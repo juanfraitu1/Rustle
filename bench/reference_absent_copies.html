@@ -1,0 +1,345 @@
+<title>Finding copies the reference doesn't show</title>
+<style>
+:root{
+  --bg:#eef1f4;--surface:#ffffff;--sunken:#f3f5f8;--ink:#151d27;--muted:#5f6b79;--hair:#dde3ea;--spine:#aab2bd;
+  --c0:#d1434f;--c1:#2c7fc0;--c2:#3a9866;--amber:#c98a1a;--gap:#cfd6de;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --shadow:0 1px 2px rgba(20,30,45,.06),0 6px 22px rgba(20,30,45,.05);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0d121a;--surface:#141b25;--sunken:#101821;--ink:#e6ecf4;--muted:#8593a3;--hair:#232f3c;--spine:#3c4756;
+  --c0:#e06974;--c1:#4c9bd8;--c2:#54b585;--amber:#dCa73e;--gap:#2a3542;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);
+}}
+:root[data-theme="light"]{--bg:#eef1f4;--surface:#ffffff;--sunken:#f3f5f8;--ink:#151d27;--muted:#5f6b79;--hair:#dde3ea;--spine:#aab2bd;--c0:#d1434f;--c1:#2c7fc0;--c2:#3a9866;--amber:#c98a1a;--gap:#cfd6de;--shadow:0 1px 2px rgba(20,30,45,.06),0 6px 22px rgba(20,30,45,.05);}
+:root[data-theme="dark"]{--bg:#0d121a;--surface:#141b25;--sunken:#101821;--ink:#e6ecf4;--muted:#8593a3;--hair:#232f3c;--spine:#3c4756;--c0:#e06974;--c1:#4c9bd8;--c2:#54b585;--amber:#dCa73e;--gap:#2a3542;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;padding:clamp(14px,3vw,34px)}
+.wrap{max-width:1040px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--mono);font-weight:600;font-size:clamp(23px,3.8vw,34px);letter-spacing:-.01em;margin:.12em 0 .1em;text-wrap:balance}
+.sub{color:var(--muted);max-width:74ch;margin:.2em 0 0;font-size:15px}.sub b{color:var(--ink)}
+
+/* three ways */
+.ways{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0 6px}
+@media(max-width:760px){.ways{grid-template-columns:1fr}}
+.way{background:var(--surface);border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow);padding:14px 15px;position:relative;overflow:hidden}
+.way::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--wc,var(--muted))}
+.way h3{font-family:var(--mono);font-size:12.5px;margin:0 0 5px;color:var(--ink)}
+.way p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
+.way .tag{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--wc,var(--muted));font-weight:600}
+
+.card{background:var(--surface);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px;margin-top:16px}
+.card>h2{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 4px;color:var(--amber)}
+.card .lede{color:var(--muted);font-size:14px;margin:0 0 14px;max-width:76ch}.card .lede b{color:var(--ink)}
+
+svg.pile{width:100%;height:auto;display:block}
+.controls{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+.controls button{font-family:var(--mono);font-size:12.5px;background:var(--sunken);border:1px solid var(--hair);border-radius:8px;padding:8px 13px;cursor:pointer;color:var(--ink)}
+.controls input[type=range]{flex:1;min-width:120px;accent-color:var(--amber)}
+.toggle{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none}
+.toggle .sw{width:30px;height:17px;border-radius:9px;background:var(--gap);position:relative;transition:background .2s}
+.toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;transition:left .2s}
+.toggle.on .sw{background:var(--amber)}.toggle.on .sw::after{left:15px}
+.scrublab{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+
+.readout{display:grid;grid-template-columns:1.1fr 1fr;gap:14px;margin-top:14px}
+@media(max-width:720px){.readout{grid-template-columns:1fr}}
+.meter{background:var(--sunken);border:1px solid var(--hair);border-radius:10px;padding:12px 14px}
+.meter .mrow{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:6px}
+.mtrack{position:relative;height:26px;background:var(--bg);border:1px solid var(--hair);border-radius:7px;overflow:hidden}
+.mfill{position:absolute;left:0;top:0;bottom:0;border-radius:6px;transition:width .3s,background .3s}
+.mthresh{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.mthresh span{position:absolute;top:-14px;left:-8px;font-family:var(--mono);font-size:9px;color:var(--ink);white-space:nowrap}
+.verdict{margin-top:8px;font-family:var(--mono);font-size:12px;min-height:40px}
+.badge{font-size:12.5px;font-weight:700;padding:3px 11px;border-radius:999px;display:inline-block}
+.legend{display:flex;flex-wrap:wrap;gap:10px 14px;font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}.sw2{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+/* funnel */
+.funnel{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.frow{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px}
+.fbar{height:22px;border-radius:5px;background:linear-gradient(90deg,var(--c2),color-mix(in srgb,var(--c2) 45%,transparent));display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#fff;font-weight:600;font-size:11px;min-width:34px}
+.frow .flab{width:210px;color:var(--muted);flex-shrink:0}.frow .flab b{color:var(--ink)}
+@media(max-width:640px){.frow .flab{width:130px}}
+
+.flag{display:flex;gap:14px;align-items:flex-start;background:var(--sunken);border:1px solid var(--hair);border-radius:12px;padding:14px 16px;margin-top:14px}
+.flag .big{font-family:var(--mono);font-size:30px;font-weight:700;color:var(--c0);line-height:1;flex-shrink:0}
+.flag .body{font-size:13px;color:var(--muted);line-height:1.55}.flag .body b{color:var(--ink)}
+.flag .verified{font-family:var(--mono);font-size:10.5px;color:var(--c2);margin-top:6px;font-weight:600}
+
+table.hits{width:100%;border-collapse:collapse;margin-top:12px;font-size:12.5px}
+table.hits th,table.hits td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--hair)}
+table.hits th{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+table.hits td{color:var(--muted)}table.hits td b{color:var(--ink)}table.hits tr:last-child td{border-bottom:none}
+.mono{font-family:var(--mono)}
+.caveat{background:color-mix(in srgb,var(--amber) 9%,transparent);border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);border-radius:10px;padding:12px 15px;margin-top:16px;font-size:13px;line-height:1.6;color:var(--muted)}
+.caveat b{color:var(--ink)}
+.foot{margin-top:16px;color:var(--muted);font-size:12px;font-family:var(--mono)}
+a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:6px 12px;cursor:pointer;z-index:5}
+:focus-visible{outline:2.5px solid var(--amber);outline-offset:2px;border-radius:6px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<a class="themebtn" id="themebtn">◑ theme</a>
+<div class="wrap">
+  <div class="eyebrow">Reference-absent copies · O4</div>
+  <h1>Finding copies the reference doesn't show</h1>
+  <p class="sub">A gene-family copy can be real and expressed yet invisible in the reference — <b>collapsed</b> onto its
+     sibling, or present but <b>unannotated</b>. We recover both from the reads alone, then <b>detect and flag, never
+     fabricate</b>: a flag becomes a copy only after assembly + genome homology + protein confirmation. Every number below is real gorilla Iso-Seq.</p>
+
+  <div class="ways">
+    <div class="way" style="--wc:var(--c0)">
+      <span class="tag">recovered here</span>
+      <h3>1 · Collapsed</h3>
+      <p>Two copies so similar the assembly merged them into ONE locus. The second copy hides in the <b>mapped</b> read pileup as a coherent 2nd haplotype.</p>
+    </div>
+    <div class="way" style="--wc:var(--c2)">
+      <span class="tag">recovered here</span>
+      <h3>2 · Unannotated</h3>
+      <p>A real, distinct locus in the assembly the gene annotation simply never labelled. Found by intersecting de-novo loci with the whole annotation.</p>
+    </div>
+    <div class="way" style="--wc:var(--muted)">
+      <span class="tag">dry on T2T</span>
+      <h3>3 · Divergent-absent</h3>
+      <p>Sequence missing entirely → reads would be <i>unmapped</i>. On the complete T2T gorilla 79% of unmapped reads are already present; real only vs an incomplete reference.</p>
+    </div>
+  </div>
+
+  <!-- ============ COLLAPSED ============ -->
+  <div class="card">
+    <h2>Mode 1 · A collapsed copy, hiding in the pileup</h2>
+    <p class="lede">One reference locus, its reads stacked below. Most columns are <b>monomorphic</b> — every read agrees,
+       that's the copy the assembly kept. But a subset of columns carry a <b>balanced second allele</b> (20–60%) that
+       appears on the <b>same reads</b> every time. Co-segregation is the tell: those reads are a second copy collapsed
+       onto this locus. Reveal the columns and watch the hidden copy separate out.</p>
+    <svg id="pile" class="pile" viewBox="0 0 720 300" role="img" aria-label="read pileup revealing a collapsed second copy"></svg>
+    <div class="controls">
+      <button id="play">▶ play</button>
+      <input id="scrub" type="range" min="0" max="26" step="1" value="0" aria-label="columns revealed">
+      <span class="scrublab" id="scrublab">0 / 26 columns</span>
+      <span style="flex:1"></span>
+      <span class="toggle on" id="edtog" role="switch" aria-checked="true"><span class="sw"></span>RNA-editing firewall</span>
+    </div>
+    <div class="legend">
+      <span><span class="sw2" style="background:var(--spine)"></span>reference allele (the kept copy)</span>
+      <span><span class="sw2" style="background:var(--c0)"></span>co-segregating 2nd-copy allele</span>
+      <span><span class="sw2" style="background:var(--amber)"></span>A→I editing column (firewalled out)</span>
+      <span><span class="sw2" style="background:var(--gap)"></span>sequencing-error singleton</span>
+    </div>
+    <div class="readout">
+      <div class="meter">
+        <div class="mrow"><span>co-segregating columns</span><span id="colcount">0</span></div>
+        <div class="mtrack"><div class="mfill" id="mfill" style="background:var(--c0)"></div>
+          <div class="mthresh" id="mthresh"><span>≥12</span></div></div>
+        <div class="verdict" id="verdict"></div>
+      </div>
+      <div class="meter" style="background:transparent;border:none;padding:0">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.7">
+          Gate: <b style="color:var(--ink)">≥12 balanced columns</b> co-segregating on <b style="color:var(--ink)">≥5 reads</b>.<br>
+          Firewall — a genuine copy shows a <b style="color:var(--ink)">diverse</b> ref→alt spectrum; A→I editing is
+          A→G / T→C-dominated, so those columns are dropped (this is what stops an edited base from faking a copy — it
+          caught a GSTM false flag).
+        </div>
+      </div>
+    </div>
+    <div class="caveat" style="margin-top:14px">
+      <b>Honest funnel — the yield is small and disciplined.</b> 357 reference-copy loci across 70 families scanned in 19 s →
+      <b>30 flagged</b> → 18 survive the editing firewall → <b>4 promote</b> to confirmed reference-absent copies
+      (assembly + genome homology + BLAST). All 4 are <b>MHC genes</b> clustered in the gorilla MHC region
+      (NC_073229.2, 49–50 Mb) — the most polymorphic, copy-number-variable, reference-divergent region in the genome, exactly where you'd predict.
+    </div>
+    <table class="hits">
+      <thead><tr><th>Copy (flag)</th><th>Locus</th><th>Protein (blastx)</th><th>Divergence</th><th>2nd-copy depth</th></tr></thead>
+      <tbody>
+        <tr><td><b>DSFAM26</b></td><td class="mono">NC_073229.2:49.05M</td><td>MHC class I <b>(Gogo-B*0201)</b> — 86%, e=0.0</td><td>4.8%</td><td class="mono">193 / 340 (0.57)</td></tr>
+        <tr><td><b>DSFAM292</b></td><td class="mono">NC_073229.2:50.36M</td><td>MHC <b>DQ-alpha</b> — 97.9%, e=1e-57</td><td>20.4%</td><td class="mono">alt on 164 cols</td></tr>
+        <tr><td><b>DSFAM58</b></td><td class="mono">NC_073229.2:50.38M</td><td>MHC <b>DRB1 / DQ-beta</b> — 95%, e=0.0</td><td>3.9–8.7%</td><td class="mono">balanced 2nd hap</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ UNANNOTATED ============ -->
+  <div class="card">
+    <h2>Mode 2 · A copy the annotation never named</h2>
+    <p class="lede">Different question: not "is the sequence there" but "did anyone <b>label</b> it." We take every de-novo
+       expressed locus and intersect it with the <b>entire</b> gorilla annotation (30,191 gene / mRNA / lncRNA /
+       pseudogene spans). What overlaps <b>nothing</b> is expressed from a locus the annotation missed — and if that
+       transcript also maps to ≥2 places, it's an unannotated family <b>copy</b>.</p>
+    <div class="funnel" id="funnel"></div>
+    <div class="flag">
+      <div class="big">5×</div>
+      <div class="body">
+        <b>The literally-unknown flagship.</b> <span class="mono">NC_073236.2 : 139.89 Mb</span> — a <b>spliced 183-aa</b>
+        expressed transcript at a locus with <b>no gene, no lncRNA, no pseudogene, not even a LOC id</b>, whose sequence
+        maps to <b>~5–7 paralog loci</b> at ≥80% identity. Sequence complexity 0.96 (not a repeat), no hit to any known
+        gorilla protein. A candidate multi-copy gene family that was <b>previously completely unknown</b>.
+        <div class="verified">✓ verified live: 0 annotated features overlap this locus · transcript maps to 7 distinct loci</div>
+      </div>
+    </div>
+    <table class="hits">
+      <thead><tr><th>Level of unknown</th><th>What it is</th><th>Yield</th></tr></thead>
+      <tbody>
+        <tr><td><b>Unannotated copy of a known family</b></td><td>e.g. <b>ROBO2</b> 94% id at 5 unlabelled loci; the hard-case win <b>DSFAM817</b> has an unannotated copy reads were assigned to</td><td class="mono">~36 + 6 read-validated</td></tr>
+        <tr><td><b>Locus unannotated, protein known</b></td><td>ERV / syncytin & LOC-family copies at unlabelled loci</td><td class="mono">part of the 42</td></tr>
+        <tr><td><b>Literally unknown</b></td><td>no annotation, no protein, multi-copy + ORF + spliced (the 5× flagship + 3 more)</td><td class="mono">4 novel families</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="caveat">
+    <b>Where the honesty line is.</b> Collapsed detection is <b>mechanism-strong but copy-confirmed only after assembly + BLAST</b> —
+    of hundreds of mechanism-level flags, 4 are locked. For the near-identical cases (a copy 0–3% divergent from its
+    sibling), RNA alone <b>cannot separate a collapsed copy from a heterozygous allele</b> — that is precisely where
+    <b>DNA copy-number (parCN)</b> is needed, and we say so rather than guess. The unannotated copies are real expressed
+    loci absent from the annotation; the 4 "literally unknown" families are strong candidates pending cross-species protein confirmation.
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
+const mk=(t,a={})=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+/* ---------- collapsed pileup ---------- */
+const NREAD=14, NCOL=26;
+// the collapsed 2nd copy = this fixed subset of reads (co-segregate at every real PSV column)
+const COPY2=new Set([1,3,4,6,9,10,12]);
+// column types: 'mono' all ref; 'psv' 2nd-copy alt (diverse spectrum); 'edit' A->I (co-seg but firewalled); 'err' single-read noise
+const COLS=(()=>{
+  const t=Array(NCOL).fill('mono');
+  const psv=[2,4,5,7,9,11,12,14,16,18,20,22,24,25]; // 14 genuine co-seg PSV columns
+  const edit=[6,15,21];                              // 3 A->I editing columns (co-seg but excluded)
+  const err=[10,19];                                 // 2 sequencing-error singletons
+  psv.forEach(i=>t[i]='psv'); edit.forEach(i=>t[i]='edit'); err.forEach(i=>t[i]='err');
+  return t;
+})();
+const ERRROW=[8,13]; // which single read carries the err singleton at err columns (index into that column's noise)
+let shown=0, timer=null, firewall=true;
+
+const G={gx:150,gy:44,cw:20,rh:15,top:44};
+function build(){
+  const svg=$('pile'); svg.innerHTML='';
+  // ref-locus label bar
+  svg.appendChild(mk('rect',{x:G.gx,y:14,width:NCOL*G.cw,height:16,rx:4,fill:'var(--spine)','fill-opacity':.25}));
+  const rl=mk('text',{x:G.gx+NCOL*G.cw/2,y:26,'text-anchor':'middle',fill:'var(--muted)','font-family':'var(--mono)','font-size':'9.5'});
+  rl.textContent='ONE reference locus (the assembly kept a single copy)';svg.appendChild(rl);
+  // read rows
+  for(let r=0;r<NREAD;r++){
+    const y=G.top+r*(G.rh+2);
+    const is2=COPY2.has(r);
+    const lab=mk('text',{class:'rlab',x:G.gx-8,y:y+G.rh-3,'text-anchor':'end',fill:is2?'var(--c0)':'var(--muted)','font-family':'var(--mono)','font-size':'9','font-weight':is2?'600':'400'});
+    lab.textContent='read '+(r+1);svg.appendChild(lab);
+  }
+  drawCells();
+  // right-side bracket label for the 2nd copy (appears when detected)
+  svg.appendChild(mk('g',{id:'copy2mark'}));
+}
+function cellFill(r,c,revealed){
+  if(!revealed) return ['var(--sunken)',.5];
+  const t=COLS[c];
+  if(t==='mono') return ['var(--spine)',.5];
+  if(t==='psv'){
+    if(COPY2.has(r)) return ['var(--c0)',.92];
+    return ['var(--spine)',.5];
+  }
+  if(t==='edit'){
+    if(COPY2.has(r)) return firewall?['var(--amber)',.85]:['var(--amber)',.85];
+    return ['var(--spine)',.5];
+  }
+  if(t==='err'){
+    // one lone read shows alt
+    const noiseRow=ERRROW[[10,19].indexOf(c)];
+    if(r===noiseRow) return ['var(--gap)',.95];
+    return ['var(--spine)',.5];
+  }
+  return ['var(--spine)',.5];
+}
+function drawCells(){
+  const svg=$('pile'); document.querySelectorAll('#pile .cell').forEach(e=>e.remove());
+  for(let c=0;c<NCOL;c++){
+    const revealed=c<shown;
+    const x=G.gx+c*G.cw;
+    // column highlight for detected PSV
+    if(revealed && COLS[c]==='psv'){
+      svg.appendChild(mk('rect',{class:'cell',x:x+1,y:G.top-3,width:G.cw-2,height:NREAD*(G.rh+2)+2,rx:3,fill:'var(--c0)','fill-opacity':.06}));
+    }
+    if(revealed && COLS[c]==='edit' && firewall){
+      svg.appendChild(mk('line',{class:'cell',x1:x+G.cw/2,y1:G.top-4,x2:x+G.cw/2,y2:G.top+NREAD*(G.rh+2),stroke:'var(--amber)','stroke-width':G.cw-3,'stroke-opacity':.10}));
+    }
+    for(let r=0;r<NREAD;r++){
+      const y=G.top+r*(G.rh+2);
+      const [f,o]=cellFill(r,c,revealed);
+      svg.appendChild(mk('rect',{class:'cell',x:x+1,y:y+.5,width:G.cw-2,height:G.rh-1,rx:2,fill:f,'fill-opacity':o}));
+    }
+  }
+  // scan cursor
+  if(shown>0&&shown<=NCOL){
+    const cx=G.gx+shown*G.cw;
+    svg.appendChild(mk('line',{class:'cell',x1:cx,y1:G.top-6,x2:cx,y2:G.top+NREAD*(G.rh+2),stroke:'var(--amber)','stroke-width':1.4,'stroke-opacity':.6}));
+  }
+}
+function cosegCount(){ // co-seg PSV columns revealed so far, excluding editing when firewall on
+  let n=0;
+  for(let c=0;c<shown;c++){ if(COLS[c]==='psv') n++; else if(COLS[c]==='edit'&&!firewall) n++; }
+  return n;
+}
+function render(){
+  drawCells();
+  const n=cosegCount();
+  $('scrublab').textContent=`${shown} / ${NCOL} columns`; $('scrub').value=shown;
+  $('colcount').textContent=n;
+  const pos=Math.min(1,n/16);
+  $('mfill').style.width=(pos*100)+'%';
+  $('mthresh').style.left=(12/16*100)+'%';
+  const detected=n>=12;
+  // reveal 2nd-copy bracket when detected
+  const mark=$('copy2mark'); mark.innerHTML='';
+  const v=$('verdict');
+  if(detected){
+    $('mfill').style.background='var(--c0)';
+    v.innerHTML=`<span class="badge" style="background:color-mix(in srgb,var(--c0) 20%,transparent);color:var(--c0)">HIDDEN COPY DETECTED</span>
+      <div style="color:var(--muted);margin-top:7px;line-height:1.55">${n} balanced columns co-segregate on the <b style="color:var(--c0)">7 highlighted reads</b> — a second copy collapsed onto this locus.</div>`;
+    // bracket the copy2 reads
+    const xr=G.gx+NCOL*G.cw+6;
+    [...COPY2].forEach(r=>{const y=G.top+r*(G.rh+2);mark.appendChild(mk('rect',{x:xr,y:y+.5,width:4,height:G.rh-1,rx:1,fill:'var(--c0)'}));});
+    const t=mk('text',{x:xr+9,y:G.top+NREAD*(G.rh+2)/2,fill:'var(--c0)','font-family':'var(--mono)','font-size':'9','font-weight':'600'});
+    t.textContent='2nd copy';mark.appendChild(t);
+  } else {
+    $('mfill').style.background='color-mix(in srgb,var(--c0) 55%,transparent)';
+    v.innerHTML= n===0 ? `<span style="color:var(--muted)">Reveal columns → look for a balanced 2nd allele on the same reads.</span>`
+      : `<span style="color:var(--muted)">${n} co-segregating so far — need ≥12 to call a hidden copy.</span>`;
+  }
+}
+function step(){ if(shown<NCOL){shown++;render();} else stop(); }
+function play(){ if(timer){stop();return;} $('play').textContent='❚❚ pause'; timer=setInterval(()=>{ if(shown>=NCOL){stop();return;} step(); },240); }
+function stop(){ if(timer){clearInterval(timer);timer=null;} $('play').textContent='▶ play'; }
+$('play').onclick=play;
+$('scrub').oninput=e=>{stop();shown=+e.target.value;render();};
+$('edtog').onclick=()=>{firewall=!firewall;$('edtog').classList.toggle('on',firewall);$('edtog').setAttribute('aria-checked',firewall);render();};
+
+/* ---------- unannotated funnel ---------- */
+const FUN=[
+  {lab:'de-novo expressed loci',n:12793,c:'var(--c2)'},
+  {lab:'overlap <b>zero</b> annotation',n:291,c:'var(--c1)'},
+  {lab:'of those, <b>paralog copies</b> (≥2 loci)',n:42,c:'var(--c0)'},
+  {lab:'<b>novel</b> multi-copy families',n:4,c:'var(--amber)'},
+];
+(function(){
+  const box=$('funnel'); const max=Math.log(FUN[0].n);
+  FUN.forEach(f=>{
+    const w=Math.max(6,100*Math.log(f.n)/max);
+    const row=document.createElement('div');row.className='frow';
+    row.innerHTML=`<span class="flab">${f.lab}</span><div class="fbar" style="width:${w}%;background:linear-gradient(90deg,${f.c},color-mix(in srgb,${f.c} 45%,transparent))">${f.n.toLocaleString()}</div>`;
+    box.appendChild(row);
+  });
+})();
+
+$('foot').innerHTML='Real gorilla Iso-Seq → T2T. Collapsed: hidden_copy detector (SDA-style co-segregation) + RNA-editing firewall + assembly/BLAST promotion. Unannotated: de-novo loci ∩ full RefSeq annotation, multi-locus mapping. Detect + flag, never place — DNA parCN settles collapsed-copy vs allele for near-identical cases.';
+$('themebtn').onclick=()=>{const c=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');};
+
+build(); render();
+</script>
