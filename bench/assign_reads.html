@@ -82,7 +82,7 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
   <p class="sub">A read that fits several copies (MAPQ 0) is assigned by <b>evidence, not similarity</b>. Reveal its
      bases one PSV at a time: every position that matches only <b>one</b> copy is copy-specific evidence, and the
      chance it arose by sequencing error, <b>p ≈ εᵏ</b>, plunges. Assign when <b>p &lt; α/(K−1)</b>; otherwise the
-     read stays <b>tied</b>. Pick a read and press play.</p>
+     read stays <b>tied</b>. The last two reads are <b>traps</b> — a sequencing error and a chimeric copy→copy read — showing what the test rejects. Pick a read and press play.</p>
 
   <div class="picker" id="picker"></div>
 
@@ -96,10 +96,14 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
         <span class="scrublab" id="scrublab">0 / 26 columns</span>
       </div>
       <div class="legend">
-        <span><span class="sw" style="background:var(--amber)"></span>copy-specific match (evidence)</span>
+        <span><span class="sw" style="background:var(--c0)"></span>votes a copy (coloured by which)</span>
         <span><span class="sw" style="background:var(--spine)"></span>matches ≥2 copies (no vote)</span>
         <span><span class="sw" style="background:var(--gap)"></span>not covered</span>
+        <span><span class="sw" style="background:var(--no)"></span>× sequencing error</span>
       </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:9px;line-height:1.55">
+        A PSV column itself needs <b style="color:var(--ink)">≥ 2 reads</b> supporting each allele, so a lone error never becomes a PSV.
+        A read whose colours <b style="color:var(--ink)">switch mid-way</b> is chimeric — it crosses from one copy to another → abstained.</div>
     </div>
 
     <div class="card">
@@ -130,6 +134,7 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
       <div class="item"><span class="sym">p</span><span class="def">the <b>certificate</b>: P(this much copy-specific match is sequencing error) ≈ εᵏ &nbsp;(exactly, a Poisson-binomial upper tail)</span></div>
       <div class="item"><span class="sym">H₀</span><span class="def">the <b>null hypothesis</b>: the read actually came from a competitor copy</span></div>
       <div class="item"><span class="sym">rule</span><span class="def"><b>assign</b> iff p &lt; α/(K−1); otherwise certify <b>tied</b> — never split 1/k</span></div>
+      <div class="item"><span class="sym">artifacts</span><span class="def">a <b>sequencing error</b> is outvoted (and a lone error never makes a PSV); a <b>chimeric / read-through</b> read matches two copies → abstained &amp; flagged recombinant</span></div>
     </dl>
     <div class="credit">
       The real-vs-error significance test is <b>adapted from IsoCon</b> (Sahlin, Tomaszkiewicz, Makova &amp; Medvedev,
@@ -157,10 +162,11 @@ const COPIES=[
 ];
 const NCOL=COPIES[0].gt.length;
 const READS=[
-  {id:'69730425', gt:'GGGATAAGAGTCCGAGAAATATTGTA', note:'full coverage'},
-  {id:'53740345', gt:'ACTCCTCTGACAAGACGTCGTATAAT', note:'full coverage'},
-  {id:'18483156', gt:'...CCTCTGACAAACCGGTAGTCCAA', note:'partial (5′ clipped)'},
-  {id:'150208751',gt:'..........................', note:'spans no PSV'},
+  {id:'69730425', gt:'GGGATAAGAGTCCGAGAAATATTGTA', note:'clean read'},
+  {id:'18483156', gt:'...CCTCTGACAAACCGGTAGTCCAA', note:'clean · partial'},
+  {id:'150208751',gt:'..........................', note:'spans no PSV → tied'},
+  {id:'seq-error', gt:'GGGATCAGAGTCCGAGAAATATTGTA', note:'⚠ one sequencing error'},
+  {id:'chimera',   gt:'GGGATAAGAGTCCACCGGTAGTCCAA', note:'⚠ chimeric: GSTM3 → GSTM1'},
 ];
 let cur=0, shown=0, timer=null;
 
@@ -178,12 +184,15 @@ function classify(read){
   return out;
 }
 function evidence(read,upto){
-  const cl=classify(read); const kc=[0,0,0];
-  for(let j=0;j<upto;j++) if(cl[j].s==='dec') kc[cl[j].copy]++;
-  const lead=kc.indexOf(Math.max(...kc));
-  const k=Math.max(...kc);
-  const p= k===0 ? 1 : Math.pow(EPS,k);
-  return {cl,kc,lead,k,p};
+  const cl=classify(read); const kc=[0,0,0]; let errs=0;
+  for(let j=0;j<upto;j++){ if(cl[j].s==='dec') kc[cl[j].copy]++; else if(cl[j].s==='err') errs++; }
+  const ord=[0,1,2].slice().sort((a,b)=>kc[b]-kc[a]);
+  const lead=ord[0], runner=ord[1];
+  const net=kc[lead]-kc[runner];                 // decisive evidence for the best copy OVER its runner-up
+  const conflict=kc[runner]>=2;                   // runner-up carries real evidence too → chimeric read
+  const p= net<=0 ? 1 : Math.pow(EPS,net);
+  const assigned=!conflict && net>=2;             // p < α/(K−1) AND no conflicting evidence
+  return {cl,kc,lead,runner,net,p,conflict,assigned,errs};
 }
 
 /* ---- sequence grid ---- */
@@ -234,19 +243,17 @@ function drawRead(){
 /* ---- meter + evidence + decision ---- */
 function render(){
   drawRead();
-  const read=READS[cur], {kc,lead,k,p}=evidence(read,shown);
+  const read=READS[cur], {kc,lead,runner,net,p,conflict,assigned,errs}=evidence(read,shown);
   $('scrublab').textContent=`${shown} / ${NCOL} columns`;
   $('scrub').value=shown;
-  // meter: x position = -log10(p)/9 (clamped)
-  const pos=Math.min(1,(p<=0?9:-Math.log10(p))/9);
-  const tpos=(-Math.log10(THRESH))/9; // ~0.365
-  const assigned = p<THRESH && k>0;
-  const col = assigned? CC[lead] : 'var(--muted)';
+  $('mthresh').style.left=((-Math.log10(THRESH))/9*100)+'%';
+  // meter position + colour reflect the DECISION
+  let pos,mcol,mtxt;
+  if(conflict){ pos=0.05; mcol='var(--no)'; mtxt='conflict'; }
+  else { pos=Math.min(1,(p<=0?9:-Math.log10(p))/9); mcol=assigned?CC[lead]:'var(--muted)'; mtxt=net<=0?'p = 1':'p ≈ 10⁻'+(3*net); }
   $('mfill').style.width=(pos*100)+'%';
-  $('mfill').style.background=assigned? 'color-mix(in srgb,'+CC[lead]+' 55%, transparent)' : 'color-mix(in srgb,var(--muted) 30%, transparent)';
-  $('mthresh').style.left=(tpos*100)+'%';
-  const mv=$('mval'); mv.textContent = k===0? 'p = 1' : 'p ≈ 10⁻'+(3*k);
-  mv.style.left='calc('+Math.min(pos,0.86)*100+'% + 6px)'; mv.style.color=col;
+  $('mfill').style.background = conflict?'color-mix(in srgb,var(--no) 34%,transparent)' : (assigned?'color-mix(in srgb,'+CC[lead]+' 55%,transparent)':'color-mix(in srgb,var(--muted) 30%,transparent)');
+  const mv=$('mval'); mv.textContent=mtxt; mv.style.left='calc('+Math.min(pos,0.84)*100+'% + 6px)'; mv.style.color=mcol;
   // evidence bars
   const maxk=Math.max(1,...kc);
   $('ev').innerHTML=COPIES.map((c,i)=>`<div class="r"><span class="nm" style="color:${CC[i]}">${c.gene}</span>
@@ -254,19 +261,25 @@ function render(){
      <span class="kc">k = ${kc[i]}</span></div>`).join('');
   // decision
   const d=$('decision');
-  if(assigned){
+  if(conflict){
+    d.innerHTML=`<span class="badge" style="background:color-mix(in srgb,var(--no) 20%,transparent);color:var(--no)">RECOMBINANT → abstain</span>
+      <div class="line">The read matches <b style="color:${CC[lead]}">${COPIES[lead].gene}</b> in one region and
+      <b style="color:${CC[runner]}">${COPIES[runner].gene}</b> in another — a <b>chimeric / read-through</b> molecule that
+      crosses from one copy to the next. Its evidence conflicts (both bars fill), so <b>no single copy earns a certificate</b>
+      → it is not assigned to either, and is flagged recombinant.</div>`;
+  }else if(assigned){
     d.innerHTML=`<span class="badge" style="background:color-mix(in srgb,${CC[lead]} 20%,transparent);color:${CC[lead]}">ASSIGNED → ${COPIES[lead].gene}</span>
-      <div class="line"><b>k = ${k}</b> copy-specific matches → <b>p ≈ 10⁻${3*k}</b> ≪ α/(K−1) = 5×10⁻⁴.
-      Even ${k} private PSV${k>1?'s':''} make error astronomically unlikely. (The full read spans ~400 — this is why the certificate is p ≈ 0.)</div>`;
-  }else if(shown>=NCOL && k===0){
+      <div class="line"><b>k = ${net}</b> copy-specific matches (over the runner-up) → <b>p ≈ 10⁻${3*net}</b> ≪ α/(K−1)=5×10⁻⁴.
+      ${errs?`A stray <b>sequencing error</b> (the × below) is outvoted and does not change the call.`:`(The full read spans ~400 such PSVs — why the real certificate is p ≈ 0.)`}</div>`;
+  }else if(shown>=NCOL && net<=0 && kc[lead]===0){
     d.innerHTML=`<span class="badge" style="background:color-mix(in srgb,var(--muted) 22%,transparent);color:var(--muted)">TIED — abstain</span>
-      <div class="line">The read spans <b>no PSV where the copies differ</b> (k = 0), so p stays at 1. It cannot be resolved even in principle — certify it <b>tied</b>, never split 1/k.</div>`;
-  }else if(k===0){
+      <div class="line">The read spans <b>no PSV where the copies differ</b> (k = 0), so p stays 1. It cannot be resolved even in principle — certify <b>tied</b>, never split 1/k.</div>`;
+  }else if(net<=0){
     d.innerHTML=`<span class="badge" style="background:var(--sunken);color:var(--muted)">no evidence yet</span>
       <div class="line">No copy-specific position revealed. Keep going →</div>`;
   }else{
-    d.innerHTML=`<span class="badge" style="background:var(--sunken);color:var(--muted)">building… p ≈ 10⁻${3*k}</span>
-      <div class="line">Leaning <b style="color:${CC[lead]}">${COPIES[lead].gene}</b> — needs p &lt; 5×10⁻⁴ (one more private PSV).</div>`;
+    d.innerHTML=`<span class="badge" style="background:var(--sunken);color:var(--muted)">building… p ≈ 10⁻${3*net}</span>
+      <div class="line">Leaning <b style="color:${CC[lead]}">${COPIES[lead].gene}</b> — needs p &lt; 5×10⁻⁴ and no conflicting evidence.</div>`;
   }
 }
 
