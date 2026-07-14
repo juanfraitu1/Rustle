@@ -2287,7 +2287,7 @@ fn refine_copy_seq(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec
                 return copy.seq.clone(); // fetch miss → fall back to the exon-sum
             }
             if copy.strand == '-' {
-                s = crate::vg::reverse_complement(&s);
+                s = crate::vg_family::seq_utils::reverse_complement(&s);
             }
             s
         }
@@ -2556,7 +2556,7 @@ fn longest_orf_aa(seq: &[u8]) -> Vec<u8> {
         best
     };
     let fwd = translate(seq);
-    let rc = crate::vg::reverse_complement(seq);
+    let rc = crate::vg_family::seq_utils::reverse_complement(seq);
     let rev = translate(&rc);
     if rev.len() > fwd.len() {
         rev
@@ -3621,7 +3621,7 @@ mod tests {
                 let bar = p.t_core * minlen as f64;
                 let au = reps[i].seq.to_ascii_uppercase();
                 let bu = reps[j].seq.to_ascii_uppercase();
-                let bru = crate::vg::reverse_complement(&bu);
+                let bru = crate::vg_family::seq_utils::reverse_complement(&bu);
                 let cov = contiguous_core_coverage_bounded(&au, &bu, p.len_cap)
                     .max(contiguous_core_coverage_bounded(&au, &bru, p.len_cap));
                 // forced LCS (robust to poasta's flank-threading collapse): if lcs >> poasta cov on a small

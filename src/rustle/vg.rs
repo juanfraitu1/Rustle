@@ -6202,18 +6202,9 @@ fn kmer_hash(kmer: &[u8]) -> u64 {
 }
 
 /// Reverse complement of a DNA sequence.
-pub(crate) fn reverse_complement(seq: &[u8]) -> Vec<u8> {
-    seq.iter()
-        .rev()
-        .map(|&b| match b {
-            b'A' => b'T',
-            b'T' => b'A',
-            b'C' => b'G',
-            b'G' => b'C',
-            _ => b'N',
-        })
-        .collect()
-}
+// `reverse_complement` was relocated to `vg_family::seq_utils` (the one runtime symbol the thesis imported
+// from here); re-exported so this to-be-retired module and its legacy callers keep compiling until deletion.
+pub(crate) use crate::vg_family::seq_utils::reverse_complement;
 
 // ── Phased assembly (--vg-phase) ─────────────────────────────────────────
 

@@ -19,7 +19,7 @@ use noodles_sam::alignment::RecordBuf;
 use super::copy_split::AlignedRead;
 use super::family_detect::DenovoTranscript;
 use crate::genome::GenomeIndex;
-use crate::vg::reverse_complement;
+use crate::vg_family::seq_utils::reverse_complement;
 
 /// Pass-1 read support to keep a skeleton (`twopass_denovo_gw_pass1.py::MIN_READS`).
 pub const PASS1_MIN_READS: u32 = 2;

@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::family_graph::contiguous_core_coverage_bounded;
 use super::family_rescue::window_canon_code;
-use crate::vg::reverse_complement;
+use crate::vg_family::seq_utils::reverse_complement;
 
 /// Canonical k-mer length (matches `family_rescue::KMER` and `denovo_families.py::KMER`).
 pub const KMER: usize = 18;

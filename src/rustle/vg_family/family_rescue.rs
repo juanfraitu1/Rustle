@@ -27,7 +27,7 @@
 
 use super::family_graph::contiguous_core_coverage_bounded;
 use crate::types::DetHashSet;
-use crate::vg::reverse_complement;
+use crate::vg_family::seq_utils::reverse_complement;
 
 /// Exact k-mer length for the canonical pre-filter. `KMER = 18` gives a
 /// `4^18 ~ 6.9e10` space (negligible coincidental sharing) and fits in `u64`
