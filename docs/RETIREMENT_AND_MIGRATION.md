@@ -103,6 +103,28 @@ Re-run `cargo check` + the three thesis-bin builds after each step; each step is
 
 ## 4. SHARED-tendril EXTRACT-FIRST list (every assembler symbol the thesis imports)
 
+> **⚠ 2026-07-14 CORRECTION (dep-trace verified, supersedes the 12-symbol list below).** Only **ONE**
+> symbol is a genuine thesis *runtime* tendril: **`reverse_complement`** (used by `denovo_assemble`,
+> `family_detect`, `family_rescue`, `denovo_pipeline`). **DONE** — relocated verbatim to
+> `vg_family/seq_utils.rs` (commit `a14b988`), GSTM regression byte-identical. The other 11 symbols are
+> **false tendrils**: `FamilyGroup`/`Graph`/`Transcript`/`discover_family_groups_layer2`/`graph_exon_seqs`/
+> `exon_kmer_similarity`/`enumerate_diagnostic_sites`/`build_multimap_index_from_secondary_index`/
+> `recompute_junction_stats`/`collect_secondary_index_from_bam`/`fnv1a64` are used **only** by
+> legacy-reachable code — the `vg_family` modules `layer2`, `rescue`, `tandem`, `secondary_index`,
+> `psv_linkage` (each imported by ZERO thesis-reachable module) and the legacy functions
+> `family_graph::build_family_graph` / `build_family_graph_from_layer1_graphs` (callers: `pipeline`/`vg`/
+> `layer2`/tests only). They are **deleted WITH the island**, not extracted.
+>
+> **Remaining carve = one atomic deletion** (gate each: 3 thesis bins build + full `--lib` tests +
+> GSTM/PCDHB/MAGEA/DAZ byte-identical): (a) sever 2 reverse tendrils inline while deleting their source —
+> `bam`→`polya::detect_polya_aligned_unaligned` (+`anchored_run_meets`,`poly_window_meets`) and
+> `types`→`stringtie_parity::stringtie_exact`; (b) prune `family_graph`'s `build_family_graph*` (+
+> `make_layer1_graph` test helper) so nothing references `graph::Graph`/`vg::FamilyGroup`; (c) drop the 5
+> legacy `vg_family` modules from `mod.rs`; (d) remove every assembler `pub mod` in `lib.rs` (all but
+> `util`/`types`/`bam`/`genome`/`vg_family`) + the crate-root re-exports (`graph::*`, `gtf::write_gtf`,
+> `path_extract::*`, `pipeline::run`); (e) delete `src/bin/rustle.rs`; (f) delete the files. DEAD-orphans
+> already removed (commit `84f0a82`).
+
 The thesis imports exactly these symbols from to-be-deleted modules. Extract each into a kept module
 (new `vg_family/` submodule, or a small `vg_family/legacy_support.rs`) before deleting the source.
 
