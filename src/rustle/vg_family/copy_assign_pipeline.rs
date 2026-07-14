@@ -2081,6 +2081,82 @@ mod tests {
     }
 
     #[test]
+    fn synthetic_ground_truth_assigns_every_read_to_its_true_copy() {
+        // Self-contained (NO external fixture) ground-truth panel for the O2 accuracy claim — the
+        // always-on, data-free complement to `smoke_sim5x_ground_truth` (which no-ops without
+        // RUSTLE_SIM5X_DIR). Three single-exon copies share a base sequence and differ at 5 planted PSV
+        // columns, a distinct private allele per copy, so every pair is separated by K=5 >> 2
+        // distinguishing sites. Each copy emits reads carrying ITS OWN alleles at ITS OWN locus, tagged
+        // with the true copy index. The IsoCon certificate must assign every read to its true copy with
+        // ZERO misassignment (assign-or-abstain, never 1/k).
+        const N_COPIES: usize = 3;
+        const READS_PER_COPY: usize = 8;
+        let psv = [50usize, 100, 150, 200, 250];
+        let base = rand_seq(300, 0x6D0D);
+        let alleles = [b'A', b'C', b'G']; // one private allele per copy at every PSV column
+        let seqs: Vec<Vec<u8>> = (0..N_COPIES)
+            .map(|c| {
+                let mut s = base.clone();
+                for &p in &psv {
+                    s[p] = alleles[c];
+                }
+                s
+            })
+            .collect();
+        let copies_owned: Vec<DenovoTranscript> = (0..N_COPIES)
+            .map(|c| {
+                let start = c as u64 * 1000;
+                copy_tx(&format!("copy{c}"), start, start + 300, '+', &[], seqs[c].clone())
+            })
+            .collect();
+        let copies: Vec<&DenovoTranscript> = copies_owned.iter().collect();
+        // Each copy's reads are aligned to THAT copy's locus and carry THAT copy's sequence.
+        let mut reads = Vec::new();
+        let mut truth = Vec::new();
+        for c in 0..N_COPIES {
+            for _ in 0..READS_PER_COPY {
+                reads.push(AlignedRead {
+                    ref_start: c as u64 * 1000,
+                    cigar: vec![('M', 300)],
+                    seq: seqs[c].clone(),
+                    qual: vec![],
+                });
+                truth.push(c);
+            }
+        }
+        let res = assign_family(&copies, &reads, &AssignParams::default(), None);
+        assert_eq!(res.len(), reads.len());
+        let (mut assigned, mut misassigned) = (0usize, 0usize);
+        for (ri, a) in &res {
+            if a.status == AssignStatus::Assigned {
+                assigned += 1;
+                misassigned += (a.best_copy != truth[*ri]) as usize;
+            }
+        }
+        assert_eq!(misassigned, 0, "no read may be assigned to the WRONG copy (ground truth)");
+        assert_eq!(assigned, reads.len(), "every K=5 read spans 5 private PSVs -> all assignable");
+    }
+
+    #[test]
+    fn synthetic_ground_truth_identical_copies_all_tie() {
+        // The identifiability floor (sim5x K=0, data-free): two EXONICALLY IDENTICAL copies carry no PSV,
+        // so no read can be resolved even in principle -- every read must be certified Tied, never guessed.
+        let seq = rand_seq(300, 0xF10A7);
+        let ca = copy_tx("A", 0, 300, '+', &[], seq.clone());
+        let cb = copy_tx("B", 1000, 1300, '+', &[], seq.clone());
+        let copies = [&ca, &cb];
+        let reads: Vec<AlignedRead> = (0..12)
+            .map(|_| AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: seq.clone(), qual: vec![] })
+            .collect();
+        let res = assign_family(&copies, &reads, &AssignParams::default(), None);
+        assert_eq!(res.len(), reads.len());
+        assert!(
+            res.iter().all(|(_, a)| a.status == AssignStatus::Tied),
+            "identical copies (0 PSVs) => every read Tied, none assigned"
+        );
+    }
+
+    #[test]
     fn junction_resolves_read_when_psvs_cannot() {
         // two copies with IDENTICAL spliced sequence (so ZERO PSV columns) but DIFFERENT junction positions
         // (a copy-specific junction). A read whose intron boundary matches copyA is resolved by the junction
