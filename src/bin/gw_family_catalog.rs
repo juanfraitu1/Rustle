@@ -150,20 +150,25 @@ fn main() -> Result<()> {
     // homology-primary catalog (in addition to feeding the `--refine` block below): it recovers coding
     // paralogs that have diverged past the nucleotide seeds' ~0.65 identity floor.
     refine_params.protein_tail = args.protein_tail;
-    let raw: Vec<Vec<DenovoTranscript>> = if args.homology_primary {
-        detect_homology_catalog_genome_wide(
-            &args.bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,
-        )?
-    } else if args.cross_chrom {
-        detect_conflict_catalog_genome_wide_xchrom(
-            &args.bam, &args.fasta, args.threads, args.min_copies, &cfg,
-        )?
-    } else {
-        let catalog = detect_conflict_catalog_genome_wide(
-            &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
-        )?;
-        catalog.into_iter().map(|c| c.copies).collect()
-    };
+    let (raw, collapsed): (Vec<Vec<DenovoTranscript>>, Vec<rustle::vg_family::collapse_enumerate::CollapsedFamily>) =
+        if args.homology_primary {
+            detect_homology_catalog_genome_wide(
+                &args.bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,
+            )?
+        } else if args.cross_chrom {
+            (
+                detect_conflict_catalog_genome_wide_xchrom(
+                    &args.bam, &args.fasta, args.threads, args.min_copies, &cfg,
+                )?,
+                Vec::new(),
+            )
+        } else {
+            let catalog = detect_conflict_catalog_genome_wide(
+                &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
+            )?;
+            (catalog.into_iter().map(|c| c.copies).collect(), Vec::new())
+        };
+    let _ = &collapsed; // consumed by Task 4 (collapsed.tsv emission); bound here so the type threads through
     // Exon-sum (FLNC) homology + distinct-locus refinement (the principled membership criterion). ON BY DEFAULT
     // (removes repeat-bridge + large-gene mis-chain FPs); `--no-refine` opts out to the raw conflict catalog.
     let refine = !args.no_refine;

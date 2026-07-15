@@ -2049,7 +2049,7 @@ pub fn detect_homology_catalog_genome_wide(
     cfg: &DenovoConfig,
     refine: &RefineParams,
     gamma: f64,
-) -> Result<Vec<Vec<DenovoTranscript>>> {
+) -> Result<(Vec<Vec<DenovoTranscript>>, Vec<crate::vg_family::collapse_enumerate::CollapsedFamily>)> {
     // --- reps (identical to the conflict path's rep build) ---
     let reads = primary_reads_from_bam(bam_path, threads)?;
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
@@ -2074,16 +2074,30 @@ pub fn detect_homology_catalog_genome_wide(
     let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma);
 
     let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
+    let mut collapsed: Vec<crate::vg_family::collapse_enumerate::CollapsedFamily> = Vec::new();
     for block in blocks {
-        if block.len() < min_copies { continue; }
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
-        let loci = distinct_locus_reps(copies); // ≥2 spatially-distinct loci certificate
-        if loci.len() >= min_copies {
+        let loci = distinct_locus_reps(copies.clone()); // ≥2 spatially-distinct loci certificate
+        if block.len() >= min_copies && loci.len() >= min_copies {
             out.push(loci);
+        } else if cfg.collapse_enumerate {
+            // dropped < min_copies / < 2-distinct-loci candidate → try re-admit as K=0-collapsed COPY-NUMBER.
+            let chrom = copies[0].chrom.clone();
+            let lo = copies.iter().map(|c| c.start).min().unwrap_or(0);
+            let hi = copies.iter().map(|c| c.end).max().unwrap_or(0);
+            let consensus = copies.iter().max_by_key(|c| c.seq.len()).map(|c| c.seq.clone()).unwrap_or_default();
+            if let Some(cf) = crate::vg_family::collapse_enumerate::readmit_locus(
+                bam_path, &chrom, lo, hi, &consensus, &genome, fasta_path, &refine.minimap2, threads,
+            ) {
+                collapsed.push(cf);
+            }
         }
     }
     eprintln!("[gw-catalog-homology] {} E_r edges -> {} families (>= {} distinct loci)", edges2.len(), out.len(), min_copies);
-    Ok(out)
+    if !collapsed.is_empty() {
+        eprintln!("[gw-catalog-homology] collapse-enumerate: {} K=0-collapsed families re-admitted (copy-number only)", collapsed.len());
+    }
+    Ok((out, collapsed))
 }
 
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
@@ -4550,7 +4564,7 @@ mod tests {
     #[test]
     fn homology_catalog_groups_fixture_family() {
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
-        let fams = detect_homology_catalog_genome_wide(
+        let (fams, _collapsed) = detect_homology_catalog_genome_wide(
             "tests/fixtures/same_chrom_supplement/reads.bam",
             "tests/fixtures/same_chrom_supplement/genome.fa",
             2, 2, &DenovoConfig::default(), &RefineParams::default(), 0.20,
