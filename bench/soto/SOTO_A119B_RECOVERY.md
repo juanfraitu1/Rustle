@@ -109,3 +109,28 @@ Projection lifts member recovery 60 %→70 %. The residual 30 % = the 17 Soto fa
 (insufficient RNA support / dropped by the readthrough & mis-chain gates) + members too divergent from the
 family consensus to project. Precision stays clean: projection loci are near-identical hits to the family
 consensus. See `NEAR_IDENTICAL_RULES.md` for why identity is the wrong axis and the exon-PSV/junction test is right.
+
+## Panel 4 — protein-tier edge + the honest recall ceiling (verified)
+
+Two additional levers, measured against all 362 members (0 false calls, precision held):
+
+- **`--protein-tail` (coding-homology E_r edge, mmseqs fident≥0.50):** recovers **+6 RNA-split members** the
+  nucleotide floor misses — `FGF7P8`, `HERC2P3`, `WHAMMP2`, `AC004980.1`, `AC127502.1`, `FO681491.1` (a
+  pseudogene/clone mix). RNA-split members: **215 → 221**.
+- **Genome-projection loci counted as recovered (DNA-localized parCN, id≥0.98 + family-assigned reads):**
+  **+36 missed members** overlap a projection locus. Labeled distinctly from RNA-split — these are copy
+  *number* localizations, not per-read resolutions (the copy-vs-allele line we keep clean).
+
+**Combined: RNA-split 221 + DNA-projection 36 (2 overlap) = 255 / 362 = 70.4 %** (from a 59.4 % RNA-only
+baseline), at 100 % precision, with essentially no new code.
+
+**The honest ceiling.** Of the 147 misses, ~**5 are silent** (0 reads — all coding: PPIAL4A/C/E, DEFB104B,
+DDX11L16) and ~**75–90 are genuine K=0 exon-identity collapses** (≥20 reads, no distinct exonic PSV or
+copy-specific junction) — both **irreducible from RNA** (the DNA/`parcn` job). So the RNA-side algorithmic
+ceiling is ~**76 %**; the identifiability floor, not the algorithm, is what bounds Soto member recall — a
+clean, defensible statement. Miss taxonomy: 5 silent · 36 DNA-localizable (banked above) · 53
+detected-family-no-projection (~10–20 recoverable by generalized projection) · 58 dead-family (~6–15 coding
+via protein/homology) · residual genuine K=0. Empirically dead levers (do NOT build): locus-stitching (zero
+orphan fragments) and coverage-floor relaxation (~0 real members). The one guarded new build worth doing is
+**generalized projection** (extend the id≥0.98/≥3-read scan from K=0-collapsed cores to every family
+consensus) — the same 100 %-precise mechanism, ~+10–20 members of headroom.
