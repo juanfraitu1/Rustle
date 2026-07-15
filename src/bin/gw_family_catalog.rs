@@ -288,7 +288,7 @@ fn main() -> Result<()> {
     // K=0-collapsed families re-admitted by Task 3 (`--collapse-enumerate`): copy-NUMBER only, kept fully
     // separate from families.tsv/copies.tsv so the OFF path (flag off or nothing collapsed) writes no file
     // and byte-identical-OFF holds.
-    if args.collapse_enumerate && !collapsed.is_empty() {
+    if cfg.collapse_enumerate && !collapsed.is_empty() {
         let mut cf = std::fs::File::create(format!("{}.collapsed.tsv", args.out))?;
         writeln!(cf, "family_id\tchrom\tstart\tend\tfamCN\tn_alt_reads\talt_frac\tstatus\tprojection_loci")?;
         for (i, fam) in collapsed.iter().enumerate() {

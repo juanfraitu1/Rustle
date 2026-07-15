@@ -287,9 +287,12 @@ struct Args {
     #[arg(long, default_value_t = false)]
     collapse_gate: bool,
 
-    /// Re-admit near-identical families that collapse to <2 RNA loci as K0_COLLAPSED, reporting
-    /// genome-projected copy NUMBER (needs DNA parCN for per-read resolution). Writes <out>.collapsed.tsv.
-    /// Default off; when off, all existing output is byte-identical.
+    /// NO-OP in copy_assign: this flag parses here but has no consumer in this binary. The
+    /// collapse-enumeration gate (re-admitting near-identical <2-RNA-loci families as K0_COLLAPSED
+    /// copy NUMBER, `<out>.collapsed.tsv`) runs only in `gw_family_catalog` -- use `--collapse-enumerate`
+    /// there instead. Kept here only so `RUSTLE_COLLAPSE_ENUMERATE`/CLI parsing doesn't hard-error;
+    /// NOT wired into copy_assign's per-read assignment path (that would violate the
+    /// COPY-NUMBER-ONLY contract of this feature).
     #[arg(long, default_value_t = false)]
     collapse_enumerate: bool,
 
@@ -494,6 +497,12 @@ fn main() -> Result<()> {
     cfg.gate.pool_locus_support = !args.no_pool_locus_support;
     cfg.collapse_gate = args.collapse_gate; // experimental; detects paralogy, not collapse (see module header)
     cfg.collapse_enumerate = args.collapse_enumerate || cfg.collapse_enumerate; // CLI OR env (RUSTLE_COLLAPSE_ENUMERATE)
+    if cfg.collapse_enumerate {
+        eprintln!(
+            "[copy_assign] WARNING: --collapse-enumerate / RUSTLE_COLLAPSE_ENUMERATE is a no-op in copy_assign \
+             (no consumer in this binary); run gw_family_catalog --collapse-enumerate instead."
+        );
+    }
     if let Some(e) = args.eps_amb {
         cfg.eps_amb = Some(e);
     }

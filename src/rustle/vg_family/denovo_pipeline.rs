@@ -2080,8 +2080,11 @@ pub fn detect_homology_catalog_genome_wide(
         let loci = distinct_locus_reps(copies.clone()); // ≥2 spatially-distinct loci certificate
         if block.len() >= min_copies && loci.len() >= min_copies {
             out.push(loci);
-        } else if cfg.collapse_enumerate {
-            // dropped < min_copies / < 2-distinct-loci candidate → try re-admit as K=0-collapsed COPY-NUMBER.
+        } else if cfg.collapse_enumerate && loci.len() < 2 {
+            // GENUINE collapse only (< 2 RNA-distinct loci), independent of min_copies: a block with
+            // >= 2 distinct loci that merely falls short of a higher --min-copies is a resolved (not
+            // collapsed) candidate and must NOT get a mixed-locus union re-admission window.
+            // dropped < 2-distinct-loci candidate → try re-admit as K=0-collapsed COPY-NUMBER.
             let chrom = copies[0].chrom.clone();
             let lo = copies.iter().map(|c| c.start).min().unwrap_or(0);
             let hi = copies.iter().map(|c| c.end).max().unwrap_or(0);
@@ -4262,6 +4265,10 @@ mod tests {
         assert!(!DenovoConfig::default().collapse_gate);
     }
 
+    // NOTE: mutates the process-global RUSTLE_COLLAPSE_ENUMERATE env var. `serial_test` is not a
+    // dev-dependency of this crate (checked Cargo.toml), so this cannot be marked `#[serial]` without
+    // adding a new dependency; no other test in this crate reads/writes this var, so the race window
+    // is currently theoretical, but a future env-mutating test on the same var would need coordinating.
     #[test]
     fn collapse_enumerate_defaults_off_and_reads_env() {
         let d = DenovoConfig::default();

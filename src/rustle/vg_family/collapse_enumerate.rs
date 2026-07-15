@@ -12,6 +12,14 @@ use crate::genome::GenomeIndex;
 /// Min balanced-alt fraction: a co-equal collapsed 2nd copy (~0.5), not a minor het/edit (~<=0.1).
 pub const MIN_ALT_FRAC: f64 = 0.30;
 
+/// famCN from a genome projection's loci count. `project_family_copies` is called with the candidate's
+/// own span as the sole `known` entry, so its returned loci are the OTHER genomic copies -- the seed
+/// locus itself is excluded by construction. Total genomic copy number = the seed copy + the projected
+/// others, hence the `+ 1`.
+pub fn famcn_from_projection(n_projection_loci: usize) -> usize {
+    n_projection_loci + 1
+}
+
 /// The three-signal gate. ALL must hold (see spec / Global Constraints).
 pub fn admit_collapse(ev: &HiddenCopyEvidence, n_projection_loci: usize) -> bool {
     ev.flagged && ev.alt_read_fraction >= MIN_ALT_FRAC && n_projection_loci >= 2
@@ -22,7 +30,7 @@ pub struct CollapsedFamily {
     pub chrom: String,
     pub start: u64,
     pub end: u64,
-    pub famcn: usize,          // genome-projected copy number
+    pub famcn: usize,          // total genomic copy number = seed locus + projected other loci
     pub n_alt_reads: usize,    // hidden 2nd-haplotype depth
     pub alt_read_fraction: f64,
     pub projection: Vec<CopyLocus>,
@@ -92,7 +100,7 @@ pub fn readmit_locus(
     if !admit_collapse(&ev, loci.len()) { return None; }
     Some(CollapsedFamily {
         chrom: chrom.to_string(), start: lo, end: hi,
-        famcn: loci.len(), n_alt_reads: ev.n_alt_reads, alt_read_fraction: ev.alt_read_fraction,
+        famcn: famcn_from_projection(loci.len()), n_alt_reads: ev.n_alt_reads, alt_read_fraction: ev.alt_read_fraction,
         projection: loci,
     })
 }
@@ -111,7 +119,6 @@ pub fn format_collapsed_row(family_id: &str, f: &CollapsedFamily) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vg_family::hidden_copy::HiddenCopyEvidence;
     fn ev(flagged: bool, frac: f64) -> HiddenCopyEvidence {
         HiddenCopyEvidence { n_primary_reads: 300, n_alt_positions: 40, n_alt_reads: (300.0*frac) as usize, alt_read_fraction: frac, flagged }
     }
@@ -121,6 +128,21 @@ mod tests {
         assert!(!admit_collapse(&ev(false, 0.50), 2), "not flagged -> reject");
         assert!(!admit_collapse(&ev(true, 0.10), 2), "minor 2nd haplotype (het/edit-like) -> reject");
         assert!(!admit_collapse(&ev(true, 0.50), 1), "single projection locus -> reject");
+    }
+
+    /// The gate is `n_projection_loci >= 2`: exactly `MIN_ALT_FRAC` and exactly 2 projection loci
+    /// must ADMIT (not a strict `>` gate on either signal).
+    #[test]
+    fn admit_collapse_boundary_at_min_alt_frac_and_two_loci() {
+        assert!(admit_collapse(&ev(true, MIN_ALT_FRAC), 2), "alt_read_fraction == MIN_ALT_FRAC exactly -> admit (>=)");
+    }
+
+    /// `famcn` is seed-inclusive: `project_family_copies` excludes the seed's own locus (it is the sole
+    /// `known` entry), so the projection count is copies OTHER than the seed. Total famCN = seed + others.
+    #[test]
+    fn famcn_is_seed_inclusive() {
+        assert_eq!(famcn_from_projection(0), 1, "no other projected loci -> just the seed copy");
+        assert_eq!(famcn_from_projection(3), 4, "3 other projected loci + the seed copy");
     }
 
     #[test]
@@ -144,10 +166,13 @@ mod tests {
     use crate::vg_family::copy_split::AlignedRead;
 
     /// Build a `BamRead` with a single mismatch (alt) baked into an otherwise-reference-matching
-    /// `M`-only alignment, so `read_obs_from_bam_reads` always produces exactly one alt per surviving read.
-    fn mk_bam_read(ref_start: u64, len: u64, is_secondary: bool, is_supplementary: bool, name: &str) -> BamRead {
+    /// `M`-only alignment at `mismatch_offset` (relative to `ref_start`), so `read_obs_from_bam_reads`
+    /// always produces exactly one alt -- at `ref_start + mismatch_offset` -- per surviving read. A
+    /// distinct offset per read gives each read an identifiable alt position, so tests can confirm
+    /// WHICH reads survived a filter, not just how many.
+    fn mk_bam_read(ref_start: u64, len: u64, mismatch_offset: u64, is_secondary: bool, is_supplementary: bool, name: &str) -> BamRead {
         let mut seq = vec![b'A'; len as usize];
-        seq[5] = b'C'; // mismatch vs an all-'A' reference at relative offset 5
+        seq[mismatch_offset as usize] = b'C'; // mismatch vs an all-'A' reference at relative offset `mismatch_offset`
         BamRead {
             chrom: "c1".to_string(),
             read: AlignedRead { ref_start, cigar: vec![('M', len)], seq, qual: Vec::new() },
@@ -164,14 +189,23 @@ mod tests {
     fn read_obs_skips_secondary_and_supplementary() {
         let seq = vec![b'A'; 200];
         let genome = GenomeIndex::from_seqs(&[("c1", &seq[..])]);
+        // Each read carries a distinct, identifiable alt offset so the surviving ReadObs can be
+        // matched back to the exact primary reads that produced them (not merely counted).
         let reads = vec![
-            mk_bam_read(10, 50, false, false, "primary1"),
-            mk_bam_read(10, 50, true, false, "secondary"),
-            mk_bam_read(10, 50, false, true, "supplementary"),
-            mk_bam_read(10, 50, false, false, "primary2"),
+            mk_bam_read(10, 50, 5, false, false, "primary1"),      // alt at 15
+            mk_bam_read(10, 50, 10, true, false, "secondary"),     // alt at 20 (must NOT survive)
+            mk_bam_read(10, 50, 15, false, true, "supplementary"), // alt at 25 (must NOT survive)
+            mk_bam_read(10, 50, 20, false, false, "primary2"),     // alt at 30
         ];
         let obs = read_obs_from_bam_reads(&reads, "c1", 0, 200, &genome);
         assert_eq!(obs.len(), 2, "only the two primary (non-secondary, non-supplementary) reads survive");
+        let alts: Vec<Vec<u64>> = obs.iter().map(|o| o.alts.clone()).collect();
+        assert_eq!(
+            alts,
+            vec![vec![15], vec![30]],
+            "survivors are exactly primary1 (alt@15) and primary2 (alt@30), in read order -- not the \
+             secondary (alt@20) or supplementary (alt@25)"
+        );
     }
 
     #[test]
@@ -180,9 +214,15 @@ mod tests {
         let genome = GenomeIndex::from_seqs(&[("c1", &seq[..])]);
         // Read near the contig end; window requested [0, 100_000) runs far past the 100bp contig,
         // so the fetched reference window is truncated to 100bp while reads may extend past it.
-        let reads = vec![mk_bam_read(90, 20, false, false, "primary_near_end")];
+        let reads = vec![mk_bam_read(90, 20, 5, false, false, "primary_near_end")];
         let obs = read_obs_from_bam_reads(&reads, "c1", 0, 100_000, &genome);
-        assert!(obs.len() <= 1, "no panic on truncated reference window past contig end");
+        assert_eq!(obs.len(), 1, "the read is kept; only its out-of-window positions are dropped");
+        assert_eq!(
+            obs[0].alts,
+            vec![95],
+            "the read's in-window alt (ref_start 90 + offset 5 = 95, within the truncated 100bp \
+             reference window) is present -- only positions past the fetched window are dropped"
+        );
     }
 
     #[test]
