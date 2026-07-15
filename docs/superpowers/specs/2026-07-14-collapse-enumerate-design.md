@@ -40,11 +40,17 @@ For a dropped candidate locus:
 2. **Genome projection ≥2 loci** — `genome_projection::project_family_copies` of the candidate's consensus
    lands at **≥2 distinct genomic loci** at the famCN bucket (identity ≥0.98, cov ≥0.90).
 
-Both fire → re-admit. Either fails → drop as today. The two-gate requirement is precisely what the earlier
-**retired `collapse_gate`** lacked: that gate fired on EEF1A1 (χ(H)=7) because its MAPQ-0 reads map to
-*dispersed processed pseudogenes* — ambiguity without a local second-haplotype witness *and* without a clean
-≥2-locus genomic projection of a single collapsed consensus. Requiring the `hidden_copy` local witness AND the
-projection is the discriminator that makes re-admission safe.
+All three signals must hold → re-admit; any fails → drop as today. **Third signal:** `hidden_copy`'s
+`alt_read_fraction ≥ 0.30` — a *balanced, co-equal* second haplotype (the SDA/Bailey depth-doubling signature
+of a genuine LOCAL collapse of ~2 copies), which a minor het or an edited base does not produce.
+
+**Honest caveat on EEF1A1.** The earlier retired `collapse_gate` fired on EEF1A1 (χ(H)=7) because its MAPQ-0
+reads map to dispersed processed pseudogenes. The three-signal gate is *stronger* (local witness + balanced
+depth + ≥2 projection loci), but it is **not proven a priori** to reject EEF1A1 — its pseudogenes could in
+principle satisfy all three. Therefore EEF1A1 discrimination is validated **empirically**: the default-off
+flag is measured on Soto (precision on/off) with an explicit EEF1A1 control run, and if EEF1A1 (or any
+dispersed-paralog case) re-admits, an intronless/structure filter on the projection loci is added as a
+fourth signal. This is exactly why the feature ships behind an isolatable flag.
 
 ### Output
 Re-admitted families are written distinctly, never as fabricated per-read copies:
