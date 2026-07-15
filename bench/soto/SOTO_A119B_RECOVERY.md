@@ -92,3 +92,20 @@ only the chromosome column was renamed `NC_0609xx.1`→`chrN`. 83 Soto family ID
 | CHEK | ID_167 | 3 | 3 | 0 | — |
 | AC | ID_92 | 2 | 2 | 0 | — |
 | TEKT | ID_175 | 2 | 2 | 0 | — |
+
+## Panel 3 — copy number via genome projection (`--enumerate-copies`)
+
+The K=0 members that RNA merges into one locus (identical expressed sequence) are recovered as copy
+*number* by projecting each family's consensus back onto CHM13v2.0 (Liftoff-style, minimap2). 171 projection
+loci across the detected families:
+
+| level | members recovered (multi-copy families) |
+|---|---|
+| Panel 1 — expressed (present) | 355 / 355 loci have reads; 98.6% overall |
+| Panel 2 — RNA-resolved as a distinct copy | 212 / 355 = **60 %** |
+| **Panel 3 — RNA + genome projection** | **248 / 355 = 70 %** (+36 K=0 collapses) |
+
+Projection lifts member recovery 60 %→70 %. The residual 30 % = the 17 Soto families never detected
+(insufficient RNA support / dropped by the readthrough & mis-chain gates) + members too divergent from the
+family consensus to project. Precision stays clean: projection loci are near-identical hits to the family
+consensus. See `NEAR_IDENTICAL_RULES.md` for why identity is the wrong axis and the exon-PSV/junction test is right.
