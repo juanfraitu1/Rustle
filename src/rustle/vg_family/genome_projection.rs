@@ -135,6 +135,52 @@ pub fn project_families_batch(
     Ok(result)
 }
 
+#[derive(Clone, Debug)]
+pub struct ProjHit { pub qname: String, pub chrom: String, pub start: u64, pub end: u64, pub identity: f64, pub cov: f64, pub cs: String }
+
+/// Same as `run_minimap2_paf` but with `--cs` so the PAF carries a `cs:Z:` tag per hit -- needed by parcn
+/// to read the assembly base at a copy's private (PSV) positions. Kept as a sibling runner (not a flag on
+/// `run_minimap2_paf`) so the existing callers/tests are untouched.
+fn run_minimap2_paf_cs(query_path: &std::path::Path, target: &str, minimap2: &str, threads: usize) -> Result<Option<String>> {
+    let out = std::process::Command::new(minimap2)
+        .args(["-c", "--cs", "-x", "splice", "-N", "50", "-p", "0.01", "-t"]).arg(threads.to_string())
+        .arg(target).arg(query_path).output()
+        .map_err(|e| anyhow::anyhow!("minimap2 ('{minimap2}') cs projection failed: {e}"))?;
+    if !out.status.success() { return Ok(None); }
+    Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
+}
+
+/// CIGAR/cs-retaining sibling of `project_families_batch`: same single-pass batch minimap2 invocation, but
+/// returns per-hit `ProjHit` (with the `cs:Z:` tag) instead of coordinate-only `CopyLocus`, so parcn can
+/// read the assembly base at a copy's private positions.
+pub fn project_with_cs(consensuses: &[(String, Vec<u8>)], target: &str, min_identity: f64, min_cov: f64, minimap2: &str, threads: usize) -> Result<Vec<ProjHit>> {
+    let dir = std::env::temp_dir();
+    let q = dir.join(format!("rustle_parcn_q_{}_{}.fa", std::process::id(), consensuses.len()));
+    let _c = TempFile(q.clone());
+    {
+        let mut f = std::fs::File::create(&q)?;
+        for (name, seq) in consensuses { if seq.is_empty() { continue; } writeln!(f, ">{name}")?; f.write_all(seq)?; writeln!(f)?; }
+    }
+    let qlen: std::collections::HashMap<&str, usize> = consensuses.iter().map(|(n, s)| (n.as_str(), s.len())).collect();
+    let paf = match run_minimap2_paf_cs(&q, target, minimap2, threads)? { Some(p) => p, None => return Ok(Vec::new()) };
+    let mut hits = Vec::new();
+    for line in paf.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 11 { continue; }
+        let qname = f[0].to_string();
+        let (qs, qe): (u64, u64) = (f[2].parse().unwrap_or(0), f[3].parse().unwrap_or(0));
+        let (ts, te): (u64, u64) = (f[7].parse().unwrap_or(0), f[8].parse().unwrap_or(0));
+        let (matches, blk): (f64, f64) = (f[9].parse().unwrap_or(0.0), f[10].parse().unwrap_or(1.0));
+        let identity = if blk > 0.0 { matches / blk } else { 0.0 };
+        let ql = *qlen.get(f[0]).unwrap_or(&1) as f64;
+        let cov = if ql > 0.0 { (qe.saturating_sub(qs)) as f64 / ql } else { 0.0 };
+        if identity < min_identity || cov < min_cov { continue; }
+        let cs = f.iter().find_map(|t| t.strip_prefix("cs:Z:")).unwrap_or("").to_string();
+        hits.push(ProjHit { qname, chrom: f[5].to_string(), start: ts, end: te, identity, cov, cs });
+    }
+    Ok(hits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,5 +488,24 @@ mod tests {
             "min_cov=0.80 must exclude the half-length (cov~0.5) fragment hit: {:?}", f1);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn project_with_cs_returns_cs_tag() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+        // Build a tiny "genome" with two near-identical copies of a query, one carrying a SNV.
+        let dir = std::env::temp_dir();
+        let g = dir.join(format!("parcn_g_{}.fa", std::process::id()));
+        // 300bp non-degenerate query; genome = query at 0, query+SNV at 500 (padded with Ns).
+        let q: Vec<u8> = (0..300).map(|i| b"ACGT"[((i * 2654435761usize) >> 13) & 3]).collect();
+        let mut snv = q.clone(); snv[150] ^= 0b100; // flip a base
+        let pad = vec![b'A'; 200];
+        let mut gseq = q.clone(); gseq.extend(&pad); gseq.extend(&snv); gseq.extend(&pad);
+        std::fs::write(&g, format!(">c1\n{}\n", String::from_utf8_lossy(&gseq))).unwrap();
+        let hits = project_with_cs(&[("F|0".into(), q.clone())], g.to_str().unwrap(), 0.90, 0.80, "minimap2", 2).unwrap();
+        std::fs::remove_file(&g).ok();
+        assert!(hits.len() >= 2, "should find both genomic copies");
+        assert!(hits.iter().all(|h| !h.cs.is_empty()), "each hit carries a cs tag");
+        assert!(hits.iter().all(|h| h.qname == "F|0"));
     }
 }
