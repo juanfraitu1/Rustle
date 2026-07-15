@@ -684,7 +684,13 @@ git commit -m "feat(parcn): per-copy parCN tabulation + TSV row formatting"
 
 **Files:**
 - Create: `src/bin/parcn.rs`
-- Modify: `Cargo.toml` (add `[[bin]] name = "parcn" path = "src/bin/parcn.rs"` if bins are not auto-discovered — check how existing bins are declared first; if `src/bin/*.rs` auto-discovers, no Cargo.toml change).
+- Modify: `Cargo.toml` — bins are declared EXPLICITLY here (9 existing `[[bin]]` entries), so add one:
+  ```toml
+  [[bin]]
+  name = "parcn"
+  path = "src/bin/parcn.rs"
+  ```
+  Place it alongside the other `[[bin]]` blocks, matching their exact formatting.
 
 **Interfaces:**
 - Consumes: everything from `crate::vg_family::parcn::*` and `genome_projection::project_with_cs`/`ProjHit`.
