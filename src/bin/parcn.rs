@@ -11,7 +11,7 @@ use clap::Parser;
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 
-use rustle::vg_family::genome_projection::{project_with_cs, ProjHit};
+use rustle::vg_family::genome_projection::project_with_cs;
 use rustle::vg_family::parcn::{
     assign_locus, dedup_loci, format_family_row, format_parcn_row, parse_copies_fa, sun_positions,
     tabulate, Assignment, CopySun, Locus,
@@ -73,36 +73,6 @@ fn band_for(copies: &[rustle::vg_family::parcn::Copy]) -> usize {
     if hi < lo { 64 } else { (hi - lo) + 64 }
 }
 
-/// Collapse redundant SAME-QUERY hits before per-family locus construction. `project_with_cs`'s `-N 50 -p
-/// 0.01` permissiveness (needed to surface genuinely divergent secondary loci, see `genome_projection`'s
-/// module doc) also lets minimap2 chain a query across a large fake "intron" bridging two near-identical
-/// tandem copies (splice mode has no length cap on the gap it will cross) — e.g. a query whose true locus is
-/// (0,400) gets a second, spurious, lower-identity hit like (71,821) that splices over its sibling copy's
-/// locus. A single query cannot have two GENUINE placements that overlap in target coordinates (overlapping
-/// intervals are the same locus by definition), so keep, per qname, the highest-identity hit and drop any
-/// lower-identity hit (sorted desc) that target-overlaps an already-kept hit for that SAME query. This is
-/// strictly a same-query cleanup — it never removes a distinct copy's hit at a genuinely different locus, so
-/// cross-copy competition (handled by `dedup_loci`'s reciprocal-overlap rule) is untouched.
-fn collapse_same_query_overlaps(hits: Vec<ProjHit>) -> Vec<ProjHit> {
-    let mut by_qname: HashMap<String, Vec<ProjHit>> = HashMap::new();
-    for h in hits {
-        by_qname.entry(h.qname.clone()).or_default().push(h);
-    }
-    let mut out = Vec::new();
-    for (_, mut group) in by_qname {
-        group.sort_by(|a, b| b.identity.partial_cmp(&a.identity).unwrap_or(std::cmp::Ordering::Equal));
-        let mut kept: Vec<ProjHit> = Vec::new();
-        for h in group {
-            let overlaps = kept.iter().any(|k| k.chrom == h.chrom && k.start < h.end && h.start < k.end);
-            if !overlaps {
-                kept.push(h);
-            }
-        }
-        out.extend(kept);
-    }
-    out
-}
-
 /// Project one haplotype's `queries` onto `target`, group hits by family (`qname` = `"{family}|{copy}"`,
 /// split once on the FIRST `|`), dedup overlapping loci within each family, and assign each deduped locus
 /// to a copy via its SUN witness. Returns per-family `Vec<Assignment>`. Empty `project_with_cs` output
@@ -120,7 +90,6 @@ fn project_and_assign(
         eprintln!("[parcn] WARNING: no projection hits against haplotype target '{target}' (0 loci this side)");
         return Ok(HashMap::new());
     }
-    let hits = collapse_same_query_overlaps(hits);
     let mut by_fam: HashMap<String, Vec<Locus>> = HashMap::new();
     for h in &hits {
         let Some((fam, copy)) = h.qname.split_once('|') else { continue };
@@ -209,12 +178,31 @@ mod tests {
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
         let dir = std::env::temp_dir();
         let tag = std::process::id();
+        // Deterministic splitmix64-based non-degenerate sequence generator (SAME pattern as
+        // vg_family::genome_projection's tests, see that module's `projection_enumerates_disjoint_copies`
+        // note): a naive periodic index formula, or worse a homopolymer pad, aliases into a short repeated
+        // motif that minimap2 (`-x splice`, no cap on the "intron" gap it will bridge) happily chains
+        // across, fusing two distinct copy loci into one spurious alignment and inflating parCN.
+        let splitmix = |i: u64| -> u64 {
+            let mut z = i.wrapping_add(0x9E3779B97F4A7C15);
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            z ^ (z >> 31)
+        };
+        let bases = [b'A', b'C', b'G', b'T'];
+        let gen_seq = |seed: u64, len: u64| -> Vec<u8> {
+            (0..len)
+                .map(|i| bases[(splitmix(seed.wrapping_mul(0x2545_F491_4F6C_DD1D).wrapping_add(i)) % 4) as usize])
+                .collect::<Vec<u8>>()
+        };
         // Family F, two copies differing at one base (a SUN each). Each haplotype carries both copies' loci.
-        let base: Vec<u8> = (0..400).map(|i| b"ACGT"[((i * 2654435761usize) >> 11) & 3]).collect();
-        let mut c0 = base.clone(); let mut c1 = base.clone(); c1[200] = if c0[200] == b'A' { b'C' } else { b'A' };
+        let base = gen_seq(1, 400);
+        let c0 = base.clone(); let mut c1 = base.clone(); c1[200] = if c0[200] == b'A' { b'C' } else { b'A' };
         let copies_fa = dir.join(format!("parcn_e2e_copies_{tag}.fa"));
         std::fs::write(&copies_fa, format!(">F|0|c:1-1|+|nexon=1\n{}\n>F|1|c:1-1|+|nexon=1\n{}\n", String::from_utf8_lossy(&c0), String::from_utf8_lossy(&c1))).unwrap();
-        let pad = vec![b'A'; 300];
+        // Padding seeded distinctly (seed=99, vs. the copy bodies' seed=1) so it neither aligns to the
+        // copies nor to itself in a way that would fake a third locus.
+        let pad = gen_seq(99, 300);
         let hap = |name: &str| {
             let mut s = c0.clone(); s.extend(&pad); s.extend(&c1); s.extend(&pad);
             let p = dir.join(format!("parcn_e2e_{name}_{tag}.fa"));
