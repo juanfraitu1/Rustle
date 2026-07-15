@@ -185,6 +185,33 @@ pub fn assign_locus(locus: &Locus, sun: &CopySun, best_copy_seq: &[u8]) -> Assig
     }
 }
 
+fn recip_overlap(a: &Locus, b: &Locus) -> f64 {
+    if a.chrom != b.chrom { return 0.0; }
+    let (lo, hi) = (a.start.max(b.start), a.end.min(b.end));
+    if hi <= lo { return 0.0; }
+    let ov = (hi - lo) as f64;
+    let la = (a.end - a.start).max(1) as f64;
+    let lb = (b.end - b.start).max(1) as f64;
+    (ov / la).min(ov / lb)
+}
+
+/// Collapse reciprocal-overlap ≥ 0.50 loci into one, keeping the highest-identity member (its best_copy)
+/// and recording the next-highest overlapping identity as runner_up_identity (for the Tier-2 margin gate).
+pub fn dedup_loci(mut loci: Vec<Locus>) -> Vec<Locus> {
+    loci.sort_by(|a, b| b.identity.partial_cmp(&a.identity).unwrap_or(std::cmp::Ordering::Equal));
+    let mut kept: Vec<Locus> = Vec::new();
+    for l in loci {
+        if let Some(k) = kept.iter_mut().find(|k| recip_overlap(k, &l) >= 0.50) {
+            // loci are sorted DESC by identity, so the kept member `k` already has the higher identity and
+            // `l` is a runner-up candidate for that overlap group; record the highest runner-up seen.
+            k.runner_up_identity = k.runner_up_identity.max(l.identity);
+        } else {
+            kept.push(l);
+        }
+    }
+    kept
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,5 +305,18 @@ mod tests {
         assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_t3, seq).method, Method::Unresolved);
         let sun_na = CopySun { copy_id: "0".into(), tier: Tier::NA, private: vec![] };
         assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_na, seq).method, Method::SingleCopy);
+    }
+
+    #[test]
+    fn dedup_collapses_overlapping_keeps_best() {
+        let mk = |s: u64, e: u64, cp: &str, id: f64| Locus { chrom: "c1".into(), start: s, end: e, best_copy: cp.into(), identity: id, runner_up_identity: 0.0, cs: ":1".into() };
+        // Two heavily-overlapping hits (copy0 id .99, copy1 id .97) + one disjoint locus.
+        let loci = vec![mk(1000, 2000, "0", 0.99), mk(1010, 1990, "1", 0.97), mk(50000, 51000, "3", 0.98)];
+        let mut out = dedup_loci(loci);
+        out.sort_by_key(|l| l.start);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].best_copy, "0");                 // highest identity wins
+        assert!((out[0].runner_up_identity - 0.97).abs() < 1e-9); // runner-up recorded
+        assert_eq!(out[1].best_copy, "3");
     }
 }
