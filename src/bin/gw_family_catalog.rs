@@ -168,7 +168,6 @@ fn main() -> Result<()> {
             )?;
             (catalog.into_iter().map(|c| c.copies).collect(), Vec::new())
         };
-    let _ = &collapsed; // consumed by Task 4 (collapsed.tsv emission); bound here so the type threads through
     // Exon-sum (FLNC) homology + distinct-locus refinement (the principled membership criterion). ON BY DEFAULT
     // (removes repeat-bridge + large-gene mis-chain FPs); `--no-refine` opts out to the raw conflict catalog.
     let refine = !args.no_refine;
@@ -285,6 +284,18 @@ fn main() -> Result<()> {
         args.out,
         args.out
     );
+
+    // K=0-collapsed families re-admitted by Task 3 (`--collapse-enumerate`): copy-NUMBER only, kept fully
+    // separate from families.tsv/copies.tsv so the OFF path (flag off or nothing collapsed) writes no file
+    // and byte-identical-OFF holds.
+    if args.collapse_enumerate && !collapsed.is_empty() {
+        let mut cf = std::fs::File::create(format!("{}.collapsed.tsv", args.out))?;
+        writeln!(cf, "family_id\tchrom\tstart\tend\tfamCN\tn_alt_reads\talt_frac\tstatus\tprojection_loci")?;
+        for (i, fam) in collapsed.iter().enumerate() {
+            writeln!(cf, "{}", rustle::vg_family::collapse_enumerate::format_collapsed_row(&format!("GWFAMc{i}"), fam))?;
+        }
+        eprintln!("[gw-catalog] wrote {} K=0-collapsed families -> {}.collapsed.tsv", collapsed.len(), args.out);
+    }
 
     // famCN / totalCN via genome projection (spec §7): a family's RNA-observed copies are a LOWER bound
     // on its true genomic copy number when copies collapse onto one locus (K=0). Project each family's

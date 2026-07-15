@@ -97,6 +97,17 @@ pub fn readmit_locus(
     })
 }
 
+/// One `<out>.collapsed.tsv` data row for a re-admitted K=0-collapsed family. Columns:
+/// family_id, chrom, start, end, famCN, n_alt_reads, alt_frac(3dp), status, projection_loci
+/// (`chrom:start-end@identity` joined by `;`). Copy-NUMBER only — these families never appear in copies.tsv.
+pub fn format_collapsed_row(family_id: &str, f: &CollapsedFamily) -> String {
+    let proj = f.projection.iter()
+        .map(|c| format!("{}:{}-{}@{:.3}", c.chrom, c.start, c.end, c.identity))
+        .collect::<Vec<_>>().join(";");
+    format!("{family_id}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
+        f.chrom, f.start, f.end, f.famcn, f.n_alt_reads, f.alt_read_fraction, "K0_COLLAPSED", proj)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,5 +183,19 @@ mod tests {
         let reads = vec![mk_bam_read(90, 20, false, false, "primary_near_end")];
         let obs = read_obs_from_bam_reads(&reads, "c1", 0, 100_000, &genome);
         assert!(obs.len() <= 1, "no panic on truncated reference window past contig end");
+    }
+
+    #[test]
+    fn collapsed_tsv_row_format() {
+        use crate::vg_family::genome_projection::CopyLocus;
+        let f = CollapsedFamily {
+            chrom: "chr2".into(), start: 108994973, end: 109147842, famcn: 2, n_alt_reads: 600, alt_read_fraction: 0.49,
+            projection: vec![
+                CopyLocus { chrom: "chr2".into(), start: 108994973, end: 109147842, identity: 0.99,  cov: 0.95 },
+                CopyLocus { chrom: "chr2".into(), start: 110869109, end: 110895544, identity: 0.993, cov: 0.92 },
+            ],
+        };
+        let row = format_collapsed_row("GWFAMc0", &f);
+        assert_eq!(row, "GWFAMc0\tchr2\t108994973\t109147842\t2\t600\t0.490\tK0_COLLAPSED\tchr2:108994973-109147842@0.990;chr2:110869109-110895544@0.993");
     }
 }
