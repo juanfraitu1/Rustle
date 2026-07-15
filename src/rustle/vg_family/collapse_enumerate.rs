@@ -147,6 +147,34 @@ pub fn format_expressed_collapsed_row(family_id: &str, f: &ExpressedCollapsedFam
         f.chrom, f.start, f.end, f.famcn, f.min_locus_reads, "K0_COLLAPSED_EXPRESSED", proj)
 }
 
+/// Pure: assemble an `ExpressedCollapsedFamily` from already-read-supported projection loci (paired with
+/// their support counts). Returns `None` unless `>= 2` loci are supported. Factored out so the admit/famCN
+/// logic is unit-testable without minimap2/BAM I/O.
+fn build_expressed_family(chrom: &str, lo: u64, hi: u64, loci: Vec<CopyLocus>, supports: &[usize]) -> Option<ExpressedCollapsedFamily> {
+    if !admit_expressed_collapse(loci.len()) { return None; }
+    let min_locus_reads = supports.iter().copied().min().unwrap_or(0);
+    Some(ExpressedCollapsedFamily {
+        chrom: chrom.to_string(), start: lo, end: hi,
+        famcn: famcn_from_projection(loci.len()), min_locus_reads, projection: loci,
+    })
+}
+
+/// I/O driver: project the dropped candidate's consensus, keep projection loci with >= MIN_LOCUS_READS
+/// primary reads (the EEF1A1 guard), and admit if >= 2 remain. No PSV/hidden-copy requirement.
+pub fn readmit_locus_expressed(
+    bam_path: &str, chrom: &str, lo: u64, hi: u64, consensus: &[u8], fasta_path: &str, minimap2: &str, threads: usize,
+) -> Option<ExpressedCollapsedFamily> {
+    let known = vec![(chrom.to_string(), lo, hi)];
+    let loci = project_family_copies(consensus, fasta_path, &known, 0.98, 0.90, minimap2, threads).ok()?;
+    let mut supported = Vec::new();
+    let mut supports = Vec::new();
+    for l in loci {
+        let n = reads_in_region(bam_path, &l.chrom, l.start, l.end, threads).map(|(p, _)| p.len()).unwrap_or(0);
+        if n >= MIN_LOCUS_READS { supports.push(n); supported.push(l); }
+    }
+    build_expressed_family(chrom, lo, hi, supported, &supports)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,5 +317,23 @@ mod tests {
         };
         assert_eq!(format_expressed_collapsed_row("GWFAMe0", &f),
             "GWFAMe0\tchr2\t97950885\t98048181\t3\t32\tK0_COLLAPSED_EXPRESSED\tchr2:97950885-98048181@0.998;chr2:99100000-99198000@0.994");
+    }
+
+    #[test]
+    fn expressed_driver_builds_family_from_supported_loci() {
+        // exercises the post-projection assembly logic: given read-supported loci, famCN is seed-inclusive and
+        // min_locus_reads is the weakest. (The minimap2/BAM I/O path is covered by the Soto/EEF1A1 live runs.)
+        let loci = vec![
+            CopyLocus { chrom: "c".into(), start: 0, end: 9, identity: 0.99, cov: 0.95 },
+            CopyLocus { chrom: "c".into(), start: 50, end: 59, identity: 0.995, cov: 0.95 },
+        ];
+        let supports = vec![32usize, 4usize];
+        let fam = build_expressed_family("c", 0, 9, loci.clone(), &supports);
+        assert!(fam.is_some());
+        let fam = fam.unwrap();
+        assert_eq!(fam.famcn, 3);            // 2 supported loci + seed
+        assert_eq!(fam.min_locus_reads, 4);  // weakest
+        // fewer than 2 supported -> None
+        assert!(build_expressed_family("c", 0, 9, loci[..1].to_vec(), &supports[..1]).is_none());
     }
 }
