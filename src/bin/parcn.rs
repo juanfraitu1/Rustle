@@ -74,7 +74,13 @@ fn main() -> Result<()> {
 fn band_for(copies: &[rustle::vg_family::parcn::Copy]) -> usize {
     let lens = copies.iter().map(|c| c.seq.len());
     let (lo, hi) = lens.fold((usize::MAX, 0usize), |(lo, hi), l| (lo.min(l), hi.max(l)));
-    (if hi < lo { 64 } else { (hi - lo) + 64 }).min(1024)
+    // Band = the family's copy-length spread + slack, so `banded_msa_pair` can align copies that differ in
+    // length (partial/alternative-exon copies) without clipping. Capped at 8192 to bound the DP matrix on a
+    // pathological huge-disparity family (~O(len*8192) ≈ a few GB): real within-family spreads are small
+    // (observed max 5651 bp over the gorilla catalog's 157 families, so 8192 clips none of them), and
+    // `sun_positions` runs before the projection index loads so its memory never overlaps the ~13 GB index.
+    // A spread above the cap yields `None` from the banded aligner → the conservative empty-diff path.
+    (if hi < lo { 64 } else { (hi - lo) + 64 }).min(8192)
 }
 
 /// Project one haplotype's `queries` onto `target`, group hits by family (`qname` = `"{family}|{copy}"`,
