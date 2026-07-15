@@ -129,4 +129,48 @@ mod tests {
         let ev2 = detect_hidden_copy(&het, &HiddenCopyParams::default());
         assert!(!admit_collapse(&ev2, 2), "minor het does not admit");
     }
+
+    use crate::vg_family::copy_split::AlignedRead;
+
+    /// Build a `BamRead` with a single mismatch (alt) baked into an otherwise-reference-matching
+    /// `M`-only alignment, so `read_obs_from_bam_reads` always produces exactly one alt per surviving read.
+    fn mk_bam_read(ref_start: u64, len: u64, is_secondary: bool, is_supplementary: bool, name: &str) -> BamRead {
+        let mut seq = vec![b'A'; len as usize];
+        seq[5] = b'C'; // mismatch vs an all-'A' reference at relative offset 5
+        BamRead {
+            chrom: "c1".to_string(),
+            read: AlignedRead { ref_start, cigar: vec![('M', len)], seq, qual: Vec::new() },
+            mapq: 60,
+            name: name.to_string(),
+            as_score: 0,
+            de: 0.0,
+            is_supplementary,
+            is_secondary,
+        }
+    }
+
+    #[test]
+    fn read_obs_skips_secondary_and_supplementary() {
+        let seq = vec![b'A'; 200];
+        let genome = GenomeIndex::from_seqs(&[("c1", &seq[..])]);
+        let reads = vec![
+            mk_bam_read(10, 50, false, false, "primary1"),
+            mk_bam_read(10, 50, true, false, "secondary"),
+            mk_bam_read(10, 50, false, true, "supplementary"),
+            mk_bam_read(10, 50, false, false, "primary2"),
+        ];
+        let obs = read_obs_from_bam_reads(&reads, "c1", 0, 200, &genome);
+        assert_eq!(obs.len(), 2, "only the two primary (non-secondary, non-supplementary) reads survive");
+    }
+
+    #[test]
+    fn read_obs_window_past_contig_end_does_not_panic() {
+        let seq = vec![b'A'; 100];
+        let genome = GenomeIndex::from_seqs(&[("c1", &seq[..])]);
+        // Read near the contig end; window requested [0, 100_000) runs far past the 100bp contig,
+        // so the fetched reference window is truncated to 100bp while reads may extend past it.
+        let reads = vec![mk_bam_read(90, 20, false, false, "primary_near_end")];
+        let obs = read_obs_from_bam_reads(&reads, "c1", 0, 100_000, &genome);
+        assert!(obs.len() <= 1, "no panic on truncated reference window past contig end");
+    }
 }
