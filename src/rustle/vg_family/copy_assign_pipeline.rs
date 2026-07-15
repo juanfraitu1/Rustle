@@ -248,7 +248,7 @@ fn cigar_to_gapped_msa(ref_seq: &[u8], other: &[u8], ts: usize, qs: usize, cigar
 /// — the residual is **co-optimal** gap placement, where poasta's graph traceback and this DP each pick a
 /// different equal-cost alignment (neither is "more correct"). Still OPT-IN pending a full known-family
 /// re-validation before it could become the default engine.
-fn banded_msa_pair(a: &[u8], b: &[u8], band: usize) -> Option<Vec<Vec<u8>>> {
+pub(crate) fn banded_msa_pair(a: &[u8], b: &[u8], band: usize) -> Option<Vec<Vec<u8>>> {
     let (n, m) = (a.len(), b.len());
     if n == 0 || m == 0 || n.abs_diff(m) > band {
         return None; // a truncation/large-indel pair cannot stay in the band — fall back to exact
