@@ -183,7 +183,10 @@ pub struct CopySun { pub copy_id: String, pub tier: Tier, pub private: Vec<(usiz
 fn diff_offsets(b: &[u8], s: &[u8], band: usize) -> (std::collections::HashSet<usize>, usize, usize) {
     let msa = match banded_msa_pair(b, s, band) {
         Some(m) => m,
-        None => return ((0..b.len()).collect(), 0, b.len().max(1)),
+        // Band-edge failure: we cannot confirm ANY position differs from this sibling, so return an EMPTY
+        // diff set. Private = intersection over siblings, and ∅ is absorbing (∅ ∩ X = ∅) → nothing private.
+        // (Returning "all offsets differ" would be a no-op under intersection and fabricate Tier-1.)
+        None => return (std::collections::HashSet::new(), 0, b.len().max(1)),
     };
     let (ab, asb) = (&msa[0], &msa[1]);
     let (mut boff, mut diff, mut matches, mut cols) = (0usize, std::collections::HashSet::new(), 0usize, 0usize);
