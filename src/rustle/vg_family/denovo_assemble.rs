@@ -264,13 +264,18 @@ pub struct BamRead {
     pub de: f32,
     /// chimeric/split alignment (SAM flag 0x800) — excluded from conflict placements.
     pub is_supplementary: bool,
+    /// secondary alignment (SAM flag 0x100) — a multimapping read's non-primary placement; excluded,
+    /// together with `is_supplementary`, before any per-read CIGAR statistic (project invariant: primary
+    /// alignments only, `-F 2308`), so a single physical molecule is never double-counted as two witnesses.
+    pub is_secondary: bool,
 }
 
 /// Build an `AlignedRead` (ref_start 0-based, CIGAR ops as chars, read sequence) + mapping quality + read
-/// NAME + `AS:i` alignment score from a mapped record — the per-read input copy ASSIGNMENT consumes
-/// (`copy_assign_pipeline`). The sequence keeps soft-clipped bases (excludes hard-clips), matching
-/// `copy_split::allele_at`'s CIGAR walk. `as_score` is 0 if the tag is absent. `None` if unmapped.
-pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, String, i32, f32, bool)> {
+/// NAME + `AS:i` alignment score + `de:f` divergence + `is_supplementary` + `is_secondary` from a mapped
+/// record — the per-read input copy ASSIGNMENT consumes (`copy_assign_pipeline`). The sequence keeps
+/// soft-clipped bases (excludes hard-clips), matching `copy_split::allele_at`'s CIGAR walk. `as_score` is
+/// 0 if the tag is absent. `None` if unmapped.
+pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, String, i32, f32, bool, bool)> {
     if record.flags().is_unmapped() {
         return None;
     }
@@ -293,7 +298,8 @@ pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, 
     // `de` is always present on the production BAM. A de-less BAM cannot use the de-tie criterion.
     let de = record_de(record).unwrap_or(0.0);
     let is_supplementary = record.flags().is_supplementary();
-    Some((AlignedRead { ref_start, cigar, seq, qual }, mapq, name, as_score, de, is_supplementary))
+    let is_secondary = record.flags().is_secondary();
+    Some((AlignedRead { ref_start, cigar, seq, qual }, mapq, name, as_score, de, is_supplementary, is_secondary))
 }
 
 /// Scan every mapped alignment in a BAM into `BamRead`s (the copy-assignment read input). I/O driver,
@@ -312,8 +318,8 @@ pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<BamR
             Some((name, _)) => format!("{name}"),
             None => continue,
         };
-        if let Some((read, mapq, name, as_score, de, is_supplementary)) = aligned_read_from_record(&record) {
-            out.push(BamRead { chrom, read, mapq, name, as_score, de, is_supplementary });
+        if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&record) {
+            out.push(BamRead { chrom, read, mapq, name, as_score, de, is_supplementary, is_secondary });
         }
     }
     Ok(out)
@@ -399,8 +405,8 @@ fn reads_in_region_indexed(
         if let Some(pr) = primary_read_from_record(&rb, chrom) {
             primary.push(pr);
         }
-        if let Some((read, mapq, name, as_score, de, is_supplementary)) = aligned_read_from_record(&rb) {
-            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary });
+        if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
+            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary });
         }
     }
     Ok((primary, bam_reads))
@@ -447,8 +453,8 @@ impl BamIndexCache {
             if let Some(pr) = primary_read_from_record(&rb, chrom) {
                 primary.push(pr);
             }
-            if let Some((read, mapq, name, as_score, de, is_supplementary)) = aligned_read_from_record(&rb) {
-                bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary });
+            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
+                bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary });
             }
         }
         Ok((primary, bam_reads))
@@ -504,7 +510,7 @@ pub fn primary_aligned_reads_in_region(
         if f.is_unmapped() || f.is_secondary() || f.is_supplementary() {
             continue;
         }
-        if let Some((read, _, _, _, _, _)) = aligned_read_from_record(&rb) {
+        if let Some((read, _, _, _, _, _, _)) = aligned_read_from_record(&rb) {
             out.push(read);
         }
     }
@@ -576,8 +582,8 @@ fn reads_in_region_scan(
         if let Some(pr) = primary_read_from_record(&record, chrom) {
             primary.push(pr);
         }
-        if let Some((read, mapq, name, as_score, de, is_supplementary)) = aligned_read_from_record(&record) {
-            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary });
+        if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&record) {
+            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary });
         }
     }
     Ok((primary, bam_reads))
@@ -961,7 +967,7 @@ mod tests {
             .set_cigar(cigar)
             .set_sequence(seq)
             .build();
-        let (ar, _mapq, _name, _as_score, _de, _is_supp) = aligned_read_from_record(&r).expect("mapped read");
+        let (ar, _mapq, _name, _as_score, _de, _is_supp, _is_secondary) = aligned_read_from_record(&r).expect("mapped read");
         assert_eq!(ar.ref_start, 100); // 1-based 101 -> 0-based
         assert_eq!(ar.cigar, vec![('M', 5), ('N', 10), ('M', 5)]);
         assert_eq!(ar.seq, b"AAAAACCCCC".to_vec());
@@ -1205,7 +1211,7 @@ mod tests {
             .set_sequence(Sequence::from(b"ACGT".to_vec()))
             .build();
         record.data_mut().insert(Tag::new(b'd', b'e'), BufValue::Float(0.02));
-        let (_ar, _mapq, _name, _as, de, is_supp) =
+        let (_ar, _mapq, _name, _as, de, is_supp, _is_secondary) =
             aligned_read_from_record(&record).expect("mapped");
         assert!((de - 0.02).abs() < 1e-6);
         assert!(is_supp, "supplementary flag must be surfaced");

@@ -2838,10 +2838,10 @@ mod tests {
             vec![
                 BamRead { chrom: "c1".into(),
                     read: AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: primary_seq, qual: vec![] },
-                    mapq: 60, name: name.into(), as_score: 380, de: 0.010, is_supplementary: false },
+                    mapq: 60, name: name.into(), as_score: 380, de: 0.010, is_supplementary: false, is_secondary: false },
                 BamRead { chrom: "c1".into(),
                     read: AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: secondary_seq, qual: vec![] },
-                    mapq: 0, name: name.into(), as_score: 379, de: 0.012, is_supplementary: false },
+                    mapq: 0, name: name.into(), as_score: 379, de: 0.012, is_supplementary: false, is_secondary: false },
             ]
         };
         let mut bam = Vec::new();
@@ -3308,6 +3308,7 @@ mod tests {
                 as_score: 0,
                 de: 0.0,
                 is_supplementary: false,
+                is_secondary: false,
             }
         }
 
@@ -3678,7 +3679,7 @@ mod tests {
         BamRead {
             chrom: chrom.into(),
             read: AlignedRead { ref_start: start, cigar: vec![('M', len)], seq: vec![b'A'; len as usize], qual: vec![] },
-            mapq, name: name.into(), as_score: 500, de, is_supplementary: false,
+            mapq, name: name.into(), as_score: 500, de, is_supplementary: false, is_secondary,
         }
     }
 
@@ -4224,6 +4225,7 @@ mod tests {
             as_score: 100,
             de: 0.01,
             is_supplementary: supp,
+            is_secondary: false,
         };
         let reads = vec![
             mk(1_100, 0, false),  // ambiguous, inside  -> numerator + denominator
@@ -4283,6 +4285,7 @@ mod tests {
             as_score: 100,
             de: 0.01,
             is_supplementary: false,
+            is_secondary: false,
         };
         let reads = vec![mk(1_100), mk(1_200), mk(9_000)];
         let fa = gated_family(&rep, &reads, 3, "DSFAM7".into());

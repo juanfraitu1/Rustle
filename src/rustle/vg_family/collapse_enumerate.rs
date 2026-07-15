@@ -29,12 +29,21 @@ pub struct CollapsedFamily {
 }
 
 /// Per-read mismatch positions vs the reference window `[lo,hi)` — the `alts` a `detect_hidden_copy`
-/// column analysis consumes. Only `M/=/X` CIGAR ops advance both ref and query; `I/S` advance query,
-/// `D/N` advance ref. A position counts as an alt iff the read base differs from the reference base.
+/// column analysis consumes. PRIMARY alignments only (project invariant, `-F 2308`): secondary and
+/// supplementary records are additional placements of the SAME physical molecule, and `detect_hidden_copy`
+/// counts every `ReadObs` as an independent molecule — including them here would double-count exactly the
+/// multimapping reads this feature targets, corrupting `alt_read_fraction`. Only `M/=/X` CIGAR ops advance
+/// both ref and query; `I/S` advance query, `D/N` advance ref. A position counts as an alt iff the read
+/// base differs from the reference base. `refwin` can be shorter than `hi - lo` when `[lo,hi)` runs past
+/// the contig end (subtelomeric candidates); `refwin.get(..)` skips positions past the fetched window
+/// instead of panicking.
 fn read_obs_from_bam_reads(reads: &[BamRead], chrom: &str, lo: u64, hi: u64, genome: &GenomeIndex) -> Vec<ReadObs> {
     let refwin = match genome.fetch_sequence(chrom, lo, hi) { Some(s) => s, None => return Vec::new() };
     let mut out = Vec::with_capacity(reads.len());
     for br in reads {
+        if br.is_secondary || br.is_supplementary {
+            continue;
+        }
         let r = &br.read;
         let mut ref_pos = r.ref_start;
         let mut q = 0usize;
@@ -45,10 +54,11 @@ fn read_obs_from_bam_reads(reads: &[BamRead], chrom: &str, lo: u64, hi: u64, gen
                     for k in 0..len {
                         let rp = ref_pos + k;
                         if rp >= lo && rp < hi {
-                            let rb = refwin[(rp - lo) as usize];
-                            if let Some(&qb) = r.seq.get(q + k as usize) {
-                                if qb.to_ascii_uppercase() != rb.to_ascii_uppercase() {
-                                    alts.push(rp);
+                            if let Some(&rb) = refwin.get((rp - lo) as usize) {
+                                if let Some(&qb) = r.seq.get(q + k as usize) {
+                                    if qb.to_ascii_uppercase() != rb.to_ascii_uppercase() {
+                                        alts.push(rp);
+                                    }
                                 }
                             }
                         }
