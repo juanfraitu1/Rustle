@@ -82,6 +82,11 @@ pub struct DenovoConfig {
     /// PARALOGY, not collapse — it fires on EEF1A1 (pseudogenes on other chromosomes) with χ(H) = 7. See the
     /// `collapse_gate` module header.
     pub collapse_gate: bool,
+    /// Re-admit near-identical families that collapse to < 2 RNA loci as K0_COLLAPSED, ENUMERATING the
+    /// genome-projected copy count instead of abstaining. **Default OFF**: when off, all existing output is
+    /// byte-identical. Env `RUSTLE_COLLAPSE_ENUMERATE=1`, CLI `--collapse-enumerate` on `gw_family_catalog`
+    /// and `copy_assign`.
+    pub collapse_enumerate: bool,
     /// Background per-read ambiguity rate for the collapse test. Must be GENOME-WIDE, never region-local: in the
     /// DAZ window every read outside DAZ1's span is DAZ2's and ambiguous, so a local background would be ~0.95.
     /// `None` ⇒ the gate abstains. Default = `GENOME_WIDE_EPS_AMB` measured on `GGO_mm.bam`.
@@ -103,7 +108,19 @@ impl Default for DenovoConfig {
             filter_readthrough: true,
             refine: true,
             collapse_gate: false,
+            collapse_enumerate: false,
             eps_amb: Some(crate::vg_family::collapse_gate::GENOME_WIDE_EPS_AMB),
+        }
+    }
+}
+
+impl DenovoConfig {
+    /// Read overrides from `RUSTLE_*` env vars on top of `Default` (currently just
+    /// `RUSTLE_COLLAPSE_ENUMERATE`).
+    pub fn from_env() -> Self {
+        DenovoConfig {
+            collapse_enumerate: std::env::var("RUSTLE_COLLAPSE_ENUMERATE").ok().as_deref() == Some("1"),
+            ..Self::default()
         }
     }
 }
@@ -4227,6 +4244,16 @@ mod tests {
     #[test]
     fn denovoconfig_default_disables_the_collapse_gate() {
         assert!(!DenovoConfig::default().collapse_gate);
+    }
+
+    #[test]
+    fn collapse_enumerate_defaults_off_and_reads_env() {
+        let d = DenovoConfig::default();
+        assert!(!d.collapse_enumerate, "must default OFF for byte-identical behavior");
+        std::env::set_var("RUSTLE_COLLAPSE_ENUMERATE", "1");
+        assert!(DenovoConfig::from_env().collapse_enumerate);
+        std::env::remove_var("RUSTLE_COLLAPSE_ENUMERATE");
+        assert!(!DenovoConfig::from_env().collapse_enumerate);
     }
 
     /// A gated family reports chi(H) copies but only ONE copy tid (the single assembled rep), every read Tied

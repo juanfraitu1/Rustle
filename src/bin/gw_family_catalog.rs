@@ -102,6 +102,11 @@ struct Args {
     /// segdup regime.
     #[arg(long, default_value_t = false)]
     enumerate_copies: bool,
+    /// Re-admit near-identical families that collapse to <2 RNA loci as K0_COLLAPSED, reporting
+    /// genome-projected copy NUMBER (needs DNA parCN for per-read resolution). Writes <out>.collapsed.tsv.
+    /// Default off; when off, all existing output is byte-identical.
+    #[arg(long, default_value_t = false)]
+    collapse_enumerate: bool,
 
     /// Emit the single-copy baseline instead of the family catalog: `<out>.single_copy.tsv` (one row per
     /// single-copy chi(H)=1 locus) + `<out>.lambda_global.tsv` (the genome-wide median n_reads = lambda_global,
@@ -112,8 +117,9 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let mut cfg = DenovoConfig::default();
+    let mut cfg = DenovoConfig::from_env();
     cfg.complete_poa_core = args.complete_core;
+    cfg.collapse_enumerate = args.collapse_enumerate || cfg.collapse_enumerate;
 
     if args.single_copy_baseline {
         use rustle::vg_family::single_copy::lambda_global;

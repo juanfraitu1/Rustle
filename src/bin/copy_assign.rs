@@ -287,6 +287,12 @@ struct Args {
     #[arg(long, default_value_t = false)]
     collapse_gate: bool,
 
+    /// Re-admit near-identical families that collapse to <2 RNA loci as K0_COLLAPSED, reporting
+    /// genome-projected copy NUMBER (needs DNA parCN for per-read resolution). Writes <out>.collapsed.tsv.
+    /// Default off; when off, all existing output is byte-identical.
+    #[arg(long, default_value_t = false)]
+    collapse_enumerate: bool,
+
     /// Background per-read ambiguity rate for the collapse test (fraction of PRIMARY reads at MAPQ 0
     /// genome-wide). Must be a genome-wide quantity: a region-local estimate is degenerate, since in a
     /// collapsed window the reads outside the assembled rep are precisely the ambiguous ones. Default is the
@@ -479,7 +485,7 @@ fn main() -> Result<()> {
     );
 
     let lambda = resolve_lambda(args.lambda_global, args.lambda_file.as_deref().and_then(read_lambda_file));
-    let mut cfg = DenovoConfig::default();
+    let mut cfg = DenovoConfig::from_env();
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
     cfg.vg_realign = args.vg_realign; // Task 5 (report-only): off by default, byte-identical otherwise
     cfg.homology_primary = args.homology_primary; // E_r membership; off => the E_c path is untouched
@@ -487,6 +493,7 @@ fn main() -> Result<()> {
     cfg.filter_readthrough = !args.keep_readthrough; // unspliced pre-mRNA spans are not copies
     cfg.gate.pool_locus_support = !args.no_pool_locus_support;
     cfg.collapse_gate = args.collapse_gate; // experimental; detects paralogy, not collapse (see module header)
+    cfg.collapse_enumerate = args.collapse_enumerate || cfg.collapse_enumerate; // CLI OR env (RUSTLE_COLLAPSE_ENUMERATE)
     if let Some(e) = args.eps_amb {
         cfg.eps_amb = Some(e);
     }
