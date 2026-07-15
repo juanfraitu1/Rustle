@@ -142,10 +142,13 @@ pub struct ProjHit { pub qname: String, pub chrom: String, pub start: u64, pub e
 /// to read the assembly base at a copy's private (PSV) positions. Kept as a sibling runner (not a flag on
 /// `run_minimap2_paf`) so the existing callers/tests are untouched.
 fn run_minimap2_paf_cs(query_path: &std::path::Path, target: &str, minimap2: &str, threads: usize) -> Result<Option<String>> {
-    let out = std::process::Command::new(minimap2)
+    let out = match std::process::Command::new(minimap2)
         .args(["-c", "--cs", "-x", "splice", "-N", "50", "-p", "0.01", "-t"]).arg(threads.to_string())
         .arg(target).arg(query_path).output()
-        .map_err(|e| anyhow::anyhow!("minimap2 ('{minimap2}') cs projection failed: {e}"))?;
+    {
+        Ok(o) => o,
+        Err(_) => return Ok(None), // minimap2 missing/not spawnable -> graceful empty (contract)
+    };
     if !out.status.success() { return Ok(None); }
     Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
 }
@@ -154,8 +157,13 @@ fn run_minimap2_paf_cs(query_path: &std::path::Path, target: &str, minimap2: &st
 /// returns per-hit `ProjHit` (with the `cs:Z:` tag) instead of coordinate-only `CopyLocus`, so parcn can
 /// read the assembly base at a copy's private positions.
 pub fn project_with_cs(consensuses: &[(String, Vec<u8>)], target: &str, min_identity: f64, min_cov: f64, minimap2: &str, threads: usize) -> Result<Vec<ProjHit>> {
+    // `pid + consensuses.len()` alone can collide when two tests in the same process (default parallel
+    // `cargo test`) both call this with equal-length consensus lists -- a monotonic counter makes the
+    // query-FASTA path unique per call, avoiding a write/delete race on a shared temp file.
+    static CALL_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let call_id = CALL_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir();
-    let q = dir.join(format!("rustle_parcn_q_{}_{}.fa", std::process::id(), consensuses.len()));
+    let q = dir.join(format!("rustle_parcn_q_{}_{}_{}.fa", std::process::id(), consensuses.len(), call_id));
     let _c = TempFile(q.clone());
     {
         let mut f = std::fs::File::create(&q)?;
@@ -172,8 +180,8 @@ pub fn project_with_cs(consensuses: &[(String, Vec<u8>)], target: &str, min_iden
         let (ts, te): (u64, u64) = (f[7].parse().unwrap_or(0), f[8].parse().unwrap_or(0));
         let (matches, blk): (f64, f64) = (f[9].parse().unwrap_or(0.0), f[10].parse().unwrap_or(1.0));
         let identity = if blk > 0.0 { matches / blk } else { 0.0 };
-        let ql = *qlen.get(f[0]).unwrap_or(&1) as f64;
-        let cov = if ql > 0.0 { (qe.saturating_sub(qs)) as f64 / ql } else { 0.0 };
+        let ql = match qlen.get(f[0]) { Some(&l) if l > 0 => l as f64, _ => continue };
+        let cov = (qe.saturating_sub(qs)) as f64 / ql;
         if identity < min_identity || cov < min_cov { continue; }
         let cs = f.iter().find_map(|t| t.strip_prefix("cs:Z:")).unwrap_or("").to_string();
         hits.push(ProjHit { qname, chrom: f[5].to_string(), start: ts, end: te, identity, cov, cs });
@@ -507,5 +515,13 @@ mod tests {
         assert!(hits.len() >= 2, "should find both genomic copies");
         assert!(hits.iter().all(|h| !h.cs.is_empty()), "each hit carries a cs tag");
         assert!(hits.iter().all(|h| h.qname == "F|0"));
+    }
+
+    #[test]
+    fn project_with_cs_missing_minimap2_is_graceful() {
+        // a binary that cannot be spawned must yield an empty result, not an Err.
+        let got = project_with_cs(&[("F|0".into(), b"ACGTACGTACGT".to_vec())], "/nonexistent/genome.fa", 0.9, 0.8, "definitely_not_a_real_minimap2_xyz", 1);
+        assert!(got.is_ok(), "spawn failure must not error");
+        assert!(got.unwrap().is_empty(), "spawn failure must yield empty hits");
     }
 }
