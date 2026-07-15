@@ -136,7 +136,14 @@ pub fn project_families_batch(
 }
 
 #[derive(Clone, Debug)]
-pub struct ProjHit { pub qname: String, pub chrom: String, pub start: u64, pub end: u64, pub identity: f64, pub cov: f64, pub cs: String }
+pub struct ProjHit {
+    pub qname: String, pub chrom: String, pub start: u64, pub end: u64, pub identity: f64, pub cov: f64, pub cs: String,
+    /// PAF query-start/end (`[qs,qe)`, forward-query coordinates) and strand (`+`/`-`) of THIS hit's aligned
+    /// segment. The `cs` tag only describes `[qs,qe)` in target-forward order (query-reversed if `strand=='-'`),
+    /// so any per-query-offset reader of `cs` (e.g. parcn's SUN confirm) needs these to map a forward-query
+    /// offset to the right position in the cs walk.
+    pub qs: u64, pub qe: u64, pub strand: char,
+}
 
 /// Same as `run_minimap2_paf` but with `--cs` so the PAF carries a `cs:Z:` tag per hit -- needed by parcn
 /// to read the assembly base at a copy's private (PSV) positions. Kept as a sibling runner (not a flag on
@@ -177,6 +184,7 @@ pub fn project_with_cs(consensuses: &[(String, Vec<u8>)], target: &str, min_iden
         if f.len() < 11 { continue; }
         let qname = f[0].to_string();
         let (qs, qe): (u64, u64) = (f[2].parse().unwrap_or(0), f[3].parse().unwrap_or(0));
+        let strand = f.get(4).and_then(|s| s.chars().next()).unwrap_or('+');
         let (ts, te): (u64, u64) = (f[7].parse().unwrap_or(0), f[8].parse().unwrap_or(0));
         let (matches, blk): (f64, f64) = (f[9].parse().unwrap_or(0.0), f[10].parse().unwrap_or(1.0));
         let identity = if blk > 0.0 { matches / blk } else { 0.0 };
@@ -184,7 +192,7 @@ pub fn project_with_cs(consensuses: &[(String, Vec<u8>)], target: &str, min_iden
         let cov = (qe.saturating_sub(qs)) as f64 / ql;
         if identity < min_identity || cov < min_cov { continue; }
         let cs = f.iter().find_map(|t| t.strip_prefix("cs:Z:")).unwrap_or("").to_string();
-        hits.push(ProjHit { qname, chrom: f[5].to_string(), start: ts, end: te, identity, cov, cs });
+        hits.push(ProjHit { qname, chrom: f[5].to_string(), start: ts, end: te, identity, cov, cs, qs, qe, strand });
     }
     Ok(hits)
 }

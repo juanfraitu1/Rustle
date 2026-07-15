@@ -66,11 +66,15 @@ fn main() -> Result<()> {
 }
 
 /// `band` for `sun_positions`: the family's copy-length spread + a fixed slack, so the banded MSA the SUN
-/// scan relies on can reach every copy pair regardless of indel-driven length differences.
+/// scan relies on can reach every copy pair regardless of indel-driven length differences. Capped at 1024:
+/// an unbounded band on a family with a wide copy-length spread (e.g. a retained-intron outlier) can blow
+/// up the banded DP matrix's memory; beyond the cap `banded_msa_pair` returns `None` for that pair, which
+/// `diff_offsets` already handles conservatively (empty diff set -> no spurious private positions for that
+/// pair, just fewer/no confirmable SUNs for that copy).
 fn band_for(copies: &[rustle::vg_family::parcn::Copy]) -> usize {
     let lens = copies.iter().map(|c| c.seq.len());
     let (lo, hi) = lens.fold((usize::MAX, 0usize), |(lo, hi), l| (lo.min(l), hi.max(l)));
-    if hi < lo { 64 } else { (hi - lo) + 64 }
+    (if hi < lo { 64 } else { (hi - lo) + 64 }).min(1024)
 }
 
 /// Project one haplotype's `queries` onto `target`, group hits by family (`qname` = `"{family}|{copy}"`,
@@ -83,7 +87,6 @@ fn project_and_assign(
     minimap2: &str,
     threads: usize,
     suns_by_fam: &BTreeMap<String, Vec<CopySun>>,
-    seq_of: &HashMap<String, Vec<u8>>,
 ) -> Result<HashMap<String, Vec<Assignment>>> {
     let hits = project_with_cs(queries, target, 0.95, 0.90, minimap2, threads)?;
     if hits.is_empty() {
@@ -101,6 +104,9 @@ fn project_and_assign(
             identity: h.identity,
             runner_up_identity: 0.0,
             cs: h.cs.clone(),
+            qs: h.qs,
+            qe: h.qe,
+            strand: h.strand,
         });
     }
     let mut out: HashMap<String, Vec<Assignment>> = HashMap::new();
@@ -110,9 +116,7 @@ fn project_and_assign(
         let mut assignments = Vec::with_capacity(deduped.len());
         for locus in &deduped {
             let Some(sun) = suns.iter().find(|s| s.copy_id == locus.best_copy) else { continue };
-            let key = format!("{fam}|{}", locus.best_copy);
-            let Some(seq) = seq_of.get(&key) else { continue };
-            assignments.push(assign_locus(locus, sun, seq));
+            assignments.push(assign_locus(locus, sun));
         }
         out.insert(fam, assignments);
     }
@@ -128,23 +132,20 @@ pub fn run(a: RunArgs) -> Result<()> {
 
     let fams = parse_copies_fa(&a.copies_fa).with_context(|| format!("parsing {}", a.copies_fa))?;
 
-    // Query list (once, both haplotypes reuse it) + seq_of lookup, both keyed by "family|copy".
+    // Query list (once, both haplotypes reuse it), keyed by "family|copy".
     let mut queries: Vec<(String, Vec<u8>)> = Vec::new();
-    let mut seq_of: HashMap<String, Vec<u8>> = HashMap::new();
     for (fam_id, copies) in &fams {
         for c in copies {
-            let key = format!("{fam_id}|{}", c.copy_id);
-            queries.push((key.clone(), c.seq.clone()));
-            seq_of.insert(key, c.seq.clone());
+            queries.push((format!("{fam_id}|{}", c.copy_id), c.seq.clone()));
         }
     }
 
     let suns_by_fam: BTreeMap<String, Vec<CopySun>> =
         fams.iter().map(|(f, c)| (f.clone(), sun_positions(c, band_for(c)))).collect();
 
-    let mat_by_fam = project_and_assign(&queries, &a.mat, &a.minimap2, a.threads, &suns_by_fam, &seq_of)
+    let mat_by_fam = project_and_assign(&queries, &a.mat, &a.minimap2, a.threads, &suns_by_fam)
         .with_context(|| format!("projecting onto maternal haplotype {}", a.mat))?;
-    let pat_by_fam = project_and_assign(&queries, &a.pat, &a.minimap2, a.threads, &suns_by_fam, &seq_of)
+    let pat_by_fam = project_and_assign(&queries, &a.pat, &a.minimap2, a.threads, &suns_by_fam)
         .with_context(|| format!("projecting onto paternal haplotype {}", a.pat))?;
 
     let parcn_path = format!("{}.parcn.tsv", a.out);

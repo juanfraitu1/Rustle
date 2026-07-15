@@ -154,6 +154,11 @@ pub enum Method { Sun, AlignFallback, Unresolved, SingleCopy }
 pub struct Locus {
     pub chrom: String, pub start: u64, pub end: u64,
     pub best_copy: String, pub identity: f64, pub runner_up_identity: f64, pub cs: String,
+    /// PAF query-start/end (forward-query coordinates of the aligned segment `[qs,qe)`) and strand of this
+    /// hit, needed to map a copy's private forward-query offset to the right column in `cs` (see
+    /// `cs_match_states`): the cs tag only covers `[qs,qe)`, walked in TARGET-forward order (i.e.
+    /// query-reversed when `strand=='-'`).
+    pub qs: u64, pub qe: u64, pub strand: char,
 }
 
 #[derive(Clone, Debug)]
@@ -161,18 +166,46 @@ pub struct Assignment { pub copy_id: Option<String>, pub method: Method }
 
 const ALIGN_MARGIN: f64 = 0.002;
 
+/// Whether the projection alignment carries a MATCH at each forward-query offset. `Some(true)` = the aligned
+/// assembly base equals the copy's base there (so the copy's private allele IS present); `Some(false)` =
+/// substitution; `None` = indel or outside the aligned segment `[qs,qe)`. Strand-symmetric: a cs `:` match
+/// means identical aligned bases regardless of orientation, so only the POSITION mapping uses strand
+/// (`+`: a = p-qs walking the query forward; `-`: a = qe-1-p, since cs walks the target forward = query
+/// reversed). This is what the SUN gate needs: the private base is confirmed iff its column is a match.
+pub fn cs_match_states(cs: &str, qs: u64, qe: u64, strand: char, positions: &[usize]) -> Vec<Option<bool>> {
+    // walk cs once: aligned-segment query-offset `a` -> is_match
+    let mut st: std::collections::HashMap<u64, bool> = std::collections::HashMap::new();
+    let bytes = cs.as_bytes();
+    let (mut k, mut a) = (0usize, 0u64);
+    while k < bytes.len() {
+        match bytes[k] {
+            b':' => { let mut j = k + 1; let mut n = 0u64; while j < bytes.len() && bytes[j].is_ascii_digit() { n = n * 10 + (bytes[j] - b'0') as u64; j += 1; } for _ in 0..n { st.insert(a, true); a += 1; } k = j; }
+            b'*' => { st.insert(a, false); a += 1; k += 3; }
+            b'+' => { let mut j = k + 1; while j < bytes.len() && bytes[j].is_ascii_alphabetic() { a += 1; j += 1; } k = j; } // insertion: query-only -> leave unset (None)
+            b'-' | b'~' => { let mut j = k + 1; while j < bytes.len() && !b":*+-~".contains(&bytes[j]) { j += 1; } k = j; } // target-only
+            _ => { k += 1; }
+        }
+    }
+    positions.iter().map(|&p| {
+        let p = p as u64;
+        if p < qs || p >= qe { return None; }        // outside the aligned segment -> unconfirmable
+        let a = if strand == '-' { qe - 1 - p } else { p - qs };
+        st.get(&a).copied()
+    }).collect()
+}
+
 /// Hybrid assignment of a projected locus to its best copy. Tier-1: confirm the assembly carries the best
-/// copy's private base (via cs) at ≥1 private position → deterministic SUN. Tier-2: assign to the best copy
-/// iff its identity beats the runner-up by ≥ ALIGN_MARGIN (flagged fallback). Tier-3 / private-not-confirmed
-/// / near-tie → UNRESOLVED. NA (single copy) → single_copy.
-pub fn assign_locus(locus: &Locus, sun: &CopySun, best_copy_seq: &[u8]) -> Assignment {
+/// copy's private base (a cs MATCH at that private offset, mapped through `qs`/`qe`/`strand`) at ≥1 private
+/// position → deterministic SUN. Tier-2: assign to the best copy iff its identity beats the runner-up by
+/// ≥ ALIGN_MARGIN (flagged fallback). Tier-3 / private-not-confirmed / near-tie → UNRESOLVED. NA (single
+/// copy) → single_copy.
+pub fn assign_locus(locus: &Locus, sun: &CopySun) -> Assignment {
     match sun.tier {
         Tier::NA => Assignment { copy_id: Some(locus.best_copy.clone()), method: Method::SingleCopy },
         Tier::T1 => {
             let positions: Vec<usize> = sun.private.iter().map(|&(p, _)| p).collect();
-            let bases = cs_bases_at(&locus.cs, best_copy_seq, &positions);
-            let confirmed = sun.private.iter().zip(bases.iter())
-                .any(|(&(_, pb), got)| *got == Some(pb));
+            let states = cs_match_states(&locus.cs, locus.qs, locus.qe, locus.strand, &positions);
+            let confirmed = states.iter().any(|s| *s == Some(true)); // assembly carries the copy's private base
             if confirmed { Assignment { copy_id: Some(locus.best_copy.clone()), method: Method::Sun } }
             else { Assignment { copy_id: None, method: Method::Unresolved } }
         }
@@ -329,23 +362,22 @@ mod tests {
 
     #[test]
     fn assign_locus_hybrid_tiers() {
-        let mk = |cs: &str, id: f64, ru: f64| Locus { chrom: "c".into(), start: 0, end: 9, best_copy: "0".into(), identity: id, runner_up_identity: ru, cs: cs.into() };
-        let seq = b"ACGTAGGTCA"; // best copy's private base is 'A' at offset 4
+        let mk = |cs: &str, id: f64, ru: f64| Locus { chrom: "c".into(), start: 0, end: 9, best_copy: "0".into(), identity: id, runner_up_identity: ru, cs: cs.into(), qs: 0, qe: 10, strand: '+' };
         let sun_t1 = CopySun { copy_id: "0".into(), tier: Tier::T1, private: vec![(4, b'A')] };
         // cs shows a MATCH across offset 4 -> assembly carries 'A' -> SUN confirmed.
-        assert_eq!(assign_locus(&mk(":10", 0.99, 0.90), &sun_t1, seq).method, Method::Sun);
+        assert_eq!(assign_locus(&mk(":10", 0.99, 0.90), &sun_t1).method, Method::Sun);
         // cs shows a substitution at offset 4 (target g) -> assembly does NOT carry 'A' -> UNRESOLVED.
-        assert_eq!(assign_locus(&mk(":4*ga:5", 0.99, 0.90), &sun_t1, seq).method, Method::Unresolved);
+        assert_eq!(assign_locus(&mk(":4*ga:5", 0.99, 0.90), &sun_t1).method, Method::Unresolved);
         // Tier-2 with a clear identity margin -> align_fallback.
         let sun_t2 = CopySun { copy_id: "0".into(), tier: Tier::T2, private: vec![] };
-        assert_eq!(assign_locus(&mk(":10", 0.99, 0.90), &sun_t2, seq).method, Method::AlignFallback);
+        assert_eq!(assign_locus(&mk(":10", 0.99, 0.90), &sun_t2).method, Method::AlignFallback);
         // Tier-2 near-tie -> UNRESOLVED.
-        assert_eq!(assign_locus(&mk(":10", 0.991, 0.990), &sun_t2, seq).method, Method::Unresolved);
+        assert_eq!(assign_locus(&mk(":10", 0.991, 0.990), &sun_t2).method, Method::Unresolved);
         // Tier-3 -> UNRESOLVED. NA -> single_copy.
         let sun_t3 = CopySun { copy_id: "0".into(), tier: Tier::T3, private: vec![] };
-        assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_t3, seq).method, Method::Unresolved);
+        assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_t3).method, Method::Unresolved);
         let sun_na = CopySun { copy_id: "0".into(), tier: Tier::NA, private: vec![] };
-        assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_na, seq).method, Method::SingleCopy);
+        assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_na).method, Method::SingleCopy);
     }
 
     #[test]
@@ -375,7 +407,7 @@ mod tests {
 
     #[test]
     fn dedup_collapses_overlapping_keeps_best() {
-        let mk = |s: u64, e: u64, cp: &str, id: f64| Locus { chrom: "c1".into(), start: s, end: e, best_copy: cp.into(), identity: id, runner_up_identity: 0.0, cs: ":1".into() };
+        let mk = |s: u64, e: u64, cp: &str, id: f64| Locus { chrom: "c1".into(), start: s, end: e, best_copy: cp.into(), identity: id, runner_up_identity: 0.0, cs: ":1".into(), qs: 0, qe: 1, strand: '+' };
         // Two heavily-overlapping hits (copy0 id .99, copy1 id .97) + one disjoint locus.
         let loci = vec![mk(1000, 2000, "0", 0.99), mk(1010, 1990, "1", 0.97), mk(50000, 51000, "3", 0.98)];
         let mut out = dedup_loci(loci);
@@ -384,5 +416,32 @@ mod tests {
         assert_eq!(out[0].best_copy, "0");                 // highest identity wins
         assert!((out[0].runner_up_identity - 0.97).abs() < 1e-9); // runner-up recorded
         assert_eq!(out[1].best_copy, "3");
+    }
+
+    #[test]
+    fn sun_confirm_respects_qs_offset() {
+        // aligned segment starts at qs=5; the copy's private base is at forward-query offset 7.
+        // cs (segment-local): match up to seg-offset 1, then a substitution at seg-offset 2 (= query offset 7).
+        // So the assembly does NOT carry the private base at offset 7 -> must be UNRESOLVED, not SUN.
+        let sun = CopySun { copy_id: "0".into(), tier: Tier::T1, private: vec![(7, b'A')] };
+        let locus = Locus { chrom: "c".into(), start: 0, end: 9, best_copy: "0".into(), identity: 0.99, runner_up_identity: 0.0,
+            qs: 5, qe: 20, strand: '+', cs: ":2*gc:10".into() }; // seg-offset 2 (query 7) is a substitution
+        assert_eq!(assign_locus(&locus, &sun).method, Method::Unresolved);
+        // sanity: if that same column were a match, it confirms.
+        let locus_ok = Locus { cs: ":15".into(), ..locus.clone() };
+        assert_eq!(assign_locus(&locus_ok, &sun).method, Method::Sun);
+    }
+
+    #[test]
+    fn sun_confirm_respects_minus_strand() {
+        // minus strand: aligned segment [qs=0, qe=10); private position at forward-query offset 8 maps to
+        // segment-offset qe-1-8 = 1. cs has a substitution at segment-offset 1 -> assembly differs -> UNRESOLVED.
+        let sun = CopySun { copy_id: "0".into(), tier: Tier::T1, private: vec![(8, b'A')] };
+        let locus = Locus { chrom: "c".into(), start: 0, end: 10, best_copy: "0".into(), identity: 0.99, runner_up_identity: 0.0,
+            qs: 0, qe: 10, strand: '-', cs: ":1*gc:8".into() };
+        assert_eq!(assign_locus(&locus, &sun).method, Method::Unresolved);
+        // if segment-offset 1 is a match instead -> confirmed.
+        let locus_ok = Locus { cs: ":10".into(), ..locus.clone() };
+        assert_eq!(assign_locus(&locus_ok, &sun).method, Method::Sun);
     }
 }
