@@ -113,10 +113,19 @@ struct Args {
     /// the copy-number normalizer). A TABLE, not a GTF -- this is copy-number calibration, not an isoform catalog.
     #[arg(long, default_value_t = false)]
     single_copy_baseline: bool,
+
+    /// Generalized projection: project EVERY resolved copy consensus (not one per family) at id>=0.98 +
+    /// >=3-read support to localize members a single-consensus projection misses. Writes <out>.allproj.tsv
+    /// (DNA-localized parCN, NOT added to copies.tsv). Requires --homology-primary. Default off (byte-identical).
+    #[arg(long, default_value_t = false)]
+    project_all_families: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let project_all = (args.project_all_families
+        || std::env::var("RUSTLE_PROJECT_ALL_FAMILIES").ok().as_deref() == Some("1"))
+        && args.homology_primary;
     let mut cfg = DenovoConfig::from_env();
     cfg.complete_poa_core = args.complete_core;
     cfg.collapse_enumerate = args.collapse_enumerate || cfg.collapse_enumerate;
@@ -363,6 +372,42 @@ fn main() -> Result<()> {
             writeln!(ff, "{fid}\t{n_rna}\t{fam_cn}\t{total_cn}\t{loci}")?;
         }
         eprintln!("[gw-catalog] famCN/totalCN batch projection -> {}.famcn.tsv", args.out);
+    }
+
+    // Generalized projection (`--project-all-families`): project EVERY resolved copy's consensus (not just
+    // the best-supported one per family) to localize members a single-consensus projection misses. OPTIONAL,
+    // additive, DNA-localized parCN leg -- dedup'd (reciprocal-overlap >=0.50) + read-support gated (>=3
+    // primary reads over the locus), written to its own file so the RNA-split catalog (families.tsv/
+    // copies.tsv) and the famCN/totalCN batch projection (famcn.tsv) are untouched.
+    if project_all {
+        use rustle::vg_family::project_all::{CopyIn, all_copy_consensuses, known_from_fams, dedup_overlapping, overlaps_any, format_allproj_row};
+        // Build (fid, copies) with the SAME fid the catalog uses.
+        let fam_copies: Vec<(String, Vec<CopyIn>)> = fams.iter().enumerate().map(|(fi, copies)| {
+            (format!("GWFAM{fi}"), copies.iter().map(|c| CopyIn { seq: c.seq.clone(), chrom: c.chrom.clone(), start: c.start, end: c.end }).collect())
+        }).collect();
+        let consensuses = all_copy_consensuses(&fam_copies);
+        let known = known_from_fams(&fam_copies);
+        let proj = rustle::vg_family::genome_projection::project_families_batch(
+            &consensuses, &args.fasta, &known, 0.98, 0.90, &refine_params.minimap2, args.threads,
+        ).unwrap_or_default();
+        let spans_by_fam: std::collections::HashMap<&String, &Vec<(String,u64,u64)>> = known.iter().collect();
+        let mut rows: Vec<String> = Vec::new();
+        for (fid, locs) in &proj {
+            for l in dedup_overlapping(locs.clone()) {
+                // read-support gate: >=3 primary reads over the locus
+                let n_support = rustle::vg_family::denovo_assemble::reads_in_region(&args.bam, &l.chrom, l.start, l.end, args.threads)
+                    .map(|(p, _)| p.len()).unwrap_or(0);
+                if n_support < 3 { continue; }
+                let overlaps = spans_by_fam.get(fid).map(|s| overlaps_any(&l.chrom, l.start, l.end, s)).unwrap_or(false);
+                rows.push(format_allproj_row(fid, &l, n_support, overlaps));
+            }
+        }
+        if !rows.is_empty() {
+            let mut af = std::fs::File::create(format!("{}.allproj.tsv", args.out))?;
+            writeln!(af, "family_id\tchrom\tstart\tend\tidentity\tn_support_reads\toverlaps_existing_copy")?;
+            for r in &rows { writeln!(af, "{r}")?; }
+            eprintln!("[gw-catalog] project-all-families: {} loci (id>=0.98, >=3 reads) -> {}.allproj.tsv", rows.len(), args.out);
+        }
     }
     Ok(())
 }
