@@ -129,8 +129,22 @@ DDX11L16) and ~**75–90 are genuine K=0 exon-identity collapses** (≥20 reads,
 copy-specific junction) — both **irreducible from RNA** (the DNA/`parcn` job). So the RNA-side algorithmic
 ceiling is ~**76 %**; the identifiability floor, not the algorithm, is what bounds Soto member recall — a
 clean, defensible statement. Miss taxonomy: 5 silent · 36 DNA-localizable (banked above) · 53
-detected-family-no-projection (~10–20 recoverable by generalized projection) · 58 dead-family (~6–15 coding
-via protein/homology) · residual genuine K=0. Empirically dead levers (do NOT build): locus-stitching (zero
-orphan fragments) and coverage-floor relaxation (~0 real members). The one guarded new build worth doing is
-**generalized projection** (extend the id≥0.98/≥3-read scan from K=0-collapsed cores to every family
-consensus) — the same 100 %-precise mechanism, ~+10–20 members of headroom.
+detected-family-no-projection · 58 dead-family (~6–15 coding via protein/homology) · residual genuine K=0.
+Empirically dead levers (do NOT build): locus-stitching (zero orphan fragments) and coverage-floor
+relaxation (~0 real members).
+
+### Generalized projection — `--project-all-families` (built + measured)
+
+Extends the projection from **one consensus/family** to **every resolved copy's consensus** (id≥0.98,
+cov≥0.90, ≥3 primary reads), emitted to a distinct `<out>.allproj.tsv` (byte-identical OFF). Measured on
+Soto (8:41 wall, 19.2 GB): **132 loci → 41 missed members recovered** (215 → 256 RNA-split ∪ project-all =
+**70.7 %**). **Combined with `--protein-tail`: 261/362 = 72.1 %.**
+
+Honest accounting: 35 of the 41 overlap what `--enumerate-copies` already localized, so the **net marginal
+gain over the prior best is ~+6 members** (70.4 → 72.1 %). Of the 132 emitted loci, **93 (70 %) overlap the
+annotated Soto set** — *higher* than the existing `--enumerate-copies` projection's **54 %** (56/104), so
+this is not a precision regression but the Soto 80-family subset's incompleteness. The 39 off-annotation
+loci are **real unannotated paralogs** (22/39 at id≥0.995, avg 177 reads — e.g. GWFAM34 at id=0.998 /
+**1505 reads**), i.e. the O4 unannotated-copy signal, not false positives. A modest but real, precision-
+preserving recall gain, with unannotated-copy discovery as a bonus. Every locus carries `n_support_reads`
+so weak calls (a few at 3–5 reads) are filterable.
