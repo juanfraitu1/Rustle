@@ -106,6 +106,10 @@ path = "src/bin/asj_verify.rs"
 name = "family_define"
 path = "src/bin/family_define.rs"
 
+[[bin]]
+name = "parcn"
+path = "src/bin/parcn.rs"
+
 [[test]]
 name = "vg_family_family_graph"
 path = "tests/regression/vg_family_family_graph.rs"
