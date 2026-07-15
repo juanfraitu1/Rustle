@@ -23,6 +23,7 @@ pub mod consensus; // cross-copy consensus error-correction (subtractive precisi
 pub mod mosaic;
 pub mod segdup;
 pub mod hidden_copy;
+pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collapse-enumerate): pure three-signal admission decision (hidden_copy flagged + balanced alt fraction + >=2 genome-projected loci).
 pub mod phasing;
 pub mod allele_specific_junctions; // ASJ: junctions whose usage depends on a molecule's het-SNP allele.
 pub mod asj_strand_bias; // O3 ASJ analysis layer: StrandOddsRatio (SOR) strand-bias filter over asj_calls.tsv (Rust port of asj_strand_bias.py; reuses O2 noodles indexed-BAM fetch + CIGAR walk + allele_specific_junctions::fisher_exact_2x2; byte-parity tested vs GGO_mm.bam).
