@@ -185,6 +185,47 @@ pub fn assign_locus(locus: &Locus, sun: &CopySun, best_copy_seq: &[u8]) -> Assig
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct ParcnRow { pub family_id: String, pub copy_id: String, pub tier: Tier, pub loci_mat: usize, pub loci_pat: usize, pub method: Method }
+
+fn tier_str(t: &Tier) -> &'static str { match t { Tier::T1 => "T1", Tier::T2 => "T2", Tier::T3 => "T3", Tier::NA => "NA" } }
+fn method_str(m: &Method) -> &'static str { match m { Method::Sun => "SUN", Method::AlignFallback => "align_fallback", Method::Unresolved => "UNRESOLVED", Method::SingleCopy => "single_copy" } }
+
+/// Count per-copy assigned loci (mat/pat), pick each copy's dominant assignment method, and total the
+/// unresolved loci across both haplotypes. Copies with no assigned locus still get a row (parCN 0).
+pub fn tabulate(family_id: &str, copies: &[Copy], suns: &[CopySun], mat: &[Assignment], pat: &[Assignment]) -> (Vec<ParcnRow>, usize) {
+    use std::collections::HashMap;
+    let tier_of: HashMap<&str, &Tier> = suns.iter().map(|s| (s.copy_id.as_str(), &s.tier)).collect();
+    let mut mat_c: HashMap<String, usize> = HashMap::new();
+    let mut pat_c: HashMap<String, usize> = HashMap::new();
+    let mut method_of: HashMap<String, Method> = HashMap::new();
+    let mut n_unres = 0usize;
+    for (side, counts) in [(mat, &mut mat_c), (pat, &mut pat_c)] {
+        for a in side {
+            match &a.copy_id {
+                Some(cp) => { *counts.entry(cp.clone()).or_insert(0) += 1; method_of.entry(cp.clone()).or_insert_with(|| a.method.clone()); }
+                None => n_unres += 1,
+            }
+        }
+    }
+    let mut rows = Vec::with_capacity(copies.len());
+    for c in copies {
+        let tier = (*tier_of.get(c.copy_id.as_str()).unwrap_or(&&Tier::NA)).clone();
+        let method = method_of.get(&c.copy_id).cloned().unwrap_or(Method::Unresolved);
+        rows.push(ParcnRow { family_id: family_id.to_string(), copy_id: c.copy_id.clone(), tier,
+            loci_mat: *mat_c.get(&c.copy_id).unwrap_or(&0), loci_pat: *pat_c.get(&c.copy_id).unwrap_or(&0), method });
+    }
+    (rows, n_unres)
+}
+
+pub fn format_parcn_row(r: &ParcnRow) -> String {
+    format!("{}\t{}\t{}\t{}\t{}\t{}\t{}", r.family_id, r.copy_id, tier_str(&r.tier), r.loci_mat, r.loci_pat, r.loci_mat + r.loci_pat, method_str(&r.method))
+}
+pub fn format_family_row(family_id: &str, rows: &[ParcnRow], n_unresolved: usize) -> String {
+    let famcn: usize = rows.iter().map(|r| r.loci_mat + r.loci_pat).sum();
+    format!("{}\t{}\t{}\t{}", family_id, rows.len(), famcn, n_unresolved)
+}
+
 fn recip_overlap(a: &Locus, b: &Locus) -> f64 {
     if a.chrom != b.chrom { return 0.0; }
     let (lo, hi) = (a.start.max(b.start), a.end.min(b.end));
@@ -305,6 +346,31 @@ mod tests {
         assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_t3, seq).method, Method::Unresolved);
         let sun_na = CopySun { copy_id: "0".into(), tier: Tier::NA, private: vec![] };
         assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_na, seq).method, Method::SingleCopy);
+    }
+
+    #[test]
+    fn tabulate_counts_and_formats() {
+        let copies = vec![
+            Copy { family_id: "RBMY".into(), copy_id: "0".into(), seq: b"AAAA".to_vec() },
+            Copy { family_id: "RBMY".into(), copy_id: "1".into(), seq: b"AAAT".to_vec() },
+        ];
+        let suns = vec![
+            CopySun { copy_id: "0".into(), tier: Tier::T1, private: vec![(3, b'A')] },
+            CopySun { copy_id: "1".into(), tier: Tier::T2, private: vec![] },
+        ];
+        let a = |cp: &str, m: Method| Assignment { copy_id: Some(cp.into()), method: m };
+        let un = || Assignment { copy_id: None, method: Method::Unresolved };
+        // mat: copy0 SUN once, one unresolved. pat: copy0 SUN once, copy1 fallback once.
+        let mat = vec![a("0", Method::Sun), un()];
+        let pat = vec![a("0", Method::Sun), a("1", Method::AlignFallback)];
+        let (rows, n_unres) = tabulate("RBMY", &copies, &suns, &mat, &pat);
+        let r0 = rows.iter().find(|r| r.copy_id == "0").unwrap();
+        assert_eq!((r0.loci_mat, r0.loci_pat), (1, 1));       // parCN 2
+        let r1 = rows.iter().find(|r| r.copy_id == "1").unwrap();
+        assert_eq!((r1.loci_mat, r1.loci_pat), (0, 1));       // parCN 1
+        assert_eq!(n_unres, 1);
+        assert_eq!(format_parcn_row(r0), "RBMY\t0\tT1\t1\t1\t2\tSUN");
+        assert_eq!(format_family_row("RBMY", &rows, n_unres), "RBMY\t2\t3\t1");
     }
 
     #[test]
