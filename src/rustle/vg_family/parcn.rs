@@ -147,6 +147,44 @@ pub fn cs_bases_at(cs: &str, query: &[u8], positions: &[usize]) -> Vec<Option<u8
     positions.iter().map(|p| base_at.get(p).copied().flatten()).collect()
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum Method { Sun, AlignFallback, Unresolved, SingleCopy }
+
+#[derive(Clone, Debug)]
+pub struct Locus {
+    pub chrom: String, pub start: u64, pub end: u64,
+    pub best_copy: String, pub identity: f64, pub runner_up_identity: f64, pub cs: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct Assignment { pub copy_id: Option<String>, pub method: Method }
+
+const ALIGN_MARGIN: f64 = 0.002;
+
+/// Hybrid assignment of a projected locus to its best copy. Tier-1: confirm the assembly carries the best
+/// copy's private base (via cs) at ≥1 private position → deterministic SUN. Tier-2: assign to the best copy
+/// iff its identity beats the runner-up by ≥ ALIGN_MARGIN (flagged fallback). Tier-3 / private-not-confirmed
+/// / near-tie → UNRESOLVED. NA (single copy) → single_copy.
+pub fn assign_locus(locus: &Locus, sun: &CopySun, best_copy_seq: &[u8]) -> Assignment {
+    match sun.tier {
+        Tier::NA => Assignment { copy_id: Some(locus.best_copy.clone()), method: Method::SingleCopy },
+        Tier::T1 => {
+            let positions: Vec<usize> = sun.private.iter().map(|&(p, _)| p).collect();
+            let bases = cs_bases_at(&locus.cs, best_copy_seq, &positions);
+            let confirmed = sun.private.iter().zip(bases.iter())
+                .any(|(&(_, pb), got)| *got == Some(pb));
+            if confirmed { Assignment { copy_id: Some(locus.best_copy.clone()), method: Method::Sun } }
+            else { Assignment { copy_id: None, method: Method::Unresolved } }
+        }
+        Tier::T2 => {
+            if locus.identity - locus.runner_up_identity >= ALIGN_MARGIN {
+                Assignment { copy_id: Some(locus.best_copy.clone()), method: Method::AlignFallback }
+            } else { Assignment { copy_id: None, method: Method::Unresolved } }
+        }
+        Tier::T3 => Assignment { copy_id: None, method: Method::Unresolved },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +257,26 @@ mod tests {
             assert!(s.private.is_empty(), "band-edge failure must not fabricate private positions");
             assert_ne!(s.tier, super::Tier::T1, "a copy that could not be compared must not be Tier-1");
         }
+    }
+
+    #[test]
+    fn assign_locus_hybrid_tiers() {
+        let mk = |cs: &str, id: f64, ru: f64| Locus { chrom: "c".into(), start: 0, end: 9, best_copy: "0".into(), identity: id, runner_up_identity: ru, cs: cs.into() };
+        let seq = b"ACGTAGGTCA"; // best copy's private base is 'A' at offset 4
+        let sun_t1 = CopySun { copy_id: "0".into(), tier: Tier::T1, private: vec![(4, b'A')] };
+        // cs shows a MATCH across offset 4 -> assembly carries 'A' -> SUN confirmed.
+        assert_eq!(assign_locus(&mk(":10", 0.99, 0.90), &sun_t1, seq).method, Method::Sun);
+        // cs shows a substitution at offset 4 (target g) -> assembly does NOT carry 'A' -> UNRESOLVED.
+        assert_eq!(assign_locus(&mk(":4*ga:5", 0.99, 0.90), &sun_t1, seq).method, Method::Unresolved);
+        // Tier-2 with a clear identity margin -> align_fallback.
+        let sun_t2 = CopySun { copy_id: "0".into(), tier: Tier::T2, private: vec![] };
+        assert_eq!(assign_locus(&mk(":10", 0.99, 0.90), &sun_t2, seq).method, Method::AlignFallback);
+        // Tier-2 near-tie -> UNRESOLVED.
+        assert_eq!(assign_locus(&mk(":10", 0.991, 0.990), &sun_t2, seq).method, Method::Unresolved);
+        // Tier-3 -> UNRESOLVED. NA -> single_copy.
+        let sun_t3 = CopySun { copy_id: "0".into(), tier: Tier::T3, private: vec![] };
+        assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_t3, seq).method, Method::Unresolved);
+        let sun_na = CopySun { copy_id: "0".into(), tier: Tier::NA, private: vec![] };
+        assert_eq!(assign_locus(&mk(":10", 0.99, 0.0), &sun_na, seq).method, Method::SingleCopy);
     }
 }
