@@ -101,6 +101,52 @@ pub fn parse_copies_fa(path: &str) -> anyhow::Result<BTreeMap<String, Vec<Copy>>
     Ok(fams)
 }
 
+/// Walk a minimap2 `cs:Z:` short string and return, per requested QUERY offset, the aligned TARGET
+/// (assembly) base. cs ops: `:N` = N matches (target base == query base); `*xy` = substitution, x = target
+/// base, y = query base (advance query 1); `+seq` = insertion, query-only (target base None); `-seq` =
+/// deletion, target-only (no query advance); `~` splice = target-only. Bases are returned upper-cased.
+pub fn cs_bases_at(cs: &str, query: &[u8], positions: &[usize]) -> Vec<Option<u8>> {
+    let want: std::collections::HashSet<usize> = positions.iter().copied().collect();
+    let mut base_at: std::collections::HashMap<usize, Option<u8>> = std::collections::HashMap::new();
+    let bytes = cs.as_bytes();
+    let (mut k, mut qoff) = (0usize, 0usize);
+    while k < bytes.len() {
+        match bytes[k] {
+            b':' => {
+                let mut j = k + 1; let mut n = 0usize;
+                while j < bytes.len() && bytes[j].is_ascii_digit() { n = n * 10 + (bytes[j] - b'0') as usize; j += 1; }
+                for _ in 0..n {
+                    if want.contains(&qoff) { base_at.insert(qoff, query.get(qoff).map(|b| b.to_ascii_uppercase())); }
+                    qoff += 1;
+                }
+                k = j;
+            }
+            b'*' => {
+                // *<target><query>
+                let tgt = bytes.get(k + 1).map(|b| b.to_ascii_uppercase());
+                if want.contains(&qoff) { base_at.insert(qoff, tgt); }
+                qoff += 1;
+                k += 3;
+            }
+            b'+' => {
+                let mut j = k + 1;
+                while j < bytes.len() && bytes[j].is_ascii_alphabetic() {
+                    if want.contains(&qoff) { base_at.insert(qoff, None); }
+                    qoff += 1; j += 1;
+                }
+                k = j;
+            }
+            b'-' | b'~' => { // target-only: skip the following letters/coords, no query advance
+                let mut j = k + 1;
+                while j < bytes.len() && bytes[j] != b':' && bytes[j] != b'*' && bytes[j] != b'+' && bytes[j] != b'-' && bytes[j] != b'~' { j += 1; }
+                k = j;
+            }
+            _ => { k += 1; }
+        }
+    }
+    positions.iter().map(|p| base_at.get(p).copied().flatten()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,6 +192,18 @@ mod tests {
         let copies = vec![Copy { family_id: "F".into(), copy_id: "0".into(), seq: b"ACGTACGT".to_vec() }];
         let suns = sun_positions(&copies, 8);
         assert_eq!(suns[0].tier, Tier::NA);
+    }
+
+    #[test]
+    fn cs_bases_reads_match_and_substitution_and_insertion() {
+        // query ACGTACGT (len 8). cs: 3 matches, sub (target g / query t) at q=3, 2 matches,
+        // insertion of "AA" at q=6..8, tail is target-only del (does not advance query).
+        // cs grammar: :N match run; *<tgt><qry> substitution; +<seq> insertion (query-only); -<seq> deletion (target-only).
+        let cs = ":3*gt:2+aa-cc";
+        let q = b"ACGTACGT";
+        // q0 match -> assembly base 'A'(=query); q3 substitution -> assembly base 'G'(target, upper); q5 match 'C'; q6 insertion -> None.
+        let got = cs_bases_at(cs, q, &[0, 3, 5, 6]);
+        assert_eq!(got, vec![Some(b'A'), Some(b'G'), Some(b'C'), None]);
     }
 
     #[test]
