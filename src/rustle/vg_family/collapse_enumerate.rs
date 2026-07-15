@@ -116,6 +116,37 @@ pub fn format_collapsed_row(family_id: &str, f: &CollapsedFamily) -> String {
         f.chrom, f.start, f.end, f.famcn, f.n_alt_reads, f.alt_read_fraction, "K0_COLLAPSED", proj)
 }
 
+/// Minimum PRIMARY reads at a projected locus for it to count as an EXPRESSED copy (the EEF1A1 guard:
+/// silent pseudogenes fall below this).
+pub const MIN_LOCUS_READS: usize = 3;
+
+/// Expressed-collapsed admission (PSV-free): a dropped candidate is a real multi-copy family iff it
+/// projects to >= 2 genomic loci that are EACH read-supported. No hidden-copy witness required — these
+/// families are exon-identical (0 PSVs) but their copies are all transcribed.
+pub fn admit_expressed_collapse(read_supported_loci: usize) -> bool {
+    read_supported_loci >= 2
+}
+
+#[derive(Debug, Clone)]
+pub struct ExpressedCollapsedFamily {
+    pub chrom: String,
+    pub start: u64,
+    pub end: u64,
+    pub famcn: usize,           // seed-inclusive: read-supported projected loci + the seed
+    pub min_locus_reads: usize, // weakest admitted locus's support (transparency)
+    pub projection: Vec<CopyLocus>,
+}
+
+/// One `<out>.expressed_collapsed.tsv` row: family_id, chrom, start, end, famCN, min_locus_reads,
+/// status (`K0_COLLAPSED_EXPRESSED`), projection_loci (`chrom:start-end@identity` joined by `;`).
+pub fn format_expressed_collapsed_row(family_id: &str, f: &ExpressedCollapsedFamily) -> String {
+    let proj = f.projection.iter()
+        .map(|c| format!("{}:{}-{}@{:.3}", c.chrom, c.start, c.end, c.identity))
+        .collect::<Vec<_>>().join(";");
+    format!("{family_id}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        f.chrom, f.start, f.end, f.famcn, f.min_locus_reads, "K0_COLLAPSED_EXPRESSED", proj)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,5 +268,26 @@ mod tests {
         };
         let row = format_collapsed_row("GWFAMc0", &f);
         assert_eq!(row, "GWFAMc0\tchr2\t108994973\t109147842\t2\t600\t0.490\tK0_COLLAPSED\tchr2:108994973-109147842@0.990;chr2:110869109-110895544@0.993");
+    }
+
+    #[test]
+    fn admit_expressed_needs_two_read_supported_loci() {
+        assert!(!admit_expressed_collapse(0));
+        assert!(!admit_expressed_collapse(1));
+        assert!(admit_expressed_collapse(2));
+        assert!(admit_expressed_collapse(5));
+    }
+
+    #[test]
+    fn expressed_collapsed_row_format() {
+        let f = ExpressedCollapsedFamily {
+            chrom: "chr2".into(), start: 97950885, end: 98048181, famcn: 3, min_locus_reads: 32,
+            projection: vec![
+                CopyLocus { chrom: "chr2".into(), start: 97950885, end: 98048181, identity: 0.998, cov: 0.95 },
+                CopyLocus { chrom: "chr2".into(), start: 99100000, end: 99198000, identity: 0.994, cov: 0.93 },
+            ],
+        };
+        assert_eq!(format_expressed_collapsed_row("GWFAMe0", &f),
+            "GWFAMe0\tchr2\t97950885\t98048181\t3\t32\tK0_COLLAPSED_EXPRESSED\tchr2:97950885-98048181@0.998;chr2:99100000-99198000@0.994");
     }
 }
