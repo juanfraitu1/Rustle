@@ -475,10 +475,9 @@ pub fn dedup_loci(mut loci: Vec<Locus>) -> Vec<Locus> {
     let mut kept: Vec<Locus> = Vec::new();
     for l in loci {
         if let Some(k) = kept.iter_mut().find(|k| recip_overlap(k, &l) >= 0.50) {
-            if k.runner_up_identity == 0.0 || l.identity > k.runner_up_identity {
-                // k already has the higher identity (sorted desc); l is a runner-up candidate.
-                k.runner_up_identity = k.runner_up_identity.max(l.identity.min(k.identity));
-            }
+            // loci are sorted DESC by identity, so the kept member `k` already has the higher identity and
+            // `l` is a runner-up candidate for that overlap group; record the highest runner-up seen.
+            k.runner_up_identity = k.runner_up_identity.max(l.identity);
         } else {
             kept.push(l);
         }
