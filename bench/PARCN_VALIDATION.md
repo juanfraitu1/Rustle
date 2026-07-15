@@ -40,8 +40,8 @@ markers than RNA reads alone.
 
 ## 2. Conservation — no loci lost
 
-`Σ famCN_diploid (1296) + Σ n_unresolved (93) = 1389` total distinct projected loci, and the independent
-`Σ parCN` over the 414 copy rows = **1296**, matching `Σ famCN_diploid` exactly. Every deduped genomic
+`Σ famCN_diploid (1281) + Σ n_unresolved (108) = 1389` total distinct projected loci, and the independent
+`Σ parCN` over the 414 copy rows = **1281**, matching `Σ famCN_diploid` exactly. Every deduped genomic
 locus is either assigned to a copy or counted as unresolved — nothing is double-counted or dropped.
 
 ## 3. Diploid famCN tracks the catalog — and recovers what RNA collapsed
@@ -51,9 +51,9 @@ locus is either assigned to a copy or counted as unresolved — nothing is doubl
 | statistic | value |
 |---|---|
 | **median ratio** | **1.00** (Q1 1.00, Q3 1.50) |
-| exactly 2× (diploid-stable) | **70 / 157 = 45 %** |
+| exactly 2× (diploid-stable) | **69 / 157 = 44 %** |
 | within [0.75, 1.25] of 2× | 80 / 157 = 51 % |
-| mean ratio (right-skewed) | 1.51 (max 14.25) |
+| mean ratio (right-skewed) | 1.50 (max 14.25) |
 
 The **typical family's diploid copy number is exactly 2× its RNA haploid catalog count** — the expected
 result for a CN-stable paralog family present on both haplotypes, and the core correctness check. The
@@ -66,9 +66,20 @@ close.
 
 ## 4. Heterozygous copy number — a phased-assembly-only signal
 
-**35 / 157 = 22 %** of families have `loci_mat ≠ loci_pat` — the maternal and paternal haplotypes carry
+**37 / 157 = 24 %** of families have `loci_mat ≠ loci_pat` — the maternal and paternal haplotypes carry
 different copy numbers of the paralog. This allelic-CN signal is invisible to RNA and to an unphased
 reference; it falls straight out of the mat/pat split that `parcn` reports per copy.
+
+## Correctness note (whole-branch review)
+
+An adversarial whole-branch review caught two SUN-confirmation bugs the passing run could not surface
+(conservation and the diploid ratio are invariant to *which* copy a locus is assigned): the confirm read
+the wrong cs column for **soft-clipped (`qs>0`)** and **minus-strand** hits. Both are fixed — the confirm
+now tests match-vs-mismatch at the strand/`qs`-mapped position (strand-symmetric). On this catalog the fix
+moved **~15 loci (≈1 %)** from false-confirm to correctly-unresolved (famCN 1296→1281, unresolved 93→108);
+the aggregate story is unchanged, but the confirm is now correct for datasets with more inverted-duplicate
+or clipped hits. (The review also caught an over-tight `banded_msa_pair` band cap that had briefly halved
+SUN coverage; the band is now sized to the real within-family length spread, max 5651 bp.)
 
 ## Caveats (honest)
 
