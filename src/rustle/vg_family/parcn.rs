@@ -22,11 +22,16 @@ pub struct CopySun { pub copy_id: String, pub tier: Tier, pub private: Vec<(usiz
 
 /// For copy `b` vs sibling `s`: the SET of offsets in `b` (non-gap) whose aligned base in `s` differs
 /// (substitution or gap), plus `(matches, aligned_cols)` for identity. Uses the banded 2-row MSA; if the
-/// pair can't be aligned in-band, treats EVERY b offset as differing (conservative: nothing private).
+/// pair can't be aligned in-band, a difference from `s` cannot be CONFIRMED for any offset, so this
+/// returns an EMPTY diff set. Callers intersect diff sets across siblings to build a copy's private-position
+/// set (`private = ∩ diff_offsets(b, s_j)`); an empty set is absorbing under intersection (`∅ ∩ X = ∅`), so a
+/// failed comparison correctly removes ALL candidates from privateness (conservative: nothing private).
+/// Returning "every offset differs" instead would be a no-op under intersection (`U ∩ X = X`) and could
+/// fabricate a spurious Tier-1 (SUN) call from zero evidence — the bug this fallback fixes.
 fn diff_offsets(b: &[u8], s: &[u8], band: usize) -> (std::collections::HashSet<usize>, usize, usize) {
     let msa = match banded_msa_pair(b, s, band) {
         Some(m) => m,
-        None => return ((0..b.len()).collect(), 0, b.len().max(1)),
+        None => return (std::collections::HashSet::new(), 0, b.len().max(1)),
     };
     let (ab, asb) = (&msa[0], &msa[1]);
     let (mut boff, mut diff, mut matches, mut cols) = (0usize, std::collections::HashSet::new(), 0usize, 0usize);
@@ -141,5 +146,20 @@ mod tests {
         let copies = vec![Copy { family_id: "F".into(), copy_id: "0".into(), seq: b"ACGTACGT".to_vec() }];
         let suns = sun_positions(&copies, 8);
         assert_eq!(suns[0].tier, Tier::NA);
+    }
+
+    #[test]
+    fn sun_positions_band_edge_yields_no_private() {
+        // length difference (8 vs 12) exceeds a tiny band -> banded_msa_pair returns None ->
+        // the conservative fallback must yield NO private positions (never a spurious Tier-1).
+        let copies = vec![
+            Copy { family_id: "F".into(), copy_id: "0".into(), seq: b"ACGTACGT".to_vec() },
+            Copy { family_id: "F".into(), copy_id: "1".into(), seq: b"ACGTACGTACGT".to_vec() },
+        ];
+        let suns = sun_positions(&copies, 1); // band=1 << |8-12|
+        for s in &suns {
+            assert!(s.private.is_empty(), "band-edge failure must not fabricate private positions");
+            assert_ne!(s.tier, super::Tier::T1, "a copy that could not be compared must not be Tier-1");
+        }
     }
 }
