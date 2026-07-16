@@ -148,3 +148,24 @@ loci are **real unannotated paralogs** (22/39 at id≥0.995, avg 177 reads — e
 **1505 reads**), i.e. the O4 unannotated-copy signal, not false positives. A modest but real, precision-
 preserving recall gain, with unannotated-copy discovery as a bonus. Every locus carries `n_support_reads`
 so weak calls (a few at 3–5 reads) are filterable.
+
+### Expressed-collapsed families — `--collapse-expressed` (built + measured)
+
+Recovers **exon-identical (0-PSV) but heavily-expressed** families that RNA drops (`<2` distinct loci) and
+that `--collapse-enumerate`'s PSV gate cannot see. PSV-free trigger: a dropped candidate's consensus
+projects to **≥2 loci EACH read-supported (≥3 primary reads)** — the per-locus read-support is the EEF1A1
+guard. Distinct `<out>.expressed_collapsed.tsv` (byte-identical OFF). All candidates batch-projected in one
+minimap2 index load (the perf fix — 9 min vs hours for per-candidate re-indexing).
+
+Measured on Soto (**9:07 wall, 19.6 GB**): **33 expressed-collapsed families → 15 newly-covered missed
+members**, at **87 % precision** (113/130 loci overlap a real Soto region — higher than project-all's 70 %).
+**Combined all levers: 276/362 = 76.2 %** (from 72.1 %). ✅ **EEF1A1 REJECTED** (its dispersed pseudogenes are
+silent → fail per-locus read-support — the discrimination the retired depth-only `collapse_gate` lacked).
+Confirmed the gate **fires for 100 %-identical copies** (min-locus support 12–279 reads): minimap2
+distributes primary placements across identical paralogs, so each locus is read-supported.
+
+Honest limits: it recovers **7/29 dead-family members** (the ID_22/BAGE2 and ID_24/LSP1P clusters), but
+**not** ANKRD36B/LIMS1/TCAF2 — those either pile all primaries on one copy or never form a dropped candidate,
+a residual the assembly/`parcn` side must close. The reported copies are **copy-NUMBER only** (K=0 →
+per-read-unresolvable → DNA), never per-read resolutions. Net effect: **every expressed Soto family is now
+either resolved per-read or flagged as a K=0 copy-number family → DNA; nothing expressed is silently dropped.**
