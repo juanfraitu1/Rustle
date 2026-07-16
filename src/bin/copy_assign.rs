@@ -246,11 +246,18 @@ struct Args {
     /// VG re-align supplement (opt-in): for every co-located family, re-align each poor-fit/candidate
     /// read (low MAPQ, heavy clipping, or high divergence — `vg_realign::is_candidate`) to the family's
     /// copy-paths and record the decision (`reassigned` / `rejected` / `novel-candidate`) to
-    /// `<out>.vg_realign.tsv`. FEEDS BACK into the assignment: it corrects per-read copy assignments,
-    /// admits novel-read pools as new copies (widening the copy set), and recomputes the EM copy abundance
-    /// over the widened roster. Default off; when off, every output is byte-identical.
+    /// `<out>.vg_realign.tsv`. FEEDS BACK into the assignment: BOTH the correction leg (re-thread + reassign
+    /// among existing copies) AND the admission leg (admit novel-read pools as NEW copies — genome-touching,
+    /// widens the roster). Default off; when off, every output is byte-identical. Use `--vg-realign-correct`
+    /// for the correction leg WITHOUT the FP-risk admission.
     #[arg(long, default_value_t = false)]
     vg_realign: bool,
+
+    /// VG re-align CORRECTION leg ONLY (opt-in): re-thread hard reads through the family copy-paths and
+    /// correct their assignments among the EXISTING copies, WITHOUT admitting novel copies (no genome touch,
+    /// no roster widening). The safe VG-native assignment leg. Off by default; byte-identical when off.
+    #[arg(long, default_value_t = false)]
+    vg_realign_correct: bool,
 
     /// Define family MEMBERSHIP by E_r transcript homology instead of the E_c read-conflict graph. The
     /// conflict graph links two copies only when reads map ambiguously between them, so a copy whose reads
@@ -504,7 +511,8 @@ fn main() -> Result<()> {
     let lambda = resolve_lambda(args.lambda_global, args.lambda_file.as_deref().and_then(read_lambda_file));
     let mut cfg = DenovoConfig::from_env();
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
-    cfg.vg_realign = args.vg_realign; // Task 5 (report-only): off by default, byte-identical otherwise
+    cfg.vg_realign = args.vg_realign || args.vg_realign_correct; // VG correction leg (re-thread hard reads)
+    cfg.vg_realign_admit = args.vg_realign; // roster-widening admission: only via the full --vg-realign
     cfg.homology_primary = args.homology_primary; // E_r membership; off => the E_c path is untouched
     cfg.refine = !args.no_refine; // mutual-homology family gate (matches gw_family_catalog); on by default
     cfg.filter_readthrough = !args.keep_readthrough; // unspliced pre-mRNA spans are not copies
@@ -1292,7 +1300,7 @@ fn main() -> Result<()> {
     // into the assignment). Only written when --vg-realign is set so an OFF run produces exactly the same
     // output files (cfg.vg_realign OFF also means fa.realign_records is always empty, so this is belt-
     // and-suspenders with the flag check).
-    if args.vg_realign {
+    if args.vg_realign || args.vg_realign_correct {
         let mut vh = std::fs::File::create(format!("{}.vg_realign.tsv", args.out))?;
         writeln!(vh, "read_name\tfamily_id\taction\ttarget_copy\tid_best\tlinear_copy")?;
         for l in &vg_realign_lines {

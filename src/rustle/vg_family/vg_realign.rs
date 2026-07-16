@@ -544,65 +544,96 @@ pub fn apply_realign(
     let mut unfit: Vec<(String, Vec<u8>)> = Vec::new();
     let mut unfit_idx: Vec<usize> = Vec::new();
 
-    for (i, br) in bam_reads.iter().enumerate() {
-        if br.is_supplementary {
-            continue;
-        }
-        let read_len = br.read.seq.len();
-        let clip: u64 = br.read.cigar.iter().filter(|&&(op, _)| op == 'S').map(|&(_, n)| n).sum();
-        let clip_frac = if read_len > 0 { clip as f64 / read_len as f64 } else { 0.0 };
-        let div = br.de as f64;
-
-        if !is_candidate(br.mapq, div, clip_frac, rp) {
-            continue;
-        }
-
-        let linear_copy = linear_copy_of.get(i).copied().flatten();
-        let linear_copy_i64 = linear_copy.map(|c| c as i64).unwrap_or(-1);
-
-        match realign_to_paths(&br.read.seq, copy_seqs, linear_copy) {
-            None => {
-                unfit.push((br.name.clone(), br.read.seq.clone()));
-                unfit_idx.push(i);
-                records.push(RealignRecord {
-                    read_name: br.name.clone(),
-                    action: "novel-candidate".to_string(),
-                    target_copy: -1,
-                    id_best: 0.0,
-                    linear_copy: linear_copy_i64,
-                });
+    // Per-candidate realignment is independent (reads shared &copy_seqs/&psv_pos_per_copy, no shared mut),
+    // so parallelize it across reads and merge the outcomes back in READ-INDEX order — byte-identical to the
+    // former serial loop (`corrected` is a HashMap so order-free; `records`/`unfit`/`unfit_idx` are rebuilt in
+    // ascending read index, exactly as the serial loop pushed them). This is the correction leg's cost centre.
+    use rayon::prelude::*;
+    enum Outcome {
+        Skip,
+        Corrected { i: usize, copy: usize, obs: Vec<Option<u8>>, rec: RealignRecord },
+        Novel { i: usize, name: String, seq: Vec<u8>, rec: RealignRecord },
+        Rejected { rec: RealignRecord },
+    }
+    let outcomes: Vec<Outcome> = bam_reads
+        .par_iter()
+        .enumerate()
+        .map(|(i, br)| {
+            if br.is_supplementary {
+                return Outcome::Skip;
             }
-            Some(hit) => {
-                let id_best = hit.id_best;
-                match accept_realignment(&hit, linear_copy, read_len, error_rate, alpha) {
-                    RealignAction::Reassign(best_copy) => {
-                        // C1: orient the read to the copy's own (transcription-strand) frame
-                        // before the traceback -- a `-`-strand copy's consensus is the reverse
-                        // complement of forward-genome, so a literal forward alignment here would
-                        // produce garbage/`None` `path_obs`.
-                        let oriented = orient_for_copy(&br.read.seq, &copy_seqs[best_copy]);
-                        let map = align_traceback(&oriented, &copy_seqs[best_copy]);
-                        let obs = path_obs_at(&map, &psv_pos_per_copy[best_copy], &oriented);
-                        corrected.insert(i, (best_copy, obs));
-                        records.push(RealignRecord {
-                            read_name: br.name.clone(),
-                            action: "reassigned".to_string(),
-                            target_copy: best_copy as i64,
-                            id_best,
-                            linear_copy: linear_copy_i64,
-                        });
-                    }
-                    RealignAction::Reject => {
-                        records.push(RealignRecord {
-                            read_name: br.name.clone(),
-                            action: "rejected".to_string(),
-                            target_copy: -1,
-                            id_best,
-                            linear_copy: linear_copy_i64,
-                        });
+            let read_len = br.read.seq.len();
+            let clip: u64 = br.read.cigar.iter().filter(|&&(op, _)| op == 'S').map(|&(_, n)| n).sum();
+            let clip_frac = if read_len > 0 { clip as f64 / read_len as f64 } else { 0.0 };
+            let div = br.de as f64;
+            if !is_candidate(br.mapq, div, clip_frac, rp) {
+                return Outcome::Skip;
+            }
+            let linear_copy = linear_copy_of.get(i).copied().flatten();
+            let linear_copy_i64 = linear_copy.map(|c| c as i64).unwrap_or(-1);
+            match realign_to_paths(&br.read.seq, copy_seqs, linear_copy) {
+                None => Outcome::Novel {
+                    i,
+                    name: br.name.clone(),
+                    seq: br.read.seq.clone(),
+                    rec: RealignRecord {
+                        read_name: br.name.clone(),
+                        action: "novel-candidate".to_string(),
+                        target_copy: -1,
+                        id_best: 0.0,
+                        linear_copy: linear_copy_i64,
+                    },
+                },
+                Some(hit) => {
+                    let id_best = hit.id_best;
+                    match accept_realignment(&hit, linear_copy, read_len, error_rate, alpha) {
+                        RealignAction::Reassign(best_copy) => {
+                            // C1: orient the read to the copy's own (transcription-strand) frame before the
+                            // traceback -- a `-`-strand copy's consensus is the reverse complement of
+                            // forward-genome, so a literal forward alignment here would produce garbage `obs`.
+                            let oriented = orient_for_copy(&br.read.seq, &copy_seqs[best_copy]);
+                            let map = align_traceback(&oriented, &copy_seqs[best_copy]);
+                            let obs = path_obs_at(&map, &psv_pos_per_copy[best_copy], &oriented);
+                            Outcome::Corrected {
+                                i,
+                                copy: best_copy,
+                                obs,
+                                rec: RealignRecord {
+                                    read_name: br.name.clone(),
+                                    action: "reassigned".to_string(),
+                                    target_copy: best_copy as i64,
+                                    id_best,
+                                    linear_copy: linear_copy_i64,
+                                },
+                            }
+                        }
+                        RealignAction::Reject => Outcome::Rejected {
+                            rec: RealignRecord {
+                                read_name: br.name.clone(),
+                                action: "rejected".to_string(),
+                                target_copy: -1,
+                                id_best,
+                                linear_copy: linear_copy_i64,
+                            },
+                        },
                     }
                 }
             }
+        })
+        .collect();
+    for o in outcomes {
+        match o {
+            Outcome::Skip => {}
+            Outcome::Corrected { i, copy, obs, rec } => {
+                corrected.insert(i, (copy, obs));
+                records.push(rec);
+            }
+            Outcome::Novel { i, name, seq, rec } => {
+                unfit.push((name, seq));
+                unfit_idx.push(i);
+                records.push(rec);
+            }
+            Outcome::Rejected { rec } => records.push(rec),
         }
     }
 

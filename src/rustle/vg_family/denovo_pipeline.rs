@@ -60,11 +60,17 @@ pub struct DenovoConfig {
     /// VG re-align supplement (opt-in): default false = OFF, byte-identical. When true,
     /// `detect_and_assign` runs `vg_realign::apply_realign` over each co-located family's reads and then
     /// FEEDS THE RESULT BACK into the emitted `FamilyAssignment`: `apply_realign_patch` corrects per-read
-    /// assignments, `admit_novel_pools` may admit novel-read pools as new copies (widening the copy set),
-    /// and `recompute_realign_abundance` recomputes the EM `copy_abundance` over the widened roster. The
-    /// per-read decisions are also recorded on `realign_records`. NOT report-only: it mutates the copy set,
-    /// the assignments, and abundance. OFF (default) leaves every emitted field byte-identical.
+    /// VG re-align CORRECTION leg (opt-in): re-thread each poor-fit/candidate read through the family's
+    /// copy-paths, take the best-fitting path (same ε^Δ significance certificate as the PSV gate), and CORRECT
+    /// its per-read copy assignment; then `recompute_realign_abundance` re-weights the EM `copy_abundance`.
+    /// Per-read decisions recorded on `realign_records`. OFF (default) leaves every emitted field
+    /// byte-identical. The roster-widening novel-copy ADMISSION is the SEPARATE `vg_realign_admit` leg below.
     pub vg_realign: bool,
+    /// VG re-align ADMISSION leg (opt-in, gated SEPARATELY from the correction leg because it touches the
+    /// GENOME and WIDENS the copy roster on the unvalidated O4-divergent frontier = real FP-copy risk):
+    /// `admit_novel_pools` clusters reads that fit NO existing copy and admits them as new copies. Requires
+    /// `vg_realign` (the correction leg) to also be on. OFF (default) => no roster widening.
+    pub vg_realign_admit: bool,
     /// E_r homology-primary family MEMBERSHIP (opt-in). Conflict/PSV/χ(H) remain within-family. Enlarges
     /// the copy set ⟹ stricter Bonferroni α/(K−1) ⟹ assignments shift. Requires minimap2.
     pub homology_primary: bool,
@@ -109,6 +115,7 @@ impl Default for DenovoConfig {
             conflict: ConflictParams::from_env(),
             complete_poa_core: false,
             vg_realign: false,
+            vg_realign_admit: false,
             homology_primary: false,
             filter_readthrough: true,
             refine: true,
@@ -1663,7 +1670,13 @@ pub fn detect_and_assign(
         // pre-Task-3 shape) when `cfg.vg_realign` is off, since `vg_realign_apply` is `None` in that case.
         if let Some((apply_global, profiles)) = vg_realign_apply {
             let novel_pools = apply_realign_patch(&mut fa, apply_global, p);
-            admit_novel_pools(&mut fa, &novel_pools, bam_reads, &all_copies, genome, fasta_path, &profiles);
+            // Admission (roster-widening, genome-touching, O4-frontier FP risk) is gated SEPARATELY from the
+            // correction leg: correction-only re-threads + reassigns among EXISTING copies, admits none.
+            if cfg.vg_realign_admit {
+                admit_novel_pools(&mut fa, &novel_pools, bam_reads, &all_copies, genome, fasta_path, &profiles);
+            } else {
+                let _ = (&novel_pools, &profiles);
+            }
             recompute_realign_abundance(&mut fa, p, VG_REALIGN_EM_EPS, VG_REALIGN_EM_MAX_ITER);
         }
         out.push(fa);
