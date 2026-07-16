@@ -1,12 +1,13 @@
 //! K=0-collapsed family re-admission (behind `--collapse-enumerate`). A near-identical family that
 //! collapses to <2 RNA-distinct loci is re-admitted as copy NUMBER iff it shows a LOCAL collapse:
 //! a `hidden_copy` second-haplotype witness that is BALANCED (co-equal depth) AND projects to >=2 genomic loci.
+use std::collections::HashMap;
 use crate::vg_family::hidden_copy::HiddenCopyEvidence;
 use crate::vg_family::genome_projection::CopyLocus;
 
 use crate::vg_family::denovo_assemble::{BamRead, reads_in_region};
 use crate::vg_family::hidden_copy::{ReadObs, HiddenCopyParams, detect_hidden_copy};
-use crate::vg_family::genome_projection::project_family_copies;
+use crate::vg_family::genome_projection::{project_family_copies, project_families_batch};
 use crate::genome::GenomeIndex;
 
 /// Min balanced-alt fraction: a co-equal collapsed 2nd copy (~0.5), not a minor het/edit (~<=0.1).
@@ -159,20 +160,31 @@ fn build_expressed_family(chrom: &str, lo: u64, hi: u64, loci: Vec<CopyLocus>, s
     })
 }
 
-/// I/O driver: project the dropped candidate's consensus, keep projection loci with >= MIN_LOCUS_READS
-/// primary reads (the EEF1A1 guard), and admit if >= 2 remain. No PSV/hidden-copy requirement.
-pub fn readmit_locus_expressed(
-    bam_path: &str, chrom: &str, lo: u64, hi: u64, consensus: &[u8], fasta_path: &str, minimap2: &str, threads: usize,
-) -> Option<ExpressedCollapsedFamily> {
-    let known = vec![(chrom.to_string(), lo, hi)];
-    let loci = project_family_copies(consensus, fasta_path, &known, 0.98, 0.90, minimap2, threads).ok()?;
-    let mut supported = Vec::new();
-    let mut supports = Vec::new();
-    for l in loci {
-        let n = reads_in_region(bam_path, &l.chrom, l.start, l.end, threads).map(|(p, _)| p.len()).unwrap_or(0);
-        if n >= MIN_LOCUS_READS { supports.push(n); supported.push(l); }
+/// Batched re-admission for ALL dropped expressed candidates in ONE minimap2 index load (vs re-indexing the
+/// genome per candidate). `candidates` = `(unique_id, chrom, lo, hi, consensus)`. Projects every consensus
+/// at id>=0.98/cov>=0.90 (each candidate's own span excluded via `known`), then per-candidate keeps
+/// projection loci with >= MIN_LOCUS_READS primary reads (the EEF1A1 guard) and admits if >= 2 remain.
+pub fn readmit_expressed_batch(
+    candidates: &[(String, String, u64, u64, Vec<u8>)],
+    bam_path: &str, fasta_path: &str, minimap2: &str, threads: usize,
+) -> Vec<ExpressedCollapsedFamily> {
+    if candidates.is_empty() { return Vec::new(); }
+    let consensuses: Vec<(String, Vec<u8>)> = candidates.iter().map(|(id, _, _, _, seq)| (id.clone(), seq.clone())).collect();
+    let known: HashMap<String, Vec<(String, u64, u64)>> =
+        candidates.iter().map(|(id, ch, lo, hi, _)| (id.clone(), vec![(ch.clone(), *lo, *hi)])).collect();
+    let proj = project_families_batch(&consensuses, fasta_path, &known, 0.98, 0.90, minimap2, threads).unwrap_or_default();
+    let mut out = Vec::new();
+    for (id, chrom, lo, hi, _seq) in candidates {
+        let loci = match proj.get(id) { Some(l) => l.clone(), None => continue };
+        let mut supported = Vec::new();
+        let mut supports = Vec::new();
+        for l in loci {
+            let n = reads_in_region(bam_path, &l.chrom, l.start, l.end, threads).map(|(p, _)| p.len()).unwrap_or(0);
+            if n >= MIN_LOCUS_READS { supports.push(n); supported.push(l); }
+        }
+        if let Some(f) = build_expressed_family(chrom, *lo, *hi, supported, &supports) { out.push(f); }
     }
-    build_expressed_family(chrom, lo, hi, supported, &supports)
+    out
 }
 
 #[cfg(test)]

@@ -2086,7 +2086,9 @@ pub fn detect_homology_catalog_genome_wide(
 
     let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
     let mut collapsed: Vec<crate::vg_family::collapse_enumerate::CollapsedFamily> = Vec::new();
-    let mut expressed: Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily> = Vec::new();
+    // Collected here and projected in ONE batched minimap2 call after the loop (one genome index load
+    // total), instead of re-indexing the genome per dropped candidate.
+    let mut expressed_candidates: Vec<(String, String, u64, u64, Vec<u8>)> = Vec::new();
     for block in blocks {
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
         let loci = distinct_locus_reps(copies.clone()); // ≥2 spatially-distinct loci certificate
@@ -2111,14 +2113,18 @@ pub fn detect_homology_catalog_genome_wide(
                 }
             }
             if cfg.collapse_expressed {
-                if let Some(ef) = crate::vg_family::collapse_enumerate::readmit_locus_expressed(
-                    bam_path, &chrom, lo, hi, &consensus, fasta_path, &refine.minimap2, threads,
-                ) {
-                    expressed.push(ef);
-                }
+                let id = format!("exp{}", expressed_candidates.len());
+                expressed_candidates.push((id, chrom.clone(), lo, hi, consensus.clone()));
             }
         }
     }
+    let expressed = if cfg.collapse_expressed {
+        crate::vg_family::collapse_enumerate::readmit_expressed_batch(
+            &expressed_candidates, bam_path, fasta_path, &refine.minimap2, threads,
+        )
+    } else {
+        Vec::new()
+    };
     eprintln!("[gw-catalog-homology] {} E_r edges -> {} families (>= {} distinct loci)", edges2.len(), out.len(), min_copies);
     if !collapsed.is_empty() {
         eprintln!("[gw-catalog-homology] collapse-enumerate: {} K=0-collapsed families re-admitted (copy-number only)", collapsed.len());
