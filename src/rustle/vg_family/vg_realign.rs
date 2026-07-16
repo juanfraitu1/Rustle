@@ -5,8 +5,12 @@
 //! re-align correction behind a min_p significance certificate (same `epsilon^delta` form as
 //! `copy_assign::read_copy_evidence`), and greedily pool reads that fit no existing copy into
 //! candidate novel-copy clusters. Task 5: wire Tasks 1/3/4 into a per-family driver
-//! (`run_family_realign`) and, behind `DenovoConfig::vg_realign`, into the pipeline -- REPORT-ONLY
-//! (see that fn's doc for the exact scope).
+//! (`run_family_realign`) and, behind `DenovoConfig::vg_realign`, into the pipeline where it FEEDS BACK:
+//! `apply_realign_patch` CORRECTS per-read copy assignments (re-thread the hard read through the copy-paths,
+//! take the best-fitting path, same epsilon^delta significance certificate as the PSV gate); `admit_novel_pools`
+//! may ADMIT novel-read clusters as new copies (widening the roster — the O4-frontier leg); then the EM copy
+//! abundance is recomputed (denovo_pipeline.rs ~1664). Default OFF => every output byte-identical. (The
+//! `<out>.vg_realign.tsv` dump is a separate, additive report; "report-only" referred only to that file.)
 //!
 //! VG re-align END-TO-END plan, Task 1: `align_traceback` + `path_obs_at`. There is no `edlib`
 //! crate; `bridge_detector::hw_distance` is a hand-rolled 2-row DP that gives the HW/infix edit

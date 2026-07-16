@@ -1,5 +1,7 @@
-//! Liftoff-style genome-projection copy enumeration (spec §7): project a de-novo family consensus onto the
-//! genome to enumerate near-identical genomic copies (famCN), recovering K=0 collapses RNA merges. In-engine
+//! Genome-projection copy enumeration (spec §7) — the VG copy-number leg: LAND the family variation graph's
+//! consensus PATH onto the genome (minimap2) and count the near-identical landing sites. famCN = the number
+//! of genomic sites the family graph maps to, recovering K=0 collapses the RNA read graph merges into one
+//! locus. (minimap2 does the alignment; the VG framing is that famCN counts where the family graph lands.) In-engine
 //! minimap2 (no Liftoff dependency); seeded by our own consensus, so no reference-annotation circularity.
 use anyhow::Result;
 use std::collections::HashMap;

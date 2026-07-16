@@ -2,7 +2,10 @@
 //!
 //! Annotation-free, read-coherence pipeline: scan a region of a coordinate-sorted BAM, assemble de-novo
 //! transcripts, detect co-located paralog families, and assign each read — including the hard multimappers
-//! minimap2 leaves at MAPQ 0 — to a specific copy via PSV bases + copy-specific junctions.
+//! minimap2 leaves at MAPQ 0. A family IS one VARIATION GRAPH (copies = PATHS, PSV columns = BUBBLES); each
+//! read is THREADED through it and scored to its maximum-likelihood copy-path — by its PSV bases + copy-
+//! specific junctions — then significance-gated (assign-or-abstain, never 1/k). `--phase` emits the
+//! materialized GFA with the reads threaded through it as walks (the Canzar shared-evidence flip, visualized).
 //!
 //! Writes `<out>.families.tsv` (per-family roster + two-pass + unique-mapper agreement stats) and
 //! `<out>.assignments.tsv` (per-read copy assignment). A `.bai` next to the BAM makes the region read fast.

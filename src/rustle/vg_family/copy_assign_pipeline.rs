@@ -2,8 +2,11 @@
 //!
 //! Given a family's copies (`DenovoTranscript`: spliced sequence + exon structure + strand) and the reads
 //! over the family region, assign each read — especially the hard multimappers minimap2 leaves at MAPQ 0 —
-//! to a specific paralog COPY, via paralog-sequence-variant (PSV) bases + copy-specific junctions. This is
-//! the "resolve the ambiguity, pick one mapping" step on top of the family layer.
+//! to a specific paralog COPY. Equivalently (the Canzar flip): the copies are PATHS through one family
+//! VARIATION GRAPH whose bubbles are the paralog-sequence-variant (PSV) columns, and each read is THREADED
+//! through the graph — its PSV bases + copy-specific junctions select its maximum-likelihood copy-path, which
+//! the significance gate then accepts or abstains on. "PSV votes ≡ path log-likelihood": the per-copy log-L
+//! this driver sums IS the read's score along each copy-path, so votes-vs-threading is one computation, not two.
 //!
 //! It builds the `CopyProfile`/`ReadFeatures` the already-ported `copy_assign::assign_read` consumes:
 //!   1. `discover_psvs` — all-pairs alignment vs copy[0] → columns where copies differ (per-copy genomic

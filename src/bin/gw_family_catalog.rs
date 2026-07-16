@@ -328,8 +328,9 @@ fn main() -> Result<()> {
         eprintln!("[gw-catalog] collapse-expressed: {} K0_COLLAPSED_EXPRESSED families -> {}.expressed_collapsed.tsv", expressed.len(), args.out);
     }
 
-    // famCN / totalCN via genome projection (spec §7): a family's RNA-observed copies are a LOWER bound
-    // on its true genomic copy number when copies collapse onto one locus (K=0). Project each family's
+    // famCN / totalCN via genome projection (spec §7) -- the VG copy-number leg: LAND the family variation
+    // graph's consensus PATH on the genome and count near-identical landing sites. A family's RNA-observed
+    // copies are a LOWER bound on famCN when copies collapse onto one locus (K=0). Project each family's
     // best-supported consensus (most-read-supported copy's exon-sum) back onto the genome in ONE batched
     // minimap2 pass (one genome-index load for ALL families, not one per family -- avoids re-indexing the
     // whole genome hundreds/thousands of times) and count additional disjoint loci beyond the already-
