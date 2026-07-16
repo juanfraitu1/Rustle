@@ -419,3 +419,101 @@ false-triggered 3×, drop it), `bam_to_gtf.py` → GTF, `gffcompare -r GGO_genom
 
 Artifacts in /home/juanfra/winloci_scratch/validate/ (dn_realigned.bam, dn_gw*.stats/.tmap).
 
+---
+
+## PARCN_VALIDATION
+
+# Assembly-based parCN (`parcn`) — real-data validation
+
+> **Updates the "DNA copy-number axis" section above.** parCN is no longer only future work: an optional
+> assembly-side `parcn` tool was actually run on data already on disk (no DNA download, no new sequencing),
+> closing the parCN gap for the SUN-resolvable copies. The RNA-exclusive core is untouched.
+
+Ran `parcn` on the **gorilla (GGO) de-novo catalog** projected onto the **two phased mGorGor1 haplotype
+assemblies** (species-consistent). Substrate: `gw_xchrom_refined.copies.fa` — **157 families / 414 copies**
+(`--cross-chrom --homology-primary` refined catalog on GGO_mm.bam).
+
+### Command
+
+```bash
+# one-time splice indexes (mat 13.7 GB / 233 s, pat 13.0 GB / 144 s)
+minimap2 -x splice -d mGorGor1.mat.splice.mmi mGorGor1.mat.cur.20231122.fasta.gz
+minimap2 -x splice -d mGorGor1.pat.splice.mmi mGorGor1.pat.cur.20231122.fasta.gz
+
+parcn --copies-fa gw_xchrom_refined.copies.fa \
+      --mat mGorGor1.mat.splice.mmi --pat mGorGor1.pat.splice.mmi \
+      --out ggo_parcn --threads 4
+```
+
+**Cost:** 4 m 55 s wall, 17.6 GB peak RAM (one 13 GB splice index at a time; within the ~19 GB WSL2 cap).
+No DNA depth model, no GC/mappability mask. Two TSVs out.
+
+### 1. Threshold-free assignment — deterministic SUN or abstain
+
+| assign_method | copies | share |
+|---|---|---|
+| **SUN** (deterministic private-base witness) | 376 | **90.8 %** |
+| align_fallback (flagged heuristic) | 3 | 0.7 % |
+| UNRESOLVED (Tier-3 / no witness) | 35 | 8.5 % |
+
+Tier mix: T1 93.5 %, T2 1.9 %, T3 4.6 %. The heuristic fallback fires **3 times in 414** — effectively
+**assign-by-SUN or abstain**, no threshold-dependent call carries the result. SUN coverage (90.8 %) *exceeds*
+the RNA-only SUN-identifiability estimate (~82 %, `bench/sun_identifiability.py`): phased assembly + divergent
+gorilla paralogs yield cleaner private markers than RNA reads alone.
+
+### 2. Conservation — no loci lost
+
+`Σ famCN_diploid (1281) + Σ n_unresolved (108) = 1389` total distinct projected loci; the independent
+`Σ parCN` over the 414 copy rows = **1281**, matching `Σ famCN_diploid` exactly. Every deduped genomic locus
+is either assigned to a copy or counted unresolved — nothing double-counted or dropped.
+
+### 3. Diploid famCN tracks the catalog — and recovers what RNA collapsed
+
+`famCN_diploid / (2 × haploid catalog copies)` over 157 families:
+
+| statistic | value |
+|---|---|
+| **median ratio** | **1.00** (Q1 1.00, Q3 1.50) |
+| exactly 2× (diploid-stable) | **69 / 157 = 44 %** |
+| within [0.75, 1.25] of 2× | 80 / 157 = 51 % |
+| mean ratio (right-skewed) | 1.50 (max 14.25) |
+
+The typical family's **diploid CN is exactly 2× its RNA haploid catalog count** — the expected result for a
+CN-stable paralog on both haplotypes (the core correctness check). The **right tail** (Q3 1.50 → max 14.25×)
+is not error: the assembly reveals genuine copies the RNA catalog collapsed (K=0 near-identical merge) — e.g.
+`GWFAM10` 6→23, `GWFAM116` 6→28, `GWFAM107` 2→15. Because every counted locus is **SUN-gated** (carries that
+copy's private base), these expansions are real copies, not spurious cross-family hits (a spurious hit lacks
+the private marker → UNRESOLVED, not the copy's parCN). This quantifies the RNA undercount parCN exists to close.
+
+### 4. Heterozygous copy number — a phased-assembly-only signal
+
+**37 / 157 = 24 %** of families have `loci_mat ≠ loci_pat` — maternal and paternal haplotypes carry different
+copy numbers of the paralog. This allelic-CN signal is invisible to RNA and to an unphased reference; it falls
+out of the mat/pat split `parcn` reports per copy.
+
+### Frame-fix lesson (whole-branch adversarial review)
+
+An adversarial whole-branch review caught two SUN-confirmation bugs the passing run could not surface
+(conservation and the diploid ratio are invariant to *which* copy a locus is assigned): the confirm read the
+wrong cs column for **soft-clipped (`qs>0`)** and **minus-strand** hits — cs-tag reads MUST honor `qs` + strand
+or you get silent false SUN. Fixed: the confirm now tests match-vs-mismatch at the strand/`qs`-mapped position
+(strand-symmetric). The fix moved **~15 loci (≈1 %)** from false-confirm to correctly-unresolved (famCN
+1296→1281, unresolved 93→108); aggregate story unchanged, confirm now correct for inverted-duplicate/clipped
+hits. The review also caught an over-tight `banded_msa_pair` band cap (cap > real length spread) that had
+briefly halved SUN coverage; the band is now sized to the real within-family length spread (max 5651 bp).
+
+### Caveats (honest)
+
+- **Very-high-ratio families warrant a spot-check.** SUN-gating guarantees each counted locus carries the
+  copy's private base, but a repeat-rich consensus could acquire many near-identical genomic hits; the extreme
+  tail (e.g. 14×) should be eyeballed before headline use. The median / 45%-exact bulk is the trustworthy core.
+- **UNRESOLVED (8.5 %) is genuine assembly-level collapse** — copies indistinguishable even in the phased
+  assembly (no private base). Correctly abstained, not guessed.
+- Substrate uses de-novo `GWFAM` ids; a gene-name spot-map (RBMY/DAZ/GSTM) via annotation overlap is a
+  follow-up, not required for the copy-number counting validated here.
+
+**Bottom line:** `parcn` closes the parCN gap in ~5 minutes — **90.8 % deterministic SUN** (assign-or-abstain,
+essentially no heuristic), **exact conservation**, **median diploid famCN = 2× the RNA catalog** (44 % exact),
+a right tail that recovers RNA-collapsed copies, and a **24 % heterozygous-CN** signal unique to the phased
+assembly — all from on-disk data, RNA core untouched.
+

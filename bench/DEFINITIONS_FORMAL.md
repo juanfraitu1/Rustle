@@ -179,7 +179,7 @@ The family *g* is our **O1** object (a within-genome E_r component). Our per-gen
 
 So the defensible statistic is precisely: **Δχ(H) is a conservative lower bound on Soto's famCN-based expansion magnitude.** **SUN** (Sudmant 2010) is the per-copy witness making expanded copies single-read-taggable (χ(H) T1 tier). **O4** is orthogonal to expansion but coupled operationally (§7).
 
-**Demonstrated contrasts (borrowed polarization, disclosed):** MAGEA **2 (gorilla) → 11 (human)** and TSPY **5 → 33** (identical binary/recipe; `HUMAN_CROSSSPECIES.md`, `soto/SOTO_A119B_RECOVERY.md`), against conserved control **RBMY 6 = 6**.
+**Demonstrated contrasts (borrowed polarization, disclosed):** MAGEA **2 (gorilla) → 11 (human)** and TSPY **5 → 33** (identical binary/recipe; `VALIDATION_AND_STATUS.md`, `SOTO_BENCHMARK.md`), against conserved control **RBMY 6 = 6**.
 
 ### Non-implications
 (1) **Not** high copy number (a large family can be entirely ancestral — expansion is a *change on a branch*). (2) **Not** a reference-absent copy (cross-lineage-vs-ancestor, not within-species-vs-assembly). (3) **Not** inferable from a single genome, nor from a bare two-taxon inequality (polarization needs the outgroup + rooted tree + reconstruction). (4) **Not** an adaptive/functional claim (copy gain ≠ positive selection / expression gain / neofunctionalization — needs dN/dS, expression, dosage). (5) **Not** contraction (directional; mis-polarization flips them). (6) **Not** a statement about a specific paralog's identity (a count over the ortholog group; per-copy identity needs parCN/SUN). (7) **Not** identical to Soto's "duplication": the great-ape-max **2.5** cut classifies whether the human gain came from a **near-single-copy** ancestor (great-ape max < 2.5, "expansion") **vs an already-duplicated** ancestor (> 2.5, "duplication") — a split **our two-species contrast cannot make** because we have no ancestral estimate.
@@ -296,3 +296,57 @@ This is Soto's rationale and the reason the two concepts are studied together. *
 ---
 
 *Citations verified against project memory and the entries' skeptic-approved forms. Soto/Dennis 2025 confirmed as Cell 188:5363–5383, DOI 10.1016/j.cell.2025.06.037. Gorilla substrate = mGorGor1 (RNA donor == assembly individual, confirmed); the T2T accession (GCF_029281585.2) should be pinned against the exact assembly mapped against before this goes in a written defense. No invented citations.*
+
+---
+
+## Glossary — the terms, in one line each
+
+Crisp working definitions for the defense, a quick-reference companion to the formal, baseline-organized definitions above. (Folded from `bench/DEFINITIONS_FORMAL.md`.)
+
+### The sequence world (what a molecule is)
+
+| term | one-line definition |
+|---|---|
+| **Gene copy** (copy) | one of several near-identical genomic instances of a gene, made by duplication. *In our tool: a copy = one **path** through the family's variation graph (a choice of allele at each bubble).* |
+| **Isoform** | one of several transcript variants of a **single** gene, made by alternative **splicing** (different exon/junction combinations). *A path through the junctions — a different axis from copy.* |
+| **Exon / intron** | exon = a segment kept in the mature mRNA; intron = a segment spliced out. |
+| **Splice junction** | the donor–acceptor boundary where two exons are joined after an intron is removed. *In the graph, a branch point.* |
+| **Allele** | the specific base present at a variant position on one molecule/copy. |
+| **PSV** (paralogous sequence variant) | a position where the **copies** of a family differ — a column carrying ≥2 different alleles across copies. The signal that distinguishes copies. *In the graph, a bubble.* |
+| **SUN** (single unique nucleotide) | a **PSV whose allele is private to exactly one copy** (Sudmant 2010) — so a single read over it pins that copy. **SUN ⊆ PSV** — every SUN is a PSV, but a PSV that only splits copies into groups (e.g. 2 vs 2) is not a SUN. |
+
+### The evolution world (how copies arise and change)
+
+| term | one-line definition |
+|---|---|
+| **Paralog** | two genes whose last common ancestor is a **duplication** event, within a lineage. *(Fitch 1970.)* |
+| **Ortholog** | two genes whose last common ancestor is a **speciation** event — the "same" gene in two species. *(Fitch 1970.)* |
+| **Multi-copy gene family** | a set of ≥2 paralogs **present in one genome** — a descriptive state. *Our primary object (O1).* |
+| **Segmental duplication (SD)** | a duplicated genomic **block** (≥1 kb, high identity, with flanking context) — a DNA/structural object; the main mechanism producing recent paralogs. **SD98** = ≥98% identity. *(Bailey 2002.)* |
+| **Expansion** | a family that **gained** copies on a lineage vs its ancestor/outgroup — a cross-species, directional change. *Needs ≥2 species to polarize.* |
+| **Contraction** | the opposite — a lineage **lost** copies. |
+| **Pseudogene** | a gene copy that has **lost function** (disrupting mutations and/or no expression). *Unprocessed = a duplicated copy that decayed; **processed** = a retrotransposed, intronless copy.* |
+| **Retrocopy / retrogene** | a copy made by reverse-transcription of an mRNA and reinsertion → **intronless** (a signature we use to flag retrocopies). |
+| **Exonization** | a formerly **non-coding** sequence (an intron, or a transposable element such as an Alu) becoming incorporated as a **new exon** — a route by which new gene structure arises. |
+
+### Our method objects
+
+| term | one-line definition |
+|---|---|
+| **Variation graph** | the family's sequence graph — a shared **backbone** (spine) + **PSV bubbles** (copy axis) + **junction branches** (isoform axis). Copies and isoforms are **paths** through it. |
+| **Bubble** | a place in the variation graph where paths diverge — a PSV (copy-distinguishing) or a junction (isoform-distinguishing). |
+| **Family (O1)** | a **cohesive homology cluster** of loci — each homologous to ≥ γ of the others (a γ-quasi-clique). |
+| **Read-conflict graph** (H) | vertices = **reads**; an edge joins two reads that **disagree at a shared PSV** (they cannot come from one copy). A copy = a colour class (an independent set of mutually-compatible reads). |
+| **Copy number** (χ_H) | the **chromatic number of the read-conflict graph** = the fewest copies that explain the reads (**Minimum Copy Cover**; Lemma 1: MCC = χ(H)). Our per-genome copy count, a **lower bound** — exon-identical copies collapse to one (the K=0 floor). |
+| **Copy assignment (O2)** | which copy-path each read lies on — a max-weight **facility location**, **assign-or-abstain**, **no 1/k**. |
+| **Assign-or-abstain / no 1/k** | assign a read to a copy only when a calibrated significance test passes; otherwise **abstain** (certify it unresolvable) rather than split its weight 1/k across copies. |
+| **Reference-absent copy (O4)** | a copy present in the sequenced **individual** but collapsed/absent/too-divergent in the reference **assembly** (the fewest copies needed exceeds the annotated copies). |
+| **Allele-specific junction (O3)** | an **allele** linked to the splice **junction** it co-occurs with on the **same read** — allele-specific splicing off single molecules, no phasing. |
+| **K=0 floor** | the identifiability limit: exon-identical co-located copies carry **no PSV**, so they are genuinely RNA-unresolvable — we certify them **TIED**, not guess. |
+
+### The one-sentence relationships (the ones that trip people)
+
+- **SUN ⊆ PSV** — a SUN is a PSV that is private to one copy.
+- **paralog** = the relationship · **multi-copy family** = the per-genome state (what we measure) · **segmental duplication** = a recent DNA mechanism · **expansion** = the cross-species change in the state.
+- **copy** (paralog, PSV/bubble axis) vs **isoform** (splice variant, junction axis) — two orthogonal path-structures in the same variation graph.
+- **copy number** = χ_H, the **chromatic number of the read-conflict graph** = Minimum Copy Cover (Lemma 1: MCC = χ(H)). It is *not* a minimum path cover (that name belongs to the junction-augmented generalisation, CMCPC), and *not* facility location (that is the O2 read→copy **assignment**, a different problem). Keep those three names on their three objects.

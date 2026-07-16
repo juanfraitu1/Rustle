@@ -1769,7 +1769,7 @@ SEDEF's ≥1 kb/≥98% criterion did not pair. Independent modalities, same 98% 
 **What RNA uniquely adds:** divergent families down to ~0.60 nt/protein identity that neither Liftoff (`-sc 1.0` =
 identical) nor SEDEF SD98 (≥98%) can reach (e.g. the 30-copy KRAB-ZNF GWFAM8 at 0.62–0.74); *expression* (which
 genomic copies are transcribed); and reference-free construction (no annotation bias). (The Axis C
-famCN-vs-assembly cross-check is superseded by `PARCN_VALIDATION.md`.)
+famCN-vs-assembly cross-check is superseded by `FAMILY_LEVELS_AND_RELATED.md`.)
 
 
 ---
@@ -1907,3 +1907,151 @@ mapping to the right region and MAPQ calibration in repeats, not manufacturing s
 100%-identical copies. No flank lever either: the whole ~8 kb tandem unit is 99.005% identical. Conclusion: TSPY
 `0/5` is honest and correct — the correct answer for 100%-identical copies is to abstain, which is what the
 certificate reports.
+
+---
+
+## SIM DETECTION DEMO — 100% member detection / 100% precision on a planted non-circular genome (folded from `VALIDATION_AND_STATUS.md`)
+
+Companion to the SIM_GROUND_TRUTH section above (that one scores O2 per-read assignment via `sim_run.sh`; this
+one is the dedicated O1 family-**detection** demo via `bench/sim_genome.py` → `bench/sim_detection_eval.py` →
+`bench/sim_detection.tsv`). **On a fully-simulated ground-truth genome the pipeline detects 100% of multi-copy
+family members with 100% precision — every planted copy found, zero false families.**
+
+**Non-circular by construction.** `bench/sim_genome.py` *plants* the truth — it chooses each family's copy
+number, positions, divergence, and exon/intron structure, and labels every read with its true family/copy
+(`SIMGW|family|copy|iso|i`, ground truth `simgw_truth.tsv`). The *unmodified* pipeline is then asked to recover
+exactly what was planted, so sensitivity/precision are **measured, not asserted**, and nothing is inferred from
+an annotation we could have influenced. Every planted copy is uniformly covered (~40 reads) and expressed, so a
+miss would be an algorithm gap, not a coverage/expression gap — this isolates the algorithm's ceiling.
+
+Planted: 6 multi-copy families (`K0tandem` 3 identical tandem = K=0 floor; `ladder` 4 @ 0/0.3/0.8/1.5%;
+`collapse` 5 collapsed segdup PSV-resolvable; `cnv` 3 unequal expression; `hidive` 4 high-divergence
+low-complexity; `xchrom` 2 cross-chromosome) + 6 single-copy / over-merge controls (`single0..3`, `domshare0/1`)
+that must NOT form a family.
+
+```
+multi-copy families:      6/6 DETECTED   (100% family sensitivity)
+family MEMBERS (copies): 21/21 detected  (100% member sensitivity)  [K0tandem 3/3, ladder 4/4, collapse 5/5,
+                                                                      cnv 3/3, hidive 4/4, xchrom 2/2]
+false families:           0 spurious      -> precision 100%
+control families wrongly merged: 0        (expect 0)
+```
+
+**K=0 nuance (keeps the claim precise).** Even `K0tandem` — 3 exon-identical copies — is detected 3/3. That is
+not a contradiction of the K=0 frontier: family **detection is spatial** (a family = ≥2 distinct loci), and the
+3 identical copies sit at 3 distinct positions, so all are found. **K=0 is a per-read ASSIGNMENT limit, not a
+detection limit** — a read from one identical copy cannot be attributed to a *specific* copy; on the same
+benchmark the assignment step abstains (certifies TIED, never misassigns). Honest complete statement: *detection
+is complete (100% of members incl. K=0); per-read assignment resolves the divergent copies and correctly
+abstains on the exon-identical ones (assign-or-abstain, never guess).* The gap on real data (Soto ~76%) is
+therefore coverage/expression + the per-read K=0 frontier — **not** detection sensitivity.
+
+*(Note: this demo's config detects `ladder` 4/4; the `sim_run.sh` O2 run above reports `ladder` 3/4 recovered —
+there the 1.5%-diverged copy is correctly split off as its own locus because it is no longer confusable. Both are
+"the definition working as designed"; they differ only in run config.)*
+
+Reproduce:
+```bash
+python3 bench/sim_genome.py            # plant genome + labelled reads (deterministic)
+minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes simgw.fasta simgw_reads.fastq | samtools sort -o simgw.bam
+gw_family_catalog --bam simgw.bam --fasta simgw.fasta --cross-chrom --homology-primary --min-copies 2 --out simdet
+python3 bench/sim_detection_eval.py    # -> bench/sim_detection.tsv + the summary above
+```
+
+---
+
+## KNOWN-FAMILY SENSITIVITY & PRECISION — "does it only work on easy cases?" (folded from `VALIDATION_AND_STATUS.md`)
+
+Expands the terse flagship table in the FALSE NEGATIVES section above with the precision/sensitivity/difficulty
+breakdown, the RFPL flagged-failure copy table, and the negative controls. Fresh sweep, `target/release/copy_assign`
+at commit `6fbc0e0` (post-carve; byte-identical to the vetted `b55a30b` regression), flags
+`--homology-primary --skip-poa-diagnostic --min-copies 2`. Ground-truth denominator = distinct annotated paralogs
+(RefSeq / gorilla `GGO_genomic.gff`) in the window. *Precision* = fraction of CALLED copies mapping 1:1 to a
+distinct real paralog (not readthrough/nested/duplicate artifact); *Sensitivity* = distinct paralogs recovered /
+annotated; *tied %* = reads certified unresolvable (K=0 floor) = the difficulty axis. Rows easy → hard.
+
+| Family | Annotated | Called (χ_H) | **Precision** | **Sensitivity** | assigned % | tied % (difficulty) | note |
+|---|---|---|---|---|---|---|---|
+| GSTM  | 4  | 3 | **1.00** (3/3) | 0.75 (3/4) | 99.3 % | 0.6 %  | GSTM2 not recovered — low/unexpressed |
+| MAGEA | 2  | 2 | **1.00** (2/2) | **1.00** (2/2) | 96.2 % | 3.7 %  | inverted pair MAGEA4(+)/MAGEA10(−) — invisible before strand fix |
+| DAZ   | 2  | 2 | **1.00** (2/2) | **1.00** (2/2) | 94.0 % | 5.9 %  | DAZ2 resolved by **junctions** (31 vs 16 introns), not PSVs |
+| RBMY  | 6  | 6 | **1.00** (6/6) | **1.00** (6/6) | 76.9 % | 12.3 % | 6 distinct LOC paralogs, chrY |
+| PCDHB | 10 | 5 | **1.00** (5/5) | 0.50 (5/10) | 78.5 % | 21.0 % | near-identical; 5 correct, rest capped by aligner `-N` on the large array |
+| TSPY  | 6  | 5 | **1.00** (5/5) | 0.83 (5/6) | 48.6 % | 51.4 % | 4 copies 100% identical (2782 bp) — recovered as copy NUMBER, reads honestly tied |
+
+**Two things this says.** (1) **Precision = 1.00 across the ENTIRE difficulty range** — from divergent GSTM
+(0.6% tied) to near-identical PCDHB (21%) to 100%-identical TSPY (51%). The tool does not fabricate copies on hard
+cases; it works on the hard families, not only easy ones; the one precision failure (RFPL) is **flagged, not
+silent**. (2) **Sensitivity is bounded by three named, honest limits, never by "the method breaks":** silent
+copies (GSTM2 annotated but unexpressed, RNA cannot see it), aligner `-N` cap on very large tandem arrays (PCDHB
+5/10, the 5 called all correct), and exonic identity / K=0 floor (TSPY's 4 identical copies recovered as a copy
+*count* while reads are certified TIED). (3) Assignment rate degrades **gracefully** with difficulty (99% → 49%)
+and every un-assigned read is certified tied, never split 1/k. This is the opposite of "only works on easy cases."
+
+**RFPL — the honest failure (flagged, not silent).** Folded from `KNOWN_FAMILY_REGRESSION.md` (`b55a30b`,
+`copy_assign --min-copies 2 --skip-poa-diagnostic --homology-primary --lambda-file <λ=58>` over `GGO_mm.bam` vs
+`GGO.fasta`). RFPL2(−)/RFPL3(+), low-expression inverted pair in a gene desert
+(`NC_086018.1:30200000-30390000`, expected 2). Code returns **2 families, 4 copies — 3 artifacts**, precision
+1/4, annotated RFPL2 missed:
+
+| copy | span | reads | overlaps | status |
+|---|---|---|---|---|
+| CAFAM0 | `30286681-30333257` | 707 | SLC5A4 tail only (~860 bp) | **artifact** — 46 kb intergenic readthrough, no RFPL gene |
+| CAFAM0 | `30320520-30368310` | 28 | none | **artifact** — 48 kb intergenic, nested in prev (recip 0.27) |
+| CAFAM1 | `30368559-30376053` | 73 | RFPL3 (exact) | **real** — the only genuine paralog |
+| CAFAM1 | `30374795-30385865` | 6 | RFPL3 tail + desert | **artifact** — nested 3′ fragment (recip 0.11) |
+
+Read-support is inverted (707-read copy is the intergenic artifact; genuine RFPL3 carries 73), so the 4-count is
+"correct" for the wrong reason. Crucially **the tool warns** (`WARNING: 2 copy pair(s) share genomic sequence …
+Containment recip 0.27 / 0.11`) — not silent. It is the documented **coverage-floor artifact**: the R4
+readthrough rule does not fire because an intergenic desert has no junctions to engulf, and `Containment` is
+reported-not-pruned (pruning it would kill true tandem copies elsewhere). RFPL is the one known precision
+limitation, surfaced by a runtime warning rather than a silent wrong answer.
+
+**Negative controls — EEF1A1 / SRGAP2 stay silent (expect 0).**
+
+| control | region | expected | called | why |
+|---|---|---|---|---|
+| EEF1A1 | `NC_073229.2:97600000-97620000` | 0 | **0** | single-copy, 0 E_r edges — the old χ(H)=7 depth confound (3610 reads) does not over-call under `--homology-primary` |
+| SRGAP2 | `NC_073224.2:50290000-50560000` | 0 | **0** | single-copy, 0 E_r edges — no homologous second locus |
+
+Both return 0 families under `--homology-primary` (0 E_r edges); under refine-by-default (`873d2ec`) refine
+additionally cleaned an E_r over-call at SRGAP2 (3 → 0), with no refine-induced false negative on the flagships.
+
+---
+
+## HUMAN CROSS-SPECIES — the identical binary is NOT overfit to gorilla (folded from `VALIDATION_AND_STATUS.md`, 2026-07-12)
+
+Pre-empts the advisor's likely first objection — *"how do you know this is not overfit for gorilla, or for this
+specific sample?"* We ran the **identical code and recipe** on a **human** testis long-read RNA library (different
+lab, individual, species) and it reports the **real, species-specific human copy numbers** matching the human
+annotation. The method tracks the biology, not the sample.
+
+Data (all public): reads `ERR13885926` — human **testis** full-length cDNA, GENCODE, PacBio Sequel II HiFi
+(1,233,001 reads, median 888 bp); reference **T2T-CHM13v2.0** (complete chrY, the same basis Soto used).
+Alignment identical to gorilla: `minimap2 -ax splice:hq --eqx -Y -N 50 -p 0.1 --secondary=yes` → 96% reads
+mapped (1,179,288 primary), 7,942,153 secondary (the multimappers the gate needs). Copy calls: same binary/flags
+`copy_assign --min-copies 2 --skip-poa-diagnostic --homology-primary`, foreground/serial (`human_families.sh`).
+
+| family | gorilla χ(H) | **human χ(H)** | human annot (T2T) | note |
+|---|---|---|---|---|
+| RBMY | 6 | **6** | ~6 | copies land on RBMY1B/A1/D/E/J/F (CN conserved) |
+| TSPY | 5 | **33** | ~35 | the human TSPY array (TSPY2/3/4/8/9/10 + array LOCs) |
+| MAGEA | 2 | **11** | 11 | MAGEA1/2/2B/3/4/6/8/9/10/11/12; **CSAG correctly split into its own family** |
+| GSTM | 3 | 2 | 5 | partial — only expressed GSTM2 + GSTM5 resolved |
+| PCDHB | 5 | — | 16 | coverage-limited: 77 reads in this library |
+| DAZ | 2 | — | 4 | coverage-limited: 16 reads in this library |
+
+**Load-bearing point:** MAGEA **2 → 11** and TSPY **5 → 33** across species. If the method were overfit to
+gorilla it could not report these — it recovers the human expansions, matching the human annotation, with every
+recovered copy on an annotated paralog (not a mis-chain); MAGEA even split the adjacent CSAG antigen family off.
+It does NOT emit the gorilla numbers. **Honest limits:** PCDHB / DAZ under-expressed in this single library (77 /
+16 reads) — a depth limit of one dataset, not a method failure; the near-identical human-specific duplicates
+(SRGAP2B/C, ARHGAP11B) sit at the K=0 frontier and/or below the expression floor here, and SRGAP2's copies are
+84 Mb apart on chr1 so need the genome-wide catalog, not a single `--region`.
+
+**Tightest control (noted, not run):** Makova's PRJNA911852 has matched human AND gorilla testis Iso-Seq
+(human SRR22838397/398/405/406; gorilla SRR22838403/404) but those are Sequel **subreads** (pre-CCS, noisy —
+need CCS before the PSV gate), so the clean HiFi GENCODE library was used here; the matched Makova set is the
+natural same-protocol next step. Artifacts: `bench/make_human_crossspecies.py`,
+`bench/slides/human_crossspecies.png`, `/home/juanfra/human_val/`.

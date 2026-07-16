@@ -43,7 +43,7 @@ copies. From the 306-hit catalog `bench/hidden_collapse_hits.tsv`; reproduce:
 python bench/hidden_collapse_evidence.py --region NC_073236.2:139047584-139177611
 ```
 Corroborated cross-species: the same method resolves 11 MAGEA copies in human vs the 2-copy ape baseline
-(`HUMAN_CROSSSPECIES.md`). Detect-and-flag; separating a real extra *copy* from a heterozygous *allele*
+(`VALIDATION_AND_STATUS.md`). Detect-and-flag; separating a real extra *copy* from a heterozygous *allele*
 needs DNA / parental copy number.
 
 ## The one-line story
