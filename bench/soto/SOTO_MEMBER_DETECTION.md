@@ -2,7 +2,13 @@
 
 Per-member recovery of the **362 Soto members / 83 families** in `80_fams.chr.bed` (human Iso-Seq A119b →
 CHM13v2.0), across all pipeline legs. Tables:
-- `bench/soto/soto_family_detection.tsv` — one row per family: `n_members, n_detected, sensitivity, members`.
+- `bench/soto/soto_family_detection.tsv` — one row per family with **both metrics**:
+  `n_members, n_detected, sensitivity, n_pred_loci, precision, members`.
+  - **sensitivity(F)** = detected members / planted members (recall).
+  - **precision(F)** = detected loci in F's genomic region that hit a true member / all detected loci in F's
+    region (`n_pred_loci`). A detected locus in F's region hitting no annotated member is a candidate
+    **unannotated paralog** of F (Soto's 80-family subset is not exhaustive), so <100% precision usually
+    means extra real copies, not false calls.
 - `bench/soto/soto_member_detection.tsv` — one row per member: `family, gene, locus, detected(Y/N), recovered_by`.
 
 ## Headline
