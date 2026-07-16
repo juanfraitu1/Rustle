@@ -2118,3 +2118,305 @@ python bench/validate_exon_sum.py gw_xchrom_catalog minimap2 0.80 0.50   # indep
 cargo test --lib prune_same_locus minimap2_psv distinct_locus_reps homology_components   # the fixes' tests
 ```
 
+## primary_secondary_invariance
+
+# Is the recovered locus set invariant under the arbitrary primary/secondary tie-break?
+
+**Date:** 2026-07-10. **Substrate:** `GGO_mm.bam` vs `GGO.fasta`, `copy_assign` at `b55a30b`, λ=58.
+**Motivation (advisor).** The primary/secondary alignment label is arbitrary for a multi-mapping read: at
+MAPQ=0 minimap2 cannot tell which locus is correct and breaks the tie deterministically-but-meaninglessly.
+Defining a locus by "≥1 primary read" is sound only if the recovered locus set does **not** depend on that
+arbitrary choice. Two agreeing tests measure this:
+
+1. **Adversarial bound (all tie-breaks at once).** minimap2 sets MAPQ=0 *exactly* when the primary is tied,
+   so a copy's MAPQ>0 primary reads are **anchored** (no relabeling can move them) and its MAPQ=0 reads are
+   **swappable**. A copy with ≥3 anchored reads clears the locus gate under *every* tie-break.
+2. **End-to-end relabel** (`relabel_ties.py`): secondaries carry full SEQ+soft-clips, so flipping the 0x100
+   flag between a primary and an AS-tied secondary yields a valid different primary assignment; re-run
+   `copy_assign` on the flipped BAM and compare recovered copies.
+
+| family | copies | anchored/swappable | tie flips | copies after flip | χ_H o→f | invariant? |
+|---|---|---|---|---|---|---|
+| GSTM | 3 | 1345 / 0 | 0 (no-op) | 3 | 3→3 | YES (trivial: unique mappers) |
+| MAGEA | 2 | 621 / 0 | 0 (no-op) | 2 | 2→2 | YES (trivial) |
+| PCDHB | 5 | 462 / 0 | 0 (no-op) | 5 | 5→5 | YES (trivial) |
+| DAZ | 2 | copy1 1/17 | 41 | 2 | 2→2 | YES (empirical) |
+| RBMY | 6 | copy3 2/5, copy5 2/0 | 12 | 6 | 6→6 | YES (empirical) |
+| TSPY | 5 | all copies 0 anchored | 30 | 2 | 5→2 | **NO — 5→2** |
+
+**Reading it.** Divergent families (GSTM/MAGEA/PCDHB) are all MAPQ=60 — the relabel flips zero reads (a
+literal identity op); invariant by construction (also why they need `--homology-primary`: E_c finds 0
+conflict edges). Moderately-collapsed families (DAZ/RBMY) have arbitrary reads but the copies don't depend on
+them: DAZ2 has only 1/18 anchored primaries yet flipping all 41 tied reads still recovers 2 copies (DAZ2
+start wobbles ~1.4 kb), because copies are defined by **relabeling-invariant junction structure** (DAZ2's ~31
+introns vs DAZ1's ~16). TSPY's ~2.7 kb copies are exonically near-identical with 0 anchored primaries, so
+reversing the tie-break **collapses 5→2** — the K=0 frontier the thesis already flags as RNA-unresolvable.
+
+**Criterion (defense framing):** a locus is admissible iff its existence is invariant under primary↔secondary
+relabeling of tied reads — no arbitrary threshold, satisfied for every family resolvable at the RNA level.
+6 of 7 named families reproduce their exact copy set under a full adversarial tie-break reversal.
+
+### SHIPPED — the invariance certificate (quant.tsv)
+
+`copy_assign` now writes the per-copy certificate into `quant.tsv` (two new columns) plus a stderr summary,
+so the bound is produced in-binary rather than by an offline `samtools` pass:
+
+- **anchored_reads** = assigned reads mapping uniquely (`mapq>0`) to the copy — support surviving any
+  primary/secondary relabeling of tied reads.
+- **tie_invariant** = `anchored_reads ≥ GATE_MIN_READS` (3): TRUE ⟹ the copy exists under EVERY tie-break via
+  unique mappers.
+- **junction_invariant** = the copy is pinned by ≥3 reads carrying a **copy-specific junction**
+  (`copy_junction_support` / the `junction_only` signal): splice structure identifies it regardless of the
+  primary label — the second relabeling-invariant mechanism, and the one that rescues DAZ2.
+
+A copy is invariant **overall** iff `tie_invariant OR junction_invariant` (reported in the stderr summary).
+Measured `tie/junction`: GSTM all `true/false` (unique mappers, not junction-pinned) → 3/3; DAZ1 `true/true`,
+**DAZ2 `false/true`** (1 unique mapper, junction-defined) → 2/2; TSPY all `false/false` (exonically identical,
+no copy-specific junction) → 0/5; RFPL readthroughs `true/false` (unique mappers, single-exon ⟹ no junctions)
+→ 4/4. `junction_invariant` is precise: it rescues DAZ2 (`false→true`) and does **not** bless RFPL's
+single-exon readthrough artifacts or TSPY's identical copies. Related: `project_daz2_locus_support`,
+`project_k0_frontier_unresolvable`, `project_family_def_readconflict`.
+
+## famcn_readonly — reference-free copy number
+
+**Date:** 2026-07-08. **Question (advisor's):** can copy number be estimated from RNA reads ALONE — no genome,
+no assembly — such that even reads that cannot be *assigned* still *indicate* how many copies exist?
+**Answer: yes, for expressed copies.** Two reference-free legs:
+
+- **`chi_H`** = χ(H) = number of distinct pairwise-conflicting copy hap-vectors (THEORY.md Lemma 1, MCC).
+  Counts copies the PSV **conflict** structure distinguishes, incl. copies no single read can be pinned to
+  (Tier-2 "counted but unassignable" — the advisor's point). A lower bound; blind to identical copies.
+- **`depth_cn`** = `E_fam / λ_global`, where `E_fam` = total family read depth (ALL reads incl. unassignable)
+  and `λ_global` = the genome-wide single-copy RNA expression floor (median `n_reads` over single-copy
+  transcripts; Sudmant 2010 / QuicK-mer2 parCN normalization ported to RNA). Recovers the identical/collapsed
+  (Tier-3) copies `chi_H` misses, from depth alone.
+
+**Validation vs the phased assembly (`asm_hapCN`), per-gene, n=59:** `chi_H` 49% within 25% (r=0.44);
+**`depth_cn` 66% (r=0.52)**; `max(chi_H, depth_cn)` = shipped `famcn_readonly` **66% (r=0.53)**.
+
+**Depth recovers copies no assignment can.** On collapsed families `chi_H` sees ~1 copy but the unassignable
+reads' depth recovers the true count — 30 families where depth beats `chi_H`, 23 confirmed by `asm_hapCN >
+chi_H`:
+
+| gene | chi_H | depth_cn | asm_hapCN |
+|---|---|---|---|
+| LOC109025447 | 1 | 15.8 | 11 |
+| LOC115930538 | 1 | 11.4 | 12 |
+| LOC129526550 | 5 | 11.8 | 13 |
+| LOC101130894 | 2 | 10.4 | 16 |
+| LOC115930164 | 1 | 4.4 | 13 |
+| CPLANE1 | 1 | 7.7 | 6 |
+
+For LOC115930538 per-read assignment sees one copy (`chi_H=1`), reads pile ~11× deep, the assembly has 12 —
+all recovered from reads, no genome used. This is the headline "copies the linear reference hides."
+
+**Honest limit — it counts EXPRESSED copies.** Reads can't see untranscribed copies, so it under-counts when
+copies are silent (13/59 genes <60% of `asm_hapCN`: ZNF425 sees ~4 of 26, LOC129531752 2 of 22). This is the
+one thing the genome has that RNA does not, and the correct boundary of the method. Two caveats: `depth_cn` is
+an expressed-copy count (some high-depth no-oracle families e.g. SORL1 39.7 are high expression not many
+copies — only the 23 assembly-confirmed cases are asserted); these are *collapsed* copies (in the phased
+assembly, merged in the linear ref), NOT copies absent from every assembly (0 confirmed on GGO).
+
+**Shipped:** `copy_assign` emits `<out>.famcn_readonly.tsv` (`family_id chrom n_copies n_reads chi_H depth_cn
+regime famcn_readonly`) for every family (additive). `chi_H`/`n_reads` need nothing external; `depth_cn`/
+`famcn_readonly` populate when `--lambda-global` (from `bench/rna_copy_number_depth.py`) is supplied; `n_reads`
+always emitted so the depth leg is recomputable post-hoc. O1↔O2 harmony: `chi_H` **is** the O1 conflict-graph
+count = the EM's copy count `K`; `depth_cn` counts the same family's reads incl. the EM SoftZone mass.
+
+## sun_identifiability — per-copy SUN identifiability catalog
+
+The **Singly Unique Nucleotide (SUN)** layer of the copy-assignment identifiability framework (formal
+treatment in `bench/THEORY.md` §5·SUN). An **O2** object (within-family per-copy identifiability),
+complementary to the four O1 family-definition objects. A **SUN** (Sudmant 2010, *Science* 330:641,
+PMID 21030649) is a **single column** where **one** copy's base is unique among all copies — a private
+allele. On RNA it is operational: **a single read covering one SUN column assigns deterministically to that
+copy at the per-read gate** (`N(r)={c}`, `|N(r)|=1`, never misassigned to another *true* copy — Thm 4).
+
+The load-bearing distinction vs PSV: a PSV column has ≥2 distinct copy-alleles (a copy is resolvable iff its
+**full hap-vector** across all PSV columns is unique); a SUN additionally isolates one copy against all the
+rest. So **{copies with a SUN} ⊊ {copies with a unique hap-vector}** — a copy can be hap-vector-unique with
+no single-position SUN (its uniqueness is a *combination*, needing a read spanning ≥2 PSVs — exactly the copy
+a **recombinant** read can spoof, the K≥3 obstruction). SUN is single-read deterministic; hap-vector-unique-
+only is co-observation-dependent.
+
+### The 3-tier per-copy ladder (strict refinement of psv_graph's family K)
+
+| Tier | Predicate | Meaning |
+|---|---|---|
+| **1 — SUN-identifiable** | `|group(c)|==1` and `SUN(c)≠∅` | single-read **gate-deterministic**. Per-read immunity — NOT cover-level (even a SUN-rich copy can dissolve in an alternative minimum cover, §5 `S3_cover`) |
+| **2 — hap-vector-unique-only** | `|group(c)|==1` and `SUN(c)=∅` | uniqueness combination-based; no single read pins it — needs a read co-observing ≥2 PSVs. The K≥3 recombinant-spoof regime |
+| **3 — frontier/unresolvable** | `|group(c)|≥2` | shares full hap-vector; `NM:i:0` collapse; gate certifies `min_p=1` (tied) |
+
+`{psv_graph resolvable} = Tier 1 ⊎ Tier 2`; `{psv_graph frontier} = Tier 3`.
+
+### Genome-wide catalog (154 GGO validated multi-copy families / 412 copies)
+
+Source `bench/sun_identifiability.py` (copy-only asm20 aligned-pairs; drops psv_graph's `MIN_READS_PSV≥3`
+read-support gate; byte-identical across re-runs).
+
+| Tier | Copies | % |
+|---|---:|---:|
+| **1 — SUN-identifiable** (single-read gate-deterministic) | **338** | **82.0%** |
+| 2 — hap-vector-unique-only (needs ≥2-PSV co-observation) | 1 | 0.2% |
+| 3 — frontier/collapsed (`NM:i:0`) | 73 | 17.7% |
+| unique-hap (Tier 1 + Tier 2) | 339 | — |
+
+**SUN-identifiable (338) ⊊ unique-hap (339)** — the strict subset is real and machine-provable in the abstract
+(S4) but witnessed on this substrate by exactly **1** Tier-2 copy. Headline: on gorilla essentially every
+resolvable copy earns uniqueness through ≥1 single-position private allele (**82% single-read gate-
+deterministic**); the K≥3 Tier-2 regime is empirically rare (1/339). Per-family: **135/154** carry ≥1
+SUN-identifiable copy; **132/154** fully single-read taggable (every copy Tier 1); **19/154** all-Tier-3
+frontier. psv_graph cross-ref over the same 154: 124 `fully_resolvable`, 3 `partial`, 27 `no_psv`.
+
+**The K-over-count witness:** exactly **one** family is `fully_resolvable` by psv_graph's K yet harbors a
+non-single-read-taggable copy — **family 42** (8-copy tandem `LOC129529768…`, `NC_073247.2:~59.7Mb`, K=8),
+tiers 7/1/0. Tier-2 copy = `copy4=LOC129529774`: `group_size=1` but `n_sun=0` (every PSV allele shared with a
+sibling) — no single read pins it. So K over-counts single-read-taggable copies by exactly 1 genome-wide
+(339 distinct hap-vectors, 338 single-read-taggable). **RABL2** cluster (fam39: RABL2A/RABL2B + 3 LOC, 357
+PSVs, 5·T1) is the clean named positive: fully single-read taggable, K does not over-count it. SUN-rich
+examples: SMG1 (fam12, 1479 PSVs, 5·T1), DAPK1 (fam8, 610 fully-private, 2·T1), GSTM2 cluster (fam0, 7·T1).
+No-SUN frontier (0 copy-only PSV, `NM:i:0`): LOC115930538 (fam34, 8cp), RGPD8-block (fam1, 7cp), ANKRD18A/B
+(fam22, 6cp).
+
+**Machine-check:** `strong_sep_witness` recomputes the single-position witness set for all 412 copies →
+`n_sun_identifiable=338 = n_single_position_strongsep_witness=338`, `all_green=true`, 0 violations. Honest:
+`has_sun` (`count==1`) and the witness (`∀c'≠c, ≠`) are the same predicate, so this is a self-consistency /
+no-coding-bug check, **not** independent corroboration — genuine independence lives in
+`bench/sun_theory_check.py` (S1 SUN⇒unique-hap 0/1,252,380; S2 per-read gate immunity 0/6,675,294 reads;
+**S3_cover** the load-bearing counterexample — a SUN-rich copy dissolves in an alternative minimum cover, so
+cover-level copy-immunity is FALSE while per-read gate immunity holds; S4 NOT-iff both directions).
+
+**Caveats.** (1) Structural not observed — copy-only asm20 self-alignment reports *potential* identifiability;
+the RNA-achievable subset is SUNs both read-covered AND exonic. (2) Substitution-only — copy-private indels
+(good markers) not counted (⟹ undercounts). (3) A too-divergent copy has no columns, collapsing the whole
+family to all-Tier-3: 3 families (34, 75, 175) have `n_aligned < n_copies` and route to the O4 divergent path,
+not `NM:i:0` collapse. (4) The Tier-1/Tier-2 gap is near-vacuous on gorilla (1/339). (5) **Per-read, not
+cover-level** — "gate-deterministic" is a per-read gate guarantee, NOT copy immunity in the NP-hard MCC cover;
+the earlier "recombination-immune / unspoofable copy" phrasing overclaimed this and is **retracted** (tier
+numbers unaffected).
+
+## recombinant_abstain — VG-native read-path recombination abstain gate (O2)
+
+In the O2 copy-assignment variation graph (`bench/o2_vg_visualization.py`) a family is one graph: **copies are
+paths, PSVs are bubbles**. Threading a spanning read through the ordered bubbles gives a per-bubble allele-
+vector. A read consistent with **no single copy-path** but a clean concatenation of two copies' paths is a
+**recombinant** read — the concrete per-read form of the theory's K-frontier recombination obstruction
+(`sep+link` recovers copies at K=2 but fails at K≥3 through cross-copy recombination; the tight condition is
+recombination-freeness). Detector: `bench/vg_read_path_recombination.py` over 119 co-located gorilla families
+(≥2 copies AND ≥2 PSV bubbles), reads from `GGO_mm.bam`.
+
+**The robust result is OPERATIONAL, not biological.** The O2 significance gate (`copy_assign.assign_read`)
+**force-assigns 2214/2318 (95.5%)** recombinant reads to a single copy when every one conflicts with **every**
+single copy by ≥2 read-supported bubbles (`min_single_mm ≥ 2`) and should ABSTAIN. Read-level K-frontier: 127/
+134 credible reads bridge two **Tier-1 SUN-identifiable** copies — one recombinant read carries copy A's
+private SUN in one arm and copy B's in the other, satisfying two Strong-Separation witnesses at once
+(impossible for any real single copy). SUN identifiability guarantees a *non*-recombinant read is taggable; it
+gives **no** protection against a recombinant read, which belongs to no single copy and must abstain. K≥3
+enrichment is real (Fisher odds 3.78, p=0.0024; K≥3 = 29% of families but 73.6% of recombinant read-mass) but
+partly a mechanical detection-power confound (`n_recombinant` ~ `n_bubbles` r=0.392, ~`C(K,2)` r=0.356).
+
+### SHIPPED — the recombinant-abstain gate leg (default-on, opt-out `--no-recombinant-abstain`)
+
+The abstain lever is wired into the O2 copy-assignment gate as a **default-on** leg mirroring
+`--no-repeat-gate` / `--no-split-recombinants`.
+
+- **Where:** `o2_vg_visualization.materialize_family` threads every read through `copy_assign.assign_read`
+  (the min_p / margin certificate) and labels per-read `status`; the abstain leg
+  `recombinant_abstain.apply_abstain_to_vg(vg)` runs on the materialized VG at both return points.
+  `assign_read` itself is **unchanged** (byte-identity for `validate_sim5x`/`crossval`/`assign_family`); the
+  o2vg cache stays the pure-gate assignment — the leg is applied on read, never baked into the JSON.
+- **Logic reused:** `bench/recombinant_abstain.py` is the single source of `detect_read_recombination` +
+  `full_pattern_switches` (the detector now imports them) plus `is_recombinant(...)` and `apply_abstain_to_vg`.
+- **Opt-out:** `--no-recombinant-abstain` (sets `RUSTLE_NO_RECOMBINANT_ABSTAIN=1`) makes the leg a no-op;
+  output is then byte-identical to the prior pure gate.
+
+**Reads moved assigned→abstain (default-on): 2214** — systematic_copy_split 1357, localized_tract 674
+(incl GSTM2 fam13 = 292 localized), sporadic_chimera 183; of which 621 clean over the full read-supported
+pattern (`clean_full=1`), 1593 noisy. The leg deliberately does **NOT** gate on `clean_full`: abstaining is
+correct for the full 2214 because every abstained read (clean or noisy) conflicts with every single copy by
+≥2 read-supported bubbles = belongs to no single copy; gating on `clean_full` would wrongly re-admit the noisy
+belongs-to-no-copy reads. **Byte-identity:** independent leg-OFF vs leg-ON rerun over the cache (102,224 reads
+across flippable families): 2214 flipped (all exactly `assigned → recombinant`, `best_copy=None`), **0
+non-recombinant reads changed, 0 monotonicity violations** — a pure monotone addition of abstentions.
+Coverage-vs-correctness: assigned 40,534 → 38,320 (39.65% → 37.49%); cost = 2214 abstentions (5.46% of
+previously-assigned, 2.17 pts); gain = 2214 belongs-to-no-copy force-assignments removed. Tests:
+`bench/test_recombinant_abstain.py` (5 pass: predicate, monotone, opt-out no-op, determinism, data-backed
+2214 move). Different axis from `mosaic.rs::classify_event`, which gates isoform *emission* — this lives on
+the copy *assignment* axis.
+
+⚠ **Gene-conversion biology RETRACTED.** The raw switch signal is dominated by systematic near-identical-copy
+ambiguity, not recombination (1447/2318 = 62% whole-molecule copy-splits). Crossovers yield **0** credible
+biological recombination. After a full-pattern cleanliness test only **134 reads / 10 loci** are clean bi-copy
+tracts (674 localized → 134); the previously-flagship GSTM2 "conversion hotspot" (292 localized reads)
+**collapses to 1 clean read** — the **GSTM2 gene-conversion claim is retracted**. The RT-switch microhomology
+veto fired 0/2318 (inert for adjacent-PSV paralog switches) and DNA is 0/2318 (unchecked), so RT-template-
+switch is **not** excluded, and the surviving tract columns are ordinary het sites RNA cannot separate from
+allelic SNPs without DNA parCN. This is a valid **abstain trigger**, NOT a gene-conversion discovery
+instrument — no future reader should resurrect the biological claim.
+
+## classify_event — gene-conversion vs RT/template-switch discriminator (default-off)
+
+**Why.** Gene conversion and RT/template switching produce the *same observable* — one molecule/copy whose
+PSV-allele pattern is a **mosaic of two copies** (the object that breaks Strong Separation on the K≥3
+frontier). But one is biology to report, the other a library artifact to filter, and they look identical
+per-read. The mosaic detector previously confirmed a conversion on **recurrence alone** — insufficient,
+because a sequence-driven **microhomology hotspot** makes RT-switches recur. The fix adds two orthogonal legs.
+
+### The three-leg discriminator (`mosaic.rs::classify_event`)
+
+| leg | signal | meaning |
+|---|---|---|
+| **recurrence** | `ev.confirmed` (pre-existing) | breakpoint recurs across independent molecules |
+| **microhomology** | `genome::breakpoint_microhomology(chrom, br_lo, br_hi, 6..12)` | a direct repeat flanking the breakpoint = the RT/template-switch signature |
+| **DNA support** | catalog lookup (`Option<bool>`) | gene conversion is heritable → in matched DNA; RT switch is RNA-only |
+
+Truth table (artifact rule fires *before* the conversion rule):
+```
+microhomology && !dna_present                   -> RtSwitchArtifact   // template signature, not DNA-rescued
+ev.confirmed  && !microhomology && !dna_absent  -> GeneConversion     // recurrent, no signature, DNA not contradicting
+!ev.confirmed && !microhomology                 -> ChimeraSuspect     // sporadic one-off
+otherwise                                       -> Ambiguous          // mh∧dna conflict, or recurrent-but-DNA-absent
+```
+Key: **DNA is a veto, not a requirement.** `dna_supported=None` (unchecked) does not block a `GeneConversion`
+call (so the two cheap legs ship without the DNA catalog wired); `Some(false)` (checked and ABSENT —
+contradicts heritability) downgrades to `Ambiguous`; never upgrade to `GeneConversion` on a microhomology
+breakpoint.
+
+**Wired:** `mosaic.rs` (`Classification` enum + pure `classify_event`, 6 unit tests); `genome.rs`
+(`breakpoint_microhomology` scans a k-range past the old fixed 8 bp, with a **low-complexity guard** — matched
+window must carry ≥3 distinct bases, else a real conversion near a simple repeat is wrongly demoted, the error
+direction that *suppresses real conversions*); `copy_assign_pipeline.rs` (`FamilyDetail.conversion_class` +
+`classify_conversions`); `denovo_pipeline.rs` (classifies each confirmed event with the live microhomology
+leg, DNA=`None`); `ConversionEvent.chrom` (now part of the cluster key — multi-chrom paralog families like
+RABL2A/RABL2B no longer wrongly merge); production `--vg` emit path (`RUSTLE_VG_MOSAIC_EMIT`, live — a
+microhomology-signature event is classified `RtSwitchArtifact` and suppressed from emission). **Default-off
+preserved** — the whole mosaic pass is opt-in (`RUSTLE_VG_MOSAIC_ON`); `ConversionEvent.confirmed` untouched;
+purely additive metadata; byte-identical no-op verified on chr19.
+
+**Measurement — ground-truth confusion matrix** (`mosaic::tests::ground_truth_conversion_vs_rt_switch_
+confusion_matrix`, full real path): planted gene conversion (flanks differ) → GeneConversion ✓; planted RT/
+template switch (exact 8 bp direct repeat) → RtSwitchArtifact ✓; same conversion DNA-absent → Ambiguous ✓. The
+RT-switch case is load-bearing: it is recurrent (5 molecules → `confirmed=true`) so recurrence alone would
+mis-call it a conversion; the microhomology leg reclassifies it as an artifact. 627-test suite green. A 3-lens
+adversarial review confirmed additive-off holds and the truth table is sound (0 blockers); it rejected a
+proposed ">1 kb bracket" guard (misread — `is_rt_switch` reads only two short windows *ending at* each
+endpoint, never the span between).
+
+**DNA heritability leg — measured (prototype `dna_support.py`), NOT wired as a veto.** Against the T2T PSV
+catalog (`DNFAM*.json`, ref0-centric): (A) signal is real — 42% of multi-copy families (17/40) carry a DNA
+mosaic (e.g. `DNFAM39 L0 = L2|L3`); (B) coverage low — ref0 intervals cover only 2.88% of the genome; (C/D)
+"absent" unreliable — DNA mosaics are localized, so families that HAVE one return "absent" almost everywhere.
+**Conclusion (why measure-first mattered):** catalog "absent" is weak negative evidence — wiring it as a veto
+would wrongly suppress real conversions, the exact failure direction guarded against. So the catalog leg must
+be **positive-only** (`Some(true)` or `None`, never `Some(false)`); it is best used as offline corroboration.
+The **microhomology leg remains the primary shipped discriminator**.
+
+⚠ **Biology uncertain / retracted caveat.** Two surfaces still label on recurrence alone (the discriminator
+gates *emission*, not these labels): the `[VG-MOSAIC]` stderr report line and the GTF attribute
+`gene_conversion "confirmed"` (both read `ConversionEvent.confirmed`, not the microhomology classification) —
+loose end L21. More broadly, the gene-conversion *biology* on real gorilla RNA is not a verified finding (see
+recombinant_abstain above: the flagship GSTM2 conversion claim is retracted; RT-template-switch is not
+excluded on real data; tract columns are unresolvable from allelic SNPs by RNA alone without DNA parCN). The
+discriminator is a shipped *mechanism* whose emitted isoforms are correctly filtered; the underlying biological
+event calls remain hypotheses, not findings.
+

@@ -2,7 +2,7 @@
 
 > Merged from 3 source docs (verbatim; git keeps the originals' history).
 
-**Contents:** copy_assignment_theory · F4_SCOPE · IDENTIFIABILITY_LIMITS
+**Contents:** copy_assignment_theory · F4_SCOPE · IDENTIFIABILITY_LIMITS · em_consistency
 
 
 ---
@@ -35,11 +35,11 @@ Copy-assignment sits at the intersection of three active research interests:
 
 1. **Family detection** (interest #1): which expressed loci are copies of one another? A multi-copy gene
    family is defined as an $R$-refined connected component of the **transcript-homology graph $E_r$** (the RNA
-   homology oracle; see `bench/family_definition_formal.md`). The **read-conflict (de-tie) graph is *not* the
+   homology oracle; see `bench/DEFINITIONS_FORMAL.md`). The **read-conflict (de-tie) graph is *not* the
    family boundary** — it is demoted to the **within-family O2 copy-assignment *decomposition*** (the confusion
    partition *inside* a fixed family). Its **cardinality** $\chi(H)=\mathrm{MCC}$, by contrast, is **re-promoted to
    an O1 family property** — the copy *count*, including the unassignable copies (§3 Remark;
-   `bench/family_definition_formal.md` §7.4). Copy-assignment is the unit of work performed *inside* each
+   `bench/DEFINITIONS_FORMAL.md`). Copy-assignment is the unit of work performed *inside* each
    family; it is logically downstream of interest #1.
 
 2. **Copy assignment under ambiguity** (interest #2, this note): given a confirmed family component, how should
@@ -269,7 +269,7 @@ $$
 with the last gap = reference-**absent** copies (O4). (The two middle terms swap order in the reference-*collapsed*
 regime — a single reference locus hiding several hap-vectors, the SDA/Vollger case — where $n_{\text{loci}}\le\chi(H)$;
 the general statement is $\max(n_{\text{loci}},\chi(H))\le\text{true}$.) This is why $\chi(H)$ is promoted to an **O1
-family property** (the copy number) in `bench/family_definition_formal.md` §7.4, while read→copy assignment stays
+family property** (the copy number) in `bench/DEFINITIONS_FORMAL.md`, while read→copy assignment stays
 O2. Genome-wide on GGO (154 co-located families / 412 copies, `bench/copy_number_catalog.py`), on two instantiations of
 $H$ that agree on **143/154** families. On the **read-observed** graph (`psv_graph_genomewide.json`, the Lemma's
 directly-plumbed $\chi$): $\sum\chi(H)=354=322$ **read-level** singleton parts $+\,32$ collapsed parts, so
@@ -1018,7 +1018,7 @@ minimal spanning-read case:
 OK  - Corollary: junction treated as a linkage column -> path-cover recovers copies+isoforms (MCC=2)
 ```
 
-*See also: `bench/family_definition_formal.md` for the upstream family-detection step whose output populates
+*See also: `bench/DEFINITIONS_FORMAL.md` for the upstream family-detection step whose output populates
 $R$ for each identified gene family.*
 
 ---
@@ -1111,10 +1111,10 @@ of the true copy count, and attribution is provably arbitrary — exactly the fo
 
 ### 7.3 Shared condition with detection (interest #1): the O2 conflict-graph decomposition inside a family
 
-The upstream family-detection step (interest #1, `bench/family_definition_formal.md`) defines a multi-copy
+The upstream family-detection step (interest #1, `bench/DEFINITIONS_FORMAL.md`) defines a multi-copy
 gene family as an $R$-refined **connected component of the transcript-homology graph $E_r$** (the O1 homology
 oracle). The **read-conflict (de-tie) graph is *not* the O1 family boundary** — it is the **O2**
-copy-assignment decomposition *inside* a fixed $E_r$ family (`family_definition_formal.md` §5, with
+copy-assignment decomposition *inside* a fixed $E_r$ family (`DEFINITIONS_FORMAL.md`, with
 $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}$). That O2 conflict-graph object is what
 underlies the copy-assignment theory here:
 
@@ -1474,4 +1474,162 @@ The methods **assign-or-abstain up to the boundary** and **certify** the boundar
 identifiability criterion, provable boundaries, no arbitrary 1/k apportionment across the unidentifiable.
 Reaching the boundary with a certificate is the deliverable; the orthogonal-data escapes are named, not
 pretended.
+
+
+---
+
+## em_consistency
+
+# EM copy-assignment = soft SDA PSV-clustering: the MLE consistency theorem under the heuristic
+
+*The EM copy-assignment engine (`src/rustle/vg_family/em_copy_assign.rs`) is the maximum-likelihood **soft
+relaxation of SDA's PSV correlation-clustering** (Vollger et al., Nat Methods 2019 — the advisor's prior-art
+paper), run on the thesis's PSV-aware variation graph, and it is **consistent** in the identifiable regime.
+Every piece is forced: the per-read likelihood is SDA's attraction/repulsion made continuous, the E-step is
+SDA's read partition made soft, and the identifiable regime is exactly the Strong-Separation ⟹ unique
+minimum copy cover (MCC = χ(H)) result of the copy_assignment_theory section above. The consistency theorem
+is the provable layer **under** SDA's NP-complete heuristic — and it explains SDA's 91–93% accuracy floor.
+Design spec: `docs/superpowers/specs/2026-07-08-em-copy-assignment-design.md`.*
+
+## Derivation — the EM is SDA's PSV graph made continuous
+
+**SDA's PSV graph (Vollger 2019, `reference_sda_vollger`).** SDA (Segmental Duplication Assembler) resolves
+**collapsed** segmental duplications from long DNA reads. After detecting a collapse by **read-depth excess**,
+it calls **PSVs** (second-most-frequent base at positions whose total depth ≈ a multiple of single-copy
+coverage — the coverage gate separates PSVs from heterozygous alleles) and builds a signed **PSV graph**:
+nodes = PSVs; a read carrying two PSVs **on one molecule** = an **attraction** edge (same copy); two PSVs
+**mutually exclusive** across reads = a **repulsion** edge (different copies). SDA runs **correlation
+clustering** on this signed graph — *ab initio*, **no preset cluster number**, **NP-complete**, solved
+heuristically with **15 random initializations** — then **WhatsHap** partitions reads by the PSV clusters.
+SDA validates at **91–93%** of PSVs correctly assigned (SRGAP2 / NOTCH2NL, BAC ground truth) and states the
+limit outright: *"virtually identical duplications cannot be distinguished and will require even longer reads
+(>100 kb)."*
+
+**The same object on the PSV-aware VG** (`project_psv_aware_vg`, `psv_linkage.rs`): bubbles `[m]` = PSV
+columns (alphabets `A_j`), parallel paths = copies, copy `k` = allele-vector `θ_k ∈ ∏_j A_j` (built from
+read-supported PSV bubbles, SDA-style, not a handed-down catalog); a read `r` is a partial path `obs(r) ⊆ [m]`
+with allele `r(j)`. Two PSVs co-carried by one read = SDA's attraction edge. This is the identical
+column/allele model of the §2 above.
+
+**Per-read likelihood = SDA's ±1 edges made continuous.** Emission at a bubble
+`q_j(a\mid b) = 1−e_j` if `a=b`, else `e_j/(|A_j|−1) ≈ e_j/3` (DNA), with `e_j` = per-column error. Then
+`L_{rk} = ∏_{j∈obs(r)} q_j(r(j)\mid(θ_k)_j)` (this is the existing `ReadEvidence.logl`). At a bubble carrying
+copy `k`'s private allele (a SUN column, `reference_sudmant_2010_sun`), the match term `log(1−e_j)` is a
+**soft attraction to `k`** and the mismatch term `log(e_j/3)` for every other copy is a **soft repulsion** —
+SDA's ±1 edge as a continuous log-likelihood. A read spanning **no distinguishing** bubble has equal `L_{rk}`
+across the tied copies: SDA's *un-attractable* read = the K-frontier.
+
+**E-step = soft WhatsHap; M-step = path abundance.** With copy abundances `π = (π_1,…,π_K)` on the simplex:
+E-step `γ_{rk} = π_k L_{rk} / ∑_j π_j L_{rj} = softmax_k(\log L_{rk}+\log π_k)` (a fractional read→copy
+assignment, SDA's hard partition made soft); M-step `π_k = \tfrac1N ∑_r γ_{rk}` (**copy-path abundance** —
+the quantity SDA has no parameter for, since it assembles rather than quantifies). Convergence: the
+observed-data log-likelihood `ℓ(π) = ∑_r \log ∑_k π_k L_{rk}` is **non-decreasing** each sweep (the tested
+monotone invariant), stopping at `Δℓ < ε(1+|ℓ|)`. `θ` is **fixed** from the VG (copy-path refinement —
+re-estimating `θ_k` from γ-weighted reads, the direct analog of SDA re-clustering PSVs — is deferred).
+**In one line:** the EM is SDA's PSV correlation-clustering with signed edges → substitution log-likelihood,
+hard WhatsHap → soft responsibilities, plus a copy-abundance parameter.
+
+## The model and its assumptions
+
+One PSV-aware VG per family: bubbles `[m]`, `K` copy-paths `θ_k`. Read `r` has hidden origin `z_r ∼
+Categorical(π)`, draws `obs(r)` from a coverage law independent of `z_r`, emits `r(j) ∼ q_j(\cdot\mid
+(θ_{z_r})_j)`. Marginal = the **finite mixture** `P(r) = ∑_k π_k L_{rk}`. **Assumptions.** (A1) error-free
+core / completeness: each read originates from one of the `K` VG copy-paths (the standing hypothesis of
+Theorem 4; the reference-absent/O4 escape is handled by abstain-and-re-thread, not here). (A2) bounded known
+per-column error `e_j < (|A_j|−1)/|A_j|` (matched allele is modal). (A3) coverage law independent of origin.
+These are the combinatorial theory's assumptions given a probability measure.
+
+## Theorem (EM consistency in the identifiable regime)
+
+With `D_{ij} = {d:(θ_i)_d≠(θ_j)_d}` the distinguishing bubbles and `δ(r) = \min_{k≠b}|obs(r)∩D_{bk}|` (the §5b
+`δ`; `b` = MLE copy), the per-read certificate is `min_p(r) = ε^{δ(r)}`, `Certified` iff `min_p(r) <
+α/(K−1)`, `SoftZone` otherwise (`label_read`).
+
+**Denominator caveat (do not conflate).** The shipped `label_read` uses `α/(K−1)` with `K` = number of copies
+(per-copy Bonferroni over a read's `K−1` competitors); Theorem 4 above writes `α/(n−1)` with `n` = reads.
+These are **not** the same symbol — reconcile which population each Bonferroni family is over before equating.
+
+> Suppose the family satisfies **Strong Separation** (§5): every copy pair is separated by a bubble reads
+> actually span, so `δ(r) ≥ 1` (`min_p < 1`) is achievable for every cross-copy comparison. Then:
+> **(a) Identifiability** — with `θ` fixed the mixture components are **pre-labelled** (each `L_{k·}` tied to a
+> named `θ_k`), so **no relabelling ambiguity**; `π` and per-copy assignments are uniquely determined.
+> **(b) MLE consistency** — as per-copy coverage `n→∞`, `π̂_n → π*` almost surely, and the EM from a generic
+> start converges to it. **(c) Assignment consistency** — for every identifiable read (`δ≥1`), the MAP
+> `ẑ_r = \arg\max_k π̂_k L_{rk} → z*_r` for `n` large, and `γ_{r,z*_r} → 1`. **(d) The non-identifiable class
+> is honest** — for `δ(r)=0` (`min_p=1`, SoftZone) the posterior stays at the prior `γ_{rk}=π_k` for all `n`;
+> the EM makes **no hard call and never imposes a 1/k split**.
+
+This is exactly the regime where the theory proves **Strong Separation ⟹ `C*` is the unique minimum copy
+cover, `MCC = χ(H) = K`** (Lemma 1 + Theorem 2); the EM converges to that cover.
+
+**Proof ingredients.** Finite-mixture identifiability + MLE consistency (Redner & Walker, *SIAM Review*
+26:195–239, 1984; Teicher, *Ann. Math. Statist.* 34:1265–1269, 1963), specialized to the discrete PSV
+emission. **Linear independence** is *not* by "distinct product-multinomials are independent" (false for
+`K≥3`): instead the `K×K` matrix `M = [f_k(θ_j)]` with `f_k(θ_j)=∏_d q_d((θ_j)_d\mid(θ_k)_d)` is **strictly
+diagonally dominant** in the well-separated regime (each `f_k` peaks at its own centre `θ_k`, off-diagonal
+entries lose a factor `(1−e_d)→e_d/(|A_d|−1)` at each distinguishing column), hence invertible
+(Levy–Desplanques) ⟹ `{f_k}` independent ⟹ mixture identifiable. **Global (not merely local) EM
+convergence** holds **because `θ` is fixed**: then `ℓ(π)=∑_r \log∑_k π_k L_{rk}` is a sum of logs of functions
+**affine in `π`**, hence **concave on the simplex**, and the mixture-proportion EM is coordinate/MM ascent to
+the **global** MLE (unique under strict concavity, all `π*_k>0`). If `θ` were **also** estimated (the deferred
+refinement), `ℓ(π,θ)` is non-concave and only the *local* Redner–Walker guarantee returns — the shipped
+engine estimates `π` with `θ` fixed, so it lives in the globally-convergent concave case.
+
+**Coverage attribution (what the limit does and does not buy).** The likelihood-ratio favouring the truth is
+`L_{r,z*_r}/L_{r,k} = ((1−e)/(e/3))^{≥δ(r)} > 1` — a **per-read `δ/e` quantity that does NOT grow with
+coverage** (`δ(r)` is fixed by which bubbles the single molecule spans). Under A1 (`e→0`) per-read assignment
+is **exact at any coverage** (correct with `n=1` copy-read as with `n=100`). What `n→∞` buys is the
+**abundance** consistency `π̂→π*` of (b); it enters (c) only through the prior factor `π̂_k/π̂_{z*_r}`, which
+matters solely in the noisy `e>0` regime.
+
+## Consequence — explaining SDA's 91–93% floor
+
+SDA runs *hard* correlation clustering and **forces** a label on every PSV/read, including the un-attractable
+K-frontier ones. Two costs: (i) the NP-complete heuristic can stall at a non-global clustering; (ii)
+hard-calling the genuinely unidentifiable mass **must** misassign a fraction. The theorem decomposes this: on
+the **identifiable** set (`δ≥1`) the ML soft relaxation is **consistent** — per-read accuracy high at every
+coverage, `→100%` under A1; it does **not** floor. On the **unidentifiable** set (`δ=0`, K-frontier/K=0) no
+method resolves the reads; SDA hard-calls and eats a misassignment rate whereas the EM **abstains**
+(SoftZone). **What the theorem supplies:** the mechanism / *kind* of floor (a hard-caller scores ≈100% on the
+identifiable set and pays a forced error on the unidentifiable residue, pinning *overall* accuracy below 100%).
+It does **not** derive the specific **91–93%** — that value is the *instance-specific unidentifiable fraction*,
+which the theory does not supply. Keep the two curves **distinct**: the EM's **identifiable-set** accuracy
+`→100%` is a different measurement from SDA's **overall** 91–93%.
+
+**Prediction (coverage sweep, `bench/em_coverage_sweep.py` → `bench/THEORY.md`).** On a planted sim
+with known `θ*, π*, z*`, over per-copy coverage `{1,2,5,10,20,50,100}×`, two distinct axes: *(per-read `δ/e`,
+not coverage-driven)* assignment accuracy on identifiable reads high at every coverage `→100%` under A1;
+*(coverage axis)* abundance error `‖π̂−π*‖₁ → 0`; and K=0 families **stay SoftZone** at every coverage (the
+boundary is a boundary, not a coverage artifact). These are the theorem's falsifiable content.
+
+**Column filters (which bubbles enter the graph).** The raw allele-disagreement graph is error-inflated
+(§5c: colouring ≈3× the true `K`), so columns are gated by the same per-column filters, reused unchanged:
+**IsoCon** (`reference_isocon_sahlin`, per-position real-variant-vs-error), **SUN** (`reference_sudmant_2010`,
+single-position private markers — a read over a SUN column is single-read pinned, the `δ`-contributing
+attraction part (c) relies on), **Clair3-RNA** (`reference_clair3_rna`, flags A→I editing).
+`em_assign_family` computes `detect_editing_columns` and passes it into `read_copy_evidence`, so an editing
+column is downweighted in the EM likelihood as in the hard gate. **Scope caveat:** the shipped `--em` path is
+**PSV-only** — it threads no copy-specific junctions and no per-base quality
+(`ReadFeatures::junctions`/`psv_qual`, `CopyProfile::junctions` left empty), so its per-read labels can differ
+from the hard `.assignments.tsv` gate on reads whose call depends on junction or per-base-quality evidence.
+This does not affect the abundance/consistency result: junctions/quality/editing change only `min_p` and
+per-column weights, not the shape of the abundance fixed point.
+
+## Ties to the combinatorial theory (above)
+
+- **Lemma 1 (MCC = χ(H)):** the EM's hard limit (`γ` → indicators) is a `χ(H)=K`-colouring of the conflict
+  graph `H`.
+- **Theorem 2 (unique cover under Strong Separation):** the EM's identifiable regime **is** this hypothesis;
+  its MAP partition converges to the provably-unique cover `C*`.
+- **Theorem 3 (`RECOVER`, poly-time):** the EM's hardened responsibilities reproduce the connected-component
+  partition of the compatibility graph — the statistical route to the same object.
+- **Theorem 4 (`min_p` bridge):** the per-read certificate the EM attaches via `label_read` (Certified =
+  part (c) applies; SoftZone = part (d) abstention).
+- **Theorem 7 (integrality bridge):** under Strong Separation the MWCA LP is integral; the EM's soft
+  assignment converges to that same integral optimum — the EM is the mixture-model face of the
+  `NP-hard (Thm 1/5) → (1−1/e) LP-rounding (Thm 6) → integral under Strong Separation (Thm 7) → per-read
+  min_p (Thm 4)` object, not a third ad-hoc solver.
+- **The K=0 floor = SDA's ">100 kb reads" = SoftZone:** when a copy pair shares every spanned bubble the
+  mixture likelihood is flat (§6b), every read is `δ=0`, `min_p=1`, and the EM returns a posterior-invariant
+  class (`γ=π`) — **never a hard 1/k**. The EM reaches the identifiability boundary and certifies it.
 

@@ -688,3 +688,162 @@ Top families receiving recall isoforms:
 - `python3 bench/readcoherence_psv_headroom_fig.py`  (renders the funnel figure)
 - COLLAPSED-regime hit loci: `bench/headroom_loci.tsv`
 
+## readthrough_rule_validation
+
+# Validating the R4 readthrough filter — SHIPPED (2026-07-09)
+
+**Script:** `bench/readthrough_rule_validation.py`. **Substrate:** `GGO_mm.bam`.
+
+A single-exon de-novo transcript spanning 30–250 kb is unspliced pre-mRNA / intronic pileup, not an
+mRNA. Admitted as a family **copy** it corrupts the copy set (GSTM: a 30 kb single-intron transcript
+spanning both GSTM5 and GSTM1 became a "copy" beside GSTM3) and makes read alignment quadratic (RFPL:
+a 128 kb "transcript" hangs assignment past 400 s). Real intronless genes (retrocopies, TSPYL1,
+GSPT2, JUND, histones) must survive the rule.
+
+Four candidate rules were tested and refuted before R4 was adopted; the failures are the argument:
+
+| rule | statement | verdict |
+|---|---|---|
+| R1 | T overlaps any spliced transcript | too loose to measure — a nested intronless gene overlaps its host |
+| R2 | some **assembled** spliced transcript has an intron entirely inside T's span | FAILS sensitivity — keeps the 128 kb RFPL giant (too sparse to assemble a spliced tx ⇒ no intron to engulf); any rule over *assembled* transcripts inherits the hole |
+| R3 | any **read** carries a junction entirely inside T's span | FAILS specificity — drops **21.2%** of 400 expressed intronless genes (TSPYL1, GSPT2, DERPC, ATXN7L3B, EPM2AIP1, TSPYL4, JUND); stray spliced reads cross any locus |
+| **R4** | T's span contains **≥ 5 distinct junctions, each supported by ≥ 2 reads** | **ADOPTED** |
+| R5 | span / longest-contained-read ratio | FAILS — real intronless genes reach ratio 7.1, one artifact sits at 1.04 (single 238 kb pre-mRNA read); no separation |
+
+**R4 — distinct junctions, read-level, containment-scoped:** *a single-exon transcript T is the
+unspliced form of a locus iff ≥ 5 distinct splice junctions, each with ≥ 2 supporting reads, lie
+entirely inside T's span.* Three properties matter: **distinct**, not total (TSPYL1 has 51 junction
+observations but only 4 distinct); **read-level**, not transcript-level (works where the assembler
+failed — the RFPL hole); **entirely inside** (a gene nested in another's intron sees the host's
+junctions *flanking* it, never within — nested intronless genes never penalised).
+
+### Validation
+- **Sensitivity 13/13.** Every single-exon de-novo transcript across 30 regions (spans 20–250 kb) is
+  a readthrough and all flag; distinct-junction counts 14, 15, 16, 19 (GSTM), 19 (RFPL), 23, 24, 44,
+  57, 69, 69, 76, 107. **Minimum observed = 14.**
+- **Specificity 0 FP.** Expressed annotated intronless genes: median distinct junctions = **0**; worst
+  across 120 sampled = **4** (GSPT2, DERPC); at the reproduced 60-gene run worst = 3 (JUN, GPR61).
+- **Positive control** — de-novo single-exon transcripts assembled *at* four highly expressed
+  intronless loci are all **kept**: TSPYL1 (14.8 kb, 2080 reads, 4 junctions), GSPT2 (2.9 kb, 672
+  reads, 4), ATXN7L3B (8.8 kb, 1575 reads, 1); DERPC assembles as 3–4 exons so the rule never applies.
+- **Margin:** controls max 4 · artifacts min 14 — any cutoff 5–13 separates perfectly. `MIN_DISTINCT
+  = 5` = "no control ever reached it," read off the data. Honest margin is **3 junctions** (TSPYL1 at
+  4 is closest), not an order of magnitude.
+
+**Caveats:** n = 13 artifacts / 124 controls, all from 30 regions of one testis sample — prevalence
+and margin genome-wide unmeasured. The `≥ 2 reads` floor is a noise guard, not derived (at ≥ 1 the
+control tail rises). No **retrocopy** appears among the 13, so the rule is untested against the object
+it is most likely to destroy — a recent intronless retrocopy inside a family window; TSPYL1/GSPT2/
+ATXN7L3B are the closest proxy.
+
+**Shipped:** R4 runs as a filter on de-novo transcripts *before* family formation (so the readthrough
+never becomes a copy), read-level, containment-scoped, annotation-free; the dropped count is reported
+in the `copy_assign` log. Reproduce: `python bench/readthrough_rule_validation.py --bam GGO_mm.bam
+--artifact-gtf 'txdump/*.gtf' --controls single_exon_genes.tsv` (`txdump/*.gtf` = `copy_assign --gtf
+--min-copies 99` dumps; `single_exon_genes.tsv` = every annotated single-exon mRNA).
+
+## daz2_recovered
+
+# DAZ2 recovered via locus_support (junction-incidence pooling) — SHIPPED (55493fa, 2026-07-10)
+
+DAZ2 was missing not for lack of a discriminator but because `assemble_gate` tested `GATE_MIN_READS =
+3` against a **single intron chain** — i.e. against one *isoform*. At DAZ2, 17 primary reads land in
+the annotated span (16 at MAPQ 0); 12 are spliced but fragment into **9 distinct intron chains whose
+best support is 2 reads**, so every chain died at the gate — yet all 12 share the terminal junction
+`(42939630, 42943604)` and DAZ2 shares **0 junctions with DAZ1** (58 vs 19). The threshold described a
+*locus* but was applied to an *isoform*.
+
+**The fix — `denovo_assemble::locus_support`:** connected components of the **junction-incidence graph**
+(two skeletons adjacent iff they share an exact `(chrom, donor, acceptor)`); `assemble_gate` now tests
+`min_reads` against the component's summed support. This replaces a per-isoform threshold with a graph
+operation. Two exact (non-thresholded) guards, each a test:
+
+- **Single-exon skeletons never pool** — they carry no junctions, so each is its own component. (Keying
+  on the empty intron chain would union every unspliced read on a chromosome: 746 reads across 44.3 Mbp.)
+- **Chimeric bridges never pool** — a skeleton sharing junctions with two skeletons whose spans are
+  **disjoint** splices across two loci and belongs to neither; it keeps only its own read count. This
+  guard was forced by data: with naive pooling GSTM silently lost GSTM5 — a **2-read spliced transcript
+  spanning `129191743–129222260`** carried junctions of both GSTM5 (`129191742-129197751`) and GSTM1
+  (`129216297-129222748`), bridged them, inherited combined support, cleared the gate, and span-aware
+  collapse merged the two real copies into one. Disjoint-span exclusion stops it.
+
+Separately, the **readthrough filter now runs on transcripts, before locus collapse**, not on reps
+after — filtering reps let the 298 kb DAZ readthrough become the rep of every locus it spanned,
+absorbing DAZ2's transcripts into DAZ1's group so dropping the rep deleted DAZ2.
+
+**Result:** DAZ goes from 1 rep / **0 families** to **2 copies** — `42783128-42859657` (DAZ1) and
+`42899568-42945549` (DAZ2, inside its annotated span, 0 shared junctions) — 1 family, **2213 / 2353
+assigned**, 139 tied, 1 ambiguous. GSTM (3 copies, 2675), MAGEA (931), RBMY/TSPY (888/218), r1 (665),
+planted K=0 sim (360 assigned/1184 tied) all unchanged; TSPYL1/EEF1A1 controls hold at 0 families. r4:
+1 family/220 → **2 families/818** (one byte-identical, one NEW 4-copy family over 2 protein-coding + 2
+lncRNA loci carrying one flagged `Containment` overlap). **873 tests, byte-parity suite intact.**
+`--no-pool-locus-support` reproduces the pre-fix gate exactly.
+
+**Three prior routes refuted (11-agent probe, all adversarial attacks failed to refute the refutation):**
+SDA depth-excess transplanted to RNA is DEAD — RNA depth = CN × expression (9,106-fold range across
+single-copy genes); DAZ1 reaches only 3.01× the single-copy median, out-depthed by 24/100 random
+single-copy genes, while single-copy EEF1A1 scores 61.4× — depth-excess *amplifies* the false positive.
+Cluster→consensus→realign is REFUTED on its own accept case — DAZ1 has **1 PSV column** of 5,096 at
+depth ≥ 10, and 16/20 of DAZ2's reads realign to the two copies as exact ties (median AS gap 0); the
+pile never splits. (A verifier's blow: EEF1A1 downsampled to DAZ1's 200 reads yields PSV columns = 1
+across three seeds — EEF1A1's χ(H)=7 substructure was a **depth confound**, not biology.) IsoCon step
+1 merges DAZ1/DAZ2 under K=0 and discards the one signal that separates DAZ2 — distinct junction coords.
+
+**What resolves DAZ's 2213 reads is copy-specific junction structure, not exonic PSVs** — the 139 tied
+reads *are* the K=0 wall and that number is honest (1 PSV column; DAZ2's own reads tie at AS gap 0).
+⚠ Correction: DAZ1/DAZ2 do NOT differ structurally — the recovered DAZ2 rep is **5′-truncated** (starts
+42899568 vs annotated 42879918, covering 70.1%; the 5′ gap has mean primary depth 0.17× and one intron-
+bearing read, below the gate), so the 16-vs-31 intron count is truncation, not divergence. DAZ2 is a
+genuine second copy: minimap2 `-x asm20` aligns DAZ2's span to DAZ1's as one alignment at **85.9%
+identity over 99.9% of DAZ1** (inverted, DAZ1 `-`/DAZ2 `+`); reps share 0 reads and 0 junctions.
+**BPY2 remains unrecoverable** from this RNA — its window yields DAZ; copy A has 77 alignments, all
+secondary, ~0 primaries (a data limit). Honest attack surface: the fix still *contains* `GATE_MIN_READS
+= 3` — it moves the constant to bound **read support for a locus** (what a support threshold means) and
+defines the locus by a graph property with two exactly-stated exclusions and no tunable constant.
+
+## containment_coverage_floor
+
+# The Containment "defect" is a coverage floor, not a prunable artifact — do NOT prune (2026-07-10)
+
+A 7-agent workflow characterised the `Containment`-flagged overlapping copies from RFPL and r4,
+proposed three independent discriminators, and adversarially tested each against the two tests that
+protect genuine adjacent paralogs. **Verdict: do not add a pruning rule.**
+
+What the flagged copies are: RFPL (`NC_086018.1:30203643-30381055`, 104 reads / 177 kb) overlapping
+transcripts share the exact junction `(30366265, 30368092)` so `prune_same_locus` clause (a) already
+collapses them — 5′-truncated isoforms of one sparsely expressed unit; the residual flag is a *pooling*
+artifact (707-read pooled consensus staggering against a 28-read fragment). r4 is a **convergent
+opposite-strand** overlap — a `+` lncRNA transcript interleaving into the introns of `−` FAM153B,
+overlapping only 8127 bp, **585 bp below** the antisense clause's bar (8127 < 0.5·17424 = 8712) — a
+low-coverage chimeric fragment, not a paralog.
+
+**Why no pruning rule works:** every candidate discriminator is defeated by counterexample **CAFAM0**,
+which sits in the *identical feature cell* as the protected genuine adjacent tandem paralogs (tests
+T1/T2): reciprocal overlap CAFAM0 0.27 vs T1/T2 **0.40** (CAFAM0 overlaps *less* — a containment
+threshold cannot cut between them); minority-copy reads CAFAM0 **28** vs T1/T2 9 (a "drop if reads < K"
+gate needs K ≤ 9 to keep the tests and K ≥ 29 to drop CAFAM0 — contradiction); same strand (antisense
+clause N/A); CAFAM0 passes the POA homology bar. The drop-target set straddles the protected pair on
+containment fraction: `0.168 < 0.273 < 0.40 < 0.466`. The one "principled" separator — overlap-window
+sequence identity — is degenerate: reference-aligned transcripts at shared coordinates are ~100%
+identical *by construction*, reducing to "collapse any pair overlapping ≥ 1 bp," which destroys genuine
+tandem/inverted-dup paralogs. (The tests survive it only by fabricating divergent random sequence at
+shared coordinates — biologically impossible for aligned reads.) This is a **region-level coverage
+floor** (104 reads / 177 kb), invisible to the pruner by design; the clean families are all
+span-**disjoint** (DAZ ~40 kb gap, GSTM, MAGEA, RBMY) so they never enter any overlap clause.
+
+**What was done instead — nothing in the pruner; the `catalog_overlaps` warning is now kind-accurate**
+(it previously told the `DuplicateLocus` "min_p == 1 masquerade" story for `Containment` pairs too):
+- **DuplicateLocus** (recip ≈ 1): one locus admitted twice; reads abstain at `min_p == 1` (not the K=0
+  wall).
+- **Containment** (recip ≪ 1): a fragment/readthrough nested in a real copy, **inflating the copy
+  count** on low-coverage regions — reported, not pruned, because it shares its feature cell with real
+  overlapping paralogs.
+
+**Honest risk:** residual `Containment` flags stay in the output and a reader could mistake them for
+real copies (the kind-accurate warning is the mitigation) — but the far larger risk is the opposite:
+any threshold tuned to catch these silently collapses genuine overlapping paralogs, breaks the
+adjacent-paralog tests, and introduces exactly the arbitrary threshold the advisor rejects. The genuine
+upstream cause (a multi-exon readthrough bridge pooling a 707-read consensus) lives in the readthrough
+filter / E_r oracle, not in copy-set pruning; if RFPL is ever a priority the lever is more reads or a
+multi-exon-readthrough discriminator, not a containment threshold.
+

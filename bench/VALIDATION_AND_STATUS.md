@@ -442,7 +442,7 @@ consequential structural claims (L1, default-off assignment) were additionally h
   check in the EASY (MAPQ>0) regime; the load-bearing evidence is the sim5x labeled-truth K-ladder.
 - **L12** — `asj_findings.md`: the ~23 distal full-switch (|ΔPSI|=1.0) calls tagged "chimera-not-excluded"
   (no RT-switch guard in the ASJ path); local splice-proximal core unaffected.
-- **L21** — `mosaic_discriminator/README.md`: disclosed that the GTF `gene_conversion "confirmed"`
+- **L21** — `COPY_ASSIGNMENT_AND_GATE.md`: disclosed that the GTF `gene_conversion "confirmed"`
   attribute + `[VG-MOSAIC]` report still label on recurrence alone (discriminator gates emission only).
 - **L22** — `input_formats_and_ties.md` operational caveats (temp-BAM size, `$TMPDIR`, single-threaded,
   SIGKILL leak) + `main.rs` now prints the temp-BAM size/path.
@@ -1634,3 +1634,276 @@ handled correctly — the significance gate **abstains** rather than calling on 
 filter targets the one recurrent biological artifact (A→I), and **substitution-only** columns make indel
 mis-alignment fall out as gaps. The measurement itself is the airtight answer: *alignment error does not drive
 assignment*, verified against held-out DNA truth.
+
+
+---
+
+## ADVERSARIAL REVIEW #4 — defense-readiness scorecard (2026-06-29)
+
+38-agent workflow (hostile examiner → 3-skeptic refute panel → synthesis). **82 findings: 28 confirmed, 52
+partial, 2 false alarms.** The most committee-facing artifact: a per-objective attainment scorecard plus the
+killer questions and the must-do list. (The scope note at the F3/H3 sections above — "held-out-column
+self-consistency, NOT accuracy" — is this review's #1 relabel demand.)
+
+### Overall verdict: **DEFENSIBLE-WITH-HONEST-REFRAMING**
+
+A real, defensible spine exists — a relational identifiability theory (O5 Thm4 bridge making the shipped min_p
+gate a load-bearing per-read certificate; MCC=χ(H); NP-hardness), a calibrated assign-or-abstain gate whose
+abstentions are provably the identifiability floor (99.7% δ=0 impossibility — the one place O2 survives hostile
+attack), a relational family definition with genuine source-orthogonal DNA corroboration (real SEDEF segdup map,
+verified to exist), and an exact controlled synthetic result (460/460, collapse 200/200). That is a **passing
+thesis — but ONLY if every headline is rescoped to what the artifacts support.** It is decisively NOT defensible
+*as currently headlined* (the central O2 claim, the O3 core count, the O4 "copies," the "threshold-free" O1
+claim, and the O5 capstone are all overclaimed, three resting on verifiably-false or missing artifacts). It is
+also NOT not-yet: the substance is delivered; the problem is labeling/presentation, fixable in low-effort wording
+passes. Hence the middle verdict.
+
+**The single biggest risk:** the central empirical claim — that on real gorilla RNA a read is assigned to its
+TRUE copy of origin more often than chance — has ZERO fully-independent confirmation in the repo; every real-data
+path loops through minimap2, the T_CORE/core_recip RNA catalog, or a simulation generated under the gate's own
+model. Survivable by honest triangulation framing. What makes it acute: the **slide decks** (the artifacts the
+committee actually watches) re-assert the exact refuted claim three times ("copies & columns from DNA, never from
+the RNA itself"), draw the de_max=0.05 ceiling as a line while captioning it "not a threshold," and call the
+tuned δ=0.005 knife-edge "derived, not tuned." One caught falsehood reframes every honest disclosure as damage
+control.
+
+### O1–O5 attainment
+
+| obj | verdict | load-bearing caveat |
+|---|---|---|
+| **O1** RNA family def (read-conflict graph) | ATTAINED_WITH_CAVEATS | "No similarity threshold / threshold-free" is the overclaim to retire. The sig path is default-OFF (`RUSTLE_CONFLICT_SIG=1`); every headline catalog used the THRESHOLDED de_tied predicate (δ=0.005 / de_max=0.05 / min_reads=3), a "knife-edge" (0.01 re-admits CNN2, 0.02 re-admits EEF1A1). Clean "component=family" is overridden by 4–5 downstream filters (Louvain split, same-strand, span≤win, min_copies, exon-sum homology asm20 id≥0.80/cov≥0.50) that exist because the raw cross-chrom graph over-merges via Alu/repeat bridges. External validation largely similarity-validates-similarity; only genuinely-independent witness = Ensembl Compara (12 human pairs, 33% confirm, precision-only — too thin). |
+| **O2** per-read assignment (sig gate) | ATTAINED_WITH_CAVEATS | NO non-circular real-data ACCURACY. Every real "accuracy" is unique-mapper agreement (doubly circular: truth IS minimap2's primary; only MAPQ>0 = 17.7% of reads = 36,551/206,186, blind to the 82% MAPQ-0 mass). Non-circular checks are synthetic (sim's generative model EQUALS the gate's inference model) or held-out self-consistency (F3 97.2% = self-CONSISTENCY, 2.2× over chance, not accuracy). Resolution-improvement bound ~0% on real GGO (ambiguous mass is K=0 δ=0). Assigned-rate reported 46.9% / 63.9% / 75.1% with the favorable 63.9% led. |
+| **O3** allele-specific junctions | MECHANISM_ONLY | Headline "genetic core ~77" NOT reproducible: sole citation `bench/P1_P4_RESULTS.md` is a DEAD file; committed verified TSV `high_confidence==1` is exactly the 120 transversion rows, not 77. Flagships PSMD2/DAXX both FAIL the project's own SOR filter (10.45, 7.08 vs ~2). All controls are post-hoc Python over a frozen TSV — the Rust engine ships calls with ZERO strand/SOR/chimera/microhomology guards. |
+| **O4** reference-absent / collapsed | MECHANISM_ONLY (weakest) | DETECT+FLAG only — ZERO placement, ZERO validated copies on real data. The parCN/DNA experiment that would convert candidate→copy produced NO output (no `final.bed`). "divergence⇒copy" is CIRCULAR (reads selected for ≥12 ref-divergent columns, consensus then "discovered" divergent); "<0.5%⇒het" is false at the MHC where all 4 "copies" live (hyperdivergent alleles differ 4–20%). Honest framing: "4 expressed divergent MHC haplotypes," really 3 weak + 1 borderline. |
+| **O5** theory (MCC=χ(H), bridge, facility-location) | ATTAINED_WITH_CAVEATS | Textbook core sound (monotone submodularity, (1−1/e) greedy, MCC=χ(H), NP-hardness — but elementary). Every CANZAR-aligned capstone is a conjecture: Thm7 "min_p = LP dual witness" has ZERO backing (hardcodes δ=1, asserts a tautology, reads no dual); Thm6 does NO rounding ((1−1/e) is plain greedy); MWCA weight = #observed-columns (copy-INDEPENDENT, so the non-1/k selling point is never exercised); machine-checks bounded K≤3. |
+
+**Circularity verdict: PARTIALLY_CIRCULAR.** Exactly ONE fully-independent confirmation exists — for family
+REALITY (SEDEF genome-self-alignment segdup map, 253,030 pairs, verified to exist; + Compara spot-check). For the
+CENTRAL claim (RNA reads carry copy identity): ZERO fully-independent confirmations. NON_CIRCULAR sources = SEDEF
+`final.bed` + Compara paralogy (both grouping-scoped, SEDEF has no null control). Everything else routes through
+minimap2 or the T_CORE=0.13 RNA catalog.
+
+### Killer questions (EXPOSED = conceded)
+
+- **[EXPOSED]** Show ONE real-gorilla number where a read is assigned to its TRUE copy of origin more than
+  chance, ground truth from OUTSIDE the pipeline. → *There is none; conceded — the #1 risk, confirmed in code.*
+- **[EXPOSED]** "82-family threshold-free" catalog was built WITH the hand-tuned de_tied window (δ=0.005,
+  min_reads raised 2→3 to clear CNN2); the sig path ships `sig:None`. → *Build-vs-run gap + half-overclaim,
+  conceded.*
+- **[HOLDS_WITH_CAVEAT]** Which number IS O2 — 46.9% (τ vote engine) / 63.9% (sig gate, headline) / 75.1%
+  (co-located subset, now yields 69.3%/1.1%)? → *63.9% reproduces exactly; but the doc never runs both engines on
+  one substrate, "gate-equivalent at every K" is sim-only, the 75.1% cite is stale.*
+- **[EXPOSED]** O3 ~77 rests on a dead file; verified TSV is 120 transversions; PSMD2/DAXX fail your own SOR. →
+  *Both conceded.*
+- **[EXPOSED]** O4 "4 MHC COPIES": protein BLAST confirms endogeneity not copy-vs-allele; the >3%⇒copy rule is
+  tautological (reads selected for divergence) and invalid at the MHC; parCN never ran. → *"copy" unsupported,
+  should be "candidate/haplotype."*
+- **[EXPOSED]** O5 capstone: integrality "certificate" hardcodes δ=1 and asserts 0.001<1.0; no LP is rounded;
+  MWCA weight is copy-independent. → *Textbook core sound; every Canzar-aligned claim conceded not-yet-established.*
+- **[HOLDS_WITH_CAVEAT]** Four corroboration headlines (85%/73%/30.5%/97.2%) have no committed artifact — numbers
+  live only in prose; the crosstab's hardcoded `final.bed` path is broken from a clean checkout. → *Reproducibility
+  gap largely conceded; the real SEDEF-on-gorilla run is genuine credit.*
+
+### Must-do before defense
+
+1. Relabel every F3 (97.2%) / H3 (80%) "accuracy" → "held-out confirmation / self-consistency / enrichment over
+   1/K chance"; remove "first non-circular real-data O2 ACCURACY" from VALIDATION and `make_slides.py`.
+2. Strike unique-mapper agreement 99.8%/99.9% from every headline table, or annotate inline "MAPQ>0 only = 17.7%
+   of reads, circular, NOT accuracy."
+3. Recompute-and-COMMIT the O3 genetic-core artifact, or retract "~77" (dead citation; committed TSV = 120
+   transversion rows).
+4. Reframe O4 "4 MHC paralog COPIES" → "4 expressed divergent MHC haplotypes/candidates (copy-vs-allele pending
+   DNA)"; same for "15 dispersed" and "905 collapsed."
+5. Scope O1 "threshold-free" honestly ("no ABSOLUTE-similarity cutoff, relational tie, with a tuned tie-window")
+   and stop attributing it to the shipped catalog.
+6. Lead the defense with the honest framing: NO single external real-data true-origin accuracy exists; support is
+   (a) planted-label sim, (b) held-out self-consistency > 1/K, (c) partly-circular DNA/annotation — multiple
+   partial witnesses converge, no single oracle.
+
+**What the review missed:** the three `bench/` slide decks (the actual defense artifacts) were never audited —
+they assert on-slide the exact falsehoods the CRITICAL findings refuted (hardcoded 460/460, 97.2% literals
+decoupled from artifacts; "thresholds DERIVED not tuned"; no limitations slide) and contradict each other and the
+project's own OCLN/SEPTIN7 counterexample. Also unexamined: the two-engine build-vs-run question (`psv_linkage`
+τ=6.9 = 46.9% is wired into main.rs/pipeline.rs, while the 63.9% sig gate is default only in the standalone
+`copy_assign` binary — the headline may not be the engine the shipped `rustle` runs), plus recently-shipped
+production features (`--posterior`, `RUSTLE_INTRON_PSV`, intron-retention rescue) that fell outside the window.
+
+
+---
+
+## CROSS-MODAL VALIDATION — Liftoff head-to-head + SEDEF SD98 (2026-07-08)
+
+Substrate: gorilla GGO HiFi Iso-Seq → `GGO_mm.bam`, genome `GGO.fasta`. Catalog `gw_family_catalog
+--homology-primary --min-identity 0.98 --enumerate-copies` = **211 families / 520 copies** (39 cross-chromosome).
+Two orthogonal, published witnesses corroborate the RNA E_r family catalog. (Reproduce:
+`python bench/sim_liftoff_headtohead.py`; `python bench/crossmodal_validate.py rna98`.)
+
+### Axis A — vs Liftoff `-copies` (DNA + annotation), head-to-head
+
+`bench/sim_liftoff_headtohead.py`: plant 7 copies of ONE gene at 0–30% divergence, give BOTH tools the same gene
+model, threshold 0.85.
+
+| per-copy divergence | copy identity | Liftoff `-sc 0.85` | exon-sum + minimap2 (`-x splice -p 0.01`) |
+|---|---|---|---|
+| 0% | ~1.00 | ✅ | ✅ |
+| 5% | ~0.96 | ✅ | ✅ |
+| 10% | ~0.90 | ❌ | ✅ |
+| 15% | ~0.85 | ❌ | ✅ |
+| 20–30% | ≤0.80 | ❌ | ❌ |
+| **total found** | | **2 / 7** | **4 / 7** |
+
+Exon-sum + minimap2 finds MORE copies and reaches further into divergence (down to ~0.84 identity), recovering
+the 90% and 85% copies Liftoff missed *even though they clear Liftoff's own 0.85 threshold*. Liftoff default
+`-sc 1.0` reports only 100%-identical copies; on real data `-sc 0.90` found **0** copies of the ~19-copy GSTM
+cluster. `asm20`/`asm10` presets found 0 — confirming `-x splice` is the correct preset for a spliced query vs
+genomic copies. Requisite: `-p 0.01` (the default `-x splice -p` suppresses divergent secondaries). Conclusion:
+the exon-sum method matches proven Liftoff on recent copies and **extends past it** into the divergent regime.
+
+### Axis B — vs SEDEF SD98 (DNA segdups), circularity-free RNA-vs-DNA cross-check
+
+`final.bed` filtered to gorilla-vs-gorilla pairs ≥98% identity = **5,774 SD98 segdups**; a RNA-98 family is
+DNA-confirmed if ≥1 copy overlaps a SD98 interval. **Result: 131 / 211 RNA-98 families (62.1%) are DNA-confirmed
+by SEDEF SD98.** The 80 RNA-only families are either more divergent than the DNA ≥98% regime, or expressed copies
+SEDEF's ≥1 kb/≥98% criterion did not pair. Independent modalities, same 98% threshold.
+
+**What RNA uniquely adds:** divergent families down to ~0.60 nt/protein identity that neither Liftoff (`-sc 1.0` =
+identical) nor SEDEF SD98 (≥98%) can reach (e.g. the 30-copy KRAB-ZNF GWFAM8 at 0.62–0.74); *expression* (which
+genomic copies are transcribed); and reference-free construction (no annotation bias). (The Axis C
+famCN-vs-assembly cross-check is superseded by `PARCN_VALIDATION.md`.)
+
+
+---
+
+## GW CATALOG FALSE-POSITIVE AUDIT + `--refine` DEFAULT (2026-07-11, binary f379800)
+
+First WHOLE-catalog FP audit (`gw_artifact_audit.py` + 23-agent adversarial verification: extract copy sequences,
+align pairwise, cross-check annotation). The earlier `FAMILY_DEF.md` sampled 30 loci and excluded the
+large clusters that time out per-region — exactly where the artifacts live. **Note: these refine-era counts
+(124→86, later 86→100) are the current genome-wide family-count figures and supersede loose references elsewhere
+in this doc to "82 same-chrom families" as the catalog size; the "106 families / 206,186 reads" O2-recompute
+figure is a distinct object — read assignment on the conflict catalog — and is not a family count.**
+
+**Raw catalog = 124 families / 320 copies.** Classic artifacts are GONE (0 cross-family chimeras, 0 giant
+single-exon readthroughs, 0 giant-span >500 kb runaways, 0 duplicate families; 2 benign intra-overlaps). But the
+annotation cross-check flagged **23/124 families (19%) with a large-span copy (50–490 kb) at very low read support
+(2–9 reads)** — the mis-assembly signature the 500 kb structural threshold misses.
+
+Adversarial verification of the 23: **11 ARTIFACT_WHOLE_FAMILY** (GWFAM1,8,25,39,41,47,79,85,87,94,105), 6 MIXED
+(real family + artifact copies), 6 REAL (false alarm). **Two FP mechanisms in the raw E_c oracle:**
+1. **Large-gene intra-gene mis-chaining** — one big gene with giant introns split into "copies" that are
+   non-overlapping fragments of the SAME gene with ZERO mutual homology (asm20 → 0 alignments): PBX1 (292 kb),
+   EBF1 (403 kb), CTNNA2 (1.2 Mb), HS6ST2 (333 kb). Multi-exon, so R4's single-exon filter misses them.
+2. **Repeat / intronic-segdup bridge between UNRELATED genes** — a shared small intronic repeat fuses two
+   single-copy genes: NNT↔GHR (8.7 kb repeat, 22% cov), ADAMTSL1↔CCDC171, GARRE1↔ZNF540 (13%), XNDC1N↔FAM168A
+   (7%), + GWFAM47/87/94.
+
+### The fix — homology-gated refinement `--refine`, now the DEFAULT
+
+Every whole-family FP fails the gate by construction: copies must be mutually homologous (asm20 id≥0.80,
+cov-of-shorter≥0.50) across ≥2 disjoint loci. Gene-splits give 0 alignments ⟹ removed; repeat-bridges share
+7–22% « 50% ⟹ removed; MIXED artifact copies trimmed, real core kept. **Measured `--refine`: 124/320 → 86/192**
+(38 families, 128 copies dropped); **10 of 11 whole-family FPs removed**; refined structural audit clean; large-
+span/low-read copies fall 28 → 10 (survivors are genuine segdup paralogs, e.g. POTE). The one "surviving FP"
+(GWFAM94→64) is a verifier over-call — its copies align 96.6% id over 65% of the shorter (a real homologous pair,
+one copy over-extended), so refine correctly keeps it. **`--refine` is now DEFAULT** (`--no-refine` opts out).
+`copy_assign` applies the SAME gate by default (PBX1 region → 0 gene-split dropped; `--no-refine` → 1 raw FP;
+DAZ → 2 kept incl. 5′-truncated DAZ2; GSTM `--homology-primary` → 3 kept), so per-region and genome-wide define a
+family identically.
+
+**⚠ The assembly-level mis-chain filter (`retain_non_mischain`, drops giant-intron >50 kb transcripts with
+<3 supporting junction reads) removes 467 spurious splices genome-wide but CANNOT catch the gene-splits alone** —
+PBX1's 115 kb spurious intron is carried by 6 reads (above the gate), intrinsically indistinguishable from a real
+low-expression large-gene intron by any within-transcript signal. The discriminator is that the copy shares no
+homology with its supposed paralog — only `--refine` can see that. So well-supported gene-split removal is a
+family-level homology problem, not an assembler problem.
+
+
+---
+
+## FALSE NEGATIVES — refine-by-default recall audit (2026-07-11, binary c394bfd)
+
+Companion to the FP audit above. The six flagship testis families all recover exactly under refine-by-default
+`copy_assign`, both single-copy controls stay silent, and refine even cleaned an E_r over-call at SRGAP2 (3 → 0):
+
+| GSTM | MAGEA | DAZ | RBMY | TSPY | PCDHB | EEF1A1 | SRGAP2 |
+|---|---|---|---|---|---|---|---|
+| 3 | 2 | 2 | 6 | 5 | 5 | 0 | 0 |
+
+**FN classes (edges, not core):** (1) *tissue silence* — the largest class and CORRECT: ~24 of 30 sampled named
+families (HOX, TAS2R, KRT, DEFB…) carry 0 reads in testis; a multi-tissue panel recovers them. (2) *coverage
+floor* — expressed but below `GATE_MIN_READS`(3)/`locus_support`: RBMY proximal 2/6 (77 reads over 1 Mb), TSPY
+6th copy c276 (0 reads this sample), CDY/HSFY (0–10 reads); the λ-floor, more depth fixes. (3) *default-mode
+"globin problem"* — copies each mapping uniquely (high MAPQ) form ZERO conflict edges, so GSTM/MAGEA/RFPL → 0
+under default E_c, recovered only with `--homology-primary` (open question: make E_r default now that refine
+cleans its domain-bridges). (5) *under-merging* — GBP (6→4+2), TCEAL (6→3+2) understate copy number. (6) O4
+reference-absent — flagged, not resolved (needs DNA). (7) *K=0 frontier* — TSPY 4/6 copies 100% identical, reads
+tie, pipeline correctly abstains (see TSPY simulation below).
+
+**⭐ Refine recall cost (measured): 13 real families dropped.** Of the 42 families refine drops genome-wide
+(124→86), a 42-agent adversarial classification found **29 correctly dropped** (repeat-bridges + gene-splits) and
+**13 real paralog families wrongly lost** (~10% of the raw catalog), in three causes:
+
+| cause | n | examples | fixable? |
+|---|---|---|---|
+| Partial transcript models → exon-sum cov <0.50 despite ~100% id | 7 | EOLA1/EOLA2 (99.96% id, 42% cov), ZNF74-like (99.7%, 24%), RABGEF1, α2-macroglobulin, FRG1-like, GRAP | **yes** — genomic-span or `max(exon-sum, genomic)` coverage |
+| Genuine divergence below the identity floor | 5 | ARMCX1/6 (65% aa, 0 nt aln), IFITM, FRG1-like, KRAB-C2H2 ZNF (ZNF677/761/665) | partly — real P/R tradeoff; `--protein-tail` recovers coding ones |
+| Family-split edge case — near-identical pair lost when a 3rd bridging copy present | ~1–2 | ARHGAP23-like (99.2%, 99.9% cov), PDPK1/PDPK2 (99.6%, 57%) | **yes** — refine component/`distinct_locus_reps` bug |
+
+**⭐ FIXED — a genomic-span homology tier** now runs alongside the exon-sum core in `refine_families_exon_sum`
+(a real segdup covers ≥50% of its GENOMIC extent even when its partial transcript models fail the exon-sum floor,
+while a repeat-bridge covers <50% of genomic span regardless of the repeat's identity). Measured genome-wide:
+**refined families 86 → 100 (+14), 8 of the 13 measured FNs recovered** (coverage + split classes: EOLA1/2,
+ZNF74, ARHGAP23, PDPK1, α2M, FRG1…), structural audit stays CLEAN, all spot-checked FP gene-splits/bridges (PBX1,
+EBF1, CTNNA2, HS6ST2, NNT-GHR, GARRE1-ZNF540) stay ABSENT — no FP regression. The remaining **5 FNs are the
+divergence class** (recoverable only with `--protein-tail` or a lower `--min-identity`, which risks FPs). **Net
+honest recall cost of the current gate ≈ 5 genuinely-divergent paralog families genome-wide.** Closed FN classes:
+inverted duplicates (MAGEA 0→2 via chrom-only `colocated_families`), DAZ2 (0→2 via `locus_support`). The dominant
+FN overall is NOT refine but tissue silence and the coverage floor — both resolved by more data, not more method.
+
+
+---
+
+## FLAGSHIP: TSPY SIMULATION — the 0/5 tie-invariance is HONEST, not a miss (2026-07-11)
+
+The 6-copy TSPY tandem array (gorilla chrY `NC_073248.2:34731504-34847734`, copies LOC129530275/276/277/278/279/
+280). The real-data certificate reports TSPY **0/5 copies tie-break-invariant**. A ground-truth simulation (reads
+with known copy-of-origin) settles whether that is honest or a method failure — and proves it is an
+**information-theoretic K=0 wall.**
+
+**The copies are literally identical.** All-vs-all `minimap2 asm5`: c275=c277=c278=c279 are **100.000% identical
+(2782/2782 bp, byte-identical over their entire length)**; c280 differs by 1 bp (99.964%); c276 by ~6 bp
+(99.782%). A read from one identical copy carries ZERO distinguishing information from another — no method can
+separate them.
+
+**Ground-truth sim (`tspy_sim.py`, 40 HiFi reads/copy at 0.3% error, tagged with true origin, `minimap2
+-ax splice:hq -N 50`, then `copy_assign`):**
+
+| group | minimap2 primaries | copy_assign outcome |
+|---|---|---|
+| 5 near-identical copies (200 reads) | spread arbitrarily across identical positions, all MAPQ 0 | **100% tied / abstain, 0 misassignment** |
+| c276 (40 reads, ~6 bp private) | maps uniquely (MAPQ > 0) | **100% resolved to c276** |
+
+The certificate flags exactly this — **1/6 invariant = c276** (anchored 40, `tie_invariant=TRUE`); the five
+identical copies are `anchored=0, tie=false`. The pipeline does not fabricate assignments for indistinguishable
+copies and does resolve the one carrying real divergence. The `0/5` on real data is the certificate correctly
+reporting that the *expressed* TSPY copies are the identical ones — c276, the resolvable copy, had 0 reads in the
+real sample.
+
+**Methodological note (had to fix first):** the annotation assigns these identical copies INCONSISTENT exon
+boundaries (spliced lengths 1147/1140/1108). A naive per-copy-annotation sim injects fake copy-specific
+*junctions* and makes identical copies look resolvable. The faithful sim applies ONE shared splice structure to
+every copy's genomic sequence, so identical copies yield byte-identical transcripts.
+
+**Injected exonic SNVs do NOT rescue it** (`psv_cols=1` in both arms, still 100% tied): when reads spread
+arbitrarily across identical positions, `copy_assign` builds each position's consensus from a MIX of all copies,
+averaging the injected SNVs away. Only divergence large enough to make reads map UNIQUELY (c276's ~6 bp) escapes
+the mixing — which is exactly why real DAZ2 was recovered by copy-specific *junctions* (structural,
+position-anchored), not exonic PSVs, and why exonically-identical tandem arrays are the genuine K=0 wall.
+
+**A better aligner does not help (measured, arm A):** minimap2 `splice:hq`, minimap2 sensitive (`-k11 -w5 -p0.1
+-N200`), and **winnowmap `splice:hq`** (the repeat-specialist) all place c275's reads arbitrarily and resolve
+only c276 — **40/240 uniquely-mappable, 1/6 invariant, byte-for-byte identical**. Winnowmap's advantage is
+mapping to the right region and MAPQ calibration in repeats, not manufacturing sequence differences between
+100%-identical copies. No flank lever either: the whole ~8 kb tandem unit is 99.005% identical. Conclusion: TSPY
+`0/5` is honest and correct — the correct answer for 100%-identical copies is to abstain, which is what the
+certificate reports.

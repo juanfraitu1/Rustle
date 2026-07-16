@@ -169,3 +169,24 @@ Honest limits: it recovers **7/29 dead-family members** (the ID_22/BAGE2 and ID_
 a residual the assembly/`parcn` side must close. The reported copies are **copy-NUMBER only** (K=0 →
 per-read-unresolvable → DNA), never per-read resolutions. Net effect: **every expressed Soto family is now
 either resolved per-read or flagged as a K=0 copy-number family → DNA; nothing expressed is silently dropped.**
+
+## Specificity — we do not over-call (Soto concordance)
+
+Complements the recovery panels above with the reverse test: run our RNA method (`copy_assign …
+--min-copies 2 --homology-primary --lambda-file`, foreground/serial via `soto_specificity.sh`; on
+`GGO_mm.bam` / `GGO.fasta`, annotation `GGO_genomic.gff`, SEDEF `final.bed`) at the gorilla ortholog locus of
+each of **Soto's human-specific expansions**. These families are human-specific *by construction* (Kamilah
+gorilla is the outgroup denominator, and any family also duplicated in apes is excluded), so they should be
+single-copy or absent in gorilla.
+
+**Result: 13/13 concordant.** For every human-specific family (GPR89B/GPRIN2B/DUSP22B/FRMPD2B/CD8B2/SRGAP2B-C-D/
+ARHGAP11B/HYDIN2/ROCK1P1/FAM72B-C-D, plus NPY4R2·CFC1B·NOTCH2NL absent), our RNA method returns **0 multi-copy
+families** at the gorilla ortholog, and the locus **is expressed** (real single-copy call, not "no data" — e.g.
+ROCK1 579 reads, FRMPD2 363, ARHGAP11A 310, DUSP22 277, SRGAP2 248, HYDIN 187, GPR89A 70). The method does not
+fabricate Soto's human-specific expansions in gorilla — this is the specificity side of the two-sided concordance
+(the recovery side being the ancestral SD98 families DAZ/RBMY/TSPY resolved at annotated CN).
+
+The overlap is **not circular**: Soto's copies/CN come from DNA read-depth on a T2T assembly, ours from Iso-Seq
+through the PSV gate — no shared aligner, no shared silver standard. (Full per-family recovery table and
+SD98/famCN detail live in `DEFINITIONS_FORMAL.md`.) Figure: `bench/slides/soto_concordance.png`
+(`bench/make_soto_concordance.py`).

@@ -5,7 +5,7 @@ Two figures for the "how does it work / does it work" conversation:
 - `bench/slides/objectives_flow.png` (`make_objectives_flow.py`) — the **flow**: reads → variation graph
   → result, one row per objective, real numbers.
 - `bench/slides/gstm_real_copies.png` (`make_gstm_copies_fig.py`) — the **raw evidence** behind O2: the
-  2673 GSTM reads sorting into 3 copy-blocks by their PSV alleles (see `GSTM_REAL_COPIES.md`).
+  2673 GSTM reads sorting into 3 copy-blocks by their PSV alleles (see `PANELS_AND_NOTES.md`).
 
 ## What each row shows (and how to reproduce)
 

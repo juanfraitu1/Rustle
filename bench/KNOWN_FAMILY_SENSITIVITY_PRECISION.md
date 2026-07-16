@@ -46,3 +46,41 @@ not silent; controls → 0 families.)*
 is recovered; where per-read resolution drops it is for a *named* reason (silent / aligner-capped /
 exonically identical), and the tool says so rather than guessing. That is the opposite of "only works
 on easy cases."
+
+## RFPL — the honest failure (flagged, not silent)
+
+Deferred from the sweep table above; folded from `KNOWN_FAMILY_REGRESSION.md` (commit `b55a30b`,
+`copy_assign --min-copies 2 --skip-poa-diagnostic --homology-primary --lambda-file <λ=58>` over
+`GGO_mm.bam` vs `GGO.fasta`, foreground/serial).
+
+RFPL2(−) / RFPL3(+) is a low-expression inverted pair in a gene desert (`NC_086018.1:30200000-30390000`,
+expected 2). Current code returns **two families, four copies — three of them artifacts**, so precision
+is 1/4 and the annotated RFPL2 is missed:
+
+| copy | span | reads | overlaps | status |
+|---|---|---|---|---|
+| CAFAM0 | `30286681-30333257` | 707 | SLC5A4 tail only (~860 bp) | **artifact** — 46 kb intergenic readthrough, no RFPL gene |
+| CAFAM0 | `30320520-30368310` | 28 | none | **artifact** — 48 kb intergenic, nested in prev (recip 0.27) |
+| CAFAM1 | `30368559-30376053` | 73 | RFPL3 (exact) | **real** — the only genuine paralog |
+| CAFAM1 | `30374795-30385865` | 6 | RFPL3 tail + desert | **artifact** — nested 3′ fragment (recip 0.11) |
+
+The read-support distribution is inverted (the 707-read copy is the intergenic artifact; genuine RFPL3
+carries 73), so the 4-copy count is "correct" for the wrong reason. Crucially **the tool warns**
+(`WARNING: 2 copy pair(s) share genomic sequence … Containment recip 0.27 / 0.11`) — this does not pass
+silently. It is the documented **coverage-floor artifact**: the R4 readthrough rule (single-exon
+transcript engulfing ≥5 junctions) does not fire because an intergenic desert has no junctions to
+engulf, and `Containment` is reported-not-pruned because CAFAM0 shares its feature-cell with real
+overlapping paralogs elsewhere (pruning it would kill true tandem copies — see
+[CONTAINMENT_COVERAGE_FLOOR](DENOVO_PIPELINE.md)). RFPL is the one known precision limitation,
+and it is surfaced by a runtime warning rather than a silent wrong answer.
+
+## Single-copy controls — EEF1A1 / SRGAP2 stay silent (expect 0)
+
+| control | region | expected | called | why |
+|---|---|---|---|---|
+| EEF1A1 | `NC_073229.2:97600000-97620000` | 0 | **0** | single-copy, 0 E_r edges — the old χ(H)=7 depth confound (3610 reads) does not over-call under `--homology-primary` |
+| SRGAP2 | `NC_073224.2:50290000-50560000` | 0 | **0** | single-copy, 0 E_r edges — no homologous second locus |
+
+Negative controls do **not** over-call: both return 0 families under `--homology-primary` (0 E_r edges).
+Under refine-by-default (`873d2ec`) refine additionally cleaned an E_r over-call at SRGAP2 (`3 → 0`),
+with no refine-induced false negative on the flagships.

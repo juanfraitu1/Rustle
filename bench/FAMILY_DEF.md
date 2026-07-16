@@ -1186,7 +1186,7 @@ Artifacts: `family_def_artifact_filter.py` (filter + self-test) · `make_dna_fam
 
 ## family_definition_formal
 
-> **⚠ Superseded as the O1 family *definition* (2026-06-30) — see `bench/family_definition_formal.md`.** The read-conflict graph $E_c$ described below is an **ambiguity** oracle (an edge = a read that *cannot resolve* two loci), not a **homology** oracle: a multi-copy family whose copies are divergent enough to each map uniquely produces no de-tie and vanishes (measured: **~30% of multi-copy homology families / ~1/4 of copies** silently dropped). The canonical RNA family is now the **transcript-homology component $E_r$** (`bench/family_definition_formal.md`), the fourth homology oracle ($E_a$—$E_b$—$E_r$—$E_p$), which *includes* the read-resolvable copies. **Everything below is correct and retained as the within-family O2 (copy-assignment) structure**: $E_c$ / `MCC=χ(H)` / the SUN 3-tier ladder are demoted to *how copies are assigned inside a fixed $E_r$ family*, with $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}$. Results ledger: `bench/RNA_FAMILY_HOMOLOGY_REFRAME.md`.
+> **⚠ Superseded as the O1 family *definition* (2026-06-30) — see `bench/DEFINITIONS_FORMAL.md`.** The read-conflict graph $E_c$ described below is an **ambiguity** oracle (an edge = a read that *cannot resolve* two loci), not a **homology** oracle: a multi-copy family whose copies are divergent enough to each map uniquely produces no de-tie and vanishes (measured: **~30% of multi-copy homology families / ~1/4 of copies** silently dropped). The canonical RNA family is now the **transcript-homology component $E_r$** (`bench/DEFINITIONS_FORMAL.md`), the fourth homology oracle ($E_a$—$E_b$—$E_r$—$E_p$), which *includes* the read-resolvable copies. **Everything below is correct and retained as the within-family O2 (copy-assignment) structure**: $E_c$ / `MCC=χ(H)` / the SUN 3-tier ladder are demoted to *how copies are assigned inside a fixed $E_r$ family*, with $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}$. Results ledger: `bench/DEFINITIONS_FORMAL.md`.
 
 # A formal definition of a multi-copy gene family at the RNA level — and its proof on IsoSeq reads
 
@@ -1708,7 +1708,7 @@ full external orthology ground truth across all 17 candidates (incl. the de-novo
 **Two relations on expressed loci — read-confusability and backbone-homology — and the family is where both hold.**
 
 This note states the definition in closed form. The empirical record (panel ledger, genome-wide run, survey of
-rejected alternatives) is in `family_definition_formal.md`; this note is the formal object and is self-contained
+rejected alternatives) is in `DEFINITIONS_FORMAL.md`; this note is the formal object and is self-contained
 given one named input (the locus set, §1).
 
 ---
@@ -1863,7 +1863,7 @@ hold-out (not a rejection) for sparse ones.
 
 ---
 
-## 7. Evidence (summary; full record and the rejected-alternatives survey in `family_definition_formal.md`)
+## 7. Evidence (summary; full record and the rejected-alternatives survey in `DEFINITIONS_FORMAL.md`)
 
 - **Panel.** 17 hand-labelled IsoSeq candidates: **TP = 7, TN = 10, FP = 0, FN = 0**.
 - **$\sim_B$ is the decisive lever.** Backbone coverage separates repeat/retro bridges (one-sided coverage $\le 0.1$)
@@ -2537,4 +2537,223 @@ enough depth to clear the ≥3-read PSV test) is the cheap speed-up.
 
 Artifacts: `psv_graph_genomewide.py` · `psv_graph_verify.py` · `psv_graph_exonunion.py` ·
 `psv_graph_combine.py` · `psv_graph_genomewide.png` · `psv_graph_exonunion_all.json`.
+
+## divergence_floor — absolute reciprocal-identity floor on the E_r edge rule (SHIPPED, default-ON)
+
+An **absolute reciprocal-identity divergence floor** on the cross-gene edge rule of the RNA-only
+family definition (`bench/family_rna_refine.py`), **DEFAULT-ON with opt-out**. It scopes the
+catalog to families whose members are `>= FLOOR` reciprocal whole-transcript identity, at high
+precision (single-exon domain-shares and divergent paralogs excluded). Soto's SD98 move (scope to
+the clean near-identical regime) with an opt-out that recovers the ambitious divergent-inclusive
+catalog **byte-identically**. **FAMILY_DEF is the sole home of this floor.**
+
+**Default FLOOR = 0.80** (`MIN_FAMILY_IDENTITY = 0.80`). Opt out with `--no-divergence-floor` /
+`--min-family-identity=0` / `RUSTLE_NO_DIVERGENCE_FLOOR=1`; set a different floor with
+`--min-family-identity=X` (e.g. `0.85`).
+
+### The metric
+
+```
+recip_id_best = matches_best / max(len_a, len_b)
+              = min over the two members of (aligned-AND-matching bases / member length)
+```
+
+Computed from the **SAME** spliced-exon minimap2 alignment (`-cx asm20`) that defines `aln_frac` /
+`core_recip` — only the residue-match count and member lengths are added (`ri_build_recip_id.py` →
+`ri_sharedlen_recip_id.tsv`, `aln_len` reproduces the universal cache byte-for-byte). **RNA-only,
+NOT DNA.** It works because it is RECIPROCAL (min over both members): a domain-share where a small
+gene sits inside one big exon of a large gene scores high on the small side but LOW on the large
+side (`matches / len_large`), so the min cuts it. Shared-block identity or `aln_frac` alone do NOT
+work — domain-shares share one exon at ~95%.
+
+Class medians on the 1457 core+aln-passing edges (`bench/divergence_floor.tsv`): TP real cDNA
+paralog n=375 median **0.615**; genuine over-merge n=619 **0.295**; truthbar divergent paralog
+n=463 **0.320**. The reciprocal length penalty separates near-identical real paralogs (0.615) from
+divergent/domain-share over-merges (~0.30) by design.
+
+### P/R-vs-floor curve (diploid gold oracle; `PYTHONHASHSEED=0`, gamma 0.20, seed 0)
+
+`R_oracle` = diploid multi-copy oracle genes recovered / 57; `P_dedup` = 1 − distinct-FP /
+oracle-mapped; `E_p` = protein-family block purity; domShare = # of 4 named domain-shares excluded.
+
+| floor | nFam | R_oracle | P_task / P_dedup | E_p | distinctFP | domShare excl | md5 |
+|-------|------|----------|------------------|-----|-----------|---------------|-----|
+| **off** | 573 | **0.877 (50/57)** | 0.896 / 0.917 | 0.892 | 4 | 0/4 | **dca64cbd** (opt-out) |
+| 0.70 | 335 | 0.596 (34/57) | 0.879 / 0.909 | 0.961 | 3 | 3/4 | 0c433468 |
+| 0.75 | 320 | 0.579 (33/57) | 0.909 / 0.939 | 0.966 | 2 | 3/4 | 4c8c88ee |
+| **0.80** ⭐ | **307** | **0.561 (32/57)** | **0.903 / 0.936** | **0.967** | **2** | **4/4** | **e84dc2bc** (default) |
+| 0.85 | 293 | 0.509 (29/57) | 0.893 / 0.929 | 0.976 | 2 | 4/4 | b27512ce |
+| 0.90 | 284 | 0.491 (28/57) | 0.926 / 0.963 | 0.979 | 1 | 4/4 | 0b9bf57b |
+
+`floor=off` reproduces the divergent-inclusive default catalog **dca64cbd BYTE-IDENTICAL** —
+the floored build path is validated and the opt-out guaranteed exact.
+
+### Domain-share exclusion + FP composition
+
+The 4 named single-exon domain-shares: MOV10+RHOC 0.111, RBBP4+SYNC 0.350, DEDD+NIT1 0.533 (all
+excluded at every floor), and **RHD+SDHD 0.785 = min(0.785,0.879)** — the tightest, excluded only
+at **floor >= 0.80**. This is exactly why 0.80 is the minimum knee (0.75 gives 3/4). Verified at
+the catalog level (each gene absent from the multi-copy catalog), not merely a direct-edge cut.
+
+**FP residual is clean and STABLE from 0.80 on** — at 0.80 and 0.85 the distinct diploid-oracle FP
+= **2**: (1) `LOC129529978 + LOC129529986` = the irreducible **MAGE-X** DNA-only array over-size
+floor (no RNA metric removes it), and (2) `GSTM2 + LOC101129940` = one **GST protein-domain hub**.
+E_p-impure blocks drop **79 (off) → 10 (0.80) → 7 (0.85)**. At 0.90 the GST hub is also cut
+(distinctFP → 1, MAGE only) but at a cost of 4 more oracle genes.
+
+### Chosen default = 0.80 (dominates 0.85)
+
+0.80 is the empirically-best knee: identical distinct-FP residual (2, same two blocks), identical
+4/4 domain-share exclusion, retains **3 MORE** oracle genes (32 vs 29, +10% relative recall) at
+essentially equal precision (E_p 0.967 vs 0.976), and is the minimum floor excluding RHD+SDHD
+(0.785). User's suggested **0.85 is validated** (4/4 out, distinctFP 2, E_p 0.976) — a defensible
+marginally-conservative alternative but buys no distinct-FP reduction for a 3-gene recall cost.
+Precision improves vs floor-off on the load-bearing axes: E_p 0.892 → **0.967**, P_dedup 0.917 →
+**0.936**, distinctFP 4 → **2** (the task-formula P is denominator-noisy — `oracle_mapped` shrinks
+48 → 31 with the catalog — so E_p / distinct-FP are the load-bearing precision signals).
+
+**Scoped claim:** *Gene families >= 80% reciprocal whole-transcript identity: P_dedup = 0.936 (E_p
+0.967; distinct diploid-oracle FP = 2 = irreducible MAGE-X DNA over-size floor + one GST domain
+hub; all 4 named domain-shares excluded), R_oracle = 0.561 (32/57).*
+
+### Opt-out (byte-identical) and honesty
+
+`--no-divergence-floor` / `--min-family-identity=0` / `RUSTLE_NO_DIVERGENCE_FLOOR=1` all recover
+the divergent-inclusive catalog **dca64cbd byte-identical** (573 families, R_oracle 0.877).
+Mechanism: when floor <= 0 the per-edge `recip_ok()` returns `True` unconditionally and the
+reciprocal-identity cache is never loaded — the pre-floor code path is bit-for-bit unchanged. The
+floor **composes** with the other gates (`--no-repeat-gate`, `--no-split-recombinants`,
+`--no-repeat-bridge-gate`, `--high-precision` gamma 0.20 → 0.40), each ablation touching only its
+own gate. Honest scoping: making the floor default DROPS R_oracle 0.877 → 0.561 (18 lost oracle
+genes) BY DESIGN (excludes divergent + partial/length-mismatched homologs, SD98-style); the
+ambitious catalog is one flag away. RNA-only guard hard-asserts the floor feature set is exactly
+`{recip_id_best}`, disjoint from any DNA/protein/genome/soft-mask column.
+
+Files: `bench/family_rna_refine.py` (floored edge rule) · `bench/divergence_floor.py` (sweep) ·
+`bench/divergence_floor.tsv` (P/R curve) · `bench/ri_build_recip_id.py` +
+`bench/ri_sharedlen_recip_id.tsv` (reciprocal-identity cache) · `bench/test_family_rna_refine.py`
+(6 tests: opt-out byte-identity, domain-share exclusion, scoped precision improves, env==flag,
+composes, determinism).
+
+## multi_repeat_bridge_gate — 3rd VG-native family-refinement gate (SHIPPED, default-ON)
+
+The **multi-repeat-bridge conjunction gate**, WIRED as the third VG-native gate in
+`bench/family_rna_refine.py`, **DEFAULT-ON at the conservative T=8/C=2**, opt-out
+`--no-repeat-bridge-gate` / `RUSTLE_NO_REPEAT_BRIDGE_GATE=1`. It removes the DISCONNECTED
+repeat-bridge over-merge class — the dominant residual (34/83 E_p-impure blocks, 41%) where the
+pairwise E_r oracle merged loci sharing **no full exon** at id ≥ 0.70 (cross-component best-exon-id
+median 0.586 = a sub-exonic Alu/repeat bridge, not real transcript homology).
+
+### The gate
+
+```
+CUT family iff
+  (NO full shared exon : ≥2 full-exon components AND cross-component best-exon-id < 0.70)
+  AND (REPEAT-bridged  : ≥ C distinct cross-component shared VG minimizer nodes,
+                         each with global multiplicity ≥ T)
+  AND (same-gene guard : never separate loci of the same annotated gene)
+On CUT: replace the family by its full-exon components; <2-locus components drop via multi-copy filter.
+```
+
+**Why the conjunction, not either half:** multiplicity-alone can't drop below the shipped
+single-edge `min_shared_mult ≥ 20` gate without shredding GSTM2 (its internal Alu node has mult
+**426**, MAGE 8–10) — but GSTM2/MAGE form a **single** full-exon component so the no-full-shared-
+exon conjunct means no cross-component pair exists and the gate **structurally cannot fire**.
+Exon-containment-alone was FALSIFIED (`FAMILY_DEF.md` — cut real single-gene
+paralogs that fragment on UTR noise/exon-skip 1:1); the repeat conjunct + same-gene guard spare
+those. Class signature (63 families): DISCONNECTED_FP `frac_no_full_shared_exon = 1.0`, sub-20
+cross-component nodes; GSTM2/MAGE connected single components; real-paralog controls 82.6% share a
+full exon.
+
+### Shipped deployment (catalog-wide, T=8/C=2)
+
+The gate is a standing predicate applied to **every** multi-copy family. At T=8/C=2 it cuts **61
+DISCONNECTED families (605 → 573)**; every cut is DISCONNECTED (no full shared exon) by
+construction. Named cuts: the **fam17 20-gene Alu hub** (`C9H11orf65+…+UCHL1`), PDIA3+PRKAB2, the
+MPHOSPH8 and LOC134758618 collapsed-array blobs, FGD3+HIVEP1, KYAT3+RBMX, etc.
+
+Precision (headline; improves), pre-bridge md5 **5e58378a (605)** → default **dca64cbd (573)**:
+
+| metric | pre-bridge (605) | default gate-ON (573) |
+|---|---|---|
+| R_oracle (named diploid-DNA gold) | 50/57 = 0.8772 | **50/57 = 0.8772 — HELD** |
+| E_p purity | 0.8694 (79 impure) | **0.8918 (62 impure) +0.0224** |
+| distinct-FP blocks | 6 | **4** |
+| oversize FP | 3 (MAGE-Xarray, MPHOSPH8, LOC134758618) | **1 (MAGE-Xarray only)** |
+
+`--no-repeat-bridge-gate` recovers 5e58378a **byte-identical**. GSTM2 (fid 9/13), MAGE
+(546/548/553), and the 23 real-paralog controls: **0 cut** at every (T,C) in both scopes
+(structurally — single full-exon component). The only "GSTM2"-named cut is the fid-23 satellite
+`GSTM2+LOC129532045+LOC134757399` (GSTM2 Alu-bridged to unrelated LOCs) — the same-gene guard
+moves both GSTM2 loci together, dropping only the non-GSTM single-locus passengers.
+
+### Sensitivity cost (disclosed) — R_oracle is blind by construction
+
+R_oracle and E_p are BLIND to the gate's only cost (single-locus glued passengers the `<2-loci`
+filter drops), because the same-gene guard structurally preserves per-gene recovery. The operative
+sensitivity probe is the conservative cDNA-pair truth `kept_REAL` (`truth2_dna_loose`): **pair-
+recall 0.9196 → 0.9087**, **DNA component-recovery 182/187 → 177/182** at the deployed catalog
+scope (`kept_REAL −5`, NOT the roster-scope −1). Of the 5 lost REAL cDNA pairs: **4 are repeat-glue
+LABEL-NOISE** (Alu-glued no-shared-exon pairs mult 231–503 the cDNA-loose oracle mislabelled REAL,
+arguably correct to cut: `ASB6+NTMT1`, `CCDC152+SELENOP`, `ETFDH+PPID`, `GATC+SRSF9`), and **only 1
+is near-threshold-divergent** — `LOC109024259+ZNF224` (exon-id 0.686, nicked at the strict 0.70
+full-exon cutoff). At T8C2 **ZNF224 keeps all 10 KRAB-ZNF paralogs** minus only the single divergent
+`LOC109024259`; **RFPL3 is UNTOUCHED** (its bridge mult 5 < T=8). The genuine paralog *cores*
+survive. **Causal honesty:** the recall-safety comes from the **same-gene guard + no-full-shared-
+exon conjunct, NOT the multiplicity threshold** (plain no-full-shared-exon + guard already cuts
+32/35; the repeat conjunct C≥2 *narrows* to 15/35 by abstaining on the low-mult glue tail — it is a
+precision knob). The name over-credits the repeat conjunct; stated plainly.
+
+Operating points: **T=8/C=2 (shipped default)** — 15/35 roster DISCONNECTED removed, E_p +0.022,
+0 genuine paralogs lost, honestly "several repeats". **T=5/C=1 (aggressive)** — 24/35 removed, E_p
++0.034, still 0 genuine paralogs lost in roster scope. Runs **after** the recombinant-split stage,
+**before** allele-demote. Determinism: default md5 **dca64cbd** across runs (note md5 **e2f0a23a**
+= the `--high-precision` gamma=0.40 catalog, not nondeterminism). Artifacts:
+`bench/multi_repeat_bridge_gate.py` · `.tsv` (63-fam characterize, md5 5e40411a) · `.json` (gate
+sweep, md5 043b22d7); tests `test_repeat_bridge_gate`, `test_repeat_bridge_r_oracle_held`,
+`test_repeat_bridge_composes`.
+
+## Catalog artifact audit (2026-07-10) — KRAB-ZNF domain bridge under --homology-primary
+
+Ran `copy_assign` on 30 annotated multi-copy loci (2–12 paralogs, span < 900 kb from
+`GGO_genomic.gff`) plus the session panel; classified every family formed (dense LOC/ZNF
+mega-clusters >25 copies excluded for cost). **The default (E_c) catalog is clean of over-merges on
+this panel** — 16 families formed, every one a single named gene family with span-disjoint copies
+(GBP, PCDHB 5, APOBEC, APOL, TCEAL, GSTM 3, MAGEA 2, DAZ 2, TSPY 5); the 2 flagged Containment
+cases (RFPL, r4) are the known coverage floor, reported-not-pruned (`DENOVO_PIPELINE.md`).
+
+**One new artifact class, `--homology-primary`-ONLY: a KRAB-ZNF domain bridge.**
+`NC_086017.1:54339728-54640140` emitted a 3-copy family of three **distinct** annotated genes —
+ZNF445 / ZKSCAN7 / ZNF197. Genomic spans align at 43–68% identity over ~1% coverage (only the
+shared zinc-finger exon); their **spliced exon-sum transcripts do not align at asm20 at all** (the
+0.80 tier). The edge was formed by E_r's **sensitive tier (0.60 identity)**, which recovers ancient
+paralogs but also bridges the zinc-finger domain shared across the whole KRAB-ZNF superfamily.
+**Under the default E_c conflict oracle this cluster forms 0 families** (the three genes map
+uniquely, no read is ambiguous) — so the over-merge is specific to the opt-in `--homology-primary`
+path. This is the "238-blob" domain-bridge trap the genome-wide family-definition work solved with
+co-threading + community de-bridging; `copy_assign`'s inline `--homology-primary` branch
+(`denovo_pipeline.rs:1256–1260`) uses `homology_edges_all_reps` + a plain
+`gamma_quasi_clique_partition(0.20)` — raw E_r edges with **no de-bridging**, so it recovers real
+ancient paralogs *and* domain bridges indiscriminately.
+
+**The reciprocal-coverage fix was TESTED and it FAILS — reverted (keep the lesson).** The natural
+fix, reciprocal coverage `min(qcov, tcov)` instead of coverage-over-shorter, correctly shrank the
+ZNF bridge (3 → 2 copies) but **destroyed four real families**: GSTM 3→0, MAGEA 2→0, PCDHB 5→0,
+TCEAL 5→0, and dropped GBP 6→4. Reverted. **Reason (fundamental):** reciprocal coverage penalises
+transcript-length differences, which are biologically normal (isoforms, UTR extensions, truncated
+de-novo models — DAZ2 is itself a 70% model). The ZNF bridge (shorter-cov 0.55, id 0.69) sits in
+the *same pairwise cell* as real sensitive-tier paralogs. **Measured lesson: no pairwise
+coverage/identity threshold separates a domain bridge from a length-divergent real paralog** — the
+coverage-over-shorter metric was chosen deliberately to be robust to this, and this is precisely
+why domain bridges are solved by **graph structure** (co-threading + weighted-Louvain de-bridging),
+not a pairwise gate. That graph fix **cannot be ported to `copy_assign`'s per-region path**: the
+ZNF over-merge is a 3-node complete triangle any γ-quasi-clique accepts; de-bridging needs the
+genome-wide graph where the whole KRAB-ZNF blob is visible. **Disposition:** do NOT ship a
+coverage/identity threshold (breaks real length-divergent families, and is the arbitrary threshold
+the advisor rejects); the KRAB-ZNF bridge is an inherent limitation of the opt-in per-region
+`--homology-primary` mode (raw E_r, no genome-wide context) — for a clean real-family catalog use
+the genome-wide de-bridged path (`detect_homology_catalog_genome_wide` + co-threading). Minor note:
+GBP (6 annotated) fragmented as 4+2 and TCEAL (6) as 3+2 — *under*-merging (less harmful, no false
+copies, but understates copy number). Related: `DENOVO_PIPELINE.md`,
+`project_rna_family_homology_primary`, `project_family_def_readconflict`.
 
