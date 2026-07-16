@@ -318,6 +318,17 @@ fn status_str(s: AssignStatus) -> &'static str {
     }
 }
 
+/// GFA W-line SampleId sanitizer (a walk id must be a whitespace-free GFA token).
+fn sanitize_gfa_id(s: &str) -> String {
+    s.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':') { c } else { '_' }).collect()
+}
+
+/// A distinct Bandage colour per copy index for the family variation graph (grey = tied/unassigned read).
+fn copy_color(hap: i64) -> &'static str {
+    const PAL: [&str; 8] = ["#377eb8", "#e41a1c", "#4daf4a", "#984ea3", "#ff7f00", "#a65628", "#f781bf", "#00ced1"];
+    if hap < 0 { "#bbbbbb" } else { PAL[(hap as usize) % PAL.len()] }
+}
+
 fn parse_region(s: &str) -> Result<(String, u64, u64)> {
     let tok = s.split_whitespace().next().context("empty region")?;
     let (chrom, range) = tok.split_once(':').context("region must be chrom:start-end")?;
@@ -545,6 +556,11 @@ fn main() -> Result<()> {
     let mut gfa_segs: HashSet<String> = HashSet::new();        // dedup'd S-lines (shared allele = shared node = bubble anchor)
     let mut gfa_links: HashSet<(String, String)> = HashSet::new();
     let mut gfa_paths: Vec<String> = Vec::new();
+    // VG read-threading (the Canzar flip, materialized): each read WALKS the PSV-bubble nodes for the alleles
+    // it observes, REUSING a copy's node wherever their alleles agree — so multimapping reads become shared
+    // threaded evidence through the one family graph. W-lines (GFA 1.1) + a Bandage node/path colour CSV.
+    let mut gfa_walks: Vec<String> = Vec::new();
+    let mut gfa_colors: Vec<String> = Vec::new(); // "name,colour" for Bandage (copies distinct, reads by assigned copy)
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
     let mut vg_realign_lines: Vec<String> = Vec::new(); // --vg-realign: per-read re-align decisions (report-only)
@@ -925,10 +941,11 @@ fn main() -> Result<()> {
                             if !path_nodes.is_empty() {
                                 let p: Vec<String> = path_nodes.iter().map(|n| format!("{}+", n)).collect();
                                 gfa_paths.push(format!("P\t{}_copy{}\t{}\t*", fid, ci, p.join(",")));
+                                gfa_colors.push(format!("{}_copy{},{}", fid, ci, copy_color(ci as i64)));
                             }
                         }
                     }
-                    for (ri, a) in &fa.assignments {
+                    for ((ri, a), obs) in fa.assignments.iter().zip(fa.read_psv_obs.iter()) {
                         let hap: i64 = if matches!(a.status, AssignStatus::Assigned) {
                             a.best_copy as i64
                         } else {
@@ -938,6 +955,23 @@ fn main() -> Result<()> {
                             "{}\t{}\t{}\t{}\t{:.3}\t{}",
                             bam_reads[*ri], fid, hap, a.n_decisive, a.log_lr_margin, status_str(a.status)
                         ));
+                        // VG read-threading: this read WALKS the PSV-bubble nodes for the alleles it observes,
+                        // REUSING a copy's node wherever their alleles agree — multimapping reads thread through
+                        // the SAME shared nodes (the Canzar flip). Tied/K=0 reads render grey (unresolvable).
+                        let mut walk: Vec<String> = Vec::new();
+                        for (col, ob) in obs.iter().enumerate() {
+                            if let (Some(b), Some(Some(pos))) = (ob, fa.psv_col_pos.get(col)) {
+                                let nid = format!("{}_c{}_{}", fid, col, *b as char);
+                                gfa_segs.insert(format!("S\t{}\t{}\tPO:i:{}", nid, *b as char, pos));
+                                walk.push(nid);
+                            }
+                        }
+                        if !walk.is_empty() {
+                            let rn = format!("{}_{}", fid, sanitize_gfa_id(&format!("{}", bam_reads[*ri])));
+                            let w = walk.iter().map(|n| format!(">{}", n)).collect::<String>();
+                            gfa_walks.push(format!("W\t{}\t{}\t{}\t0\t{}\t{}", rn, hap.max(0), fid, walk.len(), w));
+                            gfa_colors.push(format!("{},{}", rn, copy_color(hap)));
+                        }
                     }
                 }
                 // reference-free per-family copy number (Task R1): chi_H (PSV conflict-structure
@@ -1122,7 +1156,7 @@ fn main() -> Result<()> {
         }
         // self-contained variation graph of the phasing (copies = paths, PSVs = bubbles)
         let mut gf = std::fs::File::create(format!("{}.phase.gfa", args.out))?;
-        writeln!(gf, "H\tVN:Z:1.0")?;
+        writeln!(gf, "H\tVN:Z:1.1")?; // GFA 1.1 (W-lines carry the read walks)
         let mut segs: Vec<&String> = gfa_segs.iter().collect();
         segs.sort();
         for s in segs {
@@ -1136,11 +1170,23 @@ fn main() -> Result<()> {
         for p in &gfa_paths {
             writeln!(gf, "{}", p)?;
         }
+        // reads threaded through the family graph (W-lines) — the shared-evidence flip made visible.
+        for w in &gfa_walks {
+            writeln!(gf, "{}", w)?;
+        }
+        // Bandage colour CSV: copies distinct, reads coloured by assigned copy (grey = tied/K=0, unresolvable).
+        {
+            let mut cf = std::fs::File::create(format!("{}.phase.gfa.colours.csv", args.out))?;
+            writeln!(cf, "Name,Colour")?;
+            for c in &gfa_colors {
+                writeln!(cf, "{}", c)?;
+            }
+        }
         let n_phased = phased_read_lines.iter().filter(|l| !l.contains("\t-1\t")).count();
         eprintln!(
-            "[copy_assign] phasing: {} blocks, {} haplotypes, {}/{} reads phased -> {}.phased_*.tsv + {}.phase.gfa ({} bubble-nodes, {} copy-paths)",
+            "[copy_assign] phasing: {} blocks, {} haplotypes, {}/{} reads phased -> {}.phased_*.tsv + {}.phase.gfa ({} bubble-nodes, {} copy-paths, {} read-walks; Bandage colours -> {}.phase.gfa.colours.csv)",
             phase_block_lines.len(), phased_hap_lines.len(), n_phased, phased_read_lines.len(),
-            args.out, args.out, gfa_segs.len(), gfa_paths.len()
+            args.out, args.out, gfa_segs.len(), gfa_paths.len(), gfa_walks.len(), args.out
         );
     }
 
