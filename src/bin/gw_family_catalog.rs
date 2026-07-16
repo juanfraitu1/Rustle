@@ -424,6 +424,7 @@ fn main() -> Result<()> {
                 rows.push(format_allproj_row(fid, &l, n_support, overlaps));
             }
         }
+        rows.sort(); // `proj` is a HashMap (random iteration order); sort so allproj.tsv is reproducible run-to-run
         if !rows.is_empty() {
             let mut af = std::fs::File::create(format!("{}.allproj.tsv", args.out))?;
             writeln!(af, "family_id\tchrom\tstart\tend\tidentity\tn_support_reads\toverlaps_existing_copy")?;
