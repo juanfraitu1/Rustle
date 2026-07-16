@@ -107,6 +107,11 @@ struct Args {
     /// Default off; when off, all existing output is byte-identical.
     #[arg(long, default_value_t = false)]
     collapse_enumerate: bool,
+    /// Re-admit EXON-IDENTICAL (0-PSV) but heavily-EXPRESSED families that collapse to <2 RNA loci as a
+    /// K0_COLLAPSED_EXPRESSED copy-number class (projection >=2 loci, each read-supported; needs DNA parCN for
+    /// per-read resolution). Writes <out>.expressed_collapsed.tsv. Default off; byte-identical when off.
+    #[arg(long, default_value_t = false)]
+    collapse_expressed: bool,
 
     /// Emit the single-copy baseline instead of the family catalog: `<out>.single_copy.tsv` (one row per
     /// single-copy chi(H)=1 locus) + `<out>.lambda_global.tsv` (the genome-wide median n_reads = lambda_global,
@@ -129,6 +134,7 @@ fn main() -> Result<()> {
     let mut cfg = DenovoConfig::from_env();
     cfg.complete_poa_core = args.complete_core;
     cfg.collapse_enumerate = args.collapse_enumerate || cfg.collapse_enumerate;
+    cfg.collapse_expressed = args.collapse_expressed || cfg.collapse_expressed;
 
     if args.single_copy_baseline {
         use rustle::vg_family::single_copy::lambda_global;
@@ -159,24 +165,28 @@ fn main() -> Result<()> {
     // homology-primary catalog (in addition to feeding the `--refine` block below): it recovers coding
     // paralogs that have diverged past the nucleotide seeds' ~0.65 identity floor.
     refine_params.protein_tail = args.protein_tail;
-    let (raw, collapsed): (Vec<Vec<DenovoTranscript>>, Vec<rustle::vg_family::collapse_enumerate::CollapsedFamily>) =
-        if args.homology_primary {
-            detect_homology_catalog_genome_wide(
-                &args.bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,
-            )?
-        } else if args.cross_chrom {
-            (
-                detect_conflict_catalog_genome_wide_xchrom(
-                    &args.bam, &args.fasta, args.threads, args.min_copies, &cfg,
-                )?,
-                Vec::new(),
-            )
-        } else {
-            let catalog = detect_conflict_catalog_genome_wide(
-                &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
-            )?;
-            (catalog.into_iter().map(|c| c.copies).collect(), Vec::new())
-        };
+    let (raw, collapsed, expressed): (
+        Vec<Vec<DenovoTranscript>>,
+        Vec<rustle::vg_family::collapse_enumerate::CollapsedFamily>,
+        Vec<rustle::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
+    ) = if args.homology_primary {
+        detect_homology_catalog_genome_wide(
+            &args.bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,
+        )?
+    } else if args.cross_chrom {
+        (
+            detect_conflict_catalog_genome_wide_xchrom(
+                &args.bam, &args.fasta, args.threads, args.min_copies, &cfg,
+            )?,
+            Vec::new(),
+            Vec::new(),
+        )
+    } else {
+        let catalog = detect_conflict_catalog_genome_wide(
+            &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
+        )?;
+        (catalog.into_iter().map(|c| c.copies).collect(), Vec::new(), Vec::new())
+    };
     // Exon-sum (FLNC) homology + distinct-locus refinement (the principled membership criterion). ON BY DEFAULT
     // (removes repeat-bridge + large-gene mis-chain FPs); `--no-refine` opts out to the raw conflict catalog.
     let refine = !args.no_refine;
@@ -304,6 +314,17 @@ fn main() -> Result<()> {
             writeln!(cf, "{}", rustle::vg_family::collapse_enumerate::format_collapsed_row(&format!("GWFAMc{i}"), fam))?;
         }
         eprintln!("[gw-catalog] wrote {} K=0-collapsed families -> {}.collapsed.tsv", collapsed.len(), args.out);
+    }
+
+    // K0_COLLAPSED_EXPRESSED families re-admitted by Task 3 (`--collapse-expressed`): same isolation as
+    // `--collapse-enumerate` above -- OFF path (flag off or nothing expressed-collapsed) writes no file.
+    if cfg.collapse_expressed && !expressed.is_empty() {
+        let mut ef = std::fs::File::create(format!("{}.expressed_collapsed.tsv", args.out))?;
+        writeln!(ef, "family_id\tchrom\tstart\tend\tfamCN\tmin_locus_reads\tstatus\tprojection_loci")?;
+        for (i, fam) in expressed.iter().enumerate() {
+            writeln!(ef, "{}", rustle::vg_family::collapse_enumerate::format_expressed_collapsed_row(&format!("GWFAMe{i}"), fam))?;
+        }
+        eprintln!("[gw-catalog] collapse-expressed: {} K0_COLLAPSED_EXPRESSED families -> {}.expressed_collapsed.tsv", expressed.len(), args.out);
     }
 
     // famCN / totalCN via genome projection (spec §7): a family's RNA-observed copies are a LOWER bound

@@ -87,6 +87,11 @@ pub struct DenovoConfig {
     /// byte-identical. Env `RUSTLE_COLLAPSE_ENUMERATE=1`, CLI `--collapse-enumerate` on `gw_family_catalog`
     /// and `copy_assign`.
     pub collapse_enumerate: bool,
+    /// Re-admit EXON-IDENTICAL (0-PSV) but heavily-EXPRESSED families that collapse to < 2 RNA loci as a
+    /// K0_COLLAPSED_EXPRESSED copy-number class: no hidden-copy witness required, just >= 2 genome-projected
+    /// loci that are EACH read-supported. **Default OFF**: when off, all existing output is byte-identical.
+    /// Env `RUSTLE_COLLAPSE_EXPRESSED=1`, CLI `--collapse-expressed` on `gw_family_catalog`.
+    pub collapse_expressed: bool,
     /// Background per-read ambiguity rate for the collapse test. Must be GENOME-WIDE, never region-local: in the
     /// DAZ window every read outside DAZ1's span is DAZ2's and ambiguous, so a local background would be ~0.95.
     /// `None` ⇒ the gate abstains. Default = `GENOME_WIDE_EPS_AMB` measured on `GGO_mm.bam`.
@@ -109,17 +114,19 @@ impl Default for DenovoConfig {
             refine: true,
             collapse_gate: false,
             collapse_enumerate: false,
+            collapse_expressed: false,
             eps_amb: Some(crate::vg_family::collapse_gate::GENOME_WIDE_EPS_AMB),
         }
     }
 }
 
 impl DenovoConfig {
-    /// Read overrides from `RUSTLE_*` env vars on top of `Default` (currently just
-    /// `RUSTLE_COLLAPSE_ENUMERATE`).
+    /// Read overrides from `RUSTLE_*` env vars on top of `Default` (currently `RUSTLE_COLLAPSE_ENUMERATE`
+    /// and `RUSTLE_COLLAPSE_EXPRESSED`).
     pub fn from_env() -> Self {
         DenovoConfig {
             collapse_enumerate: std::env::var("RUSTLE_COLLAPSE_ENUMERATE").ok().as_deref() == Some("1"),
+            collapse_expressed: std::env::var("RUSTLE_COLLAPSE_EXPRESSED").ok().as_deref() == Some("1"),
             ..Self::default()
         }
     }
@@ -2049,7 +2056,11 @@ pub fn detect_homology_catalog_genome_wide(
     cfg: &DenovoConfig,
     refine: &RefineParams,
     gamma: f64,
-) -> Result<(Vec<Vec<DenovoTranscript>>, Vec<crate::vg_family::collapse_enumerate::CollapsedFamily>)> {
+) -> Result<(
+    Vec<Vec<DenovoTranscript>>,
+    Vec<crate::vg_family::collapse_enumerate::CollapsedFamily>,
+    Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
+)> {
     // --- reps (identical to the conflict path's rep build) ---
     let reads = primary_reads_from_bam(bam_path, threads)?;
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
@@ -2075,24 +2086,36 @@ pub fn detect_homology_catalog_genome_wide(
 
     let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
     let mut collapsed: Vec<crate::vg_family::collapse_enumerate::CollapsedFamily> = Vec::new();
+    let mut expressed: Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily> = Vec::new();
     for block in blocks {
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
         let loci = distinct_locus_reps(copies.clone()); // ≥2 spatially-distinct loci certificate
         if block.len() >= min_copies && loci.len() >= min_copies {
             out.push(loci);
-        } else if cfg.collapse_enumerate && loci.len() < 2 {
+        } else if (cfg.collapse_enumerate || cfg.collapse_expressed) && loci.len() < 2 {
             // GENUINE collapse only (< 2 RNA-distinct loci), independent of min_copies: a block with
             // >= 2 distinct loci that merely falls short of a higher --min-copies is a resolved (not
             // collapsed) candidate and must NOT get a mixed-locus union re-admission window.
-            // dropped < 2-distinct-loci candidate → try re-admit as K=0-collapsed COPY-NUMBER.
+            // dropped < 2-distinct-loci candidate → try re-admit as K=0-collapsed COPY-NUMBER (PSV/hidden-
+            // copy witness) and/or K0_COLLAPSED_EXPRESSED (read-supported projection, no PSV requirement).
+            // The two paths are independent flags; each fires only when its own config bit is set.
             let chrom = copies[0].chrom.clone();
             let lo = copies.iter().map(|c| c.start).min().unwrap_or(0);
             let hi = copies.iter().map(|c| c.end).max().unwrap_or(0);
             let consensus = copies.iter().max_by_key(|c| c.seq.len()).map(|c| c.seq.clone()).unwrap_or_default();
-            if let Some(cf) = crate::vg_family::collapse_enumerate::readmit_locus(
-                bam_path, &chrom, lo, hi, &consensus, &genome, fasta_path, &refine.minimap2, threads,
-            ) {
-                collapsed.push(cf);
+            if cfg.collapse_enumerate {
+                if let Some(cf) = crate::vg_family::collapse_enumerate::readmit_locus(
+                    bam_path, &chrom, lo, hi, &consensus, &genome, fasta_path, &refine.minimap2, threads,
+                ) {
+                    collapsed.push(cf);
+                }
+            }
+            if cfg.collapse_expressed {
+                if let Some(ef) = crate::vg_family::collapse_enumerate::readmit_locus_expressed(
+                    bam_path, &chrom, lo, hi, &consensus, fasta_path, &refine.minimap2, threads,
+                ) {
+                    expressed.push(ef);
+                }
             }
         }
     }
@@ -2100,7 +2123,10 @@ pub fn detect_homology_catalog_genome_wide(
     if !collapsed.is_empty() {
         eprintln!("[gw-catalog-homology] collapse-enumerate: {} K=0-collapsed families re-admitted (copy-number only)", collapsed.len());
     }
-    Ok((out, collapsed))
+    if !expressed.is_empty() {
+        eprintln!("[gw-catalog-homology] collapse-expressed: {} K0_COLLAPSED_EXPRESSED families re-admitted (copy-number only)", expressed.len());
+    }
+    Ok((out, collapsed, expressed))
 }
 
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
@@ -4574,7 +4600,7 @@ mod tests {
     #[test]
     fn homology_catalog_groups_fixture_family() {
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
-        let (fams, _collapsed) = detect_homology_catalog_genome_wide(
+        let (fams, _collapsed, _expressed) = detect_homology_catalog_genome_wide(
             "tests/fixtures/same_chrom_supplement/reads.bam",
             "tests/fixtures/same_chrom_supplement/genome.fa",
             2, 2, &DenovoConfig::default(), &RefineParams::default(), 0.20,
