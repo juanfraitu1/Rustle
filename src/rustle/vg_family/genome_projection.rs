@@ -12,6 +12,23 @@ pub struct CopyLocus { pub chrom: String, pub start: u64, pub end: u64, pub iden
 struct TempFile(std::path::PathBuf);
 impl Drop for TempFile { fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); } }
 
+/// Resolve the minimap2 TARGET for a genome-projection call, optionally reusing a pre-built splice `.mmi`
+/// instead of re-indexing the multi-GB FASTA on every invocation. A gw_family_catalog run projects up to 3x
+/// (famCN, `--project-all-families`, `--collapse-enumerate`) and minimap2 rebuilds the whole splice minimizer
+/// index from scratch on each projection call while only a few hundred short consensuses are aligned — index
+/// build dominates each call.
+///
+/// Point `RUSTLE_PROJECT_MMI` at a `minimap2 -x splice -d genome.splice.mmi genome.fasta` index and every
+/// projection call targets it, collapsing per-call indexing to a ONE-TIME, cross-run cost (build it once, it
+/// persists and is reused by every future run). BYTE-IDENTICAL: the `.mmi` carries the same `-x splice` k/w
+/// and the map-time `-N/-p/-c/--cs` options are unaffected by indexing (the exact guarantee `RUSTLE_ABSENT_MMI`
+/// in `absent_copy.rs` already relies on — the SAME index serves both). Unset = the raw FASTA path, exactly as
+/// before. No temp index is auto-built: a splice `.mmi` of a ~3 Gb genome is >13 GB, so the caller owns the
+/// (persistent) file rather than have the binary leak one into the temp dir per run.
+fn projection_target(genome: &str) -> String {
+    std::env::var("RUSTLE_PROJECT_MMI").ok().filter(|m| !m.is_empty()).unwrap_or_else(|| genome.to_string())
+}
+
 /// Run `minimap2 -c -x splice -N 50 -p 0.01` (query FASTA at `query_path`) against `genome_fasta` and
 /// return the raw PAF stdout. `-p 0.01`: report divergent secondaries too (default -x splice -p suppresses
 /// them, hiding all but near-identical copies); the id/cov filter downstream decides which to keep. Returns
@@ -24,7 +41,7 @@ fn run_minimap2_paf(
 ) -> Result<Option<String>> {
     let out = std::process::Command::new(minimap2)
         .args(["-c", "-x", "splice", "-N", "50", "-p", "0.01", "-t"]).arg(threads.to_string())
-        .arg(genome_fasta).arg(query_path).output()
+        .arg(projection_target(genome_fasta)).arg(query_path).output()
         .map_err(|e| anyhow::anyhow!("minimap2 ('{minimap2}') projection failed: {e}"))?;
     if !out.status.success() { return Ok(None); }
     Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
@@ -151,7 +168,7 @@ pub struct ProjHit {
 fn run_minimap2_paf_cs(query_path: &std::path::Path, target: &str, minimap2: &str, threads: usize) -> Result<Option<String>> {
     let out = match std::process::Command::new(minimap2)
         .args(["-c", "--cs", "-x", "splice", "-N", "50", "-p", "0.01", "-t"]).arg(threads.to_string())
-        .arg(target).arg(query_path).output()
+        .arg(projection_target(target)).arg(query_path).output()
     {
         Ok(o) => o,
         Err(_) => return Ok(None), // minimap2 missing/not spawnable -> graceful empty (contract)

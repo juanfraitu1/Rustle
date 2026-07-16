@@ -1776,29 +1776,35 @@ fn gw_reps_and_catalog(
     }
 
     // --- (2) per-chrom conflict edges (load each chrom's reads ONCE; same-chrom edges only) ---
-    let mut all_edges: Vec<(usize, usize, usize)> = Vec::new();
-    for (chrom, glob) in &by_chrom {
-        if glob.len() < 2 {
-            continue; // a single rep on a chrom can form no conflict edge
-        }
+    // Parallelized ACROSS chromosomes: each chrom's reads_in_region + build_read_placements + conflict_edges
+    // is independent and its edges are remapped to GLOBAL rep indices before merge. Results are re-assembled
+    // in sorted-chrom order (rayon collect preserves the indexed order of `chrom_work`), so `all_edges` and
+    // the per-chrom stderr log are BYTE-IDENTICAL to the previous serial build. A bounded pool of `threads`
+    // workers caps concurrent chromosome read-loads (WSL2 memory), and each chrom decodes single-threaded
+    // since the parallelism is now across chromosomes (avoids threads^2 BGZF oversubscription).
+    use rayon::prelude::*;
+    let chrom_work: Vec<(&str, &Vec<usize>)> =
+        by_chrom.iter().filter(|(_, g)| g.len() >= 2).map(|(c, g)| (*c, g)).collect();
+    type ChromEdges = (Vec<(usize, usize, usize)>, (String, usize, usize, usize));
+    let run = |&(chrom, glob): &(&str, &Vec<usize>)| -> Option<ChromEdges> {
         let clen = genome.chrom_len(chrom);
-        let (_primary, bam_reads) = match reads_in_region(bam_path, chrom, 0, clen, threads) {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
+        let (_primary, bam_reads) = reads_in_region(bam_path, chrom, 0, clen, 1).ok()?;
         let chrom_reps: Vec<DenovoTranscript> = glob.iter().map(|&g| reps[g].clone()).collect();
         let placements = build_read_placements(&bam_reads, &chrom_reps);
         let edges = conflict_edges(chrom_reps.len(), &placements, &cfg.conflict);
         let n_edges = edges.len(); // this chrom's edge count (not the cumulative total)
-        for (i, j, w) in edges {
-            all_edges.push((glob[i], glob[j], w)); // local → global rep index
-        }
-        eprintln!(
-            "[gw-catalog] {chrom}: {} reps, {} reads, {} conflict edges",
-            chrom_reps.len(),
-            bam_reads.len(),
-            n_edges
-        );
+        let remapped: Vec<(usize, usize, usize)> =
+            edges.into_iter().map(|(i, j, w)| (glob[i], glob[j], w)).collect(); // local → global rep index
+        Some((remapped, (chrom.to_string(), chrom_reps.len(), bam_reads.len(), n_edges)))
+    };
+    let per_chrom: Vec<ChromEdges> = match rayon::ThreadPoolBuilder::new().num_threads(threads.max(1)).build() {
+        Ok(pool) => pool.install(|| chrom_work.par_iter().filter_map(&run).collect()),
+        Err(_) => chrom_work.iter().filter_map(&run).collect(), // serial fallback (byte-identical)
+    };
+    let mut all_edges: Vec<(usize, usize, usize)> = Vec::new();
+    for (edges, (chrom, n_reps, n_reads, n_edges)) in per_chrom {
+        all_edges.extend(edges);
+        eprintln!("[gw-catalog] {chrom}: {n_reps} reps, {n_reads} reads, {n_edges} conflict edges");
     }
 
     // --- (3) global components → split → colocated (strand-split + disjoint-loci de-dup) ---
