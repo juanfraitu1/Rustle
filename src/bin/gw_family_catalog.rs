@@ -109,7 +109,8 @@ struct Args {
     collapse_enumerate: bool,
     /// Re-admit EXON-IDENTICAL (0-PSV) but heavily-EXPRESSED families that collapse to <2 RNA loci as a
     /// K0_COLLAPSED_EXPRESSED copy-number class (projection >=2 loci, each read-supported; needs DNA parCN for
-    /// per-read resolution). Writes <out>.expressed_collapsed.tsv. Default off; byte-identical when off.
+    /// per-read resolution). Writes <out>.expressed_collapsed.tsv. Requires --homology-primary (the drop
+    /// point lives on that path; a silent no-op without it). Default off; byte-identical when off.
     #[arg(long, default_value_t = false)]
     collapse_expressed: bool,
 
