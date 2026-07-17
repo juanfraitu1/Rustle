@@ -68,6 +68,61 @@ def parse_regions(path):
     return regs
 
 
+def write_psv_vcf(out, ca_prefix, regions, contig_lens):
+    """PSV VCF (copies as samples) from copy_assign's --dump-psv matrix: <ca_prefix>.psv_cols.tsv (col->genome
+    position) + .psv_copies.tsv (each copy's allele per column). Load in IGV alongside the tagged BAM: each PSV
+    is a variant row whose per-copy genotype (0=ref allele, N=alt) is the reference the reads are matched to."""
+    import os
+    colf, copf = f"{ca_prefix}.psv_cols.tsv", f"{ca_prefix}.psv_copies.tsv"
+    if not (os.path.exists(colf) and os.path.exists(copf)):
+        print(f"  (no {colf}/.psv_copies.tsv — re-run copy_assign with --dump-psv for the PSV VCF)")
+        return None
+    cols = defaultdict(dict)   # family -> {col: genome_pos}
+    for ln in open(colf):
+        f = ln.rstrip("\n").split("\t")
+        if len(f) >= 3 and f[1].isdigit():
+            cols[f[0]][int(f[1])] = int(f[2])
+    cops = defaultdict(dict)   # family -> {copy_idx: allele_string}
+    for ln in open(copf):
+        f = ln.rstrip("\n").split("\t")
+        if len(f) >= 4 and f[1].isdigit():
+            cops[f[0]][int(f[1])] = f[3]
+    def chrom_of(pos):
+        for c, s, e in regions:
+            if s <= pos <= e:
+                return c
+        return regions[0][0] if regions else "."
+    samples = [f"{fam}_c{ci}" for fam in sorted(cols) for ci in sorted(cops.get(fam, {}))]
+    sidx = {s: i for i, s in enumerate(samples)}
+    rows = []
+    for fam in sorted(cols):
+        cps = cops.get(fam, {})
+        for col, pos in sorted(cols[fam].items()):
+            if pos < 0:
+                continue
+            bases = {ci: cps[ci][col] for ci in cps if col < len(cps[ci]) and cps[ci][col] != '.'}
+            if len(set(bases.values())) < 2:            # not decisive (all copies agree)
+                continue
+            ref = bases.get(0) or sorted(bases.values())[0]
+            alts = [b for b in sorted(set(bases.values())) if b != ref]
+            aidx = {b: i + 1 for i, b in enumerate(alts)}
+            gts = ["."] * len(samples)
+            for ci, b in bases.items():
+                gts[sidx[f"{fam}_c{ci}"]] = "0" if b == ref else str(aidx[b])
+            rows.append((chrom_of(pos), pos + 1, f"{fam}_col{col}", ref, ",".join(alts), fam, gts))
+    vcf = f"{out}.psv.vcf"
+    with open(vcf, "w") as fh:
+        fh.write("##fileformat=VCFv4.2\n")
+        fh.write('##INFO=<ID=FAM,Number=1,Type=String,Description="copy-family id">\n')
+        fh.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="copy allele: 0=REF, N=Nth ALT, .=gapped">\n')
+        for c, l in contig_lens:
+            fh.write(f"##contig=<ID={c},length={l}>\n")
+        fh.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t" + "\t".join(samples) + "\n")
+        for chrom, pos, rid, ref, alt, fam, gts in sorted(rows):
+            fh.write(f"{chrom}\t{pos}\t{rid}\t{ref}\t{alt}\t.\tPASS\tFAM={fam}\tGT\t" + "\t".join(gts) + "\n")
+    return vcf, len(rows), len(samples)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--assignments", required=True)
@@ -80,6 +135,7 @@ def main():
     amap = load_assignments(a.assignments)
     regions = parse_regions(a.regions)
     inbam = pysam.AlignmentFile(a.bam, "rb")
+    bam_contigs = list(zip(inbam.references, inbam.lengths))  # captured before close (for the VCF header)
     tmp = f"{a.out}.tagged.unsorted.bam"
     out = pysam.AlignmentFile(tmp, "wb", template=inbam)
 
@@ -131,8 +187,18 @@ def main():
 
     print(f"wrote {sorted_bam} (+ .bai): {n_written} alignments, {n_tagged} tagged by copy")
     print(f"wrote {a.out}.copies.bed: {sum(1 for v in extent.values() if v[0])} copies")
-    print(f"IGV: load {sorted_bam} + {a.out}.copies.bed + the genome FASTA. Reads auto-colour by copy (YC tag);")
-    print(f"     right-click the track -> 'Group by tag' -> cp to stack the copies separately.")
+
+    # PSV VCF (copies as samples) from the --dump-psv matrix, if present
+    import re
+    ca_prefix = re.sub(r"\.assignments\.tsv$", "", a.assignments)
+    reg_chroms = {c for c, _, _ in regions}
+    contig_lens = [(c, l) for c, l in bam_contigs if c in reg_chroms]
+    v = write_psv_vcf(a.out, ca_prefix, regions, contig_lens)
+    if v:
+        print(f"wrote {v[0]}: {v[1]} PSV sites x {v[2]} copies (IGV variant track — per-copy alleles)")
+
+    print(f"IGV: load {sorted_bam} + {a.out}.copies.bed + {a.out}.psv.vcf + the genome FASTA. Reads auto-colour by")
+    print(f"     copy (YC tag); right-click -> 'Group by tag' -> cp to stack copies; the VCF marks each PSV.")
 
 
 if __name__ == "__main__":

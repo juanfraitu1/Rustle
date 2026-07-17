@@ -146,6 +146,12 @@ struct Args {
     /// genome position). The raw per-molecule evidence behind each assignment, for the proof visualization.
     #[arg(long, default_value_t = false)]
     dump_psv: bool,
+    /// One-flag IGV bundle: implies `--dump-psv` (the PSV genotype matrix), so a subsequent
+    /// `bench/igv_tracks.py --assignments <out>.assignments.tsv --bam <bam> --regions <regions> --out <out>`
+    /// emits `<out>.tagged.bam` (reads coloured by assigned copy), `<out>.copies.bed`, and `<out>.psv.vcf`
+    /// (PSVs as an IGV variant track, copies as samples) — everything IGV needs to SEE each assignment.
+    #[arg(long, default_value_t = false)]
+    igv: bool,
     /// Decisive-margin τ: the minimum log-likelihood-ratio over the runner-up copy to call a read ASSIGNED
     /// (else AMBIGUOUS); the single calibrated knob that replaces the vote-count (min_psv, margin) integers.
     /// τ = ln((1−p)/p) for a target per-read misassignment p (τ=6.9 default ≈ p 1e-3, the Eichler AS≥10
@@ -485,7 +491,10 @@ fn resolve_lambda(explicit: Option<f64>, from_file: Option<f64>) -> Option<f64> 
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    if args.igv {
+        args.dump_psv = true; // --igv is a bundle: the PSV matrix feeds bench/igv_tracks.py -> tagged BAM + PSV VCF
+    }
 
     // collect the regions, then group by contig so each contig loads ONCE (memory-bounded sweep).
     let regions: Vec<(String, u64, u64)> = match (&args.region, &args.regions) {
@@ -1259,6 +1268,13 @@ fn main() -> Result<()> {
             "[copy_assign] dumped PSV genotype matrix: {} read rows, {} copy rows -> {}.psv_reads.tsv/.psv_copies.tsv/.psv_cols.tsv",
             psv_read_lines.len(), psv_copy_lines.len(), args.out
         );
+        if args.igv {
+            eprintln!(
+                "[copy_assign] --igv: now run  python bench/igv_tracks.py --assignments {0}.assignments.tsv \
+--bam <bam> --regions <regions> --out {0}  -> {0}.tagged.bam + {0}.copies.bed + {0}.psv.vcf (load in IGV)",
+                args.out
+            );
+        }
     }
 
     // document every family edge confirmed via the large-sequence LCS fallback (poasta memory threshold
