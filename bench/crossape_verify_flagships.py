@@ -21,11 +21,13 @@ from crossape_expansion import annotate  # family -> {'genes': {gene:count}, 'n'
 
 D = "/mnt/linuxdisk/home/juanfraitu/winloci_data"
 SPECIES = [
+    ("human",   f"{D}/HSA_gwcat.copies.tsv", f"{D}/HSA_genomic.gff"),
     ("chimp",   f"{D}/PTR_gwcat.copies.tsv", f"{D}/PTR_genomic.gff"),
     ("gorilla", f"{D}/GGO_gwcat.copies.tsv", f"{D}/GGO_genomic.gff"),
     ("orang",   f"{D}/PPY_gwcat.copies.tsv", f"{D}/PPY_genomic.gff"),
 ]
-ORDER = ["chimp", "gorilla", "orang"]
+SPECIES = [s for s in SPECIES if os.path.exists(s[1])]
+ORDER = [s[0] for s in SPECIES]
 FLAGSHIPS = [  # (label, name-regex, known biology / expected pattern)
     ("MAGEA",    r"^MAGEA\d",    "cancer-testis; expanded across catarrhines (~ancestral)"),
     ("NPIP",     r"^NPIP",       "African-ape/human expansion; ~absent in orangutan"),
@@ -74,7 +76,7 @@ def main():
     sl = load_seqlink()
 
     print("\n=== flagship verification (ann = annotated paralogs / cat = catalog copies at those genes) ===")
-    print(f"{'family':10s} {'chimp(ann/cat)':>16} {'gorilla(ann/cat)':>17} {'orang(ann/cat)':>16}  verdict")
+    print(f"{'family':10s} " + " ".join(f"{s+'(ann/cat)':>16}" for s in ORDER) + "  verdict")
     rows = []
     for label, rgx, bio in FLAGSHIPS:
         pat = re.compile(rgx, re.I)

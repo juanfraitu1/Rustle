@@ -25,11 +25,13 @@ D = "/mnt/linuxdisk/home/juanfraitu/winloci_data"
 MM2 = "/home/juanfra/miniforge3/bin/minimap2"
 S = "/home/juanfra/winloci_scratch"
 SPECIES = [
+    ("human",   f"{D}/HSA_gwcat.copies.fa", f"{D}/HSA_gwcat.copies.tsv", f"{D}/HSA_genomic.gff"),
     ("chimp",   f"{D}/PTR_gwcat.copies.fa", f"{D}/PTR_gwcat.copies.tsv", f"{D}/PTR_genomic.gff"),
     ("gorilla", f"{D}/GGO_gwcat.copies.fa", f"{D}/GGO_gwcat.copies.tsv", f"{D}/GGO_genomic.gff"),
     ("orang",   f"{D}/PPY_gwcat.copies.fa", f"{D}/PPY_gwcat.copies.tsv", f"{D}/PPY_genomic.gff"),
 ]
-ORDER = ["chimp", "gorilla", "orang"]
+SPECIES = [s for s in SPECIES if os.path.exists(s[1])]  # use whichever catalogs exist
+ORDER = [s[0] for s in SPECIES]
 ID_MIN, COV_MIN = 0.90, 0.50
 
 
@@ -48,16 +50,24 @@ def load_copies(fa):
     return fams
 
 
+BRANCHES = ["ancestral great-ape (>17 Mya, pre-orangutan)", "African great-ape ancestor (~9-17 Mya)",
+            "human-chimp ancestor (~6.5-9 Mya)", "human lineage (<6.5 Mya)", "chimp lineage (<6.5 Mya)",
+            "gorilla lineage (<9 Mya)", "orangutan lineage (<17 Mya)",
+            "ancestral (mixed pattern; contraction or linking gap)"]
+
 def origin_branch(cnt):
-    """Dollo parsimony on ((chimp,gorilla),orang): where did the multi-copy (>=2) state arise?"""
-    C, G, O = cnt["chimp"] >= 2, cnt["gorilla"] >= 2, cnt["orang"] >= 2
-    if C and G and O:       return "ancestral great-ape (>17 Mya, pre-orangutan)"
-    if C and G and not O:   return "African-ape ancestor (~9-17 Mya)"
-    if C and not G and not O: return "chimp lineage (<9 Mya; or shared with human)"
-    if G and not C and not O: return "gorilla lineage (<9 Mya)"
-    if not C and not G and O: return "orangutan lineage (<17 Mya)"
-    if C and O and not G:   return "ancestral, contracted in gorilla (>17 Mya)"
-    if G and O and not C:   return "ancestral, contracted in chimp (>17 Mya)"
+    """Dollo parsimony on (((human,chimp),gorilla),orang): where did the multi-copy (>=2) state arise?
+    With human present, human-specific expansions (SRGAP2C etc.) become MEASURED, not inferred."""
+    H = cnt.get("human", 0) >= 2; C = cnt.get("chimp", 0) >= 2
+    G = cnt.get("gorilla", 0) >= 2; O = cnt.get("orang", 0) >= 2
+    if H and C and G and O:         return "ancestral great-ape (>17 Mya, pre-orangutan)"
+    if H and C and G and not O:     return "African great-ape ancestor (~9-17 Mya)"
+    if H and C and not G and not O: return "human-chimp ancestor (~6.5-9 Mya)"
+    if H and not C and not G and not O: return "human lineage (<6.5 Mya)"
+    if C and not H and not G and not O: return "chimp lineage (<6.5 Mya)"
+    if G and not H and not C and not O: return "gorilla lineage (<9 Mya)"
+    if O and not H and not C and not G: return "orangutan lineage (<17 Mya)"
+    if sum([H, C, G, O]) >= 2:      return "ancestral (mixed pattern; contraction or linking gap)"
     return "single-copy (no expansion)"
 
 
@@ -132,19 +142,16 @@ def main():
         for label, cnt, branch, sample in rows:
             w.writerow([label] + [cnt[s] for s in ORDER] + [branch, ",".join(sample)])
 
-    print(f"\n=== SEQUENCE-LINKED cross-ape expansions (chimp / gorilla / orang) ===")
-    print(f"{'family':13s} {'chimp':>6}{'gorilla':>8}{'orang':>6}   origin branch")
+    print(f"\n=== SEQUENCE-LINKED cross-ape expansions ({' / '.join(ORDER)}) ===")
+    print(f"{'family':13s} " + "".join(f"{s:>8}" for s in ORDER) + "   origin branch")
     for label, cnt, branch, _ in rows[:32]:
-        print(f"  {label:11s} {cnt['chimp']:>6}{cnt['gorilla']:>8}{cnt['orang']:>6}   {branch}")
+        print(f"  {label:11s} " + "".join(f"{cnt[s]:>8}" for s in ORDER) + f"   {branch}")
 
     print(f"\n=== WHEN did expansions arise? (families per branch of the ape tree) ===")
     by_branch = defaultdict(int)
     for _, _, branch, _ in rows:
         by_branch[branch] += 1
-    for br in ["ancestral great-ape (>17 Mya, pre-orangutan)", "African-ape ancestor (~9-17 Mya)",
-               "chimp lineage (<9 Mya; or shared with human)", "gorilla lineage (<9 Mya)",
-               "orangutan lineage (<17 Mya)", "ancestral, contracted in gorilla (>17 Mya)",
-               "ancestral, contracted in chimp (>17 Mya)"]:
+    for br in BRANCHES:
         if by_branch.get(br):
             print(f"  {by_branch[br]:3d}  {br}")
     print(f"\n  wrote bench/crossape_seqlinked.tsv ({len(rows)} expanded ortholog groups)")

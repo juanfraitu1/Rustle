@@ -2,90 +2,73 @@
 <style>
   :root{
     --paper:#faf8f4; --panel:#ffffff; --ink:#242a2e; --muted:#6d6a63; --hair:#e5e0d7;
-    --anc:#2f6f6b;   /* ancestral great-ape  (>17 Mya)  cool */
-    --afr:#c1852b;   /* African-ape ancestor (~9-17 Mya) */
-    --hum:#bf4a37;   /* human lineage        (<6.5 Mya)  warm */
+    --anc:#2f6f6b; --afr:#c1852b; --hum:#bf4a37; --hc:#8a6d3b;
     --anc-w:#e5efee; --afr-w:#f6ecd7; --hum-w:#f6e2dd;
     --branch:#a9a297; --tip:#33383c;
     --shadow:0 1px 2px rgba(40,36,28,.06),0 8px 26px rgba(40,36,28,.07);
   }
   @media (prefers-color-scheme:dark){
-    :root{
-      --paper:#13161a; --panel:#1a1e24; --ink:#e9e6df; --muted:#9c968b; --hair:#2b3038;
-      --anc:#5fb3ad; --afr:#e0a94b; --hum:#e2705a;
-      --anc-w:#183230; --afr-w:#332810; --hum-w:#331c17;
-      --branch:#5b6069; --tip:#d7d3ca; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
-    }
+    :root{--paper:#13161a;--panel:#1a1e24;--ink:#e9e6df;--muted:#9c968b;--hair:#2b3038;
+      --anc:#5fb3ad;--afr:#e0a94b;--hum:#e2705a;--hc:#c2a06a;--anc-w:#183230;--afr-w:#332810;--hum-w:#331c17;
+      --branch:#5b6069;--tip:#d7d3ca;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);}
   }
-  :root[data-theme="dark"]{
-    --paper:#13161a; --panel:#1a1e24; --ink:#e9e6df; --muted:#9c968b; --hair:#2b3038;
-    --anc:#5fb3ad; --afr:#e0a94b; --hum:#e2705a; --anc-w:#183230; --afr-w:#332810; --hum-w:#331c17;
-    --branch:#5b6069; --tip:#d7d3ca; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
-  }
-  :root[data-theme="light"]{
-    --paper:#faf8f4; --panel:#ffffff; --ink:#242a2e; --muted:#6d6a63; --hair:#e5e0d7;
-    --anc:#2f6f6b; --afr:#c1852b; --hum:#bf4a37; --anc-w:#e5efee; --afr-w:#f6ecd7; --hum-w:#f6e2dd;
-    --branch:#a9a297; --tip:#33383c; --shadow:0 1px 2px rgba(40,36,28,.06),0 8px 26px rgba(40,36,28,.07);
-  }
+  :root[data-theme="dark"]{--paper:#13161a;--panel:#1a1e24;--ink:#e9e6df;--muted:#9c968b;--hair:#2b3038;
+    --anc:#5fb3ad;--afr:#e0a94b;--hum:#e2705a;--hc:#c2a06a;--anc-w:#183230;--afr-w:#332810;--hum-w:#331c17;
+    --branch:#5b6069;--tip:#d7d3ca;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);}
+  :root[data-theme="light"]{--paper:#faf8f4;--panel:#fff;--ink:#242a2e;--muted:#6d6a63;--hair:#e5e0d7;
+    --anc:#2f6f6b;--afr:#c1852b;--hum:#bf4a37;--hc:#8a6d3b;--anc-w:#e5efee;--afr-w:#f6ecd7;--hum-w:#f6e2dd;
+    --branch:#a9a297;--tip:#33383c;--shadow:0 1px 2px rgba(40,36,28,.06),0 8px 26px rgba(40,36,28,.07);}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);
-    font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-    -webkit-font-smoothing:antialiased;padding:34px 22px 60px}
+    font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;padding:34px 22px 60px}
   .wrap{max-width:940px;margin:0 auto}
-  .serif{font-family:Georgia,"Iowan Old Style","Times New Roman",serif}
   h1{font-family:Georgia,"Iowan Old Style",serif;font-weight:600;font-size:clamp(25px,4.2vw,36px);
     line-height:1.12;letter-spacing:-.01em;margin:0 0 10px;text-wrap:balance}
-  .sub{color:var(--muted);font-size:15.5px;max-width:70ch;margin:0 0 26px}
+  .sub{color:var(--muted);font-size:15.5px;max-width:72ch;margin:0 0 26px}
   .card{background:var(--panel);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow)}
-  figure{margin:0}
-  .fig{padding:14px 10px 6px}
+  figure{margin:0}.fig{padding:14px 10px 6px}
   svg{display:block;width:100%;height:auto;overflow:visible}
-  .tick{fill:var(--muted);font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+  .tick{fill:var(--muted);font:12px ui-monospace,Menlo,monospace}
   .axlab{fill:var(--muted);font:11.5px system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase}
-  .tip{fill:var(--tip);font-family:Georgia,serif;font-size:16.5px;font-style:italic}
-  .tipn{fill:var(--muted);font:11.5px ui-monospace,monospace}
+  .tip{fill:var(--tip);font-family:Georgia,serif;font-size:16px;font-style:italic}
+  .tipn{fill:var(--muted);font:11px ui-monospace,monospace}
   .node{fill:var(--muted);font:11px ui-monospace,monospace}
-  .fam{font:600 12.5px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.01em}
-  .tierlab{font-family:Georgia,serif;font-size:13.5px;font-style:italic}
-  .legend{display:flex;flex-wrap:wrap;gap:8px 20px;padding:4px 16px 18px}
-  .lg{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+  .fam{font:600 12px ui-monospace,Menlo,monospace}
+  .tierlab{font-family:Georgia,serif;font-size:13px;font-style:italic}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 18px;padding:4px 16px 18px}
+  .lg{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
   .sw{width:22px;height:5px;border-radius:3px;flex:none}
-  .strip{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:22px 0}
-  .stat{padding:16px 18px;border-radius:12px;border:1px solid var(--hair);background:var(--panel)}
-  .stat b{display:block;font-family:Georgia,serif;font-size:30px;line-height:1;font-variant-numeric:tabular-nums}
-  .stat span{color:var(--muted);font-size:12.5px}
-  .stat small{display:block;color:var(--muted);font-size:11px;margin-top:3px;font-variant-numeric:tabular-nums}
-  .s-anc b{color:var(--anc)} .s-afr b{color:var(--afr)} .s-hum b{color:var(--hum)}
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  .tblwrap{overflow-x:auto;margin-top:8px}
-  th,td{text-align:right;padding:8px 12px;border-bottom:1px solid var(--hair);white-space:nowrap}
+  .strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}
+  .stat{padding:15px 16px;border-radius:12px;border:1px solid var(--hair);background:var(--panel)}
+  .stat b{display:block;font-family:Georgia,serif;font-size:27px;line-height:1;font-variant-numeric:tabular-nums}
+  .stat span{color:var(--muted);font-size:12px}
+  .s-anc b{color:var(--anc)} .s-afr b{color:var(--afr)} .s-hc b{color:var(--hc)} .s-hum b{color:var(--hum)}
+  table{width:100%;border-collapse:collapse;font-size:14px}.tblwrap{overflow-x:auto;margin-top:8px}
+  th,td{text-align:right;padding:8px 11px;border-bottom:1px solid var(--hair);white-space:nowrap;font-variant-numeric:tabular-nums}
   th:first-child,td:first-child{text-align:left}
   thead th{font:600 11.5px system-ui;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-bottom:1.5px solid var(--branch)}
-  td.n{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}
-  .pill{display:inline-block;padding:1px 9px;border-radius:20px;font:600 11px ui-monospace,monospace}
+  td.h{font-weight:700;color:var(--hum)}
+  .pill{display:inline-block;padding:1px 9px;border-radius:20px;font:600 10.5px ui-monospace,monospace}
   .p-anc{background:var(--anc-w);color:var(--anc)} .p-afr{background:var(--afr-w);color:var(--afr)} .p-hum{background:var(--hum-w);color:var(--hum)}
-  h2{font-family:Georgia,serif;font-weight:600;font-size:19px;margin:34px 0 4px}
+  h2{font-family:Georgia,serif;font-weight:600;font-size:19px;margin:32px 0 4px}
   .note{color:var(--muted);font-size:13px;margin:6px 0 0}
-  .caveats{margin-top:30px;padding:18px 20px;border-radius:12px;background:var(--panel);border:1px solid var(--hair)}
+  .caveats{margin-top:28px;padding:18px 20px;border-radius:12px;background:var(--panel);border:1px solid var(--hair)}
   .caveats h3{margin:0 0 8px;font:600 12px system-ui;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-  .caveats ul{margin:0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.7}
-  .caveats b{color:var(--ink)}
-  .foot{margin-top:24px;color:var(--muted);font-size:12px;text-align:center}
+  .caveats ul{margin:0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.7}.caveats b{color:var(--ink)}
+  .foot{margin-top:22px;color:var(--muted);font-size:12px;text-align:center}
 </style>
 
 <div class="wrap">
   <h1 class="serif">When did the great-ape gene families expand?</h1>
-  <p class="sub">De-novo multi-copy family catalogs from long-read RNA (chimp, gorilla, orangutan; matched ~4M reads,
-  linked across species by consensus sequence), dated on the settled great-ape tree by parsimony on copy number.
-  Human is shown for context but was not sampled here — its placements come from the apes being single-copy.</p>
+  <p class="sub">De-novo multi-copy family catalogs from long-read RNA — human (testis), chimp, gorilla, orangutan —
+  all at matched ~4M reads, linked across species by consensus sequence, and dated on the great-ape tree by
+  parsimony on copy number. All four tips are measured; the human-specific tier is now data, not inference.</p>
 
   <figure class="card">
     <div class="fig">
       <svg viewBox="0 0 940 400" role="img" aria-label="Great-ape timetree with gene-family expansions dated to branches">
-        <!-- time axis -->
         <g>
           <line x1="70" y1="360" x2="810" y2="360" stroke="var(--hair)" stroke-width="1"/>
-          <!-- 0 Mya at x=810 (present), scale 40 px/Mya, root 18.5 Mya -->
           <g class="tick" text-anchor="middle">
             <line x1="810" y1="356" x2="810" y2="364" stroke="var(--branch)"/><text x="810" y="378">0</text>
             <line x1="610" y1="356" x2="610" y2="364" stroke="var(--branch)"/><text x="610" y="378">5</text>
@@ -94,118 +77,92 @@
           </g>
           <text class="axlab" x="440" y="395" text-anchor="middle">million years ago</text>
         </g>
-
-        <!-- ===== tree (rectangular cladogram). tips x=810; root x=70(~18.5Mya); NodeA 9Mya x=450; NodeB 6.5Mya x=550 ===== -->
-        <!-- neutral terminal + internal branches -->
+        <!-- tree: tips x=810; root 17Mya x=170; NodeA 9Mya x=450; NodeB(human-chimp) 6.5Mya x=550 -->
         <g fill="none" stroke="var(--branch)" stroke-width="3" stroke-linecap="round">
-          <!-- root vertical (orang split .. African clade) -->
-          <path d="M170 250 V95"/>
-          <!-- root -> orang -->
-          <path d="M170 250 H810"/>
-          <!-- NodeA vertical (gorilla .. (human,chimp)) -->
-          <path d="M450 160 V75"/>
-          <!-- NodeA -> gorilla -->
-          <path d="M450 160 H810"/>
-          <!-- NodeB vertical (human..chimp) -->
-          <path d="M550 75 V45"/>
-          <!-- NodeB -> chimp -->
-          <path d="M550 75 H810"/>
+          <path d="M170 250 V95"/>            <!-- root vertical -->
+          <path d="M170 250 H810"/>           <!-- root -> orang -->
+          <path d="M450 160 V75"/>            <!-- NodeA vertical -->
+          <path d="M450 160 H810"/>           <!-- NodeA -> gorilla -->
+          <path d="M550 75 V45"/>             <!-- NodeB vertical -->
+          <path d="M550 75 H810"/>            <!-- NodeB -> chimp -->
         </g>
-        <!-- TIER-COLORED branches -->
-        <!-- ancestral great-ape stem: left of root -->
         <path d="M70 250 H170" fill="none" stroke="var(--anc)" stroke-width="6" stroke-linecap="round"/>
-        <!-- African-ape stem: root -> NodeA -->
         <path d="M170 95 H450" fill="none" stroke="var(--afr)" stroke-width="6" stroke-linecap="round"/>
-        <!-- human terminal: NodeB -> human -->
+        <path d="M450 75 H550" fill="none" stroke="var(--hc)" stroke-width="5" stroke-linecap="round"/>
         <path d="M550 45 H810" fill="none" stroke="var(--hum)" stroke-width="6" stroke-linecap="round"/>
-
-        <!-- node dots + divergence times -->
         <g>
-          <circle cx="170" cy="250" r="4" fill="var(--anc)"/><text class="node" x="176" y="268">split ~17 Mya</text>
+          <circle cx="170" cy="250" r="4" fill="var(--anc)"/><text class="node" x="176" y="268">~17 Mya (orangutan split)</text>
           <circle cx="450" cy="160" r="4" fill="var(--afr)"/><text class="node" x="456" y="178">~9 Mya</text>
-          <circle cx="550" cy="75" r="3.5" fill="var(--hum)"/><text class="node" x="556" y="66" fill="var(--muted)">~6.5 Mya</text>
+          <circle cx="550" cy="75" r="3.5" fill="var(--hc)"/><text class="node" x="512" y="66" fill="var(--muted)">~6.5 Mya</text>
         </g>
-
-        <!-- tips -->
         <g>
-          <text class="tip" x="822" y="50">human</text><text class="tipn" x="822" y="64">not sampled · single-copy in apes ⇒ human-specific</text>
+          <text class="tip" x="822" y="43">human</text><text class="tipn" x="822" y="57">testis · 394 families</text>
           <text class="tip" x="822" y="79">chimpanzee</text><text class="tipn" x="822" y="93">549 families</text>
           <text class="tip" x="822" y="165">gorilla</text><text class="tipn" x="822" y="179">494 families</text>
           <text class="tip" x="822" y="255">orangutan</text><text class="tipn" x="822" y="269">462 families</text>
         </g>
-
-        <!-- tier annotations: families placed where they arose -->
-        <!-- ancestral (on the stem, drawn above-left) -->
-        <g>
-          <text class="tierlab" x="70" y="222" fill="var(--anc)">ancestral great-ape · &gt;17 Mya</text>
-          <text class="fam" x="70" y="304" fill="var(--anc)">MAGEA</text>
-          <text class="fam" x="70" y="322" fill="var(--anc)">GSTM</text>
-          <text class="fam" x="70" y="340" fill="var(--anc)">ZNF (KRAB)</text>
-        </g>
-        <!-- African-ape (near the amber stem) -->
-        <g>
-          <text class="tierlab" x="250" y="88" fill="var(--afr)">African-ape ancestor · ~9–17 Mya</text>
-          <text class="fam" x="250" y="118" fill="var(--afr)">NPIP</text>
-          <text class="fam" x="322" y="118" fill="var(--afr)">NBPF</text>
-          <text class="fam" x="392" y="118" fill="var(--afr)">POTE</text>
-        </g>
-        <!-- human (near coral terminal) -->
-        <g>
-          <text class="tierlab" x="588" y="34" fill="var(--hum)">human lineage · &lt;6.5 Mya</text>
-          <text class="fam" x="588" y="20" fill="var(--hum)" opacity="0"> </text>
-        </g>
+        <!-- ancestral -->
+        <g><text class="tierlab" x="70" y="222" fill="var(--anc)">ancestral great-ape · &gt;17 Mya · 108 families</text>
+          <text class="fam" x="70" y="300" fill="var(--anc)">MAGEA</text><text class="fam" x="70" y="318" fill="var(--anc)">GSTM · ZNF</text>
+          <text class="fam" x="70" y="336" fill="var(--anc)">ANKRD36 · TUBA</text></g>
+        <!-- African great-ape -->
+        <g><text class="tierlab" x="235" y="88" fill="var(--afr)">African great-ape · ~9–17 Mya · 40</text>
+          <text class="fam" x="235" y="118" fill="var(--afr)">NPIP</text><text class="fam" x="310" y="118" fill="var(--afr)">POTE</text><text class="fam" x="380" y="118" fill="var(--afr)">FRG1</text></g>
+        <!-- human-chimp -->
+        <g><text class="tierlab" x="452" y="100" fill="var(--hc)">human-chimp · 44</text>
+          <text class="fam" x="452" y="116" fill="var(--hc)">DPP6 · CXADR</text></g>
+        <!-- human lineage (measured) -->
+        <g><text class="tierlab" x="560" y="34" fill="var(--hum)">human lineage · &lt;6.5 Mya · 91 (measured)</text></g>
         <g class="fam" fill="var(--hum)">
-          <text x="640" y="112">SRGAP2C</text>
-          <text x="640" y="130">ARHGAP11B</text>
-          <text x="726" y="112">FAM72</text>
-          <text x="726" y="130">TBC1D3</text>
-          <line x1="700" y1="60" x2="700" y2="100" stroke="var(--hum)" stroke-width="1.2" stroke-dasharray="2 3"/>
+          <text x="590" y="112">NBPF ×16</text><text x="590" y="130">TBC1D3 ×5</text>
+          <text x="694" y="112">SRGAP2 ×2</text><text x="694" y="130">FAM72 ×3</text>
         </g>
       </svg>
     </div>
     <div class="legend">
-      <span class="lg"><span class="sw" style="background:var(--anc)"></span>ancestral great-ape (&gt;17 Mya) — in all apes</span>
-      <span class="lg"><span class="sw" style="background:var(--afr)"></span>African-ape ancestor (~9–17 Mya) — chimp + gorilla, not orangutan</span>
-      <span class="lg"><span class="sw" style="background:var(--hum)"></span>human lineage (&lt;6.5 Mya) — single-copy in every ape sampled</span>
+      <span class="lg"><span class="sw" style="background:var(--anc)"></span>ancestral great-ape (&gt;17 Mya)</span>
+      <span class="lg"><span class="sw" style="background:var(--afr)"></span>African great-ape ancestor (~9–17 Mya)</span>
+      <span class="lg"><span class="sw" style="background:var(--hc)"></span>human-chimp (~6.5–9 Mya)</span>
+      <span class="lg"><span class="sw" style="background:var(--hum)"></span>human lineage (&lt;6.5 Mya) — measured in human testis</span>
     </div>
   </figure>
 
   <div class="strip">
-    <div class="stat s-anc"><b>149</b><span>families already multi-copy in the great-ape ancestor</span><small>expanded in all three apes</small></div>
-    <div class="stat s-afr"><b>84</b><span>families expanded in the African-ape ancestor</span><small>chimp + gorilla, absent in orangutan</small></div>
-    <div class="stat s-hum"><b>4/4</b><span>human-specific brain genes are single-copy in the apes</span><small>SRGAP2 · ARHGAP11 · FAM72 · TBC1D3</small></div>
+    <div class="stat s-anc"><b>108</b><span>ancestral great-ape — expanded in all four</span></div>
+    <div class="stat s-afr"><b>40</b><span>African great-ape ancestor — not orangutan</span></div>
+    <div class="stat s-hc"><b>44</b><span>human-chimp ancestor</span></div>
+    <div class="stat s-hum"><b>91</b><span>human lineage — <b>measured</b>, incl. SRGAP2, FAM72, NBPF</span></div>
   </div>
 
-  <h2 class="serif">Verified flagship families</h2>
-  <p class="note">Copy counts are RNA-detected multi-copy loci at matched depth. Annotated-paralog counts (RefSeq) shown where they add confidence; the human-lineage genes are single-copy in every ape, which is our data directly dating their expansion to <em>after</em> the human split.</p>
-  <div class="tblwrap">
-  <table>
-    <thead><tr><th>family</th><th>chimp</th><th>gorilla</th><th>orangutan</th><th>human*</th><th style="text-align:left">origin (dated)</th></tr></thead>
+  <h2 class="serif">Verified flagship families — copies per species</h2>
+  <p class="note">RNA-detected multi-copy loci at matched depth. The human column is now a measurement (testis Iso-Seq), not literature — SRGAP2 and FAM72 read out as human-expanded vs single-copy apes directly.</p>
+  <div class="tblwrap"><table>
+    <thead><tr><th>family</th><th>human</th><th>chimp</th><th>gorilla</th><th>orang</th><th style="text-align:left">origin (dated)</th></tr></thead>
     <tbody>
-      <tr><td>MAGEA</td><td class="n">8</td><td class="n">5</td><td class="n">8</td><td class="n">~9</td><td><span class="pill p-anc">ancestral great-ape</span></td></tr>
-      <tr><td>ZNF (KRAB)</td><td class="n">172</td><td class="n">186</td><td class="n">131</td><td class="n">—</td><td><span class="pill p-anc">ancestral great-ape</span></td></tr>
-      <tr><td>GSTM</td><td class="n">3</td><td class="n">9</td><td class="n">2</td><td class="n">~5</td><td><span class="pill p-anc">ancestral great-ape</span></td></tr>
-      <tr><td>NPIP</td><td class="n">22</td><td class="n">3</td><td class="n">0</td><td class="n">expanded</td><td><span class="pill p-afr">African-ape ancestor</span></td></tr>
-      <tr><td>NBPF (Olduvai)</td><td class="n">16</td><td class="n">·</td><td class="n">0</td><td class="n">expanded</td><td><span class="pill p-afr">African-ape ancestor</span></td></tr>
-      <tr><td>POTE</td><td class="n">11</td><td class="n">·</td><td class="n">0</td><td class="n">expanded</td><td><span class="pill p-afr">African-ape ancestor</span></td></tr>
-      <tr><td>SRGAP2</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n">4</td><td><span class="pill p-hum">human lineage</span></td></tr>
-      <tr><td>ARHGAP11</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n">2</td><td><span class="pill p-hum">human lineage</span></td></tr>
-      <tr><td>FAM72</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n">4</td><td><span class="pill p-hum">human lineage</span></td></tr>
-      <tr><td>TBC1D3</td><td class="n">1</td><td class="n">~0</td><td class="n">~0</td><td class="n">many</td><td><span class="pill p-hum">human lineage</span></td></tr>
+      <tr><td>MAGEA</td><td class="h">7</td><td>8</td><td>5</td><td>8</td><td><span class="pill p-anc">ancestral great-ape</span></td></tr>
+      <tr><td>ZNF (KRAB)</td><td class="h">137</td><td>172</td><td>186</td><td>131</td><td><span class="pill p-anc">ancestral great-ape</span></td></tr>
+      <tr><td>GSTM</td><td class="h">·</td><td>3</td><td>9</td><td>2</td><td><span class="pill p-anc">ancestral great-ape</span></td></tr>
+      <tr><td>NPIP</td><td class="h">11</td><td>22</td><td>3</td><td>0</td><td><span class="pill p-afr">African great-ape</span></td></tr>
+      <tr><td>POTE</td><td class="h">15</td><td>2</td><td>1</td><td>2</td><td><span class="pill p-afr">African great-ape</span></td></tr>
+      <tr><td>NBPF (Olduvai)</td><td class="h">16</td><td>3</td><td>0</td><td>0</td><td><span class="pill p-hum">human-biased</span></td></tr>
+      <tr><td><b>SRGAP2</b></td><td class="h">2</td><td>1</td><td>1</td><td>1</td><td><span class="pill p-hum">human lineage ✓ measured</span></td></tr>
+      <tr><td><b>FAM72</b></td><td class="h">3</td><td>1</td><td>1</td><td>1</td><td><span class="pill p-hum">human lineage ✓ measured</span></td></tr>
+      <tr><td>TBC1D3</td><td class="h">5</td><td>1</td><td>0</td><td>0</td><td><span class="pill p-hum">human-biased</span></td></tr>
+      <tr><td>ARHGAP11</td><td class="h">0*</td><td>1</td><td>1</td><td>1</td><td><span class="pill p-hum">human lineage (brain — not in testis)</span></td></tr>
+      <tr><td>RBMY</td><td class="h">3</td><td>0</td><td>0</td><td>0</td><td><span class="pill p-hum">testis, Y</span></td></tr>
     </tbody>
-  </table>
-  </div>
-  <p class="note">* human column: expected from the literature (Dennis/Soto, Eichler) — not measured in this run. “·” = detected only in chimp; gorilla detection uncertain (see caveats).</p>
+  </table></div>
+  <p class="note">* ARHGAP11 has 5 annotated human paralogs but 0 in this testis RNA — it's brain-expressed, so its human-specific expansion stays inferred (needs human brain RNA). "·" = not detected in that species.</p>
 
   <div class="caveats">
     <h3>How to read this honestly</h3>
     <ul>
-      <li><b>Counts are RNA-expressed multi-copy loci</b>, matched to ~4M reads across apes — a proxy for genomic copy number, not a DNA copy-number call.</li>
-      <li><b>The multi-species branches are reliable</b> (ancestral, African-ape) — they required a family to link across species. <b>Purely lineage-specific counts are upper bounds</b>: sequence linking can miss divergent orthologs and split one ancestral family into two "lineage-specific" ones.</li>
-      <li><b>NPIP/NBPF/POTE magnitudes come from detection, not annotation</b> — most paralogs are unnamed (<code>LOC…</code>) in these assemblies, so gene-name counts undercount them. NPIP's gorilla copy (3) is the sequence-linked value; NBPF/POTE gorilla detection is uncertain.</li>
-      <li><b>The human-lineage tier is the strongest claim</b>: SRGAP2, ARHGAP11, FAM72 are single-copy in <em>all three</em> apes we sampled — direct evidence their expansion is human-specific. TBC1D3 is annotated but barely RNA-detected in apes.</li>
+      <li><b>Human is testis Iso-Seq</b> (A119b, downsampled 68M→4M to match the apes). Testis-expressed families (MAGEA, SRGAP2, FAM72, RBMY, NPIP, NBPF) are measured; a <b>brain-only</b> gene like ARHGAP11 is invisible here and stays inferred.</li>
+      <li><b>The measured human wins are real:</b> SRGAP2 (2) and FAM72 (3) vs single-copy in <em>all three</em> apes — the human-specific expansion, confirmed from human's own reads, not the literature.</li>
+      <li><b>Multi-species branches are reliable</b> (ancestral, African, human-chimp — a family had to link across species). <b>Purely lineage-specific counts are upper bounds</b>: sequence linking can miss divergent orthologs and split one ancestral family into two lineage-specific ones.</li>
+      <li><b>Counts are RNA-expressed copies</b>, a proxy for genomic copy number; a DNA (WSSD/segdup) leg would turn them into famCN on the same tree.</li>
     </ul>
   </div>
 
-  <p class="foot">Great-ape topology (((human, chimp), gorilla), orangutan); divergence times ~6.5 / ~9 / ~17 Mya. Rustle de-novo family catalogs · gw_family_catalog --cross-chrom --homology-primary.</p>
+  <p class="foot">Tree (((human, chimp), gorilla), orangutan); divergence times ~6.5 / ~9 / ~17 Mya. Rustle de-novo catalogs · gw_family_catalog --cross-chrom --homology-primary · sequence-linked + Dollo-dated.</p>
 </div>
