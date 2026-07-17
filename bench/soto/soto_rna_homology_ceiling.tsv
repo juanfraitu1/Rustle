@@ -1,0 +1,75 @@
+family_id	gene	chrom	start	end	n_sibs	best_sibling(det)	best_id_to_sib	best_cov_of_shorter	class
+ID_26	SLC9B1P1	chr16	32804124	32821138	1	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_240	FO681492.1	chr10	48641165	48655007	2	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_208	CASTOR2	chr7	76167037	76233789	4	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_327	CTSLP3	chr10	47641642	47647779	3	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_215	AC245297.1	chr1	145855639	145979396	6	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_251	AL356585.4	chr13	13734170	13738626	1	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_251	ANKRD36B	chr2	97950885	98048181	1	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_213	AC246785.1	chr1	143591826	143594083	3	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_92	AC243829.7	chr17	37109490	37110818	1	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_92	AC053481.4	chr17	63130560	63131864	1	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_431	PPIAL4D	chr1	144366357	144366853	4	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_26	AC006453.4	chr2	90228191	90245534	1	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_402	NCF1B	chr7	74420835	74436153	2	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_411	OR11H13P	chr14	13493444	13494424	2	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_240	SYT15	chr10	47464575	47480533	2	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_313	CDH12P3	chr5	71589693	71589989	1	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_240	AL157893.1	chr10	88097762	88099813	2	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_167	CHEK2P2	chr15	19353208	19362048	2	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_78	AC243562.1	chr15	82144483	82145499	4	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_431	PPIAL4F	chr1	143472956	143473742	4	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_313	CDH12P1	chr5	70901860	70902156	1	()	0.000	0.000	RNA-non-homologous (DNA-family only)
+ID_458	SPAG11B	chr8	12534401	12555431	1	SPAG11A(N)	0.992	1.001	homologous to a sibling (RNA-family member; recoverable gap)
+ID_260	MEP1AP4	chr9	44369523	44375633	2	MEP1AP1(N)	0.977	1.002	homologous to a sibling (RNA-family member; recoverable gap)
+ID_261	CNTNAP3P1	chr9	80247804	80257862	4	BX664718.2(Y)	0.982	1.001	homologous to a sibling (RNA-family member; recoverable gap)
+ID_458	SPAG11A	chr8	7171678	7192682	1	SPAG11B(N)	0.992	1.001	homologous to a sibling (RNA-family member; recoverable gap)
+ID_226	H3-2	chr1	142966564	142977985	4	H2BP1(N)	0.979	1.007	homologous to a sibling (RNA-family member; recoverable gap)
+ID_226	H2BP1	chr1	121117591	121126640	4	H3-2(N)	0.988	1.001	homologous to a sibling (RNA-family member; recoverable gap)
+ID_146	AC124944.2	chr3	198403551	198444967	1	AC233280.19(N)	0.981	1.002	homologous to a sibling (RNA-family member; recoverable gap)
+ID_402	NCF1	chr7	75976253	75991692	2	NCF1C(N)	0.992	0.820	homologous to a sibling (RNA-family member; recoverable gap)
+ID_260	MEP1AP1	chr9	77952010	77958144	2	MEP1AP4(N)	0.981	0.990	homologous to a sibling (RNA-family member; recoverable gap)
+ID_156	WHAMMP3	chr15	20336417	20358287	4	WHAMMP2(Y)	0.746	1.064	homologous to a sibling (RNA-family member; recoverable gap)
+ID_407	TRIM73	chr7	76682335	76698280	3	TRIM74(N)	0.773	1.096	homologous to a sibling (RNA-family member; recoverable gap)
+ID_35	AC008443.6	chr5	181851743	181855644	9	FAM157A(Y)	0.980	0.930	homologous to a sibling (RNA-family member; recoverable gap)
+ID_127	TCAF2C	chr7	145090337	145098763	2	AC099548.2(N)	0.995	1.003	homologous to a sibling (RNA-family member; recoverable gap)
+ID_14	LRRC37BP1	chr17	31574334	31581958	6	AC005562.2(N)	1.000	1.000	homologous to a sibling (RNA-family member; recoverable gap)
+ID_147	ANKRD30BP2	chr21	11382453	11411385	3	AL353626.3(Y)	0.925	1.017	homologous to a sibling (RNA-family member; recoverable gap)
+ID_175	AC134878.2	chr22	5801017	5862418	1	TEKT4P2(N)	0.971	0.519	homologous to a sibling (RNA-family member; recoverable gap)
+ID_127	AC099548.2	chr7	145042141	145117285	2	TCAF2C(N)	0.995	1.003	homologous to a sibling (RNA-family member; recoverable gap)
+ID_175	TEKT4P2	chr21	5692610	5754003	1	AC134878.2(N)	0.971	0.519	homologous to a sibling (RNA-family member; recoverable gap)
+ID_131	AC105272.1	chr1	103516936	103517135	5	AMY2A(Y)	0.945	1.055	homologous to a sibling (RNA-family member; recoverable gap)
+ID_146	AC233280.19	chr3	198342015	198343130	1	AC124944.2(N)	0.981	1.002	homologous to a sibling (RNA-family member; recoverable gap)
+ID_226	H3P4	chr1	121127576	121127993	4	H3C13(N)	0.980	0.589	homologous to a sibling (RNA-family member; recoverable gap)
+ID_402	NCF1C	chr7	76360590	76375995	2	NCF1(N)	0.992	0.820	homologous to a sibling (RNA-family member; recoverable gap)
+ID_226	H3C13	chr1	148937358	148937828	4	H2BC18(Y)	0.994	0.599	homologous to a sibling (RNA-family member; recoverable gap)
+ID_407	TRIM74	chr7	74187708	74197691	3	TRIM73(N)	0.417	1.233	homologous to a sibling (RNA-family member; recoverable gap)
+ID_14	AC005562.2	chr17	31562334	31562446	6	LRRC37BP1(N)	1.000	1.000	homologous to a sibling (RNA-family member; recoverable gap)
+ID_213	AC239809.1	chr1	146572932	146573150	3	AC245407.1(N)	0.947	0.990	homologous to a sibling (RNA-family member; recoverable gap)
+ID_481	UBE2Q2P8	chr15	82169947	82170050	4	UBE2Q2P12(Y)	1.000	1.000	homologous to a sibling (RNA-family member; recoverable gap)
+ID_338	DEFB108D	chr8	7634987	7639336	2	DEFB108C(N)	0.989	0.437	partial-homology (cov<0.50; coverage-gate frontier)
+ID_63	AC097527.1	chr2	106932223	106939096	7	ANAPC1P5(N)	0.941	0.277	partial-homology (cov<0.50; coverage-gate frontier)
+ID_63	ANAPC1P5	chr2	87992304	88004460	7	AC097527.1(N)	0.949	0.197	partial-homology (cov<0.50; coverage-gate frontier)
+ID_338	DEFB108C	chr8	7102093	7106486	2	DEFB108A(Y)	0.960	0.264	partial-homology (cov<0.50; coverage-gate frontier)
+ID_260	AL513478.2	chr9	40202700	40208822	2	MEP1AP1(N)	0.975	0.071	partial-homology (cov<0.50; coverage-gate frontier)
+ID_148	AC142384.1	chr16	34884759	34929924	1	AC126603.1(N)	0.950	0.141	partial-homology (cov<0.50; coverage-gate frontier)
+ID_386	LIMS1	chr2	108994973	109147842	1	LIMS4(N)	0.989	0.044	partial-homology (cov<0.50; coverage-gate frontier)
+ID_386	LIMS4	chr2	110869109	110895544	1	LIMS1(N)	0.989	0.044	partial-homology (cov<0.50; coverage-gate frontier)
+ID_12	POMZP3	chr7	77889197	77906183	3	POM121C(Y)	0.988	0.141	partial-homology (cov<0.50; coverage-gate frontier)
+ID_148	AC126603.1	chr15	18136928	18186041	1	AC142384.1(N)	0.975	0.405	partial-homology (cov<0.50; coverage-gate frontier)
+ID_14	AC090616.5	chr17	33034040	33040757	6	LRRC37A2(Y)	0.891	0.348	partial-homology (cov<0.50; coverage-gate frontier)
+ID_63	ANAPC1P1	chr2	86863741	86914950	7	ANAPC1P5(N)	0.984	0.340	partial-homology (cov<0.50; coverage-gate frontier)
+ID_127	TCAF2	chr7	144980464	145010762	2	AC099548.2(N)	0.990	0.148	partial-homology (cov<0.50; coverage-gate frontier)
+ID_431	PPIAL4A	chr1	120899120	120899781	0	?	0.00	0.00	singleton/no-reads
+ID_431	PPIAL4E	chr1	143692933	143693719	0	?	0.00	0.00	singleton/no-reads
+ID_431	PPIAL4C	chr1	148708008	148708609	0	?	0.00	0.00	singleton/no-reads
+ID_334	DEFB104B	chr8	12522996	12527770	0	?	0.00	0.00	singleton/no-reads
+ID_332	DDX11L16	chr16	4785	7013	0	?	0.00	0.00	singleton/no-reads
+ID_391	WASH6P	chr16	6965	11846	0	?	0.00	0.00	singleton/no-reads
+ID_167	AC133548.1	chr16	32772942	32779658	0	?	0.00	0.00	singleton/no-reads
+ID_348	DUX4L50	chr9	47737220	47737936	0	?	0.00	0.00	singleton/no-reads
+ID_222	AC243829.6	chr17	37415116	37415223	0	?	0.00	0.00	singleton/no-reads
+ID_261	CNTNAP3P5	chr9	39786634	39796678	0	?	0.00	0.00	singleton/no-reads
+ID_65	CR383656.5	chr14	13134773	13154353	0	?	0.00	0.00	singleton/no-reads
+ID_302	BOLA2B	chr16	29735379	29736755	0	?	0.00	0.00	singleton/no-reads
+ID_215	AC244669.2	chr1	120210345	120332947	0	?	0.00	0.00	singleton/no-reads

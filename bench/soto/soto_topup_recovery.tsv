@@ -1,0 +1,87 @@
+family_id	gene	chrom	start	end	primary_reads	topup_added	best_sibling_id	control_detected	topup_detected	classification
+ID_43	TRIM64B	chr11	89788985	89795720	1	39	0.9982	N	Y	RECOVERED by coverage
+ID_411	OR11H12	chr14	13104431	13105517	1	39	0.9939	N	Y	RECOVERED by coverage
+ID_411	OR11H1	chr22	16102172	16103154	1	39	NA	N	Y	RECOVERED by coverage
+ID_63	ANAPC1P3	chr2	87123762	87126211	3	37	0.9980	N	Y	RECOVERED by coverage
+ID_261	AL773545.4	chr9	77974578	77978517	4	36	NA	N	Y	RECOVERED by coverage
+ID_261	AL513478.3	chr9	40182305	40186244	6	34	0.9975	N	Y	RECOVERED by coverage
+ID_43	TRIM64	chr11	89888639	89894223	7	33	0.9535	N	Y	RECOVERED by coverage
+ID_213	AC245407.1	chr1	148346520	148348932	8	32	NA	N	Y	RECOVERED by coverage
+ID_65	AP000534.2	chr22	16115445	16152024	12	28	0.9599	N	Y	RECOVERED by coverage
+ID_332	FO538757.1	chr11	3740	5220	13	27	0.9946	N	Y	RECOVERED by coverage
+ID_167	AC136944.3	chr16	33739351	33747637	13	27	NA	N	Y	RECOVERED by coverage
+ID_213	AC239804.2	chr1	145768949	145779518	22	18	0.9917	N	Y	RECOVERED by coverage
+ID_431	PPIAL4A	chr1	120899120	120899781	0	0	0.9884	N	N	silent (0 reads, no template)
+ID_431	PPIAL4E	chr1	143692933	143693719	0	0	0.9980	N	N	silent (0 reads, no template)
+ID_431	PPIAL4C	chr1	148708008	148708609	0	0	NA	N	N	silent (0 reads, no template)
+ID_334	DEFB104B	chr8	12522996	12527770	0	0	NA	N	N	silent (0 reads, no template)
+ID_332	DDX11L16	chr16	4785	7013	0	0	0.9838	N	N	silent (0 reads, no template)
+ID_213	AC246785.1	chr1	143591826	143594083	1	39	0.9934	N	N	structural: topped to ideal but still no locus
+ID_391	WASH6P	chr16	6965	11846	1	39	0.9872	N	N	structural: topped to ideal but still no locus
+ID_167	AC133548.1	chr16	32772942	32779658	1	39	0.9154	N	N	structural: topped to ideal but still no locus
+ID_92	AC243829.7	chr17	37109490	37110818	1	39	0.9840	N	N	structural: topped to ideal but still no locus
+ID_348	DUX4L50	chr9	47737220	47737936	3	37	NA	N	N	structural: topped to ideal but still no locus
+ID_131	AC105272.1	chr1	103516936	103517135	4	36	NA	N	N	structural: topped to ideal but still no locus
+ID_92	AC053481.4	chr17	63130560	63131864	4	36	NA	N	N	structural: topped to ideal but still no locus
+ID_431	PPIAL4D	chr1	144366357	144366853	5	35	0.9839	N	N	structural: topped to ideal but still no locus
+ID_213	AC239809.1	chr1	146572932	146573150	5	35	NA	N	N	structural: topped to ideal but still no locus
+ID_26	SLC9B1P1	chr16	32804124	32821138	5	35	0.9474	N	N	structural: topped to ideal but still no locus
+ID_458	SPAG11B	chr8	12534401	12555431	6	34	0.9939	N	N	structural: topped to ideal but still no locus
+ID_222	AC243829.6	chr17	37415116	37415223	6	34	NA	N	N	structural: topped to ideal but still no locus
+ID_261	CNTNAP3P5	chr9	39786634	39796678	7	33	0.9832	N	N	structural: topped to ideal but still no locus
+ID_260	MEP1AP4	chr9	44369523	44375633	8	32	0.9798	N	N	structural: topped to ideal but still no locus
+ID_261	CNTNAP3P1	chr9	80247804	80257862	8	32	NA	N	N	structural: topped to ideal but still no locus
+ID_65	CR383656.5	chr14	13134773	13154353	8	32	0.9945	N	N	structural: topped to ideal but still no locus
+ID_338	DEFB108D	chr8	7634987	7639336	10	30	NA	N	N	structural: topped to ideal but still no locus
+ID_63	AC097527.1	chr2	106932223	106939096	11	29	0.9853	N	N	structural: topped to ideal but still no locus
+ID_146	AC233280.19	chr3	198342015	198343130	12	28	0.9865	N	N	structural: topped to ideal but still no locus
+ID_240	FO681492.1	chr10	48641165	48655007	12	28	0.9647	N	N	structural: topped to ideal but still no locus
+ID_226	H3P4	chr1	121127576	121127993	13	27	0.9737	N	N	structural: topped to ideal but still no locus
+ID_26	AC006453.4	chr2	90228191	90245534	13	27	0.9582	N	N	structural: topped to ideal but still no locus
+ID_402	NCF1B	chr7	74420835	74436153	15	25	0.9970	N	N	structural: topped to ideal but still no locus
+ID_63	ANAPC1P5	chr2	87992304	88004460	17	23	NA	N	N	structural: topped to ideal but still no locus
+ID_402	NCF1C	chr7	76360590	76375995	17	23	NA	N	N	structural: topped to ideal but still no locus
+ID_338	DEFB108C	chr8	7102093	7106486	17	23	0.9537	N	N	structural: topped to ideal but still no locus
+ID_411	OR11H13P	chr14	13493444	13494424	18	22	0.9806	N	N	structural: topped to ideal but still no locus
+ID_458	SPAG11A	chr8	7171678	7192682	19	21	NA	N	N	structural: topped to ideal but still no locus
+ID_260	AL513478.2	chr9	40202700	40208822	22	18	0.9883	N	N	structural: topped to ideal but still no locus
+ID_240	SYT15	chr10	47464575	47480533	24	16	0.9968	N	N	structural: topped to ideal but still no locus
+ID_226	H3C13	chr1	148937358	148937828	29	11	NA	N	N	structural: topped to ideal but still no locus
+ID_148	AC142384.1	chr16	34884759	34929924	30	10	0.8635	N	N	structural: topped to ideal but still no locus
+ID_481	UBE2Q2P8	chr15	82169947	82170050	32	8	NA	N	N	structural: topped to ideal but still no locus
+ID_226	H3-2	chr1	142966564	142977985	35	5	0.9898	N	N	structural: topped to ideal but still no locus
+ID_431	PPIAL4F	chr1	143472956	143473742	2	38	1.0000	N	N	structural: topped to ideal but still no locus [K=0 near-identical]
+ID_226	H2BP1	chr1	121117591	121126640	43	0	0.9932	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_386	LIMS1	chr2	108994973	109147842	1224	0	0.9867	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_386	LIMS4	chr2	110869109	110895544	428	0	NA	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_146	AC124944.2	chr3	198403551	198444967	871	0	0.9814	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_313	CDH12P3	chr5	71589693	71589989	225	0	NA	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_35	AC008443.6	chr5	181851743	181855644	69	0	0.9862	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_407	TRIM74	chr7	74187708	74197691	105	0	0.9974	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_402	NCF1	chr7	75976253	75991692	44	0	0.9934	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_208	CASTOR2	chr7	76167037	76233789	149	0	0.9901	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_12	POMZP3	chr7	77889197	77906183	240	0	NA	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_127	TCAF2	chr7	144980464	145010762	267	0	0.9989	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_127	TCAF2C	chr7	145090337	145098763	83	0	NA	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_260	MEP1AP1	chr9	77952010	77958144	71	0	NA	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_327	CTSLP3	chr10	47641642	47647779	50	0	0.9803	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_240	AL157893.1	chr10	88097762	88099813	41	0	NA	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_251	AL356585.4	chr13	13734170	13738626	140	0	0.9514	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_148	AC126603.1	chr15	18136928	18186041	50	0	0.9660	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_167	CHEK2P2	chr15	19353208	19362048	40	0	0.9583	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_156	WHAMMP3	chr15	20336417	20358287	362	0	0.9900	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_78	AC243562.1	chr15	82144483	82145499	70	0	0.9695	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_302	BOLA2B	chr16	29735379	29736755	445	0	NA	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_14	AC005562.2	chr17	31562334	31562446	525	0	NA	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_14	LRRC37BP1	chr17	31574334	31581958	843	0	0.9816	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_14	AC090616.5	chr17	33034040	33040757	54	0	0.9125	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_147	ANKRD30BP2	chr21	11382453	11411385	446	0	0.9629	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_175	AC134878.2	chr22	5801017	5862418	466	0	0.9805	N	N	structural: well-covered (>=40 reads), coverage not the issue
+ID_215	AC244669.2	chr1	120210345	120332947	64	0	1.0000	N	N	structural: well-covered (>=40 reads), coverage not the issue [K=0 near-identical]
+ID_215	AC245297.1	chr1	145855639	145979396	226	0	0.9991	N	N	structural: well-covered (>=40 reads), coverage not the issue [K=0 near-identical]
+ID_63	ANAPC1P1	chr2	86863741	86914950	43	0	1.0000	N	N	structural: well-covered (>=40 reads), coverage not the issue [K=0 near-identical]
+ID_251	ANKRD36B	chr2	97950885	98048181	4361	0	1.0000	N	N	structural: well-covered (>=40 reads), coverage not the issue [K=0 near-identical]
+ID_313	CDH12P1	chr5	70901860	70902156	188	0	1.0000	N	N	structural: well-covered (>=40 reads), coverage not the issue [K=0 near-identical]
+ID_407	TRIM73	chr7	76682335	76698280	374	0	1.0000	N	N	structural: well-covered (>=40 reads), coverage not the issue [K=0 near-identical]
+ID_127	AC099548.2	chr7	145042141	145117285	551	0	1.0000	N	N	structural: well-covered (>=40 reads), coverage not the issue [K=0 near-identical]
+ID_175	TEKT4P2	chr21	5692610	5754003	72	0	1.0000	N	N	structural: well-covered (>=40 reads), coverage not the issue [K=0 near-identical]

@@ -1,0 +1,32 @@
+family_id	gene	chrom	start	end	identity_exon	identity_genome	delta_exon_minus_genome	kind	verdict
+ID_431	PPIAL4C	chr1	148708008	148708609	NA	NA	NA	no-sibling
+ID_334	DEFB104B	chr8	12522996	12527770	NA	NA	NA	no-sibling
+ID_348	DUX4L50	chr9	47737220	47737936	NA	NA	NA	no-sibling
+ID_131	AC105272.1	chr1	103516936	103517135	NA	NA	NA	no-sibling
+ID_92	AC053481.4	chr17	63130560	63131864	NA	NA	NA	no-sibling
+ID_222	AC243829.6	chr17	37415116	37415223	NA	NA	NA	no-sibling
+ID_402	NCF1C	chr7	76360590	76375995	NA	NA	NA	no-sibling
+ID_226	H3C13	chr1	148937358	148937828	NA	NA	NA	no-sibling
+ID_313	CDH12P3	chr5	71589693	71589989	NA	NA	NA	no-sibling
+ID_240	AL157893.1	chr10	88097762	88099813	NA	NA	NA	no-sibling
+ID_302	BOLA2B	chr16	29735379	29736755	NA	NA	NA	no-sibling
+ID_14	AC005562.2	chr17	31562334	31562446	NA	NA	NA	no-sibling
+ID_261	CNTNAP3P5	chr9	39786634	39796678	0.9916	0.9852	+0.0064	pseudo	uniform-divergence (exon ~ genome; 'homogenized' label suspect)
+ID_226	H3P4	chr1	121127576	121127993	0.9855	0.9855	+0.0000	pseudo	uniform-divergence (exon ~ genome; 'homogenized' label suspect)
+ID_411	OR11H13P	chr14	13493444	13494424	0.9871	0.9806	+0.0065	pseudo	uniform-divergence (exon ~ genome; 'homogenized' label suspect)
+ID_167	CHEK2P2	chr15	19353208	19362048	0.9618	0.9644	-0.0026	pseudo	uniform-divergence (exon ~ genome; 'homogenized' label suspect)
+ID_78	AC243562.1	chr15	82144483	82145499	0.9782	0.9782	+0.0000	pseudo	uniform-divergence (exon ~ genome; 'homogenized' label suspect)
+ID_431	PPIAL4A	chr1	120899120	120899781	NA	0.9884	NA	coding	unmeasurable (exon-sum too short)
+ID_431	PPIAL4E	chr1	143692933	143693719	NA	0.9980	NA	coding	unmeasurable (exon-sum too short)
+ID_332	DDX11L16	chr16	4785	7013	NA	0.9843	NA	coding	unmeasurable (exon-sum too short)
+ID_213	AC246785.1	chr1	143591826	143594083	NA	0.9942	NA	pseudo	unmeasurable (exon-sum too short)
+ID_391	WASH6P	chr16	6965	11846	NA	0.9884	NA	pseudo	unmeasurable (exon-sum too short)
+ID_92	AC243829.7	chr17	37109490	37110818	NA	0.9885	NA	pseudo	unmeasurable (exon-sum too short)
+ID_431	PPIAL4D	chr1	144366357	144366853	NA	0.9839	NA	coding	unmeasurable (exon-sum too short)
+ID_65	CR383656.5	chr14	13134773	13154353	NA	0.9950	NA	coding	unmeasurable (exon-sum too short)
+ID_167	AC133548.1	chr16	32772942	32779658	1.0000	1.0000	+0.0000	pseudo	young-identical (exon AND genome ~identical)
+ID_146	AC233280.19	chr3	198342015	198343130	0.9901	0.9901	+0.0000	pseudo	young-identical (exon AND genome ~identical)
+ID_26	AC006453.4	chr2	90228191	90245534	1.0000	1.0000	+0.0000	pseudo	young-identical (exon AND genome ~identical)
+ID_402	NCF1B	chr7	74420835	74436153	0.9906	0.9973	-0.0067	coding	young-identical (exon AND genome ~identical)
+ID_240	SYT15	chr10	47464575	47480533	0.9976	0.9972	+0.0004	coding	young-identical (exon AND genome ~identical)
+ID_407	TRIM74	chr7	74187708	74197691	0.9976	0.9980	-0.0004	coding	young-identical (exon AND genome ~identical)
