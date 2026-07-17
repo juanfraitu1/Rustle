@@ -1,0 +1,954 @@
+modal_gene	copies_chimp	copies_gorilla	copies_orang	origin_branch	sample_paralogs
+ZNF77	172	186	131	ancestral great-ape (>17 Mya, pre-orangutan)	ZNF77,ZNF443,ZNF791,ZNF829,ZNF345
+GOLGA2	24	0	70	ancestral, contracted in gorilla (>17 Mya)	GOLGA2,SWI5,GOLGA6L2,MIR1233-2,MIR1233-3
+ULBP1	13	5	31	ancestral great-ape (>17 Mya, pre-orangutan)	ULBP1,ULBP3,FCRL5,CFAP299,SPC25
+ZNF875	10	0	26	ancestral, contracted in gorilla (>17 Mya)	ZNF875
+TBC1D3B	5	0	24	ancestral, contracted in gorilla (>17 Mya)	TBC1D3B,USP6
+CCNYL1	11	2	22	ancestral great-ape (>17 Mya, pre-orangutan)	CCNYL1,TDRD5,AGAP6,AGAP1
+NPIPB2	22	3	0	African-ape ancestor (~9-17 Mya)	NPIPB2,TAS2R3,SSBP1
+ZNF416	22	18	13	ancestral great-ape (>17 Mya, pre-orangutan)	ZNF416,ZNF586,ZNF776,ZNF548,ZNF549
+ADH1B	0	2	22	ancestral, contracted in chimp (>17 Mya)	ADH1B,ATG5,VIPR2,CLEC9A,KHK
+DPP6	21	0	0	chimp lineage (<9 Mya; or shared with human)	DPP6,ZNG1B,ACR
+ACTB	21	3	10	ancestral great-ape (>17 Mya, pre-orangutan)	ACTB,ACTA2,ACTG1,ACTC1,POTEA
+(unnamed)	0	0	18	orangutan lineage (<17 Mya)	
+ANKRD18A	16	4	7	ancestral great-ape (>17 Mya, pre-orangutan)	ANKRD18A,ANKRD18B,ANKRD19P
+GSTM2	13	15	2	ancestral great-ape (>17 Mya, pre-orangutan)	GSTM2,TRNAN-GUU,TRNAE-UUC,TRNAG-CCC,NBPF7P
+ANKRD36C	14	5	14	ancestral great-ape (>17 Mya, pre-orangutan)	ANKRD36C,ANKRD26,CCDC144A
+ZNF230	12	14	5	ancestral great-ape (>17 Mya, pre-orangutan)	ZNF230,ZNF224,ZNF234,ZNF222,ZNF284
+NUPR2	10	6	12	ancestral great-ape (>17 Mya, pre-orangutan)	NUPR2,PDE5A,PLEKHG4B,MPHOSPH8
+ARL17A	12	6	9	ancestral great-ape (>17 Mya, pre-orangutan)	ARL17A,RPL41,LRRC37B,SLC25A52
+MAGEA4	11	11	12	ancestral great-ape (>17 Mya, pre-orangutan)	MAGEA4,MAGEA12,MAGEA1,MAGEA11,MAGEA9
+RGPD8	7	6	11	ancestral great-ape (>17 Mya, pre-orangutan)	RGPD8,IL18R1
+LRPAP1	0	11	0	gorilla lineage (<9 Mya)	LRPAP1,XRCC2
+PDCD6	7	0	10	ancestral, contracted in gorilla (>17 Mya)	PDCD6
+TUBA8	9	10	10	ancestral great-ape (>17 Mya, pre-orangutan)	TUBA8,TUBA1C,TUBA1A,TUBA1B,TUBA4A
+(unnamed)	10	5	0	African-ape ancestor (~9-17 Mya)	
+NDUFA8	0	10	0	gorilla lineage (<9 Mya)	NDUFA8
+ZC3H11B	8	0	0	chimp lineage (<9 Mya; or shared with human)	ZC3H11B,ZC3H11A
+FRG1	3	8	0	African-ape ancestor (~9-17 Mya)	FRG1
+GPR182	8	0	0	chimp lineage (<9 Mya; or shared with human)	GPR182
+ZSCAN31	2	8	2	ancestral great-ape (>17 Mya, pre-orangutan)	ZSCAN31,ZSCAN9,ZKSCAN8,ZNF397,ZKSCAN4
+PATR-F	7	6	8	ancestral great-ape (>17 Mya, pre-orangutan)	PATR-F,PATR-G,PATR-A,PATR-E,PATR-C
+(unnamed)	2	0	8	ancestral, contracted in gorilla (>17 Mya)	
+EIF4A1	8	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	EIF4A1,EIF4A3,EIF4A2,MIR1248,RFC4
+SCMH1	0	0	8	orangutan lineage (<17 Mya)	SCMH1,FAM149B1,ZNF132
+PAFAH1B2	0	0	8	orangutan lineage (<17 Mya)	PAFAH1B2,STARD9,TMEM199,NR2C2,MRPS25
+(unnamed)	0	0	8	orangutan lineage (<17 Mya)	
+(unnamed)	2	7	0	African-ape ancestor (~9-17 Mya)	
+TUBB	6	5	7	ancestral great-ape (>17 Mya, pre-orangutan)	TUBB,TUBB4B,CIMIP2A,TUBB6,TUBB4A
+HNRNPA1	7	4	0	African-ape ancestor (~9-17 Mya)	HNRNPA1,MRPS31,HNRNPA1L2,CBX3,HNRNPA2B1
+(unnamed)	7	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	
+MCFD2	5	7	3	ancestral great-ape (>17 Mya, pre-orangutan)	MCFD2,GALNTL5,SLC12A1,ENTPD1,MYORG
+ALDH2	5	7	4	ancestral great-ape (>17 Mya, pre-orangutan)	ALDH2,ALDH1A1,ALDH1A2,ALDH1B1,ALDH1A3
+(unnamed)	5	0	7	ancestral, contracted in gorilla (>17 Mya)	
+ZNF264	7	6	6	ancestral great-ape (>17 Mya, pre-orangutan)	ZNF264,ZNF805,ZNF543,ZNF550,ZNF460
+PAGE1	6	7	5	ancestral great-ape (>17 Mya, pre-orangutan)	PAGE1
+SPANXN5	5	0	7	ancestral, contracted in gorilla (>17 Mya)	SPANXN5,SPANXN3,SPANXN2,SPANXN1
+MRPS17	0	7	0	gorilla lineage (<9 Mya)	MRPS17,MDM2,RFTN2,GREB1,SPG11
+(unnamed)	6	0	0	chimp lineage (<9 Mya; or shared with human)	
+SDHA	2	3	6	ancestral great-ape (>17 Mya, pre-orangutan)	SDHA
+KRT8	4	4	6	ancestral great-ape (>17 Mya, pre-orangutan)	KRT8,KRT1,KRT81,KRT86,KPNA4
+(unnamed)	3	0	6	ancestral, contracted in gorilla (>17 Mya)	
+SMG1	6	4	0	African-ape ancestor (~9-17 Mya)	SMG1
+USP32	5	2	6	ancestral great-ape (>17 Mya, pre-orangutan)	USP32,USP6,CA4
+(unnamed)	6	4	0	African-ape ancestor (~9-17 Mya)	
+ZNF804A	0	6	0	gorilla lineage (<9 Mya)	ZNF804A
+(unnamed)	0	0	6	orangutan lineage (<17 Mya)	
+RAD51	2	5	3	ancestral great-ape (>17 Mya, pre-orangutan)	RAD51,APOL4
+TPM2	5	4	3	ancestral great-ape (>17 Mya, pre-orangutan)	TPM2,TPM1,TPM4,TPM3
+CENPE	5	0	0	chimp lineage (<9 Mya; or shared with human)	CENPE,PCDHAC1,PCDHA12,PCDHA11,PCDHA9
+DNTTIP2	5	0	0	chimp lineage (<9 Mya; or shared with human)	DNTTIP2,DYDC1
+SLC25A6	5	5	4	ancestral great-ape (>17 Mya, pre-orangutan)	SLC25A6,SLC25A4,SLC25A5,SLC25A31
+CCT6A	4	3	5	ancestral great-ape (>17 Mya, pre-orangutan)	CCT6A,CCT6B,PSPH
+TYRP1	5	0	0	chimp lineage (<9 Mya; or shared with human)	TYRP1
+ALG1	3	5	3	ancestral great-ape (>17 Mya, pre-orangutan)	ALG1,EEF2KMT,ALG1L,ALG1L2
+ZNF484	5	0	4	ancestral, contracted in gorilla (>17 Mya)	ZNF484
+(unnamed)	5	0	0	chimp lineage (<9 Mya; or shared with human)	
+(unnamed)	5	0	0	chimp lineage (<9 Mya; or shared with human)	
+MYH10	4	5	2	ancestral great-ape (>17 Mya, pre-orangutan)	MYH10,MYH11,MYH9,NDE1
+(unnamed)	5	0	0	chimp lineage (<9 Mya; or shared with human)	
+ABR	3	5	0	African-ape ancestor (~9-17 Mya)	ABR,BCR
+MAGEB2	5	5	2	ancestral great-ape (>17 Mya, pre-orangutan)	MAGEB2,MAGEB3,MAGEB1,MAGEB18,MAGEB10
+TCEAL2	5	5	5	ancestral great-ape (>17 Mya, pre-orangutan)	TCEAL2,TCEAL6,TCEAL5,TCEAL4
+C7H8orf33	0	5	0	gorilla lineage (<9 Mya)	C7H8orf33,SURF6,PPP1R15A
+(unnamed)	0	0	5	orangutan lineage (<17 Mya)	
+SPDYE4	0	0	5	orangutan lineage (<17 Mya)	SPDYE4
+(unnamed)	0	0	5	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	5	orangutan lineage (<17 Mya)	
+EDARADD	3	4	2	ancestral great-ape (>17 Mya, pre-orangutan)	EDARADD,ENO1,ENO2,ENO3
+PPFIA1	4	2	0	African-ape ancestor (~9-17 Mya)	PPFIA1,PPFIA2,PPFIA4,MIR548K,PPFIA3
+ATP1A2	4	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	ATP1A2,ATP1A1,ATP1A4,ATP1A3,ATP1A1OS
+GSTM3	3	4	4	ancestral great-ape (>17 Mya, pre-orangutan)	GSTM3,GSTM4,GSTM1,GSTM5
+GBP2	3	4	2	ancestral great-ape (>17 Mya, pre-orangutan)	GBP2,GBP1,GBP3,GBP5
+RPS6KA1	3	4	0	African-ape ancestor (~9-17 Mya)	RPS6KA1,RPS6KA2,RPS6KA3,RPS6KA6
+DPYSL3	4	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	DPYSL3,DPYSL4,CRMP1,EVC,DPYSL2
+PPP2R2C	4	3	4	ancestral great-ape (>17 Mya, pre-orangutan)	PPP2R2C,PPP2R2A,PPP2R2D,PPP2R2B
+KRT18	4	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	KRT18,LCORL,PKNOX2,TMEM97
+SEPTIN10	4	0	2	ancestral, contracted in gorilla (>17 Mya)	SEPTIN10,SEPTIN11,SEPTIN8,MIR766,SEPTIN6
+ACTN1	4	4	3	ancestral great-ape (>17 Mya, pre-orangutan)	ACTN1,ACTN4,ACTN3,ACTN2,CAPN12
+ADAM29	4	0	2	ancestral, contracted in gorilla (>17 Mya)	ADAM29,ADAM21,SYNJ2BP,ADAM20
+RBM22	4	0	0	chimp lineage (<9 Mya; or shared with human)	RBM22
+(unnamed)	3	0	4	ancestral, contracted in gorilla (>17 Mya)	
+TRIM52	4	0	0	chimp lineage (<9 Mya; or shared with human)	TRIM52
+(unnamed)	4	0	0	chimp lineage (<9 Mya; or shared with human)	
+HSPA1L	4	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	HSPA1L,HSPA8,HSPA2,HSPA1B
+PATR-DRB5	3	4	2	ancestral great-ape (>17 Mya, pre-orangutan)	PATR-DRB5,PATR-DQB1,PATR-DPB1
+MEA1	2	0	4	ancestral, contracted in gorilla (>17 Mya)	MEA1,PPP2R5D,PPP2R5C,PPP2R5A,PPP2R5E
+GSTA2	2	4	4	ancestral great-ape (>17 Mya, pre-orangutan)	GSTA2,GSTA1
+(unnamed)	4	0	0	chimp lineage (<9 Mya; or shared with human)	
+IFITM1	4	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	IFITM1,IFITM2,IFITM3
+TRIM6	2	4	3	ancestral great-ape (>17 Mya, pre-orangutan)	TRIM6,TRIM22,TRIM5,TRIM34,TRIM21
+NXF1	3	4	0	African-ape ancestor (~9-17 Mya)	NXF1,TMEM223,NXF3
+PRPH	2	4	0	African-ape ancestor (~9-17 Mya)	PRPH,DES,VIM,INA,NT5C2
+TLE1	3	3	4	ancestral great-ape (>17 Mya, pre-orangutan)	TLE1,TLE3,TLE2,TLE4
+SPATA31D1	4	0	4	ancestral, contracted in gorilla (>17 Mya)	SPATA31D1
+UBQLN1	4	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	UBQLN1,SETMAR,SUMF1,RWDD2A,PGM3
+RPS4X	4	3	4	ancestral great-ape (>17 Mya, pre-orangutan)	RPS4X,RPS4Y1,RPS4Y2,MUL1
+MED15	4	0	2	ancestral, contracted in gorilla (>17 Mya)	MED15,CCDC74B
+RRN3	2	2	4	ancestral great-ape (>17 Mya, pre-orangutan)	RRN3,SPN,TRNAV-UAC
+(unnamed)	2	4	2	ancestral great-ape (>17 Mya, pre-orangutan)	
+CES2	4	4	3	ancestral great-ape (>17 Mya, pre-orangutan)	CES2,CES1
+ZNF875	2	4	0	African-ape ancestor (~9-17 Mya)	ZNF875,ZNF133,ZNF169,ZNF343
+GGTLC1	4	2	0	African-ape ancestor (~9-17 Mya)	GGTLC1,GGTLC2,GGT1
+BEX1	4	3	4	ancestral great-ape (>17 Mya, pre-orangutan)	BEX1,BEX2,BEX3,BEX4,RAB40AL
+DAZL	4	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	DAZL,DAZ1
+TMEM128	0	4	0	gorilla lineage (<9 Mya)	TMEM128
+NDST3	0	4	0	gorilla lineage (<9 Mya)	NDST3,SLC6A4,BLMH,SLC38A6,TRMT5
+FAR2	0	4	0	gorilla lineage (<9 Mya)	FAR2
+ABCD1	0	4	0	gorilla lineage (<9 Mya)	ABCD1
+(unnamed)	0	4	0	gorilla lineage (<9 Mya)	
+(unnamed)	0	4	0	gorilla lineage (<9 Mya)	
+SDE2	0	0	4	orangutan lineage (<17 Mya)	SDE2,HP1BP3
+KIAA0825	0	0	4	orangutan lineage (<17 Mya)	KIAA0825
+ERVK3-1	0	0	4	orangutan lineage (<17 Mya)	ERVK3-1,ZNF8
+(unnamed)	0	0	4	orangutan lineage (<17 Mya)	
+BHMT2	0	0	4	orangutan lineage (<17 Mya)	BHMT2,DMGDH,CATSPER3,PCBD2,ZAN
+ITPR3	0	0	4	orangutan lineage (<17 Mya)	ITPR3,C7H8orf33,VPS53
+(unnamed)	0	0	4	orangutan lineage (<17 Mya)	
+TNFAIP8L1	0	0	4	orangutan lineage (<17 Mya)	TNFAIP8L1,NHS
+(unnamed)	0	0	4	orangutan lineage (<17 Mya)	
+CSNK1G2	0	0	4	orangutan lineage (<17 Mya)	CSNK1G2
+GGNBP2	0	0	4	orangutan lineage (<17 Mya)	GGNBP2
+(unnamed)	0	0	4	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	4	orangutan lineage (<17 Mya)	
+AKT1	3	2	0	African-ape ancestor (~9-17 Mya)	AKT1,MIR641,AKT2,SDCCAG8,AKT3
+CAPN2	2	2	3	ancestral great-ape (>17 Mya, pre-orangutan)	CAPN2,CAPN1,CAPN11
+CD55	3	0	2	ancestral, contracted in gorilla (>17 Mya)	CD55
+SEC22B	3	3	0	African-ape ancestor (~9-17 Mya)	SEC22B,GSTM2
+NOTCH2	3	0	0	chimp lineage (<9 Mya; or shared with human)	NOTCH2,NBPF7P
+TXNIP	3	0	0	chimp lineage (<9 Mya; or shared with human)	TXNIP
+LRIG3	3	0	0	chimp lineage (<9 Mya; or shared with human)	LRIG3
+RBMXL1	2	2	3	ancestral great-ape (>17 Mya, pre-orangutan)	RBMXL1,KYAT3,RBMX
+TXNDC12	3	2	0	African-ape ancestor (~9-17 Mya)	TXNDC12,BTF3L4,BTF3,SENP7
+KPNA6	3	0	3	ancestral, contracted in gorilla (>17 Mya)	KPNA6,KPNA5,KPNA1
+YTHDF2	2	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	YTHDF2,YTHDF3,YTHDF1
+AKR7A2	2	2	3	ancestral great-ape (>17 Mya, pre-orangutan)	AKR7A2,AKR7A3
+GNB1	3	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	GNB1,GNB2,GNB4,MFN1
+(unnamed)	3	0	0	chimp lineage (<9 Mya; or shared with human)	
+CPEB2	3	0	3	ancestral, contracted in gorilla (>17 Mya)	CPEB2,CPEB4,CPEB3,MARCHF5
+CAMK2D	3	0	3	ancestral, contracted in gorilla (>17 Mya)	CAMK2D,CAMK2B,CAMK2G,OGDH
+HSPA4L	3	0	3	ancestral, contracted in gorilla (>17 Mya)	HSPA4L,HSPA4,HSPH1
+HMGB2	3	0	0	chimp lineage (<9 Mya; or shared with human)	HMGB2,NRG3,HMGB1
+TENM3	3	0	0	chimp lineage (<9 Mya; or shared with human)	TENM3,TENM4
+THBS4	2	3	0	African-ape ancestor (~9-17 Mya)	THBS4,COMP,THBS3
+PLK2	3	0	0	chimp lineage (<9 Mya; or shared with human)	PLK2
+CTNNA2	3	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	CTNNA2,LRRTM2,CTNNA1
+SPINK5	3	0	0	chimp lineage (<9 Mya; or shared with human)	SPINK5,EEF1G
+RPLP1	3	2	3	ancestral great-ape (>17 Mya, pre-orangutan)	RPLP1,MAP7,G3BP1
+PANK3	3	3	0	African-ape ancestor (~9-17 Mya)	PANK3,MIR107,PANK1,PANK2,MIR103-1
+HNRNPH1	2	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	HNRNPH1,HNRNPH2,HNRNPF,GLA
+SERPINB9	2	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	SERPINB9,SERPINB6,SERPINB8
+GMPR2	2	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	GMPR2,GMPR,TINF2,ATXN1
+SLC17A1	3	0	3	ancestral, contracted in gorilla (>17 Mya)	SLC17A1
+(unnamed)	3	0	0	chimp lineage (<9 Mya; or shared with human)	
+KLC4	3	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	KLC4,KLC2,MRPL2,KLC3,RAB1B
+PHIP	3	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	PHIP,BRWD1,BRWD3
+EPHA7	3	0	0	chimp lineage (<9 Mya; or shared with human)	EPHA7,EPHA4,EPHA3
+EZR	2	2	3	ancestral great-ape (>17 Mya, pre-orangutan)	EZR,MSN,SYTL3,RDX
+RPL23A	3	3	0	African-ape ancestor (~9-17 Mya)	RPL23A,PDCD2,TLCD1
+CYTH3	3	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	CYTH3,CYTH1,CYTH2
+DPY19L2	3	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	DPY19L2,DPY19L1
+SLC25A1	2	0	3	ancestral, contracted in gorilla (>17 Mya)	SLC25A1
+INTS4	3	0	0	chimp lineage (<9 Mya; or shared with human)	INTS4,AAMDC
+(unnamed)	3	0	0	chimp lineage (<9 Mya; or shared with human)	
+CUX1	3	0	0	chimp lineage (<9 Mya; or shared with human)	CUX1
+VDAC3	3	0	0	chimp lineage (<9 Mya; or shared with human)	VDAC3,DKK4,VDAC2
+KANK1	3	0	0	chimp lineage (<9 Mya; or shared with human)	KANK1
+IMPDH2	2	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	IMPDH2,IMPDH1,NDUFAF3
+FLNA	3	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	FLNA,FLNB,FLNC
+FNTA	3	2	0	African-ape ancestor (~9-17 Mya)	FNTA,LRMDA,JAK2,CCNC,TSTD3
+WWP1	3	0	3	ancestral, contracted in gorilla (>17 Mya)	WWP1,WWP2,ITCH,MIR140,DYNLRB1
+PFKP	3	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	PFKP,PFKM,PFKL,SENP1,ASB8
+AKR1C3	3	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	AKR1C3,AKR1C2
+TIMM23	3	2	0	African-ape ancestor (~9-17 Mya)	TIMM23,TIMM23B,PARG
+(unnamed)	3	0	0	chimp lineage (<9 Mya; or shared with human)	
+HK1	2	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	HK1,HK2,HKDC1
+(unnamed)	3	0	0	chimp lineage (<9 Mya; or shared with human)	
+LDHB	3	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	LDHB,LDHA,LDHC
+MTA2	3	0	2	ancestral, contracted in gorilla (>17 Mya)	MTA2,MTA3,EML3,MTA1
+PYGL	3	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	PYGL,PYGB,PYGM,ABHD12
+PPP1CA	2	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	PPP1CA,RAD9A,PPP1CC,PPP1CB
+PAK1	2	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	PAK1,PAK3,PAK2,PIGX
+DLG2	3	0	0	chimp lineage (<9 Mya; or shared with human)	DLG2,DLG4,DLG1
+MYL6	3	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	MYL6,MYL6B,MYL4,CDC27
+SMARCD1	2	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	SMARCD1,SMARCD2,SMARCD3
+ATP2A2	2	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	ATP2A2,ATP2A1,RABEP2,ATP2A3
+TAOK3	2	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	TAOK3,TAOK2,TAOK1
+UBC	3	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	UBC,UBB
+RPS6	3	0	0	chimp lineage (<9 Mya; or shared with human)	RPS6
+BRD3	2	3	0	African-ape ancestor (~9-17 Mya)	BRD3,BRD4,BRD2
+CTSV	2	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	CTSV,CTSL
+(unnamed)	3	0	0	chimp lineage (<9 Mya; or shared with human)	
+RFX3	3	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	RFX3,RFX2,ACSBG2,RFX1
+PRKD3	2	3	0	African-ape ancestor (~9-17 Mya)	PRKD3,PRKD1,NDUFAF7,PRKD2
+(unnamed)	3	0	0	chimp lineage (<9 Mya; or shared with human)	
+SMPD4	3	0	2	ancestral, contracted in gorilla (>17 Mya)	SMPD4
+CXADR	3	0	0	chimp lineage (<9 Mya; or shared with human)	CXADR
+TRPC4AP	2	3	0	African-ape ancestor (~9-17 Mya)	TRPC4AP,MYH7B,MIR208B,MYH7,MYH15
+(unnamed)	3	0	0	chimp lineage (<9 Mya; or shared with human)	
+SLC12A6	2	0	3	ancestral, contracted in gorilla (>17 Mya)	SLC12A6,SLC12A4,EMC4,SLC12A7
+MYL9	3	3	3	ancestral great-ape (>17 Mya, pre-orangutan)	MYL9,MYL12B,MYL12A,MYOM1
+SSX3	2	2	3	ancestral great-ape (>17 Mya, pre-orangutan)	SSX3
+PAGE2B	3	0	2	ancestral, contracted in gorilla (>17 Mya)	PAGE2B,PAGE5
+CXHXorf49B	3	0	2	ancestral, contracted in gorilla (>17 Mya)	CXHXorf49B
+DMRTC1B	2	2	3	ancestral great-ape (>17 Mya, pre-orangutan)	DMRTC1B,DMRTC1,FAM236B
+PLS3	2	3	2	ancestral great-ape (>17 Mya, pre-orangutan)	PLS3,PLS1,LCP1
+(unnamed)	3	0	0	chimp lineage (<9 Mya; or shared with human)	
+(unnamed)	3	0	3	ancestral, contracted in gorilla (>17 Mya)	
+DRICH1	2	0	3	ancestral, contracted in gorilla (>17 Mya)	DRICH1
+APOL3	2	3	0	African-ape ancestor (~9-17 Mya)	APOL3,APOL2,APOL1
+FMO4	0	3	0	gorilla lineage (<9 Mya)	FMO4,FMO1,FMO2
+PLEKHM1	0	3	0	gorilla lineage (<9 Mya)	PLEKHM1
+SEPTIN4	0	3	0	gorilla lineage (<9 Mya)	SEPTIN4,SEPTIN2,GP1BB,SEPTIN5
+COL1A1	0	3	2	ancestral, contracted in chimp (>17 Mya)	COL1A1,COL2A1,COL1A2
+(unnamed)	0	3	0	gorilla lineage (<9 Mya)	
+(unnamed)	0	3	0	gorilla lineage (<9 Mya)	
+ACSL6	0	2	3	ancestral, contracted in chimp (>17 Mya)	ACSL6,ACSL5,ACSL1,ZDHHC6
+(unnamed)	0	3	0	gorilla lineage (<9 Mya)	
+GMNN	0	3	0	gorilla lineage (<9 Mya)	GMNN
+ITPR3	0	3	0	gorilla lineage (<9 Mya)	ITPR3,ITPR2,ITPR1
+GRM4	0	3	0	gorilla lineage (<9 Mya)	GRM4,GRM8,GRM7
+RPL7A	0	3	2	ancestral, contracted in chimp (>17 Mya)	RPL7A,RFX6
+EYA4	0	3	0	gorilla lineage (<9 Mya)	EYA4,EYA1,EYA2
+EPHB4	0	3	0	gorilla lineage (<9 Mya)	EPHB4,EPHB1,EPHB3
+AKR1B1	0	3	0	gorilla lineage (<9 Mya)	AKR1B1,AKR1B10
+LOXL2	0	3	0	gorilla lineage (<9 Mya)	LOXL2,LOXL4,HTRA2,LOXL3,DOK1
+CAMK1D	0	3	0	gorilla lineage (<9 Mya)	CAMK1D,PNCK,CAMK1,OGG1
+KIF5B	0	3	0	gorilla lineage (<9 Mya)	KIF5B,KIF5A,KIF5C
+GPR17	0	3	3	ancestral, contracted in chimp (>17 Mya)	GPR17,LIMS2,LIMS1
+SCN9A	0	3	0	gorilla lineage (<9 Mya)	SCN9A,SCN7A
+CNTNAP3C	0	3	0	gorilla lineage (<9 Mya)	CNTNAP3C
+LRRC8E	0	3	0	gorilla lineage (<9 Mya)	LRRC8E,LRRC8A
+MGAT2	0	2	3	ancestral, contracted in chimp (>17 Mya)	MGAT2,RPL36AL,RPL36A,HELZ
+ACOT2	0	3	2	ancestral, contracted in chimp (>17 Mya)	ACOT2,ACOT4,ACOT6,HEATR4
+HSCB	0	3	0	gorilla lineage (<9 Mya)	HSCB,CHEK2
+DEXI	0	3	0	gorilla lineage (<9 Mya)	DEXI,CIITA
+MIR1266	0	3	0	gorilla lineage (<9 Mya)	MIR1266,MYO5C,MYO5A,MYO5B
+PDPR	0	3	0	gorilla lineage (<9 Mya)	PDPR,PSMD7
+ZSCAN5B	0	3	0	gorilla lineage (<9 Mya)	ZSCAN5B
+PLXNB3	0	3	0	gorilla lineage (<9 Mya)	PLXNB3,PLXNB1,PLXNB2
+YOD1	0	0	3	orangutan lineage (<17 Mya)	YOD1,PFKFB2,PFKFB3,PFKFB4
+EDEM3	0	0	3	orangutan lineage (<17 Mya)	EDEM3,SPEM2
+CELF3	0	0	3	orangutan lineage (<17 Mya)	CELF3,CELF6,CELF5
+ELAVL4	0	0	3	orangutan lineage (<17 Mya)	ELAVL4,ELAVL2,ELAVL1
+TRNAN-GUU	0	0	3	orangutan lineage (<17 Mya)	TRNAN-GUU
+PTPRN2	0	0	3	orangutan lineage (<17 Mya)	PTPRN2
+CSNK1G3	0	0	3	orangutan lineage (<17 Mya)	CSNK1G3,CSNK1G1,CSNK1G2
+ATF6B	0	0	3	orangutan lineage (<17 Mya)	ATF6B,CLUAP1,TUBG1,RETREG3
+GUSB	0	0	3	orangutan lineage (<17 Mya)	GUSB
+KMT2C	0	0	3	orangutan lineage (<17 Mya)	KMT2C
+KMT2C	0	0	3	orangutan lineage (<17 Mya)	KMT2C
+(unnamed)	0	0	3	orangutan lineage (<17 Mya)	
+CEP20	0	0	3	orangutan lineage (<17 Mya)	CEP20
+ARL5A	0	0	3	orangutan lineage (<17 Mya)	ARL5A,ACTR2
+(unnamed)	0	0	3	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	3	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	3	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	3	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	3	orangutan lineage (<17 Mya)	
+PDZD9	0	0	3	orangutan lineage (<17 Mya)	PDZD9
+SLX1A	0	0	3	orangutan lineage (<17 Mya)	SLX1A
+MT1X	0	0	3	orangutan lineage (<17 Mya)	MT1X
+HSFX1	0	0	3	orangutan lineage (<17 Mya)	HSFX1
+KEF41_t22	2	0	0	chimp lineage (<9 Mya; or shared with human)	KEF41_t22,KEF41_t21,CYTB,KEF41_t20,ND6
+PGBD1	2	0	0	chimp lineage (<9 Mya; or shared with human)	PGBD1
+CHML	2	0	0	chimp lineage (<9 Mya; or shared with human)	CHML,OPN3,MIR361,CHM
+RGS7	2	0	0	chimp lineage (<9 Mya; or shared with human)	RGS7,THAP12
+TRIM17	2	0	0	chimp lineage (<9 Mya; or shared with human)	TRIM17,TRIM11
+ITPKB	2	0	0	chimp lineage (<9 Mya; or shared with human)	ITPKB,ITPKA
+PYCR2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	PYCR2,PYCR1
+TMEM63A	2	2	0	African-ape ancestor (~9-17 Mya)	TMEM63A,TMEM63B,EPHX1
+ATP2B4	2	0	2	ancestral, contracted in gorilla (>17 Mya)	ATP2B4,ATP2B3,ATP2B1
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+DNM3	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	DNM3,DNM2,MIR214,MIR199A-2,MIR199A-1
+HSD17B7	2	0	0	chimp lineage (<9 Mya; or shared with human)	HSD17B7
+TRNAG-UCC	2	0	0	chimp lineage (<9 Mya; or shared with human)	TRNAG-UCC,TRNAD-GUC
+GON4L	2	0	0	chimp lineage (<9 Mya; or shared with human)	GON4L,YY1AP1,DAP3
+CLK2	2	0	0	chimp lineage (<9 Mya; or shared with human)	CLK2
+UBE2Q1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	UBE2Q1,UBE2Q2
+MCL1	2	0	0	chimp lineage (<9 Mya; or shared with human)	MCL1,EIF3F
+SF3B4	2	0	0	chimp lineage (<9 Mya; or shared with human)	SF3B4,GARIN2
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+TRIP13	2	0	0	chimp lineage (<9 Mya; or shared with human)	TRIP13
+BRD9	2	0	0	chimp lineage (<9 Mya; or shared with human)	BRD9,ZDHHC11
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+AP4B1	2	0	0	chimp lineage (<9 Mya; or shared with human)	AP4B1,BCL2L15,PTPN22
+HIPK1	2	0	0	chimp lineage (<9 Mya; or shared with human)	HIPK1,HIPK2
+ST7L	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	ST7L,ST7,MIR6132
+SLC25A24	2	0	2	ancestral, contracted in gorilla (>17 Mya)	SLC25A24
+THAP3	2	0	0	chimp lineage (<9 Mya; or shared with human)	THAP3
+HOOK1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	HOOK1,HOOK3,RNF170
+MRPL37	2	0	2	ancestral, contracted in gorilla (>17 Mya)	MRPL37,SSBP3,SSBP2
+DST	2	2	0	African-ape ancestor (~9-17 Mya)	DST,MACF1
+RRAGC	2	0	0	chimp lineage (<9 Mya; or shared with human)	RRAGC,RRAGD
+ZBTB8OS	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	ZBTB8OS,RBBP4,RBBP7,SYNC,TXLNG
+HDAC1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	HDAC1,HDAC2
+ARID1A	2	2	0	African-ape ancestor (~9-17 Mya)	ARID1A,ARID1B
+HNRNPR	2	0	2	ancestral, contracted in gorilla (>17 Mya)	HNRNPR,SYNCRIP
+TRNAE-UUC	2	0	2	ancestral, contracted in gorilla (>17 Mya)	TRNAE-UUC
+PLOD1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	PLOD1,PLOD3
+TARDBP	2	0	0	chimp lineage (<9 Mya; or shared with human)	TARDBP
+RER1	2	2	0	African-ape ancestor (~9-17 Mya)	RER1,PEX10
+LETM1	2	0	0	chimp lineage (<9 Mya; or shared with human)	LETM1,ZNF135,ZSCAN1
+FAM200B	2	0	0	chimp lineage (<9 Mya; or shared with human)	FAM200B,FAM200A
+PDS5A	2	0	0	chimp lineage (<9 Mya; or shared with human)	PDS5A,PDS5B
+NAA11	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	NAA11,NAA10
+BMP2K	2	0	2	ancestral, contracted in gorilla (>17 Mya)	BMP2K,RPS21
+SDAD1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	SDAD1,BNIP3L
+ANKRD17	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	ANKRD17,ANKHD1
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+HERC6	2	2	0	African-ape ancestor (~9-17 Mya)	HERC6,HERC5
+GRID2	2	0	0	chimp lineage (<9 Mya; or shared with human)	GRID2,PMPCA
+PAPSS1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	PAPSS1,PAPSS2
+SEC24D	2	2	0	African-ape ancestor (~9-17 Mya)	SEC24D,SEC24C
+NAA15	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	NAA15,NDUFC1,NAA16
+SMARCA5	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	SMARCA5,SMARCA1
+TRIM60	2	0	0	chimp lineage (<9 Mya; or shared with human)	TRIM60
+CLCN3	2	2	0	African-ape ancestor (~9-17 Mya)	CLCN3,CLCN4,MIR502A,MIR660,MIR362
+RNASE12	2	0	0	chimp lineage (<9 Mya; or shared with human)	RNASE12,RNASE11
+SNX25	2	0	0	chimp lineage (<9 Mya; or shared with human)	SNX25,CFAP97
+SLC6A3	2	0	0	chimp lineage (<9 Mya; or shared with human)	SLC6A3,SLC6A2
+FAM177A1	2	0	0	chimp lineage (<9 Mya; or shared with human)	FAM177A1,SRP54
+PTP4A1	2	0	0	chimp lineage (<9 Mya; or shared with human)	PTP4A1
+DHFR	2	0	0	chimp lineage (<9 Mya; or shared with human)	DHFR,DHFR2
+ENC1	2	0	2	ancestral, contracted in gorilla (>17 Mya)	ENC1,KLHL25,MIR1276
+TNPO1	2	2	0	African-ape ancestor (~9-17 Mya)	TNPO1,TNPO2
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+TAF9	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	TAF9,AK6,TAF9B,RAD17
+ANKRD55	2	0	0	chimp lineage (<9 Mya; or shared with human)	ANKRD55,FAHD2B
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+CDH18	2	0	0	chimp lineage (<9 Mya; or shared with human)	CDH18,NUP50
+RPL28	2	0	0	chimp lineage (<9 Mya; or shared with human)	RPL28
+PPP2CA	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	PPP2CA,PPP2CB
+NDUFA2	2	0	0	chimp lineage (<9 Mya; or shared with human)	NDUFA2,IK
+HARS1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	HARS1,HARS2
+PCDHB2	2	0	0	chimp lineage (<9 Mya; or shared with human)	PCDHB2,PCDHB12
+PCDHB5	2	0	0	chimp lineage (<9 Mya; or shared with human)	PCDHB5,RPL6
+CSNK1A1	2	0	2	ancestral, contracted in gorilla (>17 Mya)	CSNK1A1,ARHGEF37,CSNK1A1L
+NDST1	2	2	0	African-ape ancestor (~9-17 Mya)	NDST1,NDST2
+SLC36A3	2	0	0	chimp lineage (<9 Mya; or shared with human)	SLC36A3,SLC36A1
+KIF4B	2	0	0	chimp lineage (<9 Mya; or shared with human)	KIF4B,KIF4A
+FNDC9	2	2	0	African-ape ancestor (~9-17 Mya)	FNDC9,CYFIP2,CYFIP1,NIPA2
+RANBP17	2	2	0	African-ape ancestor (~9-17 Mya)	RANBP17,XPO7
+FBXW11	2	0	2	ancestral, contracted in gorilla (>17 Mya)	FBXW11,BTRC
+RPL26L1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	RPL26L1,RPL26,ODF4
+RPL19	2	2	0	African-ape ancestor (~9-17 Mya)	RPL19
+CANX	2	0	0	chimp lineage (<9 Mya; or shared with human)	CANX,CBY3,HMGB3
+GFPT2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	GFPT2,GFPT1
+FAM50B	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	FAM50B,FAM50A
+TMEM14C	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	TMEM14C,TMEM14B
+BTN2A2	2	2	0	African-ape ancestor (~9-17 Mya)	BTN2A2,BTN2A1
+RPL30	2	0	0	chimp lineage (<9 Mya; or shared with human)	RPL30
+STXBP4	2	2	0	African-ape ancestor (~9-17 Mya)	STXBP4,TOM1L1,TRNAT-CGU,TRNAL-AAG,TRNAT-UGU
+DDX39B	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	DDX39B,MCCD1,DDX39A
+C4A	2	2	0	African-ape ancestor (~9-17 Mya)	C4A,C4B
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+TCP11	2	0	2	ancestral, contracted in gorilla (>17 Mya)	TCP11,TCP11X2
+HSP90AB1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	HSP90AB1,HSP90AA1,SLC35B2
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+KHDC1L	2	0	0	chimp lineage (<9 Mya; or shared with human)	KHDC1L,KHDC1
+FYN	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	FYN,YES1,SRC
+ECHDC1	2	2	0	African-ape ancestor (~9-17 Mya)	ECHDC1,RNF146
+KATNA1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	KATNA1,KATNAL1
+MTHFD1L	2	2	0	African-ape ancestor (~9-17 Mya)	MTHFD1L,ZBTB25,MTHFD1
+(unnamed)	2	0	2	ancestral, contracted in gorilla (>17 Mya)	
+RAC1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	RAC1,RAC3
+PDE1C	2	0	2	ancestral, contracted in gorilla (>17 Mya)	PDE1C,PDE1A
+PGAM2	2	0	2	ancestral, contracted in gorilla (>17 Mya)	PGAM2,PGAM1,EXOSC1
+ERV3-1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	ERV3-1,ACSM1
+SBDS	2	2	0	African-ape ancestor (~9-17 Mya)	SBDS
+TYW1B	2	2	0	African-ape ancestor (~9-17 Mya)	TYW1B
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+POM121	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	POM121,NSUN5,POM121C
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+FAM133B	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	FAM133B,FAM133A
+DYNC1I1	2	0	0	chimp lineage (<9 Mya; or shared with human)	DYNC1I1,DYNC1I2
+SLC25A13	2	2	0	African-ape ancestor (~9-17 Mya)	SLC25A13,SLC25A12,MIR1282-2,MIR591
+CASTOR3P	2	0	0	chimp lineage (<9 Mya; or shared with human)	CASTOR3P,STAG3,PILRB
+SRPK2	2	0	0	chimp lineage (<9 Mya; or shared with human)	SRPK2,NKAIN3
+METTL2B	2	2	0	African-ape ancestor (~9-17 Mya)	METTL2B,METTL2A
+COPG2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	COPG2,COPG1,MEST,TSGA13
+TMEM140	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	TMEM140,CYREN
+LUC7L2	2	0	0	chimp lineage (<9 Mya; or shared with human)	LUC7L2,LUC7L
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+CDS2	2	0	0	chimp lineage (<9 Mya; or shared with human)	CDS2
+TCAF1	2	2	0	African-ape ancestor (~9-17 Mya)	TCAF1,TCAF2
+EZH2	2	2	0	African-ape ancestor (~9-17 Mya)	EZH2,EZH1
+ZNF212	2	0	0	chimp lineage (<9 Mya; or shared with human)	ZNF212
+CHPF2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	CHPF2,CHPF,MIR671,TMEM198
+ACTR3B	2	0	0	chimp lineage (<9 Mya; or shared with human)	ACTR3B
+TNKS	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	TNKS,TNKS2,MIR597
+MEIG1	2	0	0	chimp lineage (<9 Mya; or shared with human)	MEIG1
+PPP3CC	2	0	0	chimp lineage (<9 Mya; or shared with human)	PPP3CC,PPP3CB
+PLPP5	2	0	0	chimp lineage (<9 Mya; or shared with human)	PLPP5,DDHD2,PLPP4
+KAT6A	2	2	0	African-ape ancestor (~9-17 Mya)	KAT6A,KAT6B
+VDAC3	2	0	0	chimp lineage (<9 Mya; or shared with human)	VDAC3,DKK4
+PXDNL	2	0	2	ancestral, contracted in gorilla (>17 Mya)	PXDNL,PXDN
+RPS20	2	0	0	chimp lineage (<9 Mya; or shared with human)	RPS20,TMEM70
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+ARFGEF1	2	2	0	African-ape ancestor (~9-17 Mya)	ARFGEF1,ARFGEF2
+SULF1	2	2	0	African-ape ancestor (~9-17 Mya)	SULF1,SULF2
+RPL7	2	0	0	chimp lineage (<9 Mya; or shared with human)	RPL7
+RUNX1T1	2	0	0	chimp lineage (<9 Mya; or shared with human)	RUNX1T1,CBFA2T2
+STK3	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	STK3,STK4
+LY6K	2	0	0	chimp lineage (<9 Mya; or shared with human)	LY6K
+GPT	2	0	0	chimp lineage (<9 Mya; or shared with human)	GPT,GPT2
+GDI2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	GDI2,GDI1,TASOR2
+SEC61A2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	SEC61A2,SEC61A1
+NMT2	2	2	0	African-ape ancestor (~9-17 Mya)	NMT2,NMT1
+(unnamed)	2	0	2	ancestral, contracted in gorilla (>17 Mya)	
+BMS1	2	0	0	chimp lineage (<9 Mya; or shared with human)	BMS1
+WASHC2C	2	2	0	African-ape ancestor (~9-17 Mya)	WASHC2C
+ANTXRL	2	0	0	chimp lineage (<9 Mya; or shared with human)	ANTXRL
+SHLD2	2	0	0	chimp lineage (<9 Mya; or shared with human)	SHLD2
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+ADIRF	2	0	2	ancestral, contracted in gorilla (>17 Mya)	ADIRF
+IFIT1	2	0	2	ancestral, contracted in gorilla (>17 Mya)	IFIT1,IFIT5
+HSPA12A	2	2	0	African-ape ancestor (~9-17 Mya)	HSPA12A,SPMIP5,HSPA12B
+PTPRE	2	2	0	African-ape ancestor (~9-17 Mya)	PTPRE,PTPRA
+DENND5A	2	0	0	chimp lineage (<9 Mya; or shared with human)	DENND5A,DENND5B
+PARVA	2	2	0	African-ape ancestor (~9-17 Mya)	PARVA,TRNASTOP-UCA,PARVB
+SLC25A51	2	0	0	chimp lineage (<9 Mya; or shared with human)	SLC25A51
+DCDC1	2	0	0	chimp lineage (<9 Mya; or shared with human)	DCDC1
+MAPK8IP1	2	0	0	chimp lineage (<9 Mya; or shared with human)	MAPK8IP1,FREY1
+NR1H3	2	0	2	ancestral, contracted in gorilla (>17 Mya)	NR1H3,NR1H2
+KBTBD4	2	2	0	African-ape ancestor (~9-17 Mya)	KBTBD4,PTPMT1,NDUFS3
+OSBP	2	0	0	chimp lineage (<9 Mya; or shared with human)	OSBP,OSBP2
+ATL3	2	2	0	African-ape ancestor (~9-17 Mya)	ATL3,ATL2
+PACS1	2	0	0	chimp lineage (<9 Mya; or shared with human)	PACS1,PACS2
+RBM4	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	RBM4,RBM4B
+GRK2	2	2	0	African-ape ancestor (~9-17 Mya)	GRK2,GRK3
+CORO1B	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	CORO1B,CORO1C
+CDK2AP2	2	0	0	chimp lineage (<9 Mya; or shared with human)	CDK2AP2
+CPT1B	2	0	2	ancestral, contracted in gorilla (>17 Mya)	CPT1B,CPT1A,CPT1C
+NEU3	2	0	0	chimp lineage (<9 Mya; or shared with human)	NEU3
+GAB2	2	0	0	chimp lineage (<9 Mya; or shared with human)	GAB2,GAB4
+BIRC3	2	0	2	ancestral, contracted in gorilla (>17 Mya)	BIRC3,BIRC2
+PPP2R1B	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	PPP2R1B,PPP2R1A
+ERC1	2	0	0	chimp lineage (<9 Mya; or shared with human)	ERC1,ERC2
+GAPDH	2	0	0	chimp lineage (<9 Mya; or shared with human)	GAPDH
+ING4	2	2	0	African-ape ancestor (~9-17 Mya)	ING4,ING5,ACRBP
+USP5	2	2	0	African-ape ancestor (~9-17 Mya)	USP5,USP13,CDCA3
+LPCAT3	2	2	0	African-ape ancestor (~9-17 Mya)	LPCAT3,EMG1,PHB2
+SLC2A14	2	2	0	African-ape ancestor (~9-17 Mya)	SLC2A14,SLC2A3
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+C12H12orf56	2	0	0	chimp lineage (<9 Mya; or shared with human)	C12H12orf56,RPS11
+RPS26	2	0	2	ancestral, contracted in gorilla (>17 Mya)	RPS26,POLR2D
+SLC4A8	2	0	0	chimp lineage (<9 Mya; or shared with human)	SLC4A8,SLC4A7
+FMNL3	2	0	0	chimp lineage (<9 Mya; or shared with human)	FMNL3,FMNL1
+CACNB3	2	0	0	chimp lineage (<9 Mya; or shared with human)	CACNB3,CACNB4
+ALG10B	2	2	0	African-ape ancestor (~9-17 Mya)	ALG10B,ALG10
+PPFIBP1	2	0	0	chimp lineage (<9 Mya; or shared with human)	PPFIBP1,C12H12orf71
+KRR1	2	0	0	chimp lineage (<9 Mya; or shared with human)	KRR1,GLIPR1
+ACACB	2	0	0	chimp lineage (<9 Mya; or shared with human)	ACACB,ACACA
+RNFT2	2	0	0	chimp lineage (<9 Mya; or shared with human)	RNFT2,PRSS3
+ATP6V0A2	2	0	0	chimp lineage (<9 Mya; or shared with human)	ATP6V0A2,ATP6V0A1
+EP400	2	0	2	ancestral, contracted in gorilla (>17 Mya)	EP400
+NTMT1	2	2	0	African-ape ancestor (~9-17 Mya)	NTMT1,ASB6
+ENDOG	2	0	0	chimp lineage (<9 Mya; or shared with human)	ENDOG,KYAT1
+CFAP157	2	0	0	chimp lineage (<9 Mya; or shared with human)	CFAP157,PTRH1
+STXBP1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	STXBP1,STXBP2,PTRH1
+PTBP3	2	0	0	chimp lineage (<9 Mya; or shared with human)	PTBP3,PLPPR3,PTBP1
+NIPSNAP3A	2	2	0	African-ape ancestor (~9-17 Mya)	NIPSNAP3A,NIPSNAP3B
+TMOD1	2	0	0	chimp lineage (<9 Mya; or shared with human)	TMOD1,TSTD2
+IARS1	2	0	0	chimp lineage (<9 Mya; or shared with human)	IARS1,SPTLC1
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+GNAQ	2	0	0	chimp lineage (<9 Mya; or shared with human)	GNAQ,GNA11
+KIF27	2	0	0	chimp lineage (<9 Mya; or shared with human)	KIF27
+CNTNAP3	2	0	0	chimp lineage (<9 Mya; or shared with human)	CNTNAP3,CNTNAP4
+PHF24	2	0	2	ancestral, contracted in gorilla (>17 Mya)	PHF24,FAM205A
+AQP7	2	0	0	chimp lineage (<9 Mya; or shared with human)	AQP7
+LAGE3	2	2	0	African-ape ancestor (~9-17 Mya)	LAGE3,DNAJA1
+RANBP6	2	2	0	African-ape ancestor (~9-17 Mya)	RANBP6,IPO5
+SMARCA2	2	0	2	ancestral, contracted in gorilla (>17 Mya)	SMARCA2,SMARCA4
+ZNG1A	2	0	0	chimp lineage (<9 Mya; or shared with human)	ZNG1A,ZNG1B
+CKAP2L	2	0	0	chimp lineage (<9 Mya; or shared with human)	CKAP2L,IL36G,SIRPG
+FAHD2B	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	FAHD2B,FAHD2A
+TEKT4	2	0	0	chimp lineage (<9 Mya; or shared with human)	TEKT4
+FUNDC2	2	0	0	chimp lineage (<9 Mya; or shared with human)	FUNDC2,F8
+PPP4R3B	2	2	0	African-ape ancestor (~9-17 Mya)	PPP4R3B,PPP4R3A
+ATP6V1E2	2	0	0	chimp lineage (<9 Mya; or shared with human)	ATP6V1E2,ATP6V1E1,SLC25A18
+MAP4K3	2	0	0	chimp lineage (<9 Mya; or shared with human)	MAP4K3,ATL1,MAP4K5
+RRM2	2	0	0	chimp lineage (<9 Mya; or shared with human)	RRM2
+RRM2	2	0	0	chimp lineage (<9 Mya; or shared with human)	RRM2,EFHC2
+CLASP1	2	0	0	chimp lineage (<9 Mya; or shared with human)	CLASP1,CLASP2
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+RBMS1	2	0	0	chimp lineage (<9 Mya; or shared with human)	RBMS1,RBMS3
+TLK1	2	2	0	African-ape ancestor (~9-17 Mya)	TLK1,TLK2
+SP3	2	0	0	chimp lineage (<9 Mya; or shared with human)	SP3
+ATP5MC3	2	0	0	chimp lineage (<9 Mya; or shared with human)	ATP5MC3,RPS15A
+ZNF385B	2	0	0	chimp lineage (<9 Mya; or shared with human)	ZNF385B,TXNL4A
+PLCL1	2	2	0	African-ape ancestor (~9-17 Mya)	PLCL1,PLCL2
+BMPR2	2	0	0	chimp lineage (<9 Mya; or shared with human)	BMPR2
+USP37	2	2	0	African-ape ancestor (~9-17 Mya)	USP37,USP29
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+MSL3	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	MSL3
+PER2	2	0	0	chimp lineage (<9 Mya; or shared with human)	PER2,PER1
+HDAC4	2	0	0	chimp lineage (<9 Mya; or shared with human)	HDAC4,HDAC5
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+ARL2BP	2	0	0	chimp lineage (<9 Mya; or shared with human)	ARL2BP
+LSM14A	2	0	0	chimp lineage (<9 Mya; or shared with human)	LSM14A
+INTS6L	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	INTS6L,INTS6,SAGE1
+DNAJC3	2	0	0	chimp lineage (<9 Mya; or shared with human)	DNAJC3
+DOCK9	2	2	0	African-ape ancestor (~9-17 Mya)	DOCK9,DOCK11
+SLC7A7	2	0	0	chimp lineage (<9 Mya; or shared with human)	SLC7A7,OXA1L,SLC7A6OS,SLC7A6
+SEC23A	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	SEC23A,SEC23B
+BTBD6	2	0	0	chimp lineage (<9 Mya; or shared with human)	BTBD6,BRF1,BTBD3
+SNURF	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	SNURF,SNRPB,SNRPN
+CCDC32	2	0	2	ancestral, contracted in gorilla (>17 Mya)	CCDC32
+MAPKBP1	2	0	0	chimp lineage (<9 Mya; or shared with human)	MAPKBP1
+TUBGCP4	2	0	0	chimp lineage (<9 Mya; or shared with human)	TUBGCP4,ZSCAN29,ZKSCAN2
+ZNF280C	2	0	2	ancestral, contracted in gorilla (>17 Mya)	ZNF280C,ZNF280D,ZNF280B
+MORF4L1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	MORF4L1,MORF4L2
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+TTLL13	2	0	0	chimp lineage (<9 Mya; or shared with human)	TTLL13,TTLL6
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+PMM2	2	0	0	chimp lineage (<9 Mya; or shared with human)	PMM2
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+HAGH	2	0	0	chimp lineage (<9 Mya; or shared with human)	HAGH
+PKD1	2	0	0	chimp lineage (<9 Mya; or shared with human)	PKD1
+PDPK1	2	0	2	ancestral, contracted in gorilla (>17 Mya)	PDPK1
+ZSCAN32	2	0	0	chimp lineage (<9 Mya; or shared with human)	ZSCAN32,MTRNR2L4
+C16H16orf90	2	0	0	chimp lineage (<9 Mya; or shared with human)	C16H16orf90,RPL18
+MGRN1	2	0	0	chimp lineage (<9 Mya; or shared with human)	MGRN1
+SEPTIN12	2	0	2	ancestral, contracted in gorilla (>17 Mya)	SEPTIN12,SEPTIN9,SMIM22
+GSPT1	2	0	0	chimp lineage (<9 Mya; or shared with human)	GSPT1,GSPT2
+TNRC6A	2	0	0	chimp lineage (<9 Mya; or shared with human)	TNRC6A,TNRC6C
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+ALDOA	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	ALDOA,ALDOC
+ZNF747	2	0	0	chimp lineage (<9 Mya; or shared with human)	ZNF747,ZNF764
+RUSF1	2	0	0	chimp lineage (<9 Mya; or shared with human)	RUSF1,SLC5A2
+CSNK2A2	2	0	2	ancestral, contracted in gorilla (>17 Mya)	CSNK2A2,CSNK2A1
+DPEP3	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	DPEP3,DPEP2
+NIP7	2	0	0	chimp lineage (<9 Mya; or shared with human)	NIP7,COG8
+IST1	2	0	0	chimp lineage (<9 Mya; or shared with human)	IST1,PKD1L3
+DDX19A	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	DDX19A,DDX19B
+DEF8	2	0	0	chimp lineage (<9 Mya; or shared with human)	DEF8
+MED31	2	0	0	chimp lineage (<9 Mya; or shared with human)	MED31,TXNDC17,C19H17orf100
+MPDU1	2	0	0	chimp lineage (<9 Mya; or shared with human)	MPDU1,CD68,SOX15
+NAA38	2	0	2	ancestral, contracted in gorilla (>17 Mya)	NAA38,CYB5D1
+EFCAB13	2	0	0	chimp lineage (<9 Mya; or shared with human)	EFCAB13,MRPL45
+TUBG2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	TUBG2,RETREG3,TUBG1
+STAT5A	2	0	0	chimp lineage (<9 Mya; or shared with human)	STAT5A,STAT5B
+KAT2A	2	0	0	chimp lineage (<9 Mya; or shared with human)	KAT2A,KAT2B
+KRT34	2	0	0	chimp lineage (<9 Mya; or shared with human)	KRT34,KRT33A
+AP2B1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	AP2B1,AP1B1
+LINC02693	2	0	0	chimp lineage (<9 Mya; or shared with human)	LINC02693
+DRG2	2	0	0	chimp lineage (<9 Mya; or shared with human)	DRG2
+FBXW10	2	0	0	chimp lineage (<9 Mya; or shared with human)	FBXW10,FBXW10B
+DNAH9	2	0	0	chimp lineage (<9 Mya; or shared with human)	DNAH9,DNAH17,PGS1
+RANGRF	2	0	0	chimp lineage (<9 Mya; or shared with human)	RANGRF,SLC25A35
+NME1	2	0	2	ancestral, contracted in gorilla (>17 Mya)	NME1
+IGBP1C	2	0	2	ancestral, contracted in gorilla (>17 Mya)	IGBP1C,IGBP1,TEX14
+CLTC	2	2	0	African-ape ancestor (~9-17 Mya)	CLTC,CLTCL1
+AMZ2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	AMZ2,ARSG
+CSNK1D	2	0	0	chimp lineage (<9 Mya; or shared with human)	CSNK1D,CSNK1E
+FN3KRP	2	0	0	chimp lineage (<9 Mya; or shared with human)	FN3KRP,FN3K
+CNN2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	CNN2,CNN1
+SAFB2	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	SAFB2,SAFB
+AP1M2	2	2	0	African-ape ancestor (~9-17 Mya)	AP1M2,AP1M1
+(unnamed)	2	0	2	ancestral, contracted in gorilla (>17 Mya)	
+ZNF780B	2	0	0	chimp lineage (<9 Mya; or shared with human)	ZNF780B,ZNF780A
+GEMIN7	2	0	0	chimp lineage (<9 Mya; or shared with human)	GEMIN7
+NAPA	2	2	0	African-ape ancestor (~9-17 Mya)	NAPA,NAPB
+MED25	2	0	0	chimp lineage (<9 Mya; or shared with human)	MED25,PNKP,PTOV1
+NLRP7	2	2	0	African-ape ancestor (~9-17 Mya)	NLRP7,NLRP2
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+ZBED1	2	2	0	African-ape ancestor (~9-17 Mya)	ZBED1,DHRSX
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+TXLNG	2	0	0	chimp lineage (<9 Mya; or shared with human)	TXLNG,TXLNGY
+PHKA2	2	2	0	African-ape ancestor (~9-17 Mya)	PHKA2,PHKA1
+EIF1AX	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	EIF1AX,EIF1AY
+DDX3X	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	DDX3X,DDX3Y
+MAOA	2	2	0	African-ape ancestor (~9-17 Mya)	MAOA,MAOB
+NUDT10	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	NUDT10
+FAM156B	2	0	2	ancestral, contracted in gorilla (>17 Mya)	FAM156B,FAM156A
+PAGE2B	2	0	0	chimp lineage (<9 Mya; or shared with human)	PAGE2B,ALAS2,ALAS1
+NLGN3	2	0	0	chimp lineage (<9 Mya; or shared with human)	NLGN3,NLGN4Y
+CT83	2	0	2	ancestral, contracted in gorilla (>17 Mya)	CT83
+(unnamed)	2	2	0	African-ape ancestor (~9-17 Mya)	
+TEX13D	2	0	0	chimp lineage (<9 Mya; or shared with human)	TEX13D,TEX13C
+ATP11C	2	0	0	chimp lineage (<9 Mya; or shared with human)	ATP11C,ATP11B
+CXHXorf51B	2	0	0	chimp lineage (<9 Mya; or shared with human)	CXHXorf51B,CXHXorf51A
+EOLA1	2	0	2	ancestral, contracted in gorilla (>17 Mya)	EOLA1,EOLA2,HSFX3
+PNMA5	2	0	2	ancestral, contracted in gorilla (>17 Mya)	PNMA5,PNMA3
+TKTL1	2	0	2	ancestral, contracted in gorilla (>17 Mya)	TKTL1,TKT,TEX28
+(unnamed)	2	0	0	chimp lineage (<9 Mya; or shared with human)	
+PRSS43P	2	0	0	chimp lineage (<9 Mya; or shared with human)	PRSS43P,PRSS45,PRSS42
+IQCF3	2	0	2	ancestral, contracted in gorilla (>17 Mya)	IQCF3,IQCF2
+GLT8D1	2	2	0	African-ape ancestor (~9-17 Mya)	GLT8D1,GNL3,PBRM1,SPCS1
+ROPN1	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	ROPN1,ROPN1B,ALG1L,ALG1L1P
+PLSCR2	2	0	0	chimp lineage (<9 Mya; or shared with human)	PLSCR2,PLSCR1
+DGCR6L	2	2	2	ancestral great-ape (>17 Mya, pre-orangutan)	DGCR6L,DGCR6,PRODH
+TMEM191C	2	0	0	chimp lineage (<9 Mya; or shared with human)	TMEM191C
+RGL4	2	0	0	chimp lineage (<9 Mya; or shared with human)	RGL4
+MIF	2	0	0	chimp lineage (<9 Mya; or shared with human)	MIF
+(unnamed)	2	0	2	ancestral, contracted in gorilla (>17 Mya)	
+SERHL2	2	2	0	African-ape ancestor (~9-17 Mya)	SERHL2,RRP7A
+NOM1	0	2	0	gorilla lineage (<9 Mya)	NOM1
+RGS7	0	2	0	gorilla lineage (<9 Mya)	RGS7,RGS6
+DUSP5	0	2	0	gorilla lineage (<9 Mya)	DUSP5
+COQ8A	0	2	2	ancestral, contracted in chimp (>17 Mya)	COQ8A,COQ8B
+JMJD4	0	2	0	gorilla lineage (<9 Mya)	JMJD4
+TMCC2	0	2	0	gorilla lineage (<9 Mya)	TMCC2,TMCC1
+TOMM40L	0	2	0	gorilla lineage (<9 Mya)	TOMM40L,NR1I3,TOMM40
+IFI16	0	2	0	gorilla lineage (<9 Mya)	IFI16,MNDA
+C1H1orf56	0	2	0	gorilla lineage (<9 Mya)	C1H1orf56,CDC42SE1,MLLT11
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+GPR89A	0	2	0	gorilla lineage (<9 Mya)	GPR89A
+GSTM2	0	2	0	gorilla lineage (<9 Mya)	GSTM2
+RHOC	0	2	0	gorilla lineage (<9 Mya)	RHOC,MOV10
+DRAM2	0	2	0	gorilla lineage (<9 Mya)	DRAM2,CEPT1,SYCP3,CHPT1
+AHCYL1	0	2	0	gorilla lineage (<9 Mya)	AHCYL1,AHCYL2
+GNAT2	0	2	0	gorilla lineage (<9 Mya)	GNAT2,AMPD2,AMPD3
+IFI44	0	2	0	gorilla lineage (<9 Mya)	IFI44,IFI44L
+PGM1	0	2	0	gorilla lineage (<9 Mya)	PGM1,PGM5
+LRRC41	0	2	0	gorilla lineage (<9 Mya)	LRRC41,AIF1
+MAST2	0	2	0	gorilla lineage (<9 Mya)	MAST2,MAST4
+ZSWIM5	0	2	0	gorilla lineage (<9 Mya)	ZSWIM5,ZSWIM6
+CTPS1	0	2	0	gorilla lineage (<9 Mya)	CTPS1,S100G,CTPS2
+LCK	0	2	0	gorilla lineage (<9 Mya)	LCK,LYN
+PUM1	0	2	0	gorilla lineage (<9 Mya)	PUM1,PUM2
+XKR8	0	2	2	ancestral, contracted in chimp (>17 Mya)	XKR8
+HMGN2	0	2	0	gorilla lineage (<9 Mya)	HMGN2,BLOC1S6
+DVL2	0	2	2	ancestral, contracted in chimp (>17 Mya)	DVL2,TAS1R3,DVL1,DVL3
+DOK7	0	2	0	gorilla lineage (<9 Mya)	DOK7
+STK32B	0	2	0	gorilla lineage (<9 Mya)	STK32B,STK32C
+ATP8A1	0	2	2	ancestral, contracted in chimp (>17 Mya)	ATP8A1,ATP8A2
+SLAIN2	0	2	0	gorilla lineage (<9 Mya)	SLAIN2,MTHFS
+MAPK10	0	2	0	gorilla lineage (<9 Mya)	MAPK10,MAPK8,ARHGAP22
+OSTC	0	2	0	gorilla lineage (<9 Mya)	OSTC,LIG3
+TBC1D9	0	2	0	gorilla lineage (<9 Mya)	TBC1D9,TBC1D9B
+ARHGAP10	0	2	0	gorilla lineage (<9 Mya)	ARHGAP10,ARHGAP42
+LRBA	0	2	0	gorilla lineage (<9 Mya)	LRBA,MAB21L1,NBEA
+TRIM2	0	2	0	gorilla lineage (<9 Mya)	TRIM2,TRIM3
+PPID	0	2	0	gorilla lineage (<9 Mya)	PPID,ETFDH
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+ABCA9	0	2	0	gorilla lineage (<9 Mya)	ABCA9,ABCA8
+DHX40	0	2	0	gorilla lineage (<9 Mya)	DHX40
+TUBD1	0	2	0	gorilla lineage (<9 Mya)	TUBD1,RPS6KB1
+WFIKKN2	0	2	0	gorilla lineage (<9 Mya)	WFIKKN2,WFIKKN1
+PLCD3	0	2	0	gorilla lineage (<9 Mya)	PLCD3,PLCD1
+FBXL20	0	2	2	ancestral, contracted in chimp (>17 Mya)	FBXL20,FBXL2
+SLFN11	0	2	0	gorilla lineage (<9 Mya)	SLFN11,SLFN5
+CCL8	0	2	0	gorilla lineage (<9 Mya)	CCL8
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+ALDH3A1	0	2	2	ancestral, contracted in chimp (>17 Mya)	ALDH3A1,ALDH3A2
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+EPB41L4A	0	2	0	gorilla lineage (<9 Mya)	EPB41L4A
+FBN2	0	2	0	gorilla lineage (<9 Mya)	FBN2,FBN1
+SLC22A4	0	2	0	gorilla lineage (<9 Mya)	SLC22A4,SLC22A5
+DND1	0	2	0	gorilla lineage (<9 Mya)	DND1,WDR55
+THOC3	0	2	0	gorilla lineage (<9 Mya)	THOC3
+FGFR4	0	2	0	gorilla lineage (<9 Mya)	FGFR4,FGFR1
+GRK6	0	2	0	gorilla lineage (<9 Mya)	GRK6,GRK5
+CLK4	0	2	2	ancestral, contracted in chimp (>17 Mya)	CLK4,CLK1
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+GFOD1	0	2	2	ancestral, contracted in chimp (>17 Mya)	GFOD1,GFOD2
+BTN3A1	0	2	0	gorilla lineage (<9 Mya)	BTN3A1
+EHMT2	0	2	0	gorilla lineage (<9 Mya)	EHMT2,EHMT1
+TEAD3	0	2	0	gorilla lineage (<9 Mya)	TEAD3,TEAD4
+ADGRF5	0	2	0	gorilla lineage (<9 Mya)	ADGRF5
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+KHDRBS2	0	2	0	gorilla lineage (<9 Mya)	KHDRBS2,KHDRBS3
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+TSPYL4	0	2	0	gorilla lineage (<9 Mya)	TSPYL4,TSPYL1
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+OSBPL3	0	2	0	gorilla lineage (<9 Mya)	OSBPL3,OSBPL6
+YAE1	0	2	0	gorilla lineage (<9 Mya)	YAE1
+UPK3BL1	0	2	0	gorilla lineage (<9 Mya)	UPK3BL1
+OGDH	0	2	0	gorilla lineage (<9 Mya)	OGDH,OGDHL
+GALNT17	0	2	0	gorilla lineage (<9 Mya)	GALNT17
+NSUN5	0	2	2	ancestral, contracted in chimp (>17 Mya)	NSUN5,POM121,POM121C
+MIR590	0	2	0	gorilla lineage (<9 Mya)	MIR590,EIF4H,OSBP2
+TMEM120A	0	2	0	gorilla lineage (<9 Mya)	TMEM120A,TMEM120B
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+PTPRZ1	0	2	0	gorilla lineage (<9 Mya)	PTPRZ1,PTPRG
+MKRN1	0	2	0	gorilla lineage (<9 Mya)	MKRN1
+SLC4A2	0	2	0	gorilla lineage (<9 Mya)	SLC4A2,SLC4A3
+ACTR3B	0	2	2	ancestral, contracted in chimp (>17 Mya)	ACTR3B,ACTR3
+TNFRSF10D	0	2	0	gorilla lineage (<9 Mya)	TNFRSF10D
+DOCK5	0	2	0	gorilla lineage (<9 Mya)	DOCK5,DOCK1
+FABP4	0	2	0	gorilla lineage (<9 Mya)	FABP4,PMP2
+ZNF16	0	2	0	gorilla lineage (<9 Mya)	ZNF16,ZNF19
+SLC35F5	0	2	0	gorilla lineage (<9 Mya)	SLC35F5
+PPIF	0	2	0	gorilla lineage (<9 Mya)	PPIF
+DDX21	0	2	2	ancestral, contracted in chimp (>17 Mya)	DDX21,DDX50
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+EXOC6	0	2	0	gorilla lineage (<9 Mya)	EXOC6,EXOC6B
+SORCS3	0	2	0	gorilla lineage (<9 Mya)	SORCS3,SORCS1
+MICAL2	0	2	0	gorilla lineage (<9 Mya)	MICAL2,MICAL3
+FADS2	0	2	2	ancestral, contracted in chimp (>17 Mya)	FADS2,FADS3
+TMEM179B	0	2	0	gorilla lineage (<9 Mya)	TMEM179B,TMEM223
+SPTBN2	0	2	0	gorilla lineage (<9 Mya)	SPTBN2,SPTBN1
+ANO1	0	2	0	gorilla lineage (<9 Mya)	ANO1,ANO2
+MIR326	0	2	0	gorilla lineage (<9 Mya)	MIR326,ARRB1,ARRB2
+ANKRD42	0	2	0	gorilla lineage (<9 Mya)	ANKRD42,RPL32
+NAALAD2	0	2	0	gorilla lineage (<9 Mya)	NAALAD2
+MTMR2	0	2	0	gorilla lineage (<9 Mya)	MTMR2,CEP57
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+TIMM8B	0	2	0	gorilla lineage (<9 Mya)	TIMM8B,NKAPD1
+KMT2A	0	2	0	gorilla lineage (<9 Mya)	KMT2A,KMT2B
+SORL1	0	2	0	gorilla lineage (<9 Mya)	SORL1
+TSPAN31	0	2	0	gorilla lineage (<9 Mya)	TSPAN31,CDK4,MARCHF9
+SMARCC2	0	2	0	gorilla lineage (<9 Mya)	SMARCC2,SMARCC1
+GXYLT1	0	2	0	gorilla lineage (<9 Mya)	GXYLT1
+BICD1	0	2	0	gorilla lineage (<9 Mya)	BICD1,BICD2
+ITPR2	0	2	0	gorilla lineage (<9 Mya)	ITPR2,ITPR1
+KRAS	0	2	0	gorilla lineage (<9 Mya)	KRAS,ETFRF1
+MDM2	0	2	0	gorilla lineage (<9 Mya)	MDM2,RSL24D1
+CAMKK2	0	2	0	gorilla lineage (<9 Mya)	CAMKK2,CAMKK1
+GALNT13	0	2	0	gorilla lineage (<9 Mya)	GALNT13,GALNT1
+POLR3K	0	2	0	gorilla lineage (<9 Mya)	POLR3K
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+FOXO1	0	2	0	gorilla lineage (<9 Mya)	FOXO1
+IL37	0	2	0	gorilla lineage (<9 Mya)	IL37,XIAP
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+TLN1	0	2	0	gorilla lineage (<9 Mya)	TLN1,MIR190A,TLN2
+DAPK1	0	2	0	gorilla lineage (<9 Mya)	DAPK1
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+RAD23B	0	2	0	gorilla lineage (<9 Mya)	RAD23B,RAD23A
+TXN	0	2	0	gorilla lineage (<9 Mya)	TXN
+(unnamed)	0	2	2	ancestral, contracted in chimp (>17 Mya)	
+CERCAM	0	2	0	gorilla lineage (<9 Mya)	CERCAM,COLGALT1
+PNPLA7	0	2	2	ancestral, contracted in chimp (>17 Mya)	PNPLA7,PNPLA6
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+PSPC1	0	2	0	gorilla lineage (<9 Mya)	PSPC1,MPHOSPH8
+PSPC1	0	2	0	gorilla lineage (<9 Mya)	PSPC1
+ZMYM5	0	2	2	ancestral, contracted in chimp (>17 Mya)	ZMYM5,ZMYM2
+UTP14C	0	2	0	gorilla lineage (<9 Mya)	UTP14C,ALG11,UTP14A
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+SDR39U1	0	2	0	gorilla lineage (<9 Mya)	SDR39U1,KHNYN
+(unnamed)	0	2	2	ancestral, contracted in chimp (>17 Mya)	
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+RPL10L	0	2	0	gorilla lineage (<9 Mya)	RPL10L,RPL10
+IFI27L1	0	2	2	ancestral, contracted in chimp (>17 Mya)	IFI27L1,IFI27L2,IFI27
+CKB	0	2	2	ancestral, contracted in chimp (>17 Mya)	CKB,CKM,KLC3
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+TUBGCP5	0	2	0	gorilla lineage (<9 Mya)	TUBGCP5
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+HERC2	0	2	0	gorilla lineage (<9 Mya)	HERC2
+HERC2	0	2	0	gorilla lineage (<9 Mya)	HERC2
+LDHAL6B	0	2	0	gorilla lineage (<9 Mya)	LDHAL6B,MYO1E,MYO1F
+SNAPC5	0	2	2	ancestral, contracted in chimp (>17 Mya)	SNAPC5,MAP2K1,MAP2K2
+BTBD1	0	2	0	gorilla lineage (<9 Mya)	BTBD1,BTBD2
+TARS3	0	2	0	gorilla lineage (<9 Mya)	TARS3,TARS1
+CHMP1B	0	2	0	gorilla lineage (<9 Mya)	CHMP1B,GNAL,GNAS
+ATP9B	0	2	0	gorilla lineage (<9 Mya)	ATP9B,ATP9A
+ZNF75A	0	2	0	gorilla lineage (<9 Mya)	ZNF75A,ZNF75D
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+KDM8	0	2	0	gorilla lineage (<9 Mya)	KDM8
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+MAPK3	0	2	0	gorilla lineage (<9 Mya)	MAPK3,MAPK1
+BFAR	0	2	0	gorilla lineage (<9 Mya)	BFAR
+SGSM2	0	2	0	gorilla lineage (<9 Mya)	SGSM2,TSR1,SGSM1
+CDH6	0	2	0	gorilla lineage (<9 Mya)	CDH6
+SLC1A3	0	2	0	gorilla lineage (<9 Mya)	SLC1A3,SLC1A6
+CPLANE1	0	2	0	gorilla lineage (<9 Mya)	CPLANE1
+DMRTC2	0	2	0	gorilla lineage (<9 Mya)	DMRTC2,LYPD4
+ERCC1	0	2	0	gorilla lineage (<9 Mya)	ERCC1,POLR1G
+RFPL3	0	2	0	gorilla lineage (<9 Mya)	RFPL3
+SH3KBP1	0	2	0	gorilla lineage (<9 Mya)	SH3KBP1
+TMEM230	0	2	0	gorilla lineage (<9 Mya)	TMEM230
+NAA20	0	2	0	gorilla lineage (<9 Mya)	NAA20,CFAP61,CRNKL1
+CBR1	0	2	0	gorilla lineage (<9 Mya)	CBR1,CBR3
+CD99	0	2	0	gorilla lineage (<9 Mya)	CD99
+TMSB4X	0	2	2	ancestral, contracted in chimp (>17 Mya)	TMSB4X
+SCML1	0	2	0	gorilla lineage (<9 Mya)	SCML1,SCML2
+ZFX	0	2	0	gorilla lineage (<9 Mya)	ZFX,ZFY
+USP9X	0	2	2	ancestral, contracted in chimp (>17 Mya)	USP9X,USP9Y
+SLC9A7	0	2	0	gorilla lineage (<9 Mya)	SLC9A7,CHST7,SLC9A6
+(unnamed)	0	2	0	gorilla lineage (<9 Mya)	
+KDM5C	0	2	0	gorilla lineage (<9 Mya)	KDM5C,KDM5D
+GPRASP2	0	2	0	gorilla lineage (<9 Mya)	GPRASP2,GPRASP1
+TCEAL8	0	2	2	ancestral, contracted in chimp (>17 Mya)	TCEAL8,TCEAL7
+RPL39	0	2	2	ancestral, contracted in chimp (>17 Mya)	RPL39,RPL39L
+MAGEC1	0	2	2	ancestral, contracted in chimp (>17 Mya)	MAGEC1
+EOLA2	0	2	2	ancestral, contracted in chimp (>17 Mya)	EOLA2,EOLA1,HSFX3
+TMEM185A	0	2	0	gorilla lineage (<9 Mya)	TMEM185A
+IKBKG	0	2	0	gorilla lineage (<9 Mya)	IKBKG,G6PD
+CRBN	0	2	0	gorilla lineage (<9 Mya)	CRBN,TRNT1
+RAF1	0	2	0	gorilla lineage (<9 Mya)	RAF1,MKRN2
+NKIRAS1	0	2	0	gorilla lineage (<9 Mya)	NKIRAS1,UBE2E1,RPL15
+LIMD1	0	2	0	gorilla lineage (<9 Mya)	LIMD1
+GGTLC2	0	2	0	gorilla lineage (<9 Mya)	GGTLC2,ZNF280A,ZNF280B,RGL4
+LIMK2	0	2	0	gorilla lineage (<9 Mya)	LIMK2,PIK3IP1
+APOBEC3C	0	2	0	gorilla lineage (<9 Mya)	APOBEC3C,APOBEC3F
+NCAPH2	0	2	0	gorilla lineage (<9 Mya)	NCAPH2
+ZNF669	0	0	2	orangutan lineage (<17 Mya)	ZNF669
+ARID4B	0	0	2	orangutan lineage (<17 Mya)	ARID4B,GGPS1,ARID4A
+EPHX1	0	0	2	orangutan lineage (<17 Mya)	EPHX1,TMEM63A
+GARIN4	0	0	2	orangutan lineage (<17 Mya)	GARIN4,GARIN3
+PLXNA2	0	0	2	orangutan lineage (<17 Mya)	PLXNA2,PLXNA1
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+RPS27	0	0	2	orangutan lineage (<17 Mya)	RPS27,RPS27L
+PIP5K1A	0	0	2	orangutan lineage (<17 Mya)	PIP5K1A,PABIR1,PIP5K1B
+RPL21	0	0	2	orangutan lineage (<17 Mya)	RPL21
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+DPYD	0	0	2	orangutan lineage (<17 Mya)	DPYD,SVIP,CCDC179
+PIK3R3	0	0	2	orangutan lineage (<17 Mya)	PIK3R3,P3R3URF,PIK3R1
+MYCBP	0	0	2	orangutan lineage (<17 Mya)	MYCBP,GJA9
+MAGT1	0	0	2	orangutan lineage (<17 Mya)	MAGT1
+AGO3	0	0	2	orangutan lineage (<17 Mya)	AGO3,AGO2
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+CLCNKB	0	0	2	orangutan lineage (<17 Mya)	CLCNKB
+ATAD3B	0	0	2	orangutan lineage (<17 Mya)	ATAD3B
+STX18	0	0	2	orangutan lineage (<17 Mya)	STX18,EFCAB5
+LCORL	0	0	2	orangutan lineage (<17 Mya)	LCORL,NCAPG
+MED28	0	0	2	orangutan lineage (<17 Mya)	MED28
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+PAICS	0	0	2	orangutan lineage (<17 Mya)	PAICS
+PAQR3	0	0	2	orangutan lineage (<17 Mya)	PAQR3,BMP2K
+SGMS2	0	0	2	orangutan lineage (<17 Mya)	SGMS2,HADH
+DLG2	0	0	2	orangutan lineage (<17 Mya)	DLG2
+DCHS2	0	0	2	orangutan lineage (<17 Mya)	DCHS2
+TMEM144	0	0	2	orangutan lineage (<17 Mya)	TMEM144
+SELENOP	0	0	2	orangutan lineage (<17 Mya)	SELENOP,CCDC152
+HINT1	0	0	2	orangutan lineage (<17 Mya)	HINT1,LSM2,VARS1
+CD14	0	0	2	orangutan lineage (<17 Mya)	CD14,TMCO6
+NOP16	0	0	2	orangutan lineage (<17 Mya)	NOP16,HIGD2A,BBS4,HIGD2B
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+TRNAA-AGC	0	0	2	orangutan lineage (<17 Mya)	TRNAA-AGC,TRNAI-AAU
+STK38	0	0	2	orangutan lineage (<17 Mya)	STK38,STK38L
+DSE	0	0	2	orangutan lineage (<17 Mya)	DSE,RPS5
+TCP10L	0	0	2	orangutan lineage (<17 Mya)	TCP10L
+PMS2	0	0	2	orangutan lineage (<17 Mya)	PMS2
+NPTX2	0	0	2	orangutan lineage (<17 Mya)	NPTX2,NPTX1
+ARPC1A	0	0	2	orangutan lineage (<17 Mya)	ARPC1A,ARPC1B
+ZSCAN25	0	0	2	orangutan lineage (<17 Mya)	ZSCAN25
+TRIM50	0	0	2	orangutan lineage (<17 Mya)	TRIM50,FKBP6
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+BZW2	0	0	2	orangutan lineage (<17 Mya)	BZW2,BZW1
+ASNS	0	0	2	orangutan lineage (<17 Mya)	ASNS
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+MRPS33	0	0	2	orangutan lineage (<17 Mya)	MRPS33
+KMT2C	0	0	2	orangutan lineage (<17 Mya)	KMT2C
+GALNTL5	0	0	2	orangutan lineage (<17 Mya)	GALNTL5,GALNT11
+DLGAP2	0	0	2	orangutan lineage (<17 Mya)	DLGAP2,DLGAP1
+DLC1	0	0	2	orangutan lineage (<17 Mya)	DLC1,STARD13
+ERLIN2	0	0	2	orangutan lineage (<17 Mya)	ERLIN2,ERLIN1
+ADAM18	0	0	2	orangutan lineage (<17 Mya)	ADAM18
+ZNF638	0	0	2	orangutan lineage (<17 Mya)	ZNF638
+SLC52A2	0	0	2	orangutan lineage (<17 Mya)	SLC52A2,FBXL6,SLC52A1
+CELF2	0	0	2	orangutan lineage (<17 Mya)	CELF2,CELF1
+SFXN3	0	0	2	orangutan lineage (<17 Mya)	SFXN3,MRPL52
+SORCS3	0	0	2	orangutan lineage (<17 Mya)	SORCS3
+SHOC2	0	0	2	orangutan lineage (<17 Mya)	SHOC2,RPL13A
+FAM24B	0	0	2	orangutan lineage (<17 Mya)	FAM24B,FAM24A
+NAP1L4	0	0	2	orangutan lineage (<17 Mya)	NAP1L4,NAP1L1
+NRXN2	0	0	2	orangutan lineage (<17 Mya)	NRXN2,NRXN1
+B3GAT3	0	0	2	orangutan lineage (<17 Mya)	B3GAT3,TRIM59
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+CADM1	0	0	2	orangutan lineage (<17 Mya)	CADM1
+YBX3	0	0	2	orangutan lineage (<17 Mya)	YBX3
+SMIM10L1	0	0	2	orangutan lineage (<17 Mya)	SMIM10L1
+RECQL	0	0	2	orangutan lineage (<17 Mya)	RECQL,PYROXD1
+FAIM2	0	0	2	orangutan lineage (<17 Mya)	FAIM2,TMBIM1,PNKD
+ACVR1B	0	0	2	orangutan lineage (<17 Mya)	ACVR1B,TGFBR1
+PCBP2	0	0	2	orangutan lineage (<17 Mya)	PCBP2,PCBP3
+ORMDL2	0	0	2	orangutan lineage (<17 Mya)	ORMDL2,SARNP,ORMDL3
+ZC3H10	0	0	2	orangutan lineage (<17 Mya)	ZC3H10
+SHMT2	0	0	2	orangutan lineage (<17 Mya)	SHMT2,SMCR8,SHMT1
+DYNLL1	0	0	2	orangutan lineage (<17 Mya)	DYNLL1,DYNLL2
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+SPOPL	0	0	2	orangutan lineage (<17 Mya)	SPOPL,SPOP
+ZNF385B	0	0	2	orangutan lineage (<17 Mya)	ZNF385B,ZNF385D
+NBEAL1	0	0	2	orangutan lineage (<17 Mya)	NBEAL1
+ACSL3	0	0	2	orangutan lineage (<17 Mya)	ACSL3,ACSL4
+CAB39	0	0	2	orangutan lineage (<17 Mya)	CAB39,CAB39L
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+GPAT2	0	0	2	orangutan lineage (<17 Mya)	GPAT2
+MAP4K4	0	0	2	orangutan lineage (<17 Mya)	MAP4K4,TNIK
+AUP1	0	0	2	orangutan lineage (<17 Mya)	AUP1,HTRA2,LOXL3
+PAPOLG	0	0	2	orangutan lineage (<17 Mya)	PAPOLG,PAPOLA
+KIF3C	0	0	2	orangutan lineage (<17 Mya)	KIF3C,KIF3B
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+TOPORS	0	0	2	orangutan lineage (<17 Mya)	TOPORS,SMIM27
+RORB	0	0	2	orangutan lineage (<17 Mya)	RORB,RORA
+UBQLN1	0	0	2	orangutan lineage (<17 Mya)	UBQLN1,UBQLN2
+RFPL3	0	0	2	orangutan lineage (<17 Mya)	RFPL3
+RPL12	0	0	2	orangutan lineage (<17 Mya)	RPL12,CHRM5,AVEN
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+MIPEP	0	0	2	orangutan lineage (<17 Mya)	MIPEP
+SUGT1	0	0	2	orangutan lineage (<17 Mya)	SUGT1
+CUL4A	0	0	2	orangutan lineage (<17 Mya)	CUL4A,CUL4B
+FLVCR2	0	0	2	orangutan lineage (<17 Mya)	FLVCR2
+VASH1	0	0	2	orangutan lineage (<17 Mya)	VASH1
+ATXN3	0	0	2	orangutan lineage (<17 Mya)	ATXN3,ATXN3L
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+WHAMM	0	0	2	orangutan lineage (<17 Mya)	WHAMM
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+ARID3B	0	0	2	orangutan lineage (<17 Mya)	ARID3B,ARID3A
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+PIEZO2	0	0	2	orangutan lineage (<17 Mya)	PIEZO2,MATCAP1,NOL3
+CDH2	0	0	2	orangutan lineage (<17 Mya)	CDH2,CDH4
+JMJD8	0	0	2	orangutan lineage (<17 Mya)	JMJD8,STUB1
+NDUFB10	0	0	2	orangutan lineage (<17 Mya)	NDUFB10,RPL3L,RPL3
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+DYNC1LI2	0	0	2	orangutan lineage (<17 Mya)	DYNC1LI2,DYNC1LI1
+MIS12	0	0	2	orangutan lineage (<17 Mya)	MIS12,DERL2,DERL3
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+NF1	0	0	2	orangutan lineage (<17 Mya)	NF1
+KRT15	0	0	2	orangutan lineage (<17 Mya)	KRT15,KRT19
+PSMC3IP	0	0	2	orangutan lineage (<17 Mya)	PSMC3IP,MLX
+MAP3K14	0	0	2	orangutan lineage (<17 Mya)	MAP3K14,KIAA1143,KIF15
+GGA3	0	0	2	orangutan lineage (<17 Mya)	GGA3,GGA1
+MFSD11	0	0	2	orangutan lineage (<17 Mya)	MFSD11,SRSF2,METTL23
+TRMT1	0	0	2	orangutan lineage (<17 Mya)	TRMT1
+RAD54L2	0	0	2	orangutan lineage (<17 Mya)	RAD54L2
+TBCB	0	0	2	orangutan lineage (<17 Mya)	TBCB,POLR2I,OVOL3
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+FAM209B	0	0	2	orangutan lineage (<17 Mya)	FAM209B
+ASMTL	0	0	2	orangutan lineage (<17 Mya)	ASMTL
+PCYT1B	0	0	2	orangutan lineage (<17 Mya)	PCYT1B,PCYT1A
+USP9X	0	0	2	orangutan lineage (<17 Mya)	USP9X,USP9Y
+PABPC1L2B	0	0	2	orangutan lineage (<17 Mya)	PABPC1L2B
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+EBLN2	0	0	2	orangutan lineage (<17 Mya)	EBLN2,PPP4R2
+RPL29	0	0	2	orangutan lineage (<17 Mya)	RPL29
+IQCF5	0	0	2	orangutan lineage (<17 Mya)	IQCF5,IQCF1
+NCEH1	0	0	2	orangutan lineage (<17 Mya)	NCEH1
+(unnamed)	0	0	2	orangutan lineage (<17 Mya)	
+TST	0	0	2	orangutan lineage (<17 Mya)	TST,MPST

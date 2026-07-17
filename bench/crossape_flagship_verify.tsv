@@ -1,0 +1,13 @@
+family	chimp_ann/cat	gorilla_ann/cat	orang_ann/cat	seqlink_c/g/o	verdict	known_biology
+MAGEA	10/8	5/5	9/8	11/11/12	validated	cancer-testis; expanded across catarrhines (~ancestral)
+NPIP	1/1	1/0	0/0	22/3/0	validated	African-ape/human expansion; ~absent in orangutan
+NBPF	3/3	0/0	0/0	0/0/0	validated	Olduvai/DUF1220; African-ape+human expansion
+POTE	2/2	1/0	2/1	0/0/0	validated	African-ape expansion
+TBC1D3	4/1	3/0	3/0	5/0/24	DETECTION/LINK GAP (annotated multi-copy but 0 in catalog somewhere)	African-ape/human (esp. human) expansion; NOT orang-high
+SRGAP2	1/0	1/0	1/0	0/0/0	annotated but 0 catalog copies (not expressed / detection gap)	human-biased; few copies in apes
+ARHGAP11	1/0	1/0	1/0	0/0/0	annotated but 0 catalog copies (not expressed / detection gap)	human-biased duplication
+FAM72	1/0	1/0	1/0	0/0/0	annotated but 0 catalog copies (not expressed / detection gap)	human/African-ape expansion
+GSTM	5/3	5/9	3/2	3/4/4	validated	GSTM cluster; ~ancestral, ~3-5 copies
+TSPY	0/0	0/0	0/0	0/0/0	not annotated (absent/LOC-named or no assembly)	Y, testis; expanded (needs assembled Y + testis expression)
+RBMY	0/0	0/0	0/0	0/0/0	not annotated (absent/LOC-named or no assembly)	Y, testis; multi-copy (needs Y + testis)
+DAZ	0/0	1/1	0/0	0/0/0	validated	Y, testis; DAZ1-4 (needs Y + testis)
