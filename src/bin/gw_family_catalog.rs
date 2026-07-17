@@ -125,6 +125,17 @@ struct Args {
     /// (DNA-localized parCN, NOT added to copies.tsv). Requires --homology-primary. Default off (byte-identical).
     #[arg(long, default_value_t = false)]
     project_all_families: bool,
+
+    /// DNA-family fallback (DNA edge oracle): for RNA-orphan expressed loci (0 homology edges -> no RNA
+    /// family), project the transcript onto the genome at a LOOSER identity floor (--dna-family-min-identity,
+    /// default 0.90 vs collapse-expressed's 0.98) to recover DIVERGENT genomic paralogs whose expressed
+    /// sequence is non-homologous (the DNA-family != RNA-family case). Writes <out>.dna_family.tsv (copy
+    /// NUMBER only; per-read resolution needs DNA parCN). Requires --homology-primary. Default off; byte-identical when off.
+    #[arg(long, default_value_t = false)]
+    dna_family_fallback: bool,
+    /// Projection identity floor for --dna-family-fallback (default 0.90).
+    #[arg(long)]
+    dna_family_min_identity: Option<f64>,
 }
 
 fn main() -> Result<()> {
@@ -136,6 +147,8 @@ fn main() -> Result<()> {
     cfg.complete_poa_core = args.complete_core;
     cfg.collapse_enumerate = args.collapse_enumerate || cfg.collapse_enumerate;
     cfg.collapse_expressed = args.collapse_expressed || cfg.collapse_expressed;
+    cfg.dna_family_fallback = args.dna_family_fallback || cfg.dna_family_fallback;
+    if let Some(x) = args.dna_family_min_identity { cfg.dna_family_min_identity = x; }
 
     if args.single_copy_baseline {
         use rustle::vg_family::single_copy::lambda_global;
@@ -166,9 +179,10 @@ fn main() -> Result<()> {
     // homology-primary catalog (in addition to feeding the `--refine` block below): it recovers coding
     // paralogs that have diverged past the nucleotide seeds' ~0.65 identity floor.
     refine_params.protein_tail = args.protein_tail;
-    let (raw, collapsed, expressed): (
+    let (raw, collapsed, expressed, dna_families): (
         Vec<Vec<DenovoTranscript>>,
         Vec<rustle::vg_family::collapse_enumerate::CollapsedFamily>,
+        Vec<rustle::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
         Vec<rustle::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
     ) = if args.homology_primary {
         detect_homology_catalog_genome_wide(
@@ -181,12 +195,13 @@ fn main() -> Result<()> {
             )?,
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         )
     } else {
         let catalog = detect_conflict_catalog_genome_wide(
             &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
         )?;
-        (catalog.into_iter().map(|c| c.copies).collect(), Vec::new(), Vec::new())
+        (catalog.into_iter().map(|c| c.copies).collect(), Vec::new(), Vec::new(), Vec::new())
     };
     // Exon-sum (FLNC) homology + distinct-locus refinement (the principled membership criterion). ON BY DEFAULT
     // (removes repeat-bridge + large-gene mis-chain FPs); `--no-refine` opts out to the raw conflict catalog.
@@ -326,6 +341,17 @@ fn main() -> Result<()> {
             writeln!(ef, "{}", rustle::vg_family::collapse_enumerate::format_expressed_collapsed_row(&format!("GWFAMe{i}"), fam))?;
         }
         eprintln!("[gw-catalog] collapse-expressed: {} K0_COLLAPSED_EXPRESSED families -> {}.expressed_collapsed.tsv", expressed.len(), args.out);
+    }
+
+    // DNA-family fallback (`--dna-family-fallback`): RNA-orphan loci recovered by the DNA edge oracle. Same
+    // isolation contract -- OFF path (flag off or nothing recovered) writes no file (byte-identical).
+    if cfg.dna_family_fallback && !dna_families.is_empty() {
+        let mut df = std::fs::File::create(format!("{}.dna_family.tsv", args.out))?;
+        writeln!(df, "family_id\tchrom\tstart\tend\tfamCN\tmin_locus_reads\tstatus\tprojection_loci")?;
+        for (i, fam) in dna_families.iter().enumerate() {
+            writeln!(df, "{}", rustle::vg_family::collapse_enumerate::format_dna_family_row(&format!("GWFAMdna{i}"), fam))?;
+        }
+        eprintln!("[gw-catalog] dna-family-fallback: {} DNA_FAMILY_RNA_NONHOMOLOGOUS loci -> {}.dna_family.tsv", dna_families.len(), args.out);
     }
 
     // famCN / totalCN via genome projection (spec §7) -- the VG copy-number leg: LAND the family variation

@@ -98,6 +98,14 @@ pub struct DenovoConfig {
     /// loci that are EACH read-supported. **Default OFF**: when off, all existing output is byte-identical.
     /// Env `RUSTLE_COLLAPSE_EXPRESSED=1`, CLI `--collapse-expressed` on `gw_family_catalog`.
     pub collapse_expressed: bool,
+    /// DNA-family fallback (DNA edge oracle): RNA-orphan loci (0 homology edges -> no RNA family) projected
+    /// onto the genome at `dna_family_min_identity` to recover DIVERGENT genomic paralogs whose expressed
+    /// transcript is non-homologous (DNA-family != RNA-family). Copy-number only. `RUSTLE_DNA_FAMILY_FALLBACK=1`,
+    /// CLI `--dna-family-fallback`. Default off (byte-identical).
+    pub dna_family_fallback: bool,
+    /// Projection identity floor for the DNA-family fallback (looser than collapse-expressed's 0.98, since
+    /// these paralogs are divergent). CLI `--dna-family-min-identity`. Default 0.90.
+    pub dna_family_min_identity: f64,
     /// Background per-read ambiguity rate for the collapse test. Must be GENOME-WIDE, never region-local: in the
     /// DAZ window every read outside DAZ1's span is DAZ2's and ambiguous, so a local background would be ~0.95.
     /// `None` ⇒ the gate abstains. Default = `GENOME_WIDE_EPS_AMB` measured on `GGO_mm.bam`.
@@ -122,6 +130,8 @@ impl Default for DenovoConfig {
             collapse_gate: false,
             collapse_enumerate: false,
             collapse_expressed: false,
+            dna_family_fallback: false,
+            dna_family_min_identity: 0.90,
             eps_amb: Some(crate::vg_family::collapse_gate::GENOME_WIDE_EPS_AMB),
         }
     }
@@ -134,6 +144,7 @@ impl DenovoConfig {
         DenovoConfig {
             collapse_enumerate: std::env::var("RUSTLE_COLLAPSE_ENUMERATE").ok().as_deref() == Some("1"),
             collapse_expressed: std::env::var("RUSTLE_COLLAPSE_EXPRESSED").ok().as_deref() == Some("1"),
+            dna_family_fallback: std::env::var("RUSTLE_DNA_FAMILY_FALLBACK").ok().as_deref() == Some("1"),
             ..Self::default()
         }
     }
@@ -2079,6 +2090,7 @@ pub fn detect_homology_catalog_genome_wide(
     Vec<Vec<DenovoTranscript>>,
     Vec<crate::vg_family::collapse_enumerate::CollapsedFamily>,
     Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
+    Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily>, // DNA-family fallback (RNA-orphans)
 )> {
     // --- reps (identical to the conflict path's rep build) ---
     let reads = primary_reads_from_bam(bam_path, threads)?;
@@ -2108,12 +2120,15 @@ pub fn detect_homology_catalog_genome_wide(
     // Collected here and projected in ONE batched minimap2 call after the loop (one genome index load
     // total), instead of re-indexing the genome per dropped candidate.
     let mut expressed_candidates: Vec<(String, String, u64, u64, Vec<u8>)> = Vec::new();
+    // DNA-family fallback: the SAME dropped (<2 RNA-distinct-loci) orphan candidates, projected after the loop
+    // at the looser `dna_family_min_identity` to reach divergent genomic paralogs the 0.98 collapse path misses.
+    let mut dna_candidates: Vec<(String, String, u64, u64, Vec<u8>)> = Vec::new();
     for block in blocks {
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
         let loci = distinct_locus_reps(copies.clone()); // ≥2 spatially-distinct loci certificate
         if block.len() >= min_copies && loci.len() >= min_copies {
             out.push(loci);
-        } else if (cfg.collapse_enumerate || cfg.collapse_expressed) && loci.len() < 2 {
+        } else if (cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback) && loci.len() < 2 {
             // GENUINE collapse only (< 2 RNA-distinct loci), independent of min_copies: a block with
             // >= 2 distinct loci that merely falls short of a higher --min-copies is a resolved (not
             // collapsed) candidate and must NOT get a mixed-locus union re-admission window.
@@ -2135,11 +2150,22 @@ pub fn detect_homology_catalog_genome_wide(
                 let id = format!("exp{}", expressed_candidates.len());
                 expressed_candidates.push((id, chrom.clone(), lo, hi, consensus.clone()));
             }
+            if cfg.dna_family_fallback {
+                let id = format!("dna{}", dna_candidates.len());
+                dna_candidates.push((id, chrom.clone(), lo, hi, consensus.clone()));
+            }
         }
     }
     let expressed = if cfg.collapse_expressed {
         crate::vg_family::collapse_enumerate::readmit_expressed_batch(
-            &expressed_candidates, bam_path, fasta_path, &refine.minimap2, threads,
+            &expressed_candidates, bam_path, fasta_path, &refine.minimap2, threads, 0.98,
+        )
+    } else {
+        Vec::new()
+    };
+    let dna_families = if cfg.dna_family_fallback {
+        crate::vg_family::collapse_enumerate::readmit_dna_family_batch(
+            &dna_candidates, bam_path, fasta_path, &refine.minimap2, threads, cfg.dna_family_min_identity,
         )
     } else {
         Vec::new()
@@ -2151,7 +2177,10 @@ pub fn detect_homology_catalog_genome_wide(
     if !expressed.is_empty() {
         eprintln!("[gw-catalog-homology] collapse-expressed: {} K0_COLLAPSED_EXPRESSED families re-admitted (copy-number only)", expressed.len());
     }
-    Ok((out, collapsed, expressed))
+    if !dna_families.is_empty() {
+        eprintln!("[gw-catalog-homology] dna-family-fallback: {} DNA_FAMILY_RNA_NONHOMOLOGOUS loci re-admitted (copy-number only)", dna_families.len());
+    }
+    Ok((out, collapsed, expressed, dna_families))
 }
 
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
@@ -4625,7 +4654,7 @@ mod tests {
     #[test]
     fn homology_catalog_groups_fixture_family() {
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
-        let (fams, _collapsed, _expressed) = detect_homology_catalog_genome_wide(
+        let (fams, _collapsed, _expressed, _dna) = detect_homology_catalog_genome_wide(
             "tests/fixtures/same_chrom_supplement/reads.bam",
             "tests/fixtures/same_chrom_supplement/genome.fa",
             2, 2, &DenovoConfig::default(), &RefineParams::default(), 0.20,

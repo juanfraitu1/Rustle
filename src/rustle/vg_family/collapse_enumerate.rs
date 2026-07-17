@@ -148,6 +148,18 @@ pub fn format_expressed_collapsed_row(family_id: &str, f: &ExpressedCollapsedFam
         f.chrom, f.start, f.end, f.famcn, f.min_locus_reads, "K0_COLLAPSED_EXPRESSED", proj)
 }
 
+/// One `<out>.dna_family.tsv` row for an RNA-orphan locus recovered by the DNA edge oracle (`--dna-family-
+/// fallback`): same schema as `expressed_collapsed`, status `DNA_FAMILY_RNA_NONHOMOLOGOUS`. The locus's
+/// EXPRESSED transcript is non-homologous to its paralogs (no RNA family forms), yet it projects to >= 2
+/// DIVERGENT genomic copies. Copy NUMBER only; per-read resolution needs DNA parCN.
+pub fn format_dna_family_row(family_id: &str, f: &ExpressedCollapsedFamily) -> String {
+    let proj = f.projection.iter()
+        .map(|c| format!("{}:{}-{}@{:.3}", c.chrom, c.start, c.end, c.identity))
+        .collect::<Vec<_>>().join(";");
+    format!("{family_id}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        f.chrom, f.start, f.end, f.famcn, f.min_locus_reads, "DNA_FAMILY_RNA_NONHOMOLOGOUS", proj)
+}
+
 /// Pure: assemble an `ExpressedCollapsedFamily` from already-read-supported projection loci (paired with
 /// their support counts). Returns `None` unless `>= 2` loci are supported. Factored out so the admit/famCN
 /// logic is unit-testable without minimap2/BAM I/O.
@@ -162,17 +174,19 @@ fn build_expressed_family(chrom: &str, lo: u64, hi: u64, loci: Vec<CopyLocus>, s
 
 /// Batched re-admission for ALL dropped expressed candidates in ONE minimap2 index load (vs re-indexing the
 /// genome per candidate). `candidates` = `(unique_id, chrom, lo, hi, consensus)`. Projects every consensus
-/// at id>=0.98/cov>=0.90 (each candidate's own span excluded via `known`), then per-candidate keeps
+/// at `min_identity`/cov>=0.90 (each candidate's own span excluded via `known`), then per-candidate keeps
 /// projection loci with >= MIN_LOCUS_READS primary reads (the EEF1A1 guard) and admits if >= 2 remain.
+/// `min_identity` = 0.98 for the exon-identical collapse-expressed path; the DNA-family fallback passes a
+/// looser floor (~0.90) to reach DIVERGENT genomic paralogs whose expressed transcript is non-homologous.
 pub fn readmit_expressed_batch(
     candidates: &[(String, String, u64, u64, Vec<u8>)],
-    bam_path: &str, fasta_path: &str, minimap2: &str, threads: usize,
+    bam_path: &str, fasta_path: &str, minimap2: &str, threads: usize, min_identity: f64,
 ) -> Vec<ExpressedCollapsedFamily> {
     if candidates.is_empty() { return Vec::new(); }
     let consensuses: Vec<(String, Vec<u8>)> = candidates.iter().map(|(id, _, _, _, seq)| (id.clone(), seq.clone())).collect();
     let known: HashMap<String, Vec<(String, u64, u64)>> =
         candidates.iter().map(|(id, ch, lo, hi, _)| (id.clone(), vec![(ch.clone(), *lo, *hi)])).collect();
-    let proj = project_families_batch(&consensuses, fasta_path, &known, 0.98, 0.90, minimap2, threads).unwrap_or_default();
+    let proj = project_families_batch(&consensuses, fasta_path, &known, min_identity, 0.90, minimap2, threads).unwrap_or_default();
     let mut out = Vec::new();
     for (id, chrom, lo, hi, _seq) in candidates {
         let loci = match proj.get(id) { Some(l) => l.clone(), None => continue };
@@ -183,6 +197,38 @@ pub fn readmit_expressed_batch(
             if n >= MIN_LOCUS_READS { supports.push(n); supported.push(l); }
         }
         if let Some(f) = build_expressed_family(chrom, *lo, *hi, supported, &supports) { out.push(f); }
+    }
+    out
+}
+
+/// DNA-family re-admission for RNA-orphan loci (the DNA edge oracle, `--dna-family-fallback`). Projects each
+/// orphan consensus at `min_identity`/cov>=0.90; the seed's own span is excluded via `known`, so the returned
+/// loci are the OTHER genomic paralog copies. Admits as a DNA-family iff >= 1 other genomic copy exists (total
+/// famCN >= 2 = the >= 2-genomic-copy definition). UNLIKE `readmit_expressed_batch`, the projected loci need
+/// NOT be read-supported: a DNA-family's paralogs are frequently SILENT — that is precisely WHY the orphan's
+/// expressed transcript is non-homologous to them (DNA-family != RNA-family). Per-locus read counts are still
+/// computed and reported (min over paralogs; typically 0 for the silent copies) but do NOT gate admission.
+/// Copy-NUMBER only; per-read resolution of the silent copies requires DNA parCN.
+pub fn readmit_dna_family_batch(
+    candidates: &[(String, String, u64, u64, Vec<u8>)],
+    bam_path: &str, fasta_path: &str, minimap2: &str, threads: usize, min_identity: f64,
+) -> Vec<ExpressedCollapsedFamily> {
+    if candidates.is_empty() { return Vec::new(); }
+    let consensuses: Vec<(String, Vec<u8>)> = candidates.iter().map(|(id, _, _, _, seq)| (id.clone(), seq.clone())).collect();
+    let known: HashMap<String, Vec<(String, u64, u64)>> =
+        candidates.iter().map(|(id, ch, lo, hi, _)| (id.clone(), vec![(ch.clone(), *lo, *hi)])).collect();
+    let proj = project_families_batch(&consensuses, fasta_path, &known, min_identity, 0.90, minimap2, threads).unwrap_or_default();
+    let mut out = Vec::new();
+    for (id, chrom, lo, hi, _seq) in candidates {
+        let loci = match proj.get(id) { Some(l) => l.clone(), None => continue };
+        if loci.is_empty() { continue; } // >= 1 other genomic copy => famCN >= 2 => DNA-family
+        let min_reads = loci.iter()
+            .map(|l| reads_in_region(bam_path, &l.chrom, l.start, l.end, threads).map(|(p, _)| p.len()).unwrap_or(0))
+            .min().unwrap_or(0);
+        out.push(ExpressedCollapsedFamily {
+            chrom: chrom.clone(), start: *lo, end: *hi,
+            famcn: famcn_from_projection(loci.len()), min_locus_reads: min_reads, projection: loci,
+        });
     }
     out
 }
