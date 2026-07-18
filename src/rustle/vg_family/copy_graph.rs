@@ -116,6 +116,22 @@ impl CopyGraph {
         set
     }
 
+    /// Walk string "bb0+,c0_x+,bb1+,...,bbM+" given the allele taken at each column (`taken[ci]`).
+    /// A `None` in `taken` routes through the reference allele node at that column.
+    fn walk_tokens(&self, taken: &[Option<u8>]) -> Vec<String> {
+        let m = self.m();
+        let mut toks = Vec::with_capacity(2 * m + 1);
+        for ci in 0..m {
+            toks.push(format!("{}+", self.bb(ci)));
+            let b = taken.get(ci).and_then(|o| *o).or(self.columns[ci].ref_allele);
+            if let Some(b) = b {
+                toks.push(format!("{}+", self.allele_node(ci, b)));
+            }
+        }
+        toks.push(format!("{}+", self.bb(m)));
+        toks
+    }
+
     pub fn gfa_lines(&self) -> GfaLines {
         let mut out = GfaLines { header: "H\tVN:Z:1.1".into(), ..Default::default() };
         let m = self.m();
@@ -134,6 +150,10 @@ impl CopyGraph {
                 out.links.push(format!("L\t{}\t+\t{}\t+\t0M", nid, self.bb(ci + 1)));
             }
         }
+        // REFERENCE walk: the genome's own allele at each column.
+        let ref_taken: Vec<Option<u8>> = self.columns.iter().map(|c| c.ref_allele).collect();
+        let ref_walk = self.walk_tokens(&ref_taken).join(",");
+        out.paths.push(format!("P\t{}_REFERENCE\t{}\t*\tST:Z:reference", self.family, ref_walk));
         out
     }
 
@@ -210,5 +230,15 @@ mod tests {
         assert!(gfa.contains("L\tFAM1_bb0\t+\tFAM1_c0_A\t+\t0M"));
         assert!(gfa.contains("L\tFAM1_c0_A\t+\tFAM1_bb1\t+\t0M"));
         assert!(gfa.contains("L\tFAM1_bb1\t+\tFAM1_c1_G\t+\t0M"));
+    }
+
+    #[test]
+    fn reference_walk_threads_reference_alleles() {
+        let g = tiny_graph();
+        let gfa = g.to_gfa();
+        // reference alleles are A (col0) and C (col1)
+        assert!(gfa.contains(
+            "P\tFAM1_REFERENCE\tFAM1_bb0+,FAM1_c0_A+,FAM1_bb1+,FAM1_c1_C+,FAM1_bb2+\t*\tST:Z:reference"
+        ), "reference P-line missing or wrong:\n{}", gfa);
     }
 }
