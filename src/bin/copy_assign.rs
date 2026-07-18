@@ -339,10 +339,90 @@ fn sanitize_gfa_id(s: &str) -> String {
     s.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':') { c } else { '_' }).collect()
 }
 
-/// A distinct Bandage colour per copy index for the family variation graph (grey = tied/unassigned read).
-fn copy_color(hap: i64) -> &'static str {
-    const PAL: [&str; 8] = ["#377eb8", "#e41a1c", "#4daf4a", "#984ea3", "#ff7f00", "#a65628", "#f781bf", "#00ced1"];
-    if hap < 0 { "#bbbbbb" } else { PAL[(hap as usize) % PAL.len()] }
+/// Build one family's copy-graph (`--phase`): the REFERENCE walk + every copy as a tagged, corroborable
+/// PATH + every read as a threaded WALK, over the family's usable PSV columns (those with both a genome
+/// position and a fetchable reference base). Pure w.r.t. the caller except for `ref_base` (injected so this
+/// is unit-testable without genome I/O — see `build_copy_graph_maps_family_to_graph`).
+///
+/// Status derivation: a copy is ABSENT if any read assigned to it is `discovery_coupled` (only exists
+/// because absent-copy discovery admitted it), OR it falls in the collapsed/rescued tail of `copy_tids`
+/// (`ci >= copy_tids.len() - (collapsed_copies + rescued_copies)`). Absent copies in the collapsed tail are
+/// `AbsentCollapsed`; all other absent copies default to `AbsentDivergent`. Non-absent in-genome copies are
+/// `AnnotationUnknown` (the `--gff` annotated/unannotated split is Task 8, not this task).
+fn build_copy_graph(
+    fid: &str,
+    fa: &rustle::vg_family::denovo_pipeline::FamilyAssignment,
+    ref_base: impl Fn(&str, u64) -> Option<u8>,
+    bam_reads: &[String],
+) -> rustle::vg_family::copy_graph::CopyGraph {
+    use rustle::vg_family::copy_graph::*;
+    // usable columns (both a genome position and a reference base), remembering the original index.
+    let mut cols: Vec<PsvColumn> = Vec::new();
+    let mut keep: Vec<usize> = Vec::new();
+    for (j, p) in fa.psv_col_pos.iter().enumerate() {
+        if let Some(pos) = p {
+            if let Some(rb) = ref_base(&fa.chrom, *pos) {
+                cols.push(PsvColumn { col: j, genome_pos: Some(*pos), ref_allele: Some(rb) });
+                keep.push(j);
+            }
+        }
+    }
+    let sel = |row: &Vec<Option<u8>>| keep.iter().map(|&j| row.get(j).copied().flatten()).collect::<Vec<_>>();
+    let backbone = vec![b"NNNNNNNNNN".to_vec(); cols.len() + 1];
+
+    // which copies are absent (discovery_coupled reads) — collapsed tail => AbsentCollapsed else AbsentDivergent.
+    let n = fa.copy_tids.len();
+    let absent_tail_start = n.saturating_sub(fa.collapsed_copies + fa.rescued_copies);
+    let mut coupled = vec![false; n];
+    for (_ri, a) in &fa.assignments {
+        // discovery_coupled reads are inherently copy-RESOLVED (the copy exists only because that read's
+        // absent-copy evidence admitted it), so there is intentionally NO AssignStatus::Assigned filter
+        // here — the asymmetry with the RC read-tally below (which does filter to Assigned) is deliberate.
+        if a.discovery_coupled && a.best_copy < n {
+            coupled[a.best_copy] = true;
+        }
+    }
+    let copies = (0..n)
+        .map(|ci| {
+            let is_absent = coupled[ci] || (ci >= absent_tail_start && (fa.collapsed_copies + fa.rescued_copies) > 0);
+            let status = if is_absent {
+                // v1 approximation: when BOTH collapsed_copies>0 and rescued_copies>0 the merged tail is
+                // labeled AbsentCollapsed wholesale — the collapsed vs rescued sub-ranges within the tail
+                // are not distinguished (would need per-copy provenance the FamilyAssignment doesn't carry).
+                if fa.collapsed_copies > 0 && ci >= absent_tail_start {
+                    CopyStatus::AbsentCollapsed
+                } else {
+                    CopyStatus::AbsentDivergent
+                }
+            } else {
+                CopyStatus::AnnotationUnknown
+            };
+            let reads = fa
+                .assignments
+                .iter()
+                .filter(|(_, a)| a.best_copy == ci && matches!(a.status, AssignStatus::Assigned))
+                .count() as u32;
+            CopyPath {
+                id: format!("{}_copy{}", fid, ci),
+                alleles: fa.copy_psv_alleles.get(ci).map(|r| sel(r)).unwrap_or_default(),
+                status,
+                corrob: Corrob { reads: Some(reads), suns: None, map_identity: None },
+            }
+        })
+        .collect();
+
+    let reads = fa
+        .assignments
+        .iter()
+        .zip(fa.read_psv_obs.iter())
+        .map(|((ri, a), obs)| ReadWalk {
+            name: sanitize_gfa_id(&format!("{}_{}", fid, bam_reads[*ri])),
+            obs: sel(obs),
+            assigned_copy: if matches!(a.status, AssignStatus::Assigned) { Some(a.best_copy) } else { None },
+        })
+        .collect();
+
+    CopyGraph { family: fid.to_string(), columns: cols, backbone, copies, reads }
 }
 
 fn parse_region(s: &str) -> Result<(String, u64, u64)> {
@@ -574,13 +654,14 @@ fn main() -> Result<()> {
     // --phase: a self-contained variation graph (GFA) of the phasing — PSV columns = BUBBLES
     // (one segment per allele), copies = PATHS through the bubbles. Loadable in Bandage/vg.
     let mut gfa_segs: HashSet<String> = HashSet::new();        // dedup'd S-lines (shared allele = shared node = bubble anchor)
-    let mut gfa_links: HashSet<(String, String)> = HashSet::new();
+    let mut gfa_links: HashSet<String> = HashSet::new();        // dedup'd full "L\t..." strings (copy_graph emits complete lines)
     let mut gfa_paths: Vec<String> = Vec::new();
     // VG read-threading (the Canzar flip, materialized): each read WALKS the PSV-bubble nodes for the alleles
     // it observes, REUSING a copy's node wherever their alleles agree — so multimapping reads become shared
     // threaded evidence through the one family graph. W-lines (GFA 1.1) + a Bandage node/path colour CSV.
     let mut gfa_walks: Vec<String> = Vec::new();
     let mut gfa_colors: Vec<String> = Vec::new(); // "name,colour" for Bandage (copies distinct, reads by assigned copy)
+    let mut legend_rows: Vec<String> = Vec::new(); // "status\tcolour" (de-duplicated at write time)
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
     let mut vg_realign_lines: Vec<String> = Vec::new(); // --vg-realign: per-read re-align decisions (report-only)
@@ -942,30 +1023,8 @@ fn main() -> Result<()> {
                             .filter(|(_, a)| a.best_copy == ci && matches!(a.status, AssignStatus::Assigned))
                             .count();
                         phased_hap_lines.push(format!("{}\t{}\t{}\t{}\t{}", fid, ci, tid, n_sup, vs));
-
-                        // VG view: this copy is a PATH through the PSV bubbles. A node id is
-                        // (family, column, allele) — copies sharing an allele at a column share the
-                        // node (a bubble anchor); where they differ the path forks (the bubble).
-                        if let Some(alleles) = fa.copy_psv_alleles.get(ci) {
-                            let mut path_nodes: Vec<String> = Vec::new();
-                            for (col, a) in alleles.iter().enumerate() {
-                                if let (Some(b), Some(Some(pos))) = (a, fa.psv_col_pos.get(col)) {
-                                    let nid = format!("{}_c{}_{}", fid, col, *b as char);
-                                    gfa_segs.insert(format!("S\t{}\t{}\tPO:i:{}", nid, *b as char, pos));
-                                    if let Some(prev) = path_nodes.last() {
-                                        gfa_links.insert((prev.clone(), nid.clone()));
-                                    }
-                                    path_nodes.push(nid);
-                                }
-                            }
-                            if !path_nodes.is_empty() {
-                                let p: Vec<String> = path_nodes.iter().map(|n| format!("{}+", n)).collect();
-                                gfa_paths.push(format!("P\t{}_copy{}\t{}\t*", fid, ci, p.join(",")));
-                                gfa_colors.push(format!("{}_copy{},{}", fid, ci, copy_color(ci as i64)));
-                            }
-                        }
                     }
-                    for ((ri, a), obs) in fa.assignments.iter().zip(fa.read_psv_obs.iter()) {
+                    for (ri, a) in &fa.assignments {
                         let hap: i64 = if matches!(a.status, AssignStatus::Assigned) {
                             a.best_copy as i64
                         } else {
@@ -975,24 +1034,24 @@ fn main() -> Result<()> {
                             "{}\t{}\t{}\t{}\t{:.3}\t{}",
                             bam_reads[*ri], fid, hap, a.n_decisive, a.log_lr_margin, status_str(a.status)
                         ));
-                        // VG read-threading: this read WALKS the PSV-bubble nodes for the alleles it observes,
-                        // REUSING a copy's node wherever their alleles agree — multimapping reads thread through
-                        // the SAME shared nodes (the Canzar flip). Tied/K=0 reads render grey (unresolvable).
-                        let mut walk: Vec<String> = Vec::new();
-                        for (col, ob) in obs.iter().enumerate() {
-                            if let (Some(b), Some(Some(pos))) = (ob, fa.psv_col_pos.get(col)) {
-                                let nid = format!("{}_c{}_{}", fid, col, *b as char);
-                                gfa_segs.insert(format!("S\t{}\t{}\tPO:i:{}", nid, *b as char, pos));
-                                walk.push(nid);
-                            }
-                        }
-                        if !walk.is_empty() {
-                            let rn = format!("{}_{}", fid, sanitize_gfa_id(&format!("{}", bam_reads[*ri])));
-                            let w = walk.iter().map(|n| format!(">{}", n)).collect::<String>();
-                            gfa_walks.push(format!("W\t{}\t{}\t{}\t0\t{}\t{}", rn, hap.max(0), fid, walk.len(), w));
-                            gfa_colors.push(format!("{},{}", rn, copy_color(hap)));
-                        }
                     }
+
+                    // Materialize this family's copy-graph (REFERENCE walk + tagged copy paths + read
+                    // walks over the shared PSV-bubble nodes) and fold its GFA lines / Bandage colours /
+                    // status legend into the region's accumulators. Replaces the inline emitter above.
+                    let ref_base = |chrom: &str, pos: u64| {
+                        genome_for(chrom).ok()
+                            .and_then(|g| g.fetch_sequence(chrom, pos, pos + 1))
+                            .and_then(|v| v.first().copied())
+                    };
+                    let cg = build_copy_graph(&fid, fa, ref_base, bam_reads);
+                    let gl = cg.gfa_lines();
+                    for s in gl.segs { gfa_segs.insert(s); }
+                    for l in gl.links { gfa_links.insert(l); }
+                    gfa_paths.extend(gl.paths);
+                    gfa_walks.extend(gl.walks);
+                    for row in cg.colours_csv().lines() { gfa_colors.push(row.to_string()); }
+                    legend_rows.extend(cg.legend_tsv().lines().map(|s| s.to_string()));
                 }
                 // reference-free per-family copy number (Task R1): chi_H (PSV conflict-structure
                 // lower bound) always computed; depth_cn only when --lambda-global was given.
@@ -1182,10 +1241,10 @@ fn main() -> Result<()> {
         for s in segs {
             writeln!(gf, "{}", s)?;
         }
-        let mut links: Vec<&(String, String)> = gfa_links.iter().collect();
+        let mut links: Vec<&String> = gfa_links.iter().collect();
         links.sort();
-        for (a, b) in links {
-            writeln!(gf, "L\t{}\t+\t{}\t+\t0M", a, b)?;
+        for l in links {
+            writeln!(gf, "{}", l)?;
         }
         for p in &gfa_paths {
             writeln!(gf, "{}", p)?;
@@ -1202,11 +1261,23 @@ fn main() -> Result<()> {
                 writeln!(cf, "{}", c)?;
             }
         }
+        // Legend: status -> colour, de-duplicated across every family's copy-graph (first-seen order, which
+        // is deterministic given the serial region/family drain order above).
+        {
+            let mut lf = std::fs::File::create(format!("{}.phase.gfa.legend.tsv", args.out))?;
+            writeln!(lf, "status\tcolour")?;
+            let mut seen: HashSet<&String> = HashSet::new();
+            for r in &legend_rows {
+                if seen.insert(r) {
+                    writeln!(lf, "{}", r)?;
+                }
+            }
+        }
         let n_phased = phased_read_lines.iter().filter(|l| !l.contains("\t-1\t")).count();
         eprintln!(
-            "[copy_assign] phasing: {} blocks, {} haplotypes, {}/{} reads phased -> {}.phased_*.tsv + {}.phase.gfa ({} bubble-nodes, {} copy-paths, {} read-walks; Bandage colours -> {}.phase.gfa.colours.csv)",
+            "[copy_assign] phasing: {} blocks, {} haplotypes, {}/{} reads phased -> {}.phased_*.tsv + {}.phase.gfa ({} bubble-nodes, {} copy-paths, {} read-walks; Bandage colours -> {}.phase.gfa.colours.csv, legend -> {}.phase.gfa.legend.tsv)",
             phase_block_lines.len(), phased_hap_lines.len(), n_phased, phased_read_lines.len(),
-            args.out, args.out, gfa_segs.len(), gfa_paths.len(), gfa_walks.len(), args.out
+            args.out, args.out, gfa_segs.len(), gfa_paths.len(), gfa_walks.len(), args.out, args.out
         );
     }
 
@@ -1444,5 +1515,85 @@ mod tests {
         // The certificate boolean is anchored >= GATE_MIN_READS (=3): 2 -> false, 3 -> true.
         assert!(!(2u32 >= GATE_MIN_READS));
         assert!(3u32 >= GATE_MIN_READS);
+    }
+
+    #[test]
+    fn build_copy_graph_maps_family_to_graph() {
+        use rustle::vg_family::denovo_pipeline::FamilyAssignment;
+        use rustle::vg_family::copy_graph::CopyStatus;
+        let mut fa = FamilyAssignment::empty();
+        fa.chrom = "chr1".into();
+        fa.n_copies = 2;
+        fa.copy_tids = vec!["c0".into(), "c1".into()];
+        fa.psv_col_pos = vec![Some(100), Some(200)];
+        fa.copy_psv_alleles = vec![vec![Some(b'A'), Some(b'A')], vec![Some(b'A'), Some(b'G')]];
+        fa.read_psv_obs = vec![];
+        fa.assignments = vec![];
+        // injected reference: A at both positions
+        let ref_base = |_c: &str, _p: u64| Some(b'A');
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[]);
+        assert_eq!(g.columns.len(), 2);
+        assert_eq!(g.copies.len(), 2);
+        assert_eq!(g.columns[0].ref_allele, Some(b'A'));
+        // graph renders the reference walk + a divergent copy
+        let gfa = g.to_gfa();
+        assert!(gfa.contains("P\tCAFAM0_REFERENCE"));
+        assert!(gfa.contains("CAFAM0_c1_G+"));
+    }
+
+    #[test]
+    fn build_copy_graph_labels_absent_tail_copy() {
+        // The novel status-derivation logic: a copy in the COLLAPSED tail (collapsed_copies=1, so the last
+        // copy index is the tail) becomes AbsentCollapsed and renders as a _copy{i}_ABSENT path; the
+        // non-tail copy stays AnnotationUnknown (not absent, no _ABSENT suffix).
+        use rustle::vg_family::denovo_pipeline::FamilyAssignment;
+        use rustle::vg_family::copy_graph::CopyStatus;
+        let mut fa = FamilyAssignment::empty();
+        fa.chrom = "chr1".into();
+        fa.n_copies = 2;
+        fa.copy_tids = vec!["c0".into(), "c1".into()];
+        fa.psv_col_pos = vec![Some(100)];
+        // copy0 = reference allele A; copy1 = divergent G (the collapsed tail copy).
+        fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'G')]];
+        fa.read_psv_obs = vec![];
+        fa.assignments = vec![];
+        fa.collapsed_copies = 1; // => absent_tail_start = 2 - 1 = 1, so copy index 1 is the collapsed tail.
+        let ref_base = |_c: &str, _p: u64| Some(b'A');
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[]);
+        assert_eq!(g.copies.len(), 2);
+        // copy 1 is the collapsed tail => AbsentCollapsed, rendered as _ABSENT with the matching ST tag.
+        assert_eq!(g.copies[1].status, CopyStatus::AbsentCollapsed);
+        assert!(g.copies[1].status.is_absent());
+        let gfa = g.to_gfa();
+        assert!(gfa.contains("_copy1_ABSENT"), "collapsed tail copy must render _ABSENT:\n{}", gfa);
+        assert!(gfa.contains("ST:Z:absent-collapsed"), "expected ST:Z:absent-collapsed in:\n{}", gfa);
+        // copy 0 is NOT absent (in-genome, annotation axis unresolved here) => AnnotationUnknown, no _ABSENT.
+        assert_eq!(g.copies[0].status, CopyStatus::AnnotationUnknown);
+        assert!(!g.copies[0].status.is_absent());
+        assert!(!gfa.contains("_copy0_ABSENT"), "non-tail copy must NOT be _ABSENT:\n{}", gfa);
+    }
+
+    #[test]
+    fn build_copy_graph_rescued_tail_copy_is_absent_divergent() {
+        // The rescued tail (rescued_copies=1, collapsed_copies=0) labels the tail copy AbsentDivergent
+        // (not AbsentCollapsed — the collapsed-tail branch requires collapsed_copies>0).
+        use rustle::vg_family::denovo_pipeline::FamilyAssignment;
+        use rustle::vg_family::copy_graph::CopyStatus;
+        let mut fa = FamilyAssignment::empty();
+        fa.chrom = "chr1".into();
+        fa.n_copies = 2;
+        fa.copy_tids = vec!["c0".into(), "c1".into()];
+        fa.psv_col_pos = vec![Some(100)];
+        fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'G')]];
+        fa.read_psv_obs = vec![];
+        fa.assignments = vec![];
+        fa.rescued_copies = 1; // collapsed_copies stays 0 => tail copy is AbsentDivergent.
+        let ref_base = |_c: &str, _p: u64| Some(b'A');
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[]);
+        assert_eq!(g.copies[1].status, CopyStatus::AbsentDivergent);
+        let gfa = g.to_gfa();
+        assert!(gfa.contains("_copy1_ABSENT"), "rescued tail copy must render _ABSENT:\n{}", gfa);
+        assert!(gfa.contains("ST:Z:absent-divergent"), "expected ST:Z:absent-divergent in:\n{}", gfa);
+        assert_eq!(g.copies[0].status, CopyStatus::AnnotationUnknown);
     }
 }
