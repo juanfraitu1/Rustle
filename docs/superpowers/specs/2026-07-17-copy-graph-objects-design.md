@@ -91,7 +91,7 @@ pub struct ReadWalk {
 pub struct CopyGraph {
     pub family: String,
     pub columns: Vec<PsvColumn>,
-    pub backbone: Vec<Vec<u8>>,    // shared reference sequence between columns; len == columns.len()+1
+    pub backbone: Vec<Vec<u8>>,    // fixed-length spacer between columns (visual separation, NOT exonic seq); len == columns.len()+1
     pub copies: Vec<CopyPath>,
     pub reads: Vec<ReadWalk>,
 }
@@ -109,8 +109,11 @@ O4 projection and any `--gff` context).
 
 ## The graph object (GFA 1.1)
 
-- **Backbone S-nodes** — `{fam}_bb{i}`, sequence = `backbone[i]` (shared reference sequence between column i−1 and
-  column i; `bb0` = left flank, `bb[N]` = right flank). Sized nodes give visible arm length.
+- **Backbone (spacer) S-nodes** — `{fam}_bb{i}`, a short fixed-length run (e.g. 10×`N`) that separates consecutive
+  PSV bubbles and carries the walks between them, giving the graph visible topology. It is a **spacer, not claimed
+  exonic sequence** — genomic sequence between PSV genome positions would wrongly include introns (PSV columns live in
+  spliced-transcript space), so real per-transcript backbone bases are deferred to v2. `bb0`/`bb[N]` are the flanking
+  spacers.
 - **PSV allele S-nodes** — `{fam}_c{col}_{base}` (sequence = the single base), one per distinct allele present at that
   column among {reference ∪ all copies}. Tagged `PO:i:{genome_pos}`.
 - **L-lines** — for **every** allele present at a column: `bb{i} -> c{col}_{allele}` and `c{col}_{allele} -> bb{i+1}`.
@@ -158,18 +161,19 @@ The DSFAM26 demo lands without a GFF because its headline is *absent vs referenc
 
 ## Inputs / outputs
 
-**Inputs** (all already available to `copy_assign --phase`): the BAM, the reference FASTA (for backbone + reference
-alleles), the region, the assembled family (`copy_psv_alleles` — `copy_assign_pipeline.rs:880–885`; `psv_col_pos`;
-`read_psv_obs`), the per-copy absent/collapsed status (indices ≥ `n_ref` and the `discovery_coupled` flag,
-`copy_assign.rs:64–66`; collapsed/divergent subtype from the O4 hidden-copy classification), the O4 projection identity
-for `MI`, and optionally `--gff`.
+**Inputs** (all already available to `copy_assign --phase`): the BAM, the reference FASTA (for the **reference allele
+at each PSV column** — one base via `GenomeIndex::fetch_sequence`, `genome.rs:113`; the spacer backbone needs no
+FASTA), the region, the assembled family (`FamilyAssignment` — `denovo_pipeline.rs:377`: `copy_psv_alleles`,
+`read_psv_obs`, `psv_col_pos`, `copy_tids`, `copy_spans`, `assignments`), the per-copy absent/collapsed status
+(`discovery_coupled` on assigned reads, `copy_assign.rs:67`; `collapsed_copies`/`rescued_copies`), the O4 projection
+identity for `MI`, and optionally `--gff`.
 
 **Outputs:** `<out>.phase.gfa` (now with the REFERENCE walk + tagged copy paths + backbone + L-lines),
 `<out>.phase.gfa.colours.csv` (segment-keyed), `<out>.phase.gfa.legend.tsv`.
 
 ## Data flow
 
-`copy_assign --phase` → build `CopyGraph { columns (with ref_allele read from FASTA), backbone (reference sequence),
+`copy_assign --phase` → build `CopyGraph { columns (with ref_allele read from FASTA), backbone (fixed spacers),
 copies (alleles + status + MI), reads }` → `to_gfa()` / `colours_csv()` / `legend_tsv()` → write three files.
 
 ## Error handling / graceful degradation
