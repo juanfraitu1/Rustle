@@ -397,4 +397,43 @@ mod tests {
         assert!(gfa.lines().any(|l| l.starts_with("W\treadY")), "readY walk missing");
         assert_no_dangling(&gfa);
     }
+
+    #[test]
+    fn read_walk_internal_gap_routes_through_reference() {
+        // 3 columns, reference A,A,A. A read observes col0 (A) and col2 (T) but NOT col1 (internal gap):
+        // the gap at col1 must route through the reference allele node c1_A. The walk spans
+        // bb(first_obs=0) .. bb(last_obs+1=3).
+        let g = CopyGraph {
+            family: "FAM4".into(),
+            columns: (0..3).map(|i| PsvColumn {
+                col: i, genome_pos: Some(100 + i as u64), ref_allele: Some(b'A'),
+            }).collect(),
+            backbone: vec![b"NN".to_vec(); 4],
+            copies: vec![],
+            reads: vec![ReadWalk {
+                name: "readG".into(),
+                obs: vec![Some(b'A'), None, Some(b'T')],
+                assigned_copy: None,
+            }],
+        };
+        let gfa = g.to_gfa();
+        // exact W-line: gap col1 routes through reference node c1_A; starts bb0, ends bb3; 7 tokens.
+        assert!(gfa.lines().any(|l| l ==
+            "W\treadG\t0\tFAM4\t0\t7\t>FAM4_bb0>FAM4_c0_A>FAM4_bb1>FAM4_c1_A>FAM4_bb2>FAM4_c2_T>FAM4_bb3"
+        ), "internal-gap W-line missing or wrong:\n{}", gfa);
+        assert_no_dangling(&gfa);
+    }
+
+    #[test]
+    fn read_observing_zero_columns_emits_no_walk() {
+        // A read with no observations (all None) must emit NO W-line (early continue).
+        let mut g = tiny_graph(); // 2 cols
+        g.reads = vec![ReadWalk {
+            name: "readEmpty".into(),
+            obs: vec![None, None],
+            assigned_copy: None,
+        }];
+        let gfa = g.to_gfa();
+        assert!(!gfa.lines().any(|l| l.starts_with("W\t")), "no W-line expected for a read with zero observations:\n{}", gfa);
+    }
 }
