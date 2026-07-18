@@ -52,6 +52,7 @@ pub mod single_copy; // O1 baseline: single-copy (chi(H)=1) loci + lambda_global
 pub mod vg_realign; // VG re-align supplement (Task 1): candidate-read selection (is_candidate + RealignParams) for poor-fit/unmapped reads to be re-aligned to O1's family copy-paths.
 pub mod parcn; // OPTIONAL assembly-side parCN supplement (docs/superpowers/specs/2026-07-14-assembly-parcn-design.md); never wired into the RNA-exclusive core.
 pub mod project_all; // OPTIONAL --project-all-families recall leg (generalized projection); never alters the RNA-split catalog.
+pub mod linearize; // Task 1: augment-and-linearize certificate (dinucleotide-preserving decoy shuffle via Altschul-Erikson random-Eulerian-path).
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
