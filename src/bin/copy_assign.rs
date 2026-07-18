@@ -344,19 +344,49 @@ fn sanitize_gfa_id(s: &str) -> String {
     s.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':') { c } else { '_' }).collect()
 }
 
+/// Per-copy status shared by `build_copy_graph` (v1, PSV-bubble graph) and `build_exon_graph` (v2,
+/// exon presence/absence graph) — the single source of truth for the in-genome/absent axis so the two
+/// graph builders can never disagree about a copy's status.
+///
+/// A copy is ABSENT iff at least one read assigned to it is `discovery_coupled` — i.e. the copy exists only
+/// because absent-copy discovery (`--absent-copies`) admitted it. This is the EXACT v1 rule, unchanged:
+/// `copy_map_identity` feeds the `MI:f:` tag ONLY and must NEVER drive the absent/ST status (a copy admitted
+/// via `--absent-copies` carries a remap identity but is not absent unless a `discovery_coupled` read pins
+/// it). (The `collapsed_copies`/`rescued_copies` fields are diagnostic COUNTS, NOT per-`copy_tids` absence
+/// markers — `collapsed_copies` can exceed `n_copies` — so they must NOT drive absence either.) An absent
+/// copy is `AbsentCollapsed` when its genomic span OVERLAPS a non-absent (in-genome) copy of the same
+/// family — a hidden CO-LOCATED haplotype — else `AbsentDivergent` (dispersed, or spans unavailable).
+/// Non-absent in-genome copies are tagged by `annotation_status`: `InGenomeAnnotated`/`InGenomeUnannotated`
+/// when `--gff` was given, else `AnnotationUnknown` (we never claim "unannotated" unchecked).
+fn copy_status(
+    fa: &rustle::vg_family::denovo_pipeline::FamilyAssignment,
+    ci: usize,
+    ann: Option<&[(String, u64, u64)]>,
+) -> rustle::vg_family::copy_graph::CopyStatus {
+    use rustle::vg_family::copy_graph::CopyStatus;
+    let n = fa.copy_tids.len();
+    let is_coupled =
+        |k: usize| -> bool { fa.assignments.iter().any(|(_, a)| a.discovery_coupled && a.best_copy == k) };
+    if !is_coupled(ci) {
+        return annotation_status(fa, ci, ann);
+    }
+    // Half-open genomic-span overlap of two copies (same chrom): distinguishes an absent copy that is a
+    // hidden CO-LOCATED haplotype (AbsentCollapsed) from a dispersed one (AbsentDivergent).
+    let span_overlap = |i: usize, j: usize| match (fa.copy_spans.get(i), fa.copy_spans.get(j)) {
+        (Some((ci, si, ei)), Some((cj, sj, ej))) => ci == cj && si < ej && sj < ei,
+        _ => false,
+    };
+    // AbsentCollapsed iff this absent copy's span overlaps some IN-GENOME (non-coupled) copy — a hidden
+    // co-located haplotype; else it is dispersed / unlocalized => AbsentDivergent.
+    let collapsed = (0..n).any(|k| k != ci && !is_coupled(k) && span_overlap(ci, k));
+    if collapsed { CopyStatus::AbsentCollapsed } else { CopyStatus::AbsentDivergent }
+}
+
 /// Build one family's copy-graph (`--phase`): the REFERENCE walk + every copy as a tagged, corroborable
 /// PATH + every read as a threaded WALK, over the family's usable PSV columns (those with both a genome
 /// position and a fetchable reference base). Pure w.r.t. the caller except for `ref_base` (injected so this
-/// is unit-testable without genome I/O — see `build_copy_graph_maps_family_to_graph`).
-///
-/// Status derivation: a copy is ABSENT iff at least one read assigned to it is `discovery_coupled` — i.e.
-/// the copy exists only because absent-copy discovery (`--absent-copies`) admitted it. (The
-/// `collapsed_copies`/`rescued_copies` fields are diagnostic COUNTS, NOT per-`copy_tids` absence markers —
-/// `collapsed_copies` can exceed `n_copies` — so they must NOT drive absence.) An absent copy is
-/// `AbsentCollapsed` when its genomic span OVERLAPS a non-absent (in-genome) copy of the same family — a
-/// hidden CO-LOCATED haplotype — else `AbsentDivergent` (dispersed, or spans unavailable). Non-absent
-/// in-genome copies are tagged by `annotation_status`: `InGenomeAnnotated`/`InGenomeUnannotated` when
-/// `--gff` was given, else `AnnotationUnknown` (we never claim "unannotated" unchecked).
+/// is unit-testable without genome I/O — see `build_copy_graph_maps_family_to_graph`). Per-copy status is
+/// `copy_status` (shared with `build_exon_graph` — see its doc for the absence rule).
 fn build_copy_graph(
     fid: &str,
     fa: &rustle::vg_family::denovo_pipeline::FamilyAssignment,
@@ -379,35 +409,10 @@ fn build_copy_graph(
     let sel = |row: &Vec<Option<u8>>| keep.iter().map(|&j| row.get(j).copied().flatten()).collect::<Vec<_>>();
     let backbone = vec![b"NNNNNNNNNN".to_vec(); cols.len() + 1];
 
-    // Which copies are absent: ONLY those with a discovery_coupled read (a copy admitted purely by
-    // absent-copy discovery). Without `--absent-copies` no read is discovery_coupled, so every copy is
-    // in-genome — the correct default (a plain family has no reference-absent copies).
     let n = fa.copy_tids.len();
-    let mut coupled = vec![false; n];
-    for (_ri, a) in &fa.assignments {
-        // discovery_coupled reads are inherently copy-RESOLVED (the copy exists only because that read's
-        // absent-copy evidence admitted it), so there is intentionally NO AssignStatus::Assigned filter
-        // here — the asymmetry with the RC read-tally below (which does filter to Assigned) is deliberate.
-        if a.discovery_coupled && a.best_copy < n {
-            coupled[a.best_copy] = true;
-        }
-    }
-    // Half-open genomic-span overlap of two copies (same chrom): distinguishes an absent copy that is a
-    // hidden CO-LOCATED haplotype (AbsentCollapsed) from a dispersed one (AbsentDivergent).
-    let span_overlap = |i: usize, j: usize| match (fa.copy_spans.get(i), fa.copy_spans.get(j)) {
-        (Some((ci, si, ei)), Some((cj, sj, ej))) => ci == cj && si < ej && sj < ei,
-        _ => false,
-    };
     let copies = (0..n)
         .map(|ci| {
-            let status = if coupled[ci] {
-                // AbsentCollapsed iff this absent copy's span overlaps some IN-GENOME (non-coupled) copy —
-                // a hidden co-located haplotype; else it is dispersed / unlocalized => AbsentDivergent.
-                let collapsed = (0..n).any(|k| k != ci && !coupled[k] && span_overlap(ci, k));
-                if collapsed { CopyStatus::AbsentCollapsed } else { CopyStatus::AbsentDivergent }
-            } else {
-                annotation_status(fa, ci, ann)
-            };
+            let status = copy_status(fa, ci, ann);
             let reads = fa
                 .assignments
                 .iter()
@@ -434,6 +439,53 @@ fn build_copy_graph(
         .collect();
 
     CopyGraph { family: fid.to_string(), columns: cols, backbone, copies, reads }
+}
+
+/// Build one family's exon presence/absence graph (`--phase` v2): reconstructs each copy's genomic exon
+/// chain from `copy_introns` + `copy_spans` (donor/acceptor intron chain -> exon intervals) and folds it
+/// through `ExonGraph::from_copies` — the exon-level sibling of `build_copy_graph`'s PSV-bubble graph.
+/// Per-copy status reuses `copy_status` (DRY with `build_copy_graph`), threading the same `--gff`
+/// annotation overlay (`ann`) so in-genome copies come back `InGenomeAnnotated`/`InGenomeUnannotated`
+/// under `--gff`, exactly as v1's `.phase.gfa`. The per-exon reference sequence is fetched later, by the
+/// caller, via `ExonGraph::to_gfa`'s own `exon_seq` closure at write time (this builder lays out intervals
+/// only, never sequence — no genome I/O here).
+fn build_exon_graph(
+    fid: &str,
+    fa: &rustle::vg_family::denovo_pipeline::FamilyAssignment,
+    ann: Option<&[(String, u64, u64)]>,
+) -> rustle::vg_family::copy_graph::ExonGraph {
+    use rustle::vg_family::copy_graph::*;
+    let n = fa.copy_tids.len();
+    let copies: Vec<(String, CopyStatus, Corrob, String, Vec<(u64, u64)>)> = (0..n)
+        .map(|ci| {
+            // Guard: `.get(ci)` never panics on a length-0/short fixture — missing span/introns => an
+            // empty-exon copy (still walks zero classes; from_copies skips zero-length intervals anyway).
+            let (chrom, start, end) =
+                fa.copy_spans.get(ci).cloned().unwrap_or_else(|| (fa.chrom.clone(), 0, 0));
+            let introns = fa.copy_introns.get(ci).cloned().unwrap_or_default();
+            // genomic exons from the intron chain + outer span bounds:
+            let mut exons = Vec::with_capacity(introns.len() + 1);
+            let mut prev = start;
+            for (d, a) in &introns {
+                exons.push((prev, *d));
+                prev = *a;
+            }
+            exons.push((prev, end));
+            let reads = fa
+                .assignments
+                .iter()
+                .filter(|(_, a)| a.best_copy == ci && matches!(a.status, AssignStatus::Assigned))
+                .count() as u32;
+            let status = copy_status(fa, ci, ann);
+            let corrob = Corrob {
+                reads: Some(reads),
+                suns: None,
+                map_identity: fa.copy_map_identity.get(ci).copied().flatten(),
+            };
+            (format!("{}_copy{}", fid, ci), status, corrob, chrom, exons)
+        })
+        .collect();
+    ExonGraph::from_copies(fid, &copies)
 }
 
 /// In-genome annotation axis: overlap of copy `ci`'s span with any annotated interval.
@@ -737,6 +789,9 @@ fn main() -> Result<()> {
     let mut gfa_walks: Vec<String> = Vec::new();
     let mut gfa_colors: Vec<String> = Vec::new(); // "name,colour" for Bandage (copies distinct, reads by assigned copy)
     let mut legend_rows: Vec<String> = Vec::new(); // "status\tcolour" (de-duplicated at write time)
+    // --phase v2: one exon presence/absence graph per family (built during the drain, where `fa` is in
+    // scope; sequence-free — `to_gfa` fetches reference bases lazily at write time via `genome_for`).
+    let mut exon_graphs: Vec<rustle::vg_family::copy_graph::ExonGraph> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
     let mut vg_realign_lines: Vec<String> = Vec::new(); // --vg-realign: per-read re-align decisions (report-only)
@@ -1127,6 +1182,15 @@ fn main() -> Result<()> {
                     gfa_walks.extend(gl.walks);
                     for row in cg.colours_csv().lines() { gfa_colors.push(row.to_string()); }
                     legend_rows.extend(cg.legend_tsv().lines().map(|s| s.to_string()));
+
+                    // v2: this family's exon presence/absence graph (copies = walks over shared exon
+                    // classes; a copy-specific exon reads as a visible arm). Only built when the family
+                    // carries an intron chain (no `copy_introns` => no exon structure to graph).
+                    // Sequence-free at this point; folded into `<out>.exon.gfa` at write time below, where
+                    // `genome_for` fetches each exon's bases. Same `--gff` annotation overlay as v1.
+                    if !fa.copy_introns.is_empty() {
+                        exon_graphs.push(build_exon_graph(&fid, fa, annotation.as_deref()));
+                    }
                 }
                 // reference-free per-family copy number (Task R1): chi_H (PSV conflict-structure
                 // lower bound) always computed; depth_cn only when --lambda-global was given.
@@ -1353,6 +1417,54 @@ fn main() -> Result<()> {
             "[copy_assign] phasing: {} blocks, {} haplotypes, {}/{} reads phased -> {}.phased_*.tsv + {}.phase.gfa ({} bubble-nodes, {} copy-paths, {} read-walks; Bandage colours -> {}.phase.gfa.colours.csv, legend -> {}.phase.gfa.legend.tsv)",
             phase_block_lines.len(), phased_hap_lines.len(), n_phased, phased_read_lines.len(),
             args.out, args.out, gfa_segs.len(), gfa_paths.len(), gfa_walks.len(), args.out, args.out
+        );
+
+        // v2: fold every family's exon presence/absence graph (built during the drain above) into
+        // <out>.exon.gfa. Each exon's reference bases are fetched HERE, lazily, via genome_for (the
+        // builder itself only lays out intervals) — a missing/uncovered stretch falls back to an N-run,
+        // counted rather than silently faked (never claim sequence we didn't fetch).
+        let n_seq_fallback = std::cell::Cell::new(0usize);
+        let exon_seq = |ec: &rustle::vg_family::copy_graph::ExonClass| -> Vec<u8> {
+            genome_for(&ec.chrom)
+                .ok()
+                .and_then(|g| g.fetch_sequence(&ec.chrom, ec.start, ec.end))
+                .unwrap_or_else(|| {
+                    n_seq_fallback.set(n_seq_fallback.get() + 1);
+                    vec![b'N'; (ec.end - ec.start) as usize]
+                })
+        };
+        let mut eg_file = std::fs::File::create(format!("{}.exon.gfa", args.out))?;
+        writeln!(eg_file, "H\tVN:Z:1.1")?; // one header; each family's S/L/P folded below (fids are unique, no dedup needed)
+        for fam_eg in &exon_graphs {
+            for line in fam_eg.to_gfa(&exon_seq).lines().skip(1) {
+                // skip the per-family embedded "H\tVN:Z:1.1" line — the file header above already covers it
+                writeln!(eg_file, "{}", line)?;
+            }
+        }
+        {
+            let mut cf = std::fs::File::create(format!("{}.exon.gfa.colours.csv", args.out))?;
+            writeln!(cf, "Name,Colour")?;
+            for fam_eg in &exon_graphs {
+                for row in fam_eg.colours_csv().lines() {
+                    writeln!(cf, "{}", row)?;
+                }
+            }
+        }
+        {
+            let mut lf = std::fs::File::create(format!("{}.exon.gfa.legend.tsv", args.out))?;
+            writeln!(lf, "status\tcolour")?;
+            let mut seen: HashSet<String> = HashSet::new();
+            for fam_eg in &exon_graphs {
+                for row in fam_eg.legend_tsv().lines() {
+                    if seen.insert(row.to_string()) {
+                        writeln!(lf, "{}", row)?;
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "[copy_assign] exon graph: {} families -> {}.exon.gfa ({} exon-node(s) fell back to an N-run, no fetchable reference sequence); Bandage colours -> {}.exon.gfa.colours.csv, legend -> {}.exon.gfa.legend.tsv",
+            exon_graphs.len(), args.out, n_seq_fallback.get(), args.out, args.out
         );
     }
 
@@ -1721,18 +1833,49 @@ mod tests {
     #[test]
     fn build_copy_graph_fills_mi_from_copy_map_identity() {
         use rustle::vg_family::denovo_pipeline::FamilyAssignment;
+        use rustle::vg_family::copy_graph::CopyStatus;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.copy_tids = vec!["c0".into(), "c1".into()];
         fa.psv_col_pos = vec![Some(100)];
         fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'G')]];
+        // copy1 has a remap identity but NO discovery_coupled read: copy_map_identity feeds the MI tag
+        // ONLY and must NOT flip absent status — so copy1 stays IN-GENOME (AnnotationUnknown, no --gff).
         fa.copy_map_identity = vec![None, Some(0.952)];
+        fa.assignments = vec![]; // no discovery_coupled reads => no absence
         let g = build_copy_graph("CAFAM0", &fa, |_c, _p| Some(b'A'), &[], None);
+        // copy1 is in-genome, NOT absent (the LOCK on the copy_map_identity-drives-absence bug).
+        assert_eq!(g.copies[1].status, CopyStatus::AnnotationUnknown, "copy_map_identity alone must NOT make a copy absent");
+        assert!(!g.copies[1].status.is_absent());
         let gfa = g.to_gfa();
-        let c1 = gfa.lines().find(|l| l.starts_with("P\tCAFAM0_copy1")).unwrap();
+        // P-line name is EXACTLY CAFAM0_copy1 (the trailing tab excludes CAFAM0_copy1_ABSENT).
+        let c1 = gfa.lines().find(|l| l.starts_with("P\tCAFAM0_copy1\t")).expect("copy1 must be P\\tCAFAM0_copy1 (NOT _ABSENT)");
+        assert!(!gfa.contains("CAFAM0_copy1_ABSENT"), "copy_map_identity must not render _ABSENT:\n{}", gfa);
         assert!(c1.contains("MI:f:0.952"), "copy1 MI missing: {}", c1);
-        let c0 = gfa.lines().find(|l| l.starts_with("P\tCAFAM0_copy0")).unwrap();
+        assert!(c1.contains("ST:Z:annotation-unknown"), "copy1 must carry a non-absent ST:Z: status: {}", c1);
+        let c0 = gfa.lines().find(|l| l.starts_with("P\tCAFAM0_copy0\t")).unwrap();
         assert!(!c0.contains("MI:f:"), "copy0 must omit MI: {}", c0);
+    }
+
+    #[test]
+    fn build_exon_graph_makes_copy_specific_arm() {
+        use rustle::vg_family::denovo_pipeline::FamilyAssignment;
+        let mut fa = FamilyAssignment::empty();
+        fa.chrom = "chr1".into();
+        fa.copy_tids = vec!["c0".into(), "c1".into()];
+        fa.copy_spans = vec![("chr1".into(), 0, 400), ("chr1".into(), 0, 400)];
+        // copy0 introns skip 100-300 (exons 0-100, 300-400); copy1 has an extra exon (exons 0-100,150-250,300-400)
+        fa.copy_introns = vec![ vec![(100,300)], vec![(100,150),(250,300)] ];
+        fa.copy_map_identity = vec![None, Some(0.95)];
+        // copy1 is reference-ABSENT via a discovery_coupled read (the v1 absence mechanism — NOT
+        // copy_map_identity, which feeds only the MI tag); its span overlaps copy0 => AbsentCollapsed.
+        fa.assignments = vec![coupled_assignment(0, 1)];
+        let g = build_exon_graph("CAFAM0", &fa, None);
+        // copy1 walks one more class than copy0
+        assert!(g.copies[1].exon_nodes.len() > g.copies[0].exon_nodes.len());
+        let gfa = g.to_gfa(|ec| vec![b'A'; (ec.end-ec.start) as usize]);
+        assert!(gfa.contains("P\tCAFAM0_REFERENCE"));
+        assert!(gfa.lines().any(|l| l.starts_with("P\tCAFAM0_copy1_ABSENT")));
     }
 
     #[test]
