@@ -349,12 +349,14 @@ fn sanitize_gfa_id(s: &str) -> String {
 /// position and a fetchable reference base). Pure w.r.t. the caller except for `ref_base` (injected so this
 /// is unit-testable without genome I/O — see `build_copy_graph_maps_family_to_graph`).
 ///
-/// Status derivation: a copy is ABSENT if any read assigned to it is `discovery_coupled` (only exists
-/// because absent-copy discovery admitted it), OR it falls in the collapsed/rescued tail of `copy_tids`
-/// (`ci >= copy_tids.len() - (collapsed_copies + rescued_copies)`). Absent copies in the collapsed tail are
-/// `AbsentCollapsed`; all other absent copies default to `AbsentDivergent`. Non-absent in-genome copies are
-/// tagged by `annotation_status` — `InGenomeAnnotated`/`InGenomeUnannotated` when `--gff` was given, else
-/// `AnnotationUnknown` (we never claim "unannotated" unchecked).
+/// Status derivation: a copy is ABSENT iff at least one read assigned to it is `discovery_coupled` — i.e.
+/// the copy exists only because absent-copy discovery (`--absent-copies`) admitted it. (The
+/// `collapsed_copies`/`rescued_copies` fields are diagnostic COUNTS, NOT per-`copy_tids` absence markers —
+/// `collapsed_copies` can exceed `n_copies` — so they must NOT drive absence.) An absent copy is
+/// `AbsentCollapsed` when its genomic span OVERLAPS a non-absent (in-genome) copy of the same family — a
+/// hidden CO-LOCATED haplotype — else `AbsentDivergent` (dispersed, or spans unavailable). Non-absent
+/// in-genome copies are tagged by `annotation_status`: `InGenomeAnnotated`/`InGenomeUnannotated` when
+/// `--gff` was given, else `AnnotationUnknown` (we never claim "unannotated" unchecked).
 fn build_copy_graph(
     fid: &str,
     fa: &rustle::vg_family::denovo_pipeline::FamilyAssignment,
@@ -377,9 +379,10 @@ fn build_copy_graph(
     let sel = |row: &Vec<Option<u8>>| keep.iter().map(|&j| row.get(j).copied().flatten()).collect::<Vec<_>>();
     let backbone = vec![b"NNNNNNNNNN".to_vec(); cols.len() + 1];
 
-    // which copies are absent (discovery_coupled reads) — collapsed tail => AbsentCollapsed else AbsentDivergent.
+    // Which copies are absent: ONLY those with a discovery_coupled read (a copy admitted purely by
+    // absent-copy discovery). Without `--absent-copies` no read is discovery_coupled, so every copy is
+    // in-genome — the correct default (a plain family has no reference-absent copies).
     let n = fa.copy_tids.len();
-    let absent_tail_start = n.saturating_sub(fa.collapsed_copies + fa.rescued_copies);
     let mut coupled = vec![false; n];
     for (_ri, a) in &fa.assignments {
         // discovery_coupled reads are inherently copy-RESOLVED (the copy exists only because that read's
@@ -389,18 +392,19 @@ fn build_copy_graph(
             coupled[a.best_copy] = true;
         }
     }
+    // Half-open genomic-span overlap of two copies (same chrom): distinguishes an absent copy that is a
+    // hidden CO-LOCATED haplotype (AbsentCollapsed) from a dispersed one (AbsentDivergent).
+    let span_overlap = |i: usize, j: usize| match (fa.copy_spans.get(i), fa.copy_spans.get(j)) {
+        (Some((ci, si, ei)), Some((cj, sj, ej))) => ci == cj && si < ej && sj < ei,
+        _ => false,
+    };
     let copies = (0..n)
         .map(|ci| {
-            let is_absent = coupled[ci] || (ci >= absent_tail_start && (fa.collapsed_copies + fa.rescued_copies) > 0);
-            let status = if is_absent {
-                // v1 approximation: when BOTH collapsed_copies>0 and rescued_copies>0 the merged tail is
-                // labeled AbsentCollapsed wholesale — the collapsed vs rescued sub-ranges within the tail
-                // are not distinguished (would need per-copy provenance the FamilyAssignment doesn't carry).
-                if fa.collapsed_copies > 0 && ci >= absent_tail_start {
-                    CopyStatus::AbsentCollapsed
-                } else {
-                    CopyStatus::AbsentDivergent
-                }
+            let status = if coupled[ci] {
+                // AbsentCollapsed iff this absent copy's span overlaps some IN-GENOME (non-coupled) copy —
+                // a hidden co-located haplotype; else it is dispersed / unlocalized => AbsentDivergent.
+                let collapsed = (0..n).any(|k| k != ci && !coupled[k] && span_overlap(ci, k));
+                if collapsed { CopyStatus::AbsentCollapsed } else { CopyStatus::AbsentDivergent }
             } else {
                 annotation_status(fa, ci, ann)
             };
@@ -1612,42 +1616,58 @@ mod tests {
         assert!(gfa.contains("CAFAM0_c1_G+"));
     }
 
-    #[test]
-    fn build_copy_graph_labels_absent_tail_copy() {
-        // The novel status-derivation logic: a copy in the COLLAPSED tail (collapsed_copies=1, so the last
-        // copy index is the tail) becomes AbsentCollapsed and renders as a _copy{i}_ABSENT path; the
-        // non-tail copy stays AnnotationUnknown (not absent, no _ABSENT suffix).
-        use rustle::vg_family::denovo_pipeline::FamilyAssignment;
-        use rustle::vg_family::copy_graph::CopyStatus;
-        let mut fa = FamilyAssignment::empty();
-        fa.chrom = "chr1".into();
-        fa.n_copies = 2;
-        fa.copy_tids = vec!["c0".into(), "c1".into()];
-        fa.psv_col_pos = vec![Some(100)];
-        // copy0 = reference allele A; copy1 = divergent G (the collapsed tail copy).
-        fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'G')]];
-        fa.read_psv_obs = vec![];
-        fa.assignments = vec![];
-        fa.collapsed_copies = 1; // => absent_tail_start = 2 - 1 = 1, so copy index 1 is the collapsed tail.
-        let ref_base = |_c: &str, _p: u64| Some(b'A');
-        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None);
-        assert_eq!(g.copies.len(), 2);
-        // copy 1 is the collapsed tail => AbsentCollapsed, rendered as _ABSENT with the matching ST tag.
-        assert_eq!(g.copies[1].status, CopyStatus::AbsentCollapsed);
-        assert!(g.copies[1].status.is_absent());
-        let gfa = g.to_gfa();
-        assert!(gfa.contains("_copy1_ABSENT"), "collapsed tail copy must render _ABSENT:\n{}", gfa);
-        assert!(gfa.contains("ST:Z:absent-collapsed"), "expected ST:Z:absent-collapsed in:\n{}", gfa);
-        // copy 0 is NOT absent (in-genome, annotation axis unresolved here) => AnnotationUnknown, no _ABSENT.
-        assert_eq!(g.copies[0].status, CopyStatus::AnnotationUnknown);
-        assert!(!g.copies[0].status.is_absent());
-        assert!(!gfa.contains("_copy0_ABSENT"), "non-tail copy must NOT be _ABSENT:\n{}", gfa);
+    // A discovery_coupled Assignment for read `ri` pinned to copy `best_copy` (status Assigned) — the ONLY
+    // signal that makes a copy absent. Mirrors the default Assignment (copy_assign.rs) with the flag flipped.
+    fn coupled_assignment(ri: usize, best_copy: usize) -> (usize, rustle::vg_family::copy_assign::Assignment) {
+        (ri, rustle::vg_family::copy_assign::Assignment {
+            best_copy,
+            log_lr_margin: 10.0,
+            n_decisive: 1,
+            resolvable: true,
+            status: AssignStatus::Assigned,
+            p_value: 0.0,
+            min_p_value: 0.0,
+            discovery_coupled: true,
+            posterior: vec![],
+        })
     }
 
     #[test]
-    fn build_copy_graph_rescued_tail_copy_is_absent_divergent() {
-        // The rescued tail (rescued_copies=1, collapsed_copies=0) labels the tail copy AbsentDivergent
-        // (not AbsentCollapsed — the collapsed-tail branch requires collapsed_copies>0).
+    fn build_copy_graph_coupled_copy_colocated_is_absent_collapsed() {
+        // Absence is driven by a discovery_coupled read, NOT the collapsed/rescued counts. copy1 has a
+        // coupled read AND its span overlaps copy0's span => AbsentCollapsed (hidden co-located haplotype).
+        // copy0 (no coupled read) stays AnnotationUnknown (no _ABSENT).
+        use rustle::vg_family::denovo_pipeline::FamilyAssignment;
+        use rustle::vg_family::copy_graph::CopyStatus;
+        let mut fa = FamilyAssignment::empty();
+        fa.chrom = "chr1".into();
+        fa.n_copies = 2;
+        fa.copy_tids = vec!["c0".into(), "c1".into()];
+        fa.psv_col_pos = vec![Some(100)];
+        // copy0 = reference allele A; copy1 = divergent G (the absent, co-located copy).
+        fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'G')]];
+        // overlapping spans on the same chrom => co-located.
+        fa.copy_spans = vec![("chr1".into(), 1000, 2000), ("chr1".into(), 1500, 2500)];
+        fa.read_psv_obs = vec![vec![Some(b'G')]];
+        fa.assignments = vec![coupled_assignment(0, 1)]; // one read, coupled to copy1
+        let ref_base = |_c: &str, _p: u64| Some(b'A');
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &["read0".to_string()], None);
+        assert_eq!(g.copies.len(), 2);
+        assert_eq!(g.copies[1].status, CopyStatus::AbsentCollapsed);
+        assert!(g.copies[1].status.is_absent());
+        let gfa = g.to_gfa();
+        assert!(gfa.contains("_copy1_ABSENT"), "coupled co-located copy must render _ABSENT:\n{}", gfa);
+        assert!(gfa.contains("ST:Z:absent-collapsed"), "expected ST:Z:absent-collapsed in:\n{}", gfa);
+        // copy 0 is NOT absent (no coupled read) => AnnotationUnknown, no _ABSENT.
+        assert_eq!(g.copies[0].status, CopyStatus::AnnotationUnknown);
+        assert!(!g.copies[0].status.is_absent());
+        assert!(!gfa.contains("_copy0_ABSENT"), "non-coupled copy must NOT be _ABSENT:\n{}", gfa);
+    }
+
+    #[test]
+    fn build_copy_graph_coupled_copy_dispersed_is_absent_divergent() {
+        // copy1 has a coupled read but its span is DISJOINT from copy0's (different chrom) => AbsentDivergent
+        // (dispersed, no overlapping in-genome copy).
         use rustle::vg_family::denovo_pipeline::FamilyAssignment;
         use rustle::vg_family::copy_graph::CopyStatus;
         let mut fa = FamilyAssignment::empty();
@@ -1656,16 +1676,46 @@ mod tests {
         fa.copy_tids = vec!["c0".into(), "c1".into()];
         fa.psv_col_pos = vec![Some(100)];
         fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'G')]];
-        fa.read_psv_obs = vec![];
-        fa.assignments = vec![];
-        fa.rescued_copies = 1; // collapsed_copies stays 0 => tail copy is AbsentDivergent.
+        // disjoint spans (different chrom) => dispersed.
+        fa.copy_spans = vec![("chr1".into(), 1000, 2000), ("chr9".into(), 1000, 2000)];
+        fa.read_psv_obs = vec![vec![Some(b'G')]];
+        fa.assignments = vec![coupled_assignment(0, 1)];
         let ref_base = |_c: &str, _p: u64| Some(b'A');
-        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None);
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &["read0".to_string()], None);
         assert_eq!(g.copies[1].status, CopyStatus::AbsentDivergent);
         let gfa = g.to_gfa();
-        assert!(gfa.contains("_copy1_ABSENT"), "rescued tail copy must render _ABSENT:\n{}", gfa);
+        assert!(gfa.contains("_copy1_ABSENT"), "dispersed coupled copy must render _ABSENT:\n{}", gfa);
         assert!(gfa.contains("ST:Z:absent-divergent"), "expected ST:Z:absent-divergent in:\n{}", gfa);
         assert_eq!(g.copies[0].status, CopyStatus::AnnotationUnknown);
+    }
+
+    #[test]
+    fn build_copy_graph_gstm_regression_no_coupled_reads_no_absent() {
+        // REGRESSION for the GSTM bug: collapsed_copies (9) >> n_copies (3) with NO discovery_coupled reads.
+        // The old code let absent_tail_start underflow to 0 and mislabeled ALL 3 in-genome copies _ABSENT.
+        // Correct behavior: no coupled read => NO copy is absent; all are AnnotationUnknown, no _ABSENT.
+        use rustle::vg_family::denovo_pipeline::FamilyAssignment;
+        use rustle::vg_family::copy_graph::CopyStatus;
+        let mut fa = FamilyAssignment::empty();
+        fa.chrom = "chr1".into();
+        fa.n_copies = 3;
+        fa.copy_tids = vec!["c0".into(), "c1".into(), "c2".into()];
+        fa.psv_col_pos = vec![Some(100)];
+        fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'C')], vec![Some(b'G')]];
+        fa.read_psv_obs = vec![];
+        fa.assignments = vec![]; // NO discovery_coupled reads (no --absent-copies)
+        fa.collapsed_copies = 9;  // diagnostic count, far exceeds n_copies — must NOT force absence.
+        fa.rescued_copies = 0;
+        let ref_base = |_c: &str, _p: u64| Some(b'A');
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None);
+        assert_eq!(g.copies.len(), 3);
+        for ci in 0..3 {
+            assert_eq!(g.copies[ci].status, CopyStatus::AnnotationUnknown, "copy {} must be in-genome", ci);
+            assert!(!g.copies[ci].status.is_absent(), "copy {} must NOT be absent", ci);
+        }
+        let gfa = g.to_gfa();
+        assert!(!gfa.contains("_ABSENT"), "no copy may render _ABSENT when no read is discovery_coupled:\n{}", gfa);
+        assert!(!gfa.contains("absent-collapsed"), "no absent-collapsed tag expected:\n{}", gfa);
     }
 
     #[test]
