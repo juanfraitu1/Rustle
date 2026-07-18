@@ -103,6 +103,24 @@ impl CopyGraph {
         format!("{}_c{}_{}", self.family, ci, b as char)
     }
 
+    /// Number of columns where copy `c`'s allele is BOTH unique among the family's copies AND differs
+    /// from the reference allele — a private *divergent* marker (SUN). A copy identical to the
+    /// reference scores 0. (This reference-exclusion filter deviates from the plan's illustrative
+    /// snippet but matches the acceptance test's SUN semantics.)
+    fn private_columns(&self, c: usize) -> u32 {
+        let mut n = 0u32;
+        for ci in 0..self.m() {
+            let Some(Some(b)) = self.copies[c].alleles.get(ci) else { continue };
+            // Only count columns where this allele differs from the reference
+            if self.columns[ci].ref_allele == Some(*b) { continue; }
+            // Check if no other copy has this same allele
+            let unique = self.copies.iter().enumerate()
+                .all(|(k, other)| k == c || other.alleles.get(ci).and_then(|o| *o) != Some(*b));
+            if unique { n += 1; }
+        }
+        n
+    }
+
     /// The set of alleles present at column `ci` (reference ∪ all copies ∪ all reads), sorted.
     fn alleles_at(&self, ci: usize) -> BTreeSet<u8> {
         let mut set = BTreeSet::new();
@@ -154,6 +172,24 @@ impl CopyGraph {
         let ref_taken: Vec<Option<u8>> = self.columns.iter().map(|c| c.ref_allele).collect();
         let ref_walk = self.walk_tokens(&ref_taken).join(",");
         out.paths.push(format!("P\t{}_REFERENCE\t{}\t*\tST:Z:reference", self.family, ref_walk));
+
+        // copy P-lines with corroboration tags
+        for (copy_idx, cp) in self.copies.iter().enumerate() {
+            let walk = self.walk_tokens(&cp.alleles).join(",");
+            let name = if cp.status.is_absent() {
+                format!("{}_copy{}_ABSENT", self.family, copy_idx)
+            } else {
+                format!("{}_copy{}", self.family, copy_idx)
+            };
+            let mut tags = String::new();
+            if let Some(rc) = cp.corrob.reads { tags.push_str(&format!("\tRC:i:{}", rc)); }
+            let su = cp.corrob.suns.unwrap_or_else(|| self.private_columns(copy_idx));
+            tags.push_str(&format!("\tSU:i:{}", su));
+            if let Some(mi) = cp.corrob.map_identity { tags.push_str(&format!("\tMI:f:{:.3}", mi)); }
+            tags.push_str(&format!("\tST:Z:{}", cp.status.tag()));
+            out.paths.push(format!("P\t{}\t{}\t*{}", name, walk, tags));
+        }
+
         out
     }
 
@@ -240,5 +276,70 @@ mod tests {
         assert!(gfa.contains(
             "P\tFAM1_REFERENCE\tFAM1_bb0+,FAM1_c0_A+,FAM1_bb1+,FAM1_c1_C+,FAM1_bb2+\t*\tST:Z:reference"
         ), "reference P-line missing or wrong:\n{}", gfa);
+    }
+
+    #[test]
+    fn copy_paths_carry_tags_and_absent_diverges() {
+        // 3 columns; reference = A,A,A. copy0 in-genome matches ref. copy1 ABSENT diverges at col1 & col2.
+        let g = CopyGraph {
+            family: "FAM2".into(),
+            columns: (0..3).map(|i| PsvColumn {
+                col: i, genome_pos: Some(100 + i as u64), ref_allele: Some(b'A'),
+            }).collect(),
+            backbone: vec![b"NN".to_vec(); 4],
+            copies: vec![
+                CopyPath { id: "FAM2_copy0".into(), alleles: vec![Some(b'A'), Some(b'A'), Some(b'A')],
+                    status: CopyStatus::InGenomeAnnotated,
+                    corrob: Corrob { reads: Some(8), suns: None, map_identity: Some(0.998) } },
+                CopyPath { id: "FAM2_copy1".into(), alleles: vec![Some(b'A'), Some(b'G'), Some(b'T')],
+                    status: CopyStatus::AbsentDivergent,
+                    corrob: Corrob { reads: Some(12), suns: None, map_identity: Some(0.952) } },
+            ],
+            reads: vec![],
+        };
+        let gfa = g.to_gfa();
+        // absent copy P-line named with _ABSENT and tagged
+        let absent = gfa.lines().find(|l| l.starts_with("P\tFAM2_copy1_ABSENT")).expect("absent P-line");
+        assert!(absent.contains("RC:i:12"));
+        assert!(absent.contains("MI:f:0.952"));
+        assert!(absent.contains("ST:Z:absent-divergent"));
+        // SU (private columns): copy1's allele is unique (vs copy0) at col1(G) and col2(T) => SU:i:2
+        assert!(absent.contains("SU:i:2"), "expected SU:i:2 in: {}", absent);
+        // it walks the divergent nodes the reference walk does NOT (c1_G, c2_T)
+        assert!(absent.contains("FAM2_c1_G+"));
+        assert!(absent.contains("FAM2_c2_T+"));
+        // in-genome copy0 has SU:i:0 (never unique) and is not _ABSENT
+        let c0 = gfa.lines().find(|l| l.starts_with("P\tFAM2_copy0\t")).expect("copy0 P-line");
+        assert!(c0.contains("SU:i:0"));
+        assert!(c0.contains("ST:Z:in-genome-annotated"));
+    }
+
+    #[test]
+    fn omits_unknown_corrob_tags() {
+        // Honesty rule NEGATIVE path: when reads/map_identity are None, RC:i: and MI:f: are OMITTED,
+        // while SU:i: (always computed) and ST:Z: (always emitted) remain.
+        let g = CopyGraph {
+            family: "FAM3".into(),
+            columns: vec![
+                PsvColumn { col: 0, genome_pos: Some(100), ref_allele: Some(b'A') },
+                PsvColumn { col: 1, genome_pos: Some(200), ref_allele: Some(b'C') },
+            ],
+            backbone: vec![b"NN".to_vec(); 3],
+            copies: vec![CopyPath {
+                id: "FAM3_copy0".into(),
+                alleles: vec![Some(b'A'), Some(b'G')],
+                status: CopyStatus::AnnotationUnknown,
+                corrob: Corrob { reads: None, suns: None, map_identity: None },
+            }],
+            reads: vec![],
+        };
+        let gfa = g.to_gfa();
+        let cp = gfa.lines().find(|l| l.starts_with("P\tFAM3_copy0\t")).expect("copy0 P-line");
+        // unknown values => tags omitted (never faked)
+        assert!(!cp.contains("RC:i:"), "RC:i: must be omitted when reads is None: {}", cp);
+        assert!(!cp.contains("MI:f:"), "MI:f: must be omitted when map_identity is None: {}", cp);
+        // always-present tags
+        assert!(cp.contains("SU:i:"), "SU:i: must always be present: {}", cp);
+        assert!(cp.contains("ST:Z:annotation-unknown"), "ST:Z: must always be present: {}", cp);
     }
 }
