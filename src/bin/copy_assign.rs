@@ -194,6 +194,11 @@ struct Args {
     #[arg(long, default_value_t = false)]
     phase: bool,
 
+    /// Optional gene annotation (GFF3/GTF/BED) to tag in-genome copies annotated vs unannotated in the
+    /// --phase copy graph. Without it, in-genome copies are tagged `annotation-unknown`.
+    #[arg(long)]
+    gff: Option<String>,
+
     /// Skip the POA homology DIAGNOSTIC pass. It is the dominant per-region cost (the poasta all-pairs
     /// alignment over candidate rep pairs — ~85% of wall-clock on dense families) but is purely diagnostic:
     /// families come from the de-tie conflict graph, so the emitted families/assignments/abundance are
@@ -348,12 +353,14 @@ fn sanitize_gfa_id(s: &str) -> String {
 /// because absent-copy discovery admitted it), OR it falls in the collapsed/rescued tail of `copy_tids`
 /// (`ci >= copy_tids.len() - (collapsed_copies + rescued_copies)`). Absent copies in the collapsed tail are
 /// `AbsentCollapsed`; all other absent copies default to `AbsentDivergent`. Non-absent in-genome copies are
-/// `AnnotationUnknown` (the `--gff` annotated/unannotated split is Task 8, not this task).
+/// tagged by `annotation_status` — `InGenomeAnnotated`/`InGenomeUnannotated` when `--gff` was given, else
+/// `AnnotationUnknown` (we never claim "unannotated" unchecked).
 fn build_copy_graph(
     fid: &str,
     fa: &rustle::vg_family::denovo_pipeline::FamilyAssignment,
     ref_base: impl Fn(&str, u64) -> Option<u8>,
     bam_reads: &[String],
+    ann: Option<&[(String, u64, u64)]>,
 ) -> rustle::vg_family::copy_graph::CopyGraph {
     use rustle::vg_family::copy_graph::*;
     // usable columns (both a genome position and a reference base), remembering the original index.
@@ -395,7 +402,7 @@ fn build_copy_graph(
                     CopyStatus::AbsentDivergent
                 }
             } else {
-                CopyStatus::AnnotationUnknown
+                annotation_status(fa, ci, ann)
             };
             let reads = fa
                 .assignments
@@ -423,6 +430,66 @@ fn build_copy_graph(
         .collect();
 
     CopyGraph { family: fid.to_string(), columns: cols, backbone, copies, reads }
+}
+
+/// In-genome annotation axis: overlap of copy `ci`'s span with any annotated interval.
+/// `None` intervals => AnnotationUnknown (we never claim "unannotated" unchecked).
+fn annotation_status(
+    fa: &rustle::vg_family::denovo_pipeline::FamilyAssignment,
+    ci: usize,
+    ann: Option<&[(String, u64, u64)]>,
+) -> rustle::vg_family::copy_graph::CopyStatus {
+    use rustle::vg_family::copy_graph::CopyStatus;
+    let Some(ann) = ann else { return CopyStatus::AnnotationUnknown };
+    let Some((c, s, e)) = fa.copy_spans.get(ci) else { return CopyStatus::AnnotationUnknown };
+    let hit = ann.iter().any(|(ac, as_, ae)| ac == c && *as_ < *e && *s < *ae);
+    if hit { CopyStatus::InGenomeAnnotated } else { CopyStatus::InGenomeUnannotated }
+}
+
+/// Parse a gene annotation file (`--gff`) into `(chrom, start0, end)` intervals: accepts BED (0-based, cols
+/// 0/1/2) and GFF3/GTF (1-based, cols 0/3/4 -> start converted to 0-based). Lines starting with `#` and blank
+/// lines are skipped; malformed lines (wrong column count or non-numeric coords) are skipped, never panic.
+///
+/// Format is decided from the FILE EXTENSION first — a BED6/BED12 line whose NAME column (col 3) is numeric
+/// (`chr1\t1000\t2000\t5\t0\t+`) would otherwise be silently misread as GFF, yielding the wrong interval.
+/// `.bed` => BED; `.gff`/`.gff2`/`.gff3`/`.gtf` => GFF/GTF. An unknown extension falls back to the per-line
+/// numeric heuristic (GFF cols 3/4 preferred, else BED cols 1/2) for best-effort on mislabeled files.
+fn parse_annotation(path: &str) -> anyhow::Result<Vec<(String, u64, u64)>> {
+    enum Fmt { Bed, Gff, Auto }
+    let lower = path.to_ascii_lowercase();
+    let fmt = if lower.ends_with(".bed") {
+        Fmt::Bed
+    } else if lower.ends_with(".gff") || lower.ends_with(".gff2") || lower.ends_with(".gff3") || lower.ends_with(".gtf") {
+        Fmt::Gff
+    } else {
+        Fmt::Auto
+    };
+    let mut out = Vec::new();
+    for line in std::fs::read_to_string(path)?.lines() {
+        if line.starts_with('#') || line.trim().is_empty() { continue; }
+        let f: Vec<&str> = line.split('\t').collect();
+        let bed = |f: &[&str], out: &mut Vec<(String, u64, u64)>| {
+            if f.len() < 3 { return; }
+            let (Ok(s), Ok(e)) = (f[1].parse::<u64>(), f[2].parse::<u64>()) else { return }; // BED 0-based
+            out.push((f[0].to_string(), s, e));
+        };
+        let gff = |f: &[&str], out: &mut Vec<(String, u64, u64)>| {
+            if f.len() < 5 { return; }
+            let (Ok(s), Ok(e)) = (f[3].parse::<u64>(), f[4].parse::<u64>()) else { return }; // GFF/GTF 1-based
+            out.push((f[0].to_string(), s.saturating_sub(1), e));
+        };
+        match fmt {
+            Fmt::Bed => bed(&f, &mut out),
+            Fmt::Gff => gff(&f, &mut out),
+            // unknown extension: prefer the GFF shape (5+ cols, numeric 3/4), else BED (3+ cols, numeric 1/2).
+            Fmt::Auto => {
+                let before = out.len();
+                gff(&f, &mut out);
+                if out.len() == before { bed(&f, &mut out); }
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn parse_region(s: &str) -> Result<(String, u64, u64)> {
@@ -575,6 +642,10 @@ fn main() -> Result<()> {
     if args.igv {
         args.dump_psv = true; // --igv is a bundle: the PSV matrix feeds bench/igv_tracks.py -> tagged BAM + PSV VCF
     }
+    // --gff: parsed ONCE before the sweep into the annotation axis intervals (None => every in-genome copy in
+    // the --phase copy graph stays AnnotationUnknown, byte-identical to the no-flag path).
+    let annotation: Option<Vec<(String, u64, u64)>> =
+        args.gff.as_deref().map(parse_annotation).transpose().context("parsing --gff")?;
 
     // collect the regions, then group by contig so each contig loads ONCE (memory-bounded sweep).
     let regions: Vec<(String, u64, u64)> = match (&args.region, &args.regions) {
@@ -1044,7 +1115,7 @@ fn main() -> Result<()> {
                             .and_then(|g| g.fetch_sequence(chrom, pos, pos + 1))
                             .and_then(|v| v.first().copied())
                     };
-                    let cg = build_copy_graph(&fid, fa, ref_base, bam_reads);
+                    let cg = build_copy_graph(&fid, fa, ref_base, bam_reads, annotation.as_deref());
                     let gl = cg.gfa_lines();
                     for s in gl.segs { gfa_segs.insert(s); }
                     for l in gl.links { gfa_links.insert(l); }
@@ -1531,7 +1602,7 @@ mod tests {
         fa.assignments = vec![];
         // injected reference: A at both positions
         let ref_base = |_c: &str, _p: u64| Some(b'A');
-        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[]);
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None);
         assert_eq!(g.columns.len(), 2);
         assert_eq!(g.copies.len(), 2);
         assert_eq!(g.columns[0].ref_allele, Some(b'A'));
@@ -1559,7 +1630,7 @@ mod tests {
         fa.assignments = vec![];
         fa.collapsed_copies = 1; // => absent_tail_start = 2 - 1 = 1, so copy index 1 is the collapsed tail.
         let ref_base = |_c: &str, _p: u64| Some(b'A');
-        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[]);
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None);
         assert_eq!(g.copies.len(), 2);
         // copy 1 is the collapsed tail => AbsentCollapsed, rendered as _ABSENT with the matching ST tag.
         assert_eq!(g.copies[1].status, CopyStatus::AbsentCollapsed);
@@ -1589,11 +1660,49 @@ mod tests {
         fa.assignments = vec![];
         fa.rescued_copies = 1; // collapsed_copies stays 0 => tail copy is AbsentDivergent.
         let ref_base = |_c: &str, _p: u64| Some(b'A');
-        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[]);
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None);
         assert_eq!(g.copies[1].status, CopyStatus::AbsentDivergent);
         let gfa = g.to_gfa();
         assert!(gfa.contains("_copy1_ABSENT"), "rescued tail copy must render _ABSENT:\n{}", gfa);
         assert!(gfa.contains("ST:Z:absent-divergent"), "expected ST:Z:absent-divergent in:\n{}", gfa);
         assert_eq!(g.copies[0].status, CopyStatus::AnnotationUnknown);
+    }
+
+    #[test]
+    fn annotation_axis_from_intervals() {
+        use rustle::vg_family::denovo_pipeline::FamilyAssignment;
+        use rustle::vg_family::copy_graph::CopyStatus;
+        let mut fa = FamilyAssignment::empty();
+        fa.chrom = "chr1".into();
+        fa.copy_tids = vec!["c0".into(), "c1".into()];
+        fa.copy_spans = vec![("chr1".into(), 1000, 2000), ("chr1".into(), 5000, 6000)];
+        fa.psv_col_pos = vec![Some(1500)];
+        fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'A')]];
+        // annotation covers only copy0's span
+        let ann = vec![("chr1".to_string(), 900u64, 2100u64)];
+        let s0 = annotation_status(&fa, 0, Some(&ann));
+        let s1 = annotation_status(&fa, 1, Some(&ann));
+        assert_eq!(s0, CopyStatus::InGenomeAnnotated);
+        assert_eq!(s1, CopyStatus::InGenomeUnannotated);
+        assert_eq!(annotation_status(&fa, 1, None), CopyStatus::AnnotationUnknown);
+    }
+
+    #[test]
+    fn parse_annotation_bed_with_numeric_name() {
+        // Regression: a BED6 line whose NAME column (col 3) is numeric must NOT be misread as GFF (which would
+        // yield (4,5) from cols 3/4). Extension-first dispatch (`.bed` => BED cols 0/1/2) keeps it correct.
+        let dir = std::env::temp_dir();
+        let bed = dir.join(format!("rustle_task8_ann_{}.bed", std::process::id()));
+        std::fs::write(&bed, "chr1\t1000\t2000\t5\t0\t+\n").unwrap();
+        let got = parse_annotation(bed.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&bed).ok();
+        assert_eq!(got, vec![("chr1".to_string(), 1000u64, 2000u64)], "BED numeric-name line must NOT parse as (4,5)");
+
+        // A GFF/GTF file still parses cols 3/4 with the 1-based -> 0-based start conversion.
+        let gff = dir.join(format!("rustle_task8_ann_{}.gff3", std::process::id()));
+        std::fs::write(&gff, "##gff-version 3\nchr1\tsrc\tgene\t1000\t2000\t.\t+\t.\tID=g1\n").unwrap();
+        let got = parse_annotation(gff.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&gff).ok();
+        assert_eq!(got, vec![("chr1".to_string(), 999u64, 2000u64)], "GFF cols 3/4, 1-based start -> 0-based");
     }
 }
