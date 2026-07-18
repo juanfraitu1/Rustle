@@ -296,6 +296,39 @@ impl ExonGraph {
         format!("{}_E{}", self.family, k)
     }
 
+    /// Bandage node colours (keyed on exon node names): a class walked by ≥1 non-absent copy → grey;
+    /// else if only absent copies walk it → the owner's colour (red). Skip classes with no walkers.
+    pub fn colours_csv(&self) -> String {
+        let n = self.nodes.len();
+        let mut colour: BTreeMap<String, &'static str> = BTreeMap::new();
+        for k in 0..n {
+            let walkers: Vec<&CopyExonPath> = self.copies.iter().filter(|c| c.exon_nodes.contains(&k)).collect();
+            let on_ref = walkers.iter().any(|c| !c.status.is_absent());
+            let col = if on_ref {
+                CopyStatus::Reference.colour()               // grey shared/reference exon
+            } else if let Some(c) = walkers.first() {
+                c.status.colour()                            // copy-specific arm -> owner colour (red for absent)
+            } else { continue };
+            colour.insert(self.node(k), col);
+        }
+        let mut s = String::new();
+        for (kk, v) in colour { s.push_str(&format!("{},{}\n", kk, v)); }
+        s
+    }
+
+    /// Legend: each status actually present (plus reference) → its colour.
+    pub fn legend_tsv(&self) -> String {
+        let mut seen: BTreeSet<&'static str> = BTreeSet::new();
+        let mut s = format!("reference\t{}\n", CopyStatus::Reference.colour());
+        seen.insert("reference");
+        for c in &self.copies {
+            if seen.insert(c.status.tag()) {
+                s.push_str(&format!("{}\t{}\n", c.status.tag(), c.status.colour()));
+            }
+        }
+        s
+    }
+
     /// Reciprocal overlap = min(inter/len_a, inter/len_b); 0 if disjoint or different chrom.
     fn recip_overlap(a: (&str, u64, u64), b: (&str, u64, u64)) -> f64 {
         if a.0 != b.0 { return 0.0; }
@@ -786,5 +819,21 @@ mod tests {
         assert!(gfa.lines().any(|l| l.starts_with(&format!("S\tF_E{}", arm))));
         // no dangling: every P-line step is backed by an L-line
         assert_no_dangling(&gfa);
+    }
+
+    #[test]
+    fn exon_colours_arm_red_shared_grey() {
+        let copies = vec![
+            ("F_copy0".to_string(), CopyStatus::InGenomeAnnotated, Corrob::default(), "chr1".to_string(), vec![(0u64,100u64),(300,400)]),
+            ("F_copy1".to_string(), CopyStatus::AbsentDivergent, Corrob::default(), "chr1".to_string(), vec![(0,100),(150,250),(300,400)]),
+        ];
+        let g = ExonGraph::from_copies("F", &copies);
+        let csv = g.colours_csv();
+        let arm = g.copies[1].exon_nodes.iter().find(|&&k| !g.copies[0].exon_nodes.contains(&k)).copied().unwrap();
+        assert!(csv.lines().any(|l| l == format!("F_E{},#d93025", arm)), "arm not red:\n{}", csv);
+        // a shared class (walked by the in-genome copy0) is grey
+        let shared = g.copies[0].exon_nodes[0];
+        assert!(csv.lines().any(|l| l == format!("F_E{},#9aa0a6", shared)));
+        assert!(g.legend_tsv().contains("absent-divergent\t#d93025"));
     }
 }
