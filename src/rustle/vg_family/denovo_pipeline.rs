@@ -434,6 +434,11 @@ pub struct FamilyAssignment {
     /// into the same per-copy frame the EM engine (`em_assign_family`) consumes. Empty when the
     /// underlying `FamilyDetail` carries no junction data.
     pub copy_junctions: Vec<Vec<i64>>,
+    /// genomic (donor,acceptor) intron chain per copy, parallel to copy_tids. For v2 exon graph.
+    pub copy_introns: Vec<Vec<(u64, u64)>>,
+    /// per-copy genome remap identity, parallel to copy_tids: Some for reference-ABSENT copies
+    /// (their discovery remap identity), None for in-genome copies (never remapped). For MI:f:.
+    pub copy_map_identity: Vec<Option<f64>>,
     /// per-read intron-boundary offsets in the assigned copy's spliced space, parallel to
     /// `read_psv_obs`/`assignments` (`read_junctions[i]` aligns with `read_psv_obs[i]`/`assignments[i]`).
     pub read_junctions: Vec<Vec<i64>>,
@@ -475,6 +480,8 @@ impl FamilyAssignment {
             copy_psv_alleles: Vec::new(),
             read_psv_obs: Vec::new(),
             copy_junctions: Vec::new(),
+            copy_introns: Vec::new(),
+            copy_map_identity: Vec::new(),
             read_junctions: Vec::new(),
             realign_records: Vec::new(),
         }
@@ -634,6 +641,8 @@ fn gated_family(rep: &DenovoTranscript, bam_reads: &[BamRead], chi: usize, famil
         assignments,
         copy_tids: vec![rep.tid.clone()], // the one assembled rep; the other copies have no sequence
         copy_spans: vec![(rep.chrom.clone(), rep.start, rep.end)],
+        copy_introns: vec![rep.introns.clone()],
+        copy_map_identity: vec![None], // rep is an in-genome assembled transcript, never remapped
         ..FamilyAssignment::empty()
     }
 }
@@ -1229,8 +1238,8 @@ fn admit_novel_pools_with_admitter<F>(
             n_clusters,
         };
         let admitted = admit(&cand, host);
-        let t = match admitted {
-            Admission::Copy(t, _) => t, // Task 2 will use the id here.
+        let (t, adm_id) = match admitted {
+            Admission::Copy(t, id) => (t, id),
             Admission::DnaNeeds(_) => continue, // gate declined -- stays a "novel-candidate" record.
         };
 
@@ -1241,6 +1250,9 @@ fn admit_novel_pools_with_admitter<F>(
         fa.copy_psv_alleles.push(alleles);
         fa.copy_junctions.push(copy_boundaries(&t));
         fa.copy_tids.push(t.tid.clone());
+        fa.copy_spans.push((t.chrom.clone(), t.start, t.end));
+        fa.copy_introns.push(t.introns.clone());
+        fa.copy_map_identity.push(adm_id);
         fa.n_copies += 1;
 
         for &gi in pool {
@@ -1471,6 +1483,10 @@ pub fn detect_and_assign(
         let rescued =
             rescue_thin_loci_iterative(&loci, &members, &member_spans, genome, &RescueParams::default(), 3);
         let rescued_copies = rescued.len();
+        // tid -> discovery remap identity, for reference-ABSENT copies admitted below (Stage-2). Keyed on
+        // tid (not index) so it survives the pruning/reassignment `all_copies` undergoes afterward; an
+        // in-genome copy is simply absent from this map, which the main build below reads as `None`.
+        let mut remap_id_by_tid: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
         let mut all_copies: Vec<DenovoTranscript> = cf.copies.clone();
         for rc in &rescued {
             all_copies.push(DenovoTranscript {
@@ -1511,7 +1527,12 @@ pub fn detect_and_assign(
             for cand in &cands {
                 if let Some(host) = all_copies.iter().find(|t| t.tid == cand.host_tid) {
                     match absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::default()) {
-                        Admission::Copy(t, _) => admitted.push(t), // Task 2 will capture the id.
+                        Admission::Copy(t, id) => {
+                            if let Some(v) = id {
+                                remap_id_by_tid.insert(t.tid.clone(), v);
+                            }
+                            admitted.push(t);
+                        }
                         // Task 6: collect DNA-needs records for the caller to surface as <out>.dna_needs.tsv.
                         Admission::DnaNeeds(r) => dna_needs.push(r),
                     }
@@ -1648,6 +1669,8 @@ pub fn detect_and_assign(
             copy_psv_alleles: detail.copy_psv_alleles.clone(),
             read_psv_obs: Vec::with_capacity(detail.results.len()),
             copy_junctions: detail.copy_junctions.clone(),
+            copy_introns: all_copies.iter().map(|c| c.introns.clone()).collect(),
+            copy_map_identity: all_copies.iter().map(|c| remap_id_by_tid.get(&c.tid).copied()).collect(),
             read_junctions: Vec::with_capacity(detail.results.len()),
             realign_records: Vec::new(),
         };
@@ -2800,6 +2823,18 @@ mod tests {
         assert_eq!(sup, vec![0, 1, 0], "out-of-range best_copy is guarded");
     }
 
+    /// `copy_introns`/`copy_map_identity` must exist and stay length-aligned with `copy_tids` at every
+    /// construction site (`FamilyAssignment::empty()` starts both empty; a built family -- see
+    /// `admission_widens_abundance_not_left_at_zero` -- must keep all three the same length).
+    #[test]
+    fn family_assignment_has_aligned_intron_and_identity_fields() {
+        let fa = FamilyAssignment::empty();
+        assert_eq!(fa.copy_introns.len(), 0);
+        assert_eq!(fa.copy_map_identity.len(), 0);
+        assert_eq!(fa.copy_introns.len(), fa.copy_tids.len());
+        assert_eq!(fa.copy_map_identity.len(), fa.copy_tids.len());
+    }
+
     #[test]
     fn homology_refine_params_min_identity_sets_both_tiers() {
         let p = homology_refine_params(Some(0.98), 4);
@@ -3165,6 +3200,8 @@ mod tests {
             copy_psv_alleles: copy_psv_alleles.clone(),
             read_psv_obs: vec![vec![None], vec![Some(b'C')]],
             copy_junctions: copy_junctions.clone(),
+            copy_introns: vec![Vec::new(), Vec::new()],
+            copy_map_identity: vec![None, None],
             read_junctions: vec![Vec::new(), Vec::new()],
             realign_records: Vec::new(),
         };
@@ -3286,6 +3323,8 @@ mod tests {
             copy_psv_alleles: copy_psv_alleles.clone(),
             read_psv_obs: vec![vec![None, None]],
             copy_junctions: copy_junctions.clone(),
+            copy_introns: vec![Vec::new(), Vec::new()],
+            copy_map_identity: vec![None, None],
             read_junctions: vec![Vec::new()],
             realign_records: Vec::new(),
         };
@@ -3377,6 +3416,8 @@ mod tests {
             copy_psv_alleles: vec![vec![Some(backbone[10])]],
             read_psv_obs: Vec::new(),
             copy_junctions: vec![Vec::new()],
+            copy_introns: vec![Vec::new()],
+            copy_map_identity: vec![None],
             read_junctions: Vec::new(),
             realign_records: Vec::new(),
         };
@@ -3410,17 +3451,35 @@ mod tests {
 
         let admitted_t = DenovoTranscript {
             tid: "admitted1".into(), chrom: "chr1".into(), start: 0, end: 80, n_reads: 4, strand: '+',
-            introns: vec![], seq: mutated.clone(),
+            introns: vec![(30, 40)], seq: mutated.clone(),
         };
 
+        // The mocked admitter reports a remap identity (as `absent_copy::admit_candidate` does for a
+        // real reference-ABSENT admission) so this test also pins that `copy_map_identity` carries it
+        // through, aligned 1:1 with the widened `copy_tids`/`copy_introns` roster.
         admit_novel_pools_with_admitter(&mut fa, &pools, &bam_reads, &all_copies, &profiles, |_c, _h| {
-            Admission::Copy(admitted_t.clone(), None)
+            Admission::Copy(admitted_t.clone(), Some(0.987))
         });
 
         assert_eq!(fa.n_copies, 2, "the pool must be admitted as a new copy");
         assert_eq!(fa.copy_psv_alleles.len(), 2);
         assert_eq!(fa.copy_tids, vec!["host".to_string(), "admitted1".to_string()]);
         assert_eq!(fa.assignments.len(), 7, "all 7 pool reads must be assigned (none pre-existed)");
+        assert_eq!(
+            fa.copy_introns.len(), fa.copy_tids.len(),
+            "copy_introns must stay aligned with copy_tids after admission"
+        );
+        assert_eq!(
+            fa.copy_map_identity.len(), fa.copy_tids.len(),
+            "copy_map_identity must stay aligned with copy_tids after admission"
+        );
+        assert_eq!(fa.copy_map_identity[0], None, "host is in-genome, never remapped");
+        assert!(
+            fa.copy_map_identity[1].is_some(),
+            "the admitted (reference-ABSENT) copy's map identity must be captured, got {:?}",
+            fa.copy_map_identity[1]
+        );
+        assert_eq!(fa.copy_introns[1], admitted_t.introns, "admitted copy's intron chain must propagate");
 
         let p = AssignParams::default();
         recompute_realign_abundance(&mut fa, &p, 1e-6, 500);
