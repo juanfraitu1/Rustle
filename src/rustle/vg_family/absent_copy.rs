@@ -70,8 +70,10 @@ pub struct DnaNeedsRecord {
 
 /// Result of the admission gate.
 pub enum Admission {
-    /// All gates passed — the `DenovoTranscript` is the synthetic collapsed copy.
-    Copy(DenovoTranscript),
+    /// All gates passed — the `DenovoTranscript` is the synthetic collapsed copy. The second
+    /// field is the genome remap identity computed at gate 5 (`Some(id)`); `None` only where an
+    /// admitted copy has no computed identity.
+    Copy(DenovoTranscript, Option<f64>),
     /// At least one gate failed — the record is flagged for DNA validation.
     DnaNeeds(DnaNeedsRecord),
 }
@@ -150,7 +152,7 @@ where
 
     // Gate 5: genome remap identity.
     match remap_identity(&t.seq) {
-        Some(id) if id < p.remap_max_identity => Admission::Copy(t),
+        Some(id) if id < p.remap_max_identity => Admission::Copy(t, Some(id)),
         Some(_) => dna_needs(cand, ">=98% remap identity (paralog-leak or het)"),
         None => dna_needs(cand, "no homology on remap"),
     }
@@ -371,7 +373,10 @@ mod tests {
         let p = AbsentCopyParams::default();
         let got = admit_candidate_with_remap(&cand, &host(), &p, |_seq| Some(0.5));
         match got {
-            Admission::Copy(t) => assert_eq!(t.chrom, "c1"),
+            Admission::Copy(t, id) => {
+                assert_eq!(t.chrom, "c1");
+                assert_eq!(id, Some(0.5), "gate 5 must carry through the remap identity");
+            }
             _ => panic!("expected Copy"),
         }
     }
@@ -521,6 +526,28 @@ mod tests {
                 assert_eq!(r.read_count, 12);
             }
             _ => panic!("expected DnaNeeds"),
+        }
+    }
+
+    /// `Admission::Copy` carries the genome remap identity as a second field (Task 1 / copy-graph
+    /// v2) so downstream consumers (Task 2: `FamilyAssignment.copy_map_identity`, the `MI:f:` tag)
+    /// can thread it through without recomputing minimap2.
+    #[test]
+    fn admission_copy_carries_identity() {
+        let t = DenovoTranscript {
+            tid: "t".into(),
+            chrom: "c".into(),
+            start: 0,
+            end: 10,
+            n_reads: 5,
+            strand: '+',
+            introns: vec![],
+            seq: b"ACGTACGTAC".to_vec(),
+        };
+        let a = Admission::Copy(t.clone(), Some(0.95));
+        match a {
+            Admission::Copy(_, id) => assert_eq!(id, Some(0.95)),
+            _ => panic!("wrong variant"),
         }
     }
 

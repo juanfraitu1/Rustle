@@ -1230,7 +1230,7 @@ fn admit_novel_pools_with_admitter<F>(
         };
         let admitted = admit(&cand, host);
         let t = match admitted {
-            Admission::Copy(t) => t,
+            Admission::Copy(t, _) => t, // Task 2 will use the id here.
             Admission::DnaNeeds(_) => continue, // gate declined -- stays a "novel-candidate" record.
         };
 
@@ -1511,7 +1511,7 @@ pub fn detect_and_assign(
             for cand in &cands {
                 if let Some(host) = all_copies.iter().find(|t| t.tid == cand.host_tid) {
                     match absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::default()) {
-                        Admission::Copy(t) => admitted.push(t),
+                        Admission::Copy(t, _) => admitted.push(t), // Task 2 will capture the id.
                         // Task 6: collect DNA-needs records for the caller to surface as <out>.dna_needs.tsv.
                         Admission::DnaNeeds(r) => dna_needs.push(r),
                     }
@@ -3414,7 +3414,7 @@ mod tests {
         };
 
         admit_novel_pools_with_admitter(&mut fa, &pools, &bam_reads, &all_copies, &profiles, |_c, _h| {
-            Admission::Copy(admitted_t.clone())
+            Admission::Copy(admitted_t.clone(), None)
         });
 
         assert_eq!(fa.n_copies, 2, "the pool must be admitted as a new copy");
