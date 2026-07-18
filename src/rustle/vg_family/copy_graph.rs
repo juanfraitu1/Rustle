@@ -292,6 +292,10 @@ impl CopyGraph {
 }
 
 impl ExonGraph {
+    fn node(&self, k: usize) -> String {
+        format!("{}_E{}", self.family, k)
+    }
+
     /// Reciprocal overlap = min(inter/len_a, inter/len_b); 0 if disjoint or different chrom.
     fn recip_overlap(a: (&str, u64, u64), b: (&str, u64, u64)) -> f64 {
         if a.0 != b.0 { return 0.0; }
@@ -299,6 +303,51 @@ impl ExonGraph {
         if hi <= lo { return 0.0; }
         let inter = (hi - lo) as f64;
         (inter / (a.2 - a.1) as f64).min(inter / (b.2 - b.1) as f64)
+    }
+
+    pub fn to_gfa(&self, exon_seq: impl Fn(&ExonClass) -> Vec<u8>) -> String {
+        // reference = classes present in >=1 non-absent copy; fallback = present in all copies
+        let n = self.nodes.len();
+        let non_absent: Vec<&CopyExonPath> = self.copies.iter().filter(|c| !c.status.is_absent()).collect();
+        let mut ref_nodes: Vec<usize> = (0..n).filter(|&k|
+            if non_absent.is_empty() { self.copies.iter().all(|c| c.exon_nodes.contains(&k)) }
+            else { non_absent.iter().any(|c| c.exon_nodes.contains(&k)) }
+        ).collect();
+        ref_nodes.sort();
+
+        // per-class RC = sum of reads over copies walking it
+        let rc = |k: usize| -> u32 {
+            self.copies.iter().filter(|c| c.exon_nodes.contains(&k)).filter_map(|c| c.corrob.reads).sum()
+        };
+
+        let mut s = String::from("H\tVN:Z:1.1\n");
+        for (k, ec) in self.nodes.iter().enumerate() {
+            let seq = String::from_utf8_lossy(&exon_seq(ec)).to_string();
+            s.push_str(&format!("S\t{}\t{}\tPO:i:{}\tRC:i:{}\n", self.node(k), seq, ec.start, rc(k)));
+        }
+        // L-lines = union of consecutive adjacencies across reference + all copy walks
+        use std::collections::BTreeSet;
+        let mut links: BTreeSet<(usize, usize)> = BTreeSet::new();
+        let mut add_walk = |walk: &[usize], set: &mut BTreeSet<(usize,usize)>| {
+            for w in walk.windows(2) { set.insert((w[0], w[1])); }
+        };
+        add_walk(&ref_nodes, &mut links);
+        for c in &self.copies { add_walk(&c.exon_nodes, &mut links); }
+        for (a, b) in &links { s.push_str(&format!("L\t{}\t+\t{}\t+\t0M\n", self.node(*a), self.node(*b))); }
+        // REFERENCE P-line
+        let rwalk: String = ref_nodes.iter().map(|k| format!("{}+", self.node(*k))).collect::<Vec<_>>().join(",");
+        s.push_str(&format!("P\t{}_REFERENCE\t{}\t*\tST:Z:reference\n", self.family, rwalk));
+        // copy P-lines
+        for (ci, c) in self.copies.iter().enumerate() {
+            let name = if c.status.is_absent() { format!("{}_copy{}_ABSENT", self.family, ci) } else { format!("{}_copy{}", self.family, ci) };
+            let walk: String = c.exon_nodes.iter().map(|k| format!("{}+", self.node(*k))).collect::<Vec<_>>().join(",");
+            let mut tags = String::new();
+            if let Some(r) = c.corrob.reads { tags.push_str(&format!("\tRC:i:{}", r)); }
+            if let Some(mi) = c.corrob.map_identity { tags.push_str(&format!("\tMI:f:{:.3}", mi)); }
+            tags.push_str(&format!("\tST:Z:{}", c.status.tag()));
+            s.push_str(&format!("P\t{}\t{}\t*{}\n", name, walk, tags));
+        }
+        s
     }
 
     pub fn from_copies(family: &str, copies: &[(String, CopyStatus, Corrob, String, Vec<(u64,u64)>)]) -> ExonGraph {
@@ -714,5 +763,28 @@ mod tests {
         // classes sorted by start: E0=(0,100) is copy0's, E1=(71,171) is copy1's.
         assert_eq!(g.copies[0].exon_nodes, vec![0]);
         assert_eq!(g.copies[1].exon_nodes, vec![1]);
+    }
+
+    #[test]
+    fn exon_gfa_has_reference_skip_and_arm_no_dangling() {
+        let copies = vec![
+            ("F_copy0".to_string(), CopyStatus::InGenomeAnnotated, Corrob { reads: Some(10), suns: None, map_identity: None },
+                "chr1".to_string(), vec![(0u64,100u64),(300,400)]),
+            ("F_copy1".to_string(), CopyStatus::AbsentDivergent, Corrob { reads: Some(5), suns: None, map_identity: Some(0.95) },
+                "chr1".to_string(), vec![(0,100),(150,250),(300,400)]),
+        ];
+        let g = ExonGraph::from_copies("F", &copies);
+        let gfa = g.to_gfa(|ec| vec![b'A'; (ec.end - ec.start) as usize]);
+        // reference exists and is the shared backbone (2 classes), copy1 absent walks 3
+        assert!(gfa.contains("P\tF_REFERENCE"));
+        let c1 = gfa.lines().find(|l| l.starts_with("P\tF_copy1_ABSENT")).unwrap();
+        assert!(c1.contains("MI:f:0.950"));
+        assert!(c1.contains("ST:Z:absent-divergent"));
+        // the copy1-specific exon node exists with RC:i:5 (only copy1, 5 reads)
+        let arm = g.copies[1].exon_nodes.iter().find(|&&k| !g.copies[0].exon_nodes.contains(&k)).copied().unwrap();
+        assert!(gfa.contains(&format!("RC:i:5")));
+        assert!(gfa.lines().any(|l| l.starts_with(&format!("S\tF_E{}", arm))));
+        // no dangling: every P-line step is backed by an L-line
+        assert_no_dangling(&gfa);
     }
 }
