@@ -79,6 +79,18 @@ pub struct ReadWalk {
     pub assigned_copy: Option<usize>, // index into CopyGraph.copies; None = tied/K=0 (grey)
 }
 
+/// A shared exon node in the exon presence/absence graph — one genomic exon interval.
+#[derive(Clone, Debug)]
+pub struct ExonClass { pub chrom: String, pub start: u64, pub end: u64 }
+
+/// A copy as an ordered walk over exon-class indices.
+#[derive(Clone, Debug)]
+pub struct CopyExonPath { pub id: String, pub exon_nodes: Vec<usize>, pub status: CopyStatus, pub corrob: Corrob }
+
+/// Family exon presence/absence graph. `nodes` sorted by genomic start; each copy walks a subset.
+#[derive(Clone, Debug)]
+pub struct ExonGraph { pub family: String, pub nodes: Vec<ExonClass>, pub copies: Vec<CopyExonPath> }
+
 /// A whole family's variation graph. columns, every copy.alleles, every read.obs are length M and
 /// share column order; backbone is length M+1.
 #[derive(Clone, Debug)]
@@ -574,5 +586,17 @@ mod tests {
             "shared absent/non-absent node must be red (absent wins):\n{}", csv);
         assert!(!csv.lines().any(|l| l == "FAM6_c0_G,#1a73e8"),
             "shared node must NOT take the non-absent colour:\n{}", csv);
+    }
+
+    #[test]
+    fn exon_graph_constructs() {
+        let g = ExonGraph {
+            family: "F".into(),
+            nodes: vec![ExonClass { chrom: "c".into(), start: 0, end: 100 }],
+            copies: vec![CopyExonPath { id: "F_copy0".into(), exon_nodes: vec![0],
+                status: CopyStatus::InGenomeAnnotated, corrob: Corrob::default() }],
+        };
+        assert_eq!(g.nodes.len(), 1);
+        assert_eq!(g.copies[0].exon_nodes, vec![0]);
     }
 }
