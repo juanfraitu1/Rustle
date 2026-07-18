@@ -222,6 +222,55 @@ impl CopyGraph {
         }
         s
     }
+
+    /// Bandage node colours (keyed on SEGMENT names): reference-walk nodes grey, absent-only divergent
+    /// nodes red, other copy-divergent nodes their copy's status colour, backbone light grey.
+    pub fn colours_csv(&self) -> String {
+        use std::collections::BTreeMap;
+        let mut colour: BTreeMap<String, &'static str> = BTreeMap::new();
+        // backbone
+        for i in 0..=self.m() {
+            colour.insert(self.bb(i), "#dadce0");
+        }
+        for ci in 0..self.m() {
+            let refb = self.columns[ci].ref_allele;
+            for b in self.alleles_at(ci) {
+                let nid = self.allele_node(ci, b);
+                if Some(b) == refb {
+                    colour.insert(nid, CopyStatus::Reference.colour());
+                    continue;
+                }
+                // walked by any absent copy? (and not the reference allele)
+                let by_absent = self.copies.iter()
+                    .any(|c| c.status.is_absent() && c.alleles.get(ci).and_then(|o| *o) == Some(b));
+                if by_absent {
+                    colour.insert(nid, CopyStatus::AbsentDivergent.colour());
+                } else if let Some(c) = self.copies.iter()
+                    .find(|c| c.alleles.get(ci).and_then(|o| *o) == Some(b)) {
+                    colour.insert(nid, c.status.colour());
+                }
+            }
+        }
+        let mut s = String::new();
+        for (k, v) in colour { s.push_str(&format!("{},{}\n", k, v)); }
+        s
+    }
+
+    /// Legend: each status actually present (plus reference) → its colour.
+    pub fn legend_tsv(&self) -> String {
+        use std::collections::BTreeSet;
+        let mut statuses: BTreeSet<&'static str> = BTreeSet::new();
+        statuses.insert("reference");
+        let mut rows: Vec<(&'static str, &'static str)> = vec![("reference", CopyStatus::Reference.colour())];
+        for c in &self.copies {
+            if statuses.insert(c.status.tag()) {
+                rows.push((c.status.tag(), c.status.colour()));
+            }
+        }
+        let mut s = String::new();
+        for (st, col) in rows { s.push_str(&format!("{}\t{}\n", st, col)); }
+        s
+    }
 }
 
 #[cfg(test)]
@@ -435,5 +484,32 @@ mod tests {
         }];
         let gfa = g.to_gfa();
         assert!(!gfa.lines().any(|l| l.starts_with("W\t")), "no W-line expected for a read with zero observations:\n{}", gfa);
+    }
+
+    #[test]
+    fn colours_mark_absent_red_reference_grey() {
+        // reuse the 3-column absent-copy graph
+        let g = CopyGraph {
+            family: "FAM3".into(),
+            columns: (0..3).map(|i| PsvColumn { col: i, genome_pos: Some(10 + i as u64), ref_allele: Some(b'A') }).collect(),
+            backbone: vec![b"NN".to_vec(); 4],
+            copies: vec![
+                CopyPath { id: "FAM3_copy0".into(), alleles: vec![Some(b'A'), Some(b'A'), Some(b'A')],
+                    status: CopyStatus::InGenomeAnnotated, corrob: Corrob::default() },
+                CopyPath { id: "FAM3_copy1".into(), alleles: vec![Some(b'A'), Some(b'G'), Some(b'T')],
+                    status: CopyStatus::AbsentDivergent, corrob: Corrob::default() },
+            ],
+            reads: vec![],
+        };
+        let csv = g.colours_csv();
+        // reference allele node grey
+        assert!(csv.lines().any(|l| l == "FAM3_c0_A,#9aa0a6"), "ref node not grey:\n{}", csv);
+        // absent-only divergent nodes red
+        assert!(csv.lines().any(|l| l == "FAM3_c1_G,#d93025"), "absent node not red:\n{}", csv);
+        assert!(csv.lines().any(|l| l == "FAM3_c2_T,#d93025"));
+        // legend lists the two statuses in use
+        let legend = g.legend_tsv();
+        assert!(legend.contains("reference\t#9aa0a6"));
+        assert!(legend.contains("absent-divergent\t#d93025"));
     }
 }
