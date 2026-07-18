@@ -417,7 +417,7 @@ fn build_copy_graph(
                 id: format!("{}_copy{}", fid, ci),
                 alleles: fa.copy_psv_alleles.get(ci).map(|r| sel(r)).unwrap_or_default(),
                 status,
-                corrob: Corrob { reads: Some(reads), suns: None, map_identity: None },
+                corrob: Corrob { reads: Some(reads), suns: None, map_identity: fa.copy_map_identity.get(ci).copied().flatten() },
             }
         })
         .collect();
@@ -1716,6 +1716,23 @@ mod tests {
         let gfa = g.to_gfa();
         assert!(!gfa.contains("_ABSENT"), "no copy may render _ABSENT when no read is discovery_coupled:\n{}", gfa);
         assert!(!gfa.contains("absent-collapsed"), "no absent-collapsed tag expected:\n{}", gfa);
+    }
+
+    #[test]
+    fn build_copy_graph_fills_mi_from_copy_map_identity() {
+        use rustle::vg_family::denovo_pipeline::FamilyAssignment;
+        let mut fa = FamilyAssignment::empty();
+        fa.chrom = "chr1".into();
+        fa.copy_tids = vec!["c0".into(), "c1".into()];
+        fa.psv_col_pos = vec![Some(100)];
+        fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'G')]];
+        fa.copy_map_identity = vec![None, Some(0.952)];
+        let g = build_copy_graph("CAFAM0", &fa, |_c, _p| Some(b'A'), &[], None);
+        let gfa = g.to_gfa();
+        let c1 = gfa.lines().find(|l| l.starts_with("P\tCAFAM0_copy1")).unwrap();
+        assert!(c1.contains("MI:f:0.952"), "copy1 MI missing: {}", c1);
+        let c0 = gfa.lines().find(|l| l.starts_with("P\tCAFAM0_copy0")).unwrap();
+        assert!(!c0.contains("MI:f:"), "copy0 must omit MI: {}", c0);
     }
 
     #[test]
