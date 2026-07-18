@@ -4,6 +4,10 @@
 
 use std::collections::BTreeSet;
 
+/// Neutral faint colour for allele nodes observed ONLY in reads (carried by no CopyPath and unequal to
+/// the reference allele). Distinct from the backbone light-grey so read-only arms stay legible in Bandage.
+const READ_ONLY_COLOUR: &str = "#e8eaed";
+
 /// Per-copy status across the (in-genome / annotated) axes and the absent subtypes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CopyStatus {
@@ -240,14 +244,16 @@ impl CopyGraph {
                     colour.insert(nid, CopyStatus::Reference.colour());
                     continue;
                 }
-                // walked by any absent copy? (and not the reference allele)
-                let by_absent = self.copies.iter()
-                    .any(|c| c.status.is_absent() && c.alleles.get(ci).and_then(|o| *o) == Some(b));
-                if by_absent {
-                    colour.insert(nid, CopyStatus::AbsentDivergent.colour());
+                // walked by any absent copy? (and not the reference allele) — absent wins over non-absent.
+                if let Some(c) = self.copies.iter()
+                    .find(|c| c.status.is_absent() && c.alleles.get(ci).and_then(|o| *o) == Some(b)) {
+                    colour.insert(nid, c.status.colour());
                 } else if let Some(c) = self.copies.iter()
                     .find(|c| c.alleles.get(ci).and_then(|o| *o) == Some(b)) {
                     colour.insert(nid, c.status.colour());
+                } else {
+                    // observed only in reads (no copy carries it, not the reference) — neutral read-only.
+                    colour.insert(nid, READ_ONLY_COLOUR);
                 }
             }
         }
@@ -511,5 +517,62 @@ mod tests {
         let legend = g.legend_tsv();
         assert!(legend.contains("reference\t#9aa0a6"));
         assert!(legend.contains("absent-divergent\t#d93025"));
+    }
+
+    #[test]
+    fn colours_read_only_allele_gets_neutral() {
+        // A base observed ONLY in a read (differs from ref_allele AND carried by no CopyPath) still
+        // gets a GFA allele segment via alleles_at — it must receive the neutral read-only colour, not
+        // be silently dropped from colours.csv (which would render uncoloured in Bandage).
+        let g = CopyGraph {
+            family: "FAM5".into(),
+            columns: vec![
+                PsvColumn { col: 0, genome_pos: Some(100), ref_allele: Some(b'A') },
+            ],
+            backbone: vec![b"NN".to_vec(); 2],
+            copies: vec![CopyPath {
+                id: "FAM5_copy0".into(), alleles: vec![Some(b'A')],
+                status: CopyStatus::InGenomeAnnotated, corrob: Corrob::default(),
+            }],
+            // read observes 'G' at col0 — neither the reference (A) nor any copy (A) carries it.
+            reads: vec![ReadWalk {
+                name: "readR".into(), obs: vec![Some(b'G')], assigned_copy: None,
+            }],
+        };
+        let csv = g.colours_csv();
+        // the read-only node exists in the GFA (alleles_at folds it in)…
+        assert!(g.to_gfa().contains("S\tFAM5_c0_G\tG"), "read-only allele node missing from GFA:\n{}", g.to_gfa());
+        // …and it must be deliberately coloured neutral, distinct from the backbone light-grey.
+        assert!(csv.lines().any(|l| l == "FAM5_c0_G,#e8eaed"), "read-only node not neutral:\n{}", csv);
+        // reference allele still grey
+        assert!(csv.lines().any(|l| l == "FAM5_c0_A,#9aa0a6"), "ref node not grey:\n{}", csv);
+    }
+
+    #[test]
+    fn colours_absent_wins_over_non_absent_at_shared_node() {
+        // A single non-reference allele node walked by BOTH an absent copy and a non-absent copy at the
+        // same column/base must come out RED (absent precedence), not the non-absent status colour.
+        let g = CopyGraph {
+            family: "FAM6".into(),
+            columns: vec![
+                PsvColumn { col: 0, genome_pos: Some(100), ref_allele: Some(b'A') },
+            ],
+            backbone: vec![b"NN".to_vec(); 2],
+            copies: vec![
+                // non-absent copy walks G at col0…
+                CopyPath { id: "FAM6_copy0".into(), alleles: vec![Some(b'G')],
+                    status: CopyStatus::InGenomeAnnotated, corrob: Corrob::default() },
+                // …and an absent copy walks the SAME G at col0.
+                CopyPath { id: "FAM6_copy1".into(), alleles: vec![Some(b'G')],
+                    status: CopyStatus::AbsentDivergent, corrob: Corrob::default() },
+            ],
+            reads: vec![],
+        };
+        let csv = g.colours_csv();
+        // absent wins: the shared node is red, NOT the in-genome blue (#1a73e8).
+        assert!(csv.lines().any(|l| l == "FAM6_c0_G,#d93025"),
+            "shared absent/non-absent node must be red (absent wins):\n{}", csv);
+        assert!(!csv.lines().any(|l| l == "FAM6_c0_G,#1a73e8"),
+            "shared node must NOT take the non-absent colour:\n{}", csv);
     }
 }
