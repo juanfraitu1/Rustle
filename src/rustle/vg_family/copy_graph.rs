@@ -190,6 +190,25 @@ impl CopyGraph {
             out.paths.push(format!("P\t{}\t{}\t*{}", name, walk, tags));
         }
 
+        // read W-lines over each read's observed span; gaps within span route through the reference node.
+        for r in &self.reads {
+            let first = r.obs.iter().position(|o| o.is_some());
+            let last = r.obs.iter().rposition(|o| o.is_some());
+            let (Some(first), Some(last)) = (first, last) else { continue };
+            let mut toks: Vec<String> = Vec::new();
+            for ci in first..=last {
+                toks.push(format!(">{}", self.bb(ci)));
+                let b = r.obs[ci].or(self.columns[ci].ref_allele);
+                if let Some(b) = b {
+                    toks.push(format!(">{}", self.allele_node(ci, b)));
+                }
+            }
+            toks.push(format!(">{}", self.bb(last + 1)));
+            let w = toks.join("");
+            let hap = r.assigned_copy.map(|c| c as i64).unwrap_or(-1).max(0);
+            out.walks.push(format!("W\t{}\t{}\t{}\t0\t{}\t{}", r.name, hap, self.family, toks.len(), w));
+        }
+
         out
     }
 
@@ -341,5 +360,41 @@ mod tests {
         // always-present tags
         assert!(cp.contains("SU:i:"), "SU:i: must always be present: {}", cp);
         assert!(cp.contains("ST:Z:annotation-unknown"), "ST:Z: must always be present: {}", cp);
+    }
+
+    // Assert every P-line and W-line step is backed by an L-line (parses walks, checks adjacency set).
+    fn assert_no_dangling(gfa: &str) {
+        use std::collections::HashSet;
+        let mut links: HashSet<(String, String)> = HashSet::new();
+        for l in gfa.lines().filter(|l| l.starts_with("L\t")) {
+            let f: Vec<&str> = l.split('\t').collect(); // L from + to + 0M
+            links.insert((f[1].to_string(), f[3].to_string()));
+        }
+        let node = |tok: &str| tok.trim_start_matches(['>', '<']).trim_end_matches(['>', '<', '+', '-']).to_string();
+        for l in gfa.lines() {
+            let seq: Vec<String> = if l.starts_with("P\t") {
+                l.split('\t').nth(2).unwrap().split(',').map(node).collect()
+            } else if l.starts_with("W\t") {
+                let w = l.split('\t').nth(6).unwrap();
+                w.split_inclusive(['>', '<']).filter(|s| s.len() > 1).map(node).collect()
+            } else { continue };
+            for pair in seq.windows(2) {
+                assert!(links.contains(&(pair[0].clone(), pair[1].clone())),
+                    "dangling walk edge {}->{} in line: {}", pair[0], pair[1], l);
+            }
+        }
+    }
+
+    #[test]
+    fn reads_walk_with_backing_links() {
+        let mut g = tiny_graph(); // 2 cols, ref A,C
+        g.reads = vec![
+            ReadWalk { name: "readX".into(), obs: vec![Some(b'A'), Some(b'C')], assigned_copy: Some(0) },
+            ReadWalk { name: "readY".into(), obs: vec![None, Some(b'C')], assigned_copy: None },
+        ];
+        let gfa = g.to_gfa();
+        assert!(gfa.lines().any(|l| l.starts_with("W\treadX")), "readX walk missing");
+        assert!(gfa.lines().any(|l| l.starts_with("W\treadY")), "readY walk missing");
+        assert_no_dangling(&gfa);
     }
 }
