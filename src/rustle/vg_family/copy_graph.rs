@@ -2,7 +2,7 @@
 //! variation graph. A REFERENCE walk makes a reference-absent copy visibly an arm the reference does
 //! not take. Pure builder — no I/O; the caller fills the parallel vectors and writes the strings.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Neutral faint colour for allele nodes observed ONLY in reads (carried by no CopyPath and unequal to
 /// the reference allele). Distinct from the backbone light-grey so read-only arms stay legible in Bandage.
@@ -288,6 +288,72 @@ impl CopyGraph {
         let mut s = String::new();
         for (st, col) in rows { s.push_str(&format!("{}\t{}\n", st, col)); }
         s
+    }
+}
+
+impl ExonGraph {
+    /// Reciprocal overlap = min(inter/len_a, inter/len_b); 0 if disjoint or different chrom.
+    fn recip_overlap(a: (&str, u64, u64), b: (&str, u64, u64)) -> f64 {
+        if a.0 != b.0 { return 0.0; }
+        let lo = a.1.max(b.1); let hi = a.2.min(b.2);
+        if hi <= lo { return 0.0; }
+        let inter = (hi - lo) as f64;
+        (inter / (a.2 - a.1) as f64).min(inter / (b.2 - b.1) as f64)
+    }
+
+    pub fn from_copies(family: &str, copies: &[(String, CopyStatus, Corrob, String, Vec<(u64,u64)>)]) -> ExonGraph {
+        // flatten every exon as (copy_idx, chrom, start, end); skip malformed/zero-length (end <= start)
+        // so the `(a.2 - a.1)` length divisor never underflows.
+        let mut flat: Vec<(usize, String, u64, u64)> = Vec::new();
+        for (ci, (_, _, _, chrom, exons)) in copies.iter().enumerate() {
+            for &(s, e) in exons { if e > s { flat.push((ci, chrom.clone(), s, e)); } }
+        }
+
+        // union-find over flat exon items
+        let n = flat.len();
+        let mut parent: Vec<usize> = (0..n).collect();
+
+        fn find(p: &mut Vec<usize>, x: usize) -> usize {
+            if p[x] != x { let r = find(p, p[x]); p[x] = r; }
+            p[x]
+        }
+
+        for i in 0..n {
+            for j in (i+1)..n {
+                if Self::recip_overlap((&flat[i].1, flat[i].2, flat[i].3), (&flat[j].1, flat[j].2, flat[j].3)) >= 0.30 {
+                    let (a, b) = (find(&mut parent, i), find(&mut parent, j));
+                    if a != b { parent[a] = b; }
+                }
+            }
+        }
+
+        // group items by root, build one ExonClass per group (min start, max end)
+        let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for i in 0..n {
+            let r = find(&mut parent, i);
+            groups.entry(r).or_default().push(i);
+        }
+
+        let mut classes: Vec<(String, u64, u64, Vec<usize>)> = groups.values().map(|idxs| {
+            let start = idxs.iter().map(|&i| flat[i].2).min().unwrap();
+            let end = idxs.iter().map(|&i| flat[i].3).max().unwrap();
+            let members: Vec<usize> = idxs.iter().map(|&i| flat[i].0).collect();
+            (flat[idxs[0]].1.clone(), start, end, members)
+        }).collect();
+
+        classes.sort_by_key(|c| (c.1, c.2));   // by genomic (start, end) -> canonical E0..En order
+
+        let nodes: Vec<ExonClass> = classes.iter().map(|(chrom, s, e, _)|
+            ExonClass { chrom: chrom.clone(), start: *s, end: *e }
+        ).collect();
+
+        let copy_paths: Vec<CopyExonPath> = copies.iter().enumerate().map(|(ci, (id, status, corrob, _chrom, _exons))| {
+            let mut exon_nodes: Vec<usize> = (0..classes.len()).filter(|&k| classes[k].3.contains(&ci)).collect();
+            exon_nodes.sort();
+            CopyExonPath { id: id.clone(), exon_nodes, status: *status, corrob: corrob.clone() }
+        }).collect();
+
+        ExonGraph { family: family.to_string(), nodes, copies: copy_paths }
     }
 }
 
@@ -598,5 +664,55 @@ mod tests {
         };
         assert_eq!(g.nodes.len(), 1);
         assert_eq!(g.copies[0].exon_nodes, vec![0]);
+    }
+
+    #[test]
+    fn from_copies_clusters_and_flags_copy_specific_exon() {
+        // copy0 exons E1,E3 ; copy1 exons E1,E2(extra),E3 — E2 is copy1-specific.
+        let copies = vec![
+            ("F_copy0".to_string(), CopyStatus::InGenomeAnnotated, Corrob::default(), "chr1".to_string(),
+                vec![(0u64,100u64), (300,400)]),
+            ("F_copy1".to_string(), CopyStatus::AbsentDivergent, Corrob::default(), "chr1".to_string(),
+                vec![(0,100), (150,250), (300,400)]),
+        ];
+        let g = ExonGraph::from_copies("F", &copies);
+        assert_eq!(g.nodes.len(), 3, "E1,E2,E3");
+        // find the class only copy1 walks (the extra exon ~150-250)
+        let owners: Vec<Vec<usize>> = (0..g.nodes.len())
+            .map(|k| g.copies.iter().enumerate().filter(|(_, c)| c.exon_nodes.contains(&k)).map(|(i,_)| i).collect())
+            .collect();
+        let copy_specific: Vec<usize> = (0..g.nodes.len()).filter(|&k| owners[k] == vec![1]).collect();
+        assert_eq!(copy_specific.len(), 1, "exactly one copy1-specific exon");
+        // copy0 walks 2 classes, copy1 walks 3
+        assert_eq!(g.copies[0].exon_nodes.len(), 2);
+        assert_eq!(g.copies[1].exon_nodes.len(), 3);
+    }
+
+    #[test]
+    fn from_copies_respects_overlap_threshold() {
+        // A=(0,100), B=(70,170): inter=30 over len 100 => recip=0.30 => AT threshold => MERGE (1 class).
+        let merge = vec![
+            ("F_copy0".to_string(), CopyStatus::InGenomeAnnotated, Corrob::default(), "chr1".to_string(),
+                vec![(0u64,100u64)]),
+            ("F_copy1".to_string(), CopyStatus::InGenomeAnnotated, Corrob::default(), "chr1".to_string(),
+                vec![(70u64,170u64)]),
+        ];
+        let g = ExonGraph::from_copies("F", &merge);
+        assert_eq!(g.nodes.len(), 1, "recip overlap exactly 0.30 merges into one class");
+        assert_eq!(g.copies[0].exon_nodes, vec![0]);
+        assert_eq!(g.copies[1].exon_nodes, vec![0]);
+
+        // A=(0,100), B'=(71,171): inter=29 over len 100 => recip=0.29 => below threshold => SEPARATE (2 classes).
+        let split = vec![
+            ("F_copy0".to_string(), CopyStatus::InGenomeAnnotated, Corrob::default(), "chr1".to_string(),
+                vec![(0u64,100u64)]),
+            ("F_copy1".to_string(), CopyStatus::InGenomeAnnotated, Corrob::default(), "chr1".to_string(),
+                vec![(71u64,171u64)]),
+        ];
+        let g = ExonGraph::from_copies("F", &split);
+        assert_eq!(g.nodes.len(), 2, "recip overlap 0.29 (< 0.30) stays two separate classes");
+        // classes sorted by start: E0=(0,100) is copy0's, E1=(71,171) is copy1's.
+        assert_eq!(g.copies[0].exon_nodes, vec![0]);
+        assert_eq!(g.copies[1].exon_nodes, vec![1]);
     }
 }
