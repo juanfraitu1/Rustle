@@ -27,3 +27,37 @@ def test_read_fasta(tmp_path):
     p = tmp_path / "m.fa"
     p.write_text(">chr1:101-200\nAC\nGT\n>chr7:1-9\nTTTT\n")
     assert V.read_fasta(str(p)) == {"chr1:101-200": "ACGT", "chr7:1-9": "TTTT"}
+
+
+def test_msa_to_gfa_snp_bubble():
+    # col0 "A" invariant; col1 variant (C/G/C); col2-3 "GT" invariant
+    rows = ["ACGT", "AGGT", "ACGT"]
+    gfa, paths = V.msa_to_gfa(rows, ["m1", "m2", "m3"])
+    assert paths["m1"] == ["1", "2", "4"]   # A , C , GT
+    assert paths["m2"] == ["1", "3", "4"]   # A , G , GT
+    assert paths["m3"] == ["1", "2", "4"]
+    assert "S\t2\tC" in gfa and "S\t3\tG" in gfa
+    assert "S\t1\tA" in gfa and "S\t4\tGT" in gfa
+    assert "P\tm2\t1+,3+,4+\t*" in gfa
+    # link m2 traverses 1->3 and 3->4
+    links = {(l.split("\t")[1], l.split("\t")[3]) for l in gfa.splitlines() if l.startswith("L\t")}
+    assert ("1", "3") in links and ("3", "4") in links
+
+
+def test_msa_to_gfa_indel_skips_gap_member():
+    # col1 gap in m2 -> m2 skips that allele node
+    rows = ["ACGT", "A-GT", "ACGT"]
+    gfa, paths = V.msa_to_gfa(rows, ["m1", "m2", "m3"])
+    assert paths["m1"] == ["1", "2", "3"]
+    assert paths["m2"] == ["1", "3"]        # skips the gap region
+    assert paths["m3"] == ["1", "2", "3"]
+    links = {(l.split("\t")[1], l.split("\t")[3]) for l in gfa.splitlines() if l.startswith("L\t")}
+    assert ("1", "3") in links              # m2's skip link
+
+
+def test_msa_to_gfa_all_identical_single_node():
+    rows = ["ACGT", "ACGT"]
+    gfa, paths = V.msa_to_gfa(rows, ["a", "b"])
+    assert paths["a"] == ["1"] and paths["b"] == ["1"]
+    assert "S\t1\tACGT" in gfa
+    assert not any(l.startswith("L\t") for l in gfa.splitlines())  # no links, one node
