@@ -122,3 +122,47 @@ def msa_to_gfa(rows, names):
     for n in names:
         out.append(f"P\t{n}\t{'+,'.join(paths[n])}+\t*")
     return "\n".join(out) + "\n", paths
+
+
+def load_detection(tsv_lines):
+    """(chrom,start,end) -> (detected: bool, recovered_by: str)."""
+    out = {}
+    for i, ln in enumerate(tsv_lines):
+        if i == 0:
+            continue
+        f = ln.rstrip("\n").split("\t")
+        if len(f) < 6:
+            continue
+        out[(f[2], int(f[3]), int(f[4]))] = (f[5] == "Y", f[6] if len(f) > 6 else "")
+    return out
+
+
+def node_colour(members_through_node, detected_by_name):
+    """green if every member through the node is RNA-recovered, red if none is, grey otherwise."""
+    flags = {bool(detected_by_name.get(n, False)) for n in members_through_node}
+    if flags == {True}:
+        return GREEN
+    if flags == {False}:
+        return RED
+    return GREY
+
+
+def colours_csv(paths, detected_by_name):
+    node_members = defaultdict(set)
+    for n, p in paths.items():
+        for node in p:
+            node_members[node].add(n)
+    lines = ["Node,Colour"]
+    for node in sorted(node_members, key=int):
+        lines.append(f"{node},{node_colour(node_members[node], detected_by_name)}")
+    return "\n".join(lines) + "\n"
+
+
+def legend_tsv(members, detected_by_name, recovered_by_name):
+    lines = ["gene\tlocus\tdetected\trecovered_by\tcolour"]
+    for gene, chrom, start, end in members:
+        det = bool(detected_by_name.get(gene, False))
+        lines.append("\t".join([
+            gene, f"{chrom}:{start}-{end}", "Y" if det else "N",
+            recovered_by_name.get(gene, ""), GREEN if det else RED]))
+    return "\n".join(lines) + "\n"

@@ -61,3 +61,43 @@ def test_msa_to_gfa_all_identical_single_node():
     assert paths["a"] == ["1"] and paths["b"] == ["1"]
     assert "S\t1\tACGT" in gfa
     assert not any(l.startswith("L\t") for l in gfa.splitlines())  # no links, one node
+
+
+def test_load_detection():
+    tsv = [
+        "family_id\tgene\tchrom\tstart\tend\tdetected\trecovered_by",
+        "ID_462\tSRGAP2C\tchr1\t121194173\t121402237\tY\tRNA-split",
+        "ID_26\tSLC9B1P1\tchr16\t32804124\t32821138\tN\t",
+    ]
+    d = V.load_detection(tsv)
+    assert d[("chr1", 121194173, 121402237)] == (True, "RNA-split")
+    assert d[("chr16", 32804124, 32821138)] == (False, "")
+
+
+def test_node_colour():
+    det = {"a": True, "b": True, "c": False}
+    assert V.node_colour({"a", "b"}, det) == V.GREEN     # all recovered
+    assert V.node_colour({"c"}, det) == V.RED            # all DNA-only
+    assert V.node_colour({"a", "c"}, det) == V.GREY      # mixed = shared/conserved
+    assert V.node_colour(set(), det) == V.GREY           # empty
+
+
+def test_colours_csv():
+    paths = {"a": ["1", "2", "4"], "b": ["1", "3", "4"], "c": ["1", "2", "4"]}
+    det = {"a": True, "b": False, "c": True}
+    csv = V.colours_csv(paths, det)
+    rows = dict(l.split(",") for l in csv.strip().splitlines()[1:])
+    assert rows["1"] == V.GREY    # a,b,c -> mixed
+    assert rows["2"] == V.GREEN   # a,c -> recovered
+    assert rows["3"] == V.RED     # b -> DNA-only
+    assert rows["4"] == V.GREY    # a,b,c -> mixed
+    assert csv.splitlines()[0] == "Node,Colour"
+
+
+def test_legend_tsv():
+    members = [("SRGAP2C", "chr1", 100, 200)]
+    det = {"SRGAP2C": True}
+    rec = {"SRGAP2C": "RNA-split"}
+    leg = V.legend_tsv(members, det, rec)
+    assert leg.splitlines()[0] == "gene\tlocus\tdetected\trecovered_by\tcolour"
+    assert "SRGAP2C\tchr1:100-200\tY\tRNA-split\t#1e8e3e" in leg
