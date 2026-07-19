@@ -180,3 +180,108 @@ def build_record(cid, flag, hit, cons_len, orf, biotype, sedef_partner, protein,
         orf_aa=orf, coding_potential=coding_potential(orf, cons_len),
         biotype=biotype, sedef_partner=sedef_partner, protein=protein,
         copy_vs_allele=CANDIDATE, status=STATUS, reason=reason)
+
+
+def best_hits_from_paf(paf_text):
+    """cid -> (target, pos, genome_id, genome_cov, mapq) for the best hit by identity*coverage."""
+    best = {}
+    for line in paf_text.splitlines():
+        c = line.split("\t")
+        if len(c) < 12:
+            continue
+        try:
+            cid, qlen, tname, tstart = c[0], int(c[1]), c[5], int(c[7])
+            nm, al, mapq = int(c[9]), int(c[10]), int(c[11])
+        except (ValueError, IndexError):
+            continue
+        gid = nm / al if al else 0.0
+        gcov = al / qlen if qlen else 0.0
+        sc = gid * gcov
+        if cid not in best or sc > best[cid][5]:
+            best[cid] = (tname, tstart, gid, gcov, mapq, sc)
+    return {cid: (t, p, gid, gcov, mapq) for cid, (t, p, gid, gcov, mapq, _sc) in best.items()}
+
+
+def promote_all(cons, flags, hits, gff, sed, carried, exclude=frozenset()):
+    """Pure orchestration: classify every consensus, assemble promoted records, tally calls.
+    `exclude` = cids already promoted to the coding catalog; they are skipped (tallied
+    'already-coding'), so the non-coding track surfaces only what the protein gate MISSED
+    rather than duplicating the coding catalog."""
+    promoted, tally = [], Counter()
+    for cid, seq in cons.items():
+        if cid in exclude:
+            tally["already-coding"] += 1
+            continue
+        flag = flags.get(cid)
+        if flag is None:
+            tally["no-flag"] += 1
+            continue
+        h = hits.get(cid)
+        if h is None:
+            tally["no-hit"] += 1
+            continue
+        tgt, pos, gid, gcov, _mapq = h
+        own = (tgt == flag["chrom"]) and abs(pos - flag["start"]) < 200000
+        rec = dict(genome_id=gid, genome_cov=gcov, own_locus=own,
+                   alt_cols=flag["n_alt_positions"], alt_read_fraction=flag["alt_read_fraction"],
+                   alt_reads=flag["n_alt_reads"], n_primary=flag["n_primary_reads"])
+        promote, call, reason = classify_noncoding(rec)
+        tally[call] += 1
+        if not promote:
+            continue
+        parts = sedef_partners(sed, flag["chrom"], flag["start"], flag["end"]) if sed else []
+        sp = f"{parts[0][0]}:{parts[0][1]}" if parts else None
+        promoted.append(build_record(
+            cid, flag, (tgt, pos, gid, gcov), len(seq), orf_aa(seq),
+            biotype_of(gff, flag["chrom"], flag["start"], flag["end"]),
+            sp, carried.get(cid, "not-tested"), reason))
+    promoted.sort(key=lambda r: r["genome_id"])
+    return promoted, tally
+
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(description="Non-coding-aware reference-absent promotion.")
+    ap.add_argument("--cons", default=f"{OUT}/cons.fa")
+    ap.add_argument("--out", default=f"{OUT}/gw_noncoding_copies.json")
+    ap.add_argument("--threads", default="6")
+    a = ap.parse_args()
+
+    # union-load both flag files so every cons.fa cid finds its flag record
+    flags = {}
+    for fn in [f"{CAT}/genomewide_flags.json", f"{CAT}/genomewide_flags_new.json"]:
+        if os.path.exists(fn):
+            for f in json.load(open(fn)):
+                flags[f"{f['chrom']}_{f['start']}"] = f
+    cons = read_fasta(a.cons)
+    gff = load_gff_genes(GFF)
+    sed = load_sedef(SEDEF) if SEDEF and os.path.exists(SEDEF) else {}
+    carried = {}
+    rap = f"{OUT}/gw_reference_absent_copies.json"
+    if os.path.exists(rap):
+        carried = {r["cid"]: r.get("protein") for r in json.load(open(rap))}
+    exclude = set()
+    disc = f"{OUT}/gw_discriminated.json"
+    if os.path.exists(disc):
+        exclude = {r["cid"] for r in json.load(open(disc))}   # already-promoted coding copies
+
+    paf = subprocess.run([MM2, "-cx", "splice:hq", "--eqx", "-N1", "-t", a.threads, FASTA, a.cons],
+                         capture_output=True, text=True, timeout=3600).stdout
+    hits = best_hits_from_paf(paf)
+
+    promoted, tally = promote_all(cons, flags, hits, gff, sed, carried, exclude)
+    json.dump(promoted, open(a.out, "w"), indent=1)
+    write_tsv(promoted, a.out[:-5] + ".tsv" if a.out.endswith(".json") else a.out + ".tsv")
+
+    bt = Counter(r["biotype"] for r in promoted)
+    print(f"non-coding promotion: {len(promoted)} flagged reference-divergent candidates "
+          f"(track=noncoding; all copy_vs_allele={CANDIDATE})")
+    print(f"  by biotype: {dict(bt)}")
+    print("  call tally (incl. exclusions, logged not dropped):")
+    for k, v in tally.most_common():
+        print(f"    {k:18s} {v}")
+    print(f"  wrote {a.out} (+ .tsv)")
+
+
+if __name__ == "__main__":
+    main()

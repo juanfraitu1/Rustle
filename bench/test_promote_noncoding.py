@@ -118,3 +118,64 @@ def test_write_tsv_has_all_columns(tmp_path):
     PN.write_tsv([r], str(p))
     header = p.read_text().splitlines()[0].split("\t")
     assert header[0] == "cid" and "copy_vs_allele" in header and "status" in header and len(header) == 21
+
+
+def test_best_hits_from_paf_picks_best():
+    # cid q1: two hits; the higher identity*coverage wins (line B)
+    paf = "\n".join([
+        # qname qlen qs qe strand tname tlen ts te nmatch blocklen mapq ...tags
+        "q1\t1000\t0\t900\t+\tNC_1\t9\t500\t1400\t800\t900\t60\ttp:A:P",
+        "q1\t1000\t0\t950\t+\tNC_2\t9\t10\t960\t930\t950\t40\ttp:A:S",
+    ])
+    hits = PN.best_hits_from_paf(paf)
+    assert set(hits) == {"q1"}
+    tname, pos, gid, gcov, mapq = hits["q1"]
+    assert tname == "NC_2"          # 0.979*0.95 > 0.889*0.90
+    assert pos == 10 and mapq == 40
+    assert round(gid, 3) == 0.979 and round(gcov, 3) == 0.95
+
+
+def test_best_hits_ignores_short_lines():
+    assert PN.best_hits_from_paf("garbage\tline\n\n") == {}
+
+
+def test_promote_all_flagship_and_exclusions():
+    cons = {"C_flag": "ATG" + "GCA" * 200, "C_art": "AAAA", "C_ref": "CCCC"}
+    flags = {
+        "C_flag": dict(chrom="NC_1", start=1000, end=2000, n_alt_positions=40,
+                       alt_read_fraction=0.32, n_alt_reads=30, n_primary_reads=90),
+        "C_art": dict(chrom="NC_1", start=5000, end=6000, n_alt_positions=40,
+                      alt_read_fraction=0.32, n_alt_reads=30, n_primary_reads=90),
+        "C_ref": dict(chrom="NC_1", start=8000, end=9000, n_alt_positions=40,
+                      alt_read_fraction=0.32, n_alt_reads=30, n_primary_reads=90),
+    }
+    hits = {
+        "C_flag": ("NC_1", 1050, 0.90, 1.00, 60),   # divergent, own-locus -> promote
+        "C_art": ("NC_1", 5050, 0.30, 1.00, 60),    # genome_id < GID_LO -> artifact
+        "C_ref": ("NC_1", 8050, 0.99, 1.00, 60),    # genome_id >= GID_HI -> ~REF
+    }
+    gff = PN.load_gff_from_lines(["NC_1\tX\tgene\t900\t2100\t.\t+\t.\tgene_biotype=lncRNA"])
+    promoted, tally = PN.promote_all(cons, flags, hits, gff, {}, {})
+    assert [r["cid"] for r in promoted] == ["C_flag"]
+    assert promoted[0]["biotype"] == "lncRNA"
+    assert promoted[0]["copy_vs_allele"] == "candidate-DNA-needed"
+    assert promoted[0]["protein"] == "not-tested"     # carried default
+    assert tally["artifact"] == 1 and tally["~REF"] == 1 and tally["noncoding-candidate"] == 1
+
+
+def test_promote_all_missing_flag_or_hit_tallied():
+    cons = {"C_x": "ACGT"}
+    promoted, tally = PN.promote_all(cons, {}, {}, {}, {}, {})
+    assert promoted == [] and tally["no-flag"] == 1
+    promoted, tally = PN.promote_all(cons, {"C_x": dict(chrom="NC_1", start=1, end=2,
+        n_alt_positions=40, alt_read_fraction=0.3, n_alt_reads=30, n_primary_reads=90)}, {}, {}, {}, {})
+    assert promoted == [] and tally["no-hit"] == 1
+
+
+def test_promote_all_excludes_already_coding():
+    cons = {"C_flag": "ATG" + "GCA" * 200}
+    flags = {"C_flag": dict(chrom="NC_1", start=1000, end=2000, n_alt_positions=40,
+                            alt_read_fraction=0.32, n_alt_reads=30, n_primary_reads=90)}
+    hits = {"C_flag": ("NC_1", 1050, 0.90, 1.00, 60)}   # would promote if not excluded
+    promoted, tally = PN.promote_all(cons, flags, hits, {}, {}, {}, exclude={"C_flag"})
+    assert promoted == [] and tally["already-coding"] == 1
