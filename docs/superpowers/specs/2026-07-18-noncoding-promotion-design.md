@@ -41,6 +41,7 @@ The script imports the existing `orf_aa` helper (or a copy) from `promote_genome
 - `GGO_genomic.gff` (`/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff`) — biotype label; **optional** (if unreadable, biotype = `unknown`, never a gate).
 - `final.bed` (SEDEF self-align) — segdup-partner label; optional.
 - carried protein labels: if a cid is present in `gw_reference_absent_copies.json`, copy its `protein`/`prot_id` as a label; else `protein = "not-tested"` (BLAST binaries are absent; protein is never recomputed and never a gate).
+- de-duplication set `gw_discriminated.json` (the ~73 already-promoted **coding** copies): cids present here are **excluded** from the non-coding track. The collapse-quality bar is protein-agnostic, so without this de-dup the track would re-list coding copies that already passed the funnel; excluding them makes the non-coding track exactly "the credible collapses the protein gate MISSED" (matching the ~19 expected yield). Optional; absent → no exclusion.
 
 ### §3 — Genome re-score (single process)
 
