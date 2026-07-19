@@ -43,8 +43,8 @@ Per candidate copy, a `LinearizeCertificate`:
 
 ### §4 — Report-first, opt-in gate
 
-- **Default (report-only):** compute the certificate for every admitted candidate; admission is UNCHANGED (the existing remap-identity gate still decides). Emit `<out>.linearize.tsv`: `family_id, candidate_locus, n_pool, linearized_frac_real, mean_decoy, delta, perm_p, verdict`.
-- **Opt-in `--linearize-gate`:** admission additionally requires `verdict == LINEARIZES`; a candidate that passes the remap-identity gate but is `NOT`/`UNDETERMINED` becomes a `DnaNeeds` record (needs DNA validation). This lets the certificate be validated on known-real (DSFAM26 MHC) and known-decoy cases before it decides anything.
+- **Opt-in `--linearize` (report-only):** each admitted candidate's certificate is computed (~21 minimap2 subprocesses per candidate: 1 real + 20 decoy shuffles) and emitted to `<out>.linearize.tsv` (`family_id, candidate_locus, n_pool, linearized_frac_real, mean_decoy, delta, perm_p, verdict`); admission is UNCHANGED (the existing remap-identity gate still decides). ⚠**Opt-in, not always-on** (design correction, 2026-07-18): the per-candidate minimap2 cost is heavy, so plain `--absent-copies` (no `--linearize`) does NOT compute the certificate and is byte-identical to its prior behaviour — the certificate only runs when explicitly requested.
+- **Opt-in `--linearize-gate`** (implies `--linearize`): admission additionally requires `verdict == LINEARIZES`; a candidate that passes the remap-identity gate but is `NOT`/`UNDETERMINED` becomes a `DnaNeeds` record (needs DNA validation). This lets the certificate be validated on known-real (DSFAM26 MHC) and known-decoy cases before it decides anything.
 
 ### §5 — Hermetic architecture (testable without minimap2)
 

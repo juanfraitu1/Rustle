@@ -72,9 +72,10 @@ struct RegionWork {
     fallback: Vec<FallbackEdge>,
     dna_needs: Vec<DnaNeedsRecord>,
     /// Augment-and-linearize certificates (Task 4), one per Stage-2-admitted reference-absent copy:
-    /// `(family_id, certificate, (chrom, start, end))`. Written to `<out>.linearize.tsv` (Task 5); when
-    /// `--linearize-gate` is set, a non-LINEARIZES verdict also demotes that candidate out of `admitted`
-    /// in `detect_and_assign` (it appears here as a certificate row but not as an admitted copy).
+    /// `(family_id, certificate, (chrom, start, end))`. Empty unless the opt-in is on (`--linearize` or
+    /// `--linearize-gate`); written to `<out>.linearize.tsv` (Task 5) when set. Under `--linearize-gate`,
+    /// a non-LINEARIZES verdict also demotes that candidate out of `admitted` in `detect_and_assign` (it
+    /// appears here as a certificate row but not as an admitted copy).
     linearize_certs: Vec<(String, LinearizeCertificate, (String, u64, u64))>,
     transcripts: Vec<TranscriptRec>, // FLAIR-style isoforms for the --gtf emit (empty unless --gtf)
 }
@@ -220,12 +221,20 @@ struct Args {
     #[arg(long, default_value_t = false)]
     absent_copies: bool,
 
-    /// Opt-in augment-and-linearize GATE (requires --absent-copies; no-op otherwise): a Stage-2 candidate
-    /// whose `LinearizeCertificate` verdict is NOT `Linearizes` (its MAPQ-0 read pool does not land on it
-    /// distinguishably more often than on a dinucleotide-shuffled decoy) is DEMOTED — written to
-    /// `<out>.dna_needs.tsv` instead of admitted as a copy. Default OFF: every admitted candidate's
-    /// certificate is still computed and reported to `<out>.linearize.tsv`, but admission is unchanged
-    /// (byte-identical to pre-Task-5 `--absent-copies` output).
+    /// Opt-in augment-and-linearize REPORT (requires --absent-copies; no-op otherwise): compute a
+    /// `LinearizeCertificate` for every Stage-2-admitted reference-absent candidate and write it to
+    /// `<out>.linearize.tsv`. This costs one minimap2 realign-pool subprocess per admitted candidate, so it
+    /// is OFF by default — plain `--absent-copies` keeps its prior admission cost and emits no certificate
+    /// file (byte-identical to the pre-feature `--absent-copies` output). `--linearize-gate` implies this.
+    #[arg(long, default_value_t = false)]
+    linearize: bool,
+
+    /// Opt-in augment-and-linearize GATE (implies --linearize; requires --absent-copies; no-op otherwise): a
+    /// Stage-2 candidate whose `LinearizeCertificate` verdict is NOT `Linearizes` (its MAPQ-0 read pool does
+    /// not land on it distinguishably more often than on a dinucleotide-shuffled decoy) is DEMOTED — written
+    /// to `<out>.dna_needs.tsv` instead of admitted as a copy. Because it turns the certificate into an
+    /// admission decision it also enables the certificate computation + `<out>.linearize.tsv` report (as if
+    /// `--linearize` were set). Default OFF: admission is unchanged (byte-identical to plain --absent-copies).
     #[arg(long, default_value_t = false)]
     linearize_gate: bool,
 
@@ -748,6 +757,12 @@ fn main() -> Result<()> {
     let annotation: Option<Vec<(String, u64, u64)>> =
         args.gff.as_deref().map(parse_annotation).transpose().context("parsing --gff")?;
 
+    // Augment-and-linearize is opt-in: the report (`--linearize`) or the gate (`--linearize-gate`, which
+    // implies the report) turns it on. When false, the certificate is skipped entirely inside
+    // `detect_and_assign` (no minimap2 realign-pool per candidate) and no `<out>.linearize.tsv` is written,
+    // so plain `--absent-copies` is byte-identical to the pre-feature `--absent-copies` path.
+    let do_linearize = args.linearize || args.linearize_gate;
+
     // collect the regions, then group by contig so each contig loads ONCE (memory-bounded sweep).
     let regions: Vec<(String, u64, u64)> = match (&args.region, &args.regions) {
         (Some(r), None) => vec![parse_region(r)?],
@@ -839,9 +854,10 @@ fn main() -> Result<()> {
     let mut exon_graphs: Vec<rustle::vg_family::copy_graph::ExonGraph> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
-    // --absent-copies: linearize certificates, one per Stage-2-admitted candidate (Task 4), written to
-    // `<out>.linearize.tsv` below (Task 5). `--linearize-gate` additionally uses the verdict to gate
-    // admission itself (in `detect_and_assign`), so a demoted candidate shows up here but not in `fams`.
+    // --absent-copies + opt-in --linearize/--linearize-gate: linearize certificates, one per Stage-2-admitted
+    // candidate (Task 4), written to `<out>.linearize.tsv` below (Task 5) when `do_linearize`. Empty otherwise
+    // (the cert is skipped in `detect_and_assign`). `--linearize-gate` also uses the verdict to gate admission
+    // itself, so a demoted candidate shows up here but not in `fams`.
     let mut linearize_certs_all: Vec<(String, LinearizeCertificate, (String, u64, u64))> = Vec::new();
     let mut vg_realign_lines: Vec<String> = Vec::new(); // --vg-realign: per-read re-align decisions (report-only)
     let mut gfam = 0usize; // global family counter (unique ids across regions)
@@ -922,7 +938,7 @@ fn main() -> Result<()> {
         let t_da = std::time::Instant::now();
         let (fams, fallback, dna_needs, linearize_certs) = detect_and_assign(
             &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
-            args.absent_copies, args.linearize_gate, &args.fasta,
+            args.absent_copies, do_linearize, args.linearize_gate, &args.fasta,
         );
         if timing {
             eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
@@ -1619,24 +1635,26 @@ fn main() -> Result<()> {
             args.out
         );
 
-        // Augment-and-linearize certificates (Task 4/5): one row per Stage-2-admitted candidate, report-first
-        // (`--linearize-gate` off) or gating admission itself (`--linearize-gate` on -- see the TODO fired in
-        // `detect_and_assign`'s Stage-2 admission block). Written whenever --absent-copies is set, same as
-        // `.dna_needs.tsv`, so an --absent-copies-off run stays byte-identical (no new output file at all).
-        let mut lh = std::fs::File::create(format!("{}.linearize.tsv", args.out))?;
-        writeln!(
-            lh,
-            "family_id\tchrom\tstart\tend\tn_pool\tlinearized_frac_real\tmean_frac_decoy\tdelta\tperm_p\tverdict"
-        )?;
-        for (fam, cert, (chrom, start, end)) in &linearize_certs_all {
-            writeln!(lh, "{}", linearize_tsv_row(fam, (chrom, *start, *end), cert))?;
+        // Augment-and-linearize certificates (Task 4/5): one row per Stage-2-admitted candidate, report-only
+        // (`--linearize`) or gating admission too (`--linearize-gate`, which implies the report). ONLY written
+        // when the opt-in is set (`do_linearize`) -- plain `--absent-copies` skips the certificate entirely
+        // (no minimap2 per candidate) and emits no `.linearize.tsv`, byte-identical to the pre-feature path.
+        if do_linearize {
+            let mut lh = std::fs::File::create(format!("{}.linearize.tsv", args.out))?;
+            writeln!(
+                lh,
+                "family_id\tchrom\tstart\tend\tn_pool\tlinearized_frac_real\tmean_frac_decoy\tdelta\tperm_p\tverdict"
+            )?;
+            for (fam, cert, (chrom, start, end)) in &linearize_certs_all {
+                writeln!(lh, "{}", linearize_tsv_row(fam, (chrom, *start, *end), cert))?;
+            }
+            eprintln!(
+                "[copy_assign] {} linearize certificate(s) -> {}.linearize.tsv{}",
+                linearize_certs_all.len(),
+                args.out,
+                if args.linearize_gate { " (--linearize-gate: non-LINEARIZES candidates demoted to .dna_needs.tsv)" } else { "" }
+            );
         }
-        eprintln!(
-            "[copy_assign] {} linearize certificate(s) -> {}.linearize.tsv{}",
-            linearize_certs_all.len(),
-            args.out,
-            if args.linearize_gate { " (--linearize-gate: non-LINEARIZES candidates demoted to .dna_needs.tsv)" } else { "" }
-        );
     }
 
     // --vg-realign: the re-align supplement's per-family/per-read decisions (report-only — not fed back

@@ -1336,6 +1336,25 @@ fn family_linearize_cert(
     super::linearize::linearize_certificate(t_seq, copy_seqs, pool, 20, fnv1a_seed(t_seq), 5, 0.05, realign)
 }
 
+/// The augment-and-linearize OPT-IN guard: compute the certificate for one admitted candidate ONLY when
+/// `do_linearize` (= --linearize or --linearize-gate) is set; otherwise return `None` and — crucially —
+/// never call `realign`, so plain `--absent-copies` incurs no minimap2 realign-pool subprocess per
+/// candidate. Isolating the guard here makes the opt-in deterministically testable (inject a fake
+/// `realign`) without a full end-to-end absent-copy admission.
+fn linearize_cert_if_enabled(
+    do_linearize: bool,
+    t_seq: &[u8],
+    copy_seqs: &[Vec<u8>],
+    pool: &[Vec<u8>],
+    realign: impl Fn(&[Vec<u8>], &[Vec<u8>]) -> Vec<Option<(usize, u32)>>,
+) -> Option<super::linearize::LinearizeCertificate> {
+    if do_linearize {
+        Some(family_linearize_cert(t_seq, copy_seqs, pool, realign))
+    } else {
+        None
+    }
+}
+
 pub fn detect_and_assign(
     primary_reads: &[PrimaryRead],
     bam_reads: &[BamRead],
@@ -1346,6 +1365,7 @@ pub fn detect_and_assign(
     p: &AssignParams,
     rescue_extra: &[PrimaryRead],
     absent_copies: bool,
+    do_linearize: bool,
     linearize_gate: bool,
     fasta_path: &str,
 ) -> (
@@ -1568,6 +1588,19 @@ pub fn detect_and_assign(
         if absent_copies {
             let cands = recover_collapsed_candidates(&all_copies, bam_reads);
             let mut admitted: Vec<DenovoTranscript> = Vec::new();
+            // Augment-and-linearize inputs (opt-in via `do_linearize` = --linearize or --linearize-gate).
+            // `pool` (this family's MAPQ-0 / ambiguous read pool) and `copy_seqs` (the reference copies) are
+            // INVARIANT across the `for cand` loop below — `all_copies` is only reassigned AFTER the loop —
+            // so build them once here rather than per candidate. Empty (no minimap2 work) when opt-out.
+            let (pool, copy_seqs): (Vec<Vec<u8>>, Vec<Vec<u8>>) = if do_linearize {
+                (
+                    region.iter().zip(region_mapq.iter())
+                        .filter(|(_, &q)| q == 0).map(|(r, _)| r.seq.clone()).collect(),
+                    all_copies.iter().map(|c| c.seq.clone()).collect(),
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            };
             for cand in &cands {
                 if let Some(host) = all_copies.iter().find(|t| t.tid == cand.host_tid) {
                     match absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::default()) {
@@ -1575,29 +1608,37 @@ pub fn detect_and_assign(
                             if let Some(v) = id {
                                 remap_id_by_tid.insert(t.tid.clone(), v);
                             }
-                            // Augment-and-linearize certificate (report-first): re-align this family's MAPQ-0
-                            // (ambiguous) read pool against the reference copies + this candidate, and score
-                            // how uniquely they land on the new copy vs a dinucleotide-shuffled decoy.
-                            let pool: Vec<Vec<u8>> = region.iter().zip(region_mapq.iter())
-                                .filter(|(_, &q)| q == 0).map(|(r, _)| r.seq.clone()).collect();
-                            let copy_seqs: Vec<Vec<u8>> = all_copies.iter().map(|c| c.seq.clone()).collect();
-                            let cert = family_linearize_cert(&t.seq, &copy_seqs, &pool, absent_copy::realign_pool_minimap2);
-                            let verdict = cert.verdict;
-                            linearize_certs.push((cf.family_id.clone(), cert, (t.chrom.clone(), t.start, t.end)));
-                            // Opt-in gate (Task 5): a candidate that does NOT linearize (its MAPQ-0 pool fails
-                            // to prefer it over a dinucleotide-shuffled decoy) is demoted to a DNA-needs record
-                            // instead of admitted, when `--linearize-gate` is set. OFF (default) leaves this
-                            // purely additive reporting -- admission is unchanged either way.
-                            if linearize_gate && !matches!(verdict, super::linearize::Verdict::Linearizes) {
-                                dna_needs.push(DnaNeedsRecord {
-                                    chrom: t.chrom.clone(),
-                                    start: t.start,
-                                    end: t.end,
-                                    n_clusters: cand.n_clusters,
-                                    reason: "did not linearize (perm_p >= alpha)".to_string(),
-                                    read_count: cand.iso.read_count,
-                                });
-                                continue;
+                            // Augment-and-linearize certificate (opt-in, report-first): re-align this family's
+                            // MAPQ-0 (ambiguous) read pool against the reference copies + this candidate, and
+                            // score how uniquely they land on the new copy vs a dinucleotide-shuffled decoy.
+                            // SKIPPED entirely (no minimap2, no push) when `do_linearize` is false, so plain
+                            // `--absent-copies` keeps its prior admission cost and emits no certificate.
+                            if let Some(cert) = linearize_cert_if_enabled(
+                                do_linearize, &t.seq, &copy_seqs, &pool, absent_copy::realign_pool_minimap2,
+                            ) {
+                                let verdict = cert.verdict;
+                                linearize_certs.push((cf.family_id.clone(), cert, (t.chrom.clone(), t.start, t.end)));
+                                // Opt-in gate (Task 5): a candidate that does NOT linearize is demoted to a
+                                // DNA-needs record instead of admitted, when `--linearize-gate` is set. Only
+                                // reachable when the cert was computed (do_linearize implied by the gate).
+                                if linearize_gate && !matches!(verdict, super::linearize::Verdict::Linearizes) {
+                                    // UNDETERMINED (perm_p is NaN, pool below min) is a distinct cause from a
+                                    // computed non-linearizing perm_p >= alpha — report the true reason.
+                                    let reason = if matches!(verdict, super::linearize::Verdict::Undetermined) {
+                                        "pool too small for linearize certificate"
+                                    } else {
+                                        "did not linearize (perm_p >= alpha)"
+                                    };
+                                    dna_needs.push(DnaNeedsRecord {
+                                        chrom: t.chrom.clone(),
+                                        start: t.start,
+                                        end: t.end,
+                                        n_clusters: cand.n_clusters,
+                                        reason: reason.to_string(),
+                                        read_count: cand.iso.read_count,
+                                    });
+                                    continue;
+                                }
                             }
                             admitted.push(t);
                         }
@@ -3095,6 +3136,7 @@ mod tests {
             &[],
             false,
             false,
+            false,
             &fasta,
         );
         if !fallback.is_empty() {
@@ -3130,6 +3172,7 @@ mod tests {
             &[],
             false,
             false,
+            false,
             "",
         );
         assert!(fallback.is_empty(), "small paralogs use the exact poasta path, no fallback");
@@ -3151,6 +3194,62 @@ mod tests {
         assert_eq!(secondary_assign.1.status, super::super::copy_assign::AssignStatus::Assigned);
     }
 
+    /// Final-review fix #4 (opt-in coverage): the augment-and-linearize certificate is computed for an
+    /// admitted candidate ONLY when `do_linearize` is set. `linearize_cert_if_enabled` is the single guard
+    /// that gates it (and, crucially, never calls `realign` when off — no minimap2 for plain --absent-copies).
+    /// A fake `realign` double (that would panic if called when it must not) proves both directions
+    /// hermetically, without a full end-to-end absent-copy admission.
+    #[test]
+    fn linearize_cert_if_enabled_is_the_opt_in_guard() {
+        use crate::vg_family::linearize::Verdict;
+        let cand = b"ACGTACGTTTGGCCAAACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT".to_vec();
+        let copy_seqs = vec![b"TTTTGGGGCCCCAAAAAAAATTTTGGGG".to_vec()];
+        let pool: Vec<Vec<u8>> = (0..8).map(|_| cand.clone()).collect();
+
+        // OFF: certificate SKIPPED (None), and `realign` is NEVER invoked (this double panics if it is).
+        let panic_realign = |_: &[Vec<u8>], _: &[Vec<u8>]| -> Vec<Option<(usize, u32)>> {
+            panic!("realign must not be called when do_linearize is false");
+        };
+        let off = linearize_cert_if_enabled(false, &cand, &copy_seqs, &pool, panic_realign);
+        assert!(off.is_none(), "do_linearize=false must skip the certificate entirely");
+
+        // ON: certificate COMPUTED (Some) — populated, using a fake realign (no minimap2).
+        let ok_realign = |refs: &[Vec<u8>], reads: &[Vec<u8>]| {
+            let ci = refs.len() - 1;
+            reads.iter().map(|r| if r == &refs[ci] { Some((ci, 60u32)) } else { Some((0, 0)) }).collect::<Vec<_>>()
+        };
+        let on = linearize_cert_if_enabled(true, &cand, &copy_seqs, &pool, ok_realign);
+        let cert = on.expect("do_linearize=true must compute the certificate");
+        assert!(matches!(cert.verdict, Verdict::Linearizes), "cert = {cert:?}");
+    }
+
+    /// End-to-end complement: under `absent_copies=true` but `do_linearize=false`, `detect_and_assign`'s
+    /// returned `linearize_certs` vec is empty (the per-candidate certificate is skipped), so plain
+    /// `--absent-copies` pays no linearize cost. (This fixture admits no absent copy, so the ON vec is
+    /// exercised deterministically by `linearize_cert_if_enabled_is_the_opt_in_guard` above instead.)
+    #[test]
+    fn detect_and_assign_do_linearize_off_returns_empty_linearize_certs() {
+        let (genome, primary, aligned) = two_paralogs_with_psvs();
+        let (_, _, _dna_needs, linearize_certs) = detect_and_assign(
+            &primary,
+            &aligned,
+            &genome,
+            &DenovoConfig::default(),
+            5_000_000,
+            2,
+            &super::super::copy_assign::AssignParams::default(),
+            &[],
+            true,  // absent_copies ON — the admission block runs
+            false, // do_linearize OFF — but the certificate is skipped
+            false, // linearize_gate OFF
+            "",
+        );
+        assert!(
+            linearize_certs.is_empty(),
+            "do_linearize=false must yield an empty linearize_certs vec even with absent_copies=true"
+        );
+    }
+
     /// When `absent_copies=false`, the third element of `detect_and_assign`'s return tuple must
     /// always be empty — the admission block is entirely skipped, so no `DnaNeedsRecord`s are
     /// produced regardless of how many collapsed-copy candidates exist at the loci.
@@ -3167,6 +3266,7 @@ mod tests {
             &super::super::copy_assign::AssignParams::default(),
             &[],
             false, // OFF — the admission block must be completely skipped
+            false,
             false,
             "",
         );
@@ -3198,6 +3298,7 @@ mod tests {
             2,
             &AssignParams::default(),
             &[],
+            false,
             false,
             false,
             "",
@@ -3613,6 +3714,7 @@ mod tests {
             2,
             &AssignParams::default(),
             &[],
+            false,
             false,
             false,
             "",
