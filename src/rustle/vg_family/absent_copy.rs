@@ -299,6 +299,116 @@ fn remap_identity_minimap2(query_seq: &[u8], fasta_path: &str) -> Option<f64> {
 }
 
 // ---------------------------------------------------------------------------
+// Augment-and-linearize: minimap2 realign-pool closure (Task 3)
+// ---------------------------------------------------------------------------
+
+/// PAF -> per-read primary hit. `n_reads` reads were written with headers `>0..>n_reads`; targets
+/// (ref contigs) with headers `>0..`. Primary = the hit carrying the `tp:A:P` tag (fall back to the
+/// largest alignment-block length, PAF col 10, when no hit is tagged primary). Returns, per read,
+/// `Some((target_contig_index, mapq))` or `None` if the read has no hit at all. PAF is 0-indexed
+/// here: f[0]=qname, f[5]=tname, f[10]=alignment-block-len, f[11]=mapq, f[12..]=optional tags.
+pub(crate) fn paf_primary_hits(paf: &str, n_reads: usize) -> Vec<Option<(usize, u32)>> {
+    // per read: (is_primary, block_len, contig_idx, mapq)
+    let mut best: Vec<Option<(bool, u64, usize, u32)>> = vec![None; n_reads];
+    for line in paf.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 12 {
+            continue;
+        }
+        let q: usize = match f[0].parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if q >= n_reads {
+            continue;
+        }
+        let t: usize = match f[5].parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let block: u64 = f[10].parse().unwrap_or(0);
+        let mapq: u32 = f[11].parse().unwrap_or(0);
+        let is_p = f[12..].iter().any(|x| *x == "tp:A:P");
+        let cand = (is_p, block, t, mapq);
+        // Prefer primary; then larger alignment block.
+        let take = match best[q] {
+            None => true,
+            Some((p0, b0, _, _)) => (is_p, block) > (p0, b0),
+        };
+        if take {
+            best[q] = Some(cand);
+        }
+    }
+    best.into_iter().map(|o| o.map(|(_, _, t, mq)| (t, mq))).collect()
+}
+
+/// Real realign-pool closure for `linearize_certificate` (Task 2): writes `ref_contigs` as a temp
+/// target FASTA (`>{i}` headers) and `reads` as a temp query FASTA (`>{j}` headers), shells
+/// minimap2, and reduces the resulting PAF via `paf_primary_hits` to each read's primary
+/// `(target_contig_index, mapq)`. Mirrors `remap_identity_minimap2`'s temp-file/`Cleanup`/
+/// `RUSTLE_MINIMAP2`/nonce pattern, but targets a POOL of contigs (many-to-many) rather than a
+/// single genome FASTA, and uses an intronless preset (`map-hifi`) since both `ref_contigs` and
+/// `reads` are spliced-consensus sequences here — there is no intron to chain across (unlike
+/// `remap_identity_minimap2`'s genome target, which needs `-x splice`).
+///
+/// Any spawn/exit failure (minimap2 missing, bad args, non-zero exit) degrades gracefully to
+/// `vec![None; reads.len()]`, matching this module's existing `Ok(None)`-on-failure contract.
+pub fn realign_pool_minimap2(ref_contigs: &[Vec<u8>], reads: &[Vec<u8>]) -> Vec<Option<(usize, u32)>> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NONCE: AtomicUsize = AtomicUsize::new(0);
+
+    if ref_contigs.is_empty() || reads.is_empty() {
+        return vec![None; reads.len()];
+    }
+
+    let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+    let dir = std::env::temp_dir();
+    let pid = std::process::id();
+    let nonce = NONCE.fetch_add(1, Ordering::Relaxed);
+    let refp = dir.join(format!("rustle_lin_ref_{pid}_{nonce}.fa"));
+    let qp = dir.join(format!("rustle_lin_q_{pid}_{nonce}.fa"));
+
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _c1 = Cleanup(refp.clone());
+    let _c2 = Cleanup(qp.clone());
+
+    let write_fa = |path: &std::path::Path, seqs: &[Vec<u8>]| -> Option<()> {
+        let mut fh = std::fs::File::create(path).ok()?;
+        for (i, s) in seqs.iter().enumerate() {
+            writeln!(fh, ">{}", i).ok()?;
+            fh.write_all(s).ok()?;
+            fh.write_all(b"\n").ok()?;
+        }
+        Some(())
+    };
+    if write_fa(&refp, ref_contigs).is_none() || write_fa(&qp, reads).is_none() {
+        return vec![None; reads.len()];
+    }
+
+    // Intronless spliced-consensus contigs -> map-hifi (asm20-class), NOT -x splice. --secondary=no
+    // so a non-unique read's only reported hit is minimap2's own primary pick; target is the ref
+    // contig pool, query is the reads.
+    let out = match std::process::Command::new(&mm2)
+        .args(["-c", "-x", "map-hifi", "--secondary=no", "-t", "1"])
+        .arg(&refp)
+        .arg(&qp)
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return vec![None; reads.len()],
+    };
+
+    paf_primary_hits(&String::from_utf8_lossy(&out.stdout), reads.len())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -549,6 +659,19 @@ mod tests {
             Admission::Copy(_, id) => assert_eq!(id, Some(0.95)),
             _ => panic!("wrong variant"),
         }
+    }
+
+    /// Pure parse test (no minimap2 subprocess) of the PAF -> per-read-primary reducer that
+    /// `realign_pool_minimap2` uses. Read 0 has two hits: the `tp:A:P` one on contig 2 (mapq 60)
+    /// must win over the larger-block secondary on contig 1; read 1 has a single `tp:A:P` hit.
+    #[test]
+    fn primary_hit_reducer_picks_tp_p_and_reads_mapq() {
+        let paf = "0\t100\t0\t100\t+\t2\t120\t0\t100\t95\t100\t60\ttp:A:P\n\
+                   0\t100\t0\t100\t+\t1\t120\t0\t100\t80\t100\t0\ttp:A:S\n\
+                   1\t100\t0\t100\t+\t0\t120\t0\t100\t90\t100\t0\ttp:A:P\n";
+        let hits = super::paf_primary_hits(paf, 2); // 2 reads
+        assert_eq!(hits[0], Some((2, 60)));
+        assert_eq!(hits[1], Some((0, 0)));
     }
 
     /// Gate 4 fires: a PSV position (999) is NOT in the host exon frame, so
