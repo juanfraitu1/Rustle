@@ -36,7 +36,7 @@ The script imports the existing `orf_aa` helper (or a copy) from `promote_genome
 ### §2 — Inputs (all already on disk; no rebuild)
 
 - `cons.fa` = `/home/juanfra/winloci_scratch/refabsent/gw_promoted/cons.fa` — **all 734 consensuses built before the ORF gate** (only 145 survived into `gw_reference_absent_copies.json`; the other 589 are where ORF<80 non-coding copies live). These are already **post the A→I-editing filter** (they were only written if the flag passed the `agtc < 0.50` & ≥5-subtype spectrum test in `promote_genomewide.py`), so editing-cleanliness is inherited, not recomputed.
-- the flags JSON = `genomewide_flags_new.json` (default; overridable arg) — per-cid `chrom, start, end, n_primary_reads, n_alt_positions (=alt_cols), n_alt_reads, alt_read_fraction`.
+- the flags JSONs = the **union** of `genomewide_flags.json` + `genomewide_flags_new.json` (both loaded from `CAT`, keyed by `chrom_start`), so every one of the 734 `cons.fa` cids finds its flag record regardless of which scan produced it — per-cid `chrom, start, end, n_primary_reads, n_alt_positions (=alt_cols), n_alt_reads, alt_read_fraction`.
 - `GGO.fasta` (`/home/juanfra/winloci_scratch/GGO.fasta`, indexed) — genome for the re-score.
 - `GGO_genomic.gff` (`/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff`) — biotype label; **optional** (if unreadable, biotype = `unknown`, never a gate).
 - `final.bed` (SEDEF self-align) — segdup-partner label; optional.
