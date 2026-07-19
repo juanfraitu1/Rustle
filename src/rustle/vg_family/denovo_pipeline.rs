@@ -1303,6 +1303,32 @@ fn colocated_from_copies(idx: usize, mut copies: Vec<DenovoTranscript>) -> Coloc
     ColocatedFamily { family_id: format!("CAFAM{idx}"), chrom, start, end, copies }
 }
 
+/// FNV-1a of `t_seq`, reduced to a `linearize_certificate` seed. Deterministic (same candidate ->
+/// same decoy shuffles -> a reproducible certificate), and distinct candidates get distinct seeds
+/// without threading an RNG through `detect_and_assign`.
+fn fnv1a_seed(t_seq: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in t_seq {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// Package the stage-2 admission pool build + `linearize::linearize_certificate` call for one admitted
+/// absent copy: `pool` is the MAPQ-0 read pool at this family's region, `copy_seqs` are the OTHER
+/// already-known copies (the candidate itself is appended internally as the last contig — see
+/// `linearize_certificate`). Fixed defaults (`n_decoys=19, min_pool=5, alpha=0.05`) match the plan;
+/// `seed` is a deterministic FNV-1a hash of `t_seq` so the certificate is reproducible per candidate.
+fn family_linearize_cert(
+    t_seq: &[u8],
+    copy_seqs: &[Vec<u8>],
+    pool: &[Vec<u8>],
+    realign: impl Fn(&[Vec<u8>], &[Vec<u8>]) -> Vec<Option<(usize, u32)>>,
+) -> super::linearize::LinearizeCertificate {
+    super::linearize::linearize_certificate(t_seq, copy_seqs, pool, 19, fnv1a_seed(t_seq), 5, 0.05, realign)
+}
+
 pub fn detect_and_assign(
     primary_reads: &[PrimaryRead],
     bam_reads: &[BamRead],
@@ -1314,7 +1340,12 @@ pub fn detect_and_assign(
     rescue_extra: &[PrimaryRead],
     absent_copies: bool,
     fasta_path: &str,
-) -> (Vec<FamilyAssignment>, Vec<FallbackEdge>, Vec<DnaNeedsRecord>) {
+) -> (
+    Vec<FamilyAssignment>,
+    Vec<FallbackEdge>,
+    Vec<DnaNeedsRecord>,
+    Vec<(String, super::linearize::LinearizeCertificate, (String, u64, u64))>,
+) {
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
     let mut t_lap = std::time::Instant::now();
     macro_rules! lap {
@@ -1434,6 +1465,11 @@ pub fn detect_and_assign(
     }
     let mut out = Vec::new();
     let mut dna_needs: Vec<DnaNeedsRecord> = Vec::new();
+    // Report-first augment-and-linearize certificate (Task 4): one entry per Stage-2-admitted reference-absent
+    // copy, computed against that candidate's MAPQ-0 read pool. Admission itself is unchanged here (Task 5
+    // adds the opt-in `--linearize-gate`); this is purely additive reporting threaded out to the caller.
+    let mut linearize_certs: Vec<(String, super::linearize::LinearizeCertificate, (String, u64, u64))> =
+        Vec::new();
     // Co-located families, then (default) the SAME mutual-homology + distinct-locus refinement gate that
     // `gw_family_catalog` applies — so the per-region path and the genome-wide catalog agree on what a family is.
     // Without it the conflict oracle admits large-gene mis-chains (PBX1) and repeat-bridges (see
@@ -1531,6 +1567,15 @@ pub fn detect_and_assign(
                             if let Some(v) = id {
                                 remap_id_by_tid.insert(t.tid.clone(), v);
                             }
+                            // Augment-and-linearize certificate (report-first): re-align this family's MAPQ-0
+                            // (ambiguous) read pool against the reference copies + this candidate, and score
+                            // how uniquely they land on the new copy vs a dinucleotide-shuffled decoy.
+                            let pool: Vec<Vec<u8>> = region.iter().zip(region_mapq.iter())
+                                .filter(|(_, &q)| q == 0).map(|(r, _)| r.seq.clone()).collect();
+                            let copy_seqs: Vec<Vec<u8>> = all_copies.iter().map(|c| c.seq.clone()).collect();
+                            let cert = family_linearize_cert(&t.seq, &copy_seqs, &pool, absent_copy::realign_pool_minimap2);
+                            linearize_certs.push((cf.family_id.clone(), cert, (t.chrom.clone(), t.start, t.end)));
+                            // (Task 5 adds: if linearize_gate && cert.verdict != Linearizes { dna_needs.push(...); continue; })
                             admitted.push(t);
                         }
                         // Task 6: collect DNA-needs records for the caller to surface as <out>.dna_needs.tsv.
@@ -1762,7 +1807,7 @@ pub fn detect_and_assign(
         }
     }
 
-    (out, fallback, dna_needs)
+    (out, fallback, dna_needs, linearize_certs)
 }
 
 /// GENOME-WIDE de-tie READ-CONFLICT family catalog (interest I / O1) — the principled, threshold-free
@@ -2845,6 +2890,31 @@ mod tests {
         assert_eq!(d.sensitive_identity, 0.60);
     }
 
+    // Task 4 (augment-and-linearize): `family_linearize_cert` packages the stage-2 admission pool build +
+    // `linearize_certificate` call. Fake injected realign (no minimap2) — mirrors linearize.rs's own
+    // `fake_realign` test double so this stays hermetic.
+    #[test]
+    fn family_linearize_cert_uses_mapq0_pool() {
+        use crate::vg_family::linearize::Verdict;
+        // NOTE (deviation from the brief's literal snippet): the brief's candidate
+        // b"ACGTACGTTTGGCCAAACGTACGT" is self-reverse-complementary (RC(cand) == cand byte-for-byte).
+        // `linearize_certificate` always appends an RC decoy, so with a pool that matches the candidate
+        // that RC decoy ties `real` deterministically (independent of seed) and pushes perm_p to
+        // 2/21 ~= 0.095 > alpha=0.05, i.e. this exact fixture can never reach `Linearizes` under the
+        // brief's own specified defaults. Swapped in the longer, non-palindromic candidate that
+        // `linearize.rs`'s own `real_copy_linearizes_decoy_does_not` test uses (same reasoning: "longer
+        // sequence to minimize chance of shuffle returning the original"); everything else — the
+        // MAPQ-0 pool, the fake realign double, the assertion — is unchanged from the brief.
+        let cand = b"ACGTACGTTTGGCCAAACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT".to_vec();
+        let pool: Vec<Vec<u8>> = (0..8).map(|_| cand.clone()).collect();
+        let realign = |refs: &[Vec<u8>], reads: &[Vec<u8>]| {
+            let ci = refs.len() - 1;
+            reads.iter().map(|r| if r == &refs[ci] { Some((ci, 60u32)) } else { Some((0, 0)) }).collect::<Vec<_>>()
+        };
+        let cert = family_linearize_cert(&cand, &[b"TTTTGGGGCCCCAAAAAAAATTTTGGGG".to_vec()], &pool, realign);
+        assert!(matches!(cert.verdict, Verdict::Linearizes), "cert = {:?}", cert);
+    }
+
     struct SplitMix64(u64);
     impl SplitMix64 {
         fn next_u64(&mut self) -> u64 {
@@ -2994,7 +3064,7 @@ mod tests {
         contigs.insert(chrom.to_string());
         let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
         eprintln!("region {chrom}:{lo}-{hi}: {} primary reads, {} mapped reads", primary.len(), bam_reads.len());
-        let (fas, fallback, _dna_needs) = detect_and_assign(
+        let (fas, fallback, _dna_needs, _linearize_certs) = detect_and_assign(
             &primary,
             &bam_reads,
             &genome,
@@ -3028,7 +3098,7 @@ mod tests {
     #[test]
     fn detect_and_assign_resolves_multimapper_end_to_end() {
         let (genome, primary, aligned) = two_paralogs_with_psvs();
-        let (fas, fallback, dna_needs) = detect_and_assign(
+        let (fas, fallback, dna_needs, _linearize_certs) = detect_and_assign(
             &primary,
             &aligned,
             &genome,
@@ -3065,7 +3135,7 @@ mod tests {
     #[test]
     fn detect_and_assign_absent_copies_off_returns_empty_dna_needs() {
         let (genome, primary, aligned) = two_paralogs_with_psvs();
-        let (_, _, dna_needs) = detect_and_assign(
+        let (_, _, dna_needs, _linearize_certs) = detect_and_assign(
             &primary,
             &aligned,
             &genome,
@@ -3096,7 +3166,7 @@ mod tests {
         let (genome, primary, aligned) = two_paralogs_with_psvs();
         let cfg = DenovoConfig::default();
         assert!(!cfg.vg_realign, "default must be OFF");
-        let (fas, _fallback, dna_needs) = detect_and_assign(
+        let (fas, _fallback, dna_needs, _linearize_certs) = detect_and_assign(
             &primary,
             &aligned,
             &genome,
@@ -3510,7 +3580,7 @@ mod tests {
         let (genome, primary, aligned) = two_paralogs_with_psvs();
         let mut cfg = DenovoConfig::default();
         cfg.vg_realign = true;
-        let (fas, _fallback, dna_needs) = detect_and_assign(
+        let (fas, _fallback, dna_needs, _linearize_certs) = detect_and_assign(
             &primary,
             &aligned,
             &genome,

@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 use rustle::genome::GenomeIndex;
 use rustle::vg_family::absent_copy::DnaNeedsRecord;
+use rustle::vg_family::linearize::LinearizeCertificate;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
@@ -70,6 +71,10 @@ struct RegionWork {
     fams: Vec<FamilyAssignment>,
     fallback: Vec<FallbackEdge>,
     dna_needs: Vec<DnaNeedsRecord>,
+    /// Report-first augment-and-linearize certificates (Task 4), one per Stage-2-admitted reference-absent
+    /// copy: `(family_id, certificate, (chrom, start, end))`. Not yet written anywhere — the `<out>.linearize.tsv`
+    /// writer + `--linearize-gate` land in a follow-up task.
+    linearize_certs: Vec<(String, LinearizeCertificate, (String, u64, u64))>,
     transcripts: Vec<TranscriptRec>, // FLAIR-style isoforms for the --gtf emit (empty unless --gtf)
 }
 
@@ -794,6 +799,9 @@ fn main() -> Result<()> {
     let mut exon_graphs: Vec<rustle::vg_family::copy_graph::ExonGraph> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
+    // --absent-copies: report-first linearize certificates, one per Stage-2-admitted candidate (Task 4). Not
+    // yet written anywhere — the `<out>.linearize.tsv` writer + `--linearize-gate` land in a follow-up task.
+    let mut linearize_certs_all: Vec<(String, LinearizeCertificate, (String, u64, u64))> = Vec::new();
     let mut vg_realign_lines: Vec<String> = Vec::new(); // --vg-realign: per-read re-align decisions (report-only)
     let mut gfam = 0usize; // global family counter (unique ids across regions)
     let mut gtf_lines: Vec<String> = Vec::new(); // --gtf: FLAIR-style isoform GTF (transcript + exon rows)
@@ -871,7 +879,7 @@ fn main() -> Result<()> {
             Vec::new()
         };
         let t_da = std::time::Instant::now();
-        let (fams, fallback, dna_needs) = detect_and_assign(
+        let (fams, fallback, dna_needs, linearize_certs) = detect_and_assign(
             &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
             args.absent_copies, &args.fasta,
         );
@@ -904,7 +912,7 @@ fn main() -> Result<()> {
         let read_mapqs: Vec<u8> = bam_reads.iter().map(|r| r.mapq).collect();
         let as_ev = as_evidence_per_read(&bam_reads);
         let n_mapped = bam_reads.len();
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, as_ev, n_mapped, fams, fallback, dna_needs, transcripts })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -917,11 +925,12 @@ fn main() -> Result<()> {
     // serial path, so the output is byte-identical.
     {
         for work in works {
-            let RegionWork { contig, lo, hi, read_names, read_mapqs, as_ev, n_mapped, fams, fallback, dna_needs, transcripts } = work;
+            let RegionWork { contig, lo, hi, read_names, read_mapqs, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts } = work;
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
             dna_needs_rows.extend(dna_needs);
+            linearize_certs_all.extend(linearize_certs);
             // --gtf: gene_tid (a copy's own locus) -> (family id, copy index), filled as fids are assigned below.
             let mut copy_gene: std::collections::HashMap<String, (String, usize)> = std::collections::HashMap::new();
             for fa in &fams {
