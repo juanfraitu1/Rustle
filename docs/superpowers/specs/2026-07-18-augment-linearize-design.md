@@ -36,8 +36,8 @@ Per candidate copy, a `LinearizeCertificate`:
 
 ### §3 — Decoy control
 
-- Generate **N dinucleotide-preserving shuffles** of the candidate `t.seq` (same length, same di-nucleotide frequencies, scrambled order — a small deterministic generator, ~15 lines; seed from a hash of `t.seq` so certificates are reproducible). Default **N = 19** (permutation-p granularity 0.05); configurable.
-- Add the **reverse-complement** of `t.seq` (`seq_utils::reverse_complement`, `seq_utils.rs:9`) as one extra cheap sanity decoy.
+- Generate **N dinucleotide-preserving shuffles** of the candidate `t.seq` (same length, same di-nucleotide frequencies, scrambled order — a small deterministic generator, ~15 lines; seed from a hash of `t.seq` so certificates are reproducible). Default **N = 20**: a strict `perm_p < α = 0.05` permutation test needs ≥ 20 decoys, so the floor `1/(N+1) = 1/21 ≈ 0.048` is strictly below α and a perfect candidate can reach `LINEARIZES`.
+- ⚠**No reverse-complement decoy** (design correction, 2026-07-18, verified live vs minimap2): the RC is NOT a valid decoy for an *alignment-based* test — minimap2 is strand-symmetric, so `revcomp(t.seq)` attracts the *same* reads as `t.seq` (on the opposite strand) with the same MAPQ, and the strand column is discarded, so the RC would *tie* `real` and force a false `NOT`. Only the dinucleotide shuffles (which match neither strand of a read) are valid decoys. `perm_p = (#shuffles ≥ real + 1) / (N + 1)`.
 - For each decoy, build a **decoy-augmented reference** = family copy consensuses + the decoy contig (same contig count and lengths as the real arm — a matched null), align the SAME pool, and compute `linearized_frac_decoy_i` = fraction whose primary hit is the *decoy* contig with `MAPQ>0` (expected ≈ 0, since reads don't match a shuffle). (The decoy-augmented reference is the null; no separate baseline needed.)
 - `perm_p` per §1. A real copy: the pool matches the real contig → `linearized_frac_real` high, decoys ≈ 0 → Δ large, `perm_p` small. A spurious candidate: real ≈ decoys → Δ ≈ 0, `perm_p` large.
 
