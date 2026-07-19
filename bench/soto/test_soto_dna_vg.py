@@ -95,12 +95,21 @@ def test_colours_csv():
 
 
 def test_legend_tsv():
-    members = [("SRGAP2C", "chr1", 100, 200)]
-    det = {"SRGAP2C": True}
-    rec = {"SRGAP2C": "RNA-split"}
-    leg = V.legend_tsv(members, det, rec)
-    assert leg.splitlines()[0] == "gene\tlocus\tdetected\trecovered_by\tcolour"
-    assert "SRGAP2C\tchr1:100-200\tY\tRNA-split\t#1e8e3e" in leg
+    members = [("AMY1A", "chr1", 100, 200), ("AC1", "chr1", 300, 400)]
+    det = {"AMY1A": True, "AC1": False}
+    rec = {"AMY1A": "RNA-split", "AC1": ""}
+    cause = {"AC1": "expressed-K=0: exon-homogenized"}
+    leg = V.legend_tsv(members, det, rec, cause)
+    assert leg.splitlines()[0] == "gene\tlocus\tdetected\trecovered_by\tcause\tcolour"
+    assert "AMY1A\tchr1:100-200\tY\tRNA-split\t\t#1e8e3e" in leg          # green: empty cause
+    assert "AC1\tchr1:300-400\tN\t\texpressed-K=0: exon-homogenized\t#d93025" in leg  # red: cause shown
+
+
+def test_load_causes():
+    tsv = ["family_id\tgene\tchrom\tstart\tend\ta\tb\tc\td\te\tf\tcause",
+           "ID_131\tAC105272.1\tchr1\t103516936\t103517135\t.\t.\t.\t.\t.\t.\texpressed-K=0: exon-homogenized"]
+    d = V.load_causes(tsv)
+    assert d[("chr1", 103516936, 103517135)] == "expressed-K=0: exon-homogenized"
 
 
 def test_build_family_presence_and_colours(monkeypatch):
@@ -112,7 +121,7 @@ def test_build_family_presence_and_colours(monkeypatch):
     detection = {("chr1", 100, 200): (True, "RNA-split"),
                  ("chr1", 300, 400): (True, "projection"),
                  ("chr1", 500, 600): (False, "")}
-    r = V.build_family("ID_test", members, fa, detection)
+    r = V.build_family("ID_test", members, fa, detection, {})
     assert r["n_members"] == 3 and r["n_present"] == 3 and r["missing"] == []
     # every gene is a P-line
     plines = {l.split("\t")[1] for l in r["gfa"].splitlines() if l.startswith("P\t")}
@@ -126,7 +135,7 @@ def test_build_family_missing_member_logged_not_counted():
     fa = {"chr1:101-200": "ACGT"}   # g2 absent from fa
     members = [("g1", "chr1", 100, 200), ("g2", "chr9", 100, 200)]
     detection = {("chr1", 100, 200): (True, "RNA-split")}
-    r = V.build_family("ID_x", members, fa, detection)
+    r = V.build_family("ID_x", members, fa, detection, {})
     assert r["n_members"] == 2 and r["n_present"] == 1 and r["missing"] == ["g2"]
 
 
@@ -139,8 +148,8 @@ def test_apply_window_extracts_and_clamps():
 
 def test_window_members_passthrough_when_all_fit():
     seqs = ["ACGT", "ACGA", "ACGT"]        # all <= window_bp -> unchanged, no minimap2 invoked
-    out, windowed = V.window_members(seqs, window_bp=100)
-    assert out == seqs and windowed is False
+    out, windowed, span = V.window_members(seqs, window_bp=100)
+    assert out == seqs and windowed is False and span is None
 
 
 def test_build_family_windowed_flag_false_for_small(monkeypatch):
@@ -148,5 +157,5 @@ def test_build_family_windowed_flag_false_for_small(monkeypatch):
     fa = {"chr1:101-108": "ACGTACGT", "chr1:201-208": "ACGTTCGT"}
     members = [("g1", "chr1", 100, 108), ("g2", "chr1", 200, 208)]
     detection = {("chr1", 100, 108): (True, "RNA-split"), ("chr1", 200, 208): (False, "")}
-    r = V.build_family("ID_s", members, fa, detection)
-    assert r["windowed"] is False and r["n_present"] == 2
+    r = V.build_family("ID_s", members, fa, detection, {})
+    assert r["windowed"] is False and r["n_present"] == 2 and r["window_span"] is None

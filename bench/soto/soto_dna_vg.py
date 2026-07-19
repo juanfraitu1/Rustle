@@ -11,6 +11,7 @@ from collections import defaultdict
 BED = "bench/soto/80_fams.chr.bed"
 MEMFA = "/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_members.fa"
 DETECT = "bench/soto/soto_member_detection.tsv"
+CAUSES = "bench/soto/soto_floor_decomposition.tsv"
 OUT = "/home/juanfra/winloci_scratch/soto_vg"
 
 WINDOW_BP = 20000              # memory-safe abpoa window on this 19 GB box (30000 still OOM'd; full SD spans OOM)
@@ -34,9 +35,11 @@ def apply_window(seqs, member_spans, window_bp):
 def window_members(seqs, window_bp=WINDOW_BP):
     """If any member exceeds window_bp, window ALL members to the region homologous to the SHORTEST member's
     first window_bp (via minimap2), so the graph stays a shared-backbone view that fits abpoa's memory.
-    Returns (windowed_seqs, windowed: bool). No-op (returns seqs unchanged, False) when all fit."""
+    Returns (windowed_seqs, windowed: bool, window_span: int|None) — window_span is the ACTUAL window size
+    (min(window_bp, len(shortest member))), or None when not windowed. No-op (seqs unchanged, False, None)
+    when all fit."""
     if all(len(s) <= window_bp for s in seqs):
-        return list(seqs), False
+        return list(seqs), False, None
     import subprocess, tempfile
     anchor_idx = min(range(len(seqs)), key=lambda i: len(seqs[i]))
     anchor_win = seqs[anchor_idx][:window_bp]
@@ -57,7 +60,7 @@ def window_members(seqs, window_bp=WINDOW_BP):
         if i not in best or block > best[i][2]:
             best[i] = (qs, qe, block)
     spans = [(best[i][0], best[i][1]) if i in best else None for i in range(len(seqs))]
-    return apply_window(seqs, spans, window_bp), True
+    return apply_window(seqs, spans, window_bp), True, len(anchor_win)
 
 
 # ---- colours (match copy_graph.rs) ----
@@ -184,6 +187,19 @@ def load_detection(tsv_lines):
     return out
 
 
+def load_causes(tsv_lines):
+    """(chrom,start,end) -> miss cause, from soto_floor_decomposition.tsv (cols: 3 chrom,4 start,5 end,12 cause)."""
+    out = {}
+    for i, ln in enumerate(tsv_lines):
+        if i == 0:
+            continue
+        f = ln.rstrip("\n").split("\t")
+        if len(f) < 12:
+            continue
+        out[(f[2], int(f[3]), int(f[4]))] = f[11]
+    return out
+
+
 def node_colour(members_through_node, detected_by_name):
     """green if every member through the node is RNA-recovered, red if none is, grey otherwise."""
     flags = {bool(detected_by_name.get(n, False)) for n in members_through_node}
@@ -205,27 +221,30 @@ def colours_csv(paths, detected_by_name):
     return "\n".join(lines) + "\n"
 
 
-def legend_tsv(members, detected_by_name, recovered_by_name):
-    lines = ["gene\tlocus\tdetected\trecovered_by\tcolour"]
+def legend_tsv(members, detected_by_name, recovered_by_name, cause_by_name):
+    lines = ["gene\tlocus\tdetected\trecovered_by\tcause\tcolour"]
     for gene, chrom, start, end in members:
         det = bool(detected_by_name.get(gene, False))
         lines.append("\t".join([
             gene, f"{chrom}:{start}-{end}", "Y" if det else "N",
-            recovered_by_name.get(gene, ""), GREEN if det else RED]))
+            recovered_by_name.get(gene, ""),
+            "" if det else cause_by_name.get(gene, ""),      # red members: their decomposition cause
+            GREEN if det else RED]))
     return "\n".join(lines) + "\n"
 
 
-FLAGSHIPS = [("ID_462", "SRGAP2"), ("ID_8", "PMS2P"), ("ID_63", "mixed-recovery")]
+FLAGSHIPS = [("ID_462", "SRGAP2"), ("ID_8", "PMS2P"), ("ID_131", "AMYLASE (AMY1/AMY2)")]
 
 CAPTION = (
-    "DNA variation graph = the ceiling: all {n} Soto copies present as paths (Soto-corroborated, "
-    "independent DNA-read-depth catalog). green = RNA recovered; red = DNA-only (K=0 exon-identity / "
-    "silent / coverage). The VG REPRESENTS what is given; it does not 'detect' families. RNA recovers "
-    "76.2% of this ceiling genome-wide; the gap is the decomposed identifiability floor, not a method failure."
+    "DNA variation graph = the identifiability CEILING: all {n} Soto copies present as paths "
+    "(corroborated by Soto's INDEPENDENT DNA-read-depth catalog). green = RNA recovered; red = NOT "
+    "recovered (per-member cause in the legend) — K=0 exon-identity copies are the identifiability floor "
+    "(RNA cannot separate exon-identical copies; DNA can). The VG REPRESENTS what is given; it does not "
+    "'detect' families. RNA recovers 76.2% of this ceiling genome-wide.{window}"
 )
 
 
-def build_family(family_id, members, fa, detection):
+def build_family(family_id, members, fa, detection, causes):
     """Extract member seqs (skip+log those absent from fa), abpoa MSA, GFA, colours, legend, presence check."""
     present, missing, seqs, names = [], [], [], []
     for gene, chrom, start, end in members:
@@ -236,18 +255,19 @@ def build_family(family_id, members, fa, detection):
         except KeyError:
             missing.append(gene)
     if not present:
-        return dict(family_id=family_id, n_members=len(members), n_present=0,
-                    gfa="", colours="", legend="", missing=missing, windowed=False)
-    seqs, windowed = window_members(seqs)
+        return dict(family_id=family_id, n_members=len(members), n_present=0, gfa="", colours="",
+                    legend="", missing=missing, windowed=False, window_span=None)
+    seqs, windowed, window_span = window_members(seqs)
     rows = abpoa_msa(seqs) if len(seqs) > 1 else [seqs[0]]
     gfa, paths = msa_to_gfa(rows, names)
-    det_by_gene = {g: detection.get((c, s, e), (False, ""))[0] for g, c, s, e in present}
-    rec_by_gene = {g: detection.get((c, s, e), (False, ""))[1] for g, c, s, e in present}
-    colours = colours_csv(paths, det_by_gene)
-    legend = legend_tsv(present, det_by_gene, rec_by_gene)
+    det_by = {g: detection.get((c, s, e), (False, ""))[0] for g, c, s, e in present}
+    rec_by = {g: detection.get((c, s, e), (False, ""))[1] for g, c, s, e in present}
+    cause_by = {g: causes.get((c, s, e), "") for g, c, s, e in present}
+    colours = colours_csv(paths, det_by)
+    legend = legend_tsv(present, det_by, rec_by, cause_by)
     n_present = sum(1 for l in gfa.splitlines() if l.startswith("P\t"))   # checked, not assumed
-    return dict(family_id=family_id, n_members=len(members), n_present=n_present,
-                gfa=gfa, colours=colours, legend=legend, missing=missing, windowed=windowed)
+    return dict(family_id=family_id, n_members=len(members), n_present=n_present, gfa=gfa,
+                colours=colours, legend=legend, missing=missing, windowed=windowed, window_span=window_span)
 
 
 def main():
@@ -255,11 +275,12 @@ def main():
     bed = open(BED).read().splitlines()
     fa = read_fasta(MEMFA)
     detection = load_detection(open(DETECT).read().splitlines())
+    causes = load_causes(open(CAUSES).read().splitlines())
     index = ["# Soto DNA variation-graph ceiling — flagship families\n"]
     for family_id, label in FLAGSHIPS:
         members = parse_family_members(bed, family_id)
         try:
-            r = build_family(family_id, members, fa, detection)
+            r = build_family(family_id, members, fa, detection, causes)
         except Exception as ex:
             print(f"{family_id} ({label}): RENDER FAILED — {type(ex).__name__}: {ex}")
             index.append(f"## {family_id} — {label}: RENDER FAILED ({type(ex).__name__}) — "
@@ -269,12 +290,17 @@ def main():
         open(f"{base}.gfa", "w").write(r["gfa"])
         open(f"{base}.colours.csv", "w").write(r["colours"])
         open(f"{base}.legend.tsv", "w").write(r["legend"])
-        wnote = (f" [windowed to ~{WINDOW_BP // 1000} kb homologous core — full span exceeds this box's memory]"
-                 if r.get("windowed") else "")
+        if r.get("windowed"):
+            kb = (r["window_span"] or 0) // 1000
+            wnote = (f" NOTE: this graph is WINDOWED to the ~{kb} kb region homologous to the anchor "
+                     f"member — the full genomic span exceeds this box's abpoa memory.")
+            wtag = f" [windowed ~{kb} kb]"
+        else:
+            wnote, wtag = "", ""
         miss = f"  (MISSING from graph: {r['missing']})" if r["missing"] else ""
-        print(f"{family_id} ({label}): {r['n_present']}/{r['n_members']} copies as paths{wnote}{miss}")
-        index.append(f"## {family_id} — {label}: {r['n_present']}/{r['n_members']} copies present as paths{wnote}")
-        index.append(f"`{family_id}.gfa` + `{family_id}.colours.csv` (Bandage). " + CAPTION.format(n=r["n_present"]))
+        print(f"{family_id} ({label}): {r['n_present']}/{r['n_members']} copies as paths{wtag}{miss}")
+        index.append(f"## {family_id} — {label}: {r['n_present']}/{r['n_members']} copies present as paths{wtag}")
+        index.append(f"`{family_id}.gfa` + `{family_id}.colours.csv` (Bandage). " + CAPTION.format(n=r["n_present"], window=wnote))
         if r["missing"]:
             index.append(f"> honesty: {len(r['missing'])} member(s) absent from the graph: {r['missing']}")
     open(f"{OUT}/index.md", "w").write("\n\n".join(index) + "\n")

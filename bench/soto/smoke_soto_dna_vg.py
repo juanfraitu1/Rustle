@@ -10,9 +10,10 @@ import soto_dna_vg as V
 bed = open("bench/soto/80_fams.chr.bed").read().splitlines()
 fa = V.read_fasta(V.MEMFA)
 detection = V.load_detection(open("bench/soto/soto_member_detection.tsv").read().splitlines())
+causes = V.load_causes(open("bench/soto/soto_floor_decomposition.tsv").read().splitlines())
 members = V.parse_family_members(bed, "ID_8")            # PMS2P, moderate ~5-15 kb members
 assert len(members) >= 5, members
-r = V.build_family("ID_8", members, fa, detection)
+r = V.build_family("ID_8", members, fa, detection, causes)
 assert r["missing"] == [], f"members missing from graph: {r['missing']}"   # the DNA-ceiling claim
 assert r["n_present"] == r["n_members"], (r["n_present"], r["n_members"])
 kinds = {l[0] for l in r["gfa"].splitlines() if l}
