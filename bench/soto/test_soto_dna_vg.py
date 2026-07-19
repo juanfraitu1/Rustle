@@ -101,3 +101,30 @@ def test_legend_tsv():
     leg = V.legend_tsv(members, det, rec)
     assert leg.splitlines()[0] == "gene\tlocus\tdetected\trecovered_by\tcolour"
     assert "SRGAP2C\tchr1:100-200\tY\tRNA-split\t#1e8e3e" in leg
+
+
+def test_build_family_presence_and_colours(monkeypatch):
+    # isolate build_family's orchestration from abpoa (keeps the test hermetic — no pyabpoa needed).
+    # these 3 seqs are equal-length with one SNP, so the identity "MSA" is the correct alignment.
+    monkeypatch.setattr(V, "abpoa_msa", lambda seqs: list(seqs))
+    fa = {"chr1:101-200": "ACGTACGT", "chr1:301-400": "ACGTACGT", "chr1:501-600": "ACGTTCGT"}
+    members = [("g1", "chr1", 100, 200), ("g2", "chr1", 300, 400), ("g3", "chr1", 500, 600)]
+    detection = {("chr1", 100, 200): (True, "RNA-split"),
+                 ("chr1", 300, 400): (True, "projection"),
+                 ("chr1", 500, 600): (False, "")}
+    r = V.build_family("ID_test", members, fa, detection)
+    assert r["n_members"] == 3 and r["n_present"] == 3 and r["missing"] == []
+    # every gene is a P-line
+    plines = {l.split("\t")[1] for l in r["gfa"].splitlines() if l.startswith("P\t")}
+    assert plines == {"g1", "g2", "g3"}
+    # g3 differs (T at col4) -> its unique node is red; shared nodes grey; g1/g2 identical
+    assert V.RED in r["colours"] and V.GREY in r["colours"]
+    assert "g3\tchr1:500-600\tN" in r["legend"]
+
+
+def test_build_family_missing_member_logged_not_counted():
+    fa = {"chr1:101-200": "ACGT"}   # g2 absent from fa
+    members = [("g1", "chr1", 100, 200), ("g2", "chr9", 100, 200)]
+    detection = {("chr1", 100, 200): (True, "RNA-split")}
+    r = V.build_family("ID_x", members, fa, detection)
+    assert r["n_members"] == 2 and r["n_present"] == 1 and r["missing"] == ["g2"]

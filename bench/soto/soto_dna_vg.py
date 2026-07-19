@@ -166,3 +166,64 @@ def legend_tsv(members, detected_by_name, recovered_by_name):
             gene, f"{chrom}:{start}-{end}", "Y" if det else "N",
             recovered_by_name.get(gene, ""), GREEN if det else RED]))
     return "\n".join(lines) + "\n"
+
+
+FLAGSHIPS = [("ID_462", "SRGAP2"), ("ID_8", "PMS2P"), ("ID_63", "mixed-recovery")]
+
+CAPTION = (
+    "DNA variation graph = the ceiling: all {n} Soto copies present as paths (Soto-corroborated, "
+    "independent DNA-read-depth catalog). green = RNA recovered; red = DNA-only (K=0 exon-identity / "
+    "silent / coverage). The VG REPRESENTS what is given; it does not 'detect' families. RNA recovers "
+    "76.2% of this ceiling genome-wide; the gap is the decomposed identifiability floor, not a method failure."
+)
+
+
+def build_family(family_id, members, fa, detection):
+    """Extract member seqs (skip+log those absent from fa), abpoa MSA, GFA, colours, legend, presence check."""
+    present, missing, seqs, names = [], [], [], []
+    for gene, chrom, start, end in members:
+        try:
+            seqs.append(member_seq(fa, chrom, start, end))
+            names.append(gene)
+            present.append((gene, chrom, start, end))
+        except KeyError:
+            missing.append(gene)
+    if not present:
+        return dict(family_id=family_id, n_members=len(members), n_present=0,
+                    gfa="", colours="", legend="", missing=missing)
+    rows = abpoa_msa(seqs) if len(seqs) > 1 else [seqs[0]]
+    gfa, paths = msa_to_gfa(rows, names)
+    det_by_gene = {g: detection.get((c, s, e), (False, ""))[0] for g, c, s, e in present}
+    rec_by_gene = {g: detection.get((c, s, e), (False, ""))[1] for g, c, s, e in present}
+    colours = colours_csv(paths, det_by_gene)
+    legend = legend_tsv(present, det_by_gene, rec_by_gene)
+    n_present = sum(1 for l in gfa.splitlines() if l.startswith("P\t"))   # checked, not assumed
+    return dict(family_id=family_id, n_members=len(members), n_present=n_present,
+                gfa=gfa, colours=colours, legend=legend, missing=missing)
+
+
+def main():
+    os.makedirs(OUT, exist_ok=True)
+    bed = open(BED).read().splitlines()
+    fa = read_fasta(MEMFA)
+    detection = load_detection(open(DETECT).read().splitlines())
+    index = ["# Soto DNA variation-graph ceiling — flagship families\n"]
+    for family_id, label in FLAGSHIPS:
+        members = parse_family_members(bed, family_id)
+        r = build_family(family_id, members, fa, detection)
+        base = f"{OUT}/{family_id}"
+        open(f"{base}.gfa", "w").write(r["gfa"])
+        open(f"{base}.colours.csv", "w").write(r["colours"])
+        open(f"{base}.legend.tsv", "w").write(r["legend"])
+        miss = f"  (MISSING from graph: {r['missing']})" if r["missing"] else ""
+        print(f"{family_id} ({label}): {r['n_present']}/{r['n_members']} copies as paths{miss}")
+        index.append(f"## {family_id} — {label}: {r['n_present']}/{r['n_members']} copies present as paths")
+        index.append(f"`{family_id}.gfa` + `{family_id}.colours.csv` (Bandage). " + CAPTION.format(n=r["n_present"]))
+        if r["missing"]:
+            index.append(f"> honesty: {len(r['missing'])} member(s) absent from the graph: {r['missing']}")
+    open(f"{OUT}/index.md", "w").write("\n\n".join(index) + "\n")
+    print(f"wrote {OUT}/ (gfa + colours.csv + legend.tsv per family + index.md)")
+
+
+if __name__ == "__main__":
+    main()
