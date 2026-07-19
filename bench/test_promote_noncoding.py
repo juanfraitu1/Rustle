@@ -179,3 +179,51 @@ def test_promote_all_excludes_already_coding():
     hits = {"C_flag": ("NC_1", 1050, 0.90, 1.00, 60)}   # would promote if not excluded
     promoted, tally = PN.promote_all(cons, flags, hits, {}, {}, {}, exclude={"C_flag"})
     assert promoted == [] and tally["already-coding"] == 1
+
+
+import json as _json
+
+_CONS = "/home/juanfra/winloci_scratch/refabsent/gw_promoted/cons.fa"
+_GENOME = "/home/juanfra/winloci_scratch/GGO.fasta"
+_DATA_PRESENT = os.path.exists(_CONS) and os.path.exists(_GENOME) and os.path.exists(PN.MM2)
+
+_STRONG_CREDIBLE = [
+    "NC_073236.2_139051025",  # flagship lncRNA
+    "NC_073236.2_44341131",   # lncRNA
+    "NC_073234.2_27052843",   # ETV6 gene-body
+    "NC_073230.2_167930813",  # VIPR2 gene-body
+    "NC_073231.2_4861523",    # TDRP gene-body
+    "NC_073242.2_18569043",   # intergenic, 1028-aa novel ORF
+    "NC_073224.2_45327469",   # intergenic -> TRAF5
+]
+_ARTIFACTS = ["NC_073243.2_30120917", "NC_073231.2_39477379"]  # div ~70/74, genome_id ~0.29/0.26
+
+
+import pytest
+
+
+@pytest.mark.skipif(not _DATA_PRESENT, reason="cons.fa / GGO.fasta / minimap2 not present")
+def test_integration_real_734(tmp_path):
+    out = tmp_path / "gw_noncoding_copies.json"
+    sys.argv = ["promote_noncoding", "--cons", _CONS, "--out", str(out), "--threads", "6"]
+    PN.main()
+    recs = _json.load(open(out))
+    cids = {r["cid"] for r in recs}
+    # flagship + all 7 strong-credible are promoted
+    missing = [c for c in _STRONG_CREDIBLE if c not in cids]
+    assert not missing, f"strong-credible missing from promotion: {missing}"
+    # the 2 high-divergence repeat/chimera artifacts are excluded
+    assert not (set(_ARTIFACTS) & cids), "artifact leaked into promotion"
+    # sane yield band (looser bar than the workflow's ~19; report the count)
+    print(f"\n[integration] promoted {len(recs)} non-coding candidates; "
+          f"biotypes={sorted({r['biotype'] for r in recs})}")
+    assert len(recs) >= 15
+    # honesty rail holds on every record
+    assert all(r["copy_vs_allele"] == "candidate-DNA-needed" for r in recs)
+    assert all(r["status"] == "flagged-reference-divergent-candidate" for r in recs)
+    assert all(r["track"] == "noncoding" for r in recs)
+    # flagship specifics
+    fs = next(r for r in recs if r["cid"] == "NC_073236.2_139051025")
+    assert fs["coding_potential"] == "noncoding"
+    if os.path.exists(PN.GFF):            # biotype needs the (linuxdisk-mounted) annotation
+        assert fs["biotype"] == "lncRNA"
