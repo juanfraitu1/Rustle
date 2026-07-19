@@ -95,8 +95,14 @@ fn frac_on_candidate(hits: &[Option<(usize, u32)>], cand_idx: usize) -> f64 {
 }
 
 /// Test whether a sequence (candidate) linearizes: its primary-with-MAPQ>0 fraction significantly
-/// exceeds the mean of N dinucleotide-shuffled decoys + a reverse-complement decoy. Pure function;
-/// the realign closure is injected for testability.
+/// exceeds the mean of N dinucleotide-shuffled decoys. Pure function; the realign closure is
+/// injected for testability.
+///
+/// The decoys are the N dinucleotide shuffles ONLY. The reverse complement is NOT a valid decoy
+/// for an alignment-based test — minimap2 is strand-symmetric, so revcomp(candidate) attracts the
+/// same reads as the candidate (opposite strand) and would tie `real`, forcing a false NOT. The
+/// dinucleotide shuffles are the composition-matched control (a shuffle matches neither strand of a
+/// read).
 ///
 /// # Arguments
 /// - `candidate_seq`: the candidate contig (appended as the last element to family_copy_seqs).
@@ -139,17 +145,14 @@ pub fn linearize_certificate(
     // Compute the real candidate's linearized fraction.
     let real = frac_on_candidate(&realign(&build(candidate_seq), pool_reads), cand_idx);
 
-    // Generate decoys: N dinucleotide shuffles (distinct seeds) + reverse-complement.
-    let mut decoy_fracs: Vec<f64> = Vec::with_capacity(n_decoys + 1);
+    // Generate decoys: N dinucleotide shuffles (distinct seeds) ONLY. No reverse-complement decoy:
+    // minimap2 is strand-symmetric, so revcomp(candidate) would attract the same reads on the
+    // opposite strand and always tie `real` -> false NOT. (See fn-level doc.)
+    let mut decoy_fracs: Vec<f64> = Vec::with_capacity(n_decoys);
     for d in 0..n_decoys {
         let decoy = dinucleotide_shuffle(candidate_seq, seed.wrapping_add(d as u64 + 1));
         decoy_fracs.push(frac_on_candidate(&realign(&build(&decoy), pool_reads), cand_idx));
     }
-    let rc = crate::vg_family::seq_utils::reverse_complement(candidate_seq);
-    decoy_fracs.push(frac_on_candidate(
-        &realign(&build(&rc), pool_reads),
-        cand_idx,
-    ));
 
     // Compute statistics.
     let nd = decoy_fracs.len();
@@ -219,16 +222,22 @@ mod tests {
         let mut pool: Vec<Vec<u8>> = (0..8).map(|_| cand.clone()).collect();
         pool.push(b"NNNNNN".to_vec());
         pool.push(b"NNNNNN".to_vec());
-        let cert = linearize_certificate(&cand, &copies, &pool, 19, 7, 5, 0.05, fake_realign);
+        // n_decoys=20: a permutation test at alpha=0.05 needs >=20 decoys so the perm_p floor
+        // 1/(n_decoys+1) is strictly below alpha. (The now-removed RC decoy had been silently
+        // supplying this 20th decoy; without it, n_decoys=19 would floor perm_p at 1/20 = 0.05,
+        // never strictly < 0.05.)
+        let cert = linearize_certificate(&cand, &copies, &pool, 20, 7, 5, 0.05, fake_realign);
         assert!(
             (cert.linearized_frac_real - 0.8).abs() < 1e-9,
             "8/10 land on candidate"
         );
         assert!(cert.mean_frac_decoy == 0.0, "decoys != candidate bytes -> no read lands on them");
         assert!(cert.delta > 0.5);
+        // Decoys are the N=20 dinucleotide shuffles ONLY (no RC decoy). No decoy beats real, so
+        // perm_p = (0 + 1) / (n_decoys + 1) = 1/21 < 0.05.
         assert!(
-            cert.perm_p <= 1.0 / 20.0 + 1e-9,
-            "no decoy beats real -> perm_p = 1/(N+1)"
+            cert.perm_p <= 1.0 / (20.0 + 1.0) + 1e-9,
+            "no decoy beats real -> perm_p = 1/(n_decoys+1)"
         );
         assert!(matches!(cert.verdict, Verdict::Linearizes));
     }

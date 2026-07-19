@@ -1318,15 +1318,22 @@ fn fnv1a_seed(t_seq: &[u8]) -> u64 {
 /// Package the stage-2 admission pool build + `linearize::linearize_certificate` call for one admitted
 /// absent copy: `pool` is the MAPQ-0 read pool at this family's region, `copy_seqs` are the OTHER
 /// already-known copies (the candidate itself is appended internally as the last contig — see
-/// `linearize_certificate`). Fixed defaults (`n_decoys=19, min_pool=5, alpha=0.05`) match the plan;
-/// `seed` is a deterministic FNV-1a hash of `t_seq` so the certificate is reproducible per candidate.
+/// `linearize_certificate`). Fixed defaults (`n_decoys=20, min_pool=5, alpha=0.05`); `seed` is a
+/// deterministic FNV-1a hash of `t_seq` so the certificate is reproducible per candidate.
+///
+/// `n_decoys=20` (not 19): a permutation test at alpha=0.05 needs at least 20 decoys, so the perm_p
+/// floor `1/(n_decoys+1) = 1/21 ~= 0.048` is strictly below alpha and a perfect candidate can reach
+/// `Linearizes`. (Decoys are now the 20 dinucleotide shuffles only — the reverse-complement decoy was
+/// removed because minimap2 is strand-symmetric and RC(candidate) would tie `real`; see
+/// `linearize_certificate`. Previously 19 shuffles + 1 RC also summed to 20 decoys, so this preserves
+/// the same statistical resolution with all decoys valid.)
 fn family_linearize_cert(
     t_seq: &[u8],
     copy_seqs: &[Vec<u8>],
     pool: &[Vec<u8>],
     realign: impl Fn(&[Vec<u8>], &[Vec<u8>]) -> Vec<Option<(usize, u32)>>,
 ) -> super::linearize::LinearizeCertificate {
-    super::linearize::linearize_certificate(t_seq, copy_seqs, pool, 19, fnv1a_seed(t_seq), 5, 0.05, realign)
+    super::linearize::linearize_certificate(t_seq, copy_seqs, pool, 20, fnv1a_seed(t_seq), 5, 0.05, realign)
 }
 
 pub fn detect_and_assign(
@@ -2896,15 +2903,12 @@ mod tests {
     #[test]
     fn family_linearize_cert_uses_mapq0_pool() {
         use crate::vg_family::linearize::Verdict;
-        // NOTE (deviation from the brief's literal snippet): the brief's candidate
-        // b"ACGTACGTTTGGCCAAACGTACGT" is self-reverse-complementary (RC(cand) == cand byte-for-byte).
-        // `linearize_certificate` always appends an RC decoy, so with a pool that matches the candidate
-        // that RC decoy ties `real` deterministically (independent of seed) and pushes perm_p to
-        // 2/21 ~= 0.095 > alpha=0.05, i.e. this exact fixture can never reach `Linearizes` under the
-        // brief's own specified defaults. Swapped in the longer, non-palindromic candidate that
-        // `linearize.rs`'s own `real_copy_linearizes_decoy_does_not` test uses (same reasoning: "longer
-        // sequence to minimize chance of shuffle returning the original"); everything else — the
-        // MAPQ-0 pool, the fake realign double, the assertion — is unchanged from the brief.
+        // Uses a longer, non-palindromic candidate (same one as linearize.rs's
+        // `real_copy_linearizes_decoy_does_not`) to minimize the chance a dinucleotide shuffle returns
+        // the original. Decoys are the 20 dinucleotide shuffles only (the reverse-complement decoy was
+        // removed: minimap2 is strand-symmetric, so RC(candidate) would tie `real`). With the whole
+        // pool matching the candidate and no decoy beating it, perm_p = 1/(20+1) = 1/21 ~= 0.048 < 0.05
+        // -> Linearizes.
         let cand = b"ACGTACGTTTGGCCAAACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT".to_vec();
         let pool: Vec<Vec<u8>> = (0..8).map(|_| cand.clone()).collect();
         let realign = |refs: &[Vec<u8>], reads: &[Vec<u8>]| {
