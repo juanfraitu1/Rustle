@@ -71,9 +71,10 @@ struct RegionWork {
     fams: Vec<FamilyAssignment>,
     fallback: Vec<FallbackEdge>,
     dna_needs: Vec<DnaNeedsRecord>,
-    /// Report-first augment-and-linearize certificates (Task 4), one per Stage-2-admitted reference-absent
-    /// copy: `(family_id, certificate, (chrom, start, end))`. Not yet written anywhere — the `<out>.linearize.tsv`
-    /// writer + `--linearize-gate` land in a follow-up task.
+    /// Augment-and-linearize certificates (Task 4), one per Stage-2-admitted reference-absent copy:
+    /// `(family_id, certificate, (chrom, start, end))`. Written to `<out>.linearize.tsv` (Task 5); when
+    /// `--linearize-gate` is set, a non-LINEARIZES verdict also demotes that candidate out of `admitted`
+    /// in `detect_and_assign` (it appears here as a certificate row but not as an admitted copy).
     linearize_certs: Vec<(String, LinearizeCertificate, (String, u64, u64))>,
     transcripts: Vec<TranscriptRec>, // FLAIR-style isoforms for the --gtf emit (empty unless --gtf)
 }
@@ -218,6 +219,16 @@ struct Args {
     /// to `<out>.dna_needs.tsv`.
     #[arg(long, default_value_t = false)]
     absent_copies: bool,
+
+    /// Opt-in augment-and-linearize GATE (requires --absent-copies; no-op otherwise): a Stage-2 candidate
+    /// whose `LinearizeCertificate` verdict is NOT `Linearizes` (its MAPQ-0 read pool does not land on it
+    /// distinguishably more often than on a dinucleotide-shuffled decoy) is DEMOTED — written to
+    /// `<out>.dna_needs.tsv` instead of admitted as a copy. Default OFF: every admitted candidate's
+    /// certificate is still computed and reported to `<out>.linearize.tsv`, but admission is unchanged
+    /// (byte-identical to pre-Task-5 `--absent-copies` output).
+    #[arg(long, default_value_t = false)]
+    linearize_gate: bool,
+
     /// Emit `<out>.posterior.tsv`: per read, the soft per-copy POSTERIOR and the consistent ZONE (the genomic
     /// region of the copies it is compatible with) — the Bayesian complement to the hard assign/abstain, so an
     /// unassignable (Tied) read is localized to a zone with a distribution instead of a bare flag. The prior is
@@ -698,6 +709,35 @@ fn resolve_lambda(explicit: Option<f64>, from_file: Option<f64>) -> Option<f64> 
     explicit.or(from_file)
 }
 
+fn verdict_str(v: rustle::vg_family::linearize::Verdict) -> &'static str {
+    use rustle::vg_family::linearize::Verdict::*;
+    match v {
+        Linearizes => "LINEARIZES",
+        Not => "NOT",
+        Undetermined => "UNDETERMINED",
+    }
+}
+
+/// One `<out>.linearize.tsv` row for a single Stage-2-admitted reference-absent candidate's
+/// augment-and-linearize certificate (Task 4's `linearize_certs`). `NA` for NaN fracs/perm_p
+/// (the `n_pool < min_pool` short-circuit in `linearize_certificate`).
+fn linearize_tsv_row(fam: &str, loc: (&str, u64, u64), c: &LinearizeCertificate) -> String {
+    let f = |x: f64| if x.is_nan() { "NA".to_string() } else { format!("{:.3}", x) };
+    format!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        fam,
+        loc.0,
+        loc.1,
+        loc.2,
+        c.n_pool,
+        f(c.linearized_frac_real),
+        f(c.mean_frac_decoy),
+        f(c.delta),
+        if c.perm_p.is_nan() { "NA".to_string() } else { format!("{:.4}", c.perm_p) },
+        verdict_str(c.verdict)
+    )
+}
+
 fn main() -> Result<()> {
     let mut args = Args::parse();
     if args.igv {
@@ -799,8 +839,9 @@ fn main() -> Result<()> {
     let mut exon_graphs: Vec<rustle::vg_family::copy_graph::ExonGraph> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
-    // --absent-copies: report-first linearize certificates, one per Stage-2-admitted candidate (Task 4). Not
-    // yet written anywhere — the `<out>.linearize.tsv` writer + `--linearize-gate` land in a follow-up task.
+    // --absent-copies: linearize certificates, one per Stage-2-admitted candidate (Task 4), written to
+    // `<out>.linearize.tsv` below (Task 5). `--linearize-gate` additionally uses the verdict to gate
+    // admission itself (in `detect_and_assign`), so a demoted candidate shows up here but not in `fams`.
     let mut linearize_certs_all: Vec<(String, LinearizeCertificate, (String, u64, u64))> = Vec::new();
     let mut vg_realign_lines: Vec<String> = Vec::new(); // --vg-realign: per-read re-align decisions (report-only)
     let mut gfam = 0usize; // global family counter (unique ids across regions)
@@ -881,7 +922,7 @@ fn main() -> Result<()> {
         let t_da = std::time::Instant::now();
         let (fams, fallback, dna_needs, linearize_certs) = detect_and_assign(
             &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
-            args.absent_copies, &args.fasta,
+            args.absent_copies, args.linearize_gate, &args.fasta,
         );
         if timing {
             eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
@@ -1577,6 +1618,25 @@ fn main() -> Result<()> {
             dna_needs_rows.len(),
             args.out
         );
+
+        // Augment-and-linearize certificates (Task 4/5): one row per Stage-2-admitted candidate, report-first
+        // (`--linearize-gate` off) or gating admission itself (`--linearize-gate` on -- see the TODO fired in
+        // `detect_and_assign`'s Stage-2 admission block). Written whenever --absent-copies is set, same as
+        // `.dna_needs.tsv`, so an --absent-copies-off run stays byte-identical (no new output file at all).
+        let mut lh = std::fs::File::create(format!("{}.linearize.tsv", args.out))?;
+        writeln!(
+            lh,
+            "family_id\tchrom\tstart\tend\tn_pool\tlinearized_frac_real\tmean_frac_decoy\tdelta\tperm_p\tverdict"
+        )?;
+        for (fam, cert, (chrom, start, end)) in &linearize_certs_all {
+            writeln!(lh, "{}", linearize_tsv_row(fam, (chrom, *start, *end), cert))?;
+        }
+        eprintln!(
+            "[copy_assign] {} linearize certificate(s) -> {}.linearize.tsv{}",
+            linearize_certs_all.len(),
+            args.out,
+            if args.linearize_gate { " (--linearize-gate: non-LINEARIZES candidates demoted to .dna_needs.tsv)" } else { "" }
+        );
     }
 
     // --vg-realign: the re-align supplement's per-family/per-read decisions (report-only — not fed back
@@ -1657,6 +1717,15 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linearize_tsv_row_formats() {
+        use rustle::vg_family::linearize::{LinearizeCertificate, Verdict};
+        let c = LinearizeCertificate { n_pool: 40, linearized_frac_real: 0.82, mean_frac_decoy: 0.01,
+            delta: 0.81, perm_p: 0.05, verdict: Verdict::Linearizes };
+        let row = linearize_tsv_row("GWFAM1", ("chr9", 100, 200), &c);
+        assert_eq!(row, "GWFAM1\tchr9\t100\t200\t40\t0.820\t0.010\t0.810\t0.0500\tLINEARIZES");
+    }
 
     #[test]
     fn read_lambda_file_parses_the_scalar() {

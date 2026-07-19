@@ -1346,6 +1346,7 @@ pub fn detect_and_assign(
     p: &AssignParams,
     rescue_extra: &[PrimaryRead],
     absent_copies: bool,
+    linearize_gate: bool,
     fasta_path: &str,
 ) -> (
     Vec<FamilyAssignment>,
@@ -1581,8 +1582,23 @@ pub fn detect_and_assign(
                                 .filter(|(_, &q)| q == 0).map(|(r, _)| r.seq.clone()).collect();
                             let copy_seqs: Vec<Vec<u8>> = all_copies.iter().map(|c| c.seq.clone()).collect();
                             let cert = family_linearize_cert(&t.seq, &copy_seqs, &pool, absent_copy::realign_pool_minimap2);
+                            let verdict = cert.verdict;
                             linearize_certs.push((cf.family_id.clone(), cert, (t.chrom.clone(), t.start, t.end)));
-                            // (Task 5 adds: if linearize_gate && cert.verdict != Linearizes { dna_needs.push(...); continue; })
+                            // Opt-in gate (Task 5): a candidate that does NOT linearize (its MAPQ-0 pool fails
+                            // to prefer it over a dinucleotide-shuffled decoy) is demoted to a DNA-needs record
+                            // instead of admitted, when `--linearize-gate` is set. OFF (default) leaves this
+                            // purely additive reporting -- admission is unchanged either way.
+                            if linearize_gate && !matches!(verdict, super::linearize::Verdict::Linearizes) {
+                                dna_needs.push(DnaNeedsRecord {
+                                    chrom: t.chrom.clone(),
+                                    start: t.start,
+                                    end: t.end,
+                                    n_clusters: cand.n_clusters,
+                                    reason: "did not linearize (perm_p >= alpha)".to_string(),
+                                    read_count: cand.iso.read_count,
+                                });
+                                continue;
+                            }
                             admitted.push(t);
                         }
                         // Task 6: collect DNA-needs records for the caller to surface as <out>.dna_needs.tsv.
@@ -3078,6 +3094,7 @@ mod tests {
             &super::super::copy_assign::AssignParams::default(),
             &[],
             false,
+            false,
             &fasta,
         );
         if !fallback.is_empty() {
@@ -3111,6 +3128,7 @@ mod tests {
             2,
             &super::super::copy_assign::AssignParams::default(),
             &[],
+            false,
             false,
             "",
         );
@@ -3149,6 +3167,7 @@ mod tests {
             &super::super::copy_assign::AssignParams::default(),
             &[],
             false, // OFF — the admission block must be completely skipped
+            false,
             "",
         );
         assert!(
@@ -3179,6 +3198,7 @@ mod tests {
             2,
             &AssignParams::default(),
             &[],
+            false,
             false,
             "",
         );
@@ -3593,6 +3613,7 @@ mod tests {
             2,
             &AssignParams::default(),
             &[],
+            false,
             false,
             "",
         );
