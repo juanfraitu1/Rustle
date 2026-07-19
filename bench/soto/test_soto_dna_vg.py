@@ -128,3 +128,25 @@ def test_build_family_missing_member_logged_not_counted():
     detection = {("chr1", 100, 200): (True, "RNA-split")}
     r = V.build_family("ID_x", members, fa, detection)
     assert r["n_members"] == 2 and r["n_present"] == 1 and r["missing"] == ["g2"]
+
+
+def test_apply_window_extracts_and_clamps():
+    seqs = ["AAAACCCCGGGG", "TTTTAAAACCCC", "GGGG"]
+    spans = [(0, 6), None, (0, 4)]        # m0 -> [0:6] clamped to 4; m1 -> None fallback first 4; m2 -> [0:4]
+    out = V.apply_window(seqs, spans, window_bp=4)
+    assert out == ["AAAA", "TTTT", "GGGG"]
+
+
+def test_window_members_passthrough_when_all_fit():
+    seqs = ["ACGT", "ACGA", "ACGT"]        # all <= window_bp -> unchanged, no minimap2 invoked
+    out, windowed = V.window_members(seqs, window_bp=100)
+    assert out == seqs and windowed is False
+
+
+def test_build_family_windowed_flag_false_for_small(monkeypatch):
+    monkeypatch.setattr(V, "abpoa_msa", lambda s: list(s))
+    fa = {"chr1:101-108": "ACGTACGT", "chr1:201-208": "ACGTTCGT"}
+    members = [("g1", "chr1", 100, 108), ("g2", "chr1", 200, 208)]
+    detection = {("chr1", 100, 108): (True, "RNA-split"), ("chr1", 200, 208): (False, "")}
+    r = V.build_family("ID_s", members, fa, detection)
+    assert r["windowed"] is False and r["n_present"] == 2

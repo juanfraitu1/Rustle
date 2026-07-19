@@ -13,6 +13,53 @@ MEMFA = "/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_members.fa"
 DETECT = "bench/soto/soto_member_detection.tsv"
 OUT = "/home/juanfra/winloci_scratch/soto_vg"
 
+WINDOW_BP = 20000              # memory-safe abpoa window on this 19 GB box (30000 still OOM'd; full SD spans OOM)
+MM2 = "/home/juanfra/miniforge3/bin/minimap2"
+
+
+def apply_window(seqs, member_spans, window_bp):
+    """Pure: extract each member's homologous window. member_spans[i] = (qs, qe) coords in member i that
+    align to the anchor's window, or None (no hit -> fallback first window_bp). Clamp each to window_bp."""
+    out = []
+    for i, s in enumerate(seqs):
+        sp = member_spans[i]
+        if sp is None:
+            out.append(s[:window_bp])
+        else:
+            qs, qe = sp
+            out.append(s[qs:min(qe, qs + window_bp)])
+    return out
+
+
+def window_members(seqs, window_bp=WINDOW_BP):
+    """If any member exceeds window_bp, window ALL members to the region homologous to the SHORTEST member's
+    first window_bp (via minimap2), so the graph stays a shared-backbone view that fits abpoa's memory.
+    Returns (windowed_seqs, windowed: bool). No-op (returns seqs unchanged, False) when all fit."""
+    if all(len(s) <= window_bp for s in seqs):
+        return list(seqs), False
+    import subprocess, tempfile
+    anchor_idx = min(range(len(seqs)), key=lambda i: len(seqs[i]))
+    anchor_win = seqs[anchor_idx][:window_bp]
+    with tempfile.TemporaryDirectory() as td:
+        aq, tf = f"{td}/anchor.fa", f"{td}/members.fa"
+        open(aq, "w").write(f">anchor\n{anchor_win}\n")
+        open(tf, "w").write("".join(f">m{i}\n{s}\n" for i, s in enumerate(seqs)))
+        # ref=anchor, query=members  => PAF query is m{i}; member coords are qstart/qend (cols 2,3)
+        paf = subprocess.run([MM2, "-x", "asm20", "-c", aq, tf],
+                             capture_output=True, text=True, timeout=600).stdout
+    best = {}
+    for line in paf.splitlines():
+        c = line.split("\t")
+        if len(c) < 11:
+            continue
+        i = int(c[0][1:])                       # qname "m{i}"
+        qs, qe, block = int(c[2]), int(c[3]), int(c[10])
+        if i not in best or block > best[i][2]:
+            best[i] = (qs, qe, block)
+    spans = [(best[i][0], best[i][1]) if i in best else None for i in range(len(seqs))]
+    return apply_window(seqs, spans, window_bp), True
+
+
 # ---- colours (match copy_graph.rs) ----
 GREEN = "#1e8e3e"   # RNA-recovered
 RED = "#d93025"     # DNA-only (K=0 / silent / coverage)
@@ -190,7 +237,8 @@ def build_family(family_id, members, fa, detection):
             missing.append(gene)
     if not present:
         return dict(family_id=family_id, n_members=len(members), n_present=0,
-                    gfa="", colours="", legend="", missing=missing)
+                    gfa="", colours="", legend="", missing=missing, windowed=False)
+    seqs, windowed = window_members(seqs)
     rows = abpoa_msa(seqs) if len(seqs) > 1 else [seqs[0]]
     gfa, paths = msa_to_gfa(rows, names)
     det_by_gene = {g: detection.get((c, s, e), (False, ""))[0] for g, c, s, e in present}
@@ -199,7 +247,7 @@ def build_family(family_id, members, fa, detection):
     legend = legend_tsv(present, det_by_gene, rec_by_gene)
     n_present = sum(1 for l in gfa.splitlines() if l.startswith("P\t"))   # checked, not assumed
     return dict(family_id=family_id, n_members=len(members), n_present=n_present,
-                gfa=gfa, colours=colours, legend=legend, missing=missing)
+                gfa=gfa, colours=colours, legend=legend, missing=missing, windowed=windowed)
 
 
 def main():
@@ -210,14 +258,22 @@ def main():
     index = ["# Soto DNA variation-graph ceiling — flagship families\n"]
     for family_id, label in FLAGSHIPS:
         members = parse_family_members(bed, family_id)
-        r = build_family(family_id, members, fa, detection)
+        try:
+            r = build_family(family_id, members, fa, detection)
+        except Exception as ex:
+            print(f"{family_id} ({label}): RENDER FAILED — {type(ex).__name__}: {ex}")
+            index.append(f"## {family_id} — {label}: RENDER FAILED ({type(ex).__name__}) — "
+                         f"full genomic span exceeds this box's abpoa memory even windowed")
+            continue
         base = f"{OUT}/{family_id}"
         open(f"{base}.gfa", "w").write(r["gfa"])
         open(f"{base}.colours.csv", "w").write(r["colours"])
         open(f"{base}.legend.tsv", "w").write(r["legend"])
+        wnote = (f" [windowed to ~{WINDOW_BP // 1000} kb homologous core — full span exceeds this box's memory]"
+                 if r.get("windowed") else "")
         miss = f"  (MISSING from graph: {r['missing']})" if r["missing"] else ""
-        print(f"{family_id} ({label}): {r['n_present']}/{r['n_members']} copies as paths{miss}")
-        index.append(f"## {family_id} — {label}: {r['n_present']}/{r['n_members']} copies present as paths")
+        print(f"{family_id} ({label}): {r['n_present']}/{r['n_members']} copies as paths{wnote}{miss}")
+        index.append(f"## {family_id} — {label}: {r['n_present']}/{r['n_members']} copies present as paths{wnote}")
         index.append(f"`{family_id}.gfa` + `{family_id}.colours.csv` (Bandage). " + CAPTION.format(n=r["n_present"]))
         if r["missing"]:
             index.append(f"> honesty: {len(r['missing'])} member(s) absent from the graph: {r['missing']}")
