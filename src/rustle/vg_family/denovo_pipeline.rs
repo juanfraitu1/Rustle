@@ -17,7 +17,9 @@ use std::collections::{BTreeSet, HashSet};
 use anyhow::Result;
 
 use super::absent_copy::{self, AbsentCopyParams, Admission, DnaNeedsRecord};
-use super::copy_assign::{assign_read_editing, Assignment, AssignParams, AssignStatus, CopyProfile, ReadFeatures};
+use super::copy_assign::{
+    assign_read_editing, Assignment, AssignParams, AssignStatus, BubbleGraph, CopyProfile, ReadFeatures,
+};
 use super::copy_assign_pipeline::{
     assign_family_detailed, assign_family_detailed_pruned, best_overlap_copy, build_family_profiles,
     copy_boundaries, detect_editing_columns, freeze_merge, gen2off, read_ref_end, FamilyProfiles,
@@ -1029,6 +1031,9 @@ pub(crate) fn apply_realign_patch(
     } else {
         Vec::new()
     };
+    // Built once from the stable pre-correction `copy_profiles` (see comment above), same as the
+    // family's own one-shot pass -- every corrected read in this loop threads the same graph.
+    let graph = BubbleGraph::from_copies(&copy_profiles);
 
     for (read_idx, (new_copy, obs)) in apply.corrected {
         if let Some(pos) = fa.assignments.iter().position(|(ri, _)| *ri == read_idx) {
@@ -1037,7 +1042,7 @@ pub(crate) fn apply_realign_patch(
                 psv_qual: Vec::new(),
                 junctions: fa.read_junctions[pos].clone(),
             };
-            fa.assignments[pos].1 = match assign_read_editing(&rf, &copy_profiles, p, &editing_cols) {
+            fa.assignments[pos].1 = match assign_read_editing(&rf, &graph, &copy_profiles, p, &editing_cols) {
                 Some(a) => a,
                 None => {
                     // `copy_profiles` is empty (no copies at all) -- can't happen in practice (a

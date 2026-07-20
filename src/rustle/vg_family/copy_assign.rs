@@ -313,6 +313,7 @@ pub(crate) struct ReadEvidence {
 /// competitor loop for `min_p`.
 pub(crate) fn read_copy_evidence(
     read: &ReadFeatures,
+    graph: &BubbleGraph,
     copies: &[CopyProfile],
     p: &AssignParams,
     editing_cols: &[bool],
@@ -321,43 +322,25 @@ pub(crate) fn read_copy_evidence(
     let mut logl = vec![0.0f64; n];
     let mut n_decisive = 0usize;
 
-    // --- PSV term (each column weighted by its own base quality when available) ---
-    let n_cols = read.psv_obs.len();
-    // Columns this read actually spans (psv_obs = Some). Built once and reused by the PSV term and the
-    // significance gate below, so neither re-scans the full (often thousands-wide) column set per copy.
-    // Reads span a small slice of the family's columns, so this turns the gate's per-competitor O(n_cols)
-    // scan into O(spanned) — same observations, same arithmetic, just no walking over absent columns.
-    let spanned: Vec<usize> = (0..n_cols).filter(|&j| read.psv_obs[j].is_some()).collect();
-    for &j in &spanned {
-        let obs = read.psv_obs[j].expect("spanned column carries an observation");
-        // per-base error: the column's QV if the read carried one, else the flat default.
-        let e = match read.psv_qual.get(j).copied().flatten() {
+    // --- PSV term: thread the read as a WALK through the bubbles it spans (== the old `spanned` loop,
+    //     same columns, same order, so the f64 sums are bit-identical). ---
+    for b in &graph.bubbles {
+        let obs = match read.psv_obs.get(b.col).copied().flatten() {
+            Some(o) => o,
+            None => continue, // read does not span this bubble
+        };
+        let e = match read.psv_qual.get(b.col).copied().flatten() {
             Some(q) => super::copy_split::phred_err(q),
             None => p.error_rate,
         };
         let lp_match = (1.0 - e).ln();
         let lp_mis = (e / 3.0).ln();
-        // decisive iff the copies disagree at this column (among those with a defined allele)
-        let mut seen: Option<u8> = None;
-        let mut differ = false;
-        for c in copies {
-            if let Some(a) = c.alleles.get(j).copied().flatten() {
-                match seen {
-                    None => seen = Some(a),
-                    Some(s) => {
-                        if s != a {
-                            differ = true;
-                        }
-                    }
-                }
-            }
-        }
-        if differ {
+        if b.decisive {
             n_decisive += 1;
         }
-        for (ci, c) in copies.iter().enumerate() {
-            if let Some(a) = c.alleles.get(j).copied().flatten() {
-                logl[ci] += if obs == a { lp_match } else { lp_mis };
+        for (ci, a) in b.copy_allele.iter().enumerate() {
+            if let Some(a) = a {
+                logl[ci] += if obs == *a { lp_match } else { lp_mis };
             }
         }
     }
@@ -403,7 +386,8 @@ pub(crate) fn read_copy_evidence(
 /// Assign a read to its most likely copy. Returns `None` only if `copies` is empty.
 /// Deterministic: copies are scored in slice order and ties resolve to the earliest (lowest index).
 pub fn assign_read(read: &ReadFeatures, copies: &[CopyProfile], p: &AssignParams) -> Option<Assignment> {
-    assign_read_editing(read, copies, p, &[])
+    let graph = BubbleGraph::from_copies(copies);
+    assign_read_editing(read, &graph, copies, p, &[])
 }
 
 /// Like [`assign_read`], but `editing_cols[j] == true` marks PSV column `j` as an A-to-I RNA-editing site
@@ -413,6 +397,7 @@ pub fn assign_read(read: &ReadFeatures, copies: &[CopyProfile], p: &AssignParams
 /// `editing_cols` may be shorter than the PSV columns (missing = not an editing site).
 pub fn assign_read_editing(
     read: &ReadFeatures,
+    graph: &BubbleGraph,
     copies: &[CopyProfile],
     p: &AssignParams,
     editing_cols: &[bool],
@@ -421,7 +406,7 @@ pub fn assign_read_editing(
     if n == 0 {
         return None;
     }
-    let ev = read_copy_evidence(read, copies, p, editing_cols);
+    let ev = read_copy_evidence(read, graph, copies, p, editing_cols);
     let ReadEvidence { logl, min_p, n_decisive } = ev;
 
     // argmax (earliest on ties) + runner-up
@@ -543,11 +528,12 @@ mod tests {
         ];
         let read = ReadFeatures { psv_obs: vec![Some(b'A')], psv_qual: vec![], junctions: vec![] };
         let p = AssignParams::for_alpha(1e-3);
-        let ev = read_copy_evidence(&read, &copies, &p, &[false]);
+        let graph = BubbleGraph::from_copies(&copies);
+        let ev = read_copy_evidence(&read, &graph, &copies, &p, &[false]);
         // logl favors copy 0; min_p equals the Assignment's identifiability bound; one decisive column.
         assert!(ev.logl[0] > ev.logl[1]);
         assert_eq!(ev.n_decisive, 1);
-        let a = assign_read_editing(&read, &copies, &p, &[false]).unwrap();
+        let a = assign_read_editing(&read, &graph, &copies, &p, &[false]).unwrap();
         assert!((ev.min_p - a.min_p_value).abs() < 1e-12);
         // posterior consistency: softmax(logl) == Assignment.posterior
         let m = ev.logl.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -580,7 +566,8 @@ mod tests {
     #[test]
     fn read_copy_evidence_golden_is_stable() {
         let (read, copies, p) = golden_fixture();
-        let ev = read_copy_evidence(&read, &copies, &p, &[]);
+        let graph = BubbleGraph::from_copies(&copies);
+        let ev = read_copy_evidence(&read, &graph, &copies, &p, &[]);
         // Capture the CURRENT bit-exact values: run once, read the assert-failure message, paste them back,
         // then this test freezes them. (Use {:?} on f64 for the exact decimal that round-trips.)
         // EXPECTED (fill from the first run, then it must never change):
@@ -590,6 +577,44 @@ mod tests {
         assert_eq!(ev.logl, want_logl, "logl drifted -> decision changed");
         assert_eq!(ev.min_p, want_min_p, "min_p drifted");
         assert_eq!(ev.n_decisive, want_n_decisive, "n_decisive drifted");
+    }
+
+    // Second golden fixture: unlike `golden_fixture` (a genuine tie, min_p == 1.0), this read carries
+    // high-quality (Q40) support for copy 0 at column 0, a column where copy0 differs from BOTH
+    // competitors (copy1=G, copy2=T vs copy0=A) -- so it exercises the `copy_pair_significance`
+    // identifiability-bound path the tie-only golden above never touches (`min_p < 1.0`).
+    fn resolvable_fixture() -> (ReadFeatures, Vec<CopyProfile>, AssignParams) {
+        let cp = |a: Vec<Option<u8>>, j: Vec<i64>| CopyProfile { copy_id: 0, alleles: a, junctions: j };
+        let copies = vec![
+            cp(vec![Some(b'A'), Some(b'C'), Some(b'G'), Some(b'T')], vec![100]),
+            cp(vec![Some(b'G'), Some(b'G'), Some(b'G'), None],       vec![]),
+            cp(vec![Some(b'T'), Some(b'C'), Some(b'A'), Some(b'T')], vec![100, 250]),
+        ];
+        let read = ReadFeatures {
+            psv_obs: vec![Some(b'A'), Some(b'C'), None, Some(b'T')],
+            psv_qual: vec![Some(40), Some(40), None, Some(40)],
+            junctions: vec![100],
+        };
+        (read, copies, AssignParams::default())
+    }
+
+    const EXPECT_LOGL_RESOLVABLE: [f64; 3] =
+        [4.999699984999, -25.617905321288585, -5.309152670644961];
+    const EXPECT_MIN_P_RESOLVABLE: f64 = 3.3333333333333335e-5;
+    const EXPECT_N_DECISIVE_RESOLVABLE: usize = 3;
+
+    #[test]
+    fn read_copy_evidence_golden_resolvable() {
+        let (read, copies, p) = resolvable_fixture();
+        let graph = BubbleGraph::from_copies(&copies);
+        let ev = read_copy_evidence(&read, &graph, &copies, &p, &[]);
+        let want_logl: Vec<f64> = EXPECT_LOGL_RESOLVABLE.to_vec();
+        let want_min_p: f64 = EXPECT_MIN_P_RESOLVABLE;
+        let want_n_decisive: usize = EXPECT_N_DECISIVE_RESOLVABLE;
+        assert_eq!(ev.logl, want_logl, "logl drifted -> decision changed");
+        assert_eq!(ev.min_p, want_min_p, "min_p drifted");
+        assert_eq!(ev.n_decisive, want_n_decisive, "n_decisive drifted");
+        assert!(ev.min_p < 1.0, "this fixture must exercise the resolvable (min_p < 1.0) path");
     }
 
     #[test]
@@ -876,13 +901,14 @@ mod tests {
             CopyProfile { copy_id: 1, alleles: vec![Some(b'A')], junctions: vec![] },
         ];
         let r = ReadFeatures { psv_obs: vec![Some(b'G')], psv_qual: vec![Some(40)], junctions: vec![] };
-        let a = assign_read_editing(&r, &copies, &AssignParams::default(), &[]).unwrap();
+        let graph = BubbleGraph::from_copies(&copies);
+        let a = assign_read_editing(&r, &graph, &copies, &AssignParams::default(), &[]).unwrap();
         assert_eq!(a.status, AssignStatus::Assigned, "unflagged single PSV resolves");
-        let a2 = assign_read_editing(&r, &copies, &AssignParams::default(), &[true]).unwrap();
+        let a2 = assign_read_editing(&r, &graph, &copies, &AssignParams::default(), &[true]).unwrap();
         assert_eq!(a2.status, AssignStatus::Tied, "flagged editing column can't resolve -> Tied");
         assert!(a2.min_p_value >= 1e-3);
         let p_off = AssignParams { rna_editing_filter: false, ..AssignParams::default() };
-        let a3 = assign_read_editing(&r, &copies, &p_off, &[true]).unwrap();
+        let a3 = assign_read_editing(&r, &graph, &copies, &p_off, &[true]).unwrap();
         assert_eq!(a3.status, AssignStatus::Assigned, "filter off ignores the flag");
         // assign_read wrapper == assign_read_editing with empty flags
         assert_eq!(assign_read(&r, &copies, &AssignParams::default()).unwrap().status, AssignStatus::Assigned);

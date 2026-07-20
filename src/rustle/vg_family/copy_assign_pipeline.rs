@@ -21,7 +21,7 @@ use rayon::prelude::*;
 
 use super::copy_assign::{
     assign_read, assign_read_editing, boundary_present, copy_pair_significance, AssignParams, AssignStatus,
-    Assignment, CopyProfile, ReadFeatures,
+    Assignment, BubbleGraph, CopyProfile, ReadFeatures,
 };
 use super::copy_split::{intron_chain_of, AlignedRead};
 use super::family_detect::DenovoTranscript;
@@ -1473,6 +1473,8 @@ fn assign_family_detailed_once(
         obs_for_em: Option<Vec<Option<u8>>>,
         result: Option<ReadResult>,
     }
+    // Built once per family (from the family's copy roster) and shared by every read in the loop below.
+    let graph = BubbleGraph::from_copies(&fp.profiles);
     let per_read: Vec<Option<PerRead>> = reads
         .par_iter()
         .enumerate()
@@ -1493,13 +1495,13 @@ fn assign_family_detailed_once(
                 site_obs = site_obs.into_iter().step_by(stride).collect();
             }
             let mcall = detect_mosaic(&site_obs, copies.len(), MOSAIC_EPS, &mparams);
-            let Some(combined) = assign_read_editing(&feats, &fp.profiles, p, &editing_cols) else {
+            let Some(combined) = assign_read_editing(&feats, &graph, &fp.profiles, p, &editing_cols) else {
                 return Some(PerRead { mcall, obs_for_em: None, result: None });
             };
             let obs = feats.psv_obs.clone();
             let junctions = feats.junctions.clone();
             let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, psv_qual: feats.psv_qual, junctions: vec![] };
-            let Some(psv) = assign_read_editing(&psv_feats, &fp.profiles, p, &editing_cols) else {
+            let Some(psv) = assign_read_editing(&psv_feats, &graph, &fp.profiles, p, &editing_cols) else {
                 return Some(PerRead { mcall, obs_for_em: Some(obs), result: None });
             };
             Some(PerRead {

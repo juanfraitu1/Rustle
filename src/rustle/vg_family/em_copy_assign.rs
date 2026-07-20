@@ -242,6 +242,7 @@ pub fn em_assign_family(
         })
         .collect();
     let editing = crate::vg_family::copy_assign_pipeline::detect_editing_columns(read_obs, &copies);
+    let graph = super::copy_assign::BubbleGraph::from_copies(&copies);
     let evidence: Vec<super::copy_assign::ReadEvidence> = read_obs
         .iter()
         .enumerate()
@@ -251,7 +252,7 @@ pub fn em_assign_family(
                 psv_qual: vec![],
                 junctions: read_junctions.get(i).cloned().unwrap_or_default(),
             };
-            super::copy_assign::read_copy_evidence(&rf, &copies, params, &editing)
+            super::copy_assign::read_copy_evidence(&rf, &graph, &copies, params, &editing)
         })
         .collect();
     em_assign(&evidence, copy_alleles.len(), params.alpha, eps, max_iter)
@@ -400,7 +401,7 @@ mod em_driver_tests {
 ///   posterior must track the abundance prior exactly (no forced 1/k hard call), at every coverage.
 #[cfg(test)]
 mod coverage_sweep {
-    use super::super::copy_assign::{read_copy_evidence, AssignParams, CopyProfile, ReadFeatures};
+    use super::super::copy_assign::{read_copy_evidence, AssignParams, BubbleGraph, CopyProfile, ReadFeatures};
     use super::{em_assign, EmLabel};
 
     /// Seeded 64-bit LCG (Knuth MMIX constants) -- deterministic stand-in for `rand`. Returns the
@@ -509,6 +510,7 @@ mod coverage_sweep {
         let editing_cols = vec![false; N_COLS];
         let coverages = [2usize, 5, 10, 20, 50, 100];
         let mut seed: u64 = 0xC0FFEE_2026_u64;
+        let graph = BubbleGraph::from_copies(&copies);
 
         let mut l1_by_cov = std::collections::HashMap::new();
         let mut acc_by_cov = std::collections::HashMap::new();
@@ -522,7 +524,7 @@ mod coverage_sweep {
             let sim = simulate_reads(&copies, &pi_star, n_reads, err_rate, &mut seed);
             let evidence: Vec<_> = sim
                 .iter()
-                .map(|(_, r)| read_copy_evidence(r, &copies, &params, &editing_cols))
+                .map(|(_, r)| read_copy_evidence(r, &graph, &copies, &params, &editing_cols))
                 .collect();
             let truth: Vec<usize> = sim.iter().map(|(z, _)| *z).collect();
 
@@ -580,13 +582,14 @@ mod coverage_sweep {
         let params = AssignParams { error_rate: err_rate, ..AssignParams::for_alpha(1e-3) };
         let editing_cols = vec![false; N_COLS];
         let mut seed: u64 = 0xDEADBEEF_u64;
+        let graph = BubbleGraph::from_copies(&copies);
 
         for &cov in &[2usize, 10, 100] {
             let n_reads = cov * 10;
             let sim = simulate_reads(&copies, &pi_star, n_reads, err_rate, &mut seed);
             let evidence: Vec<_> = sim
                 .iter()
-                .map(|(_, r)| read_copy_evidence(r, &copies, &params, &editing_cols))
+                .map(|(_, r)| read_copy_evidence(r, &graph, &copies, &params, &editing_cols))
                 .collect();
             let result = em_assign(&evidence, 2, 1e-3, 1e-6, 500);
 
