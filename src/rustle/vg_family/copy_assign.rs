@@ -25,6 +25,53 @@ pub struct CopyProfile {
     pub junctions: Vec<i64>,
 }
 
+/// One PSV bubble of the family's ad-hoc-reference variation graph.
+#[derive(Clone, Debug)]
+pub struct Bubble {
+    /// PSV column index (= bubble id). Bubbles are in ascending column order (== the matrix order).
+    pub col: usize,
+    /// Allele-node each copy PATH visits here (index = copy). `None` = the copy has a gap.
+    pub copy_allele: Vec<Option<u8>>,
+    /// The copies carry >= 2 distinct non-`None` alleles here (read-independent). Matches the old
+    /// per-column `differ` test in `read_copy_evidence`.
+    pub decisive: bool,
+}
+
+/// The per-family variation graph the O2 decision threads reads through: one bubble per PSV column,
+/// each copy a path over the allele-nodes. Built once per family; the ad-hoc, auditable reference.
+#[derive(Clone, Debug)]
+pub struct BubbleGraph {
+    pub bubbles: Vec<Bubble>,
+    pub n_copies: usize,
+}
+
+impl BubbleGraph {
+    /// Build the family's bubble graph from the copy profiles. Deterministic; `decisive` is computed
+    /// exactly as `read_copy_evidence`'s inner `differ` loop (>= 2 distinct non-`None` alleles).
+    pub fn from_copies(copies: &[CopyProfile]) -> BubbleGraph {
+        let n_cols = copies.iter().map(|c| c.alleles.len()).max().unwrap_or(0);
+        let mut bubbles = Vec::with_capacity(n_cols);
+        for col in 0..n_cols {
+            let copy_allele: Vec<Option<u8>> =
+                copies.iter().map(|c| c.alleles.get(col).copied().flatten()).collect();
+            let mut seen: Option<u8> = None;
+            let mut decisive = false;
+            for a in copy_allele.iter().flatten() {
+                match seen {
+                    None => seen = Some(*a),
+                    Some(s) => {
+                        if s != *a {
+                            decisive = true;
+                        }
+                    }
+                }
+            }
+            bubbles.push(Bubble { col, copy_allele, decisive });
+        }
+        BubbleGraph { bubbles, n_copies: copies.len() }
+    }
+}
+
 /// One read's observed features in the family's column/boundary space.
 #[derive(Clone, Debug)]
 pub struct ReadFeatures {
@@ -937,5 +984,25 @@ mod tests {
         assert!(rate_hi <= 3e-2, "alpha=1e-2 realized {rate_hi}");
         assert!(rate_lo <= 3e-4, "alpha=1e-4 realized {rate_lo}");
         assert!(rate_lo <= rate_hi + 1e-9, "stricter alpha must not increase error ({rate_lo} vs {rate_hi})");
+    }
+
+    #[test]
+    fn bubble_graph_from_copies_structure() {
+        // 3 copies over 3 columns: col0 all 'A' (not decisive); col1 A/C/A (decisive); col2 copy2 gap
+        let mk = |a: Vec<Option<u8>>| CopyProfile { copy_id: 0, alleles: a, junctions: vec![] };
+        let copies = vec![
+            mk(vec![Some(b'A'), Some(b'A'), Some(b'G')]),
+            mk(vec![Some(b'A'), Some(b'C'), Some(b'G')]),
+            mk(vec![Some(b'A'), Some(b'A'), None]),
+        ];
+        let g = BubbleGraph::from_copies(&copies);
+        assert_eq!(g.n_copies, 3);
+        assert_eq!(g.bubbles.len(), 3);
+        assert_eq!(g.bubbles[0].col, 0);
+        assert!(!g.bubbles[0].decisive);                 // all 'A'
+        assert!(g.bubbles[1].decisive);                  // A vs C
+        assert!(!g.bubbles[2].decisive);                 // G, G, gap -> one distinct allele
+        assert_eq!(g.bubbles[1].copy_allele, vec![Some(b'A'), Some(b'C'), Some(b'A')]);
+        assert_eq!(g.bubbles[2].copy_allele, vec![Some(b'G'), Some(b'G'), None]);
     }
 }
