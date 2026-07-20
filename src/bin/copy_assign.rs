@@ -460,6 +460,7 @@ fn build_copy_graph(
             name: sanitize_gfa_id(&format!("{}_{}", fid, bam_reads[*ri])),
             obs: sel(obs),
             assigned_copy: if matches!(a.status, AssignStatus::Assigned) { Some(a.best_copy) } else { None },
+            cert: Some(ReadCert { p_value: a.p_value, min_p_value: a.min_p_value, status: a.status }),
         })
         .collect();
 

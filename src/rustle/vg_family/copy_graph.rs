@@ -71,12 +71,23 @@ pub struct CopyPath {
     pub corrob: Corrob,
 }
 
+/// Per-read significance certificate carried onto the audit W-line.
+#[derive(Clone, Debug)]
+pub struct ReadCert {
+    pub p_value: f64,
+    pub min_p_value: f64,
+    pub status: super::copy_assign::AssignStatus,
+}
+
 /// One read as a walk over the columns it observed (None = unobserved).
 #[derive(Clone, Debug)]
 pub struct ReadWalk {
     pub name: String,
     pub obs: Vec<Option<u8>>,
     pub assigned_copy: Option<usize>, // index into CopyGraph.copies; None = tied/K=0 (grey)
+    /// Significance certificate from copy_assign (p_value/min_p_value/status). `None` => the old,
+    /// untagged W-line (backward-compatible / opt-in); `Some` appends CP/PV/MP/ST tags.
+    pub cert: Option<ReadCert>,
 }
 
 /// A shared exon node in the exon presence/absence graph — one genomic exon interval.
@@ -222,7 +233,14 @@ impl CopyGraph {
             toks.push(format!(">{}", self.bb(last + 1)));
             let w = toks.join("");
             let hap = r.assigned_copy.map(|c| c as i64).unwrap_or(-1).max(0);
-            out.walks.push(format!("W\t{}\t{}\t{}\t0\t{}\t{}", r.name, hap, self.family, toks.len(), w));
+            let mut line = format!("W\t{}\t{}\t{}\t0\t{}\t{}", r.name, hap, self.family, toks.len(), w);
+            if let Some(c) = &r.cert {
+                use super::copy_assign::AssignStatus::*;
+                let st = match c.status { Assigned => "Assigned", Ambiguous => "Ambiguous", Tied => "Tied" };
+                let cp = r.assigned_copy.map(|c| format!("copy{c}")).unwrap_or_else(|| "none".into());
+                line.push_str(&format!("\tCP:Z:{cp}\tPV:f:{}\tMP:f:{}\tST:Z:{st}", c.p_value, c.min_p_value));
+            }
+            out.walks.push(line);
         }
 
         out
@@ -604,13 +622,29 @@ mod tests {
     fn reads_walk_with_backing_links() {
         let mut g = tiny_graph(); // 2 cols, ref A,C
         g.reads = vec![
-            ReadWalk { name: "readX".into(), obs: vec![Some(b'A'), Some(b'C')], assigned_copy: Some(0) },
-            ReadWalk { name: "readY".into(), obs: vec![None, Some(b'C')], assigned_copy: None },
+            ReadWalk { name: "readX".into(), obs: vec![Some(b'A'), Some(b'C')], assigned_copy: Some(0), cert: None },
+            ReadWalk { name: "readY".into(), obs: vec![None, Some(b'C')], assigned_copy: None, cert: None },
         ];
         let gfa = g.to_gfa();
         assert!(gfa.lines().any(|l| l.starts_with("W\treadX")), "readX walk missing");
         assert!(gfa.lines().any(|l| l.starts_with("W\treadY")), "readY walk missing");
         assert_no_dangling(&gfa);
+    }
+
+    #[test]
+    fn read_walk_cert_tags_emitted_when_present() {
+        use super::super::copy_assign::AssignStatus;
+        let mut g = tiny_graph(); // 2 cols, ref A,C; copy0 alleles A,G
+        g.reads = vec![
+            ReadWalk { name: "r1".into(), obs: vec![Some(b'A'), Some(b'C')], assigned_copy: Some(0),
+                       cert: Some(ReadCert { p_value: 0.001, min_p_value: 0.0005, status: AssignStatus::Assigned }) },
+            ReadWalk { name: "r2".into(), obs: vec![Some(b'A'), Some(b'C')], assigned_copy: None, cert: None },
+        ];
+        let gfa = g.to_gfa();
+        let r1 = gfa.lines().find(|l| l.starts_with("W\tr1")).expect("r1 walk");
+        assert!(r1.contains("CP:Z:copy0") && r1.contains("PV:f:0.001") && r1.contains("MP:f:0.0005") && r1.contains("ST:Z:Assigned"));
+        let r2 = gfa.lines().find(|l| l.starts_with("W\tr2")).expect("r2 walk");
+        assert!(!r2.contains("CP:Z") && !r2.contains("PV:f"), "no cert -> no tags (backward-compatible)");
     }
 
     #[test]
@@ -629,6 +663,7 @@ mod tests {
                 name: "readG".into(),
                 obs: vec![Some(b'A'), None, Some(b'T')],
                 assigned_copy: None,
+                cert: None,
             }],
         };
         let gfa = g.to_gfa();
@@ -647,6 +682,7 @@ mod tests {
             name: "readEmpty".into(),
             obs: vec![None, None],
             assigned_copy: None,
+            cert: None,
         }];
         let gfa = g.to_gfa();
         assert!(!gfa.lines().any(|l| l.starts_with("W\t")), "no W-line expected for a read with zero observations:\n{}", gfa);
@@ -696,7 +732,7 @@ mod tests {
             }],
             // read observes 'G' at col0 — neither the reference (A) nor any copy (A) carries it.
             reads: vec![ReadWalk {
-                name: "readR".into(), obs: vec![Some(b'G')], assigned_copy: None,
+                name: "readR".into(), obs: vec![Some(b'G')], assigned_copy: None, cert: None,
             }],
         };
         let csv = g.colours_csv();
