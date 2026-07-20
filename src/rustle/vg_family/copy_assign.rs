@@ -556,6 +556,42 @@ mod tests {
         for (i, &pv) in a.posterior.iter().enumerate() { assert!((e[i] - pv).abs() < 1e-9); }
     }
 
+    // Golden fixture: freezes the EXACT current ReadEvidence so the Task-3 graph refactor is provably
+    // bit-identical. If this ever changes, the decision changed — which this project forbids.
+    fn golden_fixture() -> (ReadFeatures, Vec<CopyProfile>, AssignParams) {
+        let cp = |a: Vec<Option<u8>>, j: Vec<i64>| CopyProfile { copy_id: 0, alleles: a, junctions: j };
+        let copies = vec![
+            cp(vec![Some(b'A'), Some(b'C'), Some(b'G'), Some(b'T')], vec![100]),
+            cp(vec![Some(b'A'), Some(b'G'), Some(b'G'), None],       vec![]),
+            cp(vec![Some(b'A'), Some(b'C'), Some(b'A'), Some(b'T')], vec![100, 250]),
+        ];
+        let read = ReadFeatures {
+            psv_obs: vec![Some(b'A'), Some(b'C'), None, Some(b'T')],
+            psv_qual: vec![Some(30), None, None, Some(20)],
+            junctions: vec![100],
+        };
+        (read, copies, AssignParams::default())
+    }
+
+    const EXPECT_LOGL: [f64; 3] = [4.9859446547926165, -11.90875577931572, 4.9859446547926165];
+    const EXPECT_MIN_P: f64 = 1.0;
+    const EXPECT_N_DECISIVE: usize = 2;
+
+    #[test]
+    fn read_copy_evidence_golden_is_stable() {
+        let (read, copies, p) = golden_fixture();
+        let ev = read_copy_evidence(&read, &copies, &p, &[]);
+        // Capture the CURRENT bit-exact values: run once, read the assert-failure message, paste them back,
+        // then this test freezes them. (Use {:?} on f64 for the exact decimal that round-trips.)
+        // EXPECTED (fill from the first run, then it must never change):
+        let want_logl: Vec<f64> = EXPECT_LOGL.to_vec();
+        let want_min_p: f64 = EXPECT_MIN_P;
+        let want_n_decisive: usize = EXPECT_N_DECISIVE;
+        assert_eq!(ev.logl, want_logl, "logl drifted -> decision changed");
+        assert_eq!(ev.min_p, want_min_p, "min_p drifted");
+        assert_eq!(ev.n_decisive, want_n_decisive, "n_decisive drifted");
+    }
+
     #[test]
     fn two_copies_one_psv_resolves() {
         // Legacy τ-margin gate: one PSV at flat error resolves (margin >> τ=2).
