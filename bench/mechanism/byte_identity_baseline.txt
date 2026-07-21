@@ -1,0 +1,7 @@
+# baseline @ fa2e2af
+8c0507aaddf1d0a0f5a1571a3dbf27f6  gstm.assignments.tsv
+414c0a1bbed3e508dbe55e287d423483  gstm.families.tsv
+f87dcd10e1e20d9ebeecca9e43b32d54  gstm.quant.tsv
+9135a3e1bd054a6ed939b69194dc76fc  gstm.psv_cols.tsv
+602580f785a139aab9ecd445d87ccb5f  cat.families.tsv
+9707c92e04964a805e70e0e60a73ba1e  cat.copies.tsv
