@@ -18,8 +18,9 @@ use clap::Parser;
 use rustle::vg_family::driver::{self, Inputs, Options, GAMMA, HIGH_PRECISION_GAMMA};
 
 #[derive(Parser, Debug)]
-#[command(about = "RNA-only family definition (DEFAULT-ON; opt out with --legacy). \
-                   Native Rust port of bench/family_rna_refine.py.")]
+#[command(about = "LEGACY parity fixture: reproduces the frozen Python catalog from precomputed TSVs. \
+                   The shipped genome-wide catalog is `gw_family_catalog` (exon-sum asm20 id>=0.80 edge). \
+                   Kept for regression parity only; not the live family definition. See rustle_mechanism.html.")]
 struct Args {
     /// Output catalog TSV (Python default: bench/family_rna_refine.tsv).
     #[arg(long, default_value = "bench/family_rna_refine.tsv")]
