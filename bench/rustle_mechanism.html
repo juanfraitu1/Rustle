@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rustle — the method, and every number in it</title>
+<style>
+  :root{
+    --bg:#fbfaf8; --fg:#1c1a17; --mut:#6b655d; --line:#e3ded6; --card:#ffffff;
+    --accent:#8a5a2b; --accent2:#2b6a8a; --good:#2f7d4f; --warn:#b4681a; --bad:#a83232;
+    --code:#f4f1ec;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#161513; --fg:#eae5dd; --mut:#a49c90; --line:#302d29; --card:#1e1c19;
+      --accent:#d9a066; --accent2:#6fb2d6; --good:#6bcb8e; --warn:#e0a15a; --bad:#e07a7a; --code:#232019; }
+  }
+  :root[data-theme="light"]{ --bg:#fbfaf8; --fg:#1c1a17; --mut:#6b655d; --line:#e3ded6; --card:#fff; --accent:#8a5a2b; --accent2:#2b6a8a; --good:#2f7d4f; --warn:#b4681a; --bad:#a83232; --code:#f4f1ec; }
+  :root[data-theme="dark"]{ --bg:#161513; --fg:#eae5dd; --mut:#a49c90; --line:#302d29; --card:#1e1c19; --accent:#d9a066; --accent2:#6fb2d6; --good:#6bcb8e; --warn:#e0a15a; --bad:#e07a7a; --code:#232019; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:860px;margin:0 auto;padding:0 22px 120px}
+  header.top{max-width:860px;margin:0 auto;padding:56px 22px 8px}
+  h1{font-size:31px;line-height:1.15;letter-spacing:-.4px;margin:0 0 6px}
+  .sub{color:var(--mut);font-size:16px;margin:0 0 4px}
+  h2{font-size:22px;margin:52px 0 8px;letter-spacing:-.2px;padding-top:8px;border-top:1px solid var(--line)}
+  h3{font-size:16.5px;margin:26px 0 6px}
+  p{margin:10px 0}
+  a{color:var(--accent2);text-decoration:none;border-bottom:1px solid transparent}
+  a:hover{border-bottom-color:var(--accent2)}
+  code,.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+  code{background:var(--code);padding:1px 5px;border-radius:4px}
+  .lede{font-size:18px;line-height:1.6}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:16px 0}
+  .two-sent{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;padding:20px 22px;margin:18px 0}
+  .two-sent b{color:var(--accent)}
+  .claim{font-size:19px;font-weight:600;text-align:center;margin:30px 0 6px;color:var(--fg)}
+  .claim .x{color:var(--bad)}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+    padding:2px 8px;border-radius:20px;vertical-align:middle}
+  .t-dec{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--accent)}
+  .t-res{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
+  .t-der{background:color-mix(in srgb,var(--accent2) 20%,transparent);color:var(--accent2)}
+  .t-in{background:color-mix(in srgb,var(--mut) 20%,transparent);color:var(--mut)}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;margin:12px 0}
+  .scroll{overflow-x:auto}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);font-weight:600}
+  .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+  .spine{list-style:none;padding:0;margin:16px 0;counter-reset:s}
+  .spine li{position:relative;padding:14px 16px 14px 54px;border:1px solid var(--line);border-radius:10px;margin:10px 0;background:var(--card)}
+  .spine li::before{counter-increment:s;content:counter(s);position:absolute;left:14px;top:14px;
+    width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:13px;
+    display:flex;align-items:center;justify-content:center}
+  .spine .role{font-weight:600}
+  .spine .n{color:var(--accent);font-family:"SF Mono",ui-monospace,monospace;font-size:12.5px}
+  .spine .loc{color:var(--mut);font-size:12px}
+  .good{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .ok{color:var(--good);font-weight:700} .no{color:var(--bad);font-weight:700}
+  figure{margin:18px 0}
+  figcaption{color:var(--mut);font-size:13px;margin-top:6px}
+  .note{font-size:13.5px;color:var(--mut);border-left:3px solid var(--line);padding:2px 0 2px 14px;margin:12px 0}
+  .honesty{background:color-mix(in srgb,var(--warn) 8%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);border-radius:10px;padding:14px 18px;margin:14px 0;font-size:14px}
+  .honesty b{color:var(--warn)}
+  .toggle{position:fixed;top:14px;right:14px;background:var(--card);border:1px solid var(--line);color:var(--fg);
+    border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;z-index:9}
+  details{margin:10px 0}
+  summary{cursor:pointer;font-weight:600;color:var(--accent2)}
+  .kpi{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+  .kpi div{flex:1;min-width:120px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-align:center}
+  .kpi .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:12px;color:var(--mut)}
+  svg text{fill:var(--fg)}
+</style>
+</head>
+<body>
+<button class="toggle" onclick="var r=document.documentElement;var d=(r.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));r.setAttribute('data-theme',d==='dark'?'light':'dark')">◐ theme</button>
+
+<header class="top">
+  <h1>Rustle: the whole method, and every number in it</h1>
+  <p class="sub">One pipeline, two mechanisms, two consequences — and a complete, source-verified list of every heuristic. Nothing withheld.</p>
+  <p class="sub">Substrate: gorilla (<span class="mono">mGorGor1</span>) HiFi / IsoSeq. Verification subset: the 66 Soto RNA families. Generated from real runs; regenerate with <code>bench/mechanism/</code>.</p>
+</header>
+
+<div class="wrap">
+
+<p class="lede">This page exists so that nothing about the method has to be taken on trust. It states the method in two sentences, shows the one statistical test that does the heavy lifting, names the number at every stage next to its line of source, and lists <b>all 171 heuristics</b> — sorted by how much each one can change a result, with the uncomfortable ones flagged, not buried.</p>
+
+<!-- ============================================================ -->
+<h2>1 · The method in two sentences</h2>
+
+<div class="two-sent">
+  <p><b>Define.</b> Two loci are one family iff their spliced <b>exon-sum</b> sequences are homologous (<span class="mono">asm20</span> identity ≥ 0.80, coverage-of-shorter ≥ 0.50) and there are ≥ 2 of them.</p>
+  <p style="margin-bottom:0"><b>Assign.</b> A read belongs to a copy iff it carries a base that <b>no other copy has, beyond chance</b> (Poisson-binomial upper tail, <span class="mono">p &lt; α/(n−1)</span>, α = 10⁻³). If no such base exists, the method <b>abstains</b> — it never guesses, and never splits a read <span class="mono">1/k</span>.</p>
+</div>
+
+<p>That is the entire method. Everything else on this page is either (a) how those two sentences are computed, (b) two discoveries that fall out of them for free, or (c) the machinery underneath, disclosed in full. <b>Assign</b> is Rustle's answer to Eichler's <span class="mono">AS&gt;10</span> rule — and a stronger one: it is a calibrated, Bonferroni-corrected p-value rather than a hand-picked score, and where <span class="mono">AS&gt;10</span> is forced to call a tie wrong, the certificate <b>abstains</b>.</p>
+
+<!-- ============================================================ -->
+<h2>2 · The one test that does the heavy lifting</h2>
+
+<p>A read that spans a position where copies differ (a PSV) is evidence for one copy over the others. The certificate asks a single question: <em>could this many matching PSVs have arisen by sequencing error alone?</em> It is an exact Poisson-binomial upper tail (no normal approximation), compared against <span class="mono">α/(n−1)</span> — a Bonferroni union bound over the <span class="mono">n−1</span> competitor copies.</p>
+
+<div class="card">
+  <p style="margin-top:0"><b>One test, three uses</b> — verified in source:</p>
+  <table><thead><tr><th>Use</th><th>Where</th><th>How it reuses the certificate</th></tr></thead><tbody>
+  <tr><td>Assign a read to a copy</td><td class="mono">copy_assign.rs</td><td>defines <code>poisson_binomial_upper_tail</code>; gate is <code>p &lt; α/(n−1)</code></td></tr>
+  <tr><td>Detect a <b>collapse</b></td><td class="mono">collapse_gate.rs</td><td>imports &amp; <b>calls the same function</b> literally</td></tr>
+  <tr><td>Detect a genome-<b>absent</b> copy</td><td class="mono">absent_copy.rs</td><td>uses <code>min_p_distinct</code>, whose source comment states it is “the same construction the assignment gate uses (copy_assign.rs:320)” — same <b>form</b>, distinct function</td></tr>
+  </tbody></table>
+  <p class="note" style="margin-bottom:0">Stated precisely so it can’t be over-claimed: two call-sites share the literal function; the third shares the mathematical form. Not one function everywhere — one <em>test</em>, reused three times.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>3 · Two discoveries — consequences, not new methods</h2>
+
+<h3>Copies missing from the <em>genome</em> ⇐ Assign</h3>
+<p>Run the certificate in reverse: ask <em>“do the copies I already know about explain these reads?”</em> When a set of reads carries a co-segregating base pattern that <b>no</b> modeled copy explains at significance, an unmodeled copy must exist. No copy-finder was added — the same test, reading its own failures, is the detector.</p>
+
+<h3>Genes missing from the <em>annotation</em> ⇐ Define + exon-sum</h3>
+<p>A locus that (a) nobody annotated, (b) forms an exon-sum homology edge to a known family, and (c) is <b>transcribed</b> (reads assemble through it, ≥ <span class="mono">GATE_MIN_READS</span>) is a real family member — annotation or not. Similarity says it belongs; exon-sum is <em>how</em> similarity is measured; transcripts prove it is a real gene.</p>
+
+<div class="honesty"><b>The honesty line.</b> Detection is the consequence. <em>Characterizing</em> what was detected is separate machinery (e.g. <span class="mono">hidden_copy.rs</span>’s thresholds, the linearize permutation test) — disclosed below in the full table, never smuggled into the two-sentence story. And <b>Define</b> and <b>Assign</b> stay two ideas; they are not secretly one.</p>
+
+<p class="claim">These are <b>two mechanisms and their consequences</b> — <span class="x">not four separate approaches.</span></p>
+
+<!-- ============================================================ -->
+<h2>4 · How the two sentences are computed — the five stages</h2>
+<p>k-mers, alignment identity, the graph, and POA are <b>stages of one pipeline</b>, not competing methods. Each stage below carries its one decision number and the exact line of source it lives on. (All 171 constants are in §8; these eleven are the ones that actually pick a result.)</p>
+
+<ol class="spine">
+  <li><span class="role">k-mer prefilter</span> — cheap candidate generation. <span class="n">KMER = 18</span> <span class="loc">family_detect.rs:37</span></li>
+  <li><span class="role">Exon-sum identity edge</span> — <b>the family edge test</b>. <span class="n">id ≥ 0.80, cov ≥ 0.50</span> <span class="loc">denovo_pipeline.rs:2370–71</span></li>
+  <li><span class="role">γ-quasi-clique</span> — cluster the edges into families. <span class="n">γ = 0.20</span> <span class="loc">family_definition.rs:173</span></li>
+  <li><span class="role">de-tie conflict graph</span> — count copies, χ(H). <span class="n">de-tie δ=0.005, de_max=0.05, min_reads=3</span> <span class="loc">read_conflict.rs:63</span></li>
+  <li><span class="role">Significance certificate</span> — assign each read, or abstain. <span class="n">α = 10⁻³, α/(n−1)</span> <span class="loc">copy_assign.rs:213</span></li>
+</ol>
+<p class="note">Two more decision-tier numbers sit just outside the spine: the locus admission gate <span class="mono">GATE_MIN_READS = 3</span> (denovo_assemble.rs:27) — the pipeline’s unit of existence — and <span class="mono">--min-copies = 2</span> (copy_assign.rs:108), plus the junction bonus <span class="mono">junction_weight = 5.0</span> (copy_assign.rs:210). Eleven decision numbers in total.</p>
+
+<!-- ============================================================ -->
+<h2>5 · The identifiability frontier — shown, with ground truth</h2>
+<p>The hardest question an examiner asks: <em>“if two copies are nearly identical, does your method just merge them?”</em> Here is the answer, run on synthetic families where the truth is known exactly. We plant a 4-copy tandem array at a ladder of divergences, and measure two things independently: does it get the copy <b>number</b> right, and does it <b>assign</b> reads or abstain?</p>
+
+<figure>
+<div class="scroll">
+<svg viewBox="0 0 640 300" width="100%" height="300" font-size="12" role="img" aria-label="Frontier: copy number stays correct while assignment abstains as identity approaches 100%">
+  <!-- axes -->
+  <line x1="70" y1="240" x2="600" y2="240" stroke="var(--line)"/>
+  <line x1="70" y1="30" x2="70" y2="240" stroke="var(--line)"/>
+  <text x="335" y="285" text-anchor="middle" fill="var(--mut)">pairwise copy identity  →</text>
+  <text x="24" y="135" text-anchor="middle" transform="rotate(-90 24 135)" fill="var(--mut)">fraction</text>
+  <!-- y ticks -->
+  <text x="62" y="244" text-anchor="end" fill="var(--mut)">0</text>
+  <text x="62" y="139" text-anchor="end" fill="var(--mut)">0.5</text>
+  <text x="62" y="34" text-anchor="end" fill="var(--mut)">1.0</text>
+  <line x1="67" y1="30" x2="70" y2="30" stroke="var(--mut)"/><line x1="67" y1="135" x2="70" y2="135" stroke="var(--mut)"/>
+  <!-- x ticks: 90 94 96 98 99.5 100 -->
+  <g fill="var(--mut)" text-anchor="middle">
+    <text x="106" y="256">90%</text><text x="205" y="256">94%</text><text x="304" y="256">96%</text>
+    <text x="403" y="256">98%</text><text x="502" y="256">99.5%</text><text x="585" y="256">100%</text>
+  </g>
+  <!-- copy-number-correct line: flat at 1.0 -->
+  <polyline fill="none" stroke="var(--good)" stroke-width="2.5"
+    points="106,30 205,30 304,30 403,30 502,30 585,30"/>
+  <g fill="var(--good)"><circle cx="106" cy="30" r="3"/><circle cx="205" cy="30" r="3"/><circle cx="304" cy="30" r="3"/><circle cx="403" cy="30" r="3"/><circle cx="502" cy="30" r="3"/><circle cx="585" cy="30" r="3"/></g>
+  <!-- reads abstained (tied): 0,0,0.006,0.74,0.75,1.0  -> y = 240-210*v -->
+  <polyline fill="none" stroke="var(--warn)" stroke-width="2.5"
+    points="106,240 205,240 304,239 403,85 502,83 585,30"/>
+  <g fill="var(--warn)"><circle cx="106" cy="240" r="3"/><circle cx="205" cy="240" r="3"/><circle cx="304" cy="239" r="3"/><circle cx="403" cy="85" r="3"/><circle cx="502" cy="83" r="3"/><circle cx="585" cy="30" r="3"/></g>
+  <!-- legend -->
+  <rect x="360" y="40" width="14" height="3" fill="var(--good)"/><text x="380" y="45" fill="var(--fg)">copy number correct</text>
+  <rect x="360" y="58" width="14" height="3" fill="var(--warn)"/><text x="380" y="63" fill="var(--fg)">reads abstained (Tied)</text>
+</svg>
+</div>
+<figcaption>V4c, six synthetic points, real <span class="mono">copy_assign</span> runs. <b>Copy number is correct (4/4) at every divergence, including byte-identical copies.</b> Assignment resolves fully down to ~96%, then falls off a cliff at ~97–98% and reaches total abstention at identity. Runnable: <span class="mono">bench/mechanism/demo/run_demo.sh</span>.</figcaption>
+</figure>
+
+<div class="card">
+<p style="margin-top:0"><b>Why this is the over-collapse rebuttal.</b> “Over-collapse” would mean reporting <em>fewer copies than exist</em> — and being silently wrong. That is failing the <span class="good">green</span> line. The green line never drops. What rises is the <span class="warn">amber</span> line: as copies approach identical, the method increasingly says <em>“there are still N of them — I just can’t tell you which read is which.”</em> It abstains on <b>assignment</b>; it never fabricates a <b>merge</b>. Formally, χ(H) is a <b>lower bound</b> on copy number (<span class="mono">max(n_loci, χ(H)) ≤ true</span>) — the method cannot invent a merge; the worst case is a conservative floor that it flags.</p>
+<p style="margin-bottom:0">The cliff at ~97–98% is not a tuning artifact — it is the same wall that appears on real gorilla data (§7), where the <span class="mono">remap</span> gate sits at 98%. The synthetic frontier and the real genome agree on where identifiability ends.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>6 · It genuinely recovers — not just detects</h2>
+<p>Detection could be an artifact of a permissive gate. So: delete a copy from the reference, and ask whether the certificate <b>puts it back</b>. (This is the inverse of the existing <span class="mono">linearize</span> certificate, which folds a copy <em>in</em> and asks if reads go unique.)</p>
+
+<div class="kpi">
+  <div><div class="v good">100%</div><div class="l">recovered copy identity to the deleted original</div></div>
+  <div><div class="v">96</div><div class="l">PSV columns matched (not 1–2; a rich signature)</div></div>
+  <div><div class="v good">0.46</div><div class="l">identity to the <em>wrong</em> sibling — it discriminates</div></div>
+</div>
+
+<p>The divergent arm (V4a, ~96% identity): both deleted copies recovered at identity <b>1.0</b> across 96 PSV columns, cleanly distinguished from the wrong sibling (0.46) — a genuine, non-circular recovery. Recovery is at <b>PSV-allele resolution</b> (the copy’s distinguishing bases), which is the method’s native contract, not a full <em>de-novo</em> assembly.</p>
+
+<div class="honesty"><b>Two disclosed design facts.</b> (1) The experiment deletes <b>2 copies of a 4-copy locus</b>, not 1 of 3 — because the absent-copy admission gate requires ≥ 3 co-varying clusters at a locus (<span class="mono">min_clusters = 3</span>, hardcoded in <span class="mono">absent_copy.rs</span>), so a single deletion from three copies can never reach it. That constraint is itself a finding, disclosed here. (2) The identical-copy arm recovers the copy <b>number</b> (3/3) but <b>abstains</b> on sequence (100% Tied, 0 PSVs) — the K=0 floor, shown rather than hidden.</p>
+
+<!-- ============================================================ -->
+<h2>7 · On real gorilla data — where the line actually falls</h2>
+
+<p>Two kinds of real-data evidence, and one honest boundary.</p>
+
+<h3>Detection works on real gorilla</h3>
+<p>The certificate already flags real reference-absent copies in gorilla IsoSeq — 9 collapsed loci, 5 in the MHC, 4 novel families, BLAST-corroborated. See <a href="reference_absent_copies.html">reference_absent_copies.html</a>. This is “copies missing from the genome ⇐ Assign,” demonstrated on real data (without an artificial deletion as ground truth).</p>
+
+<h3>The removal-recovery experiment is squeezed — and that is the theorem, not a defect</h3>
+<p>We scanned the gorilla catalog for a locus to run the ground-truth removal experiment on. The copy-identity distribution is <b>bimodal</b>: of 24 physically-tight ≥3-copy families, only <b>2</b> fall in the recoverable window [96%, 97.9%]. The rest are either &lt;95% (separate loci, not collapsed) or ≥98% (too similar to clear the remap gate). Recovery needs copies divergent enough to clear the 98% full-span <span class="mono">remap_max_identity</span> gate <em>and</em> similar enough to collapse into ≥3 clusters — a narrow band that recent gorilla segdups mostly sit above.</p>
+
+<div class="card">
+<p style="margin-top:0"><b>Could a better method recover the ≥98% cases?</b> The honest answer splits by regime:</p>
+<table><thead><tr><th>Regime</th><th>Recoverable from RNA reads?</th></tr></thead><tbody>
+<tr><td>Identical over covered bases</td><td><b>No method can</b> — it is a theorem. Reads from the two copies are draws from the same distribution; <span class="mono">MCC = χ(H)</span> gives them the same color. We are provably as good as anyone: everyone gets copy-number-from-depth, no separation.</td></tr>
+<tr><td>Near-identical, sparse PSVs (~98–99.9%)</td><td>Possible in principle, but the recoverable count is fixed by the PSVs in the reads (χ(H)), not the algorithm. Our certificate is the Neyman–Pearson-optimal use of those PSVs. Recovering <em>more</em> needs <b>orthogonal data</b> — DNA read-depth (SDA / Vollger / Bailey) — which the framework routes to (<span class="mono">K=0 → DNA</span>).</td></tr>
+<tr><td>Divergent (&lt;98% full-span)</td><td><b>We recover it</b> — §5 and §6, on ground truth.</td></tr>
+</tbody></table>
+<p style="margin-bottom:0">Against the RNA competitors: Eichler’s <span class="mono">AS&gt;10</span> would force a <em>wrong</em> call in the near-identical band; longcallR is unique-mapper-only and discards exactly the multimappers we use. Where they false-positive, we abstain. The one caveat we hold to honestly: “near-optimal use of the RNA PSVs” — a joint haplotype-assembly method might squeeze marginally more from the same reads; the <em>frontier</em> (χ(H)) is the theorem, and the gap to identical-copy recovery is information-theoretic, requiring DNA.</p>
+</div>
+
+<p class="note">So the real-gorilla removal-recovery returns no positive — and that is the <em>expected</em> result, corroborating the existing figure that ~15–17% of copies fall to K=0 and are routed to DNA. Sim (§5–6) proves the mechanism with ground truth; the O4 catalog proves it fires on real data; the theorem explains the boundary between them.</p>
+
+<!-- ============================================================ -->
+<h2>8 · Every heuristic in the method — all 171, tiered by blast radius</h2>
+<p>The registry (<span class="mono">bench/mechanism/heuristics.toml</span>) is verified against source by a generator that opens each <span class="mono">file:line</span> and asserts the literal value is still there — it fails loudly if any constant drifts. So this list cannot silently fall out of step with the code. Sorted by how much each number can move a result:</p>
+
+<div class="kpi">
+  <div><div class="v" style="color:var(--accent)">11</div><div class="l"><span class="tag t-dec">decision</span> pick results</div></div>
+  <div><div class="v" style="color:var(--warn)">11</div><div class="l"><span class="tag t-res">result-guard</span> can change results</div></div>
+  <div><div class="v" style="color:var(--accent2)">12</div><div class="l"><span class="tag t-der">derived</span> from statistics</div></div>
+  <div><div class="v" style="color:var(--mut)">137</div><div class="l"><span class="tag t-in">inert-guard</span> proven outside the data range</div></div>
+</div>
+
+<h3><span class="tag t-dec">decision</span> — the numbers that actually pick a result</h3>
+<div class="scroll"><table><thead><tr><th>Constant</th><th class="num">Value</th><th>Source</th><th>Stage</th></tr></thead><tbody>
+<tr><td>RefineParams::min_identity</td><td class="num">0.80</td><td class="mono">denovo_pipeline.rs:2370</td><td>edge</td></tr>
+<tr><td>RefineParams::min_coverage</td><td class="num">0.50</td><td class="mono">denovo_pipeline.rs:2371</td><td>edge</td></tr>
+<tr><td>GAMMA (γ-quasi-clique)</td><td class="num">0.20</td><td class="mono">family_definition.rs:173</td><td>cluster</td></tr>
+<tr><td>KMER (prefilter)</td><td class="num">18</td><td class="mono">family_detect.rs:37</td><td>prefilter</td></tr>
+<tr><td>ConflictParams::delta</td><td class="num">0.005</td><td class="mono">read_conflict.rs:63</td><td>count</td></tr>
+<tr><td>ConflictParams::de_max</td><td class="num">0.05</td><td class="mono">read_conflict.rs:63</td><td>count</td></tr>
+<tr><td>ConflictParams::min_reads</td><td class="num">3</td><td class="mono">read_conflict.rs:63</td><td>count</td></tr>
+<tr><td>GATE_MIN_READS (locus admission)</td><td class="num">3</td><td class="mono">denovo_assemble.rs:27</td><td>pre-O1</td></tr>
+<tr><td>AssignParams::alpha</td><td class="num">1e-3</td><td class="mono">copy_assign.rs:213</td><td>O2</td></tr>
+<tr><td>AssignParams::junction_weight</td><td class="num">5.0</td><td class="mono">copy_assign.rs:210</td><td>O2</td></tr>
+<tr><td>--min-copies</td><td class="num">2</td><td class="mono">copy_assign.rs:108</td><td>O2</td></tr>
+</tbody></table></div>
+
+<h3><span class="tag t-res">result-guard</span> — flagged loudly: these <em>can</em> change a result</h3>
+<div class="scroll"><table><thead><tr><th>Constant</th><th class="num">Value</th><th>Why it matters</th></tr></thead><tbody>
+<tr><td>POA_CAP</td><td class="num">20 000</td><td class="warn"><b>Fires on Soto.</b> Crossing it swaps poasta→minimap2 (different PSV set). GWFAM11 copies span 260 kb — 13× over.</td></tr>
+<tr><td>READ_CAP</td><td class="num">6 000</td><td class="warn"><b>Fires on Soto.</b> Truncates a family’s read pool by BAM order. GWFAM42 has 22 454 reads — 3.7× over; ~16k dropped.</td></tr>
+<tr><td>sensitive_identity</td><td class="num">0.60</td><td>Sensitive-tier floor — and it <b>disagrees</b> with a call-site literal below.</td></tr>
+<tr><td>sensitive tier call-site literal</td><td class="num">0.70</td><td class="warn">Mismatch vs the 0.60 field: two sensitive tiers use different floors. Surfaced, not hidden.</td></tr>
+<tr><td>AssignParams::error_rate</td><td class="num">0.003</td><td rowspan="5">The <b>five per-base error rates</b> asserted across the pipeline are inconsistent (0.003 / 0.01 / 0.001 / 0.005 / 0.05). The certificate is exact and Bonferroni-correct — computed on an assumed, internally inconsistent ε. Unifying these is deliverable B.</td></tr>
+<tr><td>QUANT_ERROR</td><td class="num">0.01</td></tr>
+<tr><td>RUSTLE_CONFLICT_EPS</td><td class="num">0.001</td></tr>
+<tr><td>MosaicParams::eps_floor</td><td class="num">0.005</td></tr>
+<tr><td>MosaicParams::eps_cap</td><td class="num">0.05</td></tr>
+<tr><td>GENOME_WIDE_EPS_AMB</td><td class="num">0.001313</td><td>Measured on <em>one</em> BAM (GGO_mm.bam) and shipped as the default background rate for all samples. Recompute per sample; the collapse p-value is only as valid as this constant.</td></tr>
+<tr><td>READTHROUGH_MIN_DISTINCT</td><td class="num">5</td><td>Drops a single-exon transcript engulfing ≥5 junctions as pre-mRNA. Data-informed, but the shipped value sits at neither observed boundary (≤4 vs ≥14).</td></tr>
+</tbody></table></div>
+
+<details><summary><span class="tag t-der">derived</span> — 12 quantities that come from statistics, not choice</summary>
+<p>Bonferroni threshold <span class="mono">α/(n−1)</span> (copy_assign.rs:453); the exact Poisson-binomial upper-tail DP; <span class="mono">tau_from_p</span> / <span class="mono">p_from_tau</span> (Bayes-optimal LR mapping); Benjamini–Hochberg FDR <span class="mono">q</span> (asj.rs); the permutation-test p and decoy count (linearize.rs); <span class="mono">lgamma</span> numerics; the mosaic <span class="mono">alpha_target</span> and BIC penalty; <span class="mono">RUSTLE_CONFLICT_ALPHA</span>. These are not free parameters — they follow from the error model.</p></details>
+
+<details><summary><span class="tag t-in">inert-guard</span> — 137 cost guards, proven outside the data’s range on the Soto families</summary>
+<p>These are caps and tolerances that <em>could</em> in principle change a result but provably do not on the verification set, because the quantity they guard never reaches them. Proven examples:</p>
+<table><thead><tr><th>Guard</th><th class="num">Value</th><th>Observed max on 66 Soto families</th><th></th></tr></thead><tbody>
+<tr><td>MAX_MEMBERS</td><td class="num">30</td><td class="num">25</td><td class="ok">inert</td></tr>
+<tr><td>MAX_LOCI</td><td class="num">60</td><td class="num">25</td><td class="ok">inert</td></tr>
+</tbody></table>
+<p class="note">A guard is admitted to this tier <b>only by measurement</b> — observed-max &lt; guard on the Soto families. Any guard found to fire is reclassified <span class="tag t-res">result-guard</span> (that is exactly how READ_CAP and POA_CAP ended up above). The full 137 are in <span class="mono">bench/mechanism/heuristics.tsv</span>; the two here carry a measured margin (25 vs 30 is <em>thin</em> — disclosed).</p></details>
+
+<!-- ============================================================ -->
+<h2>9 · Superseded vocabulary — mapped, so nothing reads as a new method</h2>
+<p>Earlier write-ups and figures used words that describe stages of this one pipeline, or approaches since abandoned. To pre-empt the “you keep switching methods” reading, every term is mapped:</p>
+<div class="scroll"><table><thead><tr><th>Term you may have seen</th><th>What it actually is</th></tr></thead><tbody>
+<tr><td>“k-mer Jaccard + Union-Find” (figures/01–04)</td><td class="mut">Abandoned architecture (~2026-04). Superseded.</td></tr>
+<tr><td>“profile-HMM emission model” (advisor_response.md)</td><td class="mut">Abandoned proposal (2026-05). Superseded.</td></tr>
+<tr><td>POA contiguous-core ≥ 0.13 “as the family edge”</td><td>Not the edge. <span class="mono">detect_families</span> (the 0.13 path) has <b>no caller</b> in any shipped binary; 0.13 survives only as thin-locus <b>rescue</b> admission. The edge is exon-sum id ≥ 0.80.</td></tr>
+<tr><td>“no arbitrary ≥ X% identity cutoff” (quasiclique.html)</td><td class="bad">Was false. The edge <b>is</b> id ≥ 0.80; γ = 0.20 is the <em>clustering</em> density on top of those edges — a different quantity at a different stage. Corrected.</td></tr>
+<tr><td>k-mers / POA / graph / alignment-identity</td><td>Four <b>stages</b> (§4), not four methods: k-mers generate candidates, alignment identity is the edge, the graph clusters edges, the certificate assigns reads.</td></tr>
+</tbody></table></div>
+
+<p class="note" style="margin-top:32px">Every number on this page was read from a real run or asserted against its source line. Registry + verification harness: <span class="mono">bench/mechanism/</span>. Runnable frontier demo: <span class="mono">bench/mechanism/demo/run_demo.sh</span>. Nothing here is withheld; where the method reaches its limit, this page says so.</p>
+
+</div>
+</body>
+</html>
