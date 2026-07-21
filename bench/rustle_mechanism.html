@@ -172,7 +172,7 @@
   <rect x="360" y="58" width="14" height="3" fill="var(--warn)"/><text x="380" y="63" fill="var(--fg)">reads abstained (Tied)</text>
 </svg>
 </div>
-<figcaption>V4c, six synthetic points, real <span class="mono">copy_assign</span> runs. <b>Copy number is correct (4/4) at every divergence, including byte-identical copies.</b> Assignment resolves fully down to ~96%, then falls off a cliff at ~97–98% and reaches total abstention at identity. Runnable: <span class="mono">bench/mechanism/demo/run_demo.sh</span>.</figcaption>
+<figcaption>V4c, six synthetic points, real <span class="mono">copy_assign</span> runs. <b>Copy number is correct (4/4) at every divergence, including byte-identical copies.</b> Assignment resolves fully down to the 96% point (0.6% Tied), then jumps to 74% Tied at the 98% point and reaches total abstention at identity (the exact cliff location between those two sampled points is interpolated). Runnable: <span class="mono">bench/mechanism/demo/run_demo.sh</span>.</figcaption>
 </figure>
 
 <div class="card">
@@ -185,12 +185,12 @@
 <p>Detection could be an artifact of a permissive gate. So: delete a copy from the reference, and ask whether the certificate <b>puts it back</b>. (This is the inverse of the existing <span class="mono">linearize</span> certificate, which folds a copy <em>in</em> and asks if reads go unique.)</p>
 
 <div class="kpi">
-  <div><div class="v good">100%</div><div class="l">recovered copy identity to the deleted original</div></div>
+  <div><div class="v good">1.0</div><div class="l">recovered copy identity to the deleted original</div></div>
   <div><div class="v">96</div><div class="l">PSV columns matched (not 1–2; a rich signature)</div></div>
-  <div><div class="v good">0.46</div><div class="l">identity to the <em>wrong</em> sibling — it discriminates</div></div>
+  <div><div class="v good">2 / 2</div><div class="l">deleted copies each matched to their <em>correct</em> original</div></div>
 </div>
 
-<p>The divergent arm (V4a, ~96% identity): both deleted copies recovered at identity <b>1.0</b> across 96 PSV columns, cleanly distinguished from the wrong sibling (0.46) — a genuine, non-circular recovery. Recovery is at <b>PSV-allele resolution</b> (the copy’s distinguishing bases), which is the method’s native contract, not a full <em>de-novo</em> assembly.</p>
+<p>The divergent arm (V4a, ~96% identity): both deleted copies recovered at identity <b>1.0</b> across 96 PSV columns, and <span class="mono">set_match</span> assigned each recovered copy to its <em>correct</em> original (permutation-invariant matching, both pairs at 1.0) — a genuine, non-circular recovery. Recovery is at <b>PSV-allele resolution</b> (the copy’s distinguishing bases), which is the method’s native contract, not a full <em>de-novo</em> assembly.</p>
 
 <div class="honesty"><b>Two disclosed design facts.</b> (1) The experiment deletes <b>2 copies of a 4-copy locus</b>, not 1 of 3 — because the absent-copy admission gate requires ≥ 3 co-varying clusters at a locus (<span class="mono">min_clusters = 3</span>, hardcoded in <span class="mono">absent_copy.rs</span>), so a single deletion from three copies can never reach it. That constraint is itself a finding, disclosed here. (2) The identical-copy arm recovers the copy <b>number</b> (3/3) but <b>abstains</b> on sequence (100% Tied, 0 PSVs) — the K=0 floor, shown rather than hidden.</p>
 
@@ -200,16 +200,16 @@
 <p>Two kinds of real-data evidence, and one honest boundary.</p>
 
 <h3>Detection works on real gorilla</h3>
-<p>The certificate already flags real reference-absent copies in gorilla IsoSeq — 9 collapsed loci, 5 in the MHC, 4 novel families, BLAST-corroborated. See <a href="reference_absent_copies.html">reference_absent_copies.html</a>. This is “copies missing from the genome ⇐ Assign,” demonstrated on real data (without an artificial deletion as ground truth).</p>
+<p>The certificate already flags real reference-absent copies in gorilla IsoSeq: an honest funnel of <b>30 flagged → 18 surviving the editing firewall → 4 confirmed</b> reference-absent copies, <b>all 4 in the MHC</b>, BLAST-corroborated. See <a href="reference_absent_copies.html">reference_absent_copies.html</a> (the numbers here match that page exactly). This is “copies missing from the genome ⇐ Assign,” demonstrated on real data (without an artificial deletion as ground truth).</p>
 
 <h3>The removal-recovery experiment is squeezed — and that is the theorem, not a defect</h3>
-<p>We scanned the gorilla catalog for a locus to run the ground-truth removal experiment on. The copy-identity distribution is <b>bimodal</b>: of 24 physically-tight ≥3-copy families, only <b>2</b> fall in the recoverable window [96%, 97.9%]. The rest are either &lt;95% (separate loci, not collapsed) or ≥98% (too similar to clear the remap gate). Recovery needs copies divergent enough to clear the 98% full-span <span class="mono">remap_max_identity</span> gate <em>and</em> similar enough to collapse into ≥3 clusters — a narrow band that recent gorilla segdups mostly sit above.</p>
+<p>We scanned the gorilla catalog for a locus to run the ground-truth removal experiment on. The copy-identity distribution is <b>bimodal</b>: of 24 physically-tight ≥3-copy families, only <b>2</b> fall in the recoverable window [96%, 97.9%]. The rest are either &lt;95% (separate loci, not collapsed) or ≥98% (too similar to clear the remap gate). Recovery needs copies divergent enough to clear the 98% full-span <span class="mono">remap_max_identity</span> gate <em>and</em> similar enough to collapse into ≥3 clusters — a narrow band that recent gorilla segdups mostly sit above. And the two families that <em>did</em> land in-window failed for <b>reasons unrelated to divergence</b>: one had only 3 supported copies (the same hardcoded <span class="mono">min_clusters=3</span> floor as §6), the other carried a mis-chained 492 kb annotation artifact — so the empty result is part information-theoretic (the bimodal squeeze) and part engineering (two hardcoded gates), and both are disclosed rather than folded into “the theorem.”</p>
 
 <div class="card">
 <p style="margin-top:0"><b>Could a better method recover the ≥98% cases?</b> The honest answer splits by regime:</p>
 <table><thead><tr><th>Regime</th><th>Recoverable from RNA reads?</th></tr></thead><tbody>
 <tr><td>Identical over covered bases</td><td><b>No method can</b> — it is a theorem. Reads from the two copies are draws from the same distribution; <span class="mono">MCC = χ(H)</span> gives them the same color. We are provably as good as anyone: everyone gets copy-number-from-depth, no separation.</td></tr>
-<tr><td>Near-identical, sparse PSVs (~98–99.9%)</td><td>Possible in principle, but the recoverable count is fixed by the PSVs in the reads (χ(H)), not the algorithm. Our certificate is the Neyman–Pearson-optimal use of those PSVs. Recovering <em>more</em> needs <b>orthogonal data</b> — DNA read-depth (SDA / Vollger / Bailey) — which the framework routes to (<span class="mono">K=0 → DNA</span>).</td></tr>
+<tr><td>Near-identical, sparse PSVs (~98–99.9%)</td><td>Possible in principle, but the recoverable count is fixed by the PSVs in the reads (χ(H)), not the algorithm. Our certificate is a <b>near-optimal</b> (likelihood-ratio) use of those PSVs. Recovering <em>more</em> needs <b>orthogonal data</b> — DNA read-depth (SDA / Vollger / Bailey) — which the framework routes to (<span class="mono">K=0 → DNA</span>).</td></tr>
 <tr><td>Divergent (&lt;98% full-span)</td><td><b>We recover it</b> — §5 and §6, on ground truth.</td></tr>
 </tbody></table>
 <p style="margin-bottom:0">Against the RNA competitors: Eichler’s <span class="mono">AS&gt;10</span> would force a <em>wrong</em> call in the near-identical band; longcallR is unique-mapper-only and discards exactly the multimappers we use. Where they false-positive, we abstain. The one caveat we hold to honestly: “near-optimal use of the RNA PSVs” — a joint haplotype-assembly method might squeeze marginally more from the same reads; the <em>frontier</em> (χ(H)) is the theorem, and the gap to identical-copy recovery is information-theoretic, requiring DNA.</p>
@@ -249,7 +249,7 @@
 <tr><td>READ_CAP</td><td class="num">6 000</td><td class="warn"><b>Fires on Soto.</b> Truncates a family’s read pool by BAM order. GWFAM42 has 22 454 reads — 3.7× over; ~16k dropped.</td></tr>
 <tr><td>sensitive_identity</td><td class="num">0.60</td><td>Sensitive-tier floor — and it <b>disagrees</b> with a call-site literal below.</td></tr>
 <tr><td>sensitive tier call-site literal</td><td class="num">0.70</td><td class="warn">Mismatch vs the 0.60 field: two sensitive tiers use different floors. Surfaced, not hidden.</td></tr>
-<tr><td>AssignParams::error_rate</td><td class="num">0.003</td><td rowspan="5">The <b>five per-base error rates</b> asserted across the pipeline are inconsistent (0.003 / 0.01 / 0.001 / 0.005 / 0.05). The certificate is exact and Bonferroni-correct — computed on an assumed, internally inconsistent ε. Unifying these is deliverable B.</td></tr>
+<tr><td>AssignParams::error_rate</td><td class="num">0.003</td><td rowspan="5">These <b>five result-guard per-base error rates</b> are mutually inconsistent (0.003 / 0.01 / 0.001 / 0.005 / 0.05); more of the same kind sit in the inert tier (e.g. <span class="mono">MOSAIC_EPS=0.01</span>, <span class="mono">absent_copy error_rate=0.003</span>). The certificate is exact and Bonferroni-correct — computed on an assumed, internally inconsistent ε. Unifying these is deliverable B.</td></tr>
 <tr><td>QUANT_ERROR</td><td class="num">0.01</td></tr>
 <tr><td>RUSTLE_CONFLICT_EPS</td><td class="num">0.001</td></tr>
 <tr><td>MosaicParams::eps_floor</td><td class="num">0.005</td></tr>
