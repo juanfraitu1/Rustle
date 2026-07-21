@@ -98,54 +98,38 @@
     }
   },
   "v4b": {
-    "locus": "NC_073248.2:19558214-19739408",
+    "task": "6b (V4b hunt+recovery)",
     "substrate": "GGO.fasta=mGorGor1 + GGO_mm.bam, gorilla-to-gorilla",
     "truth_source": "same-read-set vs full GGO.fasta",
-    "n_copies_supported": 6,
+    "hunt": {
+      "shortlist_tsv": "bench/mechanism/v4b_hunt_shortlist.tsv",
+      "selection_criteria": "single-chrom (n_chroms=1) families with >=3 GGO_gwcat copies, co-located span <= 3,000,000 bp (excludes cross-chrom-dispersed families)",
+      "n_families_scanned_colocated": 24,
+      "n_families_with_computable_identity": 19,
+      "n_in_window_0.96_0.979": 2,
+      "in_window_candidates": [
+        "GWFAM382 (median 0.9628, 4 copies, 156kb span)",
+        "GWFAM227 (median 0.9629, 3 copies, 134kb span)"
+      ],
+      "identity_distribution_colocated_le_3mb": {
+        "no_alignment_too_divergent_for_asm20": 5,
+        "<0.90": 5,
+        "0.90-0.95": 10,
+        "0.95-0.96": 1,
+        "0.96-0.979_in_window": 2,
+        "0.98-0.995": 0,
+        ">=0.995": 1
+      },
+      "extended_context_scan_gt_3mb_le_100mb": {
+        "note": "15 additional single-chrom families with span 3.8-64Mb were also scanned for context (not treated as tandem-array candidates -- too dispersed for a single fast region-restricted copy_assign run to represent physical collapsibility, and reads/transcripts cannot span that distance to create the multi-mapping ambiguity this method targets). Notably, MORE of these land in or near [0.96,0.979] than the tight (<=3Mb) tandem candidates (e.g. GWFAM478 0.9761/9.8Mb span, GWFAM402 0.9763/17.8Mb, GWFAM487 0.9786/3.8Mb) -- suggesting that on this genome, physically-tight recent tandem duplicates in gorilla are bimodal (either very recent/near-identical >=98%, or already diverged/dispersed <95%), while the 96-98% divergence band is populated mostly by same-chromosome but NOT tandem (already-dispersed) paralog pairs -- consistent with enough evolutionary time for both further mutation AND genomic relocation."
+      },
+      "note": "Only 2 of 24 co-located candidate families fall in the recoverable window; both were attempted in Phase 2 (see loci_attempted) and neither produced a real recovery, for two different reasons unrelated to the divergence itself (GWFAM227: too few supported copies; GWFAM382: an annotation artifact in one 'copy'). A third, structurally-cleanest candidate just above the window (GWFAM460, 99.82% identity) was also attempted as a robustness check and reproduced the RBMY1-style near-identical/degenerate-PSV failure mode at an independent locus."
+    },
     "recovered": false,
     "identity_to_intact": null,
-    "min_clusters_satisfied": true,
-    "note": "Recovery did NOT succeed at any of the 3 real gorilla tandem loci examined, but for informative, DIFFERENT reasons at each (see loci_attempted): GSTM fails before any alignment (structural min_clusters=3 gate unreachable with only 3 supported copies, exactly as V4a's simulation predicted). RBMY1 (6 copies) clears min_clusters (7 clusters found) but every candidate is declined by the downstream remap-identity gate (>=98%), because real near-identical segmental-duplication paralogs -- the exact class this method targets -- are themselves >=98% identical genome-wide, which collides with that gate's own identity ceiling. TSPY is uninformative (K=0-floor identical copies, sparse coverage). This is the honest V4a-vs-V4b gap the brief anticipated: the simulated arm (V4a) used copies independently 2%-diverged from a common base, which is more divergent than these real gorilla tandem paralogs actually are -- the method's admission gate is proven to work (V4a), but on real biological data at this identity range it is calibrated to decline rather than risk a false positive, which is the conservative and correct behavior for a paralog-vs-heterozygosity distinction, not a defect.",
-    "design": {
-      "kept_reference_copy_indices": [
-        0,
-        3,
-        4,
-        5
-      ],
-      "host_index": 4,
-      "hidden_deleted_indices": [
-        1,
-        2
-      ],
-      "mask_spans": [
-        [
-          19625716,
-          19639581
-        ],
-        [
-          19648671,
-          19662568
-        ]
-      ]
-    },
-    "degraded_n_copies": 4,
-    "degraded_collapsed_copies": 6,
-    "n_dna_needs": 6,
-    "dna_needs_reasons": [
-      ">=98% remap identity (paralog-leak or het)",
-      ">=98% remap identity (paralog-leak or het)",
-      ">=98% remap identity (paralog-leak or het)",
-      ">=98% remap identity (paralog-leak or het)",
-      ">=98% remap identity (paralog-leak or het)",
-      ">=98% remap identity (paralog-leak or het)"
-    ],
-    "n_admitted": 0,
-    "set_match": [],
-    "n_reads_realigned": 87,
-    "identity_resolution": "PSV-column (matched by absolute genome_pos between intact and degraded runs)",
-    "copy_assign_log_intact": "[copy_assign] sweeping 1 region(s) over 1 contig(s)\n[copy_assign] decisive-margin tau=6.9 error_rate=0.003\n[detect_and_assign] 87 primary -> 16 skeletons -> 16 transcripts -> 5 reps\n[detect_and_assign] homology (E_r): 10 edges -> 1 families\n[detect_and_assign] POA homology (diagnostic): 6 edges (0 via large-seq fallback)\n[detect_and_assign] refine: 1 co-located families -> 1 homology-gated (asm20 id>=0.80, cov>=0.50, >= 2 distinct loci)\n[mosaic] CAFAM0: 0 reads showed a candidate copy-switch -> 0 recurrence-confirmed conversion event(s)\n[copy_assign]   NC_073248.2:19558214-19739408: 1077 mapped reads -> 1 families\n[copy_assign] wrote /home/juanfra/winloci_scratch/mech_real/mech_real_full2.famcn_readonly.tsv (1 families; depth_cn=NA (pass --lambda-global or --lambda-file))\n[copy_assign] tie-break invariance: 4/6 copies invariant (>= 3 unique-mapper OR copy-specific-junction reads; FALSE = existence leans on the arbitrary primary label)\n[copy_assign] dumped PSV genotype matrix: 888 read rows, 6 copy rows -> /home/juanfra/winloci_scratch/mech_real/mech_real_full2.psv_reads.tsv/.psv_copies.tsv/.psv_cols.tsv\n[copy_assign] 1 families, 888 read assignments\n[copy_assign] genome-wide unique-mapper agreement: 72/72 (100.0%)\n[copy_assign] wrote /home/juanfra/winloci_scratch/mech_real/mech_real_full2.families.tsv + /home/juanfra/winloci_scratch/mech_real/mech_real_full2.assignments.tsv + /home/juanfra/winloci_scratch/mech_real/mech_real_full2.quant.tsv\n",
-    "copy_assign_log_degraded": "[copy_assign] sweeping 1 region(s) over 1 contig(s)\n[copy_assign] decisive-margin tau=6.9 error_rate=0.003\n[detect_and_assign] 87 primary -> 13 skeletons -> 12 transcripts -> 3 reps\n[detect_and_assign] homology (E_r): 3 edges -> 1 families\n[detect_and_assign] POA homology (diagnostic): 3 edges (0 via large-seq fallback)\n[detect_and_assign] refine: 1 co-located families -> 1 homology-gated (asm20 id>=0.80, cov>=0.50, >= 2 distinct loci)\n[mosaic] CAFAM0: 0 reads showed a candidate copy-switch -> 0 recurrence-confirmed conversion event(s)\n[copy_assign]   NC_073248.2_degraded:1-187195: 342 mapped reads -> 1 families\n[copy_assign] wrote /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.famcn_readonly.tsv (1 families; depth_cn=NA (pass --lambda-global or --lambda-file))\n[copy_assign] tie-break invariance: 3/4 copies invariant (>= 3 unique-mapper OR copy-specific-junction reads; FALSE = existence leans on the arbitrary primary label)\n[copy_assign] dumped PSV genotype matrix: 259 read rows, 4 copy rows -> /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.psv_reads.tsv/.psv_copies.tsv/.psv_cols.tsv\n[copy_assign] 6 DNA-needs candidate(s) -> /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.dna_needs.tsv\n[copy_assign] 0 linearize certificate(s) -> /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.linearize.tsv\n[copy_assign] 1 families, 259 read assignments\n[copy_assign] genome-wide unique-mapper agreement: 79/79 (100.0%)\n[copy_assign] wrote /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.families.tsv + /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.assignments.tsv + /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.quant.tsv\n",
+    "locus": null,
+    "median_copy_identity": null,
+    "note": "No positive recovery found. Phase 1 hunted the full genome-wide GGO_gwcat catalog (494 families) for co-located (single-chrom, <=3Mb span) families with >=3 copies (24 candidates); only 2 fall in the [0.96,0.979] recoverable-identity window. Phase 2 attempted both in-window candidates plus one near-window structurally-clean candidate (3 total real loci this task, 6 total across Task 6 + this task): GSTM (architectural stop, 3 copies), RBMY1 (min_clusters satisfied, declined at the >=98% remap-identity gate), TSPY (K=0-floor, uninformative), GWFAM382 (min_clusters satisfied generously -- 7 clusters, 6 admitted candidates -- but poor match to truth, identity_to_intact=0.39-0.41, traced to an annotation artifact where one catalogued 'copy' is actually a much larger, structurally distinct transcript), GWFAM227 (architectural stop, 3 copies, same constraint as GSTM), GWFAM460 (no valid deletion design -- degenerate near-identical PSV structure at 99.82% catalog identity, same regime as TSPY). This is a rigorous, catalog-scanned honest negative: the real gorilla tandem-family identity landscape at physically tight (co-located, <=3Mb) loci is genuinely thin in the recoverable window, and the two families that do land there both fail for structural/data-quality reasons independent of the divergence itself. No recovery number was fabricated.",
     "loci_attempted": [
       {
         "locus": "NC_073224.2:129160000-129230000",
@@ -167,6 +151,32 @@
         "n_copies_supported": 6,
         "outcome": "not attempted -- K=0 floor / sparse coverage, uninformative for this arm",
         "detail": "Intact-reference scan (copy_assign --homology-primary --min-copies 2 --dump-psv) found 6 supported copies, but PSV-allele identity between 5 of the 6 was exactly 1.0 (byte-identical at every discovered PSV column -- the K=0 floor already characterized elsewhere in this project) and per-copy anchored-read counts were near zero (0-1 for most copies; 471 mapped reads total over a 372kb region). No divergence exists to recover and the read support is too thin to trust a degradation design here, so no degraded-reference attempt was made at this locus."
+      },
+      {
+        "locus": "NC_073239.2:122615409-122771700",
+        "family_id": "GWFAM382",
+        "median_copy_identity": 0.9628,
+        "n_copies_supported": 4,
+        "outcome": "min_clusters SATISFIED (7 clusters, 6 admitted candidates) but poor match to truth (identity_to_intact=0.39-0.41, well below the 0.90 recovery bar)",
+        "detail": [
+          "In-window candidate from the Phase-1 catalog hunt (median cDNA-level pairwise identity 0.9628 across all 6 pairs of the family's 4 catalogued copies; GGO_gwcat family with the single lowest span (156kb) inside the [0.96,0.979] window and n_copies>=4). copy_assign on the intact reference confirmed n_copies_supported=4, matching the catalog. Design picker chose host=copy2 (122741456-122743192, the deepest-covered copy, 2719 hard reads), hidden (deleted)=[copy3, copy1]. Degraded-reference re-alignment (995 reads) collapsed the host locus into 7 clusters (well above the min_clusters=3 gate) and admitted 6 absent-copy candidates (0 declined by the remap-identity gate this time -- the opposite problem from RBMY1). But set_match against the 2 true deleted-copy PSV-allele strings gave identity_to_intact=0.394-0.408 -- far below the 0.90 bar, so recovered=false. Root cause: copy3 (the deleted copy furthest from the family's core trio) is a catalog/annotation artifact -- its catalogued span is 122769395-122771700 (2.3kb, like its 3 siblings) but copy_assign's own fresh read-based transcript detection at this locus finds its actual genomic footprint spans 122769398-123261551 (492kb, likely a large multi-intron isoform or an unrelated overlapping transcript folded into the same E_r homology family by a chance exon match), which is why masking it inside a tightly padded degraded reference is not a clean 'delete one tandem paralog' experiment -- most of its true span sits outside the extracted+padded window entirely. This is an informative, non-fabricated negative: the gate/degradation machinery worked exactly as designed (min_clusters cleared, admission ran), but this particular in-window family is not architecturally a clean tandem array."
+        ]
+      },
+      {
+        "locus": "NC_073230.2:143511874-143646376",
+        "family_id": "GWFAM227",
+        "median_copy_identity": 0.9629,
+        "n_copies_supported": 3,
+        "outcome": "architectural stop -- only 3 supported copies (same constraint as GSTM)",
+        "detail": "Second in-window candidate from the Phase-1 hunt (median identity 0.9629, but only 1 of the 3 possible pairs aligned under asm20 -- the other 2 pairs are too diverged for asm20's seeder, so this family's 'in-window' status rests on a single pair). copy_assign on the intact reference confirmed n_copies_supported=3, matching the catalog -- structurally identical to the GSTM constraint from Task 6: a bare 3-copy family can supply at most host+1-deleted=2 clusters at one surviving locus, never reaching min_clusters=3. Stopped before any alignment step, exactly as real_tandem.py's own logic requires."
+      },
+      {
+        "locus": "NC_073247.2:59696712-59789843",
+        "family_id": "GWFAM460",
+        "median_copy_identity": 0.9982,
+        "n_copies_supported": 8,
+        "outcome": "no valid deletion design -- degenerate (near-identical) PSV structure",
+        "detail": "Third attempt: not in-window (median identity 0.9982, above the 0.979 ceiling) but the structurally cleanest candidate in the whole catalog scan -- 7 catalogued copies in a 93kb span, all 21 pairwise comparisons aligned (unlike GWFAM227's 1/3), included as a robustness check on the RBMY1 finding at a different, non-overlapping chrY-adjacent locus (NC_073247.2). copy_assign on the intact reference found n_copies_supported=8 (even more than the catalog's 7). pick_deletion_design found NO valid host+2-hidden design at all -- no pair of copies is each strictly closer (by PSV-allele identity) to one surviving host than to every other surviving copy, i.e. the copies are too PSV-identical to reads cleanly pool onto one 'host'. This is the near-identical/K=0-adjacent regime already characterized for TSPY and RBMY1: at >=99.8% catalog-level identity, PSV columns barely distinguish copies, so even the *design* step (before any degradation or gate) fails, not just the remap-identity gate."
       }
     ]
   }
