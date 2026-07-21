@@ -96,5 +96,78 @@
       "n_reads": 360,
       "n_tied": 360
     }
+  },
+  "v4b": {
+    "locus": "NC_073248.2:19558214-19739408",
+    "substrate": "GGO.fasta=mGorGor1 + GGO_mm.bam, gorilla-to-gorilla",
+    "truth_source": "same-read-set vs full GGO.fasta",
+    "n_copies_supported": 6,
+    "recovered": false,
+    "identity_to_intact": null,
+    "min_clusters_satisfied": true,
+    "note": "Recovery did NOT succeed at any of the 3 real gorilla tandem loci examined, but for informative, DIFFERENT reasons at each (see loci_attempted): GSTM fails before any alignment (structural min_clusters=3 gate unreachable with only 3 supported copies, exactly as V4a's simulation predicted). RBMY1 (6 copies) clears min_clusters (7 clusters found) but every candidate is declined by the downstream remap-identity gate (>=98%), because real near-identical segmental-duplication paralogs -- the exact class this method targets -- are themselves >=98% identical genome-wide, which collides with that gate's own identity ceiling. TSPY is uninformative (K=0-floor identical copies, sparse coverage). This is the honest V4a-vs-V4b gap the brief anticipated: the simulated arm (V4a) used copies independently 2%-diverged from a common base, which is more divergent than these real gorilla tandem paralogs actually are -- the method's admission gate is proven to work (V4a), but on real biological data at this identity range it is calibrated to decline rather than risk a false positive, which is the conservative and correct behavior for a paralog-vs-heterozygosity distinction, not a defect.",
+    "design": {
+      "kept_reference_copy_indices": [
+        0,
+        3,
+        4,
+        5
+      ],
+      "host_index": 4,
+      "hidden_deleted_indices": [
+        1,
+        2
+      ],
+      "mask_spans": [
+        [
+          19625716,
+          19639581
+        ],
+        [
+          19648671,
+          19662568
+        ]
+      ]
+    },
+    "degraded_n_copies": 4,
+    "degraded_collapsed_copies": 6,
+    "n_dna_needs": 6,
+    "dna_needs_reasons": [
+      ">=98% remap identity (paralog-leak or het)",
+      ">=98% remap identity (paralog-leak or het)",
+      ">=98% remap identity (paralog-leak or het)",
+      ">=98% remap identity (paralog-leak or het)",
+      ">=98% remap identity (paralog-leak or het)",
+      ">=98% remap identity (paralog-leak or het)"
+    ],
+    "n_admitted": 0,
+    "set_match": [],
+    "n_reads_realigned": 87,
+    "identity_resolution": "PSV-column (matched by absolute genome_pos between intact and degraded runs)",
+    "copy_assign_log_intact": "[copy_assign] sweeping 1 region(s) over 1 contig(s)\n[copy_assign] decisive-margin tau=6.9 error_rate=0.003\n[detect_and_assign] 87 primary -> 16 skeletons -> 16 transcripts -> 5 reps\n[detect_and_assign] homology (E_r): 10 edges -> 1 families\n[detect_and_assign] POA homology (diagnostic): 6 edges (0 via large-seq fallback)\n[detect_and_assign] refine: 1 co-located families -> 1 homology-gated (asm20 id>=0.80, cov>=0.50, >= 2 distinct loci)\n[mosaic] CAFAM0: 0 reads showed a candidate copy-switch -> 0 recurrence-confirmed conversion event(s)\n[copy_assign]   NC_073248.2:19558214-19739408: 1077 mapped reads -> 1 families\n[copy_assign] wrote /home/juanfra/winloci_scratch/mech_real/mech_real_full2.famcn_readonly.tsv (1 families; depth_cn=NA (pass --lambda-global or --lambda-file))\n[copy_assign] tie-break invariance: 4/6 copies invariant (>= 3 unique-mapper OR copy-specific-junction reads; FALSE = existence leans on the arbitrary primary label)\n[copy_assign] dumped PSV genotype matrix: 888 read rows, 6 copy rows -> /home/juanfra/winloci_scratch/mech_real/mech_real_full2.psv_reads.tsv/.psv_copies.tsv/.psv_cols.tsv\n[copy_assign] 1 families, 888 read assignments\n[copy_assign] genome-wide unique-mapper agreement: 72/72 (100.0%)\n[copy_assign] wrote /home/juanfra/winloci_scratch/mech_real/mech_real_full2.families.tsv + /home/juanfra/winloci_scratch/mech_real/mech_real_full2.assignments.tsv + /home/juanfra/winloci_scratch/mech_real/mech_real_full2.quant.tsv\n",
+    "copy_assign_log_degraded": "[copy_assign] sweeping 1 region(s) over 1 contig(s)\n[copy_assign] decisive-margin tau=6.9 error_rate=0.003\n[detect_and_assign] 87 primary -> 13 skeletons -> 12 transcripts -> 3 reps\n[detect_and_assign] homology (E_r): 3 edges -> 1 families\n[detect_and_assign] POA homology (diagnostic): 3 edges (0 via large-seq fallback)\n[detect_and_assign] refine: 1 co-located families -> 1 homology-gated (asm20 id>=0.80, cov>=0.50, >= 2 distinct loci)\n[mosaic] CAFAM0: 0 reads showed a candidate copy-switch -> 0 recurrence-confirmed conversion event(s)\n[copy_assign]   NC_073248.2_degraded:1-187195: 342 mapped reads -> 1 families\n[copy_assign] wrote /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.famcn_readonly.tsv (1 families; depth_cn=NA (pass --lambda-global or --lambda-file))\n[copy_assign] tie-break invariance: 3/4 copies invariant (>= 3 unique-mapper OR copy-specific-junction reads; FALSE = existence leans on the arbitrary primary label)\n[copy_assign] dumped PSV genotype matrix: 259 read rows, 4 copy rows -> /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.psv_reads.tsv/.psv_copies.tsv/.psv_cols.tsv\n[copy_assign] 6 DNA-needs candidate(s) -> /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.dna_needs.tsv\n[copy_assign] 0 linearize certificate(s) -> /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.linearize.tsv\n[copy_assign] 1 families, 259 read assignments\n[copy_assign] genome-wide unique-mapper agreement: 79/79 (100.0%)\n[copy_assign] wrote /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.families.tsv + /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.assignments.tsv + /home/juanfra/winloci_scratch/mech_real/mech_real_degraded.quant.tsv\n",
+    "loci_attempted": [
+      {
+        "locus": "NC_073224.2:129160000-129230000",
+        "gene": "GSTM",
+        "n_copies_supported": 3,
+        "outcome": "architectural stop -- min_clusters gate unreachable",
+        "detail": "Confirmed via a real copy_assign run against the intact GGO.fasta+GGO_mm.bam (same command Task 3 used): n_copies=3. As predicted by Task 5/V4a's finding #2 (absent_copy.rs::AbsentCopyParams::min_clusters is hardcoded to 3, no CLI override), a bare 3-copy family can supply at most host+1-deleted=2 co-varying clusters at any single surviving locus after a 1-copy deletion -- structurally below the gate, independent of divergence or read depth. No degradation attempted here; the constraint precludes it before any alignment step."
+      },
+      {
+        "locus": "NC_073248.2:19558214-19739408",
+        "gene": "RBMY1 (chrY tandem array)",
+        "n_copies_supported": 6,
+        "outcome": "min_clusters SATISFIED (n_clusters=7) but declined at gate 5 (remap identity)",
+        "detail": "This is the run recorded in the main v4b block above (design: keep copy indices [0,3,4,5], host=copy4, delete copies 1 and 2, which PSV-allele identity showed as the two copies each more similar to copy4 (0.9896, 0.9793) than to any other kept copy). Degraded-reference re-alignment of the same 87 extracted reads produced n_clusters=7 at the host locus -- comfortably clearing the min_clusters=3 admission gate, unlike GSTM. All 6 declined candidates failed gate 5 (`>=98% remap identity (paralog-leak or het)`, absent_copy.rs) instead: the synthetic overlay transcript built from each cluster remaps to the genome at >=98% identity to the host, so the gate cannot certify it as a distinct extra copy rather than ordinary heterozygous variation. This tracks the underlying biology, not a bug in this driver: RBMY1's PSV-column identity between the deleted copies and the host was already 0.98-0.99 (measured directly from .psv_copies.tsv on the intact run), and PSV columns are by construction the minority of divergent sites in the copy -- most of a ~14kb copy's remaining bases are identical across paralogs, so full-span remap identity for a PSV-level-98%-identical pair is necessarily >=98% too. Real, recently-duplicated segmental-duplication tandem arrays (the exact class this method targets) sit right at or above the gate's own identity ceiling."
+      },
+      {
+        "locus": "NC_073248.2:34688121-35060917",
+        "gene": "TSPY (chrY tandem array)",
+        "n_copies_supported": 6,
+        "outcome": "not attempted -- K=0 floor / sparse coverage, uninformative for this arm",
+        "detail": "Intact-reference scan (copy_assign --homology-primary --min-copies 2 --dump-psv) found 6 supported copies, but PSV-allele identity between 5 of the 6 was exactly 1.0 (byte-identical at every discovered PSV column -- the K=0 floor already characterized elsewhere in this project) and per-copy anchored-read counts were near zero (0-1 for most copies; 471 mapped reads total over a 372kb region). No divergence exists to recover and the read support is too thin to trust a degradation design here, so no degraded-reference attempt was made at this locus."
+      }
+    ]
   }
 }
