@@ -13,6 +13,59 @@ Code consolidation (collapsing duplicate implementations) is deliverable B, a la
 
 ---
 
+## 0. The one idea that does the heavy lifting (organizing principle)
+
+The advisor wants what Eichler has — a method explainable end-to-end where one lever does the
+heavy lifting (Eichler: "the read's copy is the one with AS > 10"). Rustle already has a better
+one, and the artifact must **lead with it** so the method reads as simple *and* complete, not as
+200 knobs.
+
+**Two mechanisms, stated as two sentences:**
+
+- **Define.** Two loci are one family iff they are homologous **by exon-sum** (asm20 identity
+  ≥ 0.80 on the exon-union of each copy) and there are ≥ 2 of them.
+- **Assign.** A read belongs to a copy iff it matches a base that **no other copy has, beyond
+  chance** (Poisson-binomial upper tail, p < α/(n−1), α = 1e-3). If no such base exists, we
+  **abstain** — we never guess, and never split 1/k.
+
+This is the `AS > 10` equivalent, and stronger: it is a calibrated, Bonferroni-corrected
+p-value rather than a magic number, and where `AS > 10` forces a wrong call on a tie, the
+certificate **abstains** — the exact failure of Eichler's rule already documented in this repo.
+
+**Two discoveries are CONSEQUENCES of these two mechanisms, not new methods:**
+
+- **Copies missing from the *genome*** (collapsed / reference-absent, "O4") are a consequence
+  of **Assign**. The certificate asks "do the copies I know about explain these reads?" When a
+  co-segregating base pattern is carried by reads that **no** modeled copy explains at
+  significance, an unmodeled copy must exist. Verified reuse: the same Poisson-binomial +
+  Bonferroni α/(n−1) certificate appears in `copy_assign.rs` (assign), `absent_copy.rs`
+  (absent-copy `min_p_distinct`), and `collapse_gate.rs` (collapse) — **one test, three uses.**
+- **Genes missing from the *annotation*** (previously unknown, verified real because they are
+  transcribed, "O1 de-novo / novel O4") are a consequence of **Define**. A locus that (a) is
+  unannotated, (b) forms an exon-sum homology edge to a known family, and (c) has transcripts
+  (reads assembled through it, ≥ GATE_MIN_READS) is a real family member regardless of
+  annotation. Similarity says "it belongs"; exon-sum is *how* similarity is measured;
+  transcripts prove it is a real gene.
+
+**The honesty line (must be visible in the artifact):** detection is the consequence; some
+downstream *characterization* is separate machinery (e.g. `hidden_copy.rs`'s six thresholds,
+the linearize permutation test). The certificate *flags* the absent copy; that machinery
+*characterizes* it. Machinery is disclosed in the table (§2.2–2.3), never smuggled into the
+two-sentence story.
+
+**What this does to the ~200 heuristics:** they are not decisions. They are the machinery that
+computes "homologous by exon-sum?" and "distinguishable beyond chance?". Only ~4 numbers
+(id≥0.80, ≥2 loci, α=1e-3, and the exon-sum edge itself) decide anything; the Soto inert-guard
+proof (§3) is the evidence that the rest do not get a vote. The disclosure table thus reads as
+"look how little decides," not "look, 200 knobs."
+
+**Do NOT overclaim unification.** Define (homology) and Assign (significance) are genuinely two
+ideas, not one — the artifact presents them as two. The "one test, three uses" claim is about
+the *certificate* (Assign) only, and is verified in code. Family definition is not folded into
+the certificate.
+
+---
+
 ## 1. The finding this fixes
 
 The live pipeline is **one chain of five stages, not five approaches**:
@@ -48,14 +101,26 @@ stages, not alternatives.
 
 ### 2.1 `bench/rustle_mechanism.html` — the single stage chain
 
-One self-contained HTML page (no external assets; theme-aware; favicon 🧬). Structure:
+One self-contained HTML page (no external assets; theme-aware; favicon 🧬). Structure,
+**top to bottom, leading with the one idea (§0)**:
 
-- **Header claim, bold, above everything:** "These are five stages of one pipeline, not five
-  approaches." + the one-line role of each stage.
-- **The spine:** the five stages top-to-bottom. Each stage box carries exactly:
+- **§0 first — "The method in two sentences."** Define + Assign, in full, as the opening. Then
+  "The one test" panel: the certificate written once, with the three call sites where it is
+  reused (`copy_assign.rs`, `absent_copy.rs`, `collapse_gate.rs`) — the `AS > 10` equivalent,
+  shown to do the heavy lifting.
+- **"Two consequences, not new methods."** The two consequence statements from §0 (copies
+  missing from the genome ⇐ Assign; genes missing from the annotation ⇐ Define + exon-sum),
+  each with its one-line "the honesty line" caveat naming the separate characterization
+  machinery.
+- **Header claim, bold:** "These are two mechanisms and their consequences — not four
+  approaches."
+- **The spine (now framed as "how the two sentences are computed"):** the five stages
+  top-to-bottom. Each stage box carries exactly:
   1. one mechanism sentence (what it does),
   2. its one **primary** decision number (the decision-relevant heuristic for that stage),
   3. the `file:line` where that number lives.
+  The spine is explicitly subordinate to §0: it is the machinery of Define + Assign, not a
+  list of independent tricks.
 - **Superseded-terminology table:** every vocabulary the advisor has seen mapped to its real
   stage or to "abandoned (date)":
   | term seen | reality |
@@ -163,8 +228,12 @@ count / copy count / assignment md5. Report the truth, whatever it is.
 - `gen_heuristics.py` passes (every registry value verified against source) and emits a table
   covering all ~200 heuristics.
 - Every `inert-guard` row has a measured observed-max justifying its tier.
-- `rustle_mechanism.html` renders the five-stage spine with primary number + file:line per
-  stage, the "stages not approaches" claim, and the superseded-terminology table.
+- `rustle_mechanism.html` **leads with §0** (the two-sentence method + the one reused
+  certificate + the two consequences), then renders the five-stage spine (primary number +
+  file:line per stage, subordinate to §0), the "two mechanisms and their consequences, not four
+  approaches" claim, and the superseded-terminology table.
+- The "one test, three uses" reuse claim is verified in code before it appears in the artifact
+  (the Poisson-binomial + Bonferroni α/(n−1) form is confirmed present at all three call sites).
 - The three corrections (§2.4) are applied.
 - No artifact remains that contradicts the code (the quasiclique false claim and the
   DEFINITIONS_FORMAL 0.13 claim are gone).
