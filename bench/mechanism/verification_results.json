@@ -73,5 +73,28 @@
       }
     },
     "scope_note": "READ_CAP/POA_CAP are compile-time consts (o2_materialize.rs:250 / copy_assign_pipeline.rs:524), not CLI flags. No rebuild was performed here (out of scope; deferred to deliverable B). Both are measured DIRECTLY from real BAM/table data instead of toggled, and both already carried tier=\"result-guard\" in heuristics.toml from Task 2 -- this V3 pass supplies the empirical proof backing that tier (fires=true on real Soto-scale data), mirroring how V2 supplies the proof for the two inert-guard tiers (fires=false). No heuristics.toml reclassification was needed: all four guards' V2/V3-measured fires values already match their existing tiers."
+  },
+  "v4a": {
+    "divergent": {
+      "copy_number_correct": true,
+      "n_recovered": 2,
+      "min_identity": 1.0,
+      "preset": "splice:hq",
+      "design": "4-member design (2 reference + 2 hidden collapsed at one locus), not a bare 3-of-3 deletion -- see module docstring finding #2: min_clusters=3 is hardcoded and a 3-member/1-deleted design can never reach it.",
+      "n_copies_planted": 4,
+      "n_copies_detected": 4,
+      "n_dna_needs": 0,
+      "identity_resolution": "PSV-column (the certificate's native resolution; see --dump-psv)"
+    },
+    "identical": {
+      "copy_number_correct": true,
+      "assign_abstained": true,
+      "preset": "splice:hq",
+      "n_copies_planted": 3,
+      "n_copies_detected": 3,
+      "psv_cols_found": 0,
+      "n_reads": 360,
+      "n_tied": 360
+    }
   }
 }
