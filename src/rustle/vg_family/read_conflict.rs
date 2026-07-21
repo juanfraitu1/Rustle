@@ -250,6 +250,14 @@ pub fn family_mapq0_support(reads: &[ReadPlacements], family: &[usize], p: &Conf
     (support, both_mapq0)
 }
 
+/// True ⟹ the two co-located copies are DISTINGUISHABLE by reads and must be kept separate;
+/// false ⟹ no read separates them (true K=0) and they may collapse. This is the χ(H) edge
+/// predicate restricted to a co-located pair. No new threshold: `min_reads` is the conflict
+/// floor, and the PSV/junction flag is gated upstream at `PSV_MIN_ALLELE_READS`.
+pub fn reads_distinguish(uniq_i: usize, uniq_j: usize, shared_psv_or_junction: bool, min_reads: usize) -> bool {
+    uniq_i >= min_reads || uniq_j >= min_reads || shared_psv_or_junction
+}
+
 /// Connected-component families over the conflict edges (union-find). Returns components of size `>= 2`
 /// (a locus with no conflict needs no resolution — it is not a family), each sorted ascending, the list
 /// sorted by first member (deterministic).
@@ -532,5 +540,23 @@ mod tests {
             e.second_per_base.unwrap(),
             "...yet per-aligned-base they are identical: the margin is pure length confound"
         );
+    }
+
+    #[test]
+    fn reads_distinguish_keeps_separate_when_unique_mappers_present() {
+        // one copy has 40 unique reads (the ID_26 case): distinguishable -> keep separate
+        assert!(reads_distinguish(40, 0, false, 3));
+        // both sides above the floor: distinguishable
+        assert!(reads_distinguish(11, 8, false, 3));
+        // a read-supported PSV/junction separates them even with no unique mappers
+        assert!(reads_distinguish(0, 0, true, 3));
+    }
+
+    #[test]
+    fn reads_distinguish_merges_true_k0() {
+        // no unique mappers either side, no distinguishing PSV/junction -> K=0 -> merge
+        assert!(!reads_distinguish(0, 0, false, 3));
+        // unique support below the floor is noise, not a distinction -> merge
+        assert!(!reads_distinguish(2, 1, false, 3));
     }
 }
