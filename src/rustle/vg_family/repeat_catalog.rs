@@ -745,7 +745,7 @@ mod tests {
     /// pysam bytes. Skipped (passes) when the 3.4G genome is unavailable (e.g. CI).
     #[test]
     fn indexed_fasta_matches_pysam_on_real_genome() {
-        let genome = "/home/juanfra/winloci_scratch/GGO.fasta";
+        let genome = "/home/juanfra/winloci_scratch/GGO.fasta"; // test-only; not a shipped default
         if !std::path::Path::new(&format!("{genome}.fai")).exists() {
             eprintln!("real genome absent -> skipping pysam cross-check");
             return;

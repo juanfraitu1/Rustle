@@ -73,9 +73,13 @@ pub const DEMOTE_BAL_MIN: f64 = edge_oracle::DEMOTE_BAL_MIN;
 pub const DEMOTE_COPY_MAX: f64 = edge_oracle::DEMOTE_COPY_MAX;
 
 // --------------------------------------------------------------------------- inputs
-/// The input file paths + gate/gamma switches for one catalog build. Defaults mirror
-/// the Python module constants (`family_er_pr` / `rna_only_edge_oracle` /
-/// `recombination_bridge_detector` / `vg_repeat_catalog`).
+/// The input file paths + gate/gamma switches for one catalog build. The four
+/// BENCH-relative fields (`raw_fams`/`edges`/`univ_aln`/`allele`/`vg_repeat`) default to
+/// the shipped repo-relative locations, mirroring the Python module constants
+/// (`family_er_pr` / `rna_only_edge_oracle` / `recombination_bridge_detector` /
+/// `vg_repeat_catalog`). `meta`/`annot`/`skeletons`/`genome` have NO shipped default —
+/// they point at wherever the caller's BAM-derived scratch data lives on THEIR machine
+/// (this used to hardcode `/home/juanfra/winloci_scratch`; see [`Inputs::new`]).
 #[derive(Clone, Debug)]
 pub struct Inputs {
     /// `family_er_pr.META` = denovo transcript meta (`dn -> chrom/start/end`).
@@ -98,20 +102,26 @@ pub struct Inputs {
     pub genome: String,
 }
 
-impl Default for Inputs {
-    fn default() -> Self {
-        const SCRATCH: &str = "/home/juanfra/winloci_scratch";
+impl Inputs {
+    /// Build the input set from the four caller-supplied, machine-specific paths
+    /// (`meta`/`annot`/`skeletons`/`genome` — there is no single-machine scratch
+    /// default a shipped binary can silently fall back to; the caller must pass
+    /// these explicitly, e.g. `family_define --meta ... --annot ... --skeletons ...
+    /// --genome ...`). The remaining four fields are filled with the shipped
+    /// `bench/`-relative defaults (the Python module constants) and can be
+    /// overridden individually afterwards.
+    pub fn new(meta: String, annot: String, skeletons: String, genome: String) -> Self {
         const BENCH: &str = "bench";
         Inputs {
-            meta: format!("{SCRATCH}/denovo_transcripts.meta.tsv"),
-            annot: format!("{SCRATCH}/annot_intervals.tsv"),
+            meta,
+            annot,
             raw_fams: format!("{BENCH}/denovo_families.tsv"),
             edges: format!("{BENCH}/denovo_family_edges.tsv"),
             univ_aln: format!("{BENCH}/ri_sharedlen_universal.tsv"),
             allele: format!("{BENCH}/a1_read_consensus_o1.tsv"),
             vg_repeat: format!("{BENCH}/vg_repeat_catalog.tsv"),
-            skeletons: format!("{SCRATCH}/denovo_skeletons.tsv"),
-            genome: format!("{SCRATCH}/GGO.fasta"),
+            skeletons,
+            genome,
         }
     }
 }

@@ -55,7 +55,11 @@ pub const SOR_STRICT: f64 = 2.0;
 /// Default multimapping genome BAM (the strand-table read source). Python
 /// `bench/asj_strand_bias.py:52
 /// DEFAULT_BAM = "/home/juanfra/winloci_scratch/GGO_mm.bam"`.
-pub const DEFAULT_BAM: &str = "/home/juanfra/winloci_scratch/GGO_mm.bam";
+// test-only; not a shipped default — the ONLY consumer is the `#[ignore]`d byte-parity
+// test below (`asj_strand_bias_byte_parity`), which asserts it against the Python fixture.
+// The shipped `asj` binary requires `--bam` explicitly (clap, no default_value) and never
+// reads this constant.
+pub const DEFAULT_BAM: &str = "/home/juanfra/winloci_scratch/GGO_mm.bam"; // test-only; not a shipped default
 
 /// Input ASJ-calls TSV basename (in `bench/`). Python
 /// `bench/asj_strand_bias.py:50  IN_TSV = os.path.join(HERE, "asj_calls.tsv")`.

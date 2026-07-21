@@ -56,7 +56,11 @@ pub const OVERLAP_MERGE: f64 = 0.5;
 /// input. Python `bench/psv_graph_genomewide.py:32`:
 /// `FAM_TSV = os.environ.get("FAM_TSV", "/home/juanfra/winloci_scratch/validated_families.tsv")`
 /// — the default; the env override is honored by [`fam_tsv_path`].
-pub const FAM_TSV_DEFAULT: &str = "/home/juanfra/winloci_scratch/validated_families.tsv";
+// test-only; not a shipped default — [`fam_tsv_path`] is only called from
+// `MaterializeConfig::defaults`, which in turn is only constructed inside this module's
+// `#[cfg(test)]` block (the `#[ignore]`d `materialize_family_e2e`). No `src/bin/*.rs`
+// binary imports `o2_materialize`, so no shipped run can reach this constant.
+pub const FAM_TSV_DEFAULT: &str = "/home/juanfra/winloci_scratch/validated_families.tsv"; // test-only; not a shipped default
 
 /// Basename of the SUN identifiability TSV that supplies gene labels. Python
 /// `bench/o2_vg_visualization.py:60`:
@@ -252,7 +256,10 @@ pub const READ_CAP: usize = 6000;
 /// Default genome BAM, the read-fetch input. Python `bench/psv_graph_genomewide.py:31`:
 /// `BAM = "/home/juanfra/winloci_scratch/GGO.bam"` (a symlink to the indexed
 /// `GGO_mm.bam`; the sibling `GGO.bam.bai` index is required by [`fetch_reads`]).
-pub const BAM_DEFAULT: &str = "/home/juanfra/winloci_scratch/GGO.bam";
+// test-only; not a shipped default — only consumed by `MaterializeConfig::defaults`,
+// which is only constructed inside this module's `#[cfg(test)]` block. No `src/bin/*.rs`
+// binary imports `o2_materialize`, so no shipped run can reach this constant.
+pub const BAM_DEFAULT: &str = "/home/juanfra/winloci_scratch/GGO.bam"; // test-only; not a shipped default
 
 /// Read the minimap2 `de` (gap-compressed per-base divergence) aux tag as an `f64`.
 ///
@@ -418,7 +425,10 @@ pub fn fetch_reads<P: AsRef<Path>>(
 
 /// Default genome FASTA, the `materialize_family` copy-extraction input. Python
 /// `bench/psv_graph_genomewide.py:30  GENOME = "/home/juanfra/winloci_scratch/GGO.fasta"`.
-pub const GENOME_DEFAULT: &str = "/home/juanfra/winloci_scratch/GGO.fasta";
+// test-only; not a shipped default — only consumed by `MaterializeConfig::defaults`,
+// which is only constructed inside this module's `#[cfg(test)]` block. No `src/bin/*.rs`
+// binary imports `o2_materialize`, so no shipped run can reach this constant.
+pub const GENOME_DEFAULT: &str = "/home/juanfra/winloci_scratch/GGO.fasta"; // test-only; not a shipped default
 
 /// A PSV bubble must recur across at least this many reads (not a one-read error).
 /// Python `bench/psv_graph_genomewide.py:34  MIN_READS_PSV = 3`.
@@ -426,7 +436,7 @@ pub const MIN_READS_PSV: usize = 3;
 
 /// Default VG cache directory. Python `bench/o2_vg_visualization.py:59
 /// CACHE = "/home/juanfra/winloci_scratch/o2vg"`.
-pub const CACHE_DIR_DEFAULT: &str = "/home/juanfra/winloci_scratch/o2vg";
+pub const CACHE_DIR_DEFAULT: &str = "/home/juanfra/winloci_scratch/o2vg"; // test-only; not a shipped default
 
 /// The pre- and post-abstain materialized-VG JSON objects: `pre_abstain` is what the
 /// Python dumps to the cache (`json.dump(vg, ...)` BEFORE the abstain leg);

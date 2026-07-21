@@ -72,7 +72,11 @@ pub const CAP: i64 = 600;
 
 /// Default multimapping genome BAM (the MAPQ-0 read source). Python
 /// `bench/asj_verify.py:25  BAM = "/home/juanfra/winloci_scratch/GGO.bam"`.
-pub const DEFAULT_BAM: &str = "/home/juanfra/winloci_scratch/GGO.bam";
+// test-only; not a shipped default — the ONLY consumer is the `#[ignore]`d byte-parity
+// test below (`asj_verify_byte_parity`), which asserts it against the Python fixture. The
+// shipped `asj_verify` binary requires `--bam` explicitly (clap, no default_value) and
+// never reads this constant.
+pub const DEFAULT_BAM: &str = "/home/juanfra/winloci_scratch/GGO.bam"; // test-only; not a shipped default
 
 /// Input ASJ-calls TSV basename (in `bench/`). Python
 /// `bench/asj_verify.py:23  CALLS = .../asj_calls.tsv`.

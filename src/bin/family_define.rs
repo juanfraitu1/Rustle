@@ -56,9 +56,11 @@ struct Args {
     #[arg(long = "no-write", default_value_t = false)]
     no_write: bool,
 
-    // ---- input paths (defaults mirror the Python module constants) ----
+    // ---- input paths ----
+    /// Denovo transcript meta TSV. REQUIRED — no hardcoded winloci_scratch fallback.
     #[arg(long)]
     meta: Option<String>,
+    /// Annotation intervals TSV. REQUIRED — no hardcoded winloci_scratch fallback.
     #[arg(long)]
     annot: Option<String>,
     #[arg(long)]
@@ -71,8 +73,10 @@ struct Args {
     allele: Option<String>,
     #[arg(long)]
     vg_repeat: Option<String>,
+    /// De-novo skeletons TSV. REQUIRED — no hardcoded winloci_scratch fallback.
     #[arg(long)]
     skeletons: Option<String>,
+    /// Genome FASTA (soft-masked GGO.fasta). REQUIRED — no hardcoded winloci_scratch fallback.
     #[arg(long)]
     genome: Option<String>,
 }
@@ -93,13 +97,19 @@ fn main() {
         return;
     }
 
-    let mut inp = Inputs::default();
-    if let Some(v) = args.meta {
-        inp.meta = v;
-    }
-    if let Some(v) = args.annot {
-        inp.annot = v;
-    }
+    let meta = args
+        .meta
+        .expect("--meta is required (no hardcoded winloci_scratch fallback)");
+    let annot = args
+        .annot
+        .expect("--annot is required (no hardcoded winloci_scratch fallback)");
+    let skeletons = args
+        .skeletons
+        .expect("--skeletons is required (no hardcoded winloci_scratch fallback)");
+    let genome = args
+        .genome
+        .expect("--genome is required (no hardcoded winloci_scratch fallback)");
+    let mut inp = Inputs::new(meta, annot, skeletons, genome);
     if let Some(v) = args.raw_fams {
         inp.raw_fams = v;
     }
@@ -114,12 +124,6 @@ fn main() {
     }
     if let Some(v) = args.vg_repeat {
         inp.vg_repeat = v;
-    }
-    if let Some(v) = args.skeletons {
-        inp.skeletons = v;
-    }
-    if let Some(v) = args.genome {
-        inp.genome = v;
     }
 
     let repeat_gate = !(args.no_repeat_gate || env_on("RUSTLE_NO_REPEAT_GATE", "1"));
