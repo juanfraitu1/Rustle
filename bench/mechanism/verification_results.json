@@ -1,0 +1,19 @@
+{
+  "v1": {
+    "edge": {
+      "id": 0.80,
+      "cov": 0.50,
+      "loci": ">=2"
+    },
+    "gstm": {
+      "n_copies": 3
+    },
+    "certificate_call_sites": [
+      "src/rustle/vg_family/copy_assign.rs",
+      "src/rustle/vg_family/absent_copy.rs",
+      "src/rustle/vg_family/collapse_gate.rs"
+    ],
+    "certificate_shared": true,
+    "certificate_notes": "copy_assign.rs and collapse_gate.rs share the certificate literally: collapse_gate.rs imports and calls copy_assign::poisson_binomial_upper_tail directly, and both apply the same alpha=1e-3 Bonferroni form (copy_assign.rs uses `p.alpha / n.saturating_sub(1).max(1)`; collapse_gate.rs compares `p_value >= alpha`, alpha=GENOME_WIDE_EPS_AMB=0.001313 by default in its own test, 1e-3 elsewhere). absent_copy.rs does not call poisson_binomial_upper_tail; it calls min_p_distinct (defined in copy_split.rs, imported into absent_copy.rs), which its own doc-comment states is 'the same construction the assignment gate uses, copy_assign.rs:320': a product-of-per-base-error-rate certificate compared against the same alpha threshold, i.e. the same significance FORM (Pi(error/3) over distinguishing columns, < alpha => certifiably distinct) but a distinct function, not a shared call. Recorded as genuinely shared in form/parameterization across all three files; copy_assign.rs and collapse_gate.rs additionally share the literal function call."
+  }
+}
