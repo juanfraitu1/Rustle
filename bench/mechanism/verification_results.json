@@ -1,8 +1,8 @@
 {
   "v1": {
     "edge": {
-      "id": 0.80,
-      "cov": 0.50,
+      "id": 0.8,
+      "cov": 0.5,
       "loci": ">=2"
     },
     "gstm": {
@@ -15,5 +15,63 @@
     ],
     "certificate_shared": true,
     "certificate_notes": "copy_assign.rs and collapse_gate.rs share the certificate literally: collapse_gate.rs imports and calls copy_assign::poisson_binomial_upper_tail directly, and both apply the same alpha=1e-3 Bonferroni form (copy_assign.rs uses `p.alpha / n.saturating_sub(1).max(1)`; collapse_gate.rs compares `p_value >= alpha`, alpha=GENOME_WIDE_EPS_AMB=0.001313 by default in its own test, 1e-3 elsewhere). absent_copy.rs does not call poisson_binomial_upper_tail; it calls min_p_distinct (defined in copy_split.rs, imported into absent_copy.rs), which its own doc-comment states is 'the same construction the assignment gate uses, copy_assign.rs:320': a product-of-per-base-error-rate certificate compared against the same alpha threshold, i.e. the same significance FORM (Pi(error/3) over distinguishing columns, < alpha => certifiably distinct) but a distinct function, not a shared call. Recorded as genuinely shared in form/parameterization across all three files; copy_assign.rs and collapse_gate.rs additionally share the literal function call."
+  },
+  "v2": {
+    "MAX_MEMBERS(30)": {
+      "guard": 30,
+      "observed_max": 25,
+      "fires": false
+    },
+    "MAX_LOCI(60)": {
+      "guard": 60,
+      "observed_max": 25,
+      "fires": false
+    }
+  },
+  "v3": {
+    "READ_CAP": {
+      "guard": 6000,
+      "compile_time_const": true,
+      "togglable_via_cli": false,
+      "code_path": "src/rustle/vg_family/o2_materialize.rs:250 fetch_reads() -- caps the per-FAMILY multimapper read-sequence pool `seqs` (unique read NAMES, first-seen across all of a family's PAD=2000bp-padded copy regions, primary+secondary alignments both counted, unmapped/supplementary excluded, `de` tag required). This is the gw_family_catalog / bench/o2_vg_visualization.py code path, NOT the copy_assign binary -- copy_assign uses its own reads_in_region/pass1_skeletons and has no READ_CAP.",
+      "measurement_method": "direct samtools count (not a copy_assign run, since copy_assign does not call fetch_reads): for GWFAM42 (the Soto family with the highest avg_reads = 876.8, 6 copies on chr2), `samtools view -F 0x804 <region+-2000bp>` per copy region, read names deduplicated across all 6 regions.",
+      "family": "GWFAM42 (chr2, 6 copies, avg_reads=876.8, the highest-avg_reads of the 66 Soto families)",
+      "observed_max": 22454,
+      "observed_max_basis": "unique read names across GWFAM42's 6 PAD-padded copy regions combined (family-wide pool, as fetch_reads accumulates it)",
+      "observed_single_locus": {
+        "region": "chr2:87767940-87796331 (highest single-copy read count in the 66-family set; +/-2000bp pad used for the count below)",
+        "primary_only_-F_2308": 5264,
+        "primary_plus_secondary_-F_0x804": 20564
+      },
+      "fires": true,
+      "note": "Compile-time const; not toggled (no rebuild -- out of scope here, deferred to deliverable B). Real BAM data (A119b.t2t.bam, gorilla IsoSeq on CHM13v2.0, -N50 multimapping) shows the observed family-wide pool (22454) is 3.7x over the 6000 cap, and even a SINGLE locus alone (20564 incl. secondary) already exceeds it without combining copies. Confirms READ_CAP's existing heuristics.toml tier=\"result-guard\" is correct."
+    },
+    "POA_CAP": {
+      "guard": 20000,
+      "compile_time_const": true,
+      "togglable_via_cli": false,
+      "code_path": "src/rustle/vg_family/copy_assign_pipeline.rs:524 -- gates the poasta (exact O(n^2)) vs minimap2-MSA engine choice by the LONGER of two copies' genomic span length in bp (`ref_span.len().max(spans[other].len())`).",
+      "measurement_method": "direct max(end-start) over every copy row in bench/soto/a119b_detected_copies.tsv (66 families, all copies).",
+      "observed_max": 260931,
+      "observed_max_locus": "GWFAM11 copy DN_chr1_205467678_23, chr1:205467678-205728609 (260931 bp)",
+      "fires": true,
+      "note": "Compile-time const; not toggled (no rebuild -- deferred to deliverable B). Direct measurement over all 66 Soto families' copies shows the longest copy span (260931 bp) is 13x over the 20000bp cap, so real Soto-scale copy pairs are routed to the minimap2-MSA fallback instead of poasta. Confirms POA_CAP's existing heuristics.toml tier=\"result-guard\" is correct.",
+      "copy_assign_baseline": {
+        "purpose": "sanity/reference run on the same locus used for the READ_CAP single-locus measurement -- not itself a POA_CAP toggle (that region's family detection found 0 homology edges, so no POA comparison ran there; the POA_CAP evidence above comes from the direct table measurement instead).",
+        "cmd": "copy_assign --bam A119b.t2t.bam --fasta chm13v2.0.fa --region chr2:87767940-87796331 --homology-primary --min-copies 2 --out mech_v3_base",
+        "bam": "/mnt/linuxdisk/home/juanfraitu/winloci_data/A119b.t2t.bam",
+        "fasta": "/mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa",
+        "families_detected": 0,
+        "primary_reads": 5253,
+        "mapped_reads_incl_secondary": 20481,
+        "out_md5": {
+          "mech_v3_base.assignments.tsv": "597671f9c59799fd105991d71521bf45",
+          "mech_v3_base.families.tsv": "ef04cd86700cb9747cbe56dbaea41566",
+          "mech_v3_base.quant.tsv": "47c3871be6bdcde6950a0d6fe7d42ce1",
+          "mech_v3_base.famcn_readonly.tsv": "4f5d90ffe9ab7ee7d4c1af766d13601b"
+        }
+      }
+    },
+    "scope_note": "READ_CAP/POA_CAP are compile-time consts (o2_materialize.rs:250 / copy_assign_pipeline.rs:524), not CLI flags. No rebuild was performed here (out of scope; deferred to deliverable B). Both are measured DIRECTLY from real BAM/table data instead of toggled, and both already carried tier=\"result-guard\" in heuristics.toml from Task 2 -- this V3 pass supplies the empirical proof backing that tier (fires=true on real Soto-scale data), mirroring how V2 supplies the proof for the two inert-guard tiers (fires=false). No heuristics.toml reclassification was needed: all four guards' V2/V3-measured fires values already match their existing tiers."
   }
 }
