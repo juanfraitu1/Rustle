@@ -1,3 +1,5 @@
+> **⚠ SUPERSEDED (2026-07-20).** This describes an earlier architecture the shipped code no longer uses (k-mer Jaccard + Union-Find, or the profile-HMM proposal). The current single method — two mechanisms (exon-sum homology + the significance certificate) and their consequences — is in [`bench/rustle_mechanism.html`](../bench/rustle_mechanism.html). Kept for history; do not cite as the current method.
+
 # Variation Graph: Novel Copy Discovery and Read Rescue
 
 ## Gene Family Variation Graph with Unmapped Read Rescue

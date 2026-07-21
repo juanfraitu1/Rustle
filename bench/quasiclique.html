@@ -125,7 +125,7 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
     <h2>Why the middle</h2>
     <p><span class="k">clique (γ=1)</span> is too strict: one missing homology edge (A1–A5 here) shatters a real family.</p>
     <p><span class="k">connected component (γ→0)</span> is too loose: a single shared repeat drags 5 unrelated genes into one false family — this is the real over-merge (a 728-member blob spanning chr1→chrY).</p>
-    <p><span class="k">γ-quasi-clique (γ≈0.4)</span> keeps a cohesive family whole even with a few missing edges, yet a sparse repeat-bridge fails the density gate and drops out. Cohesive, not brittle; no arbitrary "≥ X% identical" cutoff.</p>
+    <p><span class="k">γ-quasi-clique (γ=0.20 default; 0.40 in high-precision mode)</span> keeps a cohesive family whole even with a few missing edges, yet a sparse repeat-bridge fails the density gate and drops out. Cohesive, not brittle. <b>To be exact about the mechanism:</b> there <em>is</em> an identity cutoff — the family <em>edge</em> is an exon-sum alignment test (<span style="font-family:monospace">asm20 identity ≥ 0.80, coverage-of-shorter ≥ 0.50</span>). γ is a <em>separate</em> quantity at a <em>later</em> stage: it is the cluster <em>density</em> applied on top of those edges, not an identity threshold. See <a href="rustle_mechanism.html">rustle_mechanism.html</a> for the full stage-by-stage list.</p>
   </div>
   <div class="foot" id="foot"></div>
 </div>

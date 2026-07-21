@@ -1,3 +1,5 @@
+> **⚠ SUPERSEDED (2026-07-20).** This describes an earlier architecture the shipped code no longer uses (k-mer Jaccard + Union-Find, or the profile-HMM proposal). The current single method — two mechanisms (exon-sum homology + the significance certificate) and their consequences — is in [`bench/rustle_mechanism.html`](../bench/rustle_mechanism.html). Kept for history; do not cite as the current method.
+
 # Multi-Mapping Resolution: EM and Flow
 
 ## The Multi-Mapping Problem in Gene Families

@@ -1,3 +1,5 @@
+> **⚠ SUPERSEDED (2026-07-20).** This reply discusses a profile-HMM assignment proposal that was abandoned. The current method (significance-certificate assignment, no HMM) is in `bench/rustle_mechanism.html`. Kept for history.
+
 # Response to your email
 
 > "I don't understand your motivation of using profile HMMs to assign a read to a paralog… profile HMMs capture the alignment of multiple sequences… so this might be useful for checking if a new copy belongs to a family, but I don't see how this can help you in assigning a read to a paralog. Second, I also don't understand your idea of building a profile HMM per copy, and how you would use it to solve the assignment problem. Explain these in isolation, without mixing them up with other concepts such as variation graphs etc."
