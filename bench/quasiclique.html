@@ -84,13 +84,13 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
 
   <div class="slwrap">
     <div class="slhead">
-      <div class="g">γ = <span id="gval">0.40</span> <small id="gdef">a group is a family iff its edge density ≥ γ</small></div>
+      <div class="g">γ = <span id="gval">0.20</span> <small id="gdef">a group is a family iff its edge density ≥ γ</small></div>
       <div class="regime" id="regime"></div>
     </div>
-    <input id="slider" type="range" min="0" max="1" step="0.01" value="0.4" aria-label="gamma">
+    <input id="slider" type="range" min="0" max="1" step="0.01" value="0.2" aria-label="gamma">
     <div class="anchors">
       <button data-g="0"><b>0</b>connected component<br>(any path links)</button>
-      <button data-g="0.4"><b>≈ 0.4</b>γ-quasi-clique<br>(what we use)</button>
+      <button data-g="0.2"><b>0.20</b>γ-quasi-clique<br>(default; 0.40 high-precision)</button>
       <button data-g="1"><b>1</b>clique<br>(every pair linked)</button>
     </div>
   </div>
@@ -268,5 +268,5 @@ $('slider').addEventListener('input',e=>render(+e.target.value));
 document.querySelectorAll('.anchors button').forEach(b=>b.addEventListener('click',()=>{$('slider').value=b.dataset.g;render(+b.dataset.g);}));
 $('themebtn').addEventListener('click',()=>{const c=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');});
 $('foot').textContent='The same recursive rule the O1 catalog uses: keep a group whole iff its density ≥ γ, else split at its weakest (least-embedded) edges and recurse. γ is the one knob.';
-render(0.4);
+render(0.2);
 </script>
