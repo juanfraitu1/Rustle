@@ -1,6 +1,6 @@
 """Verify each registry heuristic against its source file:line, then emit a TSV.
 Anti-drift: if a constant's literal value is no longer on its recorded line, fail loudly."""
-import argparse, sys, tomllib, pathlib
+import argparse, re, sys, tomllib, pathlib
 
 COLS = ["stage", "tier", "kind", "name", "value", "file", "line", "rationale"]
 
@@ -16,7 +16,13 @@ def verify_entry(entry, repo_root):
     ln = entry["line"]
     if ln < 1 or ln > len(lines):
         return f'{entry["name"]}: line {ln} out of range in {entry["file"]}'
-    if str(entry["value"]) not in lines[ln - 1]:
+    val = str(entry["value"])
+    line = lines[ln - 1]
+    if re.match(r'^[0-9.]+$', val):
+        found = re.search(r'(?<![0-9.])' + re.escape(val) + r'(?![0-9.])', line) is not None
+    else:
+        found = val in line
+    if not found:
         return (f'{entry["name"]}: value {entry["value"]!r} not on '
                 f'{entry["file"]}:{ln} — got: {lines[ln-1].strip()!r}')
     return None

@@ -1,6 +1,8 @@
 import subprocess, sys, tempfile, os, pathlib
 GEN = pathlib.Path(__file__).resolve().parents[2] / "bench/mechanism/gen_heuristics.py"
 REPO = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(GEN.parent))
+from gen_heuristics import verify_entry
 
 def _toml(body):
     f = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)
@@ -27,3 +29,19 @@ def test_verify_fails_on_drifted_value():
                        capture_output=True, text=True)
     assert r.returncode != 0
     assert "edge_id" in (r.stderr + r.stdout)
+
+def test_verify_fails_on_digit_superset_drift():
+    # unit test against verify_entry directly, on a synthetic source file, to prove
+    # the digit-boundary fix: "3" must NOT match inside "13" (a digit-superset drift),
+    # while "13" must match exactly.
+    src_dir = tempfile.mkdtemp()
+    src_path = pathlib.Path(src_dir) / "fake.rs"
+    src_path.write_text("pub const GATE_MIN_READS: u32 = 13;\n")
+
+    entry_drifted = {"name": "gate_min_reads", "file": "fake.rs", "line": 1, "value": "3"}
+    err = verify_entry(entry_drifted, src_dir)
+    assert err is not None, "digit-superset drift (3 -> 13) must be caught, not silently pass"
+    assert "gate_min_reads" in err
+
+    entry_correct = {"name": "gate_min_reads", "file": "fake.rs", "line": 1, "value": "13"}
+    assert verify_entry(entry_correct, src_dir) is None
