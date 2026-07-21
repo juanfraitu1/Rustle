@@ -1,0 +1,9 @@
+gene	locus	detected	recovered_by	cause	colour
+ANAPC1P1	chr2:86863741-86914950	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+ANAPC1P2	chr2:87037033-87058220	Y	RNA-split		#1e8e3e
+ANAPC1P3	chr2:87123762-87126211	N			#d93025
+AC083899.1	chr2:87130427-87202282	Y	RNA-split		#1e8e3e
+ANAPC1P4	chr2:87712968-87750095	Y	RNA-split		#1e8e3e
+ANAPC1P5	chr2:87992304-88004460	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+AC097527.1	chr2:106932223-106939096	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+ANAPC1	chr2:112037440-112311134	Y	RNA-split		#1e8e3e

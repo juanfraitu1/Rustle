@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+TCAF2	chr7:144980464-145010762	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025
+AC099548.2	chr7:145042141-145117285	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025
+TCAF2C	chr7:145090337-145098763	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025

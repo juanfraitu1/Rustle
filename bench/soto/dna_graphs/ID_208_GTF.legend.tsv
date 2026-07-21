@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+GTF2IP14	chr7:66290271-66306356	Y	projection		#1e8e3e
+GTF2IP5	chr7:66995739-67024210	Y	RNA-split		#1e8e3e
+GTF2I	chr7:75852514-75962984	Y	RNA-split		#1e8e3e
+CASTOR2	chr7:76167037-76233789	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+GTF2IP1	chr7:76389248-76441615	Y	RNA-split		#1e8e3e

@@ -1,0 +1,5 @@
+gene	locus	detected	recovered_by	cause	colour
+TRIM64DP	chr11:89696664-89702267	Y	RNA-split		#1e8e3e
+TRIM64B	chr11:89788985-89795720	N			#d93025
+TRIM64	chr11:89888639-89894223	N			#d93025
+TRIM64EP	chr11:89977681-89983077	Y	RNA-split		#1e8e3e

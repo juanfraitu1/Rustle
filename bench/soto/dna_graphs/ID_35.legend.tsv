@@ -1,0 +1,11 @@
+gene	locus	detected	recovered_by	cause	colour
+AL669831.1	chr1:152393-205163	Y	RNA-split		#1e8e3e
+AL592148.2	chr1:221743930-221753495	Y	projection		#1e8e3e
+GTF2IP20	chr1:223141181-223182346	Y	RNA-split		#1e8e3e
+LINC01347	chr1:242467318-242512761	Y	RNA-split		#1e8e3e
+FAM157A	chr3:200883047-200954215	Y	RNA-split		#1e8e3e
+AC110079.1	chr4:121896771-121939030	Y	RNA-split		#1e8e3e
+GTF2IP12	chr4:122710627-122759756	Y	RNA-split		#1e8e3e
+AC008443.6	chr5:181851743-181855644	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025
+FAM157B	chr9:150478579-150516124	Y	RNA-split		#1e8e3e
+AL133216.2	chr10:38447204-38496163	Y	RNA-split		#1e8e3e

@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+AL513478.2	chr9:40202700-40208822	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+MEP1AP4	chr9:44369523-44375633	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+MEP1AP1	chr9:77952010-77958144	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025

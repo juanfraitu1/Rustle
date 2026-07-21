@@ -1,0 +1,5 @@
+gene	locus	detected	recovered_by	cause	colour
+POM121	chr7:74107538-74179670	Y	RNA-split		#1e8e3e
+POM121C	chr7:76704064-76773584	Y	RNA-split		#1e8e3e
+AC004980.1	chr7:77828590-77906904	Y	protein-tail		#1e8e3e
+POMZP3	chr7:77889197-77906183	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025

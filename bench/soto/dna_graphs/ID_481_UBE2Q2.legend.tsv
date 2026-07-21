@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+UBE2Q2P6	chr15:80309845-80318965	Y	RNA-split		#1e8e3e
+UBE2Q2L	chr15:82038454-82054353	Y	RNA-split		#1e8e3e
+UBE2Q2P11	chr15:82117976-82127040	Y	RNA-split		#1e8e3e
+UBE2Q2P8	chr15:82169947-82170050	N		silent (no reads on member)	#d93025
+UBE2Q2P12	chr15:82243926-82253037	Y	RNA-split		#1e8e3e

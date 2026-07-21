@@ -1,0 +1,5 @@
+gene	locus	detected	recovered_by	cause	colour
+HERC2P3	chr15:18291208-18418223	Y	protein-tail		#1e8e3e
+HERC2P2	chr15:20166919-20262941	Y	RNA-split		#1e8e3e
+HERC2	chr15:25853559-26064943	Y	projection		#1e8e3e
+HERC2P9	chr15:26366200-26461978	Y	RNA-split		#1e8e3e

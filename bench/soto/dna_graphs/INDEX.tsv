@@ -1,0 +1,84 @@
+family_id	gene	n_members	n_green_rna_recovered	n_red_dna_only	n_grey	gfa_path	status	skip_reason
+ID_8	PMS	9	9	0	0	bench/soto/dna_graphs/ID_8_PMS.gfa	rendered	
+ID_12	POM	4	3	1	1211	bench/soto/dna_graphs/ID_12_POM.gfa	rendered	
+ID_14	LRRC	7	4	3	17	bench/soto/dna_graphs/ID_14_LRRC.gfa	rendered	
+ID_22	ID_22	6	6	0	0	bench/soto/dna_graphs/ID_22.gfa	rendered	
+ID_24	LSP	3	3	0	0	bench/soto/dna_graphs/ID_24_LSP.gfa	rendered	
+ID_26	ID_26	2	0	2	0	bench/soto/dna_graphs/ID_26.gfa	rendered	
+ID_35	ID_35	10	9	1	1902	bench/soto/dna_graphs/ID_35.gfa	rendered	
+ID_43	TRIM64	4	2	2	2497	bench/soto/dna_graphs/ID_43_TRIM64.gfa	rendered	
+ID_49	DDX	3	3	0	0	bench/soto/dna_graphs/ID_49_DDX.gfa	rendered	
+ID_63	ANAPC	8	4	4	926	bench/soto/dna_graphs/ID_63_ANAPC.gfa	rendered	
+ID_65	FAR	9	7	2	139	bench/soto/dna_graphs/ID_65_FAR.gfa	rendered	
+ID_68	DNM	4	4	0	0	bench/soto/dna_graphs/ID_68_DNM.gfa	rendered	
+ID_71	HERC	5	5	0	0	bench/soto/dna_graphs/ID_71_HERC.gfa	rendered	
+ID_78	UBE	5	4	1	474	bench/soto/dna_graphs/ID_78_UBE.gfa	rendered	
+ID_88	GOLGA6L	4	4	0	0	bench/soto/dna_graphs/ID_88_GOLGA6L.gfa	rendered	
+ID_92	ID_92	2	0	2	0	bench/soto/dna_graphs/ID_92.gfa	rendered	
+ID_104	ID_104	3	3	0	0	bench/soto/dna_graphs/ID_104.gfa	rendered	
+ID_113	GOLGA8	16	16	0	0	bench/soto/dna_graphs/ID_113_GOLGA8.gfa	rendered	
+ID_116	GOLGA	6	6	0	0	bench/soto/dna_graphs/ID_116_GOLGA.gfa	rendered	
+ID_127	TCAF	3	0	3	0	bench/soto/dna_graphs/ID_127_TCAF.gfa	rendered	
+ID_131	AMY	6	5	1	49	bench/soto/dna_graphs/ID_131_AMY.gfa	rendered	
+ID_141	AC119751	1	0	0	0		skipped	single-member family (n_present=1) -- no comparative graph to draw
+ID_142	CR381670	1	0	0	0		skipped	single-member family (n_present=1) -- no comparative graph to draw
+ID_146	ID_146	2	0	2	0	bench/soto/dna_graphs/ID_146.gfa	rendered	
+ID_147	ID_147	4	3	1	1435	bench/soto/dna_graphs/ID_147.gfa	rendered	
+ID_148	AC1	2	0	2	0	bench/soto/dna_graphs/ID_148_AC1.gfa	rendered	
+ID_154	NPIP	14	14	0	0	bench/soto/dna_graphs/ID_154_NPIP.gfa	rendered	
+ID_156	WHAMMP	5	4	1	129	bench/soto/dna_graphs/ID_156_WHAMMP.gfa	rendered	
+ID_163	GUSBP	6	6	0	0	bench/soto/dna_graphs/ID_163_GUSBP.gfa	rendered	
+ID_167	ID_167	3	0	3	0	bench/soto/dna_graphs/ID_167.gfa	rendered	
+ID_175	ID_175	2	0	2	0	bench/soto/dna_graphs/ID_175.gfa	rendered	
+ID_179	ULK4P	3	3	0	0	bench/soto/dna_graphs/ID_179_ULK4P.gfa	rendered	
+ID_182	FAM	4	4	0	0	bench/soto/dna_graphs/ID_182_FAM.gfa	rendered	
+ID_188	HERC2	4	4	0	0	bench/soto/dna_graphs/ID_188_HERC2.gfa	rendered	
+ID_207	SPDYE	17	17	0	0	bench/soto/dna_graphs/ID_207_SPDYE.gfa	rendered	
+ID_208	GTF	5	4	1	323	bench/soto/dna_graphs/ID_208_GTF.gfa	rendered	
+ID_209	ID_209	3	3	0	0	bench/soto/dna_graphs/ID_209.gfa	rendered	
+ID_211	AC2	4	4	0	0	bench/soto/dna_graphs/ID_211_AC2.gfa	rendered	
+ID_212	ID_212	5	5	0	0	bench/soto/dna_graphs/ID_212.gfa	rendered	
+ID_213	AC2	4	0	4	0	bench/soto/dna_graphs/ID_213_AC2.gfa	rendered	
+ID_215	ID_215	7	5	2	193	bench/soto/dna_graphs/ID_215.gfa	rendered	
+ID_222	AC243829	1	0	0	0		skipped	single-member family (n_present=1) -- no comparative graph to draw
+ID_226	ID_226	5	1	4	150	bench/soto/dna_graphs/ID_226.gfa	rendered	
+ID_240	ID_240	3	0	3	0	bench/soto/dna_graphs/ID_240.gfa	rendered	
+ID_245	CNTNAP	4	4	0	0	bench/soto/dna_graphs/ID_245_CNTNAP.gfa	rendered	
+ID_251	ID_251	2	0	2	0	bench/soto/dna_graphs/ID_251.gfa	rendered	
+ID_260	MEP	3	0	3	0	bench/soto/dna_graphs/ID_260_MEP.gfa	rendered	
+ID_261	CNTNAP	5	1	4	2028	bench/soto/dna_graphs/ID_261_CNTNAP.gfa	rendered	
+ID_267	AL590399	1	0	0	0		skipped	single-member family (n_present=1) -- no comparative graph to draw
+ID_280	ANKRD20A	3	3	0	0	bench/soto/dna_graphs/ID_280_ANKRD20A.gfa	rendered	
+ID_283	BCRP	5	5	0	0	bench/soto/dna_graphs/ID_283_BCRP.gfa	rendered	
+ID_300	BMS1P	2	2	0	0	bench/soto/dna_graphs/ID_300_BMS1P.gfa	rendered	
+ID_302	BOLA2B	1	0	0	0		skipped	single-member family (n_present=1) -- no comparative graph to draw
+ID_313	CDH12P	2	0	2	0	bench/soto/dna_graphs/ID_313_CDH12P.gfa	rendered	
+ID_324	CSPG	5	5	0	0	bench/soto/dna_graphs/ID_324_CSPG.gfa	rendered	
+ID_327	CTSLP	4	3	1	936	bench/soto/dna_graphs/ID_327_CTSLP.gfa	rendered	
+ID_332	DDX	6	4	2	613	bench/soto/dna_graphs/ID_332_DDX.gfa	rendered	
+ID_334	DEFB104B	1	0	0	0		skipped	single-member family (n_present=1) -- no comparative graph to draw
+ID_338	DEFB108	3	1	2	1268	bench/soto/dna_graphs/ID_338_DEFB108.gfa	rendered	
+ID_348	DUX4L50	1	0	0	0		skipped	single-member family (n_present=1) -- no comparative graph to draw
+ID_354	FAM72	4	4	0	0	bench/soto/dna_graphs/ID_354_FAM72.gfa	rendered	
+ID_357	FCGR1	3	3	0	0	bench/soto/dna_graphs/ID_357_FCGR1.gfa	rendered	
+ID_359	FGF7P	5	5	0	0	bench/soto/dna_graphs/ID_359_FGF7P.gfa	rendered	
+ID_374	GTF2IRD2	3	3	0	0	bench/soto/dna_graphs/ID_374_GTF2IRD2.gfa	rendered	
+ID_386	LIMS	2	0	2	0	bench/soto/dna_graphs/ID_386_LIMS.gfa	rendered	
+ID_391	WASH	5	4	1	2281	bench/soto/dna_graphs/ID_391_WASH.gfa	rendered	
+ID_393	MST1	2	2	0	0	bench/soto/dna_graphs/ID_393_MST1.gfa	rendered	
+ID_395	RGPD	6	6	0	0	bench/soto/dna_graphs/ID_395_RGPD.gfa	rendered	
+ID_399	NAIP	4	4	0	0	bench/soto/dna_graphs/ID_399_NAIP.gfa	rendered	
+ID_400	NOTCH	6	6	0	0	bench/soto/dna_graphs/ID_400_NOTCH.gfa	rendered	
+ID_402	NCF1	3	0	3	0	bench/soto/dna_graphs/ID_402_NCF1.gfa	rendered	
+ID_403	NF1P	3	3	0	0	bench/soto/dna_graphs/ID_403_NF1P.gfa	rendered	
+ID_407	NSUN	4	2	2	1865	bench/soto/dna_graphs/ID_407_NSUN.gfa	rendered	
+ID_411	OR11H1	3	0	3	0	bench/soto/dna_graphs/ID_411_OR11H1.gfa	rendered	
+ID_431	PPIAL4	5	0	5	0	bench/soto/dna_graphs/ID_431_PPIAL4.gfa	rendered	
+ID_443	SHLD2	3	3	0	0	bench/soto/dna_graphs/ID_443_SHLD2.gfa	rendered	
+ID_448	SEC22B	3	3	0	0	bench/soto/dna_graphs/ID_448_SEC22B.gfa	rendered	
+ID_458	SPAG11	2	0	2	0	bench/soto/dna_graphs/ID_458_SPAG11.gfa	rendered	
+ID_462	SRGAP2	4	4	0	0	bench/soto/dna_graphs/ID_462_SRGAP2.gfa	rendered	
+ID_468	TBC1D3	9	9	0	0	bench/soto/dna_graphs/ID_468_TBC1D3.gfa	rendered	
+ID_474	TP53TG3	3	3	0	0	bench/soto/dna_graphs/ID_474_TP53TG3.gfa	rendered	
+ID_481	UBE2Q2	5	4	1	29	bench/soto/dna_graphs/ID_481_UBE2Q2.gfa	rendered	
+ID_490	ZNF705	3	3	0	0	bench/soto/dna_graphs/ID_490_ZNF705.gfa	rendered	

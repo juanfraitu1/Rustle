@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+H2BP1	chr1:121117591-121126640	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+H3P4	chr1:121127576-121127993	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+H3-2	chr1:142966564-142977985	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+H2BC18	chr1:148906833-148936508	Y	RNA-split		#1e8e3e
+H3C13	chr1:148937358-148937828	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025

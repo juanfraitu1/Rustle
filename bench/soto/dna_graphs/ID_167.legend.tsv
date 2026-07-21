@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+CHEK2P2	chr15:19353208-19362048	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+AC133548.1	chr16:32772942-32779658	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+AC136944.3	chr16:33739351-33747637	N			#d93025

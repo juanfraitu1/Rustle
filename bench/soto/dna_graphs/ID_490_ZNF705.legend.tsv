@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+ZNF705G	chr8:7084496-7114544	Y	RNA-split		#1e8e3e
+ZNF705D	chr8:7619008-7630136	Y	projection		#1e8e3e
+ZNF705B	chr8:12612891-12638954	Y	RNA-split		#1e8e3e

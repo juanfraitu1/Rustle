@@ -1,0 +1,5 @@
+gene	locus	detected	recovered_by	cause	colour
+CTSLP3	chr10:47641642-47647779	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+CTSLP4	chr10:51553971-51557497	Y	RNA-split		#1e8e3e
+CTSLP6	chr10:80739715-80743245	Y	RNA-split		#1e8e3e
+CTSLP1	chr10:88270282-88273802	Y	RNA-split		#1e8e3e

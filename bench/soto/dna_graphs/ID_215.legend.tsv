@@ -1,0 +1,8 @@
+gene	locus	detected	recovered_by	cause	colour
+AC244669.2	chr1:120210345-120332947	N		expressed-K=0: young identical (exon AND genome ~identical)	#d93025
+AC241952.1	chr1:120503158-120714510	Y	RNA-split		#1e8e3e
+AC239860.2	chr1:144624326-144625491	Y	RNA-split		#1e8e3e
+AC239860.1	chr1:144625929-144637478	Y	RNA-split		#1e8e3e
+PDE4DIP	chr1:145474975-145714337	Y	RNA-split		#1e8e3e
+AC245297.1	chr1:145855639-145979396	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+PDE4DIPP1	chr1:146713522-146726811	Y	RNA-split		#1e8e3e

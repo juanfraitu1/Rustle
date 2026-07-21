@@ -1,0 +1,5 @@
+gene	locus	detected	recovered_by	cause	colour
+NSUN5P2	chr7:74175809-74183019	Y	RNA-split		#1e8e3e
+TRIM74	chr7:74187708-74197691	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+TRIM73	chr7:76682335-76698280	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+NSUN5P1	chr7:76697604-76704067	Y	RNA-split		#1e8e3e

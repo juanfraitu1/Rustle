@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+NCF1B	chr7:74420835-74436153	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+NCF1	chr7:75976253-75991692	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+NCF1C	chr7:76360590-76375995	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025

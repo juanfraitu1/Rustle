@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+WHAMMP3	chr15:20336417-20358287	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+WHAMMP2	chr15:26514302-26535923	Y	protein-tail		#1e8e3e
+AC127502.1	chr15:28264052-28300871	Y	protein-tail		#1e8e3e
+AC127502.3	chr15:28300623-28306948	Y	RNA-split		#1e8e3e
+AC135983.4	chr15:30290477-30296821	Y	projection		#1e8e3e

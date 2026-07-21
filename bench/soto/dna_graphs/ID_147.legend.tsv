@@ -1,0 +1,5 @@
+gene	locus	detected	recovered_by	cause	colour
+AC125634.1	chr9:42529786-42537205	Y	RNA-split		#1e8e3e
+AL353626.3	chr9:77394972-77407442	Y	RNA-split		#1e8e3e
+FO681491.1	chr13:17624760-17647558	Y	protein-tail		#1e8e3e
+ANKRD30BP2	chr21:11382453-11411385	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025

@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+AC239859.5	chr1:142491733-142492317	Y	expr-collapse		#1e8e3e
+LSP1P5	chr2:90105022-90147871	Y	expr-collapse		#1e8e3e
+LSP1P4	chr2:91806874-91849698	Y	expr-collapse		#1e8e3e

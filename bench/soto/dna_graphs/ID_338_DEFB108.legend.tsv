@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+DEFB108C	chr8:7102093-7106486	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+DEFB108D	chr8:7634987-7639336	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+DEFB108A	chr8:12080371-12084735	Y	RNA-split		#1e8e3e

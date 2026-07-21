@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+PPIAL4A	chr1:120899120-120899781	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+PPIAL4F	chr1:143472956-143473742	N		expressed-K=0: young identical (exon AND genome ~identical)	#d93025
+PPIAL4E	chr1:143692933-143693719	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+PPIAL4D	chr1:144366357-144366853	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+PPIAL4C	chr1:148708008-148708609	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025

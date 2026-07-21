@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+WASH2P	chr2:114013234-114023720	Y	RNA-split		#1e8e3e
+WASH8P	chr3:201079783-201097278	Y	RNA-split		#1e8e3e
+WASHC1	chr11:5922-16459	Y	RNA-split		#1e8e3e
+WASH3P	chr15:99730896-99745839	Y	projection		#1e8e3e
+WASH6P	chr16:6965-11846	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025

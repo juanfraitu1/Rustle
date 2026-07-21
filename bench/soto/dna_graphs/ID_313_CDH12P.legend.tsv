@@ -1,0 +1,3 @@
+gene	locus	detected	recovered_by	cause	colour
+CDH12P1	chr5:70901860-70902156	N		expressed-K=0: young identical (exon AND genome ~identical)	#d93025
+CDH12P3	chr5:71589693-71589989	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025

@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+CNTNAP3P5	chr9:39786634-39796678	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+AL513478.3	chr9:40182305-40186244	N			#d93025
+BX664718.2	chr9:44277729-44354481	Y	RNA-split		#1e8e3e
+AL773545.4	chr9:77974578-77978517	N			#d93025
+CNTNAP3P1	chr9:80247804-80257862	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025

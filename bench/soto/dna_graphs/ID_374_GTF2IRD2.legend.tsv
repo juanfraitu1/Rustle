@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+GTF2IRD2P1	chr7:74442956-74480301	Y	RNA-split		#1e8e3e
+GTF2IRD2	chr7:75998458-76053859	Y	RNA-split		#1e8e3e
+GTF2IRD2B	chr7:76296514-76353770	Y	RNA-split		#1e8e3e

@@ -1,0 +1,3 @@
+gene	locus	detected	recovered_by	cause	colour
+AC233280.19	chr3:198342015-198343130	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+AC124944.2	chr3:198403551-198444967	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025

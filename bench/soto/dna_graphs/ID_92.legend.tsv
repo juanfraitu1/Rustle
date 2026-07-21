@@ -1,0 +1,3 @@
+gene	locus	detected	recovered_by	cause	colour
+AC243829.7	chr17:37109490-37110818	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+AC053481.4	chr17:63130560-63131864	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025

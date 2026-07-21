@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+SEC22B	chr1:120164163-120189787	Y	RNA-split		#1e8e3e
+SEC22B3P	chr1:145439433-145451394	Y	RNA-split		#1e8e3e
+SEC22B2P	chr1:146003303-146015266	Y	projection		#1e8e3e

@@ -1,0 +1,7 @@
+gene	locus	detected	recovered_by	cause	colour
+AMY2A	chr1:103465755-103474647	Y	RNA-split		#1e8e3e
+AMY1A	chr1:103504154-103513416	Y	RNA-split		#1e8e3e
+AC105272.1	chr1:103516936-103517135	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+AMY1B	chr1:103630425-103639464	Y	RNA-split		#1e8e3e
+AMYP1	chr1:103750861-103757011	Y	RNA-split		#1e8e3e
+AMY1C	chr1:103787543-103795829	Y	RNA-split		#1e8e3e

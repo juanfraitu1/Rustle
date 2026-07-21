@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+GOLGA8A	chr15:32184802-32213415	Y	RNA-split		#1e8e3e
+UBE2Q2P2	chr15:80219260-80284203	Y	RNA-split		#1e8e3e
+AC243562.1	chr15:82144483-82145499	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+UBE2Q2P1	chr15:82279207-82323633	Y	RNA-split		#1e8e3e
+AC044860.1	chr15:82932394-82986906	Y	expr-collapse		#1e8e3e

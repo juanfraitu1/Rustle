@@ -270,7 +270,8 @@ def build_family(family_id, members, fa, detection, causes):
                 colours=colours, legend=legend, missing=missing, windowed=windowed, window_span=window_span)
 
 
-def main():
+def main_flagships():
+    """Legacy 3-flagship demo -> scratch OUT (kept for the original ceiling-demo entrypoint)."""
     os.makedirs(OUT, exist_ok=True)
     bed = open(BED).read().splitlines()
     fa = read_fasta(MEMFA)
@@ -305,6 +306,286 @@ def main():
             index.append(f"> honesty: {len(r['missing'])} member(s) absent from the graph: {r['missing']}")
     open(f"{OUT}/index.md", "w").write("\n\n".join(index) + "\n")
     print(f"wrote {OUT}/ (gfa + colours.csv + legend.tsv per family + index.md)")
+
+
+# ============================================================================
+# ALL-83-FAMILIES orchestration (2026-07-20/21). Each family is rendered in a
+# SEPARATE child process (`--build-one`) so a hard crash (abpoa OOM-kill /
+# segfault — NOT always a catchable Python exception) only kills that one
+# child; the parent orchestrator sees a non-zero/negative return code, logs
+# it, and moves on to the next family. Never touches the flagship code above.
+# ============================================================================
+DNA_GRAPHS_DIR = "bench/soto/dna_graphs"
+
+INDEX_COLS = ["family_id", "gene", "n_members", "n_green_rna_recovered",
+              "n_red_dna_only", "n_grey", "gfa_path", "status", "skip_reason"]
+
+SIGNAL_REASONS = {
+    6: "SIGABRT (abpoa/abort)", 9: "SIGKILL (likely OOM-killed by the kernel)",
+    11: "SIGSEGV (segfault, likely abpoa OOM/crash)", 15: "SIGTERM",
+}
+
+
+def all_family_ids(bed_lines):
+    """Unique family IDs, in first-BED-appearance order then numerically re-sorted by the trailing
+    integer (ID_8 before ID_35 before ID_131) for a stable, readable INDEX."""
+    seen, order = set(), []
+    for ln in bed_lines:
+        f = ln.rstrip("\n").split("\t")
+        if len(f) < 4 or "|" not in f[3]:
+            continue
+        _, fam = f[3].rsplit("|", 1)
+        if fam not in seen:
+            seen.add(fam)
+            order.append(fam)
+
+    def fam_num(fid):
+        try:
+            return int(fid.split("_", 1)[1])
+        except (IndexError, ValueError):
+            return 10 ** 9
+    return sorted(order, key=fam_num)
+
+
+def family_label(family_id, members):
+    """Best-effort readable gene-family stem from BED gene names (e.g. SRGAP2C/SRGAP2D/SRGAP2B ->
+    'SRGAP2'; GOLGA8CP/GOLGA8EP/... -> 'GOLGA8'). Falls back to family_id when the members' gene names
+    share no usable stem (e.g. a family of lone accessions / unrelated symbols) -- 'else the ID'."""
+    import re
+    from collections import Counter
+    genes = [g for g, _c, _s, _e in members]
+    if not genes:
+        return family_id
+    cleaned = [re.sub(r"\.\d+$", "", g) for g in genes]      # strip accession version e.g. AL669831.1
+    prefix = os.path.commonprefix(cleaned)
+    if len(prefix) >= 3:
+        return prefix
+
+    def alpha_prefix(g):
+        m = re.match(r"^[A-Za-z]+", g)
+        return m.group(0) if m else ""
+    stems = [s for s in (alpha_prefix(g) for g in cleaned) if len(s) >= 3]
+    if stems:
+        stem, count = Counter(stems).most_common(1)[0]
+        if count >= max(2, len(genes) // 2):
+            return stem
+    return family_id
+
+
+def sanitize_part(s):
+    out = "".join(c if c.isalnum() else "_" for c in s).strip("_")
+    return out or "x"
+
+
+def filename_stem(family_id, label):
+    return family_id if label == family_id else f"{family_id}_{sanitize_part(label)}"
+
+
+def _blank_row(family_id, label, n_members, reason):
+    return dict(family_id=family_id, gene=label, n_members=n_members, n_green_rna_recovered=0,
+                n_red_dna_only=0, n_grey=0, gfa_path="", status="skipped", skip_reason=reason)
+
+
+def build_and_write_one(family_id, label, bed_lines, fa, detection, causes, outdir):
+    """Build + write one family's DNA VG to outdir. NEVER raises: every catchable failure (no BED
+    members, no member sequence in soto_members.fa, a single-member family that can't form a
+    comparative graph, minimap2/abpoa errors) is caught and returned as a 'skipped' row with a reason
+    instead of propagating. (Uncatchable failures -- an OOM SIGKILL of the whole process -- are the
+    caller's job, at the subprocess-isolation layer in _parent_run_all.)"""
+    try:
+        members = parse_family_members(bed_lines, family_id)
+    except Exception as ex:
+        return _blank_row(family_id, label, 0, f"parse_family_members failed: {type(ex).__name__}: {ex}")
+    if not members:
+        return _blank_row(family_id, label, 0, "no members in BED for this family_id")
+    present = []
+    for gene, chrom, start, end in members:
+        try:
+            member_seq(fa, chrom, start, end)
+            present.append((gene, chrom, start, end))
+        except KeyError:
+            pass
+    if not present:
+        return _blank_row(family_id, label, len(members), "no member sequence found in soto_members.fa")
+    if len(present) < 2:
+        return _blank_row(family_id, label, len(members),
+                           f"single-member family (n_present={len(present)}) -- no comparative graph to draw")
+    try:
+        r = build_family(family_id, members, fa, detection, causes)
+    except Exception as ex:
+        return _blank_row(family_id, label, len(members), f"{type(ex).__name__}: {ex}")
+    if r["n_present"] < 2:
+        return _blank_row(family_id, label, len(members),
+                           f"fewer than 2 members reached the graph (n_present={r['n_present']}, "
+                           f"missing={r['missing']})")
+    try:
+        stem = filename_stem(family_id, label)
+        os.makedirs(outdir, exist_ok=True)
+        base = f"{outdir}/{stem}"
+        open(f"{base}.gfa", "w").write(r["gfa"])
+        open(f"{base}.colours.csv", "w").write(r["colours"])
+        open(f"{base}.legend.tsv", "w").write(r["legend"])
+    except Exception as ex:
+        return _blank_row(family_id, label, len(members), f"write failed: {type(ex).__name__}: {ex}")
+    det_by = {g: detection.get((c, s, e), (False, ""))[0] for g, c, s, e in present}
+    n_green = sum(1 for v in det_by.values() if v)
+    n_red = sum(1 for v in det_by.values() if not v)
+    n_grey_nodes = sum(1 for ln in r["colours"].splitlines()[1:] if ln.endswith("," + GREY))
+    return dict(family_id=family_id, gene=label, n_members=len(members),
+                n_green_rna_recovered=n_green, n_red_dna_only=n_red, n_grey=n_grey_nodes,
+                gfa_path=f"{base}.gfa", status="rendered",
+                skip_reason=(f"missing from graph: {r['missing']}" if r["missing"] else ""),
+                windowed=r.get("windowed", False), window_span=r.get("window_span"))
+
+
+def _child_build_one(family_id, label):
+    """`--build-one` entrypoint: runs in its OWN process so a hard abpoa crash only takes this
+    process down. Prints exactly one `RESULT_JSON:{...}` line on success or on any caught failure."""
+    import json
+    bed = open(BED).read().splitlines()
+    fa = read_fasta(MEMFA)
+    detection = load_detection(open(DETECT).read().splitlines())
+    causes = load_causes(open(CAUSES).read().splitlines())
+    row = build_and_write_one(family_id, label, bed, fa, detection, causes, DNA_GRAPHS_DIR)
+    print("RESULT_JSON:" + json.dumps(row))
+
+
+def write_index(rows, outdir):
+    lines = ["\t".join(INDEX_COLS)]
+    for r in rows:
+        lines.append("\t".join(str(r.get(k, "")) for k in INDEX_COLS))
+    open(f"{outdir}/INDEX.tsv", "w").write("\n".join(lines) + "\n")
+
+
+def write_readme(rows, outdir):
+    rendered = [r for r in rows if r["status"] == "rendered"]
+    skipped = [r for r in rows if r["status"] != "rendered"]
+    tot_green = sum(r["n_green_rna_recovered"] for r in rendered)
+    tot_red = sum(r["n_red_dna_only"] for r in rendered)
+    tot_grey = sum(r["n_grey"] for r in rendered)
+    tot_members_rendered = sum(r["n_members"] for r in rendered)
+    lines = [
+        "# Soto DNA variation graphs -- all families",
+        "",
+        f"{len(rendered)}/{len(rows)} Soto families rendered as a DNA variation graph "
+        f"(base-level abpoa MSA of the members' genomic sequences -> GFA); "
+        f"{len(skipped)} skipped (logged below and in `INDEX.tsv`, never silently dropped).",
+        "",
+        "## What the colours mean",
+        "",
+        "- **green** (`#1e8e3e`) -- a copy (member) that RNA (IsoSeq A119b) actually RECOVERED "
+        "(`soto_member_detection.tsv`, `detected=Y`).",
+        "- **red** (`#d93025`) -- a copy that RNA did NOT recover (DNA-only / K=0-floor); its per-member "
+        "cause (from `soto_floor_decomposition.tsv`) is in each family's `<stem>.legend.tsv`.",
+        "- **grey** (`#9aa0a6`) -- a shared/conserved backbone **node** in the graph that BOTH a green "
+        "and a red copy pass through (mixed). Grey is a **node**-level colour only -- every member "
+        "(copy) itself is always definitively green or red per RNA detection; a node is grey where "
+        "green and red copies' sequences coincide.",
+        "",
+        "The DNA variation graph is the identifiability CEILING: every Soto DNA-catalog copy is a path "
+        "in the graph regardless of whether RNA recovered it. The graph REPRESENTS what is given (all "
+        "copies, from Soto's independent DNA-read-depth catalog); it does not 'detect' families.",
+        "",
+        "## How to open a GFA",
+        "",
+        "Open any `bench/soto/dna_graphs/<family_id>_<gene>.gfa` in "
+        "[Bandage](https://rrwick.github.io/Bandage/) (`File > Load graph`), then "
+        "`File > Load CSV` the matching `.colours.csv` and colour nodes by the `Colour` column "
+        "(Bandage: Graph drawing -> Node colours -> `Custom colours based on...` -> the loaded CSV "
+        "column). The `.legend.tsv` alongside each GFA lists, per member: detected Y/N, "
+        "recovered_by, cause (for red members), colour.",
+        "",
+        "Look up any family fast in `INDEX.tsv` (`family_id`, `gene`, `n_members`, "
+        "`n_green_rna_recovered`, `n_red_dna_only`, `n_grey`, `gfa_path`, `status`, `skip_reason`).",
+        "",
+        "## Summary counts",
+        "",
+        f"- **{len(rendered)}/{len(rows)}** families rendered, **{len(skipped)}/{len(rows)}** skipped.",
+        f"- Across rendered families: **{tot_members_rendered}** members total -- "
+        f"**{tot_green} green** (RNA-recovered) / **{tot_red} red** (DNA-only) / "
+        f"**{tot_grey} grey graph-nodes** (shared/mixed backbone, node-level not member-level).",
+        "- These counts are over RENDERED families only -- members of a SKIPPED family (e.g. the 7 "
+        "single-member families that can't form a comparative graph) are not pictured anywhere and are "
+        "excluded from the green/red totals above; see `INDEX.tsv` `n_members` for every family "
+        "including skipped ones, and `bench/soto/soto_member_detection.tsv` for the ground-truth "
+        "green/red split across ALL 362 Soto members genome-wide (the 76.2% RNA-recovery figure).",
+        "",
+        "## Skipped families",
+        "",
+    ]
+    if skipped:
+        lines.append("| family_id | gene | n_members | reason |")
+        lines.append("|---|---|---|---|")
+        for r in skipped:
+            lines.append(f"| {r['family_id']} | {r['gene']} | {r['n_members']} | {r['skip_reason']} |")
+    else:
+        lines.append("(none)")
+    lines += [
+        "",
+        "## Regenerating",
+        "",
+        "GFAs are regenerable (deterministic given the same inputs): "
+        "`/home/juanfra/miniforge3/bin/python3 bench/soto/soto_dna_vg.py` (needs `pyabpoa`; run from the "
+        "repo root). Each family renders in its own child process so one abpoa OOM/crash cannot take "
+        "down the run.",
+        "",
+    ]
+    open(f"{outdir}/README.md", "w").write("\n".join(lines) + "\n")
+
+
+def _parent_run_all(outdir=DNA_GRAPHS_DIR, timeout_s=900):
+    """Orchestrator: iterate ALL Soto families, render each in its own child process (`--build-one`),
+    never let one family's crash/OOM/timeout kill the run. Foreground, serial -- deliberately NOT
+    parallel (memory-bound abpoa, WSL2 box)."""
+    import subprocess
+    os.makedirs(outdir, exist_ok=True)
+    bed = open(BED).read().splitlines()
+    fam_ids = all_family_ids(bed)
+    rows = []
+    for i, fid in enumerate(fam_ids, 1):
+        members = parse_family_members(bed, fid)
+        label = family_label(fid, members)
+        print(f"[{i}/{len(fam_ids)}] {fid} ({label}, {len(members)} members) ... ", end="", flush=True)
+        try:
+            proc = subprocess.run(
+                [sys.executable, os.path.abspath(__file__), "--build-one", fid, label],
+                capture_output=True, text=True, timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            row = _blank_row(fid, label, len(members),
+                              f"child process timed out after {timeout_s}s (likely abpoa hang/OOM-thrash)")
+            rows.append(row)
+            print(f"SKIPPED ({row['skip_reason']})")
+            continue
+        row = None
+        if proc.returncode == 0:
+            for line in proc.stdout.splitlines():
+                if line.startswith("RESULT_JSON:"):
+                    import json
+                    row = json.loads(line[len("RESULT_JSON:"):])
+                    break
+        if row is None:
+            rc = proc.returncode
+            reason = SIGNAL_REASONS.get(-rc, f"child process exited {rc}") if rc < 0 else f"child process exited {rc}"
+            stderr_tail = [ln for ln in (proc.stderr or "").strip().splitlines()[-3:]]
+            if stderr_tail:
+                reason += " -- " + " | ".join(stderr_tail)
+            row = _blank_row(fid, label, len(members), reason)
+        rows.append(row)
+        print(f"{row['status']}" + (f" ({row['skip_reason']})" if row["skip_reason"] else ""))
+    write_index(rows, outdir)
+    write_readme(rows, outdir)
+    n_rendered = sum(1 for r in rows if r["status"] == "rendered")
+    print(f"\n{n_rendered}/{len(rows)} families rendered -> {outdir}/ (INDEX.tsv + README.md)")
+    return rows
+
+
+def main():
+    if len(sys.argv) >= 4 and sys.argv[1] == "--build-one":
+        _child_build_one(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) >= 2 and sys.argv[1] == "--flagships-only":
+        main_flagships()
+    else:
+        _parent_run_all()
 
 
 if __name__ == "__main__":

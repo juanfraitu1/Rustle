@@ -1,0 +1,10 @@
+gene	locus	detected	recovered_by	cause	colour
+FAR2P1	chr2:130441675-130470147	Y	RNA-split		#1e8e3e
+CYP4F27P	chr2:130478035-130479051	Y	projection		#1e8e3e
+FAR2P2	chr2:130850654-130865267	Y	RNA-split		#1e8e3e
+CYP4F62P	chr2:130863729-130875321	Y	projection		#1e8e3e
+CYP4F30P	chr2:131114190-131120019	Y	RNA-split		#1e8e3e
+FAR2P3	chr2:131124287-131152985	Y	RNA-split		#1e8e3e
+FAR2P4	chr2:131713789-131743753	Y	RNA-split		#1e8e3e
+CR383656.5	chr14:13134773-13154353	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+AP000534.2	chr22:16115445-16152024	N			#d93025

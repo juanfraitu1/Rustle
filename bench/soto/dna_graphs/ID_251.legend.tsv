@@ -1,0 +1,3 @@
+gene	locus	detected	recovered_by	cause	colour
+ANKRD36B	chr2:97950885-98048181	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025
+AL356585.4	chr13:13734170-13738626	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025

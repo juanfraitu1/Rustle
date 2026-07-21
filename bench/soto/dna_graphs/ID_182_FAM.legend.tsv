@@ -1,0 +1,5 @@
+gene	locus	detected	recovered_by	cause	colour
+FAM153B	chr5:176604120-176659690	Y	RNA-split		#1e8e3e
+FAM153A	chr5:178251444-178327488	Y	projection		#1e8e3e
+AC137800.1	chr16:33014727-33030069	Y	RNA-split		#1e8e3e
+AC137800.2	chr16:33033161-33036614	Y	RNA-split		#1e8e3e

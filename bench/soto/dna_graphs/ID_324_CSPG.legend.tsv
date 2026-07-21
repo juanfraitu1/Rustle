@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+CSPG4P10	chr15:80323598-80341387	Y	RNA-split		#1e8e3e
+CSPG4P11	chr15:82052722-82063358	Y	projection		#1e8e3e
+CSPG4P4Y	chr15:82133635-82137155	Y	expr-collapse		#1e8e3e
+DNM1P51	chr15:82233822-82242855	Y	projection		#1e8e3e
+CSPG4P12	chr15:82943632-82966101	Y	expr-collapse		#1e8e3e

@@ -1,0 +1,5 @@
+gene	locus	detected	recovered_by	cause	colour
+SRGAP2C	chr1:121194173-121402237	Y	RNA-split		#1e8e3e
+SRGAP2D	chr1:143047107-143140349	Y	RNA-split		#1e8e3e
+SRGAP2B	chr1:144012010-144220236	Y	RNA-split		#1e8e3e
+SRGAP2	chr1:205466058-205728625	Y	RNA-split		#1e8e3e

@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+FGF7P5	chr9:44178191-44179570	Y	RNA-split		#1e8e3e
+FGF7P7	chr9:44220295-44221682	Y	RNA-split		#1e8e3e
+FGF7P8	chr9:80292843-80294222	Y	protein-tail		#1e8e3e
+FGF7P1	chr18:15048958-15050337	Y	RNA-split		#1e8e3e
+FGF7P2	chr21:11693615-11695000	Y	projection		#1e8e3e

@@ -1,0 +1,5 @@
+gene	locus	detected	recovered_by	cause	colour
+NAIPP1	chr5:70432873-70449844	Y	RNA-split		#1e8e3e
+NAIPP2	chr5:70774918-70792685	Y	expr-collapse		#1e8e3e
+NAIP	chr5:71424929-71482091	Y	projection		#1e8e3e
+NAIPP4	chr5:71559603-71585455	Y	RNA-split		#1e8e3e

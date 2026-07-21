@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+OR11H12	chr14:13104431-13105517	N			#d93025
+OR11H13P	chr14:13493444-13494424	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+OR11H1	chr22:16102172-16103154	N			#d93025

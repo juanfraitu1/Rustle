@@ -1,0 +1,4 @@
+gene	locus	detected	recovered_by	cause	colour
+SYT15	chr10:47464575-47480533	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+FO681492.1	chr10:48641165-48655007	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+AL157893.1	chr10:88097762-88099813	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025

@@ -1,0 +1,3 @@
+gene	locus	detected	recovered_by	cause	colour
+TEKT4P2	chr21:5692610-5754003	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025
+AC134878.2	chr22:5801017-5862418	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025

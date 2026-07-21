@@ -1,0 +1,8 @@
+gene	locus	detected	recovered_by	cause	colour
+AC005562.2	chr17:31562334-31562446	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+LRRC37BP1	chr17:31574334-31581958	N		distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)	#d93025
+LRRC37B	chr17:32953747-32999386	Y	RNA-split		#1e8e3e
+AC090616.5	chr17:33034040-33040757	N		distinguishable-but-MERGED (unique reads absorbed into a co-located locus)	#d93025
+LRRC37A	chr17:47154742-47199790	Y	RNA-split		#1e8e3e
+LRRC37A2	chr17:47373158-47417300	Y	RNA-split		#1e8e3e
+LRRC37A3	chr17:65724068-65789437	Y	RNA-split		#1e8e3e

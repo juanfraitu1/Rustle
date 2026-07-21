@@ -1,0 +1,7 @@
+gene	locus	detected	recovered_by	cause	colour
+DDX11L2	chr2:114023720-114025947	Y	RNA-split		#1e8e3e
+FO538757.1	chr11:3740-5220	N			#d93025
+DDX11L5	chr12:5135-6786	Y	projection		#1e8e3e
+DDX11L9	chr15:99745852-99748389	Y	projection		#1e8e3e
+DDX11L16	chr16:4785-7013	N		expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)	#d93025
+DDX11L10	chr19:4458-6260	Y	RNA-split		#1e8e3e

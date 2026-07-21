@@ -1,0 +1,6 @@
+gene	locus	detected	recovered_by	cause	colour
+AC244669.1	chr1:120280596-120355138	Y	expr-collapse		#1e8e3e
+AC241377.4	chr1:120973035-120986976	Y	RNA-split		#1e8e3e
+AC239800.1	chr1:142817363-142832784	Y	RNA-split		#1e8e3e
+AC245100.8	chr1:146347679-146348727	Y	expr-collapse		#1e8e3e
+LINC00869	chr1:148730482-148829853	Y	RNA-split		#1e8e3e
