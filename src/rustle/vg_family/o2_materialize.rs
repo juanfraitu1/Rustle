@@ -251,6 +251,10 @@ pub const PAD: i64 = 2000;
 /// this it is truncated to the first `READ_CAP` (Python
 /// `if len(seqs) > pg.READ_CAP: seqs = dict(list(seqs.items())[:pg.READ_CAP])`).
 /// Hard-coded from `bench/psv_graph_genomewide.py:38  READ_CAP = 6000`.
+///
+/// `copy_assign --read-cap` exposes this value for auditability but does not consume it: as noted below, no
+/// `src/bin/*.rs` binary imports this module, so there is no live call site for a CLI-supplied override to
+/// reach.
 pub const READ_CAP: usize = 6000;
 
 /// Default genome BAM, the read-fetch input. Python `bench/psv_graph_genomewide.py:31`:

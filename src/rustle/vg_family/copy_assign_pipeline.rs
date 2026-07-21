@@ -521,15 +521,21 @@ pub fn discover_intron_psvs(
         x => x,
     };
     use poasta::aligner::scoring::GapAffine;
-    const POA_CAP: usize = 20_000; // poasta is exact but O(n^2); above this, fall back to minimap2 (which needs
-                                   // >~200 bp to seed, so poasta covers the short cases minimap2 cannot).
+    // poasta is exact but O(n^2); above this, fall back to minimap2 (which needs >~200 bp to seed, so poasta
+    // covers the short cases minimap2 cannot). Overridable via `RUSTLE_POA_CAP` (set from `copy_assign
+    // --poa-cap`, default 20000 == the prior hard-coded constant, so an unset/default env var is
+    // byte-identical to before this was tunable). Read via env var rather than threaded as a fn parameter:
+    // this fn is reached through `assign_family`/`assign_family_detailed`/`find_weak_copies` and >30 other
+    // call sites (many test-only), so a signature change would be far more invasive than the value is worth
+    // for an opt-in (`RUSTLE_INTRON_PSV=1`) code path — same rationale as `RUSTLE_SKIP_POA_DIAGNOSTIC`.
+    let poa_cap: usize = std::env::var("RUSTLE_POA_CAP").ok().and_then(|s| s.parse().ok()).unwrap_or(20_000);
     let mut amaps: Vec<BTreeMap<usize, usize>> = vec![BTreeMap::new(); n];
     let mut diff_off: BTreeSet<usize> = BTreeSet::new();
     for other in 1..n {
         if spans[other].is_empty() {
             continue;
         }
-        let aln = if ref_span.len().max(spans[other].len()) <= POA_CAP {
+        let aln = if ref_span.len().max(spans[other].len()) <= poa_cap {
             poa_msa_with_costs(&[ref_span.clone(), spans[other].clone()], GapAffine::new(1, 1, 32))
         } else {
             minimap2_msa_pair(ref_span, &spans[other])

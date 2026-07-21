@@ -107,6 +107,22 @@ struct Args {
     /// on its own, independently of `--homology-primary`.
     #[arg(long, default_value_t = 2)]
     min_copies: usize,
+    /// poasta→minimap2 fallback length cap (bp) for the INTRON-RETENTION PSV discovery
+    /// (`discover_intron_psvs`, opt-in via `RUSTLE_INTRON_PSV=1`): above this a copy pair's genomic span
+    /// uses minimap2, not poasta (which is exact but O(n^2)). Threaded to the use site via `RUSTLE_POA_CAP`
+    /// (an env var, not a struct field — the const sits many call frames below `main`; see the module doc at
+    /// its use site). Default 20000 matches the prior hard-coded constant exactly, so leaving this flag
+    /// unset is byte-identical to before it existed.
+    #[arg(long, default_value_t = 20_000)]
+    poa_cap: usize,
+    /// Per-family multimapper read-pool cap (`o2_materialize::READ_CAP`, `MaterializeConfig::read_cap`).
+    /// EXPOSED HERE FOR AUDITABILITY ONLY: `o2_materialize` is a Rust byte-parity port of the Python
+    /// genome-wide-catalog materializer (`bench/o2_vg_visualization.py::materialize_family`) that no
+    /// `src/bin/*.rs` binary — including this one — imports, so this flag is currently a NO-OP in
+    /// `copy_assign` (parses so `RUSTLE_READ_CAP`/CLI usage never hard-errors; a non-default value warns at
+    /// startup rather than silently doing nothing). Default 6000 matches the constant.
+    #[arg(long, default_value_t = 6_000)]
+    read_cap: usize,
     /// Co-located window (bp): copies must cluster within this span.
     #[arg(long, default_value_t = 5_000_000)]
     win: u64,
@@ -868,6 +884,23 @@ fn main() -> Result<()> {
     // does not change the emitted families/assignments — see the flag's help).
     if args.skip_poa_diagnostic {
         std::env::set_var("RUSTLE_SKIP_POA_DIAGNOSTIC", "1");
+    }
+    // `--poa-cap` is read by `discover_intron_psvs` (copy_assign_pipeline.rs) via this env var, the same
+    // "flag -> env var -> deep read" idiom as `--skip-poa-diagnostic` above: the const it replaces lives many
+    // call frames below `main` (through `assign_family`/`assign_family_detailed`/`find_weak_copies`), so a
+    // signature thread-through would touch dozens of call sites for an opt-in (`RUSTLE_INTRON_PSV=1`) code
+    // path. Always set (not gated on non-default) so the resolved value is unambiguous; the default 20000
+    // reproduces the prior hard-coded constant exactly.
+    std::env::set_var("RUSTLE_POA_CAP", args.poa_cap.to_string());
+    // `--read-cap` is a NO-OP in copy_assign (see the flag's help): `o2_materialize::READ_CAP` has no
+    // consumer in any `src/bin/*.rs` binary. Warn rather than silently ignore a non-default value.
+    if args.read_cap != 6_000 {
+        eprintln!(
+            "[copy_assign] WARNING: --read-cap={} has no consumer in this binary (o2_materialize's READ_CAP \
+             is not on copy_assign's execution path — it backs a Rust byte-parity port of the Python \
+             genome-wide-catalog materializer that no shipped binary imports); the value is ignored.",
+            args.read_cap
+        );
     }
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
     // Parse the BAM index + header ONCE and reuse across every region (the per-region path re-parses the
