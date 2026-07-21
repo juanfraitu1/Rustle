@@ -1,0 +1,29 @@
+[[heuristic]]
+name = "RefineParams::min_identity"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 2370
+value = "0.80"
+stage = "O1-edge"
+tier = "decision"
+kind = "arbitrary"
+rationale = "asm20 exon-sum homology edge identity floor — THE family edge test"
+
+[[heuristic]]
+name = "GATE_MIN_READS"
+file = "src/rustle/vg_family/denovo_assemble.rs"
+line = 27
+value = "3"
+stage = "pre-O1"
+tier = "decision"
+kind = "arbitrary"
+rationale = "locus admission gate — the pipeline's unit of existence"
+
+[[heuristic]]
+name = "copy_assign alpha (Bonferroni thr)"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 453
+value = "n.saturating_sub(1)"
+stage = "O2"
+tier = "derived"
+kind = "derived"
+rationale = "certificate threshold alpha/(n-1), union bound over n-1 competitors"
