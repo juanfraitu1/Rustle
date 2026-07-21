@@ -1,0 +1,34 @@
+# merge baseline @ 9bf155b
+## detection eval
+  member sensitivity:        276/362 = 76.2%
+  recovery precision:        100%  (every deduped known-family copy overlaps an annotated member)
+  families fully recovered:  42/83 = 51%
+## floor decomposition
+   31  expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)
+   28  distinguishable-but-MERGED (unique reads absorbed into a co-located locus)
+   10  distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)
+    3  expressed-K=0: young identical (exon AND genome ~identical)
+    2  silent (no reads on member)
+  expressed-K=0 information floor (+silent), needs DNA/PSV: 36
+  distinguishable -> NOT an info floor (mergeable / gap):   38
+## K=0 families that must stay merged (must be unchanged after the fix):
+  ID_431 PPIAL4A chr1:120899120-120899781
+  ID_431 PPIAL4E chr1:143692933-143693719
+  ID_431 PPIAL4C chr1:148708008-148708609
+  ID_334 DEFB104B chr8:12522996-12527770
+  ID_332 DDX11L16 chr16:4785-7013
+  ID_213 AC246785.1 chr1:143591826-143594083
+  ID_391 WASH6P chr16:6965-11846
+  ID_167 AC133548.1 chr16:32772942-32779658
+  ID_92 AC243829.7 chr17:37109490-37110818
+  ID_348 DUX4L50 chr9:47737220-47737936
+  ID_131 AC105272.1 chr1:103516936-103517135
+  ID_92 AC053481.4 chr17:63130560-63131864
+  ID_431 PPIAL4D chr1:144366357-144366853
+  ID_222 AC243829.6 chr17:37415116-37415223
+  ID_261 CNTNAP3P5 chr9:39786634-39796678
+  ID_65 CR383656.5 chr14:13134773-13154353
+  ID_146 AC233280.19 chr3:198342015-198343130
+  ID_226 H3P4 chr1:121127576-121127993
+  ID_26 AC006453.4 chr2:90228191-90245534
+  ID_402 NCF1B chr7:74420835-74436153
