@@ -29,8 +29,8 @@ use super::copy_split::{
     split_locus_copies, discover_locus_psvs, AlignedRead, CollapsedCandidate, CopyIsoform,
 };
 use super::denovo_assemble::{
-    assemble_gate, pass1_skeletons, pass1_skeletons_robust, primary_reads_from_bam, reads_in_region,
-    BamRead, GateParams, PrimaryRead, GATE_MIN_READS, PASS1_MIN_READS,
+    aligned_reads_from_bam, assemble_gate, pass1_skeletons, pass1_skeletons_robust, primary_reads_from_bam,
+    reads_in_region, BamRead, GateParams, PrimaryRead, GATE_MIN_READS, PASS1_MIN_READS,
 };
 use super::family_detect::{
     collapse_loci_span_aware, collapse_loci_span_aware_with_totals, detect_edges, detect_edges_reporting,
@@ -38,7 +38,10 @@ use super::family_detect::{
 };
 use super::family_rescue::{FamilyMember, RescueParams};
 use super::family_split::{classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams};
-use super::read_conflict::{as_tie_edges, conflict_edges, conflict_families, family_mapq0_support, ConflictParams, Placement, ReadPlacements};
+use super::read_conflict::{
+    as_tie_edges, conflict_edges, conflict_families, family_mapq0_support, locus_unique_mapper_counts,
+    reads_distinguish, ConflictParams, Placement, ReadPlacements,
+};
 use super::rescue_pipeline::{rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT};
 use crate::genome::GenomeIndex;
 
@@ -1406,7 +1409,7 @@ pub fn detect_and_assign(
     }
 
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
-    let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    let mut reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     eprintln!(
         "[detect_and_assign] {} primary -> {} skeletons -> {} transcripts -> {} reps",
         primary_reads.len(),
@@ -1422,6 +1425,14 @@ pub fn detect_and_assign(
     // (colocated_families, PSV discovery, assignment, EM, chi_H) is unchanged by which oracle ran.
     let placements = build_read_placements(bam_reads, &reps);
     lap!(format!("build_read_placements ({} reads x {} reps)", bam_reads.len(), reps.len()));
+    // Per-copy unique-mapper support (Task 3, identifiability-merge): record each rep's count of MAPQ>0
+    // (unambiguous) placements — free, `placements` is already built above — so `distinct_locus_reps`'s
+    // same-strand merge guard (inside `refine_families_exon_sum` below) has real read evidence instead of
+    // unconditionally collapsing every same-strand co-located pair.
+    let uniq_counts = locus_unique_mapper_counts(&placements, reps.len());
+    for (i, c) in reps.iter_mut().enumerate() {
+        c.distinguishing_uniq = uniq_counts[i];
+    }
     let (families, edges_f64): (Vec<Vec<usize>>, Vec<(usize, usize, f64)>) = if !cfg.homology_primary {
         let c_edges = conflict_edges(reps.len(), &placements, &cfg.conflict);
         let c_fams = conflict_families(reps.len(), &c_edges);
@@ -1513,9 +1524,8 @@ pub fn detect_and_assign(
         let before = colocated.len();
         let copysets: Vec<Vec<DenovoTranscript>> = colocated.iter().map(|c| c.copies.clone()).collect();
         let refine_params = RefineParams { intron_fasta: Some(fasta_path.to_string()), ..Default::default() };
-        let refined = refine_families_exon_sum(copysets, &refine_params, Some(genome)).expect(
-            "refine (default): refine_families_exon_sum failed — is minimap2 on PATH? pass --no-refine to skip",
-        );
+        let refined = refine_families_exon_sum(copysets, &refine_params, Some(genome), cfg.conflict.min_reads)
+            .expect("refine (default): refine_families_exon_sum failed — is minimap2 on PATH? pass --no-refine to skip");
         eprintln!(
             "[detect_and_assign] refine: {} co-located families -> {} homology-gated (asm20 id>=0.80, cov>=0.50, >= 2 distinct loci)",
             before,
@@ -1567,7 +1577,7 @@ pub fn detect_and_assign(
                 strand: rc.strand,
                 introns: rc.locus.introns.clone(),
                 seq: rc.seq.clone(),
-            });
+             ..Default::default() });
         }
         // reads on this family's chrom overlapping its span (assign overlaps by coord, so pre-filter chrom).
         let mut idx_map = Vec::new();
@@ -1921,7 +1931,7 @@ fn gw_reps_and_catalog(
     // rep_totals[k] is the LOCUS TOTAL reads for reps[k] (all isoforms summed) — the single-copy expression
     // basis for lambda_global, on the same footing as the family-total E_fam in depth_cn.
     let (rep_idx, rep_totals) = collapse_loci_span_aware_with_totals(&transcripts, &cfg.detect);
-    let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    let mut reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     drop(transcripts);
     eprintln!(
         "[gw-catalog] {} skeletons -> {} reps over {} contigs",
@@ -1946,26 +1956,40 @@ fn gw_reps_and_catalog(
     use rayon::prelude::*;
     let chrom_work: Vec<(&str, &Vec<usize>)> =
         by_chrom.iter().filter(|(_, g)| g.len() >= 2).map(|(c, g)| (*c, g)).collect();
-    type ChromEdges = (Vec<(usize, usize, usize)>, (String, usize, usize, usize));
+    // Per-copy unique-mapper support (Task 3, identifiability-merge), piggybacked on this SAME per-chrom
+    // placement build: `(global_rep_idx, mapq>0_placement_count)` pairs, free — `placements` is already
+    // built here for `conflict_edges`. Feeds `distinct_locus_reps`'s same-strand merge guard downstream
+    // (via `refine_families_exon_sum`) so it sees real read evidence instead of unconditionally collapsing.
+    type ChromEdges = (Vec<(usize, usize, usize)>, Vec<(usize, usize)>, (String, usize, usize, usize));
     let run = |&(chrom, glob): &(&str, &Vec<usize>)| -> Option<ChromEdges> {
         let clen = genome.chrom_len(chrom);
         let (_primary, bam_reads) = reads_in_region(bam_path, chrom, 0, clen, 1).ok()?;
         let chrom_reps: Vec<DenovoTranscript> = glob.iter().map(|&g| reps[g].clone()).collect();
         let placements = build_read_placements(&bam_reads, &chrom_reps);
         let edges = conflict_edges(chrom_reps.len(), &placements, &cfg.conflict);
+        let uniq_local = locus_unique_mapper_counts(&placements, chrom_reps.len());
+        let uniq_global: Vec<(usize, usize)> =
+            uniq_local.into_iter().enumerate().map(|(li, cnt)| (glob[li], cnt)).collect();
         let n_edges = edges.len(); // this chrom's edge count (not the cumulative total)
         let remapped: Vec<(usize, usize, usize)> =
             edges.into_iter().map(|(i, j, w)| (glob[i], glob[j], w)).collect(); // local → global rep index
-        Some((remapped, (chrom.to_string(), chrom_reps.len(), bam_reads.len(), n_edges)))
+        Some((remapped, uniq_global, (chrom.to_string(), chrom_reps.len(), bam_reads.len(), n_edges)))
     };
     let per_chrom: Vec<ChromEdges> = match rayon::ThreadPoolBuilder::new().num_threads(threads.max(1)).build() {
         Ok(pool) => pool.install(|| chrom_work.par_iter().filter_map(&run).collect()),
         Err(_) => chrom_work.iter().filter_map(&run).collect(), // serial fallback (byte-identical)
     };
     let mut all_edges: Vec<(usize, usize, usize)> = Vec::new();
-    for (edges, (chrom, n_reps, n_reads, n_edges)) in per_chrom {
+    let mut uniq_counts = vec![0usize; reps.len()];
+    for (edges, uniq_global, (chrom, n_reps, n_reads, n_edges)) in per_chrom {
         all_edges.extend(edges);
+        for (gi, cnt) in uniq_global {
+            uniq_counts[gi] = cnt;
+        }
         eprintln!("[gw-catalog] {chrom}: {n_reps} reps, {n_reads} reads, {n_edges} conflict edges");
+    }
+    for (i, c) in reps.iter_mut().enumerate() {
+        c.distinguishing_uniq = uniq_counts[i];
     }
 
     // --- (3) global components → split → colocated (strand-split + disjoint-loci de-dup) ---
@@ -2015,7 +2039,7 @@ pub fn detect_single_copy_baseline_genome_wide(
         let copysets: Vec<Vec<DenovoTranscript>> = catalog.iter().map(|c| c.copies.clone()).collect();
         let refine_params =
             RefineParams { threads, intron_fasta: Some(fasta_path.to_string()), ..Default::default() };
-        let refined = refine_families_exon_sum(copysets, &refine_params, None)?;
+        let refined = refine_families_exon_sum(copysets, &refine_params, None, cfg.conflict.min_reads)?;
         eprintln!(
             "[gw-catalog] single-copy: refined {} raw -> {} homology-gated families for the multi-copy exclusion",
             catalog.len(),
@@ -2243,9 +2267,25 @@ pub fn detect_homology_catalog_genome_wide(
         retain_non_mischain(&mut transcripts, sup, "gw-catalog");
     }
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
-    let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    let mut reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     drop(transcripts);
     eprintln!("[gw-catalog-homology] {} skeletons -> {} reps over {} contigs", skeletons.len(), reps.len(), contigs.len());
+
+    // Per-copy unique-mapper support (Task 3, identifiability-merge): `distinct_locus_reps`'s same-strand
+    // merge guard below needs read evidence, but `reads` above is `PrimaryRead` (no MAPQ) and is already
+    // dropped. Re-scan the BAM for full alignment records (MAPQ) and attribute each read to its
+    // closest-overlapping rep (`build_read_placements`, the same attribution `detect_and_assign` uses), then
+    // record each rep's count of MAPQ>0 (unambiguous) placements as `distinguishing_uniq`. This is an
+    // ADDITIONAL full-BAM pass (a genuine genome-wide cost — flagged for Task 4 perf validation); it changes
+    // no existing catalog field except which same-strand co-located pairs the merge below collapses.
+    let mapq_reads = aligned_reads_from_bam(bam_path, threads)?;
+    let placements_for_uniq = build_read_placements(&mapq_reads, &reps);
+    drop(mapq_reads);
+    let uniq_counts = locus_unique_mapper_counts(&placements_for_uniq, reps.len());
+    drop(placements_for_uniq);
+    for (i, c) in reps.iter_mut().enumerate() {
+        c.distinguishing_uniq = uniq_counts[i];
+    }
 
     // --- E_r edges + γ-quasi-clique blocks ---
     let edges2 = homology_edges_all_reps(&reps, refine)?;
@@ -2262,7 +2302,7 @@ pub fn detect_homology_catalog_genome_wide(
     let mut dna_candidates: Vec<(String, String, u64, u64, Vec<u8>)> = Vec::new();
     for block in blocks {
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
-        let loci = distinct_locus_reps(copies.clone()); // ≥2 spatially-distinct loci certificate
+        let loci = distinct_locus_reps(copies.clone(), cfg.conflict.min_reads); // ≥2 spatially-distinct loci certificate
         if block.len() >= min_copies && loci.len() >= min_copies {
             out.push(loci);
         } else if (cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback) && loci.len() < 2 {
@@ -2429,6 +2469,7 @@ pub fn refine_families_exon_sum(
     families: Vec<Vec<DenovoTranscript>>,
     params: &RefineParams,
     passed_genome: Option<&GenomeIndex>,
+    min_reads: usize,
 ) -> Result<Vec<Vec<DenovoTranscript>>> {
     // Genome for the include_introns core tier + the additive genomic-span tier. PREFER the caller's
     // already-loaded `GenomeIndex` (the per-region path caches contigs in an LRU precisely to avoid reloads); only
@@ -2519,7 +2560,7 @@ pub fn refine_families_exon_sum(
                 continue;
             }
             let comp_copies: Vec<DenovoTranscript> = comp.iter().map(|&i| fam[i].clone()).collect();
-            let loci = distinct_locus_reps(comp_copies);
+            let loci = distinct_locus_reps(comp_copies, min_reads);
             if loci.len() >= 2 {
                 refined.push(loci);
             }
@@ -2869,16 +2910,20 @@ fn uf_union(parent: &mut [usize], a: usize, b: usize) {
 const ANTISENSE_MINORITY_DENOM: u32 = 10;
 
 /// Collapse copies at the SAME locus and return one representative per spatially-DISTINCT locus. Distinct
-/// paralog copies occupy DISJOINT genomic spans, so two copies overlapping on the same chromosome are the
-/// same locus. SAME-strand overlap is always one locus (a gene plus its own nested fragment / a second
-/// isoform — which homology alignment cannot distinguish, but disjointness can). OPPOSITE-strand overlap is
+/// paralog copies occupy DISJOINT genomic spans, so two copies overlapping on the same chromosome are
+/// candidates for the same locus. SAME-strand overlap collapses iff NO read distinguishes the pair — the
+/// χ(H) read-conflict criterion (`read_conflict::reads_distinguish`), restricted to co-located copies: a
+/// copy whose `distinguishing_uniq` (unique-mapper support) clears `min_reads` is read-evidenced as its own
+/// locus (a gene plus its own nested fragment / a second isoform is the K=0 case homology alignment cannot
+/// tell apart from a genuine collapsed paralog — reads can). This replaces the unconditional coordinate
+/// collapse that produced the advisor-flagged "distinguishable-but-merged" cases. OPPOSITE-strand overlap is
 /// the sense/antisense case: collapse ONLY when one copy is a clear read-minority (a few antisense reads on
 /// a real transcript = a strand artifact, e.g. GWFAM99 = 666 `+` reads vs 3 `-` reads at one locus, a
-/// sense/antisense mis-split); a BALANCED overlapping antisense pair is two genuine loci and is kept.
-/// Threshold-free for the same-strand case; the antisense case uses an order-of-magnitude read-minority
-/// guard. The representative of a locus is the MOST-supported copy (most reads — the real one, not the
-/// minority artifact — then widest span).
-fn distinct_locus_reps(copies: Vec<DenovoTranscript>) -> Vec<DenovoTranscript> {
+/// sense/antisense mis-split); a BALANCED overlapping antisense pair is two genuine loci and is kept —
+/// UNCHANGED by this fix. `min_reads` is the conflict-graph noise floor (`cfg.conflict.min_reads`), not a
+/// new threshold. The representative of a locus is the MOST-supported copy (most reads — the real one, not
+/// the minority artifact — then widest span).
+fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<DenovoTranscript> {
     let n = copies.len();
     let mut parent: Vec<usize> = (0..n).collect();
     for i in 0..n {
@@ -2889,7 +2934,10 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>) -> Vec<DenovoTranscript> {
                 continue;
             }
             let collapse = if a.strand == b.strand {
-                true
+                // χ(H): collapse only when NO read distinguishes them (true K=0). The PSV/junction leg is
+                // not wired here (no per-copy PSV/junction evidence reaches this merge point) — the
+                // unique-mapper leg alone is the fix for the flagged over-merge cases.
+                !reads_distinguish(a.distinguishing_uniq, b.distinguishing_uniq, /*shared_psv_or_junction=*/false, min_reads)
             } else {
                 let (lo, hi) = (a.n_reads.min(b.n_reads), a.n_reads.max(b.n_reads));
                 lo.saturating_mul(ANTISENSE_MINORITY_DENOM) < hi // minority antisense = artifact
@@ -3577,7 +3625,7 @@ mod tests {
         let host = DenovoTranscript {
             tid: "host".into(), chrom: "chr1".into(), start: 0, end: 80, n_reads: 7, strand: '+',
             introns: vec![], seq: backbone.clone(),
-        };
+         ..Default::default() };
         let all_copies = vec![host.clone()];
 
         let profiles = FamilyProfiles {
@@ -3652,7 +3700,7 @@ mod tests {
         let admitted_t = DenovoTranscript {
             tid: "admitted1".into(), chrom: "chr1".into(), start: 0, end: 80, n_reads: 4, strand: '+',
             introns: vec![(30, 40)], seq: mutated.clone(),
-        };
+         ..Default::default() };
 
         // The mocked admitter reports a remap identity (as `absent_copy::admit_candidate` does for a
         // real reference-ABSENT admission) so this test also pins that `copy_map_identity` carries it
@@ -4037,7 +4085,7 @@ mod tests {
             strand: '+',
             introns: vec![],
             seq: vec![b'A'; (end - start) as usize],
-        }
+         ..Default::default() }
     }
 
     /// Build a rep with explicit introns + read count (for prune_same_locus structural tests).
@@ -4051,7 +4099,7 @@ mod tests {
             strand: '-',
             introns,
             seq: vec![b'A'; (end - start) as usize],
-        }
+         ..Default::default() }
     }
 
     #[test]
@@ -4086,7 +4134,7 @@ mod tests {
         frag.strand = '-';
         let mut para = rep_s(50000, 58000, vec![(51000, 52000)], 40); // disjoint span = distinct locus
         para.strand = '-';
-        let loci = distinct_locus_reps(vec![wide.clone(), frag, para.clone()]);
+        let loci = distinct_locus_reps(vec![wide.clone(), frag, para.clone()], 3);
         let starts: Vec<u64> = loci.iter().map(|c| c.start).collect();
         assert_eq!(starts, vec![1000, 50000], "nested fragment collapses into its locus; disjoint paralog kept");
     }
@@ -4098,7 +4146,7 @@ mod tests {
         plus.strand = '+';
         let mut minus = rep_s(1000, 5000, vec![(2000, 3000)], 80);
         minus.strand = '-';
-        let loci = distinct_locus_reps(vec![plus, minus]);
+        let loci = distinct_locus_reps(vec![plus, minus], 3);
         assert_eq!(loci.len(), 2, "balanced opposite-strand overlapping spans are distinct loci");
     }
 
@@ -4111,9 +4159,31 @@ mod tests {
         dom.strand = '+';
         let mut anti = rep_s(105549018, 105552021, vec![], 3); // overlaps dom, opposite strand, 3 reads
         anti.strand = '-';
-        let loci = distinct_locus_reps(vec![dom, anti]);
+        let loci = distinct_locus_reps(vec![dom, anti], 3);
         assert_eq!(loci.len(), 1, "minority antisense copy collapses into the real locus");
         assert_eq!(loci[0].n_reads, 666, "the dominant (real) copy is the representative");
+    }
+
+    #[test]
+    fn distinct_locus_reps_keeps_distinguishable_colocated_copies_separate() {
+        // Task 3 (identifiability-merge): two overlapping SAME-strand copies where one carries 40
+        // unique-mapper reads (well above the min_reads=3 floor) -> reads DISTINGUISH them, so the pair
+        // must NOT be coordinate-collapsed even though they overlap on the same strand (the advisor-flagged
+        // "distinguishable-but-merged" over-merge).
+        let mut a = rep("chrX", 100, 200);
+        a.distinguishing_uniq = 40;
+        let b = rep("chrX", 150, 250);
+        let loci = distinct_locus_reps(vec![a, b], 3);
+        assert_eq!(loci.len(), 2, "a copy with 40 unique reads must not be merged");
+    }
+
+    #[test]
+    fn distinct_locus_reps_still_merges_indistinguishable_colocated_copies() {
+        // Same shape, but NEITHER copy carries unique-mapper support -> true K=0, still one locus.
+        let a = rep("chrX", 100, 200);
+        let b = rep("chrX", 150, 250);
+        let loci = distinct_locus_reps(vec![a, b], 3);
+        assert_eq!(loci.len(), 1, "indistinguishable co-located copies still merge (K=0)");
     }
 
     #[test]
@@ -4142,8 +4212,8 @@ mod tests {
     fn protein_coheres_is_none_without_mmseqs() {
         // With protein_tail off / mmseqs absent the flag is None (no membership effect).
         let fam = vec![vec![
-            DenovoTranscript{tid:"a".into(),chrom:"c1".into(),start:0,end:300,n_reads:5,strand:'+',introns:vec![],seq:b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec()},
-            DenovoTranscript{tid:"b".into(),chrom:"c1".into(),start:9000,end:9300,n_reads:4,strand:'+',introns:vec![],seq:b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec()},
+            DenovoTranscript{tid:"a".into(),chrom:"c1".into(),start:0,end:300,n_reads:5,strand:'+',introns:vec![],seq:b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec(), ..Default::default() },
+            DenovoTranscript{tid:"b".into(),chrom:"c1".into(),start:9000,end:9300,n_reads:4,strand:'+',introns:vec![],seq:b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec(), ..Default::default() },
         ]];
         let mut p = RefineParams::default(); p.protein_tail = false;
         let flags = family_protein_coheres(&fam, &p);
@@ -4591,7 +4661,7 @@ mod tests {
         let mk = |tid: &str, start: u64| DenovoTranscript {
             tid: tid.into(), chrom: "c1".into(), start, end: start + 100, n_reads: 12, strand: '+',
             introns: vec![], seq: vec![],
-        };
+         ..Default::default() };
         let (a, b, c) = (mk("a", 0), mk("b", 1000), mk("c", 2000));
         let families = vec![ColocatedFamily {
             family_id: "F0".into(), chrom: "c1".into(), start: 0, end: 1100, copies: vec![a.clone(), b.clone()],
@@ -4672,7 +4742,7 @@ mod tests {
         let mk = |tid: &str, introns: Vec<(u64, u64)>| DenovoTranscript {
             tid: tid.into(), chrom: "c1".into(), start: 0, end: 1000, n_reads: 5, strand: '+', introns,
             seq: vec![b'A'; 50],
-        };
+         ..Default::default() };
         let mut ts = vec![mk("readthrough", vec![]), mk("spliced", vec![(100, 150)])];
         retain_non_readthrough(&mut ts, &support, "test");
         assert_eq!(ts.len(), 1, "the single-exon engulfer is dropped");
@@ -4755,8 +4825,8 @@ mod tests {
         let mut para = base.clone();
         for k in (0..para.len()).step_by(25) { para[k] = b"ACGT"[(para[k] as usize + 1) % 4]; }
         let reps = vec![
-            DenovoTranscript { tid: "u0".into(), chrom: "c1".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: base },
-            DenovoTranscript { tid: "u1".into(), chrom: "c2".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: para },
+            DenovoTranscript { tid: "u0".into(), chrom: "c1".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: base, ..Default::default() },
+            DenovoTranscript { tid: "u1".into(), chrom: "c2".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: para, ..Default::default() },
         ];
         let params = RefineParams::default();
         let edges = homology_edges_all_reps(&reps, &params).unwrap();
@@ -4776,9 +4846,9 @@ mod tests {
         let mut para = base.clone();
         for k in (0..para.len()).step_by(20) { para[k] = b"ACGT"[(para[k] as usize + 1) % 4]; } // ~5% divergence
         let reps = vec![
-            DenovoTranscript { tid: "r0".into(), chrom: "c1".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: base },
-            DenovoTranscript { tid: "r1".into(), chrom: "c1".into(), start: 5000, end: 5900, n_reads: 8, strand: '+', introns: vec![], seq: para },
-            DenovoTranscript { tid: "r2".into(), chrom: "c1".into(), start: 9000, end: 9900, n_reads: 5, strand: '+', introns: vec![], seq: rand_seq(900, 0x99) },
+            DenovoTranscript { tid: "r0".into(), chrom: "c1".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: base, ..Default::default() },
+            DenovoTranscript { tid: "r1".into(), chrom: "c1".into(), start: 5000, end: 5900, n_reads: 8, strand: '+', introns: vec![], seq: para, ..Default::default() },
+            DenovoTranscript { tid: "r2".into(), chrom: "c1".into(), start: 9000, end: 9900, n_reads: 5, strand: '+', introns: vec![], seq: rand_seq(900, 0x99), ..Default::default() },
         ];
         let params = RefineParams::default(); // min_identity 0.80, sensitive_identity 0.60, min_coverage 0.50
         let edges = homology_edges_all_reps(&reps, &params).unwrap();
@@ -4897,8 +4967,8 @@ mod tests {
         assert!(sensitive_edges.is_empty(), "pair must be genuinely nt-unresolvable (< 0.60), got {:?}", sensitive_edges);
 
         let reps = vec![
-            DenovoTranscript { tid: "protA".into(), chrom: "c1".into(), start: 1_000, end: 1_750, n_reads: 20, strand: '+', introns: vec![], seq: seq_a },
-            DenovoTranscript { tid: "protB".into(), chrom: "c1".into(), start: 50_000, end: 50_750, n_reads: 18, strand: '+', introns: vec![], seq: seq_b },
+            DenovoTranscript { tid: "protA".into(), chrom: "c1".into(), start: 1_000, end: 1_750, n_reads: 20, strand: '+', introns: vec![], seq: seq_a, ..Default::default() },
+            DenovoTranscript { tid: "protB".into(), chrom: "c1".into(), start: 50_000, end: 50_750, n_reads: 18, strand: '+', introns: vec![], seq: seq_b, ..Default::default() },
         ];
 
         let mut params_off = RefineParams::default();

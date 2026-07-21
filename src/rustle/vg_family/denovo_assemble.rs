@@ -794,7 +794,7 @@ pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParam
             strand,
             introns: sk.introns.clone(),
             seq,
-        });
+         ..Default::default() });
     }
     out
 }

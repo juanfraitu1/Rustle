@@ -79,7 +79,7 @@ mod tests {
         strand: char,
         introns: Vec<(u64, u64)>,
     ) -> DenovoTranscript {
-        DenovoTranscript { tid: tid.into(), chrom: chrom.into(), start, end, n_reads, strand, introns, seq: vec![] }
+        DenovoTranscript { tid: tid.into(), chrom: chrom.into(), start, end, n_reads, strand, introns, seq: vec![], ..Default::default() }
     }
     fn fam(id: &str, copies: Vec<DenovoTranscript>) -> ColocatedFamily {
         let chrom = copies[0].chrom.clone();

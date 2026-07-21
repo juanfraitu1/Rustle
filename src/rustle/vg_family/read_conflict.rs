@@ -258,6 +258,24 @@ pub fn reads_distinguish(uniq_i: usize, uniq_j: usize, shared_psv_or_junction: b
     uniq_i >= min_reads || uniq_j >= min_reads || shared_psv_or_junction
 }
 
+/// Per-locus UNIQUE-mapper count from placements: for each locus, how many reads place there with
+/// `mapq > 0` — the aligner's own uniqueness verdict (it found no competing placement to tie against). This
+/// is the raw per-copy signal carried on `DenovoTranscript::distinguishing_uniq` and consumed by
+/// `distinct_locus_reps`'s same-strand merge guard via `reads_distinguish`. Independent of `ConflictParams`:
+/// MAPQ, not the de-tie criterion, decides uniqueness here. Placements at an out-of-range locus are ignored
+/// (defensive; callers always size `n_loci` to the rep set the placements were built against).
+pub fn locus_unique_mapper_counts(reads: &[ReadPlacements], n_loci: usize) -> Vec<usize> {
+    let mut counts = vec![0usize; n_loci];
+    for placements in reads {
+        for p in placements {
+            if p.locus < n_loci && p.mapq > 0 {
+                counts[p.locus] += 1;
+            }
+        }
+    }
+    counts
+}
+
 /// Connected-component families over the conflict edges (union-find). Returns components of size `>= 2`
 /// (a locus with no conflict needs no resolution — it is not a family), each sorted ascending, the list
 /// sorted by first member (deterministic).
@@ -550,6 +568,17 @@ mod tests {
         assert!(reads_distinguish(11, 8, false, 3));
         // a read-supported PSV/junction separates them even with no unique mappers
         assert!(reads_distinguish(0, 0, true, 3));
+    }
+
+    #[test]
+    fn locus_unique_mapper_counts_counts_mapq_positive_placements_per_locus() {
+        let reads = vec![
+            vec![Placement { locus: 0, de: 0.01, mapq: 60, as_score: 100, aln_len: 2000 }], // uniq @0
+            vec![Placement { locus: 0, de: 0.01, mapq: 0, as_score: 100, aln_len: 2000 }],  // ambiguous, not counted
+            vec![Placement { locus: 1, de: 0.01, mapq: 40, as_score: 100, aln_len: 2000 }], // uniq @1
+            vec![Placement { locus: 1, de: 0.01, mapq: 40, as_score: 100, aln_len: 2000 }], // uniq @1
+        ];
+        assert_eq!(locus_unique_mapper_counts(&reads, 2), vec![1, 2]);
     }
 
     #[test]

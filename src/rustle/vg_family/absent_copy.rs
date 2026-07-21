@@ -428,7 +428,7 @@ mod tests {
             strand: '+',
             introns: vec![],
             seq: b"AAAAAAAAAA".to_vec(),
-        }
+         ..Default::default() }
     }
 
     /// Gate 1 fires: only 2 clusters (< min_clusters=3).  The remap closure returns 0.5
@@ -653,7 +653,7 @@ mod tests {
             strand: '+',
             introns: vec![],
             seq: b"ACGTACGTAC".to_vec(),
-        };
+         ..Default::default() };
         let a = Admission::Copy(t.clone(), Some(0.95));
         match a {
             Admission::Copy(_, id) => assert_eq!(id, Some(0.95)),

@@ -889,7 +889,7 @@ mod tests {
     /// mirroring how `copy_assign_pipeline`'s own tests construct copies.
     fn transcript(tid: &str, chrom: &str, start: u64, seq: Vec<u8>) -> DenovoTranscript {
         let end = start + seq.len() as u64;
-        DenovoTranscript { tid: tid.to_string(), chrom: chrom.to_string(), start, end, n_reads: 10, strand: '+', introns: vec![], seq }
+        DenovoTranscript { tid: tid.to_string(), chrom: chrom.to_string(), start, end, n_reads: 10, strand: '+', introns: vec![], seq, ..Default::default() }
     }
 
     fn bam_read(name: &str, chrom: &str, ref_start: u64, seq: Vec<u8>, mapq: u8, de: f32) -> BamRead {

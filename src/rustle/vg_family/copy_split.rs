@@ -446,7 +446,7 @@ pub(crate) fn collapsed_copy_to_transcript_from_host_seq(
         strand: host.strand,
         introns: iso.intron_chain.clone(),
         seq,
-    })
+     ..Default::default() })
 }
 
 /// Public wrapper: fetch the host's spliced sequence from the genome (using the COPY's intron chain), then
@@ -536,7 +536,7 @@ mod tests {
         let host = DenovoTranscript {
             tid: "H".into(), chrom: "c1".into(), start: 100, end: 110, n_reads: 9,
             strand: '+', introns: vec![], seq: b"AAAAAAAAAA".to_vec(),
-        };
+         ..Default::default() };
         // PSV at genome positions 102 and 107 → spliced offsets 2 and 7 (identity exon_map for a single exon).
         let psv_pos = vec![102u64, 107u64];
         let iso = CopyIsoform {
@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn collapsed_copy_to_transcript_none_when_allele_unplaceable() {
         let host = DenovoTranscript { tid: "H".into(), chrom: "c1".into(), start: 100, end: 105,
-            n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec() };
+            n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec(), ..Default::default() };
         let psv_pos = vec![999u64]; // not in host exon frame
         let iso = CopyIsoform { intron_chain: vec![], allele_vector: vec![Some(b'C')], read_count: 5, identifiable: true };
         assert!(collapsed_copy_to_transcript_from_host_seq(&iso, &psv_pos, &host).is_none());
@@ -582,7 +582,7 @@ mod tests {
         let host = DenovoTranscript {
             tid: "H".into(), chrom: "c1".into(), start: 100, end: 120, n_reads: 9,
             strand: '+', introns: vec![(105, 115)], seq: vec![],
-        };
+         ..Default::default() };
         // Copy chain: exon1 [100,108), exon2 [112,120). PSV genome 106 -> copy offset 6.
         let iso = CopyIsoform {
             intron_chain: vec![(108, 112)],
@@ -605,7 +605,7 @@ mod tests {
     #[test]
     fn collapsed_copy_to_transcript_none_on_length_mismatch() {
         let host = DenovoTranscript { tid: "H".into(), chrom: "c1".into(), start: 100, end: 105,
-            n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec() };
+            n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec(), ..Default::default() };
         let iso = CopyIsoform { intron_chain: vec![], allele_vector: vec![Some(b'C'), Some(b'G')],
             read_count: 5, identifiable: true };
         let psv_pos = vec![102u64]; // 1 position vs 2 alleles
@@ -616,7 +616,7 @@ mod tests {
     #[test]
     fn collapsed_copy_to_transcript_none_when_all_alleles_none() {
         let host = DenovoTranscript { tid: "H".into(), chrom: "c1".into(), start: 100, end: 105,
-            n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec() };
+            n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec(), ..Default::default() };
         let psv_pos = vec![102u64, 103u64];
         let iso = CopyIsoform { intron_chain: vec![], allele_vector: vec![None, None],
             read_count: 5, identifiable: true };

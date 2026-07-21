@@ -1878,7 +1878,7 @@ mod tests {
             strand,
             introns: introns.to_vec(),
             seq,
-        }
+         ..Default::default() }
     }
 
     // ---- exon_map / gen2off / copy_boundaries ----
@@ -2284,7 +2284,7 @@ mod tests {
                         strand: '+',
                         introns: vec![],
                         seq,
-                    }
+                     ..Default::default() }
                 })
                 .collect();
             let copies: Vec<&DenovoTranscript> = copies_owned.iter().collect();
@@ -2595,7 +2595,7 @@ mod tests {
             strand: '+',
             introns: vec![(start + 60, start + 160)],
             seq: spliced.clone(),
-        };
+         ..Default::default() };
         let a = mk(0);
         let b = mk(b_start);
         let copies = [&a, &b];

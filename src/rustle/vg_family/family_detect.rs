@@ -73,6 +73,33 @@ pub struct DenovoTranscript {
     pub introns: Vec<(u64, u64)>,
     /// Spliced sequence in transcription orientation.
     pub seq: Vec<u8>,
+    /// Per-copy unique-mapper support: the number of reads that place at this copy's locus UNIQUELY
+    /// (`mapq > 0` — the aligner found no competing tied placement). This is the χ(H) read-distinguishability
+    /// signal `distinct_locus_reps`'s same-strand merge guard consumes via `read_conflict::reads_distinguish`
+    /// (Task 3, identifiability-merge): a co-located same-strand pair collapses only when NEITHER copy clears
+    /// the `min_reads` floor here. Populated where BAM read placements already exist (`detect_and_assign`'s
+    /// `placements`, and the genome-wide homology catalog's own placement pass before it drops its reads);
+    /// 0 (the safe/collapsing default) elsewhere — synthetic/test copies, and admitted/rescued copies built
+    /// after the merge decision has already run.
+    pub distinguishing_uniq: usize,
+}
+
+impl Default for DenovoTranscript {
+    /// All-zero/empty — NOT a real transcript, only a base for struct-update syntax (`..Default::default()`)
+    /// in call sites that specify every semantically-meaningful field explicitly.
+    fn default() -> Self {
+        DenovoTranscript {
+            tid: String::new(),
+            chrom: String::new(),
+            start: 0,
+            end: 0,
+            n_reads: 0,
+            strand: '+',
+            introns: Vec::new(),
+            seq: Vec::new(),
+            distinguishing_uniq: 0,
+        }
+    }
 }
 
 /// Tunable detection parameters (defaults mirror `denovo_families.py`).
@@ -642,7 +669,7 @@ mod tests {
             strand: '+',
             introns: introns.to_vec(),
             seq,
-        }
+         ..Default::default() }
     }
     #[test]
     fn collapse_loci_groups_maps_isoforms_to_their_gene_rep() {
