@@ -27,3 +27,1850 @@ stage = "O2"
 tier = "derived"
 kind = "derived"
 rationale = "certificate threshold alpha/(n-1), union bound over n-1 competitors"
+
+[[heuristic]]
+name = "RefineParams::min_coverage"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 2371
+value = "0.50"
+stage = "O1-edge"
+tier = "decision"
+kind = "arbitrary"
+rationale = "cov-of-shorter floor for the same edge test"
+
+
+[[heuristic]]
+name = "RefineParams::sensitive_identity"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 2377
+value = "0.60"
+stage = "O1-edge"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "ancient-paralog sensitive tier floor"
+
+
+[[heuristic]]
+name = "sensitive tier call-site literal (mismatch vs field)"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 2506
+value = "0.70"
+stage = "O1-edge"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "sensitive nucleotide_edges call passes 0.70, not the sensitive_identity=0.60 field -- surfaced mismatch"
+
+
+[[heuristic]]
+name = "protein tier fident floor"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 2465
+value = "0.50"
+stage = "O1-edge"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "batch_protein_edges fident floor for the divergent protein tier"
+
+
+[[heuristic]]
+name = "READTHROUGH_MIN_SUPPORT"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 653
+value = "2"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min read support per engulfed junction for the readthrough filter"
+
+
+[[heuristic]]
+name = "READTHROUGH_MIN_DISTINCT"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 660
+value = "5"
+stage = "pre-O1"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "distinct engulfed junctions to call single-exon transcript unspliced readthrough (data-informed, not at an observed boundary)"
+
+
+[[heuristic]]
+name = "MISCHAIN_GIANT_INTRON_BP"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 665
+value = "50_000"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "giant-intron mischain detector threshold"
+
+
+[[heuristic]]
+name = "ANTISENSE_MINORITY_DENOM"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 2869
+value = "10"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "minority-antisense-is-artifact ratio denominator"
+
+
+[[heuristic]]
+name = "CONTAIN_FRAC"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 305
+value = "0.5"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "structureless-span containment fraction for same-locus collapse"
+
+
+[[heuristic]]
+name = "RESCUE_WIN"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 1541
+value = "1_000_000"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "genomic window for thin-locus rescue candidate search"
+
+
+[[heuristic]]
+name = "GAMMA"
+file = "src/rustle/vg_family/family_definition.rs"
+line = 173
+value = "0.20"
+stage = "O1-cluster"
+tier = "decision"
+kind = "arbitrary"
+rationale = "gamma-quasi-clique internal edge density -- the family cohesion definition"
+
+
+[[heuristic]]
+name = "LOCUS_OVERLAP"
+file = "src/rustle/vg_family/family_definition.rs"
+line = 40
+value = "0.50"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "reciprocal-span overlap fraction to collapse two loci into one"
+
+
+[[heuristic]]
+name = "PURITY"
+file = "src/rustle/vg_family/family_definition.rs"
+line = 178
+value = "0.50"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "dominant-biotype purity floor -- reported not filtered"
+
+
+[[heuristic]]
+name = "CORE_MIN"
+file = "src/rustle/vg_family/driver.rs"
+line = 51
+value = "0.19"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "core_recip KEEP threshold"
+
+
+[[heuristic]]
+name = "ALN_MIN"
+file = "src/rustle/vg_family/driver.rs"
+line = 53
+value = "0.24"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "aln_frac KEEP threshold"
+
+
+[[heuristic]]
+name = "HIGH_PRECISION_GAMMA"
+file = "src/rustle/vg_family/driver.rs"
+line = 59
+value = "0.40"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "high-precision cohesion mode gamma"
+
+
+[[heuristic]]
+name = "REPEAT_MULT_MIN"
+file = "src/rustle/vg_family/driver.rs"
+line = 63
+value = "20"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "repeat-hub gate multiplicity cut"
+
+
+[[heuristic]]
+name = "KMER (family_detect)"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 37
+value = "18"
+stage = "O1-prefilter"
+tier = "decision"
+kind = "arbitrary"
+rationale = "canonical k-mer length for the candidate-pair prefilter -- gates which pairs ever reach POA"
+
+
+[[heuristic]]
+name = "K_SHARE"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 49
+value = "6"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min co-owned informative k-mers to propose a candidate pair"
+
+
+[[heuristic]]
+name = "T_CORE (family_detect)"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 39
+value = "0.13"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "detect-edge core coverage floor -- legacy detect path, no shipped caller"
+
+
+[[heuristic]]
+name = "LEN_CAP (family_detect)"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 41
+value = "20_000"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "POA length cap for family_detect"
+
+
+[[heuristic]]
+name = "CNT_MIN"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 43
+value = "2"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min distinct reps owning a k-mer for it to be family-informative"
+
+
+[[heuristic]]
+name = "CNT_MAX"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 45
+value = "40"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "pervasive-kmer cap (mobile-element/repeat guard)"
+
+
+[[heuristic]]
+name = "PAIR_CAP"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 47
+value = "40"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "inverted-index bucket size cap (cost guard)"
+
+
+[[heuristic]]
+name = "MAX_PAIRS"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 51
+value = "8_000_000"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "hard cap on generated candidate pairs"
+
+
+[[heuristic]]
+name = "COLLAPSE_CONTAIN_FRAC"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 54
+value = "0.5"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "containment fraction for adjacent-paralog collapse"
+
+
+[[heuristic]]
+name = "COLLAPSE_SPAN_CORE"
+file = "src/rustle/vg_family/family_detect.rs"
+line = 58
+value = "0.50"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "span-core floor for collapse, above T_CORE=0.13"
+
+
+[[heuristic]]
+name = "KMER (family_rescue)"
+file = "src/rustle/vg_family/family_rescue.rs"
+line = 35
+value = "18"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "canonical k-mer length for thin-locus rescue prefilter"
+
+
+[[heuristic]]
+name = "K_RESCUE"
+file = "src/rustle/vg_family/family_rescue.rs"
+line = 46
+value = "20"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "shared k-mer floor to admit a rescue candidate"
+
+
+[[heuristic]]
+name = "T_CORE (family_rescue)"
+file = "src/rustle/vg_family/family_rescue.rs"
+line = 41
+value = "0.13"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "POA contiguous-core coverage floor for rescue"
+
+
+[[heuristic]]
+name = "LEN_CAP (family_rescue)"
+file = "src/rustle/vg_family/family_rescue.rs"
+line = 50
+value = "9000"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "POA length cap for rescue -- differs from family_detect's 20000"
+
+
+[[heuristic]]
+name = "MINIMIZER_K"
+file = "src/rustle/vg_family/minimizers.rs"
+line = 35
+value = "15"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "minimizer k-mer length"
+
+
+[[heuristic]]
+name = "MINIMIZER_W"
+file = "src/rustle/vg_family/minimizers.rs"
+line = 37
+value = "10"
+stage = "O1-prefilter"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "minimizer window size"
+
+
+[[heuristic]]
+name = "FAMILY_MERGE_JACCARD_DEFAULT"
+file = "src/rustle/vg_family/family_graph.rs"
+line = 266
+value = "0.30"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "Jaccard merge threshold -- FamilyGraph module is dead, no shipped caller"
+
+
+[[heuristic]]
+name = "WIRED_MULT_MIN"
+file = "src/rustle/vg_family/multi_repeat_bridge.rs"
+line = 65
+value = "8"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "wired-node repeat multiplicity floor"
+
+
+[[heuristic]]
+name = "WIRED_COUNT_MIN"
+file = "src/rustle/vg_family/multi_repeat_bridge.rs"
+line = 68
+value = "2"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min wired nodes to cut a bridge"
+
+
+[[heuristic]]
+name = "MAX_MEMBERS"
+file = "src/rustle/vg_family/multi_repeat_bridge.rs"
+line = 71
+value = "30"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "family-size cap for the O(n^2 exon) tensor -- tier CONFIRMED by Task 5 measurement"
+
+
+[[heuristic]]
+name = "MAX_LOCI"
+file = "src/rustle/vg_family/recombinant_split.rs"
+line = 55
+value = "60"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "member-count cap for recombinant-split scan -- tier CONFIRMED by Task 5 measurement"
+
+
+[[heuristic]]
+name = "M_OP"
+file = "src/rustle/vg_family/repeat_catalog.rs"
+line = 44
+value = "5"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "library-free repeat-node multiplicity operating threshold"
+
+
+[[heuristic]]
+name = "DEMOTE_BAL_MIN"
+file = "src/rustle/vg_family/edge_oracle.rs"
+line = 42
+value = "0.90"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "minor-allele balance floor for the DEMOTE conjunct"
+
+
+[[heuristic]]
+name = "DEMOTE_COPY_MAX"
+file = "src/rustle/vg_family/edge_oracle.rs"
+line = 48
+value = "0.10"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "copy_like ceiling for the DEMOTE conjunct"
+
+
+[[heuristic]]
+name = "MIN_DECOMP"
+file = "src/rustle/vg_family/family_split.rs"
+line = 19
+value = "6"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min community size to attempt Louvain decomposition"
+
+
+[[heuristic]]
+name = "RESOLUTION"
+file = "src/rustle/vg_family/family_split.rs"
+line = 21
+value = "1.0"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "Louvain resolution parameter"
+
+
+[[heuristic]]
+name = "WEB_MIN_SIZE"
+file = "src/rustle/vg_family/family_split.rs"
+line = 23
+value = "10"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min community size to flag a homology web"
+
+
+[[heuristic]]
+name = "WEB_MAX_DENSITY"
+file = "src/rustle/vg_family/family_split.rs"
+line = 35
+value = "0.30"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "max density to flag a sparse homology web"
+
+
+[[heuristic]]
+name = "ID_THRESH"
+file = "src/rustle/vg_family/bridge_detector.rs"
+line = 66
+value = "0.70"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "exon-pair identity floor for a bridge hit"
+
+
+[[heuristic]]
+name = "MIN_EXON"
+file = "src/rustle/vg_family/bridge_detector.rs"
+line = 68
+value = "30"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min exon length considered for bridge scanning"
+
+
+[[heuristic]]
+name = "COLINEAR_COV"
+file = "src/rustle/vg_family/bridge_detector.rs"
+line = 70
+value = "0.60"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "colinear coverage floor for subfamily dominance"
+
+
+[[heuristic]]
+name = "SegdupParams::window"
+file = "src/rustle/vg_family/segdup.rs"
+line = 103
+value = "window: 50"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "flank homology scan window (bp)"
+
+
+[[heuristic]]
+name = "SegdupParams::min_identity"
+file = "src/rustle/vg_family/segdup.rs"
+line = 103
+value = "min_identity: 0.70"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "windowed identity floor for the segdup scan"
+
+
+[[heuristic]]
+name = "SegdupParams::min_segdup_flank"
+file = "src/rustle/vg_family/segdup.rs"
+line = 103
+value = "min_segdup_flank: 500"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "total flank homology to call a segdup vs bare paralog"
+
+
+[[heuristic]]
+name = "SegdupParams::min_each_flank"
+file = "src/rustle/vg_family/segdup.rs"
+line = 103
+value = "min_each_flank: 50"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min homology required on EACH flank side"
+
+
+[[heuristic]]
+name = "SegdupParams::band"
+file = "src/rustle/vg_family/segdup.rs"
+line = 103
+value = "band: 30"
+stage = "O1-cluster"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "max flank indel (bp) the banded homology scan tolerates"
+
+
+[[heuristic]]
+name = "ConflictParams::delta (default)"
+file = "src/rustle/vg_family/read_conflict.rs"
+line = 63
+value = "delta: 0.005"
+stage = "O1-count"
+tier = "decision"
+kind = "arbitrary"
+rationale = "de-tie width -- legacy fixed-delta conflict criterion"
+
+
+[[heuristic]]
+name = "ConflictParams::de_max (default)"
+file = "src/rustle/vg_family/read_conflict.rs"
+line = 63
+value = "de_max: 0.05"
+stage = "O1-count"
+tier = "decision"
+kind = "arbitrary"
+rationale = "both-fit divergence quality floor for a conflict"
+
+
+[[heuristic]]
+name = "ConflictParams::min_reads (default)"
+file = "src/rustle/vg_family/read_conflict.rs"
+line = 63
+value = "min_reads: 3"
+stage = "O1-count"
+tier = "decision"
+kind = "arbitrary"
+rationale = "min conflicting reads for a weighted conflict edge"
+
+
+[[heuristic]]
+name = "RUSTLE_CONFLICT_EPS (default)"
+file = "src/rustle/vg_family/read_conflict.rs"
+line = 80
+value = "0.001"
+stage = "O1-count"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "per-base error rate default for the significance-based de-tie -- one of 5 epsilon values in the codebase"
+
+
+[[heuristic]]
+name = "RUSTLE_CONFLICT_ALPHA (default)"
+file = "src/rustle/vg_family/read_conflict.rs"
+line = 80
+value = "1e-3"
+stage = "O1-count"
+tier = "derived"
+kind = "arbitrary"
+rationale = "significance level for the eps^delta >= alpha de-tie -- mirrors the assignment-gate certificate, not a hand-set score gap"
+
+
+[[heuristic]]
+name = "PASS1_MIN_READS"
+file = "src/rustle/vg_family/denovo_assemble.rs"
+line = 25
+value = "2"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "pass-1 skeleton read floor"
+
+
+[[heuristic]]
+name = "MAX_SPAN"
+file = "src/rustle/vg_family/denovo_assemble.rs"
+line = 29
+value = "3_000_000"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "max genomic span for a single locus"
+
+
+[[heuristic]]
+name = "MIN_SPLICED"
+file = "src/rustle/vg_family/denovo_assemble.rs"
+line = 31
+value = "100"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min spliced bp for a locus to be admitted"
+
+
+[[heuristic]]
+name = "MAX_SPLICED"
+file = "src/rustle/vg_family/denovo_assemble.rs"
+line = 33
+value = "300_000"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "max spliced bp for a locus"
+
+
+[[heuristic]]
+name = "BSIZE"
+file = "src/rustle/util/constants.rs"
+line = 4
+value = "10_000"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "prefix-sum coverage bundle block size -- assembler-inherited"
+
+
+[[heuristic]]
+name = "LONGINTRON"
+file = "src/rustle/util/constants.rs"
+line = 10
+value = "100_000"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "long-intron threshold -- assembler-inherited"
+
+
+[[heuristic]]
+name = "MISMATCHFRAC"
+file = "src/rustle/util/constants.rs"
+line = 12
+value = "0.02"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "mismatch fraction threshold -- assembler-inherited"
+
+
+[[heuristic]]
+name = "LOWCOV"
+file = "src/rustle/util/constants.rs"
+line = 14
+value = "1.5"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "low coverage threshold -- assembler-inherited"
+
+
+[[heuristic]]
+name = "SSERROR"
+file = "src/rustle/util/constants.rs"
+line = 16
+value = "25"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "splice-site error tolerance window -- assembler-inherited"
+
+
+[[heuristic]]
+name = "FLOW_EPSILON"
+file = "src/rustle/util/constants.rs"
+line = 18
+value = "1e-6"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "global floating epsilon for merge DP -- assembler-inherited"
+
+
+[[heuristic]]
+name = "ISO_STRICT"
+file = "src/rustle/types.rs"
+line = 1117
+value = "0.025"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "strict isoform-fraction floor"
+
+
+[[heuristic]]
+name = "ISO"
+file = "src/rustle/types.rs"
+line = 1133
+value = "0.01"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "isoform-fraction floor"
+
+
+[[heuristic]]
+name = "LOW_ISO"
+file = "src/rustle/types.rs"
+line = 1134
+value = "0.02"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "low isoform-fraction floor"
+
+
+[[heuristic]]
+name = "per_splice_site_isofrac (max clamp)"
+file = "src/rustle/types.rs"
+line = 1158
+value = "1.0"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "benchmark-tuned per-splice-site isofrac clamp"
+
+
+[[heuristic]]
+name = "POLYA_MIN_CONSEC"
+file = "src/rustle/bam.rs"
+line = 367
+value = "5"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min consecutive A/T bases to call a polyA run"
+
+
+[[heuristic]]
+name = "POLYA_WINDOW"
+file = "src/rustle/bam.rs"
+line = 368
+value = "20"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "polyA scan window size"
+
+
+[[heuristic]]
+name = "POLYA_MIN_FRAC"
+file = "src/rustle/bam.rs"
+line = 369
+value = "0.8"
+stage = "pre-O1"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min A/T fraction within the polyA window"
+
+
+[[heuristic]]
+name = "AssignParams::alpha (default)"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 213
+value = "1e-3"
+stage = "O2"
+tier = "decision"
+kind = "arbitrary"
+rationale = "IsoCon significance level -- the production assignment gate"
+
+
+[[heuristic]]
+name = "Poisson-binomial DP step"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 161
+value = "from_prev"
+stage = "O2"
+tier = "derived"
+kind = "derived"
+rationale = "exact O(n^2) Poisson-binomial convolution used for the significance certificate"
+
+
+[[heuristic]]
+name = "tau_from_p"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 134
+value = "p).ln()"
+stage = "O2"
+tier = "derived"
+kind = "derived"
+rationale = "Bayes-optimal log-LR decision threshold tau(p) = ln((1-p)/p)"
+
+
+[[heuristic]]
+name = "p_from_tau"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 139
+value = "tau.exp()"
+stage = "O2"
+tier = "derived"
+kind = "derived"
+rationale = "inverse of tau_from_p -- misassignment rate implied by a margin tau"
+
+
+[[heuristic]]
+name = "AssignParams::error_rate (default)"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 209
+value = "0.003"
+stage = "O2"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "per-base PSV error rate used in the likelihood (HiFi ~0.003) -- one of 5 epsilon values in the codebase"
+
+
+[[heuristic]]
+name = "AssignParams::junction_weight (default)"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 210
+value = "5.0"
+stage = "O2"
+tier = "decision"
+kind = "arbitrary"
+rationale = "per-junction log-odds contribution to the assignment likelihood"
+
+
+[[heuristic]]
+name = "AssignParams::boundary_tol (default)"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 211
+value = "4"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "junction-boundary match tolerance (bp)"
+
+
+[[heuristic]]
+name = "AssignParams::junction_err (default)"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 214
+value = "1e-4"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "per-distinguishing-junction error probability"
+
+
+[[heuristic]]
+name = "AssignParams::margin (default, legacy)"
+file = "src/rustle/vg_family/copy_assign.rs"
+line = 212
+value = "2.0"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "legacy log-LR margin gate -- inert by default, only used under use_margin_gate"
+
+
+[[heuristic]]
+name = "QUANT_ERROR"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 948
+value = "0.01"
+stage = "O2"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "per-base error rate for soft EM quantification -- epsilon inconsistency vs the 0.003 assignment default"
+
+
+[[heuristic]]
+name = "PSV_MIN_ALLELE_READS"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 634
+value = "2"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min reads per allele for a read-supported PSV column"
+
+
+[[heuristic]]
+name = "PSV_MIN_JUDGE_COV"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 638
+value = "4"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min total coverage to judge a PSV column read-supported"
+
+
+[[heuristic]]
+name = "EDIT_MIN_FRAC"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 1009
+value = "0.05"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min minor-allele fraction to flag an A-to-I editing site"
+
+
+[[heuristic]]
+name = "EDIT_MIN_READS"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 1010
+value = "2"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min minor-allele reads to flag an editing site"
+
+
+[[heuristic]]
+name = "GAP_OPEN"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 259
+value = "32"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "banded Gotoh affine DP gap-open penalty"
+
+
+[[heuristic]]
+name = "GAP_EXT"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 260
+value = "1"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "banded Gotoh affine DP gap-extend penalty"
+
+
+[[heuristic]]
+name = "MISMATCH"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 261
+value = "1"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "banded Gotoh affine DP mismatch penalty"
+
+
+[[heuristic]]
+name = "PSV_BAND_MARGIN"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 405
+value = "1024"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "adaptive band slack over |len_a-len_b| for the PSV aligner"
+
+
+[[heuristic]]
+name = "POA_CAP"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 524
+value = "20_000"
+stage = "O2"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "poasta vs minimap2 engine-swap crossover -- poasta is exact O(n^2), above this a different engine runs"
+
+
+[[heuristic]]
+name = "MAX_CONV_SITES"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 932
+value = "300"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "PSV site cap for the convergence/stride-sample scan"
+
+
+[[heuristic]]
+name = "MOSAIC_EPS"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 1401
+value = "0.01"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "HiFi per-base error for the mosaic likelihood"
+
+
+[[heuristic]]
+name = "MAX_MOSAIC_SITES"
+file = "src/rustle/vg_family/copy_assign_pipeline.rs"
+line = 1402
+value = "250"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "PSV site cap for detect_mosaic (O(sites^2))"
+
+
+[[heuristic]]
+name = "READ_CAP"
+file = "src/rustle/vg_family/o2_materialize.rs"
+line = 250
+value = "6000"
+stage = "O2"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "read pool truncation cap by BAM order -- silently drops reads past this on dense loci"
+
+
+[[heuristic]]
+name = "OVERLAP_MERGE"
+file = "src/rustle/vg_family/o2_materialize.rs"
+line = 53
+value = "0.5"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "reciprocal overlap fraction to merge copy regions"
+
+
+[[heuristic]]
+name = "PAD"
+file = "src/rustle/vg_family/o2_materialize.rs"
+line = 244
+value = "2000"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "fetch padding around a copy region"
+
+
+[[heuristic]]
+name = "MIN_READS_PSV"
+file = "src/rustle/vg_family/o2_materialize.rs"
+line = 425
+value = "3"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min read support for a materialized PSV column"
+
+
+[[heuristic]]
+name = "GENOME_WIDE_EPS_AMB"
+file = "src/rustle/vg_family/collapse_gate.rs"
+line = 124
+value = "0.001313"
+stage = "O2"
+tier = "result-guard"
+kind = "derived"
+rationale = "background MAPQ-0 ambiguity rate measured on GGO_mm.bam only -- hard-coded default, single-sample"
+
+
+[[heuristic]]
+name = "HiddenCopyParams::balanced_lo (default)"
+file = "src/rustle/vg_family/hidden_copy.rs"
+line = 40
+value = "0.20"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min alt-allele fraction for a candidate het-firewall column"
+
+
+[[heuristic]]
+name = "HiddenCopyParams::balanced_hi (default)"
+file = "src/rustle/vg_family/hidden_copy.rs"
+line = 41
+value = "0.60"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "max alt-allele fraction for a candidate column"
+
+
+[[heuristic]]
+name = "HiddenCopyParams::min_depth (default)"
+file = "src/rustle/vg_family/hidden_copy.rs"
+line = 42
+value = "8"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min coverage at a candidate column"
+
+
+[[heuristic]]
+name = "HiddenCopyParams::min_alt_positions (default)"
+file = "src/rustle/vg_family/hidden_copy.rs"
+line = 43
+value = "12"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min candidate columns to call a hidden copy (het firewall)"
+
+
+[[heuristic]]
+name = "HiddenCopyParams::min_alt_reads (default)"
+file = "src/rustle/vg_family/hidden_copy.rs"
+line = 44
+value = "5"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min reads in the alt haplotype"
+
+
+[[heuristic]]
+name = "HiddenCopyParams::share_hi (default)"
+file = "src/rustle/vg_family/hidden_copy.rs"
+line = 45
+value = "0.60"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "alt-column fraction for a read to join the hidden haplotype"
+
+
+[[heuristic]]
+name = "MosaicParams::min_decisive_sites (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 81
+value = "6"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min decisive sites, else LowPower"
+
+
+[[heuristic]]
+name = "MosaicParams::min_tract_sites (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 82
+value = "3"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min agreeing decisive sites per flank"
+
+
+[[heuristic]]
+name = "MosaicParams::min_improvement (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 83
+value = "3"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min extra decisive sites the split must explain"
+
+
+[[heuristic]]
+name = "MosaicParams::min_seg_purity (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 84
+value = "0.85"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "per-tract agreement fraction floor"
+
+
+[[heuristic]]
+name = "MosaicParams::max_ambig_frac (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 85
+value = "0.5"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "ambiguous-read fraction ceiling, else NonIdentifiable"
+
+
+[[heuristic]]
+name = "MosaicParams::alpha_target (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 86
+value = "0.01"
+stage = "O2"
+tier = "derived"
+kind = "arbitrary"
+rationale = "target per-read FPR, Bonferroni-corrected internally"
+
+
+[[heuristic]]
+name = "MosaicParams::bic_penalty_coeff (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 87
+value = "2.0"
+stage = "O2"
+tier = "derived"
+kind = "arbitrary"
+rationale = "BIC model-complexity penalty coefficient on ln(S)"
+
+
+[[heuristic]]
+name = "MosaicParams::eps_floor (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 88
+value = "0.005"
+stage = "O2"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "lower clamp on per-read error rate -- one of 5 epsilon values in the codebase"
+
+
+[[heuristic]]
+name = "MosaicParams::eps_cap (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 89
+value = "0.05"
+stage = "O2"
+tier = "result-guard"
+kind = "arbitrary"
+rationale = "upper clamp / fail-safe per-read error rate -- one of 5 epsilon values in the codebase"
+
+
+[[heuristic]]
+name = "MosaicParams::family_min_supporting_reads (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 90
+value = "3"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min molecules to confirm a mosaic breakpoint cluster"
+
+
+[[heuristic]]
+name = "MosaicParams::breakpoint_tol (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 91
+value = "50"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "breakpoint clustering tolerance (bp)"
+
+
+[[heuristic]]
+name = "MosaicParams::max_breakpoint_dispersion (default)"
+file = "src/rustle/vg_family/mosaic.rs"
+line = 92
+value = "50"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "max breakpoint cluster dispersion (bp)"
+
+
+[[heuristic]]
+name = "MIN_INFO"
+file = "src/rustle/vg_family/recombinant_abstain.rs"
+line = 49
+value = "4"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min spanned informative sites to attempt recombinant classification"
+
+
+[[heuristic]]
+name = "MIN_ARM"
+file = "src/rustle/vg_family/recombinant_abstain.rs"
+line = 52
+value = "2"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min sites per arm of a candidate recombination breakpoint"
+
+
+[[heuristic]]
+name = "MIN_FLANK"
+file = "src/rustle/vg_family/recombinant_abstain.rs"
+line = 55
+value = "2"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min flank sites on each side of a tract"
+
+
+[[heuristic]]
+name = "MIN_TRACT"
+file = "src/rustle/vg_family/recombinant_abstain.rs"
+line = 58
+value = "2"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min sites within a recombination tract (else a point event)"
+
+
+[[heuristic]]
+name = "MIN_SINGLE_MM"
+file = "src/rustle/vg_family/recombinant_abstain.rs"
+line = 61
+value = "2"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min mismatches vs any single copy to call recombinant"
+
+
+[[heuristic]]
+name = "IMPURITY_MAX"
+file = "src/rustle/vg_family/recombinant_abstain.rs"
+line = 64
+value = "1"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "max impurity to attempt a recombinant split"
+
+
+[[heuristic]]
+name = "ALLELE_SUPPORT_ABS"
+file = "src/rustle/vg_family/recombinant_abstain.rs"
+line = 67
+value = "3"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "absolute read-count floor for allele support"
+
+
+[[heuristic]]
+name = "ALLELE_SUPPORT_FRAC"
+file = "src/rustle/vg_family/recombinant_abstain.rs"
+line = 69
+value = "0.02"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "fractional read-count floor for allele support"
+
+
+[[heuristic]]
+name = "--em-max-iter (default)"
+file = "src/bin/copy_assign.rs"
+line = 262
+value = "500"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "max E/M sweeps for --em soft quantification"
+
+
+[[heuristic]]
+name = "--em-eps (default)"
+file = "src/bin/copy_assign.rs"
+line = 265
+value = "1e-6"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "E/M convergence tolerance for --em"
+
+
+[[heuristic]]
+name = "FLOOR (consistent-zone posterior)"
+file = "src/bin/copy_assign.rs"
+line = 1025
+value = "0.01"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "posterior floor for a copy to be in the consistent zone"
+
+
+[[heuristic]]
+name = "--win (default)"
+file = "src/bin/copy_assign.rs"
+line = 111
+value = "5_000_000"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "co-located window (bp) for a family scan"
+
+
+[[heuristic]]
+name = "--min-copies (default)"
+file = "src/bin/copy_assign.rs"
+line = 108
+value = "2"
+stage = "O2"
+tier = "decision"
+kind = "arbitrary"
+rationale = "minimum copies for a co-located family -- lowering 3->2 changed default family detection on its own"
+
+
+[[heuristic]]
+name = "--as-ratio (default)"
+file = "src/bin/copy_assign.rs"
+line = 149
+value = "0.98"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "AS-tie ratio for --recover-copies secondary rescue"
+
+
+[[heuristic]]
+name = "--margin (default)"
+file = "src/bin/copy_assign.rs"
+line = 166
+value = "6.9"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "CLI decisive-margin default (tau ~ p=1e-3), legacy A/B knob -- production gate uses the IsoCon certificate"
+
+
+[[heuristic]]
+name = "MIN_ALN_ID"
+file = "src/rustle/vg_family/vg_realign.rs"
+line = 205
+value = "0.5"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min alignment identity for a realign fit to count"
+
+
+[[heuristic]]
+name = "RealignParams::max_mapq (default)"
+file = "src/rustle/vg_family/vg_realign.rs"
+line = 189
+value = "max_mapq: 20"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "MAPQ ceiling for a realign candidate"
+
+
+[[heuristic]]
+name = "RealignParams::min_clip_frac (default)"
+file = "src/rustle/vg_family/vg_realign.rs"
+line = 189
+value = "min_clip_frac: 0.20"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "clip-fraction floor for a realign candidate"
+
+
+[[heuristic]]
+name = "RealignParams::min_div (default)"
+file = "src/rustle/vg_family/vg_realign.rs"
+line = 189
+value = "min_div: 0.05"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "divergence floor for a realign candidate"
+
+
+[[heuristic]]
+name = "RealignParams::min_reads (default)"
+file = "src/rustle/vg_family/vg_realign.rs"
+line = 189
+value = "min_reads: 3"
+stage = "O2"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min reads for a realign/pool_novel cluster"
+
+
+[[heuristic]]
+name = "pool_novel min_id call site"
+file = "src/rustle/vg_family/vg_realign.rs"
+line = 640
+value = "0.9"
+stage = "O4"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "identity floor to admit a novel-candidate cluster"
+
+
+[[heuristic]]
+name = "AsjParams::d_min (default)"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 29
+value = "d_min: 12"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "anchor SNP min depth"
+
+
+[[heuristic]]
+name = "AsjParams::c_min (default)"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 29
+value = "c_min: 5"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "anchor SNP min reads per allele"
+
+
+[[heuristic]]
+name = "AsjParams::bal_lo (default)"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 29
+value = "bal_lo: 0.35"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "anchor balanced-window minor-allele floor"
+
+
+[[heuristic]]
+name = "AsjParams::bal_hi (default)"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 29
+value = "bal_hi: 0.65"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "anchor balanced-window major-allele ceiling"
+
+
+[[heuristic]]
+name = "AsjParams::min_j (default)"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 29
+value = "min_j: 3"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min junction observations to test it"
+
+
+[[heuristic]]
+name = "AsjParams::min_span (default)"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 29
+value = "min_span: 5"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min spanning reads per allele to test a junction"
+
+
+[[heuristic]]
+name = "AsjParams::dpsi (default)"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 29
+value = "dpsi: 0.30"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "effect-size floor, |delta PSI|"
+
+
+[[heuristic]]
+name = "MAX_SNP"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 296
+value = "40"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "cap het SNPs per gene for the multi-SNP phasing scan"
+
+
+[[heuristic]]
+name = "PHASE_ITERS"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 297
+value = "6"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "phasing iteration count"
+
+
+[[heuristic]]
+name = "AGREE"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 298
+value = "0.80"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "read-hap agreement fraction to call a read confidently phased"
+
+
+[[heuristic]]
+name = "PSI saturation high"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 178
+value = "psi_x >= 0.98"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "PSI saturation ceiling -- both alleles near-constitutive skips the test"
+
+
+[[heuristic]]
+name = "PSI saturation low"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 178
+value = "psi_x <= 0.02"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "PSI saturation floor -- both alleles near-excluded skips the test"
+
+
+[[heuristic]]
+name = "lgamma"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 236
+value = "fn lgamma"
+stage = "O3"
+tier = "derived"
+kind = "derived"
+rationale = "log-gamma numerics backing the exact binomial/Fisher significance test"
+
+
+[[heuristic]]
+name = "bh_fdr"
+file = "src/rustle/vg_family/allele_specific_junctions.rs"
+line = 217
+value = "fn bh_fdr"
+stage = "O3"
+tier = "derived"
+kind = "derived"
+rationale = "Benjamini-Hochberg FDR correction over tested junctions"
+
+
+[[heuristic]]
+name = "--dpsi (default)"
+file = "src/bin/asj.rs"
+line = 31
+value = "0.30"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "CLI effect-size floor default"
+
+
+[[heuristic]]
+name = "--q (default)"
+file = "src/bin/asj.rs"
+line = 34
+value = "0.05"
+stage = "O3"
+tier = "derived"
+kind = "arbitrary"
+rationale = "BH-FDR significance level"
+
+
+[[heuristic]]
+name = "MQ0_THR"
+file = "src/rustle/vg_family/asj_verify.rs"
+line = 63
+value = "0.10"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "MAPQ-0 fraction floor for unique-mapping classification"
+
+
+[[heuristic]]
+name = "PROX"
+file = "src/rustle/vg_family/asj_verify.rs"
+line = 67
+value = "100"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "anchor-to-junction proximity plausibility window (bp)"
+
+
+[[heuristic]]
+name = "CAP"
+file = "src/rustle/vg_family/asj_verify.rs"
+line = 71
+value = "600"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "read-scan cap per anchor"
+
+
+[[heuristic]]
+name = "SOR_KEEP"
+file = "src/rustle/vg_family/asj_strand_bias.rs"
+line = 49
+value = "3.0"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "strand-odds-ratio keep threshold"
+
+
+[[heuristic]]
+name = "SOR_STRICT"
+file = "src/rustle/vg_family/asj_strand_bias.rs"
+line = 53
+value = "2.0"
+stage = "O3"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "strand-odds-ratio strict threshold"
+
+
+[[heuristic]]
+name = "AbsentCopyParams::error_rate (default)"
+file = "src/rustle/vg_family/absent_copy.rs"
+line = 51
+value = "0.003"
+stage = "O4"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "per-base error rate for the reference-absent significance certificate"
+
+
+[[heuristic]]
+name = "AbsentCopyParams::alpha (default)"
+file = "src/rustle/vg_family/absent_copy.rs"
+line = 52
+value = "1e-3"
+stage = "O4"
+tier = "inert-guard"
+kind = "derived"
+rationale = "significance level -- reuses the SAME Poisson-binomial certificate as copy_assign.rs (Assign consequence)"
+
+
+[[heuristic]]
+name = "AbsentCopyParams::min_clusters (default)"
+file = "src/rustle/vg_family/absent_copy.rs"
+line = 53
+value = "3"
+stage = "O4"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "min co-varying clusters for a multi-copy call"
+
+
+[[heuristic]]
+name = "AbsentCopyParams::remap_max_identity (default)"
+file = "src/rustle/vg_family/absent_copy.rs"
+line = 54
+value = "0.98"
+stage = "O4"
+tier = "inert-guard"
+kind = "arbitrary"
+rationale = "genome remap identity ceiling for admission"
+
+
+[[heuristic]]
+name = "linearize_certificate n_decoys (call site)"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 1341
+value = "20"
+stage = "O4"
+tier = "derived"
+kind = "derived"
+rationale = "dinucleotide-shuffle decoy count for the augment-and-linearize permutation test"
+
+
+[[heuristic]]
+name = "linearize_certificate alpha (call site)"
+file = "src/rustle/vg_family/denovo_pipeline.rs"
+line = 1341
+value = "0.05"
+stage = "O4"
+tier = "derived"
+kind = "derived"
+rationale = "permutation p-value threshold for the Linearizes verdict"
