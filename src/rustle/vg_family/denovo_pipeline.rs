@@ -2936,8 +2936,11 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<D
             let collapse = if a.strand == b.strand {
                 // χ(H): collapse only when NO read distinguishes them (true K=0). The PSV/junction leg is
                 // not wired here (no per-copy PSV/junction evidence reaches this merge point) — the
-                // unique-mapper leg alone is the fix for the flagged over-merge cases.
-                !reads_distinguish(a.distinguishing_uniq, b.distinguishing_uniq, /*shared_psv_or_junction=*/false, min_reads)
+                // unique-mapper leg alone is the fix for the flagged over-merge cases. `min_reads.max(1)`:
+                // distinguishability requires at least 1 unique read, so a misconfigured
+                // `RUSTLE_CONFLICT_MIN_READS=0` can never flip `reads_distinguish(0, 0, false, 0)` to `true`
+                // and invert this guard into "nothing ever merges" (see `ConflictParams::from_env`).
+                !reads_distinguish(a.distinguishing_uniq, b.distinguishing_uniq, /*shared_psv_or_junction=*/false, min_reads.max(1))
             } else {
                 let (lo, hi) = (a.n_reads.min(b.n_reads), a.n_reads.max(b.n_reads));
                 lo.saturating_mul(ANTISENSE_MINORITY_DENOM) < hi // minority antisense = artifact
@@ -4184,6 +4187,20 @@ mod tests {
         let b = rep("chrX", 150, 250);
         let loci = distinct_locus_reps(vec![a, b], 3);
         assert_eq!(loci.len(), 1, "indistinguishable co-located copies still merge (K=0)");
+    }
+
+    #[test]
+    fn distinct_locus_reps_min_reads_zero_still_merges_indistinguishable() {
+        // Hardening: `RUSTLE_CONFLICT_MIN_READS=0` must not invert the merge guard.
+        // `reads_distinguish(0, 0, false, 0)` would be `0 >= 0` = true (spuriously "distinguishable"),
+        // so `distinct_locus_reps` clamps `min_reads` to `.max(1)` before calling it. Two co-located
+        // same-strand copies with zero unique-mapper support must still merge to one locus, not two.
+        let mut a = DenovoTranscript { chrom: "chrX".into(), start: 100, end: 200, strand: '+', n_reads: 3, ..Default::default() };
+        a.distinguishing_uniq = 0;
+        let mut b = DenovoTranscript { chrom: "chrX".into(), start: 150, end: 250, strand: '+', n_reads: 3, ..Default::default() };
+        b.distinguishing_uniq = 0;
+        let loci = distinct_locus_reps(vec![a, b], 0);
+        assert_eq!(loci.len(), 1, "min_reads=0 must still merge indistinguishable co-located copies, not invert the guard");
     }
 
     #[test]
