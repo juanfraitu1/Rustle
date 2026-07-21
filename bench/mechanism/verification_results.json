@@ -178,6 +178,15 @@
         "outcome": "no valid deletion design -- degenerate (near-identical) PSV structure",
         "detail": "Third attempt: not in-window (median identity 0.9982, above the 0.979 ceiling) but the structurally cleanest candidate in the whole catalog scan -- 7 catalogued copies in a 93kb span, all 21 pairwise comparisons aligned (unlike GWFAM227's 1/3), included as a robustness check on the RBMY1 finding at a different, non-overlapping chrY-adjacent locus (NC_073247.2). copy_assign on the intact reference found n_copies_supported=8 (even more than the catalog's 7). pick_deletion_design found NO valid host+2-hidden design at all -- no pair of copies is each strictly closer (by PSV-allele identity) to one surviving host than to every other surviving copy, i.e. the copies are too PSV-identical to reads cleanly pool onto one 'host'. This is the near-identical/K=0-adjacent regime already characterized for TSPY and RBMY1: at >=99.8% catalog-level identity, PSV columns barely distinguish copies, so even the *design* step (before any degradation or gate) fails, not just the remap-identity gate."
       }
-    ]
+    ],
+    "salvage_6c": {
+      "attempt": "GWFAM382 re-score vs intact-run detected alleles (bypass catalog annotation)",
+      "outcome": "NEGATIVE \u2014 locus is pathological, not a clean recovery",
+      "n_copies_intact": 4,
+      "recovered": false,
+      "identity_to_intact": 0.394,
+      "root_cause": "One of GWFAM382's 4 detected copies is a ~492kb readthrough/mis-chain artifact (intact run: 'mis-chain filter dropped 2 transcripts with giant intron >50000bp'). Masking that copy's 492kb span to build the degraded reference corrupts it: degraded run detects 8 copies from a 4-copy family with 21 DuplicateLocus warnings. Even a clean 2.3kb-body mask would compare against a copy set contaminated by the readthrough artifact. Locus is unsuitable for a clean removal-recovery demo AND a liability to present (492kb 'copy').",
+      "conclusion": "No clean positive real-gorilla recovery exists in this dataset: the recoverable identity window [0.96,0.979] holds only 2/24 co-located families, and the one that fired admission (GWFAM382) is structurally pathological. The identifiability theorem (MCC=chi(H)) explains this as the expected frontier behavior, not a method defect."
+    }
   }
 }
