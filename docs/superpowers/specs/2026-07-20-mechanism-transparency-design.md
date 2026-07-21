@@ -224,10 +224,48 @@ Any guard that fires on a Soto family is reclassified `result-guard` and flagged
 affected Soto loci with the guard at its default vs relaxed, and report the delta in family
 count / copy count / assignment md5. Report the truth, whatever it is.
 
+**V4 — Tandem removal-recovery positive control (the headline evidence for §0's "consequence
+of Assign" claim, and a figure in the artifact).** Ground-truth demonstration that a copy
+deleted from the reference is put back by the *same* certificate — no copy-finder added. This
+is the inverse of the existing `linearize` certificate (linearize folds a copy IN and asks "do
+reads go unique?"; this pulls a copy OUT and asks "do the leftover reads point back to it?").
+
+*Evaluation is permutation-invariant set matching:* a family is a **set** of copies (paths),
+so each recovered copy is matched to its nearest ground-truth copy; recovering
+{copy1, copy3, copy2} for {copy1, copy2, copy3} is a perfect recovery. Report copy-**number**
+recovery and per-copy **sequence** identity to the deleted copy. "Linear combination of the
+overhangs" is realized as: the column-wise pileup on the surviving copies is a superposition of
+each true copy's contribution; the recovered copy is the residual addend the survivors do not
+explain at significance (deconvolution), reconstructed as the consensus of the reads carrying
+that residual.
+
+- **V4a — Simulation (airtight feasibility proof; same individual by construction).** Plant a
+  3-copy tandem array from a real seed, with **controlled divergence** (PSVs at known
+  positions) and **shared splice structure** (repo pitfall: identical copies fabricate
+  junctions → plant shared donors/acceptors + reverse-complement where relevant). Simulate
+  HiFi/IsoSeq reads from all three; align with the project preset (`-N 50`, splice for RNA;
+  **not** `--secondary=no`, which yields 0 families). Delete one copy, then two; recover;
+  set-match against the planted copies. **Second sub-arm — the honest floor:** three
+  *identical* copies (no PSVs) ⇒ recover copy-**number** correctly but **abstain** on separable
+  sequence (the K=0 identifiability floor). Both sub-arms shipped; the floor is shown, not
+  hidden — it is the strongest evidence the method claims only what the data support.
+- **V4b — Real (gorilla A119b IsoSeq; the biological credibility the advisor requires).**
+  Substrate: a real Soto tandem family (co-located, ≥3 copies) on gorilla. Re-align A119b to
+  `mGorGor1` (indexed on disk). **Same-read-set ground truth (removes the cross-individual
+  confound, since A119b ≠ Kamilah):** align A119b to the *full* mGorGor1, select loci where
+  A119b's own reads support 3 divergent copies at significance; that set is the ground truth.
+  Delete a copy from the assembly, re-align the same reads, recover, compare to the intact copy.
+  Per the crash rule: per-locus, **foreground, serial, small batches**, outputs to
+  `winloci_scratch`. Downsampled `A119b_ds.bam` + region extraction keeps it light.
+
 **Success criteria:**
 - `gen_heuristics.py` passes (every registry value verified against source) and emits a table
   covering all ~200 heuristics.
 - Every `inert-guard` row has a measured observed-max justifying its tier.
+- V4 runs on both arms: simulation recovers deleted divergent copies (number + sequence, set-
+  matched) and correctly abstains on identical copies; the real gorilla arm recovers a deleted
+  copy of a Soto tandem family against same-read-set ground truth. The recovery figure is
+  embedded in the artifact's "consequence of Assign" section.
 - `rustle_mechanism.html` **leads with §0** (the two-sentence method + the one reused
   certificate + the two consequences), then renders the five-stage spine (primary number +
   file:line per stage, subordinate to §0), the "two mechanisms and their consequences, not four
@@ -248,6 +286,7 @@ count / copy count / assignment md5. Report the truth, whatever it is.
 | `gen_heuristics.py` | verify registry vs source, emit table | toml + src/ | `heuristics.tsv`, exit code | Python stdlib only |
 | `rustle_mechanism.html` | the legible single method | `heuristics.tsv` (embedded at build) | the artifact | gen output |
 | Soto verification | back the tiering with real data | Soto BAM/regions | observed-max per guard | mounted disk, built binaries |
+| V4 tandem recovery | ground-truth proof of "absent copy = consequence of Assign" | simulated array + gorilla A119b/mGorGor1 | recovery figure (number + set-matched sequence id) | mounted disk, minimap2, certificate binaries |
 
 Each is independently checkable: the generator has a pass/fail exit; the HTML is a static
 render of a known TSV; the verification is a set of measured numbers.
