@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420" font-family="Helvetica,Arial,sans-serif">
+  <rect x="0" y="0" width="640" height="420" fill="white" />
+  <text x="320.0" y="18" font-size="15" text-anchor="middle" font-weight="bold">Identity-gradient frontier (V4c)</text>
+  <g>
+    <line x1="70" y1="360.0" x2="610" y2="360.0" stroke="#ddd" stroke-width="1" /><text x="62" y="364.0" font-size="11" text-anchor="end" fill="#555">0.0</text>
+    <line x1="70" y1="277.5" x2="610" y2="277.5" stroke="#ddd" stroke-width="1" /><text x="62" y="281.5" font-size="11" text-anchor="end" fill="#555">0.2</text>
+    <line x1="70" y1="195.0" x2="610" y2="195.0" stroke="#ddd" stroke-width="1" /><text x="62" y="199.0" font-size="11" text-anchor="end" fill="#555">0.5</text>
+    <line x1="70" y1="112.5" x2="610" y2="112.5" stroke="#ddd" stroke-width="1" /><text x="62" y="116.5" font-size="11" text-anchor="end" fill="#555">0.8</text>
+    <line x1="70" y1="30.0" x2="610" y2="30.0" stroke="#ddd" stroke-width="1" /><text x="62" y="34.0" font-size="11" text-anchor="end" fill="#555">1.0</text>
+    <line x1="156.4" y1="30" x2="156.4" y2="360" stroke="#eee" stroke-width="1" /><text x="156.4" y="378" font-size="11" text-anchor="middle" fill="#555">90.0%</text>
+    <line x1="329.2" y1="30" x2="329.2" y2="360" stroke="#eee" stroke-width="1" /><text x="329.2" y="378" font-size="11" text-anchor="middle" fill="#555">94.0%</text>
+    <line x1="415.6" y1="30" x2="415.6" y2="360" stroke="#eee" stroke-width="1" /><text x="415.6" y="378" font-size="11" text-anchor="middle" fill="#555">96.0%</text>
+    <line x1="502.0" y1="30" x2="502.0" y2="360" stroke="#eee" stroke-width="1" /><text x="502.0" y="378" font-size="11" text-anchor="middle" fill="#555">98.0%</text>
+    <line x1="588.4" y1="30" x2="588.4" y2="360" stroke="#eee" stroke-width="1" /><text x="588.4" y="378" font-size="11" text-anchor="middle" fill="#555">100.0%</text>
+    <line x1="70" y1="30" x2="70" y2="360" stroke="#333" stroke-width="1.5" />
+    <line x1="70" y1="360" x2="610" y2="360" stroke="#333" stroke-width="1.5" />
+    <text x="340.0" y="410" font-size="12" text-anchor="middle">pairwise identity (achieved)</text>
+    <text x="16" y="195.0" font-size="12" text-anchor="middle" transform="rotate(-90 16 195.0)">fraction</text>
+  </g>
+  <g>
+    <polyline points="161.0,30.0 327.7,30.0 415.1,30.0 503.5,30.0 569.9,30.0 588.4,30.0" fill="none" stroke="#1f6f43" stroke-width="2.5" />
+    <circle cx="161.0" cy="30.0" r="4" fill="#1f6f43" />
+    <circle cx="327.7" cy="30.0" r="4" fill="#1f6f43" />
+    <circle cx="415.1" cy="30.0" r="4" fill="#1f6f43" />
+    <circle cx="503.5" cy="30.0" r="4" fill="#1f6f43" />
+    <circle cx="569.9" cy="30.0" r="4" fill="#1f6f43" />
+    <circle cx="588.4" cy="30.0" r="4" fill="#1f6f43" />
+    <polyline points="161.0,360.0 327.7,360.0 415.1,358.0 503.5,115.7 569.9,112.5 588.4,30.0" fill="none" stroke="#b3401f" stroke-width="2.5" />
+    <circle cx="161.0" cy="360.0" r="4" fill="#b3401f" />
+    <circle cx="327.7" cy="360.0" r="4" fill="#b3401f" />
+    <circle cx="415.1" cy="358.0" r="4" fill="#b3401f" />
+    <circle cx="503.5" cy="115.7" r="4" fill="#b3401f" />
+    <circle cx="569.9" cy="112.5" r="4" fill="#b3401f" />
+    <circle cx="588.4" cy="30.0" r="4" fill="#b3401f" />
+  </g>
+  <g>
+    <rect x="380" y="34" width="14" height="14" fill="#1f6f43" />
+    <text x="400" y="45" font-size="12">copy number correct (1=yes)</text>
+    <rect x="380" y="54" width="14" height="14" fill="#b3401f" />
+    <text x="400" y="65" font-size="12">reads abstained (Tied)</text>
+  </g>
+</svg>

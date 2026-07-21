@@ -188,5 +188,122 @@
       "root_cause": "One of GWFAM382's 4 detected copies is a ~492kb readthrough/mis-chain artifact (intact run: 'mis-chain filter dropped 2 transcripts with giant intron >50000bp'). Masking that copy's 492kb span to build the degraded reference corrupts it: degraded run detects 8 copies from a 4-copy family with 21 DuplicateLocus warnings. Even a clean 2.3kb-body mask would compare against a copy set contaminated by the readthrough artifact. Locus is unsuitable for a clean removal-recovery demo AND a liability to present (492kb 'copy').",
       "conclusion": "No clean positive real-gorilla recovery exists in this dataset: the recoverable identity window [0.96,0.979] holds only 2/24 co-located families, and the one that fired admission (GWFAM382) is structurally pathological. The identifiability theorem (MCC=chi(H)) explains this as the expected frontier behavior, not a method defect."
     }
+  },
+  "v4c": {
+    "ladder": [
+      {
+        "target_identity": 0.9,
+        "achieved_identity": 0.9010714285714285,
+        "n_copies_planted": 4,
+        "n_copies_detected": 4,
+        "copy_number_correct": true,
+        "frac_assigned": 1.0,
+        "frac_tied": 0.0,
+        "frac_ambiguous": 0.0,
+        "n_reads": 160,
+        "n_distinct_reads": 160,
+        "n_families_detected": 1,
+        "divergence_param": 0.0511847518850118
+      },
+      {
+        "target_identity": 0.94,
+        "achieved_identity": 0.9396428571428571,
+        "n_copies_planted": 4,
+        "n_copies_detected": 4,
+        "copy_number_correct": true,
+        "frac_assigned": 1.0,
+        "frac_tied": 0.0,
+        "frac_ambiguous": 0.0,
+        "n_reads": 160,
+        "n_distinct_reads": 160,
+        "n_families_detected": 1,
+        "divergence_param": 0.028360613388940692
+      },
+      {
+        "target_identity": 0.96,
+        "achieved_identity": 0.9598809523809524,
+        "n_copies_planted": 4,
+        "n_copies_detected": 4,
+        "copy_number_correct": true,
+        "frac_assigned": 0.9937888198757764,
+        "frac_tied": 0.006211180124223602,
+        "frac_ambiguous": 0.0,
+        "n_reads": 161,
+        "n_distinct_reads": 160,
+        "n_families_detected": 1,
+        "divergence_param": 0.021551349340006704
+      },
+      {
+        "target_identity": 0.98,
+        "achieved_identity": 0.9803571428571428,
+        "n_copies_planted": 4,
+        "n_copies_detected": 4,
+        "copy_number_correct": true,
+        "frac_assigned": 0.2597402597402597,
+        "frac_tied": 0.7402597402597403,
+        "frac_ambiguous": 0.0,
+        "n_reads": 616,
+        "n_distinct_reads": 160,
+        "n_families_detected": 1,
+        "divergence_param": 0.00927586662583053
+      },
+      {
+        "target_identity": 0.995,
+        "achieved_identity": 0.9957142857142857,
+        "n_copies_planted": 4,
+        "n_copies_detected": 4,
+        "copy_number_correct": true,
+        "frac_assigned": 0.25,
+        "frac_tied": 0.75,
+        "frac_ambiguous": 0.0,
+        "n_reads": 640,
+        "n_distinct_reads": 160,
+        "n_families_detected": 1,
+        "divergence_param": 0.002436416270211339
+      },
+      {
+        "target_identity": 1.0,
+        "achieved_identity": 1.0,
+        "n_copies_planted": 4,
+        "n_copies_detected": 4,
+        "copy_number_correct": true,
+        "frac_assigned": 0.0,
+        "frac_tied": 1.0,
+        "frac_ambiguous": 0.0,
+        "n_reads": 640,
+        "n_distinct_reads": 160,
+        "n_families_detected": 1,
+        "divergence_param": 0.0
+      }
+    ],
+    "recovery_anchor": {
+      "identity": 0.9652380952380953,
+      "recovered": true,
+      "min_identity": 1.0,
+      "n_psv_cols": 96,
+      "source": "sim_tandem._divergent_arm (V4a's proven host+2-hidden recipe, fresh re-run)",
+      "n_copies_planted": 4,
+      "n_copies_detected": 4,
+      "n_recovered": 2,
+      "n_dna_needs": 0,
+      "probes_tried_first": [
+        {
+          "identity": 0.8991666666666666,
+          "recovered": false,
+          "min_identity": 0.0,
+          "n_psv_cols": 0
+        },
+        {
+          "identity": 0.9805952380952382,
+          "recovered": false,
+          "min_identity": 0.0,
+          "n_psv_cols": 0
+        }
+      ]
+    },
+    "subset_used": "full-6pt",
+    "n_copies_per_family": 4,
+    "n_reads_per_copy": 40,
+    "error_rate": 0.003
   }
 }
