@@ -51,6 +51,7 @@ pub struct Skeleton {
     pub end: u64,
     pub n_reads: u32,
     pub introns: Vec<(u64, u64)>,
+    pub tied_seeded: bool,
 }
 
 /// Pass-1: group PRIMARY reads by `(chrom, intron-chain)` → skeletons, keeping groups with `>= min_reads`.
@@ -107,6 +108,7 @@ pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_termina
                 end: ends[ei],
                 n_reads: n,
                 introns,
+                tied_seeded: false,
             }
         })
         .collect();
@@ -847,6 +849,7 @@ pub fn cluster_unspliced(reads: &[PrimaryRead], min_reads: u32, k: usize) -> Vec
                     end: ends[ei],
                     n_reads: n,
                     introns: Vec::new(),
+                    tied_seeded: false,
                 });
             }
             i = j;
@@ -860,7 +863,7 @@ mod locus_support_tests {
     use super::*;
 
     fn sk(chrom: &str, start: u64, end: u64, n_reads: u32, introns: &[(u64, u64)]) -> Skeleton {
-        Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec() }
+        Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec(), tied_seeded: false }
     }
 
     /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
@@ -1074,7 +1077,7 @@ mod tests {
         assert!(primary_read_from_record(&rec(Flags::UNMAPPED, 101, ops()), "c1").is_none());
     }
     fn skel(chrom: &str, start: u64, end: u64, n: u32, introns: &[(u64, u64)]) -> Skeleton {
-        Skeleton { chrom: chrom.into(), start, end, n_reads: n, introns: introns.to_vec() }
+        Skeleton { chrom: chrom.into(), start, end, n_reads: n, introns: introns.to_vec(), tied_seeded: false }
     }
     /// Genome: exon1 [0,80), intron [80,100) with the given dinucleotides, exon2 [100,180). 160 bp spliced.
     fn genome_one_intron(donor: &[u8; 2], acc: &[u8; 2]) -> GenomeIndex {
