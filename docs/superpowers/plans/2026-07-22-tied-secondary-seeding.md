@@ -12,7 +12,7 @@
 
 - **Integration point is `detect_and_assign`, NOT `detect_families`** (spec said `detect_families`; exploration showed that is a test-only function while `detect_and_assign` is the production path and already carries the tied secondaries in `rescue_extra`). This is a strict improvement over the spec.
 - **Off = byte-identical:** all new behavior is behind `cfg.tied_seed` (default `false`). Existing tests must stay green unchanged.
-- **Seed only from SPLICED tied reads** (non-empty intron chain) — the shared-intron-chain agreement gate. Extent = simple min `ref_start` / max `ref_end` over the chain group.
+- **Two structure-based paths** (updated after the pseudogene extension, commit 9c3b8ca): SPLICED tied reads seed by shared-intron-chain agreement (extent = min `ref_start` / max `ref_end` over the chain group); UNSPLICED tied reads (empty chain — the pseudogene/retrocopy case) seed by position via `cluster_unspliced`. The original "spliced only" bullet is superseded — the unspliced path is what recovers the intronless missed members (TRIM64B/TRIM64).
 - **Phase 1 measures via with/without-`--tied-seed` diff.** Propagating the `tied_seeded` flag all the way to the catalog's per-member status string ("detected (tied), unassignable") is deferred to Phase 2; the flag is set on `Skeleton` now for that future use.
 - **CRASH RULE for the benchmark:** `copy_assign` runs FOREGROUND, serial, small batches, outputs to `/home/juanfra/winloci_scratch` (NOT `/tmp`). No nohup/waiter/pkill.
 - Determinism: group with `BTreeMap`, mirroring `pass1_skeletons_robust`.
