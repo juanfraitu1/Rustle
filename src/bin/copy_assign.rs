@@ -370,6 +370,11 @@ struct Args {
     /// Diagnostic: use to isolate the effect of junction-incidence pooling.
     #[arg(long, default_value_t = false)]
     no_pool_locus_support: bool,
+
+    /// Seed candidate loci from AS-tied secondary reads that share an intron chain, even with no primary
+    /// (recovers covered-but-tied K=0 copies as detected-but-unassignable). Implies fetching tied secondaries.
+    #[arg(long, default_value_t = false)]
+    tied_seed: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -810,6 +815,7 @@ fn main() -> Result<()> {
     cfg.refine = !args.no_refine; // mutual-homology family gate (matches gw_family_catalog); on by default
     cfg.filter_readthrough = !args.keep_readthrough; // unspliced pre-mRNA spans are not copies
     cfg.gate.pool_locus_support = !args.no_pool_locus_support;
+    cfg.tied_seed = args.tied_seed; // seed from AS-tied secondaries
     cfg.collapse_gate = args.collapse_gate; // experimental; detects paralogy, not collapse (see module header)
     cfg.collapse_enumerate = args.collapse_enumerate || cfg.collapse_enumerate; // CLI OR env (RUSTLE_COLLAPSE_ENUMERATE)
     if cfg.collapse_enumerate {
@@ -964,7 +970,7 @@ fn main() -> Result<()> {
                 t_read.elapsed().as_secs_f64()
             );
         }
-        let extra = if args.recover_copies {
+        let extra = if args.recover_copies || args.tied_seed {
             tied_secondary_reads_in_region(&args.bam, contig, lo, hi, args.as_ratio).unwrap_or_default()
         } else {
             Vec::new()
