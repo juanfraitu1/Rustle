@@ -74,6 +74,9 @@ pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_termina
     // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc).
     let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>)> = BTreeMap::new();
     for r in reads {
+        if r.introns.is_empty() {
+            continue; // unspliced reads are seeded position-aware below (empty chain would pool chromosome-wide)
+        }
         let e = groups
             .entry((r.chrom.as_str(), r.introns.clone()))
             .or_insert((0, Vec::new(), Vec::new()));
@@ -91,7 +94,7 @@ pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_termina
             e.2.truncate(k);
         }
     }
-    groups
+    let mut skels: Vec<Skeleton> = groups
         .into_iter()
         .filter(|(_, (n, _, _))| *n >= min_reads)
         .map(|((chrom, introns), (n, starts, ends))| {
@@ -106,7 +109,11 @@ pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_termina
                 introns,
             }
         })
-        .collect()
+        .collect();
+    // position-aware seeding of the unspliced reads (the fix): single-linkage span-overlap clustering
+    // per chromosome instead of pooling every unspliced read on a chromosome into one giant group.
+    skels.extend(cluster_unspliced(reads, min_reads, k));
+    skels
 }
 
 /// Build a `PrimaryRead` from a mapped PRIMARY alignment record (the Pass-1 I/O edge, mirroring the
@@ -1141,6 +1148,29 @@ mod tests {
     fn pass1_different_chrom_separate() {
         let reads = [pr("c1", 100, 500, &[(200, 300)]), pr("c2", 100, 500, &[(200, 300)])];
         assert_eq!(pass1_skeletons(&reads, 1).len(), 2);
+    }
+
+    #[test]
+    fn pass1_seeds_unspliced_reads_position_aware_not_one_giant() {
+        // spliced reads (one intron chain) + two DISTANT unspliced piles on the same chrom
+        let reads = vec![
+            // spliced locus (unchanged behavior)
+            pr("c1", 1000, 3000, &[(1500, 2000)]),
+            pr("c1", 1010, 3010, &[(1500, 2000)]),
+            // unspliced pile A
+            pr("c1", 400000, 402000, &[]),
+            pr("c1", 400100, 402100, &[]),
+            pr("c1", 400200, 402200, &[]),
+            // unspliced pile B, 2 Mb away
+            pr("c1", 2400000, 2402000, &[]),
+            pr("c1", 2400100, 2402100, &[]),
+            pr("c1", 2400200, 2402200, &[]),
+        ];
+        let sk = pass1_skeletons_robust(&reads, 2, 1);
+        // 1 spliced skeleton + 2 distinct unspliced skeletons = 3; NOT a single giant unspliced one
+        let unspliced_sk: Vec<_> = sk.iter().filter(|s| s.introns.is_empty()).collect();
+        assert_eq!(unspliced_sk.len(), 2, "the two distant unspliced piles seed separately");
+        assert!(unspliced_sk.iter().all(|s| s.end - s.start < 300_000), "no chromosome-spanning unspliced skeleton");
     }
 
     // ---- assemble_gate ----
