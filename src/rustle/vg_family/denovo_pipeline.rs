@@ -30,7 +30,7 @@ use super::copy_split::{
 };
 use super::denovo_assemble::{
     aligned_reads_from_bam, assemble_gate, pass1_skeletons, pass1_skeletons_robust, primary_reads_from_bam,
-    reads_in_region, BamRead, GateParams, PrimaryRead, GATE_MIN_READS, PASS1_MIN_READS,
+    reads_in_region, tied_seed_skeletons, BamRead, GateParams, PrimaryRead, GATE_MIN_READS, PASS1_MIN_READS,
 };
 use super::family_detect::{
     collapse_loci_span_aware, collapse_loci_span_aware_with_totals, detect_edges, detect_edges_reporting,
@@ -108,6 +108,12 @@ pub struct DenovoConfig {
     /// transcript is non-homologous (DNA-family != RNA-family). Copy-number only. `RUSTLE_DNA_FAMILY_FALLBACK=1`,
     /// CLI `--dna-family-fallback`. Default off (byte-identical).
     pub dna_family_fallback: bool,
+    /// Tied-secondary seeding (opt-in): after the primary-read pass1 skeletons are built, seed ADDITIONAL
+    /// skeletons from AS-tied secondary reads (`rescue_extra`) that agree on an intron chain at loci with
+    /// no primary skeleton (`tied_seed_skeletons`) — recovers starved co-located copies (K=0 members with 0
+    /// primaries) as DETECTED-but-unassignable loci. Default OFF: when off, `skeletons` is unchanged and
+    /// every downstream stage is byte-identical.
+    pub tied_seed: bool,
     /// Projection identity floor for the DNA-family fallback (looser than collapse-expressed's 0.98, since
     /// these paralogs are divergent). CLI `--dna-family-min-identity`. Default 0.90.
     pub dna_family_min_identity: f64,
@@ -136,6 +142,7 @@ impl Default for DenovoConfig {
             collapse_enumerate: false,
             collapse_expressed: false,
             dna_family_fallback: false,
+            tied_seed: false,
             dna_family_min_identity: 0.90,
             eps_amb: Some(crate::vg_family::collapse_gate::GENOME_WIDE_EPS_AMB),
         }
@@ -1393,7 +1400,11 @@ pub fn detect_and_assign(
         };
     }
     // Same `k` as the O1 catalogs: one canonical extent per locus across objectives (see `detect_families`).
-    let skeletons = pass1_skeletons_robust(primary_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    let mut skeletons = pass1_skeletons_robust(primary_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    if cfg.tied_seed {
+        let tied = tied_seed_skeletons(rescue_extra, &skeletons, cfg.pass1_min_reads);
+        skeletons.extend(tied);
+    }
     let mut transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
 
     // Unspliced readthrough spans are not transcripts, so they are removed BEFORE loci are collapsed. Filter
@@ -2970,6 +2981,11 @@ mod tests {
     use super::super::copy_split::AlignedRead;
     use super::super::family_detect::collapse_loci;
     use super::*;
+
+    #[test]
+    fn denovo_config_tied_seed_defaults_off() {
+        assert!(!DenovoConfig::default().tied_seed);
+    }
 
     #[test]
     fn add_junction_support_counts_only_pure_junction_reads_per_copy() {
