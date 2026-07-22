@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Defined but not fully assigned — why?</title>
+<style>
+:root{--bg:#fbfaf8;--fg:#1c1a17;--mut:#6b655d;--line:#e3ded6;--card:#fff;--accent:#8a5a2b;--accent2:#2b6a8a;
+--good:#2f7d4f;--bad:#a83232;--warn:#b4681a;--grey:#c8c2b8;--code:#f4f1ec;}
+@media(prefers-color-scheme:dark){:root{--bg:#161513;--fg:#eae5dd;--mut:#a49c90;--line:#302d29;--card:#1e1c19;
+--accent:#d9a066;--accent2:#6fb2d6;--good:#6bcb8e;--bad:#e07a7a;--warn:#e0a15a;--grey:#4a453e;--code:#232019;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:32px 22px 90px}
+h1{font-size:28px;letter-spacing:-.4px;margin:0 0 6px}
+.sub{color:var(--mut);margin:0 0 20px}
+.split{display:flex;gap:16px;flex-wrap:wrap;margin:20px 0}
+.split .box{flex:1;min-width:260px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.split .box h3{margin:0 0 6px;font-size:16px}
+.split .box.def{border-left:4px solid var(--accent2)} .split .box.asg{border-left:4px solid var(--accent)}
+.key{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:14px 0;font-size:15px}
+.key b{color:var(--accent)}
+.kpis{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.kpis div{flex:1;min-width:120px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:center}
+.kpis .v{font-size:22px;font-weight:700} .kpis .l{font-size:12px;color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:16px}
+.fam{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;cursor:pointer;transition:border-color .15s}
+.fam:hover{border-color:var(--accent)}
+.fam .top{display:flex;justify-content:space-between;align-items:center}
+.fam .gene{font-weight:600}
+.fam .badge{font-size:12px;font-variant-numeric:tabular-nums;color:var(--mut)}
+.dots{margin-top:10px;display:flex;gap:5px;flex-wrap:wrap}
+.dot{width:15px;height:15px;border-radius:50%}
+.dot.f{background:var(--good)} .dot.m{background:var(--bad)}
+.detail{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;display:none}
+.fam.open .detail{display:block}
+.mrow{padding:8px 0;border-bottom:1px dashed var(--line)}
+.mrow:last-child{border-bottom:none}
+.mhead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.mgene{font-size:14px;font-weight:600}
+.tag{font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:20px}
+.tag.f{background:color-mix(in srgb,var(--good) 22%,transparent);color:var(--good)}
+.tag.k0{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad)}
+.tag.sd{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
+.tag.ot{background:color-mix(in srgb,var(--mut) 22%,transparent);color:var(--mut)}
+.bar{height:14px;border-radius:7px;overflow:hidden;display:flex;margin:6px 0 4px;background:var(--grey)}
+.bar .u{background:var(--good)} .bar .t{background:var(--grey)}
+.why{font-size:13px;color:var(--mut)}
+.why b{color:var(--fg)}
+.legend{font-size:13px;color:var(--mut);margin-top:8px}
+.legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:middle;margin:0 3px}
+</style></head><body><div class="wrap">
+<h1>Defined but not fully assigned — why?</h1>
+<p class="sub">The 20 Soto families where some members are recovered and others are not. The advisor's question:
+<em>you had enough to put them in one family — why not assign reads to every member?</em></p>
+
+<div class="split">
+  <div class="box def"><h3>Define (family) — uses homology</h3>Two loci are one family iff their exon-sum sequences are
+  homologous (asm20 identity ≥ 0.80, ≥ 2 loci). This groups <b>similar</b> copies. Every red member below IS in the family —
+  homology put it there.</div>
+  <div class="box asg"><h3>Assign (member) — needs separability</h3>To recover a member you need reads that
+  <b>distinguish</b> it — a base only that copy has (a PSV), or a unique mapper. Homology says "same family"; assignment needs
+  "tell them apart." <b>Similar ≠ separable.</b></div>
+</div>
+
+<div class="key">The gap between the two is the whole point: a member can be <b>homology-grouped</b> yet have
+<b>no read that separates it</b> from its siblings. Click a family — the bar shows each missing member's reads split into
+<span style="color:var(--good)">unique (distinguishing)</span> vs <span style="color:var(--mut)">tied (MAPQ-0 multimappers)</span>.
+When the bar is all grey, homology could group it but no read can assign it — that is the <b>K=0 identifiability floor</b> (→ DNA).
+When it has green, the reads DID distinguish it — those were lost to the <b>unspliced-seeding bug</b> (now fixed).</div>
+
+<div class="kpis">
+  <div><div class="v">20</div><div class="l">partial families</div></div>
+  <div><div class="v">37</div><div class="l">missing members</div></div>
+  <div><div class="v" style="color:var(--bad)">11</div><div class="l">K=0 (no read separates → DNA)</div></div>
+  <div><div class="v" style="color:var(--warn)">18</div><div class="l">seeding-bug (reads existed → fixed)</div></div>
+  <div><div class="v" style="color:var(--mut)">8</div><div class="l">unclassified</div></div>
+</div>
+<p class="legend"><span class="sw" style="background:var(--good)"></span>found &nbsp;
+<span class="sw" style="background:var(--bad)"></span>missing &nbsp;|&nbsp; bar:
+<span class="sw" style="background:var(--good)"></span>unique/distinguishing reads &nbsp;
+<span class="sw" style="background:var(--grey)"></span>tied MAPQ-0 multimappers. Click any family to expand.</p>
+
+<div class="grid" id="grid"></div>
+</div>
+<script>
+const FAMS = [{"fid": "ID_63", "gene": "ANAPC1P1", "n": 8, "det": 4, "members": [{"gene": "ANAPC1P1", "found": false, "unique_own": 28, "ambig_mapq0": 3, "secondaries": 902, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "ANAPC1P2", "found": true}, {"gene": "ANAPC1P3", "found": false, "bucket": "other", "cause": "missed (not in floor decomposition)", "unique_own": null, "ambig_mapq0": null, "secondaries": null}, {"gene": "AC083899.1", "found": true}, {"gene": "ANAPC1P4", "found": true}, {"gene": "ANAPC1P5", "found": false, "unique_own": 12, "ambig_mapq0": 0, "secondaries": 268, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "AC097527.1", "found": false, "unique_own": 3, "ambig_mapq0": 0, "secondaries": 92, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "ANAPC1", "found": true}]}, {"fid": "ID_226", "gene": "H2BP1", "n": 5, "det": 1, "members": [{"gene": "H2BP1", "found": false, "unique_own": 31, "ambig_mapq0": 0, "secondaries": 510, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "H3P4", "found": false, "unique_own": 0, "ambig_mapq0": 0, "secondaries": 4, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}, {"gene": "H3-2", "found": false, "unique_own": 35, "ambig_mapq0": 0, "secondaries": 559, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "H2BC18", "found": true}, {"gene": "H3C13", "found": false, "unique_own": 0, "ambig_mapq0": 0, "secondaries": 6, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}]}, {"fid": "ID_261", "gene": "CNTNAP3P5", "n": 5, "det": 1, "members": [{"gene": "CNTNAP3P5", "found": false, "unique_own": 0, "ambig_mapq0": 0, "secondaries": 86, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}, {"gene": "AL513478.3", "found": false, "bucket": "other", "cause": "missed (not in floor decomposition)", "unique_own": null, "ambig_mapq0": null, "secondaries": null}, {"gene": "BX664718.2", "found": true}, {"gene": "AL773545.4", "found": false, "bucket": "other", "cause": "missed (not in floor decomposition)", "unique_own": null, "ambig_mapq0": null, "secondaries": null}, {"gene": "CNTNAP3P1", "found": false, "unique_own": 24, "ambig_mapq0": 0, "secondaries": 76, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}]}, {"fid": "ID_14", "gene": "AC005562.2", "n": 7, "det": 4, "members": [{"gene": "AC005562.2", "found": false, "unique_own": 0, "ambig_mapq0": 0, "secondaries": 2, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}, {"gene": "LRRC37BP1", "found": false, "unique_own": 304, "ambig_mapq0": 1, "secondaries": 3356, "bucket": "seeding", "cause": "distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)"}, {"gene": "LRRC37B", "found": true}, {"gene": "AC090616.5", "found": false, "unique_own": 15, "ambig_mapq0": 1, "secondaries": 505, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "LRRC37A", "found": true}, {"gene": "LRRC37A2", "found": true}, {"gene": "LRRC37A3", "found": true}]}, {"fid": "ID_65", "gene": "FAR2P1", "n": 9, "det": 7, "members": [{"gene": "FAR2P1", "found": true}, {"gene": "CYP4F27P", "found": true}, {"gene": "FAR2P2", "found": true}, {"gene": "CYP4F62P", "found": true}, {"gene": "CYP4F30P", "found": true}, {"gene": "FAR2P3", "found": true}, {"gene": "FAR2P4", "found": true}, {"gene": "CR383656.5", "found": false, "unique_own": 0, "ambig_mapq0": 0, "secondaries": 2210, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}, {"gene": "AP000534.2", "found": false, "bucket": "other", "cause": "missed (not in floor decomposition)", "unique_own": null, "ambig_mapq0": null, "secondaries": null}]}, {"fid": "ID_215", "gene": "AC244669.2", "n": 7, "det": 5, "members": [{"gene": "AC244669.2", "found": false, "unique_own": 0, "ambig_mapq0": 14, "secondaries": 1850, "bucket": "K0", "cause": "expressed-K=0: young identical (exon AND genome ~identical)"}, {"gene": "AC241952.1", "found": true}, {"gene": "AC239860.2", "found": true}, {"gene": "AC239860.1", "found": true}, {"gene": "PDE4DIP", "found": true}, {"gene": "AC245297.1", "found": false, "unique_own": 78, "ambig_mapq0": 36, "secondaries": 1582, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "PDE4DIPP1", "found": true}]}, {"fid": "ID_332", "gene": "DDX11L2", "n": 6, "det": 4, "members": [{"gene": "DDX11L2", "found": true}, {"gene": "FO538757.1", "found": false, "bucket": "other", "cause": "missed (not in floor decomposition)", "unique_own": null, "ambig_mapq0": null, "secondaries": null}, {"gene": "DDX11L5", "found": true}, {"gene": "DDX11L9", "found": true}, {"gene": "DDX11L16", "found": false, "unique_own": 0, "ambig_mapq0": 0, "secondaries": 162, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}, {"gene": "DDX11L10", "found": true}]}, {"fid": "ID_407", "gene": "NSUN5P2", "n": 4, "det": 2, "members": [{"gene": "NSUN5P2", "found": true}, {"gene": "TRIM74", "found": false, "unique_own": 2, "ambig_mapq0": 7, "secondaries": 208, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}, {"gene": "TRIM73", "found": false, "unique_own": 27, "ambig_mapq0": 7, "secondaries": 238, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "NSUN5P1", "found": true}]}, {"fid": "ID_43", "gene": "TRIM64DP", "n": 4, "det": 2, "members": [{"gene": "TRIM64DP", "found": true}, {"gene": "TRIM64B", "found": false, "bucket": "other", "cause": "missed (not in floor decomposition)", "unique_own": null, "ambig_mapq0": null, "secondaries": null}, {"gene": "TRIM64", "found": false, "bucket": "other", "cause": "missed (not in floor decomposition)", "unique_own": null, "ambig_mapq0": null, "secondaries": null}, {"gene": "TRIM64EP", "found": true}]}, {"fid": "ID_338", "gene": "DEFB108C", "n": 3, "det": 1, "members": [{"gene": "DEFB108C", "found": false, "unique_own": 4, "ambig_mapq0": 0, "secondaries": 25, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "DEFB108D", "found": false, "unique_own": 20, "ambig_mapq0": 0, "secondaries": 8, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "DEFB108A", "found": true}]}, {"fid": "ID_35", "gene": "AL669831.1", "n": 10, "det": 9, "members": [{"gene": "AL669831.1", "found": true}, {"gene": "AL592148.2", "found": true}, {"gene": "GTF2IP20", "found": true}, {"gene": "LINC01347", "found": true}, {"gene": "FAM157A", "found": true}, {"gene": "AC110079.1", "found": true}, {"gene": "GTF2IP12", "found": true}, {"gene": "AC008443.6", "found": false, "unique_own": 3, "ambig_mapq0": 0, "secondaries": 273, "bucket": "seeding", "cause": "distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)"}, {"gene": "FAM157B", "found": true}, {"gene": "AL133216.2", "found": true}]}, {"fid": "ID_131", "gene": "AMY2A", "n": 6, "det": 5, "members": [{"gene": "AMY2A", "found": true}, {"gene": "AMY1A", "found": true}, {"gene": "AC105272.1", "found": false, "unique_own": 0, "ambig_mapq0": 0, "secondaries": 907, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}, {"gene": "AMY1B", "found": true}, {"gene": "AMYP1", "found": true}, {"gene": "AMY1C", "found": true}]}, {"fid": "ID_391", "gene": "WASH2P", "n": 5, "det": 4, "members": [{"gene": "WASH2P", "found": true}, {"gene": "WASH8P", "found": true}, {"gene": "WASHC1", "found": true}, {"gene": "WASH3P", "found": true}, {"gene": "WASH6P", "found": false, "unique_own": 0, "ambig_mapq0": 11, "secondaries": 1961, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}]}, {"fid": "ID_208", "gene": "GTF2IP14", "n": 5, "det": 4, "members": [{"gene": "GTF2IP14", "found": true}, {"gene": "GTF2IP5", "found": true}, {"gene": "GTF2I", "found": true}, {"gene": "CASTOR2", "found": false, "unique_own": 119, "ambig_mapq0": 0, "secondaries": 158, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "GTF2IP1", "found": true}]}, {"fid": "ID_156", "gene": "WHAMMP3", "n": 5, "det": 4, "members": [{"gene": "WHAMMP3", "found": false, "unique_own": 321, "ambig_mapq0": 0, "secondaries": 1049, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "WHAMMP2", "found": true}, {"gene": "AC127502.1", "found": true}, {"gene": "AC127502.3", "found": true}, {"gene": "AC135983.4", "found": true}]}, {"fid": "ID_78", "gene": "GOLGA8A", "n": 5, "det": 4, "members": [{"gene": "GOLGA8A", "found": true}, {"gene": "UBE2Q2P2", "found": true}, {"gene": "AC243562.1", "found": false, "unique_own": 0, "ambig_mapq0": 0, "secondaries": 35, "bucket": "K0", "cause": "expressed-K=0: exon-homogenized (reads tie, genome <99.9% -> gene-conversion candidate)"}, {"gene": "UBE2Q2P1", "found": true}, {"gene": "AC044860.1", "found": true}]}, {"fid": "ID_481", "gene": "UBE2Q2P6", "n": 5, "det": 4, "members": [{"gene": "UBE2Q2P6", "found": true}, {"gene": "UBE2Q2L", "found": true}, {"gene": "UBE2Q2P11", "found": true}, {"gene": "UBE2Q2P8", "found": false, "unique_own": 0, "ambig_mapq0": 0, "secondaries": 0, "bucket": "silent", "cause": "silent (no reads on member)"}, {"gene": "UBE2Q2P12", "found": true}]}, {"fid": "ID_12", "gene": "POM121", "n": 4, "det": 3, "members": [{"gene": "POM121", "found": true}, {"gene": "POM121C", "found": true}, {"gene": "AC004980.1", "found": true}, {"gene": "POMZP3", "found": false, "unique_own": 186, "ambig_mapq0": 0, "secondaries": 107, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}]}, {"fid": "ID_147", "gene": "AC125634.1", "n": 4, "det": 3, "members": [{"gene": "AC125634.1", "found": true}, {"gene": "AL353626.3", "found": true}, {"gene": "FO681491.1", "found": true}, {"gene": "ANKRD30BP2", "found": false, "unique_own": 331, "ambig_mapq0": 2, "secondaries": 7912, "bucket": "seeding", "cause": "distinguishable-but-unseeded (unique reads, no nearby locus -> detection gap)"}]}, {"fid": "ID_327", "gene": "CTSLP3", "n": 4, "det": 3, "members": [{"gene": "CTSLP3", "found": false, "unique_own": 14, "ambig_mapq0": 0, "secondaries": 765, "bucket": "seeding", "cause": "distinguishable-but-MERGED (unique reads absorbed into a co-located locus)"}, {"gene": "CTSLP4", "found": true}, {"gene": "CTSLP6", "found": true}, {"gene": "CTSLP1", "found": true}]}];
+function tagFor(m){ if(m.found) return ['f','found']; const b=m.bucket;
+  if(b==='K0') return ['k0','K=0 · no read separates it']; if(b==='seeding') return ['sd','seeding bug · reads existed'];
+  return ['ot','unclassified']; }
+function bar(m){ const u=m.unique_own||0, t=(m.ambig_mapq0||0)+(m.secondaries||0), tot=Math.max(u+t,1);
+  const up=100*u/tot; return `<div class="bar" title="${u} unique / ${t} tied"><div class="u" style="width:${up}%"></div><div class="t" style="width:${100-up}%"></div></div>`; }
+function why(m){ if(m.found) return '';
+  if(m.bucket==='K0') return `<div class="why"><b>${m.unique_own} unique</b> reads, <b>${(m.ambig_mapq0||0)+(m.secondaries||0)}</b> tied (MAPQ-0 multimappers). Homology grouped it; <b>no read distinguishes it</b> from its siblings → K=0 → needs DNA.</div>`;
+  if(m.bucket==='seeding') return `<div class="why">Had <b>${m.unique_own} unique</b> distinguishing reads — enough to assign — but they were <b>deleted at seeding</b> (unspliced reads pooled chromosome-wide, over-length skeleton rejected). <b>Fixed</b> by the seeding change.</div>`;
+  return `<div class="why">Missed for a reason not yet classified (not in the floor decomposition).</div>`; }
+const grid=document.getElementById('grid');
+for(const f of FAMS){
+  const el=document.createElement('div'); el.className='fam';
+  const dots=f.members.map(m=>`<div class="dot ${m.found?'f':'m'}" title="${m.gene}: ${m.found?'found':'missing'}"></div>`).join('');
+  const rows=f.members.map(m=>{const [c,lab]=tagFor(m);
+    return `<div class="mrow"><div class="mhead"><span class="mgene">${m.gene}</span><span class="tag ${c}">${lab}</span></div>${m.found?'':bar(m)+why(m)}</div>`;}).join('');
+  el.innerHTML=`<div class="top"><span class="gene">${f.gene}</span><span class="badge">${f.det}/${f.n} recovered</span></div>
+    <div class="dots">${dots}</div><div class="detail">${rows}</div>`;
+  el.addEventListener('click',()=>el.classList.toggle('open'));
+  grid.appendChild(el);
+}
+</script></body></html>
