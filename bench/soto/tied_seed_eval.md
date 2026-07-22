@@ -51,3 +51,23 @@ The feature ships opt-in (byte-identical off) and is ready for the co-located K=
 Reproduce: `target/release/copy_assign --bam A119b.t2t.bam --fasta chm13v2.0.fa --region
 chr11:89676664-90003077 --recover-copies --tied-seed --skip-poa-diagnostic --out <scratch>` vs the same
 without `--tied-seed`; diff `<out>.families.tsv`.
+
+## Update — unspliced clustering (pseudogene case) DOES recover members
+
+`tied_seed_skeletons` now also clusters the **unspliced** tied reads by position (the pseudogene /
+retrocopy case — intronless evidence the spliced-chain gate discarded). Validated on TRIM64B: 13
+unspliced secondary reads, ≥4 genuine AS-ties@0.98.
+
+**TRIM64 region, copy loci diff (`quant.tsv`, WITH vs WITHOUT `--tied-seed`):** OFF = 13 copies,
+ON = 17. Of the 6 new tied-seeded copies:
+- **2 TRUE POSITIVES** — chr11:89,785,154 (**TRIM64B**) and chr11:89,893,563 (**TRIM64**), the exact
+  missed pseudogene members. The spliced-only gate recovered 0 of these.
+- **4 overlap no Soto member** (89.75/89.83/89.85/89.93 Mb) — over-seeding. Unspliced position-clustering
+  is looser than shared-intron-chain agreement, so it seeds more loci; these may be real unannotated
+  copies or phantoms (undetermined).
+
+**So the pseudogene lever works** — it recovers the intronless missed members the rest of the pipeline
+can't — but at ~33% precision on this region (2/6). The `min_reads` floor ("enough evidence") is the
+tuning knob: a higher unspliced floor should drop the over-seeds while keeping the strongly-supported
+real copies. Genome-wide recall/precision (and whether the 4 non-catalog loci are real) is the next
+measurement.
