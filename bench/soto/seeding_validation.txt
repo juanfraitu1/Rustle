@@ -20,3 +20,11 @@ the 76.2% -> ? member-sensitivity delta requires regenerating that catalog with 
 directional proof; the genome-wide number is a background-run follow-up.
 
 ## Precision / K=0 — pending the genome-wide catalog (min_reads>=3 floor guards noise per cluster)
+
+## GENERAL across the 28 (3 loci confirmed, OLD reps -> NEW reps, --min-copies 1):
+  chr16 ID_26  SLC9B1P1 (40 uniq):  OLD 0 reps  -> NEW 7 reps   (+7)
+  chr9  ID_261 CNTNAP3P1 (24 uniq): OLD 5 reps  -> NEW 10 reps  (+5)
+  chr9  ID_260 MEP1AP4 (11 uniq):   OLD 1 rep   -> NEW 5 reps   (+4)
+Every tested merged locus gains reps = the previously-deleted unspliced members now seed.
+(OLD's non-zero reps at chr9 = the SPLICED reps that always survived; the delta is the recovered
+unspliced loci.) Fix is general, not a one-off.
