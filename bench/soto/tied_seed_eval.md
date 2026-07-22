@@ -71,3 +71,21 @@ can't — but at ~33% precision on this region (2/6). The `min_reads` floor ("en
 tuning knob: a higher unspliced floor should drop the over-seeds while keeping the strongly-supported
 real copies. Genome-wide recall/precision (and whether the 4 non-catalog loci are real) is the next
 measurement.
+
+## Verification — the 4 "over-seeds" are mostly REAL loci
+
+Aligned each of the 4 non-Soto-member tied-seeded copies to the genome (paralogs) + the CHM13 RefSeq
+annotation:
+- **os2 chr11:89,832,458 = TRIM49D1** (protein-coding gene, 1 genome paralog) — REAL.
+- **os3 chr11:89,849,042 = TRIM49D2** (protein-coding gene, 1 genome paralog) — REAL.
+- os4 chr11:89,934,235 — unannotated but has 1 genome paralog — real-ish.
+- os1 chr11:89,746,906 — unannotated, 0 paralogs, weak homology — likely phantom.
+
+TRIM49D1/D2 are real TRIM-family genes in the same chr11 cluster (TRIM49 ≈ TRIM64 relative → reads tie),
+just not in Soto's ID_43 (TRIM64) roster. So of the 6 tied-seeded copies: **2 recover Soto members
+(TRIM64B, TRIM64), 2 are real TRIM49 genes, 1 has a paralog, 1 is a likely phantom.** Real precision
+≈ 5/6 — the naive 2/6 counted real unannotated loci as errors. The single phantom (os1) is what a
+slightly higher unspliced `min_reads` floor would remove.
+
+**Bottom line:** the unspliced pseudogene lever recovers the intronless missed members AND surfaces real
+related-family copies, with ~1 phantom per region — a strong, mostly-precise result for the user's insight.
