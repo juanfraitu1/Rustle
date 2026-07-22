@@ -123,19 +123,29 @@ pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_termina
 /// (K=0 members with 0 primaries) as DETECTED-but-unassignable loci: the copy-assignment gate still abstains
 /// on them (no copy-specific PSV), so they never falsely acquire read assignments. Groups by
 /// `(chrom, intron-chain)` like `pass1_skeletons_robust`, keeps chains with `>= min_reads`, and drops any
-/// whose span overlaps a `primary_skeletons` entry on the same chrom (that locus is already seeded). Only
-/// spliced reads (non-empty chain) seed — the shared-intron-chain agreement gate. Extent = min start / max
-/// end over the group. Deterministic (`BTreeMap` order = sorted by `(chrom, introns)`).
+/// whose span overlaps a `primary_skeletons` entry on the same chrom (that locus is already seeded).
+/// SPLICED tied reads seed by shared-intron-chain agreement; UNSPLICED tied reads (empty chain — the
+/// pseudogene / retrocopy case, where the evidence is intronless) seed by position via [`cluster_unspliced`]'s
+/// single-linkage span-overlap clustering. Both require `>= min_reads` and are deduped against
+/// `primary_skeletons`; the AS-tie gate upstream (`tied_secondary_reads`) already ensures genuine co-located
+/// ties, so a position cluster of unspliced ties is a real starved copy, not incidental pileup. Extent =
+/// min start / max end over the group. Deterministic (`BTreeMap` order = sorted by `(chrom, introns)`).
 pub fn tied_seed_skeletons(
     tied_reads: &[PrimaryRead],
     primary_skeletons: &[Skeleton],
     min_reads: u32,
 ) -> Vec<Skeleton> {
     use std::collections::BTreeMap;
+    let overlaps_primary = |chrom: &str, start: u64, end: u64| {
+        primary_skeletons
+            .iter()
+            .any(|s| s.chrom == chrom && s.start < end && start < s.end)
+    };
+    // SPLICED tied reads: seed by shared intron-chain agreement.
     let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, u64, u64)> = BTreeMap::new();
     for r in tied_reads {
         if r.introns.is_empty() {
-            continue; // shared-intron-chain gate: only spliced reads seed
+            continue; // unspliced reads are seeded by position below
         }
         let e = groups
             .entry((r.chrom.as_str(), r.introns.clone()))
@@ -144,14 +154,11 @@ pub fn tied_seed_skeletons(
         e.1 = e.1.min(r.ref_start);
         e.2 = e.2.max(r.ref_end);
     }
-    groups
+    let mut out: Vec<Skeleton> = groups
         .into_iter()
         .filter(|(_, (n, _, _))| *n >= min_reads)
         .filter_map(|((chrom, introns), (n, start, end))| {
-            let overlaps_primary = primary_skeletons
-                .iter()
-                .any(|s| s.chrom == chrom && s.start < end && start < s.end);
-            if overlaps_primary {
+            if overlaps_primary(chrom, start, end) {
                 return None;
             }
             Some(Skeleton {
@@ -163,7 +170,16 @@ pub fn tied_seed_skeletons(
                 tied_seeded: true,
             })
         })
-        .collect()
+        .collect();
+    // UNSPLICED tied reads (pseudogene / retrocopy copies): cluster by position (single-linkage overlap),
+    // mark tied-seeded, and dedup against the primary skeletons.
+    let mut unspliced = cluster_unspliced(tied_reads, min_reads, 1);
+    unspliced.retain(|s| !overlaps_primary(&s.chrom, s.start, s.end));
+    for s in &mut unspliced {
+        s.tied_seeded = true;
+    }
+    out.extend(unspliced);
+    out
 }
 
 /// Build a `PrimaryRead` from a mapped PRIMARY alignment record (the Pass-1 I/O edge, mirroring the
@@ -1468,6 +1484,37 @@ mod tests {
         let primaries = vec![Skeleton {
             chrom: "chr1".into(), start: 90, end: 480, n_reads: 5,
             introns: vec![(200, 300)], tied_seeded: false,
+        }];
+        assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
+    }
+
+    #[test]
+    fn tied_seed_clusters_unspliced_pseudogene() {
+        // UNSPLICED tied reads (empty intron chain — the pseudogene/retrocopy case) overlapping at a
+        // distinct locus seed a position cluster; the shared-intron-chain gate cannot reach these.
+        let tied = vec![
+            pr("chr1", 1000, 2000, &[]),
+            pr("chr1", 1010, 1990, &[]),
+            pr("chr1", 1005, 1995, &[]),
+        ];
+        let out = tied_seed_skeletons(&tied, &[], 3);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].tied_seeded);
+        assert!(out[0].introns.is_empty());
+        assert_eq!(out[0].n_reads, 3);
+    }
+
+    #[test]
+    fn tied_seed_unspliced_dedups_against_primary() {
+        // An unspliced tied cluster overlapping an existing primary skeleton must NOT re-seed it.
+        let tied = vec![
+            pr("chr1", 1000, 2000, &[]),
+            pr("chr1", 1010, 1990, &[]),
+            pr("chr1", 1005, 1995, &[]),
+        ];
+        let primaries = vec![Skeleton {
+            chrom: "chr1".into(), start: 900, end: 1900, n_reads: 5,
+            introns: vec![], tied_seeded: false,
         }];
         assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
     }
