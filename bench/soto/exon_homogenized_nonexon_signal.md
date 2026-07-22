@@ -1,3 +1,13 @@
+> **⚠ CORRECTED / RETRACTED (2026-07-21).** The "32% distinguishable / rescue lever" numbers below
+> were a **reduced-reference artifact**. When the family's reads (mostly multimapper secondaries whose
+> true origin is elsewhere) are aligned to a small reference of only the family's copies, they align
+> "uniquely" to one window simply because their real home is absent from the tiny reference — inflating
+> "distinguishability". Genome-wide, minimap2 ALREADY aligns the full read (UTR/intron/flank) and these
+> reads still tie (MAPQ 0). Adversarial verification across the 24 K=0-bearing families killed **all 26**
+> claimed rescues (0/34 genuine). **The non-exon signal does NOT rescue these members; the K=0 floor is
+> real.** See `bench/soto/nonexon_rescue.md` for the verified result. The genomic-divergence facts below
+> (94.8% copy identity, etc.) stand; the *rescue* interpretation does not.
+
 # Exon-homogenized copies carry recoverable non-exon signal — PPIAL4 (ID_431)
 
 **Question (advisor):** for the "exon-homogenized K=0" floor, have we checked whether retained
