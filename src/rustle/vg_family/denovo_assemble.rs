@@ -799,6 +799,55 @@ pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParam
     out
 }
 
+/// Position-aware seeding for UNSPLICED (empty-intron-chain) reads: single-linkage span-overlap
+/// clustering per chromosome, so each pseudogene/retrocopy copy seeds its OWN skeleton instead of
+/// every unspliced read on a chromosome pooling into one `(chrom, [])` group that overruns
+/// MAX_SPLICED. Threshold-free (pure overlap), mirroring `thin_loci`'s single-linkage-by-span.
+pub fn cluster_unspliced(reads: &[PrimaryRead], min_reads: u32, k: usize) -> Vec<Skeleton> {
+    use std::collections::BTreeMap;
+    let mut by_chrom: BTreeMap<&str, Vec<&PrimaryRead>> = BTreeMap::new();
+    for r in reads {
+        if r.introns.is_empty() {
+            by_chrom.entry(r.chrom.as_str()).or_default().push(r);
+        }
+    }
+    let mut out = Vec::new();
+    for (chrom, mut rs) in by_chrom {
+        rs.sort_by_key(|r| (r.ref_start, r.ref_end));
+        let mut i = 0;
+        while i < rs.len() {
+            // single-linkage: extend the cluster while the next read starts before the running max end
+            let mut cluster_end = rs[i].ref_end;
+            let mut j = i + 1;
+            while j < rs.len() && rs[j].ref_start < cluster_end {
+                cluster_end = cluster_end.max(rs[j].ref_end);
+                j += 1;
+            }
+            let cluster = &rs[i..j];
+            let n = cluster.len() as u32;
+            if n >= min_reads {
+                // per-cluster robust boundaries: k-th smallest start, k-th largest end (matches
+                // pass1_skeletons_robust's boundary rule).
+                let mut starts: Vec<u64> = cluster.iter().map(|r| r.ref_start).collect();
+                let mut ends: Vec<u64> = cluster.iter().map(|r| r.ref_end).collect();
+                starts.sort_unstable();
+                ends.sort_unstable_by(|a, b| b.cmp(a));
+                let si = k.min(starts.len()).saturating_sub(1);
+                let ei = k.min(ends.len()).saturating_sub(1);
+                out.push(Skeleton {
+                    chrom: chrom.to_string(),
+                    start: starts[si],
+                    end: ends[ei],
+                    n_reads: n,
+                    introns: Vec::new(),
+                });
+            }
+            i = j;
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod locus_support_tests {
     use super::*;
@@ -1258,5 +1307,32 @@ mod tests {
         assert!(!is_unmapped_primary(Flags::default()));
         assert!(!is_unmapped_primary(Flags::UNMAPPED | Flags::SECONDARY));
         assert!(!is_unmapped_primary(Flags::UNMAPPED | Flags::SUPPLEMENTARY));
+    }
+
+    // ---- cluster_unspliced ----
+
+    #[test]
+    fn cluster_unspliced_separates_distant_loci() {
+        // two unspliced read groups 50kb apart -> TWO skeletons, not one chromosome-spanning giant
+        let reads = vec![
+            pr("c1", 1000, 3000, &[]), pr("c1", 1100, 3100, &[]), pr("c1", 1200, 3200, &[]),
+            pr("c1", 51000, 53000, &[]), pr("c1", 51100, 53100, &[]), pr("c1", 51200, 53200, &[]),
+        ];
+        let sk = cluster_unspliced(&reads, 3, 1);
+        assert_eq!(sk.len(), 2, "distant unspliced loci must seed as separate skeletons");
+        assert!(sk.iter().all(|s| s.end - s.start < 300_000), "each skeleton spans one locus, not the chromosome");
+        assert!(sk.iter().all(|s| s.introns.is_empty()));
+    }
+
+    #[test]
+    fn cluster_unspliced_merges_overlapping_and_filters_min_reads() {
+        // one overlapping pile -> ONE skeleton; a lone read below min_reads -> dropped
+        let reads = vec![
+            pr("c1", 100, 400, &[]), pr("c1", 150, 450, &[]), pr("c1", 200, 500, &[]),
+            pr("c1", 90000, 90200, &[]), // singleton, below min_reads=2
+        ];
+        let sk = cluster_unspliced(&reads, 2, 1);
+        assert_eq!(sk.len(), 1, "overlapping unspliced reads merge; the singleton is below min_reads");
+        assert_eq!(sk[0].n_reads, 3);
     }
 }
