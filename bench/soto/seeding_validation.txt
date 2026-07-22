@@ -1,0 +1,22 @@
+# Unspliced-seeding validation — OLD (fedf8f0) vs NEW (fe4381b), real A119b IsoSeq vs CHM13
+
+## DECISIVE MECHANISTIC RESULT — the fix restores the deleted reads
+Region chr16:32754124-32871138 (ID_26 SLC9B1P1, 40 unique reads), copy_assign --homology-primary:
+  OLD: 73 primary -> 3 skeletons -> 0 transcripts -> 0 reps   (unspliced reads pool into a giant
+       single-exon skeleton, dropped by the readthrough/MAX_SPLICED gate -> member DELETED at seeding)
+  NEW: 73 primary -> 12 skeletons -> 7 transcripts -> 7 reps  (position-aware seeding -> per-locus
+       skeletons survive -> the member's locus now forms a rep)
+=> OLD detects nothing (0 reps); NEW seeds 7 loci. The fix does exactly what the diagnosis predicted.
+
+## Spliced path byte-identical (by construction)
+pass1_skeletons_robust's `if r.introns.is_empty() { continue; }` guard only skips UNSPLICED reads;
+the spliced (chrom, introns) groups loop is unchanged; the existing spliced tests (:1056, :1058)
+pass unmodified. No runtime divergence possible on spliced-only input.
+
+## Genome-wide recovery number (member sensitivity delta) — DEFERRED
+The Soto eval reads a genome-wide catalog (soto_off/soto_gw_prot/soto_pall/soto_ce). Quantifying
+the 76.2% -> ? member-sensitivity delta requires regenerating that catalog with the new binary
+(a heavy genome-wide gw_family_catalog run). The per-region mechanism above is the decisive
+directional proof; the genome-wide number is a background-run follow-up.
+
+## Precision / K=0 — pending the genome-wide catalog (min_reads>=3 floor guards noise per cluster)
