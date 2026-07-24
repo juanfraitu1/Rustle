@@ -1,19 +1,19 @@
 chrom	start	end	near_family	best_hit	best_id	verdict
 chr1	16272278	16277825	ID_393	MST1P2_ID_393_2	0.998	REAL-copy(homologous-to-a-Soto-family)
-chr1	16278523	16283903	ID_393		0.000	no-Soto-homology
-chr1	16478340	16479683	ID_393		0.000	no-Soto-homology
-chr1	16560385	16565766	ID_393		0.000	no-Soto-homology
+chr1	16278523	16283903	ID_393	ID_393	0.832	partial/divergent Soto member (ID_393)
+chr1	16478340	16479683	ID_393	ID_393	0.945	Soto-family copy (ID_393)
+chr1	16560385	16565766	ID_393	ID_393	0.845	partial/divergent Soto member (ID_393)
 chr1	103575079	103599747	ID_131	AMYP1_ID_131_7	0.998	REAL-copy(homologous-to-a-Soto-family)
 chr1	103599782	103607562	ID_131	AMY1B_ID_131_6	0.999	REAL-copy(homologous-to-a-Soto-family)
-chr1	120449518	120478614	ID_215		0.000	no-Soto-homology
+chr1	120449518	120478614	ID_215	ID_400	0.869	Soto-family copy (ID_400)
 chr1	143815796	143832983	ID_22	AC239859.5_ID_24_24	0.995	REAL-copy(homologous-to-a-Soto-family)
-chr1	145834600	145840160	ID_215		0.000	no-Soto-homology
-chr1	148601552	148620972	ID_400		0.000	no-Soto-homology
-chr15	20812032	20814214	ID_113		0.000	no-Soto-homology
+chr1	145834600	145840160	ID_215	ID_212	0.946	Soto-family copy (ID_212)
+chr1	148601552	148620972	ID_400	ID_400	0.7	non-Soto real copy (has paralog)
+chr15	20812032	20814214	ID_113	ID_116	0.998	Soto-family copy (ID_116)
 chr15	20815859	20820620	ID_113	AC100756.3_ID_116_247	1.000	REAL-copy(homologous-to-a-Soto-family)
 chr15	20972546	20985986	ID_116	GOLGA8DP_ID_113_244	0.996	REAL-copy(homologous-to-a-Soto-family)
-chr15	21025273	21028497	ID_116		0.000	no-Soto-homology
-chr15	28174361	28187051	ID_68		0.000	no-Soto-homology
+chr15	21025273	21028497	ID_116	ID_71	0.948	Soto-family copy (ID_71)
+chr15	28174361	28187051	ID_68	ID_179	0.979	Soto-family copy (ID_179)
 chr15	32330974	32339850	ID_78	GOLGA8J_ID_113_259	0.882	REAL-copy(homologous-to-a-Soto-family)
 chr15	82064821	82086891	ID_324	AC243562.1_ID_78_288	0.978	REAL-copy(homologous-to-a-Soto-family)
 chr15	82180375	82186125	ID_481	GOLGA6L4_ID_88_285	0.984	REAL-copy(homologous-to-a-Soto-family)
@@ -22,17 +22,17 @@ chr16	14938874	14953123	ID_154	NPIPA2_ID_154_301	0.984	REAL-copy(homologous-to-a
 chr16	80309670	80426376	ID_154	NPIPB15_ID_154_323	0.995	REAL-copy(homologous-to-a-Soto-family)
 chr17	37270848	37282718	ID_209	TBC1D3E_ID_468_336	0.997	REAL-copy(homologous-to-a-Soto-family)
 chr17	37427145	37437961	ID_222	TBC1D3D_ID_468_335	0.996	REAL-copy(homologous-to-a-Soto-family)
-chr5	70456936	70462706	ID_163		0.000	no-Soto-homology
+chr5	70456936	70462706	ID_163	ID_163	0.809	Soto-family copy (ID_163)
 chr5	70963730	71043224	ID_313	GUSBP16_ID_163_109	0.980	REAL-copy(homologous-to-a-Soto-family)
-chr5	181864358	181868568	ID_35		0.000	no-Soto-homology
-chr5	181881697	181906746	ID_35		0.000	no-Soto-homology
+chr5	181864358	181868568	ID_35	ID_35	0.979	Soto-family copy (ID_35)
+chr5	181881697	181906746	ID_35	ID_35	0.929	partial/divergent Soto member (ID_35)
 chr7	74355307	74407500	ID_402	GTF2IP1_ID_208_142	0.997	REAL-copy(homologous-to-a-Soto-family)
-chr7	76085482	76092920	ID_8		0.000	no-Soto-homology
+chr7	76085482	76092920	ID_8	ID_245	1.0	non-Soto single-copy locus
 chr7	76486449	76491598	ID_207	SPDYE9_ID_207_143	0.998	REAL-copy(homologous-to-a-Soto-family)
 chr7	76489130	76502937	ID_207	PMS2P10_ID_8_146	0.999	REAL-copy(homologous-to-a-Soto-family)
-chr9	77863432	77881287	ID_104		0.000	no-Soto-homology
-chr9	77896718	77916227	ID_260		0.000	no-Soto-homology
-chr9	77917188	77922776	ID_260		0.000	no-Soto-homology
-chr9	77926044	77949112	ID_260		0.000	no-Soto-homology
+chr9	77863432	77881287	ID_104	ID_280	0.944	Soto-family copy (ID_280)
+chr9	77896718	77916227	ID_260	ID_280	0.958	Soto-family copy (ID_280)
+chr9	77917188	77922776	ID_260	ID_280	0.98	Soto-family copy (ID_280)
+chr9	77926044	77949112	ID_260	ID_280	0.949	Soto-family copy (ID_280)
 chr9	79742505	79748351	ID_280	AL669942.1_ID_104_180	0.992	REAL-copy(homologous-to-a-Soto-family)
-chr9	150545078	150568219	ID_35		0.000	no-Soto-homology
+chr9	150545078	150568219	ID_35	ID_35	0.739	non-Soto real copy (has paralog)

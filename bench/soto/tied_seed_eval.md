@@ -82,10 +82,37 @@ annotation:
 - os1 chr11:89,746,906 — unannotated, 0 paralogs, weak homology — likely phantom.
 
 TRIM49D1/D2 are real TRIM-family genes in the same chr11 cluster (TRIM49 ≈ TRIM64 relative → reads tie),
-just not in Soto's ID_43 (TRIM64) roster. So of the 6 tied-seeded copies: **2 recover Soto members
-(TRIM64B, TRIM64), 2 are real TRIM49 genes, 1 has a paralog, 1 is a likely phantom.** Real precision
-≈ 5/6 — the naive 2/6 counted real unannotated loci as errors. The single phantom (os1) is what a
-slightly higher unspliced `min_reads` floor would remove.
+just not in Soto's ID_43 (TRIM64) roster.
 
-**Bottom line:** the unspliced pseudogene lever recovers the intronless missed members AND surfaces real
-related-family copies, with ~1 phantom per region — a strong, mostly-precise result for the user's insight.
+## CORRECTION (2026-07-22) — os1 is NOT a phantom; the "0 paralogs" label was a metric bug
+
+The `os1 = 0 paralogs → likely phantom` call above was WRONG. It came from aligning os1's consensus to
+the genome + **annotation**; but os1's true paralog (os4, chr11:89,934,235) is itself an **unannotated**
+gap copy, so an annotation-anchored search cannot see it. Re-scoring with the **pipeline's own homology
+oracle** (minimap2 `asm20 -c --eqx`, family edge id≥0.80 & cov≥0.50 — the `--refine` criterion; see
+`tied_seed_paralog_recheck.py` / `.tsv`) finds every one of the 6 tied-seed copies has **exactly 1
+paralog**, forming clean 2-copy pairs:
+- os1 (89,746,906) ↔ **os4 (89,934,235)** — **99.3% id, reverse-complement (inverted duplication)**,
+  NM=18 over 2543 bp, mapq=60. (Independently: os1 has 9 primary reads, 8 at MAPQ 8–10, vs os4's 2 —
+  os1 is the *better*-supported member of the pair.)
+- TRIM64B (89,785,154) ↔ TRIM64 (89,893,563) — 99.9%.
+- TRIM49D1 (89,832,458) ↔ TRIM49D2 (89,849,042) — 100%.
+
+So of the 6 tied-seeded copies: **6/6 are real paralog-pair members, 0 phantoms.** os1 is the real second
+copy of a genuine inverted-duplication family {os1, os4}; suppressing it would convert a correct 2-copy
+call into a spurious 1-copy call — the opposite of what `--tied-seed` exists to do.
+
+⭐**Levers that do NOT drop os1 (and shouldn't):** (1) a higher unspliced `min_reads` floor — os1 as a
+copy is not even a tied-seed skeleton (it is a `collapse_loci_span_aware` re-rep), and a floor high enough
+to touch the gap seeds near it also kills the real starved seed os3/TRIM49D2 (n_tied=5); (2) the `de`-tie
+gate (`RUSTLE_TIED_SEED_DE`) — os1's reads are genuine 99.3%-identity ties, so they pass the divergence
+floor; de removes homology-shadow seeds (CDONP2/CDONP3) but leaves the 17-copy set byte-identical here;
+(3) tie-orientation "hub suppression" — adversarially DO-NOT-SHIP: window-dependent (os1 flips to starved
+genome-wide), deletes the better-supported copy, and genome-wide infeasible (secondaries carry no SA tag).
+
+**Bottom line:** the unspliced pseudogene lever recovers the intronless missed members (TRIM64B, TRIM64)
+AND surfaces real related-family copies. On this region tied-seed precision is **6/6 real** once paralogy
+is scored by the homology oracle rather than the annotation. The residual open question is not "phantom
+vs real" (os1 is real) but the deeper K=0 one: os1↔os4 are an *unresolvable* intronless tie pair (no
+read-supported PSV separates them), so whether the RNA warrants emitting them as 2 copies is the
+identifiability boundary, not a precision error.

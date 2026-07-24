@@ -1,0 +1,7 @@
+copy_start	label	oracle_n_paralogs	paralog_partner	partner_id	eval_verdict	corrected
+89746906	os1 (eval:0-paralog/PHANTOM)	1	89934235	0.9930	0-paralog/PHANTOM	REAL (1 paralog)
+89785154	TRIM64B (Soto member)	1	89893563	0.9987	real	REAL (1 paralog)
+89832458	TRIM49D1 (gene)	1	89849042	1.0000	real	REAL (1 paralog)
+89849042	TRIM49D2 (gene)	1	89832458	1.0000	real	REAL (1 paralog)
+89893563	TRIM64 (Soto member)	1	89785154	0.9987	real	REAL (1 paralog)
+89934235	os4 (eval:real-ish)	1	89746906	0.9930	real-ish	REAL (1 paralog)

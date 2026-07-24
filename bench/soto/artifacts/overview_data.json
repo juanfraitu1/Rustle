@@ -1,0 +1,850 @@
+{
+"agg": {
+"sens_n": 276,
+"sens_d": 362,
+"sens_pct": 76.2,
+"prec_n": 393,
+"prec_d": 430,
+"prec_pct": 91.4,
+"phantom": 0,
+"disc_total": 37,
+"disc_real": 34,
+"disc_nonsoto": 3,
+"full": 42,
+"some": 20,
+"none": 21,
+"nfam": 83
+},
+"rows": [
+{
+"fam": "ID_222",
+"gene": "AC243829.6",
+"n": 1,
+"det": 0,
+"sens": 0,
+"disc": 1,
+"prec": 0,
+"state": "none"
+},
+{
+"fam": "ID_260",
+"gene": "AL513478.2",
+"n": 3,
+"det": 0,
+"sens": 0,
+"disc": 3,
+"prec": 0,
+"state": "none"
+},
+{
+"fam": "ID_313",
+"gene": "CDH12P1",
+"n": 2,
+"det": 0,
+"sens": 0,
+"disc": 1,
+"prec": 0,
+"state": "none"
+},
+{
+"fam": "ID_402",
+"gene": "NCF1B",
+"n": 3,
+"det": 0,
+"sens": 0,
+"disc": 1,
+"prec": 0,
+"state": "none"
+},
+{
+"fam": "ID_393",
+"gene": "MST1L",
+"n": 2,
+"det": 2,
+"sens": 100,
+"disc": 4,
+"prec": 43,
+"state": "all"
+},
+{
+"fam": "ID_104",
+"gene": "AL669942.1",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 1,
+"prec": 75,
+"state": "all"
+},
+{
+"fam": "ID_209",
+"gene": "AC233699.1",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 1,
+"prec": 75,
+"state": "all"
+},
+{
+"fam": "ID_215",
+"gene": "AC244669.2",
+"n": 7,
+"det": 5,
+"sens": 71,
+"disc": 2,
+"prec": 78,
+"state": "some"
+},
+{
+"fam": "ID_324",
+"gene": "CSPG4P10",
+"n": 5,
+"det": 5,
+"sens": 100,
+"disc": 2,
+"prec": 78,
+"state": "all"
+},
+{
+"fam": "ID_481",
+"gene": "UBE2Q2P6",
+"n": 5,
+"det": 4,
+"sens": 80,
+"disc": 1,
+"prec": 80,
+"state": "some"
+},
+{
+"fam": "ID_131",
+"gene": "AMY2A",
+"n": 6,
+"det": 5,
+"sens": 83,
+"disc": 2,
+"prec": 80,
+"state": "some"
+},
+{
+"fam": "ID_68",
+"gene": "DNM1P28",
+"n": 4,
+"det": 4,
+"sens": 100,
+"disc": 1,
+"prec": 80,
+"state": "all"
+},
+{
+"fam": "ID_116",
+"gene": "GOLGA6L6",
+"n": 6,
+"det": 6,
+"sens": 100,
+"disc": 2,
+"prec": 83,
+"state": "all"
+},
+{
+"fam": "ID_35",
+"gene": "AL669831.1",
+"n": 10,
+"det": 9,
+"sens": 90,
+"disc": 3,
+"prec": 85,
+"state": "some"
+},
+{
+"fam": "ID_78",
+"gene": "GOLGA8A",
+"n": 5,
+"det": 4,
+"sens": 80,
+"disc": 1,
+"prec": 86,
+"state": "some"
+},
+{
+"fam": "ID_400",
+"gene": "NOTCH2",
+"n": 6,
+"det": 6,
+"sens": 100,
+"disc": 1,
+"prec": 88,
+"state": "all"
+},
+{
+"fam": "ID_22",
+"gene": "AC239859.4",
+"n": 6,
+"det": 6,
+"sens": 100,
+"disc": 1,
+"prec": 91,
+"state": "all"
+},
+{
+"fam": "ID_163",
+"gene": "GUSBP1",
+"n": 6,
+"det": 6,
+"sens": 100,
+"disc": 1,
+"prec": 91,
+"state": "all"
+},
+{
+"fam": "ID_113",
+"gene": "GOLGA8CP",
+"n": 16,
+"det": 16,
+"sens": 100,
+"disc": 2,
+"prec": 91,
+"state": "all"
+},
+{
+"fam": "ID_154",
+"gene": "NPIPB2",
+"n": 14,
+"det": 14,
+"sens": 100,
+"disc": 2,
+"prec": 91,
+"state": "all"
+},
+{
+"fam": "ID_207",
+"gene": "SPDYE1",
+"n": 17,
+"det": 17,
+"sens": 100,
+"disc": 2,
+"prec": 92,
+"state": "all"
+},
+{
+"fam": "ID_280",
+"gene": "ANKRD20A3P",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 1,
+"prec": 93,
+"state": "all"
+},
+{
+"fam": "ID_8",
+"gene": "PMS2P4",
+"n": 9,
+"det": 9,
+"sens": 100,
+"disc": 1,
+"prec": 93,
+"state": "all"
+},
+{
+"fam": "ID_26",
+"gene": "AC006453.4",
+"n": 2,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_92",
+"gene": "AC243829.7",
+"n": 2,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_127",
+"gene": "TCAF2",
+"n": 3,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_146",
+"gene": "AC233280.19",
+"n": 2,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_148",
+"gene": "AC126603.1",
+"n": 2,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_167",
+"gene": "CHEK2P2",
+"n": 3,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_175",
+"gene": "TEKT4P2",
+"n": 2,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_213",
+"gene": "AC246785.1",
+"n": 4,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_240",
+"gene": "SYT15",
+"n": 3,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_251",
+"gene": "ANKRD36B",
+"n": 2,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_302",
+"gene": "BOLA2B",
+"n": 1,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_334",
+"gene": "DEFB104B",
+"n": 1,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_348",
+"gene": "DUX4L50",
+"n": 1,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_386",
+"gene": "LIMS1",
+"n": 2,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_411",
+"gene": "OR11H12",
+"n": 3,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_431",
+"gene": "PPIAL4A",
+"n": 5,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_458",
+"gene": "SPAG11A",
+"n": 2,
+"det": 0,
+"sens": 0,
+"disc": 0,
+"prec": null,
+"state": "none"
+},
+{
+"fam": "ID_226",
+"gene": "H2BP1",
+"n": 5,
+"det": 1,
+"sens": 20,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_261",
+"gene": "CNTNAP3P5",
+"n": 5,
+"det": 1,
+"sens": 20,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_338",
+"gene": "DEFB108C",
+"n": 3,
+"det": 1,
+"sens": 33,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_43",
+"gene": "TRIM64DP",
+"n": 4,
+"det": 2,
+"sens": 50,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_63",
+"gene": "ANAPC1P1",
+"n": 8,
+"det": 4,
+"sens": 50,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_407",
+"gene": "NSUN5P2",
+"n": 4,
+"det": 2,
+"sens": 50,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_14",
+"gene": "AC005562.2",
+"n": 7,
+"det": 4,
+"sens": 57,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_332",
+"gene": "DDX11L2",
+"n": 6,
+"det": 4,
+"sens": 67,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_12",
+"gene": "POM121",
+"n": 4,
+"det": 3,
+"sens": 75,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_147",
+"gene": "AC125634.1",
+"n": 4,
+"det": 3,
+"sens": 75,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_327",
+"gene": "CTSLP3",
+"n": 4,
+"det": 3,
+"sens": 75,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_65",
+"gene": "FAR2P1",
+"n": 9,
+"det": 7,
+"sens": 78,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_156",
+"gene": "WHAMMP3",
+"n": 5,
+"det": 4,
+"sens": 80,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_208",
+"gene": "GTF2IP14",
+"n": 5,
+"det": 4,
+"sens": 80,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_391",
+"gene": "WASH2P",
+"n": 5,
+"det": 4,
+"sens": 80,
+"disc": 0,
+"prec": 100,
+"state": "some"
+},
+{
+"fam": "ID_24",
+"gene": "AC239859.5",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_49",
+"gene": "AC009533.1",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_71",
+"gene": "AC023310.1",
+"n": 5,
+"det": 5,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_88",
+"gene": "GOLGA6L10",
+"n": 4,
+"det": 4,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_141",
+"gene": "AC119751.3",
+"n": 1,
+"det": 1,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_142",
+"gene": "CR381670.1",
+"n": 1,
+"det": 1,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_179",
+"gene": "ULK4P3",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_182",
+"gene": "FAM153B",
+"n": 4,
+"det": 4,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_188",
+"gene": "HERC2P3",
+"n": 4,
+"det": 4,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_211",
+"gene": "AC241377.2",
+"n": 4,
+"det": 4,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_212",
+"gene": "AC244669.1",
+"n": 5,
+"det": 5,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_245",
+"gene": "CNTNAP3",
+"n": 4,
+"det": 4,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_267",
+"gene": "AL590399.2",
+"n": 1,
+"det": 1,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_283",
+"gene": "BCRP7",
+"n": 5,
+"det": 5,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_300",
+"gene": "BMS1P17",
+"n": 2,
+"det": 2,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_354",
+"gene": "FAM72B",
+"n": 4,
+"det": 4,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_357",
+"gene": "FCGR1B",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_359",
+"gene": "FGF7P5",
+"n": 5,
+"det": 5,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_374",
+"gene": "GTF2IRD2P1",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_395",
+"gene": "RGPD1",
+"n": 6,
+"det": 6,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_399",
+"gene": "NAIPP1",
+"n": 4,
+"det": 4,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_403",
+"gene": "NF1P10",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_443",
+"gene": "SHLD2P1",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_448",
+"gene": "SEC22B",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_462",
+"gene": "SRGAP2C",
+"n": 4,
+"det": 4,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_468",
+"gene": "TBC1D3B",
+"n": 9,
+"det": 9,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_474",
+"gene": "TP53TG3D",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+},
+{
+"fam": "ID_490",
+"gene": "ZNF705G",
+"n": 3,
+"det": 3,
+"sens": 100,
+"disc": 0,
+"prec": 100,
+"state": "all"
+}
+]
+}

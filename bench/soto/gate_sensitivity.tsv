@@ -1,0 +1,5 @@
+config	gate_env	copies	on_member%	recall	detected
+default	-(default gates ON)	467	35%	295/362 = 81.5%
+gates_off	RUSTLE_KEEP_READTHROUGH=1	376	33%	294/362 = 81.2%
+readthrough_strict	RUSTLE_READTHROUGH_MIN_DISTINCT=3	483	34%	298/362 = 82.3%
+mischain_aggressive	RUSTLE_MISCHAIN_GIANT_BP=20000 RUSTLE_MISCHAIN_MIN_READS=5	513	37%	296/362 = 81.8%

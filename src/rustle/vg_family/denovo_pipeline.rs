@@ -157,6 +157,9 @@ impl DenovoConfig {
             collapse_enumerate: std::env::var("RUSTLE_COLLAPSE_ENUMERATE").ok().as_deref() == Some("1"),
             collapse_expressed: std::env::var("RUSTLE_COLLAPSE_EXPRESSED").ok().as_deref() == Some("1"),
             dna_family_fallback: std::env::var("RUSTLE_DNA_FAMILY_FALLBACK").ok().as_deref() == Some("1"),
+            // Readthrough/mis-chain gate SENSITIVITY toggle: RUSTLE_KEEP_READTHROUGH=1 disables both gates
+            // (readthroughs that connect copies are then NOT filtered). Default (unset) = gates ON = today.
+            filter_readthrough: std::env::var("RUSTLE_KEEP_READTHROUGH").ok().as_deref() != Some("1"),
             ..Self::default()
         }
     }
@@ -659,6 +662,36 @@ fn gated_family(rep: &DenovoTranscript, bam_reads: &[BamRead], chi: usize, famil
     }
 }
 
+/// `--tied-seed` existence-only append (mirrors the collapse-gate `gated_family` block). Each tied rep whose
+/// span overlaps NO already-emitted copy span becomes a singleton `TSFAM` family that TIES every overlapping
+/// read: the copy is DETECTED (existence, O1) but every read is `AssignStatus::Tied` — assignment (O2) is
+/// abstained, because a starved copy's reads are K=0 with their tie partner. Tied reps are computed OUTSIDE
+/// the primary `reps`/conflict/refine/assignment pipeline, so appending them here leaves the primary copy set
+/// byte-identical to a no-`--tied-seed` run (the fix for the amylase 21->6 over-merge and the os1 rep-shift).
+/// `emitted_spans` = every copy span already in `out`. Deterministic (input order); tid ids run
+/// `TSFAM{next_family_index + k}`. A tied rep overlapping an earlier-admitted tied rep is also skipped.
+fn tied_existence_families(
+    tied_reps: &[DenovoTranscript],
+    emitted_spans: &[(String, u64, u64)],
+    bam_reads: &[BamRead],
+    next_family_index: usize,
+) -> Vec<FamilyAssignment> {
+    let mut out = Vec::new();
+    let mut occupied: Vec<(String, u64, u64)> = emitted_spans.to_vec();
+    for t in tied_reps {
+        let overlaps = occupied
+            .iter()
+            .any(|(c, s, e)| c == &t.chrom && *s < t.end && t.start < *e);
+        if overlaps {
+            continue;
+        }
+        let fid = format!("TSFAM{}", next_family_index + out.len());
+        out.push(gated_family(t, bam_reads, 1, fid));
+        occupied.push((t.chrom.clone(), t.start, t.end));
+    }
+    out
+}
+
 /// Reads required before a splice junction counts as real rather than alignment noise.
 pub const READTHROUGH_MIN_SUPPORT: usize = 2;
 /// Distinct junctions inside a single-exon transcript's span that mark it as unspliced pre-mRNA.
@@ -720,14 +753,22 @@ pub fn read_junction_support(reads: &[PrimaryRead]) -> std::collections::HashMap
 /// Must run on TRANSCRIPTS, before `collapse_loci_span_aware`: a readthrough is the longest object in its span,
 /// so after collapse it becomes the representative of every locus it covers, and dropping that rep deletes the
 /// real copies with it (the DAZ 298 kb span absorbed DAZ2 into DAZ1's group).
+/// Env override for a gate threshold (sensitivity-analysis knob). Unset => the compiled default, so a normal
+/// run is byte-identical. Lets `bench/soto/gate_sensitivity_sweep.sh` vary the readthrough/mis-chain gates
+/// without recompiling.
+fn env_num<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
 pub fn retain_non_readthrough(
     transcripts: &mut Vec<DenovoTranscript>,
     support: &std::collections::HashMap<(String, u64, u64), usize>,
     tag: &str,
 ) {
+    let min_distinct = env_num("RUSTLE_READTHROUGH_MIN_DISTINCT", READTHROUGH_MIN_DISTINCT);
     let mut dropped = Vec::new();
     transcripts.retain(|t| {
-        let rt = is_unspliced_readthrough(t, support, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT);
+        let rt = is_unspliced_readthrough(t, support, READTHROUGH_MIN_SUPPORT, min_distinct);
         if rt {
             dropped.push(format!("{}:{}-{} ({} reads)", t.chrom, t.start, t.end, t.n_reads));
         }
@@ -738,7 +779,7 @@ pub fn retain_non_readthrough(
             "[{tag}] readthrough filter: dropped {} single-exon transcript(s) engulfing >= {} distinct \
              junctions (unspliced pre-mRNA, not copies) -> {} transcripts",
             dropped.len(),
-            READTHROUGH_MIN_DISTINCT,
+            min_distinct,
             transcripts.len()
         );
         for d in &dropped {
@@ -814,9 +855,11 @@ pub fn retain_non_mischain(
     support: &std::collections::HashMap<(String, u64, u64), usize>,
     tag: &str,
 ) {
+    let giant_bp = env_num("RUSTLE_MISCHAIN_GIANT_BP", MISCHAIN_GIANT_INTRON_BP);
+    let min_reads = env_num("RUSTLE_MISCHAIN_MIN_READS", MISCHAIN_MIN_JUNCTION_READS);
     let mut dropped = Vec::new();
     transcripts.retain(|t| {
-        let mc = is_giant_intron_mischain(t, support, MISCHAIN_GIANT_INTRON_BP, MISCHAIN_MIN_JUNCTION_READS);
+        let mc = is_giant_intron_mischain(t, support, giant_bp, min_reads);
         if mc {
             dropped.push(format!("{}:{}-{} ({} reads)", t.chrom, t.start, t.end, t.n_reads));
         }
@@ -827,8 +870,8 @@ pub fn retain_non_mischain(
             "[{tag}] mis-chain filter: dropped {} transcript(s) with a giant intron (> {} bp) supported by < {} \
              reads (spurious splice across a large gene, not a copy) -> {} transcripts",
             dropped.len(),
-            MISCHAIN_GIANT_INTRON_BP,
-            MISCHAIN_MIN_JUNCTION_READS,
+            giant_bp,
+            min_reads,
             transcripts.len()
         );
         for d in &dropped {
@@ -1400,11 +1443,45 @@ pub fn detect_and_assign(
         };
     }
     // Same `k` as the O1 catalogs: one canonical extent per locus across objectives (see `detect_families`).
-    let mut skeletons = pass1_skeletons_robust(primary_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
-    if cfg.tied_seed {
-        let tied = tied_seed_skeletons(rescue_extra, &skeletons, cfg.pass1_min_reads);
-        skeletons.extend(tied);
-    }
+    let skeletons = pass1_skeletons_robust(primary_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    // TIED-SEED (opt-in): assemble the tied-seed skeletons into their OWN reps, kept ENTIRELY OUT of the
+    // primary `reps` / conflict / refine / assignment pipeline. K=0 tied reps mixed into `reps` add spurious
+    // conflict edges that over-merge families and wreck assignment (chr1 amylase 21->6 copies; os1 rep-shift).
+    // These are appended as existence-only `TSFAM` families at the END (see `tied_existence_families`), so the
+    // primary copy set stays byte-identical to a no-`--tied-seed` run.
+    let tied_reps: Vec<DenovoTranscript> = if cfg.tied_seed {
+        let tied_sk = tied_seed_skeletons(rescue_extra, &skeletons, cfg.pass1_min_reads);
+        // DIAGNOSTIC (env-gated, no behavior change when unset): dump each tied-seed skeleton with the real
+        // primary-read coverage at its span. RUSTLE_TIED_SEED_DEBUG=<path>.
+        if let Ok(dbg_path) = std::env::var("RUSTLE_TIED_SEED_DEBUG") {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&dbg_path) {
+                for t in &tied_sk {
+                    let ov = |p: &PrimaryRead| p.chrom == t.chrom && p.ref_start < t.end && t.start < p.ref_end;
+                    let np = primary_reads.iter().filter(|p| ov(p)).count();
+                    let np_uns = primary_reads.iter().filter(|p| ov(p) && p.introns.is_empty()).count();
+                    let np_spl = primary_reads.iter().filter(|p| ov(p) && !p.introns.is_empty()).count();
+                    let n_tied_ov = rescue_extra.iter().filter(|p| ov(p)).count();
+                    let n_sk = skeletons.iter().filter(|s| s.chrom == t.chrom && s.start < t.end && t.start < s.end).count();
+                    let _ = writeln!(
+                        f, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        t.chrom, t.start, t.end, t.n_reads, t.introns.is_empty(),
+                        np, np_uns, np_spl, n_tied_ov, n_sk
+                    );
+                }
+            }
+        }
+        let mut tied_tx = assemble_gate(&tied_sk, genome, &cfg.gate);
+        if cfg.filter_readthrough {
+            let support = read_junction_support(primary_reads);
+            retain_non_readthrough(&mut tied_tx, &support, "detect_and_assign(tied)");
+            retain_non_mischain(&mut tied_tx, &support, "detect_and_assign(tied)");
+        }
+        let tied_rep_idx = collapse_loci_span_aware(&tied_tx, &cfg.detect);
+        tied_rep_idx.iter().map(|&i| tied_tx[i].clone()).collect()
+    } else {
+        Vec::new()
+    };
     let mut transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
 
     // Unspliced readthrough spans are not transcripts, so they are removed BEFORE loci are collapsed. Filter
@@ -1895,6 +1972,22 @@ pub fn detect_and_assign(
                 CollapseVerdict::NotCollapsed { .. } => {}
             }
         }
+    }
+
+    // TIED-SEED existence-only append. `tied_reps` were assembled/collapsed separately at the top (never in
+    // the primary `reps`), so `out` above is byte-identical to a no-`--tied-seed` run. Here each tied rep at a
+    // locus no emitted copy occupies becomes a singleton `TSFAM` family that ties every overlapping read
+    // (detected, unassignable). Additive-only: never merges or drops a primary copy.
+    if cfg.tied_seed && !tied_reps.is_empty() {
+        let emitted: Vec<(String, u64, u64)> =
+            out.iter().flat_map(|fa| fa.copy_spans.iter().cloned()).collect();
+        let tied_fams = tied_existence_families(&tied_reps, &emitted, bam_reads, out.len());
+        eprintln!(
+            "[detect_and_assign] tied-seed existence-only: {} tied reps -> {} appended (non-overlapping)",
+            tied_reps.len(),
+            tied_fams.len()
+        );
+        out.extend(tied_fams);
     }
 
     (out, fallback, dna_needs, linearize_certs)
@@ -4748,6 +4841,34 @@ mod tests {
         for (_, a) in &fa.assignments {
             assert_eq!(a.status, AssignStatus::Tied);
             assert_eq!(a.min_p_value, 1.0, "no distinguishing column exists: that is the honest certificate");
+        }
+    }
+
+    #[test]
+    fn tied_existence_families_appends_only_non_overlapping_as_tied() {
+        // The amylase/os1 fix: tied reps become existence-only TSFAM families ONLY at loci no emitted copy
+        // occupies, and every read on them abstains (Tied). Overlapping tied reps are dropped.
+        let mk = |start: u64| BamRead {
+            chrom: "c1".into(),
+            read: AlignedRead { ref_start: start, cigar: vec![('M', 100)], seq: vec![b'A'; 100], qual: vec![30; 100] },
+            mapq: 0,
+            name: format!("r{start}"),
+            as_score: 100,
+            de: 0.01,
+            is_supplementary: false,
+            is_secondary: false,
+        };
+        let tied = vec![rep_s(1_000, 1_500, vec![], 5), rep_s(5_000, 5_500, vec![], 5)];
+        let emitted = vec![("c1".to_string(), 900u64, 1_100u64)]; // overlaps the first tied rep only
+        let reads = vec![mk(1_050), mk(5_100)];
+        let fams = tied_existence_families(&tied, &emitted, &reads, 3);
+        assert_eq!(fams.len(), 1, "only the tied rep at the free locus is appended");
+        assert_eq!(fams[0].family_id, "TSFAM3", "id continues from next_family_index");
+        assert_eq!(fams[0].n_copies, 1, "singleton existence copy");
+        assert_eq!(fams[0].copy_spans, vec![("c1".to_string(), 5_000, 5_500)]);
+        assert!(!fams[0].assignments.is_empty(), "the overlapping read is tied to it");
+        for (_, a) in &fams[0].assignments {
+            assert_eq!(a.status, AssignStatus::Tied, "existence-only: every read abstains (K=0)");
         }
     }
 

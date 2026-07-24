@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Session genome="chm13v2.0" locus="chr1:142900000-143050000" version="8">
+  <Resources>
+    <Resource path="soto_families.bed" name="Soto families (truth)"/>
+    <Resource path="rustle_dna_families.bed" name="Rustle DNA families (blind)"/>
+  </Resources>
+  <Panel name="FeaturePanel">
+    <Track id="soto_families.bed" name="Soto families (truth)" displayMode="EXPANDED" colorScale="On"/>
+    <Track id="rustle_dna_families.bed" name="Rustle DNA families (blind)" displayMode="EXPANDED" colorScale="On"/>
+  </Panel>
+</Session>

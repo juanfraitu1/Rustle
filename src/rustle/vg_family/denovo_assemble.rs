@@ -214,18 +214,38 @@ pub fn primary_read_from_record(record: &RecordBuf, chrom: &str) -> Option<Prima
 /// read's primary is already counted in the main set; these tied secondaries restore the STARVED sibling
 /// copy's read support so the rescue can assemble it. A truly indistinguishable (no copy-specific feature)
 /// phantom is still rejected downstream by the identifiability / PSV gate — this only feeds candidates in.
-pub fn tied_secondary_reads(aln: &[(String, bool, i32, PrimaryRead)], as_ratio: f64) -> Vec<PrimaryRead> {
+pub fn tied_secondary_reads(aln: &[(String, bool, i32, f32, PrimaryRead)], as_ratio: f64) -> Vec<PrimaryRead> {
     use std::collections::HashMap;
-    let mut best: HashMap<&str, i32> = HashMap::new();
-    for (name, _, as_, _) in aln {
-        let e = best.entry(name.as_str()).or_insert(i32::MIN);
-        if *as_ > *e {
-            *e = *as_;
+    // Optional de-tie gate (`RUSTLE_TIED_SEED_DE=1`): admit a secondary iff it DE-ties with the read's best
+    // placement — `|Δde| <= DE_DELTA` AND both `de <= DE_MAX` — the SAME criterion the read-conflict graph
+    // uses (`ConflictParams` delta=0.005, de_max=0.05). Unlike the relative AS ratio (no absolute quality
+    // floor), the `de_max` floor rejects homology-shadow spillover: a read from a DISTANT paralog that aligns
+    // here with high divergence but whose AS is within `as_ratio` of its own mediocre best. Default OFF =
+    // legacy AS gate = byte-identical.
+    const DE_DELTA: f64 = 0.005;
+    const DE_MAX: f64 = 0.05;
+    let use_de = std::env::var("RUSTLE_TIED_SEED_DE").map(|v| v != "0").unwrap_or(false);
+    // best placement per read = highest AS; carry its `de` as the tie reference.
+    let mut best: HashMap<&str, (i32, f32)> = HashMap::new();
+    for (name, _, as_, de, _) in aln {
+        let e = best.entry(name.as_str()).or_insert((i32::MIN, 0.0));
+        if *as_ > e.0 {
+            *e = (*as_, *de);
         }
     }
     aln.iter()
-        .filter(|(name, is_sec, as_, _)| *is_sec && (*as_ as f64) >= best[name.as_str()] as f64 * as_ratio)
-        .map(|(_, _, _, pr)| pr.clone())
+        .filter(|(name, is_sec, as_, de, _)| {
+            if !*is_sec {
+                return false;
+            }
+            let (best_as, de_ref) = best[name.as_str()];
+            if use_de {
+                ((*de - de_ref).abs() as f64) <= DE_DELTA && (de.max(de_ref) as f64) <= DE_MAX
+            } else {
+                (*as_ as f64) >= best_as as f64 * as_ratio
+            }
+        })
+        .map(|(_, _, _, _, pr)| pr.clone())
         .collect()
 }
 
@@ -262,8 +282,10 @@ fn record_de(record: &RecordBuf) -> Option<f32> {
 }
 
 /// Like `primary_read_from_record` but ALSO accepts SECONDARY alignments, returning `(PrimaryRead, read_name,
-/// is_secondary, AS)` for the AS-tie gate. Unmapped / supplementary / no-AS / no-exon records are skipped.
-pub fn any_read_from_record(record: &RecordBuf, chrom: &str) -> Option<(PrimaryRead, String, bool, i32)> {
+/// is_secondary, AS, de)` for the tie gate. AS ratio is the default gate; the `de:f` gap-compressed divergence
+/// is carried so the de-tie gate (`RUSTLE_TIED_SEED_DE`) can use the same criterion the conflict graph uses.
+/// Unmapped / supplementary / no-AS / no-exon records are skipped.
+pub fn any_read_from_record(record: &RecordBuf, chrom: &str) -> Option<(PrimaryRead, String, bool, i32, f32)> {
     let flags = record.flags();
     if flags.is_unmapped() || flags.is_supplementary() {
         return None;
@@ -282,7 +304,8 @@ pub fn any_read_from_record(record: &RecordBuf, chrom: &str) -> Option<(PrimaryR
     };
     let name = record.name().map(|n| n.to_string()).unwrap_or_default();
     let as_ = record_as(record)?;
-    Some((pr, name, flags.is_secondary(), as_))
+    let de = record_de(record).unwrap_or(0.0);
+    Some((pr, name, flags.is_secondary(), as_, de))
 }
 
 /// Scan every PRIMARY mapped alignment in a BAM into `PrimaryRead`s (the Pass-1 input). I/O driver:
@@ -554,8 +577,8 @@ pub fn tied_secondary_reads_in_region(
     let mut aln = Vec::new();
     for result in query {
         let rb = RecordBuf::try_from_alignment_record(&header, &result?)?;
-        if let Some((pr, name, is_sec, as_)) = any_read_from_record(&rb, chrom) {
-            aln.push((name, is_sec, as_, pr));
+        if let Some((pr, name, is_sec, as_, de)) = any_read_from_record(&rb, chrom) {
+            aln.push((name, is_sec, as_, de, pr));
         }
     }
     Ok(tied_secondary_reads(&aln, as_ratio))
@@ -1022,11 +1045,11 @@ mod tests {
         // r1: a TIED multimapper (primary @ copyA AS=500, secondary @ copyB AS=500) -> the secondary restores
         // copyB's support. r2: spillover (secondary AS 300 << 500) -> dropped. r3: primary-only -> never emitted.
         let aln = vec![
-            ("r1".to_string(), false, 500, pr("c1", 0, 100, &[])),
-            ("r1".to_string(), true, 500, pr("c1", 1000, 1100, &[])),
-            ("r2".to_string(), false, 500, pr("c1", 0, 100, &[])),
-            ("r2".to_string(), true, 300, pr("c1", 1000, 1100, &[])),
-            ("r3".to_string(), false, 400, pr("c1", 0, 100, &[])),
+            ("r1".to_string(), false, 500, 0.0f32, pr("c1", 0, 100, &[])),
+            ("r1".to_string(), true, 500, 0.0f32, pr("c1", 1000, 1100, &[])),
+            ("r2".to_string(), false, 500, 0.0f32, pr("c1", 0, 100, &[])),
+            ("r2".to_string(), true, 300, 0.0f32, pr("c1", 1000, 1100, &[])),
+            ("r3".to_string(), false, 400, 0.0f32, pr("c1", 0, 100, &[])),
         ];
         let out = tied_secondary_reads(&aln, 0.98);
         assert_eq!(out.len(), 1, "only the tied secondary (r1) survives");
@@ -1037,8 +1060,8 @@ mod tests {
     fn tied_secondary_margin_boundary() {
         // secondary AS 495 vs best 500: kept at ratio 0.98 (>=490), dropped at 0.999 (<499.5).
         let aln = vec![
-            ("r".to_string(), false, 500, pr("c1", 5, 105, &[])),
-            ("r".to_string(), true, 495, pr("c1", 5, 105, &[])),
+            ("r".to_string(), false, 500, 0.0f32, pr("c1", 5, 105, &[])),
+            ("r".to_string(), true, 495, 0.0f32, pr("c1", 5, 105, &[])),
         ];
         assert_eq!(tied_secondary_reads(&aln, 0.98).len(), 1);
         assert_eq!(tied_secondary_reads(&aln, 0.999).len(), 0);

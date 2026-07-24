@@ -1,0 +1,252 @@
+<title>Does a discovery bridge two family cliques?</title>
+<style>
+  :root{
+    --ground:#f5f7f9; --panel:#ffffff; --panel-2:#eef2f5;
+    --ink:#17222e; --muted:#5a6a79; --faint:#8496a5;
+    --line:#dde4ea; --line-strong:#c6d0d9;
+    --accent:#0e6e78; --accent-soft:#0e6e7818;
+    --pms:#157f5a; --pms-soft:#157f5a22;
+    --cnt:#2b6ea3; --cnt-soft:#2b6ea322;
+    --disc:#c07d0e; --disc-soft:#c07d0e18;
+    --bad:#b1462d;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:-apple-system,"Segoe UI","Helvetica Neue",system-ui,Roboto,sans-serif;
+    --shadow:0 1px 2px #17222e0a,0 8px 24px #17222e0c;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --ground:#0c1219; --panel:#121b24; --panel-2:#0f171f;
+    --ink:#e7eef4; --muted:#93a4b4; --faint:#67788a;
+    --line:#213040; --line-strong:#2c3f52;
+    --accent:#3cb7c4; --accent-soft:#3cb7c422;
+    --pms:#37c98c; --pms-soft:#37c98c26;
+    --cnt:#5aa0dc; --cnt-soft:#5aa0dc26;
+    --disc:#e0b24d; --disc-soft:#e0b24d20;
+    --bad:#e37a5d; --shadow:0 1px 2px #0006,0 10px 30px #0004;
+  }}
+  :root[data-theme="dark"]{
+    --ground:#0c1219; --panel:#121b24; --panel-2:#0f171f;
+    --ink:#e7eef4; --muted:#93a4b4; --faint:#67788a;
+    --line:#213040; --line-strong:#2c3f52;
+    --accent:#3cb7c4; --accent-soft:#3cb7c422;
+    --pms:#37c98c; --pms-soft:#37c98c26;
+    --cnt:#5aa0dc; --cnt-soft:#5aa0dc26;
+    --disc:#e0b24d; --disc-soft:#e0b24d20;
+    --bad:#e37a5d; --shadow:0 1px 2px #0006,0 10px 30px #0004;
+  }
+  :root[data-theme="light"]{
+    --ground:#f5f7f9; --panel:#ffffff; --panel-2:#eef2f5;
+    --ink:#17222e; --muted:#5a6a79; --faint:#8496a5;
+    --line:#dde4ea; --line-strong:#c6d0d9;
+    --accent:#0e6e78; --accent-soft:#0e6e7818;
+    --pms:#157f5a; --pms-soft:#157f5a22;
+    --cnt:#2b6ea3; --cnt-soft:#2b6ea322;
+    --disc:#c07d0e; --disc-soft:#c07d0e18;
+    --bad:#b1462d; --shadow:0 1px 2px #17222e0a,0 8px 24px #17222e0c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.55;font-size:16px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px;margin:0 auto;padding:clamp(20px,4vw,48px) clamp(14px,4vw,36px) 80px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 12px}
+  h1{font-size:clamp(26px,4.4vw,42px);line-height:1.08;letter-spacing:-.02em;margin:0 0 14px;font-weight:700;text-wrap:balance;max-width:20ch}
+  .lede{font-size:clamp(15.5px,1.9vw,18px);color:var(--muted);max-width:70ch;margin:0}
+  .lede b{color:var(--ink);font-weight:600}
+  .lede code{font-family:var(--mono);font-size:.88em;background:var(--panel-2);padding:1px 6px;border-radius:5px;border:1px solid var(--line)}
+
+  .stage{margin:28px 0 0;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+  svg{display:block;width:100%;height:auto}
+  .edge-int{stroke-width:1.4}
+  .edge-cand{stroke-width:2.4}
+  .edge-ghost{stroke-dasharray:3 4;opacity:.32}
+  .node{stroke:var(--panel);stroke-width:2}
+  .nlabel{font-family:var(--mono);font-size:11px;fill:var(--muted)}
+  .cluster-label{font-family:var(--mono);font-size:12.5px;letter-spacing:.06em;font-weight:700}
+  .cluster-ring{fill:none;stroke-dasharray:5 6;stroke-width:1.4;opacity:.55}
+
+  .controls{border-top:1px solid var(--line);background:var(--panel-2);padding:20px clamp(16px,3vw,28px)}
+  .gate-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .gate-lab{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
+  input[type=range]{flex:1;min-width:200px;accent-color:var(--accent);height:6px}
+  .gate-val{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;min-width:112px;text-align:right}
+  .marks{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:8px}
+  .marks b{color:var(--muted)}
+
+  .verdict{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:18px;padding:14px 18px;border-radius:12px;border:1px solid var(--line)}
+  .verdict.ok{background:var(--pms-soft);border-color:var(--pms)}
+  .verdict.bad{background:var(--disc-soft);border-color:var(--bad)}
+  .vstatus{font-family:var(--mono);font-size:14px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:5px 13px;border-radius:20px;white-space:nowrap}
+  .verdict.ok .vstatus{background:var(--pms);color:#fff}
+  .verdict.bad .vstatus{background:var(--bad);color:#fff}
+  .vtext{font-size:14px;color:var(--muted)}
+  .vtext b{color:var(--ink);font-family:var(--mono)}
+
+  .section-h{font-family:var(--mono);font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin:38px 0 14px;display:flex;align-items:center;gap:12px}
+  .section-h::after{content:"";flex:1;height:1px;background:var(--line)}
+  .tablewrap{border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);background:var(--panel)}
+  .tscroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:600px}
+  thead th{background:var(--panel-2);text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line-strong)}
+  thead th.num{text-align:right}
+  tbody td{padding:9px 14px;border-bottom:1px solid var(--line)}
+  tbody tr:last-child td{border-bottom:none}
+  .num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .mono{font-family:var(--mono)}
+  .tag{font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:11px;font-weight:600}
+  .t-pass{background:var(--pms-soft);color:var(--pms)}
+  .t-fail{background:var(--disc-soft);color:var(--disc)}
+  .keypts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}
+  @media(max-width:640px){.keypts{grid-template-columns:1fr}}
+  .kp{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px 17px;box-shadow:var(--shadow)}
+  .kp h4{margin:0 0 6px;font-size:14px;letter-spacing:-.01em}
+  .kp p{margin:0;font-size:13.5px;color:var(--muted)}
+  .kp .n{font-family:var(--mono);color:var(--accent);font-weight:700}
+  footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px;line-height:1.5}
+  footer code{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Family-graph integrity check · PMS2P (ID_8) vs CNTNAP3 (ID_245)</p>
+  <h1>Does a discovery bridge two family cliques?</h1>
+  <p class="lede">A copy discovered next to <b>PMS2P</b> reports <b>100% identity to CNTNAP3</b> — a different family. If that made a graph edge, it would merge two cliques that must stay apart. It doesn't: the family-edge rule needs <code>id ≥ 0.80 <b>and</b> cov ≥ 0.50</code>, and that 100% hit is a <b>63 bp fragment (0.8% coverage)</b>. Drag the coverage gate and watch what the fragment can and can't do.</p>
+
+  <div class="stage">
+    <svg id="graph" viewBox="0 0 880 520" role="img" aria-label="Graph of PMS2P and CNTNAP3 cliques with a discovery node"></svg>
+    <div class="controls">
+      <div class="gate-row">
+        <span class="gate-lab">Coverage gate</span>
+        <input type="range" id="slider" min="0" max="1" step="0.001" value="0.5">
+        <span class="gate-val" id="gateval">cov ≥ 0.500</span>
+      </div>
+      <div class="marks">
+        <span>0 — no gate</span>
+        <span><b>0.008</b> · the 63 bp fragment</span>
+        <span><b>0.50</b> · Rustle's gate ✓</span>
+        <span>1.0</span>
+      </div>
+      <div class="verdict ok" id="verdict">
+        <span class="vstatus" id="vstatus">Cliques separate</span>
+        <span class="vtext" id="vtext"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-h">The discovery's candidate edges — pass or fail at the current gate</div>
+  <div class="tablewrap"><div class="tscroll"><table>
+    <thead><tr><th>Aligns to</th><th>Family</th><th class="num">identity</th><th class="num">coverage</th><th class="num">aligned</th><th>At current gate</th></tr></thead>
+    <tbody id="etb"></tbody>
+  </table></div></div>
+
+  <div class="section-h">What this shows</div>
+  <div class="keypts">
+    <div class="kp"><h4>The two cliques never touch</h4><p><span class="n">0</span> edges qualify between PMS2P and CNTNAP3 at any real threshold. The 100%-identity hit is <span class="n">63 bp</span> out of 7.4 kb.</p></div>
+    <div class="kp"><h4>The gate does the work</h4><p>At <span class="n">cov ≥ 0.50</span> the discovery has <span class="n">0</span> qualifying edges — it joins neither clique and bridges nothing. It is a real expressed locus (427 reads), attributed to PMS2P by proximity alone.</p></div>
+    <div class="kp"><h4>Why 0.50, not lower</h4><p>Drop the gate below <span class="n">~0.01</span> and the 63 bp fragment lights up, wiring the discovery into <i>both</i> cliques — a false merge. Coverage is the guard against fragment bridges.</p></div>
+    <div class="kp"><h4>Identity alone is a trap</h4><p>Ranking by identity put a 63 bp sliver at the top. A family edge is homology over <i>length</i>, not a shared exon or repeat — which is exactly what coverage measures.</p></div>
+  </div>
+
+  <footer>
+    Graph = all-vs-all <code>minimap2 asm20</code> of the discovery + every PMS2P (ID_8) and CNTNAP3 (ID_245) member on T2T-CHM13 v2.0.
+    Edge kept if <code>id ≥ 0.80 &amp; cov ≥ 0.50</code> (family oracle) or a high-identity discovery fragment (shown as ghost).
+    Reproduce: <code>bench/soto/artifacts/bridge_graph.json</code>.
+  </footer>
+</div>
+
+<script>
+const GRAPH = {"nodes":[{"id":"DISCOVERY_chr7_76085482","fam":"DISC","gene":"new copy"},{"id":"ID_8|PMS2P4|chr7:68507281-68522154","fam":"ID_8","gene":"PMS2P4"},{"id":"ID_8|PMS2P7|chr7:74233765-74249332","fam":"ID_8","gene":"PMS2P7"},{"id":"ID_8|PMS2P11|chr7:74265295-74269589","fam":"ID_8","gene":"PMS2P11"},{"id":"ID_8|PMS2P6|chr7:74293709-74305513","fam":"ID_8","gene":"PMS2P6"},{"id":"ID_8|PMS2P5|chr7:76096419-76100140","fam":"ID_8","gene":"PMS2P5"},{"id":"ID_8|PMS2P10|chr7:76575232-76586963","fam":"ID_8","gene":"PMS2P10"},{"id":"ID_8|AC211486.3|chr7:76603248-76614958","fam":"ID_8","gene":"AC211486.3"},{"id":"ID_8|PMS2P2|chr7:76631238-76646816","fam":"ID_8","gene":"PMS2P2"},{"id":"ID_8|PMS2P1|chr7:101559306-101576392","fam":"ID_8","gene":"PMS2P1"},{"id":"ID_245|CNTNAP3|chr9:39086152-39301732","fam":"ID_245","gene":"CNTNAP3"},{"id":"ID_245|BX005040.4|chr9:41323315-41373554","fam":"ID_245","gene":"BX005040.4"},{"id":"ID_245|CNTNAP3B|chr9:43440746-43680056","fam":"ID_245","gene":"CNTNAP3B"},{"id":"ID_245|CNTNAP3P2|chr9:78831664-79065816","fam":"ID_245","gene":"CNTNAP3P2"}],"edges":[{"s":"DISCOVERY_chr7_76085482","t":"ID_8|PMS2P2|chr7:76631238-76646816","id":0.89,"cov":0.05,"aln":373,"qual":false},{"s":"DISCOVERY_chr7_76085482","t":"ID_8|PMS2P7|chr7:74233765-74249332","id":0.895,"cov":0.01,"aln":76,"qual":false},{"s":"DISCOVERY_chr7_76085482","t":"ID_245|CNTNAP3P2|chr9:78831664-79065816","id":0.831,"cov":0.011,"aln":83,"qual":false},{"s":"DISCOVERY_chr7_76085482","t":"ID_245|CNTNAP3|chr9:39086152-39301732","id":1.0,"cov":0.008,"aln":63,"qual":false},{"s":"DISCOVERY_chr7_76085482","t":"ID_8|PMS2P6|chr7:74293709-74305513","id":0.895,"cov":0.01,"aln":76,"qual":false},{"s":"ID_8|PMS2P2|chr7:76631238-76646816","t":"ID_8|PMS2P7|chr7:74233765-74249332","id":0.983,"cov":1.002,"aln":15600,"qual":true},{"s":"ID_8|PMS2P1|chr7:101559306-101576392","t":"ID_8|PMS2P7|chr7:74233765-74249332","id":0.811,"cov":1.001,"aln":15584,"qual":true},{"s":"ID_8|PMS2P6|chr7:74293709-74305513","t":"ID_8|PMS2P7|chr7:74233765-74249332","id":0.975,"cov":0.999,"aln":11799,"qual":true},{"s":"ID_8|PMS2P10|chr7:76575232-76586963","t":"ID_8|PMS2P7|chr7:74233765-74249332","id":0.979,"cov":1.0,"aln":11727,"qual":true},{"s":"ID_8|AC211486.3|chr7:76603248-76614958","t":"ID_8|PMS2P7|chr7:74233765-74249332","id":0.973,"cov":1.001,"aln":11719,"qual":true},{"s":"ID_8|PMS2P11|chr7:74265295-74269589","t":"ID_8|PMS2P7|chr7:74233765-74249332","id":0.948,"cov":1.0,"aln":4297,"qual":true},{"s":"ID_8|PMS2P5|chr7:76096419-76100140","t":"ID_8|PMS2P7|chr7:74233765-74249332","id":0.91,"cov":1.035,"aln":3853,"qual":true},{"s":"ID_8|PMS2P11|chr7:74265295-74269589","t":"ID_8|PMS2P2|chr7:76631238-76646816","id":0.959,"cov":1.0,"aln":4296,"qual":true},{"s":"ID_8|PMS2P11|chr7:74265295-74269589","t":"ID_8|PMS2P6|chr7:74293709-74305513","id":0.989,"cov":0.926,"aln":3978,"qual":true},{"s":"ID_8|PMS2P10|chr7:76575232-76586963","t":"ID_8|PMS2P11|chr7:74265295-74269589","id":0.967,"cov":0.922,"aln":3962,"qual":true},{"s":"ID_8|AC211486.3|chr7:76603248-76614958","t":"ID_8|PMS2P11|chr7:74265295-74269589","id":0.96,"cov":0.922,"aln":3958,"qual":true},{"s":"ID_8|PMS2P11|chr7:74265295-74269589","t":"ID_8|PMS2P5|chr7:76096419-76100140","id":0.891,"cov":1.066,"aln":3967,"qual":true},{"s":"ID_8|PMS2P10|chr7:76575232-76586963","t":"ID_8|PMS2P6|chr7:74293709-74305513","id":0.983,"cov":1.006,"aln":11806,"qual":true},{"s":"ID_8|PMS2P2|chr7:76631238-76646816","t":"ID_8|PMS2P6|chr7:74293709-74305513","id":0.977,"cov":0.999,"aln":11799,"qual":true},{"s":"ID_8|AC211486.3|chr7:76603248-76614958","t":"ID_8|PMS2P6|chr7:74293709-74305513","id":0.975,"cov":1.008,"aln":11800,"qual":true},{"s":"ID_8|PMS2P1|chr7:101559306-101576392","t":"ID_8|PMS2P6|chr7:74293709-74305513","id":0.808,"cov":1.007,"aln":11883,"qual":true},{"s":"ID_8|PMS2P5|chr7:76096419-76100140","t":"ID_8|PMS2P6|chr7:74293709-74305513","id":0.886,"cov":1.069,"aln":3977,"qual":true},{"s":"ID_8|PMS2P2|chr7:76631238-76646816","t":"ID_8|PMS2P5|chr7:76096419-76100140","id":0.901,"cov":1.043,"aln":3883,"qual":true},{"s":"ID_8|PMS2P10|chr7:76575232-76586963","t":"ID_8|PMS2P5|chr7:76096419-76100140","id":0.892,"cov":1.051,"aln":3910,"qual":true},{"s":"ID_8|AC211486.3|chr7:76603248-76614958","t":"ID_8|PMS2P5|chr7:76096419-76100140","id":0.895,"cov":1.044,"aln":3885,"qual":true},{"s":"ID_8|PMS2P1|chr7:101559306-101576392","t":"ID_8|PMS2P5|chr7:76096419-76100140","id":0.823,"cov":1.009,"aln":3755,"qual":true},{"s":"ID_8|AC211486.3|chr7:76603248-76614958","t":"ID_8|PMS2P10|chr7:76575232-76586963","id":0.984,"cov":1.002,"aln":11736,"qual":true},{"s":"ID_8|PMS2P10|chr7:76575232-76586963","t":"ID_8|PMS2P2|chr7:76631238-76646816","id":0.984,"cov":1.0,"aln":11727,"qual":true},{"s":"ID_8|PMS2P10|chr7:76575232-76586963","t":"ID_8|PMS2P1|chr7:101559306-101576392","id":0.812,"cov":1.006,"aln":11798,"qual":true},{"s":"ID_8|AC211486.3|chr7:76603248-76614958","t":"ID_8|PMS2P2|chr7:76631238-76646816","id":0.982,"cov":1.001,"aln":11718,"qual":true},{"s":"ID_8|AC211486.3|chr7:76603248-76614958","t":"ID_8|PMS2P1|chr7:101559306-101576392","id":0.809,"cov":1.006,"aln":11777,"qual":true},{"s":"ID_8|PMS2P1|chr7:101559306-101576392","t":"ID_8|PMS2P2|chr7:76631238-76646816","id":0.807,"cov":1.002,"aln":15612,"qual":true},{"s":"ID_245|BX005040.4|chr9:41323315-41373554","t":"ID_245|CNTNAP3|chr9:39086152-39301732","id":0.839,"cov":1.004,"aln":50418,"qual":true},{"s":"ID_245|BX005040.4|chr9:41323315-41373554","t":"ID_245|CNTNAP3B|chr9:43440746-43680056","id":0.932,"cov":1.002,"aln":50350,"qual":true},{"s":"ID_245|BX005040.4|chr9:41323315-41373554","t":"ID_245|CNTNAP3P2|chr9:78831664-79065816","id":0.924,"cov":1.002,"aln":50331,"qual":true},{"s":"ID_245|CNTNAP3B|chr9:43440746-43680056","t":"ID_245|CNTNAP3P2|chr9:78831664-79065816","id":0.951,"cov":1.007,"aln":235771,"qual":true}]};
+const SVG = document.getElementById('graph');
+const NS='http://www.w3.org/2000/svg';
+const famOf = n => GRAPH.nodes.find(x=>x.id===n).fam;
+const geneOf = n => GRAPH.nodes.find(x=>x.id===n).gene;
+const isDisc = n => n.startsWith('DISCOVERY');
+
+// positions
+const pms = GRAPH.nodes.filter(n=>n.fam==='ID_8');
+const cnt = GRAPH.nodes.filter(n=>n.fam==='ID_245');
+const disc = GRAPH.nodes.find(n=>n.fam==='DISC');
+const pos={};
+function place(list, cx, cy, r){
+  list.forEach((n,i)=>{ const a=-Math.PI/2 + i/list.length*2*Math.PI; pos[n.id]={x:cx+r*Math.cos(a), y:cy+r*Math.sin(a), cx,cy}; });
+}
+place(pms, 220, 305, 118);
+place(cnt, 668, 305, 82);
+pos[disc.id]={x:445, y:78, cx:445, cy:78};
+
+const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+function cssvar(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+
+function render(thr){
+  SVG.innerHTML='';
+  // cluster rings + labels
+  [['ID_8','PMS2P · ID_8',220,305,150,'--pms'],['ID_245','CNTNAP3 · ID_245',668,305,112,'--cnt']].forEach(([f,lab,cx,cy,r,c])=>{
+    SVG.appendChild(el('circle',{cx,cy,r,class:'cluster-ring',stroke:cssvar(c)}));
+    const t=el('text',{x:cx,y:cy+r+20,'text-anchor':'middle',class:'cluster-label',fill:cssvar(c)}); t.textContent=lab; SVG.appendChild(t);
+  });
+  // edges
+  let joinP=false, joinC=false;
+  const eActive=[];
+  GRAPH.edges.forEach(e=>{
+    const a=pos[e.s], b=pos[e.t]; if(!a||!b) return;
+    const fa=famOf(e.s), fb=famOf(e.t);
+    const cand = fa==='DISC'||fb==='DISC';
+    const active = e.id>=0.80 && e.cov>=thr;
+    if(cand){
+      const other = fa==='DISC'? fb : fa;
+      const line=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'edge-cand '+(active?'':'edge-ghost'),
+        stroke: active ? cssvar('--disc') : cssvar('--faint')});
+      SVG.appendChild(line);
+      if(active){ if(other==='ID_8')joinP=true; if(other==='ID_245')joinC=true; eActive.push(e);}
+    } else if(e.qual){
+      const active2 = e.cov>=thr;
+      SVG.appendChild(el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'edge-int',
+        stroke: cssvar(fa==='ID_8'?'--pms':'--cnt'), opacity: active2?0.5:0.08}));
+    }
+  });
+  // nodes
+  GRAPH.nodes.forEach(n=>{
+    const p=pos[n.id]; const c = n.fam==='ID_8'?'--pms': n.fam==='ID_245'?'--cnt':'--disc';
+    const r = n.fam==='DISC'?13:9;
+    SVG.appendChild(el('circle',{cx:p.x,cy:p.y,r,class:'node',fill:cssvar(c)}));
+    if(n.fam==='DISC'){
+      const t=el('text',{x:p.x,y:p.y-20,'text-anchor':'middle',class:'nlabel',fill:cssvar('--disc'),'font-weight':'700'});
+      t.textContent='discovered copy · 427 reads'; SVG.appendChild(t);
+    } else {
+      const out = 15, dx=(p.x-p.cx), dy=(p.y-p.cy), L=Math.hypot(dx,dy)||1;
+      const lx=p.x+dx/L*out, ly=p.y+dy/L*out;
+      const anchor = dx>6?'start':dx<-6?'end':'middle';
+      const t=el('text',{x:lx,y:ly+3,'text-anchor':anchor,class:'nlabel'}); t.textContent=n.gene; SVG.appendChild(t);
+    }
+  });
+  // verdict
+  const bridged = joinP && joinC;
+  const v=document.getElementById('verdict'), vs=document.getElementById('vstatus'), vt=document.getElementById('vtext');
+  const joins = [joinP?'PMS2P':null, joinC?'CNTNAP3':null].filter(Boolean);
+  if(bridged){
+    v.className='verdict bad'; vs.textContent='Bridged — false merge';
+    vt.innerHTML=`At <b>cov ≥ ${thr.toFixed(3)}</b> the fragment wires the discovery into <b>both</b> cliques → the two families merge.`;
+  } else {
+    v.className='verdict ok'; vs.textContent='Cliques separate';
+    vt.innerHTML = joins.length
+      ? `At <b>cov ≥ ${thr.toFixed(3)}</b> the discovery joins only <b>${joins[0]}</b> — no cross-clique bridge.`
+      : `At <b>cov ≥ ${thr.toFixed(3)}</b> the discovery has <b>0</b> qualifying edges — it joins neither clique. Cross-clique edges: <b>0</b>.`;
+  }
+  // table
+  const disc_edges = GRAPH.edges.filter(e=>famOf(e.s)==='DISC'||famOf(e.t)==='DISC')
+    .map(e=>{ const o = famOf(e.s)==='DISC'? e.t : e.s; return {gene:geneOf(o), fam:famOf(o), id:e.id, cov:e.cov, aln:e.aln}; })
+    .sort((a,b)=>b.id-a.id);
+  document.getElementById('etb').innerHTML = disc_edges.map(e=>{
+    const pass = e.id>=0.80 && e.cov>=thr;
+    const famName = e.fam==='ID_8'?'PMS2P':'CNTNAP3';
+    return `<tr>
+      <td class="mono">${e.gene}</td><td class="mono" style="color:var(--faint)">${famName}</td>
+      <td class="num">${e.id.toFixed(3)}</td>
+      <td class="num" style="color:${e.cov>=thr?'inherit':'var(--disc)'}">${e.cov.toFixed(3)}</td>
+      <td class="num">${e.aln.toLocaleString()} bp</td>
+      <td><span class="tag ${pass?'t-pass':'t-fail'}">${pass?'edge ✓':'rejected'}</span></td></tr>`;
+  }).join('');
+}
+const slider=document.getElementById('slider'), gv=document.getElementById('gateval');
+function update(){ const t=parseFloat(slider.value); gv.textContent='cov ≥ '+t.toFixed(3); render(t); }
+slider.addEventListener('input',update);
+const mq=window.matchMedia('(prefers-color-scheme:dark)'); mq.addEventListener?.('change',update);
+new MutationObserver(update).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+update();
+</script>

@@ -1,0 +1,211 @@
+{
+"ID_8": {
+"id": "ID_8",
+"gene": "PMS2P",
+"chrom": "chr7",
+"regime": "all",
+"sens": "9 / 9",
+"prec": "90%",
+"lede": "Nine PMS2 pseudogene copies strung across chr7 \u2014 every one recovered. A tenth PMS2 copy was discovered off Soto's catalogue: it's homologous to a PMS2 member (not to its physical neighbour), the case that motivated attributing candidates by homology rather than proximity.",
+"discoveries": [
+{
+"start": 76489130,
+"end": 76502937,
+"reads": 75,
+"id": 0.979,
+"ratio": 1.17,
+"outlier": false,
+"note": "75 reads, 97.9% identical to a PMS2 member, 13.8 kb (1.2\u00d7 the family's typical member). A genuine new PMS2 copy. Its nearest catalogued neighbour is a SPDYE gene, so a proximity rule would mislabel it \u2014 homology puts it here correctly."
+}
+],
+"members": [
+{
+"gene": "PMS2P4",
+"start": 68507281,
+"end": 68522154,
+"det": true,
+"reads": 125,
+"why": "recovered"
+},
+{
+"gene": "PMS2P7",
+"start": 74233765,
+"end": 74249332,
+"det": true,
+"reads": 713,
+"why": "recovered"
+},
+{
+"gene": "PMS2P11",
+"start": 74265295,
+"end": 74269589,
+"det": true,
+"reads": 395,
+"why": "recovered"
+},
+{
+"gene": "PMS2P6",
+"start": 74293709,
+"end": 74305513,
+"det": true,
+"reads": 330,
+"why": "recovered"
+},
+{
+"gene": "PMS2P5",
+"start": 76096419,
+"end": 76100140,
+"det": true,
+"reads": 103,
+"why": "recovered"
+},
+{
+"gene": "PMS2P10",
+"start": 76575232,
+"end": 76586963,
+"det": true,
+"reads": 53,
+"why": "recovered"
+},
+{
+"gene": "AC211486.3",
+"start": 76603248,
+"end": 76614958,
+"det": true,
+"reads": 51,
+"why": "recovered"
+},
+{
+"gene": "PMS2P2",
+"start": 76631238,
+"end": 76646816,
+"det": true,
+"reads": 420,
+"why": "recovered"
+},
+{
+"gene": "PMS2P1",
+"start": 101559306,
+"end": 101576392,
+"det": true,
+"reads": 1142,
+"why": "recovered"
+}
+]
+},
+"ID_131": {
+"id": "ID_131",
+"gene": "Amylase",
+"chrom": "chr1",
+"regime": "some",
+"sens": "5 / 6",
+"prec": "71%",
+"lede": "The amylase copy-number locus. Five of six annotated copies recover cleanly; the single miss is a 199 bp fragment \u2014 too short to carry a distinguishing read. Two well-expressed new amylase copies were discovered in the gap.",
+"discoveries": [
+{
+"start": 103575079,
+"end": 103599747,
+"reads": 23,
+"id": 0.98,
+"ratio": 2.87,
+"outlier": true,
+"note": "23 reads, 98.0% to AMYP1, but 24.7 kb \u2014 2.9\u00d7 the family's median member. A size outlier: possibly a chimeric or extended span rather than a clean amylase copy. Worth a look before crediting it."
+},
+{
+"start": 103599782,
+"end": 103607562,
+"reads": 146,
+"id": 0.993,
+"ratio": 0.91,
+"outlier": false,
+"note": "146 reads, 99.3% to AMY1A, 7.8 kb (0.9\u00d7 the family's members) \u2014 a clean new amylase copy."
+}
+],
+"members": [
+{
+"gene": "AMY2A",
+"start": 103465755,
+"end": 103474647,
+"det": true,
+"reads": 19,
+"why": "recovered"
+},
+{
+"gene": "AMY1A",
+"start": 103504154,
+"end": 103513416,
+"det": true,
+"reads": 164,
+"why": "recovered"
+},
+{
+"gene": "AC105272.1",
+"start": 103516936,
+"end": 103517135,
+"det": false,
+"reads": 4,
+"why": "199 bp fragment \u2014 too short for a distinguishing read"
+},
+{
+"gene": "AMY1B",
+"start": 103630425,
+"end": 103639464,
+"det": true,
+"reads": 168,
+"why": "recovered"
+},
+{
+"gene": "AMYP1",
+"start": 103750861,
+"end": 103757011,
+"det": true,
+"reads": 11,
+"why": "recovered"
+},
+{
+"gene": "AMY1C",
+"start": 103787543,
+"end": 103795829,
+"det": true,
+"reads": 228,
+"why": "recovered"
+}
+]
+},
+"ID_402": {
+"id": "ID_402",
+"gene": "NCF1",
+"chrom": "chr7",
+"regime": "none",
+"sens": "0 / 3",
+"prec": "\u2014",
+"lede": "Three NCF1 copies, each with reads \u2014 15, 44, 17. But they are exon-identical: every read ties across all three at MAPQ 0, so not one can be assigned to a specific copy. This is the identifiability floor \u2014 expression is present, resolution is not, and DNA is required.",
+"discoveries": [],
+"members": [
+{
+"gene": "NCF1B",
+"start": 74420835,
+"end": 74436153,
+"det": false,
+"reads": 15,
+"why": "K=0 \u00b7 exon-identical (reads tie, MAPQ 0)"
+},
+{
+"gene": "NCF1",
+"start": 75976253,
+"end": 75991692,
+"det": false,
+"reads": 44,
+"why": "reads absorbed by a sibling copy"
+},
+{
+"gene": "NCF1C",
+"start": 76360590,
+"end": 76375995,
+"det": false,
+"reads": 17,
+"why": "K=0 \u00b7 exon-identical (reads tie, MAPQ 0)"
+}
+]
+}
+}

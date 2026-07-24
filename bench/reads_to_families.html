@@ -19,7 +19,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line
 .wrap{max-width:1000px;margin:0 auto}
 .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
 h1{font-family:var(--mono);font-weight:600;font-size:clamp(24px,4vw,36px);letter-spacing:-.01em;margin:.12em 0 .1em;text-wrap:balance}
-.sub{color:var(--muted);max-width:70ch;margin:.2em 0 0;font-size:15px}
+.sub{color:var(--muted);max-width:70ch;margin:.2em 0 0;font-size:15px}.sub b{color:var(--ink)}
 
 .steps{display:flex;gap:0;margin:24px 0 14px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
 .steps button{flex:1;background:none;border:none;border-right:1px solid var(--hair);padding:12px 8px;cursor:pointer;font-family:var(--mono);color:var(--muted);transition:background .2s,color .2s;text-align:center}
@@ -32,22 +32,9 @@ h1{font-family:var(--mono);font-weight:600;font-size:clamp(24px,4vw,36px);letter
 
 .stagecard{background:var(--surface);border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow);padding:12px 14px 6px}
 svg.stage{width:100%;height:auto;display:block}
-/* step-driven visibility */
-.stage .reads{transition:opacity .5s}
-.stage .node,.stage .conn{transition:opacity .45s}
-.stage .edge,.stage .hull,.stage .elabel{transition:opacity .45s}
-.stage .node circle,.stage .node .halo{transition:fill .5s,stroke .5s}
-.stage[data-step="0"] .node,.stage[data-step="0"] .conn{opacity:.12}
-.stage[data-step="0"] .edge,.stage[data-step="0"] .hull,.stage[data-step="0"] .elabel{opacity:0}
-.stage[data-step="1"] .reads{opacity:.1}
-.stage[data-step="1"] .edge,.stage[data-step="1"] .hull,.stage[data-step="1"] .elabel{opacity:0}
-.stage[data-step="2"] .reads{opacity:.07}
-.stage[data-step="2"] .hull{opacity:0}
-.stage[data-step="3"] .reads{opacity:.05}
-/* family colouring only at step 3 */
-.stage[data-step="3"] .node.gstm circle{fill:var(--c0)}
-.stage[data-step="3"] .node.gstm text{fill:#fff}
-.stage[data-step="3"] .edge.fam{stroke:var(--c0);stroke-opacity:.9}
+.stage .node{transition:transform .6s cubic-bezier(.34,.02,.24,1),opacity .4s}
+.stage .node circle{transition:fill .5s,stroke .5s}
+.stage .reads,.stage .conn,.stage #edgeL,.stage #hullL{transition:opacity .5s}
 
 .ctrls{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
 .ctrls button{font-family:var(--mono);font-size:13px;background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:8px 16px;cursor:pointer;color:var(--ink)}
@@ -71,7 +58,7 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
   <div class="eyebrow">Multi-copy gene families · O1, end to end</div>
   <h1>From reads to families</h1>
   <p class="sub">The hard leap: a pile of <b>reads</b> (molecules) becomes a <b>graph of families</b>. Four steps,
-     no annotation used — reads → de-novo loci → homology edges → dense clusters. Step through it.</p>
+     no annotation used — reads → de-novo loci → homology edges → <b>dense clusters that pull together into a family</b>. Step through it.</p>
 
   <div class="steps" id="steps">
     <button data-s="0"><span class="n">STEP 1</span><span class="t">Reads</span></button>
@@ -96,31 +83,33 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
 <script>
 const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
 const mk=(t,a={})=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+const cssv=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
-/* loci along a genome axis (schematic x; GSTM cluster is a real tandem array) */
-const AX=104, NY=210;
+const AX=104, NY=214;
 const LOCI=[
-  {id:'SG',   x:96,  label:'SG',    kind:'single', reads:'1 gene'},
-  {id:'DOM1', x:206, label:'DOM1',  kind:'dom',    reads:'1 gene'},
-  {id:'GSTM3',x:346, label:'GSTM3', kind:'gstm',   reads:'187'},
-  {id:'GSTM5',x:396, label:'GSTM5', kind:'gstm',   reads:'≈900'},
-  {id:'GSTM1',x:446, label:'GSTM1', kind:'gstm',   reads:'≈1600'},
-  {id:'DOM2', x:612, label:'DOM2',  kind:'dom',    reads:'1 gene'},
+  {id:'SG',   x:96,  label:'SG',    kind:'single'},
+  {id:'DOM1', x:206, label:'DOM1',  kind:'dom'},
+  {id:'GSTM3',x:346, label:'GSTM3', kind:'gstm'},
+  {id:'GSTM5',x:396, label:'GSTM5', kind:'gstm'},
+  {id:'GSTM1',x:446, label:'GSTM1', kind:'gstm'},
+  {id:'DOM2', x:612, label:'DOM2',  kind:'dom'},
 ];
 const byId=Object.fromEntries(LOCI.map(l=>[l.id,l]));
-const FAM_EDGES=[['GSTM3','GSTM5','≈80%'],['GSTM5','GSTM1','83%'],['GSTM3','GSTM1','≈80%']];
-const REJECT=[['DOM1','DOM2','22% aligned · no edge']];
+const FAM_EDGES=[['GSTM3','GSTM5'],['GSTM5','GSTM1'],['GSTM3','GSTM1']];
+// step-4 cluster: the family collapses from a collinear row into a 2-D triangle (a clique, not a line)
+const CLUSTER={GSTM3:[398,158], GSTM5:[352,232], GSTM1:[444,232]};
+const NODEMAP={};
 
 function build(){
   const svg=$('stage'); svg.innerHTML='';
   // genome axis
   svg.appendChild(mk('line',{x1:40,y1:AX,x2:660,y2:AX,stroke:'var(--axis)','stroke-width':2}));
   const axlab=mk('text',{x:40,y:AX-8,fill:'var(--muted)','font-family':'var(--mono)','font-size':'10'});axlab.textContent='genome';svg.appendChild(axlab);
-  [['GSTM3–GSTM1 tandem array (chr1)',396,AX+18]].forEach(([t,x,y])=>{const e=mk('text',{x,y,'text-anchor':'middle',fill:'var(--muted)','font-family':'var(--mono)','font-size':'9'});e.textContent=t;svg.appendChild(e);});
+  const arr=mk('text',{x:396,y:AX+18,'text-anchor':'middle',fill:'var(--muted)','font-family':'var(--mono)','font-size':'9'});arr.textContent='GSTM3–GSTM1 tandem array (chr1)';svg.appendChild(arr);
 
-  // read pileups (step 1)
+  // read pileups
   LOCI.forEach(l=>{
-    const g=mk('g',{class:'reads'});
+    const g=mk('g',{class:'reads','data-id':l.id});
     const n=l.kind==='gstm'?7:5;
     for(let i=0;i<n;i++){
       const w=l.kind==='gstm'?34:26, y=AX-10-i*7.5;
@@ -128,41 +117,74 @@ function build(){
     }
     svg.appendChild(g);
   });
+  // connectors axis→row-node
+  LOCI.forEach(l=>svg.appendChild(mk('line',{class:'conn','data-id':l.id,x1:l.x,y1:AX+2,x2:l.x,y2:NY-16,stroke:'var(--hair)','stroke-width':1,'stroke-dasharray':'2 3'})));
 
-  // connectors axis→node (step 2+)
-  LOCI.forEach(l=>svg.appendChild(mk('line',{class:'conn',x1:l.x,y1:AX+2,x2:l.x,y2:NY-16,stroke:'var(--hair)','stroke-width':1,'stroke-dasharray':'2 3'})));
+  // layers (below nodes): hull, then edges
+  svg.appendChild(mk('g',{id:'hullL'}));
+  svg.appendChild(mk('g',{id:'edgeL'}));
 
-  // family hull (step 4)
-  const gx=[byId.GSTM3.x,byId.GSTM5.x,byId.GSTM1.x];
-  svg.appendChild(mk('path',{class:'hull',d:`M ${gx[0]-30} ${NY} Q ${gx[1]} ${NY+56} ${gx[2]+30} ${NY} Q ${gx[1]} ${NY-42} ${gx[0]-30} ${NY} Z`,
-    fill:'color-mix(in srgb,var(--c0) 9%,transparent)',stroke:'var(--c0)','stroke-dasharray':'5 4','stroke-width':1.4,'stroke-opacity':.7}));
-
-  // edges (step 3+)
-  const arc=(a,b,dip)=>`M ${a.x} ${NY} Q ${(a.x+b.x)/2} ${NY+dip} ${b.x} ${NY}`;
-  FAM_EDGES.forEach(([a,b])=>{const A=byId[a],B=byId[b],dip=22+Math.abs(A.x-B.x)*0.12;
-    svg.appendChild(mk('path',{class:'edge fam',d:arc(A,B,dip),fill:'none',stroke:'var(--spine)','stroke-width':2.4}));});
-  REJECT.forEach(([a,b,lab])=>{const A=byId[a],B=byId[b],mx=(A.x+B.x)/2;
-    svg.appendChild(mk('path',{class:'edge',d:arc(A,B,64),fill:'none',stroke:'var(--no)','stroke-width':1.6,'stroke-dasharray':'4 4','stroke-opacity':.8}));
-    const t=mk('text',{class:'elabel',x:mx,y:NY+80,'text-anchor':'middle',fill:'var(--no)','font-family':'var(--mono)','font-size':'9.5'});t.textContent=lab;svg.appendChild(t);});
-  // family edge label
-  const el2=mk('text',{class:'elabel',x:byId.GSTM5.x,y:NY+42,'text-anchor':'middle',fill:'var(--muted)','font-family':'var(--mono)','font-size':'9.5'});el2.textContent='id ≥ 80% · cov ≥ 50%';svg.appendChild(el2);
-
-  // nodes (step 2+)
+  // nodes
   LOCI.forEach(l=>{
     const g=mk('g',{class:'node '+l.kind,transform:`translate(${l.x},${NY})`});
-    g.appendChild(mk('circle',{r:15,fill:'var(--spine)','fill-opacity':.9,stroke:'var(--surface)','stroke-width':2}));
+    const c=mk('circle',{r:15,fill:'var(--spine)','fill-opacity':.9,stroke:'var(--surface)','stroke-width':2});
+    g.appendChild(c);
     const t=mk('text',{'text-anchor':'middle',y:3.5,fill:'#fff','font-family':'var(--mono)','font-size':'8.5','font-weight':'600'});
     t.textContent=l.label.replace('GSTM','M'); g.appendChild(t);
     const lt=mk('text',{'text-anchor':'middle',y:30,fill:'var(--muted)','font-family':'var(--mono)','font-size':'9'});lt.textContent=l.label;g.appendChild(lt);
     svg.appendChild(g);
+    NODEMAP[l.id]={g,c,lt};
   });
 }
+
+function posOf(l,step){ return (step===3 && CLUSTER[l.id]) ? CLUSTER[l.id] : [l.x,NY]; }
+
+function render(step){
+  const readsOp=[1,.12,.08,.05][step], svg=$('stage');
+  document.querySelectorAll('.reads').forEach(r=>r.style.opacity=readsOp);
+  document.querySelectorAll('.conn').forEach(c=>c.style.opacity= step===0?0.12 : step>=3?0 : 1);
+
+  // position + colour nodes
+  LOCI.forEach(l=>{
+    const [x,y]=posOf(l,step), fam=l.kind==='gstm';
+    NODEMAP[l.id].g.setAttribute('transform',`translate(${x},${y})`);
+    NODEMAP[l.id].c.setAttribute('fill', (step===3 && fam)?'var(--c0)':'var(--spine)');
+    NODEMAP[l.id].g.style.opacity = (step>=1) ? ((step===3 && !fam)?0.28:1) : 0.12;
+  });
+
+  // edges + hull
+  const eL=$('edgeL'); eL.innerHTML=''; const hL=$('hullL'); hL.innerHTML='';
+  const arc=(A,B,dip)=>`M ${A[0]} ${A[1]} Q ${(A[0]+B[0])/2} ${(A[1]+B[1])/2+dip} ${B[0]} ${B[1]}`;
+  if(step>=2){
+    if(step===3){
+      // dense cluster: filled triangle (a clique in 2-D) + solid red edges
+      const P=['GSTM3','GSTM5','GSTM1'].map(id=>CLUSTER[id]);
+      hL.appendChild(mk('path',{d:`M ${P[0][0]} ${P[0][1]} L ${P[1][0]} ${P[1][1]} L ${P[2][0]} ${P[2][1]} Z`,
+        fill:'color-mix(in srgb,var(--c0) 12%,transparent)',stroke:'var(--c0)','stroke-width':1.6,'stroke-opacity':.75,'stroke-dasharray':'5 4'}));
+      FAM_EDGES.forEach(([a,b])=>eL.appendChild(mk('line',{x1:CLUSTER[a][0],y1:CLUSTER[a][1],x2:CLUSTER[b][0],y2:CLUSTER[b][1],stroke:'var(--c0)','stroke-width':2.6,'stroke-opacity':.95})));
+      // labels
+      const cl=mk('text',{x:398,y:266,'text-anchor':'middle',fill:'var(--c0)','font-family':'var(--mono)','font-size':'11','font-weight':'600'});cl.textContent='1 family · GSTM · χ_H = 3 copies';eL.appendChild(cl);
+      // the rejected pair — now clearly outside, faded
+      const A=byId.DOM1,B=byId.DOM2;
+      eL.appendChild(mk('path',{d:arc([A.x,NY],[B.x,NY],62),fill:'none',stroke:'var(--no)','stroke-width':1.4,'stroke-dasharray':'4 4','stroke-opacity':.28}));
+    } else {
+      // homology: measured arcs between the collinear loci
+      FAM_EDGES.forEach(([a,b])=>{const A=byId[a],B=byId[b],dip=22+Math.abs(A.x-B.x)*0.12;
+        eL.appendChild(mk('path',{d:arc([A.x,NY],[B.x,NY],dip),fill:'none',stroke:'var(--spine)','stroke-width':2.4}));});
+      const A=byId.DOM1,B=byId.DOM2,mx=(A.x+B.x)/2;
+      eL.appendChild(mk('path',{d:arc([A.x,NY],[B.x,NY],64),fill:'none',stroke:'var(--no)','stroke-width':1.6,'stroke-dasharray':'4 4','stroke-opacity':.85}));
+      eL.appendChild(txt(mx,NY+82,'22% aligned · no edge','var(--no)'));
+      eL.appendChild(txt(byId.GSTM5.x,NY+42,'id ≥ 80% · cov ≥ 50%','var(--muted)'));
+    }
+  }
+}
+function txt(x,y,s,fill){const t=mk('text',{x,y,'text-anchor':'middle',fill,'font-family':'var(--mono)','font-size':'9.5'});t.textContent=s;return t;}
 
 const CAPS=[
   {h:'Step 1 · Reads',p:'Iso-Seq reads align to the genome and pile up wherever a gene is transcribed. Near-identical paralogs — a tandem array like GSTM3 / GSTM5 / GSTM1 — pile up at adjacent loci; other genes pile up elsewhere. No annotation is used.',n:'the raw material: full-length transcript molecules'},
   {h:'Step 2 · Loci',p:'Reads that share an intron chain collapse into one de-novo locus — a node in the graph. This is where the count first appears: many reads → a handful of loci.',n:'GSTM: <b>2,673 reads → 3 loci</b>. Every expressed locus becomes one node.'},
-  {h:'Step 3 · Homology edges',p:'Align every pair of loci and draw an edge only where they are homologous full-length — identity ≥ 80% AND ≥ 50% of the shorter transcript aligns. GSTM3/5/1 all pair up (≈83%). DOM1 and DOM2 share one exon, but only 22% aligns → no edge. A shared domain is not a family.',n:'the edge is a measurement, not a threshold guess: both identity <b>and</b> coverage must hold'},
-  {h:'Step 4 · Families',p:'A family is a dense cluster of ≥ 2 loci — a γ-quasi-clique. GSTM3/5/1 form one, so the family is called with χ_H = 3 copies. The domain-sharers and the singleton gene are not families.',n:'1 family found: <b>GSTM (3 copies)</b>. → the γ-quasi-clique step is its own viz.'},
+  {h:'Step 3 · Homology edges',p:'Align every pair of loci and draw an edge only where they are homologous full-length — identity ≥ 80% AND ≥ 50% of the shorter transcript aligns. GSTM3/5/1 all pair up (≈ 83%). DOM1 and DOM2 share one exon, but only 22% aligns → no edge. A shared domain is not a family.',n:'the edge is a measurement, not a threshold guess: both identity <b>and</b> coverage must hold'},
+  {h:'Step 4 · Families',p:'The loci that are mutually linked <b>pull together into a family</b> — a dense cluster (γ-quasi-clique) of ≥ 2 loci. GSTM3/5/1 collapse from the row into one clique and the family is called with χ_H = 3 copies; the singleton gene and the domain-sharers stay outside. Watch the three snap into a triangle: that 2-D density <i>is</i> the family — a clique between collinear loci would only ever look like a line.',n:'1 family found: <b>GSTM (3 copies)</b>. → the γ-quasi-clique step has its own viz.'},
 ];
 let step=0;
 function setStep(s){
@@ -172,11 +194,14 @@ function setStep(s){
   $('dots').innerHTML=[0,1,2,3].map(i=>`<i class="${i===step?'on':''}"></i>`).join('');
   const c=CAPS[step]; $('caption').innerHTML=`<h2>${c.h}</h2><p>${c.p}</p><div class="num">${c.n}</div>`;
   $('prev').disabled=step===0; $('next').disabled=step===3;
+  render(step);
 }
 $('prev').onclick=()=>setStep(step-1);
 $('next').onclick=()=>setStep(step+1);
 document.querySelectorAll('.steps button').forEach(b=>b.onclick=()=>setStep(+b.dataset.s));
 document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')setStep(step+1);if(e.key==='ArrowLeft')setStep(step-1);});
+const mq=window.matchMedia('(prefers-color-scheme:dark)'); mq.addEventListener&&mq.addEventListener('change',()=>render(step));
+new MutationObserver(()=>render(step)).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 $('foot').innerHTML='No annotation, no reference gene list — the loci, the edges, and the families are all derived from the reads. The dense-cluster step (why γ-quasi-clique, not clique or connected component) has its own interactive.';
 $('themebtn').onclick=()=>{const c=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');};
 

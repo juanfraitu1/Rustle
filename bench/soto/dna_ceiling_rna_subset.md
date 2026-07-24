@@ -38,18 +38,25 @@ RNA-recovered path, red = DNA-only path.**
   the DNA truth is real (0 phantom members).
 - **The 37 extra RNA candidates** (RNA-detected loci NOT in Soto's DNA annotation), checked against
   ALL Soto members by the exact family-edge criterion (asm20 id≥0.80, cov-of-shorter≥0.50):
-  - **19 are confirmed real copies** homologous to a Soto family — copies Soto's SD98 (≥98%-identity)
-    threshold *missed*. RNA found MORE real copies, not false ones. **A win.**
-  - **18 have no Soto homology** — real transcribed loci flagged as *candidates near a family*, NOT
-    asserted family members (they are in the discovery table, never merged into a family roster).
-    Their classification (copy of a non-Soto family vs parent gene vs artifact) is a follow-up; none
-    is a family-membership over-merge.
+  - **34 are real copies homologous to a Soto family** — copies Soto's SD98 (≥98%-identity) threshold
+    *missed*. RNA found MORE real copies, not false ones. **A win.** (19 confirmed on first pass; a
+    further 15 recovered when the 18 "no-homology" candidates were re-aligned — see below.)
+  - **3 are genuinely non-Soto** — all real genomic loci: 2 have their own high-identity genomic
+    paralogs (real duplications outside Soto's 80 families), 1 is a real single-copy gene. None is a
+    fabricated family member.
+  - **0 are phantom artifacts / family-level false positives.**
+  - *Correction (verified):* the earlier pass labelled 18 of these "no Soto homology," but its
+    alignment step returned `best_id=0.000` for all 18 — a failed pass, since several clearly align
+    at ≥0.94 id to their own family. Re-aligning to all 362 members reclassifies 15/18 as real
+    Soto-family copies, 3 as real non-Soto loci, 0 as artifacts. Full breakdown:
+    `bench/soto/candidate18_classification.md`.
 - **The structural FP defense:** family definition requires the refine gate — asm20 id≥0.80,
   cov-of-shorter≥0.50, ≥2 distinct loci. The genome-wide audit showed this removes ~9% over-merge
   FPs (124→86 families). Non-homologous loci cannot be merged into a family.
 
 **Bottom line for the room:** the DNA graph is a complete, precise 100% ceiling. RNA is a faithful
 subset — it recovers 76% (→87% with the seeding fix) of that ceiling and invents no phantom family
-members (precision ~100% against the DNA truth; 19 of 37 "extra" calls are real copies DNA missed).
+members (precision ~100% against the DNA truth; **34 of 37 "extra" calls are real copies of a Soto
+family DNA's per-member check missed, the other 3 are real non-Soto loci, and 0 are phantom**).
 What RNA cannot recover is the K=0 identifiability floor — homology-grouped copies no read can
 separate — and that is a property of the reads, not a false positive.
