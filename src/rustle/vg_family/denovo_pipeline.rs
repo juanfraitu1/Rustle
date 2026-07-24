@@ -82,6 +82,8 @@ pub struct DenovoConfig {
     /// Drop single-exon reps that engulf >= `READTHROUGH_MIN_DISTINCT` distinct junctions: unspliced
     /// pre-mRNA, never a copy. Default ON — see `is_unspliced_readthrough` for the validation.
     pub filter_readthrough: bool,
+    /// Split mis-chained reads at spurious giant introns before seeding (opt-in). Default off = byte-identical.
+    pub mischain_salvage: bool,
     /// Gate each co-located family by MUTUAL HOMOLOGY (`refine_families_exon_sum`: asm20 id>=0.80,
     /// cov-of-shorter>=0.50, + sensitive tier) across >= 2 distinct loci — the SAME criterion
     /// `gw_family_catalog` refines by. Default ON: without it the read-conflict oracle admits large-gene
@@ -137,6 +139,7 @@ impl Default for DenovoConfig {
             vg_realign_admit: false,
             homology_primary: false,
             filter_readthrough: true,
+            mischain_salvage: false,
             refine: true,
             collapse_gate: false,
             collapse_enumerate: false,
@@ -160,6 +163,7 @@ impl DenovoConfig {
             // Readthrough/mis-chain gate SENSITIVITY toggle: RUSTLE_KEEP_READTHROUGH=1 disables both gates
             // (readthroughs that connect copies are then NOT filtered). Default (unset) = gates ON = today.
             filter_readthrough: std::env::var("RUSTLE_KEEP_READTHROUGH").ok().as_deref() != Some("1"),
+            mischain_salvage: std::env::var("RUSTLE_MISCHAIN_SALVAGE").ok().as_deref() == Some("1"),
             ..Self::default()
         }
     }
@@ -3078,6 +3082,11 @@ mod tests {
     #[test]
     fn denovo_config_tied_seed_defaults_off() {
         assert!(!DenovoConfig::default().tied_seed);
+    }
+
+    #[test]
+    fn mischain_salvage_defaults_off() {
+        assert!(!DenovoConfig::default().mischain_salvage);
     }
 
     #[test]
