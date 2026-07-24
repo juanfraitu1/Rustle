@@ -30,7 +30,8 @@ use super::copy_split::{
 };
 use super::denovo_assemble::{
     aligned_reads_from_bam, assemble_gate, pass1_skeletons, pass1_skeletons_robust, primary_reads_from_bam,
-    reads_in_region, tied_seed_skeletons, BamRead, GateParams, PrimaryRead, GATE_MIN_READS, PASS1_MIN_READS,
+    reads_in_region, split_mischained_reads, tied_seed_skeletons, BamRead, GateParams, PrimaryRead,
+    GATE_MIN_READS, PASS1_MIN_READS,
 };
 use super::family_detect::{
     collapse_loci_span_aware, collapse_loci_span_aware_with_totals, detect_edges, detect_edges_reporting,
@@ -884,6 +885,18 @@ pub fn retain_non_mischain(
     }
 }
 
+/// Mis-chain salvage (opt-in). `Some(split reads)` when `cfg.mischain_salvage`, else `None` (caller keeps the
+/// originals — byte-identical). Reuses the gate thresholds so it splits exactly the introns the gate would drop.
+fn maybe_salvage_mischain(reads: &[PrimaryRead], cfg: &DenovoConfig) -> Option<Vec<PrimaryRead>> {
+    if !cfg.mischain_salvage {
+        return None;
+    }
+    let giant = env_num("RUSTLE_MISCHAIN_GIANT_BP", MISCHAIN_GIANT_INTRON_BP);
+    let min_reads = env_num("RUSTLE_MISCHAIN_MIN_READS", MISCHAIN_MIN_JUNCTION_READS);
+    let support = read_junction_support(reads);
+    Some(split_mischained_reads(reads, &support, giant, min_reads))
+}
+
 /// How two copies in an emitted catalog can wrongly share genomic sequence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OverlapKind {
@@ -1447,7 +1460,9 @@ pub fn detect_and_assign(
         };
     }
     // Same `k` as the O1 catalogs: one canonical extent per locus across objectives (see `detect_families`).
-    let skeletons = pass1_skeletons_robust(primary_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    let salvaged = maybe_salvage_mischain(primary_reads, cfg);
+    let seed_reads: &[PrimaryRead] = salvaged.as_deref().unwrap_or(primary_reads);
+    let skeletons = pass1_skeletons_robust(seed_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     // TIED-SEED (opt-in): assemble the tied-seed skeletons into their OWN reps, kept ENTIRELY OUT of the
     // primary `reps` / conflict / refine / assignment pipeline. K=0 tied reps mixed into `reps` add spurious
     // conflict edges that over-merge families and wreck assignment (chr1 amylase 21->6 copies; os1 rep-shift).
@@ -2025,6 +2040,7 @@ fn gw_reps_and_catalog(
     let reads = primary_reads_from_bam(bam_path, threads)?;
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
+    let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     // Build the junction-support map BEFORE freeing the primaries. It is keyed by distinct junction, so it is a
     // rounding error next to the ~1.7M reads it derives from. O1 must drop readthroughs for the same reason O2
@@ -2224,6 +2240,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     let reads = primary_reads_from_bam(bam_path, threads)?;
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
+    let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     // Support map before the free; see the same-chrom catalog for why.
     let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
@@ -2365,6 +2382,7 @@ pub fn detect_homology_catalog_genome_wide(
     let reads = primary_reads_from_bam(bam_path, threads)?;
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
+    let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     // Support map before the free; see the same-chrom catalog for why.
     let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
@@ -4723,6 +4741,79 @@ mod tests {
         retain_non_mischain(&mut txs, &j, "test");
         assert_eq!(txs.len(), 1);
         assert_eq!(txs[0].start, 0, "the well-supported large gene survives; the mis-chain is dropped");
+    }
+
+    /// Integration: `maybe_salvage_mischain` before `pass1_skeletons_robust` recovers LOCAL seeding at both
+    /// ends of a spurious cross-locus bridge.
+    ///
+    /// Locus A (chr1:1000-1100) and locus B (chr1:900_000-900_100) each have 3 native unspliced reads — on
+    /// their own already enough to seed a bounded skeleton (`min_reads = 3`). Two EXTRA reads mis-chain A to
+    /// B across a 898.9 kb spurious intron, an exact copy of the giant/junction shape `is_giant_intron_mischain`
+    /// flags: > `MISCHAIN_GIANT_INTRON_BP` (50 kb) and carried by only 2 reads — BELOW `MISCHAIN_MIN_JUNCTION_READS`
+    /// (= `GATE_MIN_READS` = 3), so it is spurious by the same criterion the assembled-transcript gate uses.
+    ///
+    /// OFF (measured): `pass1_skeletons_robust`'s own `(chrom, intron-chain)` grouping requires `>= min_reads`
+    /// (3) reads sharing the EXACT chain; the 2 bridge reads share one chain but only number 2, so that group
+    /// is silently dropped by the min-reads filter (no giant/unbounded skeleton is even produced — the bridge
+    /// reads simply vanish uncounted). Locus A and B skeletons are seeded ONLY by their 3 native reads each
+    /// (`n_reads == 3`).
+    ///
+    /// ON (measured): `split_mischained_reads` cuts each bridge read at the spurious intron into two local,
+    /// intron-free segments — one at A's coordinates, one at B's — BEFORE Pass-1 groups by position
+    /// (`cluster_unspliced`). Those 2+2 salvaged segments join their native locus's cluster (identical span),
+    /// so both A's and B's skeleton gain real read support: `n_reads` goes from 3 to 5 at EACH locus. This is
+    /// the load-bearing ON-vs-OFF distinction (not merely "a skeleton exists", which is already true OFF) —
+    /// the test fails if the split is a no-op.
+    #[test]
+    fn salvage_seeds_local_locus_that_a_mischain_bridge_would_lose() {
+        use crate::vg_family::denovo_assemble::{pass1_skeletons_robust, PrimaryRead, Skeleton};
+        let mk = |s: u64, e: u64, introns: Vec<(u64, u64)>| PrimaryRead { chrom: "chr1".into(), ref_start: s, ref_end: e, introns };
+        let mut reads = vec![];
+        for _ in 0..3 { reads.push(mk(1000, 1100, vec![])); } // locus A natives
+        for _ in 0..3 { reads.push(mk(900_000, 900_100, vec![])); } // locus B natives
+        // 2 (not 3!) spurious bridge reads: their shared junction (1100, 900_000) is then supported by
+        // exactly 2 reads -- BELOW MISCHAIN_MIN_JUNCTION_READS (3), so `is_giant_intron_mischain`'s own
+        // criterion (and split_mischained_reads', which reuses it) flags it as spurious. At 3 reads it would
+        // sit AT the gate (not "fewer than") and never be cut -- see `mischain_keeps_real_large_gene_with_well_supported_intron`.
+        for _ in 0..2 { reads.push(mk(1000, 900_100, vec![(1100, 900_000)])); }
+
+        let cfg_off = DenovoConfig::default();
+        let cfg_on = DenovoConfig { mischain_salvage: true, ..DenovoConfig::default() };
+
+        // OFF must not transform reads at all.
+        assert!(maybe_salvage_mischain(&reads, &cfg_off).is_none(), "OFF must not transform reads");
+
+        let reads_off = maybe_salvage_mischain(&reads, &cfg_off).unwrap_or_else(|| reads.clone());
+        let reads_on = maybe_salvage_mischain(&reads, &cfg_on).unwrap_or_else(|| reads.clone());
+        let sk_off = pass1_skeletons_robust(&reads_off, 3, 1);
+        let sk_on = pass1_skeletons_robust(&reads_on, 3, 1);
+
+        let bounded_at = |sk: &[Skeleton], lo: u64, hi: u64| -> Option<u32> {
+            sk.iter()
+                .find(|s| s.chrom == "chr1" && s.start <= hi && s.end >= lo && s.end - s.start < 300_000)
+                .map(|s| s.n_reads)
+        };
+
+        // OFF: each locus seeded by its 3 native reads only; the bridge reads contribute nothing (their
+        // 2-read chain never reaches the skeleton min-reads gate).
+        assert_eq!(bounded_at(&sk_off, 1000, 1100), Some(3), "OFF: locus A seeded only by native reads");
+        assert_eq!(bounded_at(&sk_off, 900_000, 900_100), Some(3), "OFF: locus B seeded only by native reads");
+        assert_eq!(sk_off.len(), 2, "OFF: no phantom/giant skeleton from the sub-gate bridge chain");
+
+        // ON: the salvaged local segments join each locus's native cluster -- strictly MORE read support at
+        // BOTH ends, the real invariant (not just "a skeleton exists", which is already true OFF).
+        assert!(bounded_at(&sk_on, 900_000, 900_100).unwrap_or(0) >= 1);
+        assert_eq!(bounded_at(&sk_on, 1000, 1100), Some(5), "ON: locus A gains the 2 salvaged local segments");
+        assert_eq!(bounded_at(&sk_on, 900_000, 900_100), Some(5), "ON: locus B gains the 2 salvaged local segments");
+        assert!(
+            bounded_at(&sk_on, 1000, 1100).unwrap() > bounded_at(&sk_off, 1000, 1100).unwrap(),
+            "salvage must add strictly more bounded local support at A, not merely re-derive OFF's count"
+        );
+        assert!(
+            bounded_at(&sk_on, 900_000, 900_100).unwrap() > bounded_at(&sk_off, 900_000, 900_100).unwrap(),
+            "salvage must add strictly more bounded local support at B, not merely re-derive OFF's count"
+        );
+        assert_eq!(sk_on.len(), 2, "ON: still exactly the two real loci, no phantom bridge skeleton");
     }
 
     /// EEF1A1 -> LOC109023808: a retrocopy has NO introns, so the spliced parent's cross-mapping reads align
