@@ -34,7 +34,7 @@ pub const MAX_SPLICED: usize = 300_000;
 
 /// A parsed PRIMARY alignment (input to Pass-1). Built from the BAM by the I/O edge via
 /// `bam::exons_from_cigar` (introns = the gaps between consecutive exons).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrimaryRead {
     pub chrom: String,
     pub ref_start: u64,
@@ -945,6 +945,69 @@ pub fn cluster_unspliced(reads: &[PrimaryRead], min_reads: u32, k: usize) -> Vec
     out
 }
 
+/// Split reads at SPURIOUS giant introns (mis-chain salvage, Approach A). A read whose intron-chain contains an
+/// intron `(d,a)` with `a - d > giant_bp` AND junction `(chrom,d,a)` carried by `< min_reads` reads is cut at
+/// that intron into local sub-reads (the giant bridge is removed); both flanking segments are kept (each was a
+/// real local alignment). Reads with no such intron pass through UNCHANGED. `support` is measured on the
+/// ORIGINAL read set. Deterministic; sub-reads replace their parent in 5'→3' order.
+pub fn split_mischained_reads(
+    reads: &[PrimaryRead],
+    support: &std::collections::HashMap<(String, u64, u64), usize>,
+    giant_bp: u64,
+    min_reads: usize,
+) -> Vec<PrimaryRead> {
+    let mut out = Vec::with_capacity(reads.len());
+    for r in reads {
+        // introns[i] joins exon i and exon i+1. Mark spurious giant introns as cuts.
+        let is_cut: Vec<bool> = r
+            .introns
+            .iter()
+            .map(|&(d, a)| {
+                a.saturating_sub(d) > giant_bp
+                    && support.get(&(r.chrom.clone(), d, a)).copied().unwrap_or(0) < min_reads
+            })
+            .collect();
+        if !is_cut.iter().any(|&c| c) {
+            out.push(r.clone());
+            continue;
+        }
+        // reconstruct exon boundaries: exon 0 = [ref_start, introns[0].0], exon k = [introns[k-1].1, introns[k].0],
+        // last exon = [introns[last].1, ref_end].
+        let mut exons: Vec<(u64, u64)> = Vec::with_capacity(r.introns.len() + 1);
+        let mut s = r.ref_start;
+        for &(d, a) in &r.introns {
+            exons.push((s, d));
+            s = a;
+        }
+        exons.push((s, r.ref_end));
+        // walk exons; close a segment after exon i when introns[i] is a cut, else carry introns[i] inside.
+        let mut seg_start = exons[0].0;
+        let mut seg_introns: Vec<(u64, u64)> = Vec::new();
+        for i in 0..exons.len() {
+            if i + 1 < exons.len() {
+                if is_cut[i] {
+                    out.push(PrimaryRead {
+                        chrom: r.chrom.clone(),
+                        ref_start: seg_start,
+                        ref_end: exons[i].1,
+                        introns: std::mem::take(&mut seg_introns),
+                    });
+                    seg_start = exons[i + 1].0;
+                } else {
+                    seg_introns.push(r.introns[i]);
+                }
+            }
+        }
+        out.push(PrimaryRead {
+            chrom: r.chrom.clone(),
+            ref_start: seg_start,
+            ref_end: exons.last().unwrap().1,
+            introns: seg_introns,
+        });
+    }
+    out
+}
+
 #[cfg(test)]
 mod locus_support_tests {
     use super::*;
@@ -1540,5 +1603,68 @@ mod tests {
             introns: vec![], tied_seeded: false,
         }];
         assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
+    }
+
+    #[test]
+    fn split_cuts_spurious_giant_intron_keeping_both_segments() {
+        use std::collections::HashMap;
+        let reads = vec![PrimaryRead {
+            chrom: "chr1".into(), ref_start: 100, ref_end: 80_100,
+            introns: vec![(200, 210), (300, 80_000)], // small internal intron, then a giant bridge
+        }];
+        let mut support = HashMap::new();
+        support.insert(("chr1".to_string(), 300, 80_000), 1); // giant, sub-threshold -> CUT
+        let out = split_mischained_reads(&reads, &support, 50_000, 3);
+        assert_eq!(out, vec![
+            PrimaryRead { chrom: "chr1".into(), ref_start: 100,    ref_end: 300,    introns: vec![(200, 210)] },
+            PrimaryRead { chrom: "chr1".into(), ref_start: 80_000, ref_end: 80_100, introns: vec![] },
+        ]);
+    }
+
+    #[test]
+    fn split_does_not_cut_well_supported_large_intron() {
+        use std::collections::HashMap;
+        let reads = vec![PrimaryRead {
+            chrom: "chr1".into(), ref_start: 100, ref_end: 80_100, introns: vec![(300, 80_000)],
+        }];
+        let mut support = HashMap::new();
+        support.insert(("chr1".to_string(), 300, 80_000), 3); // >= min_reads -> real large-gene intron, NOT a mis-chain
+        let out = split_mischained_reads(&reads, &support, 50_000, 3);
+        assert_eq!(out, reads); // unchanged
+    }
+
+    #[test]
+    fn split_ignores_sub_giant_introns() {
+        use std::collections::HashMap;
+        let reads = vec![PrimaryRead {
+            chrom: "chr1".into(), ref_start: 100, ref_end: 500, introns: vec![(200, 210), (300, 320)],
+        }];
+        let out = split_mischained_reads(&reads, &HashMap::new(), 50_000, 3); // no intron exceeds giant_bp
+        assert_eq!(out, reads);
+    }
+
+    #[test]
+    fn split_handles_two_giant_introns_into_three_segments() {
+        use std::collections::HashMap;
+        let reads = vec![PrimaryRead {
+            chrom: "chr1".into(), ref_start: 0, ref_end: 160_050,
+            introns: vec![(50, 80_000), (80_050, 160_000)], // two giant sub-threshold bridges
+        }];
+        let out = split_mischained_reads(&reads, &HashMap::new(), 50_000, 3); // absent support => 0 < 3 => both cut
+        assert_eq!(out, vec![
+            PrimaryRead { chrom: "chr1".into(), ref_start: 0,       ref_end: 50,      introns: vec![] },
+            PrimaryRead { chrom: "chr1".into(), ref_start: 80_000,  ref_end: 80_050,  introns: vec![] },
+            PrimaryRead { chrom: "chr1".into(), ref_start: 160_000, ref_end: 160_050, introns: vec![] },
+        ]);
+    }
+
+    #[test]
+    fn split_passes_reads_through_unchanged_when_no_cut() {
+        use std::collections::HashMap;
+        let reads = vec![
+            PrimaryRead { chrom: "chr1".into(), ref_start: 0, ref_end: 100, introns: vec![] },
+            PrimaryRead { chrom: "chr2".into(), ref_start: 5, ref_end: 400, introns: vec![(100, 200)] },
+        ];
+        assert_eq!(split_mischained_reads(&reads, &HashMap::new(), 50_000, 3), reads);
     }
 }
