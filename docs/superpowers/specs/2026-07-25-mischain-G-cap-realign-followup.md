@@ -1,7 +1,37 @@
 # Mis-chain rescue via targeted `-G`-capped re-alignment — follow-up
 
 **Date:** 2026-07-25
-**Status:** promising lead, NOT yet validated (do not merge). Parked for follow-up after advisor meeting.
+**Status:** ❌ **TRIED AND CLOSED (2026-07-25).** The `-G` cap fixes the alignment artifact but does NOT
+recover families — net-negative with 0 genuine recoveries. Validated dead-end, same as the read-split. See
+**RESULT** below. Kept for the record.
+
+## RESULT (empirical, step-1 + full mischain-bucket batch)
+
+**Step-1 (NCF1, `ID_402`):** `-G 50k` re-aligns the reads clean and local (0/76 giant introns, 96% aligned,
+3% soft-clip — NOT truncated). Yet NCF1 still yields **0 families** under `--refine` AND `--homology-primary`.
+The detector logs show why: baseline forms 7 skeletons that collapse to **1 rep** (the near-identical copies
+merge → <2 loci), rescued gives 3 skeletons → **0 reps**. NCF1's wall is **K=0 copy-collapse**, not the
+mis-chain — the detector already has its own mis-chain filter, and removing the giant introns doesn't make the
+copies separable. NCF1 = the K=0 flagship; alignment fixes cannot touch it.
+
+**Full batch (all 12 mischain members / 9 families, blanket `-G 50k`):**
+- Member recovery: **1 / 12** (`ANAPC1P5`, ID_63 0→2 copies) — BUT that copy is single-exon, 5 reads, in a
+  **52% soft-masked (repeat) locus** = the repeat-artifact signature that sank `dna_family_fallback`. Genuine
+  recoveries = **0**.
+- Regressions: **CDH12 (ID_313) 4→2** and **ID_481 6→4** = **−4 real copies**. CDH12 has **510 kb real
+  introns** (cadherin) that `-G 50k` truncates. Confirms the "global cap shreds real long introns" risk with
+  numbers.
+- Net: **0 genuine gains, −4 real copies.** Even a perfectly-targeted per-read rescue (the two-BAM diff) caps
+  at +1 member — and that +1 is a repeat artifact.
+
+**Conclusion:** consistent with the read-split rejection and the `dna_family_fallback` gating (+1 repeat-y
+member each). The mis-chain is a *symptom* of K=0 (reads genuinely match ≥2 near-identical copies); the
+detector already filters it; fixing the aligner does not resolve the copies. RNA family-detection ceiling
+~85% stands. NCF1 is a clean K=0 identifiability case — use it as the honest-boundary example, not a bug.
+
+---
+
+### (Original lead below — superseded by the RESULT above.)
 
 ## The finding
 
