@@ -1,7 +1,7 @@
 planted_family	planted_copies	members_detected	sensitivity	status	detected_as
 K0tandem	3	3	3/3	DETECTED	GWFAM0
-cnv	3	3	3/3	DETECTED	GWFAM4
-collapse	5	5	5/5	DETECTED	GWFAM3
-hidive	4	4	4/4	DETECTED	GWFAM5
-ladder	4	4	4/4	DETECTED	GWFAM1
-xchrom	2	2	2/2	DETECTED	GWFAM2
+cnv	3	2	2/3	DETECTED	GWFAM2
+collapse	5	5	5/5	DETECTED	GWFAM1
+hidive	4	2	2/4	DETECTED	GWFAM3
+ladder	4	0	0/4	MISSED	
+xchrom	2	0	0/2	MISSED	
