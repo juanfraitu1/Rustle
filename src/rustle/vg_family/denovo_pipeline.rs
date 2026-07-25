@@ -120,6 +120,10 @@ pub struct DenovoConfig {
     /// Projection identity floor for the DNA-family fallback (looser than collapse-expressed's 0.98, since
     /// these paralogs are divergent). CLI `--dna-family-min-identity`. Default 0.90.
     pub dna_family_min_identity: f64,
+    /// Repeat gate for the DNA-family fallback: reject a re-admitted orphan locus whose reference region is
+    /// >= this fraction soft-masked (RepeatMasker lowercase) — an audit showed the un-gated fallback re-admits
+    /// Alus/low-complexity as spurious SD copies. `RUSTLE_DNA_FAMILY_MAX_SOFTMASK`. Default 0.50.
+    pub dna_family_max_softmask: f64,
     /// Background per-read ambiguity rate for the collapse test. Must be GENOME-WIDE, never region-local: in the
     /// DAZ window every read outside DAZ1's span is DAZ2's and ambiguous, so a local background would be ~0.95.
     /// `None` ⇒ the gate abstains. Default = `GENOME_WIDE_EPS_AMB` measured on `GGO_mm.bam`.
@@ -148,6 +152,7 @@ impl Default for DenovoConfig {
             dna_family_fallback: false,
             tied_seed: false,
             dna_family_min_identity: 0.90,
+            dna_family_max_softmask: 0.50,
             eps_amb: Some(crate::vg_family::collapse_gate::GENOME_WIDE_EPS_AMB),
         }
     }
@@ -161,6 +166,7 @@ impl DenovoConfig {
             collapse_enumerate: std::env::var("RUSTLE_COLLAPSE_ENUMERATE").ok().as_deref() == Some("1"),
             collapse_expressed: std::env::var("RUSTLE_COLLAPSE_EXPRESSED").ok().as_deref() == Some("1"),
             dna_family_fallback: std::env::var("RUSTLE_DNA_FAMILY_FALLBACK").ok().as_deref() == Some("1"),
+            dna_family_max_softmask: env_num("RUSTLE_DNA_FAMILY_MAX_SOFTMASK", 0.50),
             // Readthrough/mis-chain gate SENSITIVITY toggle: RUSTLE_KEEP_READTHROUGH=1 disables both gates
             // (readthroughs that connect copies are then NOT filtered). Default (unset) = gates ON = today.
             filter_readthrough: std::env::var("RUSTLE_KEEP_READTHROUGH").ok().as_deref() != Some("1"),
@@ -2469,6 +2475,7 @@ pub fn detect_homology_catalog_genome_wide(
     let dna_families = if cfg.dna_family_fallback {
         crate::vg_family::collapse_enumerate::readmit_dna_family_batch(
             &dna_candidates, bam_path, fasta_path, &refine.minimap2, threads, cfg.dna_family_min_identity,
+            cfg.dna_family_max_softmask,
         )
     } else {
         Vec::new()

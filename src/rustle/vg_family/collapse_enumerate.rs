@@ -201,6 +201,17 @@ pub fn readmit_expressed_batch(
     out
 }
 
+/// Soft-mask (RepeatMasker lowercase) fraction of a reference sequence: lowercase bases over total. The repeat
+/// signal for the dna-family gate — Alu SINEs and low-complexity, which project to ~99%-identical dispersed
+/// copies genome-wide and masquerade as SD paralogs, are soft-masked in the reference. An empty slice is 0.0.
+pub fn softmask_frac(seq: &[u8]) -> f64 {
+    if seq.is_empty() {
+        return 0.0;
+    }
+    let lc = seq.iter().filter(|b| b.is_ascii_lowercase()).count();
+    lc as f64 / seq.len() as f64
+}
+
 /// DNA-family re-admission for RNA-orphan loci (the DNA edge oracle, `--dna-family-fallback`). Projects each
 /// orphan consensus at `min_identity`/cov>=0.90; the seed's own span is excluded via `known`, so the returned
 /// loci are the OTHER genomic paralog copies. Admits as a DNA-family iff >= 1 other genomic copy exists (total
@@ -209,17 +220,32 @@ pub fn readmit_expressed_batch(
 /// expressed transcript is non-homologous to them (DNA-family != RNA-family). Per-locus read counts are still
 /// computed and reported (min over paralogs; typically 0 for the silent copies) but do NOT gate admission.
 /// Copy-NUMBER only; per-read resolution of the silent copies requires DNA parCN.
+///
+/// REPEAT GATE (`max_softmask`): a candidate whose re-admitted locus is >= `max_softmask` soft-masked
+/// (repeat/transposon-derived) is REJECTED — an adversarial audit showed the un-gated fallback projects orphan
+/// loci onto Alus/low-complexity (11/12 off-benchmark, both controls) rather than real gene families. This
+/// mirrors Soto's own RepeatMasker exclusion. Soft-mask is read verbatim via `IndexedFasta` (the loaded
+/// `GenomeIndex` upper-cases and cannot feed it).
 pub fn readmit_dna_family_batch(
     candidates: &[(String, String, u64, u64, Vec<u8>)],
-    bam_path: &str, fasta_path: &str, minimap2: &str, threads: usize, min_identity: f64,
+    bam_path: &str, fasta_path: &str, minimap2: &str, threads: usize, min_identity: f64, max_softmask: f64,
 ) -> Vec<ExpressedCollapsedFamily> {
     if candidates.is_empty() { return Vec::new(); }
     let consensuses: Vec<(String, Vec<u8>)> = candidates.iter().map(|(id, _, _, _, seq)| (id.clone(), seq.clone())).collect();
     let known: HashMap<String, Vec<(String, u64, u64)>> =
         candidates.iter().map(|(id, ch, lo, hi, _)| (id.clone(), vec![(ch.clone(), *lo, *hi)])).collect();
     let proj = project_families_batch(&consensuses, fasta_path, &known, min_identity, 0.90, minimap2, threads).unwrap_or_default();
+    let fa = crate::vg_family::repeat_catalog::IndexedFasta::open(fasta_path).ok();
     let mut out = Vec::new();
     for (id, chrom, lo, hi, _seq) in candidates {
+        // repeat gate: reject re-admitted loci that are repeat-dominated (soft-mask >= max_softmask).
+        if let Some(fa) = &fa {
+            if let Some(bytes) = fa.fetch(chrom, *lo as i64, *hi as i64) {
+                if softmask_frac(&bytes) >= max_softmask {
+                    continue;
+                }
+            }
+        }
         let loci = match proj.get(id) { Some(l) => l.clone(), None => continue };
         if loci.is_empty() { continue; } // >= 1 other genomic copy => famCN >= 2 => DNA-family
         let min_reads = loci.iter()
@@ -239,6 +265,15 @@ mod tests {
     fn ev(flagged: bool, frac: f64) -> HiddenCopyEvidence {
         HiddenCopyEvidence { n_primary_reads: 300, n_alt_positions: 40, n_alt_reads: (300.0*frac) as usize, alt_read_fraction: frac, flagged }
     }
+    #[test]
+    fn softmask_frac_counts_lowercase_over_total() {
+        assert_eq!(softmask_frac(b"ACGT"), 0.0);
+        assert_eq!(softmask_frac(b"acgt"), 1.0);
+        assert_eq!(softmask_frac(b"ACac"), 0.5);
+        assert_eq!(softmask_frac(b""), 0.0);
+        assert_eq!(softmask_frac(b"ACGTn"), 0.2, "lowercase n (masked) counts as soft-masked");
+    }
+
     #[test]
     fn admits_only_when_all_three_signals_hold() {
         assert!(admit_collapse(&ev(true, 0.50), 2), "flagged + balanced + >=2 loci -> admit");
