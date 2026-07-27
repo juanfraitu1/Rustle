@@ -26,9 +26,16 @@ use rustle::vg_family::family_detect::DenovoTranscript;
 #[derive(Parser, Debug)]
 #[command(about = "Genome-wide de-tie read-conflict multi-copy-family catalog (no similarity threshold).")]
 struct Args {
-    /// Coordinate-sorted BAM (a `.bai` next to it enables the fast per-contig region query).
+    /// Coordinate-sorted BAM (a `.bai` next to it enables the fast per-contig region query). Required
+    /// unless `--from-genome` is given.
     #[arg(long)]
-    bam: String,
+    bam: Option<String>,
+    /// GENOME-ONLY mode: discover SD families from the genome alone (no reads, no annotation). Argument is
+    /// a BED of search windows (e.g. `bench/soto/80_fams.chr.bed`). Reps are duplicated genomic loci found by
+    /// self-alignment; grouping uses the SAME `homology_blocks` core as `--homology-primary`. Mutually
+    /// exclusive with `--bam`.
+    #[arg(long)]
+    from_genome: Option<String>,
     /// Genome FASTA (with a `.fai`).
     #[arg(long)]
     fasta: String,
@@ -138,6 +145,111 @@ struct Args {
     dna_family_min_identity: Option<f64>,
 }
 
+/// Parse a BED of search windows (`chrom\tstart\tend`, extra columns ignored) for `--from-genome`.
+fn read_windows_bed(path: &str) -> Result<Vec<(String, u64, u64)>> {
+    let mut out = Vec::new();
+    for line in std::fs::read_to_string(path)?.lines() {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() >= 3 {
+            out.push((f[0].to_string(), f[1].parse()?, f[2].parse()?));
+        }
+    }
+    Ok(out)
+}
+
+/// Write the family catalog (`<out>.families.tsv` + `.copies.tsv` + `.copies.fa`). Shared by the RNA
+/// catalog path and the DNA `--from-genome` path: both hand it the same `Vec<Vec<DenovoTranscript>>`
+/// (each inner vec = a family's copies). Sorts families by their first copy's (chrom, start) and returns
+/// the sorted vec so the RNA path's downstream sections (collapse/famcn/project-all) see the same order.
+fn emit_catalog(
+    out: &str,
+    mut fams: Vec<Vec<DenovoTranscript>>,
+    refine_params: &RefineParams,
+) -> Result<Vec<Vec<DenovoTranscript>>> {
+    use std::collections::BTreeSet;
+    let mut fh = std::fs::File::create(format!("{out}.families.tsv"))?;
+    let mut ch = std::fs::File::create(format!("{out}.copies.tsv"))?;
+    // The exon-sum (spliced, FLNC-derived) sequence of every copy, in transcription orientation (for the
+    // RNA path); for the DNA path it is the genomic locus sequence. Annotation-free family-validation substrate.
+    let mut sh = std::fs::File::create(format!("{out}.copies.fa"))?;
+    writeln!(fh, "family_id\tn_copies\tn_chroms\tchroms\tcross_chrom\tavg_reads\tprotein_coheres")?;
+    writeln!(ch, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads")?;
+
+    // deterministic order: by the first copy's (chrom, start).
+    fams.sort_by(|a, b| {
+        let ka = a.iter().map(|c| (c.chrom.as_str(), c.start)).min();
+        let kb = b.iter().map(|c| (c.chrom.as_str(), c.start)).min();
+        ka.cmp(&kb)
+    });
+    // orthogonal protein-coherence QC flag; "NA" when --protein-tail is off (no mmseqs call).
+    let coheres = family_protein_coheres(&fams, refine_params);
+    let mut n_xchrom = 0usize;
+    for (fi, copies) in fams.iter().enumerate() {
+        let fid = format!("GWFAM{fi}");
+        let chroms: BTreeSet<&str> = copies.iter().map(|c| c.chrom.as_str()).collect();
+        let cross = chroms.len() > 1;
+        if cross {
+            n_xchrom += 1;
+        }
+        let avg_reads = if copies.is_empty() {
+            0.0
+        } else {
+            copies.iter().map(|c| c.n_reads as f64).sum::<f64>() / copies.len() as f64
+        };
+        let coheres_str = match coheres[fi] {
+            Some(true) => "true",
+            Some(false) => "false",
+            None => "NA",
+        };
+        writeln!(
+            fh,
+            "{fid}\t{}\t{}\t{}\t{}\t{:.1}\t{coheres_str}",
+            copies.len(),
+            chroms.len(),
+            chroms.iter().cloned().collect::<Vec<_>>().join(","),
+            cross,
+            avg_reads
+        )?;
+        let mut sorted = copies.clone();
+        sorted.sort_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
+        for (ci, c) in sorted.iter().enumerate() {
+            writeln!(
+                ch,
+                "{fid}\t{ci}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                c.tid,
+                c.chrom,
+                c.start,
+                c.end,
+                c.introns.len() + 1,
+                c.strand,
+                c.n_reads
+            )?;
+            if !c.seq.is_empty() {
+                writeln!(
+                    sh,
+                    ">{fid}|{ci}|{}:{}-{}|{}|nexon={}",
+                    c.chrom,
+                    c.start,
+                    c.end,
+                    c.strand,
+                    c.introns.len() + 1
+                )?;
+                sh.write_all(&c.seq)?;
+                writeln!(sh)?;
+            }
+        }
+    }
+    eprintln!(
+        "[gw-catalog] wrote {} families ({} cross-chromosome) -> {out}.families.tsv + {out}.copies.tsv",
+        fams.len(),
+        n_xchrom,
+    );
+    Ok(fams)
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     let project_all = (args.project_all_families
@@ -150,10 +262,36 @@ fn main() -> Result<()> {
     cfg.dna_family_fallback = args.dna_family_fallback || cfg.dna_family_fallback;
     if let Some(x) = args.dna_family_min_identity { cfg.dna_family_min_identity = x; }
 
+    // --from-genome: read-free/annotation-free DNA family catalog. Discovers duplicated genomic loci by
+    // self-alignment, then groups them with the SAME homology_blocks core the RNA --homology-primary path
+    // uses (via families_from_reps). Returns before any BAM-consuming path.
+    if let Some(win_bed) = args.from_genome.as_deref() {
+        use rustle::vg_family::from_genome::{genome_reps, GenomeRepParams};
+        let mut refine_params = homology_refine_params(args.min_identity, args.threads);
+        refine_params.protein_tail = args.protein_tail;
+        let windows = read_windows_bed(win_bed)?;
+        let mut gp = GenomeRepParams::from_env();
+        gp.threads = args.threads;
+        gp.minimap2 = refine_params.minimap2.clone();
+        let reps = genome_reps(&args.fasta, &windows, &gp)?;
+        eprintln!("[gw-catalog-genome] {} windows -> {} duplicated-locus reps", windows.len(), reps.len());
+        let dna_fams = rustle::vg_family::denovo_pipeline::families_from_reps(
+            reps, &refine_params, 0.20, args.min_copies, 0,
+        )?;
+        emit_catalog(&args.out, dna_fams, &refine_params)?;
+        return Ok(());
+    }
+
+    // BAM is required for every path below (single-copy baseline, conflict/homology catalogs, project-all).
+    let bam = args
+        .bam
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("--bam is required unless --from-genome is given"))?;
+
     if args.single_copy_baseline {
         use rustle::vg_family::single_copy::lambda_global;
         let loci = detect_single_copy_baseline_genome_wide(
-            &args.bam, &args.fasta, args.threads, args.win, args.min_copies, !args.no_refine, &cfg,
+            bam, &args.fasta, args.threads, args.win, args.min_copies, !args.no_refine, &cfg,
         )?;
         let mut sc = std::fs::File::create(format!("{}.single_copy.tsv", args.out))?;
         writeln!(sc, "chrom\tstart\tend\tstrand\tn_reads\tn_exons\tchi_h\tn_psv")?;
@@ -186,12 +324,12 @@ fn main() -> Result<()> {
         Vec<rustle::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
     ) = if args.homology_primary {
         detect_homology_catalog_genome_wide(
-            &args.bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,
+            bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,
         )?
     } else if args.cross_chrom {
         (
             detect_conflict_catalog_genome_wide_xchrom(
-                &args.bam, &args.fasta, args.threads, args.min_copies, &cfg,
+                bam, &args.fasta, args.threads, args.min_copies, &cfg,
             )?,
             Vec::new(),
             Vec::new(),
@@ -199,7 +337,7 @@ fn main() -> Result<()> {
         )
     } else {
         let catalog = detect_conflict_catalog_genome_wide(
-            &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
+            bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
         )?;
         (catalog.into_iter().map(|c| c.copies).collect(), Vec::new(), Vec::new(), Vec::new())
     };
@@ -232,93 +370,9 @@ fn main() -> Result<()> {
         raw
     };
 
-    let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
-    let mut ch = std::fs::File::create(format!("{}.copies.tsv", args.out))?;
-    // The exon-sum (spliced, FLNC-derived) sequence of every copy, in transcription orientation. This is
-    // the substrate for the ANNOTATION-FREE family validation: all-vs-all align a family's copies and a
-    // copy is confirmed iff its spliced sequence aligns full-length to a sibling (independent of both the
-    // conflict-graph family definition AND of RefSeq gene annotation → de-circularising).
-    let mut sh = std::fs::File::create(format!("{}.copies.fa", args.out))?;
-    writeln!(fh, "family_id\tn_copies\tn_chroms\tchroms\tcross_chrom\tavg_reads\tprotein_coheres")?;
-    writeln!(ch, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads")?;
-
-    use std::collections::BTreeSet;
-    // deterministic order: by the first copy's (chrom, start).
-    let mut fams = fams;
-    fams.sort_by(|a, b| {
-        let ka = a.iter().map(|c| (c.chrom.as_str(), c.start)).min();
-        let kb = b.iter().map(|c| (c.chrom.as_str(), c.start)).min();
-        ka.cmp(&kb)
-    });
-    // spec §6: orthogonal protein-coherence QC flag — does each family's ORFs form a connected
-    // protein-homology graph? `None` (emitted as "NA") when `--protein-tail` is off (no mmseqs call).
-    let qc_params = &refine_params;
-    let coheres = family_protein_coheres(&fams, qc_params);
-    let mut n_xchrom = 0usize;
-    for (fi, copies) in fams.iter().enumerate() {
-        let fid = format!("GWFAM{fi}");
-        let chroms: BTreeSet<&str> = copies.iter().map(|c| c.chrom.as_str()).collect();
-        let cross = chroms.len() > 1;
-        if cross {
-            n_xchrom += 1;
-        }
-        let avg_reads = if copies.is_empty() {
-            0.0
-        } else {
-            copies.iter().map(|c| c.n_reads as f64).sum::<f64>() / copies.len() as f64
-        };
-        let coheres_str = match coheres[fi] {
-            Some(true) => "true",
-            Some(false) => "false",
-            None => "NA",
-        };
-        writeln!(
-            fh,
-            "{fid}\t{}\t{}\t{}\t{}\t{:.1}\t{coheres_str}",
-            copies.len(),
-            chroms.len(),
-            chroms.iter().cloned().collect::<Vec<_>>().join(","),
-            cross,
-            avg_reads
-        )?;
-        // copies sorted by (chrom, start) for readability.
-        let mut sorted = copies.clone();
-        sorted.sort_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
-        for (ci, c) in sorted.iter().enumerate() {
-            writeln!(
-                ch,
-                "{fid}\t{ci}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                c.tid,
-                c.chrom,
-                c.start,
-                c.end,
-                c.introns.len() + 1,
-                c.strand,
-                c.n_reads
-            )?;
-            // exon-sum FASTA record: header carries family/copy/locus; sequence is the spliced consensus.
-            if !c.seq.is_empty() {
-                writeln!(
-                    sh,
-                    ">{fid}|{ci}|{}:{}-{}|{}|nexon={}",
-                    c.chrom,
-                    c.start,
-                    c.end,
-                    c.strand,
-                    c.introns.len() + 1
-                )?;
-                sh.write_all(&c.seq)?;
-                writeln!(sh)?;
-            }
-        }
-    }
-    eprintln!(
-        "[gw-catalog] wrote {} families ({} cross-chromosome) -> {}.families.tsv + {}.copies.tsv",
-        fams.len(),
-        n_xchrom,
-        args.out,
-        args.out
-    );
+    // Sort + write the family catalog (families.tsv/copies.tsv/copies.fa). Shared by the RNA path
+    // and the DNA --from-genome path; returns the sorted families for the downstream sections.
+    let fams = emit_catalog(&args.out, fams, &refine_params)?;
 
     // K=0-collapsed families re-admitted by Task 3 (`--collapse-enumerate`): copy-NUMBER only, kept fully
     // separate from families.tsv/copies.tsv so the OFF path (flag off or nothing collapsed) writes no file
@@ -444,7 +498,7 @@ fn main() -> Result<()> {
         for (fid, locs) in &proj {
             for l in dedup_overlapping(locs.clone()) {
                 // read-support gate: >=3 primary reads over the locus
-                let n_support = rustle::vg_family::denovo_assemble::reads_in_region(&args.bam, &l.chrom, l.start, l.end, args.threads)
+                let n_support = rustle::vg_family::denovo_assemble::reads_in_region(bam, &l.chrom, l.start, l.end, args.threads)
                     .map(|(p, _)| p.len()).unwrap_or(0);
                 if n_support < 3 { continue; }
                 let overlaps = spans_by_fam.get(fid).map(|s| overlaps_any(&l.chrom, l.start, l.end, s)).unwrap_or(false);

@@ -2382,6 +2382,30 @@ pub(crate) fn homology_blocks(
     Ok(crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma))
 }
 
+/// Group a rep set into families with the shared engine (`homology_blocks`) and keep those spanning
+/// >= `min_copies` spatially-distinct loci. Used by the DNA `--from-genome` path; the RNA genome-wide
+/// homology catalog keeps its collapse-aware loop but shares `homology_blocks` for the grouping itself,
+/// so both substrates are grouped by the same engine. `min_reads` is the `distinct_locus_reps`
+/// same-strand-merge floor (0 for DNA — no reads; distinct genomic loci are still kept).
+pub fn families_from_reps(
+    reps: Vec<DenovoTranscript>,
+    refine: &RefineParams,
+    gamma: f64,
+    min_copies: usize,
+    min_reads: usize,
+) -> Result<Vec<Vec<DenovoTranscript>>> {
+    let blocks = homology_blocks(&reps, refine, gamma)?;
+    let mut out = Vec::new();
+    for block in blocks {
+        let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
+        let loci = distinct_locus_reps(copies, min_reads);
+        if block.len() >= min_copies && loci.len() >= min_copies {
+            out.push(loci);
+        }
+    }
+    Ok(out)
+}
+
 /// GENOME-WIDE homology-primary (E_r) family catalog. reps → E_r edges → γ-quasi-clique blocks →
 /// ≥2 distinct loci → families. Chrom/strand-agnostic; a superset of the conflict catalog.
 pub fn detect_homology_catalog_genome_wide(
