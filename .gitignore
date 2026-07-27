@@ -90,6 +90,8 @@
 !/tests/fixtures/same_chrom_supplement/*.bam.bai
 !/tests/fixtures/same_chrom_supplement/*.fa
 !/tests/fixtures/same_chrom_supplement/*.fa.fai
+!/tests/fixtures/from_genome/*.fa
+!/tests/fixtures/from_genome/*.fa.fai
 
 *.log
 

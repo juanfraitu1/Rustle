@@ -267,12 +267,19 @@ fn main() -> Result<()> {
     // uses (via families_from_reps). Returns before any BAM-consuming path.
     if let Some(win_bed) = args.from_genome.as_deref() {
         use rustle::vg_family::from_genome::{genome_reps, GenomeRepParams};
+        if args.bam.is_some() {
+            anyhow::bail!("--from-genome and --bam are mutually exclusive (genome-only mode takes no reads)");
+        }
         let mut refine_params = homology_refine_params(args.min_identity, args.threads);
         refine_params.protein_tail = args.protein_tail;
         let windows = read_windows_bed(win_bed)?;
         let mut gp = GenomeRepParams::from_env();
         gp.threads = args.threads;
         gp.minimap2 = refine_params.minimap2.clone();
+        // `--min-identity` sets BOTH floors: the SD locus-discovery floor here AND the family-grouping floor
+        // (via refine_params above). Env RUSTLE_GENOME_MIN_IDENTITY (already applied by from_env) is overridden
+        // only when the flag is given, so `--from-genome --min-identity 0.98` = SD98 discovery + grouping.
+        if let Some(mi) = args.min_identity { gp.min_identity = mi; }
         let reps = genome_reps(&args.fasta, &windows, &gp)?;
         eprintln!("[gw-catalog-genome] {} windows -> {} duplicated-locus reps", windows.len(), reps.len());
         let dna_fams = rustle::vg_family::denovo_pipeline::families_from_reps(

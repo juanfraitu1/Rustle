@@ -74,6 +74,9 @@ pub fn genome_reps(
 
     let mut reps = Vec::new();
     for (chrom, start, end) in merged {
+        // A paralog hit whose chrom has NO search window is dropped here (its contig was never loaded into
+        // `genome`). This is intentional for the windowed benchmark (all scored members' chroms are windows);
+        // a future genome-wide run without window priors would under-report and should load all target contigs.
         if let Some(seq) = genome.fetch_sequence(&chrom, start, end) {
             reps.push(DenovoTranscript {
                 tid: format!("DN_{chrom}_{start}_1"),
