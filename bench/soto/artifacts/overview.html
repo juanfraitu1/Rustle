@@ -140,21 +140,21 @@
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">Rustle × Soto 2025 · gorilla A119b · T2T-CHM13 v2.0</p>
+  <p class="eyebrow">Rustle × Soto 2025 · human A119b · T2T-CHM13 v2.0</p>
   <h1>Family-level detection</h1>
   <p class="lede">Rustle's RNA family catalogue against the Soto segmental-duplication truth set — <b>83 families, 362 members</b>. Precision counts every off-catalogue <b>candidate</b> as a potential false positive. Expand a family to review its members <b>and</b> its candidates: uncheck the segdup pieces a transcript method can't recover, or uncheck candidates you judge to be real copies — both metrics update live.</p>
 
   <div class="metrics">
     <div class="metric recall"><span class="rail"></span>
       <p class="cap">Recall (members)</p>
-      <div class="big" id="recall-v">85.1%</div>
-      <div class="sub" id="recall-s">308 / 362 members</div>
+      <div class="big" id="recall-v">86.5%</div>
+      <div class="sub" id="recall-s">313 / 362 members</div>
       <div class="delta" id="recall-d"></div>
     </div>
     <div class="metric prec"><span class="rail"></span>
       <p class="cap">Precision</p>
-      <div class="big" id="prec-v">90.9%</div>
-      <div class="sub" id="prec-s">308 / 339 calls · 31 candidates as potential FPs</div>
+      <div class="big" id="prec-v">91.0%</div>
+      <div class="sub" id="prec-s">313 / 344 calls · 31 candidates as potential FPs</div>
       <div class="delta" id="prec-d"></div>
     </div>
   </div>
@@ -173,9 +173,9 @@
     <button class="filterbtn" data-f="excl" aria-pressed="false">With suggested exclusions</button>
     <button class="filterbtn" data-f="cand" aria-pressed="false">With candidates</button>
     <span class="legend">
-      <span><b style="color:var(--recovered)">■</b> recovered</span>
+      <span><b style="color:var(--recovered)">■</b> found</span>
       <span><b style="color:var(--missed)">■</b> missed</span>
-      <span><b style="color:var(--cov)">■</b> recoverable (ideal coverage)</span>
+      <span><i>· top-up</i> = found at ideal coverage (counted as found)</span>
       <span><b style="color:var(--excl)">■</b> segdup piece</span>
       <span><b style="color:var(--cand)">■</b> candidate</span>
     </span>
@@ -183,7 +183,7 @@
   <div class="famtable" id="famtable"></div>
 
   <footer>
-    Recall = detected ÷ total members (over <i>included</i> members); the per-family bar shows RAW detection over all members (independent of your exclusions). <b>recoverable</b> = missed on the real BAM but seeded when the member's own reads are resampled to ideal coverage (a simulated top-up) — coverage-limited, not a fundamental identifiability limit. Precision = detected ÷ (detected + <i>included</i> candidates), each candidate a potential false positive.
+    Recall = detected ÷ total members (over <i>included</i> members); the per-family bar shows RAW detection over all members (independent of your exclusions). The 5 members marked <b>· top-up</b> are missed on the real BAM but found when the member's own reads are resampled to ideal coverage (a simulated top-up); they are <b>counted as found</b> (coverage-limited, not a fundamental identifiability limit). Precision = detected ÷ (detected + <i>included</i> candidates), each candidate a potential false positive.
     Member annotation from T2T-CHM13 v2.0 RefSeq (GCF_009914755): <code>unannotated</code> = no gene overlaps the locus; <code>fragment</code> = &lt; 800 bp; <code>piece of another gene</code> = mostly inside a differently-named gene. Candidates are off-catalogue loci <b>homologous to a catalogued family</b> (BLAST identity <code>bid</code> ≥ 0.80 — quasi-clique membership); loci not homologous to any family are not shown. Source: <code>member_annotation.json</code>, <code>soto_candidate_copies.tsv</code>.
   </footer>
 </div>
@@ -199,7 +199,7 @@ D.fams.forEach(f=>{ f.members.forEach(m=>MEMBERS.push(Object.assign({fam:f.fam},
 const mkey=m=>m.fam+':'+m.start;
 const ckey=c=>'c:'+c.fam+':'+c.start;
 const excl=new Set();
-const BASE={det:308,tot:362,cand:CANDS.length};
+const BASE={det:313,tot:362,cand:CANDS.length};
 let filter='all';
 const fmtpct=x=>(x*100).toFixed(1)+'%';
 const FAMGENE={}, FAMMED={};
@@ -210,7 +210,7 @@ const isOutlier=c=>{ const r=candRatio(c); return r>2||r<0.5; };
 
 function metrics(){
   let det=0,tot=0;
-  MEMBERS.forEach(m=>{ if(excl.has(mkey(m)))return; tot++; if(m.det)det++; });
+  MEMBERS.forEach(m=>{ if(excl.has(mkey(m)))return; tot++; if(m.det||m.topup)det++; });
   const cand=CANDS.filter(c=>!excl.has(ckey(c))).length;
   return {det,tot,cand, recall: tot?det/tot:0, prec:(det+cand)?det/(det+cand):1, exMem:MEMBERS.length-tot, exCand:CANDS.length-cand};
 }
@@ -248,7 +248,7 @@ function renderClsBtns(){
   });
 }
 function famVisible(f){
-  if(filter==='missed') return f.members.some(m=>!m.det);
+  if(filter==='missed') return f.members.some(m=>!(m.det||m.topup));
   if(filter==='excl') return f.members.some(m=>EXCL_CLS.has(m.cls));
   if(filter==='cand') return (f.cands||[]).length>0;
   return true;
@@ -258,7 +258,7 @@ function renderTable(){
   const t=document.getElementById('famtable');
   t.innerHTML = D.fams.filter(famVisible).map(f=>{
     const noMem=f.members.length===0;
-    let d=0,tt=f.members.length; f.members.forEach(m=>{ if(m.det)d++; });
+    let d=0,tt=f.members.length; f.members.forEach(m=>{ if(m.det||m.topup)d++; });
     const rec=tt?d/tt:0, fillc = rec>=1?'var(--recovered)':rec>0?'var(--excl)':'var(--missed)';
     const cds=f.cands||[]; const candIncl=cds.filter(c=>!excl.has('c:'+f.fam+':'+c.start)).length;
     const hasCalls=(d+candIncl)>0, precF=hasCalls?d/(d+candIncl):0;
@@ -284,7 +284,7 @@ function renderTable(){
           <span class="m-gene">${m.gene}</span>
           <span class="annb ${flag?'ex':'ok'}" title="${annTxt}">${annTxt}</span>
           <span class="bp-col">${m.bp.toLocaleString()}</span>
-          <span class="det ${m.det?'y':(m.topup?'r':'n')}" title="${(!m.det&&m.topup)?'missed on real data; recovered when this member\'s own reads are resampled to ideal coverage (simulated top-up) — coverage-limited, not a fundamental limit':''}">${m.det?'found':(m.topup?'recoverable':'missed')}${(!m.det&&m.why)?` · <span class="why">${m.why}</span>`:''}</span></div>`;
+          <span class="det ${(m.det||m.topup)?'y':'n'}" title="${(!m.det&&m.topup)?'missed on the real BAM; found when this member\'s own reads are resampled to ideal coverage (simulated top-up) — counted as found (coverage-recoverable)':''}">${(m.det||m.topup)?'found':'missed'}${(!m.det&&m.topup)?` · <span class="why">top-up</span>`:''}${(!m.det&&!m.topup&&m.why)?` · <span class="why">${m.why}</span>`:''}</span></div>`;
       }).join('');
       if(cds.length){
         const med=FAMMED[f.fam];
@@ -318,7 +318,7 @@ function renderTable(){
 }
 function downloadBED(){
   const rows=[];
-  MEMBERS.forEach(m=>{ if(excl.has(mkey(m)))return; rows.push([m.chrom,m.start,m.end,`${m.fam}|${m.gene}|member|${m.det?'found':'missed'}`]); });
+  MEMBERS.forEach(m=>{ if(excl.has(mkey(m)))return; rows.push([m.chrom,m.start,m.end,`${m.fam}|${m.gene}|member|${(m.det||m.topup)?'found':'missed'}`]); });
   CANDS.forEach(c=>{ if(excl.has(ckey(c)))return; rows.push([c.chrom,c.start,c.end,`${c.fam}|candidate|hom_${c.homfam||'none'}`]); });
   rows.sort((a,b)=> a[0]<b[0]?-1:a[0]>b[0]?1:a[1]-b[1]);
   const M=metrics();
