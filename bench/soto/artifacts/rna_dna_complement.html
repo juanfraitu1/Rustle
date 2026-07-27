@@ -1,0 +1,255 @@
+<title>RNA × DNA — two questions about Soto's segdup families</title>
+<style>
+  :root{
+    --bg:#f6f8fb; --panel:#ffffff; --ink:#171d29; --mut:#5a6577; --line:#e2e7ef;
+    --rna:#1f9e8c; --dna:#4a72c4; --both:#2f7d9e; --hard:#c8663f;
+    --rna-soft:#1f9e8c1e; --dna-soft:#4a72c41e;
+    --shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#0e131c; --panel:#151c28; --ink:#e7ecf5; --mut:#95a1b5; --line:#26303f;
+      --rna:#37c2ad; --dna:#6f95e6; --both:#4fa6c8; --hard:#e08256;
+      --rna-soft:#37c2ad20; --dna-soft:#6f95e620; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);}
+  }
+  :root[data-theme="light"]{ --bg:#f6f8fb; --panel:#ffffff; --ink:#171d29; --mut:#5a6577; --line:#e2e7ef;
+    --rna:#1f9e8c; --dna:#4a72c4; --both:#2f7d9e; --hard:#c8663f; --rna-soft:#1f9e8c1e; --dna-soft:#4a72c41e;
+    --shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.06);}
+  :root[data-theme="dark"]{ --bg:#0e131c; --panel:#151c28; --ink:#e7ecf5; --mut:#95a1b5; --line:#26303f;
+    --rna:#37c2ad; --dna:#6f95e6; --both:#4fa6c8; --hard:#e08256; --rna-soft:#37c2ad20; --dna-soft:#6f95e620;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px;margin:0 auto;padding:44px 22px 72px}
+  .num{font-variant-numeric:tabular-nums}
+  h1{font-size:clamp(1.55rem,3.6vw,2.3rem);line-height:1.12;margin:0 0 .32em;letter-spacing:-.022em;text-wrap:balance}
+  .lede{font-size:1.08rem;color:var(--mut);margin:0;max-width:66ch}
+  .eyebrow{text-transform:uppercase;letter-spacing:.13em;font-size:.72rem;font-weight:700;color:var(--dna);margin:0 0 14px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+  section{margin-top:30px}
+  h2{font-size:.82rem;text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 13px;font-weight:700}
+
+  /* two-question hero */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px}
+  @media(max-width:640px){.two{grid-template-columns:1fr}}
+  .q{padding:22px 22px 20px;position:relative;overflow:hidden}
+  .q .tag{font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;font-weight:700}
+  .q.dna .tag{color:var(--dna)} .q.rna .tag{color:var(--rna)}
+  .q .ask{font-size:1.16rem;font-weight:640;letter-spacing:-.01em;margin:7px 0 15px;line-height:1.25}
+  .q .big{font-size:3.1rem;font-weight:760;letter-spacing:-.03em;line-height:.9}
+  .q.dna .big{color:var(--dna)} .q.rna .big{color:var(--rna)}
+  .q .cap{font-size:.86rem;color:var(--mut);margin-top:9px}
+  .q.dna{border-top:3px solid var(--dna)} .q.rna{border-top:3px solid var(--rna)}
+
+  .grid2{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;align-items:start}
+  @media(max-width:700px){.grid2{grid-template-columns:1fr}}
+
+  table{width:100%;border-collapse:collapse;font-size:.92rem}
+  th,td{text-align:left;padding:8px 14px;border-bottom:1px solid var(--line)}
+  th{font-size:.71rem;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:700}
+  td.n{text-align:right;font-variant-numeric:tabular-nums}
+  tr.hi td{background:var(--dna-soft);font-weight:600}
+  .cardpad{padding:18px 20px}
+  .cardpad h3{margin:0 0 4px;font-size:1.04rem;letter-spacing:-.01em}
+  .cardpad .cap{font-size:.85rem;color:var(--mut);margin:0 0 13px}
+
+  /* verify badge */
+  .badge{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;font-weight:650;color:var(--dna);
+    background:var(--dna-soft);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+  .badge .k{width:8px;height:8px;border-radius:50%;background:var(--dna)}
+  .vlist{font-size:.85rem;color:var(--mut);margin:12px 0 0;line-height:1.7}
+  .vlist code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.9em;color:var(--ink)}
+
+  /* RNA gap bars */
+  .bars{display:flex;flex-direction:column;gap:9px;margin-top:2px}
+  .bar{display:grid;grid-template-columns:132px 1fr 34px;align-items:center;gap:10px;font-size:.86rem}
+  .bar .lbl{color:var(--mut)} .bar .tr{height:12px;border-radius:4px;background:var(--rna-soft);overflow:hidden}
+  .bar .fl{height:100%;background:var(--rna);border-radius:4px}
+  .bar .vv{text-align:right;font-variant-numeric:tabular-nums;color:var(--mut)}
+  .split{display:flex;gap:8px;margin:14px 0 2px;font-size:.82rem;flex-wrap:wrap}
+  .split .s{padding:4px 11px;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
+  .split b{color:var(--ink)}
+  .cross{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media(max-width:560px){.cross{grid-template-columns:repeat(2,1fr)}}
+  .cell{padding:14px 12px;border-radius:11px;border:1px solid var(--line);background:var(--bg);text-align:center}
+  .cell .cn{font-size:2rem;font-weight:750;letter-spacing:-.02em;line-height:1}
+  .cell .cl{font-size:.78rem;color:var(--mut);margin-top:6px;line-height:1.3}
+  .cell .cl span{font-size:.72rem;opacity:.85}
+  .cell.both{border-top:3px solid var(--both)} .cell.both .cn{color:var(--both)}
+  .cell.dna{border-top:3px solid var(--dna)} .cell.dna .cn{color:var(--dna)}
+  .cell.rna{border-top:3px solid var(--rna)} .cell.rna .cn{color:var(--rna)}
+  .cell.none{border-top:3px solid var(--hard)} .cell.none .cn{color:var(--hard)}
+
+  .frontier{padding:20px 22px;border-left:3px solid var(--hard)}
+  .frontier h3{margin:0 0 8px;font-size:1.06rem}
+  .frontier p{margin:0 0 10px;font-size:.95rem}.frontier p:last-child{margin:0}
+  .cols2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+  @media(max-width:560px){.cols2{grid-template-columns:1fr}}
+  .mini{padding:13px 15px;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
+  .mini .h{font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:4px}
+  .mini.d .h{color:var(--dna)} .mini.r .h{color:var(--rna)}
+  .mini p{font-size:.86rem;color:var(--mut);margin:0}
+  .k2{color:var(--ink);font-weight:650}
+
+  .bottom{padding:20px 22px;border-left:3px solid var(--both)}
+  .bottom p{margin:0 0 10px}.bottom p:last-child{margin:0}
+  footer{margin-top:32px;font-size:.79rem;color:var(--mut);border-top:1px solid var(--line);padding-top:14px;line-height:1.7}
+  footer code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Rustle × Soto 2025 · CHM13v2.0 · 83 families / 362 members</p>
+  <h1>RNA and DNA answer <em>different questions</em> about Soto's duplicate families</h1>
+  <p class="lede">The ~15% of Soto members Rustle "misses" from RNA are not missing from the genome — every one is a
+  real segmental-duplication paralog. RNA and DNA simply measure different things, and the gap is exactly that
+  difference.</p>
+
+  <div class="two">
+    <div class="q dna panel">
+      <div class="tag">DNA · genome sequence</div>
+      <div class="ask">Does this duplicated copy <em>exist</em>?</div>
+      <div class="big num">~100%</div>
+      <div class="cap">362/362 members link to a real genome paralog (≥1 kb block, id ≥80%). 98.1% already at ≥95%.</div>
+    </div>
+    <div class="q rna panel">
+      <div class="tag">RNA · transcripts</div>
+      <div class="ask">Is it <em>expressed</em>, and can transcripts <em>resolve</em> the copy?</div>
+      <div class="big num">86.5%</div>
+      <div class="cap">313/362 members recovered from human Iso-Seq (306/84.5% strict own-copy). The rest are real — just not visible to RNA.</div>
+    </div>
+  </div>
+
+  <section>
+    <h2>DNA existence — every member is in the genome</h2>
+    <div class="grid2">
+      <div class="panel">
+        <table>
+          <thead><tr><th>sibling-link identity (genome-wide)</th><th class="n">members recovered</th></tr></thead>
+          <tbody>
+            <tr><td>≥98% <span style="color:var(--mut)">— strict, whole-locus</span></td><td class="n">77.3%</td></tr>
+            <tr class="hi"><td>≥95% <span style="color:var(--mut)">— ≈ Soto SD98 on the block</span></td><td class="n">98.1%</td></tr>
+            <tr><td>≥90%</td><td class="n">99.4%</td></tr>
+            <tr><td>≥80%</td><td class="n">100.0%</td></tr>
+          </tbody>
+        </table>
+        <p class="cardpad" style="padding-top:11px;font-size:.82rem;color:var(--mut)">The only variable is the identity
+        cut, not presence: SD paralogs sit at 95–98% <em>whole-locus</em> because introns and flanks diverge faster
+        than the exon blocks Soto's “SD98” measures. Nothing is absent from the genome.</p>
+      </div>
+      <div class="panel cardpad">
+        <span class="badge"><span class="k"></span>10 / 10 recoveries verified real — 0 repeat artifacts</span>
+        <p class="vlist">The hardest recoveries (benchmark singletons, short members) were each adversarially
+        checked. The short ones are the annotated <b>tip</b> of a larger duplication, not a dispersed repeat:</p>
+        <p class="vlist">
+          <code>AC243829.6</code> 107 bp → tip of a 1.5 kb block at 99.7%, 1.6 Mb away<br>
+          <code>AL590399.2</code> 310 bp → fragment of a 66 kb SD at 98.7%<br>
+          <code>DUX4L50</code> 100% soft-masked → 5 non-tandem chr9 SD copies<br>
+          <code>BOLA2B</code> → BOLA2A at 16p11.2, full-length 100%
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What the RNA misses actually are — and why RNA can't see them</h2>
+    <div class="panel cardpad">
+      <p class="cap" style="margin:0 0 12px">Decomposition on the strict own-copy basis (306 found → 56 missed;
+      counting the 5 coverage-recoverable members as found leaves 49). The cross-tab below shows the 48 of these
+      that the DNA pipeline retrieves.</p>
+      <div class="split">
+        <span class="s"><b>≈29</b> not expressed enough to detect</span>
+        <span class="s"><b>≈21</b> expressed but can't be resolved as a copy</span>
+        <span class="s"><b>6</b> under investigation</span>
+      </div>
+      <div class="bars" style="margin-top:14px">
+        <div class="bar"><span class="lbl">not-expressed</span><span class="tr"><span class="fl" style="width:39%"></span></span><span class="vv">22</span></div>
+        <div class="bar"><span class="lbl">mis-chain</span><span class="tr"><span class="fl" style="width:21%"></span></span><span class="vv">12</span></div>
+        <div class="bar"><span class="lbl">K=0 collapse</span><span class="tr"><span class="fl" style="width:12.5%"></span></span><span class="vv">7</span></div>
+        <div class="bar"><span class="lbl">genuine-miss</span><span class="tr"><span class="fl" style="width:11%"></span></span><span class="vv">6</span></div>
+        <div class="bar"><span class="lbl">seeding-gap</span><span class="tr"><span class="fl" style="width:9%"></span></span><span class="vv">5</span></div>
+        <div class="bar"><span class="lbl">other</span><span class="tr"><span class="fl" style="width:7%"></span></span><span class="vv">4</span></div>
+      </div>
+      <p class="cap" style="margin:13px 0 0">Every one is a genuine paralog in the genome (DNA confirms it). RNA misses
+      it for one of two reasons: it is <b>silent / low-coverage</b> (no transcript to read), or it is
+      <b>expressed but indistinguishable</b> from a near-identical sibling (K=0 / mis-chain).</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>DNA and RNA recover <em>different</em> members — one engine, two substrates</h2>
+    <div class="panel cardpad">
+      <p class="cap" style="margin:0 0 14px">Run through the <b>same grouping engine</b>
+      (<code style="font-family:var(--mono,ui-monospace);font-size:.9em">gw_family_catalog</code>: homology edges → γ-quasi-clique),
+      fed genome loci (<code style="font-family:var(--mono,ui-monospace);font-size:.9em">--from-genome</code>, no reads/annotation)
+      vs Iso-Seq reads. Same code, two front-ends — so the difference is the substrate, not the method.</p>
+      <div class="cross">
+        <div class="cell both"><div class="cn">310</div><div class="cl">both recover</div></div>
+        <div class="cell dna"><div class="cn">48</div><div class="cl">DNA-only<br><span>RNA missed → DNA retrieves</span></div></div>
+        <div class="cell rna"><div class="cn">3</div><div class="cl">RNA-only<br><span>DNA missed → RNA retrieves</span></div></div>
+        <div class="cell none"><div class="cn">1</div><div class="cl">neither</div></div>
+      </div>
+      <p class="cap" style="margin:14px 0 6px"><b>DNA pipeline 358/362 = 98.9%</b> · <b>RNA 313/362 = 86.5%</b>
+      (306/84.5% strict own-copy) · <b>union 361/362</b>. The 48 members DNA retrieves but RNA can't — by <em>why RNA
+      missed them</em>:</p>
+      <div class="bars">
+        <div class="bar"><span class="lbl">not-expressed <span style="color:var(--mut)">(silent copies)</span></span><span class="tr"><span class="fl" style="width:100%;background:var(--dna)"></span></span><span class="vv">22</span></div>
+        <div class="bar"><span class="lbl">mis-chain</span><span class="tr"><span class="fl" style="width:36%;background:var(--dna)"></span></span><span class="vv">8</span></div>
+        <div class="bar"><span class="lbl">K=0 collapse</span><span class="tr"><span class="fl" style="width:27%;background:var(--dna)"></span></span><span class="vv">6</span></div>
+        <div class="bar"><span class="lbl">genuine-miss</span><span class="tr"><span class="fl" style="width:27%;background:var(--dna)"></span></span><span class="vv">6</span></div>
+        <div class="bar"><span class="lbl">seeding-gap</span><span class="tr"><span class="fl" style="width:23%;background:var(--dna)"></span></span><span class="vv">5</span></div>
+        <div class="bar"><span class="lbl">thin-single-exon</span><span class="tr"><span class="fl" style="width:5%;background:var(--dna)"></span></span><span class="vv">1</span></div>
+      </div>
+      <p class="cap" style="margin:13px 0 0">The DNA advantage is <b>exactly</b> the RNA-invisible set — silent copies
+      (22 not-expressed) and K=0 collapses. And it is <b>not</b> a strict superset: the <b>3 RNA-only</b> members are
+      divergent copies below the SD identity floor that RNA reaches via expressed exon/protein homology. Complementary,
+      not ranked.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where DNA and RNA genuinely converge — the one hard problem</h2>
+    <div class="panel frontier">
+      <h3>Recovery is easy for DNA. <span class="k2">Telling near-identical copies apart is hard for both.</span></h3>
+      <p>Finding that a copy exists is trivial for DNA and moderate for RNA. The real frontier — shared by both
+      modalities — is <span class="k2">resolving which of several ~99%-identical copies you are looking at.</span></p>
+      <div class="cols2">
+        <div class="mini d"><div class="h">DNA sequence alone</div><p>Push the identity floor down to catch divergent
+        copies and it starts <b>over-merging</b> near-identical families — a sequence-only reconstruction lands at
+        81.5% recall precisely from these merges.</p></div>
+        <div class="mini r"><div class="h">RNA transcripts alone</div><p>Near-identical copies emit near-identical
+        reads (MAPQ-0, K=0) — no read-level signal to split them. This is the bulk of the resolution-limited misses.</p></div>
+      </div>
+      <p>Soto breaks the tie with <span class="k2">parCN — paralog-specific copy number from WGS read depth</span>.
+      Rustle breaks it with <span class="k2">read-level PSVs and copy-specific junctions</span>. That is the axis on
+      which RNA is <em>not</em> redundant with DNA — not recovery, but transcript-level resolution of the copies.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Bottom line</h2>
+    <div class="panel bottom">
+      <p>Through the <span class="k2">same grouping engine</span>, DNA (genome only) recovers
+      <span class="k2">358/362 = 98.9%</span> and RNA <span class="k2">313/362 = 86.5%</span> — union
+      <span class="k2">361/362</span>. That is not RNA losing a recall contest: DNA answers
+      <span class="k2">“does the copy exist,”</span> which the genome always knows, while RNA answers
+      <span class="k2">“is it expressed and resolvable,”</span> which not every copy is.</p>
+      <p>The gap is <span class="k2">48 members DNA-only vs 3 RNA-only</span> — a category difference, not error:
+      silent copies plus copies too alike to separate, against a handful of divergent copies only RNA reaches. And on
+      the one problem genuinely hard for both, DNA leans on copy number (parCN) and RNA on read-level variants. That
+      resolution axis is where the transcriptome earns its place next to the genome.</p>
+    </div>
+  </section>
+
+  <footer>
+    <b>Method.</b> Same-engine cross-tab (the "different members" panel): both modalities run through
+    <code>gw_family_catalog</code>'s homology-grouping core — <code>--from-genome</code> (genome loci, no reads/annotation)
+    vs Iso-Seq reads; a member is DNA-recovered if a ≥2-copy DNA family overlaps it, RNA-recovered from the verified
+    attribution. DNA pipeline 358/362, RNA 313/362, DNA-only 48 / RNA-only 3 / neither 1. The DNA-existence ladder
+    (~100%) additionally maps each member's CHM13v2.0 sequence genome-wide (<code>minimap2 -c --eqx -N100 -p0.02</code>,
+    ≥1 kb block); the 10 unlinked members were verified by a 10-agent adversarial workflow → 10/10 real SD paralogs.
+    Data/scripts: <code>bench/soto/dna_vs_rna_mode.md</code>, <code>run_from_genome.sh</code>,
+    <code>score_from_genome.py</code>, <code>member_dna_vs_rna.tsv</code>.
+  </footer>
+</div>

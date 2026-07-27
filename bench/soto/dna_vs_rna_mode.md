@@ -21,6 +21,35 @@ Reproduce: `gw_family_catalog --from-genome bench/soto/80_fams.chr.bed --fasta <
 then `python3 bench/soto/score_from_genome.py dna_mode.copies.tsv` (see `bench/soto/run_from_genome.sh`).
 The run: 362 windows → 577 duplicated-locus reps → 49 families.
 
+## DNA and RNA recover DIFFERENT members (same-engine cross-tab)
+
+Scoring each of the 362 members by whether the **DNA-mode** pipeline recovers it (≥2-copy family overlap)
+and whether the **RNA** pipeline recovers it (verified attribution = FOUND / resolved-elsewhere / coverage-recoverable):
+
+| | count |
+|--|------:|
+| both recover | 310 |
+| **DNA-only** (RNA missed → DNA retrieves) | **48** |
+| RNA-only (DNA missed → RNA retrieves) | 3 |
+| neither | 1 |
+| **union** | **361 / 362** |
+
+The 48 DNA-only members — what DNA retrieves that RNA cannot — by *why RNA missed them*:
+
+| RNA-miss reason | DNA-only members |
+|-----------------|-----------------:|
+| not-expressed (silent copies) | 22 |
+| mis-chain | 8 |
+| collapse-K0 (indistinguishable sibling) | 6 |
+| genuine-miss | 6 |
+| seeding-gap | 5 |
+| thin-single-exon | 1 |
+
+The DNA advantage is **exactly** the RNA-invisible set: silent copies (22 not-expressed — the genome carries
+them; RNA can't see what isn't transcribed) plus K=0 collapses. And it is **not** a strict superset — **3
+members RNA recovers that DNA misses** (divergent copies below the SD identity floor, reached by RNA via
+expressed exon/protein homology). So the two modalities are complementary, not ranked.
+
 ## What this shows
 
 Give the *same method* the genome and it reproduces ~99% of Soto; give it RNA and it reaches ~85%. The
