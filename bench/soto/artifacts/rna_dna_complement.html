@@ -178,21 +178,22 @@
   </section>
 
   <section>
-    <h2>DNA and RNA recover <em>different</em> members — one engine, two substrates</h2>
+    <h2>RNA is a subset of the genome — the gap is what splicing hides</h2>
     <div class="panel cardpad">
-      <p class="cap" style="margin:0 0 14px">Run through the <b>same grouping engine</b>
+      <p class="cap" style="margin:0 0 14px">RNA cannot recover what the genome lacks: every expressed copy is a
+      genomic copy. So the genome is the <b>superset</b> — the question is only which members RNA <em>also</em>
+      recovers. Both catalogs run through the <b>same grouping engine</b>
       (<code style="font-family:var(--mono,ui-monospace);font-size:.9em">gw_family_catalog</code>: homology edges → γ-quasi-clique),
-      fed genome loci (<code style="font-family:var(--mono,ui-monospace);font-size:.9em">--from-genome</code>, no reads/annotation)
-      vs Iso-Seq reads. Same code, two front-ends — so the difference is the substrate, not the method.</p>
+      fed genome loci (<code style="font-family:var(--mono,ui-monospace);font-size:.9em">--from-genome</code>) vs Iso-Seq reads.</p>
       <div class="cross">
         <div class="cell both"><div class="cn">310</div><div class="cl">both recover</div></div>
-        <div class="cell dna"><div class="cn">48</div><div class="cl">DNA-only<br><span>RNA missed → DNA retrieves</span></div></div>
-        <div class="cell rna"><div class="cn">3</div><div class="cl">RNA-only<br><span>DNA missed → RNA retrieves</span></div></div>
-        <div class="cell none"><div class="cn">1</div><div class="cl">neither</div></div>
+        <div class="cell dna"><div class="cn">48</div><div class="cl">DNA-only<br><span>in the genome, RNA can't see</span></div></div>
+        <div class="cell none"><div class="cn">3</div><div class="cl">DNA-pipeline gap<br><span>in the genome; RNA caught them</span></div></div>
+        <div class="cell none"><div class="cn">1</div><div class="cl">neither yet</div></div>
       </div>
-      <p class="cap" style="margin:14px 0 6px"><b>DNA pipeline 358/362 = 98.9%</b> · <b>RNA 313/362 = 86.5%</b>
-      (306/84.5% strict own-copy) · <b>union 361/362</b>. The 48 members DNA retrieves but RNA can't — by <em>why RNA
-      missed them</em>:</p>
+      <p class="cap" style="margin:14px 0 6px">Genome existence <b>~100%</b> (every member is there) · DNA-mode
+      <b>pipeline 358/362 = 98.9%</b> · RNA <b>313/362 = 86.5%</b> (306/84.5% strict own-copy). The <b>48 DNA-only</b>
+      members — in the genome but RNA-invisible — by <em>why RNA missed them</em>:</p>
       <div class="bars">
         <div class="bar"><span class="lbl">not-expressed <span style="color:var(--mut)">(silent copies)</span></span><span class="tr"><span class="fl" style="width:100%;background:var(--dna)"></span></span><span class="vv">22</span></div>
         <div class="bar"><span class="lbl">mis-chain</span><span class="tr"><span class="fl" style="width:36%;background:var(--dna)"></span></span><span class="vv">8</span></div>
@@ -202,9 +203,11 @@
         <div class="bar"><span class="lbl">thin-single-exon</span><span class="tr"><span class="fl" style="width:5%;background:var(--dna)"></span></span><span class="vv">1</span></div>
       </div>
       <p class="cap" style="margin:13px 0 0">The DNA advantage is <b>exactly</b> the RNA-invisible set — silent copies
-      (22 not-expressed) and K=0 collapses. And it is <b>not</b> a strict superset: the <b>3 RNA-only</b> members are
-      divergent copies below the SD identity floor that RNA reaches via expressed exon/protein homology. Complementary,
-      not ranked.</p>
+      (22 not-expressed) and K=0 collapses. The <b>3 members RNA caught but the DNA pipeline didn't</b>
+      (TCAF2, NPIPB2, NPIPB15) are <b>not</b> RNA-exclusive — they are large multi-copy genes present in the genome
+      that this <code style="font-family:var(--mono,ui-monospace);font-size:.9em">--from-genome</code> pass failed to
+      group (a fixable implementation limit of its self-alignment preset), plus one 218 bp member below the discovery
+      floor. RNA does not, and cannot, recover anything absent from DNA.</p>
     </div>
   </section>
 
@@ -230,15 +233,16 @@
   <section>
     <h2>Bottom line</h2>
     <div class="panel bottom">
-      <p>Through the <span class="k2">same grouping engine</span>, DNA (genome only) recovers
-      <span class="k2">358/362 = 98.9%</span> and RNA <span class="k2">313/362 = 86.5%</span> — union
-      <span class="k2">361/362</span>. That is not RNA losing a recall contest: DNA answers
+      <p>The genome is the <span class="k2">superset</span>: RNA cannot recover what DNA lacks. Through the
+      <span class="k2">same grouping engine</span>, the DNA-mode pipeline recovers <span class="k2">358/362 = 98.9%</span>
+      and RNA <span class="k2">313/362 = 86.5%</span>. That is not RNA losing a recall contest: DNA answers
       <span class="k2">“does the copy exist,”</span> which the genome always knows, while RNA answers
       <span class="k2">“is it expressed and resolvable,”</span> which not every copy is.</p>
-      <p>The gap is <span class="k2">48 members DNA-only vs 3 RNA-only</span> — a category difference, not error:
-      silent copies plus copies too alike to separate, against a handful of divergent copies only RNA reaches. And on
-      the one problem genuinely hard for both, DNA leans on copy number (parCN) and RNA on read-level variants. That
-      resolution axis is where the transcriptome earns its place next to the genome.</p>
+      <p>The gap is <span class="k2">48 members</span> in the genome that RNA can't see — silent copies plus copies too
+      alike to separate. (The 3 the DNA pipeline missed but RNA caught are in the genome too — an implementation gap,
+      not RNA reach.) And on the one problem genuinely hard for both, DNA leans on copy number (parCN) and RNA on
+      read-level variants. That resolution axis — not recovery — is where the transcriptome earns its place next to
+      the genome.</p>
     </div>
   </section>
 
@@ -246,7 +250,7 @@
     <b>Method.</b> Same-engine cross-tab (the "different members" panel): both modalities run through
     <code>gw_family_catalog</code>'s homology-grouping core — <code>--from-genome</code> (genome loci, no reads/annotation)
     vs Iso-Seq reads; a member is DNA-recovered if a ≥2-copy DNA family overlaps it, RNA-recovered from the verified
-    attribution. DNA pipeline 358/362, RNA 313/362, DNA-only 48 / RNA-only 3 / neither 1. The DNA-existence ladder
+    attribution. DNA pipeline 358/362, RNA 313/362, DNA-only 48 / DNA-pipeline-gap 3 (in the genome, not grouped) / neither 1. The DNA-existence ladder
     (~100%) additionally maps each member's CHM13v2.0 sequence genome-wide (<code>minimap2 -c --eqx -N100 -p0.02</code>,
     ≥1 kb block); the 10 unlinked members were verified by a 10-agent adversarial workflow → 10/10 real SD paralogs.
     Data/scripts: <code>bench/soto/dna_vs_rna_mode.md</code>, <code>run_from_genome.sh</code>,

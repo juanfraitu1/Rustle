@@ -29,12 +29,17 @@ and whether the **RNA** pipeline recovers it (verified attribution = FOUND / res
 | | count |
 |--|------:|
 | both recover | 310 |
-| **DNA-only** (RNA missed → DNA retrieves) | **48** |
-| RNA-only (DNA missed → RNA retrieves) | 3 |
-| neither | 1 |
-| **union** | **361 / 362** |
+| **DNA-only** (in the genome, RNA can't see) | **48** |
+| DNA-pipeline gap (in the genome; RNA caught, `--from-genome` missed) | 3 |
+| neither yet | 1 |
 
-The 48 DNA-only members — what DNA retrieves that RNA cannot — by *why RNA missed them*:
+**RNA is a subset of the genome — it cannot recover what DNA lacks.** So the genome is the superset (existence
+~100%); the DNA-mode *pipeline* recovers 358/362; RNA recovers the expressed-and-resolvable 313/362. The "3" are
+**not** RNA-exclusive: they are large multi-copy genes (TCAF2, NPIPB2, NPIPB15) present in the genome that the
+`--from-genome` pass failed to group — a fixable implementation limit of its self-alignment preset — plus one
+218 bp member (AC239809.1) below the discovery floor.
+
+The 48 DNA-only members — in the genome but RNA-invisible — by *why RNA missed them*:
 
 | RNA-miss reason | DNA-only members |
 |-----------------|-----------------:|
@@ -46,9 +51,9 @@ The 48 DNA-only members — what DNA retrieves that RNA cannot — by *why RNA m
 | thin-single-exon | 1 |
 
 The DNA advantage is **exactly** the RNA-invisible set: silent copies (22 not-expressed — the genome carries
-them; RNA can't see what isn't transcribed) plus K=0 collapses. And it is **not** a strict superset — **3
-members RNA recovers that DNA misses** (divergent copies below the SD identity floor, reached by RNA via
-expressed exon/protein homology). So the two modalities are complementary, not ranked.
+them; RNA can't see what isn't transcribed) plus K=0 collapses. The genome is a superset of RNA — the 3
+"DNA-pipeline gap" members are in the genome (the pipeline missed them, not RNA reach), so RNA never recovers
+anything DNA lacks.
 
 ## What this shows
 
