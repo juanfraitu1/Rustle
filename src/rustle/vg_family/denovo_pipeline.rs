@@ -2368,6 +2368,20 @@ pub fn homology_refine_params(min_identity: Option<f64>, threads: usize) -> Refi
     p
 }
 
+/// The shared family-grouping ENGINE: E_r homology edges over rep sequences -> γ-quasi-clique blocks
+/// (rep-index groups). Both the RNA genome-wide homology catalog and the DNA `--from-genome` path call
+/// this, so "same engine, two substrates" is literally the same function. No read/annotation dependency:
+/// it consumes only `rep.seq`.
+pub(crate) fn homology_blocks(
+    reps: &[DenovoTranscript],
+    refine: &RefineParams,
+    gamma: f64,
+) -> Result<Vec<Vec<usize>>> {
+    let edges2 = homology_edges_all_reps(reps, refine)?;
+    let edges3: Vec<(usize, usize, f64)> = edges2.iter().map(|&(a, b)| (a, b, 1.0)).collect();
+    Ok(crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma))
+}
+
 /// GENOME-WIDE homology-primary (E_r) family catalog. reps → E_r edges → γ-quasi-clique blocks →
 /// ≥2 distinct loci → families. Chrom/strand-agnostic; a superset of the conflict catalog.
 pub fn detect_homology_catalog_genome_wide(
@@ -2420,9 +2434,8 @@ pub fn detect_homology_catalog_genome_wide(
     }
 
     // --- E_r edges + γ-quasi-clique blocks ---
-    let edges2 = homology_edges_all_reps(&reps, refine)?;
-    let edges3: Vec<(usize, usize, f64)> = edges2.iter().map(|&(a, b)| (a, b, 1.0)).collect();
-    let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma);
+    let blocks = homology_blocks(&reps, refine, gamma)?;
+    let n_blocks = blocks.len(); // captured before the loop below consumes `blocks` (for the diagnostic eprintln)
 
     let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
     let mut collapsed: Vec<crate::vg_family::collapse_enumerate::CollapsedFamily> = Vec::new();
@@ -2480,7 +2493,7 @@ pub fn detect_homology_catalog_genome_wide(
     } else {
         Vec::new()
     };
-    eprintln!("[gw-catalog-homology] {} E_r edges -> {} families (>= {} distinct loci)", edges2.len(), out.len(), min_copies);
+    eprintln!("[gw-catalog-homology] {} γ-quasi-clique blocks -> {} families (>= {} distinct loci)", n_blocks, out.len(), min_copies);
     if !collapsed.is_empty() {
         eprintln!("[gw-catalog-homology] collapse-enumerate: {} K=0-collapsed families re-admitted (copy-number only)", collapsed.len());
     }
@@ -3141,6 +3154,30 @@ mod tests {
         assert_eq!(fa.copy_map_identity.len(), 0);
         assert_eq!(fa.copy_introns.len(), fa.copy_tids.len());
         assert_eq!(fa.copy_map_identity.len(), fa.copy_tids.len());
+    }
+
+    #[test]
+    fn homology_blocks_groups_identical_reps_and_isolates_unrelated() {
+        // three reps: two identical sequences (should share an E_r edge -> one block) + one unrelated.
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+        let mk = |tid: &str, chrom: &str, start: u64, seq: &[u8]| DenovoTranscript {
+            tid: tid.into(), chrom: chrom.into(), start, end: start + seq.len() as u64,
+            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(), distinguishing_uniq: 0,
+        };
+        // a 400 bp "gene" duplicated at two loci, plus an unrelated 400 bp sequence.
+        let a: Vec<u8> = b"ACGT".iter().cycle().take(400).copied().collect();
+        let b: Vec<u8> = b"TGCA".iter().cycle().take(400).copied().collect();
+        let reps = vec![
+            mk("d1", "chr1", 1000, &a),
+            mk("d2", "chr9", 5000, &a),   // identical to d1 -> same family
+            mk("d3", "chr1", 9000, &b),   // unrelated -> its own block
+        ];
+        let refine = homology_refine_params(None, 2);
+        let blocks = homology_blocks(&reps, &refine, 0.20).unwrap();
+        // d1 and d2 land in the same block; d3 is alone.
+        let block_of = |i: usize| blocks.iter().position(|bl| bl.contains(&i)).unwrap();
+        assert_eq!(block_of(0), block_of(1), "identical reps must share a block");
+        assert_ne!(block_of(0), block_of(2), "unrelated rep must be a separate block");
     }
 
     #[test]
