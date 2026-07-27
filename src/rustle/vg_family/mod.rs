@@ -46,6 +46,7 @@ pub mod copy_assign_pipeline; // Integration: per-read COPY ASSIGNMENT driver (P
 pub mod copy_graph; // Copy-graph objects: pure builder for variation graphs over family copies (Task 1).
 pub mod rescue_pipeline; // Integration: family-aware RESCUE thin-locus scan (borrow-strength copy recovery).
 pub mod genome_projection; // Liftoff-style famCN copy enumeration (spec §7): project a family consensus onto the genome via in-engine minimap2 to enumerate near-identical genomic copies, recovering K=0 collapses.
+pub mod from_genome; // DNA-mode front-end: discover duplicated genomic loci by self-alignment -> reps (genomic seq, empty intron chain) for the shared homology_blocks grouping core (--from-genome).
 pub mod em_copy_assign; // EM copy-assignment CORE: pure e_step/m_step/loglik (max-likelihood soft relaxation of SDA PSV correlation-clustering, Vollger 2019, on the PSV-aware VG); logl/pi wiring to Task 1's ReadEvidence arrives separately.
 pub mod readonly_copy_number; // Reference-free per-family copy number (Task R1): chi_h (PSV conflict-structure lower bound, Rust port of family_copy_number.py's copyonly_K) + depth_cn (read-depth E_fam/lambda_global leg, recovers Tier-3 collapsed copies chi_h misses).
 pub mod single_copy; // O1 baseline: single-copy (chi(H)=1) loci + lambda_global for the copy-number normalizer.
