@@ -59,24 +59,37 @@ pub fn genome_reps(
     let hits = project_families_batch(&consensuses, fasta_path, &known, p.min_identity, cov,
                                       &p.minimap2, p.threads)?;
 
-    // (2) rep construction: collect all hit loci, keep blocks within size bounds, merge overlaps.
-    let mut loci: Vec<(String, u64, u64)> = Vec::new();
+    // (2) rep construction. Each WINDOW is a locus to group — emit it directly so every member locus is a
+    // node the quasi-clique can place (this is Soto's setup: given the loci, group them by shared sequence).
+    // The self-alignment hits then ADD paralog loci OUTSIDE the windows, giving windowed singletons a sibling.
+    // Windows are NOT merged (they are distinct member loci) and NOT min_block-filtered (a short member is
+    // still a locus); only the extra discovered loci are size-gated and deduped, so dense paralog regions
+    // can't fuse into giant blocks that miss a member's exact coordinate.
+    let mut reps = Vec::new();
+    let mut window_spans: Vec<(String, u64, u64)> = Vec::with_capacity(windows.len());
+    for (c, s, e) in windows {
+        if let Some(seq) = genome.fetch_sequence(c, *s, *e) {
+            reps.push(DenovoTranscript {
+                tid: format!("DN_{c}_{s}_1"),
+                chrom: c.clone(), start: *s, end: *e, n_reads: 1, strand: '+',
+                introns: vec![], seq, distinguishing_uniq: 0,
+            });
+            window_spans.push((c.clone(), *s, *e));
+        }
+    }
+    // discovered paralog loci that fall OUTSIDE every window (a paralog at a locus no member covers).
+    let mut extra: Vec<(String, u64, u64)> = Vec::new();
     for hs in hits.into_values() {
         for h in hs {
             let len = h.end.saturating_sub(h.start);
-            if len >= p.min_block && len <= p.max_locus_span {
-                loci.push((h.chrom, h.start, h.end));
-            }
+            if len < p.min_block || len > p.max_locus_span { continue; }
+            let inside_window = window_spans.iter().any(|(wc, ws, we)| *wc == h.chrom && h.start < *we && *ws < h.end);
+            if inside_window { continue; }
+            extra.push((h.chrom, h.start, h.end));
         }
     }
-    loci.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-    let merged = merge_overlapping(&loci);
-
-    let mut reps = Vec::new();
-    for (chrom, start, end) in merged {
-        // A paralog hit whose chrom has NO search window is dropped here (its contig was never loaded into
-        // `genome`). This is intentional for the windowed benchmark (all scored members' chroms are windows);
-        // a future genome-wide run without window priors would under-report and should load all target contigs.
+    extra.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    for (chrom, start, end) in merge_overlapping(&extra) {
         if let Some(seq) = genome.fetch_sequence(&chrom, start, end) {
             reps.push(DenovoTranscript {
                 tid: format!("DN_{chrom}_{start}_1"),

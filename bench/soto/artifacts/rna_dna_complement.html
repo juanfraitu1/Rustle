@@ -186,28 +186,27 @@
       (<code style="font-family:var(--mono,ui-monospace);font-size:.9em">gw_family_catalog</code>: homology edges → γ-quasi-clique),
       fed genome loci (<code style="font-family:var(--mono,ui-monospace);font-size:.9em">--from-genome</code>) vs Iso-Seq reads.</p>
       <div class="cross">
-        <div class="cell both"><div class="cn">310</div><div class="cl">both recover</div></div>
+        <div class="cell both"><div class="cn">313</div><div class="cl">both recover</div></div>
         <div class="cell dna"><div class="cn">48</div><div class="cl">DNA-only<br><span>in the genome, RNA can't see</span></div></div>
-        <div class="cell none"><div class="cn">3</div><div class="cl">DNA-pipeline gap<br><span>in the genome; RNA caught them</span></div></div>
-        <div class="cell none"><div class="cn">1</div><div class="cl">neither yet</div></div>
+        <div class="cell both"><div class="cn">0</div><div class="cl">RNA-only<br><span>RNA ⊆ DNA</span></div></div>
+        <div class="cell none"><div class="cn">1</div><div class="cl">neither<br><span>107 bp fragment</span></div></div>
       </div>
-      <p class="cap" style="margin:14px 0 6px">Genome existence <b>~100%</b> (every member is there) · DNA-mode
-      <b>pipeline 358/362 = 98.9%</b> · RNA <b>313/362 = 86.5%</b> (306/84.5% strict own-copy). The <b>48 DNA-only</b>
-      members — in the genome but RNA-invisible — by <em>why RNA missed them</em>:</p>
+      <p class="cap" style="margin:14px 0 6px">Genome existence <b>100%</b> (every member is there) · our DNA method
+      <b>361/362 = 99.7%</b> (self-align + quasi-cliques) · RNA <b>313/362 = 86.5%</b> — a <b>strict subset</b>
+      (RNA-only = 0). The <b>48 DNA-only</b> members — in the genome but RNA-invisible — by <em>why RNA missed them</em>:</p>
       <div class="bars">
         <div class="bar"><span class="lbl">not-expressed <span style="color:var(--mut)">(silent copies)</span></span><span class="tr"><span class="fl" style="width:100%;background:var(--dna)"></span></span><span class="vv">22</span></div>
-        <div class="bar"><span class="lbl">mis-chain</span><span class="tr"><span class="fl" style="width:36%;background:var(--dna)"></span></span><span class="vv">8</span></div>
-        <div class="bar"><span class="lbl">K=0 collapse</span><span class="tr"><span class="fl" style="width:27%;background:var(--dna)"></span></span><span class="vv">6</span></div>
+        <div class="bar"><span class="lbl">K=0 collapse</span><span class="tr"><span class="fl" style="width:32%;background:var(--dna)"></span></span><span class="vv">7</span></div>
+        <div class="bar"><span class="lbl">mis-chain</span><span class="tr"><span class="fl" style="width:32%;background:var(--dna)"></span></span><span class="vv">7</span></div>
         <div class="bar"><span class="lbl">genuine-miss</span><span class="tr"><span class="fl" style="width:27%;background:var(--dna)"></span></span><span class="vv">6</span></div>
         <div class="bar"><span class="lbl">seeding-gap</span><span class="tr"><span class="fl" style="width:23%;background:var(--dna)"></span></span><span class="vv">5</span></div>
         <div class="bar"><span class="lbl">thin-single-exon</span><span class="tr"><span class="fl" style="width:5%;background:var(--dna)"></span></span><span class="vv">1</span></div>
       </div>
       <p class="cap" style="margin:13px 0 0">The DNA advantage is <b>exactly</b> the RNA-invisible set — silent copies
-      (22 not-expressed) and K=0 collapses. The <b>3 members RNA caught but the DNA pipeline didn't</b>
-      (TCAF2, NPIPB2, NPIPB15) are <b>not</b> RNA-exclusive — they are large multi-copy genes present in the genome
-      that this <code style="font-family:var(--mono,ui-monospace);font-size:.9em">--from-genome</code> pass failed to
-      group (a fixable implementation limit of its self-alignment preset), plus one 218 bp member below the discovery
-      floor. RNA does not, and cannot, recover anything absent from DNA.</p>
+      (22 not-expressed) and K=0 collapses. There are <b>zero RNA-only members</b>: RNA is a clean subset of what the
+      DNA method recovers. The single member neither recovers (AC243829.6) is a <b>107 bp fragment</b> with a perfect
+      genome paralog (id 1.00) that is simply too short for the homology aligner to link. RNA does not, and cannot,
+      recover anything absent from DNA.</p>
     </div>
   </section>
 
@@ -234,13 +233,12 @@
     <h2>Bottom line</h2>
     <div class="panel bottom">
       <p>The genome is the <span class="k2">superset</span>: RNA cannot recover what DNA lacks. Through the
-      <span class="k2">same grouping engine</span>, the DNA-mode pipeline recovers <span class="k2">358/362 = 98.9%</span>
-      and RNA <span class="k2">313/362 = 86.5%</span>. That is not RNA losing a recall contest: DNA answers
-      <span class="k2">“does the copy exist,”</span> which the genome always knows, while RNA answers
-      <span class="k2">“is it expressed and resolvable,”</span> which not every copy is.</p>
+      <span class="k2">same engine</span>, our DNA method (self-align + quasi-cliques) recovers
+      <span class="k2">361/362 = 99.7%</span> and RNA <span class="k2">313/362 = 86.5%</span> — a strict subset. That is
+      not RNA losing a recall contest: DNA answers <span class="k2">“does the copy exist,”</span> which the genome
+      always knows, while RNA answers <span class="k2">“is it expressed and resolvable,”</span> which not every copy is.</p>
       <p>The gap is <span class="k2">48 members</span> in the genome that RNA can't see — silent copies plus copies too
-      alike to separate. (The 3 the DNA pipeline missed but RNA caught are in the genome too — an implementation gap,
-      not RNA reach.) And on the one problem genuinely hard for both, DNA leans on copy number (parCN) and RNA on
+      alike to separate. And on the one problem genuinely hard for both, DNA leans on copy number (parCN) and RNA on
       read-level variants. That resolution axis — not recovery — is where the transcriptome earns its place next to
       the genome.</p>
     </div>

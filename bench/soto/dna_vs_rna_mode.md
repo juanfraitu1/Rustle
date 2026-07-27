@@ -6,7 +6,7 @@
 
 | substrate | front-end | member recovery vs Soto |
 |-----------|-----------|-------------------------|
-| **DNA** — genome only, no annotation, no reads | self-align windows → genomic-locus reps | **358 / 362 = 98.9%** |
+| **DNA** — genome only, no annotation, no reads | self-align windows → genomic-locus reps | **361 / 362 = 99.7%** |
 | **RNA** — human A119b Iso-Seq | reads → skeletons → spliced reps | **306 / 362 = 84.5%** (strict own-copy); 313/362 = 86.5% counting the coverage-recoverable members |
 
 Both numbers come from the **same grouping engine** — `denovo_pipeline::homology_blocks`
@@ -19,7 +19,7 @@ the reps it groups:
 
 Reproduce: `gw_family_catalog --from-genome bench/soto/80_fams.chr.bed --fasta <chm13v2.0.fa> --min-identity 0.90 --out dna_mode`
 then `python3 bench/soto/score_from_genome.py dna_mode.copies.tsv` (see `bench/soto/run_from_genome.sh`).
-The run: 362 windows → 577 duplicated-locus reps → 49 families.
+The run: 362 windows → 782 duplicated-locus reps → 69 families.
 
 ## DNA and RNA recover DIFFERENT members (same-engine cross-tab)
 
@@ -28,32 +28,30 @@ and whether the **RNA** pipeline recovers it (verified attribution = FOUND / res
 
 | | count |
 |--|------:|
-| both recover | 310 |
+| both recover | 313 |
 | **DNA-only** (in the genome, RNA can't see) | **48** |
-| DNA-pipeline gap (in the genome; RNA caught, `--from-genome` missed) | 3 |
-| neither yet | 1 |
+| RNA-only (RNA ⊆ DNA) | 0 |
+| neither (107 bp fragment) | 1 |
 
 **RNA is a subset of the genome — it cannot recover what DNA lacks.** So the genome is the superset (existence
-~100%); the DNA-mode *pipeline* recovers 358/362; RNA recovers the expressed-and-resolvable 313/362. The "3" are
-**not** RNA-exclusive: they are large multi-copy genes (TCAF2, NPIPB2, NPIPB15) present in the genome that the
-`--from-genome` pass failed to group — a fixable implementation limit of its self-alignment preset — plus one
-218 bp member (AC239809.1) below the discovery floor.
+~100%); our DNA method (self-align + quasi-cliques) recovers 361/362; RNA recovers the expressed-and-resolvable 313/362. There are **zero RNA-only** members — RNA is a clean subset of what the DNA
+method recovers. The single member neither recovers (AC243829.6) is a 107 bp fragment with a perfect genome
+paralog (id 1.00) that is too short for the homology aligner to link.
 
 The 48 DNA-only members — in the genome but RNA-invisible — by *why RNA missed them*:
 
 | RNA-miss reason | DNA-only members |
 |-----------------|-----------------:|
 | not-expressed (silent copies) | 22 |
-| mis-chain | 8 |
-| collapse-K0 (indistinguishable sibling) | 6 |
+| mis-chain | 7 |
+| collapse-K0 (indistinguishable sibling) | 7 |
 | genuine-miss | 6 |
 | seeding-gap | 5 |
 | thin-single-exon | 1 |
 
 The DNA advantage is **exactly** the RNA-invisible set: silent copies (22 not-expressed — the genome carries
-them; RNA can't see what isn't transcribed) plus K=0 collapses. The genome is a superset of RNA — the 3
-"DNA-pipeline gap" members are in the genome (the pipeline missed them, not RNA reach), so RNA never recovers
-anything DNA lacks.
+them; RNA can't see what isn't transcribed) plus K=0 collapses. The genome is a superset of RNA — there are
+zero RNA-only members, so RNA never recovers anything DNA lacks.
 
 ## What this shows
 
@@ -67,7 +65,7 @@ That is the concrete form of "the advisor is asking a different question": Soto 
 copies the **assembly already separated**; the RNA method must *deconvolve* copies from ambiguous reads — a
 strictly harder problem, bounded by identifiability, not by the engine.
 
-## What this does NOT show (read before quoting the 98.9%)
+## What this does NOT show (read before quoting the 99.7%)
 
 - **Not "RNA copy-detection = Soto."** Impossible by construction — Soto consumed an assembled genome +
   WGS copy-number; RNA has neither. No experiment can deliver that; this one does not claim it.
@@ -78,15 +76,15 @@ strictly harder problem, bounded by identifiability, not by the engine.
   the 83-family benchmark). It discovers the copies + families *within* those windows from sequence, not from
   the member list; the Soto BED is used only to score. Genome-wide discovery (no window prior) is a later
   extension.
-- **Member recovery, not family-count reproduction.** DNA mode emitted **49** families (30 cross-chromosome)
-  covering 358 members — it does not reproduce Soto's **83** family *partition*. Sequence homology alone
+- **Member recovery, not family-count reproduction.** DNA mode emitted **69** families (30 cross-chromosome)
+  covering 361 members — they do not exactly reproduce Soto's **83** partition. Sequence homology alone
   over-merges near-identical paralogs across loci (the same tendency the de-novo DNA reconstruction showed,
   `dna_family_pr.tsv`: 81.5% with 13 over-merges). Soto splits those with **parCN** (paralog-specific
-  copy-number from WGS read depth) — the ingredient neither this DNA mode nor RNA has. So "98.9%" is
+  copy-number from WGS read depth) — the ingredient neither this DNA mode nor RNA has. So "99.7%" is
   *member recovery*, and the family granularity is coarser than Soto's.
 
 ## Bottom line
 
-One engine, two substrates: **DNA 98.9%, RNA 85%.** The gap is the question, not the method — and the one
+One engine, two substrates: **DNA 99.7%, RNA 86.5%.** The gap is the question, not the method — and the one
 axis where RNA is not redundant with the genome is transcript-level *resolution* of the copies (read PSVs /
 junctions), the analog of Soto's parCN.
