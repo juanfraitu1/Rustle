@@ -168,7 +168,8 @@
     <p class="lead">Unchecking a <b>member</b> drops it from both metrics (use for segdup pieces a transcript method can't recover). Unchecking a <b>candidate</b> drops it from precision's false-positive count. A candidate whose length is far from its family's typical member size (⚠ flag) is likely an artifact — the "size-outlier" button removes those in one click. Quick-toggle a class, or vet each one in the family rows below.</p>
     <div class="clsbtns" id="clsbtns"></div>
     <div class="exclnote" id="exclnote"></div>
-    <button class="dlbtn" id="dlbed">⬇ Download BED — the included loci (contributing to the metrics)</button>
+    <button class="dlbtn" id="dlbed">⬇ Get BED — the included loci (contributing to the metrics)</button>
+    <textarea id="bedtext" readonly spellcheck="false" style="display:none;width:100%;height:170px;margin-top:8px;font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:8px;white-space:pre;overflow:auto"></textarea>
   </div>
 
   <div class="section-h">Per-family — expand to review members &amp; candidates</div>
@@ -334,10 +335,13 @@ function downloadBED(){
   const M=metrics();
   const body=['track name="Rustle_Soto_included" description="members+candidates contributing to recall/precision"',
     ...rows.map(r=>r.join('\t'))].join('\n')+'\n';
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([body],{type:'text/plain'}));
-  a.download=`rustle_soto_included_${M.tot}m_${M.cand}c.bed`;
-  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+  // Published artifacts run sandboxed (no file downloads); reveal the BED for copy + try the clipboard.
+  const ta=document.getElementById('bedtext'); ta.value=body; ta.style.display='block'; ta.focus(); ta.select();
+  const btn=document.getElementById('dlbed');
+  const label=n=>`✓ ${n} loci ready — copied to clipboard (or select the text below & copy)`;
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(body).then(()=>{btn.textContent=label(rows.length);}).catch(()=>{btn.textContent=`Select the text below & copy (${rows.length} loci)`;}); }
+  else { btn.textContent=`Select the text below & copy (${rows.length} loci)`; }
+  try{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([body],{type:'text/plain'})); a.download=`rustle_soto_included_${M.tot}m_${M.cand}c.bed`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1500); }catch(e){}
 }
 document.getElementById('dlbed').onclick=downloadBED;
 function renderAll(){ renderMetrics(); renderClsBtns(); renderTable(); }
