@@ -256,3 +256,62 @@ acceptable.
 **Decision: do not implement.** `--homology-genomic-span` is already shipped and validated on 4 chromosomes;
 projection is an equivalent point on the same curve, so a second lever adds engineering without new
 capability. Recorded here so the equivalence is documented rather than re-derived.
+
+## 8. Bipartite size matching — do predicted copies have the RIGHT SIZE? (2026-07-28)
+
+Requested by the advisor. Every number up to here scores *placement* — is a truth member covered by some
+predicted copy? That is a many-to-many test and it is blind to size: one over-extended prediction spanning
+two members scores the same as two correctly-sized ones.
+
+**Method** (`bench/soto/bipartite_size_match.py`). Force an optimal **1:1** assignment between predicted
+copies and Soto truth members — Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) maximising
+total **reciprocal overlap**, `overlap / max(len_pred, len_true)`. Reciprocal (not raw) overlap is the point:
+it reaches 1.0 only when the two intervals *coincide*, so the objective rewards getting the size right rather
+than merely touching the right place. The forced 1:1 then makes the leftovers explicit:
+
+| pattern | reading |
+|---|---|
+| matched, ratio ≥ 2× | prediction OVER-EXTENDED — over-merge signature |
+| matched, ratio ≤ 0.5× | prediction TRUNCATED — fragmentation signature |
+| unmatched prediction | spurious / extra copy |
+| unmatched truth | missed member |
+
+### Result — RNA (`definitive.copies.tsv`, 863 copies vs 362 members)
+
+```
+MATCHED 1:1        232  (64.1% of truth)
+unmatched truth    130   (missed)
+unmatched pred     631   (extra)
+
+size ratio (pred/true) over matched pairs
+  median             0.54       median log2 bias  -0.88   (UNDER-prediction)
+  IQR                0.19 - 1.00
+  within 2x          102  (44% of matched)
+  OVER-EXTENDED >=2x  17
+  TRUNCATED    <=0.5x 113
+```
+
+**RNA's dominant size error is TRUNCATION, not over-merging** — 113 truncated vs 17 over-extended, median
+0.54×. The extremes are large: SRGAP2C 5.6 kb predicted vs 208 kb true (0.03×), GUSBP1 0.03×, NOTCH2 0.03×.
+
+This is the same fragmentation already diagnosed in §7, now measured on the size axis instead of the
+partition axis, and it is *mechanistically expected*: a truth member's span is the whole genomic locus,
+while an RNA copy spans only the transcribed, covered, assembled portion. It is worth stating plainly for
+the write-up — the advisor's concern is over-merging, and on RNA the measured bias runs the other way.
+
+### ⚠ The DNA row is CIRCULAR — do not quote it
+
+`--from-genome` scores 348/362 matched, median ratio **1.00**, IQR 1.00–1.00, 0 over-extended, 0 truncated.
+That is not a result. DNA mode seeds its rep nodes **from the Soto member windows**, so predicted intervals
+are the truth intervals by construction and the size ratio is 1.00 by definition. The metric is meaningful
+only for RNA (and, separately, for DNA mode's *discovered extra* loci, which have no truth interval to
+compare against). Reporting the DNA row as a 100% size agreement would be exactly the circularity already
+corrected once in `project_soto_honest_pr_artifacts`.
+
+### What it does NOT say
+
+The 631 unmatched RNA predictions are not 631 false positives — the catalog covers the whole Soto regions,
+including real paralogs outside Soto's 80-family subset (§6, and the over-detection audit in
+`project_soto_recall_recompute`). The 1:1 constraint also *forces* leftovers whenever a truth member is
+genuinely covered by two fragments; that is counted here as one match plus one "extra", which is the
+intended reading (fragmentation), not an independent error.
