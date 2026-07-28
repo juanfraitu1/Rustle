@@ -221,3 +221,38 @@ default without touching purity.
 **Conclusion.** RNA family fragmentation is **partially remediable, not solvable** by these levers:
 38% → 49–58% of families gain a re-link, each with a trade. This is a real identifiability-adjacent limit of
 the substrate, not a tuning failure — and it is the honest counterpart to the DNA side's over-merging.
+
+### §7c. Projection edge tier — prediction refuted, and why that matters (2026-07-28)
+
+Simulated a third edge substrate: **edge(A,B) when rep A's SPLICED consensus projects onto rep B's genomic
+locus.** Asymmetric by construction — query contributes exons only, target contributes the complete locus.
+**Predicted:** fragments get found (target is complete) without intron-to-intron bridging (query is spliced),
+so completeness should rise *without* the purity cost genomic spans pay.
+
+| substrate | recall | splits | purity | completeness |
+|---|---:|---:|---:|---:|
+| exon-sum (current default) | 65.5% | 45 | **91%** | 25% |
+| genomic span id≥0.90 | 64.9% | 32 | 90% | **43%** |
+| projection id≥0.90 | 65.5% | **22** | 84% | 33% |
+| projection id≥0.95 | 65.2% | **22** | 85% | 38% |
+| projection id≥0.98 | 62.2% | 29 | 89% | 40% |
+
+⚠**The prediction is REFUTED.** At matched completeness (~40%), projection (purity 89%) and genomic spans
+(purity 90%) sit on the *same* trade curve. The spliced query does not avoid the bridging: a spliced
+consensus still aligns to a paralogous exon in an unrelated family, and the complete target locus supplies
+the rest.
+
+**Why this is the more valuable result.** Two structurally different mechanisms — symmetric
+genomic-vs-genomic alignment, and asymmetric spliced-vs-genomic projection — land on the **same
+completeness/purity frontier**. That is evidence the trade is **intrinsic to the problem**, not an artifact
+of a particular edge substrate: any rule powerful enough to reach a fragment covering exons 7–8 is also
+powerful enough to connect two families that share those exons. Escaping it needs an **orthogonal signal**
+(copy number / parCN), not a better sequence rule — the same conclusion the DNA side reached independently.
+
+**Secondary finding:** projection is the strongest *split* reducer measured (45 → **22**, vs 32 for genomic
+spans), so it is the better choice if de-fragmentation specifically is the goal and ~6 points of purity is
+acceptable.
+
+**Decision: do not implement.** `--homology-genomic-span` is already shipped and validated on 4 chromosomes;
+projection is an equivalent point on the same curve, so a second lever adds engineering without new
+capability. Recorded here so the equivalence is documented rather than re-derived.
