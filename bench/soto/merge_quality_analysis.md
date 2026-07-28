@@ -1,0 +1,115 @@
+# Over- and under-merging in the DNA family partition — diagnosis and levers
+
+**Date:** 2026-07-27. Subject: `gw_family_catalog --from-genome` vs Soto 2025 (83 families / 362 members, CHM13v2.0).
+
+## 1. The problem the member metric hides
+
+Member sensitivity/precision are **partition-blind**. If two Soto families fuse into one DNA family, every
+member is still inside a ≥2-copy family → still counted as recovered; and no off-catalog locus is created, so
+precision barely moves either. Over-merging is therefore **invisible** to the headline numbers.
+
+Measuring the partition instead (`bench/soto/partition_score.py`):
+
+| metric | value |
+|---|---|
+| member recall | **361/362 = 99.7%** |
+| Soto families with ≥1 member recovered | 82/83 |
+| DNA families emitted (≥2 copies) | 69 |
+| **clean 1:1** (DNA family = exactly one Soto family) | **38** |
+| **over-merge** (one DNA family fuses ≥2 Soto families) | **18 families, fusing 48 Soto families** |
+| **under-merge / split** (one Soto family across ≥2 DNA families) | **13 families** |
+| homogeneity (DNA families that are "pure") | 74% |
+| **completeness** (Soto families reproduced intact) | **46%** |
+
+So: memberships reproduce at 99.7%, but **only 46% of Soto's families are reproduced as families.** Both numbers
+must be quoted together — the first alone overstates the replication.
+
+## 2. Mechanism — why families fuse (over-merge)
+
+A homology edge forms when two loci share an aligned block clearing `min_identity` **and** `min_coverage`
+(fraction of the **shorter** locus covered; default **0.50**). In segmental-duplication-rich regions
+(pericentromeric / subtelomeric), **unrelated families share a duplicated block** — a mobile duplicon, an Alu,
+a shared protein domain. Pairwise sequence cannot distinguish "same family" from "shares a duplicon", so the
+quasi-clique fuses them. The code comments already name `min_coverage` as the intended defense
+("Repeat bridges are held off by `min_coverage`").
+
+Observed composition of over-merged families (baseline run):
+
+| DNA family | Soto families fused | copies | on a Soto member | EXTRA (discovered) loci |
+|---|---:|---:|---:|---:|
+| GWFAM13 | 6 (FAR2P, ANKRD20, TEKT4P2, AC119751.3, AL669942.1, CR381670.1) | 53 | 13 | 40 (**75%**) |
+| GWFAM5 | 5 (FAM72B, SRGAP2C, AC244669.2, FAM153B, POM121) | 34 | 9 | 25 (74%) |
+| GWFAM57 | 4 (PMS2P4, POM121, NSUN5P2, SPDYE1) | 39 | 26 | 13 (33%) |
+| GWFAM10 | 2 | 31 | 6 | 25 (**81%**) |
+
+Over-merged families are **61%** EXTRA (non-Soto discovered) loci vs **53%** for pure families — and the
+largest fusions are 74–81% extra. Suggestive that discovered paralog loci act as **bridges** between families;
+decisive test = restrict the node set to the member windows only (below).
+
+## 3. Mechanism — why families split (under-merge)
+
+The 13 split families track two properties, both consequences of the same coverage rule:
+
+| | split families | clean families |
+|---|---|---|
+| median(min member paralog identity) | 0.969 | 0.980 |
+| **median size spread (max/min member bp)** | **5.8×** | 2.7× |
+
+Examples: ID_215 spans **1,165 bp → 239,362 bp** members (205×), ID_481 **103 bp → 15,899 bp**, ID_182
+**3,453 bp → 76,044 bp** at 0.889 identity.
+
+Because `min_coverage` is a fraction of the shorter locus, **two large members that share only part of their
+span fail the floor** and no edge forms → the family splits. Divergent members (identity below the floor) split
+for the complementary reason.
+
+## 4. The core tension
+
+**The same knob moves the two error modes in opposite directions:**
+
+- Raise `min_coverage` → kills duplicon bridges (**less over-merge**) → but more large/partial-overlap members
+  fail the edge (**more splits**).
+- Lower it → reconnects partial members (**fewer splits**) → but admits shared-block bridges (**more over-merge**).
+
+A single global threshold therefore cannot fix both. This is the classic segmental-duplication
+family-definition problem (Bailey 2002 → Eichler-lab work): **pairwise sequence similarity is not transitive
+in the way family membership is.**
+
+## 5. Levers
+
+**A. Global thresholds (measured — `bench/soto/merge_lever_sweep.sh`).** `min_coverage`
+(`RUSTLE_GENOME_MIN_COVERAGE`), `min_identity` (`--min-identity`), γ quasi-clique density
+(`RUSTLE_GENOME_GAMMA`). These trade over-merge against split per §4; the sweep quantifies the curve.
+
+**B. Restrict the node set (decisive test for §2).** Group only the given member loci — no discovered extras.
+This is also the closest analog to Soto's own setup (they group *given* SD98 loci). If the fusions largely
+disappear, the bridges are the discovered loci and the fix is to admit extras only when they do not join two
+otherwise-disconnected blocks.
+
+**C. Structure-aware de-bridging — ORTHOGONAL to the threshold trade, and already implemented in this
+codebase but NOT wired into the `--from-genome` path:**
+- `multi_repeat_bridge` — cut families joined only through a shared repeat unit.
+- `recombinant_split` — split at articulation points (a single locus holding two blocks together).
+- `bridge_detector` / `catalog_overlaps` — exon-graph bridge and shared-sequence diagnostics.
+
+These act on **graph structure and repeat content**, not on the pairwise coverage of every edge, so they can
+cut a bridge *without* penalizing legitimate partial-overlap edges — i.e. they attack over-merge without
+causing the splits that raising `min_coverage` causes. **Highest-value next step.**
+
+**D. Copy-number concordance (Soto's actual splitter) — irreducible here.** Soto refine shared-exon groups by
+**famCN/parCN** (median read-depth copy number from WGS; group only when copy-number mean-absolute-deviation
+< 1). That is an orthogonal modality: two families that share a duplicon have *different copy-number profiles*
+even when their sequence bridges. We have no WGS depth for this benchmark, so this lever is unavailable — and
+no amount of sequence-threshold tuning substitutes for it. This is the honest ceiling of a sequence-only
+partition.
+
+**E. External duplication-unit annotation.** Soto also anchor groups to DupMasker ancestral duplication units.
+Equivalent to D in spirit: an orthogonal signal about *which* duplication a block belongs to.
+
+## 6. Honest statement for the write-up
+
+> Using the same pairwise-alignment + γ-quasi-clique engine on the genome, we reproduce Soto's family
+> **memberships** (361/362 = 99.7% of paralogs) but only **46%** of their family **partition** — the shortfall
+> is over-merging in SD-rich regions where unrelated families share a duplicated block, plus splits of families
+> whose members differ greatly in length. Sequence-only thresholds trade one error for the other; separating
+> them requires either structure-aware de-bridging (implemented, not yet wired) or the copy-number modality
+> Soto used and this benchmark lacks.

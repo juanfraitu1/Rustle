@@ -272,6 +272,22 @@ fn main() -> Result<()> {
         }
         let mut refine_params = homology_refine_params(args.min_identity, args.threads);
         refine_params.protein_tail = args.protein_tail;
+        // DNA-mode GROUPING knobs (anti over/under-merge levers). Env-only and applied ONLY on this branch,
+        // so the RNA path stays byte-identical.
+        //   RUSTLE_GENOME_MIN_COVERAGE — homology-edge coverage floor (fraction of the SHORTER locus the
+        //     alignment must cover). Default 0.50. This is the documented repeat/duplicon-bridge defense:
+        //     raising it rejects "two families share one duplicated block" edges that fuse distinct families.
+        //   RUSTLE_GENOME_GAMMA — γ-quasi-clique density for family blocks. Default 0.20. Raising it demands
+        //     denser within-family connectivity, splitting blocks held together by a few bridge edges.
+        if let Ok(v) = std::env::var("RUSTLE_GENOME_MIN_COVERAGE") {
+            if let Ok(x) = v.parse::<f64>() { refine_params.min_coverage = x; }
+        }
+        let gamma: f64 = std::env::var("RUSTLE_GENOME_GAMMA")
+            .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.20);
+        eprintln!(
+            "[gw-catalog-genome] grouping: min_identity={:.2} min_coverage={:.2} gamma={:.2}",
+            refine_params.min_identity, refine_params.min_coverage, gamma
+        );
         let windows = read_windows_bed(win_bed)?;
         let mut gp = GenomeRepParams::from_env();
         gp.threads = args.threads;
@@ -283,7 +299,7 @@ fn main() -> Result<()> {
         let reps = genome_reps(&args.fasta, &windows, &gp)?;
         eprintln!("[gw-catalog-genome] {} windows -> {} duplicated-locus reps", windows.len(), reps.len());
         let dna_fams = rustle::vg_family::denovo_pipeline::families_from_reps(
-            reps, &refine_params, 0.20, args.min_copies, 0,
+            reps, &refine_params, gamma, args.min_copies, 0,
         )?;
         emit_catalog(&args.out, dna_fams, &refine_params)?;
         return Ok(());
