@@ -81,11 +81,39 @@ already how the engine is built:
 > The advisor's critique retires `AS` as a **tie-breaker**; `de` is a better **tie-detector**; `s2` + `rl`
 > would be better still; and tie-**breaking** must live in the PSV layer regardless of which scalar is used.
 
+## 5b. Reconciliation with the earlier tag-dig (IMPORTANT qualifier)
+
+A previous analysis (`conflict_criterion_bakeoff`) already dug through these tags and concluded:
+**"ms/cm/s1 are length-confounded — AS is too; `as_per_base` divides it out"**, and explicitly decided
+**"Do NOT port nintron/ms/cm/s1/s2/ts"**. Two points reconcile that with §3-§4 here:
+
+1. **The prior decision was about RAW scores, and it is correct.** `s1` alone scales with read length exactly
+   like `AS`, so porting it as a raw score adds nothing. What §3 uses is the **ratio** `(s1 − s2)/s1`, which
+   divides length out by construction — the same normalisation `as_per_base` applies to `AS`. The
+   *comparison* is the new content, not the score.
+
+2. ⚠**But the margin inherits the PARTIAL-RUNNER-UP confound, and this is serious.** The same prior work
+   found that real Iso-Seq secondaries are often *partial*, which "manufactures a huge spurious margin" —
+   raw `as_margin` on certified-unassignable reads had median **202** (vs Eichler's AS≥10 rule), so `AS≥10`
+   would confidently assign 37/38 reads our gate certifies as UNASSIGNABLE. **`s2` is the best SECONDARY
+   CHAIN's score, so a partial runner-up depresses `s2` and inflates `(s1 − s2)/s1` in exactly the same way.**
+   The PMS2P1 0.676 vs NCF1 0.026 contrast in §3 may therefore partly reflect *partial vs full runner-ups*
+   rather than genuine placement confidence.
+
+   **Consequence:** `s2` must NOT be adopted as a tie-detector without first normalising for the runner-up's
+   aligned length (a per-base margin), and validating on the simulation where K=0 reads have `as_margin`
+   exactly 0. Until that is done, treat §3's margin numbers as *descriptive*, not as a validated criterion.
+
+This does not affect `rl` (repetitive-seed fraction), which is a read-intrinsic property with no
+runner-up dependence, or `SA`, which is a factual list of the read's other alignments.
+
 ## 6. Recommendations (not yet implemented)
 
-1. **Add `s2` as a tie-detection signal** alongside `de`: flag a read as tied when the margin is below a
-   threshold, rather than relying on MAPQ's 0/60 cliff. Cheap — the tag is already in every record.
-2. **Add `rl`/read-length as an ambiguity-type annotation.** A read that is 11% repetitive seeds is
+1. **`s2` — only after length-normalising the runner-up (see §5b).** The margin is the comparison `AS`/`de`
+   lack, but it inherits the partial-runner-up confound that already discredited raw `as_margin`. Required
+   first: a per-base margin, validated on the sim (K=0 reads must give margin ~0). Do not ship the raw ratio.
+2. **`rl`/read-length — the SAFEST of the three** (read-intrinsic, no runner-up dependence). Add as an
+   ambiguity-type annotation. A read that is 11% repetitive seeds is
    ambiguous for a *different reason* than one with a genuine score tie; the abstention record should say which.
 3. **Use `SA` for mis-chain detection.** ~3% of reads carry supplementary alignments; a read split across
    paralogous loci is exactly the NCF1 mis-chain signature, and `SA` names the partner locus directly.
