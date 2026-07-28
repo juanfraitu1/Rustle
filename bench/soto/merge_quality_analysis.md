@@ -191,3 +191,33 @@ without the global purity cost, and is the natural next experiment.
 Shipped as `--homology-genomic-span` (opt-in; default OFF keeps every existing catalog byte-identical).
 Needs **no read depth / copy number** — RNA decides WHICH loci are expressed, the reference supplies
 complete sequence for WHAT-GROUPS-WITH-WHAT.
+
+### §7b. Four remediation levers measured — none is a silver bullet (2026-07-28)
+
+The split-away pieces of the 45 fragmented RNA families were used as the test set (233 loci). "Re-linked"
+= the piece gains an edge/assignment back to its family.
+
+| lever | families with ≥1 piece re-linked | measured cost | status |
+|---|---:|---|---|
+| exon-sum pairwise (**current default**) | 38% | — | shipped |
+| lower the coverage floor (0.50→0.05) | ~+9% of *pairs* only | none | rejected: 75% of pairs have NO alignment at all |
+| **projection** (family consensus → genome, spliced) | **49%** | not measured; spliced so no intron bridging expected | machinery exists (`--project-all-families`) but writes a separate file — hits are treated as copy-NUMBER, not membership |
+| **genomic span** (`--homology-genomic-span`) | **58%** | **purity ↓ in 3/4 chromosomes** | shipped, opt-in |
+
+Two approaches were **ruled out by code inspection** (minutes, not hours):
+
+- **Genomic spans targeted at fragments.** Single-exon copies have genomic span ≈ their own length
+  (median span/seq = **1.00×** vs 3.82× for multi-exon), so the substrate switch adds them no new sequence.
+  The measured gain must come from MULTI-exon copies — the opposite of the intended target.
+- **`family_rescue` (borrow-strength).** `thin_loci` starts with `if r.introns.is_empty() { continue; }`
+  — unspliced reads are skipped — but **66% of RNA copies are single-exon**. It addresses multi-exon loci
+  below the ≥3-read gate (a RECALL lever), not the fragment/split population.
+
+**Why every failed lever failed the same way:** they all compare *the fragment's own assembled sequence* to
+something, and a fragment covering exons 7–8 has nothing to offer that comparison. Projection is the only
+one that inverts the direction (the family searches for the fragment), which is why it beats the current
+default without touching purity.
+
+**Conclusion.** RNA family fragmentation is **partially remediable, not solvable** by these levers:
+38% → 49–58% of families gain a re-link, each with a trade. This is a real identifiability-adjacent limit of
+the substrate, not a tuning failure — and it is the honest counterpart to the DNA side's over-merging.
