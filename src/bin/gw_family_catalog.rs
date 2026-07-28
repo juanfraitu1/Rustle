@@ -102,6 +102,14 @@ struct Args {
     /// E_r nucleotide identity floor (sensitive tier). Default from RefineParams (~0.60). `0.98` = Soto SD98 mode.
     #[arg(long)]
     min_identity: Option<f64>,
+    /// With `--homology-primary`: compute the E_r family edge on each locus's GENOMIC SPAN instead of its
+    /// assembled exon-sum. Fixes family FRAGMENTATION — copies of one family whose transcripts assemble
+    /// DISJOINT exon subsets share almost no assembled sequence, so no edge forms and the family splits
+    /// (measured: 75% of should-link pairs had no exon-sum alignment at all). RNA still decides WHICH loci
+    /// are expressed; the reference supplies complete sequence for grouping. Needs no read depth/copy number.
+    /// Default off (exon-sum) — existing catalogs are byte-identical unless this is set.
+    #[arg(long, default_value_t = false)]
+    homology_genomic_span: bool,
     /// Enumerate genomic copy number (famCN) per family via Liftoff-style genome projection (spec §7):
     /// project each family's best-supported consensus onto the genome (minimap2) to recover K=0 collapses
     /// the RNA read-conflict/homology path merges into one locus. Writes `<out>.famcn.tsv`. Defaults ON
@@ -340,6 +348,15 @@ fn main() -> Result<()> {
     // homology-primary catalog (in addition to feeding the `--refine` block below): it recovers coding
     // paralogs that have diverged past the nucleotide seeds' ~0.65 identity floor.
     refine_params.protein_tail = args.protein_tail;
+    // `--homology-genomic-span`: E_r edges on the genomic span of each RNA-detected locus (anti-fragmentation).
+    // Needs the genome path; harmless when the flag is off (field stays false, edges stay exon-sum).
+    refine_params.homology_genomic_span = args.homology_genomic_span;
+    if args.homology_genomic_span {
+        refine_params.intron_fasta = Some(args.fasta.clone());
+        if !args.homology_primary {
+            eprintln!("[gw-catalog] note: --homology-genomic-span affects the E_r edge, which only drives family membership under --homology-primary");
+        }
+    }
     let (raw, collapsed, expressed, dna_families): (
         Vec<Vec<DenovoTranscript>>,
         Vec<rustle::vg_family::collapse_enumerate::CollapsedFamily>,

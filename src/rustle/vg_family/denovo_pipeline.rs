@@ -2572,6 +2572,11 @@ pub struct RefineParams {
     /// where both nucleotide tiers find no edge and reads map all-primary.
     pub protein_tail: bool,
     pub mmseqs: String,
+    /// Compute the genome-wide E_r homology edge on each rep's GENOMIC SPAN instead of its assembled
+    /// exon-sum (`homology_edges_all_reps`). Fixes family FRAGMENTATION caused by incomplete/disjoint
+    /// assembly — see the rationale in `homology_edges_all_reps`. Needs `intron_fasta`. Default OFF
+    /// (exon-sum), so every existing catalog is byte-identical unless explicitly enabled.
+    pub homology_genomic_span: bool,
 }
 
 impl Default for RefineParams {
@@ -2587,6 +2592,7 @@ impl Default for RefineParams {
             sensitive_identity: 0.60,
             protein_tail: false,
             mmseqs: std::env::var("RUSTLE_MMSEQS").unwrap_or_else(|_| "mmseqs".to_string()),
+            homology_genomic_span: false,
         }
     }
 }
@@ -2848,7 +2854,42 @@ pub(crate) fn homology_edges_all_reps(
     reps: &[DenovoTranscript],
     params: &RefineParams,
 ) -> Result<Vec<(usize, usize)>> {
-    let seqs: Vec<Vec<u8>> = reps.iter().map(|r| r.seq.clone()).collect();
+    // EDGE SUBSTRATE. By default the E_r edge is computed on the ASSEMBLED exon-sum (`rep.seq`). That makes
+    // family membership hostage to assembly completeness: two copies of one family whose transcripts assemble
+    // DISJOINT exon subsets (one gets exons 1-2, its sibling 7-8) share almost no sequence, so no edge forms
+    // and the family fragments. Measured on the Soto benchmark: 75% of should-link pairs had NO exon-sum
+    // alignment at all, and those that aligned covered a median of only 12% of the shorter sequence.
+    //
+    // `homology_genomic_span` (opt-in) instead computes the edge on the GENOMIC SPAN of each RNA-detected
+    // locus — complete sequence regardless of what was assembled. RNA still decides WHERE (which loci are
+    // expressed); the reference supplies WHAT-GROUPS-WITH-WHAT. Needs no read depth / copy number.
+    // Simulated effect (863 RNA loci, id>=0.90 cov>=0.50): completeness 25%->43%, splits 45->32, with
+    // homogeneity held at ~90% (the node set stays RNA-limited, so there is little repeat bridging to admit).
+    let span_genome: Option<GenomeIndex> = if params.homology_genomic_span {
+        match params.intron_fasta.as_ref() {
+            Some(path) => {
+                let contigs: HashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
+                match GenomeIndex::from_fasta_contigs(path, &contigs) {
+                    Ok(g) => Some(g),
+                    Err(e) => {
+                        // best-effort: fall back to exon-sum edges rather than fail the catalog
+                        eprintln!("[homology] genomic-span edges skipped: genome load failed ({e})");
+                        None
+                    }
+                }
+            }
+            None => {
+                eprintln!("[homology] genomic-span edges requested but no genome path set; using exon-sum");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if span_genome.is_some() {
+        eprintln!("[homology] E_r edge substrate: GENOMIC SPAN ({} reps)", reps.len());
+    }
+    let seqs: Vec<Vec<u8>> = reps.iter().map(|r| refine_copy_seq(r, span_genome.as_ref())).collect();
     let mut set: BTreeSet<(usize, usize)> =
         nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)?
             .into_iter().collect();
@@ -3181,6 +3222,38 @@ mod tests {
     }
 
     #[test]
+    /// Anti-FRAGMENTATION invariant: two copies of one family whose ASSEMBLED transcripts cover DISJOINT
+    /// exon subsets share almost no exon-sum sequence, so the default (exon-sum) edge does NOT link them.
+    /// Computing the edge on the GENOMIC SPAN instead recovers the link. Uses the two-copy fixture whose
+    /// contigs hold the same 600 bp motif twice.
+    #[test]
+    fn genomic_span_edges_link_fragments_that_exon_sum_cannot() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+        let fa = "tests/fixtures/from_genome/subset.fa";
+        if std::fs::metadata(fa).is_err() { eprintln!("fixture absent; skip"); return; }
+        // Two copies of the SAME family (NCF1 / NCF1B contigs are ~99% identical), but their "assembled"
+        // exon-sums are DISJOINT slices: copy A carries the head, copy B the tail. They cannot align.
+        let head: Vec<u8> = b"A".repeat(400);            // stand-in fragment A (no similarity to B)
+        let tail: Vec<u8> = b"C".repeat(400);            // stand-in fragment B
+        let mk = |tid: &str, chrom: &str, start: u64, end: u64, seq: Vec<u8>| DenovoTranscript {
+            tid: tid.into(), chrom: chrom.into(), start, end,
+            n_reads: 5, strand: '+', introns: vec![], seq, distinguishing_uniq: 0,
+        };
+        let reps = vec![
+            mk("a", "NCF1", 0, 15440, head),
+            mk("b", "NCF1B", 0, 15319, tail),
+        ];
+        let mut p = homology_refine_params(Some(0.90), 2);
+        // exon-sum substrate: the disjoint fragments cannot align -> no edge
+        let e_exon = homology_edges_all_reps(&reps, &p).unwrap();
+        assert!(e_exon.is_empty(), "disjoint exon-sums must NOT link, got {e_exon:?}");
+        // genomic-span substrate: the underlying loci are ~99% identical -> edge forms
+        p.homology_genomic_span = true;
+        p.intron_fasta = Some(fa.to_string());
+        let e_span = homology_edges_all_reps(&reps, &p).unwrap();
+        assert!(!e_span.is_empty(), "genomic spans of the two paralogous loci must link");
+    }
+
     fn homology_blocks_groups_identical_reps_and_isolates_unrelated() {
         // three reps: two identical sequences (should share an E_r edge -> one block) + one unrelated.
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
