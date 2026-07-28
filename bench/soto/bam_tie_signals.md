@@ -157,11 +157,52 @@ The 7 "distinct" do not survive inspection:
 *correct*, and TSS/TES is **not** a usable copy discriminator here. Do not build TSS-aware logic for
 copy assignment or add a "boundary conflict" term to χ(H).
 
-⚠**Limits of this test** (what would change the verdict): the median 5' end is a crude summary — a *bimodal*
-TSS used by both copies would not appear as a shift; only the two best-covered copies per family were
-compared; and heavy 5' degradation could mask a real difference. A per-read TSS *distribution* comparison
-(e.g. earth-mover distance) rather than a median shift would be the stronger test if this is ever revisited.
+⚠**Limits of this test:** the median 5' end is a crude summary — a *bimodal* TSS, or the same peaks used in
+different proportions, produces no median shift. The stronger distributional test was subsequently run: §8.
 
 **Residual value:** the 5' end distributions are still informative for *biology* (genuine alternative
 promoter usage) and possibly for making exon-sum boundaries more consistent — which feeds the `min_coverage`
 floor implicated in family fragmentation (§7 of `merge_quality_analysis.md`). Just not for telling copies apart.
+
+
+---
+
+## 8. Distributional TSS test — the answer is still NO, but only because of a control (2026-07-28)
+
+§7's median test is weak by construction. The stronger test (`tss_distribution_test.py`): compare the full
+5'-end **distributions** in a common frame via **Wasserstein-1 (earth-mover)**, against an **empirical null**
+= EMD between two random halves of the *same* copy (200 permutations), which captures sampling noise *and*
+each copy's own 5'-end heterogeneity — exactly the noise the `k=2` boundary quantile is built to absorb.
+It also **rejects non-equivalent pairs** (B→A alignment covering <50% of B), which caused 5 of §7's 7 false
+"distinct" calls.
+
+**Raw result: 28/40 homologous pairs "DISTINCT" (11 skipped as non-equivalent).** That REVERSES §7.
+
+⚠**But the raw result is an artifact, caught by a control.** A real TSS is a *sharp peak*; if the 5' ends are
+scattered across the locus they are not a promoter at all — they are wherever coverage happened to fall.
+Scoring **sharpness** (fraction of 5' ends in the densest 400 bp window) in both copies:
+
+| of the 28 "DISTINCT" calls | n | interpretation |
+|---|---:|---|
+| sharp peak in **both** copies (≥0.30) | **3** | plausible genuine TSS difference |
+| **broad** scatter (0.06–0.29) | **25** | **differential partial COVERAGE, not a promoter** |
+
+The three survivors are ID_8 (PMS2P1/PMS2P7, sharpness 0.94/0.72), ID_116 (GOLGA6L1/GOLGA6L22, 0.86/0.57)
+and ID_443 (SHLD2/SHLD2P3, 0.52/0.68). The tell on the rest: EMDs of 20–50 kb (ANKRD36B 49 kb, SHLD2 50 kb)
+are far too large to be promoter shifts, and within-copy nulls of 1–13 kb confirm the distributions are broad.
+
+**Corrected verdict: 3/40 pairs (7.5%) show a genuine TSS difference** — consistent with §7's conclusion,
+now established with a test that *can* detect shape differences and still doesn't find them.
+
+### Answer to "is the exon-sum enough, or should it be extended?"
+
+**The exon-sum is enough.** Extending it to encode TSS/TES would, in ~92% of families, encode **coverage
+noise rather than biology** — and coverage noise is precisely what the `k`-th-quantile boundary rule already
+exists to suppress. Do not extend the representation, and do not add a boundary-conflict term to χ(H).
+
+**Two caveats kept honest:**
+- For the 3 sharp families TSS *is* real and discriminating. A **conditional** extension (encode TSS only
+  where the 5' distribution is sharp in all copies) would be defensible — but at 3/40 families the value is low.
+- The 25 "broad" cases are not merely noise: they independently corroborate the **differential-coverage**
+  finding in `merge_quality_analysis.md` §7 (copies of one family covering different parts of the gene).
+  The same phenomenon that fragments families also fakes TSS differences.
