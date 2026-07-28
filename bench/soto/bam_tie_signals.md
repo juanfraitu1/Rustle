@@ -121,3 +121,47 @@ runner-up dependence, or `SA`, which is a factual list of the read's other align
    granularity of abstention*, not the identifiability limit.
 
 **Reproduce:** `samtools view -F2308 <bam> <locus>` and parse `s1`, `s2`, `de`, `rl`.
+
+---
+
+## 7. TSS/TES as a copy discriminator — TESTED AND REJECTED (2026-07-28)
+
+**The blind spot is real.** The exon-sum is TSS/TES-blind by construction: `pass1_skeletons_robust` groups
+reads by **exact intron chain only**, and sets boundaries to the *k*-th smallest start / *k*-th largest end
+(`k = min_terminal_support`, default 2) — a robustness quantile, not a TSS call. No TSS/TES/polyA-aware logic
+exists anywhere in the assembly or family path (the only polyA fields live in `phasing.rs`).
+
+This matters *a priori* because IsoSeq FLNC reads are selected for carrying both the 5' primer and the 3'
+polyA, so their boundaries approximate **real** TSS/TES rather than random truncation. The hypothesis was
+that copies might use different promoters — a **positional, RNA-only** discriminator that could break ties
+where no PSV exists (DNA cannot tell you which promoter is used).
+
+**Test (common coordinate frame).** Raw offsets within each copy are not comparable (copies differ in
+length/strand), so for every family with ≥2 copies at ≥40 reads: align copy B's genomic span onto copy A's
+(`minimap2 -a -x asm20`), build a B→A position map from the CIGAR (reverse-strand aware), project each read's
+5' end into A's frame, and compare median shift against **within-copy MAD** (5' degradation is real even in
+FLNC — the *k*=2 quantile exists to absorb exactly that noise). Script: `tss_common_frame.sh`.
+
+**Result — 51 families:** **35 same TSS (69%)**, 9 ambiguous, 7 "distinct" (14%).
+
+The 7 "distinct" do not survive inspection:
+
+- **2 are trivial in magnitude** — GOLGA6L1/GOLGA6L22 shift **12 bp**, NPIPB6/NPIPB9 shift **9 bp**. They
+  clear the ratio test only because within-copy MAD is ~1 bp; the exon-sums are effectively identical.
+- **5 are non-equivalent copy pairs, not alternative promoters** — TRIM73/**NSUN5P1** (15 kb),
+  GOLGA8A/**UBE2Q2P2** (24 kb), SHLD2/SHLD2P3 (72 kb), WASH8P/WASHC1, AC110079.1/AL669831.1. These are
+  *different genes* sharing a duplicated block inside one Soto family region, so the projection lands far
+  away. This is the §2 over-merge resurfacing as a spurious TSS shift — not a biological signal.
+
+**Conclusion: sibling copies overwhelmingly share their TSS.** The exon-sum's boundary collapse is
+*correct*, and TSS/TES is **not** a usable copy discriminator here. Do not build TSS-aware logic for
+copy assignment or add a "boundary conflict" term to χ(H).
+
+⚠**Limits of this test** (what would change the verdict): the median 5' end is a crude summary — a *bimodal*
+TSS used by both copies would not appear as a shift; only the two best-covered copies per family were
+compared; and heavy 5' degradation could mask a real difference. A per-read TSS *distribution* comparison
+(e.g. earth-mover distance) rather than a median shift would be the stronger test if this is ever revisited.
+
+**Residual value:** the 5' end distributions are still informative for *biology* (genuine alternative
+promoter usage) and possibly for making exon-sum boundaries more consistent — which feeds the `min_coverage`
+floor implicated in family fragmentation (§7 of `merge_quality_analysis.md`). Just not for telling copies apart.
