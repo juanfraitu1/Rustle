@@ -315,3 +315,37 @@ including real paralogs outside Soto's 80-family subset (§6, and the over-detec
 `project_soto_recall_recompute`). The 1:1 constraint also *forces* leftovers whenever a truth member is
 genuinely covered by two fragments; that is counted here as one match plus one "extra", which is the
 intended reading (fragmentation), not an independent error.
+
+### 8b. Control — is the "truth" a duplicon rather than a gene? (tested, and it is not the explanation)
+
+Fair objection: Soto's member intervals come from the SD98 self-alignment, so they are **duplication blocks**,
+not gene models. A block can be much larger than the transcribed gene inside it, and an RNA copy can only
+ever span the gene — so a "0.03x truncated" call might be comparing a transcript to a duplicon.
+
+`bench/soto/gene_preferred_truth.py` rebuilds the truth: where a NAMED RefSeq gene matching the member's gene
+label overlaps the member interval, the gene's span replaces the block; otherwise Soto's block is kept.
+
+```
+members 362 | matched a named annotation 222 | no named match (Soto kept) 140
+interval CHANGED 222  (shrunk 99, grown 123)
+block->gene size ratio: median 1.00   p10 0.77   p90 1.82
+largest shrinks: GTF2IP12 49129->5058 (0.10x), CTSLP3 6137->977 (0.16x), HERC2P9 95778->30825 (0.32x)
+```
+
+Re-scoring against the gene-preferred truth barely moves anything:
+
+| | vs Soto blocks | vs gene-preferred |
+|---|---|---|
+| median size ratio | 0.54 | 0.54 |
+| TRUNCATED <=0.5x | 113 | 112 |
+| OVER-EXTENDED >=2x | 17 | 16 |
+
+Individual intervals *do* shift (the effect is real for a minority — the p10/p90 spread is 0.77-1.82), but the
+median block/gene ratio is 1.00, so the correction cancels in aggregate. And the extreme truncations survive
+with annotations attached: SRGAP2C gene = 207.9 kb (block 208.1 kb), NOTCH2 = 158.1 kb (block 189.2 kb),
+GUSBP1 = 231.3 kb (block 346.6 kb). These are genuinely large, intron-rich genes; a 5.6 kb prediction for
+SRGAP2C is a fragmentary assembly, not a units mismatch.
+
+**Conclusion: the truncation is real.** The size axis independently confirms the fragmentation diagnosed in
+§7 from the partition axis. The gene-preferred BED is kept as the fairer default truth for future size
+scoring even though it does not change the headline.
