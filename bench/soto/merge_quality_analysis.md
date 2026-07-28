@@ -113,3 +113,63 @@ Equivalent to D in spirit: an orthogonal signal about *which* duplication a bloc
 > whose members differ greatly in length. Sequence-only thresholds trade one error for the other; separating
 > them requires either structure-aware de-bridging (implemented, not yet wired) or the copy-number modality
 > Soto used and this benchmark lacks.
+
+---
+
+## 7. RNA side: fragmentation diagnosis and the genomic-span fix (2026-07-27)
+
+### RNA vs DNA have OPPOSITE failure modes (same metric)
+
+| catalog | recall | homogeneity | over-merge | splits | completeness |
+|---|---:|---:|---:|---:|---:|
+| DNA `--from-genome` | 99.7% | 74% | 18 (fusing 48) | 13 | 46% |
+| RNA `--cross-chrom --refine` | 65.5% | **91%** | 14 (fusing 28) | **45** | 25% |
+| RNA `--homology-primary` | 77.3% | 86% | 32 (fusing 73) | 52 | 15% |
+| RNA per-chrom conflict | 22.1% | **92%** | 6 (fusing 12) | 15 | 50% |
+
+**RNA is markedly PURER (86–92% vs 74%) but far more FRAGMENTED (45–52 splits vs 13).** The intron-chain /
+splicing constraint is real and free: the sequence that bridges unrelated families at the DNA level
+(duplicons, intronic repeats, flanks) is exactly what splicing discards, so RNA reps cannot form those
+spurious edges. **One mechanism, opposite effects: splicing removes both the sequence that DISTINGUISHES
+near-identical copies (→ K=0) and the sequence that spuriously BRIDGES families (→ no over-merge).**
+
+### Why RNA fragments — measured
+
+Across the 45 split families, 1831 pairs should be one family but landed in different RNA families:
+- **75% have NO exon-sum alignment at all** (even with the sensitive `-k11 -w5` tier);
+- of the 449 that align: median identity **0.900** but median coverage-of-shorter **0.119**;
+- relaxing the coverage floor to 0.05 recovers only **20%**.
+
+It is **not** a threshold problem: the copies assemble **disjoint exon subsets** (one gets exons 1–2, its
+sibling 7–8), so comparing *assembled* sequence has nothing to compare. Corroborating: split families have
+**7.0×** median exon-count spread vs **1.5×** for clean ones, and **62%** of copies in split families are
+single-exon fragments.
+
+### The fix: compute the E_r edge on the GENOMIC SPAN of each RNA-detected locus
+
+Same loci, genomic spans instead of exon-sums: median identity **0.900 → 0.973**, median coverage
+**0.119 → 0.982**. Per split family, fully re-linked: exon-sum 5/45 (11%) → genomic 13/45 (29%) at cov≥0.30.
+
+Simulated re-partition of all 863 RNA loci (connected components — merge-prone vs the engine's γ-quasi-clique):
+
+| substrate | recall | splits | over-merge | homogeneity | completeness |
+|---|---:|---:|---:|---:|---:|
+| exon-sum (current) | 65.5% | 45 | 14 | 91% | 25% |
+| genomic id≥0.90 cov≥0.50 | 64.9% | 32 | 11 | 90% | **43%** |
+
+**Real-data validation** (chr15 Soto regions, 66 members, `--homology-primary`, flag OFF vs ON):
+
+| | recall | clean 1:1 | over-merge | splits | homogeneity | completeness |
+|---|---:|---:|---:|---:|---:|---:|
+| OFF (exon-sum) | 86.4% | 2 | 9 (fusing 21) | 7 | 62% | 17% |
+| **ON (genomic span)** | **89.4%** | **3** | **8** (fusing 19) | 7 | **69%** | **23%** |
+
+Every metric improves or holds. ⚠**Honest caveats:** single chromosome and small counts (66 members,
+24–26 families); the gain is smaller than the connected-components simulation predicted (17→23 vs 25→43);
+and it arrives by a **different mechanism than predicted** — splits were unchanged (7→7), with the gain
+coming from purity and clean-family count. Broader validation (more chromosomes) is needed before this
+becomes a default.
+
+Shipped as `--homology-genomic-span` (opt-in; default OFF keeps every existing catalog byte-identical).
+Needs **no read depth / copy number** — RNA decides WHICH loci are expressed, the reference supplies
+complete sequence for WHAT-GROUPS-WITH-WHAT.

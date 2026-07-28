@@ -4,6 +4,7 @@ completeness), NOT just member recall. Usage: partition_score.py <copies.tsv>"""
 import sys
 from collections import defaultdict
 COP=sys.argv[1]
+BED=sys.argv[2] if len(sys.argv)>2 else "bench/soto/80_fams.chr.bed"
 copies=[]
 for i,ln in enumerate(open(COP)):
     if i==0: continue
@@ -12,7 +13,7 @@ for i,ln in enumerate(open(COP)):
 famcnt=defaultdict(int)
 for (gw,c,s,e) in copies: famcnt[gw]+=1
 members=[]
-for ln in open("bench/soto/80_fams.chr.bed"):
+for ln in open(BED):
     c,s,e,name,*_=ln.rstrip("\n").split("\t")
     members.append((name.split("|")[1],c,int(s),int(e)))
 def member_at(c,s,e):
