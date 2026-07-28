@@ -157,18 +157,36 @@ Simulated re-partition of all 863 RNA loci (connected components — merge-prone
 | exon-sum (current) | 65.5% | 45 | 14 | 91% | 25% |
 | genomic id≥0.90 cov≥0.50 | 64.9% | 32 | 11 | 90% | **43%** |
 
-**Real-data validation** (chr15 Soto regions, 66 members, `--homology-primary`, flag OFF vs ON):
+**Real-data validation — 4 chromosomes** (Soto regions only, `--homology-primary`, flag OFF vs ON):
 
-| | recall | clean 1:1 | over-merge | splits | homogeneity | completeness |
-|---|---:|---:|---:|---:|---:|---:|
-| OFF (exon-sum) | 86.4% | 2 | 9 (fusing 21) | 7 | 62% | 17% |
-| **ON (genomic span)** | **89.4%** | **3** | **8** (fusing 19) | 7 | **69%** | **23%** |
+| chrom | recall | families | clean 1:1 | over-merge | splits | **purity** | **completeness** |
+|---|---|---:|---:|---|---:|---:|---:|
+| chr7  | 77→79% ↑ | 16→13 | 1→1 | 6(15)→6(13) | 6→6 = | 62→**54** ↓ | 14→14 = |
+| chr9  | 73→81% ↑ | 32→23 | 1→2 | 3(6)→3(6)   | 3→2 ↑ | 91→**87** ↓ | 14→25 ↑ |
+| chr16 | 65→77% ↑ |  5→3  | 1→2 | 1(2)→1(3)   | 1→0 ↑ | 80→**67** ↓ | 33→40 ↑ |
+| chr15 | 86→89% ↑ | 24→26 | 2→3 | 9(21)→8(19) | 7→7 = | 62→69 ↑ | 17→23 ↑ |
 
-Every metric improves or holds. ⚠**Honest caveats:** single chromosome and small counts (66 members,
-24–26 families); the gain is smaller than the connected-components simulation predicted (17→23 vs 25→43);
-and it arrives by a **different mechanism than predicted** — splits were unchanged (7→7), with the gain
-coming from purity and clean-family count. Broader validation (more chromosomes) is needed before this
-becomes a default.
+**Pooled (166 members):** member recall **78.3% → 83.1% (+4.8 pts)**; clean 1:1 5→8; splits 17→15;
+over-merge 19 fams fusing 44 → 18 fusing 41; families **77 → 65** (fewer = more merging).
+
+⚠**CORRECTION.** An earlier note claimed, from chr15 alone, that "every metric improves or holds". **That does
+NOT generalize.** Across 4 chromosomes:
+
+- **member recall improves 4/4** (robust, +4.8 pts pooled);
+- **completeness improves 3/4, never worse**;
+- **splits never worse** (2 improve, 2 flat);
+- **but PURITY WORSENS in 3/4** (chr7 62→54, chr9 91→87, chr16 80→67). chr15 (62→69) was the exception.
+
+So there is a **real trade, not a free lunch**: genomic spans buy recall and completeness at a cost in purity —
+they reintroduce exactly the intronic/duplicon bridging sequence that splicing removes for free (§7 opening).
+The worst purity loss is chr7 (SPDYE / GTF2I / POM121 / PMS2P — the most duplicon-dense region tested), which
+also gained no completeness; testable prediction: **purity loss scales with regional duplicon density.**
+
+**Verdict: keep `--homology-genomic-span` OPT-IN, not default.** It is the right lever when completeness/recall
+matter more than partition purity (e.g. recovering fragmented families), and the wrong one in duplicon-dense
+regions. A targeted variant — apply genomic spans only to loci whose assembly is incomplete (single-exon /
+low exon-count fragments), keeping exon-sum edges elsewhere — would plausibly capture the completeness gain
+without the global purity cost, and is the natural next experiment.
 
 Shipped as `--homology-genomic-span` (opt-in; default OFF keeps every existing catalog byte-identical).
 Needs **no read depth / copy number** — RNA decides WHICH loci are expressed, the reference supplies
