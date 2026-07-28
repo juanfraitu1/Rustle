@@ -1,0 +1,235 @@
+<title>Why RNA misses members — the mechanisms</title>
+<style>
+  :root{
+    --bg:#f5f7fb;--panel:#fff;--ink:#18202e;--mut:#5b6577;--line:#e3e8f0;
+    --copy:#c9d4e6;--copyln:#9fb0cc;--exon:#5c6f92;--silent:#c4cad4;
+    --rna:#1f9e8c;--dna:#3d6fc0;--warn:#d0602f;--ok:#2f8f5b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --shadow:0 1px 2px rgba(20,30,50,.05),0 10px 30px rgba(20,30,50,.07)}
+  @media(prefers-color-scheme:dark){:root{
+    --bg:#0d121b;--panel:#141b27;--ink:#e8edf6;--mut:#96a1b4;--line:#25303f;
+    --copy:#2c3a52;--copyln:#43597e;--exon:#8fa4c8;--silent:#39414f;
+    --rna:#37c2ad;--dna:#6f95e6;--warn:#e0805a;--ok:#37c2ad;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 34px rgba(0,0,0,.4)}}
+  :root[data-theme=light]{--bg:#f5f7fb;--panel:#fff;--ink:#18202e;--mut:#5b6577;--line:#e3e8f0;--copy:#c9d4e6;--copyln:#9fb0cc;--exon:#5c6f92;--silent:#c4cad4;--rna:#1f9e8c;--dna:#3d6fc0;--warn:#d0602f;--ok:#2f8f5b}
+  :root[data-theme=dark]{--bg:#0d121b;--panel:#141b27;--ink:#e8edf6;--mut:#96a1b4;--line:#25303f;--copy:#2c3a52;--copyln:#43597e;--exon:#8fa4c8;--silent:#39414f;--rna:#37c2ad;--dna:#6f95e6;--warn:#e0805a;--ok:#37c2ad}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.55}
+  .wrap{max-width:900px;margin:0 auto;padding:40px 20px 72px}
+  h1{font-size:clamp(1.5rem,3.4vw,2.15rem);letter-spacing:-.022em;margin:0 0 .3em;text-wrap:balance}
+  .eyebrow{text-transform:uppercase;letter-spacing:.13em;font-size:.72rem;font-weight:700;color:var(--rna);margin:0 0 12px}
+  .lede{font-size:1.06rem;color:var(--mut);margin:0 0 8px;max-width:66ch}
+  .num{font-variant-numeric:tabular-nums}
+  .overview{display:flex;gap:8px;flex-wrap:wrap;margin:22px 0 8px}
+  .ob{padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:.83rem;box-shadow:var(--shadow)}
+  .ob b{font-variant-numeric:tabular-nums}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:22px 24px;margin-top:20px}
+  .card.hero{border-left:4px solid var(--warn)}
+  .card h2{font-size:1.18rem;margin:0 0 2px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .tag{font-size:.72rem;font-weight:700;padding:2px 9px;border-radius:999px;font-variant-numeric:tabular-nums}
+  .tag.ne{background:color-mix(in srgb,var(--silent) 55%,transparent);color:var(--mut)}
+  .tag.mc{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+  .tag.k0{background:color-mix(in srgb,var(--rna) 16%,transparent);color:var(--rna)}
+  .tag.sg{background:color-mix(in srgb,var(--dna) 16%,transparent);color:var(--dna)}
+  .card .sub{color:var(--mut);font-size:.9rem;margin:2px 0 14px}
+  svg{width:100%;height:auto;display:block;overflow:visible}
+  .figwrap{background:color-mix(in srgb,var(--bg) 60%,var(--panel));border:1px solid var(--line);border-radius:11px;padding:14px 16px 8px;margin:6px 0 14px}
+  .exp{font-size:.96rem;margin:0 0 10px}
+  .contrast{display:flex;gap:12px;align-items:flex-start;font-size:.9rem;background:color-mix(in srgb,var(--dna) 7%,transparent);border:1px solid color-mix(in srgb,var(--dna) 22%,transparent);border-radius:10px;padding:11px 14px}
+  .contrast .h{font-weight:700;color:var(--dna);white-space:nowrap}
+  .eg{font-family:var(--mono);font-size:.82rem;color:var(--mut);margin-top:10px}
+  .eg b{color:var(--ink)}
+  .lg{font-size:.8rem;color:var(--mut);display:flex;gap:16px;flex-wrap:wrap;margin-top:4px}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+  .bottom{border-left:4px solid var(--rna);margin-top:24px}
+  .bottom p{margin:0 0 10px}.bottom p:last-child{margin:0}
+  .k2{color:var(--ink);font-weight:650}
+  footer{margin-top:26px;font-size:.79rem;color:var(--mut);border-top:1px solid var(--line);padding-top:14px;line-height:1.7}
+  footer code{font-family:var(--mono);font-size:.9em}
+  text{font-family:ui-sans-serif,system-ui,sans-serif}
+</style>
+<div class="wrap">
+  <p class="eyebrow">Rustle × Soto · what "RNA misses a member" means</p>
+  <h1>The genome has all 362 members. RNA recovers 313 — here's <em>why</em> it can't see the other 49</h1>
+  <p class="lede">Every missed member is a real gene copy in the genome (DNA finds all 362). RNA misses it for one
+  of a few concrete, mechanical reasons — shown here at the level of the actual reads. It is never that DNA lacks
+  the copy; it is what <b>transcription and splicing</b> do to the signal.</p>
+  <div class="overview">
+    <span class="ob"><b>22</b> not expressed</span>
+    <span class="ob"><b>8</b> mis-chain</span>
+    <span class="ob"><b>7</b> K=0 collapse</span>
+    <span class="ob"><b>6</b> genuine-miss</span>
+    <span class="ob"><b>5</b> seeding-gap</span>
+    <span class="ob"><b>1</b> thin</span>
+    <span class="ob" style="border-color:var(--rna)"><b>49</b> total RNA misses</span>
+  </div>
+
+  <!-- NOT EXPRESSED -->
+  <div class="card">
+    <h2>Not expressed <span class="tag ne">22 members</span></h2>
+    <p class="sub">The copy makes no RNA. You cannot sequence a transcript that was never made.</p>
+    <div class="figwrap">
+      <svg viewBox="0 0 560 132" role="img" aria-label="Two expressed copies with reads, one silent copy with none">
+        <!-- reads over copies 1 and 3 -->
+        <g fill="var(--rna)">
+          <rect x="48" y="26" width="100" height="7" rx="3"/><rect x="60" y="37" width="96" height="7" rx="3"/><rect x="52" y="48" width="90" height="7" rx="3"/>
+          <rect x="408" y="26" width="100" height="7" rx="3"/><rect x="420" y="37" width="92" height="7" rx="3"/><rect x="412" y="48" width="98" height="7" rx="3"/>
+        </g>
+        <!-- copies -->
+        <g>
+          <rect x="40" y="72" width="130" height="36" rx="7" fill="var(--copy)" stroke="var(--copyln)"/>
+          <rect x="215" y="72" width="130" height="36" rx="7" fill="var(--silent)" stroke="var(--copyln)" stroke-dasharray="4 3"/>
+          <rect x="390" y="72" width="130" height="36" rx="7" fill="var(--copy)" stroke="var(--copyln)"/>
+        </g>
+        <!-- exon ticks -->
+        <g fill="var(--exon)">
+          <rect x="52" y="80" width="12" height="20"/><rect x="90" y="80" width="12" height="20"/><rect x="132" y="80" width="12" height="20"/>
+          <rect x="402" y="80" width="12" height="20"/><rect x="440" y="80" width="12" height="20"/><rect x="482" y="80" width="12" height="20"/>
+        </g>
+        <text x="280" y="94" text-anchor="middle" font-size="13" font-weight="700" fill="var(--mut)">SILENT</text>
+        <text x="280" y="40" text-anchor="middle" font-size="12" fill="var(--warn)">✕ no reads</text>
+        <text x="105" y="124" text-anchor="middle" font-size="11" fill="var(--mut)">expressed copy</text>
+        <text x="280" y="124" text-anchor="middle" font-size="11" fill="var(--mut)">member RNA misses</text>
+        <text x="455" y="124" text-anchor="middle" font-size="11" fill="var(--mut)">expressed copy</text>
+      </svg>
+    </div>
+    <p class="exp">Many duplicated copies are <b>silent pseudogenes or fixed-but-untranscribed genes</b>. They sit
+    in the genome intact, but produce no transcript — so no read ever lands on them. This is the single biggest
+    reason (22 of 49): not a detection failure, just an absence of RNA.</p>
+    <div class="contrast"><span class="h">DNA sees it →</span><span>The genomic copy is present whether or not it
+    is transcribed, so DNA recovers it. Expression is exactly the axis RNA adds — and loses here.</span></div>
+    <p class="eg">e.g. <b>SPAG11A</b>, <b>AC097527.1</b>, <b>AC133548.1</b>, <b>DEFB104B</b> …</p>
+  </div>
+
+  <!-- MIS-CHAIN (hero) -->
+  <div class="card hero">
+    <h2>Mis-chaining <span class="tag mc">8 members</span></h2>
+    <p class="sub">The aligner stitches one read's exons across <em>different</em> copies — a chimera belonging to none.</p>
+    <div class="figwrap">
+      <svg viewBox="0 0 640 210" role="img" aria-label="A read whose exons are chained across three separate NCF1 copies via giant spurious introns">
+        <!-- genome axis -->
+        <line x1="20" y1="150" x2="620" y2="150" stroke="var(--line)" stroke-width="2"/>
+        <!-- 3 copies far apart -->
+        <g>
+          <rect x="40" y="134" width="96" height="32" rx="6" fill="var(--copy)" stroke="var(--copyln)"/>
+          <rect x="288" y="134" width="96" height="32" rx="6" fill="var(--copy)" stroke="var(--copyln)"/>
+          <rect x="500" y="134" width="96" height="32" rx="6" fill="var(--copy)" stroke="var(--copyln)"/>
+        </g>
+        <g fill="var(--exon)">
+          <rect x="50" y="141" width="9" height="18"/><rect x="78" y="141" width="9" height="18"/><rect x="108" y="141" width="9" height="18"/>
+          <rect x="298" y="141" width="9" height="18"/><rect x="326" y="141" width="9" height="18"/><rect x="356" y="141" width="9" height="18"/>
+          <rect x="510" y="141" width="9" height="18"/><rect x="538" y="141" width="9" height="18"/><rect x="568" y="141" width="9" height="18"/>
+        </g>
+        <text x="88" y="184" text-anchor="middle" font-size="11" fill="var(--mut)">NCF1B · 74.42 Mb</text>
+        <text x="336" y="184" text-anchor="middle" font-size="11" fill="var(--mut)">NCF1 · 75.98 Mb</text>
+        <text x="548" y="184" text-anchor="middle" font-size="11" fill="var(--mut)">NCF1C · 76.36 Mb</text>
+        <text x="20" y="204" font-size="10.5" fill="var(--mut)">3 near-identical (~99.4%) copies of a ~15 kb gene, spread over ~2 Mb of chr7</text>
+        <!-- ONE read chained across all three copies -->
+        <g stroke="var(--warn)" fill="none">
+          <!-- read exon segments (solid) sitting on one exon of each copy -->
+          <line x1="78" y1="70" x2="87" y2="70" stroke="var(--rna)" stroke-width="7" stroke-linecap="round"/>
+          <line x1="326" y1="70" x2="335" y2="70" stroke="var(--rna)" stroke-width="7" stroke-linecap="round"/>
+          <line x1="538" y1="70" x2="547" y2="70" stroke="var(--rna)" stroke-width="7" stroke-linecap="round"/>
+          <!-- spurious "introns" arcing between copies -->
+          <path d="M87,70 C160,20 254,20 326,70" stroke-width="2" stroke-dasharray="5 4"/>
+          <path d="M335,70 C420,26 462,26 538,70" stroke-width="2" stroke-dasharray="5 4"/>
+        </g>
+        <!-- connectors read-exon -> copy exon -->
+        <g stroke="var(--copyln)" stroke-width="1" stroke-dasharray="2 3">
+          <line x1="82" y1="74" x2="82" y2="141"/><line x1="330" y1="74" x2="330" y2="141"/><line x1="542" y1="74" x2="542" y2="141"/>
+        </g>
+        <text x="206" y="34" text-anchor="middle" font-size="11" font-weight="700" fill="var(--warn)">≈1.5 Mb "intron"</text>
+        <text x="436" y="40" text-anchor="middle" font-size="11" font-weight="700" fill="var(--warn)">≈380 kb "intron"</text>
+        <text x="20" y="60" font-size="12" font-weight="700" fill="var(--rna)">one IsoSeq read →</text>
+      </svg>
+    </div>
+    <p class="exp">Because the copies are ~99% identical over their exons, minimap2 (in splice mode) chains a single
+    read's exons onto <b>whichever copy scores marginally best</b> — exon 1 on NCF1B, exon 2 on NCF1, exon 3 on
+    NCF1C — treating the huge gaps between copies as <b>"introns"</b>. But NCF1's real introns are &lt; 5 kb; these
+    "introns" are <b>234–387 kb</b> — impossible. The read becomes a <b>chimera across three copies</b>, so no
+    single copy assembles a clean transcript, and the whole family collapses to nothing.</p>
+    <div class="contrast"><span class="h">DNA sees it →</span><span>A DNA read is <b>contiguous genomic sequence</b>
+    — there are no "introns" to stitch across copies, and it spans the divergent intron/flank sequence that pins it
+    to one copy. Mis-chaining is a splice-alignment artifact that <b>cannot arise for DNA</b>.</span></div>
+    <p class="eg">e.g. <b>NCF1 / NCF1B / NCF1C</b>, <b>BOLA2B</b>, <b>TEKT4P2</b>, <b>AC142384.1</b> …</p>
+  </div>
+
+  <!-- K=0 COLLAPSE -->
+  <div class="card">
+    <h2>K = 0 collapse <span class="tag k0">7 members</span></h2>
+    <p class="sub">The copies are <em>identical</em> over the exons RNA reads — a read fits both equally, so they merge.</p>
+    <div class="figwrap">
+      <svg viewBox="0 0 560 150" role="img" aria-label="A read mapping equally to two exon-identical copies at MAPQ 0">
+        <!-- read -->
+        <rect x="238" y="24" width="84" height="8" rx="4" fill="var(--rna)"/>
+        <text x="280" y="18" text-anchor="middle" font-size="11" fill="var(--mut)">one read</text>
+        <!-- ambiguous connectors -->
+        <g stroke="var(--rna)" stroke-width="1.6" stroke-dasharray="4 4" opacity=".7">
+          <path d="M244,32 C170,60 140,72 128,92" fill="none"/>
+          <path d="M316,32 C390,60 420,72 432,92" fill="none"/>
+        </g>
+        <text x="280" y="66" text-anchor="middle" font-size="12" font-weight="700" fill="var(--warn)">MAPQ 0 — fits both equally</text>
+        <!-- two identical copies -->
+        <g>
+          <rect x="60" y="92" width="140" height="34" rx="7" fill="var(--copy)" stroke="var(--copyln)"/>
+          <rect x="360" y="92" width="140" height="34" rx="7" fill="var(--copy)" stroke="var(--copyln)"/>
+        </g>
+        <g fill="var(--exon)">
+          <rect x="74" y="100" width="16" height="18"/><rect x="112" y="100" width="16" height="18"/><rect x="152" y="100" width="16" height="18"/>
+          <rect x="374" y="100" width="16" height="18"/><rect x="412" y="100" width="16" height="18"/><rect x="452" y="100" width="16" height="18"/>
+        </g>
+        <text x="280" y="113" text-anchor="middle" font-size="15" font-weight="800" fill="var(--mut)">=</text>
+        <text x="130" y="144" text-anchor="middle" font-size="11" fill="var(--mut)">copy A</text>
+        <text x="430" y="144" text-anchor="middle" font-size="11" fill="var(--mut)">copy B — identical exons</text>
+      </svg>
+    </div>
+    <p class="exp">The two copies differ nowhere in the sequence a spliced read covers — there is <b>no variant</b> to
+    say which copy a read came from. Every read is a tie (MAPQ 0), so the copies <b>collapse into one</b>. This is a
+    true identifiability limit, not a bug: the information isn't in the RNA.</p>
+    <div class="contrast"><span class="h">DNA sees it →</span><span>The copies differ in their <b>introns</b>, which
+    RNA splices out. For NCF1 the copies differ at ~<b>2 exonic positions but ~75 genomic positions</b> — a DNA read
+    carries dozens of distinguishing variants; a spliced read carries almost none.</span></div>
+    <p class="eg">e.g. <b>ANAPC1P1</b>, <b>CASTOR2</b>, <b>TRIM64</b>, <b>H3P4</b> …</p>
+  </div>
+
+  <!-- SEEDING GAP -->
+  <div class="card">
+    <h2>Seeding gap <span class="tag sg">5 members</span></h2>
+    <p class="sub">Expressed, but too few reads chain locally to build a consensus — a coverage limit, not a fundamental one.</p>
+    <div class="figwrap">
+      <svg viewBox="0 0 560 122" role="img" aria-label="A copy with only one read, below the threshold to seed a consensus">
+        <line x1="40" y1="40" x2="520" y2="40" stroke="var(--warn)" stroke-width="1.4" stroke-dasharray="6 4"/>
+        <text x="524" y="44" font-size="10.5" fill="var(--warn)" text-anchor="end" dy="-6">need ≥ 3 reads to seed →</text>
+        <rect x="210" y="24" width="120" height="7" rx="3" fill="var(--rna)"/>
+        <text x="270" y="18" text-anchor="middle" font-size="11" fill="var(--mut)">only 1 read</text>
+        <rect x="200" y="70" width="150" height="34" rx="7" fill="var(--copy)" stroke="var(--copyln)"/>
+        <g fill="var(--exon)"><rect x="214" y="78" width="16" height="18"/><rect x="256" y="78" width="16" height="18"/><rect x="300" y="78" width="16" height="18"/></g>
+        <text x="275" y="120" text-anchor="middle" font-size="11" fill="var(--mut)">copy — real, but under-covered</text>
+      </svg>
+    </div>
+    <p class="exp">The copy <em>is</em> transcribed, but only one or two reads land on it — below the floor needed to
+    assemble a reliable consensus. Resampling that copy's own reads to full depth recovers it (we verified this with
+    a coverage "top-up"), so it's a depth problem, not an identifiability wall.</p>
+    <div class="contrast"><span class="h">DNA sees it →</span><span>DNA coverage is even across the genome regardless
+    of expression level, so a lowly-expressed copy is fully represented.</span></div>
+    <p class="eg">e.g. <b>ANKRD36B</b>, <b>DEFB108C / DEFB108D</b>, <b>AC008443.6</b> …  <span style="color:var(--mut)">(+ 6 genuine-miss, 1 thin single-exon)</span></p>
+  </div>
+
+  <div class="card bottom">
+    <h2>Why DNA recovers all of them</h2>
+    <p>Every one of these is a <span class="k2">signal problem, not a genome problem</span>. Not-expressed = no RNA
+    made. Mis-chain = splicing lets the aligner stitch a read across copies. K=0 = splicing removes the very sequence
+    that separates the copies. Seeding-gap = expression is too low. In every case the copy is intact in the genome,
+    which is why the DNA method recovers <span class="k2">361/362</span>.</p>
+    <p>The through-line: <span class="k2">RNA answers "is it expressed and resolvable?", DNA answers "does it exist?"</span>
+    Splicing — the thing that makes RNA informative about isoforms — is also what discards the intronic and flanking
+    sequence needed to tell near-identical copies apart. That trade is the whole story of the 49 misses.</p>
+  </div>
+
+  <footer>
+    <b>Sources.</b> Bucket counts and example genes from <code>bench/soto/member_recovery_all.tsv</code> (per-member,
+    all 362). Mis-chain intron sizes (234–387 kb) and the NCF1 exonic-vs-genomic PSV counts (~2 vs ~75) were measured
+    directly from the human A119b Iso-Seq alignments earlier in this analysis. Schematics are illustrative,
+    not to scale.
+  </footer>
+</div>
