@@ -2745,7 +2745,11 @@ pub fn refine_families_exon_sum(
         let seqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, core_genome)).collect();
         // base detector: asm20 on the configured sequence (the validated, high-precision recent core).
         let mut edge_set: BTreeSet<(usize, usize)> =
-            nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)?
+            {
+                let seed = primary_seed_args();
+                let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
+                nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, params)?
+            }
                 .into_iter()
                 .collect();
         // The additive tiers only UNION more edges. If the asm20 exon-sum core already connects every copy into a
@@ -2762,7 +2766,9 @@ pub fn refine_families_exon_sum(
             if !params.include_introns {
                 if let Some(g) = genome {
                     let gseqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, Some(g))).collect();
-                    for e in nucleotide_edges(&gseqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)? {
+                    let seed = primary_seed_args();
+                    let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
+                    for e in nucleotide_edges(&gseqs, &seed_ref, params.min_identity, params.min_coverage, params)? {
                         edge_set.insert(e);
                     }
                 }
@@ -2848,6 +2854,24 @@ pub(crate) fn extend_exon_sum_to_tes(copy: &DenovoTranscript, g: &GenomeIndex) -
     let mut out = copy.seq.clone();
     out.extend_from_slice(&ext); // exon-sum is in transcription orientation, so the 3' extension appends
     Some(out)
+}
+
+/// Minimap2 seeding arguments for the PRIMARY homology tier.
+///
+/// Default `-x asm20`, which presets k=19/w=10. That seeding is the binding constraint far more often than
+/// the identity threshold is: measured all-vs-all on curated gene families
+/// (`bench/soto/preset_sensitivity.py`), asm20 finds 8 of 66 SIGLEC member pairs where `-k 9 -w 3` finds 60,
+/// 64/153 H2BC pairs vs 153, 18/36 TUBA pairs vs 36. Critically the pairs asm20 misses are not marginal —
+/// most are ALREADY above the 0.80 identity floor (SIGLEC 8 -> 31 pairs at >= 0.80, H2BC 64 -> 141). Short
+/// exon-sums suffer worst, since k=19/w=10 leaves too few anchors, which is why family recovery correlated
+/// with sequence length in `merge_quality_analysis.md` §19b.
+///
+/// `RUSTLE_MM2_SEED` overrides it, e.g. `RUSTLE_MM2_SEED="-k 9 -w 3"`.
+pub(crate) fn primary_seed_args() -> Vec<String> {
+    match std::env::var("RUSTLE_MM2_SEED") {
+        Ok(v) if !v.trim().is_empty() => v.split_whitespace().map(str::to_string).collect(),
+        _ => vec!["-x".to_string(), "asm20".to_string()],
+    }
 }
 
 /// All-vs-all minimap2 alignment of a family's per-copy sequences (`seqs[i]`) with the given preset/params
@@ -2978,7 +3002,11 @@ pub(crate) fn homology_edges_all_reps(
     }
     let seqs: Vec<Vec<u8>> = reps.iter().map(|r| refine_copy_seq(r, span_genome.as_ref())).collect();
     let mut set: BTreeSet<(usize, usize)> =
-        nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)?
+        {
+            let seed = primary_seed_args();
+            let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
+            nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, params)?
+        }
             .into_iter().collect();
     if params.nucleotide_sensitive {
         for e in nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, params.min_coverage, params)? {
@@ -3268,6 +3296,21 @@ mod tests {
     use super::super::copy_split::AlignedRead;
     use super::super::family_detect::collapse_loci;
     use super::*;
+
+    #[test]
+    fn primary_seed_args_defaults_to_asm20_and_is_overridable() {
+        // Default must stay asm20 so no existing catalog moves.
+        std::env::remove_var("RUSTLE_MM2_SEED");
+        assert_eq!(primary_seed_args(), vec!["-x".to_string(), "asm20".to_string()]);
+        // An override is split on whitespace into separate argv entries -- passing "-k 9 -w 3" as ONE
+        // argument would make minimap2 reject it.
+        std::env::set_var("RUSTLE_MM2_SEED", "-k 9 -w 3");
+        assert_eq!(primary_seed_args(), vec!["-k", "9", "-w", "3"]);
+        // Blank / whitespace-only falls back rather than passing an empty argv.
+        std::env::set_var("RUSTLE_MM2_SEED", "   ");
+        assert_eq!(primary_seed_args(), vec!["-x".to_string(), "asm20".to_string()]);
+        std::env::remove_var("RUSTLE_MM2_SEED");
+    }
 
     #[test]
     fn tes_extension_appends_only_outward_and_never_trims() {
