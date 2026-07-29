@@ -82,6 +82,18 @@ pub struct DenovoTranscript {
     /// 0 (the safe/collapsing default) elsewhere — synthetic/test copies, and admitted/rescued copies built
     /// after the merge decision has already run.
     pub distinguishing_uniq: usize,
+
+    /// Observed 3' terminus (TES) of this copy, when the reads' 3'-end distribution is SHARP; `None` when it
+    /// is broad (differential coverage rather than a real polyadenylation site) or when no read evidence was
+    /// available. Strand-aware: the genomic coordinate of the transcript's LAST base, so `>= end` on `+` and
+    /// `<= start` on `-`.
+    ///
+    /// Exists because the 3' end carries ~5x more copy-discriminating signal than the 5' end
+    /// (`bench/soto/bam_tie_signals.md` §9: 14/42 sibling pairs have distinct TES vs 3/40 for TSS, median
+    /// shift 4.9 kb, up to 58 kb for truncated paralogs like NOTCH2 vs NOTCH2NLB). `refine_copy_seq` extends
+    /// the terminal exon of the exon-sum to here, which is exactly the sequence that distinguishes a
+    /// truncated duplicate from its parent and that the quantile boundary discards.
+    pub tes: Option<u64>,
 }
 
 impl Default for DenovoTranscript {
@@ -98,6 +110,7 @@ impl Default for DenovoTranscript {
             introns: Vec::new(),
             seq: Vec::new(),
             distinguishing_uniq: 0,
+            tes: None,
         }
     }
 }

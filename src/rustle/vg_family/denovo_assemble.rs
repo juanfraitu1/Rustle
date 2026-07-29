@@ -69,6 +69,38 @@ pub fn pass1_skeletons(reads: &[PrimaryRead], min_reads: u32) -> Vec<Skeleton> {
 /// outermost `k-1` outlier reads at each end. For FLNC IsoSeq (full-length reads), the true ends are reached
 /// by many reads, so a small `k` trims only runaways and leaves real boundaries intact. If a group has fewer
 /// than `k` reads the boundary falls back to the outermost available read.
+/// Observed 3' terminus (TES) from a copy's read 3'-ends, or `None` when the distribution is BROAD.
+///
+/// Unlike `snap_boundary` (which relocates an existing boundary), this reports the OUTERMOST position of the
+/// dominant 3'-end peak, because the terminal exon should be extended to cover the whole peak, not to its
+/// middle. `is_forward` selects the direction: on a `+`-strand transcript the 3' terminus is the maximum
+/// coordinate, on `-` the minimum.
+///
+/// The sharpness gate is the one validated in `bench/soto/bam_tie_signals.md` §8 (>= `min_frac` of ends in a
+/// `window`-wide bin, default 30% in 400 bp): a broad 3'-end scatter is differential coverage, not a
+/// polyadenylation site, and extending to it would just absorb whatever coverage happened to reach furthest.
+/// IsoSeq reads are polyA-anchored, so where the peak IS sharp it is the best-observed boundary in the data.
+pub fn sharp_tes(ends: &[u64], window: u64, min_frac: f64, is_forward: bool) -> Option<u64> {
+    if ends.len() < 10 {
+        return None; // too few reads to tell a peak from noise
+    }
+    let mut v = ends.to_vec();
+    v.sort_unstable();
+    let (mut best_n, mut best_lo) = (0usize, 0usize);
+    for i in 0..v.len() {
+        let hi = v[i].saturating_add(window);
+        let j = v.partition_point(|&x| x <= hi);
+        if j - i > best_n {
+            best_n = j - i;
+            best_lo = i;
+        }
+    }
+    if (best_n as f64) / (v.len() as f64) < min_frac {
+        return None; // broad scatter -> no TES call
+    }
+    Some(if is_forward { v[best_lo + best_n - 1] } else { v[best_lo] })
+}
+
 /// Sharp-boundary refinement (opt-in; `RUSTLE_TSS_SNAP`).
 ///
 /// The default transcript boundary is the k-th most extreme read start/end (`min_terminal_support`) — a
@@ -1119,6 +1151,24 @@ mod locus_support_tests {
     /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
     /// 2, so every chain died at `GATE_MIN_READS = 3`. They all share the terminal junction
     /// (42939630, 42943604), so the junction-incidence graph pools them into one locus with support 12.
+    #[test]
+    fn sharp_tes_reports_the_peak_edge_and_abstains_on_broad_scatter() {
+        // SHARP: 18 ends packed in 40bp plus 2 stragglers far beyond. The TES is the peak's OUTER edge --
+        // extending only to the peak's middle would truncate half the reads that define the site.
+        let mut sharp: Vec<u64> = (0..18).map(|i| 5_000 + i * 2).collect();
+        sharp.push(90_000);
+        sharp.push(95_000);
+        assert_eq!(sharp_tes(&sharp, 400, 0.30, true), Some(5_034), "forward: outermost of the peak");
+        assert_eq!(sharp_tes(&sharp, 400, 0.30, false), Some(5_000), "reverse: innermost of the peak");
+
+        // BROAD: uniform scatter is differential coverage, not a polyA site -> abstain.
+        let broad: Vec<u64> = (0..40).map(|i| i * 5_000).collect();
+        assert_eq!(sharp_tes(&broad, 400, 0.30, true), None);
+
+        // too few reads -> abstain rather than guess
+        assert_eq!(sharp_tes(&[10, 11, 12], 400, 0.30, true), None);
+    }
+
     #[test]
     fn snap_wiring_applies_the_right_end_to_the_right_boundary() {
         // Covers the WIRING, not just snap_boundary: builds one intron-chain group whose read STARTS are

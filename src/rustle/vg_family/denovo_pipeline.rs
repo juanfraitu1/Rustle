@@ -2267,6 +2267,9 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
 
     // --- GLOBAL placement accumulation: a read's placements (across chroms) keyed by name, GLOBAL idx ---
     let mut name_map: std::collections::HashMap<String, Vec<Placement>> = std::collections::HashMap::new();
+    // Per-rep read 3' ends, collected only when the TES extension is enabled (O(reads) extra memory).
+    let tes_wanted = matches!(std::env::var("RUSTLE_TES_EXTEND"), Ok(v) if v != "0" && !v.is_empty());
+    let mut tes_ends: std::collections::HashMap<usize, Vec<u64>> = std::collections::HashMap::new();
     for (chrom, glob) in &by_chrom {
         let clen = genome.chrom_len(chrom);
         let (_primary, bam_reads) = match reads_in_region(bam_path, chrom, 0, clen, threads) {
@@ -2285,6 +2288,13 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
                 .filter(|(_, rep)| br.read.ref_start < rep.end && read_end > rep.start)
                 .max_by_key(|(_, rep)| rep.end.min(read_end) - rep.start.max(br.read.ref_start));
             if let Some((gi, _)) = best {
+                // 3'-end evidence for the TES extension (see `extend_exon_sum_to_tes`). Strand-aware, taken
+                // from the REP's transcription strand rather than the read flag, since a read's own strand
+                // reflects library orientation and the rep is what the exon-sum is built in.
+                if tes_wanted {
+                    let three = if reps[*gi].strand == '-' { br.read.ref_start } else { read_end };
+                    tes_ends.entry(*gi).or_insert_with(Vec::new).push(three);
+                }
                 let aln_len = br.read.cigar.iter()
                     .filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32;
                 name_map.entry(br.name.clone()).or_default().push(Placement {
@@ -2306,6 +2316,19 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     //
     // Counted over the UNFILTERED name_map: the `v.len() >= 2` filter below keeps only multi-placement
     // (ambiguous) reads, which is precisely the complement of the unique mappers that are the evidence here.
+    if tes_wanted {
+        let win: u64 = std::env::var("RUSTLE_TES_WINDOW").ok().and_then(|v| v.parse().ok()).unwrap_or(400);
+        let frac: f64 = std::env::var("RUSTLE_TES_FRAC").ok().and_then(|v| v.parse().ok()).unwrap_or(0.30);
+        let mut n_set = 0usize;
+        for (gi, ends) in &tes_ends {
+            let fwd = reps[*gi].strand != '-';
+            if let Some(t) = crate::vg_family::denovo_assemble::sharp_tes(ends, win, frac, fwd) {
+                reps[*gi].tes = Some(t);
+                n_set += 1;
+            }
+        }
+        eprintln!("[gw-catalog-xchrom] TES extension: sharp 3' terminus on {n_set}/{} reps", reps.len());
+    }
     let all_placements: Vec<ReadPlacements> = name_map.values().cloned().collect();
     let uniq_counts = locus_unique_mapper_counts(&all_placements, reps.len());
     drop(all_placements);
@@ -2774,8 +2797,49 @@ fn refine_copy_seq(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec
             }
             s
         }
-        None => copy.seq.clone(),
+        None => extend_exon_sum_to_tes(copy, genome),
     }
+}
+
+/// Append the terminal-exon extension (copy `end`/`start` → observed TES) to the exon-sum. Opt-in via
+/// `RUSTLE_TES_EXTEND`; without it this returns the exon-sum unchanged, so every existing catalog is
+/// byte-identical.
+///
+/// WHY the 3' end specifically. The exon-sum ends at the k-th-read boundary quantile, which is deliberately
+/// conservative. For a TRUNCATED duplicate that is exactly the wrong place to stop: NOTCH2NLB's transcript
+/// terminates ~58 kb from NOTCH2's, ANAPC1P2's ~59 kb from ANAPC1's, and that difference is the clearest
+/// signal separating the parent from the copy. Measured over the Soto benchmark, 14/42 sibling pairs have
+/// genuinely distinct 3' termini against only 3/40 for 5' termini, at a median 4.9 kb
+/// (`bench/soto/bam_tie_signals.md` §9), so this adds real discriminating sequence rather than noise.
+///
+/// Fires only where `copy.tes` is set, i.e. where the 3'-end distribution was SHARP (`sharp_tes`); a broad
+/// distribution is differential coverage and extending to it would just absorb the furthest stray read.
+fn extend_exon_sum_to_tes(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec<u8> {
+    let enabled = matches!(std::env::var("RUSTLE_TES_EXTEND"), Ok(v) if v != "0" && !v.is_empty());
+    let (Some(tes), Some(g), true) = (copy.tes, genome, enabled) else {
+        return copy.seq.clone();
+    };
+    // Extension window in genomic coordinates, in the 3' direction for this strand. An inward or absent TES
+    // yields an empty window and leaves the exon-sum untouched — this may only ever ADD sequence.
+    let (lo, hi) = if copy.strand == '-' {
+        if tes >= copy.start { return copy.seq.clone(); }
+        (tes, copy.start)
+    } else {
+        if tes <= copy.end { return copy.seq.clone(); }
+        (copy.end, tes)
+    };
+    let Some(mut ext) = g.fetch_sequence(&copy.chrom, lo, hi) else {
+        return copy.seq.clone();
+    };
+    if ext.is_empty() {
+        return copy.seq.clone();
+    }
+    if copy.strand == '-' {
+        ext = crate::vg_family::seq_utils::reverse_complement(&ext);
+    }
+    let mut out = copy.seq.clone();
+    out.extend_from_slice(&ext); // exon-sum is in transcription orientation, so the 3' extension appends
+    out
 }
 
 /// All-vs-all minimap2 alignment of a family's per-copy sequences (`seqs[i]`) with the given preset/params
@@ -3198,6 +3262,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn tes_extension_appends_only_outward_and_only_when_enabled() {
+        use crate::vg_family::family_detect::DenovoTranscript;
+        // Exon-sum "ACGT" for a copy at chr1:100-104; a sharp TES at 110 should append the 6 genomic bases
+        // 104..110 in transcription orientation. With the env knob OFF nothing may change -- that is what
+        // keeps every existing catalog byte-identical.
+        let base = DenovoTranscript {
+            chrom: "c1".into(), start: 100, end: 104, strand: '+',
+            seq: b"ACGT".to_vec(), ..Default::default()
+        };
+        // no genome -> unchanged regardless of tes
+        let with_tes = DenovoTranscript { tes: Some(110), ..base.clone() };
+        assert_eq!(refine_copy_seq(&with_tes, None), b"ACGT".to_vec());
+
+        // An INWARD tes must never shorten: extension may only ADD sequence.
+        let inward = DenovoTranscript { tes: Some(102), ..base.clone() };
+        assert_eq!(extend_exon_sum_to_tes(&inward, None), b"ACGT".to_vec());
+
+        // tes == end is a no-op, not a zero-length fetch.
+        let flush = DenovoTranscript { tes: Some(104), ..base.clone() };
+        assert_eq!(extend_exon_sum_to_tes(&flush, None), b"ACGT".to_vec());
+
+        // A '-' strand copy extends from `start` DOWNWARD; a tes above start is inward -> no-op.
+        let rev = DenovoTranscript { strand: '-', tes: Some(200), ..base.clone() };
+        assert_eq!(extend_exon_sum_to_tes(&rev, None), b"ACGT".to_vec());
+    }
+
+    #[test]
     fn denovo_config_tied_seed_defaults_off() {
         assert!(!DenovoConfig::default().tied_seed);
     }
@@ -3252,7 +3343,7 @@ mod tests {
         let tail: Vec<u8> = b"C".repeat(400);            // stand-in fragment B
         let mk = |tid: &str, chrom: &str, start: u64, end: u64, seq: Vec<u8>| DenovoTranscript {
             tid: tid.into(), chrom: chrom.into(), start, end,
-            n_reads: 5, strand: '+', introns: vec![], seq, distinguishing_uniq: 0,
+            n_reads: 5, strand: '+', introns: vec![], seq, distinguishing_uniq: 0, tes: None,
         };
         let reps = vec![
             mk("a", "NCF1", 0, 15440, head),
@@ -3274,7 +3365,7 @@ mod tests {
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
         let mk = |tid: &str, chrom: &str, start: u64, seq: &[u8]| DenovoTranscript {
             tid: tid.into(), chrom: chrom.into(), start, end: start + seq.len() as u64,
-            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(), distinguishing_uniq: 0,
+            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(), distinguishing_uniq: 0, tes: None,
         };
         // a 400 bp "gene" duplicated at two loci, plus an unrelated 400 bp sequence.
         let a: Vec<u8> = b"ACGT".iter().cycle().take(400).copied().collect();

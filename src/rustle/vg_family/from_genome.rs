@@ -72,7 +72,7 @@ pub fn genome_reps(
             reps.push(DenovoTranscript {
                 tid: format!("DN_{c}_{s}_1"),
                 chrom: c.clone(), start: *s, end: *e, n_reads: 1, strand: '+',
-                introns: vec![], seq, distinguishing_uniq: 0,
+                introns: vec![], seq, distinguishing_uniq: 0, tes: None,
             });
             window_spans.push((c.clone(), *s, *e));
         }
@@ -94,7 +94,7 @@ pub fn genome_reps(
             reps.push(DenovoTranscript {
                 tid: format!("DN_{chrom}_{start}_1"),
                 chrom, start, end, n_reads: 1, strand: '+',
-                introns: vec![], seq, distinguishing_uniq: 0,
+                introns: vec![], seq, distinguishing_uniq: 0, tes: None,
             });
         }
     }
