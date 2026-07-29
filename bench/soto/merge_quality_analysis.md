@@ -859,3 +859,49 @@ An independent audit upheld these, and they qualify figures used elsewhere in th
 4. **definitive vs per-chrom is confounded by binary date**: definitive was built 07-23, the per-chrom units
    07-28, with source changes in between. The 69% -> 71% delta mixes the recipe fix with 5 days of code
    changes and should not be attributed solely to the recipe.
+
+## 18. Applying the RNA lessons to the DNA side (2026-07-28)
+
+### What transfers, and what does not
+
+| lesson from the RNA work | applies to DNA? |
+|---|---|
+| scorable denominator is 76, not 83 (7 single-member families) | **yes** — same benchmark |
+| strict grouping: >= 2 members in ONE predicted family, not merely "touched" | **yes** |
+| **purity guard** — do not credit a prediction that also absorbs OTHER Soto families | **yes, and it is decisive** |
+| isoform requirement (>= 1 spliced copy) | **no** — no splicing in DNA |
+| exon-coverage / truncation analysis (§12, §14) | **no** — `--from-genome` seeds nodes FROM the Soto windows, so span and coverage are circular by construction (§8) |
+| member-detection recall | **no** — circular for the same reason (~100% by construction) |
+
+The grouping IS fair: which seeded windows the method joins into a family is its own output and was never
+given to it. So family-level partition verdicts are directly comparable between the two modes.
+
+### Like-for-like, both modes, same definitions (denominator 76)
+
+| | RNA (per-chrom corrected) | DNA (`--from-genome`) |
+|---|---:|---:|
+| predicted families absorbing >= 2 Soto families (over-merged) | 21 | 18 |
+| COMPLETE — one predicted family covers all members | 16 (21%) | **66 (87%)** |
+| **COMPLETE — and that family is PURE** | **15 (20%)** | **35 (46%)** |
+| FOUND — >= 2 members in one predicted family | 59 (78%) | **76 (100%)** |
+| **FOUND — and that family is PURE** | **51 (67%)** | **43 (57%)** |
+| (RNA only) FOUND + >= 1 member carries an isoform | 48 (63%) | n/a |
+
+### What this says
+
+**The purity guard is to DNA what the isoform guard is to RNA** — the correction that stops a headline being
+carried by artifacts. It barely touches RNA's COMPLETE (21% -> 20%) but roughly halves DNA's (87% -> 46%),
+and DNA's perfect 100% FOUND becomes 57%. That is the §1/§7 finding — DNA over-merges (homogeneity 74%),
+RNA is purer (91%) — arriving again through an independent route.
+
+The honest two-line summary of the two modes:
+
+> **DNA reconstructs whole families better** (46% complete-and-pure vs RNA's 20%), because it has the
+> intronic and flanking sequence that makes homology edges easy to form. **RNA forms pure families more
+> often** (67% found-and-pure vs DNA's 57%), because splicing discards exactly the duplicon sequence that
+> spuriously bridges unrelated families at the DNA level. Neither is uniformly better, and both are far below
+> their unguarded numbers (DNA 100%/87%, RNA 78%/21%).
+
+⚠ Do not present DNA's 361/362 = 99.7% member recovery beside RNA's member recall as if they measure the same
+thing. DNA's is ~100% by construction (windows seeded from the truth); RNA's is a detection result. The
+family-partition rows above are the only rows where the two modes are genuinely comparable.
