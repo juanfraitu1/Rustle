@@ -439,3 +439,49 @@ truncation from fragmentary assembly (§8), which no boundary rule can fix.
    partial comparison keyed on an unstable column, and is corrected here.)
 2. A doc comment claimed the snap "never shortens"; the replacement, added when that was corrected, claimed
    it "necessarily SHORTENS". Both are wrong — it does both. Source and unit-test comments reconciled.
+
+## 10. `--cross-chrom` chi(H) guard was inert — fix and impact measurement (2026-07-28)
+
+Found while chasing a failing integration test that `cargo test --lib` never runs.
+
+**The bug.** `detect_conflict_catalog_genome_wide_xchrom` never populated `DenovoTranscript::
+distinguishing_uniq` (its `reps` binding was not even `mut`), while the two other read-based catalog paths do
+(`denovo_pipeline.rs:2122`, `:2457`). With the field 0 on every rep, `reads_distinguish(0, 0, ..)` is always
+false, so `distinct_locus_reps` collapsed ANY overlapping same-strand pair **unconditionally**. The
+read-evidence guard added in 9e887b4 — the thing that makes co-located copies merge only when reads genuinely
+cannot tell them apart, i.e. the chi(H) identifiability argument in code — was **permanently inert on the
+`--cross-chrom` path**. It became visible only when 121b7ea made `--refine` default-on.
+
+**Why it went unnoticed for weeks.** Two test defects, one masking the other:
+- `default_cross_chrom_output_is_unchanged` pointed `--out` at its own **tracked golden files**, so every run
+  overwrote the baseline it was meant to compare against and then asserted only `lines().count() > 1`. It
+  could not fail. The committed golden still contained the same-chrom family `GWFAM1` and would have caught
+  the regression on the first real comparison.
+- `cross_chrom_catalog_emits_same_chrom_family` did fail — but it is an integration test, and the routine
+  suite command is `cargo test --lib`, which does not run `tests/`.
+
+**Evidence the fix is right.** With the wiring restored, the committed golden `out_default.*` — which
+predates the regression — is reproduced **byte-for-byte**, and both integration tests pass.
+
+**Impact on the Soto benchmark: NEUTRAL.** Measured on the real cross-chrom pass (`--cross-chrom --refine`,
+the 18 cross-chrom families, 1.9 GB BAM), against the cached pre-fix run:
+
+| | pre-fix | post-fix |
+|---|---|---|
+| xchrom copies | 284 | 285 |
+| xchrom families | 85 | 86 |
+| loci only in one side | 14 old | 15 new |
+| **combined member recall** | **95/362** | **95/362** |
+
+The member score is **identical** — verified by scoring the pre-fix combined catalog with the same script as
+a control, which returns the same 95/362. So the fix is a correctness repair with no measured movement in
+either direction: it does not rescue members, and — contra the concern that restoring the guard would
+inflate copy counts by splitting duplicate transcript models — it adds exactly one copy and one family.
+
+⚠ **Separate pre-existing discrepancy, NOT caused by this fix.** The per-chrom combined catalog
+(`perchrom_catalog.copies.tsv`) scores 95/362 = 26.2% under `soto_cache_score.py`, while
+`definitive.copies.tsv` scores 237/362 = 65.5% and the committed headline is 276/362 = 76.2%. By the score
+script's own validation line ("recall near 76.2% => cache+recipe reproduce the genome-wide result; far off =>
+not comparable") the per-chrom recipe is **not comparable** to the headline. Both numbers predate this
+session's work. The headline figures quoted elsewhere derive from the `definitive` recipe; the per-chrom
+cache should not be used for recall claims until that gap is explained.
