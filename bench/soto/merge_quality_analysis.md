@@ -485,3 +485,63 @@ script's own validation line ("recall near 76.2% => cache+recipe reproduce the g
 not comparable") the per-chrom recipe is **not comparable** to the headline. Both numbers predate this
 session's work. The headline figures quoted elsewhere derive from the `definitive` recipe; the per-chrom
 cache should not be used for recall claims until that gap is explained.
+
+## 11. The per-chrom recipe scored 26.2% against a 76.2% headline — root cause and fix (2026-07-28)
+
+Flagged in §10 as a pre-existing discrepancy; chased down here. Two independent causes, both real.
+
+### Cause 1 (primary): the recipe ran a DIFFERENT ALGORITHM from the headline
+
+The headline `definitive` catalog — 863 copies, 280 families, the 76.2% member figure — is **one
+`--cross-chrom` pass over the whole `soto_regions.bam`**: Louvain community split on a *global* conflict
+graph (`detect_conflict_catalog_genome_wide_xchrom`). `recompute_perchrom.sh` instead ran
+`gw_family_catalog`'s **default** mode on each chromosome — per-chrom connected components emitted as "clean
+families (same-strand, disjoint-loci, >= 2 copies)" (`gw_reps_and_catalog`) — and its header asserted this
+"reproduces the genome-wide within-chrom detection EXACTLY".
+
+That assertion was false, and it is a much more conservative algorithm. Measured per chromosome
+(default -> `--cross-chrom`, with `definitive`'s own per-chromosome breakdown for reference):
+
+| chrom | default | --cross-chrom | definitive |
+|---|---:|---:|---:|
+| chr1 | 45 | 180 | 163 |
+| chr15 | 18 | 132 | 123 |
+| chr9 | 6 | 98 | 97 |
+| chr7 | 19 | 65 | 65 |
+| chr10 | 8 | 29 | 30 |
+
+Per-chrom units now run `--cross-chrom`. Within a single-chromosome BAM that path can only form same-chrom
+families, so the parallel split stays valid; genuinely cross-chrom families keep their separate pass.
+
+**Result: 95/362 = 26.2% -> 257/362 = 71.0%** (1107 copies vs the old 506). For reference `definitive`
+itself scores 237/362 = 65.5% on the same scorer, so the corrected split is not merely comparable — it is
+slightly *ahead* of the single-pass catalog, which is expected: isolating a chromosome removes the global
+graph's opportunity to absorb its loci into cross-chrom communities.
+
+### Cause 2: the 76.2% headline is a 4-LEG UNION; only one leg is being rebuilt
+
+`soto_cache_score.py` unions four detection legs. Only the first is recomputed here; the other three are
+cached artifacts that are **absent from the cache directory entirely**:
+
+```
+leg RNA-split    : 1107 copies      <- the rebuilt catalog
+leg protein-tail : MISSING          soto_gw_prot.copies.tsv
+leg projection   : MISSING          soto_pall.allproj.tsv
+leg expr-collapse: MISSING          soto_ce.expressed_collapsed.tsv
+```
+
+So the residual 71.0% vs 76.2% gap is **not** a recipe defect: it is one leg measured against a four-leg
+union. Any recall number from this cache is an RNA-split-only number and must be labelled as such.
+
+### Cause 3 (found while fixing): the runner reported success for a total failure
+
+`_detect_unit.sh` captured `rc=$?` *after* an `echo`/`wc` pipeline, so a binary that died instantly reported
+`rc=0`; and stale `*.copies.tsv` from the previous run survived the failure, so the combine step re-globbed
+them. A recompute in which **all 21 units failed on a missing FASTA** therefore printed "all units done in
+17s" and reproduced the previous run's numbers exactly. Now: the outputs are removed before each run, the
+binary's rc is captured immediately and propagated, and the hardcoded FASTA path (a manual WSL mount that is
+usually absent) falls back to the Desktop copy and exits 2 if neither exists.
+
+**Standing caution:** a benchmark harness that cannot fail is worse than no harness. All three causes here
+were silent — a false comment, a missing-leg union printed as "MISSING" but not as an error, and a runner
+that swallowed 21 consecutive crashes.
