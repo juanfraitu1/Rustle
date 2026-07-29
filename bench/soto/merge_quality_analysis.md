@@ -1209,3 +1209,45 @@ and no relaxation can or should rescue them: they are families by function, not 
 Fixing the seeding is still worth doing — it is a genuine defect, it is free, and it is likely to matter more
 on short-exon families elsewhere (H2BC/H4C/KRTAP all gained heavily in pairwise alignability) — but it should
 be presented as a correctness fix, not as a recall lever.
+
+### 23b. Careful evaluation of the seeding change — do NOT enable it (2026-07-29)
+
+§23 measured only recall. Sensitive seeding ADDS EDGES, which is precisely the knob §4 identified as trading
+over-merge against splits, so the purity side had to be measured before recommending anything. Both sides,
+same binary for baseline and variant:
+
+**Soto (chr1, chr15 — the two family-richest chromosomes): NO EFFECT, REAL COST.**
+
+| | copies | families | runtime |
+|---|---:|---:|---:|
+| chr1 asm20 | 180 | 54 | 534 s |
+| chr1 `-k 9 -w 3` | 180 | 54 | **805 s (+51%)** |
+| chr15 asm20 | 132 | 36 | 727 s |
+| chr15 `-k 9 -w 3` | 132 | 36 | **814 s (+12%)** |
+
+The `copies.tsv` are **byte-identical** on both chromosomes. The sensitive tier (`-k 11 -w 5` at >= 0.70)
+already runs alongside asm20 and had already contributed every edge the finer seeding would add, so the only
+measurable consequence is 12-51% more wall-clock.
+
+**Gorilla known-family set: +2 members bought by FUSING AN UNRELATED FAMILY.**
+
+| | predicted families | pure (1 truth family) | over-merged (>= 2) |
+|---|---:|---:|---:|
+| asm20 | 17 | 12 | 1 — `GWFAM10` = H2BC + H4C (both histones; defensible) |
+| `-k 9 -w 3` | 14 | 9 | 2 — `GWFAM0` = **H2BC + H4C + PCDHB**, `GWFAM7` = H2BC + H4C |
+
+Protocadherin-beta fused into a histone family is simply wrong, and **the member-recall metric hid it** —
+PCDHB still scored 14/14 under both presets, because recall is partition-blind (§1). The §23 headline of
+"+2 members, +1 family" was therefore measuring the wrong thing: the gain is an over-merge.
+
+### Verdict
+
+`RUSTLE_MM2_SEED` stays shipped, **default asm20, and should not be enabled**. The underlying observation from
+§23 is still true and still worth recording — asm20 genuinely under-seeds at the pairwise level (SIGLEC
+8 -> 60 pairs, TUBA 18 -> 36) — but at pipeline level it buys nothing on Soto, costs up to 51% runtime, and on
+the gene benchmark buys 2 members by merging PCDHB with histones.
+
+This is the §4 tension appearing for the fourth time in this document, now on the seeding axis rather than
+the threshold axis: **anything that adds homology edges trades purity for reach, and the reach was already
+supplied by the sensitive tier.** It is also a reminder that a recall-only evaluation of an edge-adding change
+is not an evaluation — the same mistake §1 warns about, made again in §23 and caught only by re-measuring.
