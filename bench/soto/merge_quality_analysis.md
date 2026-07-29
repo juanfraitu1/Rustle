@@ -591,3 +591,63 @@ junctions, `project_readthrough_filter`).
 **Recommendation: report size agreement stratified.** The spliced number (0.77 median, 66% within 2x) is the
 meaningful one for "do our transcript models have the right size"; the unspliced number measures a read-cluster
 locus against a gene model, which is a category mismatch rather than a pipeline error.
+
+## 13. Empirical rules for merging unspliced clusters — tested against ground truth (2026-07-28)
+
+§12 left the question: can unspliced read-clusters be merged into one locus without reintroducing
+readthrough over-merge? `bench/soto/unspliced_merge_rules.py` tests candidate rules against the Soto members
+(POSITIVE = two unspliced copies inside the SAME member, NEGATIVE = inside DIFFERENT members, same
+chromosome, gap < 300 kb so the decision is non-trivial). 400 positives / 141 negatives.
+
+**A structural constraint first.** `cluster_unspliced` is single-linkage span-overlap clustering, so if any
+read overlapped both clusters they would already BE one cluster. No unspliced read can bridge two clusters —
+that witness is unavailable *by construction*. The evidence must come from reads the unspliced path never
+used: **spliced** reads with aligned blocks in both clusters.
+
+### Headline (always-merge baseline precision = 0.739)
+
+| rule | precision | recall | F1 |
+|---|---:|---:|---:|
+| SPLICED-BRIDGE >= 1 | 0.924 | 0.335 | 0.492 |
+| GAP-COVERAGE >= 3 | 0.734 | 0.958 | 0.831 |
+| GAP <= 50 kb (naive proximity) | 0.938 | 0.605 | 0.736 |
+| **bridge >= 1 OR gap <= 50 kb** | **0.925** | **0.682** | **0.786** |
+
+### The gap-matched control, which is what actually decides this
+
+Positives are pairs INSIDE one member (gap <= member length) while negatives are BETWEEN members, so a raw
+gap rule partly encodes "member length vs inter-member distance" rather than same-locus evidence. Holding
+the gap constant:
+
+| gap bin | n+ / n- | base rate | bridge >= 1 precision | gapcov >= 3 precision |
+|---|---|---:|---:|---:|
+| 0-10 kb | 88 / 3 | 0.967 | 0.938 (**worse than base**) | 0.986 |
+| 10-50 kb | 154 / 13 | 0.922 | 0.967 | 0.922 |
+| **50-150 kb** | 143 / 67 | **0.681** | **0.882** | 0.681 |
+| 150-300 kb | 15 / 58 | 0.205 | 0.333 (n+ = 15, unreliable) | 0.205 |
+
+Three findings, two of them negative:
+
+1. **GAP-COVERAGE carries literally zero information.** Its precision equals the base rate to three decimals
+   in EVERY bin (0.986 / 0.922 / 0.681 / 0.205). In SD regions everything is covered, so "is the intervening
+   region covered?" — the intuitive signal — discriminates nothing. Worth recording precisely because it is
+   the first thing one would reach for.
+2. **The spliced-bridge certificate is real but NARROW.** It only beats the base rate where proximity is
+   weak, the 50-150 kb regime (0.681 -> 0.882), and even there recall is 0.21. Below 10 kb it is *worse*
+   than the base rate (0.938 vs 0.967) — at short range a spliced bridge is as likely to be a readthrough
+   transcript as evidence of one locus.
+3. **The naive distance rule is hard to beat**, but partly by construction: Soto members are compact, so
+   "same member" and "small gap" are nearly the same statement on this benchmark. That is a property of the
+   benchmark, not a general law, and it would fail wherever members are adjacent.
+
+### Recommendation
+
+`bridge >= 1 OR gap <= 50 kb` is the best precision-preserving rule found (0.925 / 0.682), but it still
+over-merges 7.5% of pairs, which is worse than the current behaviour of not merging at all when the goal is
+partition purity. The defensible use of the certificate is **narrow and additive**: extend merging into the
+50-150 kb regime where proximity alone is only 68% precise, and abstain elsewhere — an assign-or-abstain
+shape consistent with the rest of the method, rather than a global threshold.
+
+**Not implemented.** The measurement is the deliverable: it establishes that the intuitive signal (gap
+coverage) is worthless, that the principled certificate buys accuracy only in one band, and that a naive
+distance rule's apparent strength here is partly a benchmark artifact.
