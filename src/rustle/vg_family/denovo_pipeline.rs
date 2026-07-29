@@ -2257,7 +2257,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
         retain_non_mischain(&mut transcripts, sup, "gw-catalog");
     }
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
-    let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    let mut reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     drop(transcripts);
     let mut by_chrom: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
     for (gi, rep) in reps.iter().enumerate() {
@@ -2296,6 +2296,21 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
                 });
             }
         }
+    }
+    // Record each rep's count of MAPQ>0 (unambiguous) placements as `distinguishing_uniq`, exactly as the
+    // same-chrom (`gw_reps_and_catalog`) and homology (`detect_homology_catalog_genome_wide`) paths do.
+    // WITHOUT this the field stays 0 on every rep here, `reads_distinguish(0, 0, ..)` is always false, and
+    // `distinct_locus_reps` collapses ANY overlapping same-strand pair unconditionally -- i.e. the chi(H)
+    // read-evidence guard added in 9e887b4 was inert on the --cross-chrom path. It only became visible when
+    // 121b7ea made --refine (and hence `refine_families_exon_sum` -> `distinct_locus_reps`) default-on.
+    //
+    // Counted over the UNFILTERED name_map: the `v.len() >= 2` filter below keeps only multi-placement
+    // (ambiguous) reads, which is precisely the complement of the unique mappers that are the evidence here.
+    let all_placements: Vec<ReadPlacements> = name_map.values().cloned().collect();
+    let uniq_counts = locus_unique_mapper_counts(&all_placements, reps.len());
+    drop(all_placements);
+    for (i, c) in reps.iter_mut().enumerate() {
+        c.distinguishing_uniq = uniq_counts[i];
     }
     let placements: Vec<ReadPlacements> =
         name_map.into_values().filter(|v| v.len() >= 2).collect();
