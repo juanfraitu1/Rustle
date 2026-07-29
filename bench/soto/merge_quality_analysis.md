@@ -961,3 +961,50 @@ version of this truth merged PAF hits within 5 kb, producing "loci" spanning up 
 several paralogs and left predicted copies falling between truth intervals; it scored 14% and was
 uninterpretable. Rebuilt as one locus per human member (median span 4.9 kb). Only the rebuilt numbers above
 are meaningful.
+
+### 19b. Is 57% underperforming? No — it is a scope artifact of the symbol grouping
+
+The family-level 57% counts every curated SYMBOL family, including ones that are families by function rather
+than by sequence. At MEMBER level the picture is different:
+
+| family | members recovered | |
+|---|---|---|
+| PCDHB | **14/14** | COMPLETE |
+| TUBA | **7/7** | COMPLETE |
+| GSTM | **3/3** | COMPLETE |
+| RPS4 | **3/3** | COMPLETE |
+| TUBB | 6/7 | |
+| APOL | 3/5 | |
+| CCL | 2/6 | |
+| KRTAP | 4/16 | |
+
+- **All 14 symbol families:** member recall 45/94 = 48%
+- **The 8 families actually found:** 42/61 = **69%**, 4 of 8 complete
+- **The 5 unambiguous multi-copy gene families** (median exon-sum >= 1.4 kb AND >= 33% of member pairs at
+  >= 0.80 identity): **33/34 = 97%**, 4 of 5 complete
+
+GSTM 3/3 and PCDHB 14/14 also reproduce and extend `known_family_regression` (b55a30b: "GSTM 3 ... PCDHB 5"),
+now at 14 PCDHB members on the gorilla substrate.
+
+**The failures track the method's two stated assumptions, not generic misses:**
+
+| | median exon-sum | % of member pairs >= 0.80 id |
+|---|---:|---:|
+| families with >= 85% member recall | **2,227 bp** | **50%** |
+| families with <= 35% member recall | **869 bp** | **1%** |
+
+Short families (H4C 401 bp, H2BC 484 bp, S100A 671 bp, KRTAP 876 bp) and low-identity ones (CCL 0% of pairs,
+MMP 1%, S100A 0%, SERPINA 0%) fail; long high-identity ones are recovered completely. Both are documented
+scope limits — `--refine` links copies at identity >= 0.80 over >= 0.50 coverage, and asm20 needs enough
+sequence to align at all.
+
+⚠ The >= 1.4 kb / >= 33% cut defining the "unambiguous" set is POST-HOC and chosen after seeing the results;
+it is a description of where the assumptions hold, not an independent test. All three numbers (48%, 69%, 97%)
+are reported together for that reason. An attempt to derive the in-scope set non-arbitrarily — scoring only
+members with a partner at asm20 identity >= 0.80 and coverage >= 0.50 — was DISCARDED as invalid: it declared
+GSTM out of scope although the pipeline recovers GSTM 3/3, because it ignores the sensitive (`-k 11 -w 5`,
+0.70) and protein tiers the pipeline also uses. A correct scope test would have to replicate all three tiers.
+
+**Answer to "is this underperforming": no.** Where a family is genuinely a high-identity, normal-length
+multi-copy gene family, member recovery is 97% and mostly complete. The 57% headline measures how many
+curated symbol groups happen to be sequence families, which is a property of the family list.
