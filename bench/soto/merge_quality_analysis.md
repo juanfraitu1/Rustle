@@ -1099,3 +1099,57 @@ does not expose a fixed pipeline behind it.
 
 Kept opt-in on the same footing as the other levers: the strand finding is the deliverable, not a recall
 improvement. Anyone enabling it should note the two regressions.
+
+## 22. Flagship case: can the method recover a known primate gene family IN FULL? Yes (2026-07-29)
+
+Two textbook multi-copy families on the gorilla substrate, scored against orthology-mapped loci (§19).
+
+### PCDHB — the clustered protocadherin-beta array (chr5 in human, tandem array of ~16 genes)
+
+| | |
+|---|---|
+| gorilla ortholog loci mapped | **16** |
+| detected | **15** |
+| the single miss | **PCDHB1 — 0 reads**, i.e. not transcribed in this library and unrecoverable by any RNA method |
+| **detected / EXPRESSED loci** | **15/15 = 100%** |
+| predicted families covering them | **1** (`GWFAM6`) |
+| copies in GWFAM6 not on a PCDHB locus | **0 — perfectly pure** |
+
+```
+PCDHB2 99rd  PCDHB3 24  PCDHB4 60  PCDHB5 64  PCDHB6 10  PCDHB7 54  PCDHB8 53
+PCDHB9 10    PCDHB10 28 PCDHB11 36 PCDHB12 46 PCDHB13 243 PCDHB14 43 PCDHB15 229 PCDHB16 51
+                                                    -> all in GWFAM6
+```
+
+The copies are single-exon, and that is **correct biology, not a defect**: each PCDHB gene is one large
+variable exon encoding the whole ORF (unlike PCDHA/PCDHG, which splice their variable exon onto shared
+constant exons). This is also a concrete case where the isoform requirement (§17) would misjudge a real
+family — PCDHB is legitimately intronless, and it passes only because one copy (PCDHB2) picked up a second
+exon. Intronless gene families need the exon-overlap check, not the spliced-copy check.
+
+### TUBA — alpha-tubulin (a dispersed, SPLICED family, for contrast)
+
+| | |
+|---|---|
+| expressed ortholog loci | **7** |
+| detected | **7/7 = 100%** |
+| predicted families | **1** (`GWFAM13`) |
+| exon counts | 4-5 per copy — correct for tubulins |
+| contamination | none |
+
+```
+TUBA1A 1027rd  TUBA1B 2312  TUBA1C 112  TUBA3C 233  TUBA3D 192  TUBA4A 37  TUBA8 24  -> all in GWFAM13
+```
+
+### What this establishes
+
+Where a family is genuinely a multi-copy family by sequence and is expressed, the method recovers it
+**completely and purely** — one family, every expressed member, no foreign members — across both the
+intronless (PCDHB) and spliced (TUBA) architectures, and across both tandem-array (PCDHB) and dispersed
+(TUBA) duplication modes. GSTM 3/3 and RPS4 3/3 (§19b) are the same story at smaller n.
+
+This is the claim to make to the advisor, with the boundary stated in the same breath: the failures elsewhere
+in this document are families that are **not multi-copy by sequence** (S100A, SERPINA, CCL — zero member
+pairs at >= 0.80 identity), families **too short for asm20 to align** (H4C 401 bp, H2BC 484 bp), or Soto
+members that are **not genes at all** (§14, §17). None of them is a case of the method failing on a bona fide,
+expressed, sequence-defined gene family.
