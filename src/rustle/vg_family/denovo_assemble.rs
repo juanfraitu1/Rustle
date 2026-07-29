@@ -125,8 +125,6 @@ pub fn snap_boundary(positions: &[u64], fallback: u64, window: u64, min_frac: f6
 }
 
 pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_terminal_support: u32) -> Vec<Skeleton> {
-    use std::collections::BTreeMap;
-    let k = min_terminal_support.max(1) as usize;
     // Opt-in sharp-boundary refinement (see `snap_boundary`). OFF by default so every existing catalog stays
     // byte-identical; when on, all starts/ends are retained per group (O(reads) extra memory) so the peak
     // can be located, which is why it is not simply always on.
@@ -138,6 +136,21 @@ pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_termina
         }
         _ => None,
     };
+    pass1_skeletons_robust_with(reads, min_reads, min_terminal_support, snap)
+}
+
+/// `pass1_skeletons_robust` with the snap parameters passed explicitly instead of read from the environment.
+/// Exists so the snap WIRING -- the two call sites and their `is_start` flags -- is reachable from tests
+/// without mutating process env (which races under the parallel test harness). Without this split, swapping
+/// the two `is_start` arguments still passed all 638 tests.
+pub fn pass1_skeletons_robust_with(
+    reads: &[PrimaryRead],
+    min_reads: u32,
+    min_terminal_support: u32,
+    snap: Option<(u64, f64)>,
+) -> Vec<Skeleton> {
+    use std::collections::BTreeMap;
+    let k = min_terminal_support.max(1) as usize;
     // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc).
     let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>)> = BTreeMap::new();
     // all starts/ends per group, populated only when `snap` is on
@@ -1106,6 +1119,49 @@ mod locus_support_tests {
     /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
     /// 2, so every chain died at `GATE_MIN_READS = 3`. They all share the terminal junction
     /// (42939630, 42943604), so the junction-incidence graph pools them into one locus with support 12.
+    #[test]
+    fn snap_wiring_applies_the_right_end_to_the_right_boundary() {
+        // Covers the WIRING, not just snap_boundary: builds one intron-chain group whose read STARTS are
+        // sharply peaked but whose ENDS are broadly scattered, so the correct result is asymmetric --
+        // the start snaps, the end keeps its quantile. Swapping the two `is_start` arguments at the call
+        // sites, or crossing the start/end vectors, breaks this test; nothing else in the suite does.
+        let mut reads: Vec<PrimaryRead> = Vec::new();
+        for i in 0..20u64 {
+            reads.push(PrimaryRead {
+                chrom: "c1".into(),
+                ref_start: 10_000 + i % 5,          // tight peak: 10000..10004
+                ref_end: 30_000 + i * 500,          // broad scatter: 30000..39500
+                introns: vec![(12_000, 20_000)],
+            });
+        }
+        // one 5' outlier that drags the k-th-read start quantile away from the peak
+        reads.push(PrimaryRead {
+            chrom: "c1".into(),
+            ref_start: 1_000,
+            ref_end: 30_000,
+            introns: vec![(12_000, 20_000)],
+        });
+
+        let off = pass1_skeletons_robust_with(&reads, 3, 2, None);
+        let on = pass1_skeletons_robust_with(&reads, 3, 2, Some((400, 0.30)));
+        assert_eq!(off.len(), 1);
+        assert_eq!(on.len(), 1);
+
+        // OFF: the k=2 quantile takes the 2nd-smallest start, i.e. the peak's low edge is NOT used and the
+        // outlier is only partly absorbed.
+        assert_eq!(off[0].start, 10_000);
+        // ON: the start snaps to the peak's lower edge. (Both agree here; what matters is the END.)
+        assert_eq!(on[0].start, 10_000);
+
+        // The END distribution is broad, so it must NOT snap -- it keeps the quantile value. If the
+        // `is_start` flags were swapped, the end would be pulled to the low end of the scatter instead.
+        assert_eq!(
+            on[0].end, off[0].end,
+            "a broadly-scattered end must keep its quantile, not snap"
+        );
+        assert!(on[0].end > on[0].start);
+    }
+
     #[test]
     fn snap_boundary_uses_peak_when_sharp_and_falls_back_when_broad() {
         // SHARP: 18 reads within a 40bp window + 2 far outliers -> snap to the peak, not the outlier-driven
