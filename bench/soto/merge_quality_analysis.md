@@ -279,17 +279,36 @@ than merely touching the right place. The forced 1:1 then makes the leftovers ex
 ### Result — RNA (`definitive.copies.tsv`, 863 copies vs 362 members)
 
 ```
-MATCHED 1:1        232  (64.1% of truth)
-unmatched truth    130   (missed)
-unmatched pred     631   (extra)
+MATCHED 1:1        215  (59.4% of truth, containment >= 0.50)
+grazing pairs       17   (overlap > 0 but neither interval 50% covered -- NOT counted)
+unmatched truth    147   (missed)
+unmatched pred     648   (extra)
 
 size ratio (pred/true) over matched pairs
-  median             0.54       median log2 bias  -0.88   (UNDER-prediction)
-  IQR                0.19 - 1.00
-  within 2x          102  (44% of matched)
-  OVER-EXTENDED >=2x  17
-  TRUNCATED    <=0.5x 113
+  median             0.54       median log2 bias  -0.89   (UNDER-prediction)
+  IQR                0.17 - 0.97
+  within 2x           99  (46% of matched)
+  OVER-EXTENDED >=2x  12
+  TRUNCATED    <=0.5x 104
 ```
+
+CORRECTION (2026-07-28, found by adversarial review). The first version of this table admitted ANY overlap
+> 0 as a 1:1 match. That let a GRAZE count as a match: prediction chr1:144357575-144366404 clips truth member
+PPIAL4D (chr1:144366357-144366853) by 47 bp -- 0.5% of the prediction, 9.5% of the member -- and was reported
+BOTH as a matched member and as a 17.8x "over-merge signature", because the ratio uses full interval lengths
+regardless of how little lies in the intersection. 18 of the original 232 pairs had NEITHER interval 50%
+covered; the smallest admitted overlap was 33 bp. The matcher now requires the intersection to cover >= 50%
+of one interval (`--min-contain`, default 0.50). Superseded figures were: matched 232 (64.1%), within-2x 102,
+over-extended 17, truncated 113.
+
+The conclusion is unaffected and the median is threshold-stable:
+
+| --min-contain | matched | median ratio | within 2x | over | trunc |
+|---|---|---|---|---|---|
+| 0.00 (old) | 232 | 0.54 | 104 | 16 | 112 |
+| 0.25 | 229 | 0.54 | 102 | 16 | 111 |
+| **0.50 (default)** | **215** | **0.54** | **99** | **12** | **104** |
+| 0.75 | 201 | 0.52 | 90 | 12 | 99 |
 
 **RNA's dominant size error is TRUNCATION, not over-merging** — 113 truncated vs 17 over-extended, median
 0.54×. The extremes are large: SRGAP2C 5.6 kb predicted vs 208 kb true (0.03×), GUSBP1 0.03×, NOTCH2 0.03×.
@@ -350,7 +369,7 @@ SRGAP2C is a fragmentary assembly, not a units mismatch.
 §7 from the partition axis. The gene-preferred BED is kept as the fairer default truth for future size
 scoring even though it does not change the headline.
 
-## 9. Conditional TSS extension — implemented, measured, and NOT recommended (2026-07-28)
+## 9. Conditional TSS extension — implemented, measured, and left OFF (2026-07-28)
 
 Requested as a way to give copies "the adequate size" and so reduce over/under-merging. Implemented as
 `snap_boundary` + the `RUSTLE_TSS_SNAP` opt-in in `denovo_assemble.rs`: where a skeleton's read starts (or
@@ -358,37 +377,53 @@ ends) are SHARPLY PEAKED — >= 30% inside one 400 bp window, the criterion vali
 `bam_tie_signals.md` — the boundary snaps to that peak's outer edge instead of the k-th-read quantile.
 Default OFF, so every existing catalog is byte-identical.
 
-**Two implementation bugs found and fixed during validation** (both worth recording, since the first would
-have shipped silently):
-
-1. Snapping to the peak's **median** orphaned every read in the peak's first half — a guaranteed ~200 bp
-   truncation on every snap. On chr1 it moved 8/43 boundaries (max 756 bp); the corrected **edge** rule moves
-   2/43, all <= 20 bp. Fixed.
-2. A doc comment claimed the snap "never shortens". It does — pulling an outlier-dragged boundary inward IS
-   shortening, and that is the whole mechanism. Comment corrected to state the cost.
-
 **Measured effect** — same binary, same BAMs, same `--refine`, boundary rule the only difference, scored by
-the §8 bipartite matcher against the §8b gene-preferred truth (chr1+chr7+chr15+chr16, 94 vs 95 copies):
+the §8 bipartite matcher against the §8b gene-preferred truth (chr1+chr7+chr15+chr16, 94 vs 95 copies). The
+matcher selects the SAME 23 truth members in both catalogs, so the comparison can and must be PAIRED:
 
 | | snap OFF | snap ON |
 |---|---|---|
 | matched 1:1 | 23 | 23 |
 | median size ratio | 0.35 | 0.35 |
-| **within 2x** | **10 (43%)** | **8 (35%)** |
-| **TRUNCATED <=0.5x** | **13** | **15** |
+| within 2x | 10 (43%) | 8 (35%) |
+| TRUNCATED <=0.5x | 13 | 15 |
 | size-ratio IQR | 0.08 – 0.71 | 0.07 – 0.60 |
 
-**The extension makes size agreement WORSE, and the reason is structural rather than statistical.** A snap
-can only ever pull a boundary *inward* (it fires when the quantile sits outside the peak), so it can only
-shorten. RNA copies are already systematically too short — median 0.54x in §8, 0.35x on this subset. Making
-them shorter moves them away from the truth. The lever pushes on the wrong side of the error.
+**Paired analysis (the honest test):** only **6 of 23** matched members change at all — 4 worse, 2 better.
+Sign test p = **0.69**; Wilcoxon signed-rank on |log2 size error| p = **0.16**. Mean |log2 error| 2.065 (off)
+vs 2.182 (on). The six are three sibling pairs from three families: AMY1B/AMY1C, POM121/POM121C,
+NSUN5P1/NSUN5P2. **There is no detectable effect on size agreement in either direction.**
 
-It also has a detection cost: on chr7 it drops `DN_chr7_74502675_10` (10 exons, 105 reads) entirely, because
-the shortened exon-sum falls below `--refine`'s cov >= 0.50 gate and the copy loses its family edge. chr16
-gains 2 copies (15 -> 17), so the copy-count effect is close to a wash; the size effect is not.
+### CORRECTION (2026-07-28) — two claims in the first version of this section were wrong
 
-**Status: shipped as opt-in, default off, not recommended.** The code and its tests stay because the
-measurement is the deliverable — the honest answer to "should the exon-sum encode TSS?" is now backed by
-three independent results: only 3/40 copy pairs have a genuinely distinct TSS (`bam_tie_signals.md` §8),
-snapping the boundary degrades size agreement (this section), and the size error that actually matters is
+Both were caught by adversarial review, and both had been asserted confidently:
+
+1. **"A snap can only ever pull a boundary inward, so it can only shorten."** FALSE. `snap_boundary`'s near
+   branch returns `fallback.min(peak)` for a start and `fallback.max(peak)` for an end, so when the peak lies
+   OUTSIDE the quantile the boundary moves outward and the transcript gets LONGER. Measured over the four
+   chromosomes: **12 copies lengthen, 15 shorten.** This was the load-bearing mechanism for the original
+   "pushes on the wrong side of the error" conclusion, and it does not exist.
+2. **"The extension makes size agreement WORSE."** NOT SUPPORTED. The unpaired 10-vs-8 and 13-vs-15 counts
+   looked like a trend, but the paired test above (p = 0.69) shows the entire difference is 4 vs 2 discordant
+   pairs among 6 changes in 3 families. Quoting a within-2x drop of "43% → 35%" from n=23 without pairing was
+   the error; the same data, paired, says nothing.
+
+The corrected reading is weaker and more boring: **on this benchmark the snap is close to a no-op.** It
+touches 6 of 23 scored members, moves size agreement neither way at p = 0.69, and the copy-count effect is
+roughly a wash (chr7 loses `DN_chr7_74502675_10`, 10 exons / 105 reads, when the changed exon-sum falls below
+`--refine`'s cov >= 0.50; chr16 gains 2, 15 → 17).
+
+**Status: shipped as opt-in, default off, not enabled.** The reason is now *absence of demonstrated benefit*,
+not demonstrated harm — a weaker but defensible basis for leaving a lever off. What genuinely holds against
+encoding TSS in the exon-sum is the other two results, neither of which this correction touches: only 3/40
+copy pairs have a distinct TSS at all (`bam_tie_signals.md` §8), and the size error that actually matters is
 truncation from fragmentary assembly (§8), which no boundary rule can fix.
+
+**Implementation bugs found while validating** (recorded because the first would have shipped silently):
+
+1. Snapping to the peak's **median** orphaned every read in the peak's first half — a guaranteed ~200 bp
+   truncation on every snap. On chr1 the median rule changed 8 of 43 boundaries (max 756 bp); the corrected
+   **edge** rule changes 5 of 43, max 545 bp. (An earlier draft said "2/43, all ≤ 20 bp" — that came from a
+   partial comparison keyed on an unstable column, and is corrected here.)
+2. A doc comment claimed the snap "never shortens"; the replacement, added when that was corrected, claimed
+   it "necessarily SHORTENS". Both are wrong — it does both. Source and unit-test comments reconciled.

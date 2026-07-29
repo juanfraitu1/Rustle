@@ -108,11 +108,13 @@ pub fn snap_boundary(positions: &[u64], fallback: u64, window: u64, min_frac: f6
         return fallback; // broad scatter: the robust quantile is the right answer
     }
     let peak = if is_start { v[best_lo] } else { v[best_lo + best_n - 1] };
-    // A snap pulls an OUTLIER-DRAGGED boundary in to the peak's edge -- which necessarily SHORTENS the
-    // transcript. That is the intended effect (the quantile was outside the peak) but it is also the cost:
-    // a shorter exon-sum means less alignment coverage against a sibling, and --refine drops an edge below
-    // cov 0.50. Measured on chr7 this loses one 10-exon/105-read copy; on chr16 it gains two. Hence opt-in,
-    // and hence the min_frac gate -- only snap where the peak is unambiguous.
+    // The snap moves the boundary to the peak's outer edge, which may LENGTHEN or SHORTEN the transcript --
+    // measured over chr1/7/15/16 it lengthens 12 copies and shortens 15. (Two earlier versions of this
+    // comment claimed "never shortens" and then "necessarily shortens"; both were wrong, see
+    // bench/soto/merge_quality_analysis.md section 9.) The cost of the shortening half is real: a smaller
+    // exon-sum means less coverage against a sibling, and --refine drops the edge below cov 0.50, which on
+    // chr7 loses a 10-exon/105-read copy. Net effect on size agreement is undetectable (paired p = 0.69),
+    // so this stays opt-in for absence of benefit rather than demonstrated harm.
     if is_start {
         if fallback < peak.saturating_sub(window) { peak } else { fallback.min(peak) }
     } else if fallback > peak.saturating_add(window) {
@@ -1123,8 +1125,8 @@ mod locus_support_tests {
         // too few reads to judge -> fallback
         assert_eq!(snap_boundary(&[10, 11, 12], 5, 400, 0.30, true), 5);
 
-        // A snap must NEVER shorten: a fallback already inside (or tighter than) the peak is kept when that
-        // keeps the transcript longer. Start 1010 lies inside the peak -> stays at the peak's lower edge.
+        // A fallback already inside the peak is pulled OUT to the peak's edge (lengthening); a fallback far
+        // outside is pulled IN to it (shortening). Both directions are intended. Start 1010 -> edge 1000.
         assert_eq!(snap_boundary(&sharp, 1010, 400, 0.30, true), 1000);
         // End boundary: peak upper edge is 1034; a fallback beyond peak+window is pulled back to it.
         let mut e_sharp: Vec<u64> = (0..18).map(|i| 1000 + i * 2).collect();

@@ -45,7 +45,18 @@ for i, (_pf, pc, ps, pe) in enumerate(pred):
             gain[i, j] = ov / max(pe - ps, te - ts, 1)
 
 ri, cj = linear_sum_assignment(-gain)                              # maximise total reciprocal overlap
-pairs = [(i, j) for i, j in zip(ri, cj) if gain[i, j] > 0]         # drop zero-overlap forced matches
+# ADMISSION THRESHOLD. Accepting any overlap > 0 admits a GRAZE as a 1:1 match: a prediction whose last 47 bp
+# clip a member's first 47 bp was counted both as a matched member (inflating the "% of truth" line) and as a
+# 17.8x OVER-EXTENDED case, because the ratio is computed from full interval lengths regardless of how little
+# of either lies in the intersection. 18 of 232 RNA pairs had NEITHER interval 50% covered; the smallest
+# admitted overlap was 33 bp. Require the intersection to cover at least MIN_CONTAIN of one interval, so a
+# "match" means the two intervals genuinely describe the same locus before their sizes are compared.
+MIN_CONTAIN = float(sys.argv[sys.argv.index("--min-contain")+1]) if "--min-contain" in sys.argv else 0.50
+def contained(i, j):
+    ov = min(pred[i][3], truth[j][4]) - max(pred[i][2], truth[j][3])
+    return ov > 0 and max(ov / max(pred[i][3]-pred[i][2], 1), ov / max(truth[j][4]-truth[j][3], 1)) >= MIN_CONTAIN
+pairs   = [(i, j) for i, j in zip(ri, cj) if gain[i, j] > 0 and contained(i, j)]
+grazed  = [(i, j) for i, j in zip(ri, cj) if gain[i, j] > 0 and not contained(i, j)]
 
 matched_pred = {i for i, _ in pairs}
 matched_truth = {j for _, j in pairs}
@@ -64,13 +75,15 @@ log2r = np.log2(np.clip(ratios, 1e-9, None))
 print(f"=== bipartite size match: {label} ===")
 print(f"  predicted copies : {P}")
 print(f"  truth members    : {T}")
-print(f"  MATCHED 1:1      : {len(pairs)}  ({100*len(pairs)/T:.1f}% of truth)")
+print(f"  MATCHED 1:1      : {len(pairs)}  ({100*len(pairs)/T:.1f}% of truth, containment >= {MIN_CONTAIN:g})")
+print(f"  grazing pairs    : {len(grazed)}   (overlap > 0 but neither interval {MIN_CONTAIN:g} covered -- NOT counted)")
 print(f"  unmatched truth  : {T - len(matched_truth)}   (missed members)")
 print(f"  unmatched pred   : {P - len(matched_pred)}   (spurious / extra copies)")
 print()
 print(f"  size ratio (predicted / true), over matched pairs:")
 print(f"    median            {np.median(ratios):.2f}")
-print(f"    median log2 bias  {np.median(log2r):+.2f}   ({'over' if np.median(log2r)>0 else 'under'}-prediction)")
+_b = np.median(log2r)
+print(f"    median log2 bias  {_b:+.2f}   ({'no bias' if abs(_b) < 1e-9 else ('over' if _b > 0 else 'under') + '-prediction'})")
 print(f"    IQR               {np.percentile(ratios,25):.2f} - {np.percentile(ratios,75):.2f}")
 print(f"    within 2x (0.5-2) {exact}  ({100*exact/max(len(pairs),1):.0f}% of matched)")
 print(f"    OVER-EXTENDED >=2x  {len(over)}   (over-merge signature)")
