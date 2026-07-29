@@ -2327,7 +2327,20 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
                 n_set += 1;
             }
         }
-        eprintln!("[gw-catalog-xchrom] TES extension: sharp 3' terminus on {n_set}/{} reps", reps.len());
+        // Apply the extension HERE, where the genome is in scope. `refine_families_exon_sum` is called with
+        // `None` on this path (it works from the exon-sum, not genomic spans), so it has no genome to fetch
+        // the extension with — an earlier version put the call there and it silently never fired.
+        let mut n_ext = 0usize;
+        let mut ext_bp = 0usize;
+        for i in 0..reps.len() {
+            if let Some(newseq) = extend_exon_sum_to_tes(&reps[i], &genome) {
+                ext_bp += newseq.len().saturating_sub(reps[i].seq.len());
+                reps[i].seq = newseq;
+                n_ext += 1;
+            }
+        }
+        eprintln!("[gw-catalog-xchrom] TES extension: sharp 3' terminus on {n_set}/{} reps; \
+                   extended {n_ext} exon-sums by {ext_bp} bp total", reps.len());
     }
     let all_placements: Vec<ReadPlacements> = name_map.values().cloned().collect();
     let uniq_counts = locus_unique_mapper_counts(&all_placements, reps.len());
@@ -2797,7 +2810,7 @@ fn refine_copy_seq(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec
             }
             s
         }
-        None => extend_exon_sum_to_tes(copy, genome),
+        None => copy.seq.clone(), // already carries the TES extension when RUSTLE_TES_EXTEND is on
     }
 }
 
@@ -2814,32 +2827,27 @@ fn refine_copy_seq(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec
 ///
 /// Fires only where `copy.tes` is set, i.e. where the 3'-end distribution was SHARP (`sharp_tes`); a broad
 /// distribution is differential coverage and extending to it would just absorb the furthest stray read.
-fn extend_exon_sum_to_tes(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec<u8> {
-    let enabled = matches!(std::env::var("RUSTLE_TES_EXTEND"), Ok(v) if v != "0" && !v.is_empty());
-    let (Some(tes), Some(g), true) = (copy.tes, genome, enabled) else {
-        return copy.seq.clone();
-    };
-    // Extension window in genomic coordinates, in the 3' direction for this strand. An inward or absent TES
-    // yields an empty window and leaves the exon-sum untouched — this may only ever ADD sequence.
+pub(crate) fn extend_exon_sum_to_tes(copy: &DenovoTranscript, g: &GenomeIndex) -> Option<Vec<u8>> {
+    let tes = copy.tes?;
+    // Extension window in genomic coordinates, in the 3' direction for this strand. An inward or flush TES
+    // yields no window — this may only ever ADD sequence, never trim.
     let (lo, hi) = if copy.strand == '-' {
-        if tes >= copy.start { return copy.seq.clone(); }
+        if tes >= copy.start { return None; }
         (tes, copy.start)
     } else {
-        if tes <= copy.end { return copy.seq.clone(); }
+        if tes <= copy.end { return None; }
         (copy.end, tes)
     };
-    let Some(mut ext) = g.fetch_sequence(&copy.chrom, lo, hi) else {
-        return copy.seq.clone();
-    };
+    let mut ext = g.fetch_sequence(&copy.chrom, lo, hi)?;
     if ext.is_empty() {
-        return copy.seq.clone();
+        return None;
     }
     if copy.strand == '-' {
         ext = crate::vg_family::seq_utils::reverse_complement(&ext);
     }
     let mut out = copy.seq.clone();
     out.extend_from_slice(&ext); // exon-sum is in transcription orientation, so the 3' extension appends
-    out
+    Some(out)
 }
 
 /// All-vs-all minimap2 alignment of a family's per-copy sequences (`seqs[i]`) with the given preset/params
@@ -3262,7 +3270,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tes_extension_appends_only_outward_and_only_when_enabled() {
+    fn tes_extension_appends_only_outward_and_never_trims() {
         use crate::vg_family::family_detect::DenovoTranscript;
         // Exon-sum "ACGT" for a copy at chr1:100-104; a sharp TES at 110 should append the 6 genomic bases
         // 104..110 in transcription orientation. With the env knob OFF nothing may change -- that is what
@@ -3271,21 +3279,36 @@ mod tests {
             chrom: "c1".into(), start: 100, end: 104, strand: '+',
             seq: b"ACGT".to_vec(), ..Default::default()
         };
-        // no genome -> unchanged regardless of tes
-        let with_tes = DenovoTranscript { tes: Some(110), ..base.clone() };
-        assert_eq!(refine_copy_seq(&with_tes, None), b"ACGT".to_vec());
+        // A real genome so the extension can actually be fetched. An earlier version of this test passed
+        // `None` for the genome, which made every case a trivial no-op and hid that the production call site
+        // ALSO passed None -- the extension silently never fired on a full Soto run.
+        let dir = std::env::temp_dir().join(format!("tes_ext_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fa = dir.join("g.fa");
+        // c1: 100 A's, then 10 C's at 100..110, then T's
+        let seq: String = "A".repeat(100) + &"C".repeat(10) + &"T".repeat(50);
+        std::fs::write(&fa, format!(">c1\n{seq}\n")).unwrap();
+        let contigs: std::collections::HashSet<String> = ["c1".to_string()].into_iter().collect();
+        let g = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
 
-        // An INWARD tes must never shorten: extension may only ADD sequence.
-        let inward = DenovoTranscript { tes: Some(102), ..base.clone() };
-        assert_eq!(extend_exon_sum_to_tes(&inward, None), b"ACGT".to_vec());
+        // '+' strand, exon-sum ends at 104, sharp TES at 110 -> append genome[104..110] = "CCCCCC".
+        let fwd = DenovoTranscript { tes: Some(110), ..base.clone() };
+        assert_eq!(extend_exon_sum_to_tes(&fwd, &g), Some(b"ACGTCCCCCC".to_vec()));
 
+        // An INWARD tes must never trim: extension may only ADD sequence.
+        assert_eq!(extend_exon_sum_to_tes(&DenovoTranscript { tes: Some(102), ..base.clone() }, &g), None);
         // tes == end is a no-op, not a zero-length fetch.
-        let flush = DenovoTranscript { tes: Some(104), ..base.clone() };
-        assert_eq!(extend_exon_sum_to_tes(&flush, None), b"ACGT".to_vec());
+        assert_eq!(extend_exon_sum_to_tes(&DenovoTranscript { tes: Some(104), ..base.clone() }, &g), None);
+        // no tes at all -> nothing to do
+        assert_eq!(extend_exon_sum_to_tes(&base, &g), None);
 
-        // A '-' strand copy extends from `start` DOWNWARD; a tes above start is inward -> no-op.
-        let rev = DenovoTranscript { strand: '-', tes: Some(200), ..base.clone() };
-        assert_eq!(extend_exon_sum_to_tes(&rev, None), b"ACGT".to_vec());
+        // '-' strand extends from `start` DOWNWARD, reverse-complemented. start=100, tes=90 -> genome[90..100]
+        // is "AAAAAAAAAA", revcomp "TTTTTTTTTT", appended in transcription orientation.
+        let rev = DenovoTranscript { strand: '-', tes: Some(90), ..base.clone() };
+        assert_eq!(extend_exon_sum_to_tes(&rev, &g), Some(b"ACGTTTTTTTTTTT".to_vec()));
+        // a '-' tes ABOVE start is inward -> no-op
+        assert_eq!(extend_exon_sum_to_tes(&DenovoTranscript { strand: '-', tes: Some(200), ..base.clone() }, &g), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
