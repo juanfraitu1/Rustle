@@ -206,3 +206,56 @@ exists to suppress. Do not extend the representation, and do not add a boundary-
 - The 25 "broad" cases are not merely noise: they independently corroborate the **differential-coverage**
   finding in `merge_quality_analysis.md` §7 (copies of one family covering different parts of the gene).
   The same phenomenon that fragments families also fakes TSS differences.
+
+## 9. TES is NOT TSS — the 3' end carries ~5x more copy-discriminating signal (2026-07-28)
+
+§8 tested only **5' ends** and concluded the exon-sum needs no TSS encoding (3/40 pairs distinct). That
+conclusion was then applied loosely to "transcript boundaries" in general. **It does not transfer to the 3'
+end**, and polyadenylation-site choice is a different mechanism from promoter choice, so it never should have
+been assumed to. Re-running the same machinery with `--tes` (`bench/soto/tss_distribution_test.py --tes`):
+
+| | distinct pairs | same | BROAD (coverage artifact) |
+|---|---:|---:|---:|
+| **TES (3')** | **14/42 = 33%** | 12 | 16 |
+| TSS (5') | 3/40 = 8% | 12 | 25 |
+
+TES is ~4.7x more often distinct, and its BROAD (coverage-artifact) rate is lower — expected, since IsoSeq
+reads are polyA-anchored, making the 3' terminus the most reliably observed boundary in the data, whereas 5'
+ends suffer degradation.
+
+**The magnitudes are large, not polyA wobble.** Median EMD **4,855 bp**, max 58.8 kb:
+
+```
+ANAPC1  / ANAPC1P2   58,792 bp     GTF2I    / GTF2IP1    10,000 bp
+NOTCH2  / NOTCH2NLB  58,592 bp     RGPD2    / RGPD5       6,517 bp
+SHLD2   / SHLD2P1    11,113 bp     SPDYE1   / SPDYE2      5,206 bp
+```
+
+These are **truncated paralogs terminating early** — NOTCH2NL is a partial duplication of NOTCH2, ANAPC1P2 of
+ANAPC1. The 3' end is where that truncation is visible, and it is precisely the copy-distinguishing
+information the exon-sum currently discards.
+
+### Answers to the two questions
+
+1. **Is adding boundary variability detrimental?** No — that claim was RETRACTED (`merge_quality_analysis.md`
+   §9). The paired test found no detectable effect in either direction (sign test p = 0.69). The snap is off
+   for absence of demonstrated benefit, which was measured on the 5' end where there is little signal to find.
+2. **Can TES be used in the exon-sum?** **Yes, and it is the most promising untried lever in this document.**
+   Encoding the terminal exon's observed 3' extent (rather than the k-th-read quantile) would add real
+   differential sequence for 14/42 copy pairs, at a median of ~4.9 kb — orders of magnitude more than the
+   sub-50 bp differences the 5' test dismissed.
+
+⚠ **Why this is worth prioritising:** the families showing distinct TES are the ones currently FAILING.
+ID_400 (NOTCH2/NOTCH2NL) and ID_395 (RGPD1-4) are both in the set of 11 families dropped by the isoform
+requirement in `merge_quality_analysis.md` §17, and ID_14 (LRRC37A), ID_208 (GTF2I), ID_207 (SPDYE) are all
+over-merge/split cases elsewhere in these analyses. A lever that adds kilobases of discriminating sequence
+exactly where copies are currently indistinguishable is targeted at the known failure mode, not a generic
+tweak.
+
+**Not yet implemented.** Suggested next step: extend the terminal exon in `refine_copy_seq`'s exon-sum to the
+observed TES where the 3' distribution is sharp (the `sharpness()` control already exists), then re-measure
+the §17 family table — the prediction is that some of the 11 isoform-dropped families gain separability.
+
+⚠ Also fixed while running this: `tss_distribution_test.py` crashed at its own summary line with
+`NameError: b_` (the BROAD bucket was added to the verdicts but never tallied), so every run since that
+verdict was added died before printing the summary.

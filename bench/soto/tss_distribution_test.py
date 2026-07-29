@@ -38,8 +38,12 @@ NPERM       = int(sys.argv[sys.argv.index("--nperm")+1]) if "--nperm" in sys.arg
 subprocess.run(["mkdir","-p",TMP], check=False)
 rng = np.random.default_rng(0)
 
+END3 = "--tes" in sys.argv     # test 3' ends (TES) instead of 5' ends (TSS)
+
 def five_prime_ends(chrom, start, end):
-    """5' genomic coordinate of each primary read within the locus (strand-aware)."""
+    """Strand-aware terminal coordinate of each primary read in the locus. 5' (TSS) by default; with --tes
+    the 3' end instead. TES was never covered by the original 5'-only run -- polyadenylation-site choice is a
+    different mechanism from promoter choice, so it cannot be assumed to behave the same."""
     out = subprocess.run([SAMTOOLS,"view","-F","2308",BAM,f"{chrom}:{start}-{end}"],
                          capture_output=True, text=True).stdout
     ends=[]
@@ -47,7 +51,8 @@ def five_prime_ends(chrom, start, end):
         f=ln.split("\t")
         flag=int(f[1]); pos=int(f[3])
         span=sum(int(n) for n,op in re.findall(r"(\d+)([MIDNSHP=X])", f[5]) if op in "MDN=X")
-        five = pos+span if (flag & 16) else pos
+        rev = bool(flag & 16)
+        five = (pos if rev else pos+span) if END3 else (pos+span if rev else pos)
         if start <= five <= end: ends.append(five)
     return np.array(ends, dtype=float)
 
@@ -154,8 +159,9 @@ d=sum(1 for r in ok if r[6]=="DISTINCT TSS")
 s_=sum(1 for r in ok if r[6]=="same TSS")
 t=sum(1 for r in ok if r[6].startswith("significant"))
 sk=sum(1 for r in res if r[6]=="skip")
+b_=sum(1 for r in ok if r[6].startswith("BROAD"))   # was referenced below but never computed -> NameError
 print(f"\ntested {len(ok)} homologous copy pairs ({sk} skipped as non-equivalent, alnB<{MIN_ALN_FRAC}):")
-print(f"  DISTINCT TSS (EMD > null p99 AND >= {MIN_BP} bp): {d}")
+print(f"  DISTINCT (EMD > null p99 AND >= {MIN_BP} bp): {d}")
 print(f"  same TSS (EMD within null):                      {s_}")
 print(f"  significant but sub-{MIN_BP}bp (not worth encoding): {t}")
 print(f"  BROAD 5' scatter (differential coverage, NOT a promoter): {b_}")
@@ -163,4 +169,5 @@ print(f"\nnull = EMD between random halves of the same copy ({NPERM} perms) — 
 print("and each copy's own 5'-end heterogeneity (degradation), which is what the k=2 boundary quantile absorbs.")
 json.dump([{"fam":r[0],"A":r[1],"B":r[2],"emd":r[3],"p99":r[4],"ratio":r[5],"verdict":r[6]} for r in res],
           open(f"{TMP}/result.json","w"), indent=1)
-print(f"\nwrote {TMP}/result.json")
+print("\nmode:", "TES (3-prime)" if END3 else "TSS (5-prime)")
+print(f"wrote {TMP}/result.json")
