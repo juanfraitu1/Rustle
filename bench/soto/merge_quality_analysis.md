@@ -802,3 +802,60 @@ identifiability frontier. Copy assignment has K=0 (copies that reads cannot sepa
 has this (intervals whose transcriptional status reads cannot determine). Both are properties of the data,
 both are stated as theorems about what is knowable rather than as pipeline failures, and both are why
 exon-level recovery (17% of complete genes at >= 90%) sits below locus-overlap recall (72%).
+
+## 17. How many of Soto's 83 families does RNA mode find? (2026-07-28, verified)
+
+Independently recomputed by a separate agent from scratch before reading the script; all counts reproduced
+exactly. Catalog = the corrected per-chrom recipe (§11). Two corrections were applied after verification:
+
+- **`family_id` is only unique WITHIN a per-chrom unit** (each unit numbers from `GWFAM0`), so the
+  concatenated catalog merges e.g. chr1:GWFAM0 with chr15:GWFAM0. Counts are computed per unit and unioned.
+  This does not change FOUND (59) but raises the isoform-qualified count 41 -> 48.
+- **7 of the 83 Soto "families" have exactly ONE member** and can never be found *as a family*. The scorable
+  denominator is **76**. (Of those 7: 1 is detected, 6 are not.)
+
+### The answer
+
+| standard | count | of 76 scorable |
+|---|---:|---:|
+| **FAMILY FOUND** — >= 2 members grouped into ONE predicted family | **59** | **78%** |
+| **+ ISOFORM REQUIRED** — >= 1 grouped member carries a spliced (>= 2 exon) copy | **48** | **63%** |
+| **COMPLETE** — one predicted family covers ALL the family's members | **16** | **21%** |
+| singleton only (1 member covered, no family formable) | 6 | 8% |
+| missed entirely (0 members covered) | 11 | 14% |
+
+### The isoform requirement matters, and removes the flagship families
+
+Requiring a real isoform — not merely an overlapping copy — drops 11 families, and they are exactly the
+ones a reviewer will ask about, because they are represented **only by unspliced clusters** (§14: those can
+be entirely intronic):
+
+```
+ID_400  NOTCH2, NOTCH2NLA, NOTCH2NLB, NOTCH2NLC     ID_462  SRGAP2B, SRGAP2C, SRGAP2D
+ID_395  RGPD1-4                                     ID_226  H2BC18, H2BP1, H3-2, H3C13, H3P4
+ID_212  AC244669.1, AC245100.8, LINC00869           ID_448  SEC22B, SEC22B3P
+ID_22   AC006453.1, AC027612.2, AL356585.3, BAGE2   ID_24   LSP1P4, LSP1P5
+```
+
+NOTCH2NL and SRGAP2 are the canonical human-specific expansions. Reporting them as "found" on the strength of
+an intronic unspliced cluster would not survive scrutiny; **63% is the number to quote**, not 78%.
+
+### Verified caveats on the surrounding numbers
+
+An independent audit upheld these, and they qualify figures used elsewhere in this document:
+
+1. **The exon-recovery denominator (§14, §17) is gene-SYMBOL string equality.** The Soto BED uses
+   Ensembl-style symbols (AL669831.1, MST1L) while CHM13 RefSeq annotates the same loci as LOC100288069,
+   LOC124905698. 124 of 362 members overlap genuine annotated exons but are silently excluded, leaving 200
+   judgeable rather than 324. Substituting interval overlap moves exon-formable from 23/62 = 37% to
+   36/77 = 47% (definitive) and 26/62 = 42% to 39/77 = 51% (per-chrom). Interval overlap is itself an upper
+   bound (it would credit an unrelated overlapping gene's exons); the correct repair is alias reconciliation.
+2. **The exon COMPLETE column was inflated** by using judgeable members as the denominator: 8 of 11
+   per-chrom exon-COMPLETE families are complete only over the symbol-matched subset. With a fair
+   denominator COMPLETE falls 11 -> 3. FOUND is unaffected.
+3. **"1107 copies" double-counts 140 loci** (967 distinct) — the per-chrom and xchrom passes both report
+   copies in the overlapping regions and the combine does not dedup. `definitive`'s 863 are all distinct, so
+   "863 vs 1107" is not apples-to-apples.
+4. **definitive vs per-chrom is confounded by binary date**: definitive was built 07-23, the per-chrom units
+   07-28, with source changes in between. The 69% -> 71% delta mixes the recipe fix with 5 days of code
+   changes and should not be attributed solely to the recipe.
