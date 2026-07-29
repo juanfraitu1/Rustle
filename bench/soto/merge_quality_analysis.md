@@ -1153,3 +1153,59 @@ in this document are families that are **not multi-copy by sequence** (S100A, SE
 pairs at >= 0.80 identity), families **too short for asm20 to align** (H4C 401 bp, H2BC 484 bp), or Soto
 members that are **not genes at all** (§14, §17). None of them is a case of the method failing on a bona fide,
 expressed, sequence-defined gene family.
+
+## 23. Relaxing the seeding: asm20 badly under-seeds, but it is not what bounds recovery (2026-07-29)
+
+### asm20 under-seeds — a real defect, measured
+
+All-vs-all on curated gene-family exon-sums (`bench/soto/preset_sensitivity.py`), pairs with ANY alignment /
+of those, pairs at >= 0.80 identity:
+
+| family | n pairs | asm20 | `-k 11 -w 5` | `-k 9 -w 3` | `-x sr` |
+|---|---:|---|---|---|---|
+| SIGLEC | 66 | 8 / 8 | 55 / 29 | **60 / 31** | 0 / 0 |
+| CCL | 276 | 1 / 0 | 23 / 15 | **26 / 15** | 0 / 0 |
+| MMP | 231 | 2 / 2 | 19 / 3 | **30 / 7** | 0 / 0 |
+| H2BC | 153 | 64 / 64 | 150 / 140 | **153 / 141** | 0 / 0 |
+| KRTAP | 3486 | 132 / 105 | 344 / 188 | **416 / 228** | 0 / 0 |
+| TUBA | 36 | 18 / 18 | 36 / 36 | **36 / 36** | 0 / 0 |
+
+The pairs asm20 misses are mostly **not marginal** — they already clear the 0.80 identity floor (SIGLEC
+8 -> 31, H2BC 64 -> 141, TUBA 18 -> 36 pairs at >= 0.80). k=19/w=10 simply leaves too few anchors on short
+exon-sums, which is precisely why recovery correlated with sequence length in §19b: that correlation was
+partly an ALIGNMENT-SEEDING artifact misread as a length limitation. `-x sr` is useless here (0 pairs at any
+family) — it is built for <100 bp reads. Shipped as `RUSTLE_MM2_SEED` (default asm20, byte-identical).
+
+### But it barely moves the pipeline
+
+Known-gene benchmark, `--homology-primary --refine`, 14 families / 94 loci:
+
+| primary seeding | members recovered | families found |
+|---|---:|---:|
+| asm20 (default) | 45/94 | 8/14 |
+| `-k 11 -w 5` | 45/94 | 8/14 |
+| **`-k 9 -w 3`** | **47/94** | **9/14** |
+
++2 members, +1 family (APOL 3 -> 4, H4C 1 -> 2). The gain is small because the **sensitive tier already ran
+alongside asm20** (`-k 11 -w 5` at identity >= 0.70), so the edge union already contained most of what
+sensitive seeding contributes. Swapping the PRIMARY tier only adds what neither tier had.
+
+### And the remaining failures are not edge failures at all
+
+SIGLEC, S100A and SERPINA stay at 0 under every preset — because **no copy is ever emitted at those loci**:
+
+```
+SERPINA5   10,196 reads  ->  no copy in any run
+S100A13       772 reads  ->  no copy in any run
+S100A16       334 reads  ->  no copy in any run
+```
+
+These loci are richly expressed and detected as reps, but the catalog only emits copies belonging to a
+>= 2-copy family. Their paralogs are genuinely too divergent to clear the identity floor — S100A has 0 member
+pairs at >= 0.80 even under `-k 9 -w 3`, SERPINA has 2. **The floor here is real divergence, not seeding**,
+and no relaxation can or should rescue them: they are families by function, not by sequence (§19b).
+
+**Answer to "can it go further down": the seeding can, but there is little down there for this benchmark.**
+Fixing the seeding is still worth doing — it is a genuine defect, it is free, and it is likely to matter more
+on short-exon families elsewhere (H2BC/H4C/KRTAP all gained heavily in pairwise alignability) — but it should
+be presented as a correctness fix, not as a recall lever.
