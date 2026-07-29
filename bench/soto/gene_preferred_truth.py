@@ -34,7 +34,7 @@ with gzip.open(GFF, "rt") as fh:
         genes[(f[0], m.group(1).upper())].append((int(f[3]) - 1, int(f[4])))
 
 out = open(OUT, "w")
-changed = shrunk = grown = kept = 0
+changed = shrunk = grown = moved = kept = 0
 rows = []
 for c, s, e, name, gene, fam, rest in members:
     cand = [(gs, ge) for (gs, ge) in genes.get((c, gene.upper()), []) if gs < e and s < ge]
@@ -43,9 +43,11 @@ for c, s, e, name, gene, fam, rest in members:
         if (gs, ge) != (s, e):
             changed += 1
             r = (ge - gs) / max(e - s, 1)
-            (shrunk if r < 1 else grown).__iadd__ if False else None
-            if r < 1: shrunk += 1
-            else: grown += 1
+            # r == 1.0 means the interval only MOVED, it did not resize -- counting that as "grown"
+            # overstates growth, so it gets its own bucket.
+            if   r < 1: shrunk += 1
+            elif r > 1: grown  += 1
+            else:       moved  += 1
             rows.append((gene, e - s, ge - gs, r))
         s, e = gs, ge
     else:
@@ -56,13 +58,22 @@ out.close()
 print(f"members            : {len(members)}")
 print(f"  matched a named annotation : {len(members)-kept}")
 print(f"  no named match (Soto kept) : {kept}")
-print(f"  interval CHANGED           : {changed}  (shrunk {shrunk}, grown {grown})")
+print(f"  interval CHANGED           : {changed}  (shrunk {shrunk}, grown {grown}, moved-only {moved})")
 if rows:
     import statistics
     rr = sorted(r for _, _, _, r in rows)
     print(f"  gene/block size ratio: median {statistics.median(rr):.2f}  "
           f"p10 {rr[len(rr)//10]:.2f}  p90 {rr[9*len(rr)//10]:.2f}")
-    print("\n  largest SHRINKS (Soto block >> annotated gene) -- these are duplicons, not gene models:")
-    for g, b, gl, r in sorted(rows, key=lambda x: x[3])[:10]:
+    # BOTH tails, deliberately. The script's premise is that Soto blocks are LARGER than the gene inside
+    # them, so printing only the shrinks would confirm the premise by construction and hide that the
+    # majority of corrections go the other way (a block can also CLIP a gene that extends past it).
+    print("\n  largest SHRINKS (Soto block >> annotated gene) -- duplicon, not gene model:")
+    for g, b, gl, r in sorted(rows, key=lambda x: x[3])[:8]:
         print(f"    {g:14s} block {b:>8}  gene {gl:>8}  {r:.3f}x")
+    print("\n  largest GROWTHS (annotated gene extends past the Soto block):")
+    for g, b, gl, r in sorted(rows, key=lambda x: -x[3])[:8]:
+        print(f"    {g:14s} block {b:>8}  gene {gl:>8}  {r:.1f}x")
+    n_gt2 = sum(1 for _, _, _, r in rows if r > 2)
+    print(f"\n  direction summary: {sum(1 for _,_,_,r in rows if r<1)} shrink, "
+          f"{sum(1 for _,_,_,r in rows if r>1)} grow ({n_gt2} by more than 2x)")
 print(f"\nwrote {OUT}")

@@ -365,6 +365,18 @@ with annotations attached: SRGAP2C gene = 207.9 kb (block 208.1 kb), NOTCH2 = 15
 GUSBP1 = 231.3 kb (block 346.6 kb). These are genuinely large, intron-rich genes; a 5.6 kb prediction for
 SRGAP2C is a fragmentary assembly, not a units mismatch.
 
+**Tail risk of the substitution, and why it does not matter here.** The corrections are NOT one-directional
+as the premise assumed: 99 shrink, 122 grow, 1 moves without resizing. Some growths are extreme and are
+genuine RefSeq model differences rather than matching bugs -- H3P4's Soto block is 417 bp (chr1:121127576-
+121127993) while RefSeq annotates a 58.9 kb *pseudogene* whose SD-homologous core that block is (141x);
+UBE2Q2P8 is 103 bp vs a 7.6 kb pseudogene (74x). Which interval is "the truth" is then a modelling choice,
+not a fact. The report now prints BOTH tails so the premise cannot confirm itself.
+
+Because it is a choice, every conclusion drawn from it was re-run under both truths. They agree: the §8
+headline is unchanged (median 0.54 either way, table above), and the §9 paired test is *identical* under both
+(matched 21, 6 changed, 4 worse / 2 better, sign-test p = 0.688 for Soto blocks AND for gene-preferred). No
+conclusion in this document depends on the truth definition.
+
 **Conclusion: the truncation is real.** The size axis independently confirms the fragmentation diagnosed in
 §7 from the partition axis. The gene-preferred BED is kept as the fairer default truth for future size
 scoring even though it does not change the headline.
