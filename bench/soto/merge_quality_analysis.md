@@ -349,3 +349,46 @@ SRGAP2C is a fragmentary assembly, not a units mismatch.
 **Conclusion: the truncation is real.** The size axis independently confirms the fragmentation diagnosed in
 §7 from the partition axis. The gene-preferred BED is kept as the fairer default truth for future size
 scoring even though it does not change the headline.
+
+## 9. Conditional TSS extension — implemented, measured, and NOT recommended (2026-07-28)
+
+Requested as a way to give copies "the adequate size" and so reduce over/under-merging. Implemented as
+`snap_boundary` + the `RUSTLE_TSS_SNAP` opt-in in `denovo_assemble.rs`: where a skeleton's read starts (or
+ends) are SHARPLY PEAKED — >= 30% inside one 400 bp window, the criterion validated in §8 of
+`bam_tie_signals.md` — the boundary snaps to that peak's outer edge instead of the k-th-read quantile.
+Default OFF, so every existing catalog is byte-identical.
+
+**Two implementation bugs found and fixed during validation** (both worth recording, since the first would
+have shipped silently):
+
+1. Snapping to the peak's **median** orphaned every read in the peak's first half — a guaranteed ~200 bp
+   truncation on every snap. On chr1 it moved 8/43 boundaries (max 756 bp); the corrected **edge** rule moves
+   2/43, all <= 20 bp. Fixed.
+2. A doc comment claimed the snap "never shortens". It does — pulling an outlier-dragged boundary inward IS
+   shortening, and that is the whole mechanism. Comment corrected to state the cost.
+
+**Measured effect** — same binary, same BAMs, same `--refine`, boundary rule the only difference, scored by
+the §8 bipartite matcher against the §8b gene-preferred truth (chr1+chr7+chr15+chr16, 94 vs 95 copies):
+
+| | snap OFF | snap ON |
+|---|---|---|
+| matched 1:1 | 23 | 23 |
+| median size ratio | 0.35 | 0.35 |
+| **within 2x** | **10 (43%)** | **8 (35%)** |
+| **TRUNCATED <=0.5x** | **13** | **15** |
+| size-ratio IQR | 0.08 – 0.71 | 0.07 – 0.60 |
+
+**The extension makes size agreement WORSE, and the reason is structural rather than statistical.** A snap
+can only ever pull a boundary *inward* (it fires when the quantile sits outside the peak), so it can only
+shorten. RNA copies are already systematically too short — median 0.54x in §8, 0.35x on this subset. Making
+them shorter moves them away from the truth. The lever pushes on the wrong side of the error.
+
+It also has a detection cost: on chr7 it drops `DN_chr7_74502675_10` (10 exons, 105 reads) entirely, because
+the shortened exon-sum falls below `--refine`'s cov >= 0.50 gate and the copy loses its family edge. chr16
+gains 2 copies (15 -> 17), so the copy-count effect is close to a wash; the size effect is not.
+
+**Status: shipped as opt-in, default off, not recommended.** The code and its tests stay because the
+measurement is the deliverable — the honest answer to "should the exon-sum encode TSS?" is now backed by
+three independent results: only 3/40 copy pairs have a genuinely distinct TSS (`bam_tie_signals.md` §8),
+snapping the boundary degrades size agreement (this section), and the size error that actually matters is
+truncation from fragmentary assembly (§8), which no boundary rule can fix.

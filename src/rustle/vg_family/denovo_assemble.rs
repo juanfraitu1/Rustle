@@ -69,11 +69,77 @@ pub fn pass1_skeletons(reads: &[PrimaryRead], min_reads: u32) -> Vec<Skeleton> {
 /// outermost `k-1` outlier reads at each end. For FLNC IsoSeq (full-length reads), the true ends are reached
 /// by many reads, so a small `k` trims only runaways and leaves real boundaries intact. If a group has fewer
 /// than `k` reads the boundary falls back to the outermost available read.
+/// Sharp-boundary refinement (opt-in; `RUSTLE_TSS_SNAP`).
+///
+/// The default transcript boundary is the k-th most extreme read start/end (`min_terminal_support`) — a
+/// robustness QUANTILE, chosen to absorb 5'-degradation noise. That is the right default: measured on the
+/// Soto benchmark (`bench/soto/bam_tie_signals.md` §8), only ~3/40 sibling copy pairs have a genuinely
+/// SHARP 5' peak; in the other ~92% the read ends are broad scatter reflecting differential coverage, where
+/// a quantile is exactly right and a "TSS" would be noise.
+///
+/// But where the ends ARE sharply peaked, the quantile is inferior: with k=2 a couple of outlier reads drag
+/// the boundary outside the true peak, giving the copy the wrong SIZE. This snaps such a boundary to the
+/// peak instead — deliberately rare by design (see `min_frac`), fixing the handful of copies whose size is
+/// genuinely determined rather than perturbing the ragged majority.
+///
+/// Returns `fallback` unless >= `min_frac` of positions fall inside one `window`-wide bin; otherwise the
+/// bin's OUTER EDGE in the direction the boundary faces -- its minimum for a start, its maximum for an end.
+/// The edge, not the bin's median: snapping a start to the peak's median discards every read starting in the
+/// peak's first half, truncating by ~half a window on EVERY snap. Measured on chr1 the median rule changed 8
+/// of 43 copies' boundaries; the edge rule changes 2, all by <= 20 bp.
+///
+/// Pure + deterministic so it is unit-testable without reads.
+pub fn snap_boundary(positions: &[u64], fallback: u64, window: u64, min_frac: f64, is_start: bool) -> u64 {
+    if positions.len() < 10 {
+        return fallback; // too few reads to distinguish a peak from noise
+    }
+    let mut v = positions.to_vec();
+    v.sort_unstable();
+    let (mut best_n, mut best_lo) = (0usize, 0usize);
+    for i in 0..v.len() {
+        let hi = v[i].saturating_add(window);
+        let j = v.partition_point(|&x| x <= hi);
+        if j - i > best_n {
+            best_n = j - i;
+            best_lo = i;
+        }
+    }
+    if (best_n as f64) / (v.len() as f64) < min_frac {
+        return fallback; // broad scatter: the robust quantile is the right answer
+    }
+    let peak = if is_start { v[best_lo] } else { v[best_lo + best_n - 1] };
+    // A snap pulls an OUTLIER-DRAGGED boundary in to the peak's edge -- which necessarily SHORTENS the
+    // transcript. That is the intended effect (the quantile was outside the peak) but it is also the cost:
+    // a shorter exon-sum means less alignment coverage against a sibling, and --refine drops an edge below
+    // cov 0.50. Measured on chr7 this loses one 10-exon/105-read copy; on chr16 it gains two. Hence opt-in,
+    // and hence the min_frac gate -- only snap where the peak is unambiguous.
+    if is_start {
+        if fallback < peak.saturating_sub(window) { peak } else { fallback.min(peak) }
+    } else if fallback > peak.saturating_add(window) {
+        peak
+    } else {
+        fallback.max(peak)
+    }
+}
+
 pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_terminal_support: u32) -> Vec<Skeleton> {
     use std::collections::BTreeMap;
     let k = min_terminal_support.max(1) as usize;
+    // Opt-in sharp-boundary refinement (see `snap_boundary`). OFF by default so every existing catalog stays
+    // byte-identical; when on, all starts/ends are retained per group (O(reads) extra memory) so the peak
+    // can be located, which is why it is not simply always on.
+    let snap: Option<(u64, f64)> = match std::env::var("RUSTLE_TSS_SNAP") {
+        Ok(v) if v != "0" && !v.is_empty() => {
+            let win = std::env::var("RUSTLE_TSS_SNAP_WINDOW").ok().and_then(|x| x.parse().ok()).unwrap_or(400u64);
+            let frac = std::env::var("RUSTLE_TSS_SNAP_FRAC").ok().and_then(|x| x.parse().ok()).unwrap_or(0.30f64);
+            Some((win, frac))
+        }
+        _ => None,
+    };
     // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc).
     let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>)> = BTreeMap::new();
+    // all starts/ends per group, populated only when `snap` is on
+    let mut allpos: BTreeMap<(&str, Vec<(u64, u64)>), (Vec<u64>, Vec<u64>)> = BTreeMap::new();
     for r in reads {
         if r.introns.is_empty() {
             continue; // unspliced reads are seeded position-aware below (empty chain would pool chromosome-wide)
@@ -82,6 +148,13 @@ pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_termina
             .entry((r.chrom.as_str(), r.introns.clone()))
             .or_insert((0, Vec::new(), Vec::new()));
         e.0 += 1;
+        if snap.is_some() {
+            let a = allpos
+                .entry((r.chrom.as_str(), r.introns.clone()))
+                .or_insert((Vec::new(), Vec::new()));
+            a.0.push(r.ref_start);
+            a.1.push(r.ref_end);
+        }
         // keep the k smallest starts (ascending)
         let pos = e.1.partition_point(|&x| x <= r.ref_start);
         if pos < k {
@@ -102,10 +175,22 @@ pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_termina
             // robust boundary = the k-th supported value (or the outermost available if the group is smaller).
             let si = k.min(starts.len()).saturating_sub(1);
             let ei = k.min(ends.len()).saturating_sub(1);
+            let (mut start, mut end) = (starts[si], ends[ei]);
+            if let Some((win, frac)) = snap {
+                if let Some((all_s, all_e)) = allpos.get(&(chrom, introns.clone())) {
+                    start = snap_boundary(all_s, start, win, frac, true);
+                    end = snap_boundary(all_e, end, win, frac, false);
+                    if end <= start {
+                        // a snap must never invert or empty the skeleton; fall back to the quantile pair
+                        start = starts[si];
+                        end = ends[ei];
+                    }
+                }
+            }
             Skeleton {
                 chrom: chrom.to_string(),
-                start: starts[si],
-                end: ends[ei],
+                start,
+                end,
                 n_reads: n,
                 introns,
                 tied_seeded: false,
@@ -1019,6 +1104,37 @@ mod locus_support_tests {
     /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
     /// 2, so every chain died at `GATE_MIN_READS = 3`. They all share the terminal junction
     /// (42939630, 42943604), so the junction-incidence graph pools them into one locus with support 12.
+    #[test]
+    fn snap_boundary_uses_peak_when_sharp_and_falls_back_when_broad() {
+        // SHARP: 18 reads within a 40bp window + 2 far outliers -> snap to the peak, not the outlier-driven
+        // quantile. This is the case the k-th-quantile rule gets wrong.
+        let mut sharp: Vec<u64> = (0..18).map(|i| 1000 + i * 2).collect();
+        sharp.push(1);
+        sharp.push(50_000);
+        // The fallback (1) sits far outside the peak, so it is pulled in to the peak's LOWER edge (1000) --
+        // the edge, not the median, so no read in the peak is orphaned outside the boundary.
+        assert_eq!(snap_boundary(&sharp, 1, 400, 0.30, true), 1000);
+
+        // BROAD: uniformly scattered ends (differential coverage, not a TSS) -> keep the fallback.
+        let broad: Vec<u64> = (0..40).map(|i| i * 5_000).collect();
+        assert_eq!(snap_boundary(&broad, 777, 400, 0.30, true), 777, "broad scatter must not snap");
+        assert_eq!(snap_boundary(&broad, 777, 400, 0.30, false), 777);
+
+        // too few reads to judge -> fallback
+        assert_eq!(snap_boundary(&[10, 11, 12], 5, 400, 0.30, true), 5);
+
+        // A snap must NEVER shorten: a fallback already inside (or tighter than) the peak is kept when that
+        // keeps the transcript longer. Start 1010 lies inside the peak -> stays at the peak's lower edge.
+        assert_eq!(snap_boundary(&sharp, 1010, 400, 0.30, true), 1000);
+        // End boundary: peak upper edge is 1034; a fallback beyond peak+window is pulled back to it.
+        let mut e_sharp: Vec<u64> = (0..18).map(|i| 1000 + i * 2).collect();
+        e_sharp.push(60_000);
+        e_sharp.push(70_000);
+        assert_eq!(snap_boundary(&e_sharp, 90_000, 400, 0.30, false), 1034);
+        // ...but an end inside the peak is never pulled backwards past it.
+        assert_eq!(snap_boundary(&e_sharp, 1020, 400, 0.30, false), 1034);
+    }
+
     #[test]
     fn locus_support_pools_isoform_fragments_sharing_a_junction() {
         const TERMINAL: (u64, u64) = (42_939_630, 42_943_604);
