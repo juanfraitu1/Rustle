@@ -752,3 +752,53 @@ For the write-up this is a limitation worth stating plainly rather than engineer
 annotation-free method cannot in general distinguish intronic pre-mRNA signal from exonic signal at a
 duplicated locus**, and that is part of why exon-level recovery (17% of complete genes at >= 90%) sits so far
 below locus-overlap recall (72%).
+
+## 16. In-scope resolution: a certificate that decides a minority, and abstains on the rest (2026-07-28)
+
+Scope for this project is **T2T CHM13v2.0 + long RNA-seq reads only** — no CAGE, poly(A), or cross-tissue
+data. §15's suggestion to settle the unannotated-exon question with orthogonal assays is therefore withdrawn.
+Within scope, one signal remained untested.
+
+§15 tested only NEGATIVE evidence (reads splicing OVER a cluster) and got 0.53 precision, because in an SD a
+read skipping the interval may belong to a paralog. POSITIVE evidence is not symmetric: a junction whose
+**acceptor lands on the cluster's start**, or whose **donor lands on its end**, is direct observed proof that
+this interval is retained in a mature transcript. Intronic pre-mRNA has no reason to generate junctions at
+its own boundaries.
+
+Measured on the same 254 clusters (TOL = 25 bp; exonic base rate 0.626):
+
+| rule (reads only) | precision | recall | n fired |
+|---|---:|---:|---:|
+| acceptor >= 1 **AND** donor >= 1 (both boundaries) | **1.000** | 0.025 | 4 |
+| acceptor >= 3 OR donor >= 3 | 0.882 | 0.094 | 17 |
+| acceptor + donor >= 10 | 0.889 | 0.050 | 9 |
+| acceptor >= 1 OR donor >= 1 | 0.750 | 0.170 | 36 |
+
+**This is a certificate, not a classifier.** Bilateral junction support is perfect on this benchmark (4/4)
+and unilateral support at >= 3 reads is 0.88 — but together they decide only ~10-17% of clusters. The
+structural reason mirrors §13: these clusters were built *from unspliced reads*. Had junctions abutted them,
+spliced reads would have formed a spliced skeleton there instead, and they would not be in this population at
+all. The evidence is scarce for the same reason the cluster exists.
+
+### Where this leaves the question, honestly
+
+Within the project's data, the three available signals are:
+
+| evidence | direction | precision | coverage |
+|---|---|---:|---:|
+| junction abuts a boundary (§16) | exonic | 0.88 - 1.00 | ~10% |
+| spliced reads outvote exonic blocks (§15) | intronic | 0.53 | ~70% |
+| annotation overlap (§14) | either | — | out of method scope |
+
+So a **minority can be decided with a read-level certificate, and the majority cannot be decided at all from
+T2T + long RNA reads.** That is not a gap to be engineered away — it is the same identifiability argument the
+method already makes for copy assignment (K=0, `project_k0_frontier_unresolvable`), reappearing on a new
+axis: *is this base transcribed in this copy?* The honest move is the one the method already takes elsewhere
+— **assign where a witness exists, abstain otherwise** — and to report exon-coverage alongside
+overlap-recall (§14) rather than filtering the catalog on evidence that is wrong half the time.
+
+**Suggested framing for the write-up:** the intronic-cluster population is not a bug but a second
+identifiability frontier. Copy assignment has K=0 (copies that reads cannot separate); locus reconstruction
+has this (intervals whose transcriptional status reads cannot determine). Both are properties of the data,
+both are stated as theorems about what is knowable rather than as pipeline failures, and both are why
+exon-level recovery (17% of complete genes at >= 90%) sits below locus-overlap recall (72%).
