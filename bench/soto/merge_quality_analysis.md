@@ -905,3 +905,59 @@ The honest two-line summary of the two modes:
 ⚠ Do not present DNA's 361/362 = 99.7% member recovery beside RNA's member recall as if they measure the same
 thing. DNA's is ~100% by construction (windows seeded from the truth); RNA's is a detection result. The
 family-partition rows above are the only rows where the two modes are genuinely comparable.
+
+## 19. A KNOWN-GENE-FAMILY benchmark, independent of Soto (2026-07-29)
+
+Motivated by the observation that Soto's members are segmental-duplication BLOCKS: only 126/362 are
+protein_coding, 121 are pseudogenes and 110 carry no named annotation at all. "Did we recover the family"
+there is partly a question about duplicated sequence rather than about genes.
+
+### Why this had to run on gorilla
+
+**Both human IsoSeq BAMs are restricted to Soto regions** — literally 0 primary reads at GSTM, HBB, PCDHB,
+KRT, TUBB and S100A. No non-Soto human family can be tested with the data on hand. The only full-genome
+long-RNA alignment available is `GGO_mm.bam` (mGorGor1, 10.7M reads), which is also the thesis substrate.
+
+### Ground truth by orthology (independent of the method, but an inference)
+
+The gorilla annotation carries only LOC ids, so families are defined in HUMAN by curated gene symbol (CHM13
+RefSeq has symbols), each member's exon-sum is extracted, and those are mapped to `GGO.fasta`
+(`minimap2 -x splice`, identity >= 0.85, query coverage >= 0.50). Each human member contributes its single
+best gorilla hit, so one truth locus = one orthologous gene. Families deliberately EXCLUDE anything inside
+Soto regions (AMY, DEFB, NPIP, GOLGA, NBPF, TBC1D3), so the set is genuinely independent.
+
+18 families / 277 human members → 14 families with >= 2 EXPRESSED gorilla loci (>= 10 reads) / 94 loci.
+Unexpressed families are excluded rather than scored as failures — no RNA method can recover them.
+
+### Result — and the mode is the whole story
+
+| gorilla, 14 families / 94 loci | FOUND | + ISOFORM | singleton | missed |
+|---|---:|---:|---:|---:|
+| `--cross-chrom --refine` | 2/14 (14%) | 1/14 | 0 | 12 |
+| **`--homology-primary --refine`** | **8/14 (57%)** | **8/14 (57%)** | 3 | 3 |
+| *(Soto, same criteria, `--cross-chrom`)* | *78%* | *63%* | — | — |
+
+`--cross-chrom` builds families from read-CONFLICT, which dispersed paralogs like GSTM and MAGEA do not
+generate — their reads map uniquely, so no conflict edge forms and the family is invisible. That is exactly
+what `known_family_regression` (b55a30b) recorded: "GSTM/MAGEA/RFPL need `--homology-primary`". Using the
+conflict mode here was an operator error on a benchmark built for the homology mode, and it cost 43 points.
+
+**2 of the 3 remaining misses are CORRECT behaviour.** The identity control (all-vs-all on each family's
+human exon-sums) shows S100A and SERPINA have **zero** member pairs at >= 0.80 identity — they are families by
+FUNCTION and symbol, not by sequence, and so are outside the method's definition of a multi-copy family.
+Excluding them: **8/12 = 67%**. SIGLEC is a genuine miss (8 pairs >= 0.80, median 0.893).
+
+### The contrast that matters
+
+On Soto, FOUND 78% falls to 63% once an isoform is required — 15 of 59 families are represented only by
+unspliced clusters (§17). **Here FOUND and +ISOFORM are identical (8 = 8): every family found is found with a
+real spliced transcript.** That is the direct consequence of these being expressed protein-coding genes rather
+than duplication blocks, and it is the cleanest available evidence that the isoform shortfall on Soto is a
+property of the benchmark's content, not a pipeline defect.
+
+⚠ Caveats. (1) The ground truth is an ORTHOLOGY INFERENCE and inherits cross-species mapping ambiguity in
+duplicated regions — the method's own difficulty one level up. (2) n = 14 families is small. (3) A first
+version of this truth merged PAF hits within 5 kb, producing "loci" spanning up to 234 kb that swallowed
+several paralogs and left predicted copies falling between truth intervals; it scored 14% and was
+uninterpretable. Rebuilt as one locus per human member (median span 4.9 kb). Only the rebuilt numbers above
+are meaningful.
