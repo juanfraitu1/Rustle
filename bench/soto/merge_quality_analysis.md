@@ -1008,3 +1008,51 @@ GSTM out of scope although the pipeline recovers GSTM 3/3, because it ignores th
 **Answer to "is this underperforming": no.** Where a family is genuinely a high-identity, normal-length
 multi-copy gene family, member recovery is 97% and mostly complete. The 57% headline measures how many
 curated symbol groups happen to be sequence families, which is a property of the family list.
+
+## 20. Why the isoform requirement is so harsh — a representative-selection artifact (2026-07-29)
+
+The isoform guard drops 11 of 59 Soto families (§17), and 67% of all Soto catalog copies are single-exon
+against 42% on the gorilla gene benchmark (§19). For IsoSeq full-length transcripts at genes with 34 exons
+that makes no sense. It is not biology — it is an artifact of how a locus picks its representative.
+
+**First, the obvious explanations are excluded.** The dropped families are NOT intronless: NOTCH2 has 34
+annotated exons, RGPD1-4 have 23-27, SRGAP2B/C/D 8-11, SEC22B 5. Only the histone family (ID_226) contains a
+genuinely single-exon member. And spliced reads are abundant at these loci:
+
+| locus | spliced reads | distinct intron chains | chains with >= 3 reads | biggest chain |
+|---|---:|---:|---:|---:|
+| NOTCH2 | 490 | **240** | 40 | 24 (5% of spliced) |
+| SRGAP2C | 185 | 44 | 13 | 46 (25%) |
+| RGPD2 | 467 | 116 | 19 | 139 (30%) |
+
+**The mechanism.** Four shipped behaviours compose into one systematic bias:
+
+1. In SD regions, spliced reads SHATTER across intron chains — NOTCH2's 490 spliced reads produce 240
+   distinct chains, the largest holding 5% of them (mis-chaining, alternative splicing, and paralog
+   cross-mapping all contribute).
+2. `pass1_skeletons_robust` groups spliced reads by EXACT intron chain, so each spliced skeleton carries only
+   its own chain's reads — at most 24 (NOTCH2) or 46 (SRGAP2C).
+3. `cluster_unspliced` pools unspliced reads by SPAN OVERLAP with no chain constraint, so one cluster
+   aggregates everything unspliced in the span — 95-96 reads at these loci.
+4. `locus_reps` (`family_detect.rs:288`) picks the locus representative by `max(n_reads, span)`.
+
+So the unspliced pool outvotes every individual spliced chain and becomes the locus. Measured:
+
+```
+SRGAP2C  emitted copy: 1 exon,  96 reads   |  biggest spliced chain there: 46 reads
+NOTCH2   emitted copy: 1 exon,  95 reads   |  biggest spliced chain there: 24 reads
+```
+
+**The unfairness is structural: spliced evidence competes PER ISOFORM while unspliced evidence competes
+POOLED.** Multiple intron chains at one locus are isoforms of the same transcription unit; comparing each
+separately against a pooled unspliced cluster guarantees the unspliced side wins wherever chains fragment —
+which is exactly, and only, where the benchmark lives. It also explains §14: those unspliced winners are
+frequently INTRONIC (SRGAP2's two copies lie inside a single ~93 kb intron), so the locus ends up represented
+by pre-mRNA signal while the real spliced evidence is discarded.
+
+**Candidate fix, not yet implemented:** aggregate spliced chains sharing a locus before the comparison (they
+are isoforms, not competitors), or prefer a spliced candidate whenever one clears `min_reads`. Either makes
+the comparison like-for-like. The prediction is that the isoform-dropped families recover a spliced
+representative, and that the 67% single-exon rate falls toward the 42% seen on the gorilla gene set. That is
+a sharper and better-targeted lever than the TES extension (§9-10), which acted on sequence rather than on
+which skeleton wins the locus.
