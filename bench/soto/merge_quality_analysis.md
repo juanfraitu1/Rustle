@@ -651,3 +651,58 @@ shape consistent with the rest of the method, rather than a global threshold.
 **Not implemented.** The measurement is the deliverable: it establishes that the intuitive signal (gap
 coverage) is worthless, that the principled certificate buys accuracy only in one band, and that a naive
 distance rule's apparent strength here is partly a benchmark artifact.
+
+## 14. Does the method find the FULL locus of a complete gene? No — and this qualifies the recall headline (2026-07-28)
+
+Member recall counts a member as recovered when **any** predicted copy overlaps it. That is a locus-*overlap*
+test, not a locus-*recovery* test. `bench/soto/locus_completeness.py` asks the stronger question: taking the
+UNION of every predicted copy overlapping a member (so fragmentation is forgiven), what fraction of that
+gene's ANNOTATED EXONIC bases do we cover? Stratified by `gene_biotype`, since "complete gene" is the
+question — of the 252 Soto members carrying a named annotation, 126 are protein_coding.
+
+### Complete genes (protein_coding, n = 105 with annotated exons in the member interval)
+
+| | |
+|---|---|
+| detected at all (>= 1 overlapping copy) | **76/105 = 72%** |
+| median exon coverage, over detected | **0.69** |
+| **>= 90% of annotated exons covered** | **18/76 = 24% of detected, 17% of all** |
+| >= 75% | 31/76 = 41% of detected |
+| >= 50% | 50/76 = 66% of detected |
+| spliced copies only | median 0.53; >= 90% in 13/76 |
+
+By biotype: transcribed_pseudogene 81% detected / median 0.61; pseudogene 42% detected / median 0.77.
+
+**Isoform-fairness control.** Scoring against the union of all isoforms' exons is a harsh bar — no single
+transcript expresses it. Re-scored against the **best-matching single transcript** (median 4 isoforms/gene):
+median coverage **0.67**, >= 90% in 36%. So the union bar accounts for only ~12 points at the 90% threshold
+and does not explain the result. (This control joins annotation slightly differently and so runs over 90
+detected members rather than 76; the distributions are the comparable quantity, not the denominators.)
+
+### The qualitative finding underneath: some "detections" are purely INTRONIC
+
+Several protein_coding members are scored as recovered while covering **zero** annotated exons:
+
+```
+SRGAP2     2 copies, exon_cov 0.00   both clusters lie inside ONE ~93kb intron
+                                     (13,068bp/95 reads and 6,696bp/3 reads; nearest exon 1.7-9.7kb away)
+NPIPB2     1 copy,   exon_cov 0.00   1,356bp cluster, nearest exon 2.7kb away, intronic
+NOTCH2     1 copy,   exon_cov 0.03      NOTCH2NLC 0.03    NOTCH2NLA 0.04    LIMS4 0.05
+```
+
+These are unspliced clusters sitting in intronic sequence — pre-mRNA or unannotated intronic transcription —
+which overlap the gene's *span* and therefore satisfy the overlap-based recall test while contributing
+nothing to the gene's exon structure. This is the same population identified in §12 as driving the size
+truncation, now shown to be positionally intronic rather than merely short.
+
+### Honest statement
+
+> Member recall (76.2% / 65.5% / 71.0% depending on recipe, §11) measures whether a Soto member's locus is
+> **touched** by a predicted copy. It is not a statement that the gene was reconstructed. For complete
+> (protein-coding) genes, 72% are touched, but only **17%** have >= 90% of their annotated exons covered even
+> when all overlapping copies are unioned, and the median covered fraction is **0.69**. Some members counted
+> as recovered are represented solely by intronic unspliced clusters covering none of the gene's exons.
+
+Both numbers should be quoted together, exactly as §1 argued for member recall vs partition completeness.
+The gap between them is not a defect to be hidden — it is the honest scope of what an RNA-only method
+recovers — but presenting overlap-recall alone overstates it.
