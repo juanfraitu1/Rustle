@@ -706,3 +706,49 @@ truncation, now shown to be positionally intronic rather than merely short.
 Both numbers should be quoted together, exactly as §1 argued for member recall vs partition completeness.
 The gap between them is not a defect to be hidden — it is the honest scope of what an RNA-only method
 recovers — but presenting overlap-recall alone overstates it.
+
+## 15. Can intronic clusters be excluded WITHOUT annotation? Tested — no (2026-07-28)
+
+§14 ended by suggesting a copy should overlap an annotated exon before counting toward member recall. That is
+legitimate as a **scoring** change — an evaluation may use information the method cannot — but it does not
+fix the pipeline, and gating *detection* on a GFF would destroy the annotation-independence that is the whole
+point of the approach. So: can the reads alone tell that a cluster is intronic?
+
+The reads do carry a direct observation of splicing: a spliced read's `N` CIGAR gap **is** an intron. Two
+annotation-free rules were tested on the 254 unspliced clusters that lie inside a Soto member (label, from
+annotation and used ONLY for grading: intronic = 0 annotated exonic bases; base rate 0.374):
+
+| rule (reads only) | best precision | recall |
+|---|---:|---:|
+| >= k spliced reads whose intron CONTAINS the cluster | 0.482 (k=10) | 0.705 |
+| intron-witnesses OUTVOTE exonic-block witnesses among spliced reads (>=95%, >=5 votes) | **0.528** | 0.695 |
+| *(base rate — always predict intronic)* | *0.374* | *1.000* |
+
+Both are informative but neither is usable: the best rule reaches 0.53 precision, i.e. **roughly half of the
+clusters it would discard are not intronic**. The second rule is the more principled one — it excludes
+unspliced reads (which created the cluster, so counting them is circular) and makes it a contest between
+mature-transcript evidence for and against the interval being retained — and it gains only ~0.05 over the
+cruder version.
+
+**Why it fails is itself the finding.** In segmental duplications a spliced read that skips this interval may
+belong to a *paralogous copy* in which the interval genuinely is intronic, while for this copy it is exonic.
+Read-level splice evidence is therefore not copy-specific — the same multimapping ambiguity the whole method
+is about, reappearing at the level of "is this base transcribed here?".
+
+⚠ One caveat that cuts in the rule's favour and cannot be resolved here: a cluster with zero *annotated*
+exonic bases may be a genuine **unannotated** exon rather than intronic pre-mRNA, in which case some of the
+counted false positives are correct calls and the annotation label is the thing at fault. Settling that needs
+independent evidence (CAGE, poly(A), or cross-tissue reproducibility), not more of this BAM.
+
+### Consequence
+
+There is currently **no reliable annotation-free way to exclude intronic clusters from the catalog.** The
+overstatement §14 identified therefore cannot be fixed inside the method's own constraints — only in the
+evaluation, where annotation is fair game. This is an argument for reporting overlap-recall and exon-coverage
+side by side (§14) rather than for adding a filter: the filter would be wrong half the time, and it would
+make the method depend on exactly the annotation the thesis claims not to need.
+
+For the write-up this is a limitation worth stating plainly rather than engineering around: **an RNA-only,
+annotation-free method cannot in general distinguish intronic pre-mRNA signal from exonic signal at a
+duplicated locus**, and that is part of why exon-level recovery (17% of complete genes at >= 90%) sits so far
+below locus-overlap recall (72%).
