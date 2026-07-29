@@ -1,7 +1,7 @@
 [[heuristic]]
 name = "RefineParams::min_identity"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 2370
+line = 2600
 value = "0.80"
 stage = "O1-edge"
 tier = "decision"
@@ -31,7 +31,7 @@ rationale = "certificate threshold alpha/(n-1), union bound over n-1 competitors
 [[heuristic]]
 name = "RefineParams::min_coverage"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 2371
+line = 2601
 value = "0.50"
 stage = "O1-edge"
 tier = "decision"
@@ -42,7 +42,7 @@ rationale = "cov-of-shorter floor for the same edge test"
 [[heuristic]]
 name = "RefineParams::sensitive_identity"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 2377
+line = 2607
 value = "0.60"
 stage = "O1-edge"
 tier = "result-guard"
@@ -52,8 +52,9 @@ rationale = "ancient-paralog sensitive tier floor"
 
 [[heuristic]]
 name = "sensitive tier call-site literal (mismatch vs field)"
+anchor = "nucleotide_edges"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 2506
+line = 2738
 value = "0.70"
 stage = "O1-edge"
 tier = "result-guard"
@@ -64,7 +65,7 @@ rationale = "sensitive nucleotide_edges call passes 0.70, not the sensitive_iden
 [[heuristic]]
 name = "protein tier fident floor"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 2465
+line = 2697
 value = "0.50"
 stage = "O1-edge"
 tier = "inert-guard"
@@ -75,7 +76,7 @@ rationale = "batch_protein_edges fident floor for the divergent protein tier"
 [[heuristic]]
 name = "READTHROUGH_MIN_SUPPORT"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 653
+line = 707
 value = "2"
 stage = "pre-O1"
 tier = "inert-guard"
@@ -86,7 +87,7 @@ rationale = "min read support per engulfed junction for the readthrough filter"
 [[heuristic]]
 name = "READTHROUGH_MIN_DISTINCT"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 660
+line = 714
 value = "5"
 stage = "pre-O1"
 tier = "result-guard"
@@ -97,7 +98,7 @@ rationale = "distinct engulfed junctions to call single-exon transcript unsplice
 [[heuristic]]
 name = "MISCHAIN_GIANT_INTRON_BP"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 665
+line = 719
 value = "50_000"
 stage = "pre-O1"
 tier = "inert-guard"
@@ -108,7 +109,7 @@ rationale = "giant-intron mischain detector threshold"
 [[heuristic]]
 name = "ANTISENSE_MINORITY_DENOM"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 2869
+line = 3136
 value = "10"
 stage = "O1-cluster"
 tier = "inert-guard"
@@ -119,7 +120,7 @@ rationale = "minority-antisense-is-artifact ratio denominator"
 [[heuristic]]
 name = "CONTAIN_FRAC"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 305
+line = 329
 value = "0.5"
 stage = "pre-O1"
 tier = "inert-guard"
@@ -130,7 +131,7 @@ rationale = "structureless-span containment fraction for same-locus collapse"
 [[heuristic]]
 name = "RESCUE_WIN"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 1541
+line = 1664
 value = "1_000_000"
 stage = "O1-cluster"
 tier = "inert-guard"
@@ -955,7 +956,7 @@ rationale = "legacy log-LR margin gate -- inert by default, only used under use_
 [[heuristic]]
 name = "QUANT_ERROR"
 file = "src/rustle/vg_family/copy_assign_pipeline.rs"
-line = 948
+line = 954
 value = "0.01"
 stage = "O2"
 tier = "result-guard"
@@ -966,7 +967,7 @@ rationale = "per-base error rate for soft EM quantification -- epsilon inconsist
 [[heuristic]]
 name = "PSV_MIN_ALLELE_READS"
 file = "src/rustle/vg_family/copy_assign_pipeline.rs"
-line = 634
+line = 640
 value = "2"
 stage = "O2"
 tier = "inert-guard"
@@ -977,7 +978,7 @@ rationale = "min reads per allele for a read-supported PSV column"
 [[heuristic]]
 name = "PSV_MIN_JUDGE_COV"
 file = "src/rustle/vg_family/copy_assign_pipeline.rs"
-line = 638
+line = 644
 value = "4"
 stage = "O2"
 tier = "inert-guard"
@@ -988,7 +989,7 @@ rationale = "min total coverage to judge a PSV column read-supported"
 [[heuristic]]
 name = "EDIT_MIN_FRAC"
 file = "src/rustle/vg_family/copy_assign_pipeline.rs"
-line = 1009
+line = 1015
 value = "0.05"
 stage = "O2"
 tier = "inert-guard"
@@ -999,7 +1000,7 @@ rationale = "min minor-allele fraction to flag an A-to-I editing site"
 [[heuristic]]
 name = "EDIT_MIN_READS"
 file = "src/rustle/vg_family/copy_assign_pipeline.rs"
-line = 1010
+line = 1016
 value = "2"
 stage = "O2"
 tier = "inert-guard"
@@ -1054,7 +1055,7 @@ rationale = "adaptive band slack over |len_a-len_b| for the PSV aligner"
 [[heuristic]]
 name = "POA_CAP"
 file = "src/rustle/vg_family/copy_assign_pipeline.rs"
-line = 524
+line = 531
 value = "20_000"
 stage = "O2"
 tier = "result-guard"
@@ -1065,7 +1066,7 @@ rationale = "poasta vs minimap2 engine-swap crossover -- poasta is exact O(n^2),
 [[heuristic]]
 name = "MAX_CONV_SITES"
 file = "src/rustle/vg_family/copy_assign_pipeline.rs"
-line = 932
+line = 938
 value = "300"
 stage = "O2"
 tier = "inert-guard"
@@ -1076,7 +1077,7 @@ rationale = "PSV site cap for the convergence/stride-sample scan"
 [[heuristic]]
 name = "MOSAIC_EPS"
 file = "src/rustle/vg_family/copy_assign_pipeline.rs"
-line = 1401
+line = 1407
 value = "0.01"
 stage = "O2"
 tier = "inert-guard"
@@ -1087,7 +1088,7 @@ rationale = "HiFi per-base error for the mosaic likelihood"
 [[heuristic]]
 name = "MAX_MOSAIC_SITES"
 file = "src/rustle/vg_family/copy_assign_pipeline.rs"
-line = 1402
+line = 1408
 value = "250"
 stage = "O2"
 tier = "inert-guard"
@@ -1098,7 +1099,7 @@ rationale = "PSV site cap for detect_mosaic (O(sites^2))"
 [[heuristic]]
 name = "READ_CAP"
 file = "src/rustle/vg_family/o2_materialize.rs"
-line = 250
+line = 258
 value = "6000"
 stage = "O2"
 tier = "result-guard"
@@ -1120,7 +1121,7 @@ rationale = "reciprocal overlap fraction to merge copy regions"
 [[heuristic]]
 name = "PAD"
 file = "src/rustle/vg_family/o2_materialize.rs"
-line = 244
+line = 248
 value = "2000"
 stage = "O2"
 tier = "inert-guard"
@@ -1131,7 +1132,7 @@ rationale = "fetch padding around a copy region"
 [[heuristic]]
 name = "MIN_READS_PSV"
 file = "src/rustle/vg_family/o2_materialize.rs"
-line = 425
+line = 439
 value = "3"
 stage = "O2"
 tier = "inert-guard"
@@ -1439,7 +1440,7 @@ rationale = "fractional read-count floor for allele support"
 [[heuristic]]
 name = "--em-max-iter (default)"
 file = "src/bin/copy_assign.rs"
-line = 262
+line = 278
 value = "500"
 stage = "O2"
 tier = "inert-guard"
@@ -1450,7 +1451,7 @@ rationale = "max E/M sweeps for --em soft quantification"
 [[heuristic]]
 name = "--em-eps (default)"
 file = "src/bin/copy_assign.rs"
-line = 265
+line = 281
 value = "1e-6"
 stage = "O2"
 tier = "inert-guard"
@@ -1461,7 +1462,7 @@ rationale = "E/M convergence tolerance for --em"
 [[heuristic]]
 name = "FLOOR (consistent-zone posterior)"
 file = "src/bin/copy_assign.rs"
-line = 1025
+line = 1064
 value = "0.01"
 stage = "O2"
 tier = "inert-guard"
@@ -1472,7 +1473,7 @@ rationale = "posterior floor for a copy to be in the consistent zone"
 [[heuristic]]
 name = "--win (default)"
 file = "src/bin/copy_assign.rs"
-line = 111
+line = 127
 value = "5_000_000"
 stage = "O2"
 tier = "inert-guard"
@@ -1494,7 +1495,7 @@ rationale = "minimum copies for a co-located family -- lowering 3->2 changed def
 [[heuristic]]
 name = "--as-ratio (default)"
 file = "src/bin/copy_assign.rs"
-line = 149
+line = 165
 value = "0.98"
 stage = "O2"
 tier = "inert-guard"
@@ -1505,7 +1506,7 @@ rationale = "AS-tie ratio for --recover-copies secondary rescue"
 [[heuristic]]
 name = "--margin (default)"
 file = "src/bin/copy_assign.rs"
-line = 166
+line = 182
 value = "6.9"
 stage = "O2"
 tier = "inert-guard"
@@ -1857,7 +1858,7 @@ rationale = "genome remap identity ceiling for admission"
 [[heuristic]]
 name = "linearize_certificate n_decoys (call site)"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 1341
+line = 1417
 value = "20"
 stage = "O4"
 tier = "derived"
@@ -1868,7 +1869,7 @@ rationale = "dinucleotide-shuffle decoy count for the augment-and-linearize perm
 [[heuristic]]
 name = "linearize_certificate alpha (call site)"
 file = "src/rustle/vg_family/denovo_pipeline.rs"
-line = 1341
+line = 1417
 value = "0.05"
 stage = "O4"
 tier = "derived"

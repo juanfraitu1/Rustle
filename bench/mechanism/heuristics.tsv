@@ -1,7 +1,7 @@
 stage	tier	kind	name	value	file	line	rationale
 O1-cluster	decision	arbitrary	GAMMA	0.20	src/rustle/vg_family/family_definition.rs	173	gamma-quasi-clique internal edge density -- the family cohesion definition
 O1-cluster	inert-guard	arbitrary	ALN_MIN	0.24	src/rustle/vg_family/driver.rs	53	aln_frac KEEP threshold
-O1-cluster	inert-guard	arbitrary	ANTISENSE_MINORITY_DENOM	10	src/rustle/vg_family/denovo_pipeline.rs	2869	minority-antisense-is-artifact ratio denominator
+O1-cluster	inert-guard	arbitrary	ANTISENSE_MINORITY_DENOM	10	src/rustle/vg_family/denovo_pipeline.rs	3136	minority-antisense-is-artifact ratio denominator
 O1-cluster	inert-guard	arbitrary	COLINEAR_COV	0.60	src/rustle/vg_family/bridge_detector.rs	70	colinear coverage floor for subfamily dominance
 O1-cluster	inert-guard	arbitrary	CORE_MIN	0.19	src/rustle/vg_family/driver.rs	51	core_recip KEEP threshold
 O1-cluster	inert-guard	arbitrary	DEMOTE_BAL_MIN	0.90	src/rustle/vg_family/edge_oracle.rs	42	minor-allele balance floor for the DEMOTE conjunct
@@ -17,7 +17,7 @@ O1-cluster	inert-guard	arbitrary	MIN_EXON	30	src/rustle/vg_family/bridge_detecto
 O1-cluster	inert-guard	arbitrary	M_OP	5	src/rustle/vg_family/repeat_catalog.rs	44	library-free repeat-node multiplicity operating threshold
 O1-cluster	inert-guard	arbitrary	PURITY	0.50	src/rustle/vg_family/family_definition.rs	178	dominant-biotype purity floor -- reported not filtered
 O1-cluster	inert-guard	arbitrary	REPEAT_MULT_MIN	20	src/rustle/vg_family/driver.rs	63	repeat-hub gate multiplicity cut
-O1-cluster	inert-guard	arbitrary	RESCUE_WIN	1_000_000	src/rustle/vg_family/denovo_pipeline.rs	1541	genomic window for thin-locus rescue candidate search
+O1-cluster	inert-guard	arbitrary	RESCUE_WIN	1_000_000	src/rustle/vg_family/denovo_pipeline.rs	1664	genomic window for thin-locus rescue candidate search
 O1-cluster	inert-guard	arbitrary	RESOLUTION	1.0	src/rustle/vg_family/family_split.rs	21	Louvain resolution parameter
 O1-cluster	inert-guard	arbitrary	SegdupParams::band	band: 30	src/rustle/vg_family/segdup.rs	103	max flank indel (bp) the banded homology scan tolerates
 O1-cluster	inert-guard	arbitrary	SegdupParams::min_each_flank	min_each_flank: 50	src/rustle/vg_family/segdup.rs	103	min homology required on EACH flank side
@@ -33,11 +33,11 @@ O1-count	decision	arbitrary	ConflictParams::delta (default)	delta: 0.005	src/rus
 O1-count	decision	arbitrary	ConflictParams::min_reads (default)	min_reads: 3	src/rustle/vg_family/read_conflict.rs	63	min conflicting reads for a weighted conflict edge
 O1-count	derived	arbitrary	RUSTLE_CONFLICT_ALPHA (default)	1e-3	src/rustle/vg_family/read_conflict.rs	80	significance level for the eps^delta >= alpha de-tie -- mirrors the assignment-gate certificate, not a hand-set score gap
 O1-count	result-guard	arbitrary	RUSTLE_CONFLICT_EPS (default)	0.001	src/rustle/vg_family/read_conflict.rs	80	per-base error rate default for the significance-based de-tie -- one of 5 epsilon values in the codebase
-O1-edge	decision	arbitrary	RefineParams::min_coverage	0.50	src/rustle/vg_family/denovo_pipeline.rs	2371	cov-of-shorter floor for the same edge test
-O1-edge	decision	arbitrary	RefineParams::min_identity	0.80	src/rustle/vg_family/denovo_pipeline.rs	2370	asm20 exon-sum homology edge identity floor — THE family edge test
-O1-edge	inert-guard	arbitrary	protein tier fident floor	0.50	src/rustle/vg_family/denovo_pipeline.rs	2465	batch_protein_edges fident floor for the divergent protein tier
-O1-edge	result-guard	arbitrary	RefineParams::sensitive_identity	0.60	src/rustle/vg_family/denovo_pipeline.rs	2377	ancient-paralog sensitive tier floor
-O1-edge	result-guard	arbitrary	sensitive tier call-site literal (mismatch vs field)	0.70	src/rustle/vg_family/denovo_pipeline.rs	2506	sensitive nucleotide_edges call passes 0.70, not the sensitive_identity=0.60 field -- surfaced mismatch
+O1-edge	decision	arbitrary	RefineParams::min_coverage	0.50	src/rustle/vg_family/denovo_pipeline.rs	2601	cov-of-shorter floor for the same edge test
+O1-edge	decision	arbitrary	RefineParams::min_identity	0.80	src/rustle/vg_family/denovo_pipeline.rs	2600	asm20 exon-sum homology edge identity floor — THE family edge test
+O1-edge	inert-guard	arbitrary	protein tier fident floor	0.50	src/rustle/vg_family/denovo_pipeline.rs	2697	batch_protein_edges fident floor for the divergent protein tier
+O1-edge	result-guard	arbitrary	RefineParams::sensitive_identity	0.60	src/rustle/vg_family/denovo_pipeline.rs	2607	ancient-paralog sensitive tier floor
+O1-edge	result-guard	arbitrary	sensitive tier call-site literal (mismatch vs field)	0.70	src/rustle/vg_family/denovo_pipeline.rs	2738	sensitive nucleotide_edges call passes 0.70, not the sensitive_identity=0.60 field -- surfaced mismatch
 O1-prefilter	decision	arbitrary	KMER (family_detect)	18	src/rustle/vg_family/family_detect.rs	37	canonical k-mer length for the candidate-pair prefilter -- gates which pairs ever reach POA
 O1-prefilter	inert-guard	arbitrary	CNT_MAX	40	src/rustle/vg_family/family_detect.rs	45	pervasive-kmer cap (mobile-element/repeat guard)
 O1-prefilter	inert-guard	arbitrary	CNT_MIN	2	src/rustle/vg_family/family_detect.rs	43	min distinct reps owning a k-mer for it to be family-informative
@@ -63,19 +63,19 @@ O2	derived	derived	Poisson-binomial DP step	from_prev	src/rustle/vg_family/copy_
 O2	derived	derived	copy_assign alpha (Bonferroni thr)	n.saturating_sub(1)	src/rustle/vg_family/copy_assign.rs	453	certificate threshold alpha/(n-1), union bound over n-1 competitors
 O2	derived	derived	p_from_tau	tau.exp()	src/rustle/vg_family/copy_assign.rs	139	inverse of tau_from_p -- misassignment rate implied by a margin tau
 O2	derived	derived	tau_from_p	p).ln()	src/rustle/vg_family/copy_assign.rs	134	Bayes-optimal log-LR decision threshold tau(p) = ln((1-p)/p)
-O2	inert-guard	arbitrary	--as-ratio (default)	0.98	src/bin/copy_assign.rs	149	AS-tie ratio for --recover-copies secondary rescue
-O2	inert-guard	arbitrary	--em-eps (default)	1e-6	src/bin/copy_assign.rs	265	E/M convergence tolerance for --em
-O2	inert-guard	arbitrary	--em-max-iter (default)	500	src/bin/copy_assign.rs	262	max E/M sweeps for --em soft quantification
-O2	inert-guard	arbitrary	--margin (default)	6.9	src/bin/copy_assign.rs	166	CLI decisive-margin default (tau ~ p=1e-3), legacy A/B knob -- production gate uses the IsoCon certificate
-O2	inert-guard	arbitrary	--win (default)	5_000_000	src/bin/copy_assign.rs	111	co-located window (bp) for a family scan
+O2	inert-guard	arbitrary	--as-ratio (default)	0.98	src/bin/copy_assign.rs	165	AS-tie ratio for --recover-copies secondary rescue
+O2	inert-guard	arbitrary	--em-eps (default)	1e-6	src/bin/copy_assign.rs	281	E/M convergence tolerance for --em
+O2	inert-guard	arbitrary	--em-max-iter (default)	500	src/bin/copy_assign.rs	278	max E/M sweeps for --em soft quantification
+O2	inert-guard	arbitrary	--margin (default)	6.9	src/bin/copy_assign.rs	182	CLI decisive-margin default (tau ~ p=1e-3), legacy A/B knob -- production gate uses the IsoCon certificate
+O2	inert-guard	arbitrary	--win (default)	5_000_000	src/bin/copy_assign.rs	127	co-located window (bp) for a family scan
 O2	inert-guard	arbitrary	ALLELE_SUPPORT_ABS	3	src/rustle/vg_family/recombinant_abstain.rs	67	absolute read-count floor for allele support
 O2	inert-guard	arbitrary	ALLELE_SUPPORT_FRAC	0.02	src/rustle/vg_family/recombinant_abstain.rs	69	fractional read-count floor for allele support
 O2	inert-guard	arbitrary	AssignParams::boundary_tol (default)	4	src/rustle/vg_family/copy_assign.rs	211	junction-boundary match tolerance (bp)
 O2	inert-guard	arbitrary	AssignParams::junction_err (default)	1e-4	src/rustle/vg_family/copy_assign.rs	214	per-distinguishing-junction error probability
 O2	inert-guard	arbitrary	AssignParams::margin (default, legacy)	2.0	src/rustle/vg_family/copy_assign.rs	212	legacy log-LR margin gate -- inert by default, only used under use_margin_gate
-O2	inert-guard	arbitrary	EDIT_MIN_FRAC	0.05	src/rustle/vg_family/copy_assign_pipeline.rs	1009	min minor-allele fraction to flag an A-to-I editing site
-O2	inert-guard	arbitrary	EDIT_MIN_READS	2	src/rustle/vg_family/copy_assign_pipeline.rs	1010	min minor-allele reads to flag an editing site
-O2	inert-guard	arbitrary	FLOOR (consistent-zone posterior)	0.01	src/bin/copy_assign.rs	1025	posterior floor for a copy to be in the consistent zone
+O2	inert-guard	arbitrary	EDIT_MIN_FRAC	0.05	src/rustle/vg_family/copy_assign_pipeline.rs	1015	min minor-allele fraction to flag an A-to-I editing site
+O2	inert-guard	arbitrary	EDIT_MIN_READS	2	src/rustle/vg_family/copy_assign_pipeline.rs	1016	min minor-allele reads to flag an editing site
+O2	inert-guard	arbitrary	FLOOR (consistent-zone posterior)	0.01	src/bin/copy_assign.rs	1064	posterior floor for a copy to be in the consistent zone
 O2	inert-guard	arbitrary	GAP_EXT	1	src/rustle/vg_family/copy_assign_pipeline.rs	260	banded Gotoh affine DP gap-extend penalty
 O2	inert-guard	arbitrary	GAP_OPEN	32	src/rustle/vg_family/copy_assign_pipeline.rs	259	banded Gotoh affine DP gap-open penalty
 O2	inert-guard	arbitrary	HiddenCopyParams::balanced_hi (default)	0.60	src/rustle/vg_family/hidden_copy.rs	41	max alt-allele fraction for a candidate column
@@ -85,17 +85,17 @@ O2	inert-guard	arbitrary	HiddenCopyParams::min_alt_reads (default)	5	src/rustle/
 O2	inert-guard	arbitrary	HiddenCopyParams::min_depth (default)	8	src/rustle/vg_family/hidden_copy.rs	42	min coverage at a candidate column
 O2	inert-guard	arbitrary	HiddenCopyParams::share_hi (default)	0.60	src/rustle/vg_family/hidden_copy.rs	45	alt-column fraction for a read to join the hidden haplotype
 O2	inert-guard	arbitrary	IMPURITY_MAX	1	src/rustle/vg_family/recombinant_abstain.rs	64	max impurity to attempt a recombinant split
-O2	inert-guard	arbitrary	MAX_CONV_SITES	300	src/rustle/vg_family/copy_assign_pipeline.rs	932	PSV site cap for the convergence/stride-sample scan
-O2	inert-guard	arbitrary	MAX_MOSAIC_SITES	250	src/rustle/vg_family/copy_assign_pipeline.rs	1402	PSV site cap for detect_mosaic (O(sites^2))
+O2	inert-guard	arbitrary	MAX_CONV_SITES	300	src/rustle/vg_family/copy_assign_pipeline.rs	938	PSV site cap for the convergence/stride-sample scan
+O2	inert-guard	arbitrary	MAX_MOSAIC_SITES	250	src/rustle/vg_family/copy_assign_pipeline.rs	1408	PSV site cap for detect_mosaic (O(sites^2))
 O2	inert-guard	arbitrary	MIN_ALN_ID	0.5	src/rustle/vg_family/vg_realign.rs	205	min alignment identity for a realign fit to count
 O2	inert-guard	arbitrary	MIN_ARM	2	src/rustle/vg_family/recombinant_abstain.rs	52	min sites per arm of a candidate recombination breakpoint
 O2	inert-guard	arbitrary	MIN_FLANK	2	src/rustle/vg_family/recombinant_abstain.rs	55	min flank sites on each side of a tract
 O2	inert-guard	arbitrary	MIN_INFO	4	src/rustle/vg_family/recombinant_abstain.rs	49	min spanned informative sites to attempt recombinant classification
-O2	inert-guard	arbitrary	MIN_READS_PSV	3	src/rustle/vg_family/o2_materialize.rs	425	min read support for a materialized PSV column
+O2	inert-guard	arbitrary	MIN_READS_PSV	3	src/rustle/vg_family/o2_materialize.rs	439	min read support for a materialized PSV column
 O2	inert-guard	arbitrary	MIN_SINGLE_MM	2	src/rustle/vg_family/recombinant_abstain.rs	61	min mismatches vs any single copy to call recombinant
 O2	inert-guard	arbitrary	MIN_TRACT	2	src/rustle/vg_family/recombinant_abstain.rs	58	min sites within a recombination tract (else a point event)
 O2	inert-guard	arbitrary	MISMATCH	1	src/rustle/vg_family/copy_assign_pipeline.rs	261	banded Gotoh affine DP mismatch penalty
-O2	inert-guard	arbitrary	MOSAIC_EPS	0.01	src/rustle/vg_family/copy_assign_pipeline.rs	1401	HiFi per-base error for the mosaic likelihood
+O2	inert-guard	arbitrary	MOSAIC_EPS	0.01	src/rustle/vg_family/copy_assign_pipeline.rs	1407	HiFi per-base error for the mosaic likelihood
 O2	inert-guard	arbitrary	MosaicParams::breakpoint_tol (default)	50	src/rustle/vg_family/mosaic.rs	91	breakpoint clustering tolerance (bp)
 O2	inert-guard	arbitrary	MosaicParams::family_min_supporting_reads (default)	3	src/rustle/vg_family/mosaic.rs	90	min molecules to confirm a mosaic breakpoint cluster
 O2	inert-guard	arbitrary	MosaicParams::max_ambig_frac (default)	0.5	src/rustle/vg_family/mosaic.rs	85	ambiguous-read fraction ceiling, else NonIdentifiable
@@ -105,10 +105,10 @@ O2	inert-guard	arbitrary	MosaicParams::min_improvement (default)	3	src/rustle/vg
 O2	inert-guard	arbitrary	MosaicParams::min_seg_purity (default)	0.85	src/rustle/vg_family/mosaic.rs	84	per-tract agreement fraction floor
 O2	inert-guard	arbitrary	MosaicParams::min_tract_sites (default)	3	src/rustle/vg_family/mosaic.rs	82	min agreeing decisive sites per flank
 O2	inert-guard	arbitrary	OVERLAP_MERGE	0.5	src/rustle/vg_family/o2_materialize.rs	53	reciprocal overlap fraction to merge copy regions
-O2	inert-guard	arbitrary	PAD	2000	src/rustle/vg_family/o2_materialize.rs	244	fetch padding around a copy region
+O2	inert-guard	arbitrary	PAD	2000	src/rustle/vg_family/o2_materialize.rs	248	fetch padding around a copy region
 O2	inert-guard	arbitrary	PSV_BAND_MARGIN	1024	src/rustle/vg_family/copy_assign_pipeline.rs	405	adaptive band slack over |len_a-len_b| for the PSV aligner
-O2	inert-guard	arbitrary	PSV_MIN_ALLELE_READS	2	src/rustle/vg_family/copy_assign_pipeline.rs	634	min reads per allele for a read-supported PSV column
-O2	inert-guard	arbitrary	PSV_MIN_JUDGE_COV	4	src/rustle/vg_family/copy_assign_pipeline.rs	638	min total coverage to judge a PSV column read-supported
+O2	inert-guard	arbitrary	PSV_MIN_ALLELE_READS	2	src/rustle/vg_family/copy_assign_pipeline.rs	640	min reads per allele for a read-supported PSV column
+O2	inert-guard	arbitrary	PSV_MIN_JUDGE_COV	4	src/rustle/vg_family/copy_assign_pipeline.rs	644	min total coverage to judge a PSV column read-supported
 O2	inert-guard	arbitrary	RealignParams::max_mapq (default)	max_mapq: 20	src/rustle/vg_family/vg_realign.rs	189	MAPQ ceiling for a realign candidate
 O2	inert-guard	arbitrary	RealignParams::min_clip_frac (default)	min_clip_frac: 0.20	src/rustle/vg_family/vg_realign.rs	189	clip-fraction floor for a realign candidate
 O2	inert-guard	arbitrary	RealignParams::min_div (default)	min_div: 0.05	src/rustle/vg_family/vg_realign.rs	189	divergence floor for a realign candidate
@@ -117,9 +117,9 @@ O2	result-guard	arbitrary	AssignParams::error_rate (default)	0.003	src/rustle/vg
 O2	result-guard	derived	GENOME_WIDE_EPS_AMB	0.001313	src/rustle/vg_family/collapse_gate.rs	124	background MAPQ-0 ambiguity rate measured on GGO_mm.bam only -- hard-coded default, single-sample
 O2	result-guard	arbitrary	MosaicParams::eps_cap (default)	0.05	src/rustle/vg_family/mosaic.rs	89	upper clamp / fail-safe per-read error rate -- one of 5 epsilon values in the codebase
 O2	result-guard	arbitrary	MosaicParams::eps_floor (default)	0.005	src/rustle/vg_family/mosaic.rs	88	lower clamp on per-read error rate -- one of 5 epsilon values in the codebase
-O2	result-guard	arbitrary	POA_CAP	20_000	src/rustle/vg_family/copy_assign_pipeline.rs	524	poasta vs minimap2 engine-swap crossover -- poasta is exact O(n^2), above this a different engine runs
-O2	result-guard	arbitrary	QUANT_ERROR	0.01	src/rustle/vg_family/copy_assign_pipeline.rs	948	per-base error rate for soft EM quantification -- epsilon inconsistency vs the 0.003 assignment default
-O2	result-guard	arbitrary	READ_CAP	6000	src/rustle/vg_family/o2_materialize.rs	250	read pool truncation cap by BAM order -- silently drops reads past this on dense loci
+O2	result-guard	arbitrary	POA_CAP	20_000	src/rustle/vg_family/copy_assign_pipeline.rs	531	poasta vs minimap2 engine-swap crossover -- poasta is exact O(n^2), above this a different engine runs
+O2	result-guard	arbitrary	QUANT_ERROR	0.01	src/rustle/vg_family/copy_assign_pipeline.rs	954	per-base error rate for soft EM quantification -- epsilon inconsistency vs the 0.003 assignment default
+O2	result-guard	arbitrary	READ_CAP	6000	src/rustle/vg_family/o2_materialize.rs	258	read pool truncation cap by BAM order -- silently drops reads past this on dense loci
 O3	derived	arbitrary	--q (default)	0.05	src/bin/asj.rs	34	BH-FDR significance level
 O3	derived	derived	bh_fdr	fn bh_fdr	src/rustle/vg_family/allele_specific_junctions.rs	217	Benjamini-Hochberg FDR correction over tested junctions
 O3	derived	derived	lgamma	fn lgamma	src/rustle/vg_family/allele_specific_junctions.rs	236	log-gamma numerics backing the exact binomial/Fisher significance test
@@ -141,8 +141,8 @@ O3	inert-guard	arbitrary	PSI saturation high	psi_x >= 0.98	src/rustle/vg_family/
 O3	inert-guard	arbitrary	PSI saturation low	psi_x <= 0.02	src/rustle/vg_family/allele_specific_junctions.rs	178	PSI saturation floor -- both alleles near-excluded skips the test
 O3	inert-guard	arbitrary	SOR_KEEP	3.0	src/rustle/vg_family/asj_strand_bias.rs	49	strand-odds-ratio keep threshold
 O3	inert-guard	arbitrary	SOR_STRICT	2.0	src/rustle/vg_family/asj_strand_bias.rs	53	strand-odds-ratio strict threshold
-O4	derived	derived	linearize_certificate alpha (call site)	0.05	src/rustle/vg_family/denovo_pipeline.rs	1341	permutation p-value threshold for the Linearizes verdict
-O4	derived	derived	linearize_certificate n_decoys (call site)	20	src/rustle/vg_family/denovo_pipeline.rs	1341	dinucleotide-shuffle decoy count for the augment-and-linearize permutation test
+O4	derived	derived	linearize_certificate alpha (call site)	0.05	src/rustle/vg_family/denovo_pipeline.rs	1417	permutation p-value threshold for the Linearizes verdict
+O4	derived	derived	linearize_certificate n_decoys (call site)	20	src/rustle/vg_family/denovo_pipeline.rs	1417	dinucleotide-shuffle decoy count for the augment-and-linearize permutation test
 O4	inert-guard	derived	AbsentCopyParams::alpha (default)	1e-3	src/rustle/vg_family/absent_copy.rs	52	significance level -- reuses the SAME Poisson-binomial certificate as copy_assign.rs (Assign consequence)
 O4	inert-guard	arbitrary	AbsentCopyParams::error_rate (default)	0.003	src/rustle/vg_family/absent_copy.rs	51	per-base error rate for the reference-absent significance certificate
 O4	inert-guard	arbitrary	AbsentCopyParams::min_clusters (default)	3	src/rustle/vg_family/absent_copy.rs	53	min co-varying clusters for a multi-copy call
@@ -150,7 +150,7 @@ O4	inert-guard	arbitrary	AbsentCopyParams::remap_max_identity (default)	0.98	src
 O4	inert-guard	arbitrary	pool_novel min_id call site	0.9	src/rustle/vg_family/vg_realign.rs	640	identity floor to admit a novel-candidate cluster
 pre-O1	decision	arbitrary	GATE_MIN_READS	3	src/rustle/vg_family/denovo_assemble.rs	27	locus admission gate — the pipeline's unit of existence
 pre-O1	inert-guard	arbitrary	BSIZE	10_000	src/rustle/util/constants.rs	4	prefix-sum coverage bundle block size -- assembler-inherited
-pre-O1	inert-guard	arbitrary	CONTAIN_FRAC	0.5	src/rustle/vg_family/denovo_pipeline.rs	305	structureless-span containment fraction for same-locus collapse
+pre-O1	inert-guard	arbitrary	CONTAIN_FRAC	0.5	src/rustle/vg_family/denovo_pipeline.rs	329	structureless-span containment fraction for same-locus collapse
 pre-O1	inert-guard	arbitrary	FLOW_EPSILON	1e-6	src/rustle/util/constants.rs	18	global floating epsilon for merge DP -- assembler-inherited
 pre-O1	inert-guard	arbitrary	ISO	0.01	src/rustle/types.rs	1133	isoform-fraction floor
 pre-O1	inert-guard	arbitrary	ISO_STRICT	0.025	src/rustle/types.rs	1117	strict isoform-fraction floor
@@ -160,13 +160,13 @@ pre-O1	inert-guard	arbitrary	LOW_ISO	0.02	src/rustle/types.rs	1134	low isoform-f
 pre-O1	inert-guard	arbitrary	MAX_SPAN	3_000_000	src/rustle/vg_family/denovo_assemble.rs	29	max genomic span for a single locus
 pre-O1	inert-guard	arbitrary	MAX_SPLICED	300_000	src/rustle/vg_family/denovo_assemble.rs	33	max spliced bp for a locus
 pre-O1	inert-guard	arbitrary	MIN_SPLICED	100	src/rustle/vg_family/denovo_assemble.rs	31	min spliced bp for a locus to be admitted
-pre-O1	inert-guard	arbitrary	MISCHAIN_GIANT_INTRON_BP	50_000	src/rustle/vg_family/denovo_pipeline.rs	665	giant-intron mischain detector threshold
+pre-O1	inert-guard	arbitrary	MISCHAIN_GIANT_INTRON_BP	50_000	src/rustle/vg_family/denovo_pipeline.rs	719	giant-intron mischain detector threshold
 pre-O1	inert-guard	arbitrary	MISMATCHFRAC	0.02	src/rustle/util/constants.rs	12	mismatch fraction threshold -- assembler-inherited
 pre-O1	inert-guard	arbitrary	PASS1_MIN_READS	2	src/rustle/vg_family/denovo_assemble.rs	25	pass-1 skeleton read floor
 pre-O1	inert-guard	arbitrary	POLYA_MIN_CONSEC	5	src/rustle/bam.rs	367	min consecutive A/T bases to call a polyA run
 pre-O1	inert-guard	arbitrary	POLYA_MIN_FRAC	0.8	src/rustle/bam.rs	369	min A/T fraction within the polyA window
 pre-O1	inert-guard	arbitrary	POLYA_WINDOW	20	src/rustle/bam.rs	368	polyA scan window size
-pre-O1	inert-guard	arbitrary	READTHROUGH_MIN_SUPPORT	2	src/rustle/vg_family/denovo_pipeline.rs	653	min read support per engulfed junction for the readthrough filter
+pre-O1	inert-guard	arbitrary	READTHROUGH_MIN_SUPPORT	2	src/rustle/vg_family/denovo_pipeline.rs	707	min read support per engulfed junction for the readthrough filter
 pre-O1	inert-guard	arbitrary	SSERROR	25	src/rustle/util/constants.rs	16	splice-site error tolerance window -- assembler-inherited
 pre-O1	inert-guard	arbitrary	per_splice_site_isofrac (max clamp)	1.0	src/rustle/types.rs	1158	benchmark-tuned per-splice-site isofrac clamp
-pre-O1	result-guard	arbitrary	READTHROUGH_MIN_DISTINCT	5	src/rustle/vg_family/denovo_pipeline.rs	660	distinct engulfed junctions to call single-exon transcript unspliced readthrough (data-informed, not at an observed boundary)
+pre-O1	result-guard	arbitrary	READTHROUGH_MIN_DISTINCT	5	src/rustle/vg_family/denovo_pipeline.rs	714	distinct engulfed junctions to call single-exon transcript unspliced readthrough (data-informed, not at an observed boundary)
