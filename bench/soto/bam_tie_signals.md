@@ -259,3 +259,52 @@ the §17 family table — the prediction is that some of the 11 isoform-dropped 
 ⚠ Also fixed while running this: `tss_distribution_test.py` crashed at its own summary line with
 `NameError: b_` (the BROAD bucket was added to the verdicts but never tallied), so every run since that
 verdict was added died before printing the summary.
+
+## 10. TES exon-sum extension — implemented, measured, no family-level gain (2026-07-29)
+
+`RUSTLE_TES_EXTEND` ships (opt-in, default off, `sharp_tes` + `extend_exon_sum_to_tes`, 651 tests). It fires
+substantially: on the Soto cross-chrom pass a sharp 3' terminus is found for **363/622 reps**, and **153
+exon-sums are extended by 532 kb total**; on chr1, 123 exon-sums by 564 kb; on chr2, 79 by 318 kb.
+
+**Effect on the benchmark: none.**
+
+| | copies | FOUND (>=2 grouped) | + ISOFORM | families changed |
+|---|---:|---:|---:|---:|
+| xchrom pass | 285 -> 290 | 13 -> 13 | 9 -> 9 | 0 |
+| chr1 | 180 -> 183 | 13 -> 13 | 7 -> 7 | 0 |
+| chr2 | 63 -> 65 | 6 -> 6 | 3 -> 3 | 1 (no verdict change) |
+
+### The §9 prediction was wrong, and wrong in an instructive way
+
+§9 predicted this lever would rescue families dropped by the isoform requirement (`merge_quality_analysis.md`
+§17) — ID_400 NOTCH2/NOTCH2NL, ID_395 RGPD, ID_462 SRGAP2. It cannot, and the reason is a category error in
+the prediction rather than a shortfall in the implementation:
+
+```
+ID_400  grouped 4->4   with-isoform 0->0        ID_462  grouped 3->3   with-isoform 0->0
+ID_395  grouped 4->4   with-isoform 0->0        ID_226  grouped 5->5   with-isoform 0->0
+```
+
+Those families fail the isoform test because their copies are **UNSPLICED** (`n_exon == 1`). The TES
+extension lengthens a copy's exon-sum *sequence*; it does not and cannot make a copy spliced. Splicedness and
+sequence length are different axes, and §9 conflated them. The extension can only ever act on homology edges
+(by making exon-sums more distinctive) — it has no route to the isoform criterion at all.
+
+### What still stands, and what does not
+
+- **Stands:** the measurement in §9. TES genuinely is ~5x more often distinct than TSS (14/42 vs 3/40, median
+  4.9 kb), and that remains the correct answer to "does the 3' end carry copy-discriminating signal".
+- **Does not stand:** the inference that encoding it in the exon-sum would improve family recovery. Adding
+  883 kb of real 3'-terminal sequence across chr1+chr2 moved no family verdict. The extra sequence is
+  evidently either not where the homology edges are decided, or not decisive against the existing
+  identity/coverage thresholds.
+- **Kept anyway,** opt-in and default off, on the same basis as `RUSTLE_TSS_SNAP`: the measurement is the
+  deliverable, and a lever with a validated detector (`sharp_tes`) is worth having wired for future work on
+  the edge criteria — but it should not be presented as an improvement.
+
+⚠ **Implementation bug worth recording.** The first version placed the extension in `refine_copy_seq`'s
+`None` arm and passed it that arm's `genome`, which is `None` by definition — so it silently never fired. A
+full 40-minute Soto A/B produced byte-identical output while the log reported "sharp 3' terminus on 363/622
+reps". The unit test missed it because it also passed `None`, making every assertion a trivial no-op. Both
+are fixed: the extension is applied where the genome is in scope, and the test builds a real `GenomeIndex`
+from a temp FASTA and asserts the appended bases in both strand directions.
