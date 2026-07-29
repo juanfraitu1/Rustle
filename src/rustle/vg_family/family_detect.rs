@@ -378,6 +378,17 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
     }
 
     // Phase 2: iterative span-aware merge of locus representatives.
+    //
+    // Under `RUSTLE_SPLICED_REP`, an INTRONLESS transcript is treated as having UNKNOWN strand rather than
+    // `+`. Strand is derived from canonical junction motifs, so a cluster with no junctions has none to
+    // derive from and its `+` is a placeholder. The merge condition `a.strand == b.strand` nevertheless
+    // treats that placeholder as evidence, which makes an unspliced cluster unmergeable with any MINUS-strand
+    // gene's spliced skeletons. Measured on the Soto catalog: all 740 single-exon copies are `+`, while
+    // spliced copies split 149 `+` / 218 `-`. So at a minus-strand gene -- SRGAP2 among them -- the intronic
+    // unspliced cluster never even meets the spliced evidence, survives as an independent locus, and is
+    // emitted as its own single-exon copy (§14, §20).
+    let unstranded_unspliced =
+        matches!(std::env::var("RUSTLE_SPLICED_REP"), Ok(v) if v != "0" && !v.is_empty());
     loop {
         let reps = locus_reps(transcripts, &parent);
         let mut merged = false;
@@ -385,7 +396,13 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
             let a = &transcripts[reps[i]];
             for j in (i + 1)..reps.len() {
                 let b = &transcripts[reps[j]];
-                if a.chrom != b.chrom || a.strand != b.strand {
+                // Strand blocks a merge only when BOTH sides actually have a junction-derived strand.
+                let strand_conflict = if unstranded_unspliced {
+                    !a.introns.is_empty() && !b.introns.is_empty() && a.strand != b.strand
+                } else {
+                    a.strand != b.strand
+                };
+                if a.chrom != b.chrom || strand_conflict {
                     continue;
                 }
                 let ov = a.end.min(b.end).saturating_sub(a.start.max(b.start));

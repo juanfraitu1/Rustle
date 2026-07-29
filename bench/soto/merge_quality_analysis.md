@@ -1056,3 +1056,46 @@ the comparison like-for-like. The prediction is that the isoform-dropped familie
 representative, and that the 67% single-exon rate falls toward the 42% seen on the gorilla gene set. That is
 a sharper and better-targeted lever than the TES extension (§9-10), which acted on sequence rather than on
 which skeleton wins the locus.
+
+## 21. Implementing the §20 fix — a genuine bug found, a marginal net effect (2026-07-29)
+
+Two changes, both behind `RUSTLE_SPLICED_REP` (opt-in, default off, byte-identical; suite 642/642):
+
+1. **Spliced-preferring locus representative.** `locus_reps` picked by `max(n_reads, span)`. Spliced chains at
+   a locus are ISOFORMS of one transcription unit, not competitors, so their reads are now summed and the
+   winning CLASS supplies the representative. Fair in both directions — an intronless locus has no spliced
+   member so its unspliced cluster still wins, and a locus where unspliced genuinely dominates is unchanged.
+2. **Unspliced clusters are UNSTRANDED for merging.** This is the real bug. Strand comes from canonical
+   junction motifs, so a cluster with no junctions has none — its `+` is a placeholder. But
+   `collapse_parent`'s phase-2 merge tested `a.strand == b.strand` and treated that placeholder as evidence.
+   **All 740 single-exon copies in the Soto catalog are `+`, while spliced copies split 149 `+` / 218 `-`.**
+   So at any MINUS-strand gene the intronic unspliced cluster could never merge with the gene's spliced
+   skeletons — it survived as an independent locus and was emitted as its own single-exon copy. SRGAP2 is
+   minus-strand, which is why §14 found its two "copies" sitting inside one intron.
+
+### Measured (chr1 + chr2, `--cross-chrom --refine`)
+
+| | FOUND | + ISOFORM | 1-exon rate |
+|---|---:|---:|---:|
+| off | 19 | 10 | chr1 72%, chr2 71% |
+| on | **18 (−1)** | **11 (+1)** | chr1 74%, chr2 **59%** |
+
+Per family: 5 gained isoform evidence — including the flagship **ID_462 SRGAP2 0→1**, plus ID_448 SEC22B
+0→1, ID_212 0→1, ID_211 2→3, ID_35 2→3 — while 2 regressed: ID_215 lost all isoform evidence (3→0) and
+ID_357 lost the family entirely (grouped 2→0). ID_400 (NOTCH2) still has no isoform.
+
+### Honest verdict
+
+**The strand defect is real and worth fixing regardless** — a placeholder value was being used as evidence,
+and the 740/740 vs 149/218 split is unambiguous. But the composite change is **net-marginal on this
+benchmark**: +1 isoform-qualified family, −1 found family. It moves the specific loci §20 predicted (SRGAP2
+gains a spliced representative) without moving the aggregate.
+
+The §20 mechanism was therefore **partly wrong**. I claimed the unspliced cluster and the spliced skeletons
+compete for one locus representative. At SRGAP2C they never meet at all — the strand placeholder keeps them
+in separate components — and after the strand fix that locus STILL emits 1 exon / 96 reads, because the
+spliced skeletons that merge with it are individually small. Two distinct barriers stack, and removing one
+does not expose a fixed pipeline behind it.
+
+Kept opt-in on the same footing as the other levers: the strand finding is the deliverable, not a recall
+improvement. Anyone enabling it should note the two regressions.
