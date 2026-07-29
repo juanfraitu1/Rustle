@@ -545,3 +545,49 @@ usually absent) falls back to the Desktop copy and exits 2 if neither exists.
 **Standing caution:** a benchmark harness that cannot fail is worse than no harness. All three causes here
 were silent — a false comment, a missing-leg union printed as "MISSING" but not as an error, and a runner
 that swallowed 21 consecutive crashes.
+
+## 12. What the truncation actually is — spliced vs unspliced (2026-07-28)
+
+§8 reported "RNA copies are systematically truncated, median 0.54x". That number is a **mixture of two
+populations with opposite behaviour**, and quoting it unstratified is misleading:
+
+| matched pairs | n | median ratio | within 2x | truncated <=0.5x | over >=2x |
+|---|---:|---:|---:|---:|---:|
+| **SPLICED (>= 2 exons)** | 127 | **0.77** | 84 (66%) | 36 | 7 |
+| **UNSPLICED (1 exon)** | 91 | **0.17** | 15 (16%) | 72 | 4 |
+
+67% of all truncated pairs are single-exon copies (vs 17% of well-sized ones), and the ratio degrades
+monotonically with exon count: 1 exon -> 0.133, 2 -> 0.263, 3 -> 0.096, 4 -> 0.268, 5+ -> 0.361.
+
+### Why unspliced copies cannot span a locus — and why that is structural, not a bug
+
+Unspliced copies are produced by `cluster_unspliced` in `pass1_skeletons_robust`: single-linkage
+**span-overlap** clustering of unspliced reads per chromosome. A cluster's genomic extent is therefore
+bounded by **read length** (~1-10 kb), not by gene length, no matter how long the locus is. Nothing can join
+two unspliced read-clusters 50 kb apart, because an unspliced read carries no intron chain — the very
+evidence that lets spliced reads reach across a locus. GUSBP1's 231 kb annotated span is covered by **11
+separate ~9 kb unspliced clusters**; CNTNAP3P2's 238 kb by 19.
+
+Merging them by proximity is possible but is exactly the readthrough/over-merge failure the pipeline
+deliberately guards against (the readthrough filter already drops single-exon transcripts engulfing >= 5
+junctions, `project_readthrough_filter`).
+
+### The hypothesis this refutes, and the one it supports
+
+- **"Spliced RNA inherently cannot span the whole locus"** — REFUTED, and inverted. A spliced transcript's
+  genomic span *includes* its introns, so splicing does not shrink it. The spliced copies are the
+  well-sized population (0.77). Full-length reads demonstrably reach the whole locus: at SRGAP2C the longest
+  primary read spans 206,964 bp against a 207,899 bp gene; SRGAP2 260,860 vs 260,886.
+- **"The truncation is inherent"** — SUPPORTED, but for the unspliced population only, and for a different
+  reason: no intron chain means no evidence linking distant read clusters.
+
+⚠ Two measurement cautions found while establishing this:
+- Max-read-span is contaminated by MIS-CHAINS: NPIPB2 shows a read spanning 1270% of its gene, GTF2IRD2B
+  680%, ULK4P2 750%. Only spans near 100% (SRGAP2/2C/2D) are evidence of genuine full-length alignment.
+- Read presence over an unincluded exon does not prove the reads BELONG to that copy — in SD regions they may
+  be homology-shadow multimappers. `bench/soto/truncation_cause.py` establishes the locus is covered
+  (65/65 truncated pairs have read-supported exons we omitted), not that the reads are assignable.
+
+**Recommendation: report size agreement stratified.** The spliced number (0.77 median, 66% within 2x) is the
+meaningful one for "do our transcript models have the right size"; the unspliced number measures a read-cluster
+locus against a gene model, which is a category mismatch rather than a pipeline error.
