@@ -1454,3 +1454,58 @@ loses the substructure the advisor specifically asked about, and the substructur
 First stage reports **6 windows -> 13 duplicated-locus reps**, against 14 known members. Grouping stage is
 still running; the rep count is the number to check when it finishes, since that is the genuinely de-novo
 detection figure.
+
+### 24f. ROOT CAUSE of the NPIPB12 miss — one non-canonical junction (2026-07-29)
+
+Traced with a new `RUSTLE_DEBUG_LOCUS=chr:start-end` knob that logs one locus through every stage
+(reads -> skeletons -> gate+filters -> reps). On the reproducer BAM:
+
+```
+[dbg chr16:29765424-29788033] reads=514  skeletons=40
+  skeleton 29765317-29788442  introns=9  reads=109   <- NPIPB12's exact annotated span
+  skeleton 29765317-29788442  introns=9  reads=89
+  skeleton 29725035-29877436  introns=13 reads=34    <- mis-chain
+[dbg] transcripts after gate+filters=12   <- the 109- and 89-read skeletons are GONE
+[dbg] REPS after collapse=1
+  rep 29725035-29877436 exons=14 reads=34            <- a 152 kb model, 2,540 bp of exon
+```
+
+**The skeleton forms perfectly and the GATE discards it.** `build_spliced_seq` returns `None` if ANY junction
+is non-canonical. NPIPB12 (RefSeq NM_001395932.1) has **9 junctions: 8 canonical CT..AC and one CT..AT**
+(intron 1, 252 bp). One odd junction out of nine throws away a 10-exon, 109-read transcript.
+
+That single fact explains every earlier observation: the real-data miss, why the semi-synthetic top-up did not
+help (simulated reads reproduce the same junction), why lowering the coverage floor did nothing, and why depth
+was irrelevant.
+
+⚠ It also **invalidates §24d's conclusion** that the control had "excluded every data-side explanation and so
+this is a pipeline defect on ideal evidence". The premise was right — it IS a pipeline defect — but the
+reasoning was luck: the first control also had a **strand bug** (exons concatenated in genomic order for a
+MINUS-strand gene, so the simulated mRNA was reverse-complemented and its junctions were non-canonical). Fixed
+in `npipb12_topup.py`; the corrected control still fails, for the reason above.
+
+### The obvious fix is NOT safe — measured
+
+`RUSTLE_JUNCTION_MAJORITY` (opt-in, default off): take strand from the canonical majority, tolerate a
+minority of non-canonical junctions, still reject a genuine strand conflict. Unit-tested including the
+conflict case.
+
+| chr16, real data | copies | families | NPIPB12 |
+|---|---:|---:|---|
+| off (default, strict) | 66 | 20 | not called |
+| on | **34** | **11** | called — but as the 152 kb mis-chain, not its own locus |
+
+**It costs half the chr16 catalogue.** Gating tolerance by intron size (non-canonical allowed only below
+10 kb, `RUSTLE_JUNCTION_NC_MAX_BP`) changes nothing, which rules out the first hypothesis — the loss is not
+mis-chains being newly admitted. The admitted transcripts instead act as **bridges**: `collapse_parent` merges
+on SPAN overlap, so a newly-surviving long model absorbs loci that were previously separate reps.
+
+### Where this leaves it
+
+- **Root cause: identified precisely** — one non-canonical junction discards the whole transcript.
+- **Second defect exposed: collapse merges on SPAN**, so a model whose giant intron spans a locus can absorb
+  it. That is the same "reads spliced over a locus carry no information about it" point, now shown to have a
+  concrete cost.
+- **A safe fix needs both**: tolerate the odd junction AND make collapse containment EXONIC rather than
+  span-based, so relaxing the gate cannot bridge loci.
+- Default is unchanged and byte-identical (66 copies, verified). Nothing risky ships.

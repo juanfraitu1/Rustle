@@ -40,11 +40,27 @@ tid, exons = best[0], sorted(best[1])
 print(f"{GENE}: {len(tx)} annotated transcripts; using {tid} with {len(exons)} exons, "
       f"{sum(b-a for a,b in exons)} bp spliced, span {exons[0][0]}-{exons[-1][1]}")
 
+# STRAND MATTERS. NPIPB12 is on the MINUS strand, so the mRNA is the reverse complement of the
+# genomic-order exon concatenation. Simulating the forward concatenation and mapping with `-uf` (which
+# forces forward = transcript strand) yields non-canonical junctions, and assemble_gate rejects the
+# resulting skeletons -- they form but never become transcripts. That silently invalidated the first
+# version of this control.
+strand="+"
+with gzip.open(HGFF,"rt") as fh:
+    for ln in fh:
+        if ln.startswith("#"): continue
+        f=ln.rstrip("\n").split("\t")
+        if len(f)>=9 and f[2]=="gene" and f[0]==CHROM and f"Name={GENE};" in f[8]+";":
+            strand=f[6]; break
 seq=[]
 for a,b in exons:
     r=subprocess.run([SAM,"faidx",HFA,f"{CHROM}:{a+1}-{b}"],capture_output=True,text=True).stdout
     seq.append("".join(r.split("\n")[1:]))
 mrna="".join(seq)
+if strand=="-":
+    comp={"A":"T","C":"G","G":"C","T":"A","N":"N","a":"t","c":"g","g":"c","t":"a","n":"n"}
+    mrna="".join(comp.get(ch,"N") for ch in reversed(mrna))
+print(f"gene strand {strand}; mRNA {'reverse-complemented' if strand=='-' else 'as-is'}, {len(mrna)} bp")
 
 # IsoSeq-like: low error, some 5'/3' degradation -- matched to the real library's character
 reads=simulate_reads(mrna, N_READS, err=0.003, indel=0.001, seed=12, trunc_frac=0.15)

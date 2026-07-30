@@ -865,16 +865,60 @@ pub fn build_spliced_seq(
     end: u64,
     introns: &[(u64, u64)],
 ) -> Option<(Vec<u8>, char)> {
+    // Strand from the junction motifs. STRICT (default): every junction must be canonical and they must all
+    // agree, otherwise the whole transcript is discarded. That is unforgiving in a specific way -- ONE odd
+    // junction throws away an arbitrarily deep, otherwise-clean multi-exon model. NPIPB12 (RefSeq
+    // NM_001395932.1) is exactly this: 9 junctions, 8 canonical CT..AC, and intron 1 is CT..AT. Its
+    // 109-read, 10-exon skeleton is dropped here, which is why the member is missing from the catalogue and
+    // why neither extra coverage nor a lower homology floor recovered it
+    // (bench/soto/merge_quality_analysis.md §24b, §24d).
+    //
+    // MAJORITY (`RUSTLE_JUNCTION_MAJORITY`): decide strand by the canonical majority and tolerate a minority
+    // of non-canonical junctions. Still requires at least one canonical junction, and still rejects a
+    // genuine strand CONFLICT (both strands well represented), so a chimeric model is not admitted.
+    // ⚠ A blanket relaxation is NET-HARMFUL, measured: chr16 copies 66 -> 34 and families 20 -> 11, because
+    // the all-canonical rule was doing DOUBLE DUTY -- it drops NPIPB12 (bad) but also drops MIS-CHAINS (good),
+    // since a spuriously chained junction is usually non-canonical. So tolerance is granted only to SMALL
+    // introns: a 252 bp non-canonical junction (NPIPB12's) is a plausible real splice variant, a 104 kb one
+    // is a mis-chain. Above `RUSTLE_JUNCTION_NC_MAX_BP` (default 10 kb) canonical is still required.
+    let majority = matches!(std::env::var("RUSTLE_JUNCTION_MAJORITY"), Ok(v) if v != "0" && !v.is_empty());
+    let nc_max: u64 = std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000);
     let mut strand: Option<char> = None;
-    for &(d, a) in introns {
-        match junction_strand(genome, chrom, d, a) {
-            Some(st) => {
-                if strand.is_some_and(|s0| s0 != st) {
-                    return None;
+    if majority {
+        let (mut plus, mut minus) = (0usize, 0usize);
+        for &(d, a) in introns {
+            match junction_strand(genome, chrom, d, a) {
+                Some('+') => plus += 1,
+                Some('-') => minus += 1,
+                // A non-canonical junction is tolerated only if the intron is small enough to be a real
+                // splice variant. A large one is mis-chain evidence and still rejects the transcript.
+                Some(_) | None => {
+                    if a.saturating_sub(d) > nc_max {
+                        return None;
+                    }
                 }
-                strand = Some(st);
             }
-            None => return None,
+        }
+        if plus == 0 && minus == 0 {
+            return None; // no canonical junction at all -> no strand evidence
+        }
+        // A real conflict is both strands substantially supported; a lone dissenter is tolerated.
+        let (hi, lo) = if plus >= minus { (plus, minus) } else { (minus, plus) };
+        if lo * 2 > hi {
+            return None;
+        }
+        strand = Some(if plus >= minus { '+' } else { '-' });
+    } else {
+        for &(d, a) in introns {
+            match junction_strand(genome, chrom, d, a) {
+                Some(st) => {
+                    if strand.is_some_and(|s0| s0 != st) {
+                        return None;
+                    }
+                    strand = Some(st);
+                }
+                None => return None,
+            }
         }
     }
     let mut exons = Vec::with_capacity(introns.len() + 1);
@@ -1151,6 +1195,45 @@ mod locus_support_tests {
     /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
     /// 2, so every chain died at `GATE_MIN_READS = 3`. They all share the terminal junction
     /// (42939630, 42943604), so the junction-incidence graph pools them into one locus with support 12.
+    #[test]
+    fn junction_majority_tolerates_one_odd_junction_but_not_a_real_conflict() {
+        // A synthetic minus-strand gene with 3 introns: two canonical CT..AC and one CT..AT -- the NPIPB12
+        // shape. STRICT drops the whole transcript; MAJORITY keeps it and calls the strand from the two
+        // canonical junctions.
+        let dir = std::env::temp_dir().join(format!("jm_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fa = dir.join("g.fa");
+        // layout: exon(100) CT..AT intron(100) exon(100) CT..AC intron(100) exon(100) CT..AC intron(100) exon(100)
+        let ex = "A".repeat(100);
+        let bad = "CT".to_string() + &"G".repeat(96) + "AT";
+        let good = "CT".to_string() + &"G".repeat(96) + "AC";
+        let seq = format!("{ex}{bad}{ex}{good}{ex}{good}{ex}");
+        std::fs::write(&fa, format!(">c1\n{seq}\n")).unwrap();
+        let contigs: std::collections::HashSet<String> = ["c1".to_string()].into_iter().collect();
+        let g = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
+        let introns = vec![(100, 200), (300, 400), (500, 600)];
+
+        std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
+        assert!(build_spliced_seq(&g, "c1", 0, 700, &introns).is_none(),
+                "strict mode must drop a transcript with one non-canonical junction");
+
+        std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "1");
+        let got = build_spliced_seq(&g, "c1", 0, 700, &introns);
+        assert!(got.is_some(), "majority mode must keep it");
+        assert_eq!(got.unwrap().1, '-', "strand comes from the two canonical CT..AC junctions");
+
+        // A genuine CONFLICT -- one canonical '+' against one canonical '-' -- must still be rejected, so a
+        // chimeric model is never admitted.
+        let gtag = "GT".to_string() + &"G".repeat(96) + "AG";
+        let seq2 = format!("{ex}{gtag}{ex}{good}{ex}");
+        std::fs::write(&fa, format!(">c1\n{seq2}\n")).unwrap();
+        let g2 = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
+        assert!(build_spliced_seq(&g2, "c1", 0, 500, &vec![(100, 200), (300, 400)]).is_none(),
+                "a 1-vs-1 strand conflict must be rejected even in majority mode");
+        std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn sharp_tes_reports_the_peak_edge_and_abstains_on_broad_scatter() {
         // SHARP: 18 ends packed in 40bp plus 2 stragglers far beyond. The TES is the peak's OUTER edge --

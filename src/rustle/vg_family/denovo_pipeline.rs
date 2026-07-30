@@ -2048,9 +2048,6 @@ fn gw_reps_and_catalog(
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
-    // Build the junction-support map BEFORE freeing the primaries. It is keyed by distinct junction, so it is a
-    // rounding error next to the ~1.7M reads it derives from. O1 must drop readthroughs for the same reason O2
-    // does, or the two objectives disagree about what a locus is.
     let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
     drop(reads); // free the ~1.7M primaries before the per-chrom read load
     let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
@@ -2248,6 +2245,22 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    // `RUSTLE_DEBUG_LOCUS=chr:start-end` traces one locus through every stage, so a member that vanishes can
+    // be attributed to the stage that dropped it instead of inferred. Off by default; pure logging.
+    let dbg_locus: Option<(String, u64, u64)> = std::env::var("RUSTLE_DEBUG_LOCUS").ok().and_then(|v| {
+        let (c, r) = v.split_once(':')?;
+        let (a, b) = r.split_once('-')?;
+        Some((c.to_string(), a.trim().parse().ok()?, b.trim().parse().ok()?))
+    });
+    if let Some((c, a, b)) = &dbg_locus {
+        let n = reads.iter().filter(|r| &r.chrom == c && r.ref_start < *b && r.ref_end > *a).count();
+        let mut sk: Vec<_> = skeletons.iter().filter(|s| &s.chrom == c && s.start < *b && s.end > *a).collect();
+        sk.sort_by_key(|s| std::cmp::Reverse(s.n_reads));
+        eprintln!("[dbg {c}:{a}-{b}] reads={n}  skeletons={}", sk.len());
+        for s in sk.iter().take(6) {
+            eprintln!("[dbg]   skeleton {}-{} introns={} reads={}", s.start, s.end, s.introns.len(), s.n_reads);
+        }
+    }
     // Support map before the free; see the same-chrom catalog for why.
     let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
     drop(reads);
@@ -2256,8 +2269,24 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
         retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
         retain_non_mischain(&mut transcripts, sup, "gw-catalog");
     }
+    if let Some((c, a, b)) = &dbg_locus {
+        let t: Vec<&DenovoTranscript> = transcripts.iter().filter(|t| &t.chrom == c && t.start < *b && t.end > *a).collect();
+        eprintln!("[dbg {c}:{a}-{b}] transcripts after gate+filters={}", t.len());
+        let mut t = t; t.sort_by_key(|x| std::cmp::Reverse(x.n_reads));
+        for x in t.iter().take(6) {
+            eprintln!("[dbg]   tx {}-{} exons={} reads={} strand={} seq={}bp",
+                      x.start, x.end, x.introns.len() + 1, x.n_reads, x.strand, x.seq.len());
+        }
+    }
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let mut reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    if let Some((c, a, b)) = &dbg_locus {
+        let r: Vec<&DenovoTranscript> = reps.iter().filter(|t| &t.chrom == c && t.start < *b && t.end > *a).collect();
+        eprintln!("[dbg {c}:{a}-{b}] REPS after collapse={}", r.len());
+        for x in r.iter().take(8) {
+            eprintln!("[dbg]   rep {}-{} exons={} reads={} strand={}", x.start, x.end, x.introns.len() + 1, x.n_reads, x.strand);
+        }
+    }
     drop(transcripts);
     let mut by_chrom: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
     for (gi, rep) in reps.iter().enumerate() {
