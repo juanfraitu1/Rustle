@@ -1251,3 +1251,80 @@ This is the §4 tension appearing for the fourth time in this document, now on t
 the threshold axis: **anything that adds homology edges trades purity for reach, and the reach was already
 supplied by the sensitive tier.** It is also a reminder that a recall-only evaluation of an edge-adding change
 is not an evaluation — the same mistake §1 warns about, made again in §23 and caught only by re-measuring.
+
+## 24. Advisor review: NPIP, FAM72, long introns — O1 evidence (2026-07-29)
+
+Three questions from Canzar, answered from the shipped catalogue. Artifact:
+`https://claude.ai/code/artifact/11987ad2-84e8-4c77-a8e3-01445659c87d`.
+Graph data: `bench/soto/family_similarity_graph.py`.
+
+⚠ **Scope discipline (the advisor will penalise conflating these).** This is **O1 — family identification**.
+A family is defined by the **homology graph E_r** (exon-sum, identity >= 0.80, coverage >= 0.50 of the
+shorter, >= 2 distinct loci). The **read-conflict graph E_c and the `de` tie criterion are O2 machinery** —
+the ambiguity oracle for copy assignment. They do NOT decide family membership. An earlier draft of the
+artifact described the conflict criterion and the assignment criterion as "one decision rule"; that is exactly
+the O1/O2 conflation to avoid, and it was removed.
+
+### Q1 — "surprised you found all copies of NPIP; NPIPA and NPIPB are quite different subfamilies"
+
+**He is right, and we DO separate them.** Soto has one entry (ID_154, 14 members); our catalogue emits FOUR
+families, tracking the A/B boundary:
+
+| predicted family | members |
+|---|---|
+| GWFAM140 | NPIPB6, B7, B8, B9, B10P, B11, B15 — **all NPIPB** |
+| GWFAM138 | NPIPA2, NPIPA5, NPIPA7 + NPIPP1, NPIPB14P — **the NPIPA side** |
+| GWFAM136 | NPIPB2 |
+| (none) | NPIPB12 |
+
+**The key measurement — identity cannot separate the subfamilies, coverage can:**
+
+| pairs | n | median identity | median aligned coverage |
+|---|---:|---:|---:|
+| A ↔ A | 3 | 0.991 | **0.46** |
+| A ↔ B | 30 | 0.962 | **0.12** |
+| B ↔ B | 45 | 0.993 | **0.06** |
+
+All 91/91 member pairs align; 87 at >= 0.80; median identity 0.985. So on identity NPIP looks like one
+family — it is the **coverage floor** that splits it. NPIP paralogs share near-identical duplicated BLOCKS
+but differ in how much of the gene is shared. Also: 13 of 14 members align to THEMSELVES at a second offset
+(internal repeats), which is part of why the family is hard.
+
+### Q2 — "FAM72B looks much more clean"
+
+Confirmed. All four members in ONE family (GWFAM24), 4 exons each, 33-153 reads. The difference from NPIP is
+coverage, not identity: **median coverage 0.507 (FAM72) vs 0.065 (NPIP)**; identity 0.995 vs 0.985. FAM72 are
+whole-gene duplicates; NPIP members share blocks.
+
+### Q3 — "each copy seems spanned by many (artificial) long introns"
+
+| locus | introns | median | p90 | > 50 kb |
+|---|---:|---:|---:|---:|
+| NPIP | 8,513 | 1,359 bp | 5,251 bp | 119 (1.4%) |
+| FAM72 | 4,494 | 3,933 bp | 40,646 bp | 264 (5.9%) |
+
+Most introns are ordinary. Handled by: the mis-chain filter (> 50 kb with < 3 reads; 5 transcripts on chr16,
+2 chr1, 1 chr15), the readthrough filter (33 on chr16), and the already-rejected aligner fix (`-G 50k`
+removes the artifact but recovers 0 families and loses 4 real copies, `project_mischain_gcap_realign`).
+
+**Two hypotheses about their ORIGIN were tested and both are minor:**
+- reads merely SPLICED OVER a locus (no aligned block there, so no evidence for it): **0-1.2%** of reads
+- long introns whose far end lands on ANOTHER member of the same family (chained across paralogs):
+  **3% at NPIP, 0% at FAM72**
+
+So most long introns are simply long, in genuinely large genes. Worth saying rather than over-attributing
+them to artifact.
+
+### The O1 answer: members and isoforms recovered
+
+| family | members detected | isoforms supported by the data (>= 3 reads, locus-internal) |
+|---|---|---|
+| **FAM72** | **4 / 4** | 23 |
+| **NPIP** | **13 / 14** | 174 |
+
+The single gap is **NPIPB12 — 273 reads and 3 supported isoforms, so a genuine miss, not a coverage limit.**
+Open case, not to be rounded away.
+
+On isoforms: we DETECT them (174 distinct intron chains at NPIP) and then **collapse them to one
+representative per locus** before family definition. Deliberate — for O1 a family is a set of **loci**, not of
+transcripts, so two isoforms of one gene must not become two "copies".
