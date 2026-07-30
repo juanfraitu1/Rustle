@@ -1388,3 +1388,37 @@ the A/B split, and it is a better answer to the advisor than "we split it into f
    chained out of the locus (§24b) — more reads at the locus would not change how the existing ones chain.
 
 Top-up is the right instrument for a coverage-limited miss; NPIPB12 is not one.
+
+### 24d. Semi-synthetic top-up for NPIPB12 — the data explanation is EXCLUDED (2026-07-29)
+
+`bench/soto/npipb12_topup.py` simulates reads from **NPIPB12's own annotated transcript** (NM_001395932.1,
+10 exons, 3,737 bp — not a paralog's, which would be circular), maps them with the same
+`minimap2 -ax splice:hq -uf -N 50 -p 0.1` the real library uses, merges with the real chr16 BAM, and re-runs
+the catalogue.
+
+| condition | reads at the locus | NPIPB12 recovered |
+|---|---:|---|
+| real data only | 273 (86% mis-chained out) | no |
+| + 60 simulated | 29 clean added | no |
+| + 400 simulated | **235 clean added** | no |
+| + 400 simulated, `min_coverage` 0.20 | 235 | **no** |
+
+**The simulated reads are not the problem — they chain perfectly.** 235/235 lie fully inside the locus, 0
+leave it, 0 carry a > 50 kb intron, and the two dominant chains hold **89 and 81 reads across 9 introns**
+(span ~21 kb). That is a clean, deep, correctly-spliced skeleton, larger than the 34-read mis-chain model it
+competes with — and still no copy is emitted.
+
+**What this excludes.** Not coverage depth (235 clean reads). Not mis-chaining (0/235 mis-chained). Not the
+E_r coverage floor (0.20 tested, which adds 10 copies elsewhere but not this one). Not read quality, and not
+the annotation. **The member is dropped somewhere in locus/family formation, on evidence that is by
+construction ideal.**
+
+⭐ **This is now a minimal reproducer for a real pipeline defect**, not a data limitation:
+`npipb12_topup/merged.bam` + `--cross-chrom --refine` should emit a copy at chr16:29,765,424-29,788,033 and
+does not. Root-causing it is the follow-up; the value here is that the semi-synthetic control **removed every
+data-side explanation**, which is exactly what such a control is for.
+
+⚠ Incidental finding worth recording: of 400 reads simulated from NPIPB12's own sequence, a large share map
+to OTHER NPIP loci (chr16 ~21 Mb and ~30 Mb clusters). Even reads generated from one member's exact reference
+sequence are redistributed across the family by the aligner — a direct demonstration of the multimapping
+problem, on data where the true origin is known.
