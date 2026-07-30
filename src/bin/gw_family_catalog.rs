@@ -344,6 +344,14 @@ fn main() -> Result<()> {
     // cross-chrom path emits same-chromosome families (incl. inverted duplications and distant paralogs)
     // and cross-chromosome families together; the default path is the tight same-strand tandem-array view.
     let mut refine_params = homology_refine_params(args.min_identity, args.threads);
+    // Same knob as the --from-genome path, honoured here too: the E_r coverage floor (fraction of the
+    // SHORTER exon-sum the alignment must cover, default 0.50) is the duplicon-bridge defence, and it is the
+    // criterion that decides borderline members. Exposed so a member's exclusion can be attributed to
+    // coverage rather than inferred -- e.g. NPIPB12, whose 13 homology edges all reach >= 0.89 identity but
+    // top out at 0.25 coverage (bench/soto/merge_quality_analysis.md §24).
+    if let Ok(v) = std::env::var("RUSTLE_GENOME_MIN_COVERAGE") {
+        if let Ok(x) = v.parse::<f64>() { refine_params.min_coverage = x; }
+    }
     // `--protein-tail` also promotes protein homology to a genome-wide E_r DEFINITION edge in the
     // homology-primary catalog (in addition to feeding the `--refine` block below): it recovers coding
     // paralogs that have diverged past the nucleotide seeds' ~0.65 identity floor.
@@ -394,6 +402,11 @@ fn main() -> Result<()> {
             intron_fasta: Some(args.fasta.clone()),
             nucleotide_sensitive: !args.no_sensitive,
             protein_tail: args.protein_tail,
+            // Inherit the two E_r thresholds from `refine_params` rather than taking struct defaults --
+            // otherwise `--min-identity` and RUSTLE_GENOME_MIN_COVERAGE are silently ignored on this path,
+            // which is the code path `--refine` actually runs.
+            min_identity: refine_params.min_identity,
+            min_coverage: refine_params.min_coverage,
             ..Default::default()
         };
         let refined = refine_families_exon_sum(raw, &params, None, cfg.conflict.min_reads)?;

@@ -1328,3 +1328,34 @@ Open case, not to be rounded away.
 On isoforms: we DETECT them (174 distinct intron chains at NPIP) and then **collapse them to one
 representative per locus** before family definition. Deliberate — for O1 a family is a set of **loci**, not of
 transcripts, so two isoforms of one gene must not become two "copies".
+
+### 24b. Why NPIPB12 is missed — and a real CLI bug found while checking (2026-07-29)
+
+NPIPB12 carries **273 reads** and 3 data-supported isoforms, so "not enough data" is not the answer.
+
+**First hypothesis (WRONG, and disproved by direct test):** its 13 homology edges reach identity 0.89-1.00 but
+top out at **0.25 coverage**, all failing the `>= 0.50` floor — so the coverage floor looked like the cause.
+Tested by lowering it: chr16 at `min_coverage` 0.20 gains **+10 copies and +2 families** but **still does not
+recover NPIPB12**. The E_r threshold is not what excludes it.
+
+**Actual cause — the long introns of §24 Q3, landing on the one member we miss:**
+
+```
+86% of NPIPB12's spliced reads (224/259) carry a chain that LEAVES the locus
+dominant models: 34 reads and 28 reads, both mis-chained across a 104,410 bp intron (151-170 kb span)
+locus-internal chains at >= 3 reads: 3, the largest holding only 7 reads
+```
+
+minimap2 has chained the evidence away from the locus. The reads exist; the locus-internal skeleton is
+7 reads deep against two 30-read mis-chain models. This is a **mis-chain problem, not a family-definition
+problem**, and it is the concrete cost of the artifact the advisor asked about.
+
+### ⚠ Two real bugs found while running this test
+
+1. **`--min-identity` was silently ignored on the `--refine` path.** The refine branch built its own
+   `RefineParams { .., ..Default::default() }`, so `min_identity` and `min_coverage` took struct defaults
+   regardless of the CLI flag or env. Since `--refine` is ON BY DEFAULT, the documented `--min-identity` flag
+   had **no effect on the main code path**. Fixed: both thresholds now inherit from `refine_params`.
+   This is why the first coverage test came back byte-identical — the knob was never reaching the code.
+2. `RUSTLE_GENOME_MIN_COVERAGE` was honoured only in the `--from-genome` branch; now honoured on the reads
+   path too, so a member's exclusion can be **attributed** to the coverage floor rather than inferred.
