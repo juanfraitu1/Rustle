@@ -1359,3 +1359,32 @@ problem**, and it is the concrete cost of the artifact the advisor asked about.
    This is why the first coverage test came back byte-identical — the knob was never reaching the code.
 2. `RUSTLE_GENOME_MIN_COVERAGE` was honoured only in the `--from-genome` branch; now honoured on the reads
    path too, so a member's exclusion can be **attributed** to the coverage floor rather than inferred.
+
+### 24c. FAMILY vs SUBFAMILY — the right framing, and why the top-up BAMs cannot help (2026-07-29)
+
+**Reporting NPIP as "four families" was the wrong framing.** The method already computes a two-level
+structure and we were only reporting the leaves. Both levels come from the SAME criterion at two
+resolutions of the E_r coverage floor:
+
+| coverage floor | NPIP | FAM72 | reading |
+|---|---|---|---|
+| >= 0.10 | **1 component, all 14 members** | 1 component, 4 | **FAMILY** — "same gene family?" |
+| >= 0.20 | 1 component, 13 (NPIPP1 out) | 1 component, 4 | intermediate |
+| >= 0.50 (default) | 2 components + 6 singletons | **1 component, 4** | **SUBFAMILY** — "which copies are interchangeable?" |
+
+So: **NPIP is ONE family that resolves into an A-side and a B-side subfamily.** And **FAM72 is "clean"
+precisely because family and subfamily COINCIDE** — a single component at every threshold, nothing to
+resolve. That is the structural difference between the two cases, on the same coverage axis that produces
+the A/B split, and it is a better answer to the advisor than "we split it into four".
+
+### The top-up BAMs cannot answer this — three independent reasons
+
+1. **They are SYNTHETIC.** `bench/build_topup.py` simulates reads from a representative transcript to bring
+   under-covered genes to a target depth. Any recovery they produce is a statement about simulated data.
+2. **They do not cover these families.** `topup18/` holds 9: ID_127, ID_131, ID_146, ID_313, ID_386, ID_402,
+   ID_407, ID_43, ID_481 — neither ID_154 (NPIP) nor ID_354 (FAM72). The older `topup/topup.bam` is GORILLA
+   (NC_073* contigs, `SIMTOPUP|` read names), not human CHM13.
+3. **NPIPB12 is not under-covered.** It has 273 reads. Its failure is that 86% of its spliced reads are
+   chained out of the locus (§24b) — more reads at the locus would not change how the existing ones chain.
+
+Top-up is the right instrument for a coverage-limited miss; NPIPB12 is not one.
