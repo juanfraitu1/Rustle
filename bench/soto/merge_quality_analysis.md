@@ -1422,3 +1422,35 @@ data-side explanation**, which is exactly what such a control is for.
 to OTHER NPIP loci (chr16 ~21 Mb and ~30 Mb clusters). Even reads generated from one member's exact reference
 sequence are redistributed across the family by the aligner — a direct demonstration of the multimapping
 problem, on data where the true origin is known.
+
+### 24e. Would DNA recover all NPIP members? (2026-07-29)
+
+**Seeded DNA mode (`--from-genome` on the Soto windows): 14/14 NPIP members, all in ONE family (GWFAM44) —
+including NPIPB12, which RNA misses.**
+
+⚠ Read this correctly. **Member detection there is CIRCULAR** — the windows given to `--from-genome` ARE the
+Soto member intervals, so "14/14 detected" is true by construction and must not be quoted as a result (§8).
+What IS the method's own output, and therefore fair, is **the grouping**: all 14 land in a single family.
+
+**The informative contrast is between the two modes' RESOLUTION, not their recall:**
+
+| | members grouped | structure recovered |
+|---|---|---|
+| DNA (`--from-genome`) | 14 in **1** family | **no A/B split** |
+| RNA (`--cross-chrom --refine`) | 13, in **3** subfamilies | **A-side / B-side resolved** |
+
+DNA groups on **genomic spans** — introns and flanks are shared across the whole NPIP family, so coverage is
+high between every pair and the family collapses to one component. RNA groups on **exon-sums**, where the
+A-vs-B coverage difference (0.46 / 0.12 / 0.06, §24) is visible. So:
+
+> **DNA answers the FAMILY question; RNA answers the SUBFAMILY question.** This is the same
+> family/subfamily axis as §24c, now expressed as a difference between modalities rather than a threshold.
+
+That also means "would DNA get all the members" is the wrong question to win on — DNA gets the membership but
+loses the substructure the advisor specifically asked about, and the substructure is the harder result.
+
+**Non-circular test (running):** `--from-genome` over 7.9 Mb of search windows (30x the member intervals,
+±500 kb padding, `npip_broad.bed`) so the loci must be DISCOVERED by self-alignment rather than supplied.
+First stage reports **6 windows -> 13 duplicated-locus reps**, against 14 known members. Grouping stage is
+still running; the rep count is the number to check when it finishes, since that is the genuinely de-novo
+detection figure.
