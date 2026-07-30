@@ -339,6 +339,39 @@ fn pick_locus_rep(transcripts: &[DenovoTranscript], members: &[usize], spliced_r
     best(members)
 }
 
+/// Exon intervals implied by a transcript's `(start, end, introns)`.
+fn exons_of(t: &DenovoTranscript) -> Vec<(u64, u64)> {
+    let mut out = Vec::with_capacity(t.introns.len() + 1);
+    let mut prev = t.start;
+    for &(d, a) in &t.introns {
+        if d > prev { out.push((prev, d)); }
+        prev = a;
+    }
+    if t.end > prev { out.push((prev, t.end)); }
+    out
+}
+
+/// Overlap between two transcripts' EXONS, plus each one's exonic length.
+///
+/// The span-based alternative counts INTRONIC space as shared, which is how a mis-chained model whose giant
+/// intron happens to cross a locus absorbs that locus during collapse. At NPIPB12 the surviving rep spans
+/// 152 kb while carrying only 2,540 bp of exon — 98% of its "overlap" with the true 23 kb locus is intron,
+/// i.e. sequence the model itself asserts is spliced OUT. Measuring on exons makes containment mean what it
+/// is supposed to: the two models describe the same transcribed sequence.
+fn exonic_overlap(a: &DenovoTranscript, b: &DenovoTranscript) -> (u64, u64, u64) {
+    let (ea, eb) = (exons_of(a), exons_of(b));
+    let la: u64 = ea.iter().map(|(s, e)| e - s).sum();
+    let lb: u64 = eb.iter().map(|(s, e)| e - s).sum();
+    let mut ov = 0u64;
+    for &(s1, e1) in &ea {
+        for &(s2, e2) in &eb {
+            let (lo, hi) = (s1.max(s2), e1.min(e2));
+            if hi > lo { ov += hi - lo; }
+        }
+    }
+    (ov, la, lb)
+}
+
 /// Span-aware isoform-to-gene-locus collapse.
 ///
 /// First performs the standard junction-based collapse (`collapse_loci`). Then, if
@@ -389,6 +422,8 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
     // emitted as its own single-exon copy (§14, §20).
     let unstranded_unspliced =
         matches!(std::env::var("RUSTLE_SPLICED_REP"), Ok(v) if v != "0" && !v.is_empty());
+    let exonic_collapse =
+        matches!(std::env::var("RUSTLE_COLLAPSE_EXONIC"), Ok(v) if v != "0" && !v.is_empty());
     loop {
         let reps = locus_reps(transcripts, &parent);
         let mut merged = false;
@@ -405,11 +440,20 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
                 if a.chrom != b.chrom || strand_conflict {
                     continue;
                 }
-                let ov = a.end.min(b.end).saturating_sub(a.start.max(b.start));
+                // `RUSTLE_COLLAPSE_EXONIC`: measure containment on EXONS rather than the genomic span, so a
+                // model whose giant intron crosses a locus cannot absorb it. This must accompany
+                // RUSTLE_JUNCTION_MAJORITY: relaxing the junction gate alone admits longer models that then
+                // BRIDGE separate loci through exactly this span-based rule (chr16 66 -> 34 copies).
+                let (ov, minlen) = if exonic_collapse {
+                    let (eov, la, lb) = exonic_overlap(a, b);
+                    (eov, la.min(lb).max(1))
+                } else {
+                    let ov = a.end.min(b.end).saturating_sub(a.start.max(b.start));
+                    (ov, (a.end - a.start).min(b.end - b.start).max(1))
+                };
                 if ov == 0 {
                     continue;
                 }
-                let minlen = (a.end - a.start).min(b.end - b.start).max(1);
                 let containment = ov as f64 / minlen as f64;
                 if containment >= COLLAPSE_CONTAIN_FRAC {
                     uf_union(&mut parent, reps[i], reps[j]);
@@ -743,6 +787,41 @@ mod tests {
             seq,
          ..Default::default() }
     }
+    #[test]
+    fn exonic_containment_refuses_to_merge_a_locus_swallowed_by_a_giant_intron() {
+        // The NPIPB12 shape: a 10 kb model whose single intron spans a separate 1 kb locus. By SPAN the small
+        // one is 100% contained; by EXONS they share nothing, because the "overlap" is sequence the long
+        // model asserts is spliced out.
+        let long = DenovoTranscript {
+            chrom: "c1".into(), start: 0, end: 10_000, strand: '+',
+            introns: vec![(500, 9_500)], seq: b"AC".to_vec(), ..Default::default()
+        };
+        let inner = DenovoTranscript {
+            chrom: "c1".into(), start: 4_000, end: 5_000, strand: '+',
+            introns: vec![], seq: b"AC".to_vec(), ..Default::default()
+        };
+        // span containment: the inner locus is fully inside the long model's span
+        let span_ov = long.end.min(inner.end).saturating_sub(long.start.max(inner.start));
+        assert_eq!(span_ov, 1_000);
+        let span_minlen = (long.end - long.start).min(inner.end - inner.start);
+        assert_eq!(span_ov as f64 / span_minlen as f64, 1.0, "span rule says fully contained -> would merge");
+
+        // exonic containment: zero shared exonic sequence
+        let (eov, la, lb) = exonic_overlap(&long, &inner);
+        assert_eq!(eov, 0, "no shared EXONIC sequence");
+        assert_eq!(la, 1_000, "long model's exons are 0-500 and 9500-10000");
+        assert_eq!(lb, 1_000);
+
+        // and it still merges genuine isoforms that share exonic sequence
+        let iso = DenovoTranscript {
+            chrom: "c1".into(), start: 0, end: 400, strand: '+',
+            introns: vec![], seq: b"AC".to_vec(), ..Default::default()
+        };
+        let (eov2, _, lb2) = exonic_overlap(&long, &iso);
+        assert_eq!(eov2, 400);
+        assert!(eov2 as f64 / lb2 as f64 >= COLLAPSE_CONTAIN_FRAC, "real isoform still merges");
+    }
+
     #[test]
     fn spliced_rep_beats_a_read_richer_unspliced_pool_but_only_when_spliced_evidence_wins() {
         // The SRGAP2C shape: three spliced isoform-chains of 20/16/10 reads (46 total) at one locus, plus a
