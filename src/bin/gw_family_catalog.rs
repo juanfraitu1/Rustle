@@ -172,6 +172,38 @@ fn read_windows_bed(path: &str) -> Result<Vec<(String, u64, u64)>> {
 /// catalog path and the DNA `--from-genome` path: both hand it the same `Vec<Vec<DenovoTranscript>>`
 /// (each inner vec = a family's copies). Sorts families by their first copy's (chrom, start) and returns
 /// the sorted vec so the RNA path's downstream sections (collapse/famcn/project-all) see the same order.
+/// Genomic exon blocks of a copy as `start-end,start-end,...` (half-open, genomic order, ascending).
+///
+/// `copies.tsv` carried only `n_exon`, so every downstream consumer that needed the actual exons had to
+/// re-derive them from an annotation — which defeats the point, since the loci are annotation-free. It also
+/// silently forced read-depth work onto the transcript SPAN: measuring famCN over `start..end` averages in
+/// every intron, and on a 208 kb NBPF model that measures intronic repeat content rather than the gene
+/// (measured: within-family famCN spread 60 over spans vs 4.4 over exons).
+///
+/// An unspliced copy (no introns) yields the single block `start-end`.
+fn exon_blocks(c: &DenovoTranscript) -> String {
+    let mut out = String::new();
+    let mut prev = c.start;
+    for &(d, a) in &c.introns {
+        // Defensive: a malformed chain (donor before the running cursor, or acceptor <= donor) would
+        // otherwise emit a reversed block that a consumer would read as a valid interval.
+        if d > prev && a >= d {
+            if !out.is_empty() {
+                out.push(',');
+            }
+            out.push_str(&format!("{prev}-{d}"));
+            prev = a;
+        }
+    }
+    if c.end > prev {
+        if !out.is_empty() {
+            out.push(',');
+        }
+        out.push_str(&format!("{prev}-{}", c.end));
+    }
+    out
+}
+
 fn emit_catalog(
     out: &str,
     mut fams: Vec<Vec<DenovoTranscript>>,
@@ -184,7 +216,8 @@ fn emit_catalog(
     // RNA path); for the DNA path it is the genomic locus sequence. Annotation-free family-validation substrate.
     let mut sh = std::fs::File::create(format!("{out}.copies.fa"))?;
     writeln!(fh, "family_id\tn_copies\tn_chroms\tchroms\tcross_chrom\tavg_reads\tprotein_coheres")?;
-    writeln!(ch, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads")?;
+    // `exons` is APPENDED last so existing header-keyed readers keep working unchanged.
+    writeln!(ch, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons")?;
 
     // deterministic order: by the first copy's (chrom, start).
     fams.sort_by(|a, b| {
@@ -226,14 +259,15 @@ fn emit_catalog(
         for (ci, c) in sorted.iter().enumerate() {
             writeln!(
                 ch,
-                "{fid}\t{ci}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                "{fid}\t{ci}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                 c.tid,
                 c.chrom,
                 c.start,
                 c.end,
                 c.introns.len() + 1,
                 c.strand,
-                c.n_reads
+                c.n_reads,
+                exon_blocks(c)
             )?;
             if !c.seq.is_empty() {
                 writeln!(
@@ -372,7 +406,16 @@ fn main() -> Result<()> {
         Vec<rustle::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
     ) = if args.homology_primary {
         detect_homology_catalog_genome_wide(
-            bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,
+            bam,
+            &args.fasta,
+            args.threads,
+            args.min_copies,
+            &cfg,
+            &refine_params,
+            // γ-quasi-clique density floor. Same knob the --from-genome path reads, so the two E_r
+            // callers cannot drift apart. Default 0.20; 0.40 is the high-precision setting, which splits
+            // low-density blocks instead of admitting them as one family.
+            std::env::var("RUSTLE_GENOME_GAMMA").ok().and_then(|v| v.parse().ok()).unwrap_or(0.20),
         )?
     } else if args.cross_chrom {
         (
@@ -567,4 +610,64 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tx(start: u64, end: u64, introns: Vec<(u64, u64)>) -> DenovoTranscript {
+        DenovoTranscript {
+            tid: "t".into(),
+            chrom: "chr1".into(),
+            start,
+            end,
+            n_reads: 5,
+            strand: '+',
+            introns,
+            seq: Vec::new(),
+            distinguishing_uniq: 0,
+            tes: None,
+        }
+    }
+
+    #[test]
+    fn exon_blocks_splits_on_the_intron_chain() {
+        // two introns -> three exons; blocks are half-open and in ascending genomic order
+        let t = tx(1000, 2000, vec![(1100, 1300), (1500, 1800)]);
+        assert_eq!(exon_blocks(&t), "1000-1100,1300-1500,1800-2000");
+        // the block count must agree with the n_exon column emitted beside it
+        assert_eq!(exon_blocks(&t).split(',').count(), t.introns.len() + 1);
+    }
+
+    #[test]
+    fn exon_blocks_unspliced_copy_is_one_block() {
+        assert_eq!(exon_blocks(&tx(500, 900, vec![])), "500-900");
+    }
+
+    #[test]
+    fn exon_blocks_rejects_a_malformed_chain_rather_than_emitting_a_reversed_block() {
+        // acceptor before donor, and a donor behind the running cursor: both must be skipped, never
+        // written as "1500-1200" which a consumer would read as a valid interval.
+        let t = tx(1000, 2000, vec![(1500, 1200), (900, 950)]);
+        let blocks = exon_blocks(&t);
+        assert_eq!(blocks, "1000-2000", "malformed introns must not produce reversed blocks");
+        for b in blocks.split(',') {
+            let (s, e) = b.split_once('-').unwrap();
+            assert!(s.parse::<u64>().unwrap() < e.parse::<u64>().unwrap(), "reversed block {b}");
+        }
+    }
+
+    #[test]
+    fn exon_blocks_sum_of_lengths_is_the_spliced_length() {
+        let t = tx(0, 1000, vec![(200, 400), (600, 700)]);
+        let total: u64 = exon_blocks(&t)
+            .split(',')
+            .map(|b| {
+                let (s, e) = b.split_once('-').unwrap();
+                e.parse::<u64>().unwrap() - s.parse::<u64>().unwrap()
+            })
+            .sum();
+        assert_eq!(total, 1000 - (400 - 200) - (700 - 600));
+    }
 }

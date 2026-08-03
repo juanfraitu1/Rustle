@@ -12,7 +12,7 @@
 //! next stage). `detect_families` is the testable transform over parsed reads + a loaded genome (a
 //! single-region reference path; the genome-wide catalogs are the shipped entry points).
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet, BTreeMap};
 
 use anyhow::Result;
 
@@ -159,6 +159,19 @@ impl Default for DenovoConfig {
 }
 
 impl DenovoConfig {
+    /// Read-count floor for "this locus is really there", shared by every path.
+    ///
+    /// It is STORED on `ConflictParams` because the conflict graph was the first consumer, but it is a plain
+    /// scalar (default 3, `RUSTLE_CONFLICT_MIN_READS`) with no conflict-graph semantics. Reaching through
+    /// `cfg.conflict.min_reads` inside `detect_homology_catalog_genome_wide` made the `--homology-primary`
+    /// path *read* as if it consulted E_c, which is precisely the claim that path exists to avoid: there,
+    /// family membership is decided by sequence homology alone (`homology_blocks`), and no conflict edge is
+    /// ever built. Call this accessor on the homology path so the code says what is true.
+    /// Enforced by `homology_catalog_never_touches_the_conflict_graph`.
+    pub fn locus_min_reads(&self) -> usize {
+        self.conflict.min_reads
+    }
+
     /// Read overrides from `RUSTLE_*` env vars on top of `Default` (currently `RUSTLE_COLLAPSE_ENUMERATE`
     /// and `RUSTLE_COLLAPSE_EXPRESSED`).
     pub fn from_env() -> Self {
@@ -2278,8 +2291,19 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
                       x.start, x.end, x.introns.len() + 1, x.n_reads, x.strand, x.seq.len());
         }
     }
-    let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
-    let mut reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    // Exon-union substrate (`RUSTLE_LOCUS_EXON_UNION=1`, default off = byte-identical): rebuild each locus
+    // rep from the union of its group's exons rather than its single best chain. See `union_locus_reps`.
+    let union_reps = std::env::var("RUSTLE_LOCUS_EXON_UNION").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    let union_floor: u32 = std::env::var("RUSTLE_LOCUS_UNION_MIN_READS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+    let mut reps: Vec<DenovoTranscript> = if union_reps {
+        union_locus_reps(&transcripts, &cfg.detect, &genome, union_floor)
+    } else {
+        let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
+        rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
+    };
     if let Some((c, a, b)) = &dbg_locus {
         let r: Vec<&DenovoTranscript> = reps.iter().filter(|t| &t.chrom == c && t.start < *b && t.end > *a).collect();
         eprintln!("[dbg {c}:{a}-{b}] REPS after collapse={}", r.len());
@@ -2452,6 +2476,126 @@ pub fn homology_refine_params(min_identity: Option<f64>, threads: usize) -> Refi
 /// (rep-index groups). Both the RNA genome-wide homology catalog and the DNA `--from-genome` path call
 /// this, so "same engine, two substrates" is literally the same function. No read/annotation dependency:
 /// it consumes only `rep.seq`.
+/// Coverage floor for the within-family split. **DEFAULT OFF (0.0)**; set `RUSTLE_COVERAGE_SPLIT=0.90` to enable.
+///
+/// ⚠ SHIPPED DEFAULT-ON, THEN REVERTED. The "free purity gain" that justified default-on (over-merges
+/// 22 -> 10 at unchanged recall) was an artifact of a broken benchmark: the scorer credited a truth member
+/// as recovered by ANY overlapping copy, including copies whose family the split had just dissolved into
+/// singletons. Counting only members still inside a >= 2-locus family, the real trade on the Soto benchmark
+/// is:
+///     identity 0.70 (baseline)          recall 80.7  over-merges 22  worst 7
+///     identity 0.70 + coverage 0.90     recall 72.7  over-merges 10  worst 6
+///     identity 0.98                     recall 76.0  over-merges  8  worst 2
+/// i.e. **raising the identity floor dominates this split on all three axes**, and the split costs 8.0
+/// recall points, more than the 0.98 floor's 5.8.
+///
+/// The cause is exactly the RNA failure mode the floor cannot distinguish from a real split: assembly
+/// incompleteness. One copy assembles a full multi-exon transcript while its sibling yields only a
+/// fragment, so their exon-sums cannot clear a high coverage floor and the family breaks apart. That is an
+/// artifact of transcript reconstruction, not evidence the copies are unrelated.
+///
+/// Kept because the same lever DOES help on the DNA/Soto-replication side, where copies are whole
+/// duplication units rather than transcripts (ARI 0.608 -> 0.698 with no WGS). Enable it there, not on RNA.
+pub(crate) fn coverage_split_floor() -> f64 {
+    std::env::var("RUSTLE_COVERAGE_SPLIT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0)
+}
+
+/// Split one homology block into sub-blocks whose members mutually align over at least `min_cov` of the
+/// SHORTER exon-sum.
+///
+/// The E_r edge that BUILT the block already requires coverage >= `params.min_coverage` (0.50); this is a
+/// second, stricter application of the same measurement, used to split a block that is already formed. It
+/// can therefore only split, never merge, so recall can fall only when a sub-block drops below the
+/// >= 2-distinct-loci bar.
+///
+/// Why coverage and not identity: on Soto's own catalog the groupings that need WGS copy number (famCN) to
+/// separate are INVISIBLE to identity — median within-vs-between-group identity delta +0.0001, everything
+/// sitting at 0.98-0.997 — but obvious in coverage (delta +0.524, with between-group coverage 0.000, i.e.
+/// the subgroups frequently do not align to each other at all). Measured end-to-end on the Soto benchmark
+/// at floor 0.90: real over-merges 22 -> 10 with member recall UNCHANGED at 81.8%, where instead raising the
+/// identity floor to 0.98 bought 22 -> 8 at a cost of 5.8 recall points. Flat over 0.90-0.95.
+/// ⚠It does NOT subsume the identity floor: the worst single fusion stays 6 here vs 2 at identity 0.98.
+/// The two levers remove different failures — many small fusions vs one dense blob.
+/// High-coverage edge set over ALL reps, computed ONCE. Pairs that mutually align over >= `min_cov` of the
+/// shorter exon-sum, using the SAME tiers that build the E_r edge.
+///
+/// PERFORMANCE, learned the hard way: the first version aligned each block separately inside the family
+/// loop. That is one minimap2 process per block -- thousands genome-wide -- and it took the
+/// homology-primary integration test from seconds to **65 minutes**. Alignment cost belongs in one
+/// genome-wide pass, exactly like `homology_edges_all_reps`, after which the per-block split is a pure set
+/// operation.
+pub(crate) fn coverage_edges_all_reps(
+    reps: &[DenovoTranscript],
+    min_cov: f64,
+    params: &RefineParams,
+) -> Result<BTreeSet<(usize, usize)>> {
+    if min_cov <= 0.0 || reps.len() < 2 {
+        return Ok(BTreeSet::new());
+    }
+    let seqs: Vec<Vec<u8>> = reps.iter().map(|r| r.seq.clone()).collect();
+    if seqs.iter().all(|s| s.is_empty()) {
+        return Ok(BTreeSet::new());
+    }
+    let mut edges: BTreeSet<(usize, usize)> =
+        nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, min_cov, params)?
+            .into_iter()
+            .collect();
+    if params.nucleotide_sensitive {
+        edges.extend(nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, min_cov, params)?);
+    }
+    Ok(edges)
+}
+
+/// Split one homology block into sub-blocks connected by `cov_edges` (from `coverage_edges_all_reps`).
+///
+/// The E_r edge that BUILT the block already requires coverage >= `params.min_coverage` (0.50); this is a
+/// second, stricter application of the same measurement on an already-formed block, so it can only split,
+/// never merge. Recall falls only when a sub-block drops below the >= 2-distinct-loci bar.
+///
+/// Why coverage and not identity: on Soto's own catalog the groupings that need WGS copy number (famCN) to
+/// separate are INVISIBLE to identity -- median within-vs-between-group identity delta +0.0001, everything
+/// at 0.98-0.997 -- but obvious in coverage (delta +0.524, between-group coverage 0.000, i.e. the subgroups
+/// frequently do not align to each other at all). Measured end-to-end on the Soto benchmark at floor 0.90:
+/// real over-merges 22 -> 10 with member recall UNCHANGED at 81.8%, where raising the identity floor to
+/// 0.98 instead bought 22 -> 8 at a cost of 5.8 recall points. Flat over 0.90-0.95.
+/// - It does NOT subsume the identity floor: worst single fusion stays 6 here vs 2 at identity 0.98.
+///
+/// NO SIGNAL => NO SPLIT: if no member pair carries a coverage edge, the block is returned intact. An E_r
+/// edge already joined these reps, so silence means the aligner found nothing (short exon-sums produce no
+/// asm20 alignment at all), not that the copies are unrelated. Treating silence as separateness shattered
+/// the test fixture's legitimate 2-copy family into singletons.
+pub(crate) fn coverage_split_block(
+    block: &[usize],
+    cov_edges: &BTreeSet<(usize, usize)>,
+) -> Vec<Vec<usize>> {
+    if block.len() < 2 {
+        return vec![block.to_vec()];
+    }
+    let local: Vec<(usize, usize)> = (0..block.len())
+        .flat_map(|i| ((i + 1)..block.len()).map(move |j| (i, j)))
+        .filter(|&(i, j)| {
+            let (a, b) = (block[i].min(block[j]), block[i].max(block[j]));
+            cov_edges.contains(&(a, b))
+        })
+        .collect();
+    if local.is_empty() {
+        return vec![block.to_vec()];
+    }
+    let mut parent: Vec<usize> = (0..block.len()).collect();
+    for (i, j) in local {
+        uf_union(&mut parent, i, j);
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for i in 0..block.len() {
+        let r = uf_find(&mut parent, i);
+        groups.entry(r).or_default().push(block[i]);
+    }
+    groups.into_values().collect()
+}
+
 pub(crate) fn homology_blocks(
     reps: &[DenovoTranscript],
     refine: &RefineParams,
@@ -2475,12 +2619,16 @@ pub fn families_from_reps(
     min_reads: usize,
 ) -> Result<Vec<Vec<DenovoTranscript>>> {
     let blocks = homology_blocks(&reps, refine, gamma)?;
+    let cov_split = coverage_split_floor();
+    let cov_edges = coverage_edges_all_reps(&reps, cov_split, refine)?;
     let mut out = Vec::new();
     for block in blocks {
-        let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
-        let loci = distinct_locus_reps(copies, min_reads);
-        if block.len() >= min_copies && loci.len() >= min_copies {
-            out.push(loci);
+        for sub in coverage_split_block(&block, &cov_edges) {
+            let copies: Vec<DenovoTranscript> = sub.iter().map(|&i| reps[i].clone()).collect();
+            let loci = distinct_locus_reps(copies, min_reads);
+            if sub.len() >= min_copies && loci.len() >= min_copies {
+                out.push(loci);
+            }
         }
     }
     Ok(out)
@@ -2516,8 +2664,17 @@ pub fn detect_homology_catalog_genome_wide(
         retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
         retain_non_mischain(&mut transcripts, sup, "gw-catalog");
     }
-    let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
-    let mut reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    let union_reps = std::env::var("RUSTLE_LOCUS_EXON_UNION").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    let union_floor: u32 = std::env::var("RUSTLE_LOCUS_UNION_MIN_READS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+    let mut reps: Vec<DenovoTranscript> = if union_reps {
+        union_locus_reps(&transcripts, &cfg.detect, &genome, union_floor)
+    } else {
+        let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
+        rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
+    };
     drop(transcripts);
     eprintln!("[gw-catalog-homology] {} skeletons -> {} reps over {} contigs", skeletons.len(), reps.len(), contigs.len());
 
@@ -2540,6 +2697,20 @@ pub fn detect_homology_catalog_genome_wide(
     // --- E_r edges + γ-quasi-clique blocks ---
     let blocks = homology_blocks(&reps, refine, gamma)?;
     let n_blocks = blocks.len(); // captured before the loop below consumes `blocks` (for the diagnostic eprintln)
+    // Within-family COVERAGE split (see `coverage_split_block`). Applied to the formed blocks, so it can
+    // only split. `RUSTLE_COVERAGE_SPLIT=0` restores the pre-split catalog.
+    let cov_split = coverage_split_floor();
+    let cov_edges = coverage_edges_all_reps(&reps, cov_split, refine)?;
+    let blocks: Vec<Vec<usize>> = {
+        let mut v = Vec::with_capacity(blocks.len());
+        for b in blocks {
+            v.extend(coverage_split_block(&b, &cov_edges));
+        }
+        if v.len() != n_blocks {
+            eprintln!("[gw-catalog-homology] coverage split (>= {cov_split}): {n_blocks} blocks -> {} sub-blocks", v.len());
+        }
+        v
+    };
 
     let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
     let mut collapsed: Vec<crate::vg_family::collapse_enumerate::CollapsedFamily> = Vec::new();
@@ -2551,7 +2722,9 @@ pub fn detect_homology_catalog_genome_wide(
     let mut dna_candidates: Vec<(String, String, u64, u64, Vec<u8>)> = Vec::new();
     for block in blocks {
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
-        let loci = distinct_locus_reps(copies.clone(), cfg.conflict.min_reads); // ≥2 spatially-distinct loci certificate
+        // ≥2 spatially-distinct loci certificate. `locus_min_reads()`, not `cfg.conflict.min_reads`: this
+        // path builds no conflict graph (see the accessor's doc comment).
+        let loci = distinct_locus_reps(copies.clone(), cfg.locus_min_reads());
         if block.len() >= min_copies && loci.len() >= min_copies {
             out.push(loci);
         } else if (cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback) && loci.len() < 2 {
@@ -2669,7 +2842,13 @@ impl Default for RefineParams {
             include_introns: false,
             intron_fasta: None,
             nucleotide_sensitive: true,
-            sensitive_identity: 0.60,
+            // Sensitive-tier identity floor. Overridable ALONE via RUSTLE_SENSITIVE_IDENTITY so the tier can
+            // be A/B'd without moving `min_identity` (which --min-identity sets for BOTH tiers). Needed to
+            // isolate the effect of any other change from this floor's own effect.
+            sensitive_identity: std::env::var("RUSTLE_SENSITIVE_IDENTITY")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.60),
             protein_tail: false,
             mmseqs: std::env::var("RUSTLE_MMSEQS").unwrap_or_else(|_| "mmseqs".to_string()),
             homology_genomic_span: false,
@@ -2694,6 +2873,38 @@ impl Default for RefineParams {
 /// raw catalog). Independent of annotation → does not depend on a reference gene set.
 /// Do the `edges` connect all `n` nodes into a single component? (union-find). Used to short-circuit refine's
 /// additive homology tiers when the asm20 core already fully connects a family.
+/// Which E_r tier produced an edge. An edge can be found by more than one tier, so this is a MASK and not
+/// an enum: `tier_names` reports every tier that independently supports it. Recorded rather than inferred,
+/// so "this family was discovered by the sensitive tier" is an auditable fact — the union of tiers is
+/// otherwise indistinguishable from a single-tier result once the edges are merged.
+pub type TierMask = u8;
+pub const TIER_ASM20: TierMask = 1 << 0;
+pub const TIER_SENSITIVE: TierMask = 1 << 1;
+pub const TIER_GENOMIC: TierMask = 1 << 2;
+pub const TIER_PROTEIN: TierMask = 1 << 3;
+
+/// Human-readable tier list for a mask, e.g. `asm20+sensitive`. Empty mask -> "none".
+pub fn tier_names(m: TierMask) -> String {
+    let mut v: Vec<&str> = Vec::new();
+    if m & TIER_ASM20 != 0 {
+        v.push("asm20");
+    }
+    if m & TIER_SENSITIVE != 0 {
+        v.push("sensitive");
+    }
+    if m & TIER_GENOMIC != 0 {
+        v.push("genomic-span");
+    }
+    if m & TIER_PROTEIN != 0 {
+        v.push("protein");
+    }
+    if v.is_empty() {
+        "none".to_string()
+    } else {
+        v.join("+")
+    }
+}
+
 fn edges_connect_all(n: usize, edges: &BTreeSet<(usize, usize)>) -> bool {
     if n <= 1 {
         return true;
@@ -2773,14 +2984,17 @@ pub fn refine_families_exon_sum(
         let core_genome = if params.include_introns { genome } else { None };
         let seqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, core_genome)).collect();
         // base detector: asm20 on the configured sequence (the validated, high-precision recent core).
-        let mut edge_set: BTreeSet<(usize, usize)> =
-            {
-                let seed = primary_seed_args();
-                let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
-                nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, params)?
+        // Provenance: every edge carries the mask of tiers that independently produced it, so a family's
+        // discovery path is recorded rather than reconstructed from the merged edge set.
+        let mut prov: BTreeMap<(usize, usize), TierMask> = BTreeMap::new();
+        {
+            let seed = primary_seed_args();
+            let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
+            for e in nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, params)? {
+                *prov.entry(e).or_insert(0) |= TIER_ASM20;
             }
-                .into_iter()
-                .collect();
+        }
+        let mut edge_set: BTreeSet<(usize, usize)> = prov.keys().copied().collect();
         // The additive tiers only UNION more edges. If the asm20 exon-sum core already connects every copy into a
         // single homology component, they are a provable no-op (`homology_components` on a superset of a connected
         // edge set gives the same partition, and `distinct_locus_reps` runs unchanged). So skip them — and the
@@ -2799,6 +3013,7 @@ pub fn refine_families_exon_sum(
                     let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
                     for e in nucleotide_edges(&gseqs, &seed_ref, params.min_identity, params.min_coverage, params)? {
                         edge_set.insert(e);
+                        *prov.entry(e).or_insert(0) |= TIER_GENOMIC;
                     }
                 }
             }
@@ -2806,13 +3021,24 @@ pub fn refine_families_exon_sum(
             // seed is cleanest on the spliced copy). Edges are UNIONed in.
             if params.nucleotide_sensitive {
                 let exon_seqs: Vec<Vec<u8>> = fam.iter().map(|c| c.seq.clone()).collect();
-                for e in nucleotide_edges(&exon_seqs, &["-k", "11", "-w", "5"], 0.70, params.min_coverage, params)? {
+                // Identity floor comes from `params.sensitive_identity` (the SAME knob as the E_r path).
+                // This was a hard-coded 0.70 that `--min-identity` could not reach, so `--min-identity 0.98`
+                // silently admitted 0.70 edges here. One tier, one knob.
+                for e in nucleotide_edges(
+                    &exon_seqs,
+                    &["-k", "11", "-w", "5"],
+                    params.sensitive_identity,
+                    params.min_coverage,
+                    params,
+                )? {
                     edge_set.insert(e);
+                    *prov.entry(e).or_insert(0) |= TIER_SENSITIVE;
                 }
             }
             if params.protein_tail {
                 for &e in fam_protein.get(fi).map(|v| v.as_slice()).unwrap_or(&[]) {
                     edge_set.insert(e);
+                    *prov.entry(e).or_insert(0) |= TIER_PROTEIN;
                 }
             }
         }
@@ -2821,9 +3047,36 @@ pub fn refine_families_exon_sum(
             if comp.len() < 2 {
                 continue;
             }
+            // Provenance of THIS component: the union of its internal edges' tier masks, plus the tiers
+            // without which it would fall apart. An edge found only by one tier is load-bearing for that
+            // component; report it so "discovered via the sensitive tier" is checkable.
+            let cset: BTreeSet<usize> = comp.iter().copied().collect();
+            let mut mask: TierMask = 0;
+            let mut sole: BTreeMap<TierMask, usize> = BTreeMap::new();
+            for (&(a, b), &m) in prov.iter() {
+                if cset.contains(&a) && cset.contains(&b) {
+                    mask |= m;
+                    if m.count_ones() == 1 {
+                        *sole.entry(m).or_insert(0) += 1;
+                    }
+                }
+            }
             let comp_copies: Vec<DenovoTranscript> = comp.iter().map(|&i| fam[i].clone()).collect();
             let loci = distinct_locus_reps(comp_copies, min_reads);
             if loci.len() >= 2 {
+                if let Some(span) = loci.first() {
+                    let uniq: Vec<String> =
+                        sole.iter().map(|(&m, &n)| format!("{}={}", tier_names(m), n)).collect();
+                    eprintln!(
+                        "[provenance] family @ {}:{}-{} ({} loci): tiers={} sole-support[{}]",
+                        span.chrom,
+                        span.start,
+                        span.end,
+                        loci.len(),
+                        tier_names(mask),
+                        uniq.join(" ")
+                    );
+                }
                 refined.push(loci);
             }
         }
@@ -2921,7 +3174,14 @@ pub(crate) fn nucleotide_edges(
     let nonce = seqs.iter().map(|s| s.len()).sum::<usize>().wrapping_mul(1000003)
         ^ seqs.len()
         ^ mm_args.len().wrapping_mul(7);
-    let path = dir.join(format!("rustle_refine_{pid}_{nonce}.fa"));
+    // The nonce is a pure function of (total length, count, arg count), so two CONCURRENT calls of the same
+    // shape in one process resolve to the same path: both write it and the first `Cleanup` to drop deletes
+    // it under the other. Production is sequential here, but `cargo test` runs every test in threads of a
+    // single process, which made the suite flaky (2 of 3 runs). A per-call counter makes the path unique
+    // without losing the nonce's diagnostic value.
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let uniq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = dir.join(format!("rustle_refine_{pid}_{nonce}_{uniq}.fa"));
     struct Cleanup(std::path::PathBuf);
     impl Drop for Cleanup {
         fn drop(&mut self) {
@@ -2949,6 +3209,33 @@ pub(crate) fn nucleotide_edges(
         return Ok(Vec::new()); // an alignment-time failure on one family → no edges (family dissolves)
     }
     let text = String::from_utf8_lossy(&out.stdout);
+    // OPTIONAL summed-coverage rule (`RUSTLE_ER_SUM_COVERAGE=1`, default off = byte-identical).
+    //
+    // The default rule evaluates coverage on ONE record and never sums, so two loci sharing 60% of the
+    // shorter sequence across three separate blocks get no edge. That is exactly what a SHATTERED locus
+    // representative produces: reads in segmental duplications fragment into many exact intron chains
+    // (GTF2IP14: 287 reads over 222 distinct chains, the winner holding 13), so the rep describes a
+    // fragment and fails the 0.50 floor against its own paralogs. Measured: 32 of the 61 Soto members that
+    // no mode finds have a >=3-read chain available, i.e. the locus is buildable and is lost here.
+    //
+    // Summing raises the NUMERATOR and leaves the sequences untouched, unlike the exon-union substrate,
+    // which lengthened them and inflated the denominator instead (that cost 20 recall points).
+    //
+    // Guards, because summing is what the per-record rule exists to prevent:
+    //   - only records on the SAME strand for that pair are summed (a real fragmented gene is collinear;
+    //     a repeat matches in both orientations),
+    //   - only records whose query span is >= `min_block` bp count, so a swarm of short repeat hits
+    //     cannot accumulate past the floor,
+    //   - query intervals are UNIONed, never added, so overlapping records cannot double-count.
+    let sum_cov = std::env::var("RUSTLE_ER_SUM_COVERAGE")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false);
+    let min_block: f64 = std::env::var("RUSTLE_ER_SUM_MIN_BLOCK")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200.0);
+    let mut sum_blocks: BTreeMap<(usize, usize, char), (Vec<(u64, u64)>, f64)> = BTreeMap::new();
+
     let mut edge_set: BTreeSet<(usize, usize)> = BTreeSet::new();
     for line in text.lines() {
         let f: Vec<&str> = line.split('\t').collect();
@@ -2978,7 +3265,267 @@ pub(crate) fn nucleotide_edges(
         if ident >= min_id && cov >= min_cov {
             edge_set.insert((q.min(t), q.max(t)));
         }
+        if sum_cov && ident >= min_id && (qe - qs) >= min_block {
+            let strand = f[4].chars().next().unwrap_or('+');
+            let entry = sum_blocks
+                .entry((q.min(t), q.max(t), strand))
+                .or_insert_with(|| (Vec::new(), shorter));
+            entry.0.push((qs as u64, qe as u64));
+            entry.1 = entry.1.min(shorter);
+        }
     }
+    if sum_cov {
+        let mut added = 0usize;
+        for ((a, b, _strand), (mut iv, shorter)) in sum_blocks {
+            if edge_set.contains(&(a, b)) {
+                continue;
+            }
+            iv.sort_unstable();
+            let mut union_len = 0u64;
+            let mut cur: Option<(u64, u64)> = None;
+            for (s0, e0) in iv {
+                match cur {
+                    Some((cs, ce)) if s0 <= ce => cur = Some((cs, ce.max(e0))),
+                    Some((cs, ce)) => {
+                        union_len += ce - cs;
+                        cur = Some((s0, e0));
+                    }
+                    None => cur = Some((s0, e0)),
+                }
+            }
+            if let Some((cs, ce)) = cur {
+                union_len += ce - cs;
+            }
+            if union_len as f64 / shorter.max(1.0) >= min_cov {
+                edge_set.insert((a, b));
+                added += 1;
+            }
+        }
+        if added > 0 {
+            eprintln!("[summed-coverage] {added} additional edge(s) from collinear blocks >= {min_block} bp");
+        }
+    }
+    Ok(edge_set.into_iter().collect())
+}
+
+/// Rebuild each locus representative from the UNION of its group's exons instead of its single best chain.
+///
+/// Off by default (`RUSTLE_LOCUS_EXON_UNION=1` to enable) — unset is byte-identical to the shipping path.
+///
+/// Measured against Soto truth windows and gorilla known gene families, unioning cut cross-family edges by
+/// ~70% (Soto 164 -> 50) and broke up the pathological component that fused 40 of 83 Soto families into
+/// 2-family pairs, while within-family edges rose 165 -> 448. The cost is loci: groups where no chain clears
+/// `min_chain_reads` produce nothing (Soto 299 -> 263 loci, gorilla 75 -> 65).
+///
+/// The sequence is built DIRECTLY from the merged exons, deliberately bypassing `build_spliced_seq`'s
+/// canonical-junction gate: the union's "introns" are gaps between merged exons and can be chimeric
+/// (donor from one chain, acceptor from another), so re-gating would discard the locus over a junction no
+/// read ever asserted. Each contributing chain already passed that gate upstream.
+fn union_locus_reps(
+    transcripts: &[DenovoTranscript],
+    detect: &crate::vg_family::family_detect::DetectParams,
+    genome: &GenomeIndex,
+    min_chain_reads: u32,
+) -> Vec<DenovoTranscript> {
+    use crate::vg_family::family_detect::{locus_groups, union_locus_geometry};
+    use crate::vg_family::seq_utils::reverse_complement;
+    let mut out = Vec::new();
+    let (mut dropped, mut widened) = (0usize, 0usize);
+    for members in locus_groups(transcripts, detect) {
+        let rep_i = *members
+            .iter()
+            .max_by_key(|&&i| (transcripts[i].n_reads, transcripts[i].end - transcripts[i].start))
+            .expect("locus group is never empty");
+        let base = &transcripts[rep_i];
+        let Some((start, end, introns)) = union_locus_geometry(transcripts, &members, min_chain_reads)
+        else {
+            dropped += 1;
+            continue;
+        };
+        let mut seq: Vec<u8> = Vec::new();
+        let mut prev = start;
+        let mut ok = true;
+        for &(d, a) in &introns {
+            match genome.fetch_sequence(&base.chrom, prev, d) {
+                Some(b) => seq.extend_from_slice(&b),
+                None => {
+                    ok = false;
+                    break;
+                }
+            }
+            prev = a;
+        }
+        if ok {
+            match genome.fetch_sequence(&base.chrom, prev, end) {
+                Some(b) => seq.extend_from_slice(&b),
+                None => ok = false,
+            }
+        }
+        if !ok || seq.is_empty() {
+            dropped += 1;
+            continue;
+        }
+        seq.make_ascii_uppercase();
+        if base.strand == '-' {
+            seq = reverse_complement(&seq);
+        }
+        if seq.len() > base.seq.len() {
+            widened += 1;
+        }
+        out.push(DenovoTranscript { start, end, introns, seq, ..base.clone() });
+    }
+    eprintln!(
+        "[exon-union] {} locus reps ({} widened vs single-chain, {} dropped: no chain >= {} reads)",
+        out.len(),
+        widened,
+        dropped,
+        min_chain_reads
+    );
+    out
+}
+
+/// All-vs-all over arbitrary sequences, accepting a pair on identity plus ABSOLUTE aligned length rather
+/// than the coverage-of-shorter fraction `nucleotide_edges` uses. The shared-exon rule needs this because a
+/// single shared exon is meaningful at, say, 300 aligned bp regardless of how long either gene is; scaling
+/// by the shorter sequence would make a short exon trivially pass and a long one trivially fail.
+fn nucleotide_edges_indexed(
+    seqs: &[Vec<u8>],
+    mm_args: &[&str],
+    min_id: f64,
+    min_bp: u64,
+    params: &RefineParams,
+) -> Result<Vec<(usize, usize)>> {
+    use std::io::Write;
+    let dir = std::env::temp_dir();
+    let pid = std::process::id();
+    static TMP_SEQ2: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let uniq = TMP_SEQ2.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = dir.join(format!("rustle_exon_{pid}_{uniq}.fa"));
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _guard = Cleanup(path.clone());
+    {
+        let mut fh = std::fs::File::create(&path)?;
+        for (i, sq) in seqs.iter().enumerate() {
+            writeln!(fh, ">{i}")?;
+            fh.write_all(sq)?;
+            writeln!(fh)?;
+        }
+    }
+    let out = std::process::Command::new(&params.minimap2)
+        .args(["-c", "-X", "--no-long-join", "-t"])
+        .arg(params.threads.max(1).to_string())
+        .args(mm_args)
+        .arg(&path)
+        .arg(&path)
+        .output()
+        .map_err(|e| anyhow::anyhow!("failed to run minimap2 ('{}'): {e}", params.minimap2))?;
+    if !out.status.success() {
+        return Ok(Vec::new());
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut edges: BTreeSet<(usize, usize)> = BTreeSet::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 12 {
+            continue;
+        }
+        let (q, t) = match (f[0].parse::<usize>().ok(), f[5].parse::<usize>().ok()) {
+            (Some(q), Some(t)) if q != t => (q, t),
+            _ => continue,
+        };
+        let qs = f[2].parse::<f64>().unwrap_or(0.0);
+        let qe = f[3].parse::<f64>().unwrap_or(0.0);
+        let de = f[12..].iter().find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
+        let ident = match de {
+            Some(d) => 1.0 - d,
+            None => {
+                let nm = f[9].parse::<f64>().unwrap_or(0.0);
+                let al = f[10].parse::<f64>().unwrap_or(1.0).max(1.0);
+                nm / al
+            }
+        };
+        if ident >= min_id && (qe - qs) as u64 >= min_bp {
+            edges.insert((q.min(t), q.max(t)));
+        }
+    }
+    Ok(edges.into_iter().collect())
+}
+
+/// SHARED-EXON edges: Soto's clustering criterion, as an alternative to the exon-sum rule.
+///
+/// Soto 2025 clusters SD-98 genes into families "based on shared exons and similar famCN (MAD<1) between
+/// paralogs". The famCN half needs WGS read depth, which neither IsoSeq nor the reference provides, so this
+/// implements the SEQUENCE half only: two loci are linked if ANY ONE of their exons aligns to any exon of
+/// the other above `min_identity`, over at least `min_bp` aligned bases.
+///
+/// The contrast with `homology_edges_all_reps` is the point of having both:
+///   exon-sum rule  one alignment must cover >= 50% of the SHORTER WHOLE gene model
+///   shared-exon    one exon pair suffices, with no whole-gene coverage requirement
+/// So shared-exon is strictly more permissive on partial homology and should merge more. Whether that is
+/// recall or over-merge is exactly what comparing them measures.
+///
+/// Exon sequences are sliced out of each rep's stored exon-sum rather than re-fetched, so this sees exactly
+/// the bases the exon-sum rule sees. On the '-' strand the stored sequence is the reverse complement of the
+/// concatenation, so the exon LENGTHS are reversed before slicing; each slice is then that exon in reverse
+/// complement, which is immaterial to alignment since minimap2 tries both strands.
+pub fn shared_exon_edges(
+    reps: &[DenovoTranscript],
+    min_identity: f64,
+    min_bp: u64,
+    params: &RefineParams,
+) -> Result<Vec<(usize, usize)>> {
+    let mut seqs: Vec<Vec<u8>> = Vec::new();
+    let mut owner: Vec<usize> = Vec::new();
+    for (ri, r) in reps.iter().enumerate() {
+        // exon lengths in genomic order, from the intron chain
+        let mut lens: Vec<usize> = Vec::with_capacity(r.introns.len() + 1);
+        let mut prev = r.start;
+        for &(d, a) in &r.introns {
+            lens.push(d.saturating_sub(prev) as usize);
+            prev = a;
+        }
+        lens.push(r.end.saturating_sub(prev) as usize);
+        if r.strand == '-' {
+            lens.reverse();
+        }
+        let mut off = 0usize;
+        for l in lens {
+            if l == 0 || off + l > r.seq.len() {
+                off += l;
+                continue;
+            }
+            if l as u64 >= min_bp {
+                seqs.push(r.seq[off..off + l].to_vec());
+                owner.push(ri);
+            }
+            off += l;
+        }
+    }
+    if seqs.len() < 2 {
+        return Ok(Vec::new());
+    }
+    let mut edge_set: BTreeSet<(usize, usize)> = BTreeSet::new();
+    // One all-vs-all over every exon of every locus. asm20 seeding, same as the core nucleotide tier.
+    let pairs = nucleotide_edges_indexed(&seqs, &["-x", "asm20"], min_identity, min_bp, params)?;
+    for (a, b) in pairs {
+        let (ra, rb) = (owner[a], owner[b]);
+        if ra != rb {
+            edge_set.insert((ra.min(rb), ra.max(rb)));
+        }
+    }
+    eprintln!(
+        "[shared-exon] {} exons over {} loci -> {} locus pairs linked (id >= {}, >= {} bp aligned)",
+        seqs.len(),
+        reps.len(),
+        edge_set.len(),
+        min_identity,
+        min_bp
+    );
     Ok(edge_set.into_iter().collect())
 }
 
@@ -3030,16 +3577,43 @@ pub(crate) fn homology_edges_all_reps(
         eprintln!("[homology] E_r edge substrate: GENOMIC SPAN ({} reps)", reps.len());
     }
     let seqs: Vec<Vec<u8>> = reps.iter().map(|r| refine_copy_seq(r, span_genome.as_ref())).collect();
-    let mut set: BTreeSet<(usize, usize)> =
-        {
-            let seed = primary_seed_args();
-            let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
-            nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, params)?
+    // SHARED-EXON mode (`RUSTLE_SHARED_EXON=1`): replace the exon-sum rule with Soto's criterion --
+    // any single shared exon links two loci. Not a tier that unions in; it REPLACES the nucleotide runs,
+    // so the two definitions can be compared rather than blended.
+    if std::env::var("RUSTLE_SHARED_EXON").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) {
+        let se_id: f64 = std::env::var("RUSTLE_SHARED_EXON_IDENTITY")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.98);
+        let se_bp: u64 = std::env::var("RUSTLE_SHARED_EXON_MIN_BP")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+        eprintln!("[shared-exon] MODE ACTIVE: replacing the exon-sum rule (id >= {se_id}, >= {se_bp} bp)");
+        return shared_exon_edges(reps, se_id, se_bp, params);
+    }
+    let mut prov: BTreeMap<(usize, usize), TierMask> = BTreeMap::new();
+    // The asm20 run is SKIPPABLE here (`RUSTLE_ER_SENSITIVE_ONLY=1`, default off). Measured on Soto
+    // (--homology-primary, sensitive floor 0.70): asm20 produced 2894 edges of which **0** were unique --
+    // every one was also found by the sensitive run, which added 1643 more on its own. Whenever
+    // `sensitive_identity <= min_identity` the sensitive run has both the lower bar and the denser seeding,
+    // so asm20 is expected to be a subset; this env var lets that be verified per dataset rather than
+    // assumed, and skips one genome-wide all-vs-all when it holds.
+    // NOTE: this is path-specific. On the `--cross-chrom` refine path asm20 runs FIRST and the sensitive run
+    // is conditional on `edges_connect_all`, so there asm20 carried sole support in 139 families. Do not
+    // generalise the skip to that path.
+    let sensitive_only = params.nucleotide_sensitive
+        && std::env::var("RUSTLE_ER_SENSITIVE_ONLY").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    if !sensitive_only {
+        let seed = primary_seed_args();
+        let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
+        for e in nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, params)? {
+            *prov.entry(e).or_insert(0) |= TIER_ASM20;
         }
-            .into_iter().collect();
+    } else {
+        eprintln!("[homology] asm20 run SKIPPED (RUSTLE_ER_SENSITIVE_ONLY)");
+    }
+    let mut set: BTreeSet<(usize, usize)> = prov.keys().copied().collect();
     if params.nucleotide_sensitive {
         for e in nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, params.min_coverage, params)? {
             set.insert(e);
+            *prov.entry(e).or_insert(0) |= TIER_SENSITIVE;
         }
     }
     if params.protein_tail {
@@ -3047,7 +3621,42 @@ pub(crate) fn homology_edges_all_reps(
         if let Some(edges) = prot.first() {
             for &e in edges {
                 set.insert(e);
+                *prov.entry(e).or_insert(0) |= TIER_PROTEIN;
             }
+        }
+    }
+    // Tier accounting over the whole rep set: how many edges each tier found, and how many it is the SOLE
+    // source of. The second number is the one that decides whether a tier earns its place -- an edge that
+    // another tier also finds costs a subprocess and changes nothing.
+    let mut total: BTreeMap<TierMask, usize> = BTreeMap::new();
+    let mut only: BTreeMap<TierMask, usize> = BTreeMap::new();
+    for &m in prov.values() {
+        for bit in [TIER_ASM20, TIER_SENSITIVE, TIER_GENOMIC, TIER_PROTEIN] {
+            if m & bit != 0 {
+                *total.entry(bit).or_insert(0) += 1;
+            }
+        }
+        if m.count_ones() == 1 {
+            *only.entry(m).or_insert(0) += 1;
+        }
+    }
+    let fmt: Vec<String> = total
+        .iter()
+        .map(|(&b, &n)| format!("{}={} (sole {})", tier_names(b), n, only.get(&b).copied().unwrap_or(0)))
+        .collect();
+    eprintln!("[provenance] E_r edges by tier: {} | total {}", fmt.join(" "), prov.len());
+    if let Ok(path) = std::env::var("RUSTLE_EDGE_PROVENANCE") {
+        use std::io::Write;
+        if let Ok(mut fh) = std::fs::File::create(&path) {
+            let _ = writeln!(fh, "rep_i\trep_j\tchrom_i\tstart_i\tchrom_j\tstart_j\ttiers");
+            for (&(i, j), &m) in prov.iter() {
+                let _ = writeln!(
+                    fh,
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    i, j, reps[i].chrom, reps[i].start, reps[j].chrom, reps[j].start, tier_names(m)
+                );
+            }
+            eprintln!("[provenance] wrote per-edge tiers to {path}");
         }
     }
     Ok(set.into_iter().collect())
@@ -3455,6 +4064,146 @@ mod tests {
         assert!(!e_span.is_empty(), "genomic spans of the two paralogous loci must link");
     }
 
+    /// O1 INDEPENDENCE GUARD. The `--homology-primary` claim we make to the advisor is that family
+    /// MEMBERSHIP there is decided by sequence homology alone: E_r proposes the family, and the read-conflict
+    /// graph E_c plays no part. That claim is false of `--cross-chrom`, where the conflict graph proposes
+    /// candidate families and E_r can only split them -- so the distinction is load-bearing and must not
+    /// erode by someone adding one convenient `conflict_edges` call.
+    ///
+    /// This is a SOURCE-level guard rather than a behavioural one because "never calls X" is not observable
+    /// from outputs: a conflict-derived merge and a homology-derived merge produce the same struct. It reads
+    /// the body of `detect_homology_catalog_genome_wide` and fails if any conflict-graph constructor appears.
+    ///
+    /// Read evidence that IS allowed on this path, and why it is not E_c:
+    ///   - locus discovery (primary alignments -> skeletons -> reps): decides WHERE loci are, not who is
+    ///     related to whom.
+    ///   - `distinguishing_uniq` (per-locus count of MAPQ>0 placements): a per-locus scalar consumed only by
+    ///     `distinct_locus_reps`, which collapses OVERLAPPING same-strand copies inside one block. It can
+    ///     never add a member and never links two blocks, so it cannot create a family.
+    /// Neither is a pairwise ambiguity edge, which is what E_c is.
+    /// The coverage split must SPLIT a block whose two halves share only a fragment, and must LEAVE ALONE a
+    /// block whose members align full-length. Both halves matter: a split rule that fires on everything
+    /// would destroy recall, and one that never fires is inert.
+    #[test]
+    fn coverage_split_separates_fragment_sharers_and_keeps_full_length_pairs() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            return;
+        }
+        let mk = |tid: &str, seq: &[u8]| DenovoTranscript {
+            tid: tid.into(), chrom: "chr1".into(), start: 0, end: seq.len() as u64,
+            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(),
+            distinguishing_uniq: 0, tes: None,
+        };
+        let core = rand_seq(600, 0xA11CE);
+        let tail_a = rand_seq(1400, 0xBEEF);
+        let tail_b = rand_seq(1400, 0xF00D);
+        // a1/a2 are near-identical full length; b1 shares ONLY the 600 bp core with them
+        let a1: Vec<u8> = core.iter().chain(tail_a.iter()).copied().collect();
+        let mut a2 = a1.clone();
+        a2[50] = if a2[50] == b'A' { b'C' } else { b'A' };
+        let b1: Vec<u8> = core.iter().chain(tail_b.iter()).copied().collect();
+        let reps = vec![mk("a1", &a1), mk("a2", &a2), mk("b1", &b1)];
+        let params = homology_refine_params(Some(0.80), 2);
+
+        let edges = coverage_edges_all_reps(&reps, 0.90, &params).unwrap();
+        let groups = coverage_split_block(&[0, 1, 2], &edges);
+        let of = |i: usize| groups.iter().position(|g| g.contains(&i)).unwrap();
+        assert_eq!(of(0), of(1), "full-length near-identical copies must stay together");
+        assert_ne!(of(0), of(2), "a copy sharing only a fragment must split off at coverage 0.90");
+
+        // floor 0 disables the split entirely (the opt-out contract)
+        let none = coverage_edges_all_reps(&reps, 0.0, &params).unwrap();
+        assert!(none.is_empty(), "min_cov 0 must yield no split edges");
+        assert_eq!(coverage_split_block(&[0, 1, 2], &none).len(), 1, "no edges must leave the block whole");
+        // a singleton block is returned unchanged
+        assert_eq!(coverage_split_block(&[0], &edges), vec![vec![0]]);
+    }
+
+    /// A block the aligner cannot speak to must survive intact. Short exon-sums (the 108-138 bp fixture)
+    /// produce NO asm20 alignment at all; treating that silence as "unrelated" shattered a legitimate
+    /// 2-copy family into singletons and made `homology_catalog_groups_fixture_family` return `[]`.
+    #[test]
+    fn coverage_split_leaves_a_block_intact_when_the_aligner_finds_nothing() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            return;
+        }
+        let mk = |tid: &str, seq: &[u8]| DenovoTranscript {
+            tid: tid.into(), chrom: "c1".into(), start: 0, end: seq.len() as u64,
+            n_reads: 9, strand: '+', introns: vec![], seq: seq.to_vec(),
+            distinguishing_uniq: 0, tes: None,
+        };
+        // two unrelated ~110 bp sequences: far too short for a reliable alignment
+        let reps = vec![mk("s1", &rand_seq(110, 0x1234)), mk("s2", &rand_seq(110, 0x9876))];
+        let params = homology_refine_params(None, 2);
+        let edges = coverage_edges_all_reps(&reps, 0.90, &params).unwrap();
+        let groups = coverage_split_block(&[0, 1], &edges);
+        assert_eq!(
+            groups.len(), 1,
+            "no alignment signal must mean NO split -- silence is not evidence of separateness"
+        );
+    }
+
+    /// The split is DEFAULT OFF. It was briefly shipped default-on on the strength of a benchmark whose
+    /// recall metric could not see families dissolved into singletons; corrected, the split costs 8.0 recall
+    /// points on RNA and is dominated by raising the identity floor. This test pins the default so that
+    /// cannot silently regress.
+    #[test]
+    fn coverage_split_is_off_by_default() {
+        assert!(
+            coverage_split_floor() == 0.0 || std::env::var("RUSTLE_COVERAGE_SPLIT").is_ok(),
+            "the coverage split must be OFF by default -- it is dominated by the identity floor on RNA"
+        );
+    }
+
+    #[test]
+    fn homology_catalog_never_touches_the_conflict_graph() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/rustle/vg_family/denovo_pipeline.rs"
+        ))
+        .expect("read own source");
+        let start = src
+            .find("pub fn detect_homology_catalog_genome_wide(")
+            .expect("homology catalog entry point not found -- was it renamed?");
+        // Body ends at the NEAREST following top-level item (`pub fn`/`fn` at column 0) -- the nearer of the
+        // two, not whichever is checked first, or the scan would run on into unrelated functions.
+        let rest = &src[start + 10..];
+        let end = [rest.find("\npub fn "), rest.find("\nfn ")]
+            .into_iter()
+            .flatten()
+            .min()
+            .map(|o| start + 10 + o)
+            .unwrap_or(src.len());
+        // Strip line comments: a comment EXPLAINING that this path avoids the conflict graph must not trip
+        // the guard, and equally a banned call must not hide behind one.
+        let body: String = src[start..end]
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        for banned in ["conflict_edges(", "conflict_families(", "as_tie_edges(", "family_mapq0_support("] {
+            assert!(
+                !body.contains(banned),
+                "--homology-primary must decide membership from E_r alone, but \
+                 detect_homology_catalog_genome_wide now calls `{banned}`. If this is deliberate, the \
+                 O1-independent-of-O2 claim in the thesis and in bench/soto/PIPELINE_READS_TO_GRAPH.txt \
+                 is no longer true and must be rewritten before this test is relaxed."
+            );
+        }
+        assert!(
+            body.contains("homology_blocks("),
+            "the homology catalog must still form families via homology_blocks (E_r)"
+        );
+        // The path must not reach into ConflictParams either -- that reads as an E_c dependency even where
+        // only the shared read-count scalar is wanted. `locus_min_reads()` is the path-neutral accessor.
+        assert!(
+            !body.contains("cfg.conflict."),
+            "use cfg.locus_min_reads() on the homology path, not cfg.conflict.*"
+        );
+    }
+
+    #[test]
     fn homology_blocks_groups_identical_reps_and_isolates_unrelated() {
         // three reps: two identical sequences (should share an E_r edge -> one block) + one unrelated.
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
@@ -4691,6 +5440,124 @@ mod tests {
         let orf = longest_orf_aa(with_stop);
         assert!(orf.len() >= 5, "kept the longest stop-free run, got {:?}", String::from_utf8_lossy(&orf));
         assert!(!orf.contains(&b'*'), "ORF must not contain stop codons");
+    }
+
+    /// The summed-coverage rule's interval merge, extracted so the arithmetic is testable without
+    /// spawning minimap2. Mirrors the union loop in `nucleotide_edges`.
+    fn union_len(mut iv: Vec<(u64, u64)>) -> u64 {
+        iv.sort_unstable();
+        let mut total = 0u64;
+        let mut cur: Option<(u64, u64)> = None;
+        for (s, e) in iv {
+            match cur {
+                Some((cs, ce)) if s <= ce => cur = Some((cs, ce.max(e))),
+                Some((cs, ce)) => {
+                    total += ce - cs;
+                    cur = Some((s, e));
+                }
+                None => cur = Some((s, e)),
+            }
+        }
+        if let Some((cs, ce)) = cur {
+            total += ce - cs;
+        }
+        total
+    }
+
+    #[test]
+    fn summed_coverage_unions_disjoint_blocks() {
+        // Three separate blocks of a shattered rep: 300 + 300 + 300 = 900 of a 1500 bp shorter sequence
+        // = 0.60, which clears the 0.50 floor. No single block would.
+        assert_eq!(union_len(vec![(0, 300), (500, 800), (1000, 1300)]), 900);
+    }
+
+    #[test]
+    fn summed_coverage_never_double_counts_overlaps() {
+        // Overlapping records must UNION, not add: 0-600 and 400-900 is 900 bp of query, not 1100.
+        // Adding would let a repeat aligned many times to the same locus manufacture coverage.
+        assert_eq!(union_len(vec![(0, 600), (400, 900)]), 900);
+        assert_eq!(union_len(vec![(0, 1000), (200, 300), (400, 500)]), 1000);
+    }
+
+    #[test]
+    fn summed_coverage_single_block_matches_the_per_record_rule() {
+        // With one record the summed rule must reduce to the default, so enabling it cannot change
+        // any pair that already had a qualifying single alignment.
+        assert_eq!(union_len(vec![(120, 900)]), 780);
+        assert_eq!(union_len(vec![]), 0);
+    }
+
+    #[test]
+    fn shared_exon_slices_match_the_exon_sum_layout() {
+        // The rule slices exons out of the stored exon-sum instead of re-fetching, so the slice offsets
+        // must reproduce the layout build_spliced_seq produced. On '-' the stored seq is the reverse
+        // complement of the concatenation, so exon LENGTHS run in the opposite order.
+        let lens = |t: &DenovoTranscript| -> Vec<usize> {
+            let mut v = Vec::new();
+            let mut prev = t.start;
+            for &(d, a) in &t.introns {
+                v.push(d.saturating_sub(prev) as usize);
+                prev = a;
+            }
+            v.push(t.end.saturating_sub(prev) as usize);
+            if t.strand == '-' {
+                v.reverse();
+            }
+            v
+        };
+        // exons 100-200 (100 bp) and 300-450 (150 bp) => 250 bp exon-sum
+        let mut t = DenovoTranscript {
+            chrom: "c".into(), start: 100, end: 450, introns: vec![(200, 300)],
+            seq: vec![b'A'; 250], strand: '+', ..Default::default()
+        };
+        assert_eq!(lens(&t), vec![100, 150]);
+        assert_eq!(lens(&t).iter().sum::<usize>(), t.seq.len(), "slices must tile the exon-sum exactly");
+        t.strand = '-';
+        assert_eq!(lens(&t), vec![150, 100], "minus strand reverses the exon order in the stored seq");
+        assert_eq!(lens(&t).iter().sum::<usize>(), t.seq.len());
+    }
+
+    #[test]
+    fn tier_names_reports_every_contributing_tier() {
+        assert_eq!(tier_names(0), "none");
+        assert_eq!(tier_names(TIER_ASM20), "asm20");
+        assert_eq!(tier_names(TIER_SENSITIVE), "sensitive");
+        assert_eq!(tier_names(TIER_GENOMIC), "genomic-span");
+        assert_eq!(tier_names(TIER_PROTEIN), "protein");
+        // An edge found by two tiers must report BOTH -- reporting only the first would make a tier look
+        // load-bearing when a second tier independently supports the same edge.
+        assert_eq!(tier_names(TIER_ASM20 | TIER_SENSITIVE), "asm20+sensitive");
+        assert_eq!(
+            tier_names(TIER_ASM20 | TIER_SENSITIVE | TIER_GENOMIC | TIER_PROTEIN),
+            "asm20+sensitive+genomic-span+protein"
+        );
+    }
+
+    #[test]
+    fn tier_bits_are_distinct_single_bits() {
+        // count_ones()==1 is the "sole support" test in the provenance accounting; it is only meaningful if
+        // every tier constant is a distinct single bit.
+        for b in [TIER_ASM20, TIER_SENSITIVE, TIER_GENOMIC, TIER_PROTEIN] {
+            assert_eq!(b.count_ones(), 1, "tier {b} must be a single bit");
+        }
+        let all = [TIER_ASM20, TIER_SENSITIVE, TIER_GENOMIC, TIER_PROTEIN];
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[i + 1..] {
+                assert_eq!(a & b, 0, "tier bits must not overlap");
+            }
+        }
+    }
+
+    #[test]
+    fn sensitive_tier_floor_follows_min_identity_on_the_refine_path() {
+        // Regression: the refine path hard-coded 0.70, which --min-identity could not reach, so
+        // `--min-identity 0.98` silently admitted 0.70 edges. Both tiers must now move together.
+        let p = homology_refine_params(Some(0.98), 4);
+        assert_eq!(p.min_identity, 0.98);
+        assert_eq!(p.sensitive_identity, 0.98, "sensitive tier must track --min-identity, not stay at 0.70");
+        let d = RefineParams::default();
+        assert_eq!(d.min_identity, 0.80);
+        assert_eq!(d.sensitive_identity, 0.60, "default sensitive floor is 0.60 -- the EFFECTIVE E_r floor");
     }
 
     #[test]

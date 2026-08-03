@@ -104,3 +104,11 @@
 
 # large local checkpoints (never commit)
 bench/*.npz
+
+# 7c. Test OUTPUTS written into the fixture dirs by the gw_family_catalog integration tests.
+#     These are generated on every `cargo test` run and are not fixtures. The committed GOLDENS
+#     (out.copies.tsv, out_default.*) are already tracked, and .gitignore does not affect tracked
+#     files, so they keep working. Only the generated siblings are ignored.
+/tests/fixtures/same_chrom_supplement/out_hom*
+/tests/fixtures/same_chrom_supplement/out_famcn*
+/tests/fixtures/same_chrom_supplement/out_conflict_enum*

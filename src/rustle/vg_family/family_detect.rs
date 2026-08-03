@@ -271,6 +271,66 @@ pub fn collapse_loci_groups(transcripts: &[DenovoTranscript]) -> Vec<usize> {
 /// Compute the representative index for each union-find component in `parent`, using the same tie-break
 /// as `collapse_loci`: most reads, then longest span, then earliest index. Returns rep indices sorted
 /// ascending.
+/// Locus GROUPS: the transcript indices collapsed onto each locus, in the same order `locus_reps` emits its
+/// representatives. `locus_reps` discards this grouping by returning one index per locus; the exon-union
+/// substrate needs it, because the union is taken over the whole group.
+pub(crate) fn locus_groups(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<Vec<usize>> {
+    let parent = collapse_parent(transcripts, p);
+    let mut find = |mut x: usize| {
+        while parent[x] != x {
+            x = parent[x];
+        }
+        x
+    };
+    let mut by_root: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for i in 0..transcripts.len() {
+        by_root.entry(find(i)).or_default().push(i);
+    }
+    by_root.into_values().collect()
+}
+
+/// Union the EXON intervals of a locus group into one geometry `(start, end, introns)`.
+///
+/// `pick_locus_rep` returns the single highest-support intron chain. In segmental duplications reads shatter
+/// into many partial chains — NOTCH2: 490 reads over 240 distinct chains, the largest holding 5% — so that
+/// one chain describes a FRAGMENT of the locus (measured at median 0.54x the truth span, 104 truncated vs 12
+/// over-extended). Fragments of *different* genes then align to each other, which is how a single component
+/// came to fuse 40 of 83 Soto families.
+///
+/// Only members with `>= min_chain_reads` contribute. That floor is the mechanism, not a tuning knob:
+/// unioning EVERY read instead rebuilt the blob (39 families fused vs 2 with the floor).
+///
+/// The returned `introns` are the gaps BETWEEN merged exons, so they are not necessarily any single
+/// transcript's junctions and may be chimeric — the caller must therefore build the sequence directly and
+/// must NOT re-apply the canonical-junction gate, whose job was already done per-chain upstream.
+pub(crate) fn union_locus_geometry(
+    transcripts: &[DenovoTranscript],
+    members: &[usize],
+    min_chain_reads: u32,
+) -> Option<(u64, u64, Vec<(u64, u64)>)> {
+    let mut ex: Vec<(u64, u64)> = Vec::new();
+    for &i in members {
+        if transcripts[i].n_reads >= min_chain_reads {
+            ex.extend(exons_of(&transcripts[i]));
+        }
+    }
+    if ex.is_empty() {
+        return None;
+    }
+    ex.sort_unstable();
+    let mut merged: Vec<(u64, u64)> = Vec::with_capacity(ex.len());
+    for (a, b) in ex {
+        match merged.last_mut() {
+            Some(last) if a <= last.1 => last.1 = last.1.max(b),
+            _ => merged.push((a, b)),
+        }
+    }
+    let start = merged[0].0;
+    let end = merged[merged.len() - 1].1;
+    let introns: Vec<(u64, u64)> = merged.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+    Some((start, end, introns))
+}
+
 fn locus_reps(transcripts: &[DenovoTranscript], parent: &[usize]) -> Vec<usize> {
     let n = transcripts.len();
     let mut comp: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
@@ -340,7 +400,7 @@ fn pick_locus_rep(transcripts: &[DenovoTranscript], members: &[usize], spliced_r
 }
 
 /// Exon intervals implied by a transcript's `(start, end, introns)`.
-fn exons_of(t: &DenovoTranscript) -> Vec<(u64, u64)> {
+pub(crate) fn exons_of(t: &DenovoTranscript) -> Vec<(u64, u64)> {
     let mut out = Vec::with_capacity(t.introns.len() + 1);
     let mut prev = t.start;
     for &(d, a) in &t.introns {
@@ -787,6 +847,58 @@ mod tests {
             seq,
          ..Default::default() }
     }
+    #[test]
+    fn union_geometry_merges_partial_chains_into_the_whole_locus() {
+        // Two chains covering opposite halves of one locus -- the shattering case. Either alone is a
+        // fragment; the union is the locus.
+        let t = vec![
+            tx("t100_5", "c", 100, 400, 5, &[(200, 300)], vec![b'A'; 10]),   // exons 100-200, 300-400
+            tx("t500_4", "c", 500, 900, 4, &[(600, 700)], vec![b'A'; 10]),   // exons 500-600, 700-900
+        ];
+        let (s, e, introns) = union_locus_geometry(&t, &[0, 1], 3).unwrap();
+        assert_eq!((s, e), (100, 900));
+        // gaps between merged exons: 200-300, 400-500, 600-700
+        assert_eq!(introns, vec![(200, 300), (400, 500), (600, 700)]);
+    }
+
+    #[test]
+    fn union_geometry_drops_chains_below_the_read_floor() {
+        // The floor is the mechanism, not a knob: without it the union readmits noise and rebuilds the
+        // 40-family blob. A 2-read chain must contribute nothing at floor 3.
+        let t = vec![tx("t100_5", "c", 100, 200, 5, &[], vec![b'A'; 10]), tx("t900_2", "c", 900, 1000, 2, &[], vec![b'A'; 10])];
+        let (s, e, introns) = union_locus_geometry(&t, &[0, 1], 3).unwrap();
+        assert_eq!((s, e), (100, 200), "the 2-read chain must not extend the locus");
+        assert!(introns.is_empty());
+    }
+
+    #[test]
+    fn union_geometry_returns_none_when_no_chain_clears_the_floor() {
+        // Whole locus is lost rather than silently rebuilt from sub-threshold evidence. This is the
+        // measured cost of the substrate (Soto 299 -> 263 loci).
+        let t = vec![tx("t100_1", "c", 100, 200, 1, &[], vec![b'A'; 10]), tx("t150_2", "c", 150, 250, 2, &[], vec![b'A'; 10])];
+        assert!(union_locus_geometry(&t, &[0, 1], 3).is_none());
+    }
+
+    #[test]
+    fn union_geometry_of_a_single_chain_reproduces_that_chain() {
+        // With one chain above the floor the union must be a no-op, so enabling the substrate cannot
+        // perturb loci that never shattered.
+        let t = vec![tx("t100_9", "c", 100, 400, 9, &[(200, 300)], vec![b'A'; 10])];
+        let (s, e, introns) = union_locus_geometry(&t, &[0], 3).unwrap();
+        assert_eq!((s, e), (t[0].start, t[0].end));
+        assert_eq!(introns, t[0].introns);
+    }
+
+    #[test]
+    fn union_geometry_absorbs_a_retained_intron_isoform() {
+        // One chain splices 200-300, another retains it. The union treats retained sequence as exonic,
+        // which is the point: include everything the reads support.
+        let t = vec![tx("t100_6", "c", 100, 400, 6, &[(200, 300)], vec![b'A'; 10]), tx("t100_4", "c", 100, 400, 4, &[], vec![b'A'; 10])];
+        let (s, e, introns) = union_locus_geometry(&t, &[0, 1], 3).unwrap();
+        assert_eq!((s, e), (100, 400));
+        assert!(introns.is_empty(), "retained-intron support fills the gap");
+    }
+
     #[test]
     fn exonic_containment_refuses_to_merge_a_locus_swallowed_by_a_giant_intron() {
         // The NPIPB12 shape: a 10 kb model whose single intron spans a separate 1 kb locus. By SPAN the small
