@@ -1,0 +1,78 @@
+WHY TIGHTENING THE HOMOLOGY EDGE RULE DOES NOT BUY PURITY
+2026-08-03
+
+Two independent attempts to improve RNA family grouping failed this week, and they failed by the same
+mechanism. That mechanism is a property of the pipeline rather than of either idea, so it is written up
+once here and referenced from both.
+
+
+THE COUPLING
+
+A family must span at least two spatially distinct loci to be emitted at all. So when an edge rule is
+tightened and a family loses an edge, the family does not merely become smaller: it can fall below that bar
+and disappear, and its copies are then never written out. Detection falls with it.
+
+The consequence is that precision and recall do not trade against each other in the usual way. Tightening
+the rule raises precision as intended, but recall falls faster, because whole loci are being removed rather
+than only wrong edges.
+
+Measured twice, on the Soto benchmark, with the denominator held fixed at the full truth set:
+
+  lever                                  precision      detected      copies      F1
+  identity floor 0.70 -> 0.93          0.796 -> 0.932   296 -> 282   1710 -> 1425   0.438 -> 0.433
+  isoform pooling, >=1 -> >=8 exons    0.419 -> 0.523   113 ->  85    545 ->  197   0.494 -> 0.392
+
+In both cases the precision gain is real and arrives exactly as predicted. In both cases the net effect on
+F1 is nil or negative.
+
+
+THE RULE THIS IMPLIES
+
+Any proposal to change the homology edge rule must report DETECTION and COPY COUNT alongside precision. A
+proposal evaluated on precision alone, or on a fixed set of already-emitted copies, will look like a win and
+be a loss.
+
+The same coupling is why re-grouping a fixed copies.fa is an UPPER bound on such a change and never a lower
+one. That error was made on 2026-08-02: an offline re-grouping predicted F1 0.553 for a raised identity
+floor, and two full pipeline runs returned 0.433. The offline arithmetic was correct to three decimal
+places. The experimental design was not, because it held constant the very thing the change perturbs.
+
+
+WHAT WAS BEING ATTEMPTED, AND WHAT SURVIVES OF IT
+
+The second attempt is worth recording in full because its premise was correct and remains a live target.
+
+The pipeline keeps one representative transcript per locus and discards the other isoforms. Of the
+representatives that cover a known family member, 46 percent are single-exon stubs. At those same loci, 95
+percent still have spliced reads and 53 percent carry a spliced chain supported by at least three reads. In
+other words a usable spliced model exists, we build it, and then we throw it away. NOTCH2NLA, SRGAP2C and
+LIMS1 are all represented by unspliced stubs while 92, 65 and 124 reads respectively support a proper
+spliced model at the same locus.
+
+Pooling every isoform's exons into the shared-exon rule was the obvious response, and it does what was
+intended: 12.8 times more exons in the pool, and roughly 30 true pairs recovered that the
+representative-only rule cannot find. But it never beats the baseline, because it also admits far more false
+edges than true ones.
+
+  arm                                precision   recall     F1     new-edge precision
+  representative only (baseline)       0.645      0.498    0.562         --
+  pooled, one exon >= 100 bp           0.422      0.597    0.494       32/209 = 15%
+  pooled, one exon >= 600 bp           0.518      0.591    0.552             25%
+  pooled, at least 2 agreeing exons    0.399      0.582    0.473
+  pooled, at least 8 agreeing exons    0.523      0.314    0.392
+
+Both refinement axes were tried. Raising the minimum shared length peaks below the baseline. Requiring
+several independent exons to agree is worse still, for the coupling reason above.
+
+The honest conclusion is bounded rather than open: about 30 recoverable pairs sit in the discarded isoforms,
+and no exon-level rule tested extracts them cleanly. That is a target for a different kind of rule, not an
+argument for tuning this one further.
+
+
+A NOTE ON THE MEASUREMENT HARNESS
+
+These numbers come from a two-chromosome subset, chr1 and chr15, which runs two arms in about 45 minutes
+instead of about 3 hours genome-wide. The subset is not arbitrary: those two chromosomes carry the most
+stub representatives and 39 percent of all true pairs, including every flagship case. Restricting to two
+chromosomes removes cross-chromosome families, so absolute F1 there is not comparable to the genome-wide
+figure. Only the difference between arms is.
