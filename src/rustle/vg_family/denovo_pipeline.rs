@@ -2601,7 +2601,27 @@ pub(crate) fn homology_blocks(
     refine: &RefineParams,
     gamma: f64,
 ) -> Result<Vec<Vec<usize>>> {
-    let edges2 = homology_edges_all_reps(reps, refine)?;
+    homology_blocks_pooled(reps, None, refine, gamma)
+}
+
+/// As `homology_blocks`, optionally pooling every isoform's exons into the shared-exon rule.
+pub(crate) fn homology_blocks_pooled(
+    reps: &[DenovoTranscript],
+    pooled: Option<&[Vec<Vec<u8>>]>,
+    refine: &RefineParams,
+    gamma: f64,
+) -> Result<Vec<Vec<usize>>> {
+    let edges2 = homology_edges_all_reps_pooled(reps, pooled, refine)?;
+    // Every edge carries weight 1.0, so the weighted machinery underneath runs UNWEIGHTED. This is a
+    // deliberate choice, not an oversight, and it is worth stating because `de` (hence identity) IS
+    // computed for every edge and then discarded here.
+    //
+    // Weighting was tested: using identity/coverage as an edge weight and re-clustering gives the same
+    // partition to within noise on the Soto benchmark, because the edge SET is already the product of
+    // hard identity+coverage floors -- the surviving edges have little dynamic range left to weight.
+    // The lever that does move the result is WHICH edges exist (the floors, and the shared-exon rule),
+    // not how strongly they are weighted. Revisit only if the edge rule is ever relaxed enough to admit
+    // a genuinely graded population.
     let edges3: Vec<(usize, usize, f64)> = edges2.iter().map(|&(a, b)| (a, b, 1.0)).collect();
     Ok(crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma))
 }
@@ -2669,8 +2689,32 @@ pub fn detect_homology_catalog_genome_wide(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(3);
+    // Pooled per-locus exon sequences for `RUSTLE_SHARED_EXON_ISOFORMS` (default off). Captured HERE because
+    // `transcripts` is dropped immediately below and the non-representative isoforms carry exon sequence the
+    // representative may lack -- 46% of representatives covering a known member are single-exon stubs while
+    // 53% of those loci have a gate-passing spliced chain. Min-bp is applied later, so slice with 0 here.
+    let pool_isoforms = std::env::var("RUSTLE_SHARED_EXON_ISOFORMS")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false);
+    let mut pooled_exons: Vec<Vec<Vec<u8>>> = Vec::new();
     let mut reps: Vec<DenovoTranscript> = if union_reps {
         union_locus_reps(&transcripts, &cfg.detect, &genome, union_floor)
+    } else if pool_isoforms {
+        let (rep_idx, members) =
+            crate::vg_family::family_detect::collapse_loci_span_aware_with_members(&transcripts, &cfg.detect);
+        pooled_exons = members
+            .iter()
+            .map(|ms| ms.iter().flat_map(|&i| exon_seqs_of(&transcripts[i], 0)).collect())
+            .collect();
+        let n_ex: usize = pooled_exons.iter().map(|v| v.len()).sum();
+        eprintln!(
+            "[shared-exon-isoforms] pooled {} exons over {} loci from {} isoforms (rep-only would give {})",
+            n_ex,
+            rep_idx.len(),
+            members.iter().map(|m| m.len()).sum::<usize>(),
+            rep_idx.iter().map(|&i| exon_seqs_of(&transcripts[i], 0).len()).sum::<usize>()
+        );
+        rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
     } else {
         let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
         rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
@@ -2693,9 +2737,26 @@ pub fn detect_homology_catalog_genome_wide(
     for (i, c) in reps.iter_mut().enumerate() {
         c.distinguishing_uniq = uniq_counts[i];
     }
+    // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent → catalogs byte-identical): dump the rep table
+    // that `distinct_locus_reps` (the ">= 2 spatially-distinct loci" certificate) is about to run on, so
+    // the merge predicate can be re-derived offline. One line per rep, tab-separated.
+    if std::env::var("RUSTLE_LOCUS_AUDIT").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) {
+        for (i, c) in reps.iter().enumerate() {
+            eprintln!(
+                "[rep-audit]\t{i}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                c.chrom, c.start, c.end, c.strand, c.n_reads, c.distinguishing_uniq,
+                c.introns.len() + 1, c.seq.len()
+            );
+        }
+    }
 
     // --- E_r edges + γ-quasi-clique blocks ---
-    let blocks = homology_blocks(&reps, refine, gamma)?;
+    let blocks = homology_blocks_pooled(
+        &reps,
+        if pooled_exons.is_empty() { None } else { Some(pooled_exons.as_slice()) },
+        refine,
+        gamma,
+    )?;
     let n_blocks = blocks.len(); // captured before the loop below consumes `blocks` (for the diagnostic eprintln)
     // Within-family COVERAGE split (see `coverage_split_block`). Applied to the formed blocks, so it can
     // only split. `RUSTLE_COVERAGE_SPLIT=0` restores the pre-split catalog.
@@ -3473,6 +3534,109 @@ fn nucleotide_edges_indexed(
 /// the bases the exon-sum rule sees. On the '-' strand the stored sequence is the reverse complement of the
 /// concatenation, so the exon LENGTHS are reversed before slicing; each slice is then that exon in reverse
 /// complement, which is immaterial to alignment since minimap2 tries both strands.
+/// Slice one transcript's stored exon-sum back into its individual exon sequences.
+///
+/// ⚠ The stored `seq` is the CONCATENATED exons, and on the '-' strand it is the reverse complement of that
+/// concatenation -- so the exon LENGTHS must be reversed before slicing. Getting this wrong silently returns
+/// the right number of exons with the wrong bases. Factored out so the single-representative and pooled
+/// callers cannot drift apart on it.
+fn exon_seqs_of(t: &DenovoTranscript, min_bp: u64) -> Vec<Vec<u8>> {
+    let mut lens: Vec<usize> = Vec::with_capacity(t.introns.len() + 1);
+    let mut prev = t.start;
+    for &(d, a) in &t.introns {
+        lens.push(d.saturating_sub(prev) as usize);
+        prev = a;
+    }
+    lens.push(t.end.saturating_sub(prev) as usize);
+    if t.strand == '-' {
+        lens.reverse();
+    }
+    let mut out = Vec::new();
+    let mut off = 0usize;
+    for l in lens {
+        if l == 0 || off + l > t.seq.len() {
+            off += l;
+            continue;
+        }
+        if l as u64 >= min_bp {
+            out.push(t.seq[off..off + l].to_vec());
+        }
+        off += l;
+    }
+    out
+}
+
+/// Shared-exon edges where each locus contributes the exons of EVERY isoform collapsed into it, not only
+/// those of its chosen representative (`RUSTLE_SHARED_EXON_ISOFORMS`).
+///
+/// WHY. The pipeline keeps one representative per locus and discards the rest, and 46% of the
+/// representatives that cover a known family member are single-exon stubs. Measured at those stub loci:
+/// 95% still have spliced reads, and 53% have a spliced chain carried by >= 3 reads -- i.e. a gate-passing
+/// spliced model exists and we threw it away. NOTCH2NLA, SRGAP2C and LIMS1 are represented by unspliced
+/// stubs while 92, 65 and 124 reads respectively support a proper spliced model at the same locus. A stub
+/// cannot cover half of a full transcript, so the pair never gets an edge even though both loci were found.
+///
+/// WHY THIS IS NOT `RUSTLE_LOCUS_EXON_UNION`, which lost 20 recall points: that concatenated the isoforms
+/// into ONE LONGER sequence, and coverage is aligned-span / shorter-length, so a longer representative
+/// inflated its own denominator and edges vanished. Here the exons stay SEPARATE and are matched
+/// any-to-any, so no sequence gets longer and no denominator moves. It also does not touch representative
+/// selection, so it cannot regress the way `RUSTLE_SPLICED_REP` did.
+///
+/// ⚠ Judge it on PRECISION: more exons per locus means more chances to match, including on shared repeats
+/// and common domains. The question is whether the NEW edges are true co-family pairs.
+pub fn shared_exon_edges_pooled(
+    reps: &[DenovoTranscript],
+    pooled: &[Vec<Vec<u8>>],
+    min_identity: f64,
+    min_bp: u64,
+    params: &RefineParams,
+) -> Result<Vec<(usize, usize)>> {
+    let mut seqs: Vec<Vec<u8>> = Vec::new();
+    let mut owner: Vec<usize> = Vec::new();
+    for (ri, exs) in pooled.iter().enumerate() {
+        for e in exs {
+            if e.len() as u64 >= min_bp {
+                seqs.push(e.clone());
+                owner.push(ri);
+            }
+        }
+    }
+    edges_from_exon_pool(seqs, owner, reps.len(), min_identity, min_bp, params, "shared-exon-pooled")
+}
+
+/// Shared engine for both shared-exon variants: one all-vs-all over every exon, then lift exon pairs to
+/// locus pairs.
+fn edges_from_exon_pool(
+    seqs: Vec<Vec<u8>>,
+    owner: Vec<usize>,
+    n_loci: usize,
+    min_identity: f64,
+    min_bp: u64,
+    params: &RefineParams,
+    tag: &str,
+) -> Result<Vec<(usize, usize)>> {
+    if seqs.len() < 2 {
+        return Ok(Vec::new());
+    }
+    let mut edge_set: BTreeSet<(usize, usize)> = BTreeSet::new();
+    let pairs = nucleotide_edges_indexed(&seqs, &["-x", "asm20"], min_identity, min_bp, params)?;
+    for (a, b) in pairs {
+        let (ra, rb) = (owner[a], owner[b]);
+        if ra != rb {
+            edge_set.insert((ra.min(rb), ra.max(rb)));
+        }
+    }
+    eprintln!(
+        "[{tag}] {} exons over {} loci -> {} locus pairs linked (id >= {}, >= {} bp aligned)",
+        seqs.len(),
+        n_loci,
+        edge_set.len(),
+        min_identity,
+        min_bp
+    );
+    Ok(edge_set.into_iter().collect())
+}
+
 pub fn shared_exon_edges(
     reps: &[DenovoTranscript],
     min_identity: f64,
@@ -3482,51 +3646,12 @@ pub fn shared_exon_edges(
     let mut seqs: Vec<Vec<u8>> = Vec::new();
     let mut owner: Vec<usize> = Vec::new();
     for (ri, r) in reps.iter().enumerate() {
-        // exon lengths in genomic order, from the intron chain
-        let mut lens: Vec<usize> = Vec::with_capacity(r.introns.len() + 1);
-        let mut prev = r.start;
-        for &(d, a) in &r.introns {
-            lens.push(d.saturating_sub(prev) as usize);
-            prev = a;
-        }
-        lens.push(r.end.saturating_sub(prev) as usize);
-        if r.strand == '-' {
-            lens.reverse();
-        }
-        let mut off = 0usize;
-        for l in lens {
-            if l == 0 || off + l > r.seq.len() {
-                off += l;
-                continue;
-            }
-            if l as u64 >= min_bp {
-                seqs.push(r.seq[off..off + l].to_vec());
-                owner.push(ri);
-            }
-            off += l;
+        for e in exon_seqs_of(r, min_bp) {
+            seqs.push(e);
+            owner.push(ri);
         }
     }
-    if seqs.len() < 2 {
-        return Ok(Vec::new());
-    }
-    let mut edge_set: BTreeSet<(usize, usize)> = BTreeSet::new();
-    // One all-vs-all over every exon of every locus. asm20 seeding, same as the core nucleotide tier.
-    let pairs = nucleotide_edges_indexed(&seqs, &["-x", "asm20"], min_identity, min_bp, params)?;
-    for (a, b) in pairs {
-        let (ra, rb) = (owner[a], owner[b]);
-        if ra != rb {
-            edge_set.insert((ra.min(rb), ra.max(rb)));
-        }
-    }
-    eprintln!(
-        "[shared-exon] {} exons over {} loci -> {} locus pairs linked (id >= {}, >= {} bp aligned)",
-        seqs.len(),
-        reps.len(),
-        edge_set.len(),
-        min_identity,
-        min_bp
-    );
-    Ok(edge_set.into_iter().collect())
+    edges_from_exon_pool(seqs, owner, reps.len(), min_identity, min_bp, params, "shared-exon")
 }
 
 /// E_r homology edges over ALL reps' exon-sum sequences: asm20 (recent) ∪ sensitive -k11 -w5 (ancient) ∪
@@ -3539,6 +3664,16 @@ pub fn shared_exon_edges(
 /// over the whole rep universe (local indices == global indices since there is exactly one "family").
 pub(crate) fn homology_edges_all_reps(
     reps: &[DenovoTranscript],
+    params: &RefineParams,
+) -> Result<Vec<(usize, usize)>> {
+    homology_edges_all_reps_pooled(reps, None, params)
+}
+
+/// As `homology_edges_all_reps`, but when `pooled` is supplied the shared-exon rule draws on EVERY isoform's
+/// exons for each locus instead of only the representative's. See `shared_exon_edges_pooled`.
+pub(crate) fn homology_edges_all_reps_pooled(
+    reps: &[DenovoTranscript],
+    pooled: Option<&[Vec<Vec<u8>>]>,
     params: &RefineParams,
 ) -> Result<Vec<(usize, usize)>> {
     // EDGE SUBSTRATE. By default the E_r edge is computed on the ASSEMBLED exon-sum (`rep.seq`). That makes
@@ -3586,7 +3721,10 @@ pub(crate) fn homology_edges_all_reps(
         let se_bp: u64 = std::env::var("RUSTLE_SHARED_EXON_MIN_BP")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
         eprintln!("[shared-exon] MODE ACTIVE: replacing the exon-sum rule (id >= {se_id}, >= {se_bp} bp)");
-        return shared_exon_edges(reps, se_id, se_bp, params);
+        return match pooled {
+            Some(p) => shared_exon_edges_pooled(reps, p, se_id, se_bp, params),
+            None => shared_exon_edges(reps, se_id, se_bp, params),
+        };
     }
     let mut prov: BTreeMap<(usize, usize), TierMask> = BTreeMap::new();
     // The asm20 run is SKIPPABLE here (`RUSTLE_ER_SENSITIVE_ONLY=1`, default off). Measured on Soto
@@ -3889,12 +4027,38 @@ const ANTISENSE_MINORITY_DENOM: u32 = 10;
 /// the minority artifact — then widest span).
 fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<DenovoTranscript> {
     let n = copies.len();
+    // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent): log every co-located pair this merge examines
+    // and its verdict, so "how many merges does the >=2-distinct-loci certificate perform, and at what
+    // overlap fraction" is measurable without re-deriving the block structure offline.
+    let audit = std::env::var("RUSTLE_LOCUS_AUDIT").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    // A/B KNOB (`RUSTLE_LOCUS_MERGE_MIN_COVER`, default 0.0 = today's "any overlap"): additionally require
+    // the overlap to cover >= this fraction of the SHORTER copy before the co-located merge may fire — i.e.
+    // the same containment bar `collapse_parent` (the candidate->locus merge) uses. Exists to MEASURE the
+    // advisor's proposed harmonisation of the two overlap rules; not a shipped default.
+    let merge_min_cover: f64 = std::env::var("RUSTLE_LOCUS_MERGE_MIN_COVER")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
     let mut parent: Vec<usize> = (0..n).collect();
     for i in 0..n {
         for j in (i + 1)..n {
             let (a, b) = (&copies[i], &copies[j]);
             let same_pos = a.chrom == b.chrom && a.end.min(b.end) > a.start.max(b.start);
             if !same_pos {
+                continue;
+            }
+            let cover = {
+                let ov = a.end.min(b.end) - a.start.max(b.start);
+                let minlen = (a.end - a.start).min(b.end - b.start).max(1);
+                ov as f64 / minlen as f64
+            };
+            if cover < merge_min_cover {
+                if audit {
+                    eprintln!(
+                        "[locus-audit]\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\tBELOW_COVER",
+                        a.chrom, a.start, a.end, a.strand, a.n_reads, a.distinguishing_uniq,
+                        b.start, b.end, b.strand, b.n_reads, b.distinguishing_uniq,
+                        a.end.min(b.end) - a.start.max(b.start), cover
+                    );
+                }
                 continue;
             }
             let collapse = if a.strand == b.strand {
@@ -3909,6 +4073,16 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<D
                 let (lo, hi) = (a.n_reads.min(b.n_reads), a.n_reads.max(b.n_reads));
                 lo.saturating_mul(ANTISENSE_MINORITY_DENOM) < hi // minority antisense = artifact
             };
+            if audit {
+                let ov = a.end.min(b.end) - a.start.max(b.start);
+                let minlen = (a.end - a.start).min(b.end - b.start).max(1);
+                eprintln!(
+                    "[locus-audit]\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}",
+                    a.chrom, a.start, a.end, a.strand, a.n_reads, a.distinguishing_uniq,
+                    b.start, b.end, b.strand, b.n_reads, b.distinguishing_uniq,
+                    ov, ov as f64 / minlen as f64, if collapse { "MERGE" } else { "KEEP" }
+                );
+            }
             if collapse {
                 uf_union(&mut parent, i, j);
             }
@@ -4147,6 +4321,44 @@ mod tests {
     /// recall metric could not see families dissolved into singletons; corrected, the split costs 8.0 recall
     /// points on RNA and is dominated by raising the identity floor. This test pins the default so that
     /// cannot silently regress.
+    /// Pooling isoform exons must ADD the exons the representative lacks, and must not silently change the
+    /// rep-only behaviour. The case that matters is a locus whose representative is an unspliced STUB while a
+    /// spliced isoform at the same locus carries the real exons -- that is 46% of the representatives
+    /// covering a known family member, and it is why a stub cannot form an edge with a full transcript.
+    #[test]
+    fn pooled_isoform_exons_recover_what_a_stub_representative_lacks() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            return;
+        }
+        let mk = |tid: &str, start: u64, introns: Vec<(u64, u64)>, seq: Vec<u8>| DenovoTranscript {
+            tid: tid.into(), chrom: "chr1".into(), start, end: start + 1200,
+            n_reads: 9, strand: '+', introns, seq, distinguishing_uniq: 0, tes: None,
+        };
+        let ex_a = rand_seq(400, 0x5EED1);
+        let ex_b = rand_seq(400, 0x5EED2);
+        // locus 1: representative is an unspliced STUB carrying only filler; a spliced isoform at the same
+        // locus carries ex_a + ex_b.
+        let stub = mk("stub", 0, vec![], rand_seq(600, 0xF11E));
+        let spliced: Vec<u8> = ex_a.iter().chain(ex_b.iter()).copied().collect();
+        // locus 2: a full transcript sharing exon A with locus 1's discarded isoform.
+        let other: Vec<u8> = ex_a.iter().chain(rand_seq(400, 0xBEEF).iter()).copied().collect();
+        let reps = vec![stub.clone(), mk("other", 50_000, vec![(50_400, 50_500)], other)];
+
+        let params = homology_refine_params(Some(0.90), 2);
+        let rep_only = shared_exon_edges(&reps, 0.90, 200, &params).unwrap();
+        assert!(
+            rep_only.is_empty(),
+            "control: with only the stub representative there is no shared exon, so no edge"
+        );
+
+        let pooled = vec![vec![ex_a.clone(), ex_b.clone()], vec![ex_a.clone()]];
+        let with_pool = shared_exon_edges_pooled(&reps, &pooled, 0.90, 200, &params).unwrap();
+        assert!(
+            with_pool.contains(&(0, 1)),
+            "pooling the discarded spliced isoform's exons must recover the edge the stub could not form"
+        );
+    }
+
     #[test]
     fn coverage_split_is_off_by_default() {
         assert!(
@@ -4191,9 +4403,13 @@ mod tests {
                  is no longer true and must be rewritten before this test is relaxed."
             );
         }
+        // Accepts `homology_blocks(` or `homology_blocks_pooled(` -- both route through
+        // `homology_edges_all_reps*`, i.e. E_r alone. The pooled variant only widens which EXONS feed the
+        // shared-exon rule (every isoform's, not just the representative's); it introduces no read-assignment
+        // and no conflict edge, so the O1-from-sequence-alone invariant is unchanged.
         assert!(
-            body.contains("homology_blocks("),
-            "the homology catalog must still form families via homology_blocks (E_r)"
+            body.contains("homology_blocks(") || body.contains("homology_blocks_pooled("),
+            "the homology catalog must still form families via homology_blocks* (E_r)"
         );
         // The path must not reach into ConflictParams either -- that reads as an E_c dependency even where
         // only the shared read-count scalar is wanted. `locus_min_reads()` is the path-neutral accessor.
@@ -4225,6 +4441,28 @@ mod tests {
         let block_of = |i: usize| blocks.iter().position(|bl| bl.contains(&i)).unwrap();
         assert_eq!(block_of(0), block_of(1), "identical reps must share a block");
         assert_ne!(block_of(0), block_of(2), "unrelated rep must be a separate block");
+    }
+
+    /// `--min-identity` must reach BOTH E_r floors on the `--refine` path too, not just on the
+    /// homology-primary path. gw_family_catalog.rs rebuilds a RefineParams for `refine_families_exon_sum`
+    /// and used to copy only min_identity + min_coverage, so `--min-identity 0.93` gave run 1 a floor of
+    /// 0.93 while run 3 silently kept the 0.60 default -- and since the runs are unioned, 0.60 was the
+    /// effective floor. This pins the invariant the CLI advertises.
+    #[test]
+    fn refine_params_carry_the_sensitive_floor_too() {
+        let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin/gw_family_catalog.rs"))
+            .expect("read gw_family_catalog.rs");
+        let start = src.find("let refine = !args.no_refine;").expect("refine block not found");
+        let block = &src[start..start + 1600];
+        for field in ["min_identity: refine_params.min_identity",
+                      "min_coverage: refine_params.min_coverage",
+                      "sensitive_identity: refine_params.sensitive_identity"] {
+            assert!(
+                block.contains(field),
+                "the --refine RefineParams must inherit `{field}` from refine_params; dropping one lets \
+                 --min-identity set only some of the E_r floors, and the union takes the loosest"
+            );
+        }
     }
 
     #[test]

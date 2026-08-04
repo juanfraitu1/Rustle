@@ -548,6 +548,38 @@ pub fn collapse_loci_span_aware(transcripts: &[DenovoTranscript], p: &DetectPara
     locus_reps(transcripts, &parent)
 }
 
+/// Like `collapse_loci_span_aware`, but also returns, PARALLEL to the reps, the MEMBER INDICES of each
+/// rep's locus -- every isoform that collapsed into it, including the rep itself.
+///
+/// Needed because the pipeline otherwise discards the non-representative isoforms, and they carry exon
+/// sequence the representative may lack: 46% of the representatives covering a known family member are
+/// single-exon stubs, yet 53% of those loci have a spliced chain supported by >= 3 reads. Uses the SAME
+/// `collapse_parent` union-find as `collapse_loci_span_aware`, so reps and members cannot disagree.
+pub fn collapse_loci_span_aware_with_members(
+    transcripts: &[DenovoTranscript],
+    p: &DetectParams,
+) -> (Vec<usize>, Vec<Vec<usize>>) {
+    if transcripts.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let parent = collapse_parent(transcripts, p);
+    let reps = locus_reps(transcripts, &parent);
+    let mut ptmp = parent.clone();
+    let mut by_root: std::collections::HashMap<usize, Vec<usize>> = std::collections::HashMap::new();
+    for i in 0..transcripts.len() {
+        let r = uf_find(&mut ptmp, i);
+        by_root.entry(r).or_default().push(i);
+    }
+    let members: Vec<Vec<usize>> = reps
+        .iter()
+        .map(|&rep| {
+            let r = uf_find(&mut ptmp, rep);
+            by_root.get(&r).cloned().unwrap_or_else(|| vec![rep])
+        })
+        .collect();
+    (reps, members)
+}
+
 /// Like `collapse_loci_span_aware`, but also returns, PARALLEL to the reps, the LOCUS TOTAL read count = the
 /// summed `n_reads` over ALL isoforms collapsed into each rep's locus (not just the representative isoform).
 /// This is the correct single-copy expression basis for λ_global: a gene's total expression, not its dominant
