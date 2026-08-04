@@ -1,0 +1,124 @@
+FROM ISOSEQ READS TO THE FAMILY GRAPH (NPIP as example)
+
+CORRECTED 2026-08-03 after review. Four things in the previous version were wrong, all in a direction that
+flattered the method, and they are fixed below: (1) the conditionality and ORDER of the three alignment runs
+in step 7, (2) the claim that the effective identity floor is a uniform 0.60, (3) the impression that step 7
+does nothing under --homology-primary, and (4) a second locus-merge rule in step 7 that was never documented.
+
+This describes --cross-chrom. Our current and better mode is --homology-primary, which defines families from
+sequence homology alone with NO conflict graph: there step 4 does not run, and the "candidate families" that
+step 5 refines are the homology blocks themselves. Step 7 still runs there and is not a no-op (407 blocks
+became 410 families in one run). Numbers quoted here are --cross-chrom unless stated.
+
+No annotation is used to build anything. Loci are built from the reads and nothing else; the T2T
+reference supplies the bases at those read-derived coordinates. RefSeq gene names and the Soto catalog are
+used only to score the output, never to produce it.
+
+Reads give coordinates, the reference gives bases. No read base enters any comparison at any step: an
+exon-sum is reference sequence fetched at read-derived exon coordinates. The three comparison runs in step 7
+differ only in which interval of the reference they read.
+
+Terms. A candidate transcript is one distinct intron chain. A locus is a set of candidate transcripts that
+step 5 merged together. The exon-sum is the exonic sequence of the single candidate chosen to represent a
+locus. Graph nodes are loci, and the string compared is that locus's exon-sum.
+
+Alignment records. Primary alignments build the loci and their sequences. Secondary alignments contribute no
+sequence; they are used only as evidence of ambiguity (one read placing at several loci), which is what
+proposes candidate families in step 6 and assigns reads to copies afterwards. Supplementary (chimeric or
+split) alignments are discarded everywhere: a supplementary record is one piece of a read that aligned to two
+distant places, so admitting it would invent an intron chain spanning the two and a false link between
+unrelated loci.
+
+
+1. Reads to exons. Primary alignments only. An N in the CIGAR is a spliced-out intron, so the blocks between
+   the N operations are the exons.
+
+2. Reads to candidate transcripts. Two reads belong to the same candidate if their intron lists are
+   identical, junction for junction. Keep a candidate if at least 3 reads carry that exact list. Its start is
+   the 2nd smallest read start and its end is the 2nd largest read end, so one runaway read cannot stretch
+   it. One locus yields many candidates: NPIPB9's 206 reads give 54 distinct intron lists, the largest
+   holding only 21 percent.
+
+3. Candidate transcript to exon-sum. Reference bases at the read-derived exon coordinates, concatenated
+   (reads give the coordinates, the genome gives the bases). Every junction must be canonical or the whole
+   candidate is dropped. NPIPB12 has 8 of its 9 junctions canonical and one CT..AT, so a 109-read model is
+   discarded.
+
+4. Two filters. Drop a single-exon candidate that engulfs 5 or more junctions (unspliced pre-mRNA). Drop a
+   candidate with an intron longer than 50 kb that is carried by fewer than 3 reads (mis-chain). Both are
+   conjunctions, never length alone.
+
+5. Candidates to loci. Two candidates are put in the same locus if either (a) they share at least one
+   identical junction, or (b) they are on the same chromosome and strand and their overlap covers at least
+   half of the shorter one. Apply this repeatedly until nothing more merges. There is no clustering algorithm
+   and no chosen number of groups: it is a fixed pairwise rule applied transitively, so the outcome does not
+   depend on any ordering or initialisation. Each locus then keeps one representative, the candidate with the
+   most reads, ties broken by longer span. NPIPB9: 54 candidates become 1 locus with a 1,546 bp exon-sum. All
+   other isoforms are discarded; NPIPA2 has 14 candidates and 6 distinct first exons.
+
+6. Loci to candidate families (read ambiguity). Each alignment record, including secondaries, is attributed
+   to the single locus it overlaps most. A read attributed to two different loci puts an edge between them.
+   Groups are then found in that edge graph by Louvain modularity, and a group is thrown away if it has 10 or
+   more loci and fewer than 30 percent of its possible internal pairs are actually edges. The reasoning: in a
+   real paralog family nearly every copy is confused with every other, so the group is dense, whereas a chain
+   of loci linked one-to-the-next through a shared repeat is sparse.
+
+   Consequence worth stating: step 7 can only split what this step proposed, never merge or extend it. Two
+   loci with near-identical sequence but no read shared between them are therefore never grouped in this
+   mode, so dispersed paralogs whose reads map uniquely (GSTM, MAGEA) are missed by construction.
+
+7. Candidate families to final families (sequence homology). Within each candidate family, minimap2 is run
+   all-vs-all up to three times and the edges are unioned. ONE run is unconditional; the other TWO are both
+   conditional on the SAME test, namely whether run 1's edges alone already connect every member of THAT
+   family (a union-find over run-1 edges, per family, no threshold):
+
+       run 1   exon-sums, asm20 seeding (k=19, w=10)                  identity >= 0.80   ALWAYS
+       -- then, only if run 1 leaves THIS family disconnected, in this order:
+       run 2   the same interval unspliced, intronic gaps kept        identity >= 0.80
+       run 3   exon-sums, sensitive seeding (k=11, w=5)               identity >= 0.60
+
+   The previous version of this document said run 2 was unconditional and run 3 conditional, and put them
+   in the opposite order. That was wrong. An edge between two loci exists if any one
+   alignment record from any run reaches that run's minimum identity and covers at least 0.50 of the shorter
+   sequence. Coverage is never added up across records, so two loci sharing 60 percent of their sequence in
+   four separate blocks get no edge. Identity is 1 minus de, minimap2's gap-compressed divergence, so an
+   indel of any length counts as one difference.
+
+   Then take connected components of those edges, and collapse loci that were counted twice. There are TWO
+   merge rules here, and the previous version documented only the first:
+     - SAME strand, any overlap: merge unless at least 3 reads map uniquely (MAPQ > 0) to one of them. The
+       "any overlap" looks inconsistent with step 5's "at least half the shorter one", but it is vacuous:
+       step 5 is iterated to a fixed point, so no same-strand pair reaching step 7 can overlap by half the
+       shorter one (largest observed 0.485 over 451 chr1 loci, 0.495 genome-wide). What step 7 has and step 5
+       cannot have is the per-locus unique-mapper count, which does not exist until the loci do.
+     - OPPOSITE strand, any overlap: merge whenever one locus carries less than a tenth of the other's reads,
+       with no overlap fraction and no MAPQ test. This is an antisense-artifact heuristic, it was previously
+       undocumented, and it is the only place "any overlap" genuinely bites (all four merges on chr1 are of
+       this kind, one at 15.9% containment).
+   Keep the component only if at least 2 loci remain.
+
+   Two things to be explicit about.
+
+   (i) The effective identity requirement is NOT a uniform 0.60. It is 0.80 for every family that run 1
+   already connects, and falls to 0.60 only inside families run 1 left disconnected: on the run behind these
+   numbers, 139 of 281 emitted families carry run-1 edges only and never saw the 0.60 bar.
+
+   (ii) Run 3 does not look up a gene or a region. It reads exactly the same interval as run 1, first base to
+   last base of the representative transcript, both read-derived, and simply keeps the intronic gaps instead
+   of splicing them out. The gap positions are the N gaps in the reads' own CIGARs; only the bases inside
+   them come from the reference, as they do in every run. Nothing about the locus is assumed: reads pile up
+   somewhere, that pile defines an interval, and run 3 asks whether two such intervals are homologous when
+   left unspliced. What is true is that those intronic bases were never observed by the RNA, so the evidence
+   class differs, and 28 of 281 families have no edge from runs 1 and 2 at all. Those rest on genomic rather
+   than transcribed sequence and belong in a separate count from any "identified from RNA" figure.
+
+
+RESULT
+
+NPIP: Soto's single ID_154 becomes 4 families (7 NPIPB, 5 on the NPIPA side, 1 pair, and NPIPB12 not called
+at step 3).
+
+Benchmark: 281 families, 872 copies, covering 237 of 362 members (65.5 percent). The largest over-merge fuses
+2 annotated families.
+
+The gamma = 0.20 quasi-clique split applies to the --homology-primary and genome-only modes, not to this one.

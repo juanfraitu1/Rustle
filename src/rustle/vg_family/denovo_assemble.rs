@@ -320,8 +320,32 @@ pub fn tied_seed_skeletons(
 /// `reference_start`); introns are the gaps between consecutive `bam::exons_from_cigar` exons. `chrom` is
 /// the record's reference-sequence name, resolved by the caller from the header.
 pub fn primary_read_from_record(record: &RecordBuf, chrom: &str) -> Option<PrimaryRead> {
+    alignment_read_from_record(record, chrom, false)
+}
+
+/// FLAG-FREE site construction (the shared core of `primary_read_from_record`).
+///
+/// With `allow_secondary = false` this is the historical primary-only Pass-1 edge (`-F 2308`). With
+/// `allow_secondary = true` it also admits SECONDARY (0x100) alignments, so a multimapping read contributes
+/// one candidate site per PLACEMENT rather than only at the placement minimap2 happened to flag primary.
+/// Supplementary (0x800) and unmapped stay excluded in both modes: a supplementary record is a fragment of
+/// the same molecule (its CIGAR is not an independent transcript model), which is a different object from a
+/// secondary (a complete alternative placement of the whole molecule).
+///
+/// Only the intron chain and the reference span are taken here — never SEQ — so the standing "secondary
+/// records may lack SEQ / carry hard clips" hazard does not apply to this path. (Measured on the Soto BAM:
+/// minimap2 was run with `-Y`, so all 3,214,558 secondary records carry SEQ and none are hard-clipped; the
+/// exon parse would fail loudly, not silently, if that ever changed.)
+pub fn alignment_read_from_record(
+    record: &RecordBuf,
+    chrom: &str,
+    allow_secondary: bool,
+) -> Option<PrimaryRead> {
     let flags = record.flags();
-    if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
+    if flags.is_unmapped() || flags.is_supplementary() {
+        return None;
+    }
+    if flags.is_secondary() && !allow_secondary {
         return None;
     }
     let ref_start = (record.alignment_start()?.get() as u64).saturating_sub(1); // 1-based -> 0-based
@@ -443,10 +467,30 @@ pub fn any_read_from_record(record: &RecordBuf, chrom: &str) -> Option<(PrimaryR
 /// Scan every PRIMARY mapped alignment in a BAM into `PrimaryRead`s (the Pass-1 input). I/O driver:
 /// opens the BAM, reads the header for reference names, and applies `primary_read_from_record`.
 pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<PrimaryRead>> {
+    // FLAG-FREE SITE CONSTRUCTION (opt-in, `RUSTLE_FLAGFREE_SITES=1`; default off ⟹ byte-identical).
+    //
+    // The advisor's objection: for a read multimapping across near-identical paralogs the alignment scores
+    // are near-tied, so which placement minimap2 flags primary is close to arbitrary — yet Pass-1 seeds
+    // candidate sites from primaries ALONE. This mode removes the flag from the CONSTRUCTION decision
+    // entirely: every placement of every read proposes a site, and a site survives only if the existing
+    // downstream gates (`pass1_skeletons_robust`'s identical-intron-chain agreement, then `assemble_gate`'s
+    // `locus_support >= GATE_MIN_READS`) find enough reads agreeing on a chain THERE. It is deliberately an
+    // ABSTENTION from read→locus assignment, not a solution to it: a read is allowed to support several
+    // sites at once, because "which copies exist" (O1) should not require first answering "where did this
+    // molecule come from" (O2).
+    //
+    // The dedup below is the one thing that must NOT be abstained on: two records of the SAME molecule at
+    // the SAME site with the SAME chain are one witness, not two, and letting them count twice would
+    // manufacture read support out of alignment redundancy.
+    let flagfree = std::env::var("RUSTLE_FLAGFREE_SITES")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false);
     let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
     let header = reader.read_header()?;
     let mut record = RecordBuf::default();
     let mut out = Vec::new();
+    let (mut n_prim, mut n_sec, mut n_dup) = (0usize, 0usize, 0usize);
+    let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
     while reader.read_record_buf(&header, &mut record)? > 0 {
         let chrom = match record
             .reference_sequence_id()
@@ -455,9 +499,34 @@ pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<Prim
             Some((name, _)) => format!("{name}"),
             None => continue,
         };
-        if let Some(pr) = primary_read_from_record(&record, &chrom) {
+        let is_sec = record.flags().is_secondary();
+        if let Some(pr) = alignment_read_from_record(&record, &chrom, flagfree) {
+            if flagfree {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                record.name().map(|n| n.to_string()).unwrap_or_default().hash(&mut h);
+                pr.chrom.hash(&mut h);
+                pr.ref_start.hash(&mut h);
+                pr.ref_end.hash(&mut h);
+                pr.introns.hash(&mut h);
+                if !seen.insert(h.finish()) {
+                    n_dup += 1;
+                    continue; // same molecule, same site, same chain — one witness
+                }
+                if is_sec {
+                    n_sec += 1;
+                } else {
+                    n_prim += 1;
+                }
+            }
             out.push(pr);
         }
+    }
+    if flagfree {
+        eprintln!(
+            "[flagfree] site construction from ALL alignments: {} placements ({n_prim} primary + {n_sec} secondary), {n_dup} same-molecule/same-site duplicates dropped",
+            out.len()
+        );
     }
     Ok(out)
 }
@@ -899,8 +968,13 @@ pub fn build_spliced_seq(
                 }
             }
         }
-        if plus == 0 && minus == 0 {
-            return None; // no canonical junction at all -> no strand evidence
+        // ⚠ Only meaningful for a SPLICED transcript. An unspliced candidate has no junctions at all, so
+        // this counter is vacuously (0, 0) and the guard rejected EVERY single-exon candidate genome-wide
+        // (2,729 of them) whenever the majority mode was enabled -- silently, and inconsistently with the
+        // strict path below, which lets an unspliced model through and falls back to the '+' placeholder.
+        // Absence of junction evidence is not the same as junction evidence that disagrees.
+        if !introns.is_empty() && plus == 0 && minus == 0 {
+            return None; // a SPLICED model with no canonical junction has no strand evidence
         }
         // A real conflict is both strands substantially supported; a lone dissenter is tolerated.
         let (hi, lo) = if plus >= minus { (plus, minus) } else { (minus, plus) };
@@ -1221,6 +1295,26 @@ mod locus_support_tests {
         let got = build_spliced_seq(&g, "c1", 0, 700, &introns);
         assert!(got.is_some(), "majority mode must keep it");
         assert_eq!(got.unwrap().1, '-', "strand comes from the two canonical CT..AC junctions");
+
+        // REGRESSION: an UNSPLICED candidate has no junctions, so the canonical counters are vacuously
+        // (0, 0). The majority path used to read that as "no strand evidence" and reject, which silently
+        // deleted every single-exon candidate genome-wide (2,729) and contradicted the strict path, which
+        // admits an unspliced model with the '+' placeholder. Absence of junction evidence is not evidence
+        // of disagreement. Both modes must agree here.
+        let un: Vec<(u64, u64)> = vec![];
+        let strict_unspliced = {
+            std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
+            build_spliced_seq(&g, "c1", 0, 100, &un)
+        };
+        std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "1");
+        let majority_unspliced = build_spliced_seq(&g, "c1", 0, 100, &un);
+        assert!(strict_unspliced.is_some(), "strict mode admits an unspliced model (control)");
+        assert!(
+            majority_unspliced.is_some(),
+            "majority mode must NOT reject an unspliced candidate -- it has no junctions to be canonical"
+        );
+        assert_eq!(strict_unspliced.unwrap().1, majority_unspliced.unwrap().1,
+                   "both modes must give an unspliced model the same placeholder strand");
 
         // A genuine CONFLICT -- one canonical '+' against one canonical '-' -- must still be rejected, so a
         // chimeric model is never admitted.

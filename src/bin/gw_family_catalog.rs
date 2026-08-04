@@ -445,11 +445,18 @@ fn main() -> Result<()> {
             intron_fasta: Some(args.fasta.clone()),
             nucleotide_sensitive: !args.no_sensitive,
             protein_tail: args.protein_tail,
-            // Inherit the two E_r thresholds from `refine_params` rather than taking struct defaults --
+            // Inherit ALL THREE E_r thresholds from `refine_params` rather than taking struct defaults --
             // otherwise `--min-identity` and RUSTLE_GENOME_MIN_COVERAGE are silently ignored on this path,
             // which is the code path `--refine` actually runs.
+            //
+            // ⚠ `sensitive_identity` was missing here. `homology_refine_params` deliberately sets BOTH
+            // floors from `--min-identity` (see `homology_refine_params_min_identity_sets_both_tiers`), but
+            // this struct then rebuilt the sensitive floor from `Default`, so `--min-identity 0.93` gave
+            // run 1 a floor of 0.93 while run 3 silently kept 0.60. The user asked for one floor and got
+            // two, and the looser one is the effective floor of the union.
             min_identity: refine_params.min_identity,
             min_coverage: refine_params.min_coverage,
+            sensitive_identity: refine_params.sensitive_identity,
             ..Default::default()
         };
         let refined = refine_families_exon_sum(raw, &params, None, cfg.conflict.min_reads)?;
