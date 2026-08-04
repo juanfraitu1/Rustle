@@ -331,6 +331,110 @@ pub(crate) fn union_locus_geometry(
     Some((start, end, introns))
 }
 
+/// Build a locus geometry as the maximum-weight path through a READ-WITNESSED splice graph.
+///
+/// WHY NOT `pick_locus_rep`. It returns the single best-supported intron chain, and inside segmental
+/// duplications there is no good chain to return: NOTCH2NLC's 156 spliced reads occupy 117 distinct chains.
+/// `RUSTLE_SPLICED_REP` fixed the spliced-vs-unspliced comparison and was still net-marginal, because the
+/// winning class must still nominate one OBSERVED chain. Shattering is combinatorial in chains and not in
+/// junctions -- a read must match EVERY junction to join a chain, while each junction is supported
+/// independently, and at that same locus 55 junctions carry >= 3 reads and 32 carry >= 10.
+///
+/// WHY NOT `union_locus_geometry`. Unioning every member's exons lost 20 recall points, because it
+/// lengthens a representative and coverage is aligned/min(qlen,tlen), so the rep inflates its own
+/// denominator. It also produces gaps between merged exons that no read asserts.
+///
+/// THE CONSTRUCTION. Nodes are the locus's junctions with >= `min_reads` support. An edge A -> B exists
+/// only when some member transcript carries A immediately followed by B, so every step is witnessed by
+/// reads; a transcript groups reads by EXACT intron chain, so its consecutive introns are co-observed by
+/// construction. The representative is the maximum-weight path, computed exactly by one pass over the
+/// junctions in coordinate order (edges only ever run forward, so that order is a topological one).
+///
+/// The co-observation constraint is what makes a low floor safe. Selecting a maximum-weight set of merely
+/// NON-OVERLAPPING junctions has no locality: junctions from a neighbouring gene do not overlap either, so
+/// the chain hops into it. Measured on the 52 stub-represented Soto members at a floor of 3 reads, the
+/// unconstrained set put 35% of loci above 2x their true size (DNM1P50 reached 22x) while the co-observed
+/// path put 27% there and raised correctly-sized loci from 22 to 26. The two arms converge at a floor of
+/// 20, which is the proof that raising the floor never fixed the chaining -- it removed the loci where bad
+/// chaining could happen.
+///
+/// Terminal exons come from evidence: `start`/`end` are the extreme bounds of the transcripts that
+/// contributed a junction to the chosen path, so they cannot run past what reads at this locus support.
+pub(crate) fn cothread_locus_geometry(
+    transcripts: &[DenovoTranscript],
+    members: &[usize],
+    min_reads: u32,
+) -> Option<(u64, u64, Vec<(u64, u64)>)> {
+    let mut weight: BTreeMap<(u64, u64), u64> = BTreeMap::new();
+    let mut succ: BTreeMap<(u64, u64), BTreeSet<(u64, u64)>> = BTreeMap::new();
+    for &i in members {
+        let t = &transcripts[i];
+        for &j in &t.introns {
+            *weight.entry(j).or_insert(0) += t.n_reads as u64;
+        }
+        for w in t.introns.windows(2) {
+            succ.entry(w[0]).or_default().insert(w[1]);
+        }
+    }
+    let nodes: Vec<(u64, u64)> = weight
+        .iter()
+        .filter(|&(_, &w)| w >= min_reads as u64)
+        .map(|(&j, _)| j)
+        .collect();
+    if nodes.is_empty() {
+        return None;
+    }
+    let index: BTreeMap<(u64, u64), usize> = nodes.iter().enumerate().map(|(i, &j)| (j, i)).collect();
+    let mut best: Vec<u64> = nodes.iter().map(|j| weight[j]).collect();
+    let mut prev: Vec<Option<usize>> = vec![None; nodes.len()];
+    for i in 0..nodes.len() {
+        let (_, acceptor) = nodes[i];
+        let Some(nexts) = succ.get(&nodes[i]) else { continue };
+        for nxt in nexts {
+            let Some(&k) = index.get(nxt) else { continue };
+            // Forward only, and the introns must not overlap, or the chain is not a valid transcript.
+            if k <= i || nxt.0 < acceptor {
+                continue;
+            }
+            let cand = best[i] + weight[nxt];
+            if cand > best[k] {
+                best[k] = cand;
+                prev[k] = Some(i);
+            }
+        }
+    }
+    let mut end_i = 0usize;
+    for i in 1..nodes.len() {
+        if best[i] > best[end_i] {
+            end_i = i;
+        }
+    }
+    let mut chain: Vec<(u64, u64)> = Vec::new();
+    let mut cur = Some(end_i);
+    while let Some(i) = cur {
+        chain.push(nodes[i]);
+        cur = prev[i];
+    }
+    chain.reverse();
+    let on_path: BTreeSet<(u64, u64)> = chain.iter().copied().collect();
+    let (mut start, mut stop) = (u64::MAX, 0u64);
+    for &i in members {
+        let t = &transcripts[i];
+        if t.introns.iter().any(|j| on_path.contains(j)) {
+            start = start.min(t.start);
+            stop = stop.max(t.end);
+        }
+    }
+    if start == u64::MAX || stop <= start {
+        return None;
+    }
+    // The path's own extent must fit inside the contributing transcripts' bounds.
+    if chain[0].0 < start || chain[chain.len() - 1].1 > stop {
+        return None;
+    }
+    Some((start, stop, chain))
+}
+
 fn locus_reps(transcripts: &[DenovoTranscript], parent: &[usize]) -> Vec<usize> {
     let n = transcripts.len();
     let mut comp: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
@@ -879,6 +983,60 @@ mod tests {
             seq,
          ..Default::default() }
     }
+    #[test]
+    fn cothread_chain_spans_more_junctions_than_any_single_transcript() {
+        // The shattering case: no observed chain carries the whole locus, but consecutive junctions are
+        // co-observed pairwise, so the graph path recovers all four.
+        let t = vec![
+            tx("a", "c", 100, 900, 5, &[(200, 300), (400, 500)], vec![b'A'; 10]),
+            tx("b", "c", 100, 900, 4, &[(400, 500), (600, 700)], vec![b'A'; 10]),
+            tx("c", "c", 100, 900, 4, &[(600, 700), (750, 800)], vec![b'A'; 10]),
+        ];
+        let (s, e, chain) = cothread_locus_geometry(&t, &[0, 1, 2], 3).unwrap();
+        assert_eq!((s, e), (100, 900));
+        assert_eq!(chain, vec![(200, 300), (400, 500), (600, 700), (750, 800)],
+                   "path threads all four junctions though no transcript carries more than two");
+    }
+
+    #[test]
+    fn cothread_refuses_to_chain_junctions_no_read_ever_co_observed() {
+        // THE POINT OF THE CONSTRAINT. (200,300) and (5000,5100) do not overlap, so a max-weight
+        // NON-OVERLAPPING set would happily take both and produce a locus spanning the neighbour. No
+        // transcript carries them together, so the co-observed path must not.
+        let t = vec![
+            tx("here", "c", 100, 400, 9, &[(200, 300)], vec![b'A'; 10]),
+            tx("nbr", "c", 4900, 5200, 9, &[(5000, 5100)], vec![b'A'; 10]),
+        ];
+        let (s, e, chain) = cothread_locus_geometry(&t, &[0, 1], 3).unwrap();
+        assert_eq!(chain.len(), 1, "no read witnesses the succession, so no chaining across genes");
+        assert!(e - s <= 300, "extent stays at the contributing transcript, got {s}-{e}");
+    }
+
+    #[test]
+    fn cothread_applies_the_junction_floor_and_abstains_when_nothing_clears_it() {
+        let t = vec![
+            tx("weak", "c", 100, 900, 2, &[(200, 300), (400, 500)], vec![b'A'; 10]),
+            tx("stub", "c", 100, 900, 50, &[], vec![b'A'; 10]),
+        ];
+        assert!(cothread_locus_geometry(&t, &[0, 1], 3).is_none(),
+                "2 reads/junction is below the floor; caller must fall back to today's representative");
+        // The same junctions, now carried by enough reads, do produce a chain.
+        let t2 = vec![tx("ok", "c", 100, 900, 3, &[(200, 300), (400, 500)], vec![b'A'; 10])];
+        assert_eq!(cothread_locus_geometry(&t2, &[0], 3).unwrap().2,
+                   vec![(200, 300), (400, 500)]);
+    }
+
+    #[test]
+    fn cothread_prefers_the_heavier_path_when_two_compete() {
+        // Both successions are read-witnessed from (200,300); the heavier one wins.
+        let t = vec![
+            tx("light", "c", 100, 900, 3, &[(200, 300), (400, 500)], vec![b'A'; 10]),
+            tx("heavy", "c", 100, 900, 30, &[(200, 300), (600, 700)], vec![b'A'; 10]),
+        ];
+        let chain = cothread_locus_geometry(&t, &[0, 1], 3).unwrap().2;
+        assert_eq!(chain, vec![(200, 300), (600, 700)]);
+    }
+
     #[test]
     fn union_geometry_merges_partial_chains_into_the_whole_locus() {
         // Two chains covering opposite halves of one locus -- the shattering case. Either alone is a

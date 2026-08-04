@@ -2300,6 +2300,8 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
         .unwrap_or(3);
     let mut reps: Vec<DenovoTranscript> = if union_reps {
         union_locus_reps(&transcripts, &cfg.detect, &genome, union_floor)
+    } else if let Some(fl) = cothread_rep_floor() {
+        cothread_locus_reps(&transcripts, &cfg.detect, &genome, fl)
     } else {
         let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
         rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
@@ -2699,6 +2701,8 @@ pub fn detect_homology_catalog_genome_wide(
     let mut pooled_exons: Vec<Vec<Vec<u8>>> = Vec::new();
     let mut reps: Vec<DenovoTranscript> = if union_reps {
         union_locus_reps(&transcripts, &cfg.detect, &genome, union_floor)
+    } else if let Some(fl) = cothread_rep_floor() {
+        cothread_locus_reps(&transcripts, &cfg.detect, &genome, fl)
     } else if pool_isoforms {
         let (rep_idx, members) =
             crate::vg_family::family_detect::collapse_loci_span_aware_with_members(&transcripts, &cfg.detect);
@@ -3382,6 +3386,109 @@ pub(crate) fn nucleotide_edges(
 /// canonical-junction gate: the union's "introns" are gaps between merged exons and can be chimeric
 /// (donor from one chain, acceptor from another), so re-gating would discard the locus over a junction no
 /// read ever asserted. Each contributing chain already passed that gate upstream.
+/// Junction-support floor for the co-threaded representative; `None` (default) leaves the path untouched.
+///
+/// `RUSTLE_COTHREAD_REP` is the switch and carries the floor: `1` selects the measured default of 3 reads
+/// per junction, any other integer sets it directly. 3 is the floor the rest of the pipeline already uses
+/// for a junction, and the co-observation constraint (not a higher floor) is what keeps the chain local --
+/// see `cothread_locus_geometry`.
+fn cothread_rep_floor() -> Option<u32> {
+    let v = std::env::var("RUSTLE_COTHREAD_REP").ok()?;
+    if v.is_empty() || v == "0" {
+        return None;
+    }
+    Some(match v.parse::<u32>() {
+        Ok(1) | Err(_) => 3,
+        Ok(n) => n.max(1),
+    })
+}
+
+/// Rebuild each locus representative as the maximum-weight path through its READ-WITNESSED splice graph
+/// (`cothread_locus_geometry`), instead of picking the single best-supported observed chain.
+///
+/// Off by default (`RUSTLE_COTHREAD_REP=1` to enable) — unset is byte-identical to the shipping path.
+///
+/// This targets the single-exon representative, which is one defect with three symptoms: 74.6% of reps are
+/// single-exon; a stub cannot cover half of a spliced sibling so the pair gets NO alignment record at all
+/// (median coverage 0.000 stub-vs-stub, 0.099 stub-vs-spliced, 0.636 spliced-vs-spliced); and stub-
+/// represented loci come out at 0.29x their true size against 0.75x for spliced ones. Verified against
+/// RefSeq gene spans rather than duplication blocks: every member with a spliced rep lands at 0.86-1.04
+/// (AMY1A/B/C all 0.86, GOLGA6L10 1.00, FAM72 0.88-1.03) and every badly undersized one has a 1-exon rep
+/// (AMY2A 0.52, SRGAP2/B/C 0.03-0.05).
+///
+/// Measured on the 52 stub-represented Soto members, taking the constructed chain where one exists at the
+/// floor and keeping today's representative otherwise: correctly-sized loci (within 0.5-2x of truth) go
+/// from 15 to 26 at a floor of 3 reads per junction and to 28 at 5, while over-extension falls from the
+/// unconstrained variant's 35% to 27% and 13%. SRGAP2 goes 0.05 -> 0.99 and SRGAP2C 0.03 -> 0.97.
+///
+/// ⚠ The representative feeds the E_r substrate, so edges, families and F1 all move. `RUSTLE_SPLICED_REP`
+/// regressed by touching exactly this. Judge it on family detection, not only on sizes.
+fn cothread_locus_reps(
+    transcripts: &[DenovoTranscript],
+    detect: &crate::vg_family::family_detect::DetectParams,
+    genome: &GenomeIndex,
+    min_reads: u32,
+) -> Vec<DenovoTranscript> {
+    use crate::vg_family::family_detect::{cothread_locus_geometry, locus_groups};
+    use crate::vg_family::seq_utils::reverse_complement;
+    let mut out = Vec::new();
+    let (mut built, mut kept) = (0usize, 0usize);
+    for members in locus_groups(transcripts, detect) {
+        let rep_i = *members
+            .iter()
+            .max_by_key(|&&i| (transcripts[i].n_reads, transcripts[i].end - transcripts[i].start))
+            .expect("locus group is never empty");
+        let base = &transcripts[rep_i];
+        // Fall back to today's representative whenever no read-witnessed chain clears the floor, so the
+        // change can only add structure and never remove a locus.
+        let Some((start, end, introns)) = cothread_locus_geometry(transcripts, &members, min_reads)
+        else {
+            kept += 1;
+            out.push(base.clone());
+            continue;
+        };
+        let mut seq: Vec<u8> = Vec::new();
+        let mut prev = start;
+        let mut ok = true;
+        for &(d, a) in &introns {
+            match genome.fetch_sequence(&base.chrom, prev, d) {
+                Some(b) => seq.extend_from_slice(&b),
+                None => {
+                    ok = false;
+                    break;
+                }
+            }
+            prev = a;
+        }
+        if ok {
+            match genome.fetch_sequence(&base.chrom, prev, end) {
+                Some(b) => seq.extend_from_slice(&b),
+                None => ok = false,
+            }
+        }
+        if !ok || seq.is_empty() {
+            kept += 1;
+            out.push(base.clone());
+            continue;
+        }
+        seq.make_ascii_uppercase();
+        if base.strand == '-' {
+            seq = reverse_complement(&seq);
+        }
+        built += 1;
+        out.push(DenovoTranscript { start, end, introns, seq, ..base.clone() });
+    }
+    eprintln!(
+        "[cothread-rep] {} locus reps: {} rebuilt from the splice graph, {} kept as-is \
+         (no read-witnessed chain >= {} reads/junction)",
+        out.len(),
+        built,
+        kept,
+        min_reads
+    );
+    out
+}
+
 fn union_locus_reps(
     transcripts: &[DenovoTranscript],
     detect: &crate::vg_family::family_detect::DetectParams,
