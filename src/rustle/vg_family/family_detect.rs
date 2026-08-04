@@ -83,6 +83,22 @@ pub struct DenovoTranscript {
     /// after the merge decision has already run.
     pub distinguishing_uniq: usize,
 
+    /// Bases of this copy's span carried by at least `RUSTLE_ER_CORE_DEPTH` reads — the READ-SUPPORTED
+    /// CORE, as opposed to the called span. 0 means "not measured" and callers must fall back to the span.
+    ///
+    /// Why it exists: the E_r coverage test divides the aligned length by the SHORTER COPY'S SPAN, so the
+    /// criterion that decides membership is measured against a quantity the pipeline itself produces, and
+    /// both boundary errors corrupt it. An over-extended locus inflates its own denominator and LOSES real
+    /// edges (measured: 14 of 521 true co-family pairs fail the 0.50 floor purely for this, NOTCH2NLB at
+    /// 0.436 and AMY2A at 0.232 where true sizes give 0.939 and 1.000). A truncated locus shrinks it and
+    /// passes trivially, which is why coverage never detected the 0.55x truncation problem at all.
+    ///
+    /// A readthrough tail is low-depth, so it never enters the core and cannot inflate the denominator.
+    /// Measured edge-level on chr1+chr15: `aligned / min(core at depth >= 10) >= 0.80` gives precision
+    /// 0.830 and recall 0.883 against the span rule's 0.822 / 0.845 — better on BOTH axes, where every
+    /// denominator-free alternative (absolute aligned length, exonic coverage) was worse on at least one.
+    pub core_bp: u64,
+
     /// Observed 3' terminus (TES) of this copy, when the reads' 3'-end distribution is SHARP; `None` when it
     /// is broad (differential coverage rather than a real polyadenylation site) or when no read evidence was
     /// available. Strand-aware: the genomic coordinate of the transcript's LAST base, so `>= end` on `+` and
@@ -110,6 +126,7 @@ impl Default for DenovoTranscript {
             introns: Vec::new(),
             seq: Vec::new(),
             distinguishing_uniq: 0,
+            core_bp: 0,
             tes: None,
         }
     }

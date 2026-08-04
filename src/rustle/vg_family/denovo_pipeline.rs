@@ -579,6 +579,78 @@ pub(super) fn build_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscr
     by_name.into_values().collect()
 }
 
+
+/// Read-depth floor defining the core (`RUSTLE_ER_CORE_DEPTH`, default 10). Measured edge-level on
+/// chr1+chr15: depth >= 10 separated best; depth >= 3 barely trims the span (core/span median 0.93) and a
+/// relative floor (10% of the locus max) was slightly worse.
+fn core_depth_floor() -> u32 {
+    std::env::var("RUSTLE_ER_CORE_DEPTH").ok().and_then(|v| v.parse().ok()).unwrap_or(10)
+}
+
+/// Coverage floor applied against the read-supported CORE instead of the called span
+/// (`RUSTLE_ER_CORE_COVERAGE`, unset = off = byte-identical). The core is a tighter target than the span,
+/// so the equivalent demand is a HIGHER floor: 0.80 on the core corresponds to 0.50 on the span.
+fn core_cov_floor() -> Option<f64> {
+    let v = std::env::var("RUSTLE_ER_CORE_COVERAGE").ok()?;
+    if v.is_empty() || v == "0" { return None; }
+    v.parse::<f64>().ok().filter(|x| *x > 0.0)
+}
+
+/// Bases of each rep's span covered by at least `min_depth` reads: the READ-SUPPORTED CORE.
+///
+/// The E_r coverage test divides by the shorter copy's SPAN, so a boundary error moves the very denominator
+/// that decides membership. A readthrough tail is low-depth and therefore never enters the core, so the core
+/// does not inflate when the model runs past the locus. See `DenovoTranscript::core_bp` for the measurements.
+///
+/// Depth counts every primary read overlapping the span, matching what `samtools depth` reports there, so
+/// the value is independent of how reads were attributed to loci.
+pub(super) fn locus_core_bp(bam_reads: &[BamRead], reps: &[DenovoTranscript], min_depth: u32) -> Vec<u64> {
+    use std::collections::BTreeMap;
+    let mut by_chrom: BTreeMap<&str, Vec<(u64, u64)>> = BTreeMap::new();
+    for br in bam_reads {
+        if br.is_supplementary {
+            continue;
+        }
+        by_chrom
+            .entry(br.chrom.as_str())
+            .or_default()
+            .push((br.read.ref_start, read_ref_end(&br.read)));
+    }
+    for v in by_chrom.values_mut() {
+        v.sort_unstable();
+    }
+    reps.iter()
+        .map(|r| {
+            let Some(v) = by_chrom.get(r.chrom.as_str()) else { return 0 };
+            // Sweep only the read endpoints that fall in this rep's span; a position's depth changes only
+            // there, so counting covered bases between consecutive events is exact.
+            let mut events: Vec<(u64, i32)> = Vec::new();
+            for &(s, e) in v.iter() {
+                if s >= r.end {
+                    break;
+                }
+                if e > r.start {
+                    events.push((s.max(r.start), 1));
+                    events.push((e.min(r.end), -1));
+                }
+            }
+            if events.is_empty() {
+                return 0;
+            }
+            events.sort_unstable();
+            let (mut depth, mut prev, mut core) = (0i32, events[0].0, 0u64);
+            for (pos, delta) in events {
+                if depth >= min_depth as i32 && pos > prev {
+                    core += pos - prev;
+                }
+                depth += delta;
+                prev = pos;
+            }
+            core
+        })
+        .collect()
+}
+
 /// Convert the read-conflict kernel's component output to `SplitFamily` objects that `colocated_families`
 /// consumes. Edge weights (read counts) are cast to `f64` for `community_stats`; class follows the same
 /// size+density rule as the POA path so large, sparse conflict components can still be flagged as Webs.
@@ -2542,11 +2614,11 @@ pub(crate) fn coverage_edges_all_reps(
         return Ok(BTreeSet::new());
     }
     let mut edges: BTreeSet<(usize, usize)> =
-        nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, min_cov, params)?
+        nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, min_cov, None, params)?
             .into_iter()
             .collect();
     if params.nucleotide_sensitive {
-        edges.extend(nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, min_cov, params)?);
+        edges.extend(nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, min_cov, None, params)?);
     }
     Ok(edges)
 }
@@ -2735,11 +2807,15 @@ pub fn detect_homology_catalog_genome_wide(
     // no existing catalog field except which same-strand co-located pairs the merge below collapses.
     let mapq_reads = aligned_reads_from_bam(bam_path, threads)?;
     let placements_for_uniq = build_read_placements(&mapq_reads, &reps);
+    // Read-supported core, measured on the same pass rather than re-reading the BAM. Only consumed when
+    // `RUSTLE_ER_CORE_COVERAGE` is set; computing it always keeps the value available to the audit dump.
+    let cores = locus_core_bp(&mapq_reads, &reps, core_depth_floor());
     drop(mapq_reads);
     let uniq_counts = locus_unique_mapper_counts(&placements_for_uniq, reps.len());
     drop(placements_for_uniq);
     for (i, c) in reps.iter_mut().enumerate() {
         c.distinguishing_uniq = uniq_counts[i];
+        c.core_bp = cores[i];
     }
     // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent → catalogs byte-identical): dump the rep table
     // that `distinct_locus_reps` (the ">= 2 spatially-distinct loci" certificate) is about to run on, so
@@ -3055,7 +3131,7 @@ pub fn refine_families_exon_sum(
         {
             let seed = primary_seed_args();
             let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
-            for e in nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, params)? {
+            for e in nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, None, params)? {
                 *prov.entry(e).or_insert(0) |= TIER_ASM20;
             }
         }
@@ -3076,7 +3152,7 @@ pub fn refine_families_exon_sum(
                     let gseqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, Some(g))).collect();
                     let seed = primary_seed_args();
                     let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
-                    for e in nucleotide_edges(&gseqs, &seed_ref, params.min_identity, params.min_coverage, params)? {
+                    for e in nucleotide_edges(&gseqs, &seed_ref, params.min_identity, params.min_coverage, None, params)? {
                         edge_set.insert(e);
                         *prov.entry(e).or_insert(0) |= TIER_GENOMIC;
                     }
@@ -3094,6 +3170,7 @@ pub fn refine_families_exon_sum(
                     &["-k", "11", "-w", "5"],
                     params.sensitive_identity,
                     params.min_coverage,
+                    None,
                     params,
                 )? {
                     edge_set.insert(e);
@@ -3231,6 +3308,7 @@ pub(crate) fn nucleotide_edges(
     mm_args: &[&str],
     min_id: f64,
     min_cov: f64,
+    cores: Option<&[u64]>,
     params: &RefineParams,
 ) -> Result<Vec<(usize, usize)>> {
     use std::io::Write;
@@ -3325,9 +3403,25 @@ pub(crate) fn nucleotide_edges(
                 nmatch / alnlen
             }
         };
-        let shorter = ql.min(tl).max(1.0);
+        // Denominator: the shorter SPAN by default, or the shorter READ-SUPPORTED CORE when
+        // `RUSTLE_ER_CORE_COVERAGE` is set and both cores were measured. The span is produced by the
+        // pipeline itself, so a boundary error moves the criterion that decides membership; the core is
+        // depth-defined and a readthrough tail never enters it. Falls back to the span whenever either core
+        // is 0 (not measured), so the rule can never become MORE permissive through missing data.
+        // The floor must travel WITH the denominator. The core is a strictly smaller target than the span
+        // (measured core/span median 0.41, quartiles 0.10-0.68), so the same fraction means a different
+        // demand; applying the span's 0.50 to a core denominator silently makes the rule LOOSER.
+        let (shorter, floor) = match core_cov_floor() {
+            Some(f) => match (cores.and_then(|c| c.get(q)), cores.and_then(|c| c.get(t))) {
+                (Some(&a), Some(&b)) if a > 0 && b > 0 => ((a.min(b) as f64).max(1.0), f),
+                // Core unmeasured for this pair: fall back to the span AND to the span's floor, so missing
+                // data can never make the rule more permissive.
+                _ => (ql.min(tl).max(1.0), min_cov),
+            },
+            None => (ql.min(tl).max(1.0), min_cov),
+        };
         let cov = (qe - qs) / shorter;
-        if ident >= min_id && cov >= min_cov {
+        if ident >= min_id && cov >= floor {
             edge_set.insert((q.min(t), q.max(t)));
         }
         if sum_cov && ident >= min_id && (qe - qs) >= min_block {
@@ -3837,6 +3931,14 @@ pub(crate) fn homology_edges_all_reps_pooled(
         eprintln!("[homology] E_r edge substrate: GENOMIC SPAN ({} reps)", reps.len());
     }
     let seqs: Vec<Vec<u8>> = reps.iter().map(|r| refine_copy_seq(r, span_genome.as_ref())).collect();
+    // Parallel to `seqs` by construction (both are built 1:1 from `reps`), which is what lets
+    // `nucleotide_edges` index cores by the same PAF sequence id.
+    let core_lens: Vec<u64> = reps.iter().map(|r| r.core_bp).collect();
+    if let Some(fl) = core_cov_floor() {
+        let have = core_lens.iter().filter(|&&c| c > 0).count();
+        eprintln!("[homology] E_r coverage denominator: READ-SUPPORTED CORE (depth >= {}, floor {fl:.2}); \
+                   measured for {have}/{} reps, rest fall back to span", core_depth_floor(), reps.len());
+    }
     // SHARED-EXON mode (`RUSTLE_SHARED_EXON=1`): replace the exon-sum rule with Soto's criterion --
     // any single shared exon links two loci. Not a tier that unions in; it REPLACES the nucleotide runs,
     // so the two definitions can be compared rather than blended.
@@ -3866,7 +3968,7 @@ pub(crate) fn homology_edges_all_reps_pooled(
     if !sensitive_only {
         let seed = primary_seed_args();
         let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
-        for e in nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, params)? {
+        for e in nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, Some(&core_lens), params)? {
             *prov.entry(e).or_insert(0) |= TIER_ASM20;
         }
     } else {
@@ -3874,7 +3976,7 @@ pub(crate) fn homology_edges_all_reps_pooled(
     }
     let mut set: BTreeSet<(usize, usize)> = prov.keys().copied().collect();
     if params.nucleotide_sensitive {
-        for e in nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, params.min_coverage, params)? {
+        for e in nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, params.min_coverage, Some(&core_lens), params)? {
             set.insert(e);
             *prov.entry(e).or_insert(0) |= TIER_SENSITIVE;
         }
@@ -4346,7 +4448,7 @@ mod tests {
         let tail: Vec<u8> = b"C".repeat(400);            // stand-in fragment B
         let mk = |tid: &str, chrom: &str, start: u64, end: u64, seq: Vec<u8>| DenovoTranscript {
             tid: tid.into(), chrom: chrom.into(), start, end,
-            n_reads: 5, strand: '+', introns: vec![], seq, distinguishing_uniq: 0, tes: None,
+            n_reads: 5, strand: '+', introns: vec![], seq, distinguishing_uniq: 0, core_bp: 0, tes: None,
         };
         let reps = vec![
             mk("a", "NCF1", 0, 15440, head),
@@ -4391,7 +4493,7 @@ mod tests {
         let mk = |tid: &str, seq: &[u8]| DenovoTranscript {
             tid: tid.into(), chrom: "chr1".into(), start: 0, end: seq.len() as u64,
             n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(),
-            distinguishing_uniq: 0, tes: None,
+            distinguishing_uniq: 0, core_bp: 0, tes: None,
         };
         let core = rand_seq(600, 0xA11CE);
         let tail_a = rand_seq(1400, 0xBEEF);
@@ -4429,7 +4531,7 @@ mod tests {
         let mk = |tid: &str, seq: &[u8]| DenovoTranscript {
             tid: tid.into(), chrom: "c1".into(), start: 0, end: seq.len() as u64,
             n_reads: 9, strand: '+', introns: vec![], seq: seq.to_vec(),
-            distinguishing_uniq: 0, tes: None,
+            distinguishing_uniq: 0, core_bp: 0, tes: None,
         };
         // two unrelated ~110 bp sequences: far too short for a reliable alignment
         let reps = vec![mk("s1", &rand_seq(110, 0x1234)), mk("s2", &rand_seq(110, 0x9876))];
@@ -4457,7 +4559,7 @@ mod tests {
         }
         let mk = |tid: &str, start: u64, introns: Vec<(u64, u64)>, seq: Vec<u8>| DenovoTranscript {
             tid: tid.into(), chrom: "chr1".into(), start, end: start + 1200,
-            n_reads: 9, strand: '+', introns, seq, distinguishing_uniq: 0, tes: None,
+            n_reads: 9, strand: '+', introns, seq, distinguishing_uniq: 0, core_bp: 0, tes: None,
         };
         let ex_a = rand_seq(400, 0x5EED1);
         let ex_b = rand_seq(400, 0x5EED2);
@@ -4550,7 +4652,7 @@ mod tests {
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
         let mk = |tid: &str, chrom: &str, start: u64, seq: &[u8]| DenovoTranscript {
             tid: tid.into(), chrom: chrom.into(), start, end: start + seq.len() as u64,
-            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(), distinguishing_uniq: 0, tes: None,
+            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(), distinguishing_uniq: 0, core_bp: 0, tes: None,
         };
         // a 400 bp "gene" duplicated at two loci, plus an unrelated 400 bp sequence.
         let a: Vec<u8> = b"ACGT".iter().cycle().take(400).copied().collect();
@@ -5666,6 +5768,29 @@ mod tests {
             read: AlignedRead { ref_start: start, cigar: vec![('M', len)], seq: vec![b'A'; len as usize], qual: vec![] },
             mapq, name: name.into(), as_score: 500, de, is_supplementary: false, is_secondary,
         }
+    }
+
+    #[test]
+    fn core_bp_counts_only_bases_at_or_above_the_depth_floor() {
+        // Three reads stacked over 100..200, plus one lone read running out to 1000 -- the readthrough
+        // tail that must NOT enter the core, since keeping it out is the whole point of the denominator.
+        let reads = vec![
+            bam_read("c1", 100, 200, "a", 0.0, false),
+            bam_read("c1", 100, 200, "b", 0.0, false),
+            bam_read("c1", 100, 200, "c", 0.0, false),
+            bam_read("c1", 150, 1000, "readthrough", 0.0, false),
+        ];
+        let r = rep("c1", 0, 1000);
+        assert_eq!(
+            locus_core_bp(&reads, std::slice::from_ref(&r), 3),
+            vec![100],
+            "only the 3-deep block counts; the 850 bp single-read tail is excluded"
+        );
+        assert_eq!(
+            locus_core_bp(&reads, std::slice::from_ref(&r), 5),
+            vec![0],
+            "nothing reaches depth 5 -> core unmeasured -> callers must fall back to the span"
+        );
     }
 
     fn rep(chrom: &str, start: u64, end: u64) -> DenovoTranscript {
@@ -6788,7 +6913,7 @@ mod tests {
         // Confirm via the pipeline's own aligner: BOTH nt tiers must find NO edge at this divergence.
         let p = RefineParams::default();
         let sensitive_edges = nucleotide_edges(
-            &[seq_a.clone(), seq_b.clone()], &["-k", "11", "-w", "5"], 0.60, 0.50, &p,
+            &[seq_a.clone(), seq_b.clone()], &["-k", "11", "-w", "5"], 0.60, 0.50, None, &p,
         ).unwrap();
         assert!(sensitive_edges.is_empty(), "pair must be genuinely nt-unresolvable (< 0.60), got {:?}", sensitive_edges);
 
