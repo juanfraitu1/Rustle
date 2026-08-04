@@ -366,16 +366,30 @@ pub(crate) fn cothread_locus_geometry(
     min_reads: u32,
 ) -> Option<(u64, u64, Vec<(u64, u64)>)> {
     let mut weight: BTreeMap<(u64, u64), u64> = BTreeMap::new();
-    let mut succ: BTreeMap<(u64, u64), BTreeSet<(u64, u64)>> = BTreeMap::new();
+    let mut succ_reads: BTreeMap<(u64, u64), BTreeMap<(u64, u64), u64>> = BTreeMap::new();
     for &i in members {
         let t = &transcripts[i];
         for &j in &t.introns {
             *weight.entry(j).or_insert(0) += t.n_reads as u64;
         }
         for w in t.introns.windows(2) {
-            succ.entry(w[0]).or_default().insert(w[1]);
+            *succ_reads.entry(w[0]).or_default().entry(w[1]).or_insert(0) += t.n_reads as u64;
         }
     }
+    // The SAME floor applies to edges as to nodes. Requiring only that SOME read witnesses A -> B is not
+    // enough: a readthrough read genuinely witnesses successions ACROSS genes, so co-observation alone let
+    // the path walk out of a locus into its neighbour. Measured at NOTCH2NLC (annotated span 81 kb, 3
+    // introns): the path ran to 161 kb and 88 introns, NONE of them inside the gene, threading small
+    // junctions in the downstream NOTCH2NL/NBPF repeat region. Neither existing guard catches that -- the
+    // readthrough filter only targets SINGLE-EXON transcripts, and the mis-chain filter only targets GIANT
+    // introns, while these were a 709 bp median. A readthrough succession is carried by few reads, so the
+    // node floor applied to edges removes it and leaves real successions alone.
+    let succ: BTreeMap<(u64, u64), BTreeSet<(u64, u64)>> = succ_reads
+        .into_iter()
+        .map(|(a, nxt)| {
+            (a, nxt.into_iter().filter(|&(_, r)| r >= min_reads as u64).map(|(b, _)| b).collect())
+        })
+        .collect();
     let nodes: Vec<(u64, u64)> = weight
         .iter()
         .filter(|&(_, &w)| w >= min_reads as u64)
@@ -417,10 +431,14 @@ pub(crate) fn cothread_locus_geometry(
     }
     chain.reverse();
     let on_path: BTreeSet<(u64, u64)> = chain.iter().copied().collect();
+    // Terminal exons come only from transcripts whose WHOLE chain is a sub-chain of the path. Accepting any
+    // transcript that merely SHARES a junction lets a rejected readthrough donate its span: at NOTCH2NLC the
+    // model kept a single 80 kb first exon that way, even though the cross-gene succession itself had
+    // already been refused. A contributor must be consistent with the model, not merely touch it.
     let (mut start, mut stop) = (u64::MAX, 0u64);
     for &i in members {
         let t = &transcripts[i];
-        if t.introns.iter().any(|j| on_path.contains(j)) {
+        if !t.introns.is_empty() && t.introns.iter().all(|j| on_path.contains(j)) {
             start = start.min(t.start);
             stop = stop.max(t.end);
         }
@@ -996,6 +1014,26 @@ mod tests {
         assert_eq!((s, e), (100, 900));
         assert_eq!(chain, vec![(200, 300), (400, 500), (600, 700), (750, 800)],
                    "path threads all four junctions though no transcript carries more than two");
+    }
+
+    #[test]
+    fn cothread_edges_obey_the_same_read_floor_as_nodes() {
+        // A readthrough carrying 2 reads witnesses the succession into the neighbouring gene. Both
+        // junctions clear the NODE floor on their own support, so only an EDGE floor can stop the walk.
+        let t = vec![
+            tx("here", "c", 100, 900, 40, &[(200, 300)], vec![b'A'; 10]),
+            tx("nbr", "c", 5000, 6000, 40, &[(5200, 5300)], vec![b'A'; 10]),
+            tx("readthrough", "c", 100, 6000, 2, &[(200, 300), (5200, 5300)], vec![b'A'; 10]),
+        ];
+        let (s, e, chain) = cothread_locus_geometry(&t, &[0, 1, 2], 3).unwrap();
+        assert_eq!(chain.len(), 1, "a 2-read readthrough must not license the cross-gene step");
+        assert!(e - s < 5000, "extent must not run into the neighbour, got {s}-{e}");
+        // With enough reads behind it the succession is real and IS taken.
+        let t2 = vec![
+            tx("here", "c", 100, 900, 40, &[(200, 300)], vec![b'A'; 10]),
+            tx("both", "c", 100, 6000, 9, &[(200, 300), (5200, 5300)], vec![b'A'; 10]),
+        ];
+        assert_eq!(cothread_locus_geometry(&t2, &[0, 1], 3).unwrap().2.len(), 2);
     }
 
     #[test]
