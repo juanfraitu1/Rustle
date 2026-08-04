@@ -1,0 +1,60 @@
+Total families: 4633
+Bad families (DNA-FP OR E_p-impure): 64
+Real families: 4569
+
+=== Top 30 rules by score (bad_removed - collateral_real) ===
+rank rule                                                    flag  bad  FP  EP real$   prec    rec  score
+   1 n_distinct_loci>=5 AND mean_pair_mult>=25                  9    7   1   6    2  0.778  0.109    5.0
+   2 mean_pair_mult>=25 AND n_distinct_loci>=5 AND pair_hub_frac>=0.4    9    7   1   6    2  0.778  0.109    5.0
+   3 n_members>=80                                              4    4   0   4    0  1.000  0.062    4.0
+   4 n_members>=80 AND n_members>=60                            4    4   0   4    0  1.000  0.062    4.0
+   5 n_members>=80 AND n_members>=50                            4    4   0   4    0  1.000  0.062    4.0
+   6 n_members>=80 AND n_distinct_loci>=4                       4    4   0   4    0  1.000  0.062    4.0
+   7 n_members>=80 AND n_members>=40                            4    4   0   4    0  1.000  0.062    4.0
+   8 n_members>=80 AND n_distinct_loci>=3                       4    4   0   4    0  1.000  0.062    4.0
+   9 n_members>=60 AND n_distinct_loci>=5                       8    6   0   6    2  0.750  0.094    4.0
+  10 n_distinct_loci>=5 AND pair_hub_frac>=0.4                 10    7   1   6    3  0.700  0.109    4.0
+  11 n_members>=50 AND n_members>=60 AND n_members>=80          4    4   0   4    0  1.000  0.062    4.0
+  12 n_distinct_loci>=4 AND n_members>=60 AND n_members>=80     4    4   0   4    0  1.000  0.062    4.0
+  13 n_members>=40 AND n_members>=60 AND n_members>=80          4    4   0   4    0  1.000  0.062    4.0
+  14 n_distinct_loci>=3 AND n_members>=60 AND n_members>=80     4    4   0   4    0  1.000  0.062    4.0
+  15 n_distinct_loci>=4 AND n_members>=50 AND n_members>=80     4    4   0   4    0  1.000  0.062    4.0
+  16 n_members>=40 AND n_members>=50 AND n_members>=80          4    4   0   4    0  1.000  0.062    4.0
+  17 n_distinct_loci>=3 AND n_members>=50 AND n_members>=80     4    4   0   4    0  1.000  0.062    4.0
+  18 n_distinct_loci>=4 AND n_members>=40 AND n_members>=80     4    4   0   4    0  1.000  0.062    4.0
+  19 n_distinct_loci>=3 AND n_distinct_loci>=4 AND n_members>=80    4    4   0   4    0  1.000  0.062    4.0
+  20 n_distinct_loci>=3 AND n_members>=40 AND n_members>=80     4    4   0   4    0  1.000  0.062    4.0
+  21 n_distinct_loci>=4 AND n_distinct_loci>=5 AND n_members>=60    8    6   0   6    2  0.750  0.094    4.0
+  22 n_members>=80 AND n_distinct_loci>=5                       3    3   0   3    0  1.000  0.047    3.0
+  23 n_distinct_loci>=5 AND pair_hub_frac>=0.5                  7    5   1   4    2  0.714  0.078    3.0
+  24 n_chrom>=4 AND n_distinct_loci>=3                          5    4   0   4    1  0.800  0.062    3.0
+  25 mean_pair_mult>=25 AND n_distinct_loci>=5 AND pair_hub_frac>=0.5    7    5   1   4    2  0.714  0.078    3.0
+  26 n_distinct_loci>=5 AND n_members>=60 AND n_members>=80     3    3   0   3    0  1.000  0.047    3.0
+  27 n_distinct_loci>=5 AND n_members>=50 AND n_members>=80     3    3   0   3    0  1.000  0.047    3.0
+  28 n_distinct_loci>=4 AND n_distinct_loci>=5 AND n_members>=80    3    3   0   3    0  1.000  0.047    3.0
+  29 n_distinct_loci>=5 AND n_members>=40 AND n_members>=80     3    3   0   3    0  1.000  0.047    3.0
+  30 n_distinct_loci>=3 AND n_distinct_loci>=5 AND n_members>=80    3    3   0   3    0  1.000  0.047    3.0
+
+=== Best precision at fixed bad-recall thresholds ===
+recall>=0.10: n_distinct_loci>=5 AND mean_pair_mult>=25  prec=0.778  flagged=9  real_lost=2
+recall>=0.20: n_distinct_loci>=5  prec=0.448  flagged=29  real_lost=16
+recall>=0.30: n_distinct_loci>=4  prec=0.345  flagged=58  real_lost=38
+recall>=0.40: n_distinct_loci>=3  prec=0.307  flagged=101  real_lost=70
+recall>=0.50: mean_pair_mult>=20  prec=0.205  flagged=156  real_lost=124
+
+=== Zero-collateral rules that catch the most bad families ===
+n_members>=80                                           bad=  4 FP=0 EP=4 flagged=  4
+n_members>=80 AND n_members>=60                         bad=  4 FP=0 EP=4 flagged=  4
+n_members>=80 AND n_members>=50                         bad=  4 FP=0 EP=4 flagged=  4
+n_members>=80 AND n_distinct_loci>=4                    bad=  4 FP=0 EP=4 flagged=  4
+n_members>=80 AND n_members>=40                         bad=  4 FP=0 EP=4 flagged=  4
+n_members>=80 AND n_distinct_loci>=3                    bad=  4 FP=0 EP=4 flagged=  4
+n_members>=50 AND n_members>=60 AND n_members>=80       bad=  4 FP=0 EP=4 flagged=  4
+n_distinct_loci>=4 AND n_members>=60 AND n_members>=80  bad=  4 FP=0 EP=4 flagged=  4
+n_members>=40 AND n_members>=60 AND n_members>=80       bad=  4 FP=0 EP=4 flagged=  4
+n_distinct_loci>=3 AND n_members>=60 AND n_members>=80  bad=  4 FP=0 EP=4 flagged=  4
+n_distinct_loci>=4 AND n_members>=50 AND n_members>=80  bad=  4 FP=0 EP=4 flagged=  4
+n_members>=40 AND n_members>=50 AND n_members>=80       bad=  4 FP=0 EP=4 flagged=  4
+n_distinct_loci>=3 AND n_members>=50 AND n_members>=80  bad=  4 FP=0 EP=4 flagged=  4
+n_distinct_loci>=4 AND n_members>=40 AND n_members>=80  bad=  4 FP=0 EP=4 flagged=  4
+n_distinct_loci>=3 AND n_distinct_loci>=4 AND n_members>=80 bad=  4 FP=0 EP=4 flagged=  4

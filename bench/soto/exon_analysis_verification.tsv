@@ -1,0 +1,13 @@
+gene	shared_exon	best_paralog_id	softmask_pct	reads_at_exons	expressed	bucket_supported
+PPIAL4A	REAL	98.95	8.68	0	False	True
+LOC105371211	REAL	0.9974	3.9	1	False	True
+OR11H12	REAL	0	12.13	1	False	True
+AL513478.3	REAL	100	0.61	6	True	True
+DEFB108C	REAL	99.36	26.3	17	True	True
+WASH6P	REAL	100	3.3	1	False	True
+SPAG11A	REAL	100	25.7	10	True	False
+ANAPC1P1	REAL	0.991	0	26	True	True
+CASTOR2	REAL	100	33.8	48	True	True
+TRIM64	REAL	1	11.4	7	True	True
+DUX4L50	REPEAT_OR_SPURIOUS	0.975	99.4	3	True	True
+AC008443.6	NO_EXON	0	59.25	69	True	True
