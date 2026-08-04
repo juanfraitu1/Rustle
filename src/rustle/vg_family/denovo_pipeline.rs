@@ -3618,14 +3618,32 @@ fn edges_from_exon_pool(
     if seqs.len() < 2 {
         return Ok(Vec::new());
     }
-    let mut edge_set: BTreeSet<(usize, usize)> = BTreeSet::new();
+    // How many DISTINCT exon pairs must support a locus pair before it becomes an edge
+    // (`RUSTLE_SHARED_EXON_MIN_COUNT`, default 1 = the original any-one-exon rule).
+    //
+    // One shared exon is weak evidence: a single conserved domain or an exonised repeat links two loci that
+    // are not paralogs. Measured on chr1+chr15 with every isoform's exons pooled, the any-one-exon rule
+    // admitted 209 new locus pairs of which only 32 (15%) were true co-family pairs, and raising the length
+    // floor did not fix it (25% at 600 bp, and F1 never beat the representative-only baseline). Requiring
+    // several INDEPENDENT exons to agree is a different axis from requiring one LONGER exon, and it is the
+    // one that distinguishes a shared gene structure from a shared element.
+    let min_shared: usize = std::env::var("RUSTLE_SHARED_EXON_MIN_COUNT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let mut support: std::collections::BTreeMap<(usize, usize), usize> = std::collections::BTreeMap::new();
     let pairs = nucleotide_edges_indexed(&seqs, &["-x", "asm20"], min_identity, min_bp, params)?;
     for (a, b) in pairs {
         let (ra, rb) = (owner[a], owner[b]);
         if ra != rb {
-            edge_set.insert((ra.min(rb), ra.max(rb)));
+            *support.entry((ra.min(rb), ra.max(rb))).or_insert(0) += 1;
         }
     }
+    let edge_set: BTreeSet<(usize, usize)> = support
+        .into_iter()
+        .filter(|&(_, n)| n >= min_shared)
+        .map(|(k, _)| k)
+        .collect();
     eprintln!(
         "[{tag}] {} exons over {} loci -> {} locus pairs linked (id >= {}, >= {} bp aligned)",
         seqs.len(),
