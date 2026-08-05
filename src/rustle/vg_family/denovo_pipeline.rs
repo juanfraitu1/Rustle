@@ -596,6 +596,86 @@ fn core_cov_floor() -> Option<f64> {
     v.parse::<f64>().ok().filter(|x| *x > 0.0)
 }
 
+
+/// Maximum `de` (gap-compressed divergence) for a read to define a locus BOUNDARY
+/// (`RUSTLE_LOCUS_DE_EXTENT`, unset = off = byte-identical). Measured optimum 0.0005.
+fn locus_de_extent() -> Option<f32> {
+    let v = std::env::var("RUSTLE_LOCUS_DE_EXTENT").ok()?;
+    if v.is_empty() || v == "0" { return None; }
+    v.parse::<f32>().ok().filter(|x| *x > 0.0)
+}
+
+/// Locus extent defined by only the reads that CANNOT have come from a paralog.
+///
+/// The span of an emitted copy is inherited from whichever transcript became its representative, and that
+/// span is what the E_r coverage test divides by and what every size comparison scores. Measured against
+/// RefSeq gene spans (per copy, chr1+chr15): the shipped representative is in-band 0.5-2x only 25% of the
+/// time with a median of 0.18 -- overwhelmingly TRUNCATED. Taking the extent of ALL primary reads instead
+/// gives 36% and median 3.53 -- now overwhelmingly OVER-extended, because reads that bled in from a
+/// paralog drag the boundary outward.
+///
+/// Filtering those out by divergence fixes both ends at once, and the effect is monotone until it turns:
+///
+///   primary reads, de <= 0.005    in-band 42%   median 2.05
+///   primary reads, de <= 0.002    in-band 49%   median 1.29
+///   primary reads, de <= 0.0005   in-band 58%   median 1.00   <- optimum
+///   primary reads, de <= 0.0      in-band 49%   median 0.91   (turns over; too few reads survive)
+///
+/// de <= 0.0005 is roughly one mismatch per 2 kb: a read that can only have come from THIS copy. Absolute
+/// thresholds beat per-locus relative trimming (58% vs 46% for dropping the most divergent half), which is
+/// worth recording because relative is the more obvious design.
+///
+/// Returns `None` for a locus with no qualifying read (56 of 340 in the measurement) so the caller keeps
+/// the representative's own span -- the change can only sharpen a boundary, never delete a locus.
+///
+/// The result is CLAMPED to contain the representative's own intron chain: the flanks are where
+/// over-extension lives, but a junction is asserted evidence and shrinking past one would invalidate the
+/// model rather than improve it.
+pub(super) fn locus_confident_extent(
+    bam_reads: &[BamRead],
+    reps: &[DenovoTranscript],
+    max_de: f32,
+) -> Vec<Option<(u64, u64)>> {
+    use std::collections::BTreeMap;
+    let mut by_chrom: BTreeMap<&str, Vec<(u64, u64)>> = BTreeMap::new();
+    for br in bam_reads {
+        if br.is_supplementary || br.de > max_de {
+            continue;
+        }
+        by_chrom
+            .entry(br.chrom.as_str())
+            .or_default()
+            .push((br.read.ref_start, read_ref_end(&br.read)));
+    }
+    for v in by_chrom.values_mut() {
+        v.sort_unstable();
+    }
+    reps.iter()
+        .map(|r| {
+            let v = by_chrom.get(r.chrom.as_str())?;
+            let (mut lo, mut hi) = (u64::MAX, 0u64);
+            for &(s, e) in v.iter() {
+                if s >= r.end {
+                    break;
+                }
+                if e > r.start {
+                    lo = lo.min(s);
+                    hi = hi.max(e);
+                }
+            }
+            if lo == u64::MAX || hi <= lo {
+                return None;
+            }
+            // never cut into the transcript's own asserted structure
+            if let (Some(first), Some(last)) = (r.introns.first(), r.introns.last()) {
+                lo = lo.min(first.0);
+                hi = hi.max(last.1);
+            }
+            Some((lo, hi))
+        })
+        .collect()
+}
+
 /// Bases of each rep's span covered by at least `min_depth` reads: the READ-SUPPORTED CORE.
 ///
 /// The E_r coverage test divides by the shorter copy's SPAN, so a boundary error moves the very denominator
@@ -2810,12 +2890,27 @@ pub fn detect_homology_catalog_genome_wide(
     // Read-supported core, measured on the same pass rather than re-reading the BAM. Only consumed when
     // `RUSTLE_ER_CORE_COVERAGE` is set; computing it always keeps the value available to the audit dump.
     let cores = locus_core_bp(&mapq_reads, &reps, core_depth_floor());
+    // Boundaries are derived from the SAME borrow, before the reads are dropped. Cloning them instead
+    // roughly doubles peak RSS on a multimapper-rich BAM (94% of alignments secondary here) and made an
+    // 18-minute arm thrash for an hour at 15.5 GB.
+    let de_extent = locus_de_extent().map(|max_de| locus_confident_extent(&mapq_reads, &reps, max_de));
     drop(mapq_reads);
     let uniq_counts = locus_unique_mapper_counts(&placements_for_uniq, reps.len());
     drop(placements_for_uniq);
     for (i, c) in reps.iter_mut().enumerate() {
         c.distinguishing_uniq = uniq_counts[i];
         c.core_bp = cores[i];
+    }
+    if let Some(ext) = de_extent {
+        let (mut set, mut kept) = (0usize, 0usize);
+        for (i, c) in reps.iter_mut().enumerate() {
+            match ext[i] {
+                Some((lo, hi)) => { c.start = lo; c.end = hi; set += 1; }
+                None => kept += 1,
+            }
+        }
+        eprintln!("[locus-extent] confident-read boundaries: {set} reps re-bounded, \
+                   {kept} kept (no qualifying read)");
     }
     // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent → catalogs byte-identical): dump the rep table
     // that `distinct_locus_reps` (the ">= 2 spatially-distinct loci" certificate) is about to run on, so
@@ -5791,6 +5886,31 @@ mod tests {
             vec![0],
             "nothing reaches depth 5 -> core unmeasured -> callers must fall back to the span"
         );
+    }
+
+    #[test]
+    fn confident_extent_ignores_divergent_reads_and_never_cuts_a_junction() {
+        // Two clean reads define the locus; a divergent read (paralog bleed) runs 3 kb further out and
+        // must NOT move the boundary.
+        let mut clean_a = bam_read("c1", 1_000, 2_000, "clean_a", 0.0002, false);
+        let mut clean_b = bam_read("c1", 1_100, 2_100, "clean_b", 0.0003, false);
+        let bleed = bam_read("c1", 1_000, 5_000, "paralog_bleed", 0.02, false);
+        clean_a.de = 0.0002;
+        clean_b.de = 0.0003;
+        let reads = vec![clean_a, clean_b, bleed];
+        let r = rep("c1", 900, 5_200);
+        let got = locus_confident_extent(&reads, std::slice::from_ref(&r), 0.0005);
+        assert_eq!(got, vec![Some((1_000, 2_100))], "the 0.02-divergence read must not set the boundary");
+
+        // A locus whose reads are ALL divergent yields None, so the caller keeps today's span.
+        let only_bleed = vec![bam_read("c1", 1_000, 5_000, "b", 0.02, false)];
+        assert_eq!(locus_confident_extent(&only_bleed, std::slice::from_ref(&r), 0.0005), vec![None]);
+
+        // Clamping: a junction outside the confident-read extent still has to be contained.
+        let mut spliced = rep("c1", 900, 5_200);
+        spliced.introns = vec![(2_500, 3_000)];
+        let got = locus_confident_extent(&reads, std::slice::from_ref(&spliced), 0.0005);
+        assert_eq!(got, vec![Some((1_000, 3_000))], "must not shrink past an asserted junction");
     }
 
     fn rep(chrom: &str, start: u64, end: u64) -> DenovoTranscript {
