@@ -676,6 +676,62 @@ pub(super) fn locus_confident_extent(
         .collect()
 }
 
+
+
+/// Deny a STUB the right to CREATE family membership (`RUSTLE_ER_NO_STUB_EDGES=1`, default off).
+///
+/// The locus is kept; only its E_r edges are refused. Deleting stubs outright costs far more than it buys
+/// (F1 0.704 -> 0.608) because the >=2-loci gate then dissolves whole families, and the ones that dissolve
+/// are disproportionately small and pure. Refusing the EDGE leaves every locus in place, so a family whose
+/// other members connect to each other survives intact.
+///
+/// Motivated by NPIP, where every false positive was a single-exon stub joining through a short perfect
+/// match while the real members carried 4, 8 and 21 exons -- and where identity and coverage CANNOT reject
+/// them, because the contaminant pairs score higher than the true pairs on both.
+///
+/// A genuinely intronless copy (`stub == false` despite one exon) is unaffected: it has no spliced evidence
+/// at its locus, so it is a real intronless gene rather than a fragment of a spliced one.
+fn er_no_stub_edges() -> bool {
+    std::env::var("RUSTLE_ER_NO_STUB_EDGES").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
+}
+
+/// Whether reads at each rep's locus assert a splice junction carried by `>= min_reads` reads.
+///
+/// Combined with `n_exon == 1` this separates a STUB (single-exon representative of a spliced gene) from a
+/// genuinely INTRONLESS copy. Both look identical in the copy table; only the reads distinguish them.
+pub(super) fn locus_has_spliced_evidence(
+    bam_reads: &[BamRead],
+    reps: &[DenovoTranscript],
+    min_reads: u32,
+) -> Vec<bool> {
+    use std::collections::BTreeMap;
+    let mut by_chrom: BTreeMap<&str, BTreeMap<(u64, u64), u32>> = BTreeMap::new();
+    for br in bam_reads {
+        if br.is_supplementary {
+            continue;
+        }
+        let mut p = br.read.ref_start;
+        let e = by_chrom.entry(br.chrom.as_str()).or_default();
+        for &(op, n) in &br.read.cigar {
+            match op {
+                'N' => {
+                    *e.entry((p, p + n)).or_insert(0) += 1;
+                    p += n;
+                }
+                'M' | 'D' | 'X' | '=' => p += n,
+                _ => {}
+            }
+        }
+    }
+    reps.iter()
+        .map(|r| {
+            by_chrom.get(r.chrom.as_str()).is_some_and(|m| {
+                m.range((r.start, 0)..(r.end, u64::MAX)).any(|(_, &c)| c >= min_reads)
+            })
+        })
+        .collect()
+}
+
 /// Bases of each rep's span covered by at least `min_depth` reads: the READ-SUPPORTED CORE.
 ///
 /// The E_r coverage test divides by the shorter copy's SPAN, so a boundary error moves the very denominator
@@ -2890,6 +2946,7 @@ pub fn detect_homology_catalog_genome_wide(
     // Read-supported core, measured on the same pass rather than re-reading the BAM. Only consumed when
     // `RUSTLE_ER_CORE_COVERAGE` is set; computing it always keeps the value available to the audit dump.
     let cores = locus_core_bp(&mapq_reads, &reps, core_depth_floor());
+    let spliced_ev = locus_has_spliced_evidence(&mapq_reads, &reps, 3);
     // Boundaries are derived from the SAME borrow, before the reads are dropped. Cloning them instead
     // roughly doubles peak RSS on a multimapper-rich BAM (94% of alignments secondary here) and made an
     // 18-minute arm thrash for an hour at 15.5 GB.
@@ -2900,6 +2957,7 @@ pub fn detect_homology_catalog_genome_wide(
     for (i, c) in reps.iter_mut().enumerate() {
         c.distinguishing_uniq = uniq_counts[i];
         c.core_bp = cores[i];
+        c.stub = c.introns.is_empty() && spliced_ev[i];
     }
     if let Some(ext) = de_extent {
         let (mut set, mut kept) = (0usize, 0usize);
@@ -4029,6 +4087,7 @@ pub(crate) fn homology_edges_all_reps_pooled(
     // Parallel to `seqs` by construction (both are built 1:1 from `reps`), which is what lets
     // `nucleotide_edges` index cores by the same PAF sequence id.
     let core_lens: Vec<u64> = reps.iter().map(|r| r.core_bp).collect();
+    let drop_stub_edges = er_no_stub_edges();
     if let Some(fl) = core_cov_floor() {
         let have = core_lens.iter().filter(|&&c| c > 0).count();
         eprintln!("[homology] E_r coverage denominator: READ-SUPPORTED CORE (depth >= {}, floor {fl:.2}); \
@@ -4118,6 +4177,17 @@ pub(crate) fn homology_edges_all_reps_pooled(
             }
             eprintln!("[provenance] wrote per-edge tiers to {path}");
         }
+    }
+    if drop_stub_edges {
+        let before = set.len();
+        set.retain(|&(i, j)| !reps[i].stub && !reps[j].stub);
+        let n_stub = reps.iter().filter(|r| r.stub).count();
+        let n_intronless = reps.iter().filter(|r| r.introns.is_empty() && !r.stub).count();
+        eprintln!(
+            "[homology] stub-edge guard: {n_stub} stubs and {n_intronless} genuinely intronless reps; \
+             edges {before} -> {} (loci all retained)",
+            set.len()
+        );
     }
     Ok(set.into_iter().collect())
 }
@@ -4543,7 +4613,7 @@ mod tests {
         let tail: Vec<u8> = b"C".repeat(400);            // stand-in fragment B
         let mk = |tid: &str, chrom: &str, start: u64, end: u64, seq: Vec<u8>| DenovoTranscript {
             tid: tid.into(), chrom: chrom.into(), start, end,
-            n_reads: 5, strand: '+', introns: vec![], seq, distinguishing_uniq: 0, core_bp: 0, tes: None,
+            n_reads: 5, strand: '+', introns: vec![], seq, distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
         };
         let reps = vec![
             mk("a", "NCF1", 0, 15440, head),
@@ -4588,7 +4658,7 @@ mod tests {
         let mk = |tid: &str, seq: &[u8]| DenovoTranscript {
             tid: tid.into(), chrom: "chr1".into(), start: 0, end: seq.len() as u64,
             n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(),
-            distinguishing_uniq: 0, core_bp: 0, tes: None,
+            distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
         };
         let core = rand_seq(600, 0xA11CE);
         let tail_a = rand_seq(1400, 0xBEEF);
@@ -4626,7 +4696,7 @@ mod tests {
         let mk = |tid: &str, seq: &[u8]| DenovoTranscript {
             tid: tid.into(), chrom: "c1".into(), start: 0, end: seq.len() as u64,
             n_reads: 9, strand: '+', introns: vec![], seq: seq.to_vec(),
-            distinguishing_uniq: 0, core_bp: 0, tes: None,
+            distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
         };
         // two unrelated ~110 bp sequences: far too short for a reliable alignment
         let reps = vec![mk("s1", &rand_seq(110, 0x1234)), mk("s2", &rand_seq(110, 0x9876))];
@@ -4654,7 +4724,7 @@ mod tests {
         }
         let mk = |tid: &str, start: u64, introns: Vec<(u64, u64)>, seq: Vec<u8>| DenovoTranscript {
             tid: tid.into(), chrom: "chr1".into(), start, end: start + 1200,
-            n_reads: 9, strand: '+', introns, seq, distinguishing_uniq: 0, core_bp: 0, tes: None,
+            n_reads: 9, strand: '+', introns, seq, distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
         };
         let ex_a = rand_seq(400, 0x5EED1);
         let ex_b = rand_seq(400, 0x5EED2);
@@ -4747,7 +4817,7 @@ mod tests {
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
         let mk = |tid: &str, chrom: &str, start: u64, seq: &[u8]| DenovoTranscript {
             tid: tid.into(), chrom: chrom.into(), start, end: start + seq.len() as u64,
-            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(), distinguishing_uniq: 0, core_bp: 0, tes: None,
+            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(), distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
         };
         // a 400 bp "gene" duplicated at two loci, plus an unrelated 400 bp sequence.
         let a: Vec<u8> = b"ACGT".iter().cycle().take(400).copied().collect();

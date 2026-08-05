@@ -99,6 +99,23 @@ pub struct DenovoTranscript {
     /// denominator-free alternative (absolute aligned length, exonic coverage) was worse on at least one.
     pub core_bp: u64,
 
+    /// This copy is a STUB: its representative is single-exon, but reads at its locus DO assert a splice
+    /// junction, so the gene is spliced and the representative is a fragment of it. Distinct from a
+    /// genuinely intronless copy (histone, retrocopy), which is also single-exon but has no spliced
+    /// evidence at all -- measured on chr1+chr15, 324 of 432 single-exon copies are stubs and 108 are not.
+    ///
+    /// Why the distinction is worth carrying: a stub is short, so it matches a FRAGMENT of a real gene
+    /// almost perfectly and can form an E_r edge on that basis. In the NPIP family every false positive was
+    /// a single-exon stub joining through a short high-identity match -- and identity and coverage cannot
+    /// reject them, because those pairs score HIGHER than the true NPIP pairs (coverage 0.979 vs 0.912,
+    /// 13,992 aligned bp vs 2,923). The real members carried 4, 8 and 21 exons.
+    ///
+    /// Deleting stubs outright is worse than keeping them (F1 0.704 -> 0.608): 70% of copies are
+    /// single-exon, so removal dissolves 65 of 95 families through the >=2-loci gate, and the families that
+    /// die are disproportionately the small pure ones. The defensible use is to deny a stub the right to
+    /// CREATE family membership while keeping it as a locus.
+    pub stub: bool,
+
     /// Observed 3' terminus (TES) of this copy, when the reads' 3'-end distribution is SHARP; `None` when it
     /// is broad (differential coverage rather than a real polyadenylation site) or when no read evidence was
     /// available. Strand-aware: the genomic coordinate of the transcript's LAST base, so `>= end` on `+` and
@@ -127,6 +144,7 @@ impl Default for DenovoTranscript {
             seq: Vec::new(),
             distinguishing_uniq: 0,
             core_bp: 0,
+            stub: false,
             tes: None,
         }
     }
