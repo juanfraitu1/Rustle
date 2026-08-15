@@ -68,7 +68,11 @@ locus counts therefore do not move**; P2's densities and P4b's edge sets do.
 > gorilla NPIP loses one of 261 to a **0.0011 coverage near-miss** (`c` = 0.4989 against the 0.50 floor)
 > and keeps its single component. **P4b moved a lot** — RNA 338 → 260 edges, Jaccard 0.963 → 0.741 —
 > **but `E_RNA ⊂ E_DNA` survives (0 RNA-only edges) and all 91 DNA-only edges are coverage misses at
-> identity ≥ 0.9709.** ⚠ **§3b's N0 table is at a THIRD tier and stays OPEN.**
+> identity ≥ 0.9709.** ⚠⚠ **THE CONTAINMENT IS PANEL-SPECIFIC — see §1★.3.** It holds on this 27-node
+> `o1_joint` NPIP panel and **fails on the 80-node `o1_closure` panel: 33 RNA-only edges of 481 (6.9%)**.
+> What survives everywhere is the PARTITION-level claim: exactly **1 of those 33** joins two DNA
+> components. Never quote "0 RNA-only edges" without naming the panel.
+> ⚠ **§3b's N0 table is at a THIRD tier and stays OPEN.**
 
 ### Coverage form (defect M1), fixed the same day
 
@@ -431,9 +435,15 @@ panel-internal evidence for `τ` is not independent of it.
 **`γ` = 0.20 — INERT, by structure and then by measurement.**
 Structurally, `gamma_quasi_clique_partition` keeps a block iff `block.len() <= 2 ||
 induced_density >= γ`, so γ can only bind on a component with `|C| ≥ 3` whose density is below γ.
-Measured: **every family on the panel but GSTM is effectively a complete graph**, so γ = 0.20 and
-γ = 0.40 produce **byte-identical** output, and at the documented β/d all 21 components clear 0.40
-with minimum density **0.4722**. Human NPIP is `27·26/2 = 351` edges on 27 nodes — density exactly
+Measured **on the β/d panel of this section**: every family but GSTM is effectively a complete graph, so
+γ = 0.20 and γ = 0.40 produce **byte-identical** output, and all 21 components clear 0.40 with minimum
+density **0.4722**.
+⚠⚠ **DO NOT GENERALISE THAT SENTENCE — corrected 2026-08-14, see §1★.2.** On the 80-node `o1_closure`
+panel only **2 of 7** families are complete (both n ≤ 3) and densities run **0.348–1.000, median 0.864**.
+The two minima are different panels and must not be cross-quoted (0.4722 here, **0.348** there). The
+conclusion that γ = 0.20 is inert survives — it sits 0.148 below the sparsest observed family — but the
+REASON is "0.20 is far below the sparsest real family", **not** "families are cliques", and at γ = 0.40
+**HERC2 (0.348) would split**. Human NPIP is `27·26/2 = 351` edges on 27 nodes — density exactly
 **1.000**, so that family is a γ-quasi-clique for *every* γ ∈ (0,1] and no threshold was chosen.
 ⚠ **Inert is not harmless.** γ *is* the only stated defence against over-merge, and it catches
 over-merges roughly half the time: chr15's 61-locus GOLGA8 blob sits at density 0.210 and is correctly
@@ -1223,8 +1233,12 @@ identity failures and zero lack a record. This is the same shape as the panel's 
 
 ⚠ **What moved is the count, and it moved a lot: RNA 338 → 260 edges, Jaccard 0.963 → 0.741.** The
 headline "Jaccard 0.963" is a PANEL number computed with coverage **aggregated over records** (default
-OFF). Quote **0.741** for the shipped rule at the shipped tier, and quote the containment (0 RNA-only)
-as the tier-robust part.
+OFF). Quote **0.741** for the shipped rule at the shipped tier.
+⚠⚠ **THE CONTAINMENT IS TIER-ROBUST BUT NOT PANEL-ROBUST — this instruction is CORRECTED (2026-08-14).**
+It previously read "quote the containment (0 RNA-only) as the tier-robust part", which invited quoting a
+figure that does not generalise: on the 80-node `o1_closure` panel there are **33 RNA-only edges of 481
+(6.9%)**. Quote instead the claim that survives both tier and panel — **only 1 of those 33 joins two DNA
+components**, i.e. containment holds at the PARTITION level (6/7 families), not at the EDGE level. §1★.3.
 
 ⚠⚠ **A defect in the diagnostic was found and fixed en route (2026-08-11).** `graph_vs_graph_report.py`
 fed `why()` the output of `paf_pairs(..., min_identity, min_coverage)`, whose floors are applied *per
@@ -1982,7 +1996,7 @@ emits **no NH tag**; `sec_frac` is the NH-free equivalent.
   recomputed at the shipped tier on both genomes (one `seed_family.sh` invocation per species, plus
   `graph_vs_graph.sh`). **P2: human 351 / 1.000 unchanged (Jaccard 1.0000); gorilla 261 → 260 edges,
   0.870 → 0.867, one component either way.** **P4b: RNA 338 → 260 edges, Jaccard 0.963 → 0.741, still
-  0 RNA-only edges.** P1, P3 and P4 are tier-invariant by construction and reproduce to the digit.
+  0 RNA-only edges** *(on this 27-node panel — ⚠ 33/481 on the 80-node panel, §1★.3)*. P1, P3 and P4 are tier-invariant by construction and reproduce to the digit.
   ⚠ **What remains open is §3b's N0 table**, which is at a THIRD tier again
   (`-x asm20 -k11 -w5 -c --eqx -N200 -p0.02`, `nmatch/blocklen ≥ 0.60`) and needs the 5-chromosome
   seed-free candidate build re-run end to end. ⚠ The HERC2 figures quoted in this bullet

@@ -51,6 +51,13 @@ phenomenon; it is a statement about the statistic:
 The published mini-reference performance (TPR **41.13%** [37.02, 45.37] per arm at a substrate-matched
 FPR of **3.29%** [2.03, 5.27]) is therefore an **upper bound**, and was labelled as such.
 
+⚠⚠ **BOTH of those figures have T1-clean replacements — do not quote them bare.** 41.13% is the
+per-arm rate; for the mini-reference screen quote the **host-only arm yield 25.44% (189/743)**, and for
+the false-positive rate quote **1.98%** (the fixed-denominator form of the 3.29%, which used a
+called-only denominator conditioned on the method's own output). Five detection rates and four FPRs are
+on file and are **not interchangeable** — see the *O3 RATE PROVENANCE* table in
+`NEGATIVE_RESULTS_REGISTER.md` §6.4 before quoting any of them.
+
 ## 3. The candidates: retracted, and fully explained
 
 Three loci carried transcripts with no home above 96% anywhere in the individual's **diploid** genome
@@ -146,7 +153,12 @@ minimap2 needs to place a read as primary.** Two loci can be one `E_r` family wh
 cross-map. ⟹ **the family graph and the read-competition graph are not the same graph**, and this run
 measures the gap for the first time. Consistent with O1 reach **0.5500** [0.3983, 0.6929].
 
-## 6. The S2 detector, built and held-out tested
+## 6. The divergence-mixture detector, built and held-out tested
+
+⚠ **Naming, corrected 2026-08-14.** This was called "the S2 detector" in the first draft, and that is
+wrong in a way a reviewer who knows the literature will catch: **S2 is depth excess *plus* PSV
+structure**, and this detector deliberately uses **no depth at all** (§6, next paragraph). It
+implements the PSV/variant half of S2 only. Call it a divergence-mixture detector.
 
 **Statistic — the within-pile divergence mixture.** 1-D 2-means on the per-read `de` vector; fire iff the
 higher-divergence cluster holds a fraction in [0.10, 0.50] **and** the cluster separation ≥ 0.01. The
