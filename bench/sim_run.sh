@@ -19,10 +19,12 @@ echo "== 2. map (keep secondaries so co-located copies multimap => MAPQ-0) =="
   | "$SAM" sort -o "$OUT/simgw.bam"
 "$SAM" index "$OUT/simgw.bam"
 
-echo "== 3. O1: family catalog (cross-chrom, >=2 copies) =="
+# The simulated copies sit on two separate contigs (simA/simB), so this exercises the dispersed case. That
+# needs no flag: the default homology (E_r) catalog never restricts membership by chromosome.
+echo "== 3. O1: family catalog (homology/E_r, >=2 copies) =="
 printf 'simA:0-200000\nsimB:0-200000\n' > "$OUT/simgw_regions.txt"
 "$REL/gw_family_catalog" --bam "$OUT/simgw.bam" --fasta "$OUT/simgw.fasta" \
-  --cross-chrom --min-copies 2 --out "$OUT/simgw_fam" 2>/dev/null
+  --min-copies 2 --out "$OUT/simgw_fam" 2>/dev/null
 
 echo "== 4. O2: per-read copy assignment (de-novo families + posterior/zone) =="
 "$REL/copy_assign" --bam "$OUT/simgw.bam" --fasta "$OUT/simgw.fasta" \

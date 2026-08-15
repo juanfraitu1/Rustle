@@ -129,7 +129,7 @@ runner-up dependence, or `SA`, which is a factual list of the read's other align
 **The blind spot is real.** The exon-sum is TSS/TES-blind by construction: `pass1_skeletons_robust` groups
 reads by **exact intron chain only**, and sets boundaries to the *k*-th smallest start / *k*-th largest end
 (`k = min_terminal_support`, default 2) — a robustness quantile, not a TSS call. No TSS/TES/polyA-aware logic
-exists anywhere in the assembly or family path (the only polyA fields live in `phasing.rs`).
+exists anywhere in the assembly or family path (the only polyA fields lived in `vg_family/phasing.rs`, which was **deleted 2026-08-10** as unreachable — so there are now **none** anywhere in the pipeline).
 
 This matters *a priori* because IsoSeq FLNC reads are selected for carrying both the 5' primer and the 3'
 polyA, so their boundaries approximate **real** TSS/TES rather than random truncation. The hypothesis was

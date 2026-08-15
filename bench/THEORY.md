@@ -345,7 +345,16 @@ error objective counts allele mismatches.  Theorem 1 (hardness via coloring, par
 and MEC-hardness (error objective) together show that hardness is **robust across both objective
 functions**: minimizing the number of copies and minimizing allele flips are both NP-hard.
 
-#### Definition (MEC, as implemented in `vg_family/phasing.rs`)
+#### Definition (MEC — a THEORY object; ⚠ NOT implemented in shipping Rustle)
+
+> ⚠ **Corrected 2026-08-10.** This heading read *"as implemented in `vg_family/phasing.rs`"*. That
+> module had **zero call sites** and named a CLI flag (`--vg-phase`) that never existed, and it was
+> **deleted** on 2026-08-10. It also solved a *different* problem from the one this section is about:
+> it was **diploid** MEC over a **binary** allele matrix at **one** locus (with `h_B = ¬h_A`), whereas
+> O2 is *k*-copy over 4-letter alleles across a family. The `k = 2` construction below therefore
+> stands as **mathematics with no shipped implementation**; the shipped O2 decision rule is a per-read
+> argmax + Poisson-binomial certificate, specified in `docs/copy_assignment_definition.md`.
+
 
 Encode the reads over the $m$ heterozygous sites of a locus as an allele matrix
 
@@ -1439,8 +1448,17 @@ construction there is no PSV and no copy-specific junction → the read is **uni
 theory: a copy is resolvable iff it carries a distinguishing feature; the Strong-Separation / K-frontier
 results characterize exactly when a unique cover exists). K=0 violates the precondition.
 
-**Empirically confirmed.** `project_k0_frontier`: at exonically-identical co-located loci the locus
-references are NM:i:0 (byte-identical) and **0/386 reads** are resolvable — a hard floor, not a tuning issue.
+**Empirically confirmed, and the substrate is pinned (re-derived 2026-08-11).** **GORILLA** — mGorGor1
+(`GGO.fasta`), reads `GGO_mm.bam` (OR6737 IsoSeq; note `GGO.bam` is a *symlink* to it), **no annotation**:
+the pair is de-novo family `DNFAM1`, coordinates in `bench/copy_resolution_census.tsv`. At the two
+exonically-identical co-located loci the locus references are byte-identical — re-aligned today with
+`minimap2 -x asm20 -c --cs`, `NC_073247.2:164381193-164384845` vs `164442446-164446047` gives
+**nmatch 3599 / blocklen 3599**, and `164397062-164401094` vs `164424321-164430225` gives **4030 / 4030**,
+identity 1.000000 both — and **0/386 reads** are resolvable. ⚠ State the denominator's definition when
+quoting it: 386 = reads aligned at **both** loci carrying a MAPQ-0 alignment **and holding a primary
+record at one of the two** (311 + 75); without the primary restriction the same query returns 1,692.
+The **numerator is entailed, not measured**: identical references ⟹ the distinguishing-column set is
+empty ⟹ 0 resolvable at any denominator. A hard floor, not a tuning issue.
 
 **Now CERTIFIED by the significance gate.** The IsoCon gate routes such reads to `Tied` because every
 competitor has an empty distinguishing set → `min_p_value = 1.0 ≥ α`. So the method does not guess (no 1/k);

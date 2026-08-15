@@ -305,5 +305,505 @@
     "n_copies_per_family": 4,
     "n_reads_per_copy": 40,
     "error_rate": 0.003
+  },
+  "v4b_mincl2_ablation": {
+    "task": "V4b architectural-stop re-run at a lowered gate-1 cluster floor (min_clusters=2)",
+    "supersedes": "the 'architectural stop' outcome recorded for GSTM and GWFAM227 in data['v4b']['loci_attempted']; every other entry of 'v4b' is unchanged and still stands",
+    "driver": "bench/mechanism/v4b_3copy.py (1-of-3 deletion; real_tandem.py cannot be used -- it requires >=4 copies to delete two)",
+    "knob": "copy_assign --absent-min-clusters 2 (RUSTLE_ABSENT_MIN_CLUSTERS); DEFAULT REMAINS 3, unchanged",
+    "control": "every ablation is paired with an IDENTICAL run on the UNMASKED region-local reference, same extracted read set, same min_clusters. Neither control admitted an absent copy, so no admission below is an artefact of the lowered gate.",
+    "recovered_any": false,
+    "headline": "No recovery at either locus, but for two DIFFERENT and newly-measured reasons. GWFAM227's stop was genuinely architectural and the knob dissolved it (gate 1 '<3 clusters' -> passes at 2 -> declined at gate 5, >=98% remap identity). GSTM's 'architectural stop' was a PREDICTION THAT IS FALSE: the degraded locus yields n_clusters=3, so the shipping gate was reachable all along and the run is byte-identical with and without the knob; its admitted copy resembles its own HOST (0.7629) MORE than the deleted copy (0.7210), i.e. it is the copy-vs-allele confusion the gate is named for, admitted at the DEFAULT floor.",
+    "loci": {
+      "GSTM": {
+        "label": "GSTM",
+        "locus": "NC_073224.2:129160000-129230000",
+        "min_clusters": 2,
+        "pad": 3000,
+        "scratch": "/home/juanfra/winloci_scratch/v4b_mincl2/GSTM",
+        "intact_n_families": 1,
+        "intact_n_copies_supported": 3,
+        "intact_copies": [
+          {
+            "copy_index": 0,
+            "copy_tid": "DN_NC_073224.2_129169634_8",
+            "start": 129169634,
+            "end": 129173089,
+            "n_reads_hard": "222",
+            "anchored_reads": "213"
+          },
+          {
+            "copy_index": 1,
+            "copy_tid": "DN_NC_073224.2_129191738_8",
+            "start": 129191738,
+            "end": 129197754,
+            "n_reads_hard": "242",
+            "anchored_reads": "44"
+          },
+          {
+            "copy_index": 2,
+            "copy_tid": "DN_NC_073224.2_129212428_8",
+            "start": 129212428,
+            "end": 129222730,
+            "n_reads_hard": "2209",
+            "anchored_reads": "1089"
+          }
+        ],
+        "design": {
+          "host": 1,
+          "hidden": [
+            2
+          ],
+          "keep": [
+            0,
+            1
+          ],
+          "psv_identity_hidden_to_host": 0.5117647058823529,
+          "n_psv_cols_compared": 340
+        },
+        "mask_spans": [
+          [
+            129212428,
+            129222730
+          ]
+        ],
+        "local_ref_len": 76001,
+        "bases_masked": 10303,
+        "n_reads_extracted": 1382,
+        "ablation": {
+          "label": "ablation",
+          "ref": "/home/juanfra/winloci_scratch/v4b_mincl2/GSTM/ref_ablation.fa",
+          "n_reads_realigned_primary": 1367,
+          "n_families": 1,
+          "families_n_copies": [
+            3
+          ],
+          "n_dna_needs": 1,
+          "dna_needs": [
+            {
+              "n_clusters": 3,
+              "reason": ">=98% remap identity (paralog-leak or het)",
+              "read_count": 3,
+              "span": "NC_073224.2_local:35168-41261"
+            }
+          ],
+          "n_clusters_seen": [
+            3
+          ],
+          "max_n_clusters_seen": 3,
+          "n_admitted_absent_copies": 1,
+          "admitted_indices": [
+            2
+          ],
+          "admitted_tids": [
+            "AC_NC_073224.2_local_35168"
+          ],
+          "gate1_rejections": [],
+          "min_clusters_notice_printed": true,
+          "identity_to_intact_deleted_copy": 0.7209944751381215,
+          "set_match": [
+            [
+              0,
+              0,
+              0.7209944751381215
+            ]
+          ],
+          "n_shared_psv_positions": 362
+        },
+        "control": {
+          "label": "control",
+          "ref": "/home/juanfra/winloci_scratch/v4b_mincl2/GSTM/ref_control.fa",
+          "n_reads_realigned_primary": 1382,
+          "n_families": 1,
+          "families_n_copies": [
+            3
+          ],
+          "n_dna_needs": 0,
+          "dna_needs": [],
+          "n_clusters_seen": [],
+          "max_n_clusters_seen": null,
+          "n_admitted_absent_copies": 0,
+          "admitted_indices": [],
+          "admitted_tids": [],
+          "gate1_rejections": [],
+          "min_clusters_notice_printed": false,
+          "identity_to_intact_deleted_copy": null,
+          "set_match": [],
+          "n_shared_psv_positions": 411
+        },
+        "control_also_admitted": false,
+        "recovered": false
+      },
+      "GWFAM227": {
+        "label": "GWFAM227",
+        "locus": "NC_073230.2:143511874-143646376",
+        "min_clusters": 2,
+        "pad": 3000,
+        "scratch": "/home/juanfra/winloci_scratch/v4b_mincl2/GWFAM227",
+        "intact_n_families": 1,
+        "intact_n_copies_supported": 3,
+        "intact_copies": [
+          {
+            "copy_index": 0,
+            "copy_tid": "DN_NC_073230.2_143511874_10",
+            "start": 143511874,
+            "end": 143528740,
+            "n_reads_hard": "600",
+            "anchored_reads": "586"
+          },
+          {
+            "copy_index": 1,
+            "copy_tid": "DN_NC_073230.2_143596846_10",
+            "start": 143596846,
+            "end": 143611143,
+            "n_reads_hard": "94",
+            "anchored_reads": "82"
+          },
+          {
+            "copy_index": 2,
+            "copy_tid": "DN_NC_073230.2_143617428_10",
+            "start": 143617428,
+            "end": 143646376,
+            "n_reads_hard": "102",
+            "anchored_reads": "14"
+          }
+        ],
+        "design": {
+          "host": 1,
+          "hidden": [
+            2
+          ],
+          "keep": [
+            0,
+            1
+          ],
+          "psv_identity_hidden_to_host": 0.45585874799357945,
+          "n_psv_cols_compared": 623
+        },
+        "mask_spans": [
+          [
+            143617428,
+            143646376
+          ]
+        ],
+        "local_ref_len": 140503,
+        "bases_masked": 28949,
+        "n_reads_extracted": 683,
+        "ablation": {
+          "label": "ablation",
+          "ref": "/home/juanfra/winloci_scratch/v4b_mincl2/GWFAM227/ref_ablation.fa",
+          "n_reads_realigned_primary": 680,
+          "n_families": 1,
+          "families_n_copies": [
+            2
+          ],
+          "n_dna_needs": 1,
+          "dna_needs": [
+            {
+              "n_clusters": 2,
+              "reason": ">=98% remap identity (paralog-leak or het)",
+              "read_count": 3,
+              "span": "NC_073230.2_local:87810-102270"
+            }
+          ],
+          "n_clusters_seen": [
+            2
+          ],
+          "max_n_clusters_seen": 2,
+          "n_admitted_absent_copies": 0,
+          "admitted_indices": [],
+          "admitted_tids": [],
+          "gate1_rejections": [],
+          "min_clusters_notice_printed": true,
+          "identity_to_intact_deleted_copy": null,
+          "set_match": [],
+          "n_shared_psv_positions": 544
+        },
+        "control": {
+          "label": "control",
+          "ref": "/home/juanfra/winloci_scratch/v4b_mincl2/GWFAM227/ref_control.fa",
+          "n_reads_realigned_primary": 682,
+          "n_families": 1,
+          "families_n_copies": [
+            3
+          ],
+          "n_dna_needs": 1,
+          "dna_needs": [
+            {
+              "n_clusters": 2,
+              "reason": "pure A->G spectrum (editing-like)",
+              "read_count": 3,
+              "span": "NC_073230.2_local:87973-102270"
+            }
+          ],
+          "n_clusters_seen": [
+            2
+          ],
+          "max_n_clusters_seen": 2,
+          "n_admitted_absent_copies": 0,
+          "admitted_indices": [],
+          "admitted_tids": [],
+          "gate1_rejections": [],
+          "min_clusters_notice_printed": true,
+          "identity_to_intact_deleted_copy": null,
+          "set_match": [],
+          "n_shared_psv_positions": 701
+        },
+        "control_also_admitted": false,
+        "recovered": false
+      }
+    },
+    "gate_load_bearing_check": {
+      "GSTM": {
+        "default_min_clusters_3_rerun": "1 admitted absent copy, dna_needs n_clusters=3 reason '>=98% remap identity'; psv_copies/psv_cols/families/quant/dna_needs ALL byte-identical to the min_clusters=2 run",
+        "knob_load_bearing": false
+      },
+      "GWFAM227": {
+        "default_min_clusters_3_rerun": "0 admitted; dna_needs n_clusters=2 reason '<3 clusters (copy-vs-allele needs DNA)' (gate 1 fires)",
+        "knob_load_bearing": true
+      }
+    },
+    "artifacts": "/home/juanfra/winloci_scratch/v4b_mincl2/{GSTM,GWFAM227}/"
+  },
+  "v4b_mincl2_control_matrix": {
+    "task": "Negative control for the lowered gate-1 cluster floor: full 2x2 (copy DELETED vs INTACT) x (min_clusters 2 vs default 3), same reads, same region-local reference, same copy_assign command, for GSTM and GWFAM227.",
+    "relates_to": "v4b_mincl2_ablation (unchanged). The 'ablation' and 'ablation_default' arms below are the SAME runs recorded there, re-read from disk; the two 'control_default' arms are NEW (run 2026-08-08).",
+    "new_arm_commands": [
+      "cd /home/juanfra/winloci_scratch/v4b_mincl2/GSTM && env -u RUSTLE_ABSENT_MIN_CLUSTERS target/release/copy_assign --bam control.sorted.bam --fasta ref_control.fa --region NC_073224.2_local:1-76001 --out control_default.ca --homology-primary --min-copies 2 --absent-copies --dump-psv",
+      "cd /home/juanfra/winloci_scratch/v4b_mincl2/GWFAM227 && env -u RUSTLE_ABSENT_MIN_CLUSTERS target/release/copy_assign --bam control.sorted.bam --fasta ref_control.fa --region NC_073230.2_local:1-140503 --out control_default.ca --homology-primary --min-copies 2 --absent-copies --dump-psv"
+    ],
+    "control_stayed_silent": true,
+    "headline": "The control holds. Across all 8 runs the ONLY admitted reference-absent copy is GSTM's AC_NC_073224.2_local_35168, and it appears ONLY in the copy-deleted arms -- at BOTH min_clusters=2 and the default 3, byte-identically. Neither intact-assembly control admits anything at either floor. So min_clusters=2 did not manufacture a false positive on these two loci. It also did not manufacture a recovery: GSTM's single admission was already produced at the DEFAULT floor and is not the deleted copy (identity 0.7210 to it, vs 0.7629 to its own host).",
+    "third_arm_verdict": "Gate 1 IS what blocked GWFAM227 and is NOT what blocked GSTM. GWFAM227 copy-deleted: at 3 the dna_needs reason is '<3 clusters (copy-vs-allele needs DNA)'; at 2 the same candidate advances and is declined at gate 5 '>=98% remap identity'. GSTM copy-deleted: reason is '>=98% remap identity' at BOTH floors (n_clusters=3 was reached), and all five output TSVs are byte-identical between the two floors.",
+    "caveat_gstm_control_is_silent_for_a_weaker_reason": "GSTM's intact control emits 0 collapsed candidates at all (families.tsv collapsed_copies=0, 0 dna_needs rows, and the [absent_copy] notice never fires because AbsentCopyParams::from_env is only reached inside the candidate loop). So that control shows no false positive, but it never actually presented a candidate TO gate 1 -- it does not test whether gate 1 at 2 would admit a het allele. GWFAM227's intact control is the stronger one: it DOES produce a candidate at both floors and declines it both times (gate 1 at 3, gate 3 'pure A->G spectrum (editing-like)' at 2).",
+    "default_unchanged": "absent_copy.rs DEFAULT_MIN_CLUSTERS is still 3. No source file was modified by this control run; the only new files are the four control_default.ca.* output sets, control_default.log, and control_matrix.json, all under /home/juanfra/winloci_scratch/v4b_mincl2/.",
+    "arms": {
+      "GSTM": {
+        "ablation": {
+          "copy_deleted": true,
+          "min_clusters": 2,
+          "knob_set": true,
+          "n_families": 1,
+          "families_n_copies": [
+            3
+          ],
+          "collapsed_copies": [
+            2
+          ],
+          "n_dna_needs": 1,
+          "dna_needs": [
+            {
+              "n_clusters": 3,
+              "read_count": 3,
+              "reason": ">=98% remap identity (paralog-leak or het)",
+              "span": "NC_073224.2_local:35168-41261"
+            }
+          ],
+          "n_admitted_absent_copies": 1,
+          "admitted_tids": [
+            "AC_NC_073224.2_local_35168"
+          ],
+          "admitted_reads_hard": [
+            "0"
+          ],
+          "notice_lines": 1
+        },
+        "ablation_default": {
+          "copy_deleted": true,
+          "min_clusters": 3,
+          "knob_set": false,
+          "n_families": 1,
+          "families_n_copies": [
+            3
+          ],
+          "collapsed_copies": [
+            2
+          ],
+          "n_dna_needs": 1,
+          "dna_needs": [
+            {
+              "n_clusters": 3,
+              "read_count": 3,
+              "reason": ">=98% remap identity (paralog-leak or het)",
+              "span": "NC_073224.2_local:35168-41261"
+            }
+          ],
+          "n_admitted_absent_copies": 1,
+          "admitted_tids": [
+            "AC_NC_073224.2_local_35168"
+          ],
+          "admitted_reads_hard": [
+            "0"
+          ],
+          "notice_lines": 0
+        },
+        "control": {
+          "copy_deleted": false,
+          "min_clusters": 2,
+          "knob_set": true,
+          "n_families": 1,
+          "families_n_copies": [
+            3
+          ],
+          "collapsed_copies": [
+            0
+          ],
+          "n_dna_needs": 0,
+          "dna_needs": [],
+          "n_admitted_absent_copies": 0,
+          "admitted_tids": [],
+          "admitted_reads_hard": [],
+          "notice_lines": 0
+        },
+        "control_default": {
+          "copy_deleted": false,
+          "min_clusters": 3,
+          "knob_set": false,
+          "n_families": 1,
+          "families_n_copies": [
+            3
+          ],
+          "collapsed_copies": [
+            0
+          ],
+          "n_dna_needs": 0,
+          "dna_needs": [],
+          "n_admitted_absent_copies": 0,
+          "admitted_tids": [],
+          "admitted_reads_hard": [],
+          "notice_lines": 0
+        },
+        "byte_identity": {
+          "assignments: ablation vs ablation_default": true,
+          "quant: ablation vs ablation_default": true,
+          "families: ablation vs ablation_default": true,
+          "psv_copies: ablation vs ablation_default": true,
+          "psv_cols: ablation vs ablation_default": true,
+          "dna_needs: ablation vs ablation_default": true,
+          "assignments: control vs control_default": true,
+          "quant: control vs control_default": true,
+          "families: control vs control_default": true,
+          "psv_copies: control vs control_default": true,
+          "psv_cols: control vs control_default": true,
+          "dna_needs: control vs control_default": true
+        }
+      },
+      "GWFAM227": {
+        "ablation": {
+          "copy_deleted": true,
+          "min_clusters": 2,
+          "knob_set": true,
+          "n_families": 1,
+          "families_n_copies": [
+            2
+          ],
+          "collapsed_copies": [
+            1
+          ],
+          "n_dna_needs": 1,
+          "dna_needs": [
+            {
+              "n_clusters": 2,
+              "read_count": 3,
+              "reason": ">=98% remap identity (paralog-leak or het)",
+              "span": "NC_073230.2_local:87810-102270"
+            }
+          ],
+          "n_admitted_absent_copies": 0,
+          "admitted_tids": [],
+          "admitted_reads_hard": [],
+          "notice_lines": 1
+        },
+        "ablation_default": {
+          "copy_deleted": true,
+          "min_clusters": 3,
+          "knob_set": false,
+          "n_families": 1,
+          "families_n_copies": [
+            2
+          ],
+          "collapsed_copies": [
+            1
+          ],
+          "n_dna_needs": 1,
+          "dna_needs": [
+            {
+              "n_clusters": 2,
+              "read_count": 3,
+              "reason": "<3 clusters (copy-vs-allele needs DNA)",
+              "span": "NC_073230.2_local:87810-102270"
+            }
+          ],
+          "n_admitted_absent_copies": 0,
+          "admitted_tids": [],
+          "admitted_reads_hard": [],
+          "notice_lines": 0
+        },
+        "control": {
+          "copy_deleted": false,
+          "min_clusters": 2,
+          "knob_set": true,
+          "n_families": 1,
+          "families_n_copies": [
+            3
+          ],
+          "collapsed_copies": [
+            1
+          ],
+          "n_dna_needs": 1,
+          "dna_needs": [
+            {
+              "n_clusters": 2,
+              "read_count": 3,
+              "reason": "pure A->G spectrum (editing-like)",
+              "span": "NC_073230.2_local:87973-102270"
+            }
+          ],
+          "n_admitted_absent_copies": 0,
+          "admitted_tids": [],
+          "admitted_reads_hard": [],
+          "notice_lines": 1
+        },
+        "control_default": {
+          "copy_deleted": false,
+          "min_clusters": 3,
+          "knob_set": false,
+          "n_families": 1,
+          "families_n_copies": [
+            3
+          ],
+          "collapsed_copies": [
+            1
+          ],
+          "n_dna_needs": 1,
+          "dna_needs": [
+            {
+              "n_clusters": 2,
+              "read_count": 3,
+              "reason": "<3 clusters (copy-vs-allele needs DNA)",
+              "span": "NC_073230.2_local:87973-102270"
+            }
+          ],
+          "n_admitted_absent_copies": 0,
+          "admitted_tids": [],
+          "admitted_reads_hard": [],
+          "notice_lines": 0
+        },
+        "byte_identity": {
+          "assignments: ablation vs ablation_default": true,
+          "quant: ablation vs ablation_default": true,
+          "families: ablation vs ablation_default": true,
+          "psv_copies: ablation vs ablation_default": true,
+          "psv_cols: ablation vs ablation_default": true,
+          "dna_needs: ablation vs ablation_default": false,
+          "assignments: control vs control_default": true,
+          "quant: control vs control_default": true,
+          "families: control vs control_default": true,
+          "psv_copies: control vs control_default": true,
+          "psv_cols: control vs control_default": true,
+          "dna_needs: control vs control_default": false
+        }
+      }
+    }
   }
 }
