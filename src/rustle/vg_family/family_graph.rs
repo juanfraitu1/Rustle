@@ -567,23 +567,64 @@ pub fn poa_msa_with_costs(
     gap_costs: poasta::aligner::scoring::GapAffine,
 ) -> Result<Vec<Vec<u8>>> {
     use anyhow::anyhow;
-    use poasta::aligner::config::{AffineDijkstra, AffineMinGapCost};
-    use poasta::graphs::poa::POAGraph;
-    use poasta::io::fasta::poa_graph_to_fasta;
 
     if seqs.len() < 2 {
         return Err(anyhow!("poa_msa requires at least 2 sequences"));
     }
 
-    // Exact gap-affine global alignment. Default = AffineDijkstra (uniform-cost search). RUSTLE_POA_ASTAR=1
-    // swaps in AffineMinGapCost = the SAME optimal-cost search with an admissible min-gap-cost A* heuristic.
+    // Exact gap-affine global alignment. Default HERE = AffineDijkstra (uniform-cost search).
+    // RUSTLE_POA_ASTAR=1 swaps in AffineMinGapCost = the SAME optimal-cost search with an admissible
+    // min-gap-cost A* heuristic.
     // VERIFIED (2026-07-12) on real families GSTM(745 cols)/DAZ/RBMY(1542)/PCDHB(3293): A* is BYTE-IDENTICAL to
     // Dijkstra (families/quant/assignments diff = 0) — so the co-optimal-traceback concern does not bite here —
-    // but gives NO measurable speedup (0.0/0.5/12.7s, PCDHB marginally slower): poasta's min-gap heuristic does
-    // not prune these paralog alignments. So Dijkstra stays the default; the toggle is kept for the record.
+    // but gives NO measurable speedup UNDER THE PSV GAP COSTS (0.0/0.5/12.7s, PCDHB marginally slower):
+    // poasta's min-gap heuristic does not prune those paralog alignments. So Dijkstra stays the default on
+    // THIS path.
+    // ⚠ THE SCOPE OF THAT "no speedup" FINDING WAS TOO WIDE. Re-measured 2026-08-09 on the contiguous-core
+    // path, whose gap_open is 32 rather than the PSV costs: A* is 32-44% FASTER there (paired interleaved
+    // n=5, 15/15 wins; TFRC 0.563x, TBP 0.593x, HERC2 0.678x) with all 75 control-panel output files
+    // byte-identical. That path therefore selects A* explicitly via `contiguous_core_coverage`, which calls
+    // `poa_msa_with_costs_cfg` — it does NOT go through this env switch.
     // (minimap2 via RUSTLE_PSV_MINIMAP2 is fast but LOSES PSVs — 109 vs 3293 on PCDHB, 0 vs 745 on GSTM — as it
     // clips divergent flanks; not a safe default. The exact-DP cost is inherent to accurate PSV discovery.)
-    let astar = std::env::var_os("RUSTLE_POA_ASTAR").is_some();
+    // ⚠ WAS `var_os(..).is_some()`, i.e. `RUSTLE_POA_ASTAR=0` TURNED A* ON here. That is the tree's
+    // opt-in idiom (`set and not "0"`) inverted, and it silently invalidates any A/B that disables the
+    // toggle: measured 2026-08-09, a copy_assign GSTM run with `RUSTLE_POA_ASTAR=0` was ~8% FASTER than
+    // the unset default, because the "off" arm had switched THIS path to A*. Parsed as an ordinary
+    // opt-in flag now. The DEFAULT (unset) is unchanged, so no shipped configuration moves.
+    let astar = matches!(std::env::var("RUSTLE_POA_ASTAR"), Ok(ref v) if v != "0" && !v.is_empty());
+    poa_msa_with_costs_cfg_inner(seqs, gap_costs, astar)
+}
+
+/// [`poa_msa_with_costs`] with the aligner variant passed EXPLICITLY instead of read from the environment.
+///
+/// Exists because the two poasta consumers want different defaults and must not share a global switch:
+/// the PSV/MSA path measured A* as no faster under ITS gap costs (see the note above), while the
+/// contiguous-core path (gap_open=32) measured 32-44% faster with byte-identical output. A caller that
+/// picks the variant can be memoized, because the variant is then an explicit part of the cache key
+/// rather than ambient state.
+pub fn poa_msa_with_costs_cfg(
+    seqs: &[Vec<u8>],
+    gap_costs: poasta::aligner::scoring::GapAffine,
+    astar: bool,
+) -> Result<Vec<Vec<u8>>> {
+    use anyhow::anyhow;
+    if seqs.len() < 2 {
+        return Err(anyhow!("poa_msa requires at least 2 sequences"));
+    }
+    poa_msa_with_costs_cfg_inner(seqs, gap_costs, astar)
+}
+
+fn poa_msa_with_costs_cfg_inner(
+    seqs: &[Vec<u8>],
+    gap_costs: poasta::aligner::scoring::GapAffine,
+    astar: bool,
+) -> Result<Vec<Vec<u8>>> {
+    use anyhow::anyhow;
+    use poasta::aligner::config::{AffineDijkstra, AffineMinGapCost};
+    use poasta::graphs::poa::POAGraph;
+    use poasta::io::fasta::poa_graph_to_fasta;
+
     let graph: POAGraph<u32> = if astar {
         build_poa_graph(seqs, AffineMinGapCost(gap_costs))?
     } else {
@@ -687,6 +728,14 @@ pub fn poa_msa_with_costs(
 /// Edge cases: returns 0.0 if either sequence is empty or the alignment fails;
 /// identical sequences return ~1.0 (the whole sequence is one matched run).
 pub fn contiguous_core_coverage(a: &[u8], b: &[u8]) -> f64 {
+    contiguous_core_coverage_with(a, b, core_astar())
+}
+
+/// [`contiguous_core_coverage`] with the aligner variant chosen by the caller rather than by
+/// [`core_astar`]. Both variants are exact optimal-cost searches over the same graph and scoring; which
+/// one is faster depends on the SHAPE of the pair, which is a property of the CALL SITE (see
+/// [`contiguous_core_coverage_bounded_with`]).
+pub fn contiguous_core_coverage_with(a: &[u8], b: &[u8], astar: bool) -> f64 {
     use poasta::aligner::scoring::GapAffine;
     let minlen = a.len().min(b.len());
     if minlen == 0 {
@@ -695,7 +744,7 @@ pub fn contiguous_core_coverage(a: &[u8], b: &[u8]) -> f64 {
     // Dedicated strong-gap-open scoring (mismatch=1, gap_extend=1, gap_open=32).
     // See the doc comment: anchors the conserved core against divergent flanks.
     let core_gap_costs = GapAffine::new(1, 1, 32);
-    let msa = match poa_msa_with_costs(&[a.to_vec(), b.to_vec()], core_gap_costs) {
+    let msa = match poa_msa_with_costs_cfg(&[a.to_vec(), b.to_vec()], core_gap_costs, astar) {
         Ok(m) => m,
         Err(_) => return 0.0,
     };
@@ -795,11 +844,256 @@ pub fn longest_common_substring(a: &[u8], b: &[u8]) -> usize {
     best as usize
 }
 
+/// Which exact aligner the CONTIGUOUS-CORE path uses. A* (`AffineMinGapCost`) is the default here — see the
+/// re-measurement note on [`poa_msa_with_costs`]. `RUSTLE_POA_ASTAR=0` forces the old Dijkstra search back on
+/// this path so the change can be A/B'd without a rebuild; any other value (set or unset) means A*.
+///
+/// Both are EXACT optimal-cost searches over the same graph and scoring, so this selects only how the
+/// optimum is found, not what it is. It is nonetheless part of the memo key below, because co-optimal
+/// traceback is not proven unique and a cache must never serve a value the current setting did not produce.
+pub fn core_astar() -> bool {
+    !matches!(std::env::var("RUSTLE_POA_ASTAR"), Ok(v) if v == "0")
+}
+
+/// ASCII-uppercase VIEW of `s` that allocates only when `s` actually contains a lowercase ASCII letter.
+///
+/// The POA collapse loop uppercased both operands of every candidate pair on every sweep, i.e. two full
+/// sequence copies per pair per iteration — while `GenomeIndex` already uppercases every base at load, so
+/// the copies were almost always identical to their input. The uppercase is still APPLIED (soft-masked
+/// input reaching these paths from elsewhere must behave exactly as before); only the allocation is
+/// conditional, so the bytes handed downstream are unchanged.
+pub fn upper_cow(s: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    if s.iter().any(|c| c.is_ascii_lowercase()) {
+        std::borrow::Cow::Owned(s.to_ascii_uppercase())
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Memo for the contiguous-core kernel.
+//
+// WHY: `collapse_parent` re-runs its full O(r^2) candidate sweep until an entire sweep merges nothing, so
+// the LAST sweep — by definition the one that changes no state — re-aligns every surviving pair and throws
+// every result away, and each earlier sweep re-aligns every pair it failed to merge. The kernel is a pure
+// function of its arguments, so those repeats are recomputation with no other effect.
+//
+// THE KEY IS EVERY ARGUMENT THAT CAN CHANGE THE VALUE, and nothing else:
+//   (interned id of `a`'s exact bytes, interned id of `b`'s exact bytes, `poasta_cap`, `core_astar()`)
+// - The two sequences are keyed SEPARATELY AND IN ORDER. `poa_msa_with_costs` builds the graph from the
+//   FIRST sequence, so f(a,b) == f(b,a) is UNPROVEN; normalising the pair order into one key would be a
+//   result-changing edit disguised as a cache. (`memo_order_is_part_of_the_key` pins this.)
+// - `poasta_cap` selects the poasta-vs-suffix-automaton BRANCH, so it changes the value, not just the cost.
+// - The aligner variant is ambient (env), so it is resolved to a bool and stored explicitly.
+// - The gap costs are NOT in the key because they are a hard-coded constant of `contiguous_core_coverage`
+//   (1,1,32). If they ever become a parameter they MUST be added here.
+// - The merge THRESHOLDS (`collapse_span_core`, COLLAPSE_CONTAIN_FRAC, `t_core`) are deliberately ABSENT:
+//   they are applied by the callers to this function's return value and cannot change it. That separation
+//   is what makes a threshold sweep reuse the alignments.
+//
+// Sequences are interned so the table stores each distinct sequence once (O(r) bytes) rather than once per
+// pair (O(r^2) bytes), and the key is the exact bytes — not a hash — so there is no collision path to a
+// silently wrong value.
+// ---------------------------------------------------------------------------------------------------
+
+/// Interned-byte budget. Past this the memo stops INSERTING (it still serves hits), so a genome-wide run
+/// degrades to today's recompute-everything behaviour instead of growing without bound.
+const CORE_MEMO_MAX_BYTES: usize = 512 * 1024 * 1024;
+/// Entry-count budget, same degradation rule. 4M entries of a 4-word key + f64 is ~200 MB.
+const CORE_MEMO_MAX_ENTRIES: usize = 4_000_000;
+
+/// FxHash, not SipHash. The intern map is probed with a FULL SEQUENCE (up to `len_cap` = 20 kb) on EVERY
+/// call including misses, so the hash pass is the memo's entire per-call overhead — free next to a POA
+/// alignment, not free next to a memo HIT or the cheap suffix-automaton branch.
+///
+/// MEASURED, not assumed (medians of 3, warm cache, interleaved builds): on HERC2 — the panel region
+/// where the memo actually fires — SipHash 13.423 s [13.377-13.474] vs FxHash 9.867 s [9.803-10.091],
+/// a 26% difference with both spreads under 0.3 s. Neutral on the regions where the memo rarely hits
+/// (GSTM 0.976, MAGEA 0.987, RABL2 1.001, SDHA 0.997, TBP 0.996).
+///
+/// Exactness is unaffected: `HashMap` still compares keys with `Eq`, so a hash collision costs a byte
+/// comparison, never a wrong value. (Also deterministic — FxHash has no random seed — though nothing
+/// here depends on iteration order.)
+#[derive(Default)]
+struct CoreMemo {
+    ids: crate::types::DetHashMap<Vec<u8>, u32>,
+    interned_bytes: usize,
+    vals: crate::types::DetHashMap<(u32, u32, usize, bool), f64>,
+    hits: u64,
+    misses: u64,
+}
+
+fn core_memo() -> &'static std::sync::Mutex<CoreMemo> {
+    static MEMO: std::sync::OnceLock<std::sync::Mutex<CoreMemo>> = std::sync::OnceLock::new();
+    MEMO.get_or_init(|| std::sync::Mutex::new(CoreMemo::default()))
+}
+
+/// A poisoned memo is still a valid cache (the data is plain values, and a panic mid-update cannot leave a
+/// wrong entry — insertion is the last step), so recover the guard rather than cascading the panic.
+fn core_memo_lock() -> std::sync::MutexGuard<'static, CoreMemo> {
+    core_memo().lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// `(hits, misses)` on the contiguous-core memo since process start. Test/diagnostic hook — this is how
+/// `memo_*` tests prove that a changed key component MISSES rather than silently reusing a stale value.
+pub fn core_memo_stats() -> (u64, u64) {
+    let m = core_memo_lock();
+    (m.hits, m.misses)
+}
+
+/// Is `(a, b, poasta_cap, astar)` — the FULL key — currently cached? Diagnostic, and the hook the memo
+/// key tests use: asserting on presence per key is immune to sibling tests sharing the process-global
+/// table, which a hit/miss counter is not.
+pub fn core_memo_contains(a: &[u8], b: &[u8], poasta_cap: usize, astar: bool) -> bool {
+    let m = core_memo_lock();
+    match (m.ids.get(a), m.ids.get(b)) {
+        (Some(&ia), Some(&ib)) => m.vals.contains_key(&(ia, ib, poasta_cap, astar)),
+        _ => false,
+    }
+}
+
+/// Plant a value under an exact key WITHOUT running the kernel. Test-only: a planted value the kernel
+/// would never return is what makes "this call was served from the cache under THIS key" a deterministic
+/// assertion rather than an inference from a counter.
+#[cfg(test)]
+fn core_memo_plant(a: &[u8], b: &[u8], poasta_cap: usize, astar: bool, v: f64) {
+    let mut m = core_memo_lock();
+    let ia = match m.ids.get(a).copied() {
+        Some(i) => i,
+        None => {
+            let i = m.ids.len() as u32;
+            m.ids.insert(a.to_vec(), i);
+            m.interned_bytes += a.len();
+            i
+        }
+    };
+    let ib = match m.ids.get(b).copied() {
+        Some(i) => i,
+        None => {
+            let i = m.ids.len() as u32;
+            m.ids.insert(b.to_vec(), i);
+            m.interned_bytes += b.len();
+            i
+        }
+    };
+    m.vals.insert((ia, ib, poasta_cap, astar), v);
+}
+
+/// Drop every cached value and interned sequence. Only for tests that need a known starting point.
+pub fn core_memo_clear() {
+    let mut m = core_memo_lock();
+    m.ids.clear();
+    m.vals.clear();
+    m.interned_bytes = 0;
+    m.hits = 0;
+    m.misses = 0;
+}
+
 /// [`contiguous_core_coverage`] with a MEMORY GUARD: when the larger sequence exceeds `poasta_cap`, poasta's
 /// graph aligner would OOM, so use the linear-memory longest-common-substring metric instead (faithful — a
 /// poasta ungapped-equal run IS a common substring). At or below the cap, the exact poasta path is used, so
 /// the validated small-transcript behaviour is byte-identical.
+///
+/// MEMOIZED — see the key documentation above. The memo is transparent: it never changes what this function
+/// returns, only how often the kernel underneath it runs.
 pub fn contiguous_core_coverage_bounded(a: &[u8], b: &[u8], poasta_cap: usize) -> f64 {
+    contiguous_core_coverage_bounded_with(a, b, poasta_cap, core_astar())
+}
+
+/// A* IS NOT UNIFORMLY BETTER — WHICH VARIANT WINS IS A PROPERTY OF THE CALL SITE, SO THE CALL SITE PICKS.
+///
+/// Measured 2026-08-09, both directions on real data:
+/// - LOCUS COLLAPSE (`collapse_parent` / `distinct_locus_reps`), which aligns long OVERLAPPING transcript
+///   models up to `len_cap` = 20 kb: A* is a large win. 25-region control panel 93.0 s -> 40.8 s overall;
+///   isolating the aligner alone on the POA-bound regions, HERC2 34.9 -> 17.6 s (0.504x).
+/// - EDGE CONFIRMATION (`confirm_edge`, rayon-parallel over candidate rep pairs) and the rescue path: A*
+///   LOSES. `copy_assign` on GSTM, where `RUSTLE_LOCUS_JUNCTION_ONLY=1` shows the collapse costs nothing,
+///   is 30.20 s with A* off vs 31.68 s with it on (medians of 3, interleaved, rotated order) — the
+///   min-gap heuristic's per-node overhead is not repaid on those pairs.
+///
+/// So `EDGE_CONFIRM_ASTAR = false` is not a tuning constant; it is the pre-existing behaviour of that path,
+/// left in place because the measurement that justified changing the collapse does not extend to it.
+pub fn contiguous_core_coverage_bounded_with(
+    a: &[u8],
+    b: &[u8],
+    poasta_cap: usize,
+    astar: bool,
+) -> f64 {
+    // `RUSTLE_POA_MEMO=0` bypasses the memo entirely. Kept because the ONLY way to be sure a cache is
+    // transparent on real data is to be able to re-run the same job without it, and because it is what
+    // measures the memo's contribution separately from the other speed changes.
+    if matches!(std::env::var("RUSTLE_POA_MEMO"), Ok(ref v) if v == "0") {
+        return contiguous_core_coverage_bounded_uncached_with(a, b, poasta_cap, astar);
+    }
+    // Look up first; the lock is held only across two hash probes, never across an alignment.
+    let ids = {
+        let mut m = core_memo_lock();
+        match (m.ids.get(a).copied(), m.ids.get(b).copied()) {
+            (Some(ia), Some(ib)) => {
+                if let Some(&v) = m.vals.get(&(ia, ib, poasta_cap, astar)) {
+                    m.hits += 1;
+                    return v;
+                }
+                m.misses += 1;
+                Some((ia, ib))
+            }
+            _ => {
+                m.misses += 1;
+                None
+            }
+        }
+    };
+
+    let v = contiguous_core_coverage_bounded_uncached_with(a, b, poasta_cap, astar);
+
+    let mut m = core_memo_lock();
+    if m.vals.len() >= CORE_MEMO_MAX_ENTRIES {
+        return v;
+    }
+    let (ia, ib) = match ids {
+        Some(p) => p,
+        None => {
+            if m.interned_bytes.saturating_add(a.len() + b.len()) > CORE_MEMO_MAX_BYTES {
+                return v;
+            }
+            let ia = match m.ids.get(a).copied() {
+                Some(i) => i,
+                None => {
+                    let i = m.ids.len() as u32;
+                    m.ids.insert(a.to_vec(), i);
+                    m.interned_bytes += a.len();
+                    i
+                }
+            };
+            let ib = match m.ids.get(b).copied() {
+                Some(i) => i,
+                None => {
+                    let i = m.ids.len() as u32;
+                    m.ids.insert(b.to_vec(), i);
+                    m.interned_bytes += b.len();
+                    i
+                }
+            };
+            (ia, ib)
+        }
+    };
+    m.vals.insert((ia, ib, poasta_cap, astar), v);
+    v
+}
+
+/// The kernel itself, with no memo in front of it. Kept separate so the memo can be proven transparent by
+/// comparing the two on the same inputs.
+pub fn contiguous_core_coverage_bounded_uncached(a: &[u8], b: &[u8], poasta_cap: usize) -> f64 {
+    contiguous_core_coverage_bounded_uncached_with(a, b, poasta_cap, core_astar())
+}
+
+/// [`contiguous_core_coverage_bounded_uncached`] with the aligner variant chosen by the caller.
+pub fn contiguous_core_coverage_bounded_uncached_with(
+    a: &[u8],
+    b: &[u8],
+    poasta_cap: usize,
+    astar: bool,
+) -> f64 {
     if a.len().max(b.len()) > poasta_cap {
         let minlen = a.len().min(b.len());
         if minlen == 0 {
@@ -807,9 +1101,14 @@ pub fn contiguous_core_coverage_bounded(a: &[u8], b: &[u8], poasta_cap: usize) -
         }
         longest_common_substring(a, b) as f64 / minlen as f64
     } else {
-        contiguous_core_coverage(a, b)
+        contiguous_core_coverage_with(a, b, astar)
     }
 }
+
+/// The aligner variant used by EDGE CONFIRMATION and the rescue path (`confirm_edge`,
+/// `family_rescue`): plain Dijkstra, i.e. exactly what those paths did before the collapse path moved to
+/// A*. See [`contiguous_core_coverage_bounded_with`] for the measurement in both directions.
+pub const EDGE_CONFIRM_ASTAR: bool = false;
 
 /// Threshold for the POA contiguous-core coverage family-merge gate, read from
 /// `RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE`. Default `0.0` => gate OFF =>
@@ -1396,6 +1695,172 @@ mod tests {
         let mut rng = SplitMix64(seed);
         const B: [u8; 4] = [b'A', b'C', b'G', b'T'];
         (0..n).map(|_| B[(rng.next_u64() % 4) as usize]).collect()
+    }
+
+    // ----------------------------------------------------------------------
+    // MEMO KEY TESTS for `contiguous_core_coverage_bounded`.
+    //
+    // The rule these enforce: the cache key contains EVERY argument that can change the returned value —
+    // both sequences (in order), the poasta cap, and the resolved aligner variant — and a change to any
+    // of them MISSES. Each test plants a sentinel value (0.4242, which the kernel cannot produce for
+    // these inputs) under one exact key, then shows that only that key is served and every neighbouring
+    // key recomputes.
+    //
+    // Every test uses sequences unique to itself, so the process-global table cannot be perturbed by a
+    // sibling test running concurrently; presence is asserted per key rather than via a global counter.
+    // ----------------------------------------------------------------------
+
+    /// RUSTLE_POA_ASTAR is process-global. Serialize the tests that mutate it.
+    static ASTAR_ENV_LOCK: Mutex<()> = Mutex::new(());
+    const MEMO_SENTINEL: f64 = 0.4242;
+
+    #[test]
+    fn memo_serves_its_key_and_a_changed_cap_misses() {
+        let a = core_rand_seq(300, 0x0BAD_1001);
+        let b = core_rand_seq(300, 0x0BAD_1002);
+        let astar = core_astar();
+
+        // Plant a value the kernel would never produce, under cap = 10_000 only.
+        core_memo_plant(&a, &b, 10_000, astar, MEMO_SENTINEL);
+        assert!(core_memo_contains(&a, &b, 10_000, astar));
+        assert_eq!(
+            contiguous_core_coverage_bounded(&a, &b, 10_000),
+            MEMO_SENTINEL,
+            "a repeat call under the SAME key must be served from the memo"
+        );
+
+        // A DIFFERENT cap is a different key. It must miss -- and it must miss for a real reason: the cap
+        // selects the poasta-vs-suffix-automaton branch, so it genuinely changes the value.
+        assert!(!core_memo_contains(&a, &b, 100, astar));
+        let v_small_cap = contiguous_core_coverage_bounded(&a, &b, 100);
+        assert_ne!(
+            v_small_cap, MEMO_SENTINEL,
+            "changing poasta_cap must MISS the cache, not reuse the value cached for another cap"
+        );
+        assert_eq!(
+            v_small_cap,
+            contiguous_core_coverage_bounded_uncached(&a, &b, 100),
+            "the value computed after the miss must equal the uncached kernel"
+        );
+        // ...and the original key is untouched by the miss.
+        assert_eq!(contiguous_core_coverage_bounded(&a, &b, 10_000), MEMO_SENTINEL);
+    }
+
+    #[test]
+    fn memo_order_is_part_of_the_key() {
+        // poasta builds its graph from the FIRST sequence, so f(a,b) == f(b,a) is UNPROVEN. The key must
+        // therefore be ordered: swapping the operands must recompute, never reuse.
+        let a = core_rand_seq(280, 0x0BAD_2001);
+        let b = core_rand_seq(280, 0x0BAD_2002);
+        let astar = core_astar();
+        core_memo_plant(&a, &b, 10_000, astar, MEMO_SENTINEL);
+
+        assert!(!core_memo_contains(&b, &a, 10_000, astar));
+        let swapped = contiguous_core_coverage_bounded(&b, &a, 10_000);
+        assert_ne!(
+            swapped, MEMO_SENTINEL,
+            "(b,a) must MISS the entry cached for (a,b) -- pair order is part of the key"
+        );
+        assert_eq!(swapped, contiguous_core_coverage_bounded_uncached(&b, &a, 10_000));
+    }
+
+    /// The aligner variant is part of the key: the two variants have SEPARATE entries, and the lookup
+    /// uses whichever variant `core_astar()` currently resolves to.
+    ///
+    /// Deliberately does NOT mutate RUSTLE_POA_ASTAR while an alignment is in flight — that would change
+    /// the aligner under any concurrently-running test. The env plumbing is pinned separately, by
+    /// `core_astar_defaults_to_true_and_only_zero_disables`, which touches no alignment.
+    #[test]
+    fn memo_astar_variant_is_part_of_the_key() {
+        let a = core_rand_seq(260, 0x0BAD_3001);
+        let b = core_rand_seq(260, 0x0BAD_3002);
+        let current = core_astar();
+
+        // Plant DIFFERENT sentinels under the two variants of the same (a, b, cap).
+        core_memo_plant(&a, &b, 10_000, current, MEMO_SENTINEL);
+        core_memo_plant(&a, &b, 10_000, !current, MEMO_SENTINEL + 0.1);
+        assert!(core_memo_contains(&a, &b, 10_000, true));
+        assert!(core_memo_contains(&a, &b, 10_000, false));
+
+        assert_eq!(
+            contiguous_core_coverage_bounded(&a, &b, 10_000),
+            MEMO_SENTINEL,
+            "the lookup must use the CURRENTLY resolved aligner variant, not the other entry"
+        );
+
+        // And with only the OTHER variant cached, the current one must miss and recompute.
+        let c = core_rand_seq(260, 0x0BAD_3003);
+        core_memo_plant(&a, &c, 10_000, !current, MEMO_SENTINEL);
+        assert!(!core_memo_contains(&a, &c, 10_000, current));
+        let v = contiguous_core_coverage_bounded(&a, &c, 10_000);
+        assert_ne!(
+            v, MEMO_SENTINEL,
+            "a value cached for the other aligner variant must NOT be served"
+        );
+        assert_eq!(v, contiguous_core_coverage_bounded_uncached(&a, &c, 10_000));
+    }
+
+    /// `core_astar()` is the env plumbing only — no alignment runs inside the locked window, so mutating
+    /// the process-global variable here cannot perturb a concurrent test's aligner.
+    #[test]
+    fn core_astar_defaults_to_true_and_only_zero_disables() {
+        let _guard = ASTAR_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let prior = std::env::var("RUSTLE_POA_ASTAR").ok();
+        std::env::remove_var("RUSTLE_POA_ASTAR");
+        let unset = core_astar();
+        std::env::set_var("RUSTLE_POA_ASTAR", "0");
+        let zero = core_astar();
+        std::env::set_var("RUSTLE_POA_ASTAR", "1");
+        let one = core_astar();
+        match prior {
+            Some(v) => std::env::set_var("RUSTLE_POA_ASTAR", v),
+            None => std::env::remove_var("RUSTLE_POA_ASTAR"),
+        }
+        assert!(unset, "A* is the DEFAULT on the contiguous-core path (measured 32-44% faster there)");
+        assert!(!zero, "RUSTLE_POA_ASTAR=0 must restore the Dijkstra search on this path");
+        assert!(one);
+    }
+
+    #[test]
+    fn memo_is_transparent_versus_the_uncached_kernel() {
+        // The memo must never change what the function returns -- only how often the kernel runs. Cover
+        // both branches of the cap guard, an identical pair, an empty operand, and a repeat call.
+        let core = core_rand_seq(200, 0x0BAD_4000);
+        let mut a = core_rand_seq(60, 0x0BAD_4001);
+        a.extend_from_slice(&core);
+        let mut b = core_rand_seq(60, 0x0BAD_4002);
+        b.extend_from_slice(&core);
+        let empty: Vec<u8> = Vec::new();
+        let cases: [(&[u8], &[u8], usize); 6] = [
+            (&a, &b, 10_000), // poasta branch
+            (&a, &b, 10),     // suffix-automaton branch (cap exceeded)
+            (&a, &a, 10_000), // identical operands
+            (&a, &b, 10_000), // repeat -> served from cache, must still agree
+            (&empty, &b, 10_000),
+            (&a, &empty, 10),
+        ];
+        for (x, y, cap) in cases {
+            assert_eq!(
+                contiguous_core_coverage_bounded(x, y, cap),
+                contiguous_core_coverage_bounded_uncached(x, y, cap),
+                "memoized result must equal the uncached kernel (cap={cap})"
+            );
+        }
+    }
+
+    #[test]
+    fn upper_cow_borrows_when_already_uppercase_and_still_uppercases() {
+        use std::borrow::Cow;
+        let up = b"ACGTNACGT".to_vec();
+        assert!(matches!(upper_cow(&up), Cow::Borrowed(_)), "no lowercase -> no allocation");
+        let mixed = b"acgtNACgt".to_vec();
+        let got = upper_cow(&mixed);
+        assert!(matches!(got, Cow::Owned(_)), "lowercase present -> must allocate");
+        assert_eq!(
+            got.as_ref(),
+            mixed.to_ascii_uppercase().as_slice(),
+            "the bytes handed downstream must be identical to to_ascii_uppercase()"
+        );
     }
 
     #[test]

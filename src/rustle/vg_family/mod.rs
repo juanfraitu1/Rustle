@@ -24,7 +24,11 @@ pub mod mosaic;
 pub mod segdup;
 pub mod hidden_copy;
 pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collapse-enumerate): pure three-signal admission decision (hidden_copy flagged + balanced alt fraction + >=2 genome-projected loci).
-pub mod phasing;
+// `phasing` (within-locus DIPLOID MEC) was DELETED 2026-08-10: zero call sites, and the flag it
+// named (`--vg-phase`) never existed as a CLI option (`RustleConfig::vg_phase` is set false at
+// construction and never read). It was also the wrong object for O2 — binary alleles, h_B = !h_A,
+// one locus — where O2 is k-copy over 4-letter alleles across a family. Verdict + evidence:
+// docs/copy_assignment_definition.md §10.
 pub mod allele_specific_junctions; // ASJ: junctions whose usage depends on a molecule's het-SNP allele.
 pub mod asj_strand_bias; // O3 ASJ analysis layer: StrandOddsRatio (SOR) strand-bias filter over asj_calls.tsv (Rust port of asj_strand_bias.py; reuses O2 noodles indexed-BAM fetch + CIGAR walk + allele_specific_junctions::fisher_exact_2x2; byte-parity tested vs GGO_mm.bam).
 pub mod asj_verify; // O3 ASJ analysis layer: confound control (frac_mq0 MAPQ-0 fraction at the anchor + anchor->junction dist + high_confidence) over asj_calls.tsv -> asj_calls_verified.tsv (Rust port of asj_verify.py; reuses the O2 noodles indexed-BAM fetch w/ 600-cap; byte-parity tested vs GGO.bam).
@@ -54,6 +58,8 @@ pub mod vg_realign; // VG re-align supplement (Task 1): candidate-read selection
 pub mod parcn; // OPTIONAL assembly-side parCN supplement (docs/superpowers/specs/2026-07-14-assembly-parcn-design.md); never wired into the RNA-exclusive core.
 pub mod project_all; // OPTIONAL --project-all-families recall leg (generalized projection); never alters the RNA-split catalog.
 pub mod linearize; // Task 1: augment-and-linearize certificate (dinucleotide-preserving decoy shuffle via Altschul-Erikson random-Eulerian-path).
+pub mod catalog_input; // O1->O2 FILE contract: parse a gw_family_catalog copies.tsv (+ copies.fa) back into the copy set `copy_assign --families` assigns to, keeping the catalog's own ids as the JOIN KEY.
+pub mod seed_projection; // `--seed`: a QUERY over the EMITTED catalog (the block containing s), never a term in the definition; the node set stays seed-free.
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1

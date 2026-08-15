@@ -1186,13 +1186,21 @@ fn find_weak_copies(
 /// Like `assign_family` but returns the TWO-PASS detail per read so callers can report how many reads a
 /// copy-specific junction resolved that PSVs alone could not (`junction_only`), and — with read mapq — the
 /// unique-mapper agreement. Reads overlapping no copy are skipped.
+///
+/// `mol_names` — the BAM query name of each entry of `reads`, when the caller can supply it. `reads` is a
+/// list of alignment RECORDS, and a multimapping molecule contributes one record per placement (the shipped
+/// BAM is aligned with `-Y`, so its secondary records carry the full SEQ and each is independently
+/// scorable). With names supplied, the unit of an assignment becomes the MOLECULE: see
+/// `assign_family_detailed_once`. `None` (unit tests, callers with no name vector) keeps the historical
+/// one-row-per-record behaviour exactly.
 pub fn assign_family_detailed(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],
     p: &AssignParams,
     genome: Option<&crate::genome::GenomeIndex>,
+    mol_names: Option<&[String]>,
 ) -> FamilyDetail {
-    assign_family_detailed_once(copies, reads, p, genome)
+    assign_family_detailed_once(copies, reads, p, genome, mol_names)
 }
 
 /// IsoCon-style iterative copy pruning: repeatedly assign reads, identify copies with no significant
@@ -1207,6 +1215,7 @@ pub fn assign_family_detailed_pruned(
     reads: &[AlignedRead],
     p: &AssignParams,
     genome: Option<&crate::genome::GenomeIndex>,
+    mol_names: Option<&[String]>,
 ) -> FamilyDetail {
     // Phase 1: iteratively decide which original copies survive.  `merge_target[i]` always points from
     // original index i to the original index that currently represents it.  Initially each copy represents
@@ -1215,7 +1224,7 @@ pub fn assign_family_detailed_pruned(
     let mut current_indices: Vec<usize> = (0..copies.len()).collect();
     let mut current_copies: Vec<&DenovoTranscript> = copies.to_vec();
     loop {
-        let detail = assign_family_detailed_once(&current_copies, reads, p, genome);
+        let detail = assign_family_detailed_once(&current_copies, reads, p, genome, mol_names);
         let weak = find_weak_copies(&detail, &current_copies, reads, p, genome);
         if weak.is_empty() {
             break;
@@ -1236,14 +1245,14 @@ pub fn assign_family_detailed_pruned(
 
     if current_indices.len() == copies.len() {
         // Nothing was pruned — use the detail from the last full-size iteration.
-        let mut detail = assign_family_detailed_once(copies, reads, p, genome);
+        let mut detail = assign_family_detailed_once(copies, reads, p, genome, mol_names);
         detail.copy_indices = current_indices;
         return detail;
     }
 
     // Phase 2: assign against the FULL original copy set so reads that only overlapped a removed copy
     // are not dropped.  Then remap every per-copy index to its surviving output position.
-    let full_detail = assign_family_detailed_once(copies, reads, p, genome);
+    let full_detail = assign_family_detailed_once(copies, reads, p, genome, mol_names);
 
     // Map original copy index -> output copy index (position in `current_indices`).
     let mut orig_to_out: Vec<Option<usize>> = vec![None; copies.len()];
@@ -1381,11 +1390,40 @@ pub fn assign_family_detailed_pruned(
     }
 }
 
+/// # `mol_names`: RECORD in, MOLECULE out
+///
+/// `reads` is a list of alignment RECORDS. A multimapping molecule contributes one record per placement,
+/// and the shipped BAMs are aligned with minimap2 `-Y`, which writes the FULL SEQ on secondary records —
+/// so every one of a molecule's records is an independently scorable observation and each gets its own
+/// verdict below. That is what the assignment stage WANTS as input (a molecule's records corroborate each
+/// other; on the planted-truth `-Y` ladder 998/1000 molecules had ≥2 `Assigned` records and they AGREED),
+/// but it is NOT a valid output unit: a molecule comes from exactly one copy, so emitting one row per
+/// record makes one molecule several "reads", double-counts it in every per-copy read count, and — where
+/// the records disagree — asserts that one molecule came from two copies at once.
+///
+/// With `mol_names` supplied, each molecule is reduced to ONE result, with no new constant:
+///
+/// * **contradiction ⇒ abstain.** If ≥2 of the molecule's records are `Assigned` and they name ≥2 DISTINCT
+///   copies, the molecule is `Ambiguous`. This is O2's assign-or-abstain contract applied to the molecule,
+///   and it is the only admissible arbitration: on the gorilla SHARP family every one of the 323 native
+///   contradicting molecules (323/323) has its LARGEST margin on the record carrying the PRIMARY flag, so
+///   any "keep the strongest record" rule is the aligner's primary flag in disguise — exactly the defect
+///   that retired the `uniq_agree` metric.
+/// * otherwise the representative is the record that OBSERVED the most (max `n_decisive`, then max margin,
+///   then min `p_value`, then lowest record index). When the records agree, the decision is theirs
+///   unanimously and this choice only picks which certificate is reported.
+///
+/// The reduction is applied before `results`, the EM observation vector and the mosaic calls are built, so
+/// every downstream statistic (`.assignments.tsv` rows, `families.tsv` counters, `quant.tsv`
+/// `n_reads_hard` and `abundance`, `collapsed_copies`, the iterative-prune decisions) counts molecules.
+///
+/// `None` keeps the historical one-row-per-record behaviour byte-for-byte.
 fn assign_family_detailed_once(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],
     p: &AssignParams,
     genome: Option<&crate::genome::GenomeIndex>,
+    mol_names: Option<&[String]>,
 ) -> FamilyDetail {
     if copies.len() < 2 {
         return FamilyDetail {
@@ -1531,6 +1569,86 @@ fn assign_family_detailed_once(
             t_assign.elapsed().as_secs_f64()
         );
     }
+    // RECORD -> MOLECULE reduction (see this function's doc comment). No-op when `mol_names` is `None`.
+    let per_read: Vec<Option<PerRead>> = match mol_names {
+        None => per_read,
+        Some(names) => {
+            debug_assert_eq!(names.len(), reads.len());
+            let mut groups: std::collections::HashMap<&str, Vec<usize>> =
+                std::collections::HashMap::new();
+            let mut order: Vec<&str> = Vec::new();
+            for (i, n) in names.iter().enumerate().take(per_read.len()) {
+                let e = groups.entry(n.as_str()).or_insert_with(|| {
+                    order.push(n.as_str());
+                    Vec::new()
+                });
+                e.push(i);
+            }
+            let mut keep: Vec<bool> = vec![false; per_read.len()];
+            let mut downgrade: Vec<bool> = vec![false; per_read.len()];
+            for name in &order {
+                let idx = &groups[name];
+                // present records only; a record the assigner produced nothing for cannot represent the
+                // molecule unless no record did.
+                let with_result: Vec<usize> =
+                    idx.iter().copied().filter(|&i| per_read[i].as_ref().is_some_and(|pr| pr.result.is_some())).collect();
+                let pool: &[usize] = if with_result.is_empty() { idx } else { &with_result };
+                // "most-observed" representative: max n_decisive, then max margin, then min p, then index.
+                let rep = pool
+                    .iter()
+                    .copied()
+                    .max_by(|&a, &b| {
+                        let key = |i: usize| {
+                            per_read[i].as_ref().and_then(|pr| pr.result.as_ref()).map(|r| {
+                                (r.combined.n_decisive, r.combined.log_lr_margin, -r.combined.p_value)
+                            })
+                        };
+                        match (key(a), key(b)) {
+                            (Some(ka), Some(kb)) => ka
+                                .0
+                                .cmp(&kb.0)
+                                .then(ka.1.partial_cmp(&kb.1).unwrap_or(std::cmp::Ordering::Equal))
+                                .then(ka.2.partial_cmp(&kb.2).unwrap_or(std::cmp::Ordering::Equal))
+                                .then(b.cmp(&a)), // lower record index wins ties
+                            (Some(_), None) => std::cmp::Ordering::Greater,
+                            (None, Some(_)) => std::cmp::Ordering::Less,
+                            (None, None) => b.cmp(&a),
+                        }
+                    })
+                    .expect("group is non-empty");
+                keep[rep] = true;
+                // CONTRADICTION: ≥2 records `Assigned` to ≥2 distinct copies ⇒ the molecule abstains.
+                let mut named: Vec<usize> = idx
+                    .iter()
+                    .filter_map(|&i| per_read[i].as_ref().and_then(|pr| pr.result.as_ref()))
+                    .filter(|r| r.combined.status == AssignStatus::Assigned)
+                    .map(|r| r.combined.best_copy)
+                    .collect();
+                named.sort_unstable();
+                named.dedup();
+                if named.len() >= 2 {
+                    downgrade[rep] = true;
+                }
+            }
+            per_read
+                .into_iter()
+                .enumerate()
+                .map(|(i, pr)| {
+                    if !keep[i] {
+                        return None;
+                    }
+                    pr.map(|mut pr| {
+                        if downgrade[i] {
+                            if let Some(r) = pr.result.as_mut() {
+                                r.combined.status = AssignStatus::Ambiguous;
+                            }
+                        }
+                        pr
+                    })
+                })
+                .collect()
+        }
+    };
     let mut results = Vec::new();
     let mut read_obs: Vec<Vec<Option<u8>>> = Vec::new(); // per-read PSV observations for the soft EM
     let mut mosaic_calls = Vec::new();
@@ -2180,7 +2298,7 @@ mod tests {
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 100), ('N', 100), ('M', 200)], seq: spliced, qual: vec![] };
         // junction_err=1e-4 < alpha=1e-3: a single copy-specific junction resolves under the
         // significance gate (p_read=1e-4 < 1e-3, margin >> 0 -> Assigned).
-        let detail = assign_family_detailed(&copies, &[read], &AssignParams::default(), None);
+        let detail = assign_family_detailed(&copies, &[read], &AssignParams::default(), None, None);
         assert_eq!(detail.n_cols, 0, "identical sequences -> no PSV columns");
         assert_eq!(detail.results.len(), 1);
         let r = &detail.results[0];
@@ -2229,7 +2347,7 @@ mod tests {
         let reads: Vec<AlignedRead> = (0..30)
             .map(|_| AlignedRead { ref_start: 0, cigar: vec![('M', 150)], seq: base[0..150].to_vec(), qual: vec![] })
             .collect();
-        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None);
+        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None, None);
         assert!(
             detail.copy_abundance_ci.iter().all(|&ci| (ci - 0.5).abs() < 1e-9),
             "unidentifiable (no decisive reads) -> CI = 0.5 full-simplex, got {:?}",
@@ -2403,7 +2521,7 @@ mod tests {
             recomb[p] = b'C'; // ...then switch to copy B at the last 4 PSVs
         }
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: recomb, qual: vec![] };
-        let detail = assign_family_detailed(&[&ca, &cb], &[read], &AssignParams::default(), None);
+        let detail = assign_family_detailed(&[&ca, &cb], &[read], &AssignParams::default(), None, None);
         assert!(detail.mosaic_reads >= 1, "recombinant flagged as mosaic; got {}", detail.mosaic_reads);
     }
 
@@ -2422,7 +2540,7 @@ mod tests {
         let ca = copy_tx("A", 0, 300, '+', &[], sa);
         let cb = copy_tx("B", 1000, 1300, '+', &[], sb);
         let cc = copy_tx("C", 2000, 2300, '+', &[], sc);
-        let detail = assign_family_detailed(&[&ca, &cb, &cc], &[], &AssignParams::default(), None);
+        let detail = assign_family_detailed(&[&ca, &cb, &cc], &[], &AssignParams::default(), None, None);
         assert_eq!(detail.copy_conversions.len(), 1, "exactly copy C is a mosaic of two others");
         assert_eq!(detail.copy_conversions[0].copy_c, 2, "copy C (index 2) is the converted copy");
     }
@@ -2661,7 +2779,7 @@ mod tests {
         let reads = [r0, r1, r2];
         let mut p = AssignParams::default();
         p.iterative_prune = true;
-        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None);
+        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None, None);
         assert_eq!(detail.copy_psv_alleles.len(), 2, "duplicate c2 merged -> 2 surviving copies");
         // The surviving copies should be c0 and c1 (c2 removed, not c0).
         assert!(detail.results.iter().all(|r| r.combined.best_copy < 2));
@@ -2685,7 +2803,7 @@ mod tests {
         let reads = [r0, r1, r2];
         let mut p = AssignParams::default();
         p.iterative_prune = true;
-        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None);
+        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None, None);
         assert_eq!(detail.copy_psv_alleles.len(), 3, "all distinct supported copies kept");
     }
 
@@ -2704,7 +2822,7 @@ mod tests {
         let r1 = q40_read(1000, vec![('M', 100)], seq_with(&base, &[(50, b'C')]));
         let r2 = q40_read(2000, vec![('M', 100)], seq_with(&base, &[(50, b'C')]));
         let reads = [r0, r1, r2];
-        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None);
+        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None, None);
         assert_eq!(detail.copy_psv_alleles.len(), 3, "default (prune off) keeps all 3 copies");
     }
 }

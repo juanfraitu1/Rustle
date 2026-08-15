@@ -159,6 +159,25 @@ pub struct EmResult {
 /// exactly `loglik == 0.0` -- e.g. a K=0 flat-evidence family -- still converges immediately instead of
 /// running to `max_iter`; the only numeric tolerance this driver introduces) or after `max_iter` sweeps,
 /// whichever comes first.
+///
+/// ⚠ DEFECT ON RECORD (measured 2026-08-11, NOT fixed). THE TOLERANCE IS SET BY A QUANTITY THAT
+/// CANNOT AFFECT THE ESTIMATE. `loglik` sums over records and carries the junction term, and when
+/// the family's copies share their splice structure that term adds the SAME constant to every copy
+/// of every read -- so it cancels in the E-step and cannot move `gamma` or `pi`, but it does not
+/// cancel inside `|loglik|`, where it inflates the stopping tolerance. The driver therefore stops
+/// EARLY relative to the same rule applied to the likelihood that actually drives the estimate:
+/// measured 1 sweep against 3, 7 against 21, 7 against 24, 2 against 12 -- 3.0x to 6.0x -- on the
+/// four sim5x families where it can be checked. (The check is exact: a PSV-only reconstruction that
+/// omits the junction term entirely reproduces the binary's `gamma` on 26,774/26,774 records and
+/// its `pi` to 5e-5, which is what proves the term is a per-read constant there.)
+/// NOT FIXED HERE because it is not inert: `n_iter`, `posteriors` and `abundances` all move, and
+/// `abundances` reaches `fa.copy_abundance` and therefore default output via
+/// `denovo_pipeline::recompute_realign_abundance`. Running to true convergence changes NO decision
+/// on the balanced sim5x panel (0/3081 co-committed reads move), but that panel's true `pi` is
+/// uniform, so it cannot exercise the failure mode; the one skewed family available
+/// (`unb_e003t7`) has copies of five different spans, so its junction term is NOT constant and the
+/// reconstruction cannot score it. THE STOPPING RULE IS UNMEASURED ON SKEWED ABUNDANCE.
+/// Evidence: `close_o1o2/EM_DEFECTS.txt` sections 1, 2, 4.
 pub(crate) fn em_assign(
     evidence: &[super::copy_assign::ReadEvidence],
     k: usize,
@@ -223,6 +242,30 @@ pub(crate) fn em_assign(
 /// per-base-quality evidence can still get a *different* per-read label here than `.assignments.tsv`
 /// reports -- the abundance estimate is a light-weight complement to the hard PSV+junction
 /// assignment, not a re-derivation of it, and is not claimed to reproduce it read-for-read.
+///
+/// ⚠ DEFECT ON RECORD (measured 2026-08-11, NOT fixed -- the fix is not local, see below).
+/// The empty `psv_qual` is not a cosmetic simplification and its blast radius is NOT limited to
+/// `--em`:
+///   * `read_copy_evidence` falls through to the flat `p.error_rate` (default 3e-3) for EVERY
+///     column, where the hard gate uses `phred_err(q)` clamped to 1e-4. On Q40+ reads that is a
+///     30x inflation of the per-column error, hence a 30^m inflation of `min_p` over `m`
+///     distinguishing columns, hence of the `label_read` Bonferroni test. On the sim5x panel every
+///     copy pair differs at exactly ONE column, so `min_p` = e/3 = 1.0e-3 against a bound of
+///     alpha/(K-1) = 2.5e-4: the EM certifies **0 of 26,774 read-records**, where the same reads
+///     at 1e-4 certify 3,746. The gate's own `.assignments.tsv` prints `min_p_value = 3.333e-5`
+///     for those reads, so the two halves of one likelihood model disagree 30-fold on the error
+///     rate they assume.
+///   * It also reaches DEFAULT output. `denovo_pipeline::recompute_realign_abundance` calls this
+///     same wrapper and overwrites `fa.copy_abundance`, which `copy_assign.rs` writes out; so a
+///     run with `--vg-realign` and no `--em` is already consuming this likelihood.
+/// What it does NOT do is change any assignment: `e` enters every copy through the same two
+/// constants `ln(1-e)` and `ln(e/3)`, so it stretches the gaps between copies without reordering
+/// them. Measured: the EM argmax agrees with the gate on 3081/3081 co-committed reads at BOTH
+/// error rates. It changes what is CERTIFIED, never what is CHOSEN.
+/// NOT FIXED HERE because the fix is not one line: `FamilyAssignment` carries no `read_psv_qual`
+/// parallel to `read_psv_obs`, two of the four sites that write `read_psv_obs` (the vg-realign
+/// correction and novel-pool admission paths) have no quality to write, and threading it would
+/// move `copy_abundance` on default runs. Evidence: `close_o1o2/EM_DEFECTS.txt` sections 1, 3, 4.
 pub fn em_assign_family(
     read_obs: &[Vec<Option<u8>>],
     copy_alleles: &[Vec<Option<u8>>],

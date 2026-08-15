@@ -28,8 +28,12 @@ use rustle::vg_family::denovo_assemble::{
     assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache, BamRead,
     GATE_MIN_READS,
 };
+use rustle::vg_family::catalog_input::{
+    group_families, parse_copies_fa, parse_copies_tsv, to_colocated, CatalogFamily, SeqIndex,
+};
 use rustle::vg_family::denovo_pipeline::{
-    catalog_overlaps, detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment, OverlapKind,
+    catalog_overlaps, detect_and_assign, ColocatedFamily, DenovoConfig, FallbackEdge, FamilyAssignment,
+    OverlapKind,
 };
 use rustle::vg_family::family_detect::collapse_loci_groups;
 use rustle::vg_family::read_conflict::{as_evidence, AsEvidence};
@@ -208,12 +212,19 @@ struct Args {
     /// surviving copies are defensible. Default OFF (byte-identical baseline).
     #[arg(long, default_value_t = false)]
     iterative_prune: bool,
-    /// Emit FACULTATIVE long-read PHASING (dependency-free; no external phaser, no CNN). Phases reads into
-    /// copy-HAPLOTYPES from their linked PSV evidence — the N-copy generalisation of read-backed phasing
-    /// (min-path-cover over the PSV graph). Writes `<out>.phase_blocks.tsv` (one PHASE SET per family),
-    /// `<out>.phased_haplotypes.tsv` (each haplotype's `pos:allele` variant string — the phased alleles),
-    /// and `<out>.phased_reads.tsv` (read → haplotype HAPLOTAG with the decisive-margin confidence;
-    /// haplotype = -1 when the read is ambiguous/tied = unphased). Block ≙ PS tag, haplotype ≙ HP tag.
+    /// RE-EXPRESS THE COPY ASSIGNMENT IN PHASING VOCABULARY (PS/HP tags + a GFA). This runs NO phasing
+    /// algorithm of its own: it is a RELABELING of the assignment this binary already computed —
+    /// phase set = family, haplotype = the assigned copy, unphased (-1) = abstained (ambiguous/tied).
+    /// Measured: over 6 historical runs / 119,524 read-rows the multiset of
+    /// `(read_name, family, haplotype)` equals `(read_name, family, assigned_copy-if-assigned-else -1)`
+    /// EXACTLY, symmetric difference 0. (Compare per read NAME and you get a spurious mismatch — read
+    /// names repeat within a family; the identity is only visible as a multiset.)
+    /// Writes `<out>.phase_blocks.tsv` (one PHASE SET per family), `<out>.phased_haplotypes.tsv` (each
+    /// copy's `pos:allele` PSV string), `<out>.phased_reads.tsv` (read → copy, with `n_psv_spanned` =
+    /// `n_decisive` and `margin` = the assignment's log-LR margin), and `<out>.phase.gfa`.
+    /// Block ≙ PS tag, haplotype ≙ HP tag, so downstream phasing tooling can consume it.
+    /// ⚠ HISTORICAL NOTE: this help previously claimed a "min-path-cover over the PSV graph". No such
+    /// computation exists in the O2 path — see `docs/copy_assignment_definition.md` §9.4.
     #[arg(long, default_value_t = false)]
     phase: bool,
 
@@ -236,6 +247,23 @@ struct Args {
     /// to `<out>.dna_needs.tsv`.
     #[arg(long, default_value_t = false)]
     absent_copies: bool,
+
+    /// EXPERIMENT-ONLY override of the reference-absent admission gate's cluster floor
+    /// (`absent_copy.rs` gate 1, `n_clusters >= min_clusters`). Unset = the shipping default 3, and
+    /// output is byte-identical to a build without this flag.
+    ///
+    /// Gate 1 is an identifiability claim, NOT a tuning knob: below three co-varying clusters a
+    /// second COPY is indistinguishable from a heterozygous ALLELE without DNA copy-number data.
+    /// Lowering it in production manufactures false positives. The one legitimate use is a
+    /// removal-recovery ablation (V4b), where a known copy is DELETED from the assembly, so copy
+    /// status holds BY CONSTRUCTION and the gate is re-asking a question the design already
+    /// answered — and where it is unreachable anyway (deleting one copy of a 3-copy family leaves
+    /// at most 2 clusters). Such a run is interpretable ONLY beside the identical INTACT-assembly
+    /// control at the same value: if the control also admits a copy, the recovery is an artefact.
+    ///
+    /// A value that is not a positive integer falls back to 3 (a typo must not disable the gate).
+    #[arg(long, value_name = "N")]
+    absent_min_clusters: Option<usize>,
 
     /// Opt-in augment-and-linearize REPORT (requires --absent-copies; no-op otherwise): compute a
     /// `LinearizeCertificate` for every Stage-2-admitted reference-absent candidate and write it to
@@ -322,9 +350,18 @@ struct Args {
     homology_primary: bool,
 
     /// DISABLE the mutual-homology + distinct-locus family gate. Refinement is ON BY DEFAULT: each co-located
-    /// family must have its copies MUTUALLY HOMOLOGOUS (asm20 id>=0.80, cov-of-shorter>=0.50, + sensitive tier)
-    /// across >= 2 distinct loci — the SAME criterion `gw_family_catalog` refines by, so the per-region and
-    /// genome-wide paths agree. Without it the conflict oracle admits large-gene mis-chains (PBX1) and
+    /// family must have its copies MUTUALLY HOMOLOGOUS (the shared E_r primary tier -- `-k 11 -w 5` at
+    /// `sensitive_identity` 0.60 by default since X.4, `-x asm20` at 0.80 under `RUSTLE_ER_SENSITIVE_ONLY=0`
+    /// -- cov-of-shorter>=0.50)
+    /// across >= 2 distinct loci.
+    /// ⚠ This is NOT "the same criterion `gw_family_catalog` refines by" and the two paths do NOT
+    /// automatically agree — that claim was false from D1 (2026-08-09) onward and is corrected here
+    /// (O-4). `gw_family_catalog`'s DEFAULT homology catalog does not call refine at all
+    /// (`refine_enabled` = `refine_flag || !o1_homology`), so it applies no such gate; and where refine
+    /// DOES run it additionally UNIONS a genomic-span tier in (see `additive_genomic_tier`), which the
+    /// catalog's own E_r site never does. Both facts are certified per run: `additive_genomic_tier` in
+    /// `<prefix>.rule.tsv` and `n_edges_genomic_tier_added` in `<prefix>.refine.params.tsv`.
+    /// Without this gate the conflict oracle admits large-gene mis-chains (PBX1) and
     /// repeat-bridges as families (`bench/GW_CATALOG_FP_AUDIT.md`). `--no-refine` assigns the raw families and
     /// needs no minimap2.
     #[arg(long, default_value_t = false)]
@@ -375,6 +412,47 @@ struct Args {
     /// (recovers covered-but-tied K=0 copies as detected-but-unassignable). Implies fetching tied secondaries.
     #[arg(long, default_value_t = false)]
     tied_seed: bool,
+
+    /// CONSUME the O1 catalog: a `gw_family_catalog` `<out>.copies.tsv`. Those rows ARE the copy set for the
+    /// swept regions — this binary then detects NOTHING. Reads still come from `--bam`; only the copy set is
+    /// supplied.
+    ///
+    /// # Why
+    /// O1 and O2 share one node type, one edge engine and one admission primitive BY FUNCTION CALL and
+    /// nothing BY FILE, so each binary re-derived its own families and the two tables had no join key
+    /// (`GWFAM{i}` vs `CAFAM{i}`, assigned independently). Measured at defaults, they built different
+    /// objects: the GSTM catalog has 4 copies where `copy_assign` found 0 families on 6031 reads. With
+    /// `--families` the two copy sets agree BY CONSTRUCTION, and every emitted row carries the catalog's own
+    /// `family_id` (so `family_id` here IS `GWFAM{i}`, not `CAFAM{i}`) plus a `<out>.family_join.tsv`
+    /// mapping each assigned copy back to its `(family_id, copy_idx, tid)` catalog row.
+    ///
+    /// # What is switched OFF (documented, not silent)
+    /// Family CONSTRUCTION, in full: pass-1 skeletons, the assemble gate, locus collapse, the membership
+    /// oracle (E_c conflict graph / E_r homology), the POA diagnostic, co-location, the REFINE gate
+    /// (`--no-refine` becomes moot), and the thin-locus RESCUE leg (it ADDS copies below the assembly read
+    /// floor). Anything else that would change the roster is REFUSED rather than silently applied:
+    /// `--absent-copies`, `--vg-realign` (admission leg), `--iterative-prune`, `--collapse-gate`,
+    /// `--tied-seed`, `--recover-copies`. `--vg-realign-correct` is allowed (it only re-threads reads among
+    /// the given copies). `--min-copies`/`--win` are not applied: the catalog already decided membership.
+    ///
+    /// # Contract (all loud, none silent)
+    /// Every supplied copy must (a) be named by the `copies.tsv` header columns, (b) belong to a
+    /// SAME-CHROMOSOME family (a cross-chrom family — RABL2's 5 contigs — is structurally unassignable by a
+    /// region-scoped binary and is refused, never truncated), (c) fall inside exactly one `--region` /
+    /// `--regions` entry, (d) have a sequence (see `--copies-fa`), and (e) have at least one overlapping
+    /// read in the BAM. A violation aborts the run.
+    #[arg(long)]
+    families: Option<String>,
+
+    /// The `gw_family_catalog` `<out>.copies.fa` beside `--families`. When given, each copy's spliced
+    /// sequence is the catalog's OWN emitted bytes (checked against its `copies.tsv` row: chrom, span,
+    /// strand, exon count) — so O2 assigns against exactly the sequence O1 defined the family with, with no
+    /// reconstruction step that could differ. Without it the sequence is rebuilt from `--fasta` at the
+    /// catalog's exon coordinates through the SAME `build_spliced_seq` the catalog used, and the strand it
+    /// derives from the junction motifs must match the strand the catalog recorded (a mismatch means the
+    /// FASTA is not the assembly the catalog was built against, and aborts). Prefer `--copies-fa`.
+    #[arg(long)]
+    copies_fa: Option<String>,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -602,6 +680,130 @@ fn parse_region(s: &str) -> Result<(String, u64, u64)> {
     Ok((chrom.to_string(), lo_s.parse().context("bad region start")?, hi_s.parse().context("bad region end")?))
 }
 
+/// A swept region, keyed exactly as the sweep iterates it.
+type RegionKey = (String, u64, u64);
+/// `--families`: the supplied catalog families BOUND to the region that will assign them.
+type RegionFamilies = std::collections::BTreeMap<RegionKey, Vec<CatalogFamily>>;
+/// `--families`: catalog `tid` -> `(catalog family_id, catalog copy_idx)`. The JOIN KEY. Built from the
+/// supplied table (never from the assignment output), so `<out>.family_join.tsv` reports the catalog's own
+/// identity for a copy rather than an index this binary re-derived.
+type CatalogIndex = std::collections::HashMap<String, (String, usize)>;
+
+fn build_catalog_index(rf: &RegionFamilies) -> CatalogIndex {
+    let mut ix = CatalogIndex::new();
+    for fams in rf.values() {
+        for f in fams {
+            for c in &f.copies {
+                ix.insert(c.tid.clone(), (c.family_id.clone(), c.copy_idx));
+            }
+        }
+    }
+    ix
+}
+
+/// Reference end (0-based, exclusive) of an aligned read. Local mirror of
+/// `copy_assign_pipeline::read_ref_end` (which is `pub(crate)`), used only for the "every supplied copy has
+/// reads" contract check below.
+fn read_ref_end_local(read: &rustle::vg_family::copy_split::AlignedRead) -> u64 {
+    read.ref_start
+        + read.cigar.iter().filter(|(op, _)| matches!(op, 'M' | '=' | 'X' | 'D' | 'N')).map(|(_, n)| n).sum::<u64>()
+}
+
+/// Load, VALIDATE and region-bind the `--families` catalog (see the flag's help for the contract).
+///
+/// Returns `(None, None)` when `--families` was not given — the historical path, untouched.
+///
+/// Everything here is a hard error. The one thing this function must never do is drop a supplied copy:
+/// a copy silently missing from O2's roster is indistinguishable, downstream, from a copy O2 legitimately
+/// found no evidence for, and that ambiguity is the exact defect class this contract exists to remove.
+fn load_supplied_families(
+    args: &Args,
+    by_contig: &std::collections::BTreeMap<String, Vec<(u64, u64)>>,
+) -> Result<(Option<RegionFamilies>, Option<SeqIndex>)> {
+    let Some(path) = args.families.as_deref() else {
+        if args.copies_fa.is_some() {
+            anyhow::bail!("--copies-fa is only meaningful with --families (it supplies the copies' sequences)");
+        }
+        return Ok((None, None));
+    };
+    // Roster-CHANGING legs are refused, not silently applied: with --families the copy set must be exactly
+    // the supplied one, and each of these adds or removes copies. --vg-realign-correct is deliberately NOT
+    // here: it re-threads reads among the GIVEN copies and never touches the roster.
+    for (on, flag, why) in [
+        (args.absent_copies, "--absent-copies", "admits reference-absent copies"),
+        (args.vg_realign, "--vg-realign", "admits novel read pools as new copies"),
+        (args.iterative_prune, "--iterative-prune", "merges/drops copies"),
+        (args.collapse_gate, "--collapse-gate", "admits collapsed loci as extra copies"),
+        (args.tied_seed, "--tied-seed", "seeds additional loci as copies"),
+        (args.recover_copies, "--recover-copies", "feeds tied secondaries into copy rescue"),
+    ] {
+        if on {
+            anyhow::bail!(
+                "--families is incompatible with {flag}: it {why}, so the assigned copy set would no longer \
+                 be the supplied catalog. Drop {flag}, or run without --families."
+            );
+        }
+    }
+    if args.no_refine {
+        eprintln!(
+            "[copy_assign] NOTE: --no-refine is moot under --families (no family construction runs at all)."
+        );
+    }
+    if args.homology_primary {
+        eprintln!(
+            "[copy_assign] NOTE: --homology-primary is moot under --families (the membership oracle is the \
+             supplied catalog, not E_c or E_r)."
+        );
+    }
+    let text = std::fs::read_to_string(path).with_context(|| format!("reading --families {path}"))?;
+    let fams = group_families(parse_copies_tsv(&text).with_context(|| format!("parsing --families {path}"))?)?;
+    let seqs = match args.copies_fa.as_deref() {
+        Some(p) => {
+            let t = std::fs::read_to_string(p).with_context(|| format!("reading --copies-fa {p}"))?;
+            Some(parse_copies_fa(&t).with_context(|| format!("parsing --copies-fa {p}"))?)
+        }
+        None => None,
+    };
+    // Bind each family to the ONE swept region that contains it. Containment (not overlap) is required:
+    // a family straddling a region boundary would be assigned against the reads of only part of its own
+    // span, which is the truncation this mode exists to prevent.
+    let mut bound: RegionFamilies = RegionFamilies::new();
+    for f in fams {
+        let hits: Vec<RegionKey> = by_contig
+            .get(&f.chrom)
+            .map(|rs| {
+                rs.iter()
+                    .filter(|&&(lo, hi)| f.start >= lo && f.end <= hi)
+                    .map(|&(lo, hi)| (f.chrom.clone(), lo, hi))
+                    .collect()
+            })
+            .unwrap_or_default();
+        match hits.len() {
+            0 => anyhow::bail!(
+                "--families: {} ({}:{}-{}) lies outside every --region/--regions entry, so its reads would \
+                 never be read. Add a region containing it, or remove it from the catalog.",
+                f.family_id, f.chrom, f.start, f.end
+            ),
+            1 => bound.entry(hits[0].clone()).or_default().push(f),
+            n => anyhow::bail!(
+                "--families: {} ({}:{}-{}) is contained in {n} different swept regions, so which reads it \
+                 would be assigned against is ambiguous. De-duplicate the region list.",
+                f.family_id, f.chrom, f.start, f.end
+            ),
+        }
+    }
+    let n_fam: usize = bound.values().map(|v| v.len()).sum();
+    let n_copy: usize = bound.values().flatten().map(|f| f.copies.len()).sum();
+    eprintln!(
+        "[copy_assign] --families {path}: {n_fam} famil{} / {n_copy} copies bound to {} region(s); sequences \
+         from {}",
+        if n_fam == 1 { "y" } else { "ies" },
+        bound.len(),
+        if seqs.is_some() { "--copies-fa (the catalog's own bytes)" } else { "--fasta (rebuilt at the catalog's exon coordinates)" },
+    );
+    Ok((Some(bound), seqs))
+}
+
 /// Alignment-score evidence for every read in the region, indexed like the region's `bam_reads`.
 ///
 /// Each `BamRead` is ONE alignment record, so a multimapper contributes several records under one name.
@@ -806,6 +1008,14 @@ fn main() -> Result<()> {
         by_contig.len()
     );
 
+    // ---- O1 -> O2 FILE CONTRACT (`--families`) -------------------------------------------------------
+    // The catalog is loaded, validated and BOUND TO REGIONS here, before a single read is touched, so a
+    // malformed or unassignable roster fails in the first second rather than after an hour of alignment.
+    // `region_families` is keyed by the exact `(contig, lo, hi)` triple the sweep iterates, so each region's
+    // worker gets its own families with no re-derivation and no ambiguity about which region owns a family.
+    let (region_families, catalog_seqs) = load_supplied_families(&args, &by_contig)?;
+    let catalog_index: Option<CatalogIndex> = region_families.as_ref().map(build_catalog_index);
+
     let lambda = resolve_lambda(args.lambda_global, args.lambda_file.as_deref().and_then(read_lambda_file));
     let mut cfg = DenovoConfig::from_env();
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
@@ -850,6 +1060,10 @@ fn main() -> Result<()> {
         Some((parts.get(2)?.to_string(), parts.get(1)?.parse().ok()?))
     }
     let mut quant_rows: Vec<QuantRow> = Vec::new();
+    // `--families`: one row per ASSIGNED copy, naming the catalog row it came from. The explicit join
+    // between `<out>.quant.tsv` and the O1 `copies.tsv`, and the place a copy that failed to survive
+    // assignment would be visible as a missing row.
+    let mut join_rows: Vec<String> = Vec::new();
     let mut mosaic_rows: Vec<MosaicRow> = Vec::new();
     let mut famcn_rows: Vec<FamCnRow> = Vec::new(); // reference-free chi_H + depth_cn (always emitted)
     let mut copyconv_rows: Vec<CopyConvRow> = Vec::new();
@@ -898,6 +1112,19 @@ fn main() -> Result<()> {
     // path. Always set (not gated on non-default) so the resolved value is unambiguous; the default 20000
     // reproduces the prior hard-coded constant exactly.
     std::env::set_var("RUSTLE_POA_CAP", args.poa_cap.to_string());
+    // `--absent-min-clusters` reaches `absent_copy::AbsentCopyParams::from_env` through the same
+    // "flag -> env var -> deep read" idiom (the params are built inside `detect_and_assign`'s
+    // candidate loop, many frames below `main`). Set ONLY when the flag is given, so (a) an
+    // unset run is byte-identical and (b) a caller who exported RUSTLE_ABSENT_MIN_CLUSTERS
+    // directly is not silently clobbered by the flag's default.
+    if let Some(n) = args.absent_min_clusters {
+        std::env::set_var(rustle::vg_family::absent_copy::MIN_CLUSTERS_ENV, n.to_string());
+        if !args.absent_copies {
+            eprintln!(
+                "[copy_assign] WARNING: --absent-min-clusters={n} has no effect without --absent-copies"
+            );
+        }
+    }
     // `--read-cap` is a NO-OP in copy_assign (see the flag's help): `o2_materialize::READ_CAP` has no
     // consumer in any `src/bin/*.rs` binary. Warn rather than silently ignore a non-default value.
     if args.read_cap != 6_000 {
@@ -975,10 +1202,47 @@ fn main() -> Result<()> {
         } else {
             Vec::new()
         };
+        // `--families`: materialize THIS region's supplied catalog families into the copy set, and enforce
+        // the last two contract clauses (a sequence exists for every copy; every copy has reads here).
+        // Done inside the worker because it needs this region's genome and this region's BAM slice.
+        let supplied: Option<Vec<ColocatedFamily>> = match &region_families {
+            None => None,
+            Some(rf) => {
+                let mine = rf.get(&(contig.clone(), lo, hi)).map(|v| v.as_slice()).unwrap_or(&[]);
+                let mut v: Vec<ColocatedFamily> = Vec::with_capacity(mine.len());
+                for f in mine {
+                    let (cf, _src) = to_colocated(f, catalog_seqs.as_ref(), &genome)?;
+                    for c in &cf.copies {
+                        // A supplied copy with no read here cannot be assigned anything, and dropping it
+                        // silently would understate K and loosen the Bonferroni certificate for the rest.
+                        let n = bam_reads
+                            .iter()
+                            .filter(|br| {
+                                br.chrom == c.chrom
+                                    && br.read.ref_start < c.end
+                                    && read_ref_end_local(&br.read) > c.start
+                            })
+                            .count();
+                        if n == 0 {
+                            anyhow::bail!(
+                                "--families: {} copy {} ({}:{}-{}) has NO reads in {contig}:{lo}-{hi} of \
+                                 {}. It cannot be assigned, and silently dropping it would understate the \
+                                 family's copy count. Check the BAM is the one the catalog was built from \
+                                 (subset BAMs are the recurring trap here).",
+                                cf.family_id, c.tid, c.chrom, c.start, c.end, args.bam
+                            );
+                        }
+                    }
+                    v.push(cf);
+                }
+                Some(v)
+            }
+        };
         let t_da = std::time::Instant::now();
         let (fams, fallback, dna_needs, linearize_certs) = detect_and_assign(
             &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
             args.absent_copies, do_linearize, args.linearize_gate, &args.fasta,
+            supplied.as_deref(),
         );
         if timing {
             eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
@@ -1028,10 +1292,24 @@ fn main() -> Result<()> {
             fallback_all.extend(fallback);
             dna_needs_rows.extend(dna_needs);
             linearize_certs_all.extend(linearize_certs);
+            // Best mapq over each MOLECULE's records in this region (only its primary record can be >0).
+            // See the `mqs` construction below: the tie-break invariance certificate is a molecule property.
+            let mol_mapq: std::collections::HashMap<&str, u8> = {
+                let mut m: std::collections::HashMap<&str, u8> = std::collections::HashMap::new();
+                for (n, &q) in bam_reads.iter().zip(read_mapqs.iter()) {
+                    let e = m.entry(n.as_str()).or_insert(0);
+                    *e = (*e).max(q);
+                }
+                m
+            };
             // --gtf: gene_tid (a copy's own locus) -> (family id, copy index), filled as fids are assigned below.
             let mut copy_gene: std::collections::HashMap<String, (String, usize)> = std::collections::HashMap::new();
             for fa in &fams {
-                let fid = format!("CAFAM{gfam}");
+                // JOIN KEY. Without `--families` this binary invents its own id (`CAFAM{i}`), which is
+                // precisely why the O1 and O2 tables could not be joined. With `--families` the family
+                // KEEPS the catalog's own `GWFAM{i}` — no id is minted, so `family_id` means the same
+                // thing in both tables. `gfam` still advances so the two modes cannot alias.
+                let fid = if region_families.is_some() { fa.family_id.clone() } else { format!("CAFAM{gfam}") };
                 gfam += 1;
                 if args.gtf {
                     for (ci, tid) in fa.copy_tids.iter().enumerate() {
@@ -1104,7 +1382,14 @@ fn main() -> Result<()> {
                 // soft per-copy abundance (+ the hard read count for comparison) + the tie-break invariance
                 // certificate (anchored = unique-mapper support; see anchored_support).
                 let bcs: Vec<usize> = fa.assignments.iter().map(|(_, a)| a.best_copy).collect();
-                let mqs: Vec<u8> = fa.assignments.iter().map(|(ri, _)| read_mapqs[*ri]).collect();
+                // MOLECULE-level mapq: only a molecule's PRIMARY record carries mapq>0, and after the
+                // record->molecule reduction the surviving record need not be the primary. Max over the
+                // molecule's records keeps `anchored`/`tie_invariant` counting the same molecules as before.
+                let mqs: Vec<u8> = fa
+                    .assignments
+                    .iter()
+                    .map(|(ri, _)| mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]))
+                    .collect();
                 for (ci, tid) in fa.copy_tids.iter().enumerate() {
                     let anchored = anchored_support(&bcs, &mqs, ci);
                     quant_rows.push(QuantRow {
@@ -1122,6 +1407,24 @@ fn main() -> Result<()> {
                         junction_invariant: fa.copy_junction_support.get(ci).copied().unwrap_or(0) as u32
                             >= GATE_MIN_READS,
                     });
+                    // `--families`: name the catalog row this copy IS. Looked up by the catalog `tid`
+                    // (carried through `DenovoTranscript::tid` untouched), never by position, so the join
+                    // does not depend on the copy ordering surviving the assignment stage.
+                    if let Some(ix) = &catalog_index {
+                        let (cf, cidx) = match ix.get(tid) {
+                            Some((f, i)) => (f.clone(), i.to_string()),
+                            // Unreachable while the roster-changing legs are refused; reported rather than
+                            // hidden, because a copy O2 invented is exactly what --families must never do.
+                            None => ("NOT_IN_CATALOG".to_string(), "NA".to_string()),
+                        };
+                        join_rows.push(format!(
+                            "{fid}\t{ci}\t{tid}\t{cf}\t{cidx}\t{}\t{}\t{}\t{}",
+                            fa.copy_spans.get(ci).map(|s| s.0.clone()).unwrap_or_default(),
+                            fa.copy_spans.get(ci).map_or(0, |s| s.1),
+                            fa.copy_spans.get(ci).map_or(0, |s| s.2),
+                            fa.assignments.iter().filter(|(_, a)| a.best_copy == ci).count(),
+                        ));
+                    }
                 }
                 // gene-conversion: report per-read candidate switches (RT-switch-like) vs recurrence-confirmed
                 // events, so the discriminator's anti-artifact gate is visible on real data.
@@ -1459,6 +1762,41 @@ fn main() -> Result<()> {
         "[copy_assign] tie-break invariance: {}/{} copies invariant (>= {} unique-mapper OR copy-specific-junction reads; FALSE = existence leans on the arbitrary primary label)",
         n_inv, quant_rows.len(), GATE_MIN_READS
     );
+
+    // `--families`: the explicit O1<->O2 JOIN, plus the closing half of the no-silent-drop contract. The
+    // input side was validated before any read was touched; this checks the OUTPUT side — that every
+    // supplied catalog copy actually came back out as an assigned copy. It is the only place a copy lost
+    // inside the assignment stage could be seen, so it is an ERROR, not a log line.
+    if let Some(ix) = &catalog_index {
+        let mut jh = std::fs::File::create(format!("{}.family_join.tsv", args.out))?;
+        writeln!(
+            jh,
+            "family_id\tcopy_index\tcopy_tid\tcatalog_family_id\tcatalog_copy_idx\tchrom\tstart\tend\tn_reads_hard"
+        )?;
+        for l in &join_rows {
+            writeln!(jh, "{l}")?;
+        }
+        let emitted: HashSet<&str> = join_rows
+            .iter()
+            .filter_map(|l| l.split('\t').nth(2))
+            .collect();
+        let missing: Vec<&String> = ix.keys().filter(|t| !emitted.contains(t.as_str())).collect();
+        if !missing.is_empty() {
+            anyhow::bail!(
+                "--families: {} of {} supplied copies did not come back as assigned copies ({}). A supplied \
+                 copy must never be dropped; this is a bug in the assignment path, not a filter.",
+                missing.len(),
+                ix.len(),
+                missing.iter().take(10).map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            );
+        }
+        eprintln!(
+            "[copy_assign] wrote {}.family_join.tsv ({} copies, all {} supplied catalog copies present)",
+            args.out,
+            join_rows.len(),
+            ix.len()
+        );
+    }
 
     // FACULTATIVE long-read phasing output (dependency-free): phase set (PS) per family, each haplotype's
     // PSV variant string, and read -> haplotype (HP) haplotag. Only written under --phase.

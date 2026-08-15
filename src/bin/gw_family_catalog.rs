@@ -1,7 +1,8 @@
 //! gw_family_catalog — the GENOME-WIDE multi-copy-gene-family catalog (interest I / O1).
 //!
 //! DEFINITION: a family is a HOMOLOGY component — a γ-quasi-clique of the transcribed-homology graph E_r
-//! spanning ≥2 physically-distinct loci — enforced by `refine_families_exon_sum` (asm20 id≥0.80,
+//! spanning ≥2 physically-distinct loci — enforced by `refine_families_exon_sum` (the shared E_r primary
+//! tier, `-k 11 -w 5` @ 0.60 by default since X.4,
 //! cov-of-shorter≥0.50 + sensitive tier + ≥2-distinct-loci gate; default ON). The read-conflict graph is
 //! NOT the family definition: it SEEDS the catalog (the loci among which reads are genuinely confused = where
 //! copies must be co-resolved) and is the within-family copy-number oracle (χ_H). Homology decides
@@ -18,8 +19,8 @@ use std::io::Write;
 use rustle::vg_family::denovo_pipeline::{
     detect_single_copy_baseline_genome_wide,
     detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
-    detect_homology_catalog_genome_wide, family_protein_coheres, homology_refine_params,
-    refine_families_exon_sum, DenovoConfig, RefineParams,
+    detect_homology_catalog_genome_wide, families_from_reps_certified, family_protein_coheres,
+    homology_refine_params, refine_families_exon_sum, DenovoConfig, FamilyCertificate, RefineParams,
 };
 use rustle::vg_family::family_detect::DenovoTranscript;
 
@@ -51,9 +52,18 @@ struct Args {
     /// BAM-reading threads.
     #[arg(long, default_value_t = 4)]
     threads: usize,
-    /// Capture CROSS-CHROMOSOME paralog families (RABL2A/B, DAZ-class) — a read confused between copies on
-    /// different chromosomes forms a conflict edge; families are NOT restricted to one chromosome. Without
-    /// this flag, only co-located same-chrom tandem arrays are emitted (the `--win`-bounded default).
+    /// DEPRECATED — build the O1 catalog from the READ-CONFLICT graph (E_c) instead of sequence homology.
+    ///
+    /// The name is misleading and is kept only to reproduce historical catalogs. This flag never was a
+    /// "chromosome setting": the DEFAULT homology mode has no chromosome restriction either, and reports
+    /// `cross_chrom` per family as an OBSERVATION. What this flag actually selects is the conflict-graph
+    /// catalog, where a read confused between two copies forms the family edge.
+    ///
+    /// Two reasons not to use it. It loses on every measurement: 65.5% against homology's 81.8% overall,
+    /// and 14% against 57% on DISPERSED paralogs — the very case the name promises — where it fails
+    /// silently. And it makes E_c participate in O1, so "a family is E_r, and O1 is independent of O2" is
+    /// false of this mode alone. E_c remains correct and necessary for O2 (copy assignment); that path is
+    /// untouched by this flag.
     #[arg(long, default_value_t = false)]
     cross_chrom: bool,
     /// REFINE the raw conflict-graph catalog by exon-sum (FLNC) homology (requires minimap2 on PATH). A real
@@ -61,14 +71,25 @@ struct Args {
     /// sequences all-vs-all align, asm20 identity>=0.80 cov-of-shorter>=0.50) and (ii) span >=2 spatially-
     /// DISTINCT loci (disjoint genomic spans). This removes the Alu-SINE-bridged cross-chrom over-merges and
     /// the same-locus isoform/fragment contamination that read-conflict alone admits. Emits one row per
-    /// distinct locus. Strongly recommended with `--cross-chrom`.
+    /// distinct locus. ON BY DEFAULT for the legacy conflict catalogs (`--window-catalog`/`--cross-chrom`).
+    ///
+    /// On the DEFAULT (homology, E_r) catalog this flag is OPT-IN and changes the emitted OBJECT: the
+    /// definition is γ-quasi-clique(E_r) (`docs/seeded_family_definition.md` §1), and refine appends a
+    /// SECOND clustering stage — its own primary + genomic-span edge tiers (⚠ the tier itself is now the
+    /// SAME object as E_r's since X.4; what still differs is the clustering), no core-coverage
+    /// denominator, no stub guard, clustered by CONNECTED COMPONENTS. Use it only to reproduce the
+    /// pre-2026-08-09 default catalog. At shipped defaults it is a measured no-op (0/50 files change on
+    /// the 25-region panel); under `--homology-genomic-span` it is not (7f/28c on vs 6f/29c off).
     #[arg(long, default_value_t = false)]
     refine: bool,
     /// DISABLE homology refinement and emit the RAW read-conflict catalog. Refinement is ON BY DEFAULT: the raw
     /// conflict graph admits repeat-bridge (unrelated genes sharing an intronic repeat) and large-gene
     /// mis-chain false positives (~9% of families genome-wide, `bench/GW_CATALOG_FP_AUDIT.md`); the homology +
     /// distinct-locus gate removes them. Use `--no-refine` for the raw catalog (e.g. reproducing the pre-fix
-    /// numbers, or when minimap2 is unavailable). The `--refine` flag is now a no-op kept for back-compat.
+    /// numbers, or when minimap2 is unavailable). It wins over `--refine` and applies to every catalog.
+    ///
+    /// ⚠ On the DEFAULT homology catalog refine is already OFF since 2026-08-09, so `--no-refine` is a
+    /// no-op there; it is the conflict catalogs (`--window-catalog`/`--cross-chrom`) that it still turns off.
     #[arg(long, default_value_t = false)]
     no_refine: bool,
     /// With `--refine`, align the GENOMIC span (introns INCLUDED) instead of the exon-sum. Captures intron
@@ -94,11 +115,21 @@ struct Args {
     /// seeded by the conflict families. Default off.
     #[arg(long, default_value_t = false)]
     complete_core: bool,
-    /// HOMOLOGY-PRIMARY (E_r) family definition: build families from exon-sum nucleotide homology
-    /// (gamma-quasi-clique), not the read-conflict graph. Captures ancient paralogs + K=0 collapses the
-    /// conflict path misses. Ships alongside --cross-chrom.
+    /// [DEFAULT, accepted for compatibility] HOMOLOGY-PRIMARY (E_r) family definition: build families from
+    /// nucleotide homology between locus representatives (gamma-quasi-clique), not the read-conflict graph.
+    /// Captures ancient paralogs + the K=0 collapses the conflict path misses.
+    ///
+    /// ALREADY CROSS-CHROMOSOME. Chromosome never enters the grouping — membership is decided by sequence
+    /// alone — so dispersed families (MAGEA, TSPY, RFPL, GSTM) are found without any extra flag. The
+    /// `cross_chrom` column in families.tsv reports whether a family turned out to span chromosomes; it is
+    /// an output, not an input. This is now the default, so passing this flag is a no-op.
     #[arg(long, default_value_t = false)]
     homology_primary: bool,
+    /// Build the O1 catalog from the read-conflict graph restricted to a `--win`-bounded window on ONE
+    /// chromosome (the historical pre-2026-07 default). Superseded by the homology mode; kept addressable
+    /// so the old behaviour can still be reproduced.
+    #[arg(long, default_value_t = false)]
+    window_catalog: bool,
     /// E_r nucleotide identity floor (sensitive tier). Default from RefineParams (~0.60). `0.98` = Soto SD98 mode.
     #[arg(long)]
     min_identity: Option<f64>,
@@ -151,6 +182,81 @@ struct Args {
     /// Projection identity floor for --dna-family-fallback (default 0.90).
     #[arg(long)]
     dna_family_min_identity: Option<f64>,
+
+    /// QUERY the emitted catalog: print the family (the connected component / γ-quasi-clique block)
+    /// containing `chrom:start-end`. Repeatable. Writes `<out>.seed.tsv` in addition to stdout.
+    ///
+    /// ⚠ **This is a projection, not a second pipeline.** The seed is NOT an input to the definition:
+    /// it does not filter the BAM, it does not restrict the window set, and it does not enter node
+    /// construction or `E_r`. The catalog is built exactly as it would be without `--seed`, and the
+    /// flag then looks up which emitted block the seed lands in (max overlapping bp). Every output
+    /// file other than `<out>.seed.tsv` is byte-identical with and without the flag — that identity
+    /// is what makes the answer a property of the partition rather than of the query.
+    ///
+    /// Coordinates are 1-based inclusive (GFF/samtools convention). Seeds that overlap no emitted
+    /// copy ABSTAIN; they are not snapped to a nearest locus. See
+    /// `src/rustle/vg_family/seed_projection.rs` for why a seed-DERIVED node set (the
+    /// `bench/crossspecies` probe) is not seed-invariant and is not what this queries.
+    #[arg(long)]
+    seed: Vec<String>,
+}
+
+/// `--seed`: project each seed onto the EMITTED catalog and report the block containing it.
+///
+/// The view built here must match `emit_catalog`'s rows exactly — families in emitted order (so the
+/// index is `GWFAM{i}`) and copies sorted by `(chrom, start)` (so the index is `copy_idx`) —
+/// otherwise the ids printed would not name rows the user can look up in `copies.tsv`.
+fn project_seeds(
+    specs: &[String],
+    fams: &[Vec<DenovoTranscript>],
+    out: &str,
+    min_copies: usize,
+) -> Result<()> {
+    use rustle::vg_family::seed_projection::{
+        format_seed_rows, parse_seed, project_seed, SeedHit, SEED_TSV_HEADER,
+    };
+    if specs.is_empty() {
+        return Ok(());
+    }
+    let view: Vec<Vec<(String, u64, u64)>> = fams
+        .iter()
+        .map(|copies| {
+            let mut v: Vec<(String, u64, u64)> =
+                copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
+            v.sort_by(|a, b| (a.0.as_str(), a.1).cmp(&(b.0.as_str(), b.1)));
+            v
+        })
+        .collect();
+    // Parse EVERY seed before writing anything, so a typo in the third seed does not leave a
+    // half-written .seed.tsv beside a good catalog.
+    let seeds = specs.iter().map(|s| parse_seed(s)).collect::<Result<Vec<_>>>()?;
+    let mut fh = std::fs::File::create(format!("{out}.seed.tsv"))?;
+    writeln!(fh, "{SEED_TSV_HEADER}")?;
+    println!("{SEED_TSV_HEADER}");
+    let (mut n_hit, mut n_abstain) = (0usize, 0usize);
+    for seed in &seeds {
+        let hit = project_seed(seed, &view);
+        match hit {
+            SeedHit::Hit { .. } => n_hit += 1,
+            SeedHit::Abstain => n_abstain += 1,
+        }
+        for row in format_seed_rows(seed, &view, &hit) {
+            writeln!(fh, "{row}")?;
+            println!("{row}");
+        }
+    }
+    eprintln!(
+        "[gw-catalog] --seed: {n_hit} projected onto emitted families, {n_abstain} abstained -> {out}.seed.tsv"
+    );
+    if n_abstain > 0 {
+        eprintln!(
+            "[gw-catalog]   ABSTAIN_NO_OVERLAP = no EMITTED copy overlaps the seed. At --min-copies \
+             {min_copies} a block below that size is not written, so this does NOT distinguish \"the \
+             seed's locus is a singleton\" from \"there is no transcribed locus there\"; re-run with \
+             --min-copies 1 to separate the two."
+        );
+    }
+    Ok(())
 }
 
 /// Parse a BED of search windows (`chrom\tstart\tend`, extra columns ignored) for `--from-genome`.
@@ -206,7 +312,8 @@ fn exon_blocks(c: &DenovoTranscript) -> String {
 
 fn emit_catalog(
     out: &str,
-    mut fams: Vec<Vec<DenovoTranscript>>,
+    fams: Vec<Vec<DenovoTranscript>>,
+    certs: Option<Vec<FamilyCertificate>>,
     refine_params: &RefineParams,
 ) -> Result<Vec<Vec<DenovoTranscript>>> {
     use std::collections::BTreeSet;
@@ -215,16 +322,42 @@ fn emit_catalog(
     // The exon-sum (spliced, FLNC-derived) sequence of every copy, in transcription orientation (for the
     // RNA path); for the DNA path it is the genomic locus sequence. Annotation-free family-validation substrate.
     let mut sh = std::fs::File::create(format!("{out}.copies.fa"))?;
-    writeln!(fh, "family_id\tn_copies\tn_chroms\tchroms\tcross_chrom\tavg_reads\tprotein_coheres")?;
+    // `n_edges`/`density`/`lambda`/`cut_certified` are APPENDED last, so existing header-keyed readers
+    // keep working unchanged. They are a REPORT on the emitted family, never an input to it:
+    //   lambda        = minimum number of E_r edges whose removal splits this family (0 = n<2)
+    //   cut_certified = lambda >= 2, i.e. "no single alignment record's loss can split this family"
+    // A 2-copy family necessarily has lambda = 1, so `cut_certified=false` is NOT a defect flag — see
+    // docs/seeded_family_definition.md §1★.5.
+    writeln!(
+        fh,
+        "family_id\tn_copies\tn_chroms\tchroms\tcross_chrom\tavg_reads\tprotein_coheres\
+         \tn_edges\tdensity\tlambda\tcut_certified"
+    )?;
     // `exons` is APPENDED last so existing header-keyed readers keep working unchanged.
     writeln!(ch, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons")?;
 
+    // The certificate is positional, so it MUST travel with its family through the sort below — sorting
+    // the two lists independently would silently attach each λ to the wrong family.
+    if let Some(c) = &certs {
+        anyhow::ensure!(
+            c.len() == fams.len(),
+            "certificate/family count mismatch: {} certificates for {} families",
+            c.len(),
+            fams.len()
+        );
+    }
+    let mut paired: Vec<(Vec<DenovoTranscript>, Option<FamilyCertificate>)> = match certs {
+        Some(c) => fams.into_iter().zip(c.into_iter().map(Some)).collect(),
+        None => fams.into_iter().map(|f| (f, None)).collect(),
+    };
     // deterministic order: by the first copy's (chrom, start).
-    fams.sort_by(|a, b| {
-        let ka = a.iter().map(|c| (c.chrom.as_str(), c.start)).min();
-        let kb = b.iter().map(|c| (c.chrom.as_str(), c.start)).min();
+    paired.sort_by(|a, b| {
+        let ka = a.0.iter().map(|c| (c.chrom.as_str(), c.start)).min();
+        let kb = b.0.iter().map(|c| (c.chrom.as_str(), c.start)).min();
         ka.cmp(&kb)
     });
+    let cert_of: Vec<Option<FamilyCertificate>> = paired.iter().map(|p| p.1).collect();
+    let fams: Vec<Vec<DenovoTranscript>> = paired.into_iter().map(|p| p.0).collect();
     // orthogonal protein-coherence QC flag; "NA" when --protein-tail is off (no mmseqs call).
     let coheres = family_protein_coheres(&fams, refine_params);
     let mut n_xchrom = 0usize;
@@ -245,9 +378,20 @@ fn emit_catalog(
             Some(false) => "false",
             None => "NA",
         };
+        // Structural certificate; "NA" on paths that do not carry one (never a silent 0 — a missing
+        // certificate and a genuinely disconnected family must not print the same thing).
+        let (n_edges_s, density_s, lambda_s, certified_s) = match cert_of[fi] {
+            Some(c) => (
+                c.n_edges.to_string(),
+                format!("{:.4}", c.density),
+                c.lambda.to_string(),
+                (c.lambda >= 2).to_string(),
+            ),
+            None => ("NA".into(), "NA".into(), "NA".into(), "NA".into()),
+        };
         writeln!(
             fh,
-            "{fid}\t{}\t{}\t{}\t{}\t{:.1}\t{coheres_str}",
+            "{fid}\t{}\t{}\t{}\t{}\t{:.1}\t{coheres_str}\t{n_edges_s}\t{density_s}\t{lambda_s}\t{certified_s}",
             copies.len(),
             chroms.len(),
             chroms.iter().cloned().collect::<Vec<_>>().join(","),
@@ -292,11 +436,65 @@ fn emit_catalog(
     Ok(fams)
 }
 
+/// Should the second, exon-sum `refine_families_exon_sum` stage run?
+///
+/// ⚠ **This is the D1 fix: the shipped catalog used to be TWO definitions.** `refine` ran
+/// unconditionally on the homology (E_r) path while the DNA `--from-genome` path returned before it, so
+/// RNA emitted `refine(γ-QC(E_r))` and DNA emitted `γ-QC(E_r)`. Refine is not a pass-through — it
+/// recomputes edges on its own core and genomic-span SUBSTRATES (no core-coverage denominator,
+/// no stub guard) and clusters by CONNECTED COMPONENTS
+/// (`denovo_pipeline::homology_components`) instead of the γ-quasi-clique rule the definition names.
+/// None of that appears in `docs/seeded_family_definition.md` §1.
+///
+/// Resolution: refine is **opt-in on the homology (default) catalog** and stays **on by default for the
+/// legacy conflict catalogs** (`--window-catalog` / `--cross-chrom`), which is what it was written for
+/// and where it was measured to bite (APOBEC3 1f/2c → 0f/0c, SHARP 2f/4c → 1f/2c).
+///
+/// Cost at shipped defaults: **zero** — 0 of 50 output files changed over the 25-region gorilla panel
+/// (strict single-copy controls 0/7, family panel 6 families / 24 copies, SHARP 1f/2c), and one whole
+/// per-family minimap2 stage disappears. It stops being free the moment E_r's edge substrate stops
+/// matching refine's: under `--homology-genomic-span` the same panel reads 7f/28c with refine vs 6f/29c
+/// without, refine having split two recovered MAGEA copies into a spurious 2-copy family and dropped
+/// GSTM4 from the GSTM family.
+///
+/// `--no-refine` still wins over everything (the documented escape hatch when minimap2 is unavailable).
+fn refine_enabled(o1_homology: bool, refine_flag: bool, no_refine_flag: bool) -> bool {
+    if no_refine_flag {
+        return false;
+    }
+    // Explicit --refine opts back in anywhere (and reproduces the pre-2026-08-09 default catalog).
+    refine_flag || !o1_homology
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
+    // O1 mode. Homology (E_r) is THE mode and the default; the two conflict-graph catalogs are legacy and
+    // must now be asked for by name. Derived once here rather than read off `args.homology_primary`, which
+    // is a no-op compatibility flag and would be true even when a legacy catalog was requested.
+    let o1_homology = !args.cross_chrom && !args.window_catalog;
+    if args.cross_chrom && args.window_catalog {
+        anyhow::bail!("--cross-chrom and --window-catalog select different legacy catalogs; pass at most one");
+    }
+    if args.cross_chrom {
+        eprintln!(
+            "[gw-catalog] WARNING: --cross-chrom builds O1 from the READ-CONFLICT graph (E_c), not sequence\n\
+             [gw-catalog]          homology. It is retained only to reproduce historical catalogs.\n\
+             [gw-catalog]          * it is NOT what makes families cross-chromosome — the default homology\n\
+             [gw-catalog]            mode has no chromosome restriction either, and finds dispersed families\n\
+             [gw-catalog]            BETTER (57% vs 14% on dispersed paralogs; 81.8% vs 65.5% overall);\n\
+             [gw-catalog]          * it makes E_c participate in O1, so O1 is no longer independent of O2.\n\
+             [gw-catalog]          Drop the flag to use the homology (E_r) catalog."
+        );
+    }
+    if args.window_catalog {
+        eprintln!(
+            "[gw-catalog] WARNING: --window-catalog is the pre-2026-07 conflict catalog, bounded to a \
+             --win window on one chromosome. Superseded by the default homology mode."
+        );
+    }
     let project_all = (args.project_all_families
         || std::env::var("RUSTLE_PROJECT_ALL_FAMILIES").ok().as_deref() == Some("1"))
-        && args.homology_primary;
+        && o1_homology;
     let mut cfg = DenovoConfig::from_env();
     cfg.complete_poa_core = args.complete_core;
     cfg.collapse_enumerate = args.collapse_enumerate || cfg.collapse_enumerate;
@@ -340,10 +538,11 @@ fn main() -> Result<()> {
         if let Some(mi) = args.min_identity { gp.min_identity = mi; }
         let reps = genome_reps(&args.fasta, &windows, &gp)?;
         eprintln!("[gw-catalog-genome] {} windows -> {} duplicated-locus reps", windows.len(), reps.len());
-        let dna_fams = rustle::vg_family::denovo_pipeline::families_from_reps(
+        let (dna_fams, dna_certs) = families_from_reps_certified(
             reps, &refine_params, gamma, args.min_copies, 0,
         )?;
-        emit_catalog(&args.out, dna_fams, &refine_params)?;
+        let dna_fams = emit_catalog(&args.out, dna_fams, Some(dna_certs), &refine_params)?;
+        project_seeds(&args.seed, &dna_fams, &args.out, args.min_copies)?;
         return Ok(());
     }
 
@@ -395,16 +594,17 @@ fn main() -> Result<()> {
     refine_params.homology_genomic_span = args.homology_genomic_span;
     if args.homology_genomic_span {
         refine_params.intron_fasta = Some(args.fasta.clone());
-        if !args.homology_primary {
-            eprintln!("[gw-catalog] note: --homology-genomic-span affects the E_r edge, which only drives family membership under --homology-primary");
+        if !o1_homology {
+            eprintln!("[gw-catalog] note: --homology-genomic-span affects the E_r edge, which drives family membership only in the (default) homology catalog — it is inert for the legacy conflict catalogs");
         }
     }
-    let (raw, collapsed, expressed, dna_families): (
+    let (raw, raw_certs, collapsed, expressed, dna_families): (
         Vec<Vec<DenovoTranscript>>,
+        Vec<FamilyCertificate>,
         Vec<rustle::vg_family::collapse_enumerate::CollapsedFamily>,
         Vec<rustle::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
         Vec<rustle::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
-    ) = if args.homology_primary {
+    ) = if o1_homology {
         detect_homology_catalog_genome_wide(
             bam,
             &args.fasta,
@@ -418,10 +618,13 @@ fn main() -> Result<()> {
             std::env::var("RUSTLE_GENOME_GAMMA").ok().and_then(|v| v.parse().ok()).unwrap_or(0.20),
         )?
     } else if args.cross_chrom {
+        // CONFLICT catalogs build no E_r graph, so there is no λ to certify: an EMPTY certificate vector
+        // makes the column print "NA" rather than a fabricated 0.
         (
             detect_conflict_catalog_genome_wide_xchrom(
                 bam, &args.fasta, args.threads, args.min_copies, &cfg,
             )?,
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -430,12 +633,33 @@ fn main() -> Result<()> {
         let catalog = detect_conflict_catalog_genome_wide(
             bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
         )?;
-        (catalog.into_iter().map(|c| c.copies).collect(), Vec::new(), Vec::new(), Vec::new())
+        (
+            catalog.into_iter().map(|c| c.copies).collect(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
     };
-    // Exon-sum (FLNC) homology + distinct-locus refinement (the principled membership criterion). ON BY DEFAULT
-    // (removes repeat-bridge + large-gene mis-chain FPs); `--no-refine` opts out to the raw conflict catalog.
-    let refine = !args.no_refine;
+    // Exon-sum (FLNC) homology + distinct-locus refinement. ON BY DEFAULT for the legacy CONFLICT catalogs
+    // (--window-catalog / --cross-chrom), where the raw read-conflict graph admits repeat-bridge and
+    // large-gene mis-chain FPs that this stage removes. OPT-IN (`--refine`) on the default HOMOLOGY catalog:
+    // there the definition is already γ-quasi-clique(E_r), and refine would append a second, undocumented
+    // clustering stage over a different edge set. See `refine_enabled` for the measurements.
+    let refine = refine_enabled(o1_homology, args.refine, args.no_refine);
+    if o1_homology && refine {
+        eprintln!(
+            "[gw-catalog] NOTE: --refine on the homology catalog appends a SECOND clustering stage \
+             (core + genomic-span substrates, connected components) on top of γ-quasi-clique(E_r). \
+             The emitted object is then no longer the definition in docs/seeded_family_definition.md §1."
+        );
+    }
+    // The λ certificate describes the γ-quasi-clique(E_r) families. `--refine` re-clusters them over a
+    // DIFFERENT edge set, so the certificates would no longer describe the emitted rows — they are
+    // DROPPED (the column prints "NA"), never carried across. A wrong λ is worse than an absent one.
+    let mut certs: Option<Vec<FamilyCertificate>> = if raw_certs.is_empty() { None } else { Some(raw_certs) };
     let fams: Vec<Vec<DenovoTranscript>> = if refine {
+        certs = None;
         let n_raw = raw.len();
         let params = RefineParams {
             threads: args.threads,
@@ -475,7 +699,10 @@ fn main() -> Result<()> {
 
     // Sort + write the family catalog (families.tsv/copies.tsv/copies.fa). Shared by the RNA path
     // and the DNA --from-genome path; returns the sorted families for the downstream sections.
-    let fams = emit_catalog(&args.out, fams, &refine_params)?;
+    let fams = emit_catalog(&args.out, fams, certs, &refine_params)?;
+    // `--seed` is a QUERY over what was just emitted: it runs AFTER the catalog exists and cannot
+    // influence it. No-op (and no `.seed.tsv`) when the flag is absent.
+    project_seeds(&args.seed, &fams, &args.out, args.min_copies)?;
 
     // K=0-collapsed families re-admitted by Task 3 (`--collapse-enumerate`): copy-NUMBER only, kept fully
     // separate from families.tsv/copies.tsv so the OFF path (flag off or nothing collapsed) writes no file
@@ -525,7 +752,7 @@ fn main() -> Result<()> {
     // cov>=0.70), while cov>=0.90 is too strict and drops divergent full-length copies (GSTM 4 vs 19
     // truth); cov>=0.80 is the sweet spot (verified: GSTM 20 vs 19, RABL2 6 vs 5, GWFAM18 12 vs 11,
     // GWFAM21 22 vs 22).
-    let enumerate = (args.enumerate_copies || args.min_identity == Some(0.98)) && args.homology_primary;
+    let enumerate = (args.enumerate_copies || args.min_identity == Some(0.98)) && o1_homology;
     if enumerate {
         use std::collections::HashMap;
         let consensuses: Vec<(String, Vec<u8>)> = fams
@@ -634,6 +861,8 @@ mod tests {
             introns,
             seq: Vec::new(),
             distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
             tes: None,
         }
     }
@@ -663,6 +892,53 @@ mod tests {
             let (s, e) = b.split_once('-').unwrap();
             assert!(s.parse::<u64>().unwrap() < e.parse::<u64>().unwrap(), "reversed block {b}");
         }
+    }
+
+    // ---- D1: the shipped catalog must be ONE definition, not two -------------------------------
+    //
+    // `refine_families_exon_sum` used to run unconditionally on the homology (E_r) path, which meant
+    // the default catalog emitted `refine(gamma-QC(E_r))` while the DNA `--from-genome` path emitted
+    // `gamma-QC(E_r)`. Refine is not a pass-through: it recomputes edges on its own core and
+    // genomic-span@0.80 tiers, WITHOUT the core-coverage denominator or the stub guard, and clusters by
+    // CONNECTED COMPONENTS (denovo_pipeline::homology_components) rather than by the gamma-quasi-clique
+    // rule the definition names (docs/seeded_family_definition.md §1). None of those tiers appear in the
+    // definition. So on the homology path refine is now OPT-IN; on the legacy conflict catalogs
+    // (--window-catalog / --cross-chrom), where it was written and where it was MEASURED to bite
+    // (APOBEC3 1f/2c -> 0f/0c, SHARP 2f/4c -> 1f/2c), it stays on by default.
+    //
+    // Measured at shipped defaults when this flipped: 0 of 50 output files changed across the 25-region
+    // gorilla panel (strict single-copy controls 0/7, family panel 6 families / 24 copies, SHARP 1f/2c).
+    // The flip is NOT free once E_r's substrate moves: under --homology-genomic-span the same panel goes
+    // 7f/28c (refine on) -> 6f/29c (refine off), refine having split two recovered MAGEA copies into a
+    // spurious family and dropped GSTM4.
+
+    #[test]
+    fn refine_is_opt_in_on_the_homology_catalog() {
+        // default homology run, no flags: the emitted object must be gamma-QC(E_r) alone.
+        assert!(!refine_enabled(true, false, false));
+    }
+
+    #[test]
+    fn refine_stays_on_by_default_on_the_conflict_catalogs() {
+        // --window-catalog / --cross-chrom: refine is the documented FP filter for the raw conflict
+        // graph (repeat-bridge + large-gene mis-chain), so it must not silently turn off with D1's fix.
+        assert!(refine_enabled(false, false, false));
+    }
+
+    #[test]
+    fn refine_flag_opts_back_in_on_the_homology_catalog() {
+        // `--refine` was a back-compat no-op; it now has to MEAN something on the default path,
+        // otherwise the pre-fix catalog is no longer reproducible.
+        assert!(refine_enabled(true, true, false));
+    }
+
+    #[test]
+    fn no_refine_still_wins_over_refine_on_every_catalog() {
+        // --no-refine is the documented escape hatch (e.g. minimap2 absent); an explicit off must beat
+        // both the conflict-catalog default and an explicit --refine.
+        assert!(!refine_enabled(false, false, true));
+        assert!(!refine_enabled(true, true, true));
+        assert!(!refine_enabled(false, true, true));
     }
 
     #[test]

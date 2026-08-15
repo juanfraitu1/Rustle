@@ -90,19 +90,46 @@ fn families_tsv_has_protein_coheres_column() {
     let mut lines = fams.lines();
     let header = lines.next().expect("families.tsv must have a header");
     let header_cols: Vec<&str> = header.split('\t').collect();
-    assert_eq!(
-        header_cols.last().copied(), Some("protein_coheres"),
-        "families.tsv header's last column must be protein_coheres; header={header}"
-    );
+    // ⚠ THIS TEST USED TO READ `protein_coheres` POSITIONALLY, as the LAST column, and broke the first
+    // time a column was appended (the λ certificate, 2026-08-14). The emitter's stated contract is that
+    // new columns are APPENDED so that HEADER-KEYED readers keep working — so the test now reads the way
+    // the contract says readers do, by name. Same assertion, no longer coupled to column count.
+    let coheres_at = header_cols
+        .iter()
+        .position(|c| *c == "protein_coheres")
+        .unwrap_or_else(|| panic!("families.tsv must carry a protein_coheres column; header={header}"));
+    // The λ certificate columns are part of the emitted family (docs/seeded_family_definition.md §1★.5).
+    for col in ["n_edges", "density", "lambda", "cut_certified"] {
+        assert!(
+            header_cols.contains(&col),
+            "families.tsv must carry the `{col}` certificate column; header={header}"
+        );
+    }
+    let lambda_at = header_cols.iter().position(|c| *c == "lambda").unwrap();
+    let n_copies_at = header_cols.iter().position(|c| *c == "n_copies").unwrap();
+    let certified_at = header_cols.iter().position(|c| *c == "cut_certified").unwrap();
     let mut n_rows = 0;
     for l in lines {
         if l.is_empty() { continue; }
         n_rows += 1;
         let cols: Vec<&str> = l.split('\t').collect();
+        assert_eq!(cols.len(), header_cols.len(), "row/header column count must agree; row={l}");
         assert_eq!(
-            cols.last().copied(), Some("NA"),
-            "without --protein-tail every row's last field must be NA; row={l}"
+            cols.get(coheres_at).copied(), Some("NA"),
+            "without --protein-tail every row's protein_coheres must be NA; row={l}"
         );
+        // λ is REPORTED, never enforced, so the only invariants are arithmetic ones. The fixture's
+        // families are 2-copy, which is precisely the case that CANNOT be cut-certified.
+        let n_copies: usize = cols[n_copies_at].parse().unwrap();
+        let lambda: usize = cols[lambda_at].parse().unwrap_or_else(|_| panic!("lambda must be numeric on the homology path; row={l}"));
+        assert!(lambda < n_copies.max(2), "lambda cannot reach n for a simple graph; row={l}");
+        assert_eq!(
+            cols[certified_at] == "true", lambda >= 2,
+            "cut_certified must be exactly `lambda >= 2`; row={l}"
+        );
+        if n_copies == 2 {
+            assert_eq!(lambda, 1, "a 2-copy family has lambda = 1 NECESSARILY; row={l}");
+        }
     }
     assert!(n_rows > 0, "expected >=1 family row\n{}", fams);
 }

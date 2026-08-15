@@ -7,6 +7,8 @@
 //!
 //! Gate order:
 //!   1. `n_clusters >= min_clusters` — enough co-varying clusters for a multi-copy call.
+//!      Default 3, overridable for removal-ablation experiments ONLY — see
+//!      [`AbsentCopyParams::from_env`], which documents why the default must not change.
 //!   2. `min_p_distinct` — the candidate's allele vector is certifiably distinct from the host.
 //!   3. `strand_symmetric_spectrum` — NOT a pure A→G editing artefact.
 //!   4. `collapsed_copy_to_transcript_from_host_seq` — alleles are placeable (substitution-only).
@@ -32,13 +34,21 @@ use crate::vg_family::family_detect::DenovoTranscript;
 // Public types
 // ---------------------------------------------------------------------------
 
+/// The shipping cluster floor for gate 1. **This value must not change.** See
+/// [`AbsentCopyParams::from_env`] for the (experiment-only) override and why it exists.
+pub const DEFAULT_MIN_CLUSTERS: usize = 3;
+
+/// Env var overriding [`AbsentCopyParams::min_clusters`]. Unset ⇒ [`DEFAULT_MIN_CLUSTERS`].
+pub const MIN_CLUSTERS_ENV: &str = "RUSTLE_ABSENT_MIN_CLUSTERS";
+
 /// Tunable thresholds for the admission gate.
 pub struct AbsentCopyParams {
     /// Per-base sequencing error rate used in `min_p_distinct` (default 0.003 = HiFi).
     pub error_rate: f64,
     /// Bonferroni-corrected significance threshold for `min_p_distinct` (default 1e-3).
     pub alpha: f64,
-    /// Minimum number of identifiable co-varying clusters at the locus (default 3).
+    /// Minimum number of identifiable co-varying clusters at the locus
+    /// (default [`DEFAULT_MIN_CLUSTERS`] = 3).
     pub min_clusters: usize,
     /// Upper bound on remap identity; above this threshold the copy maps back too cleanly
     /// to be a genuine divergent paralog (default 0.98 = 98 %).
@@ -50,9 +60,71 @@ impl Default for AbsentCopyParams {
         Self {
             error_rate: 0.003,
             alpha: 1e-3,
-            min_clusters: 3,
+            min_clusters: DEFAULT_MIN_CLUSTERS,
             remap_max_identity: 0.98,
         }
+    }
+}
+
+/// Parse a raw [`MIN_CLUSTERS_ENV`] value into a cluster floor.
+///
+/// Pure (takes the string, never reads the environment) so the policy below is testable without
+/// mutating process-global state — env-mutating tests race under `cargo test`'s thread pool.
+///
+/// Policy is deliberately FAIL-SAFE: anything not a positive integer (absent, empty, non-numeric,
+/// or `0`) yields [`DEFAULT_MIN_CLUSTERS`]. `0` is rejected rather than honoured because
+/// `n_clusters < 0` is unsatisfiable, i.e. `0` would silently DISABLE gate 1 outright; a gate that
+/// guards against copy-vs-allele confusion must never be switched off by a typo.
+pub(crate) fn parse_min_clusters(raw: Option<&str>) -> usize {
+    match raw.map(str::trim).and_then(|s| s.parse::<usize>().ok()) {
+        Some(n) if n >= 1 => n,
+        _ => DEFAULT_MIN_CLUSTERS,
+    }
+}
+
+impl AbsentCopyParams {
+    /// `Default`, but with `min_clusters` overridable via [`MIN_CLUSTERS_ENV`]
+    /// (CLI: `copy_assign --absent-min-clusters N`). Every other field is the `Default` value.
+    ///
+    /// # Why this one threshold is configurable — and why the default MUST stay 3
+    ///
+    /// Gate 1 (`n_clusters >= min_clusters`) is not a tuning parameter; it is an IDENTIFIABILITY
+    /// claim. With fewer than three co-varying clusters at a locus you cannot tell a second COPY
+    /// from a heterozygous ALLELE of one copy using RNA alone — that separation needs DNA
+    /// copy-number evidence, which is exactly what the rejection reason
+    /// `"<N clusters (copy-vs-allele needs DNA)"` says. Lowering it in production would
+    /// manufacture false positives by admitting heterozygous sites as reference-absent copies.
+    /// **The default must not change. Do not "tune" it to raise recovery.**
+    ///
+    /// The override exists for ONE situation: an experiment in which copy status is established
+    /// BY CONSTRUCTION rather than inferred — specifically the V4b removal-recovery ablation,
+    /// where a known copy is DELETED from the assembly and the same reads are re-aligned. There
+    /// the gate is answering a question the experimental design has already answered, and it is
+    /// additionally UNREACHABLE by arithmetic: deleting one copy of a 3-copy family leaves at
+    /// most host + deleted = 2 clusters, so `n_clusters >= 3` can never hold and the locus stops
+    /// on gate 1 for a reason that has nothing to do with divergence (this is what blocked GSTM
+    /// and GWFAM227).
+    ///
+    /// Any run using the override is only interpretable ALONGSIDE the identical run against the
+    /// INTACT (undeleted) assembly at the SAME `min_clusters`. If the no-deletion control also
+    /// admits a copy, the "recovery" is an artefact of the lowered gate, not a recovery.
+    pub fn from_env() -> Self {
+        let raw = std::env::var(MIN_CLUSTERS_ENV).ok();
+        let min_clusters = parse_min_clusters(raw.as_deref());
+        // Announce ONCE per process, and only when the var is set, so an unset run prints nothing
+        // and stays byte-identical. A lowered gate must be visible in the run log it produced.
+        if raw.is_some() {
+            static NOTICE: std::sync::Once = std::sync::Once::new();
+            NOTICE.call_once(|| {
+                eprintln!(
+                    "[absent_copy] {MIN_CLUSTERS_ENV}={:?} -> min_clusters={min_clusters} \
+                     (default {DEFAULT_MIN_CLUSTERS}). Gate 1 guards copy-vs-allele; a run below \
+                     the default is valid ONLY next to the intact-assembly control at the same value.",
+                    raw.as_deref().unwrap_or("")
+                );
+            });
+        }
+        Self { min_clusters, ..Self::default() }
     }
 }
 
@@ -429,6 +501,71 @@ mod tests {
             introns: vec![],
             seq: b"AAAAAAAAAA".to_vec(),
          ..Default::default() }
+    }
+
+    /// The shipping cluster floor is 3 and MUST stay 3: below three co-varying clusters a second
+    /// COPY is not distinguishable from a heterozygous ALLELE without DNA. This pins the default
+    /// so lowering it requires deleting a test that says why it exists, not editing a literal.
+    /// The override (`RUSTLE_ABSENT_MIN_CLUSTERS` / `--absent-min-clusters`) is for removal
+    /// ablations, where copy status is established by construction — see `from_env`'s docs.
+    #[test]
+    fn default_min_clusters_is_three_and_must_stay_three() {
+        assert_eq!(AbsentCopyParams::default().min_clusters, 3);
+        assert_eq!(DEFAULT_MIN_CLUSTERS, 3);
+    }
+
+    /// The `MIN_CLUSTERS_ENV` parse policy, exercised WITHOUT touching the process environment
+    /// (env-mutating tests race under cargo's thread pool). Fail-safe: absent/blank/non-numeric/`0`
+    /// all fall back to the default. `0` in particular must NOT be honoured — `n_clusters < 0` is
+    /// unsatisfiable, so it would silently switch gate 1 off entirely.
+    #[test]
+    fn min_clusters_env_parse_is_fail_safe() {
+        assert_eq!(parse_min_clusters(None), 3, "unset -> default");
+        assert_eq!(parse_min_clusters(Some("2")), 2, "ablation value honoured");
+        assert_eq!(parse_min_clusters(Some(" 2 ")), 2, "whitespace trimmed");
+        assert_eq!(parse_min_clusters(Some("1")), 1, "1 is a positive integer");
+        assert_eq!(parse_min_clusters(Some("5")), 5, "raising the floor is allowed");
+        assert_eq!(parse_min_clusters(Some("0")), 3, "0 would DISABLE gate 1 -> refuse");
+        assert_eq!(parse_min_clusters(Some("")), 3, "empty -> default");
+        assert_eq!(parse_min_clusters(Some("two")), 3, "non-numeric -> default");
+        assert_eq!(parse_min_clusters(Some("-1")), 3, "negative -> default");
+        assert_eq!(parse_min_clusters(Some("2.5")), 3, "non-integer -> default");
+    }
+
+    /// The override actually moves gate 1: the SAME 2-cluster candidate that `default()` rejects is
+    /// admitted at `min_clusters = 2`. Drives the params struct directly (no env), so it documents
+    /// the ablation's mechanism without process-global state.
+    #[test]
+    fn lowered_min_clusters_admits_the_two_cluster_candidate_default_rejects() {
+        let cand = CollapsedCandidate {
+            host_tid: "H".into(),
+            chrom: "c1".into(),
+            start: 100,
+            end: 110,
+            iso: CopyIsoform {
+                intron_chain: vec![],
+                allele_vector: vec![Some(b'C'), Some(b'T'), Some(b'C')],
+                read_count: 5,
+                identifiable: true,
+            },
+            psv_pos: vec![102, 104, 106],
+            // A 3-copy family with one copy DELETED supplies at most host + deleted = 2.
+            n_clusters: 2,
+        };
+        // Default: stops on gate 1.
+        match admit_candidate_with_remap(&cand, &host(), &AbsentCopyParams::default(), |_| Some(0.5)) {
+            Admission::DnaNeeds(r) => assert!(r.reason.contains("clusters"), "got: {}", r.reason),
+            _ => panic!("default must reject a 2-cluster candidate"),
+        }
+        // Ablation floor: gate 1 passes and the remaining four gates decide.
+        let p = AbsentCopyParams { min_clusters: 2, ..Default::default() };
+        match admit_candidate_with_remap(&cand, &host(), &p, |_| Some(0.5)) {
+            Admission::Copy(t, id) => {
+                assert_eq!(t.chrom, "c1");
+                assert_eq!(id, Some(0.5));
+            }
+            Admission::DnaNeeds(r) => panic!("expected Copy at min_clusters=2, got: {}", r.reason),
+        }
     }
 
     /// Gate 1 fires: only 2 clusters (< min_clusters=3).  The remap closure returns 0.5

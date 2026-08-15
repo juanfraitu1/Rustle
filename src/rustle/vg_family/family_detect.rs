@@ -29,7 +29,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::family_graph::contiguous_core_coverage_bounded;
+use super::family_graph::{contiguous_core_coverage_bounded, upper_cow};
 use super::family_rescue::window_canon_code;
 use crate::vg_family::seq_utils::reverse_complement;
 
@@ -623,7 +623,26 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
         }
     }
 
-    if !p.collapse_span_aware {
+    // `RUSTLE_LOCUS_JUNCTION_ONLY=1` stops here, leaving a locus defined ONLY by phase 1: the connected
+    // components of "two transcripts share a read-witnessed junction".
+    //
+    // WHY THIS IS A DIFFERENT KIND OF DEFINITION, not just a stricter one. Phase 1 is a relation on
+    // EVIDENCE and needs no representative. Phase 2 below is a fixed-point iteration -- it calls
+    // `locus_reps` to pick representatives, merges them by SPAN, then recomputes -- so membership depends
+    // on the representative and the representative depends on membership. Two consequences follow from
+    // that, and only from that:
+    //   - span overlap is satisfied VACUOUSLY by a giant intron, so a transcript that splices straight OVER
+    //     a gene is admitted as a member of it (NPIPB9: the selected rep has 24 aligned blocks, NONE inside
+    //     the gene, joined by one 104,410 bp intron spanning the whole of it -- membership by absence);
+    //   - the merge is order-dependent through the rep it happens to pick at each round.
+    // Phase 1 has neither property. It cannot admit a transcript that shares no junction with the locus, so
+    // it cannot be satisfied by an intron.
+    //
+    // The cost is the thing phase 2 was written for: genuine alternative-first/last-exon isoforms whose
+    // intron sets are DISJOINT stay separate loci, splitting one gene into several. That trade is what this
+    // knob exists to measure. Default unset = today's behaviour, byte-identical.
+    let junction_only = matches!(std::env::var("RUSTLE_LOCUS_JUNCTION_ONLY"), Ok(v) if v != "0" && !v.is_empty());
+    if !p.collapse_span_aware || junction_only {
         return parent;
     }
 
@@ -678,8 +697,8 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
                     continue;
                 }
                 // Disjoint-junction isoforms with similar length: require strong POA core coverage.
-                let au = a.seq.to_ascii_uppercase();
-                let bu = b.seq.to_ascii_uppercase();
+                let au = upper_cow(&a.seq);
+                let bu = upper_cow(&b.seq);
                 let core = contiguous_core_coverage_bounded(&au, &bu, p.len_cap);
                 if core >= p.collapse_span_core {
                     uf_union(&mut parent, reps[i], reps[j]);
@@ -873,12 +892,18 @@ pub fn candidate_pairs(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usiz
 /// run IS a common substring — so a large read-through "hub" that homologously contains a copy is still
 /// confirmed (the DSFAM45 case) instead of being lost. Below the cap the exact poasta path is unchanged.
 pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
-    let au = a.to_ascii_uppercase();
-    let bu = b.to_ascii_uppercase();
-    let mut cr = contiguous_core_coverage_bounded(&au, &bu, p.len_cap);
+    use super::family_graph::{contiguous_core_coverage_bounded_with, EDGE_CONFIRM_ASTAR};
+    let au = upper_cow(a);
+    let bu = upper_cow(b);
+    let mut cr = contiguous_core_coverage_bounded_with(&au, &bu, p.len_cap, EDGE_CONFIRM_ASTAR);
     if cr < p.t_core {
         // opposite orientation (copies assembled on different strands).
-        let rc = contiguous_core_coverage_bounded(&au, &reverse_complement(&bu), p.len_cap);
+        let rc = contiguous_core_coverage_bounded_with(
+            &au,
+            &reverse_complement(&bu),
+            p.len_cap,
+            EDGE_CONFIRM_ASTAR,
+        );
         if rc > cr {
             cr = rc;
         }

@@ -19,7 +19,7 @@ use rustle::vg_family::driver::{self, Inputs, Options, GAMMA, HIGH_PRECISION_GAM
 
 #[derive(Parser, Debug)]
 #[command(about = "LEGACY parity fixture: reproduces the frozen Python catalog from precomputed TSVs. \
-                   The shipped genome-wide catalog is `gw_family_catalog` (exon-sum asm20 id>=0.80 edge). \
+                   The shipped genome-wide catalog is `gw_family_catalog` (exon-sum E_r edge). \
                    Kept for regression parity only; not the live family definition. See rustle_mechanism.html.")]
 struct Args {
     /// Output catalog TSV (Python default: bench/family_rna_refine.tsv).

@@ -21,22 +21,21 @@ noodles-sam = "0.66"
 noodles-csi = "0.40"
 noodles-core = "0.15"
 
-# Fast hashmap - significantly faster than std
-hashbrown = "0.15"
-fixedbitset = "0.5"
+# REMOVED 2026-08-09, all three declared but referenced NOWHERE in src/ or tests/ (verified by grep,
+# including behind cfg): `hashbrown` (the "fast hashmap" was never adopted — the tree uses std maps via
+# types::DetHashMap), `memmap2` (no memory-mapped I/O exists), `roaring` (no bitset junction matching
+# exists; the one bitset in the tree is util/bitset.rs on `fixedbitset`). They linked nothing, so removing
+# them changes no behaviour and costs no runtime — it only stops compiling them, and with lto=fat +
+# codegen-units=1 on this box that is real build time on every clean build.
+fixedbitset = "0.5" # util/bitset.rs
 
-# Fast hashing (used in junction_set.rs)
+# Fast hashing (used in types.rs / junction_set.rs)
 fxhash = "0.2"
 
 # Parallel processing
 rayon = "1.10"
 
-# Memory-mapped I/O
-memmap2 = "0.9"
-
-# Bitset operations for fast junction matching
-roaring = "0.10"
-lru = "0.12"
+lru = "0.12" # src/bin/copy_assign.rs contig cache
 
 # Random sampling for rarefaction analysis
 rand = "0.8"

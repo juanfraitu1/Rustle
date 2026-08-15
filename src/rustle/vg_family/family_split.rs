@@ -69,6 +69,11 @@ pub struct CommunityStats {
     pub density: f64,
     pub avg_core_recip: f64,
     pub n_articulation: usize,
+    /// Global edge connectivity λ of the induced subgraph — the minimum number of edges whose removal
+    /// disconnects this community. `λ >= 2` certifies that no single alignment record's loss can split
+    /// it. **Reported, never used to decide membership** (a 2-node family has λ = 1 necessarily); see
+    /// `edge_connectivity`.
+    pub lambda: usize,
 }
 
 /// A final decomposed family with its structural diagnostics and class.
@@ -316,6 +321,81 @@ pub fn articulation_points(n: usize, edges: &[(usize, usize)]) -> Vec<usize> {
     (0..n).filter(|&i| is_ap[i]).collect()
 }
 
+/// Global EDGE CONNECTIVITY λ of an undirected graph on local ids `0..n` (Stoer–Wagner). Every entry of
+/// `edges` contributes weight 1, so PARALLEL EDGES ADD — de-duplicate before calling if that is not wanted
+/// (`community_stats` passes a de-duplicated induced set).
+///
+/// λ = the minimum number of edges whose removal disconnects the graph. Returns **0** when `n < 2` or when
+/// the graph is already disconnected: in both cases no edge has to be paid to separate two nodes.
+///
+/// WHY THIS EXISTS — and why it is NOT part of the family definition. `λ >= 2` is a per-family
+/// CERTIFICATE: it states that **no single alignment record's loss can split this family**. It is
+/// deliberately not a membership criterion, because a 2-copy family has `λ = 1` NECESSARILY (one edge is
+/// all a 2-node graph can have), so gating membership on `λ >= 2` would delete every 2-copy family —
+/// the most common family there is. It reports confidence; it never decides membership.
+/// See `docs/seeded_family_definition.md` §1★.5.
+///
+/// Deterministic: the maximum-adjacency search breaks ties toward the smallest node id.
+pub fn edge_connectivity(n: usize, edges: &[(usize, usize)]) -> usize {
+    if n < 2 {
+        return 0;
+    }
+    let mut w = vec![vec![0usize; n]; n];
+    for &(a, b) in edges {
+        if a != b && a < n && b < n {
+            w[a][b] += 1;
+            w[b][a] += 1;
+        }
+    }
+    let mut active: Vec<usize> = (0..n).collect();
+    let mut best = usize::MAX;
+    while active.len() > 1 {
+        // maximum-adjacency search over the surviving supernodes
+        let mut in_a = vec![false; n];
+        let mut wsum = vec![0usize; n];
+        let (mut prev, mut last) = (usize::MAX, usize::MAX);
+        for _ in 0..active.len() {
+            let mut sel = usize::MAX;
+            for &v in &active {
+                // strict `>` with `active` ascending => ties go to the smallest id (deterministic)
+                if !in_a[v] && (sel == usize::MAX || wsum[v] > wsum[sel]) {
+                    sel = v;
+                }
+            }
+            in_a[sel] = true;
+            prev = last;
+            last = sel;
+            for &v in &active {
+                if !in_a[v] {
+                    wsum[v] += w[sel][v];
+                }
+            }
+        }
+        // cut-of-the-phase = weight from the last-added node to everything else (all of which are in A)
+        let cut: usize = active.iter().filter(|&&v| v != last).map(|&v| w[last][v]).sum();
+        best = best.min(cut);
+        if best == 0 {
+            return 0; // already disconnected; no smaller cut exists
+        }
+        if prev == usize::MAX {
+            break;
+        }
+        // merge `last` into `prev`
+        for &v in &active {
+            if v != last && v != prev {
+                w[prev][v] += w[last][v];
+                w[v][prev] = w[prev][v];
+            }
+        }
+        active.retain(|&v| v != last);
+    }
+    if best == usize::MAX {
+        0
+    } else {
+        best
+    }
+}
+
 /// Structural diagnostics of the subgraph induced by `members` (global node ids) over `edges`.
 pub(crate) fn community_stats(members: &[usize], edges: &[(usize, usize, f64)]) -> CommunityStats {
     let set: BTreeSet<usize> = members.iter().copied().collect();
@@ -336,15 +416,17 @@ pub(crate) fn community_stats(members: &[usize], edges: &[(usize, usize, f64)]) 
         1.0
     };
     let avg_core_recip = if n_edges > 0 { wsum / n_edges as f64 } else { 0.0 };
-    // articulation only for n > 2 (python `arts = ... if n > 2 else 0`); relabel members to 0..n.
-    let n_articulation = if n > 2 {
-        let idx: BTreeMap<usize, usize> = set.iter().enumerate().map(|(i, &node)| (node, i)).collect();
-        let local: Vec<(usize, usize)> = internal.iter().map(|&(a, b)| (idx[&a], idx[&b])).collect();
-        articulation_points(n, &local).len()
-    } else {
-        0
-    };
-    CommunityStats { n, n_edges, density, avg_core_recip, n_articulation }
+    // Local relabelling `member -> 0..n`, shared by the articulation and λ passes.
+    let idx: BTreeMap<usize, usize> = set.iter().enumerate().map(|(i, &node)| (node, i)).collect();
+    let local: Vec<(usize, usize)> = internal.iter().map(|&(a, b)| (idx[&a], idx[&b])).collect();
+    // articulation only for n > 2 (python `arts = ... if n > 2 else 0`).
+    let n_articulation = if n > 2 { articulation_points(n, &local).len() } else { 0 };
+    // λ over the DE-DUPLICATED induced edge set: `edges` may list a pair more than once, and
+    // `edge_connectivity` counts every entry as weight 1, which would inflate the cut.
+    let dedup: BTreeSet<(usize, usize)> =
+        local.iter().map(|&(a, b)| (a.min(b), a.max(b))).collect();
+    let lambda = edge_connectivity(n, &dedup.iter().copied().collect::<Vec<_>>());
+    CommunityStats { n, n_edges, density, avg_core_recip, n_articulation, lambda }
 }
 
 /// Classify a community by size + density (web iff `n >= web_min_size && density < web_max_density`).
@@ -574,6 +656,63 @@ mod tests {
         assert!((s.density - 1.0).abs() < 1e-9);
         assert!((s.avg_core_recip - (0.5 + 0.7 + 0.9) / 3.0).abs() < 1e-9);
         assert_eq!(s.n_articulation, 0);
+        assert_eq!(s.lambda, 2, "K3 is 2-edge-connected");
+    }
+
+    // ── λ (EDGE CONNECTIVITY) — the per-family certificate ────────────────────────────────────────
+    //
+    // λ is REPORTED, never used to decide membership. The `lambda_two_node_is_one` case is the reason:
+    // a 2-copy family cannot have λ >= 2, so gating membership on λ would delete every 2-copy family.
+
+    #[test]
+    fn lambda_complete_graph_is_n_minus_one() {
+        for n in 2..=6usize {
+            let edges: Vec<(usize, usize)> =
+                (0..n).flat_map(|i| ((i + 1)..n).map(move |j| (i, j))).collect();
+            assert_eq!(edge_connectivity(n, &edges), n - 1, "K{n} must have lambda = {}", n - 1);
+        }
+    }
+
+    #[test]
+    fn lambda_two_node_is_one() {
+        // THE REASON λ IS NOT A MEMBERSHIP CRITERION: one edge is all a 2-node graph can hold.
+        assert_eq!(edge_connectivity(2, &[(0, 1)]), 1);
+    }
+
+    #[test]
+    fn lambda_path_and_cycle() {
+        // path 0-1-2-3 hangs on any single edge; the 4-cycle needs two cuts.
+        assert_eq!(edge_connectivity(4, &[(0, 1), (1, 2), (2, 3)]), 1);
+        assert_eq!(edge_connectivity(4, &[(0, 1), (1, 2), (2, 3), (3, 0)]), 2);
+    }
+
+    #[test]
+    fn lambda_disconnected_and_degenerate_are_zero() {
+        assert_eq!(edge_connectivity(4, &[(0, 1), (2, 3)]), 0, "already disconnected");
+        assert_eq!(edge_connectivity(3, &[(0, 1)]), 0, "isolated node 2");
+        assert_eq!(edge_connectivity(1, &[]), 0, "single node: no cut to pay");
+        assert_eq!(edge_connectivity(0, &[]), 0);
+    }
+
+    #[test]
+    fn lambda_two_cliques_joined_by_a_bridge_is_one() {
+        // K3 {0,1,2} -- bridge 2-3 -- K3 {3,4,5}: dense, but one record's loss splits it.
+        let edges = [(0, 1), (0, 2), (1, 2), (2, 3), (3, 4), (3, 5), (4, 5)];
+        assert_eq!(edge_connectivity(6, &edges), 1);
+        let s = community_stats(
+            &[0, 1, 2, 3, 4, 5],
+            &edges.iter().map(|&(a, b)| (a, b, 1.0)).collect::<Vec<_>>(),
+        );
+        assert_eq!(s.lambda, 1);
+        assert_eq!(s.n_articulation, 2, "the bridge's two endpoints are cut vertices");
+    }
+
+    #[test]
+    fn lambda_ignores_duplicate_records_for_the_same_pair() {
+        // `community_stats` de-duplicates before λ: three alignment records for one pair is still ONE
+        // edge whose loss splits the family, so λ must stay 1 and not be inflated to 3.
+        let e = [(0, 1, 1.0), (0, 1, 1.0), (0, 1, 1.0)];
+        assert_eq!(community_stats(&[0, 1], &e).lambda, 1);
     }
 
     #[test]

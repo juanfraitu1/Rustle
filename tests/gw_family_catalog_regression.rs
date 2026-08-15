@@ -12,6 +12,12 @@ use std::process::Command;
 /// two overlapping copies -- `distinguishing_uniq` was never populated on the `--cross-chrom` path, so the
 /// chi(H) read-evidence guard was inert. The committed golden still contained GWFAM1 and would have caught
 /// it on the first real comparison.
+/// ⚠ GOLDEN REGENERATED 2026-08-14, deliberately and once, for the λ certificate columns
+/// (`n_edges`/`density`/`lambda`/`cut_certified`). What was verified before blessing the new baseline:
+/// `copies.tsv` and `copies.fa` stayed BYTE-IDENTICAL; `families.tsv` differed ONLY by the four appended
+/// fields; both families (GWFAM0 cross-chrom, GWFAM1 same-chrom) survived; and every new field is `NA`,
+/// which is correct on this path — `--cross-chrom` is the CONFLICT catalog, it builds no `E_r` graph, so
+/// it has no λ to certify. `NA` and not `0`: a missing certificate must not read as a disconnected family.
 #[test]
 fn default_cross_chrom_output_is_unchanged() {
     let bin = env!("CARGO_BIN_EXE_gw_family_catalog");

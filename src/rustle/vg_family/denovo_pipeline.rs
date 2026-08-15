@@ -85,7 +85,8 @@ pub struct DenovoConfig {
     pub filter_readthrough: bool,
     /// Split mis-chained reads at spurious giant introns before seeding (opt-in). Default off = byte-identical.
     pub mischain_salvage: bool,
-    /// Gate each co-located family by MUTUAL HOMOLOGY (`refine_families_exon_sum`: asm20 id>=0.80,
+    /// Gate each co-located family by MUTUAL HOMOLOGY (`refine_families_exon_sum`, on the SHARED E_r
+    /// primary tier since X.4 -- `-k 11 -w 5` @ 0.60 by default,
     /// cov-of-shorter>=0.50, + sensitive tier) across >= 2 distinct loci — the SAME criterion
     /// `gw_family_catalog` refines by. Default ON: without it the read-conflict oracle admits large-gene
     /// intra-gene mis-chains (PBX1) and repeat-bridges as families (`bench/GW_CATALOG_FP_AUDIT.md`). Requires
@@ -386,8 +387,8 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>, p: &DetectParams) -> Vec<Deno
                 && !a.introns.is_empty()
                 && !b.introns.is_empty()
             {
-                let au = a.seq.to_ascii_uppercase();
-                let bu = b.seq.to_ascii_uppercase();
+                let au = crate::vg_family::family_graph::upper_cow(&a.seq);
+                let bu = crate::vg_family::family_graph::upper_cow(&b.seq);
                 let core = contiguous_core_coverage_bounded(&au, &bu, p.len_cap);
                 if core >= p.collapse_span_core {
                     return true;
@@ -832,7 +833,9 @@ use crate::vg_family::collapse_gate::{collapse_verdict, Ambiguity, CollapseVerdi
 ///
 /// A read is AMBIGUOUS iff `mapq == 0`: the aligner found no reason to prefer this placement over another.
 /// Supplementary records are excluded for the same reason they are excluded from conflict edges — a chimeric
-/// segment is adjacency, not ambiguity. Secondary records never enter `bam_reads` as separate entries here.
+/// segment is adjacency, not ambiguity. ⚠ Secondary records DO enter `bam_reads` as separate entries
+/// (`reads_in_region` collects every mapped record) — this counter deliberately includes them, because a
+/// multimapper's alternative placements are exactly the ambiguity being measured.
 fn locus_ambiguity(rep: &DenovoTranscript, bam_reads: &[BamRead]) -> Ambiguity {
     let (mut n, mut k) = (0usize, 0usize);
     for br in bam_reads {
@@ -1110,6 +1113,44 @@ pub fn retain_non_mischain(
             eprintln!("[{tag}]   mis-chain {d}");
         }
     }
+}
+
+/// Is this READ mis-chained — does its alignment leave the locus through a giant gap?
+///
+/// True iff any of the read's OWN introns exceeds `giant_bp`. **There is deliberately no support clause**,
+/// and that is the entire difference from [`is_giant_intron_mischain`]:
+///
+/// * [`is_giant_intron_mischain`] asks *is this TRANSCRIPT MODEL spurious?* A giant intron carried by many
+///   reads may be a real deep large gene, so it is kept — the documented scope limit.
+/// * This asks *do THIS READ's bases belong at THIS locus?* A read chained across a giant gap lays its
+///   far-end bases into a pileup that is hundreds of kb away, and it does that whether one read or a
+///   hundred make the same chaining mistake. **A popular mis-chain is evidence of systematic mis-chaining,
+///   not of truth.** So for any per-read statistic scoped to a locus — identity, divergence, clipping, a
+///   PSV column — the support clause is not merely unhelpful, it is the wrong question.
+///
+/// Measured on the matched-individual substrate (`o3_mischain/fix/red/`, denominators printed there):
+/// at the locus `GWFAM244:2` **150 of 150** primary reads carry an intron > `MISCHAIN_GIANT_INTRON_BP`,
+/// the dominant mis-chain is **827,011 bp** and is carried by **97** primary reads — **32×**
+/// [`MISCHAIN_MIN_JUNCTION_READS`] — so [`is_giant_intron_mischain`] returns `false` for every dominant
+/// mis-chain at that locus while this predicate returns `true` for every one of its reads.
+pub fn is_mischained_read(r: &PrimaryRead, giant_bp: u64) -> bool {
+    r.introns.iter().any(|&(d, a)| a.saturating_sub(d) > giant_bp)
+}
+
+/// Drop mis-chained reads ([`is_mischained_read`]) before any locus-scoped per-read statistic. Returns the
+/// number dropped so the caller can print the denominator. Threshold from the single source of truth
+/// [`MISCHAIN_GIANT_INTRON_BP`], env-overridable exactly like the transcript-level filter, so a sweep moves
+/// both rules together and neither can silently disagree about what "giant" means.
+///
+/// This is NOT [`split_mischained_reads`]: that one SALVAGES (cuts a read into its local pieces and keeps
+/// both) and is the right tool when the reads are being assembled. This one REMOVES, which is the right
+/// tool when the reads are being measured — a salvaged half-read is still a read whose mate half sits at
+/// another copy, and a locus statistic must not average over the two.
+pub fn retain_local_reads(reads: &mut Vec<PrimaryRead>) -> usize {
+    let giant = env_num("RUSTLE_MISCHAIN_GIANT_BP", MISCHAIN_GIANT_INTRON_BP);
+    let before = reads.len();
+    reads.retain(|r| !is_mischained_read(r, giant));
+    before - reads.len()
 }
 
 /// Mis-chain salvage (opt-in). `Some(split reads)` when `cfg.mischain_salvage`, else `None` (caller keeps the
@@ -1491,7 +1532,8 @@ fn admit_novel_pools(
     profiles: &FamilyProfiles,
 ) {
     admit_novel_pools_with_admitter(fa, pools, bam_reads, all_copies, profiles, |cand, host| {
-        absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::default())
+        // `from_env` == `default` unless RUSTLE_ABSENT_MIN_CLUSTERS is set (removal-ablation only).
+        absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::from_env())
     })
 }
 
@@ -1657,6 +1699,28 @@ fn linearize_cert_if_enabled(
     }
 }
 
+/// Detect co-located families in a region and assign every read to a copy.
+///
+/// # `supplied_families` — the O1→O2 file contract (`copy_assign --families`)
+///
+/// `None` (the default, and every historical caller) = the shipped behaviour: families are DERIVED here
+/// from the BAM (pass1 → gate → collapse → membership oracle → co-location → refine).
+///
+/// `Some(f)` = the copy set is GIVEN (a `gw_family_catalog` `copies.tsv`, materialized by
+/// `catalog_input::to_colocated`), and this function DOES NOT CONSTRUCT FAMILIES AT ALL. Specifically it
+/// skips, and must keep skipping:
+///
+/// * `pass1_skeletons_robust` and everything reached through it — with no skeletons, `transcripts`/`reps`
+///   are empty, so the placement pass, the membership oracle (E_c conflict graph or E_r homology), the POA
+///   diagnostic, `colocated_families` and the collapse gate all degenerate to no-ops for free;
+/// * the REFINE gate (`refine_families_exon_sum`), which re-clusters a copy set by its own edge tiers —
+///   re-deriving membership on top of a supplied roster is exactly what this mode exists to avoid;
+/// * the family RESCUE leg (`rescue_thin_loci_iterative`), which ADDS under-assembled copies to the family.
+///
+/// What still runs is the ASSIGNMENT of BAM reads to the given copies (PSV + junction likelihood +
+/// significance gate) — reads always come from the BAM; only the copy set is supplied. The other
+/// roster-changing legs (`absent_copies`, `vg_realign` admission, `iterative_prune`, `collapse_gate`,
+/// `tied_seed`) are refused by the CLI when `--families` is given rather than silently widened here.
 pub fn detect_and_assign(
     primary_reads: &[PrimaryRead],
     bam_reads: &[BamRead],
@@ -1670,6 +1734,7 @@ pub fn detect_and_assign(
     do_linearize: bool,
     linearize_gate: bool,
     fasta_path: &str,
+    supplied_families: Option<&[ColocatedFamily]>,
 ) -> (
     Vec<FamilyAssignment>,
     Vec<FallbackEdge>,
@@ -1686,10 +1751,21 @@ pub fn detect_and_assign(
             }
         };
     }
+    // O1→O2 FILE CONTRACT: with a supplied catalog the whole detection front end is DEAD WORK and, worse,
+    // would be a second membership oracle running behind the user's back. Emptying the skeletons is enough
+    // to switch it all off at once: `assemble_gate([])` = no transcripts = no reps, and every stage below
+    // (`build_read_placements`, the conflict/homology oracle, the POA diagnostic, `colocated_families`, the
+    // collapse gate) is a fold over `reps` that is vacuous on an empty rep set. Stated once, here, rather
+    // than as five separate `if supplied` guards that could drift apart.
+    let supplied = supplied_families.is_some();
     // Same `k` as the O1 catalogs: one canonical extent per locus across objectives (see `detect_families`).
-    let salvaged = maybe_salvage_mischain(primary_reads, cfg);
+    let salvaged = if supplied { None } else { maybe_salvage_mischain(primary_reads, cfg) };
     let seed_reads: &[PrimaryRead] = salvaged.as_deref().unwrap_or(primary_reads);
-    let skeletons = pass1_skeletons_robust(seed_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    let skeletons = if supplied {
+        Vec::new()
+    } else {
+        pass1_skeletons_robust(seed_reads, cfg.pass1_min_reads, cfg.min_terminal_support)
+    };
     // TIED-SEED (opt-in): assemble the tied-seed skeletons into their OWN reps, kept ENTIRELY OUT of the
     // primary `reps` / conflict / refine / assignment pipeline. K=0 tied reps mixed into `reps` add spurious
     // conflict edges that over-merge families and wreck assignment (chr1 amylase 21->6 copies; os1 rep-shift).
@@ -1852,24 +1928,61 @@ pub fn detect_and_assign(
     // `gw_family_catalog` applies — so the per-region path and the genome-wide catalog agree on what a family is.
     // Without it the conflict oracle admits large-gene mis-chains (PBX1) and repeat-bridges (see
     // `bench/GW_CATALOG_FP_AUDIT.md`). `cfg.refine` off ⇒ assign the raw families (no minimap2).
-    let mut colocated: Vec<ColocatedFamily> =
-        colocated_families(&reps, &split, win, min_copies, &cfg.detect);
-    if cfg.refine {
+    //
+    // ⚠ **RESIDUAL D1 (2026-08-09, KNOWN, NOT FIXED HERE).** `gw_family_catalog` made refine OPT-IN on
+    // the homology (E_r) catalog, because refine appends a second clustering stage — its own core +
+    // genomic-span edge SUBSTRATES, clustered by CONNECTED COMPONENTS — on top of γ-quasi-clique(E_r),
+    // and none of that is in `docs/seeded_family_definition.md` §1. This site still runs refine
+    // unconditionally on `cfg.refine`. That is CORRECT for copy_assign's DEFAULT (`homology_primary`
+    // defaults to false ⇒ these are E_c conflict-derived co-located families, which is exactly the
+    // catalog refine was written for and where it was measured to bite). It reproduces the D1 shape
+    // ONLY under `copy_assign --homology-primary`. Left alone deliberately: that combination was not
+    // measured, and an unmeasured behavioural change is worse than a recorded one.
+    //
+    // With `supplied_families` the roster is GIVEN, so neither `colocated_families` nor refine runs: this
+    // mode exists precisely so O2 stops deriving its own answer to "what is a family". `reps` is empty here
+    // (see the front-end note above), so `colocated_families` would return nothing anyway — the branch is
+    // written explicitly so the skip is a stated decision rather than a side effect of an empty vector.
+    let mut colocated: Vec<ColocatedFamily> = match supplied_families {
+        Some(f) => {
+            eprintln!(
+                "[detect_and_assign] --families: {} supplied catalog famil{} assigned AS GIVEN \
+                 (no detection, no refine, no rescue)",
+                f.len(),
+                if f.len() == 1 { "y" } else { "ies" }
+            );
+            f.to_vec()
+        }
+        None => colocated_families(&reps, &split, win, min_copies, &cfg.detect),
+    };
+    if cfg.refine && !supplied {
         let before = colocated.len();
         let copysets: Vec<Vec<DenovoTranscript>> = colocated.iter().map(|c| c.copies.clone()).collect();
         let refine_params = RefineParams { intron_fasta: Some(fasta_path.to_string()), ..Default::default() };
         let refined = refine_families_exon_sum(copysets, &refine_params, Some(genome), cfg.conflict.min_reads)
             .expect("refine (default): refine_families_exon_sum failed — is minimap2 on PATH? pass --no-refine to skip");
+        // ⚠ This line used to hard-code "asm20 id>=0.80". It was already wrong for `--min-identity` runs
+        // and became wrong for EVERY default run when the primary tier moved to the sensitive seed (X.4),
+        // so it is derived from the same selector refine actually uses.
+        let (log_seed, log_floor, _) = er_primary_tier(&refine_params);
         eprintln!(
-            "[detect_and_assign] refine: {} co-located families -> {} homology-gated (asm20 id>=0.80, cov>=0.50, >= 2 distinct loci)",
+            "[detect_and_assign] refine: {} co-located families -> {} homology-gated ({} id>={:.2}, cov>={:.2}, >= 2 distinct loci)",
             before,
-            refined.len()
+            refined.len(),
+            log_seed.join(" "),
+            log_floor,
+            refine_params.min_coverage
         );
         colocated = refined.into_iter().enumerate().map(|(i, c)| colocated_from_copies(i, c)).collect();
     }
     for cf in colocated {
         // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
         // and ADD them to the copy set, so reads can be assigned to them too. Iterative (bridge-aware).
+        //
+        // ⚠ SKIPPED under `--families`. Rescue WIDENS the roster — it is copy construction, just at a lower
+        // read floor — so leaving it on would mean `copy_assign --families` assigned against a copy set that
+        // is not the one it was handed, and the O1/O2 sets could not be compared. Requirement: with a
+        // supplied catalog the copy set is EXACTLY the supplied catalog.
         let members: Vec<FamilyMember> = cf
             .copies
             .iter()
@@ -1886,15 +1999,18 @@ pub fn detect_and_assign(
         let (rlo, rhi) = (cf.start.saturating_sub(RESCUE_WIN), cf.end + RESCUE_WIN);
         // collapsed-copy recovery: AS-tied secondary reads (rescue_extra, empty by default) join the rescue
         // input so a copy whose reads minimap2 flagged secondary can clear the thin-loci support gate.
-        let region_primary: Vec<PrimaryRead> = primary_reads
-            .iter()
-            .chain(rescue_extra.iter())
-            .filter(|r| r.chrom == cf.chrom && r.ref_start < rhi && r.ref_end > rlo)
-            .cloned()
-            .collect();
-        let loci = thin_loci(&region_primary, RESCUE_MIN_SUPPORT);
-        let rescued =
-            rescue_thin_loci_iterative(&loci, &members, &member_spans, genome, &RescueParams::default(), 3);
+        let rescued = if supplied {
+            Vec::new()
+        } else {
+            let region_primary: Vec<PrimaryRead> = primary_reads
+                .iter()
+                .chain(rescue_extra.iter())
+                .filter(|r| r.chrom == cf.chrom && r.ref_start < rhi && r.ref_end > rlo)
+                .cloned()
+                .collect();
+            let loci = thin_loci(&region_primary, RESCUE_MIN_SUPPORT);
+            rescue_thin_loci_iterative(&loci, &members, &member_spans, genome, &RescueParams::default(), 3)
+        };
         let rescued_copies = rescued.len();
         // tid -> discovery remap identity, for reference-ABSENT copies admitted below (Stage-2). Keyed on
         // tid (not index) so it survives the pruning/reassignment `all_copies` undergoes afterward; an
@@ -1924,13 +2040,29 @@ pub fn detect_and_assign(
                 region_mapq.push(br.mapq);
             }
         }
+        // O2.14: `region` holds alignment RECORDS; a multimapping molecule appears once per placement (the
+        // shipped BAM is `-Y`, so its secondary records carry the full SEQ and each is independently
+        // scorable). The names make the MOLECULE the unit of a result — see `assign_family_detailed_once`.
+        let region_names: Vec<String> = idx_map.iter().map(|&i| bam_reads[i].name.clone()).collect();
+        // Unique-mapper support is a property of the MOLECULE ("this molecule has a mapq>0 placement"),
+        // not of whichever of its records represents it after the reduction — only the PRIMARY record
+        // carries mapq>0, and the representative need not be the primary. Taking the max over a molecule's
+        // records keeps `uniq`/`anchored` counting exactly the molecules they counted before the reduction.
+        let region_mapq_mol: Vec<u8> = {
+            let mut best: std::collections::HashMap<&str, u8> = std::collections::HashMap::new();
+            for (n, &q) in region_names.iter().zip(region_mapq.iter()) {
+                let e = best.entry(n.as_str()).or_insert(0);
+                *e = (*e).max(q);
+            }
+            region_names.iter().map(|n| best[n.as_str()]).collect()
+        };
         // Stage-1 and Stage-2 run WITHOUT iterative pruning so freeze_merge and downstream bookkeeping stay
         // in the original index space. Pruning, when requested, is applied as a final post-process below.
         let p_once = AssignParams { iterative_prune: false, ..*p };
         // Stage-1: assign over the reference copies only (borrow scoped so `all_copies` stays reassignable).
         let mut detail = {
             let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
-            assign_family_detailed(&copies, &region, &p_once, Some(genome))
+            assign_family_detailed(&copies, &region, &p_once, Some(genome), Some(&region_names))
         };
         // Task 5 (opt-in): two-stage freeze for reference-ABSENT (collapsed) copies. OFF => this whole block
         // is skipped, so the loop below is byte-for-byte the pre-Task-5 path (`all_copies`/`detail` unchanged).
@@ -1952,7 +2084,8 @@ pub fn detect_and_assign(
             };
             for cand in &cands {
                 if let Some(host) = all_copies.iter().find(|t| t.tid == cand.host_tid) {
-                    match absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::default()) {
+                    // `from_env` == `default` unless RUSTLE_ABSENT_MIN_CLUSTERS is set (removal-ablation only).
+                    match absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::from_env()) {
                         Admission::Copy(t, id) => {
                             if let Some(v) = id {
                                 remap_id_by_tid.insert(t.tid.clone(), v);
@@ -2005,7 +2138,7 @@ pub fn detect_and_assign(
                 // surviving absent-copy assignment is flagged `discovery_coupled`). Matched by read_index.
                 {
                     let copies2: Vec<&DenovoTranscript> = copies2_owned.iter().collect();
-                    let mut d2 = assign_family_detailed(&copies2, &region, &p_once, Some(genome));
+                    let mut d2 = assign_family_detailed(&copies2, &region, &p_once, Some(genome), Some(&region_names));
                     d2.results = freeze_merge(&detail.results, std::mem::take(&mut d2.results), n_ref);
                     detail = d2;
                 }
@@ -2019,7 +2152,7 @@ pub fn detect_and_assign(
         // post-process so the output copy roster is internally consistent.
         if p.iterative_prune && all_copies.len() >= 2 {
             let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
-            detail = assign_family_detailed_pruned(&copies, &region, p, Some(genome));
+            detail = assign_family_detailed_pruned(&copies, &region, p, Some(genome), Some(&region_names));
             all_copies = detail.copy_indices.iter().map(|&i| all_copies[i].clone()).collect();
         }
         // Unified gene-conversion-vs-artifact discriminator: tag each confirmed event by recurrence
@@ -2146,7 +2279,7 @@ pub fn detect_and_assign(
                 r.combined.n_decisive >= 1,
                 resolvable_psv,
             );
-            if assigned_j && region_mapq[r.read_index] > 0 {
+            if assigned_j && region_mapq_mol[r.read_index] > 0 {
                 fa.uniq += 1;
                 fa.uniq_agree += (r.combined.best_copy == r.mapped_copy) as usize;
             }
@@ -2754,7 +2887,7 @@ pub(crate) fn coverage_edges_all_reps(
             .into_iter()
             .collect();
     if params.nucleotide_sensitive {
-        edges.extend(nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, min_cov, None, params)?);
+        edges.extend(nucleotide_edges(&seqs, ER_SENSITIVE_SEED, params.sensitive_identity, min_cov, None, params)?);
     }
     Ok(edges)
 }
@@ -2821,6 +2954,18 @@ pub(crate) fn homology_blocks_pooled(
     refine: &RefineParams,
     gamma: f64,
 ) -> Result<Vec<Vec<usize>>> {
+    Ok(homology_blocks_pooled_with_edges(reps, pooled, refine, gamma)?.0)
+}
+
+/// As `homology_blocks_pooled`, additionally returning the `E_r` edge set the blocks were cut from.
+/// The blocks are bit-identical to `homology_blocks_pooled`'s — this only stops throwing the edges away,
+/// because the λ certificate needs the graph, not just the partition of it.
+pub(crate) fn homology_blocks_pooled_with_edges(
+    reps: &[DenovoTranscript],
+    pooled: Option<&[Vec<Vec<u8>>]>,
+    refine: &RefineParams,
+    gamma: f64,
+) -> Result<(Vec<Vec<usize>>, Vec<(usize, usize)>)> {
     let edges2 = homology_edges_all_reps_pooled(reps, pooled, refine)?;
     // Every edge carries weight 1.0, so the weighted machinery underneath runs UNWEIGHTED. This is a
     // deliberate choice, not an oversight, and it is worth stating because `de` (hence identity) IS
@@ -2833,7 +2978,8 @@ pub(crate) fn homology_blocks_pooled(
     // not how strongly they are weighted. Revisit only if the edge rule is ever relaxed enough to admit
     // a genuinely graded population.
     let edges3: Vec<(usize, usize, f64)> = edges2.iter().map(|&(a, b)| (a, b, 1.0)).collect();
-    Ok(crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma))
+    let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma);
+    Ok((blocks, edges2))
 }
 
 /// Group a rep set into families with the shared engine (`homology_blocks`) and keep those spanning
@@ -2848,20 +2994,104 @@ pub fn families_from_reps(
     min_copies: usize,
     min_reads: usize,
 ) -> Result<Vec<Vec<DenovoTranscript>>> {
-    let blocks = homology_blocks(&reps, refine, gamma)?;
+    Ok(families_from_reps_certified(reps, refine, gamma, min_copies, min_reads)?.0)
+}
+
+/// THE STRUCTURAL CERTIFICATE of ONE emitted family, computed on the graph whose nodes are the family's
+/// EMITTED copies (post `coverage_split_block`, post `distinct_locus_reps` — see
+/// `distinct_locus_reps_grouped` for why the node set matters).
+///
+/// This is a REPORT, not a rule: nothing in the pipeline branches on it, no family is added, dropped or
+/// reshaped by it, and it carries no threshold. Its purpose is to let a reader check a claim the catalog
+/// would otherwise only assert — how much alignment evidence the family's connectedness actually rests on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FamilyCertificate {
+    /// Emitted copies in the family (= the node count λ and `density` are computed over).
+    pub n: usize,
+    /// `E_r` edges induced on those copies, de-duplicated (a merged locus inherits its members' edges).
+    pub n_edges: usize,
+    /// `2|E| / (n(n-1))`; `1.0` for `n <= 1`.
+    pub density: f64,
+    /// Edge connectivity: the minimum number of `E_r` edges whose removal would split this family.
+    /// **`lambda >= 2` certifies that no single alignment record's loss can split it.** `lambda == 1`
+    /// says the family hangs on one edge — always true for a 2-copy family, which is exactly why this
+    /// is reported rather than enforced.
+    pub lambda: usize,
+}
+
+/// As `families_from_reps`, additionally returning one `FamilyCertificate` per emitted family, in the
+/// SAME order. The family list is bit-identical to `families_from_reps`' — the certificate is derived
+/// from the graph that was already built and is never consulted to decide membership.
+pub fn families_from_reps_certified(
+    reps: Vec<DenovoTranscript>,
+    refine: &RefineParams,
+    gamma: f64,
+    min_copies: usize,
+    min_reads: usize,
+) -> Result<(Vec<Vec<DenovoTranscript>>, Vec<FamilyCertificate>)> {
+    let (blocks, er_edges) = homology_blocks_pooled_with_edges(&reps, None, refine, gamma)?;
     let cov_split = coverage_split_floor();
     let cov_edges = coverage_edges_all_reps(&reps, cov_split, refine)?;
     let mut out = Vec::new();
+    let mut certs = Vec::new();
     for block in blocks {
         for sub in coverage_split_block(&block, &cov_edges) {
             let copies: Vec<DenovoTranscript> = sub.iter().map(|&i| reps[i].clone()).collect();
-            let loci = distinct_locus_reps(copies, min_reads);
+            let grouped = distinct_locus_reps_grouped(copies, min_reads);
+            let loci: Vec<DenovoTranscript> = grouped.iter().map(|(t, _)| t.clone()).collect();
             if sub.len() >= min_copies && loci.len() >= min_copies {
+                let groups: Vec<Vec<usize>> = grouped
+                    .iter()
+                    .map(|(_, mem)| mem.iter().map(|&li| sub[li]).collect())
+                    .collect();
+                certs.push(certificate_for(&groups, &er_edges));
                 out.push(loci);
             }
         }
     }
-    Ok(out)
+    Ok((out, certs))
+}
+
+/// Build a `FamilyCertificate` for a family whose emitted copies are `groups` — one entry per emitted
+/// copy, listing the GLOBAL rep indices that merged into it — over the global `E_r` edge set.
+///
+/// An edge between two emitted copies exists iff ANY member of one aligns to ANY member of the other.
+/// Edges INSIDE a merged copy are dropped (they became self-loops when the loci collapsed), and the
+/// result is de-duplicated so several alignment records for one copy pair count as the ONE edge whose
+/// loss would actually split the family.
+pub(crate) fn certificate_for(
+    groups: &[Vec<usize>],
+    er_edges: &[(usize, usize)],
+) -> FamilyCertificate {
+    use std::collections::{BTreeSet, HashMap};
+    let n = groups.len();
+    let mut owner: HashMap<usize, usize> = HashMap::new();
+    for (gi, g) in groups.iter().enumerate() {
+        for &r in g {
+            owner.insert(r, gi);
+        }
+    }
+    let mut induced: BTreeSet<(usize, usize)> = BTreeSet::new();
+    for &(a, b) in er_edges {
+        if let (Some(&ga), Some(&gb)) = (owner.get(&a), owner.get(&b)) {
+            if ga != gb {
+                induced.insert((ga.min(gb), ga.max(gb)));
+            }
+        }
+    }
+    let edges: Vec<(usize, usize)> = induced.iter().copied().collect();
+    let n_edges = edges.len();
+    let density = if n > 1 {
+        2.0 * n_edges as f64 / (n as f64 * (n as f64 - 1.0))
+    } else {
+        1.0
+    };
+    FamilyCertificate {
+        n,
+        n_edges,
+        density,
+        lambda: crate::vg_family::family_split::edge_connectivity(n, &edges),
+    }
 }
 
 /// GENOME-WIDE homology-primary (E_r) family catalog. reps → E_r edges → γ-quasi-clique blocks →
@@ -2876,6 +3106,7 @@ pub fn detect_homology_catalog_genome_wide(
     gamma: f64,
 ) -> Result<(
     Vec<Vec<DenovoTranscript>>,
+    Vec<FamilyCertificate>, // one per emitted family, SAME order as the families above
     Vec<crate::vg_family::collapse_enumerate::CollapsedFamily>,
     Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
     Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily>, // DNA-family fallback (RNA-orphans)
@@ -2984,7 +3215,8 @@ pub fn detect_homology_catalog_genome_wide(
     }
 
     // --- E_r edges + γ-quasi-clique blocks ---
-    let blocks = homology_blocks_pooled(
+    // `er_edges` is kept (not discarded as before) solely to compute each emitted family's λ certificate.
+    let (blocks, er_edges) = homology_blocks_pooled_with_edges(
         &reps,
         if pooled_exons.is_empty() { None } else { Some(pooled_exons.as_slice()) },
         refine,
@@ -3007,6 +3239,8 @@ pub fn detect_homology_catalog_genome_wide(
     };
 
     let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
+    // One entry per family pushed to `out`, in the same order (see `FamilyCertificate`).
+    let mut certs: Vec<FamilyCertificate> = Vec::new();
     let mut collapsed: Vec<crate::vg_family::collapse_enumerate::CollapsedFamily> = Vec::new();
     // Collected here and projected in ONE batched minimap2 call after the loop (one genome index load
     // total), instead of re-indexing the genome per dropped candidate.
@@ -3018,8 +3252,15 @@ pub fn detect_homology_catalog_genome_wide(
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
         // ≥2 spatially-distinct loci certificate. `locus_min_reads()`, not `cfg.conflict.min_reads`: this
         // path builds no conflict graph (see the accessor's doc comment).
-        let loci = distinct_locus_reps(copies.clone(), cfg.locus_min_reads());
+        let grouped = distinct_locus_reps_grouped(copies.clone(), cfg.locus_min_reads());
+        let loci: Vec<DenovoTranscript> = grouped.iter().map(|(t, _)| t.clone()).collect();
         if block.len() >= min_copies && loci.len() >= min_copies {
+            // λ certificate on the EMITTED node set (post-merge), never on the pre-merge block.
+            let groups: Vec<Vec<usize>> = grouped
+                .iter()
+                .map(|(_, mem)| mem.iter().map(|&li| block[li]).collect())
+                .collect();
+            certs.push(certificate_for(&groups, &er_edges));
             out.push(loci);
         } else if (cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback) && loci.len() < 2 {
             // GENUINE collapse only (< 2 RNA-distinct loci), independent of min_copies: a block with
@@ -3074,7 +3315,8 @@ pub fn detect_homology_catalog_genome_wide(
     if !dna_families.is_empty() {
         eprintln!("[gw-catalog-homology] dna-family-fallback: {} DNA_FAMILY_RNA_NONHOMOLOGOUS loci re-admitted (copy-number only)", dna_families.len());
     }
-    Ok((out, collapsed, expressed, dna_families))
+    debug_assert_eq!(out.len(), certs.len(), "one certificate per emitted family, same order");
+    Ok((out, certs, collapsed, expressed, dna_families))
 }
 
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
@@ -3268,59 +3510,158 @@ pub fn refine_families_exon_sum(
     } else {
         Vec::new()
     };
+    // ⭐ X.4 — ONE TIER. The primary tier is resolved ONCE, from the shared `er_primary_tier`, and reused
+    // for every family and for the genomic-span tier below. Before this, both sites called
+    // `primary_seed_args()` directly and so ignored `RUSTLE_ER_SENSITIVE_ONLY` entirely.
+    let (prim_seed, prim_floor, prim_mask) = er_primary_tier(params);
+    let prim_seed_ref: Vec<&str> = prim_seed.iter().map(String::as_str).collect();
+    // ⭐ O-3 — THE ONE DECISION about the additive genomic-span leg, taken ONCE, here. The gate below
+    // branches on it and the certificate at the bottom of this function is built from THIS value, so
+    // `params.tsv` cannot claim a substrate the run did not use. It used to be a nested `if` no observer
+    // could read, which is why the certificate printed `substrate = exon-sum` for an `E_x ∪ E_g` run.
+    let genomic_tier = additive_genomic_tier(params, genome.is_some());
+    // The substrate the CORE tier aligns. `refine_copy_seq(_, core_genome)` is what actually decides it,
+    // so it is named from the same condition rather than restated.
+    let core_substrate = substrate_name(params.include_introns);
+    eprintln!(
+        "[refine] E_r primary tier: {} @ identity {:.4} (sensitive_only={}) | core substrate: {} | additive genomic tier: {}",
+        prim_seed.join(" "),
+        prim_floor,
+        er_sensitive_only(params),
+        core_substrate,
+        genomic_tier.label()
+    );
+    // Aggregates for the `<prefix>.refine.params.tsv` instrument (below). Data only; the RULE rows come
+    // from `er_rule_rows` and are byte-comparable against the O1 catalog's.
+    let mut dump_reps = 0usize;
+    let mut dump_edges = 0usize;
+    let mut dump_lens: Vec<usize> = Vec::new();
+    // ⭐ UNION AUDIT (`RUSTLE_UNION_AUDIT=<path>`) — the instrument for "how often does the additive
+    // genomic-span tier actually fire, and does it move anything?". PURE ACCOUNTING: every value below is
+    // derived from data the function already computes, nothing feeds back into a decision, and the whole
+    // block writes only when the env var is set. Behaviour-neutrality is asserted by the control panel
+    // staying byte-identical with the var set and unset.
+    let audit_on = std::env::var("RUSTLE_UNION_AUDIT").map(|v| !v.is_empty()).unwrap_or(false);
+    let mut au_fam_examined = 0usize; // families with >= 2 copies (the gate's denominator)
+    let mut au_gate_false = 0usize; // ... where edges_connect_all(primary) was FALSE
+    let mut au_genomic_calls = 0usize; // ... where the genomic-span tier actually ran (genome present)
+    let mut au_genomic_skipped_nogenome = 0usize; // gate open but no genome => tier could not run
+    let mut au_fam_genomic_added = 0usize; // families where the genomic leg added >= 1 NEW edge
+    let mut au_edges_genomic_new = 0usize; // NEW edges contributed by the genomic leg
+    let mut au_edges_primary_total = 0usize;
+    let mut au_fam_comps_changed = 0usize; // families whose COMPONENT PARTITION moved under the union
+    let mut au_comps_primary_total = 0usize;
+    let mut au_comps_union_total = 0usize;
+    let mut au_fam_connected_by_union = 0usize; // gate-false families the union made fully connected
+    let mut au_rows: Vec<String> = Vec::new();
     let mut refined: Vec<Vec<DenovoTranscript>> = Vec::new();
     for (fi, fam) in families.iter().enumerate() {
         if fam.len() < 2 {
             continue;
         }
+        au_fam_examined += 1;
         // core tier: exon-sum (spliced) for a clean, intron-length-independent identity; genomic span only when
         // include_introns is explicitly set (the genomic-span tier below is the additive default-on path).
         let core_genome = if params.include_introns { genome } else { None };
         let seqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, core_genome)).collect();
-        // base detector: asm20 on the configured sequence (the validated, high-precision recent core).
+        dump_reps += fam.len();
+        dump_lens.extend(seqs.iter().map(|s| s.len()));
+        // base detector: the PRIMARY tier on the configured sequence.
         // Provenance: every edge carries the mask of tiers that independently produced it, so a family's
         // discovery path is recorded rather than reconstructed from the merged edge set.
         let mut prov: BTreeMap<(usize, usize), TierMask> = BTreeMap::new();
         {
-            let seed = primary_seed_args();
-            let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
-            for e in nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, None, params)? {
-                *prov.entry(e).or_insert(0) |= TIER_ASM20;
+            // The dump tag carries the CORE substrate's name (one spelling, `substrate_name`), so a
+            // `<prefix>.refine.core.<substrate>.*.paf` can never be confused with the additive leg's.
+            for e in nucleotide_edges_tagged(
+                &seqs,
+                &prim_seed_ref,
+                prim_floor,
+                params.min_coverage,
+                None,
+                params,
+                Some(&format!("refine.core.{core_substrate}")),
+            )? {
+                *prov.entry(e).or_insert(0) |= prim_mask;
             }
         }
         let mut edge_set: BTreeSet<(usize, usize)> = prov.keys().copied().collect();
+        // Snapshot of the PRIMARY (exon-sum core) edge set, before any additive tier unions into it. This is
+        // the object every "union is a no-op" claim on record was actually measured on; keeping it lets the
+        // audit compare the two partitions on the SHIPPED object instead of on an externally built PAF.
+        let au_primary: BTreeSet<(usize, usize)> = if audit_on { edge_set.clone() } else { BTreeSet::new() };
+        au_edges_primary_total += edge_set.len();
         // The additive tiers only UNION more edges. If the asm20 exon-sum core already connects every copy into a
         // single homology component, they are a provable no-op (`homology_components` on a superset of a connected
         // edge set gives the same partition, and `distinct_locus_reps` runs unchanged). So skip them — and the
         // genome fetch the genomic-span tier needs — for the common fully-connected family. This is the case for
         // most near-identical segdup families; the tiers (and the genome touch) run only when asm20 left a gap.
         if !edges_connect_all(fam.len(), &edge_set) {
-            // GENOMIC-SPAN tier (recall fix, `bench/FALSE_NEGATIVES.md`): a near-identical segdup whose PARTIAL
+            // GENOMIC-SPAN tier (recall fix; evidence + denominators in `bench/FALSE_NEGATIVES.md`, which
+            // was DELETED in 9b0814f and RESTORED by O-4 — this citation dangled for a month, leaving a
+            // default-ON edge rule with no justification in the tree. O-4 2026-08-13 re-measured the leg
+            // on the SHIPPED object and KEPT it ON: 11/26 families' partitions moved, yet block sets vs
+            // DNA-only differ 0/26 and the emitted catalogs are identical (ARI 1.0000, 0 forbidden pairs).
+            // It is a recall gain with no measured precision cost BECAUSE it is gated and family-local.)
+            // A near-identical segdup whose PARTIAL
             // de-novo transcript models fail the exon-sum coverage floor still covers most of its GENOMIC extent
             // at the same (gap-compressed) identity; a repeat-bridge covers < min_coverage of the genomic span
             // regardless of the repeat's identity, so this does NOT readmit bridges/gene-splits. Skipped when
             // include_introns already ran the core tier on genomic.
-            if !params.include_introns {
-                if let Some(g) = genome {
-                    let gseqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, Some(g))).collect();
-                    let seed = primary_seed_args();
-                    let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
-                    for e in nucleotide_edges(&gseqs, &seed_ref, params.min_identity, params.min_coverage, None, params)? {
-                        edge_set.insert(e);
-                        *prov.entry(e).or_insert(0) |= TIER_GENOMIC;
+            au_gate_false += 1;
+            // ⭐ O-3 — the gate reads `genomic_tier`, the SAME value the certificate is built from. The
+            // arms below are exactly the old nested `if !params.include_introns { if let Some(g) = … }`:
+            // `CoreIsGenomic` and `NotPresent` fall through silently as the outer `if` did, `NoGenome` is
+            // the old `else`. Behaviour-identical by construction; what changed is that it is now READABLE.
+            if genomic_tier.armed() {
+                let g = genome.expect("GenomicTier::Armed is returned only when a genome is available");
+                au_genomic_calls += 1;
+                let gseqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, Some(g))).collect();
+                // SAME primary tier as the core run — a different SUBSTRATE, never a different rule. The
+                // dump tag names that substrate, so the `.paf` / `.args` this leg drops can no longer be
+                // mistaken for the core run's (before O-3 the two were byte-identical but for a counter).
+                let mut au_new_here = 0usize;
+                for e in nucleotide_edges_tagged(
+                    &gseqs,
+                    &prim_seed_ref,
+                    prim_floor,
+                    params.min_coverage,
+                    None,
+                    params,
+                    Some(&format!("refine.additive.{SUBSTRATE_GENOMIC_SPAN}")),
+                )? {
+                    // `insert` returns true iff the edge was NOT already present, i.e. iff the genomic
+                    // leg contributed an edge the exon-sum core did not have. That is the quantity the
+                    // whole run turns on, so it is counted here rather than inferred from the tier mask
+                    // (a mask can be set on an edge the primary tier already found).
+                    if edge_set.insert(e) {
+                        au_new_here += 1;
                     }
+                    *prov.entry(e).or_insert(0) |= TIER_GENOMIC;
                 }
+                au_edges_genomic_new += au_new_here;
+                if au_new_here > 0 {
+                    au_fam_genomic_added += 1;
+                }
+            } else if genomic_tier == GenomicTier::NoGenome {
+                au_genomic_skipped_nogenome += 1;
             }
             // divergent tiers on the EXON-SUM (protein ORFs need the spliced sequence; the sensitive nucleotide
             // seed is cleanest on the spliced copy). Edges are UNIONed in.
-            if params.nucleotide_sensitive {
+            //
+            // ⚠ Under sensitive-only on the exon-sum substrate the PRIMARY tier already IS this run — same
+            // seed, same floor, same sequences, same `cores: None` — so re-running it can only reproduce the
+            // edges already in `prov`. Skipped, which removes one minimap2 subprocess per unconnected family
+            // and cannot move the edge set. (With `include_introns` the core ran on GENOMIC sequence, so the
+            // exon-sum run is still a distinct substrate and does run.)
+            if params.nucleotide_sensitive && !(er_sensitive_only(params) && !params.include_introns) {
                 let exon_seqs: Vec<Vec<u8>> = fam.iter().map(|c| c.seq.clone()).collect();
                 // Identity floor comes from `params.sensitive_identity` (the SAME knob as the E_r path).
                 // This was a hard-coded 0.70 that `--min-identity` could not reach, so `--min-identity 0.98`
                 // silently admitted 0.70 edges here. One tier, one knob.
                 for e in nucleotide_edges(
                     &exon_seqs,
-                    &["-k", "11", "-w", "5"],
+                    ER_SENSITIVE_SEED,
                     params.sensitive_identity,
                     params.min_coverage,
                     None,
@@ -3337,7 +3678,48 @@ pub fn refine_families_exon_sum(
                 }
             }
         }
+        // ⭐ THE HINGE MEASUREMENT, per family: does the union change the PARTITION the pipeline goes on to
+        // emit? Compared as component SIGNATURES (each component's sorted member list), because a bare
+        // component COUNT can stay equal while membership moves. Read-only: `edges` below is unaffected.
+        if audit_on {
+            let sig = |es: &BTreeSet<(usize, usize)>| -> Vec<Vec<usize>> {
+                let v: Vec<(usize, usize)> = es.iter().copied().collect();
+                let mut cs = homology_components(fam.len(), &v);
+                for c in cs.iter_mut() {
+                    c.sort_unstable();
+                }
+                cs.sort();
+                cs
+            };
+            let cp = sig(&au_primary);
+            let cu = sig(&edge_set);
+            au_comps_primary_total += cp.len();
+            au_comps_union_total += cu.len();
+            let moved = cp != cu;
+            if moved {
+                au_fam_comps_changed += 1;
+            }
+            if au_primary.len() != edge_set.len() && edges_connect_all(fam.len(), &edge_set) {
+                au_fam_connected_by_union += 1;
+            }
+            let span = &fam[0];
+            au_rows.push(format!(
+                "{}\t{}:{}-{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                fi,
+                span.chrom,
+                span.start,
+                span.end,
+                fam.len(),
+                au_primary.len(),
+                edge_set.len(),
+                edge_set.len() - au_primary.len(),
+                cp.len(),
+                cu.len(),
+                if moved { "PARTITION_MOVED" } else { "same" }
+            ));
+        }
         let edges: Vec<(usize, usize)> = edge_set.into_iter().collect();
+        dump_edges += edges.len();
         for comp in homology_components(fam.len(), &edges) {
             if comp.len() < 2 {
                 continue;
@@ -3374,6 +3756,102 @@ pub fn refine_families_exon_sum(
                 }
                 refined.push(loci);
             }
+        }
+    }
+    // ⭐ X.4(2) — THE INSTRUMENT NOW FIRES INSIDE `copy_assign`. `write_er_edge_dump` is reachable only
+    // from `homology_edges_all_reps_pooled`, which O2's refine never calls; measured before this, 25/25
+    // params files were written on the O1 side and 0/25 on the O2 side, so "diff two params.tsv files"
+    // was an O1-only capability. Refine now emits its own pair under the SAME `RUSTLE_ER_EDGE_DUMP`
+    // prefix, with the rule rows produced by the SHARED `er_rule_rows`.
+    // ⭐ UNION AUDIT emission. Appends (never truncates) so one file accumulates a whole panel, and every
+    // call of this function is its own `call=` block — a driver that runs 25 regions gets 25 blocks in one
+    // file. Denominators are PRE-DECLARED here: `fam_examined` is every input family with >= 2 copies, and
+    // it is printed whether or not the tier ever fired.
+    if audit_on {
+        if let Ok(path) = std::env::var("RUSTLE_UNION_AUDIT") {
+            use std::io::Write;
+            static UNION_AUDIT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let call = UNION_AUDIT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                let _ = writeln!(
+                    f,
+                    "#call\t{call}\tlabel\t{}",
+                    std::env::var("RUSTLE_UNION_AUDIT_LABEL").unwrap_or_else(|_| "NA".into())
+                );
+                let _ = writeln!(
+                    f,
+                    "SUMMARY\tcall={call}\tfam_examined={au_fam_examined}\tgate_false={au_gate_false}\
+                     \tgenomic_calls={au_genomic_calls}\tgenomic_skipped_nogenome={au_genomic_skipped_nogenome}\
+                     \tfam_genomic_added_edges={au_fam_genomic_added}\tedges_genomic_new={au_edges_genomic_new}\
+                     \tedges_primary_total={au_edges_primary_total}\tfam_partition_moved={au_fam_comps_changed}\
+                     \tcomps_primary={au_comps_primary_total}\tcomps_union={au_comps_union_total}\
+                     \tfam_connected_by_union={au_fam_connected_by_union}\tinclude_introns={}\tgenome_present={}",
+                    params.include_introns,
+                    genome.is_some()
+                );
+                for r in &au_rows {
+                    let _ = writeln!(f, "FAM\tcall={call}\t{r}");
+                }
+            }
+        }
+    }
+    if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
+        if !prefix.is_empty() {
+            static REFINE_DUMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let n = REFINE_DUMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let stem =
+                if n == 0 { format!("{prefix}.refine") } else { format!("{prefix}.refine.call{}", n + 1) };
+            // ⭐ O-3 — `genomic_tier` is THE VARIABLE THE GATE BRANCHED ON, not a second derivation of the
+            // same condition. That is the whole point: a certificate re-deriving its own answer can be
+            // right about the code and wrong about the run.
+            let site = ErRuleSite {
+                substrate_genomic: params.include_introns,
+                core_lens_supplied: false,
+                genomic_tier,
+            };
+            let rule = er_rule_rows(params, &site);
+            write_kv_tsv(&format!("{stem}.rule.tsv"), &rule);
+            // params.tsv = the data rows THEN the rule rows, so it stays a superset of `.rule.tsv` on both
+            // sides. Only `.rule.tsv` is the parity object; these counts are input-dependent by design.
+            let mut rows: Vec<(String, String)> = vec![
+                ("site".into(), "refine_families_exon_sum".into()),
+                ("n_families_in".into(), families.len().to_string()),
+                ("n_families_out".into(), refined.len().to_string()),
+                ("n_reps".into(), dump_reps.to_string()),
+                ("n_edges".into(), dump_edges.to_string()),
+                ("min_identity_asm20".into(), format!("{:.6}", params.min_identity)),
+                ("sensitive_identity".into(), format!("{:.6}", params.sensitive_identity)),
+                ("nucleotide_sensitive".into(), params.nucleotide_sensitive.to_string()),
+                ("protein_tail".into(), params.protein_tail.to_string()),
+                ("include_introns".into(), params.include_introns.to_string()),
+                ("threads".into(), params.threads.to_string()),
+                // ⭐ O-3 — DID THE ADDITIVE GENOMIC LEG ACTUALLY FIRE, AND WHAT DID IT CONTRIBUTE?
+                // `additive_genomic_tier` (a RULE row, appended below) says whether it was ARMED; these
+                // say what happened. Both are needed: an armed leg that never fires and a leg that
+                // rebuilt the whole edge set print the same rule row and must not print the same run.
+                ("n_families_examined".into(), au_fam_examined.to_string()),
+                ("n_families_core_unconnected".into(), au_gate_false.to_string()),
+                ("n_families_genomic_tier_ran".into(), au_genomic_calls.to_string()),
+                ("n_families_genomic_tier_skipped_nogenome".into(), au_genomic_skipped_nogenome.to_string()),
+                ("n_families_genomic_tier_added_edges".into(), au_fam_genomic_added.to_string()),
+                // The number every "the union is a no-op" claim is about: edges present in `E_x ∪ E_g`
+                // and NOT in the exon-sum core's `E_x`. 0 here is the no-op, measured on the object the
+                // binary actually emits.
+                ("n_edges_genomic_tier_added".into(), au_edges_genomic_new.to_string()),
+                ("n_edges_core_tier".into(), au_edges_primary_total.to_string()),
+                ("additive_genomic_tier_fired".into(), (au_edges_genomic_new > 0).to_string()),
+                ("paf_glob_for_this_edge_set".into(), format!("{prefix}.refine.*.paf")),
+                ("substrate_median_len_bp".into(), {
+                    median_len(&dump_lens).map(|m| m.to_string()).unwrap_or_else(|| "NA".into())
+                }),
+                ("coverage_floor_median_bp_demand".into(), {
+                    coverage_floor_bp_demand(params.min_coverage, &dump_lens)
+                        .map(|b| b.to_string())
+                        .unwrap_or_else(|| "NA".into())
+                }),
+            ];
+            rows.extend(rule);
+            write_kv_tsv(&format!("{stem}.params.tsv"), &rows);
         }
     }
     Ok(refined)
@@ -3451,6 +3929,262 @@ pub(crate) fn primary_seed_args() -> Vec<String> {
     }
 }
 
+/// ─────────────────────────────────────────────────────────────────────────────────────────────────────
+/// THE SHIPPED E_r ALIGNMENT TIER — **ONE DEFINITION, NO SECOND COPY**.
+///
+/// Every all-vs-all homology alignment in this crate is `minimap2 -c -X --no-long-join -t <threads>
+/// <preset...>`. These three flags were previously hardcoded at FOUR sites (two `Command` builders, the
+/// `RUSTLE_ER_EDGE_DUMP` `.args` line, and the `params.tsv` `mm_args_sensitive` row). That duplication is
+/// exactly how the tier drifted away from the eight bench/crossspecies panel scripts, which ran
+/// `-N 200 -p 0.02` with NO `-X` and therefore built a DIFFERENT graph on byte-identical FASTA (partition
+/// differs on 4/14 panels, edge count on 10/14). `-N`/`-p` are INERT at this tier; `-X` is the operative
+/// difference, because it implies `--dual=no`.
+///
+/// ⚠ `-X` means ONE orientation per pair is emitted and the query is NOT necessarily the shorter sequence
+/// (measured: the query is the LONGER sequence in ~60% of records). Any per-record statistic computed here
+/// must therefore choose its AXIS explicitly — see `ER_COVERAGE_FORM` and the coverage block below.
+///
+/// The VALUE is unchanged from the shipped binary; only the duplication is removed.
+pub(crate) const ER_TIER_FLAGS: &[&str] = &["-c", "-X", "--no-long-join"];
+
+/// Human-readable statement of the coverage form applied to every E_r record. Emitted into
+/// `params.tsv` so a run self-reports its definition (diff two `params.tsv` files, never read code).
+pub(crate) const ER_COVERAGE_FORM: &str = "aligned span on the SHORTER sequence / len(shorter) \
+    (ql<=tl ? (qe-qs)/ql : (te-ts)/tl); axis follows the denominator";
+
+/// Build the shipped-tier `minimap2` invocation. **The only place a `Command` for E_r is constructed.**
+pub(crate) fn er_tier_command(minimap2: &str, threads: usize, mm_args: &[&str]) -> std::process::Command {
+    let mut cmd = std::process::Command::new(minimap2);
+    cmd.args(ER_TIER_FLAGS).arg("-t").arg(threads.max(1).to_string()).args(mm_args);
+    cmd
+}
+
+/// The SENSITIVE seeding tier (`-k 11 -w 5`), previously re-typed at five sites. Paired with
+/// `RefineParams::sensitive_identity`, not `min_identity`.
+pub(crate) const ER_SENSITIVE_SEED: &[&str] = &["-k", "11", "-w", "5"];
+
+/// ⭐ IS THE SHIPPED SINGLE-TIER DEFAULT ACTIVE? (`RUSTLE_ER_SENSITIVE_ONLY`, default **on**.)
+///
+/// **X.4 — THIS PREDICATE USED TO EXIST IN EXACTLY ONE FUNCTION.** The 2026-08-07 "sensitive-only
+/// default" was written inline inside `homology_edges_all_reps_pooled`, so it governed the O1 catalog
+/// edge and NOTHING ELSE. `refine_families_exon_sum` — the edge step O2 (`copy_assign`) actually runs —
+/// called `primary_seed_args()` unconditionally at two sites and therefore kept running `-x asm20` at
+/// `min_identity` (0.80) after the flip. Measured before this fix: O1 ran the sensitive tier on 25/25
+/// panel calls while O2's refine ran asm20@0.80 on 10 of 13. "One tier" was true of one caller.
+///
+/// The predicate now lives here and both callers read it, so the tier cannot drift per call site again.
+pub(crate) fn er_sensitive_only(params: &RefineParams) -> bool {
+    params.nucleotide_sensitive
+        && std::env::var("RUSTLE_ER_SENSITIVE_ONLY").map(|v| v != "0" && !v.is_empty()).unwrap_or(true)
+}
+
+/// The PRIMARY E_r tier as `(seed args, identity floor, tier bit)` — **the single definition of "what
+/// alignment decides an edge"**, shared by O1's `homology_edges_all_reps_pooled` and O2's
+/// `refine_families_exon_sum`.
+///
+/// Sensitive-only (the default): `-k 11 -w 5` at `sensitive_identity`. Otherwise the legacy primary:
+/// `primary_seed_args()` (`-x asm20`, or `RUSTLE_MM2_SEED`) at `min_identity`.
+pub(crate) fn er_primary_tier(params: &RefineParams) -> (Vec<String>, f64, TierMask) {
+    if er_sensitive_only(params) {
+        (ER_SENSITIVE_SEED.iter().map(|s| (*s).to_string()).collect(), params.sensitive_identity, TIER_SENSITIVE)
+    } else {
+        (primary_seed_args(), params.min_identity, TIER_ASM20)
+    }
+}
+
+/// ⭐ **THE TWO SUBSTRATE NAMES, ONCE.** Spelled here and nowhere else, so the certificate row, the
+/// `[refine]` log line and the `.args` / PAF filenames of a dump can never disagree about which sequence
+/// an alignment was run on. (Same reason `ER_TIER_FLAGS` exists: the tier was hardcoded at four sites and
+/// two of them could describe a command the binary never ran.)
+pub(crate) const SUBSTRATE_EXON_SUM: &str = "exon-sum";
+pub(crate) const SUBSTRATE_GENOMIC_SPAN: &str = "genomic-span";
+
+/// The name of the substrate an E_r tier aligned. `genomic == true` ⟹ the genomic span of the locus
+/// (introns + flanks), else the spliced exon-sum.
+pub(crate) fn substrate_name(genomic: bool) -> &'static str {
+    if genomic {
+        SUBSTRATE_GENOMIC_SPAN
+    } else {
+        SUBSTRATE_EXON_SUM
+    }
+}
+
+/// ⭐ **THE STATE OF THE ADDITIVE GENOMIC-SPAN TIER AT A CALL SITE.** `family_refine` does not compute a
+/// single-substrate `E_r`: it runs the primary tier on the CORE substrate and then, for any family the
+/// core leaves unconnected, UNIONS IN the same tier re-run on the genomic span. Whether that second leg is
+/// armed is a property of the *rule*, not of the data, and until O-3 it was decided inline by a nested
+/// `if !params.include_introns { if let Some(g) = genome { … } }` that nothing else could read — so the
+/// certificate printed `substrate = exon-sum` for an edge set that is `E_x ∪ E_g`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum GenomicTier {
+    /// Armed: fires on every family the core tier leaves unconnected. The shipped refine default.
+    Armed,
+    /// The core tier ALREADY aligns the genomic span (`include_introns`), so there is no second substrate.
+    CoreIsGenomic,
+    /// Armed by configuration but no genome is reachable at this call site, so the leg cannot run.
+    NoGenome,
+    /// This call site has no additive genomic leg at all. `homology_edges_all_reps_pooled` SWAPS its
+    /// substrate (`homology_genomic_span`) rather than unioning a second one in.
+    NotPresent,
+}
+
+impl GenomicTier {
+    /// The one predicate the gate branches on. Reading it here rather than re-deriving the condition is
+    /// what makes the certificate and the run the same decision.
+    pub(crate) fn armed(self) -> bool {
+        matches!(self, GenomicTier::Armed)
+    }
+    /// The certificate value. Says what it is AND, when off, why — an unexplained `off` cannot be told
+    /// apart from a missing genome, which is the difference between a rule and an accident.
+    pub(crate) fn label(self) -> String {
+        match self {
+            GenomicTier::Armed => format!(
+                "armed ({SUBSTRATE_GENOMIC_SPAN}, same primary tier; UNIONED into any family the core tier leaves unconnected)"
+            ),
+            GenomicTier::CoreIsGenomic => {
+                format!("off (core substrate is already {SUBSTRATE_GENOMIC_SPAN})")
+            }
+            GenomicTier::NoGenome => "off (no genome reachable at this call site)".into(),
+            GenomicTier::NotPresent => "absent (single-substrate site)".into(),
+        }
+    }
+}
+
+/// ⭐ **THE ONE DECISION.** `family_refine`'s gate and `er_rule_rows` BOTH call this, so `params.tsv`
+/// cannot describe a tier the run did not arm. Do NOT re-derive the condition anywhere else — that
+/// duplication is exactly how the audit trail came to describe a command the binary never ran (B1).
+pub(crate) fn additive_genomic_tier(params: &RefineParams, genome_available: bool) -> GenomicTier {
+    if params.include_introns {
+        GenomicTier::CoreIsGenomic
+    } else if !genome_available {
+        GenomicTier::NoGenome
+    } else {
+        GenomicTier::Armed
+    }
+}
+
+/// Which sequence each E_r call site aligns, and whether it can offer a read-supported core denominator.
+/// Only these things legitimately differ between the two sites, so they are named rather than left
+/// to be inferred from a key that happens to be spelled differently on each side.
+///
+/// ⚠ `include_introns` (refine) and `homology_genomic_span` (the catalog) are **NOT the same substrate
+/// under two names** — that earlier comment was false and is corrected here (O-4). Each SWAPS its own
+/// site's core substrate, but refine ADDITIONALLY unions a genomic-span tier in (`genomic_tier`) while
+/// the catalog has no additive leg at all. A swap and a gated union are different operations, and that
+/// difference is the one line `diff <prefix>.rule.tsv <prefix>.refine.rule.tsv` prints — see
+/// `site_divergence_policy` below for why it is intentional rather than drift.
+pub(crate) struct ErRuleSite {
+    /// `true` ⟹ the primary tier aligns the GENOMIC span; `false` ⟹ the spliced exon-sum. This is the
+    /// CORE substrate only; a site may additionally union a second one in — see `genomic_tier`.
+    pub substrate_genomic: bool,
+    /// `true` ⟹ per-rep read-supported core lengths were passed, so `RUSTLE_ER_CORE_COVERAGE` can bite.
+    pub core_lens_supplied: bool,
+    /// The additive genomic-span leg's state, taken from `additive_genomic_tier()` at the site — never
+    /// re-derived here.
+    pub genomic_tier: GenomicTier,
+}
+
+/// ⭐ **THE E_r RULE AS A FILE.** Every knob that DECIDES an edge, at its EFFECTIVE value, and **nothing
+/// data-dependent** — no counts, no lengths, no paths. Emitted verbatim by BOTH E_r call sites as
+/// `<prefix>.rule.tsv` (O1) and `<prefix>.refine.rule.tsv` (O2), so
+///
+///     diff <prefix>.rule.tsv <prefix>.refine.rule.tsv
+///
+/// is the answer to "do O1 and O2 use the same rule?". An EMPTY diff is the certificate; any line is the
+/// drift. This is what row X.2 of `docs/OBJECTIVES_AND_VERIFICATION.md` recorded as missing: the previous
+/// `params.tsv` was written only by `homology_edges_all_reps_pooled`, which O2's refine never calls, so
+/// the "settle it by diffing two files" claim was an O1-only capability (25/25 written on the O1 side,
+/// 0/25 on the O2 side).
+///
+/// ⚠ Keep this free of anything a run's INPUT can move. A count in here turns a rule diff into a data
+/// diff and the certificate stops meaning anything.
+pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(String, String)> {
+    let (seed, floor, mask) = er_primary_tier(params);
+    let longer = matches!(std::env::var("RUSTLE_ER_COVERAGE_LONGER"), Ok(v) if v != "0" && !v.is_empty());
+    vec![
+        ("mm_flags".into(), ER_TIER_FLAGS.join(" ")),
+        ("primary_tier_seed".into(), seed.join(" ")),
+        ("primary_tier_identity".into(), format!("{floor:.6}")),
+        ("primary_tier_name".into(), tier_names(mask)),
+        ("sensitive_only".into(), er_sensitive_only(params).to_string()),
+        // The ADDITIVE sensitive run. Under sensitive-only on the exon-sum it is the primary tier itself,
+        // so re-running it would be a byte-identical no-op; that is stated here rather than left implicit.
+        ("additive_sensitive_tier".into(), {
+            if !params.nucleotide_sensitive {
+                "off".into()
+            } else if er_sensitive_only(params) && !site.substrate_genomic {
+                "same-as-primary (not re-run)".into()
+            } else {
+                format!("{} @ {:.6}", ER_SENSITIVE_SEED.join(" "), params.sensitive_identity)
+            }
+        }),
+        ("protein_tier".into(), params.protein_tail.to_string()),
+        ("min_coverage".into(), format!("{:.6}", params.min_coverage)),
+        // ⚠ NAMED `core_substrate`, NOT `substrate`. A run whose edge set is `E_x ∪ E_g` has no single
+        // substrate, and the old key invited exactly the misreading it produced: `substrate = exon-sum`
+        // printed on a run that unioned genomic-span edges in (O-3 / joint-run finding F6).
+        ("core_substrate".into(), substrate_name(site.substrate_genomic).into()),
+        // The ADDITIVE GENOMIC-SPAN leg. This is a RULE row: whether the leg is armed decides edges. How
+        // often it FIRED and how many edges it contributed are data, and live in `params.tsv`.
+        ("additive_genomic_tier".into(), site.genomic_tier.label()),
+        // ⭐ O-4 — WHY THE ONE DIFFERING LINE ABOVE IS A DECISION AND NOT DRIFT. Emitted IDENTICALLY at
+        // both sites (a constant), so it never widens the diff; its whole job is that a reader who diffs
+        // the two certificates and finds `additive_genomic_tier` differing learns, from the file itself,
+        // that the divergence was measured and kept. Constant ⟹ it cannot turn a rule diff into a data
+        // diff. Evidence and denominators: `bench/FALSE_NEGATIVES.md`.
+        (
+            "site_divergence_policy".into(),
+            "additive_genomic_tier is the ONLY axis on which the O1 and O2 E_r sites differ; \
+             O-4 2026-08-13 ADJUDICATED KEEP BOTH (refine's leg is GATED+family-local: emitted \
+             catalogs identical 0/26 vs DNA-only, ARI 1.0000; the O1 site's swap is global and its \
+             precision sign is truth-dependent) -- see bench/FALSE_NEGATIVES.md"
+                .into(),
+        ),
+        ("coverage_denominator".into(), match (core_cov_floor(), site.core_lens_supplied) {
+            (Some(f), true) => format!("core(min)@floor={f:.6} else span"),
+            // The core denominator is only reachable where core lengths were passed. Saying "core" at a
+            // site that never supplies them would describe a rule the binary cannot run.
+            (Some(f), false) => format!("span(min) [RUSTLE_ER_CORE_COVERAGE={f:.6} UNREACHABLE here: no core lens]"),
+            (None, _) if longer => "span(max)".into(),
+            (None, _) => "span(min)".into(),
+        }),
+        ("coverage_form".into(), ER_COVERAGE_FORM.into()),
+        ("identity_metric".into(), "1-de (fallback nmatch/blocklen when de:f: absent)".into()),
+        ("edge_rule".into(), "ANY single record clearing both floors".into()),
+        ("summed_coverage".into(), std::env::var("RUSTLE_ER_SUM_COVERAGE").unwrap_or_else(|_| "<unset>".into())),
+        ("drop_stub_edges".into(), er_no_stub_edges().to_string()),
+        ("shared_exon_mode".into(), std::env::var("RUSTLE_SHARED_EXON").unwrap_or_else(|_| "<unset>".into())),
+        ("minimap2".into(), params.minimap2.clone()),
+    ]
+}
+
+/// Write a `key\tvalue` TSV. Used for both `.rule.tsv` and `.params.tsv` so the two can never disagree
+/// about their own format.
+fn write_kv_tsv(path: &str, rows: &[(String, String)]) {
+    use std::io::Write;
+    match std::fs::File::create(path) {
+        Ok(mut fh) => {
+            let _ = writeln!(fh, "key\tvalue");
+            for (k, v) in rows {
+                let _ = writeln!(fh, "{k}\t{v}");
+            }
+            eprintln!("[er-dump] -> {path}");
+        }
+        Err(e) => eprintln!("[er-dump] FAILED to write {path}: {e}"),
+    }
+}
+
+/// The same invocation as a string, for logs / `.args` dumps / `params.tsv`. Derived from
+/// `er_tier_command`'s constants so a dump can never describe a command that was not run.
+pub(crate) fn er_tier_cmdline(minimap2: &str, threads: usize, mm_args: &[&str]) -> String {
+    let mut s = format!("{minimap2} {} -t {}", ER_TIER_FLAGS.join(" "), threads.max(1));
+    if !mm_args.is_empty() {
+        s.push(' ');
+        s.push_str(&mm_args.join(" "));
+    }
+    s
+}
+
 /// All-vs-all minimap2 alignment of a family's per-copy sequences (`seqs[i]`) with the given preset/params
 /// `mm_args` (e.g. `["-x","asm20"]` or `["-k","11","-w","5"]`) → the set of homology edges `(i, j)` (i < j)
 /// whose alignment passes `identity >= min_id` AND `aligned-fraction-of-shorter >= min_cov`. One subprocess
@@ -3464,6 +4198,58 @@ pub(crate) fn nucleotide_edges(
     cores: Option<&[u64]>,
     params: &RefineParams,
 ) -> Result<Vec<(usize, usize)>> {
+    nucleotide_edges_tagged(seqs, mm_args, min_id, min_cov, cores, params, None)
+}
+
+/// As `nucleotide_edges`, but LABELS the PAF/`.args` this call drops under `RUSTLE_ER_EDGE_DUMP`.
+///
+/// ⚠ WHY THIS EXISTS (O-3). `family_refine` runs the SAME tier twice per unconnected family — once on the
+/// exon-sum core, once on the genomic span — and the two dumps differed only by a call counter, so the
+/// audit trail could not say which substrate produced which alignment. The tag is built from
+/// `substrate_name()`, the single spelling the certificate also uses.
+pub(crate) fn nucleotide_edges_tagged(
+    seqs: &[Vec<u8>],
+    mm_args: &[&str],
+    min_id: f64,
+    min_cov: f64,
+    cores: Option<&[u64]>,
+    params: &RefineParams,
+    dump_tag: Option<&str>,
+) -> Result<Vec<(usize, usize)>> {
+    Ok(nucleotide_edges_scored(seqs, mm_args, min_id, min_cov, cores, params, dump_tag)?
+        .into_iter()
+        .map(|(i, j, _ident, _cov)| (i, j))
+        .collect())
+}
+
+/// As `nucleotide_edges`, but also returns the EXEMPLAR identity and coverage of each edge — the passing
+/// record with the highest coverage (ties broken by higher identity), which is deterministic.
+///
+/// WHY THIS SPLIT EXISTS. `homology_edges_all_reps_pooled` receives only `(usize, usize)` pairs: the two
+/// numbers that actually decide an edge are computed here and were discarded one stack frame later, so the
+/// Rust engine could report THAT an edge exists but never WHY. That made true parity against the canonical
+/// Python mirror (`bench/soto/rustlib.py`) unverifiable — a diff could show a set difference but not
+/// attribute it to the identity metric (`1 - de` vs `nmatch/blocklen`), the coverage denominator
+/// (`min` vs `max` vs read-supported core), the floors, or the tier. `RUSTLE_ER_EDGE_DUMP` consumes these
+/// values; see the dump block at the end of `homology_edges_all_reps_pooled`.
+///
+/// The exemplar is REPORTING ONLY. The edge SET is unchanged: a pair is still an edge as soon as ONE
+/// record clears both floors, and coverage is still never summed across records on the default path.
+///
+/// `dump_tag` labels the PAF this call writes under `RUSTLE_ER_EDGE_DUMP`. `Some("er")` marks the two tier
+/// calls that actually BUILD the returned E_r edge set; `None` (every other call site) marks the downstream
+/// per-family refinement runs. Without the tag a single run drops several same-named PAFs in the directory
+/// and a differ can silently pick one that never contributed to the dumped edge set — which would produce a
+/// confident, wrong parity result, the exact failure this dump exists to prevent.
+fn nucleotide_edges_scored(
+    seqs: &[Vec<u8>],
+    mm_args: &[&str],
+    min_id: f64,
+    min_cov: f64,
+    cores: Option<&[u64]>,
+    params: &RefineParams,
+    dump_tag: Option<&str>,
+) -> Result<Vec<(usize, usize, f64, f64)>> {
     use std::io::Write;
     let dir = std::env::temp_dir();
     let pid = std::process::id();
@@ -3493,18 +4279,65 @@ pub(crate) fn nucleotide_edges(
             writeln!(f)?;
         }
     }
-    let out = std::process::Command::new(&params.minimap2)
-        .args(["-c", "-X", "--no-long-join", "-t"])
-        .arg(params.threads.to_string())
-        .args(mm_args)
+    let out = er_tier_command(&params.minimap2, params.threads, mm_args)
         .arg(&path)
         .arg(&path)
         .output()
         .map_err(|e| anyhow::anyhow!("failed to run minimap2 ('{}') for refinement: {e}", params.minimap2))?;
     if !out.status.success() {
-        return Ok(Vec::new()); // an alignment-time failure on one family → no edges (family dissolves)
+        // ⚠ An alignment-time failure is SILENTLY an empty edge set (the family dissolves). Say so on
+        // stderr when the parity dump is on, so an empty dump is never mistaken for a zero-edge finding.
+        if std::env::var("RUSTLE_ER_EDGE_DUMP").is_ok() {
+            eprintln!(
+                "[er-dump] ⚠ minimap2 EXITED NON-ZERO ({}) for args {:?} on {} seqs -> ZERO edges. \
+                 An empty dump here is a FAILED ALIGNMENT, not a result.",
+                out.status,
+                mm_args,
+                seqs.len()
+            );
+        }
+        return Ok(Vec::new());
     }
     let text = String::from_utf8_lossy(&out.stdout);
+    // Opt-in: hand the parity differ the EXACT bytes this rule was applied to. Without this the Python
+    // mirror has to re-run minimap2 itself, and any difference in that invocation (the on-disk fixture PAF
+    // was made with `-x asm20 ... -N 200 -p 0.02` and NO `-X`, i.e. both orientations of every pair) is
+    // charged to the edge rule instead of to the alignment. The rep FASTA is copied too because the
+    // `Cleanup` guard above deletes it, and its `>{i}` headers ARE the node ids used in the PAF.
+    // ⚠ On a genome-wide run this file is the full all-vs-all PAF and can be large.
+    if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
+        if !prefix.is_empty() {
+            let argsig: String = mm_args
+                .join("")
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                .collect();
+            let tag = dump_tag.map(|t| format!("{t}.")).unwrap_or_else(|| "refine.".to_string());
+            let stem = format!("{prefix}.{tag}{argsig}.{uniq}");
+            if std::fs::write(format!("{stem}.paf"), text.as_bytes()).is_ok() {
+                let _ = std::fs::copy(&path, format!("{stem}.reps.fa"));
+                let _ = std::fs::write(
+                    format!("{stem}.args"),
+                    format!(
+                        // ⚠ `tier` is the O-3 fix: the exon-sum core run and the additive genomic-span run
+                        // use the SAME command on DIFFERENT sequence, so without this line two `.args`
+                        // files from one family are byte-identical and neither says what it aligned.
+                        "{} <reps.fa> <reps.fa>\ntier\t{}\nmin_identity\t{}\nmin_coverage\t{}\ncoverage_form\t{}\n",
+                        er_tier_cmdline(&params.minimap2, params.threads, mm_args),
+                        tag.trim_end_matches('.'),
+                        min_id,
+                        min_cov,
+                        ER_COVERAGE_FORM
+                    ),
+                );
+                eprintln!(
+                    "[er-dump] tier {:?}: {} PAF records -> {stem}.paf (+ .reps.fa, .args)",
+                    mm_args,
+                    text.lines().count()
+                );
+            }
+        }
+    }
     // OPTIONAL summed-coverage rule (`RUSTLE_ER_SUM_COVERAGE=1`, default off = byte-identical).
     //
     // The default rule evaluates coverage on ONE record and never sums, so two loci sharing 60% of the
@@ -3530,9 +4363,10 @@ pub(crate) fn nucleotide_edges(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(200.0);
-    let mut sum_blocks: BTreeMap<(usize, usize, char), (Vec<(u64, u64)>, f64)> = BTreeMap::new();
+    let mut sum_blocks: BTreeMap<(usize, usize, char), (Vec<(u64, u64)>, f64, f64)> = BTreeMap::new();
 
-    let mut edge_set: BTreeSet<(usize, usize)> = BTreeSet::new();
+    // Value = the EXEMPLAR (identity, coverage) for reporting only; membership is decided exactly as before.
+    let mut edge_set: BTreeMap<(usize, usize), (f64, f64)> = BTreeMap::new();
     for line in text.lines() {
         let f: Vec<&str> = line.split('\t').collect();
         if f.len() < 12 {
@@ -3547,6 +4381,12 @@ pub(crate) fn nucleotide_edges(
         let qs = f[2].parse::<f64>().unwrap_or(0.0);
         let qe = f[3].parse::<f64>().unwrap_or(0.0);
         let tl = f[6].parse::<f64>().unwrap_or(0.0);
+        // M1: the TARGET-axis aligned span. Previously unparsed, which is why the numerator was always
+        // taken from the query axis even when the denominator came from the target (see the coverage
+        // block below). PAF target start/end are columns 8/9 (0-based fields 7/8) and are always in
+        // forward-target orientation, so `te - ts` is a length regardless of the strand column.
+        let ts = f[7].parse::<f64>().unwrap_or(0.0);
+        let te = f[8].parse::<f64>().unwrap_or(0.0);
         let de = f[12..].iter().find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
         let ident = match de {
             Some(d) => 1.0 - d,
@@ -3564,32 +4404,98 @@ pub(crate) fn nucleotide_edges(
         // The floor must travel WITH the denominator. The core is a strictly smaller target than the span
         // (measured core/span median 0.41, quartiles 0.10-0.68), so the same fraction means a different
         // demand; applying the span's 0.50 to a core denominator silently makes the rule LOOSER.
+        // `RUSTLE_ER_COVERAGE_LONGER=1` divides by the LONGER sequence instead of the shorter, i.e. it
+        // demands that BOTH members be covered (equivalently BLAST's qcovs AND scovs clearing the floor).
+        // Default off = byte-identical.
+        //
+        // WHY. Coverage-of-shorter is STRUCTURALLY BLIND to truncation: a 10% fragment that aligns fully
+        // into a complete sibling scores 1.00, so the rule cannot tell a copy from a piece of one. Three
+        // independent measurements point at the same fix:
+        //   - as a certificate on RNA pairs it gives 129 TRUE vs 2 FALSE, precision 0.985;
+        //   - it is the mechanism behind the only measured RNA-vs-DNA partition contradiction — a 2,037 bp
+        //     NPIPB6 fragment reaches coverage 0.948 against a 38,653 bp chimeric read-through node while
+        //     touching 5% of it, dragging EIF3CL into the NPIP family;
+        //   - it is what would make component merging MONOTONE under improving evidence: with min(), a rep
+        //     that gets MORE complete can BREAK its edge to a shorter sibling (the exon-union substrate lost
+        //     20 recall points to exactly that), so "better reads can only merge components" is currently
+        //     false, and that monotonicity is what makes a witnessed component a coarser reading of a family
+        //     rather than a competing answer.
+        //
+        // ⚠ It is NOT free: the duplicated unit is size-invariant while annotated spans are not (NPIP genes
+        // span 10.6-49.4 kb around a ~16 kb cassette, block length correlating with max(span) at only
+        // r=+0.196), so dividing by the longer span penalises pairs whose ANNOTATION differs rather than
+        // whose SEQUENCE does. Measured ceiling on NPIP: only 134/171 true pairs could reach 0.50 at all,
+        // and NPIPB8-NPIPB2 caps at 0.215. Expect a recall cost; the question this knob exists to answer is
+        // whether the precision gain pays for it end to end.
+        //
+        // ⚠⚠ M1 — THE COVERAGE STATISTIC MUST BE A FRACTION, AND BEFORE THIS FIX IT WAS NOT.
+        //
+        // The numerator was ALWAYS the query-axis aligned span `qe - qs` while the denominator was
+        // `min(ql, tl)` — i.e. a query-axis numerator over a possibly-TARGET denominator. That is not an
+        // aligned FRACTION of anything; it is two different sequences' measurements divided.
+        //
+        // It bites because the shipped tier passes `-X`, which implies `--dual=no`: exactly ONE
+        // orientation per pair is emitted, and minimap2 does not guarantee the query is the shorter
+        // sequence. Measured on the shipped catalog PAFs the query is the LONGER sequence in ~60% of
+        // records, and 110 of 939 accepted edges (11.7%) scored coverage ABOVE 1.0, maximum 1.178 — a
+        // fraction exceeding 1 is the defect making itself visible.
+        //
+        // THE FIX: the numerator's AXIS FOLLOWS THE DENOMINATOR. Whichever sequence supplies the
+        // denominator also supplies the aligned span:
+        //     default (shorter):  ql <= tl ? (qe-qs)/ql : (te-ts)/tl
+        //     COVERAGE_LONGER:    ql >= tl ? (qe-qs)/ql : (te-ts)/tl
+        //     CORE_COVERAGE:      the side whose CORE was selected supplies the span
+        // This is NOT a null change — it removes edges whose apparent coverage was borrowed from the
+        // other sequence's axis, and it can add edges where the target side is the better-covered one.
+        let longer_cov = matches!(std::env::var("RUSTLE_ER_COVERAGE_LONGER"), Ok(v) if v != "0" && !v.is_empty());
+        // `true` = the QUERY side supplies both numerator and denominator; `false` = the TARGET side.
+        // Note this choice is orientation-independent: if a record arrived with q and t swapped, the
+        // flag flips with it and the SAME physical sequence is still selected.
+        let mut side_is_query = if longer_cov { ql >= tl } else { ql <= tl };
+        let span_denom = if longer_cov { ql.max(tl).max(1.0) } else { ql.min(tl).max(1.0) };
         let (shorter, floor) = match core_cov_floor() {
             Some(f) => match (cores.and_then(|c| c.get(q)), cores.and_then(|c| c.get(t))) {
-                (Some(&a), Some(&b)) if a > 0 && b > 0 => ((a.min(b) as f64).max(1.0), f),
+                (Some(&a), Some(&b)) if a > 0 && b > 0 => {
+                    let d = if longer_cov { a.max(b) } else { a.min(b) };
+                    // The core denominator can select the OPPOSITE side from the span, so recompute the
+                    // axis against the cores rather than inheriting the span's answer.
+                    side_is_query = if longer_cov { a >= b } else { a <= b };
+                    ((d as f64).max(1.0), f)
+                }
                 // Core unmeasured for this pair: fall back to the span AND to the span's floor, so missing
                 // data can never make the rule more permissive.
-                _ => (ql.min(tl).max(1.0), min_cov),
+                _ => (span_denom, min_cov),
             },
-            None => (ql.min(tl).max(1.0), min_cov),
+            None => (span_denom, min_cov),
         };
-        let cov = (qe - qs) / shorter;
+        let aln_on_denom_axis = if side_is_query { qe - qs } else { te - ts };
+        let cov = aln_on_denom_axis / shorter;
         if ident >= min_id && cov >= floor {
-            edge_set.insert((q.min(t), q.max(t)));
+            let slot = edge_set.entry((q.min(t), q.max(t))).or_insert((ident, cov));
+            // Keep the highest-coverage passing record as the exemplar (ties -> higher identity). Pure
+            // reporting: the KEY set is identical either way, so this cannot move an edge.
+            if (cov, ident) > (slot.1, slot.0) {
+                *slot = (ident, cov);
+            }
         }
-        if sum_cov && ident >= min_id && (qe - qs) >= min_block {
+        // M1 applies here too: the summed rule unions intervals into the SAME denominator, so the
+        // intervals must be measured on the denominator's axis or the union is a sum of two coordinate
+        // systems. `min_block` is likewise a length on that axis.
+        let (aln_s, aln_e) = if side_is_query { (qs, qe) } else { (ts, te) };
+        if sum_cov && ident >= min_id && aln_on_denom_axis >= min_block {
             let strand = f[4].chars().next().unwrap_or('+');
             let entry = sum_blocks
                 .entry((q.min(t), q.max(t), strand))
-                .or_insert_with(|| (Vec::new(), shorter));
-            entry.0.push((qs as u64, qe as u64));
+                .or_insert_with(|| (Vec::new(), shorter, ident));
+            entry.0.push((aln_s as u64, aln_e as u64));
             entry.1 = entry.1.min(shorter);
+            entry.2 = entry.2.max(ident);
         }
     }
     if sum_cov {
         let mut added = 0usize;
-        for ((a, b, _strand), (mut iv, shorter)) in sum_blocks {
-            if edge_set.contains(&(a, b)) {
+        for ((a, b, _strand), (mut iv, shorter, best_ident)) in sum_blocks {
+            if edge_set.contains_key(&(a, b)) {
                 continue;
             }
             iv.sort_unstable();
@@ -3608,8 +4514,9 @@ pub(crate) fn nucleotide_edges(
             if let Some((cs, ce)) = cur {
                 union_len += ce - cs;
             }
-            if union_len as f64 / shorter.max(1.0) >= min_cov {
-                edge_set.insert((a, b));
+            let union_cov = union_len as f64 / shorter.max(1.0);
+            if union_cov >= min_cov {
+                edge_set.insert((a, b), (best_ident, union_cov));
                 added += 1;
             }
         }
@@ -3617,7 +4524,7 @@ pub(crate) fn nucleotide_edges(
             eprintln!("[summed-coverage] {added} additional edge(s) from collinear blocks >= {min_block} bp");
         }
     }
-    Ok(edge_set.into_iter().collect())
+    Ok(edge_set.into_iter().map(|((i, j), (id, cov))| (i, j, id, cov)).collect())
 }
 
 /// Rebuild each locus representative from the UNION of its group's exons instead of its single best chain.
@@ -3831,10 +4738,7 @@ fn nucleotide_edges_indexed(
             writeln!(fh)?;
         }
     }
-    let out = std::process::Command::new(&params.minimap2)
-        .args(["-c", "-X", "--no-long-join", "-t"])
-        .arg(params.threads.max(1).to_string())
-        .args(mm_args)
+    let out = er_tier_command(&params.minimap2, params.threads, mm_args)
         .arg(&path)
         .arg(&path)
         .output()
@@ -4108,31 +5012,59 @@ pub(crate) fn homology_edges_all_reps_pooled(
         };
     }
     let mut prov: BTreeMap<(usize, usize), TierMask> = BTreeMap::new();
-    // The asm20 run is SKIPPABLE here (`RUSTLE_ER_SENSITIVE_ONLY=1`, default off). Measured on Soto
-    // (--homology-primary, sensitive floor 0.70): asm20 produced 2894 edges of which **0** were unique --
-    // every one was also found by the sensitive run, which added 1643 more on its own. Whenever
-    // `sensitive_identity <= min_identity` the sensitive run has both the lower bar and the denser seeding,
-    // so asm20 is expected to be a subset; this env var lets that be verified per dataset rather than
-    // assumed, and skips one genome-wide all-vs-all when it holds.
-    // NOTE: this is path-specific. On the `--cross-chrom` refine path asm20 runs FIRST and the sensitive run
-    // is conditional on `edges_connect_all`, so there asm20 carried sole support in 139 families. Do not
-    // generalise the skip to that path.
-    let sensitive_only = params.nucleotide_sensitive
-        && std::env::var("RUSTLE_ER_SENSITIVE_ONLY").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    // Exemplar (identity, coverage, tier-that-reported-them) per edge, consumed by `RUSTLE_ER_EDGE_DUMP`
+    // only. Populated whether or not the dump is on (at most |E| f64 pairs), so enabling the dump cannot
+    // change which code paths run.
+    let mut metrics: BTreeMap<(usize, usize), (f64, f64, TierMask)> = BTreeMap::new();
+    // ⭐ SENSITIVE-ONLY IS NOW THE DEFAULT on this path; set `RUSTLE_ER_SENSITIVE_ONLY=0` to restore the
+    // asm20 run. asm20 is a SUBSET of the sensitive run, structurally and measured:
+    //   * structurally: whenever `sensitive_identity <= min_identity` the sensitive run has BOTH the lower
+    //     identity bar AND the denser seeding (-k11 -w5 vs asm20's -k19 -w19), so it cannot miss an edge
+    //     the coarser, stricter run finds.
+    //   * Soto (--homology-primary, sensitive floor 0.70): asm20 produced 2894 edges, **0 unique**; the
+    //     sensitive run added 1643 on its own.
+    //   * NPIP 2026-08-06 (27 discovered loci, GENOMIC): asm20 2162, sensitive 2210, union 2210,
+    //     asm20-only **0**.  TBC1D3 (11 loci, genomic): asm20 55, sensitive 55, asm20-only **0**.
+    // ⚠ NOT EXACTLY 0 ON THE SPLICED SUBSTRATE. Same 27 NPIP loci, read-supported exons instead of
+    //   genomic span: asm20 150, sensitive 269, union **270** -- asm20 contributed ONE sole edge.
+    //   The subset argument above is about seeding density and identity floor, both of which hold; the
+    //   single exception comes from chaining on a fragmented (concatenated-exon) target, where the
+    //   coarser -k19 -w19 seeding can chain across a junction the denser seeding splits. One edge in
+    //   270 does not justify a second genome-wide pass, but the claim is "0 on genomic, 1 on spliced",
+    //   not "0".
+    // Skipping it removes one whole genome-wide all-vs-all from the edge step.
+    // ⚠ PATH-SPECIFIC. On the deprecated `--cross-chrom` refine path asm20 runs FIRST and the sensitive run
+    // is conditional on `edges_connect_all`, so THERE asm20 carried sole support in 139 families. That path
+    // is retired; do not generalise this default to it.
+    // X.4: the predicate moved to `er_sensitive_only` so `refine_families_exon_sum` reads the SAME one.
+    // The value here is unchanged.
+    let sensitive_only = er_sensitive_only(params);
     if !sensitive_only {
         let seed = primary_seed_args();
         let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
-        for e in nucleotide_edges(&seqs, &seed_ref, params.min_identity, params.min_coverage, Some(&core_lens), params)? {
-            *prov.entry(e).or_insert(0) |= TIER_ASM20;
+        for (i, j, ident, cov) in
+            nucleotide_edges_scored(&seqs, &seed_ref, params.min_identity, params.min_coverage, Some(&core_lens), params, Some("er"))?
+        {
+            *prov.entry((i, j)).or_insert(0) |= TIER_ASM20;
+            record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_ASM20);
         }
     } else {
         eprintln!("[homology] asm20 run SKIPPED (RUSTLE_ER_SENSITIVE_ONLY)");
     }
     let mut set: BTreeSet<(usize, usize)> = prov.keys().copied().collect();
     if params.nucleotide_sensitive {
-        for e in nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, params.min_coverage, Some(&core_lens), params)? {
-            set.insert(e);
-            *prov.entry(e).or_insert(0) |= TIER_SENSITIVE;
+        for (i, j, ident, cov) in nucleotide_edges_scored(
+            &seqs,
+            ER_SENSITIVE_SEED,
+            params.sensitive_identity,
+            params.min_coverage,
+            Some(&core_lens),
+            params,
+            Some("er"),
+        )? {
+            set.insert((i, j));
+            *prov.entry((i, j)).or_insert(0) |= TIER_SENSITIVE;
+            record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_SENSITIVE);
         }
     }
     if params.protein_tail {
@@ -4189,7 +5121,250 @@ pub(crate) fn homology_edges_all_reps_pooled(
             set.len()
         );
     }
+    // Opt-in parity dump. Placed HERE, after the stub guard, so what it writes is exactly what this
+    // function RETURNS -- the pre-existing `RUSTLE_EDGE_PROVENANCE` writer above dumps `prov`, which
+    // `set.retain` never filters, so under `RUSTLE_ER_NO_STUB_EDGES=1` that file is a strict superset.
+    if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
+        if !prefix.is_empty() {
+            write_er_edge_dump(&prefix, reps, &seqs, &set, &prov, &metrics, params, span_genome.is_some());
+        }
+    }
     Ok(set.into_iter().collect())
+}
+
+/// Keep the highest-coverage exemplar per edge across tiers (ties -> higher identity, then lower tier bit).
+/// Deterministic and reporting-only; see `nucleotide_edges_scored`.
+fn record_edge_metric(
+    metrics: &mut BTreeMap<(usize, usize), (f64, f64, TierMask)>,
+    key: (usize, usize),
+    ident: f64,
+    cov: f64,
+    tier: TierMask,
+) {
+    let slot = metrics.entry(key).or_insert((ident, cov, tier));
+    if (cov, ident) > (slot.1, slot.0) {
+        *slot = (ident, cov, tier);
+    }
+}
+
+/// OPT-IN E_r EDGE DUMP (`RUSTLE_ER_EDGE_DUMP=<prefix>`, unset = not one byte changes).
+///
+/// WHY THIS EXISTS. `gw_family_catalog` emits `copies.tsv` and `families.tsv` but never its EDGE set, and
+/// the edge set is NOT recoverable from them: `distinct_locus_reps` merges/drops reps after blocks are
+/// formed and `emit_catalog` re-sorts families and assigns a fresh per-family `copy_idx`, so the node
+/// numbering the edges are expressed in does not survive into any shipped output. That made parity between
+/// this engine and the canonical Python mirror (`bench/soto/rustlib.py`) UNVERIFIABLE: a test could only
+/// compare Python against another Python harness while claiming to check the Rust. This dump is the missing
+/// artefact — it is the Rust's own answer, in a form Python can diff against.
+///
+/// Three files, all tab-separated, all with a header, all sorted (edges by `(i, j)`, nodes by index,
+/// params in a fixed order) so a `diff` is stable across runs:
+///   * `<prefix>.nodes.tsv`  — one row per rep INCLUDING isolated ones. Without it "no edge" and "not a
+///     node" are indistinguishable. `aln_len` is `len(refine_copy_seq(...))`, i.e. the PAF `qlen`/`tlen`
+///     that became the coverage DENOMINATOR — under `--homology-genomic-span` that is the fetched genomic
+///     span, not `rep.seq.len()`, and using the wrong one silently reproduces a different rule.
+///   * `<prefix>.edges.tsv` — one row per RETURNED edge, with both node keys, both intervals, the exemplar
+///     identity and coverage, the tier those two numbers came from, and the full contributing TierMask.
+///   * `<prefix>.params.tsv` — every knob that can silently move the edge rule, at its EFFECTIVE value.
+///     A clean diff means nothing if both sides were quietly mis-set; this block is what makes it mean
+///     something.
+///
+/// `node_key` is `L~{chrom}_{start}_{end}`, matching `rustlib.canon_node`. `DenovoTranscript.start/end`
+/// are already 0-based half-open, so NO arithmetic is applied here — the `-1` inside `canon_node` exists
+/// only to convert samtools' 1-based inclusive region strings.
+///
+/// ⚠ Silent in `RUSTLE_SHARED_EXON=1` mode, which returns from `homology_edges_all_reps_pooled` before any
+/// of this. An empty dump there is that, not a zero-edge finding.
+///
+/// ⚠ This function is called once per invocation of `homology_edges_all_reps_pooled`. If a run calls it
+/// more than once the later calls get a `.call<N>` infix rather than overwriting, and each path is echoed
+/// to stderr.
+/// Lower median of a length list (deterministic for even n). `None` on an empty list.
+fn median_len(lens: &[usize]) -> Option<usize> {
+    if lens.is_empty() {
+        return None;
+    }
+    let mut v = lens.to_vec();
+    v.sort_unstable();
+    Some(v[(v.len() - 1) / 2])
+}
+
+/// **D2 — the coverage clause `c` is SCALE-DEPENDENT.** `c` is a fraction of `min(|u|,|v|)`, so the
+/// same 0.50 demands a completely different number of BASES depending on what sequence each node
+/// contributes. Measured on one fixed 61-node set with the identical rule and aligner, the median
+/// `0.50·min(len)` demand is **8,810 bp on the genomic span, 4,658 bp on pooled exons and 895 bp on the
+/// shipped rep transcript** — and the pair-bite tracks it (8.30% / 28.31% / 30.81%).
+///
+/// The rule was deliberately LEFT ALONE (see `docs/seeded_family_definition.md` §1a: the absolute-bp
+/// alternative was swept and refuted, and genomic-span-by-default moves the residual into locus
+/// boundaries). What is fixed instead is that the substrate is no longer an UNDECLARED free parameter:
+/// this returns the run's own absolute number so `<prefix>.params.tsv` can carry it.
+///
+/// `lens` must be the lengths of the sequences actually aligned, not `rep.seq.len()` — under
+/// `--homology-genomic-span` those differ by ~7.5× (median spliced `seqlen/span` 0.1292).
+fn coverage_floor_bp_demand(min_coverage: f64, lens: &[usize]) -> Option<u64> {
+    let m = median_len(lens)?;
+    Some((min_coverage.max(0.0) * m as f64).round() as u64)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_er_edge_dump(
+    prefix: &str,
+    reps: &[DenovoTranscript],
+    seqs: &[Vec<u8>],
+    set: &BTreeSet<(usize, usize)>,
+    prov: &BTreeMap<(usize, usize), TierMask>,
+    metrics: &BTreeMap<(usize, usize), (f64, f64, TierMask)>,
+    params: &RefineParams,
+    genomic_span_active: bool,
+) {
+    use std::io::Write;
+    static DUMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = DUMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let stem = if n == 0 { prefix.to_string() } else { format!("{prefix}.call{}", n + 1) };
+    let key = |r: &DenovoTranscript| format!("L~{}_{}_{}", r.chrom, r.start, r.end);
+
+    // --- nodes ---------------------------------------------------------------------------------
+    match std::fs::File::create(format!("{stem}.nodes.tsv")) {
+        Ok(mut fh) => {
+            let _ = writeln!(
+                fh,
+                "idx\tnode_key\tchrom\tstart\tend\tstrand\tn_exon\tn_reads\tdistinguishing_uniq\t\
+                 core_bp\tstub\taln_len\texon_sum_len\tdegree"
+            );
+            for (i, r) in reps.iter().enumerate() {
+                let deg = set.iter().filter(|&&(a, b)| a == i || b == i).count();
+                let _ = writeln!(
+                    fh,
+                    "{i}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{deg}",
+                    key(r),
+                    r.chrom,
+                    r.start,
+                    r.end,
+                    r.strand,
+                    r.introns.len() + 1,
+                    r.n_reads,
+                    r.distinguishing_uniq,
+                    r.core_bp,
+                    r.stub,
+                    seqs.get(i).map(|s| s.len()).unwrap_or(0),
+                    r.seq.len(),
+                );
+            }
+            eprintln!("[er-dump] {} nodes -> {stem}.nodes.tsv", reps.len());
+        }
+        Err(e) => eprintln!("[er-dump] FAILED to write {stem}.nodes.tsv: {e}"),
+    }
+
+    // --- edges ---------------------------------------------------------------------------------
+    match std::fs::File::create(format!("{stem}.edges.tsv")) {
+        Ok(mut fh) => {
+            let _ = writeln!(
+                fh,
+                "rep_i\trep_j\tnode_key_i\tnode_key_j\tchrom_i\tstart_i\tend_i\tstrand_i\t\
+                 chrom_j\tstart_j\tend_j\tstrand_j\tidentity\tcoverage\tmetric_tier\ttiers"
+            );
+            for &(i, j) in set.iter() {
+                let (ri, rj) = (&reps[i], &reps[j]);
+                let (ident, cov, mtier) = match metrics.get(&(i, j)) {
+                    // {:.6} on both sides of the diff; the raw f64 is compared by both engines with `>=`
+                    // against the same floors, so six places is well past what can differ.
+                    Some(&(id, cv, t)) => (format!("{id:.6}"), format!("{cv:.6}"), tier_names(t)),
+                    // Protein-tier edges carry no nucleotide identity/coverage at all.
+                    None => ("NA".to_string(), "NA".to_string(), "NA".to_string()),
+                };
+                let _ = writeln!(
+                    fh,
+                    "{i}\t{j}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{ident}\t{cov}\t{mtier}\t{}",
+                    key(ri),
+                    key(rj),
+                    ri.chrom,
+                    ri.start,
+                    ri.end,
+                    ri.strand,
+                    rj.chrom,
+                    rj.start,
+                    rj.end,
+                    rj.strand,
+                    tier_names(prov.get(&(i, j)).copied().unwrap_or(0)),
+                );
+            }
+            eprintln!("[er-dump] {} edges -> {stem}.edges.tsv", set.len());
+        }
+        Err(e) => eprintln!("[er-dump] FAILED to write {stem}.edges.tsv: {e}"),
+    }
+
+    // --- params --------------------------------------------------------------------------------
+    // The PAF stems are built from the RAW prefix (they are written by `nucleotide_edges_scored`, which
+    // does not know about this function's `.call<N>` de-collision suffix).
+    let stem_hint = prefix;
+    let env = |k: &str| std::env::var(k).unwrap_or_else(|_| "<unset>".to_string());
+    // ⭐ X.4 — THE RULE ROWS ARE NO LONGER TYPED HERE. They come from the shared `er_rule_rows`, the same
+    // function `refine_families_exon_sum` calls, and are ALSO written on their own as `<stem>.rule.tsv`
+    // so the O1/O2 parity question is a `diff` of two data-free files. Everything below `rows` is
+    // input-dependent (counts, lengths, paths) and must NOT be used for that diff.
+    let rule = er_rule_rows(
+        params,
+        // ⚠ O-3 — `NotPresent`, and this is a REAL ASYMMETRY, not a formality: this site SWAPS its
+        // substrate (`homology_genomic_span`, default OFF) where refine UNIONS a second one in (default
+        // ON). Recording it is what makes `diff <prefix>.rule.tsv <prefix>.refine.rule.tsv` able to see
+        // the difference at all; it printed an empty diff across it before.
+        &ErRuleSite {
+            substrate_genomic: genomic_span_active,
+            core_lens_supplied: true,
+            genomic_tier: GenomicTier::NotPresent,
+        },
+    );
+    write_kv_tsv(&format!("{stem}.rule.tsv"), &rule);
+    let mut rows: Vec<(String, String)> = vec![
+        ("site".into(), "homology_edges_all_reps_pooled".into()),
+        ("n_reps".into(), reps.len().to_string()),
+        ("n_edges".into(), set.len().to_string()),
+        ("min_identity_asm20".into(), format!("{:.6}", params.min_identity)),
+        ("sensitive_identity".into(), format!("{:.6}", params.sensitive_identity)),
+        ("nucleotide_sensitive".into(), params.nucleotide_sensitive.to_string()),
+        ("protein_tail".into(), params.protein_tail.to_string()),
+        ("homology_genomic_span".into(), params.homology_genomic_span.to_string()),
+        ("genomic_span_active".into(), genomic_span_active.to_string()),
+        ("threads".into(), params.threads.to_string()),
+        // Derived from ER_TIER_FLAGS, never re-typed: this row used to be a fourth hardcoded copy of the
+        // tier and could therefore describe a command the binary did not run.
+        (
+            "mm_args_sensitive".into(),
+            er_tier_cmdline(&params.minimap2, params.threads, ER_SENSITIVE_SEED),
+        ),
+        // THE ONLY PAFs THAT BUILT THIS EDGE SET. A run also drops `<prefix>.refine.*.paf` from the
+        // downstream per-family refinement; diffing against one of those compares nothing.
+        ("paf_glob_for_this_edge_set".into(), format!("{stem_hint}.er.*.paf")),
+        // D2: the coverage clause is a FRACTION, so the substrate silently sets its absolute demand.
+        // Record both so no catalog can be quoted without its scale (docs/seeded_family_definition.md §1a).
+        ("substrate_median_len_bp".into(), {
+            let lens: Vec<usize> = seqs.iter().map(|s| s.len()).collect();
+            median_len(&lens).map(|m| m.to_string()).unwrap_or_else(|| "NA".into())
+        }),
+        ("coverage_floor_median_bp_demand".into(), {
+            let lens: Vec<usize> = seqs.iter().map(|s| s.len()).collect();
+            coverage_floor_bp_demand(params.min_coverage, &lens)
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "NA".into())
+        }),
+        ("env.RUSTLE_ER_SENSITIVE_ONLY".into(), env("RUSTLE_ER_SENSITIVE_ONLY")),
+        ("env.RUSTLE_ER_SUM_COVERAGE".into(), env("RUSTLE_ER_SUM_COVERAGE")),
+        ("env.RUSTLE_ER_SUM_MIN_BLOCK".into(), env("RUSTLE_ER_SUM_MIN_BLOCK")),
+        ("env.RUSTLE_ER_CORE_COVERAGE".into(), env("RUSTLE_ER_CORE_COVERAGE")),
+        ("env.RUSTLE_ER_CORE_DEPTH".into(), env("RUSTLE_ER_CORE_DEPTH")),
+        ("env.RUSTLE_ER_COVERAGE_LONGER".into(), env("RUSTLE_ER_COVERAGE_LONGER")),
+        ("env.RUSTLE_ER_NO_STUB_EDGES".into(), env("RUSTLE_ER_NO_STUB_EDGES")),
+        ("env.RUSTLE_SHARED_EXON".into(), env("RUSTLE_SHARED_EXON")),
+        ("env.RUSTLE_SENSITIVE_IDENTITY".into(), env("RUSTLE_SENSITIVE_IDENTITY")),
+        ("env.RUSTLE_GENOME_MIN_COVERAGE".into(), env("RUSTLE_GENOME_MIN_COVERAGE")),
+        ("env.RUSTLE_GENOME_GAMMA".into(), env("RUSTLE_GENOME_GAMMA")),
+        ("env.RUSTLE_LOCUS_EXON_UNION".into(), env("RUSTLE_LOCUS_EXON_UNION")),
+        ("env.RUSTLE_COTHREAD_REP".into(), env("RUSTLE_COTHREAD_REP")),
+    ];
+    // The rule rows land LAST, so `params.tsv` remains a strict superset of `rule.tsv` on both sides.
+    rows.extend(rule);
+    write_kv_tsv(&format!("{stem}.params.tsv"), &rows);
 }
 
 /// Protein-homology tier, BATCHED across all families into ONE `mmseqs easy-search`. Each copy's longest ORF
@@ -4418,6 +5593,21 @@ const ANTISENSE_MINORITY_DENOM: u32 = 10;
 /// new threshold. The representative of a locus is the MOST-supported copy (most reads — the real one, not
 /// the minority artifact — then widest span).
 fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<DenovoTranscript> {
+    distinct_locus_reps_grouped(copies, min_reads).into_iter().map(|(t, _)| t).collect()
+}
+
+/// As `distinct_locus_reps`, but ALSO returns, for each emitted locus, the indices into the input
+/// `copies` that merged into it. Identical merge behaviour — `distinct_locus_reps` is a thin wrapper.
+///
+/// EXISTS FOR THE λ CERTIFICATE. λ has to be computed on the graph whose nodes ARE THE EMITTED COPIES,
+/// not on the pre-merge block: this function is exactly where the node set changes (co-located copies
+/// collapse into one locus), so a λ measured before it would describe a different object than the one
+/// the catalog prints. Computing a structural statistic on the wrong node set is the documented trap
+/// "never judge a change to what a NODE IS on node-level metrics".
+fn distinct_locus_reps_grouped(
+    copies: Vec<DenovoTranscript>,
+    min_reads: usize,
+) -> Vec<(DenovoTranscript, Vec<usize>)> {
     let n = copies.len();
     // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent): log every co-located pair this merge examines
     // and its verdict, so "how many merges does the >=2-distinct-loci certificate perform, and at what
@@ -4430,6 +5620,10 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<D
     let merge_min_cover: f64 = std::env::var("RUSTLE_LOCUS_MERGE_MIN_COVER")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
     let mut parent: Vec<usize> = (0..n).collect();
+    // Counts pairs whose MERGE/KEEP verdict came from `reads_distinguish` — O2's χ(H) predicate — i.e.
+    // the sole place O1's node set consults read evidence. Reported unconditionally below so the
+    // O1 ⊥ O2 exception can never be silently load-bearing. See the block comment at the branch.
+    let mut read_leg_decisions: usize = 0;
     for i in 0..n {
         for j in (i + 1)..n {
             let (a, b) = (&copies[i], &copies[j]);
@@ -4453,7 +5647,73 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<D
                 }
                 continue;
             }
-            let collapse = if a.strand == b.strand {
+            // A JUNCTION-LESS rep carries no strand evidence and no independent splice structure:
+            // `DenovoTranscript::strand` is assigned "from the gate's canonical-junction classification",
+            // and a copy with no introns has no junctions to classify, so its `'+'` is a DEFAULT LABEL, not
+            // a call. When such a rep's span is additionally CONTAINED in an overlapping copy's span, it is
+            // that copy's own unspliced read fraction — not a paralog — and it must collapse.
+            //
+            // Measured (2026-08-08, 7 strict single-copy control genes): every spurious "2-copy family" at
+            // a single-copy gene was exactly this shape — (spliced multi-exon rep) + (single-exon rep at the
+            // same start), edge identity 1.0000 because it is literally the same sequence, and the
+            // single-exon rep's read count equal to the count of reads with no `N` in CIGAR. Those reads sit
+            // on the SAME BAM strand, so nothing about the pair is antisense; the fake strand difference
+            // merely routed it to the `ANTISENSE_MINORITY_DENOM` branch, where ratios of 0.145-0.571 cleared
+            // the 1/10 artifact bar and the pair survived as two "loci". 4 of 7 controls emitted families
+            // this way, and the same shape inflated real families' copy counts (MAGEA 13 records at 11 loci,
+            // GSTM 5 at 4).
+            //
+            // THE RULE: exactly ONE side junction-less, the other spliced. A rep WITH junctions carries
+            // positive evidence of being an independent transcript unit (its splice structure); an
+            // overlapping rep WITHOUT junctions carries none, and cannot be told apart from that
+            // transcript's own unspliced reads. When BOTH lack junctions neither can claim priority, so
+            // the read-conflict criterion below decides — which is what preserves the advisor-flagged
+            // "distinguishable-but-merged" cases.
+            //
+            // ⚠ Span CONTAINMENT was tried first and is the WRONG SHAPE: it fixed only 1 of the 4 measured
+            // artifacts, because the junction-less rep's ends are read-derived and routinely overhang by a
+            // base or two — HMBS by 1 bp (127034654-127036246 vs ...245), TFRC by 2 bp
+            // (207807896 vs 207807898), and TBP by 5 kb. Overlap + the junction asymmetry is the invariant;
+            // containment is not.
+            //
+            // PARAMETER-FREE (a junction count of zero, and the overlap already required by `same_pos`), so
+            // this restores the threshold-free distinct-LOCUS guarantee this function's doc comment claims.
+            // It cannot touch a genuine paralog pair (disjoint spans never reach here), a balanced
+            // sense/antisense pair (both spliced), or two junction-less copies (read rule still decides).
+            let unspliced_fragment = a.introns.is_empty() != b.introns.is_empty();
+            // ⚠ O1 ⊥ O2 — THE ONE PLACE O1's NODE SET DEPENDS ON READS, STATED RATHER THAN ASSUMED.
+            //
+            // `reads_distinguish` is O2's χ(H) edge predicate (`read_conflict.rs:253`), so the branch
+            // below is a point where READ EVIDENCE decides what a NODE IS, and therefore where O1's
+            // "membership by SEQUENCE alone" does not hold literally. It reaches here from the DEFAULT
+            // catalog path (`detect_homology_catalog_genome_wide`), not from behind `--refine`.
+            //
+            // IT IS NOT REMOVABLE, AND THAT IS THE POINT. The branch is entered only by a co-located,
+            // SAME-STRAND pair that the junction-asymmetry rule above did not settle — i.e. one whose
+            // two sides are both spliced or both junction-less. In the junction-less case there is no
+            // splice structure to compare and the genomic sequence is shared by construction (the spans
+            // overlap), so NOTHING in the sequence separates the pair: this is the true K=0 case, and
+            // the unique-mapper count is the only signal that exists. Both advisor-flagged
+            // "distinguishable-but-merged" tests below (`..._keeps_distinguishable_colocated_copies_
+            // separate`, `..._two_junctionless_copies_still_decided_by_reads`) are exactly this shape —
+            // their `rep()` helper builds `introns: vec![]`.
+            //
+            // MEASURED 2026-08-13 (`RUSTLE_LOCUS_AUDIT=1`, gorilla): this branch decided **0 of 109**
+            // co-located pairs — 15 on the 25-region control panel and 94 on the 19-region family panel.
+            // Every pair was settled by the junction-asymmetry rule above (104) or the antisense-ratio
+            // rule below (5). So the dependency is real in the code and inert on the data measured.
+            // ⚠ Do NOT "fix" this by comparing intron chains on the both-spliced side: two overlapping
+            // same-strand reps with different chains are usually ISOFORMS OF ONE GENE, and splitting
+            // them would over-split loci. There is no substrate on record where the branch fires, so
+            // such a change cannot be validated — it would be judged on node-level metrics, which has
+            // failed end-to-end three times in this project.
+            //
+            // The counter below makes the exception VISIBLE instead of silent: if the read leg ever
+            // decides anything, the run says so on stderr, unconditionally.
+            let collapse = if unspliced_fragment {
+                true
+            } else if a.strand == b.strand {
+                read_leg_decisions += 1;
                 // χ(H): collapse only when NO read distinguishes them (true K=0). The PSV/junction leg is
                 // not wired here (no per-copy PSV/junction evidence reaches this merge point) — the
                 // unique-mapper leg alone is the fix for the flagged over-merge cases. `min_reads.max(1)`:
@@ -4472,7 +5732,14 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<D
                     "[locus-audit]\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}",
                     a.chrom, a.start, a.end, a.strand, a.n_reads, a.distinguishing_uniq,
                     b.start, b.end, b.strand, b.n_reads, b.distinguishing_uniq,
-                    ov, ov as f64 / minlen as f64, if collapse { "MERGE" } else { "KEEP" }
+                    ov, ov as f64 / minlen as f64,
+                    // distinguish the unspliced-fragment collapse so "how many merges came from the
+                    // junction-less rule" is countable straight out of the audit log.
+                    match (collapse, unspliced_fragment) {
+                        (true, true) => "MERGE_UNSPLICED",
+                        (true, false) => "MERGE",
+                        (false, _) => "KEEP",
+                    }
                 );
             }
             if collapse {
@@ -4480,19 +5747,37 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<D
             }
         }
     }
+    // ⚠ O1 ⊥ O2 EXCEPTION REPORT — unconditional, not behind `RUSTLE_LOCUS_AUDIT`. Silence here is the
+    // claim "this catalog's node set is a function of SEQUENCE alone"; a non-zero count is the claim
+    // "N co-located same-strand pairs were decided by O2's χ(H) read predicate", which must then be
+    // disclosed wherever the catalog's numbers are quoted. Measured 0 on every substrate to date.
+    if read_leg_decisions > 0 {
+        eprintln!(
+            "[o1-perp-o2] WARNING: {read_leg_decisions} co-located same-strand pair(s) were decided by \
+             reads_distinguish (O2's chi(H) predicate), not by sequence. O1's node set is NOT a \
+             function of sequence alone for this run — disclose it with any number derived from it."
+        );
+    }
     // representative per locus = MOST reads (the real copy, not the minority artifact), then widest span.
     let key = |t: &DenovoTranscript| (t.n_reads, t.end - t.start);
+    let roots: Vec<usize> = (0..n).map(|i| uf_find(&mut parent, i)).collect();
     let mut by_locus: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new(); // root -> rep idx
+    let mut members: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
     for i in 0..n {
-        let r = uf_find(&mut parent, i);
+        let r = roots[i];
         let rep = by_locus.entry(r).or_insert(i);
         if key(&copies[i]) > key(&copies[*rep]) {
             *rep = i;
         }
+        members.entry(r).or_default().push(i);
     }
-    let mut reps: Vec<usize> = by_locus.into_values().collect();
-    reps.sort_unstable();
-    reps.into_iter().map(|i| copies[i].clone()).collect()
+    // Emitted order is by representative index, exactly as before the grouped variant existed.
+    let mut out: Vec<(usize, Vec<usize>)> = by_locus
+        .into_iter()
+        .map(|(root, rep)| (rep, members.remove(&root).unwrap_or_default()))
+        .collect();
+    out.sort_by_key(|&(rep, _)| rep);
+    out.into_iter().map(|(rep, mem)| (copies[rep].clone(), mem)).collect()
 }
 
 #[cfg(test)]
@@ -4500,6 +5785,566 @@ mod tests {
     use super::super::copy_split::AlignedRead;
     use super::super::family_detect::collapse_loci;
     use super::*;
+
+    // ── B1: THE SHIPPED TIER IS CENTRALISED, AND STAYING CENTRALISED IS ENFORCED ─────────────────
+    //
+    // The value below is the SHIPPED value, transcribed from the pre-fix binary. If this assertion
+    // ever needs editing, the tier changed and every O1 number in
+    // docs/seeded_family_definition.md must be recomputed and re-labelled.
+    #[test]
+    fn er_tier_value_is_the_shipped_tier_and_is_unchanged() {
+        assert_eq!(ER_TIER_FLAGS, &["-c", "-X", "--no-long-join"]);
+        assert_eq!(ER_SENSITIVE_SEED, &["-k", "11", "-w", "5"]);
+        // The exact argv the shipped binary ran on the sensitive tier, threads=4.
+        assert_eq!(
+            er_tier_cmdline("minimap2", 4, ER_SENSITIVE_SEED),
+            "minimap2 -c -X --no-long-join -t 4 -k 11 -w 5"
+        );
+        // ...and on the asm20 seeding tier used by refine.
+        let seed: Vec<&str> = vec!["-x", "asm20"];
+        assert_eq!(
+            er_tier_cmdline("minimap2", 4, &seed),
+            "minimap2 -c -X --no-long-join -t 4 -x asm20"
+        );
+        // `-t 0` is not a legal minimap2 thread count; one of the two former hardcoded sites clamped
+        // and the other did not. The centralised builder clamps, always.
+        assert!(er_tier_cmdline("minimap2", 0, &[]).contains("-t 1"));
+        // The COMMAND and the CMDLINE must not be able to disagree -- a .args dump that describes a
+        // command the binary did not run is worse than no dump.
+        let cmd = er_tier_command("minimap2", 4, ER_SENSITIVE_SEED);
+        let argv: Vec<String> =
+            cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(
+            format!("{} {}", cmd.get_program().to_string_lossy(), argv.join(" ")),
+            er_tier_cmdline("minimap2", 4, ER_SENSITIVE_SEED)
+        );
+    }
+
+    /// ANTI-DRIFT GUARD. The tier was hardcoded at four sites and that is precisely how it drifted
+    /// away from the panel scripts. This test fails the moment a fifth copy appears: it re-reads this
+    /// source file and requires the flag to exist as a Rust string literal EXACTLY ONCE.
+    #[test]
+    fn er_tier_flags_appear_as_a_literal_exactly_once_in_the_source() {
+        let whole = include_str!("denovo_pipeline.rs");
+        // Count only SHIPPING code. The test module legitimately re-types the tier once, to PIN its
+        // value (`er_tier_value_is_the_shipped_tier_and_is_unchanged`); that copy is the point.
+        let src = whole.split("\n#[cfg(test)]\nmod tests {").next().expect("test module marker");
+        assert!(src.len() < whole.len(), "test-module split failed; the guard would scan itself");
+        // Assembled at runtime so this test's own text is not the thing it counts.
+        let needle = format!("\"--no-{}\"", "long-join");
+        let n = src.matches(needle.as_str()).count();
+        assert_eq!(
+            n, 1,
+            "the E_r tier flag appears as a string literal {n} times; it must appear ONCE, inside \
+             ER_TIER_FLAGS. A second copy is how B1 happened. Use er_tier_command()."
+        );
+        let k11 = src.matches("\"-k\", \"11\", \"-w\", \"5\"").count();
+        assert_eq!(k11, 1, "the sensitive seed is re-typed {k11} times; use ER_SENSITIVE_SEED.");
+    }
+
+    // ── M1: THE COVERAGE STATISTIC IS A FRACTION ────────────────────────────────────────────────
+    //
+    // Pure-arithmetic guard on the FORM. The rule is: the numerator's axis follows the denominator.
+    // Written against the same PAF fields the parser reads, so it pins the formula, not a wrapper.
+    #[test]
+    fn coverage_numerator_axis_follows_the_denominator() {
+        // (ql, qs, qe, tl, ts, te)
+        fn cov(ql: f64, qs: f64, qe: f64, tl: f64, ts: f64, te: f64, longer: bool) -> f64 {
+            let side_is_query = if longer { ql >= tl } else { ql <= tl };
+            let denom = if longer { ql.max(tl).max(1.0) } else { ql.min(tl).max(1.0) };
+            let aln = if side_is_query { qe - qs } else { te - ts };
+            aln / denom
+        }
+        // THE DEFECT, reproduced. -X/--dual=no put the LONGER sequence on the query axis: a 10,000 bp
+        // query aligning 9,000 bp against a 2,000 bp target. Old form = 9000/2000 = 4.5, a "fraction"
+        // of 450%. New form reads the target axis: 1800/2000 = 0.90.
+        let old = (9000.0 - 0.0) / 2000.0_f64.min(10000.0);
+        assert!(old > 1.0, "the pre-fix form must be reproducible as >1 to prove it was not a fraction");
+        let new = cov(10000.0, 0.0, 9000.0, 2000.0, 100.0, 1900.0, false);
+        assert!((new - 0.90).abs() < 1e-9, "got {new}");
+        // A fraction can never exceed 1: the aligned span on a sequence is bounded by its length.
+        assert!(new <= 1.0);
+        // Query IS the shorter sequence -> the query axis is used, i.e. the historical behaviour is
+        // preserved on exactly the records where it was already correct.
+        let q_shorter = cov(2000.0, 100.0, 1900.0, 10000.0, 0.0, 9000.0, false);
+        assert!((q_shorter - 0.90).abs() < 1e-9, "got {q_shorter}");
+        // COVERAGE_LONGER demands BOTH members be covered, so it takes the longer sequence's axis.
+        let longer = cov(10000.0, 0.0, 9000.0, 2000.0, 100.0, 1900.0, true);
+        assert!((longer - 0.90).abs() < 1e-9, "got {longer}");
+        // ...and the same pair with the roles swapped gives the SAME number under both settings.
+        // Symmetry under q/t exchange is the property the old form lacked.
+        for lg in [false, true] {
+            let a = cov(10000.0, 0.0, 9000.0, 2000.0, 100.0, 1900.0, lg);
+            let b = cov(2000.0, 100.0, 1900.0, 10000.0, 0.0, 9000.0, lg);
+            assert!((a - b).abs() < 1e-9, "coverage must be symmetric under q/t swap (longer={lg})");
+        }
+    }
+
+    /// End-to-end on the real parser: two sequences of DIFFERENT length, so the denominator axis is
+    /// actually exercised. Every other aligner test in this file uses EQUAL-length sequences, which
+    /// makes the denominator untestable by construction.
+    #[test]
+    fn nucleotide_edges_coverage_is_bounded_by_one_on_unequal_lengths() {
+        // A 6 kb sequence and a 2 kb exact SUBSEQUENCE of it. The short one is fully covered (1.00);
+        // the long one is one third covered. Under the shipped -X the pair is emitted once, in an
+        // orientation we do not control -- which is the whole point.
+        let mut rng: u64 = 0x5eed_1234;
+        let long: Vec<u8> = (0..6000)
+            .map(|_| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                b"ACGT"[((rng >> 33) % 4) as usize]
+            })
+            .collect();
+        let short = long[2000..4000].to_vec();
+        let p = RefineParams { threads: 1, ..Default::default() };
+        let scored =
+            nucleotide_edges_scored(&[long, short], ER_SENSITIVE_SEED, 0.60, 0.50, None, &p, None)
+                .expect("alignment");
+        assert_eq!(scored.len(), 1, "the pair must produce exactly one edge");
+        let cov = scored[0].3;
+        assert!(
+            cov <= 1.0 + 1e-9,
+            "coverage {cov} exceeds 1.0 -- the statistic is not a fraction (M1 has regressed)"
+        );
+        // Coverage-of-the-SHORTER of an exact subsequence is ~1.0 whichever axis minimap2 chose.
+        assert!(cov > 0.90, "coverage {cov} -- an exact 2 kb subsequence must cover the shorter fully");
+    }
+
+    // ---- X.4: ONE TIER, and an instrument that can prove it ------------------------------------
+    //
+    // The 2026-08-07 "sensitive-only default" was written inline inside `homology_edges_all_reps_pooled`.
+    // `refine_families_exon_sum` — the edge step `copy_assign` runs — called `primary_seed_args()`
+    // unconditionally at two sites, so O2 kept running `-x asm20` at 0.80 (10 of 13 panel calls) while
+    // O1 ran `-k 11 -w 5` at 0.60 (25 of 25). These three tests are what makes that non-reproducible.
+
+    /// Serializes the two tests below that touch `RUSTLE_ER_SENSITIVE_ONLY`, which is process-global.
+    static X4_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn er_primary_tier_is_the_sensitive_seed_by_default() {
+        let _g = X4_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let saved = std::env::var("RUSTLE_ER_SENSITIVE_ONLY").ok();
+        std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY");
+        let p = RefineParams::default();
+        let (seed, floor, mask) = er_primary_tier(&p);
+        assert_eq!(seed, ER_SENSITIVE_SEED.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(floor, p.sensitive_identity, "the floor must travel WITH the seed, not stay at min_identity");
+        assert_eq!(mask, TIER_SENSITIVE);
+        // Opting out restores the legacy primary EXACTLY, floor included.
+        std::env::set_var("RUSTLE_ER_SENSITIVE_ONLY", "0");
+        let (seed, floor, mask) = er_primary_tier(&p);
+        assert_eq!(seed, primary_seed_args());
+        assert_eq!(floor, p.min_identity);
+        assert_eq!(mask, TIER_ASM20);
+        match saved {
+            Some(v) => std::env::set_var("RUSTLE_ER_SENSITIVE_ONLY", v),
+            None => std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY"),
+        }
+        // `--no-sensitive` also falls back to asm20 without touching the env var.
+        let off = RefineParams { nucleotide_sensitive: false, ..RefineParams::default() };
+        assert_eq!(er_primary_tier(&off).2, TIER_ASM20);
+    }
+
+    /// THE PARITY CERTIFICATE, as an assertion — **on the axes the two sites are supposed to share**.
+    /// Given the SAME site descriptor the shared `er_rule_rows` must emit byte-identical rows; that is
+    /// what makes `diff <prefix>.rule.tsv <prefix>.refine.rule.tsv` a real answer instead of a claim.
+    ///
+    /// ⚠ O-3 — this test used to be read as *"O1 and O2 run the same rule"*, which it never checked: it
+    /// hands BOTH sites a hand-written descriptor. The sites' ACTUAL descriptors differ on the additive
+    /// genomic leg, and that is asserted separately in
+    /// `the_o1_and_o2_certificates_differ_only_on_the_additive_genomic_tier`.
+    #[test]
+    fn er_rule_rows_are_identical_at_the_o1_and_o2_call_sites() {
+        let _g = X4_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let saved = std::env::var("RUSTLE_ER_SENSITIVE_ONLY").ok();
+        std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY");
+        let p = RefineParams::default();
+        let site = |cores: bool| ErRuleSite {
+            substrate_genomic: false,
+            core_lens_supplied: cores,
+            genomic_tier: GenomicTier::NotPresent,
+        };
+        // O1: `homology_edges_all_reps_pooled` — exon-sum substrate, core lengths supplied.
+        let o1 = er_rule_rows(&p, &site(true));
+        // O2: `refine_families_exon_sum` — exon-sum substrate, no core lengths (it passes `cores: None`).
+        let o2 = er_rule_rows(&p, &site(false));
+        match saved {
+            Some(v) => std::env::set_var("RUSTLE_ER_SENSITIVE_ONLY", v),
+            None => std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY"),
+        }
+        assert_eq!(o1, o2, "O1 and O2 must emit the same E_r rule at shipped defaults");
+        let m: std::collections::BTreeMap<&str, &str> =
+            o1.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        assert_eq!(m["primary_tier_seed"], "-k 11 -w 5");
+        assert_eq!(m["primary_tier_identity"], "0.600000");
+        assert_eq!(m["sensitive_only"], "true");
+        // No count, length or path may enter the rule file: a data row would turn the parity diff into
+        // a data diff and the certificate would stop meaning anything.
+        for k in m.keys() {
+            assert!(
+                !k.starts_with("n_") && !k.contains("median") && !k.contains("paf"),
+                "`{k}` is data-dependent and must live in params.tsv, not rule.tsv"
+            );
+        }
+    }
+
+    /// ⭐ O-3 — **THE ASYMMETRY THE CERTIFICATE USED TO HIDE, AS AN ASSERTION.** At shipped defaults with a
+    /// genome reachable, O2's refine unions an additive GENOMIC-SPAN leg into `E_r` and O1's catalog does
+    /// not (it SWAPS its substrate instead, `homology_genomic_span` default OFF). So the two rule files
+    /// must differ, and must differ on exactly ONE key. Before this, both printed `substrate = exon-sum`
+    /// and the diff was empty — a certificate that answered "same rule?" with "yes" about a rule that
+    /// differed.
+    ///
+    /// ⚠ This test is the reason the X.2 claim *"`diff O1.rule.tsv O2.refine.rule.tsv` is EMPTY"* must be
+    /// requoted: it was empty because the file could not see the substrate, not because the rules agreed.
+    #[test]
+    fn the_o1_and_o2_certificates_differ_only_on_the_additive_genomic_tier() {
+        let _g = X4_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let saved = std::env::var("RUSTLE_ER_SENSITIVE_ONLY").ok();
+        std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY");
+        let p = RefineParams::default();
+        // The descriptors the two sites ACTUALLY build (see the two `ErRuleSite { … }` literals).
+        let o1 = er_rule_rows(
+            &p,
+            &ErRuleSite {
+                substrate_genomic: false,
+                core_lens_supplied: true,
+                genomic_tier: GenomicTier::NotPresent,
+            },
+        );
+        let o2 = er_rule_rows(
+            &p,
+            &ErRuleSite {
+                substrate_genomic: false,
+                core_lens_supplied: false,
+                genomic_tier: additive_genomic_tier(&p, true),
+            },
+        );
+        match saved {
+            Some(v) => std::env::set_var("RUSTLE_ER_SENSITIVE_ONLY", v),
+            None => std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY"),
+        }
+        let diff: Vec<&str> = o1
+            .iter()
+            .zip(o2.iter())
+            .filter(|(a, b)| a != b)
+            .map(|(a, _)| a.0.as_str())
+            .collect();
+        assert_eq!(
+            diff,
+            vec!["additive_genomic_tier"],
+            "the O1/O2 rule diff must show the additive genomic leg and NOTHING else; got {diff:?}"
+        );
+        let get = |rows: &[(String, String)], k: &str| {
+            rows.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone()).unwrap_or_default()
+        };
+        assert!(get(&o2, "additive_genomic_tier").starts_with("armed"));
+        assert!(get(&o1, "additive_genomic_tier").starts_with("absent"));
+        // Both still agree on the CORE substrate — the point is that the core is not the whole rule.
+        assert_eq!(get(&o1, "core_substrate"), SUBSTRATE_EXON_SUM);
+        assert_eq!(get(&o2, "core_substrate"), SUBSTRATE_EXON_SUM);
+    }
+
+    /// ⭐ O-4 — **THE DIVERGENCE MUST NOT BE SILENT, AND ITS EVIDENCE MUST BE IN THE TREE.**
+    /// O-3 made the two sites' one differing line VISIBLE; a bare difference still reads as drift. This
+    /// asserts the certificate carries, identically at both sites, a row saying the divergence was
+    /// measured and kept, that the row NAMES the key that differs, and — the part that actually failed
+    /// for a month — that the evidence it cites EXISTS. `bench/FALSE_NEGATIVES.md` was deleted in
+    /// `9b0814f` while `family_refine` went on citing it, leaving a default-ON edge rule with no
+    /// justification in the tree. A doc reference that no test reads is a doc reference that rots.
+    #[test]
+    fn the_site_divergence_is_declared_identically_at_both_sites_and_its_evidence_exists() {
+        let _g = X4_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let p = RefineParams::default();
+        let get = |rows: &[(String, String)], k: &str| {
+            rows.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone())
+        };
+        let o1 = er_rule_rows(
+            &p,
+            &ErRuleSite {
+                substrate_genomic: false,
+                core_lens_supplied: true,
+                genomic_tier: GenomicTier::NotPresent,
+            },
+        );
+        let o2 = er_rule_rows(
+            &p,
+            &ErRuleSite {
+                substrate_genomic: false,
+                core_lens_supplied: false,
+                genomic_tier: additive_genomic_tier(&p, true),
+            },
+        );
+        let a = get(&o1, "site_divergence_policy").expect("O1 certificate must declare the policy");
+        let b = get(&o2, "site_divergence_policy").expect("O2 certificate must declare the policy");
+        // CONSTANT across sites: the policy explains the diff, it must never widen it.
+        assert_eq!(a, b, "the policy row is a constant; if it differs it becomes a second drift axis");
+        // It must name the key that actually differs, or it explains the wrong line.
+        assert!(
+            a.contains("additive_genomic_tier"),
+            "the policy must name the diverging key; got `{a}`"
+        );
+        // ⚠ THE GUARD THAT WOULD HAVE CAUGHT THE ORIGINAL DEFECT: the cited evidence must be in the tree.
+        let cited = "bench/FALSE_NEGATIVES.md";
+        assert!(a.contains(cited), "the policy must cite its evidence; got `{a}`");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(cited);
+        assert!(
+            path.is_file(),
+            "`{cited}` is cited by the E_r certificate AND by `family_refine`'s genomic-span tier, so it \
+             must exist. It was deleted once (9b0814f) and the default-ON tier cited a missing file for a \
+             month. Restore it rather than dropping the citation."
+        );
+        let body = std::fs::read_to_string(&path).expect("cited evidence must be readable");
+        assert!(
+            body.contains("genomic-span"),
+            "the cited file must actually be about the genomic-span tier it justifies"
+        );
+    }
+
+    /// ⭐ O-3 — the arming decision is a total function of `(include_introns, genome available)`, and every
+    /// off-state says WHY. An unexplained `off` cannot be told apart from a missing genome, which is the
+    /// difference between a rule and an accident of deployment.
+    #[test]
+    fn additive_genomic_tier_states_are_exhaustive_and_self_explaining() {
+        let mut p = RefineParams::default();
+        assert!(!p.include_introns, "shipped default: the core tier is the exon-sum");
+        assert_eq!(additive_genomic_tier(&p, true), GenomicTier::Armed);
+        assert_eq!(additive_genomic_tier(&p, false), GenomicTier::NoGenome);
+        p.include_introns = true;
+        // include_introns runs the CORE on genomic, so there is no second substrate to union in — the
+        // gate's `if !params.include_introns` and this arm must never disagree.
+        assert_eq!(additive_genomic_tier(&p, true), GenomicTier::CoreIsGenomic);
+        assert_eq!(additive_genomic_tier(&p, false), GenomicTier::CoreIsGenomic);
+        assert!(GenomicTier::Armed.armed());
+        for t in [GenomicTier::CoreIsGenomic, GenomicTier::NoGenome, GenomicTier::NotPresent] {
+            assert!(!t.armed(), "{t:?} must not arm the leg");
+            let l = t.label();
+            assert!(
+                l.starts_with("off (") || l.starts_with("absent ("),
+                "every non-armed state must state its reason; got `{l}`"
+            );
+        }
+        // One spelling of each substrate, shared with the dump tags and the `[refine]` log line.
+        assert_eq!(substrate_name(false), SUBSTRATE_EXON_SUM);
+        assert_eq!(substrate_name(true), SUBSTRATE_GENOMIC_SPAN);
+    }
+
+    /// ⭐ O-3 SOURCE GUARD — **ONE SOURCE OF TRUTH, the `ER_TIER_FLAGS` precedent.** The certificate must
+    /// be built from the SAME value the gate branched on. A second `additive_genomic_tier(...)` call in
+    /// the dump block, or a hand-written `genomic_tier:` literal there, would re-create precisely the
+    /// defect this fixes: a file that is right about the code and wrong about the run.
+    #[test]
+    fn refine_certificate_derives_the_genomic_tier_from_the_gate_not_a_second_derivation() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/rustle/vg_family/denovo_pipeline.rs"
+        ))
+        .expect("read denovo_pipeline.rs");
+        let start = src.find("pub fn refine_families_exon_sum(").expect("refine_families_exon_sum not found");
+        let end = src[start..].find("\n/// The sequence used to compare a copy").expect("end of refine not found");
+        let body = &src[start..start + end];
+        let code: String =
+            body.lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+        assert_eq!(
+            code.matches("additive_genomic_tier(").count(),
+            1,
+            "the additive genomic leg must be decided ONCE in refine; a second derivation is how a \
+             certificate comes to describe a run that did not happen"
+        );
+        assert!(
+            code.contains("genomic_tier.armed()"),
+            "the gate must branch on the shared `GenomicTier`, not re-test `include_introns` / `genome`"
+        );
+        assert!(
+            code.contains("genomic_tier,"),
+            "the emitted ErRuleSite must carry the gate's own `genomic_tier` value"
+        );
+        // The old inline condition must not come back alongside it.
+        assert!(
+            !code.contains("if !params.include_introns {\n                if let Some(g) = genome"),
+            "the nested include_introns/genome gate is what made the leg unobservable"
+        );
+    }
+
+    /// Source-level guard: refine must not reach for `primary_seed_args()` again. That call is exactly
+    /// how the tier drifted — it bypasses `RUSTLE_ER_SENSITIVE_ONLY` and pairs the seed with
+    /// `min_identity` instead of `sensitive_identity`.
+    #[test]
+    fn refine_resolves_its_tier_only_through_er_primary_tier() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/rustle/vg_family/denovo_pipeline.rs"
+        ))
+        .expect("read denovo_pipeline.rs");
+        let start = src.find("pub fn refine_families_exon_sum(").expect("refine_families_exon_sum not found");
+        let end = src[start..].find("\n/// The sequence used to compare a copy").expect("end of refine not found");
+        let body = &src[start..start + end];
+        // CODE only — the function's own commentary NAMES the retired call in order to explain why it is
+        // retired, and a scan that cannot tell those apart fails on its own documentation.
+        let code: String = body
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !code.contains("primary_seed_args()"),
+            "refine must resolve its seed via `er_primary_tier`; a direct `primary_seed_args()` call \
+             ignores RUSTLE_ER_SENSITIVE_ONLY and silently re-splits O1 and O2 into two tiers"
+        );
+        assert!(code.contains("er_primary_tier(params)"), "refine must call `er_primary_tier`");
+        assert!(
+            code.contains("er_rule_rows(params, &site)"),
+            "refine must emit the shared rule rows, or the O1/O2 params diff is unavailable inside copy_assign"
+        );
+    }
+
+    /// ⭐ O-3 — **THE CERTIFICATE MUST NAME THE SUBSTRATE THAT ACTUALLY RAN.** `family_refine` runs its
+    /// core tier on the exon-sum and then, gated only on `!edges_connect_all`, UNIONS IN an additive
+    /// GENOMIC-SPAN tier (default on whenever a genome is reachable). Before this test the certificate
+    /// wired `substrate` to `params.include_introns` alone, so a run whose edge set is `E_x ∪ E_g` wrote
+    /// `substrate = exon-sum` and carried **no row at all** for the additive tier — and "diff two
+    /// `params.tsv` files", the project's official way to settle *do O1 and O2 use the same rule?*, was
+    /// blind on exactly that axis.
+    ///
+    /// This is an END-TO-END assertion on the FILES, not on `er_rule_rows` in isolation: the failure it
+    /// guards against is a certificate that disagrees with the run, which only the emitted bytes can show.
+    /// The fixture is the one from `genomic_span_edges_link_fragments_that_exon_sum_cannot` — two ~99%
+    /// identical loci whose "assembled" exon-sums are DISJOINT, so the core tier cannot link them and the
+    /// family exists ONLY because the genomic leg fired.
+    #[test]
+    fn refine_certificate_reports_the_additive_genomic_tier_that_actually_ran() {
+        use crate::vg_family::family_detect::DenovoTranscript;
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            eprintln!("minimap2 absent; skip");
+            return;
+        }
+        let fa = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/from_genome/subset.fa");
+        if std::fs::metadata(fa).is_err() {
+            eprintln!("fixture absent; skip");
+            return;
+        }
+        // The dump prefix is process-global env, and so is the tier lock every other X.4 test takes.
+        let _g = X4_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let dir = std::env::temp_dir().join(format!("rustle_o3_cert_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mkdir dump dir");
+        let prefix = dir.join("cert");
+        let mk = |tid: &str, chrom: &str, end: u64, seq: Vec<u8>| DenovoTranscript {
+            tid: tid.into(),
+            chrom: chrom.into(),
+            start: 0,
+            end,
+            n_reads: 5,
+            strand: '+',
+            introns: vec![],
+            seq,
+            distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
+            tes: None,
+        };
+        // 431 bp is a FINGERPRINT, not a magic number: `RUSTLE_ER_EDGE_DUMP` is process-global, so any
+        // other test calling refine while this one holds it drops its own dump in the same directory
+        // under `.call<N>`. `substrate_median_len_bp` = 431 with 2 reps and 1 family in identifies THIS
+        // call without asking the file the question the test is here to ask. (Selecting on the answer —
+        // "the params file that says the tier fired" — would be the classic denominator-conditioned-on-
+        // the-prediction defect; it would pass on an empty dump.)
+        let fam = vec![
+            mk("a", "NCF1", 15440, b"A".repeat(431)),
+            mk("b", "NCF1B", 15319, b"C".repeat(431)),
+        ];
+        let mut p = homology_refine_params(Some(0.90), 2);
+        p.intron_fasta = Some(fa.to_string());
+        assert!(!p.include_introns, "the core substrate must be the exon-sum for this test to mean anything");
+        std::env::set_var("RUSTLE_ER_EDGE_DUMP", prefix.to_str().unwrap());
+        let out = refine_families_exon_sum(vec![fam], &p, None, 1);
+        std::env::remove_var("RUSTLE_ER_EDGE_DUMP");
+        let out = out.expect("refine");
+        // The family exists ONLY via the additive genomic leg: the exon-sums are disjoint 400-mers.
+        assert_eq!(out.len(), 1, "the genomic-span tier must union the two disjoint exon-sums into one family");
+
+        let kv = |path: &std::path::Path| -> std::collections::BTreeMap<String, String> {
+            std::fs::read_to_string(path)
+                .unwrap_or_default()
+                .lines()
+                .skip(1)
+                .filter_map(|l| l.split_once('\t'))
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect()
+        };
+        // Pick THIS call's dump by fingerprint rather than by filename: `REFINE_DUMP_SEQ` renames the
+        // second and later refine calls in the process to `.call<N>`, and OTHER tests' refine calls land
+        // in this directory too while the env var is set (that is not hypothetical — it is what the
+        // first full-suite run of this test caught).
+        let mut mine: Vec<(std::path::PathBuf, std::collections::BTreeMap<String, String>)> = Vec::new();
+        let mut seen: Vec<String> = Vec::new();
+        for e in std::fs::read_dir(&dir).expect("read dump dir") {
+            let path = e.expect("dirent").path();
+            if !path.to_string_lossy().ends_with(".params.tsv") {
+                continue;
+            }
+            let m = kv(&path);
+            seen.push(format!(
+                "{} [n_reps={:?} n_families_in={:?} substrate_median_len_bp={:?}]",
+                path.display(),
+                m.get("n_reps"),
+                m.get("n_families_in"),
+                m.get("substrate_median_len_bp")
+            ));
+            if m.get("n_reps").map(String::as_str) == Some("2")
+                && m.get("n_families_in").map(String::as_str) == Some("1")
+                && m.get("substrate_median_len_bp").map(String::as_str) == Some("431")
+            {
+                mine.push((path, m));
+            }
+        }
+        assert_eq!(
+            mine.len(),
+            1,
+            "the 431 bp / 2-rep / 1-family fingerprint must identify exactly one dump; saw {seen:#?}"
+        );
+        let (ppath, par) = mine.pop().expect("checked len == 1");
+        let rpath = std::path::PathBuf::from(ppath.to_string_lossy().replace(".params.tsv", ".rule.tsv"));
+        let rule = kv(&rpath);
+        let shown = std::fs::read_to_string(&rpath).unwrap_or_default();
+
+        // (1) THE RULE FILE — the parity object — must say the additive tier was armed.
+        let tier = rule.get("additive_genomic_tier").map(String::as_str).unwrap_or("<MISSING>");
+        assert!(
+            tier.starts_with("armed"),
+            "rule.tsv must record the additive GENOMIC-SPAN tier as armed on a run whose edge set is \
+             E_x u E_g; got `additive_genomic_tier = {tier}`.\n--- rule.tsv as emitted ---\n{shown}"
+        );
+        // (2) ...and must not let `core_substrate` be read as "this is all that ran".
+        assert_eq!(
+            rule.get("core_substrate").map(String::as_str),
+            Some("exon-sum"),
+            "the core substrate row must be named `core_substrate`, not `substrate`: a run that unions a \
+             second substrate in has no single `substrate`.\n--- rule.tsv as emitted ---\n{shown}"
+        );
+        // (3) THE PARAMS FILE — the data side — must say it FIRED and how much it contributed.
+        assert_eq!(
+            par.get("n_families_genomic_tier_ran").map(String::as_str),
+            Some("1"),
+            "params.tsv must record that the genomic leg RAN on this family; got {:?}",
+            par.get("n_families_genomic_tier_ran")
+        );
+        let added: usize =
+            par.get("n_edges_genomic_tier_added").and_then(|v| v.parse().ok()).unwrap_or(0);
+        assert!(
+            added >= 1,
+            "params.tsv must record the edges the genomic leg CONTRIBUTED (the family only exists \
+             because of them); got n_edges_genomic_tier_added = {:?}",
+            par.get("n_edges_genomic_tier_added")
+        );
+        // `RUSTLE_O3_KEEP_DUMP=1` leaves the emitted certificate on disk: the before/after bytes of this
+        // dump ARE the evidence that the fix landed, and a passing test that deletes them is unquotable.
+        if std::env::var("RUSTLE_O3_KEEP_DUMP").map(|v| v.is_empty()).unwrap_or(true) {
+            let _ = std::fs::remove_dir_all(&dir);
+        } else {
+            eprintln!("[o3] certificate kept at {}", dir.display());
+        }
+    }
 
     #[test]
     fn primary_seed_args_defaults_to_asm20_and_is_overridable() {
@@ -4786,21 +6631,110 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        for banned in ["conflict_edges(", "conflict_families(", "as_tie_edges(", "family_mapq0_support("] {
+        // ⚠ THIS GUARD USED TO CHECK SPELLING, NOT SEMANTICS, AND PASSED WHILE THE VIOLATION FLOWED.
+        // It banned four hand-picked strings; the actual `E_c` dependency on this path uses DIFFERENT
+        // names (`locus_unique_mapper_counts`, and `reads_distinguish` one level down inside
+        // `distinct_locus_reps`), so none of them tripped it. Same shape as the `--cross-chrom`
+        // precedent, where a flag's NAME hid what it selected. Two fixes:
+        //
+        //   (1) the checked set is DERIVED from the `use super::read_conflict::{...}` import rather than
+        //       hand-listed, so a new `E_c` symbol cannot be added without this test seeing it; and
+        //   (2) the scan is TRANSITIVE over the in-file helpers the catalog calls, because the body-only
+        //       scan was structurally blind to `reads_distinguish` — it is not in the catalog body, it
+        //       is in `distinct_locus_reps`, which the catalog calls.
+        //
+        // DISCLOSED_EC_USES is the honest ledger of where O1's node set DOES consult read evidence. It
+        // is not an exemption — every entry is a place the "membership by SEQUENCE alone" claim must be
+        // qualified, and the spec qualifies it. Adding to this list is a THESIS EDIT, not a code edit.
+        let ec_imports: Vec<String> = {
+            let u = src.find("use super::read_conflict::{").expect("read_conflict import not found");
+            let close = src[u..].find("};").expect("unterminated read_conflict import") + u;
+            src[u + "use super::read_conflict::{".len()..close]
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
+        // Transitive scan: the catalog body PLUS the in-file helpers it calls that can carry E_c inward.
+        // ⚠ Bound each helper by BRACE MATCHING, not by "the next top-level `fn`". `distinct_locus_reps`
+        // is the last column-0 `fn` in this file (everything after it is the indented `mod tests`), so a
+        // next-item scan finds nothing, falls back to end-of-file, and swallows the test module — where
+        // the banned names legitimately appear in this very guard's own ban list. That false-positives
+        // the guard, which is worse than the leak it looks for: a test that cries wolf gets relaxed.
+        let mut scanned = body.clone();
+        // ⚠ BOTH names are required. `distinct_locus_reps` became a one-line wrapper when the λ
+        // certificate needed the merge groups, and the E_c call (`reads_distinguish`) moved into
+        // `distinct_locus_reps_grouped`. Scanning only the wrapper would make this guard pass
+        // VACUOUSLY — it would find no banned symbol because it would be reading an empty body.
+        // The `used || !disclosed` assertion below is what catches that, and it is why the list is
+        // asserted non-trivial here rather than trusted.
+        for helper in ["fn distinct_locus_reps(", "fn distinct_locus_reps_grouped("] {
+            if let Some(h) = src.find(helper) {
+                let open = h + src[h..].find('{').expect("helper has no body");
+                let mut depth = 0usize;
+                let mut hend = src.len();
+                for (off, ch) in src[open..].char_indices() {
+                    match ch {
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                hend = open + off + 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                scanned.push('\n');
+                scanned.push_str(
+                    &src[h..hend].lines().map(|l| l.split("//").next().unwrap_or(""))
+                        .collect::<Vec<_>>().join("\n"),
+                );
+            }
+        }
+        const DISCLOSED_EC_USES: [&str; 2] = [
+            // per-locus MAPQ>0 count, fed to `distinguishing_uniq` (catalog body)
+            "locus_unique_mapper_counts",
+            // O2's chi(H) predicate, inside `distinct_locus_reps`; decides MERGE/KEEP for a co-located
+            // SAME-STRAND pair that the junction-asymmetry rule did not settle. Measured to decide
+            // 0 of 109 such pairs on gorilla and 0 firings over 451 chr1 loci, but reachable.
+            "reads_distinguish",
+        ];
+        for sym in &ec_imports {
+            // types carry no behaviour into the node set; only callables do
+            if sym.chars().next().is_some_and(|c| c.is_uppercase()) {
+                continue;
+            }
+            let used = scanned.contains(&format!("{sym}("));
+            let disclosed = DISCLOSED_EC_USES.contains(&sym.as_str());
             assert!(
-                !body.contains(banned),
-                "--homology-primary must decide membership from E_r alone, but \
-                 detect_homology_catalog_genome_wide now calls `{banned}`. If this is deliberate, the \
-                 O1-independent-of-O2 claim in the thesis and in bench/soto/PIPELINE_READS_TO_GRAPH.txt \
-                 is no longer true and must be rewritten before this test is relaxed."
+                !used || disclosed,
+                "O1 must decide membership from E_r alone, but the homology catalog path now reaches \
+                 `{sym}` from read_conflict.rs (the E_c module) — a NEW read dependency in O1's node \
+                 set. Either remove it, or add it to DISCLOSED_EC_USES *and* qualify the \
+                 membership-by-sequence-alone claim in docs/seeded_family_definition.md and in \
+                 bench/soto/PIPELINE_READS_TO_GRAPH.txt. Do not relax this test on its own."
+            );
+            assert!(
+                used || !disclosed,
+                "`{sym}` is listed in DISCLOSED_EC_USES but no longer appears on the homology catalog \
+                 path. If the dependency is genuinely gone, delete the entry AND strengthen the claim \
+                 in the spec — O1 just became sequence-alone at the node and should say so."
             );
         }
         // Accepts `homology_blocks(` or `homology_blocks_pooled(` -- both route through
         // `homology_edges_all_reps*`, i.e. E_r alone. The pooled variant only widens which EXONS feed the
         // shared-exon rule (every isoform's, not just the representative's); it introduces no read-assignment
         // and no conflict edge, so the O1-from-sequence-alone invariant is unchanged.
+        // `homology_blocks_pooled_with_edges(` is accepted for the same reason as the pooled variant: it
+        // returns the SAME blocks and additionally hands back the E_r edge set the blocks were cut from,
+        // which the λ certificate reports on. It introduces no new edge source — λ is computed from E_r
+        // and nothing else — so the O1-from-sequence-alone invariant is unchanged.
         assert!(
-            body.contains("homology_blocks(") || body.contains("homology_blocks_pooled("),
+            body.contains("homology_blocks(")
+                || body.contains("homology_blocks_pooled(")
+                || body.contains("homology_blocks_pooled_with_edges("),
             "the homology catalog must still form families via homology_blocks* (E_r)"
         );
         // The path must not reach into ConflictParams either -- that reads as an E_c dependency even where
@@ -4808,6 +6742,21 @@ mod tests {
         assert!(
             !body.contains("cfg.conflict."),
             "use cfg.locus_min_reads() on the homology path, not cfg.conflict.*"
+        );
+        // ⚠ AND THE ACCESSOR IS AN ALIAS, WHICH IS WHY THE ASSERT ABOVE PASSES WHILE THE DEPENDENCY
+        // FLOWS. `locus_min_reads()` literally returns `self.conflict.min_reads`, i.e. O2's
+        // `RUSTLE_CONFLICT_MIN_READS` (default 3) under an O1-sounding name. Banning `cfg.conflict.` at
+        // the call site therefore enforces SPELLING only. Pin the alias so nobody reads the assert above
+        // as evidence that the homology path has its own, independent read floor — it does not.
+        let accessor = src
+            .find("pub fn locus_min_reads(")
+            .map(|i| src[i..i + 200].to_string())
+            .expect("locus_min_reads accessor not found -- was it renamed?");
+        assert!(
+            accessor.contains("self.conflict.min_reads"),
+            "locus_min_reads() no longer aliases conflict.min_reads. If the homology path gained an \
+             INDEPENDENT read floor that is an improvement to O1 ⊥ O2 and the spec should say so; \
+             update this pin deliberately rather than letting the change pass unnoticed."
         );
     }
 
@@ -4844,8 +6793,38 @@ mod tests {
     fn refine_params_carry_the_sensitive_floor_too() {
         let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin/gw_family_catalog.rs"))
             .expect("read gw_family_catalog.rs");
-        let start = src.find("let refine = !args.no_refine;").expect("refine block not found");
-        let block = &src[start..start + 1600];
+        // Anchor on the refine gate in main(). (Was `let refine = !args.no_refine;` before the D1 fix
+        // made refine opt-in on the homology catalog; see `refine_enabled`.)
+        let start = src
+            .find("let refine = refine_enabled(")
+            .expect("refine block not found in gw_family_catalog::main");
+        // ⚠ THIS USED TO BE A FIXED 2,400-BYTE WINDOW, and it failed the first time an unrelated line
+        // was added between the anchor and the struct — the fields had simply slid past the cutoff.
+        // A magic byte count is not a statement about the code, so it is replaced by the actual
+        // construct: the `RefineParams { .. }` literal in the refine branch, brace-matched. That is
+        // STRICTLY TIGHTER than the window (which could also have swept in unrelated code), so this
+        // is a strengthening, not a relaxation of the guard.
+        let lit = start
+            + src[start..]
+                .find("let params = RefineParams {")
+                .expect("the --refine RefineParams literal must follow the refine gate");
+        let open = lit + src[lit..].find('{').expect("RefineParams literal has no body");
+        let mut depth = 0usize;
+        let mut close = src.len();
+        for (off, ch) in src[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = open + off + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let block = &src[lit..close];
         for field in ["min_identity: refine_params.min_identity",
                       "min_coverage: refine_params.min_coverage",
                       "sensitive_identity: refine_params.sensitive_identity"] {
@@ -4853,6 +6832,64 @@ mod tests {
                 block.contains(field),
                 "the --refine RefineParams must inherit `{field}` from refine_params; dropping one lets \
                  --min-identity set only some of the E_r floors, and the union takes the loosest"
+            );
+        }
+    }
+
+    // ---- D2: the coverage clause is scale-dependent; the substrate must be RECORDED ---------------
+    //
+    // `c = 0.50 of min(qlen,tlen)` is a completeness filter, not a homology criterion, and the two
+    // shipped paths feed it substrates ~7.5x apart in length. The RULE is deliberately unchanged (the
+    // absolute-bp alternative was swept and refuted; genomic-span-by-default moves the residual into
+    // locus boundaries -- docs/seeded_family_definition.md 1a). What these defend is that the run
+    // reports its own absolute demand, so the substrate stops being an UNDECLARED free parameter.
+
+    #[test]
+    fn coverage_floor_bp_demand_is_the_documented_absolute_number() {
+        // c * median(|node|), rounded. 0.50 of a 1,790 bp median transcript = 895 bp -- the number the
+        // 61-node panel measured for the shipped RNA substrate.
+        assert_eq!(coverage_floor_bp_demand(0.50, &[1790]), Some(895));
+        // lower median for even n, so the value is deterministic across runs
+        assert_eq!(coverage_floor_bp_demand(0.50, &[1000, 2000]), Some(500));
+        assert_eq!(coverage_floor_bp_demand(0.50, &[100, 1790, 9000]), Some(895));
+        // empty node set has no scale to report -- must be NA, never 0 (0 reads as "no floor at all").
+        assert_eq!(coverage_floor_bp_demand(0.50, &[]), None);
+    }
+
+    #[test]
+    fn coverage_floor_bp_demand_exposes_the_substrate_scale_dependence() {
+        // THE D2 DEFECT, as an assertion: one identical coverage FRACTION, two substrates, ~10x
+        // different base-pair demand. Panel numbers: 8,810 bp on genomic span vs 895 bp on the rep
+        // transcript, from a median spliced seqlen/span ratio of ~0.13.
+        let transcript = coverage_floor_bp_demand(0.50, &[1790]).unwrap();
+        let genomic_span = coverage_floor_bp_demand(0.50, &[17620]).unwrap();
+        assert_eq!((transcript, genomic_span), (895, 8810));
+        assert!(
+            genomic_span >= 5 * transcript,
+            "the same 0.50 floor must be reported as a different absolute demand per substrate; \
+             collapsing them back to one number is the defect this records"
+        );
+    }
+
+    /// The E_r params dump is the only machine-readable place a catalog's SCALE is recorded. If these
+    /// rows go away, `<prefix>.params.tsv` documents the coverage FRACTION while silently omitting what
+    /// it costs in bases, and an E_r number becomes unquotable without re-running the alignment.
+    #[test]
+    fn er_params_dump_records_the_substrate_scale() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/rustle/vg_family/denovo_pipeline.rs"
+        ))
+        .expect("read denovo_pipeline.rs");
+        let start = src.find("fn write_er_edge_dump(").expect("write_er_edge_dump not found");
+        let body = &src[start..];
+        for key in ["substrate_median_len_bp", "coverage_floor_median_bp_demand", "homology_genomic_span"] {
+            assert!(
+                body.contains(&format!("(\"{key}\".into()")),
+                "{stem}.params.tsv must record `{key}` -- the E_r edge substrate sets the ABSOLUTE \
+                 demand of the 0.50 coverage floor (8,810 bp on genomic span vs 895 bp on a rep \
+                 transcript), so a catalog quoted without it is unattributable",
+                stem = "<prefix>"
             );
         }
     }
@@ -4960,7 +6997,22 @@ mod tests {
 
     /// Two paralogs sharing a core but DIFFERING at 3 PSV offsets (so detection finds a family AND reads are
     /// resolvable), plus one copyB read aligned to copyA's region (a multimapper).
+    /// Physical fixture: a molecule's two records carry the SAME sequence (copyB's transcript), which is
+    /// what a real BAM contains -- minimap2 `-Y` copies the full SEQ onto the secondary record, and a
+    /// molecule has one sequence. The primary sits at copyA's locus, so resolving it to copyB is
+    /// resolution AGAINST the primary flag.
     fn two_paralogs_with_psvs() -> (GenomeIndex, Vec<PrimaryRead>, Vec<BamRead>) {
+        two_paralogs_with_psvs_impl(true)
+    }
+
+    /// ADVERSARIAL fixture: the same molecule's two records carry DIFFERENT sequences (copyB's on the
+    /// primary, copyA's on the secondary). No aligner can emit this -- it is here only to force the
+    /// record-vs-record contradiction that the molecule reduction must answer with an abstention.
+    fn two_paralogs_contradicting_records() -> (GenomeIndex, Vec<PrimaryRead>, Vec<BamRead>) {
+        two_paralogs_with_psvs_impl(false)
+    }
+
+    fn two_paralogs_with_psvs_impl(same_seq: bool) -> (GenomeIndex, Vec<PrimaryRead>, Vec<BamRead>) {
         let base = rand_seq(300, 0xC0FE_D1FF);
         let psv = [60usize, 150, 240];
         let (mut core_a, mut core_b) = (base.clone(), base);
@@ -5007,8 +7059,20 @@ mod tests {
             ]
         };
         let mut bam = Vec::new();
-        for nm in ["readB", "readC", "readD"] {
-            bam.extend(mk(nm, copyb_spliced.clone(), copya_spliced.clone()));
+        if same_seq {
+            // PHYSICAL: each molecule has ONE sequence on BOTH of its records. Three molecules carry
+            // copyB's transcript and three carry copyA's -- both alleles must be observed at every PSV
+            // column or the read-support filter drops the column as an assembly artifact.
+            for nm in ["readB", "readC", "readD"] {
+                bam.extend(mk(nm, copyb_spliced.clone(), copyb_spliced.clone()));
+            }
+            for nm in ["readE", "readF", "readG"] {
+                bam.extend(mk(nm, copya_spliced.clone(), copya_spliced.clone()));
+            }
+        } else {
+            for nm in ["readB", "readC", "readD"] {
+                bam.extend(mk(nm, copyb_spliced.clone(), copya_spliced.clone()));
+            }
         }
         (genome, primary, bam)
     }
@@ -5051,6 +7115,7 @@ mod tests {
             false,
             false,
             &fasta,
+            None,
         );
         if !fallback.is_empty() {
             eprintln!("family edges via large-seq fallback (auditable): {}", fallback.len());
@@ -5087,24 +7152,59 @@ mod tests {
             false,
             false,
             "",
+            None,
         );
         assert!(fallback.is_empty(), "small paralogs use the exact poasta path, no fallback");
         assert!(dna_needs.is_empty(), "absent_copies=false must return empty dna_needs vec");
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
         assert_eq!(fa.n_copies, 2);
-        // Six BamRecords: readB/readC/readD each primary+secondary; all overlap the family.
-        assert_eq!(fa.n_reads, 6);
+        // Six BAM RECORDS -- readB/readC/readD, each primary (locus 0) + secondary (locus 1000) -- but
+        // THREE MOLECULES. The unit of an assignment is the molecule, so three rows, not six.
+        assert_eq!(fa.n_reads, 6, "12 records / 6 molecules -> 6 results");
         assert_eq!(fa.assignments.len(), 6);
-        // copies sorted by start: copyA=0, copyB=1.
-        // Primary (ref_start=0, seq=copyb_spliced) -> assigned to copyB (best_copy=1).
-        let primary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 1)
-            .expect("primary read (copyB seq at locus 0) should resolve to copyB (copy 1)");
-        assert_eq!(primary_assign.1.status, super::super::copy_assign::AssignStatus::Assigned);
-        // Secondary (ref_start=1000, seq=copya_spliced) -> assigned to copyA (best_copy=0).
-        let secondary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 0)
-            .expect("secondary read (copyA seq at locus 1000) should resolve to copyA (copy 0)");
-        assert_eq!(secondary_assign.1.status, super::super::copy_assign::AssignStatus::Assigned);
+        // copies sorted by start: copyA=0, copyB=1. EVERY molecule's primary record sits at copyA's locus,
+        // so the primary flag says "copy 0" for all six. Three of them carry copyB's transcript and must
+        // come back copy 1: resolution is by SEQUENCE, against the primary flag.
+        use super::super::copy_assign::AssignStatus as St;
+        let to_b = fa.assignments.iter().filter(|(_, a)| a.best_copy == 1 && a.status == St::Assigned).count();
+        let to_a = fa.assignments.iter().filter(|(_, a)| a.best_copy == 0 && a.status == St::Assigned).count();
+        assert_eq!((to_a, to_b), (3, 3), "3 copyA molecules -> copy 0, 3 copyB molecules -> copy 1");
+    }
+
+    /// O2.14. A molecule has ONE copy of origin, so two records of one molecule that are both `Assigned`
+    /// and name DIFFERENT copies cannot both be right. The reduction answers with the molecule-level
+    /// abstention O2's assign-or-abstain contract requires -- it does NOT pick the stronger record, because
+    /// on real data the stronger record is the PRIMARY one 323/323 times, which would make the assignment
+    /// the aligner's primary flag in disguise.
+    #[test]
+    fn detect_and_assign_contradicting_records_of_one_molecule_abstain() {
+        let (genome, primary, aligned) = two_paralogs_contradicting_records();
+        let (fas, _fallback, _dna_needs, _lc) = detect_and_assign(
+            &primary,
+            &aligned,
+            &genome,
+            &DenovoConfig::default(),
+            5_000_000,
+            2,
+            &super::super::copy_assign::AssignParams::default(),
+            &[],
+            false,
+            false,
+            false,
+            "",
+            None,
+        );
+        assert_eq!(fas.len(), 1, "one co-located 2-copy family");
+        let fa = &fas[0];
+        assert_eq!(fa.assignments.len(), 3, "3 molecules, 6 records");
+        for (_, a) in &fa.assignments {
+            assert_eq!(
+                a.status,
+                super::super::copy_assign::AssignStatus::Ambiguous,
+                "records naming different copies -> the MOLECULE abstains"
+            );
+        }
     }
 
     /// Final-review fix #4 (opt-in coverage): the augment-and-linearize certificate is computed for an
@@ -5156,6 +7256,7 @@ mod tests {
             false, // do_linearize OFF — but the certificate is skipped
             false, // linearize_gate OFF
             "",
+            None,  // families DERIVED here (the O1->O2 --families contract is the other test)
         );
         assert!(
             linearize_certs.is_empty(),
@@ -5182,6 +7283,7 @@ mod tests {
             false,
             false,
             "",
+            None,
         );
         assert!(
             dna_needs.is_empty(),
@@ -5215,21 +7317,18 @@ mod tests {
             false,
             false,
             "",
+            None,
         );
         assert!(dna_needs.is_empty());
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
         assert!(fa.realign_records.is_empty(), "vg_realign OFF -> the vg_realign block must not run at all");
         assert_eq!(fa.n_copies, 2);
-        assert_eq!(fa.assignments.len(), 6);
-        // Same assignments the pre-Task-3 test (`detect_and_assign_resolves_multimapper_end_to_end`)
-        // pins: copyB read (locus 0) -> copy 1, copyA read (locus 1000) -> copy 0, both Assigned.
-        let primary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 1)
-            .expect("primary read (copyB seq at locus 0) should resolve to copyB (copy 1)");
-        assert_eq!(primary_assign.1.status, AssignStatus::Assigned);
-        let secondary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 0)
-            .expect("secondary read (copyA seq at locus 1000) should resolve to copyA (copy 0)");
-        assert_eq!(secondary_assign.1.status, AssignStatus::Assigned);
+        assert_eq!(fa.assignments.len(), 6, "6 molecules (12 records)");
+        // Same assignments the pre-Task-3 test (`detect_and_assign_resolves_multimapper_end_to_end`) pins.
+        let to_b = fa.assignments.iter().filter(|(_, a)| a.best_copy == 1 && a.status == AssignStatus::Assigned).count();
+        let to_a = fa.assignments.iter().filter(|(_, a)| a.best_copy == 0 && a.status == AssignStatus::Assigned).count();
+        assert_eq!((to_a, to_b), (3, 3));
     }
 
     /// `apply_realign_patch` directly (per the task's suggested factoring): a planted correction
@@ -5631,13 +7730,14 @@ mod tests {
             false,
             false,
             "",
+            None,
         );
         assert!(dna_needs.is_empty());
         assert_eq!(fas.len(), 1);
         let fa = &fas[0];
         assert_eq!(fa.n_copies, 2, "no spurious admissions on this clean fixture");
-        assert_eq!(fa.assignments.len(), 6);
-        assert!(!fa.realign_records.is_empty(), "the 3 low-MAPQ secondary reads must be candidates");
+        assert_eq!(fa.assignments.len(), 6, "6 molecules (12 records)");
+        assert!(!fa.realign_records.is_empty(), "the low-MAPQ secondary records must be candidates");
         assert!(
             fa.realign_records.iter().all(|r| r.action == "reassigned" || r.action == "rejected"),
             "no unfit/novel reads on this fixture: {:?}",
@@ -5645,12 +7745,9 @@ mod tests {
         );
         // The vg-realign path must agree with (not regress) the one-shot PSV gate's already-correct
         // calls on this fixture.
-        let primary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 1)
-            .expect("copyB read still resolves to copy 1");
-        assert_eq!(primary_assign.1.status, AssignStatus::Assigned);
-        let secondary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 0)
-            .expect("copyA read still resolves to copy 0");
-        assert_eq!(secondary_assign.1.status, AssignStatus::Assigned);
+        let to_b = fa.assignments.iter().filter(|(_, a)| a.best_copy == 1 && a.status == AssignStatus::Assigned).count();
+        let to_a = fa.assignments.iter().filter(|(_, a)| a.best_copy == 0 && a.status == AssignStatus::Assigned).count();
+        assert_eq!((to_a, to_b), (3, 3), "the vg-realign path must not regress the PSV gate's calls");
         // copy_abundance was recomputed via em_assign_family -- still a valid distribution.
         assert_eq!(fa.copy_abundance.len(), 2);
         let sum: f64 = fa.copy_abundance.iter().sum();
@@ -5670,7 +7767,7 @@ mod tests {
         let mut minus = rep_s(50_000, 54_000, vec![(51_000, 52_000)], 18); // disjoint locus, opposite strand
         minus.strand = '-';
         let reps = vec![plus, minus];
-        let stats = crate::vg_family::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0 };
+        let stats = crate::vg_family::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0, lambda: 1 };
         let fams = vec![SplitFamily { members: vec![0, 1], class: FamilyClass::Family, stats }];
 
         let out = colocated_families(&reps, &fams, 5_000_000, 2, &DetectParams::default());
@@ -5689,7 +7786,7 @@ mod tests {
         let mut minus = rep_s(1_100, 10_900, vec![(6_000, 7_000), (8_000, 9_000)], 5); // overlaps, opposite strand
         minus.strand = '-';
         let reps = vec![plus, minus];
-        let stats = crate::vg_family::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0 };
+        let stats = crate::vg_family::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0, lambda: 1 };
         let fams = vec![SplitFamily { members: vec![0, 1], class: FamilyClass::Family, stats }];
 
         let out = colocated_families(&reps, &fams, 5_000_000, 2, &DetectParams::default());
@@ -5903,8 +8000,8 @@ mod tests {
                 let span = if common > 0 { (amax - amin).min(bmax - bmin) as usize } else { 0 };
                 let minlen = reps[i].seq.len().min(reps[j].seq.len());
                 let bar = p.t_core * minlen as f64;
-                let au = reps[i].seq.to_ascii_uppercase();
-                let bu = reps[j].seq.to_ascii_uppercase();
+                let au = crate::vg_family::family_graph::upper_cow(&reps[i].seq);
+                let bu = crate::vg_family::family_graph::upper_cow(&reps[j].seq);
                 let bru = crate::vg_family::seq_utils::reverse_complement(&bu);
                 let cov = contiguous_core_coverage_bounded(&au, &bu, p.len_cap)
                     .max(contiguous_core_coverage_bounded(&au, &bru, p.len_cap));
@@ -6070,6 +8167,59 @@ mod tests {
         let loci = distinct_locus_reps(vec![dom, anti], 3);
         assert_eq!(loci.len(), 1, "minority antisense copy collapses into the real locus");
         assert_eq!(loci[0].n_reads, 666, "the dominant (real) copy is the representative");
+    }
+
+    #[test]
+    fn distinct_locus_reps_unspliced_fragment_collapses_despite_balanced_reads() {
+        // THE MEASURED CONTROL ARTIFACT (2026-08-08). At 4 of 7 strict single-copy control genes the
+        // catalog emitted a "2-copy family" that was one locus: a spliced multi-exon rep plus a
+        // SINGLE-EXON rep at the same start, whose read count equalled the locus's unspliced reads (reads
+        // with no `N` in CIGAR) and whose reads sat on the SAME BAM strand. The single-exon rep's `'+'` is
+        // only the default label for a junction-less rep, so the pair was routed to the antisense branch,
+        // where its BALANCED read ratio (0.145-0.571, far above the 1/10 artifact bar) let it survive.
+        // Read support here is deliberately balanced (60 vs 100 = 0.60) so the ANTISENSE_MINORITY_DENOM
+        // rule cannot be what collapses it — only the junction-less + containment rule can.
+        let mut spliced = rep_s(1000, 5000, vec![(2000, 3000)], 100);
+        spliced.strand = '-';
+        let mut unspliced = rep_s(1000, 5200, vec![], 60); // no introns, and deliberately OVERHANGING
+        unspliced.strand = '+';
+        unspliced.distinguishing_uniq = 40; // would "distinguish" under the same-strand read rule too
+        let loci = distinct_locus_reps(vec![spliced, unspliced], 3);
+        assert_eq!(loci.len(), 1, "an overlapping junction-less rep is the locus's unspliced fraction, not a second locus");
+        assert_eq!(loci[0].n_reads, 100, "the spliced (real) copy is the representative");
+    }
+
+    #[test]
+    fn distinct_locus_reps_disjoint_junctionless_copies_stay_distinct() {
+        // Guard against over-collapsing: the rule requires CONTAINMENT, so two junction-less copies at
+        // disjoint spans (real single-exon paralogs) remain two loci.
+        let a = rep("chrX", 100, 200);
+        let b = rep("chrX", 5000, 5100);
+        let loci = distinct_locus_reps(vec![a, b], 3);
+        assert_eq!(loci.len(), 2, "disjoint junction-less copies are distinct loci");
+    }
+
+    #[test]
+    fn distinct_locus_reps_two_junctionless_copies_still_decided_by_reads() {
+        // BOTH sides junction-less -> the asymmetry that identifies an unspliced fragment is absent, so
+        // neither can claim priority and the read-conflict rule must still decide. This is what keeps the
+        // advisor-flagged "distinguishable-but-merged" behaviour intact.
+        let mut a = rep("chrX", 100, 200);
+        a.distinguishing_uniq = 40;
+        let b = rep("chrX", 150, 250);
+        let loci = distinct_locus_reps(vec![a, b], 3);
+        assert_eq!(loci.len(), 2, "two junction-less copies are decided by reads, not by the unspliced rule");
+    }
+
+    #[test]
+    fn distinct_locus_reps_unspliced_rule_survives_end_overhang() {
+        // The measured HMBS/TFRC shape: the junction-less rep OVERHANGS the spliced one by a base or two,
+        // so any containment-based rule misses it. Overlap + junction asymmetry must still collapse.
+        let spliced = rep_s(127034654, 127036245, vec![(127035000, 127035500)], 6);
+        let mut unspliced = rep_s(127034654, 127036246, vec![], 19); // 1 bp past the spliced end
+        unspliced.strand = '+';
+        let loci = distinct_locus_reps(vec![spliced, unspliced], 3);
+        assert_eq!(loci.len(), 1, "a 1 bp overhang must not defeat the unspliced-fragment collapse");
     }
 
     #[test]
@@ -6354,7 +8504,7 @@ mod tests {
         ];
         let fam = SplitFamily {
             members: vec![0, 1, 2, 3],
-            stats: CommunityStats { n: 4, n_edges: 0, density: 1.0, avg_core_recip: 0.0, n_articulation: 0 },
+            stats: CommunityStats { n: 4, n_edges: 0, density: 1.0, avg_core_recip: 0.0, n_articulation: 0, lambda: 0 },
             class: FamilyClass::Family,
         };
         let colo = colocated_families(&reps, &[fam], 5_000_000, 2, &DetectParams::default());
@@ -6628,6 +8778,118 @@ mod tests {
         retain_non_mischain(&mut txs, &j, "test");
         assert_eq!(txs.len(), 1);
         assert_eq!(txs[0].start, 0, "the well-supported large gene survives; the mis-chain is dropped");
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // READ-LEVEL mis-chain: the gap the transcript-level rule leaves open, and the guard that keeps it shut.
+    // ---------------------------------------------------------------------------------------------
+
+    fn pread(s: u64, e: u64, introns: Vec<(u64, u64)>) -> PrimaryRead {
+        PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: e, introns }
+    }
+
+    /// THE REGRESSION. The real `GWFAM244:2` shape, measured on the matched-individual BAM
+    /// (`o3_mischain/fix/red/O1_SIDE.txt`): an 827,011 bp mis-chain carried by **97** primary reads.
+    ///
+    /// The transcript-level rule must return FALSE on it — 97 >= `MISCHAIN_MIN_JUNCTION_READS` (3), and
+    /// that is by design, not a bug. Therefore a locus-scoped PER-READ statistic that reuses the
+    /// transcript rule sees **nothing**, which is exactly how 150/150 mis-chained reads reached the O3
+    /// divergence statistic and manufactured two of its three surviving candidates. The read-level rule
+    /// must return TRUE on the very same object. If these two ever agree here, the read-level rule has
+    /// silently acquired a support clause and this test fails.
+    #[test]
+    fn read_level_mischain_catches_what_the_transcript_rule_is_designed_to_miss() {
+        let giant = (122_919_265u64, 123_746_276u64); // 827,011 bp, the measured mis-chain
+        assert_eq!(giant.1 - giant.0, 827_011);
+
+        let tx = rep_s(122_741_457, 123_746_276, vec![giant], 97);
+        let j = junc(&[(giant.0, giant.1, 97)]); // 97 reads = 32x MISCHAIN_MIN_JUNCTION_READS
+        assert!(
+            !is_giant_intron_mischain(&tx, &j, MISCHAIN_GIANT_INTRON_BP, MISCHAIN_MIN_JUNCTION_READS),
+            "the transcript rule is SUPPOSED to keep a well-supported giant intron; if this ever flips, \
+             the read-level rule below is no longer the thing standing between mis-chains and the statistic"
+        );
+
+        let r = pread(122_741_457, 123_746_276, vec![giant]);
+        assert!(
+            is_mischained_read(&r, MISCHAIN_GIANT_INTRON_BP),
+            "READ-LEVEL rule must fire on the same 827 kb chain regardless of how many reads share it"
+        );
+    }
+
+    /// `retain_local_reads` removes exactly the reads that leave the locus, keeps ordinary transcript
+    /// structure, and reports the count so a caller can print its denominator. The kept read carries the
+    /// largest intron measured in a surviving O3 candidate (2,137 bp at GWFAM382:2) and a 48 kb POTE-scale
+    /// intron — both under the giant threshold, both untouched.
+    #[test]
+    fn retain_local_reads_drops_only_the_escaping_reads_and_counts_them() {
+        let mut reads = vec![
+            pread(122_741_457, 122_743_192, vec![(122_741_900, 122_744_037)]), // 2,137 bp — a real intron
+            pread(0, 200_000, vec![(20_000, 68_000)]),                          // 48 kb POTE — under giant
+            pread(122_741_457, 123_746_276, vec![(122_919_265, 123_746_276)]),  // 827 kb — escapes
+            pread(19_611_985, 20_383_478, vec![(19_611_985, 20_383_478)]),      // 771 kb — escapes
+            pread(1_000, 4_000, vec![]),                                        // unspliced local
+        ];
+        let dropped = retain_local_reads(&mut reads);
+        assert_eq!(dropped, 2, "exactly the two giant-gap reads");
+        assert_eq!(reads.len(), 3);
+        assert!(reads.iter().all(|r| !is_mischained_read(r, MISCHAIN_GIANT_INTRON_BP)));
+    }
+
+    /// GUARD — ONE SOURCE OF TRUTH FOR THE THRESHOLD.
+    ///
+    /// `MISCHAIN_GIANT_INTRON_BP` must be *defined* exactly once in the Rust sources, because the O3
+    /// detector's read-selection step (`o3_detector/mischain.py`) parses that literal out of this file
+    /// rather than restating it. A second definition would let the two languages drift apart silently.
+    ///
+    /// **Bounded scan, deliberately.** The `homology_catalog_never_touches_the_conflict_graph` guard was
+    /// itself false-positived by a scan that ran to EOF and matched text outside the region it meant to
+    /// police, so this one (a) enumerates `src/**/*.rs` explicitly rather than the whole tree, (b) matches
+    /// only a `const` DEFINITION (`const NAME`), never a use, and (c) asserts it actually visited files, so
+    /// a broken path cannot make the guard pass vacuously.
+    #[test]
+    fn mischain_threshold_has_exactly_one_definition_site() {
+        fn rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    rs_files(&p, out);
+                } else if p.extension().and_then(|s| s.to_str()) == Some("rs") {
+                    out.push(p);
+                }
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        rs_files(&root, &mut files);
+        assert!(files.len() > 5, "scan found {} .rs files under {root:?} — the scan is broken, not the code", files.len());
+
+        // The needle is ASSEMBLED AT RUNTIME. Spelling it as one literal would put the needle into this
+        // very file and the guard would count ITSELF as a second definition — which is exactly what it
+        // did on the first run (`fix/suite.log`: found lines 943 and 8707). Requiring `pub const` at the
+        // start of the line is the same predicate `mischain.py` parses with, so the two agree by
+        // construction rather than by coincidence.
+        let needle = format!("pub {} {}", "const", "MISCHAIN_GIANT_INTRON_BP");
+        let mut defs: Vec<String> = Vec::new();
+        for f in &files {
+            let Ok(txt) = std::fs::read_to_string(f) else { continue };
+            for (i, line) in txt.lines().enumerate() {
+                let t = line.trim_start();
+                if t.starts_with("//") {
+                    continue; // a doc/comment mention is a reference, not a definition
+                }
+                if t.starts_with(&needle) {
+                    defs.push(format!("{}:{}", f.display(), i + 1));
+                }
+            }
+        }
+        assert_eq!(
+            defs.len(),
+            1,
+            "MISCHAIN_GIANT_INTRON_BP must have exactly ONE definition site; found {defs:?}"
+        );
+        assert_eq!(MISCHAIN_GIANT_INTRON_BP, 50_000, "the parsed-by-Python literal changed value");
     }
 
     /// Integration: `maybe_salvage_mischain` before `pass1_skeletons_robust` recovers LOCAL seeding at both
@@ -7103,7 +9365,7 @@ mod tests {
         // Confirm via the pipeline's own aligner: BOTH nt tiers must find NO edge at this divergence.
         let p = RefineParams::default();
         let sensitive_edges = nucleotide_edges(
-            &[seq_a.clone(), seq_b.clone()], &["-k", "11", "-w", "5"], 0.60, 0.50, None, &p,
+            &[seq_a.clone(), seq_b.clone()], ER_SENSITIVE_SEED, 0.60, 0.50, None, &p,
         ).unwrap();
         assert!(sensitive_edges.is_empty(), "pair must be genuinely nt-unresolvable (< 0.60), got {:?}", sensitive_edges);
 
@@ -7126,13 +9388,66 @@ mod tests {
     #[test]
     fn homology_catalog_groups_fixture_family() {
         if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
-        let (fams, _collapsed, _expressed, _dna) = detect_homology_catalog_genome_wide(
+        let (fams, certs, _collapsed, _expressed, _dna) = detect_homology_catalog_genome_wide(
             "tests/fixtures/same_chrom_supplement/reads.bam",
             "tests/fixtures/same_chrom_supplement/genome.fa",
             2, 2, &DenovoConfig::default(), &RefineParams::default(), 0.20,
         ).unwrap();
         // the fixture's two homologous loci (c1:A + c2:X) must land in one family of >= 2 distinct loci.
         assert!(fams.iter().any(|f| f.len() >= 2), "expected a >=2-copy homology family, got {:?}", fams.iter().map(|f| f.len()).collect::<Vec<_>>());
+        // ONE CERTIFICATE PER EMITTED FAMILY, SAME ORDER -- the column would otherwise attach each
+        // family's lambda to a different family's row.
+        assert_eq!(certs.len(), fams.len(), "one certificate per emitted family");
+        for (c, f) in certs.iter().zip(fams.iter()) {
+            assert_eq!(c.n, f.len(), "certificate node count must be the EMITTED copy count");
+        }
     }
 
+    // ── THE λ CERTIFICATE IS COMPUTED ON THE EMITTED NODE SET ────────────────────────────────────
+    //
+    // `distinct_locus_reps` MERGES co-located copies, so the emitted family has fewer nodes than the
+    // block it came from. A λ measured before that merge describes a different object than the row the
+    // catalog prints. This is the documented trap "never judge a change to what a NODE IS on node-level
+    // metrics", and the test below is built so the two answers genuinely DISAGREE -- if `certificate_for`
+    // were ever changed to take the pre-merge block, this test fails rather than drifting silently.
+
+    #[test]
+    fn certificate_is_measured_after_the_locus_merge_not_before() {
+        // Pre-merge: reps {0,1,2} form a TRIANGLE -> lambda = 2 (2-edge-connected).
+        let er_edges = [(0usize, 1usize), (0, 2), (1, 2)];
+        assert_eq!(
+            crate::vg_family::family_split::edge_connectivity(3, &er_edges),
+            2,
+            "the pre-merge block is a triangle"
+        );
+        // Emitted: reps 0 and 1 collapsed into ONE locus, so the family has 2 copies joined by the
+        // single edge "something in {0,1} aligns to 2" -> lambda = 1, NOT 2.
+        let groups = vec![vec![0usize, 1usize], vec![2usize]];
+        let cert = certificate_for(&groups, &er_edges);
+        assert_eq!(cert.n, 2, "two EMITTED copies, not three reps");
+        assert_eq!(cert.n_edges, 1, "(0,2) and (1,2) are the SAME emitted edge and must not double-count");
+        assert_eq!(cert.lambda, 1, "measured on the emitted node set, the family hangs on one edge");
+        assert!((cert.density - 1.0).abs() < 1e-9, "2 nodes, 1 edge => density 1.0");
+    }
+
+    #[test]
+    fn certificate_drops_edges_internal_to_a_merged_copy() {
+        // The (0,1) edge became a SELF-LOOP when those reps collapsed into one locus: it cannot hold two
+        // emitted copies together, so it must not be counted as evidence that it does.
+        let er_edges = [(0usize, 1usize)];
+        let cert = certificate_for(&[vec![0, 1]], &er_edges);
+        assert_eq!(cert.n, 1);
+        assert_eq!(cert.n_edges, 0, "an intra-copy edge is not a family edge");
+        assert_eq!(cert.lambda, 0, "a 1-node family has no cut to pay");
+    }
+
+    #[test]
+    fn certificate_two_copy_family_is_always_lambda_one() {
+        // THE REASON λ IS REPORTED AND NOT ENFORCED. A 2-copy family cannot clear `lambda >= 2`, so a
+        // membership rule built on it would delete the single most common family size in the catalog.
+        let cert = certificate_for(&[vec![0], vec![1]], &[(0usize, 1usize)]);
+        assert_eq!(cert.n, 2);
+        assert_eq!(cert.lambda, 1);
+        assert!(cert.lambda < 2, "cut_certified=false here is NOT a defect flag");
+    }
 }
