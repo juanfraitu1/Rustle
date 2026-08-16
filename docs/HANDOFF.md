@@ -132,8 +132,14 @@ pathogenic threshold; gene-family CN is discrete copies of a whole unit. Closer 
 
 ## 5. NEXT ACTIONS, RANKED
 
-1. **Rewrite O2's objective statement** as abstention. Costs a paragraph; everything needed is
-   measured. Highest value per unit effort in the whole project.
+1. ✅**DONE 2026-08-15** — O2 restated as abstention (`copy_assignment_definition.md` §0, both
+   objective tables, and the three straggler sites). Commits d53cea2 + 2d2a09f.
+1b. **RUN the O2 reassignment ground-truth experiment** — designed and feasibility-measured in
+   `docs/o2_reassignment_ground_truth.md`, not yet run. Closes the last Tier-1 gap in O2: structural
+   anchors (sequence present in one copy, absent in its sister) label a read's copy of origin WITHOUT
+   any scoring decision, so trimming the anchor and re-scoring gives non-circular reassignment
+   accuracy on REAL reads. **34/162 families carry an anchor ≥100 bp (median 779 bp)**; median 72
+   reads on the lower-depth copy. ⚠ Anchor discovery must use the SHIPPED sensitive tier, not asm20.
 2. **Run the Illumina/HiFi depth check (S2)** now that §2 unblocks it — the field's own standard,
    on the matched individual, where excess depth means assembly collapse rather than polymorphism.
 3. **Finish the O1 fibroblast replication** (§3a) and compare on the shared node set.
