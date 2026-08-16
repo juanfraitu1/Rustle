@@ -134,7 +134,10 @@ pathogenic threshold; gene-family CN is discrete copies of a whole unit. Closer 
 
 1. ✅**DONE 2026-08-15** — O2 restated as abstention (`copy_assignment_definition.md` §0, both
    objective tables, and the three straggler sites). Commits d53cea2 + 2d2a09f.
-1b. **RUN the O2 reassignment ground-truth experiment** — designed and feasibility-measured in
+1b. ✅**RUN 2026-08-15 — UNDERPOWERED, AND THE ROUTE IS REFUTED** (`docs/o2_reassignment_result.md`).
+   n=53 from 2 families (n_eff≈3) vs an expected ~680; filter L1 rejects **29/29** anchors in the
+   contested families and **0/53** scored reads are near-ties, so the route cannot reach O2's target
+   population. Reassignment on real reads remains UNMEASURED. Superseded design note: — designed and feasibility-measured in
    `docs/o2_reassignment_ground_truth.md`, not yet run. Closes the last Tier-1 gap in O2: structural
    anchors (sequence present in one copy, absent in its sister) label a read's copy of origin WITHOUT
    any scoring decision, so trimming the anchor and re-scoring gives non-circular reassignment
