@@ -11,7 +11,9 @@ Rustle began as a Rust port of the StringTie long-read transcript **assembler**.
 since moved to **multi-copy gene FAMILIES**:
 
 - **O1** — family DEFINITION (γ-quasi-clique homology components; copy number χ(H))
-- **O2** — copy ASSIGNMENT under MAPQ-0 ambiguity (PSV + junction + SUN, assign-or-abstain)
+- **O2** — copy ASSIGNMENT: whether the evidence warrants assigning a read to a copy at all (PSV +
+  junction + SUN, assign-or-abstain). ⚠ contested set is **alignment-score near-ties**, not MAPQ-0 —
+  restated 2026-08-15, see `docs/copy_assignment_definition.md` §0
 - **O3** — allele-specific junctions (ASJ)
 - **O4** — reference-absent (collapsed / divergent) copies
 

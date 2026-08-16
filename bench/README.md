@@ -10,7 +10,8 @@ any removed file with `git log --follow --diff-filter=D -- bench/<old-name>.md` 
 - **FAMILY_DEF.md** — **O1**, the RNA multi-copy family definition: read-conflict/de-tie vs E_r homology,
   γ-quasi-clique, formal proof, BAM/junction/VG signals, criterion bake-offs, and the shipped refine gates
   (reciprocal-identity divergence floor, multi-repeat-bridge gate, catalog artifact audit).
-- **COPY_ASSIGNMENT_AND_GATE.md** — **O2**, copy-assignment under MAPQ-0 ambiguity + the significance/de-tie
+- **COPY_ASSIGNMENT_AND_GATE.md** — **O2**, copy-assignment (⚠ contested set is alignment-score
+  near-ties, NOT MAPQ-0 — restated 2026-08-15, see `docs/copy_assignment_definition.md` §0) + the significance/de-tie
   gate (assign-or-abstain, never 1/k): copy-split, PSV LLR-vs-votes, τ sweeps, identifiability/resolution
   bounds, primary/secondary invariance, reference-free copy number, the SUN ladder, the recombinant-abstain
   gate, and the gene-conversion-vs-RT discriminator (biology caveated).

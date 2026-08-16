@@ -243,10 +243,16 @@ chromosome clause is unfalsifiable in chr1 scope), and **"0 of 8 dispersed famil
 restated as "1 of 24 genome-wide-dispersed chr1 families" = 0.0417 [0.0074, 0.2024]**. The second
 correction makes O1 look **worse** and must be published with the first.
 
-### O2 — ASSIGN
+### O2 — ABSTAIN
 
-**Copy assignment under MAPQ-0 ambiguity is solved to the limit the evidence allows, and the limit is
-provable rather than empirical.** *Proven:* the objective **decomposes** (P-2), so the shipped per-read
+⚠ **Restated 2026-08-15 — see `copy_assignment_definition.md` §0.** The heading said ASSIGN and the
+claim below said *"under MAPQ-0 ambiguity"*. MAPQ-0 is **0.04%** of reads inside the multi-copy loci
+(rarer than genome-wide); the contested set is **alignment-score near-ties, 21.75%**. And the
+contribution is **abstention, not reassignment**: minimap2 is near-optimal at WHICH present copy, but
+**at chance about WHETHER the read belongs at all (AUC 0.4944 vs the divergence channel's 0.7995)**.
+
+**Deciding whether the evidence warrants a copy assignment at all is solved to the limit the evidence
+allows, and the limit is provable rather than empirical.** *Proven:* the objective **decomposes** (P-2), so the shipped per-read
 gate **is** the optimum of the stated objective and no joint estimator can beat it; and at K=0 the
 distinguishing evidence is **empty** (P-3), so abstention is compelled, not chosen. *Measured, and it
 confirms the proof:* the EM changes **0 of 3,081** co-committed decisions on reads carrying evidence;
