@@ -6,7 +6,7 @@
 > | # | objective |
 > |---|---|
 > | **O1** | Define a multi-copy gene family topologically at the RNA level (quasi-clique in E_r; MCC = χ(H)) |
-> | **O2** | Assign reads to the right COPY under MAPQ-0 ambiguity — no 1/k, assign-or-abstain |
+> | **O2** | Decide, for a read at a multi-copy locus, whether the evidence warrants assigning it to a COPY AT ALL — and abstain when it does not. Contested set = **alignment-score near-ties**, not MAPQ-0. No 1/k. |
 > | **O3** | Reference-absent / unannotated copies — DETECT + FLAG (this was O4) |
 >
 > **The allele-specific-junction objective is DROPPED** — cut for time, and because it does not connect

@@ -109,7 +109,7 @@ limit · **TODO** = not attempted or not finished · **REFUTED** = tried and fou
 | # | objective | one-line statement |
 |---|---|---|
 | **O1** | **Define** | A multi-copy gene family, defined topologically at the RNA level: quasi-clique in the sequence-homology graph `E_r`, with the read-conflict graph and variation graph as surrounding formalism (MCC = χ(H)). |
-| **O2** | **Assign** | Assign reads to the right **copy** under MAPQ-0 ambiguity, using PSV + junction + divergence — **no 1/k**, assign-or-abstain. |
+| **O2** | **Abstain** | Decide, for a read at a multi-copy locus, **whether the evidence warrants assigning it to a copy at all**, using PSV + junction + divergence — **no 1/k**, assign-or-abstain. ⚠ Restated 2026-08-15: the contested population is **alignment-score near-ties (21.75%)**, not MAPQ-0 (**0.04%**), and the contribution is **abstention, not reassignment**. See `copy_assignment_definition.md` §0. |
 | **O3** | **Detect** | Reference-absent and unannotated copies — **DETECT + FLAG only**, not assemble. |
 
 **Dropped (2026-08-07): allele-specific junctions.** ⚠ It was the *only* objective the 2026-06-25 audit

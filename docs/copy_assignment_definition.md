@@ -7,6 +7,84 @@ number below is measured; the script that produced it is named inline. Anything 
 
 ---
 
+## §0 ⭐⭐ THE OBJECTIVE, RESTATED (2026-08-15) — read this before §1
+
+O2 was stated as *"assign reads to the right copy under MAPQ-0 ambiguity."* **Both halves of that are
+now measured and neither survives an examiner who checks.** The restatement is not a retreat: it is
+narrower, true, and defended by a measurement no reviewer can call circular.
+
+> **O2 decides, for a read at a multi-copy locus, whether the evidence warrants assigning it to a copy
+> at all — and abstains when it does not.** The contested population is **alignment-score near-ties**,
+> not MAPQ-0. No 1/k.
+
+### Why the old statement fails, in two numbers
+
+**1. MAPQ-0 names the wrong population.** In the matched fibroblast BAM, primary alignments only:
+
+| population | MAPQ 0 | MAPQ 60 |
+|---|---|---|
+| genome-wide (n = 135,300) | 0.0020 | 0.9854 |
+| **inside the 915 multi-copy loci** (n = 1,537,238) | **0.0004** | 0.9876 |
+
+**MAPQ-0 is RARER inside the multi-copy loci than genome-wide.** The old statement described **0.04%**
+of the reads O2 exists for. Long reads largely solved the MAPQ-0 problem on this substrate — which is
+exactly why Soto's short-read 0.85% in SD98 was *the rationale for long reads* in the first place.
+⭐ **But ambiguity is real; MAPQ hides it.** On 60 multi-copy loci (70,246 primaries): **33.70% carry
+≥1 secondary**, and the alignment-score margin to the best secondary is **≤5% for 21.75%** of reads
+(≤1% for 0.88%). The genuinely contested set is ~**22%** — roughly **500×** the MAPQ-0 set.
+
+**2. Reassignment is not where the contribution is.** Asking whether a secondary fits the read *better
+by divergence* than the primary minimap2 chose — the exact set where a divergence rule must differ:
+
+| population | n | a secondary fits better by `de` |
+|---|---|---|
+| reads with ≥1 secondary | 23,675 | 1.96% |
+| near-tie (AS margin ≤5%) | 15,277 | 2.05% |
+| **tight tie (AS margin ≤1%)** | **617** | **12.16%** |
+
+Disagreement is **6× enriched in tight ties** — the opportunity is exactly where predicted — but tight
+ties are only 0.88% of primaries, so net decision-changing headroom is **~0.1% of reads**, the same
+order as the known **30/5,378 = 0.56% novel decisions**. ⟹ **Re-scoping fixes the framing but not the
+novelty. Within the near-tie population, divergence and alignment score agree 98% of the time.**
+⚠⚠ **NEVER claim O2 assigns reads better than minimap2. It measurably does not, on ~99.9% of reads.**
+
+### What the restatement is defended by
+
+**minimap2 is at CHANCE about whether a read belongs at all.** Using the whole-genome excision run,
+where a deleted copy's reads migrate to a surviving locus and their true origin is known **by design**
+— labels no aligner produced:
+
+| signal | AUC (held-out) |
+|---|---|
+| **divergence z-score against the pile** | **0.7995** |
+| **MAPQ alone** | **0.4944** |
+
+Median MAPQ is **60 for foreign reads and 60 for native ones**; MAPQ = 60 covers **96.07%** of foreign
+reads versus 94.98% of native ones — the foreign reads are, if anything, *marginally more confident*.
+**minimap2 is not merely wrong about these reads, it is confidently wrong, and its confidence carries
+zero information about whether the read belongs.** Its TPR on this task is **0 by construction**: it
+has no abstention mechanism. Held-out operating point **TPR 0.5066 / FPR 0.0280** at loci where
+foreign reads are under half the pile. Details: `winloci_scratch/o3_excise/RESULTS_O2_TRUTH.md`.
+
+### The coherent position, in three lines
+
+* minimap2 is **near-optimal at choosing WHICH present copy** a read belongs to.
+* minimap2 is **at chance about WHETHER** it belongs to any present copy.
+* **O2 supplies the second, not the first — abstention, not reassignment.**
+
+Plus one structural result worth stating alongside: **the objective decomposes**, so per-read argmax
+*is* the optimum — confirmed empirically by an EM that changed **0 of 3,081** evidenced decisions.
+
+### ⚠ What is still OPEN under the restatement
+
+**There is no non-circular ground truth for REASSIGNMENT.** The validation above covers **abstention**
+only (the true copy is absent by construction, so it is an abstention test). Real-data agreement with
+the primary flag *is* the 98.4% number and cannot serve as validation. **Do not claim reassignment
+accuracy anywhere.** Also structural, not tunable: where foreign reads exceed 50% of a pile the robust
+centre estimates the wrong population and TPR collapses 0.5066 → 0.2404 (29 of 83 loci).
+
+---
+
 ## ⚠⚠ NOTICE — READ BEFORE QUOTING O2 ANYWHERE (2026-08-10)
 
 Until today O2 had **no specification**, and the three places it *was* defined
