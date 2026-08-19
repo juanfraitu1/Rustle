@@ -1,0 +1,6 @@
+case	emitted_loci	fresh_family_ids	rna_homology_edges	rna_block_witnesses	dna_duplication_edges	dna_block_witnesses	both_layer_edges	rna_only_edges	dna_only_edges	layer_edge_jaccard	rna_edge_density	dna_edge_density	rna_components	dna_components	rna_cross_fresh_family_edges	dna_cross_fresh_family_edges	rooted_provenance_edges	direction_status
+GOLGA6_8	19	GWFAM16,GWFAM17,GWFAM18	76	76	84	84	58	18	26	0.5686	0.4444	0.4912	17,1,1	19	0	13	0	UNROOTED
+MAGEA	10	GWFAM33,GWFAM34	22	22	17	17	17	5	0	0.7727	0.4889	0.3778	7,3	7,1,1,1	0	0	0	UNROOTED
+RABL2	2	GWFAM28	1	1	1	1	1	0	0	1.0000	1.0000	1.0000	2	2	0	0	0	UNROOTED
+NBPF_core	19	GWFAM0,GWFAM1,GWFAM2	49	49	100	100	42	7	58	0.3925	0.2865	0.5848	17,1,1	19	0	21	0	UNROOTED
+NBPF_repeat_bridge	15	GWFAM1,GWFAM15,GWFAM30,GWFAM8	26	26	14	14	6	20	8	0.1765	0.2476	0.1333	11,2,1,1	11,1,1,1,1	0	7	0	UNROOTED

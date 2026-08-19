@@ -1,0 +1,15 @@
+family_id	n_copies	n_chroms	chroms	cross_chrom	avg_reads	protein_coheres	n_edges	density	lambda	cut_certified
+GWFAM0	4	1	NC_073224.2	false	243.2	NA	4	0.6667	1	false
+GWFAM1	2	2	NC_073224.2,NC_073247.2	true	6.5	NA	1	1.0000	1	false
+GWFAM2	2	1	NC_073229.2	false	67.5	NA	1	1.0000	1	false
+GWFAM3	2	1	NC_073229.2	false	11.5	NA	1	1.0000	1	false
+GWFAM4	6	1	NC_073236.2	false	97.5	NA	10	0.6667	2	true
+GWFAM5	3	1	NC_073237.2	false	11.3	NA	2	0.6667	1	false
+GWFAM6	2	1	NC_073237.2	false	16.0	NA	1	1.0000	1	false
+GWFAM7	2	1	NC_073237.2	false	3.5	NA	1	1.0000	1	false
+GWFAM8	2	1	NC_073240.2	false	128.0	NA	1	1.0000	1	false
+GWFAM9	11	1	NC_073247.2	false	61.5	NA	47	0.8545	2	true
+GWFAM10	2	1	NC_073247.2	false	358.0	NA	1	1.0000	1	false
+GWFAM11	2	2	NC_073248.2,NC_086017.1	true	15.5	NA	1	1.0000	1	false
+GWFAM12	2	2	NC_073248.2,NC_086017.1	true	304.5	NA	1	1.0000	1	false
+GWFAM13	2	1	NC_086018.1	false	98.5	NA	1	1.0000	1	false

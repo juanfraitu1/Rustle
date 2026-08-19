@@ -1,0 +1,48 @@
+key	value
+site	homology_edges_all_reps_pooled
+n_reps	64
+n_edges	73
+min_identity_asm20	0.800000
+sensitive_identity	0.600000
+nucleotide_sensitive	true
+protein_tail	false
+homology_genomic_span	false
+genomic_span_active	false
+threads	4
+mm_args_sensitive	minimap2 -c -X --no-long-join -t 4 -k 11 -w 5
+paf_glob_for_this_edge_set	/tmp/rustle_o1_fresh_emission/GGO.fresh_er.er.*.paf
+substrate_median_len_bp	3052
+coverage_floor_median_bp_demand	1526
+env.RUSTLE_ER_SENSITIVE_ONLY	<unset>
+env.RUSTLE_ER_SUM_COVERAGE	<unset>
+env.RUSTLE_ER_SUM_MIN_BLOCK	<unset>
+env.RUSTLE_ER_CORE_COVERAGE	<unset>
+env.RUSTLE_ER_CORE_DEPTH	<unset>
+env.RUSTLE_ER_COVERAGE_LONGER	<unset>
+env.RUSTLE_ER_NO_STUB_EDGES	<unset>
+env.RUSTLE_SHARED_EXON	<unset>
+env.RUSTLE_SENSITIVE_IDENTITY	<unset>
+env.RUSTLE_GENOME_MIN_COVERAGE	<unset>
+env.RUSTLE_GENOME_GAMMA	<unset>
+env.RUSTLE_LOCUS_EXON_UNION	<unset>
+env.RUSTLE_COTHREAD_REP	<unset>
+mm_flags	-c -X --no-long-join
+primary_tier_seed	-k 11 -w 5
+primary_tier_identity	0.600000
+primary_tier_name	sensitive
+sensitive_only	true
+additive_sensitive_tier	same-as-primary (not re-run)
+protein_tier	false
+min_coverage	0.500000
+core_substrate	exon-sum
+additive_genomic_tier	absent (single-substrate site)
+site_divergence_policy	additive_genomic_tier is the ONLY axis on which the O1 and O2 E_r sites differ; O-4 2026-08-13 ADJUDICATED KEEP BOTH (refine's leg is GATED+family-local: emitted catalogs identical 0/26 vs DNA-only, ARI 1.0000; the O1 site's swap is global and its precision sign is truth-dependent) -- see bench/FALSE_NEGATIVES.md
+coverage_denominator	span(min)
+coverage_form	aligned span on the SHORTER sequence / len(shorter) (ql<=tl ? (qe-qs)/ql : (te-ts)/tl); axis follows the denominator
+identity_metric	1-de (fallback nmatch/blocklen when de:f: absent)
+alignment_orientation	forward-only (+); valid only for transcript-oriented RNA representatives
+edge_rule	ANY single record clearing both floors
+summed_coverage	<unset>
+drop_stub_edges	false
+shared_exon_mode	<unset>
+minimap2	minimap2

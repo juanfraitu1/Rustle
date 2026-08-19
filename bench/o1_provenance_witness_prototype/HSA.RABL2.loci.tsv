@@ -1,0 +1,3 @@
+case	locus_id	annotation	disposition	membership_role	fresh_family	rna_degree	dna_degree	both_layer_degree	rna_only_degree	dna_only_degree
+RABL2	L~chr22_51280995_51297151	RABL2B	KEEP_KNOWN	FAMILY_MEMBER	GWFAM28	1	1	1	0	0
+RABL2	L~chr2_114051947_114068133	RABL2A	KEEP_KNOWN	FAMILY_MEMBER	GWFAM28	1	1	1	0	0

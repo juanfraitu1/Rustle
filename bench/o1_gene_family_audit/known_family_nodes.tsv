@@ -1,0 +1,81 @@
+family	node	locus	symbols	rna_eligible	named_gene_member	rna_reaches_named	dna_degree	rna_forward_degree	disposition	reason
+NPIP	L~chr16_11963287_12012756	chr16:11963287-12012756	NPIPB2;TNFRSF17	1	1	1	14	12	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_14740933_14763869	chr16:14740933-14763869	NPIPA2	1	1	1	27	13	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_14934456_14953124	chr16:14934456-14953124	NPIPA1	1	1	1	28	15	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_15105563_15115512	chr16:15105563-15115512	LOC100505915;PDXDC1	1	0	0	26	0	REMOVE_OBVIOUS_FP	PDXDC1/LOC100505915 interval; NPIP connection is reverse-complement-only
+NPIP	L~chr16_15117336_15126198	chr16:15117336-15126198	PDXDC1	1	0	0	26	20	REVIEW_CONFLICTING_GENE	forward transcript homology reaches the family, but independent annotation names a different gene: PDXDC1
+NPIP	L~chr16_15368405_15407001	chr16:15368405-15407001	MPV17L;MPV17L-BMERB1;NPIPA5	1	1	1	27	13	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_16340280_16359022	chr16:16340280-16359022	NPIPA6	1	1	1	28	23	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_16387394_16406190	chr16:16387394-16406190	NPIPA7	1	1	1	28	24	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_18325161_18343979	chr16:18325161-18343979	NPIPA8	1	1	1	28	24	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_18372353_18391116	chr16:18372353-18391116	NPIPA9	1	1	1	28	8	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_2117540_2119871	chr16:2117540-2119871	PKD1	0	0	0	5	0	REMOVE_OBVIOUS_FP	PKD1 interval; RNA-null and no NPIP seed
+NPIP	L~chr16_21337399_21374021	chr16:21337399-21374021	LOC100190986;NPIPB3	1	1	1	27	18	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_21680685_21717295	chr16:21680685-21717295	LOC105371131;LOC128966632	1	0	1	27	19	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+NPIP	L~chr16_22345950_22382381	chr16:22345950-22382381	LOC112268174;NPIPB4	1	1	1	27	18	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_22777929_22814315	chr16:22777929-22814315	LOC124907830;NPIPB5	1	1	1	27	11	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_28623008_28660222	chr16:28623008-28660222	EIF3CL;NPIPB6	1	1	1	26	18	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_28736989_28778611	chr16:28736989-28778611	CLN3;LOC124907832;NPIPB7;SULT1A1	1	1	1	27	19	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_28923836_28939457	chr16:28923836-28939457	NPIPB8	1	1	1	27	22	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_29016080_29053457	chr16:29016080-29053457	EIF3C;NPIPB9	1	1	1	26	15	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_29316313_29333933	chr16:29316313-29333933	.	1	0	1	27	24	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+NPIP	L~chr16_29663331_29699434	chr16:29663331-29699434	NPIPB11	1	1	1	27	14	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_29765317_29801471	chr16:29765317-29801471	LOC124907844;NPIPB12	1	1	1	27	3	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_30507414_30543635	chr16:30507414-30543635	LOC124907845;LOC128966583	1	0	1	27	20	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+NPIP	L~chr16_30609373_30645605	chr16:30609373-30645605	LOC101929894;NPIPB13	1	1	1	27	16	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_75785926_75819336	chr16:75785926-75819336	LOC124907800	1	0	1	26	16	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+NPIP	L~chr16_76016979_76022709	chr16:76016979-76022709	.	0	0	0	10	0	REVIEW_DNA_ONLY	DNA SD homology without RNA or independent gene-family typing
+NPIP	L~chr16_80192449_80209904	chr16:80192449-80209904	LOC124907811;NPIPB15	1	1	1	27	22	KEEP_KNOWN	independent family symbol and graph support
+NPIP	L~chr16_80306831_80324279	chr16:80306831-80324279	LOC124907808	1	0	1	27	22	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+NPIP	L~chr16_80421197_80438610	chr16:80421197-80438610	LOC124907807	1	0	1	27	24	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+NPIP	L~chr18_11781586_11806247	chr18:11781586-11806247	.	1	0	1	27	17	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+TBC1D3	L~chr17_37113572_37126269	chr17:37113572-37126269	LOC128966682;TBC1D3B	1	1	1	10	10	KEEP_KNOWN	independent family symbol and graph support
+TBC1D3	L~chr17_37201560_37214212	chr17:37201560-37214212	LOC102724956;TBC1D3I	1	1	1	10	10	KEEP_KNOWN	independent family symbol and graph support
+TBC1D3	L~chr17_37267960_37282718	chr17:37267960-37282718	TBC1D3G	1	1	1	11	10	KEEP_KNOWN	independent family symbol and graph support
+TBC1D3	L~chr17_37325492_37338208	chr17:37325492-37338208	TBC1D3H	1	1	1	10	10	KEEP_KNOWN	independent family symbol and graph support
+TBC1D3	L~chr17_37427056_37439768	chr17:37427056-37439768	LOC124900636;TBC1D3F	1	1	1	10	10	KEEP_KNOWN	independent family symbol and graph support
+TBC1D3	L~chr17_38909634_38922351	chr17:38909634-38922351	TBC1D3E	1	1	1	10	10	KEEP_KNOWN	independent family symbol and graph support
+TBC1D3	L~chr17_38965105_38977782	chr17:38965105-38977782	TBC1D3K	1	1	1	10	10	KEEP_KNOWN	independent family symbol and graph support
+TBC1D3	L~chr17_38989253_39001929	chr17:38989253-39001929	TBC1D3D	1	1	1	10	10	KEEP_KNOWN	independent family symbol and graph support
+TBC1D3	L~chr17_39044722_39059475	chr17:39044722-39059475	TBC1D3	1	1	1	11	10	KEEP_KNOWN	independent family symbol and graph support
+TBC1D3	L~chr17_48453760_48455808	chr17:48453760-48455808	NPEPPS	0	0	0	2	0	REMOVE_OBVIOUS_FP	NPEPPS interval; RNA-null and no TBC1D3 seed
+TBC1D3	L~chr17_60876851_60889628	chr17:60876851-60889628	LOC105371848	1	0	1	10	10	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+TBC1D3	L~chr17_63134632_63147424	chr17:63134632-63147424	LOC105371853	1	0	1	10	10	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+RABL2	L~chr22_51281002_51297168	chr22:51281002-51297168	RABL2B	1	1	1	1	1	KEEP_KNOWN	independent family symbol and graph support
+RABL2	L~chr2_114051958_114068120	chr2:114051958-114068120	RABL2A	1	1	1	1	1	KEEP_KNOWN	independent family symbol and graph support
+APOBEC3	L~chr22_39427985_39433575	chr22:39427985-39433575	APOBEC3A	0	1	1	2	0	KEEP_KNOWN	independent family symbol and graph support
+APOBEC3	L~chr22_39452732_39463200	chr22:39452732-39463200	APOBEC3B;APOBEC3B-AS1	0	1	1	1	0	KEEP_KNOWN	independent family symbol and graph support
+APOBEC3	L~chr22_39484668_39490772	chr22:39484668-39490772	APOBEC3C	1	1	1	2	0	KEEP_KNOWN	independent family symbol and graph support
+APOBEC3	L~chr22_39491546_39505348	chr22:39491546-39505348	APOBEC3D	1	1	1	2	0	KEEP_KNOWN	independent family symbol and graph support
+APOBEC3	L~chr22_39511022_39526391	chr22:39511022-39526391	APOBEC3F	1	1	1	3	0	KEEP_KNOWN	independent family symbol and graph support
+APOBEC3	L~chr22_39547422_39558159	chr22:39547422-39558159	APOBEC3G	1	1	1	2	0	KEEP_KNOWN	independent family symbol and graph support
+APOBEC3	L~chr22_39567662_39574409	chr22:39567662-39574409	APOBEC3H	0	1	1	0	0	KEEP_KNOWN_OUTLIER	independent family symbol but no passing family edge; report as a false negative
+MAGEA	L~chrX_147847406_147853265	chrX:147847406-147853265	MAGEA9B	1	1	1	8	11	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_147951769_147980829	chrX:147951769-147980829	MAGEA11	1	1	1	7	10	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_148047612_148053471	chrX:148047612-148053471	MAGEA9	1	1	1	8	11	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_148146880_148151523	chrX:148146880-148151523	MAGEA8;MAGEA8-AS1	1	1	1	12	11	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_150180746_150191399	chrX:150180746-150191399	MAGEA4	1	1	1	10	9	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_150380125_150383437	chrX:150380125-150383437	LOC100533997;LOC105373369	0	0	0	12	0	REVIEW_DNA_ONLY	DNA SD homology without RNA or independent gene-family typing
+MAGEA	L~chrX_150399373_150404642	chrX:150399373-150404642	LOC100533997;MAGEA10	1	1	1	9	6	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_150965350_150968920	chrX:150965350-150968920	MAGEA3	1	1	1	6	10	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_150981161_150985189	chrX:150981161-150985189	MAGEA2B	1	1	1	7	11	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_151000335_151004248	chrX:151000335-151004248	MAGEA12	1	1	1	12	10	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_151016432_151020460	chrX:151016432-151020460	MAGEA2	1	1	1	7	11	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_151032688_151036258	chrX:151032688-151036258	MAGEA6	1	1	1	6	10	KEEP_KNOWN	independent family symbol and graph support
+MAGEA	L~chrX_151483623_151488220	chrX:151483623-151488220	MAGEA1	1	1	1	12	10	KEEP_KNOWN	independent family symbol and graph support
+GSTM	L~chr1_109684536_109696166	chr1:109684536-109696166	GSTM4	1	1	1	2	1	KEEP_KNOWN	independent family symbol and graph support
+GSTM	L~chr1_109696171_109703776	chr1:109696171-109703776	GSTM2	1	1	1	2	0	KEEP_KNOWN	independent family symbol and graph support
+GSTM	L~chr1_109721792_109728310	chr1:109721792-109728310	GSTM5	1	1	1	2	1	KEEP_KNOWN	independent family symbol and graph support
+GSTM	L~chr1_109744082_109751183	chr1:109744082-109751183	GSTM3	1	1	1	0	0	KEEP_KNOWN_OUTLIER	independent family symbol but no passing family edge; report as a false negative
+HERC2	L~chr15_18340759_18376045	chr15:18340759-18376045	.	1	0	1	3	5	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+HERC2	L~chr15_18378835_18410091	chr15:18378835-18410091	.	1	0	1	3	2	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+HERC2	L~chr15_20174292_20205675	chr15:20174292-20205675	.	1	0	1	3	3	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+HERC2	L~chr15_20208027_20254954	chr15:20208027-20254954	.	1	0	1	3	3	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+HERC2	L~chr15_25853560_26064943	chr15:25853560-26064943	HERC2	1	1	1	11	4	KEEP_KNOWN_OUTLIER	independent family symbol but no passing family edge; report as a false negative
+HERC2	L~chr15_26374081_26405229	chr15:26374081-26405229	.	1	0	1	3	2	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+HERC2	L~chr15_26407946_26453858	chr15:26407946-26453858	.	1	0	1	3	3	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+HERC2	L~chr15_28620350_28638850	chr15:28620350-28638850	.	1	0	1	1	1	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+HERC2	L~chr16_32539231_32565148	chr16:32539231-32565148	.	1	0	1	4	4	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member
+HERC2	L~chr16_33166163_33190131	chr16:33166163-33190131	.	1	0	0	4	0	REVIEW_SD_ONLY	RNA evidence exists but no forward transcript path reaches a named member
+HERC2	L~chr16_33508977_33532950	chr16:33508977-33532950	.	0	0	0	4	0	REVIEW_DNA_ONLY	DNA SD homology without RNA or independent gene-family typing
+HERC2	L~chr16_34253089_34278984	chr16:34253089-34278984	.	1	0	1	4	5	KEEP_RNA_CANDIDATE	forward transcript homology reaches an independently named family member

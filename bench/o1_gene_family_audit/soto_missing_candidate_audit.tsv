@@ -1,0 +1,19 @@
+locus	soto_sd_family	gene_family_stems	genomic_paralog_loci	identity	coverage_of_shorter	best_annotation	best_annotation_biotype	independent_family_annotation	copy_key	disposition	reason
+chr1:16278523-16283903	ID_393	MST1	3	0.832	0.280	LOC124905695	lncRNA	.	chr1:16278523-16283903	REVIEW_PARTIAL_SD_HOMOLOGY	real duplicated locus, but it does not pass the O1 family edge floor
+chr1:16478340-16479683	ID_393	MST1	3	0.945	0.990	.	.	.	chr1:16478340-16479683	NOVEL_GENE_COPY_CANDIDATE	coherent-family homology and genomic paralogs, but no independent gene annotation
+chr1:16560385-16565766	ID_393	MST1	3	0.845	0.280	LOC124905700	lncRNA	.	chr1:16560385-16565766	REVIEW_PARTIAL_SD_HOMOLOGY	real duplicated locus, but it does not pass the O1 family edge floor
+chr1:120449518-120478614	ID_400	NBPF,NOTCH2NL	3	0.869	0.780	NBPF8	protein_coding	NBPF8	NBPF8	SUPPORTED_SOTO_MISSING_GENE_COPY	SD homology, multi-copy genome evidence, and independent gene-family annotation agree
+chr1:145834600-145840160	ID_212	.	6	0.946	1.000	.	.	.	chr1:145834600-145840160	SD_EXTENSION_ONLY	the Soto SD cluster is gene-family-heterogeneous or untyped
+chr1:148601552-148620972	ID_400	NBPF,NOTCH2NL	2	0.992	1.000	NBPF19	protein_coding	NBPF19	NBPF19	SUPPORTED_SOTO_MISSING_GENE_COPY	SD homology, multi-copy genome evidence, and independent gene-family annotation agree
+chr15:20812032-20814214	ID_116	GOLGA6	2	0.998	0.760	GOLGA6L1	protein_coding	GOLGA6L1	GOLGA6L1	SUPPORTED_SOTO_MISSING_GENE_COPY	SD homology, multi-copy genome evidence, and independent gene-family annotation agree
+chr15:21025273-21028497	ID_71	HERC2	5	0.948	0.600	LOC102723564	misc_RNA	LOC102723564	LOC102723564	SUPPORTED_NONCODING_FAMILY_LOCUS	same-family annotation agrees, but the record is noncoding and is not counted as a gene copy
+chr15:28174361-28187051	ID_179	ULK4	4	0.979	0.980	CHRFAM7A	protein_coding	.	chr15:28174361-28187051	REJECT_GENE_FAMILY_ASSIGNMENT	the locus is independently annotated as a different protein-coding gene
+chr5:70456936-70462706	ID_163	GUSB	4	0.809	1.000	.	.	.	chr5:70456936-70462706	NOVEL_GENE_COPY_CANDIDATE	coherent-family homology and genomic paralogs, but no independent gene annotation
+chr5:181864358-181868568	ID_35	.	8	0.979	1.000	.	.	.	chr5:181864358-181868568	SD_EXTENSION_ONLY	the Soto SD cluster is gene-family-heterogeneous or untyped
+chr5:181881697-181906746	ID_35	.	6	0.929	0.390	LOC100132062	lncRNA	.	chr5:181881697-181906746	REVIEW_PARTIAL_SD_HOMOLOGY	real duplicated locus, but it does not pass the O1 family edge floor
+chr7:76085482-76092920	ID_245	.	1	1.000	0.010	LOC124901673	lncRNA	.	chr7:76085482-76092920	REJECT_NOT_MULTICOPY	whole-genome check found only one locus
+chr9:77863432-77881287	ID_280	ANKRD20A,ANKYRIN REPEAT DOMAIN-CONTAINING PROTEIN 20A	5	0.944	1.000	LOC128966611	protein_coding	LOC128966611	LOC128966611	SUPPORTED_SOTO_MISSING_GENE_COPY	SD homology, multi-copy genome evidence, and independent gene-family annotation agree
+chr9:77896718-77916227	ID_280	ANKRD20A,ANKYRIN REPEAT DOMAIN-CONTAINING PROTEIN 20A	4	0.958	1.000	LOC128966611	protein_coding	LOC128966611	LOC128966611	SUPPORTED_SOTO_MISSING_GENE_COPY	SD homology, multi-copy genome evidence, and independent gene-family annotation agree
+chr9:77917188-77922776	ID_280	ANKRD20A,ANKYRIN REPEAT DOMAIN-CONTAINING PROTEIN 20A	4	0.980	1.000	LOC128966611	protein_coding	LOC128966611	LOC128966611	SUPPORTED_SOTO_MISSING_GENE_COPY	SD homology, multi-copy genome evidence, and independent gene-family annotation agree
+chr9:77926044-77949112	ID_280	ANKRD20A,ANKYRIN REPEAT DOMAIN-CONTAINING PROTEIN 20A	4	0.949	1.000	.	.	.	chr9:77926044-77949112	NOVEL_GENE_COPY_CANDIDATE	coherent-family homology and genomic paralogs, but no independent gene annotation
+chr9:150545078-150568219	ID_35	.	8	0.739	0.340	LOC124906818	lncRNA	.	chr9:150545078-150568219	REVIEW_PARTIAL_SD_HOMOLOGY	real duplicated locus, but it does not pass the O1 family edge floor

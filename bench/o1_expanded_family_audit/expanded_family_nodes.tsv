@@ -1,0 +1,134 @@
+species	case	catalog_family	node	locus	genes	disposition	reason
+GGO	C4	GWFAM179	GWFAM179~0	NC_073229.2:49583457-49597695	C4A	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	C4	GWFAM179	GWFAM179~1	NC_073229.2:49609915-49624154	C4B	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	TSPYL	GWFAM196	GWFAM196~0	NC_073229.2:140449427-140453573	TSPYL4	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	TSPYL	GWFAM196	GWFAM196~1	NC_073229.2:140476252-140479462	TSPYL1	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	GSTM	GWFAM34	GWFAM34~0	NC_073224.2:129169634-129173089	GSTM3	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	GSTM	GWFAM34	GWFAM34~1	NC_073224.2:129191738-129197754	GSTM5	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	GSTM	GWFAM34	GWFAM34~2	NC_073224.2:129214072-129222700	GSTM1	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	GSTM	GWFAM34	GWFAM34~3	NC_073224.2:130416115-130425450	GSTM4	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	RGPD	GWFAM332	GWFAM332~0	NC_073236.2:46653760-46675997	LOC101136692	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	RGPD	GWFAM332	GWFAM332~1	NC_073236.2:47713107-47730218	LOC109025447	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	RGPD	GWFAM332	GWFAM332~2	NC_073236.2:47732254-47781827	LOC109025447,LOC129531693	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	RGPD	GWFAM332	GWFAM332~3	NC_073236.2:49989276-49996072	RGPD8	KEEP_KNOWN_OUTLIER	independent same-family protein-coding annotation
+GGO	RGPD	GWFAM332	GWFAM332~4	NC_073236.2:51202489-51224380	LOC129531666	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	RGPD	GWFAM332	GWFAM332~5	NC_073236.2:52825244-52845979	LOC101131768	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	ANKRD18	GWFAM338	GWFAM338~0	NC_073237.2:29418618-29426261	LOC101142783	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	ANKRD18	GWFAM338	GWFAM338~1	NC_073237.2:29426288-29451443	LOC101142783	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	ANKRD18	GWFAM338	GWFAM338~2	NC_073237.2:31482001-31507794	ANKRD18B	KEEP_KNOWN_OUTLIER	independent same-family protein-coding annotation
+GGO	ANKRD18	GWFAM338	GWFAM338~3	NC_073237.2:93517785-93564369	LOC101147259,LOC129524455,LOC134756891	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	HERC2	GWFAM387	GWFAM387~0	NC_073240.2:23337811-23357151	LOC115932987,LOC129527054	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	HERC2	GWFAM387	GWFAM387~1	NC_073240.2:29369422-29402102	HERC2	KEEP_KNOWN_OUTLIER	independent same-family protein-coding annotation
+GGO	MAGEA	GWFAM455	GWFAM455~0	NC_073247.2:46342753-46348287	MAGEB16	REVIEW_CONFLICTING_GENE	independent annotation names another gene: MAGEB16
+GGO	MAGEA	GWFAM455	GWFAM455~1	NC_073247.2:161251228-161256980	LOC129530018	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	MAGEA	GWFAM455	GWFAM455~10	NC_073247.2:164861280-164865957	MAGEA1	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	MAGEA	GWFAM455	GWFAM455~2	NC_073247.2:161459069-161464316	MAGEA9	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	MAGEA	GWFAM455	GWFAM455~3	NC_073247.2:163590503-163600782	MAGEA4	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	MAGEA	GWFAM455	GWFAM455~4	NC_073247.2:163809311-163814501	MAGEA10	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	MAGEA	GWFAM455	GWFAM455~5	NC_073247.2:164381244-164384845	LOC129529976	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	MAGEA	GWFAM455	GWFAM455~6	NC_073247.2:164397083-164401094	LOC129529978	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	MAGEA	GWFAM455	GWFAM455~7	NC_073247.2:164407412-164411338	MAGEA12	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	MAGEA	GWFAM455	GWFAM455~8	NC_073247.2:164426194-164430205	LOC129529983	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	MAGEA	GWFAM455	GWFAM455~9	NC_073247.2:164442448-164446063	LOC129529986	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+GGO	DAZ	GWFAM479	GWFAM479~0	NC_073248.2:42783135-42859567	DAZ1	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	DAZ	GWFAM479	GWFAM479~1	NC_086017.1:26423034-26441838	DAZL	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	APOBEC3	GWFAM491	GWFAM491~0	NC_086018.1:37016959-37023077	APOBEC3C	KEEP_KNOWN	independent same-family protein-coding annotation
+GGO	APOBEC3	GWFAM491	GWFAM491~1	NC_086018.1:37043632-37056318	APOBEC3F	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~0	chr12:100117634-100121292	.	REVIEW_UNTYPED	no same-family annotation or forward path to a named member
+HSA	GOLGA6_8	GWFAM141	GWFAM141~1	chr15:18474207-18487533	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	GOLGA6_8	GWFAM141	GWFAM141~10	chr15:27926773-27937424	GOLGA8T	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~11	chr15:30241581-30252173	GOLGA8O	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~12	chr15:32184806-32193312	GOLGA8A	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~13	chr15:32330818-32333748	GOLGA8B	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~14	chr15:73646286-73657735	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	GOLGA6_8	GWFAM141	GWFAM141~15	chr15:80206660-80213549	GOLGA6L10	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~16	chr15:80295867-80300833	GOLGA6L9	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~17	chr15:82101777-82108939	GOLGA6L4	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~18	chr15:82259568-82264268	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	GOLGA6_8	GWFAM141	GWFAM141~19	chr2:24273577-24292480	ITSN2	REVIEW_CONFLICTING_GENE	independent annotation names another gene: ITSN2
+HSA	GOLGA6_8	GWFAM141	GWFAM141~2	chr15:20096775-20102319	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	GOLGA6_8	GWFAM141	GWFAM141~20	chr5:7237269-7244517	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	GOLGA6_8	GWFAM141	GWFAM141~21	chr9:140463968-140483144	GOLGA2,SWI5	REVIEW_RELATED_OUTGROUP	best annotation GOLGA2 is a documented ancestral/broad-family homolog, but not a recent target-subfamily copy
+HSA	GOLGA6_8	GWFAM141	GWFAM141~3	chr15:20279487-20289966	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	GOLGA6_8	GWFAM141	GWFAM141~4	chr15:20841211-20852879	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	GOLGA6_8	GWFAM141	GWFAM141~5	chr15:20974312-20979383	LOC124907502	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	GOLGA6_8	GWFAM141	GWFAM141~6	chr15:21174429-21180518	GOLGA6L2	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~7	chr15:26093584-26100826	GOLGA6L24	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~8	chr15:26121387-26134740	GOLGA8F	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	GOLGA6_8	GWFAM141	GWFAM141~9	chr15:26298047-26309714	GOLGA8G	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	TBC1D3	GWFAM235	GWFAM235~0	chr17:37271813-37282718	TBC1D3G	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	TBC1D3	GWFAM235	GWFAM235~1	chr17:37427055-37437961	TBC1D3F	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	TBC1D3	GWFAM235	GWFAM235~2	chr17:38911439-38922350	TBC1D3E	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	TBC1D3	GWFAM235	GWFAM235~3	chr17:38965106-38976051	TBC1D3K	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	TBC1D3	GWFAM235	GWFAM235~4	chr17:39044729-39065854	TBC1D3	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	TBC1D3	GWFAM235	GWFAM235~5	chr17:60876857-60887781	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	RANBP2_RGPD	GWFAM280	GWFAM280~0	chr2:86990903-87018015	PLGLB1,RGPD1	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RANBP2_RGPD	GWFAM280	GWFAM280~1	chr2:87767942-87796311	PLGLB2,RGPD2	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RANBP2_RGPD	GWFAM280	GWFAM280~2	chr2:106865867-106885993	RGPD3	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RANBP2_RGPD	GWFAM280	GWFAM280~3	chr2:108332493-108352398	RGPD4	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RANBP2_RGPD	GWFAM280	GWFAM280~4	chr2:108960318-108970074	GCC2	REVIEW_CONFLICTING_GENE	independent annotation names another gene: GCC2
+HSA	RANBP2_RGPD	GWFAM280	GWFAM280~5	chr2:109225621-109246413	RANBP2	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RANBP2_RGPD	GWFAM280	GWFAM280~6	chr2:110297535-110319390	RANBP2,RGPD5	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RANBP2_RGPD	GWFAM280	GWFAM280~7	chr2:110936277-110958134	RGPD6	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RANBP2_RGPD	GWFAM280	GWFAM280~8	chr2:112795154-112817015	RGPD8	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RABL2	GWFAM288	GWFAM288~0	chr2:114052011-114068117	RABL2A	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RABL2	GWFAM288	GWFAM288~1	chr22:51281005-51297164	RABL2B	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	AMY1	GWFAM32	GWFAM32~0	chr1:103536284-103544010	AMY1B	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	AMY1	GWFAM32	GWFAM32~1	chr1:103599811-103607558	LOC124905662,LOC128966568	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	AMY1	GWFAM32	GWFAM32~2	chr1:103630430-103638182	LOC128966570	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	AMY1	GWFAM32	GWFAM32~3	chr1:103693942-103701691	LOC124905666	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	AMY1	GWFAM32	GWFAM32~4	chr1:103724562-103732312	LOC124905668	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	AMY1	GWFAM32	GWFAM32~5	chr1:103788075-103795827	AMY1C	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	PCDHB	GWFAM341	GWFAM341~0	chr5:141619674-141621677	PCDHB2	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	PCDHB	GWFAM341	GWFAM341~1	chr5:141707394-141709427	PCDHB16	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	MAGEA	GWFAM375	GWFAM375~0	chrX:25725660-25728072	MAGEB18	REVIEW_CONFLICTING_GENE	independent annotation names another gene: MAGEB18
+HSA	MAGEA	GWFAM375	GWFAM375~1	chrX:29807893-29812621	MAGEB2	REVIEW_CONFLICTING_GENE	independent annotation names another gene: MAGEB2
+HSA	MAGEA	GWFAM375	GWFAM375~2	chrX:29839508-29844391	MAGEB1	REVIEW_CONFLICTING_GENE	independent annotation names another gene: MAGEB1
+HSA	MAGEA	GWFAM375	GWFAM375~3	chrX:147847405-147853213	MAGEA9B	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	MAGEA	GWFAM375	GWFAM375~4	chrX:147951772-147956968	MAGEA11	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	MAGEA	GWFAM375	GWFAM375~5	chrX:148047700-148053448	MAGEA9	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	MAGEA	GWFAM375	GWFAM375~6	chrX:150184485-150191397	MAGEA4	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	MAGEA	GWFAM375	GWFAM375~7	chrX:150400501-150404620	LOC100533997,MAGEA10	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	MAGEA	GWFAM375	GWFAM375~8	chrX:150965338-150968919	MAGEA3	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	MAGEA	GWFAM375	GWFAM375~9	chrX:151032689-151036270	MAGEA6	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RBMY1	GWFAM393	GWFAM393~0	chrY:22386658-22401036	RBMY1B	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RBMY1	GWFAM393	GWFAM393~1	chrY:22715595-22729980	RBMY1D	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	RBMY1	GWFAM393	GWFAM393~2	chrY:23239127-23253508	RBMY1F	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~0	chr1:16004107-16016849	NBPF1	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~1	chr1:16197048-16220874	LOC124905564	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	NBPF_core	GWFAM5	GWFAM5~10	chr1:144498147-144520861	NBPF20	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~11	chr1:144691650-144725287	GPR89A	REVIEW_CONFLICTING_GENE	independent annotation names another gene: GPR89A
+HSA	NBPF_core	GWFAM5	GWFAM5~12	chr1:145181688-145184172	NBPF10	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~13	chr1:145721211-145740076	NBPF9	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~14	chr1:146192086-146215264	NBPF14,NOTCH2NLB	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~15	chr1:146269343-146275854	NBPF14	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~16	chr1:146680110-146702807	NBPF11	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~17	chr1:147812345-147816735	NBPF12	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~18	chr1:148603999-148620950	NBPF19	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~19	chr1:148677119-148680424	NBPF19	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~2	chr1:16623535-16625827	LOC128966598	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	NBPF_core	GWFAM5	GWFAM5~20	chr5:86765447-86780534	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	NBPF_core	GWFAM5	GWFAM5~3	chr1:16651941-16655931	LOC128966598	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	NBPF_core	GWFAM5	GWFAM5~4	chr1:21292339-21308824	NBPF3	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~5	chr1:108317004-108352009	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	NBPF_core	GWFAM5	GWFAM5~6	chr1:108483723-108505288	NBPF6	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~7	chr1:119846929-119857970	.	KEEP_RNA_CANDIDATE	forward RNA homology reaches a named family member; no conflicting named gene
+HSA	NBPF_core	GWFAM5	GWFAM5~8	chr1:120818575-120841260	NBPF26	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_core	GWFAM5	GWFAM5~9	chr1:144475892-144494196	NBPF20	KEEP_KNOWN	independent same-family protein-coding annotation
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~0	chr1:108306435-108321758	NBPF4	KEEP_KNOWN_OUTLIER	independent same-family protein-coding annotation
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~1	chr1:157334493-157340968	.	REVIEW_UNTYPED	no same-family annotation or forward path to a named member
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~10	chr2:110774714-110806921	LIMS4	REVIEW_CONFLICTING_GENE	independent annotation names another gene: LIMS4
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~11	chr20:5512112-5518046	.	REVIEW_UNTYPED	no same-family annotation or forward path to a named member
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~12	chr20:5539011-5545186	.	REVIEW_UNTYPED	no same-family annotation or forward path to a named member
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~13	chr5:86491157-86514189	.	REVIEW_UNTYPED	no same-family annotation or forward path to a named member
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~14	chr6:143328759-143339190	NMBR	REVIEW_CONFLICTING_GENE	independent annotation names another gene: NMBR
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~15	chr7:54950739-54954280	.	REVIEW_UNTYPED	no same-family annotation or forward path to a named member
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~16	chr8:82275843-82282969	.	REVIEW_UNTYPED	no same-family annotation or forward path to a named member
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~2	chr1:224373779-224383409	DNAH14	REVIEW_CONFLICTING_GENE	independent annotation names another gene: DNAH14
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~3	chr1:237358171-237414508	.	REVIEW_UNTYPED	no same-family annotation or forward path to a named member
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~4	chr12:110591848-110607905	TCTN1	REVIEW_CONFLICTING_GENE	independent annotation names another gene: TCTN1
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~5	chr14:18170273-18189771	DHRS4L2	REVIEW_CONFLICTING_GENE	independent annotation names another gene: DHRS4L2
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~6	chr14:31943982-31948327	TTC6	REVIEW_CONFLICTING_GENE	independent annotation names another gene: TTC6
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~7	chr15:40667794-40672170	TTBK2	REVIEW_CONFLICTING_GENE	independent annotation names another gene: TTBK2
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~8	chr15:46537272-46540532	CEP152	REVIEW_CONFLICTING_GENE	independent annotation names another gene: CEP152
+HSA	NBPF_repeat_bridge	GWFAM33	GWFAM33~9	chr18:79318545-79365248	ATP9B	REVIEW_CONFLICTING_GENE	independent annotation names another gene: ATP9B

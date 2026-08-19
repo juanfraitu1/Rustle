@@ -1,0 +1,21 @@
+key	value
+mm_flags	-c -X --no-long-join
+primary_tier_seed	-k 11 -w 5
+primary_tier_identity	0.600000
+primary_tier_name	sensitive
+sensitive_only	true
+additive_sensitive_tier	same-as-primary (not re-run)
+protein_tier	false
+min_coverage	0.500000
+core_substrate	exon-sum
+additive_genomic_tier	absent (single-substrate site)
+site_divergence_policy	additive_genomic_tier is the ONLY axis on which the O1 and O2 E_r sites differ; O-4 2026-08-13 ADJUDICATED KEEP BOTH (refine's leg is GATED+family-local: emitted catalogs identical 0/26 vs DNA-only, ARI 1.0000; the O1 site's swap is global and its precision sign is truth-dependent) -- see bench/FALSE_NEGATIVES.md
+coverage_denominator	span(min)
+coverage_form	aligned span on the SHORTER sequence / len(shorter) (ql<=tl ? (qe-qs)/ql : (te-ts)/tl); axis follows the denominator
+identity_metric	1-de (fallback nmatch/blocklen when de:f: absent)
+alignment_orientation	forward-only (+); valid only for transcript-oriented RNA representatives
+edge_rule	ANY single record clearing both floors
+summed_coverage	<unset>
+drop_stub_edges	false
+shared_exon_mode	<unset>
+minimap2	minimap2
