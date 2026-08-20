@@ -4383,32 +4383,31 @@ fn nucleotide_edges_scored(
             writeln!(f)?;
         }
     }
-    let out = er_tier_command(&params.minimap2, params.threads, mm_args)
+    // ⚠⚠ STREAMED, NOT BUFFERED (2026-08-19). This used `.output()`, which holds the ENTIRE
+    // all-vs-all PAF in a `Vec<u8>` before parsing a single line. Per-family that is nothing; genome-wide
+    // it is the whole 12,415-rep all-vs-all through the sensitive `-k11 -w5` tier, and it is what made the
+    // genome-wide catalog unrunnable — a run reached 23.7 GB RSS + 10.2 GB swap, `D` state, ~11% CPU
+    // (the parent blocked accumulating the child's stdout) and had to be killed at 1h34m.
+    // Memory is now bounded by one line regardless of PAF size. Records, order and edges are unchanged.
+    let mut child = er_tier_command(&params.minimap2, params.threads, mm_args)
         .arg(&path)
         .arg(&path)
-        .output()
+        .stdout(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| anyhow::anyhow!("failed to run minimap2 ('{}') for refinement: {e}", params.minimap2))?;
-    if !out.status.success() {
-        // ⚠ An alignment-time failure is SILENTLY an empty edge set (the family dissolves). Say so on
-        // stderr when the parity dump is on, so an empty dump is never mistaken for a zero-edge finding.
-        if std::env::var("RUSTLE_ER_EDGE_DUMP").is_ok() {
-            eprintln!(
-                "[er-dump] ⚠ minimap2 EXITED NON-ZERO ({}) for args {:?} on {} seqs -> ZERO edges. \
-                 An empty dump here is a FAILED ALIGNMENT, not a result.",
-                out.status,
-                mm_args,
-                seqs.len()
-            );
-        }
-        return Ok(Vec::new());
-    }
-    let text = String::from_utf8_lossy(&out.stdout);
+    let child_stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("minimap2 stdout pipe unavailable"))?;
     // Opt-in: hand the parity differ the EXACT bytes this rule was applied to. Without this the Python
     // mirror has to re-run minimap2 itself, and any difference in that invocation (the on-disk fixture PAF
     // was made with `-x asm20 ... -N 200 -p 0.02` and NO `-X`, i.e. both orientations of every pair) is
     // charged to the edge rule instead of to the alignment. The rep FASTA is copied too because the
     // `Cleanup` guard above deletes it, and its `>{i}` headers ARE the node ids used in the PAF.
     // ⚠ On a genome-wide run this file is the full all-vs-all PAF and can be large.
+    // The dump is now TEED while streaming rather than written from a buffer.
+    let mut dump_stem: Option<(String, String)> = None;
+    let mut dump_w: Option<std::io::BufWriter<std::fs::File>> = None;
     if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
         if !prefix.is_empty() {
             let argsig: String = mm_args
@@ -4418,30 +4417,13 @@ fn nucleotide_edges_scored(
                 .collect();
             let tag = dump_tag.map(|t| format!("{t}.")).unwrap_or_else(|| "refine.".to_string());
             let stem = format!("{prefix}.{tag}{argsig}.{uniq}");
-            if std::fs::write(format!("{stem}.paf"), text.as_bytes()).is_ok() {
-                let _ = std::fs::copy(&path, format!("{stem}.reps.fa"));
-                let _ = std::fs::write(
-                    format!("{stem}.args"),
-                    format!(
-                        // ⚠ `tier` is the O-3 fix: the exon-sum core run and the additive genomic-span run
-                        // use the SAME command on DIFFERENT sequence, so without this line two `.args`
-                        // files from one family are byte-identical and neither says what it aligned.
-                        "{} <reps.fa> <reps.fa>\ntier\t{}\nmin_identity\t{}\nmin_coverage\t{}\ncoverage_form\t{}\n",
-                        er_tier_cmdline(&params.minimap2, params.threads, mm_args),
-                        tag.trim_end_matches('.'),
-                        min_id,
-                        min_cov,
-                        ER_COVERAGE_FORM
-                    ),
-                );
-                eprintln!(
-                    "[er-dump] tier {:?}: {} PAF records -> {stem}.paf (+ .reps.fa, .args)",
-                    mm_args,
-                    text.lines().count()
-                );
+            if let Ok(f) = std::fs::File::create(format!("{stem}.paf")) {
+                dump_w = Some(std::io::BufWriter::new(f));
+                dump_stem = Some((stem, tag));
             }
         }
     }
+    let mut n_records = 0usize;
     // OPTIONAL summed-coverage rule (`RUSTLE_ER_SUM_COVERAGE=1`, default off = byte-identical).
     //
     // The default rule evaluates coverage on ONE record and never sums, so two loci sharing 60% of the
@@ -4471,7 +4453,14 @@ fn nucleotide_edges_scored(
 
     // Value = the EXEMPLAR (identity, coverage) for reporting only; membership is decided exactly as before.
     let mut edge_set: BTreeMap<(usize, usize), (f64, f64)> = BTreeMap::new();
-    for line in text.lines() {
+    use std::io::BufRead as _;
+    for line in std::io::BufReader::new(child_stdout).lines() {
+        let line = line.map_err(|e| anyhow::anyhow!("reading minimap2 stdout: {e}"))?;
+        n_records += 1;
+        if let Some(w) = dump_w.as_mut() {
+            let _ = writeln!(w, "{line}");
+        }
+        let line = line.as_str();
         let f: Vec<&str> = line.split('\t').collect();
         if f.len() < 12 {
             continue;
@@ -4598,6 +4587,49 @@ fn nucleotide_edges_scored(
             entry.1 = entry.1.min(shorter);
             entry.2 = entry.2.max(ident);
         }
+    }
+    // ---- the child is done: status check + dump finalisation ----
+    // ⚠ SEMANTICS PRESERVED: a non-zero minimap2 exit is still SILENTLY an empty edge set (the family
+    // dissolves). Streaming means we discover that AFTER parsing, so whatever was accumulated is
+    // discarded here rather than returned.
+    let status = child
+        .wait()
+        .map_err(|e| anyhow::anyhow!("waiting for minimap2 ('{}'): {e}", params.minimap2))?;
+    if let Some(mut w) = dump_w.take() {
+        let _ = w.flush();
+    }
+    if !status.success() {
+        if std::env::var("RUSTLE_ER_EDGE_DUMP").is_ok() {
+            eprintln!(
+                "[er-dump] ⚠ minimap2 EXITED NON-ZERO ({}) for args {:?} on {} seqs -> ZERO edges. \
+                 An empty dump here is a FAILED ALIGNMENT, not a result.",
+                status,
+                mm_args,
+                seqs.len()
+            );
+        }
+        return Ok(Vec::new());
+    }
+    if let Some((stem, tag)) = dump_stem {
+        let _ = std::fs::copy(&path, format!("{stem}.reps.fa"));
+        let _ = std::fs::write(
+            format!("{stem}.args"),
+            format!(
+                // ⚠ `tier` is the O-3 fix: the exon-sum core run and the additive genomic-span run use
+                // the SAME command on DIFFERENT sequence, so without this line two `.args` files from one
+                // family are byte-identical and neither says what it aligned.
+                "{} <reps.fa> <reps.fa>\ntier\t{}\nmin_identity\t{}\nmin_coverage\t{}\ncoverage_form\t{}\n",
+                er_tier_cmdline(&params.minimap2, params.threads, mm_args),
+                tag.trim_end_matches('.'),
+                min_id,
+                min_cov,
+                ER_COVERAGE_FORM
+            ),
+        );
+        eprintln!(
+            "[er-dump] tier {:?}: {n_records} PAF records -> {stem}.paf (+ .reps.fa, .args)",
+            mm_args
+        );
     }
     if sum_cov {
         let mut added = 0usize;
