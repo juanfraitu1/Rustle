@@ -1,6 +1,6 @@
 # REGISTER OF NEGATIVE RESULTS
 
-*Last updated 2026-08-14 (audited — see §10 Corrections log). 641 adversarially verified negative results,
+*Last updated 2026-08-19. 635 entries. 641 adversarially verified negative results,
 consolidated into 628 entries (near-duplicate results recorded in two source files are merged into one row).
 Unsupported claims were dropped before this document was written; every entry below carries the number that
 killed it, EXCEPT entries whose killing-number cell is explicitly marked* **(NO-POWER)** *— no measurement is
@@ -24,15 +24,55 @@ attach a number if you can find one.*
 5. **Read §2 METRIC TRAPS first if you are designing an evaluation.** Those patterns generalise past
    the specific claim that died and have each killed several results.
 
+## §0 ROUTES CLOSED ON 2026-08-19 — read this list first
+
+Nine routes were opened and closed in one session. They are individually filed in §4/§6 below; this
+is the scannable version, because 635 rows are not. **Every one of these looked good before it was
+measured properly.**
+
+| # | route | what killed it |
+|---|---|---|
+| 1 | Rare-anchor test **replacing** the coverage clause | no operating point — parity with γ's 253 cross-family edges needs M≈3 and discards **48%** of the shipped edge set. It is a **veto, never an admission criterion** |
+| 2 | Full-length-FLNC-read guard on the **edge** | blocks shorter than a median read (2,772 bp) are FP **14/14** but TP **130/144 = 0.9028** — fires on ~90% of true pairs |
+| 3 | Full-length-FLNC-read guard on the **node** | **INERT**, 1,412/1,415 pass. The catalog has **0/1415 single-exon nodes**, so the pathology it targets cannot occur; and nodes are BUILT from the reads, so the audit is near-tautological (T20) |
+| 4 | Junction-crossing predicate **in the definition** | **12.80%** of shipped edges rejected genome-wide (268 within-family) with a **100× monotone bias by exon count** (0.3555 at n_exon=2 → 0.0036 at >6). The pseudogene fix (abstain when intronless) is **inert** — no intronless nodes exist |
+| 5 | Soft-clip predicate in `E_r` | **algebraic**: `clip_frac = 1 − cov` on the same axis. It IS the coverage clause; the two-sided form is coverage-of-longer = R1/R2, already refuted |
+| 6 | Hard-clip / supplementary linkage as node QC | only **37** reads span ≥2 catalog copies ⇒ **5 same-family links, each at one read**, **4/494 = 0.81%** of families vs a pathology-(a) baseline of 5.67% |
+| 7 | Single-outgroup **rooting** of the provenance model | pilot certified **3/18** family probes with two-sided synteny in both haplotypes; and its substrate is **inverted** (human-study / gorilla-outgroup where the thesis is gorilla-study) |
+| 8 | Genome-wide mat-vs-pat **copy-number rate** | **UNINFORMATIVE by its own pre-registration** — span-matched control floor **0.1512** against a gene rate of **0.0278**, 5.4× above. Controls were span- but not **composition**-matched |
+| 9 | Broad-family / recent-subfamily **hierarchy** | ceiling **29.55%** of families, real reach **19.23%** — inert on the 348 two-copy families and the 50 complete graphs |
+
+### The three lessons that generalise past these nine
+
+1. ⚠⚠ **MEASURE AN EDGE RULE ON THE WHOLE EDGE SET.** The 164-pair frozen arms are **6%** of the
+   2,727 shipped edges **and are where the FPs were**. Both guards devised on 2026-08-19 cost
+   **0–6% on the arms and 3.67–12.80% genome-wide**. An arm-only cost is not a cost.
+2. ⚠⚠ **RECORD `-p` AND `-N` WITH ANY COPY COUNT.** minimap2's default `-p 0.8` discards secondaries
+   scoring under 0.8× the primary, which on a 58 kb probe silently removed **8 of MAPKBP1's 9
+   copies**. This put the circulating **8/9/9-vs-5/6/8** haplotype deficit in doubt — it does not
+   reproduce at either setting. Copy counting is far more `-p`-sensitive than any prior doc stated.
+3. ⚠⚠ **A CONTROL BUILT ON THE WRONG MATCHING IS NOT A NULL.** Span-matched random intervals are far
+   more repeat-rich than gene bodies, so the "null" fired 5.4× above the signal. **A signal below its
+   own null means the null is wrong**, not that the signal is absent.
+
+### And one self-inflicted error worth not repeating
+
+The junction rule's TP cost was first computed as **zero**, on the ground that all 9 losses were
+single-exon genes. That was **circular**: the TP arm's `a_nex` column is exons **TOUCHED**, not total
+exons (that is `a_tot_ex`), and touched-count is 1 **by construction** whenever `max_exon_frac = 1.0`.
+With the correct column there are **0 single-exon nodes in either arm** and all 9 losses are genuine.
+**Check what a column means before scoping a rule with it.**
+
 ## §1 Contents
 
 | § | Section | Entries |
 |---|---|---|
 | 2 | Metric traps (rules) | 20 rules |
 | 3 | The false-omission measurement (2026-08-14) | new |
-| 4 | O1 — family definition | 231 |
+| 0 | **Routes closed 2026-08-19 — read first** | 9 |
+| 4 | O1 — family definition | 236 |
 | 5 | O2 — copy assignment | 92 |
-| 6 | O3 — reference-absent / collapsed copies | 71 |
+| 6 | O3 — reference-absent / collapsed copies | 74 |
 | 7 | Benchmarking & evaluation | 130 |
 | 8 | Infrastructure & tooling | 67 |
 | 9 | Framing & scope | 37 |
@@ -221,6 +261,7 @@ where reads go. It is **not** evidence that O1 missed 53.8% of its members. It i
 | H | Any-locus homology bounding fixes locus sizes (median 0.55× → 1.03×) | in-band (0.5–2×): shipped 47% vs any-locus **37%**; >2× goes 5% → 37% | Distribution-shift artifact: 21 pp of "too small" became 32 pp of "too big" (T4) |
 | H | Admit a node only if a contained, end-to-end FLNC read fits inside it (the NODE version of the full-length-read guard — locus-local, upstream of E_r, so P1 is untouched) | **INERT: 1,412/1,415 = 0.9979 of nodes pass**, 0/14 FP and 0/144 TP pairs killed, 1/494 families destroyed — and **identical at every eps from 0.02 to 0.20**, so clipping never binds | ⚠**T20 — it removes nothing, so it excludes nothing.** Cause: the shipped GGO catalog has **0/1415 single-exon nodes** and 0 spans <500 bp, so census pathology (b) (ANKHD1's 206 bp unspliced stub) **is not in this catalog** — a min-2-exon requirement already does the job. Second cause: nodes are BUILT from the reads, so a read-derived audit of read-derived nodes is near-tautological. ⟹ in the shipped catalog the 47 node-construction failures are dominated by pathology (a) one-locus-cut-in-two, which this cannot fix |
 | M | Require the ALIGNING FLNC READ to be used end-to-end across the pair — a read's length is set by the molecule, not by node construction, so it escapes the scale-free denominator | the separation is not there: aligned blocks shorter than a median FLNC read (2,772 bp) are **FP 14/14 = 1.000 but TP 130/144 = 0.9028**; block medians FP 1,354 vs TP 1,782 bp | Fires on ~90% of TRUE pairs too. Stricter form of the already-refuted cross-mapping coverage condition — a diverged paralogue cross-maps only over its conserved region. ⚠**The NODE version is UNTESTED** (admit a node only if its reps rest on end-to-end reads) and targets the 47 node-construction failures, not the 30 definitional ones |
+| M | A broad-family / recent-copy-subfamily hierarchy will express the GOLGA2-type case across the catalog | ceiling is **146/494 = 29.55%** (a split needs n≥3, and **348/494 = 70.45%** of GGO families are 2-copy); real reach after removing complete graphs is **95/494 = 19.23%** | Inert on 80.57% of the catalog by construction. ⭐The λ=1 shape IS common where it applies — **all 79** single-edge cuts isolate exactly one node = **15.99%** of families — but λ=1 is a **triage flag, not a membership call**: all 14 gorilla FPs also rest on exactly one record. Control: 145/146 connected |
 | H | Add a SOFT-CLIP predicate to E_r (how much of each rep hangs off the alignment) | **algebraically identical to the coverage clause**: in a PAF, `clip_frac(query) = (qs + ql − qe)/ql = 1 − cov(query)` on the same axis | It is the incumbent clause written the other way round ⇒ zero new information. The two-sided version (clipping on the LONGER rep) **is** coverage-of-longer = candidates **R1/R2, already refuted** — R1 dominated, R2 makes E_r a function of which representative you extract and pushes 19/494 GGO families below γ |
 | M | HARD CLIPS / supplementary alignments link the two halves of a split locus (census pathology (a), the dominant node-construction failure) | of 1,628,629 primaries, **12,097 reads carry a supplementary**, but only **37** span ≥2 catalog copies ⇒ **5 same-family links, every one at a single read**, implicating **4/494 = 0.81%** of families against a pathology-(a) baseline of **28/494 = 5.67%** | Reaches at most 4 of the 28 affected families, and a 1-read link is indistinguishable from a chimeric artifact. Not a usable signal. `o1_gmult/suppl.py` |
 | H | Add the junction-crossing predicate to E_r (reject iff the alignment stays inside one exon on both sides) — threshold-free, no length denominator, works at n=2 | on 164 arm pairs it looked excellent (12/14 FP, 9/150 TP); **genome-wide it rejects 349/2,727 = 12.80% of shipped edges, 268 of them WITHIN a family**, against a measured false-merge rate of ~1.33% ⇒ mostly collateral | ⚠**Monotone bias by exon count: 0.3555 at n_exon=2 → 0.0036 at >6**, a 100× gradient — a 2-exon model has ONE junction so the alignment must hit it. That is where retrocopies/pseudogenes live. ⚠The intended fix (abstain when intronless) is **INERT**: 0/1415 single-exon nodes. It would make E_r a function of the MODEL's exon count, not of the pair ⇒ **flag, never gate**. `docs/o1_junction_crossing_guard.md` §3a |
@@ -610,6 +651,9 @@ information on the ~57% of families that are pairs**. Read the kills as "not a d
 
 | R | Claim / proposal | Killing number | Why |
 |---|---|---|---|
+| H | Measure the rate of whole-gene copy-number difference between one individual's two haplotypes (mat vs pat, genome-wide) | **UNINFORMATIVE**: span-matched random intervals fire at **0.1512 [0.1403, 0.1629]** against a gene rate of **0.0278** — the control floor is **5.4× the signal**, which the pre-registration declared means "uninformative, not a number" | ⚠Controls were **span-matched but not composition-matched** — a random 30 kb interval is far more repeat/segdup-rich than a gene body. **Do not quote 2.78%.** ⭐What survives: `_pri`'s mosaic split re-derived independently from chromosome lengths as **16 PAT / 9 MAT**, and the rate agrees across strata (0.0290 vs 0.0250) ⇒ **`d_hap` is NOT probe-provenance driven**. `docs/o3_haplotype_cnv_result.md` |
+| H | The MAPKBP1/PLA2G4B/SPTBN5 deficit (8/9/9 `_pri`/`_pat` vs 5/6/8 `_mat`) shows 1–3 whole gene copies differ between KB3781's haplotypes | **does not reproduce at either setting**: at minimap2 default `-p 0.8` MAPKBP1 gives **1/1** (paralogues score under 0.8× a 58 kb self-hit and are discarded), at `-p 0.1` **9/8** — neither is 8/5. SPTBN5 reproduces exactly; PLA2G4B off by one | ⚠⚠**DO NOT QUOTE THE MAGNITUDE.** With secondaries retained the mat deficits shrink **3,3,1 → ~1,2,0**. Direction survives. ⚠This also undercuts the collapse screen's validation, which rested on recovering 8/9/9 — if it ran at default `-p`, its counts were suppressed on long probes, **biasing it toward zero** |
+| M | Root the duplication-provenance model with a single outgroup (gorilla) over the human graph | pilot certified **3 of 18** family probes with two-sided synteny in both haplotypes (30/40 `gorilla_synteny.tsv` rows `NO_TWO_SIDED_SYNTENY`) | ⚠And the substrate is **INVERTED** relative to the thesis — human-study / gorilla-outgroup where the thesis is gorilla-study; new probes and flanks would be needed and the PoC does not transfer. DEFERRED as future work, spec retained. `docs/o1_duplication_provenance_model.md` |
 | H | Divergent reference-absent copies show up in the UNMAPPED read pile ⟹ mine the pile genome-wide | UNGUIDED bulk screen: **5,519 unmapped reads = 0.13%**; 79% already present at 99.7% identity; 1 unresolved hit (38 reads, 775 aa ORF) | The UNGUIDED bulk screen is low-yield — do not re-run it. ⚠MECHANISM CORRECTED 08-14 (whole-genome excision on the COMPLETE T2T): "divergent copies FORCE-MAP onto a paralog" holds for only **104/162 = 64.2%**; **54/162 = 33.3% ORPHAN**, median **92.73%** of that copy's reads UNMAPPED (pooled 61,512/178,145 = 34.53%) ⟹ a coherent unmapped pile IS the measured absence signature in one third of cases (§6.1 "The missing-copy signature is CLIPPING"), and "real only against GRCh38" is WITHDRAWN. A TARGETED per-locus unmapped-pile detector is UNBUILT, not dead — if built, emit a FLAGGED CANDIDATE class only (no interval, no seed-invariance), IG/TR and run-exclusivity screens compulsory |
 | H | A clipping-based transcript-alignment anomaly is a recognised way to detect an absent copy | 53 searches / ~30 primary papers: **not one** collapse detector uses clipping | The field's standards are S1 re-assemble, S2 depth+PSV, S3 unique peptides |
 | M | The family definition can hold a copy with no genomic coordinates | (structural) V's elements are genomic intervals | The definition as written cannot hold a coordinate-free copy |
