@@ -19,8 +19,16 @@ reverse-complement homology, which is evidence for an inverted repeat rather tha
 two homologous transcripts. An inverted *genomic* duplication still aligns `+` after
 each expressed copy is normalized to its own transcript direction.
 
-The guard is implemented as the opt-in `gw_family_catalog --rna-forward-only` switch,
-but is **not yet a shipping default**. It filters PAF records before both the ordinary
+**⭐ SHIPPED AS THE DEFAULT 2026-08-19** (`793 passed / 0 failed / 11 ignored`, baseline 792 + the new
+lock-in test). Opt out with `gw_family_catalog --no-rna-forward-only`; `--rna-forward-only` is retained
+so an explicit request still conflict-checks against `--from-genome`.
+
+⚠⚠ **The flip is at the RNA ENTRY POINTS, never on `RefineParams::default()`.** That struct is
+**substrate-agnostic** — it configures both the RNA exon-sum path and the reference-oriented DNA path,
+where a `-` record is a **real inverted segmental duplication**. Flipping the type default silently
+applied the RNA guard to DNA and dropped an inverted duplication; the existing
+`genome_mode_grouping_keeps_an_inverted_duplication` test caught it. A new test,
+`refine_params_default_is_orientation_agnostic`, now locks that in and says so in its message. It filters PAF records before both the ordinary
 single-record edge and the optional summed-coverage edge are formed, and writes its
 effective value as `alignment_orientation` in the E_r rule certificate. The current
 evidence consists of the frozen-PAF test, the corrected seven-family panel, and a fresh

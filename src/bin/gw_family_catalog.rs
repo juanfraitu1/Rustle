@@ -20,7 +20,8 @@ use rustle::vg_family::denovo_pipeline::{
     detect_single_copy_baseline_genome_wide,
     detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
     detect_homology_catalog_genome_wide, families_from_reps_certified, family_protein_coheres,
-    homology_refine_params, refine_families_exon_sum, DenovoConfig, FamilyCertificate, RefineParams,
+    homology_refine_params, refine_families_exon_sum, write_joint_rna_dna_certificate, DenovoConfig,
+    FamilyCertificate, RefineParams,
 };
 use rustle::vg_family::family_detect::DenovoTranscript;
 
@@ -141,6 +142,25 @@ struct Args {
     /// Default off (exon-sum) — existing catalogs are byte-identical unless this is set.
     #[arg(long, default_value_t = false)]
     homology_genomic_span: bool,
+    /// RNA-only precision guard: accept a nucleotide E_r edge only when at least one passing alignment is
+    /// forward (`+`) between transcript-oriented representatives. Reverse-only matches are consistent with
+    /// inverted repeats rather than homologous transcripts. Incompatible with `--from-genome`, whose DNA
+    /// reps are deliberately stored in reference orientation and may be true inverted duplications.
+    ///
+    /// DEFAULT ON since 2026-08-19 — this flag is retained only so an explicit request is still accepted
+    /// (and so it can still conflict-check against `--from-genome`). Use `--no-rna-forward-only` to opt out.
+    #[arg(long, default_value_t = false)]
+    rna_forward_only: bool,
+    /// Opt OUT of the forward-only E_r guard and accept reverse-only nucleotide matches, restoring the
+    /// pre-2026-08-19 behaviour. Reverse-only edges are enriched ~46× for overlapping ANTISENSE pairs
+    /// (a gene and its own antisense partner), so expect lower precision.
+    #[arg(long, default_value_t = false)]
+    no_rna_forward_only: bool,
+    /// Compare the RNA exon-sum and DNA genomic-span homology graphs on the SAME emitted RNA loci. Writes
+    /// `<out>.joint_edges.tsv`, `.joint_families.tsv`, and `.joint_rule.tsv` with RNA+DNA corroborated,
+    /// RNA-only, and DNA-only edges. Reporting-only: it never silently unions/intersects family membership.
+    #[arg(long, default_value_t = false)]
+    joint_dna_rna: bool,
     /// Enumerate genomic copy number (famCN) per family via Liftoff-style genome projection (spec §7):
     /// project each family's best-supported consensus onto the genome (minimap2) to recover K=0 collapses
     /// the RNA read-conflict/homology path merges into one locus. Writes `<out>.famcn.tsv`. Defaults ON
@@ -475,6 +495,21 @@ fn main() -> Result<()> {
     if args.cross_chrom && args.window_catalog {
         anyhow::bail!("--cross-chrom and --window-catalog select different legacy catalogs; pass at most one");
     }
+    if args.joint_dna_rna && !o1_homology {
+        anyhow::bail!(
+            "--joint-dna-rna is a certificate for the default RNA homology catalog; it is not defined for legacy read-conflict catalogs"
+        );
+    }
+    if args.joint_dna_rna && args.single_copy_baseline {
+        anyhow::bail!("--joint-dna-rna requires a family catalog and is incompatible with --single-copy-baseline");
+    }
+    if args.joint_dna_rna
+        && matches!(std::env::var("RUSTLE_SHARED_EXON"), Ok(v) if v != "0" && !v.is_empty())
+    {
+        anyhow::bail!(
+            "--joint-dna-rna currently requires the standard nucleotide E_r tiers; RUSTLE_SHARED_EXON is a different edge definition"
+        );
+    }
     if args.cross_chrom {
         eprintln!(
             "[gw-catalog] WARNING: --cross-chrom builds O1 from the READ-CONFLICT graph (E_c), not sequence\n\
@@ -510,7 +545,26 @@ fn main() -> Result<()> {
         if args.bam.is_some() {
             anyhow::bail!("--from-genome and --bam are mutually exclusive (genome-only mode takes no reads)");
         }
+        // The guard is default-ON, but it is meaningless on reference-oriented DNA reps, so
+        // --from-genome silently runs without it. Only an EXPLICIT request is an error.
+        if args.rna_forward_only {
+            anyhow::bail!(
+                "--rna-forward-only is defined only for transcript-oriented RNA representatives; \
+                 it cannot be applied to reference-oriented --from-genome DNA loci"
+            );
+        }
+        if args.joint_dna_rna {
+            anyhow::bail!(
+                "--joint-dna-rna must be run on the RNA catalog with --bam; --from-genome has no RNA arm"
+            );
+        }
         let mut refine_params = homology_refine_params(args.min_identity, args.threads);
+        // ⚠ These reps are stored in REFERENCE orientation, where a '-' record can be a REAL inverted
+        // segmental duplication — so the RNA forward-only guard must never reach this substrate.
+        // `RefineParams::default()` already leaves it false; this is an explicit restatement so a future
+        // default flip cannot silently turn it on here (that exact mistake was caught by
+        // `genome_mode_grouping_keeps_an_inverted_duplication` on 2026-08-19).
+        refine_params.require_forward_alignment = false;
         refine_params.protein_tail = args.protein_tail;
         // DNA-mode GROUPING knobs (anti over/under-merge levers). Env-only and applied ONLY on this branch,
         // so the RNA path stays byte-identical.
@@ -589,6 +643,9 @@ fn main() -> Result<()> {
     // homology-primary catalog (in addition to feeding the `--refine` block below): it recovers coding
     // paralogs that have diverged past the nucleotide seeds' ~0.65 identity floor.
     refine_params.protein_tail = args.protein_tail;
+    // DEFAULT ON (2026-08-19): forward-only unless explicitly opted out. `--rna-forward-only`
+    // remains accepted so an explicit request still conflict-checks against `--from-genome`.
+    refine_params.require_forward_alignment = !args.no_rna_forward_only;
     // `--homology-genomic-span`: E_r edges on the genomic span of each RNA-detected locus (anti-fragmentation).
     // Needs the genome path; harmless when the flag is off (field stays false, edges stay exon-sum).
     refine_params.homology_genomic_span = args.homology_genomic_span;
@@ -681,6 +738,7 @@ fn main() -> Result<()> {
             min_identity: refine_params.min_identity,
             min_coverage: refine_params.min_coverage,
             sensitive_identity: refine_params.sensitive_identity,
+            require_forward_alignment: refine_params.require_forward_alignment,
             ..Default::default()
         };
         let refined = refine_families_exon_sum(raw, &params, None, cfg.conflict.min_reads)?;
@@ -700,6 +758,9 @@ fn main() -> Result<()> {
     // Sort + write the family catalog (families.tsv/copies.tsv/copies.fa). Shared by the RNA path
     // and the DNA --from-genome path; returns the sorted families for the downstream sections.
     let fams = emit_catalog(&args.out, fams, certs, &refine_params)?;
+    if args.joint_dna_rna {
+        write_joint_rna_dna_certificate(&args.out, &fams, &args.fasta, &refine_params)?;
+    }
     // `--seed` is a QUERY over what was just emitted: it runs AFTER the catalog exists and cannot
     // influence it. No-op (and no `.seed.tsv`) when the flag is absent.
     project_seeds(&args.seed, &fams, &args.out, args.min_copies)?;

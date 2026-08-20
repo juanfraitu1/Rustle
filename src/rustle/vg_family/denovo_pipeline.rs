@@ -1958,7 +1958,12 @@ pub fn detect_and_assign(
     if cfg.refine && !supplied {
         let before = colocated.len();
         let copysets: Vec<Vec<DenovoTranscript>> = colocated.iter().map(|c| c.copies.clone()).collect();
-        let refine_params = RefineParams { intron_fasta: Some(fasta_path.to_string()), ..Default::default() };
+        // RNA exon-sum substrate -> the forward-only E_r guard applies (DEFAULT ON 2026-08-19).
+        let refine_params = RefineParams {
+            intron_fasta: Some(fasta_path.to_string()),
+            require_forward_alignment: true,
+            ..Default::default()
+        };
         let refined = refine_families_exon_sum(copysets, &refine_params, Some(genome), cfg.conflict.min_reads)
             .expect("refine (default): refine_families_exon_sum failed — is minimap2 on PATH? pass --no-refine to skip");
         // ⚠ This line used to hard-code "asm20 id>=0.80". It was already wrong for `--min-identity` runs
@@ -2519,7 +2524,13 @@ pub fn detect_single_copy_baseline_genome_wide(
     let families: Vec<ColocatedFamily> = if refine {
         let copysets: Vec<Vec<DenovoTranscript>> = catalog.iter().map(|c| c.copies.clone()).collect();
         let refine_params =
-            RefineParams { threads, intron_fasta: Some(fasta_path.to_string()), ..Default::default() };
+            // RNA exon-sum substrate -> forward-only guard applies (DEFAULT ON 2026-08-19).
+            RefineParams {
+                threads,
+                intron_fasta: Some(fasta_path.to_string()),
+                require_forward_alignment: true,
+                ..Default::default()
+            };
         let refined = refine_families_exon_sum(copysets, &refine_params, None, cfg.conflict.min_reads)?;
         eprintln!(
             "[gw-catalog] single-copy: refined {} raw -> {} homology-gated families for the multi-copy exclusion",
@@ -3366,6 +3377,14 @@ pub struct RefineParams {
     /// assembly — see the rationale in `homology_edges_all_reps`. Needs `intron_fasta`. Default OFF
     /// (exon-sum), so every existing catalog is byte-identical unless explicitly enabled.
     pub homology_genomic_span: bool,
+    /// Require a forward (`+`) PAF orientation for nucleotide homology edges. This is meaningful only
+    /// when every input sequence is in TRANSCRIPTION orientation (the RNA exon-sum and RNA-locus genomic
+    /// span paths). A reverse-only match between such sequences supports reverse-complement sequence
+    /// reuse, not a homologous transcript, and is enriched for inverted-repeat false positives.
+    ///
+    /// This must stay OFF for the annotation-free `--from-genome` arm: those reps are stored in reference
+    /// orientation, so a real inverted genomic duplication legitimately aligns on `-`.
+    pub require_forward_alignment: bool,
 }
 
 impl Default for RefineParams {
@@ -3388,6 +3407,15 @@ impl Default for RefineParams {
             protein_tail: false,
             mmseqs: std::env::var("RUSTLE_MMSEQS").unwrap_or_else(|_| "mmseqs".to_string()),
             homology_genomic_span: false,
+            // ⚠ STAYS FALSE, and the 2026-08-19 default flip deliberately did NOT change it.
+            // `RefineParams` is SUBSTRATE-AGNOSTIC: the same struct configures the RNA exon-sum path
+            // and the reference-oriented DNA path (`--from-genome`, genome-mode grouping). A '-' record
+            // is reverse-complement homology between TRANSCRIPT-oriented reps, but a REAL inverted
+            // segmental duplication between REFERENCE-oriented ones. Flipping this default silently
+            // applied the RNA guard to DNA and dropped an inverted duplication — caught by
+            // `genome_mode_grouping_keeps_an_inverted_duplication`. The guard is therefore turned on at
+            // the RNA ENTRY POINTS, never here. See docs/o1_false_positive_rules.md.
+            require_forward_alignment: false,
         }
     }
 }
@@ -4150,6 +4178,14 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         }),
         ("coverage_form".into(), ER_COVERAGE_FORM.into()),
         ("identity_metric".into(), "1-de (fallback nmatch/blocklen when de:f: absent)".into()),
+        (
+            "alignment_orientation".into(),
+            if params.require_forward_alignment {
+                "forward-only (+); valid only for transcript-oriented RNA representatives".into()
+            } else {
+                "both (+/-)".into()
+            },
+        ),
         ("edge_rule".into(), "ANY single record clearing both floors".into()),
         ("summed_coverage".into(), std::env::var("RUSTLE_ER_SUM_COVERAGE").unwrap_or_else(|_| "<unset>".into())),
         ("drop_stub_edges".into(), er_no_stub_edges().to_string()),
@@ -4377,6 +4413,10 @@ fn nucleotide_edges_scored(
             (Some(q), Some(t)) if q != t => (q, t),
             _ => continue,
         };
+        let strand = f[4].chars().next().unwrap_or('+');
+        if params.require_forward_alignment && strand != '+' {
+            continue;
+        }
         let ql = f[1].parse::<f64>().unwrap_or(0.0);
         let qs = f[2].parse::<f64>().unwrap_or(0.0);
         let qe = f[3].parse::<f64>().unwrap_or(0.0);
@@ -4483,7 +4523,6 @@ fn nucleotide_edges_scored(
         // systems. `min_block` is likewise a length on that axis.
         let (aln_s, aln_e) = if side_is_query { (qs, qe) } else { (ts, te) };
         if sum_cov && ident >= min_id && aln_on_denom_axis >= min_block {
-            let strand = f[4].chars().next().unwrap_or('+');
             let entry = sum_blocks
                 .entry((q.min(t), q.max(t), strand))
                 .or_insert_with(|| (Vec::new(), shorter, ident));
@@ -4525,6 +4564,276 @@ fn nucleotide_edges_scored(
         }
     }
     Ok(edge_set.into_iter().map(|((i, j), (id, cov))| (i, j, id, cov)).collect())
+}
+
+/// Run the standard nucleotide E_r tier(s) on one explicit sequence substrate. This is the small shared
+/// primitive used by the joint RNA/DNA certificate below: both arms inherit the same seeds, identity and
+/// coverage thresholds, while the caller deliberately controls the substrate and orientation semantics.
+fn nucleotide_rule_edge_set(
+    seqs: &[Vec<u8>],
+    cores: Option<&[u64]>,
+    params: &RefineParams,
+    dump_tag: &str,
+) -> Result<BTreeSet<(usize, usize)>> {
+    let (seed, floor, _) = er_primary_tier(params);
+    let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
+    let mut set: BTreeSet<(usize, usize)> = nucleotide_edges_scored(
+        seqs,
+        &seed_ref,
+        floor,
+        params.min_coverage,
+        cores,
+        params,
+        Some(dump_tag),
+    )?
+    .into_iter()
+    .map(|(i, j, _, _)| (i, j))
+    .collect();
+
+    // When sensitive-only is active, `er_primary_tier` has already run this exact tier. Otherwise it is
+    // the additive sensitive tier, matching `homology_edges_all_reps_pooled` without duplicating a run.
+    if params.nucleotide_sensitive && !er_sensitive_only(params) {
+        set.extend(
+            nucleotide_edges_scored(
+                seqs,
+                ER_SENSITIVE_SEED,
+                params.sensitive_identity,
+                params.min_coverage,
+                cores,
+                params,
+                Some(dump_tag),
+            )?
+            .into_iter()
+            .map(|(i, j, _, _)| (i, j)),
+        );
+    }
+    Ok(set)
+}
+
+fn joint_component_count(n: usize, edges: &[(usize, usize)]) -> usize {
+    if n == 0 {
+        return 0;
+    }
+    let mut adj = vec![Vec::new(); n];
+    for &(a, b) in edges {
+        if a < n && b < n && a != b {
+            adj[a].push(b);
+            adj[b].push(a);
+        }
+    }
+    let mut seen = vec![false; n];
+    let mut components = 0;
+    for root in 0..n {
+        if seen[root] {
+            continue;
+        }
+        components += 1;
+        seen[root] = true;
+        let mut stack = vec![root];
+        while let Some(a) = stack.pop() {
+            for &b in &adj[a] {
+                if !seen[b] {
+                    seen[b] = true;
+                    stack.push(b);
+                }
+            }
+        }
+    }
+    components
+}
+
+/// Write a typed RNA/DNA evidence certificate over the RNA-detected locus universe.
+///
+/// This intentionally does NOT union or intersect the two graphs to alter family membership. The RNA arm
+/// aligns spliced, transcript-oriented exon sums; the DNA arm aligns the same loci's complete genomic spans
+/// (transcript-normalised for a stable node representation) and remains orientation-agnostic so inverted
+/// structural duplications are not erased. Their union is reported edge-by-edge as `RNA_DNA`, `RNA_ONLY`,
+/// or `DNA_ONLY`, including cross-family edges that can expose a possible split or a repeat bridge.
+///
+/// Outputs:
+///   `<out>.joint_edges.tsv`    one row per edge in either arm;
+///   `<out>.joint_families.tsv` within-family connectivity and concordance summaries;
+///   `<out>.joint_rule.tsv`     the typed, non-membership semantics of the comparison.
+pub fn write_joint_rna_dna_certificate(
+    out: &str,
+    fams: &[Vec<DenovoTranscript>],
+    fasta_path: &str,
+    params: &RefineParams,
+) -> Result<()> {
+    use std::io::Write;
+
+    anyhow::ensure!(
+        !matches!(std::env::var("RUSTLE_SHARED_EXON"), Ok(v) if v != "0" && !v.is_empty()),
+        "--joint-dna-rna currently requires the standard nucleotide E_r tiers; RUSTLE_SHARED_EXON is a different edge definition"
+    );
+
+    #[derive(Clone)]
+    struct Node {
+        family: usize,
+        copy: usize,
+        rep: DenovoTranscript,
+    }
+
+    // Match `copies.tsv` exactly: family order is already the emitted order, and copy_idx is coordinate-sorted.
+    let mut nodes = Vec::new();
+    for (fi, fam) in fams.iter().enumerate() {
+        let mut sorted = fam.clone();
+        sorted.sort_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
+        for (ci, rep) in sorted.into_iter().enumerate() {
+            nodes.push(Node { family: fi, copy: ci, rep });
+        }
+    }
+    let contigs: HashSet<String> = nodes.iter().map(|n| n.rep.chrom.clone()).collect();
+    // An empty emitted catalog must produce empty joint reports cheaply, not trigger the FASTA loader's
+    // intentional empty-contig fallback to loading the entire genome.
+    let genome = if nodes.is_empty() {
+        GenomeIndex::default()
+    } else {
+        GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?
+    };
+    let rna_seqs: Vec<Vec<u8>> = nodes.iter().map(|n| n.rep.seq.clone()).collect();
+    let dna_seqs: Vec<Vec<u8>> = nodes.iter().map(|n| refine_copy_seq(&n.rep, Some(&genome))).collect();
+    let core_lens: Vec<u64> = nodes.iter().map(|n| n.rep.core_bp).collect();
+
+    let mut rna_params = params.clone();
+    rna_params.homology_genomic_span = false;
+    rna_params.protein_tail = false; // this certificate compares nucleotide evidence on two substrates
+    let rna_edges = if nodes.is_empty() {
+        BTreeSet::new()
+    } else {
+        nucleotide_rule_edge_set(&rna_seqs, Some(&core_lens), &rna_params, "joint_rna")?
+    };
+
+    let mut dna_params = params.clone();
+    dna_params.require_forward_alignment = false;
+    dna_params.homology_genomic_span = true;
+    dna_params.protein_tail = false;
+    let dna_edges = if nodes.is_empty() {
+        BTreeSet::new()
+    } else {
+        nucleotide_rule_edge_set(&dna_seqs, None, &dna_params, "joint_dna")?
+    };
+
+    let union: BTreeSet<(usize, usize)> = rna_edges.union(&dna_edges).copied().collect();
+    let mut ef = std::fs::File::create(format!("{out}.joint_edges.tsv"))?;
+    writeln!(
+        ef,
+        "family_i\tcopy_i\tchrom_i\tstart_i\tend_i\tstrand_i\tfamily_j\tcopy_j\tchrom_j\tstart_j\tend_j\tstrand_j\trna_edge\tdna_edge\tevidence_class\tsame_emitted_family"
+    )?;
+    let mut cross = 0usize;
+    for &(i, j) in &union {
+        let (a, b) = (&nodes[i], &nodes[j]);
+        let rna = rna_edges.contains(&(i, j));
+        let dna = dna_edges.contains(&(i, j));
+        let class = match (rna, dna) {
+            (true, true) => "RNA_DNA",
+            (true, false) => "RNA_ONLY",
+            (false, true) => "DNA_ONLY",
+            (false, false) => unreachable!(),
+        };
+        let same = a.family == b.family;
+        cross += (!same) as usize;
+        writeln!(
+            ef,
+            "GWFAM{}\t{}\t{}\t{}\t{}\t{}\tGWFAM{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            a.family,
+            a.copy,
+            a.rep.chrom,
+            a.rep.start,
+            a.rep.end,
+            a.rep.strand,
+            b.family,
+            b.copy,
+            b.rep.chrom,
+            b.rep.start,
+            b.rep.end,
+            b.rep.strand,
+            rna,
+            dna,
+            class,
+            same,
+        )?;
+    }
+
+    let mut ff = std::fs::File::create(format!("{out}.joint_families.tsv"))?;
+    writeln!(
+        ff,
+        "family_id\tn_copies\trna_edges\tdna_edges\tboth_edges\trna_only_edges\tdna_only_edges\tedge_jaccard\trna_components\tdna_components\tjoint_status\tkappa"
+    )?;
+    for (fi, fam) in fams.iter().enumerate() {
+        let mut rna_local = Vec::new();
+        let mut dna_local = Vec::new();
+        let (mut both, mut rna_only, mut dna_only) = (0usize, 0usize, 0usize);
+        for &(i, j) in &union {
+            if nodes[i].family != fi || nodes[j].family != fi {
+                continue;
+            }
+            let pair = (nodes[i].copy, nodes[j].copy);
+            let rna = rna_edges.contains(&(i, j));
+            let dna = dna_edges.contains(&(i, j));
+            if rna {
+                rna_local.push(pair);
+            }
+            if dna {
+                dna_local.push(pair);
+            }
+            match (rna, dna) {
+                (true, true) => both += 1,
+                (true, false) => rna_only += 1,
+                (false, true) => dna_only += 1,
+                (false, false) => unreachable!(),
+            }
+        }
+        let rc = joint_component_count(fam.len(), &rna_local);
+        let dc = joint_component_count(fam.len(), &dna_local);
+        let status = match (rc <= 1, dc <= 1) {
+            (true, true) => "BOTH_CONNECTED",
+            (true, false) => "RNA_CONNECTED_DNA_FRAGMENTED",
+            (false, true) => "DNA_CONNECTED_RNA_FRAGMENTED",
+            (false, false) => "BOTH_FRAGMENTED",
+        };
+        // The pre-declared certificate in docs/joint_family_definition.md: RNA must both connect the
+        // emitted family and contribute no edge absent from DNA. With no RNA edge there is no held-out
+        // RNA test to score, so the family is UNTESTABLE rather than silently called concordant.
+        let kappa = if rna_local.is_empty() {
+            "UNTESTABLE"
+        } else if rc <= 1 && rna_only == 0 {
+            "CONCORDANT"
+        } else {
+            "DISCORDANT"
+        };
+        let union_n = both + rna_only + dna_only;
+        let jaccard = if union_n == 0 { 1.0 } else { both as f64 / union_n as f64 };
+        writeln!(
+            ff,
+            "GWFAM{fi}\t{}\t{}\t{}\t{both}\t{rna_only}\t{dna_only}\t{jaccard:.4}\t{rc}\t{dc}\t{status}\t{kappa}",
+            fam.len(),
+            rna_local.len(),
+            dna_local.len(),
+        )?;
+    }
+
+    let mut rf = std::fs::File::create(format!("{out}.joint_rule.tsv"))?;
+    writeln!(rf, "key\tvalue")?;
+    writeln!(rf, "node_universe\tRNA-detected emitted loci")?;
+    writeln!(rf, "membership_effect\tnone (report/certificate only)")?;
+    writeln!(rf, "rna_substrate\tspliced exon-sum, transcription orientation")?;
+    writeln!(rf, "rna_orientation\t{}", if rna_params.require_forward_alignment { "forward-only (+)" } else { "both (+/-)" })?;
+    writeln!(rf, "dna_substrate\tcomplete genomic span of the same RNA locus, transcript-normalised")?;
+    writeln!(rf, "dna_orientation\tboth (+/-); inverted structural duplication remains valid")?;
+    writeln!(rf, "protein_edges\texcluded (nucleotide substrate comparison)")?;
+    writeln!(rf, "primary_identity\t{:.6}", er_primary_tier(params).1)?;
+    writeln!(rf, "min_coverage\t{:.6}", params.min_coverage)?;
+    writeln!(rf, "edge_classes\tRNA_DNA,RNA_ONLY,DNA_ONLY")?;
+    writeln!(rf, "kappa\tCONCORDANT iff RNA is connected and E_RNA is a subset of E_DNA; UNTESTABLE iff RNA has no edge; otherwise DISCORDANT")?;
+    eprintln!(
+        "[joint-rna-dna] {} RNA edges, {} DNA edges, {} union edges ({} cross-family) -> {out}.joint_*.tsv",
+        rna_edges.len(),
+        dna_edges.len(),
+        union.len(),
+        cross,
+    );
+    Ok(())
 }
 
 /// Rebuild each locus representative from the UNION of its group's exons instead of its single best chain.
@@ -5908,6 +6217,202 @@ mod tests {
         );
         // Coverage-of-the-SHORTER of an exact subsequence is ~1.0 whichever axis minimap2 chose.
         assert!(cov > 0.90, "coverage {cov} -- an exact 2 kb subsequence must cover the shorter fully");
+    }
+
+    /// The orientation guard is typed to transcript-oriented RNA representatives. Two representatives
+    /// that are exact reverse complements pass the historical strand-agnostic rule, but cannot describe
+    /// the same transcript orientation and must not form an RNA E_r edge when the guard is armed.
+    #[test]
+    fn rna_forward_only_rejects_a_reverse_complement_only_edge() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            return;
+        }
+        let mut rng: u64 = 0x0a11_ce55_2026;
+        let seq: Vec<u8> = (0..5000)
+            .map(|_| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                b"ACGT"[((rng >> 33) % 4) as usize]
+            })
+            .collect();
+        let rev = crate::vg_family::seq_utils::reverse_complement(&seq);
+
+        let permissive = RefineParams { threads: 1, ..Default::default() };
+        let old = nucleotide_edges_scored(
+            &[seq.clone(), rev.clone()],
+            ER_SENSITIVE_SEED,
+            0.60,
+            0.50,
+            None,
+            &permissive,
+            None,
+        )
+        .expect("strand-agnostic alignment");
+        assert_eq!(old.len(), 1, "the historical rule must admit the reverse-complement pair");
+
+        let guarded = RefineParams {
+            threads: 1,
+            require_forward_alignment: true,
+            ..Default::default()
+        };
+        let new = nucleotide_edges_scored(
+            &[seq, rev],
+            ER_SENSITIVE_SEED,
+            0.60,
+            0.50,
+            None,
+            &guarded,
+            None,
+        )
+        .expect("forward-only alignment");
+        assert!(new.is_empty(), "a reverse-only match must not become an RNA family edge");
+    }
+
+    /// The other half of the typed rule: reference-oriented DNA reps must continue to admit a real
+    /// inverted duplication. This exercises the same `families_from_reps_certified` grouping core used by
+    /// `gw_family_catalog --from-genome`, not only the PAF parser in isolation.
+    #[test]
+    /// LOCK-IN, 2026-08-19. `RefineParams` is SUBSTRATE-AGNOSTIC: the same struct configures the RNA
+    /// exon-sum path and the reference-oriented DNA path. `require_forward_alignment` is meaningful
+    /// only for TRANSCRIPT-oriented reps — between REFERENCE-oriented ones a '-' record is a REAL
+    /// inverted segmental duplication.
+    ///
+    /// Flipping this default to `true` when the RNA guard became default-on silently applied it to the
+    /// DNA substrate and dropped an inverted duplication (caught by
+    /// `genome_mode_grouping_keeps_an_inverted_duplication`). The guard is therefore enabled at the RNA
+    /// ENTRY POINTS, never on the type. **If you are here to flip this default, that is the bug.**
+    fn refine_params_default_is_orientation_agnostic() {
+        assert!(
+            !RefineParams::default().require_forward_alignment,
+            "RefineParams::default() must stay orientation-agnostic — enable the forward-only guard at \
+             the RNA entry points instead, or reference-oriented DNA reps lose inverted duplications"
+        );
+    }
+
+    #[test]
+    fn genome_mode_grouping_keeps_an_inverted_duplication() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            return;
+        }
+        let mut rng: u64 = 0xd1a0_1a57;
+        let seq: Vec<u8> = (0..5000)
+            .map(|_| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                b"ACGT"[((rng >> 33) % 4) as usize]
+            })
+            .collect();
+        let rev = crate::vg_family::seq_utils::reverse_complement(&seq);
+        let reps = vec![
+            DenovoTranscript {
+                tid: "dna_a".into(),
+                chrom: "a".into(),
+                start: 0,
+                end: 5000,
+                n_reads: 1,
+                strand: '+',
+                seq,
+                ..Default::default()
+            },
+            DenovoTranscript {
+                tid: "dna_b_inverted".into(),
+                chrom: "b".into(),
+                start: 0,
+                end: 5000,
+                n_reads: 1,
+                strand: '+',
+                seq: rev,
+                ..Default::default()
+            },
+        ];
+        let params = RefineParams { threads: 1, ..Default::default() };
+        let (fams, _) = families_from_reps_certified(reps, &params, 0.20, 2, 0)
+            .expect("DNA grouping");
+        assert_eq!(fams.len(), 1, "the inverted DNA duplication must remain one family");
+        assert_eq!(fams[0].len(), 2);
+    }
+
+    #[test]
+    fn orientation_rule_is_explicit_in_the_certificate() {
+        let site = ErRuleSite {
+            substrate_genomic: false,
+            core_lens_supplied: true,
+            genomic_tier: GenomicTier::NotPresent,
+        };
+        let off = er_rule_rows(&RefineParams::default(), &site);
+        let on = er_rule_rows(
+            &RefineParams { require_forward_alignment: true, ..Default::default() },
+            &site,
+        );
+        let value = |rows: &[(String, String)]| -> String {
+            rows.iter()
+                .find(|(k, _)| k == "alignment_orientation")
+                .map(|(_, v)| v.clone())
+                .expect("alignment_orientation rule row")
+        };
+        assert_eq!(value(&off), "both (+/-)");
+        assert!(value(&on).starts_with("forward-only (+)"));
+    }
+
+    #[test]
+    fn joint_certificate_reports_corroborated_edges_without_changing_membership() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            return;
+        }
+        let mut rng: u64 = 0xd1a0_2026;
+        let genomic: Vec<u8> = (0..5000)
+            .map(|_| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                b"ACGT"[((rng >> 33) % 4) as usize]
+            })
+            .collect();
+        let exon_sum = genomic[500..3500].to_vec();
+        let fam = vec![
+            DenovoTranscript {
+                tid: "rna_a".into(),
+                chrom: "a".into(),
+                start: 0,
+                end: 5000,
+                n_reads: 10,
+                strand: '+',
+                introns: vec![(1000, 3000)],
+                seq: exon_sum.clone(),
+                ..Default::default()
+            },
+            DenovoTranscript {
+                tid: "rna_b".into(),
+                chrom: "b".into(),
+                start: 0,
+                end: 5000,
+                n_reads: 9,
+                strand: '+',
+                introns: vec![(1000, 3000)],
+                seq: exon_sum,
+                ..Default::default()
+            },
+        ];
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let fasta = tmp.path().join("genome.fa");
+        let seq = String::from_utf8(genomic).expect("DNA alphabet");
+        std::fs::write(&fasta, format!(">a\n{seq}\n>b\n{seq}\n")).expect("write fasta");
+        let out = tmp.path().join("joint");
+        let params = RefineParams {
+            threads: 1,
+            require_forward_alignment: true,
+            ..Default::default()
+        };
+        write_joint_rna_dna_certificate(
+            out.to_str().unwrap(),
+            &[fam],
+            fasta.to_str().unwrap(),
+            &params,
+        )
+        .expect("joint certificate");
+
+        let edges = std::fs::read_to_string(out.with_extension("joint_edges.tsv")).expect("edges");
+        assert!(edges.lines().skip(1).any(|r| r.contains("\ttrue\ttrue\tRNA_DNA\ttrue")), "{edges}");
+        let families = std::fs::read_to_string(out.with_extension("joint_families.tsv")).expect("families");
+        assert!(families.lines().skip(1).any(|r| r.ends_with("\tBOTH_CONNECTED\tCONCORDANT")), "{families}");
+        let rules = std::fs::read_to_string(out.with_extension("joint_rule.tsv")).expect("rules");
+        assert!(rules.contains("membership_effect\tnone (report/certificate only)"));
     }
 
     // ---- X.4: ONE TIER, and an instrument that can prove it ------------------------------------
