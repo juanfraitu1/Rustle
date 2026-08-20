@@ -72,6 +72,43 @@ it was written to run, is on by default, and was measured to help (APOBEC3 1f/2c
 binary.** That is deliberate. It is not the defined object, and pretending it could be regenerated was
 the hazard. Numbers measured on it must be re-measured, not re-derived.
 
+## 5b. ⭐ THE GENOME-WIDE RUN COMPLETED (2026-08-20) — and two of my claims about it were wrong
+
+First successful genome-wide catalog at current defaults: **2h18m, 627 families (445 cross-chromosome)**.
+
+```text
+94257 skeletons -> 17924 reps over 26 contigs      (Jul-17: 79569 -> 12415)
+E_r edges by tier: sensitive=4778 (sole 4778)      (Jul-17: 3042)
+16483 γ-quasi-clique blocks -> 627 families        (Jul-17: 526 raw -> 494 refined)
+```
+
+| | shipped Jul-17 | current defaults |
+|---|---:|---:|
+| families | 494 | **627** |
+| 2-copy share | 348/494 = **0.7045** | 440/627 = **0.7018** |
+| λ populated | (column did not exist) | **627/627 = 1.0000**, 75 `cut_certified` |
+
+⭐ **The two-copy dominance REPLICATES** — 0.7018 vs 0.7045 on a catalog with 27% more families built
+by a different path. That property is robust, not an artifact of the old catalog.
+
+### ⚠⚠ Correction 1: I killed a run that was probably going to finish
+
+The 2026-08-19 run was killed at 1h34m at **23.7 GB RSS + 10.2 GB swap, state `D`, ~11% CPU**, on the
+judgement that it was swap-thrashing and would not complete. This run passed through **the same state**
+— 24.46 GB RSS + 7.89 GB swap, state `D` — at ~2h07m and **finished 11 minutes later**. That phase is
+the normal heavy end of the E_r stage, not a death spiral. The kill was wrong.
+
+### ⚠⚠ Correction 2: the streamed PAF was not the unblocker
+
+`37a4e01` was presented as the fix for the OOM. The completed run shows **our own process still reaches
+24.46 GB**, and minimap2 separately reports a **24.479 GB** peak, on a 25 GB machine with 16 GB swap.
+The buffered PAF was one allocation among much larger ones. Streaming is still correct — bounded beats
+unbounded, and it removes one contributor at the exact moment memory is tightest — but it did not cause
+the completion, and the E_r all-vs-all over 17,924 reps still runs **at the edge of the machine**.
+
+**What is actually true:** the genome-wide catalog was always runnable; it takes ~2h20m and peaks near
+25 GB. Anyone running it should expect swap and not interpret state `D` as failure.
+
 ## 6. What to do
 
 1. **Rebuild the catalog at current defaults** (running now) and record both numbers.
