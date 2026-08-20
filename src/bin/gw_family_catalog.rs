@@ -80,6 +80,10 @@ struct Args {
     /// denominator, no stub guard, clustered by CONNECTED COMPONENTS. Use it only to reproduce the
     /// pre-2026-08-09 default catalog. At shipped defaults it is a measured no-op (0/50 files change on
     /// the 25-region panel); under `--homology-genomic-span` it is not (7f/28c on vs 6f/29c off).
+    ///
+    /// ⚠ **REJECTED on the O1 homology catalog since 2026-08-20** — that path has ONE object and refine
+    /// is not it. Meaningful only on `--window-catalog` / `--cross-chrom`, where it is already the
+    /// default (so this flag is a no-op there too, and `--no-refine` is the lever).
     #[arg(long, default_value_t = false)]
     refine: bool,
     /// DISABLE homology refinement and emit the RAW read-conflict catalog. Refinement is ON BY DEFAULT: the raw
@@ -476,13 +480,25 @@ fn emit_catalog(
 /// without, refine having split two recovered MAGEA copies into a spurious 2-copy family and dropped
 /// GSTM4 from the GSTM family.
 ///
+/// ⭐ **2026-08-20: refine can no longer be opted INTO on the O1 path — there is ONE default path.**
+/// It was opt-in from 2026-08-09 so the pre-fix catalog stayed reproducible. That option is what let the
+/// shipped 494-family catalog be built with `refine(γ-QC(E_r))` while the default moved to `γ-QC(E_r)`,
+/// and for the discrepancy to go unnoticed for six weeks (`docs/o1_catalog_provenance.md`). A flag that
+/// changes what the catalog *is* is not a convenience, it is a provenance hazard: the emitted object
+/// must not depend on an invocation detail. Passing `--refine` on the O1 path is now an ERROR that says
+/// so, rather than silently producing a non-definitional object.
+///
+/// Refine keeps its real home: the legacy conflict catalogs, where it was written to run and where it
+/// was measured to help.
+///
 /// `--no-refine` still wins over everything (the documented escape hatch when minimap2 is unavailable).
-fn refine_enabled(o1_homology: bool, refine_flag: bool, no_refine_flag: bool) -> bool {
+fn refine_enabled(o1_homology: bool, no_refine_flag: bool) -> bool {
     if no_refine_flag {
         return false;
     }
-    // Explicit --refine opts back in anywhere (and reproduces the pre-2026-08-09 default catalog).
-    refine_flag || !o1_homology
+    // The O1 homology catalog emits γ-quasi-clique(E_r) and nothing else. Refine is for the legacy
+    // conflict catalogs only — there is no argument that turns it on here.
+    !o1_homology
 }
 
 fn main() -> Result<()> {
@@ -493,6 +509,20 @@ fn main() -> Result<()> {
     let o1_homology = !args.cross_chrom && !args.window_catalog;
     if args.cross_chrom && args.window_catalog {
         anyhow::bail!("--cross-chrom and --window-catalog select different legacy catalogs; pass at most one");
+    }
+    // ONE DEFAULT PATH (2026-08-20). Refine re-clusters by CONNECTED COMPONENTS over its own substrates,
+    // which is not the γ-quasi-clique(E_r) object the definition names, so it cannot be requested on the
+    // O1 catalog at all. Erroring beats ignoring: a silently-ignored flag is how the shipped catalog's
+    // provenance was lost in the first place.
+    if o1_homology && (args.refine || args.refine_introns) {
+        anyhow::bail!(
+            "--refine/--refine-introns cannot be used with the O1 homology catalog: refine clusters by \
+             connected components over its own substrates, which is NOT the γ-quasi-clique(E_r) object \
+             docs/seeded_family_definition.md §1 defines. The O1 catalog has ONE path and emits ONE \
+             object. Refine remains available on the legacy conflict catalogs (--window-catalog / \
+             --cross-chrom), where it is on by default. See docs/o1_catalog_provenance.md for why the \
+             opt-in was removed."
+        );
     }
     if args.joint_dna_rna && !o1_homology {
         anyhow::bail!(
@@ -706,7 +736,7 @@ fn main() -> Result<()> {
     // large-gene mis-chain FPs that this stage removes. OPT-IN (`--refine`) on the default HOMOLOGY catalog:
     // there the definition is already γ-quasi-clique(E_r), and refine would append a second, undocumented
     // clustering stage over a different edge set. See `refine_enabled` for the measurements.
-    let refine = refine_enabled(o1_homology, args.refine, args.no_refine);
+    let refine = refine_enabled(o1_homology, args.no_refine);
     if o1_homology && refine {
         eprintln!(
             "[gw-catalog] NOTE: --refine on the homology catalog appends a SECOND clustering stage \
@@ -989,32 +1019,27 @@ mod tests {
     // spurious family and dropped GSTM4.
 
     #[test]
-    fn refine_is_opt_in_on_the_homology_catalog() {
-        // default homology run, no flags: the emitted object must be gamma-QC(E_r) alone.
-        assert!(!refine_enabled(true, false, false));
+    fn the_o1_catalog_has_exactly_one_path() {
+        // ⭐ 2026-08-20. The O1 homology catalog emits γ-QC(E_r) and NOTHING else. There is no argument
+        // that turns refine on here — the opt-in was removed because it is what let the shipped
+        // 494-family catalog be built with a different object than the default produced, unnoticed for
+        // six weeks (docs/o1_catalog_provenance.md). `--refine` on this path is rejected in main().
+        assert!(!refine_enabled(true, false), "default O1 run must be γ-QC(E_r) alone");
+        assert!(!refine_enabled(true, true), "--no-refine changes nothing: refine was never on here");
     }
 
     #[test]
     fn refine_stays_on_by_default_on_the_conflict_catalogs() {
         // --window-catalog / --cross-chrom: refine is the documented FP filter for the raw conflict
-        // graph (repeat-bridge + large-gene mis-chain), so it must not silently turn off with D1's fix.
-        assert!(refine_enabled(false, false, false));
+        // graph (repeat-bridge + large-gene mis-chain), and is what it was written for. Removing the
+        // O1 opt-in must not disturb its real home.
+        assert!(refine_enabled(false, false));
     }
 
     #[test]
-    fn refine_flag_opts_back_in_on_the_homology_catalog() {
-        // `--refine` was a back-compat no-op; it now has to MEAN something on the default path,
-        // otherwise the pre-fix catalog is no longer reproducible.
-        assert!(refine_enabled(true, true, false));
-    }
-
-    #[test]
-    fn no_refine_still_wins_over_refine_on_every_catalog() {
-        // --no-refine is the documented escape hatch (e.g. minimap2 absent); an explicit off must beat
-        // both the conflict-catalog default and an explicit --refine.
-        assert!(!refine_enabled(false, false, true));
-        assert!(!refine_enabled(true, true, true));
-        assert!(!refine_enabled(false, true, true));
+    fn no_refine_still_wins_on_the_conflict_catalogs() {
+        // --no-refine remains the documented escape hatch (e.g. minimap2 absent).
+        assert!(!refine_enabled(false, true));
     }
 
     #[test]

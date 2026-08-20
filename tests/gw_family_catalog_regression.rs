@@ -68,3 +68,55 @@ fn default_cross_chrom_output_is_unchanged() {
         .count();
     assert_eq!(same_chrom, 1, "golden must retain the same-chrom family\n{families}");
 }
+
+/// ⭐ 2026-08-20: THE O1 CATALOG HAS EXACTLY ONE PATH.
+///
+/// `--refine` used to be an opt-in on the homology catalog so the pre-2026-08-09 object stayed
+/// reproducible. That option is what allowed the shipped 494-family catalog to be built as
+/// `refine(γ-QC(E_r))` while the default emitted `γ-QC(E_r)`, and for nobody to notice for six weeks —
+/// see `docs/o1_catalog_provenance.md`. A flag that changes what the catalog *is* is a provenance
+/// hazard, so it is now REJECTED rather than honoured or (worse) silently ignored.
+///
+/// The unit test on `refine_enabled` cannot reach this: the rejection lives in `main`.
+#[test]
+fn refine_is_rejected_on_the_o1_catalog() {
+    let bin = env!("CARGO_BIN_EXE_gw_family_catalog");
+    let scratch = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("gwcat_one_path");
+    let out = scratch.to_str().expect("scratch path is valid UTF-8").to_string();
+
+    for flag in ["--refine", "--refine-introns"] {
+        let res = Command::new(bin)
+            .arg("--bam")
+            .arg("tests/fixtures/same_chrom_supplement/reads.bam")
+            .arg("--fasta")
+            .arg("tests/fixtures/same_chrom_supplement/genome.fa")
+            .arg("--out")
+            .arg(&out)
+            .arg(flag)
+            .output()
+            .expect("gw_family_catalog failed to run");
+        assert!(
+            !res.status.success(),
+            "{flag} must be REJECTED on the O1 homology catalog, not accepted"
+        );
+        let err = String::from_utf8_lossy(&res.stderr);
+        assert!(
+            err.contains("ONE path"),
+            "the error must say WHY there is one path, so the reader is not left guessing; got: {err}"
+        );
+    }
+
+    // …and it remains usable on the legacy conflict catalog it was written for.
+    let ok = Command::new(bin)
+        .arg("--bam")
+        .arg("tests/fixtures/same_chrom_supplement/reads.bam")
+        .arg("--fasta")
+        .arg("tests/fixtures/same_chrom_supplement/genome.fa")
+        .arg("--out")
+        .arg(&out)
+        .arg("--cross-chrom")
+        .arg("--refine")
+        .status()
+        .expect("gw_family_catalog failed to run");
+    assert!(ok.success(), "refine must still work on --cross-chrom, its documented home");
+}

@@ -51,7 +51,28 @@ The genome-wide run has been unrunnable: it OOM'd at **23.7 GB RSS + 10.2 GB swa
 1h34m. Nobody could rebuild the catalog, so nobody compared it to its own log. The streaming fix in
 `37a4e01` removes that blocker — the buffered all-vs-all PAF was the cause.
 
-## 5. What to do
+## 5. ⭐ RESOLVED 2026-08-20 — the O1 catalog now has exactly ONE path
+
+`--refine` and `--refine-introns` are **rejected** on the O1 homology catalog. They are not ignored and
+they are not honoured: passing either is an error that explains why. The rationale is not that refine is
+useless — it is that **a flag which changes what the catalog *is* is a provenance hazard**, and this one
+proved it: it let the shipped 494-family catalog be built as `refine(γ-QC(E_r))` while the default
+emitted `γ-QC(E_r)`, and the discrepancy survived six weeks.
+
+The evidence says refine does not belong in the O1 definition anyway: it re-clusters by **connected
+components** over its own substrates (no core-coverage denominator, no stub guard), which is not the
+γ-quasi-clique(E_r) object `seeded_family_definition.md` §1 names, and under `--homology-genomic-span`
+it split two recovered MAGEA copies into a spurious family and dropped GSTM4.
+
+Refine keeps its real home — the legacy conflict catalogs (`--window-catalog` / `--cross-chrom`), where
+it was written to run, is on by default, and was measured to help (APOBEC3 1f/2c → 0f/0c, SHARP
+2f/4c → 1f/2c). `--no-refine` is still the escape hatch there.
+
+⚠ **Consequence: the 494-family catalog is no longer reproducible by any invocation of the current
+binary.** That is deliberate. It is not the defined object, and pretending it could be regenerated was
+the hazard. Numbers measured on it must be re-measured, not re-derived.
+
+## 6. What to do
 
 1. **Rebuild the catalog at current defaults** (running now) and record both numbers.
 2. **Re-measure the headline rates on it.** They are the thesis's numbers and they are currently
