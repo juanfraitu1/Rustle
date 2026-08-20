@@ -135,13 +135,61 @@ would be wrong.
 5. **Gate or flag is undecided.** As a gate it changes `E_r` and every downstream certificate; as a
    flag it costs nothing and P1 is untouched either way.
 
-## 8. Reproduction
+## 8. Can it REPLACE coverage? No — refuted
+
+The tempting move is to drop the coverage clause entirely. Coverage is scale-free (a ~1 kb Alu is
+≥0.50 of any node under 2 kb), which is the whole named hole; a rare-anchor test is structurally
+immune to that, because a repeat has no rare anchor at **any** node size. So:
+
+```text
+E_r_free(a,b)  iff  exists a record with identity >= tier floor
+                    AND min_shared_gmult(record) < M
+```
+
+**This cannot be judged on the FP/TP arms** — both were built from pairs that already pass
+coverage ≥ 0.50. A rule that drops coverage must be judged on what coverage is currently holding
+back. All-vs-all over the 1,415 shipped GGO reps, both tiers, every identity-passing pair split by
+whether it clears coverage:
+
+| | pairs | within shipped family | cross-family |
+|---|---:|---:|---:|
+| `COV_PASS` (the shipped edge set) | 2,727 | 2,474 | 253 |
+| `COV_FAIL` (what coverage rejects) | 14,111 | 830 | 13,281 |
+
+(The 253 cross-family `COV_PASS` pairs are not an anomaly: families are γ-quasi-cliques *of* E_r
+components, so a cross-family E_r edge is by definition an edge γ cut.)
+
+| `M` | shipped edges kept | NEW edges from `COV_FAIL` | of which cross-family |
+|---:|---:|---:|---:|
+| 2 | 835/2,727 = 0.306 | 131 | 23 |
+| 3 | 1,415/2,727 = 0.519 | 437 | 214 |
+| 5 | 1,822/2,727 = 0.668 | 878 | 528 |
+| 10 | 2,173/2,727 = 0.797 | 1,463 | 967 |
+| 20 | 2,363/2,727 = 0.867 | 1,915 | 1,310 |
+| 50 | 2,459/2,727 = 0.902 | 2,239 | 1,567 |
+
+**There is no operating point.** Holding new cross-family edges at parity with γ's existing 253
+puts `M` near 3, which discards **48% of the shipped edge set**. Recovering 90% of the shipped
+edges costs **1,567 new cross-family edges, 6.2× the 253 that exist**. Recall loss starts before
+merge suppression does — the same shape as the coverage-repair impossibility argument.
+
+**Why, mechanistically.** The TP distribution has median `min_shared_gmult` = 2, so an admission
+criterion strict enough to exclude repeats (`< 2`, i.e. a genuinely unique anchor) also excludes
+most real paralogue pairs. The statistic's discriminative power lives at the **top** of its range —
+it separates "definitely a mobile element" (100–13,000) from everything else, and does not separate
+within the low end at all.
+
+⟹ **The genome-anchored statistic is a VETO, never an admission criterion.** It belongs on top of
+the coverage clause, not in place of it. Coverage stays.
+
+## 9. Reproduction
 
 ```bash
 cd /mnt/linuxdisk/home/juanfraitu/o1_gmult
 python3 blocks.py     # recover each pair's aligned block from the shipped reps
 python3 gmult.py      # one streaming pass over GGO.fasta, ~9 min, ~3 GB RSS
 python3 eval.py       # seed-invariance, discrimination, softmask additivity
+python3 covfree.py    # §8: can it replace coverage? (all-vs-all + one genome pass)
 ```
 
-Outputs: `pair_blocks.tsv`/`.fa`, `gmult.tsv`, `seed_invariance.tsv`.
+Outputs: `pair_blocks.tsv`/`.fa`, `gmult.tsv`, `seed_invariance.tsv`, `covfree.tsv`.

@@ -251,6 +251,7 @@ where reads go. It is **not** evidence that O1 missed 53.8% of its members. It i
 
 | R | Claim | Killing number | Why |
 |---|---|---|---|
+| H | Replace E_r's coverage clause with a genome-anchored rare-anchor test (coverage is scale-free; a repeat has no rare anchor at any node size) | **no operating point**: holding new cross-family edges at parity with γ's existing 253 needs M≈3 and discards **48% of the shipped edge set**; recovering 90% of shipped edges costs **1,567 new cross-family edges, 6.2×** | TP median `min_shared_gmult` = 2, so a criterion strict enough to exclude repeats also excludes most real paralogues. The statistic separates only at the TOP of its range ⇒ it is a **VETO, never an admission criterion**. Coverage stays. `docs/o1_genome_anchored_repeat_gate.md` §8 |
 | M | The declared identity floor is 0.60 but the effective floor is ~0.75–0.80 | 71 of 73 dispersed pairs produce **NO alignment record at all**; the 2 that do sit at 0.84/0.85 | There is no effective floor on that stratum — there is SILENCE, and both die on coverage |
 | M | The JOINT arm gives better family rosters than the RNA arm | Fisher p = 0.3881 (45/50 vs 41/50) and p = 0.5238 (3/5 vs 1/5), intervals overlap | Not significant; κ fires discordant 4/6 but at n=6 the test cannot reach 0.05 |
 | M | The constant reduction succeeded — τ was eliminated | **12 of 13 (k,w) settings change the partition** on byte-identical node FASTAs | τ was renamed to minimap2's `k`, and the effect is non-monotone |
