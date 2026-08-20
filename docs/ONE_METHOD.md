@@ -59,6 +59,10 @@ call "O3" means three different things; the numbering below is the current one.
 
 ## What is measured, and the one named hole
 
+> ⚠ **Every quotable figure, with its substrate, lives in [`NUMBERS.md`](NUMBERS.md). Look a number up
+> there before quoting it.** The two headline rates below are on **different species** — false-merge is
+> HUMAN, false-omission is GORILLA — and must never be pooled.
+
 ⚠⚠ **QUOTE THE PROVENANCE WITH THE NUMBER.** The rates below were measured on the **shipped 494-family
 catalog**, which was built with `refine` on and which **no invocation of the current binary can
 reproduce** (`o1_catalog_provenance.md`). The current default emits **627 families**. Rates needing
