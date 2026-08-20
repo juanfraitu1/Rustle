@@ -17,12 +17,51 @@
 > verdict cannot be "definitional". The full argument, every adversarial finding, the limits and the
 > costed open items are in **§9** below and in
 > `/home/juanfra/winloci_scratch/o1_joint/O1_JOINT_VERDICT.md`.
+
 >
 > ⚠ **Sections 0–8 were written BEFORE phase 3 and are retained as the pre-declaration**
 > (sha256 `f8996c55…1692a7` freezes F-J1..F-J6). **Four of their claims are corrected in §9.4.**
 > Where §0–§8 and §9 disagree, **§9 is the record.**
 
 ---
+
+### Implementation note — 2026-08-16
+
+`gw_family_catalog --joint-dna-rna` now materializes the property/certificate verdict
+without changing the partition. On the emitted RNA-locus universe it runs the same
+nucleotide identity/coverage tiers on two typed substrates:
+
+- RNA: spliced exon-sums in transcription orientation (and, when requested,
+  `--rna-forward-only`);
+- DNA: complete genomic spans of those loci, transcript-normalized but accepting both
+  PAF orientations so inverted structural duplications remain visible.
+
+It writes `<out>.joint_edges.tsv` (`RNA_DNA`, `RNA_ONLY`, `DNA_ONLY`),
+`<out>.joint_families.tsv` (connectivity, edge Jaccard, and κ), and
+`<out>.joint_rule.tsv` (the typed semantics). The files are reporting-only:
+`membership_effect=none`. DNA-only cross-family edges are exposed as hypotheses, not
+automatic merges, and RNA-only edges expose possible repeat/extent disagreement.
+
+The node universe is deliberately stated in the rule file: this comparison covers
+RNA-detected emitted loci. It cannot discover wholly unexpressed DNA-only nodes;
+`--from-genome` and `--dna-family-fallback` remain the complementary mechanisms for
+that part of O1.
+
+There is a second type boundary: **a Soto family is an SD cluster, not automatically
+a gene family**. DNA-only homology may corroborate a gene-family assignment, and it
+may rescue an RNA-null locus that has independent same-family annotation. It must not
+recruit an anonymous locus into a gene family merely because both loci share an SD
+block. [`bench/o1_gene_family_audit.py`](../bench/o1_gene_family_audit.py) enforces
+this distinction in the validation graphs; the production joint files remain
+reporting-only and do not pretend to solve gene-family typing.
+
+Example:
+
+```bash
+gw_family_catalog \
+  --bam reads.bam --fasta genome.fa --out sample \
+  --rna-forward-only --joint-dna-rna
+```
 
 Status **2026-08-12** (§0–§8), **2026-08-13** (§9). Companion to `docs/seeded_family_definition.md`, whose notation, tier notice and
 constants this document inherits without restating. Written **before phase 3 measures anything**; every

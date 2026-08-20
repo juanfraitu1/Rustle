@@ -221,10 +221,113 @@ requires the collapsed copies to have been ~2% divergent.
    one. RNA can *identify* which copies are transcribed, via PSVs — that is O2 — but copy **number**
    requires DNA (parCN/famCN, WSSD, ddPCR).
 5. **The ORPHANED third is untouched by §6.** Where reads go unmapped there is no pile to run a
-   within-pile statistic on; that needs a different detector (see §8).
+   within-pile statistic on; that needs a different detector (see §9).
 6. **n is small.** 37 held-out positives; 162 families; one individual; one tissue.
 
-## 8. What follows
+## 8. Possible O3 avenues — decision record (2026-08-16)
+
+The original wording, "find copies not in the genome," is too strong for Iso-Seq alone. The observable
+object is a set of **expressed read paths not adequately explained by the copies in the analysis
+reference**. Whether that object is an extra genomic copy, a divergent allele, a novel isoform, or an
+artifact is a second question. Therefore the proposed thesis wording is:
+
+> **O3 — detect and flag expressed transcript paths not adequately explained by the copies represented
+> in the analysis reference. Evaluate missing-copy recovery by leave-one-copy-out reference ablation.
+> Do not call a natural candidate a confirmed genomic copy without independent DNA evidence.**
+
+This wording does not assume that reference bias exists in the biological sample. It makes reference
+bias a falsifiable stress condition in the controlled experiment and a hypothesis in natural data.
+Also, a reference assembly is not an "average copy set": CHM13 and mGorGor1 are assemblies of particular
+individuals, while a composite reference such as GRCh38 is still not guaranteed to contain every
+population- or donor-specific copy.
+
+### 8.1 Recommended main avenue: paired leave-one-copy-out ablation
+
+This is the strongest O3 experiment available without importing another genome or using Liftoff.
+
+1. Start from an O1 family whose members are known, expressed, non-overlapping enough to mask safely,
+   and distinguishable by linked PSVs and/or splice structure. A Soto segmental-duplication family is
+   eligible only after it passes the O1 gene-family rules; segmental duplication alone is not truth for
+   a multi-copy gene family.
+2. Make two otherwise identical references: the intact reference and one in which a known family copy
+   is masked or removed. Select the hidden copy by a pre-declared rule, not from the outcome.
+3. Align the same Iso-Seq molecules to both references with minimap2. Rustle receives only the degraded
+   reference for discovery. The hidden sequence is evaluator-only truth.
+4. Search both fates demonstrated in §5: **ABSORBED** reads that align to a sibling or outside-family
+   paralog, including high-MAPQ primaries, and **ORPHANED** reads that become unmapped. A MAPQ-0-only
+   screen is insufficient.
+5. Cluster reads by linked residual variants and junctions and emit an auditable candidate signature.
+   Reconstructing and adding a candidate transcript path to the local family graph is an optional
+   stronger evaluation, not required by the detect-and-flag objective.
+6. Split molecules into discovery and validation sets. On held-out molecules, require the candidate to
+   improve alignment likelihood/read assignment over every represented sibling and over a
+   length/composition-matched decoy.
+7. Only after prediction, compare the candidate with the withheld copy. Run the same detector on the
+   intact reference as the paired negative control.
+
+Report at least: family-level detection recall; signature agreement with the withheld copy; held-out
+read reassignment; false-positive rate on the intact reference; results by hidden-to-host divergence;
+and the fraction on which Rustle correctly abstains. If optional path reconstruction is attempted, also
+report sequence identity and covered fraction against the withheld copy. The intact/masked pair is the
+causal test: removing one copy must create the signal and restoring it must remove the signal.
+
+The current full-genome mask experiment in §5 already establishes the two read fates and gives a
+held-out operating point for the absorbed/divergent stratum. A next experiment should evaluate the
+complete candidate flag on held-out reads; candidate-path recovery can be reported separately as a
+stretch result. Near-identical copies are an expected abstention stratum, not failures to be hidden by
+the aggregate score.
+
+### 8.2 RNA-only natural-candidate avenue: useful, but detection-and-flag only
+
+On the unmodified reference, Rustle can report a **reference-divergent transcript candidate** when a
+coherent set of molecules carries linked PSVs and/or splice structure that no represented family copy
+explains. The output should include the best competing locus, number of independently supporting
+molecules, phasing/linkage strength, run balance, remap identity, decoy result, and all rejection
+reasons. It must screen IG/TR somatic rearrangement, run-exclusive contamination, giant-intron
+mis-chaining, repeat-driven alignment, and ordinary novel isoforms before admission.
+
+The interpretation has hard limits:
+
+* an unexpressed extra copy is invisible to Iso-Seq;
+* an expressed copy identical across observed bases is indistinguishable from increased expression;
+* two coherent haplotypes at one represented locus are compatible with ordinary diploid alleles;
+* three or more clean linked haplotypes can reject a simple one-locus diploid explanation under the
+  stated assumptions, but do not locate or fully prove an extra genomic copy; and
+* RNA abundance is not genomic copy number.
+
+Consequently this avenue can produce ranked, auditable candidates and a transcript-haplotype lower
+bound. It cannot by itself support the sentence "this individual has an additional genomic copy."
+
+### 8.3 Independent-validation avenue: needed only for the stronger natural claim
+
+If the thesis must confirm that a natural candidate is an additional genomic copy, an independent
+DNA measurement is unavoidable. Suitable validation includes targeted genomic long reads, matched WGS
+depth plus paralog-specific k-mers/PSVs, ddPCR, or a donor-matched phased assembly. These data may remain
+**blinded evaluator-only evidence**: Rustle can make its prediction from the original reference and
+Iso-Seq, after which the DNA assay tests it. This validates the method without turning the DNA result
+into an input feature.
+
+A second assembly is therefore optional validation, not the proposed solution. Feeding a better or
+donor-specific genome to Rustle would largely remove the missing-reference challenge; it should not be
+the main O3 experiment. Liftoff is neither required nor proposed. If projection is ever needed solely
+to build evaluation truth, a minimap2-based, evaluator-side comparison is sufficient and must remain
+separate from candidate discovery.
+
+### 8.4 Claims supported by each avenue
+
+| avenue | defensible conclusion | conclusion it does **not** support |
+|---|---|---|
+| paired intact/masked reference | Rustle detects the expressed consequence of a known omitted copy, at a measured sensitivity and FPR; optional reconstruction is scored separately | the unmodified biological sample naturally contains a reference-absent copy |
+| unmodified Iso-Seq only | a transcript path/haplotype is not adequately explained by represented copies | the path is an additional genomic locus or a genomic copy-number increase |
+| independent donor DNA validation | the flagged transcript is supported by an additional/different genomic copy | that RNA alone established the copy |
+| alternate assembly used as method input | annotation/assignment against that assembly | robustness to a missing copy in the analysis reference |
+
+**Recommended thesis order:** make §8.1 the primary O3 result; use §8.2 as exploratory candidate
+generation; attempt §8.3 only if suitable donor DNA becomes available. A clean negative in natural data
+and an explicit abstention region are valid outcomes. Do not claim natural reference bias unless §8.3
+supplies evidence for it.
+
+## 9. What follows
 
 * **A detector for the ORPHANED third.** 33.3% of deleted copies produce a coherent pile of unmapped
   reads (median 92.7% of that copy's reads). ⚠ Any such class must stay a **flagged candidate**, never a

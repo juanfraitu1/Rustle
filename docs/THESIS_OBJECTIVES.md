@@ -7,7 +7,7 @@
 > |---|---|
 > | **O1** | Define a multi-copy gene family topologically at the RNA level (quasi-clique in E_r; MCC = χ(H)) |
 > | **O2** | Decide, for a read at a multi-copy locus, whether the evidence warrants assigning it to a COPY AT ALL — and abstain when it does not. Contested set = **alignment-score near-ties**, not MAPQ-0. No 1/k. |
-> | **O3** | Reference-absent / unannotated copies — DETECT + FLAG (this was O4) |
+> | **O3** | Detect + flag expressed transcript paths not explained by represented reference copies; validate missing-copy recovery by paired leave-one-copy-out ablation (this was O4) |
 >
 > **The allele-specific-junction objective is DROPPED** — cut for time, and because it does not connect
 > to the others. ⚠ It was the only objective the 2026-06-25 audit rated ATTAINED; the ASJ result itself
@@ -16,6 +16,16 @@
 > ⚠ **"O3" denotes three different things across this repo's history** — the EM below, ASJ in the
 > 06-25 audit, and reference-absent copies now. Resolve the scheme before quoting any objective number.
 > The numbered sections below are kept for provenance only.
+>
+> **Current O3 avenues and claim boundary (2026-08-16):** see
+> [`docs/o3_missing_copy_evidence.md` §8](o3_missing_copy_evidence.md#8-possible-o3-avenues--decision-record-2026-08-16).
+> Liftoff or a second genome is not required for the main experiment; natural RNA-only findings remain
+> candidates unless independently validated with donor DNA.
+>
+> **Current O1 purity rules and expanded known-family graphs (2026-08-16):** see
+> [`docs/o1_false_positive_rules.md`](o1_false_positive_rules.md) and the 19-graph
+> [`expanded audit`](../bench/o1_expanded_family_audit/README.md). Soto SD membership is discovery
+> evidence, not automatic gene-family membership; primary and audit graphs are emitted separately.
 
 
 > Thesis-level narrative + status. The machine-generated synthetic scorecard lives in
@@ -46,6 +56,43 @@ generalization*: nodes = exon-classes carrying per-copy sequence, paths = copy �
 - Validated on **14 known families** (`bench/paralog_secondary_scan/validate_known_families.py`): DAZ / NBPF /
   RBMY / amylase → `family`; TSPY (97% ties) / MAGEA → `family_nonidentifiable`; SORD+LOC → spillover;
   β-defensin / protocadherin / PRAME correctly excluded (not expressed here).
+- **Fresh O1 purity challenge (2026-08-16):** current Rustle was rerun on predeclared regional
+  extracts from the original whole-genome-aligned GGO/HSA BAMs, without old node or family ids as
+  inputs. It re-emits 124/133 audited loci and 72/75 independently named targets. Although 14/16
+  unrelated conflicting-gene loci are real/reproducible emissions, only 1/16 rejoins the target;
+  all nine re-emitted non-NBPF loci from the adversarial repeat bridge remain outside fresh NBPF.
+  GOLGA2 is now separated as a documented broad-family/recent-subfamily outgroup rather than
+  mis-scored as an unrelated false positive; an RNA identity-0.80 view removes it but damages MAGEA
+  and NBPF, so this is a typed hierarchy rather than a new global threshold.
+  The cost is explicit: 69/75 named targets land in the modal family (three not emitted, three
+  split). The HSA run also discloses one node-pair decision delegated to O2 `reads_distinguish`,
+  so this particular node set is not sequence-only. Direct Rustle tables, rule certificates,
+  logs, and actual fresh `E_r` GFAs:
+  `bench/o1_fresh_emission_validation/`; interpretation: `docs/o1_false_positive_rules.md`.
+- **Deferred implementation:** emit the current RNA homology family as the broad family plus an
+  opt-in, nested DNA-supported recent-copy subfamily (`RECENT_COPY`, `BROAD_ONLY`, or
+  `DNA_UNRESOLVED`). The annotation-free algorithm, flag-off byte-identity requirement, output
+  schema, GOLGA discriminator, and cross-family safety tests are specified in
+  `docs/o1_hierarchical_family_followup.md`. Production Rustle does not yet emit these fields.
+- **Provenance-model avenue:** represent loci as ordered paths through homologous duplication blocks,
+  with separate RNA-homology, DNA-duplication, read-conflict, and optionally rooted ancestry edges.
+  This can express the mosaic GOLGA2 + ITSN2-UTR origin of the chr15 GOLGA expansion without calling
+  ITSN2 a GOLGA family member. A single genome yields an unrooted network; directional “ancestral”
+  claims require outgroup sequence/synteny, without using the outgroup as the assembly reference.
+  Formal model, five-family local pairwise-witness prototype, empirical concordance results, and
+  proof-of-concept criteria: `docs/o1_duplication_provenance_model.md`. Durable typed tables and GFA
+  projections: `bench/o1_provenance_witness_prototype/`. This is evidence that the representation
+  separates coherent cores from repeat bridges; stable multi-locus block-class construction is
+  still deferred and the current graphs remain `UNROOTED`. A deferred single-outgroup extension now
+  specifies direct minimap2 block/flank alignment to both phased gorilla haplotypes, two-sided
+  synteny rooting, explicit abstention states, and flag-off invariance. It uses no annotation
+  projection and cannot change human family membership. Local ape assembly paths and WSL mount
+  instructions: `docs/linuxdisk_data_access.md`. A GOLGA proof of concept now finds recurrent human
+  intervals from GOLGA2 into 8 audited family loci and from ITSN2 into 6, while both proposed source
+  loci have unique two-sided synteny in both gorilla haplotypes. These are retained as
+  `ROOT_CANDIDATE_SINGLE_OUTGROUP` with `direction_status=UNROOTED`, because stable multi-locus
+  block classes are not implemented. Evidence and rerun script:
+  `bench/o1_outgroup_rooting_poc/`.
 - **Open:** the §9 "report the range of consistent splits" quantification is deferred (shipped behavior:
   label non-identifiable + abstain from splitting); scope gate is `any_spliced` (lenient vs per-copy wording).
 

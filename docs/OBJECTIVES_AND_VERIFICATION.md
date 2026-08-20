@@ -110,7 +110,7 @@ limit · **TODO** = not attempted or not finished · **REFUTED** = tried and fou
 |---|---|---|
 | **O1** | **Define** | A multi-copy gene family, defined topologically at the RNA level: quasi-clique in the sequence-homology graph `E_r`, with the read-conflict graph and variation graph as surrounding formalism (MCC = χ(H)). |
 | **O2** | **Abstain** | Decide, for a read at a multi-copy locus, **whether the evidence warrants assigning it to a copy at all**, using PSV + junction + divergence — **no 1/k**, assign-or-abstain. ⚠ Restated 2026-08-15: the contested population is **alignment-score near-ties (21.75%)**, not MAPQ-0 (**0.04%**), and the contribution is **abstention, not reassignment**. See `copy_assignment_definition.md` §0. |
-| **O3** | **Detect** | Reference-absent and unannotated copies — **DETECT + FLAG only**, not assemble. |
+| **O3** | **Detect** | Detect + flag expressed transcript paths not explained by represented reference copies; validate missing-copy recovery by paired leave-one-copy-out ablation. Natural RNA-only calls remain candidates without independent donor-DNA evidence. See [`o3_missing_copy_evidence.md` §8](o3_missing_copy_evidence.md#8-possible-o3-avenues--decision-record-2026-08-16). |
 
 **Dropped (2026-08-07): allele-specific junctions.** ⚠ It was the *only* objective the 2026-06-25 audit
 rated ATTAINED ("the headline"). Say what was given up rather than presenting the reduced scope as costless.

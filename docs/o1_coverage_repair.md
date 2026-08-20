@@ -3,6 +3,14 @@
 **Status 2026-08-15.** Supersedes the "strongest objection still open" paragraph of
 [`o1_error_case_census.md`](o1_error_case_census.md) §5.
 
+> **2026-08-16 follow-up:** a new threshold-free axis, transcript alignment
+> orientation, rejects 29/74 frozen false edges while preserving the named families
+> after repairing the historical panel's strand bug. It is an RNA-only hard-rule
+> candidate now implemented behind `--rna-forward-only`, pending an end-to-end
+> GGO/HSA catalog run before any default change. See
+> [`o1_false_positive_rules.md`](o1_false_positive_rules.md). The negative conclusions
+> below about coverage, length, soft-mask, and promiscuity thresholds are unchanged.
+
 **Short answer, in one line:**
 
 > **The bugs are fixed and guarded. The repeat-bridge failure class is real, named, and reproducible —

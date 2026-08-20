@@ -13,31 +13,78 @@ the copies; a significance test assigns the reads.**
 
 ## One sentence per objective
 
+⚠ **Renumbered 2026-08-19.** The thesis is **three** objectives. **ASJ (allele-specific junctions) is
+DROPPED** — it was the only objective ever rated ATTAINED, so say what was given up. What older docs
+call "O3" means three different things; the numbering below is the current one.
+
 - **O1 — family definition.** A family is a **γ-quasi-clique of the transcribed-homology graph `E_r`**
   (mutual exon-level homology, ≥2 physically-distinct loci). *Homology is the only membership criterion.*
-- **O1 — copy number.** `χ_H` = the **chromatic number of the read-conflict graph** = the Minimum Copy Cover
-  (Lemma 1). A read-conflict edge joins two reads that disagree at a shared PSV; a copy is a colour class; a
-  *lower bound* (identical copies collapse — the K=0 floor). *The read-conflict graph counts copies; it never
-  defines the family.*
-- **O2 — copy assignment.** Assign a read to a copy iff the **IsoCon significance certificate** passes
-  (`min_p < α/(n−1)`, Bonferroni over the PSV + junction likelihood); otherwise **abstain** (certify Tied).
-  **Never split a read 1/k.** One calibrated `α` (1e-3), one per-base error `ε`; no hand-set thresholds.
-- **O3 — allele-specific junctions.** On a single molecule, link the **allele** to the splice **junction** it
-  co-occurs with (Fisher exact + BH-FDR + transversion/SOR filters). No phasing.
-- **O4 — reference-absent copies.** A copy the reads *demand* but the assembly lacks: `χ_H` exceeds the
-  annotated loci, **or** depth (`E_fam/λ`) exceeds one copy. Detect-and-flag; copy-vs-allele needs DNA.
+  `E_r` = identity ≥ 0.60 **and** coverage ≥ 0.50 of the shorter, on **one single record**, over
+  exon-sum spliced representatives. **P1 (seed-invariance) is a theorem.**
+- **O1 — copy number.** `χ_H` = the **chromatic number of the read-conflict graph** = the Minimum Copy
+  Cover (Lemma 1). A read-conflict edge joins two reads that disagree at a shared PSV; a copy is a colour
+  class; a *lower bound* (identical copies collapse — the K=0 floor). *The read-conflict graph counts
+  copies; it never defines the family.*
+- **O2 — copy assignment under ambiguity.** ⚠ **The target population is ALIGNMENT-SCORE NEAR-TIES, not
+  MAPQ-0** — MAPQ-0 is 0.0004 inside the multi-copy loci, while **21.75%** of reads there are within 5% of
+  the primary's alignment score. Assign a read to a copy iff the significance certificate passes;
+  otherwise **abstain**. **Never split a read 1/k.** ⚠ **Defend O2 on ABSTENTION, not reassignment** —
+  held-out abstention gives TPR 0.5066 / FPR 0.0280, AUC 0.7995, where **MAPQ is at chance (0.4944)**.
+  **Never claim "assigns better than minimap2"**: net headroom is ~0.1%.
+- **O3 — reference-absent / unannotated copies.** A copy the reads *demand* but the assembly lacks.
+  **Detect-and-flag**; copy-vs-allele needs DNA. ⚠ Bounded in two strata: in **unique** sequence it works
+  (≤ 6.4 missing expressed copies); in the **collapsible/paralogous** stratum it is **formally unbounded
+  and vacuous** — and that dead stratum is where O3's target class lives.
 
 ## The one theorem and the one test
 
-- **Theorem.** Copy number = `χ_H` = MCC (Lemma 1); assignment = a facility-location / max-weight cover with
-  a per-read identifiability certificate. One clean combinatorial object; everything else is engineering.
-- **Test (why believe it).** A **planted-genome simulation**: known copy number → exact recovery, and K=0
-  identical copies → *certified Tied, not guessed*. Non-circular (truth planted in read names, de-novo
-  discovery, multimapper-only scoring). Corroborated on real data: the known families are recovered exactly
-  (GSTM 3, PCDHB 5, MAGEA 2, DAZ 2), and the same method tracks *species-specific* copy number on held-out
-  human (MAGEA 2→11, TSPY 5→33) — so it is not overfit.
+- **Theorem.** ⚠ **Corrected 2026-08-19.** Copy number = `χ_H` = MCC (Lemma 1). **Assignment is NOT a
+  facility-location / max-weight cover** — that framing is retracted: O2 **decomposes**, so **per-read
+  argmax is optimal**, and loci must **never** be built with facility location or bipartite matching.
+  The load-bearing theorem is **P1, seed-invariance of `E_r`**: membership depends only on the two
+  sequences, so the partition cannot be a function of the node set or the seed order.
+- **Test (why believe it).** A **planted-genome simulation**: known copy number → exact recovery, and
+  K=0 identical copies → *certified Tied, not guessed*. Non-circular (truth planted in read names,
+  de-novo discovery, multimapper-only scoring). Corroborated on real data: the known families are
+  recovered exactly (GSTM 3, PCDHB 5, MAGEA 2, DAZ 2), and the same method tracks *species-specific*
+  copy number on held-out human (MAGEA 2→11, TSPY 5→33) — so it is not overfit.
 
-## Consistency status (code vs this spec, 2026-07-21)
+## What is measured, and the one named hole (2026-08-19)
+
+| | |
+|---|---|
+| false-merge rate | **2/150 = 1.33%** [0.37, 4.73], power measured |
+| false-omission rate | **9/162 = 5.6%** [0.0295, 0.1022] |
+| identity-clause failures | **0/728** — the failure mode is localised to the coverage clause |
+| DNA vs RNA partition, same loci | **identical, 7/7** |
+| reach | ~0.55 of families genome-wide (chr1 22/40, representative at Fisher p = 0.6090) |
+
+**The hole.** ~30 of 105 classified bad-family cases are **definitional**, and they are **one
+mechanism**: the min-length coverage denominator is **scale-free**, so a ~1 kb dispersed repeat is
+≥ 0.50 of any node under 2 kb, and 24.88% of gorilla copies are ≤ 2 kb. Exposure ceiling
+**41/494 = 8.30%** of gorilla families, and **30 is a floor**.
+
+**Five repair routes are closed**, all recorded in `NEGATIVE_RESULTS_REGISTER.md`: thresholds
+(impossibility — HERC2 splits at c_long ≥ 0.034 before the first FP dies at 0.05), coverage-of-longer
+(dominated), rep repair (no discriminator), read tiling (AUC 0.1259, significant in the **wrong**
+direction), and rare-anchor replacement (no operating point — see below).
+
+**Two guards exist, both pair-local by construction so P1 is untouched. Neither has run through the
+shipped binary (T8), and the definition is UNCHANGED.**
+
+1. **Transcript-orientation guard** — 29/74 FPs rejected for 4 lost edges of 9,032.
+   `o1_false_positive_rules.md`. Blocked on a whole-genome GGO/HSA comparison.
+2. **Genome-anchored repeat veto** — `min_shared_gmult`, the minimum genome-wide occurrence count of a
+   shared canonical 21-mer. 10/12 scored FPs at **0/135** TP cost; seed-invariance demonstrated
+   (**0/147** vs the catalog-counted analogue's **94/147**). `o1_genome_anchored_repeat_gate.md`.
+   ⚠ It is a **veto, never an admission criterion** — replacing coverage with it has no operating point.
+   ⚠ Ship as a **flag** first: as a gate it changes `E_r`, so every `density`/`λ`/`cut_certified` value
+   must be re-emitted and γ margins move (the analogous R2 pushed 19/494 GGO families below γ).
+
+## Consistency status (code vs this spec, 2026-07-21) — HISTORICAL
+
+⚠ This table is a **2026-07-21 snapshot** and is not maintained. Its "O3 published number"
+row refers to the **dropped ASJ objective**. Read it as a record of that pass, not as current state.
 
 Honest map of where the shipped code already matches the spec and where two approaches still coexist.
 Deliverable B attempted to consolidate each coexisting pair under a byte-identity gate

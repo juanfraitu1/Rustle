@@ -40,7 +40,7 @@ longcallR, Sahlin 2018 IsoCon, Zheng 2025 Clair3-RNA, family-detection prior-art
   T2T-complete gorilla — which is either "machinery works, reference is complete" **or** "machinery is inert."
   We cannot currently tell which.
 - **Code-state (verified):** GAP. Positive evidence is synthetic only (`absent_copy_sim.py` plants A1/A2
-  haplotypes) + unit tests with mocked remap. `docs/VG_OBJECTIVES_AND_ROADMAP.md` Obj-2 lists the exact missing
+  haplotypes) + unit tests with mocked remap. (`docs/VG_OBJECTIVES_AND_ROADMAP.md`, DELETED 2026-08-19 as superseded by `docs/THESIS_OBJECTIVES.md`; see git history) Obj-2 listed the exact missing
   test: "mask one copy out of the reference, confirm the scan recovers its reads." Never run.
 - **Action:** take one of the 4 protein-confirmed MHC copies (or a clean RABL2/DAZ copy), **delete it from the
   reference FASTA**, rebuild the `.mmi`, realign that locus's reads, run `--absent-copies`, and verify O4
