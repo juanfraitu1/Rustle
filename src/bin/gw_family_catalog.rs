@@ -21,8 +21,7 @@ use rustle::vg_family::denovo_pipeline::{
     detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
     detect_homology_catalog_genome_wide, families_from_reps_certified, family_protein_coheres,
     homology_refine_params, refine_families_exon_sum, write_joint_rna_dna_certificate, DenovoConfig,
-    FamilyCertificate, RefineParams,
-};
+    certificates_for_families, FamilyCertificate, RefineParams, Substrate};
 use rustle::vg_family::family_detect::DenovoTranscript;
 
 #[derive(Parser, Debug)]
@@ -560,10 +559,11 @@ fn main() -> Result<()> {
         }
         let mut refine_params = homology_refine_params(args.min_identity, args.threads);
         // ⚠ These reps are stored in REFERENCE orientation, where a '-' record can be a REAL inverted
-        // segmental duplication — so the RNA forward-only guard must never reach this substrate.
-        // `RefineParams::default()` already leaves it false; this is an explicit restatement so a future
-        // default flip cannot silently turn it on here (that exact mistake was caught by
+        // segmental duplication. DECLARING the substrate makes every orientation-sensitive option inert
+        // here by construction — see `RefineParams::forward_only_active`. Flipping a default can no
+        // longer reach this path (that exact mistake was caught by
         // `genome_mode_grouping_keeps_an_inverted_duplication` on 2026-08-19).
+        refine_params.substrate = Substrate::ReferenceOriented;
         refine_params.require_forward_alignment = false;
         refine_params.protein_tail = args.protein_tail;
         // DNA-mode GROUPING knobs (anti over/under-merge levers). Env-only and applied ONLY on this branch,
@@ -645,6 +645,9 @@ fn main() -> Result<()> {
     refine_params.protein_tail = args.protein_tail;
     // DEFAULT ON (2026-08-19): forward-only unless explicitly opted out. `--rna-forward-only`
     // remains accepted so an explicit request still conflict-checks against `--from-genome`.
+    // The substrate declaration is what ACTIVATES it: on a reference-oriented substrate the flag is
+    // inert by construction (`RefineParams::forward_only_active`).
+    refine_params.substrate = Substrate::TranscriptOriented;
     refine_params.require_forward_alignment = !args.no_rna_forward_only;
     // `--homology-genomic-span`: E_r edges on the genomic span of each RNA-detected locus (anti-fragmentation).
     // Needs the genome path; harmless when the flag is off (field stays false, edges stay exon-sum).
@@ -712,8 +715,10 @@ fn main() -> Result<()> {
         );
     }
     // The λ certificate describes the γ-quasi-clique(E_r) families. `--refine` re-clusters them over a
-    // DIFFERENT edge set, so the certificates would no longer describe the emitted rows — they are
-    // DROPPED (the column prints "NA"), never carried across. A wrong λ is worse than an absent one.
+    // DIFFERENT edge set, so the pre-refine certificates would no longer describe the emitted rows and
+    // are never carried across — a wrong λ is worse than an absent one. Since 2026-08-19 they are
+    // RECOMPUTED over the refined rows instead of dropped, so the column is a number rather than "NA"
+    // and it describes what is actually written.
     let mut certs: Option<Vec<FamilyCertificate>> = if raw_certs.is_empty() { None } else { Some(raw_certs) };
     let fams: Vec<Vec<DenovoTranscript>> = if refine {
         certs = None;
@@ -739,9 +744,19 @@ fn main() -> Result<()> {
             min_coverage: refine_params.min_coverage,
             sensitive_identity: refine_params.sensitive_identity,
             require_forward_alignment: refine_params.require_forward_alignment,
+            substrate: refine_params.substrate,
             ..Default::default()
         };
         let refined = refine_families_exon_sum(raw, &params, None, cfg.conflict.min_reads)?;
+        // Rebuild the certificate over exactly the rows that will be emitted. On failure the column
+        // falls back to "NA" — an absent certificate is honest, a stale one is not.
+        certs = match certificates_for_families(&refined, &params) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("[gw-catalog] refine: λ certificate not recomputed ({e}); column stays NA");
+                None
+            }
+        };
         eprintln!(
             "[gw-catalog] {}{}{} refine: {} raw families -> {} refined (homology component AND >= 2 distinct loci)",
             if args.refine_introns { "genomic(intron-inclusive)" } else { "exon-sum" },

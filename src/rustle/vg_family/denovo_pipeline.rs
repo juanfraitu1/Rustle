@@ -1962,6 +1962,7 @@ pub fn detect_and_assign(
         let refine_params = RefineParams {
             intron_fasta: Some(fasta_path.to_string()),
             require_forward_alignment: true,
+            substrate: Substrate::TranscriptOriented,
             ..Default::default()
         };
         let refined = refine_families_exon_sum(copysets, &refine_params, Some(genome), cfg.conflict.min_reads)
@@ -2529,6 +2530,7 @@ pub fn detect_single_copy_baseline_genome_wide(
                 threads,
                 intron_fasta: Some(fasta_path.to_string()),
                 require_forward_alignment: true,
+                substrate: Substrate::TranscriptOriented,
                 ..Default::default()
             };
         let refined = refine_families_exon_sum(copysets, &refine_params, None, cfg.conflict.min_reads)?;
@@ -2817,6 +2819,16 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
 /// RefineParams for the homology-primary (E_r) path. `min_identity` (if given) is the EFFECTIVE
 /// nucleotide identity floor: it sets BOTH the asm20 tier and the sensitive tier, so the union's
 /// floor is exactly `mi` (0.98 = Soto SD98 mode). None -> defaults (asm20 0.80 / sensitive 0.60).
+impl RefineParams {
+    /// The ONE place the forward-only E_r guard is decided. It is meaningful only between
+    /// transcript-oriented reps, so it is inert on a reference-oriented substrate no matter what
+    /// `require_forward_alignment` says. Every orientation-sensitive option should route through a
+    /// method like this rather than reading the flag directly.
+    pub(crate) fn forward_only_active(&self) -> bool {
+        self.require_forward_alignment && self.substrate == Substrate::TranscriptOriented
+    }
+}
+
 pub fn homology_refine_params(min_identity: Option<f64>, threads: usize) -> RefineParams {
     let mut p = RefineParams { threads, ..Default::default() };
     if let Some(mi) = min_identity {
@@ -3070,6 +3082,33 @@ pub fn families_from_reps_certified(
 /// Edges INSIDE a merged copy are dropped (they became self-loops when the loci collapsed), and the
 /// result is de-duplicated so several alignment records for one copy pair count as the ONE edge whose
 /// loss would actually split the family.
+/// Recompute λ certificates for families produced by a clustering OTHER than γ-quasi-clique(E_r) —
+/// i.e. the `--refine` path, which re-clusters over a different edge set.
+///
+/// Before this existed the only safe option was to DROP the certificate (the column printed `NA`),
+/// because carrying the pre-refine λ across would have described a partition the emitted row no longer
+/// belongs to, and a wrong λ is worse than an absent one. This makes the certificate TOTAL instead:
+/// the graph is rebuilt over exactly the rows that will be emitted, so what is reported describes what
+/// is written.
+///
+/// Each family's transcripts are already one-per-locus by the time refine returns, so the certificate's
+/// nodes are the emitted copies and the groups are singletons.
+///
+/// ⚠ COST: one alignment per family, the same order `--refine` already pays. It is not free, which is
+/// why it runs only on the path that needs it.
+pub fn certificates_for_families(
+    fams: &[Vec<DenovoTranscript>],
+    params: &RefineParams,
+) -> Result<Vec<FamilyCertificate>> {
+    let mut out = Vec::with_capacity(fams.len());
+    for fam in fams {
+        let groups: Vec<Vec<usize>> = (0..fam.len()).map(|i| vec![i]).collect();
+        let edges = homology_edges_all_reps_pooled(fam, None, params)?;
+        out.push(certificate_for(&groups, &edges));
+    }
+    Ok(out)
+}
+
 pub(crate) fn certificate_for(
     groups: &[Vec<usize>],
     er_edges: &[(usize, usize)],
@@ -3333,6 +3372,27 @@ pub fn detect_homology_catalog_genome_wide(
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
 /// point (`bench/validate_exon_sum.py`): minimap2 asm20, identity >= 0.80 (asm20's native divergence
 /// envelope), coverage-of-shorter >= 0.50 (more than half the shorter spliced sequence aligns).
+/// Which orientation convention a set of representative sequences follows.
+///
+/// This exists because `RefineParams` configures BOTH substrates, and orientation-sensitive options
+/// mean opposite things on them. Between TRANSCRIPT-oriented reps a `-` alignment is
+/// reverse-complement homology (an inverted repeat, not two homologous transcripts); between
+/// REFERENCE-oriented reps it is an ordinary **inverted segmental duplication**, which is real and
+/// must be kept.
+///
+/// Making the substrate explicit turns three scattered `require_forward_alignment = false`
+/// force-offs into one declaration per entry point. On 2026-08-19 a default flip silently applied
+/// the RNA guard to DNA and dropped an inverted duplication; only a test written for another purpose
+/// caught it. `forward_only_active()` is the single place that decision now lives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Substrate {
+    /// RNA exon-sum, or an RNA-locus genomic span after `refine_copy_seq` normalisation — stored
+    /// 5'→3' in TRANSCRIPTION direction.
+    TranscriptOriented,
+    /// Reference-oriented DNA intervals (`--from-genome`, the DNA arm of `--joint-dna-rna`).
+    ReferenceOriented,
+}
+
 #[derive(Clone, Debug)]
 pub struct RefineParams {
     pub min_identity: f64,
@@ -3385,6 +3445,11 @@ pub struct RefineParams {
     /// This must stay OFF for the annotation-free `--from-genome` arm: those reps are stored in reference
     /// orientation, so a real inverted genomic duplication legitimately aligns on `-`.
     pub require_forward_alignment: bool,
+    /// Orientation convention of the reps these params will be applied to. Orientation-sensitive
+    /// options are INERT unless this is `TranscriptOriented` — see `forward_only_active`.
+    /// Defaults to `ReferenceOriented`, the conservative choice: a forgotten declaration costs
+    /// precision, never an inverted duplication.
+    pub substrate: Substrate,
 }
 
 impl Default for RefineParams {
@@ -3416,6 +3481,9 @@ impl Default for RefineParams {
             // `genome_mode_grouping_keeps_an_inverted_duplication`. The guard is therefore turned on at
             // the RNA ENTRY POINTS, never here. See docs/o1_false_positive_rules.md.
             require_forward_alignment: false,
+            // Conservative default: orientation-sensitive options stay inert until an entry
+            // point declares the substrate. Forgetting costs precision, never correctness.
+            substrate: Substrate::ReferenceOriented,
         }
     }
 }
@@ -4180,7 +4248,7 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ("identity_metric".into(), "1-de (fallback nmatch/blocklen when de:f: absent)".into()),
         (
             "alignment_orientation".into(),
-            if params.require_forward_alignment {
+            if params.forward_only_active() {
                 "forward-only (+); valid only for transcript-oriented RNA representatives".into()
             } else {
                 "both (+/-)".into()
@@ -4414,7 +4482,7 @@ fn nucleotide_edges_scored(
             _ => continue,
         };
         let strand = f[4].chars().next().unwrap_or('+');
-        if params.require_forward_alignment && strand != '+' {
+        if params.forward_only_active() && strand != '+' {
             continue;
         }
         let ql = f[1].parse::<f64>().unwrap_or(0.0);
@@ -4706,6 +4774,7 @@ pub fn write_joint_rna_dna_certificate(
 
     let mut dna_params = params.clone();
     dna_params.require_forward_alignment = false;
+    dna_params.substrate = Substrate::ReferenceOriented; // genomic spans, not transcripts
     dna_params.homology_genomic_span = true;
     dna_params.protein_tail = false;
     let dna_edges = if nodes.is_empty() {
@@ -6249,9 +6318,13 @@ mod tests {
         .expect("strand-agnostic alignment");
         assert_eq!(old.len(), 1, "the historical rule must admit the reverse-complement pair");
 
+        // ⚠ The SUBSTRATE arms the guard, not the flag alone — this is the RNA half of the typed rule,
+        // so it must declare transcript orientation. (`forward_only_guard_is_inert_on_a_reference_\
+        // oriented_substrate` covers the DNA half.)
         let guarded = RefineParams {
             threads: 1,
             require_forward_alignment: true,
+            substrate: Substrate::TranscriptOriented,
             ..Default::default()
         };
         let new = nucleotide_edges_scored(
@@ -6271,21 +6344,84 @@ mod tests {
     /// inverted duplication. This exercises the same `families_from_reps_certified` grouping core used by
     /// `gw_family_catalog --from-genome`, not only the PAF parser in isolation.
     #[test]
-    /// LOCK-IN, 2026-08-19. `RefineParams` is SUBSTRATE-AGNOSTIC: the same struct configures the RNA
-    /// exon-sum path and the reference-oriented DNA path. `require_forward_alignment` is meaningful
-    /// only for TRANSCRIPT-oriented reps — between REFERENCE-oriented ones a '-' record is a REAL
-    /// inverted segmental duplication.
-    ///
-    /// Flipping this default to `true` when the RNA guard became default-on silently applied it to the
-    /// DNA substrate and dropped an inverted duplication (caught by
-    /// `genome_mode_grouping_keeps_an_inverted_duplication`). The guard is therefore enabled at the RNA
-    /// ENTRY POINTS, never on the type. **If you are here to flip this default, that is the bug.**
+    /// `--refine` used to emit `NA` for λ because its partition comes from a different edge set.
+    /// `certificates_for_families` rebuilds the graph over exactly the rows that will be written, so
+    /// the certificate describes the emitted family rather than a superseded one.
+    fn certificates_are_recomputed_for_a_refined_partition() {
+        // two families: a connected pair, and a single copy (degenerate)
+        let mk = |name: &str, start: u64, seq: &str| DenovoTranscript {
+            tid: name.to_string(),
+            chrom: "chr1".to_string(),
+            start,
+            end: start + seq.len() as u64,
+            n_reads: 5,
+            seq: seq.as_bytes().to_vec(),
+            ..Default::default()
+        };
+        let body: String = std::iter::repeat("ACGTTGCAAGGCTTACGGATCCTTAGGCAT").take(40).collect();
+        let fams = vec![
+            vec![mk("a", 1_000, &body), mk("b", 900_000, &body)],
+            vec![mk("c", 2_000_000, &body)],
+        ];
+        let params = RefineParams { threads: 1, ..Default::default() };
+        let certs = match certificates_for_families(&fams, &params) {
+            Ok(c) => c,
+            // minimap2 absent in this environment -> the wiring is what matters, skip silently
+            Err(_) => return,
+        };
+        assert_eq!(certs.len(), fams.len(), "one certificate per emitted family, same order");
+        assert_eq!(certs[0].n, 2, "the certificate counts the EMITTED rows");
+        assert_eq!(certs[1].n, 1);
+        assert_eq!(certs[1].lambda, 0, "a single-copy family has no cut to certify");
+    }
+
+    #[test]
+    /// LOCK-IN, 2026-08-19. `RefineParams` configures BOTH substrates, so orientation-sensitive
+    /// options must be inert until an entry point DECLARES the substrate. Flipping this default to
+    /// `TranscriptOriented` would silently arm the RNA guard on reference-oriented DNA reps and drop
+    /// inverted duplications — the mistake `genome_mode_grouping_keeps_an_inverted_duplication` caught.
+    /// **If you are here to flip this default, that is the bug.**
     fn refine_params_default_is_orientation_agnostic() {
         assert!(
             !RefineParams::default().require_forward_alignment,
             "RefineParams::default() must stay orientation-agnostic — enable the forward-only guard at \
              the RNA entry points instead, or reference-oriented DNA reps lose inverted duplications"
         );
+        assert_eq!(
+            RefineParams::default().substrate,
+            Substrate::ReferenceOriented,
+            "the conservative default: a forgotten substrate declaration must cost PRECISION, never an \
+             inverted duplication"
+        );
+    }
+
+    #[test]
+    /// The substrate, not the flag, is what arms an orientation-sensitive option. This is the whole
+    /// point of the type: setting the flag on a reference-oriented substrate must be a no-op rather
+    /// than a silent correctness bug.
+    fn forward_only_guard_is_inert_on_a_reference_oriented_substrate() {
+        let dna = RefineParams {
+            require_forward_alignment: true,
+            substrate: Substrate::ReferenceOriented,
+            ..Default::default()
+        };
+        assert!(
+            !dna.forward_only_active(),
+            "a '-' record between REFERENCE-oriented reps is a real inverted segmental duplication; \
+             the forward-only guard must not fire even when the flag is set"
+        );
+        let rna = RefineParams {
+            require_forward_alignment: true,
+            substrate: Substrate::TranscriptOriented,
+            ..Default::default()
+        };
+        assert!(rna.forward_only_active(), "declared RNA substrate + flag set must arm the guard");
+        let rna_off = RefineParams {
+            require_forward_alignment: false,
+            substrate: Substrate::TranscriptOriented,
+            ..Default::default()
+        };
+        assert!(!rna_off.forward_only_active(), "--no-rna-forward-only must still disarm it");
     }
 
     #[test]
@@ -6338,8 +6474,24 @@ mod tests {
             genomic_tier: GenomicTier::NotPresent,
         };
         let off = er_rule_rows(&RefineParams::default(), &site);
+        // ⚠ The SUBSTRATE is what arms the guard, not the flag — setting `require_forward_alignment`
+        // alone on the default (reference-oriented) substrate is deliberately a no-op, so the
+        // certificate must be built on a declared RNA substrate to report "forward-only".
         let on = er_rule_rows(
-            &RefineParams { require_forward_alignment: true, ..Default::default() },
+            &RefineParams {
+                require_forward_alignment: true,
+                substrate: Substrate::TranscriptOriented,
+                ..Default::default()
+            },
+            &site,
+        );
+        // and the same flag on the DNA substrate must still report "both"
+        let dna = er_rule_rows(
+            &RefineParams {
+                require_forward_alignment: true,
+                substrate: Substrate::ReferenceOriented,
+                ..Default::default()
+            },
             &site,
         );
         let value = |rows: &[(String, String)]| -> String {
@@ -6350,6 +6502,10 @@ mod tests {
         };
         assert_eq!(value(&off), "both (+/-)");
         assert!(value(&on).starts_with("forward-only (+)"));
+        assert_eq!(
+            value(&off), value(&dna),
+            "the flag must be inert on a reference-oriented substrate — same certificate as off"
+        );
     }
 
     #[test]
