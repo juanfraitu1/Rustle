@@ -58,6 +58,59 @@ read-free DNA intervals in genomic-plus orientation, where a `-` PAF record can 
 real inverted segmental duplication. Do not apply it to an arbitrary imported FASTA
 unless its sequences are explicitly declared transcript-oriented.
 
+## ⭐ The whole-genome GGO/HSA comparison (2026-08-19) — the blocking experiment, done offline
+
+**T8: offline re-derivation over the shipped reps, not the binary.** The γ step is deliberately NOT
+reimplemented (that engine is Louvain-based and reimplementing it offline has already produced one
+Simpson's-paradox error here). Every statement below is **γ-independent**: edge removal, disconnection
+and isolation hold whatever γ does, because γ can only split a component further, never rejoin one.
+Species are never pooled.
+
+| | GGO | HSA |
+|---|---:|---:|
+| families / copies | 494 / 1,415 | 394 / 1,220 |
+| within-family `E_r` edges | 2,474 | 2,402 |
+| minus-only, removed by the guard | **55 = 0.0222** | **153 = 0.0637** |
+| families losing ≥1 edge | 42 = 0.0850 | 27 = 0.0685 |
+| families that DISCONNECT | 42 = 0.0850 | 27 = 0.0685 |
+| copies left ISOLATED | 73 = 0.0516 | 42 = 0.0344 |
+| families that DISSOLVE | **31 = 0.0628** | **17 = 0.0431** |
+
+### The dissolutions are not collateral — they are ~90% provably-wrong families
+
+**All 31 dissolved GGO families are 2-copy**, which is arithmetic: a 2-copy family rests on one edge.
+The question is whether that edge should have existed. Splitting the removals:
+
+| variant | edges | families touched | dissolved |
+|---|---:|---:|---:|
+| BROAD — all minus-only (GGO) | 55 | 42 | 31 = 0.0628 |
+| **NARROW — minus-only AND overlapping antisense** (GGO) | 33 | 33 | **28 = 0.0567** |
+| BROAD (HSA) | 153 | 27 | 17 = 0.0431 |
+| NARROW (HSA) | 15 | 15 | 14 = 0.0355 |
+
+**28 of the 31 GGO dissolutions are overlapping ANTISENSE pairs** — the same DNA read in opposite
+directions. Those are **provably not two homologous transcripts**, so deleting them is correct.
+⟹ **~5.67% of GGO "families" are a gene paired with its own overlapping antisense partner, not
+paralogues at all.** That is a precision defect of the same order as the definitional hole's 8.30%
+exposure — and unlike that hole, it is fixable by a rule that is pair-local, threshold-free, and
+already implemented.
+
+### It also splits every known false-merge family
+
+`GWFAM210` (the MRPS17 **AluY** hub), `GWFAM264`, `GWFAM82`, `GWFAM85` all go 1 → 2 or 1 → 3 — i.e.
+the guard independently splits the anti-FP characterisation's Groups 1–3.
+
+### ⚠ What is NOT corroborated
+
+* **Only 1 of the 31 GGO dissolutions** is independently flagged as repeat-bridged by the
+  genome-anchored veto (`gmult ≥ 50`). The two guards target different mechanisms, so this is expected
+  — but it means **3 non-antisense dissolutions rest on the strand observation alone**.
+* ⚠ **Unexplained species asymmetry:** HSA removes **6.37%** of within-family edges against GGO's
+  **2.22%**, nearly 3×, yet only **15/153 = 9.80%** of HSA's removals are antisense overlaps versus
+  **33/55 = 60.00%** of GGO's. HSA's non-antisense removals mostly split families rather than dissolve
+  them. This should be understood before the default moves on the human arm.
+* This is **T8**. It bounds the change; it does not replace running the binary both ways.
+
 ## Frozen-arm result
 
 Reproducer: [`bench/o1_orientation_gate.py`](../bench/o1_orientation_gate.py).
