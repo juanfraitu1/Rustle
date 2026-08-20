@@ -64,11 +64,11 @@ catalog**, which was built with `refine` on and which **no invocation of the cur
 reproduce** (`o1_catalog_provenance.md`). The current default emits **627 families**. Rates needing
 truth labels have NOT been re-measured; structural properties HAVE.
 
-**Rates — measured on the 494-family catalog, NOT re-measured:**
+**Rates — each on its OWN substrate; read the row, do not assume the catalog:**
 
 | | |
 |---|---|
-| false-merge rate | **2/150 = 1.33%** [0.37, 4.73], power measured |
+| false-merge rate | **2/150 = 1.33%** [0.37, 4.73], power measured. ⚠ **HUMAN CHM13 v2.0 / A119b, 150 gene-tight single-locus windows — NOT the GGO catalog.** A **specificity and a LOWER bound**, not a precision (no positive stratum ⟹ no prevalence). ⭐**RE-MEASURED 2026-08-20 under the new defaults: unchanged at 2/150, same two windows** — while spurious E_r edges on the same panel fell **28 → 3** (`o1_false_merge_remeasured.md`) |
 | false-omission rate | **9/162 = 5.6%** [0.0295, 0.1022] |
 | identity-clause failures | **0/728** — the failure mode is localised to the coverage clause |
 | DNA vs RNA partition, same loci | **identical, 7/7** |
