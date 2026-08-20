@@ -32,9 +32,17 @@ call "O3" means three different things; the numbering below is the current one.
   held-out abstention gives TPR 0.5066 / FPR 0.0280, AUC 0.7995, where **MAPQ is at chance (0.4944)**.
   **Never claim "assigns better than minimap2"**: net headroom is ~0.1%.
 - **O3 — reference-absent / unannotated copies.** A copy the reads *demand* but the assembly lacks.
-  **Detect-and-flag**; copy-vs-allele needs DNA. ⚠ Bounded in two strata: in **unique** sequence it works
-  (≤ 6.4 missing expressed copies); in the **collapsible/paralogous** stratum it is **formally unbounded
-  and vacuous** — and that dead stratum is where O3's target class lives.
+  **Detect-and-flag with a measured FPR, STRATIFIED by whether the orphaned reads have anywhere to go**;
+  copy-vs-allele needs DNA. The stratification is forced by the excision control: a deleted copy is
+  **ORPHANED 33.3%** of the time (median 92.7% of its reads unmapped) or **ABSORBED 64.2%** (reads land
+  on the best paralogue at **1.75× depth**). *Expression is not the constraint — where the reads go is.*
+  | stratum × route | bound |
+  |---|---|
+  | unique sequence, unmapped-read | **M ≤ 6.4** missing expressed copies |
+  | paralogous, unmapped-read | ⚠⚠ **vacuous** (π = 1/35, **formally unbounded**) — and O3's target class lives here |
+  | paralogous, depth (S2) | **TPR 0.2703 / FPR 0.0200** held out; set by **divergence not abundance**, ⚠ 45.78% of positives below the 0.01 divergence where it works |
+
+  ⚠ The signature is **UNMAPPED READS, not clipping**. **Never claim completeness.**
 
 ## The one theorem and the one test
 

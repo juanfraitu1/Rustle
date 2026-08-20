@@ -7,7 +7,7 @@
 > |---|---|
 > | **O1** | Define a multi-copy gene family topologically at the RNA level (quasi-clique in E_r; MCC = χ(H)) |
 > | **O2** | Decide, for a read at a multi-copy locus, whether the evidence warrants assigning it to a COPY AT ALL — and abstain when it does not. Contested set = **alignment-score near-ties**, not MAPQ-0. No 1/k. |
-> | **O3** | Detect + flag expressed transcript paths not explained by represented reference copies; validate missing-copy recovery by paired leave-one-copy-out ablation (this was O4) |
+> | **O3** | Detect + flag expressed transcript paths not explained by represented reference copies, **STRATIFIED by whether the orphaned reads have anywhere to go**. Detect-and-flag with a measured FPR per stratum; **completeness is never claimed**. (this was O4) |
 >
 > **The allele-specific-junction objective is DROPPED** — cut for time, and because it does not connect
 > to the others. ⚠ It was the only objective the 2026-06-25 audit rated ATTAINED; the ASJ result itself
@@ -16,6 +16,52 @@
 > ⚠ **"O3" denotes three different things across this repo's history** — the EM below, ASJ in the
 > 06-25 audit, and reference-absent copies now. Resolve the scheme before quoting any objective number.
 > The numbered sections below are kept for provenance only.
+>
+> ### ⭐ O3 RESTATED (2026-08-19) — stratify the target, bound each stratum
+>
+> O3 as originally posed — *"find copies missing from the genome"* — is **not achievable**, and the
+> reason is measured, not conjectural. In the whole-genome excision control (one copy of 162 two-copy
+> families deleted, matched IsoSeq) a deleted copy has **two fates**:
+>
+> | fate | rate | what the reads do |
+> |---|---:|---|
+> | **ORPHANED** | 33.3% | median **92.7% of reads unmapped** — detectable |
+> | **ABSORBED** | 64.2% | reads land on the best paralogue at **1.75× depth**, concordance 0.967 — invisible to any unmapped-read method |
+>
+> **Expression is not the constraint** (99.34% of copies clear the floor); **where the reads go** is.
+> ⚠ And O3's original target class — a collapsed paralogue — sits in the ABSORBED stratum.
+>
+> This is the same move that rescued O2: restate the target population and the claim, then bound each
+> stratum honestly.
+>
+> **Target.** Copies absent from the assembly, **stratified by whether the orphaned reads have anywhere
+> to go.** **Claim.** Detect-and-flag with a measured FPR, stated **per stratum**:
+>
+> | stratum × route | status | bound |
+> |---|---|---|
+> | unique sequence, **unmapped-read** route | **works** | **M ≤ 6.4** missing expressed copies |
+> | paralogous sequence, **unmapped-read** route | ⚠⚠ **vacuous** | π = 1/35 = 0.0286, 0/26 at cov ≥ 0.8, **formally unbounded** |
+> | paralogous sequence, **depth (S2)** route | **partial** | held-out **TPR 0.2703 / FPR 0.0200**; sensitivity set by **divergence, not abundance** (0.4500 above 0.01 divergence vs **0.0588** below) — ⚠ and **45.78% of positives lie below 0.01** |
+>
+> **Say this, not more:** *the instrument flags candidates with a measured false-positive rate in a
+> named stratum, and has explicitly no power for unmapped-read detection in the collapsible stratum.*
+> **Never claim completeness.** The signature is **UNMAPPED READS, not clipping** (34.53% pooled,
+> MAPQ-60 before deletion) — no published collapse detector uses clipping.
+>
+> ⚠ **The one real candidate does not close:** STON1+GTF2A1L, ~116.7 kb absent from mGorGor1, 125
+> near-full-length unmapped reads, gapless chromosome, 0 GFF lines, present in chimp and orangutan —
+> but **single-copy, n = 1, p = 0.055, UNCONFIRMED**. It supports the instrument; it is not a result.
+>
+> ⭐ **The niche is empty**, which is the thesis value: nobody has found a reference-absent copy from
+> transcriptome data. The field standard is S1 re-assemble / S2 depth+PSV / S3 peptides. A *bounded
+> negative* is therefore itself publishable.
+>
+> ⚠ **The advisor's "the reference is an average" objection fails on PROVENANCE, not on measurement:**
+> mGorGor1 is a haplotype-resolved assembly of **one animal** and the fibroblast IsoSeq is that
+> animal's **own cell line**. Keep the two arguments separate — the objection dies on how the substrate
+> was built, and the copy-number-polymorphism rate is **still unmeasured** (the 2026-08-19 mat-vs-pat
+> run was uninformative: control floor 0.1512 vs signal 0.0278). ⚠⚠ And **do not quote the 8/9/9-vs-5/6/8
+> haplotype deficit** — it does not reproduce; see [`o3_haplotype_cnv_result.md`](o3_haplotype_cnv_result.md).
 >
 > **Current O3 avenues and claim boundary (2026-08-16):** see
 > [`docs/o3_missing_copy_evidence.md` §8](o3_missing_copy_evidence.md#8-possible-o3-avenues--decision-record-2026-08-16).
