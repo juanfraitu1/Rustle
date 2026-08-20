@@ -111,9 +111,11 @@ the completion, and the E_r all-vs-all over 17,924 reps still runs **at the edge
 
 ## 6. What to do
 
-1. **Rebuild the catalog at current defaults** (running now) and record both numbers.
-2. **Re-measure the headline rates on it.** They are the thesis's numbers and they are currently
-   attached to a catalog the tool no longer produces.
+1. ✅ **DONE 2026-08-20 — catalog rebuilt at current defaults: 627 families.** `o1_gw/ggo_gw.*`.
+2. ⚠ **PARTLY DONE.** *Structural* properties are re-measured and agree with the offline estimates to
+   ±0.019 (see §5b and `ONE_METHOD.md`). The *rates* — false-merge 1.33%, false-omission 5.6%, the
+   8.30% exposure ceiling — are **NOT** re-measured: each needs truth labels (curation, excision), not
+   just a recount. Until then every one must be quoted **with the 494-family catalog named**.
 3. **State the provenance wherever a number is quoted** — which binary, which defaults, which date.
    The `refine` default changed under these numbers once already without anyone noticing.
 4. Do **not** silently substitute the 526-family catalog for the 494 one. They are different objects;

@@ -57,7 +57,14 @@ call "O3" means three different things; the numbering below is the current one.
   recovered exactly (GSTM 3, PCDHB 5, MAGEA 2, DAZ 2), and the same method tracks *species-specific*
   copy number on held-out human (MAGEA 2→11, TSPY 5→33) — so it is not overfit.
 
-## What is measured, and the one named hole (2026-08-19)
+## What is measured, and the one named hole
+
+⚠⚠ **QUOTE THE PROVENANCE WITH THE NUMBER.** The rates below were measured on the **shipped 494-family
+catalog**, which was built with `refine` on and which **no invocation of the current binary can
+reproduce** (`o1_catalog_provenance.md`). The current default emits **627 families**. Rates needing
+truth labels have NOT been re-measured; structural properties HAVE.
+
+**Rates — measured on the 494-family catalog, NOT re-measured:**
 
 | | |
 |---|---|
@@ -66,6 +73,28 @@ call "O3" means three different things; the numbering below is the current one.
 | identity-clause failures | **0/728** — the failure mode is localised to the coverage clause |
 | DNA vs RNA partition, same loci | **identical, 7/7** |
 | reach | ~0.55 of families genome-wide (chr1 22/40, representative at Fisher p = 0.6090) |
+
+**Structure — RE-MEASURED 2026-08-20 on the 627-family catalog, from the pipeline's own certificates:**
+
+| | 494 (offline) | **627 (pipeline)** |
+|---|---:|---:|
+| 2-copy share — no split possible | 0.7045 | **0.7018** |
+| n ≥ 3, the hierarchy ceiling | 0.2955 | **0.2982** |
+| complete graphs — γ provably inert | 0.1012 | **0.0893** |
+| real reach (density < 1) | 0.1923 | **0.2089** |
+| λ = 1 with n ≥ 3 | 0.1599 | **0.1786** |
+
+⭐ **The offline re-derivation was faithful.** Every quantity agrees to within **±0.019** across a
+different catalog (+27% families), a different transcript set (94,257 vs 79,569 skeletons), a different
+code path (refine on vs off) and a different method (offline reconstruction vs the shipped Rust). The
+structural claims survive their substrate change — including the one that matters most:
+
+> **γ is provably inert on 0.7018 + 0.0893 = 79.11% of the catalog** (two-copy families plus complete
+> graphs), so the graph-theoretic content of the definition applies to ~21% of its output.
+
+⭐ **Only 75/627 = 11.96% of families are `cut_certified` (λ ≥ 2).** Among n ≥ 3 families,
+**112/187 = 59.9% have λ = 1** — a single alignment record holds them together. (For 2-copy families
+λ = 1 is arithmetic, not a defect.)
 
 **The hole.** ~30 of 105 classified bad-family cases are **definitional**, and they are **one
 mechanism**: the min-length coverage denominator is **scale-free**, so a ~1 kb dispersed repeat is
