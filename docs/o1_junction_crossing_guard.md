@@ -1,6 +1,9 @@
 # A threshold-free edge predicate that works at n = 2
 
-**Status 2026-08-19. Offline (T8), nothing through the shipped binary, no default moved.**
+**Status 2026-08-19. ⚠⚠ VERDICT: DO NOT ADD TO THE DEFINITION — see §3a.** The frozen arms
+materially understated the cost; measured genome-wide the rule rejects **12.80%** of shipped `E_r`
+edges with a **monotone bias against low-exon models**. It remains a legitimate **flag**.
+Offline (T8), nothing through the shipped binary, no default moved.
 Companion to [`o1_genome_anchored_repeat_gate.md`](o1_genome_anchored_repeat_gate.md) and
 [`o1_error_case_census.md`](o1_error_case_census.md).
 
@@ -45,6 +48,50 @@ a **truth-label failure, not a false merge**, so it *should* survive. Effectivel
 
 The two guards are complementary, not redundant: junction-only 3, gmult-only 1, both 9.
 The genome-anchored veto abstains on 2 FP and 15 TP pairs (no shared 21-mer at identity 0.69–0.80).
+
+## 3a. ⚠⚠ GENOME-WIDE: the arms understated the cost, and the rule does not generalise
+
+The 164-pair arms are 6% of the catalog's 2,727 shipped edges. Measured on **all** of them — with
+exon boundaries recovered by splice-aligning every rep back to the genome (**control: recovered exon
+count equals `n_exon` on 1,405/1,415 = 0.9929**):
+
+| rule | edges rejected / 2,727 | rate | within a shipped family |
+|---|---:|---:|---:|
+| **junction-crossing** | **349** | **0.1280** | **268** |
+| genome-anchored veto @ M=50 | 100 | 0.0367 | 61 |
+| genome-anchored veto @ M=100 | 77 | 0.0282 | 50 |
+
+On the arms these cost 6.00% and **0%** respectively. Genome-wide they cost **12.80%** and **3.67%**.
+⚠ **Both were measured only where the FPs were, and both look far worse on the full distribution.**
+Since the measured false-merge rate is ~1.33%, **a rule rejecting 12.80% of edges is rejecting mostly
+collateral, not false merges.**
+
+### The pseudogene / retrocopy exposure is real and monotone
+
+Stratified by the **smaller** model's exon count:
+
+| `n_exon` (min) | edges | rejected | rate |
+|---:|---:|---:|---:|
+| 2 | 211 | 75 | **0.3555** |
+| 3 | 231 | 45 | 0.1948 |
+| 4 | 1,373 | 186 | 0.1355 |
+| 5–6 | 356 | 41 | 0.1152 |
+| > 6 | 556 | 2 | **0.0036** |
+
+**A 100-fold gradient.** The mechanism is structural: a 2-exon model has exactly **one** junction, so
+the alignment must hit that specific junction or be rejected. Low-exon models are disadvantaged by
+construction — and that is where retrocopies, processed pseudogenes and compact genes live.
+
+⚠ **The intended pseudogene fix — "abstain when a model is intronless" — is INERT.** The shipped
+catalog has **0/1415 single-exon nodes** (the node builder requires ≥2 exons), so nothing abstains.
+The damage sits at 2–4 exons, which *do* have junctions, just few. **No abstention rule rescues it.**
+
+### Why this disqualifies it as a membership condition
+
+It would make `E_r` a function of **how many exons a model happens to have** — a property of the
+node builder and the assembly, not of the homology relation between two sequences. That is the same
+genus of defect as R5's non-locality: membership must not depend on a property of the model rather
+than of the pair. **Flag, never gate.**
 
 ## 4. The cost is real — 9 true pairs, and they are not an artifact
 
