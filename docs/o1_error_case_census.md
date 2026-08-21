@@ -248,3 +248,67 @@ measures it directly:
 place. Together with the human negative panel (spurious E_r edges **28 → 3**,
 `o1_false_positive_rules.md`) the guard's precision benefit is now measured on **two independent
 substrates and the real binary**, not on the GGO FP arm it was derived from.
+
+---
+
+# Appendix B — the non-circular evaluation, run (2026-08-20)
+
+Reproducer: `bench/o1_compara_noncircular.py`. HSA/CHM13 catalog (394 families, 1,220 copies) against
+**Ensembl Compara paralogy**, entirely from the on-disk cache (0 live lookups).
+
+## Why this answers the circularity objection — and what it does not
+
+The standing objection is that seeding O1 with an annotation makes any discovery circular. That
+objection is precise and it is about the **evaluation**, not the method: using annotation as a seed is
+fine; scoring against truth **derived from that annotation** is not. Compara paralogy comes from
+Ensembl's gene trees and is independent of the CHM13 GFF used to seed and to name nodes.
+
+⚠ The annotation is still used here — to map a node to a gene symbol. What it is **not** used for is
+deciding whether two genes are paralogues. That distinction is the whole point.
+
+## Result
+
+| | |
+|---|---|
+| copies mapped to a protein-coding gene | 987/1,220 = 0.8090 |
+| same-family pairs mapping to the **same** gene (a split locus, not a paralogy claim) | 15 |
+| **PRECISION** — checkable pairs Compara confirms as paralogues | **193/552 = 0.3496** |
+| **RECALL** — Compara paralogue pairs the catalog puts in one family | **194/1,186 = 0.1636** |
+
+⭐ **The headline finding is a replication.** The previously recorded 4/12 = 33% precision against
+Compara now reproduces at **0.3496 on 552 pairs — 46× the scale.** It was not small-n noise.
+
+Stratified by pair identity:
+
+| identity | checkable | confirmed | rate |
+|---|---:|---:|---:|
+| ≥ 0.95 | 2 | 2 | 1.0000 |
+| 0.90–0.95 | 4 | 3 | 0.7500 |
+| 0.80–0.90 | 132 | 52 | 0.3939 |
+| < 0.80 | 359 | 118 | 0.3287 |
+
+The gradient runs the right way, **but ≥0.90 holds only 6 pairs in total, so nothing may be claimed
+there.** 491 of 497 pairs sit below 0.90 identity.
+
+## ⚠ Why the number is a bound on AGREEMENT, not a precision
+
+**Compara paralogy and "multi-copy gene family" are different predicates**, and the disagreement is
+concentrated exactly where they differ. Worked example, verified by hand: `ZNF684`, `ZNF26` and `ZNF84`
+sit in one emitted family; each has **62, 176 and 36** Compara paralogues respectively; and **none is
+listed as a paralogue of either other**. Compara's relation is tree-derived and specific; `E_r` is
+sequence homology. Neither is wrong — they answer different questions.
+
+Checked before believing the number: the cache is healthy (512/553 paralogue queries carry ≥1
+paralogue, 41 empty, 0 malformed), a failed symbol lookup **skips** a pair rather than scoring it as a
+miss, and the join was verified by hand on the ZNF examples.
+
+## What to take from it
+
+1. ✅ **A non-circular evaluation is possible and has been run.** That is the answerable form of the
+   advisor's objection, and it now has a number.
+2. ⚠ **Compara is the wrong external truth for this claim.** Its predicate is not O1's, so it bounds
+   agreement at ~0.35 and cannot rise much regardless of how good O1 gets.
+3. ⭐ **The external truths that DO match the predicate are the published expansions** — Yoo/Rhie's
+   gorilla-specific MAPKBP1 / SPTBN5 / PLA2G4B, which the instrument recovers **exactly 8/9/9** at
+   identity 0.973–0.983 and stable across coverage floors 0.05→0.50 — and SD catalogs. Those are the
+   cards to play against the circularity objection, not Compara.
