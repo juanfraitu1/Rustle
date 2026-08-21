@@ -114,6 +114,28 @@ Wilson95 **[0.0000, 0.2153]** — bounded, not proven zero.
 CERTIFICATES.** Every attempt to *replace* the relation with a certificate failed — they are not the
 same kind of object.
 
+## 4a. ⚠ The search for more FP rules has hit diminishing returns — structurally
+
+Four rules already reject all or nearly all of the 14 false merges; the binding constraint has always
+been **genome-wide TP cost** (2.05% / 3.67% / 12.80% / 80%). And the space of *references* a new rule
+could use is now largely enumerated:
+
+| reference | status |
+|---|---|
+| the two nodes themselves | **exhausted** — length in disguise |
+| the graph | **exhausted** — every concept scores below chance |
+| the genome, via shared-anchor multiplicity | `gmult` — works, as a veto |
+| the genome, via the neighbourhood | flank homology — works, portable |
+| the genome, via whole-locus rank | **subsumed by `gmult`**; the tier cannot see repeats at rep scale |
+| a duplication catalog | SD containment — works, not portable |
+| strand | orientation — **shipped** |
+| the annotation, as repeat content | softmask — works, library-based |
+| the annotation, as gene content | ⚠ **circular** — entailed by the truth predicate |
+
+**What remains genuinely untried is a different KIND of reference, not another statistic over the
+genome:** another individual, another species' independently-built catalog, or experimental evidence.
+Each is a project rather than a rule.
+
 ## 5. OPEN
 
 | | |
