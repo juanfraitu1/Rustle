@@ -100,7 +100,7 @@ same kind of object.
 
 | | |
 |---|---|
-| **weight `E_r` by EXTERNAL evidence and re-partition** | the one graph-theoretic move left: external evidence never passed through `E_r`'s floors, so unlike identity/coverage it retains dynamic range. The code's own note licenses the revisit |
+| **weight `E_r` by EXTERNAL evidence and re-partition** | ⚠**PRICED 2026-08-20, headroom is MODERATE.** On the 530-copy hairball, γ's cuts already land preferentially on repeat-bridge edges — median `gmult` **20 for cut vs 5 for kept**, ≥50 rate **42.4% vs 22.3%**, **AUC 0.6690**. So γ captures ~⅔ of the ordering external evidence provides, **purely from density**. Residual headroom: **22.3% of KEPT edges carry gmult ≥ 50** and **57.6% of CUT edges are below it**. ⚠**Blocker: the hairball has no truth labels**, so a re-partition cannot be scored as better — it can only be shown to differ. Build only alongside truth for those 56 families |
 | re-measure the **8.30%** ceiling on the 627 catalog | needs the case census re-classified, not a recount |
 | **114** SD-supported pairs γ splits *outside* the hairball | the residual over-split, down from 246 once forced cuts are removed |
 | genomic span at **its own** re-fitted floor | a project (held-out fit, genome-wide measurement), not a flag flip |
