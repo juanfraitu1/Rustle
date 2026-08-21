@@ -611,3 +611,45 @@ never an admission criterion, because TP median gmult is 2 — is intrinsic, not
 
 ⟹ **A statistic that captures the concept must reference something outside the pair.** Everything
 internal to the two nodes is length in disguise.
+
+## Appendix — what SD-anchoring ADDS, and an unexpected finding about γ (2026-08-20)
+
+Reproducers: `bench/o1_sd_anchor.py`, `bench/o1_sd_recall.py`. Substrate: the completed SEDEF
+`final.bed` on mGorGor1 (253,030 pairs) + the current **627-family** catalog. T8: offline.
+
+SD membership is an **admission certificate** — FP **0/14** at every SD identity floor from 0.99 down
+to 0.80, while TP coverage rises 7 → 53/150. Because the false merges are already excluded by it, an
+SD-unit *denominator* cannot add discrimination on the FP arm. So the value must be **recall**.
+
+### Duplication-supported catalog pairs
+
+| | |
+|---|---:|
+| SD-supported pairs **already in one family** | 810 |
+| SD-supported pairs in **different** families | **674** |
+
+⚠ A cross-family SD link is **not** automatically a missed edge — one segmental duplication can carry
+two genuinely different genes. Decomposing the 674 by *why* `E_r` did not join them:
+
+| | n | rate | |
+|---|---:|---:|---|
+| **no alignment record at all** | 346 | 0.5134 | co-duplicated **different genes**; correctly separate |
+| identity fails | **0** | **0.0000** | ⭐ **identity never binds — a further independent substrate**, joining 0/728, 245/245, 171/171 |
+| identity passes, **coverage fails** | **82** | 0.1217 | ⭐ **genuine candidate missed edges** — the false-omission population, and SD support finds them |
+| **would pass `E_r`; γ split them** | **246** | 0.3650 | ⭐⭐ see below |
+
+### ⭐⭐ The unexpected finding: γ is splitting duplication-supported pairs
+
+**246 of the 674 have a qualifying `E_r` edge and were separated by the γ-quasi-clique partition.**
+Segmental-duplication evidence says they are duplication-linked, `E_r` agrees, and γ put them in
+different families — **3× more often than the coverage clause loses them (246 vs 82).**
+
+This is the other side of the day's structural measurement. γ is provably **inert on 79.11%** of the
+catalog (two-copy families plus complete graphs); where it *is* active, it splits SD-supported pairs
+246 times. **The partition step, not the edge rule, is the larger source of disagreement with
+independent duplication evidence.** That has never been measured before and it is a different target
+from the named coverage hole.
+
+⚠ Caveat carried: SD co-membership is not the same predicate as gene-family membership, so both the
+246 and the 82 may still contain co-duplicated distinct genes that happen to align. The 346
+no-record pairs absorb the clearest such cases, not all of them.
