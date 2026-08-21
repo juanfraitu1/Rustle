@@ -163,3 +163,34 @@ before either consolidation can be decided and gate-verified for real.
 **Nothing is safe to blindly delete right now** — every remaining "dead" module is compile-pinned or a tested
 deliverable. The remaining simplification is *consolidation* (pick one of each pair above, in deliverable C)
 and the assembler carve, both refactors that must keep the numbers identical.
+
+## Is the definition too targeted? — the expansion axes, measured (2026-08-20)
+
+| axis | expandable? | what happens |
+|---|---|---|
+| identity ≥ 0.60 | **already fully open** | it has never once bound: **0/728**, **0/674**, **245/245**. Lowering it changes nothing |
+| coverage ≥ 0.50 | ✗ | dropping it admits **14,111** extra identity-passing pairs against **2,727** shipped — **5.2×** — with no operating point at any `c` |
+| γ = 0.20 | ✗ | at γ→0 the E_r connected components include one of **530 copies = 26.25% of the catalog, spanning 56 shipped families** |
+| **substrate (exon-sum → genomic span)** | ✓ **the one open axis** | span **503 T / 46 F (P 0.916)** vs exon-sum **327 / 33 (P 0.908)** — more true pairs **and** better precision |
+| node set | separate problem | 47 of 105 classified failures live here, not in the relation |
+
+### ⭐ This retires the "γ does nothing" criticism
+
+γ is inert on **79.11%** of families — but that is because **most families are already clean
+components**. It splits only **16** components in the whole catalog, and one of those splits a
+**530-copy blob into 56 families**. Where γ acts it performs the single load-bearing operation in the
+pipeline: **preventing a quarter of the catalog collapsing into one hairball.** Inertness on the easy
+majority is not weakness; it is what a correct partition step looks like.
+
+### And it sharpens the SD disagreement
+
+Of the **246** SD-supported pairs γ separates, **132 = 53.66% lie inside that 530-copy component** —
+**forced cuts**, where γ had to partition a blob no definition could emit whole. The genuinely
+questionable over-splits are the remaining **114**, not 246.
+
+### The honest scope statement
+
+The definition is not too targeted in its **thresholds**; it is **scoped in its object**. It defines a
+family among **expressed loci with well-delineated transcript models**. It does not reach unexpressed
+copies (no reads ⟹ no node), fragmentary transcript models, or dispersed/diverged families
+(**0/8** at every rung). Saying so is stronger than implying generality the measurements do not support.
