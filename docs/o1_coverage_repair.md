@@ -565,3 +565,49 @@ using the span as a coverage **denominator**.
 candidates of that kind tested so far each break something: junction-crossing (12.80% of edges, 100×
 exon-count bias), catalog-counted repeat promiscuity (breaks P1), genome-anchored promiscuity (a veto,
 not an admission criterion), read tiling (wrong direction), full-length reads (no separation).
+
+## Appendix continued — two statistics of a DIFFERENT KIND, both refuted (2026-08-20)
+
+Reproducer: `bench/o1_block_consistency.py`. Same frozen arms, genomic spans, unit = pair.
+
+### 1. Internal consistency — is the passing block younger than the pair's own ancestry?
+
+A duplication copies a unit at one moment, so everything the two loci share should show **one**
+divergence level; an element inserted later is **more similar** than the pair's own ancestry.
+`contrast = identity(top block) − median identity(other shared blocks ≥ 200 bp)`.
+
+| | FP | TP |
+|---|---:|---:|
+| median contrast | **−0.0236** | **−0.0220** |
+| **AUC(FP > TP)** | \multicolumn — | **0.4336** |
+
+**No signal**, and marginally the wrong direction. ⚠ **The reason matters more than the null:** on
+genomic spans, *most shared sequence is itself repeats* (FP median 6 shared blocks, TP median 28), so
+"the pair's other shared blocks" is **a contaminated ancestry baseline** — it is contaminated by the
+very thing the statistic tests for. Any statistic that uses a pair's other shared sequence as its
+reference inherits this.
+
+### 2. Block count / density — is the homology distributed or concentrated?
+
+| | FP median | TP median | AUC(TP > FP) |
+|---|---:|---:|---:|
+| `n_blocks` raw | 5.50 | 28.50 | **0.7548** |
+| blocks per kb of the shorter span | 0.48 | 1.32 | **0.6410** |
+
+**Half the raw signal was span length** — FP shorter spans median **9,696 bp** vs TP **18,945 bp**.
+The length-normalised residual (0.6410) is weak, far below the genome-anchored veto's 0.9429.
+
+## ⭐ The pattern across every failed candidate
+
+**The FP class *is* the short-node class** (shorter span 9,696 vs 18,945 bp; exon-sum reps ≤ 2 kb are
+21.40% of copies and where the scale-free defect fires). So any statistic computed **from the two
+nodes** partially re-encodes length, half-works, and then collapses when length-normalised. That is
+what happened to coverage (all four cells), block count, junction crossing, and read tiling.
+
+**Exactly one statistic tested escapes this, and it escapes it by construction:** the genome-anchored
+repeat multiplicity asks a question about **the genome**, not about either node — so it cannot re-encode
+node length. It is also the only one that separates well (**AUC 0.9429**). Its limitation — a **veto**,
+never an admission criterion, because TP median gmult is 2 — is intrinsic, not a tuning failure.
+
+⟹ **A statistic that captures the concept must reference something outside the pair.** Everything
+internal to the two nodes is length in disguise.
