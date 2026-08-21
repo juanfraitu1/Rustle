@@ -34,6 +34,26 @@ in two days. A number without its substrate is not a result.
 | **identical partition, 7/7** DNA vs RNA | agreement count | same loci, with RNA evidence | Small n. The RELATION transcends substrate; the NODE SET does not |
 | **41/494 = 8.30%** definitional exposure ceiling | ceiling; **30 is a floor** | **GORILLA**, the **494**-family catalog | ⚠ Not re-measured on the 627 catalog. Needs the case census re-classified, not a recount |
 
+### ⚠ Anything quoted per **/1415** or **/494** is on the SUPERSEDED catalog
+
+The 494-family catalog had **1,415** copies; the 627-family catalog has **2,019**. Re-measure before
+quoting. Worked example — the short-copy population that the scale-free coverage mechanism exploits:
+
+| | 494 catalog | **627 catalog** |
+|---|---:|---:|
+| copies with rep ≤ 2,000 bp | 352/1415 = **0.2488** | 432/2019 = **0.2140** |
+
+The mechanism claim survives (still ~1 copy in 5), but **0.2488 is stale — quote 0.2140.**
+
+### ⭐ Orientation guard, measured END-TO-END on the real binary (2026-08-20)
+
+| | guard OFF (494) | **guard ON (627)** |
+|---|---:|---:|
+| families containing an overlapping same-family pair | 35/494 = 0.0709 (35/35 opposite-strand) | **4/627 = 0.0064** |
+| spurious E_r edges, HUMAN 150-window negative panel | 28 | **3** |
+
+Two independent substrates, both through the shipped binary. **No longer T8.**
+
 ### Structure — GORILLA, the **627**-family catalog, from the pipeline's own certificates (2026-08-20)
 
 | | value |

@@ -47,8 +47,12 @@ independent — it comes from **coordinates and strand**, not from the FP arm �
 * the guard's genome-wide reach is bounded: minus-only edges are **56/2,727 = 2.05%** of the catalog,
   so **that is its maximum cost**, against junction-crossing's 12.80% and the genome-anchored veto's
   3.67%. **It is the cheapest of the three guards by a factor of ~2–6.**
-* **33 of those 56** are demonstrably antisense overlaps that should never have been edges ⟹ at least
-  **59% of what the guard removes is provably artifactual**, not collateral.
+* **33 of those 56** are overlapping antisense pairs ⟹ **59% of what the guard removes carries no
+  homology evidence.** ⚠ **Stated precisely (the earlier "provably artifactual" overstated it):** a
+  gene and its antisense partner share the same DNA *by construction*, so a `-` alignment between their
+  transcript-oriented reps is **entailed by the overlap** and is therefore not evidence of homology.
+  That is not the same as proving the two are non-homologous — a duplicated region could in principle
+  contain both. The edge is uninformative, not disproven.
 
 ## 3. What real pathology (a) costs to fix
 
@@ -86,7 +90,20 @@ Pathology (a) is smaller and better-behaved than "47 node-construction failures"
 * **28 families** (5.67%) are adjacent-locus candidates, unresolved;
 * the identity-only route is unusable.
 
-**Nothing here changes the definition.** The one actionable item it produces is that the
-transcript-orientation guard now has independent corroboration and a bounded genome-wide cost of
-**2.05%**, which makes it the strongest of the three candidate guards and reinforces its position as
-the top open item.
+**Nothing here changes the definition.**
+
+## 5. ⭐ CONFIRMED END-TO-END ON THE REAL BINARY (2026-08-20) — this is no longer T8
+
+The prediction above was offline. The genome-wide catalog built with the guard **on by default** now
+measures it directly:
+
+| | families with an overlapping same-family pair | opposite-strand |
+|---|---:|---:|
+| 494 catalog, guard OFF | **35/494 = 0.0709** | **35/35** |
+| **627 catalog, guard ON** | **4/627 = 0.0064** | 3/4 |
+
+**A 91% reduction in the antisense-overlap class, measured by the shipped binary.** Every one of the
+35 pre-guard cases was opposite-strand, which is what made the mechanism identifiable in the first
+place. Together with the human negative panel (spurious E_r edges **28 → 3**,
+`o1_false_merge_remeasured.md`) the guard's precision benefit is now measured on **two independent
+substrates and the real binary**, not on the GGO FP arm it was derived from.
