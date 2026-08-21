@@ -6,6 +6,7 @@
 
 | document | answers |
 |---|---|
+| [`o1_ledger.md`](o1_ledger.md) | **One page: every route tried against O1, its verdict, and the number that decided it.** Read before proposing anything |
 | [`NUMBERS.md`](NUMBERS.md) | **Every quotable figure with its substrate.** Look a number up here *before* quoting it — the two headline O1 rates are on different species |
 | [`ONE_METHOD.md`](ONE_METHOD.md) | The canonical one-sentence statement per objective. If the code or a slide disagrees, they are wrong |
 | [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | **639 things already tried and why they failed. Read before proposing an approach.** §0 lists the nine routes closed on 2026-08-19 |
