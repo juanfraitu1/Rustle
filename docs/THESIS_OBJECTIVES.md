@@ -119,7 +119,7 @@ generalization*: nodes = exon-classes carrying per-copy sequence, paths = copy Ã
   opt-in, nested DNA-supported recent-copy subfamily (`RECENT_COPY`, `BROAD_ONLY`, or
   `DNA_UNRESOLVED`). The annotation-free algorithm, flag-off byte-identity requirement, output
   schema, GOLGA discriminator, and cross-family safety tests are specified in
-  `docs/o1_hierarchical_family_followup.md`. Production Rustle does not yet emit these fields.
+  `docs/o1_duplication_provenance_model.md`. Production Rustle does not yet emit these fields.
 - **Provenance-model avenue:** represent loci as ordered paths through homologous duplication blocks,
   with separate RNA-homology, DNA-duplication, read-conflict, and optionally rooted ancestry edges.
   This can express the mosaic GOLGA2 + ITSN2-UTR origin of the chr15 GOLGA expansion without calling
