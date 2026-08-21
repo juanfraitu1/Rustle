@@ -87,10 +87,24 @@ signal that cleanly rejects false merges is **external** and has low sensitivity
 | signal | reference | FP admitted | TP reach |
 |---|---|---:|---:|
 | exon-sum coverage ≥ 0.50 | internal | 14/14 | **150/150** |
-| genomic-span coverage ≥ 0.50 | genome | **0/14** | 30/150 |
-| SD containment | SD catalog | **0/14** | 24–53/150 |
+| genomic-span coverage ≥ 0.50 | genome | **0/14** | 30/150 = 0.2000 |
+| SD containment ≥ 0.90 | SD catalog | **0/14** | 24/150 = 0.1600 |
+| **flank homology** ⭐ *portable* | **genome only** | **0/14** | 30/150 = 0.2000 |
+| **UNION of the three** | — | **0/14** | **41/150 = 0.2733** |
 | genome-anchored repeat veto | genome | rejects 10/12 | **0/135** cost |
 | transcript orientation | strand | rejects 6/14 | 4/9,032 edges |
+
+⭐ **Flank homology is the portable certificate.** Take 5 kb outside each locus, **exclude the gene
+bodies**, and ask whether the extra-genic sequence aligns (≥ 300 bp at ≥ 0.90). A segmental duplication
+copies a neighbourhood, so a real pair shares flanks; a mobile element inserted into two unrelated
+genes does not. It reaches SD containment's specificity **using only the genome** — no SD catalog, no
+species-specific third input — which is exactly the portability objection that stopped SD containment
+becoming a membership condition. ⚠ A *negative* is weak (a duplication with boundaries inside the gene,
+or an old one with diverged flanks, looks the same); the **positive** is the informative direction.
+
+⚠ The three certificates **overlap substantially** — 30 + 24 + 30 = 84 if disjoint, 41 in fact — so
+they measure related things (all are genomic co-duplication evidence). The union still admits **0/14**,
+Wilson95 **[0.0000, 0.2153]** — bounded, not proven zero.
 
 ⟹ **The architecture is one high-sensitivity RELATION plus low-sensitivity, high-precision
 CERTIFICATES.** Every attempt to *replace* the relation with a certificate failed — they are not the
