@@ -136,6 +136,49 @@ could use is now largely enumerated:
 genome:** another individual, another species' independently-built catalog, or experimental evidence.
 Each is a project rather than a rule.
 
+## 4b. ⭐ RECALL — what is missing so ALL members are found (2026-08-21)
+
+Measured against **independent duplication evidence** (SEDEF `final.bed`) rather than only against
+excision. Three tiers, in order of size — and the effort so far has gone to the smallest.
+
+### Tier 1 — the copy must become a NODE *(largest, and outside `E_r` entirely)*
+
+| | |
+|---|---|
+| excision destinations that are not even nodes | **54/56 = 96.4%** |
+| families with a member unservable by reads | **23.08%** |
+
+**An unexpressed copy is structurally invisible to an RNA method.** No edge rule, threshold or
+partition can recover a locus that never became a node. This is a property of the substrate, and it is
+why the definition's honest scope is *expressed loci with well-delineated transcript models*.
+
+### Tiers 2 and 3 — given that both loci ARE nodes
+
+| | pairs | share |
+|---|---:|---:|
+| SD-supported pairs with both loci already nodes | 1,484 | |
+| ├ co-duplicated **different** genes (no alignment; correctly apart) | 346 | |
+| **recall denominator** — pairs that should be one family | **1,138** | |
+| **FOUND** | 810 | **0.7118** |
+| **lost to the COVERAGE clause** | 82 | 0.0721 |
+| **lost to γ** — the edge existed, the partition cut it | **246** | **0.2162** |
+
+⭐ **γ costs 3.0× what the coverage clause costs.** The named definitional hole is real, but it is the
+**smaller** of the two recoverable losses, and essentially all effort has gone to it.
+
+Of the 246, **132 lie inside the 530-copy hairball** — forced cuts, where γ had to partition a blob no
+definition could emit whole. The genuinely questionable over-splits are the remaining **114**.
+
+⚠ **The 71.18% is an over-estimate of general recall.** SD-supported pairs are recent, high-identity
+duplications — the easy end. And SD co-membership is not family membership, so the 1,138 denominator
+may still contain co-duplicated distinct genes that happen to align.
+
+### ⟹ What is missing, in order of size
+
+1. **Expression / node construction** — unrecoverable within `E_r`; the substrate's limit.
+2. **γ's partition** — 21.6%, of which 114 pairs are questionable rather than forced. **Untouched.**
+3. **The coverage clause** — 7.2%. Seven repair routes closed; the hole is named and bounded.
+
 ## 5. OPEN
 
 | | |
