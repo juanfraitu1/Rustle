@@ -1,5 +1,11 @@
 # HANDOFF — state as of 2026-08-19
 
+> ⚠ **CATALOG PROVENANCE.** Figures quoted per **/494** (families) or **/1415** (copies) describe the
+> **superseded** 2026-07-17 catalog, which **no invocation of the current binary reproduces** — it was
+> built with `refine` on, a default removed on 2026-08-20. The current default emits **627 families /
+> 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
+> [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
+
 Supersedes the 2026-08-15 handoff (which recorded HEAD `4285b8f`, 0 unpushed — both now stale).
 
 Branch `dna-from-genome`, HEAD **`1247d67`**, **7 unpushed commits**. Only `tools/stringtie`

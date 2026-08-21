@@ -1,5 +1,11 @@
 # ⚠ The shipped catalog was built by a path that is no longer the default
 
+> ⚠ **CATALOG PROVENANCE.** Figures quoted per **/494** (families) or **/1415** (copies) describe the
+> **superseded** 2026-07-17 catalog, which **no invocation of the current binary reproduces** — it was
+> built with `refine` on, a default removed on 2026-08-20. The current default emits **627 families /
+> 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
+> [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
+
 **Status 2026-08-19. Discovered while trying to confirm the orientation-guard default on real data.**
 
 ## 1. The finding

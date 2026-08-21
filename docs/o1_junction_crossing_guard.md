@@ -1,5 +1,11 @@
 # A threshold-free edge predicate that works at n = 2
 
+> ⚠ **CATALOG PROVENANCE.** Figures quoted per **/494** (families) or **/1415** (copies) describe the
+> **superseded** 2026-07-17 catalog, which **no invocation of the current binary reproduces** — it was
+> built with `refine` on, a default removed on 2026-08-20. The current default emits **627 families /
+> 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
+> [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
+
 **Status 2026-08-19. ⚠⚠ VERDICT: DO NOT ADD TO THE DEFINITION — see §3a.** The frozen arms
 materially understated the cost; measured genome-wide the rule rejects **12.80%** of shipped `E_r`
 edges with a **monotone bias against low-exon models**. It remains a legitimate **flag**.

@@ -1,5 +1,11 @@
 # O1 — Can full-length read evidence repair E_r? (read-tiling vs. repeat bridges)
 
+> ⚠ **CATALOG PROVENANCE.** Figures quoted per **/494** (families) or **/1415** (copies) describe the
+> **superseded** 2026-07-17 catalog, which **no invocation of the current binary reproduces** — it was
+> built with `refine` on, a default removed on 2026-08-20. The current default emits **627 families /
+> 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
+> [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
+
 **Date:** 2026-08-15/16 · **Objective:** O1 (family definition, edge relation `E_r`)
 **Companion to:** `docs/o1_coverage_repair.md` (the coverage-threshold impossibility sweep, wf_0c3783ec-0a8)
 **Artifacts:** `/home/juanfra/winloci_scratch/o1_readfix/` — `routeA_edges_ALL.tsv` (731 rows), `ROUTEB_per_edge.tsv` (1,809 rows), `ROUTEB_sweep.tsv` (255 rows), `ROUTE_A_THRESHOLDS.txt` and `ROUTEB_PREDECLARATION.txt` (both written **before** scoring), `attack_circular/`, `attack_expr.py`, `attack_rarefy.py`, `attack_matched.py`.

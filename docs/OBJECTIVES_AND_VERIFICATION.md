@@ -1,5 +1,11 @@
 # Thesis objectives and their verification checklist
 
+> ⚠ **CATALOG PROVENANCE.** Figures quoted per **/494** (families) or **/1415** (copies) describe the
+> **superseded** 2026-07-17 catalog, which **no invocation of the current binary reproduces** — it was
+> built with `refine` on, a default removed on 2026-08-20. The current default emits **627 families /
+> 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
+> [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
+
 Status as of **2026-08-11 — FINAL PASS, CLOSED. The conclusions are stated below and are the thing to
 quote; everything under them is the audit trail that earns them.** Three objectives, agreed with the
 advisor on 2026-08-07.

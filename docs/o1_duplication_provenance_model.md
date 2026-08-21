@@ -1,5 +1,11 @@
 # O1 extension: block-aware duplication provenance graph
 
+> ⚠ **CATALOG PROVENANCE.** Figures quoted per **/494** (families) or **/1415** (copies) describe the
+> **superseded** 2026-07-17 catalog, which **no invocation of the current binary reproduces** — it was
+> built with `refine` on, a default removed on 2026-08-20. The current default emits **627 families /
+> 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
+> [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
+
 **Status (assessed 2026-08-19):** model specified; pairwise-witness prototype run on five local
 HSA cases; stable multi-locus block classes and rooted provenance remain unimplemented.
 

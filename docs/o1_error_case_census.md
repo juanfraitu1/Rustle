@@ -1,5 +1,11 @@
 # O1 — census of incorrectly-called families: does the definition survive?
 
+> ⚠ **CATALOG PROVENANCE.** Figures quoted per **/494** (families) or **/1415** (copies) describe the
+> **superseded** 2026-07-17 catalog, which **no invocation of the current binary reproduces** — it was
+> built with `refine` on, a default removed on 2026-08-20. The current default emits **627 families /
+> 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
+> [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
+
 **Status 2026-08-15. Answer: the definition does NOT come through clean.** There are ~30 definitional
 failures, and they are **not 30 separate problems — they are one mechanism with 30 instances.**
 
@@ -36,6 +42,8 @@ sit at **0.749–0.803**, far above the 0.60 floor. **It is the coverage clause,
 admits them.**
 
 **Exposed population is large: 352/1415 = 24.88% of shipped gorilla copies have reps ≤ 2,000 bp.**
+⭐ **Re-measured 2026-08-20 on the current 627-family catalog: 432/2019 = 21.40%.** The mechanism
+claim survives — still about one copy in five — but **quote 0.2140, not 0.2488**.
 Genome-wide upper bound on exposure: **41/494 = 8.30% [6.18, 11.07]** of shipped gorilla families are
 held together **exclusively** by edges with block ≤ 1,200 bp and coverage < 0.60 (153/2445 intra-family
 edges). ⚠ That is an **upper bound, not a count** — real short-gene families (e.g. GWFAM272
