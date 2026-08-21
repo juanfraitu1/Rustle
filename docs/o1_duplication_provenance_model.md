@@ -856,3 +856,48 @@ this catalog can compute.
 ⟹ **The concrete next result available here is a partition of the catalog by duplication MECHANISM**
 — segmental vs retrotranspositional vs ancient — which is what this model was specified to express and
 is now measurable rather than aspirational.
+
+## Appendix B.1 — folded in as a CERTIFICATE (2026-08-20)
+
+`bench/o1_sd_certificate.py`. Emits `dup_mechanism`, `sd_identity`, `sd_contained` alongside the
+existing family rows.
+
+| mechanism | families | |
+|---|---:|---:|
+| `UNRESOLVED` | 333/627 | 0.5311 |
+| `SD_OVERLAP` | 145/627 | 0.2313 |
+| **`SEGMENTAL`** | **136/627** | **0.2169** |
+| `RETRO_CANDIDATE` | 13/627 | 0.0207 |
+
+### ⚠⚠ Why a certificate and NOT a membership condition
+
+This changes no partition, adds no edge and removes none — deliberately:
+
+1. **Portability.** As an edge rule, SD support would make `E_r` depend on a **third input that is
+   species-specific and tool-dependent**. The gorilla SD catalog is a multi-day SEDEF run; a new
+   species needs it redone. The definition would stop being computable from *(genome, reads)*.
+2. **Coverage.** It reaches 21.7% of families, so as a membership condition it is inert on ~78% —
+   the same objection already levelled at γ.
+3. **Evidence standard.** No edge rule may be adopted on arm evidence alone. Every candidate measured
+   on 2026-08-20 cost **0–6% on the 164-pair arms and 3.67–12.80% genome-wide**; this one has not had
+   that test.
+
+As a certificate it is free: it reports what **independent genomic evidence** says about each family
+and leaves the definition untouched. Same pattern as `lambda` / `cut_certified`, which is the only
+pattern that has worked.
+
+### What each class licenses
+
+* **`SEGMENTAL`** — both loci lie **entirely inside** the two units of one SD at ≥ 0.90. Sayable:
+  *the family and the duplicated segment are the same event.* ⚠ Not sayable: **which copy is
+  ancestral** — with one genome every duplication edge is symmetric (`DNA_DUPLICATION`, never
+  `DERIVED_FROM`), and a ≥0.90 signature may reflect later **gene conversion** rather than the
+  original event. Containment dates the **segment**, not the family.
+* **`RETRO_CANDIDATE`** (13) — exon-sum identity ≥ 0.95 with **no** SD support at any floor. A
+  retrocopy duplicates the mRNA, so no genomic segment was duplicated and **no SD can exist by
+  construction**. ⚠ A *candidate*: an old segmental duplication whose signature decayed below the
+  floor looks identical. Separating them needs intron/flank divergence, which this does not compute.
+* **`UNRESOLVED`** (333, the majority) — no SD support and not recent enough to be a retro candidate.
+  Dominated by duplications **older than the SD floor**. This is the honest home of everything the
+  certificate cannot classify, and it is deliberately the largest class rather than a residual hidden
+  inside the others.
