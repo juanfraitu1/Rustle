@@ -179,6 +179,42 @@ may still contain co-duplicated distinct genes that happen to align.
 2. **γ's partition** — 21.6%, of which 114 pairs are questionable rather than forced. **Untouched.**
 3. **The coverage clause** — 7.2%. Seven repair routes closed; the hole is named and bounded.
 
+## 4c. The 114 questionable γ splits, adjudicated (2026-08-21)
+
+`bench/o1_gamma_adjudicate.py`. Each locus mapped to its best-overlapping annotated gene, then
+compared. ⚠ The annotation is legitimate here — it produced neither the γ partition nor the SD calls.
+
+| | pairs | |
+|---|---:|---:|
+| **UNINFORMATIVE** — different `LOC` ids | 75/114 | 0.6579 |
+| UNRESOLVED — no overlapping gene | 26/114 | 0.2281 |
+| **γ CORRECT** — different named genes | 11/114 | 0.0965 |
+| **OVER-SPLIT** — same named gene | **2/114** | 0.0175 |
+
+**Among the 13 adjudicable pairs: over-split 2/13 = 0.1538, Wilson95 [0.0432, 0.4229].**
+The single confirmed over-split is **DHRSX**, one gene's copies separated into `GWFAM578` / `GWFAM579`.
+
+### ⚠⚠ The methodological trap, recorded because it nearly went the other way
+
+The first run counted **"different `LOC` ids" as evidence γ was CORRECT**, giving over-split
+**2/88 = 2.27%** — a clean exoneration. It is wrong. **RefSeq assigns a distinct `LOC` id per LOCUS**,
+so two copies of one *unnamed* family carry different ids **by construction**. That class cannot
+distinguish "two copies of one unnamed family" from "two different unnamed genes"; it is
+**uninformative**, and counting it as correct inflated the exoneration **~7×**.
+
+(An earlier version made the opposite error — excluding `LOC` entirely — which discarded the 2
+over-splits' comparability along with everything else. A `LOC` id counts for **equality** and never
+for the **stem** test.)
+
+### What this establishes, and what it does not
+
+* ✅ **γ is not obviously broken.** Where the annotation can adjudicate, it is right 11 of 13 times.
+* ❌ **It is not exonerated either.** **88.6% of the questionable set is un-adjudicable by annotation**
+  — precisely because γ acts in unannotated, repeat-rich, recently-duplicated territory. The same
+  blocker as the hairball: **no truth where the hard cases are.**
+* ⟹ The γ question cannot be settled with the annotation. It needs truth of a different kind for
+  unnamed loci — cross-species orthology, or manual curation of a sample.
+
 ## 5. OPEN
 
 | | |
