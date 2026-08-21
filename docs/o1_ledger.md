@@ -81,6 +81,10 @@ exactly that structure**, so density methods *reinforce* the error.
 
 ## 4. What WORKS but only as a CERTIFICATE
 
+*Full treatment, including what each certificate licenses and how to reproduce it:*
+[`o1_corroboration_layer.md`](o1_corroboration_layer.md).
+
+
 Every high-sensitivity signal is **internal** to the pair and carries the false-merge problem; every
 signal that cleanly rejects false merges is **external** and has low sensitivity.
 

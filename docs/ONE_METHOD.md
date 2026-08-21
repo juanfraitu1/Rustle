@@ -218,6 +218,10 @@ genome-wide), not a flag flip.
 
 ## ⭐ The structural conclusion the day converges on
 
+*Consolidated with each certificate's licence and limits in*
+[`o1_corroboration_layer.md`](o1_corroboration_layer.md).
+
+
 Every high-sensitivity signal is **internal to the pair** and carries the false-merge problem; every
 signal that cleanly rejects false merges is **external** and has low sensitivity:
 

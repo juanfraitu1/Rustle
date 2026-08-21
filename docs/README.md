@@ -27,6 +27,7 @@
 
 | | |
 |---|---|
+| [`o1_corroboration_layer.md`](o1_corroboration_layer.md) | **The admission side** — external certificates (flank homology, SD containment, span coverage), what each licenses, and why the object is a relation PLUS certificates |
 | [`o1_false_positive_rules.md`](o1_false_positive_rules.md) | **All E_r precision guards in one place.** Orientation guard (SHIPPED as default), genome-anchored veto (flag), junction predicate (refuted as a gate), plus the human-panel confirmation |
 | [`o1_error_case_census.md`](o1_error_case_census.md) | What is actually wrong with the bad families — 30 definitional, 47 node-construction, 26 not-an-error — plus pathology (a) dissected |
 | [`o1_coverage_repair.md`](o1_coverage_repair.md) | Why no threshold fixes the coverage clause (impossibility argument) |
