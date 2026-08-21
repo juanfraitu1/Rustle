@@ -510,3 +510,58 @@ ones.* Two caveats stated plainly: all sweep numbers are offline PAF re-derivati
 through `gw_family_catalog` — the flag's inertness must be demonstrated by a byte-identical catalog
 re-run — and the census's count of 30 definitional failures remains a **floor**, one that the `mkreps`
 correction (§2, 18/111 case-pair verdicts flipping `no → EDGE`) pushes **up**, not down.
+
+---
+
+# Appendix — the SUBSTRATE × DENOMINATOR space is now complete, and all four cells fail
+
+**2026-08-20.** Reproducer: `bench/o1_substrate_denominator.py`. Offline (T8), GGO, unit = pair,
+14 FP / 150 TP frozen arms. ⚠ The FP arm is not held out; the TP side is load-bearing.
+
+The census prescribed *"change the denominator or the substrate, not the threshold."* That is a 2×2,
+and one cell had never been tested. It has now.
+
+| | coverage of **SHORTER** | coverage of **LONGER** |
+|---|---|---|
+| **exon-sum** | the **INCUMBENT** — scale-free defect; **provably non-separating** (true GFPT1×GFPT2 0.5353 < false ATP1A1×ATP4A 0.5689) | **R2 — REFUTED**: makes `E_r` a function of which *representative* you extract; pushes 19/494 GGO families below γ |
+| **genomic span** | **AUC 0.5990** — barely above chance | ⭐ the untested cell: **AUC 0.3195**, direction right, **but no operating point** |
+
+### The untested cell, measured
+
+Direction is correct — FPs score *lower*, so "reject below `c`" is the right shape. The operating
+point is not:
+
+| `c` | FP rejected | TP lost |
+|---:|---:|---:|
+| 0.10 | 12/14 | **88/150 = 0.5867** |
+| 0.20 | 14/14 | **113/150 = 0.7533** |
+
+### ⚠ It failed for a reason I did NOT predict, and the prediction was favourable
+
+The pre-stated failure was span-length variation (NPIP: annotated spans 10.6–49.4 kb, NPIPB8–NPIPB2
+capped at 0.215). On **read-derived** intervals that threat was *inverted* — TP median span ratio
+**1.35** vs FP **4.10**, so it would have hit FPs 4× harder. **The prediction was right and the cell
+still died.**
+
+The actual mechanism: **TP median coverage-of-longer on a span is 0.0880.** A genomic span is mostly
+**intron**, and paralogue introns do not align. So coverage-of-longer on a span measures **intron
+divergence**, not homology extent. Requiring half the *span* to align is requiring the introns to
+align, which paralogy does not deliver.
+
+### What this closes
+
+**The concept cannot be captured by a coverage statistic on any substrate**, and the two substrates
+fail for *opposite* reasons:
+
+* **exon-sum is too short** — a ~1 kb repeat is ≥0.50 of any node under 2 kb (the scale-free defect);
+* **genomic span is mostly intron** — the denominator is dominated by sequence that never aligns.
+
+This also **vindicates the incumbent's substrate choice**: the exon-sum exists precisely to remove the
+introns so that coverage measures shared *exonic* extent. And it scopes the substrate-fold result
+(span precision 0.916 vs exon-sum 0.908) correctly — that was about the **edge set**, never about
+using the span as a coverage **denominator**.
+
+⟹ **A fix must be a different KIND of statistic, not a different substrate or denominator.** The
+candidates of that kind tested so far each break something: junction-crossing (12.80% of edges, 100×
+exon-count bias), catalog-counted repeat promiscuity (breaks P1), genome-anchored promiscuity (a veto,
+not an admission criterion), read tiling (wrong direction), full-length reads (no separation).
