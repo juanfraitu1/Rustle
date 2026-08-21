@@ -194,3 +194,43 @@ The definition is not too targeted in its **thresholds**; it is **scoped in its 
 family among **expressed loci with well-delineated transcript models**. It does not reach unexpressed
 copies (no reads ⟹ no node), fragmentary transcript models, or dispersed/diverged families
 (**0/8** at every rung). Saying so is stronger than implying generality the measurements do not support.
+
+### ⚠ Should `--homology-genomic-span` be the default? NO — substrate and threshold are COUPLED
+
+Measured at the shipped operating point `c = 0.50`, unit = pair, frozen arms:
+
+| substrate | FP admitted | TP admitted |
+|---|---:|---:|
+| exon-sum (incumbent) | 14/14 | **150/150** |
+| genomic span | **0/14** | **30/150 = 0.2000** |
+
+Swapping the substrate under the shipped threshold rejects every false merge and **loses 80% of true
+pairs** — the same mechanism that killed coverage-of-longer on spans: a genomic span is mostly
+**intron**, and paralogue introns do not align, so span coverage rarely reaches 0.50. Third
+independent confirmation of that mechanism.
+
+⚠ **This does not contradict "the span wins on both axes" (503 T / 46 F, P 0.916 vs 327 / 33, P
+0.908).** That measurement is at **a different operating point** (id 0.90). Both are true: the span is
+the better substrate *at its own threshold*. **You cannot move the substrate without re-fitting the
+floor** — and re-fitting a floor on the arms it will be scored against is exactly the overfitting this
+project forbids. So this is a project (new substrate, new floor, fitted on held-out data, measured
+genome-wide), not a flag flip.
+
+## ⭐ The structural conclusion the day converges on
+
+Every high-sensitivity signal is **internal to the pair** and carries the false-merge problem; every
+signal that cleanly rejects false merges is **external** and has low sensitivity:
+
+| signal | reference | FP admitted | TP reach |
+|---|---|---:|---:|
+| exon-sum coverage ≥ 0.50 | internal | 14/14 | **150/150** |
+| genomic-span coverage ≥ 0.50 | genome | **0/14** | 30/150 |
+| SD containment | SD catalog | **0/14** | ~24–53/150 |
+| genome-anchored repeat veto | genome | rejects 10/12 | 0/135 cost |
+| transcript orientation | strand | rejects 6/14 | 4/9,032 edges |
+
+⟹ **The defensible architecture is one high-sensitivity RELATION plus a set of low-sensitivity,
+high-precision CERTIFICATES that mark which edges independent evidence corroborates.** That is what
+has been built: `E_r` as the relation; `lambda` / `cut_certified` / `dup_mechanism` / the orientation
+certificate as the corroboration layer. It is also why every attempt to replace the relation with a
+certificate failed — they are not the same kind of object and cannot substitute for one another.
