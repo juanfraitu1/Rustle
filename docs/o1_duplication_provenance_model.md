@@ -806,3 +806,53 @@ Until implemented and validated, O1 should claim that Rustle emits a broad RNA h
 that a nested recent-copy view is specified but deferred. The current audit may show GOLGA2 as a
 related outgroup for interpretation, but must not imply that production Rustle already emits the
 proposed `recent_subfamily_id` or `copy_relation` fields.
+
+---
+
+# Appendix B — CAN WE SAY SOME GENE FAMILIES AROSE BY SEGMENTAL DUPLICATION? (2026-08-20)
+
+Measured on the completed SEDEF `final.bed` (mGorGor1, 253,030 pairs) against the current 627-family
+catalog. Reproducer: the containment sweep in `bench/o1_sd_recall.py`'s companion. T8: offline.
+
+**Criterion.** Not "the copies overlap an SD" but the strict one: **both member loci lie ENTIRELY
+inside the two units of a single segmental duplication.** Containment matters — it says the whole gene
+travelled with the duplicated segment, rather than the gene merely abutting one.
+
+| SD identity | copies **overlap** one SD | gene **fully inside** the SD unit |
+|---|---:|---:|
+| ≥ 0.99 | 70/627 = 0.1116 | **50/627 = 0.0797** |
+| ≥ 0.98 | 121/627 = 0.1930 | 86/627 = 0.1372 |
+| ≥ 0.95 | 164/627 = 0.2616 | 114/627 = 0.1818 |
+| ≥ 0.90 | 218/627 = 0.3477 | **136/627 = 0.2169** |
+| ≥ 0.80 | 281/627 = 0.4482 | 155/627 = 0.2472 |
+
+The containment curve **flattens past 0.90** (136 → 155 as the floor drops two further bands), so
+**~22% is a real SD-explained fraction, not a threshold artefact.** Of those 136 families, median size
+is 2 and **63 have n ≥ 3**.
+
+## What this licenses, and what it does not
+
+✅ **Sayable:** *"For 136 of 627 = 21.7% of gorilla families, every member locus lies entirely within a
+single segmental duplication at ≥90% identity — the family and the duplicated segment are the same
+event."* Containment on **genomic** sequence, called by an independent tool over introns and flanks,
+is a materially stronger statement than "these transcripts are similar", which is all `E_r` asserts.
+
+❌ **Not sayable without an outgroup:** *which copy is ancestral.* This document's own claim boundary
+applies unchanged — with one genome every duplication edge is symmetric, so the relation is
+`DNA_DUPLICATION`, never `DERIVED_FROM`. "Gave rise to" smuggles in a direction the data does not carry.
+
+⚠ **Also not excluded:** that the ≥90% SD signature reflects later **gene conversion** homogenising an
+older duplication rather than the original event. Containment dates the *segment*, not the family.
+
+## Why the negative half is the more interesting result
+
+**~78% of families are NOT SD-contained**, and that is a classification, not a gap. A family can be
+absent from the SD catalog because it is **older** (the segmental signature has decayed below 90%),
+because it arose by **retrotransposition** (no genomic segment was duplicated at all, so no SD exists
+by construction), or because it is not a real family. Those are distinguishable — a retrocopy family
+should show high exon-sum identity with **no** genomic-span SD support, which is exactly the signature
+this catalog can compute.
+
+⟹ **The concrete next result available here is a partition of the catalog by duplication MECHANISM**
+— segmental vs retrotranspositional vs ancient — which is what this model was specified to express and
+is now measurable rather than aspirational.
