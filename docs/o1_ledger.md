@@ -215,7 +215,47 @@ for the **stem** test.)
 * ⟹ The γ question cannot be settled with the annotation. It needs truth of a different kind for
   unnamed loci — cross-species orthology, or manual curation of a sample.
 
-## 5. OPEN
+## 4d. Can γ be SIMPLIFIED? (2026-08-21)
+
+γ looks expensive: inert on **79.11%** of families, splitting only **16** components, **NP-hard** so the
+code certifies *a valid witness* rather than the optimum, and documented as having **two divergent
+implementations**. Two questions, both now answered.
+
+### Can an edge veto replace it? NO — measured
+
+γ's one real job is preventing the 530-copy hairball. If that blob were held together by repeat-bridge
+edges, a pair-local veto would dissolve it and the partition step could go. Dropping hairball edges by
+genome-anchored multiplicity:
+
+| drop edges with `gmult` ≥ | edges kept | largest component |
+|---:|---:|---:|
+| none (γ→0) | 4,019 | 508 |
+| 100 | 2,866 | 371 |
+| 20 | 2,513 | 289 |
+| **5** | **1,492 = 37%** | **206** |
+
+**Dropping 63% of the edges still leaves a 206-node blob**, against γ's 56 families. The hairball's
+connectivity is **distributed**, not carried by a cuttable set of bridges. ⟹ **γ's job is a PARTITION
+job and no edge filter substitutes for it.**
+
+### Is the two-implementation complexity real? NO — already gone on the O1 path
+
+`ONE_METHOD.md`'s consistency table (2026-07-21, marked HISTORICAL) says *"Still two:
+`family_definition::refine_component` (CNM) vs `family_split::gamma_quasi_clique_partition` (Louvain)…
+deferred to deliverable C."* **That overstates the current state.** Traced 2026-08-21:
+
+* `gw_family_catalog` calls **`refine_families_exon_sum`**, which routes to **Louvain**;
+* the CNM `refine_component` is reached only through `family_definition::refine_families`, whose sole
+  caller is **`driver.rs:386`** — the legacy `family_define` binary.
+
+⟹ **Only one γ implementation is reachable from the O1 catalog.** The divergence is real but confined
+to a legacy parity fixture, not to the shipped definition.
+
+### What is irreducible
+
+γ-quasi-clique partitioning is **NP-hard**, so the emitted partition is *a certified valid witness*,
+not the optimum. That is inherent to the object, not an implementation choice — and it is the honest
+caveat to state, rather than the two-implementations one.
 
 | | |
 |---|---|
