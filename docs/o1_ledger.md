@@ -148,9 +148,33 @@ excision. Three tiers, in order of size — and the effort so far has gone to th
 | excision destinations that are not even nodes | **54/56 = 96.4%** |
 | families with a member unservable by reads | **23.08%** |
 
-**An unexpressed copy is structurally invisible to an RNA method.** No edge rule, threshold or
-partition can recover a locus that never became a node. This is a property of the substrate, and it is
-why the definition's honest scope is *expressed loci with well-delineated transcript models*.
+⚠⚠ **CORRECTED 2026-08-21 — tier 1 is NOT wholly an expression limit.** This section previously said
+an unexpressed copy is structurally invisible and *"no edge rule, threshold or partition can recover a
+locus that never became a node"*. Only part of that holds. Measured directly: segmental duplications
+predict **3,928** copy locations where the catalog has **nothing**, and sampling 400 of them for read
+support (`-F 2308`):
+
+| | of 400 | |
+|---|---:|---:|
+| **no reads** — genuinely invisible to RNA | 170 | **0.4250** |
+| 1–2 reads | 90 | 0.2250 |
+| **≥ 3 reads** — clears the pipeline's own `MIN_READS`, a node *could* have been built | **140** | **0.3500** |
+
+⟹ scaled, **~1,374 expressed, duplication-supported locations are absent from the catalog** — against
+2,019 copies present, i.e. **68% as many candidate copies missing as present.** About **a third** of
+tier 1 is a **node-construction gap**, not an expression limit; only ~42.5% is truly unrecoverable.
+
+⚠ **Upper bound.** An SD partner interval need not contain a gene, and clearing `MIN_READS` is not the
+node builder's only criterion — the catalog has **0/1415 single-exon nodes**, so an unspliced
+read-pile correctly does not become one. Sampling was systematic (stride over a sorted key list), not
+random.
+
+### ⭐ Why this is the thesis's binding constraint
+
+**O2 assigns a read to a copy. A copy O1 misses can never receive a read** — the possibility is not on
+the table — whereas a copy O1 wrongly adds, O2 can decline. The asymmetry favours **recall**, and
+essentially all effort has gone to **precision**: seven closed repair routes on the coverage clause,
+which costs **7.2%**, while tier 1 leaves ~1,374 expressed candidates unlaid.
 
 ### Tiers 2 and 3 — given that both loci ARE nodes
 
