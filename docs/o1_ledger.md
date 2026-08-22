@@ -161,8 +161,32 @@ support (`-F 2308`):
 | **≥ 3 reads** — clears the pipeline's own `MIN_READS`, a node *could* have been built | **140** | **0.3500** |
 
 ⟹ scaled, **~1,374 expressed, duplication-supported locations are absent from the catalog** — against
-2,019 copies present, i.e. **68% as many candidate copies missing as present.** About **a third** of
-tier 1 is a **node-construction gap**, not an expression limit; only ~42.5% is truly unrecoverable.
+2,019 copies present.
+
+### ⚠⚠ Both readings of that 1,374 were wrong. Corrected the same day.
+
+**(i) The threshold was the wrong one — ~282, not ~1,374.** "≥ 3 reads in the interval" is not the
+pipeline's criterion; it requires ≥ 3 reads on a **consistent intron chain**. Re-measured against the
+builder's own rule (`bench/o1_why_no_node.py`, 250 sampled):
+
+| | of 250 | |
+|---|---:|---:|
+| below `MIN_READS` overall | 165 | 0.6600 |
+| spliced but **no chain reaching 3 reads** — correctly not a node | 67 | 0.2680 |
+| **≥ 3-read spliced chain and still no node** | **18** | **0.0720** |
+
+⟹ **~282**, a **5× reduction**. Two thirds of the "expressed" intervals do not clear `MIN_READS` at
+all once measured properly.
+
+**(ii) And those 282 cannot be blamed on the node builder.** `copies.tsv` lists **family members
+only**, so "no node here" and "a node that joined no family" are **conflated**. The well-supported
+examples settle it by inspection — `NC_073224.2:145475666-145481637` carries **133 primaries, a
+106-read chain and 22 introns**; a locus like that unquestionably becomes a node. It is a **singleton**,
+not a missing node.
+
+⟹ **The gap is in `E_r`/γ — family assignment — not in node construction.** Distinguishing the two
+cleanly needs the rep set, which the catalog does not emit; `--single-copy-baseline` would supply it
+and was not run.
 
 ⚠ **Upper bound.** An SD partner interval need not contain a gene, and clearing `MIN_READS` is not the
 node builder's only criterion — the catalog has **0/1415 single-exon nodes**, so an unspliced
@@ -173,8 +197,12 @@ random.
 
 **O2 assigns a read to a copy. A copy O1 misses can never receive a read** — the possibility is not on
 the table — whereas a copy O1 wrongly adds, O2 can decline. The asymmetry favours **recall**, and
-essentially all effort has gone to **precision**: seven closed repair routes on the coverage clause,
-which costs **7.2%**, while tier 1 leaves ~1,374 expressed candidates unlaid.
+essentially all effort has gone to **precision**.
+
+After both corrections the recall picture is: **~282 expressed, spliced, duplication-supported loci
+are not in any family**, and the evidence points at **family assignment** rather than node
+construction. That sits alongside γ's 21.6% and the coverage clause's 7.2% — all three now in the same
+`E_r`/partition layer, not upstream of it.
 
 ### Tiers 2 and 3 — given that both loci ARE nodes
 
