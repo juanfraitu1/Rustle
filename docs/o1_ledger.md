@@ -184,9 +184,13 @@ examples settle it by inspection — `NC_073224.2:145475666-145481637` carries *
 106-read chain and 22 introns**; a locus like that unquestionably becomes a node. It is a **singleton**,
 not a missing node.
 
-⟹ **The gap is in `E_r`/γ — family assignment — not in node construction.** Distinguishing the two
-cleanly needs the rep set, which the catalog does not emit; `--single-copy-baseline` would supply it
-and was not run.
+⟹ ~~**The gap is in `E_r`/γ — family assignment — not in node construction.**~~
+⚠⚠⚠ **RETRACTED THE SAME DAY — see §4e.** This was inference from three inspected examples, and the
+measurement reverses it. `--single-copy-baseline` is also the WRONG instrument (it returns before the
+`o1_homology` dispatch and builds from the read-conflict graph `E_c`; 83.3% of the shipped catalog's
+own copies are structurally unreachable by it). The rep set was obtained instead from
+`RUSTLE_ER_EDGE_DUMP` on the shipped run, and on the honest gated subset **node construction dominates
+at 0.8067**, not `E_r`/γ.
 
 ⚠ **Upper bound.** An SD partner interval need not contain a gene, and clearing `MIN_READS` is not the
 node builder's only criterion — the catalog has **0/1415 single-exon nodes**, so an unspliced
@@ -199,10 +203,11 @@ random.
 the table — whereas a copy O1 wrongly adds, O2 can decline. The asymmetry favours **recall**, and
 essentially all effort has gone to **precision**.
 
-After both corrections the recall picture is: **~282 expressed, spliced, duplication-supported loci
-are not in any family**, and the evidence points at **family assignment** rather than node
-construction. That sits alongside γ's 21.6% and the coverage clause's 7.2% — all three now in the same
-`E_r`/partition layer, not upstream of it.
+~~After both corrections the recall picture is: **~282 …** and the evidence points at **family
+assignment** rather than node construction.~~ ⚠⚠⚠ **RETRACTED — §4e.** The ~282 is a scaled estimate
+whose denominator is conditioned on the prediction, and both the direction and the size change once a
+base rate is computed. The defensible replacement is **275 loci across 120/627 families**, decomposing
+**0.8067 node construction / 0.1919 `E_r` / 0.0014 γ**.
 
 ### Tiers 2 and 3 — given that both loci ARE nodes
 
@@ -315,3 +320,303 @@ caveat to state, rather than the two-implementations one.
 | re-measure the **8.30%** ceiling on the 627 catalog | needs the case census re-classified, not a recount |
 | **114** SD-supported pairs γ splits *outside* the hairball | the residual over-split, down from 246 once forced cuts are removed |
 | genomic span at **its own** re-fitted floor | a project (held-out fit, genome-wide measurement), not a flag flip |
+
+---
+
+## 4e. ⭐⭐⭐ The SD "node gap" AUDITED — it was the base rate (2026-08-21)
+
+`RUSTLE_ER_EDGE_DUMP` on a re-run of the shipped invocation (2h19m, exit 0). **Determinism gate
+passed**: 94,257 skeletons → 17,924 reps → 16,483 γ-blocks → 627 families → 2,019 copies, the copy set
+**byte-identical** to the 2026-08-20 catalog. So `dump/ggo.nodes.tsv` (17,924 rows + `degree`) and
+`dump/ggo.edges.tsv` (4,778 edges) X-ray **the shipped object**, not a lookalike. Params self-recorded
+in `dump/ggo.params.tsv`: `homology_genomic_span=false`, `core_substrate=exon-sum`,
+`alignment_orientation=forward-only(+)`, `min_coverage=0.50`, all `RUSTLE_*` overrides unset.
+
+The classification that motivated §4b was then audited by 17 agents across four angles, each
+adversarially verified by three independent lenses. **0 of 4 angles survived.** The arithmetic is
+correct — five reimplementations plus `bedtools` reproduce **3,529 / 398 / 1 / 0** over the 3,928
+intervals, and the suspected fixed-window bug never fires (max required backscan 4). **The counting was
+right; the inference was not.**
+
+### The dissolution
+
+| comparator | never-a-node | |
+|---|---:|---|
+| observed (3,928 SD-absent intervals) | **0.8984** | the claimed gap |
+| all non-copy SD sides (n = 73,324) | **0.9086** | matched compartment |
+| SD sides with no catalog copy at either mate (n = 69,396) | **0.9092** | cleanest |
+
+**0.8984 IS the base rate for catalog-absent SD sequence.** The set is, if anything, node-*enriched*.
+The apparent deficit came from an implicit **uniform-genome** comparator, which is 13.75% SD while the
+truth set is 100% SD; the two biases cancel almost exactly (uniform-null depletion −0.0755 in AUC,
+anchor-status enrichment +0.0765).
+
+### RETRACTED — do not quote
+
+| number | why |
+|---|---|
+| "the gap is node construction" (a=0.8984) | it is the base rate; **no gap to attribute** |
+| **"γ costs 1/3,928"** | tie-break-degenerate (0 or 1 by tie policy); p-value flips across four nulls (0.0588 / 0.0274 / 0.2338 / 0.6517) |
+| **n = 3,928** as a sample size | 78.77% self-overlap, 49.97% strictly nested ⟹ **effective n = 1,556**; block-unit rate **0.8464** |
+| "398 nodes" | 398 is **intervals**; the rep count is **248** |
+| any depletion factor | **sign flips with the unit** — interval OR 1.32 (enriched) vs block OR 0.71 (depleted) |
+| class (c) = 0/3,928 | circular — the BED was built by deleting SD intervals overlapping a copy |
+
+### SURVIVES
+
+- **γ is exonerated, on a clean number:** **107/17,924 = 0.60%** of reps have `degree > 0` and never
+  ship (96 reachable, 2,942,231 bp = **0.083% of genome**). Third independent exoneration of γ.
+- **The truth set cannot measure O1 recall.** **21.89%** of intervals have *zero* bases homologous to
+  the anchor copy's exons, and **53.39%** fall below the **0.50 coverage floor `E_r` itself requires**
+  (median coverage 0.4208 vs control 0.8971; positive control 40/1,180 = 3.39%, Fisher p = 4.5e-62).
+  For a majority, catalog-absence is `E_r` behaving exactly as defined. **An SD partner is a duplicated
+  SEGMENT, not a duplicated GENE** — the same mechanism as the false-omission work.
+
+### ⭐⭐⭐ The real finding: the binding constraint is the PRIMARY FLAG
+
+| | |
+|---|---:|
+| intervals with **zero primary reads** (`-F 2308`) yet ≥3 genuinely aligning reads | **37.14%** |
+| same, restricted to exon-homologous intervals (gate defined **without** reads) | **829/1,831 = 45.28%** |
+| sampled zero-primary intervals carrying a **≥3-read exact intron chain in secondary space** | **136/235 = 57.87%** |
+| …of those, all-canonical (would clear `PASS1_MIN_READS`, `GATE_MIN_READS` *and* the junction filter) | **29.36%** |
+
+Spot-checked secondaries: `de` **0.011–0.020** (98–99% identity) at **MAPQ 0**. Builder default **C5
+(admit candidates from all-secondary regions) is OFF** (`src/rustle/types.rs:1044`).
+
+**This is structurally forced.** The 3,928 are *defined* as the SD mate that **loses minimap2's
+primary/secondary tie-break**. Applying `-F 2308` removes, **from one arm only**, exactly the evidence
+the set's own definition selected against.
+
+⚠ **The house rule "always `-F 2308`" is right for per-read CIGAR statistics and WRONG for asking
+"is this locus transcribed" at a locus that lost a tie-break.**
+
+⟹ ⭐⭐ **O1 AND O2 ARE NOT SEPARABLE AT THE COPIES O1 MISSES.** Whether a locus becomes a node depends
+on an **assignment** decision made upstream by the aligner. This is a second — and far larger — scoped
+exception to O1 ⊥ O2 than the co-located junction-less pair of 2026-08-13.
+
+⚠ **45.28% is an UPPER BOUND**; primary-only 0.3465 is the LOWER bound. A ≥90%-identical duplicate of
+an expressed gene attracts secondaries whether or not it is itself transcribed. Separating them
+requires **PSVs, not read counts**.
+
+⚠ C5 also inherits **`-p`/`-N` dependence**: this BAM is `-N 50 -p 0.1 --secondary=yes`; at minimap2's
+default `-p 0.8` paralogues scoring under 0.8× the self-hit are discarded outright — the same
+parameter-sensitivity that invalidated the haplotype-CNV copy counts. **Record `-p` and `-N` with any
+copy count derived this way.**
+
+### The defensible number
+
+Gated on exon homology above `E_r`'s own floor **and** primary read support:
+**714 intervals → 275 merged loci → 120/627 = 19.14% of shipped families.**
+
+| | of 714 | |
+|---|---:|---:|
+| no node at all → **node construction** | 576 | **0.8067** |
+| node with degree 0 → **`E_r` sensitivity** | 137 | **0.1919** |
+| node with degree > 0 → **γ** | 1 | **0.0014** |
+
+⟹ on the honest subset **`E_r`'s share is 19%, not 10%**, and node construction still dominates —
+but on a **5.5× smaller denominator** at a **2.6× coarser unit** than §4b claimed. Anything larger runs
+through the unvalidated secondary-visible tier and is bounded by the primary-flag problem, which makes
+it an **O1 × O2 joint** quantity, not an O1 recall number.
+
+---
+
+## 4f. Design: permissive admission + PSV corroboration (2026-08-21)
+
+The question raised: *admit loosely, tolerate some weird merges, then corroborate with the RNA.* The
+architecture is right; the corroborating statistic must be **allelic, not quantitative**.
+
+**Why read presence cannot corroborate.** Already refuted 2026-08-16: reads are **redundant with the
+rep alignment** (median gain **+0.000**, > 0.10 in **0/14**), and tiling breadth discriminates
+significantly in the **wrong direction** (AUC 0.1259, p = 0.0005) with a *passing* positive control.
+Here it fails harder: **a phantom node's rep is built from the very reads that would corroborate it**,
+so "≥ 3 spliced reads" is true *by construction* — it is the admission criterion.
+
+**Why `E_r` cannot filter phantoms either.** A node admitted from spillover has a rep ≈ the paralog's
+sequence, so it clears identity ≥ 0.60 and coverage ≥ 0.50 **trivially** — it *is* a copy at the
+sequence level. `E_r` compares rep to rep and cannot see that one rep was assembled from the other's
+reads. Every phantom joins the family it spilled from, attacking false-merge (1.33% [0.37, 4.73])
+invisibly, because a phantom looks like an *excellent* member.
+
+**What escapes.** The rep is a **consensus**, and a consensus averages away the discriminating signal:
+spillover reads carry the **source copy's alleles at positions where the two references differ**. So:
+
+> **A phantom retains ZERO reads after PSV assignment. A real copy retains its own.**
+
+The machinery already ships — `psv_linkage.rs::assign_read_to_copy`, gate `n_decisive ≥ 1` (default
+since 2026-06-24) — and carries a *derived* bound rather than a tuned threshold:
+**τ = ln((1−p)/p)**, τ = 6.9 ⟹ **stated P(misassign) ≤ 1e-3**. On real gorilla data τ = 2 and τ = 6.9
+give an identical operating point, so the principled choice is free. ⚠ **The lever is the GATE, not the
+scoring** — votes ≡ LLR under flat error, identical in 16/16 configs.
+
+**Ordering — corroboration cannot run at admission.** PSVs are defined **between copies**, so a node in
+isolation has none: the merge must happen first, provisionally. Nor can it run after the partition —
+removing a node would perturb a γ-block and λ certificate computed *with it present*, so the
+certificate would no longer certify the object built. The only valid slot:
+
+> **nodes → `E_r` edges → PSV corroboration → drop refuted → γ → λ**
+
+**Three outcomes, not two.** `n_decisive = 0` — exonically identical copies with no PSVs — is a genuine
+floor, **aligner-invariant** (winnowmap tested: identical; DSFAM42 stays 95% MAPQ-0 under both). Those
+can be neither corroborated nor refuted, and it is exactly where phantoms are most likely. So
+**corroborated / refuted / ABSTAINED**, with the abstain class flagged rather than silently merged —
+the same shape as O3's detect-and-flag, and consistent with defending O2 on abstention.
+
+### Next step
+
+1. ✅ **Emit per-rep exon arrays** — `catalog_input::exon_blocks_str`, `nodes.tsv` gains `exons` +
+   `exon_bp`. 801 tests pass; validated against 2,019 real copies (758 minus-strand) with **zero**
+   convention violations. Independently reproduces the motivating figure: catalog copies are
+   **0.9078 intron by bp** (audit: 0.9083 over all reps).
+2. **▶ IN FLIGHT** — re-run with the new binary, then redefine (a)/(b1)/(b2) on **exons instead of
+   spans**. Rep spans are **90.83% intron by bp**, so today's class (a) cannot distinguish *"the
+   interval lies inside a rep's intron"* (correct rejection) from *"real transcript sequence no node
+   covers"* (a real miss). That ambiguity is what invalidated the audit's expression angle.
+3. **Then the only non-circular test.** Everything above is **T8** (offline re-derivation on both
+   sides). Run the real binary restricted to the flagged loci in **three arms — off / admit-only /
+   admit + PSV-corroborate** — scoring all three outcome classes with the abstain rate reported
+   separately, never folded into either side. Two arms would not do: without admit-only, a PSV gate is
+   untestable, because you cannot show a filter works without measuring what it filtered.
+   Pre-registered rule: if the 137 degree-0 intervals stay degree-0 under **exon-level** coverage
+   ≥ 0.50, `E_r` has a real sensitivity hole worth a theorem; if they gain edges, the residual was a
+   span artefact.
+
+⚠ Before that run: fix the duplicate rep triple `NC_073229.2:140449427-140453573` (idx 3036 and 13514
+differ in strand, exon count and degree) — inert for this classification, but any `copies.tsv` ↔
+`nodes.tsv` join on the triple silently picks one of two rows.
+
+---
+
+## 4g. ⭐⭐ The exon arrays land: 45% of "a node is here" was an INTRON (2026-08-22)
+
+Re-ran the catalog with the exon-array build. **Determinism gate passed on every check**: 94,257 →
+17,924 reps, 16,483 blocks → 627 families, copies **identical** to the shipped catalog, and the
+cross-path invariant `exon_bp == exon_sum_len` holds on **17,924/17,924 reps, 0 mismatches** — so the
+malformed-chain guard never fires on real data and the arrays are complete.
+
+Reclassifying the 3,928 SD intervals on **exons** instead of spans (`bench/o1_classify_exonic.py`,
+exact max-end-prefix sweep replacing the fixed 800-row window):
+
+| | of 3,928 | |
+|---|---:|---:|
+| (a) never a node — ⚠ **the BASE RATE, not a gap** (§4e) | 3,529 | 0.8984 |
+| **(b-EXONIC)** overlaps a spliced rep's **exon** — transcript really is there | **189** | 0.0481 |
+| **(b-INTRONIC)** inside a spliced rep's **intron** only — **CORRECT rejection** | **155** | 0.0395 |
+| (s) stub rep only — **INDETERMINATE** (exon array == span) | 55 | 0.0140 |
+
+⭐ **Of the 344 intervals with a spliced rep, 45.06% are INTRONIC.** The span-based classification
+counted all 344 as "a node is here"; only **189** have transcript sequence in the interval. That is the
+ambiguity the exon arrays were built to remove, and it removes **nearly half** of the apparent
+node-level signal. Median exonic bp in-interval where exonic: **571**.
+
+⭐ **The stub worry, measured: small HERE.** Single-exon reps are 33.07% of the rep set, but only
+**55/3,928 = 1.40%** of these intervals are stub-only. The stub problem is real at the rep level
+(§ stubs memory) and does **not** materially bind this particular analysis.
+
+γ appears once more at **1/189**, consistent with §4e's 107/17,924 = 0.60%. **Fourth exoneration.**
+
+### ⚠ RETRACTED WITHIN THE HOUR — "E_r is the binding constraint, 188/189 = 0.9947"
+
+Generated and killed in the same session. Spliced reps that are **not** catalog copies have degree 0 at
+rate **10,460/10,518 = 0.9945** — the observed 0.9947 **is the base rate to four decimals**. The
+interval set was built by excluding catalog copies, and non-catalog ⟹ degree 0 almost surely, so the
+figure is entailed by construction. **The same defect as §4e's dissolved headline, one level down.**
+(Sound-join check: 0/1,478 spliced catalog copies have degree 0, as required.)
+
+⟹ **This analysis cannot rank `E_r` against node construction.** What it establishes is narrower and
+solid: **45% of the "node present" class is a correct rejection**, and the residual candidate set is
+**189 intervals** carrying real exonic sequence — inspectable, with coordinates, not an estimate.
+
+---
+
+## 4h. ⛔ SHARED-EXON / ISOFORM POOLING — CLOSED, NO-GO (2026-08-22)
+
+The proposal: stop discarding the non-representative isoform chains, so a locus's full exonic content
+participates. Designed and killed **before** spending a run (17 agents, 4 angles, 3 adversarial lenses each).
+Everything below is **T8** — offline re-derivation on existing artifacts; it bounds the payload from above,
+which is enough to stop, and is not enough to have proceeded.
+
+### Dead on BOTH readings — measured on GORILLA, not transferred from human
+
+| | measured | unit |
+|---|---:|---|
+| shipped `E_r` edges the rule recovers | **396/4,778 = 0.0829** | edge |
+| shipped families retaining ≥1 shared-exon edge | **157/627 = 0.2504** | family |
+| families with λ = 1 (a single cut destroys them) | **552/627 = 0.8804** | family |
+
+⟹ **dead as a REPLACEMENT.** And after deleting exon matches on the *same genomic interval*:
+
+| `MIN_COUNT` | genuine NEW node pairs |
+|---:|---:|
+| ≥1 | 376 (194 with fully disjoint spans) |
+| **≥2** | **9** |
+| ≥3 | **0** |
+
+⟹ **dead as an ADDITION.** Pre-registered launch floor was ≥100 disjoint-exon new pairs at the target
+`MIN_COUNT`; measured 9. Nine pairs cannot move a 627-family partition behind a ≥2-distinct-loci gate and
+a γ splitter.
+
+### ⚠⚠ RETRACTED: "MIN_COUNT ≥ 2 is the untested axis"
+
+Quoted from the source docstring on 2026-08-21 and **wrong** — it was tested 2026-08-03 on HUMAN
+chr1+chr15 **through the real binary**, against a matched control, on the EMITTED PARTITION:
+
+| `MIN_COUNT` | copies | families |
+|---:|---:|---:|
+| 1 | 545 | 121 |
+| 2 | 323 (−40.73%) | 62 (−48.76%) |
+| 4 | 243 | 43 |
+| 8 | 197 | 43 |
+
+Monotone loss. The docstring has been replaced with both measurements so the lead is not inherited again.
+
+### ⭐ TWO REAL BUGS — and they are why the rule looked alive
+
+**1. The distinct-locus guard was missing.** The only predicate was `ra != rb`, so two representatives over
+the SAME genomic span linked to each other — their exons being the same physical DNA, aligning to
+themselves at ~100%.
+
+| of the 2,795 node pairs the rule reported that `E_r` does not | | in-`E_r` control |
+|---|---:|---:|
+| overlapping rep spans | **2,601 = 0.9306** | 50/396 = 0.1263 |
+| every matched exon on the same physical interval | 2,419 = 0.8655 | 49/396 = 0.1237 |
+| overlapping **and opposite-strand** (a locus matching its own antisense model) | 2,348 = 0.8401 | 3/396 = 0.0076 |
+
+The control **inverts**, so this is a property of what the rule ADDS. **FIXED** (guard mirroring
+`distinct_locus_reps_grouped`, with a positive control in the test). 802 tests pass.
+
+**2. `MIN_COUNT` is not counting independent exons.** Under `ISOFORMS=1`, `support` accumulates exon
+INDEX pairs over an UN-DEDUPLICATED pool, so one genomic exon pair contributes `n_iso_a × n_iso_b`. It
+measures **isoform multiplicity**. ⟹ every `MIN_COUNT` figure ever quoted as evidence about *independent
+exons* is void (the partition-cost table above is unaffected, and is what actually kills the axis).
+Dedup fix specified, **not landed** — the path is a recorded dead end.
+
+### ⭐⭐ CORRECTION — a GORILLA-NATIVE RefSeq GFF exists
+
+`/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff` — NCBI RefSeq `GCF_029281585.2-RS_2024_02`,
+genome-build `NHGRI_mGorGor1-v2.0_pri`, taxon 9595, **41,193 gene+pseudogene records**, contigs matching the
+substrate. The standing claim *"there is no gorilla RefSeq GFF on this machine"* was **false**, over-generalised
+from the (true) fact that the HUMAN `HSA_genomic.gff` drops 29.1% of loci. It had been constraining truth-set
+designs. Call results **"gorilla-native loci, human-curated relation"** — never "gorilla ground truth".
+
+### ⟹ Where the finding actually routes
+
+**93.06% self-overlap means this belongs to the NODE BUILDER, not the edge rule** — the same destination
+`o1_error_case_census.md` reached for the coverage hole (47/105 cases node-construction). The real defect the
+investigation surfaced is upstream and already documented: rep selection keeps ONE chain, **46% of
+representatives covering a known family member are single-exon stubs**, and **53% of those loci have a
+gate-passing ≥3-read spliced chain that was discarded** (NOTCH2NLA / SRGAP2C / LIMS1 at 92 / 65 / 124 reads).
+
+⚠ Note also, for any future additive tier: **γ-quasi-clique is NON-MONOTONE under edge addition** — 4 shipped
+families / 63 copies drop below γ=0.20 from a single +1-node/+1-edge attachment, and 626/627 families have at
+least one such partner. A union tier can LOSE copies; never pre-register a one-sided readout.
+
+### Sharp edge found while testing
+
+`exon_seqs_of` derives exon LENGTHS from genomic coordinates and slices `seq` by them, so a rep whose span
+and sequence length disagree contributes **ZERO exons, silently**. This is why the guard test's positive
+control failed on first run. ⚠ It also means `pooled_isoform_exons_recover_what_a_stub_representative_lacks`
+passes its rep-only assertion because its `stub` (span 1,200, seq 600) emits no exons — **not** for the
+"carries only filler" reason its comment states. That test is weaker than it reads.
+

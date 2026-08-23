@@ -39,6 +39,24 @@ in two days. A number without its substrate is not a result.
 | **22/40 = 0.5500** [0.3983, 0.6929] reach | recovery at τ=0.50; ~0.55 defensible genome-wide | **HUMAN** CHM13 **chr1**; 40-family GFF denominator fixed before the run | chr1 is representative under a **matched** clustering rule (40.0% vs 36.3% genome-wide, **Fisher p = 0.6090**). ⚠ The "chr1 is 80% clustered so it flatters the method" objection is **REFUTED** — the 80% and 36.3% came from *different rules*. Register entry; do not re-raise |
 | **identical partition, 7/7** DNA vs RNA | agreement count | same loci, with RNA evidence | Small n. The RELATION transcends substrate; the NODE SET does not |
 | **41/494 = 8.30%** definitional exposure ceiling | ceiling; **30 is a floor** | **GORILLA**, the **494**-family catalog | ⚠ Not re-measured on the 627 catalog. Needs the case census re-classified, not a recount |
+| **275 loci / 120 of 627 families = 19.14%** | O1's **defensible miss** — loci with exon homology above `E_r`'s own floor AND primary read support | **GORILLA**, 627 catalog; `RUSTLE_ER_EDGE_DUMP` on a determinism-gated re-run (copies byte-identical to 2026-08-20) | Decomposes **0.8067 node construction / 0.1919 `E_r` / 0.0014 γ**. ⚠ **T8** — offline re-derivation, not pipeline-confirmed. Unit is **merged loci**, from 714 intervals |
+| **107/17,924 = 0.60%** reps with `degree > 0` that never ship | γ's total cost, rep unit | same run | 96 reachable, 2,942,231 bp = **0.083% of genome**. ⭐ Replaces the retracted "γ costs 1/3,928" |
+| **45.28%** exon-homologous intervals with ZERO primaries but ≥3 real alignments | **UPPER bound** (primary-only 0.3465 is the lower) | same run + `GGO_ds.bam` | ⚠ A ≥90%-identical duplicate attracts secondaries whether or not it is transcribed. ⚠ Inherits **`-p`/`-N`** dependence — this BAM is `-N 50 -p 0.1`; **record both with any copy count** |
+
+### ⚠⚠ RETRACTED 2026-08-21 — the SD "node gap" (audit: 17 agents, 0 of 4 angles survived)
+
+| do NOT quote | why |
+|---|---|
+| **0.8984 "never a node"** as a gap | it **IS the base rate** for catalog-absent SD sequence (matched comparator 0.9086, n = 73,324; cleanest 0.9092, n = 69,396). The set is if anything node-*enriched* |
+| **"γ costs 1/3,928"** | tie-break-degenerate (0 or 1 by tie policy); p flips across four nulls (0.0588 / 0.0274 / 0.2338 / 0.6517). Use **107/17,924** instead |
+| **n = 3,928** as a sample size | 78.77% self-overlap, 49.97% strictly nested ⟹ **effective n = 1,556**; block-unit rate 0.8464 not 0.8984 |
+| **~282** or **~1,374** expressed loci absent | scaled estimates on a denominator conditioned on the prediction. Use **275 loci / 120 families** |
+| any **depletion factor** | **sign flips with the unit** — interval OR 1.32 (enriched), block OR 0.71 (depleted). Not an identified effect |
+| **"398 nodes"** | 398 is **intervals**; the rep count is **248** |
+
+⚠ **The truth set cannot measure O1 recall at all**: 21.89% of those intervals have *zero* bases
+homologous to the anchor copy's exons, and 53.39% fall below the **0.50 coverage floor `E_r` itself
+requires**. An SD partner is a duplicated **SEGMENT**, not a duplicated **GENE**.
 
 ### ⚠ Anything quoted per **/1415** or **/494** is on the SUPERSEDED catalog
 

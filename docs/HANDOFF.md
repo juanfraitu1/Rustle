@@ -1,4 +1,4 @@
-# HANDOFF — state as of 2026-08-19
+# HANDOFF — state as of 2026-08-22
 
 > ⚠ **CATALOG PROVENANCE.** Figures quoted per **/494** (families) or **/1415** (copies) describe the
 > **superseded** 2026-07-17 catalog, which **no invocation of the current binary reproduces** — it was
@@ -11,6 +11,32 @@ Supersedes the 2026-08-15 handoff (which recorded HEAD `4285b8f`, 0 unpushed —
 Branch `dna-from-genome`, HEAD **`1247d67`**, **7 unpushed commits**. Only `tools/stringtie`
 (third-party submodule) is dirty — leave it. Source changes in `gw_family_catalog.rs` /
 `denovo_pipeline.rs` (the λ certificate work) remain **uncommitted** — see §4.
+
+## 0. State as of 2026-08-22 — nothing in flight
+
+**The exon-array re-run COMPLETED and its gate passed.** `/mnt/linuxdisk/home/juanfraitu/o1_reps2/`:
+94,257 skeletons → 17,924 reps, 16,483 blocks → 627 families, copies **byte-identical** to the shipped
+catalog, and `exon_bp == exon_sum_len` on **17,924/17,924 reps, 0 mismatches**. `dump/ggo.nodes.tsv` now
+carries `exons` + `exon_bp`. ⚠ The FIRST dump (`o1_reps/dump/`) has **no** exon columns — use `o1_reps2`.
+⚠ Do NOT re-run the baseline: `/mnt/linuxdisk/home/juanfraitu/o1_gw/ggo_gw.copies.tsv` is frozen
+(627 families / 2,019 copies) and `o1_reps2/dump/ggo.edges.tsv` is its edge dump.
+
+**The λ certificate work IS committed** (`fd7d429`, `2e5f99b`) — the older note in §4 calling it
+uncommitted is stale.
+
+**Read `o1_ledger.md` §4e–§4h before proposing anything on O1 recall.** Four sections landed 08-21/22:
+§4e the SD "node gap" was the BASE RATE (0/4 audit angles survived); §4f the permissive-admission +
+PSV-corroboration design; §4g the exon arrays (45% of "a node is here" was an INTRON); §4h shared-exon /
+isoform pooling **CLOSED, NO-GO**.
+
+⚠⚠ **Three headline numbers died this session to ONE defect — a denominator conditioned on the
+prediction.** The SD gap (0.8984 = the base rate), the degree-0 rate (0.9947 vs a 0.9945 base rate), and
+the shared-exon self-overlap (93.06%, which inverts on its control). Treat it as a class, not bad luck.
+
+⭐⭐ **A GORILLA-NATIVE RefSeq GFF EXISTS**: `/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff`
+(GCF_029281585.2-RS_2024_02, mGorGor1-v2.0_pri, 41,193 gene+pseudogene records, contigs match the
+substrate). The standing claim that there is none was **false** and had been constraining truth-set
+designs. Call results "gorilla-native loci, human-curated relation".
 
 ## 1. What changed on 2026-08-19
 
