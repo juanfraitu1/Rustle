@@ -41,7 +41,7 @@ in two days. A number without its substrate is not a result.
 | **41/494 = 8.30%** definitional exposure ceiling | ceiling; **30 is a floor** | **GORILLA**, the **494**-family catalog | ⚠ Not re-measured on the 627 catalog. Needs the case census re-classified, not a recount |
 | **275 loci / 120 of 627 families = 19.14%** | O1's **defensible miss** — loci with exon homology above `E_r`'s own floor AND primary read support | **GORILLA**, 627 catalog; `RUSTLE_ER_EDGE_DUMP` on a determinism-gated re-run (copies byte-identical to 2026-08-20) | Decomposes **0.8067 node construction / 0.1919 `E_r` / 0.0014 γ**. ⚠ **T8** — offline re-derivation, not pipeline-confirmed. Unit is **merged loci**, from 714 intervals |
 | **107/17,924 = 0.60%** reps with `degree > 0` that never ship | γ's total cost, rep unit | same run | 96 reachable, 2,942,231 bp = **0.083% of genome**. ⭐ Replaces the retracted "γ costs 1/3,928" |
-| **45.28%** exon-homologous intervals with ZERO primaries but ≥3 real alignments | **UPPER bound** (primary-only 0.3465 is the lower) | same run + `GGO_ds.bam` | ⚠ A ≥90%-identical duplicate attracts secondaries whether or not it is transcribed. ⚠ Inherits **`-p`/`-N`** dependence — this BAM is `-N 50 -p 0.1`; **record both with any copy count** |
+| ~~**45.28%** zero-primary but >=3 real alignments~~ ⛔**RETRACTED 2026-08-22** | **FAILED ITS MATCHED CONTROL** | — | Candidate 109/882 = 0.1236 vs size/compartment-matched control 104/881 = 0.1180, **Fisher p = 0.7701**; at the zero-primary stage the **control is HIGHER** (0.7707 vs 0.5635). It is the BASE RATE of duplicated genic sequence. **O1 ⊥ O2 stands.** See `o1_ledger.md` §4i |
 
 ### ⚠⚠ RETRACTED 2026-08-21 — the SD "node gap" (audit: 17 agents, 0 of 4 angles survived)
 

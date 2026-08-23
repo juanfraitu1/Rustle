@@ -391,7 +391,10 @@ the set's own definition selected against.
 ⚠ **The house rule "always `-F 2308`" is right for per-read CIGAR statistics and WRONG for asking
 "is this locus transcribed" at a locus that lost a tie-break.**
 
-⟹ ⭐⭐ **O1 AND O2 ARE NOT SEPARABLE AT THE COPIES O1 MISSES.** Whether a locus becomes a node depends
+⟹ ~~**O1 AND O2 ARE NOT SEPARABLE AT THE COPIES O1 MISSES.**~~
+⚠⚠⚠ **RETRACTED 2026-08-22 (same day it was written) — IT FAILED ITS OWN MATCHED CONTROL. See §4i.**
+
+ Whether a locus becomes a node depends
 on an **assignment** decision made upstream by the aligner. This is a second — and far larger — scoped
 exception to O1 ⊥ O2 than the co-located junction-less pair of 2026-08-13.
 
@@ -619,4 +622,98 @@ and sequence length disagree contributes **ZERO exons, silently**. This is why t
 control failed on first run. ⚠ It also means `pooled_isoform_exons_recover_what_a_stub_representative_lacks`
 passes its rep-only assertion because its `stub` (span 1,200, seq 600) emits no exons — **not** for the
 "carries only filler" reason its comment states. That test is weaker than it reads.
+
+---
+
+## 4i. ⛔⛔ §4e's PRIMARY-FLAG FINDING IS REFUTED BY ITS OWN CONTROL (2026-08-22)
+
+§4e concluded that the binding constraint on O1 recall is minimap2's primary flag, and therefore that
+**O1 and O2 are not separable at the copies O1 misses**. That was committed, pushed, and written to
+memory. **It is wrong.** The statistic was never compared against a matched control; when one is
+computed the effect vanishes.
+
+**Candidate** = SD mate of a catalog copy, exon-homologous, no rep. **Control** = SD side with NO catalog
+copy on *either* mate, no rep, size- and compartment-matched. Unit = merged genomic locus.
+
+| gate stage | candidate (n=882) | control (n=881) | |
+|---|---:|---:|---|
+| zero-primary | 497 = **0.5635** | 679 = **0.7707** | ⚠ **control HIGHER**, p ≈ 0 |
+| + ≥3 good secondaries | 192 = 0.2177 | 211 = **0.2395** | control higher, p = 0.2817 |
+| + **≥3-read EXACT intron chain** | **109 = 0.1236** | **104 = 0.1180** | **Fisher p = 0.7701** |
+
+⟹ *"reads land here as secondaries carrying a shared intron chain"* is **the base rate of duplicated
+genic sequence** — not evidence that a copy is transcribed there. **O1 ⊥ O2 STANDS. No second scoped
+exception is warranted.** Reinforcing it: **21,770/23,807 = 0.9144** of the secondary reads at those loci
+carry the **anchor's** alleles, i.e. the class is overwhelmingly spillover.
+
+⚠ **This is the FOURTH headline in one week to die to the same defect — a rate quoted without its
+comparator.** The other three: §4e's own 0.8984 "never a node" (= the base rate 0.9086); the 0.9947
+degree-0 rate (= a 0.9945 base rate); the shared-exon 93.06% self-overlap (inverts on its control).
+**Treat "I have a rate but not its comparator" as a stop condition, not a to-do.**
+
+**Blast radius that would have been at stake**, recorded so the cost is known when this is proposed
+again: 109 merged loci, **47/627 = 0.0750 of families**, 201/2,019 copies; under worst-case pendant
+attachment **4/47 receiving families drop below γ = 0.20** and **13/75 = 0.1733 of all λ ≥ 2 certificates
+are lost**. **C5 stays OFF** (`src/rustle/types.rs:1044`).
+
+⚠ Register the standing recommendation *"keep a site if ≥3 reads share an intron chain by ANY
+alignment"* as **REFUTED — zero specificity**.
+
+### ⚠⚠ AND §4f's premise is gone with it
+
+The permissive-admission + PSV-corroboration design was motivated by that finding. Its ordering argument
+and its phantom analysis remain correct as *reasoning*, but there is now **no measured reason to admit
+anything**. Do not build it.
+
+## 4j. O1 → O2 IS A CONDITIONING, NOT A CORRELATION (2026-08-22)
+
+Tested whether an O1 graph certificate bounds O2's assignability — the theorem-shaped claim. **It is
+false by construction, and I checked rather than assumed.**
+
+- `grep -E "lambda|stoer|min_cut|density|gamma|quasi_clique|cut_certified" src/rustle/vg_family/copy_assign.rs`
+  → **0 hits.** The ONLY quantity O2 consumes from O1 is the family **cardinality**, at
+  `copy_assign.rs:453`: `let thr = p.alpha / (n.saturating_sub(1).max(1) as f64);`
+- It could not matter much if it did: on 104,147 read-records **90.95% sit outside any movable zone**
+  (min_p exactly 0 in 39.82%, < 1e-12 in 26.73%, ≥ 1.0 in 29.40%), and collapsing **every** family to
+  n = 2 — the maximal relaxation of that denominator — moves **14/104,147 = 0.013%** of verdicts.
+- Every retrofit failed: density / Fiedler / min-cut **AUC 0.36 / 0.35 / 0.35** (§3c); `de`-weighted
+  capacity **equals `min_de` on 515/627 = 0.8214** and is ≥ it by construction on the rest; `E_r` degree
+  is **at chance after depth+length matching** (0.4607 / 0.4899 / 0.4839 vs 0.5000).
+
+### ⚠ ENTAILED — do not sell as findings
+
+| claim | why it is entailed |
+|---|---|
+| **λ = 1 on 552/627 = 0.8804** | **440/627 = 0.7018 are 2-copy, and λ = 1 there is a THEOREM.** The informative residue is **112/187 = 0.599 of families with ≥3 copies**. Quote *that*. |
+| "λ certifies a graph blind to 42.57% of within-family pairs" | = 1 − density; γ = 0.20 *permits* 80% of pairs edgeless by definition. The parameter restated. |
+| "family order beats α by 20×" | matched perturbation of n and of α gives **0/104,147** disagreements. |
+| "n_decisive = 0 ⟹ abstain is an identifiability floor" | 100% of n_decisive = 0 rows are tied — it *is* the `if`. |
+| δ-bound "copies below divergence δ are unassignable" | pigeonhole on the definition of divergence; the headline moves 3.07% → 8.92% → 13.08% across δ = 0.0005 / 0.005 / 0.01. |
+
+### ⟹ The defensible statement
+
+**O1 → O2 is a CONDITIONING, not a correlation.** Given the copy set, assignment decomposes and per-read
+argmax is optimal; the combinatorial difficulty lives entirely in **choosing the set** — which is O1,
+with O3 discharging the precondition that the set is complete. That is also why O2 is defended on
+**abstention**, its only non-circular validation: excision-held-out **TPR 0.5066 / FPR 0.0280,
+AUC 0.7995** against **MAPQ at AUC 0.4944** (median 60 vs 60) on the same reads.
+
+⚠ Do NOT present "O1 and O2 are views of one graph object" — already REFUTED (register §9.1:994),
+reframed as **two graphs, one arrow**.
+
+## 4k. O3 AS A RESIDUAL OF O1+O2 — DEGENERATES ON ITS OWN POSITIVE CONTROL
+
+- The **abstention** residual is undefined at **162/162** excision positives: the panel is TWO-COPY, so
+  masking leaves |C| = 1 — no assignment, hence no abstention.
+- The **PSV** residual at |C| = 1 **IS the shipped S2 within-pile mixture detector** — a rename.
+- The **depth** residual was already refuted: 16/104 destinations had zero baseline reads; the 1.75×
+  needs a "before" that a real case does not have.
+
+**O3's honest status is unchanged.** Bar to beat: **TPR 0.2703 / FPR 0.0200** on the excision panel.
+Sensitivity is set by **divergence, not abundance** (0.4500 at ≥0.01 diverged vs 0.0588 below) and
+**45.78% of real positives sit below that line** — a property of the problem, not the detector.
+Two levers, in order: an **n ≥ 3 excision panel** (⚠ feasibility: 14 families at ≥20 reads, 56 at ≥5,
+157 at ≥3 — and only **6/43 = 0.1395** of scenarios put the deleted copy below de 0.01 against
+**45.78%** of real positives, so the panel would sample the WRONG divergence regime; measure that
+distribution offline first, it is free), and a **larger compartment**.
 
