@@ -83,8 +83,40 @@ pub struct CatalogSeq {
 /// `(family_id, copy_idx)` → the catalog's own emitted sequence.
 pub type SeqIndex = BTreeMap<(String, usize), CatalogSeq>;
 
+/// Format an ascending half-open exon block list as the canonical `start-end,start-end,...` string —
+/// the ONE representation `copies.tsv`, `nodes.tsv` and `parse_exons` all speak. Inverse of `introns_of`.
+///
+/// Takes the fields rather than a `DenovoTranscript` so the emitters can share it without this module
+/// depending on the detector's types; `gw_family_catalog::exon_blocks` is the thin typed wrapper.
+///
+/// An unspliced copy (no introns) yields the single block `start-end`.
+///
+/// Defensive: a malformed chain (donor before the running cursor, or acceptor < donor) is SKIPPED
+/// rather than emitted, because a reversed block would read as a valid interval to every consumer.
+/// The dropped bases are then visible as `exon_bp < exon_sum_len` instead of silently corrupting a span.
+pub fn exon_blocks_str(start: u64, end: u64, introns: &[(u64, u64)]) -> String {
+    let mut out = String::new();
+    let mut prev = start;
+    for &(d, a) in introns {
+        if d > prev && a >= d {
+            if !out.is_empty() {
+                out.push(',');
+            }
+            out.push_str(&format!("{prev}-{d}"));
+            prev = a;
+        }
+    }
+    if end > prev {
+        if !out.is_empty() {
+            out.push(',');
+        }
+        out.push_str(&format!("{prev}-{end}"));
+    }
+    out
+}
+
 /// Intron `(donor, acceptor)` chain implied by an ascending half-open exon block list. Inverse of
-/// `gw_family_catalog::exon_blocks`.
+/// `exon_blocks_str`.
 pub fn introns_of(exons: &[(u64, u64)]) -> Vec<(u64, u64)> {
     exons.windows(2).map(|w| (w[0].1, w[1].0)).collect()
 }
@@ -470,5 +502,49 @@ mod tests {
     fn a_malformed_copies_fa_header_is_an_error() {
         let e = parse_copies_fa(">GWFAM0|0|c1:0-10\nAC\n").unwrap_err().to_string();
         assert!(e.contains("malformed header"), "{e}");
+    }
+
+    /// The emitted string and the parser are a round trip, and `introns_of` inverts it. If this ever
+    /// fails, `nodes.tsv` and `copies.tsv` stop being joinable on exons -- which is the only way to ask
+    /// "is this interval inside a rep's EXON or inside its INTRON", a distinction rep spans cannot make
+    /// (spans are 90.83% intron by bp).
+    #[test]
+    fn exon_blocks_str_round_trips_through_parse_and_introns_of() {
+        let introns = vec![(1100u64, 1300u64), (1500, 1800)];
+        let s = exon_blocks_str(1000, 2000, &introns);
+        assert_eq!(s, "1000-1100,1300-1500,1800-2000");
+        let parsed = parse_exons(&s).expect("parse");
+        assert_eq!(parsed, vec![(1000, 1100), (1300, 1500), (1800, 2000)]);
+        assert_eq!(introns_of(&parsed), introns, "introns_of must invert exon_blocks_str exactly");
+    }
+
+    /// The sum of the emitted blocks IS the spliced length. `write_er_edge_dump` emits both
+    /// (`exon_bp` and `exon_sum_len`) from different code paths precisely so a consumer can check this
+    /// invariant per row instead of trusting it.
+    #[test]
+    fn exon_blocks_str_lengths_sum_to_the_spliced_length() {
+        let introns = vec![(1100u64, 1300u64), (1500, 1800)];
+        let total: u64 = exon_blocks_str(1000, 2000, &introns)
+            .split(',')
+            .map(|b| {
+                let (a, z) = b.split_once('-').unwrap();
+                z.parse::<u64>().unwrap() - a.parse::<u64>().unwrap()
+            })
+            .sum();
+        assert_eq!(total, 100 + 200 + 200, "exon_bp must equal the exon-sum, not the span");
+        assert_eq!(exon_blocks_str(500, 900, &[]), "500-900", "an unspliced rep is one block");
+    }
+
+    /// A minus-strand rep must still emit GENOMIC-ASCENDING blocks. The transcription orientation lives
+    /// in `strand` and in `seq`; the coordinates never flip. A sibling Python tool (`mkreps.py`) shipped
+    /// the opposite convention and scrambled exon order on minus-strand genes, so this is pinned here.
+    #[test]
+    fn exon_blocks_str_is_genomic_ascending_regardless_of_transcription_strand() {
+        let s = exon_blocks_str(1000, 2000, &[(1100, 1300), (1500, 1800)]);
+        let starts: Vec<u64> =
+            s.split(',').map(|b| b.split_once('-').unwrap().0.parse().unwrap()).collect();
+        let mut sorted = starts.clone();
+        sorted.sort_unstable();
+        assert_eq!(starts, sorted, "blocks must be ascending in GENOMIC coordinates");
     }
 }

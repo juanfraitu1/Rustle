@@ -5269,7 +5269,7 @@ pub fn shared_exon_edges_pooled(
             }
         }
     }
-    edges_from_exon_pool(seqs, owner, reps.len(), min_identity, min_bp, params, "shared-exon-pooled")
+    edges_from_exon_pool(seqs, owner, reps, min_identity, min_bp, params, "shared-exon-pooled")
 }
 
 /// Shared engine for both shared-exon variants: one all-vs-all over every exon, then lift exon pairs to
@@ -5277,7 +5277,7 @@ pub fn shared_exon_edges_pooled(
 fn edges_from_exon_pool(
     seqs: Vec<Vec<u8>>,
     owner: Vec<usize>,
-    n_loci: usize,
+    reps: &[DenovoTranscript],
     min_identity: f64,
     min_bp: u64,
     params: &RefineParams,
@@ -5290,22 +5290,57 @@ fn edges_from_exon_pool(
     // (`RUSTLE_SHARED_EXON_MIN_COUNT`, default 1 = the original any-one-exon rule).
     //
     // One shared exon is weak evidence: a single conserved domain or an exonised repeat links two loci that
-    // are not paralogs. Measured on chr1+chr15 with every isoform's exons pooled, the any-one-exon rule
-    // admitted 209 new locus pairs of which only 32 (15%) were true co-family pairs, and raising the length
-    // floor did not fix it (25% at 600 bp, and F1 never beat the representative-only baseline). Requiring
-    // several INDEPENDENT exons to agree is a different axis from requiring one LONGER exon, and it is the
-    // one that distinguishes a shared gene structure from a shared element.
+    // are not paralogs. Measured on chr1+chr15 (HUMAN) with every isoform's exons pooled, the any-one-exon
+    // rule admitted 209 new locus pairs of which only 32 (15%) were true co-family pairs, and raising the
+    // length floor did not fix it (25% at 600 bp, and F1 never beat the representative-only baseline).
+    //
+    // ⚠⚠ THE "REQUIRING SEVERAL INDEPENDENT EXONS IS THE UNTESTED AXIS" CLAIM THAT STOOD HERE IS RETRACTED
+    // (2026-08-22). It is NOT untested and it does NOT distinguish structure from element:
+    //
+    //  * MEASURED 2026-08-03, HUMAN chr1+chr15, through the REAL BINARY (hp/iso_count.sh against the matched
+    //    hp/iso_minbp.sh MB_300 control, id=0.70 min_bp=300 gamma=0.20 ISOFORMS=1), unit = EMITTED copies /
+    //    EMITTED families:  MIN_COUNT 1 -> 545/121 | 2 -> 323/62 | 4 -> 243/43 | 8 -> 197/43.
+    //    Monotone loss on the emitted partition. DEAD-END.
+    //  * MEASURED 2026-08-22, GORILLA genome-wide, rep-only, unit = NODE PAIR: after deleting exon matches
+    //    that fall on the SAME genomic interval, the rule adds 376 pairs at MIN_COUNT>=1, 9 at >=2, 0 at >=3.
+    //  * ⚠ AND THE COUNTER IS NOT COUNTING WHAT THE NAME SAYS: under ISOFORMS=1 `support` accumulates exon
+    //    INDEX pairs over an UN-DEDUPLICATED pool, so ONE genomic exon pair contributes n_iso_a * n_iso_b.
+    //    MIN_COUNT there measures ISOFORM MULTIPLICITY, not exon independence. Every MIN_COUNT figure ever
+    //    quoted under ISOFORMS=1 is void as a statement about independent exons (it remains valid as the
+    //    partition COST above, which is what actually kills the axis).
     let min_shared: usize = std::env::var("RUSTLE_SHARED_EXON_MIN_COUNT")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
     let mut support: std::collections::BTreeMap<(usize, usize), usize> = std::collections::BTreeMap::new();
     let pairs = nucleotide_edges_indexed(&seqs, &["-x", "asm20"], min_identity, min_bp, params)?;
+    let mut self_overlap = 0usize;
     for (a, b) in pairs {
         let (ra, rb) = (owner[a], owner[b]);
-        if ra != rb {
-            *support.entry((ra.min(rb), ra.max(rb))).or_insert(0) += 1;
+        if ra == rb {
+            continue;
         }
+        // DISTINCT-LOCUS GUARD. `ra != rb` alone is not enough: two representatives whose genomic spans
+        // OVERLAP are one locus seen twice, and their exons are then the SAME PHYSICAL DNA, so they align
+        // to themselves at ~100% identity and manufacture an edge that asserts no homology at all.
+        //
+        // Measured genome-wide on gorilla (2026-08-22, rep-only, id >= 0.98, >= 100 bp): of the 2,795 node
+        // pairs this rule reported that E_r does not, 2,601 = 93.06% had OVERLAPPING SPANS and 2,419 =
+        // 86.55% had every matched exon on the same physical interval -- 84.01% of them additionally on
+        // OPPOSITE strands, i.e. a locus matching its own antisense annotation. The in-E_r pairs invert the
+        // statistic (50/396 = 12.63% overlap), so this is a property of the pairs the rule ADDS, not of the
+        // measurement. Removing them takes the genuine new payload from 2,795 to 376 node pairs.
+        //
+        // The same_pos test mirrors `distinct_locus_reps_grouped`, so the two agree on what "one locus" is.
+        let (x, y) = (&reps[ra], &reps[rb]);
+        if x.chrom == y.chrom && x.end.min(y.end) > x.start.max(y.start) {
+            self_overlap += 1;
+            continue;
+        }
+        *support.entry((ra.min(rb), ra.max(rb))).or_insert(0) += 1;
+    }
+    if self_overlap > 0 {
+        eprintln!("[{tag}] dropped {self_overlap} same-locus exon matches (overlapping rep spans)");
     }
     let edge_set: BTreeSet<(usize, usize)> = support
         .into_iter()
@@ -5315,7 +5350,7 @@ fn edges_from_exon_pool(
     eprintln!(
         "[{tag}] {} exons over {} loci -> {} locus pairs linked (id >= {}, >= {} bp aligned)",
         seqs.len(),
-        n_loci,
+        reps.len(),
         edge_set.len(),
         min_identity,
         min_bp
@@ -5337,7 +5372,7 @@ pub fn shared_exon_edges(
             owner.push(ri);
         }
     }
-    edges_from_exon_pool(seqs, owner, reps.len(), min_identity, min_bp, params, "shared-exon")
+    edges_from_exon_pool(seqs, owner, reps, min_identity, min_bp, params, "shared-exon")
 }
 
 /// E_r homology edges over ALL reps' exon-sum sequences: asm20 (recent) ∪ sensitive -k11 -w5 (ancient) ∪
@@ -5640,13 +5675,33 @@ fn write_er_edge_dump(
             let _ = writeln!(
                 fh,
                 "idx\tnode_key\tchrom\tstart\tend\tstrand\tn_exon\tn_reads\tdistinguishing_uniq\t\
-                 core_bp\tstub\taln_len\texon_sum_len\tdegree"
+                 core_bp\tstub\taln_len\texon_sum_len\tdegree\texons\texon_bp"
             );
             for (i, r) in reps.iter().enumerate() {
                 let deg = set.iter().filter(|&&(a, b)| a == i || b == i).count();
+                // The rep's EXON blocks, not just their count. Without them every locational query
+                // against this table has to use the rep's genomic SPAN -- and spans are 90.83% intron
+                // by bp (614,224,265 bp of span vs 56,345,279 bp of exon-sum across the 17,924 reps of
+                // the 2026-08-20 catalog; median per-rep exonic fraction 0.2232). That inflates
+                // "an interval lies inside a rep" ~11x over the transcribed footprint and makes
+                // "correctly rejected because it is intronic" indistinguishable from "real transcript
+                // sequence absent from every node" -- the ambiguity that invalidated the 2026-08-21
+                // SD-gap audit. `copies.tsv` has carried exons since it was written; the 15,905 reps
+                // that join NO family are exactly the ones that had no other way to be seen.
+                let exons = crate::vg_family::catalog_input::exon_blocks_str(r.start, r.end, &r.introns);
+                // Emitted alongside `exon_sum_len` (= the spliced seq length) ON PURPOSE: the two are
+                // computed by different paths and must agree. A mismatch means the malformed-chain
+                // guard dropped a block, which is a data defect the consumer should see rather than a
+                // silent truncation of the locus.
+                let exon_bp: u64 = exons
+                    .split(',')
+                    .filter(|b| !b.is_empty())
+                    .filter_map(|b| b.split_once('-'))
+                    .filter_map(|(a, z)| Some(z.parse::<u64>().ok()?.saturating_sub(a.parse::<u64>().ok()?)))
+                    .sum();
                 let _ = writeln!(
                     fh,
-                    "{i}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{deg}",
+                    "{i}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{deg}\t{exons}\t{exon_bp}",
                     key(r),
                     r.chrom,
                     r.start,
@@ -7255,6 +7310,42 @@ mod tests {
     /// rep-only behaviour. The case that matters is a locus whose representative is an unspliced STUB while a
     /// spliced isoform at the same locus carries the real exons -- that is 46% of the representatives
     /// covering a known family member, and it is why a stub cannot form an edge with a full transcript.
+    /// Two representatives over the SAME genomic span are one locus seen twice. Their exons are the same
+    /// physical DNA, so without a distinct-locus guard they align to themselves at ~100% and fabricate an
+    /// edge. Genome-wide on gorilla this was 93.06% of everything the shared-exon rule reported that E_r
+    /// did not (2,601/2,795), 84.01% of it on OPPOSITE strands -- a locus matching its own antisense model.
+    #[test]
+    fn shared_exon_does_not_link_a_locus_to_itself_across_two_representatives() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            return;
+        }
+        let ex = rand_seq(400, 0xC0FFEE);
+        // `end - start` MUST equal `seq.len()` here: `exon_seqs_of` derives exon LENGTHS from the genomic
+        // coordinates and then slices `seq` by them, so a span longer than the sequence makes every exon
+        // fail the `off + l > seq.len()` bound and the locus contributes NO exons at all -- which would
+        // make this test pass its guard assertion for the wrong reason.
+        let mk = |tid: &str, chrom: &str, start: u64, strand: char| DenovoTranscript {
+            tid: tid.into(), chrom: chrom.into(), start, end: start + ex.len() as u64, n_reads: 9, strand,
+            introns: vec![], seq: ex.clone(), distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+        };
+        let params = homology_refine_params(Some(0.90), 2);
+
+        // Same span, opposite strands -- the dominant real-data shape.
+        let overlapping = vec![mk("a", "chr1", 1_000, '+'), mk("b", "chr1", 1_200, '-')];
+        assert!(
+            shared_exon_edges(&overlapping, 0.90, 200, &params).unwrap().is_empty(),
+            "two representatives over one genomic locus must not link to each other"
+        );
+
+        // Positive control: identical sequence at DISJOINT loci is a real homology claim and must survive,
+        // so the guard is not simply suppressing every edge.
+        let disjoint = vec![mk("a", "chr1", 1_000, '+'), mk("b", "chr2", 9_000_000, '+')];
+        assert!(
+            shared_exon_edges(&disjoint, 0.90, 200, &params).unwrap().contains(&(0, 1)),
+            "control: the same exon at two DISJOINT loci must still form an edge"
+        );
+    }
+
     #[test]
     fn pooled_isoform_exons_recover_what_a_stub_representative_lacks() {
         if std::process::Command::new("minimap2").arg("--version").output().is_err() {
@@ -7585,6 +7676,86 @@ mod tests {
                 stem = "<prefix>"
             );
         }
+    }
+
+    /// `nodes.tsv` is the only table that covers reps which join NO family (15,905 of 17,924 in the
+    /// 2026-08-20 catalog). Its ABSENCE of an exon array is what forced the 2026-08-21 SD-gap audit to
+    /// run every locational query on rep genomic SPANS -- 90.83% intron by bp -- which made "the
+    /// interval is inside this rep's intron" (correct rejection) indistinguishable from "real
+    /// transcript sequence no node covers" (a real miss), and invalidated that angle. Dropping the
+    /// column again would silently reintroduce the same ambiguity, so it is pinned at the source level.
+    #[test]
+    fn er_node_dump_emits_the_exon_array_not_just_the_exon_count() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/rustle/vg_family/denovo_pipeline.rs"
+        ))
+        .expect("read denovo_pipeline.rs");
+        let start = src.find("fn write_er_edge_dump(").expect("write_er_edge_dump not found");
+        let body = &src[start..];
+        for col in ["\\texons\\texon_bp", "exon_blocks_str("] {
+            assert!(
+                body.contains(col),
+                "the node dump must emit the exon ARRAY ({col} missing): n_exon alone cannot tell an \
+                 intronic interval from an uncovered one, and rep spans are 90.83% intron by bp"
+            );
+        }
+    }
+
+    /// BEHAVIOURAL companion to the source lint above: the lint would still pass if `exon_bp` computed
+    /// garbage, and that parse-back arithmetic is the only genuinely new logic in the emitter.
+    ///
+    /// Uses a MINUS-strand 3-exon rep whose span (1,000 bp) is twice its exon-sum (500 bp) -- the same
+    /// shape, in miniature, that makes span-based locational queries misleading at genome scale (rep
+    /// spans are 90.83% intron by bp across the shipped catalog).
+    #[test]
+    fn er_node_dump_exon_array_agrees_with_the_spliced_length_it_reports() {
+        let r = DenovoTranscript {
+            tid: "t".into(),
+            chrom: "c1".into(),
+            start: 1000,
+            end: 2000,
+            n_reads: 7,
+            strand: '-',
+            introns: vec![(1100, 1300), (1500, 1800)],
+            seq: vec![b'A'; 500],
+            ..Default::default()
+        };
+        let dir = std::env::temp_dir().join(format!("rustle_er_dump_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        write_er_edge_dump(
+            dir.join("t").to_str().expect("utf8 path"),
+            &[r],
+            &[vec![b'A'; 500]],
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &RefineParams::default(),
+            false,
+        );
+        // `DUMP_SEQ` is a process-global counter, so the stem may carry a `.callN` suffix.
+        let f = std::fs::read_dir(&dir)
+            .expect("readdir")
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .find(|p| p.to_string_lossy().ends_with(".nodes.tsv"))
+            .expect("the dump must write a nodes.tsv");
+        let text = std::fs::read_to_string(&f).expect("read nodes.tsv");
+        let hdr: Vec<&str> = text.lines().next().expect("header").split('\t').collect();
+        let row: Vec<&str> = text.lines().nth(1).expect("one data row").split('\t').collect();
+        let col = |n: &str| {
+            row[hdr.iter().position(|h| *h == n).unwrap_or_else(|| panic!("no column {n}"))]
+        };
+        assert_eq!(col("exons"), "1000-1100,1300-1500,1800-2000", "genomic-ascending half-open blocks");
+        assert_eq!(col("n_exon"), "3");
+        // The invariant the two columns exist to expose: computed by different paths, they must agree.
+        // A mismatch means the malformed-chain guard dropped a block -- visible, not silent.
+        assert_eq!(col("exon_bp"), "500");
+        assert_eq!(col("exon_bp"), col("exon_sum_len"), "exon_bp must equal the spliced length");
+        // And the reason the array is needed at all: n_exon + span cannot recover this.
+        let span = col("end").parse::<u64>().expect("end") - col("start").parse::<u64>().expect("start");
+        assert_eq!(span, 1000);
+        assert!(span > col("exon_bp").parse::<u64>().expect("exon_bp"), "span exceeds the exon-sum");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -311,26 +311,10 @@ fn read_windows_bed(path: &str) -> Result<Vec<(String, u64, u64)>> {
 ///
 /// An unspliced copy (no introns) yields the single block `start-end`.
 fn exon_blocks(c: &DenovoTranscript) -> String {
-    let mut out = String::new();
-    let mut prev = c.start;
-    for &(d, a) in &c.introns {
-        // Defensive: a malformed chain (donor before the running cursor, or acceptor <= donor) would
-        // otherwise emit a reversed block that a consumer would read as a valid interval.
-        if d > prev && a >= d {
-            if !out.is_empty() {
-                out.push(',');
-            }
-            out.push_str(&format!("{prev}-{d}"));
-            prev = a;
-        }
-    }
-    if c.end > prev {
-        if !out.is_empty() {
-            out.push(',');
-        }
-        out.push_str(&format!("{prev}-{}", c.end));
-    }
-    out
+    // ONE implementation, shared with `write_er_edge_dump`'s node dump: a second copy here would let
+    // `copies.tsv` and `nodes.tsv` drift apart on the malformed-chain rule, and joining them on exons
+    // is the whole point of emitting the array.
+    rustle::vg_family::catalog_input::exon_blocks_str(c.start, c.end, &c.introns)
 }
 
 fn emit_catalog(
