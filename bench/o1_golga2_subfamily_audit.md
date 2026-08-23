@@ -79,7 +79,7 @@ added.
 
 Production emission of both hierarchy levels is deliberately deferred. The proposed algorithm,
 CLI/output contract, safeguards, and acceptance tests are specified in
-[`docs/o1_hierarchical_family_followup.md`](../docs/o1_hierarchical_family_followup.md).
+[`docs/o1_duplication_provenance_model.md`](../docs/o1_duplication_provenance_model.md).
 
 ## Reproduction
 
