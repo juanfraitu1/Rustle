@@ -646,6 +646,64 @@ genic sequence** — not evidence that a copy is transcribed there. **O1 ⊥ O2 
 exception is warranted.** Reinforcing it: **21,770/23,807 = 0.9144** of the secondary reads at those loci
 carry the **anchor's** alleles, i.e. the class is overwhelmingly spillover.
 
+### ⚠⚠ CORRECTION 2026-08-23 — §4i's OWN CONTROL WAS DEFECTIVE. STATUS: OPEN, NOT REFUTED.
+
+The gate script filtered secondaries at `de <= 0.05`, which discards **two thirds of all overlapping
+secondaries** (97,980/290,942 = 0.3368 kept) and discards them NON-RANDOMLY: it keeps only alignments
+>= 95% identical, which is backwards for detecting a DIVERGED second copy. Sweeping the threshold:
+
+| `de <=` | CAND | CTRL | Fisher p | cand secondaries kept |
+|---:|---:|---:|---:|---:|
+| **0.05** (as run) | 109/882 = 0.1236 | 104/881 = 0.1180 | **0.7701** | 0.3368 |
+| 0.10 | 247/882 = 0.2800 | 164/881 = 0.1862 | **< 0.0001** | 0.8090 |
+| **0.20+ (unfiltered)** | **270/882 = 0.3061** | **181/881 = 0.2054** | **< 0.0001** | 1.0000 |
+
+⟹ **the tie was a filter artefact**, so "p = 0.7701" and "it IS the base rate" are withdrawn as the
+BASIS of the retraction.
+
+⚠⚠ **But the finding is NOT restored, because the control is not matched on the thing that generates
+reads.** A CANDIDATE is the SD mate of a **catalog copy** — an expressed locus. A CONTROL has no catalog
+copy at EITHER mate. So candidates have a nearby expressed paralogue to spill from and controls do not,
+which predicts more secondaries at candidates **with no transcription at the candidate required** —
+consistent with 21,770/23,807 = 0.9144 of those secondaries carrying the ANCHOR's alleles.
+
+⟹ the gate alone cannot decide it: it measures read VOLUME, and volume is confounded with the label.
+
+### ⭐⭐⭐ CLOSED 2026-08-23 — the volume-insensitive test says SPILLOVER. §4e IS REFUTED.
+
+`bench/o1_competitor_resolved.py`, pre-registered before the result. For every SECONDARY read at a
+gate-passing locus L, compare minimap2's own `de` at L against `de` at **that read's own primary locus P**
+— the alternative it actually contested. This asks whether the reads that arrive PREFER L, and is
+therefore **insensitive to how many arrive**, which is what the gate could not separate. Nothing is
+re-derived: both `de` values are minimap2's, so this is not the offline-PSV route that has failed 4x.
+
+| | CAND (270 loci) | CTRL (181 loci) |
+|---|---:|---:|
+| median per-locus fraction of reads fitting **L** better | **0.0000** | **0.0000** |
+| pooled READ unit | 233/108,688 = **0.0021** | 151/37,559 = **0.0040** |
+
+**Mann-Whitney over per-locus fractions: U = 23,271, p = 0.2685 — TIE.**
+
+Three comparators, all failed:
+1. **the matched control arm** — tie (p = 0.2685), and the candidate rate is if anything the LOWER of
+   the two (0.0021 vs 0.0040), i.e. pointing AWAY from the hypothesis;
+2. **the genome-wide rate** at which a secondary wins by `de` at all — **0.0196**. Both arms sit ~5-9x
+   BELOW it, which is what high-identity SD mates should look like if the reads are spillover;
+3. **a constant predictor** — "never prefer L" scores 0.0021 wrong on candidates. The median locus has
+   ZERO reads preferring it.
+
+⟹ **The secondaries at these loci fit the locus they were assigned to, essentially always. They are
+spillover** — corroborating the 21,770/23,807 = 0.9144 anchor-allele figure by an independent statistic.
+
+⭐ **VERDICT (pre-registered): C5 stays OFF permanently. No second O1 ⊥ O2 exception. §4e's primary-flag
+finding is REFUTED** — not by the defective p = 0.7701 gate control, but by a test the volume confound
+cannot reach. **O1 ⊥ O2 STANDS.**
+
+⚠ Note the sequence honestly: the finding was asserted (08-22), retracted on a broken control (08-22),
+the retraction's basis was withdrawn (08-23), and the claim was then refuted on a sound one (08-23). The
+conclusion is the same as the first retraction; **the reasoning that got there the first time was not
+sound, and only the pre-registered test settled it.**
+
 ⚠ **This is the FOURTH headline in one week to die to the same defect — a rate quoted without its
 comparator.** The other three: §4e's own 0.8984 "never a node" (= the base rate 0.9086); the 0.9947
 degree-0 rate (= a 0.9945 base rate); the shared-exon 93.06% self-overlap (inverts on its control).
