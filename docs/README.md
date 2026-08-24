@@ -20,7 +20,8 @@
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The O1 definition itself — the normative document |
 | [`joint_family_definition.md`](joint_family_definition.md) | DNA/RNA jointness: a property, not the definition |
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | O2's rule |
-| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) · [`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md) | Scope, and the per-row verification ledger |
+| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | **⭐ THE SCOREBOARD — what is WON / DEAD / OPEN per objective, and the recurring failure modes. Read before proposing anything.** Also scope, and the superseded O1–O5 numbering kept for provenance |
+| [`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md) | The per-row verification ledger |
 | [`VG_FAMILY_TERMS.md`](VG_FAMILY_TERMS.md) | What "locus", "copy", "isoform", "family" each mean |
 
 ## O1 — investigations
