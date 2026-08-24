@@ -58,6 +58,19 @@ in two days. A number without its substrate is not a result.
 homologous to the anchor copy's exons, and 53.39% fall below the **0.50 coverage floor `E_r` itself
 requires**. An SD partner is a duplicated **SEGMENT**, not a duplicated **GENE**.
 
+### ⛔⛔ RETRACTED 2026-08-23 — the O1 loss decomposition (sign reversed)
+
+| do NOT quote | why |
+|---|---|
+| **"γ costs 3.0× the coverage clause"** (246 = 0.2162 vs 82 = 0.0721) | scored on an edge set that is **NOT `E_r`** — `bench/o1_gamma_adjudicate.py:50` uses the min-length coverage form and **never reads the PAF strand field**, admitting minus-strand records the definition rejects at `denovo_pipeline.rs:4473` |
+| **"the 114 questionable γ over-splits"** | **the set is EMPTY as a γ target**: 0/114 share an `E_r` component (Wilson [0.0000, 0.0326]); 113–114/114 have only a MINUS-STRAND qualifying record. γ never saw them |
+| **"530 copies / 26.25% / 56 families"** at γ→0 | **466 copies / 38 families** (+14/4) = **480/2,019 = 0.2377** across **42/627 = 0.0670** |
+| **"the partition does not transport, ARI 0.7064"** | **blob-driven** — drop the largest component and flat **ARI = 0.9707** (coarse 0.9578). ⭐ the **87.06% edge transport is unaffected** |
+
+⭐ **CORRECT decomposition** — shipped `-k11 -w5` PAF, shipped coverage form, copy-pair unit, denom 1,135:
+**orientation guard 167 = 0.1471 · coverage clause 147 = 0.1295 · identity 0 · γ 11 = 0.0097.**
+⟹ the EDGE RULE costs **~28×** what γ costs. The orientation guard is the largest single loss channel — it buys precision (spurious edges **28 → 3**, antisense families **7.09% → 0.64%**, HUMAN panel) and that trade is now quantified on both sides. See `o1_ledger.md` §4m.
+
 ### ⚠ Anything quoted per **/1415** or **/494** is on the SUPERSEDED catalog
 
 The 494-family catalog had **1,415** copies; the 627-family catalog has **2,019**. Re-measure before

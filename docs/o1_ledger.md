@@ -220,7 +220,13 @@ base rate is computed. The defensible replacement is **275 loci across 120/627 f
 | **lost to the COVERAGE clause** | 82 | 0.0721 |
 | **lost to γ** — the edge existed, the partition cut it | **246** | **0.2162** |
 
-⭐ **γ costs 3.0× what the coverage clause costs.** The named definitional hole is real, but it is the
+⛔⛔ ~~**γ costs 3.0× what the coverage clause costs.**~~ **RETRACTED 2026-08-23, SIGN REVERSED — see §4m.**
+The edge set these 1,138 pairs were scored against was NOT `E_r`: `bench/o1_gamma_adjudicate.py:50` uses
+the **min-length** coverage form `(qe-qs)/min(ql,tl)` instead of the shipped axis-following form, and it
+**never reads `f[4]`, the PAF strand field**, so it admitted minus-strand records the definition rejects
+at `denovo_pipeline.rs:4473`. On the shipped instrument the ordering inverts.
+
+ The named definitional hole is real, but it is the
 **smaller** of the two recoverable losses, and essentially all effort has gone to it.
 
 Of the 246, **132 lie inside the 530-copy hairball** — forced cuts, where γ had to partition a blob no
@@ -842,4 +848,79 @@ bought by restricting to a well-connected core.
 - ⚠ **Animal and tissue are CONFOUNDED** by this design; it cannot say which drives the residual.
 - ⚠ One fibroblast run; no determinism gate exists for it (no prior fibroblast catalog to compare).
 - ⚠ The 627 vs 356 family difference is **expected biology, untested** — do not quote it as instability.
+
+---
+
+## 4m. ⛔⛔⛔ γ IS NOT THE PROBLEM — THE ORIENTATION GUARD IS (2026-08-23)
+
+Commissioned to design the deferred hierarchical emission against the "114 questionable γ over-splits".
+**The target set is empty, and the premise that produced it was measuring a different object.**
+
+### The finding: 0/114
+
+**0/114 of the recovery target is recoverable at ANY level, because 0/114 share an `E_r` connected
+component** — and coarsening can only merge *within* a component. Wilson 95% **[0.0000, 0.0326]**.
+⭐ The comparator shows the lookup is not empty by construction: **129–132/132** of the "forced"
+inside-hairball pairs *are* same-component.
+
+**Mechanism: 113–114/114 have a qualifying MINUS-STRAND record and no qualifying forward record.**
+`ggo.rule.tsv` records `alignment_orientation = forward-only (+)`; the guard is
+`denovo_pipeline.rs:4473-4474`. **γ never saw these pairs.** They were removed one stage earlier, by the
+orientation guard shipped as a default on 2026-08-20.
+
+### ⛔ RETRACTED — and the sign reverses
+
+Re-scored on the **shipped** `-k 11 -w 5` PAF with the **shipped** coverage form (the only instrument the
+definition actually uses), copy-pair unit, denominator 1,135:
+
+| loss channel | pairs | share |
+|---|---:|---:|
+| **orientation guard** | **167** | **0.1471** |
+| **coverage clause** | **147** | **0.1295** |
+| identity floor | 0 | 0.0000 |
+| **γ — the partition** | **11** | **0.0097** |
+
+⟹ **the EDGE RULE costs ~28× what γ costs**, not the reverse. Guard:coverage is **1.14×, near parity** —
+not the 2.80× one arm claimed. ⚠ Three re-derivations gave three answers because two used the offline
+`gw_ava_*.paf` (different presets) instead of the shipped PAF. **Quote only the row above.**
+
+| also retracted | correction |
+|---|---|
+| "the honest recovery target is the remaining 114" | **the set is empty as a γ target** |
+| "530 copies = 26.25% of the catalog / 56 families" at γ→0 | **466 copies / 38 families** (+14/4 in a second component) = **480/2,019 = 0.2377** across **42/627 = 0.0670** of families |
+| §4l's "the PARTITION does not transport (ARI 0.7064)" | **blob-driven.** Drop the single largest component (~172/724 = 23.8% of shared copies) and flat **ARI = 0.9707**, coarse 0.9578 — **the flat partition transports BETTER.** The 87.06% edge-transport figure is unaffected. |
+
+### ⛔ NO-GO on a hierarchy, on its own arithmetic
+
+The level that recovers the genuine γ-cut pairs **is** the level that re-forms the blob — they are the
+same object, and there is no threshold in between. Matched-permissiveness pricing of the coarse level:
+new co-membership pairs are duplication-supported at **167/104,125 = 0.0016** against **810/6,469 =
+0.1252** for the relation the catalog already asserts and **507/1,926,577 = 0.0003** for a random
+cross-component pair. **78× less supported than production**; to surface 167 supported pairs it asserts
+**103,958 unsupported** ones.
+
+A *recent* (refinement) level adds **0** new assertions by theorem, but is informative on only
+**69/627 = 11.00%** and **splits 36/523 = 6.88% of SEDEF-certified co-contained pairs at id ≥ 0.90** —
+measurably wrong on the only stratum with independent truth. Its "SEGMENTAL dissolved 0/136"
+corroboration is **circular** (selected at SD id ≥ 0.90 while DISSOLVED *is* max within-family identity
+< 0.90).
+
+### ✅ MODIFIED-GO — a disclosure, and it must NOT be called a hierarchy
+
+`copies.tsv` / `copies.fa` **byte-identical**; **627 families / 2,019 copies** remains the headline.
+Three columns appended to `families.tsv` after `cut_certified` (the same additive contract as
+`lambda`): **`er_component_id`** (min `node_key` of the family's `E_r` component; 627/627 families lie in
+exactly one), **`er_component_n_families`** (42/627 = 0.0670 carry > 1), **`gamma_forced`** (true iff γ
+actually split this component; 42/627, 2 components genome-wide).
+
+⚠ **Membership is still answered by `family_id`. There is no query.** These columns are a *disclosure* —
+"this family is one γ-block of a 466-copy component" — and must not be consumed by any predicate, gate or
+filter. Name it `er_component_id`, **never `superfamily_id`**: nobody may write "a 466-copy KZNF family".
+
+### ⟹ Where the effort should go
+
+**The orientation guard is now the largest single measured loss channel (0.1471).** It is not wrong — it
+cut spurious edges **28 → 3** on a HUMAN negative panel and antisense families **7.09% → 0.64%** — but
+its recall cost had never been measured, and it is at parity with the coverage clause. **That trade is
+now quantified on both sides and is the open question.** γ, at 0.0097, is not worth further work.
 
