@@ -924,3 +924,73 @@ cut spurious edges **28 → 3** on a HUMAN negative panel and antisense families
 its recall cost had never been measured, and it is at parity with the coverage clause. **That trade is
 now quantified on both sides and is the open question.** γ, at 0.0097, is not worth further work.
 
+---
+
+## 4n. ⭐⭐⭐ THE ORIENTATION GUARD IS FILTERING ON AN UNMEASURED FIELD (2026-08-24)
+
+§4m established the guard as O1's largest loss channel (167/1,135 = **0.1471** of SD-supported pairs,
+against coverage 0.1295 and γ 0.0097). This is the mechanism, and it is a **defect, not a trade-off**.
+
+### A third of the rep set has a PLACEHOLDER strand, not a measured one
+
+`denovo_assemble.rs:1010`: `let strand = strand.unwrap_or('+');` — a rep's strand comes from the gate's
+canonical-junction classification, so a **single-exon rep has no junctions and no determinable strand**,
+and the code stamps `'+'`.
+
+| rep class | n | `'+'` | `'-'` |
+|---|---:|---:|---:|
+| **single-exon** | 5,928 | **5,928 = 1.0000** | **0 = 0.0000** |
+| spliced (≥2 exons) | 11,996 | 5,839 = 0.4867 | 6,157 = 0.5133 |
+
+Not one single-exon rep is `'-'`. Spliced reps split ~50/50, which is what biology looks like.
+⚠ **33.07% of the rep set carries an unmeasured field.** If single-exon reps resemble spliced ones,
+roughly **3,000 of the 5,928 currently carry the WRONG strand** *(estimated from the spliced ratio)*.
+
+### Why that costs edges
+
+A rep's `seq` is stored **in its `strand` orientation**, so a rep wrongly marked `'+'` is stored
+**reverse-complemented**; its alignment to a correctly-oriented paralogue comes out MINUS-strand, and the
+guard drops it at `denovo_pipeline.rs:4473`. Measured on the shipped `-k11 -w5` PAF under the shipped rule
+(`bench/o1_guard_cost.py`), rep-pair unit:
+
+| | measured | |
+|---|---:|---|
+| guard-blocked pairs (a qualifying `'-'` record, no qualifying `'+'`) | **4,009** | |
+| …involving ≥1 **single-exon** rep | **3,951 = 0.9855** | ⭐ |
+| **…both spliced — genuine antisense candidates** | **58 = 0.0145** | genome-wide |
+| **COMPARATOR** — kept (`'+'`) pairs involving ≥1 single-exon rep | 1,884/4,778 = **0.3943** | **2.50× enrichment** |
+
+⟹ **the guard is overwhelmingly discarding artefacts of its own placeholder, not antisense biology.**
+
+### ⭐ The fix is to MEASURE the strand, not to relax the guard
+
+Relaxing it (e.g. to `n_exon ≥ 2` both sides) would admit 3,951 rep pairs wholesale and forfeit the
+precision the guard was shipped for (spurious edges **28 → 3**, antisense families **7.09% → 0.64%**,
+HUMAN panel). Instead, determine the strand the reads already carry — then those reps are stored in the
+right orientation, align `'+'`, and **pass the guard without it being weakened.**
+
+**Validated on a LABELLED set** (`bench/o1_strand_recovery.py`): spliced reps have junction-determined
+strand, i.e. ground truth. On 400 sampled at random from 11,996:
+
+| signal | agreement with junction-determined strand |
+|---|---:|
+| `ts:A:` majority (BAM is `-ax splice:hq -uf`) | **386/400 = 0.9650** |
+| FLAG 0x10 majority | **386/400 = 0.9650** |
+| **COMPARATOR — constant `'+'` predictor** | **0.4867** |
+
+⟹ read orientation recovers the strand at **0.9650** vs a 0.4867 floor. Applied to single-exon reps this
+replaces an ~50%-wrong placeholder with a ~3.5%-wrong measurement — roughly a **14× reduction in
+mis-stranded reps** *(estimated)*.
+
+### ⚠ How this MUST be judged
+
+This changes **what a node IS** (the orientation its sequence is stored in). Judging such a change on
+node- or edge-level counts has **failed 3× end-to-end**. Acceptance must be on:
+1. the emitted **PARTITION** (families/copies), not edge counts;
+2. the **HUMAN 150-window negative panel** — false-merge must not regress from 2/150 = 1.33%;
+3. the **antisense-family rate** — must not regress from 0.64% back toward 7.09%;
+4. the 58 genuine antisense pairs must **still be rejected**.
+
+⚠ Un-run. Requires a source change plus a full catalog rebuild (~2h20m), and it is a **definition-level
+change**, so the negative panel is mandatory, not optional.
+
