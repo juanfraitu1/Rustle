@@ -775,3 +775,71 @@ Two levers, in order: an **n ≥ 3 excision panel** (⚠ feasibility: 14 familie
 **45.78%** of real positives, so the panel would sample the WRONG divergence regime; measure that
 distribution offline first, it is free), and a **larger compartment**.
 
+---
+
+## 4l. ⭐⭐⭐ CROSS-SUBSTRATE REPLICATION — the RELATION transports, the PARTITION less so (2026-08-23)
+
+**The first test of whether O1's object is GENOMIC or SAMPLE-CONDITIONAL**, and the first result in this
+line that is **NOT T8** — it ran through the real binary twice.
+
+Every thesis number rests on a catalog built from `GGO_ds.bam` = **OR6737 TESTIS**, a *different animal*
+from the assembly (KB3781). A depth-matched KB3781 **FIBROBLAST** catalog was built with the same binary,
+reference and parameters, so exactly two things differ: **animal and tissue**.
+
+⚠ `fibro_ds.bam` was NOT depth-matched to the shipped substrate despite the note saying so — 3,962,281
+primaries against 1,628,629, i.e. **2.43x**. Subsampled by READ-NAME hash (`-s 42.4110`, so every
+alignment of a kept read survives together and the primary/secondary structure `E_r` depends on is
+preserved) to **1,627,629 primaries — 0.06% off target.**
+
+| | testis (OR6737) | fibroblast (KB3781) |
+|---|---:|---:|
+| primaries | 1,628,629 | 1,627,629 |
+| skeletons | 94,257 | **55,366** |
+| reps | 17,924 | **13,196** |
+| families | 627 | **356** |
+
+⚠ **THE COUNTS ARE NOT THE READOUT.** Testis transcribes far more of the genome, so fewer fibroblast loci
+is expected biology. Judging the definition on per-sample yields would repeat the error made 3x here
+(judging what a NODE is on node-level counts). The question is agreement **on the loci both see**.
+
+### Agreement on shared loci — reciprocal-50% matched, n = 10,143 reps
+
+(0.5659 of testis, 0.7686 of fibroblast. ⚠ The matcher's lookback window is **inert**: 60 / 400 / 2000
+give byte-identical results, so it is not truncating — the defect that nearly invalidated the SD work.)
+
+| | measured | comparator |
+|---|---:|---|
+| **`E_r` edges recovered** — testis edges on shared loci also found by fibroblast | **1,171/1,345 = 0.8706** | edge density ~2.7e-5, so chance ≈ 0 |
+| edge **Jaccard** | 1,171/1,583 = **0.7397** | as above |
+| partition **ARI** on 724 shared catalog copies | **0.7064** | size-preserving label permutation: mean **-0.0000**, 95th pct 0.0038, **p ≤ 0.005** (200 perms) |
+| **co-membership pair Jaccard** (the harsher, uncorrected framing) | 1,192/2,174 = **0.5483** | — |
+
+⭐⭐ **THE RELATION TRANSPORTS ACROSS ANIMAL *AND* TISSUE: 87.06% of `E_r` edges are recovered.** That is
+the strongest substrate-independence evidence O1 has, and it is consistent with the standing conclusion
+*"the RELATION transcends; the LEVEL can be made to; the NODE SET cannot."*
+
+### ⚠ The partition transports LESS well, and the instability is DIRECTIONAL
+
+Of 261,726 copy pairs on shared loci: together in both **1,192**, apart in both 259,552,
+**testis-together/fibroblast-apart (fibroblast SPLITS) 290 = 0.2953 of disagreements**, and
+**testis-apart/fibroblast-together (fibroblast MERGES) 692 = 0.7047**.
+
+**Fibroblast merges 2.4x more often than it splits** — and its graph on the shared loci is *denser*
+(1,409 edges vs 1,345) despite having 26% fewer reps overall, which points the mechanism at γ: a denser
+graph yields larger quasi-clique blocks. ⚠ Report ARI 0.7064 **and** the pair Jaccard 0.5483; ARI is
+chance-corrected but 259,552/261,726 = 99.2% of pairs are trivially apart in both.
+
+### SELECTION CHECK — the shared stratum is NOT the easier one
+
+Testis reps that MATCHED have **mean degree 0.429** and 10.46% with degree > 0; the UNMATCHED have
+**0.669** and 13.69%. So the shared loci are, if anything, *less* connected — the agreement above is not
+bought by restricting to a well-connected core.
+
+### What this does and does not establish
+
+- ⭐ It **removes the cross-individual objection** as a blanket criticism: the relation survives a change
+  of animal *and* tissue at 0.8706.
+- ⚠ **Animal and tissue are CONFOUNDED** by this design; it cannot say which drives the residual.
+- ⚠ One fibroblast run; no determinism gate exists for it (no prior fibroblast catalog to compare).
+- ⚠ The 627 vs 356 family difference is **expected biology, untested** — do not quote it as instability.
+

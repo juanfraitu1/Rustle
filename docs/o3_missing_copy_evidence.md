@@ -344,3 +344,59 @@ supplies evidence for it.
 `/home/juanfra/winloci_scratch/o3_excise/` (`PREREG.md`, `panel.py`, `mask_genome.py`, `analyse2.py`,
 `detector.py`, `RESULTS_DETECTOR.md`). Masked genome and BAMs:
 `/mnt/linuxdisk/home/juanfraitu/o3_excise/`. DNA-side check: `winloci_scratch/o3_collapse/`.
+
+---
+
+## ⛔ THE HAPLOTYPE ROUTE — NO-GO (2026-08-23)
+
+*Can the non-chosen haplotype supply O3 a REAL positive panel of reference-absent copies?* 17 agents,
+4 angles, 3 adversarial lenses each. **The premise half-holds; the panel does not survive one flag.**
+
+### What is TRUE (verified at byte level)
+`_pri` **is** a per-chromosome mosaic, verbatim: **16 PAT contigs (2,382,898,053 bp) + 9 MAT
+(1,162,936,171 bp) + chrM (16,412 bp) = 3,545,850,636 bp, residual 0.** A 100 kb slice of `_pri`
+NC_073229.2 is md5-identical to mat CM054587.2 at the same coordinates; the pat homolog is not.
+
+### ⚠⚠ WHAT IS FALSE — AND IT IS THE SUBSTRATE, NOT THE IDEA
+**`GGO_ds.bam` — the BAM the entire O1 catalog was built from — is a DIFFERENT ANIMAL from the
+assembly.** Its `@PG` reads `raw/testis/long_reads/GGO/GGO_OR6737.IS...fastq`; 3,000/3,000 sampled
+primaries carry movie `m64076_221110_210557`. Assembly = **KB3781 "Jim"** (SAMN04003007), RNA =
+**OR6737**. Already recorded at `NEGATIVE_RESULTS_REGISTER.md:160` and `o1_read_evidence_repair.md:51`.
+⭐ **Same-animal RNA DOES exist** — `/mnt/linuxdisk/home/juanfraitu/fibroblasts/GCA_029281585.2_flnc_mm.bam`
+(SRR27438212/13, SRR27178662/63 → SAMN04003007). **Any same-individual argument must use it.**
+
+### The route fails on its own measurement, independent of provenance
+
+| kill test | measured | rule |
+|---|---|---|
+| **KT-1 parameter stability** — candidate set at `-p 0.1` vs `-p 0.8` | 56 vs 60, intersection 40, **Jaccard 0.5263** | ≥0.80 required; **FAILED** — 47% turnover on one flag |
+| **KT-2 corrected instrument** — gene candidates vs composition-matched control | **37/3,853 = 0.96%** vs **82/3,862 = 2.12%**, CMH p = 0.5749 | genes are **DEPLETED**; **FAILED** |
+| **KT-3 mirror arm** — excess in the *chosen* haplotype (truth value: not reference-absent) | 56 vs 51, binomial **p = 0.6992** | candidate supply is **symmetric with its own negative control**; **FAILED** |
+
+Two instrument bugs found in the 08-19 code: `count.py` opens a new "copy" on a **1 bp** gap (ACACB's two
+copies abut at CM054568.2:124,626,594/595), and counting genome-wide mat-vs-pat is wrong because
+**`_pri` IS mat for 9 chromosomes**, so 26.91% of "surplus copies" are in the reference.
+
+### ⚠⚠ RETRACT the "larger compartment" argument — it was mine and it is wrong
+The non-chosen haplotype is 3,360,731,991 bp, but that is not the ABSENT set. Measured absent fraction:
+**0.3295% of genic span** (297,879/90,406,212 bp) and 1.2760% of random span ⟹ **10.9–42.1 Mb
+genome-wide against the 2026-08-14 compartment's ~37.0 Mb**. So **~1.1× at best, and 3.4× SMALLER in
+the gene frame** — not the 84× I claimed. **The lever the 08-14 work named is NOT supplied.**
+
+Expected detections after every repair: **≈ 0.9** — numerically identical to the 0.47–0.94 that made
+the 08-14 collapse run underpowered by construction. Panel after the tandem/flank filter: **1 locus**
+(TRANK1, 3,602 bp). Inserted sequence is **median 71.2% softmask repeat**; the two largest blocks are
+one satellite array counted twice.
+
+### The het-CNV objection, resolved — concede it, do not argue it
+**A haplotype-specific copy is 100% in the ABSORBED stratum by construction**: its reads have a
+near-perfect home in its own retained allele. It satisfies the letter of O3-restated but is a different
+phenomenon, and it is present at 1× dosage in this individual and absent in ~half the population.
+
+### What would have counted as confirmation (kept, for any future attempt)
+Raw HiFi from `gorilla_hifi/SRR26152581` (verified HiFi, same animal, on disk) spanning **both**
+breakpoints at 0.35–0.70× local diploid depth with zero such reads over the `_pri` interval — the only
+thing separating "extra copy on haplotype A" from "collapse on haplotype B". Plus held-out molecules
+carrying **≥2 linked PSVs**, scored against the third-allele null **51/19,365 = 0.0026** (the tightest
+null in the design, 180× tighter than an allele-fraction null).
+
