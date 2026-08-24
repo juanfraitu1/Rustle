@@ -41,6 +41,10 @@ pub struct PrimaryRead {
     pub ref_end: u64,
     /// Intron `(donor, acceptor)` chain (empty for a single-exon read).
     pub introns: Vec<(u64, u64)>,
+    /// FLAG 0x10 — this alignment is reverse-complemented. Carried because an UNSPLICED model has no
+    /// junction motif to read a strand from, so the majority read orientation is the only strand
+    /// measurement available there (see [`Skeleton::read_strand`]).
+    pub reverse: bool,
 }
 
 /// A de-novo read-coherence skeleton (Pass-1 output): a distinct `(chrom, intron-chain)` with its support.
@@ -52,6 +56,22 @@ pub struct Skeleton {
     pub n_reads: u32,
     pub introns: Vec<(u64, u64)>,
     pub tied_seeded: bool,
+    /// Majority READ orientation of the group: `'-'` iff a STRICT majority of its reads carry FLAG 0x10,
+    /// else `'+'`; `None` when the group was not built from reads. Consulted ONLY for an unspliced model
+    /// (see [`build_spliced_seq`]) — a spliced model's strand comes from its junction motifs.
+    pub read_strand: Option<char>,
+}
+
+/// Majority READ orientation of a group of reads: `'-'` iff a STRICT majority carry FLAG 0x10, else `'+'`.
+/// A tie resolves to `'+'`, the historical placeholder, so the vote can only move a skeleton OFF the
+/// placeholder when the reads actually outvote it. Counting (not ordering) means the answer does not depend
+/// on the order the reads arrived in.
+fn majority_read_strand(n_reverse: u32, n_total: u32) -> char {
+    if n_reverse * 2 > n_total {
+        '-'
+    } else {
+        '+'
+    }
 }
 
 /// Pass-1: group PRIMARY reads by `(chrom, intron-chain)` → skeletons, keeping groups with `>= min_reads`.
@@ -183,8 +203,8 @@ pub fn pass1_skeletons_robust_with(
 ) -> Vec<Skeleton> {
     use std::collections::BTreeMap;
     let k = min_terminal_support.max(1) as usize;
-    // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc).
-    let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>)> = BTreeMap::new();
+    // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc, n_reverse).
+    let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)> = BTreeMap::new();
     // all starts/ends per group, populated only when `snap` is on
     let mut allpos: BTreeMap<(&str, Vec<(u64, u64)>), (Vec<u64>, Vec<u64>)> = BTreeMap::new();
     for r in reads {
@@ -193,8 +213,9 @@ pub fn pass1_skeletons_robust_with(
         }
         let e = groups
             .entry((r.chrom.as_str(), r.introns.clone()))
-            .or_insert((0, Vec::new(), Vec::new()));
+            .or_insert((0, Vec::new(), Vec::new(), 0));
         e.0 += 1;
+        e.3 += u32::from(r.reverse);
         if snap.is_some() {
             let a = allpos
                 .entry((r.chrom.as_str(), r.introns.clone()))
@@ -217,8 +238,8 @@ pub fn pass1_skeletons_robust_with(
     }
     let mut skels: Vec<Skeleton> = groups
         .into_iter()
-        .filter(|(_, (n, _, _))| *n >= min_reads)
-        .map(|((chrom, introns), (n, starts, ends))| {
+        .filter(|(_, (n, _, _, _))| *n >= min_reads)
+        .map(|((chrom, introns), (n, starts, ends, n_rev))| {
             // robust boundary = the k-th supported value (or the outermost available if the group is smaller).
             let si = k.min(starts.len()).saturating_sub(1);
             let ei = k.min(ends.len()).saturating_sub(1);
@@ -241,6 +262,7 @@ pub fn pass1_skeletons_robust_with(
                 n_reads: n,
                 introns,
                 tied_seeded: false,
+                read_strand: Some(majority_read_strand(n_rev, n)),
             }
         })
         .collect();
@@ -300,6 +322,9 @@ pub fn tied_seed_skeletons(
                 n_reads: n,
                 introns,
                 tied_seeded: true,
+                // SPLICED: the strand comes from the junction motifs, which never consult `read_strand`.
+                // The unspliced tied seeds below go through `cluster_unspliced`, which does measure it.
+                read_strand: None,
             })
         })
         .collect();
@@ -360,6 +385,7 @@ pub fn alignment_read_from_record(
         ref_start,
         ref_end: exons.last().map(|e| e.1).unwrap_or(ref_start),
         introns,
+        reverse: flags.is_reverse_complemented(),
     })
 }
 
@@ -457,6 +483,7 @@ pub fn any_read_from_record(record: &RecordBuf, chrom: &str) -> Option<(PrimaryR
         ref_start,
         ref_end: exons.last().map(|e| e.1).unwrap_or(ref_start),
         introns,
+        reverse: flags.is_reverse_complemented(),
     };
     let name = record.name().map(|n| n.to_string()).unwrap_or_default();
     let as_ = record_as(record)?;
@@ -927,12 +954,39 @@ fn junction_strand(genome: &GenomeIndex, chrom: &str, donor: u64, acceptor: u64)
 /// `reverse_complement`, which maps lowercase → N, is safe), and reverse-complement for a `-` strand.
 /// Returns `None` if a junction is non-canonical/inconsistent or a fetch fails. Length gating is the
 /// caller's. Shared by the assemble gate and the rescue thin-locus scan.
+///
+/// `read_strand` is the majority orientation of the reads that seeded the model ([`Skeleton::read_strand`]),
+/// consulted ONLY when there are no introns — see the strand resolution at the end. Every caller but the
+/// assemble gate passes `None`.
 pub fn build_spliced_seq(
     genome: &GenomeIndex,
     chrom: &str,
     start: u64,
     end: u64,
     introns: &[(u64, u64)],
+    read_strand: Option<char>,
+) -> Option<(Vec<u8>, char)> {
+    let majority = matches!(std::env::var("RUSTLE_JUNCTION_MAJORITY"), Ok(v) if v != "0" && !v.is_empty());
+    let nc_max: u64 = std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000);
+    build_spliced_seq_with(genome, chrom, start, end, introns, read_strand, majority, nc_max)
+}
+
+/// `build_spliced_seq` with the junction-mode switches passed explicitly instead of read from the
+/// environment. Exists so the strand resolution is testable in BOTH modes without mutating process env
+/// (which races under the parallel test harness) -- the same split, for the same reason, as
+/// `pass1_skeletons_robust_with`. It matters specifically here because the two modes arrive at the
+/// resolution in DIFFERENT states for an unspliced model: strict leaves `strand` as `None`, majority sets
+/// it to `Some('+')` from a vacuous count.
+#[allow(clippy::too_many_arguments)]
+pub fn build_spliced_seq_with(
+    genome: &GenomeIndex,
+    chrom: &str,
+    start: u64,
+    end: u64,
+    introns: &[(u64, u64)],
+    read_strand: Option<char>,
+    majority: bool,
+    nc_max: u64,
 ) -> Option<(Vec<u8>, char)> {
     // Strand from the junction motifs. STRICT (default): every junction must be canonical and they must all
     // agree, otherwise the whole transcript is discarded. That is unforgiving in a specific way -- ONE odd
@@ -950,8 +1004,6 @@ pub fn build_spliced_seq(
     // since a spuriously chained junction is usually non-canonical. So tolerance is granted only to SMALL
     // introns: a 252 bp non-canonical junction (NPIPB12's) is a plausible real splice variant, a 104 kb one
     // is a mis-chain. Above `RUSTLE_JUNCTION_NC_MAX_BP` (default 10 kb) canonical is still required.
-    let majority = matches!(std::env::var("RUSTLE_JUNCTION_MAJORITY"), Ok(v) if v != "0" && !v.is_empty());
-    let nc_max: u64 = std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000);
     let mut strand: Option<char> = None;
     if majority {
         let (mut plus, mut minus) = (0usize, 0usize);
@@ -1007,7 +1059,24 @@ pub fn build_spliced_seq(
         let s = genome.fetch_sequence(chrom, xs, xe)?;
         seq.extend(s.iter().map(|b| b.to_ascii_uppercase()));
     }
-    let strand = strand.unwrap_or('+');
+    // An UNSPLICED model has NO junction evidence, so nothing above measured its strand: both paths leave
+    // the '+' placeholder (strict leaves `strand` None; majority set it from a vacuously (0,0) count). The
+    // placeholder is not a measurement — on the shipped rep dump all 5,928 single-exon reps are '+' and NONE
+    // is '-', 33.07% of the rep set, while the 11,996 spliced reps split 0.4867 / 0.5133. It costs edges: a
+    // rep stored in the wrong orientation aligns MINUS to a correctly-oriented paralogue and the orientation
+    // guard drops the pair — 3,951 of the 4,009 guard-blocked pairs (0.9855) involve a single-exon rep,
+    // against 0.3943 of the kept pairs (2.50x). The read orientation IS a measurement: scored on the spliced
+    // reps, whose strand is junction-determined, FLAG-0x10 majority reproduces it 386/400 = 0.9650 versus
+    // 0.4867 for the constant '+'.
+    //
+    // A SPLICED model's strand is junction evidence and is left untouched — read orientation never overrides
+    // a motif. Note the order `read_strand.or(strand)`, not the reverse: in majority mode the vacuous count
+    // already set `strand = Some('+')` EXPLICITLY, so `strand.or(read_strand)` would never fire there.
+    let strand = if introns.is_empty() {
+        read_strand.or(strand).unwrap_or('+')
+    } else {
+        strand.unwrap_or('+')
+    };
     if strand == '-' {
         seq = reverse_complement(&seq);
     }
@@ -1113,6 +1182,23 @@ pub fn locus_support(skeletons: &[Skeleton]) -> Vec<u32> {
 /// junctions are all canonical + consistent-strand, and whose spliced length is in `[min_spliced, max_spliced]`.
 /// A locus is a copy family of size >= 1; single-copy is the chi(H)=1 boundary case (see the `single_copy` module).
 pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParams) -> Vec<DenovoTranscript> {
+    // Opt-in read-orientation strand for UNSPLICED models (`RUSTLE_READ_STRAND`, see `build_spliced_seq`).
+    // OFF by default so every existing catalog stays byte-identical; the delta gets measured before it is
+    // flipped.
+    let use_read_strand = matches!(std::env::var("RUSTLE_READ_STRAND"), Ok(v) if v != "0" && !v.is_empty());
+    assemble_gate_with(skeletons, genome, p, use_read_strand)
+}
+
+/// `assemble_gate` with the read-orientation switch passed explicitly instead of read from the environment.
+/// Exists so the WIRING -- that `sk.read_strand` actually reaches `build_spliced_seq` -- is reachable from
+/// tests without mutating process env (which races under the parallel test harness); the same split, and for
+/// the same reason, as `pass1_skeletons_robust_with`.
+pub fn assemble_gate_with(
+    skeletons: &[Skeleton],
+    genome: &GenomeIndex,
+    p: &GateParams,
+    use_read_strand: bool,
+) -> Vec<DenovoTranscript> {
     let support: Vec<u32> =
         if p.pool_locus_support { locus_support(skeletons) } else { skeletons.iter().map(|s| s.n_reads).collect() };
     let mut out = Vec::new();
@@ -1123,7 +1209,14 @@ pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParam
         if sk.end.saturating_sub(sk.start) > p.max_span {
             continue;
         }
-        let (seq, strand) = match build_spliced_seq(genome, &sk.chrom, sk.start, sk.end, &sk.introns) {
+        let (seq, strand) = match build_spliced_seq(
+            genome,
+            &sk.chrom,
+            sk.start,
+            sk.end,
+            &sk.introns,
+            if use_read_strand { sk.read_strand } else { None },
+        ) {
             Some(v) => v,
             None => continue,
         };
@@ -1180,6 +1273,10 @@ pub fn cluster_unspliced(reads: &[PrimaryRead], min_reads: u32, k: usize) -> Vec
                 ends.sort_unstable_by(|a, b| b.cmp(a));
                 let si = k.min(starts.len()).saturating_sub(1);
                 let ei = k.min(ends.len()).saturating_sub(1);
+                // These are exactly the skeletons with no junctions, so the read orientation is the only
+                // strand measurement they will ever get (see `build_spliced_seq`). Cluster MEMBERSHIP is a
+                // function of the sorted (start, end) multiset, so the vote is order-independent too.
+                let n_rev = cluster.iter().filter(|r| r.reverse).count() as u32;
                 out.push(Skeleton {
                     chrom: chrom.to_string(),
                     start: starts[si],
@@ -1187,6 +1284,7 @@ pub fn cluster_unspliced(reads: &[PrimaryRead], min_reads: u32, k: usize) -> Vec
                     n_reads: n,
                     introns: Vec::new(),
                     tied_seeded: false,
+                    read_strand: Some(majority_read_strand(n_rev, n)),
                 });
             }
             i = j;
@@ -1241,6 +1339,7 @@ pub fn split_mischained_reads(
                         ref_start: seg_start,
                         ref_end: exons[i].1,
                         introns: std::mem::take(&mut seg_introns),
+                        reverse: r.reverse, // a cut splits one molecule; every piece kept its orientation
                     });
                     seg_start = exons[i + 1].0;
                 } else {
@@ -1253,6 +1352,7 @@ pub fn split_mischained_reads(
             ref_start: seg_start,
             ref_end: exons.last().unwrap().1,
             introns: seg_introns,
+            reverse: r.reverse,
         });
     }
     out
@@ -1263,7 +1363,7 @@ mod locus_support_tests {
     use super::*;
 
     fn sk(chrom: &str, start: u64, end: u64, n_reads: u32, introns: &[(u64, u64)]) -> Skeleton {
-        Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec(), tied_seeded: false }
+        Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec(), tied_seeded: false, read_strand: None }
     }
 
     /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
@@ -1288,11 +1388,11 @@ mod locus_support_tests {
         let introns = vec![(100, 200), (300, 400), (500, 600)];
 
         std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
-        assert!(build_spliced_seq(&g, "c1", 0, 700, &introns).is_none(),
+        assert!(build_spliced_seq(&g, "c1", 0, 700, &introns, None).is_none(),
                 "strict mode must drop a transcript with one non-canonical junction");
 
         std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "1");
-        let got = build_spliced_seq(&g, "c1", 0, 700, &introns);
+        let got = build_spliced_seq(&g, "c1", 0, 700, &introns, None);
         assert!(got.is_some(), "majority mode must keep it");
         assert_eq!(got.unwrap().1, '-', "strand comes from the two canonical CT..AC junctions");
 
@@ -1304,10 +1404,10 @@ mod locus_support_tests {
         let un: Vec<(u64, u64)> = vec![];
         let strict_unspliced = {
             std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
-            build_spliced_seq(&g, "c1", 0, 100, &un)
+            build_spliced_seq(&g, "c1", 0, 100, &un, None)
         };
         std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "1");
-        let majority_unspliced = build_spliced_seq(&g, "c1", 0, 100, &un);
+        let majority_unspliced = build_spliced_seq(&g, "c1", 0, 100, &un, None);
         assert!(strict_unspliced.is_some(), "strict mode admits an unspliced model (control)");
         assert!(
             majority_unspliced.is_some(),
@@ -1322,7 +1422,7 @@ mod locus_support_tests {
         let seq2 = format!("{ex}{gtag}{ex}{good}{ex}");
         std::fs::write(&fa, format!(">c1\n{seq2}\n")).unwrap();
         let g2 = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
-        assert!(build_spliced_seq(&g2, "c1", 0, 500, &vec![(100, 200), (300, 400)]).is_none(),
+        assert!(build_spliced_seq(&g2, "c1", 0, 500, &vec![(100, 200), (300, 400)], None).is_none(),
                 "a 1-vs-1 strand conflict must be rejected even in majority mode");
         std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1359,6 +1459,7 @@ mod locus_support_tests {
                 ref_start: 10_000 + i % 5,          // tight peak: 10000..10004
                 ref_end: 30_000 + i * 500,          // broad scatter: 30000..39500
                 introns: vec![(12_000, 20_000)],
+                reverse: false,
             });
         }
         // one 5' outlier that drags the k-th-read start quantile away from the peak
@@ -1367,6 +1468,7 @@ mod locus_support_tests {
             ref_start: 1_000,
             ref_end: 30_000,
             introns: vec![(12_000, 20_000)],
+            reverse: false,
         });
 
         let off = pass1_skeletons_robust_with(&reads, 3, 2, None);
@@ -1501,7 +1603,7 @@ mod tests {
     use super::*;
 
     fn pr(chrom: &str, start: u64, end: u64, introns: &[(u64, u64)]) -> PrimaryRead {
-        PrimaryRead { chrom: chrom.into(), ref_start: start, ref_end: end, introns: introns.to_vec() }
+        PrimaryRead { chrom: chrom.into(), ref_start: start, ref_end: end, introns: introns.to_vec(), reverse: false }
     }
 
     #[test]
@@ -1561,6 +1663,30 @@ mod tests {
         assert_eq!(p.ref_start, 100);
         assert_eq!(p.ref_end, 280);
         assert_eq!(p.introns, vec![(180, 200)]);
+    }
+
+    /// ⭐ THE INGEST TEST. `flags.is_reverse_complemented()` at the two record->PrimaryRead sites is the
+    /// ONLY place BAM orientation enters the rep set, and it is the sole input `RUSTLE_READ_STRAND`
+    /// consumes. Every other test in this change hand-builds `PrimaryRead { reverse: .. }` literals, so
+    /// WITHOUT this test both ingest sites could be replaced by `false` and the feature would be entirely
+    /// inert in production while the whole suite still passed -- which would make a null result from a
+    /// 2h+ catalog run uninterpretable ("did it do nothing, or was it never wired?").
+    #[test]
+    fn record_ingest_captures_read_orientation() {
+        let ops = || vec![Op::new(Kind::Match, 80), Op::new(Kind::Skip, 20), Op::new(Kind::Match, 80)];
+        let fwd = primary_read_from_record(&rec(Flags::default(), 101, ops()), "c1")
+            .expect("forward primary");
+        assert!(!fwd.reverse, "a forward record must not be marked reverse");
+        let rev = primary_read_from_record(&rec(Flags::REVERSE_COMPLEMENTED, 101, ops()), "c1")
+            .expect("reverse primary");
+        assert!(rev.reverse, "FLAG 0x10 must reach PrimaryRead.reverse");
+        // Orientation must not perturb the coordinates it travels beside.
+        assert_eq!((rev.ref_start, rev.ref_end, rev.introns.clone()), (fwd.ref_start, fwd.ref_end, fwd.introns.clone()));
+
+        // The same ingest via `alignment_read_from_record`, which the secondary-tolerant path uses.
+        let ar = alignment_read_from_record(&rec(Flags::REVERSE_COMPLEMENTED, 101, ops()), "c1", false)
+            .expect("reverse primary via alignment_read_from_record");
+        assert!(ar.reverse, "FLAG 0x10 must reach PrimaryRead.reverse on the alignment_read path too");
     }
 
     #[test]
@@ -1628,7 +1754,8 @@ mod tests {
         assert!(primary_read_from_record(&rec(Flags::UNMAPPED, 101, ops()), "c1").is_none());
     }
     fn skel(chrom: &str, start: u64, end: u64, n: u32, introns: &[(u64, u64)]) -> Skeleton {
-        Skeleton { chrom: chrom.into(), start, end, n_reads: n, introns: introns.to_vec(), tied_seeded: false }
+        Skeleton { chrom: chrom.into(), start, end, n_reads: n, introns: introns.to_vec(), tied_seeded: false,
+                   read_strand: Some('+') } // `pr` builds forward reads, so the group's vote is '+'
     }
     /// Genome: exon1 [0,80), intron [80,100) with the given dinucleotides, exon2 [100,180). 160 bp spliced.
     fn genome_one_intron(donor: &[u8; 2], acc: &[u8; 2]) -> GenomeIndex {
@@ -1920,6 +2047,106 @@ mod tests {
         assert_eq!(sk[0].n_reads, 3);
     }
 
+    // ---- read-orientation strand for UNSPLICED models (RUSTLE_READ_STRAND) ----
+
+    /// The defect: an unspliced model has no junction motif, so its strand was the `'+'` placeholder --
+    /// on the shipped rep dump all 5,928 single-exon reps are `'+'` and none is `'-'` (33.07% of the set),
+    /// while the 11,996 spliced reps split 0.4867 / 0.5133. This pins BOTH halves of the fix: the flag OFF
+    /// is today's answer exactly, and the flag ON moves ONLY the model that has no junction evidence.
+    ///
+    /// Both junction modes are exercised, because they reach the resolution in different states: strict
+    /// leaves `strand` `None` for an unspliced model, majority sets it to `Some('+')` from a vacuous 0-vs-0
+    /// count -- so a `strand.or(read_strand)` would silently never fire under majority.
+    #[test]
+    fn read_strand_off_is_unchanged_and_only_an_unspliced_model_can_flip() {
+        // exon1 [0,80), canonical GT..AG intron [80,100), exon2 [100,180) -- a '+'-strand shape.
+        let g = genome_one_intron(b"GT", b"AG");
+        let spliced = vec![(80u64, 100u64)];
+        let unspliced: Vec<(u64, u64)> = vec![];
+
+        for &majority in &[false, true] {
+            // OFF (`read_strand = None`): today's answer, in both modes.
+            let sp = build_spliced_seq_with(&g, "c1", 0, 180, &spliced, None, majority, 10_000).unwrap();
+            assert_eq!(sp.1, '+', "the junction motifs say '+'");
+            assert_eq!(sp.0.len(), 160, "the 20 bp intron is spliced out");
+            let un = build_spliced_seq_with(&g, "c1", 0, 180, &unspliced, None, majority, 10_000).unwrap();
+            assert_eq!(un.1, '+', "no junctions and no read evidence -> the historical placeholder");
+            assert_eq!(un.0.len(), 180);
+
+            // THE FIX FIRES: the measured read strand replaces the placeholder, and the STORED SEQUENCE
+            // flips with it -- which is the point, since a rep stored in the wrong orientation is what the
+            // orientation guard drops (3,951 of 4,009 guard-blocked pairs involve a single-exon rep).
+            let flipped =
+                build_spliced_seq_with(&g, "c1", 0, 180, &unspliced, Some('-'), majority, 10_000).unwrap();
+            assert_eq!(flipped.1, '-', "majority={majority}: the read strand must win over the placeholder");
+            assert_eq!(flipped.0, reverse_complement(&un.0), "the sequence must flip with the strand");
+
+            // ...and a measured '+' is a no-op rather than merely coinciding.
+            assert_eq!(build_spliced_seq_with(&g, "c1", 0, 180, &unspliced, Some('+'), majority, 10_000), Some(un));
+
+            // SPLICED UNTOUCHED: junction evidence beats read orientation, always.
+            let sp_rev =
+                build_spliced_seq_with(&g, "c1", 0, 180, &spliced, Some('-'), majority, 10_000).unwrap();
+            assert_eq!(sp_rev, sp, "a spliced model's strand IS evidence and must not move");
+        }
+    }
+
+    /// The WIRING: that `Skeleton::read_strand` actually reaches `build_spliced_seq`, and only when the
+    /// switch is on. Reached through `assemble_gate_with` so the test never touches process env.
+    #[test]
+    fn assemble_gate_read_strand_switch_is_wired_to_the_unspliced_skeleton() {
+        let g = genome_one_intron(b"GT", b"AG");
+        let mut sk = skel("c1", 0, 180, 3, &[]);
+        sk.read_strand = Some('-');
+
+        let off = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), false);
+        assert_eq!(off.len(), 1);
+        assert_eq!(off[0].strand, '+', "default OFF: the skeleton's measured strand is not consulted");
+
+        let on = assemble_gate_with(&[sk], &g, &GateParams::default(), true);
+        assert_eq!(on.len(), 1);
+        assert_eq!(on[0].strand, '-', "ON: the vote reaches build_spliced_seq");
+        assert_eq!(on[0].seq, reverse_complement(&off[0].seq), "and the emitted sequence flips with it");
+    }
+
+    /// The vote is a STRICT majority (a tie keeps the `'+'` placeholder) and is a COUNT, not a scan, so it
+    /// cannot depend on the order the BAM happened to deliver the reads in.
+    #[test]
+    fn read_strand_is_a_strict_majority_and_ignores_read_order() {
+        let un = |s: u64, e: u64, rev: bool| PrimaryRead {
+            chrom: "c1".into(), ref_start: s, ref_end: e, introns: vec![], reverse: rev,
+        };
+
+        // 2 reverse vs 1 forward -> '-'
+        let reads = vec![un(100, 400, true), un(150, 450, true), un(200, 500, false)];
+        assert_eq!(cluster_unspliced(&reads, 3, 1)[0].read_strand, Some('-'));
+        // 1 vs 1 is NOT a majority: the vote only moves a skeleton when the reads outvote the placeholder.
+        let tie = vec![un(100, 400, true), un(150, 450, false)];
+        assert_eq!(cluster_unspliced(&tie, 2, 1)[0].read_strand, Some('+'), "a tie keeps the placeholder");
+        // 1 reverse vs 2 forward -> '+'
+        let fwd = vec![un(100, 400, true), un(150, 450, false), un(200, 500, false)];
+        assert_eq!(cluster_unspliced(&fwd, 3, 1)[0].read_strand, Some('+'));
+
+        // ORDER-INDEPENDENT even for reads with IDENTICAL coordinates, where the cluster's own sort cannot
+        // separate them -- only counting is stable here.
+        let same = vec![un(10, 90, true), un(10, 90, false), un(10, 90, true)];
+        for k in 0..same.len() {
+            let mut perm = same.clone();
+            perm.rotate_left(k);
+            assert_eq!(cluster_unspliced(&perm, 3, 1), cluster_unspliced(&same, 3, 1), "rotation {k}");
+        }
+
+        // Same for the spliced grouping in pass1. The field is recorded there too (a skeleton is a skeleton),
+        // though only an unspliced model ever consults it.
+        let sp = |s: u64, rev: bool| PrimaryRead {
+            chrom: "c1".into(), ref_start: s, ref_end: s + 400, introns: vec![(200, 300)], reverse: rev,
+        };
+        let g1 = vec![sp(100, true), sp(101, true), sp(102, false)];
+        let g2 = vec![sp(102, false), sp(101, true), sp(100, true)];
+        assert_eq!(pass1_skeletons_robust_with(&g1, 2, 1, None), pass1_skeletons_robust_with(&g2, 2, 1, None));
+        assert_eq!(pass1_skeletons_robust_with(&g1, 2, 1, None)[0].read_strand, Some('-'));
+    }
+
     // ---- tied_seed_skeletons ----
 
     #[test]
@@ -1970,7 +2197,7 @@ mod tests {
         ];
         let primaries = vec![Skeleton {
             chrom: "chr1".into(), start: 90, end: 480, n_reads: 5,
-            introns: vec![(200, 300)], tied_seeded: false,
+            introns: vec![(200, 300)], tied_seeded: false, read_strand: None,
         }];
         assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
     }
@@ -2001,7 +2228,7 @@ mod tests {
         ];
         let primaries = vec![Skeleton {
             chrom: "chr1".into(), start: 900, end: 1900, n_reads: 5,
-            introns: vec![], tied_seeded: false,
+            introns: vec![], tied_seeded: false, read_strand: None,
         }];
         assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
     }
@@ -2012,13 +2239,14 @@ mod tests {
         let reads = vec![PrimaryRead {
             chrom: "chr1".into(), ref_start: 100, ref_end: 80_100,
             introns: vec![(200, 210), (300, 80_000)], // small internal intron, then a giant bridge
+            reverse: false,
         }];
         let mut support = HashMap::new();
         support.insert(("chr1".to_string(), 300, 80_000), 1); // giant, sub-threshold -> CUT
         let out = split_mischained_reads(&reads, &support, 50_000, 3);
         assert_eq!(out, vec![
-            PrimaryRead { chrom: "chr1".into(), ref_start: 100,    ref_end: 300,    introns: vec![(200, 210)] },
-            PrimaryRead { chrom: "chr1".into(), ref_start: 80_000, ref_end: 80_100, introns: vec![] },
+            PrimaryRead { chrom: "chr1".into(), ref_start: 100,    ref_end: 300,    introns: vec![(200, 210)], reverse: false },
+            PrimaryRead { chrom: "chr1".into(), ref_start: 80_000, ref_end: 80_100, introns: vec![], reverse: false },
         ]);
     }
 
@@ -2026,7 +2254,7 @@ mod tests {
     fn split_does_not_cut_well_supported_large_intron() {
         use std::collections::HashMap;
         let reads = vec![PrimaryRead {
-            chrom: "chr1".into(), ref_start: 100, ref_end: 80_100, introns: vec![(300, 80_000)],
+            chrom: "chr1".into(), ref_start: 100, ref_end: 80_100, introns: vec![(300, 80_000)], reverse: false,
         }];
         let mut support = HashMap::new();
         support.insert(("chr1".to_string(), 300, 80_000), 3); // >= min_reads -> real large-gene intron, NOT a mis-chain
@@ -2038,7 +2266,7 @@ mod tests {
     fn split_ignores_sub_giant_introns() {
         use std::collections::HashMap;
         let reads = vec![PrimaryRead {
-            chrom: "chr1".into(), ref_start: 100, ref_end: 500, introns: vec![(200, 210), (300, 320)],
+            chrom: "chr1".into(), ref_start: 100, ref_end: 500, introns: vec![(200, 210), (300, 320)], reverse: false,
         }];
         let out = split_mischained_reads(&reads, &HashMap::new(), 50_000, 3); // no intron exceeds giant_bp
         assert_eq!(out, reads);
@@ -2050,12 +2278,13 @@ mod tests {
         let reads = vec![PrimaryRead {
             chrom: "chr1".into(), ref_start: 0, ref_end: 160_050,
             introns: vec![(50, 80_000), (80_050, 160_000)], // two giant sub-threshold bridges
+            reverse: false,
         }];
         let out = split_mischained_reads(&reads, &HashMap::new(), 50_000, 3); // absent support => 0 < 3 => both cut
         assert_eq!(out, vec![
-            PrimaryRead { chrom: "chr1".into(), ref_start: 0,       ref_end: 50,      introns: vec![] },
-            PrimaryRead { chrom: "chr1".into(), ref_start: 80_000,  ref_end: 80_050,  introns: vec![] },
-            PrimaryRead { chrom: "chr1".into(), ref_start: 160_000, ref_end: 160_050, introns: vec![] },
+            PrimaryRead { chrom: "chr1".into(), ref_start: 0,       ref_end: 50,      introns: vec![], reverse: false },
+            PrimaryRead { chrom: "chr1".into(), ref_start: 80_000,  ref_end: 80_050,  introns: vec![], reverse: false },
+            PrimaryRead { chrom: "chr1".into(), ref_start: 160_000, ref_end: 160_050, introns: vec![], reverse: false },
         ]);
     }
 
@@ -2063,8 +2292,8 @@ mod tests {
     fn split_passes_reads_through_unchanged_when_no_cut() {
         use std::collections::HashMap;
         let reads = vec![
-            PrimaryRead { chrom: "chr1".into(), ref_start: 0, ref_end: 100, introns: vec![] },
-            PrimaryRead { chrom: "chr2".into(), ref_start: 5, ref_end: 400, introns: vec![(100, 200)] },
+            PrimaryRead { chrom: "chr1".into(), ref_start: 0, ref_end: 100, introns: vec![], reverse: false },
+            PrimaryRead { chrom: "chr2".into(), ref_start: 5, ref_end: 400, introns: vec![(100, 200)], reverse: false },
         ];
         assert_eq!(split_mischained_reads(&reads, &HashMap::new(), 50_000, 3), reads);
     }

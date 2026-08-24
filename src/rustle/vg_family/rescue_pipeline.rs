@@ -136,7 +136,7 @@ pub fn rescue_thin_loci(
         {
             continue;
         }
-        let (seq, strand) = match build_spliced_seq(genome, &locus.chrom, locus.start, locus.end, &locus.introns) {
+        let (seq, strand) = match build_spliced_seq(genome, &locus.chrom, locus.start, locus.end, &locus.introns, None) {
             Some(v) => v,
             None => continue,
         };
@@ -224,7 +224,7 @@ mod tests {
         parts.iter().flat_map(|p| p.iter().copied()).collect()
     }
     fn read(chrom: &str, s: u64, e: u64, introns: &[(u64, u64)]) -> PrimaryRead {
-        PrimaryRead { chrom: chrom.into(), ref_start: s, ref_end: e, introns: introns.to_vec() }
+        PrimaryRead { chrom: chrom.into(), ref_start: s, ref_end: e, introns: introns.to_vec(), reverse: false }
     }
 
     /// Genome with one thin gene: exon1 [0,200), canonical intron [200,220) GT..AG, exon2 [220,420);

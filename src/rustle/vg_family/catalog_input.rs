@@ -360,7 +360,7 @@ pub fn to_colocated(
             }
             None => {
                 let (seq, derived) =
-                    super::denovo_assemble::build_spliced_seq(genome, &c.chrom, c.start, c.end, &introns)
+                    super::denovo_assemble::build_spliced_seq(genome, &c.chrom, c.start, c.end, &introns, Some(c.strand))
                         .with_context(|| {
                             format!(
                                 "--families: could not rebuild {} copy {} ({}:{}-{}) from --fasta — the \

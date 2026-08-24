@@ -458,7 +458,7 @@ pub fn collapsed_copy_to_transcript(
     genome: &crate::genome::GenomeIndex,
 ) -> Option<crate::vg_family::family_detect::DenovoTranscript> {
     use crate::vg_family::denovo_assemble::build_spliced_seq;
-    let (seq, strand) = build_spliced_seq(genome, &host.chrom, host.start, host.end, &iso.intron_chain)?;
+    let (seq, strand) = build_spliced_seq(genome, &host.chrom, host.start, host.end, &iso.intron_chain, Some(host.strand))?;
     // `seq` follows the COPY's intron chain, so `host_spliced.introns` MUST be that same chain for
     // `exon_map`/`gen2off` to agree with the seq bytes (the host's own chain may differ — private junction).
     let host_spliced = crate::vg_family::family_detect::DenovoTranscript {

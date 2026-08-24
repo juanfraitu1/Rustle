@@ -5826,6 +5826,10 @@ fn write_er_edge_dump(
         ("env.RUSTLE_GENOME_GAMMA".into(), env("RUSTLE_GENOME_GAMMA")),
         ("env.RUSTLE_LOCUS_EXON_UNION".into(), env("RUSTLE_LOCUS_EXON_UNION")),
         ("env.RUSTLE_COTHREAD_REP".into(), env("RUSTLE_COTHREAD_REP")),
+        // Third member of the set above: like EXON_UNION and COTHREAD_REP it changes what a rep IS --
+        // here the `strand` column AND the stored sequence bytes of every unspliced rep. Without this row
+        // an OFF and an ON catalog have byte-identical params.tsv, defeating this file's stated purpose.
+        ("env.RUSTLE_READ_STRAND".into(), env("RUSTLE_READ_STRAND")),
     ];
     // The rule rows land LAST, so `params.tsv` remains a strict superset of `rule.tsv` on both sides.
     rows.extend(rule);
@@ -7806,7 +7810,7 @@ mod tests {
         (0..n).map(|_| B[(rng.next_u64() % 4) as usize]).collect()
     }
     fn read(chrom: &str, s: u64, e: u64, introns: &[(u64, u64)]) -> PrimaryRead {
-        PrimaryRead { chrom: chrom.into(), ref_start: s, ref_end: e, introns: introns.to_vec() }
+        PrimaryRead { chrom: chrom.into(), ref_start: s, ref_end: e, introns: introns.to_vec(), reverse: false }
     }
     fn cat(parts: &[&[u8]]) -> Vec<u8> {
         parts.iter().flat_map(|p| p.iter().copied()).collect()
@@ -9649,7 +9653,7 @@ mod tests {
     // ---------------------------------------------------------------------------------------------
 
     fn pread(s: u64, e: u64, introns: Vec<(u64, u64)>) -> PrimaryRead {
-        PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: e, introns }
+        PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: e, introns, reverse: false }
     }
 
     /// THE REGRESSION. The real `GWFAM244:2` shape, measured on the matched-individual BAM
@@ -9780,7 +9784,7 @@ mod tests {
     #[test]
     fn salvage_seeds_local_locus_that_a_mischain_bridge_would_lose() {
         use crate::vg_family::denovo_assemble::{pass1_skeletons_robust, PrimaryRead, Skeleton};
-        let mk = |s: u64, e: u64, introns: Vec<(u64, u64)>| PrimaryRead { chrom: "chr1".into(), ref_start: s, ref_end: e, introns };
+        let mk = |s: u64, e: u64, introns: Vec<(u64, u64)>| PrimaryRead { chrom: "chr1".into(), ref_start: s, ref_end: e, introns, reverse: false };
         let mut reads = vec![];
         for _ in 0..3 { reads.push(mk(1000, 1100, vec![])); } // locus A natives
         for _ in 0..3 { reads.push(mk(900_000, 900_100, vec![])); } // locus B natives
@@ -9990,7 +9994,7 @@ mod tests {
     /// secondaries, inflating the DAZ readthrough span from 56 to 154 distinct junctions.
     #[test]
     fn read_junction_support_counts_each_primary_read_once() {
-        let pr = |s: u64, introns: Vec<(u64, u64)>| PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: s + 400, introns };
+        let pr = |s: u64, introns: Vec<(u64, u64)>| PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: s + 400, introns, reverse: false };
         let reads = vec![pr(50, vec![(100, 200)]), pr(60, vec![(100, 200)]), pr(70, vec![(300, 400)])];
         let sup = read_junction_support(&reads);
         assert_eq!(sup.get(&("c1".to_string(), 100, 200)), Some(&2));
@@ -10021,7 +10025,7 @@ mod tests {
     /// the same locus had different boundaries in O1 and O2.
     #[test]
     fn skeleton_terminal_trim_is_uniform_k() {
-        let mk = |s: u64| PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: 500, introns: vec![(200, 300)] };
+        let mk = |s: u64| PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: 500, introns: vec![(200, 300)], reverse: false };
         let reads = vec![mk(100), mk(100), mk(100), mk(10)]; // one runaway 5' read
         assert_eq!(pass1_skeletons(&reads, 2)[0].start, 10, "k=1 keeps the runaway");
         assert_eq!(

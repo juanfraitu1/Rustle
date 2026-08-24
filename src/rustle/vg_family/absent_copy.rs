@@ -256,6 +256,11 @@ pub fn admit_candidate(
         host.start,
         host.end,
         &cand.iso.intron_chain,
+        // The host's strand is already KNOWN from the catalog, so pass it rather than None: with
+        // RUSTLE_READ_STRAND on, an unspliced host would otherwise be rebuilt as the '+' placeholder
+        // and its bytes would disagree with the reverse-complemented catalog sequence that `gen2off`
+        // is computed against.
+        Some(host.strand),
     ) {
         Some(v) => v,
         None => return dna_needs(cand, "host sequence unbuildable"),
