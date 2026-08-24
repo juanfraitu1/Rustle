@@ -110,7 +110,7 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 |---|---|---|
 | Shipped catalog | **627 families / 2,019 copies** | GORILLA mGorGor1 |
 | **P1 seed-invariance is a THEOREM** | — | definitional |
-| **The RELATION transports across ANIMAL *and* TISSUE** ⭐ *(08-23, not T8)* | **87.06% of `E_r` edges recovered**; ARI **0.7064** vs null −0.0000 | testis(OR6737) vs depth-matched fibroblast(KB3781), 10,143 shared loci |
+| **The RELATION transports across ANIMAL *and* TISSUE** ⭐ *(08-23, not T8)* | **87.06% of `E_r` edges recovered** (Jaccard 0.7397). Partition **ARI 0.9707** once the single largest component is dropped (0.7064 raw — **blob-driven**) | testis(OR6737) vs depth-matched fibroblast(KB3781), 10,143 shared loci |
 | λ (edge connectivity) shipped as a per-family certificate | `lambda` / `cut_certified` | — |
 | Orientation guard shipped as default | spurious edges **28 → 3**; antisense families **7.09% → 0.64%** | HUMAN negative panel + GORILLA |
 | ONE path — `--refine` removed, hard error on O1 | — | — |
@@ -138,7 +138,10 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 ### 🔄 OPEN
 - **The named definitional hole**: the min-length coverage denominator is **scale-free** (a ~1 kb repeat is ≥0.50 of ANY node < 2 kb; 24.88% of gorilla copies are ≤ 2 kb). Ceiling **41/494 = 8.30%** on the **superseded 494-family catalog**, ⚠ *not re-measured on the current 627*.
 - **Node construction** — the largest unaddressed lever. Rep selection keeps **ONE chain**; **46%** of representatives covering a known family member are **single-exon stubs**, and **53%** of those loci have a gate-passing **≥3-read spliced chain that was discarded** (NOTCH2NLA / SRGAP2C / LIMS1 at 92 / 65 / 124 reads).
-- **γ's partition stability**: fibroblast **merges 2.4× more than it splits**, its shared-loci graph being *denser* (1,409 vs 1,345 edges) ⟹ denser graph → larger quasi-clique blocks. ⚠ γ is **non-monotone under edge addition**.
+- ⭐⭐ **THE ORIENTATION GUARD IS THE LARGEST LOSS CHANNEL** *(08-23, ledger §4m)*. Re-scored on the shipped `-k11 -w5` PAF with the shipped coverage form (copy-pair unit, denom 1,135): **orientation guard 167 = 0.1471 · coverage clause 147 = 0.1295 · identity 0 · γ 11 = 0.0097** ⟹ the edge rule costs **~28× γ**. The guard buys real precision (spurious edges **28 → 3**, antisense families **7.09% → 0.64%**, ⚠HUMAN panel) — **that trade is now measured on both sides and is THE open O1 question.**
+  - ⛔ **RETRACTED:** "γ costs 3.0× the coverage clause" (246 = 0.2162 vs 82 = 0.0721) — scored on a **non-`E_r`** edge set (`o1_gamma_adjudicate.py:50` uses min-length coverage and **never reads the PAF strand field**). ⛔ **The "114 questionable γ over-splits" set is EMPTY as a γ target**: 0/114 share an `E_r` component; 113–114/114 have only a minus-strand record, so γ never saw them.
+  - ⛔ **A HIERARCHY IS A NO-GO** on its own arithmetic: the level that recovers the γ-cut pairs **is** the level that re-forms the blob. New coarse pairs are duplication-supported at **0.0016** vs **0.1252** for what the catalog already asserts — **78× less**. What ships instead is a *disclosure* (3 appended `families.tsv` columns), **not** a hierarchy.
+  - ⚠ The blob is **466 copies / 38 families** (+14/4 in a second) = **480/2,019 = 0.2377** across **42/627 = 0.0670** — not 530/26.25%/56. γ is **non-monotone under edge addition**.
 
 ---
 
