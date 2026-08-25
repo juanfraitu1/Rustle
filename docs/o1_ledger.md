@@ -1059,3 +1059,64 @@ problem lives — and NOT the edge recovery the guard analysis implied.
 strand accuracy some merges are wrong, and the human panel cannot see gorilla-side merges. Understand
 those 61 before making this the default. **Ships opt-in (`RUSTLE_READ_STRAND`); the default is unchanged.**
 
+---
+
+## 4p. ⚖️ WHERE THE 61 COPIES WENT — ROUGHLY HALF CORRECTION, HALF LOSS. **DO NOT FLIP THE DEFAULT.**
+
+§4o passed every pre-registered criterion but lost 61 copies net. This resolves them
+(`bench/o1_strand_copy_delta.py`).
+
+### The net hides the churn
+
+**224 lost, 163 gained** — not 61 of anything. Classifying the 224 (⚠ the "is this locus still
+represented" question is ASYMMETRIC: a merged rep is LARGER than its parts, so a reciprocal-overlap rule
+would manufacture losses):
+
+| class | n | | |
+|---|---:|---:|---|
+| **B DEMOTED** — an ON rep covers it, but it is in no family | 112 | 0.5000 | the concerning class |
+| **A ABSORBED** — an ON CATALOG COPY covers it (merged, still in a family) | 61 | 0.2723 | benign; the change working |
+| C "VANISHED" — no ON rep covers ≥50% of it | 51 | 0.2277 | ⚠ see below |
+
+⚠ **My own ≥50% rule manufactured most of class C.** Re-examined under ANY overlap, **38/51 = 0.7451
+still have an ON rep** (the locus survives under a smaller/different representative, because
+`pick_locus_rep` re-picks after a merge) and 19/51 overlap an ON catalog copy. **Only 13/51 are truly
+absent from the rep set.**
+
+**The strand fix is demonstrably the cause**: single-exon copies are **144/224 = 0.6429** of the losses
+against a base rate of **541/2,019 = 0.2680** — **2.40× enriched**.
+
+### ⚖️ The verdict: the dissolved families split almost evenly
+
+112 demotions touch 58 OFF families; **35 dissolved entirely** (median OFF size 2). Reading each
+dissolved family's members at their ON rep strand:
+
+| | n | |
+|---|---:|---|
+| members now **OPPOSITE-strand** ⟹ the family was an **ANTISENSE ARTEFACT** | **16/35 = 0.4571** | **dissolving is CORRECT** |
+| members still **SAME-strand** ⟹ the edge was lost for another reason | **18/35 = 0.5143** | **a genuine cost** |
+| indeterminate | 1/35 | |
+
+Examples correctly dissolved: **GWFAM46** (`116689952-116693606` OFF`+`→ON`-` vs `130657657-130685127`
+ON`+`), **GWFAM65**, **GWFAM109**.
+
+### ⟹ DECISION: **RUSTLE_READ_STRAND STAYS OPT-IN. The default is UNCHANGED.**
+
+The change fixes a real defect — a third of the rep set carried an unmeasured strand — and it corrects
+**16** genuine antisense artefacts while cutting guard-blocked pairs 86%. But it costs **18** real
+families, and at the family level the catalog is roughly break-even (627 → 630) with large churn in both
+directions. **That is not a basis for changing the definition's default.**
+
+### ⭐ The actionable refinement: ABSTAIN instead of guessing
+
+The 18 lost families are the price of a **0.9650** vote propagating through locus collapse
+(`family_detect.rs:670` collapses on strand, so one wrong call merges two distinct loci or splits one).
+The fix is not a better signal but a **decision rule**: when the read vote is not decisive, **keep the
+`'+'` placeholder rather than flipping**. Abstention converts a wrong call into the status quo ante,
+which is exactly the shape O2 is already defended on (assign-or-abstain, `n_decisive >= 1`) — and it
+makes the two objectives consistent in their treatment of insufficient evidence.
+
+⚠ Un-measured: what majority margin buys what accuracy, and how many of the 16 correct dissolutions
+survive a stricter rule. That trade is the next measurement, and it is cheap — the vote tallies are
+already computable from the BAM without a catalog rebuild.
+
