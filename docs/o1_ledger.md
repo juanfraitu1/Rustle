@@ -1433,3 +1433,70 @@ representative** — because `E_r` edges are properties of the exact representat
 because 60.51% of the edge set is within 1.49× of the coverage floor. O1 should **disclose** it
 (`frac_pure_intron`) rather than claim to have solved it.
 
+---
+
+## 4t. ⛔⛔ THE SCOPED ORIENTATION GUARD — SOUND IN PRINCIPLE, CATASTROPHIC IN EFFECT (2026-08-25)
+
+§4s closed representative selection. This closes the remaining route into the stub defect: **relaxing the
+orientation guard where it has no information.** Implemented, then **killed offline** — no catalog run
+was spent.
+
+### Why it looked right
+
+Stratifying §4s's 0/215 by whether the "container" contains the stub's **exons** (not merely its span):
+
+| stratum | n | dominant failure |
+|---|---:|---|
+| **genuine exonic upgrade** | 124 | **123/124 = 0.9919 the ORIENTATION GUARD** |
+| stub lies in the container's **introns** | 91 | 84/91 = 0.9231 **no alignment** — different objects |
+
+and **123/129 = 0.9535** of those guard blocks have a **single-exon (placeholder-strand) partner**.
+⟹ for real stub→spliced upgrades the blocker is **the guard acting on an unmeasured field, on the
+PARTNER side** — not representative choice, and not coverage (**1/215 = 0.0047**).
+
+⛔ **This CORRECTS §4s**, which named the coverage floor as the mechanism from a *projection*
+(60.51% below floor at 1.49× inflation). Measured on the actual pairs, coverage is **0.5%**.
+The projection was hypothetical; the guard is what fires.
+
+### Why it is fatal
+
+Exempting minus-strand records where a rep's strand was never measured **and** the spans are disjoint
+(both clauses needed — the unmeasured clause alone admits 3,951 pairs of which **1,727 = 0.4371** have
+overlapping spans against **0.0109** in the shipped set, **40×**) leaves **2,224** pairs. Then:
+
+| | measured |
+|---|---:|
+| SEDEF support vs the shipped edge set | **0.2350 vs 0.3025 = 0.78×** |
+| pairs joining two reps that are **already catalog copies** | 1,913/2,224 = 0.8602 |
+| …of those, joining **two DIFFERENT families** | **1,912/1,913 = 0.9995** |
+| distinct family pairs fused | **112** |
+| catalog touched | **77/627 = 0.1228** |
+| ⟹ collapses into | **17 blocks, the largest swallowing 43 families** |
+| pairs that would form a genuinely NEW family | 77/2,224 = **0.0346** |
+
+**The trade is 1,912 family merges to gain 77 new families.** That is the hairball pathology, arrived at
+from a new direction.
+
+### ⚠⚠ THE INSTRUMENT LESSON: the negative panel is BLIND to this change
+
+The pre-registered cheap test was the HUMAN 150-window panel. It ran and returned **false-merge 2/150 =
+0.0133 and 3 E_r edges — both unchanged.** ⛔ **That is NOT a pass.** The panel offers **0 qualifying
+pairs**: its windows are gene-tight and single-locus, so all 25 of its guard-blocked pairs are
+**co-located**, which the disjoint-span clause excludes by construction.
+
+⭐ **An acceptance instrument that cannot express the change under test returns a null for the wrong
+reason.** Check the candidate count BEFORE reading the verdict — the same discipline as the mutation
+test that proved the read-strand ingest was wired.
+
+### ⟹ What this settles about the orientation guard
+
+**The guard is doing correct work for a wrong-sounding reason.** §4n established that it filters on an
+unmeasured field — **98.55%** of what it blocks involves a placeholder strand. That remains true, and it
+is *still* not a reason to relax it: those pairs are overwhelmingly **cross-family bridges**, and
+admitting them on the principled ground that the field is unmeasured would destroy the partition.
+
+⟹ **The stub defect has no remaining route.** Representative selection is closed (§4s, 0/215); the
+guard cannot be scoped (here); exon-union, shared-exon and the hierarchy were already NO-GO. **O1 should
+DISCLOSE the defect (`frac_pure_intron`, §4s) and not claim to have solved it.** `RUSTLE_ER_GUARD_SCOPED`
+ships **off**, retained only as the record of this experiment.
+

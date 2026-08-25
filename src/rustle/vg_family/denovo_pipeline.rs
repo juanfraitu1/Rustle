@@ -4320,7 +4320,7 @@ pub(crate) fn nucleotide_edges_tagged(
     params: &RefineParams,
     dump_tag: Option<&str>,
 ) -> Result<Vec<(usize, usize)>> {
-    Ok(nucleotide_edges_scored(seqs, mm_args, min_id, min_cov, cores, params, dump_tag)?
+    Ok(nucleotide_edges_scored(seqs, mm_args, min_id, min_cov, cores, params, dump_tag, None)?
         .into_iter()
         .map(|(i, j, _ident, _cov)| (i, j))
         .collect())
@@ -4353,6 +4353,11 @@ fn nucleotide_edges_scored(
     cores: Option<&[u64]>,
     params: &RefineParams,
     dump_tag: Option<&str>,
+    // Pair-level exemption from the orientation guard, supplied by the caller because only it knows what
+    // the sequences ARE. Passed as a predicate rather than as parallel arrays so no per-rep data has to be
+    // threaded through this function's seven other call sites. `None` = the guard applies unconditionally,
+    // which is the shipped behaviour.
+    guard_exempt: Option<&dyn Fn(usize, usize) -> bool>,
 ) -> Result<Vec<(usize, usize, f64, f64)>> {
     use std::io::Write;
     let dir = std::env::temp_dir();
@@ -4471,7 +4476,13 @@ fn nucleotide_edges_scored(
             _ => continue,
         };
         let strand = f[4].chars().next().unwrap_or('+');
-        if params.forward_only_active() && strand != '+' {
+        if params.forward_only_active() && strand != '+' && !guard_exempt.is_some_and(|ex| ex(q, t)) {
+            // A MINUS-strand record means the two stored sequences disagree in orientation. That is
+            // evidence of antisense only when BOTH strands were actually measured: a rep whose strand was
+            // never junction-determined carries the `'+'` placeholder, so it may simply be stored
+            // backwards, and its minus alignment says nothing about sense. Measured on the shipped
+            // catalog: 3,951/4,009 = 0.9855 of guard-blocked pairs involve such a rep, leaving 58 genuine
+            // antisense candidates genome-wide. See `guard_exempt` at the call site for the scoping.
             continue;
         }
         let ql = f[1].parse::<f64>().unwrap_or(0.0);
@@ -4684,8 +4695,7 @@ fn nucleotide_rule_edge_set(
         params.min_coverage,
         cores,
         params,
-        Some(dump_tag),
-    )?
+        Some(dump_tag), None)?
     .into_iter()
     .map(|(i, j, _, _)| (i, j))
     .collect();
@@ -4701,8 +4711,7 @@ fn nucleotide_rule_edge_set(
                 params.min_coverage,
                 cores,
                 params,
-                Some(dump_tag),
-            )?
+                Some(dump_tag), None)?
             .into_iter()
             .map(|(i, j, _, _)| (i, j)),
         );
@@ -5436,6 +5445,49 @@ pub(crate) fn homology_edges_all_reps_pooled(
     // Parallel to `seqs` by construction (both are built 1:1 from `reps`), which is what lets
     // `nucleotide_edges` index cores by the same PAF sequence id.
     let core_lens: Vec<u64> = reps.iter().map(|r| r.core_bp).collect();
+    // SCOPED ORIENTATION GUARD (`RUSTLE_ER_GUARD_SCOPED`, default OFF = byte-identical).
+    //
+    // The guard rejects every minus-strand record. That is right when both strands were MEASURED, and
+    // vacuous when one was not: `denovo_assemble.rs` stamps `strand.unwrap_or('+')` on any rep with no
+    // canonical junction, so all 5,928 single-exon reps carry `'+'` and none carries `'-'`. Such a rep may
+    // simply be stored backwards, in which case its minus alignment is an artefact of the placeholder.
+    //
+    // Measured on the shipped catalog (rep-pair unit): of 4,009 guard-blocked pairs, 3,951 = 0.9855
+    // involve a rep with an unmeasured strand, leaving 58 genuine antisense candidates genome-wide. And
+    // among the stub loci that DO have a unique containing spliced model, 123/124 = 0.9919 of the
+    // exonic-upgrade cases fail here rather than on identity or coverage, with a placeholder-strand
+    // partner in 0.9535 of them.
+    //
+    // ⚠ THE SPAN-OVERLAP CLAUSE IS LOAD-BEARING, NOT TIDINESS. Exempting on the unmeasured strand alone
+    // would admit 3,951 pairs of which 1,727 = 0.4371 have OVERLAPPING SPANS -- one locus counted twice,
+    // the dominant known artefact class -- against 0.0109 in the shipped edge set, i.e. 40x enriched.
+    // Requiring disjoint spans leaves 2,224 pairs whose SEDEF support is 0.2350 against the shipped set's
+    // 0.3025 (0.78x): weaker than what ships, but not the artefact population.
+    // ⛔⛔ MEASURED AND REJECTED 2026-08-25 — DO NOT ENABLE. The exemption is sound in principle (the
+    // guard is testing a field that was never measured) and catastrophic in effect: of the 2,224 pairs it
+    // admits, 1,913 join two reps that are ALREADY catalog copies, and 1,912/1,913 = 0.9995 of those join
+    // two DIFFERENT families. They would fuse 112 family pairs, touching 77/627 = 0.1228 of the catalog,
+    // collapsing it into 17 blocks whose largest swallows 43 families. Retained, off, because the flag is
+    // the record of the experiment. See `docs/o1_ledger.md` §4t.
+    //
+    // ⚠ The HUMAN 150-window negative panel CANNOT adjudicate this: it offers 0 qualifying pairs (its
+    // windows are single-locus, so its 25 guard-blocked pairs are all CO-LOCATED and the disjoint-span
+    // clause excludes them). Its 2/150 result under this flag is uninformative, not a pass.
+    let guard_exempt: Option<Box<dyn Fn(usize, usize) -> bool>> =
+        if matches!(std::env::var("RUSTLE_ER_GUARD_SCOPED"), Ok(v) if v != "0" && !v.is_empty()) {
+            let meta: Vec<(String, u64, u64, bool)> = reps
+                .iter()
+                .map(|r| (r.chrom.clone(), r.start, r.end, r.introns.is_empty()))
+                .collect();
+            Some(Box::new(move |a: usize, b: usize| {
+                let (Some(x), Some(y)) = (meta.get(a), meta.get(b)) else { return false };
+                let unmeasured = x.3 || y.3; // a junction-less rep has no measured strand
+                let overlap = x.0 == y.0 && x.2.min(y.2) > x.1.max(y.1);
+                unmeasured && !overlap
+            }))
+        } else {
+            None
+        };
     let drop_stub_edges = er_no_stub_edges();
     if let Some(fl) = core_cov_floor() {
         let have = core_lens.iter().filter(|&&c| c > 0).count();
@@ -5488,7 +5540,7 @@ pub(crate) fn homology_edges_all_reps_pooled(
         let seed = primary_seed_args();
         let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
         for (i, j, ident, cov) in
-            nucleotide_edges_scored(&seqs, &seed_ref, params.min_identity, params.min_coverage, Some(&core_lens), params, Some("er"))?
+            nucleotide_edges_scored(&seqs, &seed_ref, params.min_identity, params.min_coverage, Some(&core_lens), params, Some("er"), guard_exempt.as_ref().map(|f| f as &dyn Fn(usize, usize) -> bool))?
         {
             *prov.entry((i, j)).or_insert(0) |= TIER_ASM20;
             record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_ASM20);
@@ -5505,8 +5557,7 @@ pub(crate) fn homology_edges_all_reps_pooled(
             params.min_coverage,
             Some(&core_lens),
             params,
-            Some("er"),
-        )? {
+            Some("er"), None)? {
             set.insert((i, j));
             *prov.entry((i, j)).or_insert(0) |= TIER_SENSITIVE;
             record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_SENSITIVE);
@@ -5830,6 +5881,11 @@ fn write_er_edge_dump(
         // here the `strand` column AND the stored sequence bytes of every unspliced rep. Without this row
         // an OFF and an ON catalog have byte-identical params.tsv, defeating this file's stated purpose.
         ("env.RUSTLE_READ_STRAND".into(), env("RUSTLE_READ_STRAND")),
+        // Also an opt-in that changes the EDGE RULE, so a catalog must be able to name it. Omitting
+        // this row is the M2 defect from the read-strand work, repeated: without it an ON and an OFF
+        // arm have byte-identical params.tsv and a null result cannot be distinguished from a flag
+        // that never reached the process.
+        ("env.RUSTLE_ER_GUARD_SCOPED".into(), env("RUSTLE_ER_GUARD_SCOPED")),
     ];
     // The rule rows land LAST, so `params.tsv` remains a strict superset of `rule.tsv` on both sides.
     rows.extend(rule);
@@ -6367,7 +6423,7 @@ mod tests {
         let short = long[2000..4000].to_vec();
         let p = RefineParams { threads: 1, ..Default::default() };
         let scored =
-            nucleotide_edges_scored(&[long, short], ER_SENSITIVE_SEED, 0.60, 0.50, None, &p, None)
+            nucleotide_edges_scored(&[long, short], ER_SENSITIVE_SEED, 0.60, 0.50, None, &p, None, None)
                 .expect("alignment");
         assert_eq!(scored.len(), 1, "the pair must produce exactly one edge");
         let cov = scored[0].3;
@@ -6405,6 +6461,7 @@ mod tests {
             None,
             &permissive,
             None,
+            None,
         )
         .expect("strand-agnostic alignment");
         assert_eq!(old.len(), 1, "the historical rule must admit the reverse-complement pair");
@@ -6426,6 +6483,7 @@ mod tests {
             None,
             &guarded,
             None,
+            None, // the scoped exemption is opt-in; this test pins the UNSCOPED guard
         )
         .expect("forward-only alignment");
         assert!(new.is_empty(), "a reverse-only match must not become an RNA family edge");
@@ -7760,6 +7818,30 @@ mod tests {
         assert_eq!(span, 1000);
         assert!(span > col("exon_bp").parse::<u64>().expect("exon_bp"), "span exceeds the exon-sum");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The scoped-guard predicate: exempt a minus-strand record ONLY when a rep's strand was never
+    /// measured AND the two spans are disjoint. Both clauses are load-bearing -- dropping the span clause
+    /// admits a population 40x enriched for overlapping-span pairs (one locus counted twice).
+    #[test]
+    fn scoped_guard_exempts_only_unmeasured_strand_at_disjoint_loci() {
+        let mk = |chrom: &str, start: u64, end: u64, spliced: bool| DenovoTranscript {
+            tid: "t".into(), chrom: chrom.into(), start, end, n_reads: 5, strand: '+',
+            introns: if spliced { vec![(start + 10, start + 20)] } else { vec![] },
+            seq: vec![b'A'; 50], distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+        };
+        // index 0 unspliced (strand NOT measured), 1 spliced elsewhere, 2 spliced OVERLAPPING 0.
+        let reps = vec![mk("c1", 1_000, 2_000, false), mk("c2", 9_000, 9_500, true), mk("c1", 1_500, 2_500, true)];
+        let meta: Vec<(String, u64, u64, bool)> =
+            reps.iter().map(|r| (r.chrom.clone(), r.start, r.end, r.introns.is_empty())).collect();
+        let ex = |a: usize, b: usize| {
+            let (x, y) = (&meta[a], &meta[b]);
+            (x.3 || y.3) && !(x.0 == y.0 && x.2.min(y.2) > x.1.max(y.1))
+        };
+        assert!(ex(0, 1), "unmeasured strand at a DISJOINT locus: exempt");
+        assert!(!ex(0, 2), "unmeasured strand but OVERLAPPING spans: NOT exempt (one locus counted twice)");
+        assert!(!ex(1, 2), "both strands junction-determined: NOT exempt — a real antisense candidate");
+        assert!(ex(1, 0) == ex(0, 1), "the predicate must be symmetric in its arguments");
     }
 
     #[test]
