@@ -1120,3 +1120,53 @@ makes the two objectives consistent in their treatment of insufficient evidence.
 survive a stricter rule. That trade is the next measurement, and it is cheap — the vote tallies are
 already computable from the BAM without a catalog rebuild.
 
+---
+
+## 4q. ⛔ ABSTENTION DOES NOT RESCUE IT — THE 18 LOSSES ARE MARGIN-INVARIANT. **LINE CLOSED.** (2026-08-25)
+
+§4p left the read-strand fix break-even (16 correctly-dissolved antisense artefacts against 18 genuine
+losses) and proposed abstention: don't flip on a bare majority, keep the `'+'` placeholder when the vote
+is not decisive. The offline curve supported it — accuracy 0.9600 → **0.9934** at margin 0.90, a 6.1×
+drop in wrong calls, while still flipping 0.93 of the reps a bare majority would.
+
+**Run at margin 0.90 through the real binary. It does not work.**
+
+| arm | families | copies | dissolved | **CORRECT** (now antisense) | **LOST** (still same-strand) | indet |
+|---|---:|---:|---:|---:|---:|---:|
+| OFF | 627 | 2,019 | — | — | — | — |
+| ON, bare majority | 630 | 1,958 | 35 | 16 | **18** | 1 |
+| **ON, margin 0.90** | **624** | 1,948 | 37 | 18 | **18** | 1 |
+
+The margin **is** binding — single-exon `'-'` calls fall 1,926 → 1,765 as abstainers return to the
+placeholder (OFF 5,928/0 · ON 2,060/1,926 · ON90 2,293/1,765). So the rule fired and did what it was
+built to do.
+
+⭐ **But the genuine losses are EXACTLY 18 in both arms.** They are **invariant to the strand-vote
+margin**, so they are **not caused by low-confidence calls** — the mechanism §4p hypothesised is wrong.
+Abstention changed *which* families dissolve (correct 16 → 18) without protecting a single lost one, and
+left the catalog with **fewer** families than either the bare-majority arm or the baseline (624 vs 630 vs
+627).
+
+### ⟹ CLOSED. Four iterations is enough, and the stop was pre-registered
+
+Recorded before the run: *"if both classes fall together, the honest conclusion is that this defect is
+real but its correction doesn't pay for itself at this read depth — written down, not iterated past a
+fifth time."* The outcome is worse than that: the loss class did not move **at all**.
+
+**`RUSTLE_READ_STRAND` and `RUSTLE_READ_STRAND_MARGIN` both stay OPT-IN, default OFF.** The OFF gate is
+byte-identical to the shipped catalog (§4o), so nothing is at risk.
+
+### What SURVIVES from this line — the defect, not the fix
+
+- ⭐ **A third of the rep set carried an UNMEASURED strand**: `strand.unwrap_or('+')` gave all **5,928**
+  single-exon reps `'+'` and **zero** `'-'`, against a spliced split of 0.4867/0.5133. That is a real,
+  named defect in the node builder and it is now documented in the source.
+- ⭐ **Read orientation measures it at 0.9650** (386/400 on a junction-determined labelled set, against a
+  constant-`'+'` floor of 0.4867), rising to **0.9934** at margin 0.90 and **1.0000** at unanimity.
+- ⭐ **98.55%** of the orientation guard's blocked pairs involve such a rep (vs a 0.3943 base rate among
+  kept pairs, 2.50×), leaving only **58** genuine antisense candidates genome-wide — all of which
+  **remain rejected** in every arm.
+- ⚠ **Correcting the strand is roughly break-even on the emitted catalog**, and the residual 18-family
+  loss has an unknown cause that is NOT vote confidence. **That is the open question if anyone returns
+  to this** — and it should be attacked directly, not through the strand rule.
+
