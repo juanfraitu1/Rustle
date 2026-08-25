@@ -351,7 +351,7 @@ The local disk contains both phased KB3781 gorilla haplotypes. They are two asse
 species and one individual, not two phylogenetic outgroups. Agreement between them is nevertheless
 valuable: it distinguishes a reproducible gorilla copy state from haplotype polymorphism or a
 haplotype-specific assembly problem. The local data paths and WSL mount procedure are documented in
-[`linuxdisk_data_access.md`](linuxdisk_data_access.md).
+[`REFERENCE.md`](REFERENCE.md).
 
 For GOLGA, gorilla is the appropriate first species. Complete ape genome comparisons report a much
 simpler gorilla GOLGA8 state, whereas orangutan has its own large GOLGA8 expansion and is therefore
@@ -510,7 +510,7 @@ If only one source block roots, preserve the other as `UNROOTED`; do not force o
 ### Proof-of-concept result (2026-08-17)
 
 The one-species interface was exercised against both phased KB3781 gorilla haplotypes using the
-local assemblies documented in [`linuxdisk_data_access.md`](linuxdisk_data_access.md). The pilot
+local assemblies documented in [`REFERENCE.md`](REFERENCE.md). The pilot
 used 25 kb left/right flanks, strict `asm5` flank mappings and sensitive `asm20` locus mappings.
 Gorilla annotations were not consulted.
 

@@ -122,7 +122,7 @@ catalog, transcript set, code path and method — so the structural claims are s
 | **π = 1/35 = 0.0286**, 0/26 at cov ≥ 0.8 | **formally unbounded ⟹ vacuous** | paralogous stratum, unmapped-read route — **and O3's target class lives here** |
 | **TPR 0.2703 / FPR 0.0200** | held-out S2 detector | set by **divergence not abundance**: 0.4500 above 0.01 vs **0.0588** below, and **45.78%** of positives lie below 0.01 |
 | **ABSORBED 64.2% / ORPHANED 33.3%**, depth **1.75×** | excision fates | the signature is **UNMAPPED READS, not clipping** |
-| ~~8/9/9 vs 5/6/8~~ | ⚠⚠ **DO NOT QUOTE** | does not reproduce at either `-p`; deficits shrink 3,3,1 → ~1,2,0 (`o3_haplotype_cnv_result.md`) |
+| ~~8/9/9 vs 5/6/8~~ | ⚠⚠ **DO NOT QUOTE** | does not reproduce at either `-p`; deficits shrink 3,3,1 → ~1,2,0 (`o3_missing_copy_evidence.md`) |
 
 ## Operational
 

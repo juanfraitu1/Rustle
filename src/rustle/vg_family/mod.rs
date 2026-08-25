@@ -2,7 +2,7 @@
 //!
 //! Builds a per-exon family graph (`family_graph`) over paralog copies and
 //! drives structural detectors (mosaic, segdup, hidden_copy, positional) plus
-//! k-mer-based novel-copy rescue. See `docs/UNMAPPED_FAMILY_RESCUE.md` for why
+//! k-mer-based novel-copy rescue. See `docs/o3_missing_copy_evidence.md` for why
 //! the aligner misses the reads this module rescues.
 
 pub mod seq_utils; // small sequence utilities (reverse_complement); relocated from the retired assembler vg.rs.

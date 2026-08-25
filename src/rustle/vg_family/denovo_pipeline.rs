@@ -4,7 +4,7 @@
 //! explicitly noted: a set of isoforms collapsed by shared splice junctions
 //! (`family_detect::collapse_loci`). The physical `(chrom, start, end)` span
 //! used for the ≥2-distinct-loci certificate is `family_definition::distinct_loci`.
-//! See `docs/VG_FAMILY_TERMS.md` for the canonical vocabulary.
+//! See `docs/REFERENCE.md` for the canonical vocabulary.
 //!
 //!   primary reads ─► pass1 skeletons ─► assemble gate ─► collapse loci ─► detect edges ─► decompose families
 //!

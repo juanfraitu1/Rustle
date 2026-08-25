@@ -3,7 +3,7 @@
 //! **Terminology.** This module uses "locus" in the **gene-locus** sense: a set of
 //! isoforms collapsed by shared splice junctions. It is NOT the physical `(chrom,
 //! start, end)` span used for the ≥2-distinct-loci certificate (that is
-//! `family_definition::distinct_loci`). See `docs/VG_FAMILY_TERMS.md` for the
+//! `family_definition::distinct_loci`). See `docs/REFERENCE.md` for the
 //! canonical vocabulary.
 //!
 //! Annotation-free, minimizer-free. Given the de-novo assembled transcripts (built by the integration

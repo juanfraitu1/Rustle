@@ -61,7 +61,7 @@
 > animal's **own cell line**. Keep the two arguments separate — the objection dies on how the substrate
 > was built, and the copy-number-polymorphism rate is **still unmeasured** (the 2026-08-19 mat-vs-pat
 > run was uninformative: control floor 0.1512 vs signal 0.0278). ⚠⚠ And **do not quote the 8/9/9-vs-5/6/8
-> haplotype deficit** — it does not reproduce; see [`o3_haplotype_cnv_result.md`](o3_haplotype_cnv_result.md).
+> haplotype deficit** — it does not reproduce; see [`o3_missing_copy_evidence.md`](o3_missing_copy_evidence.md).
 >
 > **Current O3 avenues and claim boundary (2026-08-16):** see
 > [`docs/o3_missing_copy_evidence.md` §8](o3_missing_copy_evidence.md#8-possible-o3-avenues--decision-record-2026-08-16).
@@ -138,10 +138,16 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 ### 🔄 OPEN
 - **The named definitional hole**: the min-length coverage denominator is **scale-free** (a ~1 kb repeat is ≥0.50 of ANY node < 2 kb; 24.88% of gorilla copies are ≤ 2 kb). Ceiling **41/494 = 8.30%** on the **superseded 494-family catalog**, ⚠ *not re-measured on the current 627*.
 - **Node construction** — the largest unaddressed lever. Rep selection keeps **ONE chain**; **46%** of representatives covering a known family member are **single-exon stubs**, and **53%** of those loci have a gate-passing **≥3-read spliced chain that was discarded** (NOTCH2NLA / SRGAP2C / LIMS1 at 92 / 65 / 124 reads).
-- ⭐⭐ **THE ORIENTATION GUARD IS THE LARGEST LOSS CHANNEL** *(08-23, ledger §4m)*. Re-scored on the shipped `-k11 -w5` PAF with the shipped coverage form (copy-pair unit, denom 1,135): **orientation guard 167 = 0.1471 · coverage clause 147 = 0.1295 · identity 0 · γ 11 = 0.0097** ⟹ the edge rule costs **~28× γ**. The guard buys real precision (spurious edges **28 → 3**, antisense families **7.09% → 0.64%**, ⚠HUMAN panel) — **that trade is now measured on both sides and is THE open O1 question.**
-  - ⛔ **RETRACTED:** "γ costs 3.0× the coverage clause" (246 = 0.2162 vs 82 = 0.0721) — scored on a **non-`E_r`** edge set (`o1_gamma_adjudicate.py:50` uses min-length coverage and **never reads the PAF strand field**). ⛔ **The "114 questionable γ over-splits" set is EMPTY as a γ target**: 0/114 share an `E_r` component; 113–114/114 have only a minus-strand record, so γ never saw them.
-  - ⛔ **A HIERARCHY IS A NO-GO** on its own arithmetic: the level that recovers the γ-cut pairs **is** the level that re-forms the blob. New coarse pairs are duplication-supported at **0.0016** vs **0.1252** for what the catalog already asserts — **78× less**. What ships instead is a *disclosure* (3 appended `families.tsv` columns), **not** a hierarchy.
-  - ⚠ The blob is **466 copies / 38 families** (+14/4 in a second) = **480/2,019 = 0.2377** across **42/627 = 0.0670** — not 530/26.25%/56. γ is **non-monotone under edge addition**.
+- ⭐⭐ **THE ORIENTATION GUARD IS THE LARGEST LOSS CHANNEL** *(08-23, ledger §4m)*. On the shipped `-k11 -w5` PAF with the shipped coverage form (copy-pair unit, denom 1,135): **orientation guard 167 = 0.1471 · coverage clause 147 = 0.1295 · identity 0 · γ 11 = 0.0097** ⟹ the edge rule costs **~28× γ**.
+  - ⛔ **RETRACTED:** "γ costs 3.0× the coverage clause" — scored on a **non-`E_r`** edge set. ⛔ The **"114 questionable γ over-splits" set is EMPTY**: 0/114 share an `E_r` component; 113–114/114 have only a minus-strand record, so γ never saw them.
+  - ⛔ **A HIERARCHY IS A NO-GO** *(§4m)*: the level that recovers the γ-cut pairs **is** the level that re-forms the blob; new coarse pairs are duplication-supported at **0.0016** vs **0.1252** — **78× less**. What ships is a *disclosure*, not a hierarchy.
+- ⭐⭐⭐ **THE GUARD WAS FILTERING ON AN UNMEASURED FIELD — RESOLVED** *(08-24/25, ledger §4n–§4r)*. `strand.unwrap_or('+')` gave **all 5,928 single-exon reps `'+'` and zero `'-'`** (spliced split 0.4867/0.5133), so a third of the rep set carried a **placeholder**. **98.55%** of guard-blocked pairs involve such a rep (base 0.3943, **2.50×**), leaving only **58** genuine antisense candidates genome-wide. Read orientation measures the strand at **0.9650** (0.9934 at margin 0.90, 1.0000 at unanimity) against a constant-`'+'` floor of **0.4867**.
+  - Shipped **opt-in** (`RUSTLE_READ_STRAND`, `RUSTLE_READ_STRAND_MARGIN`); the OFF gate is **byte-identical** to the shipped catalog. All pre-registered criteria PASS (0/58 antisense admitted; antisense-family rate 0.0048 both arms; **HUMAN 150-window false-merge 2/150 = 0.0133 UNMOVED**).
+  - ⛔ **ABSTENTION DOES NOT RESCUE IT** *(§4q)*: the dominant dissolution cause is the **same 32 families in both arms**, so it is not vote-related. **Line CLOSED after four iterations, stop pre-registered.**
+  - ⭐⭐ **THE REAL EFFECT IS NODE CONSTRUCTION** *(§4r)*: measuring the strand **re-picks 2,306 representatives and turns 1,928 = 0.8361 of them from a single-exon STUB into a SPLICED model** — the largest named node-construction defect — at a cost of 32 dissolved families. ⚠ That a spliced rep is *better* is **inferred, not measured**.
+  - ⭐ **WHAT IT SETTLES:** `E_r` edges are computed on the **representative's sequence**, so improving a node breaks the edges formed with its worse version. **That is a property of ONE-REPRESENTATIVE-PER-LOCUS**, not of the strand fix, and any future change to representative selection pays the same cost.
+  - ⚠⚠ **A matching lesson worth more than the result**: reading a property off *"the rep with the largest overlap"* returns a **neighbouring** rep when the exact span is gone — the case under test. That produced a phantom class of 18 families, retracted **twice**. **Match loci EXACTLY.**
+- ⚠ The blob is **466 copies / 38 families** (+14/4 in a second) = **480/2,019 = 0.2377** across **42/627 = 0.0670**. γ is **non-monotone under edge addition**.
 
 ---
 
@@ -266,7 +272,7 @@ generalization*: nodes = exon-classes carrying per-copy sequence, paths = copy �
   specifies direct minimap2 block/flank alignment to both phased gorilla haplotypes, two-sided
   synteny rooting, explicit abstention states, and flag-off invariance. It uses no annotation
   projection and cannot change human family membership. Local ape assembly paths and WSL mount
-  instructions: `docs/linuxdisk_data_access.md`. A GOLGA proof of concept now finds recurrent human
+  instructions: `docs/REFERENCE.md`. A GOLGA proof of concept now finds recurrent human
   intervals from GOLGA2 into 8 audited family loci and from ITSN2 into 6, while both proposed source
   loci have unique two-sided synteny in both gorilla haplotypes. These are retained as
   `ROOT_CANDIDATE_SINGLE_OUTGROUP` with `direction_status=UNROOTED`, because stable multi-locus
