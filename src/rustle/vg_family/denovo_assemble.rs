@@ -60,6 +60,33 @@ pub struct Skeleton {
     /// else `'+'`; `None` when the group was not built from reads. Consulted ONLY for an unspliced model
     /// (see [`build_spliced_seq`]) — a spliced model's strand comes from its junction motifs.
     pub read_strand: Option<char>,
+    /// Observed majority fraction behind `read_strand` -- `max(fwd, rev) / total`, in [0.5, 1.0].
+    ///
+    /// Stored so the ABSTENTION threshold can be applied at the point of USE rather than baked into the
+    /// vote: the skeleton records what the reads said, and the caller decides whether that is decisive
+    /// enough to overrule the placeholder. 0.0 when there were no reads to count.
+    ///
+    /// WHY A THRESHOLD EXISTS AT ALL. A bare majority is right 0.9600 of the time (measured against
+    /// junction-determined strand on 1,200 spliced reps; a constant `'+'` scores 0.4900). Those 4% of
+    /// wrong calls are not cosmetic -- `family_detect.rs` collapses co-located reps ON STRAND, so one
+    /// wrong call merges two distinct loci or splits one. Measured cost of the bare majority: of 35
+    /// dissolved families, 16 were antisense artefacts (correctly dissolved) but 18 were still
+    /// same-strand -- a genuine loss (`docs/o1_ledger.md` 4p).
+    ///
+    /// Measured accuracy against abstention cost, same labelled set:
+    ///   margin >= 0.00  accuracy 0.9600, abstains 0.0000 of single-exon reps
+    ///   margin >= 0.80  accuracy 0.9893, abstains 0.0600
+    ///   margin >= 0.90  accuracy 0.9934, abstains 0.1112   <- default
+    ///   margin >= 1.00  accuracy 1.0000, abstains 0.3983
+    /// At 0.90 the error rate falls 6.1x while still flipping 506/544 = 0.93 of the reps a bare majority
+    /// would. ⚠ Abstaining is NOT neutral -- it keeps the `'+'` placeholder, which is wrong about half
+    /// the time -- so a higher threshold trades a corrupted locus for a known-biased one, not for nothing.
+    ///
+    /// Stored as COUNTS rather than the ratio: exact, keeps `Eq` derivable, and a struct deriving
+    /// `PartialEq` should not be comparing floats. Read it via [`Skeleton::read_strand_frac`].
+    pub read_rev: u32,
+    /// Total reads behind `read_strand` (see [`Skeleton::read_rev`]). 0 when the group had none.
+    pub read_tot: u32,
 }
 
 /// Majority READ orientation of a group of reads: `'-'` iff a STRICT majority carry FLAG 0x10, else `'+'`.
@@ -72,6 +99,24 @@ fn majority_read_strand(n_reverse: u32, n_total: u32) -> char {
     } else {
         '+'
     }
+}
+
+impl Skeleton {
+    /// Observed majority fraction behind `read_strand` -- `max(fwd, rev) / total`, in [0.5, 1.0], and
+    /// 0.0 for an empty group (which abstains under any positive threshold).
+    pub fn read_strand_frac(&self) -> f64 {
+        read_strand_fraction(self.read_rev, self.read_tot)
+    }
+}
+
+/// The fraction of reads behind `majority_read_strand`'s call -- `max(fwd, rev) / total`, in [0.5, 1.0].
+/// 0.0 for an empty group, which abstains under any positive threshold.
+fn read_strand_fraction(n_reverse: u32, n_total: u32) -> f64 {
+    if n_total == 0 {
+        return 0.0;
+    }
+    let rev = n_reverse.min(n_total);
+    (rev.max(n_total - rev) as f64) / (n_total as f64)
 }
 
 /// Pass-1: group PRIMARY reads by `(chrom, intron-chain)` → skeletons, keeping groups with `>= min_reads`.
@@ -263,6 +308,7 @@ pub fn pass1_skeletons_robust_with(
                 introns,
                 tied_seeded: false,
                 read_strand: Some(majority_read_strand(n_rev, n)),
+                read_rev: n_rev, read_tot: n,
             }
         })
         .collect();
@@ -325,6 +371,8 @@ pub fn tied_seed_skeletons(
                 // SPLICED: the strand comes from the junction motifs, which never consult `read_strand`.
                 // The unspliced tied seeds below go through `cluster_unspliced`, which does measure it.
                 read_strand: None,
+                read_rev: 0,
+                read_tot: 0,
             })
         })
         .collect();
@@ -1186,7 +1234,15 @@ pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParam
     // OFF by default so every existing catalog stays byte-identical; the delta gets measured before it is
     // flipped.
     let use_read_strand = matches!(std::env::var("RUSTLE_READ_STRAND"), Ok(v) if v != "0" && !v.is_empty());
-    assemble_gate_with(skeletons, genome, p, use_read_strand)
+    // ABSTENTION THRESHOLD (`RUSTLE_READ_STRAND_MARGIN`, default 0.90). A bare majority is right 0.9600 of
+    // the time; at 0.90 it is 0.9934 -- a 6.1x drop in wrong calls -- while still flipping 0.93 of the reps
+    // a bare majority would. See `Skeleton::read_strand_frac` for the full curve and why abstaining is not
+    // a neutral act.
+    let margin: f64 = std::env::var("RUSTLE_READ_STRAND_MARGIN")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.90);
+    assemble_gate_with(skeletons, genome, p, use_read_strand, margin)
 }
 
 /// `assemble_gate` with the read-orientation switch passed explicitly instead of read from the environment.
@@ -1198,6 +1254,7 @@ pub fn assemble_gate_with(
     genome: &GenomeIndex,
     p: &GateParams,
     use_read_strand: bool,
+    strand_margin: f64,
 ) -> Vec<DenovoTranscript> {
     let support: Vec<u32> =
         if p.pool_locus_support { locus_support(skeletons) } else { skeletons.iter().map(|s| s.n_reads).collect() };
@@ -1215,7 +1272,10 @@ pub fn assemble_gate_with(
             sk.start,
             sk.end,
             &sk.introns,
-            if use_read_strand { sk.read_strand } else { None },
+            // ABSTAIN unless the reads were decisive: below the margin the skeleton keeps the historical
+            // `'+'` placeholder, so a non-decisive vote degrades to the status quo ante instead of
+            // corrupting a locus (`family_detect.rs` collapses co-located reps ON STRAND).
+            if use_read_strand && sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None },
         ) {
             Some(v) => v,
             None => continue,
@@ -1285,6 +1345,7 @@ pub fn cluster_unspliced(reads: &[PrimaryRead], min_reads: u32, k: usize) -> Vec
                     introns: Vec::new(),
                     tied_seeded: false,
                     read_strand: Some(majority_read_strand(n_rev, n)),
+                    read_rev: n_rev, read_tot: n,
                 });
             }
             i = j;
@@ -1363,7 +1424,7 @@ mod locus_support_tests {
     use super::*;
 
     fn sk(chrom: &str, start: u64, end: u64, n_reads: u32, introns: &[(u64, u64)]) -> Skeleton {
-        Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec(), tied_seeded: false, read_strand: None }
+        Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec(), tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0 }
     }
 
     /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
@@ -1755,7 +1816,10 @@ mod tests {
     }
     fn skel(chrom: &str, start: u64, end: u64, n: u32, introns: &[(u64, u64)]) -> Skeleton {
         Skeleton { chrom: chrom.into(), start, end, n_reads: n, introns: introns.to_vec(), tied_seeded: false,
-                   read_strand: Some('+') } // `pr` builds forward reads, so the group's vote is '+'
+                   // `pr` builds FORWARD reads, so the group's vote is unanimously '+' (read_rev = 0) over
+                   // all `n` of them -- `read_tot` must track `n`, not a constant, or every equality
+                   // assertion against a real pass1 output fails on the count alone.
+                   read_strand: Some('+'), read_rev: 0, read_tot: n }
     }
     /// Genome: exon1 [0,80), intron [80,100) with the given dinucleotides, exon2 [100,180). 160 bp spliced.
     fn genome_one_intron(donor: &[u8; 2], acc: &[u8; 2]) -> GenomeIndex {
@@ -2098,15 +2162,47 @@ mod tests {
         let g = genome_one_intron(b"GT", b"AG");
         let mut sk = skel("c1", 0, 180, 3, &[]);
         sk.read_strand = Some('-');
+        sk.read_rev = 3; sk.read_tot = 3; // unanimous, clears any threshold
 
-        let off = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), false);
+        let off = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), false, 0.90);
         assert_eq!(off.len(), 1);
         assert_eq!(off[0].strand, '+', "default OFF: the skeleton's measured strand is not consulted");
 
-        let on = assemble_gate_with(&[sk], &g, &GateParams::default(), true);
+        let on = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), true, 0.90);
         assert_eq!(on.len(), 1);
-        assert_eq!(on[0].strand, '-', "ON: the vote reaches build_spliced_seq");
+        assert_eq!(on[0].strand, '-', "ON: a decisive vote reaches build_spliced_seq");
         assert_eq!(on[0].seq, reverse_complement(&off[0].seq), "and the emitted sequence flips with it");
+    }
+
+    /// ABSTENTION. A vote that does not clear the margin must leave the skeleton on the `'+'` placeholder,
+    /// so a marginal call degrades to the status quo ante rather than corrupting a locus. Without this the
+    /// threshold could be ignored and every test above would still pass.
+    #[test]
+    fn a_non_decisive_read_vote_abstains_and_keeps_the_placeholder() {
+        let g = genome_one_intron(b"GT", b"AG");
+        let mut sk = skel("c1", 0, 180, 3, &[]);
+        sk.read_strand = Some('-');
+        sk.read_rev = 3; sk.read_tot = 5; // 0.60 — a real majority, below the 0.90 default
+
+        let strict = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), true, 0.90);
+        assert_eq!(strict[0].strand, '+', "0.60 < 0.90: ABSTAIN, keep the placeholder");
+
+        // ...and the same skeleton flips once the threshold is lowered beneath its margin, so the guard is
+        // the threshold and not some other property of this skeleton.
+        let loose = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), true, 0.50);
+        assert_eq!(loose[0].strand, '-', "0.60 >= 0.50: the same vote is now decisive");
+        assert_eq!(strict[0].seq, reverse_complement(&loose[0].seq), "and the sequence follows the call");
+    }
+
+    /// `read_strand_frac` is the observed majority fraction, and 0.0 for an empty group (which abstains
+    /// under any positive threshold).
+    #[test]
+    fn read_strand_fraction_is_the_observed_majority() {
+        assert!((read_strand_fraction(3, 4) - 0.75).abs() < 1e-12);
+        assert!((read_strand_fraction(1, 4) - 0.75).abs() < 1e-12, "symmetric: it is the WINNER's share");
+        assert!((read_strand_fraction(2, 4) - 0.50).abs() < 1e-12, "a tie is 0.50");
+        assert_eq!(read_strand_fraction(0, 0), 0.0, "no reads => abstain under any positive margin");
+        assert!((read_strand_fraction(5, 5) - 1.0).abs() < 1e-12);
     }
 
     /// The vote is a STRICT majority (a tie keeps the `'+'` placeholder) and is a COUNT, not a scan, so it
@@ -2197,7 +2293,7 @@ mod tests {
         ];
         let primaries = vec![Skeleton {
             chrom: "chr1".into(), start: 90, end: 480, n_reads: 5,
-            introns: vec![(200, 300)], tied_seeded: false, read_strand: None,
+            introns: vec![(200, 300)], tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0,
         }];
         assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
     }
@@ -2228,7 +2324,7 @@ mod tests {
         ];
         let primaries = vec![Skeleton {
             chrom: "chr1".into(), start: 900, end: 1900, n_reads: 5,
-            introns: vec![], tied_seeded: false, read_strand: None,
+            introns: vec![], tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0,
         }];
         assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
     }
