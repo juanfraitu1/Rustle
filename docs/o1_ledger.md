@@ -1170,3 +1170,71 @@ byte-identical to the shipped catalog (§4o), so nothing is at risk.
   loss has an unknown cause that is NOT vote confidence. **That is the open question if anyone returns
   to this** — and it should be attacked directly, not through the strand rule.
 
+---
+
+## 4r. ⭐⭐⭐ WHY THOSE FAMILIES DISSOLVE — THE REPRESENTATIVE IS RE-PICKED, STUB → SPLICED (2026-08-25)
+
+§4q left one open question: the dissolutions have *"an unknown cause that is NOT vote confidence."*
+Answered. **It is not antisense, not vote confidence, and not the coverage floor — the family's
+representative is replaced by a better one, and the `E_r` edge was formed with the old one.**
+
+### ⛔ FIRST — §4p AND §4q's CLASSIFICATION IS RETRACTED (my error, twice)
+
+Both sections classified a dissolved family by reading its members' strand from *"the ON rep with the
+largest overlap"*. That matcher returns a **neighbouring rep** when the exact span is gone — which is
+precisely the case under test. Re-derived with **exact (chrom, start, end) matching**:
+
+| dissolved family, cause | ON (bare majority) | ON90 (margin 0.90) |
+|---|---:|---:|
+| **member span is NO LONGER A NODE — rep re-picked** | **32** | **32** (the same 32) |
+| OPPOSITE strand in ON — a true antisense artefact | 3 | 5 |
+| same-strand with **both** spans intact | **0** | **0** |
+| total | 35 | 37 |
+
+⟹ **"16 correct / 18 lost" (§4p) and "the 18 losses are margin-invariant" (§4q) are BOTH WITHDRAWN.**
+There is no same-strand-both-intact class at all: it was an artefact of the overlap lookup.
+⭐ **§4q's CONCLUSION STANDS AND IS STRENGTHENED** — the dominant cause is **the identical 32 families in
+both arms**, and it is not vote-related, so abstention could never have addressed it.
+
+### The mechanism, measured
+
+**The locus survives; its representative moves.** Of the 41 changed member spans, **39/41 = 0.9512 still
+have an overlapping ON rep** (median overlap of the new rep with the old span **1.0000** — it *contains*
+it; median boundary shift **52,957 bp**); only **2** are truly absent from the rep set.
+
+**And the new representative is better.** At those 39 loci the median `n_exon` goes **1 → 5**:
+
+| | measured | comparator |
+|---|---:|---|
+| old rep was a single-exon **STUB**, new one is **SPLICED** | 27/39 = **0.6923** | **1,928/2,306 = 0.8361** genome-wide among ALL re-picked reps ⟹ **0.83×, NOT enriched** |
+| the new rep IS a catalog copy in ON (family relabelled) | 11/39 = 0.2821 | |
+| the new rep is in NO ON family (a real membership loss) | 28/39 = 0.7179 | |
+
+⚠ The comparator matters and reverses the reading: stub→spliced is **what the strand fix does
+everywhere** (83.61% of 2,306 re-picked reps), not something peculiar to the dissolved families. The 32
+dissolutions are **collateral**, not the phenomenon.
+
+⚠ An earlier comparator here was **vacuous by construction** — "families that survived" was *defined* as
+all copies present at their exact OFF spans, so it can contain no re-picked rep (n = 0). Not evidence.
+
+### ⭐⭐ THE REAL HEADLINE: the strand fix repairs 1,928 STUB REPRESENTATIVES
+
+The ledger's largest named node-construction defect is that `pick_locus_rep` keeps ONE chain, and **46%
+of representatives covering a known family member are single-exon stubs** while **53% of those loci have
+a gate-passing ≥3-read spliced chain that was discarded**. Measuring the strand lets a stub group with
+the spliced transcripts at its own locus (they were kept apart by a placeholder `'+'` against a real
+`'-'`), and `pick_locus_rep` then selects the spliced model.
+
+**That is 1,928 loci genome-wide whose representative goes from a stub to a spliced model** — and it is a
+far larger effect than the ±3 families the catalog headline moves by. ⚠ **UNVALIDATED as an improvement**:
+that a spliced rep is *better* is an inference from the stub census, not measured here. The catalog-level
+consequence is 32 families dissolving.
+
+### ⟹ What this settles, and the honest position
+
+The read-strand line stays **CLOSED and OPT-IN** (§4q). But the reason is now precise: correcting a
+placeholder strand **re-picks 2,306 representatives**, and `E_r` edges are computed on the
+representative's sequence — so improving a node breaks the edges that were formed with its worse version.
+**This is a property of the one-representative-per-locus design, not of the strand fix**, and any future
+change to representative selection will pay the same cost. That is the finding worth carrying forward.
+
