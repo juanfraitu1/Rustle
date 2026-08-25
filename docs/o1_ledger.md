@@ -1349,3 +1349,87 @@ python3 bench/o1_sd_anchor.py 0.90           # SD containment, identity floor as
 python3 bench/o1_sd_certificate.py           # duplication-mechanism classes on a catalog
 python3 bench/o1_substrate_denominator.py    # genomic-span coverage
 ```
+
+---
+
+## 4s. ⛔⛔ REPRESENTATIVE SELECTION IS CLOSED — `E_r` HAS NO UPGRADE PATH (2026-08-25)
+
+§4r ended by naming one-representative-per-locus as the root cause and pointed at the stub defect.
+**Attacked directly. NO-GO on changing the representative; the defect ships as a FLAG.**
+
+### ⭐ The carrying number: 0/215 (verified independently by the controller)
+
+For every OFF `E_r` edge whose **shorter** endpoint is a single-exon rep that has a **unique containing
+spliced model at its own locus** (n = **215** edges, from **1,632** such loci), does that spliced model
+form an `E_r` edge with the stub's partner?
+
+| | |
+|---|---:|
+| **the container inherits the stub's partner edge** | **0/215 = 0.0000** [Wilson 95% upper 0.0170] |
+| *"the edge is a property of the LOCUS"* predicts | 215/215 |
+| *"the edge is a property of the exact REPRESENTATIVE SEQUENCE"* predicts | ~0.01 (base rate 4,778/C(17,923,2) = **2.97e-05**) |
+
+**Two must-pass validity checks, both run before believing it:**
+- **1,416/1,416 = 1.0000** of the containers are themselves OFF representatives, so they sat in the same
+  all-vs-all and *could* have formed the edge. (Had this been ~0, the result would be a lookup artefact.)
+- The containers are not inert: **116/215** have ≥1 `E_r` edge of their own; genome-wide 151/1,416 =
+  0.1066 have degree > 0.
+
+⟹ **`E_r` has NO UPGRADE PATH. Any representative change rewrites the edge set from scratch.** The
+pre-registered kill was *"if the spliced model inherits < 20% of the stub's edges, representative
+selection is closed"*. Observed **0.0000**.
+
+### ⛔ And my brief was wrong: "is a spliced rep better?" HAS been measured — it regressed
+
+I told the investigation this had *"never been measured"*. Wrong in both directions:
+
+| level | measurement | result |
+|---|---|---|
+| **partition** (the one that counts) | `RUSTLE_SPLICED_REP`, **two real-binary e2e runs** (register row 357) | chr7 family-detection **F1 0.570 → 0.411**; chr16 **0.910 → 0.761**; **loses NPIPB12** |
+| node (association, not intervention) | register row 990: in-band fraction at spliced-rep loci 69% (n=45) vs stub-rep loci 28% (n=32) | 2.46× — but this stratifies ONE catalog by an outcome-correlated covariate |
+| counterfactual on the arms on disk | per-copy **annotated-intron precision** OFF **0.9700** (13,415/13,830) vs ON **0.9714** (13,243/13,633) | **a null** |
+
+⟹ the premise is true at node level, where it does not matter, and **false at partition level, where it
+does**.
+
+### ⚠ The generalisation: the edge set sits within 1.49× of the coverage floor
+
+Projecting a uniform **1.49×** inflation of the shorter rep's exonic length (the *observed median*
+stub→container ratio; q1 1.14, q3 2.04, n = 1,632) onto the whole OFF edge set:
+**2,891/4,778 = 0.6051 of edges fall below the 0.50 coverage floor.** The stub class is not special —
+110/215 = 0.5116 against that 0.6051 comparator.
+
+⭐ **This restates `RUSTLE_LOCUS_EXON_UNION`'s −20 recall points as a general property of the coverage
+clause: ANY intervention that lengthens a representative pays it**, whether the longer sequence is
+selected or constructed. That prices `RUSTLE_COTHREAD_REP` too — it constructs a max-weight path, so it
+escapes the selection entailment, but not this one. ⚠ Its documented Soto gains (correctly-sized loci
+15 → 26; SRGAP2 0.05 → 0.99) are about **locus SIZE**, a different objective needing its own
+pre-registration — do not run it as a stub fix.
+
+### ✅ MODIFIED-GO — ship the defect as a FLAG, not a fix
+
+Emit **`frac_pure_intron`** per catalog copy: the fraction of a copy's asserted exonic bp lying inside an
+annotated intron with **no** annotated exon overlap, against `GGO_genomic.gff` (277,703 distinct introns).
+Genuinely new and not a closed route in disguise — it touches no node, no edge, no denominator and no
+partition; **emission ≠ definition**, so P1 is untouched.
+
+| | measured | how to quote it |
+|---|---:|---|
+| single-exon copies placing > 50% of asserted bases in pure intron | 149/431 = **0.3457** vs 37/1,450 = 0.0255 multi-exon | 13.55× — **unclustered upper reading only** |
+| clustered by family | 55/185 = 0.2973 vs 31/551 = 0.0563 | 5.3× |
+| **within-family paired**, 118 families holding both classes | **22/118 = 0.1864 vs 16/118 = 0.1356** | ⭐ **1.37×** — *this* is the effect size (sign test 20 vs 7, 91 ties) |
+
+Catalog burden **149/2,019 = 0.0738** (floor) to **259/2,019 = 0.1283** (ceiling). Corroborates §4g's
+45.06% intron rate by an independent route.
+
+⚠ **Mandatory caveat, every time**: differential exclusion — **110/541 = 20.3%** of single-exon copies
+fall outside annotated space vs **28/1,478 = 1.9%** of multi-exon; and `GGO_genomic.gff` holds
+**0 NOTCH2NL\*, 1 SRGAP2, 1 LIMS1**, so it is **structurally blind at the named flagship families**.
+
+### ⟹ The thesis statement about node construction
+
+**The stub defect is real, it is measurable, and it is not fixable by choosing a different
+representative** — because `E_r` edges are properties of the exact representative sequence (0/215), and
+because 60.51% of the edge set is within 1.49× of the coverage floor. O1 should **disclose** it
+(`frac_pure_intron`) rather than claim to have solved it.
+
