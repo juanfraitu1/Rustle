@@ -994,3 +994,68 @@ node- or edge-level counts has **failed 3× end-to-end**. Acceptance must be on:
 ⚠ Un-run. Requires a source change plus a full catalog rebuild (~2h20m), and it is a **definition-level
 change**, so the negative panel is mandatory, not optional.
 
+---
+
+## 4o. ⭐⭐⭐ READ-STRAND MEASUREMENT — RUN, AND EVERY PRE-REGISTERED CRITERION PASSES (2026-08-24)
+
+§4n found that `strand.unwrap_or('+')` gives a third of the rep set an UNMEASURED strand. Both arms are
+now run through the real binary. **This is NOT T8.**
+
+### The OFF gate — the opt-in is genuinely inert
+
+`copies.tsv` md5 **35eb5c51c141cda25fc7c1866d310f1a**, identical to the shipped catalog; 94,257 skeletons
+→ 17,924 reps → 627 families; single-exon reps still 5,928 `'+'` / 0 `'-'`. `params.tsv` differs by
+**exactly one row** (`env.RUSTLE_READ_STRAND <unset>`) plus the output path. 2:11:27, 24.4 GB peak.
+
+### The ON arm — the placeholder is gone and the distribution looks like biology
+
+| | OFF | ON |
+|---|---:|---:|
+| single-exon reps `'+'` / `'-'` | **5,928 / 0** | **2,060 / 1,926** |
+| skeletons → reps | 94,257 → **17,924** | 94,257 → **15,626** |
+| families / copies | 627 / 2,019 | **630 / 1,958** |
+| wall / peak RSS | 2:11:27 / 24.4 GB | 2:44:23 / 24.4 GB |
+
+The measured split **0.5168 / 0.4832** closely tracks the spliced (junction-determined) distribution
+**0.4867 / 0.5133** — a measured field that looks like biology, not noise.
+
+### The TWO-SIDED ledger (`bench/o1_guard_delta.py`) — the reason a one-sided count would mislead
+
+| | measured |
+|---|---:|
+| guard-blocked pairs OFF → ON | **4,009 → 551 (−86%)** |
+| **GAINED** (934 of them were guard-blocked in OFF) | **972** |
+| **LOST** (only 214 newly guard-blocked; the rest are pairs whose reps MERGED) | **864** |
+| **NET** | **+108** |
+
+⚠ **A one-sided ledger would have reported "934 recovered".** The net is +108. Report both arms.
+
+### ⭐ ACCEPTANCE — all pre-registered before any result, all PASS
+
+| criterion | OFF | ON | |
+|---|---|---|---|
+| the 58 frozen genuine-antisense pairs admitted (keyed by `node_key`) | — | **0/58** | **PASS** |
+| families with an overlapping OPPOSITE-STRAND pair | 3/627 = 0.0048 | **3/630 = 0.0048** | **PASS** (pre-guard 0.0709) |
+| **HUMAN 150-window negative panel, false-merge** | **2/150 = 0.0133** | **2/150 = 0.0133** | **PASS — unmoved** |
+| partition shape | 627 fam, size-2 440, max 42 | 630 fam, size-2 441, max 40 | stable |
+
+⚠ **Negative-panel E_r edges rose 3 → 5.** Both new classes are ALREADY-NAMED pathologies, not new ones,
+and neither reaches `copies.tsv` (which is why family-level false-merge is unmoved):
+- **W038** `chr14:64934142-64989490(-) × chr14:64928524-64936834(-)`, identity **exactly 1.000000**,
+  spans OVERLAP — the **self-identity** pathology, one locus emitted as two (same class as the known W063).
+- **W106 ×2**, targeting a **206 bp** rep at `chr5:141029012-141029218`, identity 0.834/0.831,
+  coverage 0.966–1.000 — the **scale-free coverage denominator**: a 206 bp rep is ≥0.50 covered by almost
+  anything. This is O1's named definitional hole, surfaced (not created) by the strand fix.
+
+### ⟹ WHAT THIS ACTUALLY IS: a NODE-CONSTRUCTION fix, not an edge-recovery win
+
+The partition barely moves (627 → 630) while the **rep set moves a lot (17,924 → 15,626, −12.8%)**:
+co-located reps that a placeholder strand had artificially kept apart now collapse correctly
+(`family_detect.rs:670` gates span-aware collapse on `a.strand != b.strand`). So the dominant effect is
+**fixing over-fragmentation of loci** — which is exactly where the ledger says O1's largest unaddressed
+problem lives — and NOT the edge recovery the guard analysis implied.
+
+⚠ **STILL OPEN before flipping the default**: **61 copies left the catalog** (2,019 → 1,958). At 0.9650
+strand accuracy some merges are wrong, and the human panel cannot see gorilla-side merges. Understand
+those 61 before making this the default. **Ships opt-in (`RUSTLE_READ_STRAND`); the default is unchanged.**
+
