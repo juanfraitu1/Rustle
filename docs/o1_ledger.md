@@ -1717,3 +1717,104 @@ on the strength of the threshold agreeing.**
 
 **Disposition:** flag RETAINED, default OFF, **DO NOT ENABLE** — it is the record of the experiment, like
 `RUSTLE_ER_GUARD_SCOPED`. ⟹ **§4v's "free precision gain" does not exist; there is no queued win.**
+
+## §4y — reference bias is NOT the binding constraint; DEPTH is (2026-08-26)
+
+**The claim under test** (advisor, 2026-08-26): *all copies are found only when the fibroblast reads are
+aligned to the T2T assembly of that same animal; align any other individual and copies are missed.*
+
+**Direct test on NPIP** — the same 31 homology-defined loci scored against three catalogs:
+
+| substrate | animal | depth / scope | NPIP loci in a family |
+|---|---|---|---:|
+| testis OR6737 | **different** | genome-wide | **3/31** |
+| fibroblast KB3781 | **same as assembly** | 41% subsample, genome-wide | **1/31** |
+| fibroblast KB3781 | **same as assembly** | full depth, 3 contigs | **12/31** |
+
+⛔ **THE PREMISE IS FALSE TWICE OVER.** (1) Same animal, full depth, aligned to its own assembly recovers
+**12/31 — not all**. (2) The same animal at reduced depth recovers **1/31, WORSE than a different
+animal's testis at 3/31** ⟹ individual identity is not the ordering variable.
+
+⭐ **The clean comparison is rows 2 vs 3: same animal, same tissue, same pipeline, same 31-locus
+denominator — a 12× difference from READ DEPTH ALONE.** Row 3 is if anything handicapped (a 3-contig
+catalog cannot form off-contig edges; all 31 NPIP loci are on those contigs).
+
+⚠ Rows 1 and 3 differ in tissue AND scope, so only the depth comparison is clean. Corroborating, from
+§4l: **87.06% of E_r edges replicate** across a different animal *and* tissue. Reference bias is real and
+second-order; O1's measured reach is **0.55** even on favourable data.
+
+### Where the reads of a missing copy go — measured, not assumed
+
+Whole-genome excision, 162 families:
+
+| fate | share | detail |
+|---|---:|---|
+| **ABSORBED** — redistributed onto surviving paralogues | **104/162 = 64.2%** | leaves a **depth ghost of 1.75×** |
+| **ORPHANED** — become unmapped | **54/162 = 33.3%** | median **92.73%** of that copy's reads unmapped |
+
+⚠ **UNIT TRAP (T12):** the **34.53%** figure that circulates is a **READ** fraction; the 33.3% is a
+**COPY** fraction. They nearly coincide and are different units — always say which.
+
+### Can the redistribution be reverse-engineered into a "there was probably another copy" call?
+
+**Partly, and the limit is DIVERGENCE, not abundance.** The held-out S2 detector runs at
+**TPR 0.2703 / FPR 0.0200**, but its power is **0.4500 above 0.01 divergence vs 0.0588 below**, and
+**45.78% of true positives lie below 0.01** ⟹ recently-duplicated near-identical copies are close to
+invisible — exactly the class that gets collapsed. The unmapped-read route is separately **VACUOUS** for
+this stratum (π = 1/35, 0/26 at cov ≥ 0.8): an ABSORBED copy is not orphaned, so there is no pile to find.
+
+⟹ **the unexploited signal is the 1.75× depth ghost**, and nothing currently keys on it. See §4z for why
+a depth caller cannot be built from the WGS on hand.
+
+## §4z — a WGS depth caller for the ABSORBED stratum: sound design, BLOCKED ON DEPTH (2026-08-26)
+
+**The idea.** §4y leaves the 1.75× depth ghost as the only unexploited signal for the **64.2% ABSORBED**
+stratum — the copies that both existing routes miss (the unmapped route is vacuous there; the S2 detector
+runs at 0.0588 TPR below 0.01 divergence, and 45.78% of positives are below 0.01). If a collapsed copy's
+reads pile onto its surviving paralogue, that locus should carry **two copies' worth of DNA depth**, and a
+caller could flag it.
+
+⚠ **§4u does NOT refute this.** §4u killed **k-mer multiplicity → CN** (paralogues at median identity
+0.8234 share ~1.7% of their 21-mers, so a copy's k-mers are private and CN reads as 1). **Depth is a
+different mechanism** — it needs reads to MAP to the locus, which is exactly what "absorbed" means. The
+two routes fail and succeed independently.
+
+### ⛔ Blocker 1: the WGS is 0.65×, and the call needs ~25×
+
+Measured directly on `SRR26152581_subreads.fastq.gz`: **163,171 reads / 1,978,946,468 bp**, mean
+**12,128 bp** ⟹ **0.65× of a 3.04 Gb assembly**.
+
+Power for a 1-copy vs 2-copy call, stated as arithmetic rather than opinion. Reads overlapping a locus of
+length *L* per 1× is `(L + readlen)/readlen`; separation of *n* vs 2*n* Poisson counts is
+`z = n/sqrt(3n)`:
+
+| locus | reads/locus at 1× | coverage for n≥10 (z=1.83) | for n≥30 (z=3.16) |
+|---|---:|---:|---:|
+| 1.5 kb | 1.10 | 9.1× | **27.3×** |
+| 3 kb | 1.20 | 8.3× | **25.0×** |
+| 10 kb | 1.66 | 6.0× | 18.0× |
+| 30 kb | 2.99 | 3.3× | 10.0× |
+
+⟹ **z = 1.83 at n = 10 is NOT separable**; a usable call needs n ≈ 30, i.e. **~25× at the 1.5–3 kb loci
+that dominate** (24.88% of gorilla copies are ≤ 2 kb). At 0.65× a 3 kb locus expects **0.78 reads**.
+**Shortfall ≈ 38×.**
+
+### ⛔ Blocker 2: the compartment is pre-registered EMPTY
+
+Per §4u, `CN_WGS = CN_assembly + collapse_deficit`, the WGS animal IS the assembly animal
+(SAMN04003007/KB3781), and the residual — which is exactly this absorbed stratum — is pre-registered at
+**< 1 collapse**. So even at 25× the expected yield **in this genome** is ~0. A null result would confirm
+the pre-registration, not validate the caller.
+
+### ⚠ And RNA cannot substitute
+
+The 1.75× ghost was measured on RNA (`o3_excise/panel_primary.bam` is `splice:hq` FLNC) in a **PAIRED**
+design — same locus, reference with and without the sibling, expression held constant. **A caller gets no
+counterfactual**: given one BAM it must compare observed depth to an EXPECTATION, and on RNA that
+expectation is expression, which is unknown and varies over orders of magnitude. The pairing is what made
+the measurement work and is precisely what a caller cannot have.
+
+**Verdict: NOT REFUTED — BLOCKED ON DATA.** Do not build it against 0.65×; a caller trained there would
+be fitting noise. **Actionable:** 0.65× is ONE run. If further HiFi/Illumina runs exist under
+SAMN04003007 they can be pooled — **~25× is the number to hit**, and validation should use the excision
+ablation (162 arms, 104 absorbed, known ground truth) rather than the empty native compartment.
