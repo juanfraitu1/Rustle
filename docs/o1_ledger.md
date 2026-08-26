@@ -1621,3 +1621,48 @@ quality**. This is not "rigid" — a rigid definition would miss hard cases whil
 This one keeps the DEGENERATE cases and drops the well-resolved ones. Every pure-NPIP family in this
 catalog (`GWFAM30` 6/6, `GWFAM32` 3/3, `GWFAM31` 2/2) is built from single-exon stubs.
 ⟹ **claim reproducibility and falsifiability, NOT adequacy.** See `docs/THESIS_OBJECTIVES.md`.
+
+## §4w — the shared-exon edge rule does NOT fix the completeness deficit (2026-08-26) — REFUTED
+
+**Motivation.** §4v established that edge formation is anti-correlated with model completeness, mechanism
+= the scale-free coverage denominator (half of the SHORTER sequence). The ledger's own prescription was
+"change the DENOMINATOR, not the threshold". `shared_exon_edges` is the one in-tree implementation of
+that and its precision had never been measured: exons are matched **any-to-any** with an **absolute
+aligned-bp floor** (`>= 100 bp`), so no sequence lengthens and no denominator moves. It also does not
+touch representative selection, so it cannot regress the way `RUSTLE_SPLICED_REP` did.
+
+**Arms.** Same substrate, same binary, same 2,847 reps (node construction untouched — confirmed identical
+in all three). OFF = incumbent (coverage >= 0.50 of shorter, id >= 0.60). SE98 = `RUSTLE_SHARED_EXON=1`
+at its default id >= 0.98. SE60 = the same at **id >= 0.60**, matched to the incumbent, which is the arm
+that isolates the denominator. ⚠ SE98 alone is CONFOUNDED (it moves identity AND denominator together);
+it is reported only for shape.
+
+**Endpoint: reaches a family, as a fraction of all reps in that exon class.**
+
+| class | reps | OFF | SE98 | SE60 |
+|---|---:|---:|---:|---:|
+| single-exon | 1,234 | 0.1718 | 0.0429 | 0.0900 |
+| 2–4 exons | 510 | 0.2627 | 0.0235 | 0.1431 |
+| 5–14 exons | 827 | 0.1487 | 0.0278 | 0.0798 |
+| **≥15 exons** | 276 | **0.0543** | **0.0326** | **0.0399** |
+| **deficit** | | **3.16×** | 1.32× | 2.26× |
+
+⛔⛔ **THE RATIO IMPROVES WHILE THE TERM WE CARE ABOUT GETS WORSE.** The deficit narrows 3.16× → 2.26× →
+1.32×, and quoting that alone would read as a fix. It is not: the **≥15-exon rate FALLS in every arm**
+(0.0543 → 0.0399 → 0.0326; absolute copies **15 → 11 → 9**). The deficit closes because the *stub* rate
+collapses (0.1718 → 0.0900 → 0.0429), not because complete models do better.
+⟹ **a ratio of two rates is not a valid endpoint when both are free to fall.** Same family as the
+already-registered "ratio-to-truth ⟹ use the IN-BAND FRACTION, never the median".
+
+**Every pre-registered endpoint moves the wrong way** (OFF → SE60): families **83 → 59**, copies
+**484 → 261**, NPIP loci in a family **12/31 → 10/31**, 100%-NPIP families **3 → 1**, largest family
+39 → 22. There is no arm in which complete models gain.
+
+**Verdict: REFUTED.** Replacing the fractional denominator with an absolute aligned-bp floor does not
+rescue complete transcript models; it is uniformly stricter and costs recall and NPIP purity together.
+⟹ **the designed denominator fix is now MEASURED and dead**, closing the route §4s/[[project_o1_single_exon_stubs]]
+left open ("precision UNMEASURED"). The completeness deficit of §4v stands with **no known repair**.
+
+⚠ Candidate count checked before reading the verdict: SE60 linked **966 locus pairs** from 11,385 exons
+(SE98: 164) against OFF's 1,847 E_r edges — the instrument had ample candidates, so this is a real
+negative, not a blind panel.
