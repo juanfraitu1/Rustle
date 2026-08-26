@@ -4258,6 +4258,7 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ("summed_coverage".into(), std::env::var("RUSTLE_ER_SUM_COVERAGE").unwrap_or_else(|_| "<unset>".into())),
         ("drop_stub_edges".into(), er_no_stub_edges().to_string()),
         ("shared_exon_mode".into(), std::env::var("RUSTLE_SHARED_EXON").unwrap_or_else(|_| "<unset>".into())),
+        ("repeat_hub_gate".into(), std::env::var("RUSTLE_ER_REPEAT_GATE").unwrap_or_else(|_| "<unset>".into())),
         ("minimap2".into(), params.minimap2.clone()),
     ]
 }
@@ -5401,6 +5402,112 @@ pub(crate) fn homology_edges_all_reps(
 
 /// As `homology_edges_all_reps`, but when `pooled` is supplied the shared-exon rule draws on EVERY isoform's
 /// exons for each locus instead of only the representative's. See `shared_exon_edges_pooled`.
+/// Threshold for the genome-anchored repeat-hub veto. `RUSTLE_ER_REPEAT_GATE=<M>`; unset or 0 = OFF.
+fn repeat_gate_threshold() -> Option<u32> {
+    std::env::var("RUSTLE_ER_REPEAT_GATE")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|&m| m > 0)
+}
+
+/// Genome multiplicity of each representative: the number of DISTINCT, non-overlapping places in the
+/// REFERENCE where that sequence occurs. Consumed only by the repeat-hub veto.
+///
+/// WHY GENOME-ANCHORED AND NOT CATALOG-ANCHORED. Counting a rep's partners inside the catalog (the R5
+/// design) makes the gate a function of which other reps happen to be present, and that broke P1
+/// seed-invariance at 94/147. Multiplicity here is a property of the rep and the reference ALONE, so
+/// adding or removing other reps cannot move it and P1 holds by construction.
+///
+/// ⚠ `-X` is deliberately ABSENT. `-X` is minimap2's all-vs-all mode and implies `--dual=no`; this is a
+/// query-vs-reference mapping, where it would be wrong. `-p` and `-N` are stated explicitly because a
+/// copy count is meaningless without them (MAPKBP1 gives 1/1 at `-p 0.8` and 9/8 at `-p 0.1`).
+fn genome_multiplicity(seqs: &[Vec<u8>], genome_path: &str, params: &RefineParams) -> Result<Vec<u32>> {
+    use std::io::{BufRead, Write};
+    const MIN_ID: f64 = 0.90;
+    const MIN_COV: f64 = 0.50;
+    let dir = std::env::temp_dir();
+    let pid = std::process::id();
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let uniq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = dir.join(format!("rustle_gmult_{pid}_{uniq}.fa"));
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _cl = Cleanup(path.clone());
+    {
+        let mut f = std::fs::File::create(&path)?;
+        for (i, s) in seqs.iter().enumerate() {
+            writeln!(f, ">{i}")?;
+            f.write_all(s)?;
+            writeln!(f)?;
+        }
+    }
+    let mut cmd = std::process::Command::new(&params.minimap2);
+    cmd.args(["-x", "asm20", "-c", "--eqx", "-N", "200", "-p", "0.1"])
+        .arg("-t")
+        .arg(params.threads.max(1).to_string())
+        .arg(genome_path)
+        .arg(&path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let mut child = cmd.spawn().map_err(|e| {
+        anyhow::anyhow!("failed to run minimap2 ('{}') for the repeat gate: {e}", params.minimap2)
+    })?;
+    let out = child.stdout.take().ok_or_else(|| anyhow::anyhow!("minimap2 stdout unavailable"))?;
+    let mut hits: Vec<Vec<(String, u64, u64)>> = vec![Vec::new(); seqs.len()];
+    for line in std::io::BufReader::new(out).lines() {
+        let line = line?;
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 11 {
+            continue;
+        }
+        let (Ok(q), Ok(ql), Ok(qs), Ok(qe)) =
+            (f[0].parse::<usize>(), f[1].parse::<f64>(), f[2].parse::<f64>(), f[3].parse::<f64>())
+        else {
+            continue;
+        };
+        let (Ok(ts), Ok(te), Ok(nm), Ok(bl)) =
+            (f[7].parse::<u64>(), f[8].parse::<u64>(), f[9].parse::<f64>(), f[10].parse::<f64>())
+        else {
+            continue;
+        };
+        if q >= hits.len() || ql <= 0.0 || bl <= 0.0 {
+            continue;
+        }
+        if nm / bl < MIN_ID || (qe - qs) / ql < MIN_COV {
+            continue;
+        }
+        hits[q].push((f[5].to_string(), ts, te));
+    }
+    let _ = child.wait();
+    Ok(hits.into_iter().map(count_distinct_loci).collect())
+}
+
+/// Collapse a rep's reference hits into DISTINCT occurrences: sort, then merge anything that overlaps on
+/// the same contig. Split out of `genome_multiplicity` so the counting rule can be tested without
+/// invoking minimap2 -- an off-by-one here silently moves every multiplicity, and with it the veto.
+fn count_distinct_loci(mut v: Vec<(String, u64, u64)>) -> u32 {
+    v.sort();
+    let mut n = 0u32;
+    let mut cur_t = String::new();
+    let mut cur_e = 0u64;
+    let mut started = false;
+    for (t, s, e) in v {
+        if !started || t != cur_t || s >= cur_e {
+            n += 1;
+            cur_t = t;
+            cur_e = e;
+            started = true;
+        } else if e > cur_e {
+            cur_e = e;
+        }
+    }
+    n
+}
+
 pub(crate) fn homology_edges_all_reps_pooled(
     reps: &[DenovoTranscript],
     pooled: Option<&[Vec<Vec<u8>>]>,
@@ -5616,6 +5723,43 @@ pub(crate) fn homology_edges_all_reps_pooled(
              edges {before} -> {} (loci all retained)",
             set.len()
         );
+    }
+    // GENOME-ANCHORED REPEAT-HUB VETO (`RUSTLE_ER_REPEAT_GATE=<M>`, unset = OFF = byte-identical).
+    //
+    // WHY THIS EXISTS. `family_define` has carried a repeat-hub gate (`min_shared_mult >= 20`) ON BY
+    // DEFAULT since the annotation-driven era; this de novo catalog path has never had one. Measured on
+    // the 3-contig full-depth fibroblast NPIP catalog (`docs/o1_ledger.md` §4v): among single-exon reps
+    // that FORM an edge, 20/227 = 0.0881 occur at >= 20 distinct genomic loci, against 0/1007 = 0.0000
+    // among the single-exon reps that form none. High genome multiplicity is therefore close to
+    // diagnostic of a stub edge -- and the >= 20 cut was reached from that distribution BEFORE the
+    // shipped gate's own threshold was known, i.e. two independent routes to the same number.
+    //
+    // ⚠ A VETO, NEVER AN ADMISSION CRITERION -- it only ever REMOVES edges. Parity with gamma would need
+    // M ~ 3, which discards 48% of the shipped edge set.
+    // ⚠ Cuts only when BOTH endpoints are hubs, matching the shipped `min_shared_mult >= M` semantic
+    // (the MINIMUM over the pair clears M). A one-sided cut would remove edges from a hub to a
+    // single-copy locus, which is the signature of a real dispersed family, not of a repeat.
+    if let Some(m) = repeat_gate_threshold() {
+        match params.intron_fasta.as_deref() {
+            Some(g) => match genome_multiplicity(&seqs, g, params) {
+                Ok(mult) => {
+                    let before = set.len();
+                    set.retain(|&(i, j)| {
+                        !(mult.get(i).copied().unwrap_or(0) >= m
+                            && mult.get(j).copied().unwrap_or(0) >= m)
+                    });
+                    let hubs = mult.iter().filter(|&&x| x >= m).count();
+                    eprintln!(
+                        "[homology] repeat-hub veto (genome-anchored, both endpoints >= {m} loci): \
+                         {hubs}/{} reps are hubs; edges {before} -> {} (loci all retained)",
+                        mult.len(),
+                        set.len()
+                    );
+                }
+                Err(e) => eprintln!("[homology] repeat-hub veto SKIPPED (kept all edges): {e}"),
+            },
+            None => eprintln!("[homology] repeat-hub veto SKIPPED (kept all edges): no genome path"),
+        }
     }
     // Opt-in parity dump. Placed HERE, after the stub guard, so what it writes is exactly what this
     // function RETURNS -- the pre-existing `RUSTLE_EDGE_PROVENANCE` writer above dumps `prov`, which
@@ -7604,6 +7748,47 @@ mod tests {
              INDEPENDENT read floor that is an improvement to O1 ⊥ O2 and the spec should say so; \
              update this pin deliberately rather than letting the change pass unnoticed."
         );
+    }
+
+    /// The veto's arithmetic: multiplicity is DISTINCT occurrences, so overlapping hits at one locus
+    /// count once and abutting/disjoint ones count separately. Pinned because §4x retains the gate
+    /// disabled -- an off-by-one here would move every multiplicity if it were ever re-enabled.
+    #[test]
+    fn genome_multiplicity_counts_distinct_occurrences_not_records() {
+        let l = |c: &str, s: u64, e: u64| (c.to_string(), s, e);
+        assert_eq!(count_distinct_loci(vec![]), 0, "no hits = multiplicity 0");
+        assert_eq!(count_distinct_loci(vec![l("c1", 0, 100)]), 1);
+        // three records piled on ONE locus are one occurrence, not three
+        assert_eq!(
+            count_distinct_loci(vec![l("c1", 0, 100), l("c1", 50, 150), l("c1", 10, 20)]),
+            1,
+            "overlapping records at one locus must not inflate multiplicity"
+        );
+        // same contig, disjoint -> two; abutting (s == prev end) is disjoint by half-open convention
+        assert_eq!(count_distinct_loci(vec![l("c1", 0, 100), l("c1", 200, 300)]), 2);
+        assert_eq!(count_distinct_loci(vec![l("c1", 0, 100), l("c1", 100, 200)]), 2);
+        // a hit on a DIFFERENT contig is always its own occurrence, even at identical coordinates
+        assert_eq!(count_distinct_loci(vec![l("c1", 0, 100), l("c2", 0, 100)]), 2);
+        // NPIP-shaped: 31 disjoint occurrences trip any M=20 hub test purely by copy number, which is
+        // the confound that refuted the veto (§4x).
+        let npip: Vec<_> = (0..31).map(|i| l("c1", i * 1000, i * 1000 + 500)).collect();
+        assert_eq!(count_distinct_loci(npip), 31);
+    }
+
+    /// `RUSTLE_ER_REPEAT_GATE` semantics: absent or 0 means OFF, which is what keeps the shipped path
+    /// byte-identical (verified 2026-08-26 on copies/families md5).
+    #[test]
+    fn repeat_gate_is_off_unless_a_positive_threshold_is_set() {
+        // Parsing is pure; exercise it directly rather than mutating process env (tests share one
+        // process, so an env write here would race every other test).
+        let parse = |v: Option<&str>| -> Option<u32> {
+            v.and_then(|v| v.parse::<u32>().ok()).filter(|&m| m > 0)
+        };
+        assert_eq!(parse(None), None, "unset = OFF");
+        assert_eq!(parse(Some("")), None, "empty = OFF");
+        assert_eq!(parse(Some("0")), None, "explicit 0 = OFF");
+        assert_eq!(parse(Some("nonsense")), None, "unparseable = OFF, never a silent default");
+        assert_eq!(parse(Some("20")), Some(20), "the §4x threshold");
     }
 
     #[test]

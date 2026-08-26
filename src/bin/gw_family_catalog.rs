@@ -476,6 +476,14 @@ fn emit_catalog(
 /// was measured to help.
 ///
 /// `--no-refine` still wins over everything (the documented escape hatch when minimap2 is unavailable).
+/// Is the genome-anchored repeat-hub veto requested? Mirrors `denovo_pipeline::repeat_gate_threshold`.
+fn repeat_gate_on() -> bool {
+    std::env::var("RUSTLE_ER_REPEAT_GATE")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .is_some_and(|m| m > 0)
+}
+
 fn refine_enabled(o1_homology: bool, no_refine_flag: bool) -> bool {
     if no_refine_flag {
         return false;
@@ -671,6 +679,13 @@ fn main() -> Result<()> {
         if !o1_homology {
             eprintln!("[gw-catalog] note: --homology-genomic-span affects the E_r edge, which drives family membership only in the (default) homology catalog — it is inert for the legacy conflict catalogs");
         }
+    }
+    // The genome-anchored repeat-hub veto (`RUSTLE_ER_REPEAT_GATE=<M>`) needs the reference in order to
+    // count how many distinct places each representative occurs in. It reads the same field the
+    // genomic-span route uses. Set ONLY when the gate is on, so the OFF path stays byte-identical --
+    // verified 2026-08-26: with the flag unset, copies.tsv and families.tsv md5s are unchanged.
+    if repeat_gate_on() {
+        refine_params.intron_fasta = Some(args.fasta.clone());
     }
     let (raw, raw_certs, collapsed, expressed, dna_families): (
         Vec<Vec<DenovoTranscript>>,

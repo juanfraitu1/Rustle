@@ -1607,9 +1607,15 @@ being single-exon where exon-sum == genomic segment.
 | **no edge** | 1,007 | 1 | 1 | **0.0000** |
 
 ⭐ **The majority of stub edges are NOT repeat-driven** (median multiplicity 1 — family-sized, not
-repeat-sized). ⭐⭐ **But high multiplicity is essentially DIAGNOSTIC of a stub edge: 20/227 vs 0/1,007.**
-That is the `gmult` veto's signature and reproduces its shipped role — **a VETO, never an admission
-criterion** ([[project_o1_genome_anchored_repeat_gate]]).
+repeat-sized).
+
+⛔⛔ **RETRACTED 2026-08-26 — the second half of this section was WRONG.** It read the 20/227-vs-0/1,007
+contrast as "high multiplicity is diagnostic of a stub edge", called those edges removable junk, and
+proposed the veto as a free precision gain. **All three claims are refuted by §4x.** Multiplicity and
+degree measure THE SAME THING: a rep with N near-identical genomic copies has N potential partners.
+Stratified, the stub edge rate is **mult 1 → 0.1443 · 2–4 → 0.4574 · ≥20 → 1.0000 (20/20)** — a perfect
+rate, because those are the highest-copy-number loci, which is precisely what O1 exists to find. The
+"junk" was NPIP.
 
 **Verdict.** Applying the veto takes the stub rate **0.1840 → 207/1,234 = 0.1677**, so the deficit
 **SURVIVES**: **3.67×** against well-supported spliced models (was 4.02×), **2.89×** against all ≥15-exon
@@ -1666,3 +1672,48 @@ left open ("precision UNMEASURED"). The completeness deficit of §4v stands with
 ⚠ Candidate count checked before reading the verdict: SE60 linked **966 locus pairs** from 11,385 exons
 (SE98: 164) against OFF's 1,847 E_r edges — the instrument had ample candidates, so this is a real
 negative, not a blind panel.
+
+
+## §4x — the repeat-hub veto is REFUTED for the catalog path (2026-08-26)
+
+**What was built.** `family_define` has carried a repeat-hub gate (`min_shared_mult >= 20`) ON BY DEFAULT
+since the annotation era; the de novo catalog path never had one. Ported it as
+`RUSTLE_ER_REPEAT_GATE=<M>`: per-rep genome multiplicity (distinct non-overlapping reference loci at
+>= 90% identity, >= 50% coverage of the rep, `-p 0.1 -N 200` recorded), vetoing an edge when BOTH
+endpoints are hubs. **Genome-anchored, so P1 holds by construction** — multiplicity is a property of the
+rep and the reference alone, unlike R5's catalog-anchored count which broke seed-invariance at 94/147.
+
+**Discipline checks PASS.** Flag unset ⟹ `copies.tsv` md5 `2c002d7c…` and `families.tsv` `03e8497e…`
+**byte-identical** to baseline, and `repeat_hub_gate` is emitted into the params certificate (the M2
+defect, shipped twice before, does not recur).
+⚠ **The first ON run was a silent no-op** — `intron_fasta` is populated only under
+`--homology-genomic-span`, so the veto had no reference and returned the baseline exactly. **"Identical
+to baseline" would have read as "safe and inert" had the veto not logged its own skip.** Same failure
+class as the human 150-window panel scoring 2/150 on zero qualifying pairs. **Make a no-op announce
+itself.**
+
+**Result at M=20 (veto fired: 19/2,847 reps are hubs; edges 1846 → 1826).**
+
+| | OFF | GATE20 |
+|---|---:|---:|
+| families | 83 | 82 |
+| copies | 484 | 473 |
+| **NPIP loci in a family** | **12/31** | **7/31** |
+| **100%-NPIP families** | **3** | **1** |
+
+⛔⛔ **REFUTED — ACTIVELY HARMFUL ON THE TARGET FAMILY.** All 11 lost copies are single-exon and
+**7/11 sit at NPIP loci**. The gate destroys 5 of 12 recovered NPIP loci and 2 of 3 pure NPIP families to
+remove 20 edges.
+
+⭐⭐⭐ **WHY, AND IT GENERALISES: GENOME MULTIPLICITY CANNOT DISTINGUISH A REPEAT FROM A HIGH-COPY GENE
+FAMILY — AND HIGH-COPY GENE FAMILIES ARE O1'S ENTIRE SUBJECT.** NPIP has 31 loci, so an NPIP exon-sum
+trips any "occurs in ≥ 20 places" test **by being what it is**. The gate's predictor is confounded with
+the target it is supposed to protect. ⟹ **the veto's apparent signal in §4v was TAUTOLOGICAL**: mult ≥ 20
+⟹ edge rate 1.0000, because both quantities ask "does this sequence have paralogues?".
+
+⚠ Why it is nevertheless correct in `family_define`: that path is annotation-driven, so a named gene is
+never at risk of being reclassified as a repeat by its own copy number. **Do not port gates across paths
+on the strength of the threshold agreeing.**
+
+**Disposition:** flag RETAINED, default OFF, **DO NOT ENABLE** — it is the record of the experiment, like
+`RUSTLE_ER_GUARD_SCOPED`. ⟹ **§4v's "free precision gain" does not exist; there is no queued win.**
