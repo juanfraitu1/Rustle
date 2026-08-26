@@ -1500,3 +1500,76 @@ guard cannot be scoped (here); exon-union, shared-exon and the hierarchy were al
 DISCLOSE the defect (`frac_pure_intron`, §4s) and not claim to have solved it.** `RUSTLE_ER_GUARD_SCOPED`
 ships **off**, retained only as the record of this experiment.
 
+---
+
+## 4u. ⛔ WGS CANNOT GIVE A COPY-NUMBER BASELINE FOR O1 — AND THE ONE IT COULD GIVE NEEDS NO WGS (2026-08-25)
+
+Asked whether the downloaded WGS can inform the O1 definition, or at least supply an expected copy
+number per family. **Killed at the design stage, before any counting.**
+
+### ⭐ The physics: family paralogues are too diverged for exact k-mer matching
+
+Measured on the shipped edge dump (`o1_strand/off/dump/ggo.edges.tsv`), within-family `E_r` edges,
+n = 3,715 — **verified by the controller, not re-derived**:
+
+| within-family identity | ⟹ P(a 21-mer is identical) |
+|---|---:|
+| **median 0.8234** | **0.0169** |
+| q1 0.7635 | 0.0035 |
+| q3 0.8922 | 0.0911 |
+
+**1,524/3,715 = 0.4102 of within-family edges join copies sharing under 1% of their 21-mers.**
+
+⟹ a k-mer multiplicity readout returns **CN ≈ 1 for a copy regardless of its family size**, because a
+copy's k-mers are essentially private to it. ⚠ This is not a tunable: lowering k to recover sharing
+destroys specificity, and the identity distribution is a property of the biology, not of the method.
+A supporting probe reports **216/627 = 0.3445 of families share ZERO genomic 21-mers across their
+copies** (48.01% share ≤ 10) — consistent with the arithmetic above. ⚠ that figure is UNVERIFIED (its
+verifier died on a session limit); the identity table is the controller-verified part.
+
+### ⭐⭐ And the baseline the question actually wants is FREE — the WGS is not needed
+
+**The WGS animal IS the assembly animal** (both SAMN04003007 / KB3781). So the decomposition is
+
+> **CN_WGS = CN_assembly + collapse_deficit**
+
+- **CN_assembly** — how many times a copy's sequence occurs in `GGO.fasta` — needs **no WGS at all**, and
+  the machinery is already in-tree (`min_shared_gmult`: genome-anchored, seed-invariance **0/147**,
+  AUC 0.9429). ⚠ Any such count must record **`-p` and `-N`** (MAPKBP1 gives 1/1 at `-p 0.8` and 9/8 at
+  `-p 0.1`).
+- **collapse_deficit** — the WGS-only residual — **is O3's ABSORBED stratum** (64.2% of excised copies,
+  depth 1.75×), and the project's own O1/O3 boundary puts it outside O1: *O1 finds copies missing from
+  the ANNOTATION; O3 finds copies missing from the GENOME.* The o3 work pre-registers **< 1 collapse**
+  in this compartment, so the residual is expected to be empty.
+
+⟹ **everything the WGS adds beyond the assembly is, by this project's own boundary, not O1's.**
+
+### ⛔ NOT in the definition — three independent reasons
+
+1. **It measures the wrong thing** (above): CN ≈ 1 for diverged paralogues.
+2. **It would break substrate portability.** The cross-substrate replication that gives O1 its strongest
+   generalisation claim — **87.06% of `E_r` edges recovered** across a different ANIMAL *and* TISSUE —
+   ran on a fibroblast sample with **no matching WGS**. A definition consuming DNA copy number could not
+   be evaluated on its own best evidence.
+3. **It repeats a closed entry.** "Joint DNA/RNA" was already RETRACTED as a definition and survives as a
+   PROPERTY; the measured gain there was **CONTIGUITY, not jointness** (a length-matched DNA-only arm
+   recovered 91/91).
+
+⭐ The defensible use is the third of the three the design considered: **an external validation set,
+never consumed by the pipeline** — the same standing as `frac_pure_intron` (§4s) and the λ certificate,
+under the settled principle **emission ≠ definition**.
+
+### ⚠ And the comparison would be confounded even if it worked
+
+O1 sees only **EXPRESSED** copies, from **testis of a different animal**; DNA sees **all** copies. So
+**O1 < DNA is EXPECTED and is not evidence of an O1 defect.** A probe reports that the stratum where the
+comparison would be clean (core ≥ 200 shared k-mers AND no copy in an SD) contains **2 families, none
+with ≥ 3 copies** ⚠ (unverified — same session-limit loss). Even granting the method, there is nothing
+to measure on.
+
+### ⟹ What to do instead, if a baseline is wanted
+
+Count each catalog copy's occurrences **in the assembly** (`GGO.fasta`), recording `-p` and `-N`, and
+publish it as an **annotation** beside each family — not as a term in the definition, and not from the
+WGS. Cost: one genome pass, no k-mer database, no 42.5 GB of counting.
+
