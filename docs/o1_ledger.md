@@ -1573,3 +1573,51 @@ Count each catalog copy's occurrences **in the assembly** (`GGO.fasta`), recordi
 publish it as an **annotation** beside each family — not as a term in the definition, and not from the
 WGS. Cost: one genome pass, no k-mer database, no 42.5 GB of counting.
 
+
+## §4v — the completeness deficit is REAL, not a repeat artefact (2026-08-26)
+
+**Substrate:** the 3-contig full-depth fibroblast NPIP catalog (2,847 reps / 83 families). ⚠ NOT
+comparable to the genome-wide testis catalog; whole-contig subset, so off-contig partners cannot form
+edges.
+
+**The finding under test (§4v.1).** Edge formation falls as the transcript model gets more complete:
+single-exon **227/1,234 = 0.1840**, 2–4 exons 0.2706, 5–14 exons 0.1560, **≥15 exons 16/276 = 0.0580**.
+Restricted to models both complete and well supported (≥15 exons AND ≥100 reads): **7/153 = 0.0458**.
+Mechanism: coverage ≥ 0.50 of the SHORTER sequence on a scale-free denominator — a stub needs half of
+~2 kb, a 21-exon model half of ~30 kb across diverged UTRs and alternative exons. **Completeness raises
+the bar the model itself must clear.** Sharpest single case: `NC_073242.2:29391569-29415846`, 21 exons,
+**4,187 reads**, `degree = 0`.
+
+**The attack (§4v.2): are stub edges just repeats?** If stubs pair via Alu/L1-class sequence the deficit
+would be an artefact of junk, not of the coverage clause. Measured genome multiplicity of every rep —
+`minimap2 -x asm20 -c --eqx -N 200 -p 0.1` against the three contigs, a hit being ≥90% identity and
+≥50% coverage OF THE REP, distinct non-overlapping target loci counted. **`-p` and `-N` recorded.**
+
+⚠⚠ **THE CROSS-CLASS COMPARISON IS INVALID AND IS RETRACTED HERE BEFORE USE.** An exon-sum is a
+CONCATENATION of exons; it cannot align contiguously to genomic DNA across an intron, so the ≥50%
+single-record coverage filter systematically fails for spliced reps — hence their median multiplicity of
+**0**, which is a measurement artefact, not biology. **Only the within-stub arms are comparable**, both
+being single-exon where exon-sum == genomic segment.
+
+**Result (valid arm).** Among single-exon reps:
+
+| arm | n | median mult | q90 | frac ≥ 20 loci |
+|---|---:|---:|---:|---:|
+| **with an edge** | 227 | 1 | 6 | **0.0881** |
+| **no edge** | 1,007 | 1 | 1 | **0.0000** |
+
+⭐ **The majority of stub edges are NOT repeat-driven** (median multiplicity 1 — family-sized, not
+repeat-sized). ⭐⭐ **But high multiplicity is essentially DIAGNOSTIC of a stub edge: 20/227 vs 0/1,007.**
+That is the `gmult` veto's signature and reproduces its shipped role — **a VETO, never an admission
+criterion** ([[project_o1_genome_anchored_repeat_gate]]).
+
+**Verdict.** Applying the veto takes the stub rate **0.1840 → 207/1,234 = 0.1677**, so the deficit
+**SURVIVES**: **3.67×** against well-supported spliced models (was 4.02×), **2.89×** against all ≥15-exon
+reps (was 3.17×). ⟹ **the completeness deficit is a property of the EDGE RULE, not of repeat contamination**,
+and ~9% of stub edges are separately removable junk.
+
+**Consequence for O1's claim.** The definition's detection power is **anti-correlated with evidence
+quality**. This is not "rigid" — a rigid definition would miss hard cases while keeping easy real ones.
+This one keeps the DEGENERATE cases and drops the well-resolved ones. Every pure-NPIP family in this
+catalog (`GWFAM30` 6/6, `GWFAM32` 3/3, `GWFAM31` 2/2) is built from single-exon stubs.
+⟹ **claim reproducibility and falsifiability, NOT adequacy.** See `docs/THESIS_OBJECTIVES.md`.
