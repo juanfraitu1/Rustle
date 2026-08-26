@@ -1779,10 +1779,36 @@ caller could flag it.
 different mechanism** — it needs reads to MAP to the locus, which is exactly what "absorbed" means. The
 two routes fail and succeed independently.
 
-### ⛔ Blocker 1: the WGS is 0.65×, and the call needs ~25×
+### ⛔→✅ Blocker 1 WITHDRAWN SAME DAY: the 0.65× was a TRUNCATED DOWNLOAD, not the data
 
-Measured directly on `SRR26152581_subreads.fastq.gz`: **163,171 reads / 1,978,946,468 bp**, mean
-**12,128 bp** ⟹ **0.65× of a 3.04 Gb assembly**.
+⚠⚠ **RETRACTED 2026-08-26, hours after writing.** The measurement below was taken on the local file and
+reported as the RUN's depth. It is not: `gzip -t` returns **`unexpected end of file`**, and ENA reports
+`SRR26152581` at **34.62 Gbp = 11.39×**. The local copy holds **1.98 Gbp = 5.7% of the run.**
+⟹ **"the WGS is too shallow" was a statement about a broken download.** **`gzip -t` EVERY archive
+BEFORE deriving a number from it.**
+
+⭐⭐ **The real picture: 108 runs exist under SAMN04003007, 102 of them WGS, totalling 1,389 Gbp =
+456.91× of a 3.04 Gb assembly** — **18× the requirement**, not 1/38th of it.
+
+| platform / model | runs | Gbp | coverage |
+|---|---:|---:|---:|
+| OXFORD_NANOPORE / PromethION | 6 | 561.2 | 184.61× |
+| PACBIO_SMRT / Sequel II (HiFi) | 22 | 375.6 | 123.56× |
+| ILLUMINA / NovaSeq 6000 | 8 | 279.7 | 92.00× |
+| ILLUMINA / HiSeq 2500 | 3 | 92.1 | 30.30× |
+| PACBIO_SMRT / RS II (CLR) | 62 | 44.2 | 14.52× |
+| ILLUMINA / NextSeq 500 | 1 | 36.2 | 11.92× |
+
+**Two Sequel II HiFi runs reach the target**: `SRR26152597` (13.70×) + `SRR26152596` (13.39×) =
+**27.09×**. HiFi is the right substrate here — the whole problem is resolving collapsed paralogues, where
+long reads map unambiguously and short reads do not.
+
+⚠ The ENA metadata caveat still holds: `sample_title` LIES for every run under this BioSample (it labels
+fibroblast IsoSeq as "Y flow-sorted DNA"). The STRUCTURED fields used above — `library_strategy`,
+`instrument_model`, `base_count` — are the trustworthy ones.
+
+**The original (WRONG) measurement, kept as the record:** `SRR26152581_subreads.fastq.gz` locally holds
+163,171 reads / 1,978,946,468 bp, mean 12,128 bp ⟹ 0.65×.
 
 Power for a 1-copy vs 2-copy call, stated as arithmetic rather than opinion. Reads overlapping a locus of
 length *L* per 1× is `(L + readlen)/readlen`; separation of *n* vs 2*n* Poisson counts is
@@ -1814,7 +1840,12 @@ counterfactual**: given one BAM it must compare observed depth to an EXPECTATION
 expectation is expression, which is unknown and varies over orders of magnitude. The pairing is what made
 the measurement work and is precisely what a caller cannot have.
 
-**Verdict: NOT REFUTED — BLOCKED ON DATA.** Do not build it against 0.65×; a caller trained there would
-be fitting noise. **Actionable:** 0.65× is ONE run. If further HiFi/Illumina runs exist under
-SAMN04003007 they can be pooled — **~25× is the number to hit**, and validation should use the excision
-ablation (162 arms, 104 absorbed, known ground truth) rather than the empty native compartment.
+**Verdict (REVISED): the DEPTH blocker is GONE; only Blocker 2 remains, and it is scoped.** 27.09× is two
+downloads away. Blocker 2 says the NATIVE compartment is pre-registered empty (< 1 collapse), so the
+caller must be **built and validated on the excision ablation** — 162 arms, 104 absorbed, known ground
+truth — where the positives are constructed and plentiful. Running it on the native genome afterwards is
+a TEST OF THE PRE-REGISTRATION, and a null there is a confirmation, not a failure.
+
+**Cost to proceed:** ~82 Gbp of `fastq.gz` to fetch (order 25–30 GB compressed; 579 GB free on
+`/mnt/linuxdisk`), then a genome-wide `minimap2 -x map-hifi` of ~76 Gbp on 4 threads — a multi-hour to
+overnight run, and the largest single compute commitment in this project so far. ⚠ ONE AT A TIME.
