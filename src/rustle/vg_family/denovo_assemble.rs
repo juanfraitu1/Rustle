@@ -344,6 +344,37 @@ pub fn footprint_nodes_enabled() -> bool {
     matches!(std::env::var("RUSTLE_FOOTPRINT_NODES"), Ok(v) if v != "0" && !v.is_empty())
 }
 
+/// Search windows for the footprint pass (`RUSTLE_FOOTPRINT_WINDOWS=<bed>`), or `None` for the
+/// genome-wide island scan.
+///
+/// WHY WINDOWS. §5n measured that the SAME DNA substrate gives 10/31 NPIP loci when node boundaries come
+/// from where reads happened to fall, and 26/31 when they come from homology to a real gene. The
+/// substrate was never the problem; the BOUNDARIES were. Seeding supplies boundaries: §5m found 23/23
+/// expressed NPIP members from one annotated copy plus one iteration, where the pipeline's own discovery
+/// finds 13/23. This lets those windows drive RNA node construction, which `--from-genome` cannot express
+/// because it takes no BAM.
+///
+/// A window also BOUNDS the gap-grouping that the genome-wide scan gets wrong: inside a window, runs are
+/// joined regardless of `max_gap`, because the window itself asserts they belong to one locus.
+pub fn footprint_windows() -> Option<Vec<(String, u64, u64)>> {
+    let path = std::env::var("RUSTLE_FOOTPRINT_WINDOWS").ok().filter(|p| !p.is_empty())?;
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| eprintln!("[footprint] cannot read windows {path}: {e}"))
+        .ok()?;
+    let mut out = Vec::new();
+    for line in text.lines() {
+        if line.starts_with('#') || line.trim().is_empty() { continue; }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 3 { continue; }
+        match (f[1].parse::<u64>(), f[2].parse::<u64>()) {
+            (Ok(a), Ok(b)) if b > a => out.push((f[0].to_string(), a, b)),
+            _ => {}
+        }
+    }
+    eprintln!("[footprint] {} search windows loaded from {path}", out.len());
+    Some(out)
+}
+
 /// FOOTPRINT SKELETONS: one node per read-covered region, with NO requirement that the reads agree on a
 /// splice structure.
 ///
@@ -396,6 +427,70 @@ pub fn footprint_skeletons(
         taken.entry(sk.chrom.as_str()).or_default().push((sk.start, sk.end));
     }
     let mut out = Vec::new();
+    // WINDOWED MODE: one node per supplied window, built from the reads inside it. The window supplies
+    // the BOUNDARY, which §5n showed is the thing that matters; gap-grouping is bypassed because the
+    // window itself asserts that its runs belong to one locus.
+    if let Some(wins) = footprint_windows() {
+        for (wc, ws, we) in &wins {
+            let Some(rs) = by_chrom.get(wc.as_str()) else { continue };
+            let inside: Vec<&&PrimaryRead> = rs
+                .iter()
+                .filter(|r| {
+                    let (a, b) = (r.ref_start, r.ref_end);
+                    b > a && (b.min(*we).saturating_sub(a.max(*ws))) * 2 >= (b - a)
+                })
+                .collect();
+            if (inside.len() as u32) < min_cov { continue; }
+            // A window is "already served" only when existing nodes cover MOST of it. Blocking on ANY
+            // contained rep was wrong: measured on the 26 seeded NPIP windows, existing reps cover a
+            // MEDIAN 3.7% of a window and 24/26 are under half covered, so that test discarded the
+            // uncovered ~96% and only 2 of 26 windows ever emitted a node.
+            let mut iv: Vec<(u64, u64)> = existing
+                .iter()
+                .filter(|sk| sk.n_reads >= min_reads && sk.chrom == *wc && we.min(&sk.end) > ws.max(&sk.start))
+                .map(|sk| (sk.start.max(*ws), sk.end.min(*we)))
+                .collect();
+            iv.sort_unstable();
+            let mut served = 0u64;
+            if !iv.is_empty() {
+                let (mut cs, mut ce) = iv[0];
+                for &(a, b) in &iv[1..] {
+                    if a <= ce { ce = ce.max(b); } else { served += ce - cs; cs = a; ce = b; }
+                }
+                served += ce - cs;
+            }
+            if served * 2 >= we - ws { continue; }
+            let mut depth: HashMap<u64, u32> = HashMap::new();
+            let mut rev = 0u32;
+            for r in &inside {
+                if r.reverse { rev += 1; }
+                for (a, b) in exon_blocks_of(r) {
+                    for bin in (a.max(*ws) / BIN)..=(b.min(*we) / BIN) {
+                        *depth.entry(bin).or_insert(0) += 1;
+                    }
+                }
+            }
+            let mut bins: Vec<u64> = depth.iter().filter(|(_, &d)| d >= min_cov).map(|(&b, _)| b).collect();
+            if bins.is_empty() { continue; }
+            bins.sort_unstable();
+            let mut runs: Vec<(u64, u64)> = Vec::new();
+            let (mut st, mut pv) = (bins[0], bins[0]);
+            for &b in &bins[1..] {
+                if b == pv + 1 { pv = b; } else { runs.push((st * BIN, (pv + 1) * BIN)); st = b; pv = b; }
+            }
+            runs.push((st * BIN, (pv + 1) * BIN));
+            let bp: u64 = runs.iter().map(|(a, b)| b - a).sum();
+            if bp < min_bp { continue; }
+            let introns: Vec<(u64, u64)> = runs.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+            out.push(Skeleton {
+                chrom: wc.clone(), start: runs[0].0, end: runs[runs.len() - 1].1,
+                n_reads: inside.len() as u32, introns, tied_seeded: false, footprint: true,
+                read_strand: Some(majority_read_strand(rev, inside.len() as u32)),
+                read_rev: rev, read_tot: inside.len() as u32,
+            });
+        }
+        return out;
+    }
     for (chrom, rs) in by_chrom {
         // bin coverage over EXONIC blocks; a read's introns contribute nothing
         let mut depth: HashMap<u64, u32> = HashMap::new();
@@ -1170,6 +1265,57 @@ pub fn build_spliced_seq(
 /// resolution in DIFFERENT states for an unspliced model: strict leaves `strand` as `None`, majority sets
 /// it to `Some('+')` from a vacuous count.
 #[allow(clippy::too_many_arguments)]
+/// Sequence for a FOOTPRINT node, whose `introns` are UNCOVERED COVERAGE GAPS rather than spliced-out
+/// introns, so no motif test applies to them at all.
+///
+/// ⚠⚠ THIS EXISTS BECAUSE THE PREVIOUS ROUTING WAS A BUG WITH A FALSE COMMENT. Footprints were sent to
+/// `build_spliced_seq_with(majority = true, nc_max = u64::MAX)` under a comment claiming the
+/// canonical-motif test was "skipped" and the sequence "taken as-is". It was not: `nc_max` lifts only the
+/// per-junction SIZE veto, and the majority path still runs the `plus == 0 && minus == 0` guard below,
+/// which demands at least one canonical junction. A footprint's 50 bp-binned gaps have no reason to carry
+/// GT-AG/GC-AG/AT-AC.
+///
+/// MEASURED COST OF THE BUG (2026-08-27): across 22 candidate footprints, 8 of 248 gaps were canonical
+/// (0.0323) against a uniform expectation of 6/256 = 0.0234 -- Poisson p ~ 0.24, i.e. INDISTINGUISHABLE
+/// FROM CHANCE. Every surviving multi-gap footprint passed on exactly ONE accidental dinucleotide.
+/// Genome-wide the guard killed **225 of 288 = 78%** of footprints. Survival was a lottery.
+pub fn build_footprint_seq(
+    genome: &GenomeIndex,
+    chrom: &str,
+    start: u64,
+    end: u64,
+    gaps: &[(u64, u64)],
+    read_strand: Option<char>,
+) -> Option<(Vec<u8>, char)> {
+    let mut seq = Vec::new();
+    let mut cur = start;
+    let mut take = |a: u64, b: u64, seq: &mut Vec<u8>| -> Option<()> {
+        let s = genome.fetch_sequence(chrom, a, b)?;
+        seq.extend(s.iter().map(|x| x.to_ascii_uppercase()));
+        Some(())
+    };
+    for &(a, b) in gaps {
+        if a > cur {
+            take(cur, a, &mut seq)?;
+        }
+        cur = b;
+    }
+    if end > cur {
+        take(cur, end, &mut seq)?;
+    }
+    if seq.is_empty() {
+        return None;
+    }
+    // No junction evidence exists for a footprint, so strand comes from the READ vote exactly as it does
+    // for an unspliced model, falling back to the historical '+' placeholder when the vote was not
+    // decisive (the caller applies the margin).
+    let strand = read_strand.unwrap_or('+');
+    if strand == '-' {
+        seq = reverse_complement(&seq);
+    }
+    Some((seq, strand))
+}
+
 pub fn build_spliced_seq_with(
     genome: &GenomeIndex,
     chrom: &str,
@@ -1416,10 +1562,9 @@ pub fn assemble_gate_with(
         // unspliced model. Non-footprint skeletons are untouched, which is what keeps the OFF arm
         // byte-identical.
         let (seq, strand) = if sk.footprint {
-            match build_spliced_seq_with(
+            match build_footprint_seq(
                 genome, &sk.chrom, sk.start, sk.end, &sk.introns,
                 if sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None },
-                true, u64::MAX,
             ) {
                 Some(v) => v,
                 None => continue,
@@ -1830,6 +1975,39 @@ mod tests {
     /// Pinned because §5h's whole claim rests on this: introns must be excluded from coverage (else the
     /// node is a genomic span, which §5g measured as WORSE), and gaps must become intron entries so the
     /// exon-sum skips them.
+
+    /// ⚠⚠ REGRESSION TEST FOR A BUG THAT SHIPPED BEHIND A FALSE COMMENT. Footprints were routed to
+    /// `build_spliced_seq_with(majority = true, nc_max = u64::MAX)` under a comment claiming the motif
+    /// test was skipped. It was not — `nc_max` lifts only the intron-SIZE veto — so the
+    /// `plus == 0 && minus == 0` guard killed 225 of 288 footprints (78%) genome-wide, and the survivors
+    /// passed on an accidental dinucleotide at roughly the random rate (8/248 gaps canonical vs a 6/256
+    /// expectation, Poisson p ~ 0.24). This asserts a footprint whose gaps carry NO canonical motif still
+    /// yields sequence.
+    #[test]
+    fn a_footprint_with_no_canonical_gap_still_builds() {
+        // a gap whose flanks are deliberately NOT a splice motif, as a coverage gap generally is not
+        let dir = std::env::temp_dir().join(format!("fp_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fa = dir.join("g.fa");
+        let seq = format!("{}{}{}", "A".repeat(100), "G".repeat(100), "C".repeat(100));
+        std::fs::write(&fa, format!(">c1\n{seq}\n")).unwrap();
+        let contigs: std::collections::HashSet<String> = ["c1".to_string()].into_iter().collect();
+        let g = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
+        let gaps = vec![(100u64, 200u64)];
+
+        let fp = build_footprint_seq(&g, "c1", 0, 300, &gaps, Some('+'));
+        assert!(fp.is_some(), "a footprint must not be rejected for lacking a splice motif");
+        let (fseq, strand) = fp.unwrap();
+        assert_eq!(strand, '+');
+        assert_eq!(fseq.len(), 200, "gap bases must be EXCLUDED and the flanks concatenated");
+        assert!(!fseq.contains(&b'G'), "the gap's bases must not appear in the sequence");
+
+        // the same intervals through the spliced builder ARE rejected — the bug, pinned in place
+        let spliced = build_spliced_seq_with(&g, "c1", 0, 300, &gaps, Some('+'), true, u64::MAX);
+        assert!(spliced.is_none(),
+                "the spliced path applies the motif test even at nc_max = MAX — that WAS the bug");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     #[test]
     fn a_footprint_node_covers_exons_and_gaps_become_introns() {
         let mk = |s: u64, e: u64, iv: Vec<(u64, u64)>| PrimaryRead {

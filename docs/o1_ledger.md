@@ -2576,3 +2576,68 @@ gorilla-specific copies — exactly O3's target class. They should not be quoted
 them. `--from-genome` cannot express that (no `--bam`), so it needs the footprint pass restricted to given
 windows — a small feature, and the natural next step. **The DNA number above must not be quoted as an
 RNA-level result.**
+
+## §5o — ⚠⚠ A FOURTH CONSTRUCTION ERROR, SHIPPED BEHIND A FALSE COMMENT; and seeded windows REJECTED (2026-08-27)
+
+Investigated by an 8-agent workflow with an adversarial verifier that re-measured every load-bearing
+number from real binary runs and run logs rather than trusting the diagnoses.
+
+### ⛔⛔ THE BUG: footprints were NOT exempt from the canonical-motif test
+
+`denovo_assemble.rs` documented footprints as *"marked `footprint: true` so the canonical-motif test is
+skipped … sequence taken as-is."* **That comment was FALSE.** Footprints routed to
+`build_spliced_seq_with(majority = true, nc_max = u64::MAX)`, and `nc_max` lifts only the per-junction
+SIZE veto — the majority path still ran `if !introns.is_empty() && plus == 0 && minus == 0 { return None }`,
+demanding at least one canonical junction. A footprint's 50 bp-binned **coverage gaps** have no reason to
+carry `GT-AG` / `GC-AG` / `AT-AC`.
+
+**Measured:** across 22 candidate footprints, **8 of 248 gaps were canonical = 0.0323**, against a uniform
+expectation of **6/256 = 0.0234** — 5.81 expected vs 8 observed, **Poisson p ≈ 0.24, INDISTINGUISHABLE
+FROM CHANCE**. Every surviving multi-gap footprint passed on **exactly one accidental dinucleotide** out of
+4–40 gaps. Genome-wide the guard killed **225 of 288 = 78%** of footprints.
+⟹ **the feature's entire yield was a lottery ticket**, and §5i's +1 locus was drawn from it.
+
+**FIXED**: a dedicated `build_footprint_seq` — no motif test, strand from the read vote as for an unspliced
+model — with a regression test that pins BOTH halves (the footprint path accepts a motif-free gap; the
+spliced path still rejects it even at `nc_max = MAX`).
+
+**Effect of the fix**, scored on the objective (a locus counts when a family copy lies ≥50% INSIDE it):
+
+| arm | families | nodes | **loci in a family** | pure |
+|---|---:|---:|---:|---:|
+| shipped | 83 | 13/31 | **12/31** | 3 |
+| footprint, bug present (§5i) | 87 | 15/31 | **13/31** | 3 |
+| **footprint, gate fixed** | 100 | **16/31** | **13/31** | 3 |
+
+Post-gate transcripts +63 → **+210**; footprint survival roughly tripled. ⟹ **+1 NODE, 0 additional loci
+on the objective** — the bottom of the verifier's pre-registered range (0 to +2, point estimate +1).
+**Keep the fix** (the code now does what it claims, and node admission is no longer a coin flip), but it
+is **NOT a gain on the objective**. ⚠ families 87 → 100 and copies 491 → 534: the extra blocks are outside
+NPIP and their correctness is **UNMEASURED**.
+
+### ⛔ SEEDED WINDOWS → RNA NODES: DO NOT IMPLEMENT
+
+| arm | loci in a family | pure NPIP |
+|---|---:|---:|
+| shipped | 12/31 | 3 |
+| **unseeded footprint (needs no seeds, no truth set, no geometry)** | **13/31** | **3** |
+| seeded 26 windows | **12/31** | **2** |
+
+**Seeding buys 0 loci over shipped and costs 1 locus and 1 pure family against the free feature.**
+Two further findings from the verifier:
+- ⚠ **The 22/31 ceiling I was aiming at is an ORACLE** — obtained by feeding the 31 TRUE locus spans as
+  windows. Not reachable from any seed set buildable without the truth annotation, and tuning window
+  extent against `ggo_loci.json` is this project's own banned move.
+- ⚠ **The chain-capable ceiling is 11/31, BELOW the shipped 13/31** ⟹ a third of the shipped NPIP nodes
+  are unspliced stubs, not chain agreement.
+
+### ⚠⚠ TWO HEADLINE NUMBERS WERE COINCIDENCES
+
+Reproduced from run logs alone, no modelling: *"reps unchanged at 2,847"* is **+6 / −6**, and *"NPIP
+unchanged at 13/31"* is **+1 / −1**. Of the 6 reps the footprints destroyed, **4 were 100% inside a true
+NPIP locus**, including a 3,637 bp model displaced by a 137 kb footprint only 20.46% inside — which then
+merged 4 shipped reps, 2 of them with zero NPIP overlap. **An unchanged total is not evidence of
+inertness; diff the sets.**
+
+⟹ **§5m and §5n STAND** (one seed finds 23/23 expressed; seeded windows give 26/31 on DNA). What is
+refuted is only that seeded boundaries help **RNA node construction**.
