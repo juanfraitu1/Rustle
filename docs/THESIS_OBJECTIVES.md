@@ -150,6 +150,14 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 
 ### 🔄 OPEN
 
+- ⭐⭐⭐ **SEEDED DISCOVERY (§5m) — the largest measured gain in the objective.** ONE annotated gorilla
+  copy plus one iteration finds **23/23 = 100% of expressed NPIP members**, against **13/23 = 56.5%** for
+  the pipeline's own node construction; RNA discovery is a strict SUBSET of it. With §5e (correct nodes ⟹
+  30/31 grouped) this projects to ~23 recovered against today's 12. Sits inside the accepted
+  "genome + minimal annotation + reads" reframing. ⚠ n = 1 family, recent high-identity expansion, and
+  the 2026-08-12 cross-family result was P = 0.0635 — **a demonstration, not a rate.**
+
+
 - ⭐ **FOOTPRINT NODES (§5h) — the one open candidate whose evidence points the right way on both axes.**
   Drop the chain-consistency requirement: a node is the union of bases covered by ≥2 reads, exonic only.
   Prototype gives **18/31 vs 12/31** NPIP loci at **3.23%** contamination against a 60-locus control.

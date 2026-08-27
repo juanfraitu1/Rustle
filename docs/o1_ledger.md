@@ -2484,3 +2484,52 @@ A structural test would sharpen an axis that is already not costing anything.
 ⟹ **Best arm remains the footprint node (§5i): 13/31 loci, 3 pure, +1 over shipped.** Every route that
 enriches the EDGE (shared exon, pooled isoforms, DNA substrate, lower floor, graph structure) has now been
 measured, and the ones that moved the needle at all moved the NODE.
+
+## §5m — ⭐⭐⭐ ONE SEED FINDS EVERY EXPRESSED MEMBER (2026-08-27)
+
+**Question (user): starting from minimal annotation or seeds, can we find all family members — or at
+least the expressed ones?** Measured on NPIP. **Yes, and the expressed answer is complete.**
+
+**Design, and why it is not circular.** The seed is the **single annotated gorilla NPIP copy**,
+`NPIPB11` at `NC_073242.2:31337556-31462161` (124.6 kb) — the only one the gorilla GFF names. The truth
+set is the 31 loci located from **human** orthologs. Different sources, so recovery is a real measurement.
+`minimap2 -x asm20 -c --eqx -N 200 -p 0.1` — ⚠ `-p` and `-N` recorded, copy counts are sensitive to both.
+
+| | true NPIP loci found |
+|---|---:|
+| round 1 — the single seed | **16/31** |
+| round 2 — iterate, using round 1's hits as seeds | **25/31** (+9) |
+| 19 human seeds (this session's original search) | 31/31 |
+| **the RNA pipeline's own node construction** | **13/31** |
+
+### ⭐⭐⭐ Against the EXPRESSED subset, the seeded search is complete
+
+| | of the 23 expressed loci |
+|---|---:|
+| **seeded search (1 seed + 1 iteration)** | **23/23 = 1.000** |
+| RNA pipeline's own discovery | **13/23 = 0.565** |
+| currently reach a family | 12 |
+
+⭐ **RNA discovery is a strict SUBSET of seeded discovery**: seeding finds **12 loci RNA misses** and
+misses **0** that RNA finds. **A single annotated copy plus one iteration recovers EVERY expressed member
+of the family** — the pipeline's own discovery reaches 56.5% of them.
+
+⟹ **combined with §5e** (with correct nodes the shipped rule groups 30/31), seeded discovery + the
+EXISTING definition projects to ~23 recovered against the current **12**, from ONE annotation.
+⟹ this sits inside the O1 reframing already accepted on 2026-08-12 (*"genome + MINIMAL ANNOTATION +
+reads"*), so it is **not** the scope change that DNA-first discovery would be (§5g).
+
+### ⚠ What this is not
+
+- **n = 1 family.** A demonstration, not a rate. The 2026-08-12 minimal-annotation work measured
+  Δ+0.1000 at **P = 0.0635 (not significant)** across 22 families, surviving only at m≥3 (5/22 vs 0/22),
+  and left *"coordinate-only baseline never computed"* open.
+- **NPIP is a recent hominoid expansion at high identity**, which is the easy case for homology seeding.
+  An older family whose copies have diverged would be harder — the same age-dependence §5g raised.
+- The seed is a **124.6 kb whole-gene span**; a shorter seed (CDS only) is untested and likely weaker.
+- "23/23 expressed" is relative to the human-derived 31-locus truth set, and to §5d's corrected
+  expression criterion (≥3 reads lying ≥50% INSIDE the locus, not ≥1 bp overlapping).
+
+⟹ **NEXT, COSTED (~20 min):** feed the 25 seeded loci to the catalog as search windows and measure how
+many reach a family. §5e predicts ~24; the current pipeline gets 12. ⚠ Use the SEEDED windows, never the
+truth windows — `--from-genome` seeded from truth is circular and the register bans quoting it.
