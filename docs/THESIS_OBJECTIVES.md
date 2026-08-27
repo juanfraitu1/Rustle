@@ -144,6 +144,13 @@ These have cost more than any single wrong idea. **Four headlines died in one we
   is UNCHANGED at 12/31 at every floor while pure families fall 3 → 1 and the largest balloons 39 → 104.
 
 ### 🔄 OPEN
+
+- ⭐⭐ **ORACLE ABLATION (§5e) — the definition owns 3% of the loss, node construction owns 58%.** With
+  perfect nodes the shipped rule groups **30/31** NPIP loci (and 5/5 on true exon-sums); the shipped run
+  gets 12/31 because **18 loci never become nodes**. ⟹ **stop repairing the edge rule** — §4w, §4x, §5b
+  and §5c all optimised the 3%. Largest addressable block: the **7 loci whose reads never agree on a
+  chain**, then the **4** that clear the read gate and still produce no node.
+
 - **The named definitional hole**: the min-length coverage denominator is **scale-free** (a ~1 kb repeat is ≥0.50 of ANY node < 2 kb; 24.88% of gorilla copies are ≤ 2 kb). Ceiling **41/494 = 8.30%** on the **superseded 494-family catalog**, ⚠ *not re-measured on the current 627*.
 - ⛔ **NODE CONSTRUCTION — the stub defect is REAL but NOT FIXABLE by representative choice** *(08-25, ledger §4s)*. `pick_locus_rep` keeps ONE chain; **46%** of reps covering a known family member are single-exon stubs and **53%** of those loci have a discarded gate-passing spliced chain.
   - ⭐ **`E_r` has NO UPGRADE PATH: 0/215** — for stub-incident edges whose stub has a unique containing spliced model at its own locus, the container inherits the edge **0/215 = 0.0000** (validity checks: **1,416/1,416** containers are themselves OFF reps, and **116/215** have edges of their own). *"Edge is a property of the locus"* predicts 215/215; *"of the exact representative sequence"* predicts ~0.01. **Any representative change rewrites the edge set from scratch.**

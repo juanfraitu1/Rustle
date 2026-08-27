@@ -2102,3 +2102,52 @@ transcription at all.
 ⚠ This is consistent with the standing result that **O1 sees only EXPRESSED copies**, and with the
 register entry that already refuted a "node construction is the binding constraint" claim on exactly this
 kind of loose criterion (`~1,374 candidates` → ~282 after re-measurement, a 5× reduction).
+
+## §5e — ORACLE ABLATION: the definition costs ~3%, node construction costs ~58% (2026-08-26)
+
+**Design.** Substitute each pipeline stage with its perfect version and see what survives. This is the
+first measurement that separates *"the definition is wrong"* from *"the definition never got the input"*.
+
+| rung | nodes | edges | NPIP loci grouped |
+|---|---|---|---:|
+| 0 | oracle | oracle | 31/31 — ceiling by construction |
+| **1** | **oracle (true locus sequence)** | **REAL shipped rule** | **30/31** |
+| **1b** | **oracle EXON-SUMS** (real substrate) | **REAL shipped rule** | **5/5 available** |
+| 3 | real | real | **12/31** — shipped |
+
+**Rung 1**: the 31 true NPIP locus sequences taken straight from the genome (25.7 kb mean), run through
+the verbatim shipped invocation and rule. **463/465 pairs align; 199 edges form; 30 of 31 loci land in
+ONE component, 1 singleton.**
+
+**Rung 1b** repeats it on the substrate the pipeline actually uses. A real gorilla NPIP transcript was
+built from annotation — `NPIPB11`'s longest mRNA, **26 exons, 12,878 bp spliced** — and projected onto
+each locus to yield genuine exon-sums. It projects cleanly to only **5/31** loci (a limit of
+single-transcript projection across 0.82-identity paralogues, not of the rule), but **all 5 group, median
+coverage 1.0000**.
+
+⚠ Rung 1 uses GENOMIC spans, which retain introns and so favour a family that arose by segmental
+duplication; rung 1b is the like-for-like substrate but is **n = 5**. Neither alone is conclusive; they
+agree, and they agree with the shipped catalog's own behaviour (12 of the 13 loci that HAVE a node reach
+a family = 0.92).
+
+### ⭐⭐⭐ The decomposition
+
+| where the loss happens | loci | share |
+|---|---:|---:|
+| **the definition (E_r + γ)** | **1** | **3%** |
+| not transcribed in fibroblast | 7 | 23% |
+| reads present but chains never reach pooled 3 | 7 | 23% |
+| passes the read gate, still no node | 4 | 13% |
+| **⟹ everything upstream of the definition** | **18** | **58%** |
+
+⟹ **GIVEN A NODE, THE DEFINITION GROUPS IT — 30/31 on perfect input, 12/13 in the shipped run. The
+open problem in O1 is NOT the definition; it is that 18 of 31 loci never become nodes.**
+
+This retro-explains four refutations in a row (§4w, §4x, §5b, §5c): all four optimised the edge rule,
+which owns **3%** of the loss. §5c's lowered coverage floor could not move NPIP recovery off 12/31 for
+exactly this reason — a perfect edge rule cannot connect a locus that has no node.
+
+⟹ **Where the remaining work is, in order of size:** the **7 fragmentation** cases (reads exist, chains
+never agree — the shattered-locus problem `locus_support` pooling was built for and evidently does not
+reach), then the **4** that clear the read gate and still produce nothing. The 7 untranscribed loci are
+outside the method by construction — **O1 sees only expressed copies.**
