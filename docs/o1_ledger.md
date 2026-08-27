@@ -2533,3 +2533,46 @@ reads"*), so it is **not** the scope change that DNA-first discovery would be (�
 ⟹ **NEXT, COSTED (~20 min):** feed the 25 seeded loci to the catalog as search windows and measure how
 many reach a family. §5e predicts ~24; the current pipeline gets 12. ⚠ Use the SEEDED windows, never the
 truth windows — `--from-genome` seeded from truth is circular and the register bans quoting it.
+
+## §5n — seeded windows through the real binary: 26/31, and the fragmentation dissolves (2026-08-27)
+
+**§5m's confirmatory run.** The 25 loci found by seeding from `NPIPB11` alone (plus 10 kb flanks, 26
+windows) were fed to the catalog via `--from-genome`. ⚠ **SEEDED windows, never the truth windows** —
+`--from-genome` seeded from truth is circular and the register bans quoting it.
+
+⚠ **Scope: `--from-genome` is mutually exclusive with `--bam`, so this arm groups on DNA and builds NO RNA
+nodes.** It measures seeded DISCOVERY + grouping, not the RNA-level objective.
+
+| route — identical edge rule throughout | NPIP loci in a family |
+|---|---:|
+| §5e oracle, TRUE locus spans | 30/31 |
+| **seeded windows (this)** | **26/31** |
+| shipped, RNA discovery + RNA nodes | **12/31** |
+| §5g, DNA spans of RNA-FOUND nodes | 10/31 |
+
+### ⭐⭐ Three prior findings confirmed at once
+
+1. **§5g's diagnosis is right.** Same DNA substrate, different node set: spans bounded by *where reads
+   fell* give **10/31**; spans bounded by *homology to a real gene* give **26/31**. The substrate was
+   never the problem — **the boundaries were.**
+2. **§5m's projection lands.** Predicted ~23–24 from seeded discovery plus the existing grouping;
+   measured **26**.
+3. **§5k's fragmentation dissolves.** The catalog emits **2 families** — `GWFAM0` with 31 copies and
+   `GWFAM1` with 3 — instead of the shipped 5–6 fragments. NPIP comes back as ONE family, without any
+   change to the edge rule, γ, or a subfamily layer.
+
+### Precision, and an honest asymmetry in the truth set
+
+**5 of GWFAM0's 31 copies lie outside the 31-locus truth set (purity 0.839).** Their nearest true NPIP
+locus is 63 kb – 1.87 Mb away, so they are not boundary spill. ⚠ **The truth set was built from HUMAN
+orthologs, so a GORILLA-SPECIFIC NPIP copy is absent from it by construction and is scored here as an
+error.** These 5 are therefore an upper bound on false positives and a plausible lower bound on
+gorilla-specific copies — exactly O3's target class. They should not be quoted as 5 false positives.
+
+⚠ **Cost:** 29 min and **22.6 GB peak** for 26 windows — the DNA substrate's ~12× sequence volume again
+(§5g). Genome-wide this route would not fit on this machine.
+
+⟹ **What is still unmeasured, and it is the actual objective:** seeded windows with **RNA nodes** built at
+them. `--from-genome` cannot express that (no `--bam`), so it needs the footprint pass restricted to given
+windows — a small feature, and the natural next step. **The DNA number above must not be quoted as an
+RNA-level result.**
