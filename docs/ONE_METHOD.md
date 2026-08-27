@@ -78,7 +78,7 @@ truth labels have NOT been re-measured; structural properties HAVE.
 
 | | |
 |---|---|
-| false-merge rate | **2/150 = 1.33%** [0.37, 4.73], power measured. ⚠ **HUMAN CHM13 v2.0 / A119b, 150 gene-tight single-locus windows — NOT the GGO catalog.** A **specificity and a LOWER bound**, not a precision (no positive stratum ⟹ no prevalence). ⭐**RE-MEASURED 2026-08-20 under the new defaults: unchanged at 2/150, same two windows** — while spurious E_r edges on the same panel fell **28 → 3** (`o1_false_positive_rules.md`) |
+| false-merge rate | **2/150 = 1.33%** [0.37, 4.73], power measured. ⚠ **HUMAN CHM13 v2.0 / A119b, 150 gene-tight single-locus windows — NOT the GGO catalog.** A **specificity and a LOWER bound**, not a precision (no positive stratum ⟹ no prevalence). ⭐**RE-MEASURED 2026-08-20 under the new defaults: unchanged at 2/150, same two windows** — while spurious E_r edges on the same panel fell **28 → 3** (`o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`) |
 | false-omission rate | **9/162 = 5.6%** [0.0295, 0.1022] |
 | identity-clause failures | **0/728** — the failure mode is localised to the coverage clause |
 | DNA vs RNA partition, same loci | **identical, 7/7** |
@@ -120,10 +120,10 @@ direction), and rare-anchor replacement (no operating point — see below).
 shipped binary (T8), and the definition is UNCHANGED.**
 
 1. **Transcript-orientation guard** — 29/74 FPs rejected for 4 lost edges of 9,032.
-   `o1_false_positive_rules.md`. Blocked on a whole-genome GGO/HSA comparison.
+   `o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`. Blocked on a whole-genome GGO/HSA comparison.
 2. **Genome-anchored repeat veto** — `min_shared_gmult`, the minimum genome-wide occurrence count of a
    shared canonical 21-mer. 10/12 scored FPs at **0/135** TP cost; seed-invariance demonstrated
-   (**0/147** vs the catalog-counted analogue's **94/147**). `o1_false_positive_rules.md`.
+   (**0/147** vs the catalog-counted analogue's **94/147**). `o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`.
    ⚠ It is a **veto, never an admission criterion** — replacing coverage with it has no operating point.
    ⚠ Ship as a **flag** first: as a gate it changes `E_r`, so every `density`/`λ`/`cut_certified` value
    must be re-emitted and γ margins move (the analogous R2 pushed 19/494 GGO families below γ).

@@ -1,8 +1,27 @@
 # Rustle
 
-A long-read transcript assembler written in Rust, with a **variation graph (VG) mode** for multi-copy gene family assembly.
+**A method for defining and resolving multi-copy gene families from long-read RNA, in Rust.**
 
-> **For the theory:** see [docs/ALGORITHMS.md](docs/ALGORITHMS.md) — derivations of max-flow decomposition, EM for multi-mappers, variation graphs for paralogs, k-mer novel-copy rescue, SNP-based copy assignment, and honest failure-mode analysis.
+The thesis is three objectives, **not an assembler** — the assembly engine documented further down is the
+substrate the objectives are built on, not the contribution:
+
+| | objective | status |
+|---|---|---|
+| **O1** | define a multi-copy gene family topologically at the RNA level | reproducible; failure modes measured |
+| **O2** | copy assignment under ambiguity — assign-or-abstain, never 1/k | defended on **abstention**, not reassignment |
+| **O3** | reference-absent / unannotated copies — detect and flag | two complementary detectors |
+
+> **Start here:** [`docs/METHOD_PSEUDOCODE.md`](docs/METHOD_PSEUDOCODE.md) — the method step by step, every
+> constant verified against the source. Then [`docs/o1_ledger.md`](docs/o1_ledger.md) for the running
+> record of what has been measured, [`docs/NUMBERS.md`](docs/NUMBERS.md) for the load-bearing figures with
+> the trap each one avoids, and [`docs/NEGATIVE_RESULTS_REGISTER.md`](docs/NEGATIVE_RESULTS_REGISTER.md)
+> — **consult it before proposing an approach**, it records what has already been refuted.
+
+> ⚠ **The sections below describe the assembly ENGINE** (splice graph, max-flow decomposition, VG mode).
+> They are accurate about the code and are *not* the thesis contribution. `docs/ONE_METHOD.md`, which the
+> engine sections used to reference, was deleted in `eff1248` as a stale assembler doc; its live
+> replacements are [`docs/ONE_METHOD.md`](docs/ONE_METHOD.md) and
+> [`docs/METHOD_PSEUDOCODE.md`](docs/METHOD_PSEUDOCODE.md).
 
 ## Overview
 
@@ -16,7 +35,7 @@ Each read deposits its read mass along the edges its alignment uses. Per-edge ca
 
 **Max-flow** (Edmonds-Karp) finds the largest total mass that can travel source → sink without exceeding any edge's capacity. That number is the total assembly evidence the locus supports. **Path extraction** then decomposes that flow back into individual paths by repeatedly picking the source → sink path with the highest residual capacity, recording it as one transcript, subtracting its flow from the graph, and repeating until no more flow remains. Each extracted path is one assembled transcript; the flow it carried is its abundance estimate (reported as `cov` in the output GTF).
 
-The math mirrors the biology: each observed read came from one molecule, so any decomposition of the read flow into paths corresponds to a hypothesis about which molecules existed in the sample. The honest limitation is that flow decomposition is not unique when alternative paths share edges — multiple isoform combinations can explain the same observed flow. The path-extraction heuristics (long-read-seeded, highest-residual-first) and the post-extraction filters resolve those ambiguities. See [ALGORITHMS §3](docs/ALGORITHMS.md#3-network-flow-formulation-and-why-it-works) for the full formulation and [§3.4](docs/ALGORITHMS.md#34-the-honest-limitation) for the non-uniqueness caveat.
+The math mirrors the biology: each observed read came from one molecule, so any decomposition of the read flow into paths corresponds to a hypothesis about which molecules existed in the sample. The honest limitation is that flow decomposition is not unique when alternative paths share edges — multiple isoform combinations can explain the same observed flow. The path-extraction heuristics (long-read-seeded, highest-residual-first) and the post-extraction filters resolve those ambiguities. See [the method docs §3](docs/ONE_METHOD.md) for the full formulation and [§3.4](docs/ONE_METHOD.md) for the non-uniqueness caveat.
 
 ### Why variation graphs for paralogs
 
@@ -33,17 +52,17 @@ Any copy-to-copy difference becomes a *bubble* in the VG with shared flanking no
 | Tandem-repeated exon | repeated node with multiplicity | ⚠️ detected at bundle level, not modelled as repeats |
 | Whole copy-specific segment | branched sub-path | ✅ implicit |
 
-"Implicit" means: Rustle doesn't build a single explicit variation-graph data structure for the whole family. Instead, each copy keeps its own splice graph, and the VG abstraction lives in *how reads are weighted across copies* before each copy is assembled. That's the architectural choice explained in [ALGORITHMS §6](docs/ALGORITHMS.md#6-how-vg-mode-wraps-the-network-flow-core).
+"Implicit" means: Rustle doesn't build a single explicit variation-graph data structure for the whole family. Instead, each copy keeps its own splice graph, and the VG abstraction lives in *how reads are weighted across copies* before each copy is assembled. That's the architectural choice explained in [the method docs §6](docs/ONE_METHOD.md).
 
 This buys us two things a linear reference can't:
 - A read from a shared region is *naturally attributed to the family* — it contributes mass to each copy weighted by compatibility (junctions and, with `--vg-snp`, diagnostic SNPs).
 - A read matching sequence that isn't in *any* reference copy can be *rescued by k-mer similarity* to the family — the aligner missed it, but the VG sees it.
 
-See [ALGORITHMS §5](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) (what a VG encodes + scope table), [§6](docs/ALGORITHMS.md#6-how-vg-mode-wraps-the-network-flow-core) (how VG connects to network flow), and [§10](docs/ALGORITHMS.md#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads) (k-mer rescue).
+See [the method docs §5](docs/ONE_METHOD.md) (what a VG encodes + scope table), [§6](docs/ONE_METHOD.md) (how VG connects to network flow), and [§10](docs/ONE_METHOD.md) (k-mer rescue).
 
 ### Network flow × VG in one sentence
 
-**The VG layer re-weights reads across related gene copies; the network flow then runs on each copy's splice graph independently, with those re-weighted reads as input capacities.** See [ALGORITHMS §6](docs/ALGORITHMS.md#6-how-vg-mode-wraps-the-network-flow-core) for the full architectural decomposition and why we chose this over a joint family-wide max-flow.
+**The VG layer re-weights reads across related gene copies; the network flow then runs on each copy's splice graph independently, with those re-weighted reads as input capacities.** See [the method docs §6](docs/ONE_METHOD.md) for the full architectural decomposition and why we chose this over a joint family-wide max-flow.
 
 ### Why EM for multi-mappers
 
@@ -54,7 +73,7 @@ A read aligning equally well to *N* copies genuinely might come from any of them
 
 Both steps have closed forms. EM provably non-decreases the likelihood each iteration (Jensen's inequality). Convergence in 10-20 iterations on biological data. The honest answer for a read that fits two expressed copies equally is a *probabilistic split* — EM produces it; winner-take-all methods can't.
 
-See [ALGORITHMS §8](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) for the derivation.
+See [the method docs §8](docs/ONE_METHOD.md) for the derivation.
 
 ### How HMMs model SNPs and copy-specific exons
 
@@ -66,7 +85,7 @@ The `em` solver scores P(r | k) by a coarse junction-compatibility rule (how man
 
 **How copy-specific exons land in the score.** A paralog that contains a cassette exon has additional HMM states for the inserted region. A read spanning that exon traverses those states with high emission probability under the paralog that has the exon, contributing a long stretch of `log(1−ε)` terms. Under a paralog that lacks the exon, the same read either has to traverse junction-skip states that don't model the inserted sequence well, or its non-aligning bases score against an unrelated state, contributing many `log(ε/3)` terms. The forward likelihood reflects that gap. The `--vg-exon-len-penalty` flag adds an additional structural penalty that scales linearly with the difference between the read's total spliced length and each candidate copy's typical spliced length — a coarse signal that complements the HMM's per-base scoring for highly divergent paralogs.
 
-See [ALGORITHMS §8](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) for the EM derivation and [§11](docs/ALGORITHMS.md#11-snp-based-copy-assignment) for the SNP rule.
+See [the method docs §8](docs/ONE_METHOD.md) for the EM derivation and [§11](docs/ONE_METHOD.md) for the SNP rule.
 
 ### Benchmark: Rustle vs StringTie (GGO chr19, PacBio IsoSeq)
 
@@ -215,7 +234,7 @@ flowchart TD
 7. **Transcript filtering:** drop isoforms below `transcript_isofrac` of their locus max, drop pairwise-contained transcripts, drop intron-chain subsets, drop low-cov runoff.
 8. **Output:** GTF with per-transcript coverage, FPKM, TPM; optional gene abundance table.
 
-Each stage has a "why" to it — the sentence-level summary here is the surface; [ALGORITHMS.md](docs/ALGORITHMS.md) has the derivations.
+Each stage has a "why" to it — the sentence-level summary here is the surface; [ALGORITHMS.md](docs/ONE_METHOD.md) has the derivations.
 
 ### VG Extension: How It Wraps the Core Pipeline
 
@@ -268,13 +287,13 @@ flowchart LR
 
 The `--vg` flag enables variation graph mode for multi-copy gene families. A gene family is a set of paralogs (duplicated copies of a common ancestor) like olfactory receptors, amylases, or the TBC1D3 family in great apes. Reads from these regions multi-map or fail to map entirely on a linear reference; VG mode jointly resolves them.
 
-**Full algorithmic treatment in [docs/ALGORITHMS.md](docs/ALGORITHMS.md):**
-- [§5 Variation graphs for gene families](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) — what a VG encodes, scope (SNPs, indels, exon-level diffs, repeats)
-- [§6 How VG wraps network flow](docs/ALGORITHMS.md#6-how-vg-mode-wraps-the-network-flow-core) — per-copy flow with family-level read reweighting
-- [§8 EM solver](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) — derivation and convergence
-- [§9 Flow solver](docs/ALGORITHMS.md#9-flow-solver-two-pass-redistribution) — two-pass redistribution
-- [§10 Novel copy discovery](docs/ALGORITHMS.md#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads) — k-mer rescue
-- [§11 SNP-based assignment](docs/ALGORITHMS.md#11-snp-based-copy-assignment)
+**Full algorithmic treatment in [docs/ONE_METHOD.md](docs/ONE_METHOD.md):**
+- [§5 Variation graphs for gene families](docs/ONE_METHOD.md) — what a VG encodes, scope (SNPs, indels, exon-level diffs, repeats)
+- [§6 How VG wraps network flow](docs/ONE_METHOD.md) — per-copy flow with family-level read reweighting
+- [§8 EM solver](docs/ONE_METHOD.md) — derivation and convergence
+- [§9 Flow solver](docs/ONE_METHOD.md) — two-pass redistribution
+- [§10 Novel copy discovery](docs/ONE_METHOD.md) — k-mer rescue
+- [§11 SNP-based assignment](docs/ONE_METHOD.md)
 
 ```bash
 # HMM-EM solver (default) — per-base profile-HMM scoring for SNP and exon-level differences

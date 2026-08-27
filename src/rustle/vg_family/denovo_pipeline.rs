@@ -3479,7 +3479,7 @@ impl Default for RefineParams {
             // segmental duplication between REFERENCE-oriented ones. Flipping this default silently
             // applied the RNA guard to DNA and dropped an inverted duplication — caught by
             // `genome_mode_grouping_keeps_an_inverted_duplication`. The guard is therefore turned on at
-            // the RNA ENTRY POINTS, never here. See docs/o1_false_positive_rules.md.
+            // the RNA ENTRY POINTS, never here. See docs/o1_investigations.md#false-positive-hardening-rules-that-survived-falsification.
             require_forward_alignment: false,
             // Conservative default: orientation-sensitive options stay inert until an entry
             // point declares the substrate. Forgetting costs precision, never correctness.

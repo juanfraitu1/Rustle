@@ -69,7 +69,7 @@
 > candidates unless independently validated with donor DNA.
 >
 > **Current O1 purity rules and expanded known-family graphs (2026-08-16):** see
-> [`docs/o1_false_positive_rules.md`](o1_false_positive_rules.md) and the 19-graph
+> [`docs/o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`](o1_investigations.md#false-positive-hardening-rules-that-survived-falsification) and the 19-graph
 > [`expanded audit`](../bench/o1_expanded_family_audit/README.md). Soto SD membership is discovery
 > evidence, not automatic gene-family membership; primary and audit graphs are emitted separately.
 
@@ -257,19 +257,19 @@ generalization*: nodes = exon-classes carrying per-copy sequence, paths = copy �
   split). The HSA run also discloses one node-pair decision delegated to O2 `reads_distinguish`,
   so this particular node set is not sequence-only. Direct Rustle tables, rule certificates,
   logs, and actual fresh `E_r` GFAs:
-  `bench/o1_fresh_emission_validation/`; interpretation: `docs/o1_false_positive_rules.md`.
+  `bench/o1_fresh_emission_validation/`; interpretation: `docs/o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`.
 - **Deferred implementation:** emit the current RNA homology family as the broad family plus an
   opt-in, nested DNA-supported recent-copy subfamily (`RECENT_COPY`, `BROAD_ONLY`, or
   `DNA_UNRESOLVED`). The annotation-free algorithm, flag-off byte-identity requirement, output
   schema, GOLGA discriminator, and cross-family safety tests are specified in
-  `docs/o1_duplication_provenance_model.md`. Production Rustle does not yet emit these fields.
+  `docs/o1_investigations.md#block-aware-duplication-provenance-graph`. Production Rustle does not yet emit these fields.
 - **Provenance-model avenue:** represent loci as ordered paths through homologous duplication blocks,
   with separate RNA-homology, DNA-duplication, read-conflict, and optionally rooted ancestry edges.
   This can express the mosaic GOLGA2 + ITSN2-UTR origin of the chr15 GOLGA expansion without calling
   ITSN2 a GOLGA family member. A single genome yields an unrooted network; directional “ancestral”
   claims require outgroup sequence/synteny, without using the outgroup as the assembly reference.
   Formal model, five-family local pairwise-witness prototype, empirical concordance results, and
-  proof-of-concept criteria: `docs/o1_duplication_provenance_model.md`. Durable typed tables and GFA
+  proof-of-concept criteria: `docs/o1_investigations.md#block-aware-duplication-provenance-graph`. Durable typed tables and GFA
   projections: `bench/o1_provenance_witness_prototype/`. This is evidence that the representation
   separates coherent cores from repeat bridges; stable multi-locus block-class construction is
   still deferred and the current graphs remain `UNROOTED`. A deferred single-outgroup extension now

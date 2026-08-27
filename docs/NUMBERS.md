@@ -32,7 +32,7 @@ in two days. A number without its substrate is not a result.
 
 | number | what it IS | substrate | notes |
 |---|---|---|---|
-| **2/150 = 1.33%** [0.0037, 0.0473] false-merge | **specificity, LOWER bound** — *not* a precision | **HUMAN** CHM13 v2.0 / `A119b.t2t.bam`; 150 gene-tight **single-locus windows** from 1,630 eligible, seed 101 | No positive stratum ⟹ no prevalence ⟹ **no precision**. Power demonstrated: 108/150 windows carry a merge opportunity over 2,466 node pairs. ⭐**Re-measured 2026-08-20 under the new defaults: unchanged, same two windows** (`o1_false_positive_rules.md`) |
+| **2/150 = 1.33%** [0.0037, 0.0473] false-merge | **specificity, LOWER bound** — *not* a precision | **HUMAN** CHM13 v2.0 / `A119b.t2t.bam`; 150 gene-tight **single-locus windows** from 1,630 eligible, seed 101 | No positive stratum ⟹ no prevalence ⟹ **no precision**. Power demonstrated: 108/150 windows carry a merge opportunity over 2,466 node pairs. ⭐**Re-measured 2026-08-20 under the new defaults: unchanged, same two windows** (`o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`) |
 | **28 → 3** spurious E_r edges (−89%); overlapping-span **26 → 1** | absolute counts on a negative panel | same panel as above | The orientation guard's benefit measured on an **independent** panel, not the GGO arm it was derived from |
 | **9/162 = 5.6%** [0.0295, 0.1022] false-omission | rate, ARM 3 unbiased; upper bound 24.1% | **GORILLA** mGorGor1 + **matched fibroblast** IsoSeq; whole-genome excision of one copy from 162 two-copy families | ⚠ **Different species and design from the false-merge row. Never pool.** Not re-measured under the new defaults |
 | **0/728** identity-clause failures | count | clause census | ⚠ **Cite the substrate LIST, never an ordinal** ("sixth independent substrate" is unaudited and used twice): 171/171 NPIP pairs · 194/194 records over 4,287 within-family pairs · 0/728 clause census |
@@ -130,3 +130,16 @@ catalog, transcript set, code path and method — so the structural claims are s
 |---|---|
 | genome-wide GGO catalog | **~2h20m, ~25 GB peak**, 627 families. State `D` + swap is **normal**, not failure |
 | test baseline | **795 passed / 0 failed / 11 ignored**, `cargo test --release --all-targets` |
+
+## Missing-copy detection (2026-08-26)
+
+| number | what it is | the trap it avoids |
+|---|---|---|
+| **NPIP 3/31 vs 1/31 vs 12/31** | loci in a family: different animal / same animal 41% depth / same animal full depth | **depth beats individual identity** — the same animal at low depth loses to a different animal |
+| **ABSORBED 64.2% / ORPHANED 33.3%** | fate of an excised copy's reads | ⚠ the 34.53% figure is a **READ** fraction, this is a **COPY** fraction |
+| **113/162 = 69.8%** | excised copies with a homologous landing site | predicted from sequence alone; matches the 64.2% measured from reads, unfitted |
+| **TPR 0.4248 / FPR 0.0000, AUC 0.8034** | depth caller, single genome, 40× sim | ⚠ threshold 1.5× is **NOT held out** |
+| **0.7333 vs S2's 0.0588** | depth caller below 0.01 divergence | **12.5× on the stratum S2 cannot see**; Wilson95 [0.4805, 0.8910] |
+| **15× is the knee** | coverage requirement | ⚠ **refutes my own ~25× estimate** — TPR is flat in coverage; depth buys PRECISION, not sensitivity |
+| **456.91× / 1,389 Gbp** | WGS available under SAMN04003007 | ⚠ excludes the 62 RS II runs — those are 2015 **Y flow-sorted** DNA, a different experiment |
+

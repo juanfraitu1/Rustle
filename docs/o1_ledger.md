@@ -612,7 +612,7 @@ designs. Call results **"gorilla-native loci, human-curated relation"** — neve
 ### ⟹ Where the finding actually routes
 
 **93.06% self-overlap means this belongs to the NODE BUILDER, not the edge rule** — the same destination
-`o1_error_case_census.md` reached for the coverage hole (47/105 cases node-construction). The real defect the
+`o1_investigations.md#census-of-incorrectly-called-families` reached for the coverage hole (47/105 cases node-construction). The real defect the
 investigation surfaced is upstream and already documented: rep selection keeps ONE chain, **46% of
 representatives covering a known family member are single-exon stubs**, and **53% of those loci have a
 gate-passing ≥3-read spliced chain that was discarded** (NOTCH2NLA / SRGAP2C / LIMS1 at 92 / 65 / 124 reads).
@@ -1262,7 +1262,7 @@ change to representative selection will pay the same cost. That is the finding w
 
 **Status 2026-08-20. All candidates are T8 — offline, not through the shipped binary — except the
 transcript-orientation guard, which is the default.** Companion to
-[`o1_false_positive_rules.md`](o1_false_positive_rules.md) (the veto side) and
+[`o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`](o1_investigations.md#false-positive-hardening-rules-that-survived-falsification) (the veto side) and
 [`o1_ledger.md`](o1_ledger.md) (the one-page verdict list).
 
 ### 1. Why a layer, and not a better rule
