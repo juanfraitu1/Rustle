@@ -2205,3 +2205,53 @@ unknown correctness" at exactly the loci with the least evidence.
 
 ⟹ **O1's node-construction line is CLOSED for NPIP.** §5e's "4 addressable loci" is revised to **~0**:
 the 4 are evidence-limited too, just less starkly than the 7.
+
+## §5g — the DNA substrate on RNA-found loci is WORSE, and it explains §5e (2026-08-27)
+
+**Proposal tested (user): run the definition on DNA, add RNA afterwards.** ⚠ This is NOT the retracted
+DNA∪RNA union — it is the substrate decision the joint-definition investigation itself *recommended*:
+*"assembly supplies every base and therefore the WHOLE EDGE RELATION; RNA supplies WHICH LOCI EXIST."*
+It is half-implemented as `--homology-genomic-span`, and had never been run end-to-end.
+
+| arm | families | copies | NPIP nodes | **in a family** | **pure NPIP** | runtime |
+|---|---:|---:|---:|---:|---:|---:|
+| exon-sum (shipped) | 83 | 484 | 13/31 | **12/31** | **3** | 15:08 |
+| **genomic span (DNA)** | 91 | 445 | 13/31 | **10/31** | **1** | **2:25:54** |
+
+⛔ **Worse on every endpoint that matters, at 9.6× the wall clock** (peak RSS 16.4 GB; the substrate carries
+~12× the sequence — 25.7 kb spans against ~2 kb exon-sums). 18 baseline families fuse.
+
+### ⭐⭐ Why this contradicts §5e's 30/31 — and the answer is the whole point
+
+§5e ran the same rule on genomic spans and grouped **30/31**. This arm gets 10/31. **The rule is identical;
+the NODE SET is not.**
+
+| | nodes | result |
+|---|---|---|
+| §5e rung 1 | the **31 TRUE locus spans**, complete and correctly bounded | 30/31 |
+| §5g arm | the genomic spans of the **13 RNA-detected reps**, bounded wherever the reads fell | 10/31 |
+
+⟹ **Taking the genomic span of a WRONG interval does not recover the gene** — it brings more sequence
+with the same bad boundaries. The 24 kb-upstream node stays 24 kb upstream. **RNA still decides WHERE, so
+the DNA substrate inherits every boundary error and cannot reach the 18 loci that have no node.**
+
+⭐ **The register's recommendation is therefore REAL BUT BOUNDED**: DNA does supply a better relation
+(§5e, 30/31 on correct nodes), and it is worthless while locus DISCOVERY stays with RNA. The binding
+constraint is unchanged from §5e — 18/31 loci never become nodes.
+
+### The version that WOULD work, and what it costs
+
+A genuinely DNA-first pipeline must discover loci by **self-homology** (segmental-duplication detection),
+not from RNA and not from known families — ⚠ `--from-genome` seeded from truth windows is **CIRCULAR** and
+the register bans quoting it. Such a route would find all 31 NPIP loci; the homology search in this
+session did exactly that from human orthologs.
+
+⚠⚠ **BUT IT CHANGES WHAT O1 CLAIMS.** O1's objective is to *define a multi-copy gene family topologically
+at the RNA level*. A pipeline that discovers loci by DNA self-homology and then annotates expression is
+**segmental-duplication detection plus an expression filter** — a well-trodden method (SEDEF and
+relatives), on which this project already holds cross-ape catalogs. The recall gain is real (31 vs 13
+loci at NPIP) and the novelty claim moves. **That is a thesis-scope decision, not a technical one.**
+
+⟹ **Do not flip `--homology-genomic-span`.** Its measured effect on the shipped node set is negative, and
+the substrate objection the register already recorded — *"a span is mostly INTRON and paralogue introns do
+not align"* — is joined by a second: **the span cannot fix a boundary the reads got wrong.**
