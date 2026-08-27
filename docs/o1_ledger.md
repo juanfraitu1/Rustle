@@ -2666,3 +2666,46 @@ inertness; diff the sets.**
 
 ⟹ **§5m and §5n STAND** (one seed finds 23/23 expressed; seeded windows give 26/31 on DNA). What is
 refuted is only that seeded boundaries help **RNA node construction**.
+
+## §5p — the one-seed closure GENERALISES: 65 human families, 65/65 converge (2026-08-27)
+
+⚠⚠ **HUMAN (CHM13 v2.0, Soto's 80-family panel). NEVER pool with the gorilla NPIP numbers.**
+
+§5m's closure result was **n = 1 family**. Tested on Soto's human panel: 65 families with ≥ 3 members,
+one seed each (the largest member), iterated to a fixed point. All families in ONE genome pass per round,
+query names carrying family lineage. Same command as NPIP — `minimap2 -x asm20 -c --eqx -N 200 -p 0.1`,
+hits ≥ 500 aligned bp. ⚠ `-p`/`-N` recorded.
+
+**⚠ Coordinate validity checked first, not assumed**: `soto_replication/` holds CHM13 **v1.0**, so v2.0
+compatibility was verified by requiring members of a family to be homologous TO EACH OTHER — 11, 81 and
+30 cross-member alignments on three test families. They are.
+
+### ⭐⭐ Stratified by the SD-vs-gene-family caveat (raised by the user, and measured)
+
+| stratum | n | median recall | mean recall | converged | non-members grew |
+|---|---:|---:|---:|---:|---:|
+| gene-family-like (≤25% accession names) | 42 | **1.000** | 0.895 | **42/42** | 10/42 |
+| mixed | 11 | **1.000** | 0.845 | **11/11** | 4/11 |
+| **SD-like (≥50% accessions)** | 12 | **1.000** | **0.885** | **12/12** | 4/12 |
+
+⭐ **65/65 families CONVERGE — no closure exploded.** Median recall is **1.000 in every stratum**.
+⭐⭐ **THE SD CAVEAT DOES NOT MANIFEST: SD-like 0.885 vs gene-like 0.895.** The concern was well-founded a
+priori — SDs are repeat-rich and closure should chain there — but measured, it does not. Non-member hits
+move a median of **1 → 2** across all rounds, and only **18/65 = 0.277** of families show ANY growth.
+
+⭐ **Recall is NOT size-dependent**: Pearson **r = −0.043** over 65 families; the families of 14, 16 and 17
+members each reach **1.000**. So a large family is not inherently harder to close.
+
+### ⚠ What may NOT be concluded
+
+⛔ **Do NOT read this as "NPIP is harder than a typical Soto family"** even though 0.806 < 1.000 median.
+**The truth sets are constructed differently**: NPIP's 31 loci come from HOMOLOGY to human orthologs — a
+permissive, method-adjacent set that may include marginal loci — whereas Soto's members are a CURATED
+panel. A permissive denominator lowers recall by construction. The two recalls are not commensurable.
+⚠ Species differ (human vs gorilla), assemblies differ, and the seeds differ (largest member vs the one
+annotated copy). **Only the WITHIN-panel comparisons above are safe.**
+
+⟹ **The transferable claim, and it is now n = 66 rather than n = 1:** *a homology search seeded from one
+family member and iterated to a fixed point converges, does not chain through repeats, and recovers the
+median family completely — and this holds for segmental-duplication-like groupings as well as for gene
+families.*
