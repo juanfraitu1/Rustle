@@ -2151,3 +2151,57 @@ exactly this reason — a perfect edge rule cannot connect a locus that has no n
 never agree — the shattered-locus problem `locus_support` pooling was built for and evidently does not
 reach), then the **4** that clear the read gate and still produce nothing. The 7 untranscribed loci are
 outside the method by construction — **O1 sees only expressed copies.**
+
+## §5f — the canonical-junction rule is nearly INERT, and NPIP recall is at the EVIDENCE ceiling (2026-08-26)
+
+**Proposal tested (user, 2026-08-26): do not enforce canonical junctions at all.** §5e had isolated 4
+loci as the only genuinely addressable failures, and all four carried non-canonical junctions
+(4/39, 8/38, 5/16, 2/11), which made the rule the obvious suspect — it is all-or-nothing, so one bad
+junction kills a 26-exon model.
+
+**Run end-to-end**, with `junction_majority` / `junction_nc_max_bp` first added to the params certificate:
+
+| arm | reps | families | NPIP nodes | in a family | of the 4 rescued |
+|---|---:|---:|---:|---:|---:|
+| shipped (all-canonical) | 2,847 | 83 | 13/31 | 12/31 | — |
+| `JUNCTION_MAJORITY=1` (< 10 kb) | 2,846 | 83 | 13/31 | 12/31 | **0** |
+| + `NC_MAX_BP=1e9` (any length) | 2,845 | 83 | 13/31 | 12/31 | **0** |
+
+⛔ **The rule is nearly INERT: it moves 2 reps out of 2,847 and changes NOTHING else** — identical family
+count, identical NPIP recovery, zero of the four rescued. Skeleton count is **23,672 in every arm**,
+because the canonical test runs in `build_spliced_seq`, downstream of a stage the four loci never reach.
+⟹ **do not change it.** No benefit, and the code documents it as doing DOUBLE DUTY — it is also the
+principal mis-chain filter, since a spuriously chained junction is usually non-canonical.
+
+### Four hypotheses for the 4 loci, all refuted
+
+| # | hypothesis | test | verdict |
+|---|---|---|---|
+| A | non-canonical junctions block them | both arms above | ⛔ 0/4 rescued |
+| B | reads agree but junction coordinates jitter | re-chain with ±5 bp snapping | ⛔ chains@exact **==** chains@±5 bp |
+| C | chains are compatible windows of one structure (read spanning introns 1–5 vs 3–8) | pairwise compatibility over the SHARED coordinate range | ⛔ genuinely **conflicting**: 42/91, 13/15, 11/15, 13/21 |
+| D | the reads were mis-assigned here from sibling copies | MAPQ and `de` | ⛔ not supported — **1/45 MAPQ 0**, median MAPQ **60**, median `de` 0.0012–0.0064 (good alignments) |
+
+### ⭐⭐ What is actually true
+
+These loci carry **6–19 reads, and no two agree on a splice structure** — 14 reads yielding 14 distinct
+chains, 6 yielding 6. `PASS1_MIN_READS = 2` is the binding constraint, and it is a *reasonable minimum*:
+with no structure observed twice, there is nothing to assemble a model from.
+
+⟹ **NPIP recall of 12/31 is at or near the EVIDENCE ceiling, not an algorithmic one.** Final accounting:
+
+| | loci | fixable? |
+|---|---:|---|
+| not transcribed in fibroblast | 7 | ⛔ outside the method |
+| 1–6 reads inside | 7 | ⛔ too few reads |
+| 6–19 reads, no two agreeing on a structure | 4 | ⛔ nothing repeats |
+| node exists, joins no family | 1 | the definition's 3% |
+| **recovered** | **12** | |
+
+⚠ **One architectural route remains and is NOT recommended**: a splice-GRAPH assembler would emit some
+model from 14 conflicting reads where exact-chain matching emits none. That is what StringTie did, and it
+was deliberately removed (`RETIREMENT_AND_MIGRATION.md`). It would trade "no model" for "a model of
+unknown correctness" at exactly the loci with the least evidence.
+
+⟹ **O1's node-construction line is CLOSED for NPIP.** §5e's "4 addressable loci" is revised to **~0**:
+the 4 are evidence-limited too, just less starkly than the 7.

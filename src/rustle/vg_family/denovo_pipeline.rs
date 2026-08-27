@@ -4259,6 +4259,8 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ("drop_stub_edges".into(), er_no_stub_edges().to_string()),
         ("shared_exon_mode".into(), std::env::var("RUSTLE_SHARED_EXON").unwrap_or_else(|_| "<unset>".into())),
         ("repeat_hub_gate".into(), std::env::var("RUSTLE_ER_REPEAT_GATE").unwrap_or_else(|_| "<unset>".into())),
+        ("junction_majority".into(), std::env::var("RUSTLE_JUNCTION_MAJORITY").unwrap_or_else(|_| "<unset>".into())),
+        ("junction_nc_max_bp".into(), std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").unwrap_or_else(|_| "10000 (default)".into())),
         ("minimap2".into(), params.minimap2.clone()),
     ]
 }

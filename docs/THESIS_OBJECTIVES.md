@@ -118,6 +118,11 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 | Per-rep **exon arrays** shipped ⭐ *(08-22)* | **45.06%** of "a node is here" was an **INTRON** | rep spans are 90.83% intron by bp |
 
 ### ⛔ DEAD — do not retry
+
+- **Relaxing / removing the canonical-junction requirement** (§5f) — measured end-to-end at both
+  tolerances: it moves **2 reps out of 2,847**, changes no family, and rescues **0 of the 4** target loci.
+  It is also the principal mis-chain filter. ⟹ leave it alone.
+
 | route | the number that killed it |
 |---|---|
 | **Fixing the coverage hole** | HERC2 (a real family) splits at `c_long ≥ 0.034` while the FIRST false positive dies only at 0.05 ⟹ **TP loss starts before FP rejection; no constraint-satisfying threshold exists** |
