@@ -156,6 +156,11 @@ These have cost more than any single wrong idea. **Four headlines died in one we
   30/31 grouped) this projects to ~23 recovered against today's 12. Sits inside the accepted
   "genome + minimal annotation + reads" reframing. ⚠ n = 1 family, recent high-identity expansion, and
   the 2026-08-12 cross-family result was P = 0.0635 — **a demonstration, not a rate.**
+  ⭐ **The closure CONVERGES (2026-08-27):** 3 rounds to a fixed point at 25/31, non-NPIP hits constant
+  at 1 every round (no repeat-chaining), precision 0.941 → 0.962 → 0.962. **All 6 loci it never reaches
+  have ZERO reads**, so it recovers **23/23 = 1.000 of expressed members**. ⟹ for an RNA-level objective
+  ONE seed suffices; more seeds can only add loci RNA cannot see. ⛔ But seeded windows do NOT help RNA
+  NODE construction (§5o): they lose to the free unseeded footprint pass, 12/31 vs 13/31.
 
 
 - ⭐ **FOOTPRINT NODES (§5h) — the one open candidate whose evidence points the right way on both axes.**
