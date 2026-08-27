@@ -194,7 +194,7 @@ was **identical**. It does not adjudicate this question in either direction.
    flip, a coin flip, and a negative. **The sign is truth-definition-dependent and the available
    substrates cannot settle it.** That is a measurement limit, not a preference.
 
-⚠ **Open, and NOT closed by this decision**: `docs/joint_family_definition.md` §1 states *"`E_r` is
+⚠ **Open, and NOT closed by this decision**: `docs/o1_investigations.md#the-joint-dna-rna-family-definition-retracted` §1 states *"`E_r` is
 computed on `seq_g` only"* and §1.2 rejects exon-sum edges as *"strictly weaker"*. **The shipped O1
 default is exon-sum.** The binary contradicts its own spec on this axis; O-4 keeps the binary's default
 and records the contradiction rather than silently resolving it in either direction.

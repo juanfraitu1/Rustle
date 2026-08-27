@@ -4903,7 +4903,7 @@ pub fn write_joint_rna_dna_certificate(
             (false, true) => "DNA_CONNECTED_RNA_FRAGMENTED",
             (false, false) => "BOTH_FRAGMENTED",
         };
-        // The pre-declared certificate in docs/joint_family_definition.md: RNA must both connect the
+        // The pre-declared certificate in docs/o1_investigations.md#the-joint-dna-rna-family-definition-retracted: RNA must both connect the
         // emitted family and contribute no edge absent from DNA. With no RNA edge there is no held-out
         // RNA test to score, so the family is UNTESTABLE rather than silently called concordant.
         let kappa = if rna_local.is_empty() {

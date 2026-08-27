@@ -22,7 +22,7 @@ corroboration layer into `o1_ledger.md`, and three small reference docs into `RE
 | [`o1_investigations.md#can-full-length-read-evidence-repair-e-r`](o1_investigations.md#can-full-length-read-evidence-repair-e-r) | Whether reads can be a third evidence source (they cannot) |
 | [`o1_investigations.md#census-of-incorrectly-called-families`](o1_investigations.md#census-of-incorrectly-called-families) | Every error case classified by mechanism |
 | [`o1_investigations.md#block-aware-duplication-provenance-graph`](o1_investigations.md#block-aware-duplication-provenance-graph) | The block-aware provenance graph, and the hierarchy design (emission NO-GO, §4m) |
-| [`seeded_family_definition.md`](seeded_family_definition.md) · [`joint_family_definition.md`](joint_family_definition.md) | The definition's development history |
+| [`seeded_family_definition.md`](seeded_family_definition.md) · [`o1_investigations.md`](o1_investigations.md#the-joint-dna-rna-family-definition-retracted) | The definition's development history |
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | O2: the assignment/abstention definition |
 | [`copy_assignment_definition.md#reassignment-on-real-reads-with-structural-anchor-truth-2026-08-15`](copy_assignment_definition.md#reassignment-on-real-reads-with-structural-anchor-truth-2026-08-15) | O2's reassignment result and why it is defended on abstention |
 | [`o3_missing_copy_evidence.md`](o3_missing_copy_evidence.md) | **All of O3** — the excision positive control, the unmapped route, the haplotype route (NO-GO), over-collapse, and family rescue |

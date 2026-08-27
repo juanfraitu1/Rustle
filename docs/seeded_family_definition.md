@@ -1279,7 +1279,7 @@ belongs to the PANEL tier.
 ### P4c — IS THE DNA/RNA JOINT OBJECT DEFINITIONAL? **NO — IT IS A PROPERTY** (closed 2026-08-13)
 
 Full verdict `/home/juanfra/winloci_scratch/o1_joint/O1_JOINT_VERDICT.md`; the definition that was
-tested, its pre-declared falsifiers and the phase-3 record are in `docs/joint_family_definition.md`
+tested, its pre-declared falsifiers and the phase-3 record are in `docs/o1_investigations.md#the-joint-dna-rna-family-definition-retracted`
 (§9). The question asked was whether the DNA/RNA joint object should become **a clause of O1's
 definition**. It should not.
 
@@ -1442,7 +1442,7 @@ and **passes while all of that flows** — it certifies spelling, not semantics,
 `--cross-chrom` did on 2026-08-11. ⚠ Near-inert on chr1 (the same-strand MAPQ rule fired **0 times over
 451 loci**), but that is a property of the data. **`E_r` itself is clean** — sequence-only, reference
 bases at read-derived coordinates, no read base and no assignment in any comparison. **The violation is
-entirely in `V`.** Prerequisites for any joint definition are listed in `joint_family_definition.md`
+entirely in `V`.** Prerequisites for any joint definition are listed in `o1_investigations.md`
 §9.7 (O-5).
 
 ### ⭐ RESOLVED 2026-08-13 — SCOPED, MEASURED AND MONITORED, NOT REMOVED

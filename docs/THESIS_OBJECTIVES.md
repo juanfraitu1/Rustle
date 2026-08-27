@@ -1,83 +1,79 @@
-# Thesis objectives — multi-copy gene family assembly (VG / EM)
+# Thesis objectives — the current three
 
-> ⚠⚠ **SUPERSEDED 2026-08-07. This file's five-objective VG/EM decomposition is NOT the current scope.**
-> Agreed with the advisor, the thesis now has **THREE** objectives:
->
-> | # | objective |
-> |---|---|
-> | **O1** | Define a multi-copy gene family topologically at the RNA level (quasi-clique in E_r; MCC = χ(H)) |
-> | **O2** | Decide, for a read at a multi-copy locus, whether the evidence warrants assigning it to a COPY AT ALL — and abstain when it does not. Contested set = **alignment-score near-ties**, not MAPQ-0. No 1/k. |
-> | **O3** | Detect + flag expressed transcript paths not explained by represented reference copies, **STRATIFIED by whether the orphaned reads have anywhere to go**. Detect-and-flag with a measured FPR per stratum; **completeness is never claimed**. (this was O4) |
->
-> **The allele-specific-junction objective is DROPPED** — cut for time, and because it does not connect
-> to the others. ⚠ It was the only objective the 2026-06-25 audit rated ATTAINED; the ASJ result itself
-> is de-scoped, not retracted.
->
-> ⚠ **"O3" denotes three different things across this repo's history** — the EM below, ASJ in the
-> 06-25 audit, and reference-absent copies now. Resolve the scheme before quoting any objective number.
-> The numbered sections below are kept for provenance only.
->
-> ### ⭐ O3 RESTATED (2026-08-19) — stratify the target, bound each stratum
->
-> O3 as originally posed — *"find copies missing from the genome"* — is **not achievable**, and the
-> reason is measured, not conjectural. In the whole-genome excision control (one copy of 162 two-copy
-> families deleted, matched IsoSeq) a deleted copy has **two fates**:
->
-> | fate | rate | what the reads do |
-> |---|---:|---|
-> | **ORPHANED** | 33.3% | median **92.7% of reads unmapped** — detectable |
-> | **ABSORBED** | 64.2% | reads land on the best paralogue at **1.75× depth**, concordance 0.967 — invisible to any unmapped-read method |
->
-> **Expression is not the constraint** (99.34% of copies clear the floor); **where the reads go** is.
-> ⚠ And O3's original target class — a collapsed paralogue — sits in the ABSORBED stratum.
->
-> This is the same move that rescued O2: restate the target population and the claim, then bound each
-> stratum honestly.
->
-> **Target.** Copies absent from the assembly, **stratified by whether the orphaned reads have anywhere
-> to go.** **Claim.** Detect-and-flag with a measured FPR, stated **per stratum**:
->
-> | stratum × route | status | bound |
-> |---|---|---|
-> | unique sequence, **unmapped-read** route | **works** | **M ≤ 6.4** missing expressed copies |
-> | paralogous sequence, **unmapped-read** route | ⚠⚠ **vacuous** | π = 1/35 = 0.0286, 0/26 at cov ≥ 0.8, **formally unbounded** |
-> | paralogous sequence, **depth (S2)** route | **partial** | held-out **TPR 0.2703 / FPR 0.0200**; sensitivity set by **divergence, not abundance** (0.4500 above 0.01 divergence vs **0.0588** below) — ⚠ and **45.78% of positives lie below 0.01** |
->
-> **Say this, not more:** *the instrument flags candidates with a measured false-positive rate in a
-> named stratum, and has explicitly no power for unmapped-read detection in the collapsible stratum.*
-> **Never claim completeness.** The signature is **UNMAPPED READS, not clipping** (34.53% pooled,
-> MAPQ-60 before deletion) — no published collapse detector uses clipping.
->
-> ⚠ **The one real candidate does not close:** STON1+GTF2A1L, ~116.7 kb absent from mGorGor1, 125
-> near-full-length unmapped reads, gapless chromosome, 0 GFF lines, present in chimp and orangutan —
-> but **single-copy, n = 1, p = 0.055, UNCONFIRMED**. It supports the instrument; it is not a result.
->
-> ⭐ **The niche is empty**, which is the thesis value: nobody has found a reference-absent copy from
-> transcriptome data. The field standard is S1 re-assemble / S2 depth+PSV / S3 peptides. A *bounded
-> negative* is therefore itself publishable.
->
-> ⚠ **The advisor's "the reference is an average" objection fails on PROVENANCE, not on measurement:**
-> mGorGor1 is a haplotype-resolved assembly of **one animal** and the fibroblast IsoSeq is that
-> animal's **own cell line**. Keep the two arguments separate — the objection dies on how the substrate
-> was built, and the copy-number-polymorphism rate is **still unmeasured** (the 2026-08-19 mat-vs-pat
-> run was uninformative: control floor 0.1512 vs signal 0.0278). ⚠⚠ And **do not quote the 8/9/9-vs-5/6/8
-> haplotype deficit** — it does not reproduce; see [`o3_missing_copy_evidence.md`](o3_missing_copy_evidence.md).
->
-> **Current O3 avenues and claim boundary (2026-08-16):** see
-> [`docs/o3_missing_copy_evidence.md` §8](o3_missing_copy_evidence.md#8-possible-o3-avenues--decision-record-2026-08-16).
-> Liftoff or a second genome is not required for the main experiment; natural RNA-only findings remain
-> candidates unless independently validated with donor DNA.
->
-> **Current O1 purity rules and expanded known-family graphs (2026-08-16):** see
-> [`docs/o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`](o1_investigations.md#false-positive-hardening-rules-that-survived-falsification) and the 19-graph
-> [`expanded audit`](../bench/o1_expanded_family_audit/README.md). Soto SD membership is discovery
-> evidence, not automatic gene-family membership; primary and audit graphs are emitted separately.
+The scope agreed with the advisor. **This file is the live status; nothing here is superseded.**
+The 2026-08-07 five-objective VG/EM decomposition this file used to carry is archived in
+[`o1_investigations.md`](o1_investigations.md#superseded-five-objective-vg-em-decomposition).
 
 
-> Thesis-level narrative + status. The machine-generated synthetic scorecard lives in
-> `bench/multi_copy_eval/OBJECTIVES_ASSESSMENT.md` (regenerated by `run_oracle.py`); this file is the
-> human-maintained framing it rolls up into. Last revised 2026-06-01.
+| # | objective |
+|---|---|
+| **O1** | Define a multi-copy gene family topologically at the RNA level (quasi-clique in E_r; MCC = χ(H)) |
+| **O2** | Decide, for a read at a multi-copy locus, whether the evidence warrants assigning it to a COPY AT ALL — and abstain when it does not. Contested set = **alignment-score near-ties**, not MAPQ-0. No 1/k. |
+| **O3** | Detect + flag expressed transcript paths not explained by represented reference copies, **STRATIFIED by whether the orphaned reads have anywhere to go**. Detect-and-flag with a measured FPR per stratum; **completeness is never claimed**. (this was O4) |
 
+**The allele-specific-junction objective is DROPPED** — cut for time, and because it does not connect
+to the others. ⚠ It was the only objective the 2026-06-25 audit rated ATTAINED; the ASJ result itself
+is de-scoped, not retracted.
+
+⚠ **"O3" denotes three different things across this repo's history** — the EM below, ASJ in the
+06-25 audit, and reference-absent copies now. Resolve the scheme before quoting any objective number.
+The numbered sections below are kept for provenance only.
+
+### ⭐ O3 RESTATED (2026-08-19) — stratify the target, bound each stratum
+
+O3 as originally posed — *"find copies missing from the genome"* — is **not achievable**, and the
+reason is measured, not conjectural. In the whole-genome excision control (one copy of 162 two-copy
+families deleted, matched IsoSeq) a deleted copy has **two fates**:
+
+| fate | rate | what the reads do |
+|---|---:|---|
+| **ORPHANED** | 33.3% | median **92.7% of reads unmapped** — detectable |
+| **ABSORBED** | 64.2% | reads land on the best paralogue at **1.75× depth**, concordance 0.967 — invisible to any unmapped-read method |
+
+**Expression is not the constraint** (99.34% of copies clear the floor); **where the reads go** is.
+⚠ And O3's original target class — a collapsed paralogue — sits in the ABSORBED stratum.
+
+This is the same move that rescued O2: restate the target population and the claim, then bound each
+stratum honestly.
+
+**Target.** Copies absent from the assembly, **stratified by whether the orphaned reads have anywhere
+to go.** **Claim.** Detect-and-flag with a measured FPR, stated **per stratum**:
+
+| stratum × route | status | bound |
+|---|---|---|
+| unique sequence, **unmapped-read** route | **works** | **M ≤ 6.4** missing expressed copies |
+| paralogous sequence, **unmapped-read** route | ⚠⚠ **vacuous** | π = 1/35 = 0.0286, 0/26 at cov ≥ 0.8, **formally unbounded** |
+| paralogous sequence, **depth (S2)** route | **partial** | held-out **TPR 0.2703 / FPR 0.0200**; sensitivity set by **divergence, not abundance** (0.4500 above 0.01 divergence vs **0.0588** below) — ⚠ and **45.78% of positives lie below 0.01** |
+
+**Say this, not more:** *the instrument flags candidates with a measured false-positive rate in a
+named stratum, and has explicitly no power for unmapped-read detection in the collapsible stratum.*
+**Never claim completeness.** The signature is **UNMAPPED READS, not clipping** (34.53% pooled,
+MAPQ-60 before deletion) — no published collapse detector uses clipping.
+
+⚠ **The one real candidate does not close:** STON1+GTF2A1L, ~116.7 kb absent from mGorGor1, 125
+near-full-length unmapped reads, gapless chromosome, 0 GFF lines, present in chimp and orangutan —
+but **single-copy, n = 1, p = 0.055, UNCONFIRMED**. It supports the instrument; it is not a result.
+
+⭐ **The niche is empty**, which is the thesis value: nobody has found a reference-absent copy from
+transcriptome data. The field standard is S1 re-assemble / S2 depth+PSV / S3 peptides. A *bounded
+negative* is therefore itself publishable.
+
+⚠ **The advisor's "the reference is an average" objection fails on PROVENANCE, not on measurement:**
+mGorGor1 is a haplotype-resolved assembly of **one animal** and the fibroblast IsoSeq is that
+animal's **own cell line**. Keep the two arguments separate — the objection dies on how the substrate
+was built, and the copy-number-polymorphism rate is **still unmeasured** (the 2026-08-19 mat-vs-pat
+run was uninformative: control floor 0.1512 vs signal 0.0278). ⚠⚠ And **do not quote the 8/9/9-vs-5/6/8
+haplotype deficit** — it does not reproduce; see [`o3_missing_copy_evidence.md`](o3_missing_copy_evidence.md).
+
+**Current O3 avenues and claim boundary (2026-08-16):** see
+[`docs/o3_missing_copy_evidence.md` §8](o3_missing_copy_evidence.md#8-possible-o3-avenues--decision-record-2026-08-16).
+Liftoff or a second genome is not required for the main experiment; natural RNA-only findings remain
+candidates unless independently validated with donor DNA.
+
+**Current O1 purity rules and expanded known-family graphs (2026-08-16):** see
+[`docs/o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`](o1_investigations.md#false-positive-hardening-rules-that-survived-falsification) and the 19-graph
+[`expanded audit`](../bench/o1_expanded_family_audit/README.md). Soto SD membership is discovery
+evidence, not automatic gene-family membership; primary and audit graphs are emitted separately.
 
 # ⭐ SCOREBOARD — what is WON, what is DEAD, what is OPEN
 
@@ -135,6 +131,18 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 | Facility location / bipartite matching for loci | **BANNED** — and bipartite assignment *is* the primary flag (99.10%) |
 | FamilyGraph · k-mer Jaccard · `vg` for ties | dead / linear |
 
+
+- **The shared-exon denominator repair** (`RUSTLE_SHARED_EXON`) — refuted §4w. Every endpoint moves the
+  wrong way; the completeness deficit "improves" 3.16× → 1.32× only because the STUB rate collapses too.
+  ⚠ a ratio of two rates is not an endpoint when both may fall.
+- **The repeat-hub gate ported from `family_define`** (`RUSTLE_ER_REPEAT_GATE`) — refuted §4x, actively
+  harmful: NPIP loci 12/31 → 7/31, pure families 3 → 1. **Genome multiplicity cannot distinguish a repeat
+  from a high-copy family, and high-copy families are O1's subject.** Its apparent signal was tautological
+  (mult ≥ 20 ⟹ edge rate **1.0000**).
+- **Lowering the E_r coverage floor** — refuted end-to-end §5c, *despite* the strongest edge-level
+  evidence O1 has produced (FPR +0.0018 for TPR +0.4476 against 87,990 real genomic pairs). NPIP recovery
+  is UNCHANGED at 12/31 at every floor while pure families fall 3 → 1 and the largest balloons 39 → 104.
+
 ### 🔄 OPEN
 - **The named definitional hole**: the min-length coverage denominator is **scale-free** (a ~1 kb repeat is ≥0.50 of ANY node < 2 kb; 24.88% of gorilla copies are ≤ 2 kb). Ceiling **41/494 = 8.30%** on the **superseded 494-family catalog**, ⚠ *not re-measured on the current 627*.
 - ⛔ **NODE CONSTRUCTION — the stub defect is REAL but NOT FIXABLE by representative choice** *(08-25, ledger §4s)*. `pick_locus_rep` keeps ONE chain; **46%** of reps covering a known family member are single-exon stubs and **53%** of those loci have a discarded gate-passing spliced chain.
@@ -154,6 +162,14 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 - ⚠ The blob is **466 copies / 38 families** (+14/4 in a second) = **480/2,019 = 0.2377** across **42/627 = 0.0670**. γ is **non-monotone under edge addition**.
 
 ---
+
+- **Node construction, not the edge rule.** Measured at NPIP (§5c/§5d): the edge rule has **1 locus** of
+  headroom, node construction **4**, read fragmentation **≤ 7**, and **7 loci are not transcribed at all**.
+  ⚠ §5c first claimed 18 behind node construction; that used reads overlapping by ≥ 1 bp and is
+  **withdrawn** — requiring reads ≥ 50% inside gives 23/31 expressed, not 28/31, and 419 reads, not 5,544.
+- **The completeness deficit itself has NO known repair** (§4v, survives a repeat attack at 3.67×). The
+  denominator route is measured and dead; the failure surface is a hard cliff at exactly 50% shared
+  sequence, divergence-independent (§5b).
 
 ## O2 — assign a read to a copy, or abstain
 
@@ -196,6 +212,11 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 | Sensitivity is set by **DIVERGENCE, not abundance** | **0.4500** at ≥0.01 diverged vs **0.0588** below |
 | DNA-side instrument validated | FP floor **0/817**; fires on **11.42%** of random intervals; recovers a published expansion exactly |
 | Literature position established | **nobody** has found a reference-absent copy from transcriptome data |
+
+- **A depth caller for the ABSORBED stratum** (§5a, simulation). TPR 0.4248 / FPR 0.0000, AUC 0.8034 —
+  and **TPR 0.7333 below 0.01 divergence where the S2 detector scores 0.0588**, so the two are
+  COMPLEMENTARY rather than competing. 15× is the coverage knee. ⚠ FPR 0.0000 is measured under uniform
+  simulated coverage and **must not be quoted as a real-data figure**; the 1.5× threshold is not held out.
 
 ### ⛔ DEAD — do not retry
 | route | the number |
