@@ -1849,3 +1849,73 @@ a TEST OF THE PRE-REGISTRATION, and a null there is a confirmation, not a failur
 **Cost to proceed:** ~82 Gbp of `fastq.gz` to fetch (order 25–30 GB compressed; 579 GB free on
 `/mnt/linuxdisk`), then a genome-wide `minimap2 -x map-hifi` of ~76 Gbp on 4 threads — a multi-hour to
 overnight run, and the largest single compute commitment in this project so far. ⚠ ONE AT A TIME.
+
+## §5a — a DEPTH CALLER FOR THE ABSORBED STRATUM WORKS, and it is complementary to S2 (2026-08-26)
+
+**First positive result on the missing-copy problem in this session.** §4y left the 1.75× depth ghost as
+the only unexploited signal for the **64.2% ABSORBED** stratum. Built and measured it in simulation.
+
+### Design — the reason it is not circular
+
+> **Reads are simulated from the COMPLETE `GGO.fasta` and aligned to the MASKED `GGO.masked.fasta`.**
+
+The redistribution therefore happens inside the aligner and is OBSERVED, not modelled. Simulating from
+the masked genome would assume the answer. Library matched to the real one: mean **17,266 bp**, identity
+**89%**, both measured from `SRR26152581` against this same reference (⚠ those reads are **CLR, not
+HiFi** — a stored note saying otherwise is wrong; two presets agree at identity 0.8376–0.8910).
+
+**Ground truth:** 162 excised copies / 6.85 Mb, recovered by diffing masked vs original (⚠ **NOT** from
+N-runs: the assembly's own gaps are 2.00 Mb of the 8.85 Mb of N, and a line-seam bug in a first attempt
+reported **645 Mb** of "excision" — 18% of the genome — which looked plausible. **Verify an interval is
+actually all-N before trusting it.**)
+**Positives:** 113 landing sites (mean identity 0.9482). **Negatives:** 226 **size-matched** controls.
+
+⭐ **UNPLANNED VALIDATION:** sequence alone predicts **113/162 = 69.8%** have somewhere to be absorbed;
+the real-read excision measured **104/162 = 64.2% ABSORBED**, and the 49 with no landing site match the
+54 observed ORPHANED. Prediction and observed fate agree without being fitted to each other.
+
+### The caller, and what a real one can actually use
+
+⚠ **The paired ratio is NOT available to a real caller.** Masked-vs-complete depth gives a beautiful
+signal (landing sites median **1.2744**, controls **1.0000** at every quartile, MWU **p = 1.35e-47**) but
+it needs the complete genome, which is the thing we do not have. **The caller must compare a locus to
+BACKGROUND estimated from the same genome.** All numbers below do that.
+
+| coverage | background | TPR@1.5× | FPR | AUC |
+|---:|---:|---:|---:|---:|
+| 5× | 5.41 | 0.4867 | 0.1416 | 0.7011 |
+| 10× | 11.00 | 0.4159 | 0.0575 | 0.7337 |
+| **15×** | 16.53 | **0.3982** | **0.0177** | 0.7526 |
+| 25× | 27.36 | 0.4071 | 0.0177 | 0.7758 |
+| 40× | 44.32 | 0.4248 | 0.0000 | 0.8034 |
+
+⭐⭐ **TPR IS FLAT IN COVERAGE; DEPTH BUYS PRECISION, NOT SENSITIVITY.** This **refutes my own
+pre-registered ~25× requirement**, which came from a per-READ Poisson argument (n ≈ 30 for z = 3.16).
+That framing was wrong: depth is measured **per base over a ~7 kb locus**, which aggregates far more
+information than a read count. ⟹ **15× is the knee**, and **ONE WGS run (SRR26152597 = 13.70×) suffices**
+— the second download was cancelled on this result, saving ~29.6 GB and ~12 hours.
+
+### ⭐⭐⭐ The finding that matters: it is strongest where S2 is blind
+
+| divergence to landing site | n | depth TPR@1.5× | S2 detector |
+|---|---:|---:|---:|
+| **< 0.01 (near-identical)** | 15 | **0.7333** [Wilson95 0.4805–0.8910] | **0.0588** |
+| 0.01–0.05 | 49 | 0.3265 | — |
+| 0.05–0.10 | 36 | 0.3889 | — |
+| ≥ 0.10 | 13 | 0.5385 | 0.4500 |
+
+**12.5× better on exactly the stratum S2 cannot see**, and S2's 0.0588 lies outside the Wilson interval,
+so the comparison survives n = 15. **The mechanism explains the direction:** a near-identical copy's
+reads redistribute MOST completely, so the depth ghost is strongest precisely where sequence divergence
+offers nothing. ⟹ **the two detectors are COMPLEMENTARY, not competing** — S2 above 0.01 divergence
+(0.4500), depth below it (0.7333). Overall single-genome: **TPR 0.4248 / FPR 0.0000, AUC 0.8034** vs S2's
+**0.2703 / 0.0200**.
+
+### ⚠ What is NOT established
+
+- **SIMULATION**, not real data. Real libraries carry GC bias and coverage non-uniformity this does not model.
+- **The 1.5× threshold is NOT held out** — it was chosen as the point where FPR reaches 0 in this data.
+- **FPR 0.0177 is not free genome-wide**: on a 20,000-locus scan that is ~350 false calls. ⟹ **apply the
+  caller to a CANDIDATE SET (known multi-copy families), not as a genome-wide sweep.**
+- The native gorilla compartment is still pre-registered at **< 1 collapse** (§4u), so running this on the
+  real WGS is a **test of that pre-registration**, where a null CONFIRMS rather than fails.
