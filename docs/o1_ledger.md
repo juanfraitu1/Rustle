@@ -2354,3 +2354,43 @@ chosen on the substrate it is scored on** — a held-out confirmation is owed be
 ⟹ **SHIPS OPT-IN, default OFF.** The gain is real but small (+1 locus), it costs 8 family fusions, and its
 one free parameter was tuned here. Same disposition as the read-strand fix (§4o/§4p): passed its criteria,
 stayed opt-in because the ledger is two-sided.
+
+## §5j — NPIP is ONE family fragmented into 5–6, not three real subfamilies (2026-08-27)
+
+**Question (user): is NPIP three families, and should each family get its own graph?** Both halves have
+clean answers, and the first is a defect rather than structure.
+
+### The 3 "pure NPIP families" are FRAGMENTS of one family
+
+| evidence | result |
+|---|---|
+| recovered NPIP loci, and how many families they occupy | 12 loci across **5 families** |
+| does the split follow the real NPIPA / NPIPB subfamily boundary? | ⛔ **NO** — `GWFAM30` holds 5 NPIPB + 1 **NPIPA**, `GWFAM31` holds one of each |
+| loci landing in MORE THAN ONE family | **3 of 12** — `21081589` (30+31), `35184501` (29+30), `21077139` (29+30) |
+| the 17 NPIP reps graphed among THEMSELVES, shipped rule | **6 components**, sizes 6/4/3/2/1/1 |
+| the 31 TRUE locus spans, same rule (§5e) | **1 component of 30** |
+
+⟹ **The fragmentation is not subfamily structure** — it cuts across the NPIPA/NPIPB split, which is the
+deep, real division in this family. And it is **not an artefact of the global graph**: graphing the NPIP
+reps in isolation still yields 6 components. ⭐ **With correct nodes the same rule yields ONE component of
+30 (§5e), so the fragmentation is caused by the NODES, not by the rule or by the partition** — the third
+independent arrival at §5e's conclusion.
+
+⚠ **3 of 12 loci are represented TWICE, in different families.** That is simultaneous over-splitting and
+double-counting: two reps at one genomic locus that the collapse did not merge, then assigned to
+different blocks. It also means a "copies" count over-states distinct loci at NPIP by ~25%.
+
+### ⛔ One graph per family is CIRCULAR
+
+The families are the OUTPUT of the graph; conditioning the graph on them assumes the answer. This project
+has already registered that failure mode — *"a denominator conditioned on the prediction"* killed 7
+claims, and *"prediction ⊆ its own truth is tautological"* killed 3 more. The pipeline is correctly
+structured: ONE global all-vs-all → γ-partition → families.
+
+⭐ **What IS legitimate, and already shipped:** per-family analysis AFTER the partition, as a certificate
+rather than a definition — `families.tsv` carries `n_edges`, `density`, `lambda` and `cut_certified` per
+family. Diagnosing a block is fine; letting the diagnosis choose the block is not.
+
+⟹ **The actionable item is the double representation**, not the graph architecture: 3/12 NPIP loci carry
+two reps that never collapsed. That is `family_detect`'s locus-collapse stage, upstream of `E_r` — the
+same layer §5e/§5i already identified.
