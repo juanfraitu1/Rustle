@@ -1927,3 +1927,65 @@ offers nothing. ⟹ **the two detectors are COMPLEMENTARY, not competing** — S
   real WGS is a **test of that pre-registration**, where a null CONFIRMS rather than fails. **UNRUN** —
   the download was cancelled at 7.53/28.6 GB once the simulation had answered the design question.
   Resume instructions, checksum and the CLR/Y-flow-sorted warnings are in `wgs/README_WGS.md`.
+
+## §5b — simulation characterises O1's RECALL exactly, and CANNOT touch its precision (2026-08-26)
+
+**Question:** can the §5a simulation approach repair O1's caveats — chiefly the §4v completeness deficit,
+whose one designed repair §4w refuted?
+
+**Design.** The deficit hypothesis is about the EDGE RULE, not about reads, so it is testable directly on
+constructed sequence pairs — no read simulation, no catalog run. 210 pairs, each a TRUE paralogue pair by
+construction: both members carry the same conserved CORE (diverged 0.02–0.20), each padded with its own
+private flank cut from a different real gorilla representative. **Sweeping the core fraction IS sweeping
+"how complete is this model relative to what it shares".** Scored with the verbatim shipped invocation
+(`-c -X --no-long-join -k 11 -w 5`) and the verbatim rule (identity ≥ 0.60, coverage ≥ 0.50 of the
+shorter, forward only).
+
+### ⭐⭐⭐ The failure surface is a clean step function, and divergence plays NO part
+
+| core fraction | pairs | edge rate | median best coverage |
+|---:|---:|---:|---:|
+| 0.90 | 30 | 1.0000 | 0.8998 |
+| 0.75 | 30 | 1.0000 | 0.7497 |
+| 0.60 | 30 | 1.0000 | 0.5999 |
+| **0.50** | 30 | **0.3667** | 0.4999 |
+| 0.40 | 30 | **0.0000** | 0.3998 |
+| 0.30 | 30 | 0.0000 | 0.2999 |
+| 0.20 | 30 | 0.0000 | 0.1999 |
+
+**Coverage tracks the shared fraction to three decimals.** ⟹ the clause is a direct readout of *how much
+of the model is shared*, and the floor is a **hard cliff at exactly 50% shared** — deterministic, not
+probabilistic. **Divergence 0.02–0.20 is irrelevant**, confirming with exact truth the standing result
+that IDENTITY NEVER BINDS.
+⚠ **The pooled 48.1% loss is NOT a real-world rate** — it is an artefact of sweeping core fraction
+uniformly. The transferable claim is the **cliff position**, not the percentage.
+
+⭐ Recall available by relaxing the floor, on exact truth: **0.40 → 0.6095 · 0.30 → 0.7810 ·
+0.20 → 0.9286** (shipped 0.50 → 0.4810).
+
+### ⛔ But the precision half is UNANSWERABLE by simulation — three constructions, three answers
+
+A recall number alone is the registered trap "a denominator conditioned on the prediction". Scoring the
+same rules against a negative class gave a **different winner every time the negatives were rebuilt**:
+
+| negative class | what happened |
+|---|---|
+| 210 pairs sharing one fixed **1 kb** element | any bp-floor above 1 kb scores FPR 0.0000 — **the threshold was above the element by construction** |
+| 96 pairs sharing an **identical 300–6000 bp** element | **nothing separates** (best Youden 0.1071) — but negatives share IDENTICAL sequence while positives share DIVERGED cores, so the negatives align better than the positives |
+| 210 **real** cross-contig rep pairs, never same family | **7/210 clear identity ≥ 0.60**, best coverage max 0.1163 ⟹ **FPR 0.0000 for every rule is VACUOUS** |
+
+⚠ The third is the same blind instrument as the human 150-window panel scoring 2/150 on zero qualifying
+pairs. **CANDIDATE COUNT CHECKED BEFORE READING THE VERDICT** — which is the only reason it was caught.
+
+### ⭐⭐ The limit, and it is structural
+
+**Simulation supplies exact POSITIVES; it cannot supply the NEGATIVE class, because "a pair that looks
+homologous but is not one family" is precisely what O1 lacks ground truth about in the first place.**
+That is why §5a worked and this does not: O3's controls were REAL genomic loci, whereas O1's negatives
+must be invented, and the invention decides the answer.
+
+⟹ **ROUTE, not yet run:** pair the simulation's exact positives with a REAL negative panel that has real
+truth — the human 150-window false-merge panel (measured 1.33%). Recall from simulation, precision from
+the panel. Neither half can be got from the other.
+⛔ **Do NOT lower the coverage floor on the strength of the recall column alone.** The 0.9286 at 0.20 is
+real and the precision cost is UNMEASURED.
