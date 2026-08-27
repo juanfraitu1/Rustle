@@ -1913,9 +1913,17 @@ offers nothing. ⟹ **the two detectors are COMPLEMENTARY, not competing** — S
 
 ### ⚠ What is NOT established
 
-- **SIMULATION**, not real data. Real libraries carry GC bias and coverage non-uniformity this does not model.
+- ⚠⚠ **FPR 0.0000 IS OPTIMISTIC AND MUST NOT BE QUOTED AS A REAL-DATA FIGURE.** The simulated controls sit
+  at ratio **exactly 1.0000 at every quartile** — that is a property of uniformly-sampled simulated reads,
+  not evidence about real libraries. Real WGS depth varies with GC content, mappability and library prep,
+  all of which inflate FPR by an amount that is **UNMEASURED**. The real-data arm was cancelled
+  2026-08-26 (see `wgs/README_WGS.md`), so this gap is open by choice, not by oversight. **TPR and AUC are
+  far less exposed** — they rest on the depth ghost, whose magnitude the real-read excision independently
+  measured at 1.75×.
 - **The 1.5× threshold is NOT held out** — it was chosen as the point where FPR reaches 0 in this data.
 - **FPR 0.0177 is not free genome-wide**: on a 20,000-locus scan that is ~350 false calls. ⟹ **apply the
   caller to a CANDIDATE SET (known multi-copy families), not as a genome-wide sweep.**
 - The native gorilla compartment is still pre-registered at **< 1 collapse** (§4u), so running this on the
-  real WGS is a **test of that pre-registration**, where a null CONFIRMS rather than fails.
+  real WGS is a **test of that pre-registration**, where a null CONFIRMS rather than fails. **UNRUN** —
+  the download was cancelled at 7.53/28.6 GB once the simulation had answered the design question.
+  Resume instructions, checksum and the CLR/Y-flow-sorted warnings are in `wgs/README_WGS.md`.
