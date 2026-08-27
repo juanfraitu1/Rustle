@@ -60,6 +60,17 @@ pub struct Skeleton {
     /// else `'+'`; `None` when the group was not built from reads. Consulted ONLY for an unspliced model
     /// (see [`build_spliced_seq`]) — a spliced model's strand comes from its junction motifs.
     pub read_strand: Option<char>,
+    /// FOOTPRINT NODE (`RUSTLE_FOOTPRINT_NODES`, default off). True when this skeleton is the union of
+    /// READ-COVERED exonic blocks at a locus rather than an assembled intron chain, i.e. its `introns` are
+    /// UNCOVERED GAPS, not spliced-out introns.
+    ///
+    /// WHY IT MUST BE MARKED. `build_spliced_seq` validates every intron against the canonical motif set;
+    /// a footprint's gaps are not splice junctions and would fail. The flag tells the builder to take the
+    /// sequence and skip motif validation, deriving strand from the READ vote as an unspliced model does.
+    ///
+    /// WHY FOOTPRINTS EXIST (`docs/o1_ledger.md` §5h): a node needs >= 3 reads agreeing on ONE intron
+    /// chain, and at the loci O1 misses no two reads agree at all (14 reads -> 14 chains, §5f).
+    pub footprint: bool,
     /// Observed majority fraction behind `read_strand` -- `max(fwd, rev) / total`, in [0.5, 1.0].
     ///
     /// Stored so the ABSTENTION threshold can be applied at the point of USE rather than baked into the
@@ -307,6 +318,7 @@ pub fn pass1_skeletons_robust_with(
                 n_reads: n,
                 introns,
                 tied_seeded: false,
+footprint: false,
                 read_strand: Some(majority_read_strand(n_rev, n)),
                 read_rev: n_rev, read_tot: n,
             }
@@ -315,7 +327,138 @@ pub fn pass1_skeletons_robust_with(
     // position-aware seeding of the unspliced reads (the fix): single-linkage span-overlap clustering
     // per chromosome instead of pooling every unspliced read on a chromosome into one giant group.
     skels.extend(cluster_unspliced(reads, min_reads, k));
+    // FOOTPRINT PASS (`RUSTLE_FOOTPRINT_NODES`, default off = byte-identical). Runs LAST and only where
+    // nothing else claimed the region, so it can add nodes and never change one the other passes made.
+    if footprint_nodes_enabled() {
+        let extra = footprint_skeletons(reads, &skels, min_reads);
+        if !extra.is_empty() {
+            eprintln!("[footprint] added {} nodes at regions no chain-based pass could reach", extra.len());
+        }
+        skels.extend(extra);
+    }
     skels
+}
+
+/// Is the footprint-node pass enabled? `RUSTLE_FOOTPRINT_NODES=1`; unset = OFF = byte-identical.
+pub fn footprint_nodes_enabled() -> bool {
+    matches!(std::env::var("RUSTLE_FOOTPRINT_NODES"), Ok(v) if v != "0" && !v.is_empty())
+}
+
+/// FOOTPRINT SKELETONS: one node per read-covered region, with NO requirement that the reads agree on a
+/// splice structure.
+///
+/// THE GAP THIS TARGETS (`docs/o1_ledger.md` §5e-§5h). A node currently needs `>= GATE_MIN_READS` reads
+/// agreeing on ONE exact intron chain. At the loci O1 misses, that is unreachable in principle: §5f
+/// measured 14 reads yielding 14 distinct chains, mutually CONFLICTING (42 of 91 pairs), not merely
+/// windowed differently and not jittered (+-5 bp snapping changes nothing). Meanwhile §5e showed the
+/// EDGE rule recovers 30/31 of those loci once a node exists. So the loss is node construction, and the
+/// fix is to stop requiring agreement.
+///
+/// CONSTRUCTION. Per chromosome, accumulate coverage over each read's EXONIC blocks only (`N` operations
+/// contribute nothing, so introns are excluded by construction and this stays an RNA object, unlike the
+/// genomic span of §5g which is mostly intron and measured WORSE). Keep maximal runs at depth
+/// `>= min_cov`, group runs separated by less than `max_gap` into one node, and emit the runs as exons
+/// with the gaps as `introns` — marked `footprint: true` so the canonical-motif test is skipped.
+///
+/// ⚠ Emitted ONLY where no existing skeleton already covers the region, so this can add nodes and never
+/// alter one the normal passes produced.
+pub fn footprint_skeletons(
+    reads: &[PrimaryRead],
+    existing: &[Skeleton],
+    min_reads: u32,
+) -> Vec<Skeleton> {
+    use std::collections::HashMap;
+    let min_cov: u32 = std::env::var("RUSTLE_FOOTPRINT_MIN_COV")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+    // ⚠ 5 kb, not 100 kb. This grouping runs GENOME-WIDE, and at 100 kb it chains every covered region
+    // on a contig into a handful of giant nodes: measured on NC_073244.2, 100 kb gives 73 islands with a
+    // max span of 4.6 Mb, which is why the first ON arm added only 14 nodes and moved nothing. Chosen so
+    // the median island span (7,050 bp) matches a typical gene, NOT to maximise any recovery number:
+    // gap 2 kb -> 3,245 islands / median 2.4 kb; 5 kb -> 1,443 / 7.1 kb; 10 kb -> 721 / 20 kb;
+    // 20 kb -> 353 / 47 kb. The shipped catalog holds ~950 reps per contig, so 5 kb is the right scale.
+    let max_gap: u64 = std::env::var("RUSTLE_FOOTPRINT_MAX_GAP")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(5_000);
+    let min_bp: u64 = std::env::var("RUSTLE_FOOTPRINT_MIN_BP")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(300);
+    const BIN: u64 = 50;
+    let mut by_chrom: HashMap<&str, Vec<&PrimaryRead>> = HashMap::new();
+    for r in reads {
+        by_chrom.entry(r.chrom.as_str()).or_default().push(r);
+    }
+    // ⚠ BLOCK ONLY AGAINST SKELETONS THAT CAN SURVIVE THE GATE. This pass runs INSIDE pass1, so
+    // `existing` still holds every candidate chain -- including the singletons that the gate will drop.
+    // At exactly the loci this targets every read forms its OWN chain (§5f: 14 reads -> 14 chains), so
+    // blocking on all candidates blocked the footprint everywhere it was needed: the first run added 14
+    // nodes genome-wide and moved nothing. A chain below `min_reads` cannot become a node on its own, so
+    // it must not reserve the region.
+    let mut taken: HashMap<&str, Vec<(u64, u64)>> = HashMap::new();
+    for sk in existing.iter().filter(|sk| sk.n_reads >= min_reads) {
+        taken.entry(sk.chrom.as_str()).or_default().push((sk.start, sk.end));
+    }
+    let mut out = Vec::new();
+    for (chrom, rs) in by_chrom {
+        // bin coverage over EXONIC blocks; a read's introns contribute nothing
+        let mut depth: HashMap<u64, u32> = HashMap::new();
+        let mut rev = 0u32;
+        for r in &rs {
+            if r.reverse { rev += 1; }
+            for (a, b) in exon_blocks_of(r) {
+                let (lo, hi) = (a / BIN, b / BIN);
+                for bin in lo..=hi { *depth.entry(bin).or_insert(0) += 1; }
+            }
+        }
+        let mut bins: Vec<u64> = depth.iter().filter(|(_, &d)| d >= min_cov).map(|(&b, _)| b).collect();
+        if bins.is_empty() { continue; }
+        bins.sort_unstable();
+        // contiguous bins -> covered runs
+        let mut runs: Vec<(u64, u64)> = Vec::new();
+        let (mut st, mut pv) = (bins[0], bins[0]);
+        for &b in &bins[1..] {
+            if b == pv + 1 { pv = b; } else { runs.push((st * BIN, (pv + 1) * BIN)); st = b; pv = b; }
+        }
+        runs.push((st * BIN, (pv + 1) * BIN));
+        // runs closer than max_gap belong to one locus
+        let mut group: Vec<(u64, u64)> = Vec::new();
+        let mut flush = |g: &mut Vec<(u64, u64)>, out: &mut Vec<Skeleton>| {
+            if g.is_empty() { return; }
+            let bp: u64 = g.iter().map(|(a, b)| b - a).sum();
+            let (s0, e0) = (g[0].0, g[g.len() - 1].1);
+            let overlaps = taken.get(chrom).is_some_and(|v| {
+                v.iter().any(|&(a, b)| e0.min(b) > s0.max(a))
+            });
+            if bp >= min_bp && !overlaps {
+                let introns: Vec<(u64, u64)> = g.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+                let n = rs.iter().filter(|r| r.ref_end.min(e0) > r.ref_start.max(s0)).count() as u32;
+                out.push(Skeleton {
+                    chrom: chrom.to_string(), start: s0, end: e0, n_reads: n, introns,
+                    tied_seeded: false, footprint: true,
+                    read_strand: Some(majority_read_strand(rev, rs.len() as u32)),
+                    read_rev: rev, read_tot: rs.len() as u32,
+                });
+            }
+            g.clear();
+        };
+        for r in runs {
+            if let Some(&(_, prev_end)) = group.last() {
+                if r.0.saturating_sub(prev_end) > max_gap { flush(&mut group, &mut out); }
+            }
+            group.push(r);
+        }
+        flush(&mut group, &mut out);
+    }
+    out
+}
+
+/// A read's aligned EXONIC blocks, i.e. its span minus its introns.
+fn exon_blocks_of(r: &PrimaryRead) -> Vec<(u64, u64)> {
+    let mut out = Vec::new();
+    let mut cur = r.ref_start;
+    for &(a, b) in &r.introns {
+        if a > cur { out.push((cur, a)); }
+        cur = b;
+    }
+    if r.ref_end > cur { out.push((cur, r.ref_end)); }
+    out
 }
 
 /// Seed skeletons from AS-tied SECONDARY reads (already gated by [`tied_secondary_reads`]) that AGREE on an
@@ -367,6 +510,7 @@ pub fn tied_seed_skeletons(
                 end,
                 n_reads: n,
                 introns,
+footprint: false,
                 tied_seeded: true,
                 // SPLICED: the strand comes from the junction motifs, which never consult `read_strand`.
                 // The unspliced tied seeds below go through `cluster_unspliced`, which does measure it.
@@ -1266,7 +1410,21 @@ pub fn assemble_gate_with(
         if sk.end.saturating_sub(sk.start) > p.max_span {
             continue;
         }
-        let (seq, strand) = match build_spliced_seq(
+        // A FOOTPRINT's `introns` are UNCOVERED GAPS, not splice junctions, so the canonical-motif test
+        // is meaningless for it. Route it through the existing majority path with an unbounded
+        // `nc_max`: sequence is taken as-is and strand comes from the read vote, exactly as for an
+        // unspliced model. Non-footprint skeletons are untouched, which is what keeps the OFF arm
+        // byte-identical.
+        let (seq, strand) = if sk.footprint {
+            match build_spliced_seq_with(
+                genome, &sk.chrom, sk.start, sk.end, &sk.introns,
+                if sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None },
+                true, u64::MAX,
+            ) {
+                Some(v) => v,
+                None => continue,
+            }
+        } else { match build_spliced_seq(
             genome,
             &sk.chrom,
             sk.start,
@@ -1279,7 +1437,7 @@ pub fn assemble_gate_with(
         ) {
             Some(v) => v,
             None => continue,
-        };
+        }};
         if seq.len() < p.min_spliced || seq.len() > p.max_spliced {
             continue;
         }
@@ -1344,6 +1502,7 @@ pub fn cluster_unspliced(reads: &[PrimaryRead], min_reads: u32, k: usize) -> Vec
                     n_reads: n,
                     introns: Vec::new(),
                     tied_seeded: false,
+footprint: false,
                     read_strand: Some(majority_read_strand(n_rev, n)),
                     read_rev: n_rev, read_tot: n,
                 });
@@ -1424,7 +1583,7 @@ mod locus_support_tests {
     use super::*;
 
     fn sk(chrom: &str, start: u64, end: u64, n_reads: u32, introns: &[(u64, u64)]) -> Skeleton {
-        Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec(), tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0 }
+        Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec(), tied_seeded: false, footprint: false, read_strand: None, read_rev: 0, read_tot: 0 }
     }
 
     /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
@@ -1667,6 +1826,49 @@ mod tests {
         PrimaryRead { chrom: chrom.into(), ref_start: start, ref_end: end, introns: introns.to_vec(), reverse: false }
     }
 
+    /// A footprint node is the union of READ-COVERED exonic blocks, so its "introns" are uncovered GAPS.
+    /// Pinned because §5h's whole claim rests on this: introns must be excluded from coverage (else the
+    /// node is a genomic span, which §5g measured as WORSE), and gaps must become intron entries so the
+    /// exon-sum skips them.
+    #[test]
+    fn a_footprint_node_covers_exons_and_gaps_become_introns() {
+        let mk = |s: u64, e: u64, iv: Vec<(u64, u64)>| PrimaryRead {
+            chrom: "c1".into(), ref_start: s, ref_end: e, introns: iv, reverse: false,
+        };
+        // three reads over one gene: exons ~[1000,1500] and ~[4000,4500], intron between.
+        let reads = vec![
+            mk(1000, 4500, vec![(1500, 4000)]),
+            mk(1000, 4500, vec![(1500, 4000)]),
+            mk(1050, 4450, vec![(1500, 4000)]),
+        ];
+        let out = footprint_skeletons(&reads, &[], 3);
+        assert_eq!(out.len(), 1, "one covered locus = one footprint node");
+        let sk = &out[0];
+        assert!(sk.footprint, "must be marked so the canonical-motif test is skipped");
+        assert_eq!(sk.introns.len(), 1, "the uncovered INTRON becomes the one gap");
+        let (a, b) = sk.introns[0];
+        assert!(a >= 1450 && b <= 4050, "gap must track the intron, got {a}..{b}");
+        // the intron is NOT counted as covered: exonic bp is ~1000, not the ~3500 span
+        let exonic: u64 = (sk.end - sk.start) - sk.introns.iter().map(|(x, y)| y - x).sum::<u64>();
+        assert!(exonic < 1500, "intronic bases must not enter the footprint, got {exonic}");
+    }
+
+    /// The pass must never touch a region an ordinary skeleton already claimed — that is what lets it ADD
+    /// nodes without altering the ones the chain-based passes produced.
+    #[test]
+    fn footprints_never_overlap_an_existing_skeleton() {
+        let mk = |s: u64, e: u64| PrimaryRead {
+            chrom: "c1".into(), ref_start: s, ref_end: e, introns: vec![], reverse: false,
+        };
+        let reads = vec![mk(1000, 3000), mk(1000, 3000), mk(1100, 2900)];
+        assert_eq!(footprint_skeletons(&reads, &[], 3).len(), 1, "unclaimed region yields a node");
+        let existing = vec![Skeleton {
+            chrom: "c1".into(), start: 900, end: 3100, n_reads: 5, introns: vec![],
+            tied_seeded: false, footprint: false, read_strand: Some('+'), read_rev: 0, read_tot: 5,
+        }];
+        assert!(footprint_skeletons(&reads, &existing, 3).is_empty(), "claimed region yields nothing");
+    }
+
     #[test]
     fn tied_secondary_kept_spillover_dropped() {
         // r1: a TIED multimapper (primary @ copyA AS=500, secondary @ copyB AS=500) -> the secondary restores
@@ -1819,6 +2021,7 @@ mod tests {
                    // `pr` builds FORWARD reads, so the group's vote is unanimously '+' (read_rev = 0) over
                    // all `n` of them -- `read_tot` must track `n`, not a constant, or every equality
                    // assertion against a real pass1 output fails on the count alone.
+footprint: false,
                    read_strand: Some('+'), read_rev: 0, read_tot: n }
     }
     /// Genome: exon1 [0,80), intron [80,100) with the given dinucleotides, exon2 [100,180). 160 bp spliced.
@@ -2293,7 +2496,8 @@ mod tests {
         ];
         let primaries = vec![Skeleton {
             chrom: "chr1".into(), start: 90, end: 480, n_reads: 5,
-            introns: vec![(200, 300)], tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0,
+            introns: vec![(200, 300)], footprint: false,
+            tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0,
         }];
         assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
     }
@@ -2324,7 +2528,8 @@ mod tests {
         ];
         let primaries = vec![Skeleton {
             chrom: "chr1".into(), start: 900, end: 1900, n_reads: 5,
-            introns: vec![], tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0,
+            introns: vec![], footprint: false,
+            tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0,
         }];
         assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
     }

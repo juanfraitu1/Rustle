@@ -4261,6 +4261,8 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ("repeat_hub_gate".into(), std::env::var("RUSTLE_ER_REPEAT_GATE").unwrap_or_else(|_| "<unset>".into())),
         ("junction_majority".into(), std::env::var("RUSTLE_JUNCTION_MAJORITY").unwrap_or_else(|_| "<unset>".into())),
         ("junction_nc_max_bp".into(), std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").unwrap_or_else(|_| "10000 (default)".into())),
+        ("footprint_nodes".into(), std::env::var("RUSTLE_FOOTPRINT_NODES").unwrap_or_else(|_| "<unset>".into())),
+        ("footprint_min_cov".into(), std::env::var("RUSTLE_FOOTPRINT_MIN_COV").unwrap_or_else(|_| "2 (default)".into())),
         ("minimap2".into(), params.minimap2.clone()),
     ]
 }

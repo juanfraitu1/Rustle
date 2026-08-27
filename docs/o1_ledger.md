@@ -2309,3 +2309,48 @@ expressed loci as a control:
 byte-identical, flag recorded in the params certificate), run the NPIP catalog end-to-end, and judge on
 the partition. This is the first change in this session whose evidence points the right way on **both**
 axes — every other candidate (§4w, §4x, §5c, §5f, §5g) failed on one or the other.
+
+## §5i — footprint nodes IMPLEMENTED and measured end-to-end: +1 locus, ships OPT-IN (2026-08-27)
+
+§5h's prototype is now a real flag (`RUSTLE_FOOTPRINT_NODES`, default OFF), run through the binary.
+**The OFF arm reproduces the baseline BYTE-IDENTICALLY** (`copies.tsv` and `families.tsv`) and the knob is
+in the params certificate.
+
+| | OFF (shipped) | FOOTPRINT ON |
+|---|---:|---:|
+| families | 83 | 87 |
+| copies | 484 | 491 |
+| largest family | 39 | **38** |
+| NPIP loci with a node | 13/31 | **15/31** |
+| **NPIP loci in a family** | **12/31** | **13/31** |
+| **pure NPIP families** | **3** | **3** |
+| cross-family fusion | — | 8 families absorb >1 baseline (largest 5) |
+| NPIP loci lost | — | **0** |
+
+⭐ **The first change this session positive end-to-end on BOTH axes**: +1 locus recovered, 0 lost, purity
+held 3/3, largest family did not grow. Fusion is modest against the comparator that killed the scoped
+guard (112 pairs, largest swallowing 43).
+
+### ⚠⚠ The prototype over-predicted 6×, and two of three bugs were invisible to it
+
+§5h predicted **18/31**; the binary gives **13/31**. The prototype scored footprint SEQUENCES against each
+other in isolation, while the real pipeline also runs locus collapse, representative selection and the
+γ partition, where a footprint competes with existing reps and can be absorbed. **T8 vindicated
+concretely.**
+
+1. **The block set.** The pass runs INSIDE pass1, so `existing` still held the singleton chains the gate
+   discards — and at exactly the target loci every read forms its own chain (§5f), so those doomed
+   singletons reserved the region. Fixed to block only against `n_reads >= min_reads`.
+2. ⚠ **The grouping threshold — the real one.** `max_gap = 100 kb` applied GENOME-WIDE chains every
+   covered region on a contig together: on `NC_073244.2`, **73 islands, max span 4.6 Mb**. That is why the
+   first two ON arms added 14 nodes and moved nothing. The prototype applied the same constant inside a
+   30 kb window, where it could not misbehave.
+
+**Re-chosen from data, not from the outcome:** 2 kb → 3,245 islands / median 2.4 kb · **5 kb → 1,443 /
+7.1 kb** · 10 kb → 721 / 20 kb · 20 kb → 353 / 47 kb. 5 kb matches a typical gene span and independently
+matches §5h's 6,175 bp footprint median, at the right scale for ~950 reps per contig. ⚠ **It was still
+chosen on the substrate it is scored on** — a held-out confirmation is owed before any default change.
+
+⟹ **SHIPS OPT-IN, default OFF.** The gain is real but small (+1 locus), it costs 8 family fusions, and its
+one free parameter was tuned here. Same disposition as the read-strand fix (§4o/§4p): passed its criteria,
+stayed opt-in because the ledger is two-sided.
