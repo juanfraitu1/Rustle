@@ -2051,3 +2051,54 @@ rule cannot connect a locus that never became a node.
 the binding constraint is upstream. ⭐ **The productive target is NODE CONSTRUCTION** — the 18 NPIP loci
 that have reads (28/31 carry ≥ 3) yet produce no node, which is the same stub/one-rep-per-locus territory
 as §4s/§4r, now with a number attached to what it is worth.
+
+## §5d — ⚠ CORRECTION to §5c: node construction has 4 loci of headroom, not 18 (2026-08-26)
+
+§5c redirected the line at node construction on the strength of "18 NPIP loci have reads but no node".
+**Diagnosing those 18 individually shows the premise was inflated by a loose read criterion**, the same
+error class that has cost this project several retractions.
+
+### ⛔ The read counts were counting the neighbours
+
+`samtools view <region>` returns every read overlapping by **≥ 1 bp**, so reads belonging to adjacent
+genes that merely clip a locus boundary were counted as that locus's evidence. Requiring a read to lie
+**≥ 50% inside** the locus:
+
+| | ≥1 bp overlap | ≥50% inside |
+|---|---:|---:|
+| NPIP loci with ≥ 3 reads | **28/31** | **23/31** |
+| total reads across the 31 loci | **5,544** | **419** |
+
+**Only 7.6% of the reads survive.** The worst case is `NC_073242.2:29415572` — **4,784 reads by overlap,
+19 inside**; the other 4,765 belong to the adjacent gene whose 21-exon / 4,187-read node sits 24 kb
+upstream and touches this locus by 223 bp. ⚠ **"28/31 expressed" and "5,544 reads" are WITHDRAWN.**
+
+### The corrected diagnosis of the 18 node-less loci
+
+Per locus, reads required ≥ 50% inside, chains pooled over the junction-incidence component exactly as
+`locus_support` does:
+
+| cause | loci | is it a METHOD failure? |
+|---|---:|---|
+| **no reads inside at all** | **7/18** | ⛔ no — not transcribed in fibroblast |
+| **pooled chain support < 3** | **7/18** | ⚠ partly — reads exist but fragment across chains that share no junction |
+| **passes the read gate, still no node** | **4/18** | ✅ yes — genuine downstream failure |
+
+### ⭐ Revised headroom at NPIP, replacing §5c's table
+
+| layer | loci |
+|---|---:|
+| edge rule | **1** |
+| node construction, downstream of the read gate | **4** |
+| read fragmentation (chains that never reach 3 pooled) | **≤ 7** |
+| **not transcribed — outside the method entirely** | **7** |
+
+⟹ **§5c's "18 loci behind node construction" is WITHDRAWN; the correct figure is 4, or ≤ 11 if the
+fragmentation cases are counted as addressable.** The redirection still points the right way — node
+construction outranks the edge rule 4:1 rather than 18:1 — but the dominant limit at NPIP is **evidence,
+not method**: 12/31 recovered against a ceiling of 23/31 expressed, and 7 loci carry no fibroblast
+transcription at all.
+
+⚠ This is consistent with the standing result that **O1 sees only EXPRESSED copies**, and with the
+register entry that already refuted a "node construction is the binding constraint" claim on exactly this
+kind of loose criterion (`~1,374 candidates` → ~282 after re-measurement, a 5× reduction).
