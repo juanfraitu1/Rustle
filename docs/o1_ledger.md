@@ -2519,6 +2519,31 @@ EXISTING definition projects to ~23 recovered against the current **12**, from O
 ⟹ this sits inside the O1 reframing already accepted on 2026-08-12 (*"genome + MINIMAL ANNOTATION +
 reads"*), so it is **not** the scope change that DNA-first discovery would be (§5g).
 
+### ⭐⭐ CONVERGENCE AND TRANSITIVITY — the closure is well-behaved (2026-08-27)
+
+⚠ §5m stopped at round 2 **arbitrarily**, not on convergence, so 25/31 was "what one iteration gave".
+Run to a fixed point it is a **convergence result**, and precision does NOT degrade:
+
+| round | loci hit | true NPIP | new NPIP | non-NPIP | precision |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 17 | 16 | 16 | 1 | 0.941 |
+| 2 | 26 | 25 | 9 | 1 | 0.962 |
+| **3** | 26 | **25** | **0** | **1** | **0.962** |
+
+**Converged at round 3.** ⭐ **The non-NPIP count is 1 at EVERY round** — transitive closure does NOT
+chain through shared repeats here, which was the obvious failure mode and the reason precision was
+tracked per round rather than only at the end.
+
+⭐⭐⭐ **THE SIX LOCI IT NEVER REACHES ALL HAVE ZERO READS** (`28300719`, `29228842`, `21285416`,
+`15670981`, `28701609`, `5715342`). Every one is unexpressed ⟹ **one seed + closure recovers
+23/23 = 1.000 of the EXPRESSED members**, and everything it misses is invisible to RNA by construction.
+
+⟹ **"SHOULD THERE BE MORE THAN ONE SEED?" — NO, not for an RNA-level objective.** One annotated copy
+saturates the expressed set; additional seeds can only add loci with no RNA evidence. 19 human orthologs
+reach 31/31, but the extra 6 over the closure's 25 are exactly the zero-read ones.
+⟹ **"IS IT TRANSITIVE?" — YES, AND IT TERMINATES:** 3 rounds to a fixed point, precision flat at 0.962.
+
+
 ### ⚠ What this is not
 
 - **n = 1 family.** A demonstration, not a rate. The 2026-08-12 minimal-annotation work measured
