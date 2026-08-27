@@ -1989,3 +1989,65 @@ truth — the human 150-window false-merge panel (measured 1.33%). Recall from s
 the panel. Neither half can be got from the other.
 ⛔ **Do NOT lower the coverage floor on the strength of the recall column alone.** The 0.9286 at 0.20 is
 real and the precision cost is UNMEASURED.
+
+## §5c — the coverage floor CAN be lowered on edge evidence, and it FAILS end-to-end (2026-08-26)
+
+**A fourth instance of the standing rule: a change to what an EDGE IS cannot be judged on edge metrics.**
+
+### ⭐⭐ First, a real negative class — found by accident
+
+Attempting to build a background of *verified-distinct* loci for an end-to-end benchmark, **417 of 420
+random 30 kb gorilla regions were discarded for mutual homology.** That is not a broken experiment:
+**50.5% of random genomic region pairs produce an alignment and 49.0% clear identity ≥ 0.60.**
+⟹ **repeat-driven cross-homology between random genomic regions is UNIVERSAL**, and the coverage clause
+is precisely the mechanism separating *"shares an Alu"* from *"is a paralogue"*. It also re-explains, from
+a third direction, why **identity never binds** — identity is satisfied by every repeat in the genome.
+
+Those 87,990 rejected pairs are the **real negative class §5b could not construct**: real sequence, real
+repeat content, ≥ 50 kb clear of any known family.
+
+| coverage floor | FPR (87,990 real genomic pairs) | TPR (§5b constructed positives) |
+|---:|---:|---:|
+| **0.50 (shipped)** | 0.026287 | 0.4810 |
+| 0.40 | 0.026787 | 0.6095 |
+| 0.30 | 0.027446 | 0.7810 |
+| **0.20** | **0.028094** | **0.9286** |
+
+**Between 0.20 and 0.50 there is a DEAD ZONE**: FPR moves +0.0018 while TPR moves +0.4476, a 250:1 trade.
+The genomic pairs that pass are near-complete matches that pass at ANY floor, so lowering it admits
+almost nothing new. On edge evidence alone this is the strongest repair candidate O1 has produced.
+
+### ⛔ And it does not survive the partition
+
+| coverage | families | copies | largest | NPIP loci | pure NPIP fams |
+|---:|---:|---:|---:|---:|---:|
+| **0.50 shipped** | 83 | 484 | 39 | **12/31** | **3** |
+| 0.30 | 97 | 691 | 94 | **12/31** | **1** |
+| 0.20 | 140 | 1020 | 104 | **12/31** | **1** |
+
+⛔ **NPIP recovery is UNCHANGED at 12/31 in every arm**, while pure NPIP families fall **3 → 1**, the
+largest family balloons **39 → 104**, and **87–94 baseline families fuse** (28 and 25 new families each
+absorbing more than one). Cost with no benefit. *(Comparator: the scoped guard that was killed fused 112
+pairs with the largest swallowing 43 — this is smaller, and still all cost.)*
+
+### ⭐⭐⭐ Why — and it redirects the whole line
+
+Node counts are **identical (2,847) in all three arms**: node construction is untouched, so only edges
+moved. At NPIP:
+
+| | loci |
+|---|---:|
+| NPIP loci total | 31 |
+| **with a node at all** | **13** |
+| reaching a family (every arm) | 12 |
+| ⟹ **headroom for ANY edge-rule change** | **1** |
+| ⟹ **headroom behind NODE CONSTRUCTION** | **18** |
+
+**The edge rule has ONE locus of headroom at NPIP; node construction has EIGHTEEN.** §4v, §4w, §5b and
+this section all optimised the edge rule — the wrong half of the pipeline for this family. A perfect edge
+rule cannot connect a locus that never became a node.
+
+⟹ **VERDICT: do NOT lower the floor.** The edge-level evidence is genuine and the dead zone is real, but
+the binding constraint is upstream. ⭐ **The productive target is NODE CONSTRUCTION** — the 18 NPIP loci
+that have reads (28/31 carry ≥ 3) yet produce no node, which is the same stub/one-rep-per-locus territory
+as §4s/§4r, now with a number attached to what it is worth.
