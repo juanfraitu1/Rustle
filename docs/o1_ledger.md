@@ -2394,3 +2394,51 @@ family. Diagnosing a block is fine; letting the diagnosis choose the block is no
 ⟹ **The actionable item is the double representation**, not the graph architecture: 3/12 NPIP loci carry
 two reps that never collapsed. That is `family_detect`'s locus-collapse stage, upstream of `E_r` — the
 same layer §5e/§5i already identified.
+
+## §5k — ⛔ A FAMILY/SUBFAMILY HIERARCHY CANNOT RECONCILE THE FRAGMENTATION (2026-08-27)
+
+**Proposal (user): define a SUBFAMILY level to reconcile §5j's fragmentation** — family = a coarse
+grouping, subfamily = the current γ-blocks. NPIP would then read as *1 family, 6 subfamilies* rather than
+5–6 unrelated families.
+
+⚠ **First, γ can only SPLIT a connected component, never merge one.** So a hierarchy can only help if the
+fragments are γ-splits of one component. They are not: §5j measured the 17 NPIP reps as **6 genuinely
+DISCONNECTED components** at the shipped floor. Reconciling them therefore requires a MORE PERMISSIVE
+edge floor, not a coarser partition of the same edges.
+
+### The permissive tier does connect NPIP — by absorbing it into a hairball
+
+17 NPIP reps in isolation: 6 components at floor 0.50, **1 component at 0.10**. But run genome-wide on
+all 2,847 reps, the component NPIP lands in is:
+
+| floor | NPIP components | their sizes | **non-NPIP reps in them** |
+|---:|---:|---|---:|
+| **0.50 (shipped)** | 5 | [384, 10, 2, 1, 1] | **381** |
+| 0.30 | 3 | [856, 10, 2] | 851 |
+| 0.20 | 2 | [1093, 10] | 1086 |
+| **0.10** | **1** | **[1359]** | **1342** |
+| 0.05 | 1 | [1440] | 1423 |
+
+⛔ **THERE IS NO FLOOR AT WHICH NPIP IS ONE COMPONENT *AND* THAT COMPONENT IS NPIP-SPECIFIC.** The
+single-component state always IS the blob — at 0.10 the component holds 1,359 reps of which **1,342 are
+not NPIP**, and genome-wide that one component absorbs 1,359 of the 1,474 reps that are in any component
+at all. The very permissiveness that joins NPIP's fragments joins everything else first.
+
+⟹ **the hierarchy has no meaningful coarse level to offer.** Strict ⟹ fragmented; permissive ⟹ one blob.
+Same shape as the coverage-repair impossibility (*"TP loss starts BEFORE FP rejection ⟹ no
+constraint-satisfying threshold exists"*).
+
+### ⭐⭐ And it corrects how §5j should be read
+
+**At the SHIPPED floor, NPIP's largest component already contains 381 NON-NPIP reps.** So γ is not
+over-splitting a clean NPIP component — **γ is carving NPIP out of a 384-rep hairball**, which is a much
+harder problem and exactly the job γ exists to do (§4m: without γ one component holds 466 copies over 38
+families). The 5–6 fragments are γ's best effort on a badly contaminated component, not a gratuitous split.
+
+⟹ **Do not add a subfamily level.** It would relabel a node-construction defect as biological structure
+while offering no level at which the coarse grouping means anything. ⭐ **The fragments are also NOT
+subfamilies on the evidence** (§5j): they cut across the real NPIPA/NPIPB boundary, and 3 of 12 loci sit
+in two of them at once — a locus cannot belong to two subfamilies.
+
+⟹ **The finding stands where §5e/§5i/§5j put it: fix the NODES.** With correct nodes the same rule and the
+same γ give ONE component of 30/31 (§5e) — no hierarchy required.
