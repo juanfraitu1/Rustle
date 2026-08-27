@@ -150,6 +150,12 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 
 ### 🔄 OPEN
 
+- ⭐ **FOOTPRINT NODES (§5h) — the one open candidate whose evidence points the right way on both axes.**
+  Drop the chain-consistency requirement: a node is the union of bases covered by ≥2 reads, exonic only.
+  Prototype gives **18/31 vs 12/31** NPIP loci at **3.23%** contamination against a 60-locus control.
+  ⚠ OFFLINE (T8) and node-level — needs implementation behind a flag and an END-TO-END partition verdict.
+
+
 - ⭐⭐ **ORACLE ABLATION (§5e) — the definition owns 3% of the loss, node construction owns 58%.** With
   perfect nodes the shipped rule groups **30/31** NPIP loci (and 5/5 on true exon-sums); the shipped run
   gets 12/31 because **18 loci never become nodes**. ⟹ **stop repairing the edge rule** — §4w, §4x, §5b

@@ -2255,3 +2255,57 @@ loci at NPIP) and the novelty claim moves. **That is a thesis-scope decision, no
 ⟹ **Do not flip `--homology-genomic-span`.** Its measured effect on the shipped node set is negative, and
 the substrate objection the register already recorded — *"a span is mostly INTRON and paralogue introns do
 not align"* — is joined by a second: **the span cannot fix a boundary the reads got wrong.**
+
+## §5h — ⭐ REDEFINE THE NODE, NOT THE EDGE: footprint nodes recover +6 loci (2026-08-27)
+
+**Question (user): redefine at the RNA level, or define at both levels?** The measurements answer it.
+**"Both levels" is not needed** — §5g showed the DNA substrate inherits RNA's boundary errors, and the
+DNA∪RNA union is long retracted. **The productive change is at the RNA level, and it is to the NODE, not
+the EDGE**: §5e established the edge rule recovers 30/31 given correct nodes, so the edge rule is not what
+is failing.
+
+**What a node currently requires:** ≥3 pooled reads agreeing on ONE consistent intron chain. §5f showed
+that at the failing loci **no two reads agree on a splice structure** (14 reads → 14 chains), which is
+unreachable by any pooling or junction-tolerance rule.
+
+**FOOTPRINT NODE (prototype):** the union of bases covered by ≥2 reads, exonic only (the reads' `N`
+operations exclude introns), ≥300 bp, **with no chain-consistency requirement and no assembly**. Still
+purely RNA — only read-covered bases.
+
+| ladder, identical edge rule throughout | NPIP loci grouped |
+|---|---:|
+| oracle true locus spans (§5e) | 30/31 |
+| **footprint nodes** | **18/31** |
+| shipped assembled chains | 12/31 |
+| genomic span of the shipped nodes (§5g) | 10/31 |
+
+Footprints exist at **24/31** loci against 13/31 for assembled chains, median **6,175 bp**, and 18 group
+into 2 components.
+
+**PRECISION, measured — not the recall column alone.** The same construction applied at 60 non-NPIP
+expressed loci as a control:
+
+| edge class | n |
+|---|---:|
+| NPIP ↔ NPIP (wanted) | 30 |
+| **NPIP ↔ control (false)** | **1** |
+| control ↔ control | 1 |
+
+⟹ **contamination 1/31 = 0.0323** for **+6 loci = +50% relative recall**.
+
+### ⚠ What this is NOT yet
+
+- **OFFLINE (T8).** A prototype over PAF, not the shipped binary. This project's own rule: offline
+  re-derivation is a hypothesis generator, **never a test**.
+- **Node-level.** Three prior definitional changes passed node metrics and failed end-to-end (§4x, §5b,
+  §5c). **The verdict must come from the PARTITION** — families, copies, NPIP purity, cross-family fusion.
+- The 60-locus control is small, and its 1 control↔control edge suggests it contains real paralogue pairs,
+  so contamination is an **upper** bound on that panel and an **underestimate** of what a genome-wide
+  control would contain.
+- Footprints are ~3× longer than exon-sums, so the scale-free coverage denominator (§4v) will act on them
+  differently at genome scale.
+
+⟹ **Recommended next step, costed:** implement the footprint node behind a flag (default OFF, OFF arm
+byte-identical, flag recorded in the params certificate), run the NPIP catalog end-to-end, and judge on
+the partition. This is the first change in this session whose evidence points the right way on **both**
+axes — every other candidate (§4w, §4x, §5c, §5f, §5g) failed on one or the other.
