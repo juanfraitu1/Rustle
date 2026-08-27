@@ -1666,6 +1666,23 @@ already-registered "ratio-to-truth ⟹ use the IN-BAND FRACTION, never the media
 
 **Verdict: REFUTED.** Replacing the fractional denominator with an absolute aligned-bp floor does not
 rescue complete transcript models; it is uniformly stricter and costs recall and NPIP purity together.
+
+⚠ **SCOPE CORRECTED 2026-08-27 — these arms ran the REP-ONLY variant.** `pool_isoforms` defaults to
+false, so `RUSTLE_SHARED_EXON=1` alone never exercised `shared_exon_edges_pooled`, in which each locus
+contributes the exons of EVERY isoform collapsed into it. That variant targets the strongest stated
+motivation for the whole route (46% of reps covering a known member are stubs while 53% of those loci
+have a discarded gate-passing spliced chain), and the original §4w wording implied a coverage it did not
+have. **Now run at matched identity 0.60** (`RUSTLE_SHARED_EXON_ISOFORMS=1`): 109,135 exons over 2,847
+loci against 11,385 rep-only, **1,494 locus pairs linked against 966** — and **worse on every endpoint**:
+
+| | families | NPIP loci | pure NPIP |
+|---|---:|---:|---:|
+| shipped exon-sum | 83 | **12/31** | **3** |
+| SE60 rep-only | 59 | 10/31 | 1 |
+| **SE60 + isoforms** | **134** | **10/31** | **0** |
+
+⟹ pooling every isoform's exons **fragments harder** (134 families) and **destroys NPIP purity entirely
+(3 → 0)**. **The verdict stands and now covers both variants.**
 ⟹ **the designed denominator fix is now MEASURED and dead**, closing the route §4s/[[project_o1_single_exon_stubs]]
 left open ("precision UNMEASURED"). The completeness deficit of §4v stands with **no known repair**.
 
@@ -2442,3 +2459,28 @@ in two of them at once — a locus cannot belong to two subfamilies.
 
 ⟹ **The finding stands where §5e/§5i/§5j put it: fix the NODES.** With correct nodes the same rule and the
 same γ give ONE component of 30/31 (§5e) — no hierarchy required.
+
+
+## §5l — graph-to-graph similarity: the implemented half is refuted, the other half targets the wrong axis (2026-08-27)
+
+**Proposal (user): compare loci as GRAPHS rather than as one representative sequence each.** It splits
+into two distinct ideas, and they have different fates.
+
+**(a) Use every isoform, not one representative — IMPLEMENTED, now REFUTED.** This is
+`shared_exon_edges_pooled`, and §4w had never actually run it (see the scope correction there). Run at
+matched identity it is worse than both the shipped rule and the rep-only variant: 134 families,
+**10/31 NPIP loci, 0 pure NPIP families**. ⟹ the isoform information is real (9.6× more exons) and using
+it this way costs more than it buys.
+
+**(b) Compare splice-graph STRUCTURE — unimplemented, and aimed at the wrong constraint.** Two loci would
+be linked when their junctions CORRESPOND, not merely when their sequence aligns. ⚠ Paralogues sit at
+different coordinates, so their junctions are not directly comparable: the comparison requires an
+alignment first, then a check that junctions correspond in the alignment frame. That is strictly STRONGER
+than the current sequence test, so it can only REMOVE edges ⟹ it buys **precision**.
+⛔ **Precision is not the binding constraint**: §5c measured FPR moving **+0.0018** across the entire
+coverage range while TPR moved **+0.4476**, and §5e attributes only **3%** of the loss to the edge rule.
+A structural test would sharpen an axis that is already not costing anything.
+
+⟹ **Best arm remains the footprint node (§5i): 13/31 loci, 3 pure, +1 over shipped.** Every route that
+enriches the EDGE (shared exon, pooled isoforms, DNA substrate, lower floor, graph structure) has now been
+measured, and the ones that moved the needle at all moved the NODE.
