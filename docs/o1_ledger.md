@@ -2879,3 +2879,54 @@ families) and §5o's absorbed footprints, now seen from the other side.
 
 ⚠ §4s closed *"which transcript becomes the representative"* (0/215 edge inheritance). **This is a
 different question — whether a LOCUS survives collapse at all — and it is not covered by that closure.**
+
+## §5t — ⚠ CORRECTION: the ceiling is NOT expression, and the chain disagreement is an ALIGNER artefact (2026-08-27)
+
+**Two corrections, both prompted by the user asking why the topped-up run should be bounded by expression
+at all. It should not be, and I said otherwise.**
+
+### ⛔ RETRACTED: "31/31 is unreachable because 8 loci have no expression"
+
+That applies to REAL-READ runs only. §5s topped **every** locus to ~40 reads, so in that run no locus is
+unexpressed. Measured on the 8 loci that had no real expression:
+
+| after top-up | count |
+|---|---:|
+| became a NODE | **6/8** |
+| reached a FAMILY | **4/8** |
+| still no node **despite pooled support 40** | **2/8** |
+
+⟹ **expression was not their binding constraint** — six became nodes the moment they had reads.
+⟹ **the "23-locus expressed ceiling" is a property of the real-read substrate, NOT of the method.** In the
+topped-up run every locus has reads and recovery is still 15/31, so **the ceiling is set by LOCUS COLLAPSE
+and by the fragmentation below — 31/31 is not excluded.**
+
+### ⭐⭐⭐ The chain disagreement §5f attributed to biology is produced by the ALIGNER
+
+Reads simulated from ONE identical template, 40 per locus, after `minimap2 -ax splice:hq`:
+
+| arm | loci | median reads | **median distinct chains** | median best chain |
+|---|---:|---:|---:|---:|
+| **spliced** | 11 | 49 | **28** | 10 |
+| unspliced | 20 | 47 | **3** | 1 |
+
+⭐ **40 reads from a SINGLE template yield a median of 28 distinct intron chains.** There is no isoform
+diversity in that input — the template is one sequence. The aligner is placing junctions inconsistently
+across near-identical paralogues. Unspliced reads, having no junctions to disagree about, cluster cleanly
+at a median of 3.
+
+**How far apart are the placements?** Donor positions within 500 bp of a neighbour (n = 171):
+median gap **64 bp**, q25 8, q75 187 — **only 0.187 of gaps are ≤ 5 bp**, 0.368 ≤ 20 bp, 0.456 ≤ 50 bp.
+
+⚠⚠ **THIS QUALIFIES §5f.** That section tested ±5 bp snapping, found chains@exact == chains@±5bp, and
+concluded the reads "genuinely disagree on splice structure — not coordinate jitter". **The ±5 bp window
+was far too small: 81.3% of neighbouring donor placements differ by MORE than 5 bp.** The disagreement is
+real at 5 bp and is nonetheless an ALIGNMENT artefact, visible here because the ground truth is a single
+template. §5f's conclusion that the loci are evidence-limited stands for the real reads; its mechanism —
+"genuinely different splice structures" — does **not**.
+
+⚠ Scope: measured on SIMULATED reads. Whether real reads fragment by the same mechanism is **NOT
+MEASURED**, though §5f's real-read pattern (14 reads → 14 chains) is the same shape.
+
+⟹ **Two repairs are now on the table and they are independent**: locus collapse (§5s) and junction
+placement tolerance at a realistic scale (tens to low hundreds of bp, not 5). Neither is the definition.
