@@ -3883,6 +3883,11 @@ here.
 
 ## §6k — TBC1D3: subfamily as a LEVEL of one tree, selected by the widest merge gap (2026-08-28)
 
+> ⚠ **HEDGE FROM §6l**: the merge-height *divergence ladder* below must NOT be claimed as
+> information beyond identity — partial correlation of height with an independent protein divergence
+> proxy, controlling for DNA identity, is **−0.0465 (p = 0.8919)**. The ladder is a presentation of
+> `1 − identity`, not a second measurement. The LEVEL SELECTION (widest merge gap) is unaffected.
+
 The user's scoping: subfamilies are meaningless at n=2 and meaningful for clusters like TBC1D3. The
 register agrees arithmetically — a split needs n≥3 and **348/494 = 70.45% of GGO families are 2-copy**,
 which is why hierarchy-as-catalog-refinement was refuted (inert on 80.57%). This section applies it to
@@ -3945,3 +3950,85 @@ alignment while the tree comes from *gorilla*-vs-gorilla, so the tree never saw 
 sequence-based, so this is a genuine external check, not a fully independent one. Copy counts remain
 preset-dependent (§6e). ⚠ **NC_073228.2 is a 195 Mb contig; whether it is the human-chr17 ortholog is NOT
 established here** and must not be asserted.
+
+---
+
+## §6l — the hierarchy audit: what the tree does and does not add (2026-08-28)
+
+Nine agents built five hierarchy variants on the 72-gene panel and adversarially checked the winner.
+Every headline number reproduced from raw `ff.paf` via the shipped `nm/bl` predicate. Four findings, two
+of which matter more than the hierarchy itself.
+
+### ⭐⭐⭐ 1. THE 52% "MISSING RECORDS" GAP IS MOSTLY CORRECT BEHAVIOUR
+
+§6j reported **420/806 = 0.5211** of within-coarse-family pairs having no nucleotide record at all, and
+read it as the recall ceiling. Decomposed by stratum:
+
+| stratum | pairs with a record | missing |
+|---|---|---|
+| **within-SUBFAMILY** | 188/201 = 0.9353 | **13/201 = 0.0647** |
+| cross-subfamily, within coarse family | 198/605 = 0.3273 | **407/605 = 0.6727** |
+| cross-coarse-family | 195/1,750 = 0.1114 | — |
+
+⭐⭐ **The 52% is almost entirely a CROSS-SUBFAMILY phenomenon. Within a true subfamily only 6.47% of
+pairs lack a record.** ⟹ **most of what §6j called O1's recall ceiling is the rule correctly declining to
+link genes that are not recent duplicates.** The real within-subfamily miss rate is 6.47%, not 52%.
+
+### ⭐⭐ 2. IDENTITY ALONE IS NOT A DISTANCE — COVERAGE CARRIES THE SIGNAL
+
+Medians of the best-coverage record: **within-subfamily identity 0.7915 vs cross-COARSE identity
+0.7906 — indistinguishable — while coverage differs 23× (0.9811 vs 0.0421).** Of the 100 shortest
+distances under `1 − identity`, only 63 are within-subfamily; **21 are cross-COARSE**, and average
+linkage merges those first (e.g. `MAGEC3—LOC115933515`, MAGE vs GOLGA6L26, d = 0.0363 — shorter than
+MAGE-A's own formation height).
+⟹ this is why `1 − identity` scored ARI 0.5849 while `1 − identity×coverage` scored **0.8484**, and it
+is a **fourth independent confirmation that the coverage clause is the load-bearing half of E_r**.
+⭐ **Gating pairs by the SHIPPED edge rule before building the tree lifts ARI 0.5849 → 0.8374** at the
+shipped constants (not tuned) — the edge rule is exactly the missing distance filter.
+
+### ⛔ 3. MERGE HEIGHTS DO NOT TRACE DIVERGENCE BEYOND IDENTITY
+
+Heights correlate strongly with an independent protein proxy (**Spearman −0.8909, p = 0.0002, n = 11**),
+so they are not noise. **But the partial correlation controlling for DNA identity is −0.0465,
+p = 0.8919**, while the reverse partial is +0.6823, p = 0.0207.
+⟹ ⛔ **merge height is essentially `1 − identity` relabelled; "tracing divergence" is a RESTATEMENT, not
+an additional measurement.** A divergence ladder may still be a useful *presentation*, but it must not be
+claimed as information the identity column does not already carry. ⚠ **This hedge applies to §6k's
+TBC1D3 divergence ladder too.**
+
+### ⚠ 4. THE HIERARCHY'S LIFT OVER A TRIVIAL BASELINE IS SMALL, AND PURITY IS NEARLY VACUOUS
+
+- **Lift over the best trivial baseline is +0.0351 ARI** (average linkage 0.8484 at k=20 vs
+  **single linkage 0.8133** — i.e. one pairwise threshold on identity×coverage). That difference is
+  **exactly two gene attachments** (MAGEB5, MAGEC1).
+- ⚠ **"17/17 pure clusters" is not the honest denominator.** At k=20, 4 of those 17 are size-1 and cannot
+  be impure; **RFPL4B is pure BY CONSTRUCTION** (the any-alignment graph has 6 components and RFPL4B is an
+  isolated 2-node one, so no linkage rule could merge it) and MAGE-E likewise. ⟹ **the honest score is
+  0 errors / 12 genuine opportunities, and 2/12 non-singleton subfamilies are recovered by construction.**
+- ⚠ **best_k is ORACLE-selected** by maximising ARI against the labels being scored ⟹ 0.8484 is an
+  UPPER BOUND, not a prediction. (Null control passes: 1,000–2,000 label permutations, null mean 0.0253,
+  p95 0.0569, p ≤ 0.0005 — the signal is real; it is the LEVEL that fails.)
+- ✅ **Missing-pair fill policy is INERT**: four policies (worst×1.0, ×1.5, 1.0, ×3.0) give identical
+  best_k, ARI and purity, though only ×1.5 reproduces the merge topology byte-for-byte.
+
+### ⭐⭐ 5. CIRCULARITY IS REAL AND LARGE — BUT A SEQUENCE-FREE CHECK EXISTS AND PASSES
+
+⚠⚠ The labels are **similarity-derived by construction** ("golgin subfamily A member 6-**LIKE** protein
+9"). Pushing the **protein** channel — the very evidence those names were written from — through the
+identical pipeline reaches **ARI62 = 0.9042, purity62 = 1.0000, numerically identical to the DNA
+headline**, and **192/201 = 0.9552** of the within-subfamily pairs are visible to it. ⟹ **the label-shuffle
+p-value tests against NO STRUCTURE, not against the circular alternative**, and "labels.tsv is independent
+of any alignment" is true only of *this* alignment.
+⭐ **Not refuted, because a genuinely sequence-free criterion exists**: **genomic position**, which was
+never an input to minimap2. Against position-only 2 Mb tandem-array blocks the k=20 composite scores
+**ARI 0.6333 — exactly equal to the annotated labels' own 0.6333** — beating protein 0.4073, identity
+0.3930 and length-only 0.3770. ⟹ **position is the non-circular validator; use it, not the product names,
+whenever a subfamily claim must be defended.**
+
+### No transferable height (confirms §6k)
+
+Only **3 of 5** coarse families have ≥2 annotated subfamilies (AMY and NPIP have exactly one, so the
+question is vacuous there). Of the 3: GOLGA6 admits a window (0.06846, 0.42226], RFPL (0.02594, 0.97024],
+and **MAGE is DEGENERATE — its subfamilies form at or above the height at which the whole 72-gene tree
+closes.** **Intersection over the informative families: EMPTY.** ⟹ **the level must be read PER FAMILY**,
+as §6k does for TBC1D3.
