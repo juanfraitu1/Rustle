@@ -3376,3 +3376,82 @@ UNTESTED on this panel.** ⚠ Also **every predicted component is already a cliq
 added 0 pairs and single-linkage chaining — the usual false-merge source — was never exercised.
 ⚠ The negative panel is **blind at the nodes supplying 2 of the 3 gained members**: all 5 MAGEA nodes have
 **zero** cross-family alignment records.
+
+---
+
+## §6d — the node set rebuilt from SEQUENCE, not names (2026-08-28)
+
+§6c showed every name-based error in §6a/§6b came from one cause: a **prefix grep over gene symbols**,
+which silently drops LOC-named paralogues. This section rebuilds the node set name-blind and re-runs.
+
+**Construction.** One seed per family, **CDS envelope extracted in GENE orientation** (minus-strand genes
+revcomped — the fix for §6c's 17/17 confound). Seeds vs whole genome, `-x asm20 -p 0 -N 500`. Every hit
+at identity ≥ 0.60 and ≥ 0.50 **query** coverage becomes a copy interval, **extracted in the orientation
+of the hit**. Gene names are attached **afterwards, as a readout only** — they never define membership.
+
+### ⭐⭐ BOTH name-based routes fail, and they fail the SAME way
+
+| product keyword | genes | LOC-named | invisible to a symbol grep |
+|---|---|---|---|
+| ret finger protein-like | 9 | 9 | **100%** |
+| golgin subfamily A member 6 | 14 | 14 | **100%** |
+| alpha-amylase | 1 | 1 | 100% |
+| MAGE family member A | 5 | 0 | 0% |
+
+⚠⚠ **The mirror trap: a PRODUCT-keyword census is no better.** NCBI phrases the same family differently
+for symbol-bearing vs LOC-named genes, and **a single hyphen splits it**:
+
+| symbol gene | its product | LOC gene | its product |
+|---|---|---|---|
+| RFPL1 | "ret finger protein **like** 1" | LOC101151087 | "ret finger protein**-like** 4A" |
+| GOLGA6L7 | "golgin **A6 family like 7**" | LOC101137218 | "golgin **subfamily A member 6-like protein** 7" |
+| NPIPB11 | "nuclear pore complex **interacting**" | LOC101141990 | "nuclear pore complex**-interacting**" |
+
+⟹ symbol grep finds one half of each family, product keyword finds the other, and **both split along the
+same symbol/LOC boundary** — which is why every §6b key error took the form *"X is a singleton"*.
+⭐ Some members are invisible to **both**: `LOC101137871` (MAGEA component) and `LOC101149946 /
+LOC101141018 / LOC101140740` (GOLGA6L component) carry **no product description at all**.
+⟹ **Only sequence is a reliable membership test.** MAGEA is the one family the old key got right, and it
+is the one family that is 0% LOC-named.
+
+### Result: 7 components, one per seed, zero cross-seed contamination
+
+| seed | symbol grep gave | sequence discovery gives |
+|---|---|---|
+| GOLGA6L | 2 | **7** |
+| NPIP | 1 | **8** (⚠ but see below) |
+| AMY | 3 | 3 |
+| MAGEA | 5 | 3 (⚠ preset-limited, see below) |
+| RFPL | 3 | 3 |
+| SRGAP / HERC | 1 | **1 each** ✅ correctly singleton |
+
+The GOLGA6L component contains exactly the three LOC "6-like protein 7" genes §6c named
+(LOC115931294 / LOC134757625 / LOC101137218) plus three product-less LOC genes.
+
+### ⭐⭐⭐ The forward-only guard costs NOTHING once nodes are co-oriented
+
+```
+202 aligned pairs -> 58 E_r edges (both strands) | 58 forward-only   (difference: 0)
+```
+
+⭐⭐ **This confirms §6c's diagnosis and closes the question.** §6b's "+23.08 points from dropping the
+guard" measured **my reference-orientation extraction**, not the guard. Extract nodes in gene/hit
+orientation and the guard is **free**: it blocks 0 within-family edges while remaining available to
+reject genuine antisense. ⟹ **the fix is node construction, and the guard stays on.**
+
+### ⚠⚠ TWO TRAPS THIS RUN EXPOSED
+
+⛔ **"NPIP: 1 → 8 copies" would have been WRONG.** The NPIPB11 seed is a **104,913 bp gene span**, and
+**7 of the 8 discovered intervals contain NO NPIP-family gene at all** (they are annotated titin-like,
+sortilin-related-receptor-like, multidrug-resistance-protein-1); only the seed's own interval carries
+NPIPB11. ⟹ **the 105 kb seed found 8 homologous ~100 kb SEGMENTAL DUPLICATION BLOCKS, not 8 gene
+copies.** ⭐⭐ **NODE GRANULARITY DETERMINES WHAT "COPY" MEANS**: an 8 kb CDS envelope (AMY) returns gene
+copies; a 105 kb gene span returns SD blocks. State the node unit with every copy count.
+
+⚠⚠ **THE DISCOVERY PRESET DETERMINES THE COPY COUNT — record it like `-p`/`-N`.** From the same MAGEA1
+seed on the same 4 Mb window: **`asm20` returns 3 copies, `-k 11 -w 5` returns ~11–12** at
+**identity 0.76–0.85 and query coverage up to 0.965**. That band is *inside* asm20's nominal ~20%
+divergence range, but its `k=19 / w=10` seeding does not find it. ⟹ **extend the standing rule: ALWAYS
+RECORD THE PRESET (`-x`/`-k`/`-w`) ALONGSIDE `-p` AND `-N`.** ⚠ **§6a's "gorilla has exactly 3 AMY
+copies, no unannotated copy" used `asm20` and is therefore under-powered by exactly this gap** — a
+sensitive per-contig re-run is the test, recorded separately.
