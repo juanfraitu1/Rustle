@@ -3182,3 +3182,36 @@ choice is worth **+33 recall points (0.6923 → 0.9231) at zero cross-family cos
 key. ⚠ **This says nothing about the RNA default** — on transcript-oriented reps an antisense overlap is
 a different biological object, and §4o's frozen-antisense panel (0/58 admitted, antisense-family rate
 0.0048) is the instrument that governs that decision, not this one.
+
+### §6b precision control — a size-matched negative panel, and why the both-strands arm passed a HARDER test
+
+The §6b precision figure rested on only 17 singleton nodes as possible false partners, which cannot
+support the words "precision 1.0000". Replaced with a proper control: **600 unrelated gorilla genes drawn
+size-matched** to the family nodes (median 16,663 bp vs the families' 17,140 bp; range 763–347,015 vs
+945–302,838) — matched on the SIZE DISTRIBUTION, not on count, because a count-matched null proves
+nothing here.
+
+⚠ **Scoring rule fixed in advance**: a false merge is counted **only** as a family↔negative edge.
+Negative↔negative merges are NOT scored, because two randomly drawn genes may be genuine paralogues and
+calling such a merge an error would assume the answer.
+
+30 family nodes as query against the 600 negatives as target (18.8 s, peak RSS 1.68 GB — the earlier
+630×630 self-alignment was abandoned at 27 min for doing ~11× the work to answer the same question):
+
+| arm | eligible pairs (any alignment) | false merges | rate | Wilson 95% |
+|---|---|---|---|---|
+| forward-only | 205 | **0** | 0.000000 | [0, **0.0184**] |
+| both strands | **389** | **0** | 0.000000 | [0, **0.0098**] |
+
+**389 of 18,000 possible pairs had any alignment at all (0.0216)** — the candidate count is real, so the
+zero is not the vacuous kind.
+
+⭐⭐ **The load-bearing observation: allowing both strands nearly DOUBLES the eligible pair count
+(205 → 389).** The both-strands arm was therefore exposed to ~1.9× as many opportunities to false-merge,
+produced **zero**, and ends with a **tighter** upper bound (0.0098 vs 0.0184). So the +33 recall points
+of §6b are not bought by loosening: the harder-tested arm is also the better-bounded one.
+
+⚠ **Do NOT compare this to the RNA false-merge rate** (human 150-window panel, 2/150 = 1.33%
+[0.37, 4.73]). Different substrate (DNA intervals vs RNA exon-sum reps), different species panel, and
+different construction. The numbers must not be pooled or ranked against each other.
+⚠ **n is still 4 families / 13 members** on the recall side; only the precision side is now well-powered.
