@@ -3700,3 +3700,61 @@ the residual miss is not a threshold problem. (iv) ⚠⚠ **This does NOT transf
 unexamined**: §4s measured that **60.51% of the RNA edge set falls below the 0.50 floor under a 1.49×
 rep-length inflation**, so the same change there has a different and unmeasured consequence. Test the DNA
 arm first.
+
+---
+
+## §6h — ⛔ RETRACT §6g's coverage-floor recommendation: the register already refuted it (2026-08-28)
+
+⛔⛔ **§6g's "lower the E_r coverage floor 0.50 → 0.30" is WITHDRAWN before it reached the pipeline.**
+`docs/NEGATIVE_RESULTS_REGISTER.md` §4.1 (**REFUTED / RETRACTED — High redo risk**) already contains the
+identical experiment:
+
+> *"Relax the E_r coverage floor from 0.50 to 0.30 to recover lost true pairs — cov≥0.30: **402 T / 132 F
+> (P 0.753)** vs shipped **340 T / 62 F (P 0.846)** — **62 true bought for 70 false**. And 127/180 of the
+> target pairs have coverage EXACTLY 0.00 — no floor can admit a missing record."*
+
+⚠⚠ **The register flags this row "High redo risk" — i.e. as a thing likely to be re-proposed — and I
+re-proposed it.** The standing rule *CONSULT THE REGISTER BEFORE PROPOSING AN APPROACH* exists for
+exactly this, and I consulted it only after recommending the change.
+
+### Why §6g's panel disagreed: its negative set was the weak link
+
+§6g's decisive observation was *"142 positives in [0.30, 0.70] against **0 of 379 negatives**"*, which
+made the floor look free to lower. That zero is a property of **how I drew the negatives** — 576
+size-matched *randomly chosen annotated genes* — not of the rule. Re-scoring against a genuinely
+adversarial negative set (every genome-wide hit of the four seeds at identity ≥ 0.60, **644,905
+records**, which contains every repeat bridge in the genome):
+
+| coverage band | positives | negatives |
+|---|---|---|
+| [0.30, 0.40) | 2 | **1** |
+| [0.40, 0.50) | 0 | **1** |
+| [0.50, 0.60) | 4 | **3** |
+| [0.60, 0.70) | 1 | 0 |
+
+⭐ **5 negatives fall in [0.30, 0.70]** where the size-matched panel had **0/379**, and moving the floor
+0.50 → 0.30 admits **2 more positives against 2 more negatives — a 1:1 trade**, consistent in sign with
+the register's better-powered 62-for-70. ⟹ **the shipped 0.50 stands.**
+
+⚠ **Neither negative set is clean, and this bounds the whole exercise.** The size-matched panel is too
+EASY (0 in the decision band); the genome-wide set is contaminated the OTHER way — it labels a hit
+"negative" unless it lands on a same-family *annotated* gene, but §6e showed **3 MAGEA copies carry no
+annotation at all**, so the 19 negatives at [0.8, 0.9) and 5 at [0.9, 1.0) are very likely **unannotated
+true copies**. ⟹ **a defensible floor experiment needs a negative set that is adversarial AND
+annotation-independent; neither of mine is.** That, not the floor value, is the open problem.
+
+### What §6g still supports
+
+✅ The **P/R table itself stands** — it is the first non-circular measurement in §6 (nodes from
+annotation, truth from full-GFF product text, negatives size-matched, and the rule visibly fails):
+**pair recall 223/806 = 0.2767 [0.2469, 0.3086], component recall 48/72 = 0.6667, component purity
+1.0000, 0 cross-family edges (0/195 eligible, Wilson 95% upper 0.0193).**
+✅ **Coverage is the right quantity — AUC 0.9808** (n_pos 386, n_neg 379).
+✅ **MAGEA stays 27/35 at EVERY floor**, so its residual miss is not a threshold problem — the register's
+companion line explains it: *pairs with coverage exactly 0.00 cannot be admitted by any floor.*
+⛔ Only the **recommendation** to move the floor is withdrawn.
+
+⚠ **LESSON (third instance this session of the same class).** §6b's precision rested on 17 possible
+partners; §6d's guard result was a 0-of-0; §6g's floor result rested on a negative set with an empty
+decision band. **All three were zero/near-zero-candidate results read as strong ones.** Before quoting a
+rate: state the candidate count, and state what the control's construction EXCLUDES.
