@@ -2993,6 +2993,14 @@ which makes it a LOWER bound on difficulty, not an upper one.
 
 ## §6a — AMY: the family definition stated on DNA alone (2026-08-27)
 
+> ⛔⛔ **SUPERSEDED IN PART BY §6c (2026-08-28).** An adversarial audit broke this section's two
+> headlines: the `-p`/seed-invariance result (⛔ `-p` is INERT at this tier — `-X` implies
+> `--dual=no`) and the human comparator (⛔ CHM13 has 9–11 amylase units, not 5 — the LOC-name trap
+> named in this very section). The identity/coverage reading is also withdrawn: the 0.60 identity
+> floor sits below minimap2's emission floor and cannot fire. **Read §6c before quoting anything
+> here.** What stands: gorilla = 3 AMY copies, the complete triangle, and MGAM/MGAM2 excluded.
+
+
 **Why this section exists.** Every §5 experiment defined the family on the RNA representation — exon-sum
 representatives, one rep per locus, micro-exon guards, read-derived strand. Each of those is a place the
 definition can fail for reasons that have nothing to do with the definition. This section asks the prior
@@ -3123,6 +3131,14 @@ no O3 case.
 
 ## §6b — the DNA definition across four families: precision 1.0000, and orientation is the whole recall gap (2026-08-27)
 
+> ⛔⛔ **SUPERSEDED IN PART BY §6c (2026-08-28).** ⛔ The title's "precision 1.0000" is not
+> supportable (denominator = the prediction); ⛔ the scale-free narrowing was a ZERO-CANDIDATE
+> result and the hole is real (36/150 on repeat-rich small nodes); ⛔ the recall gain is
+> misattributed — it measures a node-extraction bug (reference vs gene orientation), not the
+> forward-only guard; ⛔ "+33 recall points" is really +23.08 POINTS; ⛔ the answer key is wrong in
+> 3 of 8 assertions. **Read §6c before quoting anything here.**
+
+
 §6a was n=1. This section runs the same DNA-level definition over **30 annotated CDS-envelope nodes**
 drawn from AMY, MAGEA, RFPL, GOLGA, HERC, SRGAP and NPIP, scored against an **answer key written before
 the run** (`amy/PREREGISTER.md`).
@@ -3215,3 +3231,148 @@ of §6b are not bought by loosening: the harder-tested arm is also the better-bo
 [0.37, 4.73]). Different substrate (DNA intervals vs RNA exon-sum reps), different species panel, and
 different construction. The numbers must not be pooled or ranked against each other.
 ⚠ **n is still 4 families / 13 members** on the recall side; only the precision side is now well-powered.
+
+---
+
+## §6c — ADVERSARIAL AUDIT OF §6a/§6b: seven of eight claims broken or narrowed (2026-08-28)
+
+A 25-agent audit (2 adversarial lenses per claim, then adjudication) attacked every load-bearing claim
+in §6a and §6b. **Seven of eight were REFUTED or OVERSTATED.** The arithmetic reproduced everywhere —
+every count in §6a/§6b is correct — but the *inferences* drawn from the counts mostly do not survive.
+This section is the correction of record; §6a and §6b must be read through it.
+
+### ⛔⛔⛔ 1. THE IDENTITY CLAUSE IS INERT — AND THIS REACHES BEYOND DNA
+
+⛔ **RETRACT "identity never binds" as a finding about the definition, on every substrate.** The E_r
+identity floor is 0.60. minimap2 cannot emit an alignment below its own scoring floor `B/(A+B)`:
+**default `A=2,B=4` ⟹ 0.667; asm20 `A=1,B=4` ⟹ 0.800.**
+
+⭐ **The observed minima track the preset, with the biology held constant**: the three default-scored
+PAFs bottom out at **0.6500 / 0.6313 / 0.6577**, while `amy_vs_genome.asm20.paf` bottoms out at
+**0.8118**. Over 71,950 non-self records, **0 fall below 0.60**. A log-linear fit to the [0.66, 0.76)
+bins predicts 34.2 records in [0.60, 0.65) against **0** observed (Poisson P = 1.4e-15) ⟹ the
+distribution is **TRUNCATED, not exhausted**.
+
+⭐ **Verified independently here** (synthetic control, seed 7): a 6 kb sequence against copies at 5–45%
+divergence emits an alignment **only for the 5% copy (identity 0.947)**; 15/25/30/35/40/45% give **no
+alignment at all**, under default *and* asm20 scoring, with **0 records below 0.60 identity**.
+
+⟹ ⭐⭐ **E_r is not a two-clause rule. It is COVERAGE (+ orientation); the identity clause has never been
+able to fire under default scoring.** Deleting the 0.60 floor leaves the 30-node partition
+byte-identical. ⚠⚠ **This reinterprets the RNA results too** — "IDENTITY NEVER FAILS 0/728" and
+"0.749–0.803 vs a 0.60 floor" are measurements of minimap2's emission floor, **not** findings about
+paralogue biology. Four "independent confirmations" were four measurements of the same constant.
+
+⛔ Also misattributed in §6b: **orientation blocks 9/9 and coverage does ZERO independent
+discriminative work in the forward arm.** The pair booked as "fails COVERAGE" (RFPL1–RFPL2) is itself an
+inverted duplication — its only forward record is a **292 bp fragment at coverage 0.0386**, recovering at
+**0.7682 / 0.9537 on reverse**. Coverage's only genuine bite is **1/16**, visible solely in the
+both-strands arm.
+
+### ⛔⛔ 2. §6b's SCALE-FREE NARROWING WAS A ZERO-CANDIDATE RESULT — AND THE HOLE IS REAL
+
+⛔ **RETRACT "the scale-free hole needs a shared REPEAT, not a length ratio."** It rested on an **empty
+cell**: **0 of 54 small (<2 kb) × giant (>100 kb) pairs produced any alignment record**, and no record
+among 89,447 joins a ≤2 kb node to a ≥100 kb node. **The quoted 319× ratio appears in NO pair the rule
+ever evaluated** (max ratio actually scored: **49.08×**; and the smallest node is MAGEA12 at 945 bp, not
+MAGEA1 at 951). This is precisely the project's own *check the candidate count before reading a verdict*
+trap — committed one section after restating it.
+
+⛔ **The stated cause was also false.** Unrelated gene bodies DO carry long homology: **133/209 = 63.6%**
+of aligned cross-family pairs span ≥476 bp on the shorter node, with contiguous match runs to **1,161 bp**
+(span 5,013 bp, HERC1×HERC2, identity 0.9469). They fail because the shorter node's **median length among
+aligned pairs is 18,977 bp**, where a 5 kb block is coverage 0.03.
+
+⭐⭐ **When the missing cell was supplied, the hole fired immediately**: 150 real repeat-rich 1,000 bp
+gorilla windows from a chromosome carrying no family node give **36/150 = 0.2400 spurious E_r edges**
+(coverage to 1.0000, identity 0.714–0.965) versus **0/150 repeat-poor windows** (Fisher **p = 2.7e-12**).
+⭐ **What actually protects the 30-node panel is ANNOTATION, not the rule**: node length and repeat
+content are confounded (Spearman ρ = +0.735), and **0/120 annotated genes <2 kb carry a ≥476 bp masked
+run, versus 261/286 = 0.9126 of genes ≥20 kb**. ⟹ the hole is real, ~24% on repeat-rich small nodes, and
+annotated CDS envelopes are structurally shielded from it.
+
+### ⛔⛔ 3. THE RECALL GAIN IS MISATTRIBUTED — IT IS MY EXTRACTION BUG, NOT THE GUARD
+
+⛔ **`fam_nodes.fa` was extracted in REFERENCE orientation even though `fam_nodes.bed` carries the gene
+strand (16 of 30 nodes are '−').** All 9 within-family pairs failing the forward arm are
+opposite-annotated-strand; all 8 passing are same-strand — **a perfect 17/17 confound.** Re-extracting
+the nodes in **GENE orientation** yields **16 edges / 12-13 placed / no-forward 8 → 0 WITH THE GUARD
+STILL ON** (confirmed two ways, including an alignment-free algebraic relabelling of the original PAF).
+
+⟹ ⭐⭐ **The correct fix is to store DNA nodes 5'→3' in gene orientation, NOT to drop the forward-only
+guard.** §6b's framing ("the guard is an RNA rule with no justification on DNA") is withdrawn as the
+*explanation*; the +23 points are real but they measure my node construction, not the guard.
+⛔ **Arithmetic correction: the gain is +23.08 percentage POINTS** (9/13 = 0.6923 → 12/13 = 0.9231).
+"+33 recall points" conflated the **relative** gain (+33.3%) with points — an inflation of 1.44×.
+⚠ **Power**: the +3 members come from 2 of 4 families and 3 inverted genes, so **n_eff ≈ 2**; a cluster
+bootstrap over families gives 95% CI **[0.0, 37.5] points, P(Δ=0) = 0.059**. ⚠ The metric is monotone
+non-decreasing under edge addition, so the SIGN was guaranteed a priori.
+
+### ⛔⛔ 4. `-p` AND `-N` ARE INERT AT THE E_r TIER — §6a's HEADLINE CONTRADICTS THE TREE
+
+⛔ **RETRACT "P1 seed-invariance makes `-p` a derived parameter."** Under `-c -X --no-long-join -k 11
+-w 5`, **`-X` implies `--dual=no` and `-p`/`-N` do nothing**: the shipped `fam_allvall.paf` is
+**byte-identical (89,447/89,447 records, md5 4b5920241b41e7e4a0022aee33387c07)** to a rerun at the
+minimap2 **default `-p 0.8`**. ⚠⚠ **`denovo_pipeline.rs:4194` already documents this** ("`-N`/`-p` are
+INERT at this tier; `-X` is the operative difference, because it implies `--dual=no`") — the §6a headline
+contradicted an in-tree finding. §6b's 8 forward / 16 both-strand / 0 cross-family result was **already a
+default-`-p` result.**
+
+⚠ The `-p` sweep did measure something real — the **stage-1 discovery pass** (no `-X`, target contains the
+seed's own locus, so a perfect self-hit sets the reference) — but there the true breakpoint is
+**0.471627 = 3898/8265, not 0.5**, the {0, 0.2, 0.5, 0.8} grid never probed 0.3–0.47, and count-invariance
+is **NON-MONOTONE** (holding on [0, 0.4716) and again on [0.5248, 1.0]) ⟹ "largest `-p` preserving
+invariance" is not well-defined.
+
+### ⛔⛔ 5. HUMAN AMY: THE LOC-NAME TRAP, COMMITTED ONE PARAGRAPH AFTER NAMING IT
+
+⛔ **"Human CHM13 has 5 AMY genes" is FALSE.** `NC_060925.1:103.3–103.9 Mb` carries **12 CDS-bearing
+loci — 11 protein-coding α-amylase plus the AMYP1 pseudogene**; applying §6a's OWN unit criterion (10 CDS
+blocks, 7.0–9.5 kb envelope) gives **9 units**. **"5" is exactly what `gene=AMY[0-9]` returns** — the
+identical LOC-name trap §6a documents for gorilla *one paragraph earlier*. ✅ **GGO = 3 stands** (same
+script). ⟹ the gorilla-vs-human contrast is **3 vs 9–11**, not 3 vs 5.
+
+⛔ **"Two independent methods agree" is withdrawn.** `GGO_segdup_putative.bedpe` carries
+**identity=nan in 399,405/399,405 rows**, score 0 throughout, and **FAILS its positive control 0/3**: it
+contains **no row pairing any two of the three real AMY duplications**. It is not a working instrument
+here. ⚠ Both arms also read `GGO.fasta`, so they were never independent, and **neither can address
+"reference-absent" by construction.** The off-cluster candidate refutation stands, but on the 600-gene
+panel **39/114 = 0.3421 of length-matched genes have ≥1 such off-locus repeat partner** — that outcome is
+the *negative control's* expected behaviour, not evidence.
+
+### ⛔⛔ 6. THE ANSWER KEY ITSELF IS WRONG IN 3 OF 8 ASSERTIONS — SAME ROOT CAUSE EVERY TIME
+
+`PREREGISTER.md` was built by a **prefix grep over NAMED genes**, which silently drops LOC-named
+paralogues. Both auditors independently found the same three errors:
+
+- ⛔ **GOLGA6L7 and GOLGA6L10 are NOT a family — they are different subfamilies.** 6L7 forms a clique with
+  LOC115931294 / LOC134757625 / LOC101137218 (all "golgin subfamily A member 6-like protein 7",
+  id 0.9668–0.9675, **cov 1.0000**); 6L10 with LOC115930840 / LOC101138066 ("6-like protein 9") and
+  LOC129523543 (id 0.9555–0.9922). Between the two clusters: **0/28 edges, max cov 0.3341.**
+  ⟹ ⭐ **§6b's ONE declared recall miss (GOLGA6L 0.5000) is a KEY ERROR, not a limitation of the rule.**
+- ⛔ **RFPL4A is not a singleton** — it heads an **8-locus tandem array** on NC_073244.2 (~9,142 bp
+  periodicity, 8 distinct GeneIDs, all "ret finger protein-like 4A") at **id 0.9738–0.9825, cov 1.0000** —
+  *tighter than the declared RFPL family*.
+- ⛔ **NPIPB11 is not a singleton, and "only NPIP member annotated" is factually false** — 5 NPIPB loci
+  exist; NPIPB11 edges LOC101141990 (id 0.9682, cov 0.8007) and LOC101134557 (id 0.9518, cov 0.8344).
+
+✅ **Survives**: AMY = {LOC101133335, AMY2A, AMY2B}; MAGEA = {1,4,9,10,12} as one family (id 0.7743–0.8723,
+cov 0.6339–1.0000, MAGEA10 the weakest link but clearing the floor); RFPL{1,2,3} with RFPL4A excluded
+(563 bp 3'-domain block, cov 0.4086); and the ancient sets correctly non-merging — **SRGAP1/2/3 max cov
+0.0059, HERC1–6 max 0.0414, GOLGA1–5/7 max 0.0725.** ⭐ The "fake pass" worry about SRGAP is **unfounded**:
+SRGAP1/2/3 have no annotated paralogue in the GFF.
+
+### ⚠ 7. PRECISION: THE ZERO IS REAL, THE WORD "1.0000" IS NOT — AND 0.50 IS UNTESTED
+
+The zero is genuine and not luck: within-family base rate among the 226 aligned pairs is **17/226 =
+0.0752 (13.3× lift)**, and P(a random 16-of-226 draw is all within-family) = **1.3e-23**.
+⛔ But **"precision 1.0000" has the prediction as its denominator** (n=8, n=16 ⟹ Wilson-95 *lower* bounds
+only **0.6756 / 0.8064**). ✅ **Correct statement: 0 cross-family edges among 209 eligible cross-family
+pairs, Wilson 95% upper 0.0180** (0/189, upper 0.0199 forward-only), plus **0/389 family×negative,
+upper 0.0098.**
+⚠⚠ ⭐ **The decision gap is EMPTY: highest cross-family coverage 0.4086 vs lowest true-edge coverage
+0.6339** ⟹ **any coverage floor in [0.41, 0.64] returns the identical partition, so the shipped 0.50 is
+UNTESTED on this panel.** ⚠ Also **every predicted component is already a clique**, so transitive closure
+added 0 pairs and single-linkage chaining — the usual false-merge source — was never exercised.
+⚠ The negative panel is **blind at the nodes supplying 2 of the 3 gained members**: all 5 MAGEA nodes have
+**zero** cross-family alignment records.
