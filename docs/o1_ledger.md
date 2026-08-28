@@ -2709,3 +2709,57 @@ annotated copy). **Only the WITHIN-panel comparisons above are safe.**
 family member and iterated to a fixed point converges, does not chain through repeats, and recovers the
 median family completely — and this holds for segmental-duplication-like groupings as well as for gene
 families.*
+
+## §5q — EDGE WEIGHTS: the partition discards a 0.9491-AUC signal, and using it changes nothing (2026-08-27)
+
+**Question (user): would other graph-theory concepts improve precision and recall?** Most are already
+refuted in the register — connected components (238-member blobs at density 0.08), pure cliques
+(over-splits tubulins/LILRs), min-cut/Fiedler/density as over-merge discriminators (AUC 0.35–0.52; **size
+dominates and connectivity INVERTS once size is controlled**), λ as a membership clause (entailed at n=2,
+and ~57% of families are pairs), and a pair-local edge veto replacing the partition (**the hairball's
+connectivity is DISTRIBUTED — dropping 63% of its edges still leaves a 206-node component**).
+
+⭐ **One thing was genuinely unexploited.** `denovo_pipeline.rs` flattened every edge to weight **1.0**
+before the partition — while Louvain underneath is a *weighted*-modularity algorithm. Identity and
+coverage were computed, used once for the threshold, then discarded.
+
+**The discarded value carries strong signal** (unit = E_r edge, 3-contig NPIP catalog):
+
+| edge class | n | median identity | median coverage |
+|---|---:|---:|---:|
+| NPIP ↔ NPIP (wanted) | 22 | **0.9878** | 0.9995 |
+| NPIP ↔ non-NPIP (suspect) | 42 | **0.8281** | 0.9525 |
+| non-NPIP ↔ non-NPIP | 1,782 | 0.7757 | 0.6642 |
+
+**AUC(identity) = 0.9491**, AUC(coverage) = 0.6418.
+
+### ⛔ And it does nothing end-to-end — the FOURTH such failure this session
+
+`RUSTLE_ER_WEIGHTED_PARTITION=identity`, OFF arm byte-identical:
+
+| arm | families | copies | NPIP loci | NPIP families | pure |
+|---|---:|---:|---:|---:|---:|
+| shipped (unweighted) | 83 | 484 | **12/31** | **5** | **3** |
+| **weighted by identity** | 88 | 484 | **12/31** | **5** | **3** |
+
+Identical on every objective endpoint. It splits 5 more blocks elsewhere at an unchanged copy count, and
+does not touch NPIP's recovery or its 5-way fragmentation.
+
+### ⭐⭐ THE MECHANISM, and it bounds the whole idea
+
+`family_split.rs:511` — `induced_density` computes `edges.iter().filter(...).count()`. **It DISCARDS the
+weight.** So the γ TEST (*whether* a block is split) is unweighted; only Louvain's `split_once` (*how* it
+is split) sees weights. Since **γ is inert on 79% of families**, weighting reaches only a fraction of a
+minority.
+
+⚠ **And making `induced_density` weighted would make things WORSE, not better.** Identity weights are
+< 1, so every weighted density is LOWER than its unweighted counterpart, more blocks fall under γ = 0.20,
+and the partition splits MORE — while NPIP is already over-split 5 ways (§5j). Recovering the current
+behaviour would need γ re-tuned to the weight distribution, which is fitting a threshold on the arms it
+is scored against — the move this project forbids.
+
+⟹ **VERDICT: edge weights are not the lever.** Retained as `RUSTLE_ER_WEIGHTED_PARTITION` (default OFF,
+byte-identical, in the params certificate) as the record of the experiment.
+⟹ **Answer to the original question: no graph-theoretic concept now looks promising.** The partition is
+not where O1 loses copies — §5e put **~3%** of the loss on the edge rule and everything downstream of it,
+and **~58%** on node construction. A better partition operates on the 3%.

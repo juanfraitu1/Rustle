@@ -2989,7 +2989,8 @@ pub(crate) fn homology_blocks_pooled_with_edges(
     refine: &RefineParams,
     gamma: f64,
 ) -> Result<(Vec<Vec<usize>>, Vec<(usize, usize)>)> {
-    let edges2 = homology_edges_all_reps_pooled(reps, pooled, refine)?;
+    let edges_w = homology_edges_all_reps_pooled_weighted(reps, pooled, refine)?;
+    let edges2: Vec<(usize, usize)> = edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
     // Every edge carries weight 1.0, so the weighted machinery underneath runs UNWEIGHTED. This is a
     // deliberate choice, not an oversight, and it is worth stating because `de` (hence identity) IS
     // computed for every edge and then discarded here.
@@ -3000,7 +3001,30 @@ pub(crate) fn homology_blocks_pooled_with_edges(
     // The lever that does move the result is WHICH edges exist (the floors, and the shared-exon rule),
     // not how strongly they are weighted. Revisit only if the edge rule is ever relaxed enough to admit
     // a genuinely graded population.
-    let edges3: Vec<(usize, usize, f64)> = edges2.iter().map(|&(a, b)| (a, b, 1.0)).collect();
+    // EDGE WEIGHTS (`RUSTLE_ER_WEIGHTED_PARTITION`, unset = OFF = every weight 1.0 = byte-identical).
+    //
+    // The partition currently discards identity and coverage: they decide whether an edge EXISTS and are
+    // then flattened to 1.0, even though Louvain underneath is a WEIGHTED-modularity algorithm. Measured
+    // on the 3-contig NPIP catalog (unit = E_r edge): NPIP<->NPIP edges have median identity 0.9878
+    // against 0.8281 for NPIP<->non-NPIP, an AUC of 0.9491. Coverage is weaker at AUC 0.6418.
+    //
+    // ⚠ This is EDGE-LEVEL evidence, and this project has had three definitional changes pass edge or
+    // node metrics and fail end-to-end (§4x, §5b, §5c). It must be judged on the PARTITION.
+    // ⚠ P1 (seed-invariance) survives because weighting changes only the SCORE inside `split_once`; the
+    // operation stays split-only from `all_components`, which is what the proof rests on.
+    let w_mode = std::env::var("RUSTLE_ER_WEIGHTED_PARTITION").unwrap_or_default();
+    let edges3: Vec<(usize, usize, f64)> = if w_mode.is_empty() || w_mode == "0" {
+        edges2.iter().map(|&(a, b)| (a, b, 1.0)).collect()
+    } else {
+        eprintln!(
+            "[partition] WEIGHTED by {} over {} edges",
+            if w_mode == "coverage" { "coverage" } else { "identity" }, edges_w.len()
+        );
+        edges_w
+            .iter()
+            .map(|&(a, b, i, c)| (a, b, if w_mode == "coverage" { c } else { i }))
+            .collect()
+    };
     let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma);
     Ok((blocks, edges2))
 }
@@ -4264,6 +4288,7 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ("footprint_nodes".into(), std::env::var("RUSTLE_FOOTPRINT_NODES").unwrap_or_else(|_| "<unset>".into())),
         ("footprint_min_cov".into(), std::env::var("RUSTLE_FOOTPRINT_MIN_COV").unwrap_or_else(|_| "2 (default)".into())),
         ("footprint_windows".into(), std::env::var("RUSTLE_FOOTPRINT_WINDOWS").unwrap_or_else(|_| "<unset>".into())),
+        ("weighted_partition".into(), std::env::var("RUSTLE_ER_WEIGHTED_PARTITION").unwrap_or_else(|_| "<unset>".into())),
         ("minimap2".into(), params.minimap2.clone()),
     ]
 }
@@ -5513,11 +5538,29 @@ fn count_distinct_loci(mut v: Vec<(String, u64, u64)>) -> u32 {
     n
 }
 
+/// `homology_edges_all_reps_pooled`, but also returning each edge's exemplar (identity, coverage).
+///
+/// Added because the partition DISCARDED those numbers: it flattened every edge to weight 1.0 before
+/// handing them to Louvain, which is a WEIGHTED-modularity algorithm. Measured on the 3-contig NPIP
+/// catalog, identity separates NPIP<->NPIP edges from NPIP<->non-NPIP at AUC 0.9491 (median 0.9878 vs
+/// 0.8281), so the flattening throws away a strong signal. Consumed only under
+/// `RUSTLE_ER_WEIGHTED_PARTITION`; the unweighted wrapper below keeps every existing caller byte-identical.
 pub(crate) fn homology_edges_all_reps_pooled(
     reps: &[DenovoTranscript],
     pooled: Option<&[Vec<Vec<u8>>]>,
     params: &RefineParams,
 ) -> Result<Vec<(usize, usize)>> {
+    Ok(homology_edges_all_reps_pooled_weighted(reps, pooled, params)?
+        .into_iter()
+        .map(|(a, b, _, _)| (a, b))
+        .collect())
+}
+
+pub(crate) fn homology_edges_all_reps_pooled_weighted(
+    reps: &[DenovoTranscript],
+    pooled: Option<&[Vec<Vec<u8>>]>,
+    params: &RefineParams,
+) -> Result<Vec<(usize, usize, f64, f64)>> {
     // EDGE SUBSTRATE. By default the E_r edge is computed on the ASSEMBLED exon-sum (`rep.seq`). That makes
     // family membership hostage to assembly completeness: two copies of one family whose transcripts assemble
     // DISJOINT exon subsets (one gets exons 1-2, its sibling 7-8) share almost no sequence, so no edge forms
@@ -5615,10 +5658,12 @@ pub(crate) fn homology_edges_all_reps_pooled(
         let se_bp: u64 = std::env::var("RUSTLE_SHARED_EXON_MIN_BP")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
         eprintln!("[shared-exon] MODE ACTIVE: replacing the exon-sum rule (id >= {se_id}, >= {se_bp} bp)");
-        return match pooled {
-            Some(p) => shared_exon_edges_pooled(reps, p, se_id, se_bp, params),
-            None => shared_exon_edges(reps, se_id, se_bp, params),
+        let se = match pooled {
+            Some(p) => shared_exon_edges_pooled(reps, p, se_id, se_bp, params)?,
+            None => shared_exon_edges(reps, se_id, se_bp, params)?,
         };
+        // shared-exon mode reports no per-edge exemplar, so every weight defaults to 1.0
+        return Ok(se.into_iter().map(|(a, b)| (a, b, 1.0, 1.0)).collect());
     }
     let mut prov: BTreeMap<(usize, usize), TierMask> = BTreeMap::new();
     // Exemplar (identity, coverage, tier-that-reported-them) per edge, consumed by `RUSTLE_ER_EDGE_DUMP`
@@ -5774,7 +5819,13 @@ pub(crate) fn homology_edges_all_reps_pooled(
             write_er_edge_dump(&prefix, reps, &seqs, &set, &prov, &metrics, params, span_genome.is_some());
         }
     }
-    Ok(set.into_iter().collect())
+    Ok(set
+        .into_iter()
+        .map(|(a, b)| {
+            let (i, c, _) = metrics.get(&(a, b)).copied().unwrap_or((1.0, 1.0, TierMask::default()));
+            (a, b, i, c)
+        })
+        .collect())
 }
 
 /// Keep the highest-coverage exemplar per edge across tiers (ties -> higher identity, then lower tier bit).
