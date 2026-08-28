@@ -3807,3 +3807,74 @@ repeat-bridge / spurious-chain shape the coverage clause alone would not catch.
 - ⚠ **Not everything moves**: for the small within-family tallies the audit checked, the 17-pair result
   was identical under both estimators (8 / 8 / 1 / 0), so §6g's P/R table is only mildly affected —
   735/14,739 = 5.0% of its records shift. **It should be recomputed under `nm/bl` before being quoted.**
+
+---
+
+## §6j — the P/R table, corrected: recall depends on TRUTH GRANULARITY, and the protein tier is real (2026-08-28)
+
+Three corrections to §6g, in order of size.
+
+### 1. ✅ The shipped-estimator recompute changes NOTHING
+
+§6i retracted §6c because the offline helper used `1 − de:f` while the shipped rule uses `nm/bl`.
+Rescoring §6g's whole panel with the shipped predicate copied verbatim from `denovo_pipeline.rs:3091`:
+**223 edges, pair recall 0.2767, component recall 48/72, purity 1.0000, 0/195 cross-family, 3/184
+family × negative — every number identical.** The 735 sub-0.60 `nm/bl` records in `ff.paf` either fail
+the coverage clause anyway or are not the best-coverage record for their pair. ⟹ **§6c's CLAIM was
+wrong; §6g's MEASUREMENTS survive it intact.**
+
+### 2. ⛔ The preset-union hypothesis is REFUTED — and it un-does §6e's "non-nested"
+
+Pre-registered: *presets are non-nested (§6e), so union recall > max(arm) at precision drop ≤ 0.01.*
+
+| arm | edges | pair recall | component recall |
+|---|---|---|---|
+| `-k11 -w5` (sensitive) | 223 | 0.2767 | 0.6667 |
+| `asm20` (core) | 86 | 0.1067 | 0.3889 |
+| **UNION** | **223** | **0.2767** | **0.6667** |
+
+⭐ **asm20-only edges: 0. `asm20` ⊂ `-k11 -w5` STRICTLY at the edge level — the union buys nothing.**
+⚠ **This also undermines §6e's "presets are NON-NESTED"**: that comparison ran `-k11 -w5` **per contig**
+against `asm20` **genome-wide**, so the one GOLGA6L copy `asm20` "uniquely" found is most likely a
+chunking artefact, not a preset property. ⟹ **§6e's non-nestedness claim is downgraded to UNVERIFIED**;
+the union rule ("prefer the union of presets") is withdrawn.
+
+### 3. ⭐⭐⭐ THE RECALL NUMBER IS A PROPERTY OF THE TRUTH SET'S GRANULARITY
+
+§6g's "MAGEA 27/35" scored the rule for failing to merge genes my truth set had lumped. `"MAGEA"` is in
+fact **eight distinct MAGE subfamilies** — MAGE-B 12, MAGE-A 12, MAGE-D 4, MAGE-C 3, MAGE-E 2, MAGE-F 1,
+MAGE-H 1 — and MAGE-D/E/F/H are the divergent non-CT MAGEs. **The rule SHOULD refuse those merges.**
+GOLGA6 likewise splits into 6L / 6C / 6A (the first audit had already found 6L7 and 6L10 are different
+subfamilies). Rescoring at subfamily granularity, same nodes, same rule:
+
+| truth granularity | families | genes | pair recall | Wilson 95% | component recall | purity | cross edges |
+|---|---|---|---|---|---|---|---|
+| **coarse** (product family) | 5 | 72 | 0.2767 | [0.2469, 0.3086] | 48/72 = 0.6667 | **1.0000** | **0** |
+| **subfamily** | 12 | 62 | **0.8209** | [0.7620, 0.8677] | **57/62 = 0.9194** | 0.9286 | 40 |
+
+⭐⭐ **The SAME edge set scores pair recall 0.2767 or 0.8209 depending only on what you call a family.**
+Coarse truth buys purity 1.0000 at recall 0.2767; fine truth buys recall 0.8209 at purity 0.9286. ⟹
+**neither number is "O1's recall" — the granularity is a MODELLING CHOICE the data does not determine,
+and every recall/purity figure in this project must state which one it used.** The 40 cross-subfamily
+edges are not obviously errors: MAGE-A↔MAGE-B is a real relationship at the family level.
+
+### ⭐⭐ The protein tier is a genuine, additive win
+
+`protein_tail` (mmseqs, **DEFAULT OFF**) is documented to reach *"coding paralogs past the ~0.65
+nt-identity floor where both nucleotide tiers find no edge"* — exactly the **420/806 = 52.11%** of
+within-family pairs that have **no nucleotide alignment at all** under either preset (vs 163/806 = 20.22%
+that have a record but fall below the coverage floor). Scored on this panel (annotated CDS translated
+in-frame — an **UPPER BOUND** on the shipped tier, which must guess the ORF by 6-frame translation):
+
+| granularity | nucleotide | **+ protein** | new edges |
+|---|---|---|---|
+| coarse, component recall | 0.6667 | **0.7361** | 19 — **19 within-family, 0 cross** |
+| subfamily, component recall | 0.9194 | **0.9516** | 11 — 8 within, 3 cross |
+| subfamily, pair recall | 0.8209 | **0.8607** | |
+
+⭐ **NPIP goes 3/5 → 5/5 (complete) and RFPL4A-family stays 8/8; coarse purity stays 1.0000.**
+⚠ At subfamily granularity it adds 3 cross-subfamily edges (purity 0.9286 → 0.9231), so it is additive
+but **not free** — and mmseqs **is installed here**, so the tier is runnable.
+⟹ **Worth an end-to-end pipeline A/B with `protein_tail` ON.** ⚠ Untested through the binary; this panel
+is annotation-derived, and the shipped tier's 6-frame ORF guess will do worse than the in-frame CDS used
+here.
