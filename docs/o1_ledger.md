@@ -2763,3 +2763,64 @@ byte-identical, in the params certificate) as the record of the experiment.
 ⟹ **Answer to the original question: no graph-theoretic concept now looks promising.** The partition is
 not where O1 loses copies — §5e put **~3%** of the loss on the edge rule and everything downstream of it,
 and **~58%** on node construction. A better partition operates on the 3%.
+
+## §5r — ⭐⭐⭐ TIER-2 ADMISSION: expression and assemblability are different questions (2026-08-27)
+
+**Proposal (user): separate coverage so it says which loci are REALLY expressed, and let SIMILARITY admit
+the rest.** This is the first proposal this session aimed at the layer that actually loses copies.
+
+### Why NPIP is not fully recovered — the funnel, each row measured
+
+| step | loss | remaining |
+|---|---:|---:|
+| 31 NPIP loci | | 31 |
+| no expression (< 3 reads lying ≥ 50% INSIDE) | −8 | 23 |
+| **expressed but NO NODE built** | **−10** | 13 |
+| node built, joins no family | −1 | **12** |
+
+⭐ **The dominant loss is loci that ARE expressed and cannot be assembled.** Reads 3–19 per locus, but
+their reads never agree on a splice structure (worst case 14 reads → 14 distinct chains), so no chain
+reaches `PASS1_MIN_READS = 2` and nothing pools to `GATE_MIN_READS = 3`.
+⟹ the pipeline **conflates "is this locus expressed?" with "can I assemble a transcript model here?"**,
+and failing the second currently kills the first.
+
+### The measurement
+
+For each of the 10 expressed-but-nodeless loci, its best match among the 13 loci that DO have a node:
+
+| substrate | clears the SHIPPED `E_r` rule |
+|---|---:|
+| oracle (true locus spans) | **10/10** — identity 0.7890–0.9980, coverage 0.999–1.000 |
+| **pipeline-knowable** (span of the READ CLUSTER vs a node-bearing locus's span) | **10/10** — identity 0.7890–0.9979, coverage 0.8802–1.000 |
+
+⭐ **It works on sequence the pipeline can actually obtain** — the read cluster's own extent, not the
+truth interval. ⟹ projected **12/31 → 22/31**, against the 23-locus expressed ceiling.
+
+### ⭐⭐ NEGATIVE CONTROL — and this is what the previous four candidates failed
+
+The same rule applied to 200 non-NPIP read clusters (≥ 3 reads):
+
+| | rate |
+|---|---:|
+| true positives admitted | **10/10 = 1.0000** |
+| **non-NPIP controls admitted** | **4/200 = 0.0200** |
+
+153/200 controls produced a forward alignment to tier-1 and only 4 cleared the rule, so **the coverage
+clause is what rejects them**, not the absence of homology.
+⚠ **0.0200 is an UPPER bound**: "non-NPIP" is defined by the 31-locus homology-derived truth set, so a
+genuine NPIP-related locus outside those 31 counts here as a false positive.
+
+### ⚠ Why this is not the same pattern as §4x / §5b / §5c / §5q
+
+Those four had strong edge-level evidence and failed end-to-end **because they changed the EDGE rule,
+which §5e puts at ~3% of the loss** — a better edge cannot reach a locus that has no node. **This targets
+the ~58%**: it admits loci that never became nodes. It is the first candidate whose mechanism matches the
+measured failure.
+
+⚠ **STILL A PROJECTION, NOT A RESULT.** No end-to-end run yet. Open questions the run must answer: how the
+read-cluster span behaves when reads scatter (the `max_gap` failure of §5i), what the genome-wide
+admission rate is against 2,847 reps rather than 200 controls, and whether admitted copies survive locus
+collapse and the γ partition.
+
+⟹ **The output must carry the EVIDENCE TIER** — tier 1 assembled its own model, tier 2 was admitted by
+similarity plus weak expression. They are different claims and a single count would hide that.
