@@ -237,3 +237,65 @@ is not a γ certificate.
 Also absent and load-bearing: the **coverage ≥ 0.50** clause, the **forward-only orientation guard**, the
 **separate unspliced clustering rule** that builds a third to a half of all nodes, and the fact that
 step 5 **permanently discards every non-representative isoform**.
+
+---
+
+# Where the method actually loses copies — measured, 2026-08-27
+
+The steps above describe what the pipeline does. This section says which of them is responsible for what
+is missed, because that was not obvious and four repair attempts were aimed at the wrong stage.
+
+## The oracle decomposition
+
+Substituting each stage with a perfect version, on the gorilla NPIP family (31 loci located by homology
+to the 19 human copies; fibroblast reads from the assembly's own animal):
+
+| nodes | edges | NPIP loci grouped |
+|---|---|---:|
+| oracle — the 31 true locus spans | **the real shipped rule** | **30/31** |
+| real — what the pipeline builds | the real shipped rule | **12/31** |
+
+⭐⭐ **GIVEN A NODE, THE DEFINITION GROUPS IT.** The edge rule owns ~**3%** of the loss; everything
+upstream of it owns ~**58%**. Of the 18 NPIP loci that never become nodes: **7 are not transcribed at
+all**, 7 have 1–6 reads, and 4 clear the read gate yet still build nothing because **no two reads agree
+on a splice structure** (14 reads → 14 mutually conflicting chains).
+
+⟹ **the open problem in O1 is node construction, not the family definition.** Four routes that enrich the
+EDGE were measured and refuted: shared-exon matching, pooled-isoform exons, the genomic-span substrate,
+and lowering the coverage floor. The last is the sharpest — it has genuinely strong edge-level evidence
+(FPR +0.0018 for TPR +0.4476 against 87,990 real genomic pairs) and still cannot move NPIP off 12/31,
+because a perfect edge rule cannot connect a locus that has no node.
+
+## Two things that are true of the definition, and worth stating plainly
+
+- **Identity never binds.** Repeat-driven cross-homology between random genomic regions is universal —
+  50.5% of random 30 kb pairs align and 49.0% clear identity ≥ 0.60. The COVERAGE clause is what separates
+  "shares an Alu" from "is a paralogue".
+- **Completeness is penalised.** Edge formation falls as a transcript model gets more complete:
+  single-exon reps form an edge at 0.1840, ≥15-exon reps at 0.0580. The mechanism is the coverage
+  denominator — a stub needs half of ~2 kb, a complete model half of ~30 kb across diverged UTRs. This
+  survives a repeat attack (the deficit is 3.67× after vetoing repeat-driven stub edges) and **has no
+  known repair**.
+
+## Optional modes that exist, with their measured effect
+
+| flag | what it does | measured |
+|---|---|---|
+| `RUSTLE_FOOTPRINT_NODES=1` | a node may be the union of bases covered by ≥ 2 reads, exonic only, with NO requirement that reads agree on a splice structure | +1 NPIP locus (12/31 → 13/31), purity held at 3 pure families, 0 lost. **Ships OFF.** |
+| `RUSTLE_READ_STRAND=1` | measure a single-exon rep's strand from read orientation instead of the `'+'` placeholder | two-sided: 972 edges gained, 864 lost; 16 antisense families correctly dissolved, 18 genuinely lost. **Ships OFF.** |
+
+## Finding a family's members from ONE annotated copy
+
+`bench/family_closure.py` — align a seed to the genome, use its hits as the next round's seeds, repeat to
+a fixed point.
+
+| | |
+|---|---|
+| gorilla NPIP, seeded from `NPIPB11` alone | converges in 3 rounds at 25/31 loci; **23/23 = 1.000 of the EXPRESSED members** |
+| the pipeline's own RNA discovery | 13/31 loci, 13/23 expressed |
+| human, Soto's 65-family panel | **65/65 converge**, median recall **1.000** per stratum |
+| segmental-duplication-like families | 0.885 vs 0.895 for gene families — **no drift** |
+
+⚠ It finds **LOCI, not nodes**. Feeding these windows to RNA node construction was measured and REJECTED:
+it loses to the unseeded footprint pass (12/31 vs 13/31). It narrows the annotation dependency from many
+seeds to one; it does not remove it.

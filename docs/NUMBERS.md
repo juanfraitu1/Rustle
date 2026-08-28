@@ -143,3 +143,18 @@ catalog, transcript set, code path and method — so the structural claims are s
 | **15× is the knee** | coverage requirement | ⚠ **refutes my own ~25× estimate** — TPR is flat in coverage; depth buys PRECISION, not sensitivity |
 | **456.91× / 1,389 Gbp** | WGS available under SAMN04003007 | ⚠ excludes the 62 RS II runs — those are 2015 **Y flow-sorted** DNA, a different experiment |
 
+## Where O1 loses copies, and the seeded closure (2026-08-27)
+
+| number | what it is | the trap it avoids |
+|---|---|---|
+| **30/31 vs 12/31** | oracle nodes vs real nodes, same edge rule | ⟹ the definition owns **3%** of the loss, node construction **58%** |
+| **0.1840 vs 0.0580** | edge formation, single-exon vs ≥15-exon reps | completeness is PENALISED; survives a repeat attack at 3.67× |
+| **50.5% / 49.0%** | random 30 kb genomic pairs that align / clear identity ≥0.60 | ⟹ identity never binds; the COVERAGE clause is what separates a repeat from a paralogue |
+| **+0.0018 FPR for +0.4476 TPR** | lowering the coverage floor, on 87,990 real pairs | ⚠ **strong edge evidence that FAILS end-to-end** — NPIP stays at 12/31 |
+| **25/31, converged round 3** | seeded closure, gorilla NPIP, ONE annotated seed | non-member hits constant at 1 every round ⟹ no repeat-chaining |
+| **23/23 = 1.000** | expressed NPIP members found by that closure | vs 13/23 for the pipeline's own discovery |
+| **65/65 converge, median recall 1.000** | human Soto panel, 65 families | ⚠ HUMAN — never pool with the gorilla figures |
+| **SD-like 0.885 vs gene-like 0.895** | closure recall by family type | the SD-drift concern was well-founded and **does not manifest** |
+| **r = −0.043** | closure recall vs family size, 65 families | large families are not harder; 14/16/17-member families all reach 1.000 |
+| **8/248 = 0.0323 vs 6/256 = 0.0234** | canonical motifs among footprint gaps vs chance | Poisson p ≈ 0.24 ⟹ the old gate admitted footprints **at random**; fixed |
+
