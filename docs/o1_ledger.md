@@ -3758,3 +3758,52 @@ companion line explains it: *pairs with coverage exactly 0.00 cannot be admitted
 partners; §6d's guard result was a 0-of-0; §6g's floor result rested on a negative set with an empty
 decision band. **All three were zero/near-zero-candidate results read as strong ones.** Before quoting a
 rate: state the candidate count, and state what the control's construction EXCLUDES.
+
+---
+
+## §6i — ⛔ RETRACT §6c's "the identity clause is inert": I measured the WRONG ESTIMATOR (2026-08-28)
+
+⛔⛔⛔ **§6c's headline — "E_r's 0.60 identity floor sits below minimap2's emission floor and is
+structurally incapable of firing", and its corollary "E_r is really a one-clause rule" — is WITHDRAWN.**
+It was computed with **gap-compressed identity (`1 − de:f`)**. **The shipped rule does not use that
+estimator.** `denovo_pipeline.rs:3091` reads:
+
+```rust
+if nm / bl >= params.sensitive_identity && cov >= params.min_coverage {
+```
+
+i.e. **matches / block-length**, in which every gap BASE counts as a mismatch, whereas `de:f` charges a
+gap of any length once. minimap2's scoring floor `B/(A+B)` bounds the **gap-compressed** quantity, not
+`nm/bl` — so the emission-floor argument simply does not apply to the clause the code evaluates.
+
+Measured across every PAF in this investigation:
+
+| PAF | records | **< 0.60 by `nm/bl` (SHIPPED)** | < 0.60 by `1 − de:f` | min `nm/bl` |
+|---|---|---|---|---|
+| `pr/ff.paf` | 14,739 | **735** | 0 | 0.2373 |
+| `pr/fn.paf` | 268 | **11** | 0 | 0.4655 |
+| `seq/disc_allvall.paf` | 234,086 | **16,139** | 0 | 0.1478 |
+| `fam_allvall.paf` | 89,447 | **2,950** | 0 | 0.2014 |
+| `seq/sensitive_all.paf` | 644,905 | **7,519** | 0 | 0.2071 |
+
+⟹ ⭐⭐ **Under the shipped estimator the identity clause fires on 1.2–6.9% of records and reaches as low
+as 0.1478. It is NOT inert, it is NOT dominated by the aligner, and E_r remains a genuine TWO-CLAUSE
+rule.** ✅ **What the clause actually does is now clear and is a real function: it rejects INDEL-HEAVY
+alignments** — high gap-compressed identity but low base-level identity — which is exactly the
+repeat-bridge / spurious-chain shape the coverage clause alone would not catch.
+
+⚠⚠ **Consequences, stated explicitly:**
+- ⛔ **"Four independent confirmations were four measurements of the same constant" is withdrawn** for any
+  result computed with the shipped `nm/bl` rule. ⚠ The RNA figures (`0/728` in false_omission,
+  0.749–0.803 in def_failures) must each be re-checked for **which estimator produced them** before being
+  either defended or re-retracted — I have not done that, and must not assume either way.
+- ⛔ The proposal to **verify inertness end-to-end by expecting a byte-identical catalog is dropped** —
+  the prediction is now expected to FAIL, and running it would have burned the run to learn what one
+  `grep` of line 3091 shows.
+- ⭐ **Cause: `amy/dna_define.py::ident()` prefers the `de:f` tag and only falls back to `nmatch/blen`.**
+  Every offline number in §6a–§6h used it. ⚠ **The estimator must MATCH the shipped rule, or the offline
+  panel is measuring a different definition than the pipeline implements.** Re-derived offline results
+  are hypothesis generators (T8) — this is the failure mode that makes them so.
+- ⚠ **Not everything moves**: for the small within-family tallies the audit checked, the 17-pair result
+  was identical under both estimators (8 / 8 / 1 / 0), so §6g's P/R table is only mildly affected —
+  735/14,739 = 5.0% of its records shift. **It should be recomputed under `nm/bl` before being quoted.**
