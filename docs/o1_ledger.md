@@ -3118,3 +3118,67 @@ dispersed repeat whose coordinates happen to overlap AMY2A, not an AMY copy.
 off-cluster down to 0.05 coverage; the SEDEF catalog's only off-cluster candidate is refuted on direct
 test. **Gorilla has 3 AMY copies; human CHM13 has 5.** No reference-absent copy — this family presents
 no O3 case.
+
+---
+
+## §6b — the DNA definition across four families: precision 1.0000, and orientation is the whole recall gap (2026-08-27)
+
+§6a was n=1. This section runs the same DNA-level definition over **30 annotated CDS-envelope nodes**
+drawn from AMY, MAGEA, RFPL, GOLGA, HERC, SRGAP and NPIP, scored against an **answer key written before
+the run** (`amy/PREREGISTER.md`).
+
+⚠ **The prefix trap was avoided by design.** `GOLGA*` and `HERC*` are not families — GOLGA6L7/6L10 are
+the multi-copy pair while GOLGA1-5/7 are distinct genes, and HERC1/2 (giant) are unrelated to HERC3-6
+(small). ZNF already sprang this trap once (231 "members" that are a domain superfamily). The key
+therefore separates **recent near-identical duplicates** (expected to form families) from **ancient
+domain-sharing paralogs** (expected to stay apart, as MGAM/MGAM2 correctly did in §6a).
+
+### The pre-registered failure mode did NOT occur
+
+Node size spans **951 bp (MAGEA1) to 302,838 bp (SRGAP1) — a 319× range**, so I pre-registered that the
+scale-free coverage denominator would fire: ~476 bp of the 951 bp MAGEA1 landing anywhere inside the
+302 kb SRGAP1 gives coverage-of-the-shorter ≥ 0.50 and a spurious edge.
+
+⭐ **Zero such edges appeared.** 226 pairs had *some* alignment; 8 became edges; **0 were cross-family.**
+⟹ **The scale-free hole is not triggered by size disparity alone — it needs a shared REPEAT.** Unrelated
+gene bodies do not contain ~476 bp of contiguous ≥60% homology. This narrows the hole recorded in
+[[project_o1_definitional_failures]]: it is a *repeat* problem, not a *length-ratio* problem, and a
+length-ratio-based guard would therefore be aimed at the wrong variable.
+
+### Which clause fails, over every within-family pair
+
+| outcome | count |
+|---|---|
+| edge formed | 8 |
+| fails COVERAGE | 1 |
+| fails IDENTITY | **0** |
+| **NO FORWARD ALIGNMENT** | **8** |
+
+⭐⭐ **Identity fails zero times** — the fourth independent confirmation of "identity never binds"
+(0/728 in false_omission; 0.749–0.803 vs the 0.60 floor in def_failures; 0.68–0.78 for MGAM/MGAM2 in
+§6a). ⭐⭐⭐ **But 8 of the 10 misses have no forward alignment at all, and every one of them is an
+INVERTED DUPLICATION**: MAGEA1/4/9 are (+) while MAGEA10/12 are (−); RFPL1/3 are (+) while RFPL2 is (−);
+GOLGA6L7 is (−) while GOLGA6L10 is (+). On the reverse strand **7/8 are recoverable**, including
+**RFPL2–RFPL3 at coverage 0.999, identity 0.959** — a near-perfect paralogue pair killed purely by
+orientation. The 8th (GOLGA6L7–GOLGA6L10) fails coverage at 0.294 even on the reverse strand, so it is a
+genuine coverage miss, not an orientation one.
+
+| arm | edges | cross-family pairs | members placed |
+|---|---|---|---|
+| forward-only | 8 | 0 | 9/13 = **0.6923** |
+| both strands | 16 | 0 | 12/13 = **0.9231** |
+
+per family, both-strands: AMY **1.0000**, MAGEA **1.0000** (was 0.6000), RFPL **1.0000** (was 0.6667),
+GOLGA6L 0.5000 (unchanged — the real coverage miss).
+
+### ⚠ This validates a decision already in the code; it is NOT a bug report
+
+`RefineParams::forward_only_active()` is `require_forward_alignment && substrate ==
+Substrate::TranscriptOriented`, documented as *"meaningful only between transcript-oriented reps, so it
+is inert on a reference-oriented substrate no matter what `require_forward_alignment` says"*, and
+`denovo_pipeline.rs:4985` sets `dna_params.substrate = Substrate::ReferenceOriented` for `--from-genome`.
+⟹ **The shipped DNA path already disables the guard.** What is new here is the *measurement*: the design
+choice is worth **+33 recall points (0.6923 → 0.9231) at zero cross-family cost** on a pre-registered
+key. ⚠ **This says nothing about the RNA default** — on transcript-oriented reps an antisense overlap is
+a different biological object, and §4o's frozen-antisense panel (0/58 admitted, antisense-family rate
+0.0048) is the instrument that governs that decision, not this one.
