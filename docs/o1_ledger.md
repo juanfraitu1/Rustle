@@ -2824,3 +2824,58 @@ collapse and the γ partition.
 
 ⟹ **The output must carry the EVIDENCE TIER** — tier 1 assembled its own model, tier 2 was admitted by
 similarity plus weak expression. They are different claims and a single count would hide that.
+
+## §5s — ⭐⭐⭐ TOP-UP: coverage is NOT the limit — LOCUS COLLAPSE is (2026-08-27)
+
+**Proposal (user): top up every locus with simulated reads, so the definition can be tested with
+expression removed as a variable.** Run, and it overturns the standing attribution.
+
+### The construction, and its verification
+
+40 simulated reads per locus from a 2%-error template, **added to** (not substituting for) the real
+fibroblast BAM: 1,240 reads, merged total 1,010,636 primaries.
+⚠ **Stratified by necessity**: only **11/31** loci accept a transcript projected from the one annotated
+gorilla copy even at `-N 50 -p 0.05` — the copies are too diverged (median within-family identity 0.82)
+for a sibling's splice structure to transfer. The other 20 were simulated from the genomic span.
+
+**The delivery was verified, not assumed**: **93.71%** of simulated reads landed at their SOURCE locus,
+5.56% were absorbed by a paralogue, 0.73% fell outside. **30/31 loci received ≥ 20 reads; 0 received
+none.** So coverage really was delivered.
+
+### ⛔ And recovery barely moves
+
+| arm | families | copies | NPIP nodes | NPIP in a family |
+|---|---:|---:|---:|---:|
+| real reads only | 83 | 484 | 13/31 | **12/31** |
+| **topped up (40 reads each)** | 76 | 445 | **17/31** | **15/31** |
+
+Per arm (never pooled — the unspliced arm builds genomic-substrate nodes, worse per §5g):
+**spliced 5/11 in a family · unspliced 10/20.**
+⚠ **Two-sided: +8 loci gained, 5 LOST**, net +3. Families fall 83 → 76 and copies 484 → 445.
+
+⟹ **With ~40 clean reads at essentially every locus, recovery is 15/31, not 31/31. COVERAGE IS NOT THE
+LIMITING FACTOR.**
+
+### ⭐⭐⭐ Where it actually fails — and it is not where §5e implied
+
+Of the **14** loci still nodeless, **13 PASS the read gate** — 38–94 reads, pooled support up to **43**,
+best single chain up to **23**. No drop reason is logged for any of them (the readthrough and mis-chain
+filters name their coordinates; 160 and 14 drops respectively, none at these loci), and the transcripts
+survive to the 18,088 that reach collapse.
+
+⚠ **Checked that this is not my measurement rule again: 13/14 have NO overlapping rep AT ALL**, not a rep
+failing a ≥50% overlap test. The nearest rep sits **0.7–141.6 kb away** and does not overlap.
+
+⟹ **The transcripts are built and then ABSORBED by locus collapse.** `collapse_loci_span_aware` merges
+the locus with a neighbour, `pick_locus_rep` keeps ONE transcript, and the winner's span is its own — so
+an absorbed locus leaves **no trace at its own coordinates**.
+
+### What this changes
+
+⚠ **§5e attributed ~58% of the loss to "node construction". This localises it further: the transcripts
+EXIST. The loss is in LOCUS COLLAPSE and representative selection, downstream of the gate and upstream of
+the definition.** Same mechanism as §5j's double representation (3/12 loci carrying two reps in different
+families) and §5o's absorbed footprints, now seen from the other side.
+
+⚠ §4s closed *"which transcript becomes the representative"* (0/215 edge inheritance). **This is a
+different question — whether a LOCUS survives collapse at all — and it is not covered by that closure.**
