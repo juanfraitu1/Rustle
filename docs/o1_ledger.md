@@ -3381,6 +3381,14 @@ added 0 pairs and single-linkage chaining — the usual false-merge source — w
 
 ## §6d — the node set rebuilt from SEQUENCE, not names (2026-08-28)
 
+> ⛔⛔ **LARGELY SUPERSEDED BY §6f (2026-08-28).** A second audit refuted this section's three
+> headlines as TRUE BY CONSTRUCTION: the "guard costs nothing" result is a 0-of-0 (0/202 pairs could
+> even supply a reverse-strand candidate) and its recommendation is backwards — the shipped
+> `--from-genome` path already force-disables the guard; the "7 clean components" are forced by the
+> stage-1 gate (58/58 within-seed pairs entailed); and the NPIP "SD blocks" are in fact 6 UNANNOTATED
+> GENE COPIES (85–99% of NPIPB11's CDS union). The hyphen mechanism came from a truncated index.
+> **Read §6f before quoting anything here.**
+
 §6c showed every name-based error in §6a/§6b came from one cause: a **prefix grep over gene symbols**,
 which silently drops LOC-named paralogues. This section rebuilds the node set name-blind and re-runs.
 
@@ -3460,6 +3468,11 @@ sensitive per-contig re-run is the test, recorded separately.
 
 ## §6e — the sensitivity test: AMY survives, MAGEA is 26 copies, and presets are NON-NESTED (2026-08-28)
 
+> ⚠ **PARTLY CORRECTED BY §6f.** The AMY, RFPL and MAGEA-multi-copy results STAND. But the preset
+> gap is larger than stated (asm20 3 vs -k11 -w5 **18** on the window, not ~11–12) and its MECHANISM is
+> wrong: seeding contributes **0** of the gap — the gate is SCORING (`-s` with the mismatch penalty).
+> The naming breakdown here is computed from the same truncated index §6f retracts.
+
 §6d left one live threat: every genome-wide count used `asm20`, which was shown to miss MAGEA copies at
 identity 0.76–0.85. Test: re-run all four small seeds at **`-k 11 -w 5 -p 0 -N 500`, one contig at a
 time** (per-contig keeps memory ~1.6 GB; `k=11` on the whole genome OOMs at 24.9 GB). 644,905 records.
@@ -3514,3 +3527,90 @@ LOC101153208 "golgin subfamily A member 6-like protein 24"), while finding 6 of 
 UNION over any single preset.** This extends the standing rule beyond `-p`/`-N`.
 ⚠ It also means **§6e's own "AMY = 3" is a two-preset agreement, not a proof** — the strongest available
 statement, but a third preset could still differ.
+
+---
+
+## §6f — SECOND AUDIT: §6d is largely an artefact of its own construction (2026-08-28)
+
+A second 15-agent audit attacked §6d/§6e. **Four claims REFUTED, one OVERSTATED.** Every count again
+reproduced exactly; the inferences again did not. The single deepest finding:
+
+### ⛔⛔⛔ THE TWO-STAGE DESIGN IS CIRCULAR — STAGE 2 MADE NO DECISION AT ALL
+
+Stage 1 admits an interval iff it covers **≥ 0.50 of the seed**. Stage 2 then asks whether pairs of those
+intervals cover ≥ 0.50 of each other. ⭐⭐ **All 26/26 nodes are 100.00% covered by their own seed's
+alignment blocks (the node IS the merged target span), so 58/58 within-seed pairs are FORCED to clear
+0.50** — verified by interval-overlap lower bound, min stage-1 query coverage 0.5084. **All 58 possible
+within-seed pairs aligned and all 58 became edges; 0/267 cross-seed.** ⟹ **every family is a complete
+clique because fragmentation was impossible, and the constant predictor "edge iff same seed" reproduces
+both arms exactly.** ⛔ **RETRACT §6d's "7 components, one per seed, zero cross-seed contamination" as
+evidence for anything about E_r** — the cross-seed zero is real but low-information (0/144 aligned
+cross-seed pairs, Wilson-95 upper 0.0260).
+
+⟹ **A discover-then-define pipeline cannot validate its own edge rule unless stage 2 applies a criterion
+stage 1 did not already enforce.** This is the general lesson and it should be checked against the
+shipped RNA path.
+
+### ⛔⛔⛔ "THE GUARD COSTS NOTHING" IS A 0-OF-0 — AND IT IS BACKWARDS
+
+⛔ **RETRACT §6d's "58 vs 58, the forward-only guard costs nothing."** The guard's **candidate count is
+ZERO**: **0/202 aligned pairs supply a reverse-strand record clearing identity 0.60 AND coverage 0.50**;
+max reverse coverage in the panel is **0.1532** (0.0592 among the 58 edges) — **3.26×** below the floor.
+`discover.py` extracts every interval in the orientation of its hit to ONE per-family seed (audited:
+0/26 strand-mixed merges, 0 loci discovered under two seeds), so same-seed nodes are **co-oriented by
+fiat**. It is the same *check the candidate count* trap as §6c, in a new costume.
+
+⭐⭐ **The measurement this panel DOES support points the OTHER WAY.** Relabelling the same PAF to
+reference orientation (alignment-free; coverage and identity are revcomp-invariant) drops the forward arm
+**58 → 26**, and the 32 pairs the guard rejects are **32/32 WITHIN-SEED, 0/32 cross-seed** — *every*
+rejection it can make here **destroys a true edge** (null: E[lost] = 29.00, **P(lost = 0) = 1.9e-06**).
+
+⛔⛔ **§6d's recommendation "the fix is node construction, and the guard stays ON" is WRONG IN
+DIRECTION.** The shipped `--from-genome` path already stores reference-oriented reps and **force-disables**
+the guard, locked in on 2026-08-19 by `genome_mode_grouping_keeps_an_inverted_duplication` and
+`refine_params_default_is_orientation_agnostic` — whose message reads *"if you are here to flip this
+default, that is the bug."* ⚠ **I proposed flipping exactly that default.** The tree was already right.
+
+⚠ **And the proposed fix is not available to a de novo caller**: co-orientation needs one seed per family
+— *the assignment the graph is meant to compute* — and deriving orientation from the graph instead
+(2-colouring each component by alignment-strand parity) requires precisely the reverse-strand records the
+guard forbids.
+⚠ **Provenance**: no minimap2 CMD log survives for `disc_allvall.paf`, and it retains **530 full-length
+diagonal self hits**, which is NOT `-X` behaviour — the quoted preset is unverified.
+
+### ⛔⛔ NPIP: THE INFERENCE WAS BACKWARDS — THEY *ARE* GENE COPIES
+
+⛔ **RETRACT "7 of 8 NPIP intervals contain no NPIP gene, therefore they are SD blocks not gene copies."**
+Both halves fail. **(1) A name-negative is zero-information here**: only **5** NPIP-family gene records
+exist genome-wide, so P(a random 104,913 bp window contains one) = **0.000198**; expected count among the
+7 blocks is **0.0014** and observed is 0. **The constant predictor "contains no annotated NPIP gene"
+scores 8/8** against the claim's 7/8 — the readout measured NCBI's annotation sparsity, not block content.
+**(2) The blocks ARE gene copies**: CIGAR-projecting NPIPB11's 27-block, 12,609 bp CDS union through each
+discovery record recovers **0.8520–0.9935 of the CDS union in 6 of the 7 non-seed intervals** (26–27 of 27
+blocks). ⟹ ⭐⭐ **these are 6 unannotated NPIP gene copies — an O3 result — not segmental duplication
+blocks.** ⚠ The "node granularity determines what a copy means" moral was drawn from a false premise;
+it may still be true, but this panel is not evidence for it.
+
+### ⛔⛔ THE NAMING STORY: RIGHT PHENOMENON, WRONG MECHANISM, BROKEN INSTRUMENT
+
+⛔ **RETRACT the hyphen mechanism and the 7/26 figure.** `gene_index.pkl` was **truncated**: 22,706
+entries holding **one mRNA-level `product=` per gene**, with **no CDS products, no pseudogenes (7,027),
+no lncRNAs (7,330)**. ⛔ **The hyphen claim is false on its own exemplars** — read from the GFF's **CDS**
+`product=`, the symbol-bearing genes carry the hyphenated form themselves: RFPL1 = *"LOW QUALITY PROTEIN:
+ret finger protein-like 1"*, RFPL2/3 = *"ret finger protein-like 2/3 isoform X1"*, GOLGA6L7 = *"LOW
+QUALITY PROTEIN: golgin subfamily A member 6-like protein…"*. ⭐ With a complete census, **symbol-only
+intervals = 0/26 = 0.0000** (symbol 11/26, keyword 16/26), against the **7/26** I reported off the broken
+index. ✅ **What survives**: RFPL is 9/9 and GOLGA6 14/14 LOC-named, so a *symbol* grep genuinely misses
+most members, and 3 MAGEA copies have no annotation at all. ⛔ **But "both name routes fail identically,
+split by a hyphen" is withdrawn** — it was an artefact of my own truncated parse.
+
+### ⚠ PRESET SENSITIVITY: TRUE AND UNDERSTATED, BUT THE MECHANISM IS WRONG
+
+✅ The headline holds and is **stronger** than stated: on the 4 Mb MAGEA window, `-x asm20` → **3** copies
+and `-k11 -w5` → **18** (not "~11–12"; that figure could not be reproduced at any `-p` and was most
+likely a **unit swap** — annotated loci touched, counted as copies).
+⛔ **But "asm20's `k=19/w=10` seeding misses them" is FALSE: seeding contributes 0 of the 15-copy gap.**
+`-x asm20 -k11 -w5` still gives **3**, while `-k19 -w10` with default scoring gives **16** and
+`-x asm20 -A 2` gives **16**. ⟹ **the gate is SCORING (the `-s` minimal-chain-score threshold interacting
+with the mismatch penalty), not seeding.** The practical rule from §6e stands — record the preset — but
+the stated cause must be corrected.
