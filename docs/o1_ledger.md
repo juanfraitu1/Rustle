@@ -3455,3 +3455,62 @@ divergence range, but its `k=19 / w=10` seeding does not find it. ⟹ **extend t
 RECORD THE PRESET (`-x`/`-k`/`-w`) ALONGSIDE `-p` AND `-N`.** ⚠ **§6a's "gorilla has exactly 3 AMY
 copies, no unannotated copy" used `asm20` and is therefore under-powered by exactly this gap** — a
 sensitive per-contig re-run is the test, recorded separately.
+
+---
+
+## §6e — the sensitivity test: AMY survives, MAGEA is 26 copies, and presets are NON-NESTED (2026-08-28)
+
+§6d left one live threat: every genome-wide count used `asm20`, which was shown to miss MAGEA copies at
+identity 0.76–0.85. Test: re-run all four small seeds at **`-k 11 -w 5 -p 0 -N 500`, one contig at a
+time** (per-contig keeps memory ~1.6 GB; `k=11` on the whole genome OOMs at 24.9 GB). 644,905 records.
+
+| seed | records | copies `-k11 -w5` | copies `asm20` |
+|---|---|---|---|
+| **AMY** | 20,418 | **3** | **3** |
+| RFPL | 587,948 | 3 | 3 |
+| GOLGA6L | 36,510 | 6 | 7 |
+| **MAGEA** | 29 | **26** | 3 |
+
+### ✅ §6a's AMY claim SURVIVES the sensitivity attack
+
+The sensitive scan returns **the same 3 intervals** — LOC101133335 / AMY2A / AMY2B, all annotated,
+**nothing unannotated, nothing off-cluster** — despite 20,418 raw records. ⟹ the 0.60–0.80 identity gap
+§6c flagged is **closed for AMY**: **gorilla has 3 AMY copies under both `asm20` and `-k11 -w5`,
+genome-wide, `-p 0 -N 500`.**
+⭐ RFPL is the strongest demonstration of the coverage clause doing real work: **587,948 raw records
+collapse to 3 copies.** The repeat noise is enormous and the clause removes essentially all of it.
+
+### ⭐⭐⭐ MAGEA HAS 26 COPIES, AND A SYMBOL GREP SEES 26.9% OF THEM
+
+26 intervals, all on `NC_073247.2` (X-linked, as MAGEA should be), identity 0.7275–1.0000,
+coverage 0.513–1.000, **0/26 above 50% soft-masked (max 9.7%) — none is a repeat artefact.** About half
+(13/26) are near-full-length at coverage ≥ 0.95; the rest are partial copies.
+
+| how the copy is annotated | n |
+|---|---|
+| symbol-named `MAGEA*` | 7 |
+| LOC, product **"melanoma-associated antigen"** | 9 |
+| LOC, **no product at all** (pseudogene) | 6 |
+| **NO annotation whatsoever** | **3** |
+| other product text | 1 |
+
+⚠⚠⚠ **A THIRD NAMING CONVENTION — and it defeated the fix §6d proposed.** The same family, in the same
+GFF, is written `MAGEA9` → *"MAGE family member A9"* for symbol genes and `LOC129530018` →
+*"melanoma-associated antigen 9"* for LOC genes: **different words entirely, not a hyphen**. §6d's
+product-keyword census searched `"MAGE family member A"` and returned exactly **5** — it missed **all 9**
+melanoma-associated-antigen genes. ⟹ **the census I built to escape the symbol trap fell into the same
+trap one level down.** A symbol grep sees **7/26 = 26.9%**; the product grep sees 5/26.
+⟹ ⭐⭐ **No name-based membership test is trustworthy. Only sequence.**
+
+⭐ **O3 material**: **3 copies carry no annotation at all**, and 6 more are pseudogenes with no product —
+present in the reference, absent from the naming.
+
+### ⚠⚠ PRESETS ARE NON-NESTED — NEITHER DOMINATES
+
+⛔ **The sensitive scan MISSED a GOLGA6L copy that `asm20` found** (`NC_073240.2:24,974,895-24,979,577`,
+LOC101153208 "golgin subfamily A member 6-like protein 24"), while finding 6 of the other 7. ⟹ **`-k11
+-w5` is not a strict superset of `asm20`**; each preset finds copies the other misses.
+⟹ **a copy count is a property of (seed, preset, `-p`, `-N`, node unit) — report all five, and prefer the
+UNION over any single preset.** This extends the standing rule beyond `-p`/`-N`.
+⚠ It also means **§6e's own "AMY = 3" is a two-preset agreement, not a proof** — the strongest available
+statement, but a third preset could still differ.
