@@ -2930,3 +2930,61 @@ MEASURED**, though §5f's real-read pattern (14 reads → 14 chains) is the same
 
 ⟹ **Two repairs are now on the table and they are independent**: locus collapse (§5s) and junction
 placement tolerance at a realistic scale (tens to low hundreds of bp, not 5). Neither is the definition.
+
+## §5u — ⛔⛔ RETRACTION of §5t's aligner claim: the simulated templates were not transcripts (2026-08-27)
+
+**Prompted by the user asking whether the simulated reads were simply not varied enough, or the splicing
+not convincing. The splicing was not convincing. It was not splicing at all.**
+
+### The defect
+
+§5t's spliced arm simulated reads from "transcripts" produced by projecting the one annotated gorilla NPIP
+copy onto each locus with `minimap2 -x splice`. Inspected:
+
+| | |
+|---|---:|
+| blocks under 20 bp | **6,429 / 6,919 = 0.9292** |
+| `NPIP0` | 2,088 blocks, **median 2 bp** |
+| `NPIP1` | 2,043 blocks, **median 1 bp** |
+| projected junctions that are canonical | 81/94 = **0.8617** (real splice sites are ~0.99) |
+
+⟹ **these are SHATTERED ALIGNMENT BLOCKS, not gene models.** Splice-aware alignment across
+0.82-identity paralogues fragmented the transcript into thousands of micro-blocks, and the simulated
+reads were drawn from that. A read carrying 2,000 one-base "exons" is not an mRNA, and no aligner
+behaviour can be inferred from how it maps.
+
+### ⛔ What is RETRACTED
+
+- **"40 reads from ONE template yield a median of 28 distinct chains — the ALIGNER fragments them."**
+  The input was garbage; the fragmentation is the simulation's, not the aligner's.
+- **The donor-gap distribution** (median 64 bp, q25 8, q75 187, 0.187 of gaps ≤ 5 bp). Measuring scatter
+  from an invalid template measures nothing.
+- **§5t's qualification of §5f.** §5f tested ±5 bp snapping on REAL reads and concluded they genuinely
+  disagree on splice structure. **That conclusion STANDS, unqualified.** The retraction is mine, not its.
+
+### ✅ What SURVIVES, and why
+
+The two arms had different template quality, and only one was invalid:
+
+| arm | template | loci | nodes | in a family |
+|---|---|---:|---:|---:|
+| spliced | projected — **92.9% of blocks < 20 bp, INVALID** | 11 | 5 | 5 |
+| **unspliced** | the locus **genomic span** — a real contiguous sequence, **VALID** | 20 | 12 | **10** |
+
+⟹ **on the valid arm alone, 10/20 recovered — so 10 loci still fail with ~40 reads from a legitimate
+template.** §5s's core finding is unaffected: **coverage is not the limiting factor and locus collapse
+absorbs loci that pass the read gate.** Of the 14 nodeless loci in §5s, **8 are from the unspliced (valid)
+arm**, including cases with pooled support up to 43.
+
+⟹ **§5t's OTHER finding also survives** — that 6/8 previously-unexpressed loci became nodes once topped
+up, so the "23 expressed loci" ceiling is a property of the real-read substrate rather than of the method.
+That count does not depend on template quality.
+
+### ⚠ The lesson
+
+**A simulation is only as good as its generative model, and I never inspected mine.** The 28-chain result
+was striking enough to feel like a discovery, and it was an artefact of an input I had not looked at. The
+check that caught it — *are these blocks the size of exons?* — costs one command and should have run
+before the first read was simulated. ⚠ **The user's second objection (no isoform diversity) also stands
+and is unfixed**: one template per locus means the simulation cannot reproduce real isoform structure,
+which makes it a LOWER bound on difficulty, not an upper one.
