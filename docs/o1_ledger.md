@@ -2988,3 +2988,133 @@ check that caught it — *are these blocks the size of exons?* — costs one com
 before the first read was simulated. ⚠ **The user's second objection (no isoform diversity) also stands
 and is unfixed**: one template per locus means the simulation cannot reproduce real isoform structure,
 which makes it a LOWER bound on difficulty, not an upper one.
+
+---
+
+## §6a — AMY: the family definition stated on DNA alone (2026-08-27)
+
+**Why this section exists.** Every §5 experiment defined the family on the RNA representation — exon-sum
+representatives, one rep per locus, micro-exon guards, read-derived strand. Each of those is a place the
+definition can fail for reasons that have nothing to do with the definition. This section asks the prior
+question: **stated on DNA, with genomic intervals as nodes, does the definition work?** Nothing here uses
+reads, exon sums, rep picking, or a strand vote.
+
+### The substrate
+
+Gorilla annotation (`GGO_genomic.gff`, GCF_029281585.2, NHGRI_mGorGor1-v2.0_pri) carries **3 coding
+amylase genes plus 1 pseudogene** in ~112 kb of `NC_073224.2`. ⚠ **AMY1 is present but under a `LOC`
+name** — `LOC101133335` has product `alpha-amylase 1B`; searching on `gene=AMY` alone finds only AMY2A
+and AMY2B and would have reported the family as size 2. Human CHM13 carries **5** (AMY2B, AMY2A, AMY1A,
+AMY1B, AMY1C) in ~392 kb of `NC_060925.1`.
+
+⚠ **Annotation gene spans are unusable as DNA nodes here.** `AMY2A`'s gene span is 50,111 bp and
+*overlaps* `AMY2B`'s, and the pseudogene sits inside `AMY2B` — a readthrough transcript variant inflates
+the span. The **CDS envelope** is clean and, notably, **uniform**:
+
+| | gene | CDS envelope | span | CDS blocks |
+|---|---|---|---|---|
+| GGO | LOC101133335 (AMY1B) | 136,222,106–136,230,308 | 8,202 | 10 |
+| GGO | AMY2A | 136,262,941–136,271,157 | 8,216 | 10 |
+| GGO | AMY2B | 136,309,116–136,317,270 | 8,154 | 10 |
+| HSA | AMY2B / AMY2A / AMY1A / AMY1B / AMY1C | — | 7,898–8,227 | 10 each |
+
+⭐ **Every AMY unit, both species, is 10 CDS blocks and ~8.2 kb.** This matters for one specific reason:
+O1's single named definitional hole is that the min-length coverage denominator is **scale-free**
+(§4/def_failures — a ~1 kb repeat clears 0.50 of any node under 2 kb). With every node at 8.2 kb, **that
+hole cannot bite on this family**, so anything that fails here fails for another reason.
+
+### Stage 1 — discovery (seed → genome)
+
+One seed, the AMY1B genomic interval, against the whole genome, `-x asm20 -p 0 -N 500`, keeping hits at
+identity ≥ 0.60 and ≥ 0.50 of the **query** covered (the chromosome is not a node, so the denominator is
+the query):
+
+| copy | identity | cov_q | annotation |
+|---|---|---|---|
+| NC_073224.2:136,222,099–136,230,351 | 1.0000 | 1.000 | AMY1B (self) |
+| NC_073224.2:136,262,934–136,271,200 | **0.9278** | 1.000 | AMY2A |
+| NC_073224.2:136,309,109–136,317,310 | **0.9303** | 1.000 | AMY2B |
+
+**3/3 annotated copies, at full query coverage.** Genome-wide the seed produces **only these 3 records**;
+relaxing the coverage floor 0.50 → 0.20 → 0.05 adds **nothing**, and there are no off-cluster hits.
+
+### Stage 2 — definition (copies all-vs-all)
+
+The discovered intervals, all-vs-all under the shipped rule (`-c -X --no-long-join -k 11 -w 5`; identity
+≥ 0.60 **and** coverage ≥ 0.50 **of the shorter**, forward-only), with MGAM and MGAM2 — which carry the
+α-amylase domain but are a different family — as the **negative control**:
+
+| pair | strand | identity | cov of shorter | edge |
+|---|---|---|---|---|
+| cpA–cpB | + | 0.9282 | **1.0000** | YES |
+| cpA–cpC | + | 0.9308 | **1.0000** | YES |
+| cpB–cpC | + | 0.9360 | **1.0000** | YES |
+| MGAM–cpA | − | 0.7698 | 0.0342 | no |
+| MGAM2–cpB | + | 0.6814 | 0.0635 | no |
+| MGAM–MGAM2 | − | 0.7613 | 0.0127 | no |
+
+⭐ **The AMY copies form a complete triangle (γ = 1.0); MGAM and MGAM2 are separate singleton
+components.** ⭐⭐ **The controls pass the identity floor and are excluded by coverage alone** — 0.68–0.78
+identity against a 0.60 floor, killed at 0.013–0.064 coverage. This is the **same signature** recorded on
+RNA ("IDENTITY NEVER BINDS", 0.749–0.803 vs a 0.60 floor, 0/728): it is a property of the rule, not of
+the RNA representation.
+
+### ⭐⭐ `-p` decides whether the definition is even well-posed
+
+`-p` is minimap2's secondary-to-primary score ratio. Running all three copies as seeds against the
+cluster (real minimap2 runs at each `-p`, not an offline re-derivation):
+
+| `-p` (with `-N 500`) | seed cpA | seed cpB | seed cpC | seed-invariant? |
+|---|---|---|---|---|
+| 0.0 | 3 | 3 | 3 | ✅ |
+| 0.2 | 3 | 3 | 3 | ✅ |
+| 0.5 | 1 | 2 | 2 | ❌ |
+| **0.8 (minimap2 default)** | 1 | 1 | 1 | family invisible |
+
+⭐⭐ **P1 seed-invariance holds at `-p ≤ 0.2` and breaks at `-p ≥ 0.5`.** At the default `-p 0.8` the
+family collapses to 3 singletons. This reproduces the MAPKBP1 lesson (hapcnv: 1/1 at `-p 0.8`, 9/8 at
+`-p 0.1`) on an independent family, and it converts `-p` from a tuned knob into a **derived** one:
+choose the largest `-p` at which the partition is seed-invariant. That is a threshold fixed by a
+property of the output, not by fitting to truth.
+
+### What this establishes, and what it does not
+
+⭐ **On DNA the definition is exact on this family**: 3/3 recovered, a perfect clique, a domain-sharing
+negative control correctly excluded, and no unannotated copies. The RNA-side failures catalogued in §5
+(2,088-block projections, stub representatives, placeholder strand, one-rep-per-locus) are therefore
+**representation failures, not definition failures** — the same rule, given clean DNA nodes, is exact.
+
+⚠ **Gorilla 3 vs human 5** is consistent with the human-specific AMY1 expansion and is *not* an O3
+detection: no reference-absent copy was found, at any coverage floor down to 0.05.
+⚠ **Scope**: one family, one genome, n=1 — this is an existence proof that the DNA statement is clean,
+not a measurement of its precision or recall.
+⚠ **Sensitivity caveat**: `asm20` addresses ~20% divergence, so copies between the 0.60 identity floor
+and ~0.80 could in principle be missed; the `-k 11 -w 5` genome pass is the control for that and is
+recorded separately.
+
+### §6a addendum — the sensitivity control, and two traps it contained
+
+The `-k 11 -w 5` genome pass intended as the divergence control **was killed at 24,943,544 KB RSS**
+(24.9 GB of a 25 GB machine) after 5 minutes. ⚠ **OPERATIONAL: `k=11` against the 3.5 Gb genome is an
+OOM, not a slow job** — the index reports *average occurrences 736.4*, and the shipped pipeline only ever
+uses `-k 11 -w 5` on the small representative FASTA, never on a genome. Do not repeat it.
+
+The control was instead run **independently of minimap2**, against the SEDEF segdup catalog
+(`GGO_segdup_putative.bedpe`), asking: does any genome-wide duplication block overlap an AMY gene body?
+
+⚠ **TRAP 1 — a single garbage record made every gene look 100% duplicated.** The catalog contains
+`NC_073224.2:73,990,166-145,002,185 <-> NC_011120.1:0-16,411`: a **71,012,019 bp** span paired with the
+**16,411 bp mitochondrial genome**. It spuriously overlaps every gene on the arm, and reported *100.0% of
+the gene* for all three AMY copies. **A 71 Mb "duplication block" is not a duplication** — check the
+block length before reading an overlap fraction.
+
+⚠ **TRAP 2 — the one real off-cluster candidate was a repeat, and it looked convincing.** After removing
+the mtDNA record, exactly one informative row survived: AMY2A paired over **7,840 bp = 95.4% of the gene**
+with `NC_073227.2:75,086,075-75,096,529`. Directly tested, that interval is **99.4% soft-masked repeat,
+carries no annotated gene, and produces ZERO alignment to AMY2A** at `-k 11 -w 5 -p 0 -N 50`. It is a
+dispersed repeat whose coordinates happen to overlap AMY2A, not an AMY copy.
+
+⭐ **Result: two independent methods agree.** The minimap2 seed search finds 3 copies and nothing
+off-cluster down to 0.05 coverage; the SEDEF catalog's only off-cluster candidate is refuted on direct
+test. **Gorilla has 3 AMY copies; human CHM13 has 5.** No reference-absent copy — this family presents
+no O3 case.
