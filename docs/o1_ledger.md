@@ -3614,3 +3614,89 @@ likely a **unit swap** — annotated loci touched, counted as copies).
 `-x asm20 -A 2` gives **16**. ⟹ **the gate is SCORING (the `-s` minimal-chain-score threshold interacting
 with the mismatch penalty), not seeding.** The practical rule from §6e stands — record the preset — but
 the stated cause must be corrected.
+
+---
+
+## §6g — an honest precision/recall table, and the 0.50 coverage floor TESTED (2026-08-28)
+
+§6f established that §6b/§6d could not measure the rule: their node sets were built by discovery from a
+seed, so stage 2's edges were entailed by stage 1's gate. **This panel is built differently and is
+non-circular by construction**:
+
+- **Nodes come from ANNOTATION, not discovery** — the CDS envelope of every annotated member, extracted
+  in **gene orientation**. Stage 2 can therefore disagree with stage 1, and it does.
+- **Truth comes from normalised `product=` text over the FULL GFF** (2,374,329 feature lines; CDS
+  products, pseudogenes and lncRNAs included — the parse §6f showed was missing before).
+- **Negatives are SIZE-MATCHED** unrelated genes (576 of them; median 2,421 bp vs the families' 2,547).
+
+⚠ **The rule could fail here, and did**: it misses 10 of 72 members and produces 3 candidate false
+merges. That is what makes the numbers meaningful.
+
+### Families, by product text (symbol-blind)
+
+| family | members | LOC-named |
+|---|---|---|
+| MAGEA | 35 | 40% |
+| GOLGA6 | 16 | 88% |
+| RFPL | 13 | 69% |
+| NPIP | 5 | 80% |
+| AMY | 3 | 33% |
+
+### Precision / recall at the SHIPPED floor (identity ≥ 0.60, coverage ≥ 0.50 of the shorter)
+
+| family | members | annotated pairs | edges | pair recall | Wilson 95% | component recall |
+|---|---|---|---|---|---|---|
+| AMY | 3 | 3 | 3 | **1.0000** | [0.4385, 1.0000] | **3/3** |
+| RFPL | 13 | 78 | 32 | 0.4103 | [0.3078, 0.5211] | 8/13 |
+| NPIP | 5 | 10 | 4 | 0.4000 | [0.1682, 0.6873] | 3/5 |
+| GOLGA6 | 16 | 120 | 32 | 0.2667 | [0.1957, 0.3521] | 7/16 |
+| MAGEA | 35 | 595 | 152 | 0.2555 | [0.2221, 0.2920] | 27/35 |
+| **ALL** | **72** | **806** | **223** | **0.2767** | **[0.2469, 0.3086]** | **48/72 = 0.6667** |
+
+**Precision**: 223 edges, **0 cross-family**; cross-family false-merge rate **0/195 eligible** of 1,750
+possible, Wilson 95% **[0, 0.0193]**. Family × size-matched negative: **3/184 eligible** = 0.0163,
+Wilson 95% [0.0056, 0.0468]. **Component purity 1.0000 — 0 components mix two annotated families.**
+
+⚠ **The 3 "false merges" are probably TRUE positives.** All three are the same partner,
+`LOC115931109` at `NC_073242.2:29,435,860` — chr16, in the SULT1A / CLN3 / PDXDC1 neighbourhood, i.e. the
+classic **NPIP segmental-duplication region** — hitting three different NPIP genes at **identity
+0.9411–0.9674, coverage 0.7284–0.8862**. Annotated *"serine/arginine repetitive matrix protein 2-like"*.
+A 95%-identity relationship over 3/4 of a 20 kb span is a paralogue, not an error. ⟹ **report as
+CANDIDATE false merges; the true rate is plausibly 0/184.**
+
+### ⭐⭐⭐ THE 0.50 COVERAGE FLOOR IS TOO CONSERVATIVE — 0.30 STRICTLY DOMINATES IT
+
+§6c found the decision gap EMPTY, so 0.50 was untested. **On this panel the band is populated on the
+positive side and empty on the negative side**, which is exactly what makes the floor testable:
+
+- **positives with coverage in [0.30, 0.70]: 142**
+- **negatives with coverage in [0.30, 0.70]: 0 / 379** (Wilson 95% upper on the in-band negative rate
+  **0.0151**) — the negatives are **bimodal**: repeat noise below 0.30, and the 3 suspect NPIP pairs
+  at 0.73–0.89.
+
+⟹ **Across the whole [0.30, 0.70] band the floor trades recall against NOTHING.**
+
+| floor | pair recall | precision | component recall | purity | mixed comps |
+|---|---|---|---|---|---|
+| 0.20 | 0.4355 | 0.9832 | 0.8611 | 1.0000 | 0 |
+| **0.30** | **0.3821** | **0.9904** | **0.8611** | **1.0000** | **0** |
+| 0.40 | 0.3151 | 0.9883 | 0.7639 | 1.0000 | 0 |
+| **0.50 (shipped)** | 0.2767 | 0.9867 | 0.6667 | 1.0000 | 0 |
+| 0.70 | 0.2060 | 0.9822 | 0.6528 | 1.0000 | 0 |
+
+⭐⭐ **0.50 → 0.30 gains +85 true edges and +19.4 points of component recall (0.6667 → 0.8611) at
+UNCHANGED purity (1.0000, 0 mixed components) and NO additional false positives** — precision actually
+*rises* to 0.9904. **GOLGA6 goes 7/16 → 16/16 and NPIP 3/5 → 5/5 (both complete); RFPL 8/13 → 11/13.**
+[0.20, 0.30] is a plateau, so **0.30 is the conservative end of the optimum.**
+
+⭐ **The coverage clause itself is validated: AUC = 0.9808** (n_pos 386, n_neg 379). It is the right
+quantity; only the threshold is miscalibrated.
+
+⚠ **Scope, stated plainly.** (i) n = **5 families / 72 members / one genome** — this is a calibration
+signal, not a universal constant. (ii) Truth is annotation-derived and annotation is unreliable — 3 MAGEA
+copies genome-wide carry no annotation at all (§6e), so the recall denominator is itself incomplete.
+(iii) **MAGEA stays 27/35 at every floor** — 8 members are unreachable by coverage at any threshold, so
+the residual miss is not a threshold problem. (iv) ⚠⚠ **This does NOT transfer to the RNA path
+unexamined**: §4s measured that **60.51% of the RNA edge set falls below the 0.50 floor under a 1.49×
+rep-length inflation**, so the same change there has a different and unmeasured consequence. Test the DNA
+arm first.
