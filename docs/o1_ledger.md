@@ -3878,3 +3878,70 @@ but **not free** — and mmseqs **is installed here**, so the tier is runnable.
 ⟹ **Worth an end-to-end pipeline A/B with `protein_tail` ON.** ⚠ Untested through the binary; this panel
 is annotation-derived, and the shipped tier's 6-frame ORF guess will do worse than the in-frame CDS used
 here.
+
+---
+
+## §6k — TBC1D3: subfamily as a LEVEL of one tree, selected by the widest merge gap (2026-08-28)
+
+The user's scoping: subfamilies are meaningless at n=2 and meaningful for clusters like TBC1D3. The
+register agrees arithmetically — a split needs n≥3 and **348/494 = 70.45% of GGO families are 2-copy**,
+which is why hierarchy-as-catalog-refinement was refuted (inert on 80.57%). This section applies it to
+**one clustered family**, which is the domain where it can work.
+
+### Locating the family: gorilla TBC1D3 has 18 copies to human's 9
+
+⚠ **Gorilla TBC1D3 is 0/9 by symbol** (the three `TBC1D3*` names are TBC1D30/31/32, different genes) and
+**no gorilla TBC1D3 coordinates existed anywhere in the project**. Located here by homology from the 9
+human CHM13 copies (`tbc1d3/hsa_tbc1d3.fa`).
+**Preset recorded in full** (§6e's rule): `-x asm20 -p 0 -N 500`, per contig (bounded ~1.1 GB RSS),
+identity ≥ 0.60 by **`nm/bl`** (the shipped predicate, §6i), query coverage ≥ 0.50, merge slop 5 kb.
+
+| tier | n | identity | coverage | location |
+|---|---|---|---|---|
+| **full-length** | **11** | 0.9713–0.9785 | 1.000 | NC_073228.2 |
+| partial (TBC1D3G-like) | 5 | 0.8422–0.9054 | 0.507–0.678 | NC_073228.2 |
+| distal | 2 | 0.8792–0.9043 | ~1.000 | NC_073243.2 |
+
+⭐ **The identity distribution is BIMODAL with an empty gap from 0.9054 to 0.9713** — a two-level
+structure visible before any clustering is run.
+
+### ⭐⭐⭐ The widest merge gap selects the level, and the level is right
+
+Copies extracted **in hit orientation** (co-oriented), all-vs-all `-c -X --no-long-join -k11 -w5`,
+average linkage on **d = 1 − identity × coverage** (the composite that won the parallel variant test;
+plain 1 − identity did **worse**, contradicting `family_hierarchy.py`'s design note that coverage "would
+only add noise" — on these genomic spans it does not).
+
+| rank | gap | between | selects |
+|---|---|---|---|
+| **1** | **0.0427** | h = 0.0534 → 0.0961 | **k = 6** |
+| 2 | 0.0418 | 0.1662 → 0.2080 | k = 2 |
+| 3 | 0.0339 | 0.0961 → 0.1300 | k = 5 |
+
+⭐⭐ **At the gap-selected k = 6, all six clusters are PURE** with respect to an independent
+full-length/divergent tier label, and **the 11 full-length copies form EXACTLY one cluster (set equality
+verified, |cluster| = |full| = 11).** The level is chosen by a property of the tree — the widest gap in
+merge heights — not by a tuned threshold, which is the Canzar-shaped form.
+
+**Divergence ladder**: the recent expansion coalesces entirely **below h = 0.0534**; then the widest gap
+in the tree; the older copies join between **h = 0.0961 and h = 0.2080**. ⟹ merge heights order the
+expansion, and the 11-copy recent burst is separated from the ancient copies by the largest single step
+in the tree.
+
+### ⚠ Why this works here and NOT on the pooled panel
+
+On the 72-gene / 12-subfamily panel (§6j), **no variant achieved label purity at or below the true group
+count**: the NPIP-validated `1 − identity` distance was pure only at **k = 44–72** — degenerate, since
+k = 72 is all-singletons and pure by construction — and the best variant reached purity 1.0000 only at
+**k = 20** for 12 true subfamilies (0.5806 at k = 12–13, **0.0000** at k = 2–5). The 2026-08-05 NPIP
+result held *below* the true group count (pure at k = 2..8 for 2 groups); pooled, the floor sits at 3.7×
+it.
+⟹ ⭐⭐ **A single global tree level does NOT transfer across families — subfamilies in different families
+formed at different depths, so one cut cannot serve all.** The unit is ONE CLUSTERED FAMILY, exactly as
+the user scoped it. Report the level per family, selected by that family's widest merge gap.
+
+⚠ **Scope**: n = 1 family. The purity label (full-length vs divergent) comes from the *human*-vs-gorilla
+alignment while the tree comes from *gorilla*-vs-gorilla, so the tree never saw it — but both are
+sequence-based, so this is a genuine external check, not a fully independent one. Copy counts remain
+preset-dependent (§6e). ⚠ **NC_073228.2 is a 195 Mb contig; whether it is the human-chr17 ortholog is NOT
+established here** and must not be asserted.
