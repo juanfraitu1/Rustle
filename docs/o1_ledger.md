@@ -4451,3 +4451,55 @@ down to identity 0.1478). Its comment claimed "the SAME rule", which is how it h
 ⭐ **`tier2_rescue` no longer re-types the E_r tier flags** — it builds the command from `ER_TIER_FLAGS`
 and `ER_SENSITIVE_SEED` (excluding `-X`, which does not apply when aligning candidates against reps). The
 anti-drift guard had caught this; it was a genuine second literal copy.
+
+---
+
+## §6t — ⚠ CORRECT §6s: the excision ratio is an ORACLE statistic, not a detection rate (2026-08-29)
+
+§6s reported the O3 leg as "validated by excision: **TPR 0.7965 at FPR 0.0000, AUC 0.8924**". **That is
+not a detection rate and must not be quoted as one.**
+
+`o3_excise/align.sh` states the design: *"PAIRED alignment: the SAME simulated reads against the COMPLETE
+genome and the MASKED one. Depth at a landing site with the paralogue present (complete) vs absent
+(masked) isolates the redistribution."*
+
+⟹ ⛔ **the masked/complete ratio requires BOTH references — i.e. it requires already knowing where the
+copy was removed.** A real O3 caller possesses only the actual assembly, which *is* the masked arm. The
+statistic cannot be computed in the situation it is meant to detect. This is the same class of error the
+session caught three times already: a quantity conditioned on the answer.
+⚠ Two further scope limits: the reads are **simulated at 40×** (`sim_40x.fastq.gz`), not real fibroblast;
+and the run is `-ax map-pb --eqx -N 50 -p 0.1` — record the preset with any figure from it.
+
+### ✅ What the panel DOES establish — and it is still the load-bearing result
+
+**The redistribution mechanism is real and quantified.** Same reads, both references, so library
+composition cannot explain the difference:
+
+| stratum | n | median masked/complete | >1.10 | max |
+|---|---|---|---|---|
+| copy excised | 113 | **1.2744** | 0.6018 | 2.45× |
+| control | 225 | **1.0000** | **0.0000** | 1.0015× |
+
+⭐ **When a copy is absent from the reference its reads are ABSORBED by the surviving paralogue**, and the
+controls move not at all (max 1.0015×). ✅ This is a **mechanism confirmation**, and it agrees with the
+independent figures already in `docs/o3_missing_copy_evidence.md`: FixItFelix's ~1.5× for collapsed
+regions and this project's own §5 measurement of 1.75×. ⚠ It is whole-genome, so the doc's
+"mini-reference manufactured the signal" critique does **not** apply to this panel — but the doc's other
+finding stands and is the decisive one: **the shipped detector fires 0/915 on the matched whole-genome
+arm**, because a read that does not fit locus *u* on 3.6 Gb finds a better primary home elsewhere instead
+of piling onto *u*.
+
+### ⭐⭐ This STRENGTHENS the design conclusion rather than weakening it
+
+Because the paired-reference statistic is unavailable in practice, the O3 leg **cannot** be a depth
+comparison at all — not between copies (expression variance reaches **109.96×** against a **1.27×**
+signal, §6s) and not between references (requires the answer). ⟹ **it must read structure WITHIN the one
+locus it can see.**
+
+✅ **The shipped code already does exactly this**, and no change is needed: `absent_copy.rs` admits a
+collapsed copy from **co-varying allele clusters inside the host locus** (gate 1: `n_clusters >= 3`;
+gate 2: `min_p_distinct`; gate 3: strand-symmetry, rejecting A→G editing artefacts; gate 4: alleles
+placeable; gate 5: the synthetic copy must NOT remap to its host at ≥ 98%), and anything RNA cannot
+settle returns **`DnaNeeds`** rather than a guess — the module's own header says the separation *"needs
+DNA"*. ⟹ **the architecture the user described is implemented correctly; what the excision panel supplies
+is the mechanism behind it, not a rate for it.**
