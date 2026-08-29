@@ -340,8 +340,13 @@ fn emit_catalog(
         "family_id\tn_copies\tn_chroms\tchroms\tcross_chrom\tavg_reads\tprotein_coheres\
          \tn_edges\tdensity\tlambda\tcut_certified"
     )?;
-    // `exons` is APPENDED last so existing header-keyed readers keep working unchanged.
-    writeln!(ch, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons")?;
+    // `exons` and `max_family_identity` are APPENDED last so existing header-keyed readers keep working.
+    //   max_family_identity = the highest E_r identity on any edge incident to this copy within its
+    //   family; "NA" when no certificate was carried. REPORTED ONLY — nothing branches on it. It is the
+    //   number the partition computes and then flattens to 1.0 (ledger §5q), and it predicts where copy
+    //   assignment meets alignment-score near-ties (§6r: rho 0.5804, p 0.0005 held out). A PRIOR, not a
+    //   gate: 8.67% of reads below identity 0.95 are still contested.
+    writeln!(ch, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tmax_family_identity")?;
 
     // The certificate is positional, so it MUST travel with its family through the sort below — sorting
     // the two lists independently would silently attach each λ to the wrong family.
@@ -363,7 +368,7 @@ fn emit_catalog(
         let kb = b.0.iter().map(|c| (c.chrom.as_str(), c.start)).min();
         ka.cmp(&kb)
     });
-    let cert_of: Vec<Option<FamilyCertificate>> = paired.iter().map(|p| p.1).collect();
+    let cert_of: Vec<Option<FamilyCertificate>> = paired.iter().map(|p| p.1.clone()).collect();
     let fams: Vec<Vec<DenovoTranscript>> = paired.into_iter().map(|p| p.0).collect();
     // orthogonal protein-coherence QC flag; "NA" when --protein-tail is off (no mmseqs call).
     let coheres = family_protein_coheres(&fams, refine_params);
@@ -387,7 +392,7 @@ fn emit_catalog(
         };
         // Structural certificate; "NA" on paths that do not carry one (never a silent 0 — a missing
         // certificate and a genuinely disconnected family must not print the same thing).
-        let (n_edges_s, density_s, lambda_s, certified_s) = match cert_of[fi] {
+        let (n_edges_s, density_s, lambda_s, certified_s) = match &cert_of[fi] {
             Some(c) => (
                 c.n_edges.to_string(),
                 format!("{:.4}", c.density),
@@ -405,12 +410,21 @@ fn emit_catalog(
             cross,
             avg_reads
         )?;
-        let mut sorted = copies.clone();
-        sorted.sort_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
-        for (ci, c) in sorted.iter().enumerate() {
+        // PAIR each copy with its reported identity BEFORE sorting. `copy_max_identity` is positional in
+        // the pre-sort copy order, so sorting the copies alone would attach every value to the wrong row —
+        // the same failure the family-level certificate comment above warns about.
+        let cmax: Vec<f64> = match &cert_of[fi] {
+            Some(c) if c.copy_max_identity.len() == copies.len() => c.copy_max_identity.clone(),
+            _ => vec![f64::NAN; copies.len()],
+        };
+        let mut sorted: Vec<(DenovoTranscript, f64)> =
+            copies.iter().cloned().zip(cmax.into_iter()).collect();
+        sorted.sort_by(|a, b| (a.0.chrom.as_str(), a.0.start).cmp(&(b.0.chrom.as_str(), b.0.start)));
+        for (ci, (c, mid)) in sorted.iter().enumerate() {
+            let mid_s = if mid.is_finite() { format!("{mid:.6}") } else { "NA".to_string() };
             writeln!(
                 ch,
-                "{fid}\t{ci}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                "{fid}\t{ci}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{mid_s}",
                 c.tid,
                 c.chrom,
                 c.start,

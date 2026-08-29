@@ -2983,12 +2983,162 @@ pub(crate) fn homology_blocks_pooled(
 /// As `homology_blocks_pooled`, additionally returning the `E_r` edge set the blocks were cut from.
 /// The blocks are bit-identical to `homology_blocks_pooled`'s — this only stops throwing the edges away,
 /// because the λ certificate needs the graph, not just the partition of it.
+/// TIER-2 ADMISSION (`RUSTLE_TIER2_ADMIT=1`, unset = OFF = byte-identical).
+///
+/// WHAT IT DOES. After reps are built, find read clusters that NO rep covers, build each one's
+/// read-covered sequence, and admit it as a copy if it clears the SHIPPED `E_r` rule against an existing
+/// rep. Admitted copies get a `T2~` tid prefix so `copies.tsv` distinguishes them: "assembled its own
+/// model" and "admitted by similarity plus weak expression" are different claims and a single count
+/// would hide that.
+///
+/// WHY (`docs/o1_ledger.md` §5r/§5s). The pipeline conflates "is this locus expressed?" with "can I
+/// assemble a transcript model here?", and failing the second kills the first. At NPIP, 10 loci are
+/// expressed and build no node; every one of them clears `E_r` against a node-bearing sibling — 10/10 on
+/// oracle spans AND 10/10 on the read-cluster span the pipeline can actually obtain — while the same rule
+/// admits only 4/200 non-NPIP control clusters (0.0200).
+///
+/// ⚠ THIS WORKS AROUND A DEFECT RATHER THAN FIXING IT. §5s topped every locus up to ~40 reads and
+/// recovery still reached only 15/31: 13 of the 14 remaining loci PASS the read gate (pooled support up
+/// to 43) and have NO overlapping rep, because `collapse_loci_span_aware` absorbs them and
+/// `pick_locus_rep` keeps only the winner's span. The real repair is in locus collapse.
+fn tier2_enabled() -> bool {
+    matches!(std::env::var("RUSTLE_TIER2_ADMIT"), Ok(v) if v != "0" && !v.is_empty())
+}
+
+fn tier2_rescue(
+    bam_path: &str,
+    threads: usize,
+    reps: &[DenovoTranscript],
+    genome: &GenomeIndex,
+    params: &RefineParams,
+    min_reads: u32,
+) -> Vec<DenovoTranscript> {
+    use crate::vg_family::denovo_assemble::{build_footprint_seq, footprint_skeletons, Skeleton};
+    use std::io::Write;
+    // ⚠ The caller DROPS `reads` before the homology stage to bound peak memory (the catalog peaks near
+    // 17 GB). Tier-2 is opt-in, so it re-reads the BAM itself rather than forcing every run to hold the
+    // reads alive for a feature that is off by default.
+    let reads = match primary_reads_from_bam(bam_path, threads) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("[tier2] skipped: cannot re-read {bam_path}: {e}"); return Vec::new(); }
+    };
+    let reads = &reads[..];
+    // Existing reps block their own regions: a locus that already has a rep needs no rescue.
+    let blockers: Vec<Skeleton> = reps
+        .iter()
+        .map(|r| Skeleton {
+            chrom: r.chrom.clone(), start: r.start, end: r.end, n_reads: min_reads.max(1),
+            introns: r.introns.clone(), tied_seeded: false, footprint: false,
+            read_strand: None, read_rev: 0, read_tot: 0,
+        })
+        .collect();
+    let cands = footprint_skeletons(reads, &blockers, min_reads);
+    if cands.is_empty() {
+        return Vec::new();
+    }
+    // Sequence for each candidate, from its READ-COVERED blocks (never the whole genomic span).
+    let mut cand_seq: Vec<(usize, Vec<u8>, char)> = Vec::new();
+    for (i, sk) in cands.iter().enumerate() {
+        if let Some((seq, strand)) = build_footprint_seq(
+            genome, &sk.chrom, sk.start, sk.end, &sk.introns, sk.read_strand,
+        ) {
+            if seq.len() >= 300 {
+                cand_seq.push((i, seq, strand));
+            }
+        }
+    }
+    if cand_seq.is_empty() {
+        return Vec::new();
+    }
+    // Align candidates against the EXISTING reps with the shipped E_r invocation.
+    let dir = std::env::temp_dir();
+    let pid = std::process::id();
+    let (cp, rp) = (dir.join(format!("t2c_{pid}.fa")), dir.join(format!("t2r_{pid}.fa")));
+    {
+        let mut f = match std::fs::File::create(&cp) { Ok(f) => f, Err(_) => return Vec::new() };
+        for (i, seq, _) in &cand_seq {
+            let _ = writeln!(f, ">C{i}");
+            let _ = f.write_all(seq);
+            let _ = writeln!(f);
+        }
+        let mut g = match std::fs::File::create(&rp) { Ok(g) => g, Err(_) => return Vec::new() };
+        for (j, r) in reps.iter().enumerate() {
+            let _ = writeln!(g, ">R{j}");
+            let _ = g.write_all(&r.seq);
+            let _ = writeln!(g);
+        }
+    }
+    // ANTI-DRIFT: the tier is assembled from its single definitions, never re-typed. `-X` is
+    // deliberately EXCLUDED — tier-2 aligns candidates against reps (two files), not a set against
+    // itself, so all-vs-all/`--dual=no` does not apply here.
+    let out = {
+        let mut cmd = std::process::Command::new(&params.minimap2);
+        cmd.args(ER_TIER_FLAGS.iter().filter(|f| **f != "-X"))
+            .args(ER_SENSITIVE_SEED)
+            .arg("-t")
+            .arg(params.threads.max(1).to_string())
+            .arg(&rp)
+            .arg(&cp);
+        cmd.output()
+    };
+    let _ = std::fs::remove_file(&cp);
+    let _ = std::fs::remove_file(&rp);
+    let out = match out { Ok(o) => o, Err(_) => return Vec::new() };
+    let mut admitted: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 12 { continue; }
+        let (Ok(ql), Ok(qs), Ok(qe)) = (f[1].parse::<f64>(), f[2].parse::<f64>(), f[3].parse::<f64>())
+        else { continue };
+        let (Ok(tl), Ok(ts), Ok(te)) = (f[6].parse::<f64>(), f[7].parse::<f64>(), f[8].parse::<f64>())
+        else { continue };
+        let (Ok(nm), Ok(bl)) = (f[9].parse::<f64>(), f[10].parse::<f64>()) else { continue };
+        if f[4] != "+" || bl <= 0.0 || ql <= 0.0 || tl <= 0.0 { continue; }
+        // the SAME rule: identity >= floor AND coverage >= floor of the SHORTER, axis follows denominator
+        let cov = if ql <= tl { (qe - qs) / ql } else { (te - ts) / tl };
+        if nm / bl >= params.sensitive_identity && cov >= params.min_coverage {
+            if let Some(i) = f[0].strip_prefix('C').and_then(|x| x.parse::<usize>().ok()) {
+                admitted.insert(i);
+            }
+        }
+    }
+    cand_seq
+        .into_iter()
+        .filter(|(i, _, _)| admitted.contains(i))
+        .map(|(i, seq, strand)| {
+            let sk = &cands[i];
+            DenovoTranscript {
+                tid: format!("T2~{}_{}_{}", sk.chrom, sk.start, sk.end),
+                chrom: sk.chrom.clone(), start: sk.start, end: sk.end, n_reads: sk.n_reads,
+                strand, introns: sk.introns.clone(), seq, ..Default::default()
+            }
+        })
+        .collect()
+}
+
+/// Flattening wrapper: identical partition, edges without their weights. Every pre-existing caller
+/// keeps its exact signature and output; the weights are available from the `_weighted` core below.
 pub(crate) fn homology_blocks_pooled_with_edges(
     reps: &[DenovoTranscript],
     pooled: Option<&[Vec<Vec<u8>>]>,
     refine: &RefineParams,
     gamma: f64,
 ) -> Result<(Vec<Vec<usize>>, Vec<(usize, usize)>)> {
+    let (blocks, edges_w) = homology_blocks_pooled_with_edges_weighted(reps, pooled, refine, gamma)?;
+    Ok((blocks, edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect()))
+}
+
+/// As above, but RETURNS the per-edge identity and coverage instead of discarding them. They are already
+/// computed here (see the note below); the only change is that they now reach the caller, so a REPORTED
+/// certificate can carry them. This does NOT re-weight the partition — see the `RUSTLE_ER_WEIGHTED_PARTITION`
+/// note below and ledger §5q/§6r: `induced_density` discards weights, γ is inert on 79% of families, and
+/// identity weights < 1 lower every density, so weighting the TEST would split MORE.
+pub(crate) fn homology_blocks_pooled_with_edges_weighted(
+    reps: &[DenovoTranscript],
+    pooled: Option<&[Vec<Vec<u8>>]>,
+    refine: &RefineParams,
+    gamma: f64,
+) -> Result<(Vec<Vec<usize>>, Vec<(usize, usize, f64, f64)>)> {
     let edges_w = homology_edges_all_reps_pooled_weighted(reps, pooled, refine)?;
     let edges2: Vec<(usize, usize)> = edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
     // Every edge carries weight 1.0, so the weighted machinery underneath runs UNWEIGHTED. This is a
@@ -3026,7 +3176,8 @@ pub(crate) fn homology_blocks_pooled_with_edges(
             .collect()
     };
     let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma);
-    Ok((blocks, edges2))
+    let _ = &edges2;
+    Ok((blocks, edges_w))
 }
 
 /// Group a rep set into families with the shared engine (`homology_blocks`) and keep those spanning
@@ -3051,7 +3202,7 @@ pub fn families_from_reps(
 /// This is a REPORT, not a rule: nothing in the pipeline branches on it, no family is added, dropped or
 /// reshaped by it, and it carries no threshold. Its purpose is to let a reader check a claim the catalog
 /// would otherwise only assert — how much alignment evidence the family's connectedness actually rests on.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FamilyCertificate {
     /// Emitted copies in the family (= the node count λ and `density` are computed over).
     pub n: usize,
@@ -3064,6 +3215,19 @@ pub struct FamilyCertificate {
     /// says the family hangs on one edge — always true for a 2-copy family, which is exactly why this
     /// is reported rather than enforced.
     pub lambda: usize,
+    /// REPORTED, per emitted copy, in the same order as `groups`: the maximum E_r identity on any edge
+    /// incident to that copy within this family — the strongest evidence tying it to a sibling. `NaN`
+    /// when the certificate was built without weights.
+    ///
+    /// Why it is emitted (ledger §5q, §6r): identity is computed for every edge, used once for the
+    /// threshold, and was then discarded. It carries AUC 0.9491 for wanted-vs-suspect edges, and on a
+    /// held-out catalog (356 families / 1,070 copies) it predicts where copy assignment meets
+    /// alignment-score near-ties: Spearman ρ = 0.5804, permutation p = 0.0005, with a near-tie rate of
+    /// 0.5496 above identity 0.95 against 0.0867 below.
+    ///
+    /// ⚠ It is a PRIOR, never a gate: 8.67% of reads below the cut ARE contested, so skipping that
+    /// stratum would drop real work. Like λ, nothing branches on this value.
+    pub copy_max_identity: Vec<f64>,
 }
 
 /// As `families_from_reps`, additionally returning one `FamilyCertificate` per emitted family, in the
@@ -3076,7 +3240,7 @@ pub fn families_from_reps_certified(
     min_copies: usize,
     min_reads: usize,
 ) -> Result<(Vec<Vec<DenovoTranscript>>, Vec<FamilyCertificate>)> {
-    let (blocks, er_edges) = homology_blocks_pooled_with_edges(&reps, None, refine, gamma)?;
+    let (blocks, er_edges) = homology_blocks_pooled_with_edges_weighted(&reps, None, refine, gamma)?;
     let cov_split = coverage_split_floor();
     let cov_edges = coverage_edges_all_reps(&reps, cov_split, refine)?;
     let mut out = Vec::new();
@@ -3091,7 +3255,7 @@ pub fn families_from_reps_certified(
                     .iter()
                     .map(|(_, mem)| mem.iter().map(|&li| sub[li]).collect())
                     .collect();
-                certs.push(certificate_for(&groups, &er_edges));
+                certs.push(certificate_for_weighted(&groups, &er_edges));
                 out.push(loci);
             }
         }
@@ -3127,8 +3291,8 @@ pub fn certificates_for_families(
     let mut out = Vec::with_capacity(fams.len());
     for fam in fams {
         let groups: Vec<Vec<usize>> = (0..fam.len()).map(|i| vec![i]).collect();
-        let edges = homology_edges_all_reps_pooled(fam, None, params)?;
-        out.push(certificate_for(&groups, &edges));
+        let edges = homology_edges_all_reps_pooled_weighted(fam, None, params)?;
+        out.push(certificate_for_weighted(&groups, &edges));
     }
     Ok(out)
 }
@@ -3136,6 +3300,16 @@ pub fn certificates_for_families(
 pub(crate) fn certificate_for(
     groups: &[Vec<usize>],
     er_edges: &[(usize, usize)],
+) -> FamilyCertificate {
+    let w: Vec<(usize, usize, f64, f64)> =
+        er_edges.iter().map(|&(a, b)| (a, b, f64::NAN, f64::NAN)).collect();
+    certificate_for_weighted(groups, &w)
+}
+
+/// As `certificate_for`, but also records each emitted copy's maximum incident E_r identity.
+pub(crate) fn certificate_for_weighted(
+    groups: &[Vec<usize>],
+    er_edges: &[(usize, usize, f64, f64)],
 ) -> FamilyCertificate {
     use std::collections::{BTreeSet, HashMap};
     let n = groups.len();
@@ -3146,8 +3320,16 @@ pub(crate) fn certificate_for(
         }
     }
     let mut induced: BTreeSet<(usize, usize)> = BTreeSet::new();
-    for &(a, b) in er_edges {
+    // Per-copy maximum incident identity, reported only. An edge INSIDE one emitted copy (ga == gb) is
+    // still evidence about that copy, so it counts here even though it induces no family edge.
+    let mut cmax: Vec<f64> = vec![f64::NAN; n];
+    for &(a, b, ident, _cov) in er_edges {
         if let (Some(&ga), Some(&gb)) = (owner.get(&a), owner.get(&b)) {
+            if ident.is_finite() {
+                for g in [ga, gb] {
+                    cmax[g] = if cmax[g].is_nan() { ident } else { cmax[g].max(ident) };
+                }
+            }
             if ga != gb {
                 induced.insert((ga.min(gb), ga.max(gb)));
             }
@@ -3165,6 +3347,7 @@ pub(crate) fn certificate_for(
         n_edges,
         density,
         lambda: crate::vg_family::family_split::edge_connectivity(n, &edges),
+        copy_max_identity: cmax,
     }
 }
 
@@ -3237,6 +3420,16 @@ pub fn detect_homology_catalog_genome_wide(
         rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
     };
     drop(transcripts);
+    // TIER-2 ADMISSION (`RUSTLE_TIER2_ADMIT`, default off = byte-identical). Purely additive: it only
+    // adds reps at read clusters no existing rep covers.
+    if tier2_enabled() {
+        let extra = tier2_rescue(bam_path, threads, &reps, &genome, refine,
+            crate::vg_family::denovo_assemble::GATE_MIN_READS);
+        if !extra.is_empty() {
+            eprintln!("[tier2] admitted {} loci by similarity to an existing rep (tid prefix T2~)", extra.len());
+        }
+        reps.extend(extra);
+    }
     eprintln!("[gw-catalog-homology] {} skeletons -> {} reps over {} contigs", skeletons.len(), reps.len(), contigs.len());
 
     // Per-copy unique-mapper support (Task 3, identifiability-merge): `distinct_locus_reps`'s same-strand
@@ -3290,7 +3483,7 @@ pub fn detect_homology_catalog_genome_wide(
 
     // --- E_r edges + γ-quasi-clique blocks ---
     // `er_edges` is kept (not discarded as before) solely to compute each emitted family's λ certificate.
-    let (blocks, er_edges) = homology_blocks_pooled_with_edges(
+    let (blocks, er_edges) = homology_blocks_pooled_with_edges_weighted(
         &reps,
         if pooled_exons.is_empty() { None } else { Some(pooled_exons.as_slice()) },
         refine,
@@ -3334,7 +3527,7 @@ pub fn detect_homology_catalog_genome_wide(
                 .iter()
                 .map(|(_, mem)| mem.iter().map(|&li| block[li]).collect())
                 .collect();
-            certs.push(certificate_for(&groups, &er_edges));
+            certs.push(certificate_for_weighted(&groups, &er_edges));
             out.push(loci);
         } else if (cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback) && loci.len() < 2 {
             // GENUINE collapse only (< 2 RNA-distinct loci), independent of min_copies: a block with
@@ -4289,6 +4482,7 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ("footprint_min_cov".into(), std::env::var("RUSTLE_FOOTPRINT_MIN_COV").unwrap_or_else(|_| "2 (default)".into())),
         ("footprint_windows".into(), std::env::var("RUSTLE_FOOTPRINT_WINDOWS").unwrap_or_else(|_| "<unset>".into())),
         ("weighted_partition".into(), std::env::var("RUSTLE_ER_WEIGHTED_PARTITION").unwrap_or_else(|_| "<unset>".into())),
+        ("tier2_admit".into(), std::env::var("RUSTLE_TIER2_ADMIT").unwrap_or_else(|_| "<unset>".into())),
         ("minimap2".into(), params.minimap2.clone()),
     ]
 }
@@ -7777,10 +7971,14 @@ mod tests {
         // returns the SAME blocks and additionally hands back the E_r edge set the blocks were cut from,
         // which the λ certificate reports on. It introduces no new edge source — λ is computed from E_r
         // and nothing else — so the O1-from-sequence-alone invariant is unchanged.
+        // `..._with_edges_weighted(` is the same function returning the identity/coverage it already
+        // computed instead of discarding them (ledger §5q). Same blocks, same edge SET, same source —
+        // the weights are REPORTED on the copy and never re-enter the partition, so the invariant holds.
         assert!(
             body.contains("homology_blocks(")
                 || body.contains("homology_blocks_pooled(")
-                || body.contains("homology_blocks_pooled_with_edges("),
+                || body.contains("homology_blocks_pooled_with_edges(")
+                || body.contains("homology_blocks_pooled_with_edges_weighted("),
             "the homology catalog must still form families via homology_blocks* (E_r)"
         );
         // The path must not reach into ConflictParams either -- that reads as an E_c dependency even where

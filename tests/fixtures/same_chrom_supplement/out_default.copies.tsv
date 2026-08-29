@@ -1,5 +1,5 @@
-family_id	copy_idx	tid	chrom	start	end	n_exon	strand	n_reads	exons
-GWFAM0	0	DN_c1_0_2	c1	0	260	2	+	6	0-59,211-260
-GWFAM0	1	DN_c2_0_2	c2	0	260	2	+	3	0-59,211-260
-GWFAM1	0	DN_c1_250_2	c1	250	460	2	+	6	250-299,371-460
-GWFAM1	1	DN_c1_380_2	c1	380	550	2	+	3	380-419,451-550
+family_id	copy_idx	tid	chrom	start	end	n_exon	strand	n_reads	exons	max_family_identity
+GWFAM0	0	DN_c1_0_2	c1	0	260	2	+	6	0-59,211-260	1.000000
+GWFAM0	1	DN_c2_0_2	c2	0	260	2	+	3	0-59,211-260	1.000000
+GWFAM1	0	DN_c1_250_2	c1	250	460	2	+	6	250-299,371-460	1.000000
+GWFAM1	1	DN_c1_380_2	c1	380	550	2	+	3	380-419,451-550	1.000000
