@@ -4626,3 +4626,52 @@ load-bearing instance. **The phenomenon is established; its frequency is not.**
 have hidden. **Any two-assembly comparison must report the direction split and the assembly-size ratio
 beside the rate** — a rate whose sign distribution tracks a size asymmetry is measuring the assemblies,
 not the biology.
+
+---
+
+## §6w — validating the 8: half are fragment artefacts, and the rate falls (2026-08-29)
+
+§6v's **8/101 = 7.92%** was flagged as an upper bound because the direction split (7 MAT>PAT vs 1) tracked
+an assembly-size asymmetry. Each of the 8 was then profiled per copy. **The decisive test: restrict to
+FULL-LENGTH copies (coverage ≥ 0.90).** A difference carried by fragments is assembly noise; one carried
+by full-length units in a regular array is the §6u signature.
+
+| verdict | n | families |
+|---|---|---|
+| **ARTEFACT** — difference vanishes on full-length copies | **4** | GWFAM168 8/7→**2/2**, GWFAM259 21/22→**20/20**, GWFAM29 4/3→**1/1**, GWFAM321 **6/3→1/1** |
+| unresolved — full-length but dispersed, not tandem | 3 | GWFAM140 6/5, GWFAM300 7/8, GWFAM304 7/6 |
+| **REAL** — full-length units in a regular tandem array | **1** | **GWFAM327 24/19** |
+
+⭐ **GWFAM321's headline −3 was entirely fragments** (6/3 → 1/1), as was GWFAM259's +1 (21/22 → 20/20).
+⟹ **half the differences were the fragment confound.**
+
+| statistic | rate | Wilson 95% |
+|---|---|---|
+| §6v, before validation | 8/101 = **0.0792** | [0.0407, 0.1486] |
+| after removing fragment artefacts | **4/101 = 0.0396** | [0.0155, 0.0977] |
+| tandem-array-confirmed only | 1/101 = **0.0099** | [0.0017, 0.0536] |
+
+### The two credible instances, and why they differ in strength
+
+**GWFAM327 — 24 (MAT) vs 19 (PAT) full-length units**, **zero fragments on either haplotype**, uniform
+unit size **1,779–1,823 bp**, identical identity range (0.9103–1.0000 both), and near-identical
+periodicity: **median tandem gap 36,440 bp (MAT, n=13) vs 36,386 bp (PAT, n=8)**. ⚠ **But it runs WITH
+the assembly-size bias** (MAT > PAT), and a ~1.8 kb unit at 36.4 kb spacing is a **higher-order repeat**,
+exactly the structure where assembly length differences are notorious. ⟹ **large and clean, but bias-aligned:
+cannot be separated from an assembly-length difference on this evidence.**
+
+⭐ **GOLGA6L7 (§6u) remains the load-bearing case** precisely because it is **+1 in the MINORITY
+direction** — against the assembly bias — with a full-length 6,035 bp unit at coverage 1.000 and identity
+0.9673 against siblings at 0.9670/0.9677, on a regular 40.8 kb period. **A difference in the
+under-represented direction cannot be explained by the redundancy that produces the majority direction.**
+
+### ⟹ Where this leaves the claim
+
+✅ **The phenomenon is established** (§6u), and it needs no second individual.
+⚠ **The frequency is not.** The defensible statement is **≤ 4/101 = 3.96% [1.55, 9.77] of autosomal
+multi-copy families differ between one animal's haplotypes**, of which **exactly one is confirmed as a
+tandem-array difference in the bias-resistant direction**. ⛔ **Do not quote 7.92%** — half of it was
+fragments.
+⚠ The 3 dispersed survivors (GWFAM140/300/304, all ±1) are genuinely unresolved: full-length, but not in
+an array, so an assembly placement difference and a real CNV look the same. Settling them needs read-level
+depth at those loci, not more assembly comparison.
