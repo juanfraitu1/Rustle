@@ -4572,3 +4572,57 @@ SD-rich family in the panel, so an assembly-resolution difference between haplot
 explanation — argued against by the unit's full length, full coverage, sibling-matched identity and the
 regular 40.8 kb periodicity, but not excluded. ⚠ Record the preset with the count (above); §6e showed copy
 counts are preset-dependent, which is why only the mat-vs-pat DIFFERENCE at identical settings is quoted.
+
+---
+
+## §6v — scaling the haplotype scan: a rate, and why it must be read as an UPPER BOUND (2026-08-29)
+
+§6u established the phenomenon at one locus. Next step: how often? One gene-scale probe per **autosomal
+multi-copy family** from the shipped fibroblast catalog, both haplotypes, identical parameters
+(`-x asm20 -p 0 -N 500`, per contig; identity ≥ 0.60 by `1 − de`, cov_q ≥ 0.50, 5 kb merge).
+
+⚠ **Probe selection matters and is stated**: of 356 catalog families, **307 are autosomal multi-copy**;
+**206 were dropped because their longest copy exceeds 20 kb** — §6d showed a large genomic span returns
+**segmental-duplication blocks rather than gene copies**, so counting them would answer a different
+question. **101 probes remain, median 8,187 bp.**
+
+| outcome | n |
+|---|---|
+| concordant (MAT == PAT) | **93** |
+| **different** | **8** |
+
+**Rate = 8/101 = 0.0792, Wilson 95% [0.0407, 0.1486].**
+
+### ⚠⚠ But the DIRECTION test — which I built as a control — fires
+
+| direction | n |
+|---|---|
+| MAT > PAT | **7** |
+| PAT > MAT | **1** |
+
+Sign test **p = 0.0703**. Real heterozygous CNV should be roughly balanced; this is not. The cause is
+visible in the totals:
+
+| quantity | value |
+|---|---|
+| total copies summed over all 101 families | **MAT 245 / PAT 231** → ratio **1.0606** |
+| assembly size | mat 3.507 Gb / pat 3.352 Gb → ratio **1.0464** |
+
+⭐⭐ **The copy-count ratio tracks the assembly-size ratio (1.0606 vs 1.0464).** ⟹ **most of the MAT excess
+is plausibly assembly bulk/redundancy, not biology**, and the largest differences (−5, −3, −3) sit in the
+≥10-copy families where assembly resolution bites hardest (GWFAM327 24/19, GWFAM300 14/11, GWFAM321 6/3).
+⟹ **8/101 = 7.92% is an UPPER BOUND on the haplotype CNV rate, not an estimate.** Do not quote it as a
+rate. A defensible figure needs assembly-quality-matched haplotypes or per-locus validation.
+
+### ⭐ What survives, and why §6u's case is the credible one
+
+**GOLGA6L7 is PAT > MAT — the MINORITY direction, running AGAINST the assembly bias**, as is the only
+other PAT>MAT family (GWFAM259, 21/22). ⟹ **a difference in the under-represented direction is far harder
+to explain as assembly redundancy**, which is exactly why §6u's case — full-length 6,035 bp unit, coverage
+1.000, identity 0.9673 against siblings at 0.9670/0.9677, regular 40.8 kb periodicity — remains the
+load-bearing instance. **The phenomenon is established; its frequency is not.**
+
+⚠ **Reusable design note.** The direction test cost nothing and caught a confound the headline rate would
+have hidden. **Any two-assembly comparison must report the direction split and the assembly-size ratio
+beside the rate** — a rate whose sign distribution tracks a size asymmetry is measuring the assemblies,
+not the biology.
