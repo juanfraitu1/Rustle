@@ -4158,3 +4158,59 @@ Genome-wide sensitive scan, per seed, copies passing E_r stage-1 (identity ≥ 0
 ⟹ **the only candidate reference-present-but-unannotated copies in this panel are 3 MAGEA copies.** AMY,
 GOLGA6L and RFPL are fully accounted for by the annotation — which is itself the useful negative result:
 **the method is not manufacturing copies.**
+
+---
+
+## §6o — "no alignment record" is mostly HARMLESS; the coverage floor is what actually breaks families (2026-08-28)
+
+§6n reported the 201 within-subfamily pairs as 165 edges / 23 coverage failures / 13 no-record. That
+reads as though the 13 are the hopeless stratum. **It is the other way round.**
+
+**What "no record at all" means mechanically**: minimap2 emitted no line for the pair — not a weak line,
+none. Its minimizer seeding found too few shared exact k-mers to build a chain, so **the edge rule never
+evaluated the pair**. That is a *seeding* failure, upstream of both clauses, and it is why no threshold
+can address it.
+
+### ⭐⭐ But a missed PAIR is not a lost MEMBER — the family routes around it
+
+| missed stratum | pairs | **members still in the same component** |
+|---|---|---|
+| no alignment record at all | 13 | **12/13 = 0.9231** |
+| record exists, fails COVERAGE | 23 | **12/23 = 0.5217** |
+
+⟹ ⭐⭐⭐ **the pairs the aligner never saw are almost entirely benign, while the pairs it DID see and the
+coverage floor rejected are what actually separate members.** Of the 12 genuinely separated pairs,
+**11 align but fall below coverage** and only **1** has no record. This inverts the natural reading of
+§6n's table and redirects any future repair effort at the coverage stratum, which is at least *visible*.
+
+### ⚠ The damage is about REDUNDANCY, not subfamily size
+
+⛔ **My "small subfamilies break" hypothesis is refuted: only 1/12 = 0.08 of separated pairs sit in a
+subfamily of ≤3 members.**
+
+| subfamily | members | pairs | missed | separated | placed |
+|---|---|---|---|---|---|
+| MAGE-B | 12 | 66 | **23** | **0** | **12/12** |
+| MAGE-A | 12 | 66 | 0 | 0 | 12/12 |
+| RFPL4A | 8 | 28 | 0 | 0 | 8/8 |
+| **NPIP** | 5 | 10 | 6 | **6** | **3/5** ⛔ |
+| **MAGE-D** | 4 | 6 | 5 | **5** | **2/4** ⛔ |
+| **MAGE-E** | 2 | 1 | 1 | **1** | **1/2** ⛔ |
+
+⭐ **MAGE-B misses 23 of its 66 pairs (34.8%) and loses NOBODY**; NPIP misses 6 of 10 (60%) and loses 2.
+⟹ **what matters is whether the surviving edges keep the subfamily CONNECTED, not how many pairs are
+missed.** A pair-level recall of 0.8209 therefore understates member-level recovery (component recall
+0.9194), and the two must not be used interchangeably.
+
+### Are these members impossible to find? Almost never — n = 1 of 201
+
+- **12 of 13** no-record pairs are recovered **transitively**, through other members.
+- The **protein tier rescues 2 more** — both NPIP (`LOC101141990 ~ LOC109028586` and `~ LOC115934567`),
+  which is the mechanism behind §6j's NPIP 3/5 → 5/5.
+- ⭐ **Exactly one pair resists everything tried: `MAGEE1 ~ MAGEE2`** — no nucleotide record at any
+  preset **and no protein hit**. It is the only genuinely undetectable pair in the panel, and it is
+  fatal only because MAGE-E has **2 members**, so there is no third copy to route through.
+
+⟹ **the honest statement is: 1 of 201 within-subfamily pairs (0.50%) is beyond every method tried here.
+"No record" is not a synonym for "impossible" — it is a synonym for "not seen by THIS seeding", and in a
+family with redundancy it costs nothing.**
