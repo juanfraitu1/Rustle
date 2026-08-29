@@ -4279,3 +4279,64 @@ on this substrate is **one locus and 40 molecules.**
 expresses the near-identical copies (testis, for TBC1D3 — a different animal, so out of the current
 scope) or a substrate where similar copies are transcribed. ⚠ This is a POWER statement, not a refutation
 of threading: n = 40 supports a demonstration, never a rate.
+
+---
+
+## §6q — O1↔O2 synergy: NOT a coupled definition, but O1's edge identity as an O2 PLANNER (2026-08-28)
+
+### ⛔ First, what is already closed: coupling the two definitions
+
+Every attempt on record returns **zero**:
+
+| attempt | result |
+|---|---|
+| Joint DNA/RNA object as **definitional** (union or intersection of E_dna, E_rna) | **0 blocks in O1, 0 of 7,691 reads in O2, 0 in O3** |
+| Intron-chain comparison to "fix the O1⊥O2 leak" | branch fires **0 times on every substrate on record** |
+| Iterative joint estimator (EM, longcallR-style) | **0 disagreements among 3,081** co-committed reads |
+| Combining orthogonal levers in one classifier | in-sample 0.915 → grouped LOFO-CV **0.80 ± 0.05 vs 0.840** for the best single feature |
+
+✅ **Verified in code**: `copy_assign.rs` contains **zero** references to λ, min-cut, γ or `E_r`. O1 → O2 is a
+pure **conditioning** with no leakage, and that orthogonality is load-bearing — it is what stops the
+definition from presupposing its own members (`a VG presupposes its members`, register §4.1).
+⟹ **do not couple the definitions.**
+
+### ⭐⭐ What DOES work: O1 already computes the quantity that predicts where O2 has work
+
+`METHOD_PSEUDOCODE.md` records that the graph γ runs on is **unweighted** — "identity and coverage decide
+whether an edge exists" and are then discarded. **That discarded identity is an excellent predictor of
+O2's difficulty.** Per node, take the maximum E_r identity to any same-family partner, and compare with
+the node's observed alignment-score near-tie rate (`s2/s1 ≥ 0.95`) among its fibroblast FLNC reads:
+
+| node class | nodes | reads | **read-weighted near-tie rate** |
+|---|---|---|---|
+| max within-family identity **≥ 0.95** | 14 | 1,919 | **0.7577** |
+| max within-family identity **< 0.95** | 6 | **11,606** | **0.0000** |
+
+**Spearman ρ = 0.7173** (node-level, n = 20, threshold-free); Pearson r = 0.5718.
+⭐⭐ **The negative direction is the strong one: 11,606 reads at low-max-identity nodes produced NOT ONE
+near-tie.** ⭐ The positive extreme is equally sharp — the five nodes at rate **1.0000** all have a partner
+at identity ≥ 0.9779, including the `LOC101144987 ~ LOC101146541` pair at **0.9997** (both nodes: every
+read a near-tie) and `LOC101148313 ~ LOC115935025` at **1.0000**.
+
+⚠ **Why this is not circular**: O1's identity is measured **rep vs rep** over CDS envelopes; O2's near-tie
+is measured **read vs genome**, over shorter, spliced, exon-only molecules competing genome-wide rather
+than within the family. Related through divergence, but different objects and different measurements —
+so this is a prediction, not an entailment.
+
+⭐ **The subfamily median is the WRONG statistic; the per-node MAX is the right one.** MAGE-D has median
+within-subfamily identity **0.8000** — which reads as easy — yet **max 0.9997**, and exactly the two nodes
+in that near-identical pair have near-tie rate **1.0000 (687/687 and 655/655)** while the other two MAGE-D
+nodes, with 9,140 reads between them, sit at **0.0000**. A family-level summary hides this completely.
+
+### What the synergy buys, without touching either definition
+
+- **Skip work that provably has none**: **11,606 of 13,525 reads (85.8%)** sit at nodes where no near-tie
+  exists. Running copy_assign there cannot change an assignment.
+- **Predict where abstention will be needed** before running O2, from a number O1 has already computed.
+- **Ship it the λ way** — as a per-node REPORTED certificate that decides no membership and no assignment,
+  which is the only form of O1/O2 contact this project's record supports.
+
+⚠ **Limits.** n = 20 nodes on one substrate; **the 0.95 cut was chosen after seeing the data**, so the
+two-group contrast is fitted and only the threshold-free ρ = 0.7173 is honest without a held-out check.
+Two real exceptions with depth sit above the cut at rate 0.0000: **RFPL1 (279 reads, max id 0.9528)** and
+**LOC115934567 (50 reads, 0.9545)** — so ≥ 0.95 is a *prior*, not a guarantee.
