@@ -4340,3 +4340,46 @@ nodes, with 9,140 reads between them, sit at **0.0000**. A family-level summary 
 two-group contrast is fitted and only the threshold-free ρ = 0.7173 is honest without a held-out check.
 Two real exceptions with depth sit above the cut at rate 0.0000: **RFPL1 (279 reads, max id 0.9528)** and
 **LOC115934567 (50 reads, 0.9545)** — so ≥ 0.95 is a *prior*, not a guarantee.
+
+---
+
+## §6r — HELD-OUT test of the §6q planner: the signal holds, the clean zero does NOT (2026-08-29)
+
+§6q fitted a 0.95 cut on a 20-node panel and got a read-weighted near-tie rate of **0.7577 vs 0.0000**.
+I flagged the threshold as fitted. Tested on a genuinely held-out set — **the shipped fibroblast catalog
+(`o1_replicate`): 356 families, 1,070 copies, 2,075 E_r edges, built by the pipeline, not by me** — with
+**nothing refitted**:
+
+| group (rule fixed in advance) | copies | reads | near-ties | rate | Wilson 95% |
+|---|---|---|---|---|---|
+| max within-family identity **≥ 0.95** → predict YES | 217 | 200,558 | 110,218 | **0.5496** | [0.5474, 0.5517] |
+| max within-family identity **< 0.95** → predict NO | 853 | **1,661,251** | 144,043 | **0.0867** | [0.0863, 0.0871] |
+
+✅ **The signal replicates**: 6.3× separation, **Spearman ρ = 0.5804** threshold-free over 1,070 copies,
+**permutation p = 0.0005** (2,000 shuffles). O1's discarded edge identity genuinely predicts where O2
+faces alignment-score near-ties, on data that had no part in choosing the rule.
+
+⛔ **But the strong form is REFUTED.** §6q's "below 0.95, not one near-tie in 11,606 reads" does **not**
+hold: the held-out low group carries **144,043 near-ties at rate 0.0867**. That zero was a small-panel
+artefact — the training group had **6 nodes**. ⚠ The effect is also weaker throughout (ρ 0.7173 → 0.5804;
+0.7577/0.0000 → 0.5496/0.0867).
+
+⚠⚠ **Consequence for the planner: it may RANK, it must not SKIP.** 89.23% of reads sit at copies the rule
+predicts to be free of near-ties, but **8.67% of them are not** — skipping that stratum would silently
+drop **144,043** contested reads. ⟹ **§6q's "skip work that provably has none" is withdrawn.** The
+defensible use is a *prior* on where abstention will concentrate, never a gate.
+
+### What this licenses, and what it does not
+
+✅ Emit the weight. `denovo_pipeline.rs` flattens every edge to 1.0 before the partition (§5q), and the
+per-copy output has no identity column at all — so a quantity with **AUC 0.9491** for wanted-vs-suspect
+edges (§5q) and **ρ = 0.5804** against O2 difficulty (here) is computed and then dropped from the primary
+artifact. It should travel with the copy, in the `families.tsv` idiom: *"APPENDED last, so existing
+header-keyed readers keep working unchanged… a REPORT on the emitted family, never an input to it."*
+⛔ **Do NOT re-weight the partition.** §5q settled this twice: `induced_density` (`family_split.rs:511`)
+discards weights so the γ TEST is unweighted, γ is inert on 79% of families, and since identity weights
+are < 1 every weighted density is LOWER — more blocks fall under γ = 0.20 and the partition splits MORE,
+with NPIP already over-split 5 ways. Recovering current behaviour would need γ re-tuned to the weight
+distribution, i.e. fitting a threshold on the arms it is scored against.
+⟹ **the edge weight leaves O1 as a REPORTED per-copy certificate and enters O2 as a prior. It never
+re-enters the partition.**
