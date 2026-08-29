@@ -4503,3 +4503,72 @@ placeable; gate 5: the synthetic copy must NOT remap to its host at ≥ 98%), an
 settle returns **`DnaNeeds`** rather than a guess — the module's own header says the separation *"needs
 DNA"*. ⟹ **the architecture the user described is implemented correctly; what the excision panel supplies
 is the mechanism behind it, not a rate for it.**
+
+---
+
+## §6u — ⭐⭐⭐ DIRECT PROOF of the advisor's phenomenon, inside ONE animal (2026-08-29)
+
+**Question**: is there proof that a reference misses copies an individual carries? **Yes — and it does not
+need a second individual.** KB3781 is haplotype-resolved, so its maternal and paternal assemblies are two
+haploid genomes of the same animal. Same probe, same parameters, both haplotypes
+(`o3_hapcnv/{mat,pat}.chr.fa`, `-x asm20 -p 0 -N 500`, per contig; identity ≥ 0.60 by `1 − de`,
+cov_q ≥ 0.50, 5 kb merge).
+
+⚠ **Design note — why this avoids the 2026-08-19 failure.** That run was uninformative because its
+span-matched controls were not composition-matched (null 0.1512 vs signal 0.0278). Here there are **no
+random-interval controls**: the same probe is counted on two genomes, so preset sensitivity cancels in
+the DIFFERENCE, and single-copy genes calibrate it.
+
+### ⛔ First, the confound the calibration caught
+
+Four probes gave MAT *n* / PAT **0**: MAGEA1 3→0, MAGED1 1→0, **MAGEE1 1→0, MAGEH1 1→0**. The last two
+were my single-copy CONTROLS — and a control showing the same effect as the test is how you know the
+effect is not the one you are testing for. **All four are X-linked and have ZERO alignment records in the
+paternal haplotype** (autosomal MAGEF1 gives 1 and 1). ⟹ **KB3781 is male; the paternal haplotype carries
+Y, so the X's content is absent by SEX, not by copy number.** Discard all X-linked probes.
+
+### ⭐⭐⭐ The autosomal result: a tandem array of 3 on one haplotype, 2 on the other
+
+| probe | MAT | PAT |
+|---|---|---|
+| AMY (LOC101133335) | 3 | 3 |
+| NPIPB11 | 8 | 8 |
+| RFPL1 | 3 | 3 |
+| **GOLGA6L7** | **6** | **7** |
+| calibration: APOBR / CLN3 / NUPR1 / MAGEF1 | 1 | 1 |
+| calibration: PDXDC1 / SULT1A2 (not single-copy, but concordant) | 5 | 5 |
+
+**6/6 autosomal controls concordant; 1 of 4 autosomal families differs, by exactly one unit.** The copies
+correspond one-to-one across haplotypes — matching sizes and identities to 3 decimal places
+(4,682/4,686 bp both at id 0.924, cov 0.748; 3,182 bp both at id 0.8944, cov 0.508) — **except in one
+cluster**:
+
+| MAT (2 units) | PAT (3 units) |
+|---|---|
+| 100,405,873 · 6,035 bp · id 0.9672 | 104,789,835 · 6,033 bp · id 0.9670 |
+| 100,446,711 · 6,036 bp · id 0.9675 | 104,830,654 · 6,037 bp · id 0.9677 |
+| — | **104,871,462 · 6,035 bp · id 0.9673 · cov 1.000** |
+
+⭐ **The extra unit is not a fragment**: full length, coverage 1.000, and identity indistinguishable from
+its two siblings. ⭐⭐ **The spacing is a perfectly regular tandem array — 40,819 and 40,808 bp between
+consecutive units on PAT** (MAT's two are 40,838 apart). ⟹ **the paternal haplotype carries a third
+tandem repeat unit that the maternal haplotype does not.**
+
+### ⟹ What this proves, and why "sample matches genome" does not rescue it
+
+**This is exactly the scenario: a locus where one haploid genome shows 2 copies and the individual
+actually has 3.** And it needs no second animal — it is within KB3781.
+⭐⭐ **The primary assembly is a MOSAIC of 16 PAT / 9 MAT chromosomes** (independently re-derived from
+exact chromosome lengths, [[project_o3_haplotype_cnv_uninformative]]). It therefore carries **one
+haplotype per chromosome** — so on any chromosome drawn from one parent, the other parent's
+haplotype-specific copies are **structurally invisible, for the very animal the assembly was built
+from.** ⟹ **"the sample matches the genome" does NOT mean "the genome holds all the sample's copies":**
+a diploid individual has two haplotypes and a reference has one per chromosome. Note the probe's own
+locus returns identity **1.0000** in PAT, confirming GOLGA6L7 is a paternal-haplotype locus in the
+primary.
+
+⚠ **Scope.** One family, one array, n = 1 difference among 4 autosomal families tested. GOLGA6 is the most
+SD-rich family in the panel, so an assembly-resolution difference between haplotypes is the alternative
+explanation — argued against by the unit's full length, full coverage, sibling-matched identity and the
+regular 40.8 kb periodicity, but not excluded. ⚠ Record the preset with the count (above); §6e showed copy
+counts are preset-dependent, which is why only the mat-vs-pat DIFFERENCE at identical settings is quoted.
