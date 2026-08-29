@@ -4032,3 +4032,57 @@ question is vacuous there). Of the 3: GOLGA6 admits a window (0.06846, 0.42226],
 and **MAGE is DEGENERATE — its subfamilies form at or above the height at which the whole 72-gene tree
 closes.** **Intersection over the informative families: EMPTY.** ⟹ **the level must be read PER FAMILY**,
 as §6k does for TBC1D3.
+
+---
+
+## §6m — ⛔ RETRACT §6i, RESTORE §6c: I read the wrong function (2026-08-28)
+
+⛔⛔ **§6i is withdrawn.** It retracted §6c's "the identity clause cannot fire" on the grounds that the
+shipped rule uses `nm/bl`. **That line — `denovo_pipeline.rs:3091` — is inside `tier2_rescue`, the
+tier-2 admission path, NOT the E_r edge rule.**
+
+**The main E_r decision is `denovo_pipeline.rs:4665–4673`:**
+
+```rust
+let de = f[12..].iter().find_map(|x| x.strip_prefix("de:f:")...);
+let ident = match de { Some(d) => 1.0 - d, None => nmatch / alnlen };
+```
+
+i.e. **`1 − de`, with `nmatch/blocklen` only as a fallback** — matching what the params certificate has
+always emitted (`identity_metric = "1-de (fallback nmatch/blocklen when de:f: absent)"`,
+`denovo_pipeline.rs:4407`) and what `docs/METHOD_PSEUDOCODE.md:177` has always documented.
+
+⭐ **The fallback is DEAD CODE: 0 of 984,574 records across 8 PAFs are missing the `de:f:` tag
+(0.000000).** minimap2 `-c` always emits it. ⟹ the main path always uses `1 − de`, which is exactly the
+quantity §6c measured.
+
+### ✅ §6c is RESTORED, and now rests on 8 PAFs
+
+**0 of 984,574 records fall below the 0.60 floor**, and the observed minimum **tracks the scoring
+preset** with the biology varying freely:
+
+| preset | emission floor `B/(A+B)` | observed min `1 − de` |
+|---|---|---|
+| default (`A=2, B=4`) | 0.667 | 0.6313 / 0.6437 / 0.6500 / 0.6591 / 0.6862 / 0.7621 |
+| `asm20` (`A=1, B=4`) | 0.800 | **0.8291 / 0.8295** |
+
+⟹ ⭐⭐ **on the E_r path the identity clause is structurally incapable of firing: its floor sits below
+minimap2's emission floor.** This independently confirms `NUMBERS.md`'s existing line — *"identity never
+binds; the COVERAGE clause is what separates a repeat from a paralogue"* (49.0% of random 30 kb pairs
+clear identity ≥ 0.60) — and now supplies the mechanism for it.
+
+### ⚠⚠ A REAL DEFECT THIS EXPOSED: two paths, two estimators
+
+`tier2_rescue` (line 3091) applies `nm/bl >= sensitive_identity` **directly**, with no `de:f:` branch,
+against the same constant 0.60. The two estimators are not interchangeable — `de` is gap-compressed while
+`nm/bl` charges every gap base — and under `nm/bl` the same constant **does** fire, on **1.2–6.9%** of
+records, reaching **0.1478**.
+⟹ **the tier-2 admission path applies a materially stricter identity test than the definition it is
+admitting into, while appearing to use the same threshold.** Tier-2 is currently uncommitted/opt-in, so
+nothing shipped is wrong — but this must be reconciled before tier-2 is enabled, either by routing it
+through the same `1 − de` branch or by documenting the difference as deliberate.
+
+⚠ **Process note.** §6i was written from ONE `grep` hit without checking which function contained it, and
+it retracted a correct finding. The lesson from §6i stands in corrected form: **the offline panel must
+compute the shipped predicate — and "the shipped predicate" means the one on the path under test, which
+must be identified by reading the enclosing function, not by matching a line.**
