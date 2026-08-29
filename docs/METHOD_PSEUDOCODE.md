@@ -187,7 +187,30 @@ partition differed on 4/14 panels.
 - ⚠ `params.tsv` also prints `min_identity_asm20 = 0.80`. That is **inert here** — the asm20 tier is not
   run on this path. Do not read it as a second threshold.
 
-*Code:* `homology_edges_all_reps_pooled` → `nucleotide_edges_scored`.
+**Which clause does the work** (measured 2026-08-28, ledger §6l/§6m — state this whenever the rule is
+quoted, because the two clauses are not doing comparable jobs):
+
+- ⭐ **COVERAGE is what separates.** Median coverage of the best record is **0.9811 within a subfamily
+  against 0.0421 across families — a 23× difference** — while median identity is **0.7915 vs 0.7906,
+  i.e. indistinguishable**. Of the 100 shortest `1 − identity` distances on a 72-gene panel, **21 join
+  genes of different families**. Corroborated independently: 50.5% of random 30 kb genomic pairs align
+  and **49.0% clear identity ≥ 0.60**.
+- ⛔ **IDENTITY CANNOT FIRE ON THIS PATH.** minimap2 cannot emit an alignment below its scoring floor
+  `B/(A+B)` — **0.667** at default scoring (`A=2, B=4`), **0.800** at `asm20` (`A=1, B=4`) — and both
+  sit **above** the 0.60 floor. Measured: **0 of 984,574 records across 8 PAFs fall below 0.60**, and
+  the observed minimum tracks the *preset* while the biology varies freely (default-scored PAFs bottom
+  out at 0.6313–0.7621; `asm20` PAFs at **0.8291 / 0.8295**). ⟹ the identity clause is **inert as a
+  discriminator here**; do not present it as a second filter that admits or rejects paralogues.
+- ⭐ The `nmatch/blocklen` fallback above is **dead code**: **0 of 984,574** records lack the `de:f:` tag.
+- ⚠⚠ **The two estimators are NOT interchangeable, and one other path uses the other one.**
+  `tier2_rescue` (`denovo_pipeline.rs:3091`) applies `nm/bl ≥ sensitive_identity` **directly**, with no
+  `de:f:` branch, against the same 0.60 constant. `de` is gap-compressed; `nm/bl` charges every gap base.
+  Under `nm/bl` that same constant **does** fire — on **1.2–6.9%** of records, down to **0.1478** — so
+  tier-2 applies a materially stricter identity test than the definition it admits into. Tier-2 is
+  opt-in, so nothing shipped is affected; reconcile before enabling it.
+
+*Code:* `homology_edges_all_reps_pooled` → `nucleotide_edges_scored` (the `1 − de` branch is at
+`denovo_pipeline.rs:4665–4673`).
 
 ---
 

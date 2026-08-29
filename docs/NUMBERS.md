@@ -58,6 +58,40 @@ in two days. A number without its substrate is not a result.
 homologous to the anchor copy's exons, and 53.39% fall below the **0.50 coverage floor `E_r` itself
 requires**. An SD partner is a duplicated **SEGMENT**, not a duplicated **GENE**.
 
+---
+
+## ⚠⚠ STRATIFY RECALL BY SUBFAMILY — the coarse denominator mis-scores the rule (2026-08-28, ledger §6l)
+
+**Any O1 recall figure quoted against a whole-family denominator penalises the rule for correctly
+declining to link genes that are not recent duplicates.** On the 72-gene annotated DNA panel, the
+"missing record" rate decomposes as:
+
+| stratum | pairs with an alignment record | **missing** |
+|---|---|---|
+| **within-SUBFAMILY** | 188/201 = 0.9353 | **13/201 = 0.0647** |
+| cross-subfamily, same coarse family | 198/605 = 0.3273 | 407/605 = 0.6727 |
+| cross-coarse-family | 195/1,750 = 0.1114 | — |
+
+⭐⭐ **The headline 420/806 = 0.5211 "no nucleotide record" is almost entirely a CROSS-SUBFAMILY
+phenomenon. Within a true subfamily only 6.47% of pairs lack a record.** ⟹ **quote 6.47%, not 52%, as
+the within-subfamily miss rate, and always name which stratum a recall number belongs to.**
+
+⚠ This is the same failure mode already recorded for the dispersed-family stratum — *"the 8 were
+mis-stratified domain superfamilies under a chr1-scoped rule"*, which moved the rate from 0/8 to
+**1/24 = 4.2%**. A wrong stratum in the denominator has now cost two headline numbers.
+
+⚠⚠ **The same edge set scores pair recall 0.2767 or 0.8209 depending only on the truth granularity**
+(coarse product-family vs subfamily; component recall 0.6667 vs 0.9194, purity 1.0000 vs 0.9286).
+**Granularity is a MODELLING CHOICE the data does not determine — every recall/purity figure must state
+which one produced it.**
+
+⭐ **Validate subfamily claims with GENOMIC POSITION, not product names.** NCBI product text is
+similarity-derived ("golgin subfamily A member 6-**LIKE** protein 9"), and the protein channel alone
+reproduces the DNA headline (ARI 0.9042, purity 1.0000), so a label-shuffle null tests against *no
+structure*, not against the circular alternative. Position was never an input to minimap2: against
+position-only tandem-array blocks the partition scores **ARI 0.6333 — exactly the annotated labels' own
+0.6333** — beating protein 0.4073, identity 0.3930 and length 0.3770.
+
 ### ⛔⛔ RETRACTED 2026-08-23 — the O1 loss decomposition (sign reversed)
 
 | do NOT quote | why |
@@ -149,7 +183,7 @@ catalog, transcript set, code path and method — so the structural claims are s
 |---|---|---|
 | **30/31 vs 12/31** | oracle nodes vs real nodes, same edge rule | ⟹ the definition owns **3%** of the loss, node construction **58%** |
 | **0.1840 vs 0.0580** | edge formation, single-exon vs ≥15-exon reps | completeness is PENALISED; survives a repeat attack at 3.67× |
-| **50.5% / 49.0%** | random 30 kb genomic pairs that align / clear identity ≥0.60 | ⟹ identity never binds; the COVERAGE clause is what separates a repeat from a paralogue |
+| **50.5% / 49.0%** | random 30 kb genomic pairs that align / clear identity ≥0.60 | ⟹ identity never binds; the COVERAGE clause is what separates a repeat from a paralogue. ⭐**MECHANISM (§6m)**: minimap2 cannot emit below its scoring floor `B/(A+B)` = **0.667** default / **0.800** asm20, both ABOVE the 0.60 clause — **0 of 984,574 records across 8 PAFs fall below 0.60**, and the minimum tracks the PRESET (default 0.6313–0.7621, asm20 0.8291/0.8295) while the biology varies. The clause is inert as a discriminator on the E_r path. ⚠`tier2_rescue` uses `nm/bl` instead, where the same constant DOES fire (1.2–6.9%, min 0.1478) |
 | **+0.0018 FPR for +0.4476 TPR** | lowering the coverage floor, on 87,990 real pairs | ⚠ **strong edge evidence that FAILS end-to-end** — NPIP stays at 12/31 |
 | **25/31, converged round 3** | seeded closure, gorilla NPIP, ONE annotated seed | non-member hits constant at 1 every round ⟹ no repeat-chaining |
 | **23/23 = 1.000** | expressed NPIP members found by that closure | vs 13/23 for the pipeline's own discovery |
