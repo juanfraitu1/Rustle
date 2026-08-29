@@ -4086,3 +4086,75 @@ through the same `1 − de` branch or by documenting the difference as deliberat
 it retracted a correct finding. The lesson from §6i stands in corrected form: **the offline panel must
 compute the shipped predicate — and "the shipped predicate" means the one on the path under test, which
 must be identified by reading the enclosing function, not by matching a line.**
+
+---
+
+## §6n — the precision/recall table with error DIAGNOSTICS (2026-08-28)
+
+Computed with the **main E_r predicate** (`1 − de`, `denovo_pipeline.rs:4665`; §6m). ⭐ **The `nm/bl`
+variant used in §6g–§6l gives the IDENTICAL 223-edge set — 0 pairs differ** — so those tables are
+unaffected by the §6i/§6m confusion. Panel: 72 annotated gorilla CDS-envelope DNA nodes, gene-oriented,
+576 size-matched negatives.
+
+| truth granularity | pair recall | Wilson 95% | pair precision | component recall |
+|---|---|---|---|---|
+| **subfamily** (12 non-singleton) | **165/201 = 0.8209** | [0.7620, 0.8677] | 165/223 = 0.7399 | **57/62 = 0.9194** |
+| **coarse family** (5) | 223/806 = 0.2767 | [0.2469, 0.3086] | **223/223 = 1.0000** | 48/72 = 0.6667 |
+
+⚠⚠ **Precision and recall move in OPPOSITE directions with granularity because both are computed on the
+SAME 223 edges.** The 58 edges that count as false positives at subfamily level are true positives at
+coarse level. **Neither row is "O1's precision/recall" — always name the granularity.**
+
+### Where the 36 missed within-subfamily pairs go
+
+| outcome | n | fraction of 201 |
+|---|---|---|
+| edge recovered | 165 | 0.8209 |
+| **FN — record exists, fails COVERAGE** | 23 | 0.1144 |
+| **FN — no alignment record at all** | 13 | 0.0647 |
+| FN — fails IDENTITY | **0** | 0.0000 |
+
+⭐ **Identity accounts for zero misses**, consistent with §6m (it cannot fire on this path). The
+recoverable stratum is the 23 coverage failures; the 13 with no record are beyond any threshold.
+
+### ⭐⭐ The "false positives" are NOT repeats and NOT errors
+
+Of 223 edges, **58 cross a subfamily boundary and 0 cross a coarse-family boundary** — i.e. **zero
+genuine errors on this panel.** All 58 join subfamilies of the same family, at **identity 0.9458–0.9922,
+coverage 1.000, alignment blocks 2,785–7,868 bp** (e.g. `GOLGA6L10~GOLGA6L19` at 0.9922 / 1.000 /
+7,834 bp; `RFPL1~RFPL3` at 0.9458 / 1.000 / 3,383 bp).
+⭐ **They are not repeat-driven: 0/58 have a node above 50% soft-masked** (median max-masked 0.254).
+⟹ **these are genuine near-identical paralogue pairs that the ANNOTATION splits into different
+subfamilies** — the numbering ("6-like protein 9" vs "…19") is finer than the sequence supports. **The
+label is the questionable object here, not the edge.**
+
+### The 3 family × negative merges: repeat-rich, but the blocks are too long for repeats
+
+| family node | partner | identity | cov | block | masked (node / partner) |
+|---|---|---|---|---|---|
+| NPIPB11 | LOC115931109 | 0.9411 | 0.886 | **23,932 bp** | 0.531 / 0.651 |
+| LOC101134557 | LOC115931109 | 0.9500 | 0.763 | 19,949 bp | 0.488 / 0.651 |
+| LOC101141990 | LOC115931109 | 0.9674 | 0.728 | 14,878 bp | 0.422 / 0.651 |
+
+⚠ **Both readings are partly right, and the block length decides.** The partner is **65.1% soft-masked**,
+so "repeat-rich" is true — but a dispersed element cannot produce a **14.9–23.9 kb** collinear block at
+94–97% identity (Alu ≈ 300 bp, L1 ≈ 6 kb). ⟹ **this is a segmental duplication, i.e. a real paralogous
+relationship that the annotation names "serine/arginine repetitive matrix protein 2-like"**, sitting in
+the chr16 SULT1A/CLN3/PDXDC1 NPIP SD region. **Classify as annotation disagreement, not rule error** —
+and note the three family nodes are 1.9 Mb away, 74.5 Mb away, and on a different contig, so this is not
+a local artefact.
+
+### ⭐ Truly NEW unannotated copies: 3, and only in MAGEA
+
+Genome-wide sensitive scan, per seed, copies passing E_r stage-1 (identity ≥ 0.60, cov_q ≥ 0.50):
+
+| seed | copies | overlap an annotated gene | **unannotated** |
+|---|---|---|---|
+| AMY | 3 | 3 | **0** |
+| GOLGA6L | 6 | 6 | **0** |
+| RFPL | 3 | 3 | **0** |
+| **MAGEA** | **26** | 23 | **3** ⭐ |
+
+⟹ **the only candidate reference-present-but-unannotated copies in this panel are 3 MAGEA copies.** AMY,
+GOLGA6L and RFPL are fully accounted for by the annotation — which is itself the useful negative result:
+**the method is not manufacturing copies.**
