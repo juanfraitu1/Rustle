@@ -3094,9 +3094,21 @@ fn tier2_rescue(
         else { continue };
         let (Ok(nm), Ok(bl)) = (f[9].parse::<f64>(), f[10].parse::<f64>()) else { continue };
         if f[4] != "+" || bl <= 0.0 || ql <= 0.0 || tl <= 0.0 { continue; }
-        // the SAME rule: identity >= floor AND coverage >= floor of the SHORTER, axis follows denominator
+        // the SAME rule: identity >= floor AND coverage >= floor of the SHORTER, axis follows denominator.
+        //
+        // ⚠ THE ESTIMATOR MUST MATCH `nucleotide_edges_scored`, and it silently did not. E_r prefers the
+        // gap-compressed `de:f:` tag and falls back to `nmatch/blocklen`; this site used `nmatch/blocklen`
+        // unconditionally. They are NOT interchangeable — `de` charges a gap of any length once, `nm/bl`
+        // charges every gap BASE — so against the same 0.60 constant the raw ratio fires on 1.2–6.9% of
+        // records (down to 0.1478) that E_r admits. Tier-2 was therefore applying a materially STRICTER
+        // identity test than the definition it admits into, while appearing to use the same threshold.
+        // Measured and diagnosed in ledger §6i/§6m. Do not "simplify" this back to `nm / bl`.
+        let de = f[12..]
+            .iter()
+            .find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
+        let ident = match de { Some(d) => 1.0 - d, None => nm / bl };
         let cov = if ql <= tl { (qe - qs) / ql } else { (te - ts) / tl };
-        if nm / bl >= params.sensitive_identity && cov >= params.min_coverage {
+        if ident >= params.sensitive_identity && cov >= params.min_coverage {
             if let Some(i) = f[0].strip_prefix('C').and_then(|x| x.parse::<usize>().ok()) {
                 admitted.insert(i);
             }

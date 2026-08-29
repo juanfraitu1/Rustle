@@ -4383,3 +4383,71 @@ with NPIP already over-split 5 ways. Recovering current behaviour would need γ 
 distribution, i.e. fitting a threshold on the arms it is scored against.
 ⟹ **the edge weight leaves O1 as a REPORTED per-copy certificate and enters O2 as a prior. It never
 re-enters the partition.**
+
+---
+
+## §6s — the three objectives end to end: the chain works, the substrate has no natural instance (2026-08-29)
+
+**User's framing**: O1 says a locus has 2 tandem copies; O2 threads PSVs and assigns reads to them; O3
+finds the individual actually had 3 — *"if we had a sample from an individual where the sample matches
+the genome we would [know]"*. That condition **holds here**: the fibroblast sample and the assembly are
+the same animal (SAMN04003007 / KB3781).
+
+### ⭐⭐ The O3 leg is VALIDATED — by excision, at FPR 0
+
+`o3_excise/` removes a copy from the reference, so the sample genuinely carries one more copy than the
+reference shows, and asks where its reads go. Depth at the surviving paralogue, masked genome ÷ complete
+genome:
+
+| stratum | n | median ratio | q1 | q3 | >1.10 | max |
+|---|---|---|---|---|---|---|
+| **copy excised (positive)** | 113 | **1.2744** | 1.0186 | 1.8233 | **0.6018** | **2.45×** |
+| control (nothing excised) | 225 | **1.0000** | 1.0000 | 1.0000 | **0.0000** | 1.0015× |
+
+⭐ **AUC = 0.8924**, and at the ratio admitting **zero** controls (> 1.0015): **TPR = 0.7965 at FPR =
+0.0000.** ⟹ **when a copy is genuinely absent from the reference, its reads relocate onto the surviving
+paralogue and the excess is detectable.** The architecture the user describes is sound and demonstrated.
+
+### ⛔ But O2's ambiguity is NOT a proxy for the missing copy
+
+Lining all three objectives up on the 356-family fibroblast catalog:
+
+| family stratum | n | median depth skew (max/median reads) | median max identity |
+|---|---|---|---|
+| O2 near-tie rate ≥ 0.20 | 58 | **1.49** | **0.9949** |
+| O2 near-tie rate < 0.20 | 298 | **1.56** | **0.7720** |
+
+⭐⭐ **Depth skew is the SAME in both groups (1.49 vs 1.56) while identity differs enormously (0.9949 vs
+0.7720).** ⟹ **O2's near-tie rate tracks copy SIMILARITY, not a missing copy** — confirming §6r — and the
+hypothesised chain "an unmodeled copy causes both O2 ambiguity and depth excess" **does not appear as a
+correlation.** The two signals are orthogonal on this catalog.
+
+### ⭐⭐⭐ Why RNA depth cannot carry the O3 leg — the numbers that decide it
+
+**The absorbed-copy signal is ~1.27× (median, above).** Between-copy expression variance in the same
+catalog reaches **109.96× (GWFAM225) and 55.75× (GWFAM163, 13 copies)**. ⟹ **a 1.27× effect cannot be
+recovered from a between-copy RNA depth comparison; it is buried two orders of magnitude down.**
+⭐ **The excision panel works precisely because it compares the SAME locus to ITSELF** (masked reference
+vs complete), which cancels expression exactly. ⟹ **the O3 leg must be a WITHIN-LOCUS comparison (one
+locus, two references) or DNA depth — never a between-copy RNA comparison.** This is a design conclusion,
+not a tuning one.
+
+### ⚠ And on this animal the natural yield is pre-registered at < 1
+
+Because the WGS animal **is** the assembly animal, **CN_WGS = CN_assembly + collapse_deficit**, and the
+WGS-only residual **is** O3's absorbed stratum — **pre-registered at < 1 collapse** (§4u). ⟹ **the "there
+were really 3" case is expected to be essentially absent in this genome**, which is why the chain has
+never had a natural instance to run on and why the excision panel is the right instrument.
+⟹ **Report the architecture as demonstrated-by-construction (TPR 0.7965 / FPR 0.0000 on 113 excisions),
+never as a discovery rate on this substrate.**
+
+### Fixed here
+
+⭐ **`tier2_rescue` now uses the E_r estimator.** It applied `nm/bl >= sensitive_identity` while the
+definition applies `1 − de` with `nm/bl` only as a fallback (§6m) — against the same 0.60 constant, so
+tier-2 was silently STRICTER than the definition it admits into (the raw ratio drops 1.2–6.9% of records,
+down to identity 0.1478). Its comment claimed "the SAME rule", which is how it hid. Now assembles the
+`de`-preferring identity exactly as `nucleotide_edges_scored` does.
+⭐ **`tier2_rescue` no longer re-types the E_r tier flags** — it builds the command from `ER_TIER_FLAGS`
+and `ER_SENSITIVE_SEED` (excluding `-X`, which does not apply when aligning candidates against reps). The
+anti-drift guard had caught this; it was a genuine second literal copy.
