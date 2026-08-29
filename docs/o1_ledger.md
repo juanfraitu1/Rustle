@@ -4214,3 +4214,68 @@ missed.** A pair-level recall of 0.8209 therefore understates member-level recov
 ⟹ **the honest statement is: 1 of 201 within-subfamily pairs (0.50%) is beyond every method tried here.
 "No record" is not a synonym for "impossible" — it is a synonym for "not seen by THIS seeding", and in a
 family with redundancy it costs nothing.**
+
+---
+
+## §6p — O2 preconditions on the fibroblast substrate: threading is possible, the population is 40 reads (2026-08-28)
+
+Question: with O1 in better shape, does O2 work — can PSVs on the same molecule still be threaded through
+the variation graph? **Threading is implemented and the molecules can carry it. The problem is that
+almost nothing needs it on this substrate.**
+
+⚠ **Stale reference corrected**: the register cites `psv_linkage.rs:292` for "`--vg` emits ZERO
+copy-assignment by default". **That file no longer exists**; the PSV machinery is in
+`src/rustle/vg_family/copy_assign.rs` (1,070 lines) and `src/bin/copy_assign.rs` (2,392).
+
+⭐ **Threading IS implemented**: `read_psv_obs(read, psv_positions)` returns the read's allele at **every**
+PSV column, `logl` combines them, and `n_decisive` counts how many discriminate, gating on
+`resolvable = n_decisive >= 1`. Multi-PSV molecules are the designed input, not a missing feature.
+
+### ⛔ TBC1D3 has the structure but no expression — the standing scope is EMPTY for O2
+
+Among the 11 full-length gorilla TBC1D3 copies (§6k): median pairwise identity **0.9784** over
+**12,790 bp** ⟹ **~276 differences per pair, one every ~46 bp**. A 500 bp read would span ~10.
+**Ideal threading substrate.**
+⛔ **But the fibroblast FLNC BAM carries 9 primary reads across all 18 copies, with 12 copies at zero.**
+TBC1D3 is testis-biased. ⟹ ⚠⚠ **the standing scope (TBC1D3 + fibroblast) is viable for O1, which works
+on genomic sequence, and EMPTY for O2, which needs molecules.** This must be stated when the scope is
+quoted.
+
+### Where reads exist, there is no ambiguity to resolve
+
+FLNC primaries at the annotated family nodes (fibroblast, `-F 2308`): MAGE **11,156** over 9 expressed
+nodes, NPIP **2,623** over 5/5, RFPL 315, GOLGA6 62, AMY 21.
+⭐ Note the two deepest are **MAGE-D (4/4 expressed)** and **NPIP (5/5)** — precisely the two subfamilies
+O1 separated in §6o. But score margins kill the O2 opportunity there:
+
+| locus | reads | MAPQ 0 | **near-tie s2/s1 ≥ 0.95** | ≥ 0.80 |
+|---|---|---|---|---|
+| MAGED1 | 6,019 | 0 | **0 (0.0000)** | 0 |
+| LOC101137992 | 3,121 | 0 | **0 (0.0000)** | 0 |
+| LOC109028586 | 2,423 | 0 | **0 (0.0000)** | 0 |
+| **NPIPB11** | 114 | 4 | **40 = 0.3509** | 113 = 0.9912 |
+
+⭐⭐ **11,563 reads at the three deep loci have ZERO score competition — every one is MAPQ 60 with no
+second chain within 20%.** There is no assignment problem to solve at these loci; minimap2 has already
+placed every molecule unambiguously. **NPIPB11 is the only locus with a genuine O2 target**, and its
+**0.3509 near-tie rate matches the reframed O2 population** (alignment-score near-ties, ~21.75%
+genome-wide) rather than MAPQ-0.
+
+### ⭐ At NPIPB11 threading would work — on 40 molecules
+
+The 40 near-tie reads are **mean 2,551 bp (688–5,681), spanning a mean of 2.4 introns**, i.e. long
+spliced molecules. Their competitors are other NPIP copies on the same contig (1,989 secondary records in
+the window). NPIPB11's near-tie partners sit at identity **0.9518–0.9682**, i.e. 3–5% divergent ⟹ a
+2,551 bp exonic read crosses on the order of **85–125 discriminating positions**. ⟹ **the molecules
+amply carry multi-PSV evidence; nothing about read length or divergence blocks threading here.**
+
+### ⚠⚠ The structural finding: what needs O2 and what is expressed are anti-correlated
+
+**The family with the PSV structure to thread (TBC1D3 — 11 copies at 0.9784, one difference per 46 bp)
+has 9 reads. The families with thousands of reads (MAGE-D, NPIP's deep nodes) have ZERO near-ties,
+because the expressed copies are the divergent ones minimap2 can already separate.** Their intersection
+on this substrate is **one locus and 40 molecules.**
+⟹ **O2 cannot be evaluated at scale on fibroblast FLNC.** Any O2 claim needs either a tissue that
+expresses the near-identical copies (testis, for TBC1D3 — a different animal, so out of the current
+scope) or a substrate where similar copies are transcribed. ⚠ This is a POWER statement, not a refutation
+of threading: n = 40 supports a demonstration, never a rate.
