@@ -3388,6 +3388,50 @@ pub fn detect_homology_catalog_genome_wide(
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     // Support map before the free; see the same-chrom catalog for why.
     let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
+    // `RUSTLE_DEBUG_LOCUS` (comma-separated chr:start-end) traces each locus through every stage of THIS
+    // path. The xchrom path has its own copy; `--homology-primary` runs HERE, and a first attempt to trace
+    // through the xchrom hook produced ZERO output because of that. Pure logging; no behaviour change.
+    let dbg_loci: Vec<(String, u64, u64)> = std::env::var("RUSTLE_DEBUG_LOCUS")
+        .ok()
+        .map(|v| {
+            v.split(',')
+                .filter_map(|one| {
+                    let (c, r) = one.trim().split_once(':')?;
+                    let (a, b) = r.split_once('-')?;
+                    Some((c.to_string(), a.trim().parse().ok()?, b.trim().parse().ok()?))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if !dbg_loci.is_empty() {
+        let pooled = super::denovo_assemble::locus_support(&skeletons);
+        for (c, a, b) in &dbg_loci {
+            let n = reads.iter().filter(|r| &r.chrom == c && r.ref_start < *b && r.ref_end > *a).count();
+            let mut sk: Vec<(usize, &super::denovo_assemble::Skeleton)> = skeletons
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| &s.chrom == c && s.start < *b && s.end > *a)
+                .collect();
+            sk.sort_by_key(|(_, s)| std::cmp::Reverse(s.n_reads));
+            eprintln!("[dbg {c}:{a}-{b}] reads={n} skeletons={}", sk.len());
+            for (i, sx) in sk.iter().take(8) {
+                let sup = pooled.get(*i).copied().unwrap_or(sx.n_reads);
+                let urs = matches!(std::env::var("RUSTLE_READ_STRAND"), Ok(v) if v != "0" && !v.is_empty());
+                let marg: f64 = std::env::var("RUSTLE_READ_STRAND_MARGIN")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0.90);
+                let why = super::denovo_assemble::gate_reject_reason(
+                    sx, &genome, &cfg.gate, sup, urs, marg,
+                )
+                .unwrap_or("KEPT");
+                eprintln!(
+                    "[dbg]   skeleton {}-{} introns={} reads={} pooled={} -> {}",
+                    sx.start, sx.end, sx.introns.len(), sx.n_reads, sup, why
+                );
+            }
+        }
+    }
     drop(reads);
     let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
     if let Some(sup) = &rt_support {
@@ -3431,6 +3475,19 @@ pub fn detect_homology_catalog_genome_wide(
         let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
         rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
     };
+    for (c, a, b) in &dbg_loci {
+        let t = transcripts.iter().filter(|t| &t.chrom == c && t.start < *b && t.end > *a).count();
+        let mut r: Vec<&DenovoTranscript> =
+            reps.iter().filter(|t| &t.chrom == c && t.start < *b && t.end > *a).collect();
+        r.sort_by_key(|x| std::cmp::Reverse(x.n_reads));
+        eprintln!("[dbg {c}:{a}-{b}] transcripts={t} REPS={}", r.len());
+        for x in r.iter().take(6) {
+            eprintln!(
+                "[dbg]   rep {}-{} exons={} reads={} strand={}",
+                x.start, x.end, x.introns.len() + 1, x.n_reads, x.strand
+            );
+        }
+    }
     drop(transcripts);
     // TIER-2 ADMISSION (`RUSTLE_TIER2_ADMIT`, default off = byte-identical). Purely additive: it only
     // adds reps at read clusters no existing rep covers.
@@ -4495,6 +4552,7 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ("footprint_windows".into(), std::env::var("RUSTLE_FOOTPRINT_WINDOWS").unwrap_or_else(|_| "<unset>".into())),
         ("weighted_partition".into(), std::env::var("RUSTLE_ER_WEIGHTED_PARTITION").unwrap_or_else(|_| "<unset>".into())),
         ("tier2_admit".into(), std::env::var("RUSTLE_TIER2_ADMIT").unwrap_or_else(|_| "<unset>".into())),
+        ("collapse_exonic".into(), std::env::var("RUSTLE_COLLAPSE_EXONIC").unwrap_or_else(|_| "<unset>".into())),
         ("minimap2".into(), params.minimap2.clone()),
     ]
 }

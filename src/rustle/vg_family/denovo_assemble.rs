@@ -1537,6 +1537,52 @@ pub fn locus_support(skeletons: &[Skeleton]) -> Vec<u32> {
 /// (the junction-incidence component, see `locus_support`) carries >= `min_reads` (GATE_MIN_READS) reads, whose
 /// junctions are all canonical + consistent-strand, and whose spliced length is in `[min_spliced, max_spliced]`.
 /// A locus is a copy family of size >= 1; single-copy is the chi(H)=1 boundary case (see the `single_copy` module).
+/// Which `assemble_gate_with` clause rejects `sk`, or `None` if it is kept. DIAGNOSTIC ONLY. It mirrors the
+/// SHIPPED predicate clause-for-clause and in the SAME ORDER -- read floor (on POOLED support), span, the
+/// footprint / spliced sequence build with the same read-strand abstention, then the length window -- so a
+/// vanished member is attributed to the stage that dropped it rather than inferred offline (T8: an offline
+/// re-derivation is a hypothesis generator, never a test). Pure function; no behaviour change.
+pub fn gate_reject_reason(
+    sk: &Skeleton,
+    genome: &GenomeIndex,
+    p: &GateParams,
+    support: u32,
+    use_read_strand: bool,
+    strand_margin: f64,
+) -> Option<&'static str> {
+    if support < p.min_reads {
+        return Some("read_floor");
+    }
+    if sk.end.saturating_sub(sk.start) > p.max_span {
+        return Some("max_span");
+    }
+    let strand_arg =
+        if use_read_strand && sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None };
+    let built = if sk.footprint {
+        build_footprint_seq(
+            genome,
+            &sk.chrom,
+            sk.start,
+            sk.end,
+            &sk.introns,
+            if sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None },
+        )
+    } else {
+        build_spliced_seq(genome, &sk.chrom, sk.start, sk.end, &sk.introns, strand_arg)
+    };
+    let (seq, _strand) = match built {
+        Some(v) => v,
+        None => return Some("noncanonical_or_mixed_strand"),
+    };
+    if seq.len() < p.min_spliced {
+        return Some("too_short");
+    }
+    if seq.len() > p.max_spliced {
+        return Some("too_long");
+    }
+    None
+}
+
 pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParams) -> Vec<DenovoTranscript> {
     // Opt-in read-orientation strand for UNSPLICED models (`RUSTLE_READ_STRAND`, see `build_spliced_seq`).
     // OFF by default so every existing catalog stays byte-identical; the delta gets measured before it is

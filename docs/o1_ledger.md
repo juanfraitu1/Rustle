@@ -4718,3 +4718,139 @@ every admitted copy is identifiable** — the evidence tier must travel with the
 ⟹ **31/31 remains unreachable**: 8 loci have NO reads, and §5s showed locus collapse absorbs loci even at
 40× coverage. Tier-2 routes around that defect; it does not repair it. **The repair belongs in
 `collapse_loci_span_aware`.**
+
+## §6y — The remaining lever, closed; §5s RETRACTED (08-30)
+
+**Shipped win.** `RUSTLE_COLLAPSE_EXONIC` (pre-existing at `family_detect.rs:662`, never measured, and
+missing from the params certificate — the recurring M2 defect, now added). Measures collapse containment
+on EXONS not the genomic span. Real fibroblast BAM: reps 2,847 → 3,303, families 83 → 94, copies
+484 → 550, **NPIP purity HELD at 3/3**, NPIP loci 12/31 unchanged. OFF arm reproduces baseline
+byte-identically once the `max_family_identity` column (commit 0d8d606) is excluded — md5 03e1ddec both.
+
+**⛔ RETRACTION 1 — §5s's mechanism.** §5s concluded "the transcripts are built and then absorbed by
+locus collapse". **Refuted by ablation.** `RUSTLE_LOCUS_JUNCTION_ONLY=1` removes BOTH sequence-based
+clauses (b) span and (c) POA-core; it recovers **exactly the same single locus (28)** as the exonic fix
+— 16/31 either way — while families explode 76 → 153 and copies 445 → 699. ⟹ **locus collapse owns
+1 of 15 residual loci, not 13 of 14.** The exonic fix therefore captures 100% of what that mechanism can
+yield at 94 families rather than 153: the efficient frontier of an exhausted lever.
+
+**⛔ RETRACTION 2 — the top-up substrate is INVALID at the loci it was built to test.** The injected
+reads (named `NPIP<n>_`, 1,240 = 31×40, 91.3% at source, 29/31 with ≥20 — §5s's 93.7%/30-of-31 broadly
+reproduce) are **18,467 bp median at the MISSING loci vs 6,013 bp at recovered ones**, while REAL reads
+at those same loci are **1.2–2.9 kb, indistinguishable from recovered loci**. Long reads span many
+junctions ⟹ 27/23/20/28 distinct exact intron chains from ~24 spliced reads ⟹ no chain reaches
+`GATE_MIN_READS`, so no node can form BY CONSTRUCTION. ⟹ **"15/31 with 40 reads everywhere" never
+measured what it claimed.** ⚠ a top-up must match the real read-length distribution or it tests the
+simulator.
+
+**⭐ THE REAL RESIDUAL IS NODE CONSTRUCTION.** Of the 15 missing loci, **13 have NO overlapping node at
+all** (any-overlap, not the 50% attribution rule) and 1 more overlaps only 0.01 of a 24.3 kb node — this
+despite real support: **L3 = 62 real reads with 16 sharing ONE exact intron chain** (vs a floor of 3),
+**L5 = 4,784 real reads with 4,187 on a single chain.** Not the edge rule, not γ, not collapse, not
+depth. ⟹ the next question is WHICH construction step drops them; the cause is NOT yet established.
+
+⚠ purity is 0 on BOTH topped-up arms vs 3 on the real BAM — the simulated reads contaminate purity, so
+**purity is only interpretable on the real substrate.**
+
+## §6z — Stage attribution: WHICH construction step drops the missing NPIP loci (08-30)
+
+Instrumented the SHIPPED path. `RUSTLE_DEBUG_LOCUS` existed only in `detect_conflict_catalog_genome_wide_xchrom`;
+`--homology-primary` runs `detect_homology_catalog_genome_wide`, which had NO trace — a first run produced 0
+dbg lines. Ported the hook there (comma-separated loci) plus `gate_reject_reason`, which recomputes the
+SHIPPED gate predicate in the shipped order INCLUDING POOLED locus support. Pure logging; build clean.
+
+**The funnel over all 31 projected loci (real BAM, shipped config):**
+
+| stage | loci | median reads |
+|---|---|---|
+| 1. PASS-1 — no exact chain reaches 2 reads | **11** | **4** |
+| 2. GATE rejects every skeleton | 4 | 16 |
+| 3. LOCUS COLLAPSE absorbs it | 2 | 86 |
+| 4. reaches a REP | 14 | 35 |
+
+14 reps → shipped `copies.tsv` reports 12, so **2 more are lost at the edge/family stage**. 11+4+2+2 = 19 = 31−12. ✔
+
+**⭐ THE DOMINANT CAUSE IS EXPRESSION, NOT A DEFINITIONAL DEFECT.** The 11 Pass-1 losses carry a **median
+of 4 reads**; only 2 loci die at Pass-1 with ≥15 reads (37 and 18). This is consistent with the independently
+derived **expressed ceiling of 23/31** — these copies are not transcribed in fibroblast at detectable depth.
+⟹ **do not report the 19-locus gap as method error.**
+
+**⭐⭐ THE ONE SHARP LEVER: all 26 `read_floor` rejections sit at pooled = 2 against `GATE_MIN_READS` = 3 —
+every one is short by EXACTLY ONE READ.** (Gate verdicts over 157 traced skeletons: 44 KEPT, 26 read_floor,
+7 noncanonical_or_mixed_strand.) A floor of 2 would admit all 26. ⚠UNTESTED for precision: it must be
+scored genome-wide on false merges + NPIP purity before any claim, and the register warns that lowering a
+read floor multiplies spurious skeletons.
+
+⚠ collapse costs **2 loci** here (median 86 reads) — consistent with §6y, where the exonic fix recovered 1.
+⚠ this supersedes four offline hypotheses that each died to their comparator (collapse-absorption,
+all-canonical, projection offset, chain fragmentation): none could model POOLED support. **T8 confirmed —
+only the instrumented binary settled it.**
+
+**⚠ PROVENANCE CORRECTION (08-30).** §6y and §6z were first produced in `/mnt/linuxdisk/.../mut_repo`, a
+NON-git tree ~3,000 lines behind canonical (`denovo_pipeline.rs` 7,765 vs 10,855 lines, no tier2). The
+instrumentation was ported here and the trace RE-RUN on the canonical binary: the funnel reproduces
+**EXACTLY** — 11 / 4 / 2 / 14 loci and 44 KEPT / 26 read_floor / 7 noncanonical — so §6z stands on the
+shipped pipeline. ⚠canonical's gate has a FOOTPRINT branch and a READ-STRAND argument the stale tree
+lacked; `gate_reject_reason` mirrors the shipped clause order including both. **Check `git rev-parse` before
+trusting a measurement's tree.**
+
+## §6aa — FLAG-DEFAULT AUDIT: nothing qualifies to flip (08-30)
+
+**Scope.** 124 `RUSTLE_*` flags exist; only 13 are named in any doc. Classified every boolean behaviour
+flag on the O1 path by MEASURED verdict.
+
+| flag | measured | default |
+|---|---|---|
+| `COLLAPSE_EXONIC` | see the retraction below | **stays OFF** |
+| `LOCUS_EXON_UNION` | −20 recall points | off |
+| `SPLICED_REP` | e2e regression chr7 F1 .570→.411, chr16 .910→.761 | off |
+| `TIER2_ADMIT` | 17/31 loci but purity 3→0 | off |
+| `ER_WEIGHTED_PARTITION` | refuted; all edges weight 1.0 ⟹ runs unweighted | off |
+| `READ_STRAND` | break-even, 224 lost / 163 gained | off (opt-in) |
+| `COTHREAD_REP`, repeat gate | priced negative / P1-breaking | off |
+| `ER_SUM_COVERAGE`, `SHARED_EXON`, `FLAGFREE_SITES`, `TSS_SNAP` | **UNMEASURED** | off |
+| `*_DUMP` `*_AUDIT` `*_TRACE` `LOCUS_JUNCTION_ONLY` | diagnostics | never |
+
+⟹ **every measured flag is negative or break-even; the rest are unmeasured. The shipped defaults are
+already correct and NOTHING should be flipped.**
+
+**⛔ RETRACTION — §6y's "purity HELD 3/3" was too narrow to license `COLLAPSE_EXONIC`.** Co-membership
+pairs, OFF vs ON: **2,778 → 4,481**. The flag **CREATES 1,991 new co-membership pairs and destroys only
+288** — it merges ~7× more than it splits, and the largest family goes **39 → 60**. The rising family count
+(83 → 94) hid this because 66 copies were added at the same time. New merges are **333 cross-chromosome**
+and 1,658 same-chrom at a **median separation of 14.9 Mb** (max 111 Mb). Dispersed families do span such
+distances, so this is not proof of error — but it IS 1,991 unvalidated merges, and a 3-family NPIP purity
+check cannot speak to them. ⚠**"purity held" on a 3-family subset is not a precision measurement.**
+
+⚠**AND THE AVAILABLE PANEL CANNOT ADJUDICATE IT.** `bench/family_def_airtight_panel.py` computes edges from
+ANNOTATION-derived cDNA homology and never invokes the pipeline (no subprocess, no `RUSTLE_` env) ⟹ it is
+**BLIND to a LOCUS-COLLAPSE flag**; running both arms would return "identical", the 2/150 trap exactly.
+⚠also: exonic containment is **NOT monotonically stricter** — exon overlap shrinks but so does the
+denominator, so it can CREATE merges span-containment refuses. That is what the 1,991 are.
+⟹ **to ship it, price those 1,991 merges against an instrument that actually runs the pipeline.**
+
+## §6ab — `COLLAPSE_EXONIC` REFUTED as a default: its merges are hub fusion (08-30)
+
+**New instrument: `bench/merge_precision_arms.py`** — prices the merges a flag CREATES against the
+pipeline's OWN output, filling the gap §6aa exposed (the airtight panel recomputes edges from annotation
+and never runs the pipeline, so it is blind to any collapse/representative flag).
+
+**The statistic.** A family is an E_r component, so co-membership is transitive BY CONSTRUCTION: two copies
+being co-family is not evidence they resemble each other. A few new edges can fuse large components and
+manufacture a quadratic number of pairs. So: what fraction of co-membership pairs carries a DIRECT E_r
+edge — **read against the baseline arm's own rate.**
+
+| pair set | direct E_r edge |
+|---|---|
+| OFF baseline (2,778 pairs) | **49.53%** ← the comparator |
+| ON, kept from OFF (2,490) | 52.29% |
+| **ON, newly created (1,991)** | **14.92%** |
+
+⭐**+154 edges produce +1,991 co-membership pairs, and 85% of them have NO direct homology backing** — a
+3.3× drop against the arm's own baseline. **1,244 of the 1,991 (62%) land in ONE family, `GWFAM8`, which
+grows to 60 copies.** ⟹**this is the hairball failure mode, not recall**: exonic containment fuses
+components through hubs. ⛔**`RUSTLE_COLLAPSE_EXONIC` STAYS OFF — refuted as a default, not merely
+unvalidated.**
+
+⚠the 297 backed new pairs are legitimate (median identity 0.7639, min 0.6804) — the flag is not
+uniformly wrong, it is that 85% of what it adds is unsupported. ⚠**quote 14.92% only WITH the 49.53%.**
