@@ -4675,3 +4675,46 @@ fragments.
 ⚠ The 3 dispersed survivors (GWFAM140/300/304, all ±1) are genuinely unresolved: full-length, but not in
 an array, so an assembly placement difference and a real CNV look the same. Settling them needs read-level
 depth at those loci, not more assembly comparison.
+
+## §6x — tier-2 admission: the mechanism finally fires, and the trade is real (2026-08-29)
+
+**§5r's projection was never tested**, because the tier-2 candidate generator inherited a defect.
+
+### ⚠⚠ THE FIFTH CONSTRUCTION ERROR — AND A REPEAT OF ONE ALREADY FIXED
+
+`footprint_skeletons` has two branches. The **windowed** branch blocks a region only when existing reps
+cover **≥ 50%** of it (fixed earlier). The **genome-wide** branch — the one `tier2_rescue` uses — still
+blocked on **ANY overlap**. At the target loci reps sit **0.7–3 kb away**, so a candidate whose 5 kb
+grouping merely touched one was discarded whole.
+⟹ **tier-2 had never fired where it was designed to**: every rep at an NPIP locus was tier-1, and its
+earlier +3 came indirectly, from tier-2 reps added elsewhere perturbing collapse.
+⭐ **LESSON: when a predicate is wrong in one branch, check its siblings before moving on.** The correct
+form was 40 lines away in the same function. A test asserting both branches agree on a shared case is
+cheaper than a 17-minute run.
+
+### After the fix
+
+| arm | families | copies | **NPIP loci** | **pure** | T2 copies | NPIP reached via T2 |
+|---|---:|---:|---:|---:|---:|---:|
+| shipped | 83 | 484 | **12/31** | **3** | 0 | 0 |
+| tier-2, any-overlap block | 98 | 557 | 15/31 | 2 | 47 | 4 |
+| **tier-2, coverage block** | 117 | 631 | **17/31** | **0** | **140** | **17** |
+
+Admissions rise **50 → 238** (the block was suppressing 79% of candidates). ⭐ **The mechanism now works
+as designed** — 17 NPIP loci reached via tier-2, against 4 before.
+
+### The trade, stated both ways
+
+⭐ **Recall up and fragmentation DOWN**: 12 → **17/31** loci, and NPIP now spans **3 families instead of
+5** (§5j's fragmentation partly resolved).
+⛔ **Purity 3 → 0.** Of the 33 impurities in those 3 families: **19/33 lie within 50 kb of a true NPIP
+locus (median 6.0 kb, q1 2.8 kb)** — adjacent sequence, plausibly same-locus flanks or gorilla-specific
+copies **absent from a human-ortholog-derived truth set by construction**; but **11/33 are >1 Mb away or
+on another contig**, which is genuine contamination.
+
+⟹ **NOT shippable as a default.** 140 tier-2 copies genome-wide (22% of the shipped catalog size) are
+unvalidated, and 11 distant impurities are real false merges. **Ships OFF, with the `T2~` tid prefix so
+every admitted copy is identifiable** — the evidence tier must travel with the copy.
+⟹ **31/31 remains unreachable**: 8 loci have NO reads, and §5s showed locus collapse absorbs loci even at
+40× coverage. Tier-2 routes around that defect; it does not repair it. **The repair belongs in
+`collapse_loci_span_aware`.**

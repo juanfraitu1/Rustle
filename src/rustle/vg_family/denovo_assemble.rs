@@ -518,9 +518,27 @@ pub fn footprint_skeletons(
             if g.is_empty() { return; }
             let bp: u64 = g.iter().map(|(a, b)| b - a).sum();
             let (s0, e0) = (g[0].0, g[g.len() - 1].1);
-            let overlaps = taken.get(chrom).is_some_and(|v| {
-                v.iter().any(|&(a, b)| e0.min(b) > s0.max(a))
-            });
+            // A region is "already served" only when existing nodes cover MOST of it. Blocking on ANY
+            // overlap was a bug, and the SAME bug was already fixed in the windowed branch above: at the
+            // NPIP loci this pass targets, reps sit 0.7-3 kb away, so a footprint whose grouping reaches
+            // one was discarded whole. That is why tier-2 admission (`RUSTLE_TIER2_ADMIT`), which uses
+            // this branch, produced ZERO copies at NPIP loci while §5r projected 10/10 - every rep there
+            // was tier-1, and tier-2's +3 came indirectly from reps added elsewhere.
+            let mut iv: Vec<(u64, u64)> = taken
+                .get(chrom)
+                .map(|v| v.iter().filter(|&&(a, b)| e0.min(b) > s0.max(a))
+                          .map(|&(a, b)| (a.max(s0), b.min(e0))).collect())
+                .unwrap_or_default();
+            iv.sort_unstable();
+            let mut served = 0u64;
+            if !iv.is_empty() {
+                let (mut cs, mut ce) = iv[0];
+                for &(a, b) in &iv[1..] {
+                    if a <= ce { ce = ce.max(b); } else { served += ce - cs; cs = a; ce = b; }
+                }
+                served += ce - cs;
+            }
+            let overlaps = e0 > s0 && served * 2 >= e0 - s0;
             if bp >= min_bp && !overlaps {
                 let introns: Vec<(u64, u64)> = g.windows(2).map(|w| (w[0].1, w[1].0)).collect();
                 let n = rs.iter().filter(|r| r.ref_end.min(e0) > r.ref_start.max(s0)).count() as u32;
