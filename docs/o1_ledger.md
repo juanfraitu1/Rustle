@@ -4854,3 +4854,44 @@ unvalidated.**
 
 ⚠the 297 backed new pairs are legitimate (median identity 0.7639, min 0.6804) — the flag is not
 uniformly wrong, it is that 85% of what it adds is unsupported. ⚠**quote 14.92% only WITH the 49.53%.**
+
+## §6ac — O1 NODE FLOOR: 3 → 2, SHIPPED (08-30)
+
+**The inconsistency.** Pass-1 forms a skeleton at **2** reads; the gate then demanded **3**, discarding
+chains the previous stage had accepted. §6z found EVERY read-floor rejection at the NPIP panel sitting at
+pooled support = 2 — all 26 short by exactly one read.
+
+**Arms on the real fibroblast BAM.** Control first: floor 3 with `RUSTLE_GATE_MIN_READS` unset is
+**BYTE-IDENTICAL** to the shipped baseline (md5 2c002d7c both), so the treatment arm is interpretable.
+
+| | floor 3 | floor 2 |
+|---|---|---|
+| NPIP loci | 12/31 | **14/31** |
+| family purity | 3 | **3 (HELD)** |
+| families / copies | 83 / 484 | 121 / 678 |
+| reps | 2,847 | 3,598 |
+
+**⚠⚠ THE FIRST VERDICT WAS WRONG — `merge_precision_arms.py` HAD A SIZE CONFOUND.** Raw direct-edge
+backing (22.44% new vs 49.53% baseline) printed "do not ship". **Pairs grow as n² while edges grow
+linearly, so backing FALLS MECHANICALLY as families grow**, sound merges or not; newly-created pairs sit in
+the LARGER families, so the comparison was not like-for-like. This is the register's own "match the SIZE
+distribution, not the edge count" trap, walked into while holding the instrument built to avoid it.
+
+**Size-robust statistics (now what the script reports):**
+
+| | pairs per NEW EDGE | 2–5 | 6–15 |
+|---|---|---|---|
+| floor 3 (baseline) | — | 0.89 | 0.45 |
+| **floor 2** | **1.5** | **0.81** | **0.44** |
+| COLLAPSE_EXONIC (refuted) | **6.5** | 0.89 | 0.44 |
+
+⟹ floor 2 adds **1,446 GENUINELY NEW EDGES at 1.5 pairs each** — real homology, not amplification — and its
+families are built like the shipped ones at matched size. ⭐**SHIPPED as `NODE_MIN_READS = 2`.**
+
+⚠**`GATE_MIN_READS` STAYS 3** — it governs `copy_assign`'s tie-invariance certificate, a different
+question (O1 ⊥ O2). The knob feeds only `GateParams::default()`.
+⚠⚠**EVERY CATALOG NUMBER RECORDED BEFORE 08-30 WAS COMPUTED AT 3** (the 627-family catalog included); set
+`RUSTLE_GATE_MIN_READS=3` to reproduce one.
+⚠**A TEST ALREADY ENCODED THE OLD DEFAULT** (`gate_rejects_below_min_reads`) and failed on the flip —
+**grep the tests before changing a default.** It now pins the CLAUSE at an explicit floor, and
+`o1_node_floor_is_two_and_is_overridable` pins the VALUE. 815 pass / 0 fail.

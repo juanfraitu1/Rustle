@@ -1230,11 +1230,41 @@ pub struct GateParams {
     pub pool_locus_support: bool,
 }
 
+/// O1 NODE-CONSTRUCTION read floor. **2, not [`GATE_MIN_READS`]'s 3** (2026-08-30, `docs/o1_ledger.md`
+/// §6ac). Pass-1 already forms a skeleton at 2 reads, so a gate of 3 discarded chains the previous stage
+/// had accepted -- and the stage attribution in §6z found EVERY read-floor rejection at the NPIP panel
+/// sitting at pooled support = 2, short by exactly one read.
+///
+/// Measured before flipping, arm vs arm on the real fibroblast BAM: NPIP loci 12/31 -> 14/31 with family
+/// PURITY HELD at 3, and genome-wide the new merges are real rather than hub fusion -- 1,446 new edges at
+/// **1.5 pairs per new edge** (COLLAPSE_EXONIC, refuted, ran at 6.5) with size-matched family density
+/// tracking the old default (2-5: 0.81 vs 0.89, 6-15: 0.44 vs 0.45).
+///
+/// ⚠ SEPARATE FROM [`GATE_MIN_READS`], which stays 3 and still governs `copy_assign`'s tie-invariance
+/// certificate -- O1's node floor and O2's invariance bar are different questions (O1 ⊥ O2).
+/// ⚠ Every catalog number recorded BEFORE this date was computed at 3; set `RUSTLE_GATE_MIN_READS=3` to
+/// reproduce one.
+pub const NODE_MIN_READS: u32 = 2;
+
+/// Gate read floor, overridable via `RUSTLE_GATE_MIN_READS` (default [`GATE_MIN_READS`] = 3 ⟹ every
+/// existing catalog stays byte-identical). Exists because the stage attribution in `docs/o1_ledger.md`
+/// §6z found that ALL 26 read-floor rejections at the NPIP panel sat at pooled support = 2, i.e. short by
+/// exactly one read. Lowering the floor is a PRECISION trade, not a free recall gain: it admits every
+/// 2-read chain genome-wide, so an arm must be priced with `bench/merge_precision_arms.py` before the
+/// default moves.
+pub fn gate_min_reads() -> u32 {
+    std::env::var("RUSTLE_GATE_MIN_READS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(NODE_MIN_READS)
+}
+
 impl Default for GateParams {
     fn default() -> Self {
         GateParams {
             pool_locus_support: true,
-            min_reads: GATE_MIN_READS,
+            min_reads: gate_min_reads(),
             max_span: MAX_SPAN,
             min_spliced: MIN_SPLICED,
             max_spliced: MAX_SPLICED,
@@ -2397,8 +2427,30 @@ footprint: false,
 
     #[test]
     fn gate_rejects_below_min_reads() {
+        // Pins the CLAUSE, not the constant: a skeleton one read below whatever floor is configured is
+        // rejected. Written against an explicit `min_reads` because this test previously asserted that a
+        // 2-read skeleton is dropped -- true only while the floor was 3, so it failed the moment the
+        // O1 node floor moved to `NODE_MIN_READS` = 2 (§6ac). The floor's VALUE is pinned separately below.
         let g = genome_one_intron(b"GT", b"AG");
-        assert!(assemble_gate(&[skel("c1", 0, 180, 2, &[(80, 100)])], &g, &GateParams::default()).is_empty());
+        let p = GateParams { min_reads: 3, ..GateParams::default() };
+        assert!(assemble_gate(&[skel("c1", 0, 180, 2, &[(80, 100)])], &g, &p).is_empty());
+        assert_eq!(assemble_gate(&[skel("c1", 0, 180, 3, &[(80, 100)])], &g, &p).len(), 1);
+    }
+
+    #[test]
+    fn o1_node_floor_is_two_and_is_overridable() {
+        // The O1 node floor is 2 (§6ac: measured 12/31 -> 14/31 NPIP loci, purity held, 1.5 pairs per new
+        // edge). Pinned because flipping it silently would make every recorded catalog number incomparable.
+        assert_eq!(NODE_MIN_READS, 2);
+        assert_eq!(GateParams::default().min_reads, 2);
+        // GATE_MIN_READS stays 3: it governs `copy_assign`'s tie-invariance bar, a different question.
+        assert_eq!(GATE_MIN_READS, 3);
+        let g = genome_one_intron(b"GT", b"AG");
+        assert_eq!(
+            assemble_gate(&[skel("c1", 0, 180, 2, &[(80, 100)])], &g, &GateParams::default()).len(),
+            1,
+            "a 2-read chain must now become a node -- Pass-1 already accepted it at 2"
+        );
     }
 
     #[test]
