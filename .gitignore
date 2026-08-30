@@ -112,3 +112,13 @@ bench/*.npz
 /tests/fixtures/same_chrom_supplement/out_hom*
 /tests/fixtures/same_chrom_supplement/out_famcn*
 /tests/fixtures/same_chrom_supplement/out_conflict_enum*
+
+# --- regenerable caches and debug dumps (2026-08-29) ---------------------------------------------
+# Kept OUT of the repo because each is rebuilt on demand and none is an input to a result.
+# ⚠ NOT ignored, deliberately: bench/compara_cache.json (reruns are deterministic ONLY given it),
+# bench/family_er_pr.tsv and bench/vg_repeat_catalog.tsv (consumed by other scripts and cited in docs),
+# and everything under */testdata/ and bench/fixtures/ (test fixtures — the suite fails without them).
+analysis/family_graphs/data/gff_cache.rds
+analysis/family_graphs/data/*_cache.rds
+bench/*_debug*.jsonl
+bench/st_debug*.jsonl
