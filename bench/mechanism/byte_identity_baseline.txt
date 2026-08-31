@@ -1,7 +1,14 @@
-# baseline @ fa2e2af
-8c0507aaddf1d0a0f5a1571a3dbf27f6  gstm.assignments.tsv
-414c0a1bbed3e508dbe55e287d423483  gstm.families.tsv
-f87dcd10e1e20d9ebeecca9e43b32d54  gstm.quant.tsv
-9135a3e1bd054a6ed939b69194dc76fc  gstm.psv_cols.tsv
-602580f785a139aab9ecd445d87ccb5f  cat.families.tsv
-9707c92e04964a805e70e0e60a73ba1e  cat.copies.tsv
+# baseline @ 2ac9104
+# reason: the fa2e2af (2026-07-21) baseline predates 0db944f (2026-08-14), the record->molecule reduction, whose own doc comment states it changes .assignments.tsv rows, families.tsv counters and quant.tsv n_reads_hard/abundance. It failed on HEAD for that reason, not for anything in this branch. Re-frozen on HEAD BEFORE the RUSTLE_XFAM_RECONCILE behaviour change, with corpus 2 (psv.*, the 12-family --families batch) added because corpus 1 (gstm) is ONE family and offers ZERO cross-family candidate pairs.
+ae768eecfbcb330581b4987c79b17a47  gstm.assignments.tsv
+13b4a925a5b912738e01bda4e0c70f50  gstm.families.tsv
+fe48ac7616beea975ad49324eeaa50a5  gstm.quant.tsv
+6e7dab396e5d6bc99ef6bb018f7814c0  gstm.psv_cols.tsv
+fdf04ded2b62b39c4b541386a33b2f73  cat.families.tsv
+9532dabed49d94891646ee2bf35f9e96  cat.copies.tsv
+fe563640abbb68fa5e16427e5463a58c  psv.assignments.tsv
+033b315a68f11bccf281ad825dcf84d3  psv.families.tsv
+219f9007fe2cfa7e39e14ca00da62207  psv.quant.tsv
+9efbb5a844d8099d655a03c397640ee1  psv.psv_reads.tsv
+e4dd2797b45f33d0fd737f4c734e16ec  psv.psv_cols.tsv
+882fa2fbe33c1f56ecce8462caba335c  psv.family_join.tsv
