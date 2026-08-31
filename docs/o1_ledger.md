@@ -5011,3 +5011,45 @@ primary-flag critique it answers is correct — the defect is that seeding from 
 analogue of E_r's coverage clause, so repeat-driven placements seed sites. ⟹**the reopenable question is a
 site-level admission bar** (≥2 independent tied placements, or a coverage floor on the seeded site), NOT
 the flag itself.
+
+## §6ag — Overlapping multimappers as site evidence: the cheap win (08-30)
+
+**The rule, in one sentence.** Don't decide where a copy exists from the primary flag — between
+near-identical copies that flag is a coin toss — so let **every** alignment propose a site, and keep a
+site when **more than one read's placements land on it**.
+
+That is the whole idea. The advisor's objection all along was that seeding candidate sites from primary
+alignments alone makes "which copies exist" (O1) depend on an answer to "where did this molecule come
+from" (O2). Abstaining from that assignment is simpler than the machinery it replaces, not more complex.
+
+**One guard is needed, and only one.** The two Pass-1 paths differ in KIND:
+
+* **Spliced** reads must agree on an **exact intron chain** — already a real quorum, because a shared
+  repeat does not manufacture a shared splice structure. Safe under flag-free, no change needed.
+* **Unspliced** reads cluster on **span overlap alone** — no corroboration at all, so every repeat
+  position accumulates secondary placements into one giant node.
+
+⟹ **an unspliced site needs a primary; a spliced site does not.** That is the entire guard
+(`RUSTLE_FLAGFREE_UNSPLICED=1` restores the unguarded behaviour for A/B). It preserves the intronless
+pseudogene/retrocopy class that a blanket "spliced only" rule would have discarded.
+
+**What it costs and what it buys** (fibroblast `npip3.bam`; ⚠ the 31 NPIP loci are a minimap2 projection
+of HUMAN NPIP, not gorilla annotation):
+
+| | NPIP loci | largest family | 1-exon share | single-copy controls |
+|---|---|---|---|---|
+| primary-seeded (shipped default) | 14/31 | 54 | 1.9% | 3/3 PASS |
+| every placement, NO guard | 26/31 | 312 | 95.2% | **ATP5F1A FAIL, n=115** |
+| **every placement + the guard** | **26/31** | **50** | 68.0% | **3/3 PASS** |
+
+⭐**All of the recall (+12 loci), none of the pile-up**: 496,290 unspliced secondary-only placements
+barred, largest family back to 50 vs the primary-seeded 54. The guard costs nothing on NPIP because the
+sites carrying those loci are spliced, and spliced sites were never the ones barred.
+
+⚠**Honest residuals.** The largest family is still **68% single-exon** (vs 1.9% primary-seeded), so
+pile-up is reduced, not eliminated. On the large-n class (2,207 uniquely-named protein-coding genes) the
+guarded arm sits **+6.7 points above the shipped default** (23.29% vs 16.63%) — the unguarded arm was
++16.5 — and part of that rise is legitimate, since flag-free is meant to find more real families and the
+class is contaminated by LOC-named paralogues. ⚠**the clean control is n=3**: only ALDOA, ATP5F1A and
+RPL13A lie on this catalog's contigs. ⟹**flag-free stays OPT-IN; the guard is intrinsic to it. A ship
+decision needs the full-contig run where all 30 housekeeping genes are in scope.**

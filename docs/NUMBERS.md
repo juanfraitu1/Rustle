@@ -239,3 +239,21 @@ predicts, so it can never evidence silence.
 **Refuted 08-30, with the number that did it:** `COLLAPSE_EXONIC` (6.5 pairs/new edge, 62% of new pairs in
 one family) · shared-read `E_c` edges as a definition tier (**fusion fraction ~72% INVARIANT from 2 to 100
 shared reads** ⟹ no threshold exists).
+
+
+## 2026-08-30 (later) — overlapping multimappers as site evidence
+
+**Rule:** don't seed candidate sites from the primary flag (a coin toss between near-identical copies);
+let every alignment propose a site, and require that **an unspliced site have a primary** — a spliced site
+needs no such guard, because agreeing on an exact intron chain is already corroboration.
+
+Same substrate as above (`npip3.bam`; the 31 NPIP loci are a HUMAN projection):
+
+| | NPIP loci | largest family | single-copy controls (n=3) |
+|---|---|---|---|
+| primary-seeded (shipped default) | 14/31 | 54 | 3/3 PASS |
+| every placement, no guard | 26/31 | 312 | ATP5F1A **FAIL** (115-copy family) |
+| every placement + guard | **26/31** | 50 | 3/3 PASS |
+
+⚠ `RUSTLE_FLAGFREE_SITES` is **opt-in, not the default**; the guard is intrinsic to it. Quote 26/31 only
+with the n=3 caveat on the control and the note that the NPIP panel is a human projection.

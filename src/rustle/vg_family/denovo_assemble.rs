@@ -822,6 +822,8 @@ pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<Prim
     let mut record = RecordBuf::default();
     let mut out = Vec::new();
     let (mut n_prim, mut n_sec, mut n_dup) = (0usize, 0usize, 0usize);
+    let mut n_bar = 0usize;
+    let mut sec_flag: Vec<bool> = Vec::new();
     let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
     while reader.read_record_buf(&header, &mut record)? > 0 {
         let chrom = match record
@@ -851,12 +853,62 @@ pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<Prim
                     n_prim += 1;
                 }
             }
+            if flagfree {
+                sec_flag.push(is_sec);
+            }
             out.push(pr);
         }
     }
     if flagfree {
+        // ASYMMETRIC SITE-ADMISSION BAR (2026-08-30, ledger §6ag). Flag-free WITHOUT this is refuted: it
+        // put ATP5F1A, a canonical single-copy housekeeping gene, into a 115-copy family, and that family
+        // was 80.9% SINGLE-EXON (flag-free's largest was 95.2%, against 1.9% for the primary-seeded
+        // default). The mechanism is an asymmetry between the two Pass-1 paths: SPLICED reads must agree
+        // on an EXACT INTRON CHAIN -- a real quorum, since a shared repeat does not manufacture a shared
+        // splice structure -- while UNSPLICED reads cluster on SPAN OVERLAP alone, so under flag-free
+        // every repeat position accumulates secondary placements into one giant node.
+        //
+        // The bar: an UNSPLICED placement that is SECONDARY is admitted only where an UNSPLICED PRIMARY
+        // placement also lies -- i.e. where minimap2 actually chose the locus. Spliced placements are
+        // untouched, because chain agreement already carries the independence the span rule lacks. This
+        // deliberately preserves the intronless pseudogene/retrocopy class that a blanket "spliced only"
+        // rule would discard along with the pile-ups.
+        //
+        // `RUSTLE_FLAGFREE_UNSPLICED=1` restores the refuted behaviour, for A/B only.
+        let bar = !matches!(std::env::var("RUSTLE_FLAGFREE_UNSPLICED"), Ok(v) if v != "0" && !v.is_empty());
+        if bar {
+            let mut prim_uns: std::collections::BTreeMap<String, Vec<(u64, u64)>> = Default::default();
+            for (i, r) in out.iter().enumerate() {
+                if r.introns.is_empty() && !sec_flag.get(i).copied().unwrap_or(false) {
+                    prim_uns.entry(r.chrom.clone()).or_default().push((r.ref_start, r.ref_end));
+                }
+            }
+            for v in prim_uns.values_mut() {
+                v.sort_unstable();
+            }
+            let before = out.len();
+            let keep: Vec<bool> = out
+                .iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    if !(r.introns.is_empty() && sec_flag.get(i).copied().unwrap_or(false)) {
+                        return true;
+                    }
+                    match prim_uns.get(&r.chrom) {
+                        None => false,
+                        Some(v) => {
+                            let j = v.partition_point(|&(st, _)| st < r.ref_end);
+                            v[..j].iter().rev().take(512).any(|&(_, en)| en > r.ref_start)
+                        }
+                    }
+                })
+                .collect();
+            let mut it = keep.into_iter();
+            out.retain(|_| it.next().unwrap_or(true));
+            n_bar = before - out.len();
+        }
         eprintln!(
-            "[flagfree] site construction from ALL alignments: {} placements ({n_prim} primary + {n_sec} secondary), {n_dup} same-molecule/same-site duplicates dropped",
+            "[flagfree] site construction from ALL alignments: {} placements ({n_prim} primary + {n_sec} secondary), {n_dup} same-molecule/same-site duplicates dropped, {n_bar} unspliced secondary-only placements barred",
             out.len()
         );
     }
