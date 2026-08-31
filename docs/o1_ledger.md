@@ -4974,3 +4974,40 @@ that lumps every tag past field 12 into one string, so the `AS:i:` scan saw none
 skipped. It read as a clean null ("shared reads add nothing") and was pure artefact; only the same run
 reporting **61,941 E_r edges over the identical reps** made it impossible. **A null needs a positive
 control in the same run.**
+
+## §6af — FLAGFREE_SITES CLOSED: recall real, but it fails the negative control (08-30)
+
+§6ad measured flag-free at **NPIP 14/31 → 26/31, pure families 3 → 6**, amplification 2.0, density HIGHER
+in every size band, phantom-copy test passing. Every one of those is a POSITIVE-panel or INTERNAL measure.
+The missing evidence was a NEGATIVE control, and it reverses the recommendation.
+
+**Clean negatives — canonical single-copy housekeeping genes** (`bench/negative_control/`, the panel's own
+FAIL criterion: gene overlaps a copy in a family of ≥ 2 distinct loci):
+
+| gene | floor 3 | floor 2 | FLAGFREE |
+|---|---|---|---|
+| ALDOA | PASS | PASS | PASS |
+| **ATP5F1A** | PASS | PASS | **FAIL — GWFAM17, n=115** |
+| RPL13A | PASS | PASS | PASS |
+
+⚠**CANDIDATE COUNT: only 3 of the 30 housekeeping genes lie on this catalog's 3 contigs** — quote n=3, and
+do not read 2/3 PASS as a pass. But **a canonical single-copy gene inside a 115-copy family is an
+unambiguous false positive**, not a marginal call.
+
+**Large-n corroboration** (2,207 uniquely-named protein-coding genes on the 3 contigs, in a ≥2-copy
+family): floor 3 **12.78%** · floor 2 **16.63%** · flagfree **33.08%**. ⚠this negative class is
+CONTAMINATED — a uniquely-named gene can be a real family member whose paralogues are LOC-named (RFPL 9/9,
+GOLGA6 14/14), which is why the floor is already 12.78% at baseline. Read the DELTA, not the level: flag-free
+adds **+20.3 points over floor 3**, i.e. 448 more genes acquire a family.
+
+**⭐⭐ THE METHODOLOGICAL POINT: SIZE-MATCHED DENSITY DID NOT CATCH THIS.** Flag-free's families were denser
+than baseline in every band (0.96/0.60/0.50/0.53) — and GWFAM17 (115 copies, swallowing a housekeeping
+gene) is *part of* that. **A clique of shared repeats is DENSE.** Density is an internal-consistency
+measure and cannot distinguish a tight true family from a tight repeat cluster; only an external negative
+control can. ⟹**never close a recall win on internal structure alone.**
+
+⛔**CLOSED: `RUSTLE_FLAGFREE_SITES` STAYS OPT-IN, NOT DEFAULT.** The 26/31 recall is real and the
+primary-flag critique it answers is correct — the defect is that seeding from EVERY placement has no
+analogue of E_r's coverage clause, so repeat-driven placements seed sites. ⟹**the reopenable question is a
+site-level admission bar** (≥2 independent tied placements, or a coverage floor on the seeded site), NOT
+the flag itself.
