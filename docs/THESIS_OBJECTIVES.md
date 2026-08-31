@@ -289,7 +289,7 @@ generalization*: nodes = exon-classes carrying per-copy sequence, paths = copy �
 **M** ≥2 copies · **H** copies share a backbone (reads multi-map) · **X** ≥2 copies independently expressed
 (edit-distance anchored) · **I** graded identifiability (full / partial / none), reported not assumed.
 
-- Spec: `docs/superpowers/specs/2026-06-01-multicopy-family-definition-design.md` (jargon scrubbed for the advisor).
+- Spec: `docs/superpowers/ARCHIVE_INDEX.md` → `2026-06-01-multicopy-family-definition-design.md` (in git history) (jargon scrubbed for the advisor).
 - Operational predicate `classify_family` shipped (`src/rustle/vg.rs`), emitted as `--vg` GTF attributes
   (`family_verdict`, `family_identifiability`, `family_n_copies/n_expressed`, `family_locus_rel`).
   Commits `d286400`..`6d91bf1`. Expression counted per **identifiability class** (`3609b60`), runs
@@ -377,7 +377,7 @@ Per-copy isoform recovery — each copy gets its own source→sink paths through
   separable, so the non-VG baseline ALSO scores 100/100; it certifies non-regression, not a
   StringTie-beating capability.
 - **Discriminating benchmark built (2026-06-03):** `bench/tandem_attribution/o4o5_copy_benchmark.sh`
-  (spec `docs/superpowers/specs/2026-06-03-o4o5-copy-resolution-benchmark.md`). Key finding:
+  (spec `docs/superpowers/ARCHIVE_INDEX.md` → `2026-06-03-o4o5-copy-resolution-benchmark.md` (in git history)). Key finding:
   **gffcompare chain Sn/Pr cannot discriminate** — when copies have full-length reads the baseline
   always ties or beats VG. The honest discriminator is **copy ATTRIBUTION** (which copy each
   ambiguous read came from): on a merged-but-separable fixture VG attributes multimappers to their

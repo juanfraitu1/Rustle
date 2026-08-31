@@ -27,7 +27,7 @@ p ≈ 0), and a read spanning **0** distinguishing bubbles is certified **TIED**
 *VG-as-O2-substrate byte-identity check (2026-07-19):* re-ran the invocation above at
 `vg-o2-substrate`@e3962ce (post BubbleGraph-threaded `read_copy_evidence` + audit W-line tags) —
 `.assignments.tsv` md5 `8c0507aaddf1d0a0f5a1571a3dbf27f6`, identical to the pre-refactor `gstm_vg`
-baseline and to a `--phase` re-run; `diff` confirms byte-for-byte. See `.superpowers/sdd/task-5-report.md`.
+baseline and to a `--phase` re-run; `diff` confirms byte-for-byte. See `docs/superpowers/ARCHIVE_INDEX.md/task-5-report.md`.
 
 **O3 — allele-specific junctions (ABCC4).** On single molecules, the **T allele never uses** the junction
 at donor 109,947,543 (0/173), while the **C allele uses it 38%** (45/117): ΔPSI = 0.38, q = 3×10⁻¹⁸ —

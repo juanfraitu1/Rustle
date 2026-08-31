@@ -1507,7 +1507,7 @@ Every piece is forced: the per-read likelihood is SDA's attraction/repulsion mad
 SDA's read partition made soft, and the identifiable regime is exactly the Strong-Separation ⟹ unique
 minimum copy cover (MCC = χ(H)) result of the copy_assignment_theory section above. The consistency theorem
 is the provable layer **under** SDA's NP-complete heuristic — and it explains SDA's 91–93% accuracy floor.
-Design spec: `docs/superpowers/specs/2026-07-08-em-copy-assignment-design.md`.*
+Design spec: `docs/superpowers/ARCHIVE_INDEX.md` → `2026-07-08-em-copy-assignment-design.md` (in git history).*
 
 ## Derivation — the EM is SDA's PSV graph made continuous
 

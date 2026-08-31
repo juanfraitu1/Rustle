@@ -4895,3 +4895,82 @@ question (O1 ⊥ O2). The knob feeds only `GateParams::default()`.
 ⚠**A TEST ALREADY ENCODED THE OLD DEFAULT** (`gate_rejects_below_min_reads`) and failed on the flip —
 **grep the tests before changing a default.** It now pins the CLAUSE at an explicit floor, and
 `o1_node_floor_is_two_and_is_overridable` pins the VALUE. 815 pass / 0 fail.
+
+## §6ad — THE GAP WAS NEVER EXPRESSION: flag-free site construction recovers 26/31 (08-30)
+
+**⛔⛔ RETRACTION — "the missing loci are not expressed" (§6z, and everything built on it).** That read a
+POST-ALIGNMENT PRIMARY COUNT as if it were transcription. Measured on the real BAM (which retains
+**1,489,757 secondary alignments, MORE than its 1,009,396 primaries**):
+
+| | median primaries | median SECONDARIES |
+|---|---|---|
+| missing loci (17) | 6 | **404** |
+| recovered loci (14) | 33 | 495 |
+
+**Reads align at the missing loci at essentially the recovered rate** — locus 0 has 2 primaries against
+**1,119 secondaries**. They lose the primary-flag COIN TOSS among near-identical paralogs. Low primary
+count is exactly what redistribution predicts, so it can never evidence silence. ⚠**the "23/31 expressed
+ceiling" was derived the same way and is RETRACTED with it** — the flag-free arm reaches 26/31, past it.
+
+**The fix was already in the tree, unmeasured: `RUSTLE_FLAGFREE_SITES`** (the advisor's own objection —
+"which placement minimap2 flags primary is close to arbitrary, yet Pass-1 seeds candidate sites from
+primaries ALONE"). Every placement proposes a site; a site survives only if the EXISTING gates find reads
+agreeing on a chain THERE. Deliberately an ABSTENTION from read→locus assignment: **O1 ("which copies
+exist") must not require first answering O2 ("where did this molecule come from")**.
+
+**Arm vs the just-shipped floor-2 default:**
+
+| | floor 2 | + FLAGFREE |
+|---|---|---|
+| NPIP loci | 14/31 | **26/31** |
+| PURE families | 3 | **6** |
+| families / copies | 121 / 678 | 501 / 3,905 |
+| pairs per NEW EDGE | 1.5 | **2.0** |
+| density 2-5 / 6-15 / 16-39 / 40+ | 0.81 / 0.44 / 0.34 / 0.38 | **0.96 / 0.60 / 0.50 / 0.53** |
+
+⭐**Families are DENSER than baseline in EVERY size band** — the opposite of hub fusion (COLLAPSE_EXONIC
+ran at 6.5 pairs/edge with falling density). ⭐**Phantom-copy test PASSES**: 3,905 copies over **3,361
+DISTINCT genomic footprints = 1.16 copies/footprint vs the baseline's 1.17**, within-family overlapping
+pairs 0.005% — flag-free seeding is not duplicating placements, it is finding distinct loci.
+
+⚠**NOT yet flipped**: a 5.8× copy increase genome-wide is a large behavioural change, the NPIP panel is a
+HUMAN PROJECTION, and runtime rises (2.5M records vs 1M). Every available precision proxy improved, but
+they are proxies. ⟹**recommend ON; awaiting an explicit call.**
+
+## §6ae — SHARED-READ EDGES (E_c) AS AN ADDITIVE TIER: no depth threshold exists (08-30)
+
+**The proposal** (user): emit a definition edge when two loci share reads — the starved-locus logic that
+motivated flag-free. Measured on the flag-free arm's 6,818 reps, E_c = "both reps carry an AS-tied
+placement of the SAME read" (`read_conflict.rs`'s own definition), 1,558,151 rep-overlapping placements.
+
+**It is NOT circular, and it is NOT redundant.** Circularity check: tied-≥2 among pairs sharing ANY read is
+**54.5%**, nowhere near the ~100% that would mean flag-free co-creation ENTAILS the edge — the tie
+requirement does independent work. And E_c overlaps E_r by only **4,084 / 35,258 = 11.6%**: read-conflict
+and sequence-homology capture largely DIFFERENT relations.
+
+**⛔ But it destroys the partition at EVERY depth.** Of 31,174 additive edges, **22,485 FUSE two families**
+(501 families exist). Sweeping the shared-read floor:
+
+| min shared reads | additive | FUSE families | fusion fraction |
+|---|---|---|---|
+| 2 | 31,174 | 22,485 | **72.1%** |
+| 10 | 9,435 | 6,272 | 66.5% |
+| 100 | 1,714 | 1,228 | **71.6%** |
+
+⭐⭐**THE FUSION FRACTION IS INVARIANT TO DEPTH (~72% at 2 and at 100).** Depth does not discriminate; it
+only scales both classes down together. Structurally identical to §-coverage-repair's "TP loss starts
+BEFORE FP rejection ⟹ no constraint-satisfying threshold exists". ⟹**E_c cannot be an additive definition
+tier at any depth.**
+
+**Mechanism** — the same one §5b measured: **50.5% of random genomic region pairs align and 49.0% clear
+identity ≥ 0.60**; repeat-driven cross-homology is universal. E_r survives it because of the COVERAGE
+clause, which separates "shares an Alu" from "is a paralogue". A shared tied read IS the Alu case, and
+read DEPTH is not a substitute for span coverage. ⟹**the shipped division stands: E_r DEFINES membership,
+E_c SCOPES co-resolution** (and per the register, promoting E_c to "the principled family definition" was
+the root cause of the advisor's "inconsistent approaches" complaint).
+
+⚠**INSTRUMENT NOTE**: the first run returned **0 E_c edges from 2,499,153 records** — a `split("\t", 12)`
+that lumps every tag past field 12 into one string, so the `AS:i:` scan saw none and every record was
+skipped. It read as a clean null ("shared reads add nothing") and was pure artefact; only the same run
+reporting **61,941 E_r edges over the identical reps** made it impossible. **A null needs a positive
+control in the same run.**

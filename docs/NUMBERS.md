@@ -6,6 +6,13 @@
 > 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
 > [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
 
+> ⚠⚠ **SECOND PROVENANCE BREAK — 2026-08-30. THE O1 NODE FLOOR CHANGED FROM 3 TO 2**
+> (`NODE_MIN_READS`, ledger §6ac). **Every catalog figure recorded before 2026-08-30 — 627 families /
+> 2,019 copies, 83 families / 484 copies, and every NPIP rate — was computed at a floor of 3 and the
+> current binary does NOT reproduce them.** Set `RUSTLE_GATE_MIN_READS=3` to reproduce one.
+> ⚠ `GATE_MIN_READS` is still 3 and still governs `copy_assign`'s tie-invariance bar — a different
+> question (O1 ⊥ O2). Do not quote one for the other.
+
 **Look a number up here before quoting it.** This file exists because provenance kept living in a
 section header instead of next to the number, and that produced two wrong labels on the same document
 in two days. A number without its substrate is not a result.
@@ -192,3 +199,43 @@ catalog, transcript set, code path and method — so the structural claims are s
 | **r = −0.043** | closure recall vs family size, 65 families | large families are not harder; 14/16/17-member families all reach 1.000 |
 | **8/248 = 0.0323 vs 6/256 = 0.0234** | canonical motifs among footprint gaps vs chance | Poisson p ≈ 0.24 ⟹ the old gate admitted footprints **at random**; fixed |
 
+
+
+---
+
+## 2026-08-30 — O1 recall, and two retractions
+
+**Substrate for every figure below:** gorilla **fibroblast** `npip3.bam` (SAMN04003007 / KB3781, the
+assembly animal), 1,009,396 primaries + 1,489,757 secondaries, 3 contigs. The **31 "NPIP loci" are a
+minimap2 projection of HUMAN NPIP onto the gorilla genome** (`hsa2ggo.paf`), NOT gorilla annotation —
+every rate below inherits that. `-p`/`-N` are the catalog defaults.
+
+| configuration | families | copies | NPIP loci | pure families |
+|---|---|---|---|---|
+| floor 3, no flagfree (pre-08-30 default) | 83 | 484 | 12/31 | 3 |
+| **floor 2** (shipped 08-30) | 121 | 678 | **14/31** | 3 |
+| floor 2 + `FLAGFREE_SITES` (measured, NOT default) | 501 | 3,905 | **26/31** | **6** |
+
+**⛔ RETRACTION 1 — "the remaining loci are not expressed."** That read a POST-ALIGNMENT PRIMARY COUNT as
+transcription. Missing loci carry a **median of 404 secondary alignments vs 495 at recovered loci**; one
+has 2 primaries and **1,119 secondaries**. A low primary count is exactly what read redistribution
+predicts, so it can never evidence silence.
+
+**⛔ RETRACTION 2 — the "23/31 expressed ceiling."** Derived the same way, and the flag-free arm reaches
+**26/31**, past it. **There is currently no established expression ceiling for this panel.**
+
+**Precision figures (size-robust — read these, not raw edge backing):**
+
+| | pairs per NEW edge | density 2-5 / 6-15 / 16-39 / 40+ |
+|---|---|---|
+| floor 2 vs floor 3 | 1.5 | 0.81 / 0.44 / 0.34 / 0.38 |
+| flagfree vs floor 2 | 2.0 | **0.96 / 0.60 / 0.50 / 0.53** |
+| `COLLAPSE_EXONIC` (**refuted**) | **6.5** | falling |
+
+⚠ **Raw direct-edge backing is CONFOUNDED WITH FAMILY SIZE** (pairs ~n², edges ~n) and produced a wrong
+"do not ship" verdict for floor 2. Quote amplification and size-matched density instead
+(`bench/merge_precision_arms.py`).
+
+**Refuted 08-30, with the number that did it:** `COLLAPSE_EXONIC` (6.5 pairs/new edge, 62% of new pairs in
+one family) · shared-read `E_c` edges as a definition tier (**fusion fraction ~72% INVARIANT from 2 to 100
+shared reads** ⟹ no threshold exists).

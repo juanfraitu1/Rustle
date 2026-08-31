@@ -4549,6 +4549,9 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         // Changes WHICH SKELETONS BECOME NODES, so an ON and an OFF catalog must not have byte-identical
         // params.tsv (the M2 defect).
         ("gate_min_reads".into(), super::denovo_assemble::gate_min_reads().to_string()),
+        // Changes WHICH SITES ARE PROPOSED (every placement, not just the primary-flagged one), so an ON
+        // and an OFF catalog must not have byte-identical params.tsv (the M2 defect).
+        ("flagfree_sites".into(), std::env::var("RUSTLE_FLAGFREE_SITES").unwrap_or_else(|_| "<unset>".into())),
         ("junction_nc_max_bp".into(), std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").unwrap_or_else(|_| "10000 (default)".into())),
         ("footprint_nodes".into(), std::env::var("RUSTLE_FOOTPRINT_NODES").unwrap_or_else(|_| "<unset>".into())),
         ("footprint_min_cov".into(), std::env::var("RUSTLE_FOOTPRINT_MIN_COV").unwrap_or_else(|_| "2 (default)".into())),
