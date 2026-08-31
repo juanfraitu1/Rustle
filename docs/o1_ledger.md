@@ -5136,3 +5136,74 @@ recombination (our k = 5–19).
 ⟹**MEC is closed for O3 detection.** What survives is a narrower, gated POWER question (can a
 read-inferred group be told from the family's own reference copies at all, on a within-family matched
 pair) — **never a detector, and no TPR/FPR/detection rate may be quoted from it.**
+
+## §6aj — The advisor's two PSV objections, measured (08-31)
+
+Four investigative lenses + a synthesizer + three adversarial refuters, all recomputing from the real
+12-family dump (36,410 columns / 79,175 read-rows / 101 copies). **All three refuters fired**; what
+follows separates what survived independent recomputation from what did not.
+
+### Objection 1 — "you are not doing variant calling; give me a VCF"
+
+**✅ SURVIVES — the frame is partly a category error.** `discover_psvs`
+(`copy_assign_pipeline.rs:385-441`) star-aligns every copy to copy 0 and inserts a column only where
+`is_acgt(ca) && is_acgt(cb) && ca != cb`. **A PSV is a FIXED DIFFERENCE BETWEEN ASSEMBLED COPY
+SEQUENCES**, not a call from a pileup. There is no DP/AF/QUAL to compute *for the column*.
+
+**✅ SURVIVES — and he is factually wrong twice.**
+1. **A read pileup gate ALREADY runs by default**: `read_supported_columns` (`:652`, wired `:1470-74`,
+   disable with `RUSTLE_PSV_READFILTER=0`) keeps a column only if reads show ≥2 alleles at ≥2 reads each.
+   Counterfactual through the real binary: **36,414 candidates → 36,410 shipped = 4 dropped (0.011%)**.
+   Real, default-on, near-inert here.
+2. **Sequencing error IS modelled** — per-base Phred QVs are read from the BAM (`fill_psv_obs :751`) and
+   enter the likelihood and the per-read certificate, phred→error clamped to [1e-4, 0.25].
+
+**✅ SURVIVES — read support, confirmed by an independent recompute.** **0 / 36,410 columns are
+read-unobserved** (min depth 11, median 677) — and not by filter artifact: the predicate at `:669`
+explicitly passes columns with cov<4. **36,170 / 36,410 = 0.9934** have every copy-claimed allele seen in
+≥2 reads. ⚠quote the third-allele rate **stratified**: 105,554/12,439,427 = **0.008485** at 2-allele
+columns, NEVER the pooled 0.005543 (the 4-allele stratum is tautologically 0 over 24.7% of that
+denominator).
+
+**✅ SURVIVES — the RNA-editing confound is REFUTED with a mirror control.** Copy alleles are stored in
+transcription orientation (verified 70/70 direct, 50/50 complement vs GGO.fasta), so A-to-I would appear
+uniformly as A→G. Measured: **A→G 15,450/3,234,432 = 0.004777 vs G→A 20,607/1,953,346 = 0.010550, ratio
+0.453 — A→G is DEPLETED, not enriched.** Reference-level A/G columns 3,102 vs the C/T strand-complement
+control 2,959 (ratio 1.048, n.s.); Ti/Tv 0.657.
+
+**⛔ THE PROPOSED DELIVERABLE (build a proper VCF) IS REFUTED.** `genome_pos` **IS NOT A LOCUS**:
+`copy_assign_pipeline.rs:1495-1500` sets it via `col_canon[col].get_or_insert(g)` — the FIRST copy
+carrying the column — an internal canonicalization device so switch breakpoints share one frame. The other
+copies sit **33 kb to 81 Mb away** (GWFAM55 max 81,042,216 bp). ⟹ every ALT a VCF emitted would be a base
+from sequence **megabases from the POS the row asserts**. A VCF would make the misrepresentation WORSE.
+⚠the existing `bench/igv_tracks.py::write_psv_vcf` is independently broken: `chrom_of` (`:92-96`) scans
+regions by coordinate ignoring contig ⟹ **6,039/36,410 = 0.1659 wrong CHROM**, and REF is the
+transcription-strand base ⟹ **19,034/36,410 = 0.5228 contradict the genome** and fail
+`bcftools norm --check-ref`.
+
+### Objection 2 — "similar copies cannot carry many PSVs; usually there is no difference"
+
+**✅ SURVIVES — the strong form is REFUTED by direct count.** **0 / 490 within-family copy pairs have zero
+distinguishing columns.** Minimum 4; minimum **11** over the 469 pairs with ≥200 mutually-ungapped columns.
+Not a majority — not one pair.
+
+**✅ SURVIVES — but his prediction is a TAUTOLOGY, not an empirical claim.** In the panel frame,
+PSV-per-kb **= 1000 × (1 − identity) to machine precision** (max deviation 0.0000000000 over 490 pairs;
+Spearman exactly **−1.0000** pooled and within all 12 families). Density and divergence are the same
+number, so the prediction cannot fail. ⚠**presenting a correlation here as confirmation would be
+presenting arithmetic as evidence.**
+
+**⛔ EVERY IDENTITY-REGIME CLAIM IS REFUTED — THE AXIS IS NOT AN IDENTITY.** "Panel-frame identity" has the
+PSV panel as its own denominator — **a denominator conditioned on the prediction**, this project's named
+trap. Against the pipeline's OWN identity metric (`-k11 -w5`, `1-de`) it correlates at **rho = +0.109,
+n = 438, p = 0.022, r² = 0.012**. ⟹ **retract "our families are ~75%-identical paralogues" and "only
+1.3% of pairs sit in the too-similar regime"** — both are artifacts of that axis.
+
+### ⭐⭐ A REAL BUG SURFACED BY THE THIRD REFUTER
+
+**1,587 read names are genotyped in ≥2 family matrices** (79,175 rows over 77,372 distinct names).
+**517 carry `status='assigned'` in two or more families simultaneously**, giving **518 double-counted
+assignment rows** (53,715 assigned rows over 53,197 distinct assigned names). Of 519 assigned-copy pairs,
+**309 overlap genomically but 210 are DISJOINT** — median separation **16,341 bp**, max **37,727,971 bp**.
+**A single molecule cannot originate from two disjoint loci, so at least one member of each of those 210
+is wrong.** Not previously known; not handled anywhere in the pipeline.
