@@ -68,6 +68,13 @@ struct RegionWork {
     /// output stage can compute the tie-break invariance certificate: `mapq > 0` = a unique mapper whose copy
     /// support survives any primary/secondary relabeling. See `anchored_support`.
     read_mapqs: Vec<u8>,
+    /// Per-RECORD placement `(ref_start, ref_end, flags)`, parallel to `read_names`, with `flags` bit0 =
+    /// secondary and bit1 = supplementary. `read_names` alone names the MOLECULE; this names the
+    /// alignment RECORD a family's claim rests on, which is what distinguishes a molecule that SPANS two
+    /// loci (one record, claimed by both families) from one placed independently at two disjoint loci
+    /// (two records) — the whole of the cross-family reconciliation rule. Kept for the same reason
+    /// `read_mapqs` is: the heavy `BamRead` sequences are dropped in the worker.
+    read_spans: Vec<(u64, u64, u8)>,
     /// Alignment-score evidence per read, parallel to `read_names`. Reported, never decisive — see
     /// `read_conflict::AsEvidence` for why raw AS is length-confounded and `de` makes the call.
     as_ev: Vec<AsEvidence>,
@@ -463,6 +470,242 @@ fn status_str(s: AssignStatus) -> &'static str {
     }
 }
 
+// ---- CROSS-FAMILY RECONCILIATION (RUSTLE_XFAM_RECONCILE) -------------------------------------------
+//
+// THE DEFECT. Every family is genotyped INDEPENDENTLY, and a molecule whose records fall in two
+// families' read pools is put through both significance gates with no communication between them. On
+// `mec` (12 supplied families, 2 regions, one NPIP-region BAM) that produces 79,175 assignment rows over
+// 77,372 distinct molecules; 1,587 molecules are genotyped in >=2 families and 517 come back `assigned`
+// in >=2 families at once, for 519 assigned-copy pairs. 210 of those pairs name copy intervals that are
+// DISJOINT (median separation 16,341 bp, min 4,797 bp) — and a single molecule cannot originate from two
+// disjoint loci, so at least one member of each such pair is wrong. Nothing downstream reconciled them.
+// MEASURED split of the 519 (report arm, in-binary and authoritative): 309 `shared_locus`,
+// 99 `readthrough_span`, 111 `cross_family_contradiction`; abstaining demotes 221/53,715 = 0.0041 of
+// assigned rows, 110 molecules, and 221/1,035 = 0.2135 of CONTESTED rows — the third rate being the one
+// that matters, since a rule that only fires on multi-placement molecules is selection-biased by
+// construction. ⚠ ONE BAM, 2 regions, 6 family pairs, 170/210 disjoint pairs involving GWFAM111 alone
+// and all 309 overlaps from 2 copy pairs: these COUNTS are not claimed to transport, only the mechanism.
+//
+// THE RULE, in three strata, and only the third one abstains:
+//
+//   `shared_locus`             the two claimed copy intervals OVERLAP. Two nominally different families
+//                              claim one locus. That is an O1 PARTITION artifact (the same thing
+//                              `catalog_overlaps` already warns about, below), not an O2 assignment
+//                              error: the molecule really does come from that one interval, and both
+//                              families name it. Reported, never demoted — demoting it would charge an
+//                              O1 defect to O2's abstention rate and gut real copies of their support
+//                              (MEASURED on `mec`, double-claimed/assigned: GWFAM113 copy0 141/141,
+//                              GWFAM111 copy1 168/179, GWFAM112 copy12 141/153, GWFAM96 copy11
+//                              168/234 — the same two flagged copy pairs `catalog_overlaps` reports).
+//   `readthrough_span`         the two copies are disjoint but ONE alignment record is claimed by both —
+//                              a molecule whose N-gap spans both loci. "A molecule cannot come from two
+//                              disjoint loci" does not apply to a molecule that demonstrably spans both,
+//                              so this stratum is reported, never demoted.
+//   `cross_family_contradiction`  the two copies are disjoint AND the two claims rest on DIFFERENT
+//                              alignment records. Two independent placements naming disjoint loci: the
+//                              molecule has one origin, so at least one claim is false and there is no
+//                              admissible way to tell which. This is exactly O2's assign-or-abstain
+//                              contract at cross-family scope, so under `abstain` the molecule is
+//                              demoted to `Ambiguous` in EVERY family it is assigned in.
+//
+// WHY NO ARBITRATION (a "keep the better one" arm was never built, deliberately). At cross-family scope
+// none of the certificate fields is comparable (all MEASURED on `mec`, 519 contested pairs over 12
+// families): the median assigned margin per family spans 9.9 to 10,745.2 (1,085x), `p_value` is 0.0 on
+// BOTH sides of 434/519 = 0.8362 of contested pairs and is gated against a family-size-dependent
+// `alpha/(n-1)`, and the margin winner is simply the larger-`n_decisive` side in 385/519 = 0.7418 (with
+// 0 n_decisive ties). AS is byte-identical on both rows in 519/519, so an AS tie-break IS minimap2's
+// primary flag in disguise — the defect that retired `uniq_agree` — and the primary flag itself agrees
+// with the margin winner in only 61/109 = 0.5596 of the pairs where exactly one side is primary
+// (chance, and underpowered). Abstention is
+// therefore the whole of the intervention: it demotes ALL of a contradicting molecule's claims, because
+// choosing which side to keep IS the arbitration being refused.
+//
+// WHAT THIS DOES NOT FIX (stated here and repeated above the `.quant.tsv` write). A demotion changes
+// STATUS only. `n_reads_hard` counts `fa.assignments` by argmax `best_copy` with NO status filter, and
+// `abundance`/`ci95` come from `soft_quantify_em` inside the per-family pipeline whose `obs_for_em` is
+// populated regardless of status — so `.quant.tsv` is byte-identical between `report` and `abstain` and
+// the row inflation there is untouched. Removing a molecule from a family's EM is a two-pass
+// architecture change and a separate decision. Anyone claiming this fixes the abundance double-count is
+// wrong.
+//
+// DEFAULT OFF. Under `off` (or unset) the detector does not run, nothing new is written beyond the
+// unconditional `<out>.params.tsv`, `demote` is empty and every status emit site returns `status_str`
+// verbatim — the OFF arm is byte-identical BY CONSTRUCTION, not by inspection.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum XfamMode {
+    /// unset / `off`: the detector does not run and no side file is written (byte-identical arm).
+    Off,
+    /// `report`: write `<out>.xfam_conflicts.tsv` + a stderr summary; change no existing byte.
+    Report,
+    /// `abstain`: additionally demote every claim of a `cross_family_contradiction` molecule to `Ambiguous`.
+    Abstain,
+}
+
+impl XfamMode {
+    /// The EFFECTIVE value recorded in `<out>.params.tsv`. An unrecognized value is an error, not a
+    /// silent `off`: a typo'd flag that quietly disables the pass is how an ON arm gets reported as OFF.
+    fn from_env() -> Result<Self> {
+        match std::env::var("RUSTLE_XFAM_RECONCILE").ok().as_deref() {
+            None | Some("") | Some("off") => Ok(XfamMode::Off),
+            Some("report") => Ok(XfamMode::Report),
+            Some("abstain") => Ok(XfamMode::Abstain),
+            Some(other) => anyhow::bail!(
+                "RUSTLE_XFAM_RECONCILE={other:?} is not one of off|report|abstain"
+            ),
+        }
+    }
+    fn as_str(self) -> &'static str {
+        match self {
+            XfamMode::Off => "off",
+            XfamMode::Report => "report",
+            XfamMode::Abstain => "abstain",
+        }
+    }
+}
+
+/// A REGION-INDEPENDENT alignment-record key: `(contig, ref_start, ref_end, flags)` with
+/// `flags` bit0 = secondary, bit1 = supplementary.
+///
+/// `fa.assignments` already carries the region-global `bam_reads` index (`idx_map[r.read_index]` in
+/// `denovo_pipeline`), so the record a family's claim rests on is known exactly — but two REGIONS have
+/// independent index spaces, so the index alone cannot be compared across them. This key can. Two records
+/// at identical contig/start/end/flags are the same placement; collapsing them is correct and
+/// conservative (it can only move a pair OUT of `cross_family_contradiction`).
+type RecKey = (String, u64, u64, u8);
+
+/// One family's `assigned` claim on one molecule: which (region, family) made it, which copy interval it
+/// names, and which alignment record it rests on.
+struct XfamClaim<'a> {
+    g: usize,
+    f: usize,
+    fid: &'a str,
+    copy: usize,
+    span: (String, u64, u64),
+    rec: RecKey,
+}
+
+/// One contested pair, as written to `<out>.xfam_conflicts.tsv`.
+struct XfamConflict {
+    read_name: String,
+    stratum: &'static str,
+    fid_a: String,
+    copy_a: usize,
+    span_a: (String, u64, u64),
+    fid_b: String,
+    copy_b: usize,
+    span_b: (String, u64, u64),
+    same_record: bool,
+    sep_bp: u64,
+    demoted: bool,
+}
+
+/// PASS 1: read-only sweep over every region's assignments, classifying every molecule claimed
+/// `assigned` by two or more families.
+///
+/// Deterministic by construction: `BTreeMap`/`BTreeSet` keyed on `(read_name, region ordinal, family
+/// ordinal)` with insertion-ordered inner vectors, and no `HashMap` iteration anywhere — so the output
+/// does not depend on region-thread scheduling.
+fn xfam_pass1(
+    works: &[RegionWork],
+    named_families: bool,
+) -> (Vec<XfamConflict>, std::collections::BTreeSet<(String, usize, usize)>) {
+    use std::collections::{BTreeMap, BTreeSet};
+    // The family ids the DRAIN will mint, recomputed here with the same counter so the side file names
+    // families exactly as `.assignments.tsv` does. Declared before `by_read` so it outlives the borrow.
+    let mut gfam = 0usize;
+    let mut fids: Vec<Vec<String>> = Vec::with_capacity(works.len());
+    for work in works.iter() {
+        let mut here = Vec::with_capacity(work.fams.len());
+        for fa in &work.fams {
+            here.push(if named_families { fa.family_id.clone() } else { format!("CAFAM{gfam}") });
+            gfam += 1;
+        }
+        fids.push(here);
+    }
+    let mut by_read: BTreeMap<&str, Vec<XfamClaim>> = BTreeMap::new();
+    for (g, work) in works.iter().enumerate() {
+        for (f, fa) in work.fams.iter().enumerate() {
+            for (ri, a) in &fa.assignments {
+                if !matches!(a.status, AssignStatus::Assigned) {
+                    continue;
+                }
+                let Some(span) = fa.copy_spans.get(a.best_copy).cloned() else { continue };
+                let (rs, re, fl) = work.read_spans.get(*ri).copied().unwrap_or((0, 0, 0));
+                by_read.entry(work.read_names[*ri].as_str()).or_default().push(XfamClaim {
+                    g,
+                    f,
+                    fid: fids[g][f].as_str(),
+                    copy: a.best_copy,
+                    span,
+                    rec: (work.contig.clone(), rs, re, fl),
+                });
+            }
+        }
+    }
+    let mut conflicts: Vec<XfamConflict> = Vec::new();
+    let mut demote: BTreeSet<(String, usize, usize)> = BTreeSet::new();
+    for (name, claims) in by_read.iter() {
+        // ">= 2 DISTINCT (region, family)" is the contest condition. There is at most one row per
+        // (read, family) today, but the guard is stated on the key, not on the count.
+        let distinct: BTreeSet<(usize, usize)> = claims.iter().map(|c| (c.g, c.f)).collect();
+        if distinct.len() < 2 {
+            continue;
+        }
+        let mut contradicts = false;
+        let mut here: Vec<XfamConflict> = Vec::new();
+        for i in 0..claims.len() {
+            for j in (i + 1)..claims.len() {
+                let (a, b) = (&claims[i], &claims[j]);
+                if (a.g, a.f) == (b.g, b.f) {
+                    continue; // same family: the intra-family reduction already owns this case
+                }
+                let overlaps =
+                    a.span.0 == b.span.0 && a.span.1 < b.span.2 && b.span.1 < a.span.2;
+                let same_record = a.rec == b.rec;
+                let stratum = if overlaps {
+                    "shared_locus"
+                } else if same_record {
+                    "readthrough_span"
+                } else {
+                    contradicts = true;
+                    "cross_family_contradiction"
+                };
+                let sep_bp = if overlaps || a.span.0 != b.span.0 {
+                    0
+                } else {
+                    a.span.1.max(b.span.1) - a.span.2.min(b.span.2)
+                };
+                here.push(XfamConflict {
+                    read_name: (*name).to_string(),
+                    stratum,
+                    fid_a: a.fid.to_string(),
+                    copy_a: a.copy,
+                    span_a: a.span.clone(),
+                    fid_b: b.fid.to_string(),
+                    copy_b: b.copy,
+                    span_b: b.span.clone(),
+                    same_record,
+                    sep_bp,
+                    demoted: false,
+                });
+            }
+        }
+        if contradicts {
+            // CONTRADICTION IS A PROPERTY OF THE MOLECULE, so every claim it makes abstains — not only
+            // the two in the contradicting pair. Abstaining one side would be arbitration, which is
+            // exactly what is refused here.
+            for c in claims {
+                demote.insert(((*name).to_string(), c.g, c.f));
+            }
+            for c in here.iter_mut() {
+                c.demoted = true;
+            }
+        }
+        conflicts.extend(here);
+    }
+    (conflicts, demote)
+}
+
 /// GFA W-line SampleId sanitizer (a walk id must be a whitespace-free GFA token).
 fn sanitize_gfa_id(s: &str) -> String {
     s.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':') { c } else { '_' }).collect()
@@ -511,12 +754,16 @@ fn copy_status(
 /// position and a fetchable reference base). Pure w.r.t. the caller except for `ref_base` (injected so this
 /// is unit-testable without genome I/O — see `build_copy_graph_maps_family_to_graph`). Per-copy status is
 /// `copy_status` (shared with `build_exon_graph` — see its doc for the absence rule).
+/// `eff` is the EFFECTIVE per-row status, parallel to `fa.assignments` — `a.status` verbatim unless the
+/// cross-family reconciliation demoted that row (see `XfamMode`). Passed in rather than read off
+/// `a.status` so the graph's `Assigned` filters cannot disagree with `.assignments.tsv`.
 fn build_copy_graph(
     fid: &str,
     fa: &rustle::vg_family::denovo_pipeline::FamilyAssignment,
     ref_base: impl Fn(&str, u64) -> Option<u8>,
     bam_reads: &[String],
     ann: Option<&[(String, u64, u64)]>,
+    eff: &[AssignStatus],
 ) -> rustle::vg_family::copy_graph::CopyGraph {
     use rustle::vg_family::copy_graph::*;
     // usable columns (both a genome position and a reference base), remembering the original index.
@@ -540,7 +787,8 @@ fn build_copy_graph(
             let reads = fa
                 .assignments
                 .iter()
-                .filter(|(_, a)| a.best_copy == ci && matches!(a.status, AssignStatus::Assigned))
+                .zip(eff.iter())
+                .filter(|((_, a), s)| a.best_copy == ci && matches!(s, AssignStatus::Assigned))
                 .count() as u32;
             CopyPath {
                 id: format!("{}_copy{}", fid, ci),
@@ -555,11 +803,15 @@ fn build_copy_graph(
         .assignments
         .iter()
         .zip(fa.read_psv_obs.iter())
-        .map(|((ri, a), obs)| ReadWalk {
-            name: sanitize_gfa_id(&format!("{}_{}", fid, bam_reads[*ri])),
-            obs: sel(obs),
-            assigned_copy: if matches!(a.status, AssignStatus::Assigned) { Some(a.best_copy) } else { None },
-            cert: Some(ReadCert { p_value: a.p_value, min_p_value: a.min_p_value, status: a.status }),
+        .enumerate()
+        .map(|(k, ((ri, a), obs))| {
+            let st = eff.get(k).copied().unwrap_or(a.status);
+            ReadWalk {
+                name: sanitize_gfa_id(&format!("{}_{}", fid, bam_reads[*ri])),
+                obs: sel(obs),
+                assigned_copy: if matches!(st, AssignStatus::Assigned) { Some(a.best_copy) } else { None },
+                cert: Some(ReadCert { p_value: a.p_value, min_p_value: a.min_p_value, status: st }),
+            }
         })
         .collect();
 
@@ -574,10 +826,12 @@ fn build_copy_graph(
 /// under `--gff`, exactly as v1's `.phase.gfa`. The per-exon reference sequence is fetched later, by the
 /// caller, via `ExonGraph::to_gfa`'s own `exon_seq` closure at write time (this builder lays out intervals
 /// only, never sequence — no genome I/O here).
+/// `eff` — see `build_copy_graph`.
 fn build_exon_graph(
     fid: &str,
     fa: &rustle::vg_family::denovo_pipeline::FamilyAssignment,
     ann: Option<&[(String, u64, u64)]>,
+    eff: &[AssignStatus],
 ) -> rustle::vg_family::copy_graph::ExonGraph {
     use rustle::vg_family::copy_graph::*;
     let n = fa.copy_tids.len();
@@ -599,7 +853,8 @@ fn build_exon_graph(
             let reads = fa
                 .assignments
                 .iter()
-                .filter(|(_, a)| a.best_copy == ci && matches!(a.status, AssignStatus::Assigned))
+                .zip(eff.iter())
+                .filter(|((_, a), s)| a.best_copy == ci && matches!(s, AssignStatus::Assigned))
                 .count() as u32;
             let status = copy_status(fa, ci, ann);
             let corrob = Corrob {
@@ -1053,6 +1308,9 @@ fn main() -> Result<()> {
     let mut posterior_lines: Vec<String> = Vec::new();
     // EM-abundance prior for the posterior (else uniform).
     let prior_abundance = std::env::var("RUSTLE_POSTERIOR_PRIOR").ok().as_deref() == Some("abundance");
+    // Cross-family reconciliation mode (see `XfamMode`). Parsed HERE, before any read is touched, so an
+    // unrecognized value fails in the first second rather than silently running as `off`.
+    let xfam_mode = XfamMode::from_env()?;
     // locus from a de-novo tid `DN_<chrom>_<start>_<n>` (chrom may contain `_`, so split from the right).
     fn parse_locus(tid: &str) -> Option<(String, u64)> {
         let rest = tid.strip_prefix("DN_")?;
@@ -1271,9 +1529,19 @@ fn main() -> Result<()> {
         };
         let read_names: Vec<String> = bam_reads.iter().map(|r| r.name.clone()).collect();
         let read_mapqs: Vec<u8> = bam_reads.iter().map(|r| r.mapq).collect();
+        let read_spans: Vec<(u64, u64, u8)> = bam_reads
+            .iter()
+            .map(|r| {
+                (
+                    r.read.ref_start,
+                    read_ref_end_local(&r.read),
+                    (r.is_secondary as u8) | ((r.is_supplementary as u8) << 1),
+                )
+            })
+            .collect();
         let as_ev = as_evidence_per_read(&bam_reads);
         let n_mapped = bam_reads.len();
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, read_spans, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -1282,11 +1550,42 @@ fn main() -> Result<()> {
         })?,
         None => flat.iter().map(|&(c, lo, hi)| compute(c, lo, hi)).collect::<Result<Vec<_>>>()?,
     };
-    // SERIAL drain in the original region order — every row push + the `gfam` id counter is exactly the
-    // serial path, so the output is byte-identical.
+    // PASS 1 (read-only): cross-family reconciliation. It must run BEFORE the drain, not as a post-pass
+    // over `assign_rows`, because a molecule's status is emitted from `fa.assignments` at FOUR sites
+    // inside the drain (`.assignments.tsv`, `.posterior.tsv`, `.psv_reads.tsv`, `.phased_reads.tsv`) plus
+    // the two `--phase` graph builders' `Assigned` filters. A post-pass would fix only the first and
+    // leave the rest disagreeing with it — `status_consistency_across_outputs` is the regression that
+    // catches exactly that. Under `off` this does not run at all.
+    let (xfam_conflicts, xfam_demote) = if xfam_mode == XfamMode::Off {
+        (Vec::new(), std::collections::BTreeSet::new())
+    } else {
+        xfam_pass1(&works, region_families.is_some())
+    };
+    // The status a row is EMITTED with. Under `off`/`report` (and for every non-demoted key) this is
+    // `a.status` verbatim, so those arms are byte-identical BY CONSTRUCTION. The `Abstain` test comes
+    // FIRST so the other two modes never even build the lookup key.
+    let eff_astatus = |read_name: &str, g: usize, f: usize, a: &rustle::vg_family::copy_assign::Assignment| -> AssignStatus {
+        if xfam_mode == XfamMode::Abstain
+            && matches!(a.status, AssignStatus::Assigned)
+            && xfam_demote.contains(&(read_name.to_string(), g, f))
+        {
+            // Ambiguous, NEVER Tied: `Tied` is reserved for the K=0 identifiability wall
+            // (`min_p >= alpha/(n-1)`), and the warning below exists precisely so catalog artifacts do
+            // not masquerade as that wall. The intra-family record contradiction already demotes to
+            // Ambiguous; the cross-family scope fix inherits the same bucket.
+            AssignStatus::Ambiguous
+        } else {
+            a.status
+        }
+    };
+    let eff_status = |read_name: &str, g: usize, f: usize, a: &rustle::vg_family::copy_assign::Assignment| -> &'static str {
+        status_str(eff_astatus(read_name, g, f, a))
+    };
+    // SERIAL drain (PASS 2) in the original region order — every row push + the `gfam` id counter is
+    // exactly the serial path, so the output is byte-identical.
     {
-        for work in works {
-            let RegionWork { contig, lo, hi, read_names, read_mapqs, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts } = work;
+        for (gwork, work) in works.into_iter().enumerate() {
+            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans: _, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts } = work;
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -1304,7 +1603,7 @@ fn main() -> Result<()> {
             };
             // --gtf: gene_tid (a copy's own locus) -> (family id, copy index), filled as fids are assigned below.
             let mut copy_gene: std::collections::HashMap<String, (String, usize)> = std::collections::HashMap::new();
-            for fa in &fams {
+            for (fwork, fa) in fams.iter().enumerate() {
                 // JOIN KEY. Without `--families` this binary invents its own id (`CAFAM{i}`), which is
                 // precisely why the O1 and O2 tables could not be joined. With `--families` the family
                 // KEEPS the catalog's own `GWFAM{i}` — no id is minted, so `family_id` means the same
@@ -1321,7 +1620,7 @@ fn main() -> Result<()> {
                         read_name: bam_reads[*ri].clone(),
                         family_id: fid.clone(),
                         assigned_copy: a.best_copy,
-                        status: status_str(a.status),
+                        status: eff_status(&bam_reads[*ri], gwork, fwork, a),
                         n_decisive: a.n_decisive,
                         margin: a.log_lr_margin,
                         p_value: a.p_value,
@@ -1375,7 +1674,7 @@ fn main() -> Result<()> {
                             .join(",");
                         posterior_lines.push(format!(
                             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                            bam_reads[*ri], fid, status_str(a.status), idx.len(), chrom, zs, ze, pstr
+                            bam_reads[*ri], fid, eff_status(&bam_reads[*ri], gwork, fwork, a), idx.len(), chrom, zs, ze, pstr
                         ));
                     }
                 }
@@ -1466,8 +1765,8 @@ fn main() -> Result<()> {
                     for ((ri, a), obs) in fa.assignments.iter().zip(fa.read_psv_obs.iter()) {
                         psv_read_lines.push(format!(
                             "{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
-                            bam_reads[*ri], fid, a.best_copy, status_str(a.status), a.log_lr_margin,
-                            a.n_decisive, allele_str(obs)
+                            bam_reads[*ri], fid, a.best_copy, eff_status(&bam_reads[*ri], gwork, fwork, a),
+                            a.log_lr_margin, a.n_decisive, allele_str(obs)
                         ));
                     }
                     for (ci, tid) in fa.copy_tids.iter().enumerate() {
@@ -1534,11 +1833,16 @@ fn main() -> Result<()> {
                 // the PSV assignment. A read is phased iff it clears the decisive-margin gate (Assigned);
                 // Ambiguous/Tied reads are emitted with haplotype = -1 (unphaseable = K-frontier).
                 if args.phase {
-                    let n_phased = fa
+                    // Effective per-row status, built ONCE so the phase-block counters, the per-copy
+                    // support counts, the read haplotypes and the two graph builders' `Assigned` filters
+                    // all agree row-for-row with `.assignments.tsv`. Element-wise equal to `a.status`
+                    // under `off`/`report`.
+                    let eff: Vec<AssignStatus> = fa
                         .assignments
                         .iter()
-                        .filter(|(_, a)| matches!(a.status, AssignStatus::Assigned))
-                        .count();
+                        .map(|(ri, a)| eff_astatus(&bam_reads[*ri], gwork, fwork, a))
+                        .collect();
+                    let n_phased = eff.iter().filter(|s| matches!(s, AssignStatus::Assigned)).count();
                     phase_block_lines.push(format!(
                         "{}\t{}\t{}\t{}\t{}\t{}",
                         fid, fa.chrom, fa.n_copies, fa.psv_cols, n_phased,
@@ -1559,19 +1863,20 @@ fn main() -> Result<()> {
                         let n_sup = fa
                             .assignments
                             .iter()
-                            .filter(|(_, a)| a.best_copy == ci && matches!(a.status, AssignStatus::Assigned))
+                            .zip(eff.iter())
+                            .filter(|((_, a), s)| a.best_copy == ci && matches!(s, AssignStatus::Assigned))
                             .count();
                         phased_hap_lines.push(format!("{}\t{}\t{}\t{}\t{}", fid, ci, tid, n_sup, vs));
                     }
-                    for (ri, a) in &fa.assignments {
-                        let hap: i64 = if matches!(a.status, AssignStatus::Assigned) {
+                    for ((ri, a), es) in fa.assignments.iter().zip(eff.iter()) {
+                        let hap: i64 = if matches!(es, AssignStatus::Assigned) {
                             a.best_copy as i64
                         } else {
                             -1
                         };
                         phased_read_lines.push(format!(
                             "{}\t{}\t{}\t{}\t{:.3}\t{}",
-                            bam_reads[*ri], fid, hap, a.n_decisive, a.log_lr_margin, status_str(a.status)
+                            bam_reads[*ri], fid, hap, a.n_decisive, a.log_lr_margin, status_str(*es)
                         ));
                     }
 
@@ -1583,7 +1888,7 @@ fn main() -> Result<()> {
                             .and_then(|g| g.fetch_sequence(chrom, pos, pos + 1))
                             .and_then(|v| v.first().copied())
                     };
-                    let cg = build_copy_graph(&fid, fa, ref_base, bam_reads, annotation.as_deref());
+                    let cg = build_copy_graph(&fid, fa, ref_base, bam_reads, annotation.as_deref(), &eff);
                     let gl = cg.gfa_lines();
                     for s in gl.segs { gfa_segs.insert(s); }
                     for l in gl.links { gfa_links.insert(l); }
@@ -1598,7 +1903,7 @@ fn main() -> Result<()> {
                     // Sequence-free at this point; folded into `<out>.exon.gfa` at write time below, where
                     // `genome_for` fetches each exon's bases. Same `--gff` annotation overlay as v1.
                     if !fa.copy_introns.is_empty() {
-                        exon_graphs.push(build_exon_graph(&fid, fa, annotation.as_deref()));
+                        exon_graphs.push(build_exon_graph(&fid, fa, annotation.as_deref(), &eff));
                     }
                 }
                 // reference-free per-family copy number (Task R1): chi_H (PSV conflict-structure
@@ -1748,6 +2053,14 @@ fn main() -> Result<()> {
 
     // soft per-copy quantification: family/copy, EM abundance ± 95% CI half-width, + the hard read count for
     // comparison. The EM uses partial PSV evidence (the benchmark: beats hard at sparse PSVs; uniform at K=0).
+    //
+    // SCOPE NOTE (`RUSTLE_XFAM_RECONCILE`): this file is DELIBERATELY unmoved by a cross-family abstention.
+    // `n_reads_hard` below counts `fa.assignments` by argmax `best_copy` with NO status filter, and
+    // `abundance`/`ci95` come from `soft_quantify_em` inside the per-family pipeline, whose `obs_for_em` is
+    // populated regardless of status — so a demoted molecule still counts here, in both arms, and
+    // `.quant.tsv` is byte-identical between `report` and `abstain` (`quant_is_unmoved_by_demotion` pins
+    // it). The row inflation a double-assigned molecule causes here is therefore NOT fixed by that flag;
+    // removing a molecule from a family's EM is a two-pass architecture change and a separate decision.
     let mut qh = std::fs::File::create(format!("{}.quant.tsv", args.out))?;
     writeln!(qh, "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tcopy_start\tcopy_end\tabundance\tci95_halfwidth\tn_reads_hard\tanchored_reads\ttie_invariant\tjunction_invariant")?;
     for r in &quant_rows {
@@ -2059,6 +2372,106 @@ fn main() -> Result<()> {
         assign_rows.len()
     );
 
+    // ---- <out>.xfam_conflicts.tsv (report/abstain only) -------------------------------------------
+    // The NEW information goes to a NEW file: adding a column to any existing output would break the OFF
+    // arm's byte-identity, which is the gate this change is judged on.
+    if xfam_mode != XfamMode::Off {
+        let mut xh = std::fs::File::create(format!("{}.xfam_conflicts.tsv", args.out))?;
+        writeln!(
+            xh,
+            "read_name\tstratum\tfamily_a\tcopy_a\tchrom_a\tstart_a\tend_a\tfamily_b\tcopy_b\tchrom_b\tstart_b\tend_b\tsame_record\tsep_bp\tdemoted"
+        )?;
+        for c in &xfam_conflicts {
+            writeln!(
+                xh,
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                c.read_name, c.stratum, c.fid_a, c.copy_a, c.span_a.0, c.span_a.1, c.span_a.2,
+                c.fid_b, c.copy_b, c.span_b.0, c.span_b.1, c.span_b.2, c.same_record, c.sep_bp, c.demoted
+            )?;
+        }
+        // Every rate with its denominator (a rate without one is how four headlines died here).
+        let n_pairs = xfam_conflicts.len();
+        let n_shared = xfam_conflicts.iter().filter(|c| c.stratum == "shared_locus").count();
+        let n_rt = xfam_conflicts.iter().filter(|c| c.stratum == "readthrough_span").count();
+        let n_contra = xfam_conflicts.iter().filter(|c| c.stratum == "cross_family_contradiction").count();
+        let contested_reads: std::collections::BTreeSet<&str> =
+            xfam_conflicts.iter().map(|c| c.read_name.as_str()).collect();
+        let contested_rows: std::collections::BTreeSet<(&str, &str)> = xfam_conflicts
+            .iter()
+            .flat_map(|c| [(c.read_name.as_str(), c.fid_a.as_str()), (c.read_name.as_str(), c.fid_b.as_str())])
+            .collect();
+        // Denominator = the assigned rows the OFF arm would have emitted. A demotion only ever turns
+        // "assigned" into "ambiguous", so that is the post-demotion count plus the demotions — quoting the
+        // POST-demotion count would shrink the denominator by exactly the numerator.
+        let n_assigned = assign_rows.iter().filter(|r| r.status == "assigned").count()
+            + if xfam_mode == XfamMode::Abstain { xfam_demote.len() } else { 0 };
+        let distinct_reads: std::collections::BTreeSet<&str> =
+            assign_rows.iter().map(|r| r.read_name.as_str()).collect();
+        let demoted_mols: std::collections::BTreeSet<&str> =
+            xfam_demote.iter().map(|(n, _, _)| n.as_str()).collect();
+        // Distinct molecules with at least one assigned row IN THE OFF ARM — the honest denominator for
+        // "how many molecules did this demote": the post-demotion set is smaller by the numerator.
+        let distinct_assigned: std::collections::BTreeSet<&str> = assign_rows
+            .iter()
+            .filter(|r| r.status == "assigned")
+            .map(|r| r.read_name.as_str())
+            .chain(demoted_mols.iter().copied())
+            .collect();
+        eprintln!(
+            "[xfam] RUSTLE_XFAM_RECONCILE={}: {n_pairs} contested assigned-copy pair(s) over \
+             {}/{} distinct molecules — {n_shared} shared_locus, {n_rt} readthrough_span, \
+             {n_contra} cross_family_contradiction (the only demoting stratum). \
+             Contested (read,family) rows: {}. -> {}.xfam_conflicts.tsv",
+            xfam_mode.as_str(), contested_reads.len(), distinct_reads.len(), contested_rows.len(), args.out
+        );
+        if xfam_mode == XfamMode::Abstain {
+            let n_dem = xfam_demote.len();
+            eprintln!(
+                "[xfam] abstain: demoted {n_dem}/{n_assigned} assigned rows ({:.4}), \
+                 {}/{} distinct assigned molecules ({:.4}), {n_dem}/{} CONTESTED rows ({:.4}). \
+                 The third rate is the one that matters: a rule that only ever fires on \
+                 multi-placement molecules is selection-biased by construction, so the run-wide rate \
+                 alone hides where all of it lands. Demotion is a STATUS change only: no row is added \
+                 or deleted, and .quant.tsv (n_reads_hard, abundance, ci95) is unmoved by design.",
+                if n_assigned > 0 { n_dem as f64 / n_assigned as f64 } else { 0.0 },
+                demoted_mols.len(), distinct_assigned.len(),
+                if !distinct_assigned.is_empty() { demoted_mols.len() as f64 / distinct_assigned.len() as f64 } else { 0.0 },
+                contested_rows.len(),
+                if !contested_rows.is_empty() { n_dem as f64 / contested_rows.len() as f64 } else { 0.0 }
+            );
+        }
+    }
+
+    // ---- <out>.params.tsv (ALWAYS) ----------------------------------------------------------------
+    // The M2 landing spot this binary lacked: it writes 24 output files and no params certificate, so an
+    // ON and an OFF arm of ANY env-driven knob were previously indistinguishable from their outputs.
+    // A NEW file changes no existing byte, so writing it unconditionally is compatible with the OFF gate.
+    {
+        let mut ph = std::fs::File::create(format!("{}.params.tsv", args.out))?;
+        writeln!(ph, "key\tvalue")?;
+        let mut row = |k: &str, v: String| -> Result<()> {
+            writeln!(ph, "{k}\t{v}")?;
+            Ok(())
+        };
+        row("xfam_reconcile", xfam_mode.as_str().to_string())?;
+        row("posterior_prior", if prior_abundance { "abundance".into() } else { "uniform".to_string() })?;
+        row("margin", format!("{}", args.margin))?;
+        row("error_rate", format!("{}", args.error_rate))?;
+        row("alpha", format!("{}", args.alpha))?;
+        row("margin_gate", format!("{}", args.margin_gate))?;
+        row("rna_editing_filter", format!("{}", !args.no_editing_filter))?;
+        row("edit_rate", format!("{}", args.edit_rate))?;
+        row("iterative_prune", format!("{}", args.iterative_prune))?;
+        row("families", args.families.clone().unwrap_or_else(|| "NONE".to_string()))?;
+        row("copies_fa", args.copies_fa.clone().unwrap_or_else(|| "NONE".to_string()))?;
+        row("dump_psv", format!("{}", args.dump_psv))?;
+        row("phase", format!("{}", args.phase))?;
+        row("posterior", format!("{}", args.posterior))?;
+        row("em", format!("{}", args.em))?;
+        row("gtf", format!("{}", args.gtf))?;
+        eprintln!("[copy_assign] wrote {}.params.tsv (run certificate)", args.out);
+    }
+
     // Same-locus artifact: two copies of ONE family whose genomic spans OVERLAP are one locus admitted
     // twice, not two copies. Such a family reports min_p == 1 for every read, so it abstains wholesale and
     // its reads masquerade as the K=0 identifiability wall. Warn loudly rather than fail — the catalog is
@@ -2091,9 +2504,43 @@ fn main() -> Result<()> {
                  overlapping paralogs).",
                 flagged.len()
             );
+            // QUANTIFY the structural warning. A flagged pair is a STRUCTURE ("these two copies share
+            // sequence"); what makes it consequential is how many MOLECULES it actually double-claims —
+            // the same molecules the cross-family reconciliation's `shared_locus` stratum sees, and the
+            // reason that stratum is reported rather than demoted (demoting it would strip these copies
+            // of most of their hard support and charge an O1 partition defect to O2's abstention rate).
+            // `catalog` is built from `quant_rows` in order, so index i IS quant row i.
+            let mut qidx: std::collections::BTreeMap<(&str, usize), usize> = std::collections::BTreeMap::new();
+            for (i, r) in quant_rows.iter().enumerate() {
+                qidx.insert((r.family_id.as_str(), r.copy_index), i);
+            }
+            let mut claims: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
+            for r in assign_rows.iter().filter(|r| r.status == "assigned") {
+                if let Some(&i) = qidx.get(&(r.family_id.as_str(), r.assigned_copy)) {
+                    claims.entry(r.read_name.as_str()).or_default().push(i);
+                }
+            }
+            let mut double: std::collections::BTreeMap<(usize, usize), usize> = std::collections::BTreeMap::new();
+            for v in claims.values().filter(|v| v.len() >= 2) {
+                for a in 0..v.len() {
+                    for b in (a + 1)..v.len() {
+                        let (lo2, hi2) = (v[a].min(v[b]), v[a].max(v[b]));
+                        *double.entry((lo2, hi2)).or_insert(0) += 1;
+                    }
+                }
+            }
+            let n_double: usize = flagged
+                .iter()
+                .map(|&(i, j, _, _)| double.get(&(i.min(j), i.max(j))).copied().unwrap_or(0))
+                .sum();
+            eprintln!(
+                "[copy_assign]   ... those pairs double-claim {n_double} assigned molecule(s) in total \
+                 (one molecule counted once per flagged pair it is assigned to both sides of)."
+            );
             for &(i, j, recip, kind) in flagged.iter().take(10) {
+                let n = double.get(&(i.min(j), i.max(j))).copied().unwrap_or(0);
                 eprintln!(
-                    "[copy_assign]   {kind:?} recip={recip:.2}  {}/{}:{}-{}  vs  {}/{}-{}",
+                    "[copy_assign]   {kind:?} recip={recip:.2}  {}/{}:{}-{}  vs  {}/{}-{}  double_claimed_molecules={n}",
                     catalog[i].0, catalog[i].1, catalog[i].2, catalog[i].3, catalog[j].0, catalog[j].2, catalog[j].3
                 );
             }
@@ -2192,7 +2639,8 @@ mod tests {
         fa.assignments = vec![];
         // injected reference: A at both positions
         let ref_base = |_c: &str, _p: u64| Some(b'A');
-        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None);
+        let eff: Vec<AssignStatus> = fa.assignments.iter().map(|(_, a)| a.status).collect();
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None, &eff);
         assert_eq!(g.columns.len(), 2);
         assert_eq!(g.copies.len(), 2);
         assert_eq!(g.columns[0].ref_allele, Some(b'A'));
@@ -2237,7 +2685,8 @@ mod tests {
         fa.read_psv_obs = vec![vec![Some(b'G')]];
         fa.assignments = vec![coupled_assignment(0, 1)]; // one read, coupled to copy1
         let ref_base = |_c: &str, _p: u64| Some(b'A');
-        let g = build_copy_graph("CAFAM0", &fa, ref_base, &["read0".to_string()], None);
+        let eff: Vec<AssignStatus> = fa.assignments.iter().map(|(_, a)| a.status).collect();
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &["read0".to_string()], None, &eff);
         assert_eq!(g.copies.len(), 2);
         assert_eq!(g.copies[1].status, CopyStatus::AbsentCollapsed);
         assert!(g.copies[1].status.is_absent());
@@ -2267,7 +2716,8 @@ mod tests {
         fa.read_psv_obs = vec![vec![Some(b'G')]];
         fa.assignments = vec![coupled_assignment(0, 1)];
         let ref_base = |_c: &str, _p: u64| Some(b'A');
-        let g = build_copy_graph("CAFAM0", &fa, ref_base, &["read0".to_string()], None);
+        let eff: Vec<AssignStatus> = fa.assignments.iter().map(|(_, a)| a.status).collect();
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &["read0".to_string()], None, &eff);
         assert_eq!(g.copies[1].status, CopyStatus::AbsentDivergent);
         let gfa = g.to_gfa();
         assert!(gfa.contains("_copy1_ABSENT"), "dispersed coupled copy must render _ABSENT:\n{}", gfa);
@@ -2293,7 +2743,8 @@ mod tests {
         fa.collapsed_copies = 9;  // diagnostic count, far exceeds n_copies — must NOT force absence.
         fa.rescued_copies = 0;
         let ref_base = |_c: &str, _p: u64| Some(b'A');
-        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None);
+        let eff: Vec<AssignStatus> = fa.assignments.iter().map(|(_, a)| a.status).collect();
+        let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None, &eff);
         assert_eq!(g.copies.len(), 3);
         for ci in 0..3 {
             assert_eq!(g.copies[ci].status, CopyStatus::AnnotationUnknown, "copy {} must be in-genome", ci);
@@ -2317,7 +2768,8 @@ mod tests {
         // ONLY and must NOT flip absent status — so copy1 stays IN-GENOME (AnnotationUnknown, no --gff).
         fa.copy_map_identity = vec![None, Some(0.952)];
         fa.assignments = vec![]; // no discovery_coupled reads => no absence
-        let g = build_copy_graph("CAFAM0", &fa, |_c, _p| Some(b'A'), &[], None);
+        let eff: Vec<AssignStatus> = fa.assignments.iter().map(|(_, a)| a.status).collect();
+        let g = build_copy_graph("CAFAM0", &fa, |_c, _p| Some(b'A'), &[], None, &eff);
         // copy1 is in-genome, NOT absent (the LOCK on the copy_map_identity-drives-absence bug).
         assert_eq!(g.copies[1].status, CopyStatus::AnnotationUnknown, "copy_map_identity alone must NOT make a copy absent");
         assert!(!g.copies[1].status.is_absent());
@@ -2344,7 +2796,8 @@ mod tests {
         // copy1 is reference-ABSENT via a discovery_coupled read (the v1 absence mechanism — NOT
         // copy_map_identity, which feeds only the MI tag); its span overlaps copy0 => AbsentCollapsed.
         fa.assignments = vec![coupled_assignment(0, 1)];
-        let g = build_exon_graph("CAFAM0", &fa, None);
+        let eff: Vec<AssignStatus> = fa.assignments.iter().map(|(_, a)| a.status).collect();
+        let g = build_exon_graph("CAFAM0", &fa, None, &eff);
         // copy1 walks one more class than copy0
         assert!(g.copies[1].exon_nodes.len() > g.copies[0].exon_nodes.len());
         let gfa = g.to_gfa(|ec| vec![b'A'; (ec.end-ec.start) as usize]);

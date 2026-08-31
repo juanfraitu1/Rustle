@@ -8,6 +8,9 @@ Produces, from a `copy_assign` run + the BAM it swept:
        HP:i:<idx+1>           (so IGV's haplotype colouring also splits the copies)
      A read's SECONDARY placements get the SAME colour, so you SEE the multimapping reads fan out across
      the copies. Tied / ambiguous reads get their own grey, so the K-frontier is visible, not hidden.
+     A molecule claimed `assigned` by TWO families at once is tagged xf:Z:<stratum> (from
+     `<prefix>.xfam_conflicts.tsv`, written under RUSTLE_XFAM_RECONCILE=report/abstain) and, for the
+     cross_family_contradiction stratum, drawn near-black — it is not a copy call.
   <out>.copies.bed — one line per copy: its genomic extent (from its assigned reads), name = family|copy,
      itemRgb matching the read colour. A loci track to sit above the alignments.
 
@@ -28,6 +31,8 @@ PALETTE = [
 ]
 TIED_RGB = (150, 150, 150)
 AMB_RGB = (200, 200, 200)
+# a molecule claimed `assigned` by two families at once: not a copy call, and not the K=0 wall either.
+CONTESTED_RGB = (30, 30, 30)
 
 
 def copy_color(idx):
@@ -35,16 +40,90 @@ def copy_color(idx):
 
 
 def load_assignments(path):
-    """read_name -> (family, copy_idx, status). One row per placement; the call is identical, so first wins."""
+    """(read_name, family_id) -> (copy_idx, status), plus read_name -> [(family, copy, status), ...].
+
+    CORRECTION (2026-08-31, measured). This function used to key on `read_name` alone and keep the FIRST
+    row, on the stated ground that "the call is identical, so first wins". That is false, and by a wide
+    margin. On the 12-family `--families` batch (mec/run_psv.sh: 79,175 rows over 77,372 molecules,
+    1,587 of them with >= 2 rows):
+
+      * first-wins names a DIFFERENT (family, copy, status) than the largest-margin ASSIGNED row for
+        484/1,587 = 30.50% of multi-row molecules;
+      * 136/1,587 have a NON-assigned first row while another row of the same molecule IS assigned, so
+        first-wins painted them grey when the run had in fact resolved them;
+      * only 324/1,587 have all their assigned rows naming one (family, copy) — i.e. the premise held
+        for 20.4% of the cases it was asserted over.
+
+    A row is a (molecule, FAMILY) genotyping result, so the key is `(read_name, family_id)`. The caller
+    resolves which family a given BAM RECORD belongs to by genomic containment in that family's copy
+    intervals (`load_copy_spans`), which is the only thing that makes the tag a statement about the
+    record rather than about whichever row happened to be first.
+    """
     amap = {}
+    by_read = defaultdict(list)
     with open(path) as fh:
         next(fh)
         for ln in fh:
             f = ln.rstrip("\n").split("\t")
-            if f[0] in amap:
-                continue
-            amap[f[0]] = (f[1], int(f[2]), f[3])
-    return amap
+            amap[(f[0], f[1])] = (int(f[2]), f[3])
+            by_read[f[0]].append((f[1], int(f[2]), f[3]))
+    return amap, dict(by_read)
+
+
+def load_copy_spans(prefix):
+    """family_id -> [(chrom, start, end), ...] from `<prefix>.quant.tsv`, for record -> family resolution."""
+    import os
+    path = f"{prefix}.quant.tsv"
+    if not os.path.exists(path):
+        return {}
+    spans = defaultdict(list)
+    with open(path) as fh:
+        next(fh)
+        for ln in fh:
+            f = ln.rstrip("\n").split("\t")
+            if len(f) >= 6 and f[4].isdigit():
+                spans[f[0]].append((f[3], int(f[4]), int(f[5])))
+    return dict(spans)
+
+
+def load_xfam_conflicts(prefix):
+    """read_name -> worst stratum, from `<prefix>.xfam_conflicts.tsv` (RUSTLE_XFAM_RECONCILE=report/abstain).
+
+    Absent unless that flag was on; when present it names exactly the molecules whose rows disagree
+    ACROSS families, so they can be shown as contested instead of silently taking one row's colour.
+    """
+    import os
+    path = f"{prefix}.xfam_conflicts.tsv"
+    if not os.path.exists(path):
+        return {}
+    rank = {"shared_locus": 1, "readthrough_span": 2, "cross_family_contradiction": 3}
+    worst = {}
+    with open(path) as fh:
+        next(fh)
+        for ln in fh:
+            f = ln.rstrip("\n").split("\t")
+            st = f[1]
+            if rank.get(st, 0) > rank.get(worst.get(f[0], ""), 0):
+                worst[f[0]] = st
+    return worst
+
+
+def family_of_record(rec, rows, spans):
+    """Which of this molecule's (family, copy, status) rows describes THIS alignment record.
+
+    A record belongs to the family whose copy intervals it overlaps. Exactly one match => that row;
+    no match or several => None, and the caller must not pretend to know (it tags the record contested
+    rather than borrowing another placement's call).
+    """
+    if len(rows) == 1:
+        return rows[0]
+    hits = []
+    for fam, ci, status in rows:
+        for chrom, st, en in spans.get(fam, ()):
+            if rec.reference_name == chrom and rec.reference_start < en and (rec.reference_end or 0) > st:
+                hits.append((fam, ci, status))
+                break
+    return hits[0] if len(hits) == 1 else None
 
 
 def tag_for(family, idx, status):
@@ -132,7 +211,13 @@ def main():
     ap.add_argument("--samtools", default="samtools")
     a = ap.parse_args()
 
-    amap = load_assignments(a.assignments)
+    import re as _re
+    prefix = _re.sub(r"\.assignments\.tsv$", "", a.assignments)
+    amap, by_read = load_assignments(a.assignments)
+    spans = load_copy_spans(prefix)
+    contested = load_xfam_conflicts(prefix)
+    if contested:
+        print(f"  {len(contested)} molecule(s) contested across families (from {prefix}.xfam_conflicts.tsv)")
     regions = parse_regions(a.regions)
     inbam = pysam.AlignmentFile(a.bam, "rb")
     bam_contigs = list(zip(inbam.references, inbam.lengths))  # captured before close (for the VCF header)
@@ -150,16 +235,35 @@ def main():
             if key in seen:
                 continue
             seen.add(key)
-            info = amap.get(rec.query_name)
+            rows = by_read.get(rec.query_name)
+            info = family_of_record(rec, rows, spans) if rows else None
+            if rows and info is None:
+                # The record falls in copy intervals of SEVERAL families (or of none). There is no
+                # per-record call to draw, and borrowing another placement's call is exactly the
+                # first-wins defect. Mark it contested and move on.
+                strat = contested.get(rec.query_name, "unresolved_family")
+                rgb = CONTESTED_RGB if strat == "cross_family_contradiction" else AMB_RGB
+                rec.set_tag("xf", strat, "Z")
+                rec.set_tag("cp", f"xfam_{strat}", "Z")
+                rec.set_tag("YC", f"{rgb[0]},{rgb[1]},{rgb[2]}", "Z")
+                n_tagged += 1
             if info:
                 fam, idx, status = info
                 cp, (r, g, b), hp = tag_for(fam, idx, status)
+                strat = contested.get(rec.query_name)
+                if strat:
+                    # The molecule is claimed by >= 2 families. Say so on the record instead of letting one
+                    # family's colour stand for a call the run did not make.
+                    rec.set_tag("xf", strat, "Z")
+                    if strat == "cross_family_contradiction":
+                        cp, (r, g, b), hp = f"{fam}_xfam", CONTESTED_RGB, None
                 rec.set_tag("cp", cp, "Z")
                 rec.set_tag("YC", f"{r},{g},{b}", "Z")
                 if hp is not None:
                     rec.set_tag("HP", hp, "i")
                 n_tagged += 1
-                if status == "assigned" and not (rec.is_secondary or rec.is_supplementary):
+                if status == "assigned" and not contested.get(rec.query_name) == "cross_family_contradiction" \
+                        and not (rec.is_secondary or rec.is_supplementary):
                     k = (fam, idx)
                     ex = extent[k]
                     ex[0] = rec.reference_name
@@ -189,8 +293,7 @@ def main():
     print(f"wrote {a.out}.copies.bed: {sum(1 for v in extent.values() if v[0])} copies")
 
     # PSV VCF (copies as samples) from the --dump-psv matrix, if present
-    import re
-    ca_prefix = re.sub(r"\.assignments\.tsv$", "", a.assignments)
+    ca_prefix = prefix
     reg_chroms = {c for c, _, _ in regions}
     contig_lens = [(c, l) for c, l in bam_contigs if c in reg_chroms]
     v = write_psv_vcf(a.out, ca_prefix, regions, contig_lens)

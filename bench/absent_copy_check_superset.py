@@ -6,6 +6,17 @@ Given an OFF assignments.tsv (no --absent-copies) and an ON assignments.tsv
 ASSIGNED to the SAME copy in ON (the freeze guarantee: Stage-1 results must
 not be overwritten for reads that were already resolved).
 
+CONDITION ON RUSTLE_XFAM_RECONCILE (added 2026-08-31). The freeze guarantee this script enforces holds
+only when BOTH arms were run with the SAME value of RUSTLE_XFAM_RECONCILE. Under
+RUSTLE_XFAM_RECONCILE=abstain a molecule assigned in two families at once whose two claims rest on
+DIFFERENT alignment records naming DISJOINT copy intervals is demoted to `ambiguous` in EVERY family it
+is assigned in — deliberately, because a molecule has one origin. Those are exactly the flips this script
+reports as violations: 221 of them on the 12-family mec batch (221/53,715 assigned rows, 110 molecules).
+They are NOT --absent-copies overwriting a Stage-1 result, and comparing an OFF arm run without the flag
+against an ON arm run with it will report them as such. Set the env var identically in both arms, or
+subtract the rows listed in <out>.xfam_conflicts.tsv with demoted=true before reading this script's exit
+code.
+
 CRITICAL GOTCHA: read_name alone is NOT a unique key — the same read appears in
 multiple rows when it multimaps to multiple families.  We key on (read_name,
 family_id) and compare complete sorted rows set-wise; a naive join on read_name
