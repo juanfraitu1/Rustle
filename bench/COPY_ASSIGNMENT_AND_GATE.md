@@ -1198,9 +1198,18 @@ The unification: (1) discovered cross-chromosome copies → (2) reads assigned p
 The PSV harness already phases reads into copy-haplotypes internally (`copy_split::split_readchain_by_psv`
 + `psv_linkage::assign_read_to_copy`). `--phase` surfaces that as a first-class, **opt-in,
 dependency-free** phasing output — no external phaser (WhatsHap/HapCUT2), no neural variant caller
-(DeepVariant/Clair3), no CNN. It is the N-copy generalisation of read-backed phasing: a long molecule
-spans multiple PSVs, the linked pattern assigns it to a haplotype, and the formal object is the
-minimum path-cover of the PSV graph (MCC = χ(H), the identifiability theorem).
+(DeepVariant/Clair3), no CNN.
+
+⚠ **`--phase` RUNS NO PHASING ALGORITHM OF ITS OWN. It is a RELABELING of the assignment this binary
+already computed**: phase set = family, haplotype = the assigned copy, unphased (−1) = abstained. Over 6
+historical runs / 119,524 read-rows the multiset of `(read_name, family, haplotype)` equals
+`(read_name, family, assigned_copy-if-assigned-else −1)` exactly, symmetric difference 0 — the two cannot
+disagree by construction, so **any phasing accuracy scored against the assignment is trivially 1.0000**.
+An earlier version of this section claimed the formal object was "the minimum path-cover of the PSV
+graph"; **no such computation exists in the O2 path** — the MEC / min-path-cover module has 0 call sites.
+
+MCC = χ(H) remains the IDENTIFIABILITY THEOREM — a statement about which copies are resolvable in
+principle — but it is not what `--phase` computes, and the two must not be quoted as one thing.
 
 ## Outputs (written only under `--phase`; all other outputs unchanged → additive/default-off)
 
