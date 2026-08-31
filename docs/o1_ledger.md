@@ -5079,3 +5079,60 @@ redundant with a rule already in the tree. ⚠**the binding constraint on ML her
 ⭐**What would break it**: an assembly-derived per-copy truth set of the kind that gave GOLGA6L7 = 6 on
 `_mat` / 7 on `_pat` — DNA-derived, per-copy, independent of the RNA evidence. Bounded work for a few dozen
 families, and useful to the thesis whether or not a model is ever trained on it.
+
+
+## §6ai — k+1 MEC for reference-absent copies: NO-GO, four independent kills (08-30)
+
+Four-lens design panel + a synthesizer that RAN the objective itself on the real dumped PSV matrix
+(79,176 rows / 101 copies / 36,411 columns / 12 families), then adversarial verification. Verdict
+**NO-GO**, on four grounds each independently sufficient.
+
+**1. THE OBJECTIVE IS DEGENERATE UNDER MISSING DATA.** "Cost = cells disagreeing with their group's
+consensus" is ill-posed when a group observes no cell in a column: the optimiser minimises by SHRINKING
+THE SCORED CELL SET, and best-of-R selects exactly that. Measured: GWFAM115 at k=6 returns **MEC = 0
+with 15.3% of observed cells scored**, against a genuine k=5 fit of MEC = 1,076 at 100% scored — an
+apparent Δ of +1,076 that is **100% artifact**. GWFAM111 k=5 → MEC = 0 at 22.5% scored; GWFAM83 → 0 at
+both k=5 and k=6. Reseeding empty clusters does not fix it (the attractor is PARTIAL, not empty). The
+only repair is a hard min-group-size floor — and it is **load-bearing**: at n_min=5, GWFAM83's k=6
+solution is [348,15,10,5,5,5], three groups sitting exactly ON the floor. ⟹ the answer becomes a
+function of a tuned constant, which is the "no arbitrary thresholds" standard the advisor set.
+
+**2. THE CLEAN NEGATIVE DROPS HARDEST, AND THERE IS NO ELBOW.** With the floor and 100% of cells
+scored: **GWFAM83 — the ONLY `reference_resolved` family, `collapsed_copies = 0`, i.e. the one family
+with NO missing copy — has the LARGEST k→k+1 relative drop (0.576)**, against 0.419 (GWFAM111) and
+0.322 (GWFAM115), both collapsed. And k+1→k+2 is comparable or larger in 2/3 ⟹ smooth monotone decay,
+no k is selectable.
+
+**3. THE k = n_copies CONTROL DOES NOT PASS.** ARI of the MEC partition against the shipped assignment
+on evidenced reads: GWFAM115 **1.0000**, GWFAM111 **0.9841**, GWFAM83 **0.7621**, GWFAM104 **0.2718** —
+2 of 4 below the pre-registered 0.80 ⟹ stop before k+1.
+
+**4. THE SUBSTRATE HOLDS ≈0.2 EXPECTED TRUE POSITIVES.** `o3_missing_copy_evidence.md` §4.2: M ≤ 8.5
+expressed reference-absent copies genome-wide, point estimate 1.80, CI [0.09, 8.54], over 915 catalog
+copies ⟹ this 101-copy batch expects **0.20**. And the truth set cannot substitute: `o3_excise` deletes
+one copy of **162 TWO-copy families**, so every positive is the k=1→2 regime the incumbent already
+handles **40/40** — **the panel contains zero instances of the object under test**, and on it depth
+alone already gives AUC 0.8034 (p=0.0005) with no MEC at all.
+
+**⛔⛔ TWO OF MY OWN CLAIMS CORRECTED BY THE PANEL.**
+* **"Read sparsity caps any phasing-style method here" — WRONG.** Measured **26,177/26,183 informative
+  reads span ≥2 columns**, pairwise read-read overlap **28–1,044 columns**. Linkage is not the blocker.
+* **"The EM (0/3,081) is the soft version of MEC, so k=n is a control" — WRONG.**
+  `em_copy_assign::m_step` re-estimates only `pi` while `logl` is an **immutable input built from the
+  reference `CopyProfiles`** ⟹ the EM structurally CANNOT form a novel consensus, so register:576 does
+  not bound MEC in either direction. k=n is a control on different grounds — and it fails.
+
+**⭐ AND THE CONCEPT ALREADY SHIPS.** `denovo_pipeline.rs:1223-1235` calls `split_locus_copies` with NO
+reference input and emits every non-host cluster as a reference-absent candidate — **289 such candidates
+already exist across these 12 families, 0 admitted**. MEC's gain over it is MECHANICAL (error- and
+span-tolerance vs exact-vector equality), and mechanical gain is not detection gain: the incumbent's
+multi-copy failure is a **SPECIFICITY** failure (identical statistics with and without an absent copy),
+which MEC does not address. Also: the PSV column space is **reference-conditioned**
+(`copy_assign_pipeline.rs:441-442` inserts a column only where two COPY sequences differ), so a k+1
+consensus is necessarily a mosaic over reference alleles — an object `copy_assign.rs:1449` already models
+as `copy_conversions`, and register:520 already refutes identifiability at K≥3 via cross-copy
+recombination (our k = 5–19).
+
+⟹**MEC is closed for O3 detection.** What survives is a narrower, gated POWER question (can a
+read-inferred group be told from the family's own reference copies at all, on a within-family matched
+pair) — **never a detector, and no TPR/FPR/detection rate may be quoted from it.**
