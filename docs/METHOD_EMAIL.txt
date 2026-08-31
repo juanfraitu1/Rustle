@@ -1,94 +1,186 @@
-1. Reads to exons. Primary alignments only (samtools -F 2308: no unmapped, secondary or supplementary
-records). An N in the CIGAR is a spliced-out intron, so the blocks between the N operations are the exons.
-A D is a deletion, not an intron, and does not split an exon.
+How the pipeline goes from reads to gene families
+=================================================
 
-2. Reads to candidate transcripts. There are two rules here, not one, and the second builds a large
-fraction of everything downstream. Spliced reads: two reads belong to the same candidate if their intron
-lists are identical, junction for junction, where a junction is the exact triple (chromosome, donor,
-acceptor). Unspliced reads are excluded from that rule entirely - an empty intron list would pool them
-chromosome-wide - and are clustered separately, per chromosome, by single-linkage span overlap with no
-threshold: any overlap links. That second rule is what produces the single-exon representatives, and they
-are 43 percent of the nodes in the NPIP catalogue and 33 percent genome-wide, so it is not a footnote.
+What each stage produces
+------------------------
+  read            a nucleotide sequence with one alignment to the genome (chromosome, start
+                  position, CIGAR).
+  exon            a genomic range (chromosome, start, end), read off the CIGAR.
+  intron chain    an ordered list of (donor, acceptor) coordinate pairs. A key used to group reads,
+                  not a sequence.
+  candidate       a group of reads sharing one intron chain, or for unspliced reads a group with
+                  overlapping spans, plus an extent (chromosome, start, end) and a read count.
+  exon-sum        nucleotides: the reference bases at the candidate's exon ranges, concatenated.
+                  The reads supply the coordinates, the genome supplies the bases. Read sequences
+                  are not used after this point.
+  locus           one elected candidate, carrying a range (chromosome, start, end, strand), its
+                  exon-sum sequence, and the pooled read support.
+  homology edge   a relation between two loci, decided by aligning their exon-sums. Position is not
+                  used.
+  graph           nodes are loci, edges are homology edges.
+  component       a maximal set of loci reachable from one another by chains of edges.
+  family          a component, split where it is too sparse, with co-located loci merged, kept only
+                  if at least 2 distinct loci remain.
 
-A candidate is kept if at least 3 reads support it, but the count is pooled over the LOCUS rather than
-counted per candidate: support is summed across the connected component of the junction-incidence graph,
-where two candidates are adjacent if they share an exact junction. A 2-read candidate therefore survives
-when its locus totals 3 or more. This matters: at DAZ2 twelve reads fragment into nine chains whose best
-support is 2, and every one of them would die under a per-candidate threshold. A candidate's start is the
-2nd smallest read start and its end the 2nd largest read end, so one runaway read cannot stretch it. One
-locus yields many candidates: NPIPB9's 206 reads give 54 distinct intron lists, the largest holding only
-21 percent.
+Stages 1 to 3 work in coordinates; the exon-sum converts coordinates back into nucleotides. Position
+is not consulted again until the co-located merge in step 7.
 
-3. Candidate transcript to exon-sum. Reference bases at the read-derived exon coordinates, concatenated
-(reads give the coordinates, the genome gives the bases). Every junction must be canonical and all
-junctions must agree on strand, or the whole candidate is dropped. Canonical means GT..AG, GC..AG or
-AT..AC on the plus strand and their reverse complements CT..AC, CT..GC or GT..AT on the minus strand -
-six motifs, not two. NPIPB12 has 8 of its 9 junctions canonical and one CT..AT, which is in neither list,
-so a 109-read model is discarded. Three plain length bounds also apply at this point: span at most 3 Mb,
-and spliced length between 100 bp and 300 kb. Note that a single-exon candidate has no junctions, so this
-test is vacuous for it: it passes automatically and its strand cannot be determined this way.
+1. Reads to exons
+-----------------
+Primary alignments only (samtools -F 2308: no unmapped, secondary or supplementary records). An N in
+the CIGAR is a spliced-out intron, and the blocks between the N operations are the exons. A D is a
+deletion, not an intron, and does not split an exon.
 
-4. Two structural filters, each a conjunction. Drop a single-exon candidate whose span entirely contains
-5 or more DISTINCT junctions witnessed in the primary reads, each of them carried by at least 2 reads -
-unspliced pre-mRNA lying across a real gene. Distinct rather than total matters: TSPYL1 has 51 junction
-observations inside its span but only 4 distinct ones. The rule is read-level, not transcript-level;
-phrased over assembled transcripts it misses the RFPL readthrough entirely. Second, drop a candidate with
-an intron longer than 50 kb whose exact junction is supported by fewer than 3 primary reads (mis-chain).
-Neither of these two drops on length alone, though the three bounds in step 3 are genuine length cut-offs.
+2. Reads to candidate transcripts
+---------------------------------
+Two rules, applied separately.
 
-5. Candidates to loci. Two candidates are put in the same locus if any of three things holds: (a) they
-share at least one identical junction; (b) they are on the same chromosome and strand and their genomic
-spans overlap by at least half of the shorter span; or (c) they are on the same chromosome and strand,
-their spans overlap at all, and the POA contiguous-core coverage of the shorter exon-sum is at least 0.50 -
-which admits alternative-first-exon and alternative-last-exon isoforms whose junction sets are entirely
-disjoint. Apply repeatedly until nothing more merges.
+Spliced reads: two reads belong to the same candidate if their intron lists are identical, junction
+for junction, where a junction is the exact triple (chromosome, donor, acceptor).
 
-Two caveats belong here. First, (b) and (c) measure genomic spans with introns included, so a giant intron
-satisfies (b) vacuously: at NPIPB9 the selected representative has 24 aligned blocks, none of them inside
-the gene, joined by one 104,410 bp intron that spans the whole of it - membership by absence. Second, the
-procedure is deterministic but it is NOT order-independent. Clause (a) is an order-independent union-find,
-but (b) and (c) run as a fixed-point loop that re-picks one representative per locus each round and
-compares only representatives, so the choice of representative is part of the merge rather than a step
-after it. There is no k and no clustering algorithm, but I should not claim the outcome is independent of
-ordering, because it is not.
+Unspliced reads are excluded from that rule, because an empty intron list would pool them
+chromosome-wide. They are clustered separately, per chromosome, by single-linkage span overlap with
+no threshold: any overlap links. This rule produces the single-exon candidates.
 
-Each locus then keeps one representative: the candidate with the most reads, ties broken by longer span.
-NPIPB9's 54 candidates become 1 locus with a 1,546 bp exon-sum. Every other isoform is discarded for the
-rest of the pipeline, not temporarily - NPIPA2 has 14 candidates and 6 distinct first exons, and one
-survives. This is the largest known information loss in the method: 46 percent of the representatives
-covering a known family member are single-exon stubs, and 53 percent of those loci have a discarded
-spliced chain carried by 3 or more reads.
+A chain needs at least 2 reads to form a candidate at all. A candidate is then kept if at least 2
+reads support it, and that count is pooled over the locus rather than counted per candidate: support
+is summed across the connected component of the junction-incidence graph, in which two candidates
+are adjacent if they share an exact junction. The two floors are equal, so the pooled test does not
+currently reject a candidate that formed. The pooling rule is what allows the floor to be raised
+without discarding fragmented loci, where the reads at one locus split across many chains and no
+single chain reaches the floor alone.
 
-6. Loci to the homology graph. All representatives in the run are written to one FASTA, and that same file
-is passed to minimap2 as both the target and the query:
+A candidate's start is the 2nd smallest read start and its end is the 2nd largest read end, so a
+single read cannot extend it. The trimming is per candidate, so two candidates that later join the
+same locus can have different extents. One locus yields many candidates.
+
+3. Candidate transcript to exon-sum
+-----------------------------------
+Take the reference bases at the read-derived exon coordinates and concatenate them.
+
+Every junction must be canonical and all junctions must agree on strand, or the candidate is
+dropped. Canonical means GT..AG, GC..AG or AT..AC on the plus strand, and their reverse complements
+CT..AC, CT..GC or GT..AT on the minus strand: six motifs.
+
+Three length bounds apply: span at most 3 Mb, spliced length at least 100 bp, spliced length at most
+300 kb.
+
+A single-exon candidate has no junctions, so the canonical test is vacuous for it: it passes
+automatically, and its strand cannot be determined this way.
+
+4. Two structural filters
+-------------------------
+Each is a conjunction, and neither drops on length alone.
+
+Drop a single-exon candidate whose span entirely contains 5 or more distinct junctions witnessed in
+the primary reads, each carried by at least 2 reads. Distinct rather than total is what is counted.
+The rule is applied at read level, not over assembled transcripts.
+
+Drop a candidate with an intron longer than 50 kb whose exact junction is supported by fewer than 3
+primary reads.
+
+5. Candidates to loci
+---------------------
+Two candidates are placed in the same locus if any of three conditions holds:
+
+  (a) they share at least one identical junction;
+  (b) they are on the same chromosome and strand and their genomic spans overlap by at least half of
+      the shorter span;
+  (c) they are on the same chromosome and strand, their spans overlap, and the POA contiguous-core
+      coverage of the shorter exon-sum is at least 0.50.
+
+Condition (c) admits alternative-first-exon and alternative-last-exon isoforms whose junction sets
+are disjoint. Apply the three conditions repeatedly until nothing further merges. Conditions (b) and
+(c) form a fixed-point loop rather than a single pass, so the result is not order-independent.
+
+The merge produces a set of candidates. The locus that goes forward is one elected member: the
+candidate with the most reads, ties broken by the larger span. The locus's chromosome, start, end,
+strand and sequence are that member's. The other members contribute their reads to the support count
+and are not carried forward.
+
+A locus therefore begins and ends where its best-supported candidate begins and ends. It is not the
+union of its members' exons and not their outer envelope. The exon-sum passed to step 6 is one
+intron chain, not the locus's full exon repertoire.
+
+The elected candidate can be single-exon even where spliced candidates exist at the same locus,
+because the election is on read count. For such a locus the exon-sum is the span.
+
+The read floor in step 2 pools over the connected component of the junction-incidence graph. The
+locus here is built by the three conditions above, which include span overlap and POA core. These
+are different groupings over the same candidates and they do not coincide in either direction.
+
+6. Loci to the homology graph
+-----------------------------
+All representatives in the run are written to one FASTA, and that file is passed to minimap2 as both
+the target and the query:
 
     minimap2 -c -X --no-long-join -t <threads> -k 11 -w 5   reps.fa   reps.fa
 
-So the comparison is all-vs-all, not one-vs-all, and it is global rather than per family - there is no
-pre-grouping, and families are the OUTPUT of this step rather than an input to it. It runs once, not three
-times: the shipped path is single-tier at identity 0.60 or above with the sensitive -k 11 -w 5 seeding.
+The comparison is all-vs-all, not one-vs-all, and global rather than per family. There is no
+pre-grouping, and families are the output of this step rather than an input to it. The shipped path
+is single-tier, at identity 0.60 or above, with -k 11 -w 5 seeding.
 
-Two properties of this call are worth stating explicitly. The minimizer index acts as a prefilter, so only
-1.86 percent of all possible pairs produced any alignment record at all in the NPIP run; 98 percent of
-non-edges are "no alignment found" rather than "failed a threshold". And -X implies --dual=no, so each
-pair is emitted in one direction only, (a,b) or (b,a) but never both. Because --dual=no keeps whichever
-sequence has the lexicographically smaller FASTA header, and the headers are the representative index, the
-query is not necessarily the shorter sequence - measured, it is the longer one in 50.9 percent of records,
-essentially a coin flip. Any per-record statistic therefore has to choose its axis explicitly.
+An edge requires identity at least 0.60 and coverage at least 0.50 of the shorter sequence, both on
+a single alignment record, in the forward orientation.
 
-An edge exists between two loci if ANY SINGLE alignment record clears all three of: identity (1 - de) at
-least 0.60; coverage of at least half of the SHORTER sequence, computed as (qe-qs)/ql when ql <= tl and
-(te-ts)/tl otherwise, so the numerator's axis follows the denominator; and forward orientation, since
-minus-strand records are dropped. Records are never summed - one qualifying record is enough.
+The minimizer index acts as a prefilter, so most pairs produce no alignment record at all: most
+non-edges are "no alignment found" rather than "failed a threshold".
 
-7. Homology graph to final families. Take the connected components of those edges, then refine: any block
-of 3 or more nodes whose induced density falls below gamma = 0.20 is recursively split. Blocks of 2 or
-fewer nodes are exempt from the test entirely, and the graph gamma runs on is unweighted - identity and
-coverage decide whether an edge exists and are then discarded. Gamma is inert on 79 percent of the
-catalogue, so for four families in five the block simply is the connected component; it earns its place on
-the rest, because without it one component holds 466 copies across 38 families. The operation is
-split-only, which is what preserves seed-invariance.
+-X implies --dual=no, so each pair is emitted in one direction only, (a,b) or (b,a) but never both.
+--dual=no keeps whichever sequence has the lexicographically smaller FASTA header, and the headers
+are the representative index, so the query is not necessarily the shorter sequence. Any per-record
+statistic must therefore state its axis.
 
-Within a block, two loci that overlap on the same strand are merged back into one unless at least 3 reads
-map uniquely (MAPQ above zero) to one of them, which is the evidence that they are genuinely two loci and
-not one counted twice. Keep the block as a family only if at least 2 distinct loci remain after that.
+7. Homology graph to final families
+-----------------------------------
+Take the connected components of the edges.
+
+A connected component is a maximal set of loci in which every locus is reachable from every other by
+a chain of edges; maximal means no further locus can be added without breaking that. Every locus
+lands in exactly one component, so the components partition the loci.
+
+Membership is therefore transitive. If A-B and B-C are edges, then A, B and C form one component
+even when A and C have no edge between them, no measured identity and no alignment record. A
+component is held together by chains, not by pairwise resemblance. A single spurious edge merges two
+whole components rather than two loci.
+
+Then refine the components.
+
+The refinement in full. For a set of loci S, the induced subgraph is S together with those edges
+whose endpoints both lie in S. Its density is
+
+    density(S) = 2m / (n(n-1))
+
+where n is the number of loci in S and m the number of edges in the induced subgraph. The
+denominator n(n-1)/2 is the number of possible pairs, so density is the fraction of possible pairs
+that are edges: 1.0 if every locus is joined to every other, and near 0 for a long chain.
+
+The rule is: a block of 3 or more loci whose density is below gamma = 0.20 is split, and each part
+is tested again, until every surviving block either has 2 or fewer loci or has density at least
+gamma. Blocks of 2 or fewer are exempt, because a single edge between 2 loci already gives density
+1.0 and the test cannot fail.
+
+The split itself is Louvain community detection on the induced subgraph, run at resolution 1, 2, 4
+and 8, taking the first resolution that returns 2 or more communities. If none does, the block is
+split into its connected components instead.
+
+The graph the refinement runs on is unweighted: identity and coverage decide whether an edge exists
+and are then discarded, so every edge counts the same in the density.
+
+The refinement only ever splits. It starts from the connected components and never merges across
+them, and no locus moves between components. This is what makes the output invariant to the order
+in which loci are supplied and to the choice of starting locus.
+
+A block that passes the test is a gamma-quasi-clique: a set of loci in which at least gamma of the
+possible pairs are edges. Finding a maximum such set is NP-hard, so the block produced here is a
+certified witness that a set meets the bar, not a proof that it is the largest set that does.
+
+This step occupies the same position that Markov clustering occupies in TribeMCL, OrthoMCL and
+OrthoFinder: it partitions an all-vs-all homology graph into families. Taking the connected
+components alone, without it, chains subfamilies together through shared-domain hubs.
+
+Within a block, two loci that overlap on the same strand are merged into one unless at least 3 reads
+map uniquely (MAPQ above zero) to one of them, which is the evidence that they are two loci rather
+than one counted twice.
+
+Keep the block as a family only if at least 2 distinct loci remain.

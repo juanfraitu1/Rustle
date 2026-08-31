@@ -5053,3 +5053,29 @@ guarded arm sits **+6.7 points above the shipped default** (23.29% vs 16.63%) �
 class is contaminated by LOC-named paralogues. ⚠**the clean control is n=3**: only ALDOA, ATP5F1A and
 RPL13A lie on this catalog's contigs. ⟹**flag-free stays OPT-IN; the guard is intrinsic to it. A ship
 decision needs the full-contig run where all 30 housekeeping genes are in scope.**
+
+## §6ah — The genome-anchored repeat veto is a NULL on top of the site bar (08-30)
+
+Ran `RUSTLE_ER_REPEAT_GATE=50` on top of flag-free + the asymmetric site bar (§6ag), to target the
+residual unspliced pile-up the bar leaves (largest family still 68% single-exon).
+
+| | families | copies | NPIP | largest | 1-exon | housekeeping |
+|---|---|---|---|---|---|---|
+| floor 2 (shipped default) | 121 | 678 | 14/31 | 54 | 1.9% | 3/3 PASS |
+| + flagfree + bar | 291 | 1,584 | 26/31 | 50 | 68.0% | 3/3 PASS |
+| + flagfree + bar + repeat veto | 285 | 1,557 | **26/31** | **50** | **68.0%** | **3/3 PASS** |
+
+The veto flags **92 of 4,507 reps** as genome-anchored hubs and drops **188 of 6,554 edges (2.9%)**;
+every endpoint is unchanged. ⟹**the bar had already removed what the veto would have caught. The residual
+68% single-exon share is NOT repeat-hub driven.**
+
+**⛔ THIS ALSO UNDERCUTS THE ML EXPERIMENT IT WAS RUN TO ENABLE.** The plan was: label ← genome-anchored
+multiplicity (from the REFERENCE, independent of the RNA features), features ← RNA, task ← predict the DNA
+verdict from RNA evidence. That label is the only non-circular one available (the catalogue is circular;
+cross-substrate replication is confounded by expression — the trap behind the retracted "not expressed").
+Measured, **it identifies 92 reps whose removal changes no endpoint** ⟹ a model trained on it would be
+redundant with a rule already in the tree. ⚠**the binding constraint on ML here is LABELS, not models.**
+
+⭐**What would break it**: an assembly-derived per-copy truth set of the kind that gave GOLGA6L7 = 6 on
+`_mat` / 7 on `_pat` — DNA-derived, per-copy, independent of the RNA evidence. Bounded work for a few dozen
+families, and useful to the thesis whether or not a model is ever trained on it.
