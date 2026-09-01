@@ -1442,6 +1442,34 @@ pub fn build_spliced_seq_with(
     // since a spuriously chained junction is usually non-canonical. So tolerance is granted only to SMALL
     // introns: a 252 bp non-canonical junction (NPIPB12's) is a plausible real splice variant, a 104 kb one
     // is a mis-chain. Above `RUSTLE_JUNCTION_NC_MAX_BP` (default 10 kb) canonical is still required.
+    //
+    // ── MEASURED 2026-09-01 (docs/o1_ledger.md §6au-§6aw). READ THIS BEFORE FLIPPING THE DEFAULT. ──
+    // The advisor's objection ("do not attend only to canonical junctions") is CORRECT, and there are
+    // now three independent lines of evidence for it, so this flag is measured-positive, not merely
+    // plausible:
+    //   1. DEPTH. Non-canonical junctions collapse 140x under a support floor (28.34% of distinct
+    //      junctions at >=1 read -> 0.20% at >=500), i.e. they are overwhelmingly shallow noise. BUT the
+    //      deep tail is real: 18 non-canonical junctions at >=100 reads collapse to 7 distinct SITES
+    //      (+/-30 bp), of which 3 have NO canonical junction within 30 bp. The other 4 ARE jitter off a
+    //      real canonical site, so a motif filter would have been partly right FOR THE WRONG REASON.
+    //   2. CROSS-SUBSTRATE RECURRENCE. All 3 recur at EXACT coordinates in GGO_ds.bam (testis, OR6737 --
+    //      a different ANIMAL and TISSUE), and two are the DOMINANT form there: CT..AT 220/251 = 87.6%
+    //      of covering reads, GT..GG 65/70 = 92.9%. An artifact does not become the majority form at a
+    //      locus in an independently prepared library. The reference-artifact escape does not apply:
+    //      these sites have no canonical junction nearby to be pushed off.
+    //   3. THIS FLAG RESCUES THEM. Arm vs a byte-identical OFF control (copies.tsv 9849dcb4): the CT..AT
+    //      site (2,407 reads) and the GT..GG site (462) go 0 -> 1 spliced node. Applicable because 100%
+    //      of reads at each carry a canonical junction in the SAME chain and all introns are < 10 kb --
+    //      the NPIPB12 shape.
+    // COST on that arm: families 121 -> 117, copies 678 -> 700, strictly-engulfed 60 -> 63, NPIP loci
+    // held at 14/31 (no recall gain), single-copy housekeeping control 3/3 PASS.
+    //
+    // ⚠⚠ WHY IT IS STILL OFF, AND THE ONE THING THAT WOULD CHANGE THAT: the chr16 harm above was
+    // measured ON chr16, and that arm ran on NC_073241.2 / NC_073242.2 / NC_073244.2. THE FAILURE MODE
+    // IS NOT REACHABLE ON THOSE CONTIGS, so its absence there is NOT evidence against it -- an arm that
+    // cannot exhibit a failure does not test it. **REQUIRED BEFORE FLIPPING: a chr16 arm.** Do not read
+    // the clean pass above as a green light; it is a pass on a substrate where the known failure cannot
+    // occur.
     let mut strand: Option<char> = None;
     if majority {
         let (mut plus, mut minus) = (0usize, 0usize);

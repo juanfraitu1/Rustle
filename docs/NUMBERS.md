@@ -313,3 +313,48 @@ collapse that would absorb the stub.
 ⚠**do NOT quote the split-only certificate as seed-invariance evidence** — it is a theorem of the code and
 cannot fail (register, §6as). ⚠the family-purity/housekeeping control was **absent from the arm scorer**
 and **fires** against the `READ_STRAND` arm; re-run every arm with it before revisiting.
+
+
+## 2026-09-01 — non-canonical junctions and `RUSTLE_JUNCTION_MAJORITY`
+
+**The advisor's objection is CORRECT.** Three independent lines of evidence; all figures on
+`npip_cat/npip3.bam` (fibroblast KB3781, 3 contigs) unless stated.
+
+**1. Depth — the motif test does real work at low support, and only there.**
+
+| min reads | canonical | non-canonical | nc share |
+|---|---|---|---|
+| 1 | 47,640 | 18,844 | 28.34% |
+| 10 | 16,586 | 207 | 1.23% |
+| 500 | 3,462 | 7 | **0.20%** |
+
+Non-canonical are **8.03% of DISTINCT junctions but 0.51% of OBSERVATIONS** — shallow, not massive.
+
+**2. But the deep tail is real.** 18 non-canonical junctions at ≥100 reads → **7 distinct sites** (±30 bp);
+**3 have NO canonical junction within ±30 bp**. ⚠the other 4 ARE jitter off a canonical site (one hotspot
+supplies 12 of the 18 coordinates) — **a motif filter would be partly right for the WRONG reason.**
+
+**3. Cross-substrate recurrence** — `GGO_ds.bam`, testis, **OR6737: different ANIMAL and TISSUE**:
+
+| site | motif | fibroblast | testis | share of covering reads |
+|---|---|---|---|---|
+| `NC_073244.2:59965384-59967477` | CT..AT | 2,407 | 220 | **87.6%** |
+| `NC_073241.2:52758208-52758462` | GT..GG | 462 | 65 | **92.9%** |
+| `NC_073244.2:60228246-60228362` | CT..CC | 128 | 1 | 1.4% |
+
+⭐**two are the DOMINANT form at their locus in a second animal.** `CT..AT` is the NPIPB12 motif class —
+the rule already discards a 109-read NPIPB12 model over one such junction.
+
+**`RUSTLE_JUNCTION_MAJORITY` arm** (OFF byte-identical, `copies.tsv` 9849dcb4):
+
+| | OFF | MAJORITY |
+|---|---|---|
+| families / copies | 121 / 678 | 117 / 700 |
+| NPIP loci | 14/31 | **14/31 (no gain)** |
+| strictly engulfed | 60 | 63 |
+| housekeeping control | 3/3 | **3/3** |
+| the 2 lost sites | 0 nodes | **1 node each** |
+
+⛔**STILL OFF BY DEFAULT. The blocker is named: the chr16 harm (copies 66→34, families 20→11) was measured
+ON chr16, and this arm ran on NC_073241/242/244 — THE FAILURE IS NOT REACHABLE THERE, so a clean pass is
+not a green light. A chr16 arm is required before any flip.**
