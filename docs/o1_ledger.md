@@ -5254,3 +5254,46 @@ reporting success while structurally unable to fail.
 
 ⚠**default stays OFF** pending a genome-wide arm; `quant.tsv` and `families.tsv` are byte-identical
 across all three modes, so abundance is unmoved by the demotion.
+
+## §6al — VACUOUS INSTRUMENTS: a defect class, one confirmed, scope unassessed (08-31)
+
+Three instruments were found this week that **reported success while structurally unable to fail**. That
+is a class, not three coincidences, and it is the most dangerous defect shape in this project because a
+vacuous PASS is indistinguishable from a real one in the record.
+
+**CONFIRMED, all three:**
+1. `bench/mechanism/byte_identity_gate.sh` — `BIN` pointed at a path that did not exist, so `check` ran
+   NO binary and md5'd stale files. **The gate had been passing vacuously.** Fixed (f7ed833): default
+   corrected to the real `CARGO_TARGET_DIR`, hard abort on a missing binary, second corpus added.
+2. `RUSTLE_DEBUG_LOCUS` existed only in `detect_conflict_catalog_genome_wide_xchrom`, but
+   `--homology-primary` runs `detect_homology_catalog_genome_wide`. A full trace run produced **0 dbg
+   lines** — the instrument was absent from the path under test. Fixed (fef1317).
+3. `bench/family_def_airtight_panel.py` — computes edges from ANNOTATION-derived cDNA homology and never
+   invokes the pipeline ⟹ **structurally blind to any collapse/representative flag**. Both arms return
+   "identical", which reads as a pass. Not fixed; documented in §6aa.
+
+⚠ A fourth, in my own analysis code: `split("\t", 12)` lumped every SAM tag past field 12 into one
+string, so an `AS:i:` scan found none and **every record was skipped — 0 E_c edges from 2,499,153
+records**. It read as a clean null ("shared reads add nothing"). Caught only because the SAME run
+reported 61,941 E_r edges over identical reps, making the zero impossible. ⟹**A NULL NEEDS A POSITIVE
+CONTROL IN THE SAME RUN.**
+
+**SCOPE — FOUND, NOT ASSESSED. Do not quote these as defect counts.**
+* **`target/release/` DOES NOT EXIST in the repo** (builds go to `CARGO_TARGET_DIR` on linuxdisk), yet
+  **36 bench files invoke `target/release/<binary>`**, 8 of them named gate/check/verify/validate.
+* **349 files reference `/home/juanfra/winloci_scratch`**, a path that no longer exists (data moved to
+  `/mnt/linuxdisk/.../_from_wsl/winloci_scratch`); **37 of those are gates or validators**.
+* **Only 25 of 64 bench shell scripts use `set -e`**, so a failed command does not abort — the script
+  continues to its comparison and can still print a verdict. That is exactly the `byte_identity_gate`
+  mechanism.
+* Sampled 3 (`core_gate_gw.sh`, `gate_onoff_gw.sh`, `soto/salvage_validation.sh`): all three combine a
+  stale BAM path, the nonexistent `target/release` binary, and no `set -e`.
+
+⚠⚠**WHAT IS NOT ESTABLISHED: how many of the 37 return a FALSE PASS versus dying loudly.** Failing loudly
+is safe; passing vacuously invalidates whatever it certified. **One** is confirmed (`byte_identity_gate`).
+Extrapolating from a sample of 3 would repeat the "210 disjoint" over-reach corrected in §6ak. The audit
+is scoped but UNRUN.
+
+⟹**STANDING RULE: an instrument must be shown capable of FAILING before its PASS is evidence.** Check the
+candidate count (§4t's human panel offered 0 qualifying pairs), check the binary exists, check a null has
+a positive control in the same run.
