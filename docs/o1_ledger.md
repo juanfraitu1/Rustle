@@ -5207,3 +5207,50 @@ assignment rows** (53,715 assigned rows over 53,197 distinct assigned names). Of
 **309 overlap genomically but 210 are DISJOINT** — median separation **16,341 bp**, max **37,727,971 bp**.
 **A single molecule cannot originate from two disjoint loci, so at least one member of each of those 210
 is wrong.** Not previously known; not handled anywhere in the pipeline.
+
+## §6ak — Cross-family double assignment: fixed, and INDEPENDENTLY verified (08-31)
+
+`RUSTLE_XFAM_RECONCILE` (off = default / report / abstain), committed a8079cf. The workflow's verify
+phase crashed the terminal twice (3 xhigh agents each re-running `cargo test --release` + `copy_assign`;
+one `copy_assign` alone is **9.6 GB RSS**, so three concurrently exceed the 25 GB box — an authoring
+error, heavy work must never sit inside a `parallel()` block). Verified SERIALLY instead, by hand.
+
+**⭐ MY ORIGINAL FRAMING WAS THE WRONG CUT.** I posed the bug as "210 assignments at DISJOINT loci". The
+right axis is whether two assigned rows resolve to ONE alignment record or TWO. Measured stratification
+of all 519 contested pairs: **309 shared_locus** (one placement, two family labels — an O1 naming defect
+in an O2 costume) · **99 readthrough_span** (one record spanning both copies — biology) · **111
+cross_family_contradiction** (two independent records — genuinely impossible). ⚠**an interval-geometry
+gate fires on all 519 and would abstain 415 correct single-placement assignments.**
+
+**Independent verification (my own recount from the three arms, not the implementer's numbers):**
+
+| arm | rows | assigned | reads in ≥2 fams | disjoint copy pairs |
+|---|---|---|---|---|
+| off | 79,175 | 53,715 | 517 | 210 |
+| report | 79,175 | 53,715 | 517 | 210 |
+| abstain | 79,175 | **53,494** | **407** | **98** |
+
+* **OFF is byte-identical to the pre-fix dump** — `assignments.tsv` fe563640, `quant.tsv` 219f9007,
+  `families.tsv` 033b315a, all SAME (my md5s, not the implementer's).
+* **Row count is INVARIANT at 79,175 across all three arms** ⟹ the fix changes STATUS, it does not hide
+  rows. 221 demotions, all `assigned → ambiguous`.
+* **111/111 genuine contradictions demoted, 0 remain.** The 112th demotion is a readthrough pair whose
+  molecule is in ≥3 families and also carries a contradiction — the rule working, not a leak.
+* **The 98 residual disjoint-by-geometry pairs are 98/98 `readthrough_span` with `same_record = true`** —
+  ONE record spanning two copies, median separation 16,341 bp, max 76,199 bp. Correctly kept.
+  ⟹**geometry alone cannot separate a two-record contradiction from a one-record readthrough**, which is
+  exactly why the record axis is the right one.
+
+**Discipline checks, all pass:** `xfam_reconcile` IS in the params certificate (`copy_assign.rs:2456` —
+the M2 defect avoided); an unknown mode returns `Err` rather than silently running as off; the tests pin
+the CLAUSE (`abstain_demotes_only_the_two_record_contradiction`) and the VALUE
+(`abstain_row_counts_are_exactly_two_demotions`) separately. Suite **824 passed / 0 failed / 11 ignored**
+(baseline 815; delta = exactly the 9 new tests, no existing test edited).
+
+⭐**A SECOND BUG WAS FOUND AND FIXED EN ROUTE (f7ed833): `bench/mechanism/byte_identity_gate.sh` pointed
+at a `BIN` path that did not exist**, so `check` ran no binary and md5'd stale files — the gate had been
+passing VACUOUSLY. Same class as the blind airtight panel and the missing trace hook: an instrument
+reporting success while structurally unable to fail.
+
+⚠**default stays OFF** pending a genome-wide arm; `quant.tsv` and `families.tsv` are byte-identical
+across all three modes, so abundance is unmoved by the demotion.
