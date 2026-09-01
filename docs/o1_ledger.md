@@ -5815,3 +5815,56 @@ of covering reads in a different animal and tissue.**
   end-to-end delta has NEVER been measured — that is now the highest-value untested flag in the tree.**
 ⚠3 contigs, one comparison; the testis arm was not depth-matched (251 and 70 covering reads vs the
 fibroblast's much deeper coverage), so the SHARE is the readable statistic, not the raw count.
+
+## §6aw — `RUSTLE_JUNCTION_MAJORITY` measured: it works, and it is NOT yet a default (09-01)
+
+The advisor's objection, tested through the flag the tree already provides. **Criteria pre-registered
+before the run**; OFF arm first.
+
+**✅ IT RESCUES EXACTLY WHAT IT SHOULD.** Two of the three cross-substrate-confirmed non-canonical sites
+(§6av) were being lost ENTIRELY and now become spliced nodes:
+
+| site | motif | reads | OFF | MAJORITY |
+|---|---|---|---|---|
+| `NC_073244.2:59965384-59967477` | **CT..AT** | 2,407 | **0** | **1** |
+| `NC_073241.2:52758208-52758462` | **GT..GG** | 462 | **0** | **1** |
+| `NC_073244.2:60228246-60228362` | CT..CC | 128 | 1 | 1 |
+
+⭐it is applicable at all because **100% of reads at each site carry a canonical junction in the SAME
+chain** (2407/2407, 462/462, 128/128) and every intron is under the 10 kb `NC_MAX_BP` tolerance — the
+NPIPB12 shape exactly.
+
+**ALL FOUR PRE-REGISTERED CRITERIA PASS:**
+
+| | OFF (= arm_f2) | MAJORITY |
+|---|---|---|
+| families | 121 | 117 (−3.3%) |
+| copies | 678 | 700 (+3.2%) |
+| NPIP loci | 14/31 | **14/31 held** |
+| largest family / 1-exon share | 54 / 1.9% | 55 / 1.8% |
+| strictly engulfed | 60 | 63 |
+| **single-copy housekeeping control** | **3/3 PASS** | **3/3 PASS** |
+| spliced nodes | 1,710 | 1,715 |
+
+* **K1** (copies or families fall >25%) — pass, by a wide margin.
+* **K2** (housekeeping control) — pass. ⚠**this is the endpoint that was SILENTLY DROPPED from the
+  engulfment arm scorer and then fired**; it was run explicitly here.
+* **K3** (NPIP < 13/31) — pass, held exactly.
+* **K4** (OFF byte-identical) — pass: `copies.tsv` 9849dcb4, `families.tsv` bac5d98e, both SAME.
+
+**⛔ BUT THIS IS NOT SUFFICIENT FOR A DEFAULT FLIP, AND THE REASON IS SPECIFIC.** The measured harm of
+relaxing the canonical rule — **chr16 copies 66 → 34, families 20 → 11** — was measured **ON chr16**, and
+this substrate is `NC_073241.2 / NC_073242.2 / NC_073244.2`. **The failure mode is not reachable on these
+contigs, so its absence here is NOT evidence against it.** Asserting otherwise would be the blind-panel
+error (§6al) in a new costume: an arm that cannot exhibit the failure is not a test of it.
+⟹**REQUIRED BEFORE ANY DEFAULT CHANGE: a chr16 arm.** The in-tree comment already states the mechanism —
+the all-canonical rule does DOUBLE DUTY, dropping NPIPB12 (bad) and mis-chains (good) — so the chr16 loss
+is expected to be real and must be re-measured, not assumed away.
+
+⚠also note the gain is narrow here: **NPIP recall does not move (14/31)**, families fall by 4, and
+strictly-engulfed rises 60 → 63. The case for the flag rests on **recovering two demonstrably real,
+cross-substrate-replicated splice sites carrying 2,407 and 462 reads**, not on any endpoint improving.
+
+**DISPOSITION: keep `RUSTLE_JUNCTION_MAJORITY` OFF by default; it is now MEASURED-POSITIVE on this
+substrate and has a named blocker (the chr16 arm) rather than being untested.** That is a materially
+better position than yesterday, when it was the highest-value flag nobody had run.
