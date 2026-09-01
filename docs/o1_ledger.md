@@ -5435,3 +5435,64 @@ resolves**. Left visible rather than deleted, because the wrong version was comm
 
 ⟹**REMAINING TRULY OPEN: the 28 dead-binary scripts (§6am), and the residual holes in all ten repaired
 gates (§6an).** Neither is a provenance question about a recorded number.
+
+## §6ap — Reads spanning two near-identical copies: keep current for O2, and a LIVE O1 defect found (09-01)
+
+Four lenses + a synthesizer + three adversarial refuters, all re-deriving from the real dumps.
+**All three refuters fired.** What follows separates what survived independent recomputation.
+
+### ✅ O2: KEEP CURRENT — and it is now PROVEN, not assumed
+
+A record spanning two disjoint copies is assigned in BOTH families, and that is **not** double-counting.
+`fill_psv_obs` writes an observation only inside an M/=/X block and `allele_at` maps genomic→read offset
+**injectively**, so on disjoint copies the two families interrogate **disjoint genomic positions and
+therefore disjoint READ BASES**. Measured on the dominant pair: **294 + 1,512 = 1,806 observed columns at
+disjoint intervals = 1,806 DISTINCT read bases of ~3,255 aligned.** ⟹**each copy's claim is independently
+earned on bases the other never saw.** One molecule, two segments, two independent evidence sets.
+
+**⭐ ABUNDANCE PROVABLY CANNOT MOVE**: `quant.tsv` md5 **219f9007fe2cfa7e39e14ca00da62207 across ALL FOUR
+arms** (pre-reconcile baseline, off, report, abstain). No reconcile decision — existing or proposed —
+moves a single abundance figure; only the `status` column can change. ⟹**this was never an abundance bug.**
+
+**⛔ AND IT NEEDS NO NEW MACHINERY.** The population is **99 rows / 77,372 distinct molecules = 0.128%**,
+and **93 of the 99 are ONE copy pair** (GWFAM118:0 × GWFAM111:3, separation 16,341 bp) — essentially one
+stub. A 3-flag / 3-arm proposal was **refuted on necessity**: the honest deliverable is keep-current, add
+diagnostic columns, write the paragraph. ⚠also `same_record` is **logically incapable of failing on 94%
+of the stratum**, so its agreement is not evidence.
+
+### ⛔⛔ THE REAL FINDING: THE DAZ FAILURE MODE IS ALREADY LIVE IN THE SHIPPED CATALOG
+
+The claim that "the shipped stance is already correct" is **FALSE**. Running the in-tree
+`catalog_overlaps` logic over `arm_f2/cat.copies.tsv` (678 copies, 121 families):
+* **98 `SharedAcrossFamilies` overlaps** — the enum's own doc says this "is ALWAYS a defect: a readthrough
+  transcript in one family spans loci that are separate copies of another. Observed at GSTM."
+* **71 copies are STRICTLY ENGULFED by a copy of a DIFFERENT family, touching 34/121 families.**
+* In `dump/e.nodes.tsv`, **441/3,598 nodes engulf ≥1 other node (910 engulfments), and 115 of those carry
+  ≥1 E_r edge.**
+⟹**this is not a hypothetical guarded against; it is shipping.** ⚠the proposed "extension" would have made
+node creation strictly worse.
+
+**The mechanism, located precisely:** `is_chimeric_bridge` (`denovo_assemble.rs:1550`) — "two spans either
+intersect or they do not", threshold-free — is applied at the GATE but **NOT at collapse**.
+`collapse_parent` phase 1 (`family_detect.rs:613-624`) unions any two transcripts sharing an exact
+`(chrom, donor, acceptor)` **with no chimera test**, so a spanning object that clears the gate on its own
+reads still merges the two loci — the GSTM/DAZ mechanism, one stage later.
+
+### ⚠ THE USER'S LITERAL CASE IS INVISIBLE TO THE DETECTOR
+
+Near-identical **and** spannable is **0/3,141 E_r edges at identity ≥0.98**, but at ≥0.90 there are **27
+pairs within 100 kb and 4 within 10 kb** — and **two are WITHIN a family in this batch**: GWFAM111 c0~c1
+(identity **0.9400**, gap **8,166 bp**) and GWFAM118 c4~c5 (**0.9603**, **41,885 bp**).
+⚠**`copy_assign.rs:659` skips same-family pairs, so the xfam detector structurally CANNOT see them**, and
+`best_overlap_copy` picks ONE frame per record ⟹ **the second segment's bases are silently discarded.**
+That is the real gap the question points at — not the 99.
+
+### ⚠ WHAT WE CANNOT TELL FROM WHAT IS DUMPED
+
+**Whether the ~13 kb gap is a REAL splice junction or an aligner-invented N gap.** No per-read CIGAR,
+intron chain, junction coordinate or read strand exists in any dump. **That is exactly the test separating
+a genuine readthrough from a chimera or mis-chain, and it is UNRUN** — so "biology" in the stratum comment
+is an ASSUMPTION. ⭐**The settling statistic is breakpoint concordance: a real readthrough reuses ONE exact
+donor/acceptor across the 93 records; a mis-chain scatters them.**
+⚠also unresolved: whether GWFAM111 copy3 is a distinct copy at all, or the alternative terminal exon of
+the GWFAM118 copy0 gene 21 Mb away (single-exon, 2,096 bp, 11 reads, `stub=true`).
