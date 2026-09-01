@@ -5297,3 +5297,66 @@ is scoped but UNRUN.
 ⟹**STANDING RULE: an instrument must be shown capable of FAILING before its PASS is evidence.** Check the
 candidate count (§4t's human panel offered 0 qualifying pairs), check the binary exists, check a null has
 a positive control in the same run.
+
+## §6am — The vacuous-gate audit: 10 confirmed false PASSes, and two of my premises corrected (08-31)
+
+40 verdict-emitting bench instruments classified STATICALLY (nothing executed: cat/grep/ls/`test -e`/
+`bash -n` only, on a box where one pipeline binary is 9.6 GB and parallel builds crashed the terminal
+twice). **10 FALSE_PASS · 19 FAILS_LOUD · 11 OK · 0 OVERTURNED** — every false-pass candidate was upheld
+under independent re-derivation by a second agent instructed to default to overturning it.
+
+### ⛔ TWO OF MY BRIEFING PREMISES WERE WRONG
+
+1. **`/home/juanfra/winloci_scratch` IS NOT GONE — it is a SYMLINK** (Aug 13) to
+   `/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch`. ⟹**retract "349 files on a stale path"**;
+   the path RESOLVES. **This makes things worse, not better**: those scripts RUN rather than aborting, so
+   the failure that would have saved them never fires. Three of the ten false PASSes
+   (`validate_exon_sum`, `soto_family_validate`, `rna_reframe_validate`) exist *because* of this.
+2. **`target/` does not exist AT ALL**, not merely `target/release/`. **33 executable bench scripts
+   invoke a binary beneath it; only 5 were in the audited 40 ⟹ 28 UNAUDITED scripts carry the canonical
+   `byte_identity_gate` shape.**
+⚠count drift: measured **26/65** shells with `set -e` (register says 25/64) and **34** files invoking
+`target/release` (register says 36). Same conclusion — **re-derive before quoting either as exact**.
+
+### The ten, worst first
+
+* **`soto/gate_sensitivity_sweep.sh` — HIGHEST RISK, AND DESTRUCTIVE.** `set -u` only. `GWCAT` resolves
+  via `soto/_detect_unit.sh:6` to the nonexistent repo-local binary. Line 16 **TRUNCATES the committed
+  result** `$CACHE/gate_sensitivity.tsv` (342 B, Jul 23 17:05) and `run_config:37` `rm -f`s the cached
+  per-chrom outputs — **both BEFORE any binary is attempted** — then scores whatever stale file survives
+  and appends a verdict row. Quoted in `bench/soto/gate_robustness.md`. **It deletes the evidence and
+  writes a fabricated replacement in the same run.**
+* **`soto/salvage_validation.sh`** — the `byte_identity_gate` bug reproduced **three times in one file**,
+  including a byte-identity gate of its own: `BIN` missing ⟹ `timeout 600 "$BIN" >/dev/null 2>&1` returns
+  127, nothing aborts, and it md5-compares leftover outputs and prints PASS. Cited `o1_ledger.md:5289`.
+* **`family_def_airtight_panel.py`** — already known (§6aa); **still runs to completion today** because
+  its inputs are live. Never invokes the pipeline ⟹ blind to every `RUSTLE_*` flag it was used to judge;
+  its negative criteria pass **by default on an empty evidence set**. Quoted in the register and ledger.
+* **`gate_onoff_gw.sh`** — a silent exec failure leaves a PRIOR run's GTFs in place, so the keyed diff
+  reports **lost=0 gained=0**: the strongest possible claim ("flipping the gate ON loses no real
+  transcript") produced by **zero execution**.
+* **`family_def_newbam_validate.py`** — ⭐**the two arms are the SAME INODE**: `GGO.bam` is a symlink to
+  `GGO_mm.bam`, and `:27/:28` set `OLD=GGO.bam`, `NEW=GGO_mm.bam`. The comparison is against itself and
+  cannot fail. ⚠**BUT the recorded table (`FAMILY_DEF.md:526-530`, secondaries 4,818→313,883) PREDATES the
+  symlink and IS a real measurement — re-running today would silently null a TRUE result. DO NOT
+  re-freeze that table from this script.**
+* **`soto_family_validate.py`** — **MAD over an all-zero famCN vector is exactly 0.0**, so a map-back
+  returning nothing scores as "100% famCN-CONSISTENT". Every span is cut from the same genome used as the
+  minimap2 target, so a zero-hit copy is *proof of failure* and is scored as a pass. `cn_ok = mad < 1.0`
+  is unfalsifiable. Quoted as **"famCN-CONSISTENT 67/82 = 81.7%"**.
+* **`o4_diploid_validate.py`** — both `.mmi` inputs verified absent ⟹ the COPY branch of `classify()` is
+  unreachable ⟹ **"COPIES confirmed: 0" is true by construction**; the verdict and JSON are still written.
+* **`validate_exon_sum.py`** · **`rna_reframe_validate.py`** · **`psv_sizing/psv_phase_validate.py`** —
+  unchecked subprocesses / `max(1,…)` denominators / silent `if exists else []` comparators, each turning
+  an empty computation into a printed rate.
+
+### ⭐ One recorded number partially rescued by an internal positive control
+
+`VALIDATION_AND_STATUS.md` §F2's **81.7%** is *probably real*: the same run reports **DNA shared-exon
+25/82**, which is NONZERO and requires real PAF hits, so the aligner demonstrably worked at record time.
+No such internal control exists for `gate_robustness.md`'s sweep rows or `o1_ledger.md:5289`'s
+salvage/gate_onoff citations — **their provenance is UNRESOLVED.**
+
+⚠**SCOPE: 40 of ~657 bench scripts = ~6%**, and the selection was mine, not random. **Absence from this
+report is not evidence about a script.** Static reading establishes *prospective capability to fail*; it
+does NOT establish that any recorded number was produced vacuously. That needs a run, per script.
