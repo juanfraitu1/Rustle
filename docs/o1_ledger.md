@@ -5533,3 +5533,43 @@ from a neighbouring multi-exon gene is that gene's exon, not a paralogue.** ⭐*
 threshold-free O1 rule** — but it is UNTESTED at scale here (n=1 locus), and the §6ap engulfment finding
 (**71 copies engulfed by another family's copy, 34/121 families**) is the population it should be tried
 on. Do not generalise from this one locus.
+
+## §6ar — The pre-registered engulfment test: PARTIALLY SUPPORTED, and it bounds the mechanism (09-01)
+
+The rule pre-registered in the register on 09-01 — *a single-exon stub whose reads ALL splice into it
+through ONE canonical acceptor from a neighbouring multi-exon gene is that gene's EXON* — proven at n=1
+(GWFAM111:3, 95/95 reads on one acceptor). **Prediction: the strictly-engulfed copies split BIMODALLY.**
+Run directly against `npip3.bam` over the `arm_f2` catalog; 50 engulfed copies classified.
+
+**⚠ MY FIRST TALLY WAS WRONG, in exactly the way I had said it must not be.** Loci with spanning reads
+but **NO junction at all** score a modal share of 0.00 **BY CONSTRUCTION** — they are UNINFORMATIVE, not
+scattered — and I folded all 23 of them into the "scattered" arm, reporting **17.5% exon / 68.4%
+scattered**. ⛔**RETRACT those two numbers.** Corrected below on the informative set only.
+
+**RESULT on the 27 informative loci (a junction exists, so the rule is testable):**
+
+| modal-acceptor share | interpretation | n |
+|---|---|---|
+| **≥ 0.90** | one shared acceptor = **EXON signature** | **10 / 27 = 37.0%** |
+| 0.50 – 0.90 | intermediate, unclassified by the rule | 7 / 27 = 25.9% |
+| **< 0.50** | scattered breakpoints = **mis-chaining** | **10 / 27 = 37.0%** |
+
+Binned: **0.0-0.2 → 9 · 0.2-0.4 → 1 · 0.4-0.6 → 3 · 0.6-0.8 → 2 · 0.8-1.0 → 8**. Median 0.64.
+
+**⭐ THE SHAPE IS BIMODAL AS PREDICTED** — the two extremes hold **17/27 = 63%** with a thin middle — so
+the rule is **NOT refuted**. ⛔**BUT IT EXPLAINS ONLY ABOUT A THIRD OF ENGULFMENT, not the majority.**
+The terminal-exon mechanism proven at GWFAM111:3 is one cause among several, and a 26% intermediate band
+the rule does not classify is too large to wave away.
+
+**⭐ AND THE DISCRIMINATOR DECOMPOSES THE POPULATION** (§6aq's four-way table, now applied at scale):
+* **10 terminal-exon** (one canonical acceptor) ⟹ **O1 defect** — a stub promoted to a copy;
+* **10 scattered** ⟹ **mis-chaining** — the existing mis-chain filter's target;
+* **23 with spanning reads but NO junction** ⟹ the **tandem-array mis-alignment** case: the molecule came
+  from ONE copy ⟹ **an O2 assign-or-abstain matter, not an O1 one.** This is nearly half the population
+  and it is a DIFFERENT problem from the one this rule addresses.
+* 7 intermediate — unexplained.
+
+⟹**VERDICT: the rule survives as a CLASSIFIER for a real subclass (~37% of informative engulfments), NOT
+as an explanation of engulfment.** ⚠**n=27 informative**, one 12-family batch, one substrate; the
+`SharedAcrossFamilies` population genome-wide is unmeasured. ⚠the modal-share cut at 0.90 is a
+THRESHOLD — the bimodality is what carries the claim, not that particular number.
