@@ -5496,3 +5496,40 @@ is an ASSUMPTION. ⭐**The settling statistic is breakpoint concordance: a real 
 donor/acceptor across the 93 records; a mis-chain scatters them.**
 ⚠also unresolved: whether GWFAM111 copy3 is a distinct copy at all, or the alternative terminal exon of
 the GWFAM118 copy0 gene 21 Mb away (single-exon, 2,096 bp, 11 reads, `stub=true`).
+
+## §6aq — Breakpoint concordance RUN: the gap is real splice, and the "copy" is a terminal exon (09-01)
+
+§6ap left one thing unknowable from the dumps: **is the ~13 kb gap a REAL splice junction or an
+aligner-invented N gap?** Measured directly from `npip3.bam` (no pipeline run, one region query).
+
+**RESULT — REAL SPLICE, UNAMBIGUOUSLY.**
+* **329/329 = 100% of bridging N gaps sit on a CANONICAL motif**; **19/19 distinct junctions canonical**,
+  every one **GT..AG**. An aligner-invented gap has no reason to land on a canonical dinucleotide pair.
+* The junctions **TILE CONSECUTIVELY** rather than being one invented bridge:
+  `…→69513937`, `69514463→69516651`, `69516692→69520982`, `69521109→69522690`, with alternative donors
+  (69493201 / 69497287 / 69500244 → 69513937) — i.e. ordinary **alternative splicing within one
+  transcriptional unit**, not a chimera.
+
+**⭐⭐ AND THE CONCORDANCE TEST SETTLES WHAT THE OBJECT IS.** Of the 95 spanning reads:
+* **95/95 = 100% carry an ALIGNED BLOCK inside GWFAM111:3**, and
+* **95/95 share the SAME last acceptor, 69,522,690** — ONE exact canonical junction, **203 bp upstream of
+  GWFAM111:3's catalogued start (69,522,893)**.
+A genuine readthrough reuses ONE donor/acceptor across every record; a mis-chain scatters them. This is
+the former, at 95/95.
+
+⟹**GWFAM111:3 IS NOT A COPY. It is the TERMINAL EXON of the GWFAM118:0 transcript**, admitted to the
+catalog as a separate copy in a DIFFERENT family. It is single-exon, 2,096 bp, 11 assembly reads,
+`stub=true` — the profile §6ap flagged as unresolved, now resolved.
+
+**⟹ THE ROOT CAUSE IS O1, NOT O2.** The whole `readthrough_span` stratum (93 of its 99 rows) is this ONE
+artifact: a single-exon stub that is really a terminal exon, promoted to a family member 21 Mb from the
+gene it belongs to. ⟹**keeping the reads assigned in both families (§6ap) remains correct as an O2 act —
+the reads genuinely observe both intervals — but there is nothing to assign to, because the second
+"copy" is not a copy.** Fixing it in O2 would have been treating the symptom.
+
+⚠this is the **26.8%-single-exon-stub** problem ([[project_o1_single_exon_stubs]]) with a concrete,
+mechanistically proven instance: **a stub whose reads all splice into it through one canonical acceptor
+from a neighbouring multi-exon gene is that gene's exon, not a paralogue.** ⭐**That is a candidate
+threshold-free O1 rule** — but it is UNTESTED at scale here (n=1 locus), and the §6ap engulfment finding
+(**71 copies engulfed by another family's copy, 34/121 families**) is the population it should be tried
+on. Do not generalise from this one locus.
