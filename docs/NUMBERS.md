@@ -257,3 +257,34 @@ Same substrate as above (`npip3.bam`; the 31 NPIP loci are a HUMAN projection):
 
 ⚠ `RUSTLE_FLAGFREE_SITES` is **opt-in, not the default**; the guard is intrinsic to it. Quote 26/31 only
 with the n=3 caveat on the control and the note that the NPIP panel is a human projection.
+
+
+## 2026-09-01 — reads that span two catalogued copies
+
+**Substrate:** gorilla fibroblast `npip3.bam` (SAMN04003007/KB3781), one region query over
+`NC_073244.2:69,492,851-69,524,989`. No pipeline run. The pair is GWFAM118:0 (4 exons, 275 reads) and
+GWFAM111:3 (1 exon, 2,096 bp, 11 reads, `stub=true`), separated by 16,341 bp.
+
+| measure | value | denominator |
+|---|---|---|
+| bridging N gaps on a CANONICAL motif | **329 / 329 = 100%** | all bridging gaps in spanning reads |
+| distinct junctions canonical (all GT..AG) | **19 / 19** | distinct (donor, acceptor) pairs |
+| spanning reads with aligned bases inside the second copy | **95 / 95 = 100%** | reads spanning both |
+| spanning reads sharing the SAME last acceptor (69,522,690) | **95 / 95 = 100%** | reads spanning both |
+| that acceptor's distance upstream of the second copy's start | **203 bp** | — |
+
+⟹**GWFAM111:3 is the TERMINAL EXON of the GWFAM118:0 gene, not a copy.** 93 of the 99
+`readthrough_span` rows are this one artifact.
+
+### ⭐ THE DISCRIMINATOR — how to diagnose ANY read spanning two catalogued copies
+
+Reusable, and it is the junction structure that decides — not the coverage, not the identity:
+
+| observation | meaning | whose problem |
+|---|---|---|
+| **all spanning reads share ONE canonical junction**, and align inside both | one gene; the second "copy" is an **exon** of it | **O1** — a stub wrongly promoted to a copy |
+| breakpoints **scatter** across reads | **mis-chaining** | O1 — the mis-chain filter's target |
+| **no junction at all**, PSV alleles uniform along the read | **tandem-array mis-alignment**; the molecule came from ONE copy | O2 — assign or abstain |
+| junction present **and PSV alleles SWITCH partway** | genuine **readthrough / fusion** of two real copies | biology — keep both, disclose |
+
+⚠ measured on **n = 1 locus**. The distribution across the 71 engulfed copies is UNKNOWN.
