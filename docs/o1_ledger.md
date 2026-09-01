@@ -5776,3 +5776,42 @@ count, so fabricated structure scales with DEPTH — which a motif filter only t
 `RUSTLE_JUNCTION_NC_MAX_BP = 10,000` already tolerates a non-canonical intron up to 10 kb.
 ⚠**3 contigs, one substrate; recurrence in the testis substrate is UNMEASURED** (the workflow that would
 have tested it died on a session limit).
+
+## §6av — Cross-substrate recurrence CONFIRMS the non-canonical sites are real (09-01)
+
+§6au left one thing unmeasured: do the 3 genuine deep non-canonical sites recur in an INDEPENDENT
+substrate? Tested against `GGO_ds.bam` (testis, **OR6737 — a different ANIMAL and a different TISSUE**
+from the fibroblast KB3781 substrate). **All 3 recur at the EXACT coordinates.**
+
+| site | motif | fibroblast reads | testis reads | testis coverage | share of covering reads |
+|---|---|---|---|---|---|
+| `NC_073244.2:59965384-59967477` | **CT..AT** | 2,407 | **220** | 251 | **87.6%** |
+| `NC_073241.2:52758208-52758462` | **GT..GG** | 462 | **65** | 70 | **92.9%** |
+| `NC_073244.2:60228246-60228362` | CT..CC | 128 | 1 | 70 | 1.4% |
+
+⭐⭐**Two of the three are used by 88–93% of ALL reads covering the locus in a second animal and tissue.**
+An alignment artifact does not become the DOMINANT form at a locus in an independently prepared library
+from a different individual. ⟹**these are real splice junctions, and the shipped all-canonical rule
+discards them.** The third (CT..CC) recurs but at 1/70 reads — genuine recurrence, weak support; do not
+quote it as equal evidence.
+
+⚠**THE KNOWN BLIND SPOT, AND WHY IT DOES NOT APPLY HERE**: a REFERENCE-driven artifact would also
+reproduce across substrates, so recurrence alone is necessary-not-sufficient. But a reference artifact
+would have to out-compete a canonical alternative, and these sites have **NO canonical junction within
+±30 bp** (§6au) — there is no competing canonical site the aligner is being pushed off. Combined with
+dominance at 88–93%, the reference-artifact explanation does not survive.
+
+⟹**THE ADVISOR'S POSITION IS CONFIRMED ON MEASURED EVIDENCE, from three independent directions:**
+(1) depth — 2,407 reads at one coordinate is not noise; (2) motif class — `CT..AT` is exactly the NPIPB12
+junction class whose 109-read model the rule already discards; (3) **cross-substrate recurrence at 88–93%
+of covering reads in a different animal and tissue.**
+
+**STANDING DISPOSITION:**
+* **§6at stays WITHDRAWN.** Use the motif-free rule: weight engulfed junctions by **READ MASS**, not
+  distinct keys (~16× suppression of shallow noise, no motif test, all 3 sites kept).
+* **The shipped all-canonical rule in `build_spliced_seq_with` now has a measured cost**: NPIPB12's
+  109-read model plus ≥2 dominant, cross-substrate-replicated splice sites. ⭐**`RUSTLE_JUNCTION_MAJORITY`
+  exists precisely to relax it (canonical majority decides strand, ≥1 canonical still required) and its
+  end-to-end delta has NEVER been measured — that is now the highest-value untested flag in the tree.**
+⚠3 contigs, one comparison; the testis arm was not depth-matched (251 and 70 covering reads vs the
+fibroblast's much deeper coverage), so the SHARE is the readable statistic, not the raw count.
