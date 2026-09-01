@@ -1,5 +1,21 @@
 # Soto gate robustness — do the readthrough / mis-chain gates distort detection? (2026-07-23)
 
+> ⚠ **PROVENANCE (2026-09-01).** The script that produced this table,
+> `bench/soto/gate_sensitivity_sweep.sh`, was found to be a FALSE-PASS instrument (`o1_ledger.md` §6am):
+> its binary path was dead, it truncated this result file *before* attempting any binary, and nothing
+> aborted — so it could have scored stale files and appended a fabricated row. It has since been repaired
+> (§6an) to abort above the truncation and to preserve the prior file.
+>
+> ⭐**THESE NUMBERS NEVERTHELESS STAND, on an internal positive control**: the four configs report **four
+> DISTINCT copy counts — 467 / 376 / 483 / 513, a 137-copy spread** — each moving in the direction its
+> gate predicts (`gates_off` fewest, `mischain_aggressive` most). A dead binary scores the SAME stale
+> files for every config, so a spread of that size requires the catalog to have been genuinely rebuilt
+> per config. The recall column is the weaker half: `soto_cache_score.py`'s `hit()` is a union over four
+> legs, three of them static files independent of the rebuild, so the 81.2–82.3% band would move little
+> even if one leg were empty. **Quote the copy swing as measured; treat the 1.1-point recall band as
+> insensitive by construction rather than as evidence of stability.**
+
+
 **The question (advisor):** the pipeline drops two kinds of spurious de-novo transcripts before it builds
 families — *unspliced readthroughs* and *giant-intron mis-chains* — both of which can connect otherwise-distinct
 copies. If those gates are load-bearing, the Soto recall number would be an artifact of the thresholds. So:

@@ -5281,8 +5281,10 @@ CONTROL IN THE SAME RUN.**
 **SCOPE — FOUND, NOT ASSESSED. Do not quote these as defect counts.**
 * **`target/release/` DOES NOT EXIST in the repo** (builds go to `CARGO_TARGET_DIR` on linuxdisk), yet
   **36 bench files invoke `target/release/<binary>`**, 8 of them named gate/check/verify/validate.
-* **349 files reference `/home/juanfra/winloci_scratch`**, a path that no longer exists (data moved to
-  `/mnt/linuxdisk/.../_from_wsl/winloci_scratch`); **37 of those are gates or validators**.
+* ⛔**CORRECTED BY §6am — THIS CLAIM IS WRONG.** `/home/juanfra/winloci_scratch` is a **SYMLINK that
+  RESOLVES**, so these scripts RUN rather than aborting, which is WORSE. Original text kept for the
+  record: ~~349 files reference `/home/juanfra/winloci_scratch`, a path that no longer exists (data moved to
+  `/mnt/linuxdisk/.../_from_wsl/winloci_scratch`); **37 of those are gates or validators**.~~
 * **Only 25 of 64 bench shell scripts use `set -e`**, so a failed command does not abort — the script
   continues to its comparison and can still print a verdict. That is exactly the `byte_identity_gate`
   mechanism.
@@ -5407,3 +5409,29 @@ independent verifier reading the repaired file; none is fixed:
 
 ⟹**a repaired gate is capable of failing, which is strictly better than before, but "PASS" from any of
 these still needs its evidence count read.** ⚠**28 dead-binary scripts remain UNAUDITED** (§6am).
+
+## §6ao — Provenance of the numbers the false-PASS gates produced (09-01)
+
+§6am left two artifacts' provenance UNRESOLVED. Both now resolve, and the concern is much narrower than
+I stated.
+
+* **`salvage_validation.sh` and `gate_onoff_gw.sh` have NO quoted numbers anywhere.** The audit cited
+  "o1_ledger.md:5289", but that line is **my own §6al sampled-3 sentence** — not a place their output is
+  used as evidence. Grep confirms the only other "salvage" hits in the register are a different subject
+  (mis-chain read salvage; a Gotoh traceback). ⟹**nothing rests on those two scripts.**
+* **`gate_robustness.md`'s sweep numbers STAND, on an internal positive control the audit missed.** The
+  four configs report **four DISTINCT copy counts — 467 / 376 / 483 / 513 (a 137-copy spread)** — each
+  moving as its gate predicts. **A dead binary scores the SAME stale files for every config**, so a
+  spread that size requires a genuine per-config rebuild. Same rescue shape as §F2's 81.7% (whose control
+  was a nonzero DNA shared-exon 25/82). A provenance note is now IN `gate_robustness.md` itself, beside
+  the numbers, not only here.
+  ⚠**the recall column is the weak half**: `soto_cache_score.py`'s `hit()` unions FOUR legs, three of
+  them static files independent of the rebuild, so the **81.2–82.3% band is insensitive by construction**
+  and is not evidence of stability. Quote the copy swing; discount the recall band.
+
+⛔**ALSO CORRECTED IN PLACE: §6al's "349 files reference a path that no longer exists" is WRONG** and is
+now struck through there with a pointer to §6am. `/home/juanfra/winloci_scratch` is a **symlink that
+resolves**. Left visible rather than deleted, because the wrong version was committed and quoted.
+
+⟹**REMAINING TRULY OPEN: the 28 dead-binary scripts (§6am), and the residual holes in all ten repaired
+gates (§6an).** Neither is a provenance question about a recorded number.
