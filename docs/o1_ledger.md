@@ -8,6 +8,118 @@ One page. Every route attempted against O1's definition, its verdict, and the nu
 Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.md) holds the full
 639-row history. **Read this before proposing anything.**
 
+
+
+
+## INDEX
+
+> 100 sections is not readable front-to-back, so this is the map. **The titles carry the verdicts** —
+> they are written to ("NEITHER fix ships", "NO-GO", "SHIPPED", "the advisor is RIGHT"), so no tag is
+> added here. ⚠ An earlier version of this index DERIVED a verdict tag by keyword and scored **11/22 =
+> 50% against sections whose outcome was known first-hand** — a coin flip — so the tags were removed
+> rather than shipped. Search the section id (e.g. `§6aw`) to jump.
+
+- 1. What SHIPPED and holds
+- 2. What is TRUE and must be disclosed
+- 3. What FAILED — by family, with the number that killed it
+- 4. What WORKS but only as a CERTIFICATE
+- 4a. ⚠ The search for more FP rules has hit diminishing returns — structurally
+- 4b. ⭐ RECALL — what is missing so ALL members are found (2026-08-21)
+- 4c. The 114 questionable γ splits, adjudicated (2026-08-21)
+- 4d. Can γ be SIMPLIFIED? (2026-08-21)
+- 4e. ⭐⭐⭐ The SD "node gap" AUDITED — it was the base rate (2026-08-21)
+- 4f. Design: permissive admission + PSV corroboration (2026-08-21)
+- 4g. ⭐⭐ The exon arrays land: 45% of "a node is here" was an INTRON (2026-08-22)
+- 4h. ⛔ SHARED-EXON / ISOFORM POOLING — CLOSED, NO-GO (2026-08-22)
+- 4i. ⛔⛔ §4e's PRIMARY-FLAG FINDING IS REFUTED BY ITS OWN CONTROL (2026-08-22)
+- 4j. O1 → O2 IS A CONDITIONING, NOT A CORRELATION (2026-08-22)
+- 4k. O3 AS A RESIDUAL OF O1+O2 — DEGENERATES ON ITS OWN POSITIVE CONTROL
+- 4l. ⭐⭐⭐ CROSS-SUBSTRATE REPLICATION — the RELATION transports, the PARTITION less so (2026-08-23)
+- 4m. ⛔⛔⛔ γ IS NOT THE PROBLEM — THE ORIENTATION GUARD IS (2026-08-23)
+- 4n. ⭐⭐⭐ THE ORIENTATION GUARD IS FILTERING ON AN UNMEASURED FIELD (2026-08-24)
+- 4o. ⭐⭐⭐ READ-STRAND MEASUREMENT — RUN, AND EVERY PRE-REGISTERED CRITERION PASSES (2026-08-24)
+- 4p. ⚖️ WHERE THE 61 COPIES WENT — ROUGHLY HALF CORRECTION, HALF LOSS. **DO NOT FLIP THE DEFAULT.**
+- 4q. ⛔ ABSTENTION DOES NOT RESCUE IT — THE 18 LOSSES ARE MARGIN-INVARIANT. **LINE CLOSED.** (2026-08-25)
+- 4r. ⭐⭐⭐ WHY THOSE FAMILIES DISSOLVE — THE REPRESENTATIVE IS RE-PICKED, STUB → SPLICED (2026-08-25)
+- 4s. ⛔⛔ REPRESENTATIVE SELECTION IS CLOSED — `E_r` HAS NO UPGRADE PATH (2026-08-25)
+- 4t. ⛔⛔ THE SCOPED ORIENTATION GUARD — SOUND IN PRINCIPLE, CATASTROPHIC IN EFFECT (2026-08-25)
+- 4u. ⛔ WGS CANNOT GIVE A COPY-NUMBER BASELINE FOR O1 — AND THE ONE IT COULD GIVE NEEDS NO WGS (2026-08-25)
+- §4v — the completeness deficit is REAL, not a repeat artefact (2026-08-26)
+- §4w — the shared-exon edge rule does NOT fix the completeness deficit (2026-08-26) — REFUTED
+- §4x — the repeat-hub veto is REFUTED for the catalog path (2026-08-26)
+- §4y — reference bias is NOT the binding constraint; DEPTH is (2026-08-26)
+- §4z — a WGS depth caller for the ABSORBED stratum: sound design, BLOCKED ON DEPTH (2026-08-26)
+- §5a — a DEPTH CALLER FOR THE ABSORBED STRATUM WORKS, and it is complementary to S2 (2026-08-26)
+- §5b — simulation characterises O1's RECALL exactly, and CANNOT touch its precision (2026-08-26)
+- §5c — the coverage floor CAN be lowered on edge evidence, and it FAILS end-to-end (2026-08-26)
+- §5d — ⚠ CORRECTION to §5c: node construction has 4 loci of headroom, not 18 (2026-08-26)
+- §5e — ORACLE ABLATION: the definition costs ~3%, node construction costs ~58% (2026-08-26)
+- §5f — the canonical-junction rule is nearly INERT, and NPIP recall is at the EVIDENCE ceiling (2026-08-26)
+- §5g — the DNA substrate on RNA-found loci is WORSE, and it explains §5e (2026-08-27)
+- §5h — ⭐ REDEFINE THE NODE, NOT THE EDGE: footprint nodes recover +6 loci (2026-08-27)
+- §5i — footprint nodes IMPLEMENTED and measured end-to-end: +1 locus, ships OPT-IN (2026-08-27)
+- §5j — NPIP is ONE family fragmented into 5–6, not three real subfamilies (2026-08-27)
+- §5k — ⛔ A FAMILY/SUBFAMILY HIERARCHY CANNOT RECONCILE THE FRAGMENTATION (2026-08-27)
+- §5l — graph-to-graph similarity: the implemented half is refuted, the other half targets the wrong axis (2026-08…
+- §5m — ⭐⭐⭐ ONE SEED FINDS EVERY EXPRESSED MEMBER (2026-08-27)
+- §5n — seeded windows through the real binary: 26/31, and the fragmentation dissolves (2026-08-27)
+- §5o — ⚠⚠ A FOURTH CONSTRUCTION ERROR, SHIPPED BEHIND A FALSE COMMENT; and seeded windows REJECTED (2026-08-27)
+- §5p — the one-seed closure GENERALISES: 65 human families, 65/65 converge (2026-08-27)
+- §5q — EDGE WEIGHTS: the partition discards a 0.9491-AUC signal, and using it changes nothing (2026-08-27)
+- §5r — ⭐⭐⭐ TIER-2 ADMISSION: expression and assemblability are different questions (2026-08-27)
+- §5s — ⭐⭐⭐ TOP-UP: coverage is NOT the limit — LOCUS COLLAPSE is (2026-08-27)
+- §5t — ⚠ CORRECTION: the ceiling is NOT expression, and the chain disagreement is an ALIGNER artefact (2026-08-27)
+- §5u — ⛔⛔ RETRACTION of §5t's aligner claim: the simulated templates were not transcripts (2026-08-27)
+- §6a — AMY: the family definition stated on DNA alone (2026-08-27)
+- §6b — the DNA definition across four families: precision 1.0000, and orientation is the whole recall gap (2026-0…
+- §6c — ADVERSARIAL AUDIT OF §6a/§6b: seven of eight claims broken or narrowed (2026-08-28)
+- §6d — the node set rebuilt from SEQUENCE, not names (2026-08-28)
+- §6e — the sensitivity test: AMY survives, MAGEA is 26 copies, and presets are NON-NESTED (2026-08-28)
+- §6f — SECOND AUDIT: §6d is largely an artefact of its own construction (2026-08-28)
+- §6g — an honest precision/recall table, and the 0.50 coverage floor TESTED (2026-08-28)
+- §6h — ⛔ RETRACT §6g's coverage-floor recommendation: the register already refuted it (2026-08-28)
+- §6i — ⛔ RETRACT §6c's "the identity clause is inert": I measured the WRONG ESTIMATOR (2026-08-28)
+- §6j — the P/R table, corrected: recall depends on TRUTH GRANULARITY, and the protein tier is real (2026-08-28)
+- §6k — TBC1D3: subfamily as a LEVEL of one tree, selected by the widest merge gap (2026-08-28)
+- §6l — the hierarchy audit: what the tree does and does not add (2026-08-28)
+- §6m — ⛔ RETRACT §6i, RESTORE §6c: I read the wrong function (2026-08-28)
+- §6n — the precision/recall table with error DIAGNOSTICS (2026-08-28)
+- §6o — "no alignment record" is mostly HARMLESS; the coverage floor is what actually breaks families (2026-08-28)
+- §6p — O2 preconditions on the fibroblast substrate: threading is possible, the population is 40 reads (2026-08-28)
+- §6q — O1↔O2 synergy: NOT a coupled definition, but O1's edge identity as an O2 PLANNER (2026-08-28)
+- §6r — HELD-OUT test of the §6q planner: the signal holds, the clean zero does NOT (2026-08-29)
+- §6s — the three objectives end to end: the chain works, the substrate has no natural instance (2026-08-29)
+- §6t — ⚠ CORRECT §6s: the excision ratio is an ORACLE statistic, not a detection rate (2026-08-29)
+- §6u — ⭐⭐⭐ DIRECT PROOF of the advisor's phenomenon, inside ONE animal (2026-08-29)
+- §6v — scaling the haplotype scan: a rate, and why it must be read as an UPPER BOUND (2026-08-29)
+- §6w — validating the 8: half are fragment artefacts, and the rate falls (2026-08-29)
+- §6x — tier-2 admission: the mechanism finally fires, and the trade is real (2026-08-29)
+- §6y — The remaining lever, closed; §5s RETRACTED (08-30)
+- §6z — Stage attribution: WHICH construction step drops the missing NPIP loci (08-30)
+- §6aa — FLAG-DEFAULT AUDIT: nothing qualifies to flip (08-30)
+- §6ab — `COLLAPSE_EXONIC` REFUTED as a default: its merges are hub fusion (08-30)
+- §6ac — O1 NODE FLOOR: 3 → 2, SHIPPED (08-30)
+- §6ad — THE GAP WAS NEVER EXPRESSION: flag-free site construction recovers 26/31 (08-30)
+- §6ae — SHARED-READ EDGES (E_c) AS AN ADDITIVE TIER: no depth threshold exists (08-30)
+- §6af — FLAGFREE_SITES CLOSED: recall real, but it fails the negative control (08-30)
+- §6ag — Overlapping multimappers as site evidence: the cheap win (08-30)
+- §6ah — The genome-anchored repeat veto is a NULL on top of the site bar (08-30)
+- §6ai — k+1 MEC for reference-absent copies: NO-GO, four independent kills (08-30)
+- §6aj — The advisor's two PSV objections, measured (08-31)
+- §6ak — Cross-family double assignment: fixed, and INDEPENDENTLY verified (08-31)
+- §6al — VACUOUS INSTRUMENTS: a defect class, one confirmed, scope unassessed (08-31)
+- §6am — The vacuous-gate audit: 10 confirmed false PASSes, and two of my premises corrected (08-31)
+- §6an — The ten false-PASS gates repaired; every one retains residual holes (09-01)
+- §6ao — Provenance of the numbers the false-PASS gates produced (09-01)
+- §6ap — Reads spanning two near-identical copies: keep current for O2, and a LIVE O1 defect found (09-01)
+- §6aq — Breakpoint concordance RUN: the gap is real splice, and the "copy" is a terminal exon (09-01)
+- §6ar — The pre-registered engulfment test: PARTIALLY SUPPORTED, and it bounds the mechanism (09-01)
+- §6as — Engulfment: the cause is the STRAND PLACEHOLDER, and NEITHER fix ships (09-01)
+- §6at — Telltales of a minimap2 artifact: 38 enumerated, 12 measured, 3 real (09-01)
+- §6au — The advisor is RIGHT on non-canonical junctions; §6at RESTATED (09-01)
+- §6av — Cross-substrate recurrence CONFIRMS the non-canonical sites are real (09-01)
+- §6aw — `RUSTLE_JUNCTION_MAJORITY` measured: it works, and it is NOT yet a default (09-01)
+
 ## 1. What SHIPPED and holds
 
 | | evidence |
