@@ -5727,3 +5727,52 @@ splice sites**, 904,387 observations).
 **30.61% of primaries have ≥1 invisible off-contig placement** (detector positive control 1,404/1,404;
 MAPQ does not guard it — 0.0546 vs 0.0528). ⭐**but the comparator REVERSES the prior**: invisible
 placement is **ON-COPY 0.1844 vs FAR 0.3345**, i.e. LESS common where the copies are.
+
+## §6au — The advisor is RIGHT on non-canonical junctions; §6at RESTATED (09-01)
+
+Objection: *the pipeline should not pay attention only to canonical junctions.* Tested directly on
+`npip3.bam` (1,009,396 primaries, 66,484 distinct junctions). **He is right, and §6at's recommendation is
+withdrawn as stated.**
+
+**WHERE THE MOTIF TEST IS DOING REAL WORK — the non-canonical share COLLAPSES 140× with depth:**
+
+| min reads | canonical | non-canonical | nc share |
+|---|---|---|---|
+| 1 | 47,640 | 18,844 | **28.34%** |
+| 2 | 28,546 | 2,494 | 8.03% |
+| 10 | 16,586 | 207 | 1.23% |
+| 100 | 8,582 | 18 | 0.21% |
+| 500 | 3,462 | 7 | **0.20%** |
+
+⟹ non-canonical calls are overwhelmingly a LOW-SUPPORT phenomenon (they are 8.03% of distinct junctions
+but only **0.51% of intron OBSERVATIONS**).
+
+**WHERE HE IS RIGHT — the deep tail is real.** The 18 non-canonical junctions at ≥100 reads collapse to
+**7 distinct SITES** (±30 bp), and **3 of the 7 have NO canonical junction nearby**:
+
+| site | intron | reads | motif |
+|---|---|---|---|
+| `NC_073244.2:59965384-59967477` | 2,093 bp | **2,407** | **CT..AT** |
+| `NC_073241.2:52758208-52758462` | 254 bp | 462 | GT..GG |
+| `NC_073244.2:60228246-60228362` | 116 bp | 128 | CT..CC |
+
+⭐**2,407 reads at one coordinate is not alignment noise**, and `CT..AT` is **the same motif class as the
+NPIPB12 junction whose 109-read model the shipped all-canonical rule already discards** (8/9 canonical,
+one CT..AT). ⟹**a blanket motif filter discards real biology.**
+⚠the other 4 of 7 ARE jitter off a real canonical site (a canonical junction within ±30 bp), including the
+13,790-read hotspot at `84545311-84545597` which alone accounts for 12 of the 18 coordinates. **A motif
+filter would have been partly right for the WRONG reason, and I would have read that as vindication.**
+
+**⛔ DISPOSITION — §6at's "filter the support map to canonical" is WITHDRAWN. Replace it with a MOTIF-FREE
+rule: weight engulfed junctions by READ MASS instead of counting DISTINCT KEYS.** Non-canonical junctions
+are 8.03% of distinct keys but 0.51% of observations, so read-mass weighting suppresses exactly the
+shallow noise §6at targeted (~16×) **with no motif test at all**, keeping all 3 genuine deep sites. It
+also directly addresses §6at's own diagnosed mechanism — `READTHROUGH_MIN_SUPPORT = 2` is an ABSOLUTE
+count, so fabricated structure scales with DEPTH — which a motif filter only treats indirectly.
+
+⚠**the shipped all-canonical rule in `build_spliced_seq_with` remains a separate, UNRESOLVED cost**
+(NPIPB12 + these 3 sites). `RUSTLE_JUNCTION_MAJORITY` exists to relax it and its end-to-end delta has
+**never been measured**. ⚠note the tree does not actually hold "canonical only" as a principle anyway:
+`RUSTLE_JUNCTION_NC_MAX_BP = 10,000` already tolerates a non-canonical intron up to 10 kb.
+⚠**3 contigs, one substrate; recurrence in the testis substrate is UNMEASURED** (the workflow that would
+have tested it died on a session limit).
