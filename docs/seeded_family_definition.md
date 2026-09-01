@@ -5,6 +5,28 @@ scripts in `bench/crossspecies/`. Anything not yet measured is marked **OPEN**.
 
 ---
 
+
+## INDEX
+
+> **Index.** 12 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- ⚠⚠ TIER NOTICE — READ BEFORE QUOTING ANY NUMBER IN THIS DOCUMENT (2026-08-10)
+- 0. What the definition must survive
+- 1★. THE OBJECT, RESTATED — ONE OBJECT AT TWO LEVELS (2026-08-14)
+- 1. Definition
+- 2. Properties
+- 3. The certificate (and why it is not the definition)
+- 3a. THE THREE USES OF MULTIMAPPING — keep them apart
+- 3b. N0 — Multimapper PRESENCE as a node signal (OFFICIAL STAGE)
+- 3c. Multimapper PRESENCE — supporting measurements
+- 4. Known exposures (state these first, do not wait to be asked)
+- 4a. ⭐⭐⭐ REACH — THE BOUND, AND WHAT SETS IT (2026-08-14)
+- 5. Three false-positive filters that were tried and failed
+
 ## ⚠⚠ TIER NOTICE — READ BEFORE QUOTING ANY NUMBER IN THIS DOCUMENT (2026-08-10)
 
 **Every `E_r` number is a statement about ONE alignment tier, and until 2026-08-10 this document never

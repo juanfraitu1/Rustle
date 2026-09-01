@@ -110,6 +110,25 @@ limit · **TODO** = not attempted or not finished · **REFUTED** = tried and fou
 
 ---
 
+
+## INDEX
+
+> **Index.** 9 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- The three objectives
+- THE THREE CONCLUSIONS — final, 2026-08-11
+- Provenance and substrate hygiene — read this before quoting any number below
+- O1 — Define
+- O2 — Assign
+- O3 — Detect
+- Cross-cutting
+- What is blocking a conclusion — FINAL, revised 2026-08-11
+- Final note — how to use this file
+
 ## The three objectives
 
 | # | objective | one-line statement |

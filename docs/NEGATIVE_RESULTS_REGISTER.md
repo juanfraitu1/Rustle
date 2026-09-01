@@ -14,6 +14,47 @@ possible — or* **(STRUCTURAL / ARCHITECTURAL / QUALITATIVE / DESIGN / SCOPE AR
 argument rather than a measurement. Those two classes are admitted deliberately; treat them as arguments, and
 attach a number if you can find one.*
 
+
+## INDEX
+
+> **Index.** 31 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- How to use this
+- §0 ROUTES CLOSED ON 2026-08-19 — read this list first
+- §1 Contents
+- 4.1 REFUTED / RETRACTED — was believed, is wrong
+- 4.2 DEAD-END — never wrong, cannot be made to work
+- 4.3 TRAP / TAUTOLOGICAL — the measurement was invalid
+- 4.4 SUPERSEDED — right then, better number now
+- 5.1 REFUTED / RETRACTED
+- 5.2 DEAD-END
+- 5.3 TRAP / TAUTOLOGICAL
+- 5.4 SUPERSEDED
+- 6.1 REFUTED / RETRACTED
+- 6.2 DEAD-END
+- 6.3 TRAP / TAUTOLOGICAL
+- 6.4 SUPERSEDED
+- 7.1 TRAP / TAUTOLOGICAL — the measurement was invalid
+- 7.2 REFUTED / RETRACTED
+- 7.3 DEAD-END
+- 7.4 SUPERSEDED
+- 8.1 REFUTED / RETRACTED
+- 8.2 TRAP / TAUTOLOGICAL
+- 8.3 DEAD-END
+- 8.4 SUPERSEDED
+- 9.1 REFUTED / RETRACTED
+- 9.2 TRAP / TAUTOLOGICAL
+- 9.3 DEAD-END
+- 9.4 SUPERSEDED
+- 10.1 Entries corrected in place (killing number and/or scope changed)
+- 10.2 Verdict-kind changes (relocations)
+- 10.3 Duplicates merged (−3 entries)
+- 10.4 Deliberately NOT changed
+
 ## How to use this
 
 1. **Read this before proposing an approach, not after.** Search the claim you are about to make.

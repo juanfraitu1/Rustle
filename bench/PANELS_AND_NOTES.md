@@ -7,6 +7,63 @@
 
 ---
 
+
+## INDEX
+
+> **Index.** 47 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- ggo19_needy_top15.panel
+- Global Counts
+- Dominant Classes
+- Top Loci
+- ggo19_needy_top5.panel
+- Global Counts
+- Dominant Classes
+- Top Loci
+- rcf611_graph_vs_linear_results
+- Result — hypothesis REFUTED
+- Why
+- Verdict
+- CLUSTER_FUTURE_WORK
+- 1. Truly-orthogonal catalog precision — a real SEDEF/BISER segdup map (item #2)
+- 2. Genome-wide copy-assignment at full scale
+- 3. Positive demonstrations on real data (items L20 / editing)
+- 4. Heavy installs that failed locally
+- Notes
+- SEDEF_BUILD
+- The actual diagnosis
+- Build recipe (reproducible; also portable to the cluster)
+- Run on the gorilla genome (the real P0 deliverable)
+- Why this matters (defense)
+- LOCI_COPIES_ISOFORMS
+- The hierarchy
+- Copies and isoforms are ORTHOGONAL axes
+- "The same isoform at different loci" — three cases, all handled
+- The two regimes: where "copy = locus" holds vs bends
+- The one substantive boundary: copy-specific junction vs alternative isoform
+- Summary for the thesis
+- INTRON_RETENTION_RESCUE
+- Factor 1 — do the Tied reads even carry introns? (`bench/intron_retention_rescue.py`)
+- Factor 2 — is the intronic sequence actually distinguishing?
+- What this means — a real but limited lever
+- Honest verdict on "have we exhausted the unassignable?"
+- Implemented under a flag (`RUSTLE_INTRON_PSV=1`) — and measured
+- BAYESIAN_POSTERIOR_ZONE
+- What it computes
+- Result on GWFAM10 (8,783 reads — where the unassignable mass lives)
+- Why this is the right framing
+- POA_CORE_COMPLETION
+- Real-data measurement (cross-chrom, GGO_mm.bam)
+- What this means (the important finding)
+- How the tiers relate (corrected)
+- CONFLICT_EDGE_UNIFICATION
+- Real-data measurement (significance edge ON vs OFF; genome-wide `gw_family_catalog` on `GGO_mm.bam`)
+- GSTM_REAL_COPIES — flagship worked example (real gorilla GST-Mu cluster)
+
 ## ggo19_needy_top15.panel
 
 # Needy Ref Panel

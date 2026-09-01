@@ -7,6 +7,163 @@
 
 ---
 
+
+## INDEX
+
+> **Index.** 147 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- family_def_SPEC
+- Pipeline
+- Whole-protein (anti-sub-domain) homology bar — step 3a
+- Why this is principled (not threshold-fitting)
+- Known boundaries (explicit, not silent)
+- Files
+- OPTIONAL alternative detector — shared k-mer common-core (advisor-requested)
+- family_def_readconflict
+- The question
+- The proposed definition (operational / identifiability-grounded)
+- The experiment (`family_def_readconflict.py`, `family_def_comparison_figure.py`)
+- Findings
+- Interpretation
+- Secondary-cap exposure (`secondary_cap_exposure.py`)
+- Next step (implementation)
+- family_def_bam_signals
+- 1. Retained introns ARE summed into the copy model — by design, with one subtlety
+- 2. de is not the only signal — NM discriminates bridges that de cannot
+- family_def_cothread_results
+- What was built
+- Result — partial win, honestly bounded
+- Status
+- UPDATE — co-threading-weighted community detection (the fix for the dense blob)
+- Stranded graphs (the user's idea — verified, complementary)
+- Status / next
+- family_def_junction_splicing
+- Bottom line
+- The single cleanest unique signal: retrocopy intronlessness (S1)
+- The VG combinatorial criterion (Canzar-shaped) and what the empirics say
+- Decisive vs suggestive
+- Honest answer
+- Recommended next step
+- family_def_newbam_validation
+- Result (three paralog-dense chromosomes)
+- What this shows
+- Honest scope
+- family_def_nonlinear_census_results
+- Per-family table
+- Synthesis
+- family_def_protein_validation
+- 1. The over-merge is CONFIRMED and EXPLAINED
+- 2. CORRECTION — co-threading beats cov_min (only visible with ground truth)
+- 3. DELIVERABLE — protein-confirmed family definition
+- 4. Known limitations (separately handleable)
+- Status / recommendation
+- ADDENDUM — segment-aware recovery (Task 1) + protein community detection (Task 2)
+- CONSOLIDATED family definition (layered)
+- family_def_scaffold_wiring
+- Mechanically wired
+- But end-to-end recovery does NOT work cleanly — two root causes
+- The deep conclusion
+- Path to realize the scaffold (future work)
+- family_def_unbiased_differentiators
+- BOTTOM LINE
+- Ranked verdict table
+- (1) NEW genuine differentiators
+- (2) Confirmed-but-known (co-threading / strand)
+- (3) Confounded / circular (downgraded by verifiers)
+- Edge betweenness specifically — VERDICT WITH NUMBERS
+- How a (hypothetical) new differentiator would complement the known levers
+- Recommended next step
+- ADDENDUM — the de-bridge test the AUC framing missed (cov_min, jaccard_nbr)
+- family_def_vg_coherence_results
+- (A) Coherence — mostly redundant with the protein bar
+- (B) NON-LINEAR structure — the real finding (VERIFIED)
+- Implication
+- family_definition
+- Completeness — are KNOWN multi-copy families recovered?
+- Over-merge control (the precision side of 'complete')
+- Honest scope
+- family_definition_artifact_filter
+- Two things that DON'T work (measured, `refine_family_definition.py`)
+- The fix: artifacts are TOPOLOGICAL — the variation graph exposes them (no ORF, no annotation)
+- Refined definition (coding-agnostic, intrinsic, topological)
+- Wired into the pipeline (`family_def_artifact_filter.py` → `make_dna_family_manifest.py`)
+- family_definition_formal
+- The read-conflict graph and the family object
+- Verified formal properties
+- Demonstration on GGO.bam — 17-candidate panel
+- What the definition does NOT claim, quantified
+- FP-robustness (quantified, genome-wide)
+- Genome-wide reproduction — not overfit to the panel (`bench/family_def_genomewide.py`)
+- Precision/recall against a DNA-sequence ground truth (`bench/family_def_dna_pr.py`)
+- Residual hardcoded parameters (disclosed, not independently swept)
+- family_definition_note
+- 0. The object, in one sentence
+- 1. Primitives
+- 2. The two relations
+- 3. The definition
+- 4. Why both relations — and why this is the right object
+- 5. Properties
+- 6. Parameters
+- 7. Evidence (summary; full record and the rejected-alternatives survey in `DEFINITIONS_FORMAL.md`)
+- 8. Relation to the copy-assignment problem
+- 9. What it does not claim
+- family_graph_definition
+- Formal definition
+- Why it's cleaner than pairwise + connected-components
+- Validation (labeled set)
+- Honest caveats
+- Verdict
+- Reproduce
+- poa_family_definition
+- Definition under test
+- Two POA coverage axes (the key result)
+- Result: the separating threshold
+- Contrast: minimizer-Jaccard does NOT separate them as well
+- Per-pair table
+- Interpretation
+- Honest caveats
+- family_to_copy_bridge
+- 1. The handoff
+- 2. The bridge map (three identifications)
+- 3. The two relations, in resolution's terms
+- 4. One object, two readings — and the identifiability thread
+- 5. Empirical instantiation (`bench/psv_graph_demo.py`)
+- 6. Exact vs. pipeline
+- 7. In the code — the bridge is the production pipeline
+- Summary
+- family_criterion_bakeoff
+- Question
+- Method (`family_criterion_bakeoff.py`)
+- Headline finding — AS has a systematic false-positive mode on retrocopies
+- Corrected confusion matrix (operating point D=0.005, CEIL=0.05, MIN_READS=3)
+- Adjudications
+- Operating point & stability
+- Port plan (into `read_conflict.rs` + `build_read_placements`)
+- Open questions
+- Tag-discriminator dig (does any minimap2 tag beat or augment de?)
+- family_detection_validation
+- Headline
+- What is under test
+- Inputs reconciled
+- Q1 — Threshold justification (separability)
+- Q2 — Family detection at 0.30 vs data-optimal
+- Where does 0.30 fall? (data-driven)
+- Honest caveats
+- psv_graph_genomewide
+- Method
+- Verification (`psv_graph_verify.py`, `psv_graph_combine.py`)
+- Result (corrected, 145 unique families)
+- Why this matters
+- Honest caveats
+- Performance note
+- divergence_floor — absolute reciprocal-identity floor on the E_r edge rule (SHIPPED, default-ON)
+- multi_repeat_bridge_gate — 3rd VG-native family-refinement gate (SHIPPED, default-ON)
+- Catalog artifact audit (2026-07-10) — KRAB-ZNF domain bridge under --homology-primary
+
 ## family_def_SPEC
 
 # Multi-copy gene-family definition — canonical spec

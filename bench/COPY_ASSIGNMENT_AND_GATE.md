@@ -7,6 +7,137 @@
 
 ---
 
+
+## INDEX
+
+> **Index.** 121 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- copy_split_colocated
+- Family 1 — LOC101144552 cluster (NC_073235.2:144691596-144756221)
+- Family 2 — LOC101132628 cluster (NC_073235.2:135066522-135115177)
+- Overall honest verdict
+- copy_split_realdata
+- Inputs
+- (a) PSV budget — copies are richly distinguishable in PRINCIPLE
+- (b) Copies the method resolves
+- (c) The contrast — do reads that share a junction chain get split by PSVs? **No — they never share a cross-copy …
+- (d) Comparison to minimap2's own placement — the split agrees, adds nothing
+- (e) Honest verdict
+- Key numbers
+- Verdict
+- copy_split_sim
+- Model
+- Determinism
+- (1) Single-config demo  (N=3, P=8, C=10, e=0.003, K=2, min_reads=2)
+- (2) Sweep — identifiability boundary
+- Interpretation (the theorem, empirically)
+- Verdict
+- core_gate_atscale
+- What this measures (and what it does NOT)
+- The gate
+- (1) Coverage / evaluability
+- (2) The at-scale effect
+- (3) Compara-labeled subset (the gate is correct where we can check)
+- Per-family table (all evaluable families)
+- Honest caveats
+- Verdict
+- core_gate_gw
+- Headline
+- Bimodality — why 0.13 is a principled threshold
+- Why jaccard alone fails and core fixes it (the danger zone)
+- Per-chromosome
+- Honest scope & caveats
+- Reproduce
+- Genome-wide verdict
+- core_gate_gw_downstream
+- Setup (OOM-safe, reproducible)
+- TL;DR
+- Result 1 — the gate is active: 54 merges dropped
+- Result 2 — downstream output delta (full contig)
+- Result 3 — the one real change: RSTL.262 (48,724,206-48,742,369, + strand)
+- Verdict
+- Artifacts
+- core_gate_pipeline
+- TL;DR
+- Where the gate actually lives (architecture)
+- Instrumentation added (additive, default-off)
+- Result 1 — core-coverage distribution of Jaccard-passing pairs (gate OFF)
+- Result 2 — gate ON @0.13 fires on exactly those 5 pairs
+- Result 3 — downstream output delta (OFF vs ON), full contig
+- Verdict
+- Reproduce
+- What a genome-wide run would need
+- psv_llr_vs_votes_killtest
+- The reframed lever
+- What this does NOT cross
+- Operating-point evidence (the one knob)
+- psv_tau_sweep
+- Sim5x K-ladder — TRUE labels (read name = source copy)
+- Real GGO co-located families — 47,732 reads / 70 families (unique-mapper agreement)
+- Recommendation for the meeting
+- Honest caveats
+- Rust cross-check
+- copy_specific_junctions
+- Top DIFFERENTIAL copy-specific junctions (both copies splice, differ at this junction)
+- Honest notes
+- Reproduce
+- copy_assign_phasing
+- Outputs (written only under `--phase`; all other outputs unchanged → additive/default-off)
+- Demo (NC_073242.2:3771193-3799186, a clean tandem family)
+- Properties
+- copy_resolution_boundary
+- Bottom line
+- The census (definitive prevalence)
+- The two tiers
+- Why this is sound (not an artifact)
+- The boundary as the result
+- Reproducibility
+- Open / next
+- identifiability_bound
+- eval_significance_gate
+- 0. The guarantee (what α controls)
+- 1. Unit calibration (Rust test `sig_gate_is_calibrated_realized_error_tracks_alpha`)
+- 2. sim5x labeled-truth ladder (ground truth, NOT the circular unique-mapper agreement check)
+- 3. Default α
+- Status / follow-ups
+- resolution_improvement_bound
+- Families: detection unchanged, completeness +3 copies
+- Isoforms: two clean regimes
+- The bound — and why it is the whole story
+- What this means (not a defeat — a characterization)
+- stringtie_vs_copy_headtohead
+- Setup
+- The over-split correction (and a real pipeline bug it exposed)
+- What the copy layer actually adds
+- What this is NOT (corrections to the first draft)
+- Why standard recall can't see even this
+- Q: more multimappers in GGO.bam?
+- Verdict for the advisor
+- Reproduce
+- quant_benchmark
+- Findings
+- Takeaway
+- Real-reads validation (sim5x, ground truth) — sim5x_quant_validate.py
+- COPY_ASSIGN_RECOMPUTE
+- ⭐ O2 headline — two catalogs, one decision rule (2026-06-28; relabeled for defense-honesty)
+- Three corrections that made the recompute trustworthy
+- Genome-wide result (281 family regions → clean families)
+- ⭐ The genome-wide de-tie conflict-graph catalog (O1 / L1 — first run at scale)
+- ⭐⭐ Cross-chromosome paralog families + exon-sum (FLNC) validation (L3)
+- Robustness fixes (post-review) — corrected catalog = 152 families
+- Divergent-paralog tiers
+- Honest caveats
+- Reproduce
+- primary_secondary_invariance
+- famcn_readonly — reference-free copy number
+- sun_identifiability — per-copy SUN identifiability catalog
+- recombinant_abstain — VG-native read-path recombination abstain gate (O2)
+- classify_event — gene-conversion vs RT/template-switch discriminator (default-off)
+
 ## copy_split_colocated
 
 # Read-coherence + PSV copy-split on REAL co-located/tandem paralog families (GGO)

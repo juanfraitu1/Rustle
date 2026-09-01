@@ -7,6 +7,33 @@ number below is measured; the script that produced it is named inline. Anything 
 
 ---
 
+
+## INDEX
+
+> **Index.** 17 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- §0 ⭐⭐ THE OBJECTIVE, RESTATED (2026-08-15) — read this before §1
+- ⚠⚠ NOTICE — READ BEFORE QUOTING O2 ANYWHERE (2026-08-10)
+- 0. What the definition must survive
+- 1. Definition
+- 2. Input objects
+- 3. The feature space
+- 4. The certificate
+- 5. Every constant, and where it comes from
+- 6. Outputs — what every column means
+- 7. Verification — does the binary do what §1 says?
+- 8. Reconciliation with `bench/DEFINITIONS_FORMAL.md`
+- 9. Known defects (stated, not hidden)
+- 10. Orphaned modules — verdicts, with evidence
+- 11. O2 on REAL data — commitment rate + abstention certificate (2026-08-11, O2.3)
+- 12. One-paragraph summary for a reader in a hurry
+- Reassignment on real reads with structural-anchor truth (2026-08-15)
+- Appendix A — the PRE-REGISTRATION, written before the run
+
 ## §0 ⭐⭐ THE OBJECTIVE, RESTATED (2026-08-15) — read this before §1
 
 O2 was stated as *"assign reads to the right copy under MAPQ-0 ambiguity."* **Both halves of that are

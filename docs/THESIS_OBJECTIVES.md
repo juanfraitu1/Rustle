@@ -82,6 +82,27 @@ evidence, not automatic gene-family membership; primary and audit graphs are emi
 > `NEGATIVE_RESULTS_REGISTER.md` holds the long tail; `o1_ledger.md` §3–§4l holds O1's route-by-route detail.
 > Last updated **2026-08-23**.
 
+
+## INDEX
+
+> **Index.** 11 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- ⚠⚠ THE META-LEDGER — the failure modes that keep recurring
+- O1 — define a multi-copy gene family topologically at the RNA level
+- O2 — assign a read to a copy, or abstain
+- O3 — detect + flag reference-absent copies (**completeness never claimed**)
+- ⚠ DROPPED — allele-specific junctions (ASJ)
+- O1 — Formally define a multi-copy gene family in the VG  ✅
+- O2 — Recover copies that primary-only assembly misses  🔄 capability shown · ⛔ no validated real-data recovery
+- O3 — Assign ambiguous reads to the right copy (the EM)  ✅ synthetic
+- O4 — Assemble each copy's distinct isoforms / structural variants  ✅ synthetic (capability) · 🔄 real-data
+- O5 — Share evidence across copies via the graph  🔄 partial · ⛔ one blocker
+- Cross-cutting honest gaps
+
 ## ⚠⚠ THE META-LEDGER — the failure modes that keep recurring
 
 These have cost more than any single wrong idea. **Four headlines died in one week to #1 alone.**

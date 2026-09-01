@@ -2,6 +2,40 @@
 
 **Date:** 2026-07-27. Subject: `gw_family_catalog --from-genome` vs Soto 2025 (83 families / 362 members, CHM13v2.0).
 
+
+## INDEX
+
+> **Index.** 24 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- 1. The problem the member metric hides
+- 2. Mechanism — why families fuse (over-merge)
+- 3. Mechanism — why families split (under-merge)
+- 4. The core tension
+- 5. Levers
+- 6. Honest statement for the write-up
+- 7. RNA side: fragmentation diagnosis and the genomic-span fix (2026-07-27)
+- 8. Bipartite size matching — do predicted copies have the RIGHT SIZE? (2026-07-28)
+- 9. Conditional TSS extension — implemented, measured, and left OFF (2026-07-28)
+- 10. `--cross-chrom` chi(H) guard was inert — fix and impact measurement (2026-07-28)
+- 11. The per-chrom recipe scored 26.2% against a 76.2% headline — root cause and fix (2026-07-28)
+- 12. What the truncation actually is — spliced vs unspliced (2026-07-28)
+- 13. Empirical rules for merging unspliced clusters — tested against ground truth (2026-07-28)
+- 14. Does the method find the FULL locus of a complete gene? No — and this qualifies the recall headline (2026-07…
+- 15. Can intronic clusters be excluded WITHOUT annotation? Tested — no (2026-07-28)
+- 16. In-scope resolution: a certificate that decides a minority, and abstains on the rest (2026-07-28)
+- 17. How many of Soto's 83 families does RNA mode find? (2026-07-28, verified)
+- 18. Applying the RNA lessons to the DNA side (2026-07-28)
+- 19. A KNOWN-GENE-FAMILY benchmark, independent of Soto (2026-07-29)
+- 20. Why the isoform requirement is so harsh — a representative-selection artifact (2026-07-29)
+- 21. Implementing the §20 fix — a genuine bug found, a marginal net effect (2026-07-29)
+- 22. Flagship case: can the method recover a known primate gene family IN FULL? Yes (2026-07-29)
+- 23. Relaxing the seeding: asm20 badly under-seeds, but it is not what bounds recovery (2026-07-29)
+- 24. Advisor review: NPIP, FAM72, long introns — O1 evidence (2026-07-29)
+
 ## 1. The problem the member metric hides
 
 Member sensitivity/precision are **partition-blind**. If two Soto families fuse into one DNA family, every

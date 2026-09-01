@@ -1,5 +1,32 @@
 # Multi-Copy Gene Family Experiment (GGO)
 
+
+## INDEX
+
+> **Index.** 17 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- Three families tested
+- The family VG for GOLGA6L7 (identical topology, shifted coordinates)
+- Assembler performance per copy
+- Why multi-copy assembly is hard (GOLGA6L7 case)
+- Rustle VG mode result on GOLGA6L7 cluster
+- What an assembled transcript looks like, projected on the family VG
+- Conclusion: how to compare family members
+- Recovering L7_2 and L7_3: the RUSTLE_VG_FAMILY_RESCUE experiment
+- Gated rescue: cross-bundle family-chain registry
+- Can we find family members by graph-to-graph comparison?
+- Converting `c` to `=`: family-extend post-pass
+- Does graph similarity extend to distant family members?
+- Toward a vg-giraffe-like family view
+- Formalization: when does a "core graph" exist?
+- Flow-based multi-mapping redirection
+- Summary: we are measurably better than StringTie on multi-copy recovery
+- 1/NH vs EM: why VG mode stops using the StringTie weighting
+
 ## Three families tested
 
 | Family | Chromosome | Copies tested | Primary reads | Secondary reads |

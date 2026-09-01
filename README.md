@@ -23,6 +23,25 @@ substrate the objectives are built on, not the contribution:
 > replacements are [`docs/ONE_METHOD.md`](docs/ONE_METHOD.md) and
 > [`docs/METHOD_PSEUDOCODE.md`](docs/METHOD_PSEUDOCODE.md).
 
+
+## INDEX
+
+> **Index.** 9 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- Overview
+- Features
+- Quick Start
+- Pipeline Architecture
+- VG Mode: Gene Family Assembly
+- Key Options
+- Output
+- Installation
+- License
+
 ## Overview
 
 Rustle assembles transcripts from long-read RNA-seq alignments (PacBio, ONT) using a **splice-graph + max-flow decomposition** pipeline. It adds a **variation graph (VG) mode** that links paralogous gene copies via multi-mapping reads and jointly resolves read assignments across the family — including reads that didn't map to any reference copy.

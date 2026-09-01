@@ -7,6 +7,79 @@
 
 ---
 
+
+## INDEX
+
+> **Index.** 63 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- reference_absent_catalog
+- Population A — collapsed / CNV-absent (mapped reads) — the main yield
+- Population B — divergent-absent (unmapped reads) — dry on T2T
+- Discipline & honest caveats
+- Promotion of the 18 strong flags (`promote_hidden_copies.py` + `promote_evidence_plus.py`)
+- Locking the 4 copies (annotation + protein BLAST; `blastx` vs the 22,614-protein gorilla proteome)
+- Genome-wide extension (`hidden_copy_scan_genomewide.py` + `promote_genomewide.py`)
+- hidden_collapse_headroom
+- Verdict totals (loci with a linked PSV block)
+- n_coseg distribution (het-vs-collapse axis) — looking for a valley
+- COLLAPSED_LIKE tiers (by evidence strength)
+- Raw tier counts are NOT the headroom — confounds dominate (adversarial verification)
+- Deterministic confound-controlled headroom
+- VERDICT
+- unmapped_rescue_poc
+- Why test this
+- Method
+- Results
+- Residual-candidate follow-up (option b — done here)
+- Correction note (supersedes the in-session figures)
+- What this means for the advisor's reference-bias concern
+- Reproduce
+- Caveats / scope
+- crosschrom_discovery
+- Method (bench/extract_gene_reps.py + family_crosschrom_discovery.py + crosschrom_grade.py)
+- Recall — it finds the known cross-chromosome families
+- Precision — the per-pair signal is clean (core-identity, not Jaccard)
+- Honest caveats / residual false-positive modes
+- Verdict
+- Reproduce
+- genomic_copies
+- Result
+- RNA overlay — what transcribes (the functional readout)
+- The complete picture (three tiers + RNA overlay)
+- Honest scope
+- Reproduce
+- divergent_paralog_track_scope
+- 1. Motivation — the gap, with evidence
+- 2. The central question (sharp, falsifiable)
+- 3. The make-or-break — the truth set — is largely already in place
+- 4. Feature candidates (test both; lead with the independent one)
+- 5. Phased plan — gates, kill-criteria, effort
+- 6. Principled framing (for Canzar)
+- 7. Risks / open decisions for the user
+- 8. First concrete step (SUPERSEDED — see §9)
+- 9. CONSTRAINTS (user) — own-tool, RNA-only, Phase-4 bar
+- 10. GATE RESULT (Phase 0) — PASS
+- 11. PHASE 1 RESULT — RNA-only detector is a NO-GO (best AUC 0.629)
+- MILESTONE_reference_absent_copies
+- The question (advisor's standing interest)
+- Approach — two populations, and where they actually live
+- The pipeline (detect → validate → promote → lock)
+- Result
+- Why it matters (thesis through-line)
+- Measured specificity — false-positive BOUND (`bench/o4_fp_bound.py`)
+- Honest caveats (the loose ends)
+- Reproduce
+- UNANNOTATED_COPIES
+- The funnel
+- Three levels of "unknown"
+- Honest caveats
+- Bottom line for the advisor
+- Vetting the 88 no-protein-hit pool (`vet_unannotated_novel.py`)
+
 ## reference_absent_catalog
 
 # Reference-absent gene-family copy catalog (gorilla IsoSeq vs T2T)

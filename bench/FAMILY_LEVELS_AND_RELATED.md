@@ -7,6 +7,47 @@
 
 ---
 
+
+## INDEX
+
+> **Index.** 31 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- FAMILY_LEVELS
+- The protein harness (`bench/protein_family_verify.py`)
+- ⭐ Authoritative cross-tab — every read-conflict family × {protein, DNA, SEDEF} (`family_levels_crosstab.py`)
+- DNA copy-number axis (famCN / parCN): scope and why deferred
+- Why separate
+- RELATED_WORK_METHODS
+- The dichotomy (how to read the table)
+- Where this thesis sits (the gap)
+- DNA_PROTEIN_VALIDATION
+- dna_psv_catalog_summary
+- dna_rna_overlay
+- What actually transcribes (genome vs transcriptome)
+- Ancient-family gain (the whole point of the DNA tier)
+- Per-family 3-number summary (sample: largest + curated)
+- Honest scope
+- compara_fetch
+- Universe gene inventory
+- Mapping coverage (named genes)
+- Family-level checkability
+- compara_validation
+- Headline (the non-circular number)
+- KEY FRAMING: Compara is COARSER, so PRECISION is the metric
+- (4) Coverage (stated up front -- small, honest sample)
+- (1) PRECISION vs Compara -- UNIVERSE families (the headline)
+- (2) PRECISION vs Compara -- RUSTLE's minimizer-Jaccard grouping
+- (3) GRANULARITY (observation, not error)
+- Cross-check: JSON's stated within-universe paralog relation
+- Honest caveats
+- transcript_validation
+- Verdict: REAL + defensible
+- PARCN_VALIDATION
+
 ## FAMILY_LEVELS
 
 # Multi-copy gene families at three SEPARATE levels (RNA / DNA / protein)

@@ -7,6 +7,47 @@
 
 ---
 
+
+## INDEX
+
+> **Index.** 31 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- copy_assignment_theory
+- §1 Introduction
+- §2 Model and definitions
+- §3 The MCC core: Lemma 1
+- §4 Complexity: Theorem 1
+- §5 Identifiability: Strong Separation and Theorem 2
+- §5·SUN — the single-position private-allele witness (Sudmant 2010)
+- §6 The paths/isoforms corollary: joint recovery of copy number and isoform structure
+- §6b Tier-3: co-quantification of the irreducible core
+- §7 Empirical corroboration
+- §8 Discussion
+- References
+- F4_SCOPE
+- 1. The formulation (faithful to Canzar's facility-location frame)
+- 2. The objective fork (decide first — it determines what's provable)
+- 3. Target theorems (numbered to extend the note)
+- 4. The VG / flow-decomposition reading (the thesis framing, optional second lens)
+- 5. Structured-instance angle (where MIN-COVER becomes tractable — bonus)
+- 6. Machine-check plan (mirror the existing exhaustive style)
+- 7. Honest boundaries (state up front, the way the note already does)
+- 8. Work plan (phases, each independently checkable)
+- IDENTIFIABILITY_LIMITS
+- K=0 boundary — exonically-identical co-located copies
+- O4 boundary — copy vs allele (reference-absent confirmation)
+- Why this is a contribution, not a shortfall
+- em_consistency
+- Derivation — the EM is SDA's PSV graph made continuous
+- The model and its assumptions
+- Theorem (EM consistency in the identifiable regime)
+- Consequence — explaining SDA's 91–93% floor
+- Ties to the combinatorial theory (above)
+
 ## copy_assignment_theory
 
 # Copy-assignment theory: identifiability, hardness, and the K-frontier

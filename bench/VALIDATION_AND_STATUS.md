@@ -7,6 +7,95 @@
 
 ---
 
+
+## INDEX
+
+> **Index.** 79 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- REVIEWS_AND_AUDITS
+- PAPER_GROUNDED_REVIEW
+- The high-leverage findings (what can actually be done)
+- The cheaper robustness / citation wins
+- What the literature CONFIRMS we already got right (defensive ammunition)
+- Prioritized "what can be done" (recommendation)
+- PAPER_REVIEW_ACTIONS
+- F6 — Eichler AS≥10 rule vs our significance gate (`bench/as_decisive_vs_gate.py`)
+- F5 — StrandOddsRatio (SOR) strand-bias filter for ASJ (`bench/asj_strand_bias.py`, wired into `asj_aggregate.py`)
+- F2 — Soto-2025 DNA/CN family validation, no SEDEF (`bench/soto_family_validate.py`)
+- F1 — O4 mask-a-copy positive control (`bench/o4_mask_readmit.py`)
+- F3 — DNA-supervised copy decoding = held-out DNA-column CONFIRMATION (not external accuracy) (`bench/dna_supervi…
+- AIRTIGHT_FIXES
+- M1 — the genome facts (0-based, as stored in `bench/asj_calls.tsv`)
+- H2 — the precondition, made load-bearing
+- H3 — held-out-PSV cross-validation (`copy_assign.py crossval`)
+- H4 — `.mmi` pre-index + bounded real run
+- Reproduce
+- LOOSE_ENDS_AUDIT
+- ✅ Closed so far (2026-06-25, this session)
+- ⭐ O2 RECOMPUTE on the COMPLETE BAM (2026-06-26) — closes L10, advances L1/L4
+- 1. Honest verdict (6 objectives + 2 interests)
+- 2. Confirmed loose ends, by objective (ranked load-bearing × cheap-to-fix)
+- 3. Top 5 next actions (cheap → "built" to "defensible")
+- 4. Claims that would NOT survive an external check (thesis-credibility risks)
+- 5. "Shipped" features that are actually default-off and never validated genome-wide
+- P1_P4_RESULTS
+- P2 — O4 gate-5: `asm20` → `-x splice` (DONE, sim-verified)
+- P3 — non-circular O2 accuracy point + reconcile the 20%-vs-100% tables (DONE)
+- P4 — O3 masquerade separator on the LOC* calls (DONE)
+- P1 — O2 on the principled conflict-graph catalog (DONE)
+- scorecard
+- How it was produced
+- Result (25 chromosomes, full coverage, ~27 min, 0 failures)
+- Caveats
+- 4-way attribution (isolating the VG layer's own contribution)
+- Genome-wide StringTie-EXACT floor (`-e -G st.gtf`) — the baseline anchor
+- Intron-chain (multi-exon) recompute + baseline-parity finding
+- PSV-linkage channel (`--vg-layer2-psv-linkage`) — genome-wide result
+- PSV / multimapping — final verdict (2026-06-15): would PSVs beat StringTie? Not meaningfully.
+- benchmarks
+- Dataset 1 — "ideal coverage" GGO (top up only what the real IsoSeq lacks)
+- Dataset 2 — "5 equally good places" (the copy-assignment identifiability benchmark)
+- Reproduce
+- UNASSIGNABLE_SEPARABILITY_ATTEMPT
+- What we tried
+- Results
+- Verdict
+- SIM_GROUND_TRUTH
+- What is planted (`simA` 198 kb, `simB` 198 kb, 920 reads)
+- Results (all non-circular — the read name carries the truth)
+- The conceptual finding this makes airtight
+- Reproduce
+- FLAGSHIP_CASE_STUDIES
+- Narrative arc
+- The four flagships
+- Build order (smallest → highest value)
+- Drop (to keep the advisor-focused story sharp)
+- DEFENSE_READINESS_AUDIT
+- Per-objective attainment
+- Will it pass the advisor?
+- What's missing — prioritized
+- THE single biggest risk
+- OBJECTIVES_STATUS
+- Per-objective
+- ⭐ Default-on / validated  vs  opt-in prototype  (the build-vs-run partition)
+- What is SOLID (the defensible core)
+- The loose ends, prioritized
+- The honest scope statement (what you can stand behind today)
+- Minimal closing sequence
+- ALIGNMENT / MAPPING ERROR — measured, not modeled (2026-06-29)
+- ADVERSARIAL REVIEW #4 — defense-readiness scorecard (2026-06-29)
+- CROSS-MODAL VALIDATION — Liftoff head-to-head + SEDEF SD98 (2026-07-08)
+- GW CATALOG FALSE-POSITIVE AUDIT + `--refine` DEFAULT (2026-07-11, binary f379800)
+- FALSE NEGATIVES — refine-by-default recall audit (2026-07-11, binary c394bfd)
+- FLAGSHIP: TSPY SIMULATION — the 0/5 tie-invariance is HONEST, not a miss (2026-07-11)
+- SIM DETECTION DEMO — 100% member detection / 100% precision on a planted non-circular genome (folded from `VALID…
+- KNOWN-FAMILY SENSITIVITY & PRECISION — "does it only work on easy cases?" (folded from `VALIDATION_AND_STATUS.md`)
+- HUMAN CROSS-SPECIES — the identical binary is NOT overfit to gorilla (folded from `VALIDATION_AND_STATUS.md`, 20…
+
 ## REVIEWS_AND_AUDITS
 
 # Reviews And Audits (consolidated)

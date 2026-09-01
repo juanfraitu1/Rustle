@@ -10,6 +10,34 @@ evidence trail, not as live guidance. Current O1 status lives in [`o1_ledger.md`
 > 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
 > [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
 
+
+## INDEX
+
+> **Index.** 18 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- Contents
+- Census of incorrectly-called families
+- Appendix A — pathology (a) dissected
+- Appendix B — the non-circular evaluation, run (2026-08-20)
+- The coverage-denominator repair
+- Appendix — the SUBSTRATE × DENOMINATOR space is now complete, and all four cells fail
+- Can full-length read evidence repair E_r?
+- False-positive hardening: rules that survived falsification
+- Appendix A — the guard's confirmation on the human negative panel
+- Appendix B — the other two 2026-08-19 candidates
+- Block-aware duplication provenance graph
+- n_occurrences is DESCRIPTIVE ONLY and must carry its universe (see R5 above).
+- No downstream filter, gate, or membership predicate may consume it.
+- Appendix A — the hierarchy slice
+- Appendix B — CAN WE SAY SOME GENE FAMILIES AROSE BY SEGMENTAL DUPLICATION? (2026-08-20)
+- The joint (DNA + RNA) family definition — RETRACTED
+- 9. PHASE 3 — THE MEASUREMENT, AND THE VERDICT (2026-08-13)
+- Superseded five-objective VG/EM decomposition
+
 ## Contents
 
 - [Census of incorrectly-called families](#census-of-incorrectly-called-families) — was [this file, §census of incorrectly called families](#census-of-incorrectly-called-families)

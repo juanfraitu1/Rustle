@@ -7,6 +7,67 @@
 
 ---
 
+
+## INDEX
+
+> **Index.** 51 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- denovo_family_pipeline
+- Architecture: a general assembler with a copy-aware specialization
+- Stages (script · input · output · key params)
+- Key results
+- Rejected approaches (don't re-try without new evidence)
+- Determinism / scale / gotchas
+- Re-run (order)
+- Rust port (status & plan)
+- File index
+- denovo_families.SUPERSEDED
+- twopass_denovo
+- Result (PSV ladder K = identifiability axis)
+- What this shows
+- Honest scope
+- Verdict
+- Genome-wide: not restricted to a handful (bench/twopass_genomewide.py)
+- Reproduce
+- integrate_end_to_end
+- End-to-end on the 5-copy benchmark (WITH truth) — bench/integrate_end_to_end.py
+- Real GGO census — how much hard-multimapper signal exists
+- Bottom line (answering the question)
+- Reproduce
+- intronchain_discovery
+- Method (bench/extract_intron_chains.py + family_intronchain_discovery.py)
+- Recall — the criterion works
+- The headline: independent confirmation (structure ⟂ sequence)
+- Candidate-generation tradeoff (a finding; both modes kept, `--cand`)
+- Honest limitations
+- Verdict
+- Reproduce
+- readcoherence_finding
+- Result (genome-wide GGO, guided `-G stringtie.gtf`, SQANTI3-validated)
+- VALIDATED vs StringTie (2026-06-15, rigorous cut — survives the PSV-grade scrutiny)
+- SHIPPED — gated `--read-coherence` layer VALIDATED (2026-06-15, genome-wide 25 chroms)
+- OPTION B (truly-additive) + GC-AG fix — VALIDATED (2026-06-15, user chose "max")
+- Noise anatomy (the ~5,459 non-real extras) — filter-vs-generate split
+- Proposed design (when resumed)
+- Reproduce
+- readcoherence_psv_headroom
+- Inputs
+- Recall set
+- Tier 1 — are the recall wins even at multi-copy family loci?
+- Tier 2 — of the family-locus hits, which regime (does PSV actually SPLIT?)
+- Tier 3 — of the COLLAPSED hits, are the 'copies' REAL paralogs or domain-sharers?
+- Verdict
+- What this does and does NOT settle
+- Honest caveats (which way they push)
+- Reproduce
+- readthrough_rule_validation
+- daz2_recovered
+- containment_coverage_floor
+
 ## denovo_family_pipeline
 
 # De-novo Family + Copy-Assignment Pipeline (the "read-coherence way")

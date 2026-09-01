@@ -14,6 +14,26 @@ retracted the retraction travels with it.
 
 ---
 
+
+## INDEX
+
+> **Index.** 10 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
+> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
+> heading to jump.
+
+
+- 1. What the field accepts as evidence — and what it does not
+- 2. The transcript-side screen: 0/915, and the mechanism is the finding
+- 3. The candidates: retracted, and fully explained
+- 4. The DNA-side check: an independent zero, and it was predicted
+- 5. The whole-genome positive control (2026-08-14) — the control every prior number lacked
+- 6. The divergence-mixture detector, built and held-out tested
+- 7. Limits — state these before being asked
+- 8. Possible O3 avenues — decision record (2026-08-16)
+- 9. What follows
+- ⛔ THE HAPLOTYPE ROUTE — NO-GO (2026-08-23)
+
 ## 1. What the field accepts as evidence — and what it does not
 
 A literature sweep (53 searches, ~30 primary fetches) found **no paper that discovers a gene copy missing
