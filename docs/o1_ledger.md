@@ -5652,3 +5652,78 @@ ON/OFF pair of SPLICED_REP arms would have been indistinguishable), and 2 tests.
 ⚠**one verifier agent died** (StructuredOutput retry cap) — 2 of 3 refuters returned, so verification is
 INCOMPLETE. Of those two, one CONFIRMED every engulfment number with two independent implementations
 agreeing pair-for-pair; the other refuted on discipline.
+
+## §6at — Telltales of a minimap2 artifact: 38 enumerated, 12 measured, 3 real (09-01)
+
+Substrate `@PG`: `minimap2 2.31-r1302 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes`.
+**3 REAL-TELLTALE · 4 ALREADY-GUARDED · 13 REFUTED.** ⚠the case that prompted the question — readthroughs
+in nearby copies — was itself **REAL, not an artifact** (§6aq).
+
+### ⭐⭐ 1. ACTIONABLE: the readthrough guard is counting its own noise
+
+`read_junction_support` (`denovo_pipeline.rs:975`) builds its junction map from **EVERY intron of EVERY
+primary with NO motif test and no length floor**; `retain_non_readthrough` then counts DISTINCT engulfed
+keys. Non-canonical junctions and coordinate jitter inflate that count **without adding evidence**.
+
+| | value | comparator |
+|---|---|---|
+| non-canonical share of distinct junctions (support ≥2) | **8.03%** (2,494/31,040) | observation-weighted only **0.51%** — the pollution is in the COUNT, not the read mass |
+| nc share among the 157 drop spans | **34.15%** (501/1,467) | **3.17×** length-standardised (4.17/3.40/4.31 per band ⟹ not a short-intron artifact) |
+| **shipped drops that FLIP under a canonical-only map** | **55/157 = 35.03%** [0.280, 0.428] | drops gained = **0** by monotonicity |
+| drops whose engulfed evidence is 100% non-canonical | **10/157 = 6.37%** | the unambiguous subset |
+
+**Validated against an INDEPENDENT source that never sees a motif**: RefSeq annotates **19,002/28,546 =
+66.57% of canonical** junctions vs **5/2,494 = 0.20% of non-canonical** — **330× separation**.
+⭐**DOUBLE DISSOCIATION giving the mechanism**: Spearman(nc engulfed, span n_reads) **+0.437** vs
+Spearman(canonical, n_reads) **−0.144**; Spearman(nc, span length) **−0.115** vs canonical **+0.360**.
+⟹**real gene structure scales with SPAN LENGTH; fabricated structure scales with DEPTH — because
+`READTHROUGH_MIN_SUPPORT = 2` is an ABSOLUTE read count, unnormalised by locus depth.**
+**Case:** **JUNB** (annotated single-exon gene) — a **6,722-read** candidate was DELETED; of its engulfed
+junctions **21/21 are non-canonical and 0/21 annotated**, jittering 1–3 bp around two hotspots. MAPQ 60,
+so not a mismapping locus. No E_r node survives there.
+⚠**COST SIDE, STATED**: 4/55 flipped drops best-overlap an annotated INTRONLESS gene (Fisher p = 0.014)
+— but **52/55 overlap a multi-exon gene (median 8 exons)**, so it is not a free swap.
+✅specificity: **55/55 flipped spans overlap an annotated gene vs 0.503 expected** on size-matched random.
+⟹**DISPOSITION: filter the support map to CANONICAL junctions. Do NOT canonicalise coordinates** — the
+jitter arm independently agrees (canonical-only 153 drops; ±20 bp "safe" canonicalisation **216 = NET
+WORSE**; both together 153, so jitter adds exactly 0), and a merge has a **falsifier: 707/58,517 clusters
+hold ≥2 CANONICAL coordinates at ≥5 reads** (offsets −3/+2/−9/+2/+4 — **NAGNAG-class real alternative
+splice sites**, 904,387 observations).
+
+### 2. ALREADY GUARDED — with the guard named
+* **Mosaic reads** (paralogue jump mid-read): REAL and **structurally invisible to every O1 guard**, but
+  **absorbed by O2** — burden 15/934,689 = 1.6e-5; of the 9 reaching the PSV layer, **0.100 confidently
+  assigned vs a 0.7757 base rate** (Fisher p = 1.2e-5); residual leakage **1 in 44,351**. E_r is not
+  endangered: **10/10** such node pairs already carry an E_r edge (vs 0.0133 distance-matched).
+  ⚠**a guard here would DELETE REAL BIOLOGY — 2 of the 15 are O3 candidates.**
+* **Antisense-canonical introns** under `-uf`: real at read level (2.59–2.68× over a composition-matched
+  null) but `build_spliced_seq_with` catches them — **0/1,710 spliced nodes** carry a non-canonical or
+  mixed-motif junction; residue 7/1,710 touching **0/678 copies, 0/3,141 edges**. ⚠**acting on the residue
+  would be WRONG** (the largest is a real plus-strand junction read by mis-oriented cDNA).
+* **Non-canonical giant-intron mis-chains**: guarded UPSTREAM by `RUSTLE_JUNCTION_NC_MAX_BP = 10,000`
+  before `is_giant_intron_mischain` can see them — **0/103 giant introns non-canonical**, 96/103
+  annotated, and 2 positive controls fired so the zero is a real absence.
+* **Fragmentary secondaries**: `-F 2308` + the AS-tie gate. Within-read paired, the strongest separator
+  found anywhere: **an insertion ≥50 bp inside a spliced alignment — primary 0.00143 vs secondary
+  0.27330 = 191×**. The gate admits secondaries whose micro-exon rate is **BELOW** the primary baseline.
+
+### ⛔ 3. PLAUSIBLE BUT REFUTED — each with the number that killed it
+* **Terminal soft-clip asymmetry** — 6.573× **killed by depth**: 70.6% of large clips share ONE alignment
+  start; depth-controlled **1.044** [0.967, 1.128]. Injection power confirms the null has teeth.
+* **`-G 200,000` split alignments** — the ceiling is real (**OR 415,035×**) but is NOT the artifact:
+  **0/12,972 clip boundaries fall inside any of the 678 copies**, and the node it forms (12,101 reads) has
+  **degree 0 of 3,141 edges**. ⚠the pooled 0.709× enrichment is **Simpson-confounded** by clip length.
+* **Junction jitter as a recall lever** — net negative (216 vs 212 drops); two independent labels null
+  (**AUC 0.5366**); only 0.538% of observations are off-modal.
+* **`s2/s1` as an artifact flag** — AUC 0.9005 is **partly a theorem of the aligner** (91,000 reads have
+  `s2 == 0`); the anti-circularity test gives **AUC 0.4840 — BELOW CHANCE**; flips **0/5** decisions.
+* **Purely intronic single-exon nodes** — the 59× ratio is **TAUTOLOGICAL** (a spliced node is
+  exon-anchored by construction); against a size-preserving null they are **DEPLETED (obs/null 0.896,
+  z = −4.89)**, and a **43× MAPQ0 ratio collapses to 0.08× depth-matched**.
+* **Near-identical intron-length vectors** — a **homology test, not an artifact test**: it flags a strict
+  subset (12/12) of what identity ≥0.9301 already flags, and **identity-matched p = 0.4700**.
+
+⚠**SCOPE: one substrate, 3 contigs, one aligner configuration.** ⚠**the BAM is a 3-contig SUBSET**:
+**30.61% of primaries have ≥1 invisible off-contig placement** (detector positive control 1,404/1,404;
+MAPQ does not guard it — 0.0546 vs 0.0528). ⭐**but the comparator REVERSES the prior**: invisible
+placement is **ON-COPY 0.1844 vs FAR 0.3345**, i.e. LESS common where the copies are.
