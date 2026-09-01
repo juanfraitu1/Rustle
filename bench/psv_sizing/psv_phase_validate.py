@@ -3,11 +3,23 @@
 PSV-groups splice differently, record the divergent junction and check it is (a) MISSED by
 StringTie (real headroom) and (b) CORROBORATED by RefSeq (a real isoform, not a cross-map
 artifact). Defensible count = divergent junctions missed-by-StringTie AND in-RefSeq."""
-import pysam, csv, collections, glob, re, os
-BAM="/home/juanfra/winloci_scratch/GGO.bam"
-EX="/tmp/cre_guided/exons.tsv"; GW="/tmp/gw"
+import pysam, csv, collections, glob, re, os, sys
+# Defaults are the paths this instrument was written against; each is overridable so it can be pointed
+# at a real corpus. A missing one is a HARD ABORT below, never a silent fallback (ledger §6am).
+BAM=os.environ.get("PSV_BAM","/home/juanfra/winloci_scratch/GGO.bam")
+EX=os.environ.get("PSV_EXONS","/tmp/cre_guided/exons.tsv"); GW=os.environ.get("PSV_GW","/tmp/gw")
 CHROMS={"NC_073235.2","NC_086018.1"}
 MINDP=12; ALT_FRAC=0.25; MIN_HET=2; MIN_GRP=5; TOL=5
+
+def die(msg):
+    # §6am: this instrument's verdict is a RATE. A missing or empty input turns it into 0-of-0 printed
+    # as a finding, which is indistinguishable from a real result. Abort loudly instead of scoring it.
+    sys.stderr.write("PSV-PHASE ABORT: %s\n" % msg); sys.exit(2)
+
+# §6am: prevents an absent BAM / exon table from yielding an empty locus list that still prints a verdict.
+for _lbl, _p, _env in (("BAM", BAM, "PSV_BAM"), ("exon table", EX, "PSV_EXONS")):
+    if not os.path.exists(_p): die("%s not found: %s (override with %s=...)" % (_lbl, _p, _env))
+    if os.path.getsize(_p) == 0: die("%s is present but EMPTY: %s" % (_lbl, _p))
 
 def gtf_introns(path):
     by=collections.defaultdict(list); tx=collections.defaultdict(list); st={}
@@ -40,8 +52,18 @@ def match(j, lst): return any(abs(j[0]-k[0])<=TOL and abs(j[1]-k[1])<=TOL for k 
 
 ST={}; REF={}
 for ch in CHROMS:
-    ST[ch]=gtf_introns(f"{GW}/st_{ch}.gtf")[ch] if os.path.exists(f"{GW}/st_{ch}.gtf") else []
-    REF[ch]=gff_introns(f"{GW}/ref_{ch}.gff3")[ch] if os.path.exists(f"{GW}/ref_{ch}.gff3") else []
+    st_p=f"{GW}/st_{ch}.gtf"; ref_p=f"{GW}/ref_{ch}.gff3"
+    # §6am false-PASS fix: the old `gtf_introns(...) if os.path.exists(...) else []` made BOTH comparators
+    # empty when $GW was absent, so match() was False for everything and the novelty/agreement verdict
+    # below was scored against a comparator of size ZERO. Missing comparator annotation now aborts.
+    for _lbl, _p in (("StringTie GTF", st_p), ("RefSeq GFF3", ref_p)):
+        if not os.path.exists(_p): die("%s for %s not found: %s (set the annotation dir with PSV_GW=...)" % (_lbl, ch, _p))
+        if os.path.getsize(_p) == 0: die("%s for %s is present but EMPTY: %s" % (_lbl, ch, _p))
+    ST[ch]=gtf_introns(st_p)[ch]; REF[ch]=gff_introns(ref_p)[ch]
+    # §6am guards the EVIDENCE, not just the file: a parsable-but-intron-free comparator (or one holding
+    # no records for this contig) scores EVERY junction as "missed by StringTie" / "not in RefSeq".
+    if not ST[ch]: die("StringTie comparator for %s holds 0 introns (%s) — every junction would score as MISSED" % (ch, st_p))
+    if not REF[ch]: die("RefSeq comparator for %s holds 0 introns (%s) — no junction could be CORROBORATED" % (ch, ref_p))
 
 spans=[]
 for r in csv.DictReader(open(EX),delimiter="\t"):
@@ -52,6 +74,9 @@ spans.sort(); loci=[]
 for ch,s,e in spans:
     if loci and loci[-1][0]==ch and s<=loci[-1][2]: loci[-1]=(ch,loci[-1][1],max(loci[-1][2],e))
     else: loci.append((ch,s,e))
+# §6am: prevents an exon table with no rows on these contigs from printing "0 ... 0 headroom" as a
+# finding — that is 0-of-0, an empty computation, not a measured negative.
+if not loci: die("no loci on %s in %s — nothing to score" % (sorted(CHROMS), EX))
 
 bam=pysam.AlignmentFile(BAM,"rb")
 n_struct=0; missed_st=0; missed_and_ref=0; missed_not_ref=0
@@ -99,6 +124,10 @@ for ch,s,e in loci:
             if len(ex_real)<14: ex_real.append((ch,s,e,len(het),gn[0],gn[1],len(real)))
         else: missed_not_ref+=1
 
+# §6am: the comparator size is part of the verdict — a rate scored against a small or absent annotation
+# is not readable without it. Print it next to the numbers it conditions.
+print(f"comparator sizes (introns loaded from {GW}; loci scanned: {len(loci)}):")
+for ch in sorted(CHROMS): print(f"  {ch}: StringTie={len(ST[ch])}  RefSeq={len(REF[ch])}")
 print(f"loci with PSV-linked structural divergence: {n_struct}")
 print(f"  divergent junction MISSED by StringTie:                 {missed_st}")
 print(f"    of those, CORROBORATED by RefSeq (real, not artifact): {missed_and_ref}  <-- DEFENSIBLE headroom")

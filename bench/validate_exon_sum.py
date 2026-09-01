@@ -15,12 +15,32 @@ because read-conflict can fire on a fragment while full-length exon-sum alignmen
 
 Run: python bench/validate_exon_sum.py [prefix] [minimap2] [ID] [COV]
 """
-import sys, subprocess, collections, os, tempfile
+import sys, subprocess, collections, os, tempfile, shutil
 
 PREFIX = sys.argv[1] if len(sys.argv) > 1 else "/home/juanfra/winloci_scratch/gw_xchrom_catalog"
 MM2 = sys.argv[2] if len(sys.argv) > 2 else "minimap2"
 ID = float(sys.argv[3]) if len(sys.argv) > 3 else 0.80   # min gap-compressed identity (1 - de)
 COV = float(sys.argv[4]) if len(sys.argv) > 4 else 0.50  # min aligned fraction of the SHORTER sequence
+
+
+def abort(msg):
+    """Hard, loud, nonzero. A validator that cannot fail certifies nothing (o1_ledger.md §6am)."""
+    print(f"VALIDATE_EXON_SUM ABORT: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+# GUARD (§6am): a missing or present-but-EMPTY input used to yield an empty evidence set that still
+# printed purity rates and the OVER-MERGES verdict. Abort BEFORE any alignment and BEFORE
+# {PREFIX}.refined.tsv is truncated further down.
+for _p in (f"{PREFIX}.copies.fa", f"{PREFIX}.families.tsv"):
+    if not os.path.isfile(_p):
+        abort(f"required input missing: {_p}")
+    if os.path.getsize(_p) == 0:
+        abort(f"required input is EMPTY (zero-length evidence scores as a pass): {_p}")
+# GUARD (§6am): the aligner IS the evidence. If it is not executable every family returns 0 edges,
+# which reads as purity 1/n and prints OVER-MERGES from zero alignments. Resolved once, up front.
+if shutil.which(MM2) is None and not (os.path.isfile(MM2) and os.access(MM2, os.X_OK)):
+    abort(f"minimap2 not found / not executable: {MM2!r} (pass an explicit path as argv[2])")
 
 # --- load exon-sum sequences, grouped by family ---  header: >fid|ci|chrom:start-end|strand|nexon=N
 fam_seqs = collections.defaultdict(dict)   # fid -> {ci: seq}
@@ -51,6 +71,19 @@ for line in open(f"{PREFIX}.families.tsv"):
     f = line.rstrip("\n").split("\t")
     fams[f[0]] = {"n_copies": int(f[1]), "cross_chrom": f[4] == "true"}
 
+# GUARD (§6am): the section-3 flagship used to be skipped in SILENCE when absent, and align_family()
+# returns an empty set below 2 copies — so a 0- or 1-copy family printed "CLIQUE" (0 edges trivially
+# equals the 0 edges a clique of that size requires). The flagship claim is load-bearing (quoted in
+# bench/COPY_ASSIGNMENT_AND_GATE.md), so it is checked HERE, before any alignment and before
+# {PREFIX}.refined.tsv is truncated below.
+RABL2_FID = os.environ.get("RABL2_FID", "GWFAM50")
+if RABL2_FID not in fam_seqs:
+    abort(f"flagship family {RABL2_FID} absent from {PREFIX}.copies.fa — the clique test cannot be run "
+          f"(set RABL2_FID=<family_id> if this catalog numbers it differently)")
+if len(fam_seqs[RABL2_FID]) < 2:
+    abort(f"flagship family {RABL2_FID} has {len(fam_seqs[RABL2_FID])} copy — the clique test is VACUOUS "
+          f"below 2 copies (0 edges trivially equals the 0 edges a clique requires)")
+
 def align_family(seqs):
     """seqs: {ci: sequence}. Return set of edges {(ci_a, ci_b)} where the two spliced sequences align
     full-length (identity>=ID, coverage-of-shorter>=COV). minimap2 tries both strands."""
@@ -65,10 +98,16 @@ def align_family(seqs):
         # asm20: tuned for similar assemblies (<=~20% divergence) — these are de-tied multimappers, so
         # the copies are by construction similar enough that reads confused between them. -X = all-vs-all
         # skipping self & dual; -c emits the de:f gap-compressed-divergence tag.
-        out = subprocess.run([MM2, "-cx", "asm20", "-X", "--no-long-join", path, path],
-                             capture_output=True, text=True).stdout
+        res = subprocess.run([MM2, "-cx", "asm20", "-X", "--no-long-join", path, path],
+                             capture_output=True, text=True)
     finally:
         os.unlink(path)
+    # GUARD (§6am): the aligner ran unchecked — a per-family minimap2 failure returned empty stdout,
+    # hence 0 edges, hence purity 1/n and a printed OVER-MERGES verdict produced by NO alignment.
+    if res.returncode != 0:
+        abort(f"minimap2 exited {res.returncode} on a {len(cis)}-copy family "
+              f"(a failed aligner silently scores as 0 edges): {res.stderr.strip()[-500:]}")
+    out = res.stdout
     edges = set()
     lens = {c: len(seqs[c]) for c in cis}
     for ln in out.splitlines():
@@ -140,7 +179,7 @@ def pct(a, b):
 def med(xs):
     return sorted(xs)[len(xs)//2] if xs else 0.0
 
-n = pure = pure_xc = n_xc = 0
+n = pure = pure_xc = n_xc = total_edges = 0
 purities, pur_same, pur_xc = [], [], []
 contaminated = []
 refined = []  # (orig_fid, comp_index, [ci...]) for each >=2-copy homology component
@@ -149,6 +188,7 @@ for f, seqs in fam_seqs.items():
     if len(nodes) < 2:
         continue
     edges = align_family(seqs)
+    total_edges += len(edges)
     comps = components(nodes, edges)
     lc = max((len(c) for c in comps), default=0)
     pur = lc / len(nodes)
@@ -169,6 +209,16 @@ for f, seqs in fam_seqs.items():
         if nloci >= 2:                                     # homology-validated AND multi-LOCUS
             refined.append((f, k, reps))
 
+# GUARD (§6am): guard the EVIDENCE, not just the files. With no scorable family there is nothing to
+# be pure or impure about, and with zero alignments genome-wide every family scores purity 1/n by
+# construction — both print rates and the OVER-MERGES verdict from an empty computation. Abort here,
+# BEFORE {PREFIX}.refined.tsv (a committed artefact) is truncated below.
+if n == 0:
+    abort(f"no family in {PREFIX}.copies.fa has >=2 copies — nothing to validate")
+if total_edges == 0:
+    abort(f"0 exon-sum alignment edges across all {n} scored families — the alignment evidence set is "
+          f"EMPTY, so every purity is 1/n by construction (check minimap2 and {PREFIX}.copies.fa)")
+
 print(f"=== EXON-SUM (FLNC) validation of {PREFIX} ===")
 print(f"   annotation-free, de-circularised; minimap2 asm20, identity>={ID}, coverage-of-shorter>={COV}\n")
 print(f"--- 1. PURITY of the raw conflict-graph catalog (how often its copies are really all homologous) ---")
@@ -176,8 +226,14 @@ print(f"families with >=2 copies: {n}  (same-chrom: {n - n_xc}, cross-chrom: {n_
 print(f"PURE (all copies one homology component): all {pct(pure, n)} | "
       f"same-chrom {pct(pure - pure_xc, n - n_xc)} | cross-chrom {pct(pure_xc, n_xc)}")
 print(f"median purity: all={med(purities):.2f}  same-chrom={med(pur_same):.2f}  cross-chrom={med(pur_xc):.2f}")
-print(f"\n  => the raw cross-chrom conflict graph OVER-MERGES: read-conflict fires on shared repeats/domains,")
-print(f"     so many cross-chrom 'families' have copies whose full spliced sequences do NOT mutually align.")
+# GUARD (§6am): this verdict used to print unconditionally, i.e. it could not come out the other way.
+# It now states only what the purities above actually show.
+if pure < n:
+    print(f"\n  => the raw cross-chrom conflict graph OVER-MERGES: read-conflict fires on shared repeats/domains,")
+    print(f"     so many cross-chrom 'families' have copies whose full spliced sequences do NOT mutually align.")
+else:
+    print(f"\n  => NO over-merge detected: all {n} families are a single exon-sum-homology component,")
+    print(f"     i.e. this run does NOT support the OVER-MERGES claim.")
 print(f"\nmost-contaminated (purity<0.6) — read-conflict edges the exon-sum alignment rejects:")
 for f, cross, nc, lc, pur in sorted(contaminated, key=lambda x: x[4])[:12]:
     print(f"  {f} xc={cross} n_copies={nc} largest_homologous={lc} purity={pur}")
@@ -205,13 +261,12 @@ print(f"wrote {PREFIX}.refined.tsv")
 
 # --- 3. RABL2 flagship ---
 print("\n=== RABL2 flagship (cross-chrom) ===")
-rabl2_fid = "GWFAM50"
-if rabl2_fid in fam_seqs:
-    seqs = fam_seqs[rabl2_fid]
-    edges = align_family(seqs)
-    comps = components(list(seqs), edges)
-    lc = max((len(c) for c in comps), default=0)
-    print(f"  {rabl2_fid}: {len(seqs)} copies, largest homology component = {lc}, purity = {lc/len(seqs):.2f}")
-    print(f"  loci: {[f'{fam_locus[rabl2_fid][c][0]}:{fam_locus[rabl2_fid][c][1]}' for c in seqs]}")
-    print(f"  all-pairs aligned (clique): {len(edges)} edges among {len(seqs)} copies "
-          f"({'CLIQUE' if len(edges) == len(seqs)*(len(seqs)-1)//2 else 'not full clique'})")
+rabl2_fid = RABL2_FID   # presence and >=2 copies already hard-checked at load time (GUARD §6am above)
+seqs = fam_seqs[rabl2_fid]
+edges = align_family(seqs)
+comps = components(list(seqs), edges)
+lc = max((len(c) for c in comps), default=0)
+print(f"  {rabl2_fid}: {len(seqs)} copies, largest homology component = {lc}, purity = {lc/len(seqs):.2f}")
+print(f"  loci: {[f'{fam_locus[rabl2_fid][c][0]}:{fam_locus[rabl2_fid][c][1]}' for c in seqs]}")
+print(f"  all-pairs aligned (clique): {len(edges)} edges among {len(seqs)} copies "
+      f"({'CLIQUE' if len(edges) == len(seqs)*(len(seqs)-1)//2 else 'not full clique'})")

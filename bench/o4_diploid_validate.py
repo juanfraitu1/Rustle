@@ -55,8 +55,13 @@ Determinism: PYTHONHASHSEED=0, minimap2 -t 5, fixed -I; per-query alignments are
 deterministic (verified by re-aligning the reference and diffing the sorted PAF). 0-COPY verified
 robust to a full parameter sweep: identity gate 0.80-0.90, coverage 0.2-0.5, locus gap 100k-500k.
 
-Run: PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/o4_diploid_validate.py
+Run: PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/o4_diploid_validate.py   (from the repo root)
 Reuse existing PAFs (skip minimap2): O4_REUSE_PAF=1 PYTHONHASHSEED=0 ... bench/o4_diploid_validate.py
+  -- reuse is accepted ONLY if $WORK/query.md5 proves the PAFs were built from THIS query fasta.
+Overridable inputs: O4_HAPDIR, O4_MAT_MMI, O4_PAT_MMI, O4_MINIMAP2.
+FAIL-LOUD (docs/o1_ledger.md §6am): a missing/empty input, an empty query set, an empty PAF block set, a
+stale reused PAF, or 0 full-copy loci in any target ABORTS with exit 2 before anything is written -- the
+headline negative "COPIES confirmed: 0" must be a measurement, not a consequence of absent evidence.
 """
 import os
 import sys
@@ -66,11 +71,16 @@ import subprocess
 import hashlib
 from collections import defaultdict, Counter
 
-MINIMAP2 = "/home/juanfra/miniforge3/bin/minimap2"
+MINIMAP2 = os.environ.get("O4_MINIMAP2", "/home/juanfra/miniforge3/bin/minimap2")
 SCRATCH  = "/home/juanfra/winloci_scratch"
 GGO      = f"{SCRATCH}/GGO.fasta"                          # primary reference = GCF_029281585.2 (= RNA ref)
-MAT_MMI  = f"{SCRATCH}/mGorGor1.mat.asm20.rebuild.mmi"     # maternal hap (same as diploid_cn_oracle)
-PAT_MMI  = f"{SCRATCH}/mGorGor1.pat.asm20.mmi"             # paternal hap
+# §6am (vacuous-gate audit): both hap indexes were pointed at $SCRATCH, where NEITHER exists. With empty
+# mat/pat blocks the COPY branch of classify() is unreachable, so "COPIES confirmed: 0" was TRUE BY
+# CONSTRUCTION. The real indexes carry these exact file names on the physical disk (docs/REFERENCE.md:172-173);
+# overridable so a different assembly can be A/B-ed without editing the source.
+HAPDIR   = os.environ.get("O4_HAPDIR", "/mnt/linuxdisk/home/juanfraitu/winloci_data")
+MAT_MMI  = os.environ.get("O4_MAT_MMI", f"{HAPDIR}/mGorGor1.mat.asm20.rebuild.mmi")   # maternal hap (same as diploid_cn_oracle)
+PAT_MMI  = os.environ.get("O4_PAT_MMI", f"{HAPDIR}/mGorGor1.pat.asm20.mmi")           # paternal hap
 GW       = f"{SCRATCH}/refabsent/gw_promoted"
 ABSENT   = f"{GW}/gw_reference_absent_copies.json"         # the 145 O4 candidates
 DISC     = f"{GW}/gw_discriminated.json"                   # n_loci / cat for a subset
@@ -92,6 +102,42 @@ PREFLOOR  = 200         # discard alignment blocks < 200 bp
 THREADS   = 5
 CHRX, CHRY, CHRMT = "NC_073247.2", "NC_073248.2", "NC_011120.1"
 SUBTHRESH_FLOOR = 0.80  # a below-gate locus is "reference-present" only if it aligns at >= this id
+
+
+# ----------------------------------------------------------------------------- fail-loud guards (§6am)
+def _abort(msg):
+    """§6am: an instrument that cannot FAIL certifies nothing. Every guard here stops the run with a
+    nonzero exit and a stated reason, BEFORE any output (query fasta, PAFs, the committed TSV/JSON)
+    is written or truncated."""
+    sys.stderr.write("O4 VALIDATE ABORT: " + msg + "\n")
+    sys.exit(2)
+
+
+def require_inputs(need_aligner):
+    """§6am: hard-abort on a missing OR empty input before any work. Without this the headline negative
+    ('COPIES confirmed: 0') is unfalsifiable: absent hap indexes -> empty mat/pat blocks -> the COPY
+    branch of classify() is unreachable, while the verdict, the TSV and the JSON are still written."""
+    missing = []
+    checks = [("O4 candidates", ABSENT), ("discriminated candidates", DISC),
+              ("candidate consensus fasta", SURV_FA), ("unmapped-rescue POC", POC),
+              ("cluster reps fasta", REPS_FA), ("prior haploid labels", HAPLOID),
+              ("validated families (oracle coords)", VALID), ("diploid_cn_oracle", ORACLE)]
+    if need_aligner:
+        # only required when we are actually going to align; under a VERIFIED O4_REUSE_PAF the PAFs
+        # themselves are the evidence (see the reuse gate in main()).
+        checks = [("primary reference (GGO)", GGO), ("maternal hap index (O4_MAT_MMI)", MAT_MMI),
+                  ("paternal hap index (O4_PAT_MMI)", PAT_MMI)] + checks
+        if not os.access(MINIMAP2, os.X_OK):
+            missing.append(f"minimap2 (O4_MINIMAP2): {MINIMAP2} (MISSING or not executable)")
+    for label, p in checks:
+        if not os.path.exists(p):
+            missing.append(f"{label}: {p} (MISSING)")
+        elif os.path.getsize(p) == 0:
+            missing.append(f"{label}: {p} (EMPTY)")
+    if missing:
+        _abort("required input(s) absent or empty -- refusing to score a vacuous run and refusing to "
+               "overwrite the committed record (docs/o1_ledger.md §6am):\n  " + "\n  ".join(missing) +
+               "\n(relative paths resolve against the CWD: run from the repo root)")
 
 
 # ----------------------------------------------------------------------------- FASTA / PAF helpers
@@ -328,6 +374,10 @@ def oracle_hit(chrom, start, end, regions):
 
 # ----------------------------------------------------------------------------- main
 def main():
+    # §6am: guard BEFORE mkdir / the query fasta / the committed bench/*.tsv+json are touched, so a run
+    # missing an input aborts instead of re-writing the record with a by-construction verdict.
+    reuse_req = os.environ.get("O4_REUSE_PAF") == "1"
+    require_inputs(need_aligner=not reuse_req)
     os.makedirs(WORK, exist_ok=True)
 
     # ---- load candidates -----------------------------------------------------
@@ -380,14 +430,40 @@ def main():
                 out.write(seq[i:i + 80] + "\n")
     sys.stderr.write(f"query: {len(qlen)} candidates ({len(absent)} collapsed + "
                      f"{len(qlen)-len(absent)} divergent/unmapped) -> {query_fa}\n")
+    # §6am: guard the EVIDENCE, not the file. Both loops above `continue` silently when a cid has no
+    # consensus sequence (or a POC tag has no rep), so a key mismatch can drop EVERY candidate and leave
+    # an empty query set that scores 0 COPY / 0 novel with no data at all.
+    n_coll_q = sum(1 for m in meta.values() if m["kind"] == "collapsed")
+    if not qlen or n_coll_q == 0:
+        _abort(f"empty query set: {len(qlen)} sequences ({n_coll_q} collapsed) built from "
+               f"{len(absent)} candidates in {ABSENT} + {len(poc_cands)} POC candidates -- the cids in "
+               f"{SURV_FA} / tags in {REPS_FA} do not match; every verdict below would be vacuous")
 
     # ---- align to reference / maternal / paternal ---------------------------
     ref_paf, mat_paf, pat_paf = f"{WORK}/ref.paf", f"{WORK}/mat.paf", f"{WORK}/pat.paf"
     ref_paf2 = f"{WORK}/ref.check.paf"
-    reuse = os.environ.get("O4_REUSE_PAF") == "1" and all(
-        os.path.exists(p) for p in (ref_paf, mat_paf, pat_paf))
-    if reuse:
-        sys.stderr.write("O4_REUSE_PAF=1: reusing existing PAFs\n")
+    stamp = f"{WORK}/query.md5"          # binds a PAF set to the query fasta it was actually built from
+    with open(query_fa, "rb") as _qfh:
+        qmd5 = hashlib.md5(_qfh.read()).hexdigest()
+    if reuse_req:
+        # §6am: the old gate tested EXISTENCE only, so a STALE PAF was scored against a REGENERATED query
+        # set and any query with no PAF record fell through to "genuinely_absent". Reuse now requires
+        # non-empty PAFs provably built from THIS query fasta; anything else aborts.
+        for p in (ref_paf, mat_paf, pat_paf):
+            if not os.path.exists(p):
+                _abort(f"O4_REUSE_PAF=1 but {p} does not exist -- re-run without O4_REUSE_PAF")
+            if os.path.getsize(p) == 0:
+                _abort(f"O4_REUSE_PAF=1 but {p} is EMPTY -- every candidate would score "
+                       f"'genuinely_absent'; re-run without O4_REUSE_PAF")
+        prev = None
+        if os.path.exists(stamp):
+            with open(stamp) as _sfh:
+                prev = (_sfh.read().split() or [None])[0]
+        if prev != qmd5:
+            _abort(f"O4_REUSE_PAF=1 but the PAFs in {WORK} were not built from this query set "
+                   f"(query md5 {qmd5}, stamp {prev}) -- a stale PAF scores a missing record as "
+                   f"'genuinely_absent'; re-run without O4_REUSE_PAF")
+        sys.stderr.write(f"O4_REUSE_PAF=1: reusing existing PAFs (query md5 {qmd5[:12]} verified)\n")
     else:
         sys.stderr.write("aligning to primary reference (GGO.fasta) ...\n")
         run_minimap2(query_fa, GGO, ref_paf, is_fasta=True)
@@ -396,10 +472,23 @@ def main():
         sys.stderr.write("aligning to paternal hap ...\n")
         run_minimap2(query_fa, PAT_MMI, pat_paf, is_fasta=False)
         run_minimap2(query_fa, GGO, ref_paf2, is_fasta=True)
+        # §6am: record WHICH query set produced these PAFs, so a later O4_REUSE_PAF=1 can prove the
+        # reused alignments belong to the queries being scored instead of merely existing.
+        with open(stamp, "w") as _sfh:
+            _sfh.write(f"{qmd5}  {query_fa}  n_query={len(qlen)}\n")
 
     ref_b = read_paf_blocks(ref_paf)
     mat_b = read_paf_blocks(mat_paf)
     pat_b = read_paf_blocks(pat_paf)
+    # §6am: guard the EVIDENCE, not the file's existence. classify() can only return COPY when the mat/pat
+    # block sets are populated, so a PAF that is present but yields no block >= PREFLOOR bp makes
+    # "COPIES confirmed: 0" true by construction. Refuse to score it.
+    for lbl, bl, p in (("reference", ref_b, ref_paf), ("maternal", mat_b, mat_paf),
+                       ("paternal", pat_b, pat_paf)):
+        if not bl:
+            _abort(f"no alignment block >= {PREFLOOR} bp for ANY of the {len(qlen)} candidates in the "
+                   f"{lbl} PAF ({p}) -- with an empty {lbl} block set the COPY branch of classify() is "
+                   f"unreachable and a '0 COPY' verdict would be true by construction")
 
     # ---- determinism check: sorted-PAF md5 of two independent reference aligns ----
     def sorted_md5(p):
@@ -454,6 +543,16 @@ def main():
             reason=reason, _qn=qn,
         ))
 
+    # §6am POSITIVE CONTROL, before the committed TSV/JSON are truncated: mat and pat are haplotypes of
+    # the SAME donor as the primary reference, so a working run must place at least one candidate as a
+    # full copy in EACH target. Zero full-copy loci in a target means that alignment failed, not that the
+    # donor has no copies -- and a '0 COPY' headline read off a failed hap alignment is vacuous.
+    for lbl, key in (("reference", "ref_loci"), ("maternal", "mat_loci"), ("paternal", "pat_loci")):
+        if not any(int(r[key]) > 0 for r in rows):
+            _abort(f"0 full-copy loci in the {lbl} target across all {len(rows)} candidates (id>="
+                   f"{MIN_IDENT}, cov>={COV_FRAC}) -- the {lbl} alignment produced no usable evidence; "
+                   f"refusing to write {OUT_TSV}/{OUT_JSON} from it")
+
     # ---- write tsv ----------------------------------------------------------
     cols = ["cid", "kind", "chrom", "start", "end", "protein", "divergence", "n_loci_read",
             "haploid_label", "ref_loci", "mat_loci", "pat_loci", "ref_frag", "mat_frag", "pat_frag",
@@ -481,6 +580,22 @@ def main():
                 sweep.append(dict(min_ident=mi, cov_frac=cf, locus_gap=gap,
                                   copy=lab.get("COPY", 0), labels=dict(lab)))
     max_copy_over_sweep = max(s["copy"] for s in sweep)
+    # §6am: sweep_note was a HARDCODED sentence asserting "COPY=0 at EVERY grid point" no matter what the
+    # sweep returned -- a claim that could not be contradicted by its own data. Derive it from `sweep`.
+    _mis = sorted({s["min_ident"] for s in sweep})
+    _cfs = sorted({s["cov_frac"] for s in sweep})
+    _gaps = sorted({s["locus_gap"] for s in sweep})
+    _grid = (f"identity {'/'.join(f'{m:.2f}' for m in _mis)}, "
+             f"coverage {_cfs[0]:.1f}-{_cfs[-1]:.1f}, "
+             f"gap {_gaps[0] // 1000}k-{_gaps[-1] // 1000}k")
+    if max_copy_over_sweep == 0:
+        sweep_note = (f"COPY=0 at EVERY ({_grid}) -- "
+                      f"the negative is not a threshold/method-capacity artifact")
+    else:
+        _worst = max(sweep, key=lambda s: s["copy"])
+        sweep_note = (f"COPY is NOT 0 across the sweep: max COPY={max_copy_over_sweep} at min_ident="
+                      f"{_worst['min_ident']}, cov_frac={_worst['cov_frac']}, locus_gap="
+                      f"{_worst['locus_gap']} of ({_grid}) -- the 0-COPY headline is threshold-dependent")
 
     # ---- summary ------------------------------------------------------------
     dip = Counter(r["diploid_label"] for r in rows)
@@ -567,8 +682,7 @@ def main():
         copies_already_in_oracle_collapsed=len(copies_oracle_dup),
         # ---- 0-COPY robustness ----
         copy_max_over_sweep=max_copy_over_sweep,
-        sweep_note=("COPY=0 at EVERY (identity 0.80/0.85/0.90, coverage 0.2-0.5, gap 100k-500k) -- "
-                    "the negative is not a threshold/method-capacity artifact"),
+        sweep_note=sweep_note,          # §6am: derived from `sweep` above, no longer a fixed string
         robustness_sweep=sweep,
         sensitivity_floor=("0 COPY == 0 copy at >= ~%d%% identity; a genuinely divergent (<~%d%%) "
                            "both-hap germline copy would be scored NOVEL/genuinely_absent -- the "

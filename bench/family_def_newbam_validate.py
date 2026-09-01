@@ -12,6 +12,7 @@ Run: /home/juanfra/miniforge3/bin/python bench/family_def_newbam_validate.py NC_
 """
 import collections
 import os
+import shutil
 import subprocess
 import sys
 
@@ -24,12 +25,45 @@ from family_def_genomewide import (de_of, best_gene, ref_span, pair_evidence, co
 META = "/home/juanfra/winloci_scratch/denovo_transcripts.meta.tsv"
 SEQS = "/home/juanfra/winloci_scratch/vg_reinforce_copies.fa"
 GENOME = "/home/juanfra/winloci_scratch/GGO.fasta"
-OLD = "/home/juanfra/winloci_scratch/GGO.bam"
-NEW = "/home/juanfra/winloci_scratch/GGO_mm.bam"
+# ledger §6am: OLD was "GGO.bam", which has been a SYMLINK to GGO_mm.bam since 2026-06-23 -> both arms
+# were ONE inode and the OLD-vs-NEW comparison was against itself, so it could not fail. The
+# default-secondary-cap alignment the recorded table (bench/FAMILY_DEF.md) was measured on survives
+# under its original bytes as GGO_orig_defaultcap.bam; that file is the OLD arm. Both arms overridable.
+OLD = os.environ.get("NEWBAM_OLD", "/home/juanfra/winloci_scratch/GGO_orig_defaultcap.bam")
+NEW = os.environ.get("NEWBAM_NEW", "/home/juanfra/winloci_scratch/GGO_mm.bam")
 TMP = "/home/juanfra/winloci_scratch/newbamval"
 COV_MIN = 0.30
 PAD, MAX_READS, MIN_LEN = 5000, 3000, 300
 SAM = "/home/juanfra/miniforge3/bin/samtools"
+MM2 = os.environ.get("MINIMAP2", "minimap2")
+
+
+def _abort(msg):
+    """Every guard exits nonzero with the reason (ledger §6am)."""
+    sys.exit(f"ABORT family_def_newbam_validate: {msg}")
+
+
+def check_inputs():
+    """Pre-flight, before any scan. §6am: this instrument reported a comparison it never made."""
+    for label, path in (("meta table", META), ("copy-model cache", SEQS), ("genome", GENOME),
+                        ("OLD bam", OLD), ("NEW bam", NEW), ("samtools", SAM)):
+        # §6am: a missing input let samtools/pysam yield nothing and the empty arms diffed as "no change".
+        if not os.path.exists(path):
+            _abort(f"{label} missing: {path}")
+    for label, bam in (("OLD", OLD), ("NEW", NEW)):
+        # §6am: without an index the region fetch returns 0 alignments, which scored as agreement.
+        if not any(os.path.exists(bam + ext) for ext in (".bai", ".csi")):
+            _abort(f"{label} bam has no .bai/.csi index: {bam} (region-restricted scan needs one)")
+    # §6am, THE fix: if the arms are the same file the instrument is comparing a BAM to itself.
+    so, sn = os.stat(OLD), os.stat(NEW)
+    if (so.st_dev, so.st_ino) == (sn.st_dev, sn.st_ino):
+        _abort(f"OLD and NEW are the SAME FILE (dev {so.st_dev}, inode {so.st_ino}): "
+               f"{OLD} -> {os.path.realpath(OLD)} == {NEW} -> {os.path.realpath(NEW)}; "
+               f"the comparison is against itself and cannot fail")
+    # §6am: minimap2 absent => shell rc 127, coverage 0.0 for every pair, i.e. ~B "prunes" everything.
+    if shutil.which(MM2) is None:
+        _abort(f"minimap2 not found on PATH as {MM2!r} (~B reciprocal coverage needs it)")
+    print(f"arms: OLD={os.path.realpath(OLD)}\n      NEW={os.path.realpath(NEW)}")
 
 
 def merge(iv):
@@ -104,7 +138,11 @@ def scan_region(by_chrom, bam, region):
         d = mm[f[0]]
         if g not in d or de < d[g]:
             d[g] = de
-    p.wait()
+    rc = p.wait()
+    # §6am: an unchecked samtools failure (bad region, missing index) returned 0 rows and the arm scored
+    # as "no cross-mapping" instead of failing.
+    if rc != 0:
+        _abort(f"samtools view -f 0x100 {bam} {region} failed (exit {rc})")
     p = subprocess.Popen([SAM, "view", "-F", "0x900", bam, region],
                          stdout=subprocess.PIPE, text=True, bufsize=1 << 20)
     for line in p.stdout:
@@ -121,7 +159,10 @@ def scan_region(by_chrom, bam, region):
         d = mm[line[:i]]
         if g not in d or de < d[g]:
             d[g] = de
-    p.wait()
+    rc = p.wait()
+    # §6am: same defect on the primary/supplementary pass - a silent failure dropped the quorum reads.
+    if rc != 0:
+        _abort(f"samtools view -F 0x900 {bam} {region} failed (exit {rc})")
     return mm, nsec
 
 
@@ -143,8 +184,13 @@ def recip_cov(a, b):
     os.makedirs(TMP, exist_ok=True)
     open(f"{TMP}/a.fa", "w").write(f">a\n{a}\n")
     open(f"{TMP}/b.fa", "w").write(f">b\n{b}\n")
-    out = subprocess.run(f"minimap2 -c -x asm20 {TMP}/a.fa {TMP}/b.fa 2>/dev/null",
-                         shell=True, capture_output=True, text=True).stdout
+    r = subprocess.run(f"{MM2} -c -x asm20 {TMP}/a.fa {TMP}/b.fa",
+                       shell=True, capture_output=True, text=True)
+    # §6am: stderr went to /dev/null and the exit code was ignored, so a failed aligner returned an empty
+    # PAF, coverage 0.0, and every candidate edge was reported as a ~B-pruned "bridge".
+    if r.returncode != 0:
+        _abort(f"minimap2 failed (exit {r.returncode}): {r.stderr.strip()[:400]}")
+    out = r.stdout
     best = 0.0
     for line in out.splitlines():
         f = line.split("\t")
@@ -167,7 +213,7 @@ def run(label, bam, by_chrom, region):
     if counts:
         print(f"           quorum per edge: max={counts[0]} median={counts[len(counts)//2]} "
               f"edges>=10reads={sum(1 for c in counts if c>=10)}")
-    return dict(mm=mm, ev=ev, edges=edges, fams=fams, multimappers=multimappers)
+    return dict(mm=mm, ev=ev, edges=edges, fams=fams, multimappers=multimappers, nsec=nsec)
 
 
 def prune_b(edges, models):
@@ -185,8 +231,16 @@ def prune_b(edges, models):
 
 def main():
     chroms = sys.argv[1:] or ["NC_073244.2"]
+    check_inputs()
     by_chrom, info = load_denovo(set(chroms))
+    # §6am: with no de-novo locus on these chroms best_gene() is None for every read, both arms score 0
+    # edges, and the NET line prints "+0" as if the two BAMs agreed. An empty evidence set is not a result.
+    if sum(len(v) for v in by_chrom.values()) == 0:
+        _abort(f"no de-novo loci in {META} for {','.join(chroms)} (nothing to scan; check the chrom names)")
     models = load_models()
+    # §6am: an empty copy-model cache makes ~B call every candidate edge a bridge, which reads as a pass.
+    if not models:
+        _abort(f"copy-model cache {SEQS} yielded 0 sequences")
     bam_old = pysam.AlignmentFile(OLD, "rb")
     genome = pysam.FastaFile(GENOME)
     print(f"=== ~R re-validation on new multimapper BAM ({','.join(chroms)}) ===")
@@ -195,6 +249,11 @@ def main():
         print(f"\n--- {region} ---")
         old = run("OLD", OLD, by_chrom, region)
         new = run("NEW", NEW, by_chrom, region)
+        # §6am: an arm that scanned no secondary alignment contributes "0" to every column, and the
+        # OLD-vs-NEW deltas then read as agreement. Refuse to report a comparison one arm never made.
+        if old["nsec"] == 0 or new["nsec"] == 0:
+            _abort(f"{region}: secondaries scanned OLD={old['nsec']} NEW={new['nsec']} - an arm returned "
+                   f"no alignments on this region, so the comparison is empty")
         # resolve copy models for EVERY candidate locus (cache, else build from old BAM)
         loci = {g for (a, b, n) in list(old["edges"]) + list(new["edges"]) for g in (a, b)}
         built = 0

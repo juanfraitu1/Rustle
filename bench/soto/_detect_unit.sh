@@ -3,7 +3,12 @@
 # the cached subset BAM (once, cached), then run gw_family_catalog. Called in parallel by recompute_perchrom.sh.
 BED=$1; FLAGS=$2
 CACHE=${SOTO_CACHE:-/home/juanfra/winloci_scratch/soto_cache}; PC=$CACHE/perchrom
-BIN=${GWCAT:-/mnt/c/Users/jfris/Desktop/Rustle/target/release/gw_family_catalog}
+# The repo-local target/ DOES NOT EXIST, so this default used to resolve to nothing: every unit died
+# with rc=127 while the caller carried on and scored stale outputs (o1_ledger.md §6am). The mandated
+# build dir is CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target; overridable via GWCAT.
+BIN=${GWCAT:-/mnt/linuxdisk/home/juanfraitu/rustle_target/release/gw_family_catalog}
+# Aborts before the rm -f of this unit's previous outputs, so a missing binary cannot destroy them. (§6am)
+[ -x "$BIN" ] || { echo "[$(basename "$BED" .bed)] FATAL: gw_family_catalog not executable at $BIN (set GWCAT)" >&2; exit 2; }
 # The big-data disk is a manual WSL mount and is often absent; fall back to the Desktop Reference copy
 # rather than failing every unit with "failed to open FASTA".
 FA=${SOTO_FASTA:-}

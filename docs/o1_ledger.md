@@ -5360,3 +5360,50 @@ salvage/gate_onoff citations — **their provenance is UNRESOLVED.**
 ⚠**SCOPE: 40 of ~657 bench scripts = ~6%**, and the selection was mine, not random. **Absence from this
 report is not evidence about a script.** Static reading establishes *prospective capability to fail*; it
 does NOT establish that any recorded number was produced vacuously. That needs a run, per script.
+
+## §6an — The ten false-PASS gates repaired; every one retains residual holes (09-01)
+
+10 scripts / **12 files, 721 insertions, 89 deletions**; all 12 parse (`bash -n` / `py_compile`, my own
+check). **Zero data or doc files touched** — `bench/soto/gate_sensitivity.tsv` is byte-identical at
+md5 `18156526`, so the committed evidence quoted in `gate_robustness.md` is intact. Nothing was executed.
+
+Every repair follows `byte_identity_gate.sh` (f7ed833): a real overridable default path, a **hard abort
+with a nonzero exit BEFORE any work or truncation**, and a stated reason. Verified independently: all 10
+**can now fail** before printing a verdict, and all 10 **preserve behaviour** on a fully-provisioned run.
+
+**Notable repairs.** `gate_sensitivity_sweep.sh` now aborts above the truncation, **copies the previous
+$SUM to `.prev.<timestamp>` before rewriting**, stamps binary+commit+REASON into the new file, and adds a
+freshness backstop requiring all NBED+1 units to produce a `copies.tsv` newer than a pre-run stamp —
+because `recompute_perchrom.sh` exits 0 even when every unit dies. `family_def_newbam_validate.py` now
+**aborts when its two arms resolve to the same inode** (the symlink defect). ⚠the agent deliberately did
+NOT change `recompute_perchrom.sh`'s exit contract (other callers depend on it) and did NOT touch
+`soto_cache_score.py`'s 4-leg `hit()` — flagged as science, not a guard.
+
+**⚠⚠ RESIDUAL HOLES — THE REPAIRS CLOSED THE HEADLINE MECHANISM, NOT EVERY ROUTE.** Each was found by an
+independent verifier reading the repaired file; none is fixed:
+
+* **`family_def_airtight_panel.py`** — the positive control is **panel-wide**, so **3 of the 7
+  counterexamples still pass on ABSENCE of evidence**: all 9 pairs of the name-coincidence cases (NDUFS,
+  NDUFA, COX) have ZERO Hd records. The under-resolution abort also fires only AFTER every verdict is
+  printed. ⟹**its PASS is still not citable as a flag verdict.**
+* **`salvage_validation.sh`** — Part A **prints the three md5s but never COMPARES them**: if OFF run1 ≠
+  OFF run2, or ON == OFF (salvage inert), nothing aborts and it proceeds to "DONE".
+* **`soto_family_validate.py`** — the repair closed famCN=0 but **NOT famCN=1**: every query span is cut
+  from the minimap2 TARGET, so a self-hit is guaranteed and `min(famcn) > 0` is **satisfied by
+  construction**. `SOTO_MIN_HIT_FRAC=0` also disables the evidence floor by default.
+* **`gate_onoff_gw.sh`** — **the gate is never required to have FIRED**: `gated_merges` is recorded but
+  never checked, so if 0 merges are gated genome-wide the ON and OFF arms are the same computation and
+  "lost=0 gained=0" is again vacuous. Also truncates $SUM on every run while `continue`-ing past latched
+  contigs, so a resumed run scores only what it ran this time.
+* **`o4_diploid_validate.py`** — the positive control and empty-block guard are **floors of ONE, not
+  proportions**; the reuse stamp binds the query but **never the targets**, so PAFs built against the
+  wrong targets are accepted; and a **failed determinism check never aborts**.
+* **`validate_exon_sum.py`** — per-family aligner vacuity survives (the guard is genome-wide only), so a
+  family whose minimap2 exits 0 with empty stdout still scores purity 1/n and **strengthens** the verdict.
+* **`rna_reframe_validate.py`** — `except KeyError: continue` on the `de` tag is the largest hole: a
+  tag-stripped BAM silently empties the computation.
+* **`psv_phase_validate.py`** — guards stop at the inputs and never reach the scoring loop; every locus
+  can be discarded by the size filter and a verdict is still printed.
+
+⟹**a repaired gate is capable of failing, which is strictly better than before, but "PASS" from any of
+these still needs its evidence count read.** ⚠**28 dead-binary scripts remain UNAUDITED** (§6am).

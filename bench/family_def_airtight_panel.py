@@ -13,6 +13,13 @@ hand-verifiable panel where each case is AIRTIGHT on two independent signals:
     - retrocopies: processed pseudogene vs parent (homologous but resolvable/dispersed)
 Each is verified against the genome cDNA homology so the panel is trustworthy, unlike the
 over-merged all-vs-all. Run: python bench/family_def_airtight_panel.py
+
+SCOPE (§6am) — THIS PANEL NEVER INVOKES THE PIPELINE. Its only evidence is ANNOTATION-derived
+cDNA all-vs-all homology (rep_ava.tsv) plus gene coordinates, so it is structurally BLIND to
+every RUSTLE_* flag and to any collapse/representative/gate change: both arms of such a flag
+return identical rows BY CONSTRUCTION, and "identical" here is not a verdict. A PASS printed
+below is NOT citable as evidence about a flag, a binary, or any pipeline output — it adjudicates
+the ANNOTATION-level family definition only.
 """
 import collections
 import json
@@ -22,9 +29,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from family_def_genomewide import GENES_BED
-from family_def_read_filters import dna_homology
+from family_def_read_filters import AVA, dna_homology
 
-GFF = "/mnt/c/Users/jfris/Desktop/GGO_genomic.gff"
+# §6am: the previous default (/mnt/c/Users/jfris/Desktop/GGO_genomic.gff) DOES NOT EXIST, so the
+# coordinate fallback below was dead code and any symbol absent from GENES_BED stayed silently
+# uncoordinated. Gorilla-native RefSeq GFF (GCF_029281585.2); overridable via GGO_GFF.
+GFF = os.environ.get("GGO_GFF", "/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff")
 
 # curated, named, well-characterized real families + counterexamples (gene symbols as in the
 # gorilla RefSeq annotation; verified below against cDNA homology)
@@ -48,6 +58,14 @@ COUNTER = [
 
 
 def main():
+    # Guard (§6am): hard abort BEFORE any scoring or output truncation when an evidence file is
+    # missing — prevents a missing input from degrading into an empty evidence set on which the
+    # negative criteria below pass by default.
+    for label, path in (("gene coordinates (GENES_BED)", GENES_BED),
+                        ("cDNA all-vs-all homology (AVA)", AVA)):
+        if not os.path.exists(path):
+            sys.exit(f"ABORT: {label} missing: {path}")
+
     coord = {}
     for src in (GENES_BED,):
         with open(src) as f:
@@ -58,6 +76,12 @@ def main():
     # supplement coords from the GFF for symbols not in GENES_BED
     need = {g for _, gs in REAL + COUNTER for g in gs if g not in coord}
     if need:
+        # Guard (§6am): the coordinate fallback is only sound if the GFF is actually there. With
+        # the old dead path this loop raised nothing today only because `need` happened to be
+        # empty; an uncoordinated member makes its pairs undecidable and scores as a free pass.
+        if not os.path.exists(GFF):
+            sys.exit(f"ABORT: {len(need)} panel symbol(s) absent from GENES_BED "
+                     f"({', '.join(sorted(need))}) and the GFF is missing: {GFF}")
         for line in open(GFF):
             if line.startswith("#") or "\tgene\t" not in line:
                 continue
@@ -67,6 +91,17 @@ def main():
                 coord[m.group(1)] = (f[0], int(f[3]), int(f[4]))
 
     Hd, _ = dna_homology()
+
+    # POSITIVE CONTROL (§6am): every counterexample criterion is a NEGATIVE ("zero homology",
+    # "no airtight edge") and therefore passes BY DEFAULT on an empty evidence set. Require the
+    # homology evidence to be loaded AND to demonstrably cover this panel's own gene namespace
+    # before any verdict is printed — otherwise a null result is vacuous, not a finding.
+    panel_genes = {g for _, gs in REAL + COUNTER + PSEUDO for g in gs}
+    n_touch = sum(1 for a, b in Hd if a in panel_genes or b in panel_genes)
+    if not Hd or n_touch == 0:
+        sys.exit(f"ABORT: homology evidence not loaded — {len(Hd)} pairs total, {n_touch} touching "
+                 f"panel genes, from {AVA}. A negative verdict on an empty evidence set is vacuous.")
+    print(f"[positive control] homology evidence: {len(Hd)} pairs, {n_touch} touch a panel gene")
 
     def overlaps(a, b):
         if a not in coord or b not in coord:
@@ -136,6 +171,19 @@ def main():
           f" (+{len(PSEUDO)} pseudogene-limitation case)")
     print("  KEY: the DISJOINT-loci condition is what makes homology airtight — without it the")
     print("       cDNA self-alignment bridges overlapping/nested neighbours at id~1.0 (the over-merge).")
+
+    # Guard (§6am): abort BEFORE truncating the committed TSV/JSON when the panel did not fully
+    # resolve. A case whose members were not all located has undecidable pairs (no coords ->
+    # "no overlap", no Hd record -> "no edge"), which is a free pass for the counterexamples;
+    # a partial panel must exit nonzero instead of overwriting the recorded result.
+    adjudicated = [r for r in rows if r["kind"] in ("real", "counter")]
+    unresolved = [r for r in adjudicated if r["pres"] < r["tot"] or r["n_pairs"] == 0]
+    print(f"  resolved {len(adjudicated) - len(unresolved)}/{len(REAL) + len(COUNTER)} adjudicated "
+          f"cases (every member located, >=1 pair)")
+    if unresolved:
+        sys.exit("ABORT: panel under-resolved, outputs NOT written — "
+                 + "; ".join(f"{r['case']}: {r['pres']}/{r['tot']} members located, "
+                             f"{r['n_pairs']} pairs" for r in unresolved))
 
     # reusable TSV: case  kind  members  airtight  min_id  min_cov  n_edge/n_pairs  n_overlap
     here = os.path.dirname(os.path.abspath(__file__))

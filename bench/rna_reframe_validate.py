@@ -1,7 +1,29 @@
-import csv, json, pysam
+import csv, json, os, sys, pysam
 from collections import defaultdict
-BAM="/home/juanfra/winloci_scratch/GGO_mm.bam"
+# Real, overridable defaults (winloci_scratch is a SYMLINK to /mnt/linuxdisk/.../winloci_scratch and
+# RESOLVES; the bench/* tables are repo-relative, so this script must be run from the repo root).
+BAM=os.environ.get("RNA_REFRAME_BAM","/home/juanfra/winloci_scratch/GGO_mm.bam")
+META=os.environ.get("RNA_REFRAME_META","/home/juanfra/winloci_scratch/denovo_transcripts.meta.tsv")
+SUN='bench/sun_identifiability.tsv'
+FAMS='bench/denovo_families.tsv'
+EDGES='bench/denovo_family_edges.tsv'
+# GUARD (o1_ledger.md §6am): this instrument had NO existence check anywhere, so a missing or empty
+# input (wrong cwd, unbuilt table) produced an EMPTY computation that still printed a rate as a verdict.
+# Checked BEFORE the BAM is opened and before any number is computed.
+for p in (BAM, SUN, FAMS, EDGES, META):
+    if not os.path.exists(p):
+        sys.exit("ABORT: required input missing: %s  (bench/* paths are repo-relative -- run from the repo root; scratch inputs are pipeline outputs)"%p)
+    if os.path.getsize(p)==0:
+        sys.exit("ABORT: required input is EMPTY: %s  (an empty evidence set scores as a pass -- §6am)"%p)
+# GUARD (§6am): every section fetches from the BAM; without an index fetch() dies MID-RUN, after
+# section (A) has already printed a quotable verdict line.
+if not any(os.path.exists(x) for x in (BAM+".bai", BAM+".csi", os.path.splitext(BAM)[0]+".bai")):
+    sys.exit("ABORT: no index (.bai/.csi) beside %s -- bam.fetch() cannot run"%BAM)
 bam=pysam.AlignmentFile(BAM,"rb"); refs=set(bam.references)
+# GUARD (§6am): mapq0frac returns (0,0) for any chrom not in `refs`, so an empty header would read as
+# "no MAPQ-0 problem" over every copy.
+if not refs:
+    sys.exit("ABORT: BAM header lists 0 reference sequences: %s"%BAM)
 def mapq0frac(chrom,s,e,cap=3000):
     if chrom not in refs: return (0,0)
     n=m0=0
@@ -13,30 +35,64 @@ def mapq0frac(chrom,s,e,cap=3000):
     return (n,m0)
 
 # ---- (A) MAPQ0 over KNOWN-ambiguous SUN co-located catalog copies ----
-sun=list(csv.DictReader(open('bench/sun_identifiability.tsv'),delimiter='\t'))
+sun=list(csv.DictReader(open(SUN),delimiter='\t'))
+# GUARD (§6am): a header-only SUN table makes every downstream rate 0/0.
+if not sun:
+    sys.exit("ABORT: %s has a header but 0 data rows -- sections (A),(B),(D) would all score an empty set"%SUN)
+# GUARD (§6am): mapq0frac SILENTLY returns (0,0) for a chrom absent from the BAM header, so a contig
+# naming mismatch (e.g. RefSeq NC_073224.2 vs chr1) reads as "no MAPQ-0 problem". Abort when NOTHING
+# resolves; a partial mismatch is reported so a silently shrunken denominator cannot pass unnoticed.
+sun_chroms={r['chrom'] for r in sun}
+sun_missing=sorted(sun_chroms-refs)
+if len(sun_missing)==len(sun_chroms):
+    sys.exit("ABORT: none of the %d SUN contigs is in the BAM header (naming mismatch: SUN has e.g. %s; BAM has e.g. %s) -- mapq0frac would report 0 reads / 0%% ambiguous for EVERY copy"%(
+        len(sun_chroms),sun_missing[0],sorted(refs)[0]))
+if sun_missing:
+    print("NOTE: %d/%d SUN contigs absent from the BAM header (%d/%d rows are skipped silently by mapq0frac): %s"%(
+        len(sun_missing),len(sun_chroms),sum(1 for r in sun if r['chrom'] in set(sun_missing)),len(sun),",".join(sun_missing[:8])))
 tier_n=defaultdict(int); tier_m0=defaultdict(int)
 tot_n=tot_m0=0
 for r in sun:
     n,m0=mapq0frac(r['chrom'],int(r['start']),int(r['end']))
     tier_n[r['tier']]+=n; tier_m0[r['tier']]+=m0
     tot_n+=n; tot_m0+=m0
+# GUARD (§6am): with 0 reads collected the shipped max(1,tot_n) printed "0.0% ambiguous" -- an empty
+# evidence set wearing the clothes of a measurement. Abort instead of publishing a rate.
+if tot_n==0:
+    sys.exit("ABORT (A): 0 primary reads collected over %d SUN copies -- no evidence for a MAPQ-0 rate (check the BAM region coverage and the contig names)"%len(sun))
 print("=== (A) MAPQ0 over SUN co-located catalog (known E_c-territory) ===")
-print("ALL sun copies: reads=%d mapq0=%d = %.1f%% ambiguous"%(tot_n,tot_m0,100*tot_m0/max(1,tot_n)))
+print("ALL sun copies: reads=%d mapq0=%d = %.1f%% ambiguous"%(tot_n,tot_m0,100*tot_m0/tot_n))
 for t in sorted(tier_n):
+    n_copies=sum(1 for r in sun if r['tier']==t)
+    # GUARD (§6am): a tier with 0 reads has no rate; max(1,tier_n[t]) used to print it as 0.0% ambiguous.
+    if tier_n[t]==0:
+        print("  tier%s: reads=0 mapq0=0 = UNEVALUABLE (no reads collected)  (n_copies=%d)"%(t,n_copies))
+        continue
     print("  tier%s: reads=%d mapq0=%d = %.1f%% ambiguous  (n_copies=%d)"%(
-        t,tier_n[t],tier_m0[t],100*tier_m0[t]/max(1,tier_n[t]),sum(1 for r in sun if r['tier']==t)))
+        t,tier_n[t],tier_m0[t],100*tier_m0[t]/tier_n[t],n_copies))
 
 # ---- (B) E_c subset E_r : do co-located catalog families' copies co-group in denovo E_r? ----
 # map each sun copy (chrom,start,end) to a denovo locus by overlap; check same denovo family
-META="/home/juanfra/winloci_scratch/denovo_transcripts.meta.tsv"
 dn=[]
 for r in csv.DictReader(open(META),delimiter='\t'):
     dn.append((r['id'],r['chrom'],int(r['start']),int(r['end'])))
 dn_by_chrom=defaultdict(list)
 for i in dn: dn_by_chrom[i[1]].append(i)
+# GUARD (§6am): with 0 denovo loci find_dn() returns None for everything, so every copy counts as
+# "unmapped" and (B),(C),(D) all report an empty set as a clean result.
+if not dn:
+    sys.exit("ABORT (B): %s yielded 0 denovo loci -- find_dn() can only return None"%META)
+# GUARD (§6am): the (C)/(D) fetch loops skip any locus whose chrom is not in `refs` SILENTLY; if none
+# resolves, family_ec_visible() returns False for every family and (D) reads as "all EC_DROPPED".
+if not (set(dn_by_chrom) & refs):
+    sys.exit("ABORT (B): none of the %d denovo-meta contigs is in the BAM header (naming mismatch) -- every de-tie fetch would be skipped silently"%len(dn_by_chrom))
 loc2fam={}
-for r in csv.DictReader(open('bench/denovo_families.tsv'),delimiter='\t'):
+for r in csv.DictReader(open(FAMS),delimiter='\t'):
     for m in r['members'].split(','): loc2fam[m]=r['family_id']
+# GUARD (§6am): an empty locus->family map sends every copy down the `nofam` branch, leaving
+# evaluable==0 and no split to attribute -- i.e. a vacuous PASS of (B) and (C).
+if not loc2fam:
+    sys.exit("ABORT (B): %s yielded 0 locus->family assignments"%FAMS)
 def find_dn(chrom,s,e):
     best=None;bov=0
     for (i,c,ds,de) in dn_by_chrom.get(chrom,[]):
@@ -75,9 +131,17 @@ print("multi-copy sun families with >=2 copies mapped to denovo loci: %d"%multi_
 print("  all copies in ONE denovo E_r family (E_r contains E_c grouping): %d"%same)
 print("  copies split across >=2 denovo E_r families (genuine split)   : %d"%diff)
 print("  no multi-copy E_r label at all (UNEVALUABLE, not an E_c drop)  : %d"%no_er_family)
-print("  => containment rate among evaluable: %d/%d = %.1f%%"%(same,evaluable,100*same/max(1,evaluable)))
+# GUARD (§6am): evaluable==0 is an EMPTY denominator; the shipped max(1,evaluable) printed it as
+# "0/0 = 0.0%", a containment verdict computed over nothing. Print the diagnostics, then abort below.
+if evaluable:
+    print("  => containment rate among evaluable: %d/%d = %.1f%%"%(same,evaluable,100*same/evaluable))
+else:
+    print("  => containment rate among evaluable: UNEVALUABLE (0 families carry a multi-copy E_r label)")
 print("  sun copies with no overlapping denovo locus (not de-novo expressed): %d"%unmapped)
 print("  denovo locus not in any multi-copy E_r family: %d"%nofam)
+if not evaluable:
+    sys.exit("ABORT (B): 0 evaluable families (checked=%d, unmapped copies=%d, loci with no family=%d) -- no containment rate can be reported"%(
+        multi_copy_checked,unmapped,nofam))
 
 # ---- (C) Correctly attribute the splits: EDGE_LINKED (a cross-family core_recip edge exists,
 #          i.e. E_r component over-fragmentation) vs OPERATIONAL-SHARED-EXON leak (NO core_recip edge,
@@ -87,11 +151,19 @@ DELTA=0.005; DE_MAX=0.05; MIN_READS=3
 coord={i[0]:(i[1],i[2],i[3]) for i in dn}   # dn_locus -> (chrom,start,end)
 # homology edges present in the operational E_r oracle (core_recip>=0.13 -> connected components = families)
 er_edge=set()
-try:
-    for r in csv.DictReader(open('bench/denovo_family_edges.tsv'),delimiter='\t'):
-        er_edge.add(frozenset((r['a'],r['b'])))
-except FileNotFoundError:
-    er_edge=None
+# GUARD (§6am): the FileNotFoundError here was SWALLOWED, leaving er_edge empty/None -- which makes
+# cross_edge False for every split and labels 100% of them OPERATIONAL-SHARED-EXON-LEAK by default,
+# i.e. the headline of section (C) produced by a missing file. The read is now unguarded (existence
+# was checked up front) and the EVIDENCE itself is checked below.
+for r in csv.DictReader(open(EDGES),delimiter='\t'):
+    er_edge.add(frozenset((r['a'],r['b'])))
+if not er_edge:
+    sys.exit("ABORT (C): 0 core_recip edges read from %s -- every split would be labelled OPERATIONAL-SHARED-EXON-LEAK by construction"%EDGES)
+# GUARD (§6am): edge endpoints and denovo loci must share an id namespace, or `frozenset((a,b)) in
+# er_edge` can never match and the leak label is again true by construction rather than by measurement.
+if not {x for e in er_edge for x in e} & {i[0] for i in dn}:
+    sys.exit("ABORT (C): no endpoint of the %d edges in %s matches a denovo locus id from %s (id-namespace mismatch) -- cross_edge could never be True"%(
+        len(er_edge),EDGES,META))
 def detie_reads(a_loc,b_loc,maxwin=400000,qcap=8000):
     """Faithful read_conflict.rs de_tied count between two DN loci (best/min de per read per locus)."""
     best=defaultdict(dict)
@@ -188,3 +260,8 @@ print("fully-Tier-1 SUN families: EC_VISIBLE(form a de-tie edge, SURVIVE E_c)=%d
     n_visible,n_dropped,SIZE_CAP,n_skip,n_uncov))
 if ev: print("  => %d/%d = %.1f%% of evaluable fully-Tier-1 families are E_c-VISIBLE (a de-tie edge forms). EC_DROPPED=%d."%(
     n_visible,ev,100*n_visible/ev,n_dropped))
+else:
+    # GUARD (§6am): ev==0 printed NOTHING and exited 0 -- the DECISIVE section silently evaluating
+    # nothing is indistinguishable from it passing. Say so, and fail.
+    print("  => UNEVALUABLE: 0 fully-Tier-1 SUN families were evaluable (skip=%d, uncov=%d) -- the decisive test measured nothing."%(n_skip,n_uncov))
+    sys.exit("ABORT (D): 0 evaluable fully-Tier-1 families -- no EC_VISIBLE/EC_DROPPED claim can be made")

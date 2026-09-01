@@ -26,7 +26,7 @@ export SOTO_CACHE
 NP="${1:-3}"   # --cross-chrom units are heavier than the old default-mode ones (WSL2 memory)
 [ -d "$PC/beds" ] || { echo "per-chrom BEDs missing"; exit 1; }
 NCH=$(ls "$PC/beds"/*.bed | wc -l)
-echo "per-chrom recompute: $NCH chroms (P=$NP) + 1 cross-chrom pass  (binary $(date -r "${GWCAT:-/mnt/c/Users/jfris/Desktop/Rustle/target/release/gw_family_catalog}" '+%m-%d %H:%M' 2>/dev/null))"
+echo "per-chrom recompute: $NCH chroms (P=$NP) + 1 cross-chrom pass  (binary $(date -r "${GWCAT:-/mnt/linuxdisk/home/juanfraitu/rustle_target/release/gw_family_catalog}" '+%m-%d %H:%M' 2>/dev/null))"
 t0=$(date +%s 2>/dev/null || echo 0)
 # cross-chrom pass in background (overlaps the per-chrom pool). Its BAM is the 18 cross-chrom families'
 # regions (~1.9 GB) and --cross-chrom is heavy, so give it a long timeout (the default 1800s truncated it).

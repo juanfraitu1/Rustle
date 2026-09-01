@@ -34,8 +34,10 @@ import tempfile
 import pysam
 
 SCRATCH = "/home/juanfra/winloci_scratch"
-COPIES = f"{SCRATCH}/gw_conflict_catalog.copies.tsv"
-GENOME = f"{SCRATCH}/GGO.fasta"
+# Real, overridable defaults (the scratch path is a symlink onto /mnt/linuxdisk and DOES resolve — see
+# docs/o1_ledger.md §6am; it is the silent *success* of these paths that let an empty run score as a PASS).
+COPIES = os.environ.get("SOTO_COPIES", f"{SCRATCH}/gw_conflict_catalog.copies.tsv")
+GENOME = os.environ.get("SOTO_GENOME", f"{SCRATCH}/GGO.fasta")
 MM2 = os.environ.get("RUSTLE_MINIMAP2", "/home/juanfra/miniforge3/bin/minimap2")
 # Soto keeps mappings covering >99% of each EXON (shared exons), and groups genes that SHARE EXONS — NOT whole
 # transcripts. So the unit is an exon-sized homologous block, not the full transcript: a qualifying "shared-exon"
@@ -43,6 +45,16 @@ MM2 = os.environ.get("RUSTLE_MINIMAP2", "/home/juanfra/miniforge3/bin/minimap2")
 # coverage is stricter than Soto and wrongly fails paralogs that share only some exons.)
 MIN_EXON_BP = 200
 MIN_ID = 0.90
+# Floor on the fraction of eligible copy spans that must produce at least one qualifying hit. Every span is
+# cut FROM the genome that is also the minimap2 target, so a working run self-aligns essentially all of them;
+# the floor is <1.0 only to tolerate spans that are all-N / fully masked. Overridable, but lowering it is
+# lowering the bar for "this instrument is allowed to certify anything at all" (docs/o1_ledger.md §6am).
+MIN_HIT_FRAC = float(os.environ.get("SOTO_MIN_HIT_FRAC", "0.90"))
+
+
+def die(msg):
+    """Hard abort with a stated reason and a nonzero exit (docs/o1_ledger.md §6am)."""
+    sys.exit(f"SOTO VALIDATE ABORT: {msg}")
 
 
 def load_families():
@@ -61,8 +73,20 @@ def load_families():
 
 
 def main():
+    # §6am guard: a missing/empty catalog, genome or aligner must abort HERE, before any work — otherwise
+    # the run continues on an empty evidence set, which the MAD<1 test below scores as a 100% pass.
+    if not os.path.isfile(COPIES) or os.path.getsize(COPIES) == 0:
+        die(f"copies catalog missing or empty: {COPIES} (override with SOTO_COPIES=...)")
+    if not os.path.isfile(GENOME) or os.path.getsize(GENOME) == 0:
+        die(f"genome FASTA missing or empty: {GENOME} (override with SOTO_GENOME=...)")
+    if not (os.path.isfile(MM2) and os.access(MM2, os.X_OK)):
+        die(f"minimap2 not executable: {MM2} (override with RUSTLE_MINIMAP2=...)")
+
     fams = load_families()
     copies = [c for v in fams.values() for c in v]
+    # §6am guard: zero families = nothing to test; the rates printed at the end would be 0/0 (or vacuous).
+    if not fams:
+        die(f"no families with >=2 copies parsed from {COPIES} — nothing to validate")
     # key copies by (chrom,start,end) — denovo_transcripts.fa has DUPLICATE tids, so we source the copy
     # sequence from the GENOMIC SPAN (chrom:start-end) instead, which is also exactly what Soto maps (genomic
     # SD DNA, not spliced transcripts). Each copy gets a unique query name from its locus.
@@ -82,6 +106,9 @@ def main():
                     continue
                 seen.add(qn)
                 out.write(f">{qn}\n{fa.fetch(c['chrom'], c['start'], c['end'])}\n")
+        # §6am guard: no query written = nothing is aligned; empty hits -> famCN all zero -> MAD 0.0 -> "pass".
+        if not seen:
+            die("no copy genomic spans written; nothing to align")
         print(f"wrote {len(seen)} copy genomic spans; mapping back to the genome (asm20, DNA-to-DNA)...")
         # asm20 (DNA-to-DNA, up to ~20% divergence = paralogs); -N50 -p0.5 keeps paralog secondaries; --eqx.
         paf = subprocess.run(
@@ -104,6 +131,28 @@ def main():
         ident = (1.0 - de) if de is not None else (int(f[9]) / max(int(f[10]), 1))
         if aln_qbp >= MIN_EXON_BP and ident >= MIN_ID:
             hits.setdefault(qname, []).append((tname, ts, te, aln_qbp, ident))
+
+    # --- §6am guard: the alignment evidence itself, not just its inputs -------------------------------
+    # Every query span is CUT FROM `GENOME`, which is also the minimap2 target, so in a working run each
+    # span >= MIN_EXON_BP MUST at least self-align (full query coverage, identity 1.0). A copy with zero
+    # qualifying hits is therefore PROOF THE ALIGNMENT STEP FAILED, not evidence of a divergent paralog —
+    # and famCN=0 for every copy makes the mean-abs-deviation exactly 0.0, which `mad < 1.0` scores as
+    # "100% famCN-CONSISTENT" on no evidence at all (docs/o1_ledger.md §6am). Abort instead of certifying.
+    n_paf = sum(1 for line in paf.stdout.splitlines() if len(line.split("\t")) >= 12)
+    if n_paf == 0:
+        die("minimap2 exited 0 but returned 0 PAF records for spans cut from the target genome itself; "
+            f"stderr tail:\n{paf.stderr[-1000:]}")
+    eligible = {qname_of(c) for c in copies if (c["end"] - c["start"]) >= MIN_EXON_BP}
+    if not eligible:
+        die(f"no copy span reaches MIN_EXON_BP={MIN_EXON_BP}; no hit could ever qualify")
+    n_hit = sum(1 for q in eligible if hits.get(q))
+    frac = n_hit / len(eligible)
+    print(f"alignment evidence: {n_paf} PAF records; {n_hit}/{len(eligible)} eligible copy spans "
+          f"({100*frac:.1f}%) have a >={MIN_EXON_BP}bp, >={MIN_ID:.2f}-id hit")
+    if frac < MIN_HIT_FRAC:
+        die(f"only {n_hit}/{len(eligible)} ({100*frac:.1f}%) of copy spans align back to the genome they "
+            f"were cut from; floor is {100*MIN_HIT_FRAC:.1f}% (SOTO_MIN_HIT_FRAC). This is an alignment or "
+            "input failure, not biology, and every downstream rate would be vacuous")
 
     def overlaps(a_chrom, a_s, a_e, b_chrom, b_s, b_e):
         return a_chrom == b_chrom and a_s < b_e and b_s < a_e
@@ -137,7 +186,10 @@ def main():
                 shared_ok = False
                 break
         mad = sum(abs(x - sum(famcn) / len(famcn)) for x in famcn) / len(famcn) if famcn else 99
-        cn_ok = mad < 1.0
+        # §6am guard: MAD over an all-zero famCN vector is exactly 0.0, so a family whose copies produced NO
+        # map-back hits would score as "consistent". Zero observed loci is missing evidence, never agreement.
+        # (No-op in a correct run: a span cut from the target genome always self-aligns, so famCN >= 1.)
+        cn_ok = mad < 1.0 and min(famcn) > 0
         n_conf += shared_ok
         n_cn += cn_ok
         rows.append((fid, len(members), famcn, round(mad, 2), shared_ok, cn_ok))
