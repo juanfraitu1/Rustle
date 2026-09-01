@@ -4559,6 +4559,9 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ("weighted_partition".into(), std::env::var("RUSTLE_ER_WEIGHTED_PARTITION").unwrap_or_else(|_| "<unset>".into())),
         ("tier2_admit".into(), std::env::var("RUSTLE_TIER2_ADMIT").unwrap_or_else(|_| "<unset>".into())),
         ("collapse_exonic".into(), std::env::var("RUSTLE_COLLAPSE_EXONIC").unwrap_or_else(|_| "<unset>".into())),
+        // Changes WHICH TRANSCRIPTS COLLAPSE INTO ONE LOCUS -- i.e. what a NODE IS -- so an ON and an OFF
+        // catalog must not have byte-identical params.tsv (the M2 defect).
+        ("collapse_unstranded".into(), std::env::var("RUSTLE_COLLAPSE_UNSTRANDED").unwrap_or_else(|_| "<unset>".into())),
         ("minimap2".into(), params.minimap2.clone()),
     ]
 }
@@ -6351,6 +6354,13 @@ fn write_er_edge_dump(
         // here the `strand` column AND the stored sequence bytes of every unspliced rep. Without this row
         // an OFF and an ON catalog have byte-identical params.tsv, defeating this file's stated purpose.
         ("env.RUSTLE_READ_STRAND".into(), env("RUSTLE_READ_STRAND")),
+        // PRE-EXISTING M2 HOLES, closed here. `RUSTLE_READ_STRAND_MARGIN` is READ_STRAND's abstention
+        // threshold (`denovo_assemble.rs`), so two READ_STRAND arms at different margins were previously
+        // indistinguishable from their params.tsv. `RUSTLE_SPLICED_REP` changes rep selection
+        // (`family_detect::locus_reps`) AND the unspliced-strand collapse clause (`collapse_parent`), yet
+        // an ON and an OFF pair of SPLICED_REP arms had byte-identical params.tsv until this row existed.
+        ("env.RUSTLE_READ_STRAND_MARGIN".into(), env("RUSTLE_READ_STRAND_MARGIN")),
+        ("env.RUSTLE_SPLICED_REP".into(), env("RUSTLE_SPLICED_REP")),
         // Also an opt-in that changes the EDGE RULE, so a catalog must be able to name it. Omitting
         // this row is the M2 defect from the read-strand work, repeated: without it an ON and an OFF
         // arm have byte-identical params.tsv and a null result cannot be distinguished from a flag

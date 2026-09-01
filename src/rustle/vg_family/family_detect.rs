@@ -656,8 +656,17 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
     // spliced copies split 149 `+` / 218 `-`. So at a minus-strand gene -- SRGAP2 among them -- the intronic
     // unspliced cluster never even meets the spliced evidence, survives as an independent locus, and is
     // emitted as its own single-exon copy (§14, §20).
+    //
+    // `RUSTLE_COLLAPSE_UNSTRANDED` UN-WELDS that clause from `RUSTLE_SPLICED_REP`. `RUSTLE_SPLICED_REP`
+    // also changes WHICH transcript represents a locus (`pick_locus_rep` above), and it is that leg the
+    // end-to-end regression was attributed to (chr7 F1 0.570 -> 0.411, chr16 0.910 -> 0.761). The two
+    // effects cannot be separated while one variable gates both, so this one turns on the STRAND clause
+    // ALONE, leaving rep selection at its default. Threshold-free in the `is_chimeric_bridge` sense: it
+    // asks whether the strand field was MEASURED, not how large a number is. With NEITHER variable set the
+    // `else` branch below is reached unchanged, so the OFF arm is byte-identical by construction.
     let unstranded_unspliced =
-        matches!(std::env::var("RUSTLE_SPLICED_REP"), Ok(v) if v != "0" && !v.is_empty());
+        matches!(std::env::var("RUSTLE_SPLICED_REP"), Ok(v) if v != "0" && !v.is_empty())
+            || matches!(std::env::var("RUSTLE_COLLAPSE_UNSTRANDED"), Ok(v) if v != "0" && !v.is_empty());
     let exonic_collapse =
         matches!(std::env::var("RUSTLE_COLLAPSE_EXONIC"), Ok(v) if v != "0" && !v.is_empty());
     loop {
@@ -1451,6 +1460,102 @@ mod tests {
             2,
             "adjacent paralogs with low homology stay as two loci"
         );
+    }
+
+    // ---- RUSTLE_COLLAPSE_UNSTRANDED (the placeholder-strand un-weld) ----
+
+    /// Serializes the two tests below against each other. `collapse_parent` reads its switches from the
+    /// PROCESS environment, which cargo's harness shares across test threads. Every other collapse test in
+    /// this module builds strand `'+'` on both sides, where the two branches of `strand_conflict` are
+    /// equivalent, so none of them can be perturbed by what these two set.
+    static COLLAPSE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Save-and-restore for the three variables `collapse_parent` reads, so an ambient value in the
+    /// caller's shell cannot decide the result and neither test leaks into the other.
+    fn with_collapse_env<T>(set: &[(&str, &str)], f: impl FnOnce() -> T) -> T {
+        const VARS: [&str; 3] =
+            ["RUSTLE_SPLICED_REP", "RUSTLE_COLLAPSE_UNSTRANDED", "RUSTLE_COLLAPSE_EXONIC"];
+        let prior: Vec<(&str, Option<String>)> =
+            VARS.iter().map(|k| (*k, std::env::var(k).ok())).collect();
+        for k in VARS {
+            std::env::remove_var(k);
+        }
+        for (k, v) in set {
+            std::env::set_var(k, v);
+        }
+        let out = f();
+        for (k, v) in prior {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+        out
+    }
+
+    /// Build a transcript with an EXPLICIT strand. `tx` above hard-codes `'+'`, which is exactly the
+    /// placeholder this clause is about, so these tests cannot use it.
+    fn tx_strand(
+        tid: &str,
+        chrom: &str,
+        start: u64,
+        end: u64,
+        n_reads: u32,
+        strand: char,
+        introns: &[(u64, u64)],
+        seq: Vec<u8>,
+    ) -> DenovoTranscript {
+        DenovoTranscript { strand, ..tx(tid, chrom, start, end, n_reads, introns, seq) }
+    }
+
+    #[test]
+    fn collapse_unstranded_clause_merges_intronless_stub_into_minus_strand_gene() {
+        // THE CLAUSE. An INTRONLESS model has no canonical junction motif to derive a strand from, so its
+        // `'+'` is a placeholder, not a measurement. Strictly enclosed inside a spliced `'-'` gene
+        // (containment 1.0, same chrom), the ONLY thing separating the two is that placeholder.
+        let gene = tx_strand("gene", "c1", 1_000, 9_000, 8, '-',
+            &[(2_000, 3_000), (5_000, 6_000)], rand_seq(900, 0xD1));
+        let stub = tx_strand("stub", "c1", 4_000, 4_600, 4, '+', &[], rand_seq(600, 0xD2));
+        let txs = [gene, stub];
+        let p = DetectParams::default();
+
+        let off = with_collapse_env(&[], || collapse_loci_span_aware(&txs, &p).len());
+        assert_eq!(off, 2, "default: the placeholder '+' is treated as evidence and blocks the merge");
+
+        let on = with_collapse_env(&[("RUSTLE_COLLAPSE_UNSTRANDED", "1")], || {
+            collapse_loci_span_aware(&txs, &p).len()
+        });
+        assert_eq!(on, 1, "RUSTLE_COLLAPSE_UNSTRANDED: an UNMEASURED strand cannot block the merge");
+    }
+
+    #[test]
+    fn collapse_unstranded_keeps_genuine_antisense_spliced_pairs_apart_in_both_arms() {
+        // THE VALUE, pinned separately from the clause. When BOTH sides carry a junction-derived strand
+        // the field WAS measured, so opposite strands are real antisense and must stay two loci whether or
+        // not the variable is set. This is the mirror of the genuine-antisense cases the un-weld must not
+        // touch.
+        let minus = tx_strand("minus", "c1", 1_000, 9_000, 8, '-',
+            &[(2_000, 3_000), (5_000, 6_000)], rand_seq(900, 0xE1));
+        let plus = tx_strand("plus", "c1", 3_500, 4_500, 4, '+',
+            &[(3_800, 4_000)], rand_seq(700, 0xE2));
+        let anti = [minus.clone(), plus.clone()];
+        let p = DetectParams::default();
+
+        let off = with_collapse_env(&[], || collapse_loci_span_aware(&anti, &p).len());
+        let on = with_collapse_env(&[("RUSTLE_COLLAPSE_UNSTRANDED", "1")], || {
+            collapse_loci_span_aware(&anti, &p).len()
+        });
+        assert_eq!((off, on), (2, 2), "two MEASURED opposite strands stay two loci in BOTH arms");
+
+        // Control: the strand is the SOLE blocker above. Flip the enclosed model to '-' -- nothing else
+        // changes -- and the same pair merges in both arms, so the assertion above is not passing because
+        // containment or chrom happened to fail.
+        let same = [minus, DenovoTranscript { strand: '-', ..plus }];
+        let ctrl_off = with_collapse_env(&[], || collapse_loci_span_aware(&same, &p).len());
+        let ctrl_on = with_collapse_env(&[("RUSTLE_COLLAPSE_UNSTRANDED", "1")], || {
+            collapse_loci_span_aware(&same, &p).len()
+        });
+        assert_eq!((ctrl_off, ctrl_on), (1, 1), "same-strand control: containment and chrom do pass");
     }
 
     #[test]

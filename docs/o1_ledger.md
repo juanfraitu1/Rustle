@@ -5573,3 +5573,82 @@ the rule does not classify is too large to wave away.
 as an explanation of engulfment.** ⚠**n=27 informative**, one 12-family batch, one substrate; the
 `SharedAcrossFamilies` population genome-wide is unmeasured. ⚠the modal-share cut at 0.90 is a
 THRESHOLD — the bimodality is what carries the claim, not that particular number.
+
+## §6as — Engulfment: the cause is the STRAND PLACEHOLDER, and NEITHER fix ships (09-01)
+
+⛔**MY DIAGNOSIS WAS WRONG.** I framed engulfment as a missing chimera guard at collapse
+(`is_chimeric_bridge` at the gate but not at `collapse_parent`). Measured, the cause is elsewhere and is
+exact:
+
+* Strict cross-family engulfment on `arm_f2`: **60 copies**, strand table
+  **`{('+','-'): 58, ('-','+'): 2}` — ZERO same-strand engulfments.**
+* **All 370 single-exon copies carry `'+'` and NONE carries `'-'`**; the 308 multi-exon copies split
+  **exactly 154/154**. At node level **all 1,888 single-exon nodes are `'+'`, 0 are `'-'`.**
+* That `'+'` is the **PLACEHOLDER** from `denovo_assemble.rs:1512-1514` `strand.unwrap_or('+')`, not a
+  measurement.
+* Strict engulfment forces containment = **1.0 ≥ COLLAPSE_CONTAIN_FRAC 0.5**, the chrom test passes, and
+  `collapse_parent` phase 2 loops to a fixed point, so every shipped rep pair WAS compared ⟹
+  **`strand_conflict` (`family_detect.rs:671-676`) is the ONLY surviving clause.**
+
+⟹**a stub gets a placeholder `'+'`, the engulfing gene is `'-'`, and the strand clause BLOCKS the collapse
+that would have absorbed it. The stub then survives as a separate "copy".** Same root as §4n's
+orientation-guard finding, now shown to be what produces engulfment.
+
+**ARMS (each ~17-28 min, 17.2 GB peak, run strictly serially).**
+
+| | copies | families | NPIP | SharedAcrossFam | strictly engulfed |
+|---|---|---|---|---|---|
+| arm_f2 baseline | 678 | 121 | 14/31 | 98 | 60 |
+| **A0 OFF control** | — | — | — | — | — |
+| **A1** `RUSTLE_READ_STRAND=1` | 634 | 125 | **15/31** | 34 | 20 |
+| **A2** `RUSTLE_COLLAPSE_UNSTRANDED=1` | 497 | **87** | **14/31 held** | **5** | **1** |
+
+**✅ A0 is BYTE-IDENTICAL to `arm_f2` on all four artifacts, full files** (`cat.copies.tsv`
+`9849dcb45b63e48e7b9b4d4358113a10`). ⭐**A1's mechanism is confirmed at node level**: single-exon reps go
+**1,888 '+' / 0 '-' → 853 '+' / 511 '-'** while spliced reps stay put — the placeholder replaced by a
+measurement.
+
+**⛔ BOTH ARMS FIRE PRE-REGISTERED KILL CRITERIA — NOTHING SHIPS.**
+* **A1** fired 3: engulfed 20 (needed <15) · Shared 34 (needed <30) · largest family moved.
+* **A2** fired 3: **families 121 → 87 — 34 lost, and 25 of arm_f2's 121 lost EVERY copy span** (the plan
+  predicted at most 8 at risk: **blast radius ~4×**) · net E_r edges **−897** (gained 333, lost 1,230)
+  against a pre-registered ~237 · arm_f2's largest family **FRAGMENTED** (GWFAM79 n=54 → best match n=32,
+  Jaccard 0.509).
+* ⚠A2 **did** pass what it was aimed at: NPIP **held exactly** (0 gained, 0 lost, the same 14 loci)
+  despite 1,038 nodes absorbed; engulfed 60→1; Shared 98→5; amplification 2.7 (below the 6.5 hub-fusion
+  pole, above the 1.5 real-merge pole). **A target hit at the cost of a third of the catalog is not a fix.**
+
+**⛔ A NAMED ENDPOINT WAS SILENTLY DROPPED, AND IT FIRES AGAINST THE RECOMMENDED ARM.** "Family purity" —
+the single-copy housekeeping control (`bench/negative_control/check_housekeeping.py`, ALDOA / ATP5F1A /
+RPL13A) that this ledger's own tables carry as the 3/3 column — appears nowhere in the arm scorer. A
+refuter ran it and it **fires**. ⟹**re-run every arm with the control before any of this is revisited.**
+
+**⭐⭐ AND A FOURTH VACUOUS INSTRUMENT: THE SPLIT-ONLY CERTIFICATE CANNOT FAIL.**
+`gamma_quasi_clique_partition` (`family_split.rs:559-579`) seeds its stack with `all_components` and only
+ever pushes strictly smaller subsets, so **"every family is a subset of one E_r component" is a THEOREM of
+the code** — true for any edge set, any γ, any flag. It returned "0 straddling" in all four arms, and
+would do so whether the flag were safe or catastrophic. It is near-degenerate empirically too: arm_f2's
+E_r graph is **ONE component of 915 nodes carrying 80/121 families**, and **41/121 families ARE their whole
+component**. ⟹**it is not evidence of seed-invariance and must stop being quoted as such** (the real
+check is the 147-seed invariance panel). Joins §6al's class.
+
+**Also settled, both negative:**
+* **The mis-chain route is DEAD BY CONSTRUCTION**: `is_giant_intron_mischain` quantifies over
+  `rep.introns` and **58/60 engulfed copies have ZERO introns** ⟹ vacuously false at EVERY threshold pair.
+  Measured cost of lowering to 10 kb: brings **136/678 copies into scope to drop 3, none engulfed**.
+* **The O2 "tandem mis-alignment" reading is DEAD** — ⛔**this corrects §6aq's discriminator**: these reads
+  are **MAPQ median 60, 0/607 at MAPQ 0, NM/aligned median 0.00139**. They are clean unique alignments,
+  not mis-alignments. O2's 84.29% abstention over the 401 visible reads is CORRECT, and the 63 assignments
+  are right *given the catalog they were handed*. **An O1 defect with an O2 disclosure, not an O2 defect.**
+
+**KEPT (uncommitted → committed, all default-OFF):** the `RUSTLE_COLLAPSE_UNSTRANDED` un-weld (a 1-line
+OR that lets the strand clause be tested WITHOUT `RUSTLE_SPLICED_REP`'s rep-selection leg, which is what
+§4s's e2e regression was attributed to — the two could not be separated while one variable gated both),
+its params row, **two PRE-EXISTING M2 holes closed** (`env.RUSTLE_SPLICED_REP`,
+`env.RUSTLE_READ_STRAND_MARGIN` — both were read by the code and absent from every params.tsv, so an
+ON/OFF pair of SPLICED_REP arms would have been indistinguishable), and 2 tests. **826 passed / 0 failed
+/ 11 ignored** (824 + exactly the 2 new).
+
+⚠**one verifier agent died** (StructuredOutput retry cap) — 2 of 3 refuters returned, so verification is
+INCOMPLETE. Of those two, one CONFIRMED every engulfment number with two independent implementations
+agreeing pair-for-pair; the other refuted on discipline.
