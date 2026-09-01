@@ -288,3 +288,28 @@ Reusable, and it is the junction structure that decides — not the coverage, no
 | junction present **and PSV alleles SWITCH partway** | genuine **readthrough / fusion** of two real copies | biology — keep both, disclose |
 
 ⚠ measured on **n = 1 locus**. The distribution across the 71 engulfed copies is UNKNOWN.
+
+
+## 2026-09-01 — the engulfment arms (§6as)
+
+**Substrate:** `npip_cat/npip3.bam`, catalog `arm_f2` (node floor 2). Each arm ~17–28 min, 17.2 GB peak,
+run strictly serially. A0 (OFF, new binary) is **byte-identical** to `arm_f2` on all four artifacts
+(`cat.copies.tsv` md5 `9849dcb45b63e48e7b9b4d4358113a10`).
+
+| arm | copies | families | NPIP | SharedAcrossFam | strictly engulfed |
+|---|---|---|---|---|---|
+| baseline `arm_f2` | 678 | 121 | 14/31 | 98 | 60 |
+| `RUSTLE_READ_STRAND=1` | 634 | 125 | **15/31** | 34 | 20 |
+| `RUSTLE_COLLAPSE_UNSTRANDED=1` | 497 | **87** | 14/31 | **5** | **1** |
+
+⛔**NEITHER SHIPPED** — both fired pre-registered kill criteria. The second loses **34 families (25 losing
+every copy span)** and **897 net E_r edges**; the largest family fragments. **A target hit at the cost of a
+third of the catalog is not a fix.**
+
+**Root cause, measured:** 58 of 60 engulfments are `('+','-')`, **all 1,888 single-exon nodes carry the
+placeholder `'+'`** (`strand.unwrap_or('+')`), so `strand_conflict` is the only clause blocking the
+collapse that would absorb the stub.
+
+⚠**do NOT quote the split-only certificate as seed-invariance evidence** — it is a theorem of the code and
+cannot fail (register, §6as). ⚠the family-purity/housekeeping control was **absent from the arm scorer**
+and **fires** against the `READ_STRAND` arm; re-run every arm with it before revisiting.
