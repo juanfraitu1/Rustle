@@ -133,6 +133,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bi — E_c SPLITS the large families: the first orthogonal lever, and §6bg's FP source 2 RETRACTED (09-01)
 - §6bj — E_c refinement run as a catalog change: safe, real, and NOT general (09-01)
 - §6bk — Charge coverage on BOTH sequences: the strongest lever measured (09-01)
+- §6bl — Two-sided coverage on a SECOND substrate: the gain holds, the mechanism does not (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6793,6 +6794,10 @@ non-ZNF families here are simply out of E_c's reach, not that the rule fails on 
 
 ## §6bk — ⭐⭐ CHARGE COVERAGE ON BOTH SEQUENCES (BLAST qcovs/scovs): the strongest lever measured (09-01)
 
+> ⚠⚠ **ITS MECHANISM SECTION IS SUBSTRATE-SPECIFIC — see §6bl.** On the genome-wide catalog
+> the dropped edges are **1,099 bp not 282**, and the identity gap **vanishes (0.771 vs 0.772)**.
+> The precision GAIN reproduces; the "shared domain at higher identity" reading does NOT.
+
 The shipped clause charges coverage on the **shorter** sequence only —
 `cov = if ql <= tl { (qe-qs)/ql } else { (te-ts)/tl }`, `denovo_pipeline.rs:3110`. §6ba DISCLOSED
 `cov_longer` but never gated on it. Tested here. Instrument: `bench/er_both_coverage.py`, which
@@ -6861,3 +6866,47 @@ through a domain-sized alignment) and part is real short copies. Not separated h
 ⭐**Framing for the advisor**: it ADDS a constant but REMOVES an asymmetry — the one-sided clause is
 what let the TSS/TES boundary objection land (§6ay), since a short fragment can clear 0.50 of itself
 against a full-length partner. `RUSTLE_ER_COVERAGE_LONGER` already exists as the flag.
+
+## §6bl — TWO-SIDED COVERAGE ON A SECOND SUBSTRATE: the gain holds, the MECHANISM does not (09-01)
+
+§6bk was measured on `arm_f2` (3 contigs, 51 non-ZNF positive pairs). Repeated on the genome-wide
+fibroblast catalog — 13,196 reps / 2,075 edges / 1,070 copies / 356 families, same pipeline and
+parameters. Instrument: `bench/er_both_coverage_gw.py`.
+⭐**VALIDATION: the shipped edge count is reproduced EXACTLY again — 2,075.**
+
+### ✅ THE PRECISION GAIN REPRODUCES, WITH 3x THE POWER (167 non-ZNF positive pairs, vs 51)
+| longer-side floor | edges | fams | copies | nZ precision | nZ recall | nZ F1 |
+|---|---|---|---|---|---|---|
+| none (shipped) | 2,075 | 356 | 1,070 | 0.2803 | 0.9281 | 0.4306 |
+| 0.20 | 1,985 | 348 | 1,016 | 0.2835 | 0.8743 | 0.4282 |
+| **0.30** | 1,787 | 308 | 913 | 0.3149 | 0.8503 | **0.4595** |
+| 0.40 | 1,399 | 259 | 761 | 0.3495 | 0.7784 | 0.4824 |
+| **0.50 (symmetric)** | 975 | 200 | 576 | **0.4245** | 0.7066 | **0.5303** |
+
+⟹**F1 rises monotonically to the symmetric 0.50 here**, where on `arm_f2` 0.30 was the NPIP-neutral
+setting and ≥0.40 cost recall. **0.30 gains on BOTH substrates** (arm_f2 0.3182→0.4043; here
+0.4306→0.4595) at a much cheaper genome-wide cost: families −13%, copies −15% (against −23%/−31%).
+
+### ⛔⛔ BUT §6bk's MECHANISM DOES NOT REPRODUCE — RETRACT THE "SHARED DOMAIN" READING AS GENERAL
+| | arm_f2 dropped/kept | genome-wide dropped/kept |
+|---|---|---|
+| aligned bp on the shorter | **282** / 1,830 | **1,099** / 1,755 |
+| shorter length bp | 513 / 2,541 | 1,910 / 2,574 |
+| length ratio short/long | **0.176** / 0.707 | 0.412 / 0.769 |
+| **identity** | **0.854 / 0.787** | **0.771 / 0.772** |
+| either end single-exon | **89.1% / 31.5%** | 35.1% / 19.8% |
+
+⛔**The three claims that made §6bk's mechanism vivid all fail genome-wide**: the dropped alignment is
+**1,099 bp, not 282**; the identity gap is **0.771 vs 0.772 — GONE** (so "the false merges are HIGHER
+identity, no identity threshold can catch them" is **`arm_f2`-SPECIFIC**); and single-exon involvement
+is 35% vs 20%, not 89% vs 32%. Median `cov_longer` is **0.4810** here against 0.3175 on arm_f2.
+⟹**the clause still helps, but genome-wide it is removing PARTIAL-OVERLAP edges generally, not a
+distinctive shared-domain class.** ⚠**Do not tell the advisor "we are not fooled by shared domains" as
+a general claim** — that is one substrate's story. The general claim is the weaker, true one: *both
+sequences should be substantially covered before two loci are called the same gene.*
+
+⟹**DISPOSITION UNCHANGED, JUSTIFICATION WEAKENED.** `RUSTLE_ER_COVERAGE_LONGER = 0.30` is the setting
+that gains on both substrates and is NPIP-neutral on the one where NPIP is measurable. The symmetric
+0.50 is better genome-wide on F1 but costs **44% of families and 46% of copies** there and NPIP recall
+on `arm_f2` — too expensive to adopt on one substrate's F1.
+⚠ still offline on both; T8 unchanged — the real binary and the HUMAN 150-window panel remain unrun.
