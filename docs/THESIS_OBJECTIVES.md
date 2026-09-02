@@ -131,7 +131,7 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 | λ (edge connectivity) shipped as a per-family certificate | `lambda` / `cut_certified` | — |
 | Orientation guard shipped as default | spurious edges **28 → 3**; antisense families **7.09% → 0.64%** | HUMAN negative panel + GORILLA |
 | ONE path — `--refine` removed, hard error on O1 | — | — |
-| False-**merge** | **2/150 = 1.33%** [0.37, 4.73] | ⚠ **HUMAN**, a *specificity LOWER bound*, NOT a precision |
+| False-**merge** | **2/150 = 1.33%** [0.37, 4.73] — ⚠⚠**SUPERSEDED 2026-09-02 (§6bt): the current binary gives 3/150 = 2.00% [0.0068, 0.0571] on this same panel, on a DISJOINT set of windows — W063/W106 now emit nothing; W033/W034/W065 are new. The rate difference is not significant (2 vs 3 events); the INSTANCE change is the finding. 6/6 of the new edges carry a 2-read endpoint, i.e. the §6ac node floor 3→2.** | ⚠ **HUMAN**, a *specificity LOWER bound*, NOT a precision |
 | False-**omission** | **9/162 = 5.6%** [2.95, 10.22] | ⚠ **GORILLA**, excision ARM 3. Different species/design from the row above — **never pool** |
 | Reach | **22/40 = 0.5500** [0.398, 0.693], ~0.55 defensible genome-wide | HUMAN chr1; chr1 representative, Fisher p = 0.6090 |
 | Identity clause **never binds** | **0/728** | clause census |

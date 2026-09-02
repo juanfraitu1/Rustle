@@ -78,7 +78,7 @@ truth labels have NOT been re-measured; structural properties HAVE.
 
 | | |
 |---|---|
-| false-merge rate | **2/150 = 1.33%** [0.37, 4.73], power measured. ⚠ **HUMAN CHM13 v2.0 / A119b, 150 gene-tight single-locus windows — NOT the GGO catalog.** A **specificity and a LOWER bound**, not a precision (no positive stratum ⟹ no prevalence). ⭐**RE-MEASURED 2026-08-20 under the new defaults: unchanged at 2/150, same two windows** — while spurious E_r edges on the same panel fell **28 → 3** (`o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`) |
+| false-merge rate | **2/150 = 1.33%** [0.37, 4.73], power measured. ⚠⚠**SUPERSEDED 2026-09-02 (§6bt): the current binary gives 3/150 = 2.00% [0.0068, 0.0571] on this same panel, on a DISJOINT set of windows — W063/W106 now emit nothing; W033/W034/W065 are new. The rate difference is not significant (2 vs 3 events); the INSTANCE change is the finding. 6/6 of the new edges carry a 2-read endpoint, i.e. the §6ac node floor 3→2.**  ⚠ **HUMAN CHM13 v2.0 / A119b, 150 gene-tight single-locus windows — NOT the GGO catalog.** A **specificity and a LOWER bound**, not a precision (no positive stratum ⟹ no prevalence). ⭐**RE-MEASURED 2026-08-20 under the new defaults: unchanged at 2/150, same two windows** — while spurious E_r edges on the same panel fell **28 → 3** (`o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`) |
 | false-omission rate | **9/162 = 5.6%** [0.0295, 0.1022] |
 | identity-clause failures | **0/728** — the failure mode is localised to the coverage clause |
 | DNA vs RNA partition, same loci | **identical, 7/7** |

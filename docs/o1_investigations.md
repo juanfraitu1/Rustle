@@ -2213,8 +2213,15 @@ concentrated. **Report both, or neither.**
 
 ### 5. What this does and does not establish
 
-* ✅ The false-merge specificity is **stable at 1.33%** across a substantial change of defaults — the
-  strongest evidence yet that it is a property of the definition and not of an invocation.
+* ⚠⚠ **RESTATED 2026-09-02 (ledger §6bt).** This read *"the false-merge specificity is stable at
+  1.33% across a substantial change of defaults — the strongest evidence yet that it is a property of
+  the definition and not of an invocation."* Re-running the panel on the current binary shows it is
+  **half right**. The **RATE** is stable: **3/150 = 2.00%** [0.0068, 0.0571] against 2/150 = 1.33%,
+  2 vs 3 events, intervals overlapping almost entirely. The **INSTANCES are not**: the sets are
+  **disjoint** — W063 and W106 now emit **zero** copies and **zero** edges, and W033 `SRSF9`,
+  W034 `BAGE5`, W065 `ZNF566` are new. ⟹ *"a property of the definition, not of an invocation"* is
+  **not supported**; what the two runs share is a rate, not a failure mode. **6/6 of the new edges
+  carry a 2-read endpoint**, so the new set traces to the §6ac node floor 3 → 2.
 * ✅ The orientation guard's precision benefit is now **measured on an independent human negative
   panel**, not only on the GGO FP arm it was derived from: **28 → 3 edges**.
 * ❌ It is **still a specificity and a lower bound**. No positive stratum, no prevalence, no precision.

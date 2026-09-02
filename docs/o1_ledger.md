@@ -141,6 +141,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bq — PRE-REGISTRATION: what the coverage clause must do on the HUMAN negative panel (09-02)
 - §6br — The annotation CANNOT corroborate the 0.80-0.90 band: a 39.9x enrichment that was ONE STRING (09-02)
 - §6bs — The self-overlap defect is REAL, cross-species, and ABSENT from the current path (09-02)
+- §6bt — THE PANEL RUN: the mechanism transfers to HUMAN, and the BASELINE HAD MOVED (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7309,3 +7310,85 @@ as "fixed genome-wide."** Closing that gap is the genome-wide real-binary run al
 from §6bp — which now has a second reason to be run.
 
 ⟹ **blind-spot item 6 moves from "never audited" to MEASURED, with the caveat named.**
+
+## §6bt — ⭐⭐⭐ THE PANEL RUN: the mechanism transfers to HUMAN, and the BASELINE HAD MOVED (09-02)
+
+**Both arms on the CURRENT binary**, because the frozen 08-20 dump predates the node floor
+(3 → 2, §6ac) and could not be an OFF arm. `arm_off` and `arm_cl30` (floor 0.30), 150/150 windows
+each, harness `o1neg/run_arms.sh`, scorer `bench/o1neg_score_arms.py`.
+
+### ⚠⚠ FIRST, THE THING THAT INVALIDATES MOST OF §6bq: THE BASELINE IS NOT THE DOCUMENTED ONE
+
+| | 2026-08-20 (documented, Appendix A) | **current binary** |
+|---|---|---|
+| false-merge windows | **2/150 = 1.33%** [0.0037, 0.0473] | **3/150 = 2.00%** [0.0068, 0.0571] |
+| which windows | W063 `ZNF492`, W106 `ANKHD1` | **W033 `SRSF9`, W034 `BAGE5`, W065 `ZNF566`** |
+| E_r edges on the panel | 3 | 6 |
+
+⭐**THE SETS ARE DISJOINT. W063 AND W106 NOW EMIT ZERO COPIES AND ZERO EDGES.** ⟹ Appendix A's
+conclusion — *"the false-merge specificity is stable at 1.33%… the strongest evidence yet that it is
+a property of the definition and not of an invocation"* — is **half right and must be restated**:
+the **RATE** is stable (2 vs 3 events, intervals overlapping almost entirely), the **INSTANCES are
+not**. Two pathologies were fixed and three new ones appeared. ⚠**`1.33%` is quoted in 10 documents
+and is superseded; the current number is 2.00%.** Neither difference is significant — do not read
+the change as a regression, read it as *the panel was never re-run*.
+
+⛔**§6bq's P1, P2, P3 and P5 are VOID**: they named W063 and W106, which the current binary does not
+produce. **P4 survives** and is the one that mattered. This is the provenance trap the project keeps
+paying for — a pre-registration written against artifacts a superseded binary produced.
+
+### THE RESULT
+
+| arm | windows emitting ≥1 family | E_r edges | families | copies |
+|---|---|---:|---:|---:|
+| OFF | **3/150 = 2.00%** [0.0068, 0.0571] | 6 | 3 | 8 |
+| **ON, longer ≥ 0.30** | **1/150 = 0.67%** [0.0012, 0.0368] | **1** | **1** | **2** |
+
+⭐⭐**THE MECHANISM IS EXACT, AND IT WAS FIXED IN ADVANCE.** The rule pre-registered in §6bq — an
+edge dies iff `cov_longer < 0.30` — predicts every one of the six outcomes, on a **human** panel,
+from a clause developed entirely on **gorilla** NPIP:
+
+| window | edge | identity | cov_shorter | **cov_longer** | outcome |
+|---|---|---:|---:|---:|---|
+| W033 `SRSF9` | 0–2 | 0.7955 | 0.8457 | **0.1018** | removed |
+| W065 `ZNF566` | 1–6 | 0.8545 | 0.9218 | **0.0222** | removed |
+| W065 | 2–5 | 0.8254 | 0.5051 | **0.0783** | removed |
+| W065 | 5–6 | 0.8457 | 0.9665 | **0.0527** | removed |
+| W095 | 0–3 | 1.0000 | 0.5817 | **0.2357** | removed |
+| **W034 `BAGE5`** | 9–14 | 0.7527 | 0.5066 | **0.4604** | **KEPT** |
+
+✅**P4 PASSES — `ADDED=[]`, `GAINED=[]`.** No edge and no window appeared. The clause is a **pure
+restriction**, not a re-shuffle; that was a pre-registered falsifier and it held.
+
+⚠⚠**DO NOT SAY THE FALSE-MERGE RATE FELL BY TWO THIRDS.** §6bq said so before the result existed and
+it still governs: **3 events**, Wilson [0.0068, 0.0571] against [0.0012, 0.0368], almost entirely
+overlapping. **The rate movement is not evidence.** The evidence is that a rule fixed in advance
+predicted **6/6 edge outcomes across a species boundary**, and that the survivor is the one the
+mechanism says it cannot reach — W034's two nodes align over **46%** of the longer sequence, a
+genuine two-sided alignment, exactly the role W063 played in the pre-registration.
+
+### ⭐⭐⭐ AND THE NEW FALSE MERGES HAVE ONE CAUSE: THE NODE FLOOR
+
+Every endpoint, from `nodes.tsv`:
+
+| edge | endpoint A | endpoint B |
+|---|---|---|
+| W033 0–2 | 15 reads, 4 exons | **2 reads**, 1 exon, 311 bp |
+| W034 9–14 | 5 reads, 1 exon, stub | **2 reads**, 1 exon, 2,037 bp |
+| W065 1–6 | 53 reads, 1 exon, stub | **2 reads**, 1 exon, 179 bp |
+| W065 2–5 | **2 reads**, 1 exon, 489 bp | 11 reads, 1 exon, stub |
+| W065 5–6 | 11 reads, 1 exon, stub | **2 reads**, 1 exon, 179 bp |
+| W095 0–3 | **2 reads**, 2 exons | 22 reads, 1 exon, stub |
+
+⭐⭐⭐**6 OF 6 EDGES CARRY A 2-READ ENDPOINT — a node that CANNOT EXIST at the pre-08-30 floor of 3.**
+`NODE_MIN_READS` 3 → 2 shipped in §6ac for **+2 NPIP loci**, and its **precision cost was never
+measured**. This panel is where that cost is visible, and it appears to be the whole of the new
+false-merge set. ⚠**"Appears to be" until the control lands** — the arm at
+`RUSTLE_GATE_MIN_READS=3` is running; if it emits none of the three windows the attribution is
+measured rather than inferred. **Every one of these nodes is also single-exon or a stub**, tying
+this to the standing 26.8% single-exon-stub defect.
+
+⟹**STATUS.** The clause remains **default OFF**. What this run adds is (i) the first **cross-species**
+test of its mechanism, passed 6/6 with monotonicity intact; (ii) a **superseded headline** found by
+re-running a frozen panel; (iii) a **named, testable cause** for the current panel failures that
+implicates a default we shipped without pricing.
