@@ -128,6 +128,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bd — CROSS-COPY BORROWING IS INERT OR DEAD — and what that costs the isoform claim (09-01)
 - §6be — SEEDED MODE: the seed SUBSTRATE dominates, and a MULTI-seed reaches 30/31 (09-01)
 - §6bf — Is the seeded catalog BETTER as a catalog? NO (γ applied to both) — and the test cannot be neutral (09-01)
+- §6bg — Sources of false merges in BOTH modes: transitive closure, and one oversized family (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6547,3 +6548,74 @@ DIFFERENT questions**: the read path builds **coding families**, the seeded path
 genomic units**. **O1 is defined on RNA, so coding coherence is the right target — and the read path
 already optimises it.** The seeded mode's established value stays what §6be measured: **RECALL**
 (30/31 vs 14/31) and candidate generation, not definition.
+
+## §6bg — SOURCES OF FALSE MERGES IN BOTH MODES: transitive closure, and one oversized family (09-01)
+
+Labelled a same-family pair **CONCORDANT** when the two loci's CDS align under the project's own E_r
+rule, **DISCORDANT** otherwise. ⚠**DISCORDANT is a CANDIDATE false positive, not a proven one** — real
+paralogues diverge past 0.60 in coding sequence. Instruments: `bench/fp_sources_seeded.py`,
+`bench/fp_sources_read.py`.
+
+### ⚠⚠ READ THIS BEFORE ANY ABSOLUTE NUMBER — CDS CONCORDANCE IS A *RELATIVE* INSTRUMENT
+The same measure gives read-catalog precision **0.8411 on the 118 loci both catalogs see** (§6bf) and
+**0.1234 genome-wide**. The shared subset is loci the DNA projection found duplicated, so it is enriched
+for genuine paralogy. ⛔**DO NOT QUOTE 0.1234 AS THE READ CATALOG'S FP RATE.** Use the instrument for
+CONTRASTS within one run, never as a rate. (⚠the obvious explanation — that read loci are transcript
+spans clipping the CDS — was **tested and REFUTED**: 92.6% of read copies contain ≥0.9 of their CDS
+envelope vs 97.5% for seeded loci, and their genome-wide median span is 22,200 bp.)
+
+### ⭐⭐ FP SOURCE 1 — MEMBERSHIP CARRIED BY TRANSITIVE CLOSURE, NOT BY A DIRECT EDGE
+Seeded catalog, 6,352 same-family pairs with a CDS on both sides, baseline precision **0.7213**:
+directly-linked pairs are **0.9208** of concordant but only **0.4514** of discordant.
+⚠**the ledger's own confound applies — "direct-edge backing is CONFOUNDED WITH FAMILY SIZE"** — so it
+was stratified, and **it survives in every stratum, largest in the BIG families**:
+
+| family size | pairs | precision \| direct | precision \| transitive | lift |
+|---|---|---|---|---|
+| 2–4 | 393 | 0.9337 | 0.6875 | +0.246 |
+| 5–10 | 759 | 0.8910 | 0.4884 | +0.403 |
+| 11–30 | 1,247 | 0.8473 | 0.2091 | **+0.638** |
+| 31+ | 3,953 | 0.8183 | 0.2439 | +0.574 |
+
+⟹**transitive-only pairs in families ≥11 are 21–24% concordant against 82–85% for directly-linked ones.**
+**The same holds in the SHIPPED read catalog** (lift +0.158 / +0.400 / +0.232 / +0.071 across the same
+strata) ⟹**this is a property of defining families as CONNECTED COMPONENTS, not of the seeded mode.**
+
+**Filters measured (only worth taking if F1 RISES):**
+| filter | precision | recall | F1 |
+|---|---|---|---|
+| none | 0.7213 | 0.7889 | 0.7536 |
+| **direct edge required** | **0.8408** | 0.7264 | **0.7794** |
+| span ratio ≥ 0.50 | 0.8408 | 0.7132 | 0.7718 |
+| span ratio ≥ 0.80 | 0.8842 | 0.6379 | 0.7411 |
+| same chromosome | 0.8751 | 0.5668 | 0.6880 |
+| direct AND span ≥ 0.50 | 0.8898 | 0.6744 | 0.7673 |
+
+⟹**only the direct-edge requirement raises F1.** ⛔**"same chromosome" is the worst thing tried** — it
+destroys recall, i.e. dispersed paralogy is real and common.
+
+### ⭐⭐ FP SOURCE 2 — ONE OVERSIZED FAMILY THAT SURVIVES γ AND DOMINATES THE PAIR COUNT
+⛔**SHIPPED read catalog: `GWFAM2` — 47 members across 10 contigs (36 on NC_073244.2), E_r density
+0.2932 so it CLEARS γ=0.20, and only 21/1,035 = 2.0% of its pairs are CDS-concordant.** It contributes
+**1,081/3,144 = 34.4% of every same-family pair in the catalog.** Removing it lifts genome-wide precision
+0.1234 → 0.2007. The seeded catalog had the same shape (the 191-member component, density 0.1033) but γ
+**did** split that one. ⟹**a family's PAIR COUNT is quadratic in its size, so one blob above γ governs any
+pair-level statistic of the whole catalog — always report the largest family's share before a rate.**
+
+### ⚖️ γ IS THE WRONG LEVER FOR ONE CATALOG AND A POSSIBLE ONE FOR THE OTHER
+| γ | seeded F1 | read F1 |
+|---|---|---|
+| **0.20 (shipped)** | **0.7536** | 0.2251 |
+| 0.30 | 0.7478 | 0.2404 |
+| 0.40 (`--high-precision`) | 0.7181 | 0.2913 |
+| 0.50 | 0.7376 | 0.3039 |
+| 0.70 | 0.7250 | **0.3853** |
+
+⛔**On the seeded catalog F1 PEAKS AT THE SHIPPED 0.20 and `--high-precision` (0.40) is the WORST of the
+sweep.** On the read catalog F1 rises monotonically — but ⭐**`γ=0.20 + direct-edge` reaches F1 0.3645 at
+recall 0.8844, against γ=0.70's 0.3853 at recall 0.7531** ⟹ nearly the same F1 for **13 points more
+recall**. The direct-edge route is the cheaper one.
+
+⚠⚠**T8: THIS IS AN OFFLINE PROXY, SO IT IS A HYPOTHESIS GENERATOR, NOT A TEST.** No default moves on it.
+Before flipping anything, the direct-edge requirement must be run END-TO-END and judged on the partition,
+the HUMAN 150-window false-merge panel, and NPIP recall — the same bar §6ac and §6aa were held to.
