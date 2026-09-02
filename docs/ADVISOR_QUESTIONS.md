@@ -101,6 +101,7 @@ human NPIP onto the gorilla assembly**. The clean control has **n = 3**.
 | **One-seed closure on HUMAN families** | **65/65 converge** | §5p |
 | **Haplotype CNV proven inside one animal** | direct proof of the phenomenon, not a projection | §6u |
 | **False-merge rate** on gene-tight windows with demonstrated power | **2/150 = 1.33% [0.37, 4.73]**, 1,630 eligible, 108 with a real merge opportunity, rule fired 28× | O1.10 |
+| ⭐**Self-overlap defect, cross-species** — a standing blind spot, measured 09-02 | present at **7.09%** (GGO) and **7.10%** (PTR) in the `refine`-built catalogs; **0/4,176 pairs [0, 0.09%]** on the current path | §6bs |
 | Two-sided coverage gain reproduced on a **second substrate** | holds — ⚠ but **the mechanism did not** (§6bl retracts the shared-domain explanation) | §6bl |
 
 ⭐ **The strongest single item is the cross-substrate replication**, because the relation was never
@@ -123,6 +124,13 @@ persuasive than any surviving number:
 - never judge a change to *what a node is* on node-level metrics — **3 failed end-to-end**
 - **§6bb's own counts retracted** because the script was not preserved and never recorded its
   locus-assignment rule
+- ⭐**09-02, §6br** — an annotation-based corroboration of the weak identity band reached **39.9×**
+  a size-matched null and **survived a proximity control**, then died when we checked *what* was
+  agreeing: **776 of 788 agreements (98.5%) were the single string `"zinc finger protein"`**, which
+  the annotation carries on **552 genes**. Two instrument defects were found on the way — a
+  large-gene attractor putting `"titin"` on 26 endpoints, and a size-matched null that a *spatial*
+  predictor walks straight through (the first headline was pure co-location: cross-chromosome edges
+  in the target band scored **0.36×, below chance**)
 
 ⭐⭐ **The one non-circular O2 result, and it is the one to lead with.** In the excision run copy A
 is deleted and its reads migrate to locus B, so their true origin is A **by construction** — labels
@@ -170,7 +178,11 @@ See Part 1. The summary line: **defensible narrowly, not broadly.**
 ⚠⚠ **The concession that matters most — the evidence covers the wrong end.** Median edge identity
 is **0.8287** and **86.31% of edges sit below 0.90**, but *all* external support is at **≥ 0.90**
 (NPIP annotated median 0.9779, GOLGA6L7 0.9673). **Nothing external covers the ~0.83 band that is
-most of the catalog.** Also: **88 of 121 families (72.7%) have no segmental-duplication containment
+most of the catalog.** ⛔ **09-02: we tried to close this with the gorilla-native annotation and
+failed** (§6br). The failure is structural, not a missing effort: **61.4% of catalog nodes have no
+reciprocal gene match at all**, and among those that do the agreement is **domain-level** — strip
+zinc-finger stems and the target band scores **0/8**. ⚠ Say what this does and does not mean: it
+shows **the annotation cannot adjudicate these edges**, not that the edges are wrong. Also: **88 of 121 families (72.7%) have no segmental-duplication containment
 at any floor**, and only **5** have per-family external adjudication. **Zero experimental
 validation** — no ddPCR, qPCR, or FISH.
 
@@ -288,9 +300,13 @@ only move that buys credibility for what is below it.
 5. **The NPIP coverage table** (Q9) — it shows the method *disagreeing usefully* with a naive
    identity reading, on the family he raised himself.
 
+6. **[`REPRODUCE.md`](REPRODUCE.md)** — one catalog pinned end to end: source SHA, binary md5,
+   both input md5s, the command, and the md5s of the outputs, with the OFF-arm byte-identity that
+   proves the current binary still emits it. Have it open when he asks whether the numbers move.
+
 ⚠ **Do not lead with catalog sizes.** No pre-08-30 catalog count is reproducible by the current
 binary (`NODE_MIN_READS` 3 → 2), and a number he cannot reproduce is a number he will assume was
-chosen.
+chosen. `REPRODUCE.md` pins the **one** that is — three contigs, ~40 minutes, one command.
 
 ---
 
