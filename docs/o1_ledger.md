@@ -153,6 +153,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6ca — Families are HETEROGENEOUS, the categories collapse to SIZE, and the rule's value is category-dependent (09-02)
 - §6cb — The Soto intervals CANNOT be corrected from the GFF: the disagreement is NAMING (09-02)
 - §6cc — NPIP END TO END: all three objectives on the advisor's own family (09-02)
+- §6cd — THREE CORRECTIONS to §6cb/§6cc: the LIFTOFF BED is the more accurate source (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8150,6 +8151,12 @@ already prescribes (*"seed = CDS envelope, discover by sequence, name afterwards
 
 ## §6cc — ⭐⭐⭐ NPIP END TO END: all three objectives on the advisor's own family, against Soto's truth (09-02)
 
+> ⛔⛔ **THREE CLAIMS BELOW ARE CORRECTED BY §6cd — read it first.** NPIPB15 is **not** misplaced
+> (RefSeq confirms the BED position exactly); the O3 candidate **is NPIPB15** and is retracted; and
+> S1A must **not** be adopted as the coordinate authority — RefSeq backs the liftoff BED **8-3**.
+> The O1 and O2 findings stand; on the adjudicated 16-member set NPIP scores **14/14 detected,
+> precision 0.8558**.
+
 Human A119b/CHM13 v2.0, `arm_off` (the **shipped default path**, no flag), scored against Soto
 `ID_154` with coordinates taken from **S1A's published v2 column**, not from the liftoff BED.
 
@@ -8225,3 +8232,70 @@ of the two readings makes it simply NPIPB15.
 ⟹**STATUS: on NPIP the definition works, O2's premise holds far better than genome-wide, and O3 has
 one candidate that is confounded by a projection defect.** The binding constraint is **node
 construction**, exactly as §5e says.
+
+## §6cd — ⛔⛔ THREE CORRECTIONS TO §6cb/§6cc: THE LIFTOFF BED IS THE MORE ACCURATE SOURCE (09-02)
+
+Focused NPIP pass. Three claims made earlier today are **wrong**, and the direction of the error
+matters: I twice treated **Soto's supplement as the authority** and it is not.
+
+### ⛔ CORRECTION 1 — NPIPB15 is NOT misplaced; S1A is
+
+§6cc reported *"NPIPB15 off by 228,744 bp"* against S1A. Adjudicating against a **third source**:
+
+> **RefSeq CHM13 v2.0 places `NPIPB15` at `chr16:80,194,084-80,209,885` — the liftoff/BED position,
+> to the base.** At S1A's position (~80.42 Mb) sits **`LOC124907807`, "nuclear pore complex-interacting
+> protein family"** — a *different, unnamed* NPIP paralog.
+
+⟹**the BED is right and S1A's v2 projection points at the wrong paralog.**
+
+### ⛔ CORRECTION 2 — the O3 candidate was NPIPB15 all along
+
+§6cc's *"one strong candidate: `chr16:80,195,301-80,209,898`, 7 exons, 70 reads, no Soto gene"* is
+**RETRACTED**. It is **NPIPB15**, and the catalog found it correctly; it scored as unannotated only
+because the comparison used S1A's wrong coordinate. ⟹**NPIP yields ZERO reference-absent candidates
+on this substrate once the truth set is right.** ⚠A "novel locus" that appears when a truth
+coordinate is wrong is the same failure as a false merge, and it was 15 minutes from being reported.
+
+### ⛔ CORRECTION 3 — do not adopt S1A's coordinates wholesale
+
+I built `80_fams.s1a_v2.bed` from S1A's published v2 column and proposed it as the fixed truth set.
+**Adjudicated against RefSeq on the 11 disagreements it can settle:**
+
+| | |
+|---|---|
+| RefSeq supports the **liftoff BED** | **8** |
+| RefSeq supports **S1A** | 3 |
+
+`AMY1A` (BED 230 bp off vs S1A 220 kb), `BCRP2` (1 bp vs 186 kb), `DUX4L50` (38 bp vs **32.6 Mb**),
+`TBC1D3B` (3 bp vs 313 kb), `GOLGA8DP` (25 bp vs 131 kb) — against `BOLA2B` and `MST1L` where S1A
+wins. ⟹**the S1A-derived BED would have BROKEN 8 genes to fix 3, and it has been deleted.**
+**Neither projection is authoritative; each disagreement needs a third source.**
+
+### ✅ WHAT THE REAL NPIP DEFECTS ARE
+
+| member | status |
+|---|---|
+| **NPIPA8** | **genuinely omitted** from the BED — RefSeq `chr16:18,325,161-18,343,979` confirms S1A to 23 bp |
+| **NPIPA3** | locus real, **naming disagreement**: RefSeq has no `NPIPA3`; the gorilla panel calls this locus **`NPIPB13`** |
+| all other 14 | BED coordinates stand |
+
+⟹`bench/soto/npip_ID154.adjudicated.bed` — **16 members**, BED coordinates plus those two.
+
+### ⭐ NPIP RE-SCORED ON THE ADJUDICATED SET
+
+| | |
+|---|---|
+| reachable in the current slice | 14/16 (`NPIPA3`, `NPIPA8` outside it) |
+| **members detected** | **14/14 = 1.000** — now including `NPIPB15` |
+| **pair precision** (honest denominator) | **0.8558** [0.7756, 0.9106] — 89 TP / 15 FP |
+| predicted families holding NPIP | 10 |
+
+### ⭐ AND THE GORILLA 31-LOCUS PANEL DID *NOT* INHERIT THE BED'S OMISSIONS
+
+`o1_oracle/hsa2oracle.paf` shows it was projected from a **19-gene human NPIP roster**
+(`NPIPA1/A2/A5/A6/A7/A8/A9/B2/B3/B4/B5/B6/B7/B8/B9/B11/B12/B13/B15`), **not** from Soto's `ID_154`.
+It **includes NPIPA8**, and its `NPIPB13` is the locus S1A calls `NPIPA3`. It uses
+`NPIPB15_chr16:80194084-80209885` — **the position RefSeq confirms.**
+⟹**the panel's provenance is sound**, but ⚠**its roster is NOT Soto's `ID_154`** (7 genes in the panel
+are outside ID_154, 4 ID_154 members are outside the panel), so **"31 loci" and "16 members" are not
+comparable** and must never be quoted as the same denominator.
