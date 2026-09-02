@@ -140,6 +140,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bp — The asymmetric two-sided coverage clause END TO END: all three criteria pass (09-02)
 - §6bq — PRE-REGISTRATION: what the coverage clause must do on the HUMAN negative panel (09-02)
 - §6br — The annotation CANNOT corroborate the 0.80-0.90 band: a 39.9x enrichment that was ONE STRING (09-02)
+- §6bs — The self-overlap defect is REAL, cross-species, and ABSENT from the current path (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7262,3 +7263,49 @@ a second assembly of the same animal.
 
 Instrument: `bench/er_identity_band_external.py` (`--null`, `--seed`; prints both nulls and the
 stratified cells).
+
+## §6bs — ⭐⭐ THE SELF-OVERLAP DEFECT IS REAL, CROSS-SPECIES, AND ABSENT FROM THE CURRENT PATH (09-02)
+
+**The standing blind spot.** [[project_blindspot_audit]] item 6 (2026-08-14) recorded that *"the
+catalog emits 'spatially distinct' copies at OVERLAPPING intervals — 30 of 194 two-copy families
+have a copy overlapping its own sister"*, filed as **"node-definition problem, never audited."** It
+was never re-checked. A family whose two copies are the same piece of genome is not two copies, so
+this rate bounds how much of **every copy count in the project** is real.
+
+**Truth is pure coordinates** — no aligner, no annotation, no gene label, so nothing here can be
+circular. Instrument `bench/catalog_self_overlap_audit.py`.
+
+| catalog | families | copies | within-family pairs | families with a self-overlap | pairs | overlap/shorter: median · ≥50% · ≥90% |
+|---|---:|---:|---:|---|---:|---|
+| **GGO_gwcat** genome-wide (⚠`refine`, not reproducible) | 494 | 1,415 | 3,751 | **35/494 = 7.09%** [5.14, 9.69] | 35 | 0.347 · **9** · **1** |
+| **PTR_gwcat** chimp (⚠`refine`) | 549 | 1,675 | 4,610 | **39/549 = 7.10%** [5.24, 9.56] | 39 | 0.546 · **21** · **10** |
+| arm_cov030 (08-26, 3-contig) | 97 | 691 | 9,097 | 3/97 = 3.09% | 3 | 0.109 · 0 · 0 |
+| npip_cat / arm_ceoff (3-contig) | 83 | 484 | 2,778 | **0/83 = 0** [0, 4.42] | 0 | — |
+| ⭐**arm_f2 — the current default path** | 121 | 678 | 4,176 | **0/121 = 0** [0, **3.08**] | **0** [0, 0.09] | — |
+| ⭐**cf030 — coverage clause ON** | 99 | 490 | 2,451 | **0/99 = 0** [0, 3.74] | **0** [0, 0.16] | — |
+
+⭐⭐**THE DEFECT IS CONFIRMED AND IT REPLICATES ACROSS SPECIES AT A NEARLY IDENTICAL RATE** — GGO
+**7.09%** and PTR **7.10%** on independently built catalogs. That near-equality is itself the
+diagnosis: a rate that lands twice on the same value across two species is a property of the
+**pipeline**, not of either genome. Both catalogs were built with **`refine`**, the default removed
+on 2026-08-20.
+
+⭐⭐**AND IT IS GONE FROM THE CURRENT DEFAULT PATH** — 0 of 4,176 within-family pairs on `arm_f2`,
+0 of 2,451 on the ON arm. The family-level intervals barely meet (**7.09% [5.14, 9.69]** against
+**0% [0, 3.08]**), so this is a real movement, not the small-n illusion it could have been.
+
+⚠**AND THE OBVIOUS OBJECTION WAS TESTED, NOT ASSUMED.** *"Your zero is a 3-contig substrate too
+small to show the defect"* — **no**: `arm_cov030` produces **3** self-overlapping families **on those
+same three contigs**, so the substrate admits the defect and the current path declines to produce
+it. ⚠But note what separates them: `arm_cov030`'s three are **marginal touches** (median 0.109 of
+the shorter copy, **none** ≥50%), whereas the genome-wide pair carries the **severe** form —
+**9 pairs ≥50% in GGO and 21 in PTR, 10 of them ≥90% = a copy emitted essentially twice.**
+
+⛔**WHAT IS NOT ESTABLISHED — the substrates are not matched.** The 7.1% is **genome-wide**; every
+zero is **3-contig**. A genome-wide catalog from the **current binary does not exist**, so the honest
+claim is: *the defect is real, cross-species, and specific to the `refine`-built catalogs; the
+current path shows none of it at 3-contig scale, bounded ≤3.08% at family level.* **Do not state it
+as "fixed genome-wide."** Closing that gap is the genome-wide real-binary run already outstanding
+from §6bp — which now has a second reason to be run.
+
+⟹ **blind-spot item 6 moves from "never audited" to MEASURED, with the caveat named.**
