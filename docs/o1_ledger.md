@@ -162,6 +162,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6cj — The fragmentation has a named cause: reads LINK the pieces, the merge never looks (09-02)
 - §6ck — The linked-locus merge IMPLEMENTED and RUN: right signal, WRONG SITE (09-02)
 - §6cl — WHY THE BLOBS FORM: the canonical filter SELECTS FOR the mis-chains it cannot see (09-02)
+- §6cm — RETRACTION: the "mis-chained giants" are REAL GENES; the headline read count was 3.4x inflated (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8570,6 +8571,11 @@ with no template elsewhere.** Steps 1–5 are all implementable with what exists
 
 ## §6cj — ⭐⭐⭐ THE FRAGMENTATION HAS A NAMED CAUSE AND AN UNUSED SIGNAL: reads link the pieces, the merge never looks (09-02)
 
+> ⛔⛔ **PARTLY RETRACTED — see §6cm.** The "mis-chained giant" framing is wrong for `SNX29`
+> and `PDXDC1`, which are REAL genes spanning their nodes at 100.0% and 99.9%. And the
+> **"1,567 spliced reads"** figure counted reads OVERLAPPING the span; **457** have an aligned block
+> inside it, 71.6% merely splice over. The linkage measurement and the block-membership barrier stand.
+
 Back to the RNA side, on the 26-locus NPIP substrate (§6ch). **The catalog emits 80 assigned copies
 over 26 genes = 3.08 loci per gene**; 17 of 26 fragment into ≥3, and every fragment lands in its own
 family — which is the 14-families-for-one result.
@@ -8726,6 +8732,11 @@ instruction to **add the new name, never to delete the disclosed entry to make i
 
 ## §6cl — ⭐⭐⭐ WHY THE BLOBS FORM: the canonical-junction filter SELECTS FOR the mis-chains it cannot see (09-02)
 
+> ⛔⛔ **PARTLY RETRACTED — see §6cm.** The "mis-chained giant" framing is wrong for `SNX29`
+> and `PDXDC1`, which are REAL genes spanning their nodes at 100.0% and 99.9%. And the
+> **"1,567 spliced reads"** figure counted reads OVERLAPPING the span; **457** have an aligned block
+> inside it, 71.6% merely splice over. The linkage measurement and the block-membership barrier stand.
+
 Chasing §6ck's barrier upstream: why does minimap2 emit 100 kb introns on these reads at all?
 
 ### The blob nodes, and what they hold
@@ -8793,3 +8804,65 @@ arm.** … THE FAILURE MODE IS NOT REACHABLE ON THOSE CONTIGS."* The gorilla arm
 NC_073241.2/242.2/244.2. **`npip26.bam` is HUMAN chr16** — the substrate that requirement names now
 exists. ⚠It will not touch the blobs (the flag relaxes canonicality only **below** 10 kb), but the
 outstanding item is no longer blocked on data.
+
+## §6cm — ⛔⛔⛔ RETRACTION: the "mis-chained giants" are REAL GENES, and my headline read count was 3.4× inflated (09-02)
+
+Pushing on *"is there nothing we can do about the blobs"* produced two candidate rules, **both of which
+failed** — and in failing, showed the premise was wrong.
+
+### The two rules, both dead
+
+| rule | result |
+|---|---|
+| **max intron / exon_sum** bound | ⛔**no separating threshold.** Giant-intron nodes 26.9–47.2; ordinary spliced nodes reach **46.1** |
+| **junction support** at the giant intron | ⛔**backwards.** The giant junctions carry **55–77%** of the reads at their position — 640 reads on the 112,617 bp one. Majority support, not a weak artifact |
+
+### ⛔⛔ AND THEN THE PREMISE COLLAPSED
+
+Asking what RefSeq annotates across each node:
+
+| node | annotated gene spanning it |
+|---|---|
+| chr16:12,012,806 (**549 kb**) | **`SNX29`, 598,485 bp — covers 100.0%** |
+| chr16:14,976,003 (**168 kb**) | **`PDXDC1`, 168,469 bp — covers 99.9%** |
+| chr16:29,725,035 (152 kb) | none spans it (max 33.1%, `SMG1P2`) — this one is still unexplained |
+
+⟹⟹**TWO OF THE THREE "MIS-CHAINED GIANTS" ARE REAL GENES, ASSEMBLED CORRECTLY.** They have canonical
+junctions with majority read support **because they are real transcripts**. ⚠**This is exactly the
+warning already on record** from the FAM72/NPIP advisor review: *"most long introns are simply long,
+in genuinely large genes — say that rather than over-attributing to artifact."* **I over-attributed to
+artifact anyway.**
+
+### ⛔⛔⛔ AND THE HEADLINE NUMBER IS WRONG
+
+§6cc and §6cj both state: *"at NPIPP1, **1,567 spliced reads** collapse into a four-read locus."*
+
+| | |
+|---|---|
+| reads OVERLAPPING the NPIPP1 span | 1,608 |
+| ⭐**reads with an ALIGNED BLOCK inside it** | **457** |
+| reads merely **SPLICED OVER** it, no aligned base | **1,151 = 71.6%** |
+
+**`PDXDC1` (168 kb) physically CONTAINS `NPIPP1`**, and its transcript splices straight across it. I
+counted reads *overlapping the span* — against the project's own standing rule that **a read spliced
+OVER a locus is no evidence for it**, which §6cj's own linkage measurement was careful to obey and
+which this count was not. ⚠**The inflation is 3.4×**, and ⚠**even 457 is an upper bound**, since
+`PDXDC1` exons falling inside `NPIPP1`'s span are still counted.
+
+### WHAT SURVIVES
+
+- ✅ **§6cj's linkage measurement stands** — it used aligned blocks throughout (30.1% of reads touch
+  ≥2 loci; 93.3% within-gene).
+- ✅ **§6ck's architectural finding stands** — 96% of linked pairs span different `E_r` blocks and the
+  merge runs inside a block. That is independent of read counts.
+- ✅ **§6cl's canonical-filter finding stands as a mechanism** (41.9% canonical in reads vs 6/6 in
+  models) — but its framing as *"why the blobs form"* is wrong for 2 of 3, because those are genes.
+- ⛔ **The NPIPP1 fragmentation headline is RETRACTED at 1,567** and restated as **457, upper bound**.
+- ⛔ **"Mis-chained giants absorb the reads" is RETRACTED** for `SNX29` and `PDXDC1`.
+
+### ⟹ SO: IS THERE NOTHING TO DO?
+
+**The honest answer is that the problem is smaller than I reported and partly was not a problem.**
+Two of three giants are correct output. One node (chr16:29,725,035, no spanning gene, degree 1)
+remains genuinely unexplained and is a legitimate single case, not a class. **A rule built on the
+three-node "blob class" would have been fitted to two real genes.**
