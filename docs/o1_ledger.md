@@ -150,6 +150,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bx — THE SOTO ADJUDICATION: high P/R in Soto's stratum; the clause REJECTED as a default (09-02)
 - §6by — A FALSE-MERGE RULE VALIDATED ON EXTERNAL TRUTH: co-membership at GRAPH DISTANCE 1 (09-02)
 - §6bz — Local edge connectivity does NOT beat the direct edge; the precise statement O1 can make (09-02)
+- §6ca — Families are HETEROGENEOUS, the categories collapse to SIZE, and the rule's value is category-dependent (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7992,3 +7993,75 @@ useful form of this result, since `λ ≥ 2` is exactly what a reviewer would pr
 
 ⚠ All §6bx disclosures ride with these numbers (first-ever `o1-perp-o2` firing, `-M -L` subset BAM,
 CAT-bounded precision, re-implementation concordance).
+
+## §6ca — ⭐⭐ FAMILIES ARE HETEROGENEOUS, THE CATEGORIES COLLAPSE TO ONE AXIS, AND THE RULE'S VALUE IS CATEGORY-DEPENDENT (09-02)
+
+*"Could some families be found easily and others be difficult regardless — is there a different rule
+per category?"* Tested on §6bx's Soto-labelled pairs. Instruments `bench/soto_family_strata.py`,
+`bench/soto_connectivity_rules.py`.
+
+⚠**EVERY CATEGORY COMES FROM SOTO'S OWN METADATA** (`soto_famCN_S1C.tsv`) — size, `Family MAD`,
+coding/pseudogene composition, `Median famCN` — fixed outside this project and computed from their
+data, **never from our error rate**. Finding categories in one's own errors and then fitting a rule
+per category is the register's oldest trap, and §6bz already declined to build one.
+
+### 1. YES — the outcome is BIMODAL, not a spread
+
+Over 76 multi-member families: **14/76 at pair recall 1.00, 15/76 at 0.00**, 47 in between. ⟹**"some
+families are found easily and others not at all" is literally true**, and averaging over them
+describes almost nobody.
+
+### 2. ⛔ BUT SOTO'S CATEGORIES COLLAPSE TO ONE AXIS — SIZE
+
+| stratum | detect | pair recall | share of recovered at d=1 | foreign pairs / family |
+|---|---|---|---|---|
+| size 2–3 | 0.703 | 0.375 | **1.000** | 9.5 |
+| size 4–5 | 0.812 | 0.448 | 0.981 | 16.1 |
+| size 6–9 | 0.809 | 0.458 | 0.927 | 21.3 |
+| size 10+ | 0.856 | 0.563 | 0.753 | 30.2 |
+
+⛔**`Family MAD` is NOT an independent category — it is size.** Median MAD **0.0593** for families
+≤5 against **0.3673** for families >5. Its apparent effect (d=1 share 0.973 vs 0.743, contamination
+13.8 vs 29.8) is the size effect wearing Soto's label. Composition is partly size too (all-coding
+families are small and clean: recall 0.608, contamination 10.4; all-pseudogene 0.435 / 13.2).
+⟹**there is one axis here, not four.**
+
+### 3. ⭐⭐ THE RULE'S VALUE IS CATEGORY-DEPENDENT — AND IT REPRODUCES HELD OUT
+
+Group split on the **predicted** family (truth-independent), each family wholly in one half:
+
+| true family size | half 0 gain | half 1 gain | TP kept (half 0 / half 1) |
+|---|---|---|---|
+| 2–3 | **+0.2292** | **+0.2418** | 24/25 · 24/24 |
+| 4–5 | **+0.2573** | **+0.2673** | 66/75 · 64/75 |
+| 6–9 | **+0.2277** | **+0.3802** | 52/69 · 134/152 |
+| **10+** | **+0.0781** | **+0.1198** | **113/189 · 143/234** |
+
+⭐**Both halves agree**: `d = 1` gains **+0.23 to +0.38** in families ≤ 9 while keeping **75–100%** of
+true pairs; in families of **10+** it gains only **+0.08 / +0.12** and destroys **~40%** of them.
+
+⭐⭐⭐**AND THE MECHANISM IS A BASE RATE, WHICH IS WHY IT IS NOT A FITTED THRESHOLD.** In a large TRUE
+family most pairs genuinely ARE co-members, so a transitive assertion is often **right**; in a small
+true family a transitive assertion usually means two different families were joined, so it is
+**wrong**. ⟹`d = 1` earns its keep exactly where transitivity is most likely to be spurious. ⚠Note
+that large families are **not** uniformly bad — in half 0 the 10+ stratum has the **highest** base
+precision (0.7652); they are simply the stratum this rule cannot improve.
+
+### ⚖️ THE ANSWER TO THE QUESTION ASKED
+
+**Not a different rule per category — the SAME rule, with a category-dependent TRADE.** The
+direct-edge certificate is the right instrument for small and mid-size families and a poor trade for
+large ones. ⚠**And that is a statement about where to APPLY a certificate, not a new threshold**: the
+certificate is emitted for every pair (§6by) and `pairs.tsv` already carries the family size a
+consumer needs to make this call.
+⟹**Large families need a PARTITION fix, not an assertion filter** — consistent with §6bg's blob and
+§6bi's `E_c` refinement, which is the only lever that ever split them.
+
+### ⛔ AN INVALID SPLIT, CAUGHT AND RECORDED
+
+The first held-out split keyed on **the parity of the summed numeric family IDs of the two genes**.
+For a TRUE pair the two ids are equal, so the sum is always even ⟹ **the split separated TP from FP
+perfectly**, and half 1 returned 0 TP across every stratum. A split whose key is a function of the
+label is not a split. Replaced with a **group split on the predicted family**, which is computed
+before any truth is consulted. ⚠**Read a held-out result's per-half TP counts before reading its
+rates** — the failure was visible only in the counts.
