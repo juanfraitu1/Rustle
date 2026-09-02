@@ -6,7 +6,7 @@
 
 One page. Every route attempted against O1's definition, its verdict, and the number that decided it.
 Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.md) holds the full
-831-row history. **Read this before proposing anything.**
+836-row history. **Read this before proposing anything.**
 
 
 
@@ -149,6 +149,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bw — PRE-REGISTRATION: adjudicating the copy loss against SOTO's families (09-02)
 - §6bx — THE SOTO ADJUDICATION: high P/R in Soto's stratum; the clause REJECTED as a default (09-02)
 - §6by — A FALSE-MERGE RULE VALIDATED ON EXTERNAL TRUTH: co-membership at GRAPH DISTANCE 1 (09-02)
+- §6bz — Local edge connectivity does NOT beat the direct edge; the precise statement O1 can make (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7920,3 +7921,74 @@ certificate only stops the catalog from *asserting* the weakest pairs with equal
 some are real copies CAT missed. The **ratio** between strata is the robust quantity, not the level.
 ⚠**All §6bx disclosures ride with these numbers**, including the first-ever firing of the
 `o1-perp-o2` guard and the `-M -L` subset BAM.
+
+## §6bz — ⛔ LOCAL EDGE CONNECTIVITY DOES NOT BEAT THE DIRECT EDGE; and the precise statement O1 can make (09-02)
+
+§6by shipped `distance`, a **reachability** statement. The obvious next question — and the one the
+advisor would ask, because it is the kind of object he works in — is whether a criterion with a
+**theorem behind it** does better. Tested on §6bx's Soto-labelled pairs.
+Instrument `bench/soto_connectivity_rules.py`.
+
+**The candidate.** **Local edge connectivity** `λ(u,v)` = the minimum number of `E_r` edges whose
+removal separates `u` from `v` = (**Menger**) the maximum number of **edge-disjoint paths** joining
+them. `λ ≥ 1` is what the catalog asserts today; **`λ ≥ 2` says no single alignment record's loss
+separates the pair** — the per-pair form of the family-level `cut_certified` already emitted.
+Computed by unit-capacity max-flow; families ≤ 54 copies, so it is free.
+
+⚠**UNIT NOTE — do not mix these numbers with §6by's.** This scores **copy pairs** under an
+any-overlap assignment (**1,818** judgeable, baseline P **0.4637**); §6by scored **deduplicated gene
+pairs** (1,263, P 0.4006). Both are internally consistent; the **contrasts** transfer, the levels do
+not.
+
+| criterion | n | P | 95% CI | TP kept |
+|---|---:|---|---|---|
+| baseline — every asserted pair | 1,818 | 0.4637 | [0.441, 0.487] | 100% |
+| ⭐**`d = 1` (shipped, §6by)** | 886 | **0.6998** | [0.669, 0.729] | **73.5%** |
+| `λ ≥ 2` | 1,108 | **0.5677** | [0.538, 0.597] | 74.6% |
+| `λ ≥ 3` | 844 | 0.5569 | [0.523, 0.590] | 55.8% |
+| `d = 1` ∧ `λ ≥ 2` | 667 | 0.7136 | [0.678, 0.747] | 56.5% |
+| `d = 1` ∧ `λ = 1` (**the edge is a BRIDGE**) | 219 | 0.6575 | [0.593, 0.717] | 17.1% |
+| `d ≥ 2` ∧ `λ ≥ 2` | 441 | 0.3469 | [0.304, 0.393] | 18.1% |
+| common neighbours ≥ 1 | 1,173 | 0.5396 | [0.511, 0.568] | 75.1% |
+| `d = 1` ∧ common nbrs ≥ 1 | 666 | 0.7147 | [0.679, 0.748] | 56.5% |
+
+⛔⛔**λ ALONE IS WORSE THAN THE DIRECT EDGE — 0.5677 against 0.6998.** And adding it to `d = 1` buys
+**+0.014 precision for −17% of true pairs**, which is not a trade. **A bridging edge is barely worse
+than a redundantly-connected one (0.6575 vs 0.7136)**, while a redundantly-connected *transitive*
+pair is still bad (0.3469). ⟹**what carries the signal is the EDGE, not the redundancy.** Common
+neighbours reproduces `λ ≥ 2` almost exactly (0.7147 vs 0.7136) — for a `d = 1` pair a triangle *is*
+a second edge-disjoint path, so they are near the same statistic, and neither adds to the edge.
+
+### ⚠ ONE REAL EFFECT THE POOLED NUMBER HIDES
+
+| predicted family size | `λ ≥ 2` | `λ < 2` |
+|---|---|---|
+| 2–5 | 0.8378 (n=148) | 0.6809 (n=188) |
+| **6–15** | **0.7727** (n=484) | **0.2152** (n=302) | 
+| 16+ | 0.2752 (n=476) | 0.0955 (n=220) |
+
+⭐**Within families of 6–15, λ ≥ 2 discriminates 3.6×** — the pooled 0.5677 hides it, because in
+small families `λ < 2` is still good and in large ones `λ ≥ 2` is still bad. ⚠**This is a
+description, not a licence to build `size ∈ [6,15] ∧ λ ≥ 2`**: that rule would be selected on the
+same data it is scored on, which is the register's oldest trap. It is recorded so the next person
+sees the structure, not so it ships.
+⚠⚠**And the dominant fact is SIZE, not connectivity**: families of **16+ are bad regardless**
+(0.0955–0.2752). No connectivity criterion rescues them.
+
+### ⭐⭐⭐ THE PRECISE STATEMENT O1 CAN ACTUALLY MAKE
+
+The search for a better criterion keeps returning the same answer, so state it as the method rather
+than hunting further:
+
+> **The family is a connected component of `E_r` (γ-refined). The ASSERTION is an edge.**
+> Co-membership at distance 1 is a claim the method makes; co-membership at distance ≥ 2 is an
+> **inference from transitivity**, and the catalog now says which is which per row (§6by).
+
+That is a two-level definition with one number separating the levels, and it is **defensible without
+a threshold**: `d = 1` is not tuned, it is the graph's own primitive. Against Soto it holds
+**0.6998 / 0.6308** (two units) where the transitive inference holds **0.2156–0.3469**.
+⛔**Menger buys nothing on top of it, and that is now measured rather than assumed** — which is the
+useful form of this result, since `λ ≥ 2` is exactly what a reviewer would propose next.
+
+⚠ All §6bx disclosures ride with these numbers (first-ever `o1-perp-o2` firing, `-M -L` subset BAM,
+CAT-bounded precision, re-implementation concordance).

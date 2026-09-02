@@ -11,7 +11,7 @@
 > per-question evidence; Part 3 is what we concede unprompted; Part 4 is what to put on screen.
 
 **Provenance.** Derivations in [`o1_ledger.md`](o1_ledger.md) (120 sections), negatives in
-[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**831 rows**), status in
+[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**836 rows**), status in
 [`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md). Test baseline **824 passed /
 0 failed / 11 ignored**.
 
@@ -29,7 +29,7 @@ denial.**
 
 | | count |
 |---|---:|
-| Routes attempted and killed, each with the number that killed it | **831** |
+| Routes attempted and killed, each with the number that killed it | **836** |
 | Ledger sections (each an attempt, an audit, or a retraction) | **120** |
 | `RUSTLE_*` behaviour flags in `src/` | **135** |
 | …of which the shipped default path turns **ON** | **7** |
@@ -196,7 +196,7 @@ information about whether the read belongs.
 
 ### 1.5 "You would not show me the failures."
 
-Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **831 rows, each with
+Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **836 rows, each with
 the number that killed it**, and the two admitted exception classes (**NO-POWER**, and killed-by-
 argument) marked as such rather than hidden. Then hand him the ledger's own index note: an earlier
 auto-derived verdict tag scored **11/22 = 50% — a coin flip — against sections whose outcome was
