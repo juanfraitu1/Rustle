@@ -144,6 +144,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bt — THE PANEL RUN: the mechanism transfers to HUMAN, and the BASELINE HAD MOVED (09-02)
 - §6bt.1 — THE CONTROL: the frozen panel IS reproducible, and the node floor is the WHOLE cause (09-02)
 - §6bt.2 — EVERY PRE-REGISTERED CRITERION PASSES, on a species the clause never saw (09-02)
+- §6bu — ADJUDICATION of the coverage clause: the decision rule, fixed BEFORE the evidence (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7489,3 +7490,49 @@ byte-identical OFF arm (§6bp), a **cross-species pre-registered test at 5/5 and
 (§6bq/§6bt/§6bt.2), and a **stated cost** that is still unadjudicated. It is the closest thing in
 the project to a lever that has earned a default — **and it does not get one until the copy cost is
 priced on a second truth set.**
+
+## §6bu — ⚖️ ADJUDICATION OF `RUSTLE_ER_COVERAGE_LONGER_FLOOR`: the decision rule, fixed BEFORE the evidence (09-02)
+
+**The open question.** §6bp priced the clause at **678 → 490 copies (−27.7%)**, **121 → 99 families**,
+**3,141 → 1,652 edges** on `arm_f2`, and left the verdict as *"the trade has not been adjudicated."*
+Two instruments have since reported and both favour it: **NPIP recall 14/31 → 15/31** (§6bp) and the
+**human negative panel, 5/5 pre-registered criteria, 9/9 edge outcomes** (§6bt.2). What remains
+unpriced is the **188 lost copies** — are they false positives the clause is correctly deleting, or
+true copies it is destroying?
+
+**⚠ This section is written before the measurement, and states what each outcome will mean.** The
+project's own standard for a default flip is §6aa's: *every measured flag is negative or break-even;
+nothing should be flipped.* A flag clears that bar only by being **positive on a truth instrument and
+not merely quiet elsewhere.**
+
+### The decision rule
+
+| | condition | verdict if met |
+|---|---|---|
+| **D1** | recall does not fall on the only positive truth set on this substrate (NPIP 31) | necessary, **already met**: 14 → 15 |
+| **D2** | specificity does not fall on an independent negative panel | necessary, **already met**: §6bt.2 |
+| **D3** | the lost copies are **concentrated in strata independently characterised as defective** (single-exon stubs §4b/26.8%, 2-read nodes §6bt.1) rather than spread uniformly | supports |
+| **D4** | the loss does **not** fall disproportionately on copies carrying independent corroboration (a reciprocal RefSeq gene/pseudogene match, §6br's instrument) | supports |
+| **D5** | ⭐**the loss is not concentrated in copies that are the ONLY evidence for their family** — i.e. it must not delete families wholesale rather than trimming them | **required** |
+
+⛔**WHAT WILL NOT COUNT AS SUPPORT, stated now so it cannot be claimed later.**
+- **D3 is CORRELATED WITH THE SELECTOR AND IS THEREFORE WEAK EVIDENCE.** A short single-exon node
+  aligning into a long partner has low `cov_longer` **by construction**; "the losses are stubs"
+  partly *restates the rule* rather than testing it. It will be reported as **consistency, never as
+  validation** — the same trap as a denominator conditioned on the prediction.
+- **D4 is confounded by length** — annotation presence correlates with node size, which correlates
+  with `cov_longer` (§6br). It must be read **within length strata** or not at all.
+- ⛔**NPIP cannot carry this decision alone.** 31 loci of 678 copies, and it is the substrate every
+  O1 decision since 08-25 was scored on (§6ax). A gain of **+1 locus** is one event.
+
+### The pre-committed verdict map
+
+- **SHIP AS DEFAULT** only if D1, D2, D5 hold **and** D4 shows no penalty on corroborated copies —
+  i.e. the clause is positive on truth and provably not deleting evidence-bearing families.
+- **KEEP OPT-IN** if D1/D2 hold but the 188 are **unlabelled and unadjudicable** — a 27.7% copy loss
+  that no instrument can price is **not** a trade to make silently, whatever the F1 says.
+- **REJECT** if D5 fails, or if D4 shows the loss falls on corroborated copies.
+
+⚠**The most likely outcome is KEEP OPT-IN**, and that is a real verdict, not a failure to decide:
+the honest reason to withhold a default is *"we cannot price the cost"*, which is exactly the
+position §6aa took on every other flag.
