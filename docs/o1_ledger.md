@@ -5646,6 +5646,12 @@ threshold-free O1 rule** — but it is UNTESTED at scale here (n=1 locus), and t
 (**71 copies engulfed by another family's copy, 34/121 families**) is the population it should be tried
 on. Do not generalise from this one locus.
 
+⚠⚠**DEGENERACY, FOUND 09-01 (§6ax): THIS DISCRIMINATOR IS INVALID BELOW ~3 BRIDGING JUNCTIONS.**
+With ONE bridging intron the modal-acceptor share is **1.00 BY CONSTRUCTION**; with two it can only be
+1.00 or 0.50. A naive pair-level tally scored **39/59 = 66% "real splice"** on that basis and the number
+is garbage — **32/59 pairs had exactly one bridging intron**. It was sound at GWFAM111:3 (95 reads, 19
+distinct junctions). **Check the junction count before applying it.**
+
 ## §6ar — The pre-registered engulfment test: PARTIALLY SUPPORTED, and it bounds the mechanism (09-01)
 
 The rule pre-registered in the register on 09-01 — *a single-exon stub whose reads ALL splice into it
@@ -5980,3 +5986,77 @@ cross-substrate-replicated splice sites carrying 2,407 and 462 reads**, not on a
 **DISPOSITION: keep `RUSTLE_JUNCTION_MAJORITY` OFF by default; it is now MEASURED-POSITIVE on this
 substrate and has a named blocker (the chr16 arm) rather than being untested.** That is a materially
 better position than yesterday, when it was the highest-value flag nobody had run.
+
+## §6ax — READINESS AUDIT against the three questions the advisor will ask (09-01)
+
+### Q1 — are these REAL families, not artifacts, not overfit to one family/dataset?
+
+**Defensible TODAY, narrowly:** the E_r RELATION reproduces across a change of animal AND tissue
+(**87.06%** of edges, ARI 0.7064 vs a size-preserving null of −0.0000, p ≤ 0.005 — re-derived today from
+the on-disk dumps and reproduced exactly). **NEW, stratified (never done before):** recovery in the CLEAN
+corner (identity ≥0.90 AND coverage ≥0.60) is **130/136 = 95.59%**; in the MARGINAL corner **390/479 =
+81.42%** — so the weak stratum does replicate.
+
+**⛔ FOUR PLACES HE DRAWS BLOOD:**
+1. **THE CORROBORATION SHARES THE SUBSTRATE.** `denovo_assemble.rs:1393/:1525` build every node sequence
+   with `genome.fetch_sequence(...)` — **not one base of READ sequence enters E_r**; reads supply only
+   intervals, intron coordinates and support counts. SEDEF self-aligns the same mGorGor1 bytes ⟹
+   **corroboration of WHERE duplications are, not independent confirmation that our object is real.**
+2. **⭐ THE EVIDENCE COVERS THE WRONG END OF THE DISTRIBUTION.** The 3,141 edges have **median identity
+   0.8287**; **86.31% are below 0.90**; **31.77% are simultaneously <0.90 identity AND <0.60 coverage**
+   (same shape genome-wide: testis 80.10%/33.42%/30.62%, fibroblast 82.36%/34.60%/32.82% — not a
+   3-contig artifact). But EVERY external corroboration sits at the HIGH-identity end: SD containment is
+   scored at ≥0.90, NPIP's 171 annotated pairs have median identity **0.9779**, GOLGA6L7's proven unit
+   **0.9673**. ⟹**nothing external covers the ~0.83 band that is MOST of the catalog.**
+3. **FAMILY COUNT ≠ EVIDENCE COUNT.** 121 families / 678 copies, but distinct families with external
+   per-family adjudication: **5** (AMY, MAGEA, GOLGA6, RFPL, NPIP) **+ 1** haplotype-proven (GOLGA6L7).
+   Everything else is aggregate. SD containment recomputed on the CURRENT catalog: **33/121 = 27.27%** at
+   ≥0.90 (reproducing the old 21.69% conclusion across the provenance break) ⟹ **88/121 = 72.7% have NO
+   SD containment at any floor.**
+4. **THE METHOD IS NPIP-BOUND.** ~52 ledger sections cite NPIP, and EVERY O1 decision from 08-25 to 09-01
+   — node floor, footprints, COLLAPSE_EXONIC, FLAGFREE_SITES, tier-2, the engulfment arms,
+   JUNCTION_MAJORITY — was scored on ONE family's 31-locus panel, which is itself **a minimap2 projection
+   of HUMAN NPIP**. The clean negative control alongside it is **n=3**.
+⚠**ZERO experimental validation exists** — a grep for ddPCR/qPCR/FISH/Bionano/optical-map across docs/ and
+bench/ returns only two "this would require" sentences.
+
+### Q2 — tandem near-identical copies, a read with pieces matching every copy
+
+**MEASURED TODAY on the current binary:** **152 distinct primaries** have aligned blocks inside **≥2
+copies of the SAME family** (149 touch 2 copies, 4 touch 3). Denominators: **0.306%** of the 49,716
+primaries in the 9.7 Mb where such a span is geometrically possible; 1.5e-4 batch-wide. Implicates
+**89/678 copies (13.1%)** and **14/121 families (11.6%)**. Bounded by construction — minimap2's
+`-G 200,000` plus `-F 2308` means only 477/3,455 same-chrom within-family pairs are even reachable.
+
+**CAUSE — three axes agree and all point AWAY from ordinary readthrough biology:** the copy-joining
+intron is an annotated intron in **27/148 = 0.182** of observations against a **length-bin-matched
+background of 0.818** (a **4.5× depletion** length does not explain), and **within the same molecule**
+the copy-joining intron is annotated 0.182 vs **0.667** for that read's other introns.
+
+**⛔ BUT THE LARGEST BIN IS "WE DON'T KNOW": 73/153 = 47.7%** carry a copy-joining junction that is
+**canonical but unannotated**. We can say **≥31% is minimap2** and **~18% is real biology** and *nothing*
+about the plurality. **If he asks "so which is it?", the honest answer is: undetermined for half.**
+
+**⚠⚠ AND A FIFTH VACUOUS INSTRUMENT WAS ALMOST SHIPPED — THIS CORRECTS §6aq.** The naive pair-level tally
+using §6aq's modal-acceptor discriminator returned **39/59 = 66% "one-acceptor / real splice"**. That
+number is **garbage**: **32 of the 59 pairs have exactly ONE bridging intron, where modal share = 1.00 BY
+CONSTRUCTION**, and 7 more have two, where it can only be 1.00 or 0.50. ⟹**§6aq's discriminator is
+DEGENERATE below ~3 bridging junctions and must not be applied there.** It was sound at GWFAM111:3 (95
+reads, 19 distinct junctions); it is meaningless on a single-junction pair.
+
+### Q3 — portability to other families, tissues, apes
+
+⭐**GOOD NEWS, and it is better than expected:** all four ape BAMs are aligned to their **OWN** reference
+(chimp→mPanTro3, orangutan→mPonPyg2, human→chm13v2.0, gorilla→GGO), with the **identical** minimap2
+2.31 line and `-N 50` already satisfied ⟹ **drop-in substrate, NO realignment needed**, indexed.
+⛔**BAD NEWS:** all four catalogs (GGO 494/1,415 · HSA 394/1,220 · PTR 549/1,675 · PPY 462/1,517, all
+2026-07-17) were built with **`refine`, which is now REJECTED** ⟹ **the current binary reproduces NONE.**
+⚠⚠**AND THE NUMBER IN OUR OWN BRIEF IS THE SUPERSEDED ONE**: "149 ancestral + 84 expansions" is the
+**THREE-species** run (Jul 17 10:44, 953 groups), overwritten 84 minutes later by the four-way run (1,037
+groups) which is what wrote the repo's `bench/crossape_seqlinked.tsv`. The correct branch histogram is
+**108 ancestral great-ape · 40 African great-ape · 44 human-chimp · 174 chimp · 181 gorilla · 179 orang ·
+91 human · 220 mixed.** ⟹**do not quote 149+84.**
+⚠**cost of the obvious answer**: four genome-wide ape catalogs ≈ **8 hours strictly serial at the memory
+ceiling** (comparator: 1h10m / 25.49 GB peak on a 2.8 GB BAM; the ape BAMs are 4.0–6.1 GB), and it
+re-answers "does it run", not "is it right". A single-contig, depth-matched, directional arm is the
+better trade.
