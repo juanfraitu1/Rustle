@@ -127,7 +127,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bc — The E_c cliff RE-DERIVED: its location is DERIVABLE, and §6bb's counts are RETRACTED (09-01)
 - §6bd — CROSS-COPY BORROWING IS INERT OR DEAD — and what that costs the isoform claim (09-01)
 - §6be — SEEDED MODE: the seed SUBSTRATE dominates, and a MULTI-seed reaches 30/31 (09-01)
-- §6bf — Is the seeded catalog BETTER as a catalog? NO — and the test cannot be neutral (09-01)
+- §6bf — Is the seeded catalog BETTER as a catalog? NO (γ applied to both) — and the test cannot be neutral (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6511,6 +6511,35 @@ read-catalog copy (118 of those carry a CDS). It measures the seeded grouping **
 already reach**, and is silent on the other 95%.
 ⚠ genome-wide the seeded catalog has a **191-member blob** (sizes 191/88/74/73/44…, median 2) — a
 hairball that would need the γ-splitting the read path already applies.
+
+### ⭐ UPDATE — THE SEEDED CATALOG NOW USES GAMMA TOO; THE COMPARISON ABOVE WAS UNFAIR TO IT
+The numbers above compared **gamma-refined read families against RAW CONNECTED COMPONENTS** — the
+partitioner varied, not just the edges. Fixed by running the seeded relation through the SHIPPED rule:
+new binary **`gamma_refine`** calls `family_definition::refine_component` directly (density
+`2|E|/(n(n-1)) >= GAMMA=0.20`, then components / greedy-modularity / halving, recursively), so no
+re-implementation is in the loop.
+⚠**the binary was control-tested in BOTH directions first**: a 24-node chain of bridged triangles
+(density **0.1123**) splits into 6 blocks; a density-**0.2727** graph and a 4-clique do not.
+
+**GAMMA DOES BREAK THE HAIRBALL**: the 191-member component has density **0.1033** and splits; the
+88/74/73/44-member ones (density 0.2443/0.3043/0.3706/0.5698) are kept. Genome-wide **641 → 658
+families, max 191 → 88**, 5 components split.
+
+| set | grouping | recall | precision | F1 |
+|---|---|---|---|---|
+| all 118 | seeded RAW | 0.9429 | 0.7122 | 0.8115 |
+| all 118 | **seeded + γ** | 0.8571 | **0.7965** | **0.8257** |
+| all 118 | read (γ) | 0.8571 | 0.8411 | **0.8491** |
+| blob out | seeded RAW | 0.9221 | 0.6396 | 0.7553 |
+| blob out | **seeded + γ** | 0.8052 | **0.7294** | **0.7654** |
+| blob out | read (γ) | 0.8052 | 0.7848 | **0.7949** |
+
+⭐**γ helps the seeded catalog in both cuts** (precision 0.712→0.797 and 0.640→0.729) and ⭐⭐**equalises
+RECALL EXACTLY — 0.8571 and 0.8052 for both groupings** ⟹ with the partitioner held fixed the two
+differ on **PRECISION ALONE**, and the read catalog keeps that margin (0.8411 vs 0.7965).
+⚠**the equal recall is a coincidence of counts, not a shared mechanism** — 15 misses each, but only
+**9 in common**, 6 unique to each. (9/105 pairs missed by both = a shared limitation worth a look.)
+⟹**the verdict below is UNCHANGED but the gap is narrower and the comparison is now apples-to-apples.**
 
 ⟹**ANSWER: NO, the seeded mode is NOT better as a catalog.** On the only ground where the two can be
 compared it is slightly worse, by merging too readily. ⭐**The useful framing is that they answer

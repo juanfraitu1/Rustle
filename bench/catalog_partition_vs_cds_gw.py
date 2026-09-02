@@ -70,16 +70,25 @@ def lof(iv):
         if L[1]<a-5_000_000: break
         j-=1
     return None
-par=list(range(len(loci)))
-def f(x):
-    while par[x]!=x: par[x]=par[par[x]]; x=par[x]
-    return x
-for s,t in pairs:
-    i,j=lof(s),lof(t)
-    if i is not None and j is not None:
-        a,b=f(i),f(j)
-        if a!=b: par[a]=b
-sys.stderr.write(f"seeded loci: {len(loci)}\n")
+# GAMMA: the seeded relation is refined by the SHIPPED gamma-quasi-clique rule, not by raw
+# connected components. Without this the comparison varies the PARTITIONER as well as the edges
+# -- the read catalog is gamma-refined and the seeded one was not, which is why it carried a
+# 191-member blob. `gamma_refine` calls family_definition::refine_component directly.
+GB=f"{BASE}/rustle_target/release/gamma_refine"
+el=[]
+for s_,t_ in pairs:
+    i,j=lof(s_),lof(t_)
+    if i is not None and j is not None and i!=j: el.append(f"{i}\t{j}")
+GAMMA=os.environ.get("RUSTLE_GAMMA","")
+env=dict(os.environ)
+r=subprocess.run([GB],input="\n".join(el)+"\n",capture_output=True,text=True,env=env)
+sys.stderr.write(r.stderr)
+block={}
+for line in r.stdout.split("\n"):
+    if not line: continue
+    b,m=line.split("\t"); block[int(m)]=b
+def f(x): return block.get(x, f"S{x}")
+sys.stderr.write(f"seeded loci: {len(loci)}  gamma-refined blocks: {len(set(block.values()))}\n")
 
 # ----------------------------------------------------------- read catalog
 readcop=collections.defaultdict(list)

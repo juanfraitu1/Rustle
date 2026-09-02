@@ -70,6 +70,10 @@ codegen-units = 256 # Maximum parallelism
 panic = "unwind"
 
 [[bin]]
+name = "gamma_refine"
+path = "src/bin/gamma_refine.rs"
+
+[[bin]]
 name = "debug_poa"
 path = "src/bin/debug_poa.rs"
 
