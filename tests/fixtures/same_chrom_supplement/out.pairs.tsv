@@ -1,0 +1,3 @@
+family_id	copy_i	copy_j	chrom_i	start_i	end_i	chrom_j	start_j	end_j	distance	direct_edge
+GWFAM0	0	1	c1	0	260	c2	0	260	1	true
+GWFAM1	0	1	c1	250	460	c1	380	550	1	true
