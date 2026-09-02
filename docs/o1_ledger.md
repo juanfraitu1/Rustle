@@ -138,6 +138,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bn — Dense clusters inside families WORK; cliques do not (09-01)
 - §6bo — NOTHING SHIPPED; correction to the flag claim; see `O1_PRECISION_LEVERS.md` (09-01)
 - §6bp — The asymmetric two-sided coverage clause END TO END: all three criteria pass (09-02)
+- §6bq — PRE-REGISTRATION: what the coverage clause must do on the HUMAN negative panel (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7105,3 +7106,76 @@ arms that were only ever run offline.
 ⟹**STATUS: still NOT a default.** Default remains OFF and OFF is byte-identical. Remaining T8 items:
 the **HUMAN 150-window false-merge panel**, and a substrate whose large families are not zinc fingers.
 The genome-wide arm is also worth a real-binary run now that the offline model is validated.
+
+## §6bq — ⭐ PRE-REGISTRATION: what the coverage clause must do on the HUMAN negative panel (09-02)
+
+**⚠ THIS SECTION WAS WRITTEN AND COMMITTED BEFORE THE ON ARM WAS RUN.** That is the point of it.
+The clause was developed entirely on **gorilla** NPIP; the panel below is **human**, frozen since
+2026-08-10, and has never been used to tune anything. If the prediction holds, the clause transfers
+across species to a substrate it has never seen. If it does not, this section says so in advance.
+
+**Substrate.** `/home/juanfra/winloci_scratch/o1neg/` — 150 gene-tight single-locus windows drawn
+from 1,630 eligible, **HUMAN CHM13 v2.0** with **A119b** IsoSeq, harness `run2.sh`, seed 101, panel
+unchanged since 2026-08-10. Each window contains exactly one locus, so **any** family emitted is a
+false merge. ⚠It is a **specificity** and a **lower bound** — no positive stratum, so no prevalence
+and no precision. Standing rate: **2/150 = 1.33% [0.0037, 0.0473]**, stable across the 08-19/20
+default changes.
+
+**⚠ SCORE THE POST-GUARD SET, NOT THE PAF.** The panel's `*.paf` dumps are raw minimap2, upstream of
+the orientation guard: they carry **28** candidate pairs where the pipeline emits **3** edges. A first
+version of `bench/o1neg_covlonger_predict.py` predicted on the PAF and forecast 28 → 17, i.e. the
+removal of 11 edges **that no longer exist**. `*.edges.tsv` is the authority. This is the same class
+of error as the vacuous instruments of §6al — an arm that cannot see the layer it claims to move.
+
+**The three post-guard edges, with `cov_longer` recovered from the frozen PAF offsets** (the dump
+predates §6ba, so it does not carry the column):
+
+| window | pair | len_i / len_j | identity | cov_shorter | **cov_longer** | at floor 0.30 |
+|---|---|---|---:|---:|---:|---|
+| **W063** `ZNF492` | 0–1 | 2419 / 2161 | 1.000000 | 0.557149 | **0.497726** | **SURVIVES** |
+| **W106** `ANKHD1` | 1–3 | 7698 / **206** | 0.822300 | 0.966019 | **0.025591** | **REMOVED** |
+| **W106** `ANKHD1` | 2–3 | 1332 / **206** | 0.863000 | 0.699029 | **0.111862** | **REMOVED** |
+
+⭐**The prediction is MECHANISTIC, not a count — that is what makes it falsifiable.** The two
+survivors are different pathologies and the clause is predicted to discriminate between them:
+
+- **W106 dies** because it is exactly the failure mode the clause was built for: a **206 bp linking
+  node, 100% soft-masked interspersed repeat**, aligning almost fully into a 7,698 bp and a 1,332 bp
+  gene. Coverage-of-shorter reads **0.97** and **0.70** — the fragment looks like a perfect match;
+  coverage-of-longer reads **0.026** and **0.112** and says it touches 2.6% and 11% of its partner.
+  This is the human instance of the gorilla case the source comment has carried for months (a
+  2,037 bp NPIPB6 fragment reaching coverage 0.948 against a 38,653 bp node while touching 5% of it).
+- **W063 survives** because it is a **coordinate** pathology, not a coverage one: one locus emitted
+  as two nodes, the aligned block being the genuine 1,204 bp genomic **intersection** of the two
+  spans at identity exactly 1.000000. Both nodes are real-sized, so `cov_longer` is 0.498 and the
+  clause has no purchase. §Appendix A predicted the orientation guard could not fix it either —
+  *"pathology (a) is a coordinate signature, not a strand one"*. It is not a coverage signature
+  either, and **it is the residual this lever structurally cannot reach.**
+
+**PRE-REGISTERED CRITERIA — all five fixed before the run.**
+
+| # | criterion | prediction |
+|---|---|---|
+| **P1** | W106 emits **no** family under ON | its only 2 edges are removed |
+| **P2** | W063 **still** emits its family under ON | `cov_longer` 0.498 clears 0.30 |
+| **P3** | panel false-merge rate | **2/150 → 1/150 = 0.67%** |
+| **P4** | **no window gains** a family | the clause only ever *removes* edges (monotone) |
+| **P5** | total post-guard E_r edges | **3 → 1** |
+
+**FALSIFIERS, stated in advance.**
+⛔ **W106 survives** ⟹ the clause does not do on human what it does on gorilla; the mechanism claim
+is wrong and §6bk/§6bl's explanation is gorilla-specific.
+⛔ **W063 dies** ⟹ the offline model of the shipped predicate is wrong, which would also contradict
+§6bp's demonstrated fidelity (predicted 1,643 edges, binary gave 1,652).
+⛔ **Any new window emits a family** ⟹ the clause is not monotone-restrictive, i.e. a bug, not a
+threshold.
+
+**⚠ WHAT THIS CANNOT ESTABLISH, stated before the result so it cannot be quietly dropped.** The
+panel has **2 events**. A movement 2 → 1 is **not** statistically meaningful on its own — the
+Wilson interval on 1/150 is [0.0002, 0.0367] and it overlaps the interval on 2/150 almost entirely.
+**Do not report "the false-merge rate halved."** The evidence here is *not* the rate; it is
+**which** window died, **which** survived, and whether the reason matches the one written down
+above. A count of 1 is worth nothing; a correctly predicted mechanism on an unseen species is worth
+a great deal. Report it that way.
+
+Instrument: `bench/o1neg_covlonger_predict.py` (prediction) · `o1neg/run2.sh` (arm).
