@@ -155,6 +155,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6cc — NPIP END TO END: all three objectives on the advisor's own family (09-02)
 - §6cd — THREE CORRECTIONS to §6cb/§6cc: the LIFTOFF BED is the more accurate source (09-02)
 - §6ce — PRE-REGISTRATION: RUSTLE_ER_NO_STUB_EDGES on the Soto substrate (09-02)
+- §6cf — NO_STUB_EDGES RUN: it IS the fragmentation lever, P 0.9655, F1 a wash (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8336,3 +8337,56 @@ slower delete. Any *new* family appearing ⟹ the flag is not edge-restrictive.
 ⚠**Scored on the FIXED denominator** (the 91 pairs among the 14 genes the baseline detects) — §6cd
 showed the detected-pairs denominator reverses the sign of this comparison, and it is the third
 denominator error of the session. ⚠Held-out arm = the other 82 families, same run.
+
+## §6cf — ⚖️ `RUSTLE_ER_NO_STUB_EDGES` RUN: it IS the fragmentation lever, precision 0.9655, and F1 is a wash (09-02)
+
+The §6ce arm, real binary, Soto substrate. `drop_stub_edges true` in the params certificate.
+
+### Against the pre-registered criteria
+
+| # | prediction | result | |
+|---|---|---|---|
+| **P2** | NPIP precision rises above 0.8193 | **0.9655** [0.8827, 0.9905] | ✅ |
+| **P3** | NPIP families fall below 10 | **3** | ✅ |
+| **P4** | ⭐`NPIPB10P` is the detection loss | **lost = `['NPIPB10P']`, gained = `[]`** | ✅ **exactly** |
+| **P5** | recall falls less than the delete-model's 0.6044 | **0.6154** (56/91 vs 55/91) | ⚖️ met by **one pair** |
+| — | ⛔**falsifier: no new family may appear** | **3 pairs added** | ⛔ **FIRED** |
+
+⭐⭐**P4 is the result worth keeping.** The prediction named **which gene** would drop and **why** —
+both of `NPIPB10P`'s copies are single-exon `stub=true` (34 and 18 reads), so it had no non-stub edge
+to survive on — and exactly that gene dropped, alone. **A mechanism that predicts the identity of its
+own casualty is a much stronger claim than a rate that moves.**
+
+⛔**The falsifier fired, and it is the SAME non-monotonicity as §6bv**: removing edges lets γ split a
+sparse component into denser *passing* pieces, so 3 pairs **appear**. *"Edge-restrictive"* is true of
+edges and false of the emitted catalog — the scope correction §6bv already had to make for the
+coverage clause. **My falsifier was written too strongly; the flag is not buggy.**
+
+### The trade, on fixed denominators
+
+| | NPIP det | NPIP P | NPIP R | NPIP F1 | fams |
+|---|---|---|---|---|---|
+| OFF | 14 | 0.8193 | **0.7473** | **0.7816** | 10 |
+| **NO_STUB_EDGES** | 13 | **0.9655** | 0.6154 | 0.7517 | **3** |
+
+| held-out 82 families | det | P | R | F1 |
+|---|---|---|---|---|
+| OFF | 279 | 0.3712 | **0.6780** | **0.4797** |
+| **NO_STUB_EDGES** | 190 | **0.6566** [0.606, 0.704] | 0.3700 | 0.4733 |
+
+Catalog-wide: copies **879 → 349** (−60%), families **237 → 111**.
+
+⟹⟹**IT DOES WHAT WAS ASKED — the fragmentation collapses, 10 NPIP families → 3, and precision goes
+to 0.9655 on NPIP and 0.3712 → 0.6566 held out.** ⚠**But it is not a default:** recall falls further
+than precision rises, so **F1 is slightly WORSE on both** (0.7816 → 0.7517; 0.4797 → 0.4733), and it
+deletes 60% of the catalog's copies.
+
+⚖️**THE HONEST VERDICT — the same shape as §6bv, and for the same reason.** A precision lever with a
+recall cost, F1-neutral-to-negative, on a substrate where **no truth set can price the copies it
+removes**. ⭐**Unlike the coverage clause it has a defensible narrow use**: a consumer wanting a
+high-precision NPIP-like catalog can set it and get **P 0.9655 with 3 families instead of 10**. That
+is a *mode*, not a default.
+
+⚠**What it does NOT do:** it does not repair node construction. The 34 loci over 14 genes are still
+emitted; the flag only stops 16 of them from creating membership. **§5e's ~58% remains the binding
+constraint, and nothing measured today moves it.**
