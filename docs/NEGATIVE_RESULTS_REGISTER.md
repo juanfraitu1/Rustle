@@ -6,7 +6,7 @@
 > 2,019 copies**. Re-measure before quoting: see [`NUMBERS.md`](NUMBERS.md) and
 > [`o1_catalog_provenance.md`](o1_catalog_provenance.md).
 
-*Last updated 2026-08-19. 635 entries. 641 adversarially verified negative results,
+*Last updated 2026-09-02. **826 data rows across 25 tables** (derivable: count table rows that are neither a header nor a separator). ⚠ Earlier editions quoted **635 entries** and other documents quoted **631** and **639**; those counted CONSOLIDATED entries after near-duplicate merging, on 2026-08-19, and the three figures drifted apart afterwards. Rows and entries are different units — quote the row count, which anyone can recompute. 641 adversarially verified negative results,
 consolidated into 628 entries (near-duplicate results recorded in two source files are merged into one row).
 Unsupported claims were dropped before this document was written; every entry below carries the number that
 killed it, EXCEPT entries whose killing-number cell is explicitly marked* **(NO-POWER)** *— no measurement is

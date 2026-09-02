@@ -11,7 +11,7 @@
 > per-question evidence; Part 3 is what we concede unprompted; Part 4 is what to put on screen.
 
 **Provenance.** Derivations in [`o1_ledger.md`](o1_ledger.md) (120 sections), negatives in
-[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (635 entries), status in
+[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**826 rows**), status in
 [`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md). Test baseline **824 passed /
 0 failed / 11 ignored**.
 
@@ -29,13 +29,13 @@ denial.**
 
 | | count |
 |---|---:|
-| Routes attempted and killed, each with the number that killed it | **635** |
+| Routes attempted and killed, each with the number that killed it | **826** |
 | Ledger sections (each an attempt, an audit, or a retraction) | **120** |
 | `RUSTLE_*` behaviour flags in `src/` | **135** |
 | …of which the shipped default path turns **ON** | **7** |
 | Defaults flipped in the last month of work | **1** (`NODE_MIN_READS` 3 → 2, §6ac) |
 
-⭐ **The accounting is the answer.** ~640 hypotheses were tested; **one** default changed. If the
+⭐ **The accounting is the answer.** ~950 hypotheses were tested; **one** default changed. If the
 survivors were a chance tail we would have shipped dozens of them — the selection pressure that
 produces overfitting is *adopting* winners, and the adoption rate here is under 0.2%.
 
@@ -148,7 +148,7 @@ information about whether the read belongs.
 
 ### 1.5 "You would not show me the failures."
 
-Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **635 entries, each with
+Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **826 rows, each with
 the number that killed it**, and the two admitted exception classes (**NO-POWER**, and killed-by-
 argument) marked as such rather than hidden. Then hand him the ledger's own index note: an earlier
 auto-derived verdict tag scored **11/22 = 50% — a coin flip — against sections whose outcome was
@@ -291,7 +291,7 @@ only move that buys credibility for what is below it.
 
 1. **The register** (635 killed routes) and the deleted verdict-tag note — establishes the
    discipline before any result is shown.
-2. **The forking-paths accounting** (Part 1.1): ~640 tested, **1** default changed, and §6aa's
+2. **The forking-paths accounting** (Part 1.1): ~950 tested, **1** default changed, and §6aa's
    audit finding nothing to flip.
 3. **The excision O2 result** with the **MAPQ AUC 0.4944 control** — the only fully non-circular
    accuracy number in the project, and its control is what makes it one.
