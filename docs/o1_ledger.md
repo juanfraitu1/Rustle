@@ -134,6 +134,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bj — E_c refinement run as a catalog change: safe, real, and NOT general (09-01)
 - §6bk — Charge coverage on BOTH sequences: the strongest lever measured (09-01)
 - §6bl — Two-sided coverage on a SECOND substrate: the gain holds, the mechanism does not (09-01)
+- §6bm — Two-sided coverage + connectivity: the composite gain does NOT reproduce (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6910,3 +6911,58 @@ that gains on both substrates and is NPIP-neutral on the one where NPIP is measu
 0.50 is better genome-wide on F1 but costs **44% of families and 46% of copies** there and NPIP recall
 on `arm_f2` — too expensive to adopt on one substrate's F1.
 ⚠ still offline on both; T8 unchanged — the real binary and the HUMAN 150-window panel remain unrun.
+
+## §6bm — TWO-SIDED COVERAGE + CONNECTIVITY: the composite gain does NOT reproduce (09-01)
+
+§6bh found connectivity subsumed by the direct-edge rule. Re-asked against a DIFFERENT baseline —
+the two-sided coverage clause — because that clause changes which edges exist, so the graph the
+connectivity features see is a different object. Instrument: `bench/er_coverage_plus_connectivity.py`.
+
+### ⛔⛔ GLOBAL TRIANGLE / k-CORE IS DISQUALIFIED — IT CANNOT KEEP A 2-MEMBER FAMILY
+Genome-wide it looked like the best arm (nZ F1 0.4306 → 0.4971). It is an artefact:
+
+| arm | families | **size-2 families** | copies |
+|---|---|---|---|
+| shipped | 356 | **255** | 1,070 |
+| cov_long ≥ 0.30 | 308 | 231 | 913 |
+| cov 0.30 + triangle EVERYWHERE | **45** | **0** | 305 |
+
+⛔**A 2-member family is one edge with no common neighbour, so a triangle (or k-core-2) requirement
+deletes EVERY one of them by construction — and 255/356 = 72% of the shipped catalog is 2-member.**
+304 of 356 families lose every member. ⟹**it is not a precision filter, it is a "families must have
+≥3 members" rule in graph-theory costume**, and its precision gain comes from deleting the class of
+family that is hardest to score. On `arm_f2` it is outright harmful: **NPIP 14/31 → 13/31 and F1
+0.3182 → 0.2469, below the shipped baseline.**
+
+### ⭐ ON A FIXED UNIVERSE THE SIGNAL IS REAL — SO THE SCOPED FORM IS WORTH TESTING
+Universe fixed BEFORE filtering (copies in a ≥3-member family under cov 0.30, 451 copies / 92
+non-ZNF positive pairs), so the triangle arm cannot choose its own denominator:
+
+| arm | pairs | precision | recall | F1 |
+|---|---|---|---|---|
+| cov 0.30 | 722 | 0.1274 | 1.0000 | 0.2260 |
+| cov 0.30 + triangle | 449 | **0.1893** | 0.9239 | **0.3142** |
+| cov 0.30 + k-core 2 | 506 | 0.1680 | 0.9239 | 0.2843 |
+
+⟹**connectivity carries genuine signal once the size effect is removed** (+49% precision for 7 of 92
+true pairs). So: apply it ONLY inside families where it is definable.
+
+### ⛔ BUT THE SCOPED COMPOSITE FAILS THE CROSS-SUBSTRATE CHECK
+| arm | genome-wide nZ F1 | `arm_f2` nZ F1 | `arm_f2` NPIP |
+|---|---|---|---|
+| shipped | 0.4306 | 0.3182 | 14/31 |
+| **cov_long ≥ 0.30** | 0.4595 | **0.4043** | **14/31** |
+| cov 0.30 + triangle in fams ≥ 3 | **0.5066** | 0.4086 | 14/31 |
+| cov 0.30 + triangle in fams ≥ 5 | 0.4653 | — | — |
+
+Genome-wide the scoped composite is the best arm (0.4595 → **0.5066**, +10%, keeping 276 families and
+all 230 two-member ones — 6x the families and 2.5x the copies of the global filter).
+⛔**On `arm_f2` the same arm gains 0.4043 → 0.4086 = +0.004, i.e. NOTHING**, while costing a further
+**22% of copies** (458 → 356). ⚠**the ≥5 variant is worse than ≥3 genome-wide, so a threshold was being
+selected on one proxy** — exactly why the second substrate had to be run.
+
+⟹**RECOMMENDATION: ship the two-sided coverage clause ALONE.** `RUSTLE_ER_COVERAGE_LONGER = 0.30`
+gains on BOTH substrates (0.3182→0.4043 and 0.4306→0.4595) and is NPIP-neutral. **Connectivity is not
+worth adding**: its gain appears on one substrate and vanishes on the other, while its cost (another
+17–22% of copies) appears on both. ⭐**The general rule this session keeps re-deriving: a filter whose
+benefit does not reproduce across substrates, but whose cost does, is not a filter.**
