@@ -130,6 +130,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bf — Is the seeded catalog BETTER as a catalog? NO (γ applied to both) — and the test cannot be neutral (09-01)
 - §6bg — Sources of false merges in BOTH modes: transitive closure, and one oversized family (09-01)
 - §6bh — Connectivity as an orthogonal lever: NO; and the direct-edge rule has no default form (09-01)
+- §6bi — E_c SPLITS the large families: the first orthogonal lever, and §6bg's FP source 2 RETRACTED (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6552,6 +6553,11 @@ already optimises it.** The seeded mode's established value stays what §6be mea
 
 ## §6bg — SOURCES OF FALSE MERGES IN BOTH MODES: transitive closure, and one oversized family (09-01)
 
+> ⛔⛔ **FP SOURCE 2 IS RETRACTED — see §6bi.** The oversized families are ZINC-FINGER
+> clusters (`GWFAM79` 54 members / 42 Mb, `GWFAM2` 87.7% ZNF-annotated) — real families, not blobs.
+> CDS concordance fails on them by construction: 74.5% of read-catalog pairs are ZNF–ZNF at 0.0778.
+> **FP source 1 (transitive closure) SURVIVES** — lift +0.1538 on non-ZNF pairs.
+
 Labelled a same-family pair **CONCORDANT** when the two loci's CDS align under the project's own E_r
 rule, **DISCORDANT** otherwise. ⚠**DISCORDANT is a CANDIDATE false positive, not a proven one** — real
 paralogues diverge past 0.60 in coding sequence. Instruments: `bench/fp_sources_seeded.py`,
@@ -6675,3 +6681,64 @@ high-precision SUBSET label** and is the right place to surface this to a reader
 ⚠**caveat on the e2e substrate**: the genome-wide fibroblast catalog covers the NPIP truth set at only
 **1/31** (arm_f2, 3 contigs, gives 14/31), so **NPIP recall is not a usable end-to-end criterion on
 `fibro_gwcat`** — that check belongs on the 3-contig catalog.
+
+## §6bi — ⭐⭐ E_c SPLITS THE LARGE FAMILIES, AND IT IS THE FIRST ORTHOGONAL LEVER (09-01)
+
+The advisor's shared-multimapper edge, asked as a NARROW question: not "can E_c define families"
+(§6bb: no — 18% coverage, blind below identity 0.95) but **"inside an over-large family, does E_c mark
+which members genuinely belong together?"** Its high-identity specificity, fatal for a definition, is
+exactly what a splitter wants. Instruments: `bench/ec_blob_split.py`, `..._eval.py`.
+Substrate: `arm_f2` (3 contigs), the only catalog with E_c on the same rep set. Baseline precision
+0.1060 over 2,528 same-family pairs with a CDS on both sides.
+
+### ⭐⭐ IT IS ORTHOGONAL TO `direct` — WHERE EVERY CONNECTIVITY LEVER FAILED (§6bh)
+| | pairs | precision | F1 |
+|---|---|---|---|
+| none | 2,528 | 0.1060 | 0.1851 |
+| direct E_r edge | 1,014 | 0.2406 | 0.3531 |
+| **direct + E_c ≥ 1** | 267 | **0.5431** | **0.4567** |
+| direct + E_c = 0 | 747 | 0.1325 | 0.1776 |
+| E_c ≥ 1 alone | 335 | 0.4687 | 0.4467 |
+
+⭐**E_c more than DOUBLES precision on top of `direct` (0.2406 → 0.5431)** — §6bh's four connectivity
+levers all *lowered* it. ⭐**And it is the only thing that has ever moved the TRANSITIVE pairs:
+0.0159 → 0.1765 (11×)**, against 0.2721 → 0.2908 for the best connectivity lever.
+**Mechanism**: E_c is a READ-level relation, so it is genuinely a different substrate from the
+sequence-homology graph — which is precisely why the connectivity features, all computed on that same
+graph, could add nothing.
+
+### ⭐⭐ IT SPLITS THE 54-MEMBER FAMILY, NEARLY RECALL-FREE
+`GWFAM79` = 54 members, 34.3% of every same-family pair in the catalog:
+
+| treatment | sub-families | pairs | concordant | true pairs lost |
+|---|---|---|---|---|
+| as one family | 1 | 1,225 | 199 = **0.1624** | — |
+| **split by E_c ≥ 1** | **4** (24, 22, 3, 2) | 425 | 196 = **0.4612** | **3 / 199** |
+| split by E_c ≥ 2 | 5 (20, 18, 4, 3, 2) | 283 | 144 = 0.5088 | 55 / 199 |
+| split by E_r direct | **1** (no split) | 1,225 | 0.1624 | 0 |
+
+⟹**E_c ≥ 1 triples within-family concordance while losing 3 of 199 true pairs**, and it splits a
+component that **E_r cannot touch** — the family is a single E_r component, so no sequence-homology
+criterion can divide it. ⚠E_c ≥ 2 buys 0.05 more precision for 55 true pairs: **use ≥ 1.**
+
+### ⛔⛔ AND THE SAME WORK RETRACTS §6bg's "FP SOURCE 2"
+**`GWFAM79` IS A ZINC-FINGER CLUSTER** — 54 members over 42.27 Mb on NC_073244.2, median span 28 kb,
+53/54 spliced, annotated ZNF137 / ZNF83 / ZNF91-like / ZNF610 / ZNF816 / ZNF813. **`GWFAM2`
+(genome-wide) is 87.7% zinc-finger annotated.** KRAB-ZNF clusters are the canonical rapidly-evolving
+primate multi-copy family ⟹ ⛔**these are REAL families, not blobs, and §6bg's "one oversized family
+that survives γ" is RETRACTED as an FP source.**
+⚠⚠**AND IT EXPOSES THE INSTRUMENT'S REAL LIMIT: CDS concordance FAILS ON EXACTLY THE FAMILIES THAT
+MATTER.** In the read catalog **74.5% of all same-family pairs are ZNF–ZNF and they score 0.0778**;
+excluding them, precision rises **0.1234 → 0.2790**. ZNF finger arrays diverge under diversifying
+selection, so genuine paralogues fail a 0.60/0.50 coding bar. ⟹**never read a low CDS-concordance
+number as false merging without checking the family's biotype.**
+✅**§6bg's FP SOURCE 1 SURVIVES this**: the direct-vs-transitive lift is **+0.1538 on non-ZNF pairs**
+(0.3032 vs 0.1494), +0.1792 within ZNF, +0.2130 overall — not a ZNF artifact.
+
+⟹**DISPOSITION: this is the one place the advisor's edge idea EARNS a role in O1.** E_r defines
+membership; **E_c refines it INSIDE a family**, where its high-identity bias is a feature.
+⚠**T8 — offline proxy, so this is a hypothesis, not a shipped result.** Before anything moves: it must
+run end-to-end on the 3-contig catalog (where NPIP recall is usable, §6bh), be checked against the
+HUMAN 150-window false-merge panel, and be re-measured on a substrate whose big families are NOT ZNF.
+⚠E_c reaches only **335/2,528 = 13%** of same-family pairs and needs reads, so it is silent on
+unexpressed copies.
