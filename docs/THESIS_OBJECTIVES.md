@@ -116,6 +116,9 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 | **5** | **T8** — offline re-derivation is a hypothesis generator, **never a test**. | 4 prior offline-proxy errors on the E_r/PSV line alone. |
 | **6** | **argmax / best-hit counting is not counting** (T19); always record **`-p` and `-N`** with any copy count. | MAPKBP1 gives 1/1 at `-p 0.8` and 9/8 at `-p 0.1`. |
 | **7** | Never pool **human** and **gorilla**; state the **unit** every time. | The two headline O1 rates are on different species. |
+| **9** | ⭐**Pre-declaring a confound protects against THAT confound and no other.** | 2026-09-02 (§6bv): §6bu named **length** as D4's confound and controlled for it; the effect held in all four length quartiles. The operative confound was **EXON STRUCTURE**, and controlling for that erased it entirely. State the mechanism by which a confound could act, not just its name. |
+| **10** | **A parameter change makes an old measurement look unreproducible.** | 2026-09-02 (§6bt.1): the frozen human panel appeared to have "moved" and was written up as lost provenance. It reproduces **exactly** at `RUSTLE_GATE_MIN_READS=3` — the node floor §6ac changed. **Check the flags before declaring a number stale.** |
+| **11** | **"A pure restriction" can be true of one layer and false of another.** | 2026-09-02 (§6bv): the coverage clause adds **no** edges (verified) yet **creates 29 copies at loci that had none**, because removing edges lets γ split a sparse component into denser passing pieces. **Name the layer.** |
 | **8** | **Substrate provenance.** | The shipped catalog was built from `GGO_ds.bam` = **OR6737 testis**, a *different animal* from the assembly (KB3781). Same-animal RNA exists: `fibroblasts/GCA_029281585.2_flnc_mm.bam`. |
 
 ---
@@ -123,6 +126,20 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 ## O1 — define a multi-copy gene family topologically at the RNA level
 
 ### ✅ WON
+
+- ⭐⭐⭐ **A CROSS-SPECIES PRE-REGISTERED TEST, PASSED 5/5 (2026-09-02, §6bq → §6bt.2).** The two-sided
+  coverage clause was developed entirely on **gorilla** NPIP; the 150-window negative panel is **human**
+  CHM13/A119b, frozen since 08-10 and never used to tune anything. The prediction was **mechanistic**
+  (which window dies, why, and that the other **must survive**), committed as `5cbced4` and **pushed
+  before the run**. Result: **5/5 criteria, 0/3 falsifiers, 9/9 edge outcomes across two node floors.**
+  ⚠**Do NOT report a rate change** — 2–3 events, overlapping intervals. ⚖️**And it was then refused a
+  default (§6bv)**, which is the more useful half of the result.
+- ⭐⭐ **THE SELF-OVERLAP DEFECT IS GONE FROM THE CURRENT PATH (2026-09-02, §6bs).** Blind-spot item 6,
+  unaudited since 08-14: **7.09%** (GGO) and **7.10%** (PTR) of families in the `refine`-built catalogs
+  had a copy overlapping its own sister — cross-species replication at nearly the same value, i.e. a
+  **pipeline** property. Current path: **0/4,176 within-family pairs** [0, 0.0009]. Tested against the
+  obvious objection: `arm_cov030` produces the defect on those *same three contigs*, so the zero is not
+  substrate size. ⛔**Not claimable genome-wide** — the 7.1% is genome-wide, every zero is 3-contig.
 | result | number | substrate |
 |---|---|---|
 | Shipped catalog | **627 families / 2,019 copies** | GORILLA mGorGor1 |
@@ -170,6 +187,14 @@ These have cost more than any single wrong idea. **Four headlines died in one we
   is UNCHANGED at 12/31 at every floor while pure families fall 3 → 1 and the largest balloons 39 → 104.
 
 ### 🔄 OPEN
+
+- ⭐⭐⭐ **A POSITIVE STRATUM — now the binding constraint on O1's precision work (2026-09-02, §6bv).**
+  Every precision lever dies at the same place: **no truth set labels a meaningful share of the copies
+  a filter deletes.** The coverage clause passed a cross-species pre-registered test **5/5 / 9/9** and
+  was still refused a default because its **220 lost copies are unadjudicable** — within exon strata,
+  deleted and retained copies carry a reciprocal RefSeq match at the *same* rate. **NPIP labels 21 of
+  678.** ⟹ until a positive stratum exists, "keep opt-in" is the ceiling for every E_r lever, and that
+  is a statement about the *evidence*, not about the levers.
 
 - ⭐⭐⭐ **SEEDED DISCOVERY (§5m) — the largest measured gain in the objective.** ONE annotated gorilla
   copy plus one iteration finds **23/23 = 100% of expressed NPIP members**, against **13/23 = 56.5%** for
