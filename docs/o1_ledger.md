@@ -148,6 +148,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bv — THE ADJUDICATION: KEEP OPT-IN, and four of five criteria did not go as expected (09-02)
 - §6bw — PRE-REGISTRATION: adjudicating the copy loss against SOTO's families (09-02)
 - §6bx — THE SOTO ADJUDICATION: high P/R in Soto's stratum; the clause REJECTED as a default (09-02)
+- §6by — A FALSE-MERGE RULE VALIDATED ON EXTERNAL TRUTH: co-membership at GRAPH DISTANCE 1 (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7799,3 +7800,82 @@ no longer an absence of evidence.
 4. **Expression is NOT the limiting factor here** (§6bw): **350/362 = 96.7%** of members carry ≥2
    primaries, median depth **161**. ⟹**the 35.4% detection at the ≥50% floor cannot be blamed on
    expression** — it is node construction, consistent with §5e's ~58%.
+
+## §6by — ⭐⭐⭐ A FALSE-MERGE RULE VALIDATED ON EXTERNAL TRUTH: assert co-membership at GRAPH DISTANCE 1 (09-02)
+
+First FP-rule search in the project with an **external** labelling of co-membership assertions —
+every earlier one used the CDS proxy or NPIP. Substrate: §6bx's `arm_off`, 1,263 asserted Soto gene
+pairs, 506 true. Instrument `bench/soto_fp_rules.py`.
+
+### ⛔⛔ THE CIRCULAR RULE, NAMED FIRST SO IT IS NEVER PROPOSED
+
+Soto's families are **SD98 — ≥98% identity by construction.** Therefore *"raise the E_r identity
+floor to 0.90"* scores superbly here **for the same reason the truth set exists.** ⟹**any rule whose
+discriminating variable is edge IDENTITY is UNADJUDICABLE on this truth set**, and the operating
+point "direct edge ∧ identity ≥ 0.90 ⟹ P = 0.8891" is reported below **only as a description, never
+as a validated rule.** Every rule that follows is evaluated where identity cannot do the separating.
+
+### ⭐⭐⭐ THE RESULT: precision decays MONOTONICALLY with graph distance
+
+Shortest path between the two copies through the **full** node graph, inside their own predicted
+family (paths may run through unlabelled nodes):
+
+| distance | pairs | TP | FP | precision | 95% CI |
+|---|---:|---:|---:|---|---|
+| **d = 1 (direct E_r edge)** | 650 | 410 | 240 | **0.6308** | [0.5930, 0.6670] |
+| d = 2 | 334 | 72 | 262 | **0.2156** | [0.1748, 0.2628] |
+| d = 3 | 153 | 22 | 131 | **0.1438** | [0.0969, 0.2081] |
+| d = 4 | 85 | 1 | 84 | **0.0118** | [0.0021, 0.0637] |
+| d = 5 | 33 | 0 | 33 | **0.0000** | [0.0000, 0.1043] |
+
+⚠ d = 6 is n = 5 and reads 0.20 — noise, not a reversal. **Identity plays no part in this split**, so
+the decay is not the circular rule in disguise.
+
+| operating point | precision | TP kept | pairs asserted |
+|---|---|---|---|
+| current (all pairs in a family) | 0.4006 | 506 (100%) | 1,263 |
+| **d ≤ 1** | **0.6308** | 410 (**81.0%**) | 650 |
+| d ≤ 2 | 0.4898 | 482 (95.3%) | 984 |
+| d ≤ 3 | 0.4433 | 504 (99.6%) | 1,137 |
+
+### ⭐⭐ IT IS NOT FAMILY SIZE — the obvious confound, controlled
+
+Today's meta-ledger row 9 says pre-declaring a confound protects against that one only, so this was
+checked rather than asserted. Within **every** size stratum the effect holds and the intervals do
+**not** overlap:
+
+| predicted family size | d = 1 | d ≥ 2 | ratio |
+|---|---|---|---|
+| 2–5 | **0.8168** [0.767, 0.858] | 0.2683 [0.157, 0.419] | **3.0×** |
+| 6–15 | **0.7364** [0.688, 0.780] | 0.3000 [0.250, 0.355] | **2.5×** |
+| 16+ | **0.4362** [0.367, 0.508] | 0.1085 [0.080, 0.146] | **4.0×** |
+
+⭐**Family size is independently informative as a STRATIFIER** — d = 1 precision falls 0.8168 →
+0.7364 → 0.4362 with size. **The best operating point is `d = 1` ∧ family ≤ 5: precision 0.8168**,
+double the catalog's pooled 0.4006. ⚠As a *filter* family size was weak (R8 0.8767, R9 0.8871
+against a 0.8891 baseline in-band) — **it stratifies, it does not gate.**
+
+### ⭐⭐⭐ HOW TO SHIP IT — A CERTIFICATE, NOT A FILTER
+
+§6bh rejected the direct-edge rule because *"as a pair rule it cannot apply to a set; as k-core it
+loses 2/3 of families."* **That objection dissolves if the partition is left alone.** Emit, per
+emitted copy pair, the **graph distance inside its family** — exactly the pattern the project already
+uses for `λ` / `cut_certified`, which are computed and disclosed but never used to filter.
+
+- the catalog is **unchanged**, so nothing regresses and no default moves;
+- every co-membership assertion carries **what backs it** — an edge, or a chain of length k;
+- a consumer wanting precision reads `d = 1` and gets **0.63 pooled / 0.82 in families ≤ 5**;
+- it converts §6bg's *"transitive closure is a false-merge source"* from an internal proxy finding
+  into a **disclosed, externally validated property of each row.**
+
+### What this replicates and what it does not
+
+✅**REPLICATES §6bg on external truth.** That section named transitive closure as a false-merge
+source using the **CDS concordance proxy**; this is the same conclusion from Soto's families, and
+proxy-to-external replication is rare in this project.
+⛔**It does NOT fix the underlying merges** — the families still contain the wrong members; the
+certificate only stops the catalog from *asserting* the weakest pairs with equal confidence.
+⚠**Precision is UNDERSTATED throughout** (Soto is CAT-bounded) so d ≥ 2 pairs are not all wrong —
+some are real copies CAT missed. The **ratio** between strata is the robust quantity, not the level.
+⚠**All §6bx disclosures ride with these numbers**, including the first-ever firing of the
+`o1-perp-o2` guard and the `-M -L` subset BAM.
