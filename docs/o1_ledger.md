@@ -156,6 +156,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6cd — THREE CORRECTIONS to §6cb/§6cc: the LIFTOFF BED is the more accurate source (09-02)
 - §6ce — PRE-REGISTRATION: RUSTLE_ER_NO_STUB_EDGES on the Soto substrate (09-02)
 - §6cf — NO_STUB_EDGES RUN: it IS the fragmentation lever, P 0.9655, F1 a wash (09-02)
+- §6cg — SEEDED SEARCH ON NPIP: 5-6 seeds recover 100%, zero false positives (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8390,3 +8391,54 @@ is a *mode*, not a default.
 ⚠**What it does NOT do:** it does not repair node construction. The 34 loci over 14 genes are still
 emitted; the flag only stops 16 of them from creating membership. **§5e's ~58% remains the binding
 constraint, and nothing measured today moves it.**
+
+## §6cg — ⭐⭐⭐ SEEDED SEARCH ON NPIP: 5–6 seeds recover 100% of the rest, with ZERO false positives (09-02)
+
+Motivated by §6cf's diagnosis: node construction loses `NPIPP1` (1,567 spliced reads → a 4-read
+locus), `NPIPB12` and `NPIPB10P` to **mis-chained giants** that absorb the reads and then align to
+nothing. **A seeded search bypasses node construction entirely**, so it tests whether the information
+is reachable at all.
+
+**Design — two DISJOINT, pre-specified seed sets so the answer cannot be a seed-choice artifact.**
+Members ordered by coordinate; **set A = every 3rd (6 seeds)**, **set B = the next residue class
+(5 seeds)**. Genomic intervals from `npip_ID154.adjudicated.bed`, sequence from `chm13v2.0.fa`,
+`minimap2 -cx asm20 -N 50 -p 0.1` against chr16. Admitted at identity ≥ 0.60, query coverage ≥ 0.10.
+
+| seed set | seeds | non-seed targets | **recovered** |
+|---|---|---|---|
+| **A** (NPIPB2, NPIPA5, NPIPB6, NPIPB9, NPIPB12, NPIPB15) | 6 | 10 | **10/10 = 1.000** |
+| **B** (NPIPA2, NPIPA7, NPIPB8, NPIPB10P, NPIPA3) | 5 | 11 | **11/11 = 1.000** |
+
+⭐⭐**ALL THREE GENES NODE CONSTRUCTION LOSES ARE RECOVERED BY BOTH SETS** — `NPIPP1`
+(id 0.9846 / 0.9851, qcov 0.936 / 1.000), `NPIPB12`, `NPIPB10P`. Median hit identity ≈ **0.99**.
+⟹**the information is fully present and reachable from 5 seeds; the RNA pipeline's node construction
+is what loses it.** This is §5e's attribution and §6cf's mechanism confirmed from the opposite
+direction.
+
+### ⭐⭐ THE "OFF-TARGET" HITS ARE NOT OFF-TARGET — precision is 100%
+
+Both sets produced 10 merged hit loci outside `ID_154`. **Every one carries a RefSeq NPIP-family
+gene:** `NPIPA1`, `NPIPA6`, `NPIPA9`, `NPIPB3`, `NPIPB4`, `NPIPB5`, and four NPIP-family `LOC`
+entries (`LOC128966608`, `LOC124907834`, `LOC124907808`, `LOC124907807`). **Zero false positives.**
+
+⟹⟹**SOTO'S `ID_154` IS INCOMPLETE.** It lists **16** members; chr16 carries at least **26**
+NPIP-family loci. ⭐**The gorilla panel's 19-gene roster contains 6 of the 10 extras** — so that
+roster is *more* complete than `ID_154`, which independently supports §6cd's warning that the two
+denominators are not interchangeable.
+⭐**And `LOC124907807` is the locus at S1A's NPIPB15 coordinate** — §6cd said S1A's entry pointed at
+"a different, unnamed NPIP paralog", and here it is, recovered by both seed sets.
+
+### ⚠⚠ WHAT THIS DOES **NOT** SHOW — three limits, and the third was nearly a false claim
+
+1. **It is a DNA search.** It establishes that the loci exist and are reachable; it says **nothing**
+   about whether they are transcribed. O1 is an RNA-level objective.
+2. ⛔**It CANNOT validate the definition or the edge rule.** The seeds are NPIP, so finding NPIP is
+   near-guaranteed by sequence — [[project_discover_then_define_is_circular]]. The result is about
+   **reachability**, never about precision of the annotation-free definition.
+3. ⛔**"The catalog finds none of these 10" would have been FALSE.** 9 of the 10 have 0 catalog copies
+   and one has a 3-read copy — but **all 10 lie entirely OUTSIDE the sliced BAM** (slice coverage
+   0.0% for every one), because the slice was built from `ID_154`'s 16 regions ±5 kb. **A slice
+   artifact, not a pipeline miss**, and it was one sentence from being reported as the latter.
+
+⟹**NEXT STEP for the seeded mode: re-slice over all ~26 NPIP-family loci**, not `ID_154`'s 16, then
+ask the RNA question — which of them carry reads, and which the pipeline recovers.
