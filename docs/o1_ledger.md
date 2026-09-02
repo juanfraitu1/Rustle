@@ -145,6 +145,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bt.1 — THE CONTROL: the frozen panel IS reproducible, and the node floor is the WHOLE cause (09-02)
 - §6bt.2 — EVERY PRE-REGISTERED CRITERION PASSES, on a species the clause never saw (09-02)
 - §6bu — ADJUDICATION of the coverage clause: the decision rule, fixed BEFORE the evidence (09-02)
+- §6bv — THE ADJUDICATION: KEEP OPT-IN, and four of five criteria did not go as expected (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7362,8 +7363,11 @@ from a clause developed entirely on **gorilla** NPIP:
 | W095 | 0–3 | 1.0000 | 0.5817 | **0.2357** | removed |
 | **W034 `BAGE5`** | 9–14 | 0.7527 | 0.5066 | **0.4604** | **KEPT** |
 
-✅**P4 PASSES — `ADDED=[]`, `GAINED=[]`.** No edge and no window appeared. The clause is a **pure
-restriction**, not a re-shuffle; that was a pre-registered falsifier and it held.
+✅**P4 PASSES — `ADDED=[]`, `GAINED=[]`.** No edge and no window appeared; that was a pre-registered
+falsifier and it held. ⚠**SCOPE, added 09-02 (§6bv): "a pure restriction" is true of EDGES and FALSE
+of COPIES.** On the gorilla catalog the same clause creates **29 copies at loci that had none**,
+because removing edges lets γ split a sparse component into denser passing pieces. The panel could
+not see this — one locus per window.
 
 ⚠⚠**DO NOT SAY THE FALSE-MERGE RATE FELL BY TWO THIRDS.** §6bq said so before the result existed and
 it still governs: **3 events**, Wilson [0.0068, 0.0571] against [0.0012, 0.0368], almost entirely
@@ -7536,3 +7540,85 @@ not merely quiet elsewhere.**
 ⚠**The most likely outcome is KEEP OPT-IN**, and that is a real verdict, not a failure to decide:
 the honest reason to withhold a default is *"we cannot price the cost"*, which is exactly the
 position §6aa took on every other flag.
+
+## §6bv — ⚖️⚖️ THE ADJUDICATION: **KEEP OPT-IN**, and four of the five criteria did not go as expected (09-02)
+
+Run against §6bu's rule, on `arm_cfoff` → `arm_cf030` (same binary, same substrate, the only
+difference the clause). Instrument `bench/adjudicate_covlonger.py`.
+
+### ⭐ FIRST, A STRUCTURAL FACT NEITHER §6bp NOR §6bu ANTICIPATED
+
+**The node set is IDENTICAL — 3,598 both arms, 0 differences either way** (the clause touches only
+edges), **but the catalog is NOT a subset**: **220 copies lost, 32 gained, 29 of them at loci that
+had NO copy at all in the OFF arm.**
+
+⟹⟹**THE CLAUSE IS NOT MONOTONE AT THE CATALOG LEVEL.** Removing edges can *create* families,
+because γ demands density ≥ 0.20: a large sparse component that yields nothing can, once broken,
+fall into denser pieces that pass. Largest family **54 → 32**, two-member families **40 → 48**.
+⚠**This does not contradict §6bt.2's P4** — no *window* gained a family on the panel — but *"the
+clause is a pure restriction"* is **true of edges and FALSE of copies**, and §6bt/§6bt.2 should be
+read with that scope.
+
+### The five criteria
+
+| | verdict | evidence |
+|---|---|---|
+| **D1** recall | ✅ met, ⚠**hollow** | 14/31 → **15/31**, one gained, **none lost** (re-derived today, not quoted) |
+| **D2** specificity | ✅ **met, strongly** | §6bt.2 — 5/5 pre-registered, 9/9 edge outcomes, cross-species |
+| **D3** loss in defective strata | ⚠ consistent, **weak as pre-declared** | lost 69.5% single-exon vs kept 47.4%; median reads 6 vs 9; ≤2 reads 24.1% vs 17.9% |
+| **D4** no penalty on corroborated copies | ⛔ **NULL — and my confound was the wrong one** | see below |
+| **D5** trims rather than deletes families | ⛔ **fails the strict reading** | **18 families deleted outright**, sizes 2–6, carrying **55 copies = 25%** of the loss; 52 trimmed (165), 51 intact |
+
+### ⛔ D4: the support was real-looking, and it was exon structure
+
+Within **length** quartiles — the confound §6bu named — lost copies looked consistently less
+corroborated, in all four strata: **0.034 / 0.240 / 0.386 / 0.353** against kept **0.179 / 0.350 /
+0.536 / 0.614**. That reads as the clause preferentially deleting uncorroborated copies.
+
+Controlling instead for **exon structure**, it vanishes:
+
+| stratum | LOST | KEPT |
+|---|---|---|
+| single-exon nodes | 2/153 = **0.013** | 2/217 = **0.009** |
+| multi-exon nodes | 53/67 = **0.791** | 189/241 = **0.784** |
+
+⟹**identical.** The entire D4 signal was that lost copies are 69.5% single-exon versus 47.4%, and a
+single-exon node essentially never reciprocally matches a gene (~1%) while a multi-exon one usually
+does (~79%). ⚠**§6bu named LENGTH as the confound and length was not the operative one.** Naming a
+confound in advance does not protect against naming the wrong one.
+
+⟹⟹**THE COPY LOSS IS ANNOTATION-NEUTRAL.** By the only independent instrument available, the clause
+deletes corroborated and uncorroborated copies **at the same rate**. **At the EDGE level it is
+sharply discriminating (9/9); at the COPY level it is INDISCRIMINATE.** Both can be true at once —
+it targets bad edges, and the copy loss is **collateral**, which is also why 18 families die whole.
+
+### ⚠ D1 is met, and it is carried by the least trustworthy node in the catalog
+
+The single gained truth region, `NC_073242.2:15542379-15563701`, is hit by exactly one copy:
+
+> `NC_073242.2:15558380-15558654` — **274 bp, 2 reads, 1 exon**, in `GWFAM26`, at a locus with no OFF
+> copy, in a family that exists **only because γ re-partitioned** after edges were removed.
+
+⟹ the clause's **one measured benefit on the positive truth set** is a **2-read single-exon 274 bp
+node** — the same class §6bt.1 showed carries **6/6** of the human panel's false-merge edges, and the
+same single-exon stub stratum standing at 26.8% of shipped copies. ⚠**Do not quote "14/31 → 15/31"
+without this sentence.**
+
+### ⚖️ VERDICT — **KEEP OPT-IN** (§6bu's pre-committed middle outcome)
+
+**SHIP** required D1, D2, D5 **and** no D4 penalty. **D5 fails**, **D4 is null rather than
+supportive**, and **D1's gain is one 274 bp 2-read node**. What survives is exactly what §6bt.2
+established and no more: **a validated edge filter**, cross-species, mechanism confirmed 9/9.
+
+⭐**The honest statement of the trade:** *the clause removes the edges it was designed to remove, and
+does so across a species boundary. Its catalog-level effect — −27.7% of copies, 18 families deleted,
+29 loci created — is collateral, non-monotone, and by the one available independent measure
+indiscriminate. That is not a trade to make silently.*
+
+⚠**What would change the verdict** — a **positive stratum**: any truth set that labels a
+non-trivial share of the 220 lost copies. NPIP labels **21 of 678**. Without one, D4's null is the
+ceiling of what can be said, and **KEEP OPT-IN is the finding, not a deferral.**
+
+⭐**One real benefit is not in dispute and should be quoted:** largest family **54 → 32**, i.e. the
+ZNF blob splits, consistent with §6bi. That is a *precision* claim about family structure and it
+does not depend on any of the copy-level reasoning above.

@@ -18,7 +18,7 @@ Session of 2026-09-01. Full detail in `o1_ledger.md` §6bg–§6bn; negative res
 
 | lever | verdict | why | §
 |---|---|---|---|
-| **Two-sided coverage** (`cov_longer` floor) | ⭐⭐ **VALIDATED e2e, opt-in** | all 3 criteria pass; NPIP **14/31 → 15/31** | §6bk/§6bl/**§6bp** |
+| **Two-sided coverage** (`cov_longer` floor) | ⭐⭐ **ADJUDICATED 09-02: KEEP OPT-IN** | edge filter validated cross-species (**5/5 pre-registered, 9/9 edges**, §6bt.2); ⛔ copy-level loss is **annotation-neutral and non-monotone** — 18 families deleted, 29 loci created; the **14→15 gain is one 274 bp 2-read node** | §6bp/§6bt.2/**§6bv** |
 | **Dense clusters inside families** (γ′=0.70, families ≥3) | ⭐ **second candidate** | within-biotype separation 31× / 15×, reproduces | §6bn |
 | E_c within-family refinement | ⚖️ scoped only | safe and real, but reaches only near-identical arrays | §6bi/§6bj |
 | Direct-edge requirement | ⛔ no default form | as a pair rule it cannot apply to a set; as k-core it loses 2/3 of families | §6bg/§6bh |
