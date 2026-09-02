@@ -762,6 +762,118 @@ pub(super) fn locus_has_spliced_evidence(
 ///
 /// Depth counts every primary read overlapping the span, matching what `samtools depth` reports there, so
 /// the value is independent of how reads were attributed to loci.
+/// Read floor for the LINKED-LOCUS merge (`RUSTLE_LOCUS_LINK_MIN_READS`). `None` = off (default).
+///
+/// The co-located merge in `distinct_locus_reps_grouped` opens with `same_pos` and skips every
+/// non-overlapping pair. Measured on the 26-locus NPIP substrate (ledger §6cj), that gate is the
+/// wrong shape for the dominant node-construction defect: the catalog emits **3.08 loci per gene**,
+/// one dominant multi-exon locus plus single-exon debris, and **26 of 34 within-gene fragment pairs
+/// are DISJOINT** — so the only merge that exists never examines them.
+///
+/// The evidence it ignores is large and specific: **30.1% of reads have aligned blocks touching two
+/// or more loci of one gene** (94.3% at NPIPB6, one pair joined by 560 reads; 721 reads joining a
+/// pair at NPIPB14P), and **93.3% of that linkage support is WITHIN a single gene**. It is also
+/// heterogeneous — NPIPB9's fragments are joined by 9 reads — which is why this is a FLOOR and not a
+/// blanket merge.
+fn locus_link_min_reads() -> Option<u32> {
+    let v = std::env::var("RUSTLE_LOCUS_LINK_MIN_READS").ok()?;
+    if v.is_empty() || v == "0" {
+        return None;
+    }
+    v.parse::<u32>().ok().filter(|x| *x > 0)
+}
+
+/// A read's ALIGNED reference blocks — the exonic segments, with `N` (intron) breaking the run.
+///
+/// `read_ref_end` deliberately counts `N` toward the span because it answers "where does this
+/// alignment end"; this answers the different question "which reference bases does it actually
+/// align to", which is the only one that can witness a locus.
+fn read_exon_blocks(read: &AlignedRead) -> Vec<(u64, u64)> {
+    let mut out = Vec::new();
+    let mut p = read.ref_start;
+    let mut cur: Option<(u64, u64)> = None;
+    for &(op, len) in &read.cigar {
+        match op {
+            'M' | '=' | 'X' | 'D' => {
+                cur = Some(match cur {
+                    Some((s, _)) => (s, p + len),
+                    None => (p, p + len),
+                });
+                p += len;
+            }
+            'N' => {
+                if let Some(b) = cur.take() {
+                    out.push(b);
+                }
+                p += len;
+            }
+            _ => {}
+        }
+    }
+    if let Some(b) = cur {
+        out.push(b);
+    }
+    out
+}
+
+/// Per-pair count of reads whose ALIGNED BLOCKS touch both reps — the linked-locus signal.
+///
+/// ⚠ **Blocks, not the read's span.** A read that splices *over* a locus contributes no aligned base
+/// there and is not evidence for it — the project's standing rule (`N` in an RNA CIGAR is intron,
+/// spliced OUT). Using the outer span instead would count every read that merely reaches across a
+/// gap, which is exactly how a mis-chained model manufactures support.
+///
+/// ⚠ Primary alignments only (`-F 2308`): secondaries and supplementaries are skipped, so one
+/// physical molecule is never counted as two witnesses linking the same pair.
+///
+/// Returns a sparse map keyed by `(lo, hi)` rep indices.
+pub(super) fn locus_read_linkage(
+    bam_reads: &[BamRead],
+    reps: &[DenovoTranscript],
+) -> std::collections::HashMap<(usize, usize), u32> {
+    use std::collections::{BTreeMap, HashMap};
+    // reps indexed per chromosome, sorted by start, with the widest span on that chromosome so the
+    // backward scan from a binary search is bounded rather than a full sweep.
+    let mut by_chrom: BTreeMap<&str, (Vec<(u64, u64, usize)>, u64)> = BTreeMap::new();
+    for (i, r) in reps.iter().enumerate() {
+        let e = by_chrom.entry(r.chrom.as_str()).or_insert_with(|| (Vec::new(), 0));
+        e.0.push((r.start, r.end, i));
+        e.1 = e.1.max(r.end.saturating_sub(r.start));
+    }
+    for (v, _) in by_chrom.values_mut() {
+        v.sort_unstable();
+    }
+    let mut out: HashMap<(usize, usize), u32> = HashMap::new();
+    let mut touched: Vec<usize> = Vec::new();
+    for br in bam_reads {
+        if br.is_supplementary || br.is_secondary {
+            continue;
+        }
+        let Some((v, widest)) = by_chrom.get(br.chrom.as_str()) else { continue };
+        touched.clear();
+        for (bs, be) in read_exon_blocks(&br.read) {
+            // reps whose start < be, scanning back while a rep could still reach bs
+            let hi = v.partition_point(|&(s, _, _)| s < be);
+            let lo = v.partition_point(|&(s, _, _)| s + *widest < bs);
+            for &(s, e, idx) in &v[lo..hi] {
+                if s < be && bs < e && !touched.contains(&idx) {
+                    touched.push(idx);
+                }
+            }
+        }
+        if touched.len() < 2 {
+            continue;
+        }
+        touched.sort_unstable();
+        for a in 0..touched.len() {
+            for b in (a + 1)..touched.len() {
+                *out.entry((touched[a], touched[b])).or_insert(0) += 1;
+            }
+        }
+    }
+    out
+}
+
 pub(super) fn locus_core_bp(bam_reads: &[BamRead], reps: &[DenovoTranscript], min_depth: u32) -> Vec<u64> {
     use std::collections::BTreeMap;
     let mut by_chrom: BTreeMap<&str, Vec<(u64, u64)>> = BTreeMap::new();
@@ -3596,6 +3708,11 @@ pub fn detect_homology_catalog_genome_wide(
     // roughly doubles peak RSS on a multimapper-rich BAM (94% of alignments secondary here) and made an
     // 18-minute arm thrash for an hour at 15.5 GB.
     let de_extent = locus_de_extent().map(|max_de| locus_confident_extent(&mapq_reads, &reps, max_de));
+    // OPT-IN linked-locus merge (§6cj) — computed from the SAME borrow, for the same reason as
+    // `de_extent` above: the reads are dropped on the next line to keep peak RSS down, and cloning them
+    // instead roughly doubles it on a multimapper-rich BAM. `None` when the flag is unset, so the
+    // default path pays nothing.
+    let global_link = locus_link_min_reads().map(|_| locus_read_linkage(&mapq_reads, &reps));
     drop(mapq_reads);
     let uniq_counts = locus_unique_mapper_counts(&placements_for_uniq, reps.len());
     drop(placements_for_uniq);
@@ -3664,9 +3781,29 @@ pub fn detect_homology_catalog_genome_wide(
     let mut dna_candidates: Vec<(String, String, u64, u64, Vec<u8>)> = Vec::new();
     for block in blocks {
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
+        // The linkage map is in GLOBAL rep indices and the merge works in LOCAL ones, so it is
+        // re-indexed here rather than inside — the same positional hazard the certificate comments warn
+        // about, one dimension up.
+        let local_link: Option<Vec<Vec<u32>>> = global_link.as_ref().map(|g| {
+            let k = block.len();
+            let mut m = vec![vec![0u32; k]; k];
+            for a in 0..k {
+                for b in (a + 1)..k {
+                    let (ga, gb) = (block[a].min(block[b]), block[a].max(block[b]));
+                    let v = g.get(&(ga, gb)).copied().unwrap_or(0);
+                    m[a][b] = v;
+                    m[b][a] = v;
+                }
+            }
+            m
+        });
         // ≥2 spatially-distinct loci certificate. `locus_min_reads()`, not `cfg.conflict.min_reads`: this
         // path builds no conflict graph (see the accessor's doc comment).
-        let grouped = distinct_locus_reps_grouped(copies.clone(), cfg.locus_min_reads());
+        let grouped = distinct_locus_reps_grouped_linked(
+            copies.clone(),
+            cfg.locus_min_reads(),
+            local_link.as_deref(),
+        );
         let loci: Vec<DenovoTranscript> = grouped.iter().map(|(t, _)| t.clone()).collect();
         if block.len() >= min_copies && loci.len() >= min_copies {
             // λ certificate on the EMITTED node set (post-merge), never on the pre-merge block.
@@ -4627,6 +4764,10 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ("edge_rule".into(), "ANY single record clearing both floors".into()),
         ("summed_coverage".into(), std::env::var("RUSTLE_ER_SUM_COVERAGE").unwrap_or_else(|_| "<unset>".into())),
         ("drop_stub_edges".into(), er_no_stub_edges().to_string()),
+        (
+            "locus_link_min_reads".into(),
+            locus_link_min_reads().map(|v| v.to_string()).unwrap_or_else(|| "<unset>".into()),
+        ),
         ("shared_exon_mode".into(), std::env::var("RUSTLE_SHARED_EXON").unwrap_or_else(|_| "<unset>".into())),
         ("repeat_hub_gate".into(), std::env::var("RUSTLE_ER_REPEAT_GATE").unwrap_or_else(|_| "<unset>".into())),
         ("junction_majority".into(), std::env::var("RUSTLE_JUNCTION_MAJORITY").unwrap_or_else(|_| "<unset>".into())),
@@ -6876,6 +7017,32 @@ fn distinct_locus_reps_grouped(
     copies: Vec<DenovoTranscript>,
     min_reads: usize,
 ) -> Vec<(DenovoTranscript, Vec<usize>)> {
+    distinct_locus_reps_grouped_linked(copies, min_reads, None)
+}
+
+/// As `distinct_locus_reps_grouped`, plus the OPT-IN linked-locus merge (`RUSTLE_LOCUS_LINK_MIN_READS`).
+///
+/// `link[i][j]` is the number of reads whose aligned blocks touch both copy `i` and copy `j`
+/// (`locus_read_linkage`, in the caller's local index space). When the flag is set and a SAME-STRAND
+/// pair clears the floor, the pair merges **whether or not their spans overlap** — which is the whole
+/// point, since 26 of 34 measured within-gene fragment pairs are disjoint and the `same_pos` gate
+/// below never examines them (ledger §6cj).
+///
+/// ⚠⚠ **THIS IS A SECOND PLACE WHERE O1's NODE SET CONSULTS READ EVIDENCE.** The existing one is the
+/// `reads_distinguish` branch below, which this function already counts and reports unconditionally so
+/// it can never be silently load-bearing; this leg is counted and reported the same way. It is **not**
+/// an O1 ⊥ O2 violation — that rule governs FAMILY MEMBERSHIP (`E_r` versus `E_c`), and node
+/// construction is upstream of it and already built from reads — but "O1's node set is not a function
+/// of sequence alone" becomes true for a second reason whenever this fires, and any number derived
+/// from a run with it on must say so.
+///
+/// ⚠ Same strand is required. Read linkage across an antisense pair is the sense/antisense artifact the
+/// strand rules below exist to adjudicate, and merging on it would bypass them.
+fn distinct_locus_reps_grouped_linked(
+    copies: Vec<DenovoTranscript>,
+    min_reads: usize,
+    link: Option<&[Vec<u32>]>,
+) -> Vec<(DenovoTranscript, Vec<usize>)> {
     let n = copies.len();
     // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent): log every co-located pair this merge examines
     // and its verdict, so "how many merges does the >=2-distinct-loci certificate perform, and at what
@@ -6892,9 +7059,29 @@ fn distinct_locus_reps_grouped(
     // the sole place O1's node set consults read evidence. Reported unconditionally below so the
     // O1 ⊥ O2 exception can never be silently load-bearing. See the block comment at the branch.
     let mut read_leg_decisions: usize = 0;
+    // Same discipline for the opt-in linked-locus leg (§6cj): counted here and reported below, so a
+    // run in which it fired can never present its node set as a function of sequence alone.
+    let mut link_leg_decisions: usize = 0;
     for i in 0..n {
         for j in (i + 1)..n {
             let (a, b) = (&copies[i], &copies[j]);
+            // OPT-IN linked-locus leg (§6cj), evaluated BEFORE `same_pos` because the pairs it exists
+            // for are precisely the ones that gate discards. Same chromosome and same strand only.
+            if let (Some(floor), Some(m)) = (locus_link_min_reads(), link) {
+                let n_link = m.get(i).and_then(|row| row.get(j)).copied().unwrap_or(0);
+                if n_link >= floor && a.chrom == b.chrom && a.strand == b.strand {
+                    if audit {
+                        eprintln!(
+                            "[locus-audit]\t{}\t{}\t{}\t{}\t{}\t-\t{}\t{}\t{}\t{}\t-\t-\t{}\tLINKED_MERGE",
+                            a.chrom, a.start, a.end, a.strand, a.n_reads,
+                            b.start, b.end, b.strand, b.n_reads, n_link
+                        );
+                    }
+                    link_leg_decisions += 1;
+                    uf_union(&mut parent, i, j);
+                    continue;
+                }
+            }
             let same_pos = a.chrom == b.chrom && a.end.min(b.end) > a.start.max(b.start);
             if !same_pos {
                 continue;
@@ -7023,6 +7210,13 @@ fn distinct_locus_reps_grouped(
         eprintln!(
             "[o1-perp-o2] WARNING: {read_leg_decisions} co-located same-strand pair(s) were decided by \
              reads_distinguish (O2's chi(H) predicate), not by sequence. O1's node set is NOT a \
+             function of sequence alone for this run — disclose it with any number derived from it."
+        );
+    }
+    if link_leg_decisions > 0 {
+        eprintln!(
+            "[o1-perp-o2] WARNING: {link_leg_decisions} pair(s) were merged by READ LINKAGE \
+             (RUSTLE_LOCUS_LINK_MIN_READS), not by sequence or position. O1's node set is NOT a \
              function of sequence alone for this run — disclose it with any number derived from it."
         );
     }
@@ -7285,6 +7479,47 @@ mod tests {
     /// The other half of the typed rule: reference-oriented DNA reps must continue to admit a real
     /// inverted duplication. This exercises the same `families_from_reps_certified` grouping core used by
     /// `gw_family_catalog --from-genome`, not only the PAF parser in isolation.
+    #[test]
+    /// §6cj: the linked-locus merge must join DISJOINT fragments that reads connect — the pairs the
+    /// `same_pos` gate skips — while leaving everything else exactly as it was. 26 of 34 measured
+    /// within-gene fragment pairs are disjoint, so a merge that only looks at overlapping spans cannot
+    /// see the dominant node-construction defect at all.
+    fn linked_locus_merge_joins_disjoint_fragments_reads_connect() {
+        let rep = |start: u64, end: u64, strand: char, n_reads: u32, introns: Vec<(u64, u64)>| {
+            DenovoTranscript {
+                tid: format!("t{start}"), chrom: "c1".into(), start, end, strand, n_reads,
+                introns, seq: vec![b'A'; 100], distinguishing_uniq: 0, core_bp: 0, stub: false,
+                tes: None,
+            }
+        };
+        // a spliced locus and a DISJOINT single-exon fragment 20 kb away, same strand
+        let copies = vec![
+            rep(1_000, 3_000, '+', 200, vec![(1_500, 2_500)]),
+            rep(23_000, 23_400, '+', 5, vec![]),
+        ];
+        // no linkage -> the existing merge cannot see the pair, and both survive
+        let none = distinct_locus_reps_grouped(copies.clone(), 3);
+        assert_eq!(none.len(), 2, "disjoint copies must stay separate without read linkage");
+
+        let linked = vec![vec![0, 40], vec![40, 0]];
+        std::env::set_var("RUSTLE_LOCUS_LINK_MIN_READS", "10");
+        let merged = distinct_locus_reps_grouped_linked(copies.clone(), 3, Some(&linked));
+        // below the floor, the same pair must NOT merge -- the floor is what makes this a rule
+        let weak = vec![vec![0, 4], vec![4, 0]];
+        let unmerged = distinct_locus_reps_grouped_linked(copies.clone(), 3, Some(&weak));
+        // opposite strand must never merge on linkage alone
+        let mut anti = copies.clone();
+        anti[1].strand = '-';
+        let antisense = distinct_locus_reps_grouped_linked(anti, 3, Some(&linked));
+        std::env::remove_var("RUSTLE_LOCUS_LINK_MIN_READS");
+
+        assert_eq!(merged.len(), 1, "40 linking reads must merge the disjoint fragment into its locus");
+        assert_eq!(merged[0].0.n_reads, 200, "the representative is the most-supported copy");
+        assert_eq!(merged[0].1.len(), 2, "the merge group must record both members");
+        assert_eq!(unmerged.len(), 2, "4 linking reads is below the floor of 10 -- must not merge");
+        assert_eq!(antisense.len(), 2, "opposite-strand pairs must not merge on read linkage");
+    }
+
     #[test]
     /// §6by: the co-membership certificate must report the SHORTEST path, distinguish a direct edge
     /// from a chain, and say "no path" rather than invent one. A family asserts every pair of its
@@ -8329,13 +8564,20 @@ mod tests {
         // the banned names legitimately appear in this very guard's own ban list. That false-positives
         // the guard, which is worse than the leak it looks for: a test that cries wolf gets relaxed.
         let mut scanned = body.clone();
-        // ⚠ BOTH names are required. `distinct_locus_reps` became a one-line wrapper when the λ
-        // certificate needed the merge groups, and the E_c call (`reads_distinguish`) moved into
-        // `distinct_locus_reps_grouped`. Scanning only the wrapper would make this guard pass
-        // VACUOUSLY — it would find no banned symbol because it would be reading an empty body.
-        // The `used || !disclosed` assertion below is what catches that, and it is why the list is
-        // asserted non-trivial here rather than trusted.
-        for helper in ["fn distinct_locus_reps(", "fn distinct_locus_reps_grouped("] {
+        // ⚠ ALL THREE names are required, and the reason has now recurred twice.
+        // `distinct_locus_reps` became a one-line wrapper when the λ certificate needed the merge
+        // groups, moving the E_c call (`reads_distinguish`) into `distinct_locus_reps_grouped`; then
+        // 2026-09-02 `distinct_locus_reps_grouped` became a wrapper in turn when the linked-locus leg
+        // (§6ck) needed an extra parameter, moving the body into `..._grouped_linked`. Each time, a
+        // scan of the old name alone would read an EMPTY body and pass VACUOUSLY.
+        // ⭐ The `used || !disclosed` assertion below caught it both times — a guard that fails when its
+        // own scan stops covering the code it polices, which is the only kind worth having. Add the new
+        // name here whenever this body moves again; do not delete the disclosed entry to make it pass.
+        for helper in [
+            "fn distinct_locus_reps(",
+            "fn distinct_locus_reps_grouped(",
+            "fn distinct_locus_reps_grouped_linked(",
+        ] {
             if let Some(h) = src.find(helper) {
                 let open = h + src[h..].find('{').expect("helper has no body");
                 let mut depth = 0usize;

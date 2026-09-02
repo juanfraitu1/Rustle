@@ -160,6 +160,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6ch — NPIP on its COMPLETE roster: 26/26 detected, and a VACUOUS precision metric caught (09-02)
 - §6ci — SCOPE CORRECTION: the NPIP unannotated-locus work is the O1 COROLLARY, not O3 (09-02)
 - §6cj — The fragmentation has a named cause: reads LINK the pieces, the merge never looks (09-02)
+- §6ck — The linked-locus merge IMPLEMENTED and RUN: right signal, WRONG SITE (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8640,3 +8641,84 @@ already in place.
 
 ⟹**This is the first named, measured, unexploited lever on §5e's ~58% node-construction residual.**
 Not a trade like §6bv or §6cf — **a signal the pipeline collects and discards.**
+
+## §6ck — ⚖️ THE LINKED-LOCUS MERGE, IMPLEMENTED AND RUN: right signal, WRONG SITE (09-02)
+
+§6cj found the signal: 30.1% of reads have aligned blocks touching ≥2 loci of one gene, 93.3% of that
+support is within-gene, and the only merge that exists opens with `same_pos` while **26 of 34** fragment
+pairs are disjoint. This implements the fix and measures it.
+
+**Shipped as `RUSTLE_LOCUS_LINK_MIN_READS`, default OFF.** `locus_read_linkage()` counts, per locus
+pair, reads whose **aligned blocks** touch both — blocks, not the read's span, because a read splicing
+*over* a locus is not evidence for it; primaries only, so one molecule is never two witnesses. The leg
+sits **before** `same_pos` and requires same chromosome **and same strand**.
+
+### ⛔⛔ IT BARELY FIRES, AND THE REASON IS ARCHITECTURAL
+
+| arm | copies | families | linked merges |
+|---|---:|---:|---:|
+| OFF (control) | 96 | 14 | — |
+| K = 25 | 95 | 14 | 1 |
+| **K = 10** | **93** | **14** | **3** |
+| K = 5 | 90 | 14 | 6 |
+
+⚠**The offline projection said 96 → 42 at K = 10 (§6cj). The binary gives 96 → 93.** The
+implementation is not wrong — it merged **exactly** the pairs it could reach:
+
+| floor | linked pairs | **same** emitted family | **different** family |
+|---:|---:|---:|---:|
+| 5 | 103 | 6 | **97** |
+| **10** | **79** | **3** | **76** |
+| 25 | 48 | 1 | **47** |
+
+⟹⟹**96% of the linked pairs span two different E_r blocks, and `distinct_locus_reps_grouped` runs
+INSIDE a block.** A pair the homology graph never joined is never compared, whatever the floor. The
+merge site is **downstream of the split it is meant to repair**.
+
+⭐**This is the same barrier §6cj measured from the other side**: NPIP's 34 copies fall into **8 E_r
+components**, so the fragments of one gene are in different blocks *by the time any merge runs*. The
+`same_pos` gate was never the only obstacle — **block membership is the binding one.**
+
+### ⟹ WHAT WOULD ACTUALLY WORK
+
+The merge has to run **before blocks are formed** — at rep/locus construction, where the candidate set
+is still positional rather than homology-derived. That is a materially larger change than this one and
+it is **not** attempted here. What this section establishes is **where the barrier is**, which was not
+known this morning: not the overlap gate, and not the floor, but the fact that `E_r` has already
+partitioned the fragments apart.
+
+### ✅ WHAT SHIPS ANYWAY
+
+Correct, tested, and **inert by default** — so it costs nothing and documents the barrier in code:
+- OFF arm **byte-identical** to the pre-change catalog (`cat.copies.tsv`, `cat.families.tsv` md5-equal);
+- `locus_link_min_reads` params row, so ON and OFF arms can never be confused (defect M2);
+- ⚠**a second `[o1-perp-o2]` disclosure**, counted and printed like the existing `reads_distinguish`
+  leg: *"N pair(s) were merged by READ LINKAGE, not by sequence or position."* It is **not** an
+  O1 ⊥ O2 violation — that rule governs family membership, and node construction is upstream and
+  already read-built — but the claim *"O1's node set is a function of sequence alone"* is false
+  whenever it fires, and the counter makes that impossible to hide;
+- a test asserting the four ways it could be wrong rather than merely absent: 40 linking reads merge a
+  disjoint fragment 20 kb away, **4 reads do not** (the floor is the rule), an **opposite-strand** pair
+  never merges, and the merge group records both members so λ stays correct.
+
+⚠**Do not read the small copy deltas as "the lever is weak."** The lever is 79 pairs at K = 10; the
+**site** reaches 3 of them.
+
+### ⭐⭐ AND THE REFACTOR SILENTLY DISABLED A SAFETY GUARD — CAUGHT BY THE GUARD
+
+`homology_catalog_never_touches_the_conflict_graph` scans named function bodies for `E_c` symbols.
+Moving the merge body into `distinct_locus_reps_grouped_linked` left the scan of the OLD name reading
+a **thin wrapper**, so `reads_distinguish` disappeared from its view and the guard **stopped policing
+the one disclosed read dependency in O1's node set.**
+
+It failed on its *second* assertion — *"`reads_distinguish` is listed in DISCLOSED_EC_USES but no
+longer appears on the homology catalog path"* — i.e. the one that checks a disclosed dependency is
+**still visible**, not merely that no new one appeared. ⭐**A guard that fails when its own scan stops
+covering the code it polices is the only kind worth having**, and without it this change would have
+left a green test reading an empty body.
+
+⚠⚠**This has now recurred TWICE for the same structural reason**: adding a parameter turns the policed
+function into a wrapper. It happened when `distinct_locus_reps` became one for the λ certificate, and
+again here. The scan list now carries **three** names and the comment states the pattern, with the
+instruction to **add the new name, never to delete the disclosed entry to make it pass.**
+⟹**Suite 829 passed / 0 failed / 11 ignored** (+1 from this change).
