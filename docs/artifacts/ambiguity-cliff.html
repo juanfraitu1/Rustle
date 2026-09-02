@@ -1,0 +1,795 @@
+<title>The Ambiguity Cliff</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,300;0,400;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* --------------------------------------------------------------- tokens --
+   Three hues, each carrying a meaning rather than a decoration:
+     petrol    — the population that exists (E_r edges, seeding)
+     vermilion — what was measured on it (E_c support, alignment score)
+     olive     — what theory fixes (the derived bound, the tie threshold)   */
+:root{
+  --paper:#edf0f1; --panel:#e4e9eb; --ink:#141b1f; --ink-2:#3b474d;
+  --muted:#68767d; --rule:#c6d0d4; --rule-2:#d7dfe2;
+  --petrol:#2f5e6d; --petrol-soft:#8db0bb; --petrol-wash:rgba(47,94,109,.15);
+  --verm:#bf3c29; --verm-soft:#dd8878; --verm-wash:rgba(191,60,41,.11);
+  --olive:#6b7433; --olive-wash:rgba(107,116,51,.13);
+  --serif:"Spectral",Georgia,"Times New Roman",serif;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --col:40rem; --wide:62rem;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#11161a; --panel:#1a2126; --ink:#e3e9ec; --ink-2:#bbc6cb;
+  --muted:#8b989f; --rule:#2c373c; --rule-2:#222b30;
+  --petrol:#72a9b8; --petrol-soft:#3c6774; --petrol-wash:rgba(114,169,184,.17);
+  --verm:#ee7259; --verm-soft:#8c4335; --verm-wash:rgba(238,114,89,.13);
+  --olive:#aeb963; --olive-wash:rgba(174,185,99,.14);
+}}
+:root[data-theme="dark"]{
+  --paper:#11161a; --panel:#1a2126; --ink:#e3e9ec; --ink-2:#bbc6cb;
+  --muted:#8b989f; --rule:#2c373c; --rule-2:#222b30;
+  --petrol:#72a9b8; --petrol-soft:#3c6774; --petrol-wash:rgba(114,169,184,.17);
+  --verm:#ee7259; --verm-soft:#8c4335; --verm-wash:rgba(238,114,89,.13);
+  --olive:#aeb963; --olive-wash:rgba(174,185,99,.14);
+}
+:root[data-theme="light"]{
+  --paper:#edf0f1; --panel:#e4e9eb; --ink:#141b1f; --ink-2:#3b474d;
+  --muted:#68767d; --rule:#c6d0d4; --rule-2:#d7dfe2;
+  --petrol:#2f5e6d; --petrol-soft:#8db0bb; --petrol-wash:rgba(47,94,109,.15);
+  --verm:#bf3c29; --verm-soft:#dd8878; --verm-wash:rgba(191,60,41,.11);
+  --olive:#6b7433; --olive-wash:rgba(107,116,51,.13);
+}
+
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--serif);
+     font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.page{max-width:var(--wide);margin:0 auto;padding:0 1.5rem 6rem;
+      display:flex;flex-direction:column;align-items:center}
+.col{width:100%;max-width:var(--col)}
+.wide{width:100%;max-width:var(--wide)}
+
+h1{font-weight:700;font-size:clamp(2.4rem,7vw,3.9rem);line-height:1.02;
+   letter-spacing:-.022em;margin:.1em 0 .35em;text-wrap:balance}
+h2{font-weight:600;font-size:1.52rem;line-height:1.24;letter-spacing:-.014em;
+   margin:0;text-wrap:balance}
+h3{font-family:var(--sans);font-weight:600;font-size:.95rem;margin:0 0 .35rem}
+p{margin:0 0 1.05em}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.7rem;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 .25rem}
+.standfirst{font-size:1.2rem;line-height:1.55;color:var(--ink-2);font-weight:300}
+.n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.93em;
+   font-weight:500;letter-spacing:-.012em;white-space:nowrap}
+.k{font-family:var(--mono);font-size:.87em;background:var(--panel);
+   padding:.08em .34em;border:1px solid var(--rule-2);white-space:nowrap}
+strong{font-weight:600}
+a{color:var(--verm)}
+
+section{width:100%;display:flex;flex-direction:column;align-items:center;margin-top:3.7rem}
+.sechead{width:100%;max-width:var(--col);border-top:2px solid var(--ink);
+         padding-top:.7rem;margin-bottom:1.1rem}
+header.masthead{width:100%;max-width:var(--col);padding-top:4.4rem}
+.byline{font-family:var(--sans);font-size:.78rem;color:var(--muted);
+        border-top:1px solid var(--rule);padding-top:.7rem;margin-top:1.7rem;
+        display:flex;flex-wrap:wrap;gap:.35rem 1.5rem}
+
+.claimbox{border:1px solid var(--rule);background:var(--panel);padding:1.15rem 1.3rem;
+          margin:0 0 1.4rem;display:grid;gap:.95rem}
+.q{display:grid;grid-template-columns:auto 1fr;gap:.1rem .85rem;align-items:start}
+.tag{font-family:var(--mono);font-weight:500;font-size:.82rem;padding:.1em .45em;
+     border:1px solid currentColor;white-space:nowrap;margin-top:.15rem}
+.tag.er{color:var(--petrol)} .tag.ec{color:var(--verm)}
+.q p{margin:0;font-size:.99rem;line-height:1.48}
+.q .sub{font-family:var(--sans);font-size:.83rem;color:var(--muted);margin-top:.2rem;line-height:1.5}
+
+figure{margin:0;width:100%}
+.figframe{border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);
+          padding:1.1rem 0 .95rem}
+.scroller{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+.scroller svg{display:block;min-width:640px;width:100%;height:auto}
+figcaption{font-family:var(--sans);font-size:.83rem;line-height:1.55;color:var(--ink-2);
+           max-width:var(--col);margin:.9rem auto 0}
+figcaption b{font-weight:600;color:var(--ink)}
+
+table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:.87rem;margin:0}
+caption{caption-side:top;text-align:left;font-family:var(--sans);font-size:.72rem;
+        letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+        padding-bottom:.5rem;font-weight:600}
+th{text-align:left;font-weight:600;border-bottom:1.5px solid var(--ink);
+   padding:.42rem .5rem;line-height:1.3}
+td{padding:.42rem .5rem;border-bottom:1px solid var(--rule-2)}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+th.num{font-family:var(--sans)}
+tr.hi td{background:var(--verm-wash);font-weight:600}
+tr.hi td:first-child{box-shadow:inset 3px 0 0 var(--verm)}
+.tablewrap{overflow-x:auto;width:100%}
+
+.prop{border:1px solid var(--ink);padding:1.15rem 1.3rem;margin:0 0 1.3rem}
+.prop .lab{font-family:var(--sans);font-size:.71rem;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:.55rem}
+.prop p{font-size:.98rem;line-height:1.5}
+.eq{font-family:var(--mono);font-size:1.1rem;text-align:center;margin:.95rem 0;
+    letter-spacing:-.015em}
+
+.setbars{display:grid;gap:1.1rem}
+.setrow{display:grid;grid-template-columns:6.6rem 1fr;gap:.9rem;align-items:center}
+.setrow .lb{font-family:var(--mono);font-size:.78rem;line-height:1.3;text-align:right;
+            color:var(--muted)}
+.setrow .lb b{display:block;font-family:var(--sans);font-size:.92rem;color:var(--ink);
+              font-weight:600}
+.barwrap{width:100%}
+.bar{height:2.2rem;display:flex;border:1px solid var(--rule)}
+.seg{display:flex;align-items:center;justify-content:center;font-family:var(--mono);
+     font-size:.71rem;overflow:hidden;white-space:nowrap}
+.seg.shared{background:var(--verm);color:#fff}
+.seg.rest-er{background:var(--petrol);color:#fff}
+.seg.rest-ec{background:var(--petrol-soft);color:var(--ink)}
+
+.pullnote{font-family:var(--sans);font-size:.88rem;line-height:1.56;
+          border-left:2px solid var(--rule);padding:.05rem 0 .05rem .9rem;
+          color:var(--ink-2);margin:1.35rem 0}
+.pullnote b{color:var(--ink)}
+
+.verdict{border:2px solid var(--ink);padding:1.35rem 1.4rem}
+.verdict p:last-child{margin-bottom:0}
+.verdict .lead{font-size:1.14rem;font-weight:600;line-height:1.4;margin-bottom:.75rem}
+
+.grid2{display:grid;gap:1.1rem;grid-template-columns:1fr 1fr}
+.card{border:1px solid var(--rule);padding:.95rem 1rem;background:var(--panel)}
+.card p{font-family:var(--sans);font-size:.855rem;line-height:1.5;margin:0;color:var(--ink-2)}
+.card p+p{margin-top:.5rem}
+
+.caveats{font-family:var(--sans);font-size:.845rem;line-height:1.6;color:var(--ink-2)}
+.caveats p{font-family:var(--sans)}
+.caveats ul{padding-left:1.15rem;margin:.5rem 0 0}
+.caveats li{margin-bottom:.55rem}
+details{border-top:1px solid var(--rule);padding-top:.75rem;margin-top:1rem}
+summary{font-family:var(--sans);font-size:.85rem;font-weight:600;cursor:pointer}
+summary:focus-visible{outline:2px solid var(--verm);outline-offset:3px}
+pre{font-family:var(--mono);font-size:.735rem;line-height:1.55;background:var(--panel);
+    border:1px solid var(--rule-2);padding:.75rem .85rem;overflow-x:auto;margin:.75rem 0 0}
+
+.legend{display:flex;flex-wrap:wrap;gap:.35rem 1.3rem;font-family:var(--sans);
+        font-size:.78rem;color:var(--ink-2);margin:.75rem auto 0;max-width:var(--col)}
+.legend span{display:flex;align-items:center;gap:.4rem}
+.swatch{width:1.05rem;height:.55rem;flex:none;border:1px solid var(--rule)}
+
+@media (max-width:640px){
+  body{font-size:16px}
+  .grid2{grid-template-columns:1fr}
+  .setrow{grid-template-columns:1fr;gap:.35rem}
+  .setrow .lb{text-align:left}
+  .setrow .lb b{display:inline;margin-right:.4rem}
+}
+</style>
+
+<div class="page">
+
+<header class="masthead">
+  <p class="eyebrow">Rustle · Objective&nbsp;1 · the edge definition</p>
+  <h1>The Ambiguity Cliff</h1>
+  <p class="standfirst">Two gene copies can be aligned to each other long before a
+  sequencing read loses the ability to tell them apart. This is the distance between
+  those two bars, measured across <span class="n">3,141</span> catalog edges — and the
+  second bar turns out to be set by the aligner's scoring matrix, not by us.</p>
+  <div class="byline">
+    <span>Gorilla mGorGor1 · fibroblast Iso-Seq · <span class="n">3</span> contigs</span>
+    <span>Catalog <span class="n">arm_f2</span> · <span class="n">3,598</span> loci</span>
+  </div>
+</header>
+
+<!-- ==================================================== the two questions -->
+<section>
+  <div class="sechead"><p class="eyebrow">The proposition under test</p>
+  <h2>Two criteria, two different questions</h2></div>
+  <div class="col">
+    <div class="claimbox">
+      <div class="q">
+        <span class="tag er">E<sub>r</sub></span>
+        <div>
+          <p><strong>Can these two copies be aligned to each other?</strong></p>
+          <p class="sub">Identity ≥ 0.60 and the alignment covers ≥ 0.50 of the shorter
+          sequence. This is what currently defines family membership.</p>
+        </div>
+      </div>
+      <div class="q">
+        <span class="tag ec">E<sub>c</sub></span>
+        <div>
+          <p><strong>Can a read land on both, with nothing to choose between them?</strong></p>
+          <p class="sub">Some read has alignments at both loci scoring within 5% of its own
+          best alignment anywhere — <span class="k">AS ≥ 0.95 × best</span>. This currently
+          scopes copy assignment.</p>
+        </div>
+      </div>
+    </div>
+    <p>The proposal on the table is to drop the first and build the family graph from the
+    second alone, on the grounds that shared multi-mapping reads are “just as good, and less
+    prone to arbitrary thresholds.” Both halves of that are testable. Recomputing
+    E<sub>c</sub> on the <em>same</em> loci that produced the shipped E<sub>r</sub> edges makes
+    the two relations comparable edge by edge, with nothing else changed.</p>
+  </div>
+</section>
+
+<!-- ================================================================ chart -->
+<section>
+  <div class="sechead"><p class="eyebrow">Measurement</p>
+  <h2>Read ambiguity does not rise with identity. It steps.</h2></div>
+  <div class="col">
+    <p>For each of the 3,141 edges the question is simply whether any read actually lands on
+    both of its loci with a tied score. Grouped by the identity between the two copies, the
+    answer is a flat line and then a wall. If ambiguity were a smooth consequence of
+    similarity, this would be a ramp.</p>
+  </div>
+
+  <figure class="wide">
+    <div class="figframe">
+      <div class="scroller"><svg id="cliff" viewBox="0 0 920 470" role="img"
+        aria-label="Fraction of catalog edges with a shared tied read against pairwise identity: flat below 15 to 24 percent from 0.66 to 0.94, then rising to near 100 percent above 0.98. Bars behind show that almost no edges exist above 0.95."></svg></div>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--petrol-wash);border-color:var(--petrol-soft)"></i> edges in bin (right axis)</span>
+        <span><i class="swatch" style="background:var(--verm)"></i> share with a shared tied read, ±95% CI</span>
+        <span><i class="swatch" style="background:var(--olive-wash);border-color:var(--olive)"></i> where the scoring matrix permits ties</span>
+      </div>
+    </div>
+    <figcaption><b>Dot area is proportional to the number of edges in the bin</b>, so the
+    right-hand points are drawn small on purpose — the effect lives in a thin tail. Wilson
+    intervals are shown because the bins that carry it hold tens of edges, not thousands. The
+    olive band marks the identity above which this aligner's scoring can produce a tie at all;
+    it was derived before the bins were plotted, not fitted to them.</figcaption>
+  </figure>
+
+  <div class="col" style="margin-top:2.1rem">
+    <div class="tablewrap">
+      <table>
+        <caption>Four bands — incidence, and depth</caption>
+        <thead><tr><th>Identity</th><th class="num">Edges</th>
+          <th class="num">With a tied read</th><th class="num">95% CI</th>
+          <th class="num">Median tied reads<br>where present</th></tr></thead>
+        <tbody id="bandtable"></tbody>
+      </table>
+    </div>
+    <p style="margin-top:1.3rem">Both columns step at the same place. Below the cliff a
+    “supported” edge is typically carried by a couple of reads out of hundreds; above it, by
+    thirty, and at the extreme by <span class="n" id="maxDepth"></span>. The signal is not
+    merely rarer at low identity — where it exists at all, it is thin enough to be incidental.</p>
+    <p class="pullnote"><b>A trap worth naming.</b> The aggregate medians are almost null:
+    median identity <span class="n" id="medWith"></span> for edges with support against
+    <span class="n" id="medWithout"></span> for edges without. Reporting that alone would
+    conclude “identity does not predict read ambiguity,” which is the reverse of what the bands
+    show. A cliff standing in the thin tail of a distribution is invisible to any statistic
+    computed over the whole of it.</p>
+
+    <h3 style="margin-top:2.4rem;font-size:1.05rem">It is not an artefact of how a read is
+    credited to a locus</h3>
+    <p style="margin-top:.4rem">A placement counts as being “at” a locus when some fraction of
+    its own span falls inside that locus. The figure above uses the most permissive rule
+    available — any overlap at all — because that is the one most generous to the shared-read
+    proposal. Tightening it does not soften the result; it sharpens it into a clean separation.</p>
+    <div class="tablewrap" style="margin-top:1rem">
+      <table>
+        <caption>Share with a tied read, by band and by how much of the read must be at the locus</caption>
+        <thead><tr><th>Identity</th><th class="num">Edges</th>
+          <th class="num">any<br>overlap</th><th class="num">≥ 25%</th>
+          <th class="num">≥ 50%</th><th class="num">≥ 80%</th></tr></thead>
+        <tbody id="robusttable"></tbody>
+      </table>
+    </div>
+    <p style="margin-top:1.15rem">Under the two strictest rules, <strong>not one</strong> of the
+    <span class="n">1,203</span> edges below identity 0.80 has a read genuinely shared with its
+    partner, while roughly seven in ten of the top band still do. Most of what looked like
+    low-identity support was reads grazing the edge of a locus interval, not reads that could
+    not decide where they belonged.</p>
+  </div>
+</section>
+
+<!-- =========================================================== derivation -->
+<section>
+  <div class="sechead"><p class="eyebrow">Mechanism</p>
+  <h2>Why the cliff sits where it does</h2></div>
+  <div class="col">
+    <p>The location is not an empirical accident, and it has nothing to do with biology. A read
+    of length <em>L</em> aligned to a copy of identity <em>p</em> collects about <em>Lp</em>
+    matches and <em>L</em>(1−<em>p</em>) mismatches, so under match reward <em>A</em> and
+    mismatch penalty <em>B</em> it scores roughly <em>L</em>[<em>Ap</em> − <em>B</em>(1−<em>p</em>)]
+    there, against <em>AL</em> at its own locus. Requiring that ratio to clear a tie
+    threshold τ gives:</p>
+
+    <div class="prop">
+      <p class="lab">Necessary condition for a tie</p>
+      <p style="margin:0">Two copies of identity <em>p</em> can produce an AS-tied placement of
+      the same read only if</p>
+      <p class="eq">p ≥ (τA + B) / (A + B)</p>
+      <p style="margin:0">— the aligner's two scoring constants and the tie threshold. Nothing
+      else enters.</p>
+    </div>
+
+    <p>The constants are not a matter of opinion. Aligning synthetic reads carrying a known
+    number of mismatches, under this run's exact preset, recovers them directly:
+    <span class="k">A = 1</span> and <span class="k">B = 4</span> for
+    <span class="k">splice:hq</span>. The bound becomes <span class="n">p ≥ 0.8 + 0.2τ</span>,
+    and at our tie threshold of 0.95 it lands on <strong>p ≥ 0.99</strong>.</p>
+
+    <p>A second constant works in the same direction one stage earlier. Alignments have to be
+    seeded, and a <span class="k">k = 15</span> minimizer is shared only if all fifteen bases
+    agree — roughly <em>p</em><sup>15</sup> of the time. At this catalog's median edge identity
+    the second locus is not merely outscored; it is barely seeded.</p>
+  </div>
+
+  <figure class="wide" style="max-width:52rem;margin-top:1.6rem">
+    <div class="figframe">
+      <div class="scroller"><svg id="theory" viewBox="0 0 880 400" role="img"
+        aria-label="Two curves against identity: the alternative placement's score ratio, five p minus four, crossing the 0.95 tie threshold at identity 0.99; and the probability a 15-mer seed is shared, p to the fifteenth. At the catalog median identity 0.8287 the score ratio is 0.14 and the seed probability 0.06."></svg></div>
+    </div>
+    <figcaption><b>Both curves are properties of the aligner, not of the genome.</b> At the
+    catalog's median edge identity the alternative placement scores <span class="n">14%</span>
+    of the primary and shares <span class="n">6%</span> of its seeds. Neither is close to a tie.
+    The two curves converge only in the last percent of identity.</figcaption>
+  </figure>
+
+  <div class="col" style="margin-top:2rem">
+    <p>That bound governs the identity a read locally experiences, and edge identity is measured
+    between whole copies, so it predicts two separate things. Above the bound, ties should be
+    not merely possible but near-universal. Below it, they should occur only where a read
+    happens to sit on a locally more conserved stretch — so they should be sparse, and should
+    not track global identity in any orderly way. Both hold:</p>
+    <div class="tablewrap" style="margin-top:1.1rem">
+      <table>
+        <caption>Across the bound</caption>
+        <thead><tr><th>Identity</th><th class="num">Edges</th>
+          <th class="num">With a tied read</th><th class="num">95% CI</th></tr></thead>
+        <tbody id="toptable"></tbody>
+      </table>
+    </div>
+    <p style="margin-top:1.15rem">Below 0.94 the share wanders between
+    <span class="n">0%</span> and <span class="n">24%</span> with no upward trend — it is
+    actually <em>lower</em> at 0.88–0.92 than at 0.80–0.86. Above 0.99 there are no exceptions
+    at all.</p>
+    <p class="pullnote">The bound is a necessary condition under a uniform-mismatch
+    idealisation. It ignores gap and junction terms, treats mismatches as evenly spread, and
+    applies a read-level quantity to a number measured between full copy sequences. It predicts
+    <em>where</em> ties become possible, not how often they occur — the measurement settles the
+    rest.</p>
+  </div>
+</section>
+
+<!-- ========================================================== replacement -->
+<section>
+  <div class="sechead"><p class="eyebrow">Consequence</p>
+  <h2>What replacement would cost</h2></div>
+  <div class="col">
+    <p>A relation that is blind to most of the identity range cannot carry the definition.
+    Drawn to a common scale, the two barely touch:</p>
+  </div>
+
+  <figure class="wide" style="max-width:48rem;margin-top:1.3rem">
+    <div class="figframe" style="border-bottom:none;padding-bottom:.4rem">
+      <div class="setbars" id="setbars"></div>
+    </div>
+    <figcaption><b>The shared core is <span class="n" id="sharedN"></span> pairs.</b>
+    Everything else in each bar is a pair the other relation does not contain. Swapping
+    E<sub>r</sub> for E<sub>c</sub> is not a refinement of the same object; it is a different
+    object that happens to overlap it slightly.</figcaption>
+  </figure>
+
+  <div class="col" style="margin-top:1.9rem">
+    <div class="grid2">
+      <div class="card">
+        <h3>What is lost</h3>
+        <p><span class="n" id="lossPct"></span> of current edges carry no tied read at all and
+        would simply vanish, taking their families with them.</p>
+      </div>
+      <div class="card">
+        <h3>What is gained</h3>
+        <p><span class="n" id="extraN"></span> pairs E<sub>r</sub> rejects. On the comparable
+        additive set measured earlier, about <span class="n">72%</span> fuse two distinct
+        families — and that fraction is unchanged whether you demand 2 shared reads or 100.</p>
+      </div>
+    </div>
+    <p style="margin-top:1.4rem">The invariance is the damning part. A threshold that buys
+    precision has to change the mix as it rises; this one scales both classes down together.
+    Repeat-driven cross-homology is universal in this genome — <span class="n">50.5%</span> of
+    random region pairs align at all and <span class="n">49.0%</span> clear identity 0.60 — and
+    a shared read is precisely the “these two regions contain the same <em>Alu</em>” case. What
+    separates that from paralogy is E<sub>r</sub>'s coverage clause, and read depth is not a
+    substitute for span coverage.</p>
+  </div>
+</section>
+
+<!-- =========================================================== conjunction -->
+<section>
+  <div class="sechead"><p class="eyebrow">Consequence</p>
+  <h2>A combined gauge is worse than either</h2></div>
+  <div class="col">
+    <p>The natural compromise — require identity <em>and</em> coverage <em>and</em> a
+    multimapper count — fails on arithmetic before it reaches biology. A conjunction is bounded
+    above by its scarcest term, and multimapper support is by far the scarcest:</p>
+    <div class="tablewrap" style="margin-top:1rem">
+      <table>
+        <caption>Support at depth, over all 3,141 edges</caption>
+        <thead><tr><th>Requirement</th><th class="num">Edges retained</th>
+          <th class="num">Share of the catalog</th></tr></thead>
+        <tbody id="depthtable"></tbody>
+      </table>
+    </div>
+    <p style="margin-top:1.15rem">As a required clause it caps the edge set at the top row
+    however generous the other two terms are. It can only subtract.</p>
+  </div>
+</section>
+
+<!-- ============================================================ thresholds -->
+<section>
+  <div class="sechead"><p class="eyebrow">The claim about thresholds</p>
+  <h2>The constants move. They do not vanish.</h2></div>
+  <div class="col">
+    <p>The second half of the proposal is that a shared-read graph is freer of arbitrary
+    cutoffs. It is not. It needs a tie ratio and a minimum shared-read count, and before either
+    of those it inherits whatever the aligner was told:</p>
+    <div class="tablewrap" style="margin-top:1rem">
+      <table>
+        <caption>Where each definition's constants live</caption>
+        <thead><tr><th>E<sub>r</sub> — stated in the definition</th>
+          <th>E<sub>c</sub> — inherited from the alignment</th></tr></thead>
+        <tbody>
+          <tr><td>identity ≥ <span class="n">0.60</span></td>
+              <td>tie ratio τ = <span class="n">0.95</span></td></tr>
+          <tr><td>coverage ≥ <span class="n">0.50</span> of the shorter</td>
+              <td>minimum shared-read count</td></tr>
+          <tr><td>its own alignment: <span class="k">-k 11 -w 5 -X --no-long-join</span>,
+              forward records only</td>
+              <td><span class="k">-N 50</span> — how many alternatives are kept at all</td></tr>
+          <tr><td>one record per pair; no secondary logic</td>
+              <td><span class="k">-p 0.1</span> — whether any alternative is reported</td></tr>
+          <tr class="hi"><td>two numbers, written down and swept</td>
+              <td>an implied identity floor <span class="n">(τA+B)/(A+B)</span>,
+                  never chosen and not reachable from the graph</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:1.15rem">Both definitions rest on constants — the sequence-homology
+    route needs the aligner too. The asymmetry is in the last row. E<sub>r</sub>'s two
+    thresholds are on the page, defensible, and swept; E<sub>c</sub>'s decisive one is a
+    consequence of a scoring matrix, and no amount of tuning at the graph level can move it.</p>
+  </div>
+</section>
+
+<!-- ============================================================== verdict -->
+<section>
+  <div class="sechead"><p class="eyebrow">Disposition</p>
+  <h2>What this leaves standing</h2></div>
+  <div class="col">
+    <div class="verdict">
+      <p class="lead">E<sub>r</sub> defines membership. E<sub>c</sub> scopes co-resolution.</p>
+      <p style="margin-bottom:.7rem">They are not competing answers to one question. Sequence
+      homology reaches the <span class="n" id="botShare"></span> of edges where the copies are
+      distinguishable, which is where family structure actually lives. Read conflict reaches the
+      <span class="n" id="topShare"></span> where they are not — which is exactly the set on
+      which assignment has to abstain. The catalog needs both, doing different jobs.</p>
+      <p>That does not make the multimapper count worthless — it makes it the wrong instrument
+      for this job. What it marks, and marks well, is the set of edges on which no assignment
+      can be honest. Recorded as an <strong>optional per-edge annotation</strong> it says which
+      pairs of copies a read cannot distinguish, which is precisely the boundary the
+      assign-or-abstain rule needs and precisely what identity alone does not supply. That is
+      the same disposition already taken for <span class="k">cov_longer</span>: disclose it;
+      do not gate on it.</p>
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================== method -->
+<section>
+  <div class="sechead"><p class="eyebrow">Provenance</p>
+  <h2>Method, and what would overturn this</h2></div>
+  <div class="col caveats">
+    <p>E<sub>c</sub> was recomputed from the read alignments on the identical loci that produced
+    the shipped E<sub>r</sub> edges, so every number here is a property of one catalog rather
+    than a comparison across two runs. A read contributes a pair when two distinct loci both
+    carry a placement scoring within 5% of that read's best alignment anywhere in the genome.
+    Supplementary alignments are excluded; secondaries are not.</p>
+
+    <p style="margin-top:1.1rem"><b>The locus-assignment rule is swept, not chosen.</b> A
+    placement counts as “at” a locus when at least this fraction of its own span falls inside
+    the locus interval. The headline uses the most permissive setting — the one most generous
+    to the shared-read proposal:</p>
+    <div class="tablewrap" style="margin-top:.85rem">
+      <table>
+        <caption>Robustness to the assignment rule</caption>
+        <thead><tr><th>Overlap required</th><th class="num">E<sub>r</sub> edges supported</th>
+          <th class="num">Share</th><th class="num">E<sub>c</sub>-only pairs</th></tr></thead>
+        <tbody id="sweeptable"></tbody>
+      </table>
+    </div>
+
+    <ul style="margin-top:1.3rem">
+      <li><b>One substrate, one tissue.</b> Three contigs of one gorilla fibroblast Iso-Seq
+      library. The identity distribution has the same shape genome-wide and in testis, but the
+      cliff itself has been measured only here.</li>
+      <li><b>Small n at the top.</b> The bins that carry the effect hold tens of edges, not
+      thousands. That is the finding, but it also means the intervals there are wide, so they
+      are drawn rather than suppressed.</li>
+      <li><b>The derivation is an idealisation.</b> Uniform mismatches, no gap or junction
+      terms, read-level identity substituted for copy-level. It bounds where ties are possible;
+      it does not model their frequency.</li>
+      <li><b>Absolute counts are protocol-sensitive.</b> An earlier pass over the same question,
+      run under a script that was not preserved, put the overall support at 21.9% rather than
+      <span class="n" id="hdrShare"></span>, and the cliff band at 82.5% rather than
+      <span class="n" id="hdrTop"></span>. The band structure and the conclusion are the same;
+      the low-band counts move with the assignment rule. Only the protocol described here is
+      reproducible, and it is the one plotted.</li>
+      <li><b>What would overturn it.</b> A substrate where E<sub>c</sub> support is materially
+      above chance below identity 0.95, or an aligner configuration whose implied floor sits
+      near the catalog median. Either would move the cliff — and the bound says exactly which
+      knob does it.</li>
+    </ul>
+    <details>
+      <summary>Commands and constants</summary>
+<pre id="cmds"></pre>
+    </details>
+  </div>
+</section>
+
+</div>
+
+<script>
+const DATA = {"n":3141,"fine":[{"lo":0.6,"hi":0.62,"n":0,"k":0,"p":null,"ci":[0.0,0.0]},{"lo":0.62,"hi":0.64,"n":0,"k":0,"p":null,"ci":[0.0,0.0]},{"lo":0.64,"hi":0.66,"n":0,"k":0,"p":null,"ci":[0.0,0.0]},{"lo":0.66,"hi":0.68,"n":1,"k":0,"p":0.0,"ci":[0.0,0.7934567085261071]},{"lo":0.68,"hi":0.7,"n":88,"k":0,"p":0.0,"ci":[3.469446951953614e-18,0.04182853957248131]},{"lo":0.7,"hi":0.72,"n":188,"k":3,"p":0.015957446808510637,"ci":[0.005441459875889183,0.04585919649895339]},{"lo":0.72,"hi":0.74,"n":271,"k":18,"p":0.06642066420664207,"ci":[0.042423435181328184,0.10253860841032605]},{"lo":0.74,"hi":0.76,"n":282,"k":31,"p":0.1099290780141844,"ci":[0.07853164899439205,0.1518113101829985]},{"lo":0.76,"hi":0.78,"n":212,"k":26,"p":0.12264150943396226,"ci":[0.08508357367424874,0.17363207706221728]},{"lo":0.78,"hi":0.8,"n":161,"k":25,"p":0.15527950310559005,"ci":[0.10744385185624333,0.21918243665345322]},{"lo":0.8,"hi":0.82,"n":214,"k":52,"p":0.24299065420560748,"ci":[0.19038802402874808,0.30465791760957994]},{"lo":0.82,"hi":0.84,"n":363,"k":83,"p":0.22865013774104684,"ci":[0.18842167742318633,0.2745618010045602]},{"lo":0.84,"hi":0.86,"n":371,"k":85,"p":0.22911051212938005,"ci":[0.18925104754572805,0.2745224503797957]},{"lo":0.86,"hi":0.88,"n":314,"k":44,"p":0.14012738853503184,"ci":[0.10606808021593493,0.1828859144782775]},{"lo":0.88,"hi":0.9,"n":246,"k":23,"p":0.09349593495934959,"ci":[0.06310946828965752,0.136383330347559]},{"lo":0.9,"hi":0.92,"n":182,"k":25,"p":0.13736263736263737,"ci":[0.09480258777222239,0.19491510729712702]},{"lo":0.92,"hi":0.94,"n":83,"k":18,"p":0.21686746987951808,"ci":[0.14181449316941397,0.3169702367296206]},{"lo":0.94,"hi":0.96,"n":37,"k":19,"p":0.5135135135135135,"ci":[0.3589463722598092,0.6655384667278896]},{"lo":0.96,"hi":0.98,"n":34,"k":19,"p":0.5588235294117647,"ci":[0.3945361778918369,0.7111675978470325]},{"lo":0.98,"hi":1.0,"n":94,"k":93,"p":0.9893617021276596,"ci":[0.9421756818388973,0.9981196526609477]}],"coarse":[{"lo":0.6,"hi":0.8,"n":1203,"k":103,"p":0.085619285120532,"ci":[0.07109702691671754,0.1027796442222289],"medDepth":2,"maxDepth":33},{"lo":0.8,"hi":0.9,"n":1508,"k":287,"p":0.1903183023872679,"ci":[0.1713016356222384,0.2109087758388565],"medDepth":4,"maxDepth":264},{"lo":0.9,"hi":0.95,"n":287,"k":54,"p":0.18815331010452963,"ci":[0.14716585602073456,0.23737885835300016],"medDepth":6.0,"maxDepth":399},{"lo":0.95,"hi":1.0,"n":143,"k":120,"p":0.8391608391608392,"ci":[0.7702066931311735,0.8903690565201514],"medDepth":29.5,"maxDepth":4569}],"robust":{"rules":[0.0,0.25,0.5,0.8],"bands":[{"lo":0.6,"hi":0.8,"cells":[{"n":1203,"k":103,"p":0.085619285120532},{"n":1203,"k":10,"p":0.00831255195344971},{"n":1203,"k":0,"p":0.0},{"n":1203,"k":0,"p":0.0}]},{"lo":0.8,"hi":0.9,"cells":[{"n":1508,"k":287,"p":0.1903183023872679},{"n":1508,"k":73,"p":0.04840848806366048},{"n":1508,"k":15,"p":0.009946949602122016},{"n":1508,"k":9,"p":0.005968169761273209}]},{"lo":0.9,"hi":0.95,"cells":[{"n":287,"k":54,"p":0.18815331010452963},{"n":287,"k":18,"p":0.0627177700348432},{"n":287,"k":8,"p":0.027874564459930314},{"n":287,"k":4,"p":0.013937282229965157}]},{"lo":0.95,"hi":1.0,"cells":[{"n":143,"k":120,"p":0.8391608391608392},{"n":143,"k":108,"p":0.7552447552447552},{"n":143,"k":100,"p":0.6993006993006993},{"n":143,"k":96,"p":0.6713286713286714}]}]},"top":[{"lo":0.95,"hi":0.97,"n":28,"k":15,"p":0.5357142857142857,"ci":[0.3581239514210167,0.7046869626034041],"medDepth":7,"maxDepth":13},{"lo":0.97,"hi":0.99,"n":50,"k":40,"p":0.8,"ci":[0.6696262789551477,0.8875637005402612],"medDepth":14.5,"maxDepth":1914},{"lo":0.99,"hi":1.0,"n":65,"k":65,"p":1.0,"ci":[0.9441965323292892,0.9999999999999999],"medDepth":78,"maxDepth":4569}],"theory":[{"p":0.6,"score":0.0,"seed":0.00047018498457599973},{"p":0.605,"score":0.0,"seed":0.0005325134969752929},{"p":0.61,"score":0.0,"seed":0.0006024867845350402},{"p":0.615,"score":0.0,"seed":0.0006809680510763635},{"p":0.62,"score":0.0,"seed":0.0007689097049487666},{"p":0.625,"score":0.0,"seed":0.0008673617379884035},{"p":0.63,"score":0.0,"seed":0.0009774808139711457},{"p":0.635,"score":0.0,"seed":0.001100540120180812},{"p":0.64,"score":0.0,"seed":0.0012379400392853806},{"p":0.645,"score":0.0,"seed":0.0013912197024930073},{"p":0.65,"score":0.0,"seed":0.0015620694889554071},{"p":0.655,"score":0.0,"seed":0.0017523445406091652},{"p":0.66,"score":0.0,"seed":0.0019640793661068186},{"p":0.665,"score":0.0,"seed":0.0021995036122005904},{"p":0.67,"score":0.0,"seed":0.002461059085914088},{"p":0.675,"score":0.0,"seed":0.002751418116084141},{"p":0.68,"score":0.0,"seed":0.0030735033483877913},{"p":0.685,"score":0.0,"seed":0.00343050907380337},{"p":0.69,"score":0.0,"seed":0.0038259241966016474},{"p":0.695,"score":0.0,"seed":0.004263556954438938},{"p":0.7,"score":0.0,"seed":0.004747561509942996},{"p":0.705,"score":0.0,"seed":0.005282466540360251},{"p":0.71,"score":0.0,"seed":0.005873205959385489},{"p":0.715,"score":0.0,"seed":0.006525151913239009},{"p":0.72,"score":0.0,"seed":0.007244150201408986},{"p":0.725,"score":0.0,"seed":0.008036558281256054},{"p":0.73,"score":0.0,"seed":0.008909286024901498},{"p":0.735,"score":0.0,"seed":0.00986983940650928},{"p":0.74,"score":0.0,"seed":0.010926367308245082},{"p":0.745,"score":0.0,"seed":0.012087711643873438},{"p":0.75,"score":0.0,"seed":0.013363461010158062},{"p":0.755,"score":0.0,"seed":0.014764008087982734},{"p":0.76,"score":0.0,"seed":0.01630061102743347},{"p":0.765,"score":0.0,"seed":0.01798545906400073},{"p":0.77,"score":0.0,"seed":0.019831742626597607},{"p":0.775,"score":0.0,"seed":0.021853728212271533},{"p":0.78,"score":0.0,"seed":0.02406683831733906},{"p":0.785,"score":0.0,"seed":0.02648773673022288},{"p":0.79,"score":0.0,"seed":0.02913441950754561},{"p":0.795,"score":0.0,"seed":0.032026311972062516},{"p":0.8,"score":0.0,"seed":0.03518437208883203},{"p":0.805,"score":0.024999999999999467,"seed":0.038631200594645115},{"p":0.81,"score":0.04999999999999982,"seed":0.04239115827521616},{"p":0.815,"score":0.07499999999999929,"seed":0.04649049080498367},{"p":0.82,"score":0.09999999999999964,"seed":0.05095746158564267},{"p":0.825,"score":0.125,"seed":0.05582249304174015},{"p":0.83,"score":0.14999999999999947,"seed":0.06111831685486578},{"p":0.835,"score":0.17499999999999982,"seed":0.06688013364218842},{"p":0.84,"score":0.20000000000000018,"seed":0.0731457826103676},{"p":0.845,"score":0.22499999999999964,"seed":0.07995592174224682},{"p":0.85,"score":0.25,"seed":0.08735421910125167},{"p":0.855,"score":0.27500000000000036,"seed":0.09538755586711418},{"p":0.86,"score":0.2999999999999998,"seed":0.10410624174646739},{"p":0.865,"score":0.3250000000000002,"seed":0.11356424343304561},{"p":0.87,"score":0.34999999999999964,"seed":0.1238194268247328},{"p":0.875,"score":0.375,"seed":0.13493381373857005},{"p":0.88,"score":0.40000000000000036,"seed":0.1469738539001126},{"p":0.885,"score":0.4249999999999998,"seed":0.16001071302026806},{"p":0.89,"score":0.4499999999999993,"seed":0.174120577810999},{"p":0.895,"score":0.47499999999999964,"seed":0.18938497883109515},{"p":0.9,"score":0.5,"seed":0.20589113209464868},{"p":0.905,"score":0.5250000000000004,"seed":0.2237323004180027},{"p":0.91,"score":0.5499999999999998,"seed":0.24300817552575724},{"p":0.915,"score":0.5750000000000002,"seed":0.26382528198310357},{"p":0.92,"score":0.5999999999999996,"seed":0.2862974040702046},{"p":0.925,"score":0.625,"seed":0.3105460367648076},{"p":0.93,"score":0.6499999999999995,"seed":0.3367008620516138},{"p":0.935,"score":0.6750000000000007,"seed":0.3649002518314377},{"p":0.94,"score":0.6999999999999993,"seed":0.3952917987596815},{"p":0.945,"score":0.7250000000000005,"seed":0.4280328764024744},{"p":0.95,"score":0.75,"seed":0.46329123015975304},{"p":0.955,"score":0.7749999999999995,"seed":0.5012456004679857},{"p":0.96,"score":0.7999999999999998,"seed":0.5420863798609088},{"p":0.965,"score":0.8250000000000002,"seed":0.586016305534952},{"p":0.97,"score":0.8499999999999996,"seed":0.6332511891367891},{"p":0.975,"score":0.875,"seed":0.6840206855639235},{"p":0.98,"score":0.9000000000000004,"seed":0.7385691026454038},{"p":0.985,"score":0.9249999999999998,"seed":0.7971562536487744},{"p":0.99,"score":0.9500000000000002,"seed":0.8600583546412884},{"p":0.995,"score":0.9749999999999996,"seed":0.9275689688183278},{"p":1.0,"score":1.0,"seed":1.0}],"sweep":[{"ov":0.0,"k":564,"p":0.17956064947468958,"extra":17490},{"ov":0.25,"k":209,"p":0.06653931868831582,"extra":1803},{"ov":0.5,"k":123,"p":0.039159503342884434,"extra":1364},{"ov":0.8,"k":109,"p":0.034702324100604906,"extra":1270}],"depth":[{"m":1,"k":564},{"m":2,"k":481},{"m":5,"k":285},{"m":10,"k":175},{"m":25,"k":106},{"m":50,"k":67}],"shared":564,"extra":17490,"medianIdentity":0.8287,"medianWith":0.8479,"medianWithout":0.8226,"topBandShare":0.04552690226042662,"cmds":"# reads: the substrate's own alignment, unmodified\nminimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes \\\n         GGO.fasta  GCA_029281585.2_flnc.fastq.gz\n\n# E_r: the shipped edge dump for this catalog\narm_f2/dump/e.edges.tsv   3,141 edges over 3,598 loci\n  identity >= 0.60 and coverage >= 0.50 of the shorter, one record, forward only\n\n# E_c: recomputed here on the identical loci\nsamtools view npip3.bam | ecband2.py     # tie = AS >= 0.95 * the read's best AS\n\n# scoring constants, measured not assumed\nminimap2 -ax splice:hq --eqx ref.fa reads_with_k_mismatches.fa\n  2000 matches, 0 mm -> AS 2000    |  1950 matches, 50 mm -> AS 1750\n  => A = 1 per match, B = 4 per mismatch\n"};
+
+const fmt = n => n.toLocaleString('en-US');
+const pct = (x, d) => (100 * x).toFixed(d === undefined ? 1 : d) + '%';
+const NS = 'http://www.w3.org/2000/svg';
+const el = (t, a, txt) => {
+  const e = document.createElementNS(NS, t);
+  for (const k in a) e.setAttribute(k, a[k]);
+  if (txt !== undefined) e.textContent = txt;
+  return e;
+};
+
+/* ------------------------------------------------------------- chart one */
+(function cliff(){
+  const svg = document.getElementById('cliff');
+  const W = 920, H = 470, ML = 64, MR = 78, MT = 30, MB = 66;
+  const x0 = 0.66, x1 = 1.00;
+  const bins = DATA.fine.filter(b => b.n > 0);
+  const maxN = Math.max(...bins.map(b => b.n));
+  const X  = v => ML + (v - x0) / (x1 - x0) * (W - ML - MR);
+  const YL = v => MT + (1 - v) * (H - MT - MB);
+  const YR = v => MT + (1 - v / maxN) * (H - MT - MB);
+  const g  = f => svg.appendChild(f);
+  const BOUND = 0.99;
+
+  g(el('rect', {x: X(BOUND), y: MT, width: X(x1) - X(BOUND), height: H - MT - MB,
+                fill: 'var(--olive-wash)'}));
+  g(el('line', {x1: X(BOUND), x2: X(BOUND), y1: MT, y2: H - MB, stroke: 'var(--olive)',
+                'stroke-width': 1.3, 'stroke-dasharray': '5 3'}));
+
+  for (let v = 0; v <= 1.0001; v += 0.25){
+    g(el('line', {x1: ML, x2: W - MR, y1: YL(v), y2: YL(v), stroke: 'var(--rule)',
+                  'stroke-width': v === 0 ? 1.2 : .7}));
+    g(el('text', {x: ML - 11, y: YL(v) + 4, 'text-anchor': 'end', fill: 'var(--muted)',
+                  'font-size': 11.5, 'font-family': 'var(--mono)'}, (100*v).toFixed(0) + '%'));
+  }
+
+  const bw = (X(x0 + 0.02) - X(x0)) * .84;
+  bins.forEach(b => g(el('rect', {
+    x: X((b.lo + b.hi) / 2) - bw/2, y: YR(b.n), width: bw, height: (H - MB) - YR(b.n),
+    fill: 'var(--petrol-wash)', stroke: 'var(--petrol-soft)', 'stroke-width': .8})));
+
+  const MED = DATA.medianIdentity;
+  g(el('line', {x1: X(MED), x2: X(MED), y1: MT + 34, y2: H - MB, stroke: 'var(--petrol)',
+                'stroke-width': 1.1, 'stroke-dasharray': '2 3'}));
+  g(el('text', {x: X(MED) + 7, y: MT + 20, fill: 'var(--petrol)', 'font-size': 11.5,
+                'font-family': 'var(--sans)', 'font-weight': 600}, 'median edge'));
+  g(el('text', {x: X(MED) + 7, y: MT + 33, fill: 'var(--petrol)', 'font-size': 11.5,
+                'font-family': 'var(--mono)'}, MED.toFixed(4)));
+
+  bins.forEach(b => {
+    const cx = X((b.lo + b.hi) / 2);
+    g(el('line', {x1: cx, x2: cx, y1: YL(b.ci[0]), y2: YL(b.ci[1]),
+                  stroke: 'var(--verm-soft)', 'stroke-width': 1.4}));
+    b.ci.forEach(v => g(el('line', {x1: cx - 3.2, x2: cx + 3.2, y1: YL(v), y2: YL(v),
+                  stroke: 'var(--verm-soft)', 'stroke-width': 1.4})));
+  });
+
+  const pts = bins.map(b => [X((b.lo + b.hi) / 2), YL(b.p)]);
+  g(el('polyline', {points: pts.map(p => p.join(',')).join(' '), fill: 'none',
+                    stroke: 'var(--verm)', 'stroke-width': 2, 'stroke-linejoin': 'round'}));
+  bins.forEach((b, i) => g(el('circle', {
+    cx: pts[i][0], cy: pts[i][1], r: Math.max(2.6, Math.min(7.5, Math.sqrt(b.n) / 3.1)),
+    fill: 'var(--paper)', stroke: 'var(--verm)', 'stroke-width': 2})));
+
+  g(el('line', {x1: ML, x2: W - MR, y1: H - MB, y2: H - MB, stroke: 'var(--ink)',
+                'stroke-width': 1.2}));
+  for (let i = 0; i <= 7; i++){
+    const v = 0.66 + i * 0.05;
+    if (v > 1.0001) break;
+    g(el('line', {x1: X(v), x2: X(v), y1: H - MB, y2: H - MB + 5, stroke: 'var(--ink)',
+                  'stroke-width': 1}));
+    g(el('text', {x: X(v), y: H - MB + 19, 'text-anchor': 'middle', fill: 'var(--ink-2)',
+                  'font-size': 11.5, 'font-family': 'var(--mono)'}, v.toFixed(2)));
+  }
+  g(el('text', {x: (ML + W - MR) / 2, y: H - 24, 'text-anchor': 'middle', fill: 'var(--ink)',
+                'font-size': 12.5, 'font-family': 'var(--sans)', 'font-weight': 600},
+     'identity between the two copies'));
+
+  [0, .5, 1].forEach(f => {
+    const v = Math.round(maxN * f);
+    g(el('text', {x: W - MR + 11, y: YR(v) + 4, fill: 'var(--petrol)', 'font-size': 11.5,
+                  'font-family': 'var(--mono)'}, fmt(v)));
+  });
+  const midY = (MT + H - MB) / 2;
+  g(el('text', {x: W - 14, y: midY, fill: 'var(--petrol)', 'font-size': 12.5,
+                'font-family': 'var(--sans)', 'font-weight': 600, 'text-anchor': 'middle',
+                transform: `rotate(90 ${W - 14} ${midY})`}, 'edges in bin'));
+  g(el('text', {x: 15, y: midY, fill: 'var(--verm)', 'font-size': 12.5,
+                'font-family': 'var(--sans)', 'font-weight': 600, 'text-anchor': 'middle',
+                transform: `rotate(-90 15 ${midY})`}, 'share with a shared tied read'));
+
+  g(el('text', {x: X(BOUND) - 9, y: MT + 15, 'text-anchor': 'end', fill: 'var(--olive)',
+                'font-size': 11.5, 'font-family': 'var(--sans)', 'font-weight': 600},
+     'ties possible only to the right →'));
+  g(el('text', {x: X(BOUND) - 9, y: MT + 28, 'text-anchor': 'end', fill: 'var(--olive)',
+                'font-size': 11.5, 'font-family': 'var(--mono)'}, 'p ≥ 0.99'));
+})();
+
+/* ------------------------------------------------------------- chart two */
+(function theory(){
+  const svg = document.getElementById('theory');
+  const W = 880, H = 400, ML = 64, MR = 26, MT = 26, MB = 62;
+  const x0 = 0.60, x1 = 1.00, TAU = 0.95, BOUND = 0.99;
+  const X = v => ML + (v - x0) / (x1 - x0) * (W - ML - MR);
+  const Y = v => MT + (1 - v) * (H - MT - MB);
+  const g = f => svg.appendChild(f);
+
+  for (let v = 0; v <= 1.0001; v += 0.25){
+    g(el('line', {x1: ML, x2: W - MR, y1: Y(v), y2: Y(v), stroke: 'var(--rule)',
+                  'stroke-width': v === 0 ? 1.2 : .7}));
+    g(el('text', {x: ML - 11, y: Y(v) + 4, 'text-anchor': 'end', fill: 'var(--muted)',
+                  'font-size': 11.5, 'font-family': 'var(--mono)'}, v.toFixed(2)));
+  }
+  g(el('rect', {x: X(BOUND), y: MT, width: X(x1) - X(BOUND), height: H - MT - MB,
+                fill: 'var(--olive-wash)'}));
+
+  const line = (key, colour, dash) => {
+    const pts = DATA.theory.map(t => [X(t.p), Y(t[key])].join(',')).join(' ');
+    g(el('polyline', Object.assign({points: pts, fill: 'none', stroke: colour,
+        'stroke-width': 2.2, 'stroke-linejoin': 'round'}, dash ? {'stroke-dasharray': dash} : {})));
+  };
+  line('seed', 'var(--petrol)', '6 4');
+  line('score', 'var(--verm)');
+
+  g(el('line', {x1: ML, x2: W - MR, y1: Y(TAU), y2: Y(TAU), stroke: 'var(--olive)',
+                'stroke-width': 1.4, 'stroke-dasharray': '5 3'}));
+  g(el('text', {x: ML + 8, y: Y(TAU) - 7, fill: 'var(--olive)', 'font-size': 11.5,
+                'font-family': 'var(--sans)', 'font-weight': 600},
+     'tie threshold τ = 0.95'));
+  g(el('circle', {cx: X(BOUND), cy: Y(TAU), r: 4.5, fill: 'var(--olive)'}));
+  g(el('text', {x: X(BOUND) - 8, y: Y(TAU) - 20, 'text-anchor': 'end', fill: 'var(--olive)',
+                'font-size': 11.5, 'font-family': 'var(--mono)', 'font-weight': 500},
+     'p = 0.99'));
+
+  const MED = DATA.medianIdentity;
+  g(el('line', {x1: X(MED), x2: X(MED), y1: MT, y2: H - MB, stroke: 'var(--muted)',
+                'stroke-width': 1, 'stroke-dasharray': '2 3'}));
+  g(el('text', {x: X(MED) + 7, y: MT + 13, fill: 'var(--muted)', 'font-size': 11.5,
+                'font-family': 'var(--sans)', 'font-weight': 600}, 'median edge identity'));
+  [['score', 'var(--verm)', 5 * MED - 4], ['seed', 'var(--petrol)', Math.pow(MED, 15)]]
+    .forEach(([, c, v]) => {
+      g(el('circle', {cx: X(MED), cy: Y(v), r: 3.6, fill: c}));
+      g(el('text', {x: X(MED) + 7, y: Y(v) + 4, fill: c, 'font-size': 11.5,
+                    'font-family': 'var(--mono)'}, v.toFixed(2)));
+    });
+
+  g(el('text', {x: X(0.955), y: Y(0.62), 'text-anchor': 'end', fill: 'var(--verm)',
+                'font-size': 12, 'font-family': 'var(--sans)', 'font-weight': 600},
+     'score of the alternative placement'));
+  g(el('text', {x: X(0.955), y: Y(0.62) + 14, 'text-anchor': 'end', fill: 'var(--verm)',
+                'font-size': 11.5, 'font-family': 'var(--mono)'}, '(5p − 4)'));
+  g(el('text', {x: X(0.945), y: Y(0.30), 'text-anchor': 'end', fill: 'var(--petrol)',
+                'font-size': 12, 'font-family': 'var(--sans)', 'font-weight': 600},
+     'chance a 15-mer seed is shared'));
+  g(el('text', {x: X(0.945), y: Y(0.30) + 14, 'text-anchor': 'end', fill: 'var(--petrol)',
+                'font-size': 11.5, 'font-family': 'var(--mono)'}, '(p¹⁵)'));
+
+  g(el('line', {x1: ML, x2: W - MR, y1: H - MB, y2: H - MB, stroke: 'var(--ink)',
+                'stroke-width': 1.2}));
+  for (let v = 0.60; v <= 1.0001; v += 0.05){
+    g(el('line', {x1: X(v), x2: X(v), y1: H - MB, y2: H - MB + 5, stroke: 'var(--ink)',
+                  'stroke-width': 1}));
+    g(el('text', {x: X(v), y: H - MB + 19, 'text-anchor': 'middle', fill: 'var(--ink-2)',
+                  'font-size': 11.5, 'font-family': 'var(--mono)'}, v.toFixed(2)));
+  }
+  g(el('text', {x: (ML + W - MR) / 2, y: H - 22, 'text-anchor': 'middle', fill: 'var(--ink)',
+                'font-size': 12.5, 'font-family': 'var(--sans)', 'font-weight': 600},
+     'identity between the two copies'));
+})();
+
+/* -------------------------------------------------------------- bindings */
+(function fill(){
+  const D = DATA;
+
+  const rowHTML = b =>
+      `<td class="n">${b.lo.toFixed(2)} – ${b.hi.toFixed(2)}</td>`
+    + `<td class="num">${fmt(b.n)}</td>`
+    + `<td class="num">${fmt(b.k)} · ${pct(b.p)}</td>`
+    + `<td class="num">${pct(b.ci[0], 0)} – ${pct(b.ci[1], 0)}</td>`;
+
+  const bt = document.getElementById('bandtable');
+  D.coarse.forEach(b => {
+    const tr = document.createElement('tr');
+    if (b.lo >= 0.95) tr.className = 'hi';
+    tr.innerHTML = rowHTML(b) + `<td class="num">${b.medDepth.toFixed(0)}</td>`;
+    bt.appendChild(tr);
+  });
+
+  const tt = document.getElementById('toptable');
+  D.top.forEach(b => {
+    const tr = document.createElement('tr');
+    if (b.lo >= 0.99) tr.className = 'hi';
+    tr.innerHTML = rowHTML(b);
+    tt.appendChild(tr);
+  });
+
+  const rb = document.getElementById('robusttable');
+  D.robust.bands.forEach(b => {
+    const tr = document.createElement('tr');
+    if (b.lo >= 0.95) tr.className = 'hi';
+    tr.innerHTML = `<td class="n">${b.lo.toFixed(2)} – ${b.hi.toFixed(2)}</td>`
+      + `<td class="num">${fmt(b.cells[0].n)}</td>`
+      + b.cells.map(c => `<td class="num">${pct(c.p)}</td>`).join('');
+    rb.appendChild(tr);
+  });
+
+  const st = document.getElementById('sweeptable');
+  D.sweep.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    if (i === 0) tr.className = 'hi';
+    tr.innerHTML = `<td>${s.ov === 0 ? 'any overlap' : '≥ ' + pct(s.ov, 0) + ' of the placement'}</td>`
+      + `<td class="num">${fmt(s.k)} / ${fmt(D.n)}</td><td class="num">${pct(s.p)}</td>`
+      + `<td class="num">${fmt(s.extra)}</td>`;
+    st.appendChild(tr);
+  });
+
+  const dt = document.getElementById('depthtable');
+  D.depth.forEach((d, i) => {
+    const tr = document.createElement('tr');
+    if (i === 0) tr.className = 'hi';
+    tr.innerHTML = `<td>≥ ${d.m} shared tied read${d.m > 1 ? 's' : ''}</td>`
+      + `<td class="num">${fmt(d.k)}</td><td class="num">${pct(d.k / D.n)}</td>`;
+    dt.appendChild(tr);
+  });
+
+  const shared = D.shared, erOnly = D.n - shared, ecOnly = D.extra;
+  const scale  = Math.max(D.n, shared + ecOnly);
+  const host   = document.getElementById('setbars');
+  [{lab: '<b>E<sub>r</sub></b>' + fmt(D.n) + ' edges', total: D.n,
+    segs: [['shared', shared], ['rest-er', erOnly]]},
+   {lab: '<b>E<sub>c</sub></b>' + fmt(shared + ecOnly) + ' pairs', total: shared + ecOnly,
+    segs: [['shared', shared], ['rest-ec', ecOnly]]}].forEach(b => {
+    const row = document.createElement('div'); row.className = 'setrow';
+    const lb  = document.createElement('div'); lb.className = 'lb'; lb.innerHTML = b.lab;
+    const wrap = document.createElement('div'); wrap.className = 'barwrap';
+    const bar = document.createElement('div'); bar.className = 'bar';
+    bar.style.width = (100 * b.total / scale) + '%';
+    b.segs.forEach(([cls, v]) => {
+      const s = document.createElement('div');
+      s.className = 'seg ' + cls;
+      s.style.flex = v;
+      s.textContent = (v / scale > 0.06) ? fmt(v) : '';
+      s.title = fmt(v) + ' pairs';
+      bar.appendChild(s);
+    });
+    wrap.appendChild(bar); row.appendChild(lb); row.appendChild(wrap); host.appendChild(row);
+  });
+
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  set('medWith',   D.medianWith.toFixed(4));
+  set('medWithout',D.medianWithout.toFixed(4));
+  set('maxDepth',  fmt(D.coarse[3].maxDepth));
+  set('sharedN',   fmt(shared));
+  set('extraN',    fmt(ecOnly));
+  set('lossPct',   pct(erOnly / D.n));
+  set('topShare',  pct(D.topBandShare));
+  set('botShare',  pct(1 - D.topBandShare));
+  set('hdrShare',  pct(shared / D.n));
+  set('hdrTop',    pct(D.coarse[3].p));
+  document.getElementById('cmds').textContent = D.cmds;
+})();
+</script>

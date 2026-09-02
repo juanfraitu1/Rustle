@@ -119,6 +119,14 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6au — The advisor is RIGHT on non-canonical junctions; §6at RESTATED (09-01)
 - §6av — Cross-substrate recurrence CONFIRMS the non-canonical sites are real (09-01)
 - §6aw — `RUSTLE_JUNCTION_MAJORITY` measured: it works, and it is NOT yet a default (09-01)
+- §6ax — READINESS AUDIT against the three questions the advisor will ask (09-01)
+- §6ay — TSS/TES/UTR boundaries: the premise is FALSE, but the coverage statistic is ONE-SIDED (09-01)
+- §6az — Should rep selection / exon-sum / seeding change? ONE adjustment, and it is DISCLOSURE (09-01)
+- §6ba — `cov_longer` and the flanks are now DISCLOSED, not gated (09-01)
+- §6bb — Is a shared-multimapper graph as good as E_r? NO, and a 3-way gauge is worse (09-01)
+- §6bc — The E_c cliff RE-DERIVED: its location is DERIVABLE, and §6bb's counts are RETRACTED (09-01)
+- §6bd — CROSS-COPY BORROWING IS INERT OR DEAD — and what that costs the isoform claim (09-01)
+- §6be — SEEDED MODE: the seed SUBSTRATE dominates, and a MULTI-seed reaches 30/31 (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6216,6 +6224,11 @@ aligned span is equal on both axes — **the test pins that case and the general
 
 ## §6bb — Is a shared-multimapper graph as good as E_r? NO, and a 3-way gauge is worse (09-01)
 
+> ⚠⚠ **ITS ABSOLUTE COUNTS ARE RETRACTED — see §6bc.** The script behind them was not
+> preserved and did not record its locus-assignment rule. Re-derived: **564/3,141 = 17.96%**
+> (not 688 = 21.9%) and **17,490** E_c-only pairs (not 13,120). The cliff band and every
+> conclusion below stand; **quote §6bc's numbers.**
+
 The advisor's proposal: drop identity+coverage and build the graph from **shared multi-mapping reads**,
 which he argues is "just as good and less prone to arbitrary thresholds". Third option considered: a
 combined gauge using identity + coverage + #multimappers. Measured on `arm_f2` (3,141 E_r edges) with E_c
@@ -6265,3 +6278,189 @@ division was arrived at partly in response to him.
 of the multimapper count is as an **optional per-edge annotation** (it is present on 21.9% and is a genuine
 independent signal, 11.6% overlap) — never as a required clause. That is the same disposition §6ba took
 for `cov_longer`: **disclose, do not gate.**
+
+## §6bc — The E_c cliff RE-DERIVED: its location is DERIVABLE, and §6bb's counts are RETRACTED (09-01)
+
+§6bb's numbers came from a script that was **not preserved**. A documented re-derivation (instruments now
+in-tree: `bench/ec_identity_cliff.py`, `bench/ec_identity_cliff_assemble.py`) does **not** reproduce them.
+
+**Protocol (the one that ships):** tie = `AS >= 0.95 x the read's best AS ANYWHERE in the genome`;
+supplementary excluded, secondaries kept; a placement is credited to a locus when >= `OV` of its own
+reference span lies inside the locus interval, with `OV` **swept**. 2,499,153 records, 1,605,651 reads.
+
+### ⛔ RETRACTED: the absolute counts
+| | §6bb | re-derived (OV=0) |
+|---|---|---|
+| E_r edges with >=1 shared tied read | 688 = 21.9% | **564 = 17.96%** |
+| E_c pairs not in E_r | 13,120 | **17,490** |
+| 0.60-0.80 / 0.80-0.90 / 0.90-0.95 | 15.4 / 22.1 / 18.1% | **8.56 / 19.03 / 18.82%** |
+| **0.95-1.00** | 82.5% | **83.92%** |
+⟹**the CLIFF BAND agrees; the low bands do not.** The conclusion of §6bb is unchanged; **quote these.**
+
+### ⭐ THE ASSIGNMENT RULE WAS THE HIDDEN VARIABLE — AND TIGHTENING IT SHARPENS THE CLIFF
+Share with a tied read, by band x how much of the read must lie in the locus:
+
+| identity | any overlap | >=25% | >=50% | >=80% |
+|---|---|---|---|---|
+| 0.60-0.80 | 8.6% | 0.8% | **0.0%** | **0.0%** |
+| 0.80-0.90 | 19.0% | 4.8% | 1.0% | 0.6% |
+| 0.90-0.95 | 18.8% | 6.3% | 2.8% | 1.4% |
+| **0.95-1.00** | **83.9%** | **75.5%** | **69.9%** | **67.1%** |
+
+⭐**At >=50%, NOT ONE of the 1,203 edges below identity 0.80 has a genuinely shared read**, against ~70% of
+the top band. Most sub-cliff "support" was reads GRAZING a locus interval. ⟹**publish OV=0 (most generous
+to the shared-read proposal) and show the sweep**; the result only strengthens under every stricter rule.
+
+### ⭐⭐ THE CLIFF'S LOCATION IS DERIVABLE FROM THE SCORING MATRIX — NOT AN EMPIRICAL ACCIDENT
+A read of length L on a copy of identity p scores ~`L[Ap - B(1-p)]` against `AL` at its own locus, so a tie
+at ratio τ requires
+
+  **p >= (τA + B) / (A + B)**
+
+**A and B were MEASURED, not assumed** — synthetic reads with known mismatch counts under this run's exact
+preset: 2000 matches/0 mm → `AS 2000`; 1995/5 → 1975; 1980/20 → 1900; 1950/50 → 1750 ⟹ **A = 1, B = 4 for
+`splice:hq`**. The bound is `p >= 0.8 + 0.2τ`, so at τ=0.95 ⟹ **p >= 0.99**.
+
+**Both of its predictions hold.** Above the bound ties should be near-universal: **65/65 edges at identity
+>= 0.99 have a shared tied read, no exceptions** (0.95-0.97 = 53.6%, 0.97-0.99 = 80.0%). Below it ties need
+a locally-conserved patch, so they should be sparse and disordered: measured **0-24%, non-monotonic** (lower
+at 0.88-0.92 than at 0.80-0.86). A second aligner constant points the same way: a shared `k=15` minimizer
+needs ~`p^15`, which at the median edge identity **0.8287** is **0.0597**, where the score ratio `5p-4` is
+**0.1435**.
+⟹⭐**E_c's decisive threshold is NOT absent — it is `(τA+B)/(A+B)`, a constant nobody chose and no
+graph-level tuning can reach.** That is the answer to "less prone to arbitrary thresholds".
+
+### ⭐ DEPTH STEPS WITH INCIDENCE
+Median shared tied reads among SUPPORTED edges: **2 / 4 / 6 / 29.5** by band (max 33 / 264 / 399 / **4,569**)
+⟹ below the cliff a "supported" edge is carried by a couple of reads; above it, by thirty.
+⚠**METRIC TRAP CONFIRMED ON THE NEW NUMBERS**: aggregate medians **0.8479 with support vs 0.8226 without** —
+still nearly null. **The band breakdown is the only readable statistic.**
+
+⚠**LESSON: an unpreserved instrument's numbers cannot be defended.** §6bb's protocol did not record its
+locus-assignment rule, which is the variable that moves the low bands by 2x. Artifact published for the
+advisor: `docs/artifacts/ambiguity-cliff.html`.
+
+## §6bd — CROSS-COPY BORROWING IS INERT OR DEAD — and what that costs the isoform claim (09-01)
+
+Asked whether the method "borrows information across the family". Audited the shipped path.
+
+### ⛔ THE ASSEMBLY-SIDE BORROW MACHINERY DOES NOT RUN
+* **`consensus.rs` is DEAD CODE.** Its own header calls it *"the one SUBTRACTIVE cross-copy lever"*, yet
+  `consensus_vetoes` / `family_consensus_vetoes` have **0 call sites** outside the module's own tests.
+* **`rescue_thin_loci_iterative` IS wired** (`denovo_pipeline.rs:2018`) and produces **0 `RC_` copies** in
+  both shipped catalogs — **0/678** (arm_f2) and **0/1,070** (fibroblast genome-wide).
+* the register already records **TOPO_BORROW: 0 beneficiaries**, verdict *"all such recovery FABRICATES.
+  Keep them OFF"*.
+* **The gate is the same seed barrier as §6bc**: cross-copy exon unification needs Jaccard >= 0.30 over
+  `k=15` minimizers (`family_graph.rs:344`), and the code's own comment says the machinery is *"inert at
+  moderate identity"*. At the median edge identity 0.8287, `p^15 = 0.06`.
+
+### ⭐ WHAT DOES POOL ACROSS COPIES — AND IT IS LIVE
+O2 builds a **per-family PSV matrix** (one bubble per column, every copy's allele) and threads each read
+through the family's variation graph (`copy_assign.rs:16-52`). ⟹**claim borrowing for ASSIGNMENT. Never
+for ASSEMBLY.**
+
+### ⛔ ISOFORMS: MOST COPIES HAVE NO CHAIN TO REPORT
+**370/678 = 54.6% of catalog copies are single-exon**; median `n_exon` is **1** in every identity band above
+0.80; at identity 0.95-0.99 only **20.3%** of incident copies are spliced, median **4** reads. The
+`copy_assign --gtf` FLAIR-style emit exists but **is not validated**.
+
+### ⭐⭐ "TWO NEAR-IDENTICAL COPIES PRODUCE THE SAME ISOFORMS" IS UNFALSIFIABLE ABOVE THE CLIFF
+Edges whose two copies have **byte-exact identical intron chains**, both spliced (tol 0): **6**, and they
+separate perfectly by whether the reads can be told apart:
+
+| identity | n_exon | reads A/B | shared tied reads |
+|---|---|---|---|
+| 0.9984 | 8 | 415 / 481 | **1,349** |
+| 0.9962 | 8 | 121 / 292 | **942** |
+| 0.9950 | 2 | 33 / 27 | **293** |
+| 0.8288 | 4 | 15 / 6 | **0** |
+| 0.7882 | 4 | 128 / 96 | **0** |
+| 0.7587 | 4 | 95 / 91 | **0** |
+
+All are genuinely distinct loci (236 kb - 15.9 Mb apart, coverage 1.000 for the top three).
+⟹**above the cliff the two models are one read pool projected onto two loci: identity BY CONSTRUCTION.
+Below it — distinguishable copies, zero shared reads, same chain — it is real evidence of isoform
+conservation between paralogs.** At 10 bp tolerance the pattern is the same but softer (18.2% at >=0.99
+vs 5.0% below 0.80).
+⟹**RULE: report isoform sharing only where the copies are read-separable; flag the rest UNDETERMINED.**
+That is assign-or-abstain moved up one level.
+⚠ n=6, and full-chain equality is a STRICT test: §6ay measured within-family ends differing by a median
+**1,190 bp**, so genuine sharing with different termini fails it.
+
+## §6be — SEEDED MODE: the seed SUBSTRATE dominates, and a MULTI-seed reaches 30/31 (09-01)
+
+Question: with a minimal annotation supplying seeds, would O1 find more copies, or the same more
+accurately? Benchmark = the 31-locus NPIP truth set, substrate `npip3.bam` / `arm_f2` (fibroblast,
+3 contigs — in-scope).
+
+### ⛔ RETRACTED WITHIN THE SESSION: "a seed cannot reach them"
+The spliced CDS-union seed (12,878 bp, 26 exons) returns **14/31** — no better than reads — and at maximum
+permissiveness (`-p 0.02 -N 200`, isolated targets) **14/14 of the missed loci had ZERO alignment**. I read
+that as "no homology exists, seeding cannot help". **WRONG.** Swapping the seed substrate — the same gene's
+**genomic** interval (124,605 bp, introns included) instead of its spliced CDS — reaches those same loci at
+identity **0.86-0.97** over 15-140 kb blocks. Exactly the trap
+[[project_gene_naming_traps]] names: **a copy count is a property of (seed, PRESET, -p, -N, node unit)** —
+and the SEED SUBSTRATE dominates the preset.
+⟹**This mirrors `from_genome.rs`'s own claim, inverted: splicing discards the intron/flank sequence that
+SEPARATES near-identical copies — and that CONNECTS diverged ones.**
+
+### ⭐ RECALL ON THE 31 NPIP LOCI
+| mode | recall |
+|---|---|
+| reads only (shipped catalog copies) | **14/31** |
+| spliced CDS seed → genome (3-preset union) | 14/31 (a DIFFERENT 14; union with reads 17/31) |
+| annotation intervals as the candidate target set | 13/31 — and **0** loci the genome-wide scan missed |
+| **one DNA seed → genome** (asm20/asm10/map-hifi, block >=1 kb) | **25/31** |
+| **MULTI-SEED: all 4,477 annotated genes+pseudogenes as DNA seeds** | **30/31** |
+
+* single DNA seed, genome-wide precision **measured, not assumed** (the first target set was built from the
+  truth loci and could not produce off-target hits): **27 loci proposed, 25 inside the 31, 2 outside**, the
+  two adjacent at 15.92-16.06 Mb with 0 read-catalog support.
+* multi-seed (asm20+asm10, >=0.30 of seed covered) is a **STRICT SUPERSET of the read catalog — 0 loci
+  lost**. It recovers all six SHORT loci the single seed cannot, because the short gene at each locus
+  **becomes its own seed**. The one miss is a **1,090 bp** fragment in the PKD1 region.
+* **stable**: 30/31 and 82 families across coverage 0.30 / 0.50 / 0.70. **asm10 adds nothing over asm20**
+  (same 82 families, same recall) — here one preset suffices.
+
+### ⭐ HOW MINIMAL CAN THE ANNOTATION BE? ONLY 10.8% OF SEEDS EVER FIRE
+3,811 seeds produced a record; **412 = 10.8% produce a non-self copy**. 5,679 non-self relations → 404 loci
+→ **82 families**. You do not need a complete annotation, you need the duplicated genes — about a ninth of
+it — and you cannot know which in advance.
+
+### ⚠⚠ BUT AS A GENERAL FAMILY FINDER IT IS WEAK, AND PRECISION NEEDS THE READS
+* covers only **43/121 = 35.5%** of the read catalog's families on the same contigs
+* only **10/82** families have >=2 read-supported loci (the O1-admissible set); **65/82 have none**
+* ⛔**largest family n=74, median span 4,852 bp, density 0.366, 0/74 read-corroborated = a REPEAT CLIQUE.**
+  The NPIP family (n=34, density 0.127) is **21/34** corroborated. ⟹**DNA homology alone does not separate
+  them; read support does.**
+
+### ⭐⭐ THE 305 LOCI IN 0-CORROBORATED FAMILIES: HALF ARE EXPRESSED
+| | loci |
+|---|---|
+| >=3 primaries — expressed, node never built | **49** |
+| <3 primaries but >=50 secondaries — STARVED | **103** |
+| effectively silent — true O3 candidates | 153 |
+
+⟹**152/305 = 50% are EXPRESSED but absent from the catalog.** Same mechanism as §6ad: the 11 loci the
+single DNA seed recovers carry primaries **2/2/4/5/6/7/16/17/18/4/4,784** against secondaries **311-1,119**
+— and the outlier (**4,784 primaries, 4,779 spliced**) is a pure NODE-CONSTRUCTION failure, nothing to do
+with seeding or expression.
+⭐**CONVERGENCE**: flagfree reaches 26/31 from the same 14/31 baseline; DNA seed 25/31; multi-seed 30/31.
+Three independent routes to the same recall stratum.
+
+### ⟹ THE MODE THAT IS DEFENSIBLE (and NOT the discover-then-define trap)
+1. annotation seeds → DNA candidate loci (says **where to look**)
+2. **read evidence at those loci decides membership** — a different quantity on a different substrate from
+   the criterion that generated the candidate, so stage 2 tests what stage 1 did not
+   ([[project_discover_then_define_is_circular]])
+3. emit three tiers: **O1 member** (>=2 expressed loci) · **recoverable** (expressed but starved) ·
+   **O3 candidate** (silent)
+
+⟹**the annotation-free path stays the DEFINITION; the seeded path is a RECALL INSTRUMENT that measures what
+the definition is missing.** ⚠**Annotation NAMES remain useless: all 31 truth loci carry an annotated gene,
+but only 1/31 is named `NPIPB11`** — the rest are LOC-numbers or named for something else entirely
+(`MPV17L`, `SNX29`, `PKD1`). Intervals for free; membership still from sequence.
+⚠ one benchmark family · 3 contigs · **DNA homology proves segmental duplication, not a gene copy**
+(confirming that needs the CDS projection) · multi-seed precision is assessed only by read corroboration,
+not against an independent truth set.
