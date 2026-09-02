@@ -143,6 +143,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bs — The self-overlap defect is REAL, cross-species, and ABSENT from the current path (09-02)
 - §6bt — THE PANEL RUN: the mechanism transfers to HUMAN, and the BASELINE HAD MOVED (09-02)
 - §6bt.1 — THE CONTROL: the frozen panel IS reproducible, and the node floor is the WHOLE cause (09-02)
+- §6bt.2 — EVERY PRE-REGISTERED CRITERION PASSES, on a species the clause never saw (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7438,3 +7439,53 @@ change is **not** shown to be a bad trade — §6ac bought measured recall and t
 attributable, and was never measured**, which is a different and fairer statement than either
 "stable" or "a regression". ⚠**`RUSTLE_GATE_MIN_READS=3` is also, therefore, the reproduction recipe
 for every pre-08-30 panel number** — record it wherever those numbers are quoted.
+
+## §6bt.2 — ⭐⭐⭐ EVERY PRE-REGISTERED CRITERION PASSES, ON A SPECIES THE CLAUSE NEVER SAW (09-02)
+
+The arm §6bt.1 said was live: **node floor 3** (the configuration §6bq was written against) **+
+`RUSTLE_ER_COVERAGE_LONGER_FLOOR=0.30`**. §6bq was committed to git as **`5cbced4`** and pushed
+**before this ran**.
+
+| # | pre-registered prediction | result | |
+|---|---|---|---|
+| **P1** | W106 emits **no** family | 0 families, both edges removed | ✅ |
+| **P2** | W063 **still** emits its family | emits, `cov_longer` 0.497726 | ✅ |
+| **P3** | 2/150 → **1/150** | **1/150 = 0.67%** [0.0012, 0.0368] | ✅ |
+| **P4** | **no window gains** a family | `ADDED=[]`, `GAINED=[]` | ✅ |
+| **P5** | 3 edges → **1** | **3 → 1** | ✅ |
+
+**5/5.** None of the three falsifiers fired.
+
+⭐⭐⭐**AND THE DISCRIMINATION IS THE POINT, NOT THE COUNT.** §6bq did not predict "fewer false
+merges" — it predicted **which** would die and **why**, and that the other **must survive**:
+
+- **W106 `ANKHD1` died** — a **206 bp, 100% soft-masked** linking node aligning almost fully into a
+  7,698 bp and a 1,332 bp gene: `cov_shorter` **0.966 / 0.699** says "perfect match",
+  `cov_longer` **0.026 / 0.112** says "touches 2.6% and 11% of its partner". Exactly the gorilla
+  failure mode the clause was built for.
+- **W063 `ZNF492` survived, as required** — a **coordinate** pathology, one locus emitted as two,
+  the aligned block being the genuine **1,204 bp** intersection of the two spans at identity
+  **1.000000**. `cov_longer` **0.498**: a real two-sided alignment the clause has no purchase on.
+  It remains the residual this lever **structurally cannot reach**, and the self-identity
+  certificate is still emitted, unchanged, in the ON arm.
+
+⭐⭐**ACROSS BOTH NODE FLOORS THE RULE IS 9 FOR 9** — 6 edge outcomes at floor 2 (§6bt) and 3 at
+floor 3, every one called by `cov_longer < 0.30`, with **zero** edges or windows added in either
+arm. **The clause was developed entirely on gorilla NPIP; this panel is HUMAN CHM13/A119b, frozen
+since 2026-08-10, and has never been used to tune anything.**
+
+⚠⚠**THE CAVEAT §6bq FIXED IN ADVANCE STILL GOVERNS, AND IS REPEATED HERE SO IT CANNOT BE DROPPED.**
+The rate movements are **2 and 3 events**. Wilson [0.0012, 0.0368] against [0.0037, 0.0473] overlap
+almost entirely. **Do NOT report "the false-merge rate halved" or "fell by two thirds."** The result
+is that **a rule fixed before the run called 9/9 edge outcomes across a species boundary, and the one
+case it predicted it could not fix, it did not fix.** That is the sentence to use.
+
+⚠**Also unchanged:** this is a **specificity and a lower bound** — the panel has no positive
+stratum, so no prevalence and no precision. And the clause **stays default OFF**: §6bp priced it at
+**28% of copies** on gorilla, and nothing here speaks to that cost.
+
+⟹**STATUS.** `RUSTLE_ER_COVERAGE_LONGER_FLOOR` now has: an end-to-end gorilla run with a
+byte-identical OFF arm (§6bp), a **cross-species pre-registered test at 5/5 and 9/9 edges**
+(§6bq/§6bt/§6bt.2), and a **stated cost** that is still unadjudicated. It is the closest thing in
+the project to a lever that has earned a default — **and it does not get one until the copy cost is
+priced on a second truth set.**

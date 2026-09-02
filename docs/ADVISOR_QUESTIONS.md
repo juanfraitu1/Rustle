@@ -52,6 +52,23 @@ the read-strand run (§4o, *"every pre-registered criterion passes"* — and it 
 shipped**, §4p) and the engulfment test (§6ar, pre-registered, returned **partially supported**).
 The instrument that most often failed pre-registration is the one we most often refused to ship.
 
+⭐⭐⭐ **THE CLEANEST INSTANCE, AND THE ONE TO SHOW HIM (09-02, §6bq → §6bt.2).** The two-sided
+coverage clause was developed **entirely on gorilla NPIP**. The 150-window negative panel is
+**human** CHM13/A119b, frozen since 2026-08-10, never used to tune anything. The prediction was
+written, **committed to git as `5cbced4`, and pushed BEFORE the arm ran** — and it was
+*mechanistic*, not a count: which window would die, why, and that the other **must survive**.
+
+| | |
+|---|---|
+| pre-registered criteria | **5/5 pass**; none of the three falsifiers fired |
+| edge outcomes called by `cov_longer < 0.30`, across two node floors | **9/9** |
+| edges or windows **added** in any arm | **0** (monotonicity held) |
+| the case it predicted it **could not** fix | W063 — and it did not fix it |
+
+⚠ **Say the caveat in the same breath, because it was also fixed in advance:** the rate movements
+are **2–3 events** and the intervals overlap almost entirely. **Do not say the rate halved.** The
+claim is that a rule fixed before the run called **9/9 edge outcomes across a species boundary**.
+
 ### 1.2 "You tuned the thresholds until the answer appeared."
 
 The shipped rule has **four** free numbers, and they are visible in the source, not in a config
@@ -103,6 +120,7 @@ human NPIP onto the gorilla assembly**. The clean control has **n = 3**.
 | **False-merge rate** on gene-tight windows with demonstrated power | **2/150 = 1.33%** [0.37, 4.73] — **reproduced exactly** by the current binary at `RUSTLE_GATE_MIN_READS=3`, same two windows, same 3 edges. At the shipped floor 2: **3/150 = 2.00%**, **disjoint** set. One parameter, sets swap completely | O1.10 · §6bt.1 |
 | ⭐**Self-overlap defect, cross-species** — a standing blind spot, measured 09-02 | present at **7.09%** (GGO) and **7.10%** (PTR) in the `refine`-built catalogs; **0/4,176 pairs [0, 0.09%]** on the current path | §6bs |
 | Two-sided coverage gain reproduced on a **second substrate** | holds — ⚠ but **the mechanism did not** (§6bl retracts the shared-domain explanation) | §6bl |
+| ⭐⭐⭐**Pre-registered CROSS-SPECIES test** of a gorilla-derived clause on a human panel | **5/5 criteria, 9/9 edge outcomes**, prediction committed before the run | §6bq · §6bt.2 |
 
 ⭐ **The strongest single item is the cross-substrate replication**, because the relation was never
 tuned on that animal or that tissue. ⚠ **But state its weakness in the same breath**: **not one base
@@ -295,14 +313,17 @@ only move that buys credibility for what is below it.
    discipline before any result is shown.
 2. **The forking-paths accounting** (Part 1.1): ~950 tested, **1** default changed, and §6aa's
    audit finding nothing to flip.
-3. **The excision O2 result** with the **MAPQ AUC 0.4944 control** — the only fully non-circular
+3. **The pre-registered human panel** (§6bt.2) — a gorilla-derived clause, a human substrate it
+   never saw, the prediction pushed to git before the run, **5/5 and 9/9**, and the one case it
+   said it could not fix left unfixed. Show the commit timestamp.
+4. **The excision O2 result** with the **MAPQ AUC 0.4944 control** — the only fully non-circular
    accuracy number in the project, and its control is what makes it one.
-4. **Cross-substrate replication** 87.06% / 95.6% clean corner — with the shared-substrate caveat
+5. **Cross-substrate replication** 87.06% / 95.6% clean corner — with the shared-substrate caveat
    said aloud.
-5. **The NPIP coverage table** (Q9) — it shows the method *disagreeing usefully* with a naive
+6. **The NPIP coverage table** (Q9) — it shows the method *disagreeing usefully* with a naive
    identity reading, on the family he raised himself.
 
-6. **[`REPRODUCE.md`](REPRODUCE.md)** — one catalog pinned end to end: source SHA, binary md5,
+7. **[`REPRODUCE.md`](REPRODUCE.md)** — one catalog pinned end to end: source SHA, binary md5,
    both input md5s, the command, and the md5s of the outputs, with the OFF-arm byte-identity that
    proves the current binary still emits it. Have it open when he asks whether the numbers move.
 
