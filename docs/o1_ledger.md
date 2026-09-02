@@ -6833,6 +6833,31 @@ contraction for a precision gain, and the decision is a scientific one, not an F
 denominator is small. ⚠ arms are offline reconstructions, comparable to EACH OTHER, not to the shipped
 catalog. ⚠**T8 applies**: before any default flip this needs the real binary, the HUMAN 150-window
 false-merge panel, and a second substrate.
+### ⭐⭐ THE SHARED-DOMAIN MECHANISM IS NOW MEASURED, NOT ASSUMED
+What a 0.30 longer-floor actually removes (1,498 dropped vs 1,643 kept):
+
+| | DROPPED | KEPT |
+|---|---|---|
+| aligned bp on the shorter | **282** | 1,830 |
+| alignment block bp | 288 | 1,995 |
+| shorter sequence length | **513** | 2,541 |
+| longer sequence length | 3,729 | 3,921 |
+| length ratio short/long | **0.176** | 0.707 |
+| **identity** | **0.854** | **0.787** |
+| either end single-exon | **89.1%** | 31.5% |
+| either end a stub | 32.2% | 20.9% |
+
+⟹**the dropped edge is a ~282 bp block joining a 513 bp fragment to a 3.7 kb gene, and 89% of them
+involve a single-exon rep.** That is the shared-domain / shared-repeat signature exactly.
+⭐⭐**AND THE DROPPED EDGES ARE *HIGHER* IDENTITY THAN THE KEPT ONES (0.854 vs 0.787)** ⟹**no identity
+threshold can ever catch them** — they are genuinely 85% identical over 282 bp. **Coverage on the
+LONGER sequence is the only clause in the rule that can see this failure mode.**
+⭐**This is also the first effective handle on the STUB DEFECT**, which §4s/§4t closed as having no
+route through representative selection: the two-sided clause suppresses its effect from the EDGE side
+instead of fixing which rep is chosen.
+⚠**part of the 31% copy loss is therefore legitimate** (short fragments that only ever joined a family
+through a domain-sized alignment) and part is real short copies. Not separated here.
+
 ⭐**Framing for the advisor**: it ADDS a constant but REMOVES an asymmetry — the one-sided clause is
 what let the TSS/TES boundary objection land (§6ay), since a short fragment can clear 0.50 of itself
 against a full-length partner. `RUSTLE_ER_COVERAGE_LONGER` already exists as the flag.
