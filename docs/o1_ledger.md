@@ -132,6 +132,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bh — Connectivity as an orthogonal lever: NO; and the direct-edge rule has no default form (09-01)
 - §6bi — E_c SPLITS the large families: the first orthogonal lever, and §6bg's FP source 2 RETRACTED (09-01)
 - §6bj — E_c refinement run as a catalog change: safe, real, and NOT general (09-01)
+- §6bk — Charge coverage on BOTH sequences: the strongest lever measured (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6789,3 +6790,49 @@ not a general precision lever.** Ship it guarded and scoped, or as a per-family 
 ⚠**still unrun**: the HUMAN 150-window false-merge panel cannot take this arm — it has no human RNA
 alignment, and E_c needs reads. A non-ZNF *substrate* test also remains open: what this shows is that
 non-ZNF families here are simply out of E_c's reach, not that the rule fails on them.
+
+## §6bk — ⭐⭐ CHARGE COVERAGE ON BOTH SEQUENCES (BLAST qcovs/scovs): the strongest lever measured (09-01)
+
+The shipped clause charges coverage on the **shorter** sequence only —
+`cov = if ql <= tl { (qe-qs)/ql } else { (te-ts)/tl }`, `denovo_pipeline.rs:3110`. §6ba DISCLOSED
+`cov_longer` but never gated on it. Tested here. Instrument: `bench/er_both_coverage.py`, which
+computes the shipped predicate **verbatim** (including the `de:f:`-then-`nm/bl` identity fallback).
+⭐**VALIDATION: it reproduces the shipped edge count EXACTLY — 3,141, matching `e.params.tsv`.**
+
+⭐**PRECEDENT ALREADY IN THE TREE**: the divergent-PROTEIN tier requires `qcov/tcov >= min_coverage`
+and its own doc says the guard is there **"to reject lone-shared-domain merges"** — precisely the
+partial-homology failure mode. The nucleotide tier never got the same guard.
+
+### ⭐ MOST SHIPPED EDGES COVER LESS THAN A THIRD OF THE LONGER SEQUENCE
+Over the 3,141 shipped edges, **median `cov_longer` = 0.3175**. Fail rates for a longer-side floor:
+0.30 → **47.7%**, 0.40 → 62.2%, 0.50 → **75.6%**, 0.60 → 84.9%.
+⚠**this CORRECTS the recorded "59.97% would fail the 0.50 floor"** — on `arm_f2` it is **75.64%**.
+The 59.97% came from a different catalog; **quote the figure with its substrate.**
+
+### ⭐⭐ THE TRADE (shorter floor stays 0.50; the longer floor is the new clause)
+Scored on the non-ZNF column, which §6bi established is the only trustworthy one:
+
+| longer-side floor | edges | fams | copies | NPIP | nZ precision | nZ recall | nZ F1 |
+|---|---|---|---|---|---|---|---|
+| none (shipped) | 3,141 | 115 | 665 | **14/31** | 0.2593 | 0.4118 | 0.3182 |
+| **≥ 0.30** | 1,643 | 88 | 458 | **14/31** | **0.4419** | 0.3725 | **0.4043** |
+| ≥ 0.40 | 1,188 | 84 | 387 | 12/31 | 0.4750 | 0.3725 | 0.4176 |
+| ≥ 0.50 (symmetric) | 765 | 68 | 304 | 12/31 | 0.4595 | 0.3333 | 0.3864 |
+| ≥ 0.60 | 473 | 60 | 243 | 12/31 | 0.4333 | 0.2549 | 0.3210 |
+
+⭐**A longer-side floor of 0.30 raises non-ZNF precision 0.2593 → 0.4419 (+70%) and F1 0.3182 → 0.4043
+(+27%) with NPIP recall UNCHANGED at 14/31.** ⛔**Floors ≥ 0.40 drop NPIP to 12/31** — 0.30 is the
+NPIP-neutral setting, and the fully symmetric 0.50 is NOT the best choice.
+⟹**this beats everything else measured this session**: the direct-edge rule had no implementable form
+(§6bh) and E_c refinement only reached ZNF arrays (§6bj). This one moves the non-ZNF column.
+
+### ⚠ WHAT IT COSTS, AND WHAT IS STILL UNKNOWN
+Edges **−48%**, families 115 → 88 (**−23%**), copies 665 → 458 (**−31%**). That is a large catalog
+contraction for a precision gain, and the decision is a scientific one, not an F1 one.
+⚠**the non-ZNF positive set is only 51 pairs** (21 recovered at baseline) — the effect is large but the
+denominator is small. ⚠ arms are offline reconstructions, comparable to EACH OTHER, not to the shipped
+catalog. ⚠**T8 applies**: before any default flip this needs the real binary, the HUMAN 150-window
+false-merge panel, and a second substrate.
+⭐**Framing for the advisor**: it ADDS a constant but REMOVES an asymmetry — the one-sided clause is
+what let the TSS/TES boundary objection land (§6ay), since a short fragment can clear 0.50 of itself
+against a full-length partner. `RUSTLE_ER_COVERAGE_LONGER` already exists as the flag.
