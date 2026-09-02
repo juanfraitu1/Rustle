@@ -6127,3 +6127,51 @@ transitively (1.358)** ⟹ **the rule selects AGAINST length agreement**, so wha
 ⟹**CONCEDE: the coverage statistic is one-sided and 60% of within-family edges are certified on an axis
 that ignores a median 2 kb on the other member. DO NOT concede that the loci are core-fragments with
 invented ends — they differ by kilobases and the difference is readable straight off the PAF.**
+
+## §6az — Should rep selection / exon-sum / seeding change? ONE adjustment, and it is DISCLOSURE (09-01)
+
+Prompted by §6ay. Each of the three candidates already has a measured verdict; only one has an opening.
+
+### ⛔ REPRESENTATIVE SELECTION — CLOSED, and re-opening it is expensive
+* §4s: for stub-incident edges whose stub has a UNIQUE containing spliced model, the container inherits
+  the edge **0/215 = 0.0000** (base rate 2.97e-05) — and validity checks PASS (1,416/1,416 containers ARE
+  off reps; 116/215 have edges of their own). ⟹**any representative change rewrites the edge set from
+  scratch.**
+* `RUSTLE_SPLICED_REP` REGRESSED end-to-end: **chr7 F1 0.570 → 0.411, chr16 0.910 → 0.761**, and it loses
+  NPIPB12.
+* **60.51% of the edge set falls below the 0.50 coverage floor under a 1.49× rep-length inflation** ⟹ ANY
+  lengthening intervention pays `EXON_UNION`'s −20 points.
+* The mechanism is structural (§4q/§4r): **improving a node BREAKS the edges formed with its worse
+  version** — a property of ONE-REP-PER-LOCUS, not of any particular rule.
+⟹**do not touch it without a plan to rebuild the edge set, and expect to pay for the rebuild.**
+
+### ⛔ EXON-SUM — do not touch; and §6ay says it is not the problem
+`RUSTLE_LOCUS_EXON_UNION` (rebuild the rep from the UNION of its members' exons) **lost 20 RECALL
+POINTS** via denominator inflation. §6ay's measurement relocates the fault anyway: the exon-sum is a
+faithful object — ends differ by a **median 1,190 bp** and the unaligned flank is **all present in the
+PAF** — so what is wrong is the **STATISTIC computed over it**, not the object.
+
+### ⚠ SEEDING — works for DISCOVERY, circular as a DEFINITION
+One seed reaches **23/23** expressed NPIP members and **65/65** Soto families converge, so it is a fine
+discovery tool. But **discover-then-define is CIRCULAR**: stage-1's ≥0.50-of-seed gate ENTAILS stage-2's
+edges (58/58 within-seed pairs forced; a constant predictor "edge iff same seed" reproduces the result).
+⟹**keep it out of the definition; a second stage must test what the first did not.**
+
+### ⭐ THE ONE ADJUSTMENT: DISCLOSE `cov_longer`, DO NOT GATE ON IT
+
+§6ay's concession is that coverage is charged on the **SHORTER** sequence only, so the longer member's
+overhang is measured by nothing (median `cov_LONGER` **0.44**; a control pair differing by 1,000 bp at
+EACH end reports `cov_shorter` **1.000**).
+
+⛔**BUT `RUSTLE_ER_COVERAGE_LONGER` IS THE WRONG FIX. It REPLACES the denominator** (`denovo_pipeline.rs:4862`:
+`span_denom = ql.max(tl)`), i.e. it is a GATE, and the code's own comment concedes "this is NOT a null
+change — it removes edges". **1,035/1,726 = 59.97% of directly-certified within-family pairs have
+cov_LONGER < 0.50, so their certifying record would FAIL.** ⚠whether a *different* record rescues each pair
+is UNMEASURED, so "up to 60% of within-family edges" is the honest bound — but even a fraction of that is
+catastrophic against the −20-point bar `EXON_UNION` already set.
+
+⟹**SHIP DISCLOSURE INSTEAD: emit `cov_longer` (and the two flank lengths, already in the PAF) as columns
+beside the existing `identity` / `coverage` in the edge dump and the copies certificate.** It is additive,
+byte-identical on every existing field, needs no new threshold, and it converts the objection from "your
+statistic hides this" into "here is the number". **That is the honest answer to the advisor and it costs
+no recall.** The gate arm can then be measured later on real numbers rather than argued.
