@@ -1,183 +1,122 @@
-"""One-pass, locus-indexed read access for O1/O3 analysis.
+#!/usr/bin/env python3
+"""Counting reads at a locus — the ONE correct way, and the wrong way named so it cannot be reached
+by accident.
 
-WHY THIS EXISTS — it encodes, in code, four criteria this project has got wrong at least once each.
-Every one cost a retraction or a wrong headline; the defaults here are the corrected forms.
+⛔⛔ **THE ERROR THIS EXISTS TO PREVENT (ledger §6cm, 2026-09-02).** Counting reads that *overlap a
+locus span* instead of reads that have an *aligned block inside it*. On 2026-09-02 that inflated a
+headline 3.4x and produced a whole retracted mechanism: `NPIPP1` appeared to have 1,608 reads
+collapsing into a 4-read locus, when 1,151 of them — **71.6%** — merely spliced across it with no
+aligned base, because `PDXDC1` (168 kb) physically CONTAINS `NPIPP1` and its transcript passes
+straight through. The real figure is 457, itself an upper bound.
 
-1. ⚠ A READ BELONGS TO A LOCUS ONLY IF IT LIES MOSTLY INSIDE IT.
-   `samtools view <region>` returns everything overlapping by >= 1 bp, which counts reads of an adjacent
-   gene that merely clip the boundary. Measured at NPIP (`docs/o1_ledger.md` §5d): 5,544 reads by >=1 bp
-   overlap against 419 inside -- only 7.6% survive -- and one locus went from 4,784 to 19. That error put
-   "28/31 expressed" and "5,544 reads" into a published artifact. DEFAULT: `min_inside=0.50`.
+The project rule is old and was not enforced anywhere: **`N` in an RNA CIGAR is an intron, spliced
+OUT; a read spliced OVER a locus is no evidence for it.** `samtools view -c REGION` counts the wrong
+thing, silently, and reads beautifully in a script.
 
-2. ⚠ `N` IS AN INTRON, `D` IS NOT. Splitting on both silently merges exons.
+Use `reads_with_block_in()`. `reads_overlapping_span()` exists only so the difference is visible and
+so a caller who genuinely wants span overlap has to say so.
 
-3. ⚠ THE READ GATE POOLS OVER THE LOCUS, NOT THE CANDIDATE. The builder sums support across the
-   connected component of the junction-incidence graph (`pool_locus_support: true`,
-   `denovo_assemble.rs`), so a 2-read chain survives when its locus totals >= 3. Counting per-candidate
-   under-reports; counting "reads in the interval" over-reports by ~5x. `pooled_support()` is the
-   builder's rule.
-
-4. ⚠ PRIMARY ONLY (`-F 2308`) for any per-read CIGAR statistic.
-
-SPEED, secondarily: one indexed pass instead of a `samtools view` subprocess per locus. Measured on the
-3-contig NPIP BAM, the per-locus form made 31 process spawns and timed out at 120 s; the single pass
-takes ~44 s, and with pysam's own index it is faster still. The catalog run it feeds is 16-30 min, so
-this is not the bottleneck -- but it is free.
+⚠ Primary alignments only (`-F 2308`) throughout — the standing invariant before any per-read CIGAR
+statistic, so one molecule is never two witnesses.
 """
-from __future__ import annotations
-import collections
-from typing import Iterable, Sequence
+import re
+import subprocess
 
-try:
-    import pysam
-except ImportError:  # pragma: no cover - environment without pysam
-    pysam = None
-
-FLAG_EXCLUDE = 0x100 | 0x200 | 0x800 | 0x4  # secondary|qcfail|supplementary|unmapped  == -F 2308
+SAMTOOLS = "/home/juanfra/miniforge3/bin/samtools"
+_CIG = re.compile(r"(\d+)([MIDNSHP=X])")
 
 
-class Read:
-    __slots__ = ("start", "end", "introns", "reverse", "mapq", "clip_frac", "name")
-
-    def __init__(self, start, end, introns, reverse, mapq, clip_frac, name):
-        self.start, self.end, self.introns = start, end, introns
-        self.reverse, self.mapq, self.clip_frac, self.name = reverse, mapq, clip_frac, name
-
-    @property
-    def exon_blocks(self):
-        """Aligned blocks with introns removed — the read's EXONIC footprint."""
-        out, cur = [], self.start
-        for a, b in self.introns:
-            if a > cur:
-                out.append((cur, a))
-            cur = b
-        if self.end > cur:
-            out.append((cur, self.end))
-        return out
+def aligned_blocks(pos0, cigar):
+    """Reference blocks a read actually aligns to. `N` breaks the run; `M/=/X/D` extend it."""
+    out, p, cur = [], pos0, None
+    for ln, op in _CIG.findall(cigar):
+        ln = int(ln)
+        if op in "M=XD":
+            cur = (cur[0] if cur else p, p + ln)
+            p += ln
+        elif op == "N":
+            if cur:
+                out.append(cur)
+                cur = None
+            p += ln
+    if cur:
+        out.append(cur)
+    return out
 
 
-def _parse(aln):
-    ref = aln.reference_start
-    introns, lead, trail, qlen = [], 0, 0, 0
-    ops = aln.cigartuples or []
-    for i, (op, n) in enumerate(ops):
-        if op in (0, 7, 8):      # M = X
-            ref += n; qlen += n
-        elif op == 2:            # D  -- NOT an intron
-            ref += n
-        elif op == 3:            # N  -- intron
-            introns.append((ref, ref + n)); ref += n
-        elif op == 1:            # I
-            qlen += n
-        elif op in (4, 5):       # S H
-            qlen += n
-            if i == 0: lead = n
-            if i == len(ops) - 1: trail = n
-    return ref, introns, (lead + trail) / qlen if qlen else 0.0
+def _fetch(bam, chrom, start, end):
+    r = subprocess.run(
+        [SAMTOOLS, "view", "-F", "2308", bam, f"{chrom}:{start + 1}-{end}"],
+        capture_output=True, text=True,
+    )
+    for line in r.stdout.splitlines():
+        f = line.split("\t")
+        if len(f) > 5 and f[5] != "*":
+            yield f
 
 
-class LocusReads:
-    """Reads grouped by locus in ONE pass. `loci` is an iterable of (chrom, start, end), 0-based."""
+def reads_with_block_in(bam, chrom, start, end, blocks=None):
+    """⭐ THE CORRECT COUNT: primaries with >= 1 ALIGNED BASE inside [start, end).
 
-    def __init__(self, bam: str, loci: Iterable[Sequence], min_inside: float = 0.50):
-        if pysam is None:
-            raise RuntimeError("pysam is required; install it or use the streamed fallback")
-        self.loci = [(str(c), int(s), int(e)) for c, s, e in loci]
-        self.min_inside = min_inside
-        by_chrom = collections.defaultdict(list)
-        for i, (c, s, e) in enumerate(self.loci):
-            by_chrom[c].append((s, e, i))
-        self.reads = collections.defaultdict(list)
-        with pysam.AlignmentFile(bam, "rb") as fh:
-            for c, spans in by_chrom.items():
-                lo, hi = min(s for s, _, _ in spans), max(e for _, e, _ in spans)
-                for aln in fh.fetch(c, lo, hi):
-                    if aln.flag & FLAG_EXCLUDE:
-                        continue
-                    end, introns, clip = _parse(aln)
-                    a = aln.reference_start
-                    if end <= a:
-                        continue
-                    for s, e, i in spans:
-                        # ⚠ the read must lie MOSTLY INSIDE — not merely overlap (criterion 1)
-                        if (min(end, e) - max(a, s)) >= min_inside * (end - a):
-                            self.reads[i].append(
-                                Read(a, end, introns, aln.is_reverse, aln.mapping_quality, clip,
-                                     aln.query_name))
+    `blocks` optionally restricts to a locus's own exon blocks — stricter still, and what you want
+    when a large gene's exons fall inside the span of a small one nested within it.
+    """
+    n = 0
+    for f in _fetch(bam, chrom, start, end):
+        bl = aligned_blocks(int(f[3]) - 1, f[5])
+        if blocks is None:
+            if any(bs < end and start < be for bs, be in bl):
+                n += 1
+        elif any(bs < e2 and s2 < be for bs, be in bl for s2, e2 in blocks):
+            n += 1
+    return n
 
-    def at(self, i: int):
-        return self.reads.get(i, [])
 
-    def chains(self, i: int) -> collections.Counter:
-        """Exact intron chains and their read counts (criterion 2)."""
-        return collections.Counter(tuple(r.introns) for r in self.at(i) if r.introns)
+def reads_overlapping_span(bam, chrom, start, end):
+    """⚠ THE MISLEADING COUNT — what `samtools view -c` gives. Includes reads that splice straight
+    over the locus contributing no aligned base. Returns `(n_overlapping, n_spliced_over)` so the
+    caller cannot quote the first without seeing the second."""
+    tot = over = 0
+    for f in _fetch(bam, chrom, start, end):
+        tot += 1
+        bl = aligned_blocks(int(f[3]) - 1, f[5])
+        if not any(bs < end and start < be for bs, be in bl):
+            over += 1
+    return tot, over
 
-    def pooled_support(self, i: int) -> int:
-        """The BUILDER's gate: support summed over the junction-incidence component (criterion 3)."""
-        ch = self.chains(i)
-        if not ch:
-            return 0
-        junc = collections.defaultdict(set)
-        for k in ch:
-            for j in k:
-                junc[j].add(k)
-        best, seen = 0, set()
-        for k in ch:
-            if k in seen:
+
+def spanning_genes(gff_gz, chrom, start, end, min_cover=0.60):
+    """⭐ ASK THIS BEFORE BLAMING THE PIPELINE for an oversized locus (§6cm).
+
+    Returns annotated genes covering >= `min_cover` of the node. On 2026-09-02 two nodes called
+    "mis-chained giants" turned out to be `SNX29` (covers 100.0%) and `PDXDC1` (99.9%) — real genes,
+    correctly assembled, with canonical junctions and majority read support because they are real
+    transcripts. A rule fitted to that "blob class" would have been fitted to two real genes.
+    """
+    import gzip
+    out = []
+    with gzip.open(gff_gz, "rt") as fh:
+        for line in fh:
+            if line.startswith("#"):
                 continue
-            comp, stack = {k}, [k]
-            while stack:
-                for j in stack.pop():
-                    for o in junc[j]:
-                        if o not in comp:
-                            comp.add(o); stack.append(o)
-            seen |= comp
-            best = max(best, sum(ch[x] for x in comp))
-        return best
-
-    def expressed(self, i: int, min_reads: int = 3) -> bool:
-        return len(self.at(i)) >= min_reads
+            f = line.split("\t")
+            if len(f) < 9 or f[0] != chrom or f[2] not in ("gene", "pseudogene"):
+                continue
+            gs, ge = int(f[3]) - 1, int(f[4])
+            if gs < end and start < ge:
+                cov = (min(ge, end) - max(gs, start)) / max(1, end - start)
+                if cov >= min_cover:
+                    m = re.search(r"Name=([^;\n]+)", f[8])
+                    out.append((m.group(1) if m else "?", gs, ge, cov))
+    return sorted(out, key=lambda x: -x[3])
 
 
-# ---------------------------------------------------------------------------------------------------
-# SELF-CHECK. Run: python3 bench/locus_reads.py
-#
-# Validates against numbers established INDEPENDENTLY of this file (docs/o1_ledger.md §5d and §5f), not
-# against itself. A helper whose whole purpose is to encode corrected criteria has to be checkable, or it
-# becomes another place for the same errors to hide.
 if __name__ == "__main__":
-    import json, sys, time
-
-    BAM = "/mnt/linuxdisk/home/juanfraitu/npip_cat/npip3.bam"
-    LOCI = "/mnt/linuxdisk/home/juanfraitu/npip/ggo_loci.json"
-    try:
-        loci = json.load(open(LOCI))
-    except OSError:
-        print(f"skip: {LOCI} not present on this machine")
-        sys.exit(0)
-
-    t0 = time.time()
-    lr = LocusReads(BAM, loci)
-    elapsed = time.time() - t0
-
-    total = sum(len(lr.at(i)) for i in range(len(loci)))
-    expressed = sum(1 for i in range(len(loci)) if lr.expressed(i, 3))
-    # §5f: the four loci that clear the pooled read gate yet still build no node
-    four = {("NC_073242.2", 29415572): 6, ("NC_073242.2", 99221059): 4,
-            ("NC_073242.2", 28377934): 3, ("NC_073242.2", 31431689): 4}
-    idx = {(str(c), int(s)): i for i, (c, s, _) in enumerate(loci)}
-
-    checks = [("§5d total reads INSIDE the 31 loci", total, 419),
-              ("§5d loci expressed (>=3 reads inside)", expressed, 23)]
-    for (c, s), want in four.items():
-        i = idx.get((c, s))
-        if i is not None:
-            checks.append((f"§5f pooled support at {c}:{s}", lr.pooled_support(i), want))
-
-    bad = 0
-    for name, got, want in checks:
-        if got != want:
-            bad += 1
-        print(f"[{'ok ' if got == want else 'FAIL'}] {name}: got {got}, expected {want}")
-    print(f"\none pass over {len(loci)} loci in {elapsed:.1f}s; {len(checks) - bad}/{len(checks)} checks pass")
-    sys.exit(1 if bad else 0)
+    import sys
+    bam, chrom, start, end = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+    tot, over = reads_overlapping_span(bam, chrom, start, end)
+    good = reads_with_block_in(bam, chrom, start, end)
+    print(f"{chrom}:{start}-{end}")
+    print(f"  aligned block inside (USE THIS) : {good}")
+    print(f"  overlapping the span            : {tot}")
+    print(f"  spliced OVER, no aligned base   : {over} = {over / max(1, tot):.1%}")
