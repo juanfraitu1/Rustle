@@ -131,6 +131,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bg — Sources of false merges in BOTH modes: transitive closure, and one oversized family (09-01)
 - §6bh — Connectivity as an orthogonal lever: NO; and the direct-edge rule has no default form (09-01)
 - §6bi — E_c SPLITS the large families: the first orthogonal lever, and §6bg's FP source 2 RETRACTED (09-01)
+- §6bj — E_c refinement run as a catalog change: safe, real, and NOT general (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6742,3 +6743,49 @@ run end-to-end on the 3-contig catalog (where NPIP recall is usable, §6bh), be 
 HUMAN 150-window false-merge panel, and be re-measured on a substrate whose big families are NOT ZNF.
 ⚠E_c reaches only **335/2,528 = 13%** of same-family pairs and needs reads, so it is silent on
 unexpressed copies.
+
+## §6bj — E_c REFINEMENT RUN AS A CATALOG CHANGE: safe, real, and NOT general (09-01)
+
+§6bi measured E_c's effect INSIDE one family. This runs it as a catalog operation on `arm_f2` with
+the checks §6bi named. Instrument: `bench/ec_refine_arm.py`.
+
+### ⚠ THE RULE NEEDS A GUARD, AND WITHOUT ONE IT IS DESTRUCTIVE
+E_c reaches ~13% of same-family pairs, so splitting **every** family by its E_c components shatters
+the ones E_c cannot see. Guard: refine only a family that is large enough AND carries enough E_c
+evidence; otherwise leave it intact.
+
+| guard | families | copies | split | NPIP | prec all | prec ZNF | prec non-ZNF |
+|---|---|---|---|---|---|---|---|
+| none (shipped) | 121 | 678 | 0 | **14/31** | 0.1060 | 0.1025 | 0.2800 |
+| size ≥ 10, E_c frac ≥ 0.02 | 130 | 643 | 4 | **14/31** | **0.1884** | 0.1878 | 0.2917 |
+| size ≥ 20, E_c frac ≥ 0.05 | 128 | 671 | 2 | **14/31** | 0.1913 | 0.1915 | 0.2800 |
+| size ≥ 5, E_c frac ≥ 0.05 | 130 | 638 | 4 | **14/31** | 0.1896 | 0.1902 | 0.2969 |
+| ⛔ **unguarded** (size ≥ 2, frac ≥ 0) | **64** | **260** | 5 | **12/31** | 0.3111 | 0.3108 | 0.5484 |
+
+⭐**SAFETY CHECK PASSES: every guarded setting leaves NPIP recall UNCHANGED at 14/31**, splits only
+**4 of 121** families and costs 17–40 copies. ⛔**The unguarded rule is refuted** — it halves the
+catalog (121→64 families, 678→260 copies) and drops NPIP to 12/31. **The guard is not optional.**
+
+### ⛔⛔ BUT IT IS NOT GENERAL — E_c IS SILENT ON THE NON-ZNF FAMILIES
+E_c pair coverage in families with n ≥ 10:
+* **ZNF-dominated (6): median 0.068** — GWFAM79 0.168 → 4 sub-families, GWFAM27 0.092 → 5, GWFAM89
+  0.014 → 6
+* ⛔**non-ZNF (12): median 0.000 — SEVEN of the twelve have ZERO E_c edges**
+
+⟹**the guarded rule can only act where copies are near-identical, and on this substrate those are the
+zinc-finger arrays.** That is §6bb's blindness (nothing below identity ~0.95) resurfacing in the
+refinement role. Non-ZNF precision moves **0.2800 → 0.2917**, i.e. essentially not at all.
+⚠**my first reading — "the large families are all ZNF so the arm is untestable" — was WRONG**:
+12 of the 18 families with n ≥ 10 are non-ZNF. The arm IS testable, and the rule simply does not fire.
+
+### ⭐ A GOOD SIGN: WHERE E_c IS DENSE ON A NON-ZNF FAMILY, IT CONFIRMS RATHER THAN SPLITS
+**GWFAM47 (n=12, 0% ZNF) has E_c coverage 1.000 and returns ONE component**; GWFAM54 (n=11, 0% ZNF)
+has 0.818 and also returns one. ⟹**E_c is not splitting indiscriminately — given the evidence it
+agrees with E_r.** That is the positive control the splitting result needed.
+
+⟹**DISPOSITION: E_c within-family refinement is a REAL and SAFE instrument for NEAR-IDENTICAL ARRAYS,
+not a general precision lever.** Ship it guarded and scoped, or as a per-family annotation
+("E_c resolves this family into k sub-units"), never as a blanket rule.
+⚠**still unrun**: the HUMAN 150-window false-merge panel cannot take this arm — it has no human RNA
+alignment, and E_c needs reads. A non-ZNF *substrate* test also remains open: what this shows is that
+non-ZNF families here are simply out of E_c's reach, not that the rule fails on them.
