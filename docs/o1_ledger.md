@@ -127,6 +127,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bc — The E_c cliff RE-DERIVED: its location is DERIVABLE, and §6bb's counts are RETRACTED (09-01)
 - §6bd — CROSS-COPY BORROWING IS INERT OR DEAD — and what that costs the isoform claim (09-01)
 - §6be — SEEDED MODE: the seed SUBSTRATE dominates, and a MULTI-seed reaches 30/31 (09-01)
+- §6bf — Is the seeded catalog BETTER as a catalog? NO — and the test cannot be neutral (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6464,3 +6465,56 @@ but only 1/31 is named `NPIPB11`** — the rest are LOC-numbers or named for som
 ⚠ one benchmark family · 3 contigs · **DNA homology proves segmental duplication, not a gene copy**
 (confirming that needs the CDS projection) · multi-seed precision is assessed only by read corroboration,
 not against an independent truth set.
+
+## §6bf — IS THE SEEDED CATALOG BETTER *AS A CATALOG*? NO — and the test cannot be neutral (09-01)
+
+§6be left the seeded mode's precision unestablished. Independent criterion chosen: **coding
+coherence** — neither catalog is built from CDS, so ask whether a family's members share one,
+scored with **the project's own E_r rule** (id ≥ 0.60, cov ≥ 0.50 of the shorter) on the longest
+annotated CDS at each locus. Instrument: `bench/catalog_partition_vs_cds_gw.py`.
+
+### ⚠ TWO BIASED DESIGNS WERE DISCARDED BEFORE THE FAIR ONE
+1. *CDS fully inside the locus* — ⛔**seeded loci ARE annotated gene intervals, so containment is
+   near-entailed for them** and denied to read loci (54.6% single-exon spans that clip the CDS).
+2. *midpoint overlap* — fairer, but seeded loci still **point at a gene by construction**.
+   It reported seeded 38/47 fully coherent vs read 13/55. **Do not quote it.**
+3. ✅**the fair form: hold the LOCI FIXED.** Score only loci present in BOTH catalogs, give each the
+   SAME CDS, and let only the GROUPING vary. Scored over PAIRS, so neither family count enters.
+
+### ⛔ 3 CONTIGS WAS UNDERPOWERED AND BLOB-DRIVEN — its verdict FLIPPED between cuts
+40 shared loci / 116 positive pairs, but **ONE seeded family held 20 of the 40 loci and 82 of the 87
+false merges** (median span 114 kb — *not* the small-span repeat clique, and a span floor changes
+**nothing**, which ⛔**REFUTES the span criterion §6be proposed**). All loci: seeded F1 0.727 vs read
+0.440. Blob excluded: **read 0.824 vs seeded 0.762 — reversed, on 8 positive pairs.** Inconclusive.
+
+### ⭐ GENOME-WIDE (41,193 seeds vs the 1,070-copy fibroblast catalog): CONSISTENT ACROSS BOTH CUTS
+118 shared loci, 6,903 pairs, **105 CDS-homologous**; the largest seeded block is now only 8 loci.
+
+| set | grouping | same-family | recall | precision | F1 |
+|---|---|---|---|---|---|
+| all 118 | seeded | 139 | 0.9429 | 0.7122 | 0.8115 |
+| all 118 | **read** | 107 | 0.8571 | **0.8411** | **0.8491** |
+| blob out (110) | seeded | 111 | 0.9221 | 0.6396 | 0.7553 |
+| blob out (110) | **read** | 79 | 0.8052 | 0.7848 | **0.7949** |
+
+⟹**the seeded grouping trades PRECISION for RECALL and loses on F1 in both cuts.** It merges more
+(139 vs 107 same-family pairs) and is right less often when it does.
+
+### ⚠⚠ BUT THE CRITERION IS NOT NEUTRAL — STATE THIS BEFORE QUOTING THE VERDICT
+E_r's reps are **exon-sum** (reference bases at read-derived exon coordinates), so the read catalog
+groups on **exonic** sequence — which is nearly the question the CDS test asks. The seeded catalog
+groups on **genomic** homology (introns and flanks included). **A coding-sequence criterion is close
+to one catalog's substrate and far from the other's**, so it cannot arbitrate neutrally, and no
+sequence-homology criterion can — each favours whichever catalog uses the nearer substrate.
+⚠**AND THE COMPARISON COVERS 4.9% OF THE SEEDED CATALOG**: only **141/2,867** seeded loci overlap any
+read-catalog copy (118 of those carry a CDS). It measures the seeded grouping **only where reads
+already reach**, and is silent on the other 95%.
+⚠ genome-wide the seeded catalog has a **191-member blob** (sizes 191/88/74/73/44…, median 2) — a
+hairball that would need the γ-splitting the read path already applies.
+
+⟹**ANSWER: NO, the seeded mode is NOT better as a catalog.** On the only ground where the two can be
+compared it is slightly worse, by merging too readily. ⭐**The useful framing is that they answer
+DIFFERENT questions**: the read path builds **coding families**, the seeded path builds **duplicated
+genomic units**. **O1 is defined on RNA, so coding coherence is the right target — and the read path
+already optimises it.** The seeded mode's established value stays what §6be measured: **RECALL**
+(30/31 vs 14/31) and candidate generation, not definition.
