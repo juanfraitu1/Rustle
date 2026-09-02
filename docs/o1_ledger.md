@@ -135,6 +135,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bk — Charge coverage on BOTH sequences: the strongest lever measured (09-01)
 - §6bl — Two-sided coverage on a SECOND substrate: the gain holds, the mechanism does not (09-01)
 - §6bm — Two-sided coverage + connectivity: the composite gain does NOT reproduce (09-01)
+- §6bn — Dense clusters inside families WORK; cliques do not (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6966,3 +6967,54 @@ gains on BOTH substrates (0.3182→0.4043 and 0.4306→0.4595) and is NPIP-neutr
 worth adding**: its gain appears on one substrate and vanishes on the other, while its cost (another
 17–22% of copies) appears on both. ⭐**The general rule this session keeps re-deriving: a filter whose
 benefit does not reproduce across substrates, but whose cost does, is not a filter.**
+
+## §6bn — ⭐⭐ DENSE CLUSTERS INSIDE FAMILIES WORK; CLIQUES DO NOT (09-01)
+
+§6bm killed the *global* triangle/k-core filter (it deletes every 2-member family). The scoped form
+of the same idea is not an edge predicate but a DENSITY demand: build families at the shipped
+γ=0.20, then **re-refine each family of ≥3 members at a higher γ′**, leaving smaller ones intact.
+γ′ = 1.00 demands a CLIQUE. Instrument: `bench/er_scoped_density.py`. Both substrates in one pass.
+
+### ⚖️ THE HEADLINE METRIC BARELY MOVES — AND THAT IS THE INTERESTING PART
+| arm | arm_f2 nZ F1 | arm_f2 NPIP | gw nZ F1 | copies (arm_f2 / gw) |
+|---|---|---|---|---|
+| cov_long ≥ 0.30 | 0.4043 | 14/31 | 0.4595 | 458 / 913 |
+| + γ′ = 0.30 | 0.4086 | 14/31 | 0.4595 | 454 / 913 |
+| + γ′ = 0.50 | 0.4086 | 14/31 | 0.4595 | 451 / 913 |
+| **+ γ′ = 0.70** | **0.4130** | **14/31** | **0.4646** | 428 / 875 |
+| + γ′ = 1.00 (clique) | 0.3820 | 14/31 | 0.4637 | 422 / 872 |
+
+γ′ ≤ 0.50 is a **no-op genome-wide** (identical numbers). γ′ = 0.70 gains **+0.009 / +0.005** — which
+on 51 and 167 non-ZNF positives is about one pair, i.e. nothing. ⚠**I nearly dismissed it on that.**
+But γ′=0.70 **splits 73.5% of all same-family pairs apart** (3,657 → 968 on arm_f2) while moving F1 by
+0.009 ⟹ the change is enormous and lands almost entirely OUTSIDE the small non-ZNF set the metric
+sees. **A metric that cannot move under a 73.5% partition change is not adjudicating the change.**
+
+### ⭐⭐ THE WITHIN-BIOTYPE CONTROL IS THE REAL EVIDENCE, AND IT REPRODUCES
+§6bi forbids reading absolute CDS concordance across biotypes — but comparing **ZNF pairs to ZNF
+pairs** controls for it. Of the pairs γ′=0.70 splits vs keeps:
+
+| substrate | SPLIT (ZNF–ZNF) | KEPT (ZNF–ZNF) | separation |
+|---|---|---|---|
+| `arm_f2` | 25/1,985 = **0.0126** | 191/494 = **0.3866** | **31×** |
+| genome-wide | 37/2,344 = **0.0158** | 102/420 = **0.2429** | **15×** |
+
+⟹**inside the ZNF clusters, γ′=0.70 separates pairs that are 1.3–1.6% coding-concordant from pairs
+that are 24–39% concordant.** That is not biotype confounding — it is the same biotype on both sides.
+It is decomposing the ZNF blob into sub-families whose members genuinely share CDS.
+Non-ZNF separation is real but much weaker (0.2090 vs 0.3298 = 1.6×), so as with E_c (§6bj) the value
+concentrates in near-identical arrays.
+
+### ⛔ CLIQUES ARE TOO STRICT — AND THE SAME CONTROL SHOWS WHY
+γ′=1.00 is worse on F1 on **both** substrates (0.3820 vs 0.4130; 0.4637 vs 0.4646) and worse on
+selectivity: its SPLIT set's ZNF concordance **rises 0.0158 → 0.0371** while its KEPT set shrinks
+420 → 149 ⟹ **it has started cutting GOOD pairs.** A real paralogue family is a dense cluster, not a
+clique.
+
+⟹**DISPOSITION: γ′ = 0.70 inside families of ≥3 is the best within-family refinement measured this
+session** — better evidenced than E_c (§6bj, which reaches only 13% of pairs) and unlike §6bm's
+connectivity filters it *increases* family count instead of deleting families (arm_f2 88 → 146,
+2-member 45 → 111) at a cost of **6.5% / 4% of copies** and **NPIP unchanged at 14/31**.
+It adds **no new concept** — it is the shipped γ applied recursively at a second value.
+⚠**it is a REFINEMENT, not a replacement**: the two-sided coverage clause (§6bk/§6bl) does the work on
+the edge set; this reorganises what survives. ⚠ still offline on both substrates; T8 unchanged.
