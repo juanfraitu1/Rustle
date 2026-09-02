@@ -1,8 +1,13 @@
 # O1 precision levers — what was tried, what survived, what shipped
 
 > ## ⛔ NOTHING IN THIS DOCUMENT IS A DEFAULT.
-> **UPDATE 09-02 (§6bv): two-sided coverage has now been formally ADJUDICATED against criteria fixed
-> in advance (§6bu) and the verdict is KEEP OPT-IN.** It passed a cross-species pre-registered test
+> **UPDATE 09-02 (§6bx): two-sided coverage has now been adjudicated against SOTO 2025's families on
+> HUMAN A119b/CHM13 — an external positive stratum — and the verdict is REJECT AS A DEFAULT.** It
+> deletes **7 loci carrying "In Table S1 (SD98 gene set) = Yes"** while its precision gain is **not
+> significant** (p ≈ 0.77) at the conservative mapping. §6bv's earlier KEEP OPT-IN is superseded.
+> ⭐**The same run gives O1's strongest external P/R to date, on the DEFAULT path**: in the ≥0.90
+> identity stratum Soto covers, pair precision **0.9739**, recall **0.8743** among detected pairs,
+> against a size-matched null of **0.0214** (33.7×).** It passed a cross-species pre-registered test
 > 5/5 and was still not shipped, because its copy-level cost is annotation-neutral, non-monotone,
 > and unadjudicable without a positive stratum. **That combination — passing the test and declining
 > the default — is the point, not an inconsistency.**
@@ -23,7 +28,7 @@ Session of 2026-09-01. Full detail in `o1_ledger.md` §6bg–§6bn; negative res
 
 | lever | verdict | why | §
 |---|---|---|---|
-| **Two-sided coverage** (`cov_longer` floor) | ⭐⭐ **ADJUDICATED 09-02: KEEP OPT-IN** | edge filter validated cross-species (**5/5 pre-registered, 9/9 edges**, §6bt.2); ⛔ copy-level loss is **annotation-neutral and non-monotone** — 18 families deleted, 29 loci created; the **14→15 gain is one 274 bp 2-read node** | §6bp/§6bt.2/**§6bv** |
+| **Two-sided coverage** (`cov_longer` floor) | ⛔ **ADJUDICATED 09-02 on SOTO: REJECT as a default** | edge filter validated cross-species (**5/5 pre-registered, 9/9 edges**, §6bt.2); ⛔ copy-level loss is **annotation-neutral and non-monotone** — 18 families deleted, 29 loci created; the **14→15 gain is one 274 bp 2-read node** | §6bp/§6bt.2/**§6bv** |
 | **Dense clusters inside families** (γ′=0.70, families ≥3) | ⭐ **second candidate** | within-biotype separation 31× / 15×, reproduces | §6bn |
 | E_c within-family refinement | ⚖️ scoped only | safe and real, but reaches only near-identical arrays | §6bi/§6bj |
 | Direct-edge requirement | ⛔ no default form | as a pair rule it cannot apply to a set; as k-core it loses 2/3 of families | §6bg/§6bh |

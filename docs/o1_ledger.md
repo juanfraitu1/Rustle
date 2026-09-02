@@ -147,6 +147,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bu — ADJUDICATION of the coverage clause: the decision rule, fixed BEFORE the evidence (09-02)
 - §6bv — THE ADJUDICATION: KEEP OPT-IN, and four of five criteria did not go as expected (09-02)
 - §6bw — PRE-REGISTRATION: adjudicating the copy loss against SOTO's families (09-02)
+- §6bx — THE SOTO ADJUDICATION: high P/R in Soto's stratum; the clause REJECTED as a default (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7544,6 +7545,13 @@ position §6aa took on every other flag.
 
 ## §6bv — ⚖️⚖️ THE ADJUDICATION: **KEEP OPT-IN**, and four of the five criteria did not go as expected (09-02)
 
+> ⚠⚠ **SUPERSEDED 09-02 by §6bx — the verdict HARDENS to REJECT.** This section's KEEP OPT-IN rested on
+> *"no truth set labels a meaningful share of the copies the clause deletes."* Soto 2025's families supply
+> one, and on it the clause **deletes 7 members that carry "In Table S1 (SD98 gene set) = Yes"** while its
+> precision gain is **not significant** (p ≈ 0.77) at the conservative mapping. The copy cost is no longer
+> unadjudicable — **it is adjudicated, and it is a cost.** Everything below stands as the gorilla-side
+> analysis; the verdict is §6bx's.
+
 Run against §6bu's rule, on `arm_cfoff` → `arm_cf030` (same binary, same substrate, the only
 difference the clause). Instrument `bench/adjudicate_covlonger.py`.
 
@@ -7705,3 +7713,89 @@ right one to have.
 ⚠Caveat: the count is reads overlapping the gene span in a `-M -L` slice, i.e. *reads are present at
 the locus*, not *this gene is transcribed*. It is the same operational definition the pipeline's own
 node construction uses, which is what makes it the fair denominator here.
+
+## §6bx — ⭐⭐⭐ THE SOTO ADJUDICATION: high P/R in the stratum Soto covers, and the clause is REJECTED as a default (09-02)
+
+Run per §6bw, whose rule and limits were committed before any of this existed. Substrate **HUMAN**
+A119b/CHM13 v2.0 over `80_fams.chr.bed` (**83 families / 362 members / 11.3 Mb**), one pooled run per
+arm — **not** per family, since running each family separately would hand the pipeline the answer.
+`arm_off` **879 copies / 237 families**; `arm_cl30` **707 / 222**. Instrument `bench/soto_adjudicate.py`.
+
+### ⭐⭐⭐ PART 1 — THE HEADLINE, AND IT IS ON THE SHIPPED DEFAULT PATH
+
+| | any-overlap | **≥50% of the gene** |
+|---|---|---|
+| Soto members DETECTED | **293/362 = 0.8094** [0.766, 0.847] | 128/362 = 0.3536 [0.306, 0.404] |
+| pair **precision** | 0.4006 [0.374, 0.428] | **0.7198** [0.659, 0.774] |
+| **size-matched null** | **0.0165** (p95 0.026) ⟹ **24.3×** | **0.0214** (p95 0.043) ⟹ **33.7×** |
+| pair **recall**, both detected | 0.6866 | **0.8743** |
+| pair recall, ALL Soto pairs | 0.5238 | 0.1729 |
+| family exact set match | 19/66 | 21/33 |
+
+⭐⭐⭐**AND THE BAND TABLE IS THE RESULT** (`arm_off`, ≥50%):
+
+| band | asserted | TP | FP | precision |
+|---|---:|---:|---:|---|
+| [0.70,0.80) | 1 | 0 | 1 | 0.0000 |
+| [0.80,0.90) | 21 | 7 | 14 | 0.3333 |
+| **[0.90,1.00)** | **153** | **149** | **4** | **0.9739** |
+
+⟹**In the identity stratum Soto's SD98 definition actually covers, the shipped default achieves pair
+precision 0.9739 with recall 0.8743 among detected pairs** — against a size-matched null of 0.021.
+
+⚠⚠**AND THE COLLAPSE BELOW 0.90 IS NOT EVIDENCE THAT THOSE EDGES ARE WRONG.** Soto's families are
+**SD98 — ≥98% identity by construction.** A pair at 0.85 is **excluded from their truth set by
+definition**, genuine paralogy or not. Those 14 "FP" are correctly described as *relationships Soto's
+criterion cannot contain*, **never** as false merges. ⟹**this instrument certifies ONE stratum and is
+STRUCTURALLY SILENT on the 86.31% of the catalog below 0.90.** The user raised exactly this before
+the run; it is a limit of the truth set, not a caveat about the result.
+
+⚠**Precision is UNDERSTATED** (Soto is CAT-bounded — a real copy CAT missed scores FP), and
+**48% of asserted pairs (605/1263 any-overlap; 57/232 at ≥50%) have NO DIRECT EDGE** — they are
+**transitive-closure** assertions, §6bg's known false-merge source, now visible under external truth.
+
+### ⚖️ PART 2 — THE ADJUDICATION: **REJECT AS A DEFAULT**
+
+§6bw's pre-committed trigger: *"the ON arm loses Soto-labelled copies ⟹ **REJECT** the default."*
+**It does, at both stringencies.**
+
+| | OFF | ON (0.30) |
+|---|---|---|
+| Soto-labelled copies (≥50%) | 137 | **129** (−8) |
+| **Soto members detected** | 128 | **121** (−7) · any-overlap **293 → 270** (−23) |
+| pair precision (≥50%) | 0.7198 | 0.7321 — **z = 0.295, p ≈ 0.77, NOT significant** |
+| pair recall, ALL Soto pairs | 0.1729 | **0.1698** (falls) |
+| [0.90,1.00) band precision | 0.9739 | 0.9797 |
+
+⛔**THE SEVEN LOST MEMBERS ARE ALL BONA FIDE SOTO FAMILY MEMBERS** — `AC239860.2` (ID_215),
+`AL356585.4` (ID_251), `BMS1P17` (ID_300), `CHEK2P2` (ID_167), `GUSBP2` + `GUSBP3` (ID_163),
+`MST1P2` (ID_393) — **all seven carry "In Table S1 (SD98 gene set) = Yes"**. All are **unprocessed
+pseudogenes**, four of them *transcribed* unprocessed pseudogenes. ⚠**That is not a defence.** Soto
+counts unprocessed pseudogenes as family members deliberately, and O1's objective is *copies*, not
+coding copies. **The clause deletes loci the truth set calls real.**
+
+⚖️**BE FAIR TO THE CLAUSE — at the permissive mapping it buys a lot.** Any-overlap: precision
+**0.4006 → 0.5428**, removing **367 FP pairs against 43 TP** — an **8.5 : 1** trade, and clearly
+significant at that n. **The verdict is nevertheless REJECT**, for two reasons that do not depend on
+stringency: (i) it destroys known-real loci at **both** stringencies (7 and 23), and (ii) at the
+**conservative** mapping — the one that does not label a copy as a gene it merely touches — **the
+precision gain vanishes entirely** (p ≈ 0.77).
+
+⟹⟹**THIS SUPERSEDES §6bv's KEEP OPT-IN with a stronger verdict on better evidence.** §6bv could only
+say *"the copy loss is unadjudicable"*; on an external, advisor-trusted positive stratum it is now
+**adjudicated, and it is a cost.** `RUSTLE_ER_COVERAGE_LONGER_FLOOR` stays **OFF**, and the reason is
+no longer an absence of evidence.
+
+### ⚠ DISCLOSURES REQUIRED WITH ANY NUMBER ABOVE
+
+1. ⭐**The `o1-perp-o2` guard FIRED — for the first time ever recorded.** *"1 co-located same-strand
+   pair decided by `reads_distinguish` (O2's χ(H) predicate), not by sequence. O1's node set is NOT a
+   function of sequence alone for this run."* The scoped exception was previously measured at
+   **0/109 pairs and 0/451 chr1 loci** — never observed. **It has now fired once, and must be
+   disclosed with every number in this section.**
+2. **`-M -L` subset BAM** (±5 kb padding): a read whose competing placement lies outside the sliced
+   regions loses it. The documented `soto_regions.bam` hazard that cost three retractions.
+3. **Re-implementation concordance — never "replication", never "validation."**
+4. **Expression is NOT the limiting factor here** (§6bw): **350/362 = 96.7%** of members carry ≥2
+   primaries, median depth **161**. ⟹**the 35.4% detection at the ≥50% floor cannot be blamed on
+   expression** — it is node construction, consistent with §5e's ~58%.
