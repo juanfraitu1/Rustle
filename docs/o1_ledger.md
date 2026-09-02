@@ -6175,3 +6175,41 @@ beside the existing `identity` / `coverage` in the edge dump and the copies cert
 byte-identical on every existing field, needs no new threshold, and it converts the objection from "your
 statistic hides this" into "here is the number". **That is the honest answer to the advisor and it costs
 no recall.** The gate arm can then be measured later on real numbers rather than argued.
+
+## §6ba — `cov_longer` and the flanks are now DISCLOSED, not gated (09-01)
+
+§6az's decision, implemented. Three additive columns in the E_r edge dump, between `coverage` and
+`metric_tier`: **`cov_longer`** (the same quantity as `coverage`, measured on the LONGER sequence's axis),
+**`unaln_i`**, **`unaln_j`** (each rep's total 5′+3′ unaligned flank in bp), all read off the SAME
+exemplar record the shipped `coverage` comes from.
+
+**Additivity PROVEN, three ways, by two independent verifiers:**
+* edge set **3,141 = 3,141**, `(rep_i, rep_j)` sets identical (0 baseline-only, 0 new-only) and **row
+  ORDER identical** (compared positionally, unsorted);
+* the 16 pre-existing columns × 3,141 rows = **50,256 cells, 0 mismatches** — and projecting the new file
+  back onto those columns gives a file **BYTE-IDENTICAL** to `arm_f2`'s (md5 `5f921a83…` both, `diff`
+  exit 0), which covers header, row order and every cell at once;
+* `cat.copies.tsv` `9849dcb4`, `cat.families.tsv` `bac5d98e`, `dump/e.nodes.tsv` `0a3bb207`, the raw PAF
+  `6a4fd4ab`, `.reps.fa`, `.args` — all md5-identical.
+✅**INDEPENDENT INSTRUMENT**: E_r re-derived in Python straight from the run's own PAF using only the rule
+printed in `e.rule.tsv` — 145,284 records → 3,141 edges, and **0 mismatches on identity, coverage,
+cov_longer, unaln_i AND unaln_j across all 3,141 rows**, with a SINGLE forward record reproducing all five
+simultaneously (so the disclosure really is the same exemplar).
+✅**827 passed / 0 failed / 11 ignored** (826 + the one new test).
+✅**No params-certificate row, deliberately and stated**: no flag, no threshold, no default. (⚠a verifier
+noted `rule.tsv` also differs from `arm_f2` by 2 `<unset>` rows — those come from commits BETWEEN arm_f2
+and HEAD, both default-OFF and shown inert by the OFF-arm md5 match, not from this change.)
+
+**What it now prints.** Over all 3,141 edges: `cov_longer` min 0.0091, median **0.3169**, q3 0.4952,
+**75.71% below 0.50**; median total flank per edge **2,981 bp**, ≥1,000 bp on **91.95%**.
+⭐**The §6ay headline reproduces FROM THE EMITTED COLUMN** on within-family directly-certified pairs
+(n = **1,726**, matching exactly): **median cov_longer 0.4444**, **1,035/1,726 = 59.97% below 0.50**,
+against a shipped `coverage` on those same pairs of median 0.7034 (min 0.5000 — the floor).
+**Worked row 1**: reps 2 (4,260 bp, 4 exons) and 2323 (a 274 bp stub) — `coverage 0.518248` on the 274 bp
+member (142 aligned bp), `cov_longer 0.033333` = 142/4,260, `unaln_i 4,118`, `unaln_j 132`. **That is the
+concession made printable.**
+
+⚠**MEASURED, NOT ASSUMED**: `cov_longer ≤ coverage` holds on **3,036/3,141**; the **105 exceptions (3.34%)**
+are near-equal-length pairs (length-ratio median 1.067 vs 2.103 overall) where the axis-dependent aligned
+span from indels outweighs the small denominator difference. The inequality is a theorem only when the
+aligned span is equal on both axes — **the test pins that case and the general claim is NOT asserted.**

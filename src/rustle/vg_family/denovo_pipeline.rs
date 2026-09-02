@@ -4630,6 +4630,62 @@ pub(crate) fn nucleotide_edges_tagged(
         .collect())
 }
 
+/// ADDITIVE DISCLOSURE for one E_r edge (`docs/o1_ledger.md` §6ay/§6az), read off the SAME exemplar PAF
+/// record that supplied the row's `identity`/`coverage`.
+///
+/// WHY THIS EXISTS. E_r charges coverage on the **SHORTER** sequence only, so `1 - coverage` is the
+/// shorter member's overhang and is bounded at the 0.50 floor. **The LONGER member's overhang is measured
+/// by nothing.** Measured on the shipped catalog: median `cov_longer` 0.44, and 1,035/1,726 = 59.97% of
+/// directly-certified within-family pairs have `cov_longer < 0.50`; a synthetic pair built to differ by
+/// 1,000 bp at EACH end reports `coverage` = 1.000. So a perfect-looking coverage number is compatible
+/// with a 2 kb end difference, and nothing in the dump said so.
+///
+/// ⛔ THIS IS DISCLOSURE, NOT A RULE. `RUSTLE_ER_COVERAGE_LONGER` REPLACES the denominator and is
+/// therefore a GATE — flipping it would fail the certifying record of up to 60% of within-family edges.
+/// These three numbers gate NOTHING: they are computed, stored in a map parallel to `metrics`, and
+/// printed. The edge SET and every pre-existing column are untouched by construction.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct ErEdgeFlank {
+    /// Aligned span measured on the LONGER sequence's axis, divided by the LONGER length. The mirror of
+    /// the shipped `coverage`, which is the same quantity on the SHORTER axis.
+    pub(crate) cov_longer: f64,
+    /// Total unaligned flank (5' + 3') of rep `i` on the exemplar record, in bp.
+    pub(crate) unaln_i: u64,
+    /// Total unaligned flank (5' + 3') of rep `j` on the exemplar record, in bp.
+    pub(crate) unaln_j: u64,
+}
+
+/// The disclosure arithmetic, isolated so it is testable without an aligner.
+///
+/// `q_is_i` says whether the PAF's QUERY is the lower-indexed rep of the pair (`i = q.min(t)`), which is
+/// what maps `qs/qe/ql` and `ts/te/tl` onto `unaln_i`/`unaln_j`. Under the shipped `-X` (`--dual=no`)
+/// exactly one orientation per pair is emitted and minimap2 does not guarantee which sequence is the
+/// query, so this mapping cannot be assumed.
+///
+/// The longer side is chosen with `ql >= tl`, the same tie convention `RUSTLE_ER_COVERAGE_LONGER` uses
+/// (`ql.max(tl)` with the axis following the denominator). On a tie the two denominators are equal, so
+/// only the numerator's axis is at stake.
+///
+/// ⚠ `cov_longer <= coverage` is a THEOREM only when the aligned span is the same on both axes (a gapless
+/// or indel-balanced record): the numerator is then shared and the denominator is larger. An indel-heavy
+/// record can in principle break it, which is itself worth seeing rather than hiding.
+pub(crate) fn er_edge_flank(
+    ql: f64,
+    qs: f64,
+    qe: f64,
+    tl: f64,
+    ts: f64,
+    te: f64,
+    q_is_i: bool,
+) -> ErEdgeFlank {
+    let (long_aln, long_len) = if ql >= tl { (qe - qs, ql) } else { (te - ts, tl) };
+    let cov_longer = long_aln / long_len.max(1.0);
+    let q_unaln = (qs + (ql - qe)).max(0.0).round() as u64;
+    let t_unaln = (ts + (tl - te)).max(0.0).round() as u64;
+    let (unaln_i, unaln_j) = if q_is_i { (q_unaln, t_unaln) } else { (t_unaln, q_unaln) };
+    ErEdgeFlank { cov_longer, unaln_i, unaln_j }
+}
+
 /// As `nucleotide_edges`, but also returns the EXEMPLAR identity and coverage of each edge — the passing
 /// record with the highest coverage (ties broken by higher identity), which is deterministic.
 ///
@@ -4657,11 +4713,36 @@ fn nucleotide_edges_scored(
     cores: Option<&[u64]>,
     params: &RefineParams,
     dump_tag: Option<&str>,
+    guard_exempt: Option<&dyn Fn(usize, usize) -> bool>,
+) -> Result<Vec<(usize, usize, f64, f64)>> {
+    nucleotide_edges_scored_disclosed(
+        seqs, mm_args, min_id, min_cov, cores, params, dump_tag, guard_exempt, None,
+    )
+}
+
+/// As `nucleotide_edges_scored`, but ALSO fills `disclose` with the per-edge `ErEdgeFlank` read off the
+/// very same exemplar record that supplied the returned `(identity, coverage)`.
+///
+/// A SEPARATE map, deliberately: nothing that participates in the edge DECISION is widened or moved, so
+/// the returned edge set is bit-for-bit what it was. Entries appear only for edges whose exemplar came
+/// from a real PAF record — an edge admitted by the opt-in summed-coverage rule has no single certifying
+/// record and therefore no entry, which the dump prints as `NA` rather than inventing.
+#[allow(clippy::too_many_arguments)]
+fn nucleotide_edges_scored_disclosed(
+    seqs: &[Vec<u8>],
+    mm_args: &[&str],
+    min_id: f64,
+    min_cov: f64,
+    cores: Option<&[u64]>,
+    params: &RefineParams,
+    dump_tag: Option<&str>,
     // Pair-level exemption from the orientation guard, supplied by the caller because only it knows what
     // the sequences ARE. Passed as a predicate rather than as parallel arrays so no per-rep data has to be
     // threaded through this function's seven other call sites. `None` = the guard applies unconditionally,
     // which is the shipped behaviour.
     guard_exempt: Option<&dyn Fn(usize, usize) -> bool>,
+    // Out-parameter, reporting only. `None` = not collected.
+    disclose: Option<&mut BTreeMap<(usize, usize), ErEdgeFlank>>,
 ) -> Result<Vec<(usize, usize, f64, f64)>> {
     use std::io::Write;
     let dir = std::env::temp_dir();
@@ -4762,6 +4843,9 @@ fn nucleotide_edges_scored(
 
     // Value = the EXEMPLAR (identity, coverage) for reporting only; membership is decided exactly as before.
     let mut edge_set: BTreeMap<(usize, usize), (f64, f64)> = BTreeMap::new();
+    // Parallel to `edge_set` and updated in LOCKSTEP with it, so the disclosed flank numbers always
+    // describe the record that supplied this edge's exemplar identity/coverage. Reporting only.
+    let mut flanks: BTreeMap<(usize, usize), ErEdgeFlank> = BTreeMap::new();
     use std::io::BufRead as _;
     for line in std::io::BufReader::new(child_stdout).lines() {
         let line = line.map_err(|e| anyhow::anyhow!("reading minimap2 stdout: {e}"))?;
@@ -4883,11 +4967,31 @@ fn nucleotide_edges_scored(
         let aln_on_denom_axis = if side_is_query { qe - qs } else { te - ts };
         let cov = aln_on_denom_axis / shorter;
         if ident >= min_id && cov >= floor {
-            let slot = edge_set.entry((q.min(t), q.max(t))).or_insert((ident, cov));
+            let k = (q.min(t), q.max(t));
             // Keep the highest-coverage passing record as the exemplar (ties -> higher identity). Pure
             // reporting: the KEY set is identical either way, so this cannot move an edge.
-            if (cov, ident) > (slot.1, slot.0) {
-                *slot = (ident, cov);
+            //
+            // Spelled with `Entry` rather than `or_insert` + compare ONLY so the disclosure map can learn
+            // whether this record actually became the exemplar. The two branches are exactly the old
+            // behaviour: a vacant key takes this record; an occupied one is replaced under the identical
+            // `(cov, ident) >` test (which a fresh insert could never pass against itself).
+            let took_exemplar = match edge_set.entry(k) {
+                std::collections::btree_map::Entry::Vacant(v) => {
+                    v.insert((ident, cov));
+                    true
+                }
+                std::collections::btree_map::Entry::Occupied(mut o) => {
+                    if (cov, ident) > (o.get().1, o.get().0) {
+                        o.insert((ident, cov));
+                        true
+                    } else {
+                        false
+                    }
+                }
+            };
+            if took_exemplar {
+                // §6az DISCLOSURE, from THIS record — the same one the row's identity/coverage came from.
+                flanks.insert(k, er_edge_flank(ql, qs, qe, tl, ts, te, q < t));
             }
         }
         // M1 applies here too: the summed rule unions intervals into the SAME denominator, so the
@@ -4977,6 +5081,12 @@ fn nucleotide_edges_scored(
         if added > 0 {
             eprintln!("[summed-coverage] {added} additional edge(s) from collinear blocks >= {min_block} bp");
         }
+    }
+    if let Some(out) = disclose {
+        out.clear();
+        // Summed-coverage edges (opt-in) are inserted into `edge_set` with no certifying record, so they
+        // are simply absent here; the filter is the assertion that this map never outruns the edge set.
+        out.extend(flanks.iter().filter(|(k, _)| edge_set.contains_key(k)).map(|(k, v)| (*k, *v)));
     }
     Ok(edge_set.into_iter().map(|((i, j), (id, cov))| (i, j, id, cov)).collect())
 }
@@ -5943,6 +6053,10 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
     // only. Populated whether or not the dump is on (at most |E| f64 pairs), so enabling the dump cannot
     // change which code paths run.
     let mut metrics: BTreeMap<(usize, usize), (f64, f64, TierMask)> = BTreeMap::new();
+    // §6az ADDITIVE DISCLOSURE: `cov_longer` + both unaligned flanks, from the SAME exemplar record as
+    // `metrics`. A SEPARATE map keyed identically, so the tuple that feeds the edge decision is untouched.
+    // It gates nothing; `write_er_edge_dump` is its only consumer.
+    let mut flanks: BTreeMap<(usize, usize), ErEdgeFlank> = BTreeMap::new();
     // ⭐ SENSITIVE-ONLY IS NOW THE DEFAULT on this path; set `RUSTLE_ER_SENSITIVE_ONLY=0` to restore the
     // asm20 run. asm20 is a SUBSET of the sensitive run, structurally and measured:
     //   * structurally: whenever `sensitive_identity <= min_identity` the sensitive run has BOTH the lower
@@ -5969,28 +6083,34 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
     if !sensitive_only {
         let seed = primary_seed_args();
         let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
-        for (i, j, ident, cov) in
-            nucleotide_edges_scored(&seqs, &seed_ref, params.min_identity, params.min_coverage, Some(&core_lens), params, Some("er"), guard_exempt.as_ref().map(|f| f as &dyn Fn(usize, usize) -> bool))?
-        {
+        let mut tier_flanks: BTreeMap<(usize, usize), ErEdgeFlank> = BTreeMap::new();
+        let scored = nucleotide_edges_scored_disclosed(&seqs, &seed_ref, params.min_identity, params.min_coverage, Some(&core_lens), params, Some("er"), guard_exempt.as_ref().map(|f| f as &dyn Fn(usize, usize) -> bool), Some(&mut tier_flanks))?;
+        for (i, j, ident, cov) in scored {
             *prov.entry((i, j)).or_insert(0) |= TIER_ASM20;
-            record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_ASM20);
+            if record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_ASM20) {
+                record_edge_flank(&mut flanks, (i, j), tier_flanks.get(&(i, j)).copied());
+            }
         }
     } else {
         eprintln!("[homology] asm20 run SKIPPED (RUSTLE_ER_SENSITIVE_ONLY)");
     }
     let mut set: BTreeSet<(usize, usize)> = prov.keys().copied().collect();
     if params.nucleotide_sensitive {
-        for (i, j, ident, cov) in nucleotide_edges_scored(
+        let mut tier_flanks: BTreeMap<(usize, usize), ErEdgeFlank> = BTreeMap::new();
+        let scored = nucleotide_edges_scored_disclosed(
             &seqs,
             ER_SENSITIVE_SEED,
             params.sensitive_identity,
             params.min_coverage,
             Some(&core_lens),
             params,
-            Some("er"), None)? {
+            Some("er"), None, Some(&mut tier_flanks))?;
+        for (i, j, ident, cov) in scored {
             set.insert((i, j));
             *prov.entry((i, j)).or_insert(0) |= TIER_SENSITIVE;
-            record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_SENSITIVE);
+            if record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_SENSITIVE) {
+                record_edge_flank(&mut flanks, (i, j), tier_flanks.get(&(i, j)).copied());
+            }
         }
     }
     if params.protein_tail {
@@ -6089,7 +6209,7 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
     // `set.retain` never filters, so under `RUSTLE_ER_NO_STUB_EDGES=1` that file is a strict superset.
     if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
         if !prefix.is_empty() {
-            write_er_edge_dump(&prefix, reps, &seqs, &set, &prov, &metrics, params, span_genome.is_some());
+            write_er_edge_dump(&prefix, reps, &seqs, &set, &prov, &metrics, &flanks, params, span_genome.is_some());
         }
     }
     Ok(set
@@ -6103,16 +6223,51 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
 
 /// Keep the highest-coverage exemplar per edge across tiers (ties -> higher identity, then lower tier bit).
 /// Deterministic and reporting-only; see `nucleotide_edges_scored`.
+///
+/// Returns whether THIS call's record is now the stored exemplar, so the §6az disclosure map can follow
+/// the identical choice instead of re-deriving it (a second copy of this predicate is exactly how the
+/// disclosed flanks would come to describe a different record than the row's identity/coverage).
 fn record_edge_metric(
     metrics: &mut BTreeMap<(usize, usize), (f64, f64, TierMask)>,
     key: (usize, usize),
     ident: f64,
     cov: f64,
     tier: TierMask,
+) -> bool {
+    match metrics.entry(key) {
+        std::collections::btree_map::Entry::Vacant(v) => {
+            v.insert((ident, cov, tier));
+            true
+        }
+        std::collections::btree_map::Entry::Occupied(mut o) => {
+            if (cov, ident) > (o.get().1, o.get().0) {
+                o.insert((ident, cov, tier));
+                true
+            } else {
+                false
+            }
+        }
+    }
+}
+
+/// Move the §6az disclosure for `key` to whatever `record_edge_metric` just accepted as the exemplar.
+///
+/// `None` means the winning tier reported no certifying record for this pair (the opt-in summed-coverage
+/// rule). The stale entry is then REMOVED rather than left behind: an inherited flank would describe some
+/// other tier's record while the printed identity/coverage described this one, which is precisely the
+/// inconsistency this disclosure exists to avoid.
+fn record_edge_flank(
+    flanks: &mut BTreeMap<(usize, usize), ErEdgeFlank>,
+    key: (usize, usize),
+    flank: Option<ErEdgeFlank>,
 ) {
-    let slot = metrics.entry(key).or_insert((ident, cov, tier));
-    if (cov, ident) > (slot.1, slot.0) {
-        *slot = (ident, cov, tier);
+    match flank {
+        Some(f) => {
+            flanks.insert(key, f);
+        }
+        None => {
+            flanks.remove(&key);
+        }
     }
 }
 
@@ -6184,6 +6339,8 @@ fn write_er_edge_dump(
     set: &BTreeSet<(usize, usize)>,
     prov: &BTreeMap<(usize, usize), TierMask>,
     metrics: &BTreeMap<(usize, usize), (f64, f64, TierMask)>,
+    // §6az additive disclosure, keyed exactly like `metrics`. Consumed here and nowhere else.
+    flanks: &BTreeMap<(usize, usize), ErEdgeFlank>,
     params: &RefineParams,
     genomic_span_active: bool,
 ) {
@@ -6251,7 +6408,8 @@ fn write_er_edge_dump(
             let _ = writeln!(
                 fh,
                 "rep_i\trep_j\tnode_key_i\tnode_key_j\tchrom_i\tstart_i\tend_i\tstrand_i\t\
-                 chrom_j\tstart_j\tend_j\tstrand_j\tidentity\tcoverage\tmetric_tier\ttiers"
+                 chrom_j\tstart_j\tend_j\tstrand_j\tidentity\tcoverage\tcov_longer\tunaln_i\tunaln_j\t\
+                 metric_tier\ttiers"
             );
             for &(i, j) in set.iter() {
                 let (ri, rj) = (&reps[i], &reps[j]);
@@ -6262,9 +6420,23 @@ fn write_er_edge_dump(
                     // Protein-tier edges carry no nucleotide identity/coverage at all.
                     None => ("NA".to_string(), "NA".to_string(), "NA".to_string()),
                 };
+                // §6az DISCLOSURE. `coverage` above is the aligned fraction of the SHORTER sequence;
+                // `cov_longer` is the same quantity on the LONGER one, and `unaln_i`/`unaln_j` are each
+                // rep's total 5'+3' clipped flank in bp — all three off the SAME exemplar record.
+                // `NA` wherever no single record certified the edge (protein tier; opt-in summed
+                // coverage), never a substituted value.
+                let (cov_longer, unaln_i, unaln_j) = match flanks.get(&(i, j)) {
+                    Some(f) => (
+                        format!("{:.6}", f.cov_longer),
+                        f.unaln_i.to_string(),
+                        f.unaln_j.to_string(),
+                    ),
+                    None => ("NA".to_string(), "NA".to_string(), "NA".to_string()),
+                };
                 let _ = writeln!(
                     fh,
-                    "{i}\t{j}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{ident}\t{cov}\t{mtier}\t{}",
+                    "{i}\t{j}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{ident}\t{cov}\t\
+                     {cov_longer}\t{unaln_i}\t{unaln_j}\t{mtier}\t{}",
                     key(ri),
                     key(rj),
                     ri.chrom,
@@ -6913,6 +7085,56 @@ mod tests {
         );
         // Coverage-of-the-SHORTER of an exact subsequence is ~1.0 whichever axis minimap2 chose.
         assert!(cov > 0.90, "coverage {cov} -- an exact 2 kb subsequence must cover the shorter fully");
+    }
+
+    /// §6az DISCLOSURE ARITHMETIC. Pins `cov_longer` and the two flank lengths on a synthetic record
+    /// whose overhang is known exactly, and pins the inequality that makes the disclosure worth printing.
+    ///
+    /// The record is §6ay's synthetic control made concrete: a 5,000 bp sequence that aligns end-to-end
+    /// into a 7,000 bp one which carries 1,000 bp of extra sequence at EACH end. Coverage-of-the-shorter
+    /// reports 1.000 — a perfect number — while 2,000 bp of the longer member is outside the alignment
+    /// and no shipped column said so.
+    #[test]
+    fn er_edge_flank_discloses_the_longer_members_overhang() {
+        // query = the SHORTER member and rep i; target = the LONGER member and rep j.
+        let (ql, qs, qe) = (5000.0, 0.0, 5000.0);
+        let (tl, ts, te) = (7000.0, 1000.0, 6000.0);
+        let f = er_edge_flank(ql, qs, qe, tl, ts, te, /* q_is_i */ true);
+
+        // The shipped statistic, recomputed here rather than assumed: aligned span on the SHORTER axis
+        // over the SHORTER length. This is the number that looks perfect.
+        let coverage = (qe - qs) / ql;
+        assert!((coverage - 1.0).abs() < 1e-12, "coverage {coverage} — the control must look perfect");
+
+        // 5,000 aligned bases on the LONGER axis over 7,000 bp.
+        assert!(
+            (f.cov_longer - 5000.0 / 7000.0).abs() < 1e-12,
+            "cov_longer {} != 5000/7000",
+            f.cov_longer
+        );
+        assert_eq!(f.unaln_i, 0, "the shorter member aligns end to end");
+        assert_eq!(f.unaln_j, 2000, "1,000 bp hangs off EACH end of the longer member");
+
+        // Whenever the lengths differ and the aligned span is the same on both axes, the larger
+        // denominator makes `cov_longer` STRICTLY smaller. That is the whole content of the concession.
+        assert!(
+            f.cov_longer < coverage,
+            "cov_longer {} must be < coverage {coverage} when the lengths differ",
+            f.cov_longer
+        );
+
+        // The i/j mapping is not cosmetic: under the shipped `-X` minimap2 chooses which sequence is the
+        // query, so the same record with q and t swapped must move the flanks to the other column and
+        // leave `cov_longer` — a property of the PAIR — exactly where it was.
+        let g = er_edge_flank(tl, ts, te, ql, qs, qe, /* q_is_i */ true);
+        assert!((g.cov_longer - f.cov_longer).abs() < 1e-12, "cov_longer must not depend on the axis order");
+        assert_eq!((g.unaln_i, g.unaln_j), (2000, 0), "swapping q/t must swap the flanks");
+
+        // Equal lengths: no member is "the longer", the denominators coincide, and the inequality above
+        // becomes an equality rather than reversing.
+        let h = er_edge_flank(4000.0, 100.0, 3900.0, 4000.0, 50.0, 3850.0, true);
+        assert!((h.cov_longer - 3800.0 / 4000.0).abs() < 1e-12, "cov_longer {}", h.cov_longer);
+        assert_eq!((h.unaln_i, h.unaln_j), (200, 200));
     }
 
     /// The orientation guard is typed to transcript-oriented RNA representatives. Two representatives
@@ -8315,6 +8537,7 @@ mod tests {
             &[r],
             &[vec![b'A'; 500]],
             &BTreeSet::new(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &RefineParams::default(),
