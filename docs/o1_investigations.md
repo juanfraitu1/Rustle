@@ -2221,7 +2221,11 @@ concentrated. **Report both, or neither.**
   **disjoint** — W063 and W106 now emit **zero** copies and **zero** edges, and W033 `SRSF9`,
   W034 `BAGE5`, W065 `ZNF566` are new. ⟹ *"a property of the definition, not of an invocation"* is
   **not supported**; what the two runs share is a rate, not a failure mode. **6/6 of the new edges
-  carry a 2-read endpoint**, so the new set traces to the §6ac node floor 3 → 2.
+  carry a 2-read endpoint**, so the new set traces to the §6ac node floor 3 → 2. ✅**CONTROLLED
+  (§6bt.1): at `RUSTLE_GATE_MIN_READS=3` the current binary reproduces THIS APPENDIX EXACTLY** — 2/150,
+  W063 + W106, 3 edges, 1 self-identity certificate, the same 1,204 bp overlap. **The panel is
+  reproducible; the rate is simply a function of the node floor, and that floor must be quoted with
+  it.**
 * ✅ The orientation guard's precision benefit is now **measured on an independent human negative
   panel**, not only on the GGO FP arm it was derived from: **28 → 3 edges**.
 * ❌ It is **still a specificity and a lower bound**. No positive stratum, no prevalence, no precision.

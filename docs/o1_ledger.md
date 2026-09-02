@@ -142,6 +142,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6br — The annotation CANNOT corroborate the 0.80-0.90 band: a 39.9x enrichment that was ONE STRING (09-02)
 - §6bs — The self-overlap defect is REAL, cross-species, and ABSENT from the current path (09-02)
 - §6bt — THE PANEL RUN: the mechanism transfers to HUMAN, and the BASELINE HAD MOVED (09-02)
+- §6bt.1 — THE CONTROL: the frozen panel IS reproducible, and the node floor is the WHOLE cause (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7317,7 +7318,9 @@ from §6bp — which now has a second reason to be run.
 (3 → 2, §6ac) and could not be an OFF arm. `arm_off` and `arm_cl30` (floor 0.30), 150/150 windows
 each, harness `o1neg/run_arms.sh`, scorer `bench/o1neg_score_arms.py`.
 
-### ⚠⚠ FIRST, THE THING THAT INVALIDATES MOST OF §6bq: THE BASELINE IS NOT THE DOCUMENTED ONE
+### ⚠⚠ CORRECTED BELOW — read §6bt.1 before this subsection
+
+### FIRST: THE DEFAULT-PATH BASELINE IS NOT THE DOCUMENTED ONE
 
 | | 2026-08-20 (documented, Appendix A) | **current binary** |
 |---|---|---|
@@ -7333,9 +7336,9 @@ not**. Two pathologies were fixed and three new ones appeared. ⚠**`1.33%` is q
 and is superseded; the current number is 2.00%.** Neither difference is significant — do not read
 the change as a regression, read it as *the panel was never re-run*.
 
-⛔**§6bq's P1, P2, P3 and P5 are VOID**: they named W063 and W106, which the current binary does not
-produce. **P4 survives** and is the one that mattered. This is the provenance trap the project keeps
-paying for — a pre-registration written against artifacts a superseded binary produced.
+⚠**An earlier edition of this section declared §6bq's P1, P2, P3 and P5 VOID** — *"a pre-registration
+written against artifacts a superseded binary produced"* — and called it the provenance trap.
+**That was wrong. See §6bt.1: the frozen panel IS exactly reproducible**, and the criteria are live.
 
 ### THE RESULT
 
@@ -7383,12 +7386,55 @@ Every endpoint, from `nodes.tsv`:
 ⭐⭐⭐**6 OF 6 EDGES CARRY A 2-READ ENDPOINT — a node that CANNOT EXIST at the pre-08-30 floor of 3.**
 `NODE_MIN_READS` 3 → 2 shipped in §6ac for **+2 NPIP loci**, and its **precision cost was never
 measured**. This panel is where that cost is visible, and it appears to be the whole of the new
-false-merge set. ⚠**"Appears to be" until the control lands** — the arm at
-`RUSTLE_GATE_MIN_READS=3` is running; if it emits none of the three windows the attribution is
-measured rather than inferred. **Every one of these nodes is also single-exon or a stub**, tying
+false-merge set. ✅**THE CONTROL LANDED AND THE ATTRIBUTION IS NOW MEASURED — §6bt.1.** **Every one of these nodes is also single-exon or a stub**, tying
 this to the standing 26.8% single-exon-stub defect.
 
 ⟹**STATUS.** The clause remains **default OFF**. What this run adds is (i) the first **cross-species**
 test of its mechanism, passed 6/6 with monotonicity intact; (ii) a **superseded headline** found by
 re-running a frozen panel; (iii) a **named, testable cause** for the current panel failures that
 implicates a default we shipped without pricing.
+
+
+## §6bt.1 — ⭐⭐⭐ THE CONTROL: the frozen panel IS reproducible, and the node floor is the WHOLE cause (09-02)
+
+**A third arm, same binary, one parameter changed: `RUSTLE_GATE_MIN_READS=3`** — the floor in force
+when the panel was last run on 2026-08-20, before §6ac moved it to 2.
+
+| arm (all on binary `14a850a9…`, source `b16a019`) | emitting windows | which | E_r edges | self-identity certified |
+|---|---|---|---:|---:|
+| **floor 2 (shipped default)** | **3/150 = 2.00%** | W033, W034, W065 | 6 | 1 |
+| **floor 3 (pre-08-30)** | **2/150 = 1.33%** | **W063, W106** | **3** | **1** |
+| documented 2026-08-20 | **2/150 = 1.33%** | **W063, W106** | **3** | **1** |
+
+⭐⭐⭐**THE FLOOR-3 ARM REPRODUCES THE DOCUMENTED RESULT EXACTLY** — same rate, same two windows, same
+edge count, same single self-identity certificate, and the same `W063` self-overlap of **1,204 bp**.
+The `cov_longer` values match the ones §6bq computed from the frozen PAFs **to six decimal places**:
+**0.497726**, **0.025591**, **0.111862**.
+
+⟹⟹**TWO CORRECTIONS TO §6bt, AND THE SECOND MATTERS MORE.**
+
+**(1) The panel was never unreproducible.** §6bt called this *"the provenance trap… a pre-registration
+written against artifacts a superseded binary produced."* **False.** The 08-20 measurement is not
+lost, it is **parameterised**: the current binary reproduces it byte-for-byte at the node floor that
+produced it. What I had actually done was run an OFF arm at a **different node floor** from the frozen
+dump and compare across it — my error, not the tree's. ⚠**This is the good kind of provenance news and
+it was nearly recorded as the bad kind.**
+
+**(2) §6bq's P1, P2, P3 and P5 are NOT void — they are LIVE**, because the configuration they were
+stated at is reproducible. The arm testing them (floor 3 **+** `RUSTLE_ER_COVERAGE_LONGER_FLOOR=0.30`)
+is running; predictions stand exactly as committed before any result: **W106 dies** (cov_longer
+0.0256 / 0.1119), **W063 survives** (0.4977), **2/150 → 1/150**, **3 edges → 1**.
+
+⭐⭐**AND THE ATTRIBUTION IS NOW A CONTROLLED MEASUREMENT, NOT AN INFERENCE.** One parameter, and the
+failure sets **swap completely** — `lost=[W033, W034, W065]`, `GAINED=[W063, W106]`, with **no window
+in both**. ⟹**The §6ac node floor 3 → 2 is the entire difference between the documented 1.33% and the
+default path's 2.00%.** That change shipped for **+2 NPIP loci** and its precision cost was never
+priced; this panel is the price, and the mechanism is named: **6/6 of the floor-2 edges carry a
+2-read endpoint**, every one of them single-exon or stub.
+
+⚠**WHAT THIS DOES NOT SAY.** 2 events against 3 is **not** a significant difference and the floor
+change is **not** shown to be a bad trade — §6ac bought measured recall and this is one panel, on
+**human**, with no positive stratum. What is now established is that the trade **exists, is
+attributable, and was never measured**, which is a different and fairer statement than either
+"stable" or "a regression". ⚠**`RUSTLE_GATE_MIN_READS=3` is also, therefore, the reproduction recipe
+for every pre-08-30 panel number** — record it wherever those numbers are quoted.

@@ -100,7 +100,7 @@ human NPIP onto the gorilla assembly**. The clean control has **n = 3**.
 | **Cross-substrate replication** (different animal **and** different tissue) | **87.06%** of edges reproduce; clean corner **130/136 = 95.6%**, marginal **390/479 = 81.4%** | §4l |
 | **One-seed closure on HUMAN families** | **65/65 converge** | §5p |
 | **Haplotype CNV proven inside one animal** | direct proof of the phenomenon, not a projection | §6u |
-| **False-merge rate** on gene-tight windows with demonstrated power | 08-20: **2/150 = 1.33%** [0.37, 4.73]; ⚠**current binary 09-02: 3/150 = 2.00%** on a **disjoint** window set (§6bt) — the rate is stable, the instances are not | O1.10 · §6bt |
+| **False-merge rate** on gene-tight windows with demonstrated power | **2/150 = 1.33%** [0.37, 4.73] — **reproduced exactly** by the current binary at `RUSTLE_GATE_MIN_READS=3`, same two windows, same 3 edges. At the shipped floor 2: **3/150 = 2.00%**, **disjoint** set. One parameter, sets swap completely | O1.10 · §6bt.1 |
 | ⭐**Self-overlap defect, cross-species** — a standing blind spot, measured 09-02 | present at **7.09%** (GGO) and **7.10%** (PTR) in the `refine`-built catalogs; **0/4,176 pairs [0, 0.09%]** on the current path | §6bs |
 | Two-sided coverage gain reproduced on a **second substrate** | holds — ⚠ but **the mechanism did not** (§6bl retracts the shared-domain explanation) | §6bl |
 
@@ -165,8 +165,9 @@ feature deleted because it was not reliable enough to be honest.
 
 **Yes, with a stated scope.** A family is a connected component (≥2 loci) of a homology graph
 `E_r`, refined by a γ-quasi-clique partition. The definition is **seed-free**, **P1 (domain-sharer
-exclusion) is a theorem**, and it carries a falsifiable false-merge rate — **1.33%** [0.37, 4.73] as
-measured 08-20, **2.00%** [0.68, 5.71] on the current binary (§6bt), statistically indistinguishable.
+exclusion) is a theorem**, and it carries a falsifiable false-merge rate of **1.33%** [0.37, 4.73] —
+**reproducible today** at the node floor that produced it, and **2.00%** [0.68, 5.71] at the shipped
+floor, on a disjoint window set (§6bt.1). Quote the floor with the rate.
 
 ⚠ **The binding constraint is named and not solved: node construction, not the definition.** The
 oracle ablation (§5e) prices it — **the definition costs ~3%, node construction costs ~58%**. Say
