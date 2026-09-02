@@ -129,6 +129,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6be — SEEDED MODE: the seed SUBSTRATE dominates, and a MULTI-seed reaches 30/31 (09-01)
 - §6bf — Is the seeded catalog BETTER as a catalog? NO (γ applied to both) — and the test cannot be neutral (09-01)
 - §6bg — Sources of false merges in BOTH modes: transitive closure, and one oversized family (09-01)
+- §6bh — Connectivity as an orthogonal lever: NO; and the direct-edge rule has no default form (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6619,3 +6620,58 @@ recall**. The direct-edge route is the cheaper one.
 ⚠⚠**T8: THIS IS AN OFFLINE PROXY, SO IT IS A HYPOTHESIS GENERATOR, NOT A TEST.** No default moves on it.
 Before flipping anything, the direct-edge requirement must be run END-TO-END and judged on the partition,
 the HUMAN 150-window false-merge panel, and NPIP recall — the same bar §6ac and §6aa were held to.
+
+## §6bh — CONNECTIVITY AS AN ORTHOGONAL LEVER: NO. And the direct-edge rule does NOT survive being a DEFAULT (09-01)
+
+Asked (a) for the end-to-end run of §6bg's direct-edge rule and (b) whether some other lever —
+connectivity — is orthogonal to it. Instrument: `bench/fp_connectivity_levers.py`.
+
+### ⛔ NO CONNECTIVITY LEVER IS ORTHOGONAL — ALL FOUR ARE SUBSUMED BY `direct`
+Levers tried on each family's induced subgraph: **triangle support** (common neighbours — a chain link
+has 0), **min endpoint degree** (k-core-style; also an upper bound on λ), **articulation points**
+(Tarjan), **family min-degree**. λ itself already ships per family
+(`family_split::edge_connectivity`, emitted as the `cut_certified` certificate) and is never used as a
+filter; min-degree bounds it.
+
+| conditioned on `direct` | pairs | precision | F1 |
+|---|---|---|---|
+| **direct only (reference)** | 5,018 | **0.8408** | **0.7794** |
+| direct + triangle ≥ 1 | 4,800 | 0.8383 | 0.7587 |
+| direct + triangle ≥ 2 | 4,593 | 0.8393 | 0.7413 |
+| direct + not an articulation point | 4,599 | 0.8595 | 0.7597 |
+| direct + min endpoint degree ≥ 3 | 4,601 | 0.8392 | 0.7419 |
+
+⟹**not one adds F1 on top of `direct`; three LOWER precision.** And ⛔**nothing rescues the transitive
+pairs**: 0.2721 unfiltered, **0.2908** with triangle ≥1, 0.2644 with triangle ≥2, 0.2890 off articulation
+points. ⟹**the direct/transitive split IS the signal; the structure inside it carries no more.**
+
+### ⛔⛔ AND THE RULE DOES NOT SURVIVE IMPLEMENTATION — `k-core` IS A BAD TRADE ON BOTH CATALOGS
+A pair filter is not a catalog operation. The family-level form of "direct-edge backing" is **k-core
+pruning** (drop members with < k direct edges, iterate):
+
+| catalog | rule | families | loci/copies | NPIP | precision | F1 |
+|---|---|---|---|---|---|---|
+| seeded | γ only | **658** | 2,846 | **30/31** | 0.7213 | **0.7536** |
+| seeded | γ + k-core 2 | 219 | 1,744 | 27/31 | 0.7348 | 0.7381 |
+| seeded | γ + k-core 3 | 113 | 1,331 | **16/31** | 0.7513 | 0.7262 |
+| read | shipped | **356** | 1,070 | — | 0.1234 | 0.2179 |
+| read | k-core 2 | 56 | 358 | — | 0.1364 | 0.2280 |
+| read | k-core 3 | 28 | 234 | — | 0.1562 | 0.2471 |
+
+⟹**k-core costs ~2/3 of the families for ~1 point of precision, and F1 FALLS on the seeded catalog.**
+k-core 3 halves NPIP recall (30→16).
+
+⚠⚠**THE TRAP THIS EXPOSES — a pair-level filter's precision does NOT survive becoming a family-level
+operation.** "family min-degree ≥ 2" scores **precision 0.9047** as a *pair selection*; implemented as the
+catalog operation it actually implies (k-core 2) it gives **0.7348**. Same words, different object — the
+ARITHMETIC ≠ the DESIGN.
+
+### ⟹ THERE IS NOTHING TO RUN END-TO-END
+The direct-edge finding is real (§6bg, stratified, survives the size confound) but has **no default-flip
+form**: as a pair rule it cannot be applied to a set, and as k-core it loses far more than it gains.
+⟹**it ships as DISCLOSURE — a per-pair `direct` annotation** — the same disposition as `cov_longer`
+(§6ba) and the multimapper count (§6bb). ⭐**`cut_certified` (λ ≥ 2) is the shipped, already-computed
+high-precision SUBSET label** and is the right place to surface this to a reader.
+⚠**caveat on the e2e substrate**: the genome-wide fibroblast catalog covers the NPIP truth set at only
+**1/31** (arm_f2, 3 contigs, gives 14/31), so **NPIP recall is not a usable end-to-end criterion on
+`fibro_gwcat`** — that check belongs on the 3-contig catalog.
