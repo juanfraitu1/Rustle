@@ -136,6 +136,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bl — Two-sided coverage on a SECOND substrate: the gain holds, the mechanism does not (09-01)
 - §6bm — Two-sided coverage + connectivity: the composite gain does NOT reproduce (09-01)
 - §6bn — Dense clusters inside families WORK; cliques do not (09-01)
+- §6bo — NOTHING SHIPPED; correction to the flag claim; see `O1_PRECISION_LEVERS.md` (09-01)
 
 ## 1. What SHIPPED and holds
 
@@ -6867,7 +6868,9 @@ through a domain-sized alignment) and part is real short copies. Not separated h
 
 ⭐**Framing for the advisor**: it ADDS a constant but REMOVES an asymmetry — the one-sided clause is
 what let the TSS/TES boundary objection land (§6ay), since a short fragment can clear 0.50 of itself
-against a full-length partner. `RUSTLE_ER_COVERAGE_LONGER` already exists as the flag.
+against a full-length partner. ⚠**CORRECTED (§6bo): `RUSTLE_ER_COVERAGE_LONGER` REPLACES the denominator and applies the SAME floor
+to the longer side — it is the symmetric 0.50 variant these measurements REJECT. The asymmetric 0.30
+form needs a second constant that does not exist yet.**
 
 ## §6bl — TWO-SIDED COVERAGE ON A SECOND SUBSTRATE: the gain holds, the MECHANISM does not (09-01)
 
@@ -7018,3 +7021,40 @@ connectivity filters it *increases* family count instead of deleting families (a
 It adds **no new concept** — it is the shipped γ applied recursively at a second value.
 ⚠**it is a REFINEMENT, not a replacement**: the two-sided coverage clause (§6bk/§6bl) does the work on
 the edge set; this reorganises what survives. ⚠ still offline on both substrates; T8 unchanged.
+
+## §6bo — NOTHING SHIPPED; and a CORRECTION to the flag claim (09-01)
+
+Consolidated view of the whole precision-lever line: **`docs/O1_PRECISION_LEVERS.md`**.
+
+⛔**NOTHING FROM §6bg–§6bn HAS SHIPPED.** No default flipped, no edge rule changed. The only `src/`
+addition from this line of work is `src/bin/gamma_refine.rs` — a bench binary that calls the shipped
+`family_definition::refine_component` so offline arms use the REAL partitioner rather than a
+re-implementation. Every result is an offline reconstruction scored on a proxy ⟹ **T8: hypothesis
+generator, not a test.**
+
+⚠⚠**CORRECTION.** §6bk and §6bl both said "`RUSTLE_ER_COVERAGE_LONGER` already exists as the flag" for
+the recommended two-sided rule. **It does not.** The flag **REPLACES** the denominator — it divides by
+the longer sequence and applies the *same* floor there — so it implements the **symmetric 0.50**
+variant, which is exactly the arm the measurements reject (NPIP 14→12 on `arm_f2`, −44% families
+genome-wide). **The recommended asymmetric form (shorter ≥ 0.50 AND longer ≥ 0.30) needs a second
+constant that does not exist in the tree.**
+
+⭐**AND THE TREE ALREADY ARGUED THIS CASE BETTER THAN THIS SESSION DID.**
+`denovo_pipeline.rs:4900-4926` records, predating all of the above:
+* coverage-of-shorter is **"STRUCTURALLY BLIND to truncation"** — a 10% fragment aligning fully into a
+  complete sibling scores **1.00**, so the rule cannot tell a copy from a piece of one;
+* as a certificate on RNA pairs: **129 TRUE vs 2 FALSE, precision 0.985**;
+* a named failure — **a 2,037 bp NPIPB6 fragment reaches coverage 0.948 against a 38,653 bp chimeric
+  read-through node while touching 5% of it, dragging EIF3CL into the NPIP family**;
+* ⭐⭐the argument to put to the advisor: it is what makes component merging **MONOTONE under improving
+  evidence**, so that *"better reads can only merge components"* becomes true — currently it is false,
+  because a rep that gets MORE complete can BREAK its edge to a shorter sibling.
+
+It also **predicted the cost mechanism**: *"dividing by the longer span penalises pairs whose
+ANNOTATION differs rather than whose SEQUENCE does"* (NPIP genes span 10.6-49.4 kb around a ~16 kb
+cassette; block length correlates with max(span) at only **r = +0.196**), with a measured ceiling of
+**134/171 NPIP true pairs able to reach 0.50 at all** and **NPIPB8-NPIPB2 capping at 0.215**.
+⟹**that is exactly why the symmetric 0.50 costs NPIP recall and an asymmetric 0.30 does not** — this
+session's contribution is the measured trade, not the idea.
+⟹**the knob's own stated purpose — "whether the precision gain pays for it end to end" — is now
+answered OFFLINE and still open END TO END.**
