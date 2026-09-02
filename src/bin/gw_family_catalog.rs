@@ -347,6 +347,23 @@ fn emit_catalog(
     //   assignment meets alignment-score near-ties (§6r: rho 0.5804, p 0.0005 held out). A PRIOR, not a
     //   gate: 8.67% of reads below identity 0.95 are still contested.
     writeln!(ch, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tmax_family_identity")?;
+    // `<out>.pairs.tsv` — the CO-MEMBERSHIP certificate (ledger §6by). Its own file, not a column on
+    // `copies.tsv`, because the unit is a PAIR and copies.tsv is per-copy; bolting a pair fact onto a
+    // copy row is how `distinguishing_uniq` became ambiguous. Existing outputs are untouched, so this
+    // is additive by construction and the OFF-equivalent (a build without it) differs only by the
+    // presence of the file.
+    //
+    // `distance` = shortest path between the two copies through the family's induced E_r graph;
+    // `direct_edge` = distance == 1, i.e. an alignment record ties them, rather than a chain through
+    // other members. Measured against Soto 2025's families: precision 0.6308 at d=1 against 0.2156 at
+    // d=2 and 0.0118 at d=4, holding within every family-size stratum. REPORTED ONLY — like `lambda`
+    // and `max_family_identity`, nothing in the pipeline branches on it.
+    let mut ph = std::fs::File::create(format!("{out}.pairs.tsv"))?;
+    writeln!(
+        ph,
+        "family_id\tcopy_i\tcopy_j\tchrom_i\tstart_i\tend_i\tchrom_j\tstart_j\tend_j\
+         \tdistance\tdirect_edge"
+    )?;
 
     // The certificate is positional, so it MUST travel with its family through the sort below — sorting
     // the two lists independently would silently attach each λ to the wrong family.
@@ -417,10 +434,42 @@ fn emit_catalog(
             Some(c) if c.copy_max_identity.len() == copies.len() => c.copy_max_identity.clone(),
             _ => vec![f64::NAN; copies.len()],
         };
-        let mut sorted: Vec<(DenovoTranscript, f64)> =
-            copies.iter().cloned().zip(cmax.into_iter()).collect();
+        // The ORIGINAL index rides along too: `pair_distance` is an n x n matrix in the PRE-sort copy
+        // order, so reading it with the post-sort `ci`/`cj` would report every distance for the wrong
+        // pair — the same positional hazard as `copy_max_identity` above, one dimension worse.
+        let mut sorted: Vec<(DenovoTranscript, f64, usize)> = copies
+            .iter()
+            .cloned()
+            .zip(cmax.into_iter())
+            .enumerate()
+            .map(|(oi, (c, m))| (c, m, oi))
+            .collect();
         sorted.sort_by(|a, b| (a.0.chrom.as_str(), a.0.start).cmp(&(b.0.chrom.as_str(), b.0.start)));
-        for (ci, (c, mid)) in sorted.iter().enumerate() {
+        // §6by: what BACKS each co-membership assertion. A family asserts every pair of its members,
+        // but a pair joined by an alignment record (d=1) held precision 0.6308 against Soto 2025's
+        // families where a pair joined only through a chain (d>=2) held 0.2156. REPORTED, never a gate.
+        if let Some(cert) = &cert_of[fi] {
+            if cert.pair_distance.len() == sorted.len() {
+                for ci in 0..sorted.len() {
+                    for cj in (ci + 1)..sorted.len() {
+                        let d = cert.pair_distance[sorted[ci].2][sorted[cj].2];
+                        let d_s = if d == u32::MAX { "NA".to_string() } else { d.to_string() };
+                        writeln!(
+                            ph,
+                            "{fid}\t{ci}\t{cj}\t{}\t{}\t{}\t{}\t{}\t{}\t{d_s}\t{}",
+                            sorted[ci].0.chrom,
+                            sorted[ci].0.start,
+                            sorted[ci].0.end,
+                            sorted[cj].0.chrom,
+                            sorted[cj].0.start,
+                            sorted[cj].0.end,
+                            d == 1,
+                        )?;
+                    }
+                }
+            }
+        }
+        for (ci, (c, mid, _)) in sorted.iter().enumerate() {
             let mid_s = if mid.is_finite() { format!("{mid:.6}") } else { "NA".to_string() };
             writeln!(
                 ch,

@@ -32,6 +32,7 @@ gw_family_catalog --bam npip3.bam --fasta GGO.fasta --out $OUT/cat \
 | `cat.families.tsv` | `bac5d98e2b623400a8ad61758f3160ca` | **121 families** |
 | `dump/e.nodes.tsv` | `0a3bb20798dc954b533371e38171216a` | **3,598 nodes** |
 | `dump/e.edges.tsv` | — | **3,141 edges** |
+| `cat.pairs.tsv` | — | one row per within-family copy pair (§6by) |
 
 ⭐ **This was verified, not asserted.** `arm_f2` (built 08-30) and `arm_cfoff` (rebuilt 09-02 after
 the coverage clause landed) are **md5-identical** on all three files above, and their edge dumps agree
@@ -41,6 +42,12 @@ a gate**.
 
 ⚠ `dump/e.edges.tsv` has no md5 here precisely because of those three columns: a build predating
 §6ba produces the same 16 columns and a different file hash. Compare the columns, not the hash.
+
+⚠ `cat.pairs.tsv` is **new on 2026-09-02** (§6by) and likewise carries no md5: a build predating it
+emits no such file. It is **additive** — the three md5s above are unchanged by its introduction, which
+is the property to check rather than its own hash. It records, per co-membership assertion, the
+shortest path in the family's `E_r` graph that backs it (`distance`, `direct_edge`), and **nothing in
+the pipeline branches on it.**
 
 ## The certificate the run writes about itself
 

@@ -3261,6 +3261,62 @@ pub struct FamilyCertificate {
     /// ⚠ It is a PRIOR, never a gate: 8.67% of reads below the cut ARE contested, so skipping that
     /// stratum would drop real work. Like λ, nothing branches on this value.
     pub copy_max_identity: Vec<f64>,
+    /// REPORTED, per ordered copy pair `[i][j]`: the shortest path between the two emitted copies
+    /// through the family's induced `E_r` graph. `1` = a direct edge; `u32::MAX` = no path (possible
+    /// only for a family assembled by a non-`E_r` clustering). `[i][i] == 0`.
+    ///
+    /// Why it is emitted (ledger §6by). A family asserts co-membership for **every** pair of its
+    /// members, but those assertions are not equally supported: one pair is backed by an alignment
+    /// record, another only by a chain through other members. Measured against **Soto 2025's
+    /// families** — the first external labelling of co-membership this project has had — precision
+    /// decays monotonically with this distance:
+    ///
+    /// | d | pairs | precision |
+    /// |---|---|---|
+    /// | 1 | 650 | **0.6308** [0.5930, 0.6670] |
+    /// | 2 | 334 | 0.2156 |
+    /// | 3 | 153 | 0.1438 |
+    /// | 4 | 85 | 0.0118 |
+    /// | 5 | 33 | 0.0000 |
+    ///
+    /// Restricting to `d == 1` takes pooled pair precision **0.4006 → 0.6308** while keeping **81%**
+    /// of true pairs; `d == 1` inside a family of ≤ 5 copies reaches **0.8168**. The effect is **not**
+    /// family size — it holds within every size stratum (3.0× / 2.5× / 4.0×, non-overlapping CIs).
+    ///
+    /// ⚠ REPORTED ONLY — nothing branches on it, exactly like `lambda` and `copy_max_identity`. The
+    /// partition is unchanged; this records what BACKS each assertion so a consumer can choose. That
+    /// is what dissolves ledger §6bh's objection that a direct-edge rule "cannot apply to a set": as
+    /// a certificate it does not have to.
+    /// ⚠ Soto's set is **CAT-bounded**, so `d >= 2` pairs are not all wrong — some are real copies
+    /// CAT missed. The **ratio** between strata is the robust quantity, not the level.
+    pub pair_distance: Vec<Vec<u32>>,
+}
+
+/// All-pairs shortest paths over a family's induced `E_r` graph (BFS from each node).
+///
+/// `n` is small by construction — the largest family measured is 54 copies — so an `n x n` matrix
+/// and `n` BFS passes are cheaper than any sparse alternative and keep the emitted certificate a
+/// plain lookup.
+fn pair_distances(n: usize, edges: &[(usize, usize)]) -> Vec<Vec<u32>> {
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(a, b) in edges {
+        adj[a].push(b);
+        adj[b].push(a);
+    }
+    let mut out = vec![vec![u32::MAX; n]; n];
+    for src in 0..n {
+        out[src][src] = 0;
+        let mut q = std::collections::VecDeque::from([src]);
+        while let Some(x) = q.pop_front() {
+            for &y in &adj[x] {
+                if out[src][y] == u32::MAX {
+                    out[src][y] = out[src][x] + 1;
+                    q.push_back(y);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// As `families_from_reps`, additionally returning one `FamilyCertificate` per emitted family, in the
@@ -3381,6 +3437,7 @@ pub(crate) fn certificate_for_weighted(
         density,
         lambda: crate::vg_family::family_split::edge_connectivity(n, &edges),
         copy_max_identity: cmax,
+        pair_distance: pair_distances(n, &edges),
     }
 }
 
@@ -7228,6 +7285,34 @@ mod tests {
     /// The other half of the typed rule: reference-oriented DNA reps must continue to admit a real
     /// inverted duplication. This exercises the same `families_from_reps_certified` grouping core used by
     /// `gw_family_catalog --from-genome`, not only the PAF parser in isolation.
+    #[test]
+    /// §6by: the co-membership certificate must report the SHORTEST path, distinguish a direct edge
+    /// from a chain, and say "no path" rather than invent one. A family asserts every pair of its
+    /// members; against Soto 2025's families a `d = 1` pair held precision 0.6308 where a `d >= 2`
+    /// pair held 0.2156, so conflating them is exactly the distinction the certificate exists to make.
+    fn pair_distance_reports_the_chain_that_backs_each_co_membership() {
+        // path 0-1-2-3, plus an isolated node 4: distances 1,2,3 and one unreachable pair.
+        let d = pair_distances(5, &[(0, 1), (1, 2), (2, 3)]);
+        assert_eq!(d[0][0], 0, "a copy is at distance 0 from itself");
+        assert_eq!(d[0][1], 1, "adjacent copies are a DIRECT edge");
+        assert_eq!(d[0][2], 2);
+        assert_eq!(d[0][3], 3, "distance is the chain length, not merely >1");
+        assert_eq!(d[0][4], u32::MAX, "an unreachable pair must not report a finite distance");
+        assert_eq!(d[3][0], 3, "the matrix is symmetric");
+
+        // a shortcut must WIN: adding 0-3 collapses that pair to a direct edge and 0-2 to 2.
+        let d2 = pair_distances(4, &[(0, 1), (1, 2), (2, 3), (0, 3)]);
+        assert_eq!(d2[0][3], 1, "shortest path, not first-found");
+        assert_eq!(d2[0][2], 2);
+
+        // and it must travel through the real certificate builder, not only the helper
+        let cert = certificate_for(&[vec![0], vec![1], vec![2]], &[(0, 1), (1, 2)]);
+        assert_eq!(cert.pair_distance.len(), 3);
+        assert_eq!(cert.pair_distance[0][1], 1);
+        assert_eq!(cert.pair_distance[0][2], 2, "a transitive pair is reported as such");
+        assert_eq!(cert.n_edges, 2, "the edge count is unchanged by the new field");
+    }
+
     #[test]
     /// `--refine` used to emit `NA` for λ because its partition comes from a different edge set.
     /// `certificates_for_families` rebuilds the graph over exactly the rows that will be written, so

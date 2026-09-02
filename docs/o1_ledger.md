@@ -7868,6 +7868,47 @@ uses for `λ` / `cut_certified`, which are computed and disclosed but never used
 - it converts §6bg's *"transitive closure is a false-merge source"* from an internal proxy finding
   into a **disclosed, externally validated property of each row.**
 
+### ⭐ SHIPPED, 2026-09-02 — `<out>.pairs.tsv`
+
+Implemented as `FamilyCertificate::pair_distance` (an n×n BFS matrix over the family's induced `E_r`
+graph, n ≤ 54 so the dense form is the cheap one) and emitted as a **new file**, one row per
+within-family copy pair:
+
+```
+family_id  copy_i  copy_j  chrom_i start_i end_i  chrom_j start_j end_j  distance  direct_edge
+```
+
+**Its own file, not a column on `copies.tsv`** — the unit is a **pair** and `copies.tsv` is per-copy;
+bolting a pair fact onto a copy row is how `distinguishing_uniq` became ambiguous.
+
+⚠**THE POSITIONAL HAZARD, and it is one dimension worse than the existing one.** `emit_catalog`
+re-sorts each family's copies by `(chrom, start)` *after* the certificate is built, and the existing
+code already carries `copy_max_identity` through that sort by zipping it to the rows first. A
+**matrix** cannot be zipped: the original index has to ride along and index both axes, or **every
+distance is reported for the wrong pair**. The implementation carries `(copy, cmax, orig_index)` and
+reads `pair_distance[orig_i][orig_j]`.
+
+**Nothing branches on it** — it joins `lambda`, `cut_certified` and `max_family_identity` as a
+reported certificate. `distance = NA` means no path, which is possible only for a family assembled by
+a non-`E_r` clustering.
+
+**VERIFIED on the pinned catalog** (`REPRODUCE.md`, gorilla `npip3.bam`, 3 contigs):
+
+| check | result |
+|---|---|
+| `cat.copies.tsv` · `cat.families.tsv` · `cat.copies.fa` · `e.nodes.tsv` · `e.edges.tsv` | **all five md5-IDENTICAL** to the pre-change catalog |
+| `cat.pairs.tsv` rows | **4,176** = the within-family pair count of §6bs |
+| `direct_edge` ≡ `distance == 1` | **0 mismatches** |
+| ⭐ pairs at `d = 1` **vs** Σ `n_edges` over families | **1,727 = 1,727, exactly** |
+
+⭐**The last row is an independent cross-check, not a restatement**: `n_edges` is computed by the
+existing certificate path from the induced edge set, while `d = 1` is read out of a BFS matrix built
+separately. They agree to the pair.
+
+**Distance distribution on this catalog** — d=1 **41.4%**, d=2 **49.3%**, d=3 **8.6%**, d=4 **0.7%**.
+⟹**58.6% of the gorilla catalog's co-membership assertions are transitive**, against 48% on the human
+Soto run — the same order on two species, so the transitive burden is not a substrate quirk.
+
 ### What this replicates and what it does not
 
 ✅**REPLICATES §6bg on external truth.** That section named transitive closure as a false-merge
