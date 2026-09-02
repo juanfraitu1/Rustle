@@ -10,6 +10,7 @@ corroboration layer into `o1_ledger.md`, and three small reference docs into `RE
 | document | what it is |
 |---|---|
 | [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | **⭐ THE SCOREBOARD — what is WON / DEAD / OPEN per objective, and the recurring failure modes. Read before proposing anything.** Also scope, and the superseded O1–O5 numbering kept for provenance |
+| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | **⭐ THE DEFENSE DOSSIER — the advisor's standing questions, the "luck or overfitting" cross-examination, and what we concede before he asks.** Read before any meeting with him |
 | [`NUMBERS.md`](NUMBERS.md) | **Every quotable figure with its substrate.** Look a number up here *before* quoting it — the two headline O1 rates are on different species |
 | [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | 631 entries: what was tried, what killed it. **Consult before proposing an approach**; a re-run needs a new mechanism, not a new mood |
 | [`o1_ledger.md`](o1_ledger.md) | **O1 route by route, §3–§4r**, each with the number that decided it. The single densest record of what has and has not worked |

@@ -1,5 +1,11 @@
 # Memory digest — the long form of the memory index
 
+> ⚠ **CATALOG PROVENANCE.** This file is a **verbatim archive** of memory-index text written between
+> 2026-07 and 2026-09-01. Figures quoted per **/494** (families) or **/1415** (copies) describe the
+> **superseded** 2026-07-17 catalog; the 627/2,019 figure is **also superseded** (node floor 3 → 2,
+> ledger §6ac). Nothing here is re-measured — see [`NUMBERS.md`](NUMBERS.md) and
+> [`o1_catalog_provenance.md`](o1_catalog_provenance.md) before quoting any count.
+
 `~/.claude/projects/-mnt-c-Users-jfris-Desktop/memory/MEMORY.md` is loaded into every session and is
 capped at ~24 KB, so it carries **one line per finding**. This file holds the full text those lines
 were compacted from on 2026-09-01, verbatim, so nothing is lost and everything stays greppable.
