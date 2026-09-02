@@ -598,6 +598,27 @@ fn core_cov_floor() -> Option<f64> {
 }
 
 
+/// SECOND coverage floor, charged on the LONGER sequence (`RUSTLE_ER_COVERAGE_LONGER_FLOOR`,
+/// unset = off = byte-identical). This ADDS a clause; the shipped shorter-side floor is untouched, so
+/// the rule becomes BLAST's `qcovs AND scovs`: the shorter must clear `min_coverage`, the longer must
+/// clear this.
+///
+/// ⚠ NOT the same as `RUSTLE_ER_COVERAGE_LONGER`, which REPLACES the denominator and therefore applies
+/// the SAME floor to the longer side — i.e. the SYMMETRIC variant. Offline arms (ledger §6bk/§6bl)
+/// reject symmetry: at 0.50 on the longer side NPIP recall falls 14/31 -> 12/31 on `arm_f2` and the
+/// genome-wide catalog loses 44% of its families, while an ASYMMETRIC 0.30 gains non-ZNF precision on
+/// BOTH substrates at unchanged NPIP. The tree already predicted why: `denovo_pipeline.rs:4900-4926`
+/// records that only 134/171 NPIP true pairs can reach 0.50 on the longer axis at all (NPIPB8-NPIPB2
+/// caps at 0.215), because the duplicated unit is size-invariant while annotated spans are not.
+///
+/// Applied at the `E_r` site only. The tier-2 admission path (`RUSTLE_TIER2_ADMIT`, default off) keeps
+/// its own one-sided test.
+fn er_cov_longer_floor() -> Option<f64> {
+    let v = std::env::var("RUSTLE_ER_COVERAGE_LONGER_FLOOR").ok()?;
+    if v.is_empty() || v == "0" { return None; }
+    v.parse::<f64>().ok().filter(|x| *x > 0.0)
+}
+
 /// Maximum `de` (gap-compressed divergence) for a read to define a locus BOUNDARY
 /// (`RUSTLE_LOCUS_DE_EXTENT`, unset = off = byte-identical). Measured optimum 0.0005.
 fn locus_de_extent() -> Option<f32> {
@@ -4502,6 +4523,12 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         }),
         ("protein_tier".into(), params.protein_tail.to_string()),
         ("min_coverage".into(), format!("{:.6}", params.min_coverage)),
+        // The SECOND, longer-side coverage floor. A RULE row: it decides edges, so an ON arm must
+        // be distinguishable from an OFF arm by the certificate alone (defect M2).
+        ("min_coverage_longer".into(), match er_cov_longer_floor() {
+            Some(f) => format!("{f:.6}"),
+            None => "<unset>".into(),
+        }),
         // ⚠ NAMED `core_substrate`, NOT `substrate`. A run whose edge set is `E_x ∪ E_g` has no single
         // substrate, and the old key invited exactly the misreading it produced: `substrate = exon-sum`
         // printed on a run that unioned genomic-span edges in (O-3 / joint-run finding F6).
@@ -4966,7 +4993,14 @@ fn nucleotide_edges_scored_disclosed(
         };
         let aln_on_denom_axis = if side_is_query { qe - qs } else { te - ts };
         let cov = aln_on_denom_axis / shorter;
-        if ident >= min_id && cov >= floor {
+        // SECOND floor on the LONGER sequence, additive to the clause above (BLAST qcovs AND scovs).
+        // Uses `er_edge_flank`'s formula verbatim so the gated quantity is the SAME number the dump
+        // already discloses as `cov_longer` -- a reader can check the gate against the column.
+        let longer_ok = match er_cov_longer_floor() {
+            Some(f) => er_edge_flank(ql, qs, qe, tl, ts, te, true).cov_longer >= f,
+            None => true,
+        };
+        if ident >= min_id && cov >= floor && longer_ok {
             let k = (q.min(t), q.max(t));
             // Keep the highest-coverage passing record as the exemplar (ties -> higher identity). Pure
             // reporting: the KEY set is identical either way, so this cannot move an edge.

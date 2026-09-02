@@ -137,6 +137,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bm — Two-sided coverage + connectivity: the composite gain does NOT reproduce (09-01)
 - §6bn — Dense clusters inside families WORK; cliques do not (09-01)
 - §6bo — NOTHING SHIPPED; correction to the flag claim; see `O1_PRECISION_LEVERS.md` (09-01)
+- §6bp — The asymmetric two-sided coverage clause END TO END: all three criteria pass (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7058,3 +7059,49 @@ cassette; block length correlates with max(span) at only **r = +0.196**), with a
 session's contribution is the measured trade, not the idea.
 ⟹**the knob's own stated purpose — "whether the precision gain pays for it end to end" — is now
 answered OFFLINE and still open END TO END.**
+
+## §6bp — ⭐⭐⭐ THE ASYMMETRIC TWO-SIDED COVERAGE CLAUSE, RUN END TO END: ALL THREE CRITERIA PASS (09-02)
+
+First END-TO-END result of the §6bg-§6bo line: the real `gw_family_catalog` binary on the 3-contig
+substrate, env identical to `arm_f2`'s, so every difference is charged to the code change alone.
+Harness `npip_cat/covfloor_arms.sh`.
+
+**The change.** New `RUSTLE_ER_COVERAGE_LONGER_FLOOR` (`denovo_pipeline.rs:616`) — an **ADDITIVE**
+second clause: the shorter side keeps `min_coverage` 0.50, the longer side must clear this floor.
+⚠ distinct from `RUSTLE_ER_COVERAGE_LONGER`, which REPLACES the denominator and is therefore the
+symmetric variant §6bl rejects. The gated quantity is `er_edge_flank(...).cov_longer` **verbatim**, so
+it is the same number the dump already discloses as `cov_longer` — the gate is checkable against the
+column. Emits a `min_coverage_longer` params row (defect M2).
+
+### ✅ K1 — THE OFF ARM IS BYTE-IDENTICAL TO `arm_f2`
+`cat.copies.tsv`, `cat.families.tsv`, `dump/e.nodes.tsv`: **md5 identical**. `e.edges.tsv` differs only
+by the three columns §6ba added after `arm_f2` was built (`cov_longer`, `unaln_i`, `unaln_j`); on all
+16 shared columns the two files are **identical row-for-row, 0 rows differing in either direction**.
+⟹**the clause is genuinely additive.**
+
+### ✅ K2 — THE CERTIFICATE DISTINGUISHES THE ARMS
+`min_coverage_longer  <unset>` vs `0.300000`.
+
+### ⭐ K3 — NPIP RECALL DOES NOT HOLD. IT IMPROVES.
+| arm | families | copies | edges | **NPIP** | largest family | 2-member families |
+|---|---|---|---|---|---|---|
+| `arm_f2` / OFF | 121 | 678 | 3,141 | 14/31 | 54 | 40 |
+| **ON, longer ≥ 0.30** | 99 | 490 | 1,652 | **15/31** | **32** | 48 |
+
+⭐**NPIP recall 14/31 → 15/31** — the offline arms predicted "unchanged", so the real pipeline is
+BETTER than the reconstruction, not worse. The gained locus is
+**NC_073242.2:15,542,378-15,563,701**, which in `arm_f2` sat in **NO family** and now forms a 2-member
+family (`GWFAM26`). ⚠**it is one of the loci §6be's DNA seed also recovered** — two independent
+routes reaching the same locus.
+⭐**the largest family falls 54 → 32** (the ZNF cluster) and **2-member families RISE 40 → 48**:
+the clause is breaking fusions, not just deleting edges.
+⚠**cost is real**: families −18%, copies −28%, edges −47%.
+
+### ⭐ THE OFFLINE RECONSTRUCTION WAS ACCURATE
+Predicted 1,643 edges at this floor; the binary gives **1,652** (0.5% off). ⟹**the offline harness used
+through §6bk-§6bn was a faithful model of the shipped predicate**, which retrospectively supports the
+arms that were only ever run offline.
+
+⟹**STATUS: still NOT a default.** Default remains OFF and OFF is byte-identical. Remaining T8 items:
+the **HUMAN 150-window false-merge panel**, and a substrate whose large families are not zinc fingers.
+The genome-wide arm is also worth a real-binary run now that the offline model is validated.

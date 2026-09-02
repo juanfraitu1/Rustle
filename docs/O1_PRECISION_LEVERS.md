@@ -1,6 +1,10 @@
 # O1 precision levers — what was tried, what survived, what shipped
 
-> ## ⛔ NOTHING IN THIS DOCUMENT HAS SHIPPED.
+> ## ⛔ NOTHING IN THIS DOCUMENT IS A DEFAULT.
+> **UPDATE 09-02 (§6bp):** the two-sided coverage clause has now been run **END TO END through the real
+> binary** and passes all three criteria — the OFF arm is byte-identical to `arm_f2`, the params
+> certificate distinguishes the arms, and NPIP recall **improves 14/31 → 15/31**. It ships as
+> `RUSTLE_ER_COVERAGE_LONGER_FLOOR`, **default OFF**. Everything else below remains offline-only.
 > Every result here is an **offline reconstruction** scored against a **proxy** (CDS concordance).
 > By the T8 rule an offline re-derivation is a **hypothesis generator, never a test**. No default has
 > been flipped, no edge rule changed, and the only `src/` addition from this line of work is
@@ -14,7 +18,7 @@ Session of 2026-09-01. Full detail in `o1_ledger.md` §6bg–§6bn; negative res
 
 | lever | verdict | why | §
 |---|---|---|---|
-| **Two-sided coverage** (`cov_longer` floor) | ⭐ **best candidate** | gains on BOTH substrates, NPIP-neutral at 0.30 | §6bk/§6bl |
+| **Two-sided coverage** (`cov_longer` floor) | ⭐⭐ **VALIDATED e2e, opt-in** | all 3 criteria pass; NPIP **14/31 → 15/31** | §6bk/§6bl/**§6bp** |
 | **Dense clusters inside families** (γ′=0.70, families ≥3) | ⭐ **second candidate** | within-biotype separation 31× / 15×, reproduces | §6bn |
 | E_c within-family refinement | ⚖️ scoped only | safe and real, but reaches only near-identical arrays | §6bi/§6bj |
 | Direct-edge requirement | ⛔ no default form | as a pair rule it cannot apply to a set; as k-core it loses 2/3 of families | §6bg/§6bh |
@@ -32,10 +36,10 @@ Non-ZNF F1 `arm_f2` 0.3182 → **0.4043**, genome-wide 0.4306 → **0.4595**, NP
 
 ⚠**The floor must be ASYMMETRIC.** Shorter stays 0.50; the longer floor should be **0.30**. The
 symmetric 0.50 costs NPIP (14→12) and 44% of families genome-wide.
-⚠**CORRECTION — the existing flag does NOT implement this.** `RUSTLE_ER_COVERAGE_LONGER` **replaces**
-the denominator, applying the *same* floor to the longer side, i.e. it is exactly the symmetric 0.50
-variant the measurements reject. The asymmetric form needs a **second constant that does not exist
-yet**. Earlier statements in §6bk/§6bl that "the flag already exists" are corrected here.
+⚠**CORRECTION — the PRE-EXISTING flag does not implement this.** `RUSTLE_ER_COVERAGE_LONGER`
+**replaces** the denominator, applying the *same* floor to the longer side — the symmetric 0.50 variant
+the measurements reject. ✅**RESOLVED 09-02**: the asymmetric form is now implemented as
+`RUSTLE_ER_COVERAGE_LONGER_FLOOR` (§6bp), default OFF, OFF byte-identical.
 
 ⭐**The code anticipated all of this.** `denovo_pipeline.rs:4900-4926` already records: coverage-of-
 shorter is *"STRUCTURALLY BLIND to truncation — a 10% fragment that aligns fully into a complete
@@ -59,7 +63,8 @@ splits 0.0126/0.0158 against keeps 0.3866/0.2429).
 
 ## Before either can ship
 
-1. Run through the **real binary**, not an offline reconstruction.
+1. ~~Run through the **real binary**~~ ✅ **DONE for two-sided coverage (§6bp)**, and the offline model
+   proved faithful (predicted 1,643 edges; the binary gives 1,652). Still needed for γ′=0.70.
 2. The **HUMAN 150-window false-merge panel** (E_r-only levers can take it; E_c cannot — no human RNA).
 3. NPIP recall on the **3-contig** catalog — `fibro_gwcat` covers the truth set at only **1/31**.
 4. A substrate whose large families are **not** zinc-finger clusters.
