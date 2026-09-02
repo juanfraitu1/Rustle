@@ -159,6 +159,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6cg — SEEDED SEARCH ON NPIP: 5-6 seeds recover 100%, zero false positives (09-02)
 - §6ch — NPIP on its COMPLETE roster: 26/26 detected, and a VACUOUS precision metric caught (09-02)
 - §6ci — SCOPE CORRECTION: the NPIP unannotated-locus work is the O1 COROLLARY, not O3 (09-02)
+- §6cj — The fragmentation has a named cause: reads LINK the pieces, the merge never looks (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8564,3 +8565,78 @@ because there is no reference sequence at the locus to compare against.
 ⭐**The strongest computational item is a splice junction present ONLY at the candidate**, supported
 by reads whose alignment there beats every alternative: **mis-mapping cannot manufacture a junction
 with no template elsewhere.** Steps 1–5 are all implementable with what exists today.
+
+## §6cj — ⭐⭐⭐ THE FRAGMENTATION HAS A NAMED CAUSE AND AN UNUSED SIGNAL: reads link the pieces, the merge never looks (09-02)
+
+Back to the RNA side, on the 26-locus NPIP substrate (§6ch). **The catalog emits 80 assigned copies
+over 26 genes = 3.08 loci per gene**; 17 of 26 fragment into ≥3, and every fragment lands in its own
+family — which is the 14-families-for-one result.
+
+The shape is always the same: **one dominant multi-exon locus plus single-exon debris.**
+`NPIPB9` → `[21, 1, 1, 1, 1]` exons with `[1318, 6, 4, 33, …]` reads. `NPIPB6` → `[8, 1, 1, 1, 1, 1, 1]`.
+
+### ⭐⭐ THE LINKING EVIDENCE EXISTS, AND IT IS LARGE
+
+For each gene, reads whose **aligned blocks** (not spanned introns — a read splicing *over* a fragment
+is not evidence for it) touch **two or more** of its loci:
+
+| gene | loci | reads | link ≥2 loci | rate | best pair |
+|---|---:|---:|---:|---:|---|
+| **NPIPB6** | 7 | 703 | 663 | **0.943** | one pair by **560** reads |
+| NPIPA6 | 3 | 213 | 171 | 0.803 | |
+| NPIPB5 | 5 | 411 | 298 | 0.725 | |
+| **NPIPB14P** | 3 | 1,283 | 721 | 0.562 | one pair by **721** reads |
+| NPIPB11 | 3 | 271 | 144 | 0.531 | |
+| NPIPB7 | 7 | 444 | 224 | 0.505 | |
+| ⚠NPIPB9 | 5 | 3,348 | 19 | **0.006** | genuinely separate |
+| ⚠NPIPB2 | 4 | 491 | 12 | 0.024 | genuinely separate |
+
+**Overall 3,606 / 11,977 = 30.1% of reads touch ≥2 loci of one gene.** ⚠**Heterogeneous** — `NPIPB6`'s
+pieces are joined by 560 reads while `NPIPB9`'s are joined by 9. **A rule must therefore be a read
+FLOOR, not a blanket merge**, and the heterogeneity is what makes the floor meaningful rather than
+arbitrary.
+
+### ⛔⛔ AND THE EXISTING MERGE STRUCTURALLY CANNOT SEE IT
+
+`denovo_pipeline.rs` co-located merge:
+```
+let same_pos = a.chrom == b.chrom && a.end.min(b.end) > a.start.max(b.start);
+if !same_pos { continue; }
+```
+⟹**the merge only ever examines SPATIALLY OVERLAPPING loci.** Measured on this substrate,
+**26 of 34 within-gene fragment pairs are DISJOINT** — so the fragmentation is, by construction,
+invisible to the only merge that exists. `RUSTLE_LOCUS_MERGE_MIN_COVER` makes that gate *stricter*,
+never wider. **No code path merges on read linkage.**
+
+### ⭐ OFFLINE PROJECTION (T8 — a hypothesis generator, never a test)
+
+Annotation-free: one pass over the slice, link any two catalog loci whose blocks a read both touches,
+union-find at a read floor K.
+
+⭐**Specificity first: 5,288 of 5,666 linkage read-support is WITHIN one gene = 93.3%.**
+
+| min reads K | loci 96 → | genes reduced to 1 locus | ⚠cross-gene merges |
+|---:|---:|---:|---:|
+| 2 | 27 | 12 | 7 |
+| 5 | 38 | 11 | 4 |
+| **10** | **42** | **12** | **3** |
+| 25 | 57 | 11 | 2 |
+| 50 | 71 | 7 | 1 |
+
+⟹ at **K = 10** the fragmentation roughly halves (**3.08 → ~1.6 loci per gene**) for **3 contaminated
+components of 42**. ⚠**Offline over EMITTED copies; the real change belongs in node construction,
+before `E_r`.** Nothing here is a measurement of the pipeline.
+
+### ⚠⚠ THE DISCLOSURE THIS WOULD INCUR
+
+The merge code already counts, and reports unconditionally, *"pairs whose MERGE/KEEP verdict came from
+`reads_distinguish` — O2's χ(H) predicate — i.e. **the sole place O1's node set consults read
+evidence**"*. A read-linkage merge would be a **second** such place. ⚠It is **not** an O1⊥O2 violation
+— that rule governs *family membership* (`E_r` vs `E_c`), and node construction is upstream and
+already read-built — but it **must carry the same disclosure**, because "O1's node set is not a
+function of sequence alone" would then be true for a new reason. ⭐That guard **fired for the first
+time ever recorded** on this very substrate (§6bx), so the counter is live and the discipline is
+already in place.
+
+⟹**This is the first named, measured, unexploited lever on §5e's ~58% node-construction residual.**
+Not a trade like §6bv or §6cf — **a signal the pipeline collects and discards.**
