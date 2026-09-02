@@ -146,6 +146,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bt.2 — EVERY PRE-REGISTERED CRITERION PASSES, on a species the clause never saw (09-02)
 - §6bu — ADJUDICATION of the coverage clause: the decision rule, fixed BEFORE the evidence (09-02)
 - §6bv — THE ADJUDICATION: KEEP OPT-IN, and four of five criteria did not go as expected (09-02)
+- §6bw — PRE-REGISTRATION: adjudicating the copy loss against SOTO's families (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7622,3 +7623,63 @@ ceiling of what can be said, and **KEEP OPT-IN is the finding, not a deferral.**
 ⭐**One real benefit is not in dispute and should be quoted:** largest family **54 → 32**, i.e. the
 ZNF blob splits, consistent with §6bi. That is a *precision* claim about family structure and it
 does not depend on any of the copy-level reasoning above.
+
+## §6bw — ⚖️ PRE-REGISTRATION: adjudicating the copy loss against SOTO's families (09-02)
+
+**Why this instrument.** §6bv's verdict was **KEEP OPT-IN** for one reason: **no truth set labels a
+meaningful share of the copies a filter deletes** (NPIP labels **21 of 678**). Soto 2025 supplies
+the missing **positive stratum** — and the advisor weights it heavily. Written **before the run.**
+
+**Substrate — and it is HUMAN on HUMAN, deliberately.** `bench/soto/80_fams.chr.bed`: **83 families,
+362 member genes, 11.3 Mb, 21 chromosomes, CHM13 v2.0** — the same build as `A119b.t2t.bam`
+(verified in `coordinate_version_check.md`: named single-copy starts agree to 1–2 bp). ⚠**The
+gorilla adjudication of §6bv CANNOT be repeated here and its numbers must never be pooled with
+these.** This is a second, independent adjudication on its own substrate.
+
+### ⚠⚠ THE USER'S RESERVATION IS CORRECT AND IS BUILT IN AS A LIMIT, NOT A CAVEAT
+
+Soto's families are **SD98 — segmental duplications at ≥98% identity.** This catalog's median edge
+identity is **0.8287**, with **86.31% of edges below 0.90** (§6ax). ⟹⟹**SOTO CAN ONLY ADJUDICATE THE
+HIGH-IDENTITY STRATUM. IT CANNOT CLOSE THE 0.80–0.90 GAP, AND NO RESULT HERE MAY BE STATED AS IF IT
+DOES.** Every table below is stratified by identity band for exactly this reason. What it *can*
+settle is the question §6bv could not: **does the coverage clause delete copies that are known
+real?**
+
+### The scoring rule, fixed now
+
+**Three units, all three reported — the §6bv audit showed that quoting one is how this metric
+misleads** (exact-family 21.2%, gene-weighted 13.2%, pair-weighted 3.4% were all the *same* run):
+
+1. **DETECTION** — is a Soto member locus emitted as a copy at all? ⚠**Not family recovery.** The
+   2026-08-02 audit records "recall 81.8%" being **any-overlap detection** quoted as family
+   identification, against **46.1%** at ≥50% coverage and **family-level 6/83 = 7.2%**.
+2. **PAIR-LEVEL P/R** — over gene pairs: Soto puts A and B in one family; do we? This is the primary
+   unit, because it is the unit the edge rule actually asserts.
+3. **FAMILY-LEVEL** — exact set match, reported for completeness and expected to be low.
+
+**Two denominators, both reported.** Soto's families are **DNA-defined**; RNA can only reach what is
+**transcribed in A119b**. Recall against all 362 members is a **floor** that mostly measures
+expression. The honest denominator is **members carrying ≥ 2 reads in this BAM**. ⚠Report both, and
+never quote the expressed-denominator figure without saying it is conditioned on expression.
+
+### The adjudication question, and what each answer means
+
+| outcome | reading |
+|---|---|
+| **the ON arm loses Soto-labelled copies** | a **measured precision cost** — the clause destroys known-real copies. ⟹ **REJECT** the default |
+| **the ON arm loses none, and pair-precision rises** | the clause deletes only unlabelled copies **in this stratum** ⟹ **supports** a default, **for high-identity families only** |
+| **the ON arm loses none, and pair-precision is flat** | the clause is inert where truth exists ⟹ **KEEP OPT-IN stands**, now with a *reason* rather than an absence |
+
+⛔**WHAT THIS CANNOT ESTABLISH, stated before the numbers exist.**
+- **Not a replication.** Three of the four legs of any Soto comparison **consume Soto's own files**;
+  the standing instruction is to say **"re-implementation concordance"**, never "replication" and
+  never "validation" (2026-08-02 audit).
+- **Precision is UNDERSTATED by construction** — Soto's set is **CAT-bounded**, so a real copy CAT
+  missed scores as a false positive. This is the same effect that made the NPIP precision an
+  understatement (a 21-exon, 1,327-read unannotated NPIP copy scored as an FP).
+- **The BAM is a `-M -L` SUBSET** (regions padded ±5 kb). A read whose competing placement lies
+  outside the sliced regions **loses that placement**. This is the documented `soto_regions.bam`
+  hazard that cost three retractions; it bounds node construction, not the E_r rule, and it must be
+  disclosed with any number from this run.
+- **Singletons cannot test co-membership** — 7 of the 83 families have one member and are excluded
+  from the pair unit.
