@@ -139,6 +139,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bo — NOTHING SHIPPED; correction to the flag claim; see `O1_PRECISION_LEVERS.md` (09-01)
 - §6bp — The asymmetric two-sided coverage clause END TO END: all three criteria pass (09-02)
 - §6bq — PRE-REGISTRATION: what the coverage clause must do on the HUMAN negative panel (09-02)
+- §6br — The annotation CANNOT corroborate the 0.80-0.90 band: a 39.9x enrichment that was ONE STRING (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7179,3 +7180,85 @@ above. A count of 1 is worth nothing; a correctly predicted mechanism on an unse
 a great deal. Report it that way.
 
 Instrument: `bench/o1neg_covlonger_predict.py` (prediction) · `o1neg/run2.sh` (arm).
+
+## §6br — ⛔⛔ THE ANNOTATION CANNOT CORROBORATE THE 0.80–0.90 BAND: a 39.9× enrichment that was ONE STRING (09-02)
+
+**The gap.** §6ax concedes that the catalog's external evidence covers the wrong end of its own
+distribution: median edge identity **0.8287**, **86.31% of edges below 0.90**, while every external
+check to date sits at **≥0.90**. This section asks whether the **gorilla-native** RefSeq annotation
+(`GGO_genomic.gff`, GCF_029281585.2-RS_2024_02, 32,929 informative `gene`/`pseudogene` features
+after dropping 8,264 undescribed or *"uncharacterized LOC…"*) can speak to the ~0.83 band.
+Substrate: `arm_f2`, **3,141 edges / 3,598 nodes**. Instrument
+`bench/er_identity_band_external.py`. **Answer: NO — and the route is closed for a reason that is
+worth more than the attempt.**
+
+**⚠ TWO INSTRUMENT DEFECTS WERE FOUND BEFORE THE ANSWER, BOTH FOUND BY DISTRUSTING A GOOD NUMBER.**
+
+**Defect 1 — best-overlap-by-bp has a LARGE-GENE ATTRACTOR.** The first version labelled each node
+with the feature sharing the most base pairs. That labels any small node lying inside a long gene as
+that gene: **"titin" appeared on 26 endpoints and "myosin-11" on 27** — ZNF-sized nodes inheriting
+the name of the intron they sit in. Fixed by requiring **reciprocal overlap ≥ 0.50** (the node must
+be gene-sized and coincident, not merely contained); non-matching endpoints become **UNINFORMATIVE**,
+never a disagreement.
+
+**Defect 2 — the first headline was PURE PROXIMITY.** Under best-overlap the band [0.80,0.90) scored
+**0.3219, 15.55× a size-matched null**. Against a null matched on **co-location geometry** as well as
+size it evaporated: cross-chromosome edges in that band scored **2/489 = 0.0041 = 0.36×, BELOW the
+null.** The enrichment was co-located pairs hitting the same neighbourhood. ⟹**a size-matched null is
+not enough when the predictor is spatial; match the GEOMETRY.**
+
+**After both repairs the result looked strong — and survived the proximity control.**
+
+| band | edges | uninformative | informative | agree | rate | vs null |
+|---|---:|---:|---:|---:|---:|---:|
+| [0.60,0.70) | 89 | 24 | 65 | 51 | 0.7846 | 34.60× |
+| [0.70,0.80) | 1114 | 536 | 578 | 492 | 0.8512 | 37.54× |
+| **[0.80,0.90)** | **1508** | **1256** | **252** | **228** | **0.9048** | **39.90×** |
+| [0.90,1.00) | 430 | 399 | 31 | 17 | 0.5484 | 24.19× |
+
+| stratum | informative | rate | its own geometry-matched null | enrichment |
+|---|---:|---:|---:|---:|
+| cross-chromosome | 15 | 0.6667 | 0.0103 (n=61,077) | **64.63×** |
+| same chrom, >1 Mb apart | 418 | 0.7871 | 0.0370 (n=44,224) | **21.28×** |
+| same chrom, <1 Mb apart | 493 | 0.9108 | 0.0835 (n=2,000) | **10.91×** |
+
+⛔⛔**AND THEN IT DIED. 776 OF THE 788 AGREEMENTS — 98.5% — ARE THE SINGLE STRING `"zinc finger
+protein"`, WHICH THE ANNOTATION CARRIES ON 552 GENES.**
+
+| subset | n | agree | rate |
+|---|---:|---:|---:|
+| all informative pairs | 926 | 788 | 0.8510 |
+| pairs touching a zinc-finger stem | 892 | 776 | 0.8700 |
+| ⭐**no zinc-finger stem** | **34** | **12** | **0.3529** |
+| ⭐⭐**no ZNF and no stem carried by ≥20 genes** | **33** | **11** | **0.3333** |
+| ⭐⭐⭐**non-generic, band [0.80,0.90)** | **8** | **0** | **0.0000** |
+
+⟹ **`"zinc finger protein" == "zinc finger protein"` is a DOMAIN statement, not a copy statement.**
+It is [[project_gene_naming_traps]]'s *"never define membership by gene symbol"* wearing a new
+costume: the description field defeats LOC-naming, which is why it was chosen, but it degenerates to
+the domain for exactly the families that dominate this catalog. **A stem carried by 552 genes cannot
+corroborate a pairwise copy claim.**
+
+**⚠ THE ONE REAL SIGNAL, AND IT IS DOUBLE-EDGED.** ZNF stems are on **17.4%** of reciprocally
+annotated catalog nodes but **86.3%** of E_r edge endpoints — a **4.98× enrichment**. E_r does
+preferentially connect zinc-finger loci, and that is genuine structure. But it is precisely the
+advisor's standing objection in numerical form: **it is equally consistent with "ZNF clusters are
+real multi-copy families" (§6bi, where the blob claim was retracted) and with "a shared domain is
+merging them."** This instrument cannot separate those two readings, and neither can any statistic
+built on the same description field.
+
+**⟹ VERDICT. The 0.80–0.90 concession in §6ax STANDS, and is now stronger than before:** not only
+does no external evidence cover that band, an annotation-based attempt to cover it **fails for a
+structural reason** — **61.4% of catalog nodes have no reciprocal gene match at all** (1,389/3,598
+informative), and of the remainder the agreement signal is domain-level. ⚠**This does NOT show the
+edges are wrong.** It shows the annotation cannot adjudicate them. Those are different claims and
+the difference must be preserved.
+
+**What is NOT closed by this.** A CDS/protein-sequence check would be more specific than the
+description string — but it reads the same assembly `E_r` already reads (`genome.fetch_sequence`),
+so it is corroboration on a shared substrate, not independence (§6ax weak point 1). The band's
+external gap needs evidence from **outside this genome**: experimental (ddPCR/FISH — none exists) or
+a second assembly of the same animal.
+
+Instrument: `bench/er_identity_band_external.py` (`--null`, `--seed`; prints both nulls and the
+stratified cells).
