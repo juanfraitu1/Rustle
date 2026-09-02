@@ -157,6 +157,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6ce — PRE-REGISTRATION: RUSTLE_ER_NO_STUB_EDGES on the Soto substrate (09-02)
 - §6cf — NO_STUB_EDGES RUN: it IS the fragmentation lever, P 0.9655, F1 a wash (09-02)
 - §6cg — SEEDED SEARCH ON NPIP: 5-6 seeds recover 100%, zero false positives (09-02)
+- §6ch — NPIP on its COMPLETE roster: 26/26 detected, and a VACUOUS precision metric caught (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8442,3 +8443,59 @@ denominators are not interchangeable.
 
 ⟹**NEXT STEP for the seeded mode: re-slice over all ~26 NPIP-family loci**, not `ID_154`'s 16, then
 ask the RNA question — which of them carry reads, and which the pipeline recovers.
+
+## §6ch — ⭐ NPIP ON ITS COMPLETE ROSTER: 26/26 detected — and a VACUOUS precision metric, caught by its control (09-02)
+
+§6cg showed Soto's `ID_154` lists 16 members where chr16 carries ~26 NPIP-family loci, and that all
+10 extras were outside the sliced BAM. So: a **reproducible roster**, a slice over all of it, and both
+arms.
+
+**The roster is a RULE, not a list** — `bench/soto/npip_family_chr16.bed`: RefSeq CHM13 v2.0 chr16
+`gene`/`pseudogene` with `Name=NPIP*` **or** an NPIP-family `description=`, **UNION** Soto `ID_154`.
+**26 loci — 15 in both, 10 RefSeq-only, 1 Soto-only** (`NPIPA3`, which RefSeq does not name), with the
+source recorded per row. Slice 0.85 Mb, **16,953 primaries**.
+
+### ⭐⭐ EVERY NPIP LOCUS IS EXPRESSED, AND EVERY ONE IS FOUND
+
+| | |
+|---|---|
+| roster loci with ≥2 primaries | **26/26** — none is silent |
+| **default arm: loci detected** | **26/26** |
+| no-stub arm: loci detected | 24/26 |
+
+⟹**detection is not the problem on NPIP, on the complete roster, at all.** Including all 10 loci
+`ID_154` omits.
+
+### ⛔⛔ BUT THE PRECISION NUMBER IS VACUOUS — AND ITS CONTROL SAYS SO
+
+Both arms scored **P = 1.0000**. **That is forced.** Every locus in the slice is NPIP, so every
+asserted pair is NPIP–NPIP **by construction**; there is no foreign gene available to merge with.
+
+| predictor | P | R | F1 |
+|---|---|---|---|
+| ⛔**degenerate: put all 26 loci in ONE family** | **1.0000** | **1.0000** | **1.0000** |
+| default arm (14 families) | 1.0000 | 0.8954 | 0.9448 |
+| no-stub arm (5 families) | 1.0000 | 0.6800 | 0.8095 |
+
+⟹⟹**THE DEGENERATE PREDICTOR BEATS BOTH ARMS.** A metric a constant predictor wins is not a
+measurement — this is the [[project_vacuous_instruments]] class (§6al), and **P = 1.0000 was one
+sentence from being reported as a headline**. ⚠**Precision cannot be measured on a single-family
+slice.** The only precision estimate that stands is the multi-family one: **0.8193** [0.723, 0.887]
+from §6cd's 83-family run, where foreign genes are present and can be wrongly joined.
+
+⚠**And "recall" here is really a FRAGMENTATION measure**, not a quality one: since precision is
+forced, asserting more pairs always scores better, so 0.8954 says *"the catalog joins 89% of the
+possible pairs"*, and the remaining 11% is the split into **14 families for one true family**.
+
+### ⭐ WHAT THIS RUN LEGITIMATELY ESTABLISHES
+
+1. **Detection 26/26** on the complete roster — every NPIP locus, including the 10 outside `ID_154`.
+2. **All 26 are expressed** (≥2 primaries), so nothing here is an expression limit.
+3. **Fragmentation is the entire residual**: 14 predicted families for one true family; the no-stub
+   mode consolidates to **5** at a cost of 2 loci.
+4. ⛔ **It cannot speak to precision**, and the earlier `ID_154` false merges (`CNTNAP3P2`,
+   `SHLD2P3`, `POMZP3`, `BAGE2`…) are **not** contradicted — those genes are simply absent from this
+   slice.
+
+⟹**For the advisor, the honest NPIP headline is: every locus found (26/26, all expressed), precision
+0.8193 measured where it CAN be measured, and one family reported as 14.**
