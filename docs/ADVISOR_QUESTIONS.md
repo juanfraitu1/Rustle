@@ -11,7 +11,7 @@
 > per-question evidence; Part 3 is what we concede unprompted; Part 4 is what to put on screen.
 
 **Provenance.** Derivations in [`o1_ledger.md`](o1_ledger.md) (120 sections), negatives in
-[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**826 rows**), status in
+[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**831 rows**), status in
 [`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md). Test baseline **824 passed /
 0 failed / 11 ignored**.
 
@@ -29,7 +29,7 @@ denial.**
 
 | | count |
 |---|---:|
-| Routes attempted and killed, each with the number that killed it | **826** |
+| Routes attempted and killed, each with the number that killed it | **831** |
 | Ledger sections (each an attempt, an audit, or a retraction) | **120** |
 | `RUSTLE_*` behaviour flags in `src/` | **135** |
 | …of which the shipped default path turns **ON** | **7** |
@@ -69,6 +69,34 @@ written, **committed to git as `5cbced4`, and pushed BEFORE the arm ran** — an
 are **2–3 events** and the intervals overlap almost entirely. **Do not say the rate halved.** The
 claim is that a rule fixed before the run called **9/9 edge outcomes across a species boundary**.
 
+### 1.1b "You pre-registered something you already knew would pass."
+
+The honest reply is that **the thing which passed was then refused a default**, on criteria also
+fixed in advance (§6bu → §6bv).
+
+`RUSTLE_ER_COVERAGE_LONGER_FLOOR` passed the cross-species panel **5/5, 9/9**. It is still **OFF**,
+because the adjudication found:
+
+| criterion | outcome |
+|---|---|
+| D1 recall (NPIP 31) | met — ⚠ but **the entire gain is one 274 bp, 2-read, single-exon copy** |
+| D2 specificity | met, strongly |
+| D3 losses in defective strata | consistent, **declared weak in advance** (correlated with the selector) |
+| **D4** no penalty on corroborated copies | ⛔ **NULL** — the copy loss is **annotation-neutral** |
+| **D5** trims rather than deletes families | ⛔ **fails** — **18 families deleted outright** |
+
+⭐⭐ **The sentence that does the work:** *at the **edge** level the clause is sharply discriminating
+(9/9 across a species boundary); at the **copy** level it is **indiscriminate** — within exon strata,
+deleted and retained copies carry a reciprocal RefSeq match at the same rate (0.013 vs 0.009
+single-exon; 0.791 vs 0.784 multi-exon). It removes 27.7% of copies without enriching for the bad
+ones.* A project optimising its own numbers ships that flag; this one did not.
+
+⚠ **And the pre-registration itself failed in a way worth volunteering.** §6bu named **length** as
+D4's confound. Within length quartiles the clause looked like it preferentially deleted
+uncorroborated copies — in all four strata. The operative confound was **exon structure**, and
+controlling for that erased the effect. **Naming a confound in advance does not protect against
+naming the wrong one**, and that is now a register row (640), not a footnote.
+
 ### 1.2 "You tuned the thresholds until the answer appeared."
 
 The shipped rule has **four** free numbers, and they are visible in the source, not in a config
@@ -97,10 +125,12 @@ only on the shorter sequence, so *"a 10% fragment that aligns fully into a compl
 concrete: a **2,037 bp NPIPB6 fragment reaches coverage 0.948** against a **38,653 bp** chimeric
 read-through node while touching **5%** of it, dragging EIF3CL into NPIP.
 
-✅ **This is now fixed as an opt-in and validated end to end** — `RUSTLE_ER_COVERAGE_LONGER_FLOOR`
-(§6bp): the OFF arm is **byte-identical** to the prior catalog, the params certificate
-distinguishes the arms, and NPIP recall **improves 14/31 → 15/31**. **Default OFF**, because it
-costs 28% of copies and that trade has not been adjudicated on a second truth set.
+✅ **This is now fixed as an opt-in, validated end to end, and then formally adjudicated** —
+`RUSTLE_ER_COVERAGE_LONGER_FLOOR` (§6bp, §6bt.2, §6bv): the OFF arm is **byte-identical** to the
+prior catalog, the params certificate distinguishes the arms, the human panel passes **5/5 / 9/9**,
+and NPIP recall goes **14/31 → 15/31** ⚠ *on one 274 bp, 2-read, single-exon copy*.
+**It remains default OFF** — see §1.1b. The 27.7% copy loss is **annotation-neutral** and cannot be
+priced without a positive stratum; NPIP labels **21 of 678** copies.
 
 ### 1.3 "Everything you have is one family."
 
@@ -166,7 +196,7 @@ information about whether the read belongs.
 
 ### 1.5 "You would not show me the failures."
 
-Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **826 rows, each with
+Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **831 rows, each with
 the number that killed it**, and the two admitted exception classes (**NO-POWER**, and killed-by-
 argument) marked as such rather than hidden. Then hand him the ledger's own index note: an earlier
 auto-derived verdict tag scored **11/22 = 50% — a coin flip — against sections whose outcome was

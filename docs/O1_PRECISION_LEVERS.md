@@ -1,6 +1,11 @@
 # O1 precision levers — what was tried, what survived, what shipped
 
 > ## ⛔ NOTHING IN THIS DOCUMENT IS A DEFAULT.
+> **UPDATE 09-02 (§6bv): two-sided coverage has now been formally ADJUDICATED against criteria fixed
+> in advance (§6bu) and the verdict is KEEP OPT-IN.** It passed a cross-species pre-registered test
+> 5/5 and was still not shipped, because its copy-level cost is annotation-neutral, non-monotone,
+> and unadjudicable without a positive stratum. **That combination — passing the test and declining
+> the default — is the point, not an inconsistency.**
 > **UPDATE 09-02 (§6bp):** the two-sided coverage clause has now been run **END TO END through the real
 > binary** and passes all three criteria — the OFF arm is byte-identical to `arm_f2`, the params
 > certificate distinguishes the arms, and NPIP recall **improves 14/31 → 15/31**. It ships as
@@ -61,19 +66,47 @@ end-to-end half is still open.
 ⚠ its headline F1 movement is ~1 pair; the evidence is the **within-biotype** contrast (ZNF vs ZNF:
 splits 0.0126/0.0158 against keeps 0.3866/0.2429).
 
-## Before either can ship
+## Before either can ship — updated 2026-09-02
 
-1. ~~Run through the **real binary**~~ ✅ **DONE for two-sided coverage (§6bp)**, and the offline model
-   proved faithful (predicted 1,643 edges; the binary gives 1,652). Still needed for γ′=0.70.
-2. The **HUMAN 150-window false-merge panel** (E_r-only levers can take it; E_c cannot — no human RNA).
-3. NPIP recall on the **3-contig** catalog — `fibro_gwcat` covers the truth set at only **1/31**.
-4. A substrate whose large families are **not** zinc-finger clusters.
+**Two-sided coverage is now ADJUDICATED (§6bu rule, §6bv verdict): KEEP OPT-IN.**
+
+1. ~~Run through the **real binary**~~ ✅ **DONE (§6bp)**; the offline model proved faithful
+   (predicted 1,643 edges, the binary gave 1,652). ⚠ Still needed for γ′=0.70.
+2. ~~The **HUMAN 150-window false-merge panel**~~ ✅ **DONE (§6bq → §6bt.2): 5/5 pre-registered
+   criteria, 9/9 edge outcomes, prediction committed to git before the run.**
+3. NPIP recall on the **3-contig** catalog — done, **14/31 → 15/31** ⚠**but see §6bv: the gain is one
+   274 bp, 2-read, single-exon copy**, in a family that exists only because γ re-partitioned.
+4. A substrate whose large families are **not** zinc-finger clusters — **still open**.
+5. ⭐**NEW, and it is now the binding one: a POSITIVE STRATUM** labelling a real share of the
+   **220 lost copies**. NPIP labels **21 of 678**. Without it, §6bv's D4 null is the ceiling of what
+   can be said about the copy cost, and the clause cannot earn a default.
+
+### ⚖️ Why it did not ship, in one paragraph
+
+It is a **validated EDGE filter and an INDISCRIMINATE COPY filter**, simultaneously. Edge level:
+9/9 across a species boundary. Copy level: **annotation-neutral** — within exon-structure strata the
+lost and kept copies carry a reciprocal RefSeq match at the *same* rate (single-exon 0.013 vs 0.009;
+multi-exon 0.791 vs 0.784), so it deletes real and spurious copies alike. It is also **not monotone
+at the catalog level**: the node set is identical (3,598, 0 diff) yet **220 copies are lost and 32
+gained, 29 at loci that had none**, because removing edges lets γ split a sparse component into
+denser passing pieces. And **18 families are deleted outright** (sizes 2–6). ⭐**One benefit is not in
+dispute and is quotable alone: largest family 54 → 32 — the ZNF blob splits.**
+
+⚠⚠**METHOD LESSON, and it cost the D4 criterion.** §6bu pre-declared **length** as D4's confound.
+Within length quartiles the clause looked like it preferentially deleted uncorroborated copies, in
+all four strata. The operative confound was **exon structure**, and controlling for that instead
+erased the effect entirely. **Naming a confound in advance does not protect against naming the wrong
+one.**
 
 ## Instruments (all in `bench/`, all runnable)
 
 `er_both_coverage.py` · `er_both_coverage_gw.py` · `er_scoped_density.py` ·
 `er_coverage_plus_connectivity.py` · `fp_sources_seeded.py` · `fp_sources_read.py` ·
 `fp_connectivity_levers.py` · `ec_blob_split.py` · `catalog_partition_vs_cds*.py`
+
+**Added 2026-09-02** — `adjudicate_covlonger.py` (prices the copy loss against §6bu's five criteria) ·
+`o1neg_covlonger_predict.py` (the pre-registration predictor) · `o1neg_score_arms.py` (two-arm panel
+scorer) · `catalog_self_overlap_audit.py` (§6bs) · `er_identity_band_external.py` (§6br).
 
 ⚠**The proxy's limits are part of the result.** CDS concordance gives read-catalog precision **0.8411**
 on the 118 loci both catalogs see and **0.1234** genome-wide; **74.5%** of genome-wide pairs are
