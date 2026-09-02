@@ -154,6 +154,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6cb — The Soto intervals CANNOT be corrected from the GFF: the disagreement is NAMING (09-02)
 - §6cc — NPIP END TO END: all three objectives on the advisor's own family (09-02)
 - §6cd — THREE CORRECTIONS to §6cb/§6cc: the LIFTOFF BED is the more accurate source (09-02)
+- §6ce — PRE-REGISTRATION: RUSTLE_ER_NO_STUB_EDGES on the Soto substrate (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8299,3 +8300,39 @@ It **includes NPIPA8**, and its `NPIPB13` is the locus S1A calls `NPIPA3`. It us
 ⟹**the panel's provenance is sound**, but ⚠**its roster is NOT Soto's `ID_154`** (7 genes in the panel
 are outside ID_154, 4 ID_154 members are outside the panel), so **"31 loci" and "16 members" are not
 comparable** and must never be quoted as the same denominator.
+
+## §6ce — ⚖️ PRE-REGISTRATION: `RUSTLE_ER_NO_STUB_EDGES=1` on the Soto substrate (09-02)
+
+§6cd left NPIP's binding constraint as **node fragmentation**: 34 catalog copies over 14 genes,
+`E_r` in 8 components, recall 0.7473 on a fixed denominator. An offline filter that **deleted**
+single-exon copies took precision to **1.0000** and recall to **0.6044** — F1 **worse** (0.7816 →
+0.7534), and worse still on the held-out 82 families (F1 0.4797 → 0.4561).
+
+⭐**The flag's own doc comment predicted that, and it was written from GORILLA:** *"Deleting stubs
+outright costs far more than it buys (F1 0.704 → 0.608) because the ≥2-loci gate then dissolves whole
+families… Motivated by NPIP, where every false positive was a single-exon stub joining through a
+short perfect match while the real members carried 4, 8 and 21 exons."* ⟹**this session re-derived,
+on HUMAN with external truth, the exact failure the flag was built for.** The flag does something my
+offline model did **not**: it **keeps the locus and refuses only its `E_r` edges**.
+
+**What is in scope.** Of 34 NPIP-overlapping copies: **18 single-exon, of which 16 carry `stub=true`**
+(2 are genuinely intronless, `stub=false`, and are untouched); **0 of the 16 multi-exon copies are
+stubs.** So 16 copies lose their edges.
+
+### Pre-registered criteria
+
+| # | prediction |
+|---|---|
+| **P1** | OFF arm **byte-identical** to `arm_off` (the flag is opt-in) |
+| **P2** | NPIP pair **precision rises above 0.8193** — every FP found in §6cd was stub-mediated |
+| **P3** | NPIP predicted families holding a member **falls below 10** |
+| **P4** | ⭐**`NPIPB10P` is the most likely detection loss** — both its copies are single-exon `stub=true` (34 and 18 reads), so it has no non-stub edge to survive on |
+| **P5** | NPIP recall on the **fixed 91-pair denominator** falls **less** than the offline delete-model's 0.6044, because loci are kept |
+
+⛔**FALSIFIERS.** Precision not rising ⟹ the FPs were not stub-mediated and §6cd's mechanism is wrong.
+Recall falling **to** the delete-model's level ⟹ keeping the locus buys nothing and the flag is just a
+slower delete. Any *new* family appearing ⟹ the flag is not edge-restrictive.
+
+⚠**Scored on the FIXED denominator** (the 91 pairs among the 14 genes the baseline detects) — §6cd
+showed the detected-pairs denominator reverses the sign of this comparison, and it is the third
+denominator error of the session. ⚠Held-out arm = the other 82 families, same run.
