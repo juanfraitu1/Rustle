@@ -151,6 +151,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6by — A FALSE-MERGE RULE VALIDATED ON EXTERNAL TRUTH: co-membership at GRAPH DISTANCE 1 (09-02)
 - §6bz — Local edge connectivity does NOT beat the direct edge; the precise statement O1 can make (09-02)
 - §6ca — Families are HETEROGENEOUS, the categories collapse to SIZE, and the rule's value is category-dependent (09-02)
+- §6cb — The Soto intervals CANNOT be corrected from the GFF: the disagreement is NAMING (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -7791,6 +7792,8 @@ no longer an absence of evidence.
 
 ### ⚠ DISCLOSURES REQUIRED WITH ANY NUMBER ABOVE
 
+0. ⚠⚠**ADDED §6cb: the truth INTERVALS are unverified for multi-copy members.** `coordinate_version_check.md` validated them against `HSA_genomic.gff` — the annotation that **drops 29.1% of loci and must never be used** — and only on single-copy genes by name. Only **64/362** members agree within 100 bp with `chm13v2.0_RefSeq_full.gff.gz`, and the large disagreements are **paralog NAME SWAPS**, not coordinate error. The conclusion survives because it was reported at two stringencies with opposite sensitivity to interval error; the levels should be read with that in mind.
+
 1. ⭐**The `o1-perp-o2` guard FIRED — for the first time ever recorded.** *"1 co-located same-strand
    pair decided by `reads_distinguish` (O2's χ(H) predicate), not by sequence. O1's node set is NOT a
    function of sequence alone for this run."* The scoped exception was previously measured at
@@ -8065,3 +8068,69 @@ perfectly**, and half 1 returned 0 TP across every stratum. A split whose key is
 label is not a split. Replaced with a **group split on the predicted family**, which is computed
 before any truth is consulted. ⚠**Read a held-out result's per-half TP counts before reading its
 rates** — the failure was visible only in the counts.
+
+## §6cb — ⛔ THE SOTO INTERVALS CANNOT BE "CORRECTED" FROM THE GFF — the disagreement is NAMING, not coordinates (09-02)
+
+*"Can we just use the Soto families but with corrected coordinates from the GFF?"* — a good instinct,
+because the instrument's coordinate provenance turns out to be weaker than documented. **But the
+substitution is not viable, and the reason is the more useful result.**
+
+### ⛔ Matching Soto's 362 members by NAME against `chm13v2.0_RefSeq_full.gff.gz`
+
+| | |
+|---|---|
+| matched by name at all | **260/362 = 71.8%** |
+| coordinate delta (max of start/end shift) | **median 1,419 bp**, p90 **102 kb**, max **39.4 Mb** |
+| within 100 bp | **64** · >1 kb **137** · >10 kb **66** |
+| RefSeq span / Soto span | median 1.001, p10 0.672, p90 1.992 |
+
+⛔⛔**THE LARGE DISAGREEMENTS ARE PARALOG NAME SWAPS, NOT COORDINATE ERROR.** `SPDYE8` ↔ `SPDYE17`
+are **demonstrably swapped** between the two annotations (Soto 76,538,561 / 74,276,649 against RefSeq
+74,247,947 / 76,566,552); `SPAG11A`'s Soto locus sits **5 kb from `SPAG11B`'s RefSeq locus**.
+
+⟹⟹**IN A MULTI-COPY FAMILY, THE NAME→LOCUS ASSIGNMENT *IS* THE TRUTH.** Soto's families come from
+**CAT v4**; RefSeq assigns the same symbols to different members. Importing RefSeq coordinates by
+name would **replace CAT's family memberships with RefSeq's** — a *different* truth set, not a
+corrected one — and it is [[project_gene_naming_traps]]'s *"never define membership by gene symbol"*
+arriving from the opposite direction. **The 28.2% that do not match by name are disproportionately
+the LOC/clone-named members, i.e. exactly the hard multi-copy cases the benchmark exists for.**
+
+### ⚠⚠ BUT A REAL PROVENANCE DEFECT IS EXPOSED, AND IT AFFECTS §6bx / §6by / §6ca
+
+`bench/soto/coordinate_version_check.md` concludes *"no mismatch… no correction is needed"*. Two
+problems with how it got there:
+
+1. ⛔**It verified against `HSA_genomic.gff`** — the annotation the project's own standing rule says
+   **NEVER to use** because it **drops 29.1% of loci**. Genes missing from it were never checked.
+2. ⚠**It checked only "single-copy genes present by name"** — the easiest stratum, and precisely the
+   one where naming cannot disagree. Its own table already showed **NOTCH2NLA off by 2.7 kb** and
+   **PDE4DIP by 255 bp** while reporting agreement "to 1–2 bp".
+
+⟹**the intervals are approximately right for single-copy genes and UNVERIFIED for the multi-copy
+members**, which are the entire point of the benchmark.
+
+### ⚖️ WHAT THIS DOES AND DOES NOT DO TO TODAY'S NUMBERS
+
+⭐**The headline was already reported at two stringencies with OPPOSITE sensitivity to interval
+error** — any-overlap is nearly immune to it, ≥50%-of-gene is highly exposed — and the conclusion
+holds at both (≥0.90 band precision **0.8891** any-overlap, **0.9739** at ≥50%). That is the
+robustness argument, and it existed before this section.
+
+⚠**The coordinate-clean subset is consistent but UNDERPOWERED, and biased.** Restricting to the 64
+genes where both annotations agree within 100 bp (16 families with ≥2 such members):
+
+| stratum | n asserted | precision | recall given detection |
+|---|---:|---|---|
+| all 362, any-overlap | 1,263 | 0.4006 [0.374, 0.428] | 0.6866 |
+| clean 64, any-overlap | 60 | 0.3833 [0.271, 0.510] | 0.8214 |
+| all 362, ≥50% | 232 | 0.7198 [0.659, 0.774] | 0.8743 |
+| clean 64, ≥50% | **8** | 0.6250 [0.306, 0.863] | 1.0000 |
+
+⟹**it does not contradict the full-set numbers and has no power to confirm them** (n = 60 and n = 8),
+and the clean subset is **selected for genes both annotations agree about**, i.e. the easy ones.
+**Report it as neither support nor refutation.**
+
+⟹**VERDICT: keep the CAT-derived intervals, and disclose that they are unverified for multi-copy
+members.** The fix is not a different GFF; it is a **reciprocal-overlap** reconciliation of CAT and
+RefSeq loci that never uses a symbol — which is a project in itself, and is what [[project_gene_naming_traps]]
+already prescribes (*"seed = CDS envelope, discover by sequence, name afterwards"*).
