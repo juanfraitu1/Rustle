@@ -6213,3 +6213,55 @@ concession made printable.**
 are near-equal-length pairs (length-ratio median 1.067 vs 2.103 overall) where the axis-dependent aligned
 span from indels outweighs the small denominator difference. The inequality is a theorem only when the
 aligned span is equal on both axes — **the test pins that case and the general claim is NOT asserted.**
+
+## §6bb — Is a shared-multimapper graph as good as E_r? NO, and a 3-way gauge is worse (09-01)
+
+The advisor's proposal: drop identity+coverage and build the graph from **shared multi-mapping reads**,
+which he argues is "just as good and less prone to arbitrary thresholds". Third option considered: a
+combined gauge using identity + coverage + #multimappers. Measured on `arm_f2` (3,141 E_r edges) with E_c
+recomputed on the SAME rep set (AS-tie ≥0.95, from `npip3.bam`).
+
+### ⛔ REPLACEMENT: it is a DIFFERENT relation, and a worse one
+* **Only 688/3,141 = 21.9% of E_r edges have ANY shared tied read** (16.9% at ≥2, 11.6% at ≥5, 8.0% at
+  ≥10) ⟹ **replacing E_r with E_c LOSES 78.1% of the current edges.**
+* **E_c proposes 13,120 pairs that are NOT E_r edges** — 4.2× the entire E_r set — and §6ae measured that
+  **~72% of the additive ones FUSE two families, INVARIANT from 2 to 100 shared reads.** No threshold
+  separates them.
+
+### ⛔ THE THREE-WAY GAUGE IS WORSE: a conjunction is bounded by its scarcest term
+Requiring identity AND coverage AND multimapper support would cut the edge set to **21.9%** of its size.
+Multimappers are by far the scarcest term. It cannot be a required clause.
+
+### ⭐ WHY — THE TWO CRITERIA ASK DIFFERENT QUESTIONS, AND E_c IS BLIND TO 95% OF THIS CATALOG
+E_r asks *are these copies similar enough to ALIGN*; E_c asks *are they so similar that reads CANNOT BE
+TOLD APART*. Different bars. Support by identity band:
+
+| band | edges | with E_c support |
+|---|---|---|
+| 0.60–0.80 | 1,203 | 15.4% |
+| 0.80–0.90 | 1,508 | 22.1% |
+| 0.90–0.95 | 287 | 18.1% |
+| **0.95–1.00** | **143** | **82.5%** |
+
+⭐**It is a CLIFF at ~0.95, not a gradient** — flat at 15–22% below, **82.5%** above — and **only
+143/3,141 = 4.6% of edges sit above 0.95.** ⟹**E_c is informative on ~5% of the catalog and near-blind on
+the other 95%.** This is the same mechanism the register already recorded as "**E_c drops uniquely-mappable
+members**": at the median edge identity of **0.8287** the copies align easily but their reads RESOLVE, so
+there are no tied reads to share.
+⚠**METRIC TRAP AVOIDED:** the aggregate medians are nearly NULL — **0.8397 with support vs 0.8249
+without**. Reporting only those would have concluded "identity does not predict multimapper support",
+the opposite of the truth. **The band breakdown is the readable statistic.**
+
+### ⛔ AND IT IS NOT MORE THRESHOLD-FREE — the thresholds MOVE, they do not vanish
+"Shared multimapping reads" needs an **AS-tie cutoff** (0.95 here), a **minimum shared-read count**, and it
+inherits **minimap2's `-N 50` and `-p 0.1`**, which decide how many secondaries are reported at all.
+⟹**those constants live in the aligner's command line instead of the definition, which makes them HARDER
+to defend, not easier.** E_r's 0.60 / 0.50 are explicit, stated, and swept.
+⚠**history worth knowing**: the register records that promoting E_c to "the principled family definition"
+was **the root cause of the advisor's own earlier "inconsistent approaches" complaint** — the current
+division was arrived at partly in response to him.
+
+⟹**KEEP THE SHIPPED DIVISION: E_r DEFINES membership, E_c SCOPES co-resolution.** The one defensible use
+of the multimapper count is as an **optional per-edge annotation** (it is present on 21.9% and is a genuine
+independent signal, 11.6% overlap) — never as a required clause. That is the same disposition §6ba took
+for `cov_longer`: **disclose, do not gate.**
