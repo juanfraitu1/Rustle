@@ -158,6 +158,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6cf — NO_STUB_EDGES RUN: it IS the fragmentation lever, P 0.9655, F1 a wash (09-02)
 - §6cg — SEEDED SEARCH ON NPIP: 5-6 seeds recover 100%, zero false positives (09-02)
 - §6ch — NPIP on its COMPLETE roster: 26/26 detected, and a VACUOUS precision metric caught (09-02)
+- §6ci — SCOPE CORRECTION: the NPIP unannotated-locus work is the O1 COROLLARY, not O3 (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8155,6 +8156,10 @@ already prescribes (*"seed = CDS envelope, discover by sequence, name afterwards
 
 ## §6cc — ⭐⭐⭐ NPIP END TO END: all three objectives on the advisor's own family, against Soto's truth (09-02)
 
+> ⛔⛔ **THREE CLAIMS BELOW ARE CORRECTED BY §6cd, AND THE OBJECTIVE IS WRONG — see §6ci.**
+> This section's "O3 candidate" is **not an O3 question at all**: the locus is IN the assembly, so it
+> is the **O1 corollary** (missing from the ANNOTATION). O3 is about copies the assembler COLLAPSED,
+> whose sequence is absent from the reference.
 > ⛔⛔ **THREE CLAIMS BELOW ARE CORRECTED BY §6cd — read it first.** NPIPB15 is **not** misplaced
 > (RefSeq confirms the BED position exactly); the O3 candidate **is NPIPB15** and is retracted; and
 > S1A must **not** be adopted as the coordinate authority — RefSeq backs the liftoff BED **8-3**.
@@ -8499,3 +8504,63 @@ possible pairs"*, and the remaining 11% is the split into **14 families for one 
 
 ⟹**For the advisor, the honest NPIP headline is: every locus found (26/26, all expressed), precision
 0.8193 measured where it CAN be measured, and one family reported as 14.**
+
+## §6ci — ⛔ SCOPE CORRECTION: today's NPIP "novel locus" work is the O1 COROLLARY, not O3 (09-02)
+
+⛔**§6cc filed a candidate under O3. That was the wrong objective**, and the boundary has been
+documented since 2026-08-07 ([[project_o1_o3_boundary]]):
+
+| | finds copies missing from | the copy is… | can be scored against |
+|---|---|---|---|
+| **O1 corollary** | **the ANNOTATION** | **in the assembly** — nobody named it | the annotation, which is provably incomplete |
+| **O3** | **the GENOME** | **COLLAPSED or MISASSEMBLED** — its sequence is not in the reference at all | nothing; there is no sequence to score against |
+
+⟹**every "unannotated NPIP locus" measured today is in the assembly.** It is an **annotation** gap.
+**O3 is about copies the assembler merged away because they were too similar** — the reference
+under-represents the true copy number — and that needs **read evidence that does not fit the
+assembly**, not an annotation comparison. Nothing in §6cc–§6ch touches it.
+
+### ⭐ ON THE RIGHT SIDE OF THE LINE, TODAY'S RESULT REPLICATES THE 08-07 ONE
+
+The 08-07 record states the O1 corollary is already supported, with NPIP as its lead case:
+*"27 loci for 19 annotated genes — **8 carry RefSeq NPIP genes Soto's ID_154 omits**."*
+⭐**Today, independently and on a different substrate, the seeded search found 10 RefSeq NPIP-family
+loci outside `ID_154`** (§6cg) and the catalog detected **26/26** of the union roster (§6ch).
+**8 then, 10 now — the same finding twice, by two routes.** That is worth more than either alone.
+⚠The 08-07 record also names a locus with **no RefSeq gene at all** — `chr18:11,781,610-11,802,548`,
+97.3% identity over 22.8 kb, **on a different chromosome**. Today's search was **chr16-only**, so it
+could not have seen it; that candidate is neither confirmed nor refuted here.
+
+### ⛔ AND THERE IS NO NOVEL LOCUS IN TODAY'S RUN
+
+Of the copies on no roster locus: **7 have no RefSeq gene and ALL 7 are single-exon**; every
+**multi-exon** unassigned copy sits on an annotated gene (`PDXDC1`, `PKD1P2`, `LOC100652777`).
+The strongest single-exon candidate (chr16:28,926,181, 27 reads) fails on inspection: the region
+carries **42 spliced reads against 27 unspliced** yet the model is unspliced, and **41 of 69 reads
+extend >1 kb beyond it** — a fragment carved out of larger transcripts.
+⟹**NPIP finds what it is poised to find, 26/26, and nothing beyond it on chr16.** That is the
+defensible statement; "plus a novel gene" is not.
+
+### ⭐ ADMISSION STANDARD for an O1-corollary locus (unannotated, but IN the assembly)
+
+Ordered by what it costs to check. **This is NOT an O3 standard** — O3 cannot use steps 3–4 at all,
+because there is no reference sequence at the locus to compare against.
+
+1. **A spliced model with canonical GT–AG junctions**, each carrying independent reads. A
+   single-exon locus is not separable from an intronic pile-up — this alone eliminated all 7 above.
+2. **Reads CONTAINED, not spillover.** If most support extends well past the model, the locus is a
+   carve-out of something larger (the failure mode above, 41/69).
+3. **Absent from the FULL annotation**, not a family subset — the error that made `NPIPB15` look
+   novel in §6cc.
+4. **Reads best-explained HERE** — each supporting read's alignment at the candidate must beat its
+   alternatives on `AS`/`de`. If their best hit is a known paralog, the locus is mis-mapping. This is
+   O2's machinery doing O1's work.
+5. **PSVs against the nearest paralog** — the K ≥ 1 identifiability criterion; the difference between
+   *a copy exists* and *reads piled up*.
+6. **Recurrence in an independent individual or tissue** (the §6av argument for non-canonical sites).
+7. ⚠**Experimental**: RT-PCR across a junction unique to the locus, then Sanger. **No computational
+   step closes the gap for a reader who assumes artifacts, and the project has none of this.**
+
+⭐**The strongest computational item is a splice junction present ONLY at the candidate**, supported
+by reads whose alignment there beats every alternative: **mis-mapping cannot manufacture a junction
+with no template elsewhere.** Steps 1–5 are all implementable with what exists today.
