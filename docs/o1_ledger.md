@@ -161,6 +161,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6ci — SCOPE CORRECTION: the NPIP unannotated-locus work is the O1 COROLLARY, not O3 (09-02)
 - §6cj — The fragmentation has a named cause: reads LINK the pieces, the merge never looks (09-02)
 - §6ck — The linked-locus merge IMPLEMENTED and RUN: right signal, WRONG SITE (09-02)
+- §6cl — WHY THE BLOBS FORM: the canonical filter SELECTS FOR the mis-chains it cannot see (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8722,3 +8723,73 @@ function into a wrapper. It happened when `distinct_locus_reps` became one for t
 again here. The scan list now carries **three** names and the comment states the pattern, with the
 instruction to **add the new name, never to delete the disclosed entry to make it pass.**
 ⟹**Suite 829 passed / 0 failed / 11 ignored** (+1 from this change).
+
+## §6cl — ⭐⭐⭐ WHY THE BLOBS FORM: the canonical-junction filter SELECTS FOR the mis-chains it cannot see (09-02)
+
+Chasing §6ck's barrier upstream: why does minimap2 emit 100 kb introns on these reads at all?
+
+### The blob nodes, and what they hold
+
+`npip26` emits four nodes spanning >50 kb, including a **549 kb "locus" with 20 exons and 2,918 bp of
+exon** (density **0.0053**) and the 168 kb one holding **348 reads**. Their exon densities are
+0.005–0.025 against a median **0.78** for ordinary loci.
+
+### ⛔ THE READ-LEVEL PREDICTOR IS TOO WEAK TO GATE ON — and my first version overstated it 100×
+
+The reads DO carry the giant introns — this is minimap2 chaining, not something assembly invents:
+at the four blobs, **50–72%** of primaries have an intron >50 kb, median max intron **78–113 kb**,
+against **0.3–8%** and **3.5–6.5 kb** at ordinary loci.
+
+⚠⚠**But those were EXTREMES, not a measurement.** Across all 105 nodes with ≥10 reads, against the
+**independent** target *"this node contributes no `E_r` edge"* (degree 0), every predictor is weak:
+
+| predictor | degree-0 median | degree>0 median | ratio |
+|---|---:|---:|---:|
+| exon density | 0.3772 | 1.0000 | **2.7×** |
+| giant-intron read fraction | 0.1728 | 0.0797 | **2.2×** |
+| span | 5,647 | 3,200 | 1.8× |
+
+Best precision at any threshold is **0.29** (2 of 9 caught, 5 of 96 flagged). ⛔**The 4-vs-4 exemplar
+comparison suggested 10–200×; the population says 2.2×.** ⚠**And my first framing was CIRCULAR** — I
+defined "blob" as exon density < 0.10 and then reported density separating blobs at 50×. That is the
+definition, not a finding.
+⛔**The MAXIMUM intron is useless — 0.96×.** An ordinary locus reaches a **385,747 bp** intron. So
+`RUSTLE_MISCHAIN_GIANT_BP`, which gates on intron SIZE, is keyed on the one statistic with no signal.
+
+### ⭐⭐⭐ AND HERE IS WHY THE EXISTING CANONICAL RULE CANNOT HELP
+
+The pipeline requires a **canonical** junction above `RUSTLE_JUNCTION_NC_MAX_BP` (10 kb), on the
+documented reasoning that *"a spuriously chained junction is usually non-canonical"*. That reasoning
+is **correct** — and measured here:
+
+| | canonical |
+|---|---|
+| giant introns **in the reads** | **98/234 = 41.9%** |
+| giant introns **in the emitted blob MODELS** | **6/6 = 100%** — `GT..AG` ×5, `CT..AC` ×1 |
+
+⟹⟹**THE FILTER WORKS AND THAT IS THE PROBLEM. It removes the 58% of giant introns that are
+non-canonical and KEEPS the ones minimap2 was most confident about — which are precisely the
+well-formed mis-chains.** In a segmental duplication a canonical `GT..AG` at 100 kb is easy to find,
+and `splice` mode actively seeks one. **The canonical requirement is therefore anti-correlated with
+the artifact it is meant to remove, on exactly this substrate**, and no tightening of it reaches these
+nodes: every surviving giant intron already satisfies it.
+
+⚠**Only 20/1,898 giant read-introns land inside two annotated NPIP genes** — but **20/20 of those join
+DIFFERENT genes**, so paralog-jumping is real and merely rare relative to chains into unannotated
+sequence.
+
+### ⟹ WHAT WOULD ACTUALLY BOUND THESE
+
+Not the motif, and not the intron size alone. The implausibility is **structural**: a 112 kb intron
+inside a node whose entire exon content is 2,388 bp. NPIP genes span **14–49 kb**, so these introns
+are individually longer than any gene in the family. **A bound relating intron length to the node's
+own exon content is motif-free and reaches exactly these six introns** — but it is a new rule on a
+9-node positive set, so it is recorded as the next thing to test, not as a finding.
+
+### ⭐ AND A PENDING ARM IS NOW RUNNABLE
+
+`denovo_assemble.rs` states of `RUSTLE_JUNCTION_MAJORITY`: *"**REQUIRED BEFORE FLIPPING: a chr16
+arm.** … THE FAILURE MODE IS NOT REACHABLE ON THOSE CONTIGS."* The gorilla arm ran on
+NC_073241.2/242.2/244.2. **`npip26.bam` is HUMAN chr16** — the substrate that requirement names now
+exists. ⚠It will not touch the blobs (the flag relaxes canonicality only **below** 10 kb), but the
+outstanding item is no longer blocked on data.
