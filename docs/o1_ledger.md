@@ -7683,3 +7683,25 @@ never quote the expressed-denominator figure without saying it is conditioned on
   disclosed with any number from this run.
 - **Singletons cannot test co-membership** — 7 of the 83 families have one member and are excluded
   from the pair unit.
+
+### ⭐ MEASURED BEFORE THE ARMS LANDED: expression is NOT the limiting factor here
+
+Per-member primary counts (`-F 2308`) over the sliced BAM, gene spans unpadded:
+
+| | members |
+|---|---|
+| ≥ 2 primaries | **350/362 = 96.7%** |
+| ≥ 5 primaries | 342/362 = 94.5% |
+| **exactly 0** | **5** |
+
+Read depth per member: median **161**, quartiles **33 / 161 / 537**, max 6,974.
+
+⟹⟹**THIS REMOVES THE USUAL ESCAPE HATCH.** On the gorilla substrate, low O1 recall is routinely and
+correctly attributed to expression — *"all 6 loci it never reaches have ZERO reads"* (§5m). Here
+**96.7% of the truth set is transcribed**, so **whatever recall this run reports, expression cannot
+explain it.** A low number will mean the pipeline is failing to build or group loci that the reads
+are present for. ⚠That makes this the **harshest** recall test the project has run, and it is the
+right one to have.
+⚠Caveat: the count is reads overlapping the gene span in a `-M -L` slice, i.e. *reads are present at
+the locus*, not *this gene is transcribed*. It is the same operational definition the pipeline's own
+node construction uses, which is what makes it the fair denominator here.
