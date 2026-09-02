@@ -6060,3 +6060,70 @@ groups) which is what wrote the repo's `bench/crossape_seqlinked.tsv`. The corre
 ceiling** (comparator: 1h10m / 25.49 GB peak on a 2.8 GB BAM; the ape BAMs are 4.0–6.1 GB), and it
 re-answers "does it run", not "is it right". A single-contig, depth-matched, directional arm is the
 better trade.
+
+## §6ay — TSS/TES/UTR boundaries: the premise is FALSE, but the coverage statistic is ONE-SIDED (09-01)
+
+Objection: *"too convenient that members start and end where they should; how do you pick TSS/TES; how do
+you account for UTRs; minimap2 only shows the aligned parts so different ends would be LOST."*
+**Instrument validated first**: E_r was re-derived from the raw PAF using the shipped rule — **all 3,141
+edges reproduced, 0 missing, 0 value mismatches** (the only extras were q==t self-hits), and PAF lengths
+matched `exon_sum_len` on 0/6,724 mismatches. So every flank number below is read off the record the
+pipeline itself used. `TSS_SNAP`, `TES_EXTEND` and `ER_COVERAGE_LONGER` were all **OFF** for this catalog.
+
+### ⛔ HIS PREMISE IS FALSE — the boundaries are not tidy at all
+
+Within-family copy pairs (4,176 pairs, 121 families):
+
+| | value |
+|---|---|
+| median \|Δ exon-sum\| | **1,190 bp** (median length ratio **1.43×**) |
+| pairs differing >100 bp / >500 / >1,000 / >2,000 | 95.11% / 76.39% / 56.92% / 25.65% |
+| pairs where one member is ≥2× the other | **23.35%** |
+| median \|Δ genomic span\| | 5,631 bp |
+| both-spliced stratum (everything measured) | median 1,017 bp, ratio 1.30× |
+
+⟹**family members emphatically do NOT "start and end where they should".**
+
+### ⛔ AND THE CLIPPED SEQUENCE IS NOT LOST
+
+On the 1,726 within-family pairs with a DIRECT E_r edge, the certifying alignment leaves a **median 1,699
+bp hanging off some end**; **77.98% have ≥1,000 bp unaligned**; the LONGER member is a **median 56%
+unaligned (2,066 bp)**. minimap2 IS clipping at scale — but it all sits in the PAF as `qs`/`qlen-qe` and
+was read out directly. **Nothing is lost from the alignment.**
+
+### ⭐⭐ WHERE HE IS RIGHT — AND IT IS A REAL CONCESSION
+
+**The difference is lost from the STATISTIC, not the alignment.** E_r charges coverage on the **SHORTER**
+sequence only (`denovo_pipeline.rs:4867/4883`), so `1 − cov_shorter` is the shorter member's overhang and
+is bounded at 0.50 by the floor — that half is disclosed. **The LONGER member's overhang is measured by
+nothing**: median `cov_LONGER` = **0.44**, and **1,035/1,726 = 59.97% of directly-certified within-family
+pairs have cov_LONGER < 0.50** — a clear MAJORITY of the edges defining these families **would fail the
+project's own coverage floor if it were charged on the other member.**
+⭐**Synthetic positive control makes it unambiguous: a pair built to differ by exactly 1,000 bp at EACH
+end reports cov_shorter = 1.000.** A perfect-looking coverage number is compatible with a 2 kb end
+difference. ⟹**the fix he implicitly asks for already exists as `RUSTLE_ER_COVERAGE_LONGER`
+(`denovo_pipeline.rs:4862`) and is UNMEASURED.**
+
+### ⭐⭐ AND THE UTR QUESTION HAS A DIRECT, POSITIVE ANSWER
+
+**The end disagreement is overwhelmingly at the 3′ end — i.e. it IS 3′UTR variation, measured not invented.**
+In the stratum where strand is actually measured (both members spliced, n=1,076) the longer copy's **3′
+flank is a median 1,672 bp against 177 bp at the 5′ end — 9.45×, MWU p = 3.3e-230**.
+⭐**INTERNAL CONTROL: in the placeholder-strand stratum (any single-exon member — all 1,888 single-exon
+nodes carry the `'+'` default) the asymmetry VANISHES and inverts to 0.66×, exactly as a coin-flip
+orientation predicts.** That makes an alignment artifact very hard to sustain.
+⭐**INDEPENDENT CORROBORATION** from `GGO_genomic.gff` (UTRs derived as mRNA exons minus CDS, 80,997
+coding transcripts): gorilla **3′UTRs are 3.51× longer** than 5′UTRs at the median, **4.94× more variable**
+by IQR, and **46.5% exceed 1 kb versus 7.8%** of 5′UTRs. Right end, right sign, right order of magnitude.
+
+### The comparator, and why the residual agreement is biology not construction
+
+Members ARE more length-alike than chance — observed median ratio **1.430** vs a family-size-preserving
+label permutation at **1.736** [1.638, 1.829], **P(null ≤ observed) = 0/1000**; random same-contig pairs
+1.849, MWU p = 1.2e-237. But the effect is modest (observed/null = 0.823), and **the edge rule is NOT the
+cause: pairs the rule DIRECTLY certifies are LESS length-alike (1.566) than pairs joined only
+transitively (1.358)** ⟹ **the rule selects AGAINST length agreement**, so what remains is paralogy.
+
+⟹**CONCEDE: the coverage statistic is one-sided and 60% of within-family edges are certified on an axis
+that ignores a median 2 kb on the other member. DO NOT concede that the loci are core-fragments with
+invented ends — they differ by kilobases and the difference is readable straight off the PAF.**
