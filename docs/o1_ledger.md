@@ -152,6 +152,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6bz — Local edge connectivity does NOT beat the direct edge; the precise statement O1 can make (09-02)
 - §6ca — Families are HETEROGENEOUS, the categories collapse to SIZE, and the rule's value is category-dependent (09-02)
 - §6cb — The Soto intervals CANNOT be corrected from the GFF: the disagreement is NAMING (09-02)
+- §6cc — NPIP END TO END: all three objectives on the advisor's own family (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -8071,6 +8072,18 @@ rates** — the failure was visible only in the counts.
 
 ## §6cb — ⛔ THE SOTO INTERVALS CANNOT BE "CORRECTED" FROM THE GFF — the disagreement is NAMING, not coordinates (09-02)
 
+> ⛔⛔ **PARTLY RETRACTED THE SAME DAY — see §6cc.** This section concluded the intervals were
+> *"UNVERIFIED for the multi-copy members"*. **They are verified, and they are nearly exact.** I
+> compared the BED against the **RefSeq** GFF, a *different annotation* from the **CAT v4** Soto
+> built on, so disagreement there says nothing about whether the projection is right. The correct
+> reference is **Soto's own supplement S1A, which publishes `Gene Coords t2t-chm13v2.0`** — no
+> projection was ever required. Against it: **median delta 1 bp, 335/358 within 10 bp, 0 family-ID
+> disagreements.** What survives of this section is (i) the standing rule that a symbol-matched
+> substitution from RefSeq would import RefSeq's naming and is still wrong, and (ii) the genuine
+> defect list — **23 members >1 kb off, 4 on the wrong chromosome, 23 members omitted entirely**.
+> ⚠ The `coordinate_version_check.md` criticism also stands: it validated against `HSA_genomic.gff`,
+> the annotation that drops 29.1% of loci, when S1A was available all along.
+
 *"Can we just use the Soto families but with corrected coordinates from the GFF?"* — a good instinct,
 because the instrument's coordinate provenance turns out to be weaker than documented. **But the
 substitution is not viable, and the reason is the more useful result.**
@@ -8134,3 +8147,81 @@ and the clean subset is **selected for genes both annotations agree about**, i.e
 members.** The fix is not a different GFF; it is a **reciprocal-overlap** reconciliation of CAT and
 RefSeq loci that never uses a symbol — which is a project in itself, and is what [[project_gene_naming_traps]]
 already prescribes (*"seed = CDS envelope, discover by sequence, name afterwards"*).
+
+## §6cc — ⭐⭐⭐ NPIP END TO END: all three objectives on the advisor's own family, against Soto's truth (09-02)
+
+Human A119b/CHM13 v2.0, `arm_off` (the **shipped default path**, no flag), scored against Soto
+`ID_154` with coordinates taken from **S1A's published v2 column**, not from the liftoff BED.
+
+### ⚠ FIRST — THE PROJECTION OF ID_154 ITSELF HAS THREE DEFECTS
+
+S1A lists **16** ID_154 members; `80_fams.chr.bed` carries **14**, and one of those is misplaced:
+
+| member | defect |
+|---|---|
+| **NPIPB15** | BED chr16:80,195,643 vs S1A **228,744 bp away** |
+| **NPIPA3** | **absent from the BED** (S1A: chr16:30,611,530) |
+| **NPIPA8** | **absent from the BED** (S1A: chr16:18,325,184) |
+
+The other **13/16 are exact** (delta 1 bp = the 0-based convention). ⚠**The gorilla 31-locus NPIP
+panel is a minimap2 projection OF THIS FAMILY, so it may inherit these three defects** — check before
+quoting it again. Three members were unreachable in the current BAM slice, so everything below is on
+the **13 reachable** ones.
+
+### ⭐ O1 — THE DEFINITION IS CORRECT; NODE CONSTRUCTION IS THE LIMIT
+
+| | |
+|---|---|
+| members detected | **13/13 = 1.000** |
+| pair precision | **0.8478** [0.7606, 0.9071] — 78 TP / 14 FP |
+| pair recall, both detected | 0.7308 (57/78) |
+| catalog copies overlapping those 13 genes | **33** |
+| predicted families holding an NPIP member | 10 |
+
+⛔⛔**RETRACTION, SAME SESSION: I first reported this precision as 57/57 = 1.0000.** That denominator
+restricted **both** endpoints to `ID_154`, so a pair joining an NPIP gene to a foreign gene could not
+be counted — **a denominator conditioned on the target set**, the register's oldest trap, committed
+by me an hour after writing §6by's warning about it. On the honest denominator it is **0.8478**.
+
+⭐⭐⭐**AND THE FRAGMENTATION IS NOT γ.** Over the 33 NPIP-overlapping copies, `E_r` has **8 connected
+components** (11, 8, 4, 3, 2, 2, 2, 1). The largest reaches **11 of the 13 genes**, has density
+**0.6182** — far above `GAMMA = 0.20` — and **γ keeps it as exactly ONE family, `GWFAM126`**.
+⟹**given the edges, the definition produces the right family.** The catalog emits **33 loci for 13
+genes**; the missing links are *absent edges between fragmented nodes*, not a partition that cuts.
+**This is §5e's "definition ~3%, node construction ~58%" reproduced on HUMAN with external truth.**
+⚠The 14 false merges concentrate in **4 small families** (`GWFAM71` alone contributes 8, via
+`CNTNAP3P2` and `SHLD2P3`); **`GWFAM126`, the 11-member core, is clean.**
+
+### ⭐⭐⭐ O2 — NPIP IS EXACTLY THE REGIME O2 WAS BUILT FOR
+
+Primaries at the 16 NPIP loci (`-F 2308` for the MAPQ census):
+
+| statistic | NPIP | genome-wide / multi-copy loci (blind-spot audit) |
+|---|---|---|
+| primaries with ≥1 competing placement | **0.7879** | 0.3370 |
+| AS margin ≤ 1% (tight tie) | **0.1380** | 0.0088 |
+| AS margin ≤ 5% (near tie) | **0.3647** | 0.2175 |
+| **MAPQ 0** | **0.0599** | **0.0004** |
+
+⭐⭐**MAPQ-0 is 150× richer here, and tight ties 16× richer.** The blind-spot audit's finding —
+*"O2 names a population that is 0.04% of its own substrate"* — **does not hold on NPIP**. On the
+family the advisor actually asks about, **6% of primaries are MAPQ-0 and 13.8% sit within a 1% score
+margin**, which is the stratum where §blind-spot measured divergence disagreeing with the primary
+flag **12.16%** of the time. ⟹**quote NPIP, not the genome-wide average, when defending O2's premise.**
+
+### ⚖️ O3 — ONE STRONG CANDIDATE, AND IT IS ENTANGLED WITH THE PROJECTION DEFECT
+
+12 copies sit in NPIP-containing families without overlapping an `ID_154` gene; **7 of those overlap
+another Soto family's gene and are therefore FALSE MERGES, not candidates.** Of the 5 overlapping no
+Soto gene at all, **four are single-exon with 2–16 reads** — the standing 26.8% stub defect, weak.
+
+⭐**The one strong candidate: `chr16:80,195,301-80,209,898`, 7 exons, 70 reads, inside `GWFAM126`.**
+⚠⚠**It sits at the LIFTOFF position of NPIPB15, whose S1A position is 228 kb away.** So either the
+projection was right and S1A's coordinate is off, or NPIP carries loci at **both** positions and
+liftoff mapped to the wrong paralog. **Either way a real, well-supported transcribed NPIP-like locus
+is there** — but it must **not** be reported as reference-absent until that is resolved, because one
+of the two readings makes it simply NPIPB15.
+
+⟹**STATUS: on NPIP the definition works, O2's premise holds far better than genome-wide, and O3 has
+one candidate that is confounded by a projection defect.** The binding constraint is **node
+construction**, exactly as §5e says.
