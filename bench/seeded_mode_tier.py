@@ -48,13 +48,31 @@ fam=collections.defaultdict(list)
 for i in range(len(loci)): fam[f(i)].append(i)
 multi=[v for v in fam.values() if len(v)>=2]
 
+# ⛔ FIXED 2026-09-02 (ledger §6cn, meta-ledger row 12). This used `samtools view -c REGION`, which
+# counts every read whose SPAN overlaps the interval -- including reads that splice straight OVER it
+# contributing no aligned base. On this substrate that inflated the "expressed" tier from 21 to 49 and
+# the headline from 40% to 50%, because seeded candidate intervals routinely sit inside a larger gene's
+# intron. A read spliced OVER a locus is no evidence for it; count ALIGNED BLOCKS.
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from locus_reads import aligned_blocks, reads_with_block_in, SAMTOOLS
+
+def _block_count(L, flag_args):
+    """Reads matching `flag_args` with >= 1 aligned base inside L."""
+    out = subprocess.run([SAMTOOLS, "view", *flag_args, BAM, f"{L[0]}:{L[1]+1}-{L[2]}"],
+                         capture_output=True, text=True).stdout
+    n = 0
+    for line in out.splitlines():
+        f = line.split("\t")
+        if len(f) > 5 and f[5] != "*" and any(bs < L[2] and L[1] < be
+                                              for bs, be in aligned_blocks(int(f[3]) - 1, f[5])):
+            n += 1
+    return n
+
 def depth(L):
-    r=f"{L[0]}:{L[1]+1}-{L[2]}"
-    p=int(subprocess.run(["samtools","view","-c","-F","2308",BAM,r],
-                         capture_output=True,text=True).stdout or 0)
-    s=int(subprocess.run(["samtools","view","-c","-f","256",BAM,r],
-                         capture_output=True,text=True).stdout or 0)
-    return p,s
+    p = reads_with_block_in(BAM, L[0], L[1], L[2])      # primaries, -F 2308
+    s = _block_count(L, ["-f", "256"])                  # secondaries, same block rule
+    return p, s
 dep={}
 for v in multi:
     for i in v:
@@ -86,3 +104,19 @@ print(f"\nfamilies in an expressed tier with NO overlap of the read catalog: {le
       f"  ({newcopies} expressed loci)")
 for t,n,e in sorted(newfam, key=lambda x:-x[2])[:10]:
     print(f"   {t:<12} {n:>3} loci, {e:>3} expressed")
+
+# ── §6be's "loci in 0-CORROBORATED families" breakdown, made REPRODUCIBLE (added 2026-09-02, §6cn).
+# The ledger published 49 / 103 / 153 over 305 loci from an ad-hoc slice this script never printed, so
+# the figure could not be re-derived when `depth()` was found to be span-based (meta-ledger row 12).
+# It is emitted here so it is never again a number without a command that produces it.
+zero = [v for v in multi if not set().union(*[incat(loci[i]) for i in v])]
+zl = [i for v in zero for i in v]
+expressed = sum(1 for i in zl if dep[i][0] >= PRIM_FLOOR)
+starved = sum(1 for i in zl if dep[i][0] < PRIM_FLOOR and dep[i][1] >= SEC_FLOOR)
+silent = len(zl) - expressed - starved
+print(f"\n0-CORROBORATED families: {len(zero)}   loci: {len(zl)}")
+print(f"  >=3 primaries WITH AN ALIGNED BLOCK — expressed, node never built : {expressed}")
+print(f"  <3 primaries but >=50 secondaries — STARVED                       : {starved}")
+print(f"  effectively silent                                                : {silent}")
+if zl:
+    print(f"  => {expressed + starved}/{len(zl)} = {(expressed + starved) / len(zl):.1%} EXPRESSED but absent from the catalog")

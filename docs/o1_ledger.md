@@ -163,6 +163,7 @@ Detail lives in the linked documents; the [register](NEGATIVE_RESULTS_REGISTER.m
 - §6ck — The linked-locus merge IMPLEMENTED and RUN: right signal, WRONG SITE (09-02)
 - §6cl — WHY THE BLOBS FORM: the canonical filter SELECTS FOR the mis-chains it cannot see (09-02)
 - §6cm — RETRACTION: the "mis-chained giants" are REAL GENES; the headline read count was 3.4x inflated (09-02)
+- §6cn — THE BUG-CLASS SWEEP: 8 classes, 28 candidates, 16 killed, 12 real — two of them mine (09-02)
 
 ## 1. What SHIPPED and holds
 
@@ -6471,14 +6472,21 @@ it — and you cannot know which in advance.
   The NPIP family (n=34, density 0.127) is **21/34** corroborated. ⟹**DNA homology alone does not separate
   them; read support does.**
 
-### ⭐⭐ THE 305 LOCI IN 0-CORROBORATED FAMILIES: HALF ARE EXPRESSED
+### ⭐⭐ THE 305 LOCI IN 0-CORROBORATED FAMILIES: TWO FIFTHS ARE EXPRESSED
+> ⛔⛔ **CORRECTED 2026-09-02 (§6cn).** This table read **49 / 103 / 153** and **"152/305 = 50%…HALF ARE
+> EXPRESSED"**. `seeded_mode_tier.py::depth()` counted reads by `samtools view -c REGION` — **span
+> overlap**, so a locus a read merely splices OVER scored as expressed (meta-ledger row 12). Seeded
+> candidate intervals routinely sit inside a larger gene's intron, so the inflation was large. Re-derived
+> with **aligned blocks**; the script now prints this breakdown itself, so it is reproducible rather than
+> ad-hoc: `python3 bench/seeded_mode_tier.py 0.30`.
+
 | | loci |
 |---|---|
-| >=3 primaries — expressed, node never built | **49** |
-| <3 primaries but >=50 secondaries — STARVED | **103** |
-| effectively silent — true O3 candidates | 153 |
+| ≥3 primaries **with an aligned block** — expressed, node never built | **21** ⛔(was 49) |
+| <3 primaries but ≥50 secondaries — STARVED | **102** (was 103) |
+| effectively silent — true O3 candidates | **182** (was 153) |
 
-⟹**152/305 = 50% are EXPRESSED but absent from the catalog.** Same mechanism as §6ad: the 11 loci the
+⟹**123/305 = 40.3% are EXPRESSED but absent from the catalog** ⛔(was 152/305 = 50%). Same mechanism as §6ad: the 11 loci the
 single DNA seed recovers carry primaries **2/2/4/5/6/7/16/17/18/4/4,784** against secondaries **311-1,119**
 — and the outlier (**4,784 primaries, 4,779 spliced**) is a pure NODE-CONSTRUCTION failure, nothing to do
 with seeding or expression.
@@ -7756,7 +7764,9 @@ arm — **not** per family, since running each family separately would hand the 
 | **[0.90,1.00)** | **153** | **149** | **4** | **0.9739** |
 
 ⟹**In the identity stratum Soto's SD98 definition actually covers, the shipped default achieves pair
-precision 0.9739 with recall 0.8743 among detected pairs** — against a size-matched null of 0.021.
+precision 0.9739** (149/153). ⚠**The recall 0.8743 and the 33.7× null enrichment are POOLED over the
+arm, NOT band statistics** — pooled precision is 0.7198, and 33.7× is 0.7198/0.0214. No band-restricted
+recall or null was computed. (Corrected 09-02, §6cn; an earlier edition attributed all three to the band.)
 
 ⚠⚠**AND THE COLLAPSE BELOW 0.90 IS NOT EVIDENCE THAT THOSE EDGES ARE WRONG.** Soto's families are
 **SD98 — ≥98% identity by construction.** A pair at 0.85 is **excluded from their truth set by
@@ -8866,3 +8876,77 @@ which this count was not. ⚠**The inflation is 3.4×**, and ⚠**even 457 is an
 Two of three giants are correct output. One node (chr16:29,725,035, no spanning gene, degree 1)
 remains genuinely unexplained and is a legitimate single case, not a class. **A rule built on the
 three-node "blob class" would have been fitted to two real genes.**
+
+## §6cn — ⭐⭐⭐ THE BUG-CLASS SWEEP: 8 classes, 28 candidates, 16 killed, 12 real — two of them mine (09-02)
+
+§6cm named eight measurement-bug classes from one day's work. This searched the whole tree for other
+instances of each, then had **three adversarial lenses per candidate** try to refute it (correctness —
+did the scanner misread the code; context — is there a reason it is right; consequence — does any
+published number depend on it). A finding survived only if fewer than 2 of 3 refuted it.
+
+**92 agents, 1,651 tool calls, 6.17M tokens, ~100 min. 28 candidates → 16 REFUTED → 12 survivors.**
+⭐**The 57% kill rate is the point**: on a day when four of my own levers dissolved on inspection, a
+sweep that reported every candidate as a bug would have been the less trustworthy result.
+
+### ⛔⛔ TWO SURVIVORS ARE TEXT I WROTE TODAY
+
+**1. `O1_PRECISION_LEVERS.md:9` and §6bx — three populations presented as one.** I wrote *"in the ≥0.90
+identity stratum Soto covers, pair precision **0.9739**, recall **0.8743**, against a size-matched null
+of **0.0214** (33.7×)"*. **Only the precision is a band statistic.** The recall is pooled over the whole
+arm, and **33.7× is 0.7198/0.0214** — the *pooled* precision over the null. No band-restricted recall or
+null was ever computed. Both sites corrected; the decomposition is now stated by population.
+
+**2. `bench/seeded_mode_tier.py:53` — the span-vs-blocks bug, feeding LIVE ledger numbers.** `depth()`
+used `samtools view -c REGION`. Fixed to `reads_with_block_in`, and §6be re-derived:
+
+| §6be, 305 loci in 0-corroborated families | was | **now** |
+|---|---:|---:|
+| ≥3 primaries — expressed, node never built | 49 | **21** |
+| <3 primaries but ≥50 secondaries — starved | 103 | **102** |
+| effectively silent | 153 | **182** |
+| **headline** | **152/305 = 50%** | **123/305 = 40.3%** |
+
+⭐**The agent's numbers were not taken on trust** — the script now PRINTS this breakdown and it was
+re-derived from it: 65 families, 305 loci, 21/102/182, matching to the locus. ⚠**The published 49/103/153
+came from an ad-hoc slice the script never emitted**, which is why it could not be re-derived when the
+bug surfaced. That is now fixed too: `python3 bench/seeded_mode_tier.py 0.30` produces the table.
+⭐⭐**And the mechanism is the substrate, not a slip:** seeded candidate intervals routinely sit inside a
+larger gene's intron — the same geometry as `PDXDC1` containing `NPIPP1` (§6cm). **This substrate invites
+the error**, which is why it belongs in `bench/locus_reads.py` and not in a doc note.
+
+### ⛔⛔ A GUARD THAT COULD NEVER FAIL — the class §6ck warned about, found by machine
+
+`er_node_dump_emits_the_exon_array_not_just_the_exon_count` sliced `&src[start..]` — **to END OF FILE** —
+so the guard's own needle array sat inside the window it searched. `body.contains("exon_blocks_str(")`
+matched **its own source text**.
+
+| | occurrences of `exon_blocks_str(` |
+|---|---|
+| old unbounded slice | **3** (the emitter + 2 self-matches) |
+| **bounded to the policed function** | **1** |
+
+⟹**deleting the emitter it polices would not have broken it.** Fixed with brace-bounded extraction via a
+new `fn_body()` helper, applied to its sibling too — which survived only by luck of its needle shape
+(`("{key}".into()` is assembled at runtime and so never appears literally). ⭐**Verified closed by
+counting, not by the test passing**: a guard that passes proves nothing about whether it *can* fail.
+
+### THE REMAINING SURVIVORS — recorded, not yet fixed
+
+| severity | site | claim |
+|---|---|---|
+| HIGH | `bench/soto/soto_detection_eval.py:207` | the headline Soto "recovery precision" is a **hardcoded string literal**, over a set defined as "copies overlapping an annotated member" — numerator ≡ denominator |
+| HIGH | `bench/family_level_pr_current.py:318` | CURRENT vs LEGACY compared on truth denominators of **180 vs 200**; the arm covering 20 FEWER truth components scores HIGHER |
+| MEDIUM | `bench/o1_why_no_node.py:72`, `bench/o1_missed_possibilities.py:91` | span-vs-blocks; affects §ledger 328-332 and the SD "expressed" class |
+| MEDIUM | `bench/er_both_coverage_gw.py:102` | non-ZNF recall divides per-family pair SLOTS by DEDUPLICATED pairs — §6bl inflated, can exceed 1.0 |
+| MEDIUM | `bench/family_def_compara_check.py:79` | prints *"absent (as expected)"* unconditionally — queries keys that can never be present |
+| MEDIUM | `docs/NUMBERS.md:285` | a 4-row discriminator from **ONE locus** published as "Reusable" for "ANY read spanning two catalogued copies", while §6ar measured it classifies ~37% and §6ax found it degenerate below 3 bridging junctions |
+| LOW | `bench/crossape_verify_flagships.py:98` | "validated" is the default verdict; no escape branch implements the stated criterion |
+
+### ⚠ WHAT THE SWEEP DID NOT COVER
+
+**13 agents died on the 19:00 session limit**, leaving **5 candidates unverified** — including one in
+`denovo_pipeline.rs:1074`, `o3_missing_copy_evidence.md:101`, `gw_artifact_audit.py:16`, and
+`recombination_bridge_detector.py:286`. ⛔**Those are UNRESOLVED, not cleared**, and re-running is cheap
+(`resumeFromRunId: wf_6fe06bef-1cd` replays the cached scans and only re-runs the failed verifiers).
+⚠ The `circular-definition` dimension returned **0 survivors from 4 candidates** — all refuted — which is
+a real result for that class and not a gap.

@@ -8827,6 +8827,32 @@ mod tests {
 
     /// The E_r params dump is the only machine-readable place a catalog's SCALE is recorded. If these
     /// rows go away, `<prefix>.params.tsv` documents the coverage FRACTION while silently omitting what
+    /// Extract exactly ONE function's body by brace matching, for the source-scanning guards below.
+    ///
+    /// ⛔ EXISTS BECAUSE `&src[start..]` IS A VACUOUS GUARD (2026-09-02, ledger §6cn). Slicing to END OF
+    /// FILE puts the guard's OWN needle literals inside the window it scans, so
+    /// `body.contains("exon_blocks_str(")` matched the assertion's own source text and could never fail —
+    /// deleting the emitter it polices would not have broken it. The needle must be searched in the
+    /// policed function ONLY.
+    fn fn_body<'a>(src: &'a str, sig: &str) -> &'a str {
+        let start = src.find(sig).unwrap_or_else(|| panic!("{sig} not found"));
+        let open = start + src[start..].find('{').expect("function has no body");
+        let mut depth = 0usize;
+        for (i, c) in src[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &src[open..open + i + 1];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unbalanced braces after {sig}")
+    }
+
     /// it costs in bases, and an E_r number becomes unquotable without re-running the alignment.
     #[test]
     fn er_params_dump_records_the_substrate_scale() {
@@ -8835,8 +8861,7 @@ mod tests {
             "/src/rustle/vg_family/denovo_pipeline.rs"
         ))
         .expect("read denovo_pipeline.rs");
-        let start = src.find("fn write_er_edge_dump(").expect("write_er_edge_dump not found");
-        let body = &src[start..];
+        let body = fn_body(&src, "fn write_er_edge_dump(");
         for key in ["substrate_median_len_bp", "coverage_floor_median_bp_demand", "homology_genomic_span"] {
             assert!(
                 body.contains(&format!("(\"{key}\".into()")),
@@ -8861,8 +8886,7 @@ mod tests {
             "/src/rustle/vg_family/denovo_pipeline.rs"
         ))
         .expect("read denovo_pipeline.rs");
-        let start = src.find("fn write_er_edge_dump(").expect("write_er_edge_dump not found");
-        let body = &src[start..];
+        let body = fn_body(&src, "fn write_er_edge_dump(");
         for col in ["\\texons\\texon_bp", "exon_blocks_str("] {
             assert!(
                 body.contains(col),

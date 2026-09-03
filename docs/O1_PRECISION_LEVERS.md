@@ -5,9 +5,12 @@
 > HUMAN A119b/CHM13 — an external positive stratum — and the verdict is REJECT AS A DEFAULT.** It
 > deletes **7 loci carrying "In Table S1 (SD98 gene set) = Yes"** while its precision gain is **not
 > significant** (p ≈ 0.77) at the conservative mapping. §6bv's earlier KEEP OPT-IN is superseded.
-> ⭐**The same run gives O1's strongest external P/R to date, on the DEFAULT path**: in the ≥0.90
-> identity stratum Soto covers, pair precision **0.9739**, recall **0.8743** among detected pairs,
-> against a size-matched null of **0.0214** (33.7×).** It passed a cross-species pre-registered test
+> ⭐**The same run gives O1's strongest external P/R to date, on the DEFAULT path.** ⚠**Stated by
+> population, because an earlier edition of this line conflated three:** pooled over the arm, pair
+> precision **0.7198**, recall **0.8743** among detected pairs, against a size-matched null of
+> **0.0214** — a **33.7×** enrichment. **Within** the ≥0.90 identity stratum Soto covers, precision
+> rises to **0.9739** (149/153). ⛔**Only that last figure is a band statistic**: the recall and the
+> null enrichment are POOLED, and no band-restricted recall or null was ever computed (ledger §6cn).** It passed a cross-species pre-registered test
 > 5/5 and was still not shipped, because its copy-level cost is annotation-neutral, non-monotone,
 > and unadjudicable without a positive stratum. **That combination — passing the test and declining
 > the default — is the point, not an inconsistency.**
