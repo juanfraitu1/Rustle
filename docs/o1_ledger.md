@@ -11817,3 +11817,25 @@ node sequence = the core's exonic bases; families = MCL over cores. Acceptance t
 ⚠ It needs a candidate family to compute "half" against — so it is a REFINEMENT pass over MCL clusters,
 not a de novo definition (the discover-then-define trap is avoided because the core threshold is the
 family's own size, not a fitted constant). ⚠ BISER is not needed: SEDEF's pairs suffice and are on disk.
+
+### §6eh addendum — duplicon-first over all 46 clusters: it is a refinement for YOUNG SD families, not a universal node rule (`docs/sedef_core_all46_2026-09-04.log`)
+Per member, SEDEF "core ≥ half" (bases linked to ≥ half of the cluster's other members) for every n≥5
+cluster of `rna_bp1_p9`:
+| outcome | clusters |
+|---|---|
+| core = the whole record, 0 members dropped (tandem/local SD families) | MCL1 866 bp, MCL3 1,330, MCL6 2,571, MCL5 11 kb, MCL8, MCL9, MCL10, MCL15, MCL19, MCL22, MCL24, MCL26–28, MCL30, MCL32–35, MCL38–43 |
+| core = 0 for EVERY member — the element-welded artefacts | **MCL0/NEW101 104/104, MCL4 29/29, MCL16 10/10, MCL31 6/6** |
+| NPIP: 4 dropped = the ABCC1-region records; EIF3C 808 bp (2% of its span); chimeras keep a 23–25 kb core | MCL2 |
+| MCL7 has its OWN 26 kb core (LCR16u), 2 dropped (PDXDC1, SLC7A5) | MCL7 |
+| ⚠ **OLD families with no SD pairs: core = 0 although the CHM13 landing is coherent** | **MCL12 (10/11 zero; ZNF 0.73 chr19), MCL17 (8/10 zero; ZNF 0.90 chr19)**, MCL25 3/8 (OR7A), MCL13 3/11 |
+Core-length distribution over 618 members: 0 → 192, <1 kb → 65, 1–5 kb → 169, 5–20 kb → 96, ≥20 kb → 96
+— no wall between 0 and small; the tandem arrays' cores are 866/1,330 bp (their whole gene), so an
+absolute length floor is not the statistic. The candidate is core as a FRACTION of the record's
+exon-union (EIF3C 18%, tandem 100%), to be pre-registered before use.
+⟹ **SEDEF core depth is decisive where SD pairs exist (median max-partners ≥ half the family) and
+silent where they do not (old ZNF/OR families, identity ~0.8, no SEDEF pairs).** The refinement must be
+gated on that: apply the core segmentation only to clusters whose members have SD partner depth; leave
+homology-defined clusters without SD evidence untouched. Applied that way, on this catalog it eliminates
+the four element-welded artefacts outright, trims NPIP to its LCR16a loci, and changes nothing in the
+tandem, ZNF, OR, KIR, PSG or CEACAM families. Implementation and its pre-registration are `NEXT_STEPS`
+O1-10.
