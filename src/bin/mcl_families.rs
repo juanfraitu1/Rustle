@@ -87,8 +87,15 @@ struct Args {
     /// by the record with the greatest exon-union length; PAF records of the folded-away annotations are
     /// skipped. Writes `<out>.loci.tsv` (annotation -> representative). Measured on NPIP: 13 overlapping
     /// copy pairs, 607/1,221 O2 ties were the same locus twice. Default OFF ⟹ byte-identical
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = true)]
     merge_overlapping_loci: bool,
+    /// Escape hatch: annotation RECORDS as nodes (every catalog before §6er was built this way).
+    #[arg(long, default_value_t = false)]
+    no_merge_overlapping_loci: bool,
+    /// Locus evidence = ATTRIBUTION (every model's admitted edge is the locus's edge). Default OFF =
+    /// representative-only. ⚠ Attribution reconstructs the duplication BLOCK (LCR16a+LCR16u, §6eg).
+    #[arg(long, default_value_t = false)]
+    locus_attribute_edges: bool,
     /// SEDEF pairs (BED: chr1 s1 e1 chr2 s2 e2 …, 0-based half-open) for `--core-refine`.
     #[arg(long)]
     sedef: Option<String>,
@@ -101,6 +108,10 @@ struct Args {
     /// `<out>.refined.clusters.tsv`; `<out>.clusters.tsv` is byte-identical. Default OFF
     #[arg(long, default_value_t = false)]
     core_refine: bool,
+    /// Escape hatch: do NOT run the core refinement even though `--sedef` is given (§6er: it runs whenever
+    /// a SEDEF bed is supplied).
+    #[arg(long, default_value_t = false)]
+    no_core_refine: bool,
     /// ⭐ O1-10b (§6el): emit per-locus UNITS in the `copy_assign --families/--copies-fa` contract:
     /// `<out>.units.tsv` / `<out>.units.fa` / `<out>.units.regions`. A unit = the member's locus (its core hull
     /// under `--core-refine`, else its span) with the READ-SUPPORTED exon chain: primaries with an aligned block
@@ -113,6 +124,14 @@ struct Args {
     /// 52/52 -> 57/57 — the GFF model was the cause of O2's confident wrong calls. Default OFF
     #[arg(long, default_value_t = false)]
     emit_units: bool,
+    /// Escape hatch: do NOT emit units even though `--bam` and `--fasta` are given (§6er: units are emitted
+    /// whenever both are supplied).
+    #[arg(long, default_value_t = false)]
+    no_emit_units: bool,
+    /// Optional RepeatMasker `.out` (curated library) — adds `rep_frac` (interspersed-repeat fraction of the
+    /// unit's exon chain) to the unit table.
+    #[arg(long)]
+    rmsk: Option<String>,
     /// Genome FASTA (for `--emit-units` sequences).
     #[arg(long)]
     fasta: Option<String>,
@@ -360,7 +379,18 @@ fn has_block_in(br: &rustle::vg_family::denovo_assemble::BamRead, m: &GeneKey) -
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    // §6er (S2): the unit is the catalog row. Stages engage on their inputs; escape hatches reproduce the
+    // record-level catalogs (`--no-merge-overlapping-loci`, `--no-core-refine`, `--no-emit-units`).
+    if args.no_merge_overlapping_loci {
+        args.merge_overlapping_loci = false;
+    }
+    if args.sedef.is_some() && !args.no_core_refine {
+        args.core_refine = true;
+    }
+    if args.bam.is_some() && args.fasta.is_some() && !args.no_emit_units {
+        args.emit_units = true;
+    }
     let p = GraphParams {
         min_identity: args.min_identity,
         min_cov_longer: args.min_cov_longer,
@@ -385,7 +415,8 @@ fn main() -> Result<()> {
 
     let paf = std::fs::read_to_string(&args.paf).with_context(|| format!("reading {}", args.paf))?;
     let loci = if args.merge_overlapping_loci {
-        let m = loci_from_exon_blocks(&blocks);
+        let mut m = loci_from_exon_blocks(&blocks);
+        m.attribute_edges = args.locus_attribute_edges;
         eprintln!(
             "[mcl_families] merge-overlapping-loci (EXON-union overlap): {} annotation record(s) folded \
              into {} multi-record loci over {} GFF genes",
@@ -407,9 +438,10 @@ fn main() -> Result<()> {
     let g = graph_from_paf_loci(&paf, &exonic, &blocks, &p, loci.as_ref());
     if let Some(m) = &loci {
         eprintln!(
-            "[mcl_families] merge-overlapping-loci: {} PAF record(s) skipped as a locus aligned to itself \
-             ({} loci with >1 record); folded records' edges are attributed to their representative",
-            g.same_locus_records, m.n_multi
+            "[mcl_families] merge-overlapping-loci ({}): {} PAF record(s) skipped ({} loci with >1 record)",
+            if m.attribute_edges { "attribution" } else { "representative-only" },
+            g.same_locus_records,
+            m.n_multi
         );
     }
     // ⭐ The join rate, always. A failed coordinate join returns a byte-identical graph and reads as
@@ -593,7 +625,48 @@ fn main() -> Result<()> {
         let mut ut = std::fs::File::create(format!("{}.units.tsv", args.out))?;
         let mut uf = std::fs::File::create(format!("{}.units.fa", args.out))?;
         let mut ur = std::fs::File::create(format!("{}.units.regions", args.out))?;
-        writeln!(ut, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tsource\tcore_hull")?;
+        writeln!(ut, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tsource\tcore_hull\tsd_depth\tcore_bp\tnearest_ident\trep_frac")?;
+        // curated repeats (optional --rmsk): per contig, sorted interspersed intervals
+        let rmsk: BTreeMap<String, Vec<(u64, u64)>> = match &args.rmsk {
+            Some(path) => {
+                let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
+                let mut m: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
+                for line in text.lines() {
+                    let f: Vec<&str> = line.split_whitespace().collect();
+                    if f.len() < 11 || f[0].parse::<u64>().is_err() {
+                        continue;
+                    }
+                    let class = f[10].split('/').next().unwrap_or("");
+                    if !matches!(class, "LINE" | "SINE" | "LTR" | "Retroposon" | "DNA" | "RC" | "Unknown") {
+                        continue;
+                    }
+                    if let (Ok(a), Ok(b)) = (f[5].parse::<u64>(), f[6].parse::<u64>()) {
+                        m.entry(f[4].to_string()).or_default().push((a - 1, b));
+                    }
+                }
+                for v in m.values_mut() {
+                    v.sort_unstable();
+                }
+                m
+            }
+            None => BTreeMap::new(),
+        };
+        let rep_frac = |chrom: &str, exons: &[(u64, u64)]| -> Option<f64> {
+            let v = rmsk.get(chrom)?;
+            let (mut tot, mut inter) = (0u64, 0u64);
+            for &(s, e) in exons {
+                tot += e - s;
+                let i = v.partition_point(|x| x.1 <= s);
+                for &(a, b) in &v[i..] {
+                    if a >= e {
+                        break;
+                    }
+                    inter += b.min(e).saturating_sub(a.max(s));
+                }
+            }
+            Some(inter as f64 / tot.max(1) as f64)
+        };
+        let node_idx: BTreeMap<&GeneKey, usize> = g.genes.iter().enumerate().map(|(k, gk)| (gk, k)).collect();
         for (i, c) in clusters.iter().enumerate() {
             let fid = format!("MCL{i}");
             let mut idx = 0usize;
@@ -662,9 +735,24 @@ fn main() -> Result<()> {
                     }
                 }
                 let (us, ue) = (exons[0].0, exons.last().unwrap().1);
+                let (sd_depth, core_bp) = core_records
+                    .get(i)
+                    .and_then(|v| v.get(mi))
+                    .map(|r| (r.max_depth.to_string(), r.core_bp.to_string()))
+                    .unwrap_or_else(|| ("NA".into(), "NA".into()));
+                let nearest = node_idx.get(m).map(|&a| {
+                    c.members
+                        .iter()
+                        .filter_map(|o| node_idx.get(o).copied())
+                        .filter(|&b| b != a)
+                        .filter_map(|b| g.idents.get(&(a.min(b), a.max(b))).copied())
+                        .fold(0.0f64, f64::max)
+                });
+                let nearest_col = nearest.map(|v| format!("{v:.4}")).unwrap_or_else(|| "NA".into());
+                let rep_col = rep_frac(&m.0, &exons).map(|v| format!("{v:.3}")).unwrap_or_else(|| "NA".into());
                 writeln!(
                     ut,
-                    "{fid}\t{idx}\tMCL_{}_{us}\t{}\t{us}\t{ue}\t{}\t{strand}\t{}\t{}\t{source}\t{hull_col}",
+                    "{fid}\t{idx}\tMCL_{}_{us}\t{}\t{us}\t{ue}\t{}\t{strand}\t{}\t{}\t{source}\t{hull_col}\t{sd_depth}\t{core_bp}\t{nearest_col}\t{rep_col}",
                     m.0,
                     m.0,
                     exons.len(),
@@ -706,6 +794,7 @@ fn main() -> Result<()> {
         ("min_exonic_bp".to_string(), args.min_exonic_bp.to_string()),
         ("rejected_no_exonic".to_string(), g.rejected_no_exonic.to_string()),
         ("merge_overlapping_loci".to_string(), args.merge_overlapping_loci.to_string()),
+        ("locus_attribute_edges".to_string(), args.locus_attribute_edges.to_string()),
         ("annotations_folded_into_loci".to_string(), loci.as_ref().map_or(0, |m| m.n_merged()).to_string()),
         ("paf_records_same_locus_skipped".to_string(), g.same_locus_records.to_string()),
         ("core_refine".to_string(), args.core_refine.to_string()),

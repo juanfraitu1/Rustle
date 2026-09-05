@@ -12197,3 +12197,38 @@ removes exactly these records. ⟹ **S2 must precede any unit emission: units ar
 per annotation record.** The §6eq claim "faithful units 3/3" is withdrawn; the standing accepted
 configuration on the valid truth is the GFF-model spliced path (5/5), and the read-chain unit is accepted
 only after S2 re-runs it on locus units. Register row 687.
+
+## §6er — S2 DONE: THE UNIT IS THE CATALOG ROW. `mcl_families` now emits locus units by default; O2 consumes them with no script in between (2026-09-05)
+
+**Defaults flipped (with escape hatches, each verified byte-identical):** `--merge-overlapping-loci` ON with
+REPRESENTATIVE-ONLY evidence (`--locus-attribute-edges` keeps the block-reconstructing variant explicit,
+§6eg); core refinement runs whenever `--sedef` is given (`--no-core-refine`); units are emitted whenever
+`--bam` and `--fasta` are given (`--no-emit-units`); `--no-merge-overlapping-loci` reproduces `rna_bp1_p9`
+exactly (cmp IDENTICAL). `HomologyGraph` gained `idents` (best identity per edge). The unit table
+(`<out>.units.tsv`) gained **`sd_depth`, `core_bp`, `nearest_ident`** (the abstention forecast: max identity to
+a cluster mate, S3) and **`rep_frac`** (curated interspersed fraction of the exon chain, `--rmsk`).
+
+**New canonical 3-contig catalog: `mcl_ann/rna_units_v1`** (`docs/rna_units_v1_2026-09-05.tsv`): 3,864
+records folded into 3,154 loci; 111 clusters / 784 members (largest 103); 96 SD-evidenced clusters, 486
+kept-full / 71 trimmed / 30 dropped; **751 units** (238 read-chain, 513 GFF-fallback), all with `rep_frac`;
+**313/751 units have a ≥0.99 paralogue** (forecast: unassignable). 141 s, 1.3 GB.
+
+**Anchor sets under the new default (kept members → plurality cluster):** NPIP 33 kept → **29/33** in one
+29-locus cluster (the 4 leavers are the fragment-carried records incl. EIF3C, §6ef/§6eg — correct);
+tandem 48/48 and 36/36; MCL4 29/29; MCL6 23/23; MCL5 16/17; ZNF MCL12 11/11, MCL17 10/10; MCL7 9/11 and
+SEPARATE from NPIP (representative-only semantics: LCR16a ≠ LCR16u, as the literature says).
+
+**O2 on the NPIP locus units (23 with reads on NC_073242.2, spliced mode, `o2scale/fam_NPIPv1_073242`):**
+60 s, 2.1 GB, Containment 0. 2,943 molecules: 1,569 assigned / 508 tied / 866 ambiguous; reads whose
+primary overlaps a unit: 994 — MAPQ-60: 76 assigned (**75/76 by placement**), 37 tied, 416 ambiguous;
+MAPQ<60: 13 assigned, 64 tied, 388 ambiguous. **On the 62 valid junction anchors: 0 assigned, 60
+ambiguous, 2 absent — zero wrong calls, zero right calls: assign-or-abstain abstains on every read whose
+copy-of-origin is at issue.** Compared with the GFF-model cores (5/5 assigned on the same truth) the locus
+units abstain more; the trade is no confident call without a decisive column, which is the thesis's
+statement. ⚠ 1,949 of the 2,943 molecules do not overlap any unit (reads of neighbouring genes gathered
+within `COPY_READ_PAD`) yet receive a status — an O2 reporting hygiene item for S5 (report only reads with
+a block inside a unit, as `mcl_families` already does for corroboration).
+
+**Standing:** the unit catalog is O1's output and O2's input; the bridge scripts are retired for new work
+(`bench/o2_readchain_bridge.py` stays as the record of §6el/§6en). Roadmap: S1 ✓, S2 ✓, S3 delivered as a
+column (its forecast-vs-observed check belongs to S5); next S5 (sweep) then S6.

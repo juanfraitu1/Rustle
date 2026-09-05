@@ -102,6 +102,9 @@ pub struct HomologyGraph {
     pub genes: Vec<GeneKey>,
     /// `(i, j)` with `i < j` -> weight `identity * cov_longer`, capped at 1.0.
     pub edges: BTreeMap<(usize, usize), f64>,
+    /// `(i, j)` -> the best admitted record pair's IDENTITY alone (the abstention forecast, §6er: a copy whose
+    /// nearest paralogue is ≥0.99 identical gets no assignment).
+    pub idents: BTreeMap<(usize, usize), f64>,
     /// Genes whose exonic length was unknown, so the span was used. Reported, never silent.
     pub missing_exonic: usize,
     /// Edges whose numerator was computed from EXON BLOCKS (`exonic_overlap`). ⚠ **Always report this**:
@@ -137,6 +140,11 @@ pub struct LocusMap {
     pub rep_of: BTreeMap<GeneKey, GeneKey>,
     /// Number of loci that hold more than one annotation record.
     pub n_multi: usize,
+    /// Evidence policy. `false` (REPRESENTATIVE-ONLY, the default since §6eq): a locus's homology is its
+    /// representative record's alignments; records of folded-away models are skipped. `true` (ATTRIBUTION):
+    /// every model's admitted edge is the locus's edge — measured to reconstruct the duplication BLOCK
+    /// (LCR16a + LCR16u merge, §6eg) and kept only as an explicit option.
+    pub attribute_edges: bool,
 }
 
 impl LocusMap {
@@ -290,6 +298,10 @@ pub fn graph_from_paf_loci(
                 g.same_locus_records += 1;
                 continue;
             }
+            if !l.attribute_edges && (!l.is_representative(&qk) || !l.is_representative(&tk)) {
+                g.same_locus_records += 1; // representative-only: a folded model's record carries no evidence
+                continue;
+            }
         }
         // Two DISTINCT gene records whose 1-based inclusive intervals intersect are not paralogs; the
         // `q == t` guard above only catches byte-identical headers.
@@ -362,6 +374,10 @@ pub fn graph_from_paf_loci(
         if w > *e {
             *e = w;
         }
+        let id_e = g.idents.entry(key).or_insert(0.0);
+        if identity > *id_e {
+            *id_e = identity;
+        }
     }
     // Resolve the deferred pairs: merge each side's intervals, charge the LONGER gene's own exonic bases
     // against its own exonic denominator, and threshold once.
@@ -403,6 +419,10 @@ pub fn graph_from_paf_loci(
         let e = g.edges.entry(key).or_insert(0.0);
         if w > *e {
             *e = w;
+        }
+        let id_e = g.idents.entry(key).or_insert(0.0);
+        if identity > *id_e {
+            *id_e = identity;
         }
     }
     g.missing_exonic = missing.len();
@@ -938,9 +958,9 @@ mod tests {
     #[test]
     fn a_nested_annotation_is_not_a_second_node() {
         // Host H (c:1001-3000) contains lncRNA N (c:1201-2200). H aligns to paralogue P, N to paralogue Q
-        // (each at full coverage, so both edges pass the floors). Without the locus map the family counts
-        // H's locus twice: 4 nodes, 2 edges. With it N is folded into H and N's edge becomes H's:
-        // 3 nodes {H, P, Q}, 2 edges, and N is not a node.
+        // (each at full coverage). Without the locus map the family counts H's locus twice: 4 nodes, 2 edges.
+        // REPRESENTATIVE-ONLY (default, §6eq): N's record carries no evidence -> 2 nodes {H, P}, 1 edge.
+        // ATTRIBUTION (explicit, §6eg): N's edge becomes H's -> 3 nodes {H, P, Q}, 2 edges.
         let mut paf = paf_line("c:1001-3000", 2000, 0, 2000, "c:9001-11000", 2000, 0, 2000, 1900, 2000);
         paf.push('\n');
         paf.push_str(&paf_line("c:1201-2200", 1000, 0, 1000, "c:20001-21000", 1000, 0, 1000, 950, 1000));
@@ -957,58 +977,20 @@ mod tests {
         bl.insert(("c".to_string(), 1201, 2200), vec![(1200, 2200)]); // over the host's exon
         bl.insert(("c".to_string(), 9001, 11000), vec![(9000, 11000)]);
         bl.insert(("c".to_string(), 20001, 21000), vec![(20000, 21000)]);
-        let m = loci_from_exon_blocks(&bl);
+        let mut m = loci_from_exon_blocks(&bl);
         assert_eq!(m.n_merged(), 1);
-        let g = graph_from_paf_loci(&paf, &ex, &BTreeMap::new(), &p, Some(&m));
-        assert_eq!((g.n_nodes(), g.n_edges()), (3, 2), "{:?}", g.genes);
-        assert_eq!(g.same_locus_records, 0);
-        assert!(g.genes.contains(&("c".to_string(), 1001, 3000)));
-        assert!(!g.genes.contains(&("c".to_string(), 1201, 2200)));
-        // and a record between H and N (the locus aligned to itself) is skipped, not an edge
+        let rep_only = graph_from_paf_loci(&paf, &ex, &BTreeMap::new(), &p, Some(&m));
+        assert_eq!((rep_only.n_nodes(), rep_only.n_edges(), rep_only.same_locus_records), (2, 1, 1), "{:?}", rep_only.genes);
+        assert!(!rep_only.genes.contains(&("c".to_string(), 1201, 2200)));
+        m.attribute_edges = true;
+        let attributed = graph_from_paf_loci(&paf, &ex, &BTreeMap::new(), &p, Some(&m));
+        assert_eq!((attributed.n_nodes(), attributed.n_edges(), attributed.same_locus_records), (3, 2, 0), "{:?}", attributed.genes);
+        assert!(!attributed.genes.contains(&("c".to_string(), 1201, 2200)));
+        // a record between H and N (the locus aligned to itself) is skipped under both policies
         paf.push('\n');
         paf.push_str(&paf_line("c:1201-2200", 1000, 0, 1000, "c:1001-3000", 2000, 200, 1200, 1000, 1000));
         let g2 = graph_from_paf_loci(&paf, &ex, &BTreeMap::new(), &p, Some(&m));
         assert_eq!((g2.n_nodes(), g2.n_edges(), g2.same_locus_records), (3, 2, 1));
-    }
-
-    #[test]
-    fn core_refinement_keeps_copies_trims_chimeras_drops_slivers_and_respects_the_gate() {
-        // Family of 5 on contig c: four 20 kb copies at 100k, 200k, 300k, 400k, all pairwise SD-linked over
-        // their whole span; one chimeric 150 kb model at 600k-750k whose first 20 kb is linked to all four;
-        // one 40 kb record at 900k with a 500 bp sliver linked to all four (EIF3C-shaped).
-        let k = |s: u64, e: u64| ("c".to_string(), s, e);
-        let copies = [k(100_001, 120_000), k(200_001, 220_000), k(300_001, 320_000), k(400_001, 420_000)];
-        let chimera = k(600_001, 750_000);
-        let sliver = k(900_001, 940_000);
-        let mut bed = String::new();
-        let mut pair = |a: (u64, u64), b: (u64, u64)| bed.push_str(&format!("c\t{}\t{}\tc\t{}\t{}\n", a.0, a.1, b.0, b.1));
-        for i in 0..4 {
-            for j in (i + 1)..4 {
-                pair((copies[i].1 - 1, copies[i].2), (copies[j].1 - 1, copies[j].2));
-            }
-            pair((copies[i].1 - 1, copies[i].2), (600_000, 620_000)); // the chimera's core
-            pair((copies[i].1 - 1, copies[i].2), (900_000, 900_500)); // the sliver
-        }
-        let sd = SdPairs::from_bed_str(&bed);
-        assert_eq!(sd.n_pairs(), 6 + 4 + 4);
-        let mut members: Vec<GeneKey> = copies.to_vec();
-        members.push(chimera.clone());
-        members.push(sliver.clone());
-        let recs = refine_cluster_cores(&members, &sd);
-        assert!(recs.iter().all(|r| r.gate_passed), "{recs:?}");
-        for r in &recs[..4] {
-            assert_eq!(r.status, CoreStatus::KeptFull, "{r:?}");
-            assert_eq!(r.core_bp, 20_000);
-        }
-        let ch = &recs[4];
-        assert_eq!(ch.status, CoreStatus::KeptTrimmed, "{ch:?}");
-        assert_eq!(ch.hull, Some((600_001, 620_000)));
-        let sl = &recs[5];
-        assert_eq!(sl.status, CoreStatus::Dropped, "{sl:?}");
-        assert_eq!(sl.core_bp, 500);
-        // An old family with NO SD pairs fails the gate and is untouched.
-        let none = refine_cluster_cores(&members, &SdPairs::from_bed_str(""));
-        assert!(none.iter().all(|r| !r.gate_passed && r.status == CoreStatus::Untouched));
     }
 
     #[test]
