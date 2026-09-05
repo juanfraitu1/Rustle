@@ -1,0 +1,68 @@
+==== Soto ID_63 (8 members)
+  ANAPC1P1|ID_63         chr2:86863741-86914950  ->  CD8B[protei,ex=5256,cl=- FOLDED->LOC105374846] | ANAPC1P1[transc,ex=2435,cl=- FOLDED->LOC105374846]
+  ANAPC1P2|ID_63         chr2:87037033-87058220  ->  ANAPC1P2[transc,ex=2201,cl=MCL46]
+  ANAPC1P3|ID_63         chr2:87123762-87126211  ->  ANAPC1P3[pseudo,ex=312,cl=MCL46]
+  AC083899.1|ID_63       chr2:87130427-87202282  ->  LOC102724642[transc,ex=4007,cl=MCL46] | MIR4771-1[miRNA,ex=74,cl=-]
+  ANAPC1P4|ID_63         chr2:87712968-87750095  ->  NCAL1[lncRNA,ex=2241,cl=- FOLDED->LOC124906032] | ANAPC1P4[transc,ex=2238,cl=- FOLDED->LOC124906032]
+  ANAPC1P5|ID_63         chr2:87992304-88004460  ->  RGPD2[protei,ex=13874,cl=MCL20] | ANAPC1P5[pseudo,ex=526,cl=- FOLDED->RGPD2]
+  AC097527.1|ID_63       chr2:106932223-106939096  ->  RGPD3[protei,ex=10167,cl=MCL20] | LOC107985931[transc,ex=1994,cl=- FOLDED->CD8B2]
+  ANAPC1|ID_63           chr2:112037440-112311134  ->  LOC105373559[lncRNA,ex=885,cl=- FOLDED->LOC107985933] | LOC107985933[lncRNA,ex=3657,cl=-] | RPL34P8[pseudo,ex=-,cl=-] | CENPNP2[pseudo,ex=-,cl=-] | ANAPC1[protei,ex=12679,cl=MCL46] | MIR4771-2[miRNA,ex=74,cl=-]
+==== Soto ID_8 (9 members)
+  PMS2P4|ID_8            chr7:68507281-68522154  ->  PMS2P4[transc,ex=891,cl=- FOLDED->SPDYE21] | SPDYE21[protei,ex=3285,cl=MCL4]
+  PMS2P7|ID_8            chr7:74233765-74249332  ->  STAG3L3[transc,ex=2165,cl=- FOLDED->LOC124901672] | PMS2P7[transc,ex=668,cl=MCL21] | SPDYE8[protei,ex=2900,cl=MCL4]
+  PMS2P11|ID_8           chr7:74265295-74269589  ->  PMS2P14[pseudo,ex=-,cl=MCL21]
+  PMS2P6|ID_8            chr7:74293709-74305513  ->  PMS2P8[pseudo,ex=-,cl=MCL21] | SPDYE10[protei,ex=4312,cl=MCL4]
+  PMS2P5|ID_8            chr7:76096419-76100140  ->  PMS2P5[transc,ex=2030,cl=- FOLDED->SPDYE12]
+  PMS2P10|ID_8           chr7:76575232-76586963  ->  LOC124906602[protei,ex=3639,cl=MCL21] | SPDYE17[protei,ex=2900,cl=MCL4]
+  AC211486.3|ID_8        chr7:76603248-76614958  ->  LOC124906602[protei,ex=3639,cl=MCL21]
+  PMS2P2|ID_8            chr7:76631238-76646816  ->  LOC124906603[protei,ex=3514,cl=MCL4] | PMS2P2[transc,ex=637,cl=- FOLDED->LOC124906603] | STAG3L1[transc,ex=2170,cl=- FOLDED->LOC124901677]
+  PMS2P1|ID_8            chr7:101559306-101576392  ->  SPDYE3[protei,ex=4040,cl=MCL4] | PMS2P1[transc,ex=1518,cl=- FOLDED->SPDYE3] | STAG3L5P-PVRIG2P-PILRB[lncRNA,ex=3844,cl=- FOLDED->SPDYE3] | STAG3L5P[transc,ex=729,cl=- FOLDED->SPDYE3]
+==== Soto ID_14 (7 members)
+  AC005562.2|ID_14       chr17:31562334-31562446  ->  SMURF2P1-LRRC37BP1[transc,ex=4597,cl=MCL13] | LOC124907941[pseudo,ex=6965,cl=MCL13]
+  LRRC37BP1|ID_14        chr17:31574334-31581958  ->  SMURF2P1-LRRC37BP1[transc,ex=4597,cl=MCL13] | LOC100420850[pseudo,ex=876,cl=- FOLDED->SMURF2P1-LRRC37BP1] | LRRC37BP1[pseudo,ex=761,cl=- FOLDED->SMURF2P1-LRRC37BP1]
+  LRRC37B|ID_14          chr17:32953747-32999386  ->  LRRC37B[protei,ex=3982,cl=MCL13] | SH3GL1P1[transc,ex=2497,cl=-]
+  AC090616.5|ID_14       chr17:33034040-33040757  ->  VILMIR[lncRNA,ex=3847,cl=MCL13] | LOC102724625[lncRNA,ex=1390,cl=MCL13]
+  LRRC37A|ID_14          chr17:47154742-47199790  ->  LRRC37A[protei,ex=6412,cl=- FOLDED->ARL17B] | ARL17B[protei,ex=9265,cl=MCL13] | RN7SL656P[pseudo,ex=-,cl=-]
+  LRRC37A2|ID_14         chr17:47373158-47417300  ->  LRRC37A2[protei,ex=8539,cl=- FOLDED->LOC101927060] | ARL17A[protei,ex=17674,cl=- FOLDED->LOC101927060] | RN7SL199P[pseudo,ex=-,cl=-]
+  LRRC37A3|ID_14         chr17:65724068-65789437  ->  LOC105376844[lncRNA,ex=13749,cl=MCL13] | LRRC37A3[protei,ex=6038,cl=- FOLDED->LOC105376844] | LOC102929163[pseudo,ex=-,cl=-] | RN7SL404P[pseudo,ex=-,cl=-] | RDM1P4[pseudo,ex=-,cl=-]
+==== Soto ID_462 (4 members)
+  SRGAP2C|ID_462         chr1:121194173-121402237  ->  SRGAP2C[protei,ex=7091,cl=MCL54] | LOC107985193[lncRNA,ex=136,cl=-] | SRGAP2-AS1[lncRNA,ex=2503,cl=- FOLDED->LINC02798]
+  SRGAP2D|ID_462         chr1:143047107-143140349  ->  SRGAP2D[transc,ex=3044,cl=- FOLDED->FAM72C]
+  SRGAP2B|ID_462         chr1:144012010-144220236  ->  SRGAP2B[protei,ex=10647,cl=MCL54] | LOC107985595[lncRNA,ex=136,cl=- FOLDED->SRGAP2B] | FAM72D[protei,ex=5418,cl=- FOLDED->SRGAP2B]
+  SRGAP2|ID_462          chr1:205466058-205728625  ->  FAM72A[protei,ex=5416,cl=- FOLDED->SRGAP2] | SRGAP2[protei,ex=13506,cl=MCL54] | LOC124905748[lncRNA,ex=136,cl=- FOLDED->SRGAP2]
+==== Soto ID_354 (4 members)
+  FAM72B|ID_354          chr1:121177004-121194903  ->  FAM72B[protei,ex=2396,cl=MCL75] | SRGAP2C[protei,ex=7091,cl=MCL54]
+  FAM72C|ID_354          chr1:143027383-143043986  ->  FAM72C[protei,ex=3888,cl=MCL75]
+  FAM72D|ID_354          chr1:144220682-144237402  ->  FAM72D[protei,ex=5418,cl=- FOLDED->SRGAP2B]
+  FAM72A|ID_354          chr1:205450359-205468600  ->  FAM72A[protei,ex=5416,cl=- FOLDED->SRGAP2] | SRGAP2[protei,ex=13506,cl=MCL54]
+==== Soto ID_226 (5 members)
+  H2BP1|ID_226           chr1:121117591-121126640  ->  H3P4[transc,ex=3995,cl=MCL35] | H2BP1[transc,ex=2188,cl=- FOLDED->H3P4]
+  H3P4|ID_226            chr1:121127576-121127993  ->  H3P4[transc,ex=3995,cl=MCL35]
+  H3-2|ID_226            chr1:142966564-142977985  ->  H2BP2[transc,ex=4124,cl=MCL35] | H3-7[protei,ex=2673,cl=- FOLDED->H2BP2]
+  H2BC18|ID_226          chr1:148906833-148936508  ->  H2BC18[protei,ex=1064,cl=- FOLDED->FCGR1A] | FCGR1A[protei,ex=3091,cl=MCL35] | LOC124905738[protei,ex=1348,cl=-]
+  H3C13|ID_226           chr1:148937358-148937828  ->  H3C13[protei,ex=469,cl=-]
+==== Soto ID_35 (10 members)
+  AL669831.1|ID_35       chr1:152393-205163  ->  LOC100288069[lncRNA,ex=7117,cl=MCL5] | RNU6-1199P[pseudo,ex=-,cl=-]
+  AL592148.2|ID_35       chr1:221743930-221753495  ->  HHIPL2[protei,ex=4060,cl=- FOLDED->TAF1A]
+  GTF2IP20|ID_35         chr1:223141181-223182346  ->  GTF2IP20[transc,ex=2950,cl=MCL5] | RNU6-1319P[pseudo,ex=-,cl=-]
+  LINC01347|ID_35        chr1:242467318-242512761  ->  LINC01347[lncRNA,ex=3834,cl=MCL5] | RNU6-747P[pseudo,ex=-,cl=-]
+  FAM157A|ID_35          chr3:200883047-200954215  ->  FAM157A[lncRNA,ex=6706,cl=MCL5] | LOC124905354[lncRNA,ex=405,cl=MCL5] | RNU6-860P[pseudo,ex=-,cl=-] | LOC100133150[pseudo,ex=-,cl=MCL5]
+  AC110079.1|ID_35       chr4:121896771-121939030  ->  LOC729218[transc,ex=5853,cl=MCL5] | RNU6-1054P[pseudo,ex=-,cl=-]
+  GTF2IP12|ID_35         chr4:122710627-122759756  ->  LOC100131884[pseudo,ex=-,cl=-] | LINC01061[lncRNA,ex=4817,cl=MCL5] | RNU6-1217P[pseudo,ex=-,cl=-] | GTF2IP12[transc,ex=939,cl=MCL5]
+  AC008443.6|ID_35       chr5:181851743-181855644  ->  NO RECORD
+  FAM157B|ID_35          chr9:150478579-150516124  ->  FAM157B[lncRNA,ex=3691,cl=MCL5] | LOC124902321[lncRNA,ex=3463,cl=-]
+  AL133216.2|ID_35       chr10:38447204-38496163  ->  LOC101929540[lncRNA,ex=2222,cl=MCL5] | RNU6-1118P[pseudo,ex=-,cl=-] | LINC00999[lncRNA,ex=5253,cl=MCL5]
+==== Soto ID_261 (5 members)
+  CNTNAP3P5|ID_261       chr9:39786634-39796678  ->  CNTNAP3P6[pseudo,ex=-,cl=-]
+  AL513478.3|ID_261      chr9:40182305-40186244  ->  LOC112268033[lncRNA,ex=234,cl=MCL91]
+  BX664718.2|ID_261      chr9:44277729-44354481  ->  LOC124906846[lncRNA,ex=457,cl=-] | CNTNAP3P7[pseudo,ex=-,cl=-] | XLOC_007697[lncRNA,ex=250,cl=-] | ADGRF5P2[pseudo,ex=1399,cl=-]
+  AL773545.4|ID_261      chr9:77974578-77978517  ->  LOC124906861[lncRNA,ex=603,cl=MCL91]
+  CNTNAP3P1|ID_261       chr9:80247804-80257862  ->  NO RECORD
+==== Soto ID_403 (3 members)
+  NF1P10|ID_403          chr14:13212855-13215996  ->  NF1P10[pseudo,ex=-,cl=-]
+  NF1P7|ID_403           chr14:13803703-13813427  ->  NF1P7[pseudo,ex=-,cl=-]
+  NF1P11|ID_403          chr22:16196565-16203867  ->  NF1P6[pseudo,ex=-,cl=-]
+==== Soto ID_179 (3 members)
+  ULK4P3|ID_179          chr15:27895441-27922933  ->  ULK4P3[transc,ex=1149,cl=- FOLDED->GOLGA8T] | LOC124900359[snoRNA,ex=133,cl=-]
+  ULK4P2|ID_179          chr15:28365932-28393844  ->  ULK4P2[transc,ex=876,cl=MCL62] | LOC124900358[snoRNA,ex=133,cl=-] | ARHGAP11B-DT[lncRNA,ex=5267,cl=MCL0]
+  ULK4P1|ID_179          chr15:30203116-30231537  ->  ULK4P1[transc,ex=876,cl=MCL62] | LOC124900356[snoRNA,ex=133,cl=-]

@@ -12417,3 +12417,68 @@ reads with a block inside): 429 candidate loci, **9 outside every gene, 5 admitt
 ⟹ On this slice the annotation-gap class is 11/54 of the misses and admission recovers 2 of the 11; the node's
 shortfall was the size floor (19) and MCL fragmentation (9), not the annotation. Admission ships as a bench
 prototype, not a flag; MCL fragmentation (row 694) is the open partition defect.
+
+## §6ey — ROW 694 ROOT-CAUSED AND FIXED: fold loci AFTER clustering, exon-less records are one exon, homology must be exon-to-exon (2026-09-05)
+
+**Diagnosis** (`docs/soto_fragmentation_diagnosis_2026-09-05.txt`): the "fragmented" Soto families were never a
+partition failure. Every lost member is an annotation record that overlaps a record of a DIFFERENT family on
+exon bases — a pseudogene inside a host gene's exon (ANAPC1P1 under CD8B, PMS2P4 under SPDYE21, ANAPC1P5 under
+RGPD2), a head-to-head pair (FAM72A/SRGAP2), an antisense lncRNA (H2BP1/H3P4), a readthrough model
+(SMURF2P1-LRRC37BP1) — and the fold-first locus rule keeps ONE representative per exon-overlap component (the
+longest exon union, usually the host), then representative-only evidence discards the rest. That is the same
+defect as the NPIP block merge (§6eg) seen from the other side: fold-first + representative-only loses members,
+fold-first + attribution rebuilds the block. The second cause: 160 of the 747 RefSeq records in Soto's
+neighbourhoods have NO exon children (pseudogenes), so they have no exonic denominator and no exonic overlap, and
+no edge can reach them; 20 Soto members exist only as such records (NF1P ×3, CNTNAP3P, PMS2P8/P14 …).
+
+**Fix (three OFF flags, byte-identical off — `adj/v4_rebuild` = `rna_units_v4` on all four tables):**
+1. `mcl_families --fold-within-clusters` (`fold_parts_into_loci`): records are the graph's nodes, MCL runs on
+   them, and two records are one locus only if they overlap on exon bases AND share a cluster. Sequence decides
+   the cluster, coordinates decide the locus: two criteria, no circularity, no semantics switch.
+2. `--exonless-span`: a gene/pseudogene record with no exon children is one exon spanning the record.
+3. `--exonic-both-sides` (`GraphParams.exonic_both_sides`): some single alignment record must map ≥ 1 exon base of
+   one gene onto exon bases of the other. Records are aligned as genomic SPANS, so a nested pseudogene carries its
+   host's bases and aligns to the host's paralogues on the host's exons alone; homologous copies share exon bases
+   on both sides by definition. No new constant.
+Tests: `folding_within_clusters_keeps_overlapping_records_of_different_families_apart`,
+`exonic_both_sides_rejects_a_pair_that_touches_only_the_hosts_exons` (incl. two one-sided records ≠ exon-to-exon).
+
+**Pre-registered** (`docs/PREREG_fold_within_clusters_2026-09-05.md`, md5 a57a848f…); Soto slice, min_size 2,
+≥50 % floor (`docs/soto_arm_*_2026-09-05.log`):
+| arm | detected | band-[0.90,1) precision | recall∣both | family exact | Soto-silent band asserted |
+|---|---|---|---|---|---|
+| reference: fold-first, representative-only | 272 (0.751) | 506/533 = 0.949 | 0.942 | 51/67 | 219 |
+| record-level, no fold | 305 (0.843) | 599/706 = 0.848 | 0.941 | 44/68 | 242 |
+| attribution | 273 (0.754) | 521/578 = 0.901 | 0.971 | 44/67 | 230 |
+| fold within clusters | 289 (0.798) | 559/607 = 0.921 | 0.944 | 46/67 | 247 |
+| exon-less span alone (fold-first) | 265 (0.732) | 459/477 = 0.962 | 0.949 | 56/68 | 193 |
+| exon-to-exon alone (fold-first) | 253 (0.699) | 468/476 = 0.983 | 0.944 | 56/65 | 185 |
+| fold within + exon-less | 290 (0.801) | 549/586 = 0.937 | 0.947 | 52/69 | 232 |
+| **all three** | **289 (0.798)** | **548/581 = 0.943** | **0.949** | **52/69** | 230 |
+P1 held on detection (0.798 vs ≥ 0.80, one member) and failed on precision for the fold ALONE (0.921 < 0.94): the
+fold recovers the members and lets nested spans assert host-derived pairs; exon-to-exon removes those (0.943,
+CI [0.921, 0.959] overlaps the reference's [0.926, 0.964]). P2 failed as written: exon-less span under fold-FIRST
+LOWERS detection (8,296 records folded — a span-exon overlaps everything) and only works after the fold moves
+inside clusters. P3 held on recall and the silent band (+5 %), missed detection (0.798 < 0.82) and precision
+(0.943 < 0.94 by one pair) by the width of one member each. ⭐ **The control that matters: exon-to-exon alone on
+the OLD order drops detection 0.751 → 0.699** — 19 of the reference's detections were exon-less records reached
+through their host's exons, i.e. the reference's number was partly the artefact the fix removes. Against that
+clean baseline the fix is +36 members at −0.04 band precision.
+**Residual 33 band-[0.90,1) false pairs:** 23 are ONE RefSeq record — the exon-less pseudogene PMS2P14, an 11.8-kb
+span that aligns full-length at 0.989 to a SPDYE-bearing record (the 7q11.23 block; Soto calls it PMS2P, the
+sequence says SPDYE) — and 10 are co-duplicated neighbours across blocks (GOLGA8/GOLGA6L/UBE2Q2P on 15q13,
+DDX11L/DDX12P, ZNF705/DEFB108, ANKRD30B/FGF7P): the duplication-block question, which the SD core rule answers
+on gorilla and which has no CHM13-v2 SEDEF here.
+**Gorilla (P4, `rna_units_v6`, all three flags + follow-reads + min_size 2):** 1,457 records / 4,797 edges (v4: 5,239;
+rejected_no_exonic 43,729 → 57,553 = the intron-repeat pairs) / 274 clusters (161 pairs); 178 records folded inside
+their clusters. **NPIP: all 44 annotation records in ONE cluster, 32 loci (29 + 3 LOC records that fold-first had
+folded away: NC_073242.2:28.30, 29.39, 32.23 Mb — to be adjudicated by CHM13 landing); LCR16u/SMG1P separate
+(MCL7); the anchored real clusters intact (rna_bp1 MCL1 48/48, MCL3 36/36); MCL4 (the element) intact 29/29;
+ERV-K-in-SD MCL32/MCL24 persist.** ⭐ **The L1 artefact blob (rna_bp1 MCL0, 101 members, class
+DISPERSED+SHARED+REPEAT, frac_sd_in 0.035) DISSOLVES: 64 of its 104 records in no cluster, the rest in ≤4-member
+fragments** — the exon-to-exon rule removes intron-borne repeat homology without a repeat library. The two smaller
+artefacts (MCL15, MCL28) persist as 6- and 4-member clusters. Every v4 locus that was a chimeric model (ABCC1/SORL1
+records over NPIP) now splits by sequence into its own cluster (MCL53/MCL27), which is the core rule's drop arm
+done by the graph.
+Register rows 696–698. Suite 855 passed / 0 failed / 11 ignored. Default flips of the three flags = user decision; `--min-size 3`, no flags = every
+catalog before today.

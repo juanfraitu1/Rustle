@@ -55,3 +55,11 @@ G5 decomposed: the node's shortfall was the size floor (19/54) and MCL fragmenta
 RNA admission prototyped (`bench` only, recovers 2/11). **min_size default 2** (user); canonical 3-contig catalog =
 `mcl_ann/rna_units_v4` (268 clusters, 432 units; every ≥3 cluster identical to v3). Open next: MCL fragmentation
 (row 694), G3 sensitivity table, D3 pre-registration, the two §6eu default flips, a duplicon-name column per family.
+
+## Row 694 root-caused (§6ey, 2026-09-05)
+Not MCL: the fold-first locus rule loses every record that overlaps another family's record on exon bases, and
+exon-less pseudogene records can carry no edge. Fix = three OFF flags (`--fold-within-clusters`, `--exonless-span`,
+`--exonic-both-sides`); Soto 50 % floor: detection 0.751 → 0.798, band precision 0.949 → 0.943 (CIs overlap),
+recall|both 0.942 → 0.949; gorilla `rna_units_v6`: NPIP 44/44 records one cluster (32 loci), LCR16u separate,
+anchors intact, the L1 artefact blob dissolves (64/104 unclustered). **Default flips = user decision.** Then:
+G3 sensitivity table, D3 pre-registration, the two §6eu flips, duplicon-name column, CHM13 landing for the 3 new NPIP loci.

@@ -16,7 +16,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::vg_family::annotation_families::{
-    build_clusters, graph_from_paf_loci, loci_from_exon_blocks, mcl, refine_cluster_cores, Cluster, CoreStatus,
+    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks, mcl, refine_cluster_cores, Cluster, CoreStatus,
     GeneKey, GraphParams, SdPairs,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -151,6 +151,30 @@ struct Args {
     #[arg(long, default_value_t = 3)]
     min_reads: usize,
 
+    /// ⭐ Fold overlapping annotation records into loci AFTER clustering, inside each cluster (§6ey), instead
+    /// of before (the default since §6ef). Fold-first with representative-only evidence loses every record that
+    /// overlaps a DIFFERENT family's record on exon bases (Soto: 19 of 43 annotated misses — ANAPC1P1 folded
+    /// under CD8B's locus, PMS2P4 under SPDYE21, FAM72A under SRGAP2, LRRC37A under ARL17B); attribution rebuilds
+    /// the duplication block. With this flag records are the graph's nodes, MCL runs on them, and two records
+    /// become one locus only if they overlap on exon bases AND share a cluster. Default OFF: a default flip is a
+    /// thesis edit. Implies `--no-merge-overlapping-loci` for the graph; `--locus-attribute-edges` is ignored.
+    #[arg(long, default_value_t = false)]
+    fold_within_clusters: bool,
+
+    /// ⭐ A gene/pseudogene record with NO exon children counts as one exon spanning the record (§6ey). RefSeq
+    /// (CHM13) leaves 160 of 747 records in Soto's neighbourhoods without exon features (NF1P, CNTNAP3P, PMS2P
+    /// pseudogenes); without a block they have no exonic denominator and no exonic overlap, so no edge can
+    /// reach them (20 Soto members exist only as such records). The gorilla annotation has none. Default OFF.
+    #[arg(long, default_value_t = false)]
+    exonless_span: bool,
+
+    /// ⭐ The pair's alignment must cover ≥ `--min-exonic-bp` exon bases on BOTH records (§6ey). Records are
+    /// aligned as genomic spans, so a pseudogene inside another family's gene aligns to that family's paralogs
+    /// on the host's exons alone (Soto: PMS2P7 inside SPDYE8 → 26 false PMS2P×SPDYE pairs under
+    /// `--fold-within-clusters`). Homologous copies share exon bases on both sides. Default OFF.
+    #[arg(long, default_value_t = false)]
+    exonic_both_sides: bool,
+
     /// ⭐ Units FOLLOW THE READS (§6eu): extend a unit's read-supported exon chain beyond its core hull to every
     /// block supported by the reads that overlap the hull, WITHIN the member's annotated locus span — the same
     /// `>= --min-reads` rule and the same giant-intron cut, only the hull is no longer a clip. OFF, the
@@ -169,7 +193,7 @@ struct Args {
 /// ⚠ Reads `exon` features and joins them to their gene by the `gene=` attribute (a Name), which is why
 /// the Name -> ID map is built first. Reports the join rate: **a no-op result is the signature of a failed
 /// join** (§6dd), so a silent fallback to the span must never be possible.
-fn exonic_blocks(gff: &str) -> Result<BTreeMap<GeneKey, Vec<(u64, u64)>>> {
+fn exonic_blocks(gff: &str, exonless_span: bool) -> Result<BTreeMap<GeneKey, Vec<(u64, u64)>>> {
     let text = std::fs::read_to_string(gff).with_context(|| format!("reading {gff}"))?;
     let attr = |a: &str, k: &str| -> Option<String> {
         a.split(';').find_map(|f| f.strip_prefix(k).map(|v| v.to_string()))
@@ -202,6 +226,12 @@ fn exonic_blocks(gff: &str) -> Result<BTreeMap<GeneKey, Vec<(u64, u64)>>> {
         let (Ok(s), Ok(e)) = (f[3].parse::<u64>(), f[4].parse::<u64>()) else { continue };
         if f[0] == g.0 {
             blocks.entry(g.clone()).or_default().push((s - 1, e));
+        }
+    }
+    if exonless_span {
+        // a record with no exon children is one exon: its own span (0-based half-open)
+        for g in span_of_name.values() {
+            blocks.entry(g.clone()).or_insert_with(|| vec![(g.1 - 1, g.2)]);
         }
     }
     let mut out: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
@@ -428,10 +458,11 @@ fn main() -> Result<()> {
         exonic_overlap: args.exonic_overlap,
         reject_overlapping: args.reject_overlapping,
         min_exonic_bp: args.min_exonic_bp,
+        exonic_both_sides: args.exonic_both_sides,
     };
 
     let blocks = match &args.gff {
-        Some(g) => exonic_blocks(g)?,
+        Some(g) => exonic_blocks(g, args.exonless_span)?,
         None => {
             eprintln!(
                 "[mcl_families] WARNING: no --gff, so the coverage denominator is the GENOMIC SPAN. The \
@@ -444,7 +475,7 @@ fn main() -> Result<()> {
     eprintln!("[mcl_families] exon-union lengths for {} genes", exonic.len());
 
     let paf = std::fs::read_to_string(&args.paf).with_context(|| format!("reading {}", args.paf))?;
-    let loci = if args.merge_overlapping_loci {
+    let loci = if args.merge_overlapping_loci && !args.fold_within_clusters {
         let mut m = loci_from_exon_blocks(&blocks);
         m.attribute_edges = args.locus_attribute_edges;
         eprintln!(
@@ -521,6 +552,26 @@ fn main() -> Result<()> {
     }
 
     let parts = mcl(&g, args.inflation, 100, args.prune);
+    // ⭐ §6ey: fold overlapping records into loci INSIDE each cluster (sequence decided the cluster, coordinates
+    // decide the locus). `parts` becomes representative-only; the fold map is written like the fold-first one.
+    let (parts, loci) = if args.fold_within_clusters {
+        let (folded, m) = fold_parts_into_loci(&g, &parts, &blocks);
+        eprintln!(
+            "[mcl_families] fold-within-clusters: {} annotation record(s) folded into {} multi-record loci inside their clusters",
+            m.n_merged(),
+            m.n_multi
+        );
+        let mut lf = std::fs::File::create(format!("{}.loci.tsv", args.out))?;
+        writeln!(lf, "annotation\trepresentative")?;
+        for (k, r) in &m.rep_of {
+            if k != r {
+                writeln!(lf, "{}:{}-{}\t{}:{}-{}", k.0, k.1, k.2, r.0, r.1, r.2)?;
+            }
+        }
+        (folded, Some(m))
+    } else {
+        (parts, loci)
+    };
 
     // RNA corroboration, when a BAM is supplied.
     let corr_set: Option<BTreeSet<GeneKey>> = match &args.bam {
@@ -850,6 +901,9 @@ fn main() -> Result<()> {
         ("core_members_dropped".to_string(), core_stats.3.to_string()),
         ("emit_units".to_string(), args.emit_units.to_string()),
         ("units_follow_reads".to_string(), args.units_follow_reads.to_string()),
+        ("fold_within_clusters".to_string(), args.fold_within_clusters.to_string()),
+        ("exonless_span".to_string(), args.exonless_span.to_string()),
+        ("exonic_both_sides".to_string(), args.exonic_both_sides.to_string()),
         ("rmsk".to_string(), args.rmsk.clone().unwrap_or_else(|| "NA".into())),
         ("units_read_chain".to_string(), unit_stats.0.to_string()),
         ("units_gff_fallback".to_string(), unit_stats.1.to_string()),

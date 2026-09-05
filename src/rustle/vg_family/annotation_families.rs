@@ -55,6 +55,13 @@ pub struct GraphParams {
     /// **108/4,276** intra-cluster edges join fully NESTED intervals at identity exactly 1.000, and
     /// 54/139 clusters contain at least one. Default OFF ⟹ byte-identical.
     pub reject_overlapping: bool,
+    /// ⭐ §6ey: some single alignment record must map ≥ `min_exonic_bp` exon bases of one record onto exon
+    /// bases of the other (EXON-TO-EXON homology), not only touch the longer one's exons. Records are aligned as genomic SPANS, so a pseudogene lying inside another family's gene
+    /// carries that host's bases and aligns to the host's paralogs on the host's exons alone (Soto: PMS2P7,
+    /// inside SPDYE8's span, joined the SPDYE cluster with 26 false pairs). Homologous copies share exon
+    /// bases on both sides by definition; an alignment that touches only one gene's exons is not evidence of
+    /// the other gene's homology. No new constant. Default `false` (byte-identical).
+    pub exonic_both_sides: bool,
     /// ⭐ Minimum ABSOLUTE exonic bases the pair's alignments must jointly cover on the longer gene.
     ///
     /// An ADDITIVE guard, not a replacement for `cov_longer`. ⚠ Replacing the coverage measure with an
@@ -82,6 +89,7 @@ impl Default for GraphParams {
             min_bp: 300,
             exonic_overlap: false,
             reject_overlapping: false,
+            exonic_both_sides: false,
             min_exonic_bp: 0,
         }
     }
@@ -280,7 +288,7 @@ pub fn graph_from_paf_loci(
     // splits one paralogous alignment across many records, so a per-record floor rejects a real family
     // whose exons are jointly covered. Accumulate the pair's intervals, threshold ONCE at the end.
     // (Measured: per-record thresholding shattered the NPIP cluster 43 -> 17/15/3/3/1.)
-    type PairAcc = (Vec<(u64, u64)>, Vec<(u64, u64)>, u64, u64);
+    type PairAcc = (Vec<(u64, u64)>, Vec<(u64, u64)>, u64, u64, u64);
     let mut acc: BTreeMap<(GeneKey, GeneKey), PairAcc> = BTreeMap::new();
 
     for line in paf.lines() {
@@ -347,7 +355,7 @@ pub fn graph_from_paf_loci(
             } else {
                 ((tk.clone(), qk.clone()), false)
             };
-            let e = acc.entry(k).or_insert_with(|| (Vec::new(), Vec::new(), 0, 0));
+            let e = acc.entry(k).or_insert_with(|| (Vec::new(), Vec::new(), 0, 0, 0));
             if qf {
                 e.0.push((qs, qe));
                 e.1.push((ts, te));
@@ -357,6 +365,12 @@ pub fn graph_from_paf_loci(
             }
             e.2 += nmatch;
             e.3 += blocklen;
+            if p.exonic_both_sides {
+                // exon-to-exon: THIS record's interval must touch exon bases on both sides; keep the best record
+                let qx = exon_blocks.get(&qk).map_or(0, |b| exonic_bases_in(b, qk.1, qs, qe));
+                let tx = exon_blocks.get(&tk).map_or(0, |b| exonic_bases_in(b, tk.1, ts, te));
+                e.4 = e.4.max(qx.min(tx));
+            }
             continue;
         }
         let cov_longer = (aln as f64 / dq.max(dt).max(1) as f64).min(1.0);
@@ -381,7 +395,7 @@ pub fn graph_from_paf_loci(
     }
     // Resolve the deferred pairs: merge each side's intervals, charge the LONGER gene's own exonic bases
     // against its own exonic denominator, and threshold once.
-    for ((ak, bk), (aiv, biv, nmatch, blocklen)) in acc {
+    for ((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon)) in acc {
         let da = exonic_len.get(&ak).copied().unwrap_or(0);
         let db = exonic_len.get(&bk).copied().unwrap_or(0);
         let (gk, iv, den) = if da >= db { (&ak, aiv, da) } else { (&bk, biv, db) };
@@ -394,6 +408,13 @@ pub fn graph_from_paf_loci(
         let covered =
             merged.iter().map(|&(s0, e0)| exonic_bases_in(blocks, gk.1, s0, e0)).sum::<u64>();
         if covered < p.min_exonic_bp {
+            g.rejected_no_exonic += 1;
+            continue;
+        }
+        if p.exonic_both_sides && exon_exon < p.min_exonic_bp {
+            // no single record maps exon bases of one gene onto exon bases of the other: the homology is
+            // between spans (a nested pseudogene carrying its host's bases, co-duplicated neighbours), not
+            // between the genes
             g.rejected_no_exonic += 1;
             continue;
         }
@@ -788,6 +809,46 @@ pub struct Cluster {
 
 /// Assemble reportable clusters. `min_size` drops singletons (and, at 3, the pairs that carry no
 /// density signal). `corroborated_members` is the caller's RNA verdict per gene, or `None` if no BAM.
+/// ⭐ Fold overlapping annotation records into loci WITHIN each MCL part (§6ey). The fold-first order
+/// (`loci_from_exon_blocks` over the whole annotation, then representative-only edges) loses every record
+/// that overlaps a record of a DIFFERENT family on exon bases — a pseudogene inside a host gene's exon, a
+/// head-to-head pair, an antisense lncRNA, a readthrough model — because the locus keeps ONE representative
+/// (the longest exon union) and discards the others' homology (Soto: ANAPC1P1 → CD8B's locus, PMS2P4 →
+/// SPDYE21, FAM72A → SRGAP2, LRRC37A → ARL17B; 19 of 43 annotated misses). Attribution semantics keep the
+/// evidence but rebuild the duplication BLOCK (§6eg). Folding AFTER clustering dissolves the dilemma: two
+/// records are one locus only if they overlap on exon bases AND sit in the same sequence-homology cluster —
+/// coordinates and sequence are two different criteria, so the fold is not circular. Returns the parts with
+/// each locus reduced to its representative (longest exon union, `loci_from_exon_blocks`' rule) and the map
+/// annotation → representative for every record folded away. Records without exon blocks are never folded.
+pub fn fold_parts_into_loci(
+    g: &HomologyGraph,
+    parts: &[Vec<usize>],
+    exon_blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>,
+) -> (Vec<Vec<usize>>, LocusMap) {
+    let mut all = LocusMap::default();
+    let mut out = Vec::with_capacity(parts.len());
+    for part in parts {
+        let sub: BTreeMap<GeneKey, Vec<(u64, u64)>> = part
+            .iter()
+            .filter_map(|&i| exon_blocks.get(&g.genes[i]).map(|b| (g.genes[i].clone(), b.clone())))
+            .collect();
+        let m = loci_from_exon_blocks(&sub);
+        let kept: Vec<usize> = part
+            .iter()
+            .copied()
+            .filter(|&i| m.rep_of.get(&g.genes[i]).map_or(true, |r| *r == g.genes[i]))
+            .collect();
+        for (k, r) in &m.rep_of {
+            if k != r {
+                all.rep_of.insert(k.clone(), r.clone());
+            }
+        }
+        all.n_multi += m.n_multi;
+        out.push(kept);
+    }
+    (out, all)
+}
+
 pub fn build_clusters(
     g: &HomologyGraph,
     parts: &[Vec<usize>],
@@ -991,6 +1052,68 @@ mod tests {
         paf.push_str(&paf_line("c:1201-2200", 1000, 0, 1000, "c:1001-3000", 2000, 200, 1200, 1000, 1000));
         let g2 = graph_from_paf_loci(&paf, &ex, &BTreeMap::new(), &p, Some(&m));
         assert_eq!((g2.n_nodes(), g2.n_edges(), g2.same_locus_records), (3, 2, 1));
+    }
+
+    #[test]
+    fn folding_within_clusters_keeps_overlapping_records_of_different_families_apart() {
+        // Host A1 (c:1001-3000) contains B1 (c:1201-2200) on exon bases; A1' (c:1001-2500) is a second record
+        // of A1's own gene. A1, A1' ~ A2 (c:9001-11000); B1 ~ B2 (c:20001-21000). Fold-first loses B1 (its
+        // locus's representative is A1); fold-within-clusters keeps {A1, A2} and {B1, B2}: four loci.
+        let mut g = HomologyGraph::default();
+        let keys: Vec<GeneKey> = [
+            ("c", 1001u64, 3000u64), ("c", 1001, 2500), ("c", 9001, 11000), ("c", 1201, 2200), ("c", 20001, 21000),
+        ]
+        .iter()
+        .map(|(c, s, e)| (c.to_string(), *s, *e))
+        .collect();
+        g.genes = keys.clone();
+        let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+        bl.insert(keys[0].clone(), vec![(1000, 3000)]);
+        bl.insert(keys[1].clone(), vec![(1000, 2500)]);
+        bl.insert(keys[2].clone(), vec![(9000, 11000)]);
+        bl.insert(keys[3].clone(), vec![(1200, 2200)]);
+        bl.insert(keys[4].clone(), vec![(20000, 21000)]);
+        // fold-first: one locus {A1, A1', B1} with A1 as representative -> B1 gone
+        let first = loci_from_exon_blocks(&bl);
+        assert_eq!(first.rep_of.get(&keys[3]), Some(&keys[0]));
+        // fold within the MCL parts {A1, A1', A2}, {B1, B2}
+        let parts = vec![vec![0, 1, 2], vec![3, 4]];
+        let (folded, m) = fold_parts_into_loci(&g, &parts, &bl);
+        assert_eq!(folded, vec![vec![0, 2], vec![3, 4]]);
+        assert_eq!(m.rep_of.get(&keys[1]), Some(&keys[0]));
+        assert!(!m.rep_of.contains_key(&keys[3]), "B1 must not be folded into A1's locus");
+        assert_eq!((m.n_merged(), m.n_multi), (1, 1));
+    }
+
+    #[test]
+    fn exonic_both_sides_rejects_a_pair_that_touches_only_the_hosts_exons() {
+        // Pseudogene N (c:1201-2200, one 200-bp exon at 1400-1600) lies inside host H (c:1001-3000, exons at
+        // 1000-1200 and 2800-3000). N's SPAN carries H's bases; it aligns to H's paralogue P (c:9001-11000,
+        // exons 9000-9200, 10800-11000) over N's first 200 bp (H's exon 1000-1200 in span coordinates 0..200),
+        // i.e. on P's exons but NOT on N's own exon (span offsets 200..400 untouched).
+        let paf = paf_line("c:1201-2200", 1000, 0, 200, "c:9001-11000", 2000, 0, 200, 195, 200);
+        let mut ex = BTreeMap::new();
+        ex.insert(("c".to_string(), 1201, 2200), 200);
+        ex.insert(("c".to_string(), 9001, 11000), 400);
+        let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+        bl.insert(("c".to_string(), 1201, 2200), vec![(1400, 1600)]);
+        bl.insert(("c".to_string(), 9001, 11000), vec![(9000, 9200), (10800, 11000)]);
+        let one_side = GraphParams { min_bp: 100, min_exonic_bp: 1, min_cov_longer: 0.1, ..GraphParams::default() };
+        let g1 = graph_from_paf(&paf, &ex, &bl, &one_side);
+        assert_eq!(g1.n_edges(), 1, "the longer side (P) is touched on its exons: admitted today");
+        let both = GraphParams { exonic_both_sides: true, ..one_side };
+        let g2 = graph_from_paf(&paf, &ex, &bl, &both);
+        assert_eq!((g2.n_edges(), g2.rejected_no_exonic), (0, 1), "N's own exon is untouched: no edge");
+        // a real paralogue pair maps exon onto exon in ONE record: N's exon (span 200..400) vs P's exon 2
+        let paf2 = paf_line("c:1201-2200", 1000, 200, 400, "c:9001-11000", 2000, 1800, 2000, 195, 200);
+        let g3 = graph_from_paf(&paf2, &ex, &bl, &both);
+        assert_eq!(g3.n_edges(), 1);
+        // two records that each touch only ONE side's exons do not add up to exon-to-exon homology
+        let mut paf3 = paf.clone();
+        paf3.push('\n');
+        paf3.push_str(&paf_line("c:1201-2200", 1000, 200, 400, "c:9001-11000", 2000, 400, 600, 195, 200));
+        let g4 = graph_from_paf(&paf3, &ex, &bl, &both);
+        assert_eq!((g4.n_edges(), g4.rejected_no_exonic), (0, 1));
     }
 
     #[test]
