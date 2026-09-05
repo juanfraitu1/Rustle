@@ -12143,3 +12143,35 @@ artefact; sparse copies exist, down to 4%, but are not the ones winning); MAPQ-6
 **Standing:** `--psv-genomic` OFF; hull column and registry shipped; the spliced mode remains the
 default and its NPIP result the quotable one (abstention certificate). Pieces measured today: locus rule
 → core hulls → read-chain units → hull columns (pairwise correct) → star projection (the open defect).
+
+## §6eq — S1 DONE: the junction truth audited. 55/117 anchors were annotation gaps; on the VALID truth the spliced mode makes NO wrong confident call on NPIP, the genomic modes do (2026-09-05)
+
+`bench/o2_truth_audit.py` (`docs/npip_truth_audit_2026-09-05.tsv`): every junction-anchored read realigned
+splice-aware (`minimap2 -x splice -N 60`) to every copy's full span; an anchor is AMBIGUOUS when the read
+also aligns to another copy with the same intron count, ≥ the same query coverage and NM ≤ anchor NM + 2.
+**117 anchored → 62 valid (29 MAPQ-60, 33 MAPQ<60), 55 ambiguous (11 MAPQ-60, 44 MAPQ<60).** Of the 13
+disagreements collected since §6ej, **9 sit on ambiguous anchors** — e.g. SRR27178663.848890: NM 8 on its
+anchor copy 17, NM 2 on copy 19 with the same 3 introns; O2's copy-19 call was RIGHT and the "truth" was a
+missing exon boundary in copy 19's model (register 686 confirmed). Truth re-issued: `o2scale/truth_valid.tsv`.
+
+**Every arm rescored on the 62 valid anchors** (copy order verified by locus across the families):
+| arm | assigned | agreement | tied | ambiguous | MAPQ<60 assigned |
+|---|---|---|---|---|---|
+| GFF-model cores, spliced (§6ej) | 5 | **5/5** | 38 | 19 | 0 |
+| bench read chains (§6el, defective builder) | 5 | 5/5 | 16 | 41 | 0 |
+| **faithful units, spliced (§6en)** | 3 | **3/3** | 6 | 53 | 0 |
+| GFF-model cores, genomic hulls | 1 | 1/1 | 39 | 22 | 0 |
+| faithful units, genomic extents (§6eo) | 3 | 3/3 | 32 | 27 | 0 |
+| faithful units + hull, genomic hulls (§6ep) | 8 | **3/8** | 34 | 20 | 0/3 |
+
+**Reading.** The §6ej and §6en "confident wrong calls" (min_p 4e-35, 3e-270) were reads whose anchor was
+an annotation gap; on the valid truth the SPLICED path has made zero wrong confident calls on NPIP in any
+configuration, and the faithful read-chain units are its accepted node. The genomic-hull path is the one
+that is wrong on valid anchors (3/8): the star projection over genomic hulls is a real defect, but it is a
+defect of a path the catalog does not need. ⟹ **S4 (O2-8d) is re-scoped: the genomic PSV modes stay OFF
+and are not on the roadmap's critical path; O2's column system is the spliced star projection over
+read-chain units, which is now accepted on NPIP.** What O2 does on NPIP proper is unchanged in kind —
+of 62 valid anchors it assigns 3 and ties or abstains on 59; every multimapper anchor (33) is an
+abstention — the certificate, now on a truth that survives audit.
+
+Roadmap: S1 closed; S2 (unit = catalog row) next.
