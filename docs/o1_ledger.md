@@ -11754,3 +11754,66 @@ locus rule with attribution moves it to (a).
 4. NPIP copy number in gorilla, honestly: 28 records land on NPIP loci across 3 contigs of one assembly;
    the pangenome gives humans 21–33 haploid copies genome-wide. No gorilla number is claimable from the
    3-contig slice; the genome-wide catalog (gw_bp1_p9) is the object for that, with the same cross-mapping.
+
+## §6eh — SUGGESTIONS APPLIED: CHM13 landing for all 46 clusters; O2 re-read without EIF3C; and SEDEF recovers the ~23 kb LCR16a CORE inside every NPIP model — "define the duplicon first" WORKS (2026-09-04)
+
+User: *"should we use SEDEF/BISER to define the duplicon first? In any case let's apply your suggestions."*
+Register first: SEDEF is on disk (row 317), BISER segfaults under WSL2 (row 928), SD membership as an
+admission certificate scored FP 0/14 (row 318), SD-corroborated ≠ non-repeat (row 669). No row kills an
+SD-derived NODE. Literature: core duplicons are Jiang et al. 2007 Nat Genet's object, annotated by DupMasker
+(Jiang 2008) from an ancestral duplicon library — the concept exists; we have no DupMasker here.
+
+### O1-9 — CHM13 landing for every member of the 46 n≥5 clusters (`docs/all46_chm13_landing_2026-09-04.log`)
+618 spliced member sequences → `minimap2 -x splice` vs CHM13 → human RefSeq genes at the best hit → gene
+STEM (symbol minus copy digits / P suffix). Per cluster: share of members whose landing carries the top stem,
+and the landing chromosomes. Anchors and adjudicated classes reproduce, from an instrument that touches
+none of our inputs:
+| class | examples (top stem, share, chromosome) |
+|---|---|
+| **real gene families: ONE stem, ONE chromosome** | MCL1 NTF 0.98 chr19 · MCL3 CGB 1.00 chr19 · MCL5 ZNF 1.00 chr19 · MCL6 KATNAL 1.00 chr18 · MCL10 KIR2DL 0.92 · MCL19 CLEC 1.00 · MCL22 MBD3L 1.00 · MCL25 OR7A 1.00 · MCL26 PSG 1.00 · MCL27 RFPL4AL 1.00 · MCL33 CEACAM 1.00 · MCL37 MT 1.00 · MCL38 ZSCAN 1.00 · MCL42 CES 1.00 · MCL43 ZNF 1.00 |
+| **artefacts: scattered, no stem** | MCL0/NEW101 ZNF 0.12 over chr18/16/19 · MCL4 LINC 0.17 over chr9/2/1 · MCL15 no gene · MCL23 no gene (chr13) · MCL32 no gene |
+| **16p duplication-block "families": MIXED stems, chr16** | MCL2 NPIPB 0.64 + PLA2G 0.50 (15 members <0.5 coverage) · MCL7 SMG 0.64 + PDXDC 0.21 · MCL18 SULT1A 0.50 + NPIPB 0.30 · MCL29 SMG 0.57 + NPIPA · MCL41 GSPT/NPIPA · MCL28 GSPT/COX · MCL35 SGF/SULT1A |
+| dispersed real families (several chromosomes, one stem) | MCL11 BAGE/TPTE chr21/13 · MCL14 GGT chr22/13 · MCL21 KMT chr13/12 |
+⟹ The block-vs-gene-family distinction of §6eg is visible directly: a block "family" is the one whose
+members land on different human genes of the same chromosome-16 mosaic.
+
+### O2-7 — §6ee re-read without copy 13 (EIF3C)
+Reads overlapping a copy: **4,810 on EIF3C, 1,735 on NPIP-proper.** NPIP-proper: MAPQ-0 **0/68**
+assigned, MAPQ 1–59 **8/524**, MAPQ-60 217/1,143 assigned (602 tied, 324 ambiguous); 225 assigned reads
+over 8 resolved copies. The abstention certificate stands on a pool one quarter the size of the headline.
+
+### ⭐ The SEDEF core pilot (`docs/npip_sedef_core_2026-09-04.log`)
+For each NPIP record, the bases linked by a SEDEF pair to ≥ half of the other 43 records ("core ≥ half")
+and to ≥ 1 ("core ≥ 1"), with the maximum number of distinct partner records at any base:
+| record class | span | core ≥ half | max partners | CHM13 landing |
+|---|---|---|---|---|
+| ordinary NPIP copies (24 records) | 19–41 kb | **19–30 kb, ≈ the whole record** | 35–38 | NPIPB2/6/7/11/12/13, NPIPA2 |
+| chimeric models (ABCC1 ×4, SORL1 ×2) | 125–308 kb | **23–25 kb** | 37–39 | ABCC1 / SORL1 |
+| ABCC1-region records (4: 15.9, 16.4, 21.16, 21.19 Mb) | 25–190 kb | **0** | 7–9 | ABCC1 |
+| **copy 13 (EIF3C)** | 41 kb | **808 bp** | 25 | NPIPB6 / EIF3CL |
+| **MCL7 (14 records)** | 1–116 kb | **0 for all 14** (≤10 partners) | ≤10 | SMG1/SMG1P, PDXDC, SLC7A5 |
+**NPIP core ≥ half: median 23,420 bp, max 30,192.** That is the ~20 kb LCR16a core duplicon of Johnson
+2006, recovered per record from SEDEF alone: inside every 125–308 kb chimeric model it is a 23–25 kb
+segment, EIF3C and the ABCC1-region records do not carry it, and no MCL7 record is linked to even half of
+NPIP. The duplicon-first definition separates exactly the three classes §6eg found by cross-mapping.
+
+### O1-8 — the two O1 objects, named
+**(a) Duplication block**: what SEDEF pairs and the attribution locus rule reconstruct; NPIP + SMG1P +
+SULT1A + PDXDC + EIF3C fragments in one 16p mosaic. **(b) Gene family**: loci that share a CORE — the
+segment linked to most of the family — and whose core is transcribed; NPIP proper = 28 records sharing
+the 23 kb LCR16a core. The thesis defines (b). SEDEF proposes the core segments (DNA), the annotation/RNA
+disposes which cores are genes, the repeat column vetoes element cores (row 669), and the CHM13 landing
+adjudicates. The circularity check: the core is DNA-derived from an instrument that shares no input with
+the PAF/MCL/RNA; membership is not selected on the statistic that scores it.
+
+### Answer to the question
+**Yes — define the duplicon first, as a SEGMENTATION of annotation models by SEDEF core depth, not as a
+replacement for the homology graph.** The node becomes (locus, core segment); a chimeric model contributes
+its core, not its ABCC1 exons; a model without a core shared by the family is not a copy. Concretely
+(next implementation step, `NEXT_STEPS` O1-10): per annotation record, compute the SEDEF partner-depth
+profile against the candidate family's records; the core = maximal segment with depth ≥ half the family;
+node sequence = the core's exonic bases; families = MCL over cores. Acceptance test on NPIP: 28 loci with a
+19–30 kb core, EIF3C / ABCC1-region / MCL7 out, tandem and MCL4 unchanged, MCL6/MCL21 intact.
+⚠ It needs a candidate family to compute "half" against — so it is a REFINEMENT pass over MCL clusters,
+not a de novo definition (the discover-then-define trap is avoided because the core threshold is the
+family's own size, not a fitted constant). ⚠ BISER is not needed: SEDEF's pairs suffice and are on disk.

@@ -30,9 +30,9 @@ Canonical catalogs: `mcl_ann/rna_bp1_p9.clusters.tsv` (3 contigs) and `mcl_ann/g
 | # | step | why |
 |---|---|---|
 | O1-8 | **Name the O1 object**: duplication block (SEDEF-level, what attribution builds) vs gene family (LCR16a core, what the advisor means) | NPIP+MCL7 = LCR16a+LCR16u; the two are distinct families by origin (Johnson 2001) |
-| O1-9 | Cross-map every anchored family's copies to CHM13 and report the human-gene landing as an adjudication column | found copy 13 = EIF3C, 10/44 NPIP records chimeric; cheap (2 min/56 seqs) |
-| O1-10 | Chimeric-model segmentation at module boundaries (LCR16a ~20 kb core) — the node-construction residual with a concrete target | neither locus semantics fixes ABCC1+NPIP / SORL1+NPIP / EIF3C-over-NPIPB models |
-| O2-7 | Re-read §6ee with the labels: O2's "NPIP" assignments are 94% EIF3C reads; the NPIP-proper multimapper pool is smaller still | the abstention certificate stands, on a smaller and cleaner pool |
+| O1-9 | ~~Cross-map every anchored family's copies to CHM13~~ **DONE for all 46 (§6eh, `docs/all46_chm13_landing_2026-09-04.log`)**: real families = one stem/one chromosome; artefacts scatter; 16p block families = mixed stems | make it a catalog column (needs CHM13 mapping in the pipeline or as a post-step) |
+| O1-10 | **DUPLICON-FIRST node segmentation (§6eh pilot WORKS)**: per record, SEDEF partner-depth profile vs the candidate family; core = maximal segment with depth ≥ half the family; node = the core's exonic bases; re-cluster over cores. Acceptance on NPIP: 28 loci with a 19–30 kb core (median 23.4 kb = LCR16a), EIF3C (808 bp) / ABCC1-region (0) / all 14 MCL7 (0) OUT; tandem, MCL4, MCL6, MCL21 unchanged | this is the node-construction residual with a working instrument; a refinement pass over MCL clusters, threshold = the family's own size |
+| O2-7 | ~~Re-read §6ee~~ **DONE (§6eh)**: 4,810 reads on EIF3C vs 1,735 on NPIP-proper; NPIP-proper MAPQ-0 0/68, 1–59 8/524; 225 assigned over 8 copies | abstention certificate stands |
 
 ## Housekeeping
 - The whole MCL line is committed (0634a0e, dcd41d7); everything after §6ed is uncommitted.
