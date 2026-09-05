@@ -118,6 +118,10 @@ pub struct Assignment {
     /// (structural evidence contradicts allelic evidence). With `AssignParams::junction_conflict_abstain`
     /// such a read is never `Assigned`; it is `Ambiguous` and listed. Always `false` when the rule is off.
     pub junction_conflict: bool,
+    /// ⭐ §6fa origin certificate (read-star mode): the read's edits against its best candidate's unit exceed
+    /// what sequencing error allows, so NO candidate is its origin (its unit lacks the read's content, or the
+    /// catalog lacks the copy). Such a molecule is `Ambiguous` and counted per family. Always `false` otherwise.
+    pub origin_rejected: bool,
     /// Per-copy POSTERIOR over the candidate copies, `softmax(logl)` (likelihood-normalized, i.e. a UNIFORM
     /// prior), indexed parallel to the `copies` slice. For an *assigned* read it is ~one-hot at `best_copy`;
     /// for a *Tied* read it spreads over the consistent ZONE (the copies the read cannot be distinguished
@@ -522,6 +526,7 @@ pub fn assign_read_editing(
         min_p_value: min_p,
         discovery_coupled: false,
         junction_conflict,
+        origin_rejected: false,
         posterior,
     })
 }

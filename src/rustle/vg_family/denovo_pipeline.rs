@@ -1038,6 +1038,7 @@ fn gated_family(rep: &DenovoTranscript, bam_reads: &[BamRead], chi: usize, famil
                     min_p_value: 1.0,
                     discovery_coupled: false,
                     junction_conflict: false,
+                        origin_rejected: false,
                     posterior: vec![1.0 / chi as f64; chi],
                 },
             )
@@ -1561,6 +1562,7 @@ pub(crate) fn apply_realign_patch(
                         min_p_value: 0.0,
                         discovery_coupled: false,
                         junction_conflict: false,
+                        origin_rejected: false,
                         posterior,
                     }
                 }
@@ -1786,6 +1788,7 @@ fn admit_novel_pools_with_admitter<F>(
                         min_p_value: 0.0,
                         discovery_coupled: true,
                         junction_conflict: false,
+                        origin_rejected: false,
                         posterior,
                     },
                 ));
@@ -9584,6 +9587,7 @@ mod tests {
                         min_p_value: 1.0,
                         discovery_coupled: false,
                         junction_conflict: false,
+                        origin_rejected: false,
                         posterior: vec![0.5, 0.5],
                     },
                 ),
@@ -9599,6 +9603,7 @@ mod tests {
                         min_p_value: 1e-6,
                         discovery_coupled: false,
                         junction_conflict: false,
+                        origin_rejected: false,
                         posterior: vec![0.0, 1.0],
                     },
                 ),
@@ -9724,6 +9729,7 @@ mod tests {
                     min_p_value: 1.0,
                     discovery_coupled: false,
                     junction_conflict: false,
+                        origin_rejected: false,
                     posterior: vec![0.5, 0.5],
                 },
             )],

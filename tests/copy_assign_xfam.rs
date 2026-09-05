@@ -40,6 +40,8 @@ fn run_mode(dir: &PathBuf, mode: Option<&str>) -> (Output, String) {
     let mut c = Command::new(env!("CARGO_BIN_EXE_copy_assign"));
     c.args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
         .args(["--families", &format!("{FIX}/copies.tsv"), "--copies-fa", &format!("{FIX}/copies.fa")])
+        // the cross-family contract is stated on the RECORD-level path (§6fb: read-star is the default since 2026-09-05)
+        .args(["--no-molecule-observations"])
         .args(["--region", "x1:0-20000", "--dump-psv", "--phase", "--posterior"])
         .args(["--out", &out_s]);
     match mode {
@@ -296,6 +298,8 @@ fn an_unknown_mode_is_refused() {
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
         .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
         .args(["--families", &format!("{FIX}/copies.tsv"), "--copies-fa", &format!("{FIX}/copies.fa")])
+        // the cross-family contract is stated on the RECORD-level path (§6fb: read-star is the default since 2026-09-05)
+        .args(["--no-molecule-observations"])
         .args(["--region", "x1:0-20000", "--out", out.to_str().unwrap()])
         .env("RUSTLE_XFAM_RECONCILE", "reprot")
         .output()
@@ -344,7 +348,7 @@ fn determinism_across_repeats_and_region_threads() {
         let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
             .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
             .args(["--regions", rf.to_str().unwrap(), "--region-threads", threads])
-            .args(["--dump-psv", "--out", &out])
+            .args(["--dump-psv", "--no-molecule-observations", "--out", &out])
             .env("RUSTLE_XFAM_RECONCILE", "report")
             .output()
             .expect("spawn");

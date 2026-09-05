@@ -187,6 +187,15 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_exonic_both_sides: bool,
 
+    /// ⭐ Units of one family that share EXON bases are one locus (§6fb): the longest exon union represents them,
+    /// the others go to `<out>.units.merged.tsv`. A base cannot belong to two copies (MCL108: a 1.16-Mb read-followed
+    /// unit with two units nested in its exons, 13,000 reads counted three times, all K = 0 ties). Default ON.
+    #[arg(long, default_value_t = true)]
+    merge_overlapping_units: bool,
+    /// Escape hatch: keep every unit (the catalogs before 2026-09-05 §6fb, byte-identical).
+    #[arg(long, default_value_t = false)]
+    no_merge_overlapping_units: bool,
+
     /// ⭐ Units FOLLOW THE READS (§6eu): extend a unit's read-supported exon chain beyond its core hull to every
     /// block supported by the reads that overlap the hull, WITHIN the member's annotated locus span — the same
     /// `>= --min-reads` rule and the same giant-intron cut, only the hull is no longer a clip. OFF, the
@@ -777,7 +786,20 @@ fn main() -> Result<()> {
     }
 
     // ⭐ O1-10b: per-locus units = locus (core hull if refined) + read-supported exon chain (§6el).
-    let mut unit_stats = (0usize, 0usize, 0usize); // read-chain, gff-fallback, skipped (dropped / no exons)
+    let mut unit_stats = (0usize, 0usize, 0usize, 0usize); // read-chain, gff-fallback, skipped (dropped / no exons), merged into another unit
+    struct PendingUnit {
+        member: GeneKey,
+        exons: Vec<(u64, u64)>,
+        strand: char,
+        source: String,
+        n_reads: usize,
+        seq: Vec<u8>,
+        hull_col: String,
+        sd_depth: String,
+        core_bp: String,
+        nearest_col: String,
+        rep_col: String,
+    }
     if args.emit_units {
         let bam = args.bam.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --bam"))?;
         let fasta = args.fasta.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --fasta"))?;
@@ -787,6 +809,8 @@ fn main() -> Result<()> {
             None => BTreeMap::new(),
         };
         let mut ut = std::fs::File::create(format!("{}.units.tsv", args.out))?;
+        let mut um = std::fs::File::create(format!("{}.units.merged.tsv", args.out))?;
+        writeln!(um, "cluster_id\tmerged_unit_member\tinto_member")?;
         let mut uf = std::fs::File::create(format!("{}.units.fa", args.out))?;
         let mut ur = std::fs::File::create(format!("{}.units.regions", args.out))?;
         writeln!(ut, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tsource\tcore_hull\tsd_depth\tcore_bp\tnearest_ident\trep_frac")?;
@@ -835,6 +859,7 @@ fn main() -> Result<()> {
             let fid = format!("MCL{i}");
             let mut idx = 0usize;
             let mut hulls: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+            let mut pending: Vec<PendingUnit> = Vec::new();
             for (mi, m) in c.members.iter().enumerate() {
                 // locus = core hull (trimmed) / member span; dropped members are not units
                 // the member's SEDEF core hull (0-based half-open), for `copy_assign --psv-genomic` (§6ep)
@@ -885,11 +910,6 @@ fn main() -> Result<()> {
                     continue;
                 }
                 let n_reads = n_in_chain;
-                if source == "read_chain" {
-                    unit_stats.0 += 1;
-                } else {
-                    unit_stats.1 += 1;
-                }
                 let mut seq: Vec<u8> = Vec::new();
                 for &(s, e) in &exons {
                     let Some(part) = genome.fetch_sequence(&m.0, s, e) else {
@@ -913,7 +933,6 @@ fn main() -> Result<()> {
                         };
                     }
                 }
-                let (us, ue) = (exons[0].0, exons.last().unwrap().1);
                 let (sd_depth, core_bp) = core_records
                     .get(i)
                     .and_then(|v| v.get(mi))
@@ -929,17 +948,94 @@ fn main() -> Result<()> {
                 });
                 let nearest_col = nearest.map(|v| format!("{v:.4}")).unwrap_or_else(|| "NA".into());
                 let rep_col = rep_frac(&m.0, &exons).map(|v| format!("{v:.3}")).unwrap_or_else(|| "NA".into());
+                pending.push(PendingUnit {
+                    member: m.clone(),
+                    exons,
+                    strand,
+                    source: source.to_string(),
+                    n_reads: n_reads.max(1),
+                    seq,
+                    hull_col,
+                    sd_depth,
+                    core_bp,
+                    nearest_col,
+                    rep_col,
+                });
+            }
+            // ⭐ Units of one family that share EXON bases are one locus (§6fb): the read-followed chain of a large
+            // record can cover records nested in it (MCL108: a 1.16-Mb unit with a 143-bp and a 2.7-kb unit inside
+            // its exons, 13,000 reads counted three times, every one of them a K = 0 tie under read-star). A base
+            // cannot belong to two copies. Representative = the longest exon union; the others are recorded in
+            // `<out>.units.merged.tsv`. `--no-merge-overlapping-units` keeps every unit (byte-identical to before).
+            let merged_into: Vec<Option<usize>> = if args.merge_overlapping_units && !args.no_merge_overlapping_units {
+                let n = pending.len();
+                let mut parent: Vec<usize> = (0..n).collect();
+                fn find(p: &mut Vec<usize>, mut x: usize) -> usize {
+                    while p[x] != x {
+                        p[x] = p[p[x]];
+                        x = p[x];
+                    }
+                    x
+                }
+                for a in 0..n {
+                    for b in (a + 1)..n {
+                        if pending[a].member.0 != pending[b].member.0 {
+                            continue;
+                        }
+                        let share = pending[a].exons.iter().any(|&(s1, e1)| pending[b].exons.iter().any(|&(s2, e2)| s1 < e2 && s2 < e1));
+                        if share {
+                            let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+                            if ra != rb {
+                                parent[ra.max(rb)] = ra.min(rb);
+                            }
+                        }
+                    }
+                }
+                let exlen = |u: &PendingUnit| u.exons.iter().map(|(s, e)| e - s).sum::<u64>();
+                let mut rep_of_root: BTreeMap<usize, usize> = BTreeMap::new();
+                for k in 0..n {
+                    let r = find(&mut parent, k);
+                    let e = rep_of_root.entry(r).or_insert(k);
+                    if exlen(&pending[k]) > exlen(&pending[*e]) {
+                        *e = k;
+                    }
+                }
+                (0..n)
+                    .map(|k| {
+                        let r = find(&mut parent, k);
+                        let rep = rep_of_root[&r];
+                        if rep == k { None } else { Some(rep) }
+                    })
+                    .collect()
+            } else {
+                vec![None; pending.len()]
+            };
+            for (k, u) in pending.iter().enumerate() {
+                if let Some(rep) = merged_into[k] {
+                    let r = &pending[rep];
+                    writeln!(um, "{fid}\t{}:{}-{}\t{}:{}-{}", u.member.0, u.member.1, u.member.2, r.member.0, r.member.1, r.member.2)?;
+                    unit_stats.3 += 1;
+                    continue;
+                }
+                if u.source == "read_chain" {
+                    unit_stats.0 += 1;
+                } else {
+                    unit_stats.1 += 1;
+                }
+                let (us, ue) = (u.exons[0].0, u.exons.last().unwrap().1);
+                let (m, exons, strand, source) = (&u.member, &u.exons, u.strand, u.source.as_str());
                 writeln!(
                     ut,
-                    "{fid}\t{idx}\tMCL_{}_{us}\t{}\t{us}\t{ue}\t{}\t{strand}\t{}\t{}\t{source}\t{hull_col}\t{sd_depth}\t{core_bp}\t{nearest_col}\t{rep_col}",
+                    "{fid}\t{idx}\tMCL_{}_{us}\t{}\t{us}\t{ue}\t{}\t{strand}\t{}\t{}\t{source}\t{}\t{}\t{}\t{}\t{}",
                     m.0,
                     m.0,
                     exons.len(),
-                    n_reads.max(1),
-                    exons.iter().map(|(s, e)| format!("{s}-{e}")).collect::<Vec<_>>().join(",")
+                    u.n_reads,
+                    exons.iter().map(|(s, e)| format!("{s}-{e}")).collect::<Vec<_>>().join(","),
+                    u.hull_col, u.sd_depth, u.core_bp, u.nearest_col, u.rep_col
                 )?;
                 writeln!(uf, ">{fid}|{idx}|{}:{us}-{ue}|{strand}|nexon={}", m.0, exons.len())?;
-                uf.write_all(&seq)?;
+                uf.write_all(&u.seq)?;
                 writeln!(uf)?;
                 let h = hulls.entry(m.0.clone()).or_insert((us, ue));
                 h.0 = h.0.min(us);
@@ -952,8 +1048,8 @@ fn main() -> Result<()> {
         }
         eprintln!(
             "[mcl_families] emit-units: {} read-chain unit(s), {} GFF-fallback unit(s), {} member(s) without a unit \
-             (dropped, no exon inside the locus, or no read inside the chain)",
-            unit_stats.0, unit_stats.1, unit_stats.2
+             (dropped, no exon inside the locus, or no read inside the chain), {} unit(s) merged into an overlapping unit of the same family",
+            unit_stats.0, unit_stats.1, unit_stats.2, unit_stats.3
         );
     }
 
@@ -987,6 +1083,8 @@ fn main() -> Result<()> {
         ("fold_within_clusters".to_string(), args.fold_within_clusters.to_string()),
         ("exonless_span".to_string(), args.exonless_span.to_string()),
         ("exonic_both_sides".to_string(), args.exonic_both_sides.to_string()),
+        ("merge_overlapping_units".to_string(), (args.merge_overlapping_units && !args.no_merge_overlapping_units).to_string()),
+        ("units_merged".to_string(), unit_stats.3.to_string()),
         ("rmsk".to_string(), args.rmsk.clone().unwrap_or_else(|| "NA".into())),
         ("units_read_chain".to_string(), unit_stats.0.to_string()),
         ("units_gff_fallback".to_string(), unit_stats.1.to_string()),

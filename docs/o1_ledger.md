@@ -12603,3 +12603,32 @@ are O1's (and O3's) problem, now counted per read. PREREG scoring: P2 (0 wrong o
 agreement ≥ 99 % holds (99.3 %) but its "ambiguous −20 points" does not on NPIP — the ambiguous class changed
 meaning; P3 (placement-independence) holds by construction (one observation per molecule).
 Default stays OFF pending the user; the record-level path is unchanged and byte-identical. Suite 857 / 0 / 11.
+
+## §6fb — READ-STAR IS THE DEFAULT (user), the unexplained reads counted and located, units that share exon bases merged, and the genome-wide rebuild launched (2026-09-05)
+
+**Flip.** `copy_assign --molecule-observations` default ON (`--no-molecule-observations` = the record-level path,
+first 15 columns byte-identical); `assignments.tsv` gains `origin_rejected` (the certificate fired) and
+`params.tsv` counts it.
+
+**The first full sweep under the new default exposed an O1 defect the record-level path had been rewarding.**
+104 families on `rna_units_v8`: 71,137 unit reads — assigned 9,893 (14 %), **tied 54,181 (76 %)**, ambiguous 7,063;
+MAPQ-60 agreement 8,230/8,256 = 99.7 %; MAPQ<60 1,637/3,283 assigned. The ties are one family class: MCL108 is a
+1.16-Mb read-followed unit (15 exons) with a 143-bp and a 2.7-kb unit NESTED inside its exons, 13,000 reads
+counted three times; every read is a K = 0 tie between a unit and the unit that contains it. The record-level
+path had "assigned" all of them by placement zone — the v7 sweep's 69 % assigned (§6ez) was inflated by
+self-overlapping copies (row 703). **Fix (O1): units of one family that share exon bases are one locus**
+(`mcl_families --merge-overlapping-units`, ON, `--no-merge-overlapping-units` byte-identical; representative =
+longest exon union; `<out>.units.merged.tsv`). Catalog **`rna_units_v9`**: 349 units (275 read-chain, 74 GFF-fallback), **40 units merged** into an overlapping unit of the same family (MCL108 → one unit; MCL6, MCL9, MCL24 …); `--no-merge-overlapping-units` reproduces v8 byte-for-byte. Sweep on v9 (74 families with ≥ 2 units on a contig): 39,032 unit reads — assigned 9,896 (25 %), tied 24,857 (64 %), ambiguous 4,279 (11 %); MAPQ-60 agreement 8,234/8,259 = 99.7 %; MAPQ<60 1,637/3,283 = 50 % assigned.
+
+**The unexplained reads, per family (`bench/o2_unexplained_reads.py`, `docs/o2_unexplained_v8_*`):** on v8,
+14,415 of 71,137 unit reads (20 %) are rejected by the origin certificate; the rejected reads whose PRIMARY
+lies outside every unit of their family cluster into **62 candidate loci with ≥ 3 reads** — ZNF600 (419 reads,
+MCL4's family), PDXDC1/NTAN1 (340, LCR16u), NPIP's ABCC1-region dropped members (332), ZNF45/ZNF221/ZNF155 (280),
+ZNF91 (227): genes that ARE the read's origin and are not units of the family (dropped by the core rule, or
+members of a neighbouring cluster). These are O1's roster gaps named by O2's reads.
+**RNA admission (`bench/rna_admit_gorilla.py`, `docs/rna_admit_v8_2026-09-05.tsv`):** family units mapped back to
+the substrate, hits outside every annotated gene and every unit with ≥ 3 reads: **4 loci — LCR16u's
+NC_073242.2:35.99 Mb at 0.985 with 123 reads** (an expressed, unannotated LCR16u copy), plus three of 3–12 reads.
+
+**Paired 35 (v9 read-star vs v7 record-level):** v7 record-level 5,816/17,278 = 33.7 % assigned / 7 % tied / 59 % ambiguous @ 99.51 % → v9 read-star + merged units 5,446/16,398 = 33.2 % / 51 % tied / 16 % ambiguous @ **99.62 %**, MAPQ<60 assigned 132 → 196. Suite: 857 / 0 / 11 (the cross-family contract tests pin `--no-molecule-observations`). Genome-wide rebuild under the new
+defaults (`bench/gw_rebuild.sh`, `gw_units_v1`, GGO_ds.bam for units): 13,263 records / 64,336 edges / **2,296 clusters (1,380 pairs, 916 ≥ 3), largest 157; 9,565 members; 3,755 units (2,325 read-chain, 1,430 GFF-fallback, 450 merged); 467 dropped by the core rule; 6,691 hulls in 674 blocks, 79 shared** — the transitive block SDB0 spans several hundred clusters (the genome-wide SD network), so genome-wide only the DIRECT partner column is quotable. 477 s, 6.2 GB. Anchor persistence: NPIP 32/32 loci in one cluster (gw MCL12), LCR16u 12/12 separate (MCL111); the 3-contig real anchors intact (v9 MCL0 48/48 → gw MCL3, v9 MCL2 36/36 → gw MCL5); the tandem array persists as two clusters (gw_p9's 60 → MCL3 49 + 11 straddling, 58 → MCL5 39 + 19 straddling — records at the cut vertex overlap both halves); the element cluster (v9 MCL3, 29) fragments genome-wide (20 + 7 + 2, expected for an element); one 60-member gw_p9 cluster (MCL8) dissolves (56/60 unclustered) — to be classified..

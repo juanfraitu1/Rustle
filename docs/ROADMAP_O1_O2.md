@@ -80,3 +80,14 @@ unit ~ Binomial(aligned, error_rate), else no candidate explains the read). Pool
 ambiguous 59 % → 17 %, tied 7 % → 49 %, agreement 99.6 %. **Default flip = user decision.** Next: the unexplained
 reads are an O1/O3 item (units that lack their content; copies the catalog lacks) — count them per family and
 feed the RNA-admission prototype; then the genome-wide rebuild.
+
+## Read-star default, unit merge, unexplained reads located, genome-wide rebuild (§6fb, 2026-09-05)
+`copy_assign --molecule-observations` ON (user); `origin_rejected` column. O1: `mcl_families --merge-overlapping-units`
+ON (units sharing exon bases are one locus; row 703 — the record-level 69 % was nested-unit inflation); canonical
+3-contig catalog **`rna_units_v9`** (349 units, 40 merged). The certificate's rejected reads locate 62 candidate
+loci with ≥ 3 reads (`docs/o2_unexplained_v8_loci_2026-09-05.tsv`): genes that are the reads' origin and not
+units of the family (dropped members, neighbouring clusters) — O1's roster gaps named by O2. RNA admission finds
+an unannotated expressed LCR16u copy (NC_073242.2:35.99 Mb, 123 reads). Genome-wide catalog under the new
+defaults: `mcl_ann/gw_units_v1` (`bench/gw_rebuild.sh`). Next: fold the 62 loci back into O1 (roster admission
+by read origin), score gw_units_v1's anchors (tandem array, NPIP), the sub-30 %-score competitor question
+(`-p 0.3`: a copy below it is not a candidate — state or test).

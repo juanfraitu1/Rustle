@@ -231,10 +231,15 @@ struct Args {
     psv_read_filter: bool,
 
     /// ⭐ O2-9 / D3 (PREREG adj/d3, register 691): pool every BAM record of a molecule into ONE observation
-    /// vector (column-wise consensus of the read's base across its placements) and assign the molecule once,
-    /// instead of scoring each record and abstaining on contradiction. Default OFF (pre-registered evaluation first).
-    #[arg(long, default_value_t = false)]
+    /// vector — "the read is the star" (§6fa): the molecule's sequence aligned to every copy's unit, its own
+    /// columns, an origin certificate — instead of scoring each BAM record and abstaining on contradiction
+    /// (which masked wrong column positions, rows 700–702). **Default ON (user decision 2026-09-05)**;
+    /// `--no-molecule-observations` restores the record-level path byte-for-byte.
+    #[arg(long, default_value_t = true)]
     molecule_observations: bool,
+    /// Escape hatch: the record-level observation path (every catalog before 2026-09-05 §6fa).
+    #[arg(long, default_value_t = false)]
+    no_molecule_observations: bool,
     /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
     /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
     /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
@@ -1187,6 +1192,7 @@ struct AssignRow {
     /// Reported alignment-score evidence (see `as_evidence_per_read`). Never feeds the decision.
     as_ev: AsEvidence,
     junction_conflict: bool,
+    origin_rejected: bool,
     /// The read has an aligned BASE inside a copy of its family (§6es hygiene): rows with `false` are reads
     /// gathered from the copies' neighbourhoods that overlap no copy; report O2 on `in_copy == true`.
     in_copy: bool,
@@ -1397,7 +1403,7 @@ fn main() -> Result<()> {
         edit_rate: args.edit_rate,
         iterative_prune: args.iterative_prune,
         junction_conflict_abstain: args.junction_conflict_abstain,
-        molecule_pool: args.molecule_observations,
+        molecule_pool: args.molecule_observations && !args.no_molecule_observations,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
@@ -1777,6 +1783,7 @@ fn main() -> Result<()> {
                         min_p_value: a.min_p_value,
                         as_ev: as_ev[*ri],
                         junction_conflict: a.junction_conflict,
+                        origin_rejected: a.origin_rejected,
                         in_copy,
                         catalog_copy_idx: cat_idx_of(a.best_copy),
                     });
@@ -2138,14 +2145,14 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx")?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected")?;
     for r in &assign_rows {
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}",
             r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8
         )?;
     }
     {
@@ -2640,7 +2647,8 @@ fn main() -> Result<()> {
         row("junction_conflict_abstain", format!("{}", args.junction_conflict_abstain))?;
         row("psv_genomic", format!("{}", args.psv_genomic))?;
         row("psv_read_filter", std::env::var("RUSTLE_PSV_READFILTER").unwrap_or_else(|_| "unset".into()))?;
-        row("molecule_observations", format!("{}", args.molecule_observations))?;
+        row("molecule_observations", format!("{}", args.molecule_observations && !args.no_molecule_observations))?;
+        row("origin_rejected", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected).count()))?;
         row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;
@@ -2845,6 +2853,7 @@ mod tests {
             min_p_value: 0.0,
             discovery_coupled: true,
             junction_conflict: false,
+            origin_rejected: false,
             posterior: vec![],
         })
     }

@@ -1732,6 +1732,7 @@ pub fn assign_family_detailed_pruned(
             min_p_value: a.min_p_value,
             discovery_coupled: a.discovery_coupled,
             junction_conflict: a.junction_conflict,
+            origin_rejected: a.origin_rejected,
             posterior: post_out,
         })
     };
@@ -2079,6 +2080,7 @@ fn assign_family_detailed_once(
                     if nm as f64 > mean && p_tail < p.alpha {
                         a.status = AssignStatus::Ambiguous;
                         a.resolvable = false;
+                        a.origin_rejected = true;
                     }
                 }
                 if cand.len() < 2 {
@@ -3212,6 +3214,7 @@ mod tests {
             min_p_value: 0.0,
             discovery_coupled: false,
             junction_conflict: false,
+                        origin_rejected: false,
             posterior: vec![],
         }
     }
