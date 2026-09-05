@@ -12063,3 +12063,40 @@ last item that separates O2's NPIP result from a defensible per-read certificate
 
 **Standing:** units feature shipped OFF; §6el relabelled; O2's quotable NPIP statement is unchanged
 (abstention on the LCR16a cores; junction-anchored calls unreliable until O2-8c).
+
+## §6eo — O2-8c FIRST FORM IMPLEMENTED (`copy_assign --psv-genomic`, OFF) AND NOT ACCEPTED: genomic alignment over unit EXTENTS manufactures columns from non-homologous flanks; the span must be the SEDEF core hull (2026-09-05)
+
+Pre-registered (`adj/o2rc/PREREG.md`, O2-8c section). Shipped: `discover_genomic_psvs` (generalising the
+intron lever `discover_intron_psvs`), `copy_assign --psv-genomic` → env `RUSTLE_PSV_GENOMIC`, params row.
+Copies' genomic spans (exons + introns) in TRANSCRIPTION orientation are aligned to copy 0's; alleles are
+transcription-space bases (the read side complements a read when its mapped copy is '−', so this is the
+one consistent space; a first draft that aligned FORWARD spans with a reverse-complement retry compared
+'+' and '−' copies in different spaces and made every column "differ" — corrected before measurement).
+Two defects found and fixed on the way: the banded DP's traceback budget (a 225 kb GFF span asked for
+77 GB; now refused above 1.5 GB and passed to poasta/minimap2), and a `FamilyProfiles` struct I deleted by
+a careless slice and restored from HEAD. Flag-off output byte-identical.
+
+**Measured (fixed §6ej truth; `o2scale/*/G.*`):**
+| family | mode | PSV columns | assigned / tied / ambiguous | anchored assigned, agreement |
+|---|---|---|---|---|
+| faithful units (35) | spliced | — | 123 / 2,185 / 666 | 4, 3/4 (min_p 3e-270) |
+| faithful units (35) | genomic | 13,113 on a 13.1 kb ref | 57 / 2,493 / 424 | 3, 3/3 |
+| locus-rule units (23 of the 48-cluster; core refine drops the LCR16u loci) | genomic | 12,972 | 50 / 2,101 / 792 | **0** |
+| GFF-model cores (35) | genomic | 22,312 | 49 / 3,225 / 133 | 6, **2/6**, two at min_p 0 (underflow) |
+| 3-copy GFF family (225 kb span) | genomic | **0** (minimap2 path, silently) | 549 / 692 / 1 | 57/57 — junction term only |
+E1 holds only where nothing is assigned; E2 fails on the GFF cores. **Not accepted.**
+
+**Controlled pairs (`fam_pair_*`) show why:** two coextensive-looking '+' NPIP units of 15.4 and 19.4 kb
+give **28** spliced columns but **3,055** genomic ones; two '−' units 1,157 vs 1,121 (fine); a '+'/'−' pair
+27 vs **7,491**. The genomic mode runs a GLOBAL banded alignment over the units' extents (first to last
+read-supported exon), and those extents are not coextensive between copies — the non-homologous flanks
+are aligned end-to-end and every flank position becomes a "PSV". The spliced mode is fine when the spliced
+sequences ARE coextensive (28 columns), which is exactly why the GFF models projected acceptably and
+read-limited chains did not. Register row 684.
+
+**Design that follows:** the PSV alignment span must be the segment that is homologous by construction —
+the SEDEF core hull of §6ei (bases linked to ≥ half the family), NOT the unit extent — while the read side
+keeps observing genomic positions. `copies.tsv` needs the core hull per copy (an extra column, or the
+`cores.tsv` join), and `discover_genomic_psvs` aligns hulls. That is O2-8c′, unimplemented. Everything else
+in the chain (locus rule → core refinement → read-chain units → genomic columns on hulls → assign-or-abstain)
+now exists as measured pieces; the last join is the hull-as-alignment-span.

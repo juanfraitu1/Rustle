@@ -216,6 +216,12 @@ struct Args {
     /// `<out>.conflicts.tsv`. Likelihoods untouched; default OFF ⟹ byte-identical
     #[arg(long, default_value_t = false)]
     junction_conflict_abstain: bool,
+    /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
+    /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
+    /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
+    /// 683); SEDEF core hulls are collinear genomic segments. Default OFF ⟹ byte-identical
+    #[arg(long, default_value_t = false)]
+    psv_genomic: bool,
     /// εⱼ used for an editing-flagged PSV column in the certificate (the rate a base shows the other allele
     /// by editing rather than sequencing error). Default 0.2.
     #[arg(long, default_value_t = 0.2)]
@@ -1406,6 +1412,9 @@ fn main() -> Result<()> {
     // path. Always set (not gated on non-default) so the resolved value is unambiguous; the default 20000
     // reproduces the prior hard-coded constant exactly.
     std::env::set_var("RUSTLE_POA_CAP", args.poa_cap.to_string());
+    if args.psv_genomic {
+        std::env::set_var("RUSTLE_PSV_GENOMIC", "1");
+    }
     // `--absent-min-clusters` reaches `absent_copy::AbsentCopyParams::from_env` through the same
     // "flag -> env var -> deep read" idiom (the params are built inside `detect_and_assign`'s
     // candidate loop, many frames below `main`). Set ONLY when the flag is given, so (a) an
@@ -2548,6 +2557,7 @@ fn main() -> Result<()> {
         row("margin_gate", format!("{}", args.margin_gate))?;
         row("rna_editing_filter", format!("{}", !args.no_editing_filter))?;
         row("junction_conflict_abstain", format!("{}", args.junction_conflict_abstain))?;
+        row("psv_genomic", format!("{}", args.psv_genomic))?;
         row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;

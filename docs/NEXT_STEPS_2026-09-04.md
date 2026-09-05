@@ -49,7 +49,7 @@ Canonical catalogs: `mcl_ann/rna_bp1_p9.clusters.tsv` (3 contigs) and `mcl_ann/g
 ## Added 2026-09-05 (§6en)
 | # | step | why |
 |---|---|---|
-| O2-8c | **PSV columns on the GENOMIC core alignment**: in `discover_psvs`, align the copies' SEDEF core hulls (genomic, near-collinear) instead of their spliced sequences; project each read's bases through its own splice-aware alignment to its core; keep the same decision math | faithful read-chain units produce min_p 3e-270 wrong calls through the spliced star projection (§6en). Acceptance = the 117 anchored reads, 0 confident disagreements, on `fam_NPIPunits2_073242` |
+| O2-8c | **FIRST FORM SHIPPED OFF, NOT ACCEPTED (§6eo, register 684)**: global alignment over unit extents manufactures columns from flanks. **O2-8c′: align the SEDEF core HULLS** (add a per-copy hull to `copies.tsv` / join `cores.tsv`; `discover_genomic_psvs` aligns hulls, reads observe genomic positions as now). Acceptance unchanged. Original text: PSV columns on the GENOMIC core alignment: in `discover_psvs`, align the copies' SEDEF core hulls (genomic, near-collinear) instead of their spliced sequences; project each read's bases through its own splice-aware alignment to its core; keep the same decision math | faithful read-chain units produce min_p 3e-270 wrong calls through the spliced star projection (§6en). Acceptance = the 117 anchored reads, 0 confident disagreements, on `fam_NPIPunits2_073242` |
 
 ## Housekeeping
 - The whole MCL line is committed (0634a0e, dcd41d7); everything after §6ed is uncommitted.

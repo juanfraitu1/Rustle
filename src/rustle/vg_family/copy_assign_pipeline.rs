@@ -643,26 +643,24 @@ pub fn discover_intron_psvs(
     copies: &[&DenovoTranscript],
     genome: &crate::genome::GenomeIndex,
 ) -> Vec<PsvColumn> {
+    discover_genomic_psvs(copies, genome, true)
+}
+
+/// ⭐ O2-8c (§6eo): PSV columns from the GENOMIC alignment of the copies' spans. With `intronic_only = false`
+/// this REPLACES the spliced-sequence discovery: units whose exon composition differs (read-limited chains,
+/// 89 bp to 19 kb) sent the spliced star projection to thousands of non-homologous "PSV" columns and min_p
+/// 3e-270 on a wrong call (register 683); the genomic spans of SEDEF core hulls are collinear, so the
+/// pairwise alignment is a thin band. If the forward alignment covers less than half of the shorter span the
+/// reverse complement is tried (an inverted duplication), with positions mapped back accordingly.
+pub fn discover_genomic_psvs(
+    copies: &[&DenovoTranscript],
+    genome: &crate::genome::GenomeIndex,
+    intronic_only: bool,
+) -> Vec<PsvColumn> {
     let n = copies.len();
     if n < 2 {
         return Vec::new();
     }
-    // forward genomic spans (exons + introns), uppercased
-    let spans: Vec<Vec<u8>> = copies
-        .iter()
-        .map(|c| {
-            genome
-                .fetch_sequence(&c.chrom, c.start, c.end)
-                .map(|s| s.to_ascii_uppercase())
-                .unwrap_or_default()
-        })
-        .collect();
-    if spans[0].is_empty() {
-        return Vec::new();
-    }
-    let c0 = copies[0];
-    let ref_span = &spans[0];
-    let is_intronic = |gpos: u64| c0.introns.iter().any(|&(d, a)| gpos >= d && gpos < a);
     let comp = |b: u8| match b {
         b'A' => b'T',
         b'T' => b'A',
@@ -670,25 +668,55 @@ pub fn discover_intron_psvs(
         b'G' => b'C',
         x => x,
     };
+    // Genomic spans (exons + introns) in TRANSCRIPTION orientation — the same allele space as the spliced
+    // sequences and as the read observations (`fill_psv_obs` complements a read's base when its mapped copy is
+    // '-'). A '-' copy's span is reverse-complemented, and its offset `o` maps back to genome `end - 1 - o`.
+    let spans: Vec<Vec<u8>> = copies
+        .iter()
+        .map(|c| {
+            let fwd = genome
+                .fetch_sequence(&c.chrom, c.start, c.end)
+                .map(|s| s.to_ascii_uppercase())
+                .unwrap_or_default();
+            if c.strand == '-' { fwd.iter().rev().map(|&b| comp(b)).collect() } else { fwd }
+        })
+        .collect();
+    if spans[0].is_empty() {
+        return Vec::new();
+    }
+    let c0 = copies[0];
+    let ref_span = &spans[0];
+    let gpos = |c: &DenovoTranscript, off: usize| -> u64 {
+        if c.strand == '-' { c.end - 1 - off as u64 } else { c.start + off as u64 }
+    };
+    let is_intronic = |gpos: u64| c0.introns.iter().any(|&(d, a)| gpos >= d && gpos < a);
     use poasta::aligner::scoring::GapAffine;
-    // poasta is exact but O(n^2); above this, fall back to minimap2 (which needs >~200 bp to seed, so poasta
-    // covers the short cases minimap2 cannot). Overridable via `RUSTLE_POA_CAP` (set from `copy_assign
-    // --poa-cap`, default 20000 == the prior hard-coded constant, so an unset/default env var is
-    // byte-identical to before this was tunable). Read via env var rather than threaded as a fn parameter:
-    // this fn is reached through `assign_family`/`assign_family_detailed`/`find_weak_copies` and >30 other
-    // call sites (many test-only), so a signature change would be far more invasive than the value is worth
-    // for an opt-in (`RUSTLE_INTRON_PSV=1`) code path — same rationale as `RUSTLE_SKIP_POA_DIAGNOSTIC`.
+    // poasta is exact but O(n^2); above this, fall back to minimap2. Overridable via `RUSTLE_POA_CAP` (set from
+    // `copy_assign --poa-cap`, default 20000). Read via env var rather than a fn parameter (see the rationale at
+    // `RUSTLE_SKIP_POA_DIAGNOSTIC`).
     let poa_cap: usize = std::env::var("RUSTLE_POA_CAP").ok().and_then(|s| s.parse().ok()).unwrap_or(20_000);
+    // The banded DP's traceback is one byte per band cell; refuse it above ~1.5 GB (a 225 kb span against a
+    // 25 kb one asked for 77 GB, §6eo) and let poasta/minimap2 take the pair.
+    const BAND_CELL_BUDGET: usize = 1_500_000_000;
     let mut amaps: Vec<BTreeMap<usize, usize>> = vec![BTreeMap::new(); n];
     let mut diff_off: BTreeSet<usize> = BTreeSet::new();
     for other in 1..n {
         if spans[other].is_empty() {
             continue;
         }
-        let aln = if ref_span.len().max(spans[other].len()) <= poa_cap {
-            poa_msa_with_costs(&[ref_span.clone(), spans[other].clone()], GapAffine::new(1, 1, 32))
+        let os = &spans[other];
+        let band = ref_span.len().abs_diff(os.len()) + 1024;
+        let banded = if (ref_span.len() + 1).saturating_mul(2 * band + 1) <= BAND_CELL_BUDGET {
+            banded_msa_pair(ref_span, os, band)
         } else {
-            minimap2_msa_pair(ref_span, &spans[other])
+            None
+        };
+        let aln = if let Some(m) = banded {
+            Ok(m)
+        } else if ref_span.len().max(os.len()) <= poa_cap {
+            poa_msa_with_costs(&[ref_span.clone(), os.clone()], GapAffine::new(1, 1, 32))
+        } else {
+            minimap2_msa_pair(ref_span, os)
         };
         if let Ok(msa) = aln {
             if msa.len() == 2 {
@@ -699,7 +727,7 @@ pub fn discover_intron_psvs(
                     let (a_gap, b_gap) = (ca == b'-', cb == b'-');
                     if !a_gap && !b_gap {
                         amaps[other].insert(ro, oo);
-                        if is_acgt(ca) && is_acgt(cb) && ca != cb && is_intronic(c0.start + ro as u64) {
+                        if is_acgt(ca) && is_acgt(cb) && ca != cb && (!intronic_only || is_intronic(gpos(c0, ro))) {
                             diff_off.insert(ro);
                         }
                     }
@@ -717,18 +745,10 @@ pub fn discover_intron_psvs(
         .into_iter()
         .map(|ro| {
             let mut rec: PsvColumn = vec![None; n];
-            let g0 = c0.start + ro as u64;
-            let b0 = if c0.strand == '-' { comp(ref_span[ro]) } else { ref_span[ro] };
-            rec[0] = Some((g0, b0));
+            rec[0] = Some((gpos(c0, ro), ref_span[ro]));
             for other in 1..n {
                 if let Some(&oo) = amaps[other].get(&ro) {
-                    let gc = copies[other].start + oo as u64;
-                    let bc = if copies[other].strand == '-' {
-                        comp(spans[other][oo])
-                    } else {
-                        spans[other][oo]
-                    };
-                    rec[other] = Some((gc, bc));
+                    rec[other] = Some((gpos(copies[other], oo), spans[other][oo]));
                 }
             }
             rec
@@ -756,10 +776,17 @@ pub fn build_family_profiles(
     genome: Option<&crate::genome::GenomeIndex>,
 ) -> FamilyProfiles {
     let exon_maps: Vec<Vec<u64>> = copies.iter().map(|c| exon_map(c)).collect();
-    let mut cols = discover_psvs(copies, &exon_maps);
+    // ⭐ O2-8c: `RUSTLE_PSV_GENOMIC=1` (set by `copy_assign --psv-genomic`) discovers the columns on the GENOMIC
+    // alignment of the copies' spans instead of their spliced sequences (register 683). Unset => unchanged.
+    let genomic_mode = genome.is_some() && std::env::var_os("RUSTLE_PSV_GENOMIC").is_some();
+    let mut cols = if let (true, Some(g)) = (genomic_mode, genome) {
+        discover_genomic_psvs(copies, g, false)
+    } else {
+        discover_psvs(copies, &exon_maps)
+    };
     // INTRON-RETENTION lever (opt-in): append intronic PSV columns so reads that retain an intron can use the
     // intronic sequence. OFF (env unset / no genome) => `cols` is unchanged => byte-identical to the exon-only gate.
-    if let Some(g) = genome {
+    if let (false, Some(g)) = (genomic_mode, genome) {
         if std::env::var_os("RUSTLE_INTRON_PSV").is_some() {
             cols.extend(discover_intron_psvs(copies, g));
         }
