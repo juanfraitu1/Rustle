@@ -12232,3 +12232,43 @@ a block inside a unit, as `mcl_families` already does for corroboration).
 **Standing:** the unit catalog is O1's output and O2's input; the bridge scripts are retired for new work
 (`bench/o2_readchain_bridge.py` stays as the record of §6el/§6en). Roadmap: S1 ✓, S2 ✓, S3 delivered as a
 column (its forecast-vs-observed check belongs to S5); next S5 (sweep) then S6.
+
+## §6es — S5 DONE: O2 over the unit catalog. 87 families, 16,723 unit reads: 29% assigned, 7% tied, 64% ambiguous; MAPQ-60 placement agreement 95%; the nearest-paralogue FORECAST does not generalise (2026-09-05)
+
+**Second correction to the scoring, and the last:** `copy_assign` SORTS copies by coordinate and reports its
+own `copy_index`; `<out>.family_join.tsv` maps it to the catalog `copy_idx`. Every score of a family whose
+`copies.tsv` was not coordinate-sorted (all `--emit-units` families, cluster order) had to go through the
+join. With it, the §6eq-addendum table reads: GFF cores spliced **5/5**; **faithful units spliced 3/3**
+(the addendum's "0/3 on the nested pair" was this artefact, not a nested-pair failure — row 687 amended);
+units + hull genomic 3/8 (genuinely worse, unchanged conclusion); NPIP v1 MAPQ-60 placement 75/76 stands.
+`bench/o2_sweep_analyse.py` and every scorer now translate through the join.
+
+**Sweep (`mcl_ann/sweep_v1`, `docs/sweep_v1_{families,units}_2026-09-05.tsv`):** the 91 SD-evidenced
+per-contig families of `rna_units_v1` with ≥2 units carrying reads (artefact clusters excluded: v1 MCL0,
+MCL13, MCL4, MCL54; 19 clusters without SD evidence and 20 with <2 read-bearing units skipped).
+**87 completed, 4 aborted** on the `copies.tsv` contract "every copy has ≥1 read": units of 43 bp–2.4 kb
+whose reads sit in the hull but not inside the emitted chain (`--emit-units` counts reads in the hull;
+hygiene item: count them inside the chain). Wall 257 s total, max 84 s, **RSS max 2.8 GB** (§6em).
+
+| reads with a block inside a unit | assigned | tied | ambiguous |
+|---|---|---|---|
+| **16,723** | 4,821 (29%) | 1,136 (7%) | **10,766 (64%)** |
+| MAPQ-60: 15,601 | 4,685 assigned — **placement agreement 4,451/4,685 = 95.0%** | | |
+| MAPQ<60: 1,122 | 136 assigned (12%) | | |
+Worst placement agreement: MCL32_073244 3/23, MCL38_073244 119/310, MCL6_073244 31/36 — flagged for
+adjudication, not averaged away (both MCL32/MCL38 are 4–6-unit chr20 families; nested units are 0–2).
+
+**Forecast vs observed (S3's column, register row 688):** over the 116 units with ≥5 reads, Spearman
+(`nearest_ident`, assigned share) = **−0.04**; the 24 forecast-unassignable units (≥0.99) have a HIGHER
+median assigned share (0.16) than the rest (0.08). The NPIP-only ρ −0.55 (n=10, §6ee) does not generalise:
+identity to the nearest paralogue is not the abstention predictor across families. The column stays as a
+descriptor; it is not a forecast.
+
+**What the sweep says for the thesis:** across 87 SD-evidenced families O2 assigns 29% of unit reads and
+abstains on 71%, with the assigned MAPQ-60 reads agreeing with the linear placement 95% of the time; the
+multimapper pool it exists for (MAPQ<60) is 7% of unit reads, of which it assigns 12%. Assign-or-abstain,
+catalog-wide, is mostly abstain — and the ambiguous class (decisive columns present, margin insufficient)
+is the bulk, not the K=0 tie.
+
+Roadmap: S5 ✓; S6 (chapter) next. Hygiene items for O2: report only unit-overlapping reads; count unit
+reads inside the chain; emit `catalog_copy_idx` directly in `assignments.tsv`.
