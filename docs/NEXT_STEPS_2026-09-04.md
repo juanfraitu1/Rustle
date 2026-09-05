@@ -44,7 +44,7 @@ Canonical catalogs: `mcl_ann/rna_bp1_p9.clusters.tsv` (3 contigs) and `mcl_ann/g
 | # | step | why |
 |---|---|---|
 | O1-10b | Make the read-chain node a feature: `mcl_families` (or the bridge) emits per-locus units = SEDEF core hull + read-supported exon chain; O1 clusters over them, O2 consumes them | §6el: the GFF model was the cause of O2's confident wrong calls; the node for both objectives is the transcribed unit |
-| O2-5' | **O2 memory first**: 25.4 GB on a 3-copy family with a 25 kb copy; 20.7 GB on 43 loci — the banded pairwise PSV DP grows with copy length difference | blocks every larger run |
+| O2-5' | ~~O2 memory~~ **FIXED (§6em)**: rolling-row DP + 1-byte traceback, byte-identical; 25.4 GB → 0.49 GB, 20.7 GB → 5.7 GB | sweep and correction leg unblocked |
 
 ## Housekeeping
 - The whole MCL line is committed (0634a0e, dcd41d7); everything after §6ed is uncommitted.

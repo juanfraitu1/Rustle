@@ -264,6 +264,154 @@ pub(crate) fn banded_msa_pair(a: &[u8], b: &[u8], band: usize) -> Option<Vec<Vec
     const INF: u32 = u32::MAX / 4;
     // Standard 3-matrix Gotoh affine gap (min-cost), banded to |i - j| <= band. mm = ending in a (mis)match at
     // (i,j); e = ending in a gap in `a` (horizontal, consumes b); f = ending in a gap in `b` (vertical, consumes
+    // a). Gaps OPEN ONLY from the match state (mm). This matches poasta's gap cost.
+    //
+    // ⭐ §6em MEMORY: scores live in TWO rolling rows per matrix; the traceback is ONE BYTE per band cell
+    // (bits 0-1: mm's predecessor state at (i-1,j-1); bit 2: e extended (1) or opened (0); bit 3: f extended
+    // (1) or opened (0)), recorded with the SAME tie-breaks the value-comparison traceback used (mm ≻ f ≻ e for
+    // mm; extend ≻ open for e/f), so the alignment is byte-identical to the three-full-matrix version
+    // (`banded_msa_pair_full_matrix`, kept under cfg(test) as the oracle). A 25 kb copy against a 4 kb copy
+    // (band 22 kb) needed 3 × 25k × 43k × 4 B = 13 GB of scores and took a 25 GB machine to its limit; it now
+    // needs 1.1 GB of traceback bytes.
+    let lo = |i: usize| i.saturating_sub(band);
+    let hi = |i: usize| (i + band).min(m);
+    let width = 2 * band + 1;
+    let idx = |i: usize, j: usize| -> usize { j - lo(i) };
+    let mut tb: Vec<u8> = vec![0; (n + 1) * width];
+    let (mut mm_prev, mut e_prev, mut f_prev) = (vec![INF; width], vec![INF; width], vec![INF; width]);
+    let (mut mm_cur, mut e_cur, mut f_cur) = (vec![INF; width], vec![INF; width], vec![INF; width]);
+    mm_prev[idx(0, 0)] = 0;
+    for j in 1..=hi(0) {
+        e_prev[idx(0, j)] = GAP_OPEN + (j as u32) * GAP_EXT; // leading gap in a
+        tb[j] |= 0b0100; // extended (matches the value traceback: e[0][j-1] + EXT == e[0][j])
+    }
+    for i in 1..=n {
+        let (jl, jh) = (lo(i), hi(i));
+        for v in mm_cur.iter_mut() {
+            *v = INF;
+        }
+        for v in e_cur.iter_mut() {
+            *v = INF;
+        }
+        for v in f_cur.iter_mut() {
+            *v = INF;
+        }
+        let row = i * width;
+        for j in jl..=jh {
+            let mut t: u8 = 0;
+            // f: gap in b (vertical) — open from mm[i-1][j], extend from f[i-1][j].
+            if j >= lo(i - 1) && j <= hi(i - 1) {
+                let o = mm_prev[idx(i - 1, j)].saturating_add(GAP_OPEN + GAP_EXT);
+                let x = f_prev[idx(i - 1, j)].saturating_add(GAP_EXT);
+                f_cur[idx(i, j)] = o.min(x);
+                if x <= o {
+                    t |= 0b1000;
+                }
+            }
+            if j == 0 {
+                f_cur[idx(i, 0)] = GAP_OPEN + (i as u32) * GAP_EXT; // leading gap in b
+                t |= 0b1000;
+                tb[row + idx(i, 0)] = t;
+                continue;
+            }
+            // e: gap in a (horizontal) — open from mm[i][j-1], extend from e[i][j-1].
+            if j - 1 >= jl {
+                let o = mm_cur[idx(i, j - 1)].saturating_add(GAP_OPEN + GAP_EXT);
+                let x = e_cur[idx(i, j - 1)].saturating_add(GAP_EXT);
+                e_cur[idx(i, j)] = o.min(x);
+                if x <= o {
+                    t |= 0b0100;
+                }
+            }
+            // mm: (mis)match — best of the three states at (i-1, j-1) plus the substitution cost.
+            if j - 1 >= lo(i - 1) && j - 1 <= hi(i - 1) {
+                let sub = if a[i - 1] == b[j - 1] { 0 } else { MISMATCH };
+                let (pm, pe, pf) =
+                    (mm_prev[idx(i - 1, j - 1)], e_prev[idx(i - 1, j - 1)], f_prev[idx(i - 1, j - 1)]);
+                let prev = pm.min(pe).min(pf);
+                mm_cur[idx(i, j)] = prev.saturating_add(sub);
+                t |= if pm == prev {
+                    0
+                } else if pf == prev {
+                    2
+                } else {
+                    1
+                };
+            }
+            tb[row + idx(i, j)] = t;
+        }
+        std::mem::swap(&mut mm_prev, &mut mm_cur);
+        std::mem::swap(&mut e_prev, &mut e_cur);
+        std::mem::swap(&mut f_prev, &mut f_cur);
+    }
+    if m < lo(n) || m > hi(n) {
+        return None;
+    }
+    let end_mm = mm_prev[idx(n, m)];
+    let end_e = e_prev[idx(n, m)];
+    let end_f = f_prev[idx(n, m)];
+    let best = end_mm.min(end_e).min(end_f);
+    if best >= INF {
+        return None;
+    }
+    // STATEFUL traceback over the recorded predecessors (0=mm, 1=e, 2=f).
+    let (mut i, mut j) = (n, m);
+    let mut state: u8 = if best == end_mm {
+        0
+    } else if best == end_f {
+        2
+    } else {
+        1
+    };
+    let (mut ra, mut rb): (Vec<u8>, Vec<u8>) = (Vec::new(), Vec::new());
+    let mut hit_edge = false;
+    while i > 0 || j > 0 {
+        if i.abs_diff(j) >= band {
+            hit_edge = true; // path reached the band boundary — the true optimum may lie outside
+        }
+        let t = tb[i * width + idx(i, j)];
+        match state {
+            0 => {
+                ra.push(a[i - 1]);
+                rb.push(b[j - 1]);
+                i -= 1;
+                j -= 1;
+                state = t & 0b11;
+            }
+            2 => {
+                ra.push(a[i - 1]);
+                rb.push(b'-');
+                i -= 1;
+                state = if t & 0b1000 != 0 { 2 } else { 0 };
+            }
+            _ => {
+                ra.push(b'-');
+                rb.push(b[j - 1]);
+                j -= 1;
+                state = if t & 0b0100 != 0 { 1 } else { 0 };
+            }
+        }
+    }
+    if hit_edge {
+        return None; // fall back to exact — the band clipped the alignment
+    }
+    ra.reverse();
+    rb.reverse();
+    Some(vec![ra, rb])
+}
+
+#[cfg(test)]
+pub(crate) fn banded_msa_pair_full_matrix(a: &[u8], b: &[u8], band: usize) -> Option<Vec<Vec<u8>>> {
+    let (n, m) = (a.len(), b.len());
+    if n == 0 || m == 0 || n.abs_diff(m) > band {
+        return None; // a truncation/large-indel pair cannot stay in the band — fall back to exact
+    }
+    const GAP_OPEN: u32 = 32;
+    const GAP_EXT: u32 = 1;
+    const MISMATCH: u32 = 1;
+    const INF: u32 = u32::MAX / 4;
+    // Standard 3-matrix Gotoh affine gap (min-cost), banded to |i - j| <= band. mm = ending in a (mis)match at
+    // (i,j); e = ending in a gap in `a` (horizontal, consumes b); f = ending in a gap in `b` (vertical, consumes
     // a). Gaps OPEN ONLY from the match state (mm) — the classic formulation that yields clean, non-fragmented
     // gaps (a length-L gap = open + L·extend, one open). This matches poasta's gap cost.
     let lo = |i: usize| i.saturating_sub(band);
@@ -1954,6 +2102,51 @@ mod tests {
             poasta_suboptimal > 0,
             "expected poasta to be suboptimal on >=1 repetitive divergent pair; got {poasta_suboptimal}/4"
         );
+    }
+
+    #[test]
+    fn rolling_row_banded_dp_is_byte_identical_to_the_full_matrix_oracle() {
+        // §6em: 200 random pairs with substitutions, insertions, deletions and length differences up to 60 bp,
+        // bands from tight to loose: the rolling-row/traceback-byte DP must return EXACTLY the oracle's MSA
+        // (same co-optimal gap placement) and the same None verdicts.
+        let mut seed = 0x9E3779B97F4A7C15u64;
+        let mut rnd = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let mut agree = 0usize;
+        for t in 0..200 {
+            let n = 60 + (rnd() % 400) as usize;
+            let a: Vec<u8> = (0..n).map(|_| b"ACGT"[(rnd() % 4) as usize]).collect();
+            let mut b = a.clone();
+            let edits = 1 + (rnd() % 12) as usize;
+            for _ in 0..edits {
+                let pos = (rnd() % (b.len() as u64)) as usize;
+                match rnd() % 3 {
+                    0 => b[pos] = b"ACGT"[(rnd() % 4) as usize],
+                    1 => {
+                        let l = 1 + (rnd() % 20) as usize;
+                        for _ in 0..l {
+                            b.insert(pos, b"ACGT"[(rnd() % 4) as usize]);
+                        }
+                    }
+                    _ => {
+                        let l = (1 + (rnd() % 20) as usize).min(b.len() - pos);
+                        b.drain(pos..pos + l);
+                    }
+                }
+            }
+            let band = a.len().abs_diff(b.len()) + [2usize, 8, 32, 128][t % 4];
+            let x = banded_msa_pair(&a, &b, band);
+            let y = banded_msa_pair_full_matrix(&a, &b, band);
+            assert_eq!(x, y, "pair {t}: n={} m={} band={band}", a.len(), b.len());
+            if x.is_some() {
+                agree += 1;
+            }
+        }
+        assert!(agree > 100, "most pairs must align within their band ({agree}/200)");
     }
 
     #[test]

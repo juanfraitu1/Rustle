@@ -11997,3 +11997,25 @@ Scripts: `bench/o2_readchain_bridge.py`, `bench/o2_junction_truth.py`, `bench/o2
 outputs `o2scale/fam_NPIPrc_073242`, `fam_MCL2rc_073244`. Next: make the read-chain node a `mcl_families`
 / bridge feature rather than a script (O1-10b), then O2's memory (O2-5), then the correction leg on the
 read-chain cores with simulation as its truth (O2-2).
+
+## §6em — O2 MEMORY FIXED: the PSV-discovery DP kept three full score matrices; now rolling rows + one traceback byte per cell, byte-identical (2026-09-04)
+
+`copy_assign_pipeline::banded_msa_pair` (the banded Gotoh DP that aligns every copy to copy 0 to define
+PSV columns) allocated **three (n+1) × (2·band+1) u32 matrices**, and the band is adaptive, |Δlen| + 1024 —
+so a 25 kb read-chain copy against a 4 kb copy meant a 22 kb band, 1.09 G cells × 3 × 4 B = **13 GB of
+scores**; the 3-copy control family peaked at 25.4 GB of the machine's 25 (§6el). Rewritten: scores in two
+rolling rows per matrix, predecessors recorded in ONE BYTE per band cell (mm's predecessor state, e/f
+extend-vs-open bits) with the SAME tie-breaks the old value-comparison traceback used (mm ≻ f ≻ e; extend ≻
+open). The old function is kept under `cfg(test)` as the oracle; a 200-pair randomized test (substitutions,
+1–20 bp insertions/deletions, length differences to 60 bp, bands from tight to loose) asserts the MSA and the
+`None` verdicts are identical.
+
+| family | before | after | assignments |
+|---|---|---|---|
+| 3-copy control, read-chain copies (25 kb copy) | 31 s, **25.4 GB** | **2.3 s, 0.49 GB** | byte-identical |
+| NPIP 35 read-chain cores | 37 s, 4.5 GB | 26 s, 2.0 GB | byte-identical |
+| NPIP 43 loci (GFF models) | 342 s, 20.7 GB | 275 s, 5.7 GB | byte-identical |
+
+The residual memory is elsewhere (reads and per-copy structures; 5.7 GB on 43 loci is fine). Runs of the
+size that were one family from the crash rule are now routine; the 86-family sweep (O2-5) and the
+correction leg on read-chain cores are unblocked on memory. Test suite: `adj/o2rc/test_suite.log`.
