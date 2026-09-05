@@ -70,3 +70,13 @@ Five defaults flipped (user); canonical catalog `mcl_ann/rna_units_v8` (+ `block
 G3 closed (thresholds = point in a plateau); D3 pre-registered (implementation next); duplication blocks emitted
 (direct SD partners per family). Open: D3 implementation (O2-9), the MCL15/MCL28 residual artefacts, genome-wide
 rebuild of the catalog under the new defaults, the human-side residual (PMS2P14-type exon-less block spans).
+
+## D3 implemented (§6fa, 2026-09-05)
+`copy_assign --molecule-observations` (OFF): one observation per molecule ("the read is the star": minimap2 of the
+read to every copy's unit, columns = the read's own differing positions) + an ORIGIN CERTIFICATE (edits to the best
+unit ~ Binomial(aligned, error_rate), else no candidate explains the read). Pooling the BAM records was refuted
+(row 700). NPIP: 91 → 175 assigned, 0 wrong on the 62 anchors, and **285/433 low-MAPQ reads explained by no unit**
+(row 702) — the abstention is two thirds node incompleteness. Paired 35: assigned share unchanged (33 %),
+ambiguous 59 % → 17 %, tied 7 % → 49 %, agreement 99.6 %. **Default flip = user decision.** Next: the unexplained
+reads are an O1/O3 item (units that lack their content; copies the catalog lacks) — count them per family and
+feed the RNA-admission prototype; then the genome-wide rebuild.

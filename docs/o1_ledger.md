@@ -12532,3 +12532,74 @@ transitive closure on 16p is one component of 30 clusters (SDB1: NPIP, LCR16u an
 so the quotable relation is the DIRECT one, also emitted: **NPIP's hulls are directly SD-linked to LCR16u's (and 13
 more clusters); LCR16u's to NPIP + 4.** The catalog now states the block (SEDEF's object) beside the family (ours).
 Suite 855 / 0 / 11 after the flips; 856 / 0 / 11 after the blocks column (`adj/test_suite_blocks.log`).
+
+## §6fa — D3 IMPLEMENTED: pooling the records REFUTED, "the read is the star" + an ORIGIN CERTIFICATE ships (OFF), and NPIP's abstention is finally attributed — to the node, not to identity (2026-09-05)
+
+**Why now.** The user's question ("copies > 99 % similar are impossible to assign") was answered with the
+expected-sites table (§6ez follow-up): low-MAPQ reads with 3–30 expected distinguishing sites are assigned
+46–63 % of the time, and the wall is below 3 sites; but assignment got WORSE with more sites (24 % at 30–100,
+7 % above 100) and NPIP's 594 low-MAPQ molecules (10–180 expected sites each, 554 of them with 6 BAM records)
+were 390 ambiguous / 180 tied / 24 assigned — the contradiction rule abstaining on exactly the thesis's reads.
+
+**Form 1 — pool the records' PSV readings (PREREG adj/d3 P1–P3) — REFUTED (row 700).** Unanimity / majority /
+best-frame pooling on NPIP: 25 / 44 / 8 WRONG calls on the 62 audited anchors (record-level: 0), MAPQ-60
+agreement 24 % / 22 % / 86 %. Diagnosis: 34 % of a read's columns DISAGREE between two of its placements on
+NPIP (LCR16u: 4.6 %) — the family's star-projected column positions (`discover_psvs`, copy 0 as the star over
+spliced units of 243 bp–13 kb) are wrong for non-star copies, and the record-level contradiction rule was
+MASKING that defect (row 683's mechanism, now measured), not certifying anything.
+
+**Form 2 — the read is the star (`copy_assign --molecule-observations`, OFF).** One minimap2 batch per family
+(every molecule's sequence vs every copy's spliced unit, all hits kept, `--eqx`, best hit per copy by matching
+bases); a read's columns are ITS positions where the candidate copies' aligned bases differ; candidates = the
+copies it aligns to; columns = those every candidate covers (a copy with no base at a column must not score:
+the mismatch-driven likelihood would let an unaligned copy win at log-likelihood 0 — that produced 0 assigned /
+all tied on the first run); a single candidate is a tie (no competitor, no certificate); the family-column
+machinery is bypassed for these molecules (no EM/posterior columns). Streamed per query: peak 1.6 GB on NPIP
+(the first, non-streamed form was killed for memory twice).
+**Origin certificate (the piece that makes it honest):** under H0 "the best candidate's unit is this read's
+origin" the read's edits against that unit are Binomial(aligned, error_rate); if they are significantly more
+(one-sided, α), NO candidate explains the read ⟹ Ambiguous. Without it, read-star made 2 wrong calls on the
+anchors at min_p 0 / 1e-234 — both reads had NO hit to their anchor copy's unit and a 0.54–0.93-identity hit
+elsewhere. ⚠ First null = max(genome-placement rate, error) was too lenient (row 701): reads placed at MAPQ 60
+with NM 333/4,615 passed; the null is the error rate, the genome placement is not an origin either.
+
+| family | mode | assigned | tied | ambiguous | MAPQ-60 agreement (≥50 % inside copy) | MAPQ<60 assigned |
+|---|---|---|---|---|---|---|
+| LCR16u (MCL7) | record-level | 156 | 347 | 193 | 154/155 (145/145) | 1 of 95 |
+| LCR16u | read-star + certificate | 146 | 243 | 265 | 141/142 (98/98) | 4 of 74 |
+| NPIP (MCL1) | record-level | 91 | 108 | 805 | 76/76 (31/31) | 15 of 473 |
+| NPIP | read-star + certificate | **175** | 247 | 521 | **143/144 (143/144)** | **31 of 433** |
+NPIP's 62 audited anchors: read-star + certificate **0 assigned, 0 wrong** (58 ambiguous, 2 tied); record-level
+0/0. **Paired 35-family sweep** (`docs/sweep_v7_star_families_2026-09-05.tsv`): record-level 5,816/17,278 = 33.7 %
+assigned / 7 % tied / 59 % ambiguous @ MAPQ-60 agreement 99.51 % → read-star + certificate 5,443/16,398 =
+33.2 % / **49 % tied** / **17 % ambiguous** @ **99.60 %**; MAPQ<60 assigned 132 → 196 (+48 %). The assigned share
+is unchanged; the mass moved from "records contradict" to "K = 0 among the candidates that explain the read"
+(tied) and "no candidate explains the read" (ambiguous). Wall 136 s, peak 2.0 GB. Low-MAPQ reads by expected
+distinguishing sites (aligned length × (1 − nearest identity)):
+```
+record-level — MAPQ<60 reads on the paired 35 families, by expected distinguishing sites:
+  sites        n   assigned  tied  ambiguous
+  0-3          153     5.9%  41.8%   52.3%
+  3-10         175     5.7%  31.4%   62.9%
+  10-30        351    16.5%  14.0%   69.5%
+  30-100       294    15.0%  22.8%   62.2%
+  100-inf      193     5.7%   5.7%   88.6%
+read-star + certificate — MAPQ<60 reads on the paired 35 families, by expected distinguishing sites:
+  sites        n   assigned  tied  ambiguous
+  0-3           82     7.3%  56.1%   36.6%
+  3-10         133    15.0%  43.6%   41.4%
+  10-30        313    40.3%  31.3%   28.4%
+  30-100       250    13.6%  42.8%   43.6%
+  100-inf      185     5.4%  14.6%   80.0%
+```
+The 10–30-site bin (the advisor's "> 99 %" regime at read length) goes 16.5 % → **40 % assigned**; above 30 sites
+the certificate says 44–80 % of reads are explained by no unit — the node again, catalog-wide.
+
+⭐ **What NPIP's abstention now means.** Of NPIP's 433 low-MAPQ unit reads, **285 (66 %) are explained by NO
+unit at the sequencing error rate** — the certificate names the node, not the identity: their origin's unit
+lacks their content, or their origin is a copy the catalog does not hold. 117 are ties (K = 0 among the
+candidates that do explain them), 31 are assigned. The advisor's "> 99 % ⟹ impossible" is the 117; the 285
+are O1's (and O3's) problem, now counted per read. PREREG scoring: P2 (0 wrong on the anchors) holds; P1's
+agreement ≥ 99 % holds (99.3 %) but its "ambiguous −20 points" does not on NPIP — the ambiguous class changed
+meaning; P3 (placement-independence) holds by construction (one observation per molecule).
+Default stays OFF pending the user; the record-level path is unchanged and byte-identical. Suite 857 / 0 / 11.

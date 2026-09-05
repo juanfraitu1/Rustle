@@ -210,6 +210,13 @@ pub struct AssignParams {
     /// strictly lower junction score than some other copy is `Ambiguous`, never `Assigned`. No threshold; the
     /// likelihoods and `min_p` are untouched. Default OFF ⟹ byte-identical.
     pub junction_conflict_abstain: bool,
+    /// ⭐ O2-9 / D3 (register 691, PREREG adj/d3): ONE observation per molecule. Every BAM record of a molecule
+    /// (primary + `-N` secondaries) reads the read's base at the PSV columns in its own placement's frame; with
+    /// this flag those readings are POOLED column-wise (agreeing placements ⟹ the base; disagreeing placements ⟹
+    /// unobserved) and the molecule is assigned once, from the pooled vector, with the junctions of the record
+    /// that observed the most columns. Replaces "score every record, abstain on contradiction", which measured
+    /// placement instead of sequence (ZSCAN5A: 24/24 ambiguous molecules were 1 primary + 5 secondaries).
+    pub molecule_pool: bool,
 }
 
 impl Default for AssignParams {
@@ -229,6 +236,7 @@ impl Default for AssignParams {
             edit_rate: 0.2,
             iterative_prune: false,
             junction_conflict_abstain: false,
+            molecule_pool: false,
         }
     }
 }

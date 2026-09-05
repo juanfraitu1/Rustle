@@ -29,6 +29,15 @@ use super::copy_split::{intron_chain_of, AlignedRead};
 use super::family_detect::DenovoTranscript;
 use super::family_graph::poa_msa_with_costs;
 
+/// erf via Abramowitz–Stegun 7.1.26 (|error| < 1.5e-7), enough for a tail test at alpha ~ 1e-3.
+fn erf_approx(x: f64) -> f64 {
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    let x = x.abs();
+    let t = 1.0 / (1.0 + 0.3275911 * x);
+    let y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * (-x * x).exp();
+    sign * y
+}
+
 fn rc_base(b: u8) -> u8 {
     match b {
         b'A' | b'a' => b'T',
@@ -523,6 +532,212 @@ pub(crate) fn banded_msa_pair_full_matrix(a: &[u8], b: &[u8], band: usize) -> Op
     ra.reverse();
     rb.reverse();
     Some(vec![ra, rb])
+}
+
+/// ⭐ O2-9 / D3 — "THE READ IS THE STAR" (PREREG adj/d3; §6fa). One minimap2 batch per family: every
+/// molecule's sequence (query) against every copy's spliced unit (target), all hits kept. For each read × copy
+/// the hit's CIGAR (`--eqx`) gives the copy base aligned to each READ position, in the read's own
+/// orientation (complemented for a `-` hit). Returns, per read, per copy, `None` (no hit) or a vector over
+/// read positions of `Option<u8>` (the copy's aligned base, `None` where the read has an insertion or the
+/// hit does not cover the position). The star-projected family columns (`discover_psvs`, copy[0] as the
+/// star) misplace positions on copies whose spliced units differ in exon content (NPIP: 34 % of columns
+/// disagree between two placements of the same read, §6fa); here every read carries its own columns.
+pub fn read_star_alignments(copy_seqs: &[&[u8]], read_seqs: &[&[u8]]) -> Vec<Vec<Option<Vec<Option<u8>>>>> {
+    // full (memory-hungry) form, kept for tests: per read x copy the aligned base at every read position
+    let mut out: Vec<Vec<Option<Vec<Option<u8>>>>> = (0..read_seqs.len()).map(|_| vec![None; copy_seqs.len()]).collect();
+    read_star_stream(copy_seqs, read_seqs, |ri, per_copy, _| out[ri] = per_copy.to_vec());
+    out
+}
+
+/// One observation per molecule, streamed: the PAF is consumed query by query and each read is reduced to
+/// `(candidate copies, read bases at its columns, one CopyProfile per candidate)` before the next read's
+/// hits are parsed. Peak memory = one read's hits. `copy_id` in the profiles is the family copy index.
+/// Per read: `(candidates, obs, profiles, unit_edits)` — `unit_edits[ci] = Some((edits, aligned))` of the hit
+/// used for copy `ci` (edits = minimap2 `NM`, aligned = alignment block length), the input to the
+/// genome-versus-unit certificate in the assigner.
+pub type ReadStarObs = (Vec<usize>, Vec<Option<u8>>, Vec<CopyProfile>, Vec<Option<(u64, u64)>>);
+
+pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]]) -> Vec<ReadStarObs> {
+    let mut out: Vec<ReadStarObs> =
+        (0..read_seqs.len()).map(|_| (Vec::new(), Vec::new(), Vec::new(), Vec::new())).collect();
+    read_star_stream(copy_seqs, read_seqs, |ri, per_copy, edits| {
+        let (obs, profiles) = read_star_columns(read_seqs[ri], per_copy);
+        let cand: Vec<usize> = per_copy.iter().enumerate().filter(|(_, h)| h.is_some()).map(|(i, _)| i).collect();
+        // columns every candidate covers (the likelihood is mismatch-driven; an absent base must not score)
+        let keep: Vec<usize> =
+            (0..obs.len()).filter(|&j| cand.iter().all(|&ci| profiles[ci].alleles[j].is_some())).collect();
+        let obs2: Vec<Option<u8>> = keep.iter().map(|&j| obs[j]).collect();
+        let prof2: Vec<CopyProfile> = cand
+            .iter()
+            .map(|&ci| CopyProfile { copy_id: ci, alleles: keep.iter().map(|&j| profiles[ci].alleles[j]).collect(), junctions: Vec::new() })
+            .collect();
+        out[ri] = (cand, obs2, prof2, edits.to_vec());
+    });
+    out
+}
+
+/// Shared driver: runs minimap2 (all copies as targets, all molecules as queries, every hit kept) and calls
+/// `sink(read_index, per_copy)` once per read with that read's aligned copy bases per read position.
+fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<(u64, u64)>])>(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], mut sink: F) {
+    use std::io::{BufRead, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NONCE: AtomicUsize = AtomicUsize::new(0);
+    let (nc, nr) = (copy_seqs.len(), read_seqs.len());
+    if nc == 0 || nr == 0 {
+        return;
+    }
+    let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+    let dir = std::env::temp_dir();
+    let nonce = NONCE.fetch_add(1, Ordering::Relaxed);
+    let refp = dir.join(format!("rustle_star_ref_{}_{nonce}.fa", std::process::id()));
+    let qp = dir.join(format!("rustle_star_q_{}_{nonce}.fa", std::process::id()));
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _c1 = Cleanup(refp.clone());
+    let _c2 = Cleanup(qp.clone());
+    let write_fa = |path: &std::path::Path, seqs: &[&[u8]]| -> Option<()> {
+        let mut fh = std::io::BufWriter::new(std::fs::File::create(path).ok()?);
+        for (i, s) in seqs.iter().enumerate() {
+            writeln!(fh, ">{i}").ok()?;
+            fh.write_all(s).ok()?;
+            fh.write_all(b"\n").ok()?;
+        }
+        fh.flush().ok()
+    };
+    if write_fa(&refp, copy_seqs).is_none() || write_fa(&qp, read_seqs).is_none() {
+        return;
+    }
+    let n_arg = nc.to_string();
+    let mut child = match std::process::Command::new(&mm2)
+        .args(["-c", "--eqx", "-x", "map-hifi", "--secondary=yes", "-p", "0.3", "-N", &n_arg, "-t", "2"])
+        .arg(&refp)
+        .arg(&qp)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let stdout = child.stdout.take().expect("piped stdout");
+    let reader = std::io::BufReader::new(stdout);
+    // per-query accumulation: minimap2 emits a query's hits consecutively
+    let mut cur: Option<usize> = None;
+    let mut per_copy: Vec<Option<Vec<Option<u8>>>> = vec![None; nc];
+    let mut best_match: Vec<u64> = vec![0; nc];
+    let mut edits: Vec<Option<(u64, u64)>> = vec![None; nc];
+    let mut flush = |ri: Option<usize>, per_copy: &mut Vec<Option<Vec<Option<u8>>>>, best_match: &mut Vec<u64>, edits: &mut Vec<Option<(u64, u64)>>| {
+        if let Some(ri) = ri {
+            sink(ri, per_copy, edits);
+        }
+        for ((h, b), e) in per_copy.iter_mut().zip(best_match.iter_mut()).zip(edits.iter_mut()) {
+            *h = None;
+            *b = 0;
+            *e = None;
+        }
+    };
+    for line in reader.lines().map_while(Result::ok) {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 12 {
+            continue;
+        }
+        let (Ok(ri), Ok(qlen), Ok(qs), Ok(qe), Ok(ci), Ok(ts), Ok(nmatch), Ok(blk)) = (
+            f[0].parse::<usize>(),
+            f[1].parse::<usize>(),
+            f[2].parse::<usize>(),
+            f[3].parse::<usize>(),
+            f[5].parse::<usize>(),
+            f[7].parse::<usize>(),
+            f[9].parse::<u64>(),
+            f[10].parse::<u64>(),
+        ) else {
+            continue;
+        };
+        if ri >= nr || ci >= nc {
+            continue;
+        }
+        if cur != Some(ri) {
+            flush(cur, &mut per_copy, &mut best_match, &mut edits);
+            cur = Some(ri);
+        }
+        if nmatch <= best_match[ci] {
+            continue; // keep the hit with the most MATCHING bases per read x copy (not the longest block)
+        }
+        let Some(cg) = f[12..].iter().find_map(|t| t.strip_prefix("cg:Z:")) else { continue };
+        let nm: u64 = f[12..].iter().find_map(|t| t.strip_prefix("NM:i:")).and_then(|v| v.parse().ok()).unwrap_or(blk - nmatch);
+        let minus = f[4] == "-";
+        let copy = copy_seqs[ci];
+        let mut v: Vec<Option<u8>> = vec![None; qlen];
+        let (mut q, mut t) = (if minus { qlen - qe } else { qs }, ts);
+        let mut num = 0usize;
+        for ch in cg.bytes() {
+            if ch.is_ascii_digit() {
+                num = num * 10 + (ch - b'0') as usize;
+                continue;
+            }
+            match ch {
+                b'=' | b'X' | b'M' => {
+                    for k in 0..num {
+                        let (qq, tt) = (q + k, t + k);
+                        if tt < copy.len() && qq < qlen {
+                            let b = copy[tt].to_ascii_uppercase();
+                            let (pos, base) = if minus { (qlen - 1 - qq, rc_base(b)) } else { (qq, b) };
+                            v[pos] = Some(base);
+                        }
+                    }
+                    q += num;
+                    t += num;
+                }
+                b'I' | b'S' => q += num,
+                b'D' | b'N' => t += num,
+                _ => {}
+            }
+            num = 0;
+        }
+        best_match[ci] = nmatch;
+        edits[ci] = Some((nm, blk));
+        per_copy[ci] = Some(v);
+    }
+    flush(cur, &mut per_copy, &mut best_match, &mut edits);
+    let _ = child.wait();
+}
+
+/// Per-read columns from `read_star_alignments`: read positions where ≥ 2 copies carry an aligned base and
+/// not all of them agree. Returns the read's own bases at those positions (the observation, always `Some`)
+/// and one `CopyProfile` per copy (its aligned base per column, `None` where it has no base).
+pub fn read_star_columns(read: &[u8], per_copy: &[Option<Vec<Option<u8>>>]) -> (Vec<Option<u8>>, Vec<CopyProfile>) {
+    let nc = per_copy.len();
+    let mut cols: Vec<usize> = Vec::new();
+    for pos in 0..read.len() {
+        let mut seen: Option<u8> = None;
+        let (mut n, mut differ) = (0usize, false);
+        for pc in per_copy.iter().flatten() {
+            if let Some(b) = pc.get(pos).copied().flatten() {
+                n += 1;
+                match seen {
+                    None => seen = Some(b),
+                    Some(x) if x != b => differ = true,
+                    _ => {}
+                }
+            }
+        }
+        if n >= 2 && differ {
+            cols.push(pos);
+        }
+    }
+    let obs: Vec<Option<u8>> = cols.iter().map(|&p| Some(read[p].to_ascii_uppercase())).collect();
+    let profiles = (0..nc)
+        .map(|ci| CopyProfile {
+            copy_id: ci,
+            alleles: cols.iter().map(|&p| per_copy[ci].as_ref().and_then(|pc| pc.get(p).copied().flatten())).collect(),
+            junctions: Vec::new(),
+        })
+        .collect();
+    (obs, profiles)
 }
 
 /// Discover PSV columns by all-pairs alignment of every copy vs copy[0]: columns are ref offsets where
@@ -1730,12 +1945,8 @@ fn assign_family_detailed_once(
     }
     // Built once per family (from the family's copy roster) and shared by every read in the loop below.
     let graph = BubbleGraph::from_copies(&fp.profiles);
-    let per_read: Vec<Option<PerRead>> = reads
-        .par_iter()
-        .enumerate()
-        .map(|(ri, read)| {
-            let mc = best_overlap_copy(read, copies)?;
-            let feats = read_features(read, mc, &fp);
+    // The per-record tail (mosaic call + PSV/junction assignment) shared by both observation modes.
+    let finish = |ri: usize, mc: usize, feats: ReadFeatures| -> PerRead {
             // gene-conversion / mosaic: does this molecule's per-PSV copy match SWITCH mid-read?
             let mut site_obs: Vec<SiteObs> = Vec::new();
             for col in 0..fp.n_cols {
@@ -1751,15 +1962,15 @@ fn assign_family_detailed_once(
             }
             let mcall = detect_mosaic(&site_obs, copies.len(), MOSAIC_EPS, &mparams);
             let Some(combined) = assign_read_editing(&feats, &graph, &fp.profiles, p, &editing_cols) else {
-                return Some(PerRead { mcall, obs_for_em: None, result: None });
+                return PerRead { mcall, obs_for_em: None, result: None };
             };
             let obs = feats.psv_obs.clone();
             let junctions = feats.junctions.clone();
             let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, psv_qual: feats.psv_qual, junctions: vec![] };
             let Some(psv) = assign_read_editing(&psv_feats, &graph, &fp.profiles, p, &editing_cols) else {
-                return Some(PerRead { mcall, obs_for_em: Some(obs), result: None });
+                return PerRead { mcall, obs_for_em: Some(obs), result: None };
             };
-            Some(PerRead {
+            PerRead {
                 mcall,
                 obs_for_em: Some(obs.clone()),
                 result: Some(ReadResult {
@@ -1770,9 +1981,152 @@ fn assign_family_detailed_once(
                     psv_obs: obs,
                     junctions,
                 }),
+            }
+    };
+    // ⭐ O2-9 / D3 (`p.molecule_pool`, "the read is the star"): one observation per MOLECULE, built from the
+    // molecule's own sequence aligned to every copy's unit; the family's star-projected columns are not used.
+    let pooled = p.molecule_pool && mol_names.is_some();
+    let per_read: Vec<Option<PerRead>> = if pooled {
+        let names = mol_names.expect("pooled requires mol_names");
+        debug_assert_eq!(names.len(), reads.len());
+        let mut groups: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
+        let mut order: Vec<&str> = Vec::new();
+        for (i, n) in names.iter().enumerate().take(reads.len()) {
+            let e = groups.entry(n.as_str()).or_insert_with(|| {
+                order.push(n.as_str());
+                Vec::new()
+            });
+            e.push(i);
+        }
+        // representative record per molecule: the one overlapping a copy, with the longest sequence
+        let reps: Vec<usize> = order
+            .iter()
+            .filter_map(|name| {
+                groups[name]
+                    .iter()
+                    .copied()
+                    .filter(|&i| best_overlap_copy(&reads[i], copies).is_some())
+                    .max_by(|&a, &b| reads[a].seq.len().cmp(&reads[b].seq.len()).then(b.cmp(&a)))
             })
-        })
-        .collect();
+            .collect();
+        let copy_seqs: Vec<&[u8]> = copies.iter().map(|c| c.seq.as_slice()).collect();
+        let read_seqs: Vec<&[u8]> = reps.iter().map(|&i| reads[i].seq.as_slice()).collect();
+        let t_star = std::time::Instant::now();
+        let alns = read_star_observations(&copy_seqs, &read_seqs);
+        if timing {
+            eprintln!("[timing]     read-star minimap2 ({} molecules x {} copies): {:.1}s", reps.len(), copies.len(), t_star.elapsed().as_secs_f64());
+        }
+        let done: Vec<(usize, PerRead)> = reps
+            .par_iter()
+            .zip(alns.par_iter())
+            .map(|(&ri, (cand, obs, profiles, unit_edits))| {
+                let read = &reads[ri];
+                let mc = best_overlap_copy(read, copies).expect("rep overlaps a copy");
+                let (cand, obs, profiles) = (cand.clone(), obs.clone(), profiles.clone());
+                // the molecule's best GENOME placement (fewest edits per aligned base over all its records;
+                // needs `=`/`X` CIGARs, else None and the certificate below is skipped)
+                let genome_rate: Option<f64> = groups[names[ri].as_str()]
+                    .iter()
+                    .filter_map(|&i| {
+                        let (mut eq, mut ed) = (0u64, 0u64);
+                        let mut has_eqx = false;
+                        for &(op, n) in &reads[i].cigar {
+                            match op {
+                                '=' => { eq += n; has_eqx = true; }
+                                'X' => { ed += n; has_eqx = true; }
+                                'I' | 'D' => ed += n,
+                                _ => {}
+                            }
+                        }
+                        (has_eqx && eq + ed > 0).then(|| ed as f64 / (eq + ed) as f64)
+                    })
+                    .fold(None, |m: Option<f64>, r| Some(m.map_or(r, |x| x.min(r))));
+                // a single candidate has no competitor to certify against: `assign_read` returns Tied for it
+                // (margin ∞, nothing rejected), so the molecule stays in the output as a tie, never as a claim.
+                if cand.is_empty() {
+                    let mcall = detect_mosaic(&[], copies.len(), MOSAIC_EPS, &mparams);
+                    return (ri, PerRead { mcall, obs_for_em: None, result: None });
+                }
+                if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() {
+                    eprintln!("[star] read {ri} len={} candidates={:?} cols={}", read.seq.len(), cand, obs.len());
+                }
+                let feats = ReadFeatures { psv_obs: obs, psv_qual: Vec::new(), junctions: Vec::new() };
+                let mcall = detect_mosaic(&[], copies.len(), MOSAIC_EPS, &mparams);
+                let Some(mut a) = assign_read(&feats, &profiles, p) else {
+                    return (ri, PerRead { mcall, obs_for_em: None, result: None });
+                };
+                // posterior back in the FAMILY's copy space (the candidates are a subset)
+                let mut full = vec![0.0f64; copies.len()];
+                for (k, &ci) in cand.iter().enumerate() {
+                    full[ci] = a.posterior.get(k).copied().unwrap_or(0.0);
+                }
+                a.posterior = full;
+                // ⭐ origin certificate: under H0 "the best candidate's unit IS this read's origin", the read's edits
+                // against that unit are Binomial(aligned, error_rate) — the same sequence up to sequencing error
+                // (allelic variation, ~0.1–0.2 %, sits inside that tail). If the unit's edits are significantly
+                // MORE (one-sided, alpha), no candidate explains the read: its origin's unit lacks the read's
+                // content, or its origin is a copy the catalog does not hold (NPIP: anchor reads hit their own
+                // copy's unit not at all and a paralogue's at 0.54; reads placed at MAPQ 60 with NM 333) ⟹ Ambiguous.
+                // The read's genome placement is NOT the null: a placement at NM 333/4,615 is no origin either.
+                let _ = genome_rate;
+                if let Some(&Some((nm, blk))) = unit_edits.get(a.best_copy) {
+                    let r0 = p.error_rate;
+                    let n = blk as f64;
+                    let mean = n * r0;
+                    let sd = (n * r0 * (1.0 - r0)).sqrt().max(1e-9);
+                    let z = (nm as f64 - mean) / sd; // normal approximation of the binomial tail
+                    let p_tail = 0.5 * (1.0 - erf_approx(z / std::f64::consts::SQRT_2));
+                    if nm as f64 > mean && p_tail < p.alpha {
+                        a.status = AssignStatus::Ambiguous;
+                        a.resolvable = false;
+                    }
+                }
+                if cand.len() < 2 {
+                    // no competitor above the reporting floor: no certificate is possible, so no claim
+                    a.status = AssignStatus::Tied;
+                    a.resolvable = false;
+                    a.log_lr_margin = 0.0;
+                    a.n_decisive = 0;
+                    a.p_value = 1.0;
+                    a.min_p_value = 1.0;
+                    a.posterior = vec![1.0 / copies.len() as f64; copies.len()];
+                }
+                if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() && !feats.psv_obs.is_empty() {
+                    let match_counts: Vec<usize> = profiles.iter().map(|pr| pr.alleles.iter().zip(feats.psv_obs.iter()).filter(|(x, o)| x.is_some() && *x == *o).count()).collect();
+                    eprintln!("[star]   verdict best={} status={:?} n_dec={} margin={:.2} min_p={:.2e} p={:.2e} matches={:?}", a.best_copy, a.status, a.n_decisive, a.log_lr_margin, a.min_p_value, a.p_value, match_counts);
+                }
+                (
+                    ri,
+                    PerRead {
+                        mcall,
+                        obs_for_em: None, // the family EM works in the star-projected columns; not fed here
+                        result: Some(ReadResult {
+                            read_index: ri,
+                            mapped_copy: mc,
+                            psv: a.clone(),
+                            combined: a,
+                            psv_obs: vec![None; fp.n_cols],
+                            junctions: Vec::new(),
+                        }),
+                    },
+                )
+            })
+            .collect();
+        let mut out: Vec<Option<PerRead>> = (0..reads.len()).map(|_| None).collect();
+        for (ri, pr) in done {
+            out[ri] = Some(pr);
+        }
+        out
+    } else {
+        reads
+            .par_iter()
+            .enumerate()
+            .map(|(ri, read)| {
+                let mc = best_overlap_copy(read, copies)?;
+                Some(finish(ri, mc, read_features(read, mc, &fp)))
+            })
+            .collect()
+    };
     if timing {
         eprintln!(
             "[timing]     parallel per-read assign ({} reads): {:.1}s",
@@ -1782,6 +2136,7 @@ fn assign_family_detailed_once(
     }
     // RECORD -> MOLECULE reduction (see this function's doc comment). No-op when `mol_names` is `None`.
     let per_read: Vec<Option<PerRead>> = match mol_names {
+        _ if pooled => per_read, // one result per molecule already; no representative, no contradiction rule
         None => per_read,
         Some(names) => {
             debug_assert_eq!(names.len(), reads.len());
@@ -1979,6 +2334,39 @@ pub fn assign_family(
 mod tests {
     use super::super::copy_assign::AssignStatus;
     use super::*;
+
+    #[test]
+    fn read_star_columns_find_the_differing_positions_and_assign_the_read() {
+        // two copies: a 2-kb random core, copy B differs at 20 positions; the read is 1.2 kb of copy A
+        // (positions 300..1500), plus one read that is the reverse complement of copy B's 300..1500.
+        let mut seed = 0x9E37_79B9u64;
+        let mut rnd = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            b"ACGT"[(seed % 4) as usize]
+        };
+        let a: Vec<u8> = (0..2000).map(|_| rnd()).collect();
+        let mut b = a.clone();
+        let psv: Vec<usize> = (0..20).map(|k| 350 + k * 55).collect();
+        for &p in &psv {
+            b[p] = match a[p] { b'A' => b'C', b'C' => b'G', b'G' => b'T', _ => b'A' };
+        }
+        let read_a = a[300..1500].to_vec();
+        let read_b_rc: Vec<u8> = b[300..1500].iter().rev().map(|&x| rc_base(x)).collect();
+        let alns = read_star_alignments(&[&a, &b], &[&read_a, &read_b_rc]);
+        assert_eq!(alns.len(), 2);
+        assert!(alns[0][0].is_some() && alns[0][1].is_some(), "read A must hit both copies: {:?}", alns[0].iter().map(|x| x.is_some()).collect::<Vec<_>>());
+        let (obs, prof) = read_star_columns(&read_a, &alns[0]);
+        assert_eq!(obs.len(), 20, "20 differing positions inside the read");
+        let p = AssignParams::default();
+        let asg = assign_read(&ReadFeatures { psv_obs: obs, psv_qual: vec![], junctions: vec![] }, &prof, &p).unwrap();
+        assert_eq!((asg.best_copy, asg.status), (0, AssignStatus::Assigned), "{asg:?}");
+        let (obs_b, prof_b) = read_star_columns(&read_b_rc, &alns[1]);
+        assert_eq!(obs_b.len(), 20);
+        let asg_b = assign_read(&ReadFeatures { psv_obs: obs_b, psv_qual: vec![], junctions: vec![] }, &prof_b, &p).unwrap();
+        assert_eq!((asg_b.best_copy, asg_b.status), (1, AssignStatus::Assigned), "{asg_b:?}");
+    }
 
     #[test]
     fn read_support_keeps_two_allele_columns_drops_unbacked() {

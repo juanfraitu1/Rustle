@@ -1,0 +1,14 @@
+record-level — MAPQ<60 reads on the paired 35 families, by expected distinguishing sites:
+  sites        n   assigned  tied  ambiguous
+  0-3          153     5.9%  41.8%   52.3%
+  3-10         175     5.7%  31.4%   62.9%
+  10-30        351    16.5%  14.0%   69.5%
+  30-100       294    15.0%  22.8%   62.2%
+  100-inf      193     5.7%   5.7%   88.6%
+read-star + certificate — MAPQ<60 reads on the paired 35 families, by expected distinguishing sites:
+  sites        n   assigned  tied  ambiguous
+  0-3           82     7.3%  56.1%   36.6%
+  3-10         133    15.0%  43.6%   41.4%
+  10-30        313    40.3%  31.3%   28.4%
+  30-100       250    13.6%  42.8%   43.6%
+  100-inf      185     5.4%  14.6%   80.0%
