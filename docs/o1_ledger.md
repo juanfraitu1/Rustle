@@ -11688,3 +11688,69 @@ rule removes the tautological ties; it cannot create PSV evidence where copies a
 **Standing:** flag OFF; the default decision is the user's (it moves NPIP's boundary). Everything this
 section measured is reproducible with `--merge-overlapping-loci` on the two PAFs. Test suite:
 `adj/gwaudit/test_suite4.log`.
+
+## §6eg — WHAT NPIP IS, BIOLOGICALLY: the literature and a CHM13 cross-mapping say the locus-rule merge is the DUPLICATION BLOCK, not the gene family — and a quarter of the anchored "NPIP 44" are block chimeras (2026-09-04)
+
+User question after §6ef: is NPIP+MCL7 (the 48-locus cluster the attribution semantics produce) the
+actual biological origin of NPIP?
+
+**Literature.** NPIP = *morpheus*, the gene family carried by the ~20 kb **LCR16a core duplicon**
+(Johnson et al. 2001 Nature; Johnson et al. 2006 Nature: LCR16a is a "core duplicon" that seeds the larger
+16p duplication blocks). The 16p blocks are MOSAICS of modules LCR16a–x carrying NPIP, SULT1A, EIF3S8
+(=EIF3C), SMG1, PKD1 and ABCC6 fragments (Martin et al. 2004 Nature chr16; MBE 2008 ABCC6/PKD1).
+⭐**LCR16u, the module ADJACENT to LCR16a, carries the KIAA0220/SMG1 family (~8 copies); the two have
+"divergent origins and concerted expansion"** (Johnson et al. 2001 J Hered 92:462). Human pangenome
+(Dishuck et al. 2025, bioRxiv/Cell Genomics): 28 NPIP paralogs (NPIPA1–9, NPIPB1–15), 21–33 haploid
+copies, one solitary chr18 copy, macaque has ONE copy, extraordinary dN/dS (B9, B15 top percentile),
+tissue-specific expression (brain vs testis). ⟹ The NPIP family is LCR16a; SMG1P is LCR16u; they
+co-expanded as neighbours but are distinct families by origin.
+
+**Cross-mapping (`o2scale/all_chm13.paf`, `docs/npip_chm13_labels_2026-09-04.log`).** Every spliced copy
+sequence of the 44 NPIP records and the 14 MCL7 records was mapped to CHM13 (`minimap2 -x splice -N 20`)
+and the human RefSeq genes at the best hit read off (a cross-species POSITIONAL label, used for
+adjudication, not as a membership criterion). ⚠ The PAF identity column is intron-inflated in splice mode;
+only query coverage and MAPQ were read.
+
+| | best hit lands on | n |
+|---|---|---|
+| NPIP (44) | an NPIPB/NPIPA locus (24 with an NPIP gene in the window and best hit) | **28** |
+| | **ABCC1** (16p13.11, beside the NPIPA block) — models of 137–190 kb whose spliced sequence is 20–100% ABCC1 exons | **7** |
+| | **SORL1 (chr11)** — the 308 kb and 225 kb "sortilin-related receptor-like" models | **2** |
+| | NPIPB14P / NPIPB1P pseudogene regions, LOC | 4 + 1 |
+| MCL7 (14) | **SMG1 or SMG1P1–P6** | **8** |
+| | PDXDC1 / PDXDC2P (another LCR16 module gene) | 3 |
+| | SLC7A5 / SLC7A5P (co-located with SMG1P in LCR16u) | 1 |
+| | EXOSC6; an NPIP region | 1 + 1 |
+
+⭐**Copy 13 (NC_073242.2:29391428-29432668), the copy that holds 4,743 of O2's 5,016 assignments, maps
+with full coverage to human chr16:28.99 Mb = EIF3C / NPIPB9 and chr16:28.64 Mb = EIF3CL / NPIPB6** — the
+EIF3C/EIF3CL housekeeping pair inside the 16p11.2 block, whose exons physically overlap NPIPB6/B9 in
+human as well. Its O1 membership rested on two SD-supported edges to "+"-strand models over NPIP loci
+(§6ef). It is the expressed gene of the block, not an NPIP gene. The O2 headline "NPIP" copy is EIF3C.
+
+**Reading.** MCL7 is the LCR16u module content — SMG1P + SLC7A5P + PDXDC fragments, three different
+genes' pieces co-duplicated — a duplication-block "family", not a gene family. The NPIP cluster itself
+already contains ten block chimeras (ABCC1, SORL1 models) whose NPIP part is a copy absorbed into a
+neighbouring gene's model (§6dz addendum). ⟹ **The attribution semantics of §6ef merge LCR16a with
+LCR16u: they reconstruct the duplication BLOCK, which is exactly what Johnson 2001 says NPIP is not.**
+Two distinct O1 objects are on the table and the thesis must name which one it defines:
+(a) the DUPLICATION BLOCK — SD-level, what SEDEF corroborates (§6dy row 669), what attribution builds;
+(b) the GENE FAMILY — LCR16a's NPIP, what the advisor means, what the pangenome paper counts.
+The catalog as shipped is closer to (b) but polluted by (a) through chimeric annotation models; the
+locus rule with attribution moves it to (a).
+
+**Consequences.**
+1. ⛔ Do NOT flip `--merge-overlapping-loci` with attribution semantics: it merges duplication modules
+   (register row 676). Representatives-only semantics were rejected for dropping SD-supported paralogues
+   (row 675) — but those "paralogues" include EIF3C: the drop was partly RIGHT. Re-adjudicate row 675 with
+   the gene-level labels before choosing semantics.
+2. The node problem is CHIMERIC MODELS (ABCC1+NPIP, SORL1+NPIP, EIF3C overlapping NPIPB): an annotation
+   model can span two modules. Neither locus semantics fixes that; it needs the copy segmented at the
+   module boundary — the node-construction residual again, now with a concrete target (LCR16a's ~20 kb
+   core).
+3. The cross-species positional label is a legitimate adjudication instrument (not a symbol probe: it is
+   where the sequence LANDS in an independently assembled and annotated genome). It should be run on every
+   anchored family and reported beside SEDEF and the repeat column.
+4. NPIP copy number in gorilla, honestly: 28 records land on NPIP loci across 3 contigs of one assembly;
+   the pangenome gives humans 21–33 haploid copies genome-wide. No gorilla number is claimable from the
+   3-contig slice; the genome-wide catalog (gw_bp1_p9) is the object for that, with the same cross-mapping.

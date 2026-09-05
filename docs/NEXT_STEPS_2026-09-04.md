@@ -8,7 +8,7 @@ Canonical catalogs: `mcl_ann/rna_bp1_p9.clusters.tsv` (3 contigs) and `mcl_ann/g
 ## O1 — to conclude
 | # | step | why | where it stands |
 |---|---|---|---|
-| O1-1 | **Non-overlapping-locus NODE rule** in `mcl_families` (overlapping annotation records on a contig = one locus; representative = longest exon-union) | nested annotations are the same DNA twice: 13 NPIP copy pairs, 607/1,221 O2 ties (§6ee); the nested MCL4 lncRNA (§6dy); NPIP giant models are real transcription units (§6ea) | **SHIPPED OFF, MEASURED (§6ef)**: exon-union-overlap loci, edges attributed to the representative; 3-contig 142→116 clusters, NPIP 44 records → 33 loci; ⚠ **NPIP reunites with MCL7 (U1) into 48 loci — the anchored boundary moves; the default flip is the user's call.** O2 on it: resolved 17/43 vs 9/39, Containment 10→2 (the 2 share no exon), MAPQ-0 still 1/78 |
+| O1-1 | **Non-overlapping-locus NODE rule** in `mcl_families` (overlapping annotation records on a contig = one locus; representative = longest exon-union) | nested annotations are the same DNA twice: 13 NPIP copy pairs, 607/1,221 O2 ties (§6ee); the nested MCL4 lncRNA (§6dy); NPIP giant models are real transcription units (§6ea) | **SHIPPED OFF, MEASURED (§6ef)**: exon-union-overlap loci, edges attributed to the representative; 3-contig 142→116 clusters, NPIP 44 records → 33 loci; ⚠ **NPIP reunites with MCL7 (U1) into 48 loci — the anchored boundary moves; the default flip is the user's call — §6eg: DO NOT flip with attribution semantics, it merges LCR16a with LCR16u (the duplication block); the real defect is CHIMERIC models (ABCC1+NPIP, SORL1+NPIP, EIF3C/NPIPB overlap).** O2 on it: resolved 17/43 vs 9/39, Containment 10→2 (the 2 share no exon), MAPQ-0 still 1/78 |
 | O1-2 | Run the audit columns on the genome-wide catalog `gw_bp1_p9`: curated-repeat fraction, member union-exonic-coverage, size flags | the 46-cluster audit (§6eb, `docs/audit46_2026-09-04.tsv`) was on the 3-contig 1e-5 slice; the reported object is genome-wide | scripts exist: `mcl_ann/adj/audit46/audit46.py`, `adj/gwaudit/gwaudit_p9.py` |
 | O1-3 | **Cut certificate**, pre-registered: "members share ≥ half their exonic ≥0.85 partners outside the cluster" (§6ed) — positive control = the tandem 60/58 split (must flag each other), negative = NPIP | the 13 cell-A cuts are uncertified (§6dy); this is the first instrument sharing no input with MCL's edge density | statistic implemented (`gwaudit_p9.py`), thresholds NOT pre-registered as a cut test yet |
 | O1-4 | Library-silent element handle: a de novo-family column (`rnd-*` family share + young-mode contig spread) | MCL4's element is absent from curated Dfam and "Unknown" de novo (§6dz); the curated column misses it | scripts in `adj/rmsk/`; needs the full-genome de novo .out parsed per cluster |
@@ -25,6 +25,14 @@ Canonical catalogs: `mcl_ann/rna_bp1_p9.clusters.tsv` (3 contigs) and `mcl_ann/g
 | O2-4 | Decision with the advisor: is "abstention certificate + identity forecast" the O2 result? | on NPIP in fibroblasts the multimapping pool is 592/6,545 reads and 98.6% of it is unassignable | user/advisor decision |
 | O2-5 | Optional: the 86-family sweep (`o2scale/run_armA.sh`, resumable) EXCLUDING cell-B artefacts; ⚠ the 39-copy family peaked at 18.8 GB of 25 | only if O2-4 says O2 is reported catalog-wide | ready |
 | O2-6 | Dispersed families: scope the claim ("assignment for local families, declared abstention for dispersed") or build a genome-wide mode | the genome-wide catalog is mostly dispersed families | user decision |
+
+## Added 2026-09-04 late (§6eg)
+| # | step | why |
+|---|---|---|
+| O1-8 | **Name the O1 object**: duplication block (SEDEF-level, what attribution builds) vs gene family (LCR16a core, what the advisor means) | NPIP+MCL7 = LCR16a+LCR16u; the two are distinct families by origin (Johnson 2001) |
+| O1-9 | Cross-map every anchored family's copies to CHM13 and report the human-gene landing as an adjudication column | found copy 13 = EIF3C, 10/44 NPIP records chimeric; cheap (2 min/56 seqs) |
+| O1-10 | Chimeric-model segmentation at module boundaries (LCR16a ~20 kb core) — the node-construction residual with a concrete target | neither locus semantics fixes ABCC1+NPIP / SORL1+NPIP / EIF3C-over-NPIPB models |
+| O2-7 | Re-read §6ee with the labels: O2's "NPIP" assignments are 94% EIF3C reads; the NPIP-proper multimapper pool is smaller still | the abstention certificate stands, on a smaller and cleaner pool |
 
 ## Housekeeping
 - The whole MCL line is committed (0634a0e, dcd41d7); everything after §6ed is uncommitted.
