@@ -12175,3 +12175,25 @@ of 62 valid anchors it assigns 3 and ties or abstains on 59; every multimapper a
 abstention — the certificate, now on a truth that survives audit.
 
 Roadmap: S1 closed; S2 (unit = catalog row) next.
+
+### §6eq addendum — CORRECTION: the units-family scores in §6en/§6eo/§6ep/§6eq compared MISMATCHED copy indices; exact rescoring (`docs/npip_rescore_valid_truth_2026-09-05.log`)
+The Rust `--emit-units` writes kept members in CLUSTER order; the core bridge (`fam_NPIPcore`, whose model
+junctions define the anchors) sorted them by coordinate. Copy `k` therefore meant different loci in the two
+families, and every score of a units arm against the anchors was index noise. Mapping rebuilt from
+`cores.tsv` order and verified by containment (35/35 both ways). On the **62 valid anchors**:
+| arm | assigned | agreement | wrong calls |
+|---|---|---|---|
+| GFF-model cores, spliced (§6ej) | 5 | **5/5** | — |
+| bench read chains (§6el, defective builder) | 5 | 5/5 | — |
+| **faithful units, spliced (§6en)** | 3 | **0/3** | anchor 9 → 10 (×2), 10 → 11, min_p 1e-284..1e-294 |
+| faithful units, genomic extents (§6eo) | 3 | 0/3 | the same 9 → 10, 10 → 11 |
+| units + hull, genomic hulls (§6ep) | 8 | 0/8 | 9 → 10, 10 → 11, 1 → 14, 9 → 14 |
+So the faithful units are NOT accepted in any column mode, and the failure has one shape: **copies 9 and 10
+are the nested pair 26968105-26997053 / 26989354-26995630 — one locus with two annotation records.** With
+GFF models their spliced sequences differ; with read chains BOTH units are built from the same reads at the
+same DNA, become near-duplicates of unequal extent, and the star projection turns the unequal extent into
+hundreds of "distinguishing" columns (min_p 1e-284). The locus rule (§6ef, representative-only semantics)
+removes exactly these records. ⟹ **S2 must precede any unit emission: units are emitted per LOCUS, never
+per annotation record.** The §6eq claim "faithful units 3/3" is withdrawn; the standing accepted
+configuration on the valid truth is the GFF-model spliced path (5/5), and the read-chain unit is accepted
+only after S2 re-runs it on locus units. Register row 687.
