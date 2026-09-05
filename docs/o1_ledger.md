@@ -12351,3 +12351,21 @@ MCL32/MCL38 per catalog: MCL38 agreement 119/310 → 424/426 (both v3 legs); MCL
 lost assignments were the wrong ones. Verdict for the roadmap: ship both flags OFF, present the paired table;
 the default flips (`--units-follow-reads`, `RUSTLE_PSV_READFILTER=0` → a `--no-psv-read-filter` flag) are the
 user's; D3 needs its own pre-registration.
+
+## §6ev — THE TWO O1 DEFINITIONS ON ONE TRUTH: the switch costs no measurable precision on Soto's band and gains recall through the node; the annotation node loses members the reads found (2026-09-05)
+
+Pre-registered `soto_mcl/PREREG.md` (md5 507831b1…; copy `docs/PREREG_soto_two_definitions_2026-09-05.md`).
+Same slice as §6bx's `arm_off` (362 Soto member regions, `soto.bam`), the annotation's 747 genes/pseudogenes
+overlapping it, `minimap2 -x asm20 -c -X -N 50 -p 0.1` all-vs-all (50,277 records), `mcl_families` at the
+canonical defaults with `--bam --fasta` (457 nodes / 1,544 edges / 71 clusters ≥3 / 408 members / 387 units,
+0/71 zero-corroboration). Adapters `bench/mcl_to_cat_copies.py`, `bench/mcl_edge_dump.py`; scorer unchanged.
+Full table in `docs/O1_DEFINITION_SWITCH.md` §2; log `docs/soto_two_definitions_2026-09-05.log`.
+≥50 % floor: band [0.90,1.00) precision old **149/153 = 0.974** vs MCL units **460/482 = 0.954** (CIs overlap);
+recall|both detected 0.874 → **0.940**; recall|all Soto pairs 0.173 → 0.580; family exact 21/33 → 40/56;
+detection 0.354 → 0.658. P1 held (units arm; all-members arm 0.949 missed the 0.95 line by one pair in 500),
+P2 held, **P3 FAILED** (detection 0.66–0.70, predicted >0.80): at any-overlap the annotation reaches 0.77 of
+Soto's members, the read-assembled node 0.81. ⟹ the recall gain is the NODE; the node is incomplete; RNA
+admission of unannotated loci (the pivot's second criterion) is the unbuilt stage (G5). MCL asserts 208 pairs
+in the Soto-silent [0.80,0.90) band (old: 21) — the exposure the advisor will probe. Old definition stays
+runnable (`gw_family_catalog`, in the suite). Restatement of O1 proposed in `O1_DEFINITION_SWITCH.md` §5,
+not applied.

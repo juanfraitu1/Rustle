@@ -42,3 +42,9 @@ Three defects from adjudicating MCL32 (ZSCAN5) and MCL38 (ZNF875 / ZNF569-like):
 default still ON); **D3** a molecule's secondary records scored as independent observations (row 691, OPEN — needs its
 own PREREG; the sound form scores each molecule's sequence once). Paired sweep table in §6eu; default flips are
 decisions, not patches.
+
+## Definition switch (§6ev, 2026-09-05)
+Both O1 definitions scored on Soto (one truth, one scorer): `docs/O1_DEFINITION_SWITCH.md`. Gaps G1–G5 tracked
+there with owners; the O1 restatement (§5 of that file) awaits the user's decision; the old definition stays
+opt-in. Next in order: G5 (RNA admission of unannotated loci — the unbuilt pivot stage), G3 (threshold
+sensitivity on the anchors), Q9 (NPIPA/B), D3 pre-registration, the two §6eu default flips.

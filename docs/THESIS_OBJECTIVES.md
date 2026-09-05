@@ -191,6 +191,14 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 
 ### 🔄 OPEN
 
+- ⚠⚠ **DEFINITION GAPS, documented 2026-09-05 (`FRAMING_AUDIT_2026-09-05.md`, `O1_DEFINITION_SWITCH.md`).** Two O1
+  definitions coexist (the E_r/γ-quasi-clique above and the MCL + SD-core + read-supported-unit catalog the
+  chapter uses); scored on one truth (§6ev) the new one matches the old on Soto's [0.90,1.00) band precision
+  (0.954 vs 0.974, CIs overlap) and gains recall through the node (0.874 → 0.940 both-detected; 0.173 → 0.580
+  all pairs), but its node — the annotation — reaches fewer Soto members than the reads did (G5), and 0.70 /
+  0.30 / 300 bp remain unjustified (G3). The restatement in `O1_DEFINITION_SWITCH.md` §5 is **pending the user's
+  decision**; the old definition stays opt-in (`gw_family_catalog`).
+
 - ⭐⭐⭐ **A POSITIVE STRATUM — now the binding constraint on O1's precision work (2026-09-02, §6bv).**
   Every precision lever dies at the same place: **no truth set labels a meaningful share of the copies
   a filter deletes.** The coverage clause passed a cross-species pre-registered test **5/5 / 9/9** and
