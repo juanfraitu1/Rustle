@@ -11876,3 +11876,57 @@ cores are otherwise uniform (to be pre-registered separately).
 **Standing:** `--core-refine` OFF; `status` in `cores.tsv` is a per-member COLUMN — `kept_trimmed`
 (with the hull) is usable now for the O2 bridge on NPIP; `dropped` is a FLAG, not a removal, until a
 second pre-registration. Test suite: `adj/core/test_suite.log`.
+
+## §6ej — O2 ON NPIP's LCR16a CORES, AND A JUNCTION-ANCHORED TRUTH: O2 abstains on 98% including minimap2's unique reads, and its 11 confident calls are 4/11 WRONG by the reads' own splice structure (2026-09-04)
+
+**Core bridge.** The §6ei `cores.tsv` for NPIP (kept-full 30 + kept-trimmed 7, dropped 7 excluded; the
+trimmed copies' spans set to first–last exon inside the hull, which the `copies.tsv` contract requires)
+→ 35 copies on NC_073242.2 (`o2scale/fam_NPIPcore_073242`). `copy_assign` arm A: 43 s, 13.0 GB.
+**3,407 molecules → 19 assigned / 3,347 tied / 41 ambiguous**; binary's unique-mapper agreement 18/19.
+By MAPQ: 0 → 0/38 assigned; 1–59 → 5/467; **60 → 14/535 assigned, 507 tied.** Resolved copies 8/35.
+⟹ On NPIP proper — the LCR16a cores, with EIF3C and the chimeras' foreign exons gone — O2 ties even the
+reads minimap2 scored as unique. The §6ee/§6ei picture inverts: the "assignments" the family ever had were
+EIF3C reads and chimera-flank reads. **NPIP in fibroblasts is an abstention certificate almost in full.**
+
+**O2-2, the truth for what O2 does assign: junction anchoring (`junction_truth.py`).** A read whose
+intron (donor, acceptor) coincides exactly with an exon boundary pair of exactly ONE copy's model is
+anchored to that copy, independent of MAPQ and of PSVs. Calibration on the 3-copy family
+(`fam_MCL2_073244`, ABCC1/SORL1-region records): 69/69 junctions copy-specific, 57 anchored reads,
+**agreement 52/52 in arm A and in arm B, 43/43 among MAPQ<60** — a genuine multimapper truth.
+⚠ **The correction leg's 31 changed reads are NOT anchorable** (0 of them carry a copy-specific junction:
+their primaries lie outside every copy) — O2-2 for the re-threaded reads remains open; the remaining route
+is simulation.
+
+**On the NPIP cores** (`docs/npip_core_junction_truth_2026-09-04.log`): 231/231 junctions copy-specific,
+**117 anchored reads; O2 assigns 11 of them, ties 74, calls 32 ambiguous; agreement 7/11.** The 4
+disagreements, read by read (`bad_reads.fa`, minimap2 of the read against all 35 copy sequences):
+| read | MAPQ | primary locus | junction copy | O2 copy | n_decisive | min_p | direct alignment |
+|---|---|---|---|---|---|---|---|
+| SRR27178663.848890 | 60 | 16/17 | 17 (2 introns) | 19 | 2,184 | 4e-35 | over the shared 2,188 bp: **NM 2 to copy 19, NM 8 to copy 17** |
+| SRR27438212.7897311 | 60 | 16/17 | 17 (3/7) | 19 | 1,543 | 1e-34 | aligns to NO copy beyond 325 bp (15% of the read): its other exons lie in the dropped neighbouring record — a readthrough/chimeric molecule |
+| SRR27438212.1595710 | 60 | 16/17 | 17 | 19 | 259 | 4e-27 | NM 0 to 14/16/18/19, NM 1 to 17, on 230–260 bp (≤31% of the read) |
+| SRR27438212.2780452 | 1 | 14/15 | 14 (4/6) | 13 | 2,521 | 1e-16 | NM 53 to 14, NM 54 to 13 over 2.6 kb (61%) |
+**Reading.** These are not PSV decisions. The read is at locus 17 (splice-aware primary, MAPQ 60, its
+junctions are 17's), yet its exonic BASES match model 19 by 6 edits over 2.2 kb, or the read overlaps
+any model by a few hundred bases only, or the two candidates differ by one edit. O2 nevertheless reports
+`min_p` of 1e-16 to 1e-35 with thousands of "decisive" columns. Two causes, both already on record in
+other forms: (i) **the copy sequences are annotation MODELS** (`--copies-fa`: "exactly the bytes O1 defined
+the family with") — two models of 0.995-identical loci differ by their exon boundaries as much as by
+PSVs, so an annotation error at locus 17 makes a locus-17 read look like copy 19 (§6ea/§6ef: nodes must
+be loci, not models); (ii) **`n_decisive`/`min_p` count star-projected columns spanned, not the read's
+actual distinguishing evidence between its two best copies** — the §6df defect the correction leg was
+cured of (§6dg: `psv_decisive_count`) is still the main path's identifiability bound. ⚠ The
+`--dump-psv` allele matrix was NOT usable for this diagnosis (its per-copy strings read as random even for
+the reference copy against a 0.97-identical one); the read-level alignment above is the evidence.
+
+**Consequences.**
+1. O2's honest NPIP result: abstention on 3,347/3,407 molecules; of 117 junction-anchored reads it
+   assigns 11 and gets 4 wrong. The unique-mapper agreement (18/19) is not the number to quote; the
+   junction-anchored agreement (7/11) is, and it is an O2 defect list, not a validation.
+2. **O2-8 (new)**: recompute `min_p` from the read's pairwise evidence against its two best copies
+   (`psv_decisive_count`, §6dg) in the MAIN path, and make copies LOCUS sequences (core hull + the
+   read-supported exon chain), not GFF models. Both are implementation items with the 117 anchored reads
+   as the acceptance set (target: 0 confident disagreements; ties where the two models differ by ≤ a few
+   edits).
+3. The junction-anchored truth is the instrument for O2 from now on (register row 678); it cannot score
+   the correction leg's re-threaded reads (row 679) — simulation remains the only route there.

@@ -20,11 +20,17 @@ Canonical catalogs: `mcl_ann/rna_bp1_p9.clusters.tsv` (3 contigs) and `mcl_ann/g
 | # | step | why | where it stands |
 |---|---|---|---|
 | O2-1 | Same as O1-1: O2 must receive non-overlapping loci | 9/39 → 16/27 resolved copies when nested copies are dropped (§6ee) | DONE via O1-1 (`o2scale/fam_NPIPloci_073242`); ⚠ O2 peaked at **20.7 GB of 25** on 43 loci — memory must be looked at before any sweep |
-| O2-2 | **A truth for the correction leg's re-threaded reads** | `--vg-realign-correct`'s +31 assignments are reads whose primary lies OUTSIDE every copy; unique-mapper agreement cannot score them (§6ee) | design: simulate reads from copy sequences (the existing sim harness, `-N 50`), or use copy-specific junctions as truth |
+| O2-2 | **A truth for the correction leg's re-threaded reads** — §6ej: junction-anchored truth BUILT (`o2scale/junction_truth.py`; 52/52 on the 3-copy family, 43/43 among MAPQ<60) but **0/31 re-threaded reads are anchorable**; simulation is the remaining route | `--vg-realign-correct`'s +31 assignments are reads whose primary lies OUTSIDE every copy; unique-mapper agreement cannot score them (§6ee) | design: simulate reads from copy sequences (the existing sim harness, `-N 50`), or use copy-specific junctions as truth |
 | O2-3 | Report O2 per copy WITH O1's nearest-paralogue identity as the abstention forecast (ρ −0.55; ≥0.99 ⟹ share 0) | the certificate that ties O1 to O2 | column to add to the joint catalog |
 | O2-4 | Decision with the advisor: is "abstention certificate + identity forecast" the O2 result? | on NPIP in fibroblasts the multimapping pool is 592/6,545 reads and 98.6% of it is unassignable | user/advisor decision |
 | O2-5 | Optional: the 86-family sweep (`o2scale/run_armA.sh`, resumable) EXCLUDING cell-B artefacts; ⚠ the 39-copy family peaked at 18.8 GB of 25 | only if O2-4 says O2 is reported catalog-wide | ready |
 | O2-6 | Dispersed families: scope the claim ("assignment for local families, declared abstention for dispersed") or build a genome-wide mode | the genome-wide catalog is mostly dispersed families | user decision |
+
+## Added 2026-09-04 late (§6ej)
+| # | step | why |
+|---|---|---|
+| O2-8 | **Fix the main path's identifiability bound and the copy sequences**: `min_p` from the read's pairwise evidence vs its two best copies (`psv_decisive_count`, §6dg) instead of star-projected columns; copies = LOCUS sequences (core hull + read-supported exon chain), not GFF models | on NPIP cores O2 assigns 11/117 junction-anchored reads and 4/11 contradict the junction with min_p 1e-16..1e-35 while the reads differ from the candidates by 0–8 edits (register 678/680). Acceptance = the 117 anchored reads: 0 confident disagreements |
+| O2-9 | State O2's NPIP result as: abstention on 3,347/3,407 molecules of the LCR16a cores (507/535 of minimap2's MAPQ-60 reads tie); junction-anchored agreement 7/11 — an abstention certificate plus a defect list | user/advisor framing |
 
 ## Added 2026-09-04 late (§6eg)
 | # | step | why |
