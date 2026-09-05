@@ -12019,3 +12019,47 @@ open). The old function is kept under `cfg(test)` as the oracle; a 200-pair rand
 The residual memory is elsewhere (reads and per-copy structures; 5.7 GB on 43 loci is fine). Runs of the
 size that were one family from the crash rule are now routine; the 86-family sweep (O2-5) and the
 correction leg on read-chain cores are unblocked on memory. Test suite: `adj/o2rc/test_suite.log`.
+
+## §6en — O1-10b SHIPPED (`mcl_families --emit-units`), and it EXPOSED §6el: the bench chain builder was defective, and faithful read-chain units send O2's star projection to min_p 1e-270 (2026-09-05, 00:xx)
+
+**Shipped:** `mcl_families --emit-units --bam --fasta` (OFF; `--core-refine` optional): per kept member a UNIT
+= its locus (core hull if trimmed, else span) + read-supported exon chain, written as `<out>.units.tsv`,
+`.units.fa`, `.units.regions` in the `copy_assign --families/--copies-fa` contract; `BamRead` gained `reverse`
+and the `ts` transcript-strand tag. Chain rule (one floor, `--min-reads`): primaries with a block inside the
+locus, mis-chain cut (>50 kb intron, junction support <3), **a base is exonic iff covered by ≥ min_reads
+aligned blocks AND by more blocks than reads that splice over it**; <min_reads reads ⟹ GFF exons (source
+column). 3-contig catalog: 326 read-chain units, 573 GFF fallbacks, 38 members without a unit; 154 s.
+`clusters.tsv` byte-identical when off.
+
+**⛔ §6el's bench script was defective.** `bench/o2_readchain_bridge.py` iterated its mis-chain cut over
+INTRONS and appended `blocks[i+1]` per intron, so an UNSPLICED read with deletions kept only its first
+deletion-free block; intron-retaining reads contributed almost no coverage. The Rust units, faithful to the
+stated rule, differed in 32/35 NPIP copies (e.g. 21074204: bench 27 fragments, Rust 19 blocks). With the
+faithful rule, 4 pre-mRNA reads (≥3) outvoted 28 spliced reads at one intron and glued exon-intron-exon into
+a 6.4 kb block — hence the amended majority-splice clause (`adj/o2rc/PREREG.md` amendment, written before
+the amended run). **§6el's "5/5, 96 assigned, 57/57" stands as measured but was produced by defective
+copies; register row 682.**
+
+**O2 on the faithful units (35 NPIP cores, `o2scale/fam_NPIPunits2_073242`, fixed §6ej truth):**
+| copies | assigned / tied / ambiguous | anchored assigned, agreement | worst min_p on a wrong call |
+|---|---|---|---|
+| GFF models (§6ej) | 19 / 3,347 / 41 | 11, 7/11 | 4e-35 |
+| bench read chains (§6el, defective) | 96 / 2,766 / 177 | 5, 5/5 | — |
+| Rust units, coverage-only rule | 198 / 2,195 / 647 | 4, 2/4 | **3e-191** |
+| Rust units, majority-splice rule | 123 / 2,185 / 666 | 4, **3/4** | **3e-270** |
+Read 983160: junction locus 27, assigned 25, `min_p` 3e-270 — a bound that claims ~90 decisive PSV columns
+between two 0.99-identical cores on one read. Units of unequal exon structure (89 bp to 19 kb exonic, read-
+limited) go through `discover_psvs`'s STAR projection — every copy aligned to copy 0's spliced sequence —
+and non-homologous exon composition turns into thousands of "PSV" columns. The GFF models were merely
+consistent with each other (Gnomon draws similar models across paralogues), which is why they projected
+better, and why §6ej's four wrong calls looked like PSVs.
+
+**Reading.** The read-chain node is right for O1 (the transcribed unit) and it is what O2 must assign
+among — but O2's PSV columns cannot be defined on spliced sequences of units whose exon composition
+differs. With SEDEF core hulls the copies are homologous GENOMIC segments (23 kb, near-collinear); the
+columns belong on the genomic core alignment, and a read's PSV observations project through its own
+splice-aware alignment to that core. That is O2-8c, an architecture change to `discover_psvs`, and the
+last item that separates O2's NPIP result from a defensible per-read certificate. Register row 683.
+
+**Standing:** units feature shipped OFF; §6el relabelled; O2's quotable NPIP statement is unchanged
+(abstention on the LCR16a cores; junction-anchored calls unreliable until O2-8c).

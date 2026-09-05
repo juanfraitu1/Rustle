@@ -101,6 +101,21 @@ struct Args {
     /// `<out>.refined.clusters.tsv`; `<out>.clusters.tsv` is byte-identical. Default OFF
     #[arg(long, default_value_t = false)]
     core_refine: bool,
+    /// ⭐ O1-10b (§6el): emit per-locus UNITS in the `copy_assign --families/--copies-fa` contract:
+    /// `<out>.units.tsv` / `<out>.units.fa` / `<out>.units.regions`. A unit = the member's locus (its core hull
+    /// under `--core-refine`, else its span) with the READ-SUPPORTED exon chain: primaries with an aligned block
+    /// inside the locus, cut at introns >50 kb whose junction has <3 reads (the shipped mis-chain rule), exon
+    /// chain = bases covered by >= `--min-reads` reads, strand = majority transcript strand (`ts` tag, else
+    /// flag) — a base is exonic iff covered by >= `--min-reads` aligned blocks AND by more blocks than reads
+    /// that splice over it (§6en: pre-mRNA reads must not glue exons across an intron the majority splices);
+    /// a locus with < `--min-reads` reads keeps its GFF exons (reported). Needs `--bam` and `--fasta`.
+    /// Measured (§6el): with these units O2's junction-anchored agreement went 7/11 -> 5/5 and the control
+    /// 52/52 -> 57/57 — the GFF model was the cause of O2's confident wrong calls. Default OFF
+    #[arg(long, default_value_t = false)]
+    emit_units: bool,
+    /// Genome FASTA (for `--emit-units` sequences).
+    #[arg(long)]
+    fasta: Option<String>,
 
     /// Optional RNA BAM. Without it `corroborated` is reported as `NA` — ⚠ which is NOT 0.000, the
     /// repeat-clique signature. The two must never be conflated.
@@ -176,6 +191,137 @@ fn exonic_blocks(gff: &str) -> Result<BTreeMap<GeneKey, Vec<(u64, u64)>>> {
 
 /// Exon-union LENGTH per gene, derived from the same merge as [`exonic_blocks`] so the numerator and the
 /// denominator can never disagree about what an exon is.
+/// GFF gene strand per gene key (for `--emit-units` fallbacks and a tie-break when reads carry no strand).
+fn gene_strands(gff: &str) -> Result<BTreeMap<GeneKey, char>> {
+    let text = std::fs::read_to_string(gff).with_context(|| format!("reading {gff}"))?;
+    let mut m = BTreeMap::new();
+    for line in text.lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 || !matches!(f[2], "gene" | "pseudogene") {
+            continue;
+        }
+        let (Ok(s), Ok(e)) = (f[3].parse::<u64>(), f[4].parse::<u64>()) else { continue };
+        m.insert((f[0].to_string(), s, e), f[6].chars().next().unwrap_or('+'));
+    }
+    Ok(m)
+}
+
+/// Aligned blocks and introns of a read, 0-based half-open on the reference (`D` extends a block; `N` closes it).
+fn blocks_and_introns(br: &rustle::vg_family::denovo_assemble::BamRead) -> (Vec<(u64, u64)>, Vec<(u64, u64)>) {
+    let (mut blocks, mut introns): (Vec<(u64, u64)>, Vec<(u64, u64)>) = (Vec::new(), Vec::new());
+    let mut p = br.read.ref_start;
+    let mut cur: Option<(u64, u64)> = None;
+    for &(op, n) in &br.read.cigar {
+        match op {
+            'M' | '=' | 'X' | 'D' => {
+                cur = Some((cur.map_or(p, |c| c.0), p + n));
+                p += n;
+            }
+            'N' => {
+                if let Some(c) = cur.take() {
+                    blocks.push(c);
+                }
+                introns.push((p, p + n));
+                p += n;
+            }
+            _ => {}
+        }
+    }
+    if let Some(c) = cur {
+        blocks.push(c);
+    }
+    (blocks, introns)
+}
+
+/// ⭐ The read-supported exon chain of one locus `[lo, hi)` (§6el rule; one shipped constant pair: 50 kb / 3).
+/// Returns `(blocks, strand, n_reads)`; `blocks` empty when fewer than `min_reads` reads or no base reaches it.
+fn read_chain(
+    reads: &[rustle::vg_family::denovo_assemble::BamRead],
+    lo: u64,
+    hi: u64,
+    min_reads: usize,
+) -> (Vec<(u64, u64)>, Option<char>, usize) {
+    const GIANT_BP: u64 = 50_000;
+    let parsed: Vec<_> = reads
+        .iter()
+        .filter(|br| !br.is_supplementary && !br.is_secondary)
+        .map(|br| {
+            let (b, i) = blocks_and_introns(br);
+            let strand = match br.ts {
+                Some(t) => {
+                    if br.reverse {
+                        if t == '+' { '-' } else { '+' }
+                    } else {
+                        t
+                    }
+                }
+                None => {
+                    if br.reverse { '-' } else { '+' }
+                }
+            };
+            (b, i, strand)
+        })
+        .filter(|(b, _, _)| b.iter().any(|&(s, e)| e > lo && s < hi))
+        .collect();
+    let n_reads = parsed.len();
+    if n_reads < min_reads || hi <= lo {
+        return (Vec::new(), None, n_reads);
+    }
+    let mut support: BTreeMap<(u64, u64), usize> = BTreeMap::new();
+    for (_, introns, _) in &parsed {
+        for &i in introns {
+            *support.entry(i).or_insert(0) += 1;
+        }
+    }
+    let mut cov = vec![0u32; (hi - lo) as usize];
+    let mut spliced = vec![0u32; (hi - lo) as usize]; // reads whose intron spans the base (they vote AGAINST exon)
+    let mut strands: BTreeMap<char, usize> = BTreeMap::new();
+    for (blocks, introns, strand) in &parsed {
+        // mis-chain cut: split at giant, unsupported introns; keep the segment overlapping the locus.
+        let mut segs: Vec<Vec<(u64, u64)>> = vec![vec![blocks[0]]];
+        for (k, intr) in introns.iter().enumerate() {
+            if intr.1 - intr.0 > GIANT_BP && support.get(intr).copied().unwrap_or(0) < min_reads {
+                segs.push(Vec::new());
+            }
+            if k + 1 < blocks.len() {
+                segs.last_mut().unwrap().push(blocks[k + 1]);
+            }
+        }
+        let seg = segs.iter().find(|sg| sg.iter().any(|&(s, e)| e > lo && s < hi));
+        if let Some(sg) = seg {
+            for &(s, e) in sg {
+                for x in s.max(lo)..e.min(hi) {
+                    cov[(x - lo) as usize] += 1;
+                }
+            }
+            // introns INSIDE the kept segment splice over their bases
+            for w in sg.windows(2) {
+                for x in w[0].1.max(lo)..w[1].0.min(hi) {
+                    spliced[(x - lo) as usize] += 1;
+                }
+            }
+        }
+        *strands.entry(*strand).or_insert(0) += 1;
+    }
+    let mut blocks: Vec<(u64, u64)> = Vec::new();
+    for (k, &c) in cov.iter().enumerate() {
+        // exonic iff covered by >= min_reads blocks AND by more blocks than reads splicing over it
+        if c as usize >= min_reads && c > spliced[k] {
+            let x = lo + k as u64;
+            match blocks.last_mut() {
+                Some(b) if b.1 == x => b.1 = x + 1,
+                _ => blocks.push((x, x + 1)),
+            }
+        }
+    }
+    // majority strand; ties -> '+' (python `Counter.most_common` order-dependence removed on purpose)
+    let strand = strands.iter().max_by_key(|(c, n)| (**n, if **c == '+' { 1 } else { 0 })).map(|(c, _)| *c);
+    (blocks, strand, n_reads)
+}
+
 fn lengths_from_blocks(b: &BTreeMap<GeneKey, Vec<(u64, u64)>>) -> BTreeMap<GeneKey, u64> {
     b.iter()
         .map(|(g, v)| (g.clone(), v.iter().map(|&(s, e)| e - s).sum::<u64>().max(1)))
@@ -370,6 +516,7 @@ fn main() -> Result<()> {
 
     // ⭐ Duplicon-first core refinement (§6eh). Post-MCL, per cluster; clusters.tsv above is untouched.
     let mut core_stats = (0usize, 0usize, 0usize, 0usize, 0usize); // gated clusters, kept-full, trimmed, dropped, untouched clusters
+    let mut core_records: Vec<Vec<rustle::vg_family::annotation_families::CoreRecord>> = Vec::new();
     if args.core_refine {
         let bed = args.sedef.as_ref().ok_or_else(|| anyhow::anyhow!("--core-refine needs --sedef <bed>"))?;
         let text = std::fs::read_to_string(bed).with_context(|| format!("reading {bed}"))?;
@@ -381,6 +528,7 @@ fn main() -> Result<()> {
         writeln!(rf, "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\tstatus")?;
         for (i, c) in clusters.iter().enumerate() {
             let recs = refine_cluster_cores(&c.members, &sd);
+            core_records.push(recs.clone());
             let gate = recs.first().map_or(false, |r| r.gate_passed);
             if gate {
                 core_stats.0 += 1;
@@ -432,6 +580,111 @@ fn main() -> Result<()> {
         );
     }
 
+    // ⭐ O1-10b: per-locus units = locus (core hull if refined) + read-supported exon chain (§6el).
+    let mut unit_stats = (0usize, 0usize, 0usize); // read-chain, gff-fallback, skipped (dropped / no exons)
+    if args.emit_units {
+        let bam = args.bam.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --bam"))?;
+        let fasta = args.fasta.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --fasta"))?;
+        let genome = rustle::genome::GenomeIndex::from_fasta(fasta)?;
+        let strands = match &args.gff {
+            Some(g) => gene_strands(g)?,
+            None => BTreeMap::new(),
+        };
+        let mut ut = std::fs::File::create(format!("{}.units.tsv", args.out))?;
+        let mut uf = std::fs::File::create(format!("{}.units.fa", args.out))?;
+        let mut ur = std::fs::File::create(format!("{}.units.regions", args.out))?;
+        writeln!(ut, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tsource")?;
+        for (i, c) in clusters.iter().enumerate() {
+            let fid = format!("MCL{i}");
+            let mut idx = 0usize;
+            let mut hulls: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+            for (mi, m) in c.members.iter().enumerate() {
+                // locus = core hull (trimmed) / member span; dropped members are not units
+                let (lo, hi) = match core_records.get(i).and_then(|v| v.get(mi)) {
+                    Some(r) if r.status == CoreStatus::Dropped => {
+                        unit_stats.2 += 1;
+                        continue;
+                    }
+                    Some(r) if r.status == CoreStatus::KeptTrimmed => match r.hull {
+                        Some((a, b)) => (a.saturating_sub(1), b),
+                        None => (m.1.saturating_sub(1), m.2),
+                    },
+                    _ => (m.1.saturating_sub(1), m.2),
+                };
+                let (_, reads) = rustle::vg_family::denovo_assemble::reads_in_region(bam, &m.0, lo, hi, 1)
+                    .with_context(|| format!("reading {}:{}-{}", m.0, lo, hi))?;
+                let (chain, rstrand, n_reads) = read_chain(&reads, lo, hi, args.min_reads);
+                let gff_strand = strands.get(m).copied().unwrap_or('+');
+                let (exons, strand, source): (Vec<(u64, u64)>, char, &str) = if !chain.is_empty() {
+                    (chain, rstrand.unwrap_or(gff_strand), "read_chain")
+                } else {
+                    let ex: Vec<(u64, u64)> = blocks
+                        .get(m)
+                        .map(|v| v.iter().filter(|&&(s, e)| e > lo && s < hi).map(|&(s, e)| (s.max(lo), e.min(hi))).collect())
+                        .unwrap_or_default();
+                    if ex.is_empty() {
+                        unit_stats.2 += 1;
+                        continue;
+                    }
+                    (ex, gff_strand, "gff_fallback")
+                };
+                if source == "read_chain" {
+                    unit_stats.0 += 1;
+                } else {
+                    unit_stats.1 += 1;
+                }
+                let mut seq: Vec<u8> = Vec::new();
+                for &(s, e) in &exons {
+                    let Some(part) = genome.fetch_sequence(&m.0, s, e) else {
+                        anyhow::bail!("--emit-units: {}:{s}-{e} is not in --fasta", m.0)
+                    };
+                    seq.extend_from_slice(&part);
+                }
+                if strand == '-' {
+                    seq.reverse();
+                    for b in seq.iter_mut() {
+                        *b = match *b {
+                            b'A' => b'T',
+                            b'T' => b'A',
+                            b'C' => b'G',
+                            b'G' => b'C',
+                            b'a' => b't',
+                            b't' => b'a',
+                            b'c' => b'g',
+                            b'g' => b'c',
+                            x => x,
+                        };
+                    }
+                }
+                let (us, ue) = (exons[0].0, exons.last().unwrap().1);
+                writeln!(
+                    ut,
+                    "{fid}\t{idx}\tMCL_{}_{us}\t{}\t{us}\t{ue}\t{}\t{strand}\t{}\t{}\t{source}",
+                    m.0,
+                    m.0,
+                    exons.len(),
+                    n_reads.max(1),
+                    exons.iter().map(|(s, e)| format!("{s}-{e}")).collect::<Vec<_>>().join(",")
+                )?;
+                writeln!(uf, ">{fid}|{idx}|{}:{us}-{ue}|{strand}|nexon={}", m.0, exons.len())?;
+                uf.write_all(&seq)?;
+                writeln!(uf)?;
+                let h = hulls.entry(m.0.clone()).or_insert((us, ue));
+                h.0 = h.0.min(us);
+                h.1 = h.1.max(ue);
+                idx += 1;
+            }
+            for (ctg, (a, b)) in hulls {
+                writeln!(ur, "{fid}\t{ctg}:{}-{}", a.saturating_sub(5_000).max(1), b + 5_000)?;
+            }
+        }
+        eprintln!(
+            "[mcl_families] emit-units: {} read-chain unit(s), {} GFF-fallback unit(s), {} member(s) without a unit \
+             (dropped or no exon inside the locus)",
+            unit_stats.0, unit_stats.1, unit_stats.2
+        );
+    }
+
     // Params certificate: a flag with no certificate row makes two arms indistinguishable.
     let mut ph = std::fs::File::create(format!("{}.params.tsv", args.out))?;
     for (k, v) in [
@@ -456,6 +709,9 @@ fn main() -> Result<()> {
         ("core_members_kept_full".to_string(), core_stats.1.to_string()),
         ("core_members_trimmed".to_string(), core_stats.2.to_string()),
         ("core_members_dropped".to_string(), core_stats.3.to_string()),
+        ("emit_units".to_string(), args.emit_units.to_string()),
+        ("units_read_chain".to_string(), unit_stats.0.to_string()),
+        ("units_gff_fallback".to_string(), unit_stats.1.to_string()),
         ("inflation".to_string(), args.inflation.to_string()),
         ("prune".to_string(), format!("{:e}", args.prune)),
         ("min_identity".to_string(), p.min_identity.to_string()),

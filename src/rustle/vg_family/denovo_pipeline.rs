@@ -9257,10 +9257,10 @@ mod tests {
             vec![
                 BamRead { chrom: "c1".into(),
                     read: AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: primary_seq, qual: vec![] },
-                    mapq: 60, name: name.into(), as_score: 380, de: 0.010, is_supplementary: false, is_secondary: false },
+                    mapq: 60, name: name.into(), as_score: 380, de: 0.010, is_supplementary: false, is_secondary: false, reverse: false, ts: None },
                 BamRead { chrom: "c1".into(),
                     read: AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: secondary_seq, qual: vec![] },
-                    mapq: 0, name: name.into(), as_score: 379, de: 0.012, is_supplementary: false, is_secondary: false },
+                    mapq: 0, name: name.into(), as_score: 379, de: 0.012, is_supplementary: false, is_secondary: false, reverse: false, ts: None },
             ]
         };
         let mut bam = Vec::new();
@@ -9847,8 +9847,7 @@ mod tests {
                 as_score: 0,
                 de: 0.0,
                 is_supplementary: false,
-                is_secondary: false,
-            }
+                is_secondary: false, reverse: false, ts: None }
         }
 
         // 3 reads carrying the host's own backbone (haplotype A) + 4 reads carrying the mutated
@@ -10236,8 +10235,7 @@ mod tests {
         BamRead {
             chrom: chrom.into(),
             read: AlignedRead { ref_start: start, cigar: vec![('M', len)], seq: vec![b'A'; len as usize], qual: vec![] },
-            mapq, name: name.into(), as_score: 500, de, is_supplementary: false, is_secondary,
-        }
+            mapq, name: name.into(), as_score: 500, de, is_supplementary: false, is_secondary, reverse: false, ts: None }
     }
 
     #[test]
@@ -11222,8 +11220,7 @@ mod tests {
             as_score: 100,
             de: 0.01,
             is_supplementary: supp,
-            is_secondary: false,
-        };
+            is_secondary: false, reverse: false, ts: None };
         let reads = vec![
             mk(1_100, 0, false),  // ambiguous, inside  -> numerator + denominator
             mk(1_200, 60, false), // unique, inside     -> denominator only
@@ -11286,8 +11283,7 @@ mod tests {
             as_score: 100,
             de: 0.01,
             is_supplementary: false,
-            is_secondary: false,
-        };
+            is_secondary: false, reverse: false, ts: None };
         let reads = vec![mk(1_100), mk(1_200), mk(9_000)];
         let fa = gated_family(&rep, &reads, 3, "DSFAM7".into());
         assert_eq!(fa.n_copies, 3, "n_copies is chi(H)");
@@ -11313,8 +11309,7 @@ mod tests {
             as_score: 100,
             de: 0.01,
             is_supplementary: false,
-            is_secondary: false,
-        };
+            is_secondary: false, reverse: false, ts: None };
         let tied = vec![rep_s(1_000, 1_500, vec![], 5), rep_s(5_000, 5_500, vec![], 5)];
         let emitted = vec![("c1".to_string(), 900u64, 1_100u64)]; // overlaps the first tied rep only
         let reads = vec![mk(1_050), mk(5_100)];

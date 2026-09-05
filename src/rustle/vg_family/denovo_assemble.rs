@@ -760,6 +760,16 @@ fn record_as(record: &RecordBuf) -> Option<i32> {
 
 /// Read the `de:f` (gap-compressed per-base divergence) tag from a record — the conflict-criterion signal.
 /// `None` if absent. `de` is a custom 2-char tag carrying a float.
+/// Read the `ts:A` transcript-strand tag (`+`/`-`), `None` if absent.
+pub fn record_ts(record: &RecordBuf) -> Option<char> {
+    use noodles_sam::alignment::record::data::field::Tag;
+    use noodles_sam::alignment::record_buf::data::field::Value;
+    match record.data().get(&Tag::new(b't', b's'))? {
+        Value::Character(c) => Some(*c as char),
+        _ => None,
+    }
+}
+
 fn record_de(record: &RecordBuf) -> Option<f32> {
     use noodles_sam::alignment::record::data::field::Tag;
     use noodles_sam::alignment::record_buf::data::field::Value;
@@ -951,6 +961,11 @@ pub struct BamRead {
     /// together with `is_supplementary`, before any per-read CIGAR statistic (project invariant: primary
     /// alignments only, `-F 2308`), so a single physical molecule is never double-counted as two witnesses.
     pub is_secondary: bool,
+    /// FLAG 0x10 (reverse-complemented alignment).
+    pub reverse: bool,
+    /// minimap2 `ts:A` transcript-strand tag relative to the READ (`+`/`-`), `None` if absent. The transcript's
+    /// GENOMIC strand is `ts` for a forward alignment and flipped for a reverse one (§6el read-chain units).
+    pub ts: Option<char>,
 }
 
 /// Build an `AlignedRead` (ref_start 0-based, CIGAR ops as chars, read sequence) + mapping quality + read
@@ -1002,7 +1017,8 @@ pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<BamR
             None => continue,
         };
         if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&record) {
-            out.push(BamRead { chrom, read, mapq, name, as_score, de, is_supplementary, is_secondary });
+            let (reverse, ts) = (record.flags().is_reverse_complemented(), record_ts(&record));
+            out.push(BamRead { chrom, read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
         }
     }
     Ok(out)
@@ -1089,7 +1105,8 @@ fn reads_in_region_indexed(
             primary.push(pr);
         }
         if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
-            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary });
+            let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(&rb));
+            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
         }
     }
     Ok((primary, bam_reads))
@@ -1137,7 +1154,8 @@ impl BamIndexCache {
                 primary.push(pr);
             }
             if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
-                bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary });
+                let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(&rb));
+                bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
             }
         }
         Ok((primary, bam_reads))
@@ -1266,7 +1284,8 @@ fn reads_in_region_scan(
             primary.push(pr);
         }
         if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&record) {
-            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary });
+            let (reverse, ts) = (record.flags().is_reverse_complemented(), record_ts(&record));
+            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
         }
     }
     Ok((primary, bam_reads))

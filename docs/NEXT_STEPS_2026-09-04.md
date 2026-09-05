@@ -43,8 +43,13 @@ Canonical catalogs: `mcl_ann/rna_bp1_p9.clusters.tsv` (3 contigs) and `mcl_ann/g
 ## Added 2026-09-04 late (§6el)
 | # | step | why |
 |---|---|---|
-| O1-10b | Make the read-chain node a feature: `mcl_families` (or the bridge) emits per-locus units = SEDEF core hull + read-supported exon chain; O1 clusters over them, O2 consumes them | §6el: the GFF model was the cause of O2's confident wrong calls; the node for both objectives is the transcribed unit |
+| O1-10b | **SHIPPED OFF (§6en): `mcl_families --emit-units --bam --fasta`**, majority-splice chain rule; ⛔ exposed §6el's defective bench builder (register 682) and O2's star-projection defect on units of unequal structure (register 683). Original text: Make the read-chain node a feature: `mcl_families` (or the bridge) emits per-locus units = SEDEF core hull + read-supported exon chain; O1 clusters over them, O2 consumes them | §6el: the GFF model was the cause of O2's confident wrong calls; the node for both objectives is the transcribed unit |
 | O2-5' | ~~O2 memory~~ **FIXED (§6em)**: rolling-row DP + 1-byte traceback, byte-identical; 25.4 GB → 0.49 GB, 20.7 GB → 5.7 GB | sweep and correction leg unblocked |
+
+## Added 2026-09-05 (§6en)
+| # | step | why |
+|---|---|---|
+| O2-8c | **PSV columns on the GENOMIC core alignment**: in `discover_psvs`, align the copies' SEDEF core hulls (genomic, near-collinear) instead of their spliced sequences; project each read's bases through its own splice-aware alignment to its core; keep the same decision math | faithful read-chain units produce min_p 3e-270 wrong calls through the spliced star projection (§6en). Acceptance = the 117 anchored reads, 0 confident disagreements, on `fam_NPIPunits2_073242` |
 
 ## Housekeeping
 - The whole MCL line is committed (0634a0e, dcd41d7); everything after §6ed is uncommitted.

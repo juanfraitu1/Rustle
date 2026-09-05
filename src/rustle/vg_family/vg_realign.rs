@@ -976,8 +976,7 @@ mod tests {
             as_score: 0,
             de,
             is_supplementary: false,
-            is_secondary: false,
-        }
+            is_secondary: false, reverse: false, ts: None }
     }
 
     #[test]
