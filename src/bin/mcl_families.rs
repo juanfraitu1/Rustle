@@ -706,6 +706,21 @@ fn main() -> Result<()> {
                     }
                     (ex, gff_strand, "gff_fallback")
                 };
+                // reads with an aligned block inside the EMITTED chain (the copies.tsv contract: every copy has
+                // ≥1 read inside it; counting reads in the hull aborted 4 sweep families on chain-less units, §6es)
+                let n_in_chain = reads
+                    .iter()
+                    .filter(|br| !br.is_supplementary && !br.is_secondary)
+                    .filter(|br| {
+                        let (bl, _) = blocks_and_introns(br);
+                        bl.iter().any(|&(bs, be)| exons.iter().any(|&(s, e)| be > s && bs < e))
+                    })
+                    .count();
+                if n_in_chain == 0 {
+                    unit_stats.2 += 1;
+                    continue;
+                }
+                let n_reads = n_in_chain;
                 if source == "read_chain" {
                     unit_stats.0 += 1;
                 } else {
@@ -773,7 +788,7 @@ fn main() -> Result<()> {
         }
         eprintln!(
             "[mcl_families] emit-units: {} read-chain unit(s), {} GFF-fallback unit(s), {} member(s) without a unit \
-             (dropped or no exon inside the locus)",
+             (dropped, no exon inside the locus, or no read inside the chain)",
             unit_stats.0, unit_stats.1, unit_stats.2
         );
     }

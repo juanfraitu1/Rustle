@@ -27,7 +27,7 @@ and the register `NEGATIVE_RESULTS_REGISTER.md` remain the record of why.
 | **S5 ✓ (§6es)** | ~~Sweep~~ DONE: 87 families, 16,723 unit reads: 29% assigned / 7% tied / 64% ambiguous; MAPQ-60 placement 95%; forecast column does NOT predict (row 688). Original:: `copy_assign` over every SD-evidenced family of the unit catalog (artefacts excluded), reporting assigned / tied / forecast-vs-observed per family | the catalog-wide O2 result | 1 session (memory fixed, §6em) | table + the per-family forecast agreement |
 | **S6 (draft, `docs/CHAPTER_O1_O2_COMPOSITION_DRAFT.md`)** | ~~Write the composition chapter~~ DRAFTED: sections 1–7 with the measured numbers; needs the advisor framing decision (block vs family stated up front) and figures. Original: with NPIP as the worked example (LCR16a core, EIF3C and chimeras excluded, read-chain units, abstention certificate) and the limitations (node boundaries, library-silent elements, slice conditioning) | | 1 session | text |
 
-Order of execution now: S6 (chapter). S1–S5 done. O2 hygiene items (report only unit-overlapping reads; count unit reads inside the chain; emit `catalog_copy_idx` in assignments.tsv) are small and can precede S6.
+All steps done (S1–S5) or drafted (S6). O2 hygiene closed (§6et): `in_copy` + `catalog_copy_idx` columns, in-chain read counts, sweep v2 35/35. Canonical unit catalog: `mcl_ann/rna_units_v2`. Framing settled: the thesis defines the gene family (chapter §1).
 
 ## Standing decisions recorded
 - Locus rule: representative-only semantics (attribution merges LCR16a with LCR16u, §6eg).

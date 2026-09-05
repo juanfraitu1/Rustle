@@ -12272,3 +12272,32 @@ is the bulk, not the K=0 tie.
 
 Roadmap: S5 ✓; S6 (chapter) next. Hygiene items for O2: report only unit-overlapping reads; count unit
 reads inside the chain; emit `catalog_copy_idx` directly in `assignments.tsv`.
+
+## §6et — O2 HYGIENE DONE and the sweep re-run on the expressed-unit catalog: 35 families, 0 aborts, same picture (2026-09-05)
+
+**Shipped.** `copy_assign`: `assignments.tsv` gains two trailing columns — `in_copy` (some record of the
+molecule has an aligned BASE inside a copy of its family; the first 13 columns are byte-identical to before)
+and `catalog_copy_idx` (the catalog index of `assigned_copy`; `copy_assign` sorts copies and reports its own
+index, so this is the join `family_join.tsv` carried, now on every row) — plus a stderr line with the counts on
+`in_copy` reads. `mcl_families --emit-units`: `n_reads` now counts reads with a block inside the EMITTED
+chain and a unit with none is not emitted (the `copies.tsv` contract). Suite 852/0/11.
+
+**Catalog v2 (`mcl_ann/rna_units_v2`, `docs/rna_units_v2_2026-09-05.tsv`):** 291 units (238 read-chain,
+53 GFF-fallback); 493 members have no unit because no read lies inside their chain — the cluster table keeps
+them as O1 members, the unit table is O2's input and lists only what reads can reach.
+
+**Sweep v2 (`docs/sweep_v2_{families,units}_2026-09-05.tsv`; `bench/o2_sweep_analyse.py` on the native
+columns):** 35 SD-evidenced families, **35 completed, 0 aborted** (v1: 87 of 91), 186 s, RSS max 2.8 GB.
+| unit reads | assigned | tied | ambiguous |
+|---|---|---|---|
+| 16,650 | 4,903 (29%) | 1,078 (6%) | 10,669 (64%) |
+| MAPQ-60: 15,538 | 4,761 assigned, **placement agreement 4,538/4,761 = 95.3%** | | |
+| MAPQ<60: 1,112 | 142 assigned (13%) | | |
+Forecast column: Spearman −0.05 (row 688 stands). `in_copy` semantics: on the NPIP locus family 2,674 of
+2,943 molecules have SOME record inside a unit (secondary placements included), 994 have their PRIMARY
+inside one — quote the primary-based count when the question is "reads from this locus", the `in_copy` count
+when it is "reads O2 could place here".
+
+**Chapter framing, settled in the draft (S6 §1):** the thesis defines the GENE FAMILY (loci sharing a
+transcribed core); the duplication block is the object the same data would build under attribution
+semantics, and the chapter says why it does not. Roadmap: all steps done or drafted; hygiene closed.

@@ -7,10 +7,10 @@ for d in sorted(glob.glob('fam_*')):
     t=re.search(r'elapsed=([\d.]+) rss_kb=(\d+)',err); el,rss=(float(t.group(1)),int(t.group(2))//1024) if t else (None,None)
     cp={r['copy_idx']:(r['chrom'],int(r['start']),int(r['end'])) for r in csv.DictReader(open(f'{d}/copies.tsv'),delimiter='\t')}
     fc={r['copy_idx']:r for r in csv.DictReader(open(f'{d}/forecast.tsv'),delimiter='\t')}
-    join={r['copy_index']:r['catalog_copy_idx'] for r in csv.DictReader(open(f'{d}/A.family_join.tsv'),delimiter='\t')}
+
     A={}
     for r in csv.DictReader(open(f'{d}/A.assignments.tsv'),delimiter='\t'):
-        r['assigned_copy']=join.get(r['assigned_copy'],r['assigned_copy']); A[r['read_name']]=r
+        r['assigned_copy']=r['catalog_copy_idx']; A[r['read_name']]=r   # native column (§6et)
     # hygiene: reads with an aligned block inside a unit; truth-by-placement = unit with max block overlap
     truth={}; mapq={}
     for i,(c,s,e) in cp.items():

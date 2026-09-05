@@ -75,6 +75,10 @@ struct RegionWork {
     /// (two records) — the whole of the cross-family reconciliation rule. Kept for the same reason
     /// `read_mapqs` is: the heavy `BamRead` sequences are dropped in the worker.
     read_spans: Vec<(u64, u64, u8)>,
+    /// Aligned blocks per record (0-based half-open; `N` closes a block, `D` extends it), parallel to
+    /// `read_names`. Kept so the output stage can say whether a read has an aligned BASE inside a copy —
+    /// a read spliced OVER a copy is no evidence for it (§6es hygiene; ledger §6cm).
+    read_blocks: Vec<Vec<(u64, u64)>>,
     /// Alignment-score evidence per read, parallel to `read_names`. Reported, never decisive — see
     /// `read_conflict::AsEvidence` for why raw AS is length-confounded and `de` makes the call.
     as_ev: Vec<AsEvidence>,
@@ -975,6 +979,32 @@ fn build_catalog_index(rf: &RegionFamilies) -> CatalogIndex {
 /// Reference end (0-based, exclusive) of an aligned read. Local mirror of
 /// `copy_assign_pipeline::read_ref_end` (which is `pub(crate)`), used only for the "every supplied copy has
 /// reads" contract check below.
+/// Aligned blocks of a read (0-based half-open): `M`/`=`/`X`/`D` extend, `N` closes.
+fn aligned_blocks_local(read: &rustle::vg_family::copy_split::AlignedRead) -> Vec<(u64, u64)> {
+    let mut out = Vec::new();
+    let mut p = read.ref_start;
+    let mut cur: Option<(u64, u64)> = None;
+    for &(op, n) in &read.cigar {
+        match op {
+            'M' | '=' | 'X' | 'D' => {
+                cur = Some((cur.map_or(p, |c| c.0), p + n));
+                p += n;
+            }
+            'N' => {
+                if let Some(c) = cur.take() {
+                    out.push(c);
+                }
+                p += n;
+            }
+            _ => {}
+        }
+    }
+    if let Some(c) = cur {
+        out.push(c);
+    }
+    out
+}
+
 fn read_ref_end_local(read: &rustle::vg_family::copy_split::AlignedRead) -> u64 {
     read.ref_start
         + read.cigar.iter().filter(|(op, _)| matches!(op, 'M' | '=' | 'X' | 'D' | 'N')).map(|(_, n)| n).sum::<u64>()
@@ -1142,6 +1172,12 @@ struct AssignRow {
     /// Reported alignment-score evidence (see `as_evidence_per_read`). Never feeds the decision.
     as_ev: AsEvidence,
     junction_conflict: bool,
+    /// The read has an aligned BASE inside a copy of its family (§6es hygiene): rows with `false` are reads
+    /// gathered from the copies' neighbourhoods that overlap no copy; report O2 on `in_copy == true`.
+    in_copy: bool,
+    /// The catalog `copy_idx` of `assigned_copy` under `--families` (copy_assign SORTS copies and reports its
+    /// own index; `family_join.tsv` carries the same map). `NA` without a catalog.
+    catalog_copy_idx: String,
 }
 /// One family-table row.
 struct FamilyRow {
@@ -1623,9 +1659,10 @@ fn main() -> Result<()> {
                 )
             })
             .collect();
+        let read_blocks: Vec<Vec<(u64, u64)>> = bam_reads.iter().map(|r| aligned_blocks_local(&r.read)).collect();
         let as_ev = as_evidence_per_read(&bam_reads);
         let n_mapped = bam_reads.len();
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, read_spans, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, read_spans, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -1669,7 +1706,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans: _, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts } = work;
+            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans: _, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts } = work;
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -1699,7 +1736,16 @@ fn main() -> Result<()> {
                         copy_gene.insert(tid.clone(), (fid.clone(), ci));
                     }
                 }
+                let cat_idx_of = |ci: usize| -> String {
+                    match (&catalog_index, fa.copy_tids.get(ci)) {
+                        (Some(ix), Some(tid)) => ix.get(tid).map(|(_, i)| i.to_string()).unwrap_or_else(|| "NA".into()),
+                        _ => "NA".into(),
+                    }
+                };
                 for (ri, a) in &fa.assignments {
+                    let in_copy = read_blocks.get(*ri).map_or(false, |bl| {
+                        bl.iter().any(|&(bs, be)| fa.copy_spans.iter().any(|(c, s0, e0)| c == contig && be > *s0 && bs < *e0))
+                    });
                     assign_rows.push(AssignRow {
                         read_name: bam_reads[*ri].clone(),
                         family_id: fid.clone(),
@@ -1711,6 +1757,8 @@ fn main() -> Result<()> {
                         min_p_value: a.min_p_value,
                         as_ev: as_ev[*ri],
                         junction_conflict: a.junction_conflict,
+                        in_copy,
+                        catalog_copy_idx: cat_idx_of(a.best_copy),
                     });
                 }
                 // --vg-realign (report-only): the re-align supplement's per-read decisions for this family.
@@ -2070,15 +2118,28 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd")?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx")?;
     for r in &assign_rows {
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}",
             r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base)
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx
         )?;
+    }
+    {
+        // §6es hygiene: the numbers to quote are on reads with an aligned base inside a copy.
+        let inc: Vec<&AssignRow> = assign_rows.iter().filter(|r| r.in_copy).collect();
+        let cnt = |st: &str| inc.iter().filter(|r| r.status == st).count();
+        eprintln!(
+            "[copy_assign] reads with an aligned base inside a copy: {} of {} rows — assigned {} / tied {} / ambiguous {}",
+            inc.len(),
+            assign_rows.len(),
+            cnt("assigned"),
+            cnt("tied"),
+            cnt("ambiguous")
+        );
     }
 
     if args.junction_conflict_abstain {
