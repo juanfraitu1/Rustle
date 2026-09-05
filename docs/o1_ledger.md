@@ -11643,7 +11643,7 @@ Register row 673.
 
 ## §6ef — STEP O1-1: A LOCUS IS THE NODE. Shipped as `--merge-overlapping-loci` (OFF); measured; the NPIP boundary moves (2026-09-04)
 
-`docs/NEXT_STEPS_2026-09-04.md` step O1-1 / O2-1. Implementation in `annotation_families.rs`
+`docs/archive/NEXT_STEPS_2026-09-04.md` (superseded by `docs/ROADMAP_O1_O2.md`) step O1-1 / O2-1. Implementation in `annotation_families.rs`
 (`LocusMap`, `loci_from_exon_blocks`, `graph_from_paf_loci`) and `mcl_families --merge-overlapping-loci`
 (writes `<out>.loci.tsv`, params rows `annotations_folded_into_loci`, `paf_records_same_locus_skipped`).
 Three tests. Default OFF; byte-identity control against `rna_bp1_p9`: IDENTICAL.
