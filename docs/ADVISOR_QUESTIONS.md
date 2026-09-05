@@ -17,6 +17,18 @@
 
 ---
 
+## Part 0 — The object (read first)
+
+**`docs/O1_O2_COMPOSITION.md`** states the method as a composition: **O1's vertex set IS O2's
+path set**. Two graphs at two granularities — never "one decision rule", never "a family is one
+variation graph" (`NEGATIVE_RESULTS_REGISTER.md:472`, `:1086`, `:1090` kill both, and `:1090` is
+annotated as exactly what would irritate him). It also carries the corrections this file needs:
+⚠ **§1.2's "four free numbers" is wrong** — ~25 constants are default-reachable, +6 added
+2026-09-03 in `mcl_families.rs`. ⚠ **The excision abstention result (§Q-abstention) is not a run
+of the shipped gate** — it is the robust-z of `de`, not the α-certificate.
+
+---
+
 ## Part 1 — The cross-examination: "this is luck or overfitting"
 
 These are not hypothetical. They are the five moves that follow from his stated priors, and each

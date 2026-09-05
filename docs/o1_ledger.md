@@ -8950,3 +8950,2624 @@ counting, not by the test passing**: a guard that passes proves nothing about wh
 (`resumeFromRunId: wf_6fe06bef-1cd` replays the cached scans and only re-runs the failed verifiers).
 ⚠ The `circular-definition` dimension returned **0 survivors from 4 candidates** — all refuted — which is
 a real result for that class and not a gap.
+
+## §6co — ⛔⛔ THE EXON SUM CANNOT BE "APPROXIMATED" TO A GENOMIC COVERAGE — THE RE-NORMALISATION INVERTS THE DISCRIMINANT (09-02)
+
+**Question (user).** Whole-gene (genomic) coverage separates NPIP's over-merges perfectly — 0/15 false
+pairs pass, 60/62 true pairs pass. The shipped `E_r` coverage divides by the **exon sum**, which is
+inflated for fragments. Can we *approximate* the genomic denominator from what a node already
+carries, and get the genomic behaviour without paying for genomic alignment?
+
+**Answer: no.** Not "weakly" — the transform is **anti-correlated with the thing it is meant to fix**.
+
+### The measurement
+
+`soto_adj/arm_off` dump (`e.nodes.tsv` + `e.edges.tsv`), NPIP = `ID_154` under the one-family
+assumption. Cross-gene edges with >=1 endpoint in NPIP: **67 TP** (NPIP<->NPIP) and **22 FP**
+(NPIP<->foreign). Numerator held fixed at the shipped exon-sum `aligned_bp = coverage x min(exon_sum)`;
+only the denominator is swapped.
+
+| denominator | median TP | median FP | ordering | highest floor with ZERO FP -> TP kept |
+|---|---|---|---|---|
+| exon sum (**shipped**) | **0.7200** | 0.5745 | TP > FP ✅ | **20/67 (30%)** @ 0.92 |
+| read-supported core, shorter | 0.3201 | 0.5745 | **TP < FP ⛔** | 14/67 (21%) @ 0.92 |
+| genomic span, shorter | 0.3201 | 0.5745 | **TP < FP ⛔** | 14/67 (21%) @ 0.92 |
+| core, longer | 0.1387 | 0.1670 | **TP < FP ⛔** | 11/67 (16%) @ 0.51 |
+| span, longer | 0.1387 | 0.1670 | **TP < FP ⛔** | 11/67 (16%) @ 0.51 |
+
+Reference point: **whole-gene genomic coverage keeps 60/62 (97%) at zero FP.** Every approximation
+is *worse than the shipped exon sum*, and all four **invert** the TP/FP median ordering.
+
+### Why — and it is not bad luck, it is structural
+
+The FP-producing nodes are **single-exon fragments, for which the exon sum ALREADY IS the span**:
+
+- single-exon nodes: **1095**, median `exon_sum/span` = **1.0000**
+- multi-exon nodes: **439**, median `exon_sum/span` = **0.2723**
+
+⟹ Swapping to a genomic denominator **deflates only the multi-exon nodes — which are the TRUE NPIP
+genes — and leaves the single-exon over-mergers untouched.** The correction lands on exactly the
+population that did not need correcting. TP median falls 0.7200 -> 0.3201 (a 3.7x deflation, i.e.
+1/0.2723); FP median does not move at all. That is why the ordering flips.
+
+### The corollary that actually matters
+
+**The missing information is in the NUMERATOR, not the denominator.** Genomic-span mode works because
+it *aligns genomic sequence*, so true paralogs pick up aligned intronic bases the exon-sum alignment
+never saw (§6bz: over-merges align at exon-sum with identity 0.7955 over 796 bp, yet score 0/15 at
+whole-gene). No re-normalisation of an exon-only alignment can manufacture bases that were not aligned.
+`--homology-genomic-span`'s own doc comment says the same thing from the other side: *"75% of should-link
+pairs had no exon-sum alignment at all"*, and those that did covered *"a median of only 12% of the
+shorter sequence."*
+
+⟹ **There is no free lunch here. Genomic separation costs a genomic alignment.**
+
+### Third finding, unlooked-for: `RUSTLE_ER_CORE_COVERAGE` IS A VACUOUS INSTRUMENT ON THIS SUBSTRATE
+
+The flag exists precisely to divide by the read-supported core instead of the called span, documented
+as *"0.80 on the core corresponds to 0.50 on the span."* On `soto_adj`:
+
+- `core_bp == span` **exactly** for **1533/1534 nodes (99.9%)**; median `core_bp/span` = **1.0000**
+
+⟹ At the default `RUSTLE_ER_CORE_DEPTH=10` the core and the span are the same object here, so the
+flag's ON and OFF arms are byte-identical for all but one node. It joins the register in
+[[project_vacuous_instruments]]. **Do not report a core-coverage arm on this substrate as evidence of
+anything** — it cannot move, and its two arms are indistinguishable by construction (defect M2).
+
+**Status: closed, negative.** Nothing ships. The live route to NPIP precision remains the genomic-span
+arms (`span`, `spancl30`), which pay for the alignment rather than trying to approximate it.
+
+## §6cp — ⭐⭐⭐ THE TWO COVERAGES MUST BE USED TOGETHER: `span + coverage-longer 0.30` IS A PARETO WIN ON NPIP (09-02)
+
+**Five REAL BINARY ARMS** on `soto_adj` (not offline — T8 does not apply). All five carry distinct
+params-certificate rows, so no arm is indistinguishable from another (defect M2 cleared):
+`homology_genomic_span` / `genomic_span_active` / `min_coverage_longer` / `env.RUSTLE_ER_NO_STUB_EDGES`.
+
+Truth = NPIP as **ONE** family (`ID_154`, 16 adjudicated members). Pairwise co-membership.
+**Denominators stated:** precision = TP/(TP+FP) over predicted co-member pairs where BOTH endpoints
+carry a Soto gene label and the labels differ; recall = recovered NPIP gene-pairs / 120 truth gene-pairs
+(a denominator that does not depend on any prediction). Pairs with an UNLABELLED partner are a third
+bucket, neither numerator nor denominator, and are reported.
+
+| arm | flags | copies | TP | FP | unlab | **precision** | **recall** |
+|---|---|---|---|---|---|---|---|
+| `arm_off` (baseline) | — | 879 | 89 | 15 | 9 | 0.8558 | 0.5667 |
+| `arm_cl30` | cov-longer 0.30 | 707 | 114 | 15 | 22 | 0.8837 | 0.5917 |
+| `arm_nostub` | `ER_NO_STUB_EDGES=1` | 349 | 56 | 2 | 0 | 0.9655 | 0.4667 |
+| `arm_span` | genomic span | 1046 | 119 | 68 | 30 | **0.6364** | 0.6417 |
+| **`arm_spancl30`** | **span + cov-longer 0.30** | 720 | 105 | 3 | 12 | **0.9722** | **0.6000** |
+
+### ⭐ THE HEADLINE: the two coverages INTERACT, and only the pair works
+
+`arm_spancl30` beats the baseline **on BOTH axes** (P 0.8558 -> 0.9722, R 0.5667 -> 0.6000) — a true
+Pareto improvement, not a trade. But **genomic span ALONE is a precision DISASTER**: 0.8558 -> **0.6364**,
+adding 167 copies and 53 new false pairs. ⟹ **Never quote genomic span as a precision lever on its own.**
+The span opens up alignment (recall 0.6417, the best of any arm) and the coverage-longer floor is what
+disciplines it. Reporting either flag alone misrepresents both.
+
+It also **dominates the stub rule**: `arm_spancl30` beats `arm_nostub` on precision (0.9722 vs 0.9655)
+AND on recall (0.6000 vs 0.4667), while keeping 720 copies against 349. `RUSTLE_ER_NO_STUB_EDGES`
+works as advertised — 15 FP -> 2 — but it pays 371 copies and one whole NPIP gene (14/16 -> 13/16) for it.
+
+### ⚠ A SECOND ASSIGNMENT RULE LOOKS LIKE A CONTRADICTION AND IS NOT — IT IS NEAR-VACUOUS
+
+Scored again under `recip50` (reciprocal overlap >= 0.50 of both gene and copy, the guard added in §6br
+against the large-gene attractor), **every arm ties at P = 1.0000, R ~ 0.2333.** That is NOT corroboration
+and must never be quoted as "precision 1.0". Diagnosis:
+
+- the 8 foreign copies producing the FP endpoints have **median fraction-of-GENE = 0.0922** but
+  **median fraction-of-COPY = 1.0000** — each copy lies ENTIRELY INSIDE a foreign gene
+- **0/8 reach `fg >= 0.50`.** Examples: `POMZP3` (657 bp copy inside a 16,986 bp gene, fg 0.039),
+  `CNTNAP3P2` (fg 0.037), `ULK4P1` (0.079), `POM121` (0.098), `BAGE2` (0.159)
+
+⟹ **`recip50` cannot label a fragment of a large gene by construction**, so it excludes the entire FP
+class before scoring. Its P = 1.0000 is near-vacuity. **`genefrac` is the operative rule here.** File the
+lesson: *a stricter-looking assignment rule can be blind to exactly the error class under test.*
+
+### WHAT THE FPs ACTUALLY ARE — the source's prediction confirmed
+
+The over-merges are fragments lying 100% inside foreign genes, several of them pericentromeric
+SD families in their own right (`CNTNAP3P2`, `POMZP3`, `POM121`, `BAGE2`, `ULK4P1`) — the same
+single-exon-fragment class `RUSTLE_ER_NO_STUB_EDGES` was written for
+(*"every false positive was a single-exon stub joining through a short perfect match"*).
+
+**Status: `span + coverage-longer 0.30` is the strongest NPIP precision result to date and the first
+change that is Pareto on this slice. NOT yet shipped** — one substrate, one family, and the coverage
+clause was REJECTED on the wider Soto adjudication (§6bs/soto-adj) where it deleted 7 SD98-set members.
+The NPIP result does not overturn that; it scopes it. Pre-register before any default change.
+
+## §6cq — ⚠⚠⚠ CORRECTION TO §6co/§6cp: THE 22 NPIP "FALSE MERGES" ARE A LABELLING ARTEFACT AT ANY-OVERLAP — AND THE ISOFORM UNION IS REFUTED BY CONSTRUCTION (09-02)
+
+21-agent workflow (`wf_aa240f8c-8cd`, 0 errors), 14 adversarial refutation passes. Two of my own claims
+did not survive. Both corrections are recorded here rather than edited into §6co/§6cp, which stand as written.
+
+### ⚠⚠ CORRECTION 1 — THE FP DENOMINATOR IS AN ARTEFACT OF ANY-OVERLAP LABELLING
+
+§6co and §6cp label a node with the Soto gene it best overlaps **at ANY overlap**. Sweeping a
+fraction-of-GENE floor on the SAME arm_off edge file (my own re-derivation, reproduced independently):
+
+| gene-overlap floor | TP | FP | precision |
+|---|---|---|---|
+| 0.00 (**§6co/§6cp convention**) | 67 | **22** | 0.7528 |
+| 0.02 | 65 | 16 | 0.8025 |
+| 0.05 | 60 | 4 | 0.9375 |
+| 0.10 | 50 | **1** | **0.9804** |
+| 0.20 | 42 | **0** | **1.0000** |
+| 0.25 | 36 | 0 | 1.0000 |
+
+⟹ **21 of the 22 "false merges" involve a node covering under 10% of the gene whose name it inherited**
+(median FP min-endpoint gene overlap **0.0330** vs **0.2877** for TP), while true edges decay slowly.
+**The baseline is already P = 0.9804 at a 10% floor and P = 1.0000 at 20%.** The FP set is also
+hub-concentrated: two NPIPB2 fragment nodes carry 12/22 = 55%, three NPIP-side nodes carry 15/22 = 68%.
+
+⚠⚠ **A 547 bp, 2-read node overlapping 0.8% of `LRRC37A3` is not obviously "LRRC37A3".** It is at least
+as plausibly an unannotated NPIP-like copy inside that span — which would make the edge an **O3 FINDING,
+NOT an O1 ERROR.** Every precision rate in §6co, §6cf and §6cp inherits this.
+
+⭐**GATE G, PRE-REGISTERED, ZERO COMPUTE, MUST CLEAR BEFORE ANY FURTHER PRECISION ARM:** adjudicate the
+six hub endpoints against `Reference/chm13v2.0_RefSeq_full.gff.gz`. The premise survives only if **>= 10
+of the 22** are confirmed genuine NPIP<->foreign over-merges. **If it fails, no instrument in this family
+is worth an arm** — you cannot improve a 1-edge defect with a flag that deletes 60% of the catalog.
+
+### ⚠ CORRECTION 2 — §6cp's "PARETO" NEEDS TWO QUALIFIERS (the arithmetic stands)
+
+1. **The recall RISE from a restrictive clause is gamma non-monotonicity, not new evidence.** §6bv's
+   scope correction applies: *a pure restriction is true of EDGES and FALSE of COPIES.* Verified again
+   here — `arm_nostub`'s 500 edges are a strict subset of arm_off's 1,571 with **0 added**, yet 3 catalog
+   pairs APPEARED, because removing edges lets gamma split a sparse component into denser PASSING pieces.
+2. **The gain is DOMINANCE, not significance.** At n=89 edges, 67/89 -> 63/66 is not a significant
+   precision gain. The defensible claim is that cl30 is worse than OFF on nothing.
+3. ⚠ Separately: **"0/15 FP, 60/62 TP" is a whole-gene COVERAGE statistic, not the genomic-span ARM.**
+   The arm measures edge P 0.6586 and catalog P 0.5461, both BELOW OFF. Never brief them as the same thing.
+
+### ⛔⛔ THE USER'S PROPOSAL (isoform union) IS REFUTED — PREMISE TRUE, INFERENCE INVERTS THREE WAYS
+
+**The premise is CORRECT and now measured twice:** **782/1095 = 71.4%** of single-exon nodes sit at loci
+where reads assert a >= 3-read junction — they are single-exon because rep selection kept one chain.
+`RUSTLE_LOCUS_EXON_UNION` exists and does concatenate (`union_locus_geometry` merges overlapping exons,
+`union_locus_reps` concatenates `genome.fetch_sequence` slices into one `seq`). But:
+
+1. ⭐⭐**THE TWO FIXES CANCEL BY CONSTRUCTION — AND NOTHING LOGS IT.** `stub = introns.is_empty() &&
+   spliced_ev` (denovo_pipeline.rs:**3721**); `union_locus_reps` runs at **3644**, BEFORE that assignment,
+   and sets `introns` = gaps between merged exons. **The instant the union widens a stub — exactly the
+   goal — the rep gains an intron and `stub` becomes FALSE, silently disarming `RUSTLE_ER_NO_STUB_EDGES`
+   on precisely the loci it repaired.** Modelled: 14/29 = 48.3% of the stub endpoints flip; the guard's
+   FP catch degrades 21/22 -> 15/22.
+2. **THE UNION CANNOT SUBTRACT.** `exon_sum_len == span` exactly for **1095/1095** single-exon nodes, so a
+   union adds ZERO bp inside a stub's current span — it can only extend outward. Measured median union
+   growth: **4.17x on multi-exon nodes vs 1.47x on stubs** ⟹ it inflates the denominator **~3x harder on
+   the true NPIP members than on the over-mergers**. That is the §6co inversion again, quantified.
+3. **8 OF THE 22 FALSE EDGES HAVE A `stub == false` SINGLE-EXON ENDPOINT** (313/1095 single-exon nodes are
+   genuinely intronless, with no discarded isoform). **The union cannot touch those by construction.**
+
+### ⚠⚠ THREE INSTRUMENTS PAIRWISE MASK EACH OTHER — ANY TWO-FLAG ARM WOULD REPORT THE WRONG THING
+
+- `RUSTLE_SHARED_EXON=1` returns at ~**6281**, BEFORE the stub retain at **6393** ⟹ **stacking it with
+  `RUSTLE_ER_NO_STUB_EDGES` makes the stub guard a SILENT NO-OP.**
+- `RUSTLE_LOCUS_EXON_UNION=1` wins the rep-selector `if/else if` at **3644** ⟹ **silently masks
+  `RUSTLE_SHARED_EXON_ISOFORMS`.**
+- Neither combination errors or warns. Verify from `e.params.tsv` + the stub-guard stderr line.
+
+### OTHER VERIFIED FACTS WORTH KEEPING
+
+- ⚠**`locus_has_spliced_evidence`'s `min_reads = 3` is a HARDCODED LITERAL at line 3706, not a flag** —
+  the stub / genuinely-intronless boundary cannot be swept without a code change.
+- ⚠**`RUSTLE_ER_NO_STUB_EDGES` IS VACUOUS OUTSIDE THE RNA GENOME-WIDE PATH.** `stub` is set true ONLY at
+  line 3722; `gw_family_catalog.rs:1033`, `from_genome.rs:77/:101` and the `Default` impl all hardcode
+  `stub: false`. On `--from-genome` the retain removes nothing.
+- **The read-level half of the stub predicate buys ~nothing here**: over the 67 TP, {>= 1 stub endpoint}
+  and {>= 1 single-exon endpoint} are the SAME edge set (symmetric difference 0).
+- ⛔**`RUSTLE_SHARED_EXON` is refuted on TWO real runs** (gorilla pure-NPIP families 3 -> 0; human F1
+  0.562 -> best pooled 0.552) and is structurally ADD-only against a REMOVE problem. `MIN_COUNT >= 2`
+  *was* genuinely measured. The 32/209 = 15% figure is documented and reproducible
+  (`bench/soto/EDGE_RULE_DETECTION_COUPLING.txt:59`, scorer `bench/soto/rna_pair_score.py`).
+- ⚠**THE "-20 RECALL POINTS" IS WEAKER THAN ITS CITATIONS SUGGEST**: every occurrence in the tree traces
+  to ONE memory note with no surviving artifact, whose stated date precedes the flag's own introduction
+  (7360de0, 08-02), measured against the **`--cross-chrom` baseline RETIRED 08-05** on which E_c
+  participates in O1. Precision was never measured. It is nonetheless not worth re-testing, for the three
+  structural reasons above.
+- ⛔**SOURCE DEFECTS FOUND**: the `RUSTLE_LOCUS_EXON_UNION` docstring (5595-5607) is fused onto
+  `cothread_rep_floor()`'s doc block and documents the WRONG function; `union_locus_reps` (5711) has no
+  doc comment. And **retracted claims are still live in shipped docstrings** ("broke up the component
+  fusing 40 of 83 Soto families" — memory retracted this: *"a 40-family blob that does not exist in
+  pipeline output; real worst fusion: 2"*).
+
+## §6cr — ⭐⭐⭐ GATE G: **PASS, 22/22**. THE NPIP FALSE MERGES ARE REAL, THE MECHANISM IS **Alu**, AND THE OVERLAP FLOOR IS DISQUALIFIED (09-02)
+
+17-agent workflow (`wf_1f8183ce-466`, 0 errors); every O3 verdict gated behind a high-effort refuter.
+Pre-registered in §6cq: *the premise survives only if >= 10 of the 22 edges are genuine over-merges.*
+
+### VERDICT: **O1_ERROR 22/22 · O3_CANDIDATE 0/22 · AMBIGUOUS 0/22. GATE G PASSES BY A MARGIN OF 12.**
+
+Corrected precision: N reclassified = 0, so **(67+0)/89 = 0.7528, UNCHANGED**. ⭐Note the asymmetry that
+made pre-registration necessary: reclassifying an FP RAISES THE NUMERATOR, so a fully permissive
+adjudication would have returned **89/89 = 1.0000**, a +0.247 jump to a perfect score. That is the shape
+of a gameable metric. It did not happen.
+
+### ⚠⚠⚠ THE RESULT INVERTS §6cq — MY OWN CORRECTION WAS THE THING NEEDING CORRECTION
+
+§6cq worried the 22 FPs were an any-overlap labelling artefact. **Refuted at all 16 endpoints.**
+⟹ **THE FRACTION-OF-GENE FLOOR IS DISQUALIFIED AS A PRECISION INSTRUMENT AND MUST NOT SHIP.** Its apparent
+gains (0.7528 -> 0.9375 @5% -> 0.9804 @10% -> **1.0000 @20%**) do not remove errors — **they remove the
+LABEL that lets you see them.** The edges remain in the emitted graph at every floor setting: at the 20%
+floor the pipeline scores a **perfect 1.0000 while committing the same 22 false merges**, and pays 25
+true edges (37.3%) for the privilege. Textbook [[project_vacuous_instruments]]: it moves the metric
+without moving the object. **§6co and §6cp's FP counts stand.**
+
+### ⭐⭐ ONE MECHANISM EXPLAINS ALL 22: INTERSPERSED REPEAT, OVERWHELMINGLY **Alu**
+
+- `minimap2 -x asm20` returns **ZERO** alignments at essentially every endpoint. **The edges exist ONLY
+  under the sensitive tier's own `-k11 -w5`** (or `-x map-ont`).
+- **Hard-masking controls (9 nodes)**: NPIP alignment falls to **zero** while positive controls are
+  untouched — node 1308 masked: 0/16 NPIP members, POM121 control unchanged at 100.0000%; node 634:
+  15 -> 0 NPIP hits while its 1p12 paralog held at 95.7-99.2% and an FCGR1A exon at 100.0000%.
+- **Matched nulls (5 nodes)**: random genomic windows EQUAL OR BEAT the NPIP signal — node 1168
+  resembles random chr20 more than NPIP (13.58% vs 15.64%); node 847's best random-chr4 hit (294 bp,
+  86.05%) beat its best NPIP hit (282 bp, 85.82%).
+- ⭐**CALIBRATION IS DECISIVE**: genuine NPIP paralogy runs **0.941-0.980 identity over 12-17 kb**;
+  these 22 edges run **0.710-0.852 over 9-19% of node length at MAPQ 0**.
+- **E_c is uniformly negative**: **0 shared reads** at every tested endpoint — and the instrument is NOT
+  vacuous (four NPIP regions carry 11,776 alignments; node 989 checked 0/21 including secondaries).
+- Worked example (node 984, LRRC37A3, 3 edges): all 6 node<->NPIP alignments are **Alu-to-Alu with 1:1
+  coordinate correspondence**, 84.1% to AluSx consensus, textbook dimeric structure. Its only
+  perfect-identity transcript homology is to LRRC37A3 itself (103/103 = **100.00%**).
+
+### ⚠ A REAL DENOMINATOR-CONDITIONING DEFECT — IN MY OWN `fp_edges.tsv`
+
+The graph holds **34** edges with exactly one endpoint in the NPIP BED; `fp_edges.tsv` counts **22**.
+The FP set was conditioned on the foreign endpoint carrying an **annotated gene name** — this project's
+own trap. Bounds (INFERRED, the 12 were not adjudicated): **0.6634 <= P <= 0.7822**. Both bracket 0.7528,
+so the sign is robust, but **0.7528 must now carry a +/- 0.09 footnote.**
+
+### ⭐⭐ THE TRUTH SET IS WRONG ON 11 OF THE 22 EDGES — A THIRD CATEGORY (none of it makes an endpoint NPIP)
+
+- **`POMZP3` (3 edges) is WRONG**: POMZP3 is minus strand, the node is plus. Correct host is **LINC03009**
+  — 0/12 in-block reads match any POMZP3 junction; 6/12 splice from LINC03009's annotated exon-2 donor.
+- **`H2BC18` (1 edge) is WRONG — the nested-gene trap in reverse**: 0 bp of H2BC18 exon/CDS; the node sits
+  13.2 kb inside its 28.6 kb intron and **contains FCGR1A's entire 1,013 bp terminal exon base for base at
+  100.0000%**. The labeller charged the node to the host whose INTRON it occupies over the gene whose
+  EXON it contains.
+- `LRRC37A3` (3 edges): co-annotation, not false — 100% of the node lies in an exon of lncRNA
+  **LOC105376844** on the node's own strand, but a real 98 bp LRRC37A3 5'UTR exon is fully contained.
+- **Name/representation mismatches**: `AC097527.1` = RefSeq **LOC107985931** (and Soto ID_63 IS the
+  **ANAPC1** family — the node is 100% aligned to **ANAPC1P1 at 98.57%**, a genuine multi-copy member of a
+  DIFFERENT family); `AC134878.2`, `AC137800.2` (= RefSeq **FAM153DP**), `BX005040.4` are clone/Ensembl-only
+  names, intergenic in RefSeq. ⚠Their BED "gene spans" are **Soto member spans, not transcripts** — and
+  `frac_of_gene`, the column the floor sweeps, is computed against those spans.
+
+### ⭐⭐⭐ A TRUTH-SET BOUNDARY ERROR THAT MAY BE UNDERCOUNTING TRUE EDGES (LEAD, not adjudicated)
+
+Endpoint **chr16:29,788,426-29,790,810** carries 3 of the 12 uncounted edges at identity
+**0.9731 / 0.9819 / 0.9751** to NPIPB14P / NPIPB11 / NPIPB8 — squarely in the genuine-NPIP regime and an
+order of magnitude above the Alu regime of all 22 FPs. **RefSeq places NPIPB12 at chr16:29,765,318-29,788,442;
+`npip_ID154.adjudicated.bed` gives 29,765,424-29,788,033 — 409 bp SHORT**, so the node misses by 393 bp and
+scores as neither TP nor FP. ⟹ **if it adjudicates as NPIP the true-edge count is an undercount (67 -> 70)
+and the BED's NPIPB12 end needs correcting.** Weaker sibling: chr16:16,388,074-16,388,293 (219 bp in PKD1P2,
+3 edges at 0.861-0.985, 1.5 kb short of NPIPA7's BED start).
+
+### THE LEVER THIS POINTS AT (a lead requiring its own pre-registration, NOT a recommendation)
+
+The false set is **structurally concentrated, not diffuse**: **12 of the 22 edges emanate from just two
+nodes**, both **intron-only single-exon stubs inside NPIPB2** — node 891 (chr16:11973917-11975609, 7 edges)
+and node 893 (chr16:11980804-11982160, 5 edges, 94.2% soft-masked), each with zero exonic overlap. On the
+foreign side **all 16 endpoints are single-exon and every aligned block falls inside RepeatMasker
+soft-mask.** ⟹ the candidate lever is a constraint on **what a NODE IS** (intron-only, repeat-borne stubs),
+not on annotation overlap. ⚠⚠**Two warnings**: NPIP's own LEGITIMATE stub nodes are **84-94% soft-masked**
+vs 56-58% for its multi-exon nodes, so a soft-mask filter cuts true edges too and **its cost is UNMEASURED**;
+and per the standing rule, **a change to what a node is must NOT be judged on node-level metrics.**
+⛔`metric_tier` is **non-discriminative**: all 67 true and all 34 cross edges are `"sensitive"`.
+
+### TWO LEADS, NEITHER AN O3 CANDIDATE
+
+- **Node 1178, chr22:5,839,580-5,844,140** — the only genuinely unannotated endpoint (0 RefSeq features,
+  nearest 9,835 bp away), coherently transcribed (114 in-block primaries, 83 self-contained, one strand,
+  103/114 at MAPQ 60) and multi-copy (114/114 align in the chr21 **TEKT4P2** span). But it is an acrocentric
+  duplication family, **NOT NPIP** (0/114 in any NPIP span). Confidence **LOW**. ⚠**Clear GENCODE FIRST** —
+  no GENCODE file is on this machine, and that is exactly how the chr16:80,195,301 retraction happened —
+  then rule out **oligo-dT internal priming**, the artefact that killed node 921 (16/16 reads flush against
+  a 14 bp genomic poly-A) and the single most likely killer here.
+- **Node 1371, chr7:77,894,883 (POMZP3/LINC03009)** — the ONLY endpoint whose NPIP enrichment survived a
+  correct control (**16.7x** over a size-matched, identically-masked null, disjoint distributions). Refuted
+  as a copy because **0/21 NPIP hits touch an NPIP EXON** — all land in NPIP introns ⟹ homology to an
+  **intronic duplicon resident in NPIP loci**, not to NPIP gene sequence.
+
+### ⚠ METHODOLOGICAL CORRECTION THAT GENERALISES
+
+**`minimap2 -f` (minimiser-frequency filter) is REFERENCE-SIZE DEPENDENT.** A small NPIP index and a large
+control index do not mask equally, so a naive control returns 0 hits that read spuriously as
+NPIP-exclusivity. **Nulls must place both halves in ONE index.**
+
+## §6cs — ⭐⭐⭐ THE FULL CAUSAL CHAIN: oligo-dT INTERNAL PRIMING ON Alu A-TAILS -> UNSPLICED PRE-mRNA "LOCI" -> Alu-Alu EDGES. AND THE PIPELINE UPPERCASES THE SOFT-MASK AWAY (09-03)
+
+5-agent workflow (`wf_1b5efba2-bdd`), prompted by two user questions. Both were correct.
+
+### METHOD VALIDATION FIRST (this is what makes the rest quotable)
+- `chm13v2.0.fa` **IS soft-masked**; re-extracting every node's exons from it and concatenating reproduces
+  **all 1,534 rep sequences byte-identically** ⟹ the repeat annotation is RepeatMasker-derived, not inferred.
+- Re-running the pipeline's own command (`minimap2 -c -X --no-long-join -k11 -w5`, all-vs-all) and
+  re-implementing the edge rule recovers **1,571/1,571 shipped edges, 0 discrepancies.**
+- ⚠Pairwise re-alignment was DISCARDED: it reproduced 67/67 true but only 18/22 false edges. **The edge
+  rule must be re-derived from the POOLED all-vs-all PAF, not pair-by-pair.**
+
+### ⭐⭐ Q1 — "ARE SOME TRUE EDGES ALU-MEDIATED?" **YES, 16/67. BUT NPIP DOES NOT FRAGMENT.**
+
+| class | n/67 | median Alu-on-both-sides columns |
+|---|---|---|
+| UNIQUE (survives masking, >=90% aln bp kept) | 12 | 0.0000 (max 0.077) |
+| MIXED (survives, reduced) | 39 | 0.0000 (max 0.106) |
+| **REPEAT_ONLY (dies under masking)** | **16 (23.9%)** | **0.3596** (max 0.989) |
+| the 22 FALSE edges | 22 | **0.9340** (max 1.000) |
+
+- **51/67 true survive hard-masking; 0/22 false survive. Fisher two-sided p = 5.5e-11.** Masking is
+  aggressive but not annihilating (998/1,571 edges die globally, 0 created), so the control is real.
+- ⚠**THE SAME SIX NODES DO BOTH JOBS**: 891, 893, 896, 903, 908, 910 are **70.0-80.6% Alu by base** and carry
+  **12 of the 16 REPEAT_ONLY edges AND 17 of the 22 false ones.** Edge 891-903 (NPIPB2<->NPIPB8, counted
+  TRUE) is 70.0% Alu-on-both-sides at coverage 1.000 — **mechanistically the same object as 891's seven
+  false edges, differing only in identity.**
+- ⭐**"NPIP IS HELD TOGETHER BY Alus" IS REFUTED.** Deleting all 16 REPEAT_ONLY edges leaves **13/13 genes in
+  ONE component** (7 gene pairs lose their only direct link but stay connected transitively), and under
+  FULL masking the real **12-node multi-exon NPIP core survives INTACT and identical**. What masking
+  destroys is a separate **448-node component** (16 NPIP + 432 foreign) — the Alu blob itself.
+- **Identity nearly separates them**: REPEAT_ONLY true = 0.7787-0.9959 (median **0.9765**); the 22 false =
+  0.7101-0.8521 (median **0.7955**). Only **2/67** true edges fall in the false band, **both node 893**
+  (98.9% Alu both sides) — indistinguishable by identity, coverage AND repeat content.
+  ⚠A `>=0.90` cut would kill 22/22 false for 2/67 true, but it is **post-hoc, fitted on this panel, untested
+  elsewhere.** Do not ship it without an external pre-registered test.
+
+### ⭐⭐⭐ Q2 — "IsoSeq SHOULD SPAN ISOFORMS." THE READS *ARE* FULL-LENGTH. THE PRIMING IS THE PROBLEM.
+
+Sample of **1,523,509 primaries** (-F 2308) from 1,200 random 200-kb windows: median read 2,160 bp
+(IQR 1,706-2,690); **96.8% have both soft-clips <=50 bp** ⟹ alignments are NOT fragmented; MAPQ0 = 0.7%.
+**And yet only 55.2% carry >=1 N.**
+
+**THE MECHANISM, MEASURED** (second independent sample, 158,610 primaries / 120 windows):
+- **72.1% of UNSPLICED primaries terminate on a genomic A-tract** (>=12 A in the 20 bp 3' of the transcript
+  end) vs **21.4% of spliced**. ⭐**Local null at +300 / -300 / +1000 bp from the same points: 1.1-5.0%.**
+- **45.7% of unspliced reads lie wholly inside an annotated INTRON** (vs 3.4% of spliced); **85.0% of those
+  are A-tract terminated.**
+⟹ **oligo-dT primed off internal genomic A-tracts inside pre-mRNA.** ~45% of full-length molecules were
+never spliced. **48.2% of the 782 stub nodes carry that signature.**
+
+**NODE 891 IS A TEXTBOOK CASE**: 6 of 7 primaries are byte-identical in geometry (POS 11,973,917, end
+11,975,609, **zero N**, clipL=clipR=0, MAPQ 60, NM 4-31 ⟹ six DISTINCT CCS molecules). The node is
+**90.2% soft-masked**, has **zero exonic overlap** with NPIPB2, lies **entirely inside one NPIPB2 intron**,
+and its reads terminate flush against a **24-bp poly-A that is an Alu's A-tail**. 0/7 reads touch any of
+the 252 annotated NPIP exons genome-wide; all 7 carry MAPQ-0 SECONDARY alignments at 11-16 NPIP paralogs
+— the Alu cross-matching is visible at read level, **never as a primary and never on an exon**.
+⚠**UNRESOLVED**: the six identical 5' ends could be PCR duplicates of ONE original molecule.
+⚠Node 893 is **NOT a twin**: 3 of its 8 primaries are genuine NPIPB2 transcripts read-through (63 bp on
+exon 11,978,068-11,978,131, then a 1,766 bp intron); 3 carry 475S/877S/645S soft-clips.
+
+### ⭐⭐⭐ A STUB NODE **IS** ONE READ; A MULTI-EXON NODE IS A CONSENSUS
+All 1,534 nodes scanned against the full BAM, no sampling. `node_span / median supporting-read extent`:
+
+| class | median | IQR | in [0.8,1.25] | > 2 |
+|---|---|---|---|---|
+| STUB | **1.11** | 1.00-1.40 | 52.6% | **0.0%** |
+| MULTI-EXON | **3.64** | 1.60-8.70 | 11.4% | **67.2%** |
+
+⟹ **the user's objection is confirmed and generalised: a stub locus is a single molecule promoted to a
+node.** 22/42 NPIP nodes (52.4%) are single-exon.
+
+### ⛔⛔ Q3 — THE PIPELINE DESTROYS THE REPEAT ANNOTATION IT IS ALREADY HANDED
+- **`GenomeIndex` UPPERCASES every base at load** — `genome.rs:38` (`from_fasta`), `:104`, `:188`
+  (`make_ascii_uppercase`). `fetch_sequence` (`:199`) only slices, so it can **never** return lowercase.
+  The shipped rep FASTA is **0 lowercase / 5,321,267 bases**. The source states the loss twice
+  (`repeat_catalog.rs:24-27`, `family_graph.rs:860-863`), four call sites uppercase AGAIN defensively,
+  and **a test PINS the destruction.**
+- ⭐**A REPEAT FILTER IS THEREFORE CHEAP**: no download, no RepeatMasker run — a case-carrying reader
+  already exists (`repeat_catalog::IndexedFasta`). **Aligned-block soft-mask fraction separates the classes:
+  false edges median 0.9749 vs NPIP-NPIP median 0.3189.**
+- ⚠⚠**THE REPEAT-HUB VETO IS AIMED CORRECTLY AND BLIND BY CONSTRUCTION.** `denovo_pipeline.rs:6402-6438`,
+  default OFF (`RUSTLE_ER_REPEAT_GATE` unset ⟹ the block is skipped **without even printing its SKIPPED
+  line**; `arm_off`'s `e.params.tsv` says `repeat_hub_gate <unset>`). Its multiplicity instrument
+  (`genome_multiplicity`, `:6069-6134`) runs **`minimap2 -x asm20`** — the exact tier Gate G showed finds
+  **ZERO** alignment at every one of the 22 endpoints. ⟹ **it counts multiplicity with a tier that cannot
+  see the homology creating the edges.** (INFERRED — not run against the 3.1 Gb index.)
+- No dust/low-complexity filter, no RepeatMasker parsing, and **no `-f` setting** anywhere on the E_r path.
+  The command is verbatim `minimap2 -c -X --no-long-join -t 4 -k 11 -w 5 <reps.fa> <reps.fa>` ⟹ the
+  occurrence filter is computed over a **5.3 Mb index of 1,534 reps**: the reference-size dependence is
+  **live and unmanaged**.
+- The one real soft-mask gate (`collapse_enumerate::softmask_frac`, `dna_family_max_softmask` = 0.30) gates
+  only `readmit_dna_family_batch`, whose own flag defaults OFF, and it rejects a **LOCUS, never an EDGE**.
+  `driver.rs`'s `REPEAT_MULT_MIN=20` / `WIRED_MULT_MIN=8` are default-ON but live in **`family_define`, a
+  different binary** that `gw_family_catalog` never calls.
+
+### THE CHAIN, END TO END
+**oligo-dT primes an Alu A-tail inside a pre-mRNA intron -> a full-length but UNSPLICED molecule ->
+promoted to a single-read stub locus that is 70-90% Alu -> Alu<->Alu alignment at the sensitive `-k11 -w5`
+tier -> a false family edge.** The pipeline cannot see any step of this because it uppercased the
+soft-mask away at genome load, and the one veto aimed at it is default-off and instrumented with `asm20`.
+
+## §6ct — ⚖️ PRE-REGISTRATION: THE REPEAT-JUSTIFIED EDGE RULE (`RUSTLE_ER_REPEAT_MASKED_EDGES`) — written 09-03 BEFORE any arm
+
+### THE RULE, AND WHY IT INTRODUCES NO NEW THRESHOLD
+
+> **An E_r edge must be justified by NON-REPEAT sequence.**
+> Hard-mask every RepeatMasker soft-masked interval in the representative sequences, then apply the
+> **UNCHANGED** E_r rule — identity >= 0.60 (sensitive) / 0.80 (asm20), coverage >= 0.50 of the shorter —
+> to the masked sequences. An edge is kept iff it passes the existing rule on the masked substrate.
+
+⭐**Zero fitted parameters.** This is the point for the advisor: it is not a new threshold on a new
+statistic, it is the *existing* definition evaluated on the portion of the sequence that is not
+interspersed repeat. Contrast the rejected alternative — an `identity >= 0.90` cut, which separates the
+NPIP panel perfectly (22/22 false killed, 2/67 true lost) but is **post-hoc, fitted on that panel, and
+untested elsewhere.** It must not ship.
+
+### MEASURED PRIORS (§6cs, real data, pooled all-vs-all)
+- **51/67** true NPIP<->NPIP edges survive masking; **0/22** adjudicated false edges survive. Fisher p = **5.5e-11**.
+- Globally **998/1,571 edges die (63.5%)**, **0 created**. ⚠**This is a catalog-wide change, not an NPIP-local one, and its cost has never been priced.**
+- NPIP stays connected: deleting the 16 REPEAT_ONLY edges leaves **13/13 genes in one component**; the 12-node multi-exon core survives masking identically.
+- Soft-mask fraction of aligned blocks separates the classes: false **0.9749** vs NPIP-NPIP **0.3189**.
+
+### PREDICTIONS, BOTH DIRECTIONS, FIXED NOW
+
+**P1 (NPIP precision).** On `soto_adj`, NPIP edge precision rises from **67/89 = 0.7528** to **>= 0.95**.
+  ⛔REFUTED if any of the 22 adjudicated false edges survives the arm, or if surviving true edges < 45.
+  (Point prediction 51/51 = 1.0000; the pre-registered bar is deliberately looser than the point estimate.)
+
+**P2 (no fragmentation).** All **13** detected NPIP genes remain in ONE predicted family component, and
+  gene count does not fall below **13/16**.
+  ⛔REFUTED if the family splits, or if a gene is lost.
+
+**P3 (⚠ THE ONE THAT DECIDES SHIPPING — held-out cost).** On the **82 held-out Soto families**, scored by
+  the same harness that produced the stub guard's numbers (det 279 -> 190, P 0.3712 -> 0.6566,
+  R 0.6780 -> 0.3700, **F1 0.4797 -> 0.4733**):
+  **F1 must be >= the OFF-arm baseline F1.**
+  ⛔REFUTED — and the flag STAYS DEFAULT-OFF — if held-out F1 falls below baseline. A 63.5% global edge
+  cut that buys NPIP precision by gutting every other family is not a win.
+
+**P4 (mechanism, not just outcome).** The edges that die are the repeat-borne ones: the surviving edge set
+  has a **lower median aligned-block soft-mask fraction** than the OFF arm.
+  ⛔REFUTED if the surviving set is not enriched for low soft-mask.
+
+### SHIP CONDITION (all four, stated now)
+**P1 AND P2 AND P3 AND P4.** Any failure ⟹ implemented, measured, recorded, **left default-OFF**.
+
+### MANDATORY IMPLEMENTATION CONSTRAINTS
+1. **Default OFF and byte-identical when unset** — the project's standing requirement for a new flag.
+2. ⚠**A PARAMS-CERTIFICATE ROW IS MANDATORY** (defect M2): without it the ON and OFF arms are
+   indistinguishable. Record both the env var and whether masking actually **fired**, the way
+   `genomic_span_active` does — a requested-but-inert flag must be visible as inert.
+3. ⚠**DO NOT change `GenomeIndex`'s uppercasing** (`genome.rs:38/104/188`) — a test pins it and four sites
+   re-uppercase defensively. Compute a per-rep soft-mask bitset via the case-preserving
+   `repeat_catalog::IndexedFasta` instead.
+4. ⚠**Compute from the POOLED all-vs-all PAF, never pair-by-pair**: pairwise re-alignment reproduced
+   67/67 true but only **18/22** false edges, while pooled reproduced **1,571/1,571**.
+5. ⚠**Ordering**: must not be masked by `RUSTLE_SHARED_EXON` (returns at ~6281) or
+   `RUSTLE_LOCUS_EXON_UNION` (wins the rep-selector at 3644). Place relative to the stub retain at 6393
+   deliberately and record the choice.
+6. Report the NPIP numbers with the **+/- 0.09 footnote** from §6cr's denominator caveat (34 one-endpoint
+   edges exist; only 22 were adjudicated).
+
+## §6cu — ⚠⚠ CORRECTION TO §6cs's BAM PROVENANCE (the -M -L trap, caught 09-03). SUBSTANCE UNAFFECTED.
+
+§6cs states "BAM provenance for `soto_adj` = `A119b.t2t.bam` (full, `-N 50 --secondary=yes`)". **THAT IS
+WRONG.** `arms.sh` runs `--bam $D/soto.bam`, and `soto.bam`'s own `@PG` reads:
+
+```
+samtools view -b -M -L /mnt/linuxdisk/home/juanfraitu/soto_adj/regions.bed \
+  -o soto.bam /mnt/linuxdisk/home/juanfraitu/winloci_data/A119b.t2t.bam
+```
+
+⟹ **an `-M -L` REGION SUBSET** — 362 regions, 14,882,755 bp — of `A119b.t2t.bam`. Exactly the class the
+standing rule names (*"CHECK HOW A CATALOG'S BAM WAS BUILT — 3 retractions; `soto_regions.bam` and every
+`perchrom/*.bam` are `-M -L` SUBSETS"*). My earlier elimination (`A119b_ds` ruled out by read counts ⟹
+"therefore `A119b.t2t`") was a **false dichotomy**: the answer was a fourth file I had not enumerated.
+
+### WHY THE §6cs CONCLUSIONS NEVERTHELESS STAND — verified, not assumed
+
+Inside `regions.bed` the subset is COMPLETE. Re-counting primaries with an aligned block in each node
+(`-F 2308`) gives **identical** results in both BAMs:
+
+| node | dump `n_reads` | `soto.bam` | `A119b.t2t.bam` |
+|---|---|---|---|
+| 891 (chr16:11,973,917-11,975,609) | 7 | **7** | **7** |
+| 893 (chr16:11,980,804-11,982,160) | 8 | **8** | **8** |
+| 1178 (chr22:5,839,580-5,844,140) | 77 | **114** | **114** |
+
+⟹ the node-891 / node-893 read-level findings (unspliced, intron-resident, Alu A-tail termination) are
+**unchanged**. Node 1178's 77-vs-114 gap is NOT a BAM difference — both BAMs give 114 — it is the
+assembly's read-to-transcript assignment, which was already the correct reading.
+
+### ONE SCOPE CLARIFICATION THAT IMPROVES THE CLAIM
+The library statistics in §6cs (1,523,509 primaries from 1,200 random 200-kb windows; 158,610 from 120
+windows) were measured on the **FULL** `A119b.t2t.bam`, i.e. **genome-wide and OUTSIDE the catalog's
+14.9 Mb substrate**. So *"72.1% of unspliced reads terminate on a genomic A-tract, local null 1.1-5.0%"*
+is a **property of the LIBRARY, not an artefact of the Soto regions** — a stronger claim than §6cs made,
+and it is why the internal-priming mechanism should transport to the gorilla substrate.
+
+**ACTION:** any future read-level statement about the `soto_adj` CATALOG must query `soto.bam`; any
+statement about the LIBRARY must query `A119b.t2t.bam` and say so.
+
+## §6cv — ⚖️⚖️ THE REPEAT-JUSTIFIED EDGE RULE: IMPLEMENTED, RUN, **P1/P2 PASS, P3 SPLIT ⟹ STAYS DEFAULT-OFF** (09-03)
+
+`RUSTLE_ER_REPEAT_MASKED_EDGES=1`, implemented on `dna-from-genome`; **831 tests pass / 0 fail** (baseline
+829, +2 new) and `git status tests/fixtures/` is **clean** ⟹ byte-identical with the flag unset.
+Arm `arm_repmask` on `soto_adj` (`soto.bam`, the `-M -L` subset — see §6cu). Judged against §6ct,
+pre-registered BEFORE the run.
+
+**The mask fired and matched its offline prediction exactly**: `1534/1534 reps, 2,714,505/5,321,267 bases
+hard-masked (51.0%)` — the scout independently measured 51.01% — and **573 edges survive of 1,571**, the
+exact figure predicted offline. Copies 879 -> 436, families 237 -> 141.
+
+### P1 — NPIP EDGE PRECISION: ⭐**PASS, AND EXACTLY AS PREDICTED**
+| arm | TP | FP | precision |
+|---|---|---|---|
+| `arm_off` | 67 | 22 | 0.7528 |
+| **`arm_repmask`** | **51** | **0** | **1.0000** [51/51] |
+**0 of the 22 adjudicated false edges survive; 51 of the 67 true ones do** — the offline model's 51/67 and
+0/22 reproduced digit-for-digit by the real binary.
+
+### P2 — NO FRAGMENTATION: **PASS on the pre-registered wording, and BETTER than it asked**
+Genes 14 -> **13** (floor was 13/16 ⟹ pass). Largest NPIP component **12 genes in both arms** — unchanged.
+⭐**Families holding an NPIP member: 10 -> 3.** The pre-registered "one component" was never true of the OFF
+arm either (10 families), so that clause was mis-stated at pre-registration; on the quantity it meant —
+dispersal of NPIP across predicted families — the arm improves it **3.3x**.
+
+### ⚠⚠ P3 — THE DECIDER: **PASSES AS LITERALLY WRITTEN, AND THE WRITING WAS UNDERSPECIFIED**
+| floor | metric | `arm_off` | `arm_repmask` |
+|---|---|---|---|
+| any-overlap | DETECTION | 293/362 = 0.8094 | **219/362 = 0.6050** |
+| any-overlap | pair precision | 0.4006 | **0.8000** |
+| any-overlap | **F1 (detected denom)** | 0.5060 | **0.7766** ✅ |
+| any-overlap | **recall \| ALL Soto pairs** | **0.5238** | **0.4389** ⛔ |
+| any-overlap | **F1 (UNCONDITIONED)** | 0.4540 | **0.5668** ✅ |
+| any-overlap | FAMILY exact set match | 19/66 = 0.288 | **31/54 = 0.574** ⭐ |
+| >=50% floor | F1 (detected denom) | 0.7896 | **0.8673** ✅ |
+| >=50% floor | **F1 (UNCONDITIONED)** | **0.2788** | **0.2559** ⛔ |
+
+⚠⚠**I MUST FLAG MY OWN PRE-REGISTRATION DEFECT.** §6ct said "F1 must be >= the OFF-arm baseline F1" without
+naming WHICH F1. The harness's default is **`F1 (detected denom)`, whose recall denominator is conditioned
+on detection** — and detection FALLS 0.8094 -> 0.6050. That is this project's most-retracted trap (7 numbers
+killed for a denominator conditioned on the prediction). Recomputed unconditioned (precision x
+recall-over-ALL-Soto-pairs), the verdict **SPLITS BY FLOOR**: improves 0.4540 -> 0.5668 at any-overlap,
+**falls 0.2788 -> 0.2559 at the >=50% floor.** A rule whose sign flips with the labelling floor has not
+cleanly passed.
+
+### VERDICT: **DEFAULT-OFF.** The ship condition was P1 AND P2 AND P3 AND P4; P3 is split.
+⛔**P4 IS VACUOUS AS WRITTEN** — "surviving edges are depleted of repeat" is true *by construction* (they are
+computed on the masked substrate), so it can never fail. It joins [[project_vacuous_instruments]]; it
+should have been a *cost* predicate, not an outcome one.
+
+### ⭐ WHAT IS GENUINELY WON, AND WHAT IS PAID
+- **Won**: pair precision **0.4006 -> 0.8000** (any-overlap) — a doubling — and **FAMILY EXACT SET MATCH
+  0.288 -> 0.574**, the hardest and most O1-relevant unit, at *twice* the OFF rate.
+- **Paid**: **32 Soto members lost** at the >=50% floor (128 -> 96 detected). Named losses cluster in
+  SD-derived pseudogene families — `DNM1P28/32/50` (ID_68), `UBE2Q2P6/8/12` (ID_481), `GUSBP2/3` (ID_163),
+  `FCGR1B`/`FCGR1CP` (ID_357), `FAM157B`/`GTF2IP20`/`LINC01347` (ID_35). ⚠**These may be loci whose copies
+  are LEGITIMATELY repeat-derived**, in which case the rule is not removing errors there but removing real
+  biology — the same shape of objection Gate G raised against the overlap floor, now pointed the other way.
+  **Unadjudicated. That is the next test, not a conclusion.**
+
+### THE STANDING COMPARISON ON NPIP (catalog unit, `genefrac`)
+| arm | copies | precision | recall | genes |
+|---|---|---|---|---|
+| `arm_off` | 879 | 0.8558 | 0.5667 | 14/16 |
+| `arm_cl30` (containment 0.30) | 707 | 0.8837 | 0.5917 | 14/16 |
+| `arm_spancl30` | 720 | 0.9722 | 0.6000 | 13/16 |
+| **`arm_repmask`** | 436 | **1.0000** [93/93] | 0.5917 | 13/16 |
+⭐`arm_repmask` reaches **precision 1.0000 at the SAME recall as `arm_cl30`** (0.5917) — but on 436 copies
+against 707, i.e. it buys the precision with catalog size, not with NPIP recall.
+
+## §6cw — ⛔⛔⛔ THE REPEAT-MASKING RULE IS **MECHANISTICALLY BACKWARDS**. IT PREFERENTIALLY KILLS RECENT DUPLICATIONS. DO NOT SHIP — AND THE USER'S CONTAINMENT RULE IS VINDICATED (09-03)
+
+Adjudication of the 32 Soto members `arm_repmask` loses (§6cv). The verdict is not "the cost is
+acceptable/unacceptable" — it is that **the instrument is anti-correlated with the thing it must preserve.**
+
+### THE MEASUREMENT (998 killed edges, all classified against Gate G's calibration)
+Gate G calibrated: **genuine paralogy = identity 0.941-0.980; Alu artefact = 0.710-0.852.**
+
+| edge set | n | median identity | >= 0.94 | <= 0.86 |
+|---|---|---|---|---|
+| **KILLED, incident to a LOST Soto member** | 138 | **0.9728** | **55.1%** | 31.2% |
+| KILLED, not incident to a lost member | 860 | 0.8689 | 31.4% | 44.8% |
+| **SURVIVING (all)** | 573 | **0.8143** | **5.4%** | **70.0%** |
+
+⛔**THE INVERSION IS THE HEADLINE. The rule kills the HIGH-identity edges and keeps the LOW-identity ones.**
+Only **5.4%** of survivors reach 0.94, while **70.0%** are at or below 0.86 — the Alu band. Per lost family
+the killed edges sit deep in the SD98 regime: **ID_68 median 0.9952** (max 0.9989), ID_357 **0.9932**,
+ID_116 **0.9904**, ID_226 **0.9878**, ID_71 **0.9866**, ID_35 **0.9762**, ID_163 **0.9742** (n=51).
+**Soto's set is DEFINED as >= 98% identity.** Deleting a 0.9952-identity edge deletes exactly what that
+catalog is made of.
+
+### ⭐⭐⭐ WHY — AND IT GENERALISES BEYOND THIS FLAG
+**A recent segmental duplication is repeat-rich BECAUSE THE DUPLICATION COPIED THE REPEATS TOO.** A
+99.5%-identical young paralog shares its Alus with its parent; the whole duplicated block, repeats
+included, is genuine evidence of paralogy. Masking repeats therefore **destroys the recent-duplication
+signal preferentially** — the younger the duplicate, the more of its shared sequence is still
+indistinguishable repeat. ⟹ **repeat content is not a proxy for artefact.** The NPIP false edges were
+Alu-mediated because those specific loci were **pre-mRNA internal-priming stubs** (§6cs), not because
+Alu-sharing is artefactual in general. §6cs's mechanism was right; **generalising it into an edge rule was
+wrong**, and §6cv's P1 = 1.0000 was a true result about a non-generalising population.
+
+### ⭐⭐ THE CONTAINMENT RULE IS THE CORRECT INSTRUMENT — DIRECTLY MEASURED
+Of the **76** killed edges that are incident to a lost Soto member AND in the SD98 regime (>= 0.94; median
+identity **0.9866**, median `cov_longer` **0.4190**), containment would have SPARED:
+
+| containment floor | spared by containment, killed by masking |
+|---|---|
+| `cov_longer >= 0.20` | **68/76 = 89.5%** |
+| `cov_longer >= 0.30` | **59/76 = 77.6%** |
+| `cov_longer >= 0.40` | 44/76 = 57.9% |
+
+**Containment asks HOW MUCH is shared; masking asks WHAT KIND.** Only the first is invariant to duplication
+age. A real duplicated block covers a large fraction of BOTH sequences whatever it is made of; a single
+shared Alu covers ~300 bp of each and so fails on the longer side. That is why `cov_longer` separates the
+NPIP panel (0.3910 true vs 0.1827 false) **without ever inspecting repeat content**, and why it keeps
+63/67 true NPIP edges where masking keeps 51/67.
+
+### VERDICT
+- ⛔**`RUSTLE_ER_REPEAT_MASKED_EDGES` MUST NOT SHIP AND MUST NOT BE DEVELOPED FURTHER AS AN EDGE RULE.**
+  It stays in the tree, default-off and byte-identical when unset, as a **measuring instrument**: it is the
+  cleanest available way to LABEL an edge repeat-borne, which is still the right ingredient for making the
+  containment clause targeted rather than indiscriminate (§6cq's open question).
+- ⭐**The line to pursue is CONTAINMENT** (`RUSTLE_ER_COVERAGE_LONGER_FLOOR`), already implemented, already
+  emitting `cov_longer`, and already run as `arm_cl30`. ⚠It was rejected in §6bs for being an
+  indiscriminate copy filter; the repeat label is what could make it discriminate.
+- ⚠**§6cv's P1 (precision 1.0000) STANDS AS MEASURED and MUST NOT BE QUOTED AS A METHOD RESULT.** It is a
+  correct number about a population — NPIP's pre-mRNA stubs — whose defining property does not generalise.
+  This is the "right for the wrong reason" trap, now observed in the instrument rather than in the data.
+
+## §6cx — ⛔⛔⛔ THE INTERNAL-PRIMING READ FILTER IS REFUTED. **EVERY STUB-TARGETING LEVER IS REALLY A LOW-DEPTH FILTER, AND RANDOM THINNING REPRODUCES IT** (09-03)
+
+4-agent workflow (`wf_4506b829-f68`). Both adversarial refuters returned **FATAL**, independently, with
+disjoint arguments. The proposal was mine, not the user's; recording it in full.
+
+### ⭐ WHAT SURVIVES: THE MECHANISM, CONFIRMED A THIRD TIME AND ORIENTATION-VERIFIED
+On the CATALOG BAM: **60.1% (31,965/53,190)** of unspliced primaries terminate on a genomic A-tract vs
+**3.8% under strand inversion** and **4.5-7.3%** at +300/-300/+1000 bp. Orientation independently proven,
+not assumed: **95.83%** of introns read GT..AG in transcript orientation (FLAG-0 95.85% GT..AG, FLAG-16
+92.42% CT..AC), so the FLAG strand IS the transcript strand. Node 891's 6 primaries are FLAG-0, zero N,
+MAPQ 60, ending flush at a **24 bp Alu A-tail**. The mechanism of §6cs is real.
+
+### ⚠⚠ SCOPE CORRECTION TO §6cs — A RATE THAT DOES NOT TRANSPORT
+§6cs's **72.1% unspliced vs 21.4% spliced (3.37x)** is a **LIBRARY-BAM** figure from random genome-wide
+windows. In the **Soto SD regions where any filter must actually operate** it is **0.6645 vs 0.3868 =
+1.72x** (second refuter) / 60.1% vs 37.5% = 1.60x (first). ⟹ **~38% of GENUINE SPLICED transcript 3' ends
+in Alu-dense SD sequence are also A-tract terminated.** The clause's apparent specificity comes almost
+entirely from the **"unspliced" conjunct, not from the A-tract.** Quote §6cs's 3.37x as a library
+property ONLY.
+
+### ⛔ WHY THE FILTER DIES — FIVE SEPARATELY SUFFICIENT REASONS
+1. ⭐⭐**THE NEGATIVE CONTROLS FIRE.** Strand-INVERTED filter: 9/22 false vs 0/67 true, **p = 7.8e-07**.
+   Local null at **+300 bp**: 9/22 vs 1/67, **ratio 27.4x — LARGER than the real filter's 8.0x.** A
+   control that must be inert returns the same qualitative verdict.
+2. ⭐⭐⭐**THE CONFOUND IS NODE READ DEPTH, AND IT EXPLAINS EVERYTHING.** Per-edge minimum endpoint depth:
+   **FALSE_NPIP median 2.5 (Q1 = 0)** vs **TRUE_NPIP median 29 (Q1 = 4)**. Deleting 60.1% of unspliced
+   reads **UNIFORMLY AT RANDOM** (A-tract ignored, 300 reps) gives a median false/true removal ratio of
+   **10.41x (95% CI 4.26-36.55)** — **the observed 7.99x is BELOW the null median.** A size-and-exon-matched
+   node-kill null puts the observation at **p = 0.027**, not 2.1e-08.
+3. **THE p IS PSEUDO-REPLICATED**: the removed false edges come from only **12 distinct nodes**, 4 from
+   node 891 alone and 3 from node 893. Effective n is NODES, not edges.
+4. ⭐**GLOBALLY IT IS WORSE THAN DOING NOTHING.** All 80 Soto families, 1,066 truth-decidable edges:
+   baseline **F1 0.7789** -> annotation-free filter **F1 0.7550**. Its matched random-thinning null reaches
+   F1 0.8038, and **200/200 replicates beat the real filter.**
+5. **IT IS LARGELY THE STUB GUARD RENAMED.** Dropping every edge with a stub endpoint removes the SAME
+   21/22 false edges; the symmetric difference is **1 edge each way**. `RUSTLE_ER_NO_STUB_EDGES` already
+   exists and is strictly stronger on the false side (21/22 vs 11-17/22).
+
+### ⛔ THE ABLATION KILLS THE DISTINCTIVE INGREDIENT
+Dropping the A-tract clause and keeping only "all supporting reads unspliced" AND "junction-spanned":
+**16/22 false, 9/67 true** — BETTER than the full filter's 11/22, 7/67. The A-tract clause spares 5 false
+edges to save 2 true ones (marginal **2.5 FP/TP**, worse than the filter's own 1.57 average). **The
+distinctive ingredient does no work.**
+
+### ⚠ THE RESULT IS NOT ROBUST TO READ ATTRIBUTION — WHICH IS ITSELF THE FINDING
+The three analyses give **17/22**, **21/22** and **11/22** false edges removed, differing only in how a
+read is attributed to a node (contained-and-touches-exon vs >=80% of aligned bases inside vs
+block-touches). **A benefit that moves by 2x under a bookkeeping choice is not a benefit.** Likewise
+"0/439 multi-exon nodes killed" is **tautological** — the filter deletes only unspliced reads and all
+439 multi-exon nodes have >=1 observed spliced junction — and is false (7/439) under a calibrated
+attribution.
+
+### ⚠ MY RECOMMENDATION WAS ALSO BACKWARDS
+The benefit agent concluded "drop the annotation clause, O1 is strictly better annotation-free." The
+opposite is true: the annotation-USING variant is **the only one that beats the no-filter baseline**
+(global F1 **0.8000** vs 0.7789) and **the only one whose precision exceeds its own matched random null**
+(p = 0.010, vs p = 0.165 for annotation-free).
+
+### ⭐⭐⭐ THE GENERAL LESSON — THE MOST VALUABLE THING HERE
+**Every lever that targets the stub class is, mechanically, a LOW-DEPTH FILTER.** The false NPIP edges
+live on nodes of median depth 2.5; the true ones on nodes of median depth 29. Any rule that
+preferentially removes thin nodes will "improve NPIP precision", and **uniform random read deletion does
+it better than the mechanism-motivated rule.** ⟹ **NO STUB-TARGETING RULE MAY BE REPORTED WITHOUT A
+DEPTH-MATCHED OR RANDOM-THINNING NULL.** This retroactively raises the bar on §6cf's stub-guard result and
+on §6cv's P1 = 1.0000, neither of which was tested against such a null.
+
+⟹ **CONTAINMENT REMAINS THE ONLY SURVIVING LEVER**, and this is why: `cov_longer` is a **geometric**
+property of an alignment, not a **depth** property of a node. It cannot be reproduced by thinning reads.
+That is the pre-registered null the containment arm must still face.
+
+## §6cy — ⭐⭐ CONTAINMENT PASSES THE DEPTH NULL THAT KILLED EVERY OTHER LEVER — AND IT IS ALREADY IMPLEMENTED (09-03)
+
+§6cx established the bar: **no stub-targeting rule may be reported without a depth-matched null**, because
+false NPIP edges live on nodes of median depth 2.5 and true ones on median 29, and uniform random read
+thinning beats a mechanism-motivated filter. Containment (`RUSTLE_ER_COVERAGE_LONGER_FLOOR`, already
+implemented, already emitting `cov_longer`, already run as `arm_cl30`) is the first lever to face it.
+
+⚠**BUG IN MY OWN FIRST PASS, CORRECTED BEFORE REPORTING**: an `else` branch swept foreign<->foreign edges
+into the FP set, giving FP = 967 instead of 22. All numbers below are from the corrected run
+(TP = 67, FP = 22, as every other section uses).
+
+### ⭐ IT SEPARATES **WITHIN** DEPTH STRATA — WHICH DEPTH ALONE CANNOT EXPLAIN
+| min-endpoint depth | TP n | TP median `cov_longer` | FP n | FP median `cov_longer` |
+|---|---|---|---|---|
+| [0,3) | 6 | 0.3847 | 9 | **0.1655** |
+| [3,10) | 23 | 0.4461 | 13 | **0.2004** |
+| [10,inf) | 38 | 0.3799 | **0** | — |
+
+The separation holds in **every stratum where both classes exist**, roughly 2x in each. This is the test
+the internal-priming filter FAILED (§6cx), and the reason is structural: **`cov_longer` is a GEOMETRIC
+property of an alignment, not a DEPTH property of a node**, so read thinning cannot manufacture it.
+
+### ⚠ BUT DEPTH IS STILL A REAL CONFOUND — REPORT THIS ROW OR THE RESULT IS DISHONEST
+| rule | TP | FP | precision |
+|---|---|---|---|
+| **`cov_longer >= 0.30`** | **63** | 3 | 0.9545 |
+| `length_ratio >= 0.55` alone | 50 | 3 | 0.9434 |
+| `coverage >= 0.72` alone | 35 | 4 | 0.8974 |
+| **`min_depth >= 10` alone (DEPTH NULL)** | 38 | **0** | **1.0000** |
+
+⛔**A TRIVIAL DEPTH FILTER REACHES PRECISION 1.0000 ON THIS PANEL** — better than containment's 0.9545.
+Containment's advantage is **RECALL at comparable precision: 63/67 vs 38/67.** Never quote containment's
+precision without this row. (Note also `cov_longer == coverage x length_ratio` to a median 0.002, so the
+clause is partly a length-asymmetry constraint — but it strictly dominates `length_ratio` alone, keeping
+13 more true edges at the same FP count.)
+
+### THE THREE ARMS ON THE HELD-OUT 82 SOTO FAMILIES, UNCONDITIONED
+⚠Reported as **F1(unconditioned) = harmonic mean of precision and recall-over-ALL-Soto-pairs**, NOT the
+harness's default `F1 (detected denom)`, whose recall denominator is conditioned on detection (§6cv).
+
+| arm | detection | precision (any-ov) | recall(all) | **F1 uncond (any-ov)** | **F1 uncond (>=50%)** | family exact |
+|---|---|---|---|---|---|---|
+| `arm_off` | 0.8094 | 0.4006 | 0.5238 | 0.4540 | **0.2788** | 0.288 |
+| **`arm_cl30`** | 0.7459 | **0.5428** | 0.4793 | **0.5091** ✅ | 0.2757 (−0.003, flat) | **0.381** |
+| `arm_repmask` | 0.6050 | 0.8000 | 0.4389 | 0.5668 | **0.2559** ⛔ | 0.574 |
+
+⭐**Containment costs 23 detected members; repeat-masking costs 74.** And containment is the only arm that
+improves F1 at any-overlap while staying FLAT at the >=50% floor — repmask falls there, which is what split
+its P3. ⚠`arm_repmask`'s better headline numbers are not usable: §6cw showed its mechanism is inverted
+(it deletes SD98-regime edges of median identity 0.9728).
+
+### STATUS — WHAT IS AND IS NOT DONE
+- ⭐**NOTHING TO IMPLEMENT.** `RUSTLE_ER_COVERAGE_LONGER_FLOOR` exists, `cov_longer` is already an emitted
+  column of `e.edges.tsv`, and `arm_cl30` has been run since 09-02. The missing work was the NULL, and it
+  is now done.
+- ⚠**§6bs's REJECTION IS NOT OVERTURNED.** It rejected the clause on the SD98 stratum (deleted 7 set
+  members, gain p = 0.77). Detection here still falls 293 -> 270 = **23 members**. What is NEW is (a) a
+  MECHANISM — an Alu covers ~300 bp, a large fraction of a short stub and a tiny fraction of a real gene,
+  so requiring coverage on the LONGER side is precisely what a shared repeat cannot satisfy — and (b) the
+  depth null. Neither existed when §6bs decided.
+- **The remaining decision is a genuine precision/recall trade**, not a free win: **+14.2 precision points
+  (0.4006 -> 0.5428) and +9.3 family-exact points for -6.4 detection points.** That is the user's call.
+
+## §6cz — ⭐⭐⭐ THE VG MINIMIZER-MULTIPLICITY ORACLE CLEARS **BOTH** NULLS AND IS THE FIRST CATEGORICAL SEPARATOR: FP median = **0.0** SHARED PRIVATE NODES IN EVERY STRATUM (09-03)
+
+User's proposal ("use the vg framework more, it can model repeats"). The library-free VG repeat catalog
+already existed (`repeat_catalog.rs`, 779 lines, golden-fixture tested, `M_OP = 5`) but its only built
+catalog (`bench/vg_repeat_catalog.tsv`, 226,061 rows) is **GORILLA** (`GGO.fasta`), so it does not
+transport to the human `soto_adj` panel. Rebuilt for the 1,534 human reps:
+`bench/soto/vg_mult_oracle.py` — 647,646 distinct canonical (k=15, w=10) minimizer nodes.
+⚠**Multiplicity is counted over REPS (loci), NEVER over truth genes** — counting over truth labels would
+leak the answer into the instrument.
+
+### ⭐⭐⭐ WHY THIS IS **NOT** THE RULE §6cw REFUTED — THE INVERSION IS AVOIDED BY CONSTRUCTION
+RepeatMasker masks by **identity to a library**, so it deletes a young duplication's copy of an Alu along
+with everything else — and a recent SD is repeat-rich *because the duplication copied the repeats*
+(§6cw). Minimizer multiplicity masks by **how many distinct loci share a node**: a 2-copy recent
+duplication's shared sequence has multiplicity **2**, not 500, so it is **NOT called a repeat even inside
+an Alu**. Different quantity, opposite behaviour on duplication age. This is a structural argument, not a
+tuning result.
+
+### THE RAW SEPARATION
+| | median shared minimizer nodes | median MINIMUM multiplicity of a shared node |
+|---|---|---|
+| TRUE (67) | 237 | **3.0** |
+| FALSE (22) | 16 | **24.0** |
+
+### THE RULE — SCALE-FREE, NO COUNT THRESHOLD, AND `M_OP = 5` IS THE PROJECT'S PRE-EXISTING CONSTANT
+> **Keep an edge iff the two loci share at least ONE minimizer node of multiplicity < 5** — i.e. iff they
+> share ANY sequence that is not already common across the catalog.
+
+| | with >= 1 low-multiplicity shared node |
+|---|---|
+| **TRUE** | **59/67 = 0.8806** |
+| **FALSE** | **1/22 = 0.0455** |
+
+⟹ **precision 59/60 = 0.9833**, keeping 88.1% of true edges. ⚠`M_OP = 5` comes from
+`repeat_catalog.rs:44` and `bench/vg_repeat_catalog.py:72`; it was **NOT fitted here**. (Sweeping the
+count to >= 3 low-mult nodes gives **54/0 = 1.0000**, but that IS fitted on this panel — quote the
+un-swept >= 1 rule.) Sanity check passes: at m = 2 the rule is vacuous (0/0), since a shared node has
+multiplicity >= 2 by definition.
+
+### ⭐⭐ IT CLEARS THE DEPTH NULL (§6cx's bar) — CATEGORICALLY, NOT MARGINALLY
+| min-endpoint depth | TP n | TP median low-mult shared | FP n | FP median |
+|---|---|---|---|---|
+| [0,3) | 6 | 65.0 | 9 | **0.0** |
+| [3,10) | 23 | 18.0 | 13 | **0.0** |
+| [10,inf) | 38 | 8.0 | 0 | — |
+
+**The FP median is EXACTLY 0.0 in every stratum where FPs exist.** False edges share NO private sequence
+at all — only catalog-wide repeat. This is a categorical difference, not a threshold trade, and read
+thinning cannot manufacture it (a thinned node keeps its sequence).
+
+### ⭐⭐ IT ALSO CLEARS THE SIZE-MATCHED NULL (the standing rule: match the SIZE distribution, not the count)
+A longer node trivially carries more minimizers, so the raw count is confounded. Using the **FRACTION** of
+shared nodes that are low-multiplicity, stratified by the shorter node's length:
+
+| shorter length | TP n | TP median fraction | FP n | FP median fraction |
+|---|---|---|---|---|
+| [0, 1200) | 5 | 0.110 | 9 | **0.000** |
+| [1200, 2200) | 35 | 0.053 | 12 | **0.000** |
+| [2200, inf) | 27 | 0.091 | 1 | **0.000** |
+
+**FP = 0.000 in every length stratum.** The separation is not length, not depth, and not edge count.
+
+### HOW IT COMPARES ON THE SAME PANEL
+| rule | TP | FP | precision | clears depth null? |
+|---|---|---|---|---|
+| baseline | 67 | 22 | 0.7528 | — |
+| `cov_longer >= 0.30` (containment) | 63 | 3 | 0.9545 | yes (2x within strata) |
+| repeat-masking (§6cw) | 51 | 0 | 1.0000 | ⛔ mechanism inverted |
+| `min_depth >= 10` (the null itself) | 38 | 0 | 1.0000 | n/a — IS depth |
+| **VG low-mult oracle (`M_OP = 5`, >= 1)** | **59** | **1** | **0.9833** | ⭐**yes, categorically** |
+
+### ⚠ WHAT IS NOT YET ESTABLISHED — DO NOT OVERSTATE
+1. **This is offline (T8): a hypothesis, not a test.** No binary arm has been run. The register's prior
+   stands until one is: the same catalog measured **AUC 0.686 vs alignment-fraction 0.85** and **cut 54%
+   of borderline-real edges** as a *general* separator on GORILLA. My 88.1% true-edge retention is a
+   different substrate, different unit, and **does not overturn it**.
+2. **One family, one substrate, n = 22 false edges**, and those 22 are hub-concentrated (§6cr).
+3. The held-out 82 Soto families have **not** been scored under this oracle.
+4. It needs the same treatment every other lever got: a real arm, and adjudication of what it loses.
+
+⟹ **NEXT: score the held-out 82 offline, then a real binary arm.** This is the first lever to clear both
+the depth and the size nulls, and the first whose false-positive statistic is *categorically* zero.
+
+## §6da — ⭐⭐⭐ MCL ON THE ANNOTATION + RNA CORROBORATION: NPIP RECOVERED **31/31** WITH **35/36 MEMBERS LOC-NAMED**, AND "DNA PROPOSES, RNA DISPOSES" IS MEASURED (09-03)
+
+User's reframe (Soto sidelined: SD98-only, SD-heavy, coordinates off — see
+[[project_soto_descoped_mcl_pivot]]). Substrate = **GORILLA**, the thesis substrate. Pilot = the 3-contig
+`npip3` slice: **4,477 annotated genes+pseudogenes** (`seedmode/allgenes.fa`, headers are bare
+coordinates — **no symbols enter the clustering at any point**), reads `npip_cat/npip3.bam`, truth
+`o1_oracle/npip31.regions` (31 loci). Implementation `bench/mcl_annotation.py` (`mcl` is not installed).
+
+All-vs-all `minimap2 -x asm20 -c -X -N 50 -p 0.1`: **244,908 records**, 18 min.
+Graph: **903 nodes / 3,169 edges** at identity >= 0.70, **`cov_longer` >= 0.30**, >= 300 bp.
+⚠**The weight is `identity x cov_longer`, NOT `cov_shorter`** — a ~300 bp Alu covers most of a short
+fragment and almost none of a real gene, so a shorter-side weight lets shared repeat drive the clustering
+(§6cs/§6cz). This is the session's containment finding made load-bearing in the DEFINITION.
+
+### ⭐⭐⭐ NPIP FALLS OUT WITHOUT ANYTHING KNOWING THE STRING — AND THE NAMES PROVE THE POINT
+| inflation | clusters | NPIP truth loci placed |
+|---|---|---|
+| **1.4** | 264 | **31/31** |
+| 2.0 | 267 | 30/31 |
+| 4.0 | 156 | 21/31 |
+
+The principal NPIP cluster at I=1.4: **24 members, containing 20 of the 31 truth loci** —
+**`NPIP*`-symboled members: 0. `LOC*`-named: 24/24.**
+Across the three NPIP-bearing clusters (24 + 8 + 4 = 36 members) **exactly ONE (NPIPB11) carries an NPIP
+symbol** ⟹ **35/36 = 97.2% are INVISIBLE to a `gene=NPIP*` grep.** This is the quantified form of
+[[project_gene_naming_traps]] (RFPL 9/9, GOLGA6 14/14 LOC-named) and it is the defensible sentence for the
+advisor: *we never search for "NPIP"; we cluster the annotation by sequence and NPIP falls out, 35 of its
+36 members under names that say nothing about what they are.*
+⭐NPIP splits into ~3 clusters at I=1.4 rather than one — **the user's own subfamily framing appearing as
+graph structure rather than as an assumption.** One cluster also pulls in **PKD1**, matching the known
+PKD1-region straggler recorded in [[project_seeded_mode]].
+
+### ⭐⭐⭐ RNA CORROBORATION IS BIMODAL AND IT IS THE DISCRIMINATOR
+Corroborated = a member with **>= 3 primaries carrying an ALIGNED BLOCK** inside it (`-F 2308`;
+`bench/locus_reads.py`). 98 clusters of size >= 3:
+- **median corroborated fraction = 0.000**
+- **50/98 clusters have ZERO corroboration** — the repeat-clique signature
+- **the NPIP cluster is 22/24 = 0.917**; three size-8 clusters and one size-7 are **1.000**
+
+⭐**SIZE ALONE WOULD HAVE PICKED THE WRONG OBJECT.** The three LARGEST DNA clusters are repeat cliques:
+| size | DNA density | corroborated |
+|---|---|---|
+| 47 | 0.959 | **0.000** |
+| 35 | 1.000 | **0.000** |
+| **24 (NPIP)** | 0.928 | **0.917** |
+| 23 | 0.976 | **0.000** |
+
+And the two groups differ in DNA structure exactly as a clique should: median density **1.000** for the
+zero-corroboration clusters vs **0.793** for the corroborated ones. ⟹ **a repeat clique is a PERFECT
+clique; a real family is not.** This reproduces [[project_seeded_mode]]'s n=74 / 0-corroborated finding on
+an independent construction, and it is the operational content of **DNA PROPOSES, RNA DISPOSES**.
+
+### ⚠ WHAT THIS DOES NOT YET SHOW
+1. ⚠**"Zero corroboration" conflates REPEAT CLIQUE with NOT EXPRESSED IN FIBROBLAST.** `npip3.bam` is one
+   tissue; [[project_seeded_mode]] already counted **182 silent** loci among 305. The density contrast
+   (1.000 vs 0.793) argues the zero group is enriched for cliques, but it does not license calling any
+   individual cluster a repeat.
+2. **The extra-locus half of the proposal is NOT DONE**: loci the clusters pick up that the annotation
+   never named (the potential new genes / new members) have not been enumerated.
+3. One substrate, 3 contigs, one inflation family; no null yet for the clustering itself.
+4. Non-circularity holds BY CONSTRUCTION here — clustering is DNA sequence, admission is RNA read support:
+   different substrate, different quantity ([[project_discover_then_define_is_circular]]).
+
+## §6db — ⛔ THE EXTRA-LOCUS HALF: **0/2 SURVIVE.** BOTH ARE NEIGHBOURS' UNANNOTATED EXONS — AND THE FILTER'S DEFECT IS NAMED (09-03)
+
+Second half of the §6da reframe: enumerate loci the corroborated clusters pick up that the annotation
+never named. 138 members of the 27 corroborated clusters scanned against `npip3_contigs.fa`
+(`asm20 -N 100 -p 0.05`, 1,713 records) -> 194 merged intervals >= 500 bp -> discard anything covering
+>= 10% of an annotated gene/pseudogene/lncRNA/transcript -> require >= 3 block-in primaries. **2 survived.
+Both adjudicated ARTEFACT / ANNOTATED_ALREADY at high confidence. NO NOVEL LOCUS IS CLAIMED.**
+
+### ⚠ A FILTER DEFECT I INTRODUCED, AND ITS CORRECTION
+My FIRST pass returned **0** candidates because it filtered against **every** GFF feature type — including
+`mRNA` (10,024) and `cDNA_match` (909), whose spans cover whole INTRONS. Median annotation overlap came out
+at exactly **1.000** and nothing could ever look novel. I had over-corrected against
+[[project_gene_naming_traps]]'s "read the whole GFF" warning, which is about PRODUCT censuses, not about
+novelty. At the biological unit (gene/pseudogene/lncRNA/transcript) median overlap is **0.849** and
+**51/194** intervals are genuinely unannotated. ⭐**Record both numbers: "0 novel loci" is true at either
+setting, but for DIFFERENT reasons, and only one of them is informative.**
+
+### CANDIDATE 1 — `NC_073244.2:17994939-17999178` (4,239 bp, 9 reads, 8 spliced) ⟹ **ARTEFACT**
+It is **INTRON 1 of `LOC101130877` (ZNF763-like)**, whose RefSeq model `XM_063701026.1` is **5'-truncated**
+and starts 5.8 kb downstream.
+- **71/80** primaries over the span use ONE novel canonical GT..AG donor at 17,994,867 and land on
+  ZNF763-like acceptors **18,007,240 and 18,007,987 at EXACTLY 0 bp offset** from annotation; 74/80 have
+  blocks inside ZNF763-like; 56/80 end at its annotated 3' end.
+- The reconstructed architecture — 230 bp exon1 / 12 kb intron / 127 bp / 61 bp / big terminal exon — is
+  **the architecture of ZNF69, ZNF700 and ZNF439-like in the same tandem array**.
+- Internal priming also fires: **6/9** block-in reads end flush on a genomic A-tract vs **0/9** at +/-300 bp;
+  three reads share an "end" at 18,000,588 that is a 17-A/10-run genomic tract, not a polyA site.
+- The seed hit was **intron-to-intron**, MAPQ 0, over a block 45.7% soft-masked.
+
+### CANDIDATE 2 — `NC_073244.2:64570508-64571217` (709 bp, 4 reads, 4 spliced) ⟹ **ANNOTATED_ALREADY**
+It is the **unannotated 3' read-through / extended terminal exon of `LOC101151324` (ZNF816-like)**, which
+ends **118 bp upstream**.
+- **4/4** block-in primaries arrive via that gene's annotated acceptor 64,567,424 -> 64,569,228 at **exactly
+  0 bp offset**, as ONE CONTIGUOUS block running 647-798 bp past the RefSeq 3' boundary.
+- Independent-transcription-unit evidence is **0/4**: no read has an exon boundary inside the interval, none
+  starts or ends inside it, and the 3'-most 29 bp have no coverage.
+- Geometry `span / median in-locus extent = 1.069` — the one-read-stub signature.
+- ⚠It **has a real C2H2 zinc-finger ORF** (131 codons, `...KCDDCGKVLTSCSHLIRHQRIHTGQK...`) — **an ORF is not
+  evidence of a separate gene**; it is a degenerate finger array in a read-through UTR, and translating from
+  the host CDS stop hits a stop after 65 codons.
+
+⭐**THE FILTER DEFECT THIS EXPOSES**: candidate 2 escaped the >= 10% discard **only because it begins 118 bp
+past the annotated gene END**. The filter tested overlap with the annotated **SPAN**, not with the
+**TRANSCRIPT the reads actually build**. ⟹ **the correct discard test is "do this locus's reads splice into
+a neighbouring gene's annotated junctions", not "does the interval overlap an annotated span."** That test
+is already implemented in `bench/locus_reads.py`'s spirit and it killed BOTH candidates instantly.
+
+### ⭐ WHAT THIS DOES AND DOES NOT SAY
+- It does **NOT** weaken §6da. The definition half stands: NPIP recovered **31/31**, principal cluster
+  24 members with **24/24 LOC-named and 0 NPIP-symboled**, and RNA corroboration separating real families
+  (0.917) from repeat cliques (0.000, median density 1.000).
+- It **DOES** say the discovery half yields nothing on 3 contigs of gorilla fibroblast. Honest headline:
+  **"the method proposes 2 unnamed loci and its own RNA evidence rejects both."** That is a working
+  falsifier, and it is a better advisor answer than 2 unadjudicated candidates.
+- ⚠Both claiming clusters (CL92 size 3, CL28 size 6) are **REAL** — annotated protein-coding KRAB-ZNFs,
+  100% corroborated. **A real cluster confers no credibility on an interval its seed happens to reach**;
+  CL28 is a tandem-repeat CODING MODULE family (ZNF137-like finger arrays at ZNF 3' termini), so its
+  members' homology is generic finger-array homology at MAPQ 0.
+- **NEXT**: rerun the enumeration genome-wide (`seedgw/allgenes_gw.fa`, 41,193 seqs) with the
+  splice-into-neighbour discard as the primary filter, not the span-overlap one.
+
+## §6dc — ⚠⚠⚠ MY MCL COVERAGE DENOMINATOR EXCLUDED 62.8% OF GENES BY CONSTRUCTION; AND THE AD HOC REFERENCE **CANNOT** MOVE THE O3 GATE (09-03)
+
+3-agent scoping of the user's proposed loop (families -> residual -> ad hoc reference). Three results,
+in descending order of importance. **The first is a defect in §6da, not in the user's idea.**
+
+### ⛔⛔⛔ 1. THE `cov_longer >= 0.30` CLAUSE IS MEASURED OVER **GENE SPAN**, SO INTRONS EAT THE DENOMINATOR
+§6da's graph used `cov_longer = aligned / max(len)` where the FASTA sequences are **genomic spans**
+(headers are `CONTIG:START-END`). For a gene whose exons are a small fraction of its span, **exonic
+homology can never cover 30% of the span**, so the gene is excluded no matter how homologous it is.
+- **1,525/2,428 = 62.8%** of genes that ALREADY pass identity and length are removed by this clause alone.
+- Recomputing the denominator over **EXONIC bases** takes the graph from **903 -> 1,850 nodes (+947, and 0 lost).**
+⟹ **§6da's 264 clusters were built on ~half the eligible genes.** The NPIP result (31/31, 24/24 LOC-named)
+STANDS — it was recovered despite the restriction — but every count, every "residual", and the 903/4,477
+node figure must be re-derived. ⭐**THE FIX COSTS NO RE-ALIGNMENT**: the denominator is applied at PARSE
+time, so the running genome-wide PAF can be re-parsed with exonic lengths.
+⚠This is the same class as [[project_o1_single_exon_stubs]]'s "scale-free denominator" and §6co's
+inversion: **a denominator that includes intron makes exon-borne homology look small.**
+
+### ⛔⛔ 2. THE AD HOC REFERENCE CANNOT MOVE THE ADMISSION GATE — AND STAGE 3 ALREADY SHIPS, TWICE
+- ⭐**`linearize.rs::linearize_certificate` IS LITERALLY THE USER'S STAGE 3**: it builds the ad hoc
+  reference as `family_copy_seqs`, appends the candidate, re-aligns a read pool
+  (`absent_copy::realign_pool_minimap2`, `-c -x map-hifi --secondary=no`), scores the fraction of reads
+  whose primary lands on the candidate at MAPQ > 0, against **20 dinucleotide-preserving shuffled decoys**
+  with a permutation test at alpha = 0.05. Live in `copy_assign` but **opt-in** (`--linearize` /
+  `--linearize-gate`, default OFF). `vg_realign.rs::admit_novel_pools` is a SECOND build, also default OFF.
+- ⛔**GATE 5's QUERY AND TARGET ARE BOTH GENOME-DERIVED**, so a family-scoped reference is neither and
+  changes no input the gate consumes. The reconstruction is the HOST's spliced sequence with only the PSV
+  positions overwritten, so gate 5 measures **how far a reconstruction strays from the sequence it was
+  built FROM** — GWFAM247: reconstruction-vs-host **0.9961** while the TRUE copy0-vs-copy1 identity is
+  **0.9754**, i.e. the reconstruction reproduces **~18%** of the real divergence. Only **2 of 19**
+  computable families land in the recoverable [0.96, 0.979] window.
+- On **73 real gorilla families**: **8/328 candidates admitted (2.4%)**, and **3 of the 8 sit in GWFAM382,
+  which the register already voids.** Dominant rejector **"≥98% remap identity" 172/320 = 53.8%** —
+  ⭐**the circularity showing up as an operational fact, not a hypothetical.**
+
+### ⚠ 3. CORRECTIONS TO THE RECORD, AND A LIVE BUG
+- ⛔**"0 of 289 admitted" IS PANEL-SPECIFIC AND OVER-GENERALISED** in §6ai and `MEMORY_DIGEST.md:39`.
+  6 admissions exist at the shipping default (GWFAM268). ⚠But they are **hollow** — 5/6 carry
+  `abundance 0.0000`, `n_reads_hard 0`, `anchored_reads 0` — and that run **deviated from production**
+  (a per-contig splice index instead of the 3.6 Gb genome), which its own docstring says can only ADMIT
+  MORE. So 6/66 is an UPPER BOUND. Correct statement: **"0 of 289 in the 12-family MEC panel."**
+- ⭐**AN UNDOCUMENTED BINDING CLAUSE**: the strict canonical-junction pre-gate ("host sequence
+  unbuildable") rejects **21-24%** of candidates and **is named in no doc or ledger section anywhere**.
+- ⛔**LIVE BUG (measured on-disk, not inferred)**: the synthetic copy's tid is
+  `format!("AC_{}_{}", host.chrom, host.start)` (`copy_split.rs:441`) — **keyed on the HOST, not the
+  candidate**. Every candidate sharing a host gets the SAME tid, and `remap_id_by_tid`
+  (`denovo_pipeline.rs:2182/:2255`) is a `HashMap<String,f64>` ⟹ **last write wins and the gate-5 identity
+  is attributed to the wrong copy.** Confirmed in `GWFAM268_mc3.quant.tsv` (three rows share
+  `AC_NC_073233.2_6771943`). Live on the `--absent-copies` path today.
+- **RNA corroboration does NOT isolate the residual stratum** — 1.04x over a biotype-matched null, a clean
+  negative. ⭐**Shared-read ambiguity does: 7.1x.** The funnel ends at **8 loci in ~5 independent locations**.
+- `consensus.rs`'s three pub fns have **zero non-test callers** — the cross-copy consensus module is dead
+  in every shipped binary. (⚠But `to_gfa` is NOT dead: it lives on `copy_graph.rs:250/:359` and is written
+  by `copy_assign.rs:2196`.)
+
+## §6dd — ⭐⭐ THE EXONIC DENOMINATOR, FIXED AND SWEPT: §6da SUPERSEDED. NPIP 31/31 WITH **26** TRUTH LOCI IN ONE CLUSTER, NO SUPERFAMILY (09-03)
+
+Fix for §6dc's defect. `bench/mcl_annotation.py` now takes an `exonic` map and normalises `cov_longer` by
+**exonic bases** instead of the genomic span, capped at 1.0. Cache key carries the mode, so span and
+exonic graphs cannot be confused.
+
+⚠**A COORDINATE BUG CAUGHT ON THE FIRST ATTEMPT**: the FASTA headers use **GFF 1-based coordinates
+verbatim** (`NC_073241.2:31346-41669` is exactly GFF `31346 41669`), not 0-based. My first exonic map was
+keyed `start-1` and joined **0/4,477**, silently falling back to span and producing an identical graph —
+i.e. the fix looked inert rather than failing. Corrected join: **4,460/4,477 = 99.6%**.
+⭐**A NO-OP RESULT IS THE SIGNATURE OF A FAILED JOIN. Always print the join rate.**
+
+### THE DEFECT, QUANTIFIED
+**Median gorilla gene is 23.15% exon.** A `cov_longer >= 0.30` floor over the SPAN therefore demanded more
+coverage than the median gene *has exonic sequence at all*. Effect on the pilot graph:
+
+| denominator | nodes | edges |
+|---|---|---|
+| span (§6da) | 903 | 3,169 |
+| **exonic** | **1,920** | **24,286** |
+
+**+1,017 nodes and 7.7x the edges — 0 lost.** §6da was built on ~47% of the eligible genes.
+
+### ⚠ THE RECOVERED DENSITY RECREATES THE SUPERFAMILY — AND INFLATION FIXES IT, ON A PLATEAU
+At the old inflation 1.4 the exonic graph produces a **432-member** cluster: exactly the chaining
+`NEGATIVE_RESULTS_REGISTER.md:474` records for transitive closure (145- and 114-gene superfamilies).
+Sweeping:
+
+| inflation | clusters | largest | clusters >100 | NPIP placed | main NPIP cluster | truth loci in it |
+|---|---|---|---|---|---|---|
+| 2.0 | 448 | 317 | 1 | 31/31 | 43 | 23 |
+| 2.4 | 452 | 169 | 1 | 31/31 | 43 | 25 |
+| **2.8** | 423 | 84 | **0** | **31/31** | 43 | **26** |
+| **3.2** | 405 | **43** | **0** | **31/31** | 43 | **26** |
+| 3.6 | 384 | 25 | 0 | **18/31** ⛔ | 11 | 8 |
+
+⭐**I = 2.8-3.2 is a PLATEAU, not a knife-edge**: identical NPIP recovery (31/31), identical main-cluster
+size (43) and identical truth concentration (26) across the range, with **zero clusters over 100**. That
+matters for defensibility — a tuned constant sitting on a cliff is indefensible; a constant sitting on a
+plateau is a choice. ⚠**The cliff is at 3.6** (NPIP 31 -> 18), so 3.2 is the last safe point; prefer 2.8-3.0.
+
+### ⭐ THE CORRECTED HEADLINE — BETTER THAN §6da ON EVERY AXIS
+- **NPIP placed 31/31** (unchanged), but now concentrated: **26 of 31 truth loci in ONE cluster** vs 20 before.
+- The principal NPIP cluster is **43 members, 42-43 of them LOC-named, 1 NPIP-symboled** ⟹ the naming claim
+  strengthens: **~97.7% of the cluster is invisible to a `gene=NPIP*` grep.**
+- **No superfamily at all** (largest cluster 43 at I=3.2, vs 432 at I=1.4).
+⟹ §6da's cluster counts (264 clusters, 24-member NPIP cluster, 903 nodes) are **SUPERSEDED**. Its
+*qualitative* findings — naming-independence, and RNA corroboration separating families from repeat
+cliques — stand and must be re-measured on this graph.
+
+**PENDING**: re-run RNA corroboration and the corroborated/repeat-clique split on the exonic graph; the
+genome-wide PAF re-parses with the same fix at no alignment cost.
+
+## §6de — ⭐⭐⭐ GENOME-WIDE: NPIP TRANSPORTS EXACTLY, THE SUPERFAMILY STAYS DEAD, AND "A REPEAT CLIQUE IS A PERFECT CLIQUE" REPRODUCES **SIZE-CONTROLLED** (09-03)
+
+Full gorilla run. All-vs-all of **41,193** annotated gene+pseudogene sequences (`asm20 -c -X -N 50 -p 0.1
+--secondary=yes -K 100M`): **2h 16m, 3,356,054 records, peak RSS 17.0 GB.** Parsed with the §6dc **exonic**
+denominator (no re-alignment needed — the denominator is applied at parse time). MCL at **I = 2.8**, the
+middle of the §6dd plateau.
+
+**Graph: 19,896 nodes / 1,264,135 edges -> 3,310 multi-member clusters, 11,252 members.**
+
+### ⭐ 1. THE SUPERFAMILY STAYS DEAD AT 9x THE GENE COUNT
+Largest cluster **112**, and **only ONE cluster over 100 members**. At 41,193 genes instead of 4,477 the
+chaining opportunity is far larger, and the inflation plateau still holds. ⟹ the I = 2.8-3.2 plateau
+TRANSPORTS; it is not a property of the 3-contig slice.
+
+### ⭐⭐ 2. NPIP TRANSPORTS DIGIT-FOR-DIGIT
+| | 3-contig pilot | **genome-wide** |
+|---|---|---|
+| truth loci placed | 31/31 | **31/31** |
+| principal cluster | 43 members, 26 truth | **44 members, 26 truth** |
+| `NPIP*`-symboled in it | 1 | **1** |
+| `LOC*`-named | 42/43 | **42/44** |
+Recovered from a 41,193-gene genome-wide graph with **nothing in the pipeline knowing the string "NPIP"**.
+
+### ⭐⭐⭐ 3. THE CLIQUE SIGNATURE REPRODUCES — AND IS **NOT** A SIZE ARTEFACT
+1,101 clusters of size >= 3 scored against the **FULL 23 GB fibroblast BAM** (`-F 2308`, aligned-block
+containment):
+| | zero-corroboration | some corroboration |
+|---|---|---|
+| clusters | **391/1,101 = 35.5%** | 710 |
+| **median DNA density** | **1.000** | **0.700** |
+| **median size** | **4.0** | **4.0** |
+⭐**THE SIZES ARE IDENTICAL (4.0 vs 4.0) WHILE THE DENSITIES ARE 1.000 vs 0.700** ⟹ the separation is NOT
+the size confound the standing rule warns about ("an EDGE-COUNT-matched null proves nothing — match the
+SIZE distribution"). It is size-matched by accident and still separates. Pilot was 1.000 vs 0.793 on 98
+clusters; genome-wide is 1.000 vs 0.700 on 1,101 — **stronger, not weaker, at 11x the scale.**
+Median corroborated fraction overall **0.250**.
+
+### ⚠ 4. TWO NUMBERS THAT MUST BE REPORTED HONESTLY
+- **NAMING: 8,215/11,252 = 73.0%** of clustered members are LOC-named; **493/1,101 = 44.8%** of clusters
+  (>=3) are ENTIRELY LOC-named. ⚠**This is LOWER than the product-census figures (95.2% / 67.9%) and the
+  difference is real, not noise**: the product census only sees families defined by a shared PRODUCT
+  STRING, which skews to uncharacterized and pseudogene families, whereas sequence-built clusters also
+  contain well-named protein families. **Quote 73.0% / 44.8% for sequence-defined clusters and 95.2% /
+  67.9% for product-defined families, never one for the other.**
+- ⚠**PRODUCT-FAMILY RECOVERY IS THE WEAKEST RESULT**: over 738 families with >= 2 members in the graph,
+  the **median fraction landing in ONE cluster is 0.667**; **81.3%** have >= 50% in one cluster but only
+  **229/738 = 31.0%** are fully recovered. **The median family is SPLIT.** This is the same subfamily
+  granularity that makes NPIP 2-3 clusters rather than 1, and inflation trades it directly against
+  superfamily formation. It is a real limitation of the method as it stands, not a rounding error.
+
+### STATUS
+The DEFINITION half is now genome-wide, reproducible and size-controlled. The DISCOVERY half (§6db)
+remains 0/2 on 3 contigs and has NOT been re-run genome-wide with the splice-into-neighbour filter.
+
+## §6df — ⛔⛔⛔ `--vg-realign-correct` IS LENGTH-CONFOUNDED: A SHORT COPY IS EXCLUDED BY ARITHMETIC AND ITS READS ARE REASSIGNED **362/362 = 100%** UNCONDITIONALLY (09-03)
+
+First time the O1 -> O2 bridge was driven by an EXTERNALLY SUPPLIED catalog (MCL families -> `--families`).
+The bridge WORKS (see §6dg); this section is about the optional correction leg, which does not.
+2-agent trace (`wf_33a64bc0-c7d`): one on the source, one on the data alone.
+
+### THE MECHANISM — three defects compounding
+1. ⭐**`aln_id` IS LENGTH-CONFOUNDED.** `bridge_detector.rs:135-146`: `1 - hw_distance(q,t)/len(q)`, free end-gaps
+   on the TARGET only ⟹ **identity against a target SHORTER than the read is CAPPED at `len(t)/len(q)`.**
+   MCLFAM2's consensus lengths are **19,330 / 721 / 20,821 bp**; reads are median **2,685 bp**. The cap for
+   copy 1 is **721/2,685 = 0.269**, against a measured median `id_best` of ~0.55. ⟹ **copy 1 can only win for
+   reads under ~1,311 bp. It is excluded by ARITHMETIC ON LENGTH, not by homology.**
+2. ⭐⭐**`accept_realignment` CONVERTS THAT LENGTH DEFICIT INTO DECISIVE SITES.** `vg_realign.rs:333`:
+   `n_decisive = ((id_best - id_linear) * read_len).round()` — a whole-read EDIT-DISTANCE difference — then
+   `min_p = (error_rate/3)^n_decisive` (`:338`) treats each as an INDEPENDENT allele observation. At
+   `error_rate = 0.003`, `n_decisive >= 2` already clears `alpha = 1e-3`. For a read whose linear copy is
+   copy 1, `n_decisive ~ (0.55 - 0.269) x 2,685 ~ 754` ⟹ `min_p` underflows to 0 ⟹ **unconditional reassign**.
+   **MEASURED: 362/362 = 100.0%** of rows with `linear_copy = 1` are `reassigned`; **not one rejected**.
+   For `linear_copy = 0` (a copy comparable in length to the reads) only **264/1,169 = 22.6%**.
+   ⟹ **"reassigned" here is DEFINITIONAL, not evidential.**
+3. **WHAT IT CORRUPTS**: `denovo_pipeline.rs:1564` `fa.read_psv_obs[pos] = obs` overwrites the read's real PSV
+   vector with one re-extracted from a **median-0.55-identity** alignment against a copy whose splice
+   structure differs (copy 2's "exons" are 13,106/6,744/79/892 bp — effectively unspliced genomic). That
+   vector then drives the re-derived Assignment (`:1541`) and `em_assign_family` (`:2467`), producing the
+   shipped abundances 0.1949 / 0.8050 / 0.0001. **583/1,242 = 46.9% of this family's molecules are affected.**
+
+### THE INNOCENT PARTS — both of my suspicions were wrong
+- **Index spaces are IDENTICAL.** `target_copy` and `assigned_copy` both index `all_copies`, built 50 lines
+  apart with no mutation. `rescued` is empty under `--families` (`:2159`), and `--absent-copies` /
+  `--iterative-prune` are hard-refused (`copy_assign.rs:987-1000`). `family_join.tsv` confirms
+  copy_index 0/1/2 == catalog_copy_idx 0/1/2.
+- **`linear_copy` never = 2 because of CONTAINMENT**: copy 2's span is strictly inside copy 1's, and
+  `best_overlap_copy` (`copy_assign_pipeline.rs:791-803`) uses strict `>`, so the earlier index always wins.
+- **The `id_best` "inversion" is expected**: `accept_realignment` returns Reject when `linear == best`
+  (`:329`), so the WELL-FITTING reads are precisely the ones labelled `rejected`.
+- **`target_copy == assigned_copy` is an invariant the code NEVER PROMISED.** `apply_realign_patch`
+  (`:1534-1566`) re-derives the whole Assignment from PSVs rather than forcing `best_copy = new_copy`.
+
+### ⚠⚠ FOUR ERRORS OF MINE, CORRECTED
+1. ⛔**"assigned_copy takes {0,1,2}" is WRONG — it takes {0,1}.** Copy 2 receives **0/1,242** assignments
+   (`quant.tsv`: abundance 0.0001, `n_reads_hard` 0). So for the 321 reassigned rows targeting copy 2,
+   agreement was **arithmetically impossible**, and half my "0/583" was unreachable by construction.
+2. ⛔**MY JOIN WAS MANY-TO-ONE.** `vg_realign.tsv` is **one row per ALIGNMENT RECORD** (1,533 rows / 1,092
+   distinct names, 283 names repeat, max 5); `assignments.tsv` is **one row per MOLECULE** (1,242 / 1,242).
+   A `read_name` join silently collapses up to 5 different verdicts onto one assignment.
+3. ⛔**My `id_best` figures came from that deduped subset**: median 0.5799 / 66.6% below 0.70 should be
+   **0.6698 / 51.9%** over all 1,533 rows.
+4. ⛔**Reading `assigned_copy` on non-assigned rows is meaningless**: `copy_assign.rs:1622` writes
+   `a.best_copy` regardless of status, and **736/1,242 rows are `tied`**, where `best_copy` is only the
+   earliest-index tie-break. **264/583 = 45.3%** of the compared rows were tie-break artefacts.
+
+### A SEPARATE, SMALLER DEFECT FOUND EN ROUTE
+`apply_realign_patch` (`:1535`) patches a correction only when its RECORD index happens to be the
+molecule's representative in `fa.assignments`; **corrections on non-representative records are silently
+dropped.**
+
+### VERDICT
+⛔**DO NOT USE `--vg-realign-correct` UNTIL `aln_id` IS LENGTH-NORMALISED.** It is default-off, which is
+why this survived. The fix is not a threshold: `aln_id` must not let target length cap identity, and
+`n_decisive` must not treat a whole-read edit-distance difference as a count of independent allele
+observations. ⚠**Any family with copies of unequal length is affected** — the 721 bp copy here is a
+fragment, and §6db already showed fragments are common.
+
+## §6dg — ⭐⭐ §6df FIXED AND VERIFIED: THE UNCONDITIONAL-REASSIGNMENT PATHOLOGY COLLAPSES **362/362 -> 9/362** (09-03)
+
+Two surgical changes in `vg_realign.rs`; **831 tests pass / 0 fail** (unchanged baseline) and
+`git status tests/fixtures/` is clean, so the default path is byte-identical.
+
+1. **`aln_id_len_safe`** — aligns the SHORTER sequence as the query, the idiom already at
+   `bridge_detector.rs:363-364`. Removes the `len(t)/len(q)` identity cap that excluded the 721 bp
+   fragment copy by arithmetic.
+2. **`psv_decisive_count`** — `n_decisive` is now the count of PSV COLUMNS where the read's observed
+   allele matches `best` and contradicts `linear`, replacing `(id_best - id_linear) * read_len`. The
+   report-only leg (`run_family_realign`, no PSV frames) instead BOUNDS the old quantity by
+   `hw_distance(copy_best, copy_linear)` — there cannot be more decisive sites than the copies differ at.
+
+### MEASURED, SAME INPUTS, ONLY THE FIX CHANGED
+| | BEFORE | AFTER |
+|---|---|---|
+| reassigned / rejected | 626 / 907 | **294 / 1,239** |
+| **reads on the 721 bp copy reassigned away** | **362/362 = 100.0%** | **9/362 = 2.5%** |
+| read assignments | 1,242 | 1,242 |
+| unique-mapper agreement | 68/68 = 100% | **68/68 = 100%** |
+
+⟹ the leg now REJECTS the reads it has no PSV evidence to move, and the fragment copy keeps its reads.
+Unique-mapper agreement — the one place with a ground truth — is unchanged at 100%.
+
+### ⚠ TWO PROCESS LESSONS WORTH MORE THAN THE FIX
+1. ⛔**A MID-PATCH FAILURE LEFT THE TREE COMPILING AND WRONG.** The signature change swapped
+   `read_len: usize` for `n_decisive: usize`; when the call-site patch failed its assertion, the old
+   `read_len` argument still type-checked. `cargo build` returned 0 on code that would have reassigned
+   EVERYTHING. ⟹ **a same-typed parameter swap has no compiler safety net; only the tests caught it.**
+2. ⛔**MY FIRST COUNTER WAS WRONG AND LOOKED PLAUSIBLE**: it compared `path_obs_at` vectors from the two
+   copies, but `path_obs_at` returns the READ's base, so it compared the read to itself and always
+   returned 0. Caught only by instrumenting (`obs=Some('C') cb='C' cl='A'`), not by reading.
+
+### ⚠ THE TEST FIXTURES WERE ENCODING THE BUG
+`apply_corrects_mismapped_read` and `apply_realign_strand_orients_path_obs_for_minus_copy` asserted a
+correction from a **single** distinguishing base, which the old formula inflated to `n_decisive ~ 140`.
+Under a real PSV count one column gives `min_p = (0.003/3)^1 = 1e-3`, which does **not** clear
+`alpha = 1e-3`. Both fixtures now carry **two** PSV columns — the same ">= 2 columns" bar
+`copy_split::min_p_distinct` already enforces. **This aligns `vg_realign` with the rest of the codebase
+rather than introducing a new threshold.**
+
+## §6dh — ⭐⭐ DISPERSED FAMILIES UNBLOCKED: THE 38-COPY / 89.5 Mb FAMILY NOW ASSIGNS, 292/293 UNIQUE-MAPPER AGREEMENT (09-03)
+
+§6dg left O2 able to assign a 3-copy local family and **structurally unable** to assign a dispersed one
+— the blocker for making MCL clusters the definition, since most real families ARE dispersed.
+
+### THE FIX (`copy_assign.rs`, `--families` path only)
+A family still binds to the ONE region containing its span, so the anti-truncation guarantee is untouched.
+What changed is **which reads are loaded**: from the union of the copies' own neighbourhoods
+(`COPY_READ_PAD = 50 kb`, merged), not the whole hull.
+⭐**Justification: a read overlapping NO copy can never be assigned to one**, so nothing assignable is
+lost, and every copy's reads are still loaded in full — which is exactly what the containment check
+existed to protect. **89.5 Mb hull -> ~3.2 Mb of reads.**
+⚠**DEDUPLICATION IS LOAD-BEARING**: a read spanning a window boundary is returned by both queries.
+`BamRead` keys on `(name, ref_start)`; `PrimaryRead` **has no name field**, so it keys on
+`(chrom, ref_start, ref_end, introns)` — the placement identity. Without it one molecule becomes two
+witnesses, the standing invariant.
+Engages ONLY on `--families` (copy set known, detection/refine already off) ⟹ default path untouched.
+**831 tests pass / 0 fail; `tests/fixtures/` clean.**
+
+### RESULT — the previously-OOM family completes
+| | |
+|---|---|
+| families / copies | **2 / 41** |
+| read assignments | **5,278** |
+| **unique-mapper agreement** | **292/293 = 99.7%** |
+| MCLFAM1 (38 copies, 89.5 Mb) | 4,036: **272 assigned, 3,407 tied, 357 ambiguous** |
+| MCLFAM2 (3 copies) | 1,242: 467 assigned, 768 tied, 7 ambiguous |
+
+### ⚠⚠ PROCESSABLE IS NOT RESOLVED — REPORT BOTH
+**Only 8 of 38 copies receive ANY decisive read**, and **3,407/4,036 = 84.4% of MCLFAM1's assignments are
+TIED.** NPIP copies are near-identical and assign-or-abstain is abstaining, which is correct behaviour —
+but the honest headline is "the dispersed family can now be processed", NOT "assigned". The 99.7%
+unique-mapper agreement says the calls it DOES make are right.
+
+### ⚠ THE BLOCKER SPLIT IN TWO; ONLY ONE IS FIXED
+- **read loading** — FIXED (this section).
+- ⛔**`--vg-realign-correct` DOES NOT SCALE.** The completing run had it **OFF**. The leg runs a full
+  Needleman-Wunsch per candidate read against EVERY copy: 38 copies x ~8.8 kb vs ~2.7 kb reads is
+  ~900M DP cells per read, and it did not finish in 50 minutes (3 copies took ~25 s).
+  ⟹ **it needs a cheap prefilter (a minimizer screen) before the DP**, not an architectural change.
+  Until then, `--vg-realign-correct` is usable on small families only.
+
+### ⚠ ALSO SURFACED
+**8 Containment pairs in MCLFAM1** (reciprocal overlap 0.05-0.90), all double-claiming **0** molecules —
+fragments nested inside real copies, the class §6db already found. Know them before quoting a copy count.
+⚠`build_family_profiles/discover_psvs` cost **24.2 s for 3 copies / 13,928 columns**, and the read-support
+filter dropped **10,981/13,928 = 78.8%** of candidate columns. PSV discovery, not assignment, is the
+per-family cost.
+
+## §6di — ⭐⭐⭐ THE OVER-MERGING WAS THE **PARTITIONER**, NOT THE READS: MCL ON THE SHIPPED E_r EDGES GIVES 63 TP / 4 FP WHERE γ-QC GIVES 67/22 (09-03)
+
+User's observation: we switched to MCL for the ANNOTATION but never tried it on the READS, and the reads
+were what over-merged. Tested directly — **same edge set, only the partitioner changed.**
+
+### THE MECHANISM, AND IT IS STRUCTURAL
+**γ-quasi-clique is a DENSITY criterion on UNWEIGHTED edges** (`GAMMA = 0.20`). **MCL uses edge WEIGHT.**
+The Alu-mediated false edges are WEAK — identity **0.710-0.852** against **0.941-0.980** for genuine
+paralogy (§6cr's calibration). ⟹ **MCL can see the difference; γ-QC structurally cannot.**
+
+### MEASURED on `soto_adj/arm_off`'s SHIPPED `e.edges.tsv` (948 nodes / 1,571 edges), NPIP 67 TP / 22 FP
+| partitioner | TP co-clustered | FP co-clustered | precision |
+|---|---|---|---|
+| **γ-QC, GAMMA = 0.20 (SHIPPED)** | 67 | **22** | **0.7528** |
+| MCL I = 1.4 | **63** | 4 | **0.9403** |
+| MCL I = 2.0 | 51 | 2 | 0.9623 |
+| **MCL I = 2.8** | 47 | **0** | **1.0000** |
+| MCL I = 3.2 | 40 | 0 | 1.0000 |
+
+⭐**MCL at I = 1.4 keeps 63/67 = 94% of true edges and cuts 18 of the 22 false ones, with NO new filter
+and NO new threshold on identity or coverage — only a weight-aware partitioner on the SAME edges.**
+Compare the whole day's levers on this identical panel: containment `cov_longer >= 0.30` **63/3 = 0.9545**,
+VG low-mult oracle **59/1 = 0.9833**, stub guard **37/1 = 0.9737**, repeat masking **51/0** (mechanism
+inverted, §6cw). ⟹ **MCL matches the best of them while ADDING NOTHING** — that is a far cleaner story
+than a coverage clause, because there is no extra parameter to defend.
+
+### ⚠ WHAT THIS DOES AND DOES NOT SAY
+1. ⚠**OFFLINE (T8).** The partition was recomputed from the EMITTED edges; no binary arm has been run.
+   γ-QC's output feeds node construction and the >=2-loci gate downstream, so a real arm can move copies
+   that this re-partition cannot (§6bv: *"a pure restriction is true of EDGES and FALSE of COPIES"*).
+2. ⚠**THE WORKING INFLATION DEPENDS ON GRAPH DENSITY.** I = 1.4 is right here (1,571 edges / 948 nodes,
+   mean degree 3.3) and produced a **432-member superfamily** on the annotation graph (24,286 edges /
+   1,920 nodes, mean degree 25) where I = 2.8-3.2 was the plateau (§6dd). **The constant does not
+   transport between graphs and must be re-swept per substrate — say so rather than quoting one number.**
+3. **Recall cost is real**: 94% of true edges at I = 1.4, but only 70% at the I = 2.8 that reaches
+   precision 1.0000. There is no free point; the curve is the honest object.
+
+### ⭐ WHY THIS MATTERS FOR THE ANNOTATION DEBATE
+It makes **one partitioner serve both paths** — annotation-derived nodes and read-derived nodes — so the
+reads-only floor of the completeness ablation ([[project_o1_minimal_annotation]]) is far stronger than the
+γ-QC number suggested. **The reads were never the problem.**
+**NEXT: a real binary arm replacing γ-QC with weighted MCL, swept for inflation on the RNA graph.**
+
+## §6dk — ⭐⭐⭐ O3 POSITIVE CONTROL REPRODUCED FROM THE MCL ROSTER: GOLGA6L7 DISCORDANT BY ONE UNIT, **9/9 CONTROLS CONCORDANT**, TANDEM ARRAY MATCHING BASE-FOR-BASE (09-03)
+
+User's O3 framing: *collapsed copies that differ between individuals, where only the organism that
+generated the genome makes everything coincide.* That is the **matched-individual** design, and §6u's
+GOLGA6L7 result is its positive control. Re-run today with probes drawn from the **MCL roster**, against
+`o3_hapcnv/{mat,pat}.chr.fa` — two haploid genomes of the SAME animal (KB3781).
+Params exactly as recorded: `-x asm20 -c -p 0 -N 500`, identity >= 0.60 by `1 - de`, cov_q >= 0.50, 5 kb merge.
+
+### RESULT
+| probe | mat | pat | recorded | |
+|---|---|---|---|---|
+| **GOLGA6L7** | **5** | **6** | 6 vs 7 | ⭐**discordant by exactly one unit** |
+| AMY (LOC101133335) | 3 | 3 | 3 vs 3 | exact |
+| NPIPB11 | 8 | 8 | 8 vs 8 | exact |
+| APOBR / CLN3 / NUPR1 / MAGEF1 | 1 | 1 | 1 vs 1 | exact x4 |
+| PDXDC1 | 5 | 5 | 5 vs 5 | exact |
+| RFPL1 (MCL cluster CL580) | 4 | 4 | 3 vs 3 | concordant, +1 probe scope |
+| SULT1A2 (MCL cluster CL114) | 6 | 6 | 5 vs 5 | concordant, +1 probe scope |
+
+**9/9 autosomal controls concordant; 1 family discordant by exactly one unit** — the STRUCTURE of §6u,
+reproduced independently. The +1 on the two cluster probes is **probe SCOPE, not disagreement**: a
+4-member cluster reaches more of the family than a single gene, it shifts BOTH haplotypes identically,
+and it cancels in the paired comparison. That is what a paired design is for.
+
+### ⭐ THE TANDEM ARRAY MATCHES BASE-FOR-BASE
+| | recorded (§6u) | today |
+|---|---|---|
+| MAT | 100,405,873 · id 0.9672 · 100,446,711 · id 0.9675 | **100,405,873 · 0.9671 · 100,446,711 · 0.9674** |
+| PAT | 104,789,835 · 0.9670 · 104,830,654 · 0.9677 · **104,871,462 · 0.9673** | **104,789,835 · 0.9669 · 104,830,654 · 0.9676 · 104,871,462 · 0.9672** |
+**Identical start coordinates; identities agreeing to 3-4 decimal places; the 40,819 / 40,808 bp
+periodicity preserved.** ⟹ **the paternal haplotype carries a third tandem unit the maternal one does
+not, at full length and coverage 1.000 — in ONE animal.**
+
+### ⚠⚠ THE THREE MISSES WERE THE NAMING TRAP, COMMITTED BY ME WHILE TESTING THE CURE
+My first pass probed `AMY2B`, `RFPL1` and `SULT1A2` **by gene symbol** and got 1/1, 1/1, 2/2 against
+3/3, 3/3, 5/5. The record's own probe is **`AMY (LOC101133335)`** — a LOC name at
+`NC_073224.2:136222100-136230351`, nowhere near AMY2B — and RFPL is **9/9 LOC-named**
+([[project_gene_naming_traps]]). ⟹ **I addressed a family by its symbol and lost it, in the course of
+testing the method built because symbols lose families.** With the LOC-named probe AMY is exact; with
+the MCL CLUSTER as the probe the other two are concordant. ⭐**Address a family by its cluster, never by
+a name — including in controls.**
+
+### ⚠ OPEN, AND IT MUST NOT BE PAPERED OVER
+**GOLGA6L7 counts 5 vs 6 where §6u recorded 6 vs 7.** The DIFFERENCE is exact and the tandem cluster
+matches base-for-base, so this is one locus falling below the cov_q >= 0.50 floor with a full-span probe
+where §6u used a shorter one — a probe-LENGTH effect, since coverage is measured on the query.
+⚠**A copy count that moves with probe length is exactly what an adversarial reader attacks. Report the
+DIFFERENCE (which is probe-stable) and state the probe whenever quoting an ABSOLUTE count.**
+
+### ⚠ PROVENANCE TRAP AVOIDED
+`o3_hapcnv/probes.py` and `hapcnv.tsv` are the **08-19** run, whose headline (`MAPKBP1/PLA2G4B/SPTBN5`
+at pat 8/9/9 vs mat 5/6/8) is the one memory says **DO NOT QUOTE**
+([[project_o3_haplotype_cnv_uninformative]]). Only the haplotype FASTAs were reused; the probe set and
+the 08-19 numbers were not. ⚠Its `probes.fa` contains **2 of the 14** genes needed here — a directory
+holding the right genomes and the wrong answer.
+
+### WHAT THIS BUYS O3
+A case where the answer is established **from DNA alone, in one animal**, against which an RNA-derived
+reference-absent claim can be checked on an independent substrate. §6df established the bottleneck is
+**specificity, not detection** (289 candidates, 0 admitted); the matched individual closes the
+"different animal" escape, and the second haplotype is the check that uses no RNA at all.
+
+## §6dl — ⭐ §6dk's OPEN QUESTION CLOSED: THE MISSING LOCUS IS THE 3,182 bp UNIT AT `cov_q` 0.485 vs 0.508 — THE **DIFFERENCE** IS PROBE-STABLE, THE **COUNT** IS NOT (09-03)
+
+§6dk left GOLGA6L7 at 5 vs 6 against §6u's 6 vs 7 and flagged it as a probe-length effect. Diagnosed.
+
+**The locus is `3,182 bp, id 0.8944`** — `mat CM054600.2:84072372`, `pat CM054576.2:82435832`.
+⭐**§6u's own text records exactly this unit at `cov 0.508`**, immediately above the `cov_q >= 0.50` floor.
+A full-span probe puts it at **0.485**, immediately below. **A 0.023 coverage difference, caused purely by
+a probe ~430 bp longer** — `cov_q` is measured on the QUERY, so a longer probe lowers it for a fixed hit.
+
+### ⭐ THE FINDING IS PROBE-STABLE; THE ABSOLUTE COUNT IS NOT
+| `cov_q` floor | mat | pat | **pat − mat** |
+|---|---|---|---|
+| 0.50 | 5 | 6 | **+1** |
+| 0.45 | 6 | 7 | **+1** |
+| 0.40 | 6 | 7 | **+1** |
+| 0.35 | 6 | 7 | **+1** |
+| 0.30 | 10 | 9 | −1 ⚠ |
+| 0.25 | 26 | 27 | +1 ⚠ |
+
+⭐**The +1 paternal excess holds across the whole 0.35–0.50 band, and at 0.45–0.35 the absolute counts are
+EXACTLY §6u's 6 vs 7.** The 3,182 bp unit is present on BOTH haplotypes, so it **cancels in the paired
+comparison** — which is why the difference survives a floor change that moves the count.
+⚠**Below 0.35 the probe starts catching unrelated GOLGA-like sequence** (10 vs 9 at 0.30; 26 vs 27 at
+0.25), so the stable band has a floor as well as a ceiling. **Do not read the 0.25 row as more sensitive —
+it is a different measurement.**
+
+### THE REPORTING RULE THIS FIXES
+⭐**Quote the DIFFERENCE (probe-stable across 0.35–0.50) and state the probe whenever quoting an ABSOLUTE
+count.** "GOLGA6L7 has 7 copies" is probe-dependent; "the paternal haplotype carries one more unit than the
+maternal, stable across a 0.15-wide coverage band, in one animal" is not. The second is the claim that
+survives someone trying to pull it apart — and it is the claim O3 actually needs.
+
+## §6dm — ⭐ TWO-SIDED COVERAGE IS INERT ON THE HAPLOTYPE SCAN, AND THE REASON REFRAMES THE COUNT: `cov_q` IS A COMPLETENESS CRITERION, NOT AN ARTEFACT FILTER (09-03)
+
+User's proposal: the haplotype scan filters on `cov_q` alone, so use BOTH coverages — the same two-sided
+fix that worked for the E_r edge rule (§6cs/§6cz). Tested.
+
+⚠**FIRST, THE ADAPTATION.** In a probe-vs-genome scan the PAF target is a WHOLE CHROMOSOME, so a literal
+`sseqcov` is meaningless (~0 for every hit). The meaningful subject is the **MERGED LOCUS**:
+`cov_locus = aligned_bp / locus_span`.
+
+### RESULT: IDENTICAL AT EVERY FLOOR
+Adding `cov_locus >= 0.50` changes **nothing** — 5v6, 6v7, 6v7, 6v7, 10v9 at `cov_q` 0.50/0.45/0.40/0.35/0.30,
+exactly as with `cov_q` alone.
+
+### ⭐ WHY — AND IT IS THE INTERESTING PART
+The boundary locus (§6dl's 3,182 bp unit) measures **`cov_locus` = 0.986** (3,137 of 3,182 bp aligned)
+against `cov_q` = 0.485. ⟹ **It is not a partial or CONTAINED match. It is a COMPLETE match to a SHORTER
+UNIT** — a fully-covered 3,182 bp object hit by a 6,466 bp probe.
+⭐⭐**So `cov_q` is not filtering an artefact; it is a COMPLETENESS-OF-THE-GENE criterion — "is at least
+half the gene present here?" A fully-matched half-length unit is genuinely HALF A COPY, and whether that
+counts is a DEFINITIONAL choice, not a measurement error.** That is why the count moves with the probe and
+the DIFFERENCE does not: a half-unit present on both haplotypes cancels.
+⟹ **Two-sided coverage is the right fix for an EDGE between two comparable objects (§6cz). It is inert
+when one side is a chromosome and the ambiguity is about the OTHER side's completeness.** Do not
+generalise the two-sided lesson past the case it was measured in.
+
+### ⭐⭐ THE O3 QUESTION, ANSWERED PRECISELY
+**The phenomenon is REAL and is NOT a containment artefact.** The extra paternal unit is full length,
+`cov_locus` 1.000, identity 0.9673 against siblings at 0.9670/0.9677, in a regular 40,819/40,808 bp array,
+with **9/9 autosomal controls concordant**. Containment artefacts are fragments with low subject coverage
+or identity outliers; this is neither.
+
+⚠⚠**BUT WHAT IS PROVEN IS HAPLOTYPE CNV IN DNA, NOT O3.** O3 requires **RNA** to detect a copy the
+reference lacks, and that still stands at **289 candidates, 0 admitted** (§6df). What §6dk/§6dl/§6dm
+establish is a **TARGET**: a copy known to exist from DNA, in the SAME animal the RNA came from, with the
+"different individual" escape closed.
+⟹ **The next question is not "does O3 happen" — it is "can the RNA see THIS one?"** That is a far
+sharper question than the 289 unadjudicated candidates, because the answer is already known.
+
+## §6dn — ⛔ THE HAPLOTYPE O3 SCREEN PROMOTES NOTHING: ALL 4 INSPECTED CANDIDATES FAIL, AND THE MISSING FILTER IS **MAPQ** (09-03)
+
+Following §6dm's reframing (*"can the RNA see THIS one?"*), a directional screen for the O3 signature:
+**a family where the haplotype the primary assembly did NOT come from carries more copies** — those copies
+exist in the animal and are absent from the reference. 864 autosomal probes (one per RNA-corroborated MCL
+cluster) against `o3_hapcnv/{mat,pat}.chr.fa`.
+
+### THE SCREEN AND ITS CONTROLS
+**733/864 = 84.8% concordant** — the method does not manufacture differences. 78 with the O3 signature,
+53 with the opposite.
+⭐**THE ASSEMBLY-COMPLETENESS CONFOUND IS REJECTED.** `mat.chr.fa` is 3.51 Gb against `pat`'s 3.35 Gb, so a
+naive `mat > pat` excess could be pure completeness. Split by the primary's source haplotype:
+| primary source | mat>pat | pat>mat | toward NON-source | binomial p |
+|---|---|---|---|---|
+| PAT-derived | 60 | 37 | **61.9%** | **0.025** |
+| MAT-derived | 16 | 18 | 52.9% | 0.864 |
+`mat` does NOT dominate both rows, so completeness is out. ⚠**But the interaction test — which is what
+actually encodes the O3 prediction — is NOT significant: Fisher OR 1.82, p = 0.159.** One half of the
+predicted flip is detectable and the other is not; 9 MAT-derived contigs against 16 gives little power.
+**p = 0.159 on the test that encodes the hypothesis is not a result.**
+
+### ⭐ AN ALIGNMENT-BASED HAPLOTYPE CONTIG MAP, BECAUSE LENGTH-PAIRING IS NOT ENOUGH
+599 windows of 20 kb sampled across the 24 pat contigs, mapped to mat (`asm10`, `--secondary=no`, MAPQ>=30):
+**23/24 CLEAN (>=90% of windows agreeing), 24/24 one-to-one.** Only `CM054581.2` is ambiguous (4/12).
+⟹ correspondence is now established, and a copy-count comparison between corresponding contigs is
+interpretable. **Length-based pairing was giving deltas of 2.6-5.6 Mb and pairing the wrong chromosomes.**
+
+### ⛔ ALL FOUR INSPECTED CANDIDATES FAIL THE §6u EVIDENCE STANDARD
+| probe | counts | verdict |
+|---|---|---|
+| `LOC129533524` | 7 vs 4 | ⛔ the 4 full-length units correspond **ONE-TO-ONE** (2,682↔2,680 id 0.973; 2,671↔2,673 id 0.982; 2,673↔2,693 id 0.982), array spacing matching to **7 bp** (+252,283 vs +252,290). **The entire excess is 3 FRAGMENTS at cov 0.512-0.657.** |
+| `LOC134759213` | 5 vs 3 | ⛔ every hit partial, cov 0.529-0.653 |
+| `LOC101145118` | 5 vs 3 | ⚠ borderline, extras at cov 0.93-0.96 |
+| `LOC134758568` | 6 vs 3 | ⛔ **see below** |
+
+**`LOC134758568` looked strongest**: 3 extra copies at exactly 2,109 bp (= probe length), **cov 1.000**,
+identity 0.880-0.898 against siblings at 0.880-0.898 — the GOLGA6L7 shape. With the contig map it resolved
+to a clean **2 vs 0** on corresponding contigs (mat `CM054595.2` / pat `CM054571.2`). It fails anyway:
+1. ⛔**BOTH "extra copies" are MAPQ 0.** minimap2 cannot place them uniquely. **GOLGA6L7's units were
+   confidently placed; these are ambiguous.** A copy you cannot locate is not a copy you can count.
+2. ⛔**"pat has 0" WAS AN ARTEFACT OF WHERE I LOOKED.** Unfiltered, pat carries **6 records on
+   `CM054570.2`** — a contig with no PASSING hits, so I never examined it. The family IS present on pat;
+   the comparison was a filtered set against an unfiltered absence.
+
+### ⭐⭐ THE METHODOLOGICAL RESULT — MAPQ IS THE MISSING FILTER
+§6u's GOLGA6L7 units were full length, cov 1.000, identity matching siblings **and confidently placed**.
+This screen had the first three criteria and not the fourth. **Add MAPQ > 0 to the probe-placement
+criteria before any future haplotype copy-count claim** — at 0.88 identity in a dispersed family, placement
+ambiguity is the dominant error, not coverage.
+⚠**And always inspect the UNFILTERED record set on the counterpart contig before asserting an absence.**
+An absence measured only where the filter already passed is not an absence.
+
+⟹ **O3 STATUS UNCHANGED: the phenomenon is real (§6dk), the RNA detector is unvalidated (289 candidates,
+0 admitted), and this DNA screen promotes nothing.** The screen is worth keeping — it is directional,
+controlled, and it correctly REJECTED four candidates including its own strongest.
+
+## §6do — ⭐⭐ A CLEAN REFERENCE-ABSENT CANDIDATE (`LOC134757045`, 2 maternal units), AND ⛔ §6dn's MAPQ FILTER RETRACTED BY THE KNOWN POSITIVE (09-03)
+
+Standing summary: **`docs/O3_STATUS.md`**.
+
+### ⛔ FIRST, THE RETRACTION — §6dn's RECOMMENDATION WOULD HAVE DELETED THE TRUE POSITIVE
+§6dn concluded "add MAPQ > 0 to the probe-placement criteria". **Tested against §6u's known-real
+GOLGA6L7 case: the extra paternal unit is MAPQ 0**, as is every unit of that array except the probe's own
+source locus (MAPQ 60). ⟹ **MAPQ > 0 deletes the finding it was meant to protect.** MAPQ 0 is *what
+multi-copy means* — with `-p 0 -N 500` every member of a near-identical array is ambiguously placed by
+construction (MAPQ is bimodal here: 76% at 0, 22% at 60). ⭐⭐**TEST A PROPOSED FILTER AGAINST THE KNOWN
+POSITIVE BEFORE APPLYING IT.**
+⭐**The real discriminator is IDENTITY, already calibrated in §6cr**: genuine paralogy 0.941-0.980,
+artefact 0.710-0.852. §6dn's failed candidate sat at **0.880-0.898**; every unit of both real cases is
+**>= 0.967**. Re-screened at `identity >= 0.94` with alignment-derived contig pairing.
+
+### ⭐⭐ THE CANDIDATE: `LOC134757045` — uncharacterized lncRNA, chr14 (autosomal), MCL cluster CL493
+Contig pair `pat CM054574.2 <-> mat CM054598.2`, **17/17 CLEAN** in the alignment map. Primary source at
+this locus is **PAT**, so the reference is paternal here.
+
+| | mat CM054598.2 | pat CM054574.2 |
+|---|---|---|
+| units at id >= 0.94 | **5** | **3** |
+| unfiltered records | — | **3** ⭐ nothing hidden below threshold |
+
+**Three units correspond ONE-TO-ONE**, identity agreeing to 4 dp and sizes to the base:
+0.9957 <-> 0.9957 (2,298 bp) · 0.9780 <-> 0.9780 (2,268 bp) · 0.9735 <-> 0.9739 (2,299 bp).
+⭐**TWO MATERNAL UNITS HAVE NO PATERNAL COUNTERPART** — 2,298 bp, **cov 1.000**, **id 0.9961**,
+indistinguishable from the matched unit at 0.9957.
+⟹ **two copies present on the maternal haplotype and ABSENT from the PAT-derived reference, in one
+animal.** It passes every criterion GOLGA6L7 passed, plus the two that killed §6dn's candidate: **no
+sub-threshold hits on the counterpart**, and a **clean alignment-derived pairing**.
+
+### ⚠⚠ WHAT THIS IS NOT — THE DISTINCTION THE PHRASING KEEPS COLLAPSING
+**ASSEMBLY COLLAPSE** (the assembler merged copies — the assembly is WRONG) is not the same as
+**HAPLOID REPRESENTATION** (the primary represents ONE haplotype, so the other's extra copies are absent
+BY DESIGN). ⭐**Both cases found so far are the SECOND kind. NO ASSEMBLY COLLAPSE HAS BEEN DEMONSTRATED.**
+For O3 — a transcript with no reference locus — both qualify; for a claim about assembly quality, only
+the first would.
+⛔**AND NO BETWEEN-INDIVIDUAL COMPARISON EXISTS.** There is ONE animal. "Multi-copy families differ in
+number between individuals" is **untested here** — plausible, suggested by the haplotype result, not shown.
+⛔The screen's own statistic remains **Fisher OR 1.82, p = 0.159** on the test encoding the O3 prediction
+(PAT-derived half p = 0.025; MAT-derived half flat at 18 vs 16, n = 34). **One half of a predicted flip is
+not the flip.**
+
+### THE NEXT TEST AND ITS CAVEAT
+The two maternal units have no reference locus, so their transcripts must map onto the three reference
+copies ⟹ **predicted excess depth or PSVs unexplained by any reference copy**, in fibroblast RNA from the
+same animal. ⚠**It is a lncRNA — if silent in fibroblast the test is UNINFORMATIVE, not negative.**
+Establish expression before reading a null.
+
+## §6dp — ⛔ TWO-ANIMAL TEST: NO COLLAPSED EXTRA COPY AT THE TWO BEST-POWERED LOCI, AND THE READ-PRESENCE SCREEN IS **UNUSABLE** BETWEEN TISSUES (09-03)
+
+User established the testis sample (`GGO_OR6737`) is a DIFFERENT animal from the fibroblast donor (the
+animal the T2T assembly came from). Both RNA sets align to the same reference ⟹ a genuine
+between-individual comparison, which is the advisor's hypothesis: *do multi-copy families differ in copy
+number between individuals?*
+⚠My own genetic check could not confirm the two-animal claim and **must not be quoted as evidence either
+way**: 0 fixed differences over 6,854 exonic positions (≈3 expected between individuals in a low-diversity
+species), and only 8-15 heterozygous sites total — Jaccard 0.438 on n=8. **Underpowered, not informative.**
+The identification rests on the metadata (`GGO_OR6737` vs `GCA_029281585.2_flnc`), which the user confirms.
+
+### ⛔ THE READ-PRESENCE SCREEN CANNOT TEST THE HYPOTHESIS — IT MEASURES EXPRESSION
+Comparing HOW MANY COPIES CARRY READS per family, restricted to families expressed in BOTH (>=20 reads
+each), 52 families qualified and **33 differed**. ⭐No systematic direction (**16 testis-more vs 17
+fibroblast-more, binomial p = 1.0000**), so it is not a global tissue artefact — but the per-member
+counts settle it:
+```
+CL100  testis     [23, 11, 273, 2, 6, 22, 1, 5, 7, 17, 9, 0]
+       fibroblast [ 0,  0, 608, 0, 0,  0, 0, 0, 1, 10, 0, 0]
+CL106  testis     [0, 21, 17, 0,  97, 2, 18, 6, 7, 0, 0, 5]
+       fibroblast [0,  0,  0, 0, 213, 0,  0, 0, 0, 0, 0, 0]
+```
+**Fibroblast transcribes ONE paralog; testis transcribes the family thinly** — the testis
+transcriptional-scanning signature. ⭐**AND THE COPIES ARE DEMONSTRABLY PRESENT IN THE REFERENCE: testis
+reads MAP to them.** So this is differential expression of copies that exist, not reference-absent copies.
+⟹ **read presence conflates "the copy exists" with "the copy is transcribed here", and between two
+tissues that confound dominates completely.** This confirms the standing rule
+([[project_o3_within_locus_only]]) on an independent substrate: **no depth/presence comparison works.**
+
+### ⭐ THE EXPRESSION-INDEPENDENT TEST, AND ITS RESULT
+**Allele COUNT at a shared locus** — 2 alleles is a normal diploid locus at any expression level;
+**>= 3 alleles at >= 10% means more than two haplotypes contribute, i.e. an extra copy collapsing here.**
+Run on the two deepest shared loci (`CL100` 273/608 reads, `CL106` 97/213), all positions with >= 20 reads
+in BOTH samples:
+
+| locus | shared positions | testis >=3 alleles | fibroblast >=3 alleles |
+|---|---|---|---|
+| CL100 | 6,482 | **0** | **0** |
+| CL106 | 2,678 | **0** | **0** |
+
+⟹ **NO evidence of a collapsed extra copy in EITHER animal at either locus. Both are cleanly diploid.**
+⭐The test has power: every position carried >= 20 reads in both, so a third haplotype contributing >= 10%
+would have been seen. ⭐**It would also have caught a REFERENCE collapse** — that would show >= 3 alleles in
+BOTH animals — and it does not.
+
+### ⚠ SCOPE — WHAT THIS DOES AND DOES NOT SAY
+It does NOT refute the advisor's hypothesis genome-wide. **Two loci, chosen for depth, not at random.**
+A copy expressed below the 10% floor is invisible to it. What it does say is that at the two best-powered
+loci available, **the answer is no**, and that the cheap screen everyone reaches for first (read presence
+across copies) **cannot answer the question at all between tissues.**
+⚠Also noted: `CL137`'s deepest member is **`NC_011120.1` — the MITOCHONDRION** (1,070 / 16,578 reads).
+Any family whose top locus is mitochondrial is an artefact of expression depth; exclude the mito contig.
+
+## §6dq — ⛔⛔ THE TWO-ANIMAL ALLELE TEST IS A CLEAN ZERO ON 226,615 POSITIONS — AND THE FILTER THAT MAKES IT VALID EXCLUDES THE GENE CLASS THE HYPOTHESIS IS ABOUT (09-03)
+
+Mitochondrion (`NC_011120.1`) excluded — §6dp found `CL137`'s deepest member was mito, an expression
+artefact. Allele-count test scaled from 2 loci to **99 loci across 49 families**, every position with
+>= 20 reads in BOTH animals.
+
+### THE RESULT — A WELL-POWERED ZERO
+| | count |
+|---|---|
+| shared positions tested | **226,615** |
+| >= 3 alleles in **BOTH** animals (a REFERENCE collapse) | **0** |
+| >= 3 alleles in **testis only** (extra copy in OR6737) | **0** |
+| >= 3 alleles in **fibroblast only** (extra copy in the assembly animal) | **0** |
+
+⟹ **At every accessible locus, both animals are cleanly diploid and the reference is not collapsed.**
+The power is real: ~2,290 positions per locus, so a single collapsed copy at ONE locus should have
+produced dozens of 3-allele positions.
+
+### ⛔⛔ BUT THE TEST IS AIMED AT THE WRONG GENE CLASS, **BY CONSTRUCTION**
+The 99 testable loci are `NCOR1`, `GSPT1`, `RPL10`, `SUMO2`, `XPO6`, `HMGN2`, `DAP3`, `EI24`, `ELMO2`,
+`MTMR3`, `SAFB2`, `GON4L`, `CARNMT1` … — **housekeeping and constitutively expressed genes** (plus MHC
+class I, `CL117`).
+⭐**The requirement that makes the test VALID — expressed in BOTH tissues, to control for expression —
+simultaneously selects for CONSTITUTIVELY expressed genes, which are the LEAST likely to be recently
+duplicated or copy-number variable.** NPIP, GOLGA6 and TBC1D3 are tissue-restricted and can never pass it.
+⟹ **49 of 3,310 families were testable, and they are the wrong 49.**
+
+### ⭐ THE STRUCTURAL DIAGNOSIS
+This is not a data-volume problem, and more testis reads will not fix it. **It follows from comparing two
+different TISSUES from two different animals**: controlling the expression confound costs exactly the gene
+class the hypothesis concerns.
+⭐⭐**THE FIX IS MATCHED TISSUE, NOT MORE DEPTH.** Fibroblast (or any single tissue) IsoSeq from a second
+gorilla removes the confound at the source: with tissue held constant, "expressed in both" no longer
+selects for housekeeping genes, and the rapidly-evolving families become testable.
+
+### WHAT MAY AND MAY NOT BE SAID
+✅ *"Across 226,615 positions at 99 loci in two gorillas, we find no collapsed extra copy in either animal
+and no evidence that the reference has collapsed these families."*
+⛔ **NOT** *"multi-copy gene families do not differ in copy number between individuals."* The families that
+would show it were never tested. **A negative on a population the hypothesis excludes is not evidence
+against the hypothesis.**
+
+## §6dr — ⭐⭐ O3 EVIDENCE INVENTORY: **NOT REFUTED — UNTESTED IN THE REGIME.** "WELL TESTED BUT LACKING SUPPORT" IS NOT DEFENSIBLE (09-03)
+
+3-agent sweep of the full ledger, the negative-results register, memory, and code reachability.
+**Standing document: `docs/O3_STATUS.md`** (rewritten; carries the full route table and a 9-entry
+DO-NOT-QUOTE list).
+
+⭐**All three agents converged independently on the same verdict**, and it is not the one the framing
+assumed. What is REFUTED is a set of **named detectors**. The headline ZEROS are **vacuous, blocked or
+off-target by construction**. The phenomenon has **two DNA-level positive instances**.
+
+⭐⭐**THE SINGLE MOST IMPORTANT SENTENCE, from the code sweep: NO SHIPPED BINARY CAN EMIT A
+REFERENCE-ABSENT COPY AT DEFAULTS.** All four admission routes are default-false
+(`denovo_pipeline.rs:2235/:2466/:2482`, `gw_family_catalog.rs:885/896/907`); `absent_copy.rs` is 856 lines
+behind a flag never on in a production run. ⟹ **absence of output is a consequence of the gating, not a
+measurement. There is no null result to interpret.**
+
+⚠**TWO ERRORS FOUND IN THIS PROJECT'S OWN DOCS**, both live until now:
+1. **`docs/O3_STATUS.md:50` and `docs/MEMORY_DIGEST.md:39` still asserted "289 candidates, 0 admitted"**
+   as a general figure — §6dc retracted it as panel-specific ("0 of 289 in the 12-family MEC panel";
+   8/328 = 2.4% on 73 real gorilla families). **I wrote that line myself today.** Corrected.
+2. **`MEMORY.md` and `MEMORY_DIGEST.md:129` still title the DNA-side result "AN INDEPENDENT ZERO"**, which
+   the 08-15 caution explicitly forbids as a repeat of the denominator-error pattern. **The later record
+   governs.**
+
+⟹ **DEFENSIBLE**: *"O3's RNA detectors are refuted, vacuous or unvalidated; O3 itself is untested in the
+regime where it would occur."*
+⛔ **NOT DEFENSIBLE**: *"O3 is refuted"*, *"O3 lacks support"*, *"O3 was tested and found nothing."*
+
+## §6ds — The MCL coverage floor had a UNIT MISMATCH; the remedy is an ADDITIVE exonic floor, not an exonic numerator (2026-09-04)
+
+**Defect.** `annotation_families.rs` computed `aln = max(qe-qs, te-ts)` — bases of the gene's **GENOMIC
+span**, introns included, because the node's FASTA *is* the whole gene interval — and divided it by the
+**EXON-UNION** denominator. Numerator and denominator in different units. Measured on the pilot
+(1,920 nodes / 24,286 edges): **6,388/24,286 = 26.3%** of admitted edges have `aln >= denominator`, so
+the 0.30 floor is **vacuous** for them; **1,587/24,286 = 6.5%** have `aln >= 2x`; and **702/4,276 = 16.4%**
+of within-cluster edges are driven by an alignment that is **<5% exonic**. ⟹ intronic interspersed-repeat
+homology satisfies an exonic coverage floor.
+
+**Two adjudicated consequences** (independent agents, both having reproduced the shipped graph exactly):
+- **MCL0 (n=84)** is not a repeat clique (median identity 0.9885) but **two near-perfect cliques, 48+35,
+  glued by ONE mosaic pseudogene cut vertex** (`NC_073244.2:42925859-42930038`) whose bridging alignment
+  is **794 bp at 1.1% exonic**, reaching `cov_longer` 0.917 as 794 non-exonic bases / a 679 bp exonic
+  denominator.
+- **MCL2 (n=33)** is a genuine **repeat clique of 33 unrelated named genes** (ATP5F1A, CEP76, ELL, TRMT1,
+  STX10, LGALS4 …): **226/254** edges <5% exonic, median identity 0.8253, driving alignments 1.5-2.5 kb
+  ⟹ LINE-1/ERV/LTR scale, **not Alu**.
+- ⭐ **Gate G's Alu immunity SURVIVES**: only **2/24,286** admitted edges have the Alu shape and
+  **0/4,276** within-cluster edges are at single-Alu scale. But with 0-1 candidates that is ARITHMETIC,
+  **not measured precision** — the `asm20` tier and the longer-side denominator exclude the class by
+  construction.
+- A second, independent merge mechanism: the only self-guard is `q == t` (**string equality of the FASTA
+  header**), so distinct gene records with overlapping intervals align as paralogs — **108/4,276**
+  intra-cluster edges join fully NESTED intervals at identity exactly **1.000**; 54/139 clusters carry one.
+
+**⛔ THE OBVIOUS REMEDY IS WRONG.** Charging the numerator in exonic bases too (`--exonic-overlap`)
+cut the graph to 1,320 nodes / 4,407 edges and **shattered the NPIP cluster 43 -> 19/14/4/4**, MCL3
+27 -> 16. Diagnosis: **a recent segmental duplication copies INTRONS as well as exons**, so a real
+paralog's alignment is legitimately mostly intronic; demanding 30% of the *exon union* asks a different
+question from "are these paralogs". ⚠ Per-record thresholding made it worse still (NPIP 17/15/3/3/1)
+because minimap2 splits one paralogous alignment across many records — coverage is a property of the
+PAIR, so the pair's intervals are now unioned before thresholding.
+
+**⭐ THE REMEDY THAT WORKS — `--min-exonic-bp 300`, ADDITIVE, `cov_longer` untouched.** An edge must
+rest on at least 300 **absolute exonic bases** on the longer gene (unioned over the pair's records).
+
+| cluster | n | adjudication | `--exonic-overlap` | **`--min-exonic-bp 300`** |
+|---|---|---|---|---|
+| MCL1 | 43 | **REAL** (NPIP) | 19/43 | **43/43 intact** |
+| MCL3 | 27 | **REAL** | 16/27 | **22/27** |
+| MCL0 | 84 | **FALSE MERGE** | 47/84 | **48/84** — splits at the adjudicated cut vertex |
+| MCL2 | 33 | **REPEAT CLIQUE** | 0/33 | **1/33** |
+
+Graph 1,920/24,286 -> 1,533/5,537; largest cluster **84 -> 70**; 54,455 pairs dropped for zero exonic
+evidence. `--reject-overlapping` drops a further 2,476 pairs.
+
+**⚠ WHAT THIS IS NOT.** (1) **300 was NOT pre-registered** — it was chosen after seeing the arm-B failure.
+Its only principled anchor is that it equals `min_bp`, i.e. *the exonic evidence must itself meet the
+minimum alignment length*. (2) The adjudication set is **4 clusters (2 real, 2 false)** — far too small
+to quote a precision. (3) ⚠ **NOT MONOTONE**: `--min-exonic-bp 300 --reject-overlapping` produces a
+cluster of **85**, LARGER than the 84 it was meant to break — removing edges re-routes MCL flow.
+(4) **RNA corroboration has still never run on this catalog** (871/871 rows `NA`, `bam=<unset>`), so the
+"RNA disposes" half of the definition remains untested.
+
+**Shipped:** all three clauses **DEFAULT OFF** (`exonic_overlap`, `reject_overlapping`,
+`min_exonic_bp: 0`), pinned by `the_new_clauses_are_off_by_default`. Arm A re-run is **BYTE-IDENTICAL**
+to `rust_pilot.clusters.tsv` — ⭐ and that control earned its keep: it caught a real bug I introduced
+(the `min_cov_longer` floor was inside a replaced slice and silently vanished, admitting 63,361 edges
+instead of 24,286). **775 passed / 0 failed / 11 ignored.**
+
+## §6dt — There is no unbiased `min_exonic_bp` to choose, because the parameter DISSOLVES (2026-09-04)
+
+§6ds shipped `--min-exonic-bp 300`, anchored to `min_bp`. ⚠ That anchor was wrong and the value was
+mildly over-tuned. Two measurements settle it.
+
+**1. The adjudications sit on a 12x PLATEAU, and 300 is at its EDGE.**
+
+| `min_exonic_bp` | NPIP (43) | MCL3 (27) | MCL0 (84) | MCL2 (33) | largest |
+|---|---|---|---|---|---|
+| **1 - 200** | **43 ✓** | **27 ✓** | 48 (splits) | 0-1 | 71-109 |
+| 300 | 43 | **22** ⚠ | 48 | 1 | 70 |
+| 400 | **39** ⛔ | 19 | 48 | 1 | 61 |
+| 1200 | 31 | 20 | **0** | 1 | 71 |
+
+⟹ every adjudication is invariant from 1 to 200 bp; **300 already costs MCL3 five members**, so the
+`min_bp` anchor is REFUTED as a principled choice.
+
+**2. ⭐⭐ THE DISTRIBUTION IS A WALL AT ZERO, NOT A GRADIENT.** Over the 63,361 candidate pairs
+(reproduced independently in `exonic_dist.py`, exactly matching the binary's join count):
+
+- **53,305 / 63,361 = 84.1% share EXACTLY ZERO exonic bases.**
+- The non-zero mode is 512-1024 bp; the median non-zero pair is 854 bp.
+- Only **97 pairs** in total fall anywhere below 32 bp.
+- Surviving fraction: `>=1bp` 15.9%, `>=25bp` 15.7%, `>=300bp` 14.1% — a **1.6-point** move across a
+  300x range of the threshold.
+
+⟹ **The threshold is not doing the work; the zero/non-zero boundary is.** The defensible clause is
+therefore **"an edge must rest on at least one shared exonic base"** — a STRUCTURAL requirement with
+**no free number**, not a tuned floor. ⭐ This removes a parameter rather than adding one, which is the
+opposite of what §6ds did.
+
+**And it is strictly better on the adjudicated set** than the value it replaces: MCL3 **27/27** (vs 22)
+and MCL2 **0/33** (vs 1), with NPIP 43/43 and MCL0 splitting at its cut vertex unchanged. Graph
+1,920/24,286 -> 1,667/6,335.
+
+**⚠ WHAT IS NOT ESTABLISHED.**
+- ⛔ At 1 bp a **101-member cluster appears, 100 of whose members were in NO arm-A cluster** — consistent
+  with the audit's "320/1,920 = 16.7% of nodes carry a strong disjoint edge into a cluster and are
+  omitted anyway", i.e. plausibly a RECOVERY once 84% of junk edges are removed. **It has NOT been
+  adjudicated.** ⚠ A quick identity/length screen was run and DISCARDED as invalid: it pooled all PAF
+  records instead of each edge's driving record, and consequently labelled the known-real NPIP cluster
+  "REPEAT-like" (median identity 0.8422 against the audit's 0.9594 on admitted edges). Any adjudication
+  must use the ADMITTED edge's driving record.
+- ⚠ The adjudication set is still **4 clusters**. The plateau shows insensitivity, not correctness.
+- ⚠ **NOT MONOTONE**: largest cluster runs 109 -> 71 -> 70 as the floor rises; removing edges re-routes
+  MCL flow and can CREATE larger clusters than the default's 84.
+- ⛔ **RNA corroboration has still never run on this catalog** (871/871 `NA`, `bam=<unset>`).
+
+**Default remains `min_exonic_bp: 0` (OFF).** Flipping it is a thesis edit, and the honest form to flip
+to is **1**, not 300.
+
+## §6du — NEW101 ADJUDICATED: not a family. And `frac_in` is the instrument `density` was missing (2026-09-04)
+
+§6dt left one thing open: at `min_exonic_bp = 1` a 101-member cluster appears whose members were in NO
+arm-A cluster. Adjudicated here **on the admitted edges' pooled records** — the method §6dt's discarded
+screen got wrong. ⭐ Validation that the method is right: it reproduces the audit on the known cases
+(NPIP identity **0.9451** / frac_in **0.970** against the audit's 0.9594 / 0.973), and the arm-A graph
+rebuild reproduces **1,920 nodes / 24,286 edges / 334 components / largest 990 / 89.0% of edges** exactly.
+
+| set | n | frac_in | med exonic bp | med exon frac | med span | verdict |
+|---|---|---|---|---|---|---|
+| MCL1 (NPIP) | 43 | **0.970** | 4,617 | 0.308 | 17,686 | REAL |
+| MCL3 | 27 | **0.923** | 2,828 | 0.314 | 7,398 | REAL |
+| **NEW101** | 101 | **0.557** | **814** | **0.054** | 6,216 | ⛔ **NOT A FAMILY** |
+| MCL2 | 33 | 0.283 | 695 | 0.443 | 1,501 | repeat clique |
+
+**NEW101 is a hairball slice**: half its incident edges leave it, its edges are **94.6% intronic**, and
+its exonic support (814 bp) sits beside the repeat clique's 695, not beside the real families' 2,828-4,617.
+⚠ Note **exon FRACTION alone does not separate** — MCL2's 0.443 exceeds both real families — because its
+alignments are short. The separating quantities are **absolute exonic bp** and **cohesion**.
+
+**⛔ RAISING THE FLOOR DOES NOT FIX IT — IT MAKES COHESION WORSE.** Largest-cluster frac_in: bp=1
+**0.557**, bp=200 **0.325**, bp=300 **0.324**, and bp=1 at inflation 3.2 **0.440**. NPIP stays 43/43 in
+all four.
+
+**⭐ THE HAIRBALL IS PRE-EXISTING, AND THE EXONIC CLAUSE HALVES ITS GRIP.**
+
+| | giant component | its share of edges |
+|---|---|---|
+| arm A (default) | 990 nodes (51.6%) | **89.0%** |
+| `min_exonic_bp = 1` | 746 nodes (44.8%) | **58.0%** |
+
+⟹ the clause is a real improvement but does **not** dissolve the blob, and MCL keeps carving a
+low-cohesion slice out of what remains and reporting it as the catalog's largest cluster.
+⚠⚠ **THE LARGEST MCL CLUSTER MUST NOT BE QUOTED AS A FAMILY AT ANY SETTING.**
+
+**⭐⭐ SHIPPED: `frac_in`, a per-cluster COHESION CERTIFICATE** (`e_in / (e_in + e_out)`), emitted as a
+column of `.clusters.tsv` beside `density`. **`density` is structurally blind to it** — a perfect
+4-clique cut out of a blob has density 1.000 and cohesion 0.5, pinned by
+`frac_in_catches_a_slice_that_density_calls_perfect`. Live example in the pilot: **MCL39, density 0.6000,
+frac_in 0.1714**.
+
+**⭐ THE ANSWER TO "ARE THERE STILL FALSE MERGES", QUANTIFIED.** Over the 142 clusters at
+`min_exonic_bp = 1`: **73 sit in a clean mode at frac_in >= 0.9**, and among the 46 clusters with
+n >= 5, **20 = 43.5% fall below 0.75, covering 253/620 members**. So after the exonic fix the two
+adjudicated false merges are handled (MCL2 0/33, MCL0 split at its cut vertex, both real families intact
+at 43/43 and 27/27) — but **roughly 40% of the multi-member catalog is still hairball slices rather than
+families**, and that residue is the pre-existing giant component, not the coverage bug.
+
+**⚠ LIMITS.** `frac_in` is calibrated on **3 real + 2 artefact** clusters — it is **REPORTED, never a
+filter**, and no threshold on it is shipped. The 0.60-0.90 band holds 22/142 = 15.5% of clusters and is
+genuinely ambiguous. ⛔ **RNA corroboration still has not run on this catalog.**
+
+**Defaults unchanged** (`min_exonic_bp: 0`, `exonic_overlap: false`, `reject_overlapping: false`); the
+default clustering is byte-identical to `rust_pilot.clusters.tsv` once the new column is removed.
+**776 passed / 0 failed / 11 ignored.**
+
+## §6dv — "DNA PROPOSES, RNA DISPOSES" IS NOT IMPLEMENTED: corroboration ANTI-correlates with cohesion (2026-09-04)
+
+First run of the RNA leg on the MCL catalog — `--bam fibroblasts/GCA_029281585.2_flnc_mm.bam` (FLNC
+IsoSeq, 23.2 GB; NC_ contigs verified present for all 3 pilot contigs), `--min-exonic-bp 1`, 935 members,
+85 s. **Pre-registered in `docs/PREREG_rna_corroboration_2026-09-04.md` BEFORE the run finished. 4/4
+predictions HELD.**
+
+**⛔ THE PRIMARY RESULT — corroboration does not separate real families from hairball slices, and the
+effect is INVERTED.**
+
+| cluster size | cohesive (frac_in >= 0.90) | hairball slice (frac_in < 0.75) |
+|---|---|---|
+| all | **0.8076** (n=73) | **0.8868** (n=58) |
+| 5-9 | 0.768 | 0.903 |
+| 10-14 | 0.750 | 0.971 |
+| 20-24 | **0.565** | **0.970** |
+
+⟹ Δ = **−0.0792** overall (|Δ| < 0.20, prediction 1 held) and **the inversion GROWS with cluster size**.
+Mean corroboration **0.8478** over 142 clusters, **12/142** at zero — as a filter it is nearly vacuous.
+
+**The named cases show the mechanism directly:**
+- **MCL0**, a real chorionic-gonadotropin/NTF4 tandem **pseudogene** array: corroborated **0.0000**.
+- **MCL2**, the adjudicated repeat clique of 33 unrelated *housekeeping* genes: **0.5758** (19/33).
+  ⚠ UPPER BOUND — scored by `samtools -F 2308 -c` **span** overlap because the exonic clause had already
+  removed the cluster; the pipeline's criterion is the aligned BLOCK. Do not quote 0.5758 as a
+  pipeline number.
+- **NPIP 1.0000** (43/43), **MCL3 1.0000** (27/27).
+
+**⭐ WHY, stated so it is not mistaken for a bug.** Corroboration asks *"is this GENE expressed in
+fibroblast?"* Membership is a property of a **PAIR**. A hairball slice is built from many ordinary,
+well-expressed genes; a real multi-copy family is often a tandem array that is pseudogene-rich and
+tissue-restricted. So expression tracks *"is this an ordinary expressed gene"*, which is
+**anti-correlated with "is this a member of a multi-copy family"**.
+
+**⟹ CONSEQUENCE FOR THE FRAMING.** ⛔ **Per-member RNA corroboration CANNOT dispose of DNA-proposed
+false merges.** The "RNA disposes" half of the project's slogan is **not implemented** by the instrument
+called corroboration. Its honest role is a **necessary condition** — evidence the family is transcribed
+at all, which is what makes this an RNA thesis — never adjudication of membership.
+⚠⚠ **A LOW corroboration rate is NOT evidence against a cluster** (MCL0 = 0.0000 is a REAL array), and
+the pre-registration forbids that use.
+
+**⭐ WHAT WOULD ACTUALLY WORK — and the tension it creates.** To adjudicate membership, RNA must test the
+PAIR, not the gene: reads that map ambiguously ACROSS members are evidence the members are
+sequence-siblings. ⚠ But that is **`E_c`, O2's ambiguity oracle**, and the register already kills its use
+for membership ("E_c is the ambiguity oracle and belongs to O2; using it to build families destroys
+O1⊥O2"). ⟹ **The instrument that could dispose is the one O1 is forbidden to use.** That is a real,
+statable research problem and it should be presented as one rather than papered over.
+
+**Untouched by this run:** the 43.5% of n>=5 clusters below frac_in 0.75 (§6du) remain unadjudicated by
+RNA; single tissue; biotype and length uncontrolled.
+
+## §6dw — STRUCTURAL TRAITS: the array signature is real but TYPE-SPECIFIC; readthrough is REFUTED (2026-09-04)
+
+Follow-up to §6dv: if RNA cannot dispose, can ANNOTATION-ONLY structure identify the clusters RNA misses?
+Traits computed from `GGO_genomic.gff` alone — **independent of the PAF and of MCL**, so unlike
+corroboration they are a non-circular criterion.
+
+| set | pseudo | intronless | med exons | contigs | **tandem** | overlap pairs |
+|---|---|---|---|---|---|---|
+| MCL0 **REAL array** | **0.68** | **0.52** | **1.0** | **1** | **0.99** | 0 |
+| MCL1 REAL (NPIP) | 0.00 | 0.00 | 8.0 | 3 | 0.67 | **14** |
+| MCL3 REAL | 0.04 | 0.00 | 6.0 | 3 | 0.85 | 1 |
+| MCL2 FALSE (clique) | 0.09 | 0.00 | 5.0 | 3 | **0.18** | 1 |
+| NEW101 FALSE (slice) | 0.09 | 0.00 | 7.0 | 3 | **0.50** | 2 |
+| cohesive n>=5 (23) | 0.25 | 0.19 | 5.0 | 1.3 | 0.71 | 1.4 |
+| slices n>=5 (20) | 0.27 | 0.10 | 4.5 | 1.4 | 0.52 | 1.0 |
+
+**⛔ READTHROUGH IS REFUTED, AND BACKWARDS.** The hypothesis was that false clusters carry excess
+readthrough/overlapping members. Measured: the **REAL NPIP family has 14 overlapping pairs — more than
+every other adjudicated set combined**; the false sets have 1-2, and at population scale cohesive 1.4 vs
+slices 1.0. Overlap is mildly associated with REAL clusters. ⚠ Do not use it as an artefact flag.
+(It remains a real defect in a different sense — §6ds's 108 fully-NESTED identity-1.000 edges — but that
+is a per-EDGE artefact, not a per-CLUSTER signature.)
+
+**⭐ THE ARRAY SIGNATURE IS REAL BUT TYPE-SPECIFIC.** MCL0 is 68% pseudogene, **52% intronless**, median
+**1 exon**, single contig, tandem 0.99. That identifies the *processed/tandem pseudogene array* CLASS —
+⚠ **it does not generalise to "real family"**: NPIP is 0% pseudogene, 0% intronless, 8 exons, 3 contigs.
+At population scale `pseudo` (0.25 vs 0.27) and `intronless` (0.19 vs 0.10) do **not** separate cohesive
+from slices at all.
+
+**⚠ TANDEMNESS IS THE BEST SINGLE TRAIT — AND IT IS WEAK.** It separates all 5 adjudicated cases
+(real 0.67-0.99 vs false 0.18-0.50), but population-wide over the 46 clusters with n>=5:
+`r(tandem, frac_in) = +0.2211`, 2x2 odds ratio **2.79** (16/7 vs 9/11 at cuts 0.90 / 0.6).
+⟹ **informative, NOT a filter.** The 5-case separation was small-n optimism and must not be quoted as
+classification performance.
+
+**⭐ THE RESULT WORTH KEEPING: `r(tandem, RNA corroboration) = -0.1535`.** A second, independent
+instrument confirms §6dv's mechanism — the tandem arrays ARE the clusters fibroblast RNA fails to
+corroborate. Two instruments that each classify poorly nonetheless agree on the same structure, which is
+why a low corroboration rate must never be read as evidence against a cluster.
+
+**⭐ A DEFENSIBLE HIGH-CONFIDENCE CORE EXISTS:** **16/46** n>=5 clusters satisfy BOTH `frac_in >= 0.90`
+AND `tandem >= 0.6` — cohesive by graph structure and co-located by annotation, two criteria that share
+no input. That is the set to put in front of the advisor, stated as a core rather than as the catalog.
+
+⚠ n = 5 adjudicated clusters; single tissue; cuts (0.90, 0.6) chosen post hoc and NOT pre-registered.
+Nothing here ships as a filter.
+
+## §6dx — RETRACTION of §6du's "43.5% hairball slices"; SEDEF is the instrument; λ and cross-species REFUTED (2026-09-04)
+
+Asked "what could distinguish real families from slices", a 3-agent pass measured graph-structure
+certificates, prepared cross-species replication, and attacked both. **The attack won on every axis, and
+it ran the one independent instrument on disk that nobody had run against this catalog.**
+
+**⛔ RETRACTED: §6du's "~40% of the multi-member catalog is hairball slices".** The label "slice" was
+assigned BY `frac_in` and then `frac_in` was scored against it — circular. An instrument sharing NO input
+with the PAF, MCL or RNA — **SEDEF** (`winloci_data/GGO_sedef_final.bed`, 253,030 genome-derived SD pairs;
+register rows 317/928: *"the orthogonal check is the one not run"*) — says the low-`frac_in` clusters are
+mostly **subfamilies embedded in SD superfamilies**, which MCL cuts at I=2.8:
+
+| low-frac_in cluster | frac_in | SD-supported in-edges |
+|---|---|---|
+| MCL9 | 0.387 | **60/60** |
+| MCL7 | 0.675 | **54/54** |
+| MCL14 | 0.673 | **35/35** |
+| MCL23 | 0.651 | **28/28** |
+| **MCL28** | 0.066 | **0/6** |
+| **MCL15** | 0.293 | **0/22** |
+| **NEW101** (=rna_bp1 MCL0) | 0.557 | **23/661 = 0.035** |
+
+**17/20** low-frac_in clusters have ≥0.64 SD-supported in-edges. **The artefact class is SD-EMPTY
+clusters, and there are THREE of 46, not twenty.** Population: 2×2 (SD≥0.5 vs frac_in≥0.9) Fisher
+**p=0.61** — the independent instrument does not agree that low frac_in means artefact.
+⟹ report `frac_in` as **"superfamily embedding"**, never "slice".
+
+**⛔ LABEL WITHDRAWN: MCL3 (arm-A, n=27) is NOT anchored as REAL.** No recorded adjudication basis
+(`grep MCL3 o1_ledger.md` returns only table rows); 24 distinct products over 27 members; carried as
+REAL since §6ds on cohesion/identity — the statistics under test. **SEDEF: 44/205 = 0.215** in-edges
+supported (0.241 in the ≥0.90-identity stratum, so not SEDEF's floor). Either a small SD core in a
+repeat-derived lncRNA halo, or a family SEDEF cannot see because 99.7% of it is frequency-masked.
+**Undecidable here; withdrawn, not defended.** The anchored label set is now **NPIP (31-locus truth),
+MCL0 (annotated NTF4/CGB/LHB tandem array), MCL2 (unrelated named genes)**; NEW101's FALSE label is
+re-anchored on SEDEF (0.035), no longer on frac_in. SEDEF agrees with all four: MCL0 **1761/1761**, NPIP
+**571/580 = 0.984**, MCL2 **1/15**, NEW101 **23/661**.
+
+**⛔ λ ≥ 2 ("no single point of failure") REFUTED IN BOTH DIRECTIONS** (`disc/graphcert*.py`, on the
+6,335 admitted edges). As a REAL certificate: MCL3A has **λ=1** from two pendant members at identity
+0.9924/0.9893 — real-looking, not junk. As a FALSE detector: **13/46** low-frac_in clusters are
+internally 2-edge-connected (λ up to 7; MCL9 λ=7, density 0.91). λ equals min-degree in **46/46** — the
+degree bound is tight everywhere. The only integer statement that separates the 5 is EXTERNAL
+(`n_ext≥λ`, non-members attached by ≥λ edges: REAL 0/1/2 vs FALSE 25/138) — and for λ≤1 it IS the
+outsider count, i.e. `e_out` re-counted by node. ⚠ It fails **3 of 4** anchored-real catalog clusters
+(the 48-clique λ=24 < max_ext 26 at the cut vertex; NPIP λ=2 with 3 outsiders ≥2; MCL4 λ=1). Wrong-sided.
+
+**⛔ SMALL-N, quantified.** A random total order separates 3R/2F perfectly with p = 2/C(5,2) = **0.200**;
+14 statistics were scanned ⟹ 2.8 separators expected by chance, 5 observed, P(≥5) = **0.13**. For
+internal statistics MCL2A is disconnected on E (20 components), so the effective set is 3R/1F: p = **0.50**
+per statistic, P(≥5 of 14) = **0.91**. **At or below chance.** No number from the 5-cluster table is
+classification performance.
+
+**⛔ CROSS-SPECIES REPLICATION REFUTED AS A FAMILY/SLICE DISCRIMINATOR** (`BLOCKED_NO_PAF`; PTR/PPY GFFs
+and genomes ARE on disk, gene FASTAs extracted, commands in `disc/xspecies/run_when_allowed.sh`, ~85 min
+of minimap2 — **do not spend them for this purpose**). Alu/L1/ERV predate the ape split, so a repeat
+clique's within-gorilla edge has an orthologous chimp edge built from the SAME repeat; replication tests
+*"is the structure ancestral"*, which old repeat cliques and old families both pass. The soft-mask guard
+was tried and **FAILED**: NCBI's mask is k-mer-frequency and masks real families (MCL3 edges 0.997 masked,
+MCL2 0.985; Fisher p=0.36). No RepeatMasker/Dfam annotation on disk. ⭐ The PAFs are worth building for
+**O3** (copy-number differences across apes), not for this.
+
+**⚠ CAVEAT ON A SHIPPED CLAIM — §6dd's "I=2.8-3.2 plateau" is NPIP-ONLY** (`disc/attack/stability.log`).
+Best-Jaccard at I=3.2 / 3.6: real 48-clique **0.00 / 0.00**; real 36-clique 0.97 / **0.00**; NPIP 1.00 /
+0.32 — while low-frac_in MCL9, MCL23, MCL32, MCL36 are **1.00 / 1.00 / 1.00** at every inflation. Under a
+perturbation we control, the "slices" are MORE stable than the real tandem cliques. Fix the module
+doc-comment; it currently generalises the plateau.
+
+**⛔ MY REGISTER CHECK WAS WRONG.** I reported "zero rows on cohesion/frac_in". Rows **300** ("2-edge-
+connectivity to refine the over-merged blob — 0.3% bridges") and **301** ("density/Fiedler/min-cut —
+size dominates, density 0.36 / fiedler 0.35 / mincut 0.35") kill graph-structural signatures outright;
+row 286 kills the density margin. My grep matched the words I chose, not the synonyms the register uses.
+
+**⭐ WHAT ACTUALLY DISTINGUISHES THEM — the answer to the question asked:** a **genome-derived SD
+annotation**, not a graph certificate and not RNA. Next: classify the 46 n≥5 clusters on
+(`frac_in`, `frac_sd_in`) and hand-adjudicate ONLY the disagreement cells — SD-rich/low-frac_in
+(MCL9, MCL7, MCL14, MCL23: superfamily cuts) and SD-empty (MCL28, MCL15, NEW101: the artefact
+candidates) — because a label carries information only where the instruments disagree. ⚠ SEDEF is a tool
+the user ran, not untouched data (register 318: "a better substrate, not an oracle"; floor identity ≥0.90,
+≥1 kb); the ≥0.90 stratum answers the identity confound, not the masking one.
+
+## §6dy — THE DISAGREEMENT CELLS ADJUDICATED, THEN ATTACKED: 39/46 SD-corroborated, 3 artefacts, BOUNDARIES certified for 3 (2026-09-04)
+
+§6dx ended with: classify the 46 n≥5 clusters of `rna_bp1.clusters.tsv` on (`frac_in`, `frac_sd_in`) and
+hand-adjudicate ONLY the cells where the two instruments disagree. Three pre-registered adjudications
+(`mcl_ann/adj/cell{A,B,C}/`) and one adversarial re-run (`mcl_ann/adj/canzar/rerun{,_C}.{py,log}`;
+extracted attack text `mcl_ann/adj/attack.txt`) were run as workflow `wf_171430db-a4a`. **The attack
+re-derived every load-bearing number from the files and CONFIRMED all of them; what it destroyed was the
+INSTRUMENTS, not the counts.** Read the attack column before the verdict column.
+
+### ⛔ First, a correction to §6dx: SEDEF's floor is NOT "≥0.90 identity, ≥1 kb"
+`GGO_sedef_final.bed` (253,030 rows): fracMatch min **0.507** (median 0.870), aln_len min **900 bp**,
+uppercase columns min **exactly 100**. On the 3 substrate contigs 4,911/7,295 pairs (67%) are below 0.90.
+Consequences: (i) "an old diverged family is SD-empty because SEDEF cannot see below 0.90" is NOT an
+available alternative for anything at 0.75–0.90 identity; (ii) SEDEF seeds only on unmasked k-mers, and it
+was run on the SAME NCBI mask as `maskguard.py` (Spearman 0.905 over 3,000 pairs, col-27 ≤ unmasked+50 in
+3000/3000) — so **`frac_sd_in` is VACUOUS on any cluster whose genes are wholly masked**, a new member of
+the vacuous-instruments class ([[project_vacuous_instruments]]). The defensible mask statistic is
+**whole-gene unmasked bp** (MCL4 members median **61 bp**, NPIP 11,852, FALSE clique 10,594, tandem 173),
+NOT unmasked bp inside the aligned interval (878/1,761 supported tandem edges have <100 there — support
+comes from flanks). ⛔ Do not quote "0/172 of MCL4's unsupported edges were seedable" — right conclusion,
+wrong statistic.
+
+### Cell A — 17 SD-rich, low-`frac_in` clusters. Verdict: all 17 are SD-corroborated; the CUTS are uncertified
+Pre-registered rule (`cellA/PREREG.md`, `cellA.py`): SUPERFAMILY-CUT := ≥0.60 of out-edges to ≤2 SD-rich
+destinations AND cluster∪top-destination is one SEDEF component. Applied by its own code (`cellA.log`):
+**9** cuts (MCL7, 14, 30, 36, 32, 18, 39, 42, 29), **3** SEPARATE-FAMILY (MCL23, 44, 33), **5**
+UNDECIDABLE (MCL9, 41, 24, 12, 16). The adjudication reported 13 cuts; 4 rest on post-hoc rules
+(SD-only out-edges T1′, a group rule). ⛔ Not "10 by the pre-registered rule" — it is 9.
+
+What the attack showed, ranked:
+1. **T2 (SEDEF-only connectivity) is tautological given T1.** 42 SD-rich clusters, 41/42 are one SEDEF
+   component alone; SD-rich pairs with ≥1 PAF cross-edge: **13, all 13 SD-supported, all 13 one
+   component; PAF-only pairs: 0.** An SD-supported PAF edge IS a SEDEF pair, so one such edge unites the
+   pair to 100%. "0/17 HAIRBALL" was guaranteed by the cell's entry criterion, not found. The 11.8%
+   negative control (35/296) tested SEDEF→PAF, the rule uses PAF+SD→SEDEF, which never fails.
+2. **The rule measures "has an SD neighbour", not "is a cut": NPIP (with MCL30) and BOTH anchored
+   tandem halves score SUPERFAMILY-CUT; the FALSE clique scored SEPARATE-FAMILY** under the original
+   rule (fixed post hoc by Amendment A, self_comp). No negative anchor for SUPERFAMILY-CUT exists.
+3. **T5 (cross-edge vs in-edge cov/identity) is uncalibrated in every form.** (a) `E['cov']` is the §6ds
+   unit mismatch (genomic span / exonic length, capped at 1) — retracted in this ledger and reused as the
+   deciding statistic; it saturates at 1.00 on MCL7/30/18/14/9/NPIP. (b) Rebuilt two-sided-exonic: the
+   anchored same-array tandem cut MCL1–MCL3 gives cross 0.04 vs in 0.70 (ratio **0.06**) — the positive
+   anchor FAILS. (c) Identity equality: the FALSE clique gives cross 0.824 vs in 0.827 — the negative
+   anchor PASSES. "5 of 7 units are arbitrary cuts" used identity alone and dropped the coverage half of
+   its own declared rule; by the declared rule MCL14–MCL77 (cov 0.51, exfrac 0.21 vs 0.80, id 0.798 vs
+   0.965) and NPIP–MCL30 (cov 0.48) are TWO FAMILIES, yet one was labelled a cut and the other joined in
+   tier-2.
+4. **Provenance:** `cellA/PREREG.md` was rewritten in place at 10:54:34, after `cellA.log` (10:51:54) and
+   `cellA2.log`; no hash; original unrecoverable. The rule in `cellA.py` (born before its log) does match
+   the stated rule, so the pre-registration is credible but not provable. ⟹ **hash every PREREG at write
+   time** (cell B/C did: md5 recorded, unmodified).
+
+What survives (DEFENSIBLE): **MCL23 / MCL44 / MCL33 are separate families** whose low `frac_in` is hub or
+satellite attachment (SD out 0/15, 4/5, 5/8; MCL23's 8 UNCL out-edges all go to ONE deg-44 node in the
+MCL0 hairball; self at every I≥1.6). **Do NOT lower the inflation:** the anchored tandem halves (48/36)
+and NPIP (44) never merge at I = 1.4/1.6/1.8/2.0 (PAF cross-density 0.02/0.04 — these are PAF-sparsity
+cuts), while the largest cluster grows 131 → 160 → 219 → **327** at I = 2.0/1.8/1.6/1.4 by swallowing
+U7, MCL23, MCL24, MCL32 into the SD-empty MCL0 blob. Verified from the files. Nested-gene artefact
+excluded (overlapping-interval cross-edges ≤2/25 per pair, 0/26 tandem). I=2.0 rerun byte-identical to
+`disc/attack/I2.0.clusters.tsv`.
+
+**Tier-2 superfamily report — NEEDS-WORK, not shipped.** Components over the cluster graph with an edge
+iff ≥3 SD-supported PAF cross-edges between SD-rich clusters (`cellA5.py`): tandem 84 (reunited — which no
+inflation did), NPIP+U1 65, U7 48, U2+U5 28, U6 16, U3 15, U4 14, no blob. Honest cost: TWO thresholds —
+k=3 and k=5 agree, but **k=1 is a cliff (112 with the SD-rich restriction, 263 without)**, which is exactly
+register row 474's transitive-closure chaining; and it reunites NPIP+MCL30, which its own T5 calls two
+families. Register 90/311: a hierarchy is inert on 2-copy families (70% of the catalog); register 457:
+a hierarchy, not a threshold, is what finds the NPIPA/B-type split. Recorded as structure, not a rule.
+
+**Honest cell-A statement:** *17/17 are SD-connected real families; 13 have a neighbour reached by
+SD-supported PAF edges; whether any of those 13 cuts is a family boundary is undecided because no
+calibrated instrument exists — the anchored tandem cut fails our own coverage test.*
+
+### Cell B — 3 SD-empty clusters. Verdict: REPEAT-driven, on ONE statistic that calibrates
+Pre-registration REAL (md5 4b71319f…, unmodified, before any computation). ⚠ **0/3 verdicts follow the
+registered rule by the letter**: REPEAT-HUB required median member union span <3 kb; MCL28 3,365,
+MCL15 5,888, NEW101 7,925 — the element is ~6 kb and pooled records chain copies. The span deviation was
+flagged; **MCL15's failure of the third conjunct (T6 = 0/22 visible, T1 ARTEFACT-like False) was NOT
+flagged** — MCL15 is NEEDS-WORK.
+
+The statistic that survives population calibration (`canzar/rerun.log` B3, all 46 clusters): **member
+union-exonic-coverage** — the fraction of a member's exonic bases covered by the union of its in-edges'
+aligned intervals, using the SHORTER member's exons (the one input E's one-sided `min_exonic_bp=1` never
+used — the only genuinely half-new deciding input in all three cells).
+
+| cluster | member union-excov median | members at exactly 0 |
+|---|---|---|
+| MCL28 | **0.000** | **6/7** |
+| MCL15 | **0.011** | **5/10** |
+| NEW101 (=MCL0) | **0.000** | **65/101** |
+| every other n≥5 cluster | ≥0.281 (22 at 1.000) | max **1/8** |
+
+⛔ The other quoted statistic, **frac(cov2≥0.5), does NOT calibrate**: SD-certified MCL44 (9/9 SD),
+MCL45 (7/7), MCL41 (6/6) score 0.000, MCL8 0.065, MCL29 0.071 — same as MCL28/MCL15. Retired with HUB
+(median 1.0 on all six sets), T6 SEDEF-visible-yet-unsupported (MCL3A REAL scores 48.3%; SEDEF is
+mask-blind: support 0.406 vs 0.823 by mask stratum), and genome-wide multiplicity (FALSE anchor 30 not
+above REAL 20/23).
+
+Per cluster: **MCL28 DEFENSIBLE** — a one-hub star; leaf-side exonic bp = 0 on 6/6, the same 439–445 bp
+exonic segment of the hub admits every edge (the one-sided exonic clause's pure failure case: hub exlen
+6,371 > every leaf); Jaccard 0.05 at I=2.0. **NEW101-as-cluster DEFENSIBLE** on member excov; 78% of its
+525 out-edges go to unclustered / n<5 / SD-empty nodes (own blob, not a halo). Its "three real SD cores"
+(4+4+3 members, 15/15 SD, id 0.947–0.999, mask 0.29–0.62) are NEEDS-WORK: two interleaved 4-groups at
+65–69 Mb with 35–47 kb pooled spans, 1 vs 2 units unshown, and no shipped mechanism releases them
+(I=3.6 keeps 7/11 in a 52-node MCL0). **MCL15 NEEDS-WORK** — surviving evidence is excov 0.011 and 0/22
+two-sided, the latter uncalibrated.
+
+⚠ Caveat on the whole line: exonic geometry PASSES MCL4 (excov 1.000) whose exons ARE an interspersed
+element (cell C) — it cannot tell "lncRNA annotated on a repeat" from a family.
+
+Candidate lever, PRICED ON EDGES ONLY, NOT SHIPPED (`cellB4.log`): exonic bp ≥ t on BOTH members keeps
+NPIP 573/580 (t=1) / 488/580 (t=300), MCL3A 202/205, both tandem arrays 1105/1105 and 630/630 (⚠ 1/1105
+at t=1000 — unusable), MCL4 219/222; deletes MCL28 6/6, MCL15 14/22, NEW101 598/661; genome-wide removes
+1,507/6,335 edges at t=1. Per the register ("a pure restriction can be TRUE of edges and FALSE of copies"),
+the copy-level effect (γ) is unmeasured — T8-offline candidate, see [[project_er_two_sided_coverage]]
+(register 676: symmetric coverage cost NPIP; this is exonic-bp, a different quantity, NPIP-neutral on edges).
+
+### Cell C — MCL4 (= arm-A MCL3, n=29, frac_in 0.996, SD 50/222). Verdict: REPEAT-WELDED pending a repeat library
+Pre-registration REAL and honest; H3 (undecidable) follows its rule. H1 "small SD core + halo" is
+REFUTED (supported edges touch 28/29 members across all 5 tandem groups; unsupported edges equally exonic,
+p=0.57). H2 "real family hidden by the mask" is contradicted by calibration: "mask explains the SEDEF
+miss" is what the FALSE clique shows (13/14) and REAL NPIP does not (9/9 misses ≥1,000 unmasked bp).
+
+**Provenance defect:** on-disk `cellC3.py` cannot produce `cellC3.log` (tuple/string key bug, no
+target-side branch) and `cellC4.py` does not exist. The attack reproduced the numbers from scratch
+(`canzar/rerun_C.py`): **CONFIRMED** — MCL4 members hit median **63** annotated loci OUTSIDE the cluster
+(min 14, max 147) by a ≥2 kb, ≥0.90 single record in the existing `allgenes_gw.asm20.paf`; union **265
+loci on 23 contigs**; 56 shared by ≥half the members. ⛔ But "63 vs 0" at ≥2 kb/0.90 is NOT a calibrated
+separation — the FALSE clique also gives 0 there (its unit is <2 kb). The calibrated forms: per-member
+outside median at ≥1 kb/0.85 = **MCL4 128 / NPIP 1 / clique 27**; shared-by-half **119 / 0 / 0** (1k85)
+or **56 / 0 / 0** (2k90). ⛔ Do not quote unions at 1k85 (NPIP 280 loci / 25 contigs — no separation).
+
+**New decisive test (attack-added, overlap):** the intervals on MCL4 members that hit outside loci cover
+**48.0%** (356,026/741,252 bp) of the UNSUPPORTED in-cluster aligned union and **59.1%** of the SUPPORTED
+one, and **100% for every G1 and G3 lncRNA member**. Anchors: NPIP 0.0% / 15.6%, FALSE clique 36.5% / 0%.
+MCL4 sits on the FALSE side. The G1 array's SD support (17/25) is real at the gene-overlap level, but E's
+edges among G1 members run 100% through the element: **a tandem SD whose annotated exons are
+element-derived** (p50 outside-hit record 3,476 bp, 0.96 identity — L1PA-scale). The 407 kb member
+(285 kb "exonic", 1,520 pooled records) is a pooling artefact; its numbers are do-not-quote. One 5.4 kb
+lncRNA is NESTED inside a 74 kb member (0.99 self-edge under `reject_overlapping=false`).
+
+**What decides it:** a library-based RepeatMasker/Dfam (primate) run over the 29 members' pooled aligned
+intervals. ≥80% L1/ERV/SVA ⟹ repeat-welded (report G1/G3 as SD substructure, not a family);
+library-unannotated ⟹ the mask hid a ≥294-locus family and the 3-contig SLICE is the artefact. **No repeat
+library exists on this machine** (`find / -iname '*dfam*' -o -iname '*repeatmasker*' -o -iname '*rmsk*'`
+= nothing). This is the single missing input for the catalog.
+
+### The catalog (46 clusters n≥5; sums to 46)
+| class | n | members |
+|---|---|---|
+| anchored REAL | 3 | MCL1, MCL2 (NPIP), MCL3 |
+| SD-corroborated REAL, not adjudicated (frac_in ≥0.9, frac_sd_in ≥0.5) | 19 | MCL5 6 10 11 13 19 20 21 22 25 26 27 31 34 35 37 38 40 43 |
+| cell A: SD-corroborated REAL, boundary status open | 17 | separate 3 (MCL23 44 33) · cut-by-rule 9 · cut-by-post-hoc 4 · undecidable 1 (MCL41) |
+| cell B: ARTEFACT | 3 | MCL28 (defensible), MCL0/NEW101 (defensible), MCL15 (needs work) |
+| cell C: UNDECIDABLE by rule, REPEAT-WELDED on the two added tests | 1 | MCL4 |
+| band 0.75–0.90, not adjudicated | 3 | MCL8 (MCL23-like hub attachment, 0/14 SD out), MCL17 (tier-2 with MCL105, cut-like), MCL45 |
+
+**Tally: REAL-by-SEDEF 39 (3 anchored) · ARTEFACT 3 · UNDECIDABLE 1 · not adjudicated 3 — and family
+BOUNDARIES certified for 3 of 46.** ⚠ Tier-2 at k≥1 already joins MCL20+21 and MCL19+121: the cut
+phenomenon is not confined to cell A. ⚠ `frac_in` and e_out are computed over the 3-contig slice; every
+"closed" cluster is closed WITHIN THE SLICE (MCL4 at 0.996 is the proof).
+
+**Sentence for the advisor:** SEDEF independently corroborates membership for 39/46 clusters and
+two-sided exonic geometry kills the 3 SD-empty ones; what the catalog does not deliver is BOUNDARIES —
+for 13 low-cohesion SD clusters the cut is where MCL's PAF density fell and no instrument we have
+separates that from a family boundary (the anchored tandem cut fails our own coverage test) — and
+cohesion is slice-conditioned: the most cohesive unanchored cluster, MCL4 (0.996), is 29 mostly-lncRNA
+loci whose exons are a ≥265-locus, ~3.5 kb, 0.96-identity interspersed element, undecidable without a
+repeat annotation.
+
+### Consequences
+1. **`frac_sd_in` must be reported WITH whole-gene unmasked bp**; below 100 bp it is uninformative
+   (MCL4, MCL28, MCL15, NEW101 all qualify). The `--min-exonic-bp` clause is ONE-SIDED (longer member) —
+   state this in the params certificate.
+2. **Genome-wide closure is the catalog's missing statistic**, computable from `allgenes_gw.asm20.paf`
+   without new alignment: per member, annotated loci outside the cluster hit by a ≥1 kb/≥0.85 single
+   record (median), and the count shared by ≥half the members. ⚠ Thresholds must be PRE-REGISTERED on the
+   anchors and the whole 46 BEFORE MCL4 is re-read — the outside-cluster reading was chosen after seeing
+   MCL4. Targets are annotated loci only and `mid_occ=112` suppresses high-copy seeds: counts are LOWER
+   bounds (high is conclusive, low is not).
+3. **A repeat library is the single input that would settle MCL4 and the cell-B/exonic-geometry caveat.**
+   Acquire Dfam (primate) or a RepeatMasker track for mGorGor1 before any further catalog claim about
+   masked clusters. (Register: no prior row on this.)
+4. **Do not lower inflation; do not ship tier-2;** if superfamilies are reported, report them as
+   structure with the k-cliff disclosed.
+5. Hash every pre-registration at write time (`md5sum PREREG > PREREG.md5` before the first script).
+6. Two-sided exonic clause → offline candidate, copy-level effect (γ) unmeasured.
+
+### ⛔ Do-not-quote (union of the four agents' lists, after the attack)
+"13/17 superfamily cuts" / "5/7 arbitrary" / "10 by the pre-registered rule" (9) · "T2 one component" in
+cell A (implied by T1) · T3 inflation-merge as a superfamily criterion (the tandem never merges) · SEDEF
+cross-pair counts as independent alignments (1728/1728 is one block) · tier-2 sizes 84/65/48/28/16/15/14
+as a result · cluster ids across inflations · frac(cov2≥0.5) as a repeat discriminator · HUB · T6 ·
+genome-wide multiplicity medians · "SEDEF floor 0.90 / 1 kb" · NEW101 "median exonic bp 814" (one-sided;
+two-sided 0.0) · pooled median spans as element size (use unpooled p90/max) · "0/172 seedable" · "63 vs 0"
+at 2k90 · 1k85 unions · `cellC3.log`/`cellC4.log` as produced by on-disk scripts · the 407 kb member's
+285 kb exonic length · "MCL4 = a 29-member family" (29 is the slice) · "the two 0.99 pendants prove SD"
+(flank-dominated, exfrac 0.05–0.11) · any product label (NPIP is "titin-like"; MCL4 is 22 LOC + 3
+SLC35F5-like + 3 DEPP1-like) · the two-sided exonic retention numbers as copy-level.
+
+## §6dz — REPEAT LIBRARY ACQUIRED (UCSC GenArk, Dfam 3.8 + RepeatModeler): cell B CONFIRMED, MCL4 = a ≥673-copy UNCLASSIFIED young element, de novo library CANNOT arbitrate, gene-size rule = flag only (2026-09-04)
+
+§6dy's "single missing input" exists: NCBI's own FTP has no `_rm.out` for GCF_029281585.2, but the **UCSC
+GenArk hub** (`hgdownload.soe.ucsc.edu/hubs/GCF/029/281/585/GCF_029281585.2/`) carries both a curated and a
+de novo annotation. Downloaded to `winloci_data/rmsk/`, md5 verified:
+- `GCF_029281585.2.repeatMasker.out.gz` — RepeatMasker 4.1.7-p1, rmblast, **Dfam 3.8 curated-only**,
+  `-species 'Gorilla gorilla gorilla'`, **1,380 ancestral families, 0 lineage-specific**.
+- `GCF_029281585.2.repeatModeler.out.gz` + `repeatModeler.families.fa.gz` / `rmsk.customLib.fa.gz` —
+  RepeatModeler de novo library run with `-lib`.
+Assembly note: NCBI now lists GCF_029281585.2 as **v2.1_pri**; the three substrate contigs (NC_073241.2,
+NC_073242.2, NC_073244.2) are length-identical in v2.0 and v2.1 (116,054,869 / 131,347,499 / 80,312,928),
+so coordinates transfer. Slices: `substrate3.rm.out` (472,332 records), `substrate3.rmod.out` (457,935).
+Scripts/logs: `mcl_ann/adj/rmsk/{rmsk_test.py,rmsk.log,rmsk_union.py,rmsk_union.log,rmod_family.log,
+PREREG_rmod.md(.md5)}`. Statistic: per admitted in-edge, fraction of the POOLED aligned intervals (both
+members, absolute coords) covered by interspersed-repeat records (LINE/SINE/LTR/Retroposon/DNA/RC/Unknown).
+Decider was fixed in §6dy BEFORE the library existed: ≥80% on the unsupported-edge intervals ⟹ repeat-welded.
+
+### Curated Dfam 3.8 (`rmsk.log`)
+| set | in-edges | median interspersed | edges ≥0.80 | dominant family |
+|---|---|---|---|---|
+| tandem MCL1 / MCL3 (REAL) | 1105 / 630 | **0.000 / 0.000** | 0 / 0 | (Alu 2 kb) |
+| NPIP MCL2 (REAL) | 582 | 0.438 | **0/582** | Alu 7.3 Mb, L1 1.2 Mb |
+| MCL23 / MCL9 / MCL7 (cell A) | 28 / 60 / 54 | 0.574 / 0.495 / 0.419 | 0 / 0 / 3 | L1, Alu |
+| arm-A MCL2 clique (FALSE) | 15 | 1.000 | 13/15 | **SVA** 42 kb |
+| **MCL28** | 6 | **1.000** | **6/6** | **L1** 72 kb |
+| **MCL15** | 22 | **1.002** | **22/22** | **ERV1** 254 kb |
+| **NEW101 / MCL0** | 661 | **1.000** | **639/661** (unsupported 637/638) | **L1** 12.4 Mb |
+| **MCL4** unsupported | 172 | **0.207** | **0/172** (81/172 ≤0.20) | MER1A 341 kb, AluJ 174 kb |
+
+⭐ **Cell B is CONFIRMED by an instrument that shares no input with PAF/MCL/SEDEF/RNA: every edge of every
+SD-empty cluster is a curated interspersed repeat** — MCL28 an L1 (its "one 442 bp exonic hub segment" is
+L1), MCL15 an ERV1 (~6 kb, matching the unpooled p90 5.2 kb), NEW101 an L1 blob (the 23 SD-supported
+edges are the 3 small cores: median 0.52). The FALSE clique is SVA (Alu-scale, as Gate G said). The REAL
+anchors sit at the genomic background or below (tandem 0.000; NPIP 0.44, no edge ≥0.80).
+
+⛔ **MCL4 does NOT meet the decider on the curated library.** Its welding block is only ~20% known TE — an
+embedded **MER1A** (hAT-Charlie, ~450–1,280 bp in every G1/G3 member) plus AluJ — i.e. BELOW the primate
+background. Per the rule's other arm ("library-unannotated ⟹ hidden family") this would have restored the
+family reading, so the de novo library was applied under a pre-registration written before it arrived.
+
+### De novo RepeatModeler (`PREREG_rmod.md`, md5 041df30a…; `rmsk_union.log`, `rmod_family.log`)
+Rule R1 (calibration first): if NPIP or a tandem half scores ≥0.50 under the de novo annotation, the de novo
+library cannot separate "young repeat" from "young gene family" and MCL4's score is NOT a verdict.
+**R1 FAILED, as feared:** the de novo library absorbs the anchored tandem array **100%** (1105/1105 and
+629/630 edges ≥0.80; family `rnd-5_family-1129`, consensus 3,796 bp, classified "SINE/Alu", Recon size 19)
+and NPIP at median 0.87 (334/582 ≥0.80; L1/Alu de novo families). ⟹ **A de novo repeat library is NOT a
+real/false discriminator for multi-copy genes; it is the same instrument as the k-mer mask with names.**
+(⚠ union fractions >1 in `rmsk_union.log` are un-merged curated+de novo overlaps; only the ≥0.80 flags and
+the de novo-only shares in `rmod_family.log` are quoted.)
+
+What the de novo run DOES give is the identity of MCL4's block: **`rnd-1_family-7`** (custom-lib consensus
+652 bp "Unknown"; original RepeatModeler consensus 2,493 bp "DNA/hAT-Charlie" — classified only via the
+embedded MER1A) carries **0.559** of MCL4's unsupported-edge aligned bp (+ `rnd-1_family-59` 0.128,
+`rnd-3_family-216` 0.069, both Unknown). Genome-wide it is **bimodal**: an old mode (<1 kb, 15–35%
+divergence, ~2,200 records = ancestral MER1A fragments) and a **young mode: 673 records ≥1 kb at <10%
+divergence on 18 contigs** (57+394 of them ≥2 kb; substrate contigs carry 5+50+12). The young mode IS the
+welding block (§6dy closure: ~3.5 kb, 0.96 identity, ≥265 annotated loci on 23 contigs).
+Contrast the tandem anchor's de novo family: its young mode (102 records ≥1 kb <10%) sits on **2 contigs, 80
+on NC_073244.2** — it is the array itself, local, exactly what SEDEF said. So the anchor survives and the
+statistic that separates the two is, again, **contig spread of the young mode** (2 vs 18), not the library.
+
+**MCL4 verdict (update to §6dy):** not a 29-member family — a 3-contig slice of a **≥673-copy, ≥2.5 kb,
+<10%-divergence, unclassified dispersed element with an embedded MER1A**, absent from curated Dfam 3.8
+(no lineage-specific families were included) and without TE hallmarks (RepeatModeler "Unknown"). Whether
+that element is a gorilla-lineage transposon or a young dispersed non-coding duplicon is undecidable with
+these libraries — and for O1 it does not matter: **MCL4's admitted edges are the element, and its G1/G3
+tandem arrays are SD substructure whose annotated exons are element-derived.** It is O3/O1-boundary
+material ("reference-present, annotation-scattered multi-copy sequence"), not a family in the catalog.
+
+### Gene-size soft rule (user proposal; `adj/size/PREREG.md` md5 b0e3cffb…, `size.py`, `size.log`, `p3.log`)
+Pre-registered: per cluster, IQR of log2(length) and outlier fraction (|log2(len/median)| > 1) for genomic
+(L) and exonic (X) length; REAL = 3 anchored + 19 SD-corroborated (22), FALSE = 3 artefacts + arm-A clique (4).
+**P1 (rule separates) FAILS on all four statistics** — REAL max exceeds every FALSE value:
+
+| statistic | AUC FALSE>REAL | FALSE values | REAL max (cluster) | NPIP | tandem |
+|---|---|---|---|---|---|
+| L IQR | 0.886 | 1.93 / 2.54 / 1.07 / 1.38 | **4.11** (MCL34) | 0.90 | 0.51 / 0.55 |
+| L outlier frac | 0.886 | 0.46 / 0.50 / 0.43 / 0.30 | **0.83** (MCL34) | 0.34 | 0.08 / 0.03 |
+| X IQR | 0.864 | 2.14 / 0.98 / 0.94 / 1.67 | **2.52** (NPIP) | 2.52 | 0.51 / 0.37 |
+| X outlier frac | 0.693 | 0.41 / 0.30 / 0.00 / 0.39 | 0.43 (MCL31) | **0.41** | 0.02 / 0.00 |
+
+**P2 holds:** NPIP's exonic outlier fraction (0.41) ≥ the FALSE median (0.35) — a real SD family with partial
+copies is as size-heterogeneous as an artefact. Register 522 (exon-count concordance was a size proxy that
+fell 0.929 → 0.755 genome-wide) and 451 (real dispersed pairs span 138× in length) already said this.
+**P3 (descriptive) is where the flag earns its keep:** inside REAL clusters, size-flagged members are
+peripheral — degree/(n−1) **0.66 vs 1.00**, median in-edge identity **0.943 vs 0.986** — yet **SD-supported
+1.0 in both groups**: they are real partial/extended copies, not wrong members. NPIP's genomic-length
+outliers are 190 kb / 308 kb / 225 kb "genes" — annotation spans that run across several copies; MCL4's
+include the 407 kb pooling artefact. ⟹ **Ship as a per-member FLAG in the report (an annotation-defect
+pointer), never as a membership criterion.** No default changes.
+
+### Consequences
+1. Cell B closed: the 3 SD-empty clusters are curated L1 / ERV1 / L1; the FALSE clique is SVA. Two
+   independent instruments (SEDEF absence + member union-exonic-coverage 0; curated Dfam ≥0.80) agree.
+2. §6dy's decider had a flawed second arm: "library-unannotated ⟹ hidden family" assumed a complete library.
+   A curated-only run with 0 lineage-specific families cannot annotate a young lineage element. The corrected
+   ladder is: curated ≥0.80 ⟹ known TE; else de novo family identity + **young-mode contig spread** (local
+   ⟹ array/family; genome-wide ⟹ dispersed element of unknown class).
+3. A de novo library is NOT an arbiter (R1 failed on both anchors) — register row 665.
+4. The catalog's per-cluster report gains two columns: curated-interspersed fraction of in-edge intervals,
+   and the size flag count. Both descriptive. Tally of §6dy unchanged except MCL4: ARTEFACT-class for O1
+   (element-welded), flagged for O3.
+5. Do-not-quote: union fractions >1; "MCL4 is hAT-Charlie" (the class comes from an embedded 450 bp MER1A);
+   "the tandem array is a 566-copy Alu family" (566 de novo records are mostly <1 kb old fragments; the
+   young mode is 102 records on 2 contigs = the array); the size AUCs as evidence the rule works (REAL max
+   exceeds FALSE on all four).
+
+### §6dz addendum — "could the NPIP annotation be wrong?" (user, 17:26)
+The size flag's NPIP hits are 8/44 members of 125–308 kb (`adj/size/size.log`). Checked (inline, 17:30):
+- **7/8 are NPIP-homologous END TO END**: the union of in-cluster alignments covers 0.94–1.00 of their
+  exonic bp and 0.99–1.00 of the gene span (308,035/308,035 for LOC115932779). They are not fusions with a
+  foreign gene; they are **gene models drawn across an entire duplicon**, with 1–17 transcripts, labelled
+  by Gnomon after whatever the duplicon contains ("sortilin-related receptor-like", "titin-like").
+- **1/8 is a probable chimera**: LOC101130854 ("multidrug resistance-associated protein", 190 kb) has only
+  0.42 of its exonic bp NPIP-homologous — a genuinely long ABCC-type gene with an NPIP copy absorbed.
+- The same duplicon is annotated INCONSISTENTLY across copies: at NC_073244.2:20.93–21.16 Mb the 225 kb
+  model CONTAINS two further members; at NC_073242.2:28.85–29.16 Mb the 308 kb model contains none.
+- RNA cannot certify the giant models yet: FLNC reads with ≥100 kb reference span exist inside them (4/40,
+  8/154, 285/598, 11/28, 3/38 with `-F 2308`; max 590,937 bp for one molecule) but a single cDNA spanning
+  591 kb is the minimap2 mis-chaining signature already handled elsewhere (915 loci, 08-11 week), so those
+  reads are ambiguous between readthrough and cross-copy chaining until the mis-chain filter is applied.
+So: not "wrong", but **gene boundaries that are not copy-consistent** — exactly O1's node-construction
+residual ([[project_o1_residual_is_node_construction]]); the size flag is the cheap detector for it.
+
+## §6ea — "SHOULD RNA GET MORE PROTAGONISM IN DEFINING FAMILIES?" — TESTED ON NODE BOUNDARIES: NO. The giant NPIP models are transcription units (2026-09-04)
+
+User question after the §6dz addendum. Position taken before testing: RNA as EDGE evidence is dead five
+times over (rows 280/285/452, §6dv); the only open slot is NODE boundaries, where the annotation is
+copy-inconsistent. Pre-registered (`mcl_ann/adj/rnanode/PREREG.md`, md5 ebba4758…, 17:43, before any read
+was extracted), with the §6cm prior stated up front: *the last time "mis-chained giants" were examined they
+were real genes, and the advisor warned "most long introns are simply long."*
+
+**Design.** BAM = fibroblast FLNC (`GCA_029281585.2_flnc_mm.bam`, splice:hq -uf). Reads = `-F 2308` with an
+ALIGNED BLOCK inside the model. Shipped mis-chain cut (`split_mischained_reads`, giant >50 kb, junction
+support <3). Units = connected components of post-cut READS sharing ≥1 bp of aligned block on the same
+strand, ≥3 reads. Sets: 8 giant NPIP models (>100 kb), 3 ordinary NPIP members, 3 unique long genes chosen
+by rule (longest unclustered protein-coding >150 kb on NC_073242.2 with ≥50 block-reads). Rules: RNA-FIXES
+needs ≥6/8 giants shattered (largest unit <0.5 of model, ≥2 units) with ALL controls ≥0.5; ANNOTATION-RIGHT
+needs ≥4/8 giants ≥0.5 with concordant canonical giant junctions; VOID if a unique control fails.
+⚠ Implementation defect caught and fixed before reading the result: the first unit builder grouped
+overlapping BLOCKS, not reads (every unit = one exon; all controls 0.01–0.02). Re-run with union-find over
+reads, same pre-registration. Logs: `rnanode.log`, `subsample.log`, `rnanode_results.json`.
+
+**Result (largest post-cut unit / model span):**
+
+| model | block-reads | largest unit | giant junction (S4/S5) |
+|---|---|---|---|
+| NC_073242.2:28850493-29158527 (308 kb) | 40 | **0.35** (units 109 kb/5 reads, 80 kb/10 reads) | 4 distinct, all support ≤2 → cut |
+| NC_073244.2:20932519-21157156 (225 kb) | 154 | **1.26** (282 kb, 129 reads) | none >50 kb |
+| NC_073242.2:15910974-16101041 (190 kb) | 598 | **1.07** (587 reads) | 56 kb, **support 274, GT..AG** |
+| NC_073242.2:16363704-16543366 (180 kb) | 28 | **0.92** (19 reads) | 107 kb, support 4, CT..AC (canonical on −) |
+| NC_073242.2:15428090-15571596 (144 kb) | 26 | 0.03 (one 4.7 kb 3′ unit) | none — essentially unexpressed |
+| NC_073242.2:28370269-28507059 (137 kb) | 114 | **0.99** (107 reads) | 1 at support 1 → cut, unit unaffected |
+| NC_073242.2:30462207-30598132 (136 kb) | 38 | **1.08** | 55 kb, support 5, CT..AC |
+| NC_073242.2:31337557-31462161 (125 kb) | 119 | **0.72** (97 reads) | none |
+| NPIP control 21740955-21769462 (29 kb) | 35 | **1.64** | — |
+| NPIP control 29435861-29461971 (26 kb) | 17 | **5.68** (148 kb unit, 8 reads) | 4 groups, all support 1 |
+| NPIP control 29864793-29887290 | 1 | n/a | — |
+| unique 115678129-116181765 (504 kb) | 259 | **0.25** (124 kb 3′ unit) | 79 kb / 93 kb, support 46 / 38, GT..AG |
+| unique 82774035-83179831 (406 kb) | 2146 | 1.10 | 173 kb support **1,844** GT..AG |
+| unique 90751557-91134402 (383 kb) | 56 | 0.99 | 120 kb support 46, CT..AC |
+
+**Verdict by the rules: P-RNA-FIXES is REFUTED (1/8 shattered, needed 6); P-ANNOTATION-RIGHT holds 6/8 with
+canonical, single-breakpoint giant junctions — and the test is formally VOID because one unique control
+(the 504 kb gene) scores 0.25.** That control failing is informative in itself: in fibroblasts only its 3′
+124 kb is transcribed, so "largest unit / model" measures EXPRESSION EXTENT, not boundary correctness.
+The one shattered giant (308 kb, 0.35) is depth: its paralogue at NC_073244.2 forms one 282 kb unit from
+154 reads, and **subsampled to 40 reads (×50) it drops to median 0.61, minimum 0.35, below 0.5 in 10% of
+draws** (`subsample.log`). Five and ten reads cannot bridge 300 kb.
+
+**Two things the RNA DID show, both against the hypothesis:**
+1. The giant models are real transcription units in this tissue (6/8), with giant introns that are canonical
+   and reused at one exact breakpoint (support 274 / 1,844 in the strongest cases). §6cm again. The size
+   heterogeneity inside NPIP is biology: some duplicon copies carry an intact long transcription unit, others
+   are annotated as fragments. The size flag finds the intact ones, not errors.
+2. **Read chains make boundaries LESS copy-consistent, not more:** two of three ordinary NPIP members grow
+   to 1.6× and 5.7× their model (a 26 kb gene → a 148 kb unit on 8 reads and a 70 kb unit on 11, running
+   across neighbouring copies through introns <50 kb that the shipped rule cannot cut). This is the
+   engulfment defect on record ([[project_engulfment_strand_placeholder]], [[project_spanning_reads]]),
+   now measured on the anchored family.
+
+⚠ Circularity caveat that caps any "annotation-right" claim: RefSeq GCF_029281585.2-RS_2024_02 was built
+with gorilla RNA evidence, plausibly including this same FLNC set; agreement between reads and models is
+partly the annotation reading its own input. It does not rescue the RNA-FIXES side, which failed on its
+own terms.
+
+**Answer to the question:** no. RNA's remaining role in O1 is what it already has — nodes are transcribed
+units built from read chains where the annotation is absent, and corroboration is reported per family as
+a property — not a larger one. The composition sentence stands: DNA defines the edge, RNA defines the node
+only where DNA cannot, SEDEF and the repeat library audit. Register row 667.
+
+## §6eb — CATALOG AUDIT OF ALL 46 CLUSTERS: whole-gene closure measures INTRONS; the exonic form separates the anchors but is POST HOC; two SD-supported clusters are ERV-K (2026-09-04)
+
+§6dy consequence 2 executed: the genome-wide closure statistic on every n≥5 cluster, pre-registered
+(`mcl_ann/adj/audit46/PREREG.md`, md5 265bedaf…, 17:49) before any cluster other than the four §6dy
+anchors was measured. Deliverable: **`mcl_ann/adj/audit46/audit46.tsv`** (46 + FALSE clique; columns
+frac_in, frac_sd_in, C1 outside-loci median at ≥1 kb/≥0.85, C2 shared-by-half, C3 union/contigs, R1 curated
+repeat fraction of in-edge intervals, R1b edges ≥0.80, Z1 size flags, class). Thresholds were fixed by the
+anchors (DISPERSED := C1 ≥ 27 = the FALSE clique; LOCAL := C1 ≤ 5; SHARED := C2 ≥ 10; REPEAT := R1b ≥ 0.8).
+
+**Every pre-registered prediction FAILED, and the failure is the finding.**
+
+| prediction | predicted | observed |
+|---|---|---|
+| P1 the 22 REAL are LOCAL | ≥20/22, SHARED 0/22 | **15/22 LOCAL; DISPERSED+SHARED 4 (MCL20, 21, 11, 13); GREY+SHARED 3 (MCL40, MCL3, MCL31)** |
+| P2 cell A LOCAL | ≥14/17 | **10/17**; DISPERSED MCL9, MCL23, MCL24; GREY MCL14, 29, 30, 41 |
+| P3 new MCL4-like cases among the 19 | 0–2 | 4 flagged (6 with GREY) |
+
+Why (`flagged_detail.log`): the member-side intervals that hit outside loci are **2–10% exonic and 46–65%
+curated repeat** for MCL11 / MCL13 / MCL23 / MCL40 / MCL9 — the same profile as NPIP's own introns (6% /
+59%, which hit 280 loci but share none). **Whole-gene closure at ≥1 kb counts intronic L1/Alu/SD content**,
+so a real local family with repeat-rich introns scores DISPERSED. I did not pre-register the exonic
+dimension, although §6dy's own evidence for MCL4 was that its EXONS are the element.
+
+**Post-hoc descriptive variant (`closure_exonic.log/.tsv`, NOT a verdict): outside loci hit by a record
+whose member-side interval is ≥50% exonic.** Anchors: NPIP **0/0**, tandem MCL1 **0/0**, FALSE clique **0/0**;
+cell-B artefacts MCL0 / MCL15 / MCL28 **0/0/0**. Survivors:
+
+| cluster | C1 (exonic≥50%) | C2 shared | union / contigs | outside loci biotype | reading |
+|---|---|---|---|---|---|
+| **MCL4** | 47 | 17 | 192 / 21 | 64 lncRNA, 40 pc, 15 pseudo (at ≥1 bp: 119 shared) | element-in-exon (§6dz) |
+| **MCL24** (U4, with MCL32) | 22.5 | 28 | 46 / 17 | 26 pc, 11 pseudo | **ERV-K-in-exon** — see below |
+| MCL21 | 42 | 42 | 43 / 8 | 32 pc, 10 pseudo; exonic 1.00, repeat 0.00 | **real dispersed family, slice holds 9 of ~50** |
+| MCL3 (tandem B, anchored) | 22 | 22 | 22 / 1 | 22 pc | the array has a second block on another contig |
+| MCL31 | 13 | 13 | 16 / 7 | 10 pc; exonic 1.00, repeat 0.27 | real dispersed family, slice-truncated |
+| MCL6 | 2 | 2 | 2 / 2 | | slice-truncated |
+| MCL11, 13, 20, 23, 40 | ≤2 | ≤2 | | | **LOCAL in exons** — their DISPERSED flag was intronic |
+
+So the exonic form separates every anchor and every artefact from the two element-in-exon clusters, and
+it distinguishes "slice-truncated real family" (exonic hits to protein-coding loci, repeat 0) from
+"element-in-exon" (lncRNA/pseudogene loci, repeat present). ⛔ It was chosen after seeing the whole-gene
+result. **It must be pre-registered on a fresh object before it is used** — the genome-wide MCL run
+(`mcl_ann/gw_cl_I2.8.tsv`) is that object and would also retire "off-slice" as a category.
+
+**⭐ New finding, independent of closure: two SD-supported cell-A clusters are ERV-K.** MCL32 (14/15 SD)
+and MCL24 (19/22 SD) = unit U4 have curated-repeat fraction **1.00 / 0.97** on their in-edge intervals
+(R1b 1.00 / 1.00) and MCL24's outside-hit intervals are 40% exonic and 100% repeat: the annotated genes
+(3 pc, 4 pseudogenes, 1 lncRNA; colour: ERV-K Env, §6dy) ARE the ERV. SEDEF support here is an SD that
+contains — or is — the ERV. **"SD-corroborated" does not mean "not a repeat"**; the curated-repeat column
+is the instrument that says so, and it costs nothing. MCL32/MCL24 are not relabelled (pre-registration
+forbids it); they carry the REPEAT class in the table.
+
+**What the audit changes in the §6dy tally:** nothing is relabelled. Three columns are added to the
+per-cluster report (closure with the exonic caveat, curated-repeat fraction, size flags), and two clusters
+gain a REPEAT flag. Register rows 668–669.
+
+**Next (in order):** (1) pre-register the exonic-closure thresholds on `gw_cl_I2.8.tsv` with the same
+anchors and run it genome-wide; (2) the two-sided exonic clause copy-level (γ) run; (3) the 13 cuts
+remain uncertified.
+
+## §6ec — THE MCL PRUNE THRESHOLD IS SIZE-DEPENDENT: it dissolved the anchored tandem array genome-wide, and §6dd's "cliff at I=3.6" is a PRUNE artefact (2026-09-04)
+
+Step taken from §6eb: pre-register exonic closure on a genome-wide catalog built with the CURRENT rule
+(`adj/gwaudit/PREREG.md`, md5 ba53bbc8…; `gw_bp1` = `mcl_families --min-exonic-bp 1` on
+`allgenes_gw.asm20.paf`, 18 s, 1.9 GB: 16,915 nodes / 108,737 edges / 1,278 clusters, largest 90).
+
+**The pre-registered test stopped at its own fail conditions:** P1 held for NPIP (gw cluster of 46,
+closure 0/0) but the tandem anchor was UNCLUSTERED genome-wide (84/84), as were MCL4 (25/29) and every
+artefact; P3 failed (MCL21's genome-wide cluster of 27 still had 26 shared outside loci — a genome-wide
+MCL cut of a ~53-member family, each member has 53 PAF partners). Per the pre-registration, P4 is not
+read. Transport recall of the slice catalog (`transport_recall.log`): **40/46 clusters ≥0.8**; the 4 fully
+unclustered are the LARGE DENSE ones — MCL1 (48), MCL3 (36), MCL4 (29), MCL28 (7).
+
+**Diagnosis (`ncap_diag.log`, `tandem_*.params.tsv`).** Not the `-N 50` cap: the tandem has the SAME
+1,805/3,486 member pairs with records in both PAFs. A 118-node PAF subset containing only the tandem's
+records clusters as: I=1.4 → 118 in one cluster; I=2.0 → 60+58; **I=2.8 → 37 clustered, 81 dropped;
+I=3.2 → 0.** The mechanism is in `annotation_families.rs::mcl`: after inflation, entries `< prune`
+(absolute **1e-5**) are dropped. In a near-uniform clique of n nodes every entry is ≈1/(n+1), inflation
+maps it to (1/(n+1))^I, and the WHOLE COLUMN empties once n+1 > 10^(5/I): **61 nodes at I=2.8, 37 at
+3.2, 316 at 2.0, 3,727 at 1.4** — the observed sequence exactly. On the 3-contig graph the tandem halves
+(48/36) sit under the threshold; genome-wide, with its 22 off-slice copies, the array crosses it.
+
+**Pre-registered predictions (`PREREG_prune.md`, md5 34db5d9a…) at prune = 1e-9, all met:**
+| | prune 1e-5 (shipped) | prune 1e-9 |
+|---|---|---|
+| Q1 tandem subset, I=2.8 | 37 clustered / 81 dropped | **60 + 58 = 118/118** |
+| Q2 genome-wide tandem | unclustered 84/84 | **48/48 → n=60; 36/36 → n=58** |
+| Q2 genome-wide NPIP | 44/44 (n=46) | 44/44 (n=46) |
+| Q2 genome-wide MCL4 | unclustered | 20/29 in a 171-member cluster |
+| Q2 largest / clusters >100 | 90 / **0** (§6de's headline) | **203 / 3** |
+| Q3 3-contig | — | **138/142 clusters identical**; changed: NEW101 101→104, MCL18, MCL28, MCL39; NPIP/tandem/MCL4 byte-identical |
+Byte-identity control (default prune, rebuilt binary): IDENTICAL to `rna_bp1`.
+
+**⛔ §6dd's inflation plateau/cliff is a prune artefact (`sw_p{5,9}_I*`):**
+| I | prune 1e-5: largest / NPIP | prune 1e-9: largest / NPIP |
+|---|---|---|
+| 2.0 | 131 / 44 | 131 / 44 |
+| 2.8 | 101 / 44 | 104 / 44 |
+| 3.2 | 87 / 44 | 103 / 44 |
+| **3.6** | 52 / **26** | 98 / **44** |
+| 4.0 | 33 / 40 | 95 / 44 |
+At 1e-9 NPIP is 44/44 and both tandem halves intact from I=2.0 to 4.0; the "cliff at 3.6 (NPIP 31→18 on
+the pilot)" was the prune emptying NPIP's columns, not inflation splitting it. ⟹ **the catalog is
+inflation-insensitive over 2.0–4.0 once pruning is not size-dependent.** The constant that mattered was
+never chosen; it was inherited (1e-5, with no size safeguard; canonical MCL prunes relative to the column
+and keeps a top-k).
+
+**What the >100 genome-wide clusters at 1e-9 are (`gw_p9`):** 203 (122 lncRNA, 24 contigs — grown from
+rna_bp1 **MCL15, the ERV1 artefact**), 171 (114 lncRNA, 22 contigs — holds MCL4: the `rnd-1_family-7`
+element), 119 (99 protein-coding on 21 contigs — a real dispersed family). ⟹ §6de's *"the superfamily
+stays dead at 9× the gene count, zero clusters over 100"* was the prune killing dense clusters, and the
+clusters it was killing are the element-welded lncRNA blobs that the curated-repeat / exonic-closure
+columns exist to flag. Nothing here revives the transitive-closure superfamily (row 474): at 1e-9 the
+largest real protein-coding cluster is 119 and the 203/171 are repeat-welded.
+
+**Shipped:** `mcl_families --prune <f>` (default **1e-5 unchanged**, byte-identical; params certificate
+now records `prune`). Doc-comment on the inflation plateau caveated. **Not flipped:** a default change is
+a thesis edit; the recommendation is prune = 1e-9 (safe to n ≈ 1,635 at I=2.8) or a relative prune, with
+§6dd/§6de re-stated under it. Test suite: see `adj/gwaudit/test_suite.log`.
+Register rows 670–671.
+
+## §6ed — DEFAULT PRUNE FLIPPED TO 1e-9 (user decision); canonical catalogs regenerated; the genome-wide closure flag turns out to certify MCL CUTS, not elements (2026-09-04)
+
+**Decision (user, 18:18):** `mcl_families --prune` default **1e-5 → 1e-9**. Rationale on record in §6ec:
+the absolute post-inflation prune emptied any near-uniform clique with n+1 > 10^(5/I); 1e-9 is safe to
+n ≈ 1,635 at I=2.8. Regression test added (`absolute_prune_empties_large_uniform_cliques_and_a_size_safe_prune_does_not`:
+a 100-clique with heterogeneous weights shatters at 1e-5, largest <50, and holds ≥95 at 1e-9; ⚠ a
+PERFECTLY uniform clique is a numerical knife-edge and is not used). Help text for `--inflation` restated:
+with a size-safe prune the anchors are stable from I=2.0 to 4.0; 2.8 is the historical default, not a
+tuned value. Reproduce any pre-§6ed catalog with `--prune 1e-5`.
+
+**Canonical catalogs now:** `mcl_ann/rna_bp1_p9.clusters.tsv` (3 contigs, with BAM corroboration; 1:31)
+and `mcl_ann/gw_bp1_p9.clusters.tsv` (genome-wide, 0:41) — membership-identical to the §6ec `adj/gwaudit/
+{rna,gw}_p9` runs (cmp). Params certificates record `prune 1e-9`.
+
+**What changes on the 3 contigs (138/142 clusters identical; every anchor and every §6dy verdict object
+byte-identical in membership):**
+| 1e-5 cluster | at 1e-9 |
+|---|---|
+| NEW101 (101) | 104: absorbs MCL28's L1 hub node and 2 unclustered nodes — the L1 blob grows, as it should |
+| MCL28 (7) | 6 (loses its hub to NEW101); still SD-empty, frac_in 0.066 |
+| MCL18 (10) + MCL39 (5) = unit U2 | 11 + 4: one MCL39 member moves to MCL18; MCL39 drops below n=5 |
+| everything else | identical |
+`docs/audit46_2026-09-04.tsv` was computed on the 1e-5 catalog; the four rows above are the only ones
+affected and none changes class.
+
+**Genome-wide at 1e-9, the pre-registered exonic-closure audit re-run (`adj/gwaudit/gwaudit_p9.log`,
+same PREREG):** P1 holds (NPIP 0/0, tandem 0/0 — now clustered 60+58). **P2 FAILS the other way:** MCL4
+sits in a 171-member cluster with closure 2/1 and U4 in a 79-member cluster at 0/0 — genome-wide, an
+element-in-exon cluster ABSORBS the loci that were "outside" on the slice, so exonic closure cannot flag
+it; the curated-repeat column can (U4 R1b **1.00**; the 203-member ERV1 cluster grown from MCL15 R1b
+**1.00**) except where the element is library-unannotated (MCL4's cluster R1b 0.00 — the de novo family
+identity of §6dz is the remaining handle). **P3 FAILS again:** MCL21's cluster of 27 keeps 26 outside loci
+shared by all members (each member has 53 exonic partners; MCL cut the family at 27). P4 not read as a
+verdict; recorded: 4 flagged clusters (27, 33, 5, 50 members), all R1b 0.00, i.e. **every flag genome-wide
+is an MCL cut of one exonically-homologous family, not an element.**
+
+⟹ The statistic changes meaning with the object: on the 3-contig slice it flagged element-in-exon (and
+slice truncation); genome-wide it flags **cuts**. That is the first candidate instrument for the 13
+uncertified cell-A cuts (§6dy) that shares no input with MCL's own edge density — "members share ≥ half
+their exonic ≥0.85 partners outside the cluster" is a cut certificate. It must be pre-registered as such
+on the genome-wide catalog with the tandem 60/58 split as the positive control (they must flag each
+other) and NPIP as the negative before it is used. Register row 672.
+
+**Standing:** the §6dy tally is unchanged; §6dd/§6de plateau statements are superseded by §6ec; every
+number quoted from a catalog must now say which prune built it. Test suite under the new default:
+`adj/gwaudit/test_suite2.log`.
