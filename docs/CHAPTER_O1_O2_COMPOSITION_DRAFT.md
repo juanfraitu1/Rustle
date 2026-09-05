@@ -49,9 +49,12 @@ at issue — 0 of 62 valid anchors assigned, all ambiguous — and places MAPQ-6
 them 75 of 76 times. The "4,743 assigned reads" of the annotation-level family were EIF3C, the block's
 housekeeping gene, not NPIP (§6eg). The multimapping pool on the LCR16a cores is 592 of 6,545 reads and
 98.6% of it is unassignable with 2–5 kb molecules: **on NPIP, O2 is an abstention certificate.**
-**Catalog-wide (87 SD-evidenced families, 16,723 unit reads, §6es):** 29% assigned, 7% tied, 64%
-ambiguous; MAPQ-60 placement agreement 95%; the MAPQ<60 pool is 7% of reads, 12% of it assigned.
-Nearest-paralogue identity does not predict abstention across families (ρ −0.04; row 688).
+**Catalog-wide (35 SD-evidenced families on the 3-contig substrate, paired across unit catalogs, §6eu,
+Figs. 1–2):** with the hull-clipped units and the PSV read-filter, 29% assigned / 6% tied / 64% ambiguous
+and MAPQ-60 placement agreement 95.3%; with units that follow the reads inside the annotated locus and the
+filter off, 28% assigned / 8% tied / 63% ambiguous and agreement 99.4% (4,674/4,704): the same number of
+assignments, with the confident wrong calls gone. Nearest-paralogue identity does not predict abstention across families
+(ρ −0.05; row 688).
 
 ## 6. What is a limitation and what is a defect
 - Node boundaries are copy-inconsistent in the annotation and RNA cannot repair them (§6ea): the read
@@ -59,9 +62,22 @@ Nearest-paralogue identity does not predict abstention across families (ρ −0.
 - A library-silent element (MCL4) is caught only by de novo family identity; the curated column is blind.
 - Cohesion is slice-conditioned; the reported object is the genome-wide catalog.
 - SD corroborates the duplication, not the gene: MCL32/MCL24 are ERV-K inside SDs (row 669).
-- O2's remaining hygiene: statuses are reported for reads that overlap no unit; the catalog index must be
-  read through `family_join.tsv`; 4 families abort on units without reads inside the chain.
+- Two O2 defects found by adjudicating the sweep's worst families (§6eu, rows 689–691), both fixed or fixable
+  without a new constant: (i) the read-support PSV filter deleted every column of an unexpressed paralogue and
+  left the expressed copy's own polymorphisms as the "PSVs" (ZSCAN5: 4 of 216 columns, 11 confident wrong
+  calls) — off is strictly better on the sweep; (ii) the unit's chain was clipped to the SD hull, so a gene's
+  main exon outside the shared core was not in its unit and O2 decided on a secondary record over the
+  neighbouring copy (ZNF569-like: 190 wrong calls) — the chain now follows the reads within the annotated
+  locus (Fig. 3). Still open: a molecule's secondary records are scored as observations (row 691).
+- O2's hygiene closed (§6et): `in_copy` and `catalog_copy_idx` columns; unit reads counted inside the chain.
 
 ## 7. The sentence
 DNA defines the edge, RNA defines the node where the annotation is absent, SEDEF and the repeat library audit
 both, and O2 assigns — or, on NPIP, declines to assign — among exactly the units O1 defined.
+
+## 8. Figures
+- Fig. 1 `docs/figures/fig_sweep_status.png` — assigned / tied / ambiguous share per sweep family, three unit catalogs.
+- Fig. 2 `docs/figures/fig_sweep_agreement.png` — MAPQ-60 placement agreement per family, hull-clipped units vs units that follow the reads.
+- Fig. 3 `docs/figures/fig_znf569_locus.png` — the ZNF569-like locus: GFF exons, SD core hull, the clipped unit and the unit that follows the reads, over MAPQ-60 read coverage.
+- Fig. 4 `docs/figures/fig_npip_anchors.png` — the 62 valid NPIP junction anchors by arm (assigned-agrees / wrong / tied / ambiguous).
+Rendered by `bench/chapter_figures.py`.

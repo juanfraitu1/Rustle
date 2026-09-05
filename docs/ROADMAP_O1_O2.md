@@ -34,3 +34,11 @@ All steps done (S1–S5) or drafted (S6). O2 hygiene closed (§6et): `in_copy` +
 - Prune 1e-9 (§6ed). Inflation-insensitive 2.0–4.0 under it (§6ec).
 - Cell-B artefacts (MCL0/NEW101, MCL15, MCL28) and MCL4 are never O2 inputs.
 - O2's quotable NPIP statement until S4: abstention on the LCR16a cores; per-read calls not reliable.
+
+## After S6 — the sweep's worst families (§6eu, 2026-09-05)
+Three defects from adjudicating MCL32 (ZSCAN5) and MCL38 (ZNF875 / ZNF569-like): **D1** hull-clipped unit chains
+(fixed, `mcl_families --units-follow-reads`, OFF; bounded by the annotated locus — the unbounded form engulfs, row 690);
+**D2** the read-support PSV filter deletes the columns of unexpressed paralogues (row 689; `RUSTLE_PSV_READFILTER=0`,
+default still ON); **D3** a molecule's secondary records scored as independent observations (row 691, OPEN — needs its
+own PREREG; the sound form scores each molecule's sequence once). Paired sweep table in §6eu; default flips are
+decisions, not patches.

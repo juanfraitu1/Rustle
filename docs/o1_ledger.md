@@ -12301,3 +12301,53 @@ when it is "reads O2 could place here".
 **Chapter framing, settled in the draft (S6 §1):** the thesis defines the GENE FAMILY (loci sharing a
 transcribed core); the duplication block is the object the same data would build under attribution
 semantics, and the chapter says why it does not. Roadmap: all steps done or drafted; hygiene closed.
+
+## §6eu — THE SWEEP'S TWO WORST FAMILIES ADJUDICATED: three defects, two fixed as OFF flags, one open (2026-09-05)
+
+**Pre-registered** `adj/worst2/PREREG.md` (md5 `ef1723eb…`, addendum md5 in `PREREG.md5`). The families:
+`fam_MCL32_073244` = ZSCAN5A + two ZSCAN5C (27 unit reads, 24 ambiguous) and `fam_MCL38_073244` = two lncRNAs +
+ZNF875 + ZNF569-like (MAPQ-60 placement agreement 119/310: **190 reads the aligner places at ZNF569-like with
+NM 6/3,955 were assigned by O2 to ZNF875 at p 1e-133..1e-177**).
+
+**D1 — the unit was a fragment of the transcript (O1).** LOC101127631's 3.3-kb 3' exon (48660619-48663874) is
+annotated, but core refinement trimmed the locus to the SD hull 48675744-48689016 and `read_chain` clipped
+the chain to the hull ⟹ an 809-bp 5' fragment as the unit; each read's 3.5 kb lay outside every unit.
+ZSCAN5A likewise lost the exons its reads splice 86 kb into. E1/E2 (PREREG P1–P3): primary-only BAM →
+disagreement 190 → 1 (assigned 366 → 265; the "≥150" clause of P2 failed numerically, the disagreement
+clause held); full-extent units (`--no-core-refine`) → agreement 227/229 with secondaries, 786/787
+primary-only (P3 held). **Fix: `mcl_families --units-follow-reads` (OFF)** — the chain is judged over the
+reads' kept segments instead of clipped to the hull, **clamped to the member's annotated locus span**.
+⛔ The unbounded first form ENGULFS (row 690): read-through molecules chained MCL7's 32-kb kept-full unit
+into 133 kb over 8 genes (CDR2), unit reads 659 → 9,098, span 14.7 → 23.2 Mb — kept as
+`rna_units_v3_unbounded` / `sweep_v3_unbounded*` for the record (agreement 99.3 % there is partly engulfed
+unique genes). Escape hatch byte-identical (`v2_rebuild` = `rna_units_v2` up to `rep_frac`, whose `--rmsk`
+was never in params.tsv — now recorded).
+
+**D2 — the read-support PSV filter (O2, row 689).** `read_supported_columns` keeps a column only if two
+alleles each reach 2 reads. Where one copy is expressed, every true PSV is monomorphic and is dropped:
+ZSCAN5 kept **4 of 216 columns**, all four the expressed copy's own polymorphic sites, copies 0/1 identical
+at all four ⟹ 11 MAPQ-60 reads (NM 7–12 to their own unit, no alignment to any other unit) assigned to
+ZSCAN5C with an identical certificate (n_decisive 7, p 6.7e-9). `RUSTLE_PSV_READFILTER=0` (T1): 216 columns,
+26 assigned, all on ZSCAN5A. T2: MCL38's 190 unchanged (= D1). T3, sweep v2 units, filter off: assigned
+4,903 → 5,787, MAPQ-60 agreement 4,538/4,761 (95.3 %) → 5,421/5,644 (96.0 %). The filter cannot separate a
+mis-assembled base from an unexpressed paralogue; OFF is strictly better here. **Default still ON** — flip is
+the user's.
+
+**D3 — records of one molecule as independent observations (O2, row 691, OPEN).** Every ambiguous ZSCAN5A
+molecule = 1 primary + 5 secondaries at the paralogues; the contradiction rule demoted them. With full
+units + secondaries MCL38 is 604/896 ambiguous, primary-only 0/896 (agreement 99 % both). Primary-only
+input would be the aligner's flag in disguise; the sound form scores each molecule's sequence once.
+
+**Paired sweep (35 families, same family list, `bench/o2_sweep_split.py`):**
+| catalog | unit reads | assigned | tied | ambiguous | MAPQ-60 agreement |
+|---|---|---|---|---|---|
+| v2 hull-clipped, filter on | 16,650 | 4,903 (29 %) | 1,078 (6 %) | 10,669 (64 %) | 4,538/4,761 = 95.3 % |
+| v2, filter off | 16,650 | 5,787 (35 %) | 1,078 | 9,785 | 5,421/5,644 = 96.0 % |
+| v3 follows reads within the annotated locus, filter on | 17,191 | 3,962 (23 %) | 1,440 (8 %) | 11,789 (69 %) | 3,796/3,826 = 99.2 % |
+| v3, filter off | 17,191 | 4,841 (28 %) | 1,440 (8 %) | 10,910 (63 %) | **4,674/4,704 = 99.4 %** |
+MCL32/MCL38 per catalog: MCL38 agreement 119/310 → 424/426 (both v3 legs); MCL32 assigned 3/27 → 7/47 (filter on) → 29/47, 29/29 agree (filter off); MCL7 44 assigned/480 ambiguous → 176 assigned/451 tied/53 ambiguous, 166/167 agree. v3 total unit span 15.5 Mb (v2 14.7; unbounded 23.2). Figures: `docs/figures/fig_{sweep_status,sweep_agreement,znf569_locus,npip_anchors}.png`
+(`bench/chapter_figures.py`). Suite: 853 passed / 0 failed / 11 ignored (`adj/worst2/test_suite2.log`).
+**Reading:** the bounded fix costs 1 % of v2's assignments and removes the 190 confident wrong calls — the
+lost assignments were the wrong ones. Verdict for the roadmap: ship both flags OFF, present the paired table;
+the default flips (`--units-follow-reads`, `RUSTLE_PSV_READFILTER=0` → a `--no-psv-read-filter` flag) are the
+user's; D3 needs its own pre-registration.

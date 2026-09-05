@@ -146,6 +146,15 @@ struct Args {
     #[arg(long, default_value_t = 3)]
     min_reads: usize,
 
+    /// ⭐ Units FOLLOW THE READS (§6eu): extend a unit's read-supported exon chain beyond its core hull to every
+    /// block supported by the reads that overlap the hull, WITHIN the member's annotated locus span — the same
+    /// `>= --min-reads` rule and the same giant-intron cut, only the hull is no longer a clip. OFF, the
+    /// chain is clipped to the window: that emitted the ZNF569-like unit as an 809-bp 5' fragment without the
+    /// gene's annotated 3.3-kb 3' exon, and O2 then assigned 190 MAPQ-60 reads of that locus to ZNF875 at
+    /// p <= 1e-133 (adj/worst2). Default OFF: a default flip is a thesis edit.
+    #[arg(long, default_value_t = false)]
+    units_follow_reads: bool,
+
     #[arg(long)]
     out: String,
 }
@@ -262,6 +271,7 @@ fn read_chain(
     lo: u64,
     hi: u64,
     min_reads: usize,
+    follow: Option<(u64, u64)>,
 ) -> (Vec<(u64, u64)>, Option<char>, usize) {
     const GIANT_BP: u64 = 50_000;
     let parsed: Vec<_> = reads
@@ -295,11 +305,11 @@ fn read_chain(
             *support.entry(i).or_insert(0) += 1;
         }
     }
-    let mut cov = vec![0u32; (hi - lo) as usize];
-    let mut spliced = vec![0u32; (hi - lo) as usize]; // reads whose intron spans the base (they vote AGAINST exon)
+    // the segment of each read that overlaps the window, after the mis-chain cut (split at giant,
+    // unsupported introns); `None` = the read's kept segment does not touch the window.
+    let mut kept: Vec<Option<Vec<(u64, u64)>>> = Vec::with_capacity(parsed.len());
     let mut strands: BTreeMap<char, usize> = BTreeMap::new();
     for (blocks, introns, strand) in &parsed {
-        // mis-chain cut: split at giant, unsupported introns; keep the segment overlapping the locus.
         let mut segs: Vec<Vec<(u64, u64)>> = vec![vec![blocks[0]]];
         for (k, intr) in introns.iter().enumerate() {
             if intr.1 - intr.0 > GIANT_BP && support.get(intr).copied().unwrap_or(0) < min_reads {
@@ -309,27 +319,42 @@ fn read_chain(
                 segs.last_mut().unwrap().push(blocks[k + 1]);
             }
         }
-        let seg = segs.iter().find(|sg| sg.iter().any(|&(s, e)| e > lo && s < hi));
-        if let Some(sg) = seg {
-            for &(s, e) in sg {
-                for x in s.max(lo)..e.min(hi) {
-                    cov[(x - lo) as usize] += 1;
-                }
-            }
-            // introns INSIDE the kept segment splice over their bases
-            for w in sg.windows(2) {
-                for x in w[0].1.max(lo)..w[1].0.min(hi) {
-                    spliced[(x - lo) as usize] += 1;
-                }
+        kept.push(segs.into_iter().find(|sg| sg.iter().any(|&(s, e)| e > lo && s < hi)));
+        *strands.entry(*strand).or_insert(0) += 1;
+    }
+    // the coverage window: the locus window itself, or (units follow the reads, `follow = Some(bound)`) the
+    // extent of every kept segment CLAMPED to `bound` = the member's annotated locus span — a block outside
+    // the window but inside the annotation is then judged by the same support rule instead of being clipped.
+    // ⚠ Unbounded following ENGULFS neighbours: read-through molecules (≥3) chained MCL7's 32-kb kept-full
+    // unit into a 133-kb unit over 8 genes (CDR2 among them) and lifted the family's "unit reads" 659 → 9,098
+    // (adj/worst2, rna_units_v3_unbounded). The annotation bounds the locus; the reads shape it inside.
+    let (wlo, whi) = match follow {
+        Some((blo, bhi)) => {
+            let (a, b) = kept.iter().flatten().flatten().fold((lo, hi), |(a, b), &(s, e)| (a.min(s), b.max(e)));
+            (a.max(blo.min(lo)), b.min(bhi.max(hi)))
+        }
+        None => (lo, hi),
+    };
+    let mut cov = vec![0u32; (whi - wlo) as usize];
+    let mut spliced = vec![0u32; (whi - wlo) as usize]; // reads whose intron spans the base (they vote AGAINST exon)
+    for sg in kept.iter().flatten() {
+        for &(s, e) in sg {
+            for x in s.max(wlo)..e.min(whi) {
+                cov[(x - wlo) as usize] += 1;
             }
         }
-        *strands.entry(*strand).or_insert(0) += 1;
+        // introns INSIDE the kept segment splice over their bases
+        for w in sg.windows(2) {
+            for x in w[0].1.max(wlo)..w[1].0.min(whi) {
+                spliced[(x - wlo) as usize] += 1;
+            }
+        }
     }
     let mut blocks: Vec<(u64, u64)> = Vec::new();
     for (k, &c) in cov.iter().enumerate() {
         // exonic iff covered by >= min_reads blocks AND by more blocks than reads splicing over it
         if c as usize >= min_reads && c > spliced[k] {
-            let x = lo + k as u64;
+            let x = wlo + k as u64;
             match blocks.last_mut() {
                 Some(b) if b.1 == x => b.1 = x + 1,
                 _ => blocks.push((x, x + 1)),
@@ -691,7 +716,7 @@ fn main() -> Result<()> {
                 };
                 let (_, reads) = rustle::vg_family::denovo_assemble::reads_in_region(bam, &m.0, lo, hi, 1)
                     .with_context(|| format!("reading {}:{}-{}", m.0, lo, hi))?;
-                let (chain, rstrand, n_reads) = read_chain(&reads, lo, hi, args.min_reads);
+                let (chain, rstrand, n_reads) = read_chain(&reads, lo, hi, args.min_reads, args.units_follow_reads.then(|| (m.1.saturating_sub(1), m.2)));
                 let gff_strand = strands.get(m).copied().unwrap_or('+');
                 let (exons, strand, source): (Vec<(u64, u64)>, char, &str) = if !chain.is_empty() {
                     (chain, rstrand.unwrap_or(gff_strand), "read_chain")
@@ -819,6 +844,8 @@ fn main() -> Result<()> {
         ("core_members_trimmed".to_string(), core_stats.2.to_string()),
         ("core_members_dropped".to_string(), core_stats.3.to_string()),
         ("emit_units".to_string(), args.emit_units.to_string()),
+        ("units_follow_reads".to_string(), args.units_follow_reads.to_string()),
+        ("rmsk".to_string(), args.rmsk.clone().unwrap_or_else(|| "NA".into())),
         ("units_read_chain".to_string(), unit_stats.0.to_string()),
         ("units_gff_fallback".to_string(), unit_stats.1.to_string()),
         ("inflation".to_string(), args.inflation.to_string()),
@@ -852,4 +879,48 @@ fn main() -> Result<()> {
     }
     eprintln!("[mcl_families] wrote {}.clusters.tsv + {}.params.tsv", args.out, args.out);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustle::vg_family::copy_split::AlignedRead;
+    use rustle::vg_family::denovo_assemble::BamRead;
+
+    fn br(start: u64, cigar: &[(char, u64)]) -> BamRead {
+        let n: u64 = cigar.iter().filter(|(o, _)| matches!(o, 'M' | '=' | 'X' | 'I' | 'S')).map(|(_, l)| l).sum();
+        BamRead {
+            chrom: "c".into(),
+            read: AlignedRead { ref_start: start, cigar: cigar.to_vec(), seq: vec![b'A'; n as usize], qual: vec![] },
+            mapq: 60,
+            name: String::new(),
+            as_score: 0,
+            de: 0.0,
+            is_supplementary: false,
+            is_secondary: false,
+            reverse: false,
+            ts: Some('+'),
+        }
+    }
+
+    /// The window clips the chain unless the units follow the reads: three reads share an exon at 100-200
+    /// that lies OUTSIDE the locus window 900-1200 and splice into 1000-1100 inside it.
+    #[test]
+    fn read_chain_follows_reads_beyond_the_window_only_when_asked() {
+        let reads: Vec<BamRead> = (0..3).map(|_| br(100, &[('M', 100), ('N', 800), ('M', 100)])).collect();
+        let (clipped, _, n) = read_chain(&reads, 900, 1200, 3, None);
+        assert_eq!((clipped, n), (vec![(1000, 1100)], 3));
+        let (followed, strand, _) = read_chain(&reads, 900, 1200, 3, Some((0, 2000)));
+        assert_eq!(followed, vec![(100, 200), (1000, 1100)]);
+        assert_eq!(strand, Some('+'));
+        // the annotated locus span bounds the following: a block outside it stays clipped (no engulfment)
+        let (bounded, _, _) = read_chain(&reads, 900, 1200, 3, Some((150, 2000)));
+        assert_eq!(bounded, vec![(150, 200), (1000, 1100)]);
+        // a block supported by fewer than min_reads reads is not followed
+        let mut reads2 = reads;
+        reads2.push(br(5000, &[('M', 50), ('N', 200), ('M', 50)]));
+        reads2[3].read.ref_start = 1150; // 1150-1200 (in window) N 1400-1450 (outside, 1 read)
+        let (followed2, _, _) = read_chain(&reads2, 900, 1200, 3, Some((0, 2000)));
+        assert_eq!(followed2, vec![(100, 200), (1000, 1100)]);
+    }
 }
