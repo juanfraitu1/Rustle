@@ -11839,3 +11839,40 @@ homology-defined clusters without SD evidence untouched. Applied that way, on th
 the four element-welded artefacts outright, trims NPIP to its LCR16a loci, and changes nothing in the
 tandem, ZNF, OR, KIR, PSG or CEACAM families. Implementation and its pre-registration are `NEXT_STEPS`
 O1-10.
+
+## §6ei — O1-10 IMPLEMENTED: `mcl_families --core-refine --sedef` (OFF). Acceptance: the TRIM arm holds on NPIP, the DROP arm FAILS on MCL5 and MCL25 (2026-09-04)
+
+Pre-registration `mcl_ann/adj/core/PREREG.md` (md5 44bc4ad4…, 21:29, before implementation). Rule: one
+constant, "half", three times — depth gate (median max-depth ≥ half the other members), KEPT-FULL (core ≥
+span/2), KEPT-TRIMMED (core ≥ median core/2, node := core hull), else DROPPED; gate-failing clusters
+untouched. Implementation: `SdPairs`, `refine_cluster_cores`, `CoreStatus` in `annotation_families.rs`;
+`--core-refine --sedef <bed>` writes `<out>.cores.tsv` and `<out>.refined.clusters.tsv`, `clusters.tsv`
+byte-identical (verified against `rna_bp1_p9`). One test (copies / chimera / sliver / no-SD gate).
+Outputs: `docs/rna_bp1_p9_cores_2026-09-04.tsv`, `adj/core/{rna,gw}_core.*`.
+
+**Acceptance, honestly (3 contigs, `rna_core.cores.tsv`):**
+| item | predicted | observed | verdict |
+|---|---|---|---|
+| A1 NPIP dropped | 5 (EIF3C 808 bp; 4 ABCC1-region, core 0) | **7**: the 5, plus 28301414-28305185 (NPIPB11 fragment, core 1,818 = **48%** of its 3,772 bp span — 68 bp under the half) and 32231941-32255359 (core 2,404/23,419; CHM13 landing LOC100652777, not an NPIP gene) | 2 record-level deviations: one knife-edge fragment (pre-registration error: I asserted "every short fragment" without checking 1,818/3,772), one the rule got right and the prediction wrong |
+| A1 NPIP trimmed | 6 chimeras → 23–25 kb hulls | **7**: the 6 (hulls 23,228–25,456 bp) + 32443808-32492214 (core 13,144 of 48,407) | the 7th is a partial "+"-strand model carrying the core: rule-correct, mis-predicted |
+| A1 NPIP kept-full | 33 | 30 | follows from the above; **median core 23,612 bp** |
+| A2 tandem MCL1 / MCL3 | 0 / 0 | **0 / 0** | ✓ |
+| A3 MCL5 (ZNF, 24) / MCL6 (23) | 0 dropped, 0 trimmed | **MCL5: 2 dropped (cores 4,200 and 2,427 vs median 12,503), 5 trimmed**; MCL6 0/0 | ✗ **FAILS**: two chr19-ZNF members (CHM13 landing ZNF 1.00) dropped |
+| A4 MCL7 | dropped {PDXDC1, SLC7A5} | **exactly those 2**; SMG1 itself trimmed 116 kb → 56 kb hull | ✓ |
+| A5 MCL12, MCL17, MCL0, MCL4, MCL16, MCL31 | gate fails, untouched | **all six untouched** | ✓ |
+| not pre-registered | — | **MCL25 (OR7A, 8): 3 real members dropped with core 0** (gate passes at median 4/7); MCL13: 3 AGGF1P fragments dropped (core 0) | the gate is coarse at small n and SD depth is PATCHY in old-ish families |
+| A6 genome-wide | reported | 1,289 clusters: 840 gated, 449 untouched; members 4,534 kept-full / 895 trimmed / **524 dropped**; 8 gated clusters lose ≥46% of their members; 1:52, 2.1 GB | reported |
+
+**Reading.** The TRIM arm does what it was built for: every 125–308 kb chimeric NPIP model is cut to its
+23–25 kb LCR16a core, SMG1 to the part it shares with its pseudogenes, and the depth gate leaves the old
+ZNF families and the element artefacts alone. **The DROP arm is not a safe filter beyond NPIP**: in
+SD-evidenced families whose SD pairs are patchy (MCL5 ZNF, MCL25 OR7A, MCL13) it drops real members whose
+individual core falls under half the median, and at n=8 the gate median is one member wide. The
+pre-registration said deviations are reported, not fitted; register row 677 records the DROP arm as
+refuted in that form. The fix is not another constant: the DROP decision needs the cross-mapping /
+repeat columns as co-signatories, or must be restricted to core = 0 records in clusters whose members'
+cores are otherwise uniform (to be pre-registered separately).
+
+**Standing:** `--core-refine` OFF; `status` in `cores.tsv` is a per-member COLUMN — `kept_trimmed`
+(with the hull) is usable now for the O2 bridge on NPIP; `dropped` is a FLAG, not a removal, until a
+second pre-registration. Test suite: `adj/core/test_suite.log`.

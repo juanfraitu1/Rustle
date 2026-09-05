@@ -16,7 +16,8 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::vg_family::annotation_families::{
-    build_clusters, graph_from_paf_loci, loci_from_exon_blocks, mcl, Cluster, GeneKey, GraphParams,
+    build_clusters, graph_from_paf_loci, loci_from_exon_blocks, mcl, refine_cluster_cores, Cluster, CoreStatus,
+    GeneKey, GraphParams, SdPairs,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -88,6 +89,18 @@ struct Args {
     /// copy pairs, 607/1,221 O2 ties were the same locus twice. Default OFF ⟹ byte-identical
     #[arg(long, default_value_t = false)]
     merge_overlapping_loci: bool,
+    /// SEDEF pairs (BED: chr1 s1 e1 chr2 s2 e2 …, 0-based half-open) for `--core-refine`.
+    #[arg(long)]
+    sedef: Option<String>,
+    /// ⭐ DUPLICON-FIRST refinement (§6eh; pre-registered adj/core/PREREG.md): within each cluster, a
+    /// member's CORE is the part of it linked by SEDEF pairs to ≥ half the other members. Clusters whose
+    /// members lack SD depth (median max-depth < half) are UNTOUCHED (old ZNF/OR families have no SEDEF
+    /// pairs). In SD-evidenced clusters: core ≥ span/2 ⟹ kept (full/partial copy); else core ≥ half the
+    /// cluster's median core ⟹ kept and TRIMMED to the core hull (a chimeric model: ABCC1+NPIP, SORL1+NPIP);
+    /// else DROPPED (EIF3C carries 808 bp of NPIP's 23 kb LCR16a core). Writes `<out>.cores.tsv` and
+    /// `<out>.refined.clusters.tsv`; `<out>.clusters.tsv` is byte-identical. Default OFF
+    #[arg(long, default_value_t = false)]
+    core_refine: bool,
 
     /// Optional RNA BAM. Without it `corroborated` is reported as `NA` — ⚠ which is NOT 0.000, the
     /// repeat-clique signature. The two must never be conflated.
@@ -355,6 +368,70 @@ fn main() -> Result<()> {
         }
     }
 
+    // ⭐ Duplicon-first core refinement (§6eh). Post-MCL, per cluster; clusters.tsv above is untouched.
+    let mut core_stats = (0usize, 0usize, 0usize, 0usize, 0usize); // gated clusters, kept-full, trimmed, dropped, untouched clusters
+    if args.core_refine {
+        let bed = args.sedef.as_ref().ok_or_else(|| anyhow::anyhow!("--core-refine needs --sedef <bed>"))?;
+        let text = std::fs::read_to_string(bed).with_context(|| format!("reading {bed}"))?;
+        let sd = SdPairs::from_bed_str(&text);
+        eprintln!("[mcl_families] core-refine: {} SEDEF pair(s) loaded from {bed}", sd.n_pairs());
+        let mut cf = std::fs::File::create(format!("{}.cores.tsv", args.out))?;
+        writeln!(cf, "cluster_id\tmember\tgate\tmax_depth\tcore_bp\tspan\tmedian_core\tstatus\tcore_hull")?;
+        let mut rf = std::fs::File::create(format!("{}.refined.clusters.tsv", args.out))?;
+        writeln!(rf, "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\tstatus")?;
+        for (i, c) in clusters.iter().enumerate() {
+            let recs = refine_cluster_cores(&c.members, &sd);
+            let gate = recs.first().map_or(false, |r| r.gate_passed);
+            if gate {
+                core_stats.0 += 1;
+            } else {
+                core_stats.4 += 1;
+            }
+            let corr = c.corroborated.map(|v| format!("{v:.4}")).unwrap_or_else(|| "NA".into());
+            let kept: Vec<&rustle::vg_family::annotation_families::CoreRecord> =
+                recs.iter().filter(|r| r.status != CoreStatus::Dropped).collect();
+            for r in &recs {
+                let st = match r.status {
+                    CoreStatus::Untouched => "untouched",
+                    CoreStatus::KeptFull => "kept_full",
+                    CoreStatus::KeptTrimmed => "kept_trimmed",
+                    CoreStatus::Dropped => "dropped",
+                };
+                match r.status {
+                    CoreStatus::KeptFull => core_stats.1 += 1,
+                    CoreStatus::KeptTrimmed => core_stats.2 += 1,
+                    CoreStatus::Dropped => core_stats.3 += 1,
+                    CoreStatus::Untouched => {}
+                }
+                let hull = r.hull.map(|(a, b)| format!("{a}-{b}")).unwrap_or_else(|| "NA".into());
+                writeln!(
+                    cf,
+                    "MCL{i}\t{}:{}-{}\t{}\t{}\t{}\t{}\t{}\t{st}\t{hull}",
+                    r.member.0, r.member.1, r.member.2, gate, r.max_depth, r.core_bp, r.span, r.median_core
+                )?;
+                if r.status != CoreStatus::Dropped {
+                    let (s0, e0) = match (r.status, r.hull) {
+                        (CoreStatus::KeptTrimmed, Some(h)) => h,
+                        _ => (r.member.1, r.member.2),
+                    };
+                    writeln!(
+                        rf,
+                        "MCL{i}\t{}\t{:.4}\t{:.4}\t{corr}\t{}\t{s0}\t{e0}\t{st}",
+                        kept.len(),
+                        c.density,
+                        c.frac_in,
+                        r.member.0
+                    )?;
+                }
+            }
+        }
+        eprintln!(
+            "[mcl_families] core-refine: {} cluster(s) SD-evidenced, {} untouched; members kept-full {}, \
+             trimmed {}, dropped {}",
+            core_stats.0, core_stats.4, core_stats.1, core_stats.2, core_stats.3
+        );
+    }
+
     // Params certificate: a flag with no certificate row makes two arms indistinguishable.
     let mut ph = std::fs::File::create(format!("{}.params.tsv", args.out))?;
     for (k, v) in [
@@ -373,6 +450,12 @@ fn main() -> Result<()> {
         ("merge_overlapping_loci".to_string(), args.merge_overlapping_loci.to_string()),
         ("annotations_folded_into_loci".to_string(), loci.as_ref().map_or(0, |m| m.n_merged()).to_string()),
         ("paf_records_same_locus_skipped".to_string(), g.same_locus_records.to_string()),
+        ("core_refine".to_string(), args.core_refine.to_string()),
+        ("sedef".to_string(), args.sedef.clone().unwrap_or_else(|| "<unset>".into())),
+        ("core_clusters_gated".to_string(), core_stats.0.to_string()),
+        ("core_members_kept_full".to_string(), core_stats.1.to_string()),
+        ("core_members_trimmed".to_string(), core_stats.2.to_string()),
+        ("core_members_dropped".to_string(), core_stats.3.to_string()),
         ("inflation".to_string(), args.inflation.to_string()),
         ("prune".to_string(), format!("{:e}", args.prune)),
         ("min_identity".to_string(), p.min_identity.to_string()),

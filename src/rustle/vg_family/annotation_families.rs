@@ -409,6 +409,190 @@ pub fn graph_from_paf_loci(
     g
 }
 
+// ---------------------------------------------------------------------------------------------------
+// ⭐ DUPLICON-FIRST CORE REFINEMENT (§6eh, pre-registered adj/core/PREREG.md)
+//
+// A gene family is the set of loci sharing a CORE — the segment linked by segmental-duplication pairs
+// to most of the family — not the set of annotation models that happen to align. On NPIP the core is the
+// ~23 kb LCR16a duplicon: it sits whole inside every 125–308 kb chimeric model (ABCC1+NPIP, SORL1+NPIP),
+// EIF3C carries 808 bp of it, the ABCC1-region records none, and no SMG1P (LCR16u) record is linked to
+// even half of NPIP. One constant, "half", used three times; no other number.
+// ---------------------------------------------------------------------------------------------------
+
+/// SEDEF pairs (BED, 0-based half-open, cols 1–3 and 4–6), indexed by the contig of EITHER side.
+#[derive(Debug, Default)]
+pub struct SdPairs {
+    /// contig -> (start, end, other_contig, other_start, other_end), sorted by start.
+    by_contig: BTreeMap<String, Vec<(u64, u64, String, u64, u64)>>,
+    max_len: BTreeMap<String, u64>,
+}
+
+impl SdPairs {
+    pub fn from_bed_str(text: &str) -> SdPairs {
+        let mut sd = SdPairs::default();
+        for line in text.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 6 {
+                continue;
+            }
+            let (Ok(s1), Ok(e1), Ok(s2), Ok(e2)) =
+                (f[1].parse::<u64>(), f[2].parse::<u64>(), f[4].parse::<u64>(), f[5].parse::<u64>())
+            else {
+                continue;
+            };
+            sd.push(f[0], s1, e1, f[3], s2, e2);
+            sd.push(f[3], s2, e2, f[0], s1, e1);
+        }
+        for v in sd.by_contig.values_mut() {
+            v.sort_unstable();
+        }
+        sd
+    }
+    fn push(&mut self, c: &str, s: u64, e: u64, oc: &str, os: u64, oe: u64) {
+        self.by_contig.entry(c.to_string()).or_default().push((s, e, oc.to_string(), os, oe));
+        let m = self.max_len.entry(c.to_string()).or_insert(0);
+        *m = (*m).max(e.saturating_sub(s));
+    }
+    pub fn n_pairs(&self) -> usize {
+        self.by_contig.values().map(|v| v.len()).sum::<usize>() / 2
+    }
+    /// Pairs whose THIS side overlaps `[s, e)` on `contig`.
+    fn overlapping(&self, contig: &str, s: u64, e: u64) -> impl Iterator<Item = &(u64, u64, String, u64, u64)> {
+        let v = self.by_contig.get(contig).map(|v| v.as_slice()).unwrap_or(&[]);
+        let lo = s.saturating_sub(self.max_len.get(contig).copied().unwrap_or(0));
+        let i = v.partition_point(|x| x.0 < lo);
+        v[i..].iter().take_while(move |x| x.0 < e).filter(move |x| x.1 > s)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoreStatus {
+    /// The cluster failed the depth gate (no SD evidence): every member is left exactly as it was.
+    Untouched,
+    /// `core_bp >= span/2`: a full or partial copy of the duplicon.
+    KeptFull,
+    /// `core_bp < span/2` but `>= median_core/2`: a chimeric model carrying a full core; node := core hull.
+    KeptTrimmed,
+    /// Neither: a record carrying at most a sliver of the family's core.
+    Dropped,
+}
+
+#[derive(Debug, Clone)]
+pub struct CoreRecord {
+    pub member: GeneKey,
+    pub gate_passed: bool,
+    /// Maximum over the member's bases of the number of distinct other members linked there.
+    pub max_depth: usize,
+    pub core_bp: u64,
+    pub span: u64,
+    pub median_core: u64,
+    pub status: CoreStatus,
+    /// 1-based inclusive hull of the core segments, when a core exists.
+    pub hull: Option<(u64, u64)>,
+}
+
+/// Apply the pre-registered core rule to one cluster. Members are GFF 1-based inclusive.
+pub fn refine_cluster_cores(members: &[GeneKey], sd: &SdPairs) -> Vec<CoreRecord> {
+    let n = members.len();
+    if n < 2 {
+        return members
+            .iter()
+            .map(|m| CoreRecord {
+                member: m.clone(),
+                gate_passed: false,
+                max_depth: 0,
+                core_bp: 0,
+                span: m.2.saturating_sub(m.1) + 1,
+                median_core: 0,
+                status: CoreStatus::Untouched,
+                hull: None,
+            })
+            .collect();
+    }
+    let half_others = (n - 1) as f64 / 2.0;
+    // Per member: depth profile from every SD pair whose one side overlaps the member and whose other
+    // side overlaps a DIFFERENT member; depth counts distinct partner members.
+    let mut recs: Vec<(usize, u64, Vec<(u64, u64)>)> = Vec::with_capacity(n); // (max_depth, core_bp, core segments)
+    for (ri, r) in members.iter().enumerate() {
+        let (rs, re) = (r.1.saturating_sub(1), r.2);
+        let mut events: Vec<(u64, i32, usize)> = Vec::new();
+        for (s, e, oc, os, oe) in sd.overlapping(&r.0, rs, re) {
+            for (oi, o) in members.iter().enumerate() {
+                if oi == ri || o.0 != *oc {
+                    continue;
+                }
+                if *oe > o.1.saturating_sub(1) && *os < o.2 {
+                    events.push((rs.max(*s), 1, oi));
+                    events.push((re.min(*e), -1, oi));
+                }
+            }
+        }
+        events.sort_unstable();
+        let mut count = vec![0i32; n];
+        let mut depth = 0usize;
+        let mut max_depth = 0usize;
+        let mut last: Option<u64> = None;
+        let mut segs: Vec<(u64, u64)> = Vec::new();
+        for (pos, d, oi) in events {
+            if let Some(l) = last {
+                if pos > l && depth as f64 >= half_others {
+                    if let Some(t) = segs.last_mut().filter(|t| t.1 == l) {
+                        t.1 = pos;
+                    } else {
+                        segs.push((l, pos));
+                    }
+                }
+            }
+            if d > 0 {
+                if count[oi] == 0 {
+                    depth += 1;
+                }
+                count[oi] += 1;
+            } else {
+                count[oi] -= 1;
+                if count[oi] == 0 {
+                    depth -= 1;
+                }
+            }
+            max_depth = max_depth.max(depth);
+            last = Some(pos);
+        }
+        let core_bp = segs.iter().map(|(a, b)| b - a).sum::<u64>();
+        recs.push((max_depth, core_bp, segs));
+    }
+    let mut ratios: Vec<f64> = recs.iter().map(|(md, _, _)| *md as f64 / (n - 1) as f64).collect();
+    ratios.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let gate = median_f(&ratios) >= 0.5;
+    let mut cores: Vec<u64> = recs.iter().map(|(_, c, _)| *c).collect();
+    cores.sort_unstable();
+    let median_core = cores[cores.len() / 2];
+    members
+        .iter()
+        .zip(recs)
+        .map(|(m, (max_depth, core_bp, segs))| {
+            let span = m.2.saturating_sub(m.1) + 1;
+            let hull = if segs.is_empty() { None } else { Some((segs[0].0 + 1, segs.last().unwrap().1)) };
+            let status = if !gate {
+                CoreStatus::Untouched
+            } else if core_bp as f64 >= span as f64 / 2.0 {
+                CoreStatus::KeptFull
+            } else if core_bp as f64 >= median_core as f64 / 2.0 && core_bp > 0 {
+                CoreStatus::KeptTrimmed
+            } else {
+                CoreStatus::Dropped
+            };
+            CoreRecord { member: m.clone(), gate_passed: gate, max_depth, core_bp, span, median_core, status, hull }
+        })
+        .collect()
+}
+
+fn median_f(sorted: &[f64]) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    sorted[sorted.len() / 2]
+}
+
 /// Sort and merge half-open intervals so overlapping alignment records are not double-counted.
 fn merge_intervals(mut v: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
     if v.is_empty() {
@@ -785,6 +969,46 @@ mod tests {
         paf.push_str(&paf_line("c:1201-2200", 1000, 0, 1000, "c:1001-3000", 2000, 200, 1200, 1000, 1000));
         let g2 = graph_from_paf_loci(&paf, &ex, &BTreeMap::new(), &p, Some(&m));
         assert_eq!((g2.n_nodes(), g2.n_edges(), g2.same_locus_records), (3, 2, 1));
+    }
+
+    #[test]
+    fn core_refinement_keeps_copies_trims_chimeras_drops_slivers_and_respects_the_gate() {
+        // Family of 5 on contig c: four 20 kb copies at 100k, 200k, 300k, 400k, all pairwise SD-linked over
+        // their whole span; one chimeric 150 kb model at 600k-750k whose first 20 kb is linked to all four;
+        // one 40 kb record at 900k with a 500 bp sliver linked to all four (EIF3C-shaped).
+        let k = |s: u64, e: u64| ("c".to_string(), s, e);
+        let copies = [k(100_001, 120_000), k(200_001, 220_000), k(300_001, 320_000), k(400_001, 420_000)];
+        let chimera = k(600_001, 750_000);
+        let sliver = k(900_001, 940_000);
+        let mut bed = String::new();
+        let mut pair = |a: (u64, u64), b: (u64, u64)| bed.push_str(&format!("c\t{}\t{}\tc\t{}\t{}\n", a.0, a.1, b.0, b.1));
+        for i in 0..4 {
+            for j in (i + 1)..4 {
+                pair((copies[i].1 - 1, copies[i].2), (copies[j].1 - 1, copies[j].2));
+            }
+            pair((copies[i].1 - 1, copies[i].2), (600_000, 620_000)); // the chimera's core
+            pair((copies[i].1 - 1, copies[i].2), (900_000, 900_500)); // the sliver
+        }
+        let sd = SdPairs::from_bed_str(&bed);
+        assert_eq!(sd.n_pairs(), 6 + 4 + 4);
+        let mut members: Vec<GeneKey> = copies.to_vec();
+        members.push(chimera.clone());
+        members.push(sliver.clone());
+        let recs = refine_cluster_cores(&members, &sd);
+        assert!(recs.iter().all(|r| r.gate_passed), "{recs:?}");
+        for r in &recs[..4] {
+            assert_eq!(r.status, CoreStatus::KeptFull, "{r:?}");
+            assert_eq!(r.core_bp, 20_000);
+        }
+        let ch = &recs[4];
+        assert_eq!(ch.status, CoreStatus::KeptTrimmed, "{ch:?}");
+        assert_eq!(ch.hull, Some((600_001, 620_000)));
+        let sl = &recs[5];
+        assert_eq!(sl.status, CoreStatus::Dropped, "{sl:?}");
+        assert_eq!(sl.core_bp, 500);
+        // An old family with NO SD pairs fails the gate and is untouched.
+        let none = refine_cluster_cores(&members, &SdPairs::from_bed_str(""));
+        assert!(none.iter().all(|r| !r.gate_passed && r.status == CoreStatus::Untouched));
     }
 
     #[test]
