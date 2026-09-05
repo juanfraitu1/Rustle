@@ -11958,3 +11958,42 @@ READ-SUPPORTED exon chain (the transcribed unit measured in §6ea), not the GFF 
 node fix O1 needs. Until then, O2's NPIP statement is: abstention on 3,347/3,407 molecules; of 117
 junction-anchored reads it assigns 11 with 4 contradicting the genome; the unique-mapper number is not
 the one to quote.
+
+## §6el — O2-8b PASSES: copies built from the locus core + READ-SUPPORTED exon chain remove every confident wrong call (2026-09-04)
+
+Pre-registered `adj/o2rc/PREREG.md` (md5 dd4c4de8…) before any run. Method (`bench/o2_readchain_bridge.py`):
+per copy, primaries with a block inside the core span, cut at introns >50 kb with junction support <3 (the
+shipped mis-chain rule), exon chain = bases covered by ≥3 reads' aligned blocks, strand = majority read
+strand; a copy with <3 reads keeps its GFF exons. No new parameter. 35-core NPIP family: 28 copies got a
+read chain, 7 kept GFF exons. The truth is FIXED — the §6ej junction-anchored sets (117 / 57 reads,
+anchored by the GFF-model junctions of the ORIGINAL families; `bench/o2_score_fixed_truth.py`).
+
+| | GFF-model copies (§6ej) | read-chain copies |
+|---|---|---|
+| **NPIP 35 cores: anchored reads assigned / agreement** | 11, **7/11** | 5, **5/5** — the 4 wrong calls are `ambiguous` now |
+| NPIP: assigned / tied / ambiguous (3,407 molecules) | 19 / 3,347 / 41 | **96 / 2,766 / 177** |
+| NPIP: MAPQ-60 reads tied | 507/535 | 423/530 |
+| NPIP: binary's unique-mapper agreement | 18/19 | 94/94 |
+| 3-copy control: anchored assigned / agreement | 52, 52/52 | **57, 57/57** (5 formerly tied, now correct) |
+| 3-copy control: MAPQ<60 anchored | 43/43 | **45/45** |
+| 3-copy control: assigned / tied | 467 / 768 | 691 / 547 |
+| run time / peak RSS | 43 s / 13 GB · 13 s / 10 GB | 37 s / 4.5 GB · **31 s / 25.4 GB** ⚠ |
+
+**D1 ✓** (0 confident disagreements), **D2 ✓** (control improves, 57/57), D3 reported, D4 not needed:
+the annotation models WERE the cause of the wrong calls (row 680 confirmed), not the PSV projection.
+Assign-or-abstain now abstains where the evidence is model-dependent (ambiguous 41 → 177) and assigns
+five times more where the read chain is the locus's transcribed unit (19 → 96). On NPIP the multimapper
+picture is unchanged in kind — 2,766 ties, 423/530 MAPQ-60 reads tied — the K=0 wall is real; what moved
+is the false confidence.
+
+⚠ **Memory:** the 3-copy control peaked at **25.4 GB of 25** (its 225 kb chimera hull yields a 25 kb read
+chain; the pairwise PSV DP band grows with the length difference). O2's memory (O2-5) is now the blocker
+for any run larger than these; it must be looked at before the sweep or the correction leg on cores.
+
+**What this settles for the thesis:** the node for BOTH objectives is the locus's transcribed unit —
+core hull from SEDEF (§6ei) + exon chain from the reads (§6ea's unit builder) — not an annotation model.
+O1 defines families over those units; O2 assigns among their sequences. The GFF is the seed, not the node.
+Scripts: `bench/o2_readchain_bridge.py`, `bench/o2_junction_truth.py`, `bench/o2_score_fixed_truth.py`;
+outputs `o2scale/fam_NPIPrc_073242`, `fam_MCL2rc_073244`. Next: make the read-chain node a `mcl_families`
+/ bridge feature rather than a script (O1-10b), then O2's memory (O2-5), then the correction leg on the
+read-chain cores with simulation as its truth (O2-2).
