@@ -18,9 +18,14 @@ a base is exonic when ≥ 3 reads cover it and more reads cover it than splice o
 seed; the reads are the node.
 **Edge.** Homology between units' sequences (asm20 alignment; identity ≥ 0.70, coverage of the longer
 ≥ 0.30, ≥ 300 bp; an additive exonic floor of 1 bp, which is where the distribution's wall is, §6dt).
-**Family.** MCL over that graph, inflation 2.8, prune 1e-9. The inflation is not a tuned constant: with a
-size-safe prune the anchored families are unchanged from 2.0 to 4.0 (§6ec); the earlier "cliff at 3.6" was
-the prune emptying the columns of any near-uniform clique above 61 nodes.
+**Family.** A set of loci that share a duplicated core: each member's core is the segment of its locus linked
+by SD pairs to at least half of the set. That is the object; MCL over the homology graph (inflation 2.8, prune
+1e-9) is the pre-clustering that proposes candidate sets, and the core rule, SD corroboration, the repeat
+library and the CHM13 landing certify them. The inflation is not a tuned constant: with a size-safe prune the
+anchored families are unchanged from 2.0 to 4.0 (§6ec); the earlier "cliff at 3.6" was the prune emptying the
+columns of any near-uniform clique above 61 nodes. The earlier definition (γ-quasi-clique partition of the
+read-transcript graph E_r) stays runnable and is scored against this one on Soto in `O1_DEFINITION_SWITCH.md`:
+band-[0.90,1) precision 0.974 vs 0.954 (CIs overlap), recall among detected pairs 0.874 → 0.940.
 **Certificates carried on every unit:** SD depth and core length; curated-repeat fraction of the chain
 (Dfam 3.8); nearest-paralogue identity; and, per family, the CHM13 landing of its members (one human gene
 stem on one chromosome for every anchored real family; scattered for every artefact; mixed 16p stems for

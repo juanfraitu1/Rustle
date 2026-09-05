@@ -1,3 +1,8 @@
+> ⚠ **2026-09-05: O1 was restated** (`THESIS_OBJECTIVES.md`, `O1_DEFINITION_SWITCH.md`). The `(V, E_r)` γ-quasi-clique
+> definition below is the EARLIER definition, kept opt-in (`gw_family_catalog`); the thesis definition is the
+> SD-core family with read-supported units (`mcl_families`). The composition principle is unchanged: O1's vertex set
+> (the units) IS O2's path set.
+
 # O1 and O2 as a composition — the statement of the method
 
 > **Status: FRAMING DOCUMENT, not a result.** Every number here is cited to code or ledger.

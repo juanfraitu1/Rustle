@@ -7,7 +7,7 @@ The 2026-08-07 five-objective VG/EM decomposition this file used to carry is arc
 
 | # | objective |
 |---|---|
-| **O1** | Define a multi-copy gene family topologically at the RNA level (quasi-clique in E_r; MCC = χ(H)) |
+| **O1** | **(restated 2026-09-05, user decision)** A multi-copy gene family is a set of loci that share a duplicated core: each member's core is the segment of its locus linked by segmental-duplication pairs to at least half of the set, and the family's units are the members' read-supported exon chains within their annotated loci. Candidate sets are proposed by MCL over genomic homology of the annotation and certified by the core rule, SD corroboration, the curated repeat library and the CHM13 landing. The earlier definition — a γ-quasi-clique partition of the read-transcript homology graph E_r — remains available (`gw_family_catalog`, opt-in) and is compared with this one on one truth in `O1_DEFINITION_SWITCH.md` §2. |
 | **O2** | Decide, for a read at a multi-copy locus, whether the evidence warrants assigning it to a COPY AT ALL — and abstain when it does not. Contested set = **alignment-score near-ties**, not MAPQ-0. No 1/k. |
 | **O3** | Detect + flag expressed transcript paths not explained by represented reference copies, **STRATIFIED by whether the orphaned reads have anywhere to go**. Detect-and-flag with a measured FPR per stratum; **completeness is never claimed**. (this was O4) |
 
