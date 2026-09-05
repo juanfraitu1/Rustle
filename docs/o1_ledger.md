@@ -11571,3 +11571,120 @@ other) and NPIP as the negative before it is used. Register row 672.
 **Standing:** the §6dy tally is unchanged; §6dd/§6de plateau statements are superseded by §6ec; every
 number quoted from a catalog must now say which prune built it. Test suite under the new default:
 `adj/gwaudit/test_suite2.log`.
+
+## §6ee — O2 ON NPIP AT SCALE: it resolves the reads minimap2 already resolved, abstains on 99% of the multimappers, and half its ties were O1 NODE defects (2026-09-04)
+
+Scope narrowed by the user to NPIP (the advisor's family); the 86-family sweep (`mcl_ann/o2scale/
+PREREG.md`, md5 c989473b…) was stopped after its first family — the L1 blob, which is not a family and
+was consuming 4.3 GB. Bridge (`bridge_all.py`, doc §3 conventions, `npip3.bam` = the fibroblast FLNC BAM
+on the 3 contigs): NPIP = rna_bp1_p9 MCL2 (44) → **39 copies on NC_073242.2 + 3 on NC_073244.2**
+(1 member on NC_073241.2 alone; MCL30, NPIP's SEDEF-joined neighbour, has 0 copies with reads —
+unexpressed in fibroblasts). `copy_assign --families --copies-fa --regions`, defaults; arm B
+(`--vg-realign-correct`) only on the 3-copy family (the leg is full NW per read × copy).
+
+**Runs (foreground, serial):** 3-copy family arm A 13 s / 10.1 GB, arm B 404 s / 12.4 GB — arm B
+reproduces the 09-03 pilot exactly (498 assigned / 726 tied / 18 ambiguous, agreement 68/68).
+39-copy family arm A **222 s / 18.8 GB peak** (of 25 GB — the standing crash rule was one family from
+being violated): 8,809 molecules → **5,016 assigned / 3,435 tied / 358 ambiguous**, binary's unique-mapper
+agreement **4,968/4,969**.
+
+**Decomposition (`npip_decomp.log`, `decomp.py`; truth = the copy a read's primary blocks overlap most,
+MAPQ from the BAM):**
+
+| MAPQ of the read | n | assigned | tied | ambiguous |
+|---|---|---|---|---|
+| **0** | 68 | **0** | 67 | 1 |
+| 1–59 | 524 | **8** | 485 | 31 |
+| 60 | 5,953 | 4,960 | 669 | 324 |
+
+**4,960 of the 5,016 assignments are MAPQ-60 reads — reads the linear aligner had already placed
+uniquely.** On the reads O2 exists for, it assigns 8 of 592 (1.4%) and abstains on the rest. The
+unique-mapper agreement is therefore near-tautological as a validation: it checks the easy reads. Per
+copy (MAPQ-60, assigned rows): 4,957/4,960 overall, **214/217 excluding copy 13** — and copy 13
+(NC_073242.2:29391428-29432668, the most divergent member, max identity to any paralogue **0.903**) holds
+**4,743 of the 5,016 assignments**. Resolved copies (≥1 assigned read): **9/39**, ≥3 reads: 5.
+
+**Copy-level K=0 wall, measured:** max identity to the nearest paralogue vs assigned share, copies with
+≥10 reads (n=10): **Spearman −0.55**; the 3 copies with a ≥0.99 partner have assigned share **0.000**,
+the 7 below 0.99 median 0.133. Assign-or-abstain is doing what it was designed to do.
+
+**⭐ Half the ties were not the K=0 wall but an O1 NODE defect.** 13 copy pairs overlap on the genome
+(`Containment` warnings: a lncRNA annotated inside a gene, e.g. 21094996-21098949 inside 21074205-21114710)
+— the same DNA twice, identity 1.000 by construction. **607 of 1,221 tied reads sit on such a copy.**
+Rebuilding the bridge with the rule *"of two overlapping copies keep the longer"* (12 dropped, 27 kept;
+`fam_MCL2_073242_nonest`): resolved copies **9/39 → 16/27**, tie-break-invariant copies 16/39 → 22/27,
+MAPQ-60 ties 669 → 562, agreement 4,961/4,968; **MAPQ-0 assigned still 0/61, MAPQ 1–59 12/397.**
+⟹ O1 must hand O2 non-overlapping LOCI, not annotation records. This is the same node problem as §6dz's
+NPIP models and the nested MCL4 lncRNA, now with an O2 cost attached.
+
+**Arm B on the 3-copy family:** among the 188 molecules whose primary overlaps a copy, arm B changes
+NOTHING (MAPQ-0 1/2 assigned, 1–59 47/120, 60 21/66 in both arms). Its +31 assignments (467 → 498) are
+reads whose primary lies OUTSIDE every copy interval — the re-threading leg working on reads the linear
+alignment put elsewhere. That is the leg's actual function and it needs its own truth, not the
+unique-mapper one.
+
+**Pre-registration ledger:** T1 met (pooled ≥0.95; no family <0.80) but on a tautological population;
+T2/T3 measured at COPY level within NPIP (post-hoc form; n=10); T4 n/a; T5 met on the 3-copy family
+(0 moved among joined reads); T6 not run (scope). The 86-family sweep remains available (`o2scale/fam_*`,
+resumable) and should NOT include cell-B artefacts.
+
+**What ties O1 to O2, now concretely:**
+1. **Nodes** — O1's copy set must be non-overlapping loci (bridge rule shipped as a script; the proper
+   place is a node rule in `mcl_families` / the bridge, not `--reject-overlapping`, which only drops edges).
+2. **Identity certificate** — O1's per-copy max paralogue identity predicts O2 resolvability
+   (ρ −0.55; ≥0.99 ⟹ unresolvable). Report it per copy in the joint catalog as the abstention forecast.
+3. **What O2 can claim on NPIP in fibroblasts** — the multimapping pool is small (592 of 6,545 reads
+   overlapping copies) and 98.6% of it is unassignable at α=1e-3 with 2–5 kb molecules; the family's
+   expression is dominated by one divergent copy (4,743 reads). The honest sentence: *O2 on NPIP is an
+   abstention certificate, not a redistribution.* Its value is the 8 + 12 reads it CAN move and the
+   re-threaded reads of the correction leg, each needing a truth that is not the unique-mapper one.
+
+Register row 673.
+
+## §6ef — STEP O1-1: A LOCUS IS THE NODE. Shipped as `--merge-overlapping-loci` (OFF); measured; the NPIP boundary moves (2026-09-04)
+
+`docs/NEXT_STEPS_2026-09-04.md` step O1-1 / O2-1. Implementation in `annotation_families.rs`
+(`LocusMap`, `loci_from_exon_blocks`, `graph_from_paf_loci`) and `mcl_families --merge-overlapping-loci`
+(writes `<out>.loci.tsv`, params rows `annotations_folded_into_loci`, `paf_records_same_locus_skipped`).
+Three tests. Default OFF; byte-identity control against `rna_bp1_p9`: IDENTICAL.
+
+**Rule, and the two rules it replaced (both measured, both rejected):**
+| rule | folded records (of 40,703) | what it did |
+|---|---|---|
+| GENOMIC-overlap components, strand-agnostic | 10,856 (26.7%) | ⛔ folds 7,575 pairs with ZERO exon overlap — intronic genes are distinct loci; **dissolved MCL6 (22/23 members sit in one host's introns)**, MCL21 9→3; 63% of folded pairs antisense. Register row 674 |
+| **EXON-union-overlap components, strand-agnostic** (shipped) | **3,864 (9.5%)** into 3,154 loci | NPIP: 11 folded, all into NPIP members (the O2 `Containment` pairs); tandem, MCL4, MCL6, MCL21 intact; **44/45 clusters keep ≥0.8 of their kept members together** |
+| — with folded records' PAF records SKIPPED ("a locus is its representative's sequence") | same | ⛔ **4 SD-supported NPIP paralogues drop out** (2/2, 8/8, 11/12, 5/5 SEDEF-supported edges), among them the 4,743-read copy: their homology is visible only through the SMALLER model of a partner locus (a 7.3 kb "+"-strand model over a 12 kb "−" model's exons), because the coverage floor on the longer side fails for the big model. Register row 675 |
+| — with folded records' edges ATTRIBUTED to the locus representative (shipped semantics) | same | all 33 kept NPIP loci stay together; records between two models of ONE locus skipped (984 on 3 contigs, 4,718 genome-wide) |
+
+**Why attribution:** a locus's annotation models are competing hypotheses about one piece of DNA and none
+is privileged; the representative is a LABEL (the longest exon-union), not the evidence. The fragment
+concern (§6cr: a short model passing the longer-side floor) is bounded exactly as before — `min_bp`,
+`min_exonic_bp` and the per-record-pair coverage floor are unchanged — and the folded models here are
+476–7,294 bp exonic, not Alu fragments.
+
+**Effect on the catalogs (prune 1e-9, exonic clause 1):**
+| | annotations as nodes | loci as nodes |
+|---|---|---|
+| 3 contigs | 1,667 nodes / 6,335 edges / 142 clusters / 937 members, largest 104 | 1,293 / 5,708 / **116 / 829**, largest 112 |
+| genome-wide | 16,915 / 108,737 / 1,289 / 9,666, largest 203 | 14,236 / 102,891 / **1,095 / 8,893**, largest 207 |
+`rna_bp1_p9_loci.clusters.tsv`, `gw_bp1_p9_loci.clusters.tsv` (+ `.loci.tsv`) are on disk beside the
+canonical catalogs; the canonical ones are unchanged until the default is flipped.
+
+**⚠ THE NPIP BOUNDARY MOVES.** NPIP's 44 annotation records become 33 loci, and the loci cluster holding
+them has **48 members: 33 NPIP loci + MCL7's 11 + 4 others** — the edges attributed from folded models
+reunite NPIP with unit U1 (MCL7/MCL30), which §6dy's cell A had scored SUPERFAMILY-CUT and SEDEF-joined to
+NPIP (NPIP→MCL30 cross identity 0.983). Under attribution that cut closes. This is a change to the
+anchored family's extent and the advisor must see it as such: "NPIP" is then the SD superfamily, not the
+44-record cluster. Nothing else among the anchors moves (tandem 48/36, MCL4 29, MCL6 23, artefacts intact).
+
+**O2 on the locus-rule NPIP (43 loci with reads on NC_073242.2; `o2scale/fam_NPIPloci_073242`):**
+341 s, **20.7 GB peak of 25** (⚠ the next larger family will OOM this machine — O2 needs its memory
+looked at before any sweep); `Containment` warnings **2** (annotation family: 10) — the 2 remaining pairs overlap on the GENOME but share no exon (26989354-26995630 is the intronic lncRNA of §6ef’s exon-overlap check), i.e. distinct loci by the rule that copy_assign still flags as interval containment. 10,525 molecules →
+5,877 assigned / 4,017 tied / 631 ambiguous; agreement 5,828/5,829; MAPQ-60 5,810/5,813.
+**Resolved copies 17/43 (annotation family 9/39; hand-pruned bridge 16/27); tie-break-invariant 24/43
+(16/39).** The multimapper picture is unchanged: **MAPQ-0 assigned 1/78, MAPQ 1–59 8/606** — the locus
+rule removes the tautological ties; it cannot create PSV evidence where copies are ≥0.99 identical.
+
+**Standing:** flag OFF; the default decision is the user's (it moves NPIP's boundary). Everything this
+section measured is reproducible with `--merge-overlapping-loci` on the two PAFs. Test suite:
+`adj/gwaudit/test_suite4.log`.

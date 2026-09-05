@@ -114,6 +114,103 @@ pub struct HomologyGraph {
     pub rejected_overlapping: usize,
     /// Pairs dropped by `min_exonic_bp` — the edge rested on no exonic evidence. Reported, never silent.
     pub rejected_no_exonic: usize,
+    /// PAF records between two annotations of ONE locus (`LocusMap`) — a locus aligned to itself —
+    /// skipped. Reported, never silent.
+    pub same_locus_records: usize,
+}
+
+/// ⭐ A LOCUS, not an annotation record, is the node (§6ee).
+///
+/// Two annotation records whose EXON-UNIONS share ≥1 bp on one contig are the SAME transcribed DNA — a
+/// lncRNA model drawn over a gene's exons, two Gnomon models of one transcription unit, an antisense
+/// model over the same exons. Left as separate nodes they align to each other at identity 1.000 and each
+/// collects the same paralogue edges, so a family counts one locus twice and O2 ties by construction
+/// (NPIP: 11 such pairs, 607/1,221 tied reads). Components of that relation are one locus, represented by
+/// the record with the greatest exon-union length (ties: lowest start, then lowest end).
+/// ⚠ GENOMIC overlap is NOT the criterion: a gene inside another gene's intron is a distinct locus, and
+/// merging by genomic overlap folded 7,575 intronic genes genome-wide and dissolved MCL6 (22/23 members
+/// sit in one host's introns). Strand is ignored on purpose: for DNA homology an antisense model over the
+/// same exons is the same locus.
+#[derive(Debug, Default)]
+pub struct LocusMap {
+    /// Every annotation in a multi-record locus -> its representative (representatives map to themselves).
+    pub rep_of: BTreeMap<GeneKey, GeneKey>,
+    /// Number of loci that hold more than one annotation record.
+    pub n_multi: usize,
+}
+
+impl LocusMap {
+    pub fn representative<'a>(&'a self, k: &'a GeneKey) -> &'a GeneKey {
+        self.rep_of.get(k).unwrap_or(k)
+    }
+    pub fn is_representative(&self, k: &GeneKey) -> bool {
+        self.rep_of.get(k).map_or(true, |r| r == k)
+    }
+    /// Annotation records folded into another record's locus.
+    pub fn n_merged(&self) -> usize {
+        self.rep_of.iter().filter(|(k, r)| k != r).count()
+    }
+}
+
+/// Build the locus map from every gene's merged exon blocks (absolute coordinates, half-open, as
+/// `mcl_families::exonic_blocks` emits them). A gene with no blocks is its own locus.
+pub fn loci_from_exon_blocks(exon_blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>) -> LocusMap {
+    let genes: Vec<&GeneKey> = exon_blocks.keys().collect();
+    let idx: BTreeMap<&GeneKey, usize> = genes.iter().enumerate().map(|(i, g)| (*g, i)).collect();
+    let mut parent: Vec<usize> = (0..genes.len()).collect();
+    fn find(p: &mut Vec<usize>, mut x: usize) -> usize {
+        while p[x] != x {
+            p[x] = p[p[x]];
+            x = p[x];
+        }
+        x
+    }
+    // Sweep every exon block per contig; a block starting before the running max end overlaps the
+    // block that set it, so the two genes are joined.
+    let mut by_contig: BTreeMap<&str, Vec<(u64, u64, usize)>> = BTreeMap::new();
+    for (g, blocks) in exon_blocks {
+        for &(s, e) in blocks {
+            by_contig.entry(g.0.as_str()).or_default().push((s, e, idx[g]));
+        }
+    }
+    for (_, mut v) in by_contig {
+        v.sort_unstable();
+        let mut max_end = 0u64;
+        let mut owner = usize::MAX;
+        for (s, e, gi) in v {
+            if owner != usize::MAX && s < max_end {
+                let (a, b) = (find(&mut parent, gi), find(&mut parent, owner));
+                if a != b {
+                    parent[a.max(b)] = a.min(b);
+                }
+            }
+            if e > max_end || owner == usize::MAX {
+                max_end = max_end.max(e);
+                owner = gi;
+            }
+        }
+    }
+    let mut comps: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for i in 0..genes.len() {
+        let r = find(&mut parent, i);
+        comps.entry(r).or_default().push(i);
+    }
+    let exlen = |i: usize| exon_blocks[genes[i]].iter().map(|(s, e)| e - s).sum::<u64>();
+    let mut m = LocusMap::default();
+    for (_, members) in comps {
+        if members.len() < 2 {
+            continue;
+        }
+        let rep = *members
+            .iter()
+            .max_by(|&&a, &&b| exlen(a).cmp(&exlen(b)).then_with(|| (genes[b].1, genes[b].2).cmp(&(genes[a].1, genes[a].2))))
+            .unwrap();
+        for &i in &members {
+            m.rep_of.insert(genes[i].clone(), genes[rep].clone());
+        }
+        m.n_multi += 1;
+    }
+    m
 }
 
 impl HomologyGraph {
@@ -141,6 +238,21 @@ pub fn graph_from_paf(
     exonic_len: &BTreeMap<GeneKey, u64>,
     exon_blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>,
     p: &GraphParams,
+) -> HomologyGraph {
+    graph_from_paf_loci(paf, exonic_len, exon_blocks, p, None)
+}
+
+/// [`graph_from_paf`] with an optional [`LocusMap`]: when given, the NODE of every record is its locus
+/// representative, while the record's own lengths and exon blocks still decide admission — so an edge
+/// admitted for ANY annotation of a locus is an edge of the locus (a folded lncRNA model may carry an
+/// alignment its host record lacks: NPIP's 4,743-read copy had only such edges). Records between two
+/// annotations of one locus are skipped (`same_locus_records`). Coordinates are never remapped.
+pub fn graph_from_paf_loci(
+    paf: &str,
+    exonic_len: &BTreeMap<GeneKey, u64>,
+    exon_blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>,
+    p: &GraphParams,
+    loci: Option<&LocusMap>,
 ) -> HomologyGraph {
     let mut g = HomologyGraph::default();
     let mut idx: BTreeMap<GeneKey, usize> = BTreeMap::new();
@@ -173,6 +285,12 @@ pub fn graph_from_paf(
             continue;
         }
         let (Some(qk), Some(tk)) = (parse_gene_key(q), parse_gene_key(t)) else { continue };
+        if let Some(l) = loci {
+            if l.representative(&qk) == l.representative(&tk) {
+                g.same_locus_records += 1;
+                continue;
+            }
+        }
         // Two DISTINCT gene records whose 1-based inclusive intervals intersect are not paralogs; the
         // `q == t` guard above only catches byte-identical headers.
         if p.reject_overlapping && qk.0 == tk.0 && qk.1 <= tk.2 && tk.1 <= qk.2 {
@@ -234,7 +352,11 @@ pub fn graph_from_paf(
             continue;
         }
         let w = identity * cov_longer;
-        let (a, b) = (node_of(qk, &mut g.genes), node_of(tk, &mut g.genes));
+        let (qn, tn) = match loci {
+            Some(l) => (l.representative(&qk).clone(), l.representative(&tk).clone()),
+            None => (qk, tk),
+        };
+        let (a, b) = (node_of(qn, &mut g.genes), node_of(tn, &mut g.genes));
         let key = if a < b { (a, b) } else { (b, a) };
         let e = g.edges.entry(key).or_insert(0.0);
         if w > *e {
@@ -272,7 +394,11 @@ pub fn graph_from_paf(
         }
         let identity = nmatch as f64 / blocklen.max(1) as f64;
         let w = identity * cov_longer;
-        let (a, b) = (node_of(ak, &mut g.genes), node_of(bk, &mut g.genes));
+        let (an, bn) = match loci {
+            Some(l) => (l.representative(&ak).clone(), l.representative(&bk).clone()),
+            None => (ak, bk),
+        };
+        let (a, b) = (node_of(an, &mut g.genes), node_of(bn, &mut g.genes));
         let key = if a < b { (a, b) } else { (b, a) };
         let e = g.edges.entry(key).or_insert(0.0);
         if w > *e {
@@ -600,6 +726,65 @@ mod tests {
         let new = mcl(&g, 2.8, 100, 1e-9);
         let largest_new = new.iter().map(|p| p.len()).max().unwrap_or(0);
         assert!(largest_new >= 95, "1e-9 must keep the 100-clique (largest {largest_new}): {new:?}");
+    }
+
+    #[test]
+    fn loci_are_exon_overlap_components_not_genomic_overlap() {
+        let k = |s: u64, e: u64| ("c".to_string(), s, e);
+        let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+        bl.insert(k(100, 1000), vec![(100, 200), (900, 1000)]); // host: two exons, big intron
+        bl.insert(k(300, 400), vec![(300, 400)]); // INTRONIC gene inside the host: a distinct locus
+        bl.insert(k(150, 250), vec![(150, 250)]); // overlaps the host's first exon: same locus
+        bl.insert(k(950, 1500), vec![(950, 1050), (1400, 1500)]); // overlaps the host's last exon: same locus, longest exon-union? 200 vs host 200 -> tie -> lowest start = host
+        bl.insert(k(1450, 1600), vec![(1450, 1600)]); // overlaps the previous only: chained in
+        bl.insert(k(2000, 2500), vec![(2000, 2500)]); // separate
+        bl.insert(("d".to_string(), 100, 1000), vec![(100, 200)]); // other contig
+        let m = loci_from_exon_blocks(&bl);
+        assert_eq!(m.n_multi, 1, "{:?}", m.rep_of);
+        assert_eq!(m.n_merged(), 3);
+        assert!(m.is_representative(&k(300, 400)), "an intronic gene is its own locus");
+        assert!(m.is_representative(&k(2000, 2500)));
+        assert!(m.is_representative(&("d".to_string(), 100, 1000)));
+        // exon-union lengths: host 200, (150,250) 100, (950,1500) 200, (1450,1600) 150 -> tie host vs (950,1500) -> lowest start wins
+        for g in [k(150, 250), k(950, 1500), k(1450, 1600)] {
+            assert_eq!(m.representative(&g), &k(100, 1000), "{g:?}");
+        }
+    }
+
+    #[test]
+    fn a_nested_annotation_is_not_a_second_node() {
+        // Host H (c:1001-3000) contains lncRNA N (c:1201-2200). H aligns to paralogue P, N to paralogue Q
+        // (each at full coverage, so both edges pass the floors). Without the locus map the family counts
+        // H's locus twice: 4 nodes, 2 edges. With it N is folded into H and N's edge becomes H's:
+        // 3 nodes {H, P, Q}, 2 edges, and N is not a node.
+        let mut paf = paf_line("c:1001-3000", 2000, 0, 2000, "c:9001-11000", 2000, 0, 2000, 1900, 2000);
+        paf.push('\n');
+        paf.push_str(&paf_line("c:1201-2200", 1000, 0, 1000, "c:20001-21000", 1000, 0, 1000, 950, 1000));
+        let mut ex = BTreeMap::new();
+        ex.insert(("c".to_string(), 1001, 3000), 2000);
+        ex.insert(("c".to_string(), 1201, 2200), 1000);
+        ex.insert(("c".to_string(), 9001, 11000), 2000);
+        ex.insert(("c".to_string(), 20001, 21000), 1000);
+        let p = GraphParams { min_bp: 100, ..GraphParams::default() };
+        let plain = graph_from_paf(&paf, &ex, &BTreeMap::new(), &p);
+        assert_eq!((plain.n_nodes(), plain.n_edges()), (4, 2), "{:?}", plain.genes);
+        let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+        bl.insert(("c".to_string(), 1001, 3000), vec![(1000, 3000)]);
+        bl.insert(("c".to_string(), 1201, 2200), vec![(1200, 2200)]); // over the host's exon
+        bl.insert(("c".to_string(), 9001, 11000), vec![(9000, 11000)]);
+        bl.insert(("c".to_string(), 20001, 21000), vec![(20000, 21000)]);
+        let m = loci_from_exon_blocks(&bl);
+        assert_eq!(m.n_merged(), 1);
+        let g = graph_from_paf_loci(&paf, &ex, &BTreeMap::new(), &p, Some(&m));
+        assert_eq!((g.n_nodes(), g.n_edges()), (3, 2), "{:?}", g.genes);
+        assert_eq!(g.same_locus_records, 0);
+        assert!(g.genes.contains(&("c".to_string(), 1001, 3000)));
+        assert!(!g.genes.contains(&("c".to_string(), 1201, 2200)));
+        // and a record between H and N (the locus aligned to itself) is skipped, not an edge
+        paf.push('\n');
+        paf.push_str(&paf_line("c:1201-2200", 1000, 0, 1000, "c:1001-3000", 2000, 200, 1200, 1000, 1000));
+        let g2 = graph_from_paf_loci(&paf, &ex, &BTreeMap::new(), &p, Some(&m));
+        assert_eq!((g2.n_nodes(), g2.n_edges(), g2.same_locus_records), (3, 2, 1));
     }
 
     #[test]

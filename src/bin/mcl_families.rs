@@ -16,7 +16,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::vg_family::annotation_families::{
-    build_clusters, graph_from_paf, mcl, Cluster, GeneKey, GraphParams,
+    build_clusters, graph_from_paf_loci, loci_from_exon_blocks, mcl, Cluster, GeneKey, GraphParams,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -78,6 +78,16 @@ struct Args {
     /// families, because a segmental duplication copies introns too.
     #[arg(long, default_value_t = 0)]
     min_exonic_bp: u64,
+    /// ⭐ A LOCUS is the node (§6ee): annotation records whose EXON-UNIONS overlap on a contig (a lncRNA
+    /// model over a gene's exons, two models of one transcription unit, an antisense model over the same
+    /// exons) are ONE node — a gene inside another's INTRON stays a separate locus — represented by the
+    /// record with the greatest exon-union length, and an edge admitted for ANY record of the locus is the
+    /// locus's edge; records between two annotations of one locus are skipped. Represented
+    /// by the record with the greatest exon-union length; PAF records of the folded-away annotations are
+    /// skipped. Writes `<out>.loci.tsv` (annotation -> representative). Measured on NPIP: 13 overlapping
+    /// copy pairs, 607/1,221 O2 ties were the same locus twice. Default OFF ⟹ byte-identical
+    #[arg(long, default_value_t = false)]
+    merge_overlapping_loci: bool,
 
     /// Optional RNA BAM. Without it `corroborated` is reported as `NA` — ⚠ which is NOT 0.000, the
     /// repeat-clique signature. The two must never be conflated.
@@ -215,7 +225,34 @@ fn main() -> Result<()> {
     eprintln!("[mcl_families] exon-union lengths for {} genes", exonic.len());
 
     let paf = std::fs::read_to_string(&args.paf).with_context(|| format!("reading {}", args.paf))?;
-    let g = graph_from_paf(&paf, &exonic, &blocks, &p);
+    let loci = if args.merge_overlapping_loci {
+        let m = loci_from_exon_blocks(&blocks);
+        eprintln!(
+            "[mcl_families] merge-overlapping-loci (EXON-union overlap): {} annotation record(s) folded \
+             into {} multi-record loci over {} GFF genes",
+            m.n_merged(),
+            m.n_multi,
+            blocks.len()
+        );
+        let mut lf = std::fs::File::create(format!("{}.loci.tsv", args.out))?;
+        writeln!(lf, "annotation\trepresentative")?;
+        for (k, r) in &m.rep_of {
+            if k != r {
+                writeln!(lf, "{}:{}-{}\t{}:{}-{}", k.0, k.1, k.2, r.0, r.1, r.2)?;
+            }
+        }
+        Some(m)
+    } else {
+        None
+    };
+    let g = graph_from_paf_loci(&paf, &exonic, &blocks, &p, loci.as_ref());
+    if let Some(m) = &loci {
+        eprintln!(
+            "[mcl_families] merge-overlapping-loci: {} PAF record(s) skipped as a locus aligned to itself \
+             ({} loci with >1 record); folded records' edges are attributed to their representative",
+            g.same_locus_records, m.n_multi
+        );
+    }
     // ⭐ The join rate, always. A failed coordinate join returns a byte-identical graph and reads as
     // "the fix is inert" — it must be visible, not inferred.
     eprintln!(
@@ -333,6 +370,9 @@ fn main() -> Result<()> {
         ("rejected_overlapping".to_string(), g.rejected_overlapping.to_string()),
         ("min_exonic_bp".to_string(), args.min_exonic_bp.to_string()),
         ("rejected_no_exonic".to_string(), g.rejected_no_exonic.to_string()),
+        ("merge_overlapping_loci".to_string(), args.merge_overlapping_loci.to_string()),
+        ("annotations_folded_into_loci".to_string(), loci.as_ref().map_or(0, |m| m.n_merged()).to_string()),
+        ("paf_records_same_locus_skipped".to_string(), g.same_locus_records.to_string()),
         ("inflation".to_string(), args.inflation.to_string()),
         ("prune".to_string(), format!("{:e}", args.prune)),
         ("min_identity".to_string(), p.min_identity.to_string()),
