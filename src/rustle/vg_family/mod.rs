@@ -4,10 +4,13 @@
 //! drives structural detectors (mosaic, segdup, hidden_copy, positional) plus
 //! k-mer-based novel-copy rescue. See `docs/o3_missing_copy_evidence.md` for why
 //! the aligner misses the reads this module rescues.
+//!
+//! **STATUS:** INFRASTRUCTURE  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 pub mod seq_utils; // small sequence utilities (reverse_complement); relocated from the retired assembler vg.rs.
 pub mod collapse_gate; // O2: admit a COLLAPSED single-rep locus as a multi-copy family (ambiguity test, then chi(H)).
 pub mod minimizers; // O1 over-merge-gate FOUNDATION: canonical (k,w)-minimizers (Rust port of vg_repeat_catalog.py `minimizers`; byte-parity tested).
+pub mod annotation_families;
 pub mod repeat_catalog; // O1 over-merge-gate: node-multiplicity REPEAT CATALOG (load_skeletons/dn_exons/NodeCatalog; Rust port of vg_repeat_catalog.py catalog-production core; byte-parity tested).
 pub mod family_definition; // O1 multi-copy predicate `distinct_loci` (Rust port of genome_family_def.py; byte-parity tested).
 pub mod family_loaders; // O1 family-definition LOADERS (meta/annot/edges/families + gene_of projection; Rust port of family_er_pr.py loaders; byte-parity tested).
@@ -63,3 +66,87 @@ pub mod seed_projection; // `--seed`: a QUERY over the EMITTED catalog (the bloc
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
+
+#[cfg(test)]
+mod module_status_tests {
+    //! Enforcement for `docs/MODULE_STATUS.md`.
+    //!
+    //! ⚠⚠ **WHY THIS EXISTS.** A `//!` header is a CLAIM, and a reachability survey of all 53 modules
+    //! (ledger §6dj) found **30 of them disagreeing with what their callers actually support** — several
+    //! describing themselves in the present tense as live analysis stages while having ZERO production
+    //! callers. Shipped docstrings have also carried findings that were later retracted. These tests
+    //! cannot verify a header's prose, but they CAN force every module to declare what it is, and stop
+    //! the registry drifting away from the module set.
+
+    use std::collections::BTreeSet;
+
+    const TAGS: &[&str] = &[
+        "SHIPPED-DEFAULT",   // reachable with no env var and no non-default flag — this is the method
+        "OPT-IN",            // built and wired, behind a flag that defaults OFF — an arm, not the method
+        "OTHER-BINARY",      // live, but only from a binary other than gw_family_catalog / copy_assign
+        "REFUTED",           // implemented, MEASURED, and the measurement went against it — kept as an instrument
+        "TEST-ONLY",         // no non-test callers anywhere in src/ — dead in every shipped binary
+        "INFRASTRUCTURE",    // shared utility with no independent objective claim
+        "AMBIGUOUS",         // could not be determined — must not be the resting state of a module
+    ];
+
+    fn module_files() -> Vec<(String, String)> {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/rustle/vg_family");
+        let mut out = Vec::new();
+        for e in std::fs::read_dir(dir).expect("vg_family dir") {
+            let p = e.expect("dir entry").path();
+            if p.extension().and_then(|x| x.to_str()) != Some("rs") {
+                continue;
+            }
+            let name = p.file_name().unwrap().to_string_lossy().to_string();
+            if name == "mod.rs" {
+                continue;
+            }
+            out.push((name, std::fs::read_to_string(&p).expect("read module")));
+        }
+        out.sort();
+        out
+    }
+
+    /// Every module must say what it is. A new module cannot be added without declaring whether it
+    /// ships, is an opt-in arm, or is not reachable at all.
+    #[test]
+    fn every_module_declares_a_status() {
+        let mut missing = Vec::new();
+        let mut bad = Vec::new();
+        for (name, src) in module_files() {
+            match src.lines().find(|l| l.starts_with("//! **STATUS:**")) {
+                None => missing.push(name),
+                Some(l) => {
+                    let rest = l.trim_start_matches("//! **STATUS:**").trim();
+                    if !TAGS.iter().any(|t| rest.starts_with(t)) {
+                        bad.push(format!("{name}: {rest}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "these modules declare no `//! **STATUS:** <TAG>` line (see docs/MODULE_STATUS.md): {missing:#?}"
+        );
+        assert!(bad.is_empty(), "unknown status tag; allowed are {TAGS:?}: {bad:#?}");
+    }
+
+    /// The registry and the module set must not drift apart — a module added or removed without
+    /// updating `docs/MODULE_STATUS.md` is exactly how "what is shipped" stops being knowable.
+    #[test]
+    fn module_status_registry_covers_exactly_the_module_set() {
+        let doc = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/MODULE_STATUS.md"))
+            .expect("docs/MODULE_STATUS.md must exist");
+        let listed: BTreeSet<String> = doc
+            .lines()
+            .filter_map(|l| l.split('`').nth(1).map(|s| s.to_string()))
+            .filter(|s| s.ends_with(".rs"))
+            .collect();
+        let actual: BTreeSet<String> = module_files().into_iter().map(|(n, _)| n).collect();
+        let unlisted: Vec<&String> = actual.difference(&listed).collect();
+        let stale: Vec<&String> = listed.difference(&actual).collect();
+        assert!(unlisted.is_empty(), "modules missing from docs/MODULE_STATUS.md: {unlisted:#?}");
+        assert!(stale.is_empty(), "docs/MODULE_STATUS.md lists modules that no longer exist: {stale:#?}");
+    }
+}

@@ -10,6 +10,8 @@
 //! The split is deliberately conservative against the indistinguishability wall: a lone sporadic
 //! single-column mismatch never spawns a copy, copies separated by < K columns merge (identifiable
 //! = false), and fully-ambiguous (all-None) reads never force a copy of their own.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::BTreeMap;
 

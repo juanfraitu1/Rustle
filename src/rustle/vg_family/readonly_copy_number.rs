@@ -15,6 +15,8 @@
 //! computed for assignment, and `depth_cn` only needs a read count and an externally-supplied
 //! single-copy expression floor (`lambda_global`, itself an RNA-only quantity -- see
 //! `bench/rna_copy_number_depth.py::global_single_copy_anchor`).
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 /// Number of DISTINCT pairwise-conflicting copy hap-vectors (chi(H) / MCC, THEORY.md Lemma 1).
 ///

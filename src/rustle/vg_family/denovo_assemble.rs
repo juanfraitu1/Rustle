@@ -11,6 +11,8 @@
 //! BAM/FASTA I/O is the outer edge: the integration driver parses primary alignments into `PrimaryRead`
 //! (via `bam::exons_from_cigar`) and loads the `GenomeIndex`; these functions are the testable transforms.
 //! The gate reuses `GenomeIndex::{is_canonical_junction, fetch_sequence}` and `vg::reverse_complement`.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use anyhow::Result;
 use noodles_sam::alignment::record::cigar::op::Kind;

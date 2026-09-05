@@ -26,6 +26,8 @@
 //! The k-mer encoder is shared with `family_rescue` (canonical base-4 KMER=18); the POA primitive is the
 //! already-ported `family_graph::contiguous_core_coverage`. The BAM/FASTA orchestration that builds the
 //! `DenovoTranscript` records and parallelises the POA is the integration layer.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::{BTreeMap, BTreeSet};
 

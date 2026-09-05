@@ -33,6 +33,8 @@
 //! is indistinguishable here from a seed landing on no transcribed locus at all. Re-run with
 //! `--min-copies 1` to separate the two cases. Abstention is the O1-safe answer: "no emitted family
 //! at this seed" is a legitimate result and is never guessed around.
+//!
+//! **STATUS:** OPT-IN — --seed (src/bin/gw_family_catalog.rs:223-224, `#[arg(long)] seed: Vec<String>`, default = empty vec; project_seeds returns Ok(()) immediately on an em  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use anyhow::{anyhow, Result};
 

@@ -11,6 +11,8 @@
 //! This is the read-coherence-way detection pipeline end to end (rescue + per-read copy assignment are the
 //! next stage). `detect_families` is the testable transform over parsed reads + a loaded genome (a
 //! single-region reference path; the genome-wide catalogs are the shipped entry points).
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::{BTreeSet, HashSet, BTreeMap};
 
@@ -715,6 +717,31 @@ pub(super) fn locus_confident_extent(
 /// at its locus, so it is a real intronless gene rather than a fragment of a spliced one.
 fn er_no_stub_edges() -> bool {
     std::env::var("RUSTLE_ER_NO_STUB_EDGES").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
+}
+
+/// Require an E_r edge to be justified by NON-REPEAT sequence (`RUSTLE_ER_REPEAT_MASKED_EDGES=1`,
+/// default off = byte-identical when unset).
+///
+/// ⭐ NO NEW THRESHOLD IS INTRODUCED. Every RepeatMasker soft-masked (lowercase) base of the comparison
+/// substrate is hard-masked to `N` and the UNCHANGED rule -- identity >= `min_identity`, coverage >= 0.50
+/// of the shorter -- is applied to the masked sequences. Masking replaces bases in place, so every
+/// sequence LENGTH is preserved and no coverage denominator moves; only which alignments minimap2 can
+/// seed changes.
+///
+/// WHY. Measured on `soto_adj` (ledger §6cs): every one of the 22 adjudicated NPIP false merges is
+/// mediated by interspersed repeat, overwhelmingly Alu, and exists ONLY at the sensitive `-k11 -w5` tier
+/// (`-x asm20` finds zero). Under this rule 51/67 true NPIP<->NPIP edges survive and 0/22 false ones do
+/// (Fisher p = 5.5e-11). The mechanism is upstream: oligo-dT primes an Alu A-tail inside a pre-mRNA
+/// intron, yielding a full-length but UNSPLICED molecule that becomes a single-read stub locus 70-90%
+/// Alu by base, which then matches any other Alu-bearing node.
+///
+/// ⚠ COST NOT YET PRICED GENOME-WIDE: masking removes 998/1,571 edges on `soto_adj` (63.5%) and creates
+/// none. The held-out-82 arm decides whether this may ever become a default (§6ct, pre-registered).
+///
+/// ⚠ Deliberately NOT the `identity >= 0.90` cut, which separates the same panel better (22/22 false
+/// killed for 2/67 true) but is a post-hoc threshold fitted on that panel.
+fn er_repeat_masked_edges() -> bool {
+    std::env::var("RUSTLE_ER_REPEAT_MASKED_EDGES").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
 }
 
 /// Whether reads at each rep's locus assert a splice junction carried by `>= min_reads` reads.
@@ -4472,6 +4499,68 @@ fn refine_copy_seq(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec
     }
 }
 
+/// Hard-mask every RepeatMasker soft-masked base of `seqs` in place, returning `(reps_masked, bases_masked)`.
+///
+/// Reads the SAME intervals `refine_copy_seq` used, through `repeat_catalog::IndexedFasta`, which returns
+/// bytes verbatim and so preserves the lowercase soft-mask that `GenomeIndex` destroys (`genome.rs:38/104/188`
+/// uppercase at load, and a test pins that). Case is POSITIONAL, so a '-' strand rep needs its mask
+/// REVERSED, not reverse-complemented.
+///
+/// ⚠ ABSTAINS GLOBALLY on any length mismatch rather than masking some reps and not others: a partial mask
+/// would be unfalsifiable from the outputs. `RUSTLE_TES_EXTEND` appends past `end` without updating
+/// `start`/`end`/`introns` (see `extend_exon_sum_to_tes`), which is exactly such a case.
+fn hard_mask_repeats(
+    seqs: &mut [Vec<u8>],
+    reps: &[DenovoTranscript],
+    fasta: &str,
+    genomic_span: bool,
+) -> Result<(usize, u64)> {
+    use crate::vg_family::repeat_catalog::IndexedFasta;
+    let fa = IndexedFasta::open(fasta)
+        .map_err(|e| anyhow::anyhow!("repeat mask: cannot open {fasta} (need a .fai sidecar): {e}"))?;
+    // Build every mask BEFORE mutating anything, so a mismatch anywhere leaves `seqs` untouched.
+    let mut masks: Vec<Vec<bool>> = Vec::with_capacity(reps.len());
+    for (i, r) in reps.iter().enumerate() {
+        let mut lower: Vec<bool> = Vec::with_capacity(seqs[i].len());
+        if genomic_span {
+            let b = fa.fetch(&r.chrom, r.start as i64, r.end as i64).unwrap_or_default();
+            lower.extend(b.iter().map(|c: &u8| c.is_ascii_lowercase()));
+        } else {
+            let blocks = crate::vg_family::catalog_input::exon_blocks(r.start, r.end, &r.introns);
+            for (xs, xe) in blocks {
+                let b = fa.fetch(&r.chrom, xs as i64, xe as i64).unwrap_or_default();
+                lower.extend(b.iter().map(|c: &u8| c.is_ascii_lowercase()));
+            }
+        }
+        if r.strand == '-' {
+            lower.reverse(); // case is positional: reverse only, never complement
+        }
+        if lower.len() != seqs[i].len() {
+            anyhow::bail!(
+                "repeat mask: rep {i} ({}:{}-{}) mask len {} != seq len {} -- ABSTAINING GLOBALLY (no rep masked)",
+                r.chrom, r.start, r.end, lower.len(), seqs[i].len()
+            );
+        }
+        masks.push(lower);
+    }
+    let mut n_bases = 0u64;
+    let mut n_reps = 0usize;
+    for (i, m) in masks.iter().enumerate() {
+        let mut hit = false;
+        for (j, &is_low) in m.iter().enumerate() {
+            if is_low {
+                seqs[i][j] = b'N';
+                n_bases += 1;
+                hit = true;
+            }
+        }
+        if hit {
+            n_reps += 1;
+        }
+    }
+    Ok((n_reps, n_bases))
+}
+
 /// Append the terminal-exon extension (copy `end`/`start` → observed TES) to the exon-sum. Opt-in via
 /// `RUSTLE_TES_EXTEND`; without it this returns the exon-sum unchanged, so every existing catalog is
 /// byte-identical.
@@ -4770,6 +4859,14 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ),
         ("shared_exon_mode".into(), std::env::var("RUSTLE_SHARED_EXON").unwrap_or_else(|_| "<unset>".into())),
         ("repeat_hub_gate".into(), std::env::var("RUSTLE_ER_REPEAT_GATE").unwrap_or_else(|_| "<unset>".into())),
+        // Changes WHICH SUBSTRATE E_r is computed on, so an ON and an OFF catalog must not have
+        // byte-identical params.tsv (the M2 defect). `_active` is emitted separately at the edge site
+        // because the flag ABSTAINS without a --fasta or on any mask/seq length mismatch: a requested but
+        // inert flag must be visible as inert.
+        (
+            "repeat_masked_edges".into(),
+            std::env::var("RUSTLE_ER_REPEAT_MASKED_EDGES").unwrap_or_else(|_| "<unset>".into()),
+        ),
         ("junction_majority".into(), std::env::var("RUSTLE_JUNCTION_MAJORITY").unwrap_or_else(|_| "<unset>".into())),
         // Changes WHICH SKELETONS BECOME NODES, so an ON and an OFF catalog must not have byte-identical
         // params.tsv (the M2 defect).
@@ -6211,7 +6308,29 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
     if span_genome.is_some() {
         eprintln!("[homology] E_r edge substrate: GENOMIC SPAN ({} reps)", reps.len());
     }
-    let seqs: Vec<Vec<u8>> = reps.iter().map(|r| refine_copy_seq(r, span_genome.as_ref())).collect();
+    let mut seqs: Vec<Vec<u8>> = reps.iter().map(|r| refine_copy_seq(r, span_genome.as_ref())).collect();
+    // REPEAT-JUSTIFIED EDGES (`RUSTLE_ER_REPEAT_MASKED_EDGES=1`, default OFF = byte-identical).
+    // Masks the LOCAL `seqs` only -- never `reps[..].seq`, which is what `gw_family_catalog` writes to
+    // `copies.fa` and what `copy_assign --copies-fa`, `parcn` and the consensus path then read.
+    if er_repeat_masked_edges() {
+        match params.intron_fasta.as_deref() {
+            Some(fa) => match hard_mask_repeats(&mut seqs, reps, fa, span_genome.is_some()) {
+                Ok((n_reps, n_bases)) => {
+                    let total: u64 = seqs.iter().map(|s| s.len() as u64).sum();
+                    eprintln!(
+                        "[homology] repeat-masked E_r substrate: {n_reps}/{} reps, {n_bases}/{total} bases hard-masked ({:.1}%)",
+                        reps.len(),
+                        100.0 * n_bases as f64 / total.max(1) as f64
+                    );
+                }
+                Err(e) => eprintln!("[homology] repeat mask ABSTAINED (edges unchanged): {e:#}"),
+            },
+            None => eprintln!(
+                "[homology] repeat mask ABSTAINED (edges unchanged): RUSTLE_ER_REPEAT_MASKED_EDGES needs --fasta"
+            ),
+        }
+    }
+    let seqs = seqs;
     // Parallel to `seqs` by construction (both are built 1:1 from `reps`), which is what lets
     // `nucleotide_edges` index cores by the same PAF sequence id.
     let core_lens: Vec<u64> = reps.iter().map(|r| r.core_bp).collect();

@@ -13,6 +13,8 @@
 //! structure; `aggregate_family` confirms a conversion only when the breakpoint RECURS across
 //! independent molecules (the conversion-vs-chimera discriminator). Default-OFF in the
 //! pipeline (RUSTLE_VG_MOSAIC_ON); additive — the existing per-copy EM scoring is untouched.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 /// Per-site observation handed to the detector: which copies the read matches at one
 /// diagnostic site. `match_bits[c]` = (read base == copy c's expected base). Sites are in

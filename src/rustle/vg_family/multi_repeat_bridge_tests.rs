@@ -14,6 +14,8 @@
 //!     blocks incl. the expensive families, asserting exactly 61 cut families reproduced
 //!     and the big mult-426 GSTM2 + MAGEA cardinality families spared. Heavy HW-DP
 //!     (~27 G cell-ops); run with `cargo test --release -- --ignored`.
+//!
+//! **STATUS:** TEST-ONLY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use super::*;
 use serde_json::Value;

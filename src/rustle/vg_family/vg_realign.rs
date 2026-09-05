@@ -17,6 +17,8 @@
 //! DISTANCE only, no alignment path. To re-extract a read's base at a copy-path's PSV columns
 //! (follow-up (c) in `bench/VG_REALIGN.md`) we need the actual traceback, so this keeps a full DP
 //! + backtrack matrix (not the rolling 2-row form) and reconstructs the aligned columns.
+//!
+//! **STATUS:** OPT-IN — --vg-realign or --vg-realign-correct (src/bin/copy_assign.rs:340-341 and :346-347, both `default_value_t = false`; combined into cfg.vg_realign at cop  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::HashSet;
 
@@ -222,6 +224,19 @@ pub struct RealignHit {
 ///
 /// Returns `None` when `copy_seqs` is empty, or when the best fit is below `MIN_ALN_ID`: a read
 /// that fits no copy-path at all is not a re-align candidate for this family.
+/// `aln_id` with the SHORTER sequence as the query — the idiom already used by
+/// `bridge_detector::exon_match_tensor` (bridge_detector.rs:363-364, "align the SHORTER as the query").
+///
+/// ⛔ WHY THIS EXISTS (ledger §6df). `aln_id` is `1 - hw_distance(q, t) / len(q)` with free end-gaps on the
+/// TARGET only, so a target SHORTER than the query cannot contain it and the identity is CAPPED at
+/// `len(t) / len(q)` — a pure length artefact with no homology content. Measured on MCLFAM2: a 721 bp
+/// fragment copy against 2,685 bp median reads is capped at 721/2,685 = **0.269**, so it could never win
+/// and **362/362 = 100%** of the reads whose linear copy it was were reassigned away from it
+/// unconditionally. Any family with copies of unequal length is affected, and fragments are common.
+fn aln_id_len_safe(read: &[u8], copy: &[u8]) -> f64 {
+    if read.len() <= copy.len() { aln_id(read, copy) } else { aln_id(copy, read) }
+}
+
 pub fn realign_to_paths(
     read_seq: &[u8],
     copy_seqs: &[Vec<u8>],
@@ -234,7 +249,7 @@ pub fn realign_to_paths(
     let mut best_copy = 0usize;
     let mut id_best = f64::NEG_INFINITY;
     for (k, seq) in copy_seqs.iter().enumerate() {
-        let id = aln_id(read_seq, seq);
+        let id = aln_id_len_safe(read_seq, seq);
         // Strict `>` keeps the earliest index on ties.
         if id > id_best {
             id_best = id;
@@ -247,7 +262,7 @@ pub fn realign_to_paths(
     }
 
     let id_linear = match linear_copy {
-        Some(lc) if lc < copy_seqs.len() => aln_id(read_seq, &copy_seqs[lc]),
+        Some(lc) if lc < copy_seqs.len() => aln_id_len_safe(read_seq, &copy_seqs[lc]),
         _ => 0.0,
     };
 
@@ -315,10 +330,49 @@ pub enum RealignAction {
 /// baseline: certifying against it would accept any moderately-well-fitting `id_best` (even a
 /// near-random ~0.5 identity) as a "correction" of nothing. A read with no linear attribution at
 /// all isn't a correction case -- it's handled by the separate novel-copy path (`pool_novel`).
+/// Count the PSV columns at which the read's own observed allele SUPPORTS `best` and CONTRADICTS
+/// `linear` — the quantity `min_p = (error_rate/3)^n` actually assumes.
+///
+/// WHY THIS REPLACES `(id_best - id_linear) * read_len` (ledger §6df). That expression is a whole-read
+/// EDIT-DISTANCE difference, so one indel or one length mismatch manufactures hundreds of "independent
+/// allele observations" and `min_p` underflows to 0, making the reassignment unconditional. Measured on
+/// MCLFAM2 it gave n_decisive ~ 754 for reads whose linear copy was a 721 bp fragment, and 362/362 =
+/// 100% of those reads were reassigned without a single rejection.
+///
+/// Columns are compared BY INDEX: `psv_best[j]` and `psv_linear[j]` are the same family PSV column j in
+/// each copy's own offset frame (`psv_positions_for` builds both from `family_col_genomic_pos`). A column
+/// counts only when BOTH copies yield a called base and the read's base matches one and not the other.
+fn psv_decisive_count(
+    read_seq: &[u8],
+    copy_best: &[u8],
+    copy_linear: &[u8],
+    psv_best: &[usize],
+    psv_linear: &[usize],
+) -> usize {
+    // The read's own base at each PSV column, read through its alignment to the BEST copy.
+    // (`path_obs_at` yields the READ's base, not the copy's — comparing two such vectors to each
+    // other would compare the read to itself and always count 0.)
+    let oriented = orient_for_copy(read_seq, copy_best);
+    let map = align_traceback(&oriented, copy_best);
+    let obs = path_obs_at(&map, psv_best, &oriented);
+
+    (0..obs.len().min(psv_linear.len()))
+        .filter(|&j| {
+            let Some(r) = obs[j] else { return false };
+            let (Some(&cb), Some(&cl)) = (copy_best.get(psv_best[j]), copy_linear.get(psv_linear[j]))
+            else {
+                return false;
+            };
+            // A column is decisive only where the two COPIES actually differ and the read picks best.
+            cb != cl && r == cb
+        })
+        .count()
+}
+
 pub fn accept_realignment(
     hit: &RealignHit,
     linear_copy: Option<usize>,
-    read_len: usize,
+    n_decisive: usize,
     error_rate: f64,
     alpha: f64,
 ) -> RealignAction {
@@ -330,10 +384,10 @@ pub fn accept_realignment(
         return RealignAction::Reject;
     }
 
-    let n_decisive = ((hit.id_best - hit.id_linear) * read_len as f64).round() as i64;
     if n_decisive < 1 {
         return RealignAction::Reject;
     }
+    let n_decisive = n_decisive as i64;
 
     let min_p = (error_rate / 3.0).powi(n_decisive as i32);
     if min_p < alpha {
@@ -476,7 +530,17 @@ pub fn run_family_realign(
             },
             Some(hit) => {
                 let id_best = hit.id_best;
-                match accept_realignment(&hit, linear_copy, read_len, error_rate, alpha) {
+                // Report-only leg: no PSV frames here, so bound the decisive count by the copies'
+                // OWN divergence — there cannot be more decisive sites than the two copies differ at (§6df).
+                let n_dec = match linear_copy {
+                    Some(lc) if lc != hit.best_copy => {
+                        let raw = ((hit.id_best - hit.id_linear) * read_len as f64).round().max(0.0) as usize;
+                        let (a, b) = (hit.best_copy.min(lc), hit.best_copy.max(lc));
+                        raw.min(crate::vg_family::bridge_detector::hw_distance(&copy_seqs[a], &copy_seqs[b]))
+                    }
+                    _ => 0,
+                };
+                match accept_realignment(&hit, linear_copy, n_dec, error_rate, alpha) {
                     RealignAction::Reassign(best_copy) => RealignRecord {
                         read_name: br.name.clone(),
                         action: "reassigned".to_string(),
@@ -586,7 +650,18 @@ pub fn apply_realign(
                 },
                 Some(hit) => {
                     let id_best = hit.id_best;
-                    match accept_realignment(&hit, linear_copy, read_len, error_rate, alpha) {
+                    // §6df: the decisive count is a PSV-COLUMN count, never a scaled edit distance.
+                    let n_dec = match linear_copy {
+                        Some(lc) if lc != hit.best_copy => psv_decisive_count(
+                            &br.read.seq,
+                            &copy_seqs[hit.best_copy],
+                            &copy_seqs[lc],
+                            &psv_pos_per_copy[hit.best_copy],
+                            &psv_pos_per_copy[lc],
+                        ),
+                        _ => 0,
+                    };
+                    match accept_realignment(&hit, linear_copy, n_dec, error_rate, alpha) {
                         RealignAction::Reassign(best_copy) => {
                             // C1: orient the read to the copy's own (transcription-strand) frame before the
                             // traceback -- a `-`-strand copy's consensus is the reverse complement of
@@ -795,32 +870,31 @@ mod tests {
         let n_decisive = ((hit.id_best - hit.id_linear) * 1000.0).round() as i64;
         assert_eq!(n_decisive, 140);
 
-        let action = accept_realignment(&hit, Some(0), 1000, 0.003, 1e-3);
+        let action = accept_realignment(&hit, Some(0), 140, 0.003, 1e-3);
         assert_eq!(action, RealignAction::Reassign(2));
     }
 
     #[test]
     fn accept_marginal_rejects() {
-        // id diff 0.001 * read_len 1000 -> n_decisive = 1 (rounds exactly to 1). With a
-        // deliberately high error_rate = 0.05, min_p = (0.05/3)^1 = 0.01666... which is >= alpha
-        // = 1e-3 -- a single decisive position isn't enough evidence to overturn the read's
-        // existing linear attribution (copy 0) under this noisy an error model.
+        // ONE decisive PSV column. With a deliberately high error_rate = 0.05,
+        // min_p = (0.05/3)^1 = 0.01666... >= alpha = 1e-3 -- a single decisive column isn't enough
+        // to overturn the read's existing linear attribution (copy 0) under this noisy an error model.
+        // §6df: `n_decisive` is now a PSV-COLUMN COUNT supplied by the caller, not a scaled edit
+        // distance; passing 1 here is what one distinguishing column means.
         let hit = RealignHit { best_copy: 2, id_best: 0.90, id_linear: 0.899 };
-        let n_decisive = ((hit.id_best - hit.id_linear) * 1000.0).round() as i64;
-        assert_eq!(n_decisive, 1);
         let min_p = (0.05_f64 / 3.0).powi(1);
         assert!(min_p >= 1e-3, "min_p = {min_p} should be >= alpha");
 
-        let action = accept_realignment(&hit, Some(0), 1000, 0.05, 1e-3);
+        let action = accept_realignment(&hit, Some(0), 1, 0.05, 1e-3);
         assert_eq!(action, RealignAction::Reject);
     }
 
     #[test]
     fn accept_zero_decisive_rejects() {
-        // id_best == id_linear -> n_decisive = 0 -> no decisive evidence at all -> Reject,
-        // regardless of how permissive alpha/error_rate are.
+        // No PSV column separates the two copies for this read -> n_decisive = 0 -> no decisive
+        // evidence at all -> Reject, regardless of how permissive alpha/error_rate are.
         let hit = RealignHit { best_copy: 2, id_best: 0.95, id_linear: 0.95 };
-        let action = accept_realignment(&hit, Some(0), 1000, 0.003, 1.0);
+        let action = accept_realignment(&hit, Some(0), 0, 0.003, 1.0);
         assert_eq!(action, RealignAction::Reject);
     }
 
@@ -829,7 +903,7 @@ mod tests {
         // best_copy already IS the read's linear attribution -- no correction needed even
         // though id_best/id_linear here would otherwise look decisive.
         let hit = RealignHit { best_copy: 2, id_best: 0.99, id_linear: 0.10 };
-        let action = accept_realignment(&hit, Some(2), 1000, 0.003, 1e-3);
+        let action = accept_realignment(&hit, Some(2), 890, 0.003, 1e-3);
         assert_eq!(action, RealignAction::Reject);
     }
 
@@ -840,7 +914,7 @@ mod tests {
         // high id_best (0.99) must Reject here, not Reassign off the meaningless zero baseline;
         // genuinely unattributed reads are handled by the separate novel-copy path.
         let hit = RealignHit { best_copy: 1, id_best: 0.99, id_linear: 0.0 };
-        let action = accept_realignment(&hit, None, 1000, 0.003, 1e-3);
+        let action = accept_realignment(&hit, None, 140, 0.003, 1e-3);
         assert_eq!(action, RealignAction::Reject);
     }
 
@@ -1021,16 +1095,21 @@ mod tests {
         let copy0_seq = pseudo_seq(1, 200);
         let mut copy1_seq = pseudo_seq(2, 200);
         let p = 50usize;
+        let p2 = 120usize; // §6df: one PSV gives min_p = (0.003/3)^1 = 1e-3, which does NOT clear
+                           // alpha = 1e-3. Two decisive columns is the same bar `absent_copy` uses.
         // Force column p to differ between the two copies (pseudo_seq draws from independent
         // seeds so this already usually holds, but force it so the test isn't seed-lucky).
         if copy1_seq[p] == copy0_seq[p] {
             copy1_seq[p] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != copy0_seq[p]).unwrap();
         }
+        if copy1_seq[p2] == copy0_seq[p2] {
+            copy1_seq[p2] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != copy0_seq[p2]).unwrap();
+        }
         let copy0 = transcript("copy0", "chr1", 0, copy0_seq.clone());
         let copy1 = transcript("copy1", "chr1", 5000, copy1_seq.clone());
         let copies = vec![copy0, copy1];
         let copy_seqs = vec![copy0_seq, copy1_seq.clone()];
-        let psv_pos_per_copy = vec![vec![p], vec![p]];
+        let psv_pos_per_copy = vec![vec![p, p2], vec![p, p2]];
 
         // Read == copy 1's consensus exactly, but low MAPQ and linearly attributed to copy 0
         // (its BAM placement) -- a Task-1 candidate whose true source is copy 1.
@@ -1051,7 +1130,7 @@ mod tests {
         assert_eq!(out.corrected.len(), 1, "expected exactly one correction, got {:?}", out.corrected);
         let (new_copy, obs) = out.corrected.get(&0).expect("read 0 must be corrected");
         assert_eq!(*new_copy, 1, "read's true best-fit copy is copy 1");
-        assert_eq!(obs, &vec![Some(copy1_seq[p])], "obs at the PSV column must equal copy 1's base");
+        assert_eq!(obs, &vec![Some(copy1_seq[p]), Some(copy1_seq[p2])], "obs at the PSV column must equal copy 1's base");
         assert!(out.novel_pools.is_empty());
         assert_eq!(
             out.records.iter().filter(|r| r.action == "reassigned").count(),
@@ -1076,15 +1155,20 @@ mod tests {
         let copy0_seq = pseudo_seq(1, 200);
         let mut copy1_seq = pseudo_seq(2, 200); // TRANSCRIPTION-strand consensus of a '-'-strand copy
         let p = 50usize;
+        let p2 = 120usize; // §6df: one PSV gives min_p = (0.003/3)^1 = 1e-3, which does NOT clear
+                           // alpha = 1e-3. Two decisive columns is the same bar `absent_copy` uses.
         if copy1_seq[p] == copy0_seq[p] {
             copy1_seq[p] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != copy0_seq[p]).unwrap();
+        }
+        if copy1_seq[p2] == copy0_seq[p2] {
+            copy1_seq[p2] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != copy0_seq[p2]).unwrap();
         }
         let copy0 = transcript("copy0", "chr1", 0, copy0_seq.clone());
         let mut copy1 = transcript("copy1", "chr1", 5000, copy1_seq.clone());
         copy1.strand = '-';
         let copies = vec![copy0, copy1];
         let copy_seqs = vec![copy0_seq, copy1_seq.clone()];
-        let psv_pos_per_copy = vec![vec![p], vec![p]];
+        let psv_pos_per_copy = vec![vec![p, p2], vec![p, p2]];
 
         // The read is FORWARD-GENOME: the reverse complement of copy 1's transcription-strand
         // consensus. Low MAPQ (a Task-1 candidate) and linearly misattributed to copy 0.
@@ -1108,7 +1192,7 @@ mod tests {
         assert_eq!(*new_copy, 1, "read's true best-fit copy is copy 1 (the '-'-strand copy)");
         assert_eq!(
             obs,
-            &vec![Some(copy1_seq[p])],
+            &vec![Some(copy1_seq[p]), Some(copy1_seq[p2])],
             "path_obs at the PSV column must equal copy 1's TRANSCRIPTION-strand allele, not a \
              garbage/wrong-orientation base"
         );

@@ -3,6 +3,8 @@
 //! of genomic sites the family graph maps to, recovering K=0 collapses the RNA read graph merges into one
 //! locus. (minimap2 does the alignment; the VG framing is that famCN counts where the family graph lands.) In-engine
 //! minimap2 (no Liftoff dependency); seeded by our own consensus, so no reference-annotation circularity.
+//!
+//! **STATUS:** OPT-IN — `--enumerate-copies` (src/bin/gw_family_catalog.rs:172-173, default false) or `--min-identity 0.98` (gw_family_catalog.rs:138-139, Option, default Non  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 use anyhow::Result;
 use std::collections::HashMap;
 use std::io::Write;

@@ -21,6 +21,8 @@
 //! This is the portable KERNEL: `conflict_edges` (read placements → weighted edges) + `conflict_families`
 //! (edges → connected-component families). The remaining integration is plumbing per-locus secondary
 //! placements (`secondary_index` / `tied_secondary_reads_in_region`) into the detection stage.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 /// One read's placement on a candidate locus: the locus index plus the signals the conflict criterion uses —
 /// `de` (gap-compressed divergence, the tie discriminant), `mapq` (both-0 = genuine-multimapper corroboration),

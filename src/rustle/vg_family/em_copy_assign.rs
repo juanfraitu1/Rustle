@@ -18,6 +18,8 @@
 //! log-likelihoods, `Vec<f64>` abundances) with no VG/SDA types at this
 //! layer -- that grounding is documented here, not coded; the coupling to
 //! Task 1's `ReadEvidence.logl` arrives in Task 3.
+//!
+//! **STATUS:** OPT-IN — `--em` (src/bin/copy_assign.rs:310-311, `#[arg(long, default_value_t = false)]`) OR `--vg-realign` (src/bin/copy_assign.rs:340-341, default false)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 /// log-sum-exp over a slice, ignoring `-inf` terms so no NaN is produced when
 /// some copies have zero prior mass (`ln 0 = -inf`).

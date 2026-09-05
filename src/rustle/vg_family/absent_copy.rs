@@ -19,6 +19,8 @@
 //! injected `remap_identity` closure so tests never shell minimap2.  The real entry point
 //! `admit_candidate` rebuilds the host spliced sequence from the genome (using the copy's intron
 //! chain), then delegates to the hermetic variant with a real minimap2 closure.
+//!
+//! **STATUS:** OPT-IN — --absent-copies (src/bin/copy_assign.rs:255-256, default_value_t = false); second route --vg-realign (src/bin/copy_assign.rs:341, default false, admis  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::BTreeMap;
 

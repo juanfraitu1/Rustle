@@ -14,6 +14,8 @@
 //! non-reference allele frequency sits in a balanced band (excludes 0.5% sequencing error and
 //! fixed differences), and a co-segregation/block test (a hidden copy's alt columns co-occur on
 //! ONE read subset — distinguishing it from scattered heterozygous SNPs by requiring many).
+//!
+//! **STATUS:** OPT-IN — `--collapse-enumerate` (src/bin/gw_family_catalog.rs:177-178, `#[arg(long, default_value_t = false)]`)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 /// One primary alignment's observation at the locus: its covered span [start, end) and the positions
 /// where it carries a non-reference allele (a mismatch).

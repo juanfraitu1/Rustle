@@ -28,6 +28,8 @@
 //! >= 128 takes the same `code < 0` RESET path here as the `?` does in Python
 //! (`is_lc` is only consulted when `code >= 0`), so the reset behaviour matches --
 //! only the (never-exercised, non-ASCII) byte-vs-character length would differ.
+//!
+//! **STATUS:** INFRASTRUCTURE  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::VecDeque;
 

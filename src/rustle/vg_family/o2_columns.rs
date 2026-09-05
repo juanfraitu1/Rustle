@@ -56,6 +56,8 @@
 //! most once per reference position; if the same `query_name` recurs it is overwritten
 //! (defaultdict `dict` assignment), matching Python. `BTreeMap` gives a deterministic
 //! ascending iteration order.
+//!
+//! **STATUS:** TEST-ONLY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::BTreeMap;
 use std::path::Path;

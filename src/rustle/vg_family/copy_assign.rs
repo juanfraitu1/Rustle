@@ -10,6 +10,8 @@
 //! a junction boundary) where the candidate copies DIFFER. Reads spanning 0 such features are genuinely
 //! TIED ("N equally good places"). Among resolvable reads, a log-likelihood-ratio margin over the
 //! runner-up calls ASSIGNED vs AMBIGUOUS. Mirrors `bench/copy_assign.py::assign_read`.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use super::copy_split::{allele_at, intron_chain_of, AlignedRead};
 

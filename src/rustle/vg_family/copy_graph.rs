@@ -1,6 +1,8 @@
 //! Copy-graph objects (v1): every copy of a family is a tagged, corroborable PATH in one GFA 1.1
 //! variation graph. A REFERENCE walk makes a reference-absent copy visibly an arm the reference does
 //! not take. Pure builder — no I/O; the caller fills the parallel vectors and writes the strings.
+//!
+//! **STATUS:** OPT-IN — --phase (src/bin/copy_assign.rs:235-236, default_value_t = false)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::{BTreeMap, BTreeSet};
 

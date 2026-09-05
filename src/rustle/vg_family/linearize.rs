@@ -1,6 +1,8 @@
 //! Augment-and-linearize certificate for reference-absent copies (v2.1). Pure statistics + a deterministic
 //! dinucleotide-preserving decoy; the minimap2 re-alignment is injected as a closure so this module is testable
 //! without any subprocess.
+//!
+//! **STATUS:** OPT-IN — --linearize / --linearize-gate, both `#[arg(long, default_value_t = false)]` at src/bin/copy_assign.rs:280-281 and :289-290; both additionally require  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 /// Deterministic LCG for reproducible shuffles (no external rng crate; Date/rand not needed).
 struct Lcg(u64);

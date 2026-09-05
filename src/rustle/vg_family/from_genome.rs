@@ -3,6 +3,8 @@
 //! the genome-only counterpart of the RNA read front-end. The reps differ from RNA reps in exactly one
 //! way: genomic `seq` (introns included) and an EMPTY intron chain. That single difference is the
 //! scientific claim (splicing discards the intron/flank sequence that separates near-identical copies).
+//!
+//! **STATUS:** OPT-IN — `--from-genome <BED>` (src/bin/gw_family_catalog.rs:38-39, `#[arg(long)] from_genome: Option<String>`, default None)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 use std::collections::{HashMap, HashSet};
 use anyhow::Result;
 use crate::vg_family::family_detect::DenovoTranscript;

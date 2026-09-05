@@ -24,6 +24,8 @@
 //!      `contiguous_core_coverage` primitive, trying BOTH orientations (forward,
 //!      then a reverse-complement fallback for copies assembled on the opposite
 //!      strand). Rescue iff the contiguous-core coverage `>= T_CORE = 0.13`.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use crate::types::DetHashSet;
 use crate::vg_family::seq_utils::reverse_complement;

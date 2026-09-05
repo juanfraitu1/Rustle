@@ -13,6 +13,8 @@
 //! distant homologs in the database (here: the genome itself). The resulting
 //! candidates are then injected into the family graph as "ghost" copies in
 //! Phase 2 so HMM scoring can target them.
+//!
+//! **STATUS:** TEST-ONLY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use crate::genome::GenomeIndex;
 use crate::types::DetHashSet;

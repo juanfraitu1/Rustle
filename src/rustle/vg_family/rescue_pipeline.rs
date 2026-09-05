@@ -9,6 +9,8 @@
 //!   2. drop loci overlapping an already-assembled family member span;
 //!   3. build each thin locus's spliced sequence (canonical-junction gate, reverse-complement for `-`);
 //!   4. POA-confirm against the family members; dedup by locus, keep the best core coverage.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -5,6 +5,8 @@
 //! Copy-specific exons become singleton nodes — that is what makes a
 //! family graph different from the per-copy splice graphs it is built
 //! from.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::ops::Index;
 

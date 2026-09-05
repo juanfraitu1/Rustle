@@ -12,6 +12,8 @@
 //! order + RNG); the Python pipeline established the partition is robust (resolution 1→8 holds 96–96.7%
 //! concordance), so the faithful target is the same modularity DEFINITION with deterministic tie-breaks
 //! (sorted node/community order, strict-improvement moves), not a byte-identical partition.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::{BTreeMap, BTreeSet};
 

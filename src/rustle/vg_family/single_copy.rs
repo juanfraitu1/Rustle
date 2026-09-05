@@ -6,6 +6,8 @@
 //! and whose spliced length is in [MIN_SPLICED, MAX_SPLICED]. A locus is a copy family of size >= 1:
 //! single-copy is the degenerate χ(H)=1 case (0 PSVs); its transcripts are the λ_global baseline that
 //! calibrates `depth_cn = E_fam / λ_global`. This module is the copy-number baseline, NOT an isoform catalog.
+//!
+//! **STATUS:** OPT-IN — --single-copy-baseline (src/bin/gw_family_catalog.rs:189-190, `#[arg(long, default_value_t = false)] single_copy_baseline: bool`).  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use super::denovo_pipeline::ColocatedFamily;
 use super::family_detect::DenovoTranscript;

@@ -46,6 +46,8 @@
 //! (PSMD2 & DAXX first `high_confidence` row EXCLUDED), and the full `\r\n` output bytes ==
 //! Python. A second test runs the port on the shipped input TSVs and asserts the rendered bytes
 //! == the shipped `asj_genetic_core.tsv`.
+//!
+//! **STATUS:** TEST-ONLY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::path::Path;
 

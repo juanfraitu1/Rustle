@@ -13,6 +13,8 @@
 //! when its edge is supported by `< min_consensus_copies` copies AND its own read support is
 //! `< support_floor`. A well-supported copy-private junction (support ≥ floor) is preserved even if
 //! no sibling shares it.
+//!
+//! **STATUS:** TEST-ONLY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use super::family_graph::{CopyId, FamilyGraph, NodeIdx};
 use crate::types::Bundle;

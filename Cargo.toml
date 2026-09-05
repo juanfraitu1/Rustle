@@ -70,6 +70,10 @@ codegen-units = 256 # Maximum parallelism
 panic = "unwind"
 
 [[bin]]
+name = "mcl_families"
+path = "src/bin/mcl_families.rs"
+
+[[bin]]
 name = "gamma_refine"
 path = "src/bin/gamma_refine.rs"
 

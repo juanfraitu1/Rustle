@@ -4,6 +4,8 @@
 //! StringTie-assembler carve (`docs/RETIREMENT_AND_MIGRATION.md`): it is the one general symbol the
 //! thesis layer imported from the assembler at runtime, so keeping it in a thesis-owned module lets the
 //! whole assembler island be deleted. Behaviour is unchanged (non-ACGT bytes map to `N`, uppercase only).
+//!
+//! **STATUS:** INFRASTRUCTURE  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 /// Reverse-complement a nucleotide sequence. Non-ACGT bytes map to `b'N'`.
 pub(crate) fn reverse_complement(seq: &[u8]) -> Vec<u8> {

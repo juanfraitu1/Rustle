@@ -2,6 +2,8 @@
 //! projects catalog copy consensuses onto phased haplotype assemblies and counts per-copy genomic loci,
 //! disambiguated by deterministic SUN witnesses. Consumes only copies.fa + the assemblies; never wires
 //! into the RNA-exclusive core. See docs/superpowers/specs/2026-07-14-assembly-parcn-design.md.
+//!
+//! **STATUS:** OTHER-BINARY — binary `parcn` (Cargo.toml:116-118, path src/bin/parcn.rs); no flag inside it gates the module — the whole binary is the opt-in  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::BTreeMap;
 

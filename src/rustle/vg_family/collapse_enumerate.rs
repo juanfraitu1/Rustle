@@ -1,6 +1,8 @@
 //! K=0-collapsed family re-admission (behind `--collapse-enumerate`). A near-identical family that
 //! collapses to <2 RNA-distinct loci is re-admitted as copy NUMBER iff it shows a LOCAL collapse:
 //! a `hidden_copy` second-haplotype witness that is BALANCED (co-equal depth) AND projects to >=2 genomic loci.
+//!
+//! **STATUS:** OPT-IN — --collapse-enumerate (src/bin/gw_family_catalog.rs:177-178, default_value_t = false) or env RUSTLE_COLLAPSE_ENUMERATE=1 (denovo_pipeline.rs:180); sibl  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 use std::collections::HashMap;
 use crate::vg_family::hidden_copy::HiddenCopyEvidence;
 use crate::vg_family::genome_projection::CopyLocus;

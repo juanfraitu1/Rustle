@@ -6,6 +6,8 @@
 //! ends. IsoSeq reads are spliced mRNA and do not cover intergenic flanks, so this signal
 //! comes from the GENOME sequence (which the VG already loads for family discovery), anchored
 //! at the gene the family discovered. The core is a pure anchored sliding-window homology scan.
+//!
+//! **STATUS:** TEST-ONLY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 /// How far cross-copy homology extends OUTWARD from a gene boundary into the flank. Both
 /// slices run in the SAME direction away from the gene: index 0 is the gene boundary, larger

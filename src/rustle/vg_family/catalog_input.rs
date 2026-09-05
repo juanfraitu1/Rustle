@@ -33,6 +33,8 @@
 //!   coordinates via the SAME `build_spliced_seq` the catalog used, and the strand it derives from the
 //!   junction motifs must agree with the strand the catalog recorded (a disagreement means the FASTA is
 //!   not the assembly the catalog was built against).
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::BTreeMap;
 
@@ -95,22 +97,30 @@ pub type SeqIndex = BTreeMap<(String, usize), CatalogSeq>;
 /// rather than emitted, because a reversed block would read as a valid interval to every consumer.
 /// The dropped bases are then visible as `exon_bp < exon_sum_len` instead of silently corrupting a span.
 pub fn exon_blocks_str(start: u64, end: u64, introns: &[(u64, u64)]) -> String {
-    let mut out = String::new();
+    exon_blocks(start, end, introns)
+        .into_iter()
+        .map(|(a, b)| format!("{a}-{b}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// The exon blocks themselves, as ascending half-open `[start, end)` intervals — the complement of
+/// `introns` within `[start, end)`.
+///
+/// `exon_blocks_str` is a rendering of exactly this list, so the two can never drift: any consumer that
+/// needs the intervals (e.g. fetching per-exon sequence to build a repeat mask positionally parallel to a
+/// rep's own sequence) gets the same walk that produced the `exons` column of the node dump.
+pub fn exon_blocks(start: u64, end: u64, introns: &[(u64, u64)]) -> Vec<(u64, u64)> {
+    let mut out = Vec::new();
     let mut prev = start;
     for &(d, a) in introns {
         if d > prev && a >= d {
-            if !out.is_empty() {
-                out.push(',');
-            }
-            out.push_str(&format!("{prev}-{d}"));
+            out.push((prev, d));
             prev = a;
         }
     }
     if end > prev {
-        if !out.is_empty() {
-            out.push(',');
-        }
-        out.push_str(&format!("{prev}-{end}"));
+        out.push((prev, end));
     }
     out
 }
@@ -405,6 +415,42 @@ pub fn to_colocated(
 
 #[cfg(test)]
 mod tests {
+    /// `exon_blocks_str` must be exactly a rendering of `exon_blocks` — they are used as the same walk
+    /// (the node dump's `exons` column, and the repeat mask that must be positionally parallel to a rep's
+    /// own sequence). If they drift, a mask silently misaligns against the sequence it masks.
+    #[test]
+    fn exon_blocks_and_its_string_rendering_are_the_same_walk() {
+        let cases: &[(u64, u64, &[(u64, u64)])] = &[
+            (100, 200, &[]),
+            (100, 500, &[(200, 300)]),
+            (100, 900, &[(200, 300), (400, 550), (700, 800)]),
+            (100, 200, &[(50, 80)]),            // intron entirely before the span
+            (100, 200, &[(150, 150)]),          // degenerate zero-length intron
+        ];
+        for &(start, end, introns) in cases {
+            let blocks = exon_blocks(start, end, introns);
+            let rendered: String =
+                blocks.iter().map(|(a, b)| format!("{a}-{b}")).collect::<Vec<_>>().join(",");
+            assert_eq!(rendered, exon_blocks_str(start, end, introns), "walk drift at {start}-{end}");
+            // The blocks must be ascending, disjoint and inside the span — the properties the mask relies on.
+            let mut prev = start;
+            for &(a, b) in &blocks {
+                assert!(a >= prev && b > a && b <= end, "bad block {a}-{b} in {start}-{end}");
+                prev = b;
+            }
+        }
+    }
+
+    /// The exon blocks must sum to the same length the node dump reports as `exon_bp`, because the repeat
+    /// mask is built by concatenating per-block fetches and is then length-checked against the rep sequence.
+    #[test]
+    fn exon_blocks_sum_to_the_spliced_length() {
+        let introns = [(200u64, 300u64), (400, 550)];
+        let blocks = exon_blocks(100, 700, &introns);
+        let total: u64 = blocks.iter().map(|(a, b)| b - a).sum();
+        assert_eq!(total, (700 - 100) - (300 - 200) - (550 - 400));
+    }
+
     use super::*;
 
     const HDR: &str = "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons";

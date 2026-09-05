@@ -14,6 +14,8 @@
 //!   2. spliced↔genomic exon map (`exon_map`/`gen2off`) + intron `copy_boundaries`.
 //!   3. per read: read its base at each column's genomic position (reverse-complemented for a `-` copy) and
 //!      its intron boundaries (mapped to spliced space) → a feature vector → `assign_read`.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::{BTreeMap, BTreeSet};
 

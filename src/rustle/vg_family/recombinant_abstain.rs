@@ -36,6 +36,8 @@
 //! `bench/gen_recombinant_abstain_fixture.py`, PYTHONHASHSEED=0); see the
 //! `#[test]`s (detection parity, `build_supported` parity, apply-abstain flip-list
 //! + counters parity, and the opt-out no-op check).
+//!
+//! **STATUS:** TEST-ONLY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::{BTreeMap, BTreeSet};
 

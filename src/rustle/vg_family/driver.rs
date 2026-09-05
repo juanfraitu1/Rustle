@@ -32,6 +32,8 @@
 //!   * `validate()` (the DNA diploid-oracle SCORING that only feeds the JSON summary),
 //!   * the `family_rna_refine.json` summary + the `_report` stdout block.
 //! The acceptance is the CATALOG TSV md5; the JSON is a validation-only side output.
+//!
+//! **STATUS:** OTHER-BINARY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::{BTreeSet, HashMap};
 use std::io::Write;

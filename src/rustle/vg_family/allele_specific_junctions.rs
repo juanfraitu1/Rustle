@@ -8,6 +8,8 @@
 //! Per gene: call a balanced het ANCHOR SNP, partition reads by the allele they carry, and for each junction
 //! compute PSI = used/spanning within each allele; a 2×2 Fisher exact + |ΔPSI| effect size gives the call.
 //! Genome-wide BH-FDR + a |ΔPSI| floor (applied by the caller) select the ASJs.
+//!
+//! **STATUS:** OTHER-BINARY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::BTreeMap;
 

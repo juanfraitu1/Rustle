@@ -52,6 +52,8 @@
 //! `#[test]` re-fetches the BAM and recomputes every anchor's `frac_mq0` (bits + string) and
 //! every call's `dist`/`high_confidence`/written line, asserting `== Python`. A FAST,
 //! always-on test pins the pure `dist`/`high_confidence`/`py_float_str` logic without the BAM.
+//!
+//! **STATUS:** TEST-ONLY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::path::Path;
 

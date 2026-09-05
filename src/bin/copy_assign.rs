@@ -939,6 +939,10 @@ fn parse_region(s: &str) -> Result<(String, u64, u64)> {
 type RegionKey = (String, u64, u64);
 /// `--families`: the supplied catalog families BOUND to the region that will assign them.
 type RegionFamilies = std::collections::BTreeMap<RegionKey, Vec<CatalogFamily>>;
+/// Flank loaded around each supplied copy when gathering a dispersed family's reads (§6dh). Comfortably
+/// above any long read, so a read reaching into a copy from outside its span is still collected.
+const COPY_READ_PAD: u64 = 50_000;
+type RegionWindows = std::collections::BTreeMap<RegionKey, Vec<(u64, u64)>>;
 /// `--families`: catalog `tid` -> `(catalog family_id, catalog copy_idx)`. The JOIN KEY. Built from the
 /// supplied table (never from the assignment output), so `<out>.family_join.tsv` reports the catalog's own
 /// identity for a copy rather than an index this binary re-derived.
@@ -974,12 +978,12 @@ fn read_ref_end_local(read: &rustle::vg_family::copy_split::AlignedRead) -> u64 
 fn load_supplied_families(
     args: &Args,
     by_contig: &std::collections::BTreeMap<String, Vec<(u64, u64)>>,
-) -> Result<(Option<RegionFamilies>, Option<SeqIndex>)> {
+) -> Result<(Option<RegionFamilies>, Option<SeqIndex>, Option<RegionWindows>)> {
     let Some(path) = args.families.as_deref() else {
         if args.copies_fa.is_some() {
             anyhow::bail!("--copies-fa is only meaningful with --families (it supplies the copies' sequences)");
         }
-        return Ok((None, None));
+        return Ok((None, None, None));
     };
     // Roster-CHANGING legs are refused, not silently applied: with --families the copy set must be exactly
     // the supplied one, and each of these adds or removes copies. --vg-realign-correct is deliberately NOT
@@ -1047,6 +1051,30 @@ fn load_supplied_families(
             ),
         }
     }
+    // ⭐ DISPERSED-FAMILY READ WINDOWS (§6dh). A family binds to the ONE region containing its whole
+    // span, but a genuinely DISPERSED family (NPIP: 38 copies over 89.5 Mb) makes that region enormous
+    // and loading it whole costs 254,726 primaries to assign copies occupying a few hundred kb — it OOMs.
+    // A read that overlaps NO copy can never be assigned to one, so the region's reads are gathered from
+    // the union of the copies' own neighbourhoods instead. The anti-truncation guarantee is preserved:
+    // every copy's reads are still loaded in full.
+    let mut windows: std::collections::BTreeMap<RegionKey, Vec<(u64, u64)>> =
+        std::collections::BTreeMap::new();
+    for (k, fs) in &bound {
+        let mut w: Vec<(u64, u64)> = fs
+            .iter()
+            .flat_map(|f| f.copies.iter())
+            .map(|c| (c.start.saturating_sub(COPY_READ_PAD), c.end + COPY_READ_PAD))
+            .collect();
+        w.sort_unstable();
+        let mut merged: Vec<(u64, u64)> = Vec::with_capacity(w.len());
+        for (lo, hi) in w {
+            match merged.last_mut() {
+                Some(last) if lo <= last.1 => last.1 = last.1.max(hi),
+                _ => merged.push((lo, hi)),
+            }
+        }
+        windows.insert(k.clone(), merged);
+    }
     let n_fam: usize = bound.values().map(|v| v.len()).sum();
     let n_copy: usize = bound.values().flatten().map(|f| f.copies.len()).sum();
     eprintln!(
@@ -1056,7 +1084,7 @@ fn load_supplied_families(
         bound.len(),
         if seqs.is_some() { "--copies-fa (the catalog's own bytes)" } else { "--fasta (rebuilt at the catalog's exon coordinates)" },
     );
-    Ok((Some(bound), seqs))
+    Ok((Some(bound), seqs, Some(windows)))
 }
 
 /// Alignment-score evidence for every read in the region, indexed like the region's `bam_reads`.
@@ -1268,7 +1296,7 @@ fn main() -> Result<()> {
     // malformed or unassignable roster fails in the first second rather than after an hour of alignment.
     // `region_families` is keyed by the exact `(contig, lo, hi)` triple the sweep iterates, so each region's
     // worker gets its own families with no re-derivation and no ambiguity about which region owns a family.
-    let (region_families, catalog_seqs) = load_supplied_families(&args, &by_contig)?;
+    let (region_families, catalog_seqs, region_windows) = load_supplied_families(&args, &by_contig)?;
     let catalog_index: Option<CatalogIndex> = region_families.as_ref().map(build_catalog_index);
 
     let lambda = resolve_lambda(args.lambda_global, args.lambda_file.as_deref().and_then(read_lambda_file));
@@ -1443,11 +1471,50 @@ fn main() -> Result<()> {
     let compute = |contig: &String, lo: u64, hi: u64| -> Result<RegionWork> {
         let genome = genome_for(contig)?;
         let t_read = std::time::Instant::now();
-        let (primary, bam_reads) = match &bam_cache {
-            Some(c) => c.reads_in_region(&args.bam, contig, lo, hi),
-            None => reads_in_region(&args.bam, contig, lo, hi, args.threads),
+        // §6dh: on the --families path, gather from the supplied copies' own neighbourhoods rather than
+        // the whole bound region — a dispersed family's hull can be tens of Mb while its copies occupy a
+        // few hundred kb, and a read overlapping no copy can never be assigned to one.
+        let wins: Vec<(u64, u64)> = region_windows
+            .as_ref()
+            .and_then(|w| w.get(&(contig.clone(), lo, hi)))
+            .map(|v| v.iter().map(|&(a, b)| (a.max(lo), b.min(hi))).filter(|&(a, b)| a < b).collect())
+            .unwrap_or_else(|| vec![(lo, hi)]);
+        let (primary, bam_reads) = {
+            let mut pr: Vec<_> = Vec::new();
+            let mut br: Vec<_> = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            for &(wlo, whi) in &wins {
+                let (p, b) = match &bam_cache {
+                    Some(c) => c.reads_in_region(&args.bam, contig, wlo, whi),
+                    None => reads_in_region(&args.bam, contig, wlo, whi, args.threads),
+                }
+                .with_context(|| format!("reading {contig}:{wlo}-{whi}"))?;
+                // Windows are disjoint after merging, but a read spanning a boundary is returned by
+                // both queries; key on (name, start) so one molecule is never two witnesses.
+                for x in p {
+                    // PrimaryRead has no name; its (chrom, span, intron chain) identifies the placement.
+                    if seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone())) {
+                        pr.push(x);
+                    }
+                }
+                for x in b {
+                    br.push(x);
+                }
+            }
+            let mut bseen = std::collections::HashSet::new();
+            br.retain(|x: &rustle::vg_family::denovo_assemble::BamRead| {
+                bseen.insert((x.name.clone(), x.read.ref_start))
+            });
+            (pr, br)
+        };
+        if timing && wins.len() > 1 {
+            eprintln!(
+                "[timing] {contig}:{lo}-{hi} gathered from {} copy window(s) ({:.1} Mb of {:.1} Mb hull)",
+                wins.len(),
+                wins.iter().map(|&(a, b)| (b - a) as f64).sum::<f64>() / 1e6,
+                (hi - lo) as f64 / 1e6
+            );
         }
-        .with_context(|| format!("reading {contig}:{lo}-{hi}"))?;
         if timing {
             eprintln!(
                 "[timing] reads_in_region {contig}:{lo}-{hi} ({} reads): {:.1}s",

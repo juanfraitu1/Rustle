@@ -32,6 +32,8 @@
 //! Kept, off by default, because the machinery and its tests are sound and the p-value is correct for the
 //! question it truly answers. Do not enable it until `chi(H)` is shown to bound copies rather than haplotypes.
 //! See `bench/COLLAPSE_GATE_VALIDATION.md`.
+//!
+//! **STATUS:** REFUTED  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use crate::vg_family::copy_assign::poisson_binomial_upper_tail;
 use crate::vg_family::readonly_copy_number::chi_h;

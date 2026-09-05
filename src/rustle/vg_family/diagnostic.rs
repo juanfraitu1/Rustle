@@ -19,6 +19,8 @@
 //! | `Structural`              | Maps with minimap2 and has ≥1 indel ≥ 50 bp in CIGAR    |
 //! | `ReferenceAbsent`         | Cannot be aligned even with maximally-relaxed minimap2   |
 //! | `NeedsExternalVerification` | Internal stage inconclusive; requires minimap2 check   |
+//!
+//! **STATUS:** TEST-ONLY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use anyhow::Result;
 use std::path::Path;

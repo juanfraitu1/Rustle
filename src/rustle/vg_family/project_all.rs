@@ -2,6 +2,8 @@
 //! family) to localize members a single family-consensus projection misses. OPTIONAL, additive, DNA-localized
 //! parCN leg — never changes the RNA-split catalog or the family definition. Pure extraction + dedup + row
 //! formatting here; the minimap2 projection + read-support gate are wired in gw_family_catalog.
+//!
+//! **STATUS:** OPT-IN — --project-all-families, `#[arg(long, default_value_t = false)]` at src/bin/gw_family_catalog.rs:195-196; equivalently env RUSTLE_PROJECT_ALL_FAMILIES=  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::HashMap;
 

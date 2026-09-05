@@ -31,6 +31,8 @@
 //! `sort_by_key(start)` and the naive-union union-find below reproduce the
 //! Python `len(uf.groups())` byte-for-byte. Verified against a golden fixture
 //! generated from the shipped Python build (see `#[test] distinct_loci_parity`).
+//!
+//! **STATUS:** OTHER-BINARY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
