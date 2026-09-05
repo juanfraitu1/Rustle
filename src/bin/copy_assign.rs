@@ -210,6 +210,12 @@ struct Args {
     /// base cannot fake copy-support. This reverts to trusting every PSV column uniformly.
     #[arg(long, default_value_t = false)]
     no_editing_filter: bool,
+    /// ⭐ O2-8a (§6ej): abstain on junction/PSV CONFLICT — a read whose own splice junctions fit another copy
+    /// strictly better than its PSV-best copy is `ambiguous`, never `assigned` (on NPIP's LCR16a cores 4 of 11
+    /// junction-anchored assignments contradicted the junction at min_p 1e-16..1e-35). Writes
+    /// `<out>.conflicts.tsv`. Likelihoods untouched; default OFF ⟹ byte-identical
+    #[arg(long, default_value_t = false)]
+    junction_conflict_abstain: bool,
     /// εⱼ used for an editing-flagged PSV column in the certificate (the rate a base shows the other allele
     /// by editing rather than sequencing error). Default 0.2.
     #[arg(long, default_value_t = 0.2)]
@@ -1129,6 +1135,7 @@ struct AssignRow {
     min_p_value: f64,
     /// Reported alignment-score evidence (see `as_evidence_per_read`). Never feeds the decision.
     as_ev: AsEvidence,
+    junction_conflict: bool,
 }
 /// One family-table row.
 struct FamilyRow {
@@ -1328,6 +1335,7 @@ fn main() -> Result<()> {
         rna_editing_filter: !args.no_editing_filter,
         edit_rate: args.edit_rate,
         iterative_prune: args.iterative_prune,
+        junction_conflict_abstain: args.junction_conflict_abstain,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
@@ -1693,6 +1701,7 @@ fn main() -> Result<()> {
                         p_value: a.p_value,
                         min_p_value: a.min_p_value,
                         as_ev: as_ev[*ri],
+                        junction_conflict: a.junction_conflict,
                     });
                 }
                 // --vg-realign (report-only): the re-align supplement's per-read decisions for this family.
@@ -2061,6 +2070,17 @@ fn main() -> Result<()> {
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
             r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base)
         )?;
+    }
+
+    if args.junction_conflict_abstain {
+        let mut cf = std::fs::File::create(format!("{}.conflicts.tsv", args.out))?;
+        writeln!(cf, "read_name\tfamily_id\tpsv_best_copy\tstatus\tn_decisive\tmin_p_value")?;
+        let mut n = 0usize;
+        for r in assign_rows.iter().filter(|r| r.junction_conflict) {
+            writeln!(cf, "{}\t{}\t{}\t{}\t{}\t{:.3e}", r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.min_p_value)?;
+            n += 1;
+        }
+        eprintln!("[copy_assign] junction-conflict-abstain: {n} read(s) whose splice junctions contradict their PSV-best copy -> ambiguous ({}.conflicts.tsv)", args.out);
     }
 
     // Reference-free per-family copy number (Task R1, additive; needs no flag): chi_H (PSV
@@ -2527,6 +2547,8 @@ fn main() -> Result<()> {
         row("alpha", format!("{}", args.alpha))?;
         row("margin_gate", format!("{}", args.margin_gate))?;
         row("rna_editing_filter", format!("{}", !args.no_editing_filter))?;
+        row("junction_conflict_abstain", format!("{}", args.junction_conflict_abstain))?;
+        row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;
         row("families", args.families.clone().unwrap_or_else(|| "NONE".to_string()))?;
@@ -2729,6 +2751,7 @@ mod tests {
             p_value: 0.0,
             min_p_value: 0.0,
             discovery_coupled: true,
+            junction_conflict: false,
             posterior: vec![],
         })
     }

@@ -114,6 +114,10 @@ pub struct Assignment {
     /// the absent-copy discovery feature was on — i.e. the assignment is COUPLED to that discovery and would
     /// not exist in the frozen ref-only result. Always `false` on the default (absent-copy-OFF) path.
     pub discovery_coupled: bool,
+    /// ⭐ §6ej/O2-8a: the read's splice junctions fit another copy STRICTLY better than the PSV-best copy
+    /// (structural evidence contradicts allelic evidence). With `AssignParams::junction_conflict_abstain`
+    /// such a read is never `Assigned`; it is `Ambiguous` and listed. Always `false` when the rule is off.
+    pub junction_conflict: bool,
     /// Per-copy POSTERIOR over the candidate copies, `softmax(logl)` (likelihood-normalized, i.e. a UNIFORM
     /// prior), indexed parallel to the `copies` slice. For an *assigned* read it is ~one-hot at `best_copy`;
     /// for a *Tied* read it spreads over the consistent ZONE (the copies the read cannot be distinguished
@@ -200,6 +204,12 @@ pub struct AssignParams {
     /// have no read with significant evidence distinguishing them from their nearest neighbor, reassigning
     /// reads until all surviving copies are defensible. Default false (byte-identical baseline).
     pub iterative_prune: bool,
+    /// ⭐ O2-8a (§6ej): abstain on junction/PSV CONFLICT. On NPIP's LCR16a cores O2 assigned 11/117
+    /// junction-anchored reads and 4 contradicted the junction at min_p 1e-16..1e-35: six PSV columns outvoted
+    /// the read's own splice structure. A read that carries a decisive junction and whose PSV-best copy has a
+    /// strictly lower junction score than some other copy is `Ambiguous`, never `Assigned`. No threshold; the
+    /// likelihoods and `min_p` are untouched. Default OFF ⟹ byte-identical.
+    pub junction_conflict_abstain: bool,
 }
 
 impl Default for AssignParams {
@@ -218,6 +228,7 @@ impl Default for AssignParams {
             rna_editing_filter: true,
             edit_rate: 0.2,
             iterative_prune: false,
+            junction_conflict_abstain: false,
         }
     }
 }
@@ -304,6 +315,10 @@ pub(crate) struct ReadEvidence {
     pub min_p: f64,
     /// Number of features (PSV columns + junction boundaries) the read observes where copies differ.
     pub n_decisive: usize,
+    /// The junction term alone, per copy (a component of `logl`, accumulated separately and identically).
+    pub junc_logl: Vec<f64>,
+    /// The read carries >= 1 junction present in some copies and absent in others.
+    pub has_decisive_junction: bool,
 }
 
 /// Compute a read's per-copy log-likelihood, decisive-feature count, and identifiability bound against
@@ -322,6 +337,8 @@ pub(crate) fn read_copy_evidence(
 ) -> ReadEvidence {
     let n = copies.len();
     let mut logl = vec![0.0f64; n];
+    let mut junc_logl = vec![0.0f64; n];
+    let mut has_decisive_junction = false;
     let mut n_decisive = 0usize;
 
     // --- PSV term: thread the read as a WALK through the bubbles it spans (== the old `spanned` loop,
@@ -356,9 +373,12 @@ pub(crate) fn read_copy_evidence(
         let np = present.iter().filter(|&&x| x).count();
         if np > 0 && np < n {
             n_decisive += 1; // some copies have this junction, others lack it
+            has_decisive_junction = true;
         }
         for ci in 0..n {
-            logl[ci] += if present[ci] { p.junction_weight } else { -p.junction_weight };
+            let t = if present[ci] { p.junction_weight } else { -p.junction_weight };
+            logl[ci] += t;
+            junc_logl[ci] += t;
         }
     }
 
@@ -382,7 +402,7 @@ pub(crate) fn read_copy_evidence(
         }
     }
 
-    ReadEvidence { logl, min_p, n_decisive }
+    ReadEvidence { logl, min_p, n_decisive, junc_logl, has_decisive_junction }
 }
 
 /// Assign a read to its most likely copy. Returns `None` only if `copies` is empty.
@@ -409,7 +429,7 @@ pub fn assign_read_editing(
         return None;
     }
     let ev = read_copy_evidence(read, graph, copies, p, editing_cols);
-    let ReadEvidence { logl, min_p, n_decisive } = ev;
+    let ReadEvidence { logl, min_p, n_decisive, junc_logl, has_decisive_junction } = ev;
 
     // argmax (earliest on ties) + runner-up
     let mut best = 0usize;
@@ -464,6 +484,12 @@ pub fn assign_read_editing(
         (resolvable, status)
     };
 
+    // ⭐ O2-8a: structural evidence (the read's own splice junctions) contradicts the PSV-best copy ⟹ abstain.
+    let junction_conflict = p.junction_conflict_abstain
+        && has_decisive_junction
+        && junc_logl.iter().any(|&j| j > junc_logl[best]);
+    let status = if junction_conflict && status == AssignStatus::Assigned { AssignStatus::Ambiguous } else { status };
+
     // Per-copy posterior under a UNIFORM prior = softmax(logl), parallel to `copies`. (Likelihood-normalized;
     // an informative prior is applied downstream.) For a Tied read this spreads over the consistent zone.
     let posterior = {
@@ -487,6 +513,7 @@ pub fn assign_read_editing(
         p_value: p_read,
         min_p_value: min_p,
         discovery_coupled: false,
+        junction_conflict,
         posterior,
     })
 }
@@ -686,6 +713,32 @@ mod tests {
         assert!(a.resolvable);
         assert_eq!(a.n_decisive, 1);
         assert_eq!(a.status, AssignStatus::Assigned);
+    }
+
+    #[test]
+    fn junction_conflict_abstains_only_when_the_rule_is_on() {
+        // Two copies differing at 12 PSV columns; the read carries copy 1's alleles at all 12 (PSV says 1) but a
+        // junction present ONLY in copy 0 (structure says 0). Default: assigned to 1. With the rule: ambiguous,
+        // flagged, likelihoods unchanged.
+        let a0: Vec<Option<u8>> = (0..12).map(|_| Some(b'A')).collect();
+        let a1: Vec<Option<u8>> = (0..12).map(|_| Some(b'C')).collect();
+        let copies = vec![cp(0, &a0, &[1000]), cp(1, &a1, &[])];
+        let read = ReadFeatures {
+            psv_obs: a1.clone(),
+            psv_qual: vec![None; 12],
+            junctions: vec![1000],
+        };
+        let off = assign_read(&read, &copies, &AssignParams::default()).unwrap();
+        assert_eq!((off.best_copy, off.status, off.junction_conflict), (1, AssignStatus::Assigned, false), "{off:?}");
+        let p = AssignParams { junction_conflict_abstain: true, ..AssignParams::default() };
+        let on = assign_read(&read, &copies, &p).unwrap();
+        assert_eq!((on.best_copy, on.status, on.junction_conflict), (1, AssignStatus::Ambiguous, true), "{on:?}");
+        assert_eq!(on.log_lr_margin, off.log_lr_margin, "the likelihoods are untouched");
+        assert_eq!(on.min_p_value, off.min_p_value);
+        // A read whose junction agrees with its PSVs is not a conflict.
+        let agree = ReadFeatures { psv_obs: a0.clone(), psv_qual: vec![None; 12], junctions: vec![1000] };
+        let ok = assign_read(&agree, &copies, &p).unwrap();
+        assert_eq!((ok.best_copy, ok.status, ok.junction_conflict), (0, AssignStatus::Assigned, false), "{ok:?}");
     }
 
     #[test]

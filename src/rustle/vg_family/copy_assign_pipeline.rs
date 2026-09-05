@@ -1310,6 +1310,7 @@ pub fn assign_family_detailed_pruned(
             p_value: a.p_value,
             min_p_value: a.min_p_value,
             discovery_coupled: a.discovery_coupled,
+            junction_conflict: a.junction_conflict,
             posterior: post_out,
         })
     };
@@ -2569,6 +2570,7 @@ mod tests {
             p_value: 0.0,
             min_p_value: 0.0,
             discovery_coupled: false,
+            junction_conflict: false,
             posterior: vec![],
         }
     }

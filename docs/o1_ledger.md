@@ -11930,3 +11930,31 @@ the reference copy against a 0.97-identical one); the read-level alignment above
    edits).
 3. The junction-anchored truth is the instrument for O2 from now on (register row 678); it cannot score
    the correction leg's re-threaded reads (row 679) — simulation remains the only route there.
+
+## §6ek — O2-8a IMPLEMENTED AND REFUTED: the junction/PSV conflict abstain cannot see the discordance, because O2's junction term lives in spliced space and the truth lives on the genome (2026-09-04)
+
+Pre-registered (`adj/o2conflict/PREREG.md`, md5 2d5b98a5…, before implementation). Shipped:
+`copy_assign --junction-conflict-abstain` (OFF; `AssignParams::junction_conflict_abstain`,
+`Assignment::junction_conflict`, `ReadEvidence::{junc_logl, has_decisive_junction}`, `<out>.conflicts.tsv`,
+params rows). Likelihoods and `min_p` untouched; one unit test; flag-off output byte-identical (C4 ✓).
+
+**Acceptance (C1–C3):** on the 35-core NPIP family the rule fires on **228 reads — every one of them already
+`tied` (min_p 1.0)** — and on **0 of the 4 discordant assigned reads**; junction-anchored agreement stays
+7/11. On the 3-copy family it fires on 107 tied reads, 0 assigned; 52/52 unchanged. **C1 FAILS.**
+
+**Why (and it is the finding):** O2's junction term compares the read's intron boundaries to each copy's
+exon boundaries in SPLICED-OFFSET space (`boundary_present`, tolerance 4). Two annotation models of
+0.995-identical loci (copies 17 and 19) have the SAME spliced boundaries, so the read's junctions are
+"present" in both — not decisive — and no conflict exists in that space. The junction-anchored truth of
+§6ej is GENOMIC: the read's introns land exactly on locus 17's exon boundaries on the genome, i.e. the read
+is physically at locus 17. That information never reaches O2, which sees only spliced copy sequences and
+PSV columns; and at the PSV columns the read's bases favour model 19 by 6 edits — most plausibly a
+boundary error in model 17 that shifts a few positions of its spliced sequence (row 680). ⟹ The 4 wrong
+calls are not a conflict O2 can detect with its current inputs; they are the copy-sequence problem.
+Register row 681. The rule stays available (OFF) as a harmless guard; it is not the fix.
+
+**Therefore O2-8 reduces to O2-8b:** the copy sequence handed to O2 must be the LOCUS sequence with the
+READ-SUPPORTED exon chain (the transcribed unit measured in §6ea), not the GFF model's exons — the same
+node fix O1 needs. Until then, O2's NPIP statement is: abstention on 3,347/3,407 molecules; of 117
+junction-anchored reads it assigns 11 with 4 contradicting the genome; the unique-mapper number is not
+the one to quote.

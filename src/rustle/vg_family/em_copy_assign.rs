@@ -406,7 +406,8 @@ mod em_driver_tests {
     fn em_recovers_planted_abundance_3copy() {
         // 3 copies, one decisive column each (one-hot logl), planted 5:3:2 reads -> pi ~ 0.5,0.3,0.2
         let ev = |best: usize| super::super::copy_assign::ReadEvidence {
-            logl: (0..3).map(|c| if c==best {0.0} else {-12.0}).collect(), min_p: 1e-6, n_decisive: 1 };
+            logl: (0..3).map(|c| if c==best {0.0} else {-12.0}).collect(), min_p: 1e-6, n_decisive: 1,
+            junc_logl: vec![0.0; 3], has_decisive_junction: false };
         let mut reads = vec![]; for _ in 0..5 {reads.push(ev(0));} for _ in 0..3 {reads.push(ev(1));} for _ in 0..2 {reads.push(ev(2));}
         let r = em_assign(&reads, 3, 1e-3, 1e-9, 200);
         assert!((r.abundances[0]-0.5).abs()<0.02 && (r.abundances[1]-0.3).abs()<0.02 && (r.abundances[2]-0.2).abs()<0.02);
@@ -416,7 +417,8 @@ mod em_driver_tests {
     #[test]
     fn em_k0_reads_stay_soft_and_abundance_proportional() {
         // no distinguishing feature: logl equal across copies, min_p >= alpha -> SoftZone, posterior == pi.
-        let flat = super::super::copy_assign::ReadEvidence { logl: vec![0.0, 0.0], min_p: 1.0, n_decisive: 0 };
+        let flat = super::super::copy_assign::ReadEvidence { logl: vec![0.0, 0.0], min_p: 1.0, n_decisive: 0,
+            junc_logl: vec![0.0; 2], has_decisive_junction: false };
         let reads = vec![flat.clone(), flat.clone(), flat];
         let r = em_assign(&reads, 2, 1e-3, 1e-9, 50);
         assert!(r.labels.iter().all(|l| matches!(l, EmLabel::SoftZone)));
