@@ -220,6 +220,15 @@ struct Args {
     /// `<out>.conflicts.tsv`. Likelihoods untouched; default OFF ⟹ byte-identical
     #[arg(long, default_value_t = false)]
     junction_conflict_abstain: bool,
+
+    /// ⭐ §6eu / register 689: the read-support PSV filter (`read_supported_columns`: keep a copy-vs-copy column
+    /// only if two alleles each reach two reads). It cannot tell a mis-assembled base from an UNEXPRESSED
+    /// paralogue — both are monomorphic pileups — and on ZSCAN5 it kept 4 of 216 columns and produced 11
+    /// confident wrong calls. **Default OFF (user decision 2026-09-05)**; on the 35-family sweep OFF raised
+    /// assignments 18 % and MAPQ-60 agreement 95.3 → 96.0 %. `--psv-read-filter` turns it back on;
+    /// `RUSTLE_PSV_READFILTER=0|1`, when set, overrides the flag (the pre-2026-09-05 escape).
+    #[arg(long, default_value_t = false)]
+    psv_read_filter: bool,
     /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
     /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
     /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
@@ -1305,6 +1314,10 @@ fn linearize_tsv_row(fam: &str, loc: (&str, u64, u64), c: &LinearizeCertificate)
 
 fn main() -> Result<()> {
     let mut args = Args::parse();
+    // §6eu: the pipeline reads RUSTLE_PSV_READFILTER; an explicit env value wins, else the flag decides.
+    if std::env::var_os("RUSTLE_PSV_READFILTER").is_none() {
+        std::env::set_var("RUSTLE_PSV_READFILTER", if args.psv_read_filter { "1" } else { "0" });
+    }
     if args.igv {
         args.dump_psv = true; // --igv is a bundle: the PSV matrix feeds bench/igv_tracks.py -> tagged BAM + PSV VCF
     }
@@ -2619,6 +2632,7 @@ fn main() -> Result<()> {
         row("rna_editing_filter", format!("{}", !args.no_editing_filter))?;
         row("junction_conflict_abstain", format!("{}", args.junction_conflict_abstain))?;
         row("psv_genomic", format!("{}", args.psv_genomic))?;
+        row("psv_read_filter", std::env::var("RUSTLE_PSV_READFILTER").unwrap_or_else(|_| "unset".into()))?;
         row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;

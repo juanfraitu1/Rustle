@@ -16,8 +16,14 @@ chimeric models are trimmed to it (NPIP: seven 125–308 kb models → 23–25 k
 808 bp sliver of the core, and the ABCC1-region records fall out). The unit's exon chain is read-supported:
 a base is exonic when ≥ 3 reads cover it and more reads cover it than splice over it (§6en). The GFF is the
 seed; the reads are the node.
-**Edge.** Homology between units' sequences (asm20 alignment; identity ≥ 0.70, coverage of the longer
-≥ 0.30, ≥ 300 bp; an additive exonic floor of 1 bp, which is where the distribution's wall is, §6dt).
+**Edge.** Homology between annotation records' sequences (asm20 alignment; identity ≥ 0.70, coverage of the
+longer ≥ 0.30, ≥ 300 bp; an additive exonic floor of 1 bp, which is where the distribution's wall is, §6dt), and
+the alignment must map exon bases of one record onto exon bases of the other (§6ey: records are genomic spans, a
+nested pseudogene carries its host's bases). The three thresholds are points inside a measured plateau — identity
+0.60–0.80, coverage 0.10–0.50, 100–500 bp leave every anchored family and the Soto scores unchanged on both
+substrates; the walls are at identity 0.85, coverage 0.60 and 1 kb (§6ez). Records are clustered first and
+folded into loci afterwards, inside their cluster, so two records are one locus only if they overlap on exon
+bases and share a cluster (§6ey; the fold-first order lost every pseudogene nested in another family's gene).
 **Family.** A set of loci that share a duplicated core: each member's core is the segment of its locus linked
 by SD pairs to at least half of the set. That is the object; MCL over the homology graph (inflation 2.8, prune
 1e-9, smallest family 2 — a pair sharing a core is the minimum object, §6ex) is the pre-clustering that proposes candidate sets, and the core rule, SD corroboration, the repeat
@@ -27,9 +33,10 @@ columns of any near-uniform clique above 61 nodes. The earlier definition (γ-qu
 read-transcript graph E_r) stays runnable and is scored against this one on Soto in `O1_DEFINITION_SWITCH.md`:
 band-[0.90,1) precision 0.974 vs 0.954 (CIs overlap), recall among detected pairs 0.874 → 0.940.
 **Certificates carried on every unit:** SD depth and core length; curated-repeat fraction of the chain
-(Dfam 3.8); nearest-paralogue identity; and, per family, the CHM13 landing of its members (one human gene
-stem on one chromosome for every anchored real family; scattered for every artefact; mixed 16p stems for
-every duplication-block "family", §6eh).
+(Dfam 3.8); nearest-paralogue identity; the duplication block each core hull belongs to and the families it is
+directly SD-linked to (`blocks.tsv`, §6ez: NPIP's hulls are directly linked to LCR16u's — one block, two
+families); and, per family, the CHM13 landing of its members (one human gene stem on one chromosome for every
+anchored real family; scattered for every artefact; mixed 16p stems for every duplication-block "family", §6eh).
 
 ## 3. What the certificates decided on the 3-contig substrate (46 clusters with n ≥ 5)
 39 SD-corroborated (3 anchored: NPIP, the CGB/NTF tandem array split at a cut vertex); 3 artefacts

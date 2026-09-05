@@ -532,6 +532,66 @@ pub struct CoreRecord {
     pub hull: Option<(u64, u64)>,
 }
 
+/// ⭐ DUPLICATION BLOCKS (user request 2026-09-05): the family is defined by a shared CORE; the block is the
+/// larger unit of co-duplication that SEDEF sees. Two core hulls belong to one block when some single SEDEF
+/// pair overlaps both (a block-level SD record spans several modules — LCR16a + LCR16u — so the pair links
+/// hulls of DIFFERENT families; a module-level record links hulls of one family). Union-find over every hull
+/// in the catalog; returns one block index per hull (dense, in first-seen order). Families whose hulls share a
+/// block are the same duplication block; a family whose hulls span several blocks is a family that
+/// transposed. `hulls` are (contig, 1-based start, 1-based end). Also returns every DIRECT link (i, j),
+/// i < j, between two hulls joined by one pair — the block is the transitive closure of these, and on 16p the
+/// closure is the whole LCR16 network (30 clusters in one block), so the direct partners are the finer,
+/// quotable relation ("NPIP's hulls are directly SD-linked to LCR16u's").
+pub fn sd_blocks(hulls: &[(String, u64, u64)], sd: &SdPairs) -> (Vec<usize>, Vec<(usize, usize)>) {
+    let n = hulls.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(p: &mut Vec<usize>, mut x: usize) -> usize {
+        while p[x] != x {
+            p[x] = p[p[x]];
+            x = p[x];
+        }
+        x
+    }
+    // per contig, hull indices sorted by start
+    let mut by_contig: BTreeMap<&str, Vec<(u64, u64, usize)>> = BTreeMap::new();
+    for (i, (c, s, e)) in hulls.iter().enumerate() {
+        by_contig.entry(c.as_str()).or_default().push((*s, *e, i));
+    }
+    for v in by_contig.values_mut() {
+        v.sort_unstable();
+    }
+    let hulls_over = |c: &str, s: u64, e: u64| -> Vec<usize> {
+        by_contig
+            .get(c)
+            .map(|v| v.iter().filter(|&&(hs, he, _)| hs <= e && s <= he).map(|&(_, _, i)| i).collect())
+            .unwrap_or_default()
+    };
+    let mut links: BTreeSet<(usize, usize)> = BTreeSet::new();
+    for (i, (c, s, e)) in hulls.iter().enumerate() {
+        for &(ps, pe, ref oc, os, oe) in sd.overlapping(c, *s, *e) {
+            let _ = (ps, pe);
+            for j in hulls_over(oc, os, oe) {
+                if i != j {
+                    links.insert((i.min(j), i.max(j)));
+                }
+                let (a, b) = (find(&mut parent, i), find(&mut parent, j));
+                if a != b {
+                    parent[a.max(b)] = a.min(b);
+                }
+            }
+        }
+    }
+    let mut id: BTreeMap<usize, usize> = BTreeMap::new();
+    let blocks = (0..n)
+        .map(|i| {
+            let r = find(&mut parent, i);
+            let next = id.len();
+            *id.entry(r).or_insert(next)
+        })
+        .collect();
+    (blocks, links.into_iter().collect())
+}
+
 /// Apply the pre-registered core rule to one cluster. Members are GFF 1-based inclusive.
 pub fn refine_cluster_cores(members: &[GeneKey], sd: &SdPairs) -> Vec<CoreRecord> {
     let n = members.len();
@@ -1114,6 +1174,23 @@ mod tests {
         paf3.push_str(&paf_line("c:1201-2200", 1000, 200, 400, "c:9001-11000", 2000, 400, 600, 195, 200));
         let g4 = graph_from_paf(&paf3, &ex, &bl, &both);
         assert_eq!((g4.n_edges(), g4.rejected_no_exonic), (0, 1));
+    }
+
+    #[test]
+    fn sd_blocks_link_hulls_through_one_pair_and_keep_unlinked_hulls_apart() {
+        // pair 1: c:1000-5000 <-> c:20000-24000 spans two modules (hulls A=c:1000-2000, B=c:3000-4000 on one
+        // side; C=c:20000-21000, D=c:23000-24000 on the other) -> one block {A,B,C,D}.
+        // hull E=c:50000-51000 has a pair only to c:70000-71000 (no hull) -> its own block.
+        let bed = "c\t1000\t5000\tc\t20000\t24000\nc\t50000\t51000\tc\t70000\t71000\n";
+        let sd = SdPairs::from_bed_str(bed);
+        let hulls: Vec<(String, u64, u64)> = [(1000, 2000), (3000, 4000), (20000, 21000), (23000, 24000), (50000, 51000)]
+            .iter()
+            .map(|&(s, e)| ("c".to_string(), s, e))
+            .collect();
+        let (b, links) = sd_blocks(&hulls, &sd);
+        assert_eq!(b, vec![0, 0, 0, 0, 1], "{b:?}");
+        // direct links: every hull on one side of pair 1 to every hull on the other side; E links to nothing
+        assert_eq!(links, vec![(0, 2), (0, 3), (1, 2), (1, 3)]);
     }
 
     #[test]

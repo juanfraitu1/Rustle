@@ -111,6 +111,14 @@ naming the wrong one**, and that is now a register row (640), not a footnote.
 
 ### 1.2 "You tuned the thresholds until the answer appeared."
 
+⭐ **2026-09-05 (§6ez, `docs/g3_threshold_grid_2026-09-05.tsv`):** on the thesis definition the three edge
+thresholds (identity 0.70, coverage 0.30, 300 bp) were swept one at a time on two substrates (gorilla anchors,
+Soto slice): every anchored family and every Soto score is unchanged over identity 0.60–0.80, coverage 0.10–0.50
+and 100–500 bp; the walls are at identity 0.85 (Soto recall 0.949 → 0.925), coverage 0.60 and 1 kb. Inflation
+(2.0–4.0, §6ec), prune (size-safe, §6ec), the exonic floor (the wall at 1 bp, §6dt), "half" (one constant) and
+the 3-read support (the corroboration floor) were justified before. Say: *"every default is a point inside a
+measured plateau whose walls I can show you."*
+
 The shipped rule has **four** free numbers, and they are visible in the source, not in a config
 that drifted:
 

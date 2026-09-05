@@ -12482,3 +12482,53 @@ records over NPIP) now splits by sequence into its own cluster (MCL53/MCL27), wh
 done by the graph.
 Register rows 696–698. Suite 855 passed / 0 failed / 11 ignored. Default flips of the three flags = user decision; `--min-size 3`, no flags = every
 catalog before today.
+
+## §6ez — DEFAULTS FLIPPED (five, user decision), catalog `rna_units_v8`, O2 sweep on it, the three new NPIP loci landed, the threshold plateau measured (G3), D3 pre-registered, duplication blocks emitted (2026-09-05)
+
+**Flips (all with `--no-…` / flag escapes; escapes reproduce `rna_units_v2` byte-for-byte on clusters/units.fa/cores):**
+`mcl_families` `--fold-within-clusters`, `--exonless-span`, `--exonic-both-sides`, `--units-follow-reads` ON;
+`copy_assign` PSV read filter OFF (`--psv-read-filter` re-enables; `RUSTLE_PSV_READFILTER` when set overrides;
+`params.tsv` records it). The new defaults rebuild `rna_units_v6` byte-for-byte (`rna_units_v7`); **`rna_units_v8`**
+= v7 + `<out>.blocks.tsv` (canonical from now on: 274 clusters, 161 pairs, 389 units).
+
+**O2 sweep on v7 (new `copy_assign` default, 104 sweep families incl. pairs, `docs/sweep_v7_families_2026-09-05.tsv`):**
+76,520 unit reads — assigned 53,158 (69 %) / tied 6,026 (8 %) / ambiguous 17,336 (23 %); MAPQ-60 agreement
+51,389/51,515 = 99.76 %; MAPQ<60 3,727 reads, 1,643 assigned. ⚠ Not comparable to the 35-family sweeps (69 new
+families, most of them unique-gene pairs). **Paired on the same 35 families (matched by unit overlap):** v3 units +
+filter off 4,841/17,191 = 28.2 % assigned @ 99.36 % → v7 5,816/17,278 = 33.7 % @ 99.51 %. NPIP (v7 MCL1):
+1,004 unit reads, 9.1 % assigned, agreement 1.000, unchanged. Forecast column still none (ρ +0.11).
+
+**The three NPIP loci fold-first had folded away, landed on CHM13 (`minimap2 -x splice`, `docs/npip3new_chm13_2026-09-05.paf`):**
+NC_073242.2:28.30 Mb (LOC101131206, lncRNA, 3.8 kb) → NPIPB13/LOC101929894 at 0.975 (MAPQ 0; NPIPB6/B9/B12 at
+0.973–0.974) = an NPIPB fragment; NC_073242.2:32.23 Mb (LOC101151897, 23 kb) → chr16:14.71 Mb LOC100652777 at
+0.978, MAPQ 60 = the 16p13.11 NPIPA-region locus; NC_073242.2:29.39 Mb (LOC101140878, 41 kb) → NPIPB6 + EIF3CL at
+0.978 (MAPQ 7) = a block-level record over the EIF3CL/NPIPB6 pair — flagged, the core rule decides its hull.
+
+**G3 — the thresholds are a point inside a measured plateau** (`docs/PREREG_g3_thresholds_2026-09-05.md`, md5
+c955955c…; `docs/g3_threshold_grid_2026-09-05.tsv`; 19 grid points × 2 substrates, one-at-a-time from the defaults):
+| varied | anchors (NPIP, MCL1, MCL3, MCL4 cohesion; NPIP∥LCR16u; L1 blob dissolved) | Soto detection / band precision / recall∣both |
+|---|---|---|
+| identity 0.60–0.80 | all 1.00; separate; dissolved | 0.798 / 0.943–0.945 / 0.949 — flat |
+| identity 0.85 | MCL4 0.97 | 0.801 / 0.948 / **0.925** |
+| identity 0.90 | MCL1 0.98, **MCL4 0.76** | 0.787 / 0.952 / **0.855** |
+| cov_longer 0.10–0.50 | all ≥ 0.98; separate; dissolved | 0.796–0.798 / 0.943 / 0.948–0.953 — flat |
+| cov_longer 0.60 | MCL1 0.98 | **0.782** / 0.949 / 0.958 |
+| min_bp 100–500 | all 1.00 | 0.796–0.798 / 0.943 / 0.948 — flat |
+| min_bp 1000 | **MCL3 0.67**, MCL1 0.94 | **0.774** / 0.944 / 0.950 |
+| min_bp 2000 | NPIP 0.95, MCL4 0.93 | 0.774 / 0.945 / 0.947 |
+P1 (plateau identity 0.60–0.80, cov 0.10–0.40, min_bp 100–500) **held**; P3 (band precision within 0.02 over
+identity 0.60–0.80) **held** (0.9432–0.9447); P2's walls exist where predicted (identity ≥ 0.85, cov ≥ 0.6,
+min_bp ≥ 1000) but **NPIP is not the anchor that breaks** — its cohesion stays 1.00 to identity 0.90; MCL4 (the
+element cluster) and MCL3 break first, and Soto's recall falls at 0.85 (row 699). Quotable: *"0.70 / 0.30 / 300 bp are
+points inside a plateau that spans identity 0.60–0.80, coverage 0.10–0.50 and 100–500 bp on both substrates; the
+walls are at identity 0.85, coverage 0.60 and 1 kb."*
+
+**D3 pre-registered** (`docs/PREREG_d3_molecule_observation_2026-09-05.md`, md5 8090ee0b…): one observation per
+molecule, scored on its sequence against every copy's unit; predictions fixed before implementation.
+
+**Duplication blocks (`sd_blocks`, `<out>.blocks.tsv`; user request):** union-find over every member's core hull
+(816 hulls), two hulls joined when ONE SEDEF pair overlaps both → 83 blocks, 20 shared by > 1 cluster. ⚠ The
+transitive closure on 16p is one component of 30 clusters (SDB1: NPIP, LCR16u and 28 others — the LCR16 network),
+so the quotable relation is the DIRECT one, also emitted: **NPIP's hulls are directly SD-linked to LCR16u's (and 13
+more clusters); LCR16u's to NPIP + 4.** The catalog now states the block (SEDEF's object) beside the family (ours).
+Suite 855 / 0 / 11 after the flips; 856 / 0 / 11 after the blocks column (`adj/test_suite_blocks.log`).

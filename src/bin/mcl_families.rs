@@ -16,7 +16,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::vg_family::annotation_families::{
-    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks, mcl, refine_cluster_cores, Cluster, CoreStatus,
+    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks, mcl, sd_blocks, refine_cluster_cores, Cluster, CoreStatus,
     GeneKey, GraphParams, SdPairs,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -156,33 +156,48 @@ struct Args {
     /// overlaps a DIFFERENT family's record on exon bases (Soto: 19 of 43 annotated misses — ANAPC1P1 folded
     /// under CD8B's locus, PMS2P4 under SPDYE21, FAM72A under SRGAP2, LRRC37A under ARL17B); attribution rebuilds
     /// the duplication block. With this flag records are the graph's nodes, MCL runs on them, and two records
-    /// become one locus only if they overlap on exon bases AND share a cluster. Default OFF: a default flip is a
-    /// thesis edit. Implies `--no-merge-overlapping-loci` for the graph; `--locus-attribute-edges` is ignored.
-    #[arg(long, default_value_t = false)]
+    /// become one locus only if they overlap on exon bases AND share a cluster. **Default ON (user decision 2026-09-05, §6ey)**;
+    /// `--no-fold-within-clusters` restores fold-first. Implies `--no-merge-overlapping-loci` for the graph;
+    /// `--locus-attribute-edges` is ignored.
+    #[arg(long, default_value_t = true)]
     fold_within_clusters: bool,
+    /// Escape hatch: the behaviour before 2026-09-05 (`--fold-within-clusters` off).
+    #[arg(long, default_value_t = false)]
+    no_fold_within_clusters: bool,
 
     /// ⭐ A gene/pseudogene record with NO exon children counts as one exon spanning the record (§6ey). RefSeq
     /// (CHM13) leaves 160 of 747 records in Soto's neighbourhoods without exon features (NF1P, CNTNAP3P, PMS2P
     /// pseudogenes); without a block they have no exonic denominator and no exonic overlap, so no edge can
-    /// reach them (20 Soto members exist only as such records). The gorilla annotation has none. Default OFF.
-    #[arg(long, default_value_t = false)]
+    /// reach them (20 Soto members exist only as such records). The gorilla annotation has none. **Default ON
+    /// (user decision 2026-09-05, §6ey)**; `--no-exonless-span` restores the old behaviour.
+    #[arg(long, default_value_t = true)]
     exonless_span: bool,
+    /// Escape hatch: the behaviour before 2026-09-05 (`--exonless-span` off).
+    #[arg(long, default_value_t = false)]
+    no_exonless_span: bool,
 
     /// ⭐ The pair's alignment must cover ≥ `--min-exonic-bp` exon bases on BOTH records (§6ey). Records are
     /// aligned as genomic spans, so a pseudogene inside another family's gene aligns to that family's paralogs
     /// on the host's exons alone (Soto: PMS2P7 inside SPDYE8 → 26 false PMS2P×SPDYE pairs under
-    /// `--fold-within-clusters`). Homologous copies share exon bases on both sides. Default OFF.
-    #[arg(long, default_value_t = false)]
+    /// `--fold-within-clusters`). Homologous copies share exon bases on both sides. **Default ON (user decision
+    /// 2026-09-05, §6ey)**; `--no-exonic-both-sides` restores the one-sided rule.
+    #[arg(long, default_value_t = true)]
     exonic_both_sides: bool,
+    /// Escape hatch: the behaviour before 2026-09-05 (`--exonic-both-sides` off).
+    #[arg(long, default_value_t = false)]
+    no_exonic_both_sides: bool,
 
     /// ⭐ Units FOLLOW THE READS (§6eu): extend a unit's read-supported exon chain beyond its core hull to every
     /// block supported by the reads that overlap the hull, WITHIN the member's annotated locus span — the same
     /// `>= --min-reads` rule and the same giant-intron cut, only the hull is no longer a clip. OFF, the
     /// chain is clipped to the window: that emitted the ZNF569-like unit as an 809-bp 5' fragment without the
     /// gene's annotated 3.3-kb 3' exon, and O2 then assigned 190 MAPQ-60 reads of that locus to ZNF875 at
-    /// p <= 1e-133 (adj/worst2). Default OFF: a default flip is a thesis edit.
-    #[arg(long, default_value_t = false)]
+    /// p <= 1e-133 (adj/worst2). **Default ON (user decision 2026-09-05)**; `--no-units-follow-reads` clips to the hull.
+    #[arg(long, default_value_t = true)]
     units_follow_reads: bool,
+    /// Escape hatch: the behaviour before 2026-09-05 (`--units-follow-reads` off).
+    #[arg(long, default_value_t = false)]
+    no_units_follow_reads: bool,
 
     #[arg(long)]
     out: String,
@@ -448,6 +463,18 @@ fn main() -> Result<()> {
     if args.sedef.is_some() && !args.no_core_refine {
         args.core_refine = true;
     }
+    if args.no_fold_within_clusters {
+        args.fold_within_clusters = false;
+    }
+    if args.no_exonless_span {
+        args.exonless_span = false;
+    }
+    if args.no_exonic_both_sides {
+        args.exonic_both_sides = false;
+    }
+    if args.no_units_follow_reads {
+        args.units_follow_reads = false;
+    }
     if args.bam.is_some() && args.fasta.is_some() && !args.no_emit_units {
         args.emit_units = true;
     }
@@ -690,6 +717,62 @@ fn main() -> Result<()> {
             "[mcl_families] core-refine: {} cluster(s) SD-evidenced, {} untouched; members kept-full {}, \
              trimmed {}, dropped {}",
             core_stats.0, core_stats.4, core_stats.1, core_stats.2, core_stats.3
+        );
+        // ⭐ Duplication blocks (user request 2026-09-05): union-find over every member's core hull, two hulls
+        // linked when ONE SEDEF pair overlaps both. Written to `<out>.blocks.tsv`; no existing table changes.
+        // A block shared by several clusters is the SEDEF object (LCR16a + LCR16u); the cluster is the family.
+        let mut owners: Vec<(usize, GeneKey, (u64, u64))> = Vec::new();
+        for (ci, recs) in core_records.iter().enumerate() {
+            for r in recs {
+                if let Some(h) = r.hull {
+                    owners.push((ci, r.member.clone(), h));
+                }
+            }
+        }
+        let hulls: Vec<(String, u64, u64)> = owners.iter().map(|(_, m, h)| (m.0.clone(), h.0, h.1)).collect();
+        let (blocks, links) = sd_blocks(&hulls, &sd);
+        // direct SD partners per cluster: clusters holding a hull joined to one of this cluster's hulls by ONE pair
+        let mut direct: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+        for &(i, j) in &links {
+            let (ci, cj) = (owners[i].0, owners[j].0);
+            if ci != cj {
+                direct.entry(ci).or_default().insert(cj);
+                direct.entry(cj).or_default().insert(ci);
+            }
+        }
+        let mut clusters_of_block: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+        for ((ci, _, _), &b) in owners.iter().zip(blocks.iter()) {
+            clusters_of_block.entry(b).or_default().insert(*ci);
+        }
+        let mut bf = std::fs::File::create(format!("{}.blocks.tsv", args.out))?;
+        writeln!(bf, "cluster_id\tmember\tcore_hull\tsd_block\tblock_n_hulls\tblock_clusters\tdirect_sd_partner_clusters")?;
+        let n_of_block: BTreeMap<usize, usize> = blocks.iter().fold(BTreeMap::new(), |mut m, &b| {
+            *m.entry(b).or_insert(0) += 1;
+            m
+        });
+        for ((ci, m, h), &b) in owners.iter().zip(blocks.iter()) {
+            let cl: Vec<String> = clusters_of_block[&b].iter().map(|c| format!("MCL{c}")).collect();
+            let dp: Vec<String> = direct.get(ci).map(|s| s.iter().map(|c| format!("MCL{c}")).collect()).unwrap_or_default();
+            writeln!(
+                bf,
+                "MCL{ci}\t{}:{}-{}\t{}-{}\tSDB{b}\t{}\t{}\t{}",
+                m.0, m.1, m.2, h.0, h.1, n_of_block[&b], cl.join(","),
+                if dp.is_empty() { "-".to_string() } else { dp.join(",") }
+            )?;
+        }
+        let shared: Vec<(usize, &BTreeSet<usize>)> =
+            clusters_of_block.iter().filter(|(_, cs)| cs.len() > 1).map(|(b, cs)| (*b, cs)).collect();
+        eprintln!(
+            "[mcl_families] duplication blocks: {} hull(s) in {} block(s); {} block(s) shared by >1 cluster (e.g. {})",
+            owners.len(),
+            clusters_of_block.len(),
+            shared.len(),
+            shared
+                .iter()
+                .take(3)
+                .map(|(b, cs)| format!("SDB{b}={{{}}}", cs.iter().map(|c| format!("MCL{c}")).collect::<Vec<_>>().join(",")))
+                .collect::<Vec<_>>()
+                .join(" ")
         );
     }
 

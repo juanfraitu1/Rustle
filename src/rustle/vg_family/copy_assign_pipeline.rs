@@ -1668,7 +1668,9 @@ fn assign_family_detailed_once(
     // keep a column only if the READS observe >= 2 alleles there (>= PSV_MIN_ALLELE_READS each), dropping
     // assembly-artifact columns where the paralogs' reference sequences differ but every molecule agrees. So a
     // PSV is validated by a per-read pileup, not by alignment alone. This pass also builds `all_obs`, reused by
-    // the editing pre-pass. DEFAULT ON; `RUSTLE_PSV_READFILTER=0` reverts to the raw copy-alignment columns (A/B).
+    // the editing pre-pass. Since 2026-09-05 the `copy_assign` binary sets RUSTLE_PSV_READFILTER=0 unless the user
+    // passes `--psv-read-filter` or sets the variable (§6eu, register 689: the filter deletes every column of an
+    // unexpressed paralogue). Library callers that leave the variable unset still get the filter ON.
     let mut all_obs: Vec<Vec<Option<u8>>> = Vec::with_capacity(reads.len());
     for read in reads {
         if let Some(mc) = best_overlap_copy(read, copies) {

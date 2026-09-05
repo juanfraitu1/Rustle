@@ -63,3 +63,10 @@ exon-less pseudogene records can carry no edge. Fix = three OFF flags (`--fold-w
 recall|both 0.942 → 0.949; gorilla `rna_units_v6`: NPIP 44/44 records one cluster (32 loci), LCR16u separate,
 anchors intact, the L1 artefact blob dissolves (64/104 unclustered). **Default flips = user decision.** Then:
 G3 sensitivity table, D3 pre-registration, the two §6eu flips, duplicon-name column, CHM13 landing for the 3 new NPIP loci.
+
+## Defaults flipped, queue executed (§6ez, 2026-09-05)
+Five defaults flipped (user); canonical catalog `mcl_ann/rna_units_v8` (+ `blocks.tsv`); O2 sweep on it (paired
+35: 28.2 % → 33.7 % assigned @ 99.5 %); the 3 recovered NPIP loci landed (2 NPIP, 1 NPIPB6/EIF3CL block record);
+G3 closed (thresholds = point in a plateau); D3 pre-registered (implementation next); duplication blocks emitted
+(direct SD partners per family). Open: D3 implementation (O2-9), the MCL15/MCL28 residual artefacts, genome-wide
+rebuild of the catalog under the new defaults, the human-side residual (PMS2P14-type exon-less block spans).

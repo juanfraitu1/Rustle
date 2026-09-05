@@ -196,8 +196,10 @@ These have cost more than any single wrong idea. **Four headlines died in one we
   chapter uses); scored on one truth (§6ev) the new one matches the old on Soto's [0.90,1.00) band precision
   (0.954 vs 0.974, CIs overlap) and gains recall through the node (0.874 → 0.940 both-detected; 0.173 → 0.580
   all pairs), but its node — the annotation — reaches fewer Soto members than the reads did (G5), and 0.70 /
-  0.30 / 300 bp remain unjustified (G3). The restatement in `O1_DEFINITION_SWITCH.md` §5 is **pending the user's
-  decision**; the old definition stays opt-in (`gw_family_catalog`).
+  0.30 / 300 bp were justified on 2026-09-05 (§6ez: a plateau over identity 0.60–0.80, coverage 0.10–0.50, 100–500 bp
+  on both substrates; G3 closed). The restatement was **accepted and applied** (user, 2026-09-05); the old definition
+  stays opt-in (`gw_family_catalog`). Defaults flipped the same day (§6ey/§6ez): fold within clusters, exon-less span,
+  exon-to-exon, units follow reads, min_size 2, PSV read filter off — each with an escape that reproduces the earlier catalogs.
 
 - ⭐⭐⭐ **A POSITIVE STRATUM — now the binding constraint on O1's precision work (2026-09-02, §6bv).**
   Every precision lever dies at the same place: **no truth set labels a meaningful share of the copies
