@@ -51,8 +51,13 @@ struct Args {
     #[arg(long, default_value_t = 300)]
     min_bp: u64,
 
-    /// Smallest cluster reported. 3 is the floor at which density carries signal.
-    #[arg(long, default_value_t = 3)]
+    /// Smallest cluster reported. **2** (user decision 2026-09-05, §6ex): two loci sharing a duplicated core
+    /// is the minimum object the definition names. Pre-registered on Soto's slice, 3 → 2 recovered 18 of the
+    /// 362 members (19 of the 43 annotated misses sat in size-2 clusters) with the [0.90,1) band precision
+    /// unchanged (0.949 → 0.949) and no new pair in the Soto-silent 0.80–0.90 band. Density carries no
+    /// signal on a pair; for pairs the SD-core certificate carries the whole weight. `--min-size 3`
+    /// reproduces every catalog built before this date.
+    #[arg(long, default_value_t = 2)]
     min_size: usize,
     /// MCL prune threshold: after inflation, matrix entries below this are dropped. ⚠ An ABSOLUTE
     /// threshold interacts with cluster SIZE: in a near-uniform clique of n nodes every entry is ~1/n

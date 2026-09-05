@@ -310,6 +310,14 @@ result (Part 1.4) lives.
 
 ### Q9. "NPIPA and NPIPB should be distinct subfamilies."
 
+⭐ **2026-09-05, on the thesis definition (SD-core family, `rna_units_v3` MCL3, §6ew):** the 29 gorilla NPIP loci
+land on CHM13 as **17 NPIPB-only, 3 NPIPA2+NPIPB13, 9 ABCC1/SORL1 chimeras** (5 trimmed to the LCR16a core, 4
+dropped) — none on NPIPA alone. Identity (0.9015 vs 0.9007) and exonic coverage (0.588 vs 0.533) do not separate
+the A-landing from the B-landing loci, and MCL keeps all 20 in one cluster from inflation 1.4 to 4.0; its first
+cut is exactly the four core-0 chimeras. Say: *"in gorilla the A/B split is not a cut; the catalog reports the
+CHM13 landing per locus, and the family's first partition coincides with the core rule's drop arm."* ⚠ The
+coverage-splits-A-from-B answer below is from the EARLIER E_r graph and does not transfer (row 695).
+
 **He was right, and the method already agreed.** ⭐ **Identity cannot separate them; coverage can** —
 A↔A median coverage **0.46**, A↔B **0.12**, B↔B **0.06**, while identity is **0.99 / 0.96 / 0.99**.
 On identity NPIP is one clique; the **coverage floor** is what splits it. ⚠ Superseded detail: the

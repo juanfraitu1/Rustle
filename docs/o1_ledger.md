@@ -12369,3 +12369,51 @@ admission of unannotated loci (the pivot's second criterion) is the unbuilt stag
 in the Soto-silent [0.80,0.90) band (old: 21) — the exposure the advisor will probe. Old definition stays
 runnable (`gw_family_catalog`, in the suite). Restatement of O1 proposed in `O1_DEFINITION_SWITCH.md` §5,
 not applied.
+
+## §6ew — Q9 (NPIPA vs NPIPB) UNDER THE CORE RULE: the gorilla loci land on B stems, three on both, and the graph never cuts A from B before it fragments B (2026-09-05)
+
+Pre-registered `adj/q9/PREREG.md` (md5 865ba54d…; copy `docs/PREREG_q9_npipAB_2026-09-05.md`). Family = rna_units_v3
+MCL3, 29 loci; labels = CHM13 landing of each locus's records: **17 NPIPB-only, 3 NPIPA2+NPIPB13 ("AB"), 9
+ABCC1/SORL1 chimeric models (5 trimmed to a 24-kb LCR16a core, 4 dropped, core 0); no locus lands on NPIPA alone.**
+Edges recomputed with the shipped exonic rule (`bench/gff_exon_union.py`; 221/406 pairs pass).
+| pair class | n | identity | exonic cov_longer |
+|---|---|---|---|
+| B–B | 136 | 0.9007 | 0.533 |
+| AB–B | 51 | 0.9015 | 0.588 |
+| AB–AB | 3 | 0.9287 | 0.440 |
+| chim–chim | 33 | 0.9523 | 0.394 |
+**P1 held** (identity AB–B = B–B within 0.001). **P2: coverage does not separate either** (AB–B 0.588 ≥ B–B 0.533)
+— the old E_r finding that coverage splits A from B (Q9 in `ADVISOR_QUESTIONS.md`, A↔B 0.12) does not transfer to
+the annotation graph. **P3 held**: MCL on the 29-node subgraph keeps all 20 NPIP-proper loci (17 B + 3 AB) in ONE
+cluster from inflation 1.4 to 4.0; the first split, present already at 1.4, is exactly the **4 dropped chimeras
+(core = 0)** — the graph's own first cut coincides with the core rule's drop arm; at 6.0 B fragments (13+2+1+1)
+before any AB locus separates. **Answer for the advisor:** in the gorilla catalog NPIPA-landing and NPIPB-landing
+loci share the LCR16a core and one graph cluster; the human A/B subfamily is a 16p-position distinction that the
+gorilla loci do not carry (they best-land on NPIPB13/B11/B12 and three on both A2 and B13). The catalog reports
+the CHM13 landing per locus as the certificate. ⚠ 3 AB vs 17 B is thin; the statement is qualitative.
+
+## §6ex — G5: the annotation node's misses decomposed on Soto; RNA admission of unannotated loci prototyped; min_size 3 → 2 (user decision) (2026-09-05)
+
+The 54 Soto members the all-members MCL arm missed at any-overlap (§6ev P3), classified with the shipped exonic edge
+rule reimplemented in python and a `--min-size 2` rerun:
+| class | n |
+|---|---|
+| annotated, passes the edge rule, in a **size-2 cluster** (min_size 3 excluded it) | **19** |
+| annotated, passes the edge rule to a mate, MCL left it in no cluster ≥2 — the mates are SCATTERED over several clusters (e.g. ANAPC1P family: MCL46 ×4, MCL20 ×2, 10 unclustered) | 9 |
+| annotated, no PAF record ≥300 bp / ≥0.70 with an exonic base to any mate | 7 |
+| annotated, no exon features in RefSeq (no exonic denominator) | 5 |
+| annotated, edge below exonic cov_longer 0.30 | 3 |
+| **no RefSeq gene at all (annotation gap — G5 proper)** | **11** |
+**min_size 2** (`docs/soto_minsize2_2026-09-05.log`, ≥50 % floor): detection 254 → 272/362, band-[0.90,1) precision
+497/524 = 0.949 → 506/533 = 0.949, recall|both 0.941 → 0.942, family exact 42/58 → 51/67, Soto-silent band asserted
+219 → 219. **User flipped the default to 2** (`mcl_families --min-size`, `--min-size 3` reproduces every earlier
+catalog). Gorilla 3-contig rebuilt as **`rna_units_v4`**: 268 clusters (111 + 157 pairs), every ≥3 cluster
+byte-identical to v3, NPIP 29/29, units 291 → 432.
+**RNA admission prototype** (`unit_hits.bed`: family units mapped `minimap2 -x splice -N 50` onto the region
+sequences, id ≥0.70, cov ≥0.30 of the unit, merged per family; admit = outside every RefSeq gene AND ≥3 primary
+reads with a block inside): 429 candidate loci, **9 outside every gene, 5 admitted** — 2 recover gap members
+(FP700107.1 21 reads; **FAM95B1, 658 reads**, an expressed copy RefSeq-CHM13 lacks), 3 overlap no Soto member
+(chr10 MCL55 63 reads; chr15 MCL42 ×2 at 0.995, 4–5 reads). `docs/soto_rna_admitted_2026-09-05.tsv`.
+⟹ On this slice the annotation-gap class is 11/54 of the misses and admission recovers 2 of the 11; the node's
+shortfall was the size floor (19) and MCL fragmentation (9), not the annotation. Admission ships as a bench
+prototype, not a flag; MCL fragmentation (row 694) is the open partition defect.

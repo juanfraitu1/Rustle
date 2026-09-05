@@ -48,3 +48,10 @@ Both O1 definitions scored on Soto (one truth, one scorer): `docs/O1_DEFINITION_
 there with owners; the O1 restatement (§5 of that file) awaits the user's decision; the old definition stays
 opt-in. Next in order: G5 (RNA admission of unannotated loci — the unbuilt pivot stage), G3 (threshold
 sensitivity on the anchors), Q9 (NPIPA/B), D3 pre-registration, the two §6eu default flips.
+
+## G5 / Q9 closed, min_size flipped (§6ew–§6ex, 2026-09-05)
+Q9 answered on the thesis definition (A/B is not a cut in the gorilla catalog; landing per locus is the certificate).
+G5 decomposed: the node's shortfall was the size floor (19/54) and MCL fragmentation (9/54), annotation gaps 11/54;
+RNA admission prototyped (`bench` only, recovers 2/11). **min_size default 2** (user); canonical 3-contig catalog =
+`mcl_ann/rna_units_v4` (268 clusters, 432 units; every ≥3 cluster identical to v3). Open next: MCL fragmentation
+(row 694), G3 sensitivity table, D3 pre-registration, the two §6eu default flips, a duplicon-name column per family.

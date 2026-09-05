@@ -20,7 +20,7 @@ seed; the reads are the node.
 ≥ 0.30, ≥ 300 bp; an additive exonic floor of 1 bp, which is where the distribution's wall is, §6dt).
 **Family.** A set of loci that share a duplicated core: each member's core is the segment of its locus linked
 by SD pairs to at least half of the set. That is the object; MCL over the homology graph (inflation 2.8, prune
-1e-9) is the pre-clustering that proposes candidate sets, and the core rule, SD corroboration, the repeat
+1e-9, smallest family 2 — a pair sharing a core is the minimum object, §6ex) is the pre-clustering that proposes candidate sets, and the core rule, SD corroboration, the repeat
 library and the CHM13 landing certify them. The inflation is not a tuned constant: with a size-safe prune the
 anchored families are unchanged from 2.0 to 4.0 (§6ec); the earlier "cliff at 3.6" was the prune emptying the
 columns of any near-uniform clique above 61 nodes. The earlier definition (γ-quasi-clique partition of the
@@ -54,6 +54,10 @@ at issue — 0 of 62 valid anchors assigned, all ambiguous — and places MAPQ-6
 them 75 of 76 times. The "4,743 assigned reads" of the annotation-level family were EIF3C, the block's
 housekeeping gene, not NPIP (§6eg). The multimapping pool on the LCR16a cores is 592 of 6,545 reads and
 98.6% of it is unassignable with 2–5 kb molecules: **on NPIP, O2 is an abstention certificate.**
+NPIPA versus NPIPB (the advisor's Q9): the 29 gorilla loci land on CHM13 as 17 NPIPB-only, 3 on both NPIPA2 and
+NPIPB13, and 9 chimeric models; identity and coverage do not separate the A-landing loci and MCL keeps all 20 in
+one cluster to inflation 4.0, its first cut being exactly the four core-0 chimeras (§6ew). The A/B split is a
+human 16p-position label, not a cut in this catalog.
 **Catalog-wide (35 SD-evidenced families on the 3-contig substrate, paired across unit catalogs, §6eu,
 Figs. 1–2):** with the hull-clipped units and the PSV read-filter, 29% assigned / 6% tied / 64% ambiguous
 and MAPQ-60 placement agreement 95.3%; with units that follow the reads inside the annotated locus and the
