@@ -58,6 +58,10 @@ pub struct CatalogCopy {
     pub n_reads: u32,
     /// Half-open genomic exon blocks, ascending — the `exons` column, verbatim.
     pub exons: Vec<(u64, u64)>,
+    /// ⭐ O2-8c′ (§6ep): the copy's SEDEF core hull (`core_hull` column, 0-based half-open `s-e`, or absent /
+    /// `NA`). Under `copy_assign --psv-genomic` the PSV alignment span is this hull — the segment homologous
+    /// to ≥ half the family by construction — not the copy's extent.
+    pub core_hull: Option<(u64, u64)>,
 }
 
 /// A catalog FAMILY: its rows grouped by `family_id`, in first-seen (file) order.
@@ -160,6 +164,7 @@ pub fn parse_copies_tsv(text: &str) -> Result<Vec<CatalogCopy>> {
         idx("family_id")?, idx("copy_idx")?, idx("tid")?, idx("chrom")?, idx("start")?, idx("end")?,
         idx("n_exon")?, idx("strand")?, idx("n_reads")?, idx("exons")?,
     );
+    let i_hull: Option<usize> = cols.iter().position(|c| *c == "core_hull"); // optional (§6ep)
     let need = cols.len();
     let mut out = Vec::new();
     for (ln, line) in lines.enumerate() {
@@ -192,6 +197,15 @@ pub fn parse_copies_tsv(text: &str) -> Result<Vec<CatalogCopy>> {
             strand,
             n_reads: at(i_reads).parse().with_context(|| format!("line {}: bad n_reads", ln + 2))?,
             exons,
+            core_hull: match i_hull.map(at) {
+                None | Some("NA") | Some("") => None,
+                Some(h) => {
+                    let (a, b) = h
+                        .split_once('-')
+                        .with_context(|| format!("--families: copies.tsv line {}: bad core_hull {h:?}", ln + 2))?;
+                    Some((a.parse().with_context(|| format!("line {}: bad core_hull", ln + 2))?, b.parse().with_context(|| format!("line {}: bad core_hull", ln + 2))?))
+                }
+            },
         };
         // Structural checks on the row itself: an exon chain that does not reconstruct the copy's own
         // span/exon count means the row is not the object the catalog wrote.
@@ -389,6 +403,9 @@ pub fn to_colocated(
                 seq
             }
         };
+        if let Some(h) = c.core_hull {
+            super::copy_assign_pipeline::register_core_hull(&c.tid, h);
+        }
         copies.push(DenovoTranscript {
             tid: c.tid.clone(),
             chrom: c.chrom.clone(),

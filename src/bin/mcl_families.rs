@@ -593,13 +593,18 @@ fn main() -> Result<()> {
         let mut ut = std::fs::File::create(format!("{}.units.tsv", args.out))?;
         let mut uf = std::fs::File::create(format!("{}.units.fa", args.out))?;
         let mut ur = std::fs::File::create(format!("{}.units.regions", args.out))?;
-        writeln!(ut, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tsource")?;
+        writeln!(ut, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tsource\tcore_hull")?;
         for (i, c) in clusters.iter().enumerate() {
             let fid = format!("MCL{i}");
             let mut idx = 0usize;
             let mut hulls: BTreeMap<String, (u64, u64)> = BTreeMap::new();
             for (mi, m) in c.members.iter().enumerate() {
                 // locus = core hull (trimmed) / member span; dropped members are not units
+                // the member's SEDEF core hull (0-based half-open), for `copy_assign --psv-genomic` (§6ep)
+                let hull_col = match core_records.get(i).and_then(|v| v.get(mi)).and_then(|r| r.hull) {
+                    Some((a, b)) => format!("{}-{}", a.saturating_sub(1), b),
+                    None => "NA".to_string(),
+                };
                 let (lo, hi) = match core_records.get(i).and_then(|v| v.get(mi)) {
                     Some(r) if r.status == CoreStatus::Dropped => {
                         unit_stats.2 += 1;
@@ -659,7 +664,7 @@ fn main() -> Result<()> {
                 let (us, ue) = (exons[0].0, exons.last().unwrap().1);
                 writeln!(
                     ut,
-                    "{fid}\t{idx}\tMCL_{}_{us}\t{}\t{us}\t{ue}\t{}\t{strand}\t{}\t{}\t{source}",
+                    "{fid}\t{idx}\tMCL_{}_{us}\t{}\t{us}\t{ue}\t{}\t{strand}\t{}\t{}\t{source}\t{hull_col}",
                     m.0,
                     m.0,
                     exons.len(),

@@ -12100,3 +12100,46 @@ keeps observing genomic positions. `copies.tsv` needs the core hull per copy (an
 `cores.tsv` join), and `discover_genomic_psvs` aligns hulls. That is O2-8c′, unimplemented. Everything else
 in the chain (locus rule → core refinement → read-chain units → genomic columns on hulls → assign-or-abstain)
 now exists as measured pieces; the last join is the hull-as-alignment-span.
+
+## §6ep — O2-8c′ IMPLEMENTED: hull-span genomic PSV columns via minimap2 are CORRECT PAIRWISE and still not a family-level fix; the star projection and the low-MAPQ junction truth are the two remaining suspects (2026-09-05)
+
+**Shipped (OFF unless `--psv-genomic`):** `copies.tsv` optional `core_hull` column (0-based half-open;
+`mcl_families --emit-units` writes it from `cores.tsv`, `NA` when no core), parsed by `catalog_input` into a
+per-`tid` registry (`register_core_hull` / `core_hull_of`; a side table because `DenovoTranscript` has 81
+constructors); `discover_genomic_psvs` aligns the HULLS, minimap2 (asm20, chained, clipped ends become
+gap-only columns) FIRST and the exact aligners only as fallback. All 35 NPIP units carry a hull (median
+24,650 bp, 2.1–41.7 kb).
+
+**Why hulls alone were not enough (`fam_pairh_*`, direct minimap2 of the hull sequences):** two NPIP hulls
+share a **16 kb block at 96% identity** (NM 610/16,296) beside a 4 kb block at 77% and unshared ends —
+the union-of-linked-segments hull is not collinear end-to-end between two given copies. A GLOBAL DP over
+the hulls still gave 3,210 / 1,211 / 2,228 columns (register 685); minimap2's chained alignment gives
+**240 / 597 / 238**, in line with the direct NM counts. Pairwise, the column system is now right.
+
+**Family level (35 units, `fam_NPIPunits3_073242`, fixed §6ej truth):** 23,431 columns; **12 assigned /
+2,935 tied / 27 ambiguous**; anchored reads assigned 9, agreement **3/9**, four wrong calls at min_p 0
+(underflow), all to copy 13 (`31442760`, a full '+' NPIPB copy, allele coverage 1.00 — NOT a sparse-copy
+artefact; sparse copies exist, down to 4%, but are not the ones winning); MAPQ-60 positional agreement
+1/7. **Not accepted (E1/E2 fail).** Compared with the spliced mode on the same units (§6en: 123 assigned,
+3/4), the genomic mode abstains more and is wrong as often.
+
+**Two suspects, both now specific:**
+1. **The STAR projection.** Columns are ref-copy-0 offsets and every other copy is placed only through its
+   own alignment to copy 0; where two copies' alignments to copy 0 are out of phase (a repeat mosaic aligned
+   differently in the two pairs), their alleles are compared at non-homologous positions and a read spanning
+   that stretch sees thousands of "distinguishing" columns — hence min_p 0. The remedy is a true multiple
+   alignment of the hulls (`poa_msa_with_costs` already accepts n sequences; 35 × 25 kb is within its reach
+   with the memory fix) or a consistency filter that keeps only columns where the pairwise alignments agree
+   transitively. **O2-8d.**
+2. **The junction-anchored truth below MAPQ 60.** A "copy-specific junction" is copy-specific in the
+   ANNOTATION; for a multimapper whose primary was placed arbitrarily, the same splice exists at the
+   paralogue whose model merely lacks that exon boundary. On the 3-copy ABCC1/SORL1 family the junctions
+   were genuinely different (43/43 held); on 35 near-identical NPIP cores the MAPQ<60 anchors may be
+   annotation gaps, and some "wrong" calls may be O2 being right. The safer truth for MAPQ-60 reads is
+   minimap2's placement, and that one reads 1/7 here — still bad. **Audit the truth before O2-8d**: for each
+   anchored MAPQ<60 read, does the paralogue O2 chose carry the same splice junction in the READS (not the
+   model)? Register row 686 records the caveat.
+
+**Standing:** `--psv-genomic` OFF; hull column and registry shipped; the spliced mode remains the
+default and its NPIP result the quotable one (abstention certificate). Pieces measured today: locus rule
+→ core hulls → read-chain units → hull columns (pairwise correct) → star projection (the open defect).

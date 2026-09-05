@@ -652,6 +652,19 @@ pub fn discover_intron_psvs(
 /// 3e-270 on a wrong call (register 683); the genomic spans of SEDEF core hulls are collinear, so the
 /// pairwise alignment is a thin band. If the forward alignment covers less than half of the shorter span the
 /// reverse complement is tried (an inverted duplication), with positions mapped back accordingly.
+/// ⭐ O2-8c′ (§6ep): per-copy SEDEF core hulls, registered by `catalog_input` from the optional `core_hull`
+/// column and read by `discover_genomic_psvs`. A process-wide side table keyed by copy `tid`: adding a field
+/// to `DenovoTranscript` would touch 81 constructors for an opt-in lever (same rationale as the env-var
+/// levers). Only `--psv-genomic` consults it.
+static CORE_HULLS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (u64, u64)>>> =
+    std::sync::OnceLock::new();
+pub fn register_core_hull(tid: &str, hull: (u64, u64)) {
+    CORE_HULLS.get_or_init(Default::default).lock().unwrap().insert(tid.to_string(), hull);
+}
+pub fn core_hull_of(tid: &str) -> Option<(u64, u64)> {
+    CORE_HULLS.get().and_then(|m| m.lock().unwrap().get(tid).copied())
+}
+
 pub fn discover_genomic_psvs(
     copies: &[&DenovoTranscript],
     genome: &crate::genome::GenomeIndex,
@@ -661,6 +674,12 @@ pub fn discover_genomic_psvs(
     if n < 2 {
         return Vec::new();
     }
+    // Alignment span per copy: its registered SEDEF core hull (coextensive across the family by construction,
+    // §6ei) when present, else its extent. §6eo showed extents manufacture columns from non-homologous flanks.
+    let span_of: Vec<(u64, u64)> = copies
+        .iter()
+        .map(|c| core_hull_of(&c.tid).filter(|&(a, b)| b > a).unwrap_or((c.start, c.end)))
+        .collect();
     let comp = |b: u8| match b {
         b'A' => b'T',
         b'T' => b'A',
@@ -673,9 +692,10 @@ pub fn discover_genomic_psvs(
     // '-'). A '-' copy's span is reverse-complemented, and its offset `o` maps back to genome `end - 1 - o`.
     let spans: Vec<Vec<u8>> = copies
         .iter()
-        .map(|c| {
+        .zip(&span_of)
+        .map(|(c, &(s0, e0))| {
             let fwd = genome
-                .fetch_sequence(&c.chrom, c.start, c.end)
+                .fetch_sequence(&c.chrom, s0, e0)
                 .map(|s| s.to_ascii_uppercase())
                 .unwrap_or_default();
             if c.strand == '-' { fwd.iter().rev().map(|&b| comp(b)).collect() } else { fwd }
@@ -686,8 +706,9 @@ pub fn discover_genomic_psvs(
     }
     let c0 = copies[0];
     let ref_span = &spans[0];
-    let gpos = |c: &DenovoTranscript, off: usize| -> u64 {
-        if c.strand == '-' { c.end - 1 - off as u64 } else { c.start + off as u64 }
+    let gpos = |ci: usize, off: usize| -> u64 {
+        let (s0, e0) = span_of[ci];
+        if copies[ci].strand == '-' { e0 - 1 - off as u64 } else { s0 + off as u64 }
     };
     let is_intronic = |gpos: u64| c0.introns.iter().any(|&(d, a)| gpos >= d && gpos < a);
     use poasta::aligner::scoring::GapAffine;
@@ -705,18 +726,28 @@ pub fn discover_genomic_psvs(
             continue;
         }
         let os = &spans[other];
-        let band = ref_span.len().abs_diff(os.len()) + 1024;
-        let banded = if (ref_span.len() + 1).saturating_mul(2 * band + 1) <= BAND_CELL_BUDGET {
-            banded_msa_pair(ref_span, os, band)
-        } else {
-            None
-        };
-        let aln = if let Some(m) = banded {
-            Ok(m)
-        } else if ref_span.len().max(os.len()) <= poa_cap {
-            poa_msa_with_costs(&[ref_span.clone(), os.clone()], GapAffine::new(1, 1, 32))
-        } else {
-            minimap2_msa_pair(ref_span, os)
+        // §6ep: genomic hulls are NOT collinear end-to-end even between two copies of one family — a 16 kb
+        // core at 96% identity sits beside flanking segments at 77% (repeat mosaics) or unshared. A GLOBAL
+        // DP forces those into the alignment and manufactures thousands of "PSV" columns (register 684/685).
+        // minimap2's chained alignment keeps the homologous block and renders the rest as gap-only ends, which
+        // create no column; the exact aligners are the fallback for pairs minimap2 cannot seed (short spans).
+        let aln = match minimap2_msa_pair(ref_span, os) {
+            Ok(m) => Ok(m),
+            Err(_) => {
+                let band = ref_span.len().abs_diff(os.len()) + 1024;
+                let banded = if (ref_span.len() + 1).saturating_mul(2 * band + 1) <= BAND_CELL_BUDGET {
+                    banded_msa_pair(ref_span, os, band)
+                } else {
+                    None
+                };
+                if let Some(m) = banded {
+                    Ok(m)
+                } else if ref_span.len().max(os.len()) <= poa_cap {
+                    poa_msa_with_costs(&[ref_span.clone(), os.clone()], GapAffine::new(1, 1, 32))
+                } else {
+                    Err(anyhow::anyhow!("no aligner could take this pair"))
+                }
+            }
         };
         if let Ok(msa) = aln {
             if msa.len() == 2 {
@@ -727,7 +758,7 @@ pub fn discover_genomic_psvs(
                     let (a_gap, b_gap) = (ca == b'-', cb == b'-');
                     if !a_gap && !b_gap {
                         amaps[other].insert(ro, oo);
-                        if is_acgt(ca) && is_acgt(cb) && ca != cb && (!intronic_only || is_intronic(gpos(c0, ro))) {
+                        if is_acgt(ca) && is_acgt(cb) && ca != cb && (!intronic_only || is_intronic(gpos(0, ro))) {
                             diff_off.insert(ro);
                         }
                     }
@@ -745,10 +776,10 @@ pub fn discover_genomic_psvs(
         .into_iter()
         .map(|ro| {
             let mut rec: PsvColumn = vec![None; n];
-            rec[0] = Some((gpos(c0, ro), ref_span[ro]));
+            rec[0] = Some((gpos(0, ro), ref_span[ro]));
             for other in 1..n {
                 if let Some(&oo) = amaps[other].get(&ro) {
-                    rec[other] = Some((gpos(copies[other], oo), spans[other][oo]));
+                    rec[other] = Some((gpos(other, oo), spans[other][oo]));
                 }
             }
             rec

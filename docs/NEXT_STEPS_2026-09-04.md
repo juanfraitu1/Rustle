@@ -46,6 +46,13 @@ Canonical catalogs: `mcl_ann/rna_bp1_p9.clusters.tsv` (3 contigs) and `mcl_ann/g
 | O1-10b | **SHIPPED OFF (§6en): `mcl_families --emit-units --bam --fasta`**, majority-splice chain rule; ⛔ exposed §6el's defective bench builder (register 682) and O2's star-projection defect on units of unequal structure (register 683). Original text: Make the read-chain node a feature: `mcl_families` (or the bridge) emits per-locus units = SEDEF core hull + read-supported exon chain; O1 clusters over them, O2 consumes them | §6el: the GFF model was the cause of O2's confident wrong calls; the node for both objectives is the transcribed unit |
 | O2-5' | ~~O2 memory~~ **FIXED (§6em)**: rolling-row DP + 1-byte traceback, byte-identical; 25.4 GB → 0.49 GB, 20.7 GB → 5.7 GB | sweep and correction leg unblocked |
 
+## Added 2026-09-05 (§6ep)
+| # | step | why |
+|---|---|---|
+| O2-8c′ | **SHIPPED OFF (§6ep)**: `core_hull` column + registry, hull-span genomic columns via chained minimap2 — pairwise column counts now match direct alignment (240/597/238 vs NM 610/622/516) | family-level still 3/9 with min_p 0: the STAR projection (every copy vs copy 0 only) compares out-of-phase alleles |
+| O2-8d | **True multiple alignment of the hulls** (`poa_msa_with_costs` takes n sequences) or a transitive-consistency filter on columns; then rescore | the last projection defect; acceptance = the 117 anchored reads (after the truth audit below) |
+| O2-T | **Audit the junction truth for MAPQ<60 reads**: does the paralogue O2 chose carry the same splice in the READS? (register 686) | on near-identical paralogues a model-specific junction may be an annotation gap |
+
 ## Added 2026-09-05 (§6en)
 | # | step | why |
 |---|---|---|
