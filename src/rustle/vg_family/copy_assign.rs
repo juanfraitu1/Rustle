@@ -229,6 +229,13 @@ pub struct AssignParams {
     /// candidate and absent in the other, where both cover the position). Adds assignments (paired 35: 32.1 →
     /// 36.5 %) at a precision cost (MAPQ-60 agreement 99.90 → 99.58 %); default `false`.
     pub read_star_junctions: bool,
+    /// ⭐ §6fd (PREREG adj/gstar, all four predictions held): read-star against each candidate's GENOMIC locus
+    /// (the unit's extent padded by the family's longest molecule), splice-aware — isoform structure aligns
+    /// (introns as `N`); the origin certificate counts X + I + D + the read bases left unaligned over the read
+    /// length; columns come from the candidates' aligned genomic bases. **Default `true` since 2026-09-05**
+    /// (paired 35: 55.7 % assigned at 9,236/9,236 placement agreement, 0 wrong anchors); `false` = the spliced
+    /// UNIT form of §6fc (32.1 % @ 99.90 %, ten times faster).
+    pub read_star_genomic: bool,
 }
 
 impl Default for AssignParams {
@@ -251,6 +258,7 @@ impl Default for AssignParams {
             molecule_pool: false,
             origin_subst_only: false,
             read_star_junctions: false,
+            read_star_genomic: true,
         }
     }
 }

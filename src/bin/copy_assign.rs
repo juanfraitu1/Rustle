@@ -249,6 +249,15 @@ struct Args {
     /// of MAPQ-60 agreement on the paired 35 families).
     #[arg(long, default_value_t = false)]
     read_star_junctions: bool,
+    /// ⭐ §6fd: read-star against each candidate's GENOMIC locus (unit extent padded by the family's longest
+    /// read), splice-aware; the origin certificate counts X + I + D + unaligned read bases over the read length.
+    /// **Default ON (user decision 2026-09-05; PREREG adj/gstar held: 0 wrong anchors, 100 % placement
+    /// agreement on the paired 35)**. `--read-star-unit` restores the spliced-unit form of §6fc (10× faster).
+    #[arg(long, default_value_t = true)]
+    read_star_genomic: bool,
+    /// Escape hatch: read-star against the spliced UNITS (§6fc), the default before 2026-09-05 §6fd.
+    #[arg(long, default_value_t = false)]
+    read_star_unit: bool,
     /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
     /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
     /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
@@ -1415,6 +1424,7 @@ fn main() -> Result<()> {
         molecule_pool: args.molecule_observations && !args.no_molecule_observations,
         origin_subst_only: args.origin_substitutions_only,
         read_star_junctions: args.read_star_junctions,
+        read_star_genomic: args.read_star_genomic && !args.read_star_unit,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
@@ -2662,6 +2672,7 @@ fn main() -> Result<()> {
         row("origin_rejected", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected).count()))?;
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
         row("read_star_junctions", format!("{}", args.read_star_junctions))?;
+        row("read_star_genomic", format!("{}", args.read_star_genomic && !args.read_star_unit))?;
         row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;

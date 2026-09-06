@@ -48,12 +48,14 @@ family (§6ec).
 
 ## 4. O2: assignment among exactly O1's units
 `copy_assign` consumes the unit table as its copy set — no detection, no re-derivation of the roster
-(§6da–§6er). Since §6fa–§6fc the read is the star: each molecule's sequence is aligned to every unit, its
-columns are its own positions where the candidate units differ, and each competitor is certified against the
+(§6da–§6er). Since §6fa–§6fd the read is the star: each molecule's sequence is aligned splice-aware to every
+candidate's locus (the unit's extent padded by the family's longest read), its columns are its own positions
+where the candidates' genomic bases differ, and each competitor is certified against the
 best-aligned candidate on the columns both carry (`min_p < α/(n−1)`); a pair sharing no distinguishing column
-is a tie, a competitor not rejected is an abstention, and an origin certificate abstains when the read's edits
-against its best unit exceed sequencing error — "no candidate explains this read", which names the node, not
-the identity. The earlier family-column form scored every BAM record separately and abstained on contradiction;
+is a tie, a competitor not rejected is an abstention, and an origin certificate abstains when the read's substitutions, indels and unaligned bases
+against its best locus exceed sequencing error — "no candidate explains this read", which names the node, not
+the identity. On the 35 paired families this assigns 56 % of unit reads with 9,236 of 9,236 MAPQ-60 placements
+agreeing and no wrong call on NPIP's audited anchors (§6fd). The earlier family-column form scored every BAM record separately and abstained on contradiction;
 that abstention was masking wrong column positions on non-star copies (34 % of a read's columns disagreed
 between two placements on NPIP, §6fa). The truth for what O2 assigns is junction-anchored reads, **audited**: of
 117 anchors on NPIP, 55 were annotation gaps (the read carries the same splice on another copy at equal or

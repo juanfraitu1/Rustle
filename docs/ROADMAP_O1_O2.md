@@ -100,3 +100,11 @@ NPIP 91 → 316 assigned @ 201/201, 0 wrong anchors. Opt-ins measured and shippe
 Open: the certificate's structure-vs-origin dichotomy (a per-read isoform model would lift the LCR16u rejections
 without the substitution-only precision cost); the 60-member L1 artefact class genome-wide (classified, row-free);
 score `gw_units_v1` with O2 genome-wide (GGO_ds.bam).
+
+## §6fd — genomic read-star is the O2 default (2026-09-05)
+Read vs each candidate's LOCUS (unit extent padded by the longest read), splice-aware; certificate = X + I + D +
+unaligned bases over the read length; pairwise columns from genomic bases. PREREG held (0 wrong anchors, 100 %
+placement agreement on the paired 35, 55.7 % assigned, MAPQ<60 386/1,158). Rows 709–710 correct the isoform
+reading: the rejections were unit EXTENT. Open: the 10× time cost (minimap2 -x splice per family; batch across
+families or index once per contig); O1 unit extents that exclude expressed exons (the anchor read's locus 4–16 kb
+past its unit); genome-wide O2 on `gw_units_v1`.

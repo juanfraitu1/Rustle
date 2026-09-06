@@ -545,7 +545,7 @@ pub(crate) fn banded_msa_pair_full_matrix(a: &[u8], b: &[u8], band: usize) -> Op
 pub fn read_star_alignments(copy_seqs: &[&[u8]], read_seqs: &[&[u8]]) -> Vec<Vec<Option<Vec<Option<u8>>>>> {
     // full (memory-hungry) form, kept for tests: per read x copy the aligned base at every read position
     let mut out: Vec<Vec<Option<Vec<Option<u8>>>>> = (0..read_seqs.len()).map(|_| vec![None; copy_seqs.len()]).collect();
-    read_star_stream(copy_seqs, read_seqs, |ri, per_copy, _, _| out[ri] = per_copy.to_vec());
+    read_star_stream(copy_seqs, read_seqs, "map-hifi", |ri, per_copy, _, _| out[ri] = per_copy.to_vec());
     out
 }
 
@@ -558,15 +558,15 @@ pub fn read_star_alignments(copy_seqs: &[&[u8]], read_seqs: &[&[u8]]) -> Vec<Vec
 /// `(candidates, obs, profiles, unit_edits, covered)` — `covered[k]` = the read positions candidate `k` has an
 /// aligned base at, as sorted half-open intervals (a junction term is admitted only where BOTH candidates cover
 /// the read position; an uncovered position is not "the copy lacks the junction").
-pub type ReadStarObs = (Vec<usize>, Vec<Option<u8>>, Vec<CopyProfile>, Vec<Option<(u64, u64, u64, u64)>>, Vec<Vec<(u32, u32)>>);
+pub type ReadStarObs = (Vec<usize>, Vec<Option<u8>>, Vec<CopyProfile>, Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>>, Vec<Vec<(u32, u32)>>);
 
 /// `copy_bounds[c]` = the unit offsets where copy `c` starts a new exon (its splice boundaries in unit space);
 /// each candidate's `CopyProfile::junctions` becomes the READ positions aligned to those offsets, so the read's
 /// own junction positions (from its CIGAR) can be compared per candidate in one coordinate system (§6fc).
-pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bounds: &[Vec<u32>]) -> Vec<ReadStarObs> {
+pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bounds: &[Vec<u32>], preset: &str) -> Vec<ReadStarObs> {
     let mut out: Vec<ReadStarObs> =
         (0..read_seqs.len()).map(|_| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).collect();
-    read_star_stream(copy_seqs, read_seqs, |ri, per_copy, per_pos, edits| {
+    read_star_stream(copy_seqs, read_seqs, preset, |ri, per_copy, per_pos, edits| {
         let (obs, profiles) = read_star_columns(read_seqs[ri], per_copy);
         let cand: Vec<usize> = per_copy.iter().enumerate().filter(|(_, h)| h.is_some()).map(|(i, _)| i).collect();
         // every column stays; a candidate with no base at a column is `None` there and the PAIRWISE certificate
@@ -608,7 +608,7 @@ pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bou
 
 /// Shared driver: runs minimap2 (all copies as targets, all molecules as queries, every hit kept) and calls
 /// `sink(read_index, per_copy)` once per read with that read's aligned copy bases per read position.
-fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Option<u32>>>], &[Option<(u64, u64, u64, u64)>])>(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], mut sink: F) {
+fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Option<u32>>>], &[Option<(u64, u64, u64, u64, u64, u64, u64)>])>(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], preset: &str, mut sink: F) {
     use std::io::{BufRead, Write};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NONCE: AtomicUsize = AtomicUsize::new(0);
@@ -646,7 +646,7 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
     // below it is not a candidate. `RUSTLE_STAR_P=0` reports every chain (the test of that floor, §6fc).
     let p_arg = std::env::var("RUSTLE_STAR_P").unwrap_or_else(|_| "0.3".to_string());
     let mut child = match std::process::Command::new(&mm2)
-        .args(["-c", "--eqx", "-x", "map-hifi", "--secondary=yes", "-p", &p_arg, "-N", &n_arg, "-t", "2"])
+        .args(["-c", "--eqx", "-x", preset, "--secondary=yes", "-p", &p_arg, "-N", &n_arg, "-t", "2"])
         .arg(&refp)
         .arg(&qp)
         .stdout(std::process::Stdio::piped())
@@ -663,8 +663,8 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
     let mut per_copy: Vec<Option<Vec<Option<u8>>>> = vec![None; nc];
     let mut per_pos: Vec<Option<Vec<Option<u32>>>> = vec![None; nc];
     let mut best_match: Vec<u64> = vec![0; nc];
-    let mut edits: Vec<Option<(u64, u64, u64, u64)>> = vec![None; nc];
-    let mut flush = |ri: Option<usize>, per_copy: &mut Vec<Option<Vec<Option<u8>>>>, per_pos: &mut Vec<Option<Vec<Option<u32>>>>, best_match: &mut Vec<u64>, edits: &mut Vec<Option<(u64, u64, u64, u64)>>| {
+    let mut edits: Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>> = vec![None; nc];
+    let mut flush = |ri: Option<usize>, per_copy: &mut Vec<Option<Vec<Option<u8>>>>, per_pos: &mut Vec<Option<Vec<Option<u32>>>>, best_match: &mut Vec<u64>, edits: &mut Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>>| {
         if let Some(ri) = ri {
             sink(ri, per_copy, per_pos, edits);
         }
@@ -710,8 +710,7 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
         let mut vp: Vec<Option<u32>> = vec![None; qlen];
         let (mut q, mut t) = (if minus { qlen - qe } else { qs }, ts);
         let mut num = 0usize;
-        let (mut n_x, mut n_aligned) = (0u64, 0u64); // substitutions and aligned bases: the ORIGIN certificate's
-                                                    // numerator/denominator (indels are isoform structure, not origin, §6fc)
+        let (mut n_x, mut n_aligned, mut n_i, mut n_d) = (0u64, 0u64, 0u64, 0u64); // X, =+X, I, D bases (N never counts)
         for ch in cg.bytes() {
             if ch.is_ascii_digit() {
                 num = num * 10 + (ch - b'0') as usize;
@@ -735,14 +734,23 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
                     q += num;
                     t += num;
                 }
-                b'I' | b'S' => q += num,
-                b'D' | b'N' => t += num,
+                b'I' => {
+                    n_i += num as u64;
+                    q += num;
+                }
+                b'S' => q += num,
+                b'D' => {
+                    n_d += num as u64;
+                    t += num;
+                }
+                b'N' => t += num,
                 _ => {}
             }
             num = 0;
         }
         best_match[ci] = nmatch;
-        edits[ci] = Some((n_x, n_aligned, nm, blk));
+        let unaligned = qlen.saturating_sub(qe.saturating_sub(qs)) as u64; // read bases the hit leaves unexplained
+        edits[ci] = Some((n_x, n_aligned, nm, blk, n_i, n_d, unaligned));
         per_copy[ci] = Some(v);
         per_pos[ci] = Some(vp);
     }
@@ -2054,7 +2062,26 @@ fn assign_family_detailed_once(
                     .max_by(|&a, &b| reads[a].seq.len().cmp(&reads[b].seq.len()).then(b.cmp(&a)))
             })
             .collect();
-        let copy_seqs: Vec<&[u8]> = copies.iter().map(|c| c.seq.as_slice()).collect();
+        // ⭐ §6fd genomic form: the candidates are their LOCI (forward genomic spans), aligned splice-aware
+        // the LOCUS for the certificate is the unit's extent padded by the family's longest molecule: a read that
+        // starts inside the unit can reach at most that far beyond it (LCR16u: 553 of 696 unit reads were rejected
+        // for bases past the chain's ends, all at ~0.2 % divergence from the genome, §6fd). No constant.
+        let pad: u64 = reps.iter().map(|&i| reads[i].seq.len() as u64).max().unwrap_or(0);
+        let genomic_spans: Option<Vec<Vec<u8>>> = if p.read_star_genomic {
+            genome.and_then(|g| {
+                copies
+                    .iter()
+                    .map(|c| g.fetch_sequence(&c.chrom, c.start.saturating_sub(pad), c.end + pad))
+                    .collect::<Option<Vec<_>>>()
+            })
+        } else {
+            None
+        };
+        let copy_seqs: Vec<&[u8]> = match &genomic_spans {
+            Some(v) => v.iter().map(|x| x.as_slice()).collect(),
+            None => copies.iter().map(|c| c.seq.as_slice()).collect(),
+        };
+        let preset = if genomic_spans.is_some() { "splice" } else { "map-hifi" };
         let read_seqs: Vec<&[u8]> = reps.iter().map(|&i| reads[i].seq.as_slice()).collect();
         // each copy's splice boundaries in unit offsets: where the spliced->genomic map jumps
         let copy_bounds: Vec<Vec<u32>> = copies
@@ -2065,7 +2092,7 @@ fn assign_family_detailed_once(
             })
             .collect();
         let t_star = std::time::Instant::now();
-        let alns = read_star_observations(&copy_seqs, &read_seqs, &copy_bounds);
+        let alns = read_star_observations(&copy_seqs, &read_seqs, if genomic_spans.is_some() { &[] } else { &copy_bounds }, preset);
         if timing {
             eprintln!("[timing]     read-star minimap2 ({} molecules x {} copies): {:.1}s", reps.len(), copies.len(), t_star.elapsed().as_secs_f64());
         }
@@ -2123,7 +2150,7 @@ fn assign_family_detailed_once(
                 // candidate is certified against it on the columns BOTH carry (`copy_pair_significance`). Tied when
                 // some competitor shares no distinguishing column (K = 0 for that pair); Ambiguous when some
                 // competitor is not rejected at alpha/(n-1); Assigned when every competitor is.
-                let matches = |k: usize| unit_edits.get(cand[k]).copied().flatten().map_or(0i64, |(_, _, nm, blk)| blk as i64 - nm as i64);
+                let matches = |k: usize| unit_edits.get(cand[k]).copied().flatten().map_or(0i64, |(n_x, n_al, _, _, _, _, _)| n_al as i64 - n_x as i64);
                 let bk = (0..cand.len()).max_by_key(|&k| (matches(k), std::cmp::Reverse(k))).unwrap();
                 let thr = p.alpha / (cand.len().saturating_sub(1).max(1) as f64);
                 let (mut min_p, mut p_read, mut n_dec_min, mut margin_min, mut k0) = (1.0f64, 0.0f64, usize::MAX, f64::INFINITY, false);
@@ -2222,8 +2249,19 @@ fn assign_family_detailed_once(
                 // copy's unit not at all and a paralogue's at 0.54; reads placed at MAPQ 60 with NM 333) ⟹ Ambiguous.
                 // The read's genome placement is NOT the null: a placement at NM 333/4,615 is no origin either.
                 let _ = genome_rate;
-                if let Some(&Some((n_x, n_aligned, nm_all, blk_all))) = unit_edits.get(a.best_copy) {
-                    let (nm, blk) = if p.origin_subst_only { (n_x, n_aligned) } else { (nm_all, blk_all) };
+                if let Some(&Some((n_x, n_aligned, nm_all, blk_all, n_i, n_d, unaligned))) = unit_edits.get(a.best_copy) {
+                    // genomic form: the locus must explain the WHOLE read — X + I + D + the read bases the hit
+                    // leaves unaligned, over the read length (introns never count; a locus that leaves a third of
+                    // the read unexplained is not its origin: the anchor read whose true locus was outside its
+                    // unit's extent aligned 622 of 950 bases at NM 0 to a paralogue, §6fd). Unit form: NM over
+                    // the block (every edit) or, opt-in, substitutions only
+                    let (nm, blk) = if p.read_star_genomic {
+                        (n_x + n_i + n_d + unaligned, n_aligned + unaligned)
+                    } else if p.origin_subst_only {
+                        (n_x, n_aligned)
+                    } else {
+                        (nm_all, blk_all)
+                    };
                     let r0 = p.error_rate;
                     let n = blk as f64;
                     let mean = n * r0;

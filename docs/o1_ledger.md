@@ -12684,3 +12684,39 @@ admitted loci 2,514/2,515 assigned to the admitted locus, NPIP anchors 0 wrong. 
 certificate they are isoform-structure rejections of the RIGHT copy, which the substitution-only form lifts at
 the price above. Admission ships as the bench prototype; the certificate's dichotomy (structure vs origin) is
 the open item. Suite 857 / 0 / 11 on the final source.
+
+## §6fd — GENOMIC READ-STAR: the read against each candidate's LOCUS, splice-aware, with a whole-read origin certificate (2026-09-05)
+
+**Why.** Rows 706–708: on the spliced unit the origin certificate cannot separate isoform structure from origin.
+**Design** (`docs/PREREG_genomic_read_star_2026-09-05.md`, md5 4e559e1f…; `copy_assign --read-star-genomic`): each
+molecule is aligned `minimap2 -x splice` to every candidate's genomic span (the unit's extent, forward strand);
+introns are `N`, a retained intron or an alternative exon aligns; columns = the read's positions where the
+candidates' aligned genomic bases differ; pairwise certificates as §6fc; origin certificate = X + I + D **+ the
+read bases the hit leaves unaligned**, over the read length, ~ Binomial(error_rate).
+**The unaligned term was found by the first run's one wrong anchor** (read SRR27438212.297220): its true locus
+(copy 9, MAPQ 60, NM 1, four introns at 29.430–29.442 Mb) lies OUTSIDE copy 9's unit extent (29.446–29.462 Mb),
+so locus 9 was not a candidate, and copy 6's locus explained 622 of the read's 950 bases at NM 0 and won. A locus
+that leaves a third of the read unexplained is not its origin: with the term the read abstains. (The unit extent
+is an O1 gap of the same class as §6fb's — the annotated locus bound clipped the read-followed chain.)
+| family | form | assigned | tied | ambiguous | MAPQ-60 agreement | MAPQ<60 assigned | anchors (62) |
+|---|---|---|---|---|---|---|---|
+| NPIP | unit read-star (§6fc default) | 316 | 165 | 462 | 201/201 | 115 | 0 assigned, 0 wrong |
+| NPIP | genomic, first form | 470 | 134 | 396 | 309/309 | 161 | 14 assigned, **1 wrong** |
+| NPIP | **genomic + whole-read certificate** | **434** | 122 | 444 | **280/280** | **154** | **7 assigned, 7 right, 0 wrong** |
+| NPIP | **genomic + whole-read + locus padded by the longest read** | **480** | 65 | 457 | **301/301** | **179** | **12 assigned, 12 right, 0 wrong** |
+| LCR16u | unit read-star | 42 | 163 | 449 | 39/40 | 2 | — |
+| LCR16u | genomic + whole-read | 104 | 75 | 517 | 96/96 | 8 | — |
+| LCR16u | **genomic + whole-read + padded locus** | **252** | 70 | 374 | **232/232** | 20 | — |
+**The second finding, from LCR16u:** with the whole-read certificate 553 of its 696 unit reads were still rejected,
+all with their primary INSIDE a unit at a median 0.18 % divergence from the genome — the loci explain them, the
+unit EXTENTS do not: the reads run past the chain's ends (UTRs, unannotated exons) and those bases counted as
+unexplained. The locus for the certificate is therefore the unit's extent padded by the family's longest molecule
+(a read starting inside the unit reaches at most that far; no constant). Row 706's "isoform structure" reading
+is corrected: the rejections were node EXTENT.
+PREREG: P1 (0 wrong anchors) holds; P4 (NPIP ≥ 316 assigned, ≥ 115 MAPQ<60) holds (480, 179); P3 holds on
+assignments (42 → 252) and only partly on rejections (ambiguous 449 → 374, −17 %, not −50 %); **P2 holds: paired 35 families, 17,271 unit reads — assigned 9,622 (55.7 %), tied 3,647 (21 %), ambiguous 4,002
+(23 %); MAPQ-60 placement agreement 9,236/9,236 = 100.0 %; MAPQ<60 assigned 386 of 1,158** (record-level 132,
+unit read-star 232). Wall 1,299 s (22 min; the unit form 133 s). **All four predictions held ⟹ the genomic form
+is `copy_assign`'s default (user decision); `--read-star-unit` restores the §6fc unit form byte-for-byte.**
+Full 74-family sweep under the default (`docs/sweep_v10_families_2026-09-05.tsv`): 41,851 unit reads — assigned 15,425 (37 %), tied 20,304 (49 %), ambiguous 6,122 (15 %); **MAPQ-60 placement agreement 13,339/13,339 = 100.0 %**; MAPQ<60 assigned 2,086 of 3,722 (56 %); 41 min, 2.1 GB. Suite: 857 / 0 / 11.
+Cost: NPIP's minimap2 19 s → ~140 s (22 padded loci, splice-aware), 1.7 GB.
