@@ -48,17 +48,23 @@ family (§6ec).
 
 ## 4. O2: assignment among exactly O1's units
 `copy_assign` consumes the unit table as its copy set — no detection, no re-derivation of the roster
-(§6da–§6er). PSV columns are the star projection of the units' spliced sequences; a read is assigned when
-its evidence clears `min_p < α/(n−1)` against every competitor, tied when no column distinguishes, ambiguous
-when the margin is insufficient. The truth for what O2 assigns is junction-anchored reads, **audited**: of
+(§6da–§6er). Since §6fa–§6fc the read is the star: each molecule's sequence is aligned to every unit, its
+columns are its own positions where the candidate units differ, and each competitor is certified against the
+best-aligned candidate on the columns both carry (`min_p < α/(n−1)`); a pair sharing no distinguishing column
+is a tie, a competitor not rejected is an abstention, and an origin certificate abstains when the read's edits
+against its best unit exceed sequencing error — "no candidate explains this read", which names the node, not
+the identity. The earlier family-column form scored every BAM record separately and abstained on contradiction;
+that abstention was masking wrong column positions on non-star copies (34 % of a read's columns disagreed
+between two placements on NPIP, §6fa). The truth for what O2 assigns is junction-anchored reads, **audited**: of
 117 anchors on NPIP, 55 were annotation gaps (the read carries the same splice on another copy at equal or
 better edit distance); on the 62 valid anchors the spliced path makes no wrong confident call (GFF cores
 5/5, read-chain units 3/3, §6eq–§6es), while the genomic-hull column modes do (3/8) and stay off.
 
 ## 5. The result on NPIP, and catalog-wide
-**NPIP (29 loci after the locus rule; LCR16u separate):** O2 abstains on every read whose copy of origin is
-at issue — 0 of 62 valid anchors assigned, all ambiguous — and places MAPQ-60 reads where minimap2 placed
-them 75 of 76 times. The "4,743 assigned reads" of the annotation-level family were EIF3C, the block's
+**NPIP (32 loci after the locus rule; LCR16u separate):** on the 62 audited anchors O2 makes no wrong call
+(0 assigned, 59 abstain, 1 tie) and places MAPQ-60 reads where minimap2 placed them 201 of 201 times; of its
+433 low-MAPQ reads 115 are assigned (the record-level form: 15), 64 are K = 0 ties and 254 are explained by no
+unit at the sequencing error rate — two thirds of NPIP's abstention is the node, one third is identity (§6fa). The "4,743 assigned reads" of the annotation-level family were EIF3C, the block's
 housekeeping gene, not NPIP (§6eg). The multimapping pool on the LCR16a cores is 592 of 6,545 reads and
 98.6% of it is unassignable with 2–5 kb molecules: **on NPIP, O2 is an abstention certificate.**
 NPIPA versus NPIPB (the advisor's Q9): the 29 gorilla loci land on CHM13 as 17 NPIPB-only, 3 on both NPIPA2 and

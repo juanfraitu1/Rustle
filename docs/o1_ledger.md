@@ -12632,3 +12632,55 @@ NC_073242.2:35.99 Mb at 0.985 with 123 reads** (an expressed, unannotated LCR16u
 
 **Paired 35 (v9 read-star vs v7 record-level):** v7 record-level 5,816/17,278 = 33.7 % assigned / 7 % tied / 59 % ambiguous @ 99.51 % → v9 read-star + merged units 5,446/16,398 = 33.2 % / 51 % tied / 16 % ambiguous @ **99.62 %**, MAPQ<60 assigned 132 → 196. Suite: 857 / 0 / 11 (the cross-family contract tests pin `--no-molecule-observations`). Genome-wide rebuild under the new
 defaults (`bench/gw_rebuild.sh`, `gw_units_v1`, GGO_ds.bam for units): 13,263 records / 64,336 edges / **2,296 clusters (1,380 pairs, 916 ≥ 3), largest 157; 9,565 members; 3,755 units (2,325 read-chain, 1,430 GFF-fallback, 450 merged); 467 dropped by the core rule; 6,691 hulls in 674 blocks, 79 shared** — the transitive block SDB0 spans several hundred clusters (the genome-wide SD network), so genome-wide only the DIRECT partner column is quotable. 477 s, 6.2 GB. Anchor persistence: NPIP 32/32 loci in one cluster (gw MCL12), LCR16u 12/12 separate (MCL111); the 3-contig real anchors intact (v9 MCL0 48/48 → gw MCL3, v9 MCL2 36/36 → gw MCL5); the tandem array persists as two clusters (gw_p9's 60 → MCL3 49 + 11 straddling, 58 → MCL5 39 + 19 straddling — records at the cut vertex overlap both halves); the element cluster (v9 MCL3, 29) fragments genome-wide (20 + 7 + 2, expected for an element); one 60-member gw_p9 cluster (MCL8) dissolves (56/60 unclustered) — to be classified..
+
+## §6fc — ROSTER ADMISSION BY READ ORIGIN (O2 → O1), the read-star reporting floor tested, the dissolved genome-wide cluster classified (2026-09-05)
+
+**The dissolved 60-member genome-wide cluster (gw_p9 MCL8, §6fb)** is an L1-welded artefact: 60 unrelated
+protein-coding genes (C6, SLC35F3, MAOA, GALNT…) on 20+ contigs, frac_in 0.086, 53 % of the member spans
+curated repeat (L1 1.5 Mb, Alu 0.5 Mb). Exon-to-exon homology removed it without a repeat library — the same
+mechanism that dissolved the 3-contig L1 blob (§6ey).
+
+**The read-star reporting floor** (`RUSTLE_STAR_P`, minimap2 `-p`; default 0.3): a copy whose best hit scores
+below 30 % of the read's best hit is not a candidate. Tested at 0 ("report every chain", the no-constant form,
+row 704): LCR16u unit reads assigned 146 → 27, NPIP 175 → 50, NPIP's minimap2 19 s → 319 s. Weak partial hits
+enter the candidate set and the columns-every-candidate-covers rule shrinks the evidence to their intersection.
+The floor stays at 0.3 and is stated as a measured operating point (two points, not a plateau); the principled
+form is a per-pair column rule (columns covered by both members of each pair, certificate per pair) — open.
+
+**Roster admission by read origin** (`docs/PREREG_roster_admission_2026-09-05.md`, md5 fb267f09…;
+`bench/o2_roster_admit.py`): the certificate-rejected unit reads whose PRIMARY lies outside every unit of the
+family, clustered into loci (≥ 3 within 5 kb), become ADDED O2 CANDIDATES (`read_admitted`; chain by the unit
+rule on those primaries, strand by majority, sequence from the genome) — candidates for O2's set, not family
+members (the core rule keeps membership). On the v9 sweep: **21 of 74 families receive 61 admitted copies**
+(MCL9 9, MCL65 8, LCR16u 6, NPIP 4 — its ABCC1-region dropped members return as candidates with 332 reads).
+
+**The admission test found the next defect (row 705).** With the first read-star form (columns = those EVERY
+candidate covers) one 13-read admitted copy in MCL88 turned 1,981 assignments into 233 rejections: a candidate
+with a partial hit shrinks the shared columns — the same mechanism that made `-p 0` halve the assignments.
+**Fix: pairwise certificates.** Best = the candidate with the most matching bases in its alignment; every other
+candidate is certified against it on the columns BOTH carry (`copy_pair_significance`); Tied when some pair
+shares no distinguishing column, Ambiguous when some competitor is not rejected at α/(n−1), Assigned when all
+are; posterior = softmax of the pairwise log-LRs. Two further forms were measured and made OPT-IN:
+- `--origin-substitutions-only` (indels are isoform structure, not origin): NPIP 316 → 442 assigned, MAPQ<60
+  115 → 147, LCR16u's 1,865 isoform rejections lifted — but **1 of 20 audited anchors wrong** (read …9782780,
+  anchor 21 → 17 on 7 substitution columns) and MAPQ-60 agreement 99.9 → 98.6 % (row 707).
+- `--read-star-junctions` (the read's splice junctions as pairwise evidence where both candidates cover the
+  position; an uncovered position is NOT "the copy lacks the junction" — the first form counted it so and
+  added 27 disagreements): paired 35 assigned 32.1 → 36.5 % at agreement 99.90 → 99.58 % (row 708).
+**The default** (pairwise, every edit counted, no junction term, `-p 0.3`) makes no wrong anchor call:
+| set | assigned | tied | ambiguous | MAPQ-60 agreement | MAPQ<60 assigned |
+|---|---|---|---|---|---|
+| paired 35 (v7 record-level) | 5,816 (33.7 %) | 7 % | 59 % | 99.51 % | 132 |
+| paired 35 (final default) | 5,261 (32.1 %) | 46 % | 22 % | **5,024/5,029 = 99.90 %** | **232** |
+| full 74 on v9 | 9,497 (24 %) | 61 % | 14 % | 7,864/7,870 = 99.92 % | 1,627 of 3,283 |
+| NPIP (MCL1) | 316 (record-level 91) | 165 | 462 | 201/201 | 115 of 433 (record-level 15) |
+NPIP's 62 audited anchors: 0 assigned, 0 wrong (59 ambiguous, 1 tied). LCR16u drops (156 → 42 assigned): its
+0.99-identical pseudogenes are K = 0 pairs under the pairwise rule — honest ties where the record-level path
+assigned by placement zone.
+**Admission under the final default** (`docs/PREREG_roster_admission_2026-09-05.md`): on the 21 families,
+assigned 3,100 → 3,498 (+13 %), origin-rejected 4,658 → 4,521 (−3 %), MAPQ-60 agreement 99.78 → 99.84 %, reads at
+admitted loci 2,514/2,515 assigned to the admitted locus, NPIP anchors 0 wrong. P2, P3, P4 hold; **P1 fails**
+(rejections fall 3 %, not 50 %): the rejected reads' origin is not the admitted loci — under the every-edit
+certificate they are isoform-structure rejections of the RIGHT copy, which the substitution-only form lifts at
+the price above. Admission ships as the bench prototype; the certificate's dichotomy (structure vs origin) is
+the open item. Suite 857 / 0 / 11 on the final source.

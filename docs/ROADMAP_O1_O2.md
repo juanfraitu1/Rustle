@@ -91,3 +91,12 @@ an unannotated expressed LCR16u copy (NC_073242.2:35.99 Mb, 123 reads). Genome-w
 defaults: `mcl_ann/gw_units_v1` (`bench/gw_rebuild.sh`). Next: fold the 62 loci back into O1 (roster admission
 by read origin), score gw_units_v1's anchors (tandem array, NPIP), the sub-30 %-score competitor question
 (`-p 0.3`: a copy below it is not a candidate — state or test).
+
+## §6fc — pairwise read-star is the O2 default; admission, floor and junction forms measured (2026-09-05)
+Final default: read-star with pairwise certificates, every edit counted in the origin certificate, no junction
+term, `-p 0.3`. Paired 35: 32.1 % assigned @ 99.90 % (record-level 33.7 % @ 99.51 %), MAPQ<60 assigned 132 → 232;
+NPIP 91 → 316 assigned @ 201/201, 0 wrong anchors. Opt-ins measured and shipped OFF: `--origin-substitutions-only`
+(row 707), `--read-star-junctions` (row 708), `RUSTLE_STAR_P` (row 704). Roster admission: safe, modest (row 706).
+Open: the certificate's structure-vs-origin dichotomy (a per-read isoform model would lift the LCR16u rejections
+without the substitution-only precision cost); the 60-member L1 artefact class genome-wide (classified, row-free);
+score `gw_units_v1` with O2 genome-wide (GGO_ds.bam).

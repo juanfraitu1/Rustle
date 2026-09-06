@@ -221,6 +221,14 @@ pub struct AssignParams {
     /// that observed the most columns. Replaces "score every record, abstain on contradiction", which measured
     /// placement instead of sequence (ZSCAN5A: 24/24 ambiguous molecules were 1 primary + 5 secondaries).
     pub molecule_pool: bool,
+    /// ⭐ §6fc: origin certificate on SUBSTITUTIONS only (indels = isoform structure). Higher yield (NPIP 175 →
+    /// 442 assigned, MAPQ<60 31 → 147) but 1 of 20 audited anchors wrong and MAPQ-60 agreement 99.9 → 98.6 %;
+    /// the default (`false`) counts every edit (NM) and made no wrong anchor call. Opt-in.
+    pub origin_subst_only: bool,
+    /// ⭐ §6fc: use the read's splice junctions as pairwise evidence in read-star (a junction present in one
+    /// candidate and absent in the other, where both cover the position). Adds assignments (paired 35: 32.1 →
+    /// 36.5 %) at a precision cost (MAPQ-60 agreement 99.90 → 99.58 %); default `false`.
+    pub read_star_junctions: bool,
 }
 
 impl Default for AssignParams {
@@ -241,6 +249,8 @@ impl Default for AssignParams {
             iterative_prune: false,
             junction_conflict_abstain: false,
             molecule_pool: false,
+            origin_subst_only: false,
+            read_star_junctions: false,
         }
     }
 }

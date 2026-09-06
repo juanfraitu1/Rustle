@@ -240,6 +240,15 @@ struct Args {
     /// Escape hatch: the record-level observation path (every catalog before 2026-09-05 §6fa).
     #[arg(long, default_value_t = false)]
     no_molecule_observations: bool,
+    /// ⭐ §6fc: the origin certificate counts SUBSTITUTIONS only (indels = isoform structure, not origin). Higher
+    /// yield (NPIP 175 → 442 assigned) at 1 wrong of 20 audited anchors and 98.6 % MAPQ-60 agreement; the
+    /// default counts every edit and made no wrong anchor call. Opt-in.
+    #[arg(long, default_value_t = false)]
+    origin_substitutions_only: bool,
+    /// ⭐ §6fc: splice junctions as pairwise evidence in read-star (opt-in: +4 points of assignment at −0.3 points
+    /// of MAPQ-60 agreement on the paired 35 families).
+    #[arg(long, default_value_t = false)]
+    read_star_junctions: bool,
     /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
     /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
     /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
@@ -1404,6 +1413,8 @@ fn main() -> Result<()> {
         iterative_prune: args.iterative_prune,
         junction_conflict_abstain: args.junction_conflict_abstain,
         molecule_pool: args.molecule_observations && !args.no_molecule_observations,
+        origin_subst_only: args.origin_substitutions_only,
+        read_star_junctions: args.read_star_junctions,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
@@ -2649,6 +2660,8 @@ fn main() -> Result<()> {
         row("psv_read_filter", std::env::var("RUSTLE_PSV_READFILTER").unwrap_or_else(|_| "unset".into()))?;
         row("molecule_observations", format!("{}", args.molecule_observations && !args.no_molecule_observations))?;
         row("origin_rejected", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected).count()))?;
+        row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
+        row("read_star_junctions", format!("{}", args.read_star_junctions))?;
         row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;
