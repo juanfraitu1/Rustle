@@ -30,3 +30,7 @@ from every reference locus", copy vs haplotype undecidable from RNA (row 720); (
 44 short-chain members / 9 other families / 67 unclustered (partial paralogues below the coverage threshold);
 folding them in is a definition decision (§6fn); (4) cut certificate → 21 genome-wide cuts at ≥ 0.90 identity,
 44 nested, 27 without homology (row 721).
+
+**User decision (2026-09-06 14:34):** the read-linked admission of partial paralogues, the chain rule for members
+whose reads fall outside the chain, and the 44 nested unit pairs are **special cases** — recorded, not folded into
+the definitions for now (§6fn item 3, row 721 `nested`).
