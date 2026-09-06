@@ -351,6 +351,14 @@ the shipped per-read gate **is** the optimum and no joint estimator can beat it.
 is entailed, not chosen.** Empirically the EM changes **zero** of the gate's decisions on reads
 that carry evidence.
 
+⭐ **O2's population is the reads minimap2 cannot place; quote it on those first (2026-09-06).** NPIP-proper
+(`sweep_v14`, the 25 kept members): 1,000 unit reads, **472 (47 %) below MAPQ 60**, 34 at MAPQ 0. On the 472:
+assigned 182 (38.6 %; 181 certified against 2–7 competitors), of which **16 to a different copy than minimap2's
+primary**; K = 0 ties 25; abstain 265 (190 because no candidate explains the read — O3's material). On the 34
+MAPQ-0 reads: 1 assigned, 19 K = 0 ties, 14 abstain. Truth on the contested reads = the 33 audited junction
+anchors below MAPQ 60: **5 assigned, 5 right, 0 wrong, 28 abstain** — sensitivity 15 %, specificity 100 %. The
+unique-mapper agreement (5,208/5,208) is only the sanity check that O2 never contradicts a unique placement.
+
 ⭐ **Since the read-star (§6fa–§6fj) the claim is stronger than abstention, and it is measured.** O2 assigns a
 molecule to a copy only with a certificate: its own edits against the best candidate's locus are within
 sequencing error (the origin certificate) and every competitor is rejected on the columns the read covers (the
