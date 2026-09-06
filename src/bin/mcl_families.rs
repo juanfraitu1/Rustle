@@ -104,6 +104,12 @@ struct Args {
     /// SEDEF pairs (BED: chr1 s1 e1 chr2 s2 e2 …, 0-based half-open) for `--core-refine`.
     #[arg(long)]
     sedef: Option<String>,
+    /// ⭐ §6fo: derive the SD-like pairs for the core refinement (and `blocks.tsv`) from the input `--paf`
+    /// itself — every alignment between two annotated loci is one pair of genomic intervals — instead of a
+    /// SEDEF bed. No external SD caller; the intergenic SD context is not available this way. Ignored when
+    /// `--sedef` is given.
+    #[arg(long, default_value_t = false)]
+    core_from_paf: bool,
     /// ⭐ DUPLICON-FIRST refinement (§6eh; pre-registered adj/core/PREREG.md): within each cluster, a
     /// member's CORE is the part of it linked by SEDEF pairs to ≥ half the other members. Clusters whose
     /// members lack SD depth (median max-depth < half) are UNTOUCHED (old ZNF/OR families have no SEDEF
@@ -546,7 +552,7 @@ fn main() -> Result<()> {
     if args.no_merge_overlapping_loci {
         args.merge_overlapping_loci = false;
     }
-    if args.sedef.is_some() && !args.no_core_refine {
+    if (args.sedef.is_some() || args.core_from_paf) && !args.no_core_refine {
         args.core_refine = true;
     }
     if args.no_fold_within_clusters {
@@ -747,10 +753,20 @@ fn main() -> Result<()> {
     let mut core_stats = (0usize, 0usize, 0usize, 0usize, 0usize); // gated clusters, kept-full, trimmed, dropped, untouched clusters
     let mut core_records: Vec<Vec<rustle::vg_family::annotation_families::CoreRecord>> = Vec::new();
     if args.core_refine {
-        let bed = args.sedef.as_ref().ok_or_else(|| anyhow::anyhow!("--core-refine needs --sedef <bed>"))?;
-        let text = std::fs::read_to_string(bed).with_context(|| format!("reading {bed}"))?;
-        let sd = SdPairs::from_bed_str(&text);
-        eprintln!("[mcl_families] core-refine: {} SEDEF pair(s) loaded from {bed}", sd.n_pairs());
+        let sd = match args.sedef.as_ref() {
+            Some(bed) => {
+                let text = std::fs::read_to_string(bed).with_context(|| format!("reading {bed}"))?;
+                let sd = SdPairs::from_bed_str(&text);
+                eprintln!("[mcl_families] core-refine: {} SEDEF pair(s) loaded from {bed}", sd.n_pairs());
+                sd
+            }
+            None => {
+                let text = std::fs::read_to_string(&args.paf).with_context(|| format!("reading {}", args.paf))?;
+                let sd = SdPairs::from_paf_str(&text);
+                eprintln!("[mcl_families] core-refine: {} pair(s) derived from the input PAF (--core-from-paf)", sd.n_pairs());
+                sd
+            }
+        };
         let mut cf = std::fs::File::create(format!("{}.cores.tsv", args.out))?;
         writeln!(cf, "cluster_id\tmember\tgate\tmax_depth\tcore_bp\tspan\tmedian_core\tstatus\tcore_hull")?;
         let mut rf = std::fs::File::create(format!("{}.refined.clusters.tsv", args.out))?;
@@ -1216,6 +1232,7 @@ fn main() -> Result<()> {
         ("paf_records_same_locus_skipped".to_string(), g.same_locus_records.to_string()),
         ("core_refine".to_string(), args.core_refine.to_string()),
         ("sedef".to_string(), args.sedef.clone().unwrap_or_else(|| "<unset>".into())),
+        ("core_from_paf".to_string(), (args.core_from_paf && args.sedef.is_none()).to_string()),
         ("core_clusters_gated".to_string(), core_stats.0.to_string()),
         ("core_members_kept_full".to_string(), core_stats.1.to_string()),
         ("core_members_trimmed".to_string(), core_stats.2.to_string()),

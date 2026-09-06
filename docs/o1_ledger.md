@@ -13039,3 +13039,24 @@ row 672 asked for; **44 nested** (4,042 reads: two families' units at one place 
 inside MCL22's 330-kb unit is the 3-contig case with 1,452 reads) — an O1 overlap, not a cut; 27
 `disjoint_no_homology` (4,179 reads: reads shared through segments shorter than 300 bp). 3 contigs: 4 / 16 / 10.
 Tables `adj/o3/*/cuts.tsv`.
+
+## §6fo — THE SD CORE WITHOUT SEDEF: pairs derived from the catalog's own alignments (2026-09-06)
+
+The core refinement (§6ei) consumes pairs of homologous genomic intervals and nothing else. The input PAF — every
+asm20 alignment between two annotated loci — is such a pair set. `mcl_families --core-from-paf` (ignored when
+`--sedef` is given; `SdPairs::from_paf_str`, unit-tested) builds it: 244,908 pairs on the three contigs against
+SEDEF's bed. Same everything else (`rna_units_v11_pafcore` vs `rna_units_v11`):
+- **NPIP: the same family.** 32 members, statuses agree on 30 (the two differences are kept_full → kept_trimmed
+  with a 16-kb instead of 27-kb core); core median 20.8 kb (SEDEF 24.2 kb, the LCR16a core either way).
+- **Genome-level: not the same instrument.** SEDEF gates 200 clusters and leaves 74 untouched (old ZNF/OR
+  families with no SD call); the PAF has alignments for everything, gates 272, and re-classes 181 previously
+  untouched members (101 trimmed, 80 kept full, 17 dropped); over all 1,030 members the status agrees on 696,
+  92 kept-full members become trimmed and 17 dropped; hull Jaccard median 0.98 but p10 0.44. The PAF's pairs
+  reach down to the graph's 0.70 identity and stay inside annotated spans; SEDEF's are ≥ 90 % / ≥ 1 kb over the
+  whole genome. Units: 349 vs 367 rows (32 dropped members emitted vs 5).
+**Reading.** The definition does not depend on SEDEF: the family's own alignments define the core, and on the
+advisor's example they give the same answer. SEDEF stays the default where it exists because it is the external,
+published SD instrument (the corroboration Q2 needs) and it sees intergenic context (`blocks.tsv`); the PAF form
+is the self-contained fallback for a substrate without an SD call. A depth rule on the PAF pairs at SEDEF's
+criterion (≥ 0.90 identity, ≥ 1 kb) was not run — it is the obvious next comparison if the fallback is ever the
+default.

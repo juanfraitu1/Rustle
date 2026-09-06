@@ -489,6 +489,32 @@ impl SdPairs {
         }
         sd
     }
+    /// ⭐ Pairs derived from the catalog's OWN alignments (§6fo): every PAF record between two annotated loci
+    /// (`chrom:start-end` names, GFF 1-based as written; offsets 0-based on the query/target) becomes one pair of
+    /// genomic intervals — the same object SEDEF supplies, restricted to what the annotated loci align to each
+    /// other. No external SD caller needed; what is lost is the intergenic SD context (`blocks.tsv`).
+    pub fn from_paf_str(text: &str) -> SdPairs {
+        let mut sd = SdPairs::default();
+        for line in text.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 11 {
+                continue;
+            }
+            let (Some((qc, qs0, _)), Some((tc, ts0, _))) = (parse_gene_key(f[0]), parse_gene_key(f[5])) else { continue };
+            let (Ok(qs), Ok(qe), Ok(ts), Ok(te)) = (f[2].parse::<u64>(), f[3].parse::<u64>(), f[7].parse::<u64>(), f[8].parse::<u64>()) else { continue };
+            let (a1, b1) = (qs0.saturating_sub(1) + qs, qs0.saturating_sub(1) + qe);
+            let (a2, b2) = (ts0.saturating_sub(1) + ts, ts0.saturating_sub(1) + te);
+            if b1 <= a1 || b2 <= a2 {
+                continue;
+            }
+            sd.push(&qc, a1, b1, &tc, a2, b2);
+            sd.push(&tc, a2, b2, &qc, a1, b1);
+        }
+        for v in sd.by_contig.values_mut() {
+            v.sort_unstable();
+        }
+        sd
+    }
     fn push(&mut self, c: &str, s: u64, e: u64, oc: &str, os: u64, oe: u64) {
         self.by_contig.entry(c.to_string()).or_default().push((s, e, oc.to_string(), os, oe));
         let m = self.max_len.entry(c.to_string()).or_insert(0);
@@ -961,6 +987,20 @@ mod tests {
 
     fn paf_line(q: &str, ql: u64, qs: u64, qe: u64, t: &str, tl: u64, ts: u64, te: u64, nm: u64, bl: u64) -> String {
         format!("{q}\t{ql}\t{qs}\t{qe}\t+\t{t}\t{tl}\t{ts}\t{te}\t{nm}\t{bl}\t60")
+    }
+
+    /// §6fo: a PAF record between two annotated loci becomes one SD-like pair in genomic coordinates (both
+    /// directions), offsets applied to the loci's 1-based starts.
+    #[test]
+    fn paf_records_become_pairs_in_genomic_coordinates() {
+        let paf = "c1:1001-2000\t1000\t100\t600\t+\tc2:5001-7000\t2000\t1500\t2000\t480\t500\t60\n\
+                   c1:1001-2000\t1000\t0\t0\t+\tc2:5001-7000\t2000\t0\t0\t0\t0\t0\n";
+        let sd = SdPairs::from_paf_str(paf);
+        assert_eq!(sd.n_pairs(), 1);
+        let hits: Vec<_> = sd.overlapping("c1", 1000, 1200).cloned().collect();
+        assert_eq!(hits, vec![(1100, 1600, "c2".to_string(), 6500, 7000)]);
+        let back: Vec<_> = sd.overlapping("c2", 6600, 6700).cloned().collect();
+        assert_eq!(back, vec![(6500, 7000, "c1".to_string(), 1100, 1600)]);
     }
 
     #[test]

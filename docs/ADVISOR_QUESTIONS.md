@@ -1,5 +1,9 @@
 # The advisor's standing questions — and what the codebase can answer
 
+> **2026-09-06 pass.** Q1, Q2, Q4, Q5, Q8 and Part 3 items 7–9 rewritten to the SD-core definition and the read-star O2
+> (§6ev–§6fo). Paragraphs marked as the OLD node's measurements are kept as history. Q6 (apes) is unchanged and
+> still unanswered.
+
 > **Audience.** Stefan Canzar, who assumes a good number is luck or overfitting until shown
 > otherwise. This document is written for that reading. Every claim carries the number that
 > earns it and the section that derives it; every claim we **cannot** defend is stated as a
@@ -239,19 +243,42 @@ feature deleted because it was not reliable enough to be honest.
 
 ### Q1. "Do you have a method that identifies multi-copy gene families?"
 
-**Yes, with a stated scope.** A family is a connected component (≥2 loci) of a homology graph
-`E_r`, refined by a γ-quasi-clique partition. The definition is **seed-free**, **P1 (domain-sharer
-exclusion) is a theorem**, and it carries a falsifiable false-merge rate of **1.33%** [0.37, 4.73] —
-**reproducible today** at the node floor that produced it, and **2.00%** [0.68, 5.71] at the shipped
-floor, on a disjoint window set (§6bt.1). Quote the floor with the rate.
+**Yes — the SD-core definition (accepted 2026-09-05, §6ev; `docs/THESIS_OBJECTIVES.md`).** A family is a set of
+annotated loci, pre-clustered by MCL over their pairwise genomic homology, in which each member shares a
+duplicated core segment with at least half of the others; a member's unit is its read-supported exon chain, its
+locus the read-supported extent clipped at every other catalog unit (§6fh, §6fm). The core comes from SEDEF's
+segmental-duplication calls where they exist and **can be derived from the catalog's own alignments where they
+do not** (`--core-from-paf`, §6fo: on NPIP the two agree on 30 of 32 members and give the same LCR16a core).
+The old E_r/γ-quasi-clique definition is kept opt-in (`gw_family_catalog`) so the change can be audited.
 
-⚠ **The binding constraint is named and not solved: node construction, not the definition.** The
-oracle ablation (§5e) prices it — **the definition costs ~3%, node construction costs ~58%**. Say
-this before he finds it; it converts a hidden weakness into evidence of self-knowledge.
+**On his own example it is the better representation.** Old: NPIP fragmented into 5–6 families, 14–30 of the
+31 loci recovered depending on seeds (§5j, §6be). New: 31/31 loci, one family of 29 units on three contigs,
+LCR16u (SMG1P/SLC7A5P/PDXDC) separate, the 9 ABCC1/SORL1 chimeric models trimmed to the 23-kb LCR16a core or
+dropped and kept as candidates with `member_status` (§6eh–§6ei, §6fh). Block versus family is a certificate,
+29 versus 48 loci (§6eg).
+
+**On false merges it is not worse where the benchmark can see, and it sees more.** Paired on the Soto slice
+(`docs/O1_DEFINITION_SWITCH.md`): pair precision in the adjudicable [0.90, 1) band **0.974 → 0.954**, CIs
+overlapping; recall on pairs both methods detect **0.874 → 0.940**; recall on all Soto pairs **0.173 → 0.580**;
+families exact 21/33 → 40/56. SEDEF corroborates 39 of 46 three-contig clusters, the repeat library names 3
+artefacts (§6dy–§6dz). ⚠ The old 1.33 % false-merge rate was a different instrument (window sets) and is not
+comparable; do not quote the two side by side. ⚠ The 21 genome-wide MCL cuts certified by shared reads at
+≥ 0.90 identity (§6fn, row 721) are the known false SPLITS; say so before he asks.
+
+⚠ **The binding constraint moved with the node.** Under the old definition node construction cost ~58 % of the
+loss (§5e); under the new one the node is the read-supported chain and the remaining losses are the annotation
+(loci the GFF has no model for, §6ev P3) and the special cases recorded on 2026-09-06 (partial paralogues below
+the coverage threshold, nested units).
 
 ### Q2. "Are these real families, or artifacts and overfitting?"
 
-See Part 1. The summary line: **defensible narrowly, not broadly.**
+See Part 1. The summary line: **defensible narrowly, not broadly** — and since 2026-09-05 with three external
+instruments instead of one: SEDEF (the core rule is a refinement over an independent SD call, 39/46 corroborated),
+the RepeatMasker library (`rep_frac` names the repeat-clique clusters), and the CHM13 landing of every anchored
+family (real families land on one stem, artefacts scatter, §6eh). ⚠ **The paragraph below on the ~0.83 band is
+about the OLD edge set**; under MCL the pre-clustering edges are the same PAF, but membership is decided by the
+core rule, whose evidence is at ≥ 0.90 by construction (SEDEF) — the band objection now applies to the
+pre-clustering, not to the family.
 
 ⚠⚠ **The concession that matters most — the evidence covers the wrong end.** Median edge identity
 is **0.8287** and **86.31% of edges sit below 0.90**, but *all* external support is at **≥ 0.90**
@@ -278,17 +305,23 @@ rule (§6bi). ⚠ Scoped: it reaches only near-identical arrays, and it is **not
 
 ### Q4. "What about isoforms? Could two extremely similar copies produce the same isoforms?"
 
-Isoforms are **detected** (174 supported chains at NPIP) and then **collapsed to one representative
-per locus** before family definition — deliberate, because for O1 a family is a set of **loci**, not
-of transcripts. ⚠ **A representative is one intron chain, not the isoform union**, and **26.8% of
-shipped copies are single-exon stubs**. Both are disclosed, both are live defects.
+**Answered by the genomic read-star (§6fd).** Each molecule is aligned splice-aware to each candidate's LOCUS,
+so isoform structure aligns (introns are `N`, not edits) and only sequence the locus lacks counts against the
+origin certificate — the isoform question and the origin question are separated by construction. Two copies
+producing the same isoforms therefore tie at K = 0 columns (26 NPIP reads) or are told apart by the columns the
+read covers; the structure of the read never decides. The unit (O1's node) is the read-supported chain, i.e. the
+expressed isoform union at that locus (§6el), not one intron chain. ⚠ The 2026-09-05 residue: 456 NPIP-proper
+reads abstain because no candidate locus explains their whole sequence.
 
 ### Q5. "Two tandem near-identical copies share a read. What happens?"
 
-**Measured.** **152 primaries** touch ≥2 copies of the same family = **0.306%** of the cases where
-it is geometrically possible (**89/678 copies, 14/121 families**). The cause points **away** from
-biology: the copy-joining intron is annotated **0.182** against a length-matched **0.818** — a
-**4.5× depletion**.
+**Three cases, each with a rule (2026-09-05/06).** (i) The read aligns identically to both: a K = 0 tie,
+reported as such — 26 of NPIP's unit reads, 90 of 24,462 on the paired 35 families (§6fj). (ii) A read-through
+molecule spans two copies: the locus of each copy is clipped at the neighbour's chain, so the read leaves
+unaligned bases on both targets and abstains with `origin_rejected` (§6fh; the unclipped form turned 226 MCL4
+assignments into false ties, row 714). (iii) Two families' units over one place (44 genome-wide pairs, row 721)
+are recorded as a special case, not resolved. ⚠ The paragraph below is the OLD node's measurement (152
+primaries, 0.306 %) and its intron-annotation argument; keep it as history, do not quote it as current.
 
 ⛔ **But half is undetermined and must be conceded: 73/153 = 47.7% are canonical-but-unannotated =
 "we do not know."** Defensible statement: **≥31% minimap2 artifact, ~18% real, nothing about the
@@ -318,11 +351,17 @@ the shipped per-read gate **is** the optimum and no joint estimator can beat it.
 is entailed, not chosen.** Empirically the EM changes **zero** of the gate's decisions on reads
 that carry evidence.
 
-⚠⚠ **Restate O2's target before he does.** "MAPQ-0 ambiguity" names **0.04%** of reads inside the
-multi-copy loci — **rarer there than genome-wide**. The real contested population is **alignment-
-score near-ties: 21.75%**, ~**500×** larger. **Do not claim O2 assigns reads better than minimap2 —
-on ~99.9% of reads it measurably does not.** Claim **abstention**, which is where the excision
-result (Part 1.4) lives.
+⭐ **Since the read-star (§6fa–§6fj) the claim is stronger than abstention, and it is measured.** O2 assigns a
+molecule to a copy only with a certificate: its own edits against the best candidate's locus are within
+sequencing error (the origin certificate) and every competitor is rejected on the columns the read covers (the
+pairwise certificate). NPIP, `sweep_v14`: 62 audited junction anchors → 14 assigned, 14 right, 0 wrong, 48
+abstain; MAPQ-60 placement agreement 5,208/5,208; **587 reads assigned against 2–7+ candidates by the pairwise
+certificate**, 196 of 504 MAPQ<60 reads assigned; 456 NPIP-proper reads abstain because no locus explains them.
+Paired 35 families: 78.8 % assigned at 18,772/18,772 agreement. The abundance per copy is the sum of the
+per-molecule posteriors (`n_reads_soft`), with a half-width under 0.05 for all 26 NPIP copies. ⚠ The old line
+"O2 does not beat minimap2" described the PSV-column era; retire it. What O2 still cannot do is stated with a
+number: a copy whose expressed segment is within sequencing error of another's is absorbed with a valid
+certificate (NPIP 13 → 12 at 99.85 %, row 711).
 
 ### Q9. "NPIPA and NPIPB should be distinct subfamilies."
 
@@ -363,13 +402,19 @@ only move that buys credibility for what is below it.
 4. **The project is NPIP-bound** — 66/120 sections, clean control n = 3.
 5. **Half the tandem-read cases are undetermined** (Q5).
 6. **No ape catalog is reproducible by the current binary** (Q6).
-7. **O1's binding constraint is node construction (~58%), not the definition (~3%)** — the part we
-   formalised is not the part that limits the result.
-8. **O2 does not beat minimap2 at read assignment** and we do not claim it does (Q8).
-9. **O3 is a bounded negative, not a null result**: 0 collapse-shaped deficits at 816 evaluable loci
-   with a 0/817 [0.00, 0.47]% false-positive floor, against a literature prior of **0.47–0.94**
-   expected — ⟹ **a perfect screen returns zero 39–63% of the time.** The instrument cannot
-   currently distinguish "nothing there" from "we cannot see it," and that is the honest claim.
+7. **O1's remaining losses are the annotation and three recorded special cases**, not the definition: loci
+   the GFF has no model for (§6ev P3), partial paralogues below the coverage threshold with hundreds of
+   cross-mapping reads, nested units of two families, and members whose reads fall outside the chain (§6fn).
+   The 2026-09-05 thresholds are a measured plateau (§6ez), not a proof.
+8. **O2's wall is local identity within sequencing error**: a copy whose expressed segment is 99.85 %
+   identical to another's is absorbed with a valid certificate (row 711). Above that wall the certificate
+   is measured (0 wrong anchors, 1.0000 placement agreement); below it, the reads are an allele.
+9. **O3 flags a sequence, not a copy.** A flag means ≥ 3 reads consistently at least 0.7 % from every locus
+   the assembly holds (§6fl–§6fn); RNA alone cannot say whether that is a copy absent from the reference or
+   a diverged haplotype. On the intact catalogs 34.7 % (3 contigs) and 13.9 % (genome-wide) of the candidate
+   pairs carry it — above the pre-registered 25 % on the three contigs (row 718) — and the reference-absent
+   class proper is small (4 and 23 unannotated loci); most "missing" origins are annotated loci without a
+   unit or MCL cuts. The old collapse-deficit screen (0/816) is a different instrument and is retired.
 
 ---
 
@@ -403,14 +448,14 @@ chosen. `REPRODUCE.md` pins the **one** that is — three contigs, ~40 minutes, 
 
 | question | verdict | evidence |
 |---|---|---|
-| Q1 method exists | ⭐ defensible, scope stated | §5e, O1.10 |
-| Q2 real vs overfit | ⚠ **narrowly** defensible | §4l, §6ax, Part 1 |
+| Q1 method exists | ⭐ SD-core definition; NPIP 31/31 one family; Soto precision within CI, recall ×3.4 | §6ev, §6fh, §6fo, `O1_DEFINITION_SWITCH.md` |
+| Q2 real vs overfit | ⚠ **narrowly** defensible; three external instruments | §6dy–§6dz, §6eh, Part 1 |
 | Q3 borrowing | ⛔ no (inert) / ⭐ `E_c` splits | §6bd, §6bi |
-| Q4 isoforms | ⚠ by design, two live defects | §6be, stubs |
-| Q5 tandem reads | ⚖️ half measured, half unknown | §6aq, §6ar |
+| Q4 isoforms | ⭐ structure and origin separated by the genomic read-star | §6fd |
+| Q5 tandem reads | ⭐ K = 0 tie / clipped locus / nested special case | §6fh, §6fj, row 721 |
 | Q6 portability | ⭐ tissue/animal · ⛔ apes | §4l, §5p |
 | Q7 boundaries | ⭐ premise false | §6ay, §6ba |
-| Q8 1/k | ⭐ never used; target restated | P-2, blind-spot audit |
+| Q8 1/k | ⭐ never used; certified assignment measured (0 wrong anchors, 1.0000 agreement) | §6fa–§6fj, `sweep_v14` |
 | Q9 NPIP subfamilies | ⭐ answered on his own example | §5j, fam72 review |
 | Q10 non-canonical | ⭐ he is right; recurs | §6au, §6av, §6aw |
 | Q11 PSV | ⭐ answered | §6aj |
