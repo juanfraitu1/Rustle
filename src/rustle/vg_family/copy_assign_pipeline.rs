@@ -558,16 +558,38 @@ pub fn read_star_alignments(copy_seqs: &[&[u8]], read_seqs: &[&[u8]]) -> Vec<Vec
 /// `(candidates, obs, profiles, unit_edits, covered)` — `covered[k]` = the read positions candidate `k` has an
 /// aligned base at, as sorted half-open intervals (a junction term is admitted only where BOTH candidates cover
 /// the read position; an uncovered position is not "the copy lacks the junction").
-pub type ReadStarObs = (Vec<usize>, Vec<Option<u8>>, Vec<CopyProfile>, Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>>, Vec<Vec<(u32, u32)>>);
+pub type ReadStarObs = (Vec<usize>, Vec<Option<u8>>, Vec<CopyProfile>, Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>>, Vec<Vec<(u32, u32)>>, Vec<u32>);
+
+/// ⭐ L6: one molecule's read-star proof — the read positions of its columns (positions where ≥ 2 candidates'
+/// aligned bases differ), the read's own base there, and every candidate's base (`None` = not covered), in
+/// `cand` order. Kept in a process-wide side table under `AssignParams::dump_star` (same rationale as
+/// `CORE_HULLS`: an opt-in lever must not touch the 30-odd `Assignment` constructors) and drained by
+/// `copy_assign --dump-star` into `<out>.star_reads.tsv`.
+#[derive(Clone, Debug)]
+pub struct StarProof {
+    pub cols: Vec<u32>,
+    pub obs: Vec<Option<u8>>,
+    pub cand: Vec<usize>,
+    pub alleles: Vec<Vec<Option<u8>>>,
+}
+static STAR_PROOFS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, StarProof>>> =
+    std::sync::OnceLock::new();
+pub fn register_star_proof(read_name: &str, proof: StarProof) {
+    STAR_PROOFS.get_or_init(Default::default).lock().unwrap().insert(read_name.to_string(), proof);
+}
+/// Drain the table (the caller owns the proofs of every molecule assigned so far).
+pub fn take_star_proofs() -> std::collections::HashMap<String, StarProof> {
+    STAR_PROOFS.get().map(|m| std::mem::take(&mut *m.lock().unwrap())).unwrap_or_default()
+}
 
 /// `copy_bounds[c]` = the unit offsets where copy `c` starts a new exon (its splice boundaries in unit space);
 /// each candidate's `CopyProfile::junctions` becomes the READ positions aligned to those offsets, so the read's
 /// own junction positions (from its CIGAR) can be compared per candidate in one coordinate system (§6fc).
 pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bounds: &[Vec<u32>], preset: &str) -> Vec<ReadStarObs> {
     let mut out: Vec<ReadStarObs> =
-        (0..read_seqs.len()).map(|_| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).collect();
+        (0..read_seqs.len()).map(|_| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).collect();
     read_star_stream(copy_seqs, read_seqs, preset, |ri, per_copy, per_pos, edits| {
-        let (obs, profiles) = read_star_columns(read_seqs[ri], per_copy);
+        let (obs, profiles, cols) = read_star_columns(read_seqs[ri], per_copy);
         let cand: Vec<usize> = per_copy.iter().enumerate().filter(|(_, h)| h.is_some()).map(|(i, _)| i).collect();
         // every column stays; a candidate with no base at a column is `None` there and the PAIRWISE certificate
         // (§6fc) scores each pair on the columns both carry — no intersection over all candidates (that rule made
@@ -601,7 +623,7 @@ pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bou
                 iv
             })
             .collect();
-        out[ri] = (cand, obs, prof2, edits.to_vec(), covered);
+        out[ri] = (cand, obs, prof2, edits.to_vec(), covered, cols);
     });
     out
 }
@@ -770,7 +792,7 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
 /// Per-read columns from `read_star_alignments`: read positions where ≥ 2 copies carry an aligned base and
 /// not all of them agree. Returns the read's own bases at those positions (the observation, always `Some`)
 /// and one `CopyProfile` per copy (its aligned base per column, `None` where it has no base).
-pub fn read_star_columns(read: &[u8], per_copy: &[Option<Vec<Option<u8>>>]) -> (Vec<Option<u8>>, Vec<CopyProfile>) {
+pub fn read_star_columns(read: &[u8], per_copy: &[Option<Vec<Option<u8>>>]) -> (Vec<Option<u8>>, Vec<CopyProfile>, Vec<u32>) {
     let nc = per_copy.len();
     let mut cols: Vec<usize> = Vec::new();
     for pos in 0..read.len() {
@@ -798,7 +820,7 @@ pub fn read_star_columns(read: &[u8], per_copy: &[Option<Vec<Option<u8>>>]) -> (
             junctions: Vec::new(),
         })
         .collect();
-    (obs, profiles)
+    (obs, profiles, cols.iter().map(|&p| p as u32).collect())
 }
 
 /// Discover PSV columns by all-pairs alignment of every copy vs copy[0]: columns are ref offsets where
@@ -2164,7 +2186,7 @@ fn assign_family_detailed_once(
         let done: Vec<(usize, PerRead)> = reps
             .par_iter()
             .zip(alns.par_iter())
-            .map(|(&ri, (cand, obs, profiles, unit_edits, covered))| {
+            .map(|(&ri, (cand, obs, profiles, unit_edits, covered, star_cols))| {
                 let read = &reads[ri];
                 let mc = best_overlap_copy(read, copies).expect("rep overlaps a copy");
                 let (cand, obs, profiles) = (cand.clone(), obs.clone(), profiles.clone());
@@ -2367,14 +2389,40 @@ fn assign_family_detailed_once(
                     }
                 }
                 if cand.len() < 2 {
-                    // no competitor above the reporting floor: no certificate is possible, so no claim
-                    a.status = AssignStatus::Tied;
-                    a.resolvable = false;
                     a.log_lr_margin = 0.0;
                     a.n_decisive = 0;
                     a.p_value = 1.0;
                     a.min_p_value = 1.0;
-                    a.posterior = vec![1.0 / copies.len() as f64; copies.len()];
+                    if p.sole_candidate && !a.origin_rejected {
+                        // ⭐ L3 (§6fi, user decision 2026-09-06): the only candidate passed the origin certificate
+                        // and no competitor has a chain at all (`-p 0` changed nothing for these reads, row 716):
+                        // the family's only possible origin for this molecule. A SOLE CANDIDATE, not a tie —
+                        // `n_candidates == 1` marks it. Posterior = the candidate.
+                        a.status = AssignStatus::Assigned;
+                        a.resolvable = true;
+                        let mut one = vec![0.0f64; copies.len()];
+                        one[cand[0]] = 1.0;
+                        a.posterior = one;
+                    } else if p.sole_candidate {
+                        // the certificate rejected the only candidate: its verdict stands (Ambiguous, origin_rejected)
+                        a.posterior = vec![1.0 / copies.len() as f64; copies.len()];
+                    } else {
+                        // §6fa rule: no competitor above the reporting floor, no certificate, no claim
+                        a.status = AssignStatus::Tied;
+                        a.resolvable = false;
+                        a.posterior = vec![1.0 / copies.len() as f64; copies.len()];
+                    }
+                }
+                if p.dump_star {
+                    register_star_proof(
+                        &names[ri],
+                        StarProof {
+                            cols: star_cols.clone(),
+                            obs: feats.psv_obs.clone(),
+                            cand: cand.clone(),
+                            alleles: profiles.iter().map(|pr| pr.alleles.clone()).collect(),
+                        },
+                    );
                 }
                 if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() && !feats.psv_obs.is_empty() {
                     let match_counts: Vec<usize> = profiles.iter().map(|pr| pr.alleles.iter().zip(feats.psv_obs.iter()).filter(|(x, o)| x.is_some() && *x == *o).count()).collect();
@@ -2542,6 +2590,14 @@ fn assign_family_detailed_once(
             .map(|&t| (1.96 * (t * (1.0 - t) / n).sqrt()).min(0.5))
             .collect()
     };
+    // ⭐ L4: under the read-star the family EM sees no observations (the columns are the read's own), so the
+    // abundance above is uniform. The per-molecule posteriors ARE the soft evidence: abundance = normalised
+    // soft counts over molecules with a candidate the certificate did not reject.
+    let (copy_abundance, copy_abundance_ci) = if p.molecule_pool && mol_names.is_some() {
+        star_soft_abundance(&results, copies.len())
+    } else {
+        (copy_abundance, copy_abundance_ci)
+    };
     FamilyDetail {
         results,
         n_cols: fp.n_cols,
@@ -2556,6 +2612,33 @@ fn assign_family_detailed_once(
         copy_junctions: fp.profiles.iter().map(|pr| pr.junctions.clone()).collect(),
         copy_indices: (0..copies.len()).collect(),
     }
+}
+
+/// ⭐ L4: soft per-copy abundance from the read-star posteriors. Molecules with no candidate (orphans) or a
+/// rejected certificate contribute nothing; a sole candidate contributes 1 to its copy; a K = 0 tie 1/k to each
+/// of its k candidates; an uncertified pair its softmax. CI = normal-approx half-width over the contributing
+/// molecules (0.5 when none), clamped to 0.5 like the EM's.
+pub fn star_soft_abundance(results: &[ReadResult], n_copies: usize) -> (Vec<f64>, Vec<f64>) {
+    let mut soft = vec![0.0f64; n_copies];
+    let mut n_eff = 0usize;
+    for r in results {
+        let a = &r.combined;
+        if a.origin_rejected || a.posterior.is_empty() {
+            continue;
+        }
+        n_eff += 1;
+        for (c, w) in a.posterior.iter().enumerate().take(n_copies) {
+            soft[c] += w;
+        }
+    }
+    let tot: f64 = soft.iter().sum();
+    let ab: Vec<f64> = if tot > 0.0 { soft.iter().map(|s| s / tot).collect() } else { vec![1.0 / n_copies.max(1) as f64; n_copies] };
+    let ci: Vec<f64> = if n_eff == 0 {
+        vec![0.5; n_copies]
+    } else {
+        ab.iter().map(|&t| (1.96 * (t * (1.0 - t) / n_eff as f64).sqrt()).min(0.5)).collect()
+    };
+    (ab, ci)
 }
 
 /// Classify each confirmed conversion event with the unified discriminator (recurrence already in the
@@ -2621,6 +2704,48 @@ mod tests {
     use super::*;
 
     #[test]
+    /// L4: a sole candidate counts 1 to its copy, a K = 0 tie 1/k to each candidate, an orphan or a rejected
+    /// molecule nothing; the CI is over the contributing molecules only.
+    #[test]
+    fn star_soft_abundance_sums_posteriors_of_certified_molecules() {
+        let mk = |posterior: Vec<f64>, n_candidates: usize, origin_rejected: bool| ReadResult {
+            read_index: 0,
+            mapped_copy: 0,
+            psv: Assignment {
+                best_copy: 0, log_lr_margin: 0.0, n_decisive: 0, resolvable: false, status: AssignStatus::Tied,
+                p_value: 1.0, min_p_value: 1.0, discovery_coupled: false, junction_conflict: false,
+                origin_rejected, n_candidates, posterior: posterior.clone(),
+            },
+            combined: Assignment {
+                best_copy: 0, log_lr_margin: 0.0, n_decisive: 0, resolvable: false, status: AssignStatus::Tied,
+                p_value: 1.0, min_p_value: 1.0, discovery_coupled: false, junction_conflict: false,
+                origin_rejected, n_candidates, posterior,
+            },
+            psv_obs: Vec::new(),
+            junctions: Vec::new(),
+        };
+        let results = vec![
+            mk(vec![1.0, 0.0, 0.0], 1, false),      // sole candidate → copy 0
+            mk(vec![0.5, 0.5, 0.0], 2, false),      // K = 0 tie between 0 and 1
+            mk(vec![0.0, 0.0, 1.0], 1, true),       // rejected: nothing
+            mk(vec![1.0 / 3.0; 3], 0, true),        // orphan: nothing
+        ];
+        let (ab, ci) = star_soft_abundance(&results, 3);
+        assert!((ab[0] - 0.75).abs() < 1e-12 && (ab[1] - 0.25).abs() < 1e-12 && ab[2] == 0.0, "{ab:?}");
+        assert_eq!(ci, vec![0.5, 0.5, 0.0], "two contributing molecules: the half-width clamps at 0.5");
+        // eight contributing molecules: 7 sole candidates for copy 0 + the tie → 7.5/8, half-width below the clamp
+        let mut many = results.clone();
+        for _ in 0..6 {
+            many.push(mk(vec![1.0, 0.0, 0.0], 1, false));
+        }
+        let (ab8, ci8) = star_soft_abundance(&many, 3);
+        assert!((ab8[0] - 7.5 / 8.0).abs() < 1e-12, "{ab8:?}");
+        assert!((ci8[0] - 1.96 * (ab8[0] * (1.0 - ab8[0]) / 8.0).sqrt()).abs() < 1e-12, "{ci8:?}");
+        let (ab0, ci0) = star_soft_abundance(&[], 2);
+        assert_eq!((ab0, ci0), (vec![0.5, 0.5], vec![0.5, 0.5]));
+    }
+
+    #[test]
     fn read_star_columns_find_the_differing_positions_and_assign_the_read() {
         // two copies: a 2-kb random core, copy B differs at 20 positions; the read is 1.2 kb of copy A
         // (positions 300..1500), plus one read that is the reverse complement of copy B's 300..1500.
@@ -2642,12 +2767,12 @@ mod tests {
         let alns = read_star_alignments(&[&a, &b], &[&read_a, &read_b_rc]);
         assert_eq!(alns.len(), 2);
         assert!(alns[0][0].is_some() && alns[0][1].is_some(), "read A must hit both copies: {:?}", alns[0].iter().map(|x| x.is_some()).collect::<Vec<_>>());
-        let (obs, prof) = read_star_columns(&read_a, &alns[0]);
+        let (obs, prof, _) = read_star_columns(&read_a, &alns[0]);
         assert_eq!(obs.len(), 20, "20 differing positions inside the read");
         let p = AssignParams::default();
         let asg = assign_read(&ReadFeatures { psv_obs: obs, psv_qual: vec![], junctions: vec![] }, &prof, &p).unwrap();
         assert_eq!((asg.best_copy, asg.status), (0, AssignStatus::Assigned), "{asg:?}");
-        let (obs_b, prof_b) = read_star_columns(&read_b_rc, &alns[1]);
+        let (obs_b, prof_b, _) = read_star_columns(&read_b_rc, &alns[1]);
         assert_eq!(obs_b.len(), 20);
         let asg_b = assign_read(&ReadFeatures { psv_obs: obs_b, psv_qual: vec![], junctions: vec![] }, &prof_b, &p).unwrap();
         assert_eq!((asg_b.best_copy, asg_b.status), (1, AssignStatus::Assigned), "{asg_b:?}");

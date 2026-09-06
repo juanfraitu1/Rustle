@@ -12859,3 +12859,58 @@ candidates) — it is the family's only possible origin for that read. Whether O
 user; the counts above are what it changes (NPIP 5,329 reads, all at MAPQ 60, all at the placement unit). (2)
 The `-p 0.3` floor is a measured operating point: it costs 491 NPIP and 613 LCR16u assignments that `-p 0`
 recovers correctly, at 16× the time; a middle value was not swept.
+
+## §6fj — L3 label (user decision), L4 soft abundance, L6 the read-star proof dump (2026-09-06)
+
+**L3 label (user, 02:46): a certified sole candidate is `assigned`, marked.** `copy_assign` default: a molecule
+whose only candidate passes the origin certificate — no competitor has a chain (`-p 0` changed nothing for these
+reads, row 716) — is `assigned` with `n_candidates 1`; new column 18 `sole_candidate` (1 iff assigned with one
+candidate; no other path assigns a single-candidate molecule). A single candidate the certificate REJECTED keeps
+the certificate's verdict (`ambiguous`, `origin_rejected 1`) — the §6fa override had relabelled those `tied`
+(NPIP 733, LCR16u 180). `--no-sole-candidate` = the §6fa rule, byte-identical (MCL106: first 17 columns ==
+`sweep_v12`). Gate on `sweep_v12`'s units: every row with `n_candidates ≠ 1` identical; NPIP sole candidates
+**4,846**, LCR16u **746**. `params.tsv`: `sole_candidate`, `sole_candidates`.
+
+**L4.** Under the read-star the family EM saw no observations and `abundance` was uniform (MCL106: 0.3333 ×3).
+Now `abundance` = normalised soft counts from the per-molecule posteriors (`star_soft_abundance`: a sole
+candidate 1 to its copy, a K = 0 tie 1/k each, an uncertified pair its softmax; orphans and rejected molecules
+nothing; CI = normal half-width over the contributing molecules, clamped at 0.5 like the EM's). `quant.tsv`
+gains `n_reads_soft` (column 13); `n_reads_hard` no longer counts orphans (they carried copy 0's index: MCL106
+140 → 136). MCL106 now 0.502 / 0.286 / 0.212 with soft counts 115 / 65.5 / 48.5. Unit test
+`star_soft_abundance_sums_posteriors_of_certified_molecules`. Not touched: the iterative-prune recomputation
+(`--iterative-prune`, OFF).
+
+**L6.** `copy_assign --dump-star` (OFF) writes `<out>.star_reads.tsv`: per molecule `status`, `assigned_copy`,
+`catalog_copy_idx`, `n_candidates`, `candidates`, `n_cols`, and `columns` = `read_pos:read_base:candidate_bases`
+(one char per candidate in `candidates` order, `.` = uncovered) — the read's own columns against its candidates,
+the source of the assignment-proof figure. Kept in a process-wide side table (`StarProof`, drained by the
+binary), the same device as the core-hull registry, so no `Assignment` constructor changes. MCL106: 269 proofs.
+`read_star_columns` now also returns the column positions.
+
+**Sweep under the new default (`sweep_v13` = `sweep_v12`'s inputs, sole candidates on):** paired 35, 24,462 unit
+reads — **assigned 19,525 (79.8 %)** (v12 46.5 %), tied 233 (v12 9,715), ambiguous 4,704 (v12 3,379; the
+certificate-rejected singles moved here from `tied`), origin-rejected 4,327 (unchanged), MAPQ-60 placement
+agreement **18,994/18,995**, MAPQ<60 530/1,213 assigned; NPIP 62 anchors 16 right / 0 wrong. All 76 families:
+49,449 unit reads, **assigned 40,516 (81.9 %)**, tied 441, ambiguous 8,492, agreement 37,988/37,989; reads at
+the 13 dropped units 7,532 → 6,530 assigned to the dropped unit itself, 5 tied, 997 ambiguous, 0 stolen. Over
+every output row (unit reads and neighbourhood reads alike) 85,679 sole candidates, 430 orphans. NPIP `quant.tsv`:
+the EIF3C member 0.773 (soft count 4,374 of 4,821 hard), the 566-read dropped member 0.090, ci95 ≤ 0.011 —
+the first per-copy abundance the read-star has produced. Scripts: `bench/o2_l1l2_score.py` (BAM via `O2_BAM`),
+`adj/l346/score_*.txt`.
+
+**What the tie class now means.** A `tied` row is a K = 0 pair (two candidates, no distinguishing column the
+read covers) — 233 of 24,462 unit reads on the paired 35. Everything the aligner could not tell apart is there;
+everything with one possible origin is a sole candidate; everything no candidate explains is `ambiguous` with
+`origin_rejected`.
+
+## §6fk — L5: genome-wide catalog `gw_units_v2` and the genome-wide O2 run (2026-09-06, in progress)
+
+`bench/gw_rebuild_v2.sh` (= `gw_rebuild.sh` under the L1/L2 binary; 516 s, 6.2 GB): **3,986 units** (v1 3,756):
+3,143 kept_full, 611 kept_trimmed, **232 dropped members emitted** (of 467 dropped; 242 had a chain, 10 merged
+into an overlapping unit); 462 merges (v1 451). Gate: every v1 unit row reappears with identical columns 3–16
+except ONE — MCL342's 474-bp 4-read unit, merged transitively into a larger kept unit through a dropped unit
+that shares exon bases with both (a base cannot belong to two copies). Extents genome-wide: max-side overhang
+median 5.6 kb, p90 61 kb, max 793 kb; extent median 34 kb against a unit median of 12 kb. Split:
+**754 sweep families** (≥ 2 units on a contig; largest MCL19 on 073224 with 28 units, MCL12/073242 25).
+Run: `sweep_gw_v2/run_sweep.sh` (GGO_ds.bam, GGO.fasta, timeout 3,600 s per family, one family at a time);
+analysers take `O2_BAM=/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_ds.bam`. Results go here when it ends.

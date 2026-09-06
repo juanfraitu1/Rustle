@@ -10,7 +10,7 @@ from o2scale/fam_NPIPcore_073242).
 """
 import csv, collections, glob, os, sys, pysam
 M = '/mnt/linuxdisk/home/juanfraitu/mcl_ann'
-BAM = pysam.AlignmentFile('/mnt/linuxdisk/home/juanfraitu/npip_cat/npip3.bam')
+BAM = pysam.AlignmentFile(os.environ.get('O2_BAM', '/mnt/linuxdisk/home/juanfraitu/npip_cat/npip3.bam'))
 args = sys.argv[1:]; fams = None
 if '--families' in args:
     i = args.index('--families'); fams = set(open(args[i + 1]).read().split()); del args[i:i + 2]

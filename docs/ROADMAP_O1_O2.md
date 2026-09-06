@@ -128,3 +128,9 @@ clipped at family neighbours; O2 aligns to it) are closed: canonical `rna_units_
 16× time; the single-candidate ties are reads with no chain to any competitor — label decision pending). Next in
 order: L4 (soft counts; orphan rows must not count toward copy 0), L5 (one region per locus, genome-wide O2),
 L6 (proof dump).
+
+## L3 label, L4, L6 closed (§6fj, 2026-09-06)
+User decision: certified sole candidates are `assigned` + `sole_candidate`. Paired 35: 79.8 % assigned at
+18,994/18,995 agreement; all 76: 81.9 %. Soft abundance from posteriors (`n_reads_soft`), orphans out of the hard
+count, `--dump-star` proof dump. L5 in progress: `gw_units_v2` (genome-wide catalog with the L1/L2 columns) and
+`sweep_gw_v2` (O2 over every genome-wide family with ≥ 2 units on a contig, GGO_ds.bam).

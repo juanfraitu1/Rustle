@@ -244,6 +244,14 @@ pub struct AssignParams {
     /// read-supported locus extent (`locus_start`/`locus_end`) when the catalog carries it. `false` = the §6fd
     /// padding rule (unit extent ± the family's longest molecule). Catalogs without the columns are unaffected.
     pub read_star_catalog_locus: bool,
+    /// ⭐ L3 (§6fi, user decision 2026-09-06): a molecule whose ONLY candidate passes the origin certificate —
+    /// no competitor has a chain at all — is reported `Assigned` (a sole candidate; `n_candidates == 1` marks
+    /// it, `assignments.tsv` column `sole_candidate`). `false` = the §6fa rule (every single-candidate molecule
+    /// `Tied`, even one the certificate rejected). NPIP: 5,329 MAPQ-60 reads, 5,319/5,319 at the placement unit.
+    pub sole_candidate: bool,
+    /// L6: keep each molecule's read-star proof (its columns, its bases, every candidate's bases) in the
+    /// process-wide side table for `copy_assign --dump-star`.
+    pub dump_star: bool,
 }
 
 impl Default for AssignParams {
@@ -268,6 +276,8 @@ impl Default for AssignParams {
             read_star_junctions: false,
             read_star_genomic: true,
             read_star_catalog_locus: true,
+            sole_candidate: true,
+            dump_star: false,
         }
     }
 }

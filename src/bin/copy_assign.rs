@@ -262,6 +262,14 @@ struct Args {
     /// the family's longest molecule (the §6fd rule). Without the columns both arms are byte-identical.
     #[arg(long, default_value_t = false)]
     read_star_pad_locus: bool,
+    /// Escape hatch (L3, §6fi): report every single-candidate molecule as `tied` (the §6fa rule) instead of
+    /// `assigned` with `sole_candidate = 1` when its only candidate passes the origin certificate.
+    #[arg(long, default_value_t = false)]
+    no_sole_candidate: bool,
+    /// L6: write `<out>.star_reads.tsv` — per molecule its read-star proof: the read positions of its columns,
+    /// its base there and every candidate's base (the assignment-proof figure's source). Default OFF.
+    #[arg(long, default_value_t = false)]
+    dump_star: bool,
     /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
     /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
     /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
@@ -1252,6 +1260,9 @@ struct QuantRow {
     abundance: f64,
     ci: f64,
     n_hard: usize,
+    /// L4: Σ posterior over molecules the certificate did not reject (a sole candidate counts 1, a K = 0 tie
+    /// 1/k, an uncertified pair its softmax). Under the read-star this is the abundance's numerator.
+    n_soft: f64,
     /// Tie-break invariance certificate: reads assigned to this copy that map UNIQUELY (`mapq > 0`), so their
     /// support survives any primary/secondary relabeling of tied reads. See `anchored_support`.
     anchored: usize,
@@ -1431,6 +1442,8 @@ fn main() -> Result<()> {
         read_star_junctions: args.read_star_junctions,
         read_star_genomic: args.read_star_genomic && !args.read_star_unit,
         read_star_catalog_locus: !args.read_star_pad_locus,
+        sole_candidate: !args.no_sole_candidate,
+        dump_star: args.dump_star,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
@@ -1888,7 +1901,9 @@ fn main() -> Result<()> {
                         copy_end: fa.copy_spans.get(ci).map_or(0, |s| s.2),
                         abundance: fa.copy_abundance.get(ci).copied().unwrap_or(0.0),
                         ci: fa.copy_abundance_ci.get(ci).copied().unwrap_or(0.0),
-                        n_hard: fa.assignments.iter().filter(|(_, a)| a.best_copy == ci).count(),
+                        // an ORPHAN (no candidate, §6fg) is nobody's hard read (it carried copy 0's index by default)
+                        n_hard: fa.assignments.iter().filter(|(_, a)| a.best_copy == ci && !(a.origin_rejected && a.n_candidates == 0)).count(),
+                        n_soft: fa.assignments.iter().filter(|(_, a)| !a.origin_rejected).map(|(_, a)| a.posterior.get(ci).copied().unwrap_or(0.0)).sum(),
                         anchored,
                         tie_invariant: anchored as u32 >= GATE_MIN_READS,
                         junction_invariant: fa.copy_junction_support.get(ci).copied().unwrap_or(0) as u32
@@ -2173,14 +2188,16 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates")?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate")?;
     for r in &assign_rows {
+        // L3: an assigned molecule with exactly one candidate is a sole candidate (§6fi); no other path assigns one
+        let sole = (r.status == "assigned" && r.n_candidates == 1) as u8;
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}",
             r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole
         )?;
     }
     {
@@ -2274,11 +2291,11 @@ fn main() -> Result<()> {
     // it). The row inflation a double-assigned molecule causes here is therefore NOT fixed by that flag;
     // removing a molecule from a family's EM is a two-pass architecture change and a separate decision.
     let mut qh = std::fs::File::create(format!("{}.quant.tsv", args.out))?;
-    writeln!(qh, "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tcopy_start\tcopy_end\tabundance\tci95_halfwidth\tn_reads_hard\tanchored_reads\ttie_invariant\tjunction_invariant")?;
+    writeln!(qh, "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tcopy_start\tcopy_end\tabundance\tci95_halfwidth\tn_reads_hard\tanchored_reads\ttie_invariant\tjunction_invariant\tn_reads_soft")?;
     for r in &quant_rows {
-        writeln!(qh, "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}", r.family_id, r.copy_index, r.copy_tid,
+        writeln!(qh, "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}\t{:.2}", r.family_id, r.copy_index, r.copy_tid,
             r.copy_chrom, r.copy_start, r.copy_end, r.abundance, r.ci, r.n_hard, r.anchored, r.tie_invariant,
-            r.junction_invariant)?;
+            r.junction_invariant, r.n_soft)?;
     }
     // A copy is invariant to the arbitrary primary/secondary label if it is pinned by unique mappers OR by a
     // copy-specific junction (splice structure identifies it regardless of the label). Report the OR bottom line.
@@ -2473,6 +2490,34 @@ fn main() -> Result<()> {
         );
     }
 
+    // ⭐ L6 --dump-star: each molecule's read-star proof (its own columns, its bases, every candidate's bases).
+    if args.dump_star {
+        let proofs = rustle::vg_family::copy_assign_pipeline::take_star_proofs();
+        let mut sh = std::fs::File::create(format!("{}.star_reads.tsv", args.out))?;
+        writeln!(sh, "read_name\tfamily_id\tstatus\tassigned_copy\tcatalog_copy_idx\tn_candidates\tcandidates\tn_cols\tcolumns")?;
+        let mut n = 0usize;
+        for r in &assign_rows {
+            let Some(pf) = proofs.get(&r.read_name) else { continue };
+            let ch = |o: Option<u8>| o.map(|b| b as char).unwrap_or('.');
+            let cols: Vec<String> = pf
+                .cols
+                .iter()
+                .enumerate()
+                .map(|(j, &pos)| {
+                    let cands: String = pf.alleles.iter().map(|al| ch(al.get(j).copied().flatten())).collect();
+                    format!("{pos}:{}:{cands}", ch(pf.obs.get(j).copied().flatten()))
+                })
+                .collect();
+            writeln!(
+                sh,
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                r.read_name, r.family_id, r.status, r.assigned_copy, r.catalog_copy_idx, r.n_candidates,
+                pf.cand.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(","), pf.cols.len(), cols.join(",")
+            )?;
+            n += 1;
+        }
+        eprintln!("[copy_assign] --dump-star: {n} molecule proofs -> {}.star_reads.tsv (columns = read_pos:read_base:candidate_bases in `candidates` order, `.` = uncovered)", args.out);
+    }
     // --dump-psv: the raw per-molecule PSV genotype matrix (the assignment-proof evidence). reads × PSV columns
     // (each read's base + its assignment), the per-copy alleles, and the column→genome map — for the figure.
     if args.dump_psv {
@@ -2682,6 +2727,9 @@ fn main() -> Result<()> {
         row("read_star_junctions", format!("{}", args.read_star_junctions))?;
         row("read_star_genomic", format!("{}", args.read_star_genomic && !args.read_star_unit))?;
         row("read_star_catalog_locus", format!("{}", !args.read_star_pad_locus))?;
+        row("sole_candidate", format!("{}", !args.no_sole_candidate))?;
+        row("sole_candidates", format!("{}", assign_rows.iter().filter(|r| r.status == "assigned" && r.n_candidates == 1).count()))?;
+        row("dump_star", format!("{}", args.dump_star))?;
         row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;

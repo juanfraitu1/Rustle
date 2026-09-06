@@ -105,3 +105,11 @@ both, and O2 assigns — or, on NPIP, declines to assign — among exactly the u
 - Fig. 3 `docs/figures/fig_znf569_locus.png` — the ZNF569-like locus: GFF exons, SD core hull, the clipped unit and the unit that follows the reads, over MAPQ-60 read coverage.
 - Fig. 4 `docs/figures/fig_npip_anchors.png` — the 62 valid NPIP junction anchors by arm (assigned-agrees / wrong / tied / ambiguous).
 Rendered by `bench/chapter_figures.py`.
+
+> **Update 2026-09-06 (§6fh–§6fj).** Three changes to the composition since §4 was drafted: the candidate set is
+> every locus of the cluster (dropped members carry `member_status = dropped`); the alignment target is the
+> catalog's read-supported locus extent (O1 writes it, O2 aligns to it); a molecule whose only candidate passes
+> the origin certificate is a *sole candidate* (`assigned`, marked), not a tie. On the paired 35 families with
+> the same units: 79.8 % assigned, 233 K = 0 ties, 4,704 ambiguous (of which 4,327 rejected by the certificate),
+> MAPQ-60 placement agreement 18,994/18,995, NPIP anchors 16/16. Per-copy abundance now comes from the
+> per-molecule posteriors (`n_reads_soft`), and `--dump-star` writes each molecule's proof.

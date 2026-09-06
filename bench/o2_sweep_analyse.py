@@ -1,5 +1,5 @@
 import csv,collections,glob,os,statistics as st,math,pysam,re
-BAM=pysam.AlignmentFile('/mnt/linuxdisk/home/juanfraitu/npip_cat/npip3.bam')
+BAM=pysam.AlignmentFile(os.environ.get("O2_BAM", "/mnt/linuxdisk/home/juanfraitu/npip_cat/npip3.bam"))
 fam_rows=[]; unit_rows=[]
 for d in sorted(glob.glob('fam_*')):
     if not os.path.exists(f'{d}/A.done') or not os.path.exists(f'{d}/A.assignments.tsv'): continue
