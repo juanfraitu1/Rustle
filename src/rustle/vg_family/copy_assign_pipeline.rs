@@ -627,8 +627,9 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
             let _ = std::fs::remove_file(&self.0);
         }
     }
-    let _c1 = Cleanup(refp.clone());
-    let _c2 = Cleanup(qp.clone());
+    let keep = std::env::var_os("RUSTLE_STAR_KEEP").is_some();
+    let _c1 = (!keep).then(|| Cleanup(refp.clone()));
+    let _c2 = (!keep).then(|| Cleanup(qp.clone()));
     let write_fa = |path: &std::path::Path, seqs: &[&[u8]]| -> Option<()> {
         let mut fh = std::io::BufWriter::new(std::fs::File::create(path).ok()?);
         for (i, s) in seqs.iter().enumerate() {
@@ -640,6 +641,9 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
     };
     if write_fa(&refp, copy_seqs).is_none() || write_fa(&qp, read_seqs).is_none() {
         return;
+    }
+    if keep {
+        eprintln!("[star] kept {} and {}", refp.display(), qp.display());
     }
     let n_arg = nc.to_string();
     // reporting floor for a copy's hit relative to the read's best hit (minimap2 -p). 0.3 by default; a copy
@@ -752,6 +756,9 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
         }
         best_match[ci] = nmatch;
         let unaligned = qlen.saturating_sub(qe.saturating_sub(qs)) as u64; // read bases the hit leaves unexplained
+        if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() {
+            eprintln!("[star]   hit read {ri} copy {ci} {} q{qs}-{qe}/{qlen} t{ts} match={nmatch} blk={blk} nm={nm} x={n_x} i={n_i} d={n_d} aligned={n_aligned} unaligned={unaligned}", f[4]);
+        }
         edits[ci] = Some((n_x, n_aligned, nm, blk, n_i, n_d, unaligned));
         per_copy[ci] = Some(v);
         per_pos[ci] = Some(vp);
@@ -2299,6 +2306,9 @@ fn assign_family_detailed_once(
                     let sd = (n * r0 * (1.0 - r0)).sqrt().max(1e-9);
                     let z = (nm as f64 - mean) / sd; // normal approximation of the binomial tail
                     let p_tail = 0.5 * (1.0 - erf_approx(z / std::f64::consts::SQRT_2));
+                    if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() {
+                        eprintln!("[star]   certificate read {ri} {} best={} edits={nm} n={blk} mean={mean:.1} z={z:.1} p={p_tail:.2e} -> {}", names[ri], a.best_copy, if nm as f64 > mean && p_tail < p.alpha { "REJECT" } else { "pass" });
+                    }
                     if nm as f64 > mean && p_tail < p.alpha {
                         a.status = AssignStatus::Ambiguous;
                         a.resolvable = false;

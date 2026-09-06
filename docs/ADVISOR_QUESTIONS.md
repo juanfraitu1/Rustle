@@ -179,6 +179,14 @@ duplication corroboration **shares the substrate**. It is corroboration, **not i
 
 ### 1.4 "Your validation is circular."
 
+⭐ **2026-09-05 — the excision experiment on the shipped certificate (§6ff, `docs/PREREG_excision_2026-09-05.md`):**
+remove an NPIP copy 98.5 % / 98.7 % identical to its neighbour: 100 % of its reads abstain ("no candidate explains
+this read"), none is absorbed; the abstaining reads carry consistent mismatch sites 7–100× above the controls that
+point at the missing copy; the ZNF569-like copy (99.1 %) is reconstructed at 0.994 from its orphaned reads. The
+wall: NPIP 13's expressed segment is 99.85 % identical to copy 12 (units 0.966 overall), 12 of 32 reads are
+absorbed with a VALID certificate — a missing copy inside sequencing error is an allele. Say the wall as local
+identity, not as a percentage of the unit.
+
 This is where the project is genuinely strong, because **we killed our own metrics repeatedly and
 recorded each kill**. Present it as a list of self-inflicted retractions — it is far more
 persuasive than any surviving number:

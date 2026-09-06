@@ -112,3 +112,10 @@ past its unit); genome-wide O2 on `gw_units_v1`.
 ## Speed (§6fe, 2026-09-05)
 Read-star time is minimap2 (~95 %). Threads 4 + block-based molecule set: 2× (paired 35: 22 → 11 min), results
 identical. Placement-restricted candidates rejected (ties). Next: one batch per contig across families.
+
+## Excision (§6ff, 2026-09-05)
+`bench/o2_excision.py`: removing a 98.5–98.7 % NPIP copy orphans 100 % of its reads (abstention, 0 silent); the
+consistent-site detector points at the missing copy (7–100× controls); recovery 0.994 for the ZNF copy. The wall
+is LOCAL identity within sequencing error (NPIP 13 → 12 at 99.85 %: 38 % absorbed with a valid certificate). Open:
+report orphan molecules (row 712); an O3 detector that runs the consistent-site test on every family's rejected
+reads and the admission prototype on the orphans; recovery needs enough reads on one candidate.

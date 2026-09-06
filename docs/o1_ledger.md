@@ -12740,3 +12740,37 @@ all-vs-all finds their paralogues and certifies them. Candidates are the family,
 (that was the record-level defect, row 700). The remaining cost is inherent to all-vs-all spliced alignment;
 the next real lever is one minimap2 index per contig with all families' loci as targets and one batch per
 contig (fewer process starts, shared chaining), an engineering item.
+
+## §6ff — EXCISION: remove a copy, follow its reads, look for "a copy should be here" (O3 in O2's vocabulary) (2026-09-05)
+
+Pre-registered `docs/PREREG_excision_2026-09-05.md` (md5 4ce8e07a…); `bench/o2_excision.py`; the shipped genomic
+read-star on `rna_units_v9`, one copy removed from the candidate set, nothing else changed. Fate of the excised
+copy's MAPQ-60 reads; the detector = consistent mismatch sites (≥ 3 reads and ≥ 50 % of the reads covering the
+site) among the origin-rejected reads sharing a best candidate Y, per kb of covered locus; controls = Y's own reads
+and the un-excised run's rejected reads at Y; recovery = Y's locus with the consistent alleles patched, scored
+against the true excised locus X and against Y over the covered stretch.
+| excised copy (nearest unit identity) | MAPQ-60 reads | origin-rejected | SILENT misassignment | absent | consistent sites/kb (controls) | recovery: patched → X vs → Y (unpatched Y → X) |
+|---|---|---|---|---|---|---|
+| NPIP 7 (0.985) | 102 | 100 (98 %) | 0 | 2 | 47.7 (0.0 / 0.4) | 0.900 vs 0.863 (0.831) |
+| NPIP 11 (0.987) | 77 | 77 (100 %) | 0 | 0 | 2.9 (0.4 / 0.0) | 0.925 vs 0.997 (0.924) |
+| NPIP 2 (0.971) | 98 | 25 (26 %) | 0 | **73 (74 %)** | 17.7 (0.6 / 8.9) | 0.884 vs 0.986 (0.880) |
+| NPIP 13 (0.966) | 32 | 20 (62 %) | **12 (38 %)** | 0 | 14.0 (0.4 / 0.0) | 0.813 vs 0.776 (0.842) |
+| ZNF569-like (0.991) | 326 | 299 (92 %) | 0 | 27 | 117.6 (0.7 / 0.0) | 0.994 vs — (0.000) |
+**P1 (no silent misassignment) holds for 4 of 5 and fails on NPIP 13 — and the failure is the result.** The 12
+absorbed reads went to copy 12 with a VALID certificate: 5 edits over 3,416 bases (0.15 %, under the 0.3 % error
+null). Copy 13's expressed segment is 99.85 % identical to copy 12's locus although the units are 0.966 identical
+overall (the NPIP mosaic; the read maps to the genome at 13 with NM 1 and at 12 with NM 5). A missing copy whose
+expressed segment lies within sequencing error of a present one cannot be told from an allele of that one: its
+reads are absorbed with a certificate, and their 5 shared sites (1.5/kb) sit inside the heterozygosity range.
+That is the identifiability wall stated as a limit of O3, not of the certificate. Row 711.
+**P2** holds where the reads stay in the batch; NPIP 2's 74 % "absent" is a reporting gap: reads whose only copy
+was excised touch no candidate, are not aligned (§6fe's batch rule) and produce no row — the ORPHAN class, the
+strongest missing-copy signal, must be reported, not dropped (row 712; the RNA-admission prototype counts them
+as primaries outside every unit). **P3** holds for 4 of 5 (NPIP 11: 2.9/kb, 7× the controls but under the 5/kb
+line — its rejected reads split over three candidates). **P4** (recovery closer to X than Y) holds for 7 and 13
+and the ZNF copy (0.994 over 310 bp), fails for 11 and 2 where too few reads share one Y to patch the locus.
+**Answer for the advisor.** A copy ~98 % identical to its neighbour, removed: its reads are NOT silently
+absorbed — 100 % (7) and 100 % (11) abstain with "no candidate explains this read", and the abstaining reads
+carry a consistent-site signature 7–100× above the controls that points at the missing copy and, with enough
+reads on one candidate, reconstructs it (0.99 for the ZNF copy). The wall is local identity within sequencing
+error (copy 13 → 12 at 99.85 %), where a missing copy and an allele are the same observation. Suite 857 / 0 / 11.
