@@ -108,3 +108,7 @@ placement agreement on the paired 35, 55.7 % assigned, MAPQ<60 386/1,158). Rows 
 reading: the rejections were unit EXTENT. Open: the 10× time cost (minimap2 -x splice per family; batch across
 families or index once per contig); O1 unit extents that exclude expressed exons (the anchor read's locus 4–16 kb
 past its unit); genome-wide O2 on `gw_units_v1`.
+
+## Speed (§6fe, 2026-09-05)
+Read-star time is minimap2 (~95 %). Threads 4 + block-based molecule set: 2× (paired 35: 22 → 11 min), results
+identical. Placement-restricted candidates rejected (ties). Next: one batch per contig across families.

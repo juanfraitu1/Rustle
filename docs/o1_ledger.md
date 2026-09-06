@@ -12720,3 +12720,23 @@ unit read-star 232). Wall 1,299 s (22 min; the unit form 133 s). **All four pred
 is `copy_assign`'s default (user decision); `--read-star-unit` restores the §6fc unit form byte-for-byte.**
 Full 74-family sweep under the default (`docs/sweep_v10_families_2026-09-05.tsv`): 41,851 unit reads — assigned 15,425 (37 %), tied 20,304 (49 %), ambiguous 6,122 (15 %); **MAPQ-60 placement agreement 13,339/13,339 = 100.0 %**; MAPQ<60 assigned 2,086 of 3,722 (56 %); 41 min, 2.1 GB. Suite: 857 / 0 / 11.
 Cost: NPIP's minimap2 19 s → ~140 s (22 padded loci, splice-aware), 1.7 GB.
+
+## §6fe — SPEED: where the read-star time goes, what was taken, what was not (2026-09-05)
+
+**Profile.** NPIP under the genomic default: 131 s wall, of which ~125 s is the external `minimap2 -x splice`
+call (3,307 molecules × 22 padded loci); `discover_psvs` 1.1 s; Rust per-read work (PAF parse, columns,
+pairwise certificates) < 5 s. LRU caches, bitsets, hashbrown or more rayon would touch under 5 % of the wall.
+**Benchmark on the NPIP inputs (1,004 unit reads × 22 loci):** `-t 2` 81 s → `-t 4` 42 s; `splice:hq` 44 s
+(13.6k hits vs 12.4k — a different result, not adopted); `splice:hq -k15 -w10` 35 s (also different).
+**Taken (no result change for the reads that matter):** minimap2 threads 2 → 4 (`RUSTLE_STAR_THREADS`); the
+batch restricted to molecules with an aligned BLOCK inside some copy via any of their records
+(`has_block_in_any_copy`; span overlap admitted reads spliced over a copy). NPIP 131 → 65 s, LCR16u 74 → 34 s;
+verdicts identical on 3,070 of 3,074 common molecules (the four differ by the representative record's choice,
+1 assignment changed). Paired 35: **1,299 s → 654 s**, assigned 9,622 → 9,630, MAPQ-60 agreement 9,243/9,243, MAPQ<60 386 → 387 (`docs/sweep_v10_fast_families_2026-09-05.tsv`). Suite 857 / 0 / 11.
+**Measured and NOT taken:** aligning each molecule only against the loci where the BAM holds a record for it
+would cut alignments 4.6× (14,825 (molecule, locus) pairs vs 67,628 all-vs-all on NPIP) — but 1,686 of 3,074
+molecules have a record at ONE locus, and under that restriction they become single-candidate ties, whereas
+all-vs-all finds their paralogues and certifies them. Candidates are the family, not the aligner's placements
+(that was the record-level defect, row 700). The remaining cost is inherent to all-vs-all spliced alignment;
+the next real lever is one minimap2 index per contig with all families' loci as targets and one batch per
+contig (fewer process starts, shared chaining), an engineering item.

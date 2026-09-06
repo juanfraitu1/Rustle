@@ -645,8 +645,10 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
     // reporting floor for a copy's hit relative to the read's best hit (minimap2 -p). 0.3 by default; a copy
     // below it is not a candidate. `RUSTLE_STAR_P=0` reports every chain (the test of that floor, §6fc).
     let p_arg = std::env::var("RUSTLE_STAR_P").unwrap_or_else(|_| "0.3".to_string());
+    // minimap2 threads: the alignment IS the wall time (NPIP: 81 s at 2 threads, 42 s at 4, §6fe)
+    let t_arg = std::env::var("RUSTLE_STAR_THREADS").unwrap_or_else(|_| "4".to_string());
     let mut child = match std::process::Command::new(&mm2)
-        .args(["-c", "--eqx", "-x", preset, "--secondary=yes", "-p", &p_arg, "-N", &n_arg, "-t", "2"])
+        .args(["-c", "--eqx", "-x", preset, "--secondary=yes", "-p", &p_arg, "-N", &n_arg, "-t", &t_arg])
         .arg(&refp)
         .arg(&qp)
         .stdout(std::process::Stdio::piped())
@@ -1263,6 +1265,34 @@ fn read_features(read: &AlignedRead, mc: usize, fp: &FamilyProfiles) -> ReadFeat
 }
 
 /// The copy whose genomic span the read overlaps most (`None` if it overlaps none).
+/// Does the read have an ALIGNED BLOCK (M/=/X) inside some copy's span? Span overlap is not enough: a read
+/// spliced OVER a copy (an `N` across it) touches no base of it (the §6cm invariant). Read-star aligns only
+/// such molecules (§6fe): on NPIP 1,004 of the region's 3,307 molecules — the other 70 % end as ties whatever
+/// they are aligned to, and were 70 % of the minimap2 time.
+pub(crate) fn has_block_in_any_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> bool {
+    let mut p = read.ref_start;
+    let mut cur: Option<(u64, u64)> = None;
+    let hit = |s: u64, e: u64| copies.iter().any(|c| s < c.end && c.start < e);
+    for &(op, n) in &read.cigar {
+        match op {
+            'M' | '=' | 'X' | 'D' => {
+                cur = Some((cur.map_or(p, |c| c.0), p + n));
+                p += n;
+            }
+            'N' => {
+                if let Some((s, e)) = cur.take() {
+                    if hit(s, e) {
+                        return true;
+                    }
+                }
+                p += n;
+            }
+            _ => {}
+        }
+    }
+    cur.is_some_and(|(s, e)| hit(s, e))
+}
+
 pub(crate) fn best_overlap_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> Option<usize> {
     let r_end = read_ref_end(read);
     let mut best = None;
@@ -2051,14 +2081,15 @@ fn assign_family_detailed_once(
             });
             e.push(i);
         }
-        // representative record per molecule: the one overlapping a copy, with the longest sequence
+        // representative record per molecule: among records with an aligned BLOCK inside a copy, the longest
+        // sequence (§6fe: molecules with no base inside any copy are not aligned — they end as ties regardless)
         let reps: Vec<usize> = order
             .iter()
             .filter_map(|name| {
                 groups[name]
                     .iter()
                     .copied()
-                    .filter(|&i| best_overlap_copy(&reads[i], copies).is_some())
+                    .filter(|&i| has_block_in_any_copy(&reads[i], copies))
                     .max_by(|&a, &b| reads[a].seq.len().cmp(&reads[b].seq.len()).then(b.cmp(&a)))
             })
             .collect();
