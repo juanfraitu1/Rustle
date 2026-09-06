@@ -37,8 +37,9 @@ for a in B.fetch(xc, xs, xe):
 fate = collections.Counter(); best_of_rej = collections.Counter()
 for n in xreads:
     r = A.get(n)
-    if r is None: fate['absent'] += 1; continue
-    if r['status'] == 'assigned': fate['SILENT misassignment'] += 1
+    if r is None: fate['O3 orphan (touches no remaining candidate; not in O2\'s output — the admission prototype\'s class)'] += 1; continue
+    if r.get('n_candidates') == '0': fate['O2 orphan row (overlaps a copy, no locus aligns it)'] += 1
+    elif r['status'] == 'assigned': fate['SILENT misassignment'] += 1
     elif r.get('origin_rejected') == '1': fate['origin-rejected'] += 1; best_of_rej[r['catalog_copy_idx']] += 1
     else: fate[r['status']] += 1
 n = len(xreads)

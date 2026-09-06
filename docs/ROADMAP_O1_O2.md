@@ -117,5 +117,5 @@ identical. Placement-restricted candidates rejected (ties). Next: one batch per 
 `bench/o2_excision.py`: removing a 98.5–98.7 % NPIP copy orphans 100 % of its reads (abstention, 0 silent); the
 consistent-site detector points at the missing copy (7–100× controls); recovery 0.994 for the ZNF copy. The wall
 is LOCAL identity within sequencing error (NPIP 13 → 12 at 99.85 %: 38 % absorbed with a valid certificate). Open:
-report orphan molecules (row 712); an O3 detector that runs the consistent-site test on every family's rejected
+(row 712 closed §6fg: `n_candidates` column, orphans reported); an O3 detector that runs the consistent-site test on every family's rejected
 reads and the admission prototype on the orphans; recovery needs enough reads on one candidate.

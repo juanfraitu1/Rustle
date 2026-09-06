@@ -122,6 +122,10 @@ pub struct Assignment {
     /// what sequencing error allows, so NO candidate is its origin (its unit lacks the read's content, or the
     /// catalog lacks the copy). Such a molecule is `Ambiguous` and counted per family. Always `false` otherwise.
     pub origin_rejected: bool,
+    /// ⭐ §6fg: how many copies the molecule aligned to in read-star (its candidate set); 0 = no candidate at all
+    /// (the molecule overlaps a copy but no locus aligns it) — an ORPHAN, reported as Ambiguous + origin_rejected.
+    /// Always 0 on the record-level path.
+    pub n_candidates: usize,
     /// Per-copy POSTERIOR over the candidate copies, `softmax(logl)` (likelihood-normalized, i.e. a UNIFORM
     /// prior), indexed parallel to the `copies` slice. For an *assigned* read it is ~one-hot at `best_copy`;
     /// for a *Tied* read it spreads over the consistent ZONE (the copies the read cannot be distinguished
@@ -545,6 +549,7 @@ pub fn assign_read_editing(
         discovery_coupled: false,
         junction_conflict,
         origin_rejected: false,
+        n_candidates: 0,
         posterior,
     })
 }

@@ -1211,6 +1211,7 @@ struct AssignRow {
     as_ev: AsEvidence,
     junction_conflict: bool,
     origin_rejected: bool,
+    n_candidates: usize,
     /// The read has an aligned BASE inside a copy of its family (§6es hygiene): rows with `false` are reads
     /// gathered from the copies' neighbourhoods that overlap no copy; report O2 on `in_copy == true`.
     in_copy: bool,
@@ -1805,6 +1806,7 @@ fn main() -> Result<()> {
                         as_ev: as_ev[*ri],
                         junction_conflict: a.junction_conflict,
                         origin_rejected: a.origin_rejected,
+                        n_candidates: a.n_candidates,
                         in_copy,
                         catalog_copy_idx: cat_idx_of(a.best_copy),
                     });
@@ -2166,14 +2168,14 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected")?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates")?;
     for r in &assign_rows {
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}",
             r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates
         )?;
     }
     {
@@ -2670,6 +2672,7 @@ fn main() -> Result<()> {
         row("psv_read_filter", std::env::var("RUSTLE_PSV_READFILTER").unwrap_or_else(|_| "unset".into()))?;
         row("molecule_observations", format!("{}", args.molecule_observations && !args.no_molecule_observations))?;
         row("origin_rejected", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected).count()))?;
+        row("orphans", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected && r.n_candidates == 0).count()))?;
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
         row("read_star_junctions", format!("{}", args.read_star_junctions))?;
         row("read_star_genomic", format!("{}", args.read_star_genomic && !args.read_star_unit))?;
@@ -2878,6 +2881,7 @@ mod tests {
             discovery_coupled: true,
             junction_conflict: false,
             origin_rejected: false,
+            n_candidates: 0,
             posterior: vec![],
         })
     }

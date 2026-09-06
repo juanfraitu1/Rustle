@@ -1822,6 +1822,7 @@ pub fn assign_family_detailed_pruned(
             discovery_coupled: a.discovery_coupled,
             junction_conflict: a.junction_conflict,
             origin_rejected: a.origin_rejected,
+            n_candidates: a.n_candidates,
             posterior: post_out,
         })
     };
@@ -2096,8 +2097,12 @@ fn assign_family_detailed_once(
                 groups[name]
                     .iter()
                     .copied()
-                    .filter(|&i| has_block_in_any_copy(&reads[i], copies))
-                    .max_by(|&a, &b| reads[a].seq.len().cmp(&reads[b].seq.len()).then(b.cmp(&a)))
+                    .filter(|&i| has_block_in_any_copy(&reads[i], copies) || best_overlap_copy(&reads[i], copies).is_some())
+                    .max_by(|&a, &b| {
+                        (has_block_in_any_copy(&reads[a], copies), reads[a].seq.len())
+                            .cmp(&(has_block_in_any_copy(&reads[b], copies), reads[b].seq.len()))
+                            .then(b.cmp(&a))
+                    })
             })
             .collect();
         // ⭐ §6fd genomic form: the candidates are their LOCI (forward genomic spans), aligned splice-aware
@@ -2162,8 +2167,31 @@ fn assign_family_detailed_once(
                 // a single candidate has no competitor to certify against: `assign_read` returns Tied for it
                 // (margin ∞, nothing rejected), so the molecule stays in the output as a tie, never as a claim.
                 if cand.is_empty() {
+                    // ⭐ §6fg ORPHAN: the molecule overlaps a copy but NO locus aligns it — reported, not dropped
+                    // (row 712): Ambiguous, origin_rejected, n_candidates 0; best copy = the overlapped one.
                     let mcall = detect_mosaic(&[], copies.len(), MOSAIC_EPS, &mparams);
-                    return (ri, PerRead { mcall, obs_for_em: None, result: None });
+                    let a = Assignment {
+                        best_copy: mc,
+                        log_lr_margin: 0.0,
+                        n_decisive: 0,
+                        resolvable: false,
+                        status: AssignStatus::Ambiguous,
+                        p_value: 1.0,
+                        min_p_value: 1.0,
+                        discovery_coupled: false,
+                        junction_conflict: false,
+                        origin_rejected: true,
+                        n_candidates: 0,
+                        posterior: vec![1.0 / copies.len() as f64; copies.len()],
+                    };
+                    return (
+                        ri,
+                        PerRead {
+                            mcall,
+                            obs_for_em: None,
+                            result: Some(ReadResult { read_index: ri, mapped_copy: mc, psv: a.clone(), combined: a, psv_obs: vec![None; fp.n_cols], junctions: Vec::new() }),
+                        },
+                    );
                 }
                 if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() {
                     eprintln!("[star] read {ri} len={} candidates={:?} cols={}", read.seq.len(), cand, obs.len());
@@ -2275,6 +2303,7 @@ fn assign_family_detailed_once(
                     discovery_coupled: false,
                     junction_conflict: false,
                     origin_rejected: false,
+                    n_candidates: cand.len(),
                     posterior: full,
                 };
                 // ⭐ origin certificate: under H0 "the best candidate's unit IS this read's origin", the read's
@@ -3447,6 +3476,7 @@ mod tests {
             discovery_coupled: false,
             junction_conflict: false,
                         origin_rejected: false,
+                        n_candidates: 0,
             posterior: vec![],
         }
     }

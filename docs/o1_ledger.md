@@ -12774,3 +12774,15 @@ absorbed — 100 % (7) and 100 % (11) abstain with "no candidate explains this r
 carry a consistent-site signature 7–100× above the controls that points at the missing copy and, with enough
 reads on one candidate, reconstructs it (0.99 for the ZNF copy). The wall is local identity within sequencing
 error (copy 13 → 12 at 99.85 %), where a missing copy and an allele are the same observation. Suite 857 / 0 / 11.
+
+## §6fg — ORPHANS REPORTED (row 712 closed), `n_candidates` column (2026-09-05)
+
+Every molecule that overlaps a copy — by an aligned block OR by span (§6fe had restricted the batch to blocks) —
+now gets a row; a molecule that NO locus aligns is reported as `ambiguous`, `origin_rejected 1`, **`n_candidates 0`**
+(the O2 orphan) instead of vanishing. `assignments.tsv` gains `n_candidates` (the read's candidate-set size:
+1 = single-candidate tie, 0 = orphan); `params.tsv` counts `orphans`. NPIP 3,074 → 3,307 rows (21 orphans,
+1,587 single-candidate, 466 two-candidate …), LCR16u 3,097 → 3,151 (15 orphans); every previous verdict identical
+(3,070/3,074 and 3,096/3,097, the rest the representative record). Reads whose only copy is gone and that touch
+no other candidate cannot be tied to the family by O2 at all: they are O3's orphans (the excision script now
+labels them so) and the admission prototype (primaries outside every unit, `bench/o2_roster_admit.py`) is the
+instrument for them. Suite 857 / 0 / 11.
