@@ -132,5 +132,6 @@ L6 (proof dump).
 ## L3 label, L4, L6 closed (§6fj, 2026-09-06)
 User decision: certified sole candidates are `assigned` + `sole_candidate`. Paired 35: 79.8 % assigned at
 18,994/18,995 agreement; all 76: 81.9 %. Soft abundance from posteriors (`n_reads_soft`), orphans out of the hard
-count, `--dump-star` proof dump. L5 in progress: `gw_units_v2` (genome-wide catalog with the L1/L2 columns) and
-`sweep_gw_v2` (O2 over every genome-wide family with ≥ 2 units on a contig, GGO_ds.bam).
+count, `--dump-star` proof dump. L5 closed (§6fk): `gw_units_v2` + O2 over its 754 families — 66.9 % assigned at 44,364/44,365 agreement,
+27.8 % of unit reads origin-rejected genome-wide (O3's material). The queue is empty; next = the O3 flag pass
+(consistent-site detector over every family's rejected reads + the admission prototype over the orphans).

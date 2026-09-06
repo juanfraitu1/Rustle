@@ -12913,4 +12913,16 @@ that shares exon bases with both (a base cannot belong to two copies). Extents g
 median 5.6 kb, p90 61 kb, max 793 kb; extent median 34 kb against a unit median of 12 kb. Split:
 **754 sweep families** (≥ 2 units on a contig; largest MCL19 on 073224 with 28 units, MCL12/073242 25).
 Run: `sweep_gw_v2/run_sweep.sh` (GGO_ds.bam, GGO.fasta, timeout 3,600 s per family, one family at a time);
-analysers take `O2_BAM=/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_ds.bam`. Results go here when it ends.
+analysers take `O2_BAM=/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_ds.bam`.
+
+**Result (all 754 families, 0 failures, wall 1,824 s total / 96 s max, RSS max 2.5 GB):** 71,047 unit reads —
+**assigned 47,503 (66.9 %)**, tied 1,962 (K = 0), ambiguous 21,582 of which **origin-rejected 19,737 (27.8 %;
+paired 35 on the 3 contigs: 17.7 %)**, orphans 14; **MAPQ-60 placement agreement 44,364/44,365**; MAPQ<60
+3,138/7,859 assigned. The 145 dropped units carry 7,742 unit reads: 5,516 assigned to the dropped unit itself,
+134 tied, 2,089 ambiguous, 1 stolen. Over every output row (the 50-kb neighbourhoods included): 24,049 sole
+candidates, 8,613 orphans, 144,799 origin-rejected — the neighbourhood rows are mostly reads of other genes and
+belong to no candidate by construction. The 19,737 rejected UNIT reads are O3's material genome-wide: molecules
+with a block in a unit that no locus of the family explains. Script `adj/l346/score_gw_v2.txt`.
+⚠ The harness killed the background driver twice for "low memory" with 24 GB available (the page cache of the
+4.3-GB BAM + 3.6-GB genome, most likely a host-side reading); `sweep_gw_v2/run_chunk.sh` (foreground, 300-s
+launch budget, 240-s per-family cap, skips finished families) ran the rest in six calls.
