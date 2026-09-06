@@ -270,6 +270,10 @@ struct Args {
     /// its base there and every candidate's base (the assignment-proof figure's source). Default OFF.
     #[arg(long, default_value_t = false)]
     dump_star: bool,
+    /// Escape hatch (§6fm): count every read-star hit for a candidate even when it does not overlap the
+    /// candidate's unit inside the target (the §6fd behaviour).
+    #[arg(long, default_value_t = false)]
+    no_read_star_hit_in_unit: bool,
     /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
     /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
     /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
@@ -1444,6 +1448,7 @@ fn main() -> Result<()> {
         read_star_catalog_locus: !args.read_star_pad_locus,
         sole_candidate: !args.no_sole_candidate,
         dump_star: args.dump_star,
+        read_star_hit_in_unit: !args.no_read_star_hit_in_unit,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
@@ -2730,6 +2735,7 @@ fn main() -> Result<()> {
         row("sole_candidate", format!("{}", !args.no_sole_candidate))?;
         row("sole_candidates", format!("{}", assign_rows.iter().filter(|r| r.status == "assigned" && r.n_candidates == 1).count()))?;
         row("dump_star", format!("{}", args.dump_star))?;
+        row("read_star_hit_in_unit", format!("{}", !args.no_read_star_hit_in_unit))?;
         row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;

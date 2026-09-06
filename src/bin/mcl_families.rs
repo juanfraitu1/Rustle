@@ -384,8 +384,8 @@ fn read_extent(reads: &[rustle::vg_family::denovo_assemble::BamRead], chain: &[(
         .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
 }
 
-/// ⭐ L2: a locus never contains another unit of its family. `units[i] = (chain start, chain end, extent)` on ONE
-/// contig; the extent is clipped to the nearest chain ends of the other units that lie entirely outside its own
+/// ⭐ L2: a locus never contains another catalog unit — of ANY family (§6fm). `units[i] = (chain start, chain end,
+/// extent)` on ONE contig; the extent is clipped to the nearest chain ends of the other units that lie entirely outside its own
 /// span (units overlapping the span — nested, interleaved — do not clip). Without this, in a tandem array a
 /// single read-through molecule extends copy 1's locus over copy 2's chain, a copy-2 read then aligns identically
 /// inside both targets and ties with zero decisive columns (MCL4: 226 assigned → tied, arm A0 of PREREG L1/L2).
@@ -941,10 +941,11 @@ fn main() -> Result<()> {
             Some(inter as f64 / tot.max(1) as f64)
         };
         let node_idx: BTreeMap<&GeneKey, usize> = g.genes.iter().enumerate().map(|(k, gk)| (gk, k)).collect();
+        // every family's units are staged first: the L2 clipping (below) needs EVERY unit on a contig, whatever
+        // its family — a locus never contains another catalog unit
+        let mut staged: Vec<(String, Vec<PendingUnit>, Vec<Option<usize>>)> = Vec::new();
         for (i, c) in clusters.iter().enumerate() {
             let fid = format!("MCL{i}");
-            let mut idx = 0usize;
-            let mut hulls: BTreeMap<String, (u64, u64)> = BTreeMap::new();
             let mut pending: Vec<PendingUnit> = Vec::new();
             for (mi, m) in c.members.iter().enumerate() {
                 // locus = core hull (trimmed) / member span; dropped members are not units
@@ -1118,24 +1119,39 @@ fn main() -> Result<()> {
             } else {
                 vec![None; pending.len()]
             };
-            // L2: clip every emitted unit's extent to its family neighbours on the same contig
-            let clipped: Vec<(u64, u64)> = {
-                let mut by_ctg: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+            staged.push((fid, pending, merged_into));
+        }
+        // ⭐ L2: clip every emitted unit's extent at the chain ends of its neighbours on the contig — units of
+        // EVERY family (§6fm: MCL1971's 951-kb extent contained MCL42's unit and other genes; reads of those
+        // loci aligned perfectly inside the target and were accepted as MCL1971's sole candidates at 3 %
+        // divergence from its own unit). Nested units (overlapping spans) do not clip.
+        let clipped: Vec<Vec<(u64, u64)>> = {
+            let mut by_ctg: BTreeMap<&str, Vec<(usize, usize)>> = BTreeMap::new();
+            for (fi, (_, pending, merged_into)) in staged.iter().enumerate() {
                 for (k, u) in pending.iter().enumerate() {
                     if merged_into[k].is_none() {
-                        by_ctg.entry(u.member.0.as_str()).or_default().push(k);
+                        by_ctg.entry(u.member.0.as_str()).or_default().push((fi, k));
                     }
                 }
-                let mut out: Vec<(u64, u64)> = pending.iter().map(|u| u.locus).collect();
-                for ks in by_ctg.values() {
-                    let spans: Vec<(u64, u64, (u64, u64))> =
-                        ks.iter().map(|&k| (pending[k].exons[0].0, pending[k].exons.last().unwrap().1, pending[k].locus)).collect();
-                    for (k, c) in ks.iter().zip(clip_extents_to_neighbours(&spans)) {
-                        out[*k] = c;
-                    }
+            }
+            let mut out: Vec<Vec<(u64, u64)>> = staged.iter().map(|(_, p, _)| p.iter().map(|u| u.locus).collect()).collect();
+            for ks in by_ctg.values() {
+                let spans: Vec<(u64, u64, (u64, u64))> = ks
+                    .iter()
+                    .map(|&(fi, k)| {
+                        let u = &staged[fi].1[k];
+                        (u.exons[0].0, u.exons.last().unwrap().1, u.locus)
+                    })
+                    .collect();
+                for (&(fi, k), c) in ks.iter().zip(clip_extents_to_neighbours(&spans)) {
+                    out[fi][k] = c;
                 }
-                out
-            };
+            }
+            out
+        };
+        for (fi, (fid, pending, merged_into)) in staged.iter().enumerate() {
+            let mut idx = 0usize;
+            let mut hulls: BTreeMap<String, (u64, u64)> = BTreeMap::new();
             for (k, u) in pending.iter().enumerate() {
                 if let Some(rep) = merged_into[k] {
                     let r = &pending[rep];
@@ -1158,7 +1174,7 @@ fn main() -> Result<()> {
                     exons.len(),
                     u.n_reads,
                     exons.iter().map(|(s, e)| format!("{s}-{e}")).collect::<Vec<_>>().join(","),
-                    u.hull_col, u.sd_depth, u.core_bp, u.nearest_col, u.rep_col, u.status, clipped[k].0, clipped[k].1
+                    u.hull_col, u.sd_depth, u.core_bp, u.nearest_col, u.rep_col, u.status, clipped[fi][k].0, clipped[fi][k].1
                 )?;
                 writeln!(uf, ">{fid}|{idx}|{}:{us}-{ue}|{strand}|nexon={}", m.0, exons.len())?;
                 uf.write_all(&u.seq)?;

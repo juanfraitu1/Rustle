@@ -12969,3 +12969,73 @@ missing-copy signature — and in the rest structure or noise. (iii) The unannot
 (3 loci / 19 loci) — most "missing" origins are annotated loci without a unit or loci of another family: O1
 roster gaps and MCL cuts, not reference absence. Open: the ≥ 5/kb controls; the flagged pairs' reconstruction
 (§6ff recovery over every flag); the `other_family` loci as a cut certificate (register row 672's idea).
+
+## §6fm — A LOCUS NEVER CONTAINS ANOTHER CATALOG UNIT, AND A HIT MUST TOUCH THE UNIT (from the 15 suspect controls) (2026-09-06)
+
+**Diagnosis (row 719).** Of the 15 genome-wide pairs whose control exceeded 5 sites/kb, 13 are loci where every
+accepted read differs from the assembly by ~0.5 % (BAM NM 4.5–6.5 per kb at MAPQ 60): the reference haplotype
+differs there, the certificate admits up to ~0.7 % per read, and the control carries exactly that rate into the
+null — 11 of the 13 are unflagged, the two flagged (MCL12:6 38.7/kb, MCL424:4 45.7/kb) are 5–9× their control.
+The other two (MCL42:2 and MCL1971:1, both on 073239) share the same reads: accepted as MCL1971's SOLE
+candidates, they are 32–35 mismatches per kb from MCL1971's unit. They align perfectly elsewhere inside
+MCL1971's 951-kb locus extent — which contains MCL42's 1.7-kb unit and further genes (reads at 199–207 kb into
+the extent with 1–4 edits, accepted too). L2's clipping stopped at the family's own units; **45 of 366 3-contig
+extents and 395 of 3,986 genome-wide contained another family's unit**, and O2 let any hit inside the target
+vouch for the candidate.
+
+**Fix, two halves.** O1: `mcl_families` stages every family's units and clips each extent at the chain ends of
+EVERY catalog unit on the contig (nested units still do not clip) — `rna_units_v11` (columns 1–17 and `units.fa`
+identical to v10; 69 extents changed; 0 extents now contain another non-nested unit; max-side overhang median
+8.0 kb, p90 46 kb). O2: `copy_assign` counts a read-star hit for a candidate only if its target interval
+overlaps the candidate's unit inside the target (`read_star_hit_in_unit`, default on; escape
+`--no-read-star-hit-in-unit` reproduces `sweep_v13` byte for byte on MCL106). The remaining loci inside an
+extent are those with no unit at all — an O1 roster gap, not something a target should absorb, and the hit rule
+now refuses them.
+
+**Reruns.** `gw_units_v3` (columns 1–17 == v2, 591 extents changed, 0 extents contain another non-nested unit).
+Paired 35, same units (`sweep_v14` vs `sweep_v13`): assigned 19,281 (78.8 %) vs 19,525 (79.8 %), K = 0 ties 90 vs
+233, origin-rejected 4,739 vs 4,327 (+412: reads a target vouched for through a hit outside the unit), **MAPQ-60
+placement agreement 18,772/18,772 = 1.0000** (the one disagreement gone), NPIP anchors 14 right / 0 wrong (16 /
+0). All 76: 81.2 % at 37,710/37,710. Over every row the orphans rise 430 → 4,079: neighbourhood reads no unit's
+hit touches are nobody's now. Genome-wide (`sweep_gw_v3`, 754 families, 1,723 s): 65.9 % assigned (66.9),
+K = 0 ties 1,569 (1,962), rejected 20,969 (19,737), agreement 43,799/43,800; orphans over all rows 8,613 →
+18,494. O3 pass on the reruns (`adj/o3/v14`, `adj/o3/gw3`): 3 contigs 173 pairs, **60 flagged (34.7 %)**, control
+< 1/kb 161/176; genome-wide 711 pairs, **99 flagged (13.9 %)**, control < 1/kb 449/746; loci 152 (61
+annotated-no-unit / 87 other-family / 4 unannotated) and 417 (120 / 274 / 23, 15,641 reads, 4,611 orphans).
+
+## §6fn — O3 items 2–4: reconstruction over every flag, the annotated-no-unit loci, the cut certificate (2026-09-06)
+
+**Item 2, reconstruction (PREREG `docs/PREREG_o3_reconstruction_2026-09-06.md`, md5 33de17f2;
+`bench/o3_reconstruct.py`; row 720).** Every flagged pair's Y locus patched with the consistent alleles over
+the covered stretch (§6ff verbatim), aligned to the whole assembly (`GGO.asm20.mmi`, 10.3 GB), identity to Y by
+the same alignment rule. Gate: 3 of the 5 excisions recover X (NPIP 7, ZNF, and NPIP 11's best outside hit is X
+though Y stays closer); NPIP 2 and 13 (6–12 reads) do not, as §6ff already found. Blind: 3 contigs 3
+`existing_locus` / 42 `reference_absent` / 15 unresolved; genome-wide 13 / 62 / 24. The consensus differs from Y
+by 1.2 % of its bases on average, and the reads' primary placement already is the assembly's best explanation,
+so `reference_absent` is the verdict by construction — the reconstruction cannot separate a copy absent from the
+reference from a haplotype ≥ 0.7 % away from it. **That is O3's statement: a flag = a sequence at least this far
+from every locus the assembly holds, seen consistently by ≥ 3 reads; RNA alone does not say whether it is a copy
+or a haplotype.** The consensus and its divergence are the deliverable (`adj/o3/*/recon.tsv`, `recon/*.fa`).
+
+**Item 3, the annotated-no-unit loci (120 genome-wide, 4,222 reads at v2; 120 at v3).** Not one class:
+**44 are members of the family already** — a unit exists but its read-supported chain covers only part of the
+annotated span (MAN1B1: a 1.9-kb chain in a 23-kb gene; the admission locus spans three genes), so the reads'
+primaries fall outside it; **9 are members of another family**; **67 are in no cluster** although the PAF holds
+records to the family's units — LOC101148972 (843 reads) at identity 0.985 but coverage 0.16 (< `min_cov_longer`
+0.30: a partial paralogue), LOC101145482 at 0.915 / cov 1.0 (pruned or unclustered), ZNF234 / ZNF418 with no
+record to the family at all (reads reach the family's units through secondaries only). Folding them into O1 is
+therefore three decisions, not one: (i) the chain rule for members (why 500 reads in a member's annotated span
+are outside its chain); (ii) partial paralogues below the coverage threshold but with hundreds of reads
+cross-mapping — a read-linked admission rule (a PAF record at ≥ `min_identity` plus ≥ `min_reads` primaries whose
+secondaries land in the family's units); (iii) secondary-only neighbours, which are noise for O1. Not shipped —
+a definition change, the user's and the advisor's call; the table is `adj/o3/gw3/loci.tsv`.
+
+**Item 4, the cut certificate (`bench/o3_cut_certificate.py`; row 721).** For each (F, G) pair with ≥ 20 reads
+of F whose primary sits in G's unit: the reads, the loci, whether the shared locus overlaps one of F's own loci
+(`nested`), and the best asm20 identity between an F unit and the G units involved. Genome-wide 92 pairs: **21
+cuts** (1,821 reads; 20 at unit identity ≥ 0.90 — MCL579↔MCL964 0.997 / 358 reads, MCL742↔MCL836 0.994 / 149,
+MCL19↔MCL357 0.991 / 141) — pairs MCL separated that exchange reads at near-identity, the certificate register
+row 672 asked for; **44 nested** (4,042 reads: two families' units at one place — NPIP's dropped EIF3C member
+inside MCL22's 330-kb unit is the 3-contig case with 1,452 reads) — an O1 overlap, not a cut; 27
+`disjoint_no_homology` (4,179 reads: reads shared through segments shorter than 300 bp). 3 contigs: 4 / 16 / 10.
+Tables `adj/o3/*/cuts.tsv`.

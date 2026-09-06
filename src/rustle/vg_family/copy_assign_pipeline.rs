@@ -545,7 +545,7 @@ pub(crate) fn banded_msa_pair_full_matrix(a: &[u8], b: &[u8], band: usize) -> Op
 pub fn read_star_alignments(copy_seqs: &[&[u8]], read_seqs: &[&[u8]]) -> Vec<Vec<Option<Vec<Option<u8>>>>> {
     // full (memory-hungry) form, kept for tests: per read x copy the aligned base at every read position
     let mut out: Vec<Vec<Option<Vec<Option<u8>>>>> = (0..read_seqs.len()).map(|_| vec![None; copy_seqs.len()]).collect();
-    read_star_stream(copy_seqs, read_seqs, "map-hifi", |ri, per_copy, _, _| out[ri] = per_copy.to_vec());
+    read_star_stream(copy_seqs, read_seqs, "map-hifi", &[], |ri, per_copy, _, _| out[ri] = per_copy.to_vec());
     out
 }
 
@@ -585,10 +585,10 @@ pub fn take_star_proofs() -> std::collections::HashMap<String, StarProof> {
 /// `copy_bounds[c]` = the unit offsets where copy `c` starts a new exon (its splice boundaries in unit space);
 /// each candidate's `CopyProfile::junctions` becomes the READ positions aligned to those offsets, so the read's
 /// own junction positions (from its CIGAR) can be compared per candidate in one coordinate system (§6fc).
-pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bounds: &[Vec<u32>], preset: &str) -> Vec<ReadStarObs> {
+pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bounds: &[Vec<u32>], preset: &str, windows: &[Option<(usize, usize)>]) -> Vec<ReadStarObs> {
     let mut out: Vec<ReadStarObs> =
         (0..read_seqs.len()).map(|_| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).collect();
-    read_star_stream(copy_seqs, read_seqs, preset, |ri, per_copy, per_pos, edits| {
+    read_star_stream(copy_seqs, read_seqs, preset, windows, |ri, per_copy, per_pos, edits| {
         let (obs, profiles, cols) = read_star_columns(read_seqs[ri], per_copy);
         let cand: Vec<usize> = per_copy.iter().enumerate().filter(|(_, h)| h.is_some()).map(|(i, _)| i).collect();
         // every column stays; a candidate with no base at a column is `None` there and the PAIRWISE certificate
@@ -630,7 +630,10 @@ pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bou
 
 /// Shared driver: runs minimap2 (all copies as targets, all molecules as queries, every hit kept) and calls
 /// `sink(read_index, per_copy)` once per read with that read's aligned copy bases per read position.
-fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Option<u32>>>], &[Option<(u64, u64, u64, u64, u64, u64, u64)>])>(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], preset: &str, mut sink: F) {
+/// `windows[c]` = the candidate's UNIT in target coordinates (`Some((start, end))`): a hit whose target interval
+/// misses it is no hit for that candidate (§6fm: a target that contains other loci must not vouch for reads from
+/// them). Empty = no filter.
+fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Option<u32>>>], &[Option<(u64, u64, u64, u64, u64, u64, u64)>])>(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], preset: &str, windows: &[Option<(usize, usize)>], mut sink: F) {
     use std::io::{BufRead, Write};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NONCE: AtomicUsize = AtomicUsize::new(0);
@@ -722,6 +725,12 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
         };
         if ri >= nr || ci >= nc {
             continue;
+        }
+        if let Some(Some((ws, we))) = windows.get(ci) {
+            let te: usize = f[8].parse().unwrap_or(ts);
+            if te <= *ws || ts >= *we {
+                continue; // the hit does not touch the candidate's unit: another locus inside the target
+            }
         }
         if cur != Some(ri) {
             flush(cur, &mut per_copy, &mut per_pos, &mut best_match, &mut edits);
@@ -2179,7 +2188,14 @@ fn assign_family_detailed_once(
             })
             .collect();
         let t_star = std::time::Instant::now();
-        let alns = read_star_observations(&copy_seqs, &read_seqs, if genomic_spans.is_some() { &[] } else { &copy_bounds }, preset);
+        // §6fm: in the genomic form a hit counts for a candidate only if it overlaps the candidate's unit inside
+        // the target (`read_star_hit_in_unit`; the escape keeps every hit)
+        let windows: Vec<Option<(usize, usize)>> = if genomic_spans.is_some() && p.read_star_hit_in_unit {
+            copies.iter().map(|c| { let (a, _) = target_of(c); Some(((c.start - a) as usize, (c.end - a) as usize)) }).collect()
+        } else {
+            Vec::new()
+        };
+        let alns = read_star_observations(&copy_seqs, &read_seqs, if genomic_spans.is_some() { &[] } else { &copy_bounds }, preset, &windows);
         if timing {
             eprintln!("[timing]     read-star minimap2 ({} molecules x {} copies): {:.1}s", reps.len(), copies.len(), t_star.elapsed().as_secs_f64());
         }

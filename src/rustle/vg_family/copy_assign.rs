@@ -252,6 +252,11 @@ pub struct AssignParams {
     /// L6: keep each molecule's read-star proof (its columns, its bases, every candidate's bases) in the
     /// process-wide side table for `copy_assign --dump-star`.
     pub dump_star: bool,
+    /// ⭐ §6fm: under the genomic read-star a hit counts for a candidate only if its target interval overlaps the
+    /// candidate's UNIT (chain extent) inside the target. A target is the locus extent, which can contain other
+    /// loci; without this, reads of those loci aligned perfectly inside MCL1971's 951-kb target and were
+    /// accepted as its sole candidates at 3 % divergence from its own unit. `false` = every hit counts (§6fd).
+    pub read_star_hit_in_unit: bool,
 }
 
 impl Default for AssignParams {
@@ -278,6 +283,7 @@ impl Default for AssignParams {
             read_star_catalog_locus: true,
             sole_candidate: true,
             dump_star: false,
+            read_star_hit_in_unit: true,
         }
     }
 }

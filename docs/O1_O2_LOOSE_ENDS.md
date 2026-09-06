@@ -22,6 +22,11 @@ Cross-references: `docs/ROADMAP_O1_O2.md`, `docs/O1_O2_COMPOSITION.md`, `docs/CH
 
 ## After the queue: the O3 flag pass (§6fl, 2026-09-06)
 Done (`bench/o3_flag_pass.py`, PREREG `docs/PREREG_o3_flag_pass_2026-09-06.md`; P1 held, P2 held on the 3
-contigs and failed genome-wide, P3 missed by 4 points, P4 done). Next candidates, in order: (1) the 15
-genome-wide pairs whose control exceeds 5 sites/kb; (2) §6ff recovery over every flagged pair; (3) the
-`annotated_no_unit` loci folded into O1; (4) the `other_family` loci as a cut certificate.
+contigs and failed genome-wide, P3 missed by 4 points, P4 done). The four follow-ups (2026-09-06, §6fm–§6fn):
+(1) the 15 suspect controls → 13 are the assembly's haplotype at 0.5 %, 2 exposed an L2 defect (extents
+containing other families' units; fixed: clip at every unit, hit must touch the unit; reruns `sweep_v14`,
+`sweep_gw_v3`); (2) reconstruction over every flag → `reference_absent` by construction, a flag means "≥ 0.7 %
+from every reference locus", copy vs haplotype undecidable from RNA (row 720); (3) annotated-no-unit loci →
+44 short-chain members / 9 other families / 67 unclustered (partial paralogues below the coverage threshold);
+folding them in is a definition decision (§6fn); (4) cut certificate → 21 genome-wide cuts at ≥ 0.90 identity,
+44 nested, 27 without homology (row 721).

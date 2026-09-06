@@ -142,3 +142,11 @@ flagged). 3 contigs: 50/173 pairs flagged (28.9 %), 3 unannotated loci; genome-w
 unannotated loci (134 reads), 102 annotated-no-unit loci (4,222 reads), 258 other-family loci (10,014 reads).
 Open: 15 genome-wide controls ≥ 5/kb (untrusted flags); reconstruction over every flag; other-family loci as
 an MCL cut certificate; annotated-no-unit loci back into O1.
+
+## §6fm–§6fn (2026-09-06)
+A locus never contains another catalog unit (any family) and a read-star hit must touch the unit; reruns hold
+(3 contigs 78.8 % at 1.0000 agreement; genome-wide 65.9 % at 43,799/43,800). O3: a flag = a consistent sequence
+≥ 0.7 % from every reference locus (copy or haplotype); 21 genome-wide MCL cuts certified by shared reads at
+≥ 0.90 identity; the annotated-no-unit loci decompose into short chains / other families / partial paralogues.
+Decisions pending (user): read-linked admission of partial paralogues into O1; the chain rule for members whose
+reads fall outside the chain; the 44 nested unit pairs.
