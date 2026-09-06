@@ -19,3 +19,9 @@ exon-less block spans (Soto slice only); MCL scattering of Soto families (row 69
 
 Cross-references: `docs/ROADMAP_O1_O2.md`, `docs/O1_O2_COMPOSITION.md`, `docs/CHAPTER_O1_O2_COMPOSITION_DRAFT.md`,
 `docs/NEGATIVE_RESULTS_REGISTER.md` rows 689–712, ledger `docs/o1_ledger.md` §6et–§6fg.
+
+## After the queue: the O3 flag pass (§6fl, 2026-09-06)
+Done (`bench/o3_flag_pass.py`, PREREG `docs/PREREG_o3_flag_pass_2026-09-06.md`; P1 held, P2 held on the 3
+contigs and failed genome-wide, P3 missed by 4 points, P4 done). Next candidates, in order: (1) the 15
+genome-wide pairs whose control exceeds 5 sites/kb; (2) §6ff recovery over every flagged pair; (3) the
+`annotated_no_unit` loci folded into O1; (4) the `other_family` loci as a cut certificate.

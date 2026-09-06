@@ -135,3 +135,10 @@ User decision: certified sole candidates are `assigned` + `sole_candidate`. Pair
 count, `--dump-star` proof dump. L5 closed (§6fk): `gw_units_v2` + O2 over its 754 families — 66.9 % assigned at 44,364/44,365 agreement,
 27.8 % of unit reads origin-rejected genome-wide (O3's material). The queue is empty; next = the O3 flag pass
 (consistent-site detector over every family's rejected reads + the admission prototype over the orphans).
+
+## O3 flag pass (§6fl, 2026-09-06)
+`bench/o3_flag_pass.py`: detector + admission over every family. Gate held (five excisions reproduced and
+flagged). 3 contigs: 50/173 pairs flagged (28.9 %), 3 unannotated loci; genome-wide: 88/724 (12.2 %), 19
+unannotated loci (134 reads), 102 annotated-no-unit loci (4,222 reads), 258 other-family loci (10,014 reads).
+Open: 15 genome-wide controls ≥ 5/kb (untrusted flags); reconstruction over every flag; other-family loci as
+an MCL cut certificate; annotated-no-unit loci back into O1.

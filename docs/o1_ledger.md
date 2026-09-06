@@ -12926,3 +12926,46 @@ with a block in a unit that no locus of the family explains. Script `adj/l346/sc
 ⚠ The harness killed the background driver twice for "low memory" with 24 GB available (the page cache of the
 4.3-GB BAM + 3.6-GB genome, most likely a host-side reading); `sweep_gw_v2/run_chunk.sh` (foreground, 300-s
 launch budget, 240-s per-family cap, skips finished families) ran the rest in six calls.
+
+## §6fl — THE O3 FLAG PASS (PREREG `docs/PREREG_o3_flag_pass_2026-09-06.md`, md5 400028a5; `bench/o3_flag_pass.py`) (2026-09-06)
+
+Every family's origin-rejected unit reads, grouped by best candidate Y, through the §6ff detector (consistent
+sites per covered kb, verbatim) against the control of Y's own certificate-accepted reads, with a Poisson test at
+O2's α corrected over the pairs of the sweep; the rejected/orphan rows of any kind through the admission
+clustering (primaries outside every unit, ≥ 3 within 5 kb), each candidate locus classed `other_family` /
+`annotated_no_unit` / `unannotated`. Three defects fixed before reading anything (row 717): the control must be
+Y's accepted reads at any MAPQ (NPIP copies have almost none at 60); the admission input must be every rejected
+row, not the unit reads (whose primary is inside a unit by definition); the detector must align to O2's target,
+the L2 locus extent (padding the unit by read length put MCL29's own reads 117 sites/kb from "their" locus).
+
+**P1 (gate) holds:** on the excised copies' own reads the pass reproduces §6ff to the decimal — 47.74 / 2.87 /
+17.67 / 13.96 / 117.65 sites per kb — and flags all five (`adj/o3/excise_x`). Blind, the excision directories
+also show what an intact NPIP carries: a 104-read `structural` group at NPIP 2 (728 bp unaligned per read) in
+every one of them, which is not the excision signal.
+
+**3 contigs (`sweep_v13`, 76 families; `adj/o3/v13`):** 7,846 rejected unit reads; 173 pairs tested,
+**50 flagged `missing_copy` (28.9 %, 25 families; P3's 25 % line missed by 4 points, row 718)**, all
+`divergent`, none of the 56 `structural` pairs. Control < 1/kb 165/178 (P2 holds here). Largest flags: NPIP's
+dropped member 24 (428 reads, 12.9/kb, control 0.00), MCL6:6 (252, 12.1/kb), LCR16u:2 (207, 5.5/kb),
+MCL125's dropped member (164, 8.1/kb), MCL94:0 (142, 11.7/kb). Candidate loci 140 with 12,073 reads: 84
+`other_family` (reads of this family whose primary sits in another catalog family's unit — an MCL cut between
+homologous loci, O1's business), 53 `annotated_no_unit` (ZNF20/ZNF627/ZNF234/ZNF564 regions, 300–540 reads each:
+annotated genes the catalog gave no unit), **3 `unannotated`** (3–5 reads each). The §6fb gap loci (PDXDC1/NTAN1,
+ZNF600) no longer appear: L1's dropped members absorbed them.
+
+**Genome-wide (`sweep_gw_v2`, 754 families; `adj/o3/gw`, 358 s):** 19,723 rejected unit reads; 724 pairs,
+**88 flagged (12.2 %, 61 families; 2,926 of 18,850 rejected reads in pairs)**, 86 `divergent` + 2 `structural`.
+Control median 0.72/kb, p90 2.7/kb, < 1/kb only 456/763 (P2 fails genome-wide, row 717): 0.1–0.3 % consistent
+divergence sits inside the certificate (heterozygosity; a pooled read set), and 15 pairs with a control ≥ 5/kb
+are not explained — their flags (MCL1971:1 318 reads at 31.8/kb over a 12.2/kb control; MCL12:6) are untrusted
+until the control is understood. Candidate loci 379: 258 `other_family` (10,014 reads), 102 `annotated_no_unit`
+(4,222 reads; LOC101148972 843, MAN1B1 506, TASOR2/GDI2 347), **19 `unannotated` (134 reads; largest 29 reads at
+NC_073224.2:114.60–114.61 Mb, MCL19)**.
+
+**What O3 can now say.** (i) A removed copy at 96.6–99.1 % identity is flagged blind by its abandoned reads
+(P1). (ii) On the intact catalogs the same statistic flags 12–29 % of the (family, candidate) pairs, i.e. the
+reads no locus explains are, in about a fifth of the pairs, consistently the SAME other sequence — the
+missing-copy signature — and in the rest structure or noise. (iii) The unannotated class proper is small
+(3 loci / 19 loci) — most "missing" origins are annotated loci without a unit or loci of another family: O1
+roster gaps and MCL cuts, not reference absence. Open: the ≥ 5/kb controls; the flagged pairs' reconstruction
+(§6ff recovery over every flag); the `other_family` loci as a cut certificate (register row 672's idea).
