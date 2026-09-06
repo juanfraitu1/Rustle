@@ -62,6 +62,10 @@ pub struct CatalogCopy {
     /// `NA`). Under `copy_assign --psv-genomic` the PSV alignment span is this hull — the segment homologous
     /// to ≥ half the family by construction — not the copy's extent.
     pub core_hull: Option<(u64, u64)>,
+    /// ⭐ L2 (`docs/O1_O2_LOOSE_ENDS.md`): the read-supported locus extent (`locus_start`/`locus_end`, 0-based
+    /// half-open) written by `mcl_families`; under the genomic read-star this is the copy's alignment target
+    /// (replacing the §6fd padding rule). Absent on older catalogs.
+    pub locus: Option<(u64, u64)>,
 }
 
 /// A catalog FAMILY: its rows grouped by `family_id`, in first-seen (file) order.
@@ -165,6 +169,10 @@ pub fn parse_copies_tsv(text: &str) -> Result<Vec<CatalogCopy>> {
         idx("n_exon")?, idx("strand")?, idx("n_reads")?, idx("exons")?,
     );
     let i_hull: Option<usize> = cols.iter().position(|c| *c == "core_hull"); // optional (§6ep)
+    let i_locus: Option<(usize, usize)> = cols // optional (L2): both columns or neither
+        .iter()
+        .position(|c| *c == "locus_start")
+        .zip(cols.iter().position(|c| *c == "locus_end"));
     let need = cols.len();
     let mut out = Vec::new();
     for (ln, line) in lines.enumerate() {
@@ -206,7 +214,22 @@ pub fn parse_copies_tsv(text: &str) -> Result<Vec<CatalogCopy>> {
                     Some((a.parse().with_context(|| format!("line {}: bad core_hull", ln + 2))?, b.parse().with_context(|| format!("line {}: bad core_hull", ln + 2))?))
                 }
             },
+            locus: match i_locus.map(|(a, b)| (at(a), at(b))) {
+                None | Some(("NA", _)) | Some(("", _)) => None,
+                Some((a, b)) => Some((
+                    a.parse().with_context(|| format!("--families: copies.tsv line {}: bad locus_start {a:?}", ln + 2))?,
+                    b.parse().with_context(|| format!("--families: copies.tsv line {}: bad locus_end {b:?}", ln + 2))?,
+                )),
+            },
         };
+        if let Some((a, b)) = c.locus {
+            if a > c.start || b < c.end {
+                bail!(
+                    "--families: {} copy {} ({}:{}-{}): locus extent {a}-{b} does not contain the copy's span",
+                    c.family_id, c.copy_idx, c.chrom, c.start, c.end
+                );
+            }
+        }
         // Structural checks on the row itself: an exon chain that does not reconstruct the copy's own
         // span/exon count means the row is not the object the catalog wrote.
         if c.exons.is_empty() {
@@ -406,6 +429,9 @@ pub fn to_colocated(
         if let Some(h) = c.core_hull {
             super::copy_assign_pipeline::register_core_hull(&c.tid, h);
         }
+        if let Some(l) = c.locus {
+            super::copy_assign_pipeline::register_locus_extent(&c.tid, l);
+        }
         copies.push(DenovoTranscript {
             tid: c.tid.clone(),
             chrom: c.chrom.clone(),
@@ -486,6 +512,21 @@ mod tests {
         assert_eq!(cs[0].tid, "DN_c1_100_2");
         assert_eq!(cs[0].exons, vec![(100, 200), (300, 400)]);
         assert_eq!(introns_of(&cs[0].exons), vec![(200, 300)]);
+    }
+
+    /// L2: the optional `locus_start`/`locus_end` columns are read by name, absent on older catalogs, and must
+    /// contain the copy's own span (the extent is a superset by construction).
+    #[test]
+    fn locus_extent_columns_are_optional_and_must_contain_the_copy() {
+        let plain = format!("{HDR}\n{}\n", row("F", 0, "c1", 100, 400, "100-200,300-400", 2));
+        assert_eq!(parse_copies_tsv(&plain).unwrap()[0].locus, None);
+        let with = format!("{HDR}\tmember_status\tlocus_start\tlocus_end\n{}\tdropped\t50\t900\n", row("F", 0, "c1", 100, 400, "100-200,300-400", 2));
+        assert_eq!(parse_copies_tsv(&with).unwrap()[0].locus, Some((50, 900)));
+        let na = format!("{HDR}\tlocus_start\tlocus_end\n{}\tNA\tNA\n", row("F", 0, "c1", 100, 400, "100-200,300-400", 2));
+        assert_eq!(parse_copies_tsv(&na).unwrap()[0].locus, None);
+        let bad = format!("{HDR}\tlocus_start\tlocus_end\n{}\t150\t900\n", row("F", 0, "c1", 100, 400, "100-200,300-400", 2));
+        let err = parse_copies_tsv(&bad).unwrap_err().to_string();
+        assert!(err.contains("does not contain the copy's span"), "{err}");
     }
 
     #[test]

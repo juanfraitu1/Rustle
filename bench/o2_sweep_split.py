@@ -24,10 +24,11 @@ for fid, rs in groups.items():
     if len(rs) < 2 or (only is not None and fid not in only): continue
     d = os.path.join(out, 'fam_' + fid); os.makedirs(d, exist_ok=True)
     with open(f'{d}/copies.tsv', 'w') as ct, open(f'{d}/copies.fa', 'w') as fa, open(f'{d}/forecast.tsv', 'w') as fc:
-        ct.write('family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tcore_hull\n')
+        extra = [c for c in ('member_status', 'locus_start', 'locus_end') if c in rows[0]]  # L1/L2 columns, when the catalog has them
+        ct.write('family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tcore_hull' + ''.join('\t' + c for c in extra) + '\n')
         fc.write('copy_idx\tnearest_ident\tsd_depth\tcore_bp\trep_frac\tsource\n')
         for i, r in enumerate(rs):
-            ct.write('\t'.join([fid, str(i), r['tid'], r['chrom'], r['start'], r['end'], r['n_exon'], r['strand'], r['n_reads'], r['exons'], r['core_hull']]) + '\n')
+            ct.write('\t'.join([fid, str(i), r['tid'], r['chrom'], r['start'], r['end'], r['n_exon'], r['strand'], r['n_reads'], r['exons'], r['core_hull']] + [r[c] for c in extra]) + '\n')
             fc.write('\t'.join([str(i), r['nearest_ident'], r['sd_depth'], r['core_bp'], r['rep_frac'], r['source']]) + '\n')
             fa.write(f">{fid}|{i}|{r['chrom']}:{r['start']}-{r['end']}|{r['strand']}|nexon={r['n_exon']}\n")
             fa.write('\n'.join(seqs[r['family_id'] + '|' + r['copy_idx']]) + '\n')

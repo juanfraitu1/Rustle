@@ -940,6 +940,16 @@ pub fn register_core_hull(tid: &str, hull: (u64, u64)) {
 pub fn core_hull_of(tid: &str) -> Option<(u64, u64)> {
     CORE_HULLS.get().and_then(|m| m.lock().unwrap().get(tid).copied())
 }
+/// ⭐ L2: per-copy read-supported locus extents (`locus_start`/`locus_end` of the catalog), the genomic
+/// read-star's alignment target when present. Same side-table rationale as `CORE_HULLS`.
+static LOCUS_EXTENTS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (u64, u64)>>> =
+    std::sync::OnceLock::new();
+pub fn register_locus_extent(tid: &str, extent: (u64, u64)) {
+    LOCUS_EXTENTS.get_or_init(Default::default).lock().unwrap().insert(tid.to_string(), extent);
+}
+pub fn locus_extent_of(tid: &str) -> Option<(u64, u64)> {
+    LOCUS_EXTENTS.get().and_then(|m| m.lock().unwrap().get(tid).copied())
+}
 
 pub fn discover_genomic_psvs(
     copies: &[&DenovoTranscript],
@@ -2109,12 +2119,24 @@ fn assign_family_detailed_once(
         // the LOCUS for the certificate is the unit's extent padded by the family's longest molecule: a read that
         // starts inside the unit can reach at most that far beyond it (LCR16u: 553 of 696 unit reads were rejected
         // for bases past the chain's ends, all at ~0.2 % divergence from the genome, §6fd). No constant.
+        // ⭐ L2: when the catalog carries the read-supported extent (`locus_start`/`locus_end`, written by
+        // `mcl_families`), THAT is the target — O1 owns the locus, O2 invents nothing. `read_star_catalog_locus =
+        // false` (`--read-star-pad-locus`) and catalogs without the columns keep the §6fd padding rule.
         let pad: u64 = reps.iter().map(|&i| reads[i].seq.len() as u64).max().unwrap_or(0);
+        let target_of = |c: &DenovoTranscript| -> (u64, u64) {
+            match locus_extent_of(&c.tid).filter(|_| p.read_star_catalog_locus) {
+                Some((a, b)) => (a.min(c.start), b.max(c.end)),
+                None => (c.start.saturating_sub(pad), c.end + pad),
+            }
+        };
         let genomic_spans: Option<Vec<Vec<u8>>> = if p.read_star_genomic {
             genome.and_then(|g| {
                 copies
                     .iter()
-                    .map(|c| g.fetch_sequence(&c.chrom, c.start.saturating_sub(pad), c.end + pad))
+                    .map(|c| {
+                        let (a, b) = target_of(c);
+                        g.fetch_sequence(&c.chrom, a, b)
+                    })
                     .collect::<Option<Vec<_>>>()
             })
         } else {

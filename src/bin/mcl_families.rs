@@ -207,6 +207,17 @@ struct Args {
     /// Escape hatch: the behaviour before 2026-09-05 (`--units-follow-reads` off).
     #[arg(long, default_value_t = false)]
     no_units_follow_reads: bool,
+    /// ⭐ L1 (`docs/O1_O2_LOOSE_ENDS.md`): emit cluster members DROPPED by the core rule (core = 0) as units too,
+    /// with `member_status = dropped`. Family membership is the flag; O2's candidate set is every locus of the
+    /// cluster — MCL clustered the locus by homology, so it competes for the family's reads whatever its core
+    /// status (NPIP's ABCC1-region records: 332 reads with no candidate, surfacing as a false "missing copy"
+    /// signal, §6fg). Default ON (2026-09-05).
+    #[arg(long, default_value_t = true)]
+    units_include_dropped: bool,
+    /// Escape hatch: the row set before L1 (dropped members are not units). Columns `member_status`,
+    /// `locus_start`, `locus_end` are still appended; the previous columns are byte-identical.
+    #[arg(long, default_value_t = false)]
+    no_units_include_dropped: bool,
 
     #[arg(long)]
     out: String,
@@ -323,6 +334,82 @@ fn blocks_and_introns(br: &rustle::vg_family::denovo_assemble::BamRead) -> (Vec<
     (blocks, introns)
 }
 
+/// The mis-chain rule shared by the chain and the extent (§6el; one shipped constant pair: 50 kb / `min_reads`):
+/// a record is split at every intron longer than `GIANT_BP` whose junction fewer than `min_reads` records
+/// support; the segment returned is the one with an aligned base in `[lo, hi)`, `None` if no segment has one.
+const GIANT_BP: u64 = 50_000;
+fn kept_segment(
+    blocks: &[(u64, u64)],
+    introns: &[(u64, u64)],
+    lo: u64,
+    hi: u64,
+    support: &BTreeMap<(u64, u64), usize>,
+    min_reads: usize,
+) -> Option<Vec<(u64, u64)>> {
+    let mut segs: Vec<Vec<(u64, u64)>> = vec![vec![*blocks.first()?]];
+    for (k, intr) in introns.iter().enumerate() {
+        if intr.1 - intr.0 > GIANT_BP && support.get(intr).copied().unwrap_or(0) < min_reads {
+            segs.push(Vec::new());
+        }
+        if k + 1 < blocks.len() {
+            segs.last_mut().unwrap().push(blocks[k + 1]);
+        }
+    }
+    segs.into_iter().find(|sg| sg.iter().any(|&(s, e)| e > lo && s < hi))
+}
+
+/// ⭐ L2: the read-supported EXTENT of a unit — the union, over every PRIMARY record (`-F 2308`, the project
+/// invariant) with an aligned block inside the unit's exon chain, of the record's kept segment under the
+/// mis-chain rule above. Two definitions were refuted on the way (3-contig, unit median 21 kb): every record's
+/// reference span gave a median extent of 548 kb (records spliced over the locus through giant introns), and
+/// every record's kept segment 142 kb (MAPQ-0 secondaries with 400–800 blocks hopping through a ZNF array).
+/// Primaries with a block in the chain are the molecules O2 aligns for this copy. This is O2's alignment
+/// target (`copies.tsv` `locus_start`/`locus_end`), replacing the padding rule O2 invented in §6fd. `None`
+/// when no primary record has a block in the chain.
+fn read_extent(reads: &[rustle::vg_family::denovo_assemble::BamRead], chain: &[(u64, u64)], min_reads: usize) -> Option<(u64, u64)> {
+    let (lo, hi) = (chain.first()?.0, chain.last()?.1);
+    let parsed: Vec<(Vec<(u64, u64)>, Vec<(u64, u64)>)> =
+        reads.iter().filter(|br| !br.is_supplementary && !br.is_secondary).map(blocks_and_introns).collect();
+    let mut support: BTreeMap<(u64, u64), usize> = BTreeMap::new();
+    for (_, introns) in &parsed {
+        for &i in introns {
+            *support.entry(i).or_insert(0) += 1;
+        }
+    }
+    parsed
+        .iter()
+        .filter_map(|(b, i)| kept_segment(b, i, lo, hi, &support, min_reads))
+        .filter(|sg| sg.iter().any(|&(bs, be)| chain.iter().any(|&(s, e)| be > s && bs < e)))
+        .map(|sg| (sg[0].0, sg.last().unwrap().1))
+        .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
+}
+
+/// ⭐ L2: a locus never contains another unit of its family. `units[i] = (chain start, chain end, extent)` on ONE
+/// contig; the extent is clipped to the nearest chain ends of the other units that lie entirely outside its own
+/// span (units overlapping the span — nested, interleaved — do not clip). Without this, in a tandem array a
+/// single read-through molecule extends copy 1's locus over copy 2's chain, a copy-2 read then aligns identically
+/// inside both targets and ties with zero decisive columns (MCL4: 226 assigned → tied, arm A0 of PREREG L1/L2).
+fn clip_extents_to_neighbours(units: &[(u64, u64, (u64, u64))]) -> Vec<(u64, u64)> {
+    units
+        .iter()
+        .enumerate()
+        .map(|(i, &(s, e, (a, b)))| {
+            let (mut lo, mut hi) = (a.min(s), b.max(e));
+            for (j, &(s2, e2, _)) in units.iter().enumerate() {
+                if j == i {
+                    continue;
+                }
+                if e2 <= s {
+                    lo = lo.max(e2);
+                } else if s2 >= e {
+                    hi = hi.min(s2);
+                }
+            }
+            (lo, hi)
+        })
+        .collect()
+}
+
 /// ⭐ The read-supported exon chain of one locus `[lo, hi)` (§6el rule; one shipped constant pair: 50 kb / 3).
 /// Returns `(blocks, strand, n_reads)`; `blocks` empty when fewer than `min_reads` reads or no base reaches it.
 fn read_chain(
@@ -332,7 +419,6 @@ fn read_chain(
     min_reads: usize,
     follow: Option<(u64, u64)>,
 ) -> (Vec<(u64, u64)>, Option<char>, usize) {
-    const GIANT_BP: u64 = 50_000;
     let parsed: Vec<_> = reads
         .iter()
         .filter(|br| !br.is_supplementary && !br.is_secondary)
@@ -369,16 +455,7 @@ fn read_chain(
     let mut kept: Vec<Option<Vec<(u64, u64)>>> = Vec::with_capacity(parsed.len());
     let mut strands: BTreeMap<char, usize> = BTreeMap::new();
     for (blocks, introns, strand) in &parsed {
-        let mut segs: Vec<Vec<(u64, u64)>> = vec![vec![blocks[0]]];
-        for (k, intr) in introns.iter().enumerate() {
-            if intr.1 - intr.0 > GIANT_BP && support.get(intr).copied().unwrap_or(0) < min_reads {
-                segs.push(Vec::new());
-            }
-            if k + 1 < blocks.len() {
-                segs.last_mut().unwrap().push(blocks[k + 1]);
-            }
-        }
-        kept.push(segs.into_iter().find(|sg| sg.iter().any(|&(s, e)| e > lo && s < hi)));
+        kept.push(kept_segment(blocks, introns, lo, hi, &support, min_reads));
         *strands.entry(*strand).or_insert(0) += 1;
     }
     // the coverage window: the locus window itself, or (units follow the reads, `follow = Some(bound)`) the
@@ -483,6 +560,9 @@ fn main() -> Result<()> {
     }
     if args.no_units_follow_reads {
         args.units_follow_reads = false;
+    }
+    if args.no_units_include_dropped {
+        args.units_include_dropped = false;
     }
     if args.bam.is_some() && args.fasta.is_some() && !args.no_emit_units {
         args.emit_units = true;
@@ -799,7 +879,13 @@ fn main() -> Result<()> {
         core_bp: String,
         nearest_col: String,
         rep_col: String,
+        /// L1: `kept_full` / `kept_trimmed` / `dropped` / `ungated` (the core rule's verdict on the member).
+        status: &'static str,
+        /// L2: the read-supported locus extent (0-based half-open) — the chain's extent unioned with the
+        /// reference span of every BAM record overlapping the locus region. O2's alignment target.
+        locus: (u64, u64),
     }
+    let mut units_dropped_emitted = 0usize;
     if args.emit_units {
         let bam = args.bam.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --bam"))?;
         let fasta = args.fasta.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --fasta"))?;
@@ -813,7 +899,7 @@ fn main() -> Result<()> {
         writeln!(um, "cluster_id\tmerged_unit_member\tinto_member")?;
         let mut uf = std::fs::File::create(format!("{}.units.fa", args.out))?;
         let mut ur = std::fs::File::create(format!("{}.units.regions", args.out))?;
-        writeln!(ut, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tsource\tcore_hull\tsd_depth\tcore_bp\tnearest_ident\trep_frac")?;
+        writeln!(ut, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tsource\tcore_hull\tsd_depth\tcore_bp\tnearest_ident\trep_frac\tmember_status\tlocus_start\tlocus_end")?;
         // curated repeats (optional --rmsk): per contig, sorted interspersed intervals
         let rmsk: BTreeMap<String, Vec<(u64, u64)>> = match &args.rmsk {
             Some(path) => {
@@ -867,10 +953,19 @@ fn main() -> Result<()> {
                     Some((a, b)) => format!("{}-{}", a.saturating_sub(1), b),
                     None => "NA".to_string(),
                 };
+                let status: &'static str = match core_records.get(i).and_then(|v| v.get(mi)).map(|r| r.status) {
+                    Some(CoreStatus::Dropped) => "dropped",
+                    Some(CoreStatus::KeptTrimmed) => "kept_trimmed",
+                    Some(_) => "kept_full",
+                    None => "ungated",
+                };
                 let (lo, hi) = match core_records.get(i).and_then(|v| v.get(mi)) {
                     Some(r) if r.status == CoreStatus::Dropped => {
-                        unit_stats.2 += 1;
-                        continue;
+                        if !args.units_include_dropped {
+                            unit_stats.2 += 1;
+                            continue;
+                        }
+                        (m.1.saturating_sub(1), m.2) // L1: a dropped member's locus is its annotated span
                     }
                     Some(r) if r.status == CoreStatus::KeptTrimmed => match r.hull {
                         Some((a, b)) => (a.saturating_sub(1), b),
@@ -948,6 +1043,16 @@ fn main() -> Result<()> {
                 });
                 let nearest_col = nearest.map(|v| format!("{v:.4}")).unwrap_or_else(|| "NA".into());
                 let rep_col = rep_frac(&m.0, &exons).map(|v| format!("{v:.3}")).unwrap_or_else(|| "NA".into());
+                let locus = {
+                    let (us, ue) = (exons[0].0, exons.last().unwrap().1);
+                    match read_extent(&reads, &exons, args.min_reads) {
+                        Some((a, b)) => (a.min(us), b.max(ue)),
+                        None => (us, ue),
+                    }
+                };
+                if status == "dropped" {
+                    units_dropped_emitted += 1;
+                }
                 pending.push(PendingUnit {
                     member: m.clone(),
                     exons,
@@ -960,6 +1065,8 @@ fn main() -> Result<()> {
                     core_bp,
                     nearest_col,
                     rep_col,
+                    status,
+                    locus,
                 });
             }
             // ⭐ Units of one family that share EXON bases are one locus (§6fb): the read-followed chain of a large
@@ -991,12 +1098,13 @@ fn main() -> Result<()> {
                         }
                     }
                 }
-                let exlen = |u: &PendingUnit| u.exons.iter().map(|(s, e)| e - s).sum::<u64>();
+                // representative = kept before dropped (L1), then the longest exon union
+                let rank = |u: &PendingUnit| (u.status != "dropped", u.exons.iter().map(|(s, e)| e - s).sum::<u64>());
                 let mut rep_of_root: BTreeMap<usize, usize> = BTreeMap::new();
                 for k in 0..n {
                     let r = find(&mut parent, k);
                     let e = rep_of_root.entry(r).or_insert(k);
-                    if exlen(&pending[k]) > exlen(&pending[*e]) {
+                    if rank(&pending[k]) > rank(&pending[*e]) {
                         *e = k;
                     }
                 }
@@ -1009,6 +1117,24 @@ fn main() -> Result<()> {
                     .collect()
             } else {
                 vec![None; pending.len()]
+            };
+            // L2: clip every emitted unit's extent to its family neighbours on the same contig
+            let clipped: Vec<(u64, u64)> = {
+                let mut by_ctg: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+                for (k, u) in pending.iter().enumerate() {
+                    if merged_into[k].is_none() {
+                        by_ctg.entry(u.member.0.as_str()).or_default().push(k);
+                    }
+                }
+                let mut out: Vec<(u64, u64)> = pending.iter().map(|u| u.locus).collect();
+                for ks in by_ctg.values() {
+                    let spans: Vec<(u64, u64, (u64, u64))> =
+                        ks.iter().map(|&k| (pending[k].exons[0].0, pending[k].exons.last().unwrap().1, pending[k].locus)).collect();
+                    for (k, c) in ks.iter().zip(clip_extents_to_neighbours(&spans)) {
+                        out[*k] = c;
+                    }
+                }
+                out
             };
             for (k, u) in pending.iter().enumerate() {
                 if let Some(rep) = merged_into[k] {
@@ -1026,13 +1152,13 @@ fn main() -> Result<()> {
                 let (m, exons, strand, source) = (&u.member, &u.exons, u.strand, u.source.as_str());
                 writeln!(
                     ut,
-                    "{fid}\t{idx}\tMCL_{}_{us}\t{}\t{us}\t{ue}\t{}\t{strand}\t{}\t{}\t{source}\t{}\t{}\t{}\t{}\t{}",
+                    "{fid}\t{idx}\tMCL_{}_{us}\t{}\t{us}\t{ue}\t{}\t{strand}\t{}\t{}\t{source}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                     m.0,
                     m.0,
                     exons.len(),
                     u.n_reads,
                     exons.iter().map(|(s, e)| format!("{s}-{e}")).collect::<Vec<_>>().join(","),
-                    u.hull_col, u.sd_depth, u.core_bp, u.nearest_col, u.rep_col
+                    u.hull_col, u.sd_depth, u.core_bp, u.nearest_col, u.rep_col, u.status, clipped[k].0, clipped[k].1
                 )?;
                 writeln!(uf, ">{fid}|{idx}|{}:{us}-{ue}|{strand}|nexon={}", m.0, exons.len())?;
                 uf.write_all(&u.seq)?;
@@ -1085,6 +1211,8 @@ fn main() -> Result<()> {
         ("exonic_both_sides".to_string(), args.exonic_both_sides.to_string()),
         ("merge_overlapping_units".to_string(), (args.merge_overlapping_units && !args.no_merge_overlapping_units).to_string()),
         ("units_merged".to_string(), unit_stats.3.to_string()),
+        ("units_include_dropped".to_string(), args.units_include_dropped.to_string()),
+        ("units_dropped_emitted".to_string(), units_dropped_emitted.to_string()),
         ("rmsk".to_string(), args.rmsk.clone().unwrap_or_else(|| "NA".into())),
         ("units_read_chain".to_string(), unit_stats.0.to_string()),
         ("units_gff_fallback".to_string(), unit_stats.1.to_string()),
@@ -1162,5 +1290,47 @@ mod tests {
         reads2[3].read.ref_start = 1150; // 1150-1200 (in window) N 1400-1450 (outside, 1 read)
         let (followed2, _, _) = read_chain(&reads2, 900, 1200, 3, Some((0, 2000)));
         assert_eq!(followed2, vec![(100, 200), (1000, 1100)]);
+    }
+
+    /// L2: a locus is clipped at the chain ends of its family neighbours, never inside its own span, and a
+    /// nested or interleaved unit does not clip.
+    #[test]
+    fn clip_extents_stop_at_the_neighbouring_units_of_the_family() {
+        let units = [(1000, 2000, (100, 5000)), (3000, 4000, (1500, 9000)), (1200, 1300, (900, 1400)), (8000, 8500, (7000, 9500))];
+        // unit 0 stops at unit 1's chain (3000); unit 1 starts at unit 0's chain end (2000) and stops at unit 3's
+        // start (8000); the nested unit 2 is not clipped by its host (they overlap) and stops at 3000 → 1400 is
+        // its own bound; unit 3's own extent (7000) is inside every bound
+        assert_eq!(clip_extents_to_neighbours(&units), vec![(100, 3000), (2000, 8000), (900, 1400), (7000, 9500)]);
+        assert_eq!(clip_extents_to_neighbours(&[(10, 20, (5, 50))]), vec![(5, 50)]);
+    }
+
+    /// L2: the extent spans the kept segment of every PRIMARY record with a block in the chain, through
+    /// ordinary introns; secondaries and supplementaries never count; a record spliced over the chain with no
+    /// block in it contributes nothing; a giant unsupported intron is cut (mis-chain rule).
+    #[test]
+    fn read_extent_is_the_union_of_kept_segments_of_primaries_with_a_block_in_the_chain() {
+        let chain = [(1000u64, 1100u64)];
+        assert_eq!(read_extent(&[], &chain, 3), None);
+        assert_eq!(read_extent(&[br(1000, &[('M', 100)])], &[], 3), None);
+        let mut reads = vec![br(1000, &[('M', 100)]), br(500, &[('M', 50), ('N', 3000), ('M', 20)])];
+        // intron 550-3550 spans the chain with no block in it: the first read alone counts
+        assert_eq!(read_extent(&reads, &chain, 3), Some((1000, 1100)));
+        // a primary WITH a block in the chain extends it through its 3-kb intron
+        reads[1].read.ref_start = 1050; // 1050-1100 N 4100-4120
+        assert_eq!(read_extent(&reads, &chain, 3), Some((1000, 4120)));
+        // ...but not when it is a secondary or a supplementary (-F 2308)
+        reads[1].is_secondary = true;
+        assert_eq!(read_extent(&reads, &chain, 3), Some((1000, 1100)));
+        reads[1].is_secondary = false;
+        let mut supp = br(900, &[('S', 40), ('M', 150)]);
+        supp.is_supplementary = true;
+        reads.push(supp);
+        assert_eq!(read_extent(&reads, &chain, 3), Some((1000, 4120)));
+        // a giant (> 50 kb) intron supported by one record is cut; the same intron in three records is kept
+        reads.push(br(1090, &[('M', 20), ('N', 80_000), ('M', 30)]));
+        assert_eq!(read_extent(&reads, &chain, 3), Some((1000, 4120)));
+        reads.push(br(1090, &[('M', 20), ('N', 80_000), ('M', 30)]));
+        reads.push(br(1090, &[('M', 20), ('N', 80_000), ('M', 30)]));
+        assert_eq!(read_extent(&reads, &chain, 3), Some((1000, 81_140)));
     }
 }

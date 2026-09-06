@@ -258,6 +258,10 @@ struct Args {
     /// Escape hatch: read-star against the spliced UNITS (§6fc), the default before 2026-09-05 §6fd.
     #[arg(long, default_value_t = false)]
     read_star_unit: bool,
+    /// Escape hatch (L2): ignore the catalog's `locus_start`/`locus_end` columns and pad each unit's extent by
+    /// the family's longest molecule (the §6fd rule). Without the columns both arms are byte-identical.
+    #[arg(long, default_value_t = false)]
+    read_star_pad_locus: bool,
     /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
     /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
     /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
@@ -1426,6 +1430,7 @@ fn main() -> Result<()> {
         origin_subst_only: args.origin_substitutions_only,
         read_star_junctions: args.read_star_junctions,
         read_star_genomic: args.read_star_genomic && !args.read_star_unit,
+        read_star_catalog_locus: !args.read_star_pad_locus,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
@@ -2676,6 +2681,7 @@ fn main() -> Result<()> {
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
         row("read_star_junctions", format!("{}", args.read_star_junctions))?;
         row("read_star_genomic", format!("{}", args.read_star_genomic && !args.read_star_unit))?;
+        row("read_star_catalog_locus", format!("{}", !args.read_star_pad_locus))?;
         row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;

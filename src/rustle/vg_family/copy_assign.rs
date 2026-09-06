@@ -240,6 +240,10 @@ pub struct AssignParams {
     /// (paired 35: 55.7 % assigned at 9,236/9,236 placement agreement, 0 wrong anchors); `false` = the spliced
     /// UNIT form of §6fc (32.1 % @ 99.90 %, ten times faster).
     pub read_star_genomic: bool,
+    /// ⭐ L2 (`docs/O1_O2_LOOSE_ENDS.md`): under the genomic read-star, align against the catalog's
+    /// read-supported locus extent (`locus_start`/`locus_end`) when the catalog carries it. `false` = the §6fd
+    /// padding rule (unit extent ± the family's longest molecule). Catalogs without the columns are unaffected.
+    pub read_star_catalog_locus: bool,
 }
 
 impl Default for AssignParams {
@@ -263,6 +267,7 @@ impl Default for AssignParams {
             origin_subst_only: false,
             read_star_junctions: false,
             read_star_genomic: true,
+            read_star_catalog_locus: true,
         }
     }
 }

@@ -12786,3 +12786,76 @@ now gets a row; a molecule that NO locus aligns is reported as `ambiguous`, `ori
 no other candidate cannot be tied to the family by O2 at all: they are O3's orphans (the excision script now
 labels them so) and the admission prototype (primaries outside every unit, `bench/o2_roster_admit.py`) is the
 instrument for them. Suite 857 / 0 / 11.
+
+## §6fh — L1 + L2: dropped members are O2 candidates; the locus extent is O1's (PREREG `docs/PREREG_loose_ends_L1_L2_2026-09-05.md`, md5 78181c4f) (2026-09-05)
+
+**Queue.** `docs/O1_O2_LOOSE_ENDS.md` lists the six O1 → O2 loose ends in order (L1 dropped members, L2 the node
+≠ the candidate, L3 single-candidate ties at `-p 0.3`, L4 abundance under read-star, L5 genome-wide regions, L6
+the read-level proof dump). This section closes L1 and L2.
+
+**L1.** `mcl_families` now emits every cluster member the core rule DROPPED (core = 0) as a unit with
+`member_status = dropped` (column 17; `kept_full` / `kept_trimmed` / `dropped` / `ungated`); family membership is
+the flag, O2's candidate set is the cluster's loci. `--no-units-include-dropped` = the previous row set. 3-contig:
+**17 dropped members emitted** (of 36; the other 19 have no chain, no exon or no read), among them the EIF3C
+member of the NPIP cluster (4,774 reads, identity 0.903), the 852-read LCR16u member, MCL4's two (412 + 101).
+Merged-unit representative = kept before dropped, then longest exon union (no change on the 3 contigs).
+
+**L2.** Columns 18–19 `locus_start` / `locus_end` (0-based half-open) = the read-supported extent: the union of
+the kept segments (mis-chain rule, 50 kb / `--min-reads`) of every PRIMARY record with an aligned block in the
+emitted chain, unioned with the chain, **clipped at the chain ends of the family's other units on the contig**
+(nested units do not clip). Two definitions refuted on the way (rows 713–714): every record's span (median 548
+kb), every record's kept segment (142 kb, MAPQ-0 secondaries with hundreds of blocks), and the unclipped form
+(MCL4: 226 assignments → K = 0 ties, a read-through molecule carried copy 1's target over copy 2's unit).
+Final: overhang median 1,039 bp left / 2,291 bp right, p90 39 / 50 kb, 177 of 366 units reach past the longest
+read (spliced reads), 65 flush against a neighbour; within-family target overlaps 43 pairs (pad rule 51), a target
+containing another unit only for the 7 nested pairs. `copy_assign` consumes the columns
+(`read_star_catalog_locus`, `--read-star-pad-locus` = the §6fd padding; catalogs without the columns
+byte-identical: `adj/l1l2/p1_old`). Catalog **`rna_units_v10`** (366 units; `v10n` = escape, columns 1–16 == v9).
+
+**Gate (P1).** `v10n` columns 1–16 == `rna_units_v9.units.tsv`, `units.fa` and `clusters.tsv` identical; the
+new binary on a v9-era sweep directory reproduces `sweep_v10` (MCL106) apart from the §6fg orphan rows.
+
+**Paired 35, same units (`sweep_v12` catalog locus vs `sweep_v11_pad` padding rule), 24,462 unit reads:**
+assigned **11,368 (46.5 %) vs 10,607 (43.4 %)**, tied 9,715 vs 9,666, ambiguous 3,379 vs 4,189, origin-rejected
+**4,327 vs 5,508**, MAPQ-60 placement agreement 10,857/10,858 vs 10,184/10,185, MAPQ<60 assigned 510 vs 422.
+NPIP 62 anchors: 16 assigned / 16 right / 0 wrong vs 11 / 11 / 0. MCL4 1,543 vs 1,443 at 1,543/1,543. P3 held
+(rejections fell, agreement 0.9999); the assigned gain exceeded the ± 1 point band in the good direction.
+
+**On the v9-unit reads (the §6fd denominator, 17,271 reads, `sweep_v10` → `sweep_v12`):** assigned **9,622
+(55.7 %) → 10,644 (61.6 %)**, tied 3,647 → 3,402, ambiguous 4,002 → 3,225, origin-rejected 4,735 → 3,550. NPIP
+412 → 332 rejected (P2's literal ≥ 100 missed, row 715), LCR16u 404 → 334, MCL4 390 → 367.
+
+**All 76 sweep families (`sweep_v12`):** 49,449 unit reads, assigned 17,726 (35.8 %), tied 26,882, ambiguous
+4,841, rejected 7,848, orphans 2; MAPQ-60 agreement 15,296/15,297; MAPQ<60 2,429/3,881 assigned. Reads at the
+13 dropped units: 7,532 — assigned 745 (all to the dropped unit itself, 0 stolen from a kept unit), **tied
+6,615**: the EIF3C member's 4,774 reads are single-candidate ties (no other chain at `-p 0.3`) — the reads with
+the most evidence against every NPIP copy carry the label of none. That is L3, pre-registered
+(`docs/PREREG_loose_end_L3_2026-09-05.md`) and run next.
+
+Scripts: `bench/o2_l1l2_score.py` (paired scoring incl. dropped-unit reads and the 62 anchors),
+`bench/o2_sweep_split.py` (passes the three columns through). Results: `adj/l1l2/score_*.txt`,
+`adj/l1l2/p2_v9truth_v10_vs_v12.txt`.
+
+## §6fi — L3: single-candidate ties under the pairwise rule (PREREG `docs/PREREG_loose_end_L3_2026-09-05.md`, md5 85ee0147) (2026-09-05)
+
+`RUSTLE_STAR_P=0` on `sweep_v12`'s NPIP and LCR16u, nothing else changed (`adj/l1l2/l3`).
+- **P1 held**: NPIP 62 anchors 15 assigned / 15 right / 0 wrong (arm A′ 16 / 16 / 0).
+- **P3 held**: MAPQ-60 placement agreement 786/787 (NPIP), 915/915 (LCR16u).
+- **P2 FAILED** (row 716): reads at the dropped EIF3C member assigned to it 77 → 433, not ≥ 4,000; **4,838
+  single-candidate ties remain, all at dropped units, 4,836/4,836 MAPQ-60 with the sole candidate = the
+  placement unit**. At `-p 0` every chain is reported, so these reads have NO alignment to any NPIP locus: the
+  tie label (§6fa: one candidate, no columns) is covering reads with exactly one possible origin in the family.
+  At `-p 0.3` the same class is 5,329 (NPIP) and 884 (LCR16u; 833 at the dropped member), 5,319/5,319 and
+  884/884 agreeing with the placement.
+- **P4 FAILED**: NPIP 97 s → 1,570 s (16×, RSS 3.2 GB; the 900 s driver timeout killed the first run);
+  LCR16u 42 → 201 s.
+- What `-p 0` did buy: NPIP assigned 610 → 980 (491 reads gained a competitor chain and the pairwise
+  certificate resolved them), LCR16u 331 → 944 at 915/915 — the reads at the dropped LCR16u member 32 → 615.
+
+**Not adopted** (P2, P4). Two things follow. (1) The label: a molecule whose origin certificate passes on its sole
+candidate, with no chain on any competitor, is not a tie in the sense of §6fa (K = 0 columns between two
+candidates) — it is the family's only possible origin for that read. Whether O2 reports it as `assigned` (with a
+`sole_candidate` mark so the two classes stay distinguishable) or keeps `tied` is a semantics decision for the
+user; the counts above are what it changes (NPIP 5,329 reads, all at MAPQ 60, all at the placement unit). (2)
+The `-p 0.3` floor is a measured operating point: it costs 491 NPIP and 613 LCR16u assignments that `-p 0`
+recovers correctly, at 16× the time; a middle value was not swept.

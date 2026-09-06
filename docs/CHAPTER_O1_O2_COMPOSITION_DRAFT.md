@@ -49,7 +49,7 @@ family (§6ec).
 ## 4. O2: assignment among exactly O1's units
 `copy_assign` consumes the unit table as its copy set — no detection, no re-derivation of the roster
 (§6da–§6er). Since §6fa–§6fd the read is the star: each molecule's sequence is aligned splice-aware to every
-candidate's locus (the unit's extent padded by the family's longest read), its columns are its own positions
+candidate's locus (the catalog's read-supported extent of the unit, §6fh: primaries with a block in the chain, cut at giant unsupported introns, clipped at the family's neighbouring units — O1 writes it, O2 aligns to it), its columns are its own positions
 where the candidates' genomic bases differ, and each competitor is certified against the
 best-aligned candidate on the columns both carry (`min_p < α/(n−1)`); a pair sharing no distinguishing column
 is a tie, a competitor not rejected is an abstention, and an origin certificate abstains when the read's substitutions, indels and unaligned bases

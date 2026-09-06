@@ -119,3 +119,12 @@ consistent-site detector points at the missing copy (7–100× controls); recove
 is LOCAL identity within sequencing error (NPIP 13 → 12 at 99.85 %: 38 % absorbed with a valid certificate). Open:
 (row 712 closed §6fg: `n_candidates` column, orphans reported); an O3 detector that runs the consistent-site test on every family's rejected
 reads and the admission prototype on the orphans; recovery needs enough reads on one candidate.
+
+## Loose ends L1–L3 (§6fh, §6fi, 2026-09-05)
+`docs/O1_O2_LOOSE_ENDS.md` is the ordered queue. L1 (dropped members are O2 candidates, `member_status`) and L2
+(the locus extent is O1's: `locus_start`/`locus_end`, primaries with a block in the chain, mis-chain rule,
+clipped at family neighbours; O2 aligns to it) are closed: canonical `rna_units_v10`, paired 35 on the same units
+46.5 % vs 43.4 % assigned with rejections 4,327 vs 5,508 at 0.9999 agreement. L3 measured, not adopted (`-p 0`:
+16× time; the single-candidate ties are reads with no chain to any competitor — label decision pending). Next in
+order: L4 (soft counts; orphan rows must not count toward copy 0), L5 (one region per locus, genome-wide O2),
+L6 (proof dump).
