@@ -340,6 +340,12 @@ built with `refine`, a default since removed, so the current binary reproduces n
 
 ### Q7. "Aren't the TSS/TES/UTR boundaries too convenient?"
 
+⭐ **Sizes, his own instrument (bipartite 1:1 matching, §6fs, 2026-09-06).** On the Soto slice the new node matches
+272 of 362 members with 78 % of pairs within 2× and a median ratio of 1.00 (old node: median 0.54, 104
+truncated); at NPIP the unit is the size of the LCR16a core (median 0.89) and the locus extent the size of the
+annotated gene (1.02). Size stays a measurement, never a filter: 73 % of Soto's own families are more than 2×
+size-heterogeneous.
+
 **The premise is false and that is measurable** (§6ay) — ⚠ but the coverage statistic used to
 answer it **was one-sided** until `cov_longer` was emitted (§6ba). Answer the question, then
 volunteer the flaw in the instrument that answered it.

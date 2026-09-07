@@ -13135,7 +13135,13 @@ precision 0.9987**. The 221 that remain are contested reads no candidate explain
 | equal best alignment scores | 34 | 1 | 1 | 18 | 15 | — |
 Sensitivity 0.701, specificity 1.000 on the anchors (0 wrong of 33 assigned), precision 1.000. The 270 abstentions
 are the contested reads the certificate rejects (190: read-throughs, divergence, the error constant — §6fp) or
-cannot separate. Simulation arm A rerun and arm B tables in §6fp/§6fq; paired 35 pending (P6).
+cannot separate.
+
+**P6, paired 35 under the final default (`sweep_v15` vs `sweep_v14`, same units, 24,462 unit reads):** assigned
+**23,749 (97.1 %)** vs 19,281 (78.8 %), K = 0 ties 83 vs 90, abstain 630 vs 5,091, MAPQ-60 placement agreement
+**23,248/23,248**, contested (MAPQ < 60) assigned 501 vs 509 of 1,213, NPIP anchors 33 right / 0 wrong (14 / 0).
+All 76 families: 48,012 of 49,449 (97.1 %) at 45,567/45,567; the 13 dropped units keep 7,471 of their 7,532
+reads. Over every output row: 7,988 placement assignments, 152,885 contested rows, 98,022 certificate reports.
 
 ## §6fr — TWO METRICS, NOT ONE: O1 over every locus (expressed or not), O2 over the reads the aligner could not place (user, 2026-09-06 16:47)
 
@@ -13179,3 +13185,24 @@ read the simulation produced, and every K = 0 tie contains the truth: the poster
 copy does an equal-score read most likely belong", the certificate is the answer to "may I claim it".** Row 724
 still holds beside it: this is the population where minimap2's own choice is a coin flip (18 of 39 right at
 MAPQ 0).
+
+## §6fs — BIPARTITE SIZE MATCHING ON THE NEW NODE (the advisor's 2026-07-28 instrument, rerun; user 2026-09-06 17:19)
+
+`bench/soto/bipartite_size_match.py` (Hungarian 1:1 on reciprocal overlap, containment ≥ 0.5; in-band = size
+ratio within 0.5–2×, per trap T4). Size is a MEASUREMENT, never a filter (real families are size-heterogeneous:
+73 % of Soto's own families would fail a uniformity constraint, `project_bipartite_size_matching`).
+| prediction | truth | matched | in-band (0.5–2×) | median ratio | over-extended ≥ 2× | truncated ≤ 0.5× | unmatched truth / pred |
+|---|---|---|---|---|---|---|---|
+| OLD node (07-28, E_r reps) | Soto 362 | 215 | — | **0.54** | 12 | **104** | — |
+| **MCL units (chain extents)** | Soto 362 | **272 (75 %)** | **211 (78 %)** | **1.00** (IQR 0.84–1.19) | 34 | 27 | 90 / 115 |
+| NPIP units (29) | 26 LCR16a loci | 24 (92 %) | 17 (71 %) | 0.89 | 2 | 5 | 2 / 5 (the 5 dropped members) |
+| NPIP locus extents | 26 LCR16a loci | 24 | 14 (58 %) | 1.42 | 9 | 1 | 2 / 5 |
+| NPIP units | annotated gene spans | 24 | 14 (58 %) | 0.60 | 0 | 10 | 2 / 5 |
+| NPIP locus extents | annotated gene spans | 24 | 18 (75 %) | 1.02 | 3 | 3 | 2 / 5 |
+**Reading.** The node switch fixed the size axis: truncation went from the dominant error (104 of 215) to a
+minority (27 of 272) and the median ratio from 0.54 to 1.00 on the advisor's benchmark. At NPIP the unit (the
+read-supported chain) matches the LCR16a core's size (median 0.89) and undershoots the annotated gene span
+(0.60: the chain is the expressed part of the model); the locus extent (O2's target) matches the gene span
+(1.02) and overshoots the core (1.42: it is the core plus the read-supported flank). Both objects are the size
+they are meant to be; quote the pair, not one. The 5 unmatched predictions are the dropped members (no core
+by definition), the 2 unmatched truths the unexpressed member and the 22 %-core locus (§6fr).

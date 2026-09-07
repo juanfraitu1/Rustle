@@ -67,4 +67,4 @@ default for the shipped table; the machinery-only arm B numbers stand as reporte
 Arm B under the shipped default (two-form certificate, contested-only machinery, certified-first placement):
 overall 95.5 % right / 0.12 % wrong / precision 0.9987; contested 84.0 % / 0 wrong; MAPQ 0: 16 right, 0 wrong,
 23 K = 0 ties; unique 99.8 % / 6 wrong (the placement's residue). Posterior metric (§6fr): truth in the tie set
-for 100 % of the contested reads, top-1 for 98.3 %, uncertified pairs 197/197. P6 (paired 35) pending.
+for 100 % of the contested reads, top-1 for 98.3 %, uncertified pairs 197/197. P6 held: paired 35 assigned 78.8 % → 97.1 % at 23,248/23,248 agreement (§6fq).
