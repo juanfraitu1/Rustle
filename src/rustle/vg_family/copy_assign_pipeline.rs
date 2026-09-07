@@ -589,7 +589,53 @@ pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bou
     let mut out: Vec<ReadStarObs> =
         (0..read_seqs.len()).map(|_| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).collect();
     read_star_stream(copy_seqs, read_seqs, preset, windows, |ri, per_copy, per_pos, edits| {
-        let (obs, profiles, cols) = read_star_columns(read_seqs[ri], per_copy);
+        out[ri] = build_star_obs(read_seqs[ri], per_copy, per_pos, edits, copy_bounds);
+    });
+    out
+}
+
+/// One molecule's raw read-star hits: per copy the aligned base per read position, the copy offset per read
+/// position, and the edit tuple `(n_x, n_aligned, nm, blk, n_i, n_d, unaligned)`.
+pub type StarRaw = (Vec<Option<Vec<Option<u8>>>>, Vec<Option<Vec<Option<u32>>>>, Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>>);
+
+/// The raw hits of every molecule (owned), one minimap2 run.
+pub fn read_star_raw(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], preset: &str, windows: &[Option<(usize, usize)>]) -> Vec<StarRaw> {
+    let nc = copy_seqs.len();
+    let mut out: Vec<StarRaw> = (0..read_seqs.len()).map(|_| (vec![None; nc], vec![None; nc], vec![None; nc])).collect();
+    read_star_stream(copy_seqs, read_seqs, preset, windows, |ri, per_copy, per_pos, edits| {
+        out[ri] = (per_copy.to_vec(), per_pos.to_vec(), edits.to_vec());
+    });
+    out
+}
+
+/// ⭐ §6fp: a candidate explains a molecule by the BETTER of its two forms — its genomic locus (splice-aware) or
+/// its expressed chain (the spliced unit). Per copy the form with fewer edits (X + I + D + unaligned) is kept,
+/// and it supplies that copy's bases at the read's positions. The exact sequence of NPIP unit 17 aligned to its
+/// own locus with `-x splice` carried 814 inserted bases (an exon the splice mode leaves unspliced) and 0 against
+/// its unit: the genomic form alone rejected true reads at units 10, 12, 17, 25.
+pub fn merge_star_raw(g: StarRaw, u: StarRaw) -> StarRaw {
+    let (mut pc, mut pp, mut ed) = g;
+    let (upc, upp, ued) = u;
+    let cost = |e: &Option<(u64, u64, u64, u64, u64, u64, u64)>| e.map(|(x, _, _, _, i, d, un)| x + i + d + un);
+    for c in 0..pc.len().min(upc.len()) {
+        let take_u = match (cost(&ed[c]), cost(&ued[c])) {
+            (None, Some(_)) => true,
+            (Some(a), Some(b)) => b < a,
+            _ => false,
+        };
+        if take_u {
+            pc[c] = upc[c].clone();
+            pp[c] = upp[c].clone();
+            ed[c] = ued[c];
+        }
+    }
+    (pc, pp, ed)
+}
+
+/// Columns, profiles, junction positions and covered intervals of one molecule from its raw hits.
+pub fn build_star_obs(read: &[u8], per_copy: &[Option<Vec<Option<u8>>>], per_pos: &[Option<Vec<Option<u32>>>], edits: &[Option<(u64, u64, u64, u64, u64, u64, u64)>], copy_bounds: &[Vec<u32>]) -> ReadStarObs {
+    {
+        let (obs, profiles, cols) = read_star_columns(read, per_copy);
         let cand: Vec<usize> = per_copy.iter().enumerate().filter(|(_, h)| h.is_some()).map(|(i, _)| i).collect();
         // every column stays; a candidate with no base at a column is `None` there and the PAIRWISE certificate
         // (§6fc) scores each pair on the columns both carry — no intersection over all candidates (that rule made
@@ -623,9 +669,8 @@ pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bou
                 iv
             })
             .collect();
-        out[ri] = (cand, obs, prof2, edits.to_vec(), covered, cols);
-    });
-    out
+        (cand, obs, prof2, edits.to_vec(), covered, cols)
+    }
 }
 
 /// Shared driver: runs minimap2 (all copies as targets, all molecules as queries, every hit kept) and calls
@@ -2195,7 +2240,23 @@ fn assign_family_detailed_once(
         } else {
             Vec::new()
         };
-        let alns = read_star_observations(&copy_seqs, &read_seqs, if genomic_spans.is_some() { &[] } else { &copy_bounds }, preset, &windows);
+        let alns: Vec<ReadStarObs> = if genomic_spans.is_some() && p.read_star_two_form {
+            // ⭐ §6fp: both forms, the better one per (molecule, candidate)
+            let unit_seqs: Vec<&[u8]> = copies.iter().map(|c| c.seq.as_slice()).collect();
+            let raw_g = read_star_raw(&copy_seqs, &read_seqs, preset, &windows);
+            let raw_u = read_star_raw(&unit_seqs, &read_seqs, "map-hifi", &[]);
+            raw_g
+                .into_iter()
+                .zip(raw_u)
+                .enumerate()
+                .map(|(ri, (g, u))| {
+                    let (pc, pp, ed) = merge_star_raw(g, u);
+                    build_star_obs(read_seqs[ri], &pc, &pp, &ed, &[])
+                })
+                .collect()
+        } else {
+            read_star_observations(&copy_seqs, &read_seqs, if genomic_spans.is_some() { &[] } else { &copy_bounds }, preset, &windows)
+        };
         if timing {
             eprintln!("[timing]     read-star minimap2 ({} molecules x {} copies): {:.1}s", reps.len(), copies.len(), t_star.elapsed().as_secs_f64());
         }

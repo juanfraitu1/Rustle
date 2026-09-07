@@ -351,6 +351,26 @@ the shipped per-read gate **is** the optimum and no joint estimator can beat it.
 is entailed, not chosen.** Empirically the EM changes **zero** of the gate's decisions on reads
 that carry evidence.
 
+⭐⭐ **Two metrics (2026-09-06, §6fr).** O1: of the 26 LCR16a copies in the three contigs (the family's cores aligned
+back to the assembly at ≥ 90 %, expressed or not), 25 are family members, 24 have units, 0 are unannotated or in
+another family; the one member without a unit has a single read. O2, on the reads the aligner could not place
+(known-origin simulation): the true copy is in the posterior's tie set for 100 % of 1,380 contested reads and is
+its unique maximum for 98.3 %; for the 197 reads with evidence below the certificate's α the most likely copy is
+the right one 197 times; K = 0 ties hold the truth in a set of two at P = 0.5 each. The posterior answers "which
+copy", the certificate answers "may I claim it".
+
+⭐⭐ **One sensitivity, one specificity for NPIP (2026-09-06, §6fp–§6fq; PREREG npip_known_origin).** The machinery
+decides the contested reads (MAPQ < 60); an uncontested read keeps its certified call or takes its placement.
+Reads of known origin (5,000 simulated from the 25 NPIP units at the substrate's own error rate): **95.5 %
+right, 0.12 % wrong, precision 0.9987**; the contested subcategory (1,382 reads) 84.0 % right, 0 wrong; the
+equal-best-score reads (39 at MAPQ 0) 16 right, 0 wrong, 23 K = 0 ties against minimap2's 46 % / 54 % coin flip;
+minimap2 alone 92.3 % right / 7.6 % wrong. Real NPIP, 1,000 unit reads of the 25 kept members: **701 assigned
+(70.1 %), 29 K = 0 ties, 270 abstain; the 62 audited anchors 33 right / 0 wrong / 29 abstain** (contested
+anchors 5 / 0 / 28). What abstains on real data is decomposed, not hidden: read-throughs the catalog has no
+object for (71), divergence above 1 % (51, O3's material), the certificate's 0.3 % constant (43). Row 724: MAPQ
+60 is not proof of origin (4 % of simulated MAPQ-60 reads sit at the wrong copy; the certificate corrects 139
+of 145), which is why the certified call comes first.
+
 ⭐ **O2's population is the reads minimap2 cannot place; quote it on those first (2026-09-06).** NPIP-proper
 (`sweep_v14`, the 25 kept members): 1,000 unit reads, **472 (47 %) below MAPQ 60**, 34 at MAPQ 0. On the 472:
 assigned 182 (38.6 %; 181 certified against 2–7 competitors), of which **16 to a different copy than minimap2's

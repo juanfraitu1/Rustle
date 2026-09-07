@@ -13060,3 +13060,122 @@ published SD instrument (the corroboration Q2 needs) and it sees intergenic cont
 is the self-contained fallback for a substrate without an SD call. A depth rule on the PAF pairs at SEDEF's
 criterion (≥ 0.90 identity, ≥ 1 kb) was not run — it is the obvious next comparison if the fallback is ever the
 default.
+
+## §6fp — ONE SENSITIVITY, ONE SPECIFICITY FOR NPIP: reads of known origin, the two-form certificate, and what still abstains (PREREG `docs/PREREG_npip_known_origin_2026-09-06.md`, md5 c98df4cc + two amendments) (2026-09-06)
+
+**The question restated (user, 15:05).** O2 is for the reads minimap2 cannot place; the unique-mapper agreement
+is a sanity check, not a result. One table over every read, with the same-alignment-score reads as the
+subcategory in which the assignment must earn its keep. Truth for every read exists only in a simulation from
+the real loci; the 62 audited anchors are the reality check. `bench/npip_sim.py`: 200 reads per NPIP unit on
+073242 (25 units with reads ≥ 300 bp, 5,000 reads) from the catalog's own spliced sequences, the substrate's
+minimap2 line, `copy_assign` defaults, scored by name. Definitions: sensitivity = right / all, specificity =
+1 − wrong / all, precision = right / (right + wrong); the baseline is minimap2's primary placement.
+
+**Arm A (0.46 % edits per base, the existing simulator), §6fd certificate:** overall O2 right 35.2 %, wrong 6
+(precision 0.9966, specificity 0.9988), 3,233 abstain; baseline 91.9 % right / 8.0 % wrong. Subcategory MAPQ < 60
+(1,424 reads = 28 %): O2 25.6 % right / 3 wrong; baseline 82.4 % / 17.2 %. MAPQ 0 (38): O2 1 right / 0 wrong,
+baseline 47 % / 53 % (a coin flip). Precision held (P1), sensitivity did not: 3,221 of the abstentions were
+certificate rejections, 93 % of the longest quartile, and units 3, 10, 11, 12, 17 had 0 right.
+
+**Why (two causes, one fixed).** (i) The exact, error-free sequence of a unit aligned to its own locus extent
+with the read-star's `-x splice` line carries hundreds of INSERTED bases — unit 3 954, unit 14 528, unit 17 814 —
+an exon the splice mode leaves unspliced; against the spliced unit with `map-hifi` each is 0/0/0/0. ⭐ Fix: a
+candidate explains a molecule by the better of its two forms, locus (splice-aware) or expressed chain (spliced
+unit); per (molecule, candidate) the alignment with fewer edits is used for the origin certificate and supplies
+that candidate's bases at the read's positions (`read_star_two_form`, default on; `--read-star-genomic-only`
+byte-identical on MCL106; +34 % time on NPIP: 97 → 130 s). **Arm A rerun (P5 held):** O2 right **72.5 %, wrong
+0 of 3,624 (precision 1.0000, specificity 1.0000)**, 1,357 abstain, 19 K = 0 ties; MAPQ < 60: **68.6 % right, 0
+wrong** (baseline 82.4 / 17.2); MAPQ 0: **17 right, 0 wrong, 19 ties** (baseline 18 right / 20 wrong); equal
+best scores (30 reads): 9 right, 0 wrong, 19 ties. Units 3, 11, 12, 17: 0 → 137, 123, 179, 144 right. (ii) The
+simulator's 0.46 % edits per base is harsher than the substrate (real NPIP unique reads: median 2.1 edits/kb at
+their placement, p75 5.9, p90 23.7) — arm B at 0.21 % is the number at the real error rate (below).
+
+**Real data, P4 failed (row 722).** The two-form certificate changes nothing on real NPIP (unit 12 0/9, 17
+21/34, 2 38/60 assigned/rejected; 0 reads move between units). The 188 rejected NPIP-proper unique reads are:
+**71 whose alignment runs past the clipped locus extent, 51 with > 1 % edits at the genome (a haplotype or a
+copy — O3's material), 43 at 0.3–1 % (the certificate's fixed 0.003 null), 16 with exons outside the chain,
+7 clean-at-genome alignment artefacts.** The 71 (row 723): **48 real read-throughs** (canonical splice sites,
+intron shared by ≥ 3 molecules, landing in another catalog unit; 40 = NPIP unit 2 → MCL27:0 through one 15-kb
+intron), 15 chaining artefacts (giant or unsupported introns, several non-canonical), 8 terminal exons the
+cross-family clip cuts through. Objects the catalog lacks, in order of yield: a conjoined read-through candidate
+(`member_status = readthrough`, emitted when ≥ 3 molecules join two chains through one canonical intron), the
+O1 mis-chain cut applied to the molecule before certification, the cross-family exon overlap (a special case
+since 14:34). Not built; pending the user's decision.
+
+**Real NPIP, contested population (`sweep_v14`, the 25 kept members):** 1,000 unit reads, 472 (47 %) below
+MAPQ 60, 34 at MAPQ 0. On the 472: assigned 182 (38.6 %; 181 certified against 2–7 competitors, 16 to a copy
+other than minimap2's primary), K = 0 ties 25, abstain 265 (190 because no candidate explains the read). Truth =
+the 33 audited anchors below MAPQ 60: **5 assigned, 5 right, 0 wrong, 28 abstain**. MAPQ 0: 1 assigned, 19 ties.
+
+## §6fq — THE MACHINERY IS FOR THE CONTESTED READS; ONE TABLE OVER EVERY READ (user, 2026-09-06 16:16)
+
+**The rule.** The certificate machinery decides the CONTESTED molecules (primary MAPQ < 60, the ones the aligner
+could not place); an uncontested molecule is assigned — by its certified call when the machinery has one, else
+by its placement (the copy its primary's blocks overlap most). The certificate is still computed for every
+molecule and reported (`origin_rejected`), never applied as a gate to an uncontested one. New column 19
+`contested`; `sole_candidate` now requires `contested`; `params.tsv` `placement_assign`, `placement_assigned`,
+`placement_first`, `contested_rows`. Escapes: `--no-placement-assign` (the machinery on every read, byte-identical
+to `sweep_v14` on MCL106 with `--read-star-genomic-only`), `--placement-first` (the placement overrides the
+certified call). ⚠ The first cut used the read-star REPRESENTATIVE record's blocks for the placement — a
+secondary at another copy for a multimapper — and sent 29 of 29 uncontested anchors to the wrong copy; the
+placement is the molecule's highest-MAPQ record. Two runs of the same binary are byte-identical on NPIP.
+
+**Why certified-first (row 724).** Simulation arm B (reads of known origin at the real 0.21 % error rate):
+minimap2 places 145 of 3,618 MAPQ-60 reads at the wrong copy (4.0 %); the machinery corrects 139 of them and
+abstains on 6. Over all 5,000 reads: machinery alone 93.5 % right / 0 wrong / 326 abstain; pure placement
+92.7 % / 145 wrong; **certified-first + placement fallback 95.5 % right / 6 wrong (0.12 %) / 221 abstain,
+precision 0.9987**. The 221 that remain are contested reads no candidate explains or single-column pairs.
+
+**NPIP, real data, one table (`adj/6fq/fam_MCL1_073242`, the 25 kept members, 1,000 unit reads):**
+| population | reads | assigned | corrected off the placement | K = 0 ties | abstain | anchors right / wrong |
+|---|---|---|---|---|---|---|
+| all | 1,000 | 701 (70.1 %) | 10 | 29 | 270 | 33 / 0 of 62 (29 abstain) |
+| contested (MAPQ < 60) | 472 | 174 (36.9 %) | 10 | 29 | 269 | 5 / 0 of 33 (28 abstain) |
+| uncontested (MAPQ 60) | 528 | 527 (99.8 %) | 0 | 0 | 1 | 28 / 0 of 29 |
+| equal best alignment scores | 34 | 1 | 1 | 18 | 15 | — |
+Sensitivity 0.701, specificity 1.000 on the anchors (0 wrong of 33 assigned), precision 1.000. The 270 abstentions
+are the contested reads the certificate rejects (190: read-throughs, divergence, the error constant — §6fp) or
+cannot separate. Simulation arm A rerun and arm B tables in §6fp/§6fq; paired 35 pending (P6).
+
+## §6fr — TWO METRICS, NOT ONE: O1 over every locus (expressed or not), O2 over the reads the aligner could not place (user, 2026-09-06 16:47)
+
+**O1 locus metric for NPIP (`adj/o1loci/npip_loci.tsv`).** Truth = every LCR16a copy in the three contigs,
+expressed or not: the 24 kept members' SEDEF core hulls aligned to the assembly (`minimap2 -x asm20 -N 200
+-p 0`), hits at ≥ 90 % identity and ≥ 1 kb merged within 5 kb → **26 LCR16a loci**. Of these: **24 are kept
+members with a unit; 25 of 26 are family members** (the 25th, NC_073242.2:29,864,793, carries the full 22.5-kb
+core, is `kept_full` in `cores.tsv`, and has ONE primary read — no chain at `--min-reads 3`, so no unit: the
+unexpressed copy O1 holds as a member and O2 never sees); the 26th (28,301,414) carries 22 % of the core and is a
+dropped member. **0 unannotated, 0 in another family.** Recall as members 25/26, as units 24/26; precision
+25/25 (every kept member has a ≥ 90 % core hit by construction — the truth is the definition's own object, say
+so). 23 of the 26 loci have ≥ 3 primary reads, all 23 among the kept units. ⚠ This truth is derived from the
+family's own cores; the human-annotation relation (17 NPIPB, 3 A2+B13, 9 chimeras, §6ew) is the independent
+label set, and it agrees on the count.
+
+**O2 metric for the ambiguous reads (`bench/o2_tied_metric.py`, `copy_assign --posterior`).** The question is
+not "assigned or not" but "to which copy does an equal-score read most likely belong". The per-molecule
+posterior (the pairwise softmax) answers it, and it is reported for every class, with the meaning of each:
+- K = 0 ties: posterior split over the tie set (real NPIP: 35 reads, max 0.500, tie-set size 2) — the copies
+  are the same at every base the read covers; the tie set IS the answer.
+- Uncertified pairs (evidence present, below α): real NPIP 79 reads, **max posterior median 0.999, 78 of 79
+  ≥ 0.9** — the most likely copy is clear, the certificate withholds the claim; this is the class the posterior
+  was built for.
+- Certificate-rejected (no candidate explains the read): 585 reads, max posterior 0.999 for 311 — the posterior
+  names the candidate the read is CLOSEST to (the Y of the O3 flag pass), never an origin.
+- Assigned: 206, max posterior 1.000.
+Equal best alignment scores (as_margin 0): 69 reads, max posterior median 0.500 (31 ≥ 0.9).
+
+**On reads of known origin (simulation arm B under the shipped default, `adj/npip_sim4`, `adj/6fq/tied_metric_sim.txt`):**
+| class | reads | truth in the tie set | top-1 = truth | max posterior |
+|---|---|---|---|---|
+| contested (MAPQ < 60), all | 1,380 | 1,380 (100 %) | 1,357 (98.3 %) | median 1.000 |
+| equal best alignment scores | 31 | 31 (100 %) | 8 (25.8 %) | median 0.500 |
+| MAPQ 0 | 39 | 39 (100 %) | 16 (41.0 %) | median 0.500 |
+| K = 0 ties | 23 | 23 (100 %) | 0 (a pair each) | 0.500, tie set of 2 |
+| uncertified pairs | 197 | 197 (100 %) | 197 (100 %) | median 0.999 |
+| assigned | 1,159 | 1,159 | 1,159 | 1.000 |
+Calibration: reads at max posterior 0.5 hold the truth in a tie set of 2 (P = 0.5 each, exactly), reads at
+≥ 0.9 hold it as the unique maximum (P = 1.0). **The most likely copy is the right copy for every uncertified
+read the simulation produced, and every K = 0 tie contains the truth: the posterior is the answer to "to which
+copy does an equal-score read most likely belong", the certificate is the answer to "may I claim it".** Row 724
+still holds beside it: this is the population where minimap2's own choice is a coin flip (18 of 39 right at
+MAPQ 0).

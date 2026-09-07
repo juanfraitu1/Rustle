@@ -274,6 +274,18 @@ struct Args {
     /// candidate's unit inside the target (the §6fd behaviour).
     #[arg(long, default_value_t = false)]
     no_read_star_hit_in_unit: bool,
+    /// Escape hatch (§6fp): certify against the genomic locus alone (the §6fd form) instead of the better of
+    /// locus and expressed chain per candidate.
+    #[arg(long, default_value_t = false)]
+    read_star_genomic_only: bool,
+    /// Escape hatch (§6fq): do NOT assign uncontested molecules (primary MAPQ ≥ 60) to their placement; run the
+    /// certificate machinery on every molecule as before.
+    #[arg(long, default_value_t = false)]
+    no_placement_assign: bool,
+    /// §6fq variant: the placement OVERRIDES the machinery's certified call on uncontested molecules (the pure
+    /// "any assembler would" rule). Default is certified-first with the placement as the fallback.
+    #[arg(long, default_value_t = false)]
+    placement_first: bool,
     /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
     /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
     /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
@@ -1231,6 +1243,9 @@ struct AssignRow {
     /// The read has an aligned BASE inside a copy of its family (§6es hygiene): rows with `false` are reads
     /// gathered from the copies' neighbourhoods that overlap no copy; report O2 on `in_copy == true`.
     in_copy: bool,
+    /// §6fq: the molecule's primary MAPQ < 60 — the aligner could not place it; the certificate machinery
+    /// decided this row. `false` = assigned to its placement (the certificate only reported).
+    contested: bool,
     /// The catalog `copy_idx` of `assigned_copy` under `--families` (copy_assign SORTS copies and reports its
     /// own index; `family_join.tsv` carries the same map). `NA` without a catalog.
     catalog_copy_idx: String,
@@ -1449,10 +1464,12 @@ fn main() -> Result<()> {
         sole_candidate: !args.no_sole_candidate,
         dump_star: args.dump_star,
         read_star_hit_in_unit: !args.no_read_star_hit_in_unit,
+        read_star_two_form: !args.read_star_genomic_only,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
     let mut family_rows: Vec<FamilyRow> = Vec::new();
+    let mut placement_assigned_total = 0usize; // §6fq: uncontested molecules assigned to their placement
     let mut assign_rows: Vec<AssignRow> = Vec::new();
     let mut posterior_lines: Vec<String> = Vec::new();
     // EM-abundance prior for the posterior (else uniform).
@@ -1793,6 +1810,67 @@ fn main() -> Result<()> {
                 }
                 m
             };
+            // ⭐ §6fq (user, 2026-09-06): the certificate machinery is for the CONTESTED molecules — the ones the
+            // aligner could not place (primary MAPQ < 60). An uncontested molecule is assigned to its placement
+            // (the copy its primary's blocks overlap most), as any assembler would use it; the certificate is
+            // still computed for it and reported (`origin_rejected`), never applied. One sensitivity over every
+            // read; abstention only among the contested. `--no-placement-assign` = the machinery on every read.
+            let placement_assign = args.molecule_observations && !args.no_molecule_observations && !args.no_placement_assign;
+            let mut placement_assigned = 0usize;
+            let mut fams = fams;
+            // the molecule's PRIMARY record (its highest-MAPQ record): the row's `ri` is the read-star
+            // representative, which can be a secondary record at another copy
+            let mol_primary: std::collections::HashMap<&str, usize> = {
+                let mut m: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+                for (i, n) in bam_reads.iter().enumerate() {
+                    let e = m.entry(n.as_str()).or_insert(i);
+                    if read_mapqs[i] > read_mapqs[*e] {
+                        *e = i;
+                    }
+                }
+                m
+            };
+            if placement_assign {
+                for fa in fams.iter_mut() {
+                    for (ri, a) in fa.assignments.iter_mut() {
+                        let mq = mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]);
+                        if mq < 60 {
+                            continue;
+                        }
+                        // certified first: a molecule the machinery already assigned keeps that call (it can
+                        // correct a placement: 4 % of MAPQ-60 simulated reads sit at the wrong copy, §6fq);
+                        // the placement is the fallback when the machinery abstains or ties
+                        if !args.placement_first && a.status == rustle::vg_family::copy_assign::AssignStatus::Assigned {
+                            continue;
+                        }
+                        let pri = mol_primary.get(bam_reads[*ri].as_str()).copied().unwrap_or(*ri);
+                        let Some(bl) = read_blocks.get(pri) else { continue };
+                        let mut best: Option<(usize, u64)> = None;
+                        for (ci, (c, s0, e0)) in fa.copy_spans.iter().enumerate() {
+                            if c != contig {
+                                continue;
+                            }
+                            let o: u64 = bl.iter().map(|&(bs, be)| be.min(*e0).saturating_sub(bs.max(*s0))).sum();
+                            if o > 0 && best.map_or(true, |(_, bo)| o > bo) {
+                                best = Some((ci, o));
+                            }
+                        }
+                        let Some((pc, _)) = best else { continue };
+                        if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() && placement_assigned < 5 {
+                            eprintln!("[placement] read {} mapq {mq} blocks {:?} -> copy {pc} span {:?} (was best_copy {} status {:?}); spans {:?}", bam_reads[*ri], &bl[..bl.len().min(3)], fa.copy_spans.get(pc), a.best_copy, a.status, &fa.copy_spans[..fa.copy_spans.len().min(3)]);
+                        }
+                        a.status = rustle::vg_family::copy_assign::AssignStatus::Assigned;
+                        a.best_copy = pc;
+                        a.resolvable = true;
+                        let mut one = vec![0.0f64; fa.copy_spans.len()];
+                        one[pc] = 1.0;
+                        a.posterior = one;
+                        placement_assigned += 1;
+                    }
+                }
+            }
+            placement_assigned_total += placement_assigned;
+            let fams = fams;
             // --gtf: gene_tid (a copy's own locus) -> (family id, copy index), filled as fids are assigned below.
             let mut copy_gene: std::collections::HashMap<String, (String, usize)> = std::collections::HashMap::new();
             for (fwork, fa) in fams.iter().enumerate() {
@@ -1831,6 +1909,7 @@ fn main() -> Result<()> {
                         origin_rejected: a.origin_rejected,
                         n_candidates: a.n_candidates,
                         in_copy,
+                        contested: mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]) < 60,
                         catalog_copy_idx: cat_idx_of(a.best_copy),
                     });
                 }
@@ -2193,16 +2272,17 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate")?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested")?;
     for r in &assign_rows {
-        // L3: an assigned molecule with exactly one candidate is a sole candidate (§6fi); no other path assigns one
-        let sole = (r.status == "assigned" && r.n_candidates == 1) as u8;
+        // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
+        // one is assigned to its placement (§6fq) whatever its candidate count
+        let sole = (r.status == "assigned" && r.n_candidates == 1 && r.contested) as u8;
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8
         )?;
     }
     {
@@ -2733,9 +2813,14 @@ fn main() -> Result<()> {
         row("read_star_genomic", format!("{}", args.read_star_genomic && !args.read_star_unit))?;
         row("read_star_catalog_locus", format!("{}", !args.read_star_pad_locus))?;
         row("sole_candidate", format!("{}", !args.no_sole_candidate))?;
-        row("sole_candidates", format!("{}", assign_rows.iter().filter(|r| r.status == "assigned" && r.n_candidates == 1).count()))?;
+        row("sole_candidates", format!("{}", assign_rows.iter().filter(|r| r.status == "assigned" && r.n_candidates == 1 && r.contested).count()))?;
+        row("placement_assign", format!("{}", args.molecule_observations && !args.no_molecule_observations && !args.no_placement_assign))?;
+        row("placement_assigned", format!("{}", placement_assigned_total))?;
+        row("placement_first", format!("{}", args.placement_first))?;
+        row("contested_rows", format!("{}", assign_rows.iter().filter(|r| r.contested).count()))?;
         row("dump_star", format!("{}", args.dump_star))?;
         row("read_star_hit_in_unit", format!("{}", !args.no_read_star_hit_in_unit))?;
+        row("read_star_two_form", format!("{}", !args.read_star_genomic_only))?;
         row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;

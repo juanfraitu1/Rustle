@@ -257,6 +257,11 @@ pub struct AssignParams {
     /// loci; without this, reads of those loci aligned perfectly inside MCL1971's 951-kb target and were
     /// accepted as its sole candidates at 3 % divergence from its own unit. `false` = every hit counts (§6fd).
     pub read_star_hit_in_unit: bool,
+    /// ⭐ §6fp: under the genomic read-star a candidate explains a molecule by the better of its two forms —
+    /// locus (splice-aware) or expressed chain (spliced unit) — per (molecule, candidate) the alignment with
+    /// fewer edits. `false` = the locus alone (§6fd), which rejected true reads at units whose exons the splice
+    /// mode leaves unspliced (NPIP 17: 814 inserted bases on its own exact sequence).
+    pub read_star_two_form: bool,
 }
 
 impl Default for AssignParams {
@@ -284,6 +289,7 @@ impl Default for AssignParams {
             sole_candidate: true,
             dump_star: false,
             read_star_hit_in_unit: true,
+            read_star_two_form: true,
         }
     }
 }
