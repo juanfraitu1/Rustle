@@ -1,0 +1,45 @@
+# PREREG — the family as a CLOSURE (fixed point of "shares a core with half the family"), 2026-09-07
+
+**Written before the prototype.** md5 in `mcl_ann/adj/closure/PREREG.md5`.
+
+## The definition under test
+> **A multi-copy gene family is a set of genomic intervals that all carry copies of the same segment, where
+> that segment is what at least half of them share.**
+
+Operationally a closure, iterated to a fixed point:
+1. **Seed** — any set of loci that align to each other. Here: **connected groups** of the annotation's
+   all-vs-all links (identity >= 0.70, coverage of the longer >= 0.30, >= 300 bp). **No MCL.**
+2. **Core** — for each current member, the positions linked by duplication pairs to **at least half of the
+   other current members**. Member iff core >= half its span, or >= half the set's median core (shipped rule).
+3. **Extend** — align the members' core hulls to the genome; every interval carrying the core that is not
+   already a member is admitted if it passes step 2 against the current members.
+4. Repeat 2-3 until the member set stops changing.
+
+This replaces two named objects with one: MCL (inflation 2.8, prune 1e-9) disappears, and the annotation
+becomes a seed rather than the node set. Preparatory measurements that motivate it, both from 2026-09-07:
+connected groups + the core rule reproduce MCL + the core rule on NPIP (59 candidates pruned to 35 records
+over 25 loci, precision 35/35); and leave-one-out core projection recovered a deleted member in **25/25**
+folds, admitting nothing else.
+
+## Substrates and truth
+Gorilla three contigs (`allgenes.asm20.paf`, `GGO_sedef_final.bed`, `npip3_contigs.fa`), truth = the 26 LCR16a
+loci; and human chr16+chr18 (`npip_hsa/hsa.paf`, `HSA_sedef_pairs.bed`, `chm13v2.0.fa`), truth = the 26
+description-complete NPIP records. Human and gorilla never pooled. `lcr16a.bed` is a core projection of the
+shipped catalog (register 727): it is **valid for membership** questions and **invalid for boundary** ones,
+so no boundary claim is scored on it.
+
+## Predictions
+| # | prediction |
+|---|---|
+| **P1** | the closure **converges in <= 5 iterations** on both substrates |
+| **P2** | at the fixed point, precision (members that are truth) **>= 0.95** on each substrate |
+| **P3** | sensitivity **>= 25/26** (gorilla) and **>= 24/26** (human) |
+| **P4** | **seed-independence**: started from a random half of the seed set, and from a single locus's direct neighbours, the closure reaches the **same** member set as from the full connected group |
+| **P5** | the iteration is **not monotone** - at least one record leaves and later rejoins (observed once already on NPIP), so a convergence proof cannot rest on a decreasing set |
+| **P6** | **exonic-core refinement** (require the shared segment to carry read-supported exonic bases) raises chrY DAZ specificity above the amplicon result of 4/15 |
+
+## Interpretation fixed in advance
+- P1+P2+P4 holding ⟹ the closure is the definition to write in the thesis and MCL is dropped to a footnote.
+- P4 failing ⟹ the fixed point is seed-dependent; the definition is then **not** well posed as stated and must
+  name its seed, which is a materially weaker claim and will be reported as such.
+- P6 failing ⟹ the amplicon limit stands and is stated as a limit, not patched.

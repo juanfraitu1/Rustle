@@ -13555,3 +13555,40 @@ used "primary anywhere in the swept REGION" (n = 1,935) and the binary uses "pri
 (n = 1,697). **The binary's definition is the stricter and the correct one**; quote 39.6 % assigned / 28.3 %
 of the region-level set with a clean certificate, and the enforced line from the run in preference to either.
 Suite **866 passed / 0 failed / 11 ignored**.
+
+## §6fy — THE FAMILY AS A CLOSURE: a fixed point, measured (user, 2026-09-07; PREREG `docs/PREREG_closure_definition_2026-09-07.md`, md5 8f144fd6)
+
+**User: "I need a definition that defines and finds all members of a family, in all their locus length"** —
+and one explainable without Markov chains. Prototype `bench/o1_closure.py`; **MCL is not used at all**.
+
+> **A multi-copy gene family is a set of genomic intervals that all carry copies of the same segment, where
+> that segment is what at least half of them share.**
+> Seed (connected groups of the alignment links) → core (shared with half the others) → extend (search the
+> genome for the core) → repeat until nothing changes.
+
+| prediction | verdict |
+|---|---|
+| **P1** converges in ≤ 5 iterations | ⭐ **HELD everywhere, and fast**: gorilla 2, human 2, DAZ-seeded 1 |
+| **P2** precision ≥ 0.95 at the fixed point | ⭐ gorilla **1.000** (35 records over 25 loci); ⛔ human **0.927** (full seed) / **0.903** (half). All three non-truth members are the SAME in both seeds and explainable: two are the `PKD1P6-NPIPP1` readthrough region (whose second half IS an NPIP pseudogene — §6fv addendum) and one is `chr16:76,011,515-76,014,496`, **unannotated** |
+| **P3** sensitivity ≥ 25/26 gorilla, ≥ 24/26 human | ⭐ **HELD**: gorilla 25/26 (ID_9 the 3.8-kb fragment again), human **26/26** |
+| **P4** seed-independence | ⚖️ **SPLIT, and this is the result.** On the autosomal substrates three seeds (full group 59, random half 29, one locus's neighbours 24) reach fixed points of 35 / 29 / 29 records that fold to **25 loci each and hold the IDENTICAL 25 truth loci** — ⭐ **membership is seed-independent**. Their INTERVALS differ, so **extent is not**. ⛔ On chrY it fails outright: see below |
+| **P5** the iteration is not monotone | ⛔ **WRONG — every run was monotone** (members only left). The earlier non-monotone observation came from the MCL cluster, not from a closure run. A convergence argument on a decreasing set is therefore available on this evidence |
+| **P6** an exonic core beats the amplicon result | ⚖️ **specificity 4/15 = 0.267 → 2/2 = 1.000, but sensitivity collapses to 2 of 4 DAZ copies.** Inside an amplicon-welded cluster the majority denominator is the amplicon's, so DAZ1/DAZ3 (fewer amplicon partners in their palindrome arm) fall below it. The fix is not the core rule |
+
+⛔⛔⭐ **THE CLOSURE HAS MORE THAN ONE FIXED POINT, and chrY exhibits it.** Seeded from the connected group,
+the closure returns the **AZFc amplicon** (15 units: DAZ1–4 plus TRAPPC2P4/5/9/10, RAB9AP2/5, NLGN4Y, MED14P1,
+PPP1R12BP2, RBMY2GP). Seeded from the four DAZ copies it is **already a fixed point at iteration 0 — 4 members,
+precision 1.000, and it does NOT grow into the amplicon.** Both sets are closed under "shares a core with half
+the family". ⟹ **The definition as stated is not well posed on ampliconic sequence**; it names a family only
+once a seed is named. The pre-registered consequence was to say exactly this rather than patch it.
+
+⭐ **The repair that keeps the elegance: take the MINIMAL closed set containing the seed.** {DAZ1–4} is closed
+and is contained in the amplicon's closed set; preferring the smaller makes the definition single-valued again,
+stays one sentence ("the smallest family that is closed"), and is a lattice statement of the kind the advisor
+asks for. **Not implemented, not measured — the next experiment, not a claim.**
+
+⟹ **What can be written today.** The closure converges in one or two rounds, needs no MCL, no inflation and no
+prune, decides membership independently of the seed on autosomal families, recovers every annotated NPIP locus
+in human (26/26) and all but one in gorilla, and **finds unannotated members** — `chr16:76,011,515-76,014,496`
+came from the genome search, not the annotation. What it does NOT yet do is fix the locus EXTENT (seed-dependent)
+or choose between nested closed sets (chrY).
