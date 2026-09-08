@@ -13873,3 +13873,29 @@ intronless because they came back through RNA. A segmental duplication copies th
 the pseudogenes an SD family is made of are **unprocessed**: they keep the intron structure and lose the
 reading frame. ⟹ Splicing is the wrong instrument for a duplication-derived family, and the frame test of
 §6gb is the right one — which is also why that test flipped the class bias while this one cannot.
+
+### §6gb addendum 2 — where the read-through question actually stands (user, 2026-09-07)
+
+**Both fixes the user was considering are refused, and one is refused on its own terms.**
+- ⛔ **`-G 50k`** (register 749): only **1 of 46** read-throughs has an intron above 50 kb; their median intron
+  is **1,802 bp**. The cap would remove one read-through and damage **8.2 % of gorilla transcripts** (1,847 of
+  115,580 annotated introns exceed 50 kb, across 1,020 of 12,466 transcripts).
+- ⛔ **a junction BED from the annotation** (register 729): it puts the annotation inside the read layer, is an
+  uncalibrated per-copy prior favouring better-annotated copies, and suppresses exactly what O3 looks for.
+
+**Status of the biology-versus-artefact question, stated exactly:**
+1. ⛔ The blanket claim "48 of the 71 are real read-throughs" is **retracted** (register 731) — canonical
+   splice sites, ≥ 3 molecules and landing in another unit are all equally predicted by a cross-copy mis-chain,
+   because near-identical paralogs share their splice sites.
+2. ⭐ The **cross-copy mis-chain mechanism is available for only 4 of 46 junctions** (their two flanks are
+   linked by a duplication pair); 2 more join **opposite strands** and are impossible as one transcript. The
+   §6fw guard removes exactly those 6.
+3. ⚖️ For the remaining **42 the mis-chain explanation is unavailable** — the flanks are not duplicates, so
+   there is nothing for an aligner to jump between. Supporting, not conclusive: same strand, canonical sites,
+   ≥ 3 independent molecules, and **ordinary intron lengths** (median 1.8 kb).
+4. ⚠ **"Not this artefact" is not "real biology".** Untested routes remain: chimeric molecules from library
+   preparation or template switching, and chaining across a genuine gap for other reasons.
+
+⟹ **What would settle it, and neither is done:** the same junction recovered in an **independent dataset or
+individual**, or a full-length molecule spanning both loci with a polyA tail. Until then the honest wording is
+*"read-throughs that no cross-copy mis-chain can explain"*, not *"real read-throughs"*.
