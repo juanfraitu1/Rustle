@@ -13899,3 +13899,37 @@ reading frame. ⟹ Splicing is the wrong instrument for a duplication-derived fa
 ⟹ **What would settle it, and neither is done:** the same junction recovered in an **independent dataset or
 individual**, or a full-length molecule spanning both loci with a polyA tail. Until then the honest wording is
 *"read-throughs that no cross-copy mis-chain can explain"*, not *"real read-throughs"*.
+
+### §6gb addendum 3 — the reads are FLNC, so most of the missing evidence was already in hand (user, 2026-09-07)
+
+**User: "but the reads are full length pacbio isoseq, would we need some targeted analysis then?"** ⚠ I had
+said the settling evidence would be "a full-length molecule spanning both loci with a polyA tail". **That was
+already satisfied by the input and I had not checked what the input was.** The BAM's own `@PG` line reads
+`GCA_029281585.2_flnc_mm.bam`: these are **FLNC — full-length non-chimeric** reads, so every molecule in the
+file passed the IsoSeq requirement of a 5′ primer, a 3′ primer **and a polyA tail**, with concatemer chimeras
+already removed.
+
+**Targeted analysis, run.** For each guarded read-through with ≥ 20 supporting molecules, how many span from
+the 5′ end of the upstream unit to the 3′ end of the downstream one:
+| junction | molecules crossing | spanning A5′ → B3′ |
+|---|---|---|
+| MCL38 → MCL201 | 5,166 | **5,043 = 98 %** |
+| MCL86 → MCL88 | 90 | 65 = 72 % |
+| MCL27 → MCL7 | 147 | 43 = 29 % |
+| MCL125 → MCL125 | 102 | 11 = 11 % |
+| MCL29 → MCL106, MCL1 → MCL27 | 91, 60 | **0** |
+
+⚠ **A polyA soft-clip test returned 0 % and is UNINFORMATIVE, not negative**: `isoseq refine` trims the tail
+before alignment. Control: of 4,000 primaries in a 1-Mb window, 160 carry a soft clip ≥ 8 bp and **none** is
+polyA-like — the tails are gone from every read, so their absence at a junction means nothing. Their
+*presence* is guaranteed upstream by FLNC membership instead.
+
+⟹ **The evidence chain for the surviving junctions is now:** (i) FLNC ⟹ not a concatemer chimera; (ii)
+canonical splice sites ⟹ not a random reverse-transcription template switch, which lands at microhomology
+rather than at donor/acceptor pairs; (iii) flanks not duplicates ⟹ not a cross-copy mis-chain (§6fw guard);
+(iv) ≥ 3 independent molecules, same strand; (v) for several junctions, **full-length molecules covering the
+entire conjoined structure end to end, in quantity**. ⭐ For MCL38 → MCL201 and MCL86 → MCL88 that is about as
+strong as single-dataset evidence gets.
+⚠ Still missing, and it is now the ONLY open route: **independent replication** — the same junction in another
+individual or dataset. ⚠ And the junctions where **no molecule spans both ends** (MCL29 → MCL106, MCL1 → MCL27,
+both 0) are a different and weaker class that should not be described in the same sentence as the others.
