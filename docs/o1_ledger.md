@@ -14133,3 +14133,32 @@ junctions are unreplicated candidates, not established biology.
 fragmentation. The guard (§6fw), the aligner arms (§6gd) and the cross-species result (§6gc) were all sound as
 experiments; what they were experiments ON has now shrunk from 42 to 14. Suite **867 passed / 0 failed / 11
 ignored**.
+
+## §6gg — THE 14 SURVIVORS, RE-TESTED IN TWO OUTGROUPS (user, 2026-09-08)
+
+**User: "what would actually fix the readthroughs, I still have a hard time believing they are real biology?"**
+Fair, because §6gc's replication was measured on the OLD 42-junction set, three quarters of which were ordinary
+introns (§6ge). The test was re-run on the **current 14**, adding orangutan.
+
+| probe class | chimpanzee (3.98 M reads) | orangutan (16.9 M reads) | either |
+|---|---|---|---|
+| **the 14 read-throughs** | **6/14 = 0.43** | **6/14 = 0.43** | **7/14 = 0.50** |
+| ordinary introns of the same units (positive control) | 47/120 = 0.39 | 20/120 = 0.17 | 50/120 = 0.42 |
+| scrambled halves (negative control) | **0/14** | **0/14** | **0/14** |
+
+⭐⭐ **The read-throughs replicate at least as often as genuine introns, and the scrambled control replicates
+never.** In orangutan they replicate at **2.5× the positive control's rate** (0.43 vs 0.17). A chaining
+artefact of our gorilla pipeline cannot appear in another species' reads at all — the negative control is the
+proof of that, at 0 of 14 in both arms.
+
+⭐ **5 of the 14 replicate in BOTH outgroups** — `MCL7→MCL27` (19/129 reads), `MCL27→MCL27` (40/160),
+`MCL7→MCL27` (4/1), `MCL37→MCL37` (3/2), `MCL235→MCL30` (1/2) — i.e. conserved across the gorilla–orangutan
+split. Two more replicate in one arm only (`MCL125→MCL125` chimp 7; `MCL96→MCL22` orangutan 4).
+⚠ **7 replicate in neither and stay indeterminate.** With the positive control itself at 0.42, non-replication
+is weak evidence: real introns fail this assay more than half the time.
+
+⟹ **What actually "fixed" the read-throughs was §6gf, not any aligner or reference change**: the cross-family
+exon-overlap and own-donor rules removed the 31 junctions the pipeline had manufactured out of ordinary introns
+(42 → 14, annotated introns 32 → 1). What remains is a **small, checkable set**, and the defensible sentence is:
+*fourteen junctions survive the locus rules; seven replicate in an outgroup, five in both; the scrambled
+control replicates in neither.* Not "read-throughs are real biology" as a class.
