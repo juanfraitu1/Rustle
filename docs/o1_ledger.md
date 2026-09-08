@@ -14059,3 +14059,41 @@ the only lever that touches read-throughs is one that also deletes almost all or
 42 junctions used by chimpanzee reads, negative control 0/42). Everything else — FLNC, canonical sites, no
 microhomology tail, non-duplicate flanks, full-length spanning molecules — **excludes artefact routes without
 demonstrating biology**. One positive result and a stack of exclusions is the honest summary.
+
+## §6ge — ⚠⚠⚠ MOST "READ-THROUGHS" ARE ORDINARY INTRONS OF ONE ANNOTATED GENE THAT OUR OWN UNITS SPLIT (user, 2026-09-08)
+
+**User: "Could this be a novel junction? I think the fact that it transcends loci is suspicious."** The
+suspicion was right and the cause is ours, not the aligner's and not the biology's.
+
+| of the 42 guarded junctions | n |
+|---|---|
+| already an **ANNOTATED intron** of some transcript | **32** |
+| both ends inside **ONE annotated gene** | **36** |
+| genuinely **NOVEL** junctions | 10 |
+| novel **and** chimpanzee-replicated | **4** of 31 |
+
+**Worked example, the mechanism.** `NC_073242.2:21,114,708-21,115,437` (chimpanzee-replicated, 59 molecules)
+is an annotated intron of `LOC129527585`, which spans 21,112,721-21,135,807 — **exactly `MCL27:0`'s unit**.
+The junction is recorded as `MCL1 → MCL27` only because `MCL1:3`'s read-supported chain (21,074,204-21,114,708)
+**overruns ~2 kb into `MCL27:0`'s locus**. A read anchored in MCL1:3 that splices across LOC129527585's own
+intron therefore looks like a molecule joining two loci. It joins nothing: it is one gene, spliced normally.
+
+⛔ **Root cause: units of DIFFERENT families may overlap.** The §6fb merge rule folds overlapping units only
+*within* one family, so a cross-family overlap survives and manufactures a "read-through" out of an ordinary
+intron.
+
+**What this does and does not overturn.**
+- ⭐ It does NOT overturn that the junctions are real — being annotated introns makes them *more* clearly real,
+  and it explains the chimpanzee replication trivially: **ordinary introns replicate**. §6gc's assay and its
+  clean 0/42 negative control stand; its interpretation shrinks.
+- ⛔ It DOES overturn the description "**conjoined read-through spanning two loci**" for **32 of 42**. They span
+  one gene. The phrase should not appear in the thesis for those.
+- ⛔ The §6fw read-through OBJECT is therefore **largely redundant**: it re-describes genes the annotation
+  already has, and its real message was a **locus-construction defect**, not a missing biological object. It
+  ships OFF and should stay off until the overlap is fixed.
+- ⭐ What survives as genuinely interesting: **10 novel junctions, 4 of them chimpanzee-replicated.** Those are
+  the ones worth a sentence, and the claim for them is narrow and checkable.
+
+⟹ **The fix is upstream of everything argued yesterday: forbid or fold cross-family unit overlap.** Every
+downstream artefact — the read-through object, the guard, the §6gd aligner arms — was reacting to a shadow cast
+by two units claiming the same bases.
