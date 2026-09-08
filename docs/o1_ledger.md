@@ -13675,3 +13675,38 @@ marked unannotated. The duplicon remains what the loci SHARE; the member becomes
 On DAZ that returns the four copies; on gorilla NPIP the chain has one level and it returns 25 of 26 loci from
 a single starting locus at precision 1.000. ⚠ Still open: `ID_9` (the 3.8-kb fragment) is now missed by every
 start, and the human substrate has not been rerun under AMENDMENT 3.
+
+## §6fz — SOTO'S BENCHMARK IS A SEGMENTAL-DUPLICATION CATALOG, NOT A GENE-FAMILY ONE (user, 2026-09-07)
+
+**User: "I think Soto's families are not real families but just 98 % SDs, this conflates pseudogenes and
+fragments as well as whole genes."** Checked against CHM13 RefSeq biotypes. **The claim holds.**
+
+| what the 362 Soto members overlap | n | share |
+|---|---|---|
+| protein_coding | 140 | **38.7 %** |
+| transcribed_pseudogene | 110 | 30.4 % |
+| pseudogene | 58 | 16.0 % |
+| lncRNA | 39 | 10.8 % |
+| no annotated gene at all | 11 | 3.0 % |
+| other | 4 | 1.1 % |
+
+**Fewer than two in five members are protein-coding genes and 46.4 % are pseudogenes.** Of the 76 families with
+≥2 members, **60 MIX biotypes** (ID_207: 13 protein-coding + 4 transcribed pseudogenes; ID_35: 6 lncRNA + 1
+protein-coding + 2 pseudogenes + 1 unannotated). Within-family length spread (families ≥3 members, n = 65):
+**median 3.1×, 24 families above 5×, 12 above 20×**, extreme ID_14 at **583.7×** (0.1 kb to 65.4 kb).
+⟹ **Every recall number ever scored against Soto is partly a count of how many pseudogene fragments a method
+admits.** `O1_DEFINITION_SWITCH.md` §2's detection figures (old 0.354 → MCL 0.658) must be read with that.
+
+⚠ **The same defect is in OUR gorilla truth, in miniature.** Of the 26 LCR16a loci, **25 are protein_coding and
+`ID_9` is the single lncRNA**: 7.1 kb against a 25.5 kb median span, 4 exons against 9, **0 reads against a
+median of 23**, and core 0 bp. It is a non-coding fragment of the duplicon, not a paralogous gene.
+
+⛔ **But conflation is NOT why it is missed, and the user's inference does not follow.** On the Soto slice the
+catalog detects the classes **equally**: pseudogene 157/168 = **0.935**, protein_coding 130/140 = **0.929**,
+lncRNA 34/39 = 0.872 (overall 324/362 = 0.895). There is no class bias to blame — the method admits pseudogene
+fragments as readily as genes. `ID_9` is lost for its own reasons (no reads, a fifth of the median span, no
+majority core), and being the one non-coding member is a coincidence consistent with, not evidence for, a
+class effect.
+⚠ Scope: that detection split is measured on `soto_mcl/mcl_v12`, which was built **without** the core rule
+(`core_refine false`). **Whether the CORE RULE has a class bias is unmeasured** — and since membership, not
+detection, is what dropped `ID_9`, that is the measurement that would actually settle the question.
