@@ -14186,3 +14186,30 @@ with zero junctions unique to our path, and the assembler stack is **already ret
 unreachable from the five thesis binaries). ⟹ **If the substitution shows equal families, the right move is to
 drop stages 1–5 and cite StringTie**, which makes the thesis smaller and puts the definition and the assignment
 alone in the foreground. See `ADVISOR_QUESTIONS.md` Part 0d.
+
+### §6gh addendum — ⚠⚠ THE FRAMING OF COMMENT 1 IS CORRECTED: he wants a FAMILY-AWARE ASSEMBLER (user, 2026-09-08)
+
+**User: "I believe he does want a transcriptome assembler, just one that takes into consideration gene
+families, borrows information across the members of a family, and can resolve statistically what reads support
+what copies when the alignment score is the same."** Evidence the user cites from other emails: he asks **which
+copy an isoform belongs to**, and **where the GTF/GFF of produced isoforms is so he can check it in IGV**.
+
+⛔ **§6gh's reading was wrong** — it took comment 1 as "justify keeping a substrate two tools already provide"
+and concluded the right move might be to DROP stages 1–5 and cite StringTie. On this reading that would delete
+the deliverable. "Not a transcriptome assembler" constrains the **novelty claim**, not the **output**.
+
+| what the corrected specification asks | status |
+|---|---|
+| produce isoforms | ⭐ `copy_assign --gtf` already writes a FLAIR-style transcript+exon GTF, IGV-loadable, annotation-free |
+| which copy each isoform belongs to | ⚖️ tagged `family_id` / `copy_index` / `multicopy` — but **by position**, from where the isoform assembled, not from read evidence |
+| statistical resolution at tied scores | ⭐ the origin certificate + posterior; assign-or-abstain, never 1/k — the actual contribution |
+| borrow across family members | ⛔ assembly-side borrowing is **dead/inert**; borrowing is live only in assignment |
+| view in IGV | ⭐ `bench/igv_tracks.py` → `<out>.tagged.bam` with `cp:Z:<family>_c<idx>` |
+
+⟹ ⭐⭐ **The gap is one join, not a new component.** Isoforms are tagged by POSITION; reads are assigned to
+copies by CERTIFICATE; nothing aggregates the second onto the first. The missing sentence — *"this isoform is
+supported by N reads assigned to copy 3 with a certificate, M abstaining"* — is a join over two files the run
+already emits (`<out>.gtf`, `<out>.assignments.tsv`). ⚠ The `--gtf` path has **never been run for him**; a
+first run on NPIP is in progress.
+⚠ The flair/StringTie substitution test (§6gh, Part 0e) drops to **secondary**: it asks whether our isoforms
+match theirs, when the point is that ours carry a copy assignment and theirs cannot.

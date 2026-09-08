@@ -101,7 +101,44 @@ evidence that read-throughs are more conserved than ordinary introns.
 
 ---
 
-## Part 0d — "Not a transcriptome assembler" AND "compare to flair/StringTie" are the same request
+## Part 0d — What he is actually asking for: a FAMILY-AWARE assembler, and its IGV file
+
+⚠⚠ **CORRECTED 2026-09-08 (user).** An earlier reading of comment 1 had it as "justify keeping a substrate
+component two tools already provide". That is **not** what he means. Across other emails he asks **which copy
+an isoform belongs to** and **where the GTF/GFF of produced isoforms is so he can check it in IGV**. Taken
+together with "this is not a transcriptome assembler", the request is coherent and specific:
+
+> **He wants a transcriptome assembler — one that is family-aware.** It should produce isoforms, assign each
+> to a COPY, borrow information across members of a family, and resolve statistically which reads support
+> which copy when the alignment scores are equal.
+
+"Not a transcriptome assembler" is a statement about the **novelty claim** (a plain assembler is not the
+contribution), not about the **deliverable** (an isoform GTF is exactly the deliverable). Comment 1's
+comparison to flair/StringTie is then the natural benchmark: *those tools produce isoforms and cannot tell you
+which copy; show what yours adds.*
+
+**Where we stand against that specification, item by item:**
+| what he asks for | status |
+|---|---|
+| produce isoforms | ⭐ **exists**: `copy_assign --gtf` writes a FLAIR-style transcript+exon GTF of every de-novo isoform in the swept regions, IGV-loadable, annotation-free (intron-chain collapse + the canonical gate) |
+| say which copy each isoform belongs to | ⚖️ **partly**: each transcript carries `family_id`, `copy_index` and `multicopy "true"` — but that tag comes from **where the isoform assembled**, i.e. position, not from the read evidence |
+| resolve reads statistically when scores tie | ⭐ **exists and is the contribution**: the origin certificate + posterior, assign-or-abstain, never 1/k |
+| borrow information across family members | ⛔ **assembly-side borrowing is dead/inert** (register: `consensus.rs` has no call sites; `rescue_thin_loci_iterative` yields 0 copies in both shipped catalogs). Borrowing is live **only** in assignment |
+| view it in IGV | ⭐ `bench/igv_tracks.py` writes `<out>.tagged.bam` with `cp:Z:<family>_c<idx>` per read — IGV "Group by tag" / "Color by tag" |
+
+⟹ ⭐ **The one real gap is the join.** Isoforms are tagged by POSITION; reads are assigned to copies by
+CERTIFICATE. Nothing yet aggregates the second onto the first, i.e. *"this isoform is supported by N reads
+assigned to copy 3 with a certificate, M that abstain, and K that were assigned elsewhere"*. That is a small
+piece of work over two files we already emit (`<out>.gtf` and `<out>.assignments.tsv`), and it is precisely
+the sentence he keeps asking for. **Do this before Wednesday.**
+
+⚠ The substitution test against flair/StringTie is still worth running, but it is now a **secondary**
+question — it asks whether our isoforms are as good as theirs, when the point is that ours carry a copy
+assignment and theirs cannot.
+
+---
+
+## Part 0e — "Not a transcriptome assembler" AND "compare to flair/StringTie": the earlier reading
 
 The two instructions look contradictory. They are not, and the resolution is in his own earlier words: on
 **2026-06-25** the reframe he asked for was that *the StringTie-clone assembler is the SUBSTRATE that produces
