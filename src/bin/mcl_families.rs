@@ -263,6 +263,15 @@ struct Args {
     /// construction, so that test re-derives the annotation's own class label. Default OFF ⟹ byte-identical.
     #[arg(long, default_value_t = false)]
     coding_core: bool,
+    /// ⭐ §6ge: forbid two units of DIFFERENT families from claiming the same exon bases. The §6fb merge folds
+    /// overlapping units only WITHIN a family, so a cross-family overlap survives — and it manufactures
+    /// "read-throughs" out of ordinary introns: `MCL1:3`'s chain overran 2 kb into `MCL27:0`, whose FIRST EXON
+    /// is that overlap, so every read splicing across `LOC129527585`'s own first intron looked like a molecule
+    /// joining two loci. **32 of 42 guarded read-throughs were annotated introns of one gene.**
+    /// Contested bases go to the unit whose own annotated member span contains them; if that does not decide,
+    /// to the unit with more reads. Default OFF ⟹ byte-identical.
+    #[arg(long, default_value_t = false)]
+    no_cross_family_exon_overlap: bool,
 
     #[arg(long)]
     out: String,
@@ -559,8 +568,17 @@ fn leaving_introns(blocks: &[(u64, u64)], introns: &[(u64, u64)], chain: &[(u64,
     if !blocks.iter().any(|&(bs, be)| chain.iter().any(|&(s, e)| be > s && bs < e)) {
         return Vec::new();
     }
-    // only the DOWNSTREAM direction: the mirrored case is found when the other unit is the source
-    introns.iter().copied().filter(|&(_, e)| e > chi).collect()
+    // only the DOWNSTREAM direction: the mirrored case is found when the other unit is the source.
+    // ⭐ §6ge: the DONOR must be this chain's own splice donor — the intron must start at the end of one of
+    // its exons. Without that, a read merely ANCHORED in the chain and splicing anywhere downstream counted,
+    // so an ordinary intron of the NEXT gene was reported as a read-through out of this one (32 of 42 guarded
+    // junctions were annotated introns). The acceptor is checked separately by `readthrough_target`.
+    introns
+        .iter()
+        .copied()
+        .filter(|&(_, e)| e > chi)
+        .filter(|&(s, _)| chain.iter().any(|&(_, ce)| ce == s))
+        .collect()
 }
 
 /// The emitted unit whose chain CONTAINS the first base after the intron (`intron.1`), i.e. where the
@@ -1016,7 +1034,7 @@ fn main() -> Result<()> {
     let mut units_unexpressed = 0usize;
     let mut readthrough_units = 0usize;
     let mut noncoding_units = 0usize; // --coding-core: members demoted for not preserving the family's frame
-    let mut rt_rejected = (0usize, 0usize); // guard: (opposite strand, flanks are duplicates)
+    let mut rt_rejected = (0usize, 0usize, 0usize); // (opposite strand, duplicate flanks, donor not ours)
     if args.emit_units {
         let bam = args.bam.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --bam"))?;
         let fasta = args.fasta.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --fasta"))?;
@@ -1287,6 +1305,82 @@ fn main() -> Result<()> {
             };
             staged.push((fid, pending, merged_into));
         }
+        // ⭐ §6ge: cross-family exon overlap. Two units of different families claiming the same bases turn an
+        // ordinary intron of one into a "read-through" of the other. Contested bases are given to the unit
+        // whose own annotated member span contains them, else to the unit with more reads; the loser's exons
+        // are trimmed. Within one family the §6fb merge already handles overlap, so same-family pairs are skipped.
+        let mut cross_trimmed = 0usize;
+        if args.no_cross_family_exon_overlap {
+            let mut by_ctg: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
+            for (fi, (_, pending, _)) in staged.iter().enumerate() {
+                for (k, u) in pending.iter().enumerate() {
+                    by_ctg.entry(u.member.0.clone()).or_default().push((fi, k));
+                }
+            }
+            for ks in by_ctg.values() {
+                for a in 0..ks.len() {
+                    for b in (a + 1)..ks.len() {
+                        let ((fa, ka), (fb, kb)) = (ks[a], ks[b]);
+                        if fa == fb {
+                            continue; // §6fb owns same-family overlap
+                        }
+                        let (ea, eb) = (staged[fa].1[ka].exons.clone(), staged[fb].1[kb].exons.clone());
+                        let shared: Vec<(u64, u64)> = ea
+                            .iter()
+                            .flat_map(|&(s1, e1)| eb.iter().filter_map(move |&(s2, e2)| {
+                                let (lo, hi) = (s1.max(s2), e1.min(e2));
+                                (hi > lo).then_some((lo, hi))
+                            }))
+                            .collect();
+                        if shared.is_empty() {
+                            continue;
+                        }
+                        // owner: whose ANNOTATED member span holds more of the contested bases; ties -> reads
+                        let inside = |u: &PendingUnit| -> u64 {
+                            let (ms, me) = (u.member.1.saturating_sub(1), u.member.2);
+                            shared.iter().map(|&(s, e)| e.min(me).saturating_sub(s.max(ms))).sum()
+                        };
+                        let (ia, ib) = (inside(&staged[fa].1[ka]), inside(&staged[fb].1[kb]));
+                        let loser = if ia != ib {
+                            if ia < ib { (fa, ka) } else { (fb, kb) }
+                        } else if staged[fa].1[ka].n_reads <= staged[fb].1[kb].n_reads {
+                            (fa, ka)
+                        } else {
+                            (fb, kb)
+                        };
+                        let u = &mut staged[loser.0].1[loser.1];
+                        let mut out: Vec<(u64, u64)> = Vec::new();
+                        for &(s, e) in &u.exons {
+                            let mut segs = vec![(s, e)];
+                            for &(cs, ce) in &shared {
+                                segs = segs
+                                    .into_iter()
+                                    .flat_map(|(a0, b0)| {
+                                        let mut v = Vec::new();
+                                        if a0 < cs.min(b0) { v.push((a0, cs.min(b0))); }
+                                        if ce.max(a0) < b0 { v.push((ce.max(a0), b0)); }
+                                        if ce <= a0 || cs >= b0 { v.clear(); v.push((a0, b0)); }
+                                        v
+                                    })
+                                    .filter(|&(a0, b0)| b0 > a0)
+                                    .collect();
+                            }
+                            out.extend(segs);
+                        }
+                        out.sort_unstable();
+                        if out != u.exons {
+                            cross_trimmed += 1;
+                        }
+                        u.exons = out;
+                    }
+                }
+            }
+            // a unit trimmed to nothing is no longer a unit
+            for (_, pending, _) in staged.iter_mut() {
+                pending.retain(|u| !u.exons.is_empty());
+            }
+            eprintln!("[mcl_families] no-cross-family-exon-overlap: {cross_trimmed} unit(s) trimmed");
+        }
         // ⭐ L2: clip every emitted unit's extent at the chain ends of its neighbours on the contig — units of
         // EVERY family (§6fm: MCL1971's 951-kb extent contained MCL42's unit and other genes; reads of those
         // loci aligned perfectly inside the target and were accepted as MCL1971's sole candidates at 3 %
@@ -1337,6 +1431,13 @@ fn main() -> Result<()> {
                 }
                 let Some(&src) = pos_of.get(&(fi, k)) else { continue };
                 let u = &staged[fi].1[k];
+                // ⭐ §6ge: re-check the DONOR against the FINAL chain. The evidence above was gathered during
+                // staging, before the cross-family trim, so a junction whose donor was trimmed away belongs to
+                // the neighbouring gene and is its ordinary intron, not a read-through out of this unit.
+                if !u.exons.iter().any(|&(_, ce)| ce == j.0) {
+                    rt_rejected.2 += 1;
+                    continue;
+                }
                 let Some(tgt) = readthrough_target(j, &u.member.0, src, &flat) else { continue };
                 if !canonical_intron(&genome, &u.member.0, j.0, j.1, u.strand) {
                     continue;
@@ -1481,8 +1582,9 @@ fn main() -> Result<()> {
         if args.emit_readthrough_units {
             eprintln!(
                 "[mcl_families] emit-readthrough-units: {readthrough_units} conjoined read-through unit(s); \
-                 guard rejected {} on opposite strands and {} whose flanks are linked by a duplication pair",
-                rt_rejected.0, rt_rejected.1
+                 guard rejected {} on opposite strands, {} whose flanks are linked by a duplication pair, \
+                 {} whose donor is not this unit's own exon end",
+                rt_rejected.0, rt_rejected.1, rt_rejected.2
             );
         }
     }
@@ -1525,9 +1627,11 @@ fn main() -> Result<()> {
         ("readthrough_units".to_string(), readthrough_units.to_string()),
         ("readthrough_guard".to_string(), (!args.no_readthrough_guard).to_string()),
         ("coding_core".to_string(), args.coding_core.to_string()),
+        ("no_cross_family_exon_overlap".to_string(), args.no_cross_family_exon_overlap.to_string()),
         ("noncoding_units".to_string(), noncoding_units.to_string()),
         ("readthrough_rejected_strand".to_string(), rt_rejected.0.to_string()),
         ("readthrough_rejected_duplicate_flanks".to_string(), rt_rejected.1.to_string()),
+        ("readthrough_rejected_foreign_donor".to_string(), rt_rejected.2.to_string()),
         ("units_dropped_emitted".to_string(), units_dropped_emitted.to_string()),
         ("units_keep_unexpressed".to_string(), (args.units_keep_unexpressed && !args.no_units_keep_unexpressed).to_string()),
         ("units_unexpressed".to_string(), units_unexpressed.to_string()),
@@ -1660,10 +1764,15 @@ mod tests {
         let r = br(1000, &[('M', 100), ('N', 2900), ('M', 120)]);
         let (b, i) = blocks_and_introns(&r);
         assert!(leaving_introns(&b, &i, &chain).is_empty());
-        // anchored, intron leaving downstream: the candidate junction
+        // anchored, intron leaving downstream FROM THIS CHAIN'S OWN DONOR (4120 is an exon end): a candidate
         let r = br(1000, &[('M', 100), ('N', 2900), ('M', 120), ('N', 15_000), ('M', 200)]);
         let (b, i) = blocks_and_introns(&r);
         assert_eq!(leaving_introns(&b, &i, &chain), vec![(4120, 19_120)]);
+        // ⭐ §6ge: anchored, but the intron starts BEYOND the chain — the donor belongs to the next gene, so
+        // this is that gene's ordinary intron and not a read-through out of this unit
+        let r = br(1000, &[('M', 100), ('N', 2900), ('M', 5000), ('N', 15_000), ('M', 200)]);
+        let (b, i) = blocks_and_introns(&r);
+        assert!(leaving_introns(&b, &i, &chain).is_empty(), "donor is not this chain's exon end");
         // an empty chain is never a source
         assert!(leaving_introns(&b, &i, &[]).is_empty());
     }

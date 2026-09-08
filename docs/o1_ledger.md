@@ -14097,3 +14097,39 @@ intron.
 ⟹ **The fix is upstream of everything argued yesterday: forbid or fold cross-family unit overlap.** Every
 downstream artefact — the read-through object, the guard, the §6gd aligner arms — was reacting to a shadow cast
 by two units claiming the same bases.
+
+## §6gf — THE TWO RULES THAT REMOVE THE MANUFACTURED READ-THROUGHS (user, 2026-09-08)
+
+**User: "So make this another rule to remove the read-throughs? ok lets try that."** Two rules, both OFF by
+default, both needed — the first alone changes nothing.
+
+1. **`mcl_families --no-cross-family-exon-overlap`** — two units of DIFFERENT families may not claim the same
+   exon bases (the §6fb merge folds overlap only WITHIN a family). Contested bases go to the unit whose own
+   annotated member span contains them, else to the unit with more reads. Three contigs: **31 units trimmed**;
+   the worked case `MCL1:3` drops from 21,074,204-21,114,708 to **…-21,105,426** and no longer overlaps
+   `MCL27:0`.
+2. **the DONOR must be the unit's own splice donor** — the junction's start must equal the end of one of the
+   source unit's exons, re-checked against the FINAL chain. ⚠ Rule 1 alone left the count at 42, because the
+   read-through evidence is gathered during staging, **before** the trim; without the re-check the trimming
+   never reaches the detector.
+
+| | read-throughs | annotated introns | novel |
+|---|---|---|---|
+| §6fw guard only | 42 | **32** | 10 |
+| + rule 1 only | 42 | 32 | 10 |
+| ⭐ **+ rule 2** | **14** | **1** | **13** |
+
+⭐⭐ **31 of the 32 manufactured junctions are gone and the novel ones survive.** The object now reports what it
+was supposed to: mostly junctions the annotation does not have, with intron lengths 436 bp to 108 kb and 3–46
+molecules each.
+
+⚠ **The honest cost: only 1 of the 14 survivors is in the chimpanzee-replicated set** (`MCL37 → MCL37`, a
+47.5-kb intron, 42 molecules). That is expected rather than alarming — §6gc's replication was measured on the
+OLD set, which was 32/42 ordinary introns, and ordinary introns replicate trivially. **The cross-species test
+must be re-run on this set before any conservation claim is made about it**, and until then the 13 novel
+junctions are unreplicated candidates, not established biology.
+
+⟹ Everything argued on 09-07 about read-throughs was measured on a set that was three-quarters our own locus
+fragmentation. The guard (§6fw), the aligner arms (§6gd) and the cross-species result (§6gc) were all sound as
+experiments; what they were experiments ON has now shrunk from 42 to 14. Suite **867 passed / 0 failed / 11
+ignored**.
