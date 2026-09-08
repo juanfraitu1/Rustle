@@ -14418,3 +14418,35 @@ two independent routes to a copy concur, and the single disagreement is worth lo
 
 Suite **867 passed / 0 failed / 11 ignored**. Deferred by the user: the 53 isoforms matching no read, and the
 default state of the two read-through rules.
+
+## §6gm — THE DEFERRED TWO: a duplicate-id bug, and evidence for the rule defaults (user, 2026-09-08)
+
+### 1. The "isoforms matching no read" were a DUPLICATE-ID bug, not an accounting quirk
+⛔ **`DenovoTranscript::tid` is `DN_<contig>_<start>_<n_exon>` and COLLIDES.** Two distinct isoforms sharing a
+start and an exon count receive the same id: on NPIP **53 ids covered 122 of the 886 transcript rows**. Any
+consumer keyed on `transcript_id` — IGV, gffcompare, bedtools, our own join — silently merges them into one
+impossible model. The worked case merged two isoforms into a fictitious 62-exon, 190-kb transcript that no
+read carries, which is exactly where the "53 isoforms match no read" came from. **The bench join was right to
+be confused; the file was wrong.**
+⭐ **Fixed in the GTF emitter only** (a repeat gets `.2`, `.3` …), so no catalog's tids move. NPIP: duplicated
+ids **53 → 0**, isoforms matching no read **53 → 0**, transcript rows still 886, isoforms with a
+certificate-assigned copy 121. ⚠ The assembler's own id scheme is still colliding and is left for a separate
+change — this fixes the file, not the cause.
+
+### 2. Evidence on the two read-through rules' defaults (still OFF; the flip is the user's call)
+| | gorilla 3-contig | human Soto slice |
+|---|---|---|
+| units trimmed by the cross-family rule | 31 | 41 |
+| unit rows changed (cols 1–9) | 60 of ~1,000 | — |
+| families touched | 8 (MCL1, 13, 21, 104, 106, 125, 208, 235) | — |
+| NPIP O1 sensitivity / specificity | **26/26 and 25/25, unchanged** | — |
+| Soto sensitivity | — | 319/351 = 0.909, **unchanged** |
+| Soto specificity | — | 0.649 → **0.663** (+0.014; the denominator drops 467 → 457) |
+| Soto size in-band | — | 0.82 → 0.81 (−3 pairs) |
+| read-throughs (gorilla) | 42 → **14**, annotated introns 32 → **1** | — |
+
+⟹ **The case for turning them ON is strong and the cost is small**: membership metrics are unchanged on both
+substrates, specificity improves slightly on Soto, the size band loses 3 pairs of 319, and the manufactured
+read-throughs — 31 of 32 of which were ordinary introns of one gene — disappear. ⚠ It is still a default flip
+that moves 60 unit rows across 8 families on the gorilla contigs, so **it should be pre-registered and flipped
+deliberately, not folded in silently**. Suite **867 passed / 0 failed / 11 ignored**.

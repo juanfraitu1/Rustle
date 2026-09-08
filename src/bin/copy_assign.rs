@@ -2281,7 +2281,16 @@ fn main() -> Result<()> {
                 .collect();
             let verdict: std::collections::HashMap<&str, &AssignRow> =
                 assign_rows.iter().map(|r| (r.read_name.as_str(), r)).collect();
+            // ⚠ §6gl: `DenovoTranscript::tid` is `DN_<contig>_<start>_<n_exon>`, which COLLIDES — two distinct
+            // isoforms sharing a start and an exon count get the same id. On NPIP 53 ids covered 122 of the
+            // 886 transcript rows, and any consumer keyed on `transcript_id` (IGV, gffcompare, bedtools, our
+            // own join) silently merges them into one impossible model. Disambiguated HERE, in the GTF only,
+            // so no catalog's tids move; the assembler's own id scheme is left for a separate change.
+            let mut tid_seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
             for t in &transcripts {
+                let n = tid_seen.entry(t.tid.as_str()).or_insert(0);
+                *n += 1;
+                let uniq_tid = if *n == 1 { t.tid.clone() } else { format!("{}.{}", t.tid, *n) };
                 // (1) positional: the catalog copy this isoform overlaps most
                 let best = fams.iter().enumerate().flat_map(|(fw, fa)| {
                     fa.copy_spans.iter().enumerate().map(move |(ci, (c, s0, e0))| (fw, ci, c, *s0, *e0))
@@ -2339,7 +2348,7 @@ fn main() -> Result<()> {
                 let gs = t.start + 1; // GTF is 1-based, end-inclusive (our coords are 0-based half-open)
                 gtf_lines.push(format!(
                     "{}\trustle\ttranscript\t{}\t{}\t.\t{}\t.\tgene_id \"{}\"; transcript_id \"{}\"; reads \"{}\"; multicopy \"{}\";{}",
-                    t.chrom, gs, t.end, t.strand, t.gene_tid, t.tid, t.n_reads, multicopy, fam_attr
+                    t.chrom, gs, t.end, t.strand, t.gene_tid, uniq_tid, t.n_reads, multicopy, fam_attr
                 ));
                 // exons = the gene span minus the introns (the read's spliced structure)
                 let mut prev = t.start;
@@ -2352,7 +2361,7 @@ fn main() -> Result<()> {
                 for (k, (es, ee)) in exons.iter().enumerate() {
                     gtf_lines.push(format!(
                         "{}\trustle\texon\t{}\t{}\t.\t{}\t.\tgene_id \"{}\"; transcript_id \"{}\"; exon_number \"{}\";",
-                        t.chrom, es + 1, ee, t.strand, t.gene_tid, t.tid, k + 1
+                        t.chrom, es + 1, ee, t.strand, t.gene_tid, uniq_tid, k + 1
                     ));
                 }
             }
