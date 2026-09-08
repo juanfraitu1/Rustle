@@ -13782,3 +13782,35 @@ is not the lever**; the pre-registered consequence was to report that and stop, 
 ⟹ The duplicon-versus-gene gap (register 743) stays open, and the next candidate is not a scoring tweak: it is
 to require the shared segment to carry the **coding** sequence, which `transcribed_pseudogene` would fail by
 definition. Unmeasured.
+
+### §6ga addendum — how would we know the shared segment codes? (user question, 2026-09-07)
+
+Three routes, one of them circular.
+
+**1. Read the annotation's CDS records — CIRCULAR, rejected.** `hsa.gff` holds 1,678,264 CDS features, and a
+RefSeq pseudogene has **none by construction**. "The core carries CDS" therefore re-derives the annotation's
+own class label, so the rule would reduce to "keep what the annotation calls protein-coding" — exactly the
+gene-symbol trap in another costume (⛔ never define membership by an annotation label).
+
+**2. Longest ORF in the unit's own sequence — annotation-free, MEASURED, separates but weakly.** Over the 492
+units of the core-refined Soto slice, translating each unit's read-supported spliced sequence in three frames:
+
+| class of the overlapping gene | units | longest ORF, median aa | ORF / transcript, median |
+|---|---|---|---|
+| protein_coding | 163 | **292** | 0.26 |
+| transcribed_pseudogene | 131 | 134 | 0.15 |
+| pseudogene | 103 | 105 | 0.24 |
+| lncRNA | 91 | 89 | 0.16 |
+
+At a 300-aa threshold: protein_coding **81/163 = 0.50**, pseudogene **25/234 = 0.11**. ⟹ **The signal is real
+and needs no annotation, but it is not a clean gate**: half the protein-coding units fall below it, because a
+unit is a read-supported chain and can be partial. Usable as evidence, not as a membership criterion.
+
+**3. Frame preservation relative to the family — the principled route, UNMEASURED.** Within a family the
+shared segment is the same sequence, so a pseudogenised copy carries frameshifting indels or premature stops
+**relative to what the majority of the family reads**. That test uses no annotation, needs no absolute ORF
+threshold, and stays inside the definition's own logic — it is the same majority the core rule already takes,
+applied at codon level instead of base level: *a member is a coding member when its copy of the shared segment
+preserves the reading frame the majority of the family preserves.*
+⚠ Not built and not measured; it is the candidate that would let the definition say "gene family" rather than
+"duplicon family" without borrowing the annotation's verdict.
