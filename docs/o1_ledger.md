@@ -13737,3 +13737,48 @@ stated as "shares a duplicated core" is a DUPLICON rule; nothing in it asks for 
 correct it is the one AMENDMENT 3 introduced for a different purpose: requiring the shared segment to carry
 the transcribed exons. ⚠ Whether that lever actually reduces the bias is UNMEASURED, and it is complicated by
 `transcribed_pseudogene` being 110 of the 168 pseudogene members — they are transcribed too.
+
+## §6ga — THE SIZE REFERENCE MOVED TO THE ANNOTATION; THE EXONIC CORE IS NOT THE CORRECTIVE (user, 2026-09-07; PREREG `docs/PREREG_size_reference_2026-09-07.md`, md5 e5c01339)
+
+### Part A — bipartite size matching against real gene spans (adopted)
+**User: "do not prefer Soto's size since it might be truncated, use the real size from the annotation."**
+Built `bench/soto/80_fams.annspan.bed`: per Soto member, the CHM13 RefSeq gene/pseudogene with the greatest
+overlap, at its **full annotated extent**; the 11 members with no annotated gene are **excluded and listed**
+(`80_fams.noann.txt`), never silently dropped. ⭐ **The truncation is real and large: Soto's interval is
+SHORTER than the gene it contains in 156 of 351 members** (gene/interval length ratio q90 = 11.8×).
+
+| size reference | in-band 0.5–2× | median ratio | truncated ≤ 0.5× | over-extended ≥ 2× |
+|---|---|---|---|---|
+| Soto SD intervals | 233/312 = 0.75 | 1.00 | 42 | **37** |
+| `gene_preferred` | 254/313 = 0.81 | 1.00 | 36 | 23 |
+| ⭐ **annotated gene span** | **261/319 = 0.82** | 0.98 | 57 | **1** |
+
+**A1 HELD** (0.75 → 0.82). **A3 HELD, and it is the finding: the over-extended tail collapses from 37 to 1** —
+almost every "over-merge" signal against Soto was an artefact of scoring a whole gene against a truncated SD
+interval. **A2 missed on a technicality**: the median was already 1.00 and moved to 0.98.
+⚠ **The truncated tail GROWS, 42 → 57**, and that one is real: our units are read-supported exon chains and
+against a full gene span they genuinely fall short more often. ⚠ Sensitivity is not comparable across the rows
+(the annotation reference has 351 members, not 362).
+
+### Part B — the exonic core does NOT remove the pseudogene preference (rejected)
+⚠⚠ **First, a measurement caution that invalidates a naive comparison.** Recomputing the core rule in Python
+over the emitted UNITS does **not** reproduce the binary's class rates: binary member_status gives pseudogene
+0.026 vs protein-coding 0.074 (**0.35×**, register 743), the unit-level reimplementation gives **1.27×**. The
+binary judges annotated cluster members with the depth gate and a cluster-level median; the reimplementation
+judges post-fold, post-trim units. **Only the internal delta below is interpretable** — the absolute rates are
+not the shipped rule's.
+
+| class | units | drop, genomic core | drop, EXONIC core |
+|---|---|---|---|
+| protein_coding | 163 | 0.067 | **0.117** |
+| transcribed_pseudogene | 131 | 0.069 | 0.092 |
+| pseudogene | 103 | 0.107 | 0.107 |
+| lncRNA | 91 | 0.110 | 0.121 |
+| **pseudogene / protein-coding ratio** | | **1.27×** | **0.84×** |
+
+⛔ **B2 FAILS: the protein-coding drop rate rises from 0.067 to 0.117**, a 75 % relative increase — the
+corrective costs genes, which B2 forbade. B1's ratio crosses 1.0 rather than settling on it. **The exonic core
+is not the lever**; the pre-registered consequence was to report that and stop, not to tune it.
+⟹ The duplicon-versus-gene gap (register 743) stays open, and the next candidate is not a scoring tweak: it is
+to require the shared segment to carry the **coding** sequence, which `transcribed_pseudogene` would fail by
+definition. Unmeasured.
