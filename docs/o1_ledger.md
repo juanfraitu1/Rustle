@@ -14251,3 +14251,30 @@ O2 has nothing to decide, and the rest abstain. That is the honest denominator.
 ⟹ Remaining for Wednesday: fold the join into the GTF itself (an `assigned_copy` / `copy_votes` / `copy_purity`
 attribute per transcript) so the file he opens in IGV carries it, and fix the `DN_`/`MCL_` namespace bug in
 `copy_assign` so the built-in tag stops silently reporting `multicopy "false"`.
+
+### §6gi addendum — emit every isoform under a named locus (user, 2026-09-08)
+
+**User: "can we focus on seeing if we can emit all isoforms that exist under a specified locus?"** Added to
+`bench/isoform_copy_join.py`: `--locus <copy_index | chrom:start-end>` writes a GTF holding **only** the
+isoforms that locus's reads support, each transcript carrying `assigned_copy`, `copy_votes`, `copy_purity`
+and `abstaining`. IGV-loadable beside the copy-coloured reads from `bench/igv_tracks.py`.
+
+**NPIP, isoforms per copy (108 placed by read evidence over 22 of the family's copies):**
+| copy | locus | isoforms by EVIDENCE | by POSITION | reads |
+|---|---|---|---|---|
+| 27 | NC_073242.2:29,391,569-29,428,046 | **32** | 37 | 4,855 |
+| 24 | NC_073242.2:15,911,024-16,101,041 | **31** | 34 | 858 |
+| 2 | NC_073242.2:21,074,204-21,114,708 | 11 | 11 | 298 |
+| 12–16 | five loci | 3 each | 2–4 | 45–274 |
+| 0,3,8,21,23 | five loci | 2 each | 2–3 | 13–140 |
+| 9 others | | 1 each | 1–6 | 5–180 |
+
+⭐ **Copy 27 alone carries 32 isoforms, every one of them pure to that copy**, ranging from 8 to 22 exons —
+a real isoform repertoire for a single member of a multi-copy family, which is the object the advisor has been
+asking to see. `C27.locus.gtf`: 32 transcripts, 517 exon rows.
+
+⚠ **The two columns disagree, and the disagreement is the interesting part.** Evidence and position agree for
+the copies that have evidence (27: 32 vs 37; 24: 31 vs 34). But **many loci carry positional isoforms and zero
+evidence-assigned ones** — copy 49 has 44 by position and 0 by evidence, copy 51 has 34 and 0. Those are
+either non-member units in the swept region or loci where O2 abstains wholesale. **Overlapping a locus is not
+evidence of belonging to it**, and the per-copy table now says so in two columns instead of one.

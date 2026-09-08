@@ -10,12 +10,17 @@ according to O2's certificate?
 A read supports an isoform when their intron chains are identical (the same collapse rule that built it).
 Unspliced isoforms take reads whose span overlaps and that carry no intron.
 
-usage: isoform_copy_join.py <out.gtf> <out.assignments.tsv> <bam> <copies.tsv> [--out prefix]
+Emit mode: `--locus <copy_index | chrom:start-end>` writes a GTF holding ONLY the isoforms that locus's
+reads support, each transcript carrying `assigned_copy`, `copy_votes`, `copy_purity` and `abstaining`. That
+is the file to open in IGV beside the copy-coloured reads from `bench/igv_tracks.py`.
+
+usage: isoform_copy_join.py <out.gtf> <out.assignments.tsv> <bam> <copies.tsv> [--out prefix] [--locus L]
 """
 import sys, subprocess, re, collections, csv
 
 gtf_p, asg_p, bam, copies_p = sys.argv[1:5]
 out = sys.argv[sys.argv.index('--out') + 1] if '--out' in sys.argv else None
+locus = sys.argv[sys.argv.index('--locus') + 1] if '--locus' in sys.argv else None
 
 tx = {}
 for l in open(gtf_p):
@@ -95,6 +100,33 @@ if dec:
     print(f"\n  {'transcript':34s} {'copy':>5} {'votes':>7} {'purity':>7} {'abstain':>8}")
     for r in dec[:12]:
         print(f"  {r['transcript']:34s} {r['assigned_copy']:>5} {r['votes_for_best']:>3}/{r['votes_total']:<3} {r['purity']:>7} {r['abstaining']:>8}")
+if locus:
+    # a locus is named either by catalog copy index or by chrom:start-end
+    want = set()
+    if ':' in locus:
+        c, r = locus.rsplit(':', 1); a, b = (int(x) for x in r.split('-'))
+        for r0 in rows:
+            if r0['chrom'] == c and r0['start'] < b and a < r0['end']: want.add(r0['transcript'])
+        title = locus
+    else:
+        for r0 in rows:
+            if str(r0['assigned_copy']) == locus: want.add(r0['transcript'])
+        title = f"copy {locus}"
+    info = {r0['transcript']: r0 for r0 in rows}
+    keep, n_tx = [], 0
+    for l in open(gtf_p):
+        f = l.rstrip('\n').split('\t')
+        if len(f) < 9: continue
+        m = re.search(r'transcript_id "([^"]*)"', f[8])
+        if not m or m.group(1) not in want: continue
+        r0 = info[m.group(1)]
+        if f[2] == 'transcript':
+            n_tx += 1
+            f[8] = f[8] + f' assigned_copy "{r0["assigned_copy"]}"; copy_votes "{r0["votes_for_best"]}/{r0["votes_total"]}"; copy_purity "{r0["purity"]}"; abstaining "{r0["abstaining"]}";'
+        keep.append('\t'.join(f))
+    dest = (out or 'locus') + '.locus.gtf'
+    open(dest, 'w').write("\n".join(keep) + "\n")
+    print(f"\n{title}: {n_tx} isoform(s) written to {dest}")
 if out:
     with open(out + '.isoform_copy.tsv', 'w') as o:
         w = csv.DictWriter(o, fieldnames=list(rows[0].keys()), delimiter='\t'); w.writeheader(); w.writerows(rows)
