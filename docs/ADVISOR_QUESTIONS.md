@@ -101,6 +101,43 @@ evidence that read-throughs are more conserved than ordinary introns.
 
 ---
 
+## Part 0d — "Not a transcriptome assembler" AND "compare to flair/StringTie" are the same request
+
+The two instructions look contradictory. They are not, and the resolution is in his own earlier words: on
+**2026-06-25** the reframe he asked for was that *the StringTie-clone assembler is the SUBSTRATE that produces
+transcripts and loci, NOT the contribution* — the contribution is the family definition and the read-to-copy
+assignment. Nothing has changed since.
+
+⟹ **Comment 1 is therefore not "is your assembler better than flair?"** — on that question the answer is "we
+do not claim it is, and isoform-level metrics are the wrong test". It is the sharper question: **"you built a
+substrate component that two published tools already provide. Justify keeping yours."**
+
+**The comparison that answers it is a SUBSTITUTION test, scored on families, not on transcripts.** Steps 6–7
+consume one FASTA of one sequence per locus and do not care where it came from. So: run the family definition
+three times, once on our stages 1–5, once on StringTie's loci, once on flair's, everything downstream held
+fixed, and compare the FAMILY output — the locus set, the components, the hierarchy, and the O1 metrics
+(sensitivity, specificity, bipartite coverage) against a truth family.
+
+⭐ **Both outcomes are good, which is why this is worth running.**
+- **Families are the same** ⟹ drop stages 1–5, cite StringTie for the substrate, and the thesis gets smaller
+  while the novel part (the definition and the assignment) stands alone and unencumbered. That is a *better*
+  thesis, not a worse one, and it removes the reviewer's largest "you reimplemented a solved problem" target.
+- **Families degrade** ⟹ there is now a measured reason the custom stages exist, which is exactly what he
+  asked for, and it is stated in the currency he cares about.
+
+⚠ **Two things already in the record point at the first outcome.** A direct comparison found the foundations
+**near-identical**: introns 99.3 / 98.0, bundles 3,351 / 3,430 exact, and **nodes 96.3 % byte-identical**, with
+zero junctions unique to our path — the measured gap was over-enumeration of real introns, not a different
+object. And the assembler stack was **already retired as dead code**: its 41 modules are unreachable from the
+five thesis binaries. The substrate we ship is a thin locus-builder, not a rival assembler, which is why the
+substitution is plausible and cheap to test.
+
+⚠ **What is NOT yet done:** the substitution itself. Neither StringTie nor flair has been run into steps 6–7,
+so no family-level comparison exists. That is the single open item behind comment 1 and it should be run
+before Wednesday if anything is.
+
+---
+
 ## Part 1 — The cross-examination: "this is luck or overfitting"
 
 These are not hypothetical. They are the five moves that follow from his stated priors, and each

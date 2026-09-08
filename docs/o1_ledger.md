@@ -14162,3 +14162,27 @@ exon-overlap and own-donor rules removed the 31 junctions the pipeline had manuf
 (42 → 14, annotated introns 32 → 1). What remains is a **small, checkable set**, and the defensible sentence is:
 *fourteen junctions survive the locus rules; seven replicate in an outgroup, five in both; the scrambled
 control replicates in neither.* Not "read-throughs are real biology" as a class.
+
+## §6gh — THE ADVISOR'S FIVE COMMENTS: answers, and the framing they settle (user, 2026-09-08)
+
+Revised pseudocode: `docs/PSEUDOCODE_2026-09-08.md` (five marked changes, four reporting-only, one behavioural).
+
+| # | comment | answer | status |
+|---|---|---|---|
+| 1 | overlaps flair / StringTie | stages 1–5 are the **substrate**, not the contribution — his own 2026-06-25 reframe. The test is a SUBSTITUTION scored on families, not isoform metrics | ⚠ **not run** |
+| 2 | why primary alignments only | the flag is an arbitrary tie-break; the locus set is **invariant** to it for 6/7 named families (adversarial relabel), TSPY 5→2 the exception. Cost measured: secondary-visible tier 26/31 vs 14/31 NPIP loci, unvalidated for precision (21,770/23,807 secondary reads carry the anchor's alleles) | ⭐ answered from the record |
+| 3 | runtime, and versus Jaccard | 961 loci / 2.2 Mb → **17.9 s wall, 64 s CPU, 1.1 GB**, 4,786 edges. MinHash Jaccard over the same sequences: **11.5 s** = 1.6× faster, recovering **64 %** of the edges at its most permissive and 46 % at 0.30. Jaccard is global containment, the edge rule is local | ⭐ **measured today** |
+| 4 | report the hierarchy, show TBC1D3 | step 7 now emits every level. **TBC1D3 component = 32 loci: 11 TBC1D3 + 5 USP32 + 16 others** — the known 17q12 duplication in which TBC1D3 arose. TBC1D3 separates from USP32 at identity **0.95** and splits into two subgroups at **0.98**, Soto's SD threshold | ⭐ **measured today** |
+| 5 | similarity as well as density | every edge now keeps its alignment identity; each block reports mean and minimum pairwise identity beside density. Split rule unchanged | ⭐ shipped in the revision |
+
+⚠⚠ **A setup error worth recording**: chromosome 17's all-vs-all was first run on **genomic spans** (58 Mb) and
+did not finish in 38 minutes; on **exon-sums** (6.7 Mb) — the object step 6 actually aligns — it took **11.7 s**.
+The pseudocode says exon-sums; the mistake was mine in reproducing it. It is now the Q3 paragraph's example.
+
+⭐⭐ **The framing this settles.** "This is not a transcriptome assembler" and "compare to flair/StringTie" are
+one request, not two: he is asking why a substrate component exists that two tools already provide. The record
+suggests the answer favours removing it — a prior comparison found **nodes 96.3 % byte-identical** to StringTie
+with zero junctions unique to our path, and the assembler stack is **already retired as dead code** (41 modules
+unreachable from the five thesis binaries). ⟹ **If the substitution shows equal families, the right move is to
+drop stages 1–5 and cite StringTie**, which makes the thesis smaller and puts the definition and the assignment
+alone in the foreground. See `ADVISOR_QUESTIONS.md` Part 0d.
