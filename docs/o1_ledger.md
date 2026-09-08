@@ -13461,3 +13461,97 @@ named: the two opposite-strand joins into MCL29 (MCL7, MCL27), and the four dupl
 them previously rejected) stands as measured. Non-readthrough rows remain byte-identical to the flag-off run.
 Params rows `readthrough_guard`, `readthrough_rejected_strand`, `readthrough_rejected_duplicate_flanks`.
 Suite **866 passed / 0 failed / 11 ignored** (new: `links_is_true_only_when_one_pair_holds_both_flanks`).
+
+## §6fx — Y AMPLICONIC FAMILIES: DAZ (user, 2026-09-07; PREREG `docs/PREREG_yags_daz_2026-09-07.md`, md5 f66fca74 after AMENDMENT 1)
+
+**User: "lets focus on YAGs such as DAZ where readthroughs and reads with same alignment score, unassignable
+otherwise might be."** Human only — gorilla annotates a single `DAZ1` (`NC_073248.2`), so there is no family.
+
+**Why this is the hard case, measured before the run.** Over `chrY:23,965,002-24,099,471` (DAZ1+DAZ3) the
+A119b IsoSeq on CHM13 gives **493 primaries: 358 MAPQ 0, 134 MAPQ 1–59, ONE MAPQ 60**. The genome-wide figure
+for MAPQ 0 inside multi-copy loci is 0.04 % (08-14). NPIP's hard set was MAPQ-60 reads with tied scores; here
+the aligner does not reach MAPQ 60 at all.
+⚠ **Tissue caveat, pre-registered:** A119b is not testis and the Y ampliconic families are testis-specific.
+These reads describe **the aligner's behaviour on ampliconic sequence**, which is what O2 adjudicates. **Nothing
+here is evidence about DAZ expression.**
+
+**Substrate** (`soto_mcl/yag`, `bench/yag_build.sh`): CHM13 chrY gene/pseudogene spans, `--core-refine --sedef
+HSA_sedef_pairs.bed --emit-units --emit-readthrough-units --bam A119b.t2t.bam`. ⚠ AMENDMENT 1: the first build
+was **killed after 24 min wall / 1h44m CPU with an empty PAF** — chrY's annotation carries several **0.8–1.1 Mb
+models inside the Yq12 satellite block** and satellite-vs-satellite is quadratic in anchors. Restricted to spans
+starting **below 28 Mb** (the euchromatic MSY, which holds every ampliconic family): **648 spans, 16,040 PAF
+records, 85 clusters, 393 units, 12 s of alignment.** No alignment or clustering parameter was changed.
+
+| prediction | verdict |
+|---|---|
+| **P1** the four DAZ copies in one cluster | ⭐ **HELD** — DAZ1–4 all in MCL3 |
+| **P2** ≥ 90 % of the family's molecules contested (MAPQ < 60) | ⭐ **HELD, 97.6 %** (17,762 of 18,192) |
+| **P3** O2 assigns ≥ 20 % to a single copy | ⛔ **FAILED: 3.7 % assigned, 3.0 % with a clean origin certificate.** On DAZ specifically, 9,230 molecules touch a DAZ copy and **302 = 3.3 %** are assigned cleanly (DAZ4 187, DAZ1 71, DAZ2 26, DAZ3 18); 8,186 abstain as ambiguous, 664 tie |
+| **P4** ≤ 2 read-through units survive the guard inside DAZ | ⭐ **HELD: 0.** The §6fw guard rejected 12 duplicate-flank candidates chrY-wide — DAZ copies are duplicates of one another by construction, exactly the case the guard was built for |
+| **P5** no assignment violates the tie invariant | ⚠ **NOT TESTABLE AS WORDED** — `tie_invariant` is `anchored >= GATE_MIN_READS`, a coverage flag, not a violation flag (24 of 36 copies simply lack 3 anchored reads) |
+| **P6** another ampliconic family recovered as one cluster | ⭐ **HELD** for XKRY (6 units), BPY (4), VCY (2); ⛔ TSPY fragments into 4 clusters (15+3+2+2), RBMY into 4 (21+8+2+1), CDY into 6, HSFY into 4, PRY into 2 |
+
+⭐⭐ **The result the advisor gets: on ampliconic sequence O2 abstains, and that is the design working, not
+failing.** 96 % of molecules are left unassigned rather than guessed at; the pre-registered consequence of P3
+failing was to report it as a limit, not to tune, and it is reported. ⚠ Genome-wide unique-mapper agreement
+fell to 313/532 = 58.8 % (NPIP: 95 %) — a sanity check, not a result.
+
+⛔⛔ **MCL3 is the AZFc AMPLICON, not the DAZ gene family**: 15 units, of which 4 are DAZ and the rest are
+`TRAPPC2P4/5/9/10`, `RAB9AP2/5`, `NLGN4Y`, `MED14P1`, `PPP1R12BP2`, `RBMY2GP` — genes carried in the same
+duplicated block. All 15 are `kept_full`, so the core rule cannot separate them: **they genuinely share
+duplicated core sequence because the whole amplicon was duplicated.** Against a DAZ-only truth, specificity is
+**4/15 = 0.267**. This is §6eg's block-vs-family distinction reappearing where the block IS the unit of
+duplication; on chrY the SD-core definition reconstructs amplicons. ⭐ It is also why NLGN4Y takes 198 of the
+549 clean assignments — a 320-kb unit in the same cluster.
+
+### §6fx addendum — ⚠⚠ THE 3.7 % IS RETRACTED: THE DENOMINATOR WAS 9.4× TOO LARGE (user challenge, 2026-09-07)
+
+**User: "it is not a great look that there are so many abstentions … Can we check?"** Checked, and the
+challenge was right. §6fx's headline counted **every molecule with any alignment touching the family**, and
+that set is dominated by genome-wide multimappers that appear in the DAZ region as SECONDARY alignments only.
+
+In the swept region the abstaining molecules contribute **12,369 secondary records against 185 primary ones**
+(the assigned ones: 547 primaries). Their PRIMARY alignments are spread across the genome — chr3 825, chr1 250,
+chr4 213, chrY 201, chr7 200, chr18 195 … They are visitors, not family members.
+
+| denominator | n | assigned | clean certificate | tied | ambiguous |
+|---|---|---|---|---|---|
+| any alignment touching the family (**as first reported — RETRACTED**) | 18,192 | 677 = 3.7 % | 549 = 3.0 % | 673 | 16,842 |
+| ⭐ **molecules with a PRIMARY alignment in the region** | **1,935** | **672 = 34.7 %** | **547 = 28.3 %** | 664 | 599 |
+| visitors (secondary-only here) | 16,257 | 5 = 0.0 % | 2 = 0.0 % | 9 | 16,243 |
+
+⟹ **P3 HOLDS on the faithful reading of its own wording** ("O2 assigns ≥ 20 % of DAZ molecules"): a molecule
+whose only trace here is a secondary alignment is not a DAZ molecule. **34.7 % assigned, 28.3 % with a clean
+origin certificate**, on a substrate where 97.6 % of molecules are contested and the aligner produces one
+MAPQ-60 read in the DAZ cluster. The §6fx verdict "P3 FAILED, 3.7 %" and the sentence "O2 abstains on 96 %"
+are **withdrawn**.
+
+**The abstentions that remain are structured, not a shrug.** Of the 599 ambiguous local molecules, **66.6 %
+have ZERO decisive columns** — no nucleotide separates the candidates over what the read covers, which is the
+identifiability wall, not a decision the method declined to make. Of the 4,805 ambiguous molecules that DO have
+decisive columns, 98.6 % are refused by the origin certificate and their fit to their own best candidate is
+poor (per-base score median **0.577** against **0.982** for the assigned) — because they come from elsewhere.
+⚠ It is not read divergence: over the DAZ cluster the reads align to CHM13 at median `de` **0.0012**, slightly
+BETTER than the autosomal control (0.0017).
+
+### §6fx enforcement — the denominator is now enforced in the binary, not by convention (user, 2026-09-07)
+
+**User: "can we ensure this is enforced".** Three changes, all additive.
+
+1. **`copy_assign` gains a `primary_local` column** (21st, appended; the first 20 are byte-identical on a rerun
+   of the DAZ family): the molecule has a **PRIMARY** alignment overlapping a copy of *this* family. The
+   existing `in_copy` was not enough — it fires on any aligned block, so a secondary-only visitor satisfies it.
+   On DAZ, `in_copy` admits **14,946 of 18,192** rows; `primary_local` admits **1,697**.
+2. **The run prints the enforced rate itself**, marked `⭐ RATES ARE OVER THIS SET`, naming how many
+   secondary-only visitors it excluded, so the number a person reads off the log is already the right one.
+   DAZ: *1,697 of 18,192 rows (16,495 visitors excluded) — assigned 672 (39.6 %) / tied 664 (39.1 %) /
+   ambiguous 361 (21.3 %)*. Params row `primary_local_rows`.
+3. **`bench/o2_tied_metric.py` and `bench/o2_l1l2_score.py` restrict to it** via a shared
+   `enforce_primary_local()` that prints what it dropped and **warns loudly on older tables** that lack the
+   column rather than silently rescoring them.
+
+⚠ The binary's 39.6 % and the hand-computed 34.7 % in the addendum above differ because the hand computation
+used "primary anywhere in the swept REGION" (n = 1,935) and the binary uses "primary overlapping a COPY"
+(n = 1,697). **The binary's definition is the stricter and the correct one**; quote 39.6 % assigned / 28.3 %
+of the region-level set with a clean certificate, and the enforced line from the run in preference to either.
+Suite **866 passed / 0 failed / 11 ignored**.

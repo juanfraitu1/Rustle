@@ -4,8 +4,25 @@ likely belong? Uses `<out>.posterior.tsv` (copy_assign --posterior). On simulate
 per class — truth in the tie set, posterior top-1 accuracy, calibration of the max posterior. On real reads: the
 distribution of the max posterior and tie-set size.  usage: o2_tied_metric.py <dir> [sim.bam]"""
 import sys, csv, collections, statistics as st
+
+def enforce_primary_local(rows, label="rows"):
+    """register 734: a per-family read RATE must be taken over molecules with a PRIMARY alignment in a copy.
+    `in_copy` is not enough — it fires on any aligned block, so genome-wide multimappers that only visit as
+    SECONDARY alignments count as family reads. On DAZ that inflated the denominator 9.4x and turned 34.7%
+    assigned into a reported 3.7%. Older tables have no `primary_local` column; those are passed through with
+    a loud warning rather than silently rescored."""
+    import sys
+    if not rows:
+        return rows
+    if 'primary_local' not in rows[0]:
+        print(f"  \u26a0 {label}: no `primary_local` column (table predates register 734) — rates are NOT enforced", file=sys.stderr)
+        return rows
+    keep = [r for r in rows if r['primary_local'] == '1']
+    print(f"  primary-local enforcement: {len(keep)}/{len(rows)} {label} kept, {len(rows)-len(keep)} secondary-only visitors dropped", file=sys.stderr)
+    return keep
+
 d = sys.argv[1]; bam = sys.argv[2] if len(sys.argv) > 2 else None
-A = {r['read_name']: r for r in csv.DictReader(open(f'{d}/A.assignments.tsv'), delimiter='\t')}
+A = {r['read_name']: r for r in enforce_primary_local(list(csv.DictReader(open(f'{d}/A.assignments.tsv'), delimiter='\t')), 'assignment rows')}
 J = {r['copy_index']: r['catalog_copy_idx'] for r in csv.DictReader(open(f'{d}/A.family_join.tsv'), delimiter='\t')}
 P = {}
 for r in csv.DictReader(open(f'{d}/A.posterior.tsv'), delimiter='\t'):

@@ -1246,6 +1246,11 @@ struct AssignRow {
     /// The read has an aligned BASE inside a copy of its family (§6es hygiene): rows with `false` are reads
     /// gathered from the copies' neighbourhoods that overlap no copy; report O2 on `in_copy == true`.
     in_copy: bool,
+    /// ⭐ register 734: the molecule has a PRIMARY alignment overlapping a copy of this family. `in_copy`
+    /// fires on any aligned block, so a genome-wide multimapper that only visits as a SECONDARY satisfies it
+    /// and inflates every per-family rate — on DAZ, 16,257 of 18,192 rows were such visitors and the assigned
+    /// fraction read 3.7 % instead of 34.7 %. **Every per-family read rate must be taken over this column.**
+    primary_local: bool,
     /// §6fq: the molecule's primary MAPQ < 60 — the aligner could not place it; the certificate machinery
     /// decided this row. `false` = assigned to its placement (the certificate only reported).
     contested: bool,
@@ -1477,6 +1482,7 @@ fn main() -> Result<()> {
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
     let mut family_rows: Vec<FamilyRow> = Vec::new();
     let mut placement_assigned_total = 0usize; // §6fq: uncontested molecules assigned to their placement
+    let mut primary_local_rows = 0usize; // register 734: the enforced per-family denominator
     let mut assign_rows: Vec<AssignRow> = Vec::new();
     let mut posterior_lines: Vec<String> = Vec::new();
     // EM-abundance prior for the posterior (else uniform).
@@ -1804,7 +1810,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans: _, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts } = work;
+            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts } = work;
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -1896,6 +1902,22 @@ fn main() -> Result<()> {
                         copy_gene.insert(tid.clone(), (fid.clone(), ci));
                     }
                 }
+                // ⭐ register 734: the molecules that BELONG here — those with a PRIMARY (non-secondary,
+                // non-supplementary) alignment overlapping a copy of THIS family. `in_copy` is not enough:
+                // it fires on any aligned block, so a genome-wide multimapper visiting as a secondary counts
+                // as a family read and inflates every per-family rate. On DAZ that inflated the denominator
+                // 9.4x (18,192 rows, 1,935 of them local) and turned 34.7% assigned into a reported 3.7%.
+                let primary_local: std::collections::HashSet<&str> = bam_reads
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| read_spans.get(*i).map_or(false, |sp| sp.2 == 0))
+                    .filter(|(i, _)| {
+                        read_blocks.get(*i).map_or(false, |bl| {
+                            bl.iter().any(|&(bs, be)| fa.copy_spans.iter().any(|(c, s0, e0)| c == contig && be > *s0 && bs < *e0))
+                        })
+                    })
+                    .map(|(_, n)| n.as_str())
+                    .collect();
                 let cat_idx_of = |ci: usize| -> String {
                     match (&catalog_index, fa.copy_tids.get(ci)) {
                         (Some(ix), Some(tid)) => ix.get(tid).map(|(_, i)| i.to_string()).unwrap_or_else(|| "NA".into()),
@@ -1920,6 +1942,7 @@ fn main() -> Result<()> {
                         origin_rejected: a.origin_rejected,
                         n_candidates: a.n_candidates,
                         in_copy,
+                        primary_local: primary_local.contains(bam_reads[*ri].as_str()),
                         contested: mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]) < 60,
                         readthrough_into: match readthroughs.get(bam_reads[*ri].as_str()) {
                             Some(&(pc, _)) if pc == usize::MAX => "cut".to_string(),
@@ -2288,21 +2311,22 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into")?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into\tprimary_local")?;
     for r in &assign_rows {
         // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
         // one is assigned to its placement (§6fq) whatever its candidate count
         let sole = (r.status == "assigned" && r.n_candidates == 1 && r.contested) as u8;
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8
         )?;
     }
     {
-        // §6es hygiene: the numbers to quote are on reads with an aligned base inside a copy.
+        // §6es hygiene: reads with an aligned base inside a copy. ⚠ Kept for continuity only — it counts
+        // secondary-only visitors, so it is NOT the denominator to quote (register 734).
         let inc: Vec<&AssignRow> = assign_rows.iter().filter(|r| r.in_copy).collect();
         let cnt = |st: &str| inc.iter().filter(|r| r.status == st).count();
         eprintln!(
@@ -2313,6 +2337,21 @@ fn main() -> Result<()> {
             cnt("tied"),
             cnt("ambiguous")
         );
+        // ⭐ register 734: THE denominator. Molecules with a PRIMARY alignment inside a copy of their family.
+        let loc: Vec<&AssignRow> = assign_rows.iter().filter(|r| r.primary_local).collect();
+        let lcnt = |st: &str| loc.iter().filter(|r| r.status == st).count();
+        let pct = |n: usize| if loc.is_empty() { 0.0 } else { 100.0 * n as f64 / loc.len() as f64 };
+        eprintln!(
+            "[copy_assign] ⭐ RATES ARE OVER THIS SET — molecules with a PRIMARY alignment in a copy: {} of {} rows \
+             ({} secondary-only visitors excluded) — assigned {} ({:.1}%) / tied {} ({:.1}%) / ambiguous {} ({:.1}%)",
+            loc.len(),
+            assign_rows.len(),
+            assign_rows.len() - loc.len(),
+            lcnt("assigned"), pct(lcnt("assigned")),
+            lcnt("tied"), pct(lcnt("tied")),
+            lcnt("ambiguous"), pct(lcnt("ambiguous"))
+        );
+        primary_local_rows = loc.len();
     }
 
     if args.junction_conflict_abstain {
@@ -2832,6 +2871,7 @@ fn main() -> Result<()> {
         row("sole_candidates", format!("{}", assign_rows.iter().filter(|r| r.status == "assigned" && r.n_candidates == 1 && r.contested).count()))?;
         row("placement_assign", format!("{}", args.molecule_observations && !args.no_molecule_observations && !args.no_placement_assign))?;
         row("placement_assigned", format!("{}", placement_assigned_total))?;
+        row("primary_local_rows", format!("{primary_local_rows}"))?;
         row("placement_first", format!("{}", args.placement_first))?;
         row("readthrough_certificate", format!("{}", !args.no_readthrough_certificate))?;
         row("readthrough_explained", format!("{}", assign_rows.iter().filter(|r| r.readthrough_into != "-").count()))?;

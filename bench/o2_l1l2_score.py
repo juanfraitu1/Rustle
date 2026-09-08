@@ -9,6 +9,23 @@ compared paired. For fam_MCL1_073242 the 62 audited junction anchors are scored 
 from o2scale/fam_NPIPcore_073242).
 """
 import csv, collections, glob, os, sys, pysam
+
+def enforce_primary_local(rows, label="rows"):
+    """register 734: a per-family read RATE must be taken over molecules with a PRIMARY alignment in a copy.
+    `in_copy` is not enough — it fires on any aligned block, so genome-wide multimappers that only visit as
+    SECONDARY alignments count as family reads. On DAZ that inflated the denominator 9.4x and turned 34.7%
+    assigned into a reported 3.7%. Older tables have no `primary_local` column; those are passed through with
+    a loud warning rather than silently rescored."""
+    import sys
+    if not rows:
+        return rows
+    if 'primary_local' not in rows[0]:
+        print(f"  \u26a0 {label}: no `primary_local` column (table predates register 734) — rates are NOT enforced", file=sys.stderr)
+        return rows
+    keep = [r for r in rows if r['primary_local'] == '1']
+    print(f"  primary-local enforcement: {len(keep)}/{len(rows)} {label} kept, {len(rows)-len(keep)} secondary-only visitors dropped", file=sys.stderr)
+    return keep
+
 M = '/mnt/linuxdisk/home/juanfraitu/mcl_ann'
 BAM = pysam.AlignmentFile(os.environ.get('O2_BAM', '/mnt/linuxdisk/home/juanfraitu/npip_cat/npip3.bam'))
 args = sys.argv[1:]; fams = None
@@ -18,7 +35,7 @@ dirs = args
 
 def score(d):
     cp = {r['copy_idx']: r for r in csv.DictReader(open(f'{d}/copies.tsv'), delimiter='\t') if r.get('member_status') != 'partner'}  # §6ft: partners are targets, not family copies
-    A = {r['read_name']: r for r in csv.DictReader(open(f'{d}/A.assignments.tsv'), delimiter='\t')}
+    A = {r['read_name']: r for r in enforce_primary_local(list(csv.DictReader(open(f'{d}/A.assignments.tsv'), delimiter='\t')), 'assignment rows')}
     truth = {}; mapq = {}
     for i, r in cp.items():
         c, s, e = r['chrom'], int(r['start']), int(r['end'])

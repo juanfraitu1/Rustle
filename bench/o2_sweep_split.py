@@ -17,7 +17,9 @@ for line in open(prefix + '.units.fa'):
     else: seqs[name].append(line.strip())
 groups = collections.OrderedDict()
 for r in rows:
-    fid = f"{r['family_id']}_{r['chrom'].split('_')[1].split('.')[0]}"
+    # contig tag: `NC_073242.2` -> `073242` (the historical form), any other name kept as-is (chrY)
+    c = r['chrom']
+    fid = f"{r['family_id']}_{c.split('_')[1].split('.')[0] if '_' in c else c}"
     groups.setdefault(fid, []).append(r)
 # §6ft partners: for every family unit, the nearest catalog unit of ANOTHER family on each side (the L2 clipping
 # neighbours). They enter copies.tsv with member_status = partner: O2 aligns molecules to them so a read-through
