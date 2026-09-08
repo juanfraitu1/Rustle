@@ -254,6 +254,15 @@ struct Args {
     /// duplication pair, because a cross-copy mis-chain needs the two flanks to be copies of one another.
     #[arg(long, default_value_t = false)]
     no_readthrough_guard: bool,
+    /// ⭐ CODING CORE (§6ga addendum): a member must additionally preserve the reading frame the family
+    /// preserves — its longest ORF must reach **half the family's best**. Annotation-free and threshold-free
+    /// in absolute terms: the comparison is to the family, which is the same majority the core rule takes,
+    /// one level up. Failing members are emitted with `member_status = noncoding` (a candidate, not a
+    /// member), so they stay visible and are never conflated with the core rule's `dropped`.
+    /// ⛔ The rejected alternative was reading the annotation's CDS records: a RefSeq pseudogene has none by
+    /// construction, so that test re-derives the annotation's own class label. Default OFF ⟹ byte-identical.
+    #[arg(long, default_value_t = false)]
+    coding_core: bool,
 
     #[arg(long)]
     out: String,
@@ -578,6 +587,32 @@ fn canonical_intron(genome: &rustle::genome::GenomeIndex, contig: &str, s: u64, 
     } else {
         matches!((d.as_str(), a.as_str()), ("GT", "AG") | ("GC", "AG") | ("AT", "AC"))
     }
+}
+
+/// Longest ORF (in bases, ATG..stop inclusive) over the three forward frames of an already-oriented
+/// spliced sequence. ⚠ Deliberately simple and annotation-free: the `--coding-core` rule below does not use
+/// an absolute threshold, only this length RELATIVE to the family's best, so what matters is that a
+/// frameshifted or stop-interrupted copy scores much lower than an intact one, not the exact value.
+fn longest_orf(seq: &[u8]) -> usize {
+    let mut best = 0usize;
+    for frame in 0..3 {
+        let mut start: Option<usize> = None;
+        let mut i = frame;
+        while i + 3 <= seq.len() {
+            let c = &seq[i..i + 3];
+            let up = [c[0].to_ascii_uppercase(), c[1].to_ascii_uppercase(), c[2].to_ascii_uppercase()];
+            if start.is_none() && up == *b"ATG" {
+                start = Some(i);
+            } else if let Some(st) = start {
+                if up == *b"TAA" || up == *b"TAG" || up == *b"TGA" {
+                    best = best.max(i + 3 - st);
+                    start = None;
+                }
+            }
+            i += 3;
+        }
+    }
+    best
 }
 
 fn lengths_from_blocks(b: &BTreeMap<GeneKey, Vec<(u64, u64)>>) -> BTreeMap<GeneKey, u64> {
@@ -974,10 +1009,13 @@ fn main() -> Result<()> {
         /// L2: the read-supported locus extent (0-based half-open) — the chain's extent unioned with the
         /// reference span of every BAM record overlapping the locus region. O2's alignment target.
         locus: (u64, u64),
+        /// `--coding-core`: longest ORF of `seq`, in bases. 0 when the flag is off.
+        orf: usize,
     }
     let mut units_dropped_emitted = 0usize;
     let mut units_unexpressed = 0usize;
     let mut readthrough_units = 0usize;
+    let mut noncoding_units = 0usize; // --coding-core: members demoted for not preserving the family's frame
     let mut rt_rejected = (0usize, 0usize); // guard: (opposite strand, flanks are duplicates)
     if args.emit_units {
         let bam = args.bam.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --bam"))?;
@@ -1168,6 +1206,7 @@ fn main() -> Result<()> {
                     units_dropped_emitted += 1;
                 }
                 pending.push(PendingUnit {
+                    orf: if args.coding_core { longest_orf(&seq) } else { 0 },
                     member: m.clone(),
                     exons,
                     strand,
@@ -1182,6 +1221,20 @@ fn main() -> Result<()> {
                     status,
                     locus,
                 });
+            }
+            // ⭐ CODING CORE: a member keeps its status only if its longest ORF reaches half the family's
+            // best — the family, not an absolute aa cutoff, is the reference. Failing members become
+            // `noncoding` candidates. Dropped members are left alone: the core rule already spoke.
+            if args.coding_core {
+                let best_orf = pending.iter().filter(|u| u.status != "dropped").map(|u| u.orf).max().unwrap_or(0);
+                if best_orf > 0 {
+                    for u in pending.iter_mut() {
+                        if u.status != "dropped" && u.orf * 2 < best_orf {
+                            u.status = "noncoding";
+                            noncoding_units += 1;
+                        }
+                    }
+                }
             }
             // ⭐ Units of one family that share EXON bases are one locus (§6fb): the read-followed chain of a large
             // record can cover records nested in it (MCL108: a 1.16-Mb unit with a 143-bp and a 2.7-kb unit inside
@@ -1422,6 +1475,9 @@ fn main() -> Result<()> {
              (dropped, no exon inside the locus, or no read inside the chain), {} unit(s) merged into an overlapping unit of the same family",
             unit_stats.0, unit_stats.1, unit_stats.2, unit_stats.3
         );
+        if args.coding_core {
+            eprintln!("[mcl_families] coding-core: {noncoding_units} member(s) demoted to `noncoding` (longest ORF below half the family's best)");
+        }
         if args.emit_readthrough_units {
             eprintln!(
                 "[mcl_families] emit-readthrough-units: {readthrough_units} conjoined read-through unit(s); \
@@ -1468,6 +1524,8 @@ fn main() -> Result<()> {
         ("emit_readthrough_units".to_string(), args.emit_readthrough_units.to_string()),
         ("readthrough_units".to_string(), readthrough_units.to_string()),
         ("readthrough_guard".to_string(), (!args.no_readthrough_guard).to_string()),
+        ("coding_core".to_string(), args.coding_core.to_string()),
+        ("noncoding_units".to_string(), noncoding_units.to_string()),
         ("readthrough_rejected_strand".to_string(), rt_rejected.0.to_string()),
         ("readthrough_rejected_duplicate_flanks".to_string(), rt_rejected.1.to_string()),
         ("units_dropped_emitted".to_string(), units_dropped_emitted.to_string()),
@@ -1573,6 +1631,25 @@ mod tests {
     /// leaves the chain downstream. A read spliced over the chain with no block in it contributes nothing,
     /// and an ordinary intron inside the chain is not a candidate.
     #[test]
+    /// The ORF scan is frame-aware, takes the LONGEST ATG..stop across the three forward frames, is
+    /// case-insensitive, and reports 0 when no complete ORF exists. A frameshift shortens it, which is the
+    /// whole point of `--coding-core` (the rule compares this length to the family's best, never to a
+    /// fixed number of amino acids).
+    #[test]
+    fn longest_orf_takes_the_best_complete_reading_frame() {
+        assert_eq!(longest_orf(b""), 0);
+        assert_eq!(longest_orf(b"ATGAAACCC"), 0, "no stop codon: not a complete ORF");
+        assert_eq!(longest_orf(b"ATGAAATAA"), 9);
+        assert_eq!(longest_orf(b"atgaaataa"), 9, "case-insensitive");
+        // frame 1: a leading base pushes the same ORF into another frame
+        assert_eq!(longest_orf(b"CATGAAATAA"), 9);
+        // a single-base insertion after the start breaks the frame, so the ORF collapses
+        assert_eq!(longest_orf(b"ATGAAACCCTAA"), 12);
+        assert_eq!(longest_orf(b"ATGAAAGCCCTAA"), 0, "frameshift removes the in-frame stop");
+        // the longer of two ORFs wins
+        assert_eq!(longest_orf(b"ATGTAAGGGATGAAACCCTAA"), 12);
+    }
+
     fn leaving_introns_are_downstream_junctions_of_reads_anchored_in_the_chain() {
         let chain = [(1000u64, 1100u64), (4000, 4120)];
         // no block in the chain: nothing, however far the intron reaches

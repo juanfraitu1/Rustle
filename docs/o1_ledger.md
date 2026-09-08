@@ -13814,3 +13814,38 @@ applied at codon level instead of base level: *a member is a coding member when 
 preserves the reading frame the majority of the family preserves.*
 ⚠ Not built and not measured; it is the candidate that would let the definition say "gene family" rather than
 "duplicon family" without borrowing the annotation's verdict.
+
+## §6gb — `--coding-core`: the frame test flips the class bias and DESTROYS NPIP (user, 2026-09-07)
+
+**User: "lets try that under a flag."** Shipped OFF: `mcl_families --coding-core`. A member must additionally
+preserve the reading frame the family preserves — its longest ORF must reach **half the family's best**.
+Annotation-free, and with no absolute amino-acid cutoff: the comparison is to the family, the same majority
+the core rule takes, one level up. Failing members are emitted as `member_status = noncoding` — a candidate,
+never conflated with the core rule's `dropped`. New helper `longest_orf` with its own test (frame-aware,
+case-insensitive, a frameshift collapses it). Off ⟹ every column but `member_status` is byte-identical.
+
+**It does what it was built to do.** Soto slice (492 units, 181 demoted), exclusion rate = core-dropped +
+noncoding:
+| class | units | core drop | + noncoding | total excluded |
+|---|---|---|---|---|
+| protein_coding | 163 | 0.074 | 0.258 | **0.331** |
+| transcribed_pseudogene | 131 | 0.031 | 0.443 | 0.473 |
+| pseudogene | 103 | 0.019 | 0.350 | 0.369 |
+⟹ pseudogene / protein-coding exclusion ratio **0.35× → 1.29×**: the rule now excludes pseudogenes MORE than
+genes, which is what a *gene*-family definition should do (register 743 reversed).
+
+⛔⛔ **And it is not viable in this form: on NPIP it demotes 18 of the 25 members.** MCL1 becomes 4 kept_full +
+3 kept_trimmed + **18 noncoding** + 7 dropped. Specificity stays 7/7 = 1.000 only because the survivors are
+still truth; **19 of the 26 truth loci are now candidates rather than members.** The cause is the threshold:
+"half the family's BEST" is brutal when one member's read-supported chain happens to yield a long ORF, and
+NPIP's units are partial chains whose ORFs vary widely. It also costs 26 % of protein-coding units on the Soto
+slice — the same defect, visible in both substrates.
+
+⚠ **A scorer bug was found by this run and fixed**: `bench/o1_eval.py` counted `noncoding` rows as MEMBERS,
+so the first NPIP score read a healthy 25/25 while 18 of those members had in fact been demoted. `noncoding`
+is now in the non-member list beside `dropped`, `readthrough` and `partner`. **Any earlier number scored with
+a `noncoding` catalog would have been wrong** — none was published; this was its first run.
+
+⟹ The direction is right and the threshold is wrong. The next form to try, unmeasured: compare each member's
+frame to the family **median** rather than its best, or demand only that the ORF be non-degenerate relative to
+the member's own exon length. Suite **867 passed / 0 failed / 11 ignored**.

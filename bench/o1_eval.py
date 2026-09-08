@@ -33,14 +33,14 @@ for i, (_, _, c, s, e, _, _) in enumerate(pred):
 rows, cols = linear_sum_assignment(-W)
 pairs = [(i, j) for i, j in zip(rows, cols) if W[i, j] > 0 and ok[i, j]]
 mt = {j for _, j in pairs}; mp = {i for i, _ in pairs}
-NONMEMBER = ('dropped', 'readthrough', 'partner')  # candidates and derived objects, never in the specificity denominator
+NONMEMBER = ('dropped', 'readthrough', 'partner', 'noncoding')  # candidates and derived objects, never in the specificity denominator
 members = [i for i in range(P) if pred[i][5] not in NONMEMBER]; cands = [i for i in range(P) if pred[i][5] in NONMEMBER]
 sens = len(mt) / max(T, 1); spec = len([i for i in members if i in mp]) / max(len(members), 1)
 ratios = [(pred[i][4] - pred[i][3]) / (truth[j][2] - truth[j][1]) for i, j in pairs]
 covs = [cov[i, j] for i, j in pairs]
 inband = sum(1 for r in ratios if 0.5 <= r <= 2)
 print(f"O1 eval: predictions {P} | truth {T} | matched 1:1 {len(pairs)}")
-print(f"  sensitivity (truth rediscovered) {len(mt)}/{T} = {sens:.3f} | specificity (family MEMBERS that are truth) {len([i for i in members if i in mp])}/{len(members)} = {spec:.3f} | candidates (dropped / readthrough) {len(cands)}, of which truth {len([i for i in cands if i in mp])}")
+print(f"  sensitivity (truth rediscovered) {len(mt)}/{T} = {sens:.3f} | specificity (family MEMBERS that are truth) {len([i for i in members if i in mp])}/{len(members)} = {spec:.3f} | candidates (dropped / readthrough / noncoding) {len(cands)}, of which truth {len([i for i in cands if i in mp])}")
 print(f"  truth coverage by the matched unit: median {np.median(covs):.2f}, ≥ 0.5: {sum(1 for c in covs if c >= 0.5)}/{len(covs)}, ≥ 0.9: {sum(1 for c in covs if c >= 0.9)}/{len(covs)}")
 print(f"  size ratio pred/true: median {np.median(ratios):.2f}, in-band 0.5–2×: {inband}/{len(ratios)} = {inband/max(1,len(ratios)):.2f}, truncated ≤ 0.5×: {sum(1 for r in ratios if r <= 0.5)}, over-extended ≥ 2×: {sum(1 for r in ratios if r >= 2)}")
 miss = [truth[j] for j in range(T) if j not in mt]; extra = [pred[i] for i in range(P) if i not in mp]
