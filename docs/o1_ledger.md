@@ -14450,3 +14450,30 @@ substrates, specificity improves slightly on Soto, the size band loses 3 pairs o
 read-throughs — 31 of 32 of which were ordinary introns of one gene — disappear. ⚠ It is still a default flip
 that moves 60 unit rows across 8 families on the gorilla contigs, so **it should be pre-registered and flipped
 deliberately, not folded in silently**. Suite **867 passed / 0 failed / 11 ignored**.
+
+## §6gn — ⛔ THE DEFAULT FLIP IS REVERTED: the untested substrate failed (user, 2026-09-08; PREREG `docs/PREREG_cross_family_overlap_default_2026-09-08.md`, md5 92c2c1e0)
+
+The cross-family exon-overlap rule was flipped ON by default and **reverted the same run**. The
+pre-registration named the risk correctly: *"P4 is the real test: the other three substrates were used to
+design the rule, chr16+18 was not."*
+
+| prediction | verdict |
+|---|---|
+| **P1** `--allow-cross-family-exon-overlap` reproduces the old default | ⭐ **HELD — byte-identical to `rna_units_v12`** |
+| **P2** gorilla NPIP 26/26, 25/25 | ⭐ **HELD, unchanged** |
+| **P3** Soto sensitivity 0.909, specificity ≥ 0.649 | ⭐ **HELD**: 0.909 and **0.663** (up from 0.649) |
+| **P5** gorilla read-throughs ≤ 20, ≤ 3 annotated | ⭐ **HELD: 14, of which 1** |
+| **P4** human chr16+18 NPIP 26/26 and specificity ≥ 0.963 | ⛔⛔ **FAILED: 24/26 and 0.960** |
+
+⛔ **On human chr16+18 the rule loses `NPIPA1` (chr16:14,938,509-14,953,106) and `NPIPA6`
+(chr16:16,340,280-16,359,022)** — two real NPIP members, gone from the family because the trim took the bases
+that made them members. 19 units were trimmed on that substrate. Four of five predictions held and the fifth
+cost two truth loci, so **the pre-registered consequence applies: the default stays OFF and the failure is
+reported, not tuned around.** Default restored and verified **byte-identical to `rna_units_v12`**.
+
+⟹ **What this establishes about the rule itself.** It is right about what it was built for — the gorilla
+read-throughs fall 42 → 14 and the manufactured ones 32 → 1, with membership untouched there — and wrong as a
+universal default, because "give the contested bases to the unit whose annotated span contains them" can strip
+a genuine member of the very sequence that qualified it. **It stays an opt-in flag.** ⚠ The generalisation
+worth keeping: three substrates agreed and the fourth, the only one not used to design the rule, disagreed —
+a rule validated only where it was developed is not validated. Suite **867 passed / 0 failed / 11 ignored**.

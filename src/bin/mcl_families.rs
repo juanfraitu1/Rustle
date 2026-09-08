@@ -270,8 +270,17 @@ struct Args {
     /// joining two loci. **32 of 42 guarded read-throughs were annotated introns of one gene.**
     /// Contested bases go to the unit whose own annotated member span contains them; if that does not decide,
     /// to the unit with more reads. Default OFF ⟹ byte-identical.
+    /// ⛔ Default stays OFF. The 2026-09-08 flip (PREREG md5 92c2c1e0) was **reverted**: on human chr16+18 —
+    /// the one substrate the rule was not designed against — it LOSES `NPIPA1` and `NPIPA6`, taking NPIP
+    /// sensitivity 26/26 → 24/26 (P4 failed). The rule is right about the gorilla read-throughs and wrong as
+    /// a universal default; turning it on is a per-run decision until the loss is understood.
     #[arg(long, default_value_t = false)]
     no_cross_family_exon_overlap: bool,
+    /// Escape hatch: permit two units of different families to claim the same exon bases, reproducing every
+    /// catalog built before 2026-09-08. ⚠ With overlap allowed, an ordinary intron of one gene is reported as
+    /// a read-through out of its neighbour — 32 of 42 guarded read-throughs were exactly that (register 754).
+    #[arg(long, default_value_t = false)]
+    allow_cross_family_exon_overlap: bool,
 
     #[arg(long)]
     out: String,
@@ -1310,7 +1319,7 @@ fn main() -> Result<()> {
         // whose own annotated member span contains them, else to the unit with more reads; the loser's exons
         // are trimmed. Within one family the §6fb merge already handles overlap, so same-family pairs are skipped.
         let mut cross_trimmed = 0usize;
-        if args.no_cross_family_exon_overlap {
+        if args.no_cross_family_exon_overlap && !args.allow_cross_family_exon_overlap {
             let mut by_ctg: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
             for (fi, (_, pending, _)) in staged.iter().enumerate() {
                 for (k, u) in pending.iter().enumerate() {
@@ -1627,7 +1636,7 @@ fn main() -> Result<()> {
         ("readthrough_units".to_string(), readthrough_units.to_string()),
         ("readthrough_guard".to_string(), (!args.no_readthrough_guard).to_string()),
         ("coding_core".to_string(), args.coding_core.to_string()),
-        ("no_cross_family_exon_overlap".to_string(), args.no_cross_family_exon_overlap.to_string()),
+        ("no_cross_family_exon_overlap".to_string(), (args.no_cross_family_exon_overlap && !args.allow_cross_family_exon_overlap).to_string()),
         ("noncoding_units".to_string(), noncoding_units.to_string()),
         ("readthrough_rejected_strand".to_string(), rt_rejected.0.to_string()),
         ("readthrough_rejected_duplicate_flanks".to_string(), rt_rejected.1.to_string()),
