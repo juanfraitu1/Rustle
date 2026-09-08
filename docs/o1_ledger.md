@@ -13710,3 +13710,30 @@ class effect.
 ⚠ Scope: that detection split is measured on `soto_mcl/mcl_v12`, which was built **without** the core rule
 (`core_refine false`). **Whether the CORE RULE has a class bias is unmeasured** — and since membership, not
 detection, is what dropped `ID_9`, that is the measurement that would actually settle the question.
+
+### §6fz addendum — the core rule DOES have a class bias, and it runs the other way (2026-09-07)
+
+§6fz left one question open: detection is class-flat, but membership is what dropped `ID_9`, so does the CORE
+RULE discriminate by gene class? Measured on a core-refined Soto-slice catalog built for this
+(`soto_mcl/mcl_core`: `--core-refine --sedef HSA_sedef_pairs.bed`, 119 clusters, 492 units, 432 kept_full /
+43 trimmed / 26 dropped).
+
+| gene class of the unit | units | dropped by the core rule | drop rate |
+|---|---|---|---|
+| pseudogene (incl. transcribed) | 234 | 6 | **0.026** |
+| protein_coding | 163 | 12 | **0.074** |
+| lncRNA | 91 | 7 | 0.077 |
+
+Restricted to units overlapping a Soto member: pseudogene 0.032, protein_coding 0.052, lncRNA 0.070.
+
+⭐⭐ **The bias exists and it is the OPPOSITE of the hypothesis: the core rule retains pseudogenes at ~3× the
+rate it retains protein-coding genes** (drop rate 0.35× theirs). The mechanism is mechanical, not biological: a
+pseudogene is a duplicated copy whose span is mostly the duplicated sequence, so its core easily clears
+`core ≥ span/2`, while a protein-coding gene carries unique sequence that dilutes the fraction.
+
+⟹ **This sharpens the whole Soto reading.** We do not merely score well on a pseudogene-heavy benchmark by
+accident — **the membership rule actively prefers exactly the objects that benchmark is made of.** A rule
+stated as "shares a duplicated core" is a DUPLICON rule; nothing in it asks for a gene. The lever that would
+correct it is the one AMENDMENT 3 introduced for a different purpose: requiring the shared segment to carry
+the transcribed exons. ⚠ Whether that lever actually reduces the bias is UNMEASURED, and it is complicated by
+`transcribed_pseudogene` being 110 of the 168 pseudogene members — they are transcribed too.

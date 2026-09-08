@@ -33,6 +33,45 @@ of the shipped gate** — it is the robust-z of `de`, not the α-certificate.
 
 ---
 
+## Part 0b — What Soto 2025 is, and what it is not (READ BEFORE QUOTING ANY SOTO NUMBER)
+
+⚠⚠ **Soto's catalogue is a 98 %-identity SEGMENTAL-DUPLICATION catalogue, not a gene-family catalogue**
+(§6fz, register 741, measured 2026-09-07 against CHM13 RefSeq biotypes):
+
+| what its 362 members overlap | n | share |
+|---|---|---|
+| protein_coding | 140 | **38.7 %** |
+| transcribed_pseudogene | 110 | 30.4 % |
+| pseudogene | 58 | 16.0 % |
+| lncRNA | 39 | 10.8 % |
+| no annotated gene at all | 11 | 3.0 % |
+
+**Fewer than two in five members are protein-coding genes; 46.4 % are pseudogenes. Of the 76 multi-member
+families, 60 MIX biotypes.** Within-family length spread: median **3.1×**, 24 families above 5×, 12 above 20×,
+extreme `ID_14` at **583.7×** (0.1 kb to 65.4 kb) — one "family" holding a 100-bp fragment and a 65-kb gene.
+
+⟹ **What this means for the thesis.** A recall number against Soto is partly a count of how many pseudogene
+fragments a method admits. A method that defines a family as a set of *genes* will lose members there **by
+construction**, and that loss is not an error. So Soto is the wrong instrument for the question "did you find
+the family", and the right one for two narrower questions.
+
+**Soto remains the best available instrument for:**
+- **Paired comparisons** — both arms pay the identical price, which is why `O1_DEFINITION_SWITCH.md` §2 is a
+  valid head-to-head even though its absolute levels are not interpretable as gene-family recall.
+- **Precision in the adjudicable [0.90, 1) band** — a pair it asserts is a real duplication.
+- **Independence** — it is not our instrument, and it is CHM13-based, so it corroborates across a substrate
+  boundary.
+
+**Soto is NOT a ceiling, a gold standard, or the final word on whether a family was found.** ⚠ Its detection
+levels are also slice-conditioned: only its own neighbourhoods exist in the comparison, so genome-wide false
+merges cannot occur in either arm. ⭐ Our own gorilla truth carries the same defect in miniature and it is
+declared: of the 26 LCR16a loci, 25 are protein-coding and `ID_9` is the single lncRNA (7.1 kb against a
+25.5 kb median, 0 reads).
+⛔ One inference that does NOT follow, and was tested: this conflation does not explain which members we miss.
+Detection on the Soto slice is class-flat — pseudogene 0.935, protein_coding 0.929, lncRNA 0.872 (register 742).
+
+---
+
 ## Part 1 — The cross-examination: "this is luck or overfitting"
 
 These are not hypothetical. They are the five moves that follow from his stated priors, and each

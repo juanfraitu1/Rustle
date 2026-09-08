@@ -18,6 +18,15 @@ of `THESIS_OBJECTIVES.md`; that edit is the user's decision and the proposed wor
 | what the record says it does well | seed-free; NPIP false merges are Alu at the sensitive tier only (§6cr) | NPIP 31/31 from the first run (§6da); transports genome-wide (§6dd); duplication block ≠ family certificate (§6ef/§6eg) |
 | where it failed | node construction ~58 % of the loss (§5e); NPIP fragmented into 5–6 families (§5j); 26.8 % single-exon stubs; ape catalogs not reproducible | annotation as node loses Soto members the reads found (§6ev, below); RNA admission of unannotated loci NOT implemented; three O2-facing defects §6eu |
 
+> ⚠⚠ **Before reading §2's levels: Soto's catalogue is a 98 %-identity SEGMENTAL-DUPLICATION catalogue**
+> (§6fz, register 741). Only **38.7 %** of its 362 members overlap a protein-coding gene; 46.4 % are
+> pseudogenes, 10.8 % lncRNA, 11 have no annotated gene at all; **60 of 76 multi-member families mix
+> biotypes**, with within-family length spread median 3.1× and up to 583.7×. **The detection rows below are
+> therefore NOT gene-family recall** — they count pseudogene fragments as members. The comparison remains
+> valid as a PAIRED one (both arms pay the same price) and the band-precision rows remain interpretable.
+> The prediction P3 "detection ≥ 0.80" was scored against this catalogue and its failure must be read in
+> that light.
+
 ## 2. One truth, one scorer, both definitions (§6ev; `docs/soto_two_definitions_2026-09-05.log`)
 Soto 2025's 83 families / 362 members on CHM13 v2.0, HUMAN A119b, the SAME slice (`soto_adj/regions.bed`),
 the same reads (`soto.bam`), `bench/soto_adjudicate.py` unchanged; MCL adapted by `bench/mcl_to_cat_copies.py`
