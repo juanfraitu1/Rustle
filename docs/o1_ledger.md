@@ -13620,3 +13620,34 @@ minus-strand pair is closed on its own, so "the smallest closed set containing D
 excludes DAZ2/DAZ3. The pre-registered consequence of Q3 failing was to report it rather than patch again,
 and that is what this row does. **The definition is single-valued on autosomal families and start-dependent on
 palindromic ampliconic ones**; a thesis statement must carry that scope, not hide it.
+
+### §6fy AMENDMENT 2 — the duplicon named explicitly, and the palindrome "ambiguity" is NESTING (2026-09-07)
+
+**User: "how can we include the sd/duplicon property in the definition?"** Measured first, on the two DAZ
+fixed points of AMENDMENT 1:
+
+| family level | members | shared segment, median | exons of each member covered by it |
+|---|---|---|---|
+| {DAZ1, DAZ4} | 2 | **69.7 kb** | 1.00 – 1.00 |
+| all four DAZ | 4 | **52.7 kb** | 0.05 – 1.00 |
+
+⭐⭐ **Fewer copies share MORE sequence.** The two fixed points are not an ambiguity between right and wrong —
+they are **two duplicons at different levels of a nested structure**, which is exactly the core-duplicon
+hierarchy of Jiang et al. 2007. Register 737's "start-dependence" is better read as: the closure lands on
+whichever level its seed's evidence supports.
+
+⟹ **The definition with the duplicon made explicit** (proposed, not yet the shipped wording):
+> **A duplicon is a maximal genomic segment present at two or more locations at high identity. Its family is
+> the set of those locations. Duplicons NEST: a longer duplicon has fewer copies, so a locus belongs to a
+> CHAIN of families ordered by copy number, and a statement about "the family" must name the level.**
+
+This inverts the current phrasing — the object is named first and the family derived from it — and it makes
+the SD property definitional rather than an input. On the substrates measured, gorilla NPIP has a chain of
+**length 1** (every single-locus start converges to the same level) and DAZ a chain of **length 2**. The chain
+length is itself a measurable property of a family.
+
+⛔ **What is NOT resolved: which level to call "the gene family".** The obvious rule — the largest level whose
+shared segment still carries the transcribed exons — does **not** work on this data: at the 4-copy level exon
+coverage runs 0.05–1.00, because two of that level's members are TRUNCATED intervals inside DAZ1 and DAZ4
+rather than the whole loci. So the rule would pick the 2-copy level, which is biologically wrong for DAZ.
+**Level selection is the open problem**, and it is now stated as one rather than assumed away.
