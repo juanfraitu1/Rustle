@@ -13651,3 +13651,27 @@ shared segment still carries the transcribed exons — does **not** work on this
 coverage runs 0.05–1.00, because two of that level's members are TRUNCATED intervals inside DAZ1 and DAZ4
 rather than the whole loci. So the rule would pick the 2-copy level, which is biologically wrong for DAZ.
 **Level selection is the open problem**, and it is now stated as one rather than assumed away.
+
+### §6fy AMENDMENT 3 — a member is a LOCUS, and the level rule then works (2026-09-07; PREREG md5 88d7f3b2)
+
+Register 739's cause was diagnosed and removed: the extend step admitted the alignment fragment rather than
+the locus it lies in. At the 4-copy DAZ level those fragments were 23.2 kb inside DAZ1 and 20.8 kb inside DAZ4,
+holding **9 % and 5 % of those loci's exons**. **Change:** an admitted interval is grown to the annotated span
+containing it (the annotation proposes extent, robust to ±5 kb per §6fu); with no annotation it is kept and
+marked unannotated. The duplicon remains what the loci SHARE; the member becomes the locus.
+
+| prediction | verdict |
+|---|---|
+| **R1** the 4-copy DAZ level is four whole loci | ⭐ **HELD** — DAZ1 23,965,003-24,026,288; DAZ3 24,046,728-24,099,471; DAZ4 25,571,713-25,641,471; DAZ2 25,661,821-25,719,401 |
+| **R2** exon coverage of the shared segment > 0.5 for every member | ⭐ **HELD, and at ceiling: 1.00 at BOTH levels** |
+| **R3** the level rule picks the 4-copy level | ⭐⭐ **HELD** — with whole loci the shared segment at the 4-copy level rises from 52.7 kb to **61.3 kb** median and still carries every member's exons, so "the largest level whose shared segment still carries the transcribed exons" now selects **all four DAZ copies**, the biologically right answer |
+| **R4** gorilla NPIP unchanged | ⚖️ **precision 1.000 and 25 loci from both starts tested** — but ID_5's earlier 26-member superset is **gone**: locus growth made every start agree at 25 and lost the one that had recovered `ID_9`. More consistent, one locus poorer |
+
+⟹ ⭐⭐⭐ **The definition now has all three pieces and they hold together:**
+> A **duplicon** is a maximal genomic segment present at two or more locations at high identity. Its **family**
+> is the set of **loci** carrying it. Duplicons **nest** — a longer duplicon has fewer copies — so a locus
+> belongs to a chain of families, and **the gene family is the largest level whose shared segment still carries
+> the transcribed exons.**
+On DAZ that returns the four copies; on gorilla NPIP the chain has one level and it returns 25 of 26 loci from
+a single starting locus at precision 1.000. ⚠ Still open: `ID_9` (the 3.8-kb fragment) is now missed by every
+start, and the human substrate has not been rerun under AMENDMENT 3.

@@ -73,3 +73,26 @@ the family you start.
 - ⚠ A single-locus seed makes the majority condition vacuous on the first round (there are no "other members"),
   so round 1 admits whatever aligns; the test is what the SECOND round prunes it to. If a single locus grows to
   the amplicon and stays there, Q1 fails and the amplicon is simply the smallest closed set on chrY.
+
+---
+
+## AMENDMENT 2 — a member is a LOCUS, not an alignment fragment (2026-09-07, before the runs)
+
+Register 739 diagnosed: at the 4-copy DAZ level two members are alignment fragments inside DAZ1 and DAZ4
+(23.2 kb and 20.8 kb) that hold **9 % and 5 % of those loci's exons**. The extend step admitted the piece that
+happened to align rather than the locus it lies in, so members of one level are not comparable and the
+exon-based level rule preferred the 2-copy level.
+
+**Change:** an admitted interval is grown to the locus containing it — the overlapping annotated span where one
+exists (the annotation proposes extent, which the ablation showed is robust to ±5 kb), otherwise the interval
+is kept as-is and marked **unannotated**. The duplicon stays what the loci SHARE; the member becomes the locus.
+
+### Predictions
+| # | prediction |
+|---|---|
+| **R1** | at the 4-copy DAZ level all four members are whole loci |
+| **R2** | exon coverage of the shared segment at that level is **> 0.5 for every member** |
+| **R3** | the level rule ("largest level whose shared segment still carries the transcribed exons") then picks the **4-copy** level over the 2-copy one |
+| **R4** | gorilla NPIP is **unchanged**: 25 loci from a single-locus seed, precision 1.000 |
+
+R3 failing ⟹ level selection is not an exon question and the chain is reported without a chosen level.

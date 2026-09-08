@@ -16,6 +16,14 @@ paf_p, sed_p, mmi, gfa, truth_p, W = sys.argv[1:7]
 args = sys.argv[7:]
 seed_mode = args[args.index('--seed-mode') + 1] if '--seed-mode' in args else 'full'
 seed_bed = args[args.index('--seed-bed') + 1] if '--seed-bed' in args else None
+# AMENDMENT 2: a member is a LOCUS. An admitted interval is grown to the annotated span containing it;
+# with no annotation it is kept as-is and counted as unannotated.
+loci_bed = args[args.index('--loci-bed') + 1] if '--loci-bed' in args else None
+LOCI = []
+if loci_bed:
+    for l in open(loci_bed):
+        f = l.rstrip('\n').split('\t')
+        if len(f) >= 3 and f[1].isdigit(): LOCI.append((f[0], int(f[1]), int(f[2])))
 MAX_ITER = int(args[args.index('--max-iter') + 1]) if '--max-iter' in args else 10
 os.makedirs(W, exist_ok=True)
 MIN_ID, MIN_COV, MIN_BP = 0.70, 0.30, 300
@@ -146,8 +154,21 @@ def extend(members, prof, it):
                 if cur: merged.append((c, cur[0], cur[1]))
                 cur = [a, b]
         if cur: merged.append((c, cur[0], cur[1]))
-    return [(c, s + 1, e) for c, s, e in merged
-            if not any(m[0] == c and ov(m[1] - 1, m[2], s, e) > 0 for m in members) and e - s >= MIN_BP]
+    out = []
+    for c, s, e in merged:
+        if any(m[0] == c and ov(m[1] - 1, m[2], s, e) > 0 for m in members) or e - s < MIN_BP:
+            continue
+        # grow to the locus containing the hit (AMENDMENT 2)
+        host = [(a, b) for hc, a, b in LOCI if hc == c and ov(a, b, s, e) > 0]
+        if host:
+            s, e = min(a for a, _ in host), max(b for _, b in host)
+        out.append((c, s + 1, e))
+    # a grown interval can now swallow another: merge again so members stay disjoint
+    out.sort(); fin = []
+    for c, s, e in out:
+        if fin and fin[-1][0] == c and s <= fin[-1][2]: fin[-1][2] = max(fin[-1][2], e)
+        else: fin.append([c, s, e])
+    return [tuple(x) for x in fin]
 
 # ---- the closure
 members = list(seed); history = []; trace = []
