@@ -13849,3 +13849,27 @@ a `noncoding` catalog would have been wrong** — none was published; this was i
 ⟹ The direction is right and the threshold is wrong. The next form to try, unmeasured: compare each member's
 frame to the family **median** rather than its best, or demand only that the ORF be non-degenerate relative to
 the member's own exon length. Suite **867 passed / 0 failed / 11 ignored**.
+
+### §6gb addendum — can SPLICING identify pseudogenes? Only the retro ones, which are not the ones we have (user, 2026-09-07)
+
+**User: "if we are using both RNA and DNA can we just identify pseudogenes or lncRNA by not being spliced?"**
+Measured on the 492 core-refined Soto-slice units, exon count of the read-supported chain:
+
+| class of the overlapping gene | units | exons, median | single-exon | ≥ 3 exons |
+|---|---|---|---|---|
+| protein_coding | 163 | **9** | 0.15 | 0.79 |
+| transcribed_pseudogene | 131 | **7** | 0.12 | **0.78** |
+| pseudogene (not transcribed) | 103 | **2** | **0.41** | 0.42 |
+| lncRNA | 91 | 3 | 0.12 | 0.70 |
+
+⛔ **The idea works for one sub-class and fails for the majority.** Splicing separates the non-transcribed
+pseudogenes (41 % single-exon against 15 %), but `transcribed_pseudogene` — **131 of the 234 pseudogene units,
+the majority** — is spliced *exactly like a real gene*: median 7 exons against 9, and 0.78 versus 0.79 at
+≥ 3 exons. Pooled, the single-exon rate is 0.25 for pseudogenes against 0.15 for protein-coding: a weak signal.
+lncRNA is spliced too (0.12 single-exon), so splicing does not identify it either.
+
+⭐ **The reason is the biology of THIS object.** Splicing detects **processed (retro)** pseudogenes, which are
+intronless because they came back through RNA. A segmental duplication copies the gene *with its introns*, so
+the pseudogenes an SD family is made of are **unprocessed**: they keep the intron structure and lose the
+reading frame. ⟹ Splicing is the wrong instrument for a duplication-derived family, and the frame test of
+§6gb is the right one — which is also why that test flipped the class bias while this one cannot.
