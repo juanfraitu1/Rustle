@@ -14320,3 +14320,37 @@ than as a claim.**
 it produces is outside this family — the comparison above is deliberately restricted to the same coordinates.
 ⚠ Neither set is validated against a transcript truth here; the claim is about what each file CAN say, not
 about which isoforms are correct.
+
+### §6gj addendum — the head-to-head on this family, both directions (user, 2026-09-08)
+
+**User: "if we take the results of stringtie for this family only and compare them with ours, are there
+similarities or any way that ours are better?"** Over the family's full swept copy set (80 copies, **15,960
+primary molecules, 14,852 spliced**):
+
+| | ours | StringTie |
+|---|---|---|
+| transcripts overlapping a copy | **380** | 175 |
+| distinct spliced intron chains | **282** | 164 (**50 shared**) |
+| spliced molecules whose EXACT chain is in the set | **84.7 %** | 79.4 % |
+| read-supported junctions recovered (≥2 molecules, 1,077 total) | 42.1 % | **58.6 %** |
+| junctions asserted with < 2 molecules of support | 190 | **11** |
+| transcripts more than 2× longer than their best copy | **42** | 59 |
+
+⚠⚠ **This does not say ours is better, and it should not be presented that way.** It says the two are
+different design points and each wins on a different axis:
+- ⭐ **Ours explains more molecules exactly** (84.7 % vs 79.4 %) and over-extends less often (42 vs 59).
+- ⛔ **StringTie recovers far more read-supported junctions** (58.6 % vs 42.1 %).
+
+**The mechanism behind both numbers is the same rule.** Our collapse requires the WHOLE intron chain to be
+observed in ≥ 2 molecules, so a junction that only ever appears in rare long combinations is never emitted —
+conservative about chains, hence higher molecule-level agreement and lower junction recall. StringTie's flow
+model can emit a junction combination **no single read shows**, which recovers more junctions and is why it
+also strays outside the copy more often.
+⚠ The 190 junctions we assert below the 2-molecule bar are most likely an artefact of the accounting (reads
+were counted only inside copy intervals, while transcripts may extend beyond them); it is not quoted as a
+defect without a cleaner measurement.
+
+⟹ **The defensible sentence for Wednesday is not "ours is better".** It is: *on the same reads the two sets
+agree on 50 chains and 36–631 junctions, ours explains 5 points more of the molecules exactly, StringTie
+recovers 16 points more of the junctions — and only ours can say which copy an isoform belongs to.* The
+comparison earns its place by being two-sided.
