@@ -13933,3 +13933,40 @@ strong as single-dataset evidence gets.
 ⚠ Still missing, and it is now the ONLY open route: **independent replication** — the same junction in another
 individual or dataset. ⚠ And the junctions where **no molecule spans both ends** (MCL29 → MCL106, MCL1 → MCL27,
 both 0) are a different and weaker class that should not be described in the same sentence as the others.
+
+### §6gb addendum 4 — microhomology measured; no template-switching signature (user, 2026-09-07)
+
+**User: "how can we measure microhomology?"** A reverse-transcription template switch anneals the nascent
+cDNA's 3′ end on short sequence identity, so it leaves matching bases flanking the donor and the acceptor.
+Measured as the longest common suffix of the 25 bp ending at each side plus the longest common prefix of the
+25 bp following each, against a null of **ordinary introns of the same units** — real spliceosomal junctions,
+so the comparison controls for everything except the junction's origin.
+
+| | n | median | mean | ≥ 6 bp |
+|---|---|---|---|---|
+| read-through junctions (guarded set) | 42 | 3.0 | 2.95 | **1/42 = 2 %** |
+| ordinary introns (null) | 400 | 2.0 | 2.25 | 14/400 = 4 % |
+
+Mann-Whitney (read-throughs greater): **p = 0.000263**.
+
+⚖️ **Read the two numbers together, not the p-value alone.** The shift is real but **0.7 bp**, and the tail
+that actually signals template switching — long microhomology — is **LOWER** in the read-throughs (2 % vs 4 %
+at ≥ 6 bp). A switching artefact produces a heavy tail of 4–10 bp identities; this is a small shift in the
+bulk with no tail. ⟹ **No template-switching signature.** ⚠ Caveat on geometry: the upstream windows compare
+an exon end against an intron end, so the statistic is a screen for the tail, not a calibrated estimator.
+
+### §6gb addendum 5 — do we still need orthogonal data? YES, and it exists
+
+**Within this dataset the chain is now: FLNC (no concatemer chimera) → canonical sites → no microhomology tail
+(no template switch) → non-duplicate flanks (no cross-copy mis-chain) → ≥ 3 molecules, one strand → full-length
+molecules spanning the whole structure (98 % for MCL38 → MCL201).** Every artefact route we can name from one
+library has been closed.
+
+⚠ **That is exactly the limit: one library, one individual.** A systematic of THIS preparation would repeat
+across molecules, so molecule count cannot distinguish it, and no within-dataset statistic can. **Orthogonal
+replication remains the only open route**, and it is now the single thing standing between "no artefact we can
+name" and "real biology".
+⭐ **The data is on disk**: `winloci_data/PTR_mm.bam` (chimpanzee), `PPY_mm.bam` (orangutan) and
+`A119b.t2t.bam` (human) — independent individuals, libraries and species. ⚠ Each is aligned to its OWN genome,
+so the junctions must be carried across (align the gorilla conjoined unit sequence to the other genome, then
+ask whether that species' reads use the same junction). Not done.
