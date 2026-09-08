@@ -14213,3 +14213,41 @@ already emits (`<out>.gtf`, `<out>.assignments.tsv`). ⚠ The `--gtf` path has *
 first run on NPIP is in progress.
 ⚠ The flair/StringTie substitution test (§6gh, Part 0e) drops to **secondary**: it asks whether our isoforms
 match theirs, when the point is that ours carry a copy assignment and theirs cannot.
+
+## §6gi — THE ISOFORM→COPY JOIN, BUILT: the sentence the advisor keeps asking for (user, 2026-09-08)
+
+**The deliverable he asks for in every email — an IGV-loadable GTF whose isoforms carry a copy — now exists.**
+
+⛔ **First, a live defect found by running `--gtf` for the first time.** The emitter tags each isoform with
+`family_id` / `copy_index` by matching the isoform's `gene_id` against the catalog's copy `tid`. Those are
+different namespaces: isoforms are `DN_<contig>_<pos>_<n>`, catalog copies are `MCL_<contig>_<pos>`. **The
+lookup never matches whenever `--families` supplies a catalog, so every transcript is emitted
+`multicopy "false"`.** On NPIP: 886 transcripts, 8,754 exon rows, **0 tagged**. The feature has been inert in
+catalog mode since it was written.
+
+⭐ **Built instead: `bench/isoform_copy_join.py`, which joins on EVIDENCE, not on names or position.** A read
+supports an isoform when their intron chains are identical (the same collapse rule that built it); unspliced
+isoforms take unspliced reads whose span falls inside theirs. Each isoform then inherits the copy assignments
+of its own reads, from O2's certificate.
+
+NPIP (817 isoforms, 57,646 assignment rows):
+| | |
+|---|---|
+| isoforms with ≥1 certificate-assigned read | **108 / 817** |
+| copy purity of those isoforms | **median 1.00 — 108 of 108 are pure** |
+| largest | `DN_NC_073242.2_29391544_21` → copy 27, **3,861/3,861 votes, 0 abstaining** |
+
+⭐⭐ **Every isoform that carries assigned reads at all is assigned to exactly ONE copy.** That is the sentence:
+*this isoform is supported by 3,861 reads, all assigned to copy 27 by the origin certificate, none abstaining.*
+No isoform in the family draws its certified reads from two copies.
+
+⚠ **A bug of my own, found and fixed mid-run**: matching on the intron chain alone makes an unspliced
+isoform's EMPTY chain match every unspliced read on the contig, which produced 12 identical rows at purity
+0.25. With the span constraint added, the picture inverts to 108/108 pure. **The first numbers were an
+artefact of the join, not of the data**, and are not quoted.
+⚠ 709 of 817 isoforms carry no certificate-assigned read — most are single-copy loci in the swept region where
+O2 has nothing to decide, and the rest abstain. That is the honest denominator.
+
+⟹ Remaining for Wednesday: fold the join into the GTF itself (an `assigned_copy` / `copy_votes` / `copy_purity`
+attribute per transcript) so the file he opens in IGV carries it, and fix the `DN_`/`MCL_` namespace bug in
+`copy_assign` so the built-in tag stops silently reporting `multicopy "false"`.
