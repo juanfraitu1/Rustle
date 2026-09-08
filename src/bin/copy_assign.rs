@@ -2261,11 +2261,81 @@ fn main() -> Result<()> {
             }
             eprintln!("[copy_assign]   {contig}:{lo}-{hi}: {} mapped reads -> {} families", n_mapped, fams.len());
             // --gtf: emit every isoform of this region (transcript + exon rows), tagging family-copy genes.
+            //
+            // ⭐ §6gl. Three fixes over the first form, all here:
+            //  (1) the copy tag matched the isoform's `gene_tid` against a map of catalog copy TIDs. Those are
+            //      different namespaces — isoforms are `DN_<contig>_<pos>_<n>`, catalog copies
+            //      `MCL_<contig>_<pos>` — so the lookup NEVER fired with `--families` and every transcript was
+            //      emitted `multicopy "false"` (register 756). It is a positional match now.
+            //  (2) the isoform now carries the COPY ITS OWN READS were assigned to, from the certificate, not
+            //      merely the copy it sits inside.
+            //  (3) `copy_status` distinguishes three cases a blank used to conflate: `assigned` (≥1 read
+            //      certificate-assigned), `undecidable` (reads were adjudicated and none carried a
+            //      certificate — the identifiability wall) and `unadjudicated` (no matched read reached the
+            //      assignment at all, i.e. the isoform lies outside the swept copies). On NPIP those are
+            //      108 / 328 / 376 of 817 — reporting them as one blank hid the difference between "we cannot
+            //      tell" and "we did not look".
+            let read_chain: Vec<Vec<(u64, u64)>> = read_blocks
+                .iter()
+                .map(|bl| bl.windows(2).map(|w| (w[0].1, w[1].0)).filter(|&(a, b)| b > a).collect())
+                .collect();
+            let verdict: std::collections::HashMap<&str, &AssignRow> =
+                assign_rows.iter().map(|r| (r.read_name.as_str(), r)).collect();
             for t in &transcripts {
-                let (fam_attr, multicopy) = match copy_gene.get(&t.gene_tid) {
-                    Some((fid, ci)) => (format!(" family_id \"{fid}\"; copy_index \"{ci}\";"), "true"),
+                // (1) positional: the catalog copy this isoform overlaps most
+                let best = fams.iter().enumerate().flat_map(|(fw, fa)| {
+                    fa.copy_spans.iter().enumerate().map(move |(ci, (c, s0, e0))| (fw, ci, c, *s0, *e0))
+                }).filter(|(_, _, c, s0, e0)| *c == &t.chrom && t.end > *s0 && t.start < *e0)
+                  .max_by_key(|(_, _, _, s0, e0)| t.end.min(*e0).saturating_sub(t.start.max(*s0)));
+                let (fam_attr, multicopy) = match best {
+                    Some((fw, ci, _, _, _)) => {
+                        let fid = if region_families.is_some() { fams[fw].family_id.clone() } else { String::new() };
+                        // report the CATALOG copy index, the same namespace `assigned_copy` uses below — the
+                        // sweep's own index differs (sweep 4 == catalog 24 on NPIP), and printing the two
+                        // schemes on one line reads as a disagreement when they in fact agree
+                        let idx = match (&catalog_index, fams[fw].copy_tids.get(ci)) {
+                            (Some(ix), Some(tid)) => ix.get(tid).map(|(_, i)| i.to_string()).unwrap_or_else(|| ci.to_string()),
+                            _ => ci.to_string(),
+                        };
+                        (format!(" family_id \"{fid}\"; copy_index \"{idx}\";"), "true")
+                    }
                     None => (String::new(), "false"),
                 };
+                // (2)+(3) the copy its own reads were assigned to, and how sure that is
+                let mut votes: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+                let (mut seen, mut matched) = (0usize, 0usize);
+                for (ri, ch) in read_chain.iter().enumerate() {
+                    if read_spans.get(ri).map_or(true, |sp| sp.2 != 0) {
+                        continue; // primaries only
+                    }
+                    let same = if t.introns.is_empty() {
+                        // an unspliced isoform's chain is EMPTY and would otherwise match every unspliced read
+                        // in the region (register 757, which recurred): require containment instead
+                        ch.is_empty() && read_spans[ri].0 < t.end && t.start < read_spans[ri].1
+                    } else {
+                        ch.as_slice() == t.introns.as_slice()
+                    };
+                    if !same {
+                        continue;
+                    }
+                    matched += 1;
+                    if let Some(r) = verdict.get(bam_reads[ri].as_str()) {
+                        seen += 1;
+                        if r.status == "assigned" && !r.origin_rejected {
+                            *votes.entry(r.catalog_copy_idx.as_str()).or_insert(0) += 1;
+                        }
+                    }
+                }
+                let total: usize = votes.values().sum();
+                let copy_attr = match votes.iter().max_by_key(|(_, n)| **n) {
+                    Some((c, n)) => format!(
+                        " assigned_copy \"{c}\"; copy_votes \"{n}/{total}\"; copy_purity \"{:.3}\"; copy_status \"assigned\";",
+                        *n as f64 / total.max(1) as f64
+                    ),
+                    None if seen > 0 => format!(" copy_status \"undecidable\"; adjudicated_reads \"{seen}\";"),
+                    None => format!(" copy_status \"unadjudicated\"; matched_reads \"{matched}\";"),
+                };
+                let fam_attr = format!("{fam_attr}{copy_attr}");
                 let gs = t.start + 1; // GTF is 1-based, end-inclusive (our coords are 0-based half-open)
                 gtf_lines.push(format!(
                     "{}\trustle\ttranscript\t{}\t{}\t.\t{}\t.\tgene_id \"{}\"; transcript_id \"{}\"; reads \"{}\"; multicopy \"{}\";{}",

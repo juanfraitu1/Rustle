@@ -14389,3 +14389,32 @@ transcripts apparently sharing 674 molecules with 476 at MAPQ 0 — a false "dou
 65 % MAPQ-0 rate. With span constraints the true figures are **17 %** MAPQ-0 and **zero shared molecules**
 between those two transcripts. This is the same bug already registered as 757 and I reintroduced it in an
 ad-hoc script within a day. ⟹ **Any read-to-transcript matching must special-case the empty chain.**
+
+## §6gl — THE ISOFORM GTF NOW CARRIES ITS COPY, ITS EVIDENCE AND ITS STATE (user, 2026-09-08)
+
+**User: "lets fix first the copy tag, then the gtf states, then the join."** All three, in `copy_assign`'s
+`--gtf` emitter, one change:
+
+1. ⛔→⭐ **The copy tag fired for the first time.** It matched the isoform's `gene_tid` against a map of catalog
+   copy TIDs — different namespaces (`DN_<contig>_<pos>_<n>` vs `MCL_<contig>_<pos>`), so with `--families` it
+   never matched and **every** transcript was emitted `multicopy "false"` (register 756). Now a positional
+   match: NPIP goes **0 → 403 tagged** of 886.
+2. ⭐ **`copy_status` replaces a blank with three states**, which a blank had been conflating:
+   | state | meaning | NPIP |
+   |---|---|---|
+   | `assigned` | ≥ 1 read certificate-assigned; carries `assigned_copy`, `copy_votes`, `copy_purity` | **121** |
+   | `undecidable` | reads WERE adjudicated and none carried a certificate — the identifiability wall | **372** |
+   | `unadjudicated` | no matched read reached the assignment at all (isoform outside the swept copies) | **393** |
+   ⟹ *"we cannot tell"* and *"we did not look"* are now different words. They were the same blank before.
+3. ⭐ **The join is in the binary.** Each isoform carries the copy ITS OWN READS were assigned to, matched by
+   identical intron chain — with the empty chain special-cased by containment, because an unspliced isoform's
+   empty chain otherwise matches every unspliced read in the region (register 757, which had already recurred
+   twice).
+
+⚠ **A fourth fix the first run exposed**: the positional tag printed the SWEEP's copy index and the evidence
+tag the CATALOG's, so one line read `copy_index "4"; assigned_copy "24"` for **the same physical copy**. Both
+are the catalog index now. ⭐ With that, **position and evidence agree on 119 of 120** tagged isoforms — the
+two independent routes to a copy concur, and the single disagreement is worth looking at rather than hidden.
+
+Suite **867 passed / 0 failed / 11 ignored**. Deferred by the user: the 53 isoforms matching no read, and the
+default state of the two read-through rules.
