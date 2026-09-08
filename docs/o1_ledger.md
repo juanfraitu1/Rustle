@@ -14278,3 +14278,45 @@ the copies that have evidence (27: 32 vs 37; 24: 31 vs 34). But **many loci carr
 evidence-assigned ones** — copy 49 has 44 by position and 0 by evidence, copy 51 has 34 and 0. Those are
 either non-member units in the swept region or loci where O2 abstains wholesale. **Overlapping a locus is not
 evidence of belonging to it**, and the per-copy table now says so in two columns instead of one.
+
+## §6gj — StringTie ON THE SAME READS, INTERSECTED (user, 2026-09-08)
+
+**User: "can we run stringtie on gorilla, have it produce a gtf and use bedtools intersect to see what isoforms
+it produced".** Run in long-read mode on the identical BAM (`stringtie -L -p 4`, 70 s, 215 MB): **7,223
+transcripts / 71,080 exons** across the three contigs.
+
+| inside the SAME swept region | transcripts |
+|---|---|
+| StringTie | **1,570** |
+| ours (`copy_assign --gtf`) | 886 |
+
+⟹ StringTie emits **more** transcripts overall. The interesting comparison is not the total but what each does
+**at one copy of a multi-copy family**.
+
+**At NPIP copy 27 (`NC_073242.2:29,391,569-29,428,046`):**
+| | isoforms |
+|---|---|
+| StringTie | **3** |
+| ours, by position | 40 |
+| ours, by READ EVIDENCE (the certificate) | **32** |
+
+StringTie's three are `STRG.647.1` and `STRG.647.2` (21 exons each, the same 24.1-kb span) and `STRG.648.1`
+(4 exons over **173.5 kb**, running far outside the copy). Our 32 span **6 to 22 exons**. **Only 1 of our 32
+intron chains is reported exactly by StringTie.**
+
+⭐⭐ **The two tools are doing different jobs and the numbers say so.** StringTie's flow model is *parsimonious*
+— it assembles a minimal transcript set explaining the coverage, so a locus with 4,855 reads collapses to two
+near-identical 21-exon models plus one 173-kb read-through. The intron-chain collapse here is *exhaustive*: it
+keeps every distinct observed chain, which is what a per-copy assignment needs, because parsimony has already
+made the irreversible decision of which reads belong together.
+
+⭐⭐⭐ **And the decisive line for comment 1: StringTie's attributes are
+`gene_id "STRG.1"; transcript_id; longcov; cov; FPKM; TPM`.** There is no copy and no family, and there cannot
+be — it has no notion of which of several near-identical loci a read came from. Ours carry `assigned_copy`,
+`copy_votes`, `copy_purity` and `abstaining`. **That is the added value, stated as a file difference rather
+than as a claim.**
+
+⚠ Fair to him, not to us: 175 of StringTie's 7,223 transcripts overlap a catalog copy at all, so most of what
+it produces is outside this family — the comparison above is deliberately restricted to the same coordinates.
+⚠ Neither set is validated against a transcript truth here; the claim is about what each file CAN say, not
+about which isoforms are correct.
