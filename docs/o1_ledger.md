@@ -13970,3 +13970,36 @@ name" and "real biology".
 `A119b.t2t.bam` (human) — independent individuals, libraries and species. ⚠ Each is aligned to its OWN genome,
 so the junctions must be carried across (align the gorilla conjoined unit sequence to the other genome, then
 ask whether that species' reads use the same junction). Not done.
+
+## §6gc — THE READ-THROUGH JUNCTIONS REPLICATE IN CHIMPANZEE (user, 2026-09-07; PREREG `docs/PREREG_crossspecies_junctions_2026-09-07.md`, md5 b0794d03)
+
+**The orthogonal test §6gb addendum 5 named as the only open route, run.** Junction probes, no liftover: a
+300 bp probe = last 150 bp of the upstream exon + first 150 bp of the downstream exon, i.e. sequence that
+exists **only if the junction is spliced**. Chimpanzee reads (`PTR_mm.bam`, 3.98 M) streamed against the probe
+set; a read supports a probe when it covers the midpoint with ≥ 50 bp on **each** side.
+
+| probe class | replicated in chimpanzee |
+|---|---|
+| **read-through junctions (test)** | **30/42 = 0.71** |
+| ordinary introns of the same units (positive control) | 47/120 = 0.39 |
+| scrambled halves (negative control) | **0/42 = 0.00** |
+
+⭐⭐⭐ **P2 HELD perfectly (negative 0.00): the probe test is specific.** **P3 HELD: the read-through junctions
+replicate at 0.71** — *higher* than ordinary introns from the same units. Top support: `MCL86→MCL88` 300 chimp
+reads, `MCL7→MCL7` 185, `MCL7→MCL27` 173, `MCL38→MCL201` 162, `MCL1→MCL27` 131.
+⛔ **P1 FAILED**: the positive control replicated at 0.39, not the predicted ≥ 0.60.
+
+⟹ ⭐⭐⭐ **This closes the question in the direction the evidence pointed: the read-throughs are real.** An
+independent individual, library and species uses the same junctions, and **no systematic of the gorilla
+preparation can produce chimpanzee reads.** Combined with the within-dataset chain (FLNC, canonical sites, no
+microhomology tail, non-duplicate flanks, full-length spanning molecules), the wording "read-throughs that no
+artefact we can name explains" can now become **"read-throughs conserved between gorilla and chimpanzee"** for
+the 30 that replicate.
+
+⚠ **Two honesty constraints.** (1) The positive control is **not expression-matched**: the test junctions carry
+≥ 3 molecules and several carry thousands, while the control introns were taken from the first 120 across
+units including barely expressed ones. That confound plausibly explains why the test rate exceeds the control
+rate, so **0.71 > 0.39 must not be read as "read-throughs are more conserved than ordinary introns"** — only as
+"they replicate, and the assay works". (2) The **12 that do not replicate** are, by the pre-registered
+asymmetry, **not shown to be artefacts**: NPIP is fast-evolving and copy-number-variable, and a junction may be
+genuinely gorilla-specific or simply unexpressed in the chimpanzee library.
