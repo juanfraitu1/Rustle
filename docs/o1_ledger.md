@@ -14003,3 +14003,35 @@ rate, so **0.71 > 0.39 must not be read as "read-throughs are more conserved tha
 "they replicate, and the assay works". (2) The **12 that do not replicate** are, by the pre-registered
 asymmetry, **not shown to be artefacts**: NPIP is fast-evolving and copy-number-variable, and a junction may be
 genuinely gorilla-specific or simply unexpressed in the chimpanzee library.
+
+## §6gd — NO minimap2 SETTING IS THE RIGHT PLACE FOR THIS: the aligner line closes (user, 2026-09-08; PREREG `docs/PREREG_minimap_readthrough_arms_2026-09-07.md`, md5 208648a5 + AMENDMENT 1)
+
+**User: "would it be viable to edit minimap2 behavior to see if that can avoid the read throughs".** Now
+answerable rather than arguable: §6gc's cross-species test supplied a **truth set** — the junctions chimpanzee
+also uses — so a setting is scored by **how many CONSERVED junctions it destroys**.
+
+Same 1,009,396 primary FLNC reads, same index, only the mapping options differ. ⚠ `-r 500,0` is **rejected by
+minimap2** (`NUM1 can't be larger than NUM2`); A1 uses **`-r 500,500`**, the smallest legal value, leaving the
+long-join heuristic no reach beyond ordinary chaining (AMENDMENT 1, written before the run).
+⚠ The whole-genome arm was **killed for memory** (13.6 GB index on a 25 GB machine); both arms were rerun
+against a 1.5 GB three-contig index, legitimate because the read set is exactly what the shipped run placed on
+those contigs — **and re-validated, not assumed**.
+
+| | conserved junctions | with ZERO support | supporting reads |
+|---|---|---|---|
+| shipped BAM | 31 | 0 | 8,743 |
+| **B0 control** (three-contig index) | 31 | 0 | **8,719** — M1 HELD, 0.3 % from shipped against a 10 % bound |
+| **B1 `-r 500,500`** | 31 | **20** | **404** |
+
+⛔⛔ **M2 HELD, and not marginally: disabling the long join destroys 20 of the 31 conserved junctions and
+95 % of their supporting reads** (8,719 → 404). The best-evidenced junction of all — `MCL38 → MCL201`, 5,043 of
+5,166 molecules spanning it end to end and 162 chimpanzee reads — falls from **5,165 reads to 1**. The 11
+non-replicating junctions lose all support too, so **M3 HELD: the setting is not selective at all.**
+
+⟹ ⭐⭐⭐ **The aligner line is closed.** Every setting that reduces read-throughs does so by deleting
+conserved, cross-species-replicated biology: `-G 50k` hits 1 of 46 junctions while damaging 8.2 % of gorilla
+transcripts (register 749), `--junc-bed` is an uncalibrated per-copy prior (register 729), and `-r 500,500`
+removes two thirds of the real junctions along with the artefacts. **The six genuine artefacts are removed
+downstream by the §6fw guard, where the rule is named, auditable and reversible.** That is the general
+principle the chapter should state: an aligner option applies globally and invisibly and cannot be inspected
+after the fact; a downstream certificate applies to a named set and leaves a record.
