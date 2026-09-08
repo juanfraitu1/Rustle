@@ -13592,3 +13592,31 @@ prune, decides membership independently of the seed on autosomal families, recov
 in human (26/26) and all but one in gorilla, and **finds unannotated members** — `chr16:76,011,515-76,014,496`
 came from the genome search, not the annotation. What it does NOT yet do is fix the locus EXTENT (seed-dependent)
 or choose between nested closed sets (chrY).
+
+### §6fy AMENDMENT 1 — the MINIMAL closed set: works on autosomal families, fails on palindromes (2026-09-07; PREREG md5 912455a8)
+
+> **The family of a locus is the SMALLEST closed set containing it** — the same closure, started from a
+> **single locus**. Proposed to dispose of register 735 (the closure is not unique).
+
+⚠ **A degenerate case had to be fixed first**: "shares a core with at least half of the OTHERS" is **vacuous
+when there are no others**, and the first implementation therefore pruned every single-locus seed to the empty
+set (trivially closed, useless). A one-member set is now exempt from the condition and allowed to extend. This
+is the vacuous-truth reading of the definition, not a new rule.
+
+| prediction | verdict |
+|---|---|
+| **Q1** a single DAZ copy reaches the four DAZ copies, not the amplicon | ⭐ **the amplicon is never reached from any of the four starts** — but see Q3 |
+| **Q2** a single gorilla NPIP locus reaches the same 25 truth loci as the group seed | ⭐⭐ **HELD** — and precision is **1.000 from every start** |
+| **Q3** every single-locus start inside one family reaches the same set | ⚖️ **HOLDS on gorilla, FAILS on chrY.** Gorilla: starts at ID_1, ID_10, ID_15, ID_20 give the **identical** 25-locus set; ID_5 gives a **strict superset of 26**, recovering `ID_9`, the 3.8-kb fragment that both MCL and the group-seeded closure leave as a candidate. ⛔ chrY: DAZ1 and DAZ4 each reach **{DAZ1, DAZ4}** (2 members), while DAZ3 and DAZ2 each reach **all four**. Two distinct fixed points inside one four-copy family |
+| **Q4** each minimal set is a subset of the group-seeded set | ⭐ **HELD** |
+
+⭐⭐⭐ **The headline: on an autosomal family ONE locus recovers the whole family.** From a single annotated
+gorilla NPIP gene the closure reaches 25 of the 26 curated loci (26 of 26 from one start) at precision 1.000,
+in two or three rounds, with no MCL, no inflation, no prune, and no cluster given to it. That is the strongest
+form of "finds all members" measured so far.
+
+⛔ **And the scope limit is now exact.** The repair does not rescue the palindromic case: inside DAZ the
+minus-strand pair is closed on its own, so "the smallest closed set containing DAZ1" is {DAZ1, DAZ4} and
+excludes DAZ2/DAZ3. The pre-registered consequence of Q3 failing was to report it rather than patch again,
+and that is what this row does. **The definition is single-valued on autosomal families and start-dependent on
+palindromic ampliconic ones**; a thesis statement must carry that scope, not hide it.

@@ -43,3 +43,33 @@ so no boundary claim is scored on it.
 - P4 failing ⟹ the fixed point is seed-dependent; the definition is then **not** well posed as stated and must
   name its seed, which is a materially weaker claim and will be reported as such.
 - P6 failing ⟹ the amplicon limit stands and is stated as a limit, not patched.
+
+---
+
+## AMENDMENT 1 — the MINIMAL closed set (2026-09-07, written after P4 failed on chrY, before the runs)
+
+Register 735: the closure is **not unique**. On chrY the AZFc amplicon (15 units) and {DAZ1-4} are both closed;
+the group seed reaches the first, a DAZ seed the second. The candidate repair, now under test:
+
+> **The family of a locus is the SMALLEST closed set containing it.**
+
+Operationally: start the same closure from a **single locus** and iterate. One sentence, still no MCL, and it
+makes the definition single-valued if the least fixed point reachable from a locus is the same wherever inside
+the family you start.
+
+### Predictions
+| # | prediction |
+|---|---|
+| **Q1** | from a single DAZ copy the closure reaches **exactly the four DAZ copies**, not the amplicon |
+| **Q2** | from a single gorilla NPIP locus it reaches the **same 25 truth loci** as the group seed |
+| **Q3** | **well-definedness**: every single-locus start inside one family reaches the same set (tested on all four DAZ copies and on five gorilla NPIP loci) |
+| **Q4** | each minimal set is a **subset** of the set the group seed reaches |
+
+### Interpretation fixed in advance
+- Q1+Q3 holding ⟹ "the smallest closed set containing the locus" is the definition to write, and it disposes
+  of register 735.
+- Q3 failing ⟹ the family depends on WHICH member you start from, which is worse than depending on a seed set;
+  the repair fails and the definition must name its seed explicitly. That will be reported, not patched again.
+- ⚠ A single-locus seed makes the majority condition vacuous on the first round (there are no "other members"),
+  so round 1 admits whatever aligns; the test is what the SECOND round prunes it to. If a single locus grows to
+  the amplicon and stays there, Q1 fails and the amplicon is simply the smallest closed set on chrY.

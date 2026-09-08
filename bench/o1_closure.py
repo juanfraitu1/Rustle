@@ -108,6 +108,12 @@ def classify(cands, members):
     out = {}
     for i, m in enumerate(cands):
         md, cb, segs = prof[i]; span = m[2] - m[1] + 1
+        # "shares a core with at least half of the OTHERS" is vacuously true when there are no others: a
+        # one-member set must be allowed to extend rather than be pruned to nothing (AMENDMENT 1). Without
+        # this, every single-locus seed collapses to the empty set, which is trivially closed and useless.
+        if len([o for o in members if o != m]) == 0:
+            out[i] = ('member', md, cb, segs if segs else [[m[1] - 1, m[2]]])
+            continue
         out[i] = ('member' if (cb >= span / 2 or (cb > 0 and cb >= medc / 2)) else 'candidate', md, cb, segs)
     return out, medc
 
