@@ -14035,3 +14035,27 @@ removes two thirds of the real junctions along with the artefacts. **The six gen
 downstream by the §6fw guard, where the rule is named, auditable and reversible.** That is the general
 principle the chapter should state: an aligner option applies globally and invisibly and cannot be inspected
 after the fact; a downstream certificate applies to a named set and leaves a record.
+
+### §6gd addendum — WHY `-r 500,500` destroyed them, and why that is NOT evidence about the biology (2026-09-08)
+
+⚠ **Checked before documenting, and it changes the reading.** The setting is not a read-through lever at all:
+it disables **spliced alignment in general** beyond the chaining bandwidth. On a 20-Mb window of
+`NC_073242.2`, same reads, control versus arm:
+
+| | spliced primaries | introns > 500 bp | introns 100–500 bp |
+|---|---|---|---|
+| B0 control | 73,519 of 78,191 = **94 %** | **465,869** | 205,750 |
+| B1 `-r 500,500` | 41,864 of 78,656 = **53 %** | **9,600 (−98 %)** | 93,656 (−54 %) |
+
+⟹ The arm removed the read-throughs **incidentally**, as part of removing 98 % of every intron over 500 bp.
+Their median intron is 1,802 bp (§6gb addendum 2), which is above minimap2's default chaining bandwidth of 500,
+so an ordinary 1.8-kb intron needs the long-join path exactly as a read-through does. **The two are
+indistinguishable to this parameter by construction.**
+
+⛔ **So §6gd is NOT a second proof that read-throughs are real, and must not be cited as one.** It answers a
+different question — *where should the intervention live* — and its answer is "not in the aligner", because
+the only lever that touches read-throughs is one that also deletes almost all ordinary splicing.
+⭐ **The evidence that they are real remains exactly one thing: the cross-species replication of §6gc** (30 of
+42 junctions used by chimpanzee reads, negative control 0/42). Everything else — FLNC, canonical sites, no
+microhomology tail, non-duplicate flanks, full-length spanning molecules — **excludes artefact routes without
+demonstrating biology**. One positive result and a stack of exclusions is the honest summary.

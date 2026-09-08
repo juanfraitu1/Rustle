@@ -72,6 +72,35 @@ Detection on the Soto slice is class-flat — pseudogene 0.935, protein_coding 0
 
 ---
 
+## Part 0c — Read-throughs: what is proven, what is excluded, and where the fix lives
+
+**The claim to make:** *30 of 42 gorilla read-through junctions are used by chimpanzee reads too.* That is the
+only POSITIVE evidence and it is the one to lead with — an independent individual, library and species cannot
+be produced by a systematic of our preparation.
+
+**Everything else EXCLUDES an artefact route without demonstrating biology.** Say it that way:
+| route excluded | how |
+|---|---|
+| concatemer chimera | the reads are **FLNC** — 5′ primer, 3′ primer and polyA required upstream |
+| reverse-transcription template switch | junctions are **canonical**, and microhomology shows **no long tail** (≥6 bp: 2 % vs 4 % in real introns) |
+| cross-copy mis-chain between paralogs | only **4 of 46** junctions have duplicate-linked flanks; the §6fw guard removes those and 2 opposite-strand joins |
+| low-evidence chaining noise | ≥ 3 independent molecules, one strand; for the top junctions **full-length molecules span the whole structure** (5,043 of 5,166) |
+
+**Where the fix lives: downstream, never in the aligner.** All three aligner levers are measured and all three
+fail. `-G 50k` touches **1 of 46** junctions while damaging **8.2 %** of gorilla transcripts. `--junc-bed` from
+the annotation is an uncalibrated per-copy prior that favours better-annotated copies and suppresses what O3
+looks for. Disabling the long join (`-r 500,500`) removes **20 of 31 conserved junctions and 95 % of their
+reads** — and does so incidentally, by deleting **98 % of ALL introns over 500 bp**. ⟹ *An aligner option
+applies globally and invisibly and cannot be inspected afterwards; a downstream certificate applies to a named
+set and leaves a record.*
+
+⚠ **Two things not to over-claim.** The 12 junctions that do NOT replicate in chimpanzee are **not** shown to
+be artefacts — NPIP is fast-evolving and a junction may be lineage-specific or unexpressed there. And the
+cross-species positive control was **not expression-matched** (test 0.71 vs control 0.39), so that gap is not
+evidence that read-throughs are more conserved than ordinary introns.
+
+---
+
 ## Part 1 — The cross-examination: "this is luck or overfitting"
 
 These are not hypothetical. They are the five moves that follow from his stated priors, and each
