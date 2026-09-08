@@ -17,7 +17,7 @@ if '--families' in args:
 dirs = args
 
 def score(d):
-    cp = {r['copy_idx']: r for r in csv.DictReader(open(f'{d}/copies.tsv'), delimiter='\t')}
+    cp = {r['copy_idx']: r for r in csv.DictReader(open(f'{d}/copies.tsv'), delimiter='\t') if r.get('member_status') != 'partner'}  # §6ft: partners are targets, not family copies
     A = {r['read_name']: r for r in csv.DictReader(open(f'{d}/A.assignments.tsv'), delimiter='\t')}
     truth = {}; mapq = {}
     for i, r in cp.items():

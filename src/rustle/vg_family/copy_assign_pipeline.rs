@@ -577,6 +577,26 @@ static STAR_PROOFS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashM
 pub fn register_star_proof(read_name: &str, proof: StarProof) {
     STAR_PROOFS.get_or_init(Default::default).lock().unwrap().insert(read_name.to_string(), proof);
 }
+/// ⭐ §6ft read-through certificate: molecule name → (partner copy index, read positions the partner or the
+/// mis-chain cut explains). Same side-table device as `STAR_PROOFS`; drained by the binary.
+static READTHROUGH: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (usize, usize)>>> =
+    std::sync::OnceLock::new();
+pub fn register_readthrough(read_name: &str, partner: usize, n_explained: usize) {
+    READTHROUGH.get_or_init(Default::default).lock().unwrap().insert(read_name.to_string(), (partner, n_explained));
+}
+/// §6ft partners: catalog units of ANOTHER family (`member_status = partner`) — aligned so a read-through tail
+/// is explained, never a candidate for assignment or placement.
+static PARTNERS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = std::sync::OnceLock::new();
+pub fn register_partner(tid: &str) {
+    PARTNERS.get_or_init(Default::default).lock().unwrap().insert(tid.to_string());
+}
+pub fn is_partner(tid: &str) -> bool {
+    PARTNERS.get().map_or(false, |m| m.lock().unwrap().contains(tid))
+}
+pub fn take_readthroughs() -> std::collections::HashMap<String, (usize, usize)> {
+    READTHROUGH.get().map(|m| std::mem::take(&mut *m.lock().unwrap())).unwrap_or_default()
+}
+
 /// Drain the table (the caller owns the proofs of every molecule assigned so far).
 pub fn take_star_proofs() -> std::collections::HashMap<String, StarProof> {
     STAR_PROOFS.get().map(|m| std::mem::take(&mut *m.lock().unwrap())).unwrap_or_default()
@@ -2260,6 +2280,22 @@ fn assign_family_detailed_once(
         if timing {
             eprintln!("[timing]     read-star minimap2 ({} molecules x {} copies): {:.1}s", reps.len(), copies.len(), t_star.elapsed().as_secs_f64());
         }
+        // §6ft: intron support over every record of the family (the O1 mis-chain rule's count), for the
+        // read-through certificate's cut at giant unsupported introns
+        let intron_support: std::collections::HashMap<(u64, u64), usize> = {
+            let mut m: std::collections::HashMap<(u64, u64), usize> = std::collections::HashMap::new();
+            for r in reads.iter() {
+                let mut pos = r.ref_start;
+                for &(op, n) in &r.cigar {
+                    match op {
+                        'N' => { *m.entry((pos, pos + n)).or_insert(0) += 1; pos += n; }
+                        'M' | '=' | 'X' | 'D' => pos += n,
+                        _ => {}
+                    }
+                }
+            }
+            m
+        };
         let done: Vec<(usize, PerRead)> = reps
             .par_iter()
             .zip(alns.par_iter())
@@ -2287,8 +2323,10 @@ fn assign_family_detailed_once(
                     .fold(None, |m: Option<f64>, r| Some(m.map_or(r, |x| x.min(r))));
                 // a single candidate has no competitor to certify against: `assign_read` returns Tied for it
                 // (margin ∞, nothing rejected), so the molecule stays in the output as a tie, never as a claim.
-                if cand.is_empty() {
-                    // ⭐ §6fg ORPHAN: the molecule overlaps a copy but NO locus aligns it — reported, not dropped
+                let partner_k: std::collections::HashSet<usize> = (0..cand.len()).filter(|&k| is_partner(&copies[cand[k]].tid)).collect();
+                if cand.len() == partner_k.len() {
+                    // ⭐ §6fg ORPHAN: the molecule overlaps a copy but NO locus of the family aligns it (§6ft: a
+                    // hit on a partner alone is no candidate) — reported, not dropped
                     // (row 712): Ambiguous, origin_rejected, n_candidates 0; best copy = the overlapped one.
                     let mcall = detect_mosaic(&[], copies.len(), MOSAIC_EPS, &mparams);
                     let a = Assignment {
@@ -2338,13 +2376,91 @@ fn assign_family_detailed_once(
                 // some competitor shares no distinguishing column (K = 0 for that pair); Ambiguous when some
                 // competitor is not rejected at alpha/(n-1); Assigned when every competitor is.
                 let matches = |k: usize| unit_edits.get(cand[k]).copied().flatten().map_or(0i64, |(n_x, n_al, _, _, _, _, _)| n_al as i64 - n_x as i64);
-                let bk = (0..cand.len()).max_by_key(|&k| (matches(k), std::cmp::Reverse(k))).unwrap();
-                let thr = p.alpha / (cand.len().saturating_sub(1).max(1) as f64);
+                let bk = (0..cand.len()).filter(|k| !partner_k.contains(k)).max_by_key(|&k| (matches(k), std::cmp::Reverse(k))).unwrap();
+                // ⭐ §6ft read-through certificate. A read position the best candidate leaves unaligned is EXPLAINED
+                // when (a) another candidate aligns it — that candidate is a PARTNER (a read-through molecule
+                // spans two loci), not a competitor — or (b) it lies beyond a giant (> 50 kb) intron fewer than 3
+                // molecules support in the molecule's own record (the O1 mis-chain rule applied to the read).
+                // Explained positions leave the origin certificate; partners leave the pairwise test.
+                let rlen = read.seq.len();
+                let cov_of = |k: usize| -> Vec<bool> {
+                    let mut v = vec![false; rlen];
+                    for &(s0, e0) in &covered[k] {
+                        for x in (s0 as usize)..(e0 as usize).min(rlen) { v[x] = true; }
+                    }
+                    v
+                };
+                let best_cov = cov_of(bk);
+                let n_best_cov = best_cov.iter().filter(|&&b| b).count();
+                let mut partners: std::collections::HashSet<usize> = std::collections::HashSet::new();
+                let mut explained = vec![false; rlen];
+                let mut partner_best: Option<(usize, usize)> = None;
+                for &k in &partner_k {
+                    partners.insert(k); // a catalog partner is a partner whatever it covers
+                }
+                if p.read_star_readthrough && genomic_spans.is_some() {
+                    for k in 0..cand.len() {
+                        if k == bk { continue; }
+                        let ck = cov_of(k);
+                        let shared = ck.iter().zip(best_cov.iter()).filter(|(a, b)| **a && **b).count();
+                        let n_ck = ck.iter().filter(|&&b| b).count();
+                        // row 726: only a CATALOG partner leaves the competitor set; a family candidate covering a
+                        // different part of the read still explains those positions but stays a competitor (a
+                        // molecule spanning two family units ends as a K = 0 tie, never a sole call)
+                        if n_ck > 0 && (partner_k.contains(&k) || shared < n_best_cov.min(n_ck) / 2) {
+                            if partner_k.contains(&k) {
+                                partners.insert(k);
+                            }
+                            let mut n_new = 0usize;
+                            for x in 0..rlen { if ck[x] && !best_cov[x] { explained[x] = true; n_new += 1; } }
+                            if n_new > 0 && partner_best.map_or(true, |(_, m)| n_new > m) { partner_best = Some((cand[k], n_new)); }
+                        }
+                    }
+                    // the mis-chain cut on the molecule's own record: query positions beyond a giant unsupported intron
+                    let (mut qpos, mut rpos) = (0usize, read.ref_start);
+                    let (mut seg_q0, mut segs): (usize, Vec<(usize, usize, u64, u64)>) = (0, Vec::new()); // (q0, q1, r0, r1)
+                    let mut seg_r0 = read.ref_start;
+                    for &(op, n) in &read.cigar {
+                        match op {
+                            'M' | '=' | 'X' => { qpos += n as usize; rpos += n; }
+                            'I' | 'S' => qpos += n as usize,
+                            'D' => rpos += n,
+                            'N' => {
+                                let sup = intron_support.get(&(rpos, rpos + n)).copied().unwrap_or(0);
+                                if n > 50_000 && sup < 3 { segs.push((seg_q0, qpos, seg_r0, rpos)); seg_q0 = qpos; seg_r0 = rpos + n; }
+                                rpos += n;
+                            }
+                            _ => {}
+                        }
+                    }
+                    segs.push((seg_q0, qpos, seg_r0, rpos));
+                    if segs.len() > 1 {
+                        let c = copies[cand[bk]];
+                        if let Some(&(q0, q1, _, _)) = segs.iter().find(|&&(_, _, r0, r1)| r0 < c.end && c.start < r1) {
+                            for x in 0..rlen { if (x < q0 || x >= q1) && !best_cov[x] { explained[x] = true; } }
+                        }
+                    }
+                }
+                let n_explained_unaligned = explained.iter().zip(best_cov.iter()).filter(|(e, b)| **e && !**b).count();
+                // row 726 (second form): a partner may explain a TAIL, never the body — when the partners cover
+                // more of the read than the best family candidate, the molecule is the partner locus's, not
+                // the family's: nothing is explained and the certificate rejects it on its unaligned bases
+                let (n_explained_unaligned, explained) = if n_explained_unaligned > n_best_cov {
+                    (0usize, vec![false; rlen])
+                } else {
+                    (n_explained_unaligned, explained)
+                };
+                let _ = &explained;
+                let competitors = cand.len() - 1 - partners.len();
+                let thr = p.alpha / (competitors.max(1) as f64);
                 let (mut min_p, mut p_read, mut n_dec_min, mut margin_min, mut k0) = (1.0f64, 0.0f64, usize::MAX, f64::INFINITY, false);
                 let mut posterior_ll = vec![0.0f64; cand.len()];
+                for &k in &partners {
+                    posterior_ll[k] = f64::NEG_INFINITY; // a partner carries no posterior mass
+                }
                 let lr = ((1.0 - p.error_rate) / (p.error_rate / 3.0)).ln();
                 for k in 0..cand.len() {
-                    if k == bk {
+                    if k == bk || partners.contains(&k) {
                         continue;
                     }
                     let both: Vec<i64> = feats
@@ -2395,7 +2511,7 @@ fn assign_family_detailed_once(
                     margin_min = margin_min.min(llr);
                     posterior_ll[k] = -llr;
                 }
-                let single = cand.len() < 2;
+                let single = competitors == 0;
                 let status = if single || k0 {
                     AssignStatus::Tied
                 } else if p_read < thr && margin_min > 0.0 {
@@ -2424,7 +2540,7 @@ fn assign_family_detailed_once(
                     discovery_coupled: false,
                     junction_conflict: false,
                     origin_rejected: false,
-                    n_candidates: cand.len(),
+                    n_candidates: cand.len() - partner_k.len(), // family candidates only (§6ft)
                     posterior: full,
                 };
                 // ⭐ origin certificate: under H0 "the best candidate's unit IS this read's origin", the read's
@@ -2444,7 +2560,8 @@ fn assign_family_detailed_once(
                     // unit's extent aligned 622 of 950 bases at NM 0 to a paralogue, §6fd). Unit form: NM over
                     // the block (every edit) or, opt-in, substitutions only
                     let (nm, blk) = if p.read_star_genomic {
-                        (n_x + n_i + n_d + unaligned, n_aligned + unaligned)
+                        let ex = (n_explained_unaligned as u64).min(unaligned);
+                        (n_x + n_i + n_d + unaligned - ex, n_aligned + unaligned - ex)
                     } else if p.origin_subst_only {
                         (n_x, n_aligned)
                     } else {
@@ -2465,7 +2582,14 @@ fn assign_family_detailed_once(
                         a.origin_rejected = true;
                     }
                 }
-                if cand.len() < 2 {
+                if n_explained_unaligned > 0 && !a.origin_rejected {
+                    if let Some((pc, _)) = partner_best {
+                        register_readthrough(&names[ri], pc, n_explained_unaligned);
+                    } else {
+                        register_readthrough(&names[ri], usize::MAX, n_explained_unaligned); // mis-chain cut only
+                    }
+                }
+                if competitors == 0 {
                     a.log_lr_margin = 0.0;
                     a.n_decisive = 0;
                     a.p_value = 1.0;

@@ -461,7 +461,7 @@ pub fn graph_from_paf_loci(
 // ---------------------------------------------------------------------------------------------------
 
 /// SEDEF pairs (BED, 0-based half-open, cols 1–3 and 4–6), indexed by the contig of EITHER side.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SdPairs {
     /// contig -> (start, end, other_contig, other_start, other_end), sorted by start.
     by_contig: BTreeMap<String, Vec<(u64, u64, String, u64, u64)>>,
@@ -524,6 +524,15 @@ impl SdPairs {
         self.by_contig.values().map(|v| v.len()).sum::<usize>() / 2
     }
     /// Pairs whose THIS side overlaps `[s, e)` on `contig`.
+    /// ⭐ §6fw guard: are two intervals of ONE contig linked to each other by a single duplication pair?
+    /// A cross-copy mis-chain — the artefact the read-through object is accused of being — requires the
+    /// donor flank and the acceptor flank to be copies of one another, so an aligner has something to jump
+    /// between. When no pair links them, that mechanism cannot produce the junction. Pairs are stored in
+    /// both directions (`from_bed_str`/`from_paf_str`), so one query on `a` suffices.
+    pub fn links(&self, contig: &str, a: (u64, u64), b: (u64, u64)) -> bool {
+        self.overlapping(contig, a.0, a.1).any(|(_, _, oc, os, oe)| oc == contig && *oe > b.0 && *os < b.1)
+    }
+
     fn overlapping(&self, contig: &str, s: u64, e: u64) -> impl Iterator<Item = &(u64, u64, String, u64, u64)> {
         let v = self.by_contig.get(contig).map(|v| v.as_slice()).unwrap_or(&[]);
         let lo = s.saturating_sub(self.max_len.get(contig).copied().unwrap_or(0));
@@ -619,7 +628,13 @@ pub fn sd_blocks(hulls: &[(String, u64, u64)], sd: &SdPairs) -> (Vec<usize>, Vec
 }
 
 /// Apply the pre-registered core rule to one cluster. Members are GFF 1-based inclusive.
+/// `inclusive` (§6ft polish 2): the majority counts the locus itself — a member's core is the part shared with
+/// at least half of the FAMILY (depth + 1 ≥ n/2) instead of half of the OTHER members ((n − 1)/2). Only the
+/// boundary case moves (NPIP: a 7-kb fragment shared with 15 of 31 others).
 pub fn refine_cluster_cores(members: &[GeneKey], sd: &SdPairs) -> Vec<CoreRecord> {
+    refine_cluster_cores_with(members, sd, false)
+}
+pub fn refine_cluster_cores_with(members: &[GeneKey], sd: &SdPairs, inclusive: bool) -> Vec<CoreRecord> {
     let n = members.len();
     if n < 2 {
         return members
@@ -636,7 +651,7 @@ pub fn refine_cluster_cores(members: &[GeneKey], sd: &SdPairs) -> Vec<CoreRecord
             })
             .collect();
     }
-    let half_others = (n - 1) as f64 / 2.0;
+    let half_others = if inclusive { n as f64 / 2.0 - 1.0 } else { (n - 1) as f64 / 2.0 };
     // Per member: depth profile from every SD pair whose one side overlaps the member and whose other
     // side overlaps a DIFFERENT member; depth counts distinct partner members.
     let mut recs: Vec<(usize, u64, Vec<(u64, u64)>)> = Vec::with_capacity(n); // (max_depth, core_bp, core segments)
@@ -992,6 +1007,23 @@ mod tests {
     /// §6fo: a PAF record between two annotated loci becomes one SD-like pair in genomic coordinates (both
     /// directions), offsets applied to the loci's 1-based starts.
     #[test]
+    /// The §6fw guard: `links` is true only when one duplication pair holds BOTH intervals, in either
+    /// stored direction; unrelated flanks on the same contig, and pairs to another contig, are not links.
+    #[test]
+    fn links_is_true_only_when_one_pair_holds_both_flanks() {
+        // one pair c1:1000-2000 <-> c1:50000-51000, and one c1:1000-2000 <-> c2:7000-8000
+        let bed = "c1\t1000\t2000\tc1\t50000\t51000\nc1\t1000\t2000\tc2\t7000\t8000\n";
+        let sd = SdPairs::from_bed_str(bed);
+        assert!(sd.links("c1", (1500, 1600), (50100, 50200)));
+        assert!(sd.links("c1", (50100, 50200), (1500, 1600)), "pairs are stored both ways");
+        // the second flank is nowhere near the partner interval
+        assert!(!sd.links("c1", (1500, 1600), (90000, 90100)));
+        // the only pair reaching c2 does not link two c1 intervals
+        assert!(!sd.links("c2", (7100, 7200), (7300, 7400)));
+        // neither flank is in a pair at all
+        assert!(!sd.links("c1", (300000, 300100), (400000, 400100)));
+    }
+
     fn paf_records_become_pairs_in_genomic_coordinates() {
         let paf = "c1:1001-2000\t1000\t100\t600\t+\tc2:5001-7000\t2000\t1500\t2000\t480\t500\t60\n\
                    c1:1001-2000\t1000\t0\t0\t+\tc2:5001-7000\t2000\t0\t0\t0\t0\t0\n";

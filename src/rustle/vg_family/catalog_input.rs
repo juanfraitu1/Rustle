@@ -66,6 +66,9 @@ pub struct CatalogCopy {
     /// half-open) written by `mcl_families`; under the genomic read-star this is the copy's alignment target
     /// (replacing the §6fd padding rule). Absent on older catalogs.
     pub locus: Option<(u64, u64)>,
+    /// §6ft: `member_status = partner` — a neighbouring unit of another family, aligned to explain read-through
+    /// tails, never a candidate for assignment.
+    pub partner: bool,
 }
 
 /// A catalog FAMILY: its rows grouped by `family_id`, in first-seen (file) order.
@@ -169,6 +172,7 @@ pub fn parse_copies_tsv(text: &str) -> Result<Vec<CatalogCopy>> {
         idx("n_exon")?, idx("strand")?, idx("n_reads")?, idx("exons")?,
     );
     let i_hull: Option<usize> = cols.iter().position(|c| *c == "core_hull"); // optional (§6ep)
+    let i_status: Option<usize> = cols.iter().position(|c| *c == "member_status"); // optional (§6ft partners)
     let i_locus: Option<(usize, usize)> = cols // optional (L2): both columns or neither
         .iter()
         .position(|c| *c == "locus_start")
@@ -214,6 +218,7 @@ pub fn parse_copies_tsv(text: &str) -> Result<Vec<CatalogCopy>> {
                     Some((a.parse().with_context(|| format!("line {}: bad core_hull", ln + 2))?, b.parse().with_context(|| format!("line {}: bad core_hull", ln + 2))?))
                 }
             },
+            partner: i_status.map(at) == Some("partner"),
             locus: match i_locus.map(|(a, b)| (at(a), at(b))) {
                 None | Some(("NA", _)) | Some(("", _)) => None,
                 Some((a, b)) => Some((
@@ -431,6 +436,9 @@ pub fn to_colocated(
         }
         if let Some(l) = c.locus {
             super::copy_assign_pipeline::register_locus_extent(&c.tid, l);
+        }
+        if c.partner {
+            super::copy_assign_pipeline::register_partner(&c.tid);
         }
         copies.push(DenovoTranscript {
             tid: c.tid.clone(),

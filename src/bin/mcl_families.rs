@@ -110,6 +110,17 @@ struct Args {
     /// `--sedef` is given.
     #[arg(long, default_value_t = false)]
     core_from_paf: bool,
+    /// §6ft polish 2: the core majority counts the locus itself (shared with ≥ half of the family, depth + 1 ≥ n/2)
+    /// instead of ≥ half of the other members. Default OFF (pre-registered test pending).
+    #[arg(long, default_value_t = false)]
+    core_majority_inclusive: bool,
+    /// §6ft polish 1: a member whose reads leave no block in its chain keeps its annotated model as its unit
+    /// (`source gff_fallback`, `n_reads 0`) — membership does not depend on expression. Default ON.
+    #[arg(long, default_value_t = true)]
+    units_keep_unexpressed: bool,
+    /// Escape hatch: skip members with no read in their chain (the row set before §6ft).
+    #[arg(long, default_value_t = false)]
+    no_units_keep_unexpressed: bool,
     /// ⭐ DUPLICON-FIRST refinement (§6eh; pre-registered adj/core/PREREG.md): within each cluster, a
     /// member's CORE is the part of it linked by SEDEF pairs to ≥ half the other members. Clusters whose
     /// members lack SD depth (median max-depth < half) are UNTOUCHED (old ZNF/OR families have no SEDEF
@@ -224,6 +235,25 @@ struct Args {
     /// `locus_start`, `locus_end` are still appended; the previous columns are byte-identical.
     #[arg(long, default_value_t = false)]
     no_units_include_dropped: bool,
+    /// ⭐ Emit the CONJOINED READ-THROUGH as its own unit (`PREREG_readthrough_object_2026-09-07`, md5 1a51fa3b).
+    /// Of the 71 NPIP reads rejected for running past their locus, **48 are real read-throughs** — canonical
+    /// splice sites, the intron shared by ≥ 3 molecules, the far end inside another catalog unit (40 of them one
+    /// event: NPIP unit 2 → MCL27:0 through a single 15-kb intron). The catalog has no object for them, so they
+    /// arrive as rejections. A read-through unit is emitted for an ordered pair of emitted units (A, B) on one
+    /// contig when ≥ `--min-reads` distinct primaries have a block in A's chain and share ONE intron whose far
+    /// end lands in B's chain, and that intron is canonical (`GT..AG`, `GC..AG`, `AT..AC` on the unit's strand).
+    /// `member_status = readthrough`, `source = readthrough`, chain = A's ∪ B's. It is a UNIT, not a member:
+    /// `bench/o1_eval.py` counts it with the candidates. Default OFF ⟹ byte-identical.
+    /// ⛔ The rejected alternative was `minimap2 --junc-bed` from the annotation: it puts the annotation inside
+    /// the read layer, tilts near-ties toward better-annotated copies, and suppresses what O3 looks for.
+    #[arg(long, default_value_t = false)]
+    emit_readthrough_units: bool,
+    /// Escape hatch: emit read-through units WITHOUT the §6fw guard (the unguarded set: 46 units on the three
+    /// gorilla contigs instead of 40). The guard is the user's objection turned into a rule — a read-through is
+    /// admitted only when the two units share a strand and their donor/acceptor flanks are NOT linked by a
+    /// duplication pair, because a cross-copy mis-chain needs the two flanks to be copies of one another.
+    #[arg(long, default_value_t = false)]
+    no_readthrough_guard: bool,
 
     #[arg(long)]
     out: String,
@@ -508,6 +538,48 @@ fn read_chain(
     (blocks, strand, n_reads)
 }
 
+/// Introns of a read that LEAVE the emitted chain: the read must have an aligned block inside `chain`
+/// (`-F 2308` is the caller's job) and the intron's far end must lie beyond the chain's last exon.
+/// These are the candidate read-through junctions; the far end is resolved against the catalog later.
+fn leaving_introns(blocks: &[(u64, u64)], introns: &[(u64, u64)], chain: &[(u64, u64)]) -> Vec<(u64, u64)> {
+    if chain.is_empty() {
+        return Vec::new();
+    }
+    let (clo, chi) = (chain[0].0, chain.last().unwrap().1);
+    let _ = clo;
+    if !blocks.iter().any(|&(bs, be)| chain.iter().any(|&(s, e)| be > s && bs < e)) {
+        return Vec::new();
+    }
+    // only the DOWNSTREAM direction: the mirrored case is found when the other unit is the source
+    introns.iter().copied().filter(|&(_, e)| e > chi).collect()
+}
+
+/// The emitted unit whose chain CONTAINS the first base after the intron (`intron.1`), i.e. where the
+/// read-through lands. `units` is `(contig, exon chain)` per candidate unit; the source unit never matches.
+fn readthrough_target(intron: (u64, u64), contig: &str, src: usize, units: &[(String, Vec<(u64, u64)>)]) -> Option<usize> {
+    units.iter().enumerate().position(|(k, (c, ch))| {
+        k != src && c == contig && ch.iter().any(|&(s, e)| intron.1 >= s && intron.1 < e)
+    })
+}
+
+/// A canonical intron on `strand`: `GT..AG`, `GC..AG` or `AT..AC` read 5'→3' on the transcript.
+/// On `-` the genomic dinucleotides are the reverse complements (`CT..AC`, `CT..GC`, `GT..AT`).
+fn canonical_intron(genome: &rustle::genome::GenomeIndex, contig: &str, s: u64, e: u64, strand: char) -> bool {
+    if e < s + 4 {
+        return false;
+    }
+    let (Some(d), Some(a)) = (genome.fetch_sequence(contig, s, s + 2), genome.fetch_sequence(contig, e - 2, e)) else {
+        return false;
+    };
+    let up = |v: &[u8]| -> String { String::from_utf8_lossy(v).to_uppercase() };
+    let (d, a) = (up(&d), up(&a));
+    if strand == '-' {
+        matches!((d.as_str(), a.as_str()), ("CT", "AC") | ("CT", "GC") | ("GT", "AT"))
+    } else {
+        matches!((d.as_str(), a.as_str()), ("GT", "AG") | ("GC", "AG") | ("AT", "AC"))
+    }
+}
+
 fn lengths_from_blocks(b: &BTreeMap<GeneKey, Vec<(u64, u64)>>) -> BTreeMap<GeneKey, u64> {
     b.iter()
         .map(|(g, v)| (g.clone(), v.iter().map(|&(s, e)| e - s).sum::<u64>().max(1)))
@@ -752,6 +824,7 @@ fn main() -> Result<()> {
     // ⭐ Duplicon-first core refinement (§6eh). Post-MCL, per cluster; clusters.tsv above is untouched.
     let mut core_stats = (0usize, 0usize, 0usize, 0usize, 0usize); // gated clusters, kept-full, trimmed, dropped, untouched clusters
     let mut core_records: Vec<Vec<rustle::vg_family::annotation_families::CoreRecord>> = Vec::new();
+    let mut sd_pairs: Option<SdPairs> = None; // kept for the §6fw read-through guard
     if args.core_refine {
         let sd = match args.sedef.as_ref() {
             Some(bed) => {
@@ -767,12 +840,13 @@ fn main() -> Result<()> {
                 sd
             }
         };
+        sd_pairs = Some(sd.clone());
         let mut cf = std::fs::File::create(format!("{}.cores.tsv", args.out))?;
         writeln!(cf, "cluster_id\tmember\tgate\tmax_depth\tcore_bp\tspan\tmedian_core\tstatus\tcore_hull")?;
         let mut rf = std::fs::File::create(format!("{}.refined.clusters.tsv", args.out))?;
         writeln!(rf, "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\tstatus")?;
         for (i, c) in clusters.iter().enumerate() {
-            let recs = refine_cluster_cores(&c.members, &sd);
+            let recs = rustle::vg_family::annotation_families::refine_cluster_cores_with(&c.members, &sd, args.core_majority_inclusive);
             core_records.push(recs.clone());
             let gate = recs.first().map_or(false, |r| r.gate_passed);
             if gate {
@@ -902,6 +976,9 @@ fn main() -> Result<()> {
         locus: (u64, u64),
     }
     let mut units_dropped_emitted = 0usize;
+    let mut units_unexpressed = 0usize;
+    let mut readthrough_units = 0usize;
+    let mut rt_rejected = (0usize, 0usize); // guard: (opposite strand, flanks are duplicates)
     if args.emit_units {
         let bam = args.bam.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --bam"))?;
         let fasta = args.fasta.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --fasta"))?;
@@ -960,6 +1037,8 @@ fn main() -> Result<()> {
         // every family's units are staged first: the L2 clipping (below) needs EVERY unit on a contig, whatever
         // its family — a locus never contains another catalog unit
         let mut staged: Vec<(String, Vec<PendingUnit>, Vec<Option<usize>>)> = Vec::new();
+        // (family index, pending index, intron, molecule count) — read-through candidates, resolved after staging
+        let mut rt_evidence: Vec<(usize, usize, (u64, u64), usize)> = Vec::new();
         for (i, c) in clusters.iter().enumerate() {
             let fid = format!("MCL{i}");
             let mut pending: Vec<PendingUnit> = Vec::new();
@@ -1017,9 +1096,27 @@ fn main() -> Result<()> {
                         bl.iter().any(|&(bs, be)| exons.iter().any(|&(s, e)| be > s && bs < e))
                     })
                     .count();
-                if n_in_chain == 0 {
+                let keep_unexpressed = args.units_keep_unexpressed && !args.no_units_keep_unexpressed;
+                if n_in_chain == 0 && !(keep_unexpressed && source == "gff_fallback") {
                     unit_stats.2 += 1;
                     continue;
+                }
+                if n_in_chain == 0 {
+                    units_unexpressed += 1;
+                }
+                // read-through evidence: introns of primaries with a block in this chain that leave it
+                // downstream. Molecules are counted by name so a split record cannot vote twice.
+                if args.emit_readthrough_units {
+                    let mut seen: BTreeMap<(u64, u64), std::collections::BTreeSet<String>> = BTreeMap::new();
+                    for br in reads.iter().filter(|br| !br.is_supplementary && !br.is_secondary) {
+                        let (bl, itr) = blocks_and_introns(br);
+                        for j in leaving_introns(&bl, &itr, &exons) {
+                            seen.entry(j).or_default().insert(br.name.clone());
+                        }
+                    }
+                    for (j, names) in seen {
+                        rt_evidence.push((staged.len(), pending.len(), j, names.len()));
+                    }
                 }
                 let n_reads = n_in_chain;
                 let mut seq: Vec<u8> = Vec::new();
@@ -1075,7 +1172,7 @@ fn main() -> Result<()> {
                     exons,
                     strand,
                     source: source.to_string(),
-                    n_reads: n_reads.max(1),
+                    n_reads,
                     seq,
                     hull_col,
                     sd_depth,
@@ -1165,6 +1262,76 @@ fn main() -> Result<()> {
             }
             out
         };
+        // ⭐ The conjoined read-through as its own unit (PREREG_readthrough_object, md5 1a51fa3b). Resolved
+        // only now: the far end of a junction must land in an EMITTED chain, which is known after staging.
+        // Rows are (family index, source pending index, target family, target pending, intron, molecules).
+        let readthrough_rows: Vec<(usize, usize, usize, usize, (u64, u64), usize)> = if args.emit_readthrough_units {
+            let mut flat: Vec<(String, Vec<(u64, u64)>)> = Vec::new();
+            let mut where_of: Vec<(usize, usize)> = Vec::new();
+            for (fi, (_, pending, merged_into)) in staged.iter().enumerate() {
+                for (k, u) in pending.iter().enumerate() {
+                    if merged_into[k].is_none() {
+                        flat.push((u.member.0.clone(), u.exons.clone()));
+                        where_of.push((fi, k));
+                    }
+                }
+            }
+            let pos_of: BTreeMap<(usize, usize), usize> = where_of.iter().enumerate().map(|(a, &b)| (b, a)).collect();
+            let mut best: BTreeMap<(usize, usize, usize, usize), ((u64, u64), usize)> = BTreeMap::new();
+            for &(fi, k, j, n) in &rt_evidence {
+                if n < args.min_reads {
+                    continue;
+                }
+                let Some(&src) = pos_of.get(&(fi, k)) else { continue };
+                let u = &staged[fi].1[k];
+                let Some(tgt) = readthrough_target(j, &u.member.0, src, &flat) else { continue };
+                if !canonical_intron(&genome, &u.member.0, j.0, j.1, u.strand) {
+                    continue;
+                }
+                let (tfi, tk) = where_of[tgt];
+                // ⭐ §6fw guard (default ON): the two units must share a strand — a transcript cannot join
+                // opposite strands — and their donor/acceptor flanks must NOT be duplicates of one another,
+                // since that is exactly what a cross-copy mis-chain needs in order to jump. PAD is the 2 kb
+                // window the adjudication used. Without SD pairs only the strand half of the guard can run.
+                if !args.no_readthrough_guard {
+                    const PAD: u64 = 2_000;
+                    if staged[tfi].1[tk].strand != u.strand {
+                        rt_rejected.0 += 1;
+                        continue;
+                    }
+                    if let Some(sd) = sd_pairs.as_ref() {
+                        let donor = (j.0.saturating_sub(PAD), j.0 + PAD);
+                        let acceptor = (j.1.saturating_sub(PAD), j.1 + PAD);
+                        if sd.links(&u.member.0, donor, acceptor) {
+                            rt_rejected.1 += 1;
+                            continue;
+                        }
+                    }
+                }
+                let e = best.entry((fi, k, tfi, tk)).or_insert((j, 0));
+                if n > e.1 {
+                    *e = (j, n);
+                }
+            }
+            best.into_iter().map(|((a, b, c, d), (j, n))| (a, b, c, d, j, n)).collect()
+        } else {
+            Vec::new()
+        };
+        readthrough_units = readthrough_rows.len();
+        // side file: which two units each read-through joins, and through which intron (the 19-column
+        // units.tsv contract is untouched, so nothing downstream has to change to read this)
+        if args.emit_readthrough_units {
+            let mut rf = std::fs::File::create(format!("{}.readthrough.tsv", args.out))?;
+            writeln!(rf, "from_family\tchrom\tfrom_unit\tto_family\tto_unit\tintron_start\tintron_end\tintron_bp\tn_molecules")?;
+            for &(sfi, sk, tfi, tk, j, n) in &readthrough_rows {
+                let (a, b) = (&staged[sfi].1[sk], &staged[tfi].1[tk]);
+                writeln!(
+                    rf, "{}\t{}\t{}:{}-{}\t{}\t{}:{}-{}\t{}\t{}\t{}\t{n}",
+                    staged[sfi].0, a.member.0, a.member.0, a.exons[0].0, a.exons.last().unwrap().1,
+                    staged[tfi].0, b.member.0, b.exons[0].0, b.exons.last().unwrap().1, j.0, j.1, j.1 - j.0
+                )?;
+            }
+        }
         for (fi, (fid, pending, merged_into)) in staged.iter().enumerate() {
             let mut idx = 0usize;
             let mut hulls: BTreeMap<String, (u64, u64)> = BTreeMap::new();
@@ -1200,6 +1367,52 @@ fn main() -> Result<()> {
                 h.1 = h.1.max(ue);
                 idx += 1;
             }
+            for &(sfi, sk, tfi, tk, _j, n) in readthrough_rows.iter().filter(|r| r.0 == fi) {
+                let (a, b) = (&staged[sfi].1[sk], &staged[tfi].1[tk]);
+                // the two chains may share bases (a unit's read-followed chain can reach into its neighbour),
+                // and the copies.tsv contract requires ascending disjoint blocks: coalesce after sorting
+                let mut exons: Vec<(u64, u64)> = a.exons.iter().chain(b.exons.iter()).copied().collect();
+                exons.sort_unstable();
+                exons = exons.into_iter().fold(Vec::new(), |mut acc: Vec<(u64, u64)>, (s, e)| {
+                    match acc.last_mut() {
+                        Some(l) if s <= l.1 => l.1 = l.1.max(e),
+                        _ => acc.push((s, e)),
+                    }
+                    acc
+                });
+                let (us, ue) = (exons[0].0, exons.last().unwrap().1);
+                let ctg = &a.member.0;
+                let mut seq: Vec<u8> = Vec::new();
+                for &(s, e) in &exons {
+                    let Some(part) = genome.fetch_sequence(ctg, s, e) else {
+                        anyhow::bail!("--emit-readthrough-units: {ctg}:{s}-{e} is not in --fasta")
+                    };
+                    seq.extend_from_slice(&part);
+                }
+                if a.strand == '-' {
+                    seq.reverse();
+                    for x in seq.iter_mut() {
+                        *x = match *x {
+                            b'A' => b'T', b'T' => b'A', b'C' => b'G', b'G' => b'C',
+                            b'a' => b't', b't' => b'a', b'c' => b'g', b'g' => b'c', y => y,
+                        };
+                    }
+                }
+                writeln!(
+                    ut,
+                    "{fid}\t{idx}\tMCL_{ctg}_{us}\t{ctg}\t{us}\t{ue}\t{}\t{}\t{n}\t{}\treadthrough\tNA\tNA\tNA\tNA\tNA\treadthrough\t{us}\t{ue}",
+                    exons.len(),
+                    a.strand,
+                    exons.iter().map(|(s, e)| format!("{s}-{e}")).collect::<Vec<_>>().join(","),
+                )?;
+                writeln!(uf, ">{fid}|{idx}|{ctg}:{us}-{ue}|{}|nexon={}|readthrough", a.strand, exons.len())?;
+                uf.write_all(&seq)?;
+                writeln!(uf)?;
+                let h = hulls.entry(ctg.clone()).or_insert((us, ue));
+                h.0 = h.0.min(us);
+                h.1 = h.1.max(ue);
+                idx += 1;
+            }
             for (ctg, (a, b)) in hulls {
                 writeln!(ur, "{fid}\t{ctg}:{}-{}", a.saturating_sub(5_000).max(1), b + 5_000)?;
             }
@@ -1209,6 +1422,13 @@ fn main() -> Result<()> {
              (dropped, no exon inside the locus, or no read inside the chain), {} unit(s) merged into an overlapping unit of the same family",
             unit_stats.0, unit_stats.1, unit_stats.2, unit_stats.3
         );
+        if args.emit_readthrough_units {
+            eprintln!(
+                "[mcl_families] emit-readthrough-units: {readthrough_units} conjoined read-through unit(s); \
+                 guard rejected {} on opposite strands and {} whose flanks are linked by a duplication pair",
+                rt_rejected.0, rt_rejected.1
+            );
+        }
     }
 
     // Params certificate: a flag with no certificate row makes two arms indistinguishable.
@@ -1245,7 +1465,15 @@ fn main() -> Result<()> {
         ("merge_overlapping_units".to_string(), (args.merge_overlapping_units && !args.no_merge_overlapping_units).to_string()),
         ("units_merged".to_string(), unit_stats.3.to_string()),
         ("units_include_dropped".to_string(), args.units_include_dropped.to_string()),
+        ("emit_readthrough_units".to_string(), args.emit_readthrough_units.to_string()),
+        ("readthrough_units".to_string(), readthrough_units.to_string()),
+        ("readthrough_guard".to_string(), (!args.no_readthrough_guard).to_string()),
+        ("readthrough_rejected_strand".to_string(), rt_rejected.0.to_string()),
+        ("readthrough_rejected_duplicate_flanks".to_string(), rt_rejected.1.to_string()),
         ("units_dropped_emitted".to_string(), units_dropped_emitted.to_string()),
+        ("units_keep_unexpressed".to_string(), (args.units_keep_unexpressed && !args.no_units_keep_unexpressed).to_string()),
+        ("units_unexpressed".to_string(), units_unexpressed.to_string()),
+        ("core_majority_inclusive".to_string(), args.core_majority_inclusive.to_string()),
         ("rmsk".to_string(), args.rmsk.clone().unwrap_or_else(|| "NA".into())),
         ("units_read_chain".to_string(), unit_stats.0.to_string()),
         ("units_gff_fallback".to_string(), unit_stats.1.to_string()),
@@ -1341,6 +1569,46 @@ mod tests {
     /// ordinary introns; secondaries and supplementaries never count; a record spliced over the chain with no
     /// block in it contributes nothing; a giant unsupported intron is cut (mis-chain rule).
     #[test]
+    /// A read-through junction is an intron of a read that HAS a block in the chain and whose far end
+    /// leaves the chain downstream. A read spliced over the chain with no block in it contributes nothing,
+    /// and an ordinary intron inside the chain is not a candidate.
+    #[test]
+    fn leaving_introns_are_downstream_junctions_of_reads_anchored_in_the_chain() {
+        let chain = [(1000u64, 1100u64), (4000, 4120)];
+        // no block in the chain: nothing, however far the intron reaches
+        let r = br(100, &[('M', 50), ('N', 90_000), ('M', 50)]);
+        let (b, i) = blocks_and_introns(&r);
+        assert!(leaving_introns(&b, &i, &chain).is_empty());
+        // anchored, intron entirely inside the chain span: not a read-through
+        let r = br(1000, &[('M', 100), ('N', 2900), ('M', 120)]);
+        let (b, i) = blocks_and_introns(&r);
+        assert!(leaving_introns(&b, &i, &chain).is_empty());
+        // anchored, intron leaving downstream: the candidate junction
+        let r = br(1000, &[('M', 100), ('N', 2900), ('M', 120), ('N', 15_000), ('M', 200)]);
+        let (b, i) = blocks_and_introns(&r);
+        assert_eq!(leaving_introns(&b, &i, &chain), vec![(4120, 19_120)]);
+        // an empty chain is never a source
+        assert!(leaving_introns(&b, &i, &[]).is_empty());
+    }
+
+    /// The target is the unit whose chain contains the first base AFTER the intron; the source never
+    /// matches itself, and a junction landing between units resolves to nothing.
+    #[test]
+    fn readthrough_target_is_the_unit_holding_the_first_base_after_the_intron() {
+        let units = vec![
+            ("c1".to_string(), vec![(1000u64, 1100u64), (4000, 4120)]),
+            ("c1".to_string(), vec![(19_100, 19_400)]),
+            ("c2".to_string(), vec![(19_100, 19_400)]),
+        ];
+        assert_eq!(readthrough_target((4120, 19_120), "c1", 0, &units), Some(1));
+        // the same coordinates on another contig do not match
+        assert_eq!(readthrough_target((4120, 19_120), "c3", 0, &units), None);
+        // landing in a gap
+        assert_eq!(readthrough_target((4120, 18_000), "c1", 0, &units), None);
+        // the source unit is never its own target
+        assert_eq!(readthrough_target((1000, 4010), "c1", 0, &units), None);
+    }
+
     fn read_extent_is_the_union_of_kept_segments_of_primaries_with_a_block_in_the_chain() {
         let chain = [(1000u64, 1100u64)];
         assert_eq!(read_extent(&[], &chain, 3), None);

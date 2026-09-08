@@ -286,6 +286,9 @@ struct Args {
     /// "any assembler would" rule). Default is certified-first with the placement as the fallback.
     #[arg(long, default_value_t = false)]
     placement_first: bool,
+    /// Escape hatch (§6ft): no read-through certificate — every unaligned base counts against the candidate.
+    #[arg(long, default_value_t = false)]
+    no_readthrough_certificate: bool,
     /// ⭐ O2-8c (§6eo): discover PSV columns on the GENOMIC alignment of the copies' spans (exons + introns,
     /// reverse-complement retry for inverted duplications) instead of their spliced sequences. Read-chain units
     /// of unequal exon composition sent the spliced star projection to min_p 3e-270 on a wrong call (register
@@ -1246,6 +1249,9 @@ struct AssignRow {
     /// §6fq: the molecule's primary MAPQ < 60 — the aligner could not place it; the certificate machinery
     /// decided this row. `false` = assigned to its placement (the certificate only reported).
     contested: bool,
+    /// §6ft: the partner copy (catalog idx) whose alignment explained this molecule's unaligned tail, `cut` when
+    /// only the mis-chain cut explained it, `-` otherwise.
+    readthrough_into: String,
     /// The catalog `copy_idx` of `assigned_copy` under `--families` (copy_assign SORTS copies and reports its
     /// own index; `family_join.tsv` carries the same map). `NA` without a catalog.
     catalog_copy_idx: String,
@@ -1465,6 +1471,7 @@ fn main() -> Result<()> {
         dump_star: args.dump_star,
         read_star_hit_in_unit: !args.no_read_star_hit_in_unit,
         read_star_two_form: !args.read_star_genomic_only,
+        read_star_readthrough: !args.no_readthrough_certificate,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
@@ -1689,7 +1696,10 @@ fn main() -> Result<()> {
                                     && read_ref_end_local(&br.read) > c.start
                             })
                             .count();
-                        if n == 0 {
+                        // §6ft: a catalog copy the catalog itself marks unexpressed (`n_reads 0`, an annotated model
+                        // kept as the unit) or a partner may legitimately have no read here — it stays a target
+                        let catalog_zero = f.copies.iter().any(|cc| cc.tid == c.tid && (cc.n_reads == 0 || cc.partner));
+                        if n == 0 && !catalog_zero {
                             anyhow::bail!(
                                 "--families: {} copy {} ({}:{}-{}) has NO reads in {contig}:{lo}-{hi} of \
                                  {}. It cannot be assigned, and silently dropping it would understate the \
@@ -1815,6 +1825,7 @@ fn main() -> Result<()> {
             // (the copy its primary's blocks overlap most), as any assembler would use it; the certificate is
             // still computed for it and reported (`origin_rejected`), never applied. One sensitivity over every
             // read; abstention only among the contested. `--no-placement-assign` = the machinery on every read.
+            let readthroughs = rustle::vg_family::copy_assign_pipeline::take_readthroughs();
             let placement_assign = args.molecule_observations && !args.no_molecule_observations && !args.no_placement_assign;
             let mut placement_assigned = 0usize;
             let mut fams = fams;
@@ -1847,8 +1858,8 @@ fn main() -> Result<()> {
                         let Some(bl) = read_blocks.get(pri) else { continue };
                         let mut best: Option<(usize, u64)> = None;
                         for (ci, (c, s0, e0)) in fa.copy_spans.iter().enumerate() {
-                            if c != contig {
-                                continue;
+                            if c != contig || fa.copy_tids.get(ci).map_or(false, |t| rustle::vg_family::copy_assign_pipeline::is_partner(t)) {
+                                continue; // §6ft: never place a molecule at a partner
                             }
                             let o: u64 = bl.iter().map(|&(bs, be)| be.min(*e0).saturating_sub(bs.max(*s0))).sum();
                             if o > 0 && best.map_or(true, |(_, bo)| o > bo) {
@@ -1910,6 +1921,11 @@ fn main() -> Result<()> {
                         n_candidates: a.n_candidates,
                         in_copy,
                         contested: mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]) < 60,
+                        readthrough_into: match readthroughs.get(bam_reads[*ri].as_str()) {
+                            Some(&(pc, _)) if pc == usize::MAX => "cut".to_string(),
+                            Some(&(pc, _)) => cat_idx_of(pc),
+                            None => "-".to_string(),
+                        },
                         catalog_copy_idx: cat_idx_of(a.best_copy),
                     });
                 }
@@ -2272,17 +2288,17 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested")?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into")?;
     for r in &assign_rows {
         // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
         // one is assigned to its placement (§6fq) whatever its candidate count
         let sole = (r.status == "assigned" && r.n_candidates == 1 && r.contested) as u8;
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into
         )?;
     }
     {
@@ -2817,6 +2833,8 @@ fn main() -> Result<()> {
         row("placement_assign", format!("{}", args.molecule_observations && !args.no_molecule_observations && !args.no_placement_assign))?;
         row("placement_assigned", format!("{}", placement_assigned_total))?;
         row("placement_first", format!("{}", args.placement_first))?;
+        row("readthrough_certificate", format!("{}", !args.no_readthrough_certificate))?;
+        row("readthrough_explained", format!("{}", assign_rows.iter().filter(|r| r.readthrough_into != "-").count()))?;
         row("contested_rows", format!("{}", assign_rows.iter().filter(|r| r.contested).count()))?;
         row("dump_star", format!("{}", args.dump_star))?;
         row("read_star_hit_in_unit", format!("{}", !args.no_read_star_hit_in_unit))?;

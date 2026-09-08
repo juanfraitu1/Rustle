@@ -13206,3 +13206,258 @@ read-supported chain) matches the LCR16a core's size (median 0.89) and undershoo
 (1.02) and overshoots the core (1.42: it is the core plus the read-supported flank). Both objects are the size
 they are meant to be; quote the pair, not one. The 5 unmatched predictions are the dropped members (no core
 by definition), the 2 unmatched truths the unexpressed member and the 22 %-core locus (§6fr).
+
+## §6ft — O1 EVALUATED BY SENSITIVITY, SPECIFICITY AND BIPARTITE COVERAGE; EVERY NPIP MEMBER ACCEPTED; PARTNERS AND THE READ-THROUGH CERTIFICATE (user, 2026-09-06 17:50; PREREG `docs/PREREG_npip_all_members_2026-09-06.md`, md5 167d233e)
+
+**O1's evaluation is now `bench/o1_eval.py`:** sensitivity (truth loci rediscovered), specificity (family members
+that are truth; candidates counted separately), and for each matched pair the bipartite 1:1 coverage of the
+truth member by its rediscovered unit (plus size ratio, in-band). Truths: the 26 LCR16a loci (NPIP), Soto's 362.
+
+**Polish 1 (adopted): an unexpressed member keeps its annotated model as its unit** (`gff_fallback`,
+`n_reads 0`; `--no-units-keep-unexpressed` = the previous row set, expressed rows byte-identical). NPIP:
+sensitivity **26/26** (25 members + the 22 %-core fragment as a `dropped` candidate), specificity 25/25,
+coverage median 0.84. Three contigs: 623 unexpressed units (most cluster members have no read in `npip3.bam`);
+genome-wide `gw_units_v4`: **9,077 units** — 2,483 read-chain, 6,594 GFF (5,091 of them with 0 reads), 467
+dropped candidates. O2 accepts 0-read copies (NPIP: 137 s, no abort); a previously unexpressed NPIP member
+receives reads that were placed elsewhere — the multimapper case the thesis is about. Soto, same binary, polish
+OFF → ON: sensitivity 0.851 → 0.862 (+4 members), specificity 0.654 → 0.634 (21 units added, 4 of them truth).
+⚠ The Soto catalog rebuilt today (`soto_mcl/mcl_v12`) differs from the 2026-09-05 one on 447 rows (min_size 2,
+L1/L2/§6fm); its own baseline is 0.851 / 0.654, not the 0.751 / 0.703 of §6ev.
+
+**Polish 2 (not adopted, row 725): the inclusive majority** moves 12 statuses on the three contigs, does not
+rescue the fragment, and promotes a 6.3-kb locus with 2.9 kb of core the LCR16a truth does not hold.
+`--core-majority-inclusive` ships OFF.
+
+**Partners (adopted).** `o2_sweep_split.py` adds, for every family unit, the nearest catalog unit of ANOTHER
+family on each side (the L2 clipping neighbours) as `member_status = partner` rows (NPIP: 29 units + 51
+partners; the region holds them); `copy_assign` aligns molecules to partners so a read-through tail is
+explained, never chooses a partner as best candidate, competitor, placement or posterior mass
+(`register_partner`; escape `--no-partners` on the splitter).
+
+**The read-through certificate (adopted; escape `--no-readthrough-certificate`, byte-identical to §6fq).** A read
+position the best candidate leaves unaligned is explained when another target aligns it (a partner, or a family
+candidate whose coverage overlaps the best's by less than half — never a competitor) or when it lies beyond a
+giant (> 50 kb) intron fewer than 3 molecules support in the molecule's own record; explained positions leave
+the certificate; column 20 `readthrough_into` names the partner (catalog idx) or `cut`. NPIP, real data
+(`sweep_v17/fam_MCL1_073242`): of the **72 unique reads running past the extent, 38 now pass — all 38 by a
+partner, 31 of them by MCL27's unit 0** — 33 still flagged (the artefacts and the boundary cases: the cut explained
+0 of them, OPEN), anchors 33 right / 0 wrong, NPIP-proper assigned 706 of 1,001 (70.5 %), certificate flags 378
+→ 338. Cost: 130 → 439 s and 3.0 → 7.7 GB on NPIP (80 targets, a 90-Mb region).
+
+## §6fu — THE ANNOTATION IS A PROPOSER, NOT THE DEFINITION: a degradation ablation and a core projection (user, 2026-09-07; PREREG `docs/PREREG_annotation_ablation_2026-09-07.md` md5 65efc5b2 and `docs/PREREG_core_projection_2026-09-07.md` md5 8f7849228fba, AMENDED)
+
+**The objection.** "The SD-core definition is over-reliant on the annotation." Two parts, answered separately:
+does the annotation carry the family (no), and must a member be annotated to be found (not for a family that
+already exists).
+
+**Part 0 — the annotation carries no family information (measured, `mcl_ann/adj/ablation`).** The 25 NPIP
+members carry **25 distinct gene symbols, 24 of them `LOC*`**, one record named `NPIPB11`; grouping by symbol
+gives 25 singletons, by description **8 groups whose largest is "titin-like" (9)** and only 3 of 25 mention the
+nuclear pore complex. Genome-wide 95.2 % of members of 1,021 product-defined families are `LOC`-named. In the
+code `gene=` is a join key for exons, never a label (`annotation_families.rs:13`, `mcl_families.rs:9`).
+
+**Part 1 — the degradation ablation.** Only the GFF varies; genome, SEDEF, reads, repeat library and every
+threshold fixed. Each arm rebuilds gene-span FASTA → `minimap2 -x asm20 -c -X -N 50 -p 0.1 -t 4` →
+`mcl_families --min-exonic-bp 1 --merge-overlapping-loci --core-refine --emit-units --sedef --bam --fasta`.
+| arm | M1 clusters w/ truth | members | M3 precision | M2 sens (dominant) | M4 core-hull cov / in-band | prediction |
+|---|---|---|---|---|---|---|
+| **A0** control, full regeneration | 1 | 25 | 1.000 | 25/26 | 0.963 / 25 of 25 | **P0 HELD** — member coordinates identical to shipped `rna_units_v12`, `clusters.tsv` byte-identical |
+| **A0r** rewrite harness | 1 | 25 | 1.000 | 25/26 | 0.963 / 25 of 25 | identical (harness is faithful; it drops 406 records < 500 bp) |
+| **A1** boundaries jittered ±5 kb | 1 | 26 | 0.962 | 24/26 | 0.872 / 25 of 25 | **P1 HELD** (≥24/26, ≥0.95) |
+| **A2** boundaries jittered ±20 kb | 2 | 28 | 0.929 | 24/26 | 0.594 / 17 of 25 | **P2 HELD** (≤2 clusters, ≥20/26, ≥0.90) |
+A3 (50 % dropout), A4 (span-only exons), A5 (middle-50 % truncation) **deferred by the user** in favour of the
+projection experiment; the arms and their predictions stand in the PREREG unrun. ⚠ The regenerated A0 PAF has
+244,916 records against the shipped 244,908 (multithreaded minimap2), moving two `nearest_ident` values in
+unrelated families and nothing else. ⟹ **boundaries may be wrong by ±5 kb at no cost, and by ±20 kb at the cost
+of the extent, not the membership** — at ±20 kb the core-hull match collapses (in-band 25→17) while precision
+holds at 0.93.
+
+**Part 2 — leave-one-out core projection (`mcl_ann/adj/projection`, `bench/o1_core_projection.py`).** For each of
+the 25 members: drop it, recompute the survivors' cores over the survivors alone, align those 24 core hulls to
+the three contigs, discard intervals overlapping a survivor, admit by the unchanged membership rule.
+- ⛔ **The pre-registered truth was CIRCULAR** (register 727): `adj/size/lcr16a.bed` IS this family's own core
+  hulls projected back (identical intervals to `adj/o1loci/npip_loci.tsv`, `unit = MCL1:<copy>:<status>`).
+  R 25/25 and coverage 1.000 against it **are not quoted**. AMENDMENT 1 substitutes the held-out member's own
+  annotated gene span — the one thing its fold removes, from an instrument independent of our cores.
+- ⭐⭐ **What survives, non-circular.** The 24 survivor cores land on the held-out locus in **25/25 folds** and on
+  **nothing else on the substrate** (610 raw hits → 25 merged intervals → exactly 1 after removing survivors,
+  every fold). Against the independent gene span: **coverage median 0.936, ≥0.5 in 17/25, ≥0.9 in 13/25; size
+  ratio median 0.985, in-band 18/25.** ⭐ **The projected interval is stable at the duplicon scale — median
+  29,971 bp, IQR 26,977–30,965** — whether the annotated model is 21 kb or 308 kb.
+- ⭐ **The 8 folds below 0.5 gene-span coverage contain all 6 `kept_trimmed` members** (1, 9, 10, 13, 14, 25):
+  there the projection recovers 23–28 kb inside a 125–308 kb chimeric model, i.e. **low coverage is the
+  projection reproducing the trim**, not failing. The other two (15, 22) are an artefact of the re-score picking
+  the largest-overlap gene, which for those loci is a neighbouring record.
+- ⛔ **P5 failed** (register 728): the membership test is **inert** here — 1 candidate in, 1 admitted. A 23-kb
+  core at ≥ 0.30 coverage already isolates the family; the test is untested, not wrong.
+
+⟹ **For the advisor.** The annotation proposes approximate intervals and nothing else: it can be wrong by 5 kb
+at no cost, it carries no grouping information, and for a family that already exists a member's locus and its
+duplicon-scale extent are recoverable from sequence alone with its annotation deleted. What remains genuinely
+annotation-bound is the discovery of a family **none** of whose members is annotated — gap G5, the read-proposal
+route, and O3's territory. ⚠ Both experiments are one family on one substrate; nothing here is genome-wide.
+
+## §6fv — THE SD-CORE DEFINITION ON HUMAN NPIP (user, 2026-09-07; PREREG `docs/PREREG_npip_human_2026-09-07.md`, md5 dfbe88b6)
+
+⚠ **Human numbers, never pooled with gorilla's.** New substrate `soto_mcl/npip_hsa` (`bench/npip_human_build.sh`):
+CHM13 v2.0 chr16 + chr18, **3,128 gene/pseudogene spans** → all-vs-all `minimap2 -x asm20 -c -X -N 50 -p 0.1`
+(134,219 records) → `mcl_families --min-exonic-bp 1 --merge-overlapping-loci --core-refine --core-from-paf
+--emit-units --bam soto.bam --fasta chm13v2.0.fa`; 903 nodes, 173 clusters, 503 units, 164 s.
+⚠ **First run used `--core-from-paf`** on the belief that no human SEDEF existed here; **it does** —
+`winloci_data/soto_replication/sedefSegDups.bed`, the CHM13 SEDEF track (83,516 pairs after reshaping its
+second side from columns 10–12 into `HSA_sedef_pairs.bed`; chr16 length 96,330,374 matches CHM13 v2.0 exactly).
+⛔ The user's recollection that `Desktop/final.bed` is the human SEDEF is **wrong**: it is byte-identical to
+`GGO_sedef_final.bed` (md5 991ed343), gorilla accessions plus the gorilla mitochondrion. Both core routes are
+reported below; **the SEDEF arm is the one to quote**, the PAF arm is the sensitivity check.
+⚠ The catalog already on disk (`soto_mcl/mcl_v12`) is NOT this definition: `core_refine false`, and its Soto-slice
+PAF holds 13 of the 22 NPIP records — the other 9 were never proposed. That is why a new substrate was built.
+
+**Truth.** The 22 CHM13 RefSeq records whose symbol begins with NPIP (21 chr16, `NPIPB1P` chr18) — curated and
+independent of anything the method computes (the opposite failure from `lcr16a.bed`, register 727). The PREREG
+declared in advance that a unit outside the 22 is not necessarily false, because of the symbol trap. It was:
+**all four unmatched members are NPIP by DESCRIPTION and not by symbol** — `LOC128966608` and `LOC124907834`
+("…family member B13-like"), `LOC124907808` and `LOC124907807` ("…family member B15"). The description-complete
+truth is **26 records**, and both are reported.
+
+| | symbol truth (22) | description truth (26) |
+|---|---|---|
+| sensitivity | 22/22 = **1.000** | 26/26 = **1.000** |
+| specificity over members | 22/26 = 0.846 | 26/26 = **1.000** |
+| dropped candidates | 1 | 1 |
+
+**Bipartite 1:1 matching (26-truth), the three interval forms:**
+| form | truth coverage median | ≥ 0.9 | size ratio median | in-band 0.5–2× |
+|---|---|---|---|---|
+| unit (exon chain) | 1.00 | 23/26 | 1.00 | **25/26 = 0.96** |
+| core hull | 0.89 | 10/26 | 0.89 | 24/26 = 0.92 |
+| locus extent | 1.00 | 25/26 | 1.06 | 20/26 = 0.77 (6 over-extended) |
+
+**Predictions:** P2 (≥18/22) **held** at 22/22. P4 (core-hull in-band ≥ 0.80) **held** at 0.92.
+⭐ **P5 held**: the 7 NPIPA and 15 NPIPB records are **one cluster**, MCL0 — the core rule does not separate the
+subfamilies, the same answer Q9 gets in gorilla, now on the substrate where the subfamily names come from.
+P1 (≤ 2 clusters) **held on best-overlap** (MCL0 25, MCL1 1) but not on any-overlap (5 clusters have a unit
+touching an NPIP record — overlapping models of other families, the §6er locus case). **P3 (precision ≥ 0.85)
+missed by 0.004 on the symbol truth (0.846)** and holds at 1.000 on the description truth; recorded as written.
+
+**The one dropped candidate** is `MCL0:3`, the `PDXDC1` / `PKD1P6-NPIPP1` readthrough model: 50 kb of locus,
+**4.9 kb of core**, 362 reads. ⭐ PDXDC1 is the same LCR16u content that forms the separate MCL7 cluster in
+gorilla (§6eg) — the rule expels it in both species, from opposite directions. **10 of the 26 members carry
+0 reads** and are kept by polish 1, so membership does not depend on expression here either.
+
+⟹ **The definition transports.** On human NPIP, where the annotation names the subfamilies and a symbol grep is
+actually informative, sensitivity and specificity are both 1.000 against the description-complete truth, the
+unit form matches curated extents in-band 25/26, and NPIPA/NPIPB stay one family. ⚠ chr16 + chr18 only, cores
+from the run's own alignments rather than an independent SD caller, and 4 of the 26 truth loci are themselves
+`LOC`-named — the symbol truth understates specificity by construction.
+
+### §6fv addendum — the same measurement with the HUMAN SEDEF calls (2026-09-07)
+
+`mcl_families … --core-refine --sedef winloci_data/HSA_sedef_pairs.bed` (same PAF, same GFF, same reads,
+`cat_sedef`): 903 nodes, 173 clusters, 503 units, 77 clusters gated, **257 kept_full / 16 trimmed / 11 dropped**
+(the PAF-derived arm: 340 / 134 / 19). Of the 383 units present in both arms, **359 carry the same status; 24 move**,
+in both directions.
+
+| NPIP family MCL0 | cores from the PAF | cores from human SEDEF |
+|---|---|---|
+| members | 26 + 1 dropped candidate | **27, none dropped** |
+| sensitivity (26-truth) | 26/26 = **1.000** | 26/26 = **1.000** |
+| specificity over members | 26/26 = 1.000 | 26/27 = **0.963** |
+| core hull: truth coverage median / in-band | 0.89 / 24 of 26 = 0.92 | **1.00 / 25 of 26 = 0.96** |
+| unit: coverage median / ≥ 0.9 | 1.00 / 23 of 26 | 1.00 / 23 of 26 |
+| locus extent: ratio median / in-band | 1.06 / 20 of 26 = 0.77 | 1.06 / 20 of 26 = 0.77 |
+| NPIPA + NPIPB in one cluster | yes | yes |
+
+⚠⭐ **The §6fv reading of the dropped candidate is CORRECTED.** Under PAF-derived cores `MCL0:3` was dropped
+(4.9 kb of core in a 50 kb locus) and was written up as the rule correctly expelling a `PDXDC1` readthrough.
+Under the SEDEF calls the same locus is **kept, trimmed to a 7.9 kb core at SD depth 26** — and the annotation
+there holds `PKD1P6-NPIPP1`, *a readthrough whose second half IS an NPIP pseudogene*. **Keeping it is right and
+the earlier expulsion was the weaker call**; the sole non-truth member is a locus the symbol- and
+description-truths both miss because its largest-overlap record is `PDXDC1`. So human specificity is 0.963 with
+its one "error" being a 27th NPIP-carrying locus, not a false merge.
+⟹ An independent SD caller **sharpens the core** (hull coverage 0.89 → 1.00) and **moves 24 of 383 statuses**;
+`--core-from-paf` remains a usable fallback, not an equivalent.
+
+## §6fw — THE CONJOINED READ-THROUGH IS AN O1 OBJECT (user, 2026-09-07; PREREG `docs/PREREG_readthrough_object_2026-09-07.md`, md5 1a51fa3b)
+
+**User: "I like your idea of representing the real ones as an object"** — after refusing the alternative of
+feeding annotated junctions to the aligner (`minimap2 --junc-bed`), which would put the annotation inside the
+read layer, tilt near-ties toward better-annotated copies, and suppress what O3 looks for. **Rationale:** of the
+71 NPIP reads rejected for running past their locus, **48 are real read-throughs** and only 15 are chaining
+artefacts (register row 723) — the catalog had no object for the majority, so biology arrived as rejection.
+
+**Shipped OFF: `mcl_families --emit-readthrough-units`.** A read-through unit is emitted for an ordered pair of
+emitted units (A, B) on one contig when ≥ `--min-reads` distinct **primary molecules** (counted by name) have a
+block in A's chain and share **one identical intron** whose far end falls inside B's chain, and that intron is
+**canonical** on the unit's strand (`GT..AG`, `GC..AG`, `AT..AC`). Row: `member_status = readthrough`,
+`source = readthrough`, chain = A's ∪ B's **coalesced** (the two chains can share bases; the un-coalesced first
+form violated the ascending-disjoint `copies.tsv` contract and aborted `copy_assign`). Side file
+`<out>.readthrough.tsv` carries source unit, target unit, intron and molecule count; the 19-column units
+contract is untouched. `bench/o1_eval.py` now counts `readthrough` and `partner` with the candidates.
+
+| prediction | verdict |
+|---|---|
+| **P0** flag off ⟹ byte-identical | ⭐ **HELD** — `units.tsv` byte-identical to `rna_units_v12`; with the flag on, every non-readthrough row is identical too |
+| **P1** the §6fp event is one unit | ⚠ **NOT VERIFIABLE AS WORDED** — "NPIP unit 2 → MCL27:0 through one 15-kb intron" was measured on the v11 unit set; on v12 the same reads join MCL1's ID_4 unit to MCL27 through a **729 bp** intron (59 molecules) and to MCL7 through **1,724 bp** (41 molecules). The event is present, the description was catalog-specific |
+| **P2** < 40 units on three contigs | ⛔ **MISSED: 46** across 20 families, intron median 1,936 bp (104 bp – 108 kb). Reported, not tuned |
+| **P3** O1 metrics unchanged | ⭐ **HELD** — NPIP sensitivity 26/26, specificity 25/25 in both arms; the 7 new MCL1 rows enter as candidates |
+| **P4** ≥ 30 real read-through reads stop being rejected | ⭐ **HELD, far exceeded** — **663 molecules are assigned to a read-through unit, 551 of them `origin_rejected` in the OFF arm** |
+| **P5** no already-assigned molecule moves | ⛔ **FAILED as worded: 242 move.** Decomposition: **240 move INTO a read-through unit** (the object claiming molecules that span both loci — what it exists to do), **2 move between real copies, 1 of them still assigned** (copy 12 → 13), and among the 57,646 shared molecules only **9 become newly rejected** |
+
+⚠ The ON arm holds **60,754 molecules against 57,646** because the read-through units enlarge the swept region;
+the raw `origin_rejected` totals (52,066 → 54,687) are therefore **not comparable** — the shared-molecule
+comparison above is. NPIP O2 cost 369 s (off) → 485 s (on).
+
+⚠⚠ **The pre-registered consequence of P5 failing was "reporting-only, not a candidate", and that clause stands
+until the user decides.** What the decomposition shows is that the failure is 240 intended claims and 2 adverse
+moves, not competition between real copies — but the rule was written before the run and is not rewritten after
+it. The flag ships **OFF**; promoting the object to an O2 candidate is the user's call.
+
+Suite **865 passed / 0 failed / 11 ignored** with two new tests (`leaving_introns_…`, `readthrough_target_…`).
+
+### §6fw addendum — ARE THE READ-THROUGHS ARTEFACTS? The user's challenge, tested (2026-09-07)
+
+**User: "I still think they are assembly artifacts, especially with paralogs that are too close to each other."**
+⚠⚠ **The challenge is well founded and §6fp's "48 are real read-throughs" was OVER-CLAIMED.** Its three criteria —
+canonical splice sites, the intron shared by ≥ 3 molecules, the far end in another catalog unit — are **each
+equally predicted by the mis-chain hypothesis**, because near-identical paralogs *share their splice sites*: an
+aligner jumping from copy A's exon to copy B's exon lands on canonical dinucleotides by construction, and does
+so reproducibly across molecules. None of the three discriminates.
+
+Four tests on the 46 units of §6fw (`adj/readthrough/on.readthrough.tsv`):
+| test | result | reading |
+|---|---|---|
+| do the two units belong to the SAME family (the paralog pair the user names)? | **11 of 46**; 35 join different families | the artefact-prone class is a quarter of the set |
+| same strand (a transcript cannot join opposite strands)? | 44 of 46 | ⛔ **2 are impossible as one transcript** — MCL7→MCL29 (15 molecules) and MCL27→MCL29 (3): artefacts or a wrong strand call |
+| ⭐ **are the two SIDES OF THE JUNCTION linked by a duplication pair?** (a cross-copy mis-chain requires the donor and acceptor flanks to be copies of each other) | **4 of 46**, carrying 190 of 6,356 molecules | **the proposed mechanism is mechanically available for 4 junctions only**; for 42 the two sides are not duplicates, so no jump between copies can produce them |
+| did a SINGLE copy already explain the molecule? (NPIP, 663 molecules on read-through units) | **112 = 17 % were cleanly assigned to one copy in the OFF arm**; 551 had no single copy carrying a certificate | 17 % are mis-chain-consistent and the object is taking them; ⚠ the other 83 % are **not proof of biology** — "no single copy explains it" is also the signature of a copy MISSING from the catalog (O3) |
+
+⟹ **Neither position is fully right.** The blanket claim of biology is withdrawn; so is the blanket claim of
+artefact. The user's mechanism is real, identifiable and **small**: 4 duplicate-linked junctions plus 2
+strand-impossible ones, 11 same-family pairs in all, two of them between units whose spans **overlap**
+(MCL104, MCL48: negative gap — a "read-through" between overlapping units is a mis-chain by definition).
+⭐ **The actionable form is a guard, not an argument:** admit a read-through only when the donor and acceptor
+flanks are NOT linked by a duplication pair and the two units share a strand. That is one SEDEF query per
+candidate over machinery already present, it encodes the objection as a rule, and on this substrate it would
+remove 6 of the 46. Not built; the user's call.
+
+### §6fw guard — the objection shipped as a rule (user, 2026-09-07)
+
+**User: "ok lets do that."** `mcl_families --emit-readthrough-units` now applies the guard by default; the escape
+`--no-readthrough-guard` reproduces the unguarded set. A read-through is admitted only when
+
+1. the two units **share a strand** — a transcript cannot join opposite strands, and
+2. the junction's **donor and acceptor flanks (± 2 kb) are NOT linked by a duplication pair** — a cross-copy
+   mis-chain requires the two flanks to be copies of one another, so where no pair links them that mechanism
+   cannot produce the junction.
+
+New public query `SdPairs::links(contig, a, b)` (pairs are stored both ways, so one lookup suffices); `SdPairs`
+gains `Clone` and is kept after the core refinement for this use. Without SD pairs only the strand half runs.
+
+Three gorilla contigs: **46 → 42 units**, 13 junction candidates rejected on strand and 13 on duplicate flanks
+(candidates, not units — several share a unit pair). The six units removed are exactly the six the adjudication
+named: the two opposite-strand joins into MCL29 (MCL7, MCL27), and the four duplicate-linked
+(MCL24→MCL71, MCL29→MCL106, MCL37→MCL37, MCL71→MCL71).
+⭐ **NPIP's MCL1 rows are unchanged**, so §6fw's O2 measurement (663 molecules on read-through units, 551 of
+them previously rejected) stands as measured. Non-readthrough rows remain byte-identical to the flag-off run.
+Params rows `readthrough_guard`, `readthrough_rejected_strand`, `readthrough_rejected_duplicate_flanks`.
+Suite **866 passed / 0 failed / 11 ignored** (new: `links_is_true_only_when_one_pair_holds_both_flanks`).

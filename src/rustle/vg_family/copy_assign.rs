@@ -262,6 +262,10 @@ pub struct AssignParams {
     /// fewer edits. `false` = the locus alone (§6fd), which rejected true reads at units whose exons the splice
     /// mode leaves unspliced (NPIP 17: 814 inserted bases on its own exact sequence).
     pub read_star_two_form: bool,
+    /// ⭐ §6ft: the read-through certificate — a read position the best candidate leaves unaligned is explained
+    /// when another candidate aligns it (a partner, not a competitor) or when it lies beyond a giant unsupported
+    /// intron of the molecule's own record (the O1 mis-chain rule); explained positions leave the certificate.
+    pub read_star_readthrough: bool,
 }
 
 impl Default for AssignParams {
@@ -290,6 +294,7 @@ impl Default for AssignParams {
             dump_star: false,
             read_star_hit_in_unit: true,
             read_star_two_form: true,
+            read_star_readthrough: true,
         }
     }
 }
