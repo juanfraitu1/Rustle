@@ -14354,3 +14354,38 @@ defect without a cleaner measurement.
 agree on 50 chains and 36–631 junctions, ours explains 5 points more of the molecules exactly, StringTie
 recovers 16 points more of the junctions — and only ours can say which copy an isoform belongs to.* The
 comparison earns its place by being two-sided.
+
+## §6gk — WHERE StringTie IS FOOLED ON THE Y AMPLICONIC FAMILIES (user, 2026-09-08)
+
+**User: "can we find cases in which stringtie was fooled … for the cases of very similar loci close
+together? We can use the YAGs for this."** `stringtie -L` on the human chrY BAM (41,464 primaries): **930
+transcripts, 71 s**.
+
+⛔ **The failure I expected does NOT happen.** StringTie emits transcripts at all four DAZ copies (DAZ1 6,
+DAZ3 5, DAZ4 13, DAZ2 4), **no transcript spans two copies and no gene covers more than one**. It does not
+merge the palindrome, and it does not refuse to assemble. That hypothesis is refuted and should not be pitched.
+
+⭐⭐ **The real failure is subtler and it is exactly the thesis's territory: StringTie places transcripts at a
+NAMED copy using molecules that carry no placement information, and says nothing about it.** Of the 28
+StringTie transcripts at the four DAZ copies, **3 are built entirely on MAPQ-0 molecules**. Head to head on the
+same molecules:
+
+| StringTie transcript | it places this at | molecules | what O2 says about the same molecules |
+|---|---|---|---|
+| `STRG.323.1` | **DAZ2** | 23 | **20 tied, 3 ambiguous, 0 certificate-assigned** |
+| `STRG.320.3` | **DAZ4** | 4 | **2 tied, 2 ambiguous, 0 certificate-assigned** |
+
+⟹ **StringTie asserts that DAZ2 expresses `STRG.323.1` and gives it a TPM. O2 looks at the same 23 molecules
+and assigns none of them**: 20 are alignment-score ties and 3 abstain. The disagreement is not about the
+transcript's structure — it is about whether the copy can be named at all, and only one of the two tools is in
+a position to say it cannot.
+
+For contrast, on the same family our own emit places **81 of 261 isoforms** by certificate and **81 of 81 are
+pure to a single copy**; the rest carry no certificate-assigned read and are reported as such.
+
+⚠⚠ **Two errors of mine during this hunt, both the same one.** Matching reads to transcripts by intron chain
+alone makes an unspliced transcript's EMPTY chain match every unspliced read in range. It first produced two
+transcripts apparently sharing 674 molecules with 476 at MAPQ 0 — a false "double-counting" headline — and a
+65 % MAPQ-0 rate. With span constraints the true figures are **17 %** MAPQ-0 and **zero shared molecules**
+between those two transcripts. This is the same bug already registered as 757 and I reintroduced it in an
+ad-hoc script within a day. ⟹ **Any read-to-transcript matching must special-case the empty chain.**
