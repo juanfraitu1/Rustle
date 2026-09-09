@@ -694,3 +694,36 @@ chosen. `REPRODUCE.md` pins the **one** that is — three contigs, ~40 minutes, 
 | Q9 NPIP subfamilies | ⭐ answered on his own example | §5j, fam72 review |
 | Q10 non-canonical | ⭐ he is right; recurs | §6au, §6av, §6aw |
 | Q11 PSV | ⭐ answered | §6aj |
+
+## Part 0h — THE ADVISOR'S CLARIFICATION OF WHAT THE PROJECT IS (relayed by the user, 2026-09-09)
+
+Verbatim intent, and it supersedes Parts 0d–0g where they differ:
+
+> The project **is an assembler** — but one more similar to **flair or isoseq collapse than to StringTie**.
+> The entire focus is **multicopy gene families and better use of multi-mapping reads**, because that is a
+> common gap in all other assemblers. **In the end we produce a GTF.** It does not matter whether it contains
+> the transcripts other assemblers get easily; **what sets it apart is that it should contain the transcripts
+> other assemblers struggle to produce.** O2 is an extension: take **all the ambiguous reads (same AS — a coin
+> toss which is the "best" alignment)** and infer which copy they actually came from. **Uniquely mapped
+> transcripts are irrelevant to O2.**
+
+### What this settles
+1. **The deliverable is a GTF, judged at the hard loci only.** Junction recovery against StringTie (§6gj,
+   42.1 % vs 58.6 %) is **not a loss** — it is a comparison on the easy transcripts, which the advisor has just
+   declared out of scope. ⛔ Do not present it as a cost.
+2. **The right comparison is the one §6gt already made by accident**: isoseq collapse drops 23.1 % of the
+   family-region molecules and **30.2 % of the ones we abstain on** because it discards secondaries. The
+   transcripts carried by those molecules are *exactly* "the transcripts other assemblers struggle to produce".
+   The benchmark becomes: **at multi-copy loci, which transcripts do we emit that isoseq collapse / flair emit
+   nothing for, and are they attributed to the right copy?**
+3. **O2's scope is confirmed as §6gv shipped it**: AS-tied multimappers only (`--as-tied-only`), unique mappers
+   irrelevant. The honest population is the CONTESTED one — 28 molecules on gorilla MCL1, 759 on human MCL0 —
+   and the "38.7 % assigned" headline is retired.
+4. **flair-like, not StringTie-like**: group observed full-length structures (intron-chain collapse), do not
+   run a flow model that asserts chains no read carries. That is already the design (§6gr).
+
+### What it changes in the standing framing
+- `THESIS_OBJECTIVES.md` "NOT an assembler" ⟹ **"an assembler for the loci other assemblers cannot resolve"**.
+- The bakeoff metric (`bench/tool_bakeoff.py`) must gain a **hard-locus restriction**: score only molecules that
+  are AS-tied, and count transcripts emitted per copy where the competitor emitted none.
+- ⚠ The user decides the wording change to `THESIS_OBJECTIVES.md`; this Part records the instruction.
