@@ -306,6 +306,15 @@ struct Args {
     /// `assigned` with `sole_candidate = 1` when its only candidate passes the origin certificate.
     #[arg(long, default_value_t = false)]
     no_sole_candidate: bool,
+    /// ⭐ §6ha (user 2026-09-09; PREREG_best_by_psv_score_2026-09-09.md): escape hatch — pick read-star's BEST
+    /// candidate (`bk`) by alignment (aligned bases − substitutions over the whole read), the pre-2026-09-09
+    /// choice, instead of by PSV score (Σ ±1 over the columns the pairwise certificate itself uses). The
+    /// alignment choice can prefer a copy that aligns more of the read at the cost of more substitutions over
+    /// one that matches the read exactly wherever both are covered, ties it against the true best, and reports
+    /// `Tied` — human MCL0: 12 of 343 in-family `tied` molecules had a unique PSV-perfect candidate whose LLR
+    /// margin toward it was −48…−62. Required for `--no-as-tied-only` to reproduce the pre-2026-09-09 output.
+    #[arg(long, default_value_t = false)]
+    best_by_alignment: bool,
     /// L6: write `<out>.star_reads.tsv` — per molecule its read-star proof: the read positions of its columns,
     /// its base there and every candidate's base (the assignment-proof figure's source). Default OFF.
     #[arg(long, default_value_t = false)]
@@ -1540,6 +1549,7 @@ fn main() -> Result<()> {
         read_star_genomic: args.read_star_genomic && !args.read_star_unit,
         read_star_catalog_locus: !args.read_star_pad_locus,
         sole_candidate: !args.no_sole_candidate,
+        best_by_psv: !args.best_by_alignment,
         dump_star: args.dump_star,
         read_star_hit_in_unit: !args.no_read_star_hit_in_unit,
         read_star_two_form: !args.read_star_genomic_only,

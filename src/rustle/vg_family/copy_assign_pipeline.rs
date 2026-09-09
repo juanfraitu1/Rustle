@@ -2389,7 +2389,32 @@ fn assign_family_detailed_once(
                 // some competitor shares no distinguishing column (K = 0 for that pair); Ambiguous when some
                 // competitor is not rejected at alpha/(n-1); Assigned when every competitor is.
                 let matches = |k: usize| unit_edits.get(cand[k]).copied().flatten().map_or(0i64, |(n_x, n_al, _, _, _, _, _)| n_al as i64 - n_x as i64);
-                let bk = (0..cand.len()).filter(|k| !partner_k.contains(k)).max_by_key(|&k| (matches(k), std::cmp::Reverse(k))).unwrap();
+                // ⭐ §6ha: the PSV score is the SAME evidence the pairwise LLR certifies with — a candidate that
+                // matches the read at more columns and contradicts it at fewer, rather than one that merely
+                // aligns more of the read overall. `matches()` stays the tie-break (then index), so a molecule
+                // with no PSV columns at all (the common case) picks `bk` exactly as before.
+                let psv_score = |k: usize| -> i64 {
+                    profiles[k]
+                        .alleles
+                        .iter()
+                        .zip(feats.psv_obs.iter())
+                        .filter_map(|(&ca, &oa)| match (ca, oa) {
+                            (Some(c), Some(o)) if c == o => Some(1i64),
+                            (Some(_), Some(_)) => Some(-1i64),
+                            _ => None,
+                        })
+                        .sum()
+                };
+                let bk = (0..cand.len())
+                    .filter(|k| !partner_k.contains(k))
+                    .max_by_key(|&k| {
+                        if p.best_by_psv {
+                            (psv_score(k), matches(k), std::cmp::Reverse(k))
+                        } else {
+                            (0i64, matches(k), std::cmp::Reverse(k))
+                        }
+                    })
+                    .unwrap();
                 // ⭐ §6ft read-through certificate. A read position the best candidate leaves unaligned is EXPLAINED
                 // when (a) another candidate aligns it — that candidate is a PARTNER (a read-through molecule
                 // spans two loci), not a competitor — or (b) it lies beyond a giant (> 50 kb) intron fewer than 3

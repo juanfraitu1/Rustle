@@ -249,6 +249,15 @@ pub struct AssignParams {
     /// it, `assignments.tsv` column `sole_candidate`). `false` = the §6fa rule (every single-candidate molecule
     /// `Tied`, even one the certificate rejected). NPIP: 5,329 MAPQ-60 reads, 5,319/5,319 at the placement unit.
     pub sole_candidate: bool,
+    /// ⭐ §6ha (PREREG_best_by_psv_score_2026-09-09.md, user 2026-09-09): pick the read-star BEST candidate
+    /// (`bk`) by PSV score — Σ over columns of +1 if the candidate's allele equals the read's base, −1 if
+    /// both are known and differ — the SAME evidence the pairwise LLR certifies with, instead of
+    /// `aligned_bases − substitutions` over the whole read. The alignment-based choice can prefer a copy
+    /// that aligns 11 more bases at 11 substitutions over a copy that gaps those bases at 0 substitutions;
+    /// with the wrong `bk`, a perfect competitor sets `k0` and the molecule is `Tied` at a −48…−62 LLR margin
+    /// toward the true best (human MCL0: 12 of 343 in-family `tied` molecules, `bench/audit_ambiguity.py`).
+    /// `false` = the pre-2026-09-09 alignment-based choice (`--best-by-alignment`).
+    pub best_by_psv: bool,
     /// L6: keep each molecule's read-star proof (its columns, its bases, every candidate's bases) in the
     /// process-wide side table for `copy_assign --dump-star`.
     pub dump_star: bool,
@@ -291,6 +300,7 @@ impl Default for AssignParams {
             read_star_genomic: true,
             read_star_catalog_locus: true,
             sole_candidate: true,
+            best_by_psv: true,
             dump_star: false,
             read_star_hit_in_unit: true,
             read_star_two_form: true,

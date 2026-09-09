@@ -15352,3 +15352,72 @@ was the leak, not a result.
 ⚠ Open, in order: **`assigned_outside_catalog`** (score the outside locus; payoff for the EIF3C class is
 2/4,706, untested for the 59 contested-with-outside reads); **`tie_invariant`** retired by construction (row
 786, user's call); tie width stays 1.0; the held-back `fam_MCL2_073244` is still unscored under the new rule.
+
+## §6hb — REAL flair AND StringTie RUNS ARRIVE (user, 2026-09-09): §6gs's source-read predictions confirmed empirically, and a proper 4-way family-region bakeoff
+
+The user ran **actual** flair 3.0.1 and StringTie 3.0.1 on the identical substrates our bakeoff uses
+(`benchmark_collapse/`), with a NEW isoseq collapse arm delivered alongside (`isoseq_upload/`). This closes
+the "flair arm never ran" gap named in `docs/O1_O2_OPEN_2026-09-09.md` §E.
+
+### Provenance, checked first (the standing trap)
+- **A119b (human)**: all three tools ran on `A119b.t2t.bam` — the SAME mapped FLNC our human bakeoff uses.
+  **Directly comparable to our numbers.**
+- **GGO (gorilla)**: all three tools ran on `GGO_mm.bam`, and `run_flair.sbatch` names the reads explicitly —
+  `$WD/raw/testis/long_reads/GGO/GGO_OR6737.IS.8a36218d3f23-filtered.fastq`. **This is TESTIS, our substrate is
+  FIBROBLAST** — the same mismatch that made the earlier isoseq-GGO arm unusable (§6gt). ⛔ **The GGO numbers
+  below are reported for their own sake (all three tools agree on one substrate) and NEVER compared to our
+  gorilla fibroblast numbers.**
+
+### ⭐⭐ §6gs's flair prediction, confirmed on a REAL run (not source-derived)
+`flair.flair_A119b.55435922.err`: *"total alignments in bam file: 68,026,217; total non-secondary alignments:
+21,941,217"* ⟹ **46,085,000 records discarded on the 0x100 flag = 67.8 %** — against §6gs's source-derived
+69 % genome-wide estimate. Independent empirical corroboration of the mechanism, not a re-quote of the source
+read.
+
+### Genome-wide cross-tool gffcompare (human A119b; the user's own `compare_A119b/`, already run)
+| query → reference | intron-chain SN | intron-chain PR | transcripts (query) |
+|---|---|---|---|
+| isoseq → flair | 68.8 % | 22.0 % | 3,197,015 |
+| isoseq → stringtie | 68.7 % | 7.4 % | 3,197,015 |
+| flair → isoseq | 23.1 % | 68.8 % | 1,096,281 |
+| flair → stringtie | 43.7 % | 14.8 % | 1,096,281 |
+| stringtie → isoseq | 7.8 % | 68.7 % | 250,500 |
+| stringtie → flair | 14.8 % | 43.7 % | 250,500 |
+isoseq never merges (7.8 transcripts/locus); flair collapses to 5.3/locus; StringTie to 3.3/locus — the
+parsimony ordering already established (§6gj, §6gt) now confirmed genome-wide with real flair output.
+
+### ⭐⭐⭐ THE FAMILY-REGION 4-WAY BAKEOFF, human MCL0, real tools (extracted to the 26-copy region, `bakeoff/human/*_family.gtf`)
+Transcript-level (`summarize.sh`'s own stats function, reused verbatim):
+| tool | transcripts | exons/tx | mono-exon | mean_len | mean_span |
+|---|---|---|---|---|---|
+| ours | 1,714 | 9.76 | 16.0 % | 2,926 | 28,253 |
+| isoseq | 10,216 | 8.00 | 17.6 % | 2,245 | 23,114 |
+| flair | 3,086 | 9.91 | 17.7 % | 2,662 | 28,677 |
+| stringtie | **1,073** | 9.77 | **6.2 %** | 3,884 | 26,941 |
+StringTie's mono-exon share (6.2 % vs 16–18 % everywhere else) is its parsimony signature again: it rarely
+reports a lone single-exon fragment as its own transcript.
+
+`bench/tool_bakeoff.py` (fuzz 0 — neither flair nor StringTie has a documented junction-fuzz default, so no
+fuzz correction is owed here, unlike isoseq's `--max-fuzzy-junction 5`):
+| | ours | flair | stringtie |
+|---|---|---|---|
+| molecules placed in ONE copy | **0.606** | 0.346 | 0.306 |
+| transcripts spanning ≥ 2 copies | **0** | 11 | 2 |
+| copies with ≥ 1 transcript | 26/26 | 26/26 | 26/26 |
+
+gffcompare, restricted to the family region (`bedtools intersect -u` against the 15 padded copy blocks; both
+directions, all six ordered pairs):
+| | ours→X SN / PR | X→ours SN / PR | chain SN / PR (ours→X) | chain SN / PR (X→ours) |
+|---|---|---|---|---|
+| flair | 36.0 / 86.3 | 86.4 / 36.0 | 14.6 / 24.9 | 24.9 / 14.1 |
+| stringtie | 63.7 / 81.1 | 81.1 / 63.6 | 33.3 / 22.4 | 22.4 / 32.1 |
+| isoseq | 17.5 / 95.1 | 95.0 / 17.5 | 10.6 / 58.7 | 58.7 / 10.0 |
+⭐ **Our chain-level agreement is HIGHEST with isoseq** (58.7 % of our chains exactly match one of isoseq's)
+and lowest with flair/stringtie (14–33 %) — sensible, since isoseq and we both collapse raw structures without
+inference, while flair/stringtie assemble/merge. ⭐ Our INTRON-level precision against every tool is high
+(81–95 %) — the introns we emit are real by every tool's own standard — while chain-level numbers stay low
+across the board, the same exhaustive-junctions/conservative-chains signature documented in §6gj.
+
+⚠ None of this changes the standing framing (§6gt, ADVISOR_QUESTIONS Part 0h): the deliverable is judged on
+the hard loci, and none of isoseq/flair/stringtie carries a copy attribute. This section adds REAL flair data
+where §6gs had only source code, and a rigorous gffcompare cross-check alongside the custom scorer.
