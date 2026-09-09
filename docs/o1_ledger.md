@@ -14861,6 +14861,32 @@ not place 634 molecules; 606 of them come from somewhere the catalog does not co
 genuinely contested between catalog copies O2 assigns 6 and abstains on the rest.* Whether 28 is an adequate
 addressable population is the open question, and it is the family-wide form of the K = 0 frontier argument.
 
+### ⭐⭐⭐ BOTH ARMS DECOMPOSED — and they fail the old denominator in DIFFERENT ways
+AS exact ties, split by why the molecule is or is not O2's business:
+| arm | AS-tied | origin-rejected (**O3's**) | single-candidate (**nothing to choose**) | **GENUINELY CONTESTED** | assigned | tied | ambiguous |
+|---|---|---|---|---|---|---|---|
+| gorilla MCL1 (80 copies) | 634 | **606 (95.6 %)** | 0 | **28** | 6 (21 %) | 21 (75 %) | 1 |
+| human MCL0 (26 copies) | 7,638 | 2,140 (28.0 %) | **4,739 (62.0 %)** | **759** | 69 (9 %) | 374 (49 %) | 316 (42 %) |
+
+⚠⚠ **The two substrates are not the same problem and must never be pooled.** Gorilla's tied reads are
+overwhelmingly reads whose origin is **absent from the catalog**; human's are overwhelmingly **sole
+candidates** — AS-tied genome-wide but with one candidate locus inside the family, so there is nothing for O2
+to choose between. Only the last column is copy assignment's actual subject.
+
+⭐ **On that column the behaviour is the promise, not a failure**: the dominant outcome is `tied` (75 % gorilla,
+49 % human) — the certificate finding the candidates equally good and REFUSING to guess. That is
+assign-or-abstain working. **Assignment is a minority outcome: 21 % gorilla, 9 % human.**
+
+⟹ **The defensible O2 sentence.** *Copy assignment addresses the molecules the aligner could not place and the
+catalog can explain — 28 on this gorilla family, 759 on the human one. On those it assigns 21 % and 9 %
+respectively and abstains or ties on the rest, never dividing a read across copies.* ⚠ Whether that population
+is large enough to carry a thesis chapter is now the open question, and it is the family-wide form of the
+K = 0 frontier argument (`project_k0_frontier_unresolvable`).
+
+⚠ **The sole-candidate boundary is UNDECIDED and is worth 4,739 human molecules.** On 2026-09-06 (L3, §6fj)
+the user ruled a certified sole candidate is `assigned` + `sole_candidate`; the 09-09 scope correction implies
+it leaves O2. The two decisions conflict and the table above is reported with sole candidates held OUT.
+
 ⚠ **Region-local caveat**: AS evidence counts placements inside the swept region only, so "single placement"
-means single placement *here*, not genome-wide uniqueness. ⚠ Human arm pending; **the held-back
-`fam_MCL2_073244` must be scored before any headline is restated** (trap 15).
+means single placement *here*, not genome-wide uniqueness. ⚠ **The held-back `fam_MCL2_073244` must be scored
+before any headline is restated** (trap 15).
