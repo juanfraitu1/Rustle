@@ -198,6 +198,26 @@ struct Args {
     /// (1.0 = exact tie; 0.98 admits a 2% margin). Guards against homology-shadow spillover.
     #[arg(long, default_value_t = 0.98)]
     as_ratio: f64,
+
+    /// ⭐ O2 SCOPE (user, 2026-09-09): report only on **AS-TIED MULTIMAPPERS** — the molecules the aligner
+    /// could not place. A molecule is eligible when it has ≥2 placements in the region and its runner-up
+    /// AS ≥ `--as-tie-ratio` × its best AS. Everything else (a single placement, or a clear best) had
+    /// nothing for O2 to decide, and counting it inflates every assignment rate: measured before the flag
+    /// existed, **4,969 of gorilla MCL1's 6,142 "assigned" molecules were single-placement uncontested
+    /// reads** and only ~16 were AS-tied with ≥2 candidates (PREREG_as_tied_only_2026-09-09.md).
+    ///
+    /// Ineligible molecules keep their row and their certificate but take status `unambiguous`, so nothing
+    /// is dropped silently and the count stays auditable; they leave the assigned/tied/ambiguous rates.
+    /// ⚠ This is a REPORTING scope gate: it changes which molecules O2 speaks about, never how the
+    /// certificate is computed. Default off ⟹ every existing output is byte-identical.
+    #[arg(long)]
+    as_tied_only: bool,
+
+    /// Tie width for `--as-tied-only`. 1.0 = exact tie (the runner-up scores exactly the best, i.e. the
+    /// aligner's primary pick was a coin toss); 0.98 admits a 2 % margin. Reported at both widths before
+    /// any default is proposed.
+    #[arg(long, default_value_t = 1.0)]
+    as_tie_ratio: f64,
     /// Also dump the per-read PSV GENOTYPE MATRIX — `<out>.psv_reads.tsv` (each read's base at every PSV column
     /// + its assignment), `<out>.psv_copies.tsv` (each copy's PSV alleles), `<out>.psv_cols.tsv` (column →
     /// genome position). The raw per-molecule evidence behind each assignment, for the proof visualization.
@@ -1237,6 +1257,18 @@ fn as_evidence_per_read(bam_reads: &[BamRead]) -> Vec<AsEvidence> {
             as_evidence(placements).expect("read is its own placement, so the slice is non-empty")
         })
         .collect()
+}
+
+/// ⭐ O2 SCOPE (user, 2026-09-09). An **AS-TIED MULTIMAPPER**: ≥2 placements in the region whose runner-up
+/// alignment score reaches `ratio` × the best. This is the population copy assignment exists for — the reads
+/// where the aligner's primary/secondary label is a coin toss. A single-placement read, or one with a clear
+/// best, had nothing for O2 to decide. ⚠ Region-local: placements on other contigs are not counted, so this
+/// means "tied among the placements O2 was handed", not genome-wide multi-mapping.
+fn as_tied(ev: &AsEvidence, ratio: f64) -> bool {
+    match ev.second {
+        Some(second) => (second as f64) >= ratio * (ev.best as f64),
+        None => false,
+    }
 }
 
 /// `NA` for an absent runner-up (single-placement read); otherwise the formatted value.
@@ -2517,10 +2549,17 @@ fn main() -> Result<()> {
         // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
         // one is assigned to its placement (§6fq) whatever its candidate count
         let sole = (r.status == "assigned" && r.n_candidates == 1 && r.contested) as u8;
+        // ⭐ O2 scope gate (user, 2026-09-09): a molecule the aligner COULD place is not O2's business.
+        // Reporting-only — the certificate above is untouched; this decides what O2 speaks about.
+        let status = if args.as_tied_only && !as_tied(&r.as_ev, args.as_tie_ratio) {
+            "unambiguous"
+        } else {
+            r.status
+        };
         writeln!(
             ah,
             "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
+            r.read_name, r.family_id, r.assigned_copy, status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
             r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8
         )?;
@@ -2538,6 +2577,27 @@ fn main() -> Result<()> {
             cnt("tied"),
             cnt("ambiguous")
         );
+        // ⭐⭐ O2 SCOPE (user, 2026-09-09): the population copy assignment EXISTS for — AS-tied multimappers,
+        // where the aligner's primary/secondary pick was a coin toss. Reported at BOTH tie widths, always,
+        // with or without `--as-tied-only`, because the rates above are otherwise read as if every molecule
+        // posed a question. One row per MOLECULE (a molecule's records share their AS evidence).
+        {
+            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            let mols: Vec<&AssignRow> =
+                assign_rows.iter().filter(|r| seen.insert(r.read_name.as_str())).collect();
+            for ratio in [1.0_f64, 0.98] {
+                let el: Vec<&&AssignRow> = mols.iter().filter(|r| as_tied(&r.as_ev, ratio)).collect();
+                let c = |st: &str| el.iter().filter(|r| r.status == st).count();
+                let pc = |n: usize| if el.is_empty() { 0.0 } else { 100.0 * n as f64 / el.len() as f64 };
+                eprintln!(
+                    "[copy_assign] AS-TIED @ratio {:.2}: {} of {} molecules are what O2 is for — \
+                     assigned {} ({:.1}%) / tied {} ({:.1}%) / ambiguous {} ({:.1}%)",
+                    ratio, el.len(), mols.len(),
+                    c("assigned"), pc(c("assigned")), c("tied"), pc(c("tied")),
+                    c("ambiguous"), pc(c("ambiguous"))
+                );
+            }
+        }
         // ⭐ register 734: THE denominator. Molecules with a PRIMARY alignment inside a copy of their family.
         let loc: Vec<&AssignRow> = assign_rows.iter().filter(|r| r.primary_local).collect();
         let lcnt = |st: &str| loc.iter().filter(|r| r.status == st).count();

@@ -14809,3 +14809,58 @@ choice if the genome-wide all-vs-all ever becomes the bottleneck. But the alignm
 alone: the core rule consumes its coordinates, so replacing the edge step with Jaccard means running the
 alignment afterwards anyway on the surviving pairs. At 84 s for a panel, the prefilter currently saves nothing
 worth having — which is an argument about where the cost is, not a defence of doing more work than necessary.*
+
+## §6gv — O2's SCOPE CORRECTED: only AS-TIED MULTIMAPPERS (user, 2026-09-09; PREREG `docs/PREREG_as_tied_only_2026-09-09.md`, md5 `268fe69b`)
+
+**User: "copy assignment should only work for tied-AS multi-mapping reads, nothing else, so we need to ensure
+anything else does not enter O2 at all."** Then, on the advisor's framing: *"all primaries and secondaries when
+there are ties are just a coin toss, so we cannot assume that a primary in those conditions is reliable, all
+should be admitted."* Two halves; one was already satisfied, the other was not.
+
+### The half already satisfied — the primary is never trusted where it is a coin toss
+`placement_assign` (§6fq), the only step that uses the primary's overlap to place a molecule, fires **only at
+MAPQ ≥ 60**. A tied read is MAPQ 0, so its primary label is never used; every tied placement, primary or
+secondary, is a candidate that read-star scores independently. ⭐ That is the direct answer to the advisor.
+
+### The half that was not — the rates were over a population that posed no question
+`as_best`/`as_second` are **minimap2's own AS across a molecule's placements** (`as_evidence_per_read`), and
+the code notes they never feed the decision, so they describe what O2 was handed. Cross-tabbed over the
+**assigned** rows, before any change:
+| arm | assigned | AS exact tie | near-tie ≤5 | clear best | single placement |
+|---|---|---|---|---|---|
+| gorilla MCL1 (80 copies) | 6,142 | **6** | 14 | 1,152 | **4,969** |
+| human MCL0 (26 copies) | 9,715 | 4,958 | 413 | 4,287 | 57 |
+⛔ **4,969 of gorilla's 6,142 "assigned" molecules were single-placement, single-candidate, uncontested reads.**
+They inflate every assignment rate the project has quoted.
+
+### Shipped
+- **`--as-tied-only`** (default OFF) + **`--as-tie-ratio`** (default 1.0 = exact tie). Eligible = ≥2 placements
+  with runner-up AS ≥ ratio × best. Ineligible molecules keep their row and certificate under status
+  **`unambiguous`**; they leave the assigned/tied/ambiguous rates. ⚠ A **REPORTING scope gate** — it changes
+  which molecules O2 speaks about, never how the certificate is computed.
+- ⭐⭐ **An always-on stderr line, at BOTH tie widths, with or without the flag**, so the honest denominator
+  appears in every run without anyone opting in.
+- **Byte-identity verified**: gorilla re-run without the flag, `assignments.tsv` md5 `ff0b8f16…` = the
+  pre-change run.
+
+### The measurement, gorilla MCL1 — and why it must NOT be read as "O2 fails"
+| tie width | AS-tied molecules | assigned | tied | ambiguous |
+|---|---|---|---|---|
+| exact 1.00 | **634** of 57,646 | 6 (0.9 %) | 21 (3.3 %) | 607 (95.7 %) |
+| 0.98 | 3,997 | 187 (4.7 %) | 30 (0.8 %) | 3,780 (94.6 %) |
+
+⭐⭐⭐ **The abstention is not indecision between copies.** Of the 607 abstaining exact-tied molecules,
+**606 (95.6 %) are `origin_rejected`** — no candidate copy explains the read at all — and only 9 have a single
+candidate locus. So the AS-tied population on this family is dominated by reads whose origin is **not in the
+catalog**, which is exactly what `origin_rejected` exists to detect and is **O3's material, not an O2 failure**.
+⟹ The genuinely contested population — tied between ≥2 copies that DO explain the read — is **28 molecules**
+(6 assigned, 21 tied, 1 other).
+
+⚠⚠ **The honest scope sentence is therefore not "O2 assigns 38.7 %".** It is: *on this family the aligner could
+not place 634 molecules; 606 of them come from somewhere the catalog does not contain, and of the 28 that are
+genuinely contested between catalog copies O2 assigns 6 and abstains on the rest.* Whether 28 is an adequate
+addressable population is the open question, and it is the family-wide form of the K = 0 frontier argument.
+
+⚠ **Region-local caveat**: AS evidence counts placements inside the swept region only, so "single placement"
+means single placement *here*, not genome-wide uniqueness. ⚠ Human arm pending; **the held-back
+`fam_MCL2_073244` must be scored before any headline is restated** (trap 15).
