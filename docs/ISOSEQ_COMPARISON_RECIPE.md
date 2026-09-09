@@ -7,31 +7,42 @@ that we picked the wrong tool. **`isoseq collapse` is PacBio's own route for exa
 full-length reads actually need — group observed structures — so it isolates the only thing in dispute: **it
 cannot say which copy an isoform came from, and we can.**
 
-## What to run on the cluster
+## What to run on the cluster — TWO arms, because they answer different questions
 
-The aligned FLNC BAM is all that is needed; `isoseq collapse` takes an aligned, position-sorted BAM.
+⚠ **Corrected 2026-09-08 (user: "we don't need to cluster first with cluster2?").** The canonical IsoSeq
+route is `refine → cluster2 → pbmm2 align → collapse`. Skipping `cluster2` is a real, supported choice
+("cluster-free"), not an oversight — but the two are **not the same experiment** and both are worth having.
+
+### Arm 1 — cluster-free: `collapse` on the aligned FLNC (the apples-to-apples arm)
+This is the one that matches what we do: group observed structures by genomic mapping, no consensus building,
+no polishing. Our isoform set is exactly that, so this arm asks *is our grouping equivalent to PacBio's?*
 
 ```bash
-# input: the same aligned FLNC used everywhere here
-#   gorilla NPIP three contigs : npip3.bam   (subset of GCA_029281585.2_flnc_mm.bam)
-#   human chrY (DAZ)           : chrY.bam    (subset of A119b.t2t.bam)
-
-samtools sort -@4 -o flnc.sorted.bam  npip3.bam
-samtools index flnc.sorted.bam
-
-# one command; writes flnc.collapsed.gff plus .abundance.txt and .read_stat.txt
+samtools sort -@4 -o flnc.sorted.bam npip3.bam && samtools index flnc.sorted.bam
 isoseq collapse --do-not-collapse-extra-5exons flnc.sorted.bam flnc.collapsed.gff
 ```
+⚠ If the installed version refuses aligned FLNC as input, that route is unavailable in that build — use arm 2
+and say so; do not work around it by pre-clustering and calling it cluster-free.
 
-⚠ Use `--do-not-collapse-extra-5exons` so 5′-truncated molecules are not merged into longer models. Without
-it the comparison is unfair in OUR favour: it would collapse distinct observed structures that we keep.
+### Arm 2 — canonical: `cluster2` then align then `collapse` (the arm a reviewer expects)
+`cluster2` clusters FLNC by similarity and builds a **polished consensus** per cluster. That is an extra
+inference and error-correction step we do **not** perform, so this arm is not apples-to-apples — it asks the
+different and equally fair question *is the standard PacBio pipeline better than ours?*
 
-If the unaligned FLNC is easier to reach, the full route is
-`isoseq cluster2 flnc.bam clustered.bam` → `pbmm2 align --preset ISOSEQ` → `isoseq collapse`. The collapse-only
-route above is closer to what we do and is the cleaner comparison.
+```bash
+isoseq cluster2 flnc.bam clustered.bam                       # unaligned FLNC in
+pbmm2 align --preset ISOSEQ --sort ref.fa clustered.bam mapped.bam
+isoseq collapse --do-not-collapse-extra-5exons mapped.bam clustered.collapsed.gff
+```
+
+⚠ `--do-not-collapse-extra-5exons` in both arms: without it, 5′-truncated molecules merge into longer models
+and the comparison tilts in OUR favour by collapsing distinct structures we keep.
+⭐ Both arms write `*.read_stat.txt` mapping each read to its isoform — keep it, it is what lets the copy
+comparison run on the same molecules.
 
 ## What to send back
-`flnc.collapsed.gff` (and `flnc.collapsed.abundance.txt` if it is written).
+`flnc.collapsed.gff` and/or `clustered.collapsed.gff`, plus the matching `*.read_stat.txt` and
+`*.abundance.txt`. Say which arm each came from — the two are scored the same way but read differently.
 
 ## Scoring it here — one command
 ```bash
@@ -55,7 +66,13 @@ transcripts in each set carry a copy attribute at all.
 | transcripts > 2× their best copy | **47** | 59 |
 | transcripts carrying a COPY attribute | **404** | **0** |
 
-**Prediction to write down before the run.** `isoseq collapse` should land **closer to us than StringTie did**
-on chains and molecule agreement — it groups rather than infers — and should assert **few or no** junctions
-below 2 molecules. If it matches or beats us on molecule agreement, that is the honest outcome and the right
-response is to **use it for the grouping and keep only the attribution**, which is the contribution anyway.
+**Predictions to write down before the run.**
+- **Arm 1 (cluster-free)** should land **closer to us than StringTie did** on chains and molecule agreement —
+  it groups rather than infers — and should assert **few or no** junctions below 2 molecules.
+- **Arm 2 (cluster2)** should emit **fewer** isoforms than arm 1 and than us, because consensus building
+  merges near-identical structures, and should show **lower** exact-chain agreement with the raw molecules for
+  the same reason. If arm 2 instead agrees with the molecules better than arm 1, our reading of what
+  clustering does is wrong and should be corrected.
+- If **either** arm matches or beats us on molecule agreement, that is the honest outcome and the right
+  response is to **use it for the grouping and keep only the attribution**, which is the contribution anyway.
+⚠ Neither arm can carry a copy attribute, so that column stays the point of the exercise in both.
