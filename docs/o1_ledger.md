@@ -15083,3 +15083,46 @@ maximisation over thresholds runs inside every permutation, so picking the best 
 | human TBC1D3 | — | **no threshold yields two components of ≥ 3** — no subfamily partition exists |
 ⚠ The human-NPIP p is a DEMONSTRATION that the 1-D tests were wrong, not a pre-registered confirmation — the
 test was built after seeing them fail. Its calibration (P8–P10) is pre-registered in amendment 1 and pending.
+
+### §6gw addendum 4 — THE PARTITION TEST CALIBRATED: two detectors for two kinds of structure (PREREG_modality amendment 1, P8–P10)
+
+Genome-wide partition permutation test (`bench/gw_partition_scan.py`, gorilla, 244 families, B = 200):
+| | predicted | got |
+|---|---|---|
+| P8 partition p < 0.05 on the 18 gap-positives | ≥15 | **10/18 ⛔ refuted as written** |
+| P9 not certified on the 25 gap-negatives | ≥80 % | **23/25 = 92.0 %** ✓ |
+| P10 gorilla NPIP (MCL12) partition p < 0.05 | yes | **p = 0.100 ⛔** (contrast 0.026) |
+Genome-wide: a two-component partition (both ≥ 3 members) **exists in only 80 of 244 families**; of those,
+**42 are certified at p < 0.05, 29 at p < 0.01** (17.2 % of all families). Silverman-positive 69, partition-positive
+42, **overlap only 23** — the two statistics find largely different families.
+
+### ⭐⭐ Why P8 was MIS-SPECIFIED, not failed: the gap-positives are two different structures
+At each missed family's own gap cut, the components of the subgraph above it:
+| family | gap | components ≥ 3 (+ nodes in smaller ones) | partition p | structure |
+|---|---|---|---|---|
+| MCL146 | 0.146 | **[4]** + 6 | none | core + halo |
+| MCL93 | 0.089 | **[5]** + 5 | none | core + halo |
+| MCL104 | 0.083 | **[12]** + 1 | 0.51 | core + halo |
+| MCL3 | 0.065 | **[12]** + 1 | none | core + halo |
+| MCL26 | 0.047 | **[8]** + 6 | none | core + halo |
+| MCL22 | 0.029 | **[30]** + 4 | 0.52 | core + halo |
+| MCL188 | 0.026 | **[6]** + 2 | none | core + halo |
+| MCL47 | 0.0006 | **[14, 3]** + 5 | 0.19 | borderline two-way |
+versus the certified ones — MCL5 **[21, 21]**, MCL14 **[26, 15]**, MCL46 **[15, 7]**, MCL52 **[6, 5]**,
+MCL79 **[7, 3]**, MCL23 **[24, 3]** — genuine two-subfamily families.
+⟹ **7 of the 8 "misses" are ONE tight core with a diffuse periphery — exactly the TBC1D3/USP6 shape of the
+browser figure — and the partition test is RIGHT to decline them: there is no second subfamily.** The gap
+test detects *core-versus-halo*; the partition test detects *two-or-more subfamilies*. Both are real
+structures, both are now calibrated genome-wide, and they should be reported as two columns, never one.
+
+### The standing answer to the advisor's question
+| family | gap (core/halo) | Silverman (1-D) | **partition (subfamilies)** | published |
+|---|---|---|---|---|
+| **human NPIP** | 0.072 | 0.125 | **0.006 ✓** | A vs B, B6–B9 — recovered |
+| **human TBC1D3** | 0.79 | 0.373 | **no partition exists** ✓ | clusters positional, IGC-homogenised — correctly not split |
+| gorilla NPIP (MCL12) | 0.94 | 0.045 | 0.100 | (not the published substrate) |
+⚠ The human-NPIP partition p is **post-hoc** (amendment 1) — a demonstration that the 1-D tests measured the
+wrong thing, not a pre-registered confirmation. ⚠ Human and gorilla are never pooled; gorilla NPIP's 0.100 is
+*consistent* with Dishuck's human-specific B expansion but this analysis does not test that. ⚠ `MIN_COMP = 3`
+was fixed before any run but is a design choice. ⭐ By-product: **42 gorilla families with a certified
+two-subfamily partition** (`bakeoff/gw_partition.tsv`), unexamined.
