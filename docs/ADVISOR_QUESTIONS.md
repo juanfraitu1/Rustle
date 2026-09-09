@@ -175,6 +175,28 @@ before Wednesday if anything is.
 
 ---
 
+## Part 0f — How we guard against tuning: hold a substrate back
+
+⭐ **The strongest single answer to "you tuned until it worked" is a worked example where we did the opposite,
+and lost.** 2026-09-08, cross-family exon-overlap rule (§6gn, register 760):
+
+The rule was **designed** on the gorilla read-throughs and checked on three substrates — gorilla NPIP, the
+gorilla catalog, the human Soto slice. **All three agreed**: membership metrics unchanged, Soto specificity up
+0.649 → 0.663, manufactured read-throughs 32 → 1. On that evidence the default was flipped ON.
+
+The pre-registration had named a **fourth** substrate, human chr16+18, with the sentence *"P4 is the real test:
+the other three substrates were used to design the rule, chr16+18 was not."* It **failed**: two real members,
+`NPIPA1` and `NPIPA6`, were stripped of the sequence that qualified them, and NPIP sensitivity fell
+**26/26 → 24/26**. The default was **reverted in the same run** and verified byte-identical to the shipped
+catalog; the rule remains an opt-in flag.
+
+⟹ **The agreement of the three development substrates carried no information about the rule's correctness.**
+Only the held-out one did. That is the procedure to state when he asks about overfitting: *the substrate that
+decides a change is named in the pre-registration before the change, and it is one the change was not built
+on.* We have the failed instance to show, which is worth more than a list of successes.
+
+---
+
 ## Part 1 — The cross-examination: "this is luck or overfitting"
 
 These are not hypothetical. They are the five moves that follow from his stated priors, and each
