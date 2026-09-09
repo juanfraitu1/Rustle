@@ -15315,3 +15315,40 @@ of this family is `assigned_outside_catalog` (O3/O1 material, never a copy assig
 placements include a locus outside the family and cannot be separated is `tied`. This is also the fix for the
 containment failure: a locus can never "swallow" a neighbour if the neighbour is itself a candidate.
 ⚠ Gorilla MCL1 has 0 sole candidates, so this is a human-arm finding; the mechanism is general.
+
+### §6gz addendum — THE RULE SHIPPED, AND THREE LEAKS IT TOOK TO GET THERE (PREREG `81754ca7` scored)
+
+**Shipped** (`copy_assign`, suite 868 / 0 / 11, both escapes byte-identical — human `91081887`, gorilla `ff0b8f16`):
+- at the AS-tied gate, a molecule with a tied placement overlapping **no supplied family UNIT** is registered
+  (`register_tie_outside`); the pipeline verdict can never make it `Assigned` (forced `Tied`); a gate-only
+  column **`tie_outside_catalog`** names it. Under the gate a supplementary record is never a tie partner.
+- **`placement_assign` is disabled under the gate** — every surviving molecule is tied by alignment score, and
+  a MAPQ of 60 is the aligner's chaining-stage opinion. It exists only on the escape path.
+
+**Three leaks, in the order they were found:**
+1. **The sole-candidate promotion** (§6gz above): 4,706 EIF3C/EIF3CL reads `assigned` to NPIP copy 16.
+2. ⛔ **My first detector was circular.** It tested "outside" against `locus_extent_of` — the SAME
+   read-extended locus of copy 16 that had swallowed EIF3C — and flagged **541 of 4,706**. Testing against the
+   **unit span** (`start`/`end`, the exon chain O1 certifies) flags 4,705. The locus is the object that grew to
+   contain a foreign gene; it cannot also be the definition of "inside".
+3. ⛔ **One row survived as `assigned` + outside, and my diagnosis of it was wrong.** I called it a
+   supplementary-record tie; the BAM shows no supplementaries — a **MAPQ-60 primary at AS 1323 with three
+   secondaries at AS 1384**. `placement_assign` had trusted that primary after the certificate rejected every
+   candidate. Sized: **150 of the 165** remaining human `assigned` rows were such placements. ⭐ That read is
+   the advisor's objection verbatim — "no guarantee the primary is the best candidate" — on real data.
+   (The supplementary exclusion stays: correct on principle; gate-only, so the escape is unchanged.)
+
+**Final numbers under the rule** (human MCL0 / gorilla MCL1, never pooled):
+| | assigned | tied | ambiguous | contested set (assigned / tied / ambiguous) |
+|---|---|---|---|---|
+| human | **15** | 5,167 | 2,475 | 759: **14** / 429 / 316 |
+| gorilla | **2** | 25 | 609 | 28: **2** / 25 / 1 |
+⟹ **O2's positive yield on these families is 1.8 % and 7.1 % of the contested set; `tied` dominates.** That
+is the assign-or-abstain promise kept — and the honest scope of what O2 can claim. P5 (the EIF3C family run)
+shows why: fed the RIGHT two candidates, O2 abstains on 99.6 % of those reads because the loci differ at 6
+columns the reads do not span. Abstention there is correct, and the earlier "assignment" of the same reads
+was the leak, not a result.
+
+⚠ Open, in order: **`assigned_outside_catalog`** (score the outside locus; payoff for the EIF3C class is
+2/4,706, untested for the 59 contested-with-outside reads); **`tie_invariant`** retired by construction (row
+786, user's call); tie width stays 1.0; the held-back `fam_MCL2_073244` is still unscored under the new rule.

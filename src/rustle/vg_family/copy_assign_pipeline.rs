@@ -593,6 +593,19 @@ pub fn register_partner(tid: &str) {
 pub fn is_partner(tid: &str) -> bool {
     PARTNERS.get().map_or(false, |m| m.lock().unwrap().contains(tid))
 }
+/// ⭐ §6gz (user, 2026-09-09): molecules with an AS-TIED placement OUTSIDE every target of the supplied
+/// families. Their tie partner is a locus O2 never scored — another family's unit, or unannotated sequence
+/// (human MCL0: 4,705 of 4,739 "sole candidates" were EIF3C/EIF3CL reads swallowed by an NPIP copy's
+/// read-extended locus). Such a molecule is NEVER `Assigned`: the certificate only ever compared it against
+/// this family's copies, and the advisor's rule is that no tied placement is privileged. Registered by the
+/// binary at the AS-tied gate; consumed at the verdict.
+static TIE_OUTSIDE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = std::sync::OnceLock::new();
+pub fn register_tie_outside(read_name: &str) {
+    TIE_OUTSIDE.get_or_init(Default::default).lock().unwrap().insert(read_name.to_string());
+}
+pub fn is_tie_outside(read_name: &str) -> bool {
+    TIE_OUTSIDE.get().map_or(false, |m| m.lock().unwrap().contains(read_name))
+}
 pub fn take_readthroughs() -> std::collections::HashMap<String, (usize, usize)> {
     READTHROUGH.get().map(|m| std::mem::take(&mut *m.lock().unwrap())).unwrap_or_default()
 }
@@ -2613,6 +2626,14 @@ fn assign_family_detailed_once(
                         a.resolvable = false;
                         a.posterior = vec![1.0 / copies.len() as f64; copies.len()];
                     }
+                }
+                // ⭐ §6gz: a tie partner outside every target of the supplied families was never scored, so
+                // no verdict among THIS family's copies can be an assignment. Applies after the L3 promotion
+                // above, which is exactly the path that leaked 4,706 EIF3C reads into an NPIP copy.
+                if a.status == AssignStatus::Assigned && is_tie_outside(&names[ri]) {
+                    a.status = AssignStatus::Tied;
+                    a.resolvable = false;
+                    a.posterior = vec![1.0 / copies.len() as f64; copies.len()];
                 }
                 if p.dump_star {
                     register_star_proof(

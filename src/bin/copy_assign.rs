@@ -1243,18 +1243,27 @@ fn load_supplied_families(
 /// Each `BamRead` is ONE alignment record, so a multimapper contributes several records under one name.
 /// We group by name, so `best`/`second` are that READ's top two placements anywhere in the region — the
 /// familiar "AS of the best hit vs the next best hit". Purely reported; `de` decides.
-fn as_evidence_per_read(bam_reads: &[BamRead]) -> Vec<AsEvidence> {
+/// `exclude_supplementary` is true under the AS-tied gate (a supplementary is another segment of the read,
+/// not an alternative placement) and false on the `--no-as-tied-only` escape, which must reproduce the
+/// pre-2026-09-09 columns byte-for-byte.
+fn as_evidence_per_read(bam_reads: &[BamRead], exclude_supplementary: bool) -> Vec<AsEvidence> {
     let aligned_len = |br: &BamRead| -> u32 {
         br.read.cigar.iter().filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32
     };
+    // ⚠ A SUPPLEMENTARY record is another SEGMENT of the same read (a split/chimeric alignment), not an
+    // alternative placement of it, so it can never be a tie partner: a primary + supplementary with equal
+    // AS is one MAPQ-60 read in two pieces, and counting it as a tie let one such molecule through the
+    // AS-tied gate and into `placement_assign` (§6gz addendum). Only primary + secondary records vote.
     let mut by_name: std::collections::HashMap<&str, Vec<(i32, u32)>> = std::collections::HashMap::new();
-    for br in bam_reads {
+    for br in bam_reads.iter().filter(|br| !(exclude_supplementary && br.is_supplementary)) {
         by_name.entry(br.name.as_str()).or_default().push((br.as_score, aligned_len(br)));
     }
     bam_reads
         .iter()
         .map(|br| {
-            let placements = &by_name[br.name.as_str()];
+            // a molecule seen ONLY through supplementary records has no placement evidence of its own
+            let fallback = vec![(br.as_score, aligned_len(br))];
+            let placements = by_name.get(br.name.as_str()).unwrap_or(&fallback);
             as_evidence(placements).expect("read is its own placement, so the slice is non-empty")
         })
         .collect()
@@ -1269,6 +1278,7 @@ static GATE_MOL_ALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicU
 static GATE_MOL_TIED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static GATE_REC_ALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static GATE_REC_TIED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static GATE_MOL_OUTSIDE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn as_tied(ev: &AsEvidence, ratio: f64) -> bool {
     match ev.second {
@@ -1784,7 +1794,7 @@ fn main() -> Result<()> {
         // computed on the full record set; then non-tied molecules leave BEFORE the certificate. A unique
         // mapper is not O2's business and is never assigned. `--no-as-tied-only` skips this block.
         if !args.no_as_tied_only {
-            let ev = as_evidence_per_read(&bam_reads);
+            let ev = as_evidence_per_read(&bam_reads, !args.no_as_tied_only);
             let mut tied: std::collections::HashSet<&str> = std::collections::HashSet::new();
             let mut all: std::collections::HashSet<&str> = std::collections::HashSet::new();
             for (br, e) in bam_reads.iter().zip(ev.iter()) {
@@ -1795,6 +1805,45 @@ fn main() -> Result<()> {
             }
             let (n_all, n_tied, n_rec) = (all.len(), tied.len(), bam_reads.len());
             let tied_owned: std::collections::HashSet<String> = tied.into_iter().map(|s| s.to_string()).collect();
+            // ⭐ §6gz: which tied molecules have a tied placement OUTSIDE every supplied family UNIT?
+            // ⚠ The test is against the UNIT SPAN (`start`/`end`, the read-supported exon chain), NOT the
+            // padded read-star locus: the locus is exactly what swallowed EIF3C into NPIP copy 16 (its locus
+            // 28,982,252–29,053,456 contains EIF3C; its unit starts at 29,016,080), and a first form of this
+            // detector that used the locus flagged 541 of the 4,706 leaks — it defined "inside" by the
+            // swallowing target. A tied record overlapping no unit is a competitor O2 will never score ⟹ the
+            // molecule is registered and can never be `Assigned`. Only meaningful with --families.
+            let mut n_outside = 0usize;
+            if let Some(sup) = supplied.as_deref() {
+                let targets: Vec<(String, u64, u64)> = sup
+                    .iter()
+                    .flat_map(|f| f.copies.iter())
+                    .map(|c| (c.chrom.clone(), c.start, c.end))
+                    .collect();
+                let best_as: std::collections::HashMap<&str, i32> = bam_reads
+                    .iter()
+                    .filter(|br| tied_owned.contains(&br.name) && !br.is_supplementary)
+                    .fold(std::collections::HashMap::new(), |mut m, br| {
+                        let e = m.entry(br.name.as_str()).or_insert(br.as_score);
+                        *e = (*e).max(br.as_score);
+                        m
+                    });
+                let mut flagged: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                for br in bam_reads.iter().filter(|br| tied_owned.contains(&br.name) && !br.is_supplementary) {
+                    if br.as_score < best_as[br.name.as_str()] {
+                        continue; // not one of the tied placements
+                    }
+                    let (s0, e0) = (br.read.ref_start, read_ref_end_local(&br.read));
+                    let inside = targets.iter().any(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
+                    if !inside {
+                        flagged.insert(br.name.as_str());
+                    }
+                }
+                n_outside = flagged.len();
+                for n in flagged {
+                    rustle::vg_family::copy_assign_pipeline::register_tie_outside(n);
+                }
+            }
+            GATE_MOL_OUTSIDE.fetch_add(n_outside, std::sync::atomic::Ordering::Relaxed);
             bam_reads.retain(|br| tied_owned.contains(&br.name));
             GATE_MOL_ALL.fetch_add(n_all, std::sync::atomic::Ordering::Relaxed);
             GATE_MOL_TIED.fetch_add(n_tied, std::sync::atomic::Ordering::Relaxed);
@@ -1845,7 +1894,7 @@ fn main() -> Result<()> {
             })
             .collect();
         let read_blocks: Vec<Vec<(u64, u64)>> = bam_reads.iter().map(|r| aligned_blocks_local(&r.read)).collect();
-        let as_ev = as_evidence_per_read(&bam_reads);
+        let as_ev = as_evidence_per_read(&bam_reads, !args.no_as_tied_only);
         let n_mapped = bam_reads.len();
         Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, read_spans, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts })
     };
@@ -1913,7 +1962,12 @@ fn main() -> Result<()> {
             // still computed for it and reported (`origin_rejected`), never applied. One sensitivity over every
             // read; abstention only among the contested. `--no-placement-assign` = the machinery on every read.
             let readthroughs = rustle::vg_family::copy_assign_pipeline::take_readthroughs();
-            let placement_assign = args.molecule_observations && !args.no_molecule_observations && !args.no_placement_assign;
+            // ⭐ §6gz: under the AS-tied gate every molecule that reaches this point is tied by ALIGNMENT SCORE,
+            // and a MAPQ of 60 is the aligner's chaining-stage opinion, not a guarantee — one human read
+            // carried a MAPQ-60 primary at AS 1323 with three secondaries at AS 1384, and placement put it at
+            // the primary's copy after the certificate had rejected every candidate. No tied molecule is ever
+            // placed by its primary; placement exists only on the escape path.
+            let placement_assign = args.molecule_observations && !args.no_molecule_observations && !args.no_placement_assign && args.no_as_tied_only;
             let mut placement_assigned = 0usize;
             let mut fams = fams;
             // the molecule's PRIMARY record (its highest-MAPQ record): the row's `ri` is the read-star
@@ -1932,8 +1986,8 @@ fn main() -> Result<()> {
                 for fa in fams.iter_mut() {
                     for (ri, a) in fa.assignments.iter_mut() {
                         let mq = mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]);
-                        if mq < 60 {
-                            continue;
+                        if mq < 60 || rustle::vg_family::copy_assign_pipeline::is_tie_outside(&bam_reads[*ri]) {
+                            continue; // §6gz: a competitor O2 never scored forbids placement too
                         }
                         // certified first: a molecule the machinery already assigned keeps that call (it can
                         // correct a placement: 4 % of MAPQ-60 simulated reads sit at the wrong copy, §6fq);
@@ -2571,18 +2625,26 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into\tprimary_local")?;
+    // `tie_outside_catalog` (§6gz) exists only under the gate, so `--no-as-tied-only` stays byte-identical
+    // to the pre-2026-09-09 schema.
+    let hdr = "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into\tprimary_local";
+    if args.no_as_tied_only { writeln!(ah, "{hdr}")?; } else { writeln!(ah, "{hdr}\ttie_outside_catalog")?; }
     for r in &assign_rows {
         // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
         // one is assigned to its placement (§6fq) whatever its candidate count
         let sole = (r.status == "assigned" && r.n_candidates == 1 && r.contested) as u8;
         let status = r.status;
+        let outside = if args.no_as_tied_only {
+            String::new()
+        } else {
+            format!("\t{}", rustle::vg_family::copy_assign_pipeline::is_tie_outside(&r.read_name) as u8)
+        };
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}",
             r.read_name, r.family_id, r.assigned_copy, status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside
         )?;
     }
     {
@@ -2610,6 +2672,13 @@ fn main() -> Result<()> {
                  AS-tied and entered the certificate ({} of {} records); {} unique/clear-best molecules were \
                  skipped before it and are NOT assigned (`--no-as-tied-only` restores them)",
                 args.as_tie_ratio, mt, ma, rt, ra, ma.saturating_sub(mt)
+            );
+            let mo = GATE_MOL_OUTSIDE.load(std::sync::atomic::Ordering::Relaxed);
+            eprintln!(
+                "[copy_assign]   ⚠ {} of those tied molecules have a tied placement OUTSIDE every supplied family \
+                 target (§6gz) — their competitor was never scored, so they can be `tied` but never `assigned` \
+                 (`tie_outside_catalog` column)",
+                mo
             );
         }
         // ⭐⭐ O2 SCOPE (user, 2026-09-09): the population copy assignment EXISTS for — AS-tied multimappers,
