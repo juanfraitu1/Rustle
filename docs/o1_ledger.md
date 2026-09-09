@@ -14904,3 +14904,66 @@ it leaves O2. The two decisions conflict and the table above is reported with so
 ⚠ **Region-local caveat**: AS evidence counts placements inside the swept region only, so "single placement"
 means single placement *here*, not genome-wide uniqueness. ⚠ **The held-back `fam_MCL2_073244` must be scored
 before any headline is restated** (trap 15).
+
+## §6gw — KNOWN SUBCLUSTERS: NPIP AND TBC1D3 vs THE PUBLISHED STRUCTURE (advisor, 2026-09-09; PREREG `docs/PREREG_known_subclusters_2026-09-09.md`, md5 `a443b12a`)
+
+**Advisor: "NPIP and TBC1D3 are known to form subclusters — do our methods detect those?"** The two families
+predict OPPOSITE outcomes, which is what makes this a test rather than a fishing trip.
+
+### The external truth (pre-registered from the papers, before looking at our output)
+- **NPIP** (Dishuck 2025): subfamilies **A** and **B**; ⭐ *"IGC occurs within but not between the two major
+  subfamilies"* ⟹ a REAL sequence divergence. Nested inside B: **B3–B5**, **B6–B9**; **B12/B13** are one clade
+  "insufficient genetic distance to distinguish".
+- **TBC1D3** (Guitart): **cluster 1** and **cluster 2**, 1.35 Mbp apart, plus older orphans; ⭐⭐ *"complete
+  lineage-specific stratification … recurrent duplication or gene conversion of all gene family copies in each
+  lineage"* ⟹ within human the copies are ONE clade, so **clusters 1/2 are POSITIONAL, not phylogenetic**.
+
+### ⭐ TBC1D3 — we do NOT split the clusters, and that is the CORRECT answer (P2, P3, P4 all held)
+Positional clusters assigned from coordinates alone: the largest inter-paralogue gap is **1,473,304 bp between
+TBC1D3F and TBC1D3E** (Guitart's 1.35 Mbp), giving cluster 1 = {B, I, G, H, F} and cluster 2 = {E, K, D, TBC1D3}.
+| pairwise identity, 9 human paralogues | n | min | median | max |
+|---|---|---|---|---|
+| within cluster 1 | 10 | 0.9910 | 0.9932 | 0.9958 |
+| within cluster 2 | 6 | 0.9965 | 0.9974 | 0.9986 |
+| **between clusters** | 20 | 0.9899 | **0.9944** | 0.9966 |
+⛔ **No bimodality — between-cluster identity sits INSIDE the within-cluster ranges** (between median 0.9944 is
+*above* within-cluster-1's 0.9932). There is no sequence signal at the positional boundary, exactly as IGC
+homogenisation predicts. **Our I = 5.0 cut crosses the boundary** (MCL1 = 5 of cluster 1 + E and TBC1D3;
+MCL2 = {D, K}), and **D/K is the single most similar pair of all 36 (0.9986)**, 11.6 kb apart, both exactly
+12,610 bp — a recent tandem sister pair. ⟹ The method found the strongest real sequence signal and correctly
+declined to invent a split where gene conversion erased one.
+
+### ⛔ NPIP — INFLATION never finds A/B (P1 FAILED, replicating §6ew)
+| inflation | outcome |
+|---|---|
+| 2.8, 4.0 | ONE cluster holding **all 7 A + all 11 B** |
+| 6.0, 9.0, 14.0 | the family **shatters** below reporting size — no A/B cut at any point |
+Raising inflation destroys the family rather than cutting it at the biological boundary. **This is a
+replication of §6ew's negative, as the PREREG required it be called.**
+
+### ⭐⭐⭐ BUT THE SIGNAL IS THERE, AND THE IDENTITY FLOOR FINDS IT (not predicted — a new result)
+| NPIP pairwise identity | n | min | median | max |
+|---|---|---|---|---|
+| within A | 21 | **0.9759** | 0.9802 | 0.9977 |
+| within B | 55 | 0.9413 | 0.9711 | 0.9972 |
+| **A vs B** | 77 | 0.9433 | 0.9574 | **0.9744** |
+⭐ **A perfect gap: every A–A pair ≥ 0.9759, every A–B pair ≤ 0.9744.** Re-running MCL at `--min-identity 0.975`
+(inflation held at the 2.8 default):
+| cluster | members | published counterpart |
+|---|---|---|
+| MCL0 | A1, A2, A5, A6, A7, A8, A9 | ⭐ **all 7 NPIPA, pure** |
+| MCL1 | B2, B3, B5, **B12, B13** | contains B3/B5 and the **B12/B13 single clade** |
+| MCL3 | **B6, B7, B8, B9**, B15 | ⭐ **exactly the B6–B9 subfamily** |
+At 0.90 and 0.96 the family stays fused (18 members, A+B mixed); the structure appears only at 0.975.
+
+### ⟹ What this settles, and it converges with the advisor's OTHER criticism
+**The subfamily structure is recoverable and our default hides it.** The lever is **identity, not inflation** —
+which is precisely criticism 5 ("in addition to density, the actual similarity between loci should be taken into
+account"). The A/B boundary is invisible to MCL because **every one of these pairs clears the 0.70 admission
+floor and is then treated as an unweighted edge**; a near-clique cannot be cut on 2 % identity differences the
+graph no longer carries. ⚠ Two of the advisor's criticisms therefore have ONE fix.
+
+⚠ Gene symbols were used **only to read the result out**, never to build it. ⚠ Human only; no gorilla number
+appears here. ⚠ `--min-identity 0.975` is NOT proposed as a new default — it is a demonstration that the signal
+survives to the clustering stage; a default flip needs the held-back family and a precision price
+(`feedback_hold_a_substrate_back`).
