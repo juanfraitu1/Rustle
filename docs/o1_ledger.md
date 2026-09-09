@@ -14967,3 +14967,38 @@ graph no longer carries. ⚠ Two of the advisor's criticisms therefore have ONE 
 appears here. ⚠ `--min-identity 0.975` is NOT proposed as a new default — it is a demonstration that the signal
 survives to the clustering stage; a default flip needs the held-back family and a precision price
 (`feedback_hold_a_substrate_back`).
+
+### §6gw addendum — AN UNBIASED SUBFAMILY DETECTOR (user: "can we find the clusters in an unbiased way?")
+
+⚠ **The 0.975 above was chosen AFTER seeing the A/B gap** — it reproduces the answer because it was fitted to
+it. `bench/identity_gap.py` removes that: it locates the **largest interior gap in a family's within-family
+pairwise identity distribution** and tests it against a null of "no boundary" (identities resampled from a
+single smooth mode with the same n, mean and sd, 10,000 draws). **No operator threshold and no external truth.**
+The partition is the connected components of the subgraph above the gap.
+⚠ First form of the partition step was wrong — a per-member "majority of own edges" vote put all 28 members on
+one side, because most pairs sit below any interior cut whatever the structure. Components, not votes.
+
+| family | largest interior gap | null median / 95th | p | verdict |
+|---|---|---|---|---|
+| **TBC1D3** (9 paralogues, 36 pairs) | 0.0007 | 0.0008 / 0.0015 | **0.66** | ⭐ **NO SPLIT** — smaller than a single mode gives |
+| **NPIP** (human chr16, 378 pairs) | 0.0014 @ identity **0.9831** | 0.0008 / 0.0013 | **0.021** | ⭐ **SPLIT** |
+
+**NPIP components found without consulting the papers:**
+| group | members | published counterpart |
+|---|---|---|
+| G2 (9) | **A1, A2, A5, A6, A7, A8, A9** + B2 + PDXDC1 | ⭐ all 7 NPIPA |
+| G3 (8) | **B6, B7, B8, B9** + B15 + 3 LOC | ⭐ **the B6–B9 subfamily** |
+| G1 (9) | **B3, B5, B12, B13** + 5 LOC | the human-specific clade (paper: B3,B4,B5,B11,B12,B13) |
+| singletons | B11, LOC124907800 | B11 is in that clade but does not attach |
+
+⟹ **The same detector answers both families correctly, in opposite directions, from the identity distribution
+alone.** That is the unbiased form of the result: subfamily structure is a gap, TBC1D3 has none because gene
+conversion erased it, NPIP has one because IGC does not cross the A/B boundary.
+
+⚠⚠ **Do not oversell this.** (a) p = 0.021 is one test on one family, not a validated instrument; (b) the null
+is Gaussian, which is a poor fit for identities pressed against 1.0 — a beta or a permutation null would be
+better; (c) **two members are misplaced**: NPIPB2 lands with the A group and PDXDC1 (a known LCR16u/MCL7
+neighbour, not NPIP) is pulled in; (d) the gap-chosen cut (0.9831) is NOT the A/B boundary measured by hand
+(0.9744/0.9759) — it finds a finer boundary that happens to induce a similar grouping, so the agreement is at
+the level of the PARTITION, not the threshold. ⚠ Nothing here is proposed as a default and the held-back family
+has not been scored.
