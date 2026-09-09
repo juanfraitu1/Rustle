@@ -197,6 +197,43 @@ on.* We have the failed instance to show, which is worth more than a list of suc
 
 ---
 
+## Part 0g — Yes, this is assembler-shaped work. Say so, then say what full-length changes
+
+⭐ **Concede the original point first, because it was right.** A StringTie-clone assembler WAS built here, and
+it is now **retired as dead code** — 41 modules unreachable from the five thesis binaries. Re-implementing a
+solved problem was a real mistake and pretending otherwise costs credibility for nothing.
+
+⭐⭐ **Then make the distinction that actually holds: with full-length reads, assembly is not reconstruction.**
+Short-read assembly is a genuine inference problem — transcripts must be rebuilt from fragments, which is why
+StringTie carries a flow model. **FLNC IsoSeq reads are already transcript observations**: 5′ primer, 3′
+primer and polyA are required for a read to exist at all, and the median read here is **2,884 bp**. What
+remains is not reconstruction but three much shallower operations: **group identical structures, discard
+artefacts, and decide which copy each came from.**
+
+**Measured, on the NPIP family: we group, we do not infer.**
+| | |
+|---|---|
+| molecules | 15,960 |
+| **distinct spliced structures OBSERVED in reads** | **1,818** |
+| spliced isoforms we emit | **703** |
+| isoforms we emit that no read shows | **0** |
+⟹ Every isoform is an observed read structure; we emit a **subset** of what the data contains and invent
+nothing. StringTie's flow model, by contrast, **can and does emit junction combinations no single read shows**
+— that is inference, appropriate to fragmentary coverage and unnecessary here. It is also why it reports **3**
+transcripts at NPIP copy 27 where **32 distinct full-length structures** were observed.
+
+⟹ **The sentence to use.** *"With full-length reads the assembly problem reduces to grouping and attribution.
+The grouping is FLAIR's collapse and we claim nothing new for it — if an assembler's output is preferable,
+steps 6–7 consume it unchanged. The attribution — which copy each isoform came from — is undefined for every
+existing assembler, because none of them has a notion of copies. That is the contribution, and it is the part
+you have been asking to see."*
+
+⚠ Do not overstate the grouping: StringTie recovers **more read-supported junctions** than we do (58.6 % vs
+42.1 %, §6gj) precisely because it will assert a combination no read carries. Conservative and exhaustive are
+different virtues; ours is the one a per-copy assignment needs, not the one that maximises junction recall.
+
+---
+
 ## Part 1 — The cross-examination: "this is luck or overfitting"
 
 These are not hypothetical. They are the five moves that follow from his stated priors, and each

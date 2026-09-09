@@ -14573,3 +14573,35 @@ attribute an isoform to a copy at all.
 ⚠ Still to note before quoting: the ORF is read off genomic exon-sums with no CDS or UTR knowledge; copies with
 one or two isoforms have denominators too small to call; and a single copy's median can itself be dragged by an
 outlier (copy 13's median is 2,578 from 2 isoforms). Ships **OFF**. Suite **867 passed / 0 failed / 11 ignored**.
+
+## §6gr — "IS THIS AN ASSEMBLER?" — yes in shape, no in kind, and the difference is measurable (user, 2026-09-08)
+
+**User: "his original assembler qualms of me mimicking stringtie are fair, however what he is asking now is
+definitely something an assembler would do, also the reads are isoseq anyway so they are 'already assembled',
+they just need to be processed further."** All three clauses are right and together they settle the framing.
+
+1. ⭐ **Concede the original qualm.** A StringTie-clone assembler was built and is **retired as dead code**
+   (41 modules unreachable from the five thesis binaries). Defending it costs credibility for nothing.
+2. ⭐ **Stop denying the current work is assembler-shaped.** Emitting isoforms, a GTF and per-copy productivity
+   IS what an assembler does. The claim to defend is not "we are not an assembler" but "with full-length reads
+   the assembler's hard part is somewhere else".
+3. ⭐⭐ **The full-length argument, measured on NPIP:**
+   | | |
+   |---|---|
+   | molecules | 15,960 |
+   | distinct spliced structures OBSERVED in reads | **1,818** |
+   | spliced isoforms emitted | **703** |
+   | isoforms emitted that no read shows | **0** |
+   | median read length | 2,884 bp |
+   **We emit a SUBSET of the structures the data contains and invent none.** With FLNC reads (primer, primer,
+   polyA required) each molecule is already a transcript observation, so grouping replaces reconstruction.
+   StringTie's flow model can emit a junction combination no single read carries — inference that fragmentary
+   coverage requires and full-length data does not — which is why it reports 3 transcripts at NPIP copy 27
+   where 32 distinct full-length structures were seen.
+
+⟹ **Framing for the thesis and for Wednesday:** *with full-length reads the assembly problem reduces to
+grouping and attribution; the grouping is FLAIR's collapse and we claim nothing new for it; the attribution —
+which copy an isoform came from — is undefined for every existing assembler.* ⚠ And the concession that keeps
+it honest: StringTie recovers **more** read-supported junctions than we do (58.6 % vs 42.1 %, §6gj), precisely
+because it asserts combinations no read carries. Exhaustive-and-conservative is the right trade for a per-copy
+assignment; it is not a claim of general superiority.
