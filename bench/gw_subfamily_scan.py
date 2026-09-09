@@ -10,7 +10,9 @@ hundreds of families says whether a given family's gap is extreme.
 
 usage: gw_subfamily_scan.py <clusters.tsv> <paf> <out.tsv> [--min-pairs 10]
 """
-import sys, re, bisect, collections, math, random, statistics as st
+import sys, re, bisect, collections, math, random, statistics as st, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import modality as M
 
 clusters_p, paf_p, out_p = sys.argv[1:4]
 MINP = int(sys.argv[sys.argv.index('--min-pairs') + 1]) if '--min-pairs' in sys.argv else 10
@@ -100,8 +102,15 @@ def pvals(v, reps=2000, seed=0):
                                                   for _ in range(n)))[0] >= obs) / reps
     return obs, cut, out
 
+# dump every in-family pair once, so any later statistic reads this instead of the 1 GB PAF
+with open(out_p + '.pairs.tsv', 'w') as ph:
+    ph.write('family\ta\tb\tidentity\n')
+    for fam, d in sorted(best.items()):
+        for (a, b), idn in d.items():
+            ph.write(f'{fam}\t{a[0]}-{a[1]}\t{b[0]}-{b[1]}\t{idn:.6f}\n')
+
 with open(out_p, 'w') as fh:
-    fh.write('family\tn_members\tn_pairs\tmin_id\tmedian_id\tmax_id\tgap\tcut\tp_beta\tp_smooth\tp_worst\n')
+    fh.write('family\tn_members\tn_pairs\tmin_id\tmedian_id\tmax_id\tgap\tcut\tp_beta\tp_smooth\tp_worst\tsilverman_p\th_crit\tdbic\n')
     done = 0
     for fam, d in sorted(best.items()):
         v = sorted(d.values())
@@ -111,9 +120,11 @@ with open(out_p, 'w') as fh:
         if not pv:
             continue
         pw = max(pv.values())
+        sp, hc = M.silverman_p(v, B=200)
+        dbic = M.mixture_dbic(v)
         fh.write(f'{fam}\t{fam_n[fam]}\t{len(v)}\t{v[0]:.4f}\t{st.median(v):.4f}\t{v[-1]:.4f}\t'
                  f'{obs:.4f}\t{cut:.4f}\t{pv.get("beta", float("nan")):.4f}\t'
-                 f'{pv.get("smooth", float("nan")):.4f}\t{pw:.4f}\n')
+                 f'{pv.get("smooth", float("nan")):.4f}\t{pw:.4f}\t{sp:.4f}\t{hc:.4f}\t{dbic:.1f}\n')
         done += 1
         if done % 50 == 0:
             print(f'  {done} families scored', file=sys.stderr)

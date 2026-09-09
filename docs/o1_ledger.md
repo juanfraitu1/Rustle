@@ -15046,3 +15046,40 @@ does not test that and must not be quoted as doing so.
 that motivated it is near the edge of its power. The next step is a **more powerful statistic** — the largest
 gap uses one number out of 378 — e.g. Hartigan's dip test or a 1- vs 2-component model comparison on the
 identity distribution, scored on the 18 confirmed-positive gorilla families as a sensitivity set.
+
+### §6gw addendum 3 — WHOLE-DISTRIBUTION TESTS, CALIBRATED; AND WHY THE 1-D TESTS ARE THE WRONG INSTRUMENT (PREREG `dbe39770` + amendment 1)
+
+**Two whole-distribution statistics added** (`bench/modality.py`): Silverman's critical-bandwidth test of
+unimodality and a 1- vs 2-component mixture ΔBIC. Scored against the 18 gap-positive / 25 gap-negative gorilla
+families as a sensitivity set (no parameter tuned on them):
+| | predicted | got |
+|---|---|---|
+| P1 Silverman multimodal on gap-positives | ≥15/18 | **13/18** (missed; not refuted) |
+| P2 Silverman unimodal on gap-negatives | ≥80 % | **20/25 = 80.0 %** ✓ |
+| P3 ΔBIC ≥10 on positives / <10 on negatives | ≥15 / ≥80 % | 15/18 ✓ / **64 % ⛔** |
+| P5 human TBC1D3 unimodal | both | ✓ Silverman 0.373, ΔBIC −3.6 |
+| P6 gorilla NPIP unimodal | both | ⛔ **Silverman 0.045**, ΔBIC 68.5 |
+| P7 Silverman–ΔBIC agreement | ≥85 % | **71.7 % ⛔** |
+Genome-wide (244 gorilla families): Silverman calls **28.3 %** multimodal at 0.05 (5.7× the null rate), 35 at
+p < 0.01; **ΔBIC calls 50.0 %** — liberal, as a 1-D mixture is known to be (a second component fits skew).
+⟹ ΔBIC does not get a vote. Silverman is the calibrated 1-D test.
+
+### ⛔ P4 FAILED — human NPIP, Silverman p = 0.125 — and the reason is the finding
+Human NPIP has a **perfect** A/B partition (every A–A ≥ 0.9759, every A–B ≤ 0.9744) and every 1-D test misses
+it: gap 0.072, Silverman 0.125. Meanwhile gorilla NPIP has **no gap at all** (0.94) and Silverman finds it
+multimodal (0.045). ⭐⭐ **A clean partition need not make the marginal multimodal.** Within-B pairs alone span
+0.941–0.997, so the pooled histogram of all 378 pairs is one smeared hump with a shoulder. The structure lives
+in WHICH pairs are high — the graph — and every 1-D statistic discards exactly that. The NPIP signal was never
+weak; the instrument was measuring the wrong thing.
+
+### ⭐⭐ THE PARTITION TEST (post-hoc — amendment 1 — and stated as such)
+Statistic: over threshold-induced component partitions (components ≥ 3 members), the largest
+mean(within) − mean(between) identity contrast. Null: **permute identities across edges** — the null has
+EXACTLY the observed marginal, so only the assignment of identities to pairs is tested, and the same
+maximisation over thresholds runs inside every permutation, so picking the best threshold costs nothing unearned.
+| family | contrast | permutation p (B = 1000) |
+|---|---|---|
+| **human NPIP** | 0.0337 | **0.006 — PARTITION CERTIFIED** |
+| human TBC1D3 | — | **no threshold yields two components of ≥ 3** — no subfamily partition exists |
+⚠ The human-NPIP p is a DEMONSTRATION that the 1-D tests were wrong, not a pre-registered confirmation — the
+test was built after seeing them fail. Its calibration (P8–P10) is pre-registered in amendment 1 and pending.

@@ -9,7 +9,9 @@ family homogenised by gene conversion does not.
 
 usage: identity_gap.py <pairs.tsv>   with columns  a  b  identity
 """
-import sys, math, random, statistics as st
+import sys, math, random, statistics as st, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import modality as M
 
 rows = [l.split('\t') for l in open(sys.argv[1]) if l.strip() and not l.startswith('#')]
 pairs = [(r[0], r[1], float(r[2])) for r in rows]
@@ -69,6 +71,19 @@ for k in sorted(NUL):
     print(f'  null {k:7s} median {st.median(d):.4f}  95th {d[int(.95*len(d))]:.4f}  p = {pv[k]:.4f}')
 print(f'p = {p:.4f} (worst null governs)   -> '
       f'{"SPLIT: a boundary no smooth mode produces" if p < 0.05 else "NO SPLIT: gap is what a single mode gives"}')
+
+# ---------------------------------------------------------------- whole-distribution tests (PREREG_modality)
+sp, hc = M.silverman_p(v, B=1000)
+dbic = M.mixture_dbic(v)
+print(f"silverman  p = {sp:.4f}  (h_crit {hc:.4f})   -> {'MULTIMODAL' if sp < 0.05 else 'unimodal'}")
+print(f"mixture    dBIC = {dbic:+.1f}                 -> {'TWO components (very strong)' if dbic >= 10 else 'one component'}")
+
+pp, contrast = M.partition_perm_p(pairs, B=1000)
+if contrast != contrast or contrast < 0:
+    print("partition  no threshold yields two components of >= 3 members -> NO SUBFAMILY PARTITION EXISTS")
+else:
+    print(f"partition  contrast {contrast:.4f}  permutation p = {pp:.4f}   -> "
+          f"{'PARTITION CERTIFIED (identities are not exchangeable across edges)' if pp < 0.05 else 'not certified'}")
 
 if p < 0.05:
     # The partition is the CONNECTED COMPONENTS of the subgraph above the gap — not a per-member
