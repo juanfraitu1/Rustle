@@ -122,3 +122,65 @@ corroboration (MCL7) and one uninformative null (MCL2). **Still not proposing a 
 population beyond MCL7's small one has been checked, and MCL7's own sequence-level confirmation (does its own
 newly-resolved molecule really carry a clean recurring indel, the same direct check done above for human) has
 not been done. That remains open before any default decision.
+
+---
+## 2026-09-09, later: MCL7 sequence check, the "are the tied copies actually similar?" audit, and a blind spot
+
+### MCL7's two entering molecules — the rule confirmed on a DIFFERENT mechanism (`scratchpad/sanity/mcl7_*`)
+Both are clean by substitution and were rejected by the tightness of the Binomial null on short reads plus
+scattered 1-bp indels (typical HiFi homopolymer errors), not by a large SV:
+- `SRR27438212.8747054` → copy 1: `667=1D517=1D987=1D271=1D98=1X90=1I14=1I63=…23S` — **X = 1 over 4.6 kb**,
+  eleven scattered 1-bp I/D, a 23 bp soft-clip; pre-fix edits 35 vs mean 13.8 (z 5.7, REJECT).
+- `SRR27438212.5998780` → copy 6: `60=1X21=1X53=2X8=1X2=1X289=1I184=` — **X = 7 over 623 bp**, one 1-bp I;
+  pre-fix edits 7 vs mean **1.9** (z 3.8, REJECT). Against copy 1 it is a mess of soft-clips and mismatches —
+  specificity holds.
+⟹ Human MCL0 exercised the large-recurring-SV case (57 bp, ~490 bp); MCL7 exercises the short-read /
+scattered-1-bp-indel case. Same rule, both consistent with "indels are not origin evidence".
+
+### ⭐⭐ The audit the user asked for: are AS-tied molecules tied between copies that are actually similar?
+Two granularities, because whole-locus identity is the wrong one (a read covers ~1–3 kb, usually exonic;
+copies can be 95 % identical over a 48 kb locus with diverged introns yet near-identical over a read):
+- whole-locus, 26 human copies, minimap2 asm20 all-vs-all: 325 pairs, identity 0.936–0.998, median 0.960.
+- **read-footprint identity at the read's WORST tied placement** (`=`/`X` from the `--eqx` CIGAR), 216
+  newly-assigned: **median 0.9926, min 0.9601**; substitutions at the worst tied placement median 20, max 69.
+  **190 of 216 ≥ 0.97**: the tied copies are genuinely near-identical over the read and PSV columns resolve a
+  fine distinction. **26 < 0.97** (copy 22 ↔ 23/24/25, whole-locus 0.9486): NOT near-identical over the read.
+
+### ⭐⭐⭐ And what the tie actually IS for most of them — a finding that reframes the gate
+Classifying the 216 by whether the ASSIGNED copy is even inside the AS-tie set:
+| | n |
+|---|---|
+| assigned copy **BELOW the AS tie** (aligner under-scored it), footprint ≥ 0.97 | **180** |
+| assigned copy BELOW the AS tie, footprint < 0.97 | 26 |
+| assigned copy IN the AS-tie set | 10 |
+Anatomy of a typical one (`…4369/ccs/47_2588`): assigned copy 2 placement **AS 2354, X = 5, I = 58,
+primary = true**; the AS tie is at copy 6, **AS 2424, X = 15, I = 1**. The real 58 bp insertion costs ~50–70 AS
+in gap penalties, so the aligner's BEST-scoring placements are the WRONG copies (6/7/8 — which ARE near-
+identical to each other, so the tie among them is real), and the right copy — which minimap2's chaining stage
+itself picked as PRIMARY — sits below the tie. Read-star ignores AS, realigns against every family copy, and
+finds copy 2 on substitutions (X 5 vs 15–22). **The assignment is justified; the tie is the aligner's, among the
+wrong copies.** For the 26 low-footprint cases (copy 22, ~490 bp insertion) the same story, more extreme.
+
+### ⚠⚠ A blind spot in the AS-tied gate, quantified (`bakeoff/human/blindspot.txt`)
+If the true copy is under-scored by an SV gap penalty and the AS-best lands **uniquely** at ONE wrong copy,
+there is no tie, the gate calls it a "clear best" unique mapper, and O2 never sees it. Counted over all
+molecules with a placement in a copy, human MCL0:
+| class | n |
+|---|---|
+| AS-unique, agrees with primary (true unique mapper) | 13,199 |
+| AS-tied, primary IN the tie | 6,958 |
+| **AS-unique at a copy ≠ primary copy — gate skips, aligner disagrees with itself** | **2,278** |
+| AS-tied, primary BELOW the tie (the 206 above live here) | 666 |
+| AS-unique outside every copy, primary inside one | 111 |
+Of the 2,278: **1,456 (64 %) carry ≥ 50 bp of insertion in their PRIMARY placement** (median 63, q90 401) — the
+same SV-under-scoring mechanism. `--as-tie-ratio` does NOT cover it: AS(primary)/AS(best) median 0.978, so
+0.98 admits only 42 %, 0.95 admits 79 %, 0.90 admits 94 %. ⚠ These reads are not mis-assigned by O2 — they are
+invisible to it — but they are exactly the ambiguous reads O2 exists for. **Design question for the user, not
+implemented**: admit to the gate a molecule whose PRIMARY copy ≠ its AS-best copy (the aligner's two stages
+disagree), in addition to AS ties. Human MCL0 would gain up to 2,278 candidates; their read-star outcome is
+unmeasured.
+
+### Standing recommendation
+`--origin-drop-indels` is confirmed at the sequence level on both mechanisms (large recurring SV; short-read
+scattered indels) and on three families (large effect / uninformative / small consistent). Still the user's
+default decision. The blind spot above is the more consequential open item.
