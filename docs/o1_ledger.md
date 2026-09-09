@@ -15277,3 +15277,41 @@ The full-region human run that OOM'd at the 12 GB cap on 09-08 (§6gt) would now
 (they are tied multimappers) but O2 makes no choice for them. Under the 09-06 L3 ruling they are `assigned`; under
 the 09-09 definition ("infer which copy") there is nothing to infer. The two rulings conflict and the number is
 not small. ⚠ Human and gorilla never pooled.
+
+## §6gz — ⛔⛔ THE SOLE-CANDIDATE CLASS WAS A CROSS-FAMILY LEAK: 4,706 EIF3C/EIF3CL reads "assigned" to an NPIP copy (user, 2026-09-09)
+
+**User: "tied multimappers should include the primary since we have no guarantee it is the best candidate, and
+assignment should be based on PSVs and statistics."** Correct — and the sole-candidate class violated it.
+
+**What a sole candidate actually was.** `n_candidates` counts CATALOG copies passing the origin certificate; an
+exact-AS-tied molecule with `n_candidates == 1` therefore has its tie partner **outside the catalog**. Traced on
+human MCL0 (`bakeoff/human/hsa16.bam`, every record of the 4,739 sole-candidate molecules):
+| tie partner of the molecule | n |
+|---|---|
+| a catalog copy | 1 |
+| **NOT a catalog copy** | **4,738** — of which **4,705 land in MCL97 = EIF3C / EIF3CL** (`kept_full`), 33 in unannotated sequence |
+EIF3C/EIF3CL are the 16p11.2 duplicate pair; they are **not NPIP paralogues** (MCL97↔MCL0 identity 0.77–0.85
+over ≤ 1.9 kb). The exact tie is EIF3C ↔ EIF3CL — a real two-copy family in its own right.
+
+**How they entered NPIP's table.** NPIP copy 16 (annotated chr16:29,016,080–29,053,451, `kept_trimmed`, core at
+the FAR RIGHT 29,033,012–29,052,905) has a read-supported **locus 28,982,252–29,053,456** — extended 34 kb
+leftward — which **contains EIF3C (28,976,794–29,016,163)** almost entirely. **4,706 of the 4,739 sole
+candidates are assigned to copy 16.** The origin certificate passes trivially (the target IS EIF3C sequence),
+no other NPIP copy contains it, so `n_candidates = 1` and the 09-06 L3 label made it `assigned`.
+⚠ §6fm's rule "a locus never contains another catalog unit (any family)" is enforced against the SUPPLIED
+catalog; `copies16.tsv` held MCL0 alone, so EIF3C was invisible to it. Copy 13's locus, by contrast, ends
+exactly at EIF3CL's start (28,660,139) — the clip fires when the neighbour is visible.
+
+### ⛔ Corrected human numbers under the gate
+"assigned 4,958" = **69 genuinely contested assignments + 4,706 EIF3C leaks + 183 other sole candidates**.
+**The honest human O2 result is 69 of 759 contested (9.1 %)**, as §6gv's decomposition already said. The
+L3 ruling (sole candidate ⟹ `assigned`) is **reversed by this finding**: a tied read whose partner O2 never
+examined must never be assigned.
+
+### The design conclusion — the user's model, stated as a rule
+**Candidates = the loci of ALL of a tied molecule's tied placements, whichever O1 family they belong to.**
+Read-star then adjudicates among them by PSVs/certificate. A molecule whose winning locus is not a catalog copy
+of this family is `assigned_outside_catalog` (O3/O1 material, never a copy assignment); a molecule whose tied
+placements include a locus outside the family and cannot be separated is `tied`. This is also the fix for the
+containment failure: a locus can never "swallow" a neighbour if the neighbour is itself a candidate.
+⚠ Gorilla MCL1 has 0 sole candidates, so this is a human-arm finding; the mechanism is general.
