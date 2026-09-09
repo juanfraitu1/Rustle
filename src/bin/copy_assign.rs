@@ -2587,12 +2587,25 @@ fn main() -> Result<()> {
                 assign_rows.iter().filter(|r| seen.insert(r.read_name.as_str())).collect();
             for ratio in [1.0_f64, 0.98] {
                 let el: Vec<&&AssignRow> = mols.iter().filter(|r| as_tied(&r.as_ev, ratio)).collect();
-                let c = |st: &str| el.iter().filter(|r| r.status == st).count();
-                let pc = |n: usize| if el.is_empty() { 0.0 } else { 100.0 * n as f64 / el.len() as f64 };
+                // ⚠⚠ The AS-tied set is NOT yet O2's subject: it still holds molecules the catalog cannot
+                // explain (origin-rejected — O3's material) and molecules with a single candidate locus
+                // (nothing to choose). The two arms fail this in OPPOSITE ways — gorilla MCL1 is 95.6 %
+                // origin-rejected with 0 single-candidate, human MCL0 is 62.0 % single-candidate (§6gv) —
+                // so the decomposition is printed, never a single pooled rate.
+                let rej = el.iter().filter(|r| r.origin_rejected).count();
+                let one = el.iter().filter(|r| !r.origin_rejected && r.n_candidates < 2).count();
+                let con: Vec<&&&AssignRow> =
+                    el.iter().filter(|r| !r.origin_rejected && r.n_candidates >= 2).collect();
+                let c = |st: &str| con.iter().filter(|r| r.status == st).count();
+                let pc = |n: usize| if con.is_empty() { 0.0 } else { 100.0 * n as f64 / con.len() as f64 };
                 eprintln!(
-                    "[copy_assign] AS-TIED @ratio {:.2}: {} of {} molecules are what O2 is for — \
+                    "[copy_assign] AS-TIED @ratio {:.2}: {} of {} molecules — origin-rejected {} (O3's) / \
+                     single-candidate {} (nothing to choose) / CONTESTED {}",
+                    ratio, el.len(), mols.len(), rej, one, con.len()
+                );
+                eprintln!(
+                    "[copy_assign]   ⭐ over the CONTESTED set (O2's actual subject): \
                      assigned {} ({:.1}%) / tied {} ({:.1}%) / ambiguous {} ({:.1}%)",
-                    ratio, el.len(), mols.len(),
                     c("assigned"), pc(c("assigned")), c("tied"), pc(c("tied")),
                     c("ambiguous"), pc(c("ambiguous"))
                 );

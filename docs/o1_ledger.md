@@ -14883,6 +14883,20 @@ respectively and abstains or ties on the rest, never dividing a read across copi
 is large enough to carry a thesis chapter is now the open question, and it is the family-wide form of the
 K = 0 frontier argument (`project_k0_frontier_unresolvable`).
 
+### ⭐⭐ TIE WIDTH IS NOT A COSMETIC CHOICE — 0.98 gives a 10× BIGGER subject AND a higher assign rate
+The always-on line prints both widths. Gorilla MCL1, from one run:
+| tie width | AS-tied | origin-rejected | single-cand | **CONTESTED** | assigned | tied | ambiguous |
+|---|---|---|---|---|---|---|---|
+| exact 1.00 | 634 | 606 | 0 | **28** | 6 (21.4 %) | 21 (75.0 %) | 1 (3.6 %) |
+| 0.98 | 3,997 | 3,713 | 2 | **282** | **179 (63.5 %)** | 30 (10.6 %) | 73 (25.9 %) |
+
+⭐ **Widening from an exact tie to a 2 % margin multiplies O2's addressable population by 10 AND raises the
+assignment rate from 21 % to 64 %** — and it is mechanistically sensible: an *exact* AS tie is the case where
+the alignment evidence genuinely does not separate the copies, so `tied` dominating there (75 %) is correct
+behaviour, not weakness. A 2 % margin means a difference exists for the certificate to find.
+⚠ **This is the user's default to set** ("report both, pick later", 09-09); both widths print in every run so
+the choice can be made from three families rather than from this one.
+
 ⚠ **The sole-candidate boundary is UNDECIDED and is worth 4,739 human molecules.** On 2026-09-06 (L3, §6fj)
 the user ruled a certified sole candidate is `assigned` + `sole_candidate`; the 09-09 scope correction implies
 it leaves O2. The two decisions conflict and the table above is reported with sole candidates held OUT.
