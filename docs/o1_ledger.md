@@ -15213,3 +15213,44 @@ candidates in shipped output** (MCL38, MCL99), 2 borderline, and **9 certified s
 biology, not error (GSTM, LRRC37A3, GGT1, chromosome-array pairs). ⚠ 67 shipped families have < 10 kept pairs
 and are untestable at `MIN_COMP = 3`; the small-family false-merge rate is unmeasured, not zero. ⚠ Every
 "over-merge" stays a candidate until the core-hull check runs on the minority side. ⚠ Gorilla only.
+
+## §6gy — O2 REFACTORED: the AS-tied gate runs BEFORE the certificate, default ON (user, 2026-09-09)
+
+**User: "remove the assignment of unique mappers, skip non-tied molecules before the certificate rather than
+after."** §6gv's gate was reporting-level (relabel at emission). It is now a code path:
+- AS evidence is computed on the FULL record set of each region (a tie is only visible with every placement),
+  then non-tied molecules are **removed from `bam_reads` before `detect_and_assign`** — no read-star, no
+  certificate, no row. `placement_assign` (MAPQ ≥ 60) can no longer fire: nothing it would place survives.
+- The `--families` contract check and the `--gtf` assembly still see every read (a GTF is judged on the hard
+  transcripts, not forbidden the easy ones — ADVISOR_QUESTIONS Part 0h).
+- **Default ON by user decision.** Escape `--no-as-tied-only` — **verified byte-identical**: gorilla MCL1
+  `assignments.tsv` md5 `ff0b8f16…` = the pre-2026-09-09 output. `--as-tied-only` no longer exists.
+- Suite **868 / 0 / 11**: the three `copy_assign_xfam.rs` tests pin 52/2/54 rows on a fixture whose
+  background is unique mappers and now carry the escape (they test cross-family reconcile on the whole
+  population); new `as_tied_gate_keeps_only_exact_ties` asserts the default emits strictly fewer rows, every
+  survivor an exact tie, and the escape restores 54. ⭐ On that fixture the gate keeps exactly the 2 planted
+  contradiction molecules and drops the 52 unique background rows.
+
+### Gorilla MCL1 under the default (`bakeoff/ours_gate.*`)
+`⭐ AS-TIED GATE (ratio 1.00): 716 of 91,969 molecules … entered the certificate (2,960 of 181,452 records);
+91,253 unique/clear-best molecules were skipped before it`. Contested set **identical** to §6gv's post-hoc
+gate — 28 contested, 6 assigned / 21 tied / 1 ambiguous — the expected invariance: a tied molecule's
+certificate does not depend on the unique mappers that used to sit beside it. Read-star now aligns **2,960
+records instead of 181,452**.
+
+### PREREG `268fe69b` scored
+| | predicted | got |
+|---|---|---|
+| P1 gorilla assigned collapses > 90 % | yes | **6,142 → 6** ✓ |
+| P2 human falls ~half | 30–70 % | pending (human arm running) |
+| P3 agreement on survivors holds | yes | ✓ contested set byte-for-byte the same decisions |
+| P4 abstention rises | yes | ✓ 75 % tied on the contested set |
+| P5 some copies lose all support | yes | ✓ copies with `n_reads_hard > 0`: **27 → 19**; **`tie_invariant` true: 52 → 2** |
+
+⚠⚠ **`tie_invariant` is now nearly vacuous BY CONSTRUCTION.** It certifies a copy on ≥ 3 anchored
+(MAPQ > 0) assigned reads — exactly the reads the gate removes. Under the new definition of O2 it no longer
+answers anything; the copy-existence question it was built for (§6gv's relabel-invariance) is O1's, and O1's
+`--min-reads` corroboration still counts every read including unique mappers. ⚠ Leave the column, document
+it as retired under the gate, or move it to O1 — the user's call.
+⚠ Region-local: a molecule tied only across contigs is dropped (conservative). ⚠ `--as-tie-ratio` stays 1.0;
+under the gate only the gated width is decomposed (the other width would re-count the same rows).

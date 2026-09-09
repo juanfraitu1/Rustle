@@ -16,12 +16,28 @@ import modality as M
 
 clusters_p, paf_p, out_p = sys.argv[1:4]
 MINP = int(sys.argv[sys.argv.index('--min-pairs') + 1]) if '--min-pairs' in sys.argv else 10
+# --units <units.tsv>: restrict to the members O1 actually SHIPS (kept_full / kept_trimmed). The raw
+# cluster is not the family — 107 of 219 members across the 11 over-merge candidates never became units
+# (§6gw addendum 6). A test on the raw graph is a test of something O1 does not emit.
+UNITS = sys.argv[sys.argv.index('--units') + 1] if '--units' in sys.argv else None
 
 # ---------------------------------------------------------------- members
 import csv
 byc = collections.defaultdict(list)       # contig -> [(start, end, family)]
 fam_n = collections.Counter()
+kept = None
+if UNITS:
+    kept = collections.defaultdict(list)
+    for r in csv.DictReader(open(UNITS), delimiter='\t'):
+        if r['member_status'] in ('kept_full', 'kept_trimmed'):
+            kept[r['family_id']].append((r['chrom'], int(r['start']), int(r['end'])))
+    print(f'restricting to {sum(len(v) for v in kept.values())} kept members', file=sys.stderr)
 for r in csv.DictReader(open(clusters_p), delimiter='\t'):
+    if kept is not None:
+        s0, e0 = int(r['start']), int(r['end'])
+        if not any(c == r['chrom'] and min(e0, e) - max(s0, s) > 0.5 * min(e0 - s0, e - s)
+                   for c, s, e in kept.get(r['cluster_id'], ())):
+            continue
     byc[r['chrom']].append((int(r['start']), int(r['end']), r['cluster_id']))
     fam_n[r['cluster_id']] += 1
 for c in byc:

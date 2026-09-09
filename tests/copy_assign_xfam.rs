@@ -37,8 +37,13 @@ fn scratch(name: &str) -> PathBuf {
 fn run_mode(dir: &PathBuf, mode: Option<&str>) -> (Output, String) {
     let out = dir.join("o");
     let out_s = out.to_str().expect("utf-8 path").to_string();
+    // The reconcile clauses are pinned on the WHOLE read population of the fixture (52 assigned / 2
+    // ambiguous / 54 rows). Since 2026-09-09 copy_assign gates to AS-tied multimappers before the
+    // certificate (the advisor's definition of O2); `--no-as-tied-only` is the byte-identical escape and
+    // keeps these tests exercising what they were written to exercise. The gate itself is covered by
+    // `as_tied_gate_keeps_only_exact_ties` below.
     let mut c = Command::new(env!("CARGO_BIN_EXE_copy_assign"));
-    c.args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+    c.args(["--no-as-tied-only", "--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
         .args(["--families", &format!("{FIX}/copies.tsv"), "--copies-fa", &format!("{FIX}/copies.fa")])
         // the cross-family contract is stated on the RECORD-level path (§6fb: read-star is the default since 2026-09-05)
         .args(["--no-molecule-observations"])
@@ -296,7 +301,7 @@ fn an_unknown_mode_is_refused() {
     let d = scratch("bad_mode");
     let out = d.join("o");
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+        .args(["--no-as-tied-only", "--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
         .args(["--families", &format!("{FIX}/copies.tsv"), "--copies-fa", &format!("{FIX}/copies.fa")])
         // the cross-family contract is stated on the RECORD-level path (§6fb: read-star is the default since 2026-09-05)
         .args(["--no-molecule-observations"])
@@ -346,7 +351,7 @@ fn determinism_across_repeats_and_region_threads() {
         rf.push("regions.txt");
         std::fs::write(&rf, "x1:0-9000\nx1:9000-20000\n").unwrap();
         let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-            .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+            .args(["--no-as-tied-only", "--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
             .args(["--regions", rf.to_str().unwrap(), "--region-threads", threads])
             .args(["--dump-psv", "--no-molecule-observations", "--out", &out])
             .env("RUSTLE_XFAM_RECONCILE", "report")
@@ -361,5 +366,42 @@ fn determinism_across_repeats_and_region_threads() {
             md5_of(&outs[1], ext),
             "--region-threads>1 must equal the serial sweep in {ext}"
         );
+    }
+}
+
+
+/// The AS-tied gate (default on since 2026-09-09): every row the default run emits is an EXACT AS tie
+/// (runner-up == best), the default emits strictly fewer rows than the escape, and the escape reproduces
+/// the pinned 54-row population. A unique mapper must never appear in the default output.
+#[test]
+fn as_tied_gate_keeps_only_exact_ties() {
+    let dir = std::env::temp_dir().join(format!("xfam_gate_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |escape: bool| -> String {
+        let out = dir.join(if escape { "esc" } else { "gate" });
+        let mut c = Command::new(env!("CARGO_BIN_EXE_copy_assign"));
+        if escape {
+            c.arg("--no-as-tied-only");
+        }
+        c.args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+            .args(["--families", &format!("{FIX}/copies.tsv"), "--copies-fa", &format!("{FIX}/copies.fa")])
+            .args(["--region", "x1:0-20000", "--out", out.to_str().unwrap()]);
+        let o = c.output().unwrap();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+        std::fs::read_to_string(format!("{}.assignments.tsv", out.display())).unwrap()
+    };
+    let gate = run(false);
+    let esc = run(true);
+    let hdr: Vec<&str> = esc.lines().next().unwrap().split('\t').collect();
+    let ib = hdr.iter().position(|h| *h == "as_best").unwrap();
+    let is = hdr.iter().position(|h| *h == "as_second").unwrap();
+    let n_gate = gate.lines().count() - 1;
+    let n_esc = esc.lines().count() - 1;
+    assert_eq!(n_esc, 54, "the escape must reproduce the pinned population");
+    assert!(n_gate < n_esc, "the gate must remove the unique mappers ({n_gate} vs {n_esc})");
+    for l in gate.lines().skip(1) {
+        let f: Vec<&str> = l.split('\t').collect();
+        assert_ne!(f[is], "NA", "a single-placement read reached the certificate: {l}");
+        assert_eq!(f[ib], f[is], "a clear-best read reached the certificate: {l}");
     }
 }

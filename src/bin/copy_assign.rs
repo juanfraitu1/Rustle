@@ -199,21 +199,22 @@ struct Args {
     #[arg(long, default_value_t = 0.98)]
     as_ratio: f64,
 
-    /// ⭐ O2 SCOPE (user, 2026-09-09): report only on **AS-TIED MULTIMAPPERS** — the molecules the aligner
-    /// could not place. A molecule is eligible when it has ≥2 placements in the region and its runner-up
-    /// AS ≥ `--as-tie-ratio` × its best AS. Everything else (a single placement, or a clear best) had
-    /// nothing for O2 to decide, and counting it inflates every assignment rate: measured before the flag
-    /// existed, **4,969 of gorilla MCL1's 6,142 "assigned" molecules were single-placement uncontested
-    /// reads** and only ~16 were AS-tied with ≥2 candidates (PREREG_as_tied_only_2026-09-09.md).
+    /// ⭐ O2 SCOPE (user, 2026-09-09; DEFAULT ON by user decision the same day): copy assignment runs on
+    /// **AS-TIED MULTIMAPPERS ONLY** — the molecules the aligner could not place (≥2 placements in the region
+    /// with runner-up AS ≥ `--as-tie-ratio` × best). Everything else is dropped **before the certificate**:
+    /// no read-star, no assignment, no row. The advisor's definition: "O2 takes all the ambiguous reads —
+    /// same AS, a coin toss which is best — and infers their copy; uniquely mapped transcripts are
+    /// irrelevant to O2." Measured before the gate existed, 4,969 of gorilla MCL1's 6,142 "assigned"
+    /// molecules were single-placement uncontested reads (§6gv, PREREG_as_tied_only_2026-09-09.md).
     ///
-    /// Ineligible molecules keep their row and their certificate but take status `unambiguous`, so nothing
-    /// is dropped silently and the count stays auditable; they leave the assigned/tied/ambiguous rates.
-    /// ⚠ This is a REPORTING scope gate: it changes which molecules O2 speaks about, never how the
-    /// certificate is computed. Default off ⟹ every existing output is byte-identical.
+    /// The `--families` contract check and the `--gtf` assembly still see every read: a GTF is judged on the
+    /// hard transcripts but is not forbidden the easy ones (ADVISOR_QUESTIONS Part 0h). ⚠ Region-local:
+    /// placements on other contigs are invisible, so a molecule tied only across contigs is (conservatively)
+    /// dropped. This flag is the ESCAPE: it restores the pre-2026-09-09 behaviour byte-for-byte.
     #[arg(long)]
-    as_tied_only: bool,
+    no_as_tied_only: bool,
 
-    /// Tie width for `--as-tied-only`. 1.0 = exact tie (the runner-up scores exactly the best, i.e. the
+    /// Tie width for the AS-tied gate. 1.0 = exact tie (the runner-up scores exactly the best, i.e. the
     /// aligner's primary pick was a coin toss); 0.98 admits a 2 % margin. Reported at both widths before
     /// any default is proposed.
     #[arg(long, default_value_t = 1.0)]
@@ -1264,6 +1265,11 @@ fn as_evidence_per_read(bam_reads: &[BamRead]) -> Vec<AsEvidence> {
 /// where the aligner's primary/secondary label is a coin toss. A single-placement read, or one with a clear
 /// best, had nothing for O2 to decide. ⚠ Region-local: placements on other contigs are not counted, so this
 /// means "tied among the placements O2 was handed", not genome-wide multi-mapping.
+static GATE_MOL_ALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static GATE_MOL_TIED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static GATE_REC_ALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static GATE_REC_TIED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 fn as_tied(ev: &AsEvidence, ratio: f64) -> bool {
     match ev.second {
         Some(second) => (second as f64) >= ratio * (ev.best as f64),
@@ -1687,7 +1693,7 @@ fn main() -> Result<()> {
             .and_then(|w| w.get(&(contig.clone(), lo, hi)))
             .map(|v| v.iter().map(|&(a, b)| (a.max(lo), b.min(hi))).filter(|&(a, b)| a < b).collect())
             .unwrap_or_else(|| vec![(lo, hi)]);
-        let (primary, bam_reads) = {
+        let (primary, mut bam_reads) = {
             let mut pr: Vec<_> = Vec::new();
             let mut br: Vec<_> = Vec::new();
             let mut seen = std::collections::HashSet::new();
@@ -1774,6 +1780,27 @@ fn main() -> Result<()> {
                 Some(v)
             }
         };
+        // ⭐ THE AS-TIED GATE (default on). AS evidence needs every placement of a molecule, so it is
+        // computed on the full record set; then non-tied molecules leave BEFORE the certificate. A unique
+        // mapper is not O2's business and is never assigned. `--no-as-tied-only` skips this block.
+        if !args.no_as_tied_only {
+            let ev = as_evidence_per_read(&bam_reads);
+            let mut tied: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            let mut all: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for (br, e) in bam_reads.iter().zip(ev.iter()) {
+                all.insert(br.name.as_str());
+                if as_tied(e, args.as_tie_ratio) {
+                    tied.insert(br.name.as_str());
+                }
+            }
+            let (n_all, n_tied, n_rec) = (all.len(), tied.len(), bam_reads.len());
+            let tied_owned: std::collections::HashSet<String> = tied.into_iter().map(|s| s.to_string()).collect();
+            bam_reads.retain(|br| tied_owned.contains(&br.name));
+            GATE_MOL_ALL.fetch_add(n_all, std::sync::atomic::Ordering::Relaxed);
+            GATE_MOL_TIED.fetch_add(n_tied, std::sync::atomic::Ordering::Relaxed);
+            GATE_REC_ALL.fetch_add(n_rec, std::sync::atomic::Ordering::Relaxed);
+            GATE_REC_TIED.fetch_add(bam_reads.len(), std::sync::atomic::Ordering::Relaxed);
+        }
         let t_da = std::time::Instant::now();
         let (fams, fallback, dna_needs, linearize_certs) = detect_and_assign(
             &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
@@ -2549,13 +2576,7 @@ fn main() -> Result<()> {
         // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
         // one is assigned to its placement (§6fq) whatever its candidate count
         let sole = (r.status == "assigned" && r.n_candidates == 1 && r.contested) as u8;
-        // ⭐ O2 scope gate (user, 2026-09-09): a molecule the aligner COULD place is not O2's business.
-        // Reporting-only — the certificate above is untouched; this decides what O2 speaks about.
-        let status = if args.as_tied_only && !as_tied(&r.as_ev, args.as_tie_ratio) {
-            "unambiguous"
-        } else {
-            r.status
-        };
+        let status = r.status;
         writeln!(
             ah,
             "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
@@ -2577,6 +2598,20 @@ fn main() -> Result<()> {
             cnt("tied"),
             cnt("ambiguous")
         );
+        if !args.no_as_tied_only {
+            let (ma, mt, ra, rt) = (
+                GATE_MOL_ALL.load(std::sync::atomic::Ordering::Relaxed),
+                GATE_MOL_TIED.load(std::sync::atomic::Ordering::Relaxed),
+                GATE_REC_ALL.load(std::sync::atomic::Ordering::Relaxed),
+                GATE_REC_TIED.load(std::sync::atomic::Ordering::Relaxed),
+            );
+            eprintln!(
+                "[copy_assign] ⭐ AS-TIED GATE (ratio {:.2}): {} of {} molecules in the swept regions are \
+                 AS-tied and entered the certificate ({} of {} records); {} unique/clear-best molecules were \
+                 skipped before it and are NOT assigned (`--no-as-tied-only` restores them)",
+                args.as_tie_ratio, mt, ma, rt, ra, ma.saturating_sub(mt)
+            );
+        }
         // ⭐⭐ O2 SCOPE (user, 2026-09-09): the population copy assignment EXISTS for — AS-tied multimappers,
         // where the aligner's primary/secondary pick was a coin toss. Reported at BOTH tie widths, always,
         // with or without `--as-tied-only`, because the rates above are otherwise read as if every molecule
@@ -2585,7 +2620,11 @@ fn main() -> Result<()> {
             let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
             let mols: Vec<&AssignRow> =
                 assign_rows.iter().filter(|r| seen.insert(r.read_name.as_str())).collect();
-            for ratio in [1.0_f64, 0.98] {
+            // Under the gate only the gated width is meaningful: molecules outside it never reached the
+            // certificate, so a wider decomposition would re-count the same rows. Both widths print only
+            // with `--no-as-tied-only`.
+            let widths: Vec<f64> = if args.no_as_tied_only { vec![1.0, 0.98] } else { vec![args.as_tie_ratio] };
+            for ratio in widths {
                 let el: Vec<&&AssignRow> = mols.iter().filter(|r| as_tied(&r.as_ev, ratio)).collect();
                 // ⚠⚠ The AS-tied set is NOT yet O2's subject: it still holds molecules the catalog cannot
                 // explain (origin-rejected — O3's material) and molecules with a single candidate locus
