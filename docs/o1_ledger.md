@@ -15188,3 +15188,28 @@ candidates until the core-hull check is run (does the minority side share a core
 ⚠ This list is only the 11 low-identity families among the 42 certified partitions; **the proper genome-wide
 answer needs the partition test re-run on kept-only members for every family**, since the pairs dump was built
 on raw clusters. ⚠ `MIN_COMP = 3` makes families with < 6 kept members untestable — a power limit to state.
+
+## §6gx — THE GRAPH THAT REFLECTS WHAT O1 SHIPS: partition test on KEPT members only (user, 2026-09-09)
+
+**User: "ensure the graph reflects ground truth."** Every partition result before this ran on the RAW MCL
+clusters; O1 ships only `kept_full`/`kept_trimmed` units. `gw_subfamily_scan.py --units` now restricts the
+pair graph to shipped members (gorilla `gw_units_v3`; `bakeoff/gw_kept*.tsv`, `gw_kept_examined.txt`).
+
+| | raw clusters | **kept members (shipped)** |
+|---|---|---|
+| families with ≥ 10 within-family pairs | 244 | **88** |
+| a two-way partition (both sides ≥ 3) exists | 80 | **21** |
+| certified p < 0.05 / p < 0.01 | 42 / 29 | **11 / 7** |
+| over-merge-shaped (between-component identity < 0.85) | 11 | **2** — MCL38 (ANKRD18A, 0.834), MCL99 (0.831); borderline MCL11 (0.858), MCL155 (0.853) |
+Of the 42 raw-certified: **8** still certified on kept members, 13 present but no longer certified, 21 fall
+below 10 kept pairs. **3 newly certified only on kept members** (MCL155, MCL64 = LRRC37A3's family, MCL99).
+
+⭐ **The core rule is visibly doing its job.** MCL19 (GSTM2×4) was over-merge-shaped on the raw cluster
+(between 0.792) and is a clean subfamily split on kept members (between 0.894, p = 0.000): the divergent side
+was removed as `dropped`/never-a-unit and what ships is a real within-GSTM subfamily boundary.
+
+⟹ **Answer to "do we still have false merges in O1?"** On the families large enough to test: **2 over-merge
+candidates in shipped output** (MCL38, MCL99), 2 borderline, and **9 certified subfamily splits** that are
+biology, not error (GSTM, LRRC37A3, GGT1, chromosome-array pairs). ⚠ 67 shipped families have < 10 kept pairs
+and are untestable at `MIN_COMP = 3`; the small-family false-merge rate is unmeasured, not zero. ⚠ Every
+"over-merge" stays a candidate until the core-hull check runs on the minority side. ⚠ Gorilla only.
