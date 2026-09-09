@@ -15126,3 +15126,33 @@ wrong thing, not a pre-registered confirmation. ⚠ Human and gorilla are never 
 *consistent* with Dishuck's human-specific B expansion but this analysis does not test that. ⚠ `MIN_COMP = 3`
 was fixed before any run but is a design choice. ⭐ By-product: **42 gorilla families with a certified
 two-subfamily partition** (`bakeoff/gw_partition.tsv`), unexamined.
+
+### §6gw addendum 5 — THE 42 CERTIFIED PARTITIONS, EXAMINED (`bench/examine_partitions.py`, `bakeoff/gw_partition_examined.txt`)
+
+Gorilla, `gw_units_v3`, 42 families with partition p < 0.05. Classified by the **median identity BETWEEN the
+two components** — the quantity that says whether the two sides are subfamilies of one family or two families
+MCL joined. ⚠ Gene symbols are read out from `GGO_genomic.gff` only (mostly `LOC…`); nothing was built from them.
+
+| between-identity | n | reading | examples (component sizes; named anchors) |
+|---|---|---|---|
+| **< 0.85** | **10** | ⚠ **probable MCL over-merge** — two things that share a duplication block but not a core | **MCL236** [5,3] XPO6+SULT1A2 vs **SULT1A3** (between 0.819); MCL19 [23,3] GSTM2×4 (0.792); MCL195 [5,3] XAGE3/XAGE5 vs **XAGE2** (0.754); MCL38 [8,4,3] ANKRD18A/UBE2R2 (0.846); MCL9, MCL101, MCL190, MCL42, MCL185, MCL46 |
+| 0.85 – 0.97 | 27 | genuine **two-subfamily** families | **MCL11** [13,4,3] incl. **GOLGA6L10** (0.859); MCL23 [24,3] (0.919); MCL84 [5,3] NPAP1L cluster vs **SPTLC1×3** (0.959); MCL52 [5,5]; MCL79 [6,3] within 0.9996 / between 0.865 |
+| > 0.97 | 5 | **shallow** — separately homogenised arrays | **MCL5 [21,21]** on two chromosomes, within 0.9985 / between 0.9635; **MCL10 [28,16]** on two chromosomes, within 1.0000 / between 0.9756; MCL6 [14,3,3]; MCL0 [104,5]; MCL324 |
+
+⭐⭐ **Three readings, three consequences.**
+1. **The partition test doubles as an O1 quality instrument.** Ten families carry a certified internal boundary
+   at < 0.85 identity — the signature of MCL merging two families that share an SD block. MCL236 is the
+   crisp case: XPO6/SULT1A2 on one side, SULT1A3 on the other, joined through the 16p11-type block. That is the
+   "duplication block ≠ family" failure the core rule exists to catch, surfaced without any annotation. ⚠ Not
+   proven: each needs the core-hull check (does the between-side share a core with half the family?) before
+   it is called an over-merge. ⚠ Direction is OPPOSITE to §6fn's 21 read-certified cuts (under-splits).
+2. **The chromosome-array pattern is the TBC1D3 lesson inverted.** MCL5 and MCL10 are two arrays on two
+   chromosomes, each homogenised INSIDE to ≥ 0.9985 and drifted apart to 0.96–0.98. Gene conversion within an
+   array, none between — exactly Guitart's mechanism, here producing subfamilies rather than erasing them.
+   These are the cleanest "known-to-be-subclusters" cases the advisor asked about, in the gorilla catalog.
+3. **The named anchors line up with known subfamily-bearing families**: GOLGA6/GOLGA8 (MCL11), XAGE (MCL195),
+   GSTM (MCL19), SULT1A (MCL236). ⚠ Consistent, not tested — no gorilla truth for these exists on this machine.
+
+⟹ **Deliverable from this thread**: `bakeoff/gw_partition.tsv` (42 certified) + `gw_partition_examined.txt`
+(components, chromosomes, names) + the 10 over-merge candidates as an O1 to-do: run the core-hull check on
+each, and re-score with the held-back family before any default moves.
