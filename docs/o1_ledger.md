@@ -14672,3 +14672,87 @@ transcriptome pass cannot see families larger than ~5 (F2), its tie-break is alp
 paralog-aware mode inflates counts by k (F4), and its output BAM reports certainty it did not have (F5).
 ⚠⚠ **This is a source reading, not a benchmark.** It says what flair *would* do, not what it *does* on the
 gorilla substrate — no flair run has been made. Do not quote it as a measured comparison.
+
+## §6gt — THE TOOL BAKEOFF: isoseq collapse vs ours on HUMAN NPIP (2026-09-08)
+
+Pre-registered `docs/PREREG_tool_bakeoff_2026-09-08.md` (md5 `428a588b…`, amendment 1 `acbe7b9c…`) before any
+output existed. ⚠⚠ **HUMAN ONLY. The gorilla isoseq run is NOT usable and its numbers appear nowhere here** —
+`GGO_OR6737` is **testis** (movie `m64076_221110_210557`), our substrate is **fibroblast**
+(`SRR27178662/3`, `SRR27438212/3`). Different tissue and different individual ⟹ the isoform sets would differ
+for biological reasons. A re-run of the identical collapse job with `MAPPED=` pointing at
+`GCA_029281585.2_flnc_mm.bam` would make it comparable (the job takes 3 min 38 s).
+
+**Substrate.** Human `A119b.collapsed.gff` from `A119b.t2t.bam` — the SAME mapped FLNC our human runs use
+(`soto.bam` is a `-M -L` subset of it), same CHM13 v2.0, same reads. Family = `npip_hsa` **MCL0**.
+⚠ `copy_assign` **refused the family outright**: MCL0 spans chr16+chr18 and the binary is REGION-scoped, so it
+errors rather than silently truncating. The arm is therefore the **26 chr16 copies**; the single chr18 member
+(11,781,940–11,796,470) is excluded. That is a real O2 scope limit, not a convenience — see the register row.
+⚠ **BAM provenance (the rule that cost 3 retractions).** The full-region run OOM'd at 11.8 GB, so the arm uses
+`hsa16.bam` = `samtools view -M -L` over the 26 copies **padded 100 kb**, merged to 15 blocks / 4.63 Mb.
+Verified before use, because secondaries are the object under test: **primary 56,857 full vs 56,857 subset;
+secondary 394,901 vs 394,901** — nothing under test was lost.
+⛔ **Do NOT quote this run's `genome-wide unique-mapper agreement` (25.0 %).** It compares our call against the
+copy holding the read's PRIMARY record, and (a) the codebase already **retired** `uniq_agree` as "the aligner's
+primary flag in disguise" (`copy_assign_pipeline.rs:2032`), (b) a region-subset BAM drops primaries that landed
+outside the intervals, corrupting it further. Neither 25.0 % nor gorilla's 91.1 % is an accuracy.
+
+### The instrument, and the bias I had to remove from it
+`bench/tool_bakeoff.py` derives a copy call from ANY tool's GTF by one rule (molecule intron chain → matching
+transcripts → copy interval), because scoring on "copy attribution" would give every competitor a zero **by
+construction**. It reproduces our own certificate at **0.996** where we decide — on gorilla AND independently
+here on human, so the proxy is faithful on two substrates.
+⚠⚠ **First form was biased toward us.** `isoseq collapse` runs `--max-fuzzy-junction 5`, so its junctions sit
+up to 5 bp off the read's, while our GTF is an exact intron-chain collapse and matches by construction. At
+fuzz 0 isoseq scored **0.567** and we scored 0.606; at fuzz 5, applied symmetrically, isoseq is **0.602** and we
+are 0.608. **Most of the gap was my scorer, not the tool.** Every number below is fuzz 5.
+
+### Result (26 copies, 15,922 molecules scored in the region)
+| | ours | isoseq collapse |
+|---|---|---|
+| molecules given a single copy | 0.608 | 0.602 |
+| molecules no transcript explains | 0.392 | 0.398 |
+| **transcripts spanning ≥2 copies** | **0** | **57** (1.7 % of in-copy) |
+| copies receiving ≥1 transcript | 26/26 | 26/26 |
+| transcripts overlapping a copy | 684 | 3,405 |
+
+### ⭐⭐⭐ The mechanism, measured end to end
+`isoseq collapse` **discards secondary alignments on the 0x100 flag**. Verified locally, not quoted: in the
+delivered `read_stat`, **4,000,000 of 4,000,000** sampled reads appear exactly once — one locus per read. In
+this family's intervals the discarded pool is **394,901 secondary vs 56,857 primary records (6.9 : 1)**.
+Using isoseq's own `read_stat` to separate *dropped* from *placed elsewhere*, on ONE denominator:
+
+| | molecules | isoseq dropped |
+|---|---|---|
+| scored in region | 15,922 | 3,677 (**23.1 %**) |
+| **we ASSIGN** | 7,134 | 1,162 (**16.3 %**) |
+| **we ABSTAIN** | 8,318 | 2,511 (**30.2 %**) |
+
+⭐ **The molecules we find hard are the ones isoseq silently drops, at nearly twice the rate.** That is the
+secondary-alignment mechanism, quantified, and its direction is not circular: the stratification is by OUR
+state but the drop is isoseq's own recorded behaviour, not our judgement of it.
+
+### Predictions, scored honestly
+| | verdict |
+|---|---|
+| P1 "places fewer in one copy" | ⛔ **NOT supported** at fair fuzz — 0.602 vs 0.608 is a tie |
+| P2 "no abstention state" | ⭐ supported structurally (one locus per read, verified) — it **drops** rather than abstains |
+| P3a transcripts spanning ≥2 copies | ⭐ **supported**, 57 vs 0 |
+| P3b copies receiving a model | ⛔ **NOT supported** — 26/26 both |
+| P4 excision | not run |
+| P5 junction recovery guard | not run for isoseq |
+
+### ⚠⚠ The falsifier, and the denominator trap inside it
+Pre-registered: *"if the derived calls agree with our assigned calls on ≥95 % of the molecules we assign, the
+secondary-alignment framing must be dropped."*
+- **On the pre-registered denominator (all molecules we assign): 4,638/7,134 = 0.650** ⟹ **does not fire.**
+- Conditioned on both tools deciding: 4,638/4,671 = **0.993**.
+
+⚠⚠ **Had I quoted the conditioned figure the falsifier would have fired and I would have retired a true
+framing on a denominator conditioned on the prediction** — the register's named trap (7 rows killed for it).
+Both are reported; the pre-registered one governs.
+
+⟹ **The defensible sentence.** *isoseq collapse is not WRONG when it commits — it agrees with us on 99.3 % of
+the molecules both tools place. It is that it never places 23 % of the molecules at all, and the ones it drops
+are disproportionately the ambiguous ones (30.2 % vs 16.3 %), because it discards secondary alignments before
+any isoform logic runs.* ⚠ "Ours is better" is NOT supported by this table: the two tie on placement rate and
+on copy coverage. The separation is conflation (57 vs 0) and coverage of hard molecules.

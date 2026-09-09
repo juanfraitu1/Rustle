@@ -25,6 +25,11 @@ gtf, bam, copies_p = ap[0], ap[1], ap[2]
 def opt(k, d=None):
     return ap[ap.index(k) + 1] if k in ap else d
 label = opt('--label', 'tool')
+# Junction tolerance. isoseq collapse runs --max-fuzzy-junction 5 by default, so ITS transcript
+# junctions may sit up to 5 bp off the read's, while our GTF is an exact intron-chain collapse and
+# matches by construction. Scoring at fuzz 0 therefore biases `derived_none` in OUR favour. Applied
+# symmetrically to every arm; report both 0 and 5.
+FUZZ = int(opt('--fuzz', '0'))
 own_p = opt('--own')
 out_p = opt('--out')
 
@@ -69,6 +74,7 @@ unspliced = []          # (chrom, start, end, copy)
 n_tx = n_tx_in_copy = 0
 tx_multi = []
 copies_hit = set()
+fuzzy_chains = {}
 for t, v in ex.items():
     v.sort()
     chrom = v[0][2]
@@ -88,7 +94,11 @@ for t, v in ex.items():
     copies_hit.add(ci)
     chain = tuple((a[1], b[0]) for a, b in zip(v, v[1:]))
     if chain:
-        chain_to_copies[(chrom,) + chain].add(ci)
+        # index every junction under a rounded key so a fuzzy lookup is O(1) per read
+        key = (chrom,) + tuple((a // (2 * FUZZ + 1), b // (2 * FUZZ + 1)) for a, b in chain) if FUZZ else (chrom,) + chain
+        chain_to_copies[key].add(ci)
+        if FUZZ:
+            fuzzy_chains.setdefault(key, []).append((chain, ci))
     else:
         unspliced.append((chrom, s, e, ci))
 
@@ -129,7 +139,25 @@ for c, (lo, hi) in regions:
         seen.add(name)
         ich = introns(pos, cig)
         if ich:
-            cps = chain_to_copies.get((c,) + ich, set())
+            if FUZZ:
+                cps = set()
+                # a read matches a transcript when every junction is within FUZZ bp. The bucket key
+                # can straddle a boundary, so probe the neighbouring bucket on each coordinate too.
+                base = 2 * FUZZ + 1
+                seenk = set()
+                for d1 in (0, -1, 1):
+                    for d2 in (0, -1, 1):
+                        k = (c,) + tuple(((a // base) + d1, (b // base) + d2) for a, b in ich)
+                        if k in seenk:
+                            continue
+                        seenk.add(k)
+                        for cand, ci2 in fuzzy_chains.get(k, ()):
+                            if len(cand) == len(ich) and all(
+                                    abs(x[0] - y[0]) <= FUZZ and abs(x[1] - y[1]) <= FUZZ
+                                    for x, y in zip(cand, ich)):
+                                cps.add(ci2)
+            else:
+                cps = chain_to_copies.get((c,) + ich, set())
         else:
             # empty-chain trap (register 757): an unspliced read matches every unspliced
             # transcript's empty chain, so it must be resolved by SPAN CONTAINMENT instead.
