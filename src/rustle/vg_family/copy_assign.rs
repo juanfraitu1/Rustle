@@ -229,6 +229,19 @@ pub struct AssignParams {
     /// 442 assigned, MAPQ<60 31 → 147) but 1 of 20 audited anchors wrong and MAPQ-60 agreement 99.9 → 98.6 %;
     /// the default (`false`) counts every edit (NM) and made no wrong anchor call. Opt-in.
     pub origin_subst_only: bool,
+    /// ⭐ §6hc (user 2026-09-09, "assign the ones that have PSVs"): in the GENOMIC origin certificate
+    /// (`read_star_genomic`, the default), drop indels (I + D) from the edit count — test
+    /// `substitutions + unaligned` against the Binomial null instead of `X + I + D + unaligned`. Unlike
+    /// `origin_subst_only` (which ALSO drops `unaligned`, testing X alone over aligned bases only), this
+    /// keeps the "the locus must explain the whole read" requirement and removes only the indel term.
+    /// Traced from the `best_by_psv` fix (§6ha): 20 of 40 human MCL0 molecules newly `origin_rejected`
+    /// share `best_copy=2` with X = 2–5 substitutions (inside the 0.3 % error tolerance for a ~2 kb read)
+    /// but I = 57–66 — a near-constant ~60 bp insertion recurring across independent reads at one locus,
+    /// the signature of a real reference-vs-haplotype indel (or an alignment representation artifact), not
+    /// evidence the read is from elsewhere. Measured on all 40: 32 flip REJECT→pass under this rule; the
+    /// other 8 (dominated by 14–327 UNALIGNED bases, not indels) correctly stay rejected. Default `false`
+    /// (byte-identical); `origin_subst_only`, if also set, takes precedence.
+    pub origin_drop_indels: bool,
     /// ⭐ §6fc: use the read's splice junctions as pairwise evidence in read-star (a junction present in one
     /// candidate and absent in the other, where both cover the position). Adds assignments (paired 35: 32.1 →
     /// 36.5 %) at a precision cost (MAPQ-60 agreement 99.90 → 99.58 %); default `false`.
@@ -296,6 +309,7 @@ impl Default for AssignParams {
             junction_conflict_abstain: false,
             molecule_pool: false,
             origin_subst_only: false,
+            origin_drop_indels: false,
             read_star_junctions: false,
             read_star_genomic: true,
             read_star_catalog_locus: true,

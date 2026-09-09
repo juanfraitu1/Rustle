@@ -285,6 +285,15 @@ struct Args {
     /// default counts every edit and made no wrong anchor call. Opt-in.
     #[arg(long, default_value_t = false)]
     origin_substitutions_only: bool,
+    /// ⭐ §6hc (traced from the `best_by_psv` fix, §6ha): in the GENOMIC origin certificate, drop indels
+    /// from the edit count — test substitutions + unaligned bases only, keeping the "must explain the
+    /// whole read" requirement `--origin-substitutions-only` drops. 20 of 40 human MCL0 molecules newly
+    /// origin-rejected by the `best_by_psv` fix share one best copy with X=2–5 substitutions (inside error
+    /// tolerance) but I=57–66 — a recurring ~60 bp indel, not evidence of the wrong copy; measured 32/40
+    /// flip REJECT→pass, the other 8 (dominated by 14–327 unaligned bases) correctly stay rejected. Default
+    /// off (byte-identical); takes a back seat to `--origin-substitutions-only` if both are set.
+    #[arg(long, default_value_t = false)]
+    origin_drop_indels: bool,
     /// ⭐ §6fc: splice junctions as pairwise evidence in read-star (opt-in: +4 points of assignment at −0.3 points
     /// of MAPQ-60 agreement on the paired 35 families).
     #[arg(long, default_value_t = false)]
@@ -1545,6 +1554,7 @@ fn main() -> Result<()> {
         junction_conflict_abstain: args.junction_conflict_abstain,
         molecule_pool: args.molecule_observations && !args.no_molecule_observations,
         origin_subst_only: args.origin_substitutions_only,
+        origin_drop_indels: args.origin_drop_indels,
         read_star_junctions: args.read_star_junctions,
         read_star_genomic: args.read_star_genomic && !args.read_star_unit,
         read_star_catalog_locus: !args.read_star_pad_locus,
@@ -3256,6 +3266,7 @@ fn main() -> Result<()> {
         row("origin_rejected", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected).count()))?;
         row("orphans", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected && r.n_candidates == 0).count()))?;
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
+        row("origin_drop_indels", format!("{}", args.origin_drop_indels))?;
         row("read_star_junctions", format!("{}", args.read_star_junctions))?;
         row("read_star_genomic", format!("{}", args.read_star_genomic && !args.read_star_unit))?;
         row("read_star_catalog_locus", format!("{}", !args.read_star_pad_locus))?;

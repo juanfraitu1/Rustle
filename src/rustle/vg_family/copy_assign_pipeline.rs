@@ -2599,7 +2599,14 @@ fn assign_family_detailed_once(
                     // the block (every edit) or, opt-in, substitutions only
                     let (nm, blk) = if p.read_star_genomic {
                         let ex = (n_explained_unaligned as u64).min(unaligned);
-                        (n_x + n_i + n_d + unaligned - ex, n_aligned + unaligned - ex)
+                        // §6hc: `origin_drop_indels` removes I + D from the edit count but keeps `unaligned`
+                        // in BOTH nm and blk — unlike `origin_subst_only`, which drops `unaligned` entirely
+                        // and so no longer asks "does this locus explain the whole read". A recurring indel
+                        // of fixed size across many independent reads at one candidate is a reference-vs-
+                        // haplotype difference (or an alignment-representation artifact), not evidence the
+                        // read is from elsewhere; a large unaligned tail still is, and still rejects.
+                        let indel = if p.origin_drop_indels { 0 } else { n_i + n_d };
+                        (n_x + indel + unaligned - ex, n_aligned + unaligned - ex)
                     } else if p.origin_subst_only {
                         (n_x, n_aligned)
                     } else {
@@ -2612,7 +2619,11 @@ fn assign_family_detailed_once(
                     let z = (nm as f64 - mean) / sd; // normal approximation of the binomial tail
                     let p_tail = 0.5 * (1.0 - erf_approx(z / std::f64::consts::SQRT_2));
                     if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() {
-                        eprintln!("[star]   certificate read {ri} {} best={} edits={nm} n={blk} mean={mean:.1} z={z:.1} p={p_tail:.2e} -> {}", names[ri], a.best_copy, if nm as f64 > mean && p_tail < p.alpha { "REJECT" } else { "pass" });
+                        // §6hc: break the edit count out by kind (X/I/D/unaligned) so an origin-certificate
+                        // rejection can be diagnosed as substitution-driven (real divergence at the columns
+                        // that matter) vs indel/unaligned-driven (structure, or a soft-clip/gap artifact the
+                        // PSV-column comparison never saw) without re-instrumenting from scratch each time.
+                        eprintln!("[star]   certificate read {ri} {} best={} X={n_x} I={n_i} D={n_d} unaligned={unaligned} explained_unaligned={n_explained_unaligned} aligned={n_aligned} edits={nm} n={blk} mean={mean:.1} z={z:.1} p={p_tail:.2e} -> {}", names[ri], a.best_copy, if nm as f64 > mean && p_tail < p.alpha { "REJECT" } else { "pass" });
                     }
                     if nm as f64 > mean && p_tail < p.alpha {
                         a.status = AssignStatus::Ambiguous;
