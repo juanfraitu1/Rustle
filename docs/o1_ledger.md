@@ -15002,3 +15002,47 @@ neighbour, not NPIP) is pulled in; (d) the gap-chosen cut (0.9831) is NOT the A/
 (0.9744/0.9759) — it finds a finer boundary that happens to induce a similar grouping, so the agreement is at
 the level of the PARTITION, not the threshold. ⚠ Nothing here is proposed as a default and the held-back family
 has not been scored.
+
+### §6gw addendum 2 — GENOME-WIDE CALIBRATION: the detector has power, NPIP is a WEAK case for it
+
+**Better nulls first.** `bench/identity_gap.py` now computes three nulls and lets the **worst govern**, so no
+verdict rests on a distribution choice: `gauss` (the original), `beta` (moment-matched, the natural family on
+[0,1]), `smooth` (smoothed bootstrap at Silverman's bandwidth, non-parametric).
+⛔⛔ **This COST the NPIP result its significance.**
+| family | gauss | beta | smooth | **worst governs** |
+|---|---|---|---|---|
+| TBC1D3 (human) | 0.66 | 0.73 | 0.79 | **0.79 — no split** |
+| NPIP (human) | **0.021** | 0.072 | 0.063 | **0.072 — NOT significant** |
+**The Gaussian null was too permissive**, exactly as the first write-up warned. Register 779's "p = 0.021" is
+superseded by **p = 0.072**.
+
+**Genome-wide calibration** (`bench/gw_subfamily_scan.py`, GORILLA `gw_units_v3` + `allgenes_gw.asm20.paf`;
+9,565 members / 2,296 families → 122,913 in-family alignments → **244 families with ≥10 pairs**):
+| p_worst | families | expected under a true null |
+|---|---|---|
+| < 0.01 | 18 (**7.4 %**) | 1 % |
+| < 0.05 | 39 (**16.0 %**) | 5 % |
+| < 0.10 | 53 (21.7 %) | 10 % |
+⭐ **~3× enrichment at both tails ⟹ the statistic detects real structure**, and 18 gorilla families carry a
+subfamily boundary at p < 0.01 with gaps of **0.022–0.089** (MCL10, MCL46, MCL79, MCL92, MCL93, MCL104 …).
+⚠ Median p is **0.337**, not 0.5 — either many families genuinely have substructure (plausible) or the null is
+imperfectly calibrated. Both readings must stay open until a uniformity check on a negative control.
+
+### ⛔⛔ AND THE HONEST PLACEMENT OF NPIP
+| | pairs | gap | p_worst |
+|---|---|---|---|
+| **human** NPIP | 378 | 0.0014 | **0.072** |
+| **gorilla** NPIP (`gw` MCL12, 33 members) | 342 | 0.0010 | **0.9355 — nothing at all** |
+| the 18 strongest gorilla families | 36–1,128 | 0.022–0.089 | 0.0000 |
+⟹ **NPIP's gap is an order of magnitude shallower than what this statistic comfortably detects.** The
+published A/B partition IS reproduced by the components (§6gw), at the hand-picked 0.975 and at the
+gap-chosen 0.9831 — **but the gap test does not certify it**, and in gorilla the same family shows no
+structure whatsoever. ⚠ Human and gorilla are NOT pooled anywhere above; gorilla NPIP is reported because it
+is the same family in the calibration's own species, not as evidence about the human result.
+⚠ The gorilla result is *consistent* with Dishuck's human-specific B expansion (~2.6 mya) but this analysis
+does not test that and must not be quoted as doing so.
+
+⟹ **Where this leaves the method.** The unbiased detector is real and finds real subfamilies; the NPIP case
+that motivated it is near the edge of its power. The next step is a **more powerful statistic** — the largest
+gap uses one number out of 378 — e.g. Hartigan's dip test or a 1- vs 2-component model comparison on the
+identity distribution, scored on the 18 confirmed-positive gorilla families as a sensitivity set.

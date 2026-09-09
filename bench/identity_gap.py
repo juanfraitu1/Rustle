@@ -32,19 +32,43 @@ def largest_gap(xs):
 obs, cut = largest_gap(v)
 mu, sd = st.mean(v), st.pstdev(v)
 
-# Null: same n, same mean/sd, drawn from a single smooth mode (no boundary).
-random.seed(0)
-null = []
-for _ in range(10000):
-    s = sorted(min(1.0, max(0.0, random.gauss(mu, sd))) for _ in range(n))
-    null.append(largest_gap(s)[0])
-null.sort()
-p = sum(1 for x in null if x >= obs) / len(null)
+# ---------------------------------------------------------------- nulls
+# Three nulls, because the verdict must not rest on a distribution choice.
+#  gauss  — the first form. ⚠ POOR for identities pressed against 1.0 (mass beyond the boundary).
+#  beta   — moment-matched to the data; the natural family on [0,1].
+#  smooth — smoothed bootstrap: resample the observed values and add Gaussian noise at Silverman's
+#           bandwidth. Non-parametric, keeps the observed shape, and is the standard way to ask
+#           "is this more clustered than one smooth mode?" without naming a family.
+def nulls(n, v, mu, sd, reps=10000, seed=0):
+    rnd = random.Random(seed)
+    out = {}
+    out['gauss'] = [largest_gap(sorted(min(1.0, max(0.0, rnd.gauss(mu, sd))) for _ in range(n)))[0]
+                    for _ in range(reps)]
+    res = {}
+    if 0 < sd and 0 < mu < 1:
+        t = mu * (1 - mu) / (sd * sd) - 1
+        if t > 0:
+            al, be = mu * t, (1 - mu) * t
+            res['beta'] = [largest_gap(sorted(rnd.betavariate(al, be) for _ in range(n)))[0]
+                           for _ in range(reps)]
+    out.update(res)
+    h = 0.9 * min(sd, (st.quantiles(v, n=4)[2] - st.quantiles(v, n=4)[0]) / 1.34) * n ** -0.2 if sd > 0 else 0.0
+    if h > 0:
+        out['smooth'] = [largest_gap(sorted(min(1.0, max(0.0, rnd.choice(v) + rnd.gauss(0, h)))
+                                            for _ in range(n)))[0] for _ in range(reps)]
+    return out
+
+NUL = nulls(n, v, mu, sd)
+pv = {k: sum(1 for x in d if x >= obs) / len(d) for k, d in NUL.items()}
+p = max(pv.values())          # the CONSERVATIVE verdict: the least favourable null governs
 
 print(f'pairs {n}   identity  min {v[0]:.4f}  median {st.median(v):.4f}  max {v[-1]:.4f}')
 print(f'largest interior gap  {obs:.4f}  at identity {cut:.4f}')
-print(f'null (unimodal, same mean/sd)  median gap {st.median(null):.4f}  95th {null[int(.95*len(null))]:.4f}')
-print(f'p = {p:.4f}   -> {"SPLIT: a boundary the null does not produce" if p < 0.05 else "NO SPLIT: gap is what a single mode gives"}')
+for k in sorted(NUL):
+    d = sorted(NUL[k])
+    print(f'  null {k:7s} median {st.median(d):.4f}  95th {d[int(.95*len(d))]:.4f}  p = {pv[k]:.4f}')
+print(f'p = {p:.4f} (worst null governs)   -> '
+      f'{"SPLIT: a boundary no smooth mode produces" if p < 0.05 else "NO SPLIT: gap is what a single mode gives"}')
 
 if p < 0.05:
     # The partition is the CONNECTED COMPONENTS of the subgraph above the gap — not a per-member
