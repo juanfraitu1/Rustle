@@ -15254,3 +15254,26 @@ answers anything; the copy-existence question it was built for (§6gv's relabel-
 it as retired under the gate, or move it to O1 — the user's call.
 ⚠ Region-local: a molecule tied only across contigs is dropped (conservative). ⚠ `--as-tie-ratio` stays 1.0;
 under the gate only the gated width is decomposed (the other width would re-count the same rows).
+
+### Human MCL0 under the default (`bakeoff/human/ours_gate.*`) — P2 scored, and the cost side
+`AS-TIED GATE (ratio 1.00): 10,620 of 44,134 molecules … entered the certificate (65,134 of 415,854 records);
+33,514 skipped`. Rows **23317 → 7638**; assigned **9715 → 4958** (49% drop —
+**P2 predicted 30–70 %, got 49%: ⛔ refuted as written**, because the 4,739 sole-candidate rows are AS-tied
+and survive the gate as `assigned` + `sole_candidate` under the 09-06 L3 label — 4739 of the
+4958 assigned rows are sole candidates). The contested set is again **identical** to the post-hoc
+decomposition: 759 contested, 69 assigned / 374 tied / 316 ambiguous.
+
+⭐⭐ **The cost side is the practical result.** Same family, same BAM, same machine:
+| | before the gate | **under the gate** |
+|---|---|---|
+| wall time | 590.7 s | **91.6 s** (6.5× faster) |
+| peak RSS | 14.9 GB | **3.1 GB** (4.8× less) |
+| records into read-star | 415,854 | **65,134** |
+The full-region human run that OOM'd at the 12 GB cap on 09-08 (§6gt) would now fit with room to spare; the
+`-M -L` subset BAM and its provenance caveat may no longer be necessary.
+
+⚠ **The sole-candidate boundary is now the largest open decision in O2's output**: 4739 of the
+4958 human `assigned` rows are tied reads with ONE candidate locus in the family. They pass the gate
+(they are tied multimappers) but O2 makes no choice for them. Under the 09-06 L3 ruling they are `assigned`; under
+the 09-09 definition ("infer which copy") there is nothing to infer. The two rulings conflict and the number is
+not small. ⚠ Human and gorilla never pooled.
