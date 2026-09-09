@@ -81,3 +81,44 @@ silently on the strength of one family's trace.** Recommended next step before a
 `--origin-drop-indels` over the held-back family and a handful of others, and specifically confirm the
 two dominant loci (copy 2, copy 22) really do carry the indicated indel by inspecting their catalog reference
 sequence against a few of the newly-assigned reads directly (an alignment-level sanity check, not yet done).
+
+---
+## The requested next step (2026-09-09): direct sequence confirmation + sweep to other families
+
+### ⭐⭐⭐ Direct sequence confirmation — the indels are real, not alignment noise
+Fetched the exact genomic locus each origin certificate tested (`locus_start`–`locus_end`, human CHM13),
+aligned 2 example reads per dominant locus against it directly (`minimap2 -ax splice -uf -k14 --eqx`), read
+the raw CIGAR by eye:
+- **Copy 2** (chr16:14,938,074–14,953,180): two independent reads both show `...358=57I...` — a 57 bp
+  insertion at the **identical alignment position**, everything else clean matches/mismatches.
+- **Copy 22** (chr16:75,773,416–75,821,281): two independent reads show `...8=492I196N5=1X12=1X11=1X3=5D2=
+  2D4=8D141=1X25=...` / `...14=1X8=476I176N...` — a ~480–500 bp insertion at the identical position,
+  followed by an **identical downstream CIGAR** (same intron, same run of matches/mismatches) between the two
+  independent reads.
+- **Specificity check**: the copy-2 reads, aligned instead against copy 22's locus, show scattered mismatches
+  and large soft-clips — they do not fit there. Confirmed both ways.
+⟹ Two independent, recurring, position-identical indels of different characteristic sizes (57 bp, ~490 bp),
+present across multiple independent molecules with clean matching sequence immediately before and after —
+this is unambiguous evidence of real individual-specific structural variants relative to the CHM13 reference
+used to build the catalog (very plausibly VNTR/tandem-repeat copy-number differences, common at these
+NPIP/LCR16 loci), not evidence the reads come from elsewhere. **Not alignment noise, not a coincidence.**
+
+### The sweep to other families — one uninformative, one small-and-consistent
+| family | copies | AS-tied | contested (base) | contested (+odi) | reading |
+|---|---|---|---|---|---|
+| MCL1_073242 (produced the fix) | 80 | 716 | 725: 14/409/302 | 1,143: 230/531/382 | the large effect |
+| **MCL2_073244 (held-back, trap 15)** | 64 | **1** | 0/0/0 | 0/0/0 | ⚠ **genuinely uninformative** — too sparse an AS-tied population to test either way; NOT a validation, NOT a refutation |
+| MCL7_073242 (fresh, unexamined before today) | 32 | 99 | 9: 0/9/0 | 11: 0/10/1 | small, same-direction, non-alarming: +2 contested, `assigned` stays 0, no new false calls |
+
+⚠⚠ **The held-back family did not validate or refute this**, and that must be said plainly rather than
+glossed over — trap 15 exists to catch overfitting, and it cannot do that job on a substrate with no
+population to overfit. MCL7 is a genuine (if small) second data point and behaved consistently: it gained
+contested molecules, gained none falsely to `assigned`, and produced no alarming shift.
+
+## Revised recommendation
+The mechanism is now confirmed at the sequence level, not just the statistical level — the two dominant loci
+in the human family really do carry the indicated indels. The gorilla sweep adds one small consistent
+corroboration (MCL7) and one uninformative null (MCL2). **Still not proposing a default flip**: no OUT-of-family
+population beyond MCL7's small one has been checked, and MCL7's own sequence-level confirmation (does its own
+newly-resolved molecule really carry a clean recurring indel, the same direct check done above for human) has
+not been done. That remains open before any default decision.
