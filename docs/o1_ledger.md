@@ -14506,3 +14506,40 @@ than repair them; they are the subset where an unannotated splice site is being 
 the annotation inside the read layer and tilts toward annotated copies. `flair correct` also supports
 short-read junctions instead, which would be legitimate evidence — **we have no short reads for this
 substrate**, so that route is unavailable rather than rejected.
+
+## §6gp — WHAT ELSE TO TAKE FROM flair: PRODUCTIVITY, PER COPY (user, 2026-09-08)
+
+**User: "what would be another aspect that flair does that we could do?"** flair's pipeline is
+align → correct → collapse → **predictProductivity** → quantify → diffSplice. `correct` is refused (§6go,
+register 761) and `collapse` is a different design point we argued for keeping (§6gj). **`predictProductivity`
+is the one worth taking, and it becomes something flair cannot do once it is done PER COPY.**
+
+Measured on NPIP's 121 copy-assigned isoforms (longest ORF over the strand-oriented exon-sum, ≥ 150 aa called
+productive):
+
+| copy | isoforms | productive | median ORF (aa) |
+|---|---|---|---|
+| **27** | 38 | **38/38** | 700 |
+| **24** | 38 | 32/38 | 838 |
+| 2 | 11 | 7/11 | 319 |
+| 4 | 3 | 2/3 | 863 |
+| 13, 14, 16 | 3 each | 1/3 each | 55–113 |
+| **12** | 3 | **0/3** | **103** |
+| **0** | 2 | **0/2** | 146 |
+| **25** | 1 | **0/1** | **53** |
+| 12 further copies | 1–2 each | mostly 1/1 | 499–1,858 |
+Overall **95/121** productive.
+
+⭐⭐ **Copies of one family differ in whether their transcripts can code.** Copy 27 emits 38 isoforms and every
+one carries an ORF of ~700 aa; copy 12 emits 3 and none reaches 150 aa. Both are members of the same NPIP
+family. **That is a per-copy functional call driven by RNA, and neither flair nor StringTie can make it — not
+because they lack the ORF step, but because they cannot attribute an isoform to a copy in the first place.**
+It converts the assignment from a bookkeeping result into a biological one: *which copies of this family are
+still genes?*
+
+⚠ **Caveats before this is quoted.** The 150-aa cut is arbitrary and should be relative to the family's own
+best (the `--coding-core` lesson, §6gb: an absolute threshold cost 26 % of protein-coding units); the ORF is
+read off the genomic exon-sum with no CDS or UTR knowledge; only 121 of 886 isoforms carry an assigned copy,
+so 22 copies are covered; and copies with 1–3 isoforms have denominators too small to call.
+⟹ Next: emit `orf_aa` and `productive` per transcript in the `--gtf`, and a per-copy productivity summary
+beside the quant table. Not built.
