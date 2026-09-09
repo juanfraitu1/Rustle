@@ -14477,3 +14477,32 @@ universal default, because "give the contested bases to the unit whose annotated
 a genuine member of the very sequence that qualified it. **It stays an opt-in flag.** ⚠ The generalisation
 worth keeping: three substrates agreed and the fourth, the only one not used to design the rule, disagreed —
 a rule validated only where it was developed is not validated. Suite **867 passed / 0 failed / 11 ignored**.
+
+## §6go — WOULD `flair correct` HAVE AVOIDED THE READ-THROUGHS? No — there is nothing to correct (user, 2026-09-08)
+
+`flair correct` moves a read's junctions onto nearby annotated splice sites and drops what it cannot support.
+Tested against the 14 surviving junctions by asking how far each end sits from an annotated site:
+
+| | of 14 |
+|---|---|
+| an EXACT annotated donor–acceptor PAIR | 1 |
+| **both ends exactly ON annotated sites (distance 0), but the PAIR is not annotated** | **9** |
+| one end far from any annotated site (706 bp – 7.6 kb) | 5 |
+
+⭐⭐ **Nine of fourteen are novel COMBINATIONS of real splice sites** — the donor is a bona fide annotated
+donor, the acceptor a bona fide annotated acceptor, and only their pairing is new. **Correction has nothing to
+fix there**: the coordinates are already exactly right, which is precisely the case `flair correct` leaves
+alone. It would not remove them, and that its own criterion passes them is a point in their favour.
+
+⛔ **And it would not have helped with the ones that mattered either.** 32 of the original 42 were **already
+annotated introns** (§6ge) — correct coordinates, wrong attribution. The defect was which unit OWNED the
+junction, and `flair correct` operates on coordinates, not ownership. The fix was the cross-family
+exon-overlap and own-donor rules, and no junction-correction step could have substituted for them.
+
+⚠ **The 5 with a distant end are the ones to scrutinise** (706 bp, 1.7 kb, 3.1 kb, 7.6 kb from the nearest
+annotated donor). They are beyond any correction window, so `flair correct` would leave or discard them rather
+than repair them; they are the subset where an unannotated splice site is being claimed.
+⚠ Using an annotation to correct junctions carries the same objection as `--junc-bed` (register 729): it puts
+the annotation inside the read layer and tilts toward annotated copies. `flair correct` also supports
+short-read junctions instead, which would be legitimate evidence — **we have no short reads for this
+substrate**, so that route is unavailable rather than rejected.
