@@ -14756,3 +14756,56 @@ the molecules both tools place. It is that it never places 23 % of the molecules
 are disproportionately the ambiguous ones (30.2 % vs 16.3 %), because it discards secondary alignments before
 any isoform logic runs.* ⚠ "Ours is better" is NOT supported by this table: the two tie on placement rate and
 on copy coverage. The separation is conflation (57 vs 0) and coverage of hard molecules.
+
+## §6gu — RUNTIME OF THE PAIRWISE DNA ALIGNMENT, AND JACCARD AS A REPLACEMENT (advisor Q3, 2026-09-08)
+
+**Q: "You perform pairwise alignments of DNA sequences. Can you report runtimes of this step? How does it
+compare to just using Jaccard indexes?"**
+
+### The runtimes (from the production runs' own logs, not re-timed for the answer)
+`minimap2 -x asm20 -c -X -N 50 -p 0.1 -t 4`, all-vs-all of gene spans:
+| substrate | seqs | total bp | wall | CPU | peak RSS |
+|---|---|---|---|---|---|
+| human NPIP panel chr16+18 (`npip_hsa/spans.fa`) | 3,128 | 97.3 Mb | **83.7 s** | 323.5 s | 2.79 GB |
+| chrY YAG panel (`yag/spans.fa`) | 648 | 7.8 Mb | **10.1 s** | 41.8 s | 2.04 GB |
+| `mcl_families` clustering, GENOME-WIDE (40,703 genes → 16,915 nodes / 108,737 edges) | — | — | **18.3 s** | 18.2 s | 1.94 GB |
+⚠ **The genome-wide ALIGNMENT itself has no timing log** (`allgenes_gw.asm20.paf`, 1.03 GB, built 09-03).
+That is the one number I cannot give him and should say so; it is also the only regime where the cost argument
+could bite, since a panel aligns in 84 s.
+
+### Jaccard on the SAME input (`bench/jaccard_vs_align.py`, k=21, bottom-1000 MinHash)
+| stage | time |
+|---|---|
+| sketching (single-threaded numpy) | 26.9 s |
+| all 4,890,628 pairs (sparse matrix product) | 5.6 s |
+| **Jaccard total** | **32.5 s** |
+Fair comparison is CPU-time, since minimap2 had 4 threads and this has 1: **32.5 s vs 323.5 s ≈ 10× cheaper**.
+⚠ And this is a *Python* MinHash — `mash` in C would widen the gap further. **The speed argument is his.**
+
+### ⛔⛔ MY PREDICTION WAS WRONG — Jaccard reproduces O1's edge set almost exactly
+I predicted Jaccard would miss O1's edges because segmental duplications are local: a 20 kb duplication inside
+a 50 kb span should give a near-zero global Jaccard. **Measured, that is false here.** Of the 1,258 O1 edges
+(identity ≥0.70, cov_longer ≥0.30, ≥300 bp), only **3 (0.2 %)** have Jaccard < 0.01.
+| Jaccard threshold | recall of O1 edges | extra pairs admitted |
+|---|---|---|
+| 0.001 | 99.9 % | 1,212,390 |
+| 0.01 | 99.8 % | 59,448 |
+| **0.05** | **94.1 %** | **647** |
+| 0.10 | 90.5 % | 271 |
+⭐ **Why my reasoning failed: O1's own edge rule already requires `cov_longer ≥ 0.30`.** A pair that shares only
+a small fraction is *excluded by O1 too*, so the regime where Jaccard is blind is a regime O1 never uses. The
+two criteria agree because they are both, in effect, global-coverage criteria.
+
+### ⭐ What survives, and it is NOT the edge step
+Jaccard can propose the edges. **It cannot do step 4 — the core.** The core rule needs *which positions* of a
+member are linked by SD pairs to ≥ half the other members (§6gt figure): per-base coordinates, per partner.
+A Jaccard index is one scalar per pair; there is no formulation of the core rule over scalars. Cores are what
+turn a 49,446 bp annotation record into a 16,086 bp duplicated unit, and what separates a family from a
+duplication block (NPIP members share SD block SDB0 with 4 other clusters).
+
+⟹ **The honest answer.** *He is right that Jaccard is cheaper and right that it would do the edge step —
+measured, 94.1 % of edges at threshold 0.05 for ~10× less CPU. It is a legitimate prefilter and it is the right
+choice if the genome-wide all-vs-all ever becomes the bottleneck. But the alignment is not run for the edges
+alone: the core rule consumes its coordinates, so replacing the edge step with Jaccard means running the
+alignment afterwards anyway on the surviving pairs. At 84 s for a panel, the prefilter currently saves nothing
+worth having — which is an argument about where the cost is, not a defence of doing more work than necessary.*
