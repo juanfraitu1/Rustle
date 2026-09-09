@@ -14605,3 +14605,70 @@ which copy an isoform came from — is undefined for every existing assembler.* 
 it honest: StringTie recovers **more** read-supported junctions than we do (58.6 % vs 42.1 %, §6gj), precisely
 because it asserts combinations no read carries. Exhaustive-and-conservative is the right trade for a per-copy
 assignment; it is not a claim of general superiority.
+
+## §6gs — What flair does with secondary alignments (2026-09-08, source read, not run)
+
+**Source.** `github.com/BrooksLabUCSC/flair` cloned shallow to `/mnt/linuxdisk/home/juanfraitu/flair`,
+`573414c`, `pyproject.toml` `version = "3.0.1+master"`. ⚠ Shallow clone ⟹ `git log -S` returns only the tip
+merge commit; **no blame claim below**. Read, not executed — the one empirical claim (F6) was tested against
+the installed `minimap2` on a synthetic pair, not against flair.
+
+flair treats secondary alignments **three different ways in three stages**, and no stage abstains.
+
+### F1 — the genomic step deletes them outright
+`flair_align.py:150` — `minimap2 -ax splice --secondary=no -s <minfragmentsize> -G <maxintronlen> -t <n>`.
+**One alignment per read reaches the BED.** Every downstream stage (`flair correct`, `collapse` first pass)
+reads that BED, so **the copy choice is made irrevocably inside minimap2** before any flair code sees it.
+`--quality` defaults to **0** (`flair_align.py:38`), so a MAPQ-0 read that minimap2 placed arbitrarily among
+identical copies is kept and is indistinguishable from a MAPQ-60 unique placement.
+
+### F2 — the transcriptome step keeps at most four
+`flair_quantify.py:95`, `flair_collapse.py:235` and `:326` — `minimap2 --MD -a -N 4`. **`-N 4` is below
+minimap2's own default of 5.** For an *n*-copy family only ~5 candidates are ever scored; on NPIP's 39-copy
+family ≥34 copies never enter the candidate set. (Our sims need `-N 50`; a family larger than 5 cannot be
+adjudicated at `-N 4` at all.)
+
+### F3 — the tie-break is length-then-alphabetical
+`count_sam_transcripts.py:getbesttranscript` builds `[-AS, -matched_bases, clipping, tlen, tname]`, sorts, and
+by default returns `passingtranscripts[0][-1]`. **Ties are decided by the last two keys**: the shorter
+transcript wins, and if lengths tie, the alphabetically first transcript name wins. Deterministic, arbitrary,
+and silent — there is no tied/ambiguous state and no abstention anywhere in flair.
+
+### F4 — `--allow_paralogs` double-counts, it does not fractionate
+`count_sam_transcripts.py:56` "allow reads to be assigned to multiple paralogs with equivalent alignment".
+When set, every transcript matching the best `[AS, matched, clipping]` triple receives the read: `for assignedt
+in assignedts: transcripttoreads[assignedt].append(lastread)`. **k tied copies each get a full +1**, so a read
+contributes k to the family total. ⚠ This is *worse* than the 1/k we refuse — 1/k at least conserves mass.
+Available in `flair collapse` and `flair fusion` only, **off by default**; `flair quantify` never passes it
+(`flair_quantify.py:97-110`), so the quantify path is always single-arbitrary-best.
+
+### F5 — the emitted BAM erases the ambiguity
+`filter_transcriptome_align.py:76-79`: for each winning alignment `alignment.mapping_quality = 60`, and if it
+was secondary, `alignment.flag = 0` (or 16). **A MAPQ-0 multimapper leaves flair as a MAPQ-60 primary.** Any
+downstream MAPQ- or flag-based analysis of flair's output BAM is measuring flair's overwrite, not the aligner.
+⚠ Anyone comparing our `primary_local` denominator against flair's BAM would be comparing against a constant.
+
+### F6 — a real bug: `--minfragmentsize` is inert in `flair align`
+`flair_align.py:158` appends `mm2_cmd += ['-secondary=no']` — **one dash** — *after* `-s <minfragmentsize>` was
+already set on line 150 (which also already passes the correct `--secondary=no`). getopt reads the single-dash
+form as `-s econdary=no`, re-parsing the min-DP-score as 0. **Tested on the installed minimap2 2.31**, 3 kb
+random reference, one 120 bp exact-match read:
+
+| command | result |
+|---|---|
+| `-ax splice -s 1000` | `flag=4` (suppressed, as intended) |
+| `-ax splice -s 1000 -secondary=no` | `flag=0 cigar=120M` (**restored**) |
+| `-ax splice -s 1` | `flag=0 cigar=120M` |
+
+minimap2 accepts the malformed flag without warning. So flair's documented `--minfragmentsize` (default 80,
+"more important when doing downstream fusion detection") **has no effect**, and the effective floor is 0.
+⚠ Not our bug to fix and not load-bearing for us; recorded because it is the kind of silent-arg defect the
+framing audit tells us to look for in our own command construction, and because §6gj's StringTie comparison
+should not be extended to flair without noting it.
+
+### What this settles for the thesis framing
+The O2 contrast is now **specific and citable**. flair's genomic pass cannot see copy ambiguity (F1), its
+transcriptome pass cannot see families larger than ~5 (F2), its tie-break is alphabetical (F3), its only
+paralog-aware mode inflates counts by k (F4), and its output BAM reports certainty it did not have (F5).
+⚠⚠ **This is a source reading, not a benchmark.** It says what flair *would* do, not what it *does* on the
+gorilla substrate — no flair run has been made. Do not quote it as a measured comparison.
