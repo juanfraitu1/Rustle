@@ -616,31 +616,7 @@ fn canonical_intron(genome: &rustle::genome::GenomeIndex, contig: &str, s: u64, 
     }
 }
 
-/// Longest ORF (in bases, ATG..stop inclusive) over the three forward frames of an already-oriented
-/// spliced sequence. ⚠ Deliberately simple and annotation-free: the `--coding-core` rule below does not use
-/// an absolute threshold, only this length RELATIVE to the family's best, so what matters is that a
-/// frameshifted or stop-interrupted copy scores much lower than an intact one, not the exact value.
-fn longest_orf(seq: &[u8]) -> usize {
-    let mut best = 0usize;
-    for frame in 0..3 {
-        let mut start: Option<usize> = None;
-        let mut i = frame;
-        while i + 3 <= seq.len() {
-            let c = &seq[i..i + 3];
-            let up = [c[0].to_ascii_uppercase(), c[1].to_ascii_uppercase(), c[2].to_ascii_uppercase()];
-            if start.is_none() && up == *b"ATG" {
-                start = Some(i);
-            } else if let Some(st) = start {
-                if up == *b"TAA" || up == *b"TAG" || up == *b"TGA" {
-                    best = best.max(i + 3 - st);
-                    start = None;
-                }
-            }
-            i += 3;
-        }
-    }
-    best
-}
+use rustle::vg_family::denovo_assemble::longest_orf;
 
 fn lengths_from_blocks(b: &BTreeMap<GeneKey, Vec<(u64, u64)>>) -> BTreeMap<GeneKey, u64> {
     b.iter()

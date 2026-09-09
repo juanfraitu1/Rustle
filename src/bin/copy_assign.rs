@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
 use rustle::genome::GenomeIndex;
+use rustle::vg_family::denovo_assemble::longest_orf;
 use rustle::vg_family::absent_copy::DnaNeedsRecord;
 use rustle::vg_family::linearize::LinearizeCertificate;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
@@ -38,6 +39,15 @@ use rustle::vg_family::denovo_pipeline::{
 use rustle::vg_family::family_detect::collapse_loci_groups;
 use rustle::vg_family::read_conflict::{as_evidence, AsEvidence};
 use rustle::vg_family::readonly_copy_number::{chi_h_with_junctions, depth_cn};
+
+/// Read one GTF attribute out of an attribute string (`key "value";`). Used by `--productivity` to recover
+/// the family and copy it already wrote, rather than threading them separately.
+fn re_attr(attrs: &str, key: &str) -> Option<String> {
+    let pat = format!("{key} \"");
+    let i = attrs.find(&pat)? + pat.len();
+    let j = attrs[i..].find('"')? + i;
+    Some(attrs[i..j].to_string())
+}
 
 /// One assembled isoform (FLAIR-style intron-chain collapse), kept for the optional `--gtf` emit. `gene_tid`
 /// is the locus this isoform collapses into (shared-junction gene); a family copy is its own gene, so a
@@ -164,6 +174,15 @@ struct Args {
     /// default off. Pair with `bench/igv_tracks.py` for the copy-coloured reads.
     #[arg(long, default_value_t = false)]
     gtf: bool,
+    /// ⭐ PRODUCTIVITY (§6gp), with `--gtf`: every transcript gains `orf_aa` — the longest ORF over its
+    /// strand-oriented exon-sum — and `productive`, true when that ORF reaches **half the best ORF among the
+    /// transcripts assigned to the same family**. The bar is relative on purpose: an absolute amino-acid cut
+    /// discarded 26 % of protein-coding units when it was tried on the core rule (§6gb, register 746).
+    /// Also writes `<out>.productivity.tsv`, one row per copy. flair predicts productivity per ISOFORM; doing
+    /// it per COPY is the part flair cannot reach, because it cannot attribute an isoform to a copy.
+    /// Default off.
+    #[arg(long, default_value_t = false)]
+    productivity: bool,
     /// poasta memory threshold (bp) for POA homology confirmation. A candidate family pair whose larger
     /// transcript exceeds this is confirmed via the linear-memory longest-common-substring FALLBACK instead of
     /// poasta (which OOMs on long sequences); those edges are recorded in `<out>.fallback.tsv`. Lower it (e.g.
@@ -1536,6 +1555,9 @@ fn main() -> Result<()> {
     let mut vg_realign_lines: Vec<String> = Vec::new(); // --vg-realign: per-read re-align decisions (report-only)
     let mut gfam = 0usize; // global family counter (unique ids across regions)
     let mut gtf_lines: Vec<String> = Vec::new(); // --gtf: FLAIR-style isoform GTF (transcript + exon rows)
+    // --productivity: (attribute string, transcript id, ORF in aa) — the `productive` call needs the family's
+    // best ORF, which is only known after every region is drained, so it is a second pass over the GTF below
+    let mut prod_rows: Vec<(String, String, String, usize)> = Vec::new(); // family, copy, transcript, ORF aa
 
     // `--skip-poa-diagnostic` is read by `detect_and_assign` via this env var (it is purely diagnostic and
     // does not change the emitted families/assignments — see the flag's help).
@@ -2287,6 +2309,7 @@ fn main() -> Result<()> {
             // own join) silently merges them into one impossible model. Disambiguated HERE, in the GTF only,
             // so no catalog's tids move; the assembler's own id scheme is left for a separate change.
             let mut tid_seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+            let mut prod_genome: Option<std::sync::Arc<GenomeIndex>> = None;
             for t in &transcripts {
                 let n = tid_seen.entry(t.tid.as_str()).or_insert(0);
                 *n += 1;
@@ -2345,6 +2368,54 @@ fn main() -> Result<()> {
                     None => format!(" copy_status \"unadjudicated\"; matched_reads \"{matched}\";"),
                 };
                 let fam_attr = format!("{fam_attr}{copy_attr}");
+                // §6gp: longest ORF over the strand-oriented exon-sum. Sequence comes from the genome at the
+                // transcript's own exons, so this needs no annotation and no CDS.
+                let orf_aa = if args.productivity {
+                    let gi = match prod_genome.as_ref() {
+                        Some(g) => g.clone(),
+                        None => {
+                            let g = genome_for(&contig)?;
+                            prod_genome = Some(g.clone());
+                            g
+                        }
+                    };
+                    let mut seq: Vec<u8> = Vec::new();
+                    let mut prev = t.start;
+                    let mut ex: Vec<(u64, u64)> = Vec::new();
+                    for &(d, a) in &t.introns {
+                        ex.push((prev, d));
+                        prev = a;
+                    }
+                    ex.push((prev, t.end));
+                    for &(es, ee) in &ex {
+                        if let Some(part) = gi.fetch_sequence(&t.chrom, es, ee) {
+                            seq.extend_from_slice(&part);
+                        }
+                    }
+                    if t.strand == '-' {
+                        seq.reverse();
+                        for b in seq.iter_mut() {
+                            *b = match *b {
+                                b'A' => b'T', b'T' => b'A', b'C' => b'G', b'G' => b'C',
+                                b'a' => b't', b't' => b'a', b'c' => b'g', b'g' => b'c', x => x,
+                            };
+                        }
+                    }
+                    Some(longest_orf(&seq) / 3)
+                } else {
+                    None
+                };
+                if let Some(aa) = orf_aa {
+                    let fid = re_attr(&fam_attr, "family_id").unwrap_or_default();
+                    let cp = re_attr(&fam_attr, "assigned_copy")
+                        .or_else(|| re_attr(&fam_attr, "copy_index"))
+                        .unwrap_or_default();
+                    prod_rows.push((fid, cp, uniq_tid.clone(), aa));
+                }
+                let fam_attr = match orf_aa {
+                    Some(aa) => format!("{fam_attr} orf_aa \"{aa}\";"),
+                    None => fam_attr,
+                };
                 let gs = t.start + 1; // GTF is 1-based, end-inclusive (our coords are 0-based half-open)
                 gtf_lines.push(format!(
                     "{}\trustle\ttranscript\t{}\t{}\t.\t{}\t.\tgene_id \"{}\"; transcript_id \"{}\"; reads \"{}\"; multicopy \"{}\";{}",
@@ -2369,6 +2440,57 @@ fn main() -> Result<()> {
     } // serial-drain block
 
     if args.gtf {
+        // §6gp: the `productive` call is RELATIVE to the family's best ORF, which is only known once every
+        // region has been drained — so it is stamped here, in a second pass over the finished GTF lines.
+        // An absolute amino-acid cut was tried on the core rule and discarded 26 % of protein-coding units
+        // (§6gb, register 746), which is why the bar is the family's own best rather than a constant.
+        if args.productivity {
+            // ⚠ The bar is half the family's MEDIAN ORF, not half its best. "Half the best" was tried first
+            // and failed the same way it failed for the core rule (§6gb, register 746): one 2,578-aa outlier
+            // put the bar at 1,289 aa and called 0 of copy 27's 39 isoforms productive, when every one of
+            // them carries ~700 aa. A single long transcript must not define the family's standard.
+            let mut all: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
+            for (fid, _, _, aa) in &prod_rows {
+                all.entry(fid.as_str()).or_default().push(*aa);
+            }
+            let best: std::collections::HashMap<&str, usize> = all
+                .into_iter()
+                .map(|(f, mut v)| {
+                    v.sort_unstable();
+                    (f, v[v.len() / 2])
+                })
+                .collect();
+            let by_tid: std::collections::HashMap<&str, (&str, &str, usize)> = prod_rows
+                .iter()
+                .map(|(f, c, t, aa)| (t.as_str(), (f.as_str(), c.as_str(), *aa)))
+                .collect();
+            for line in gtf_lines.iter_mut() {
+                if !line.contains("\ttranscript\t") {
+                    continue;
+                }
+                let Some(tid) = re_attr(line, "transcript_id") else { continue };
+                let Some(&(fid, _, aa)) = by_tid.get(tid.as_str()) else { continue };
+                let bar = best.get(fid).copied().unwrap_or(0);
+                let prod = bar > 0 && aa * 2 >= bar;
+                line.push_str(&format!(" productive \"{prod}\"; family_median_orf_aa \"{bar}\";"));
+            }
+            let mut ph = std::fs::File::create(format!("{}.productivity.tsv", args.out))?;
+            writeln!(ph, "family_id\tcopy\tisoforms\tproductive\tmedian_orf_aa\tmax_orf_aa\tfamily_median_orf_aa")?;
+            let mut per: std::collections::BTreeMap<(&str, &str), Vec<usize>> = std::collections::BTreeMap::new();
+            for (f, c, _, aa) in &prod_rows {
+                per.entry((f.as_str(), c.as_str())).or_default().push(*aa);
+            }
+            for ((f, c), mut v) in per {
+                v.sort_unstable();
+                let bar = best.get(f).copied().unwrap_or(0);
+                let n_prod = v.iter().filter(|&&aa| bar > 0 && aa * 2 >= bar).count();
+                let f = if f.is_empty() { "NA" } else { f };
+                let c = if c.is_empty() { "NA" } else { c };
+                writeln!(ph, "{f}\t{c}\t{}\t{n_prod}\t{}\t{}\t{bar}", v.len(), v[v.len() / 2], v[v.len() - 1])?;
+            }
+            eprintln!("[copy_assign] wrote {}.productivity.tsv ({} isoform(s) with an ORF, bar = half the family median ORF)",
+                args.out, prod_rows.len());
+        }
         let mut gh = std::fs::File::create(format!("{}.gtf", args.out))?;
         for line in &gtf_lines {
             writeln!(gh, "{line}")?;

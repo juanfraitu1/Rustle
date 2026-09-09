@@ -14543,3 +14543,33 @@ read off the genomic exon-sum with no CDS or UTR knowledge; only 121 of 886 isof
 so 22 copies are covered; and copies with 1–3 isoforms have denominators too small to call.
 ⟹ Next: emit `orf_aa` and `productive` per transcript in the `--gtf`, and a per-copy productivity summary
 beside the quant table. Not built.
+
+## §6gq — `copy_assign --productivity`: per-copy coding potential, shipped OFF (user, 2026-09-08)
+
+**User: "sounds good, lets try that under a flag."** With `--gtf`, every transcript gains **`orf_aa`** — the
+longest ORF over its strand-oriented exon-sum, taken from the genome at the transcript's own exons, needing no
+annotation and no CDS — plus **`productive`** and the bar it was judged against. A side file
+`<out>.productivity.tsv` gives one row per copy: isoforms, productive, median and max ORF. `longest_orf` moved
+into `denovo_assemble` so `mcl_families --coding-core` and this share one implementation.
+
+⚠⚠ **The bar was wrong on the first build, in exactly the way it was wrong before.** "Half the family's BEST"
+put NPIP's bar at 1,289 aa because ONE transcript carries 2,578, and called **0 of copy 27's 39 isoforms
+productive** when every one of them carries ~700 aa. That is the same failure as `--coding-core` (§6gb,
+register 746), where half-the-best demoted 18 of 25 NPIP members. **Half the family's MEDIAN** is the shipped
+rule: NPIP's bar is 267 aa and the picture becomes readable —
+
+| copy | isoforms | productive | median ORF |
+|---|---|---|---|
+| 0 | 2 | 2 | 146 |
+| 12 | 4 | 2 | 135 |
+| 13 | 2 | 1 | 2,578 |
+| **31** | 3 | **0** | **93** |
+| **55** | 5 | **0** | **115** |
+
+⭐ **Copies of one family differ in whether their transcripts can code**, and the file now says so per copy.
+That is the statement flair cannot reach — not for want of an ORF step, which it has, but because it cannot
+attribute an isoform to a copy at all.
+
+⚠ Still to note before quoting: the ORF is read off genomic exon-sums with no CDS or UTR knowledge; copies with
+one or two isoforms have denominators too small to call; and a single copy's median can itself be dragged by an
+outlier (copy 13's median is 2,578 from 2 isoforms). Ships **OFF**. Suite **867 passed / 0 failed / 11 ignored**.
