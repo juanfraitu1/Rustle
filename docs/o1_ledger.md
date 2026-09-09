@@ -15156,3 +15156,35 @@ MCL joined. ⚠ Gene symbols are read out from `GGO_genomic.gff` only (mostly `L
 ⟹ **Deliverable from this thread**: `bakeoff/gw_partition.tsv` (42 certified) + `gw_partition_examined.txt`
 (components, chromosomes, names) + the 10 over-merge candidates as an O1 to-do: run the core-hull check on
 each, and re-score with the held-back family before any default moves.
+
+### §6gw addendum 6 — DO THE OVER-MERGE CANDIDATES SURVIVE INTO THE SHIPPED FAMILY? (user, 2026-09-09)
+
+The partition test ran on the RAW MCL clusters. Across the 11 low-identity candidates, **107 of 219 cluster
+members never became units and 27 were dropped by the core rule**, so the shipped family is much smaller than
+the graph that was tested. Per candidate, the two certified sides tagged as kept_full / kept_trimmed / dropped /
+never-a-unit, then the partition test re-run on **kept members only**:
+| family | side 1 | side 2 | kept-only re-test | merge in the SHIPPED family? |
+|---|---|---|---|---|
+| MCL9 | 3/0/0/3 | 0/0/0/3 | too few kept | ✓ **no** — side 2 entirely removed |
+| MCL101 | 0/0/0/3 | 2/0/0/1 | too few kept | ✓ **no** |
+| MCL42 | 1/0/2/2 | 0/0/2/1 | too few kept | ✓ **no** |
+| MCL168 | 0/1/0/2 | 0/0/0/3 | too few kept | ✓ **no** |
+| **MCL38** ANKRD18A | 2/3/0/3 | 1/2/1/0 | **p = 0.004**, contrast 0.165 | ⛔ **YES — certified** |
+| **MCL19** GSTM | 13/4/4/2 | 0/0/3/0 | **p = 0.002**, contrast 0.078 | ⛔ **YES** — a *different* boundary inside the 17 kept |
+| MCL236 SULT1A | 1/0/3/1 | 2/1/0/0 | 4 kept — untestable | ⚠ **present** (1 + 3 kept, both sides) |
+| MCL190 | 1/0/0/2 | 2/0/0/1 | 3 kept — untestable | ⚠ present |
+| MCL185 | 1/0/1/2 | 3/0/0/0 | 4 kept — untestable | ⚠ present |
+| MCL46 | 2/0/0/1 | 1/0/0/2 | 3 kept — untestable | ⚠ present |
+| MCL195 XAGE | 1/0/0/4 | 0/1/0/2 | 2 kept — untestable | ⚠ present |
+
+⚠⚠ **A first reading — "9 of 11 dissolve on kept members" — was WRONG and is corrected here.** Nine returned
+"no partition among kept" because they have **fewer than 6 kept members and cannot be tested at all**, not
+because they were shown clean. Counting sides instead: the core rule and unit emission removed one side
+entirely in **4 of 11**; in **7 of 11 both sides retain kept members, so the merge is in O1's shipped output**
+— 2 of them certified (the only 2 large enough to test), 5 present but statistically untestable.
+
+⟹ **Answer: yes, O1 still ships false-merge candidates — at least 7 in this list, 2 certified.** They are
+candidates until the core-hull check is run (does the minority side share a core with ≥ half the family?).
+⚠ This list is only the 11 low-identity families among the 42 certified partitions; **the proper genome-wide
+answer needs the partition test re-run on kept-only members for every family**, since the pairs dump was built
+on raw clusters. ⚠ `MIN_COMP = 3` makes families with < 6 kept members untestable — a power limit to state.
