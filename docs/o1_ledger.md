@@ -15421,3 +15421,27 @@ across the board, the same exhaustive-junctions/conservative-chains signature do
 ⚠ None of this changes the standing framing (§6gt, ADVISOR_QUESTIONS Part 0h): the deliverable is judged on
 the hard loci, and none of isoseq/flair/stringtie carries a copy attribute. This section adds REAL flair data
 where §6gs had only source code, and a rigorous gffcompare cross-check alongside the custom scorer.
+
+
+## §6hc — `--origin-drop-indels` + the excision control (2026-09-09; full record in `docs/PREREG_origin_drop_indels_2026-09-09.md` d4e85007 and `docs/PREREG_excision_odi_2026-09-09.md` f8b68981)
+Under the AS-tied gate + `best_by_psv` (§6ha, PREREG f2cb3c19) the origin certificate suppressed PSV-resolved
+assignments through REAL recurring indels (copy 2: a 57 bp insertion at `358=57I…` in independent reads; copy 22:
+~476–504 bp). `--origin-drop-indels` (nm = X + unaligned − explained; distinct from `--origin-substitutions-only`,
+which drops unaligned too) takes human contested 1,143 from 14 → **230 assigned** (531 tied / 382 ambiguous);
+gorilla MCL1 33 = 4/28/1, MCL7 11 = 0/10/1, held-back MCL2 uninformative (1 AS-tied). For 206/216 new
+assignments the assigned copy is the PRIMARY and sits BELOW the AS tie (gap penalty of the real insertion); the
+tie is among wrong near-identical copies. Excision: copy 2 removed → 149/153 = 97.4 % abstain (4 move to
+sibling copy 8 at margin 20.7); copy 22 removed → 42/42 abstain, all origin-rejected. Escapes byte-identical
+(`91081887` / `ff0b8f16`). **Default = the user's decision (step 2 of the 09-09 plan).**
+
+## §6hd — ⛔ `--admit-aligner-disagreement` REFUTED as a gate widening (2026-09-09; PREREG 58a5496b, outcome appended)
+§6hc quantified a blind spot: 2,278 human molecules whose AS-unique best copy ≠ primary copy (64 % carry a
+≥ 50 bp insertion) that the AS-tied gate never sees. The flag admits them (default OFF, gate-only column
+`aligner_disagreement`, `bench/o2_disagreement_score.py`). Human: 2,278 admitted → **759 assigned (33 %,
+refuted < 40), margin median 13.8 (refuted < 20)** vs 55 for the AS-tied contested assignments in the same run;
+477 go to the primary (63 %, inside the undecided band), 43 to the best-AS copy, **239 to a copy both aligner
+stages ranked far down (AS −211 vs the primary) at margin 6.9**. 1,490 ambiguous (660 origin-rejected even
+with drop-indels, 830 PSV dead heats at margin 0). Pre-existing contested statuses unchanged (0/7,482). Gorilla
+MCL1 64 → 12 assigned (7 primary, n_decisive 12.5, margin 76); MCL7 10 → 0. Escapes `91081887` /
+`ff0b8f16`. ⚠ Gorilla `assigned_copy` is an internal unit id — compare on `catalog_copy_idx`. **Not
+recommended as a default**: it buys 3× the assignments at a quarter of the evidence with a 31 % `other` class.

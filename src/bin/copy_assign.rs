@@ -219,6 +219,18 @@ struct Args {
     /// any default is proposed.
     #[arg(long, default_value_t = 1.0)]
     as_tie_ratio: f64,
+
+    /// ⭐ §6hd (user 2026-09-09): widen the gate to ALIGNER SELF-DISAGREEMENT — admit a molecule whose PRIMARY
+    /// record sits in one supplied-family unit while its best-AS record sits in a DIFFERENT one, even with no
+    /// AS tie. minimap2's chaining stage (which picks the primary) and its base-level scoring (AS) disagree
+    /// about the copy: by construction the aligner cannot reliably tell, the "coin toss" of O2's definition
+    /// in a stronger form. Found while auditing the origin-drop-indels assignments: a real 58 bp insertion
+    /// costs ~50–70 AS in gap penalties, so the TRUE copy (the primary) scores below a wrong copy; when the
+    /// wrong copy's AS is unique there is no tie and the gate skipped the read as a "clear best". Human MCL0:
+    /// 2,278 such molecules, 64 % carrying ≥ 50 bp of insertion in the primary placement, and `--as-tie-ratio`
+    /// does not reach them (0.98 admits 42 %). Default OFF; a gate-only column `aligner_disagreement` marks them.
+    #[arg(long)]
+    admit_aligner_disagreement: bool,
     /// Also dump the per-read PSV GENOTYPE MATRIX — `<out>.psv_reads.tsv` (each read's base at every PSV column
     /// + its assignment), `<out>.psv_copies.tsv` (each copy's PSV alleles), `<out>.psv_cols.tsv` (column →
     /// genome position). The raw per-molecule evidence behind each assignment, for the proof visualization.
@@ -1297,6 +1309,11 @@ static GATE_MOL_TIED: std::sync::atomic::AtomicUsize = std::sync::atomic::Atomic
 static GATE_REC_ALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static GATE_REC_TIED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static GATE_MOL_OUTSIDE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static GATE_MOL_DISAGREE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// §6hd: molecules admitted to the gate by aligner self-disagreement rather than an AS tie.
+static DISAGREE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = std::sync::OnceLock::new();
+fn register_disagreement(n: &str) { DISAGREE.get_or_init(Default::default).lock().unwrap().insert(n.to_string()); }
+fn is_disagreement(n: &str) -> bool { DISAGREE.get().map_or(false, |m| m.lock().unwrap().contains(n)) }
 
 fn as_tied(ev: &AsEvidence, ratio: f64) -> bool {
     match ev.second {
@@ -1824,7 +1841,7 @@ fn main() -> Result<()> {
                 }
             }
             let (n_all, n_tied, n_rec) = (all.len(), tied.len(), bam_reads.len());
-            let tied_owned: std::collections::HashSet<String> = tied.into_iter().map(|s| s.to_string()).collect();
+            let mut tied_owned: std::collections::HashSet<String> = tied.into_iter().map(|s| s.to_string()).collect();
             // ⭐ §6gz: which tied molecules have a tied placement OUTSIDE every supplied family UNIT?
             // ⚠ The test is against the UNIT SPAN (`start`/`end`, the read-supported exon chain), NOT the
             // padded read-star locus: the locus is exactly what swallowed EIF3C into NPIP copy 16 (its locus
@@ -1861,6 +1878,44 @@ fn main() -> Result<()> {
                 n_outside = flagged.len();
                 for n in flagged {
                     rustle::vg_family::copy_assign_pipeline::register_tie_outside(n);
+                }
+                // ⭐ §6hd: aligner self-disagreement. Per molecule: the unit index of its PRIMARY record and of
+                // its best-AS record(s), both by unit-span overlap (same `targets` as above). Disagree ⟹ admit.
+                if args.admit_aligner_disagreement {
+                    let unit_of = |br: &rustle::vg_family::denovo_assemble::BamRead| -> Option<usize> {
+                        let (s0, e0) = (br.read.ref_start, read_ref_end_local(&br.read));
+                        targets.iter().position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a)
+                    };
+                    let mut prim: std::collections::HashMap<&str, Option<usize>> = std::collections::HashMap::new();
+                    let mut best: std::collections::HashMap<&str, (i32, Vec<Option<usize>>)> = std::collections::HashMap::new();
+                    for br in bam_reads.iter().filter(|br| !br.is_supplementary) {
+                        let u = unit_of(br);
+                        if !br.is_secondary {
+                            prim.insert(br.name.as_str(), u);
+                        }
+                        let e = best.entry(br.name.as_str()).or_insert((br.as_score, Vec::new()));
+                        if br.as_score > e.0 {
+                            *e = (br.as_score, vec![u]);
+                        } else if br.as_score == e.0 {
+                            e.1.push(u);
+                        }
+                    }
+                    let mut n_dis = 0usize;
+                    for (name, pu) in &prim {
+                        if tied_owned.contains(*name) {
+                            continue; // already admitted by the AS tie
+                        }
+                        let Some(pu) = pu else { continue }; // primary outside every unit: not this family's
+                        let Some((_, bus)) = best.get(name) else { continue };
+                        // disagreement = the primary's unit is NOT among the best-AS units, and some best-AS
+                        // record IS inside a unit (a best-AS placement outside every unit is the §6gz case)
+                        if !bus.contains(&Some(*pu)) && bus.iter().any(|u| u.is_some()) {
+                            tied_owned.insert(name.to_string());
+                            register_disagreement(name);
+                            n_dis += 1;
+                        }
+                    }
+                    GATE_MOL_DISAGREE.fetch_add(n_dis, std::sync::atomic::Ordering::Relaxed);
                 }
             }
             GATE_MOL_OUTSIDE.fetch_add(n_outside, std::sync::atomic::Ordering::Relaxed);
@@ -2648,7 +2703,7 @@ fn main() -> Result<()> {
     // `tie_outside_catalog` (§6gz) exists only under the gate, so `--no-as-tied-only` stays byte-identical
     // to the pre-2026-09-09 schema.
     let hdr = "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into\tprimary_local";
-    if args.no_as_tied_only { writeln!(ah, "{hdr}")?; } else { writeln!(ah, "{hdr}\ttie_outside_catalog")?; }
+    if args.no_as_tied_only { writeln!(ah, "{hdr}")?; } else { writeln!(ah, "{hdr}\ttie_outside_catalog\taligner_disagreement")?; }
     for r in &assign_rows {
         // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
         // one is assigned to its placement (§6fq) whatever its candidate count
@@ -2657,7 +2712,7 @@ fn main() -> Result<()> {
         let outside = if args.no_as_tied_only {
             String::new()
         } else {
-            format!("\t{}", rustle::vg_family::copy_assign_pipeline::is_tie_outside(&r.read_name) as u8)
+            format!("\t{}\t{}", rustle::vg_family::copy_assign_pipeline::is_tie_outside(&r.read_name) as u8, is_disagreement(&r.read_name) as u8)
         };
         writeln!(
             ah,
@@ -2693,6 +2748,12 @@ fn main() -> Result<()> {
                  skipped before it and are NOT assigned (`--no-as-tied-only` restores them)",
                 args.as_tie_ratio, mt, ma, rt, ra, ma.saturating_sub(mt)
             );
+            if args.admit_aligner_disagreement {
+                eprintln!(
+                    "[copy_assign]   ⭐ §6hd ALIGNER-DISAGREEMENT: {} additional molecules admitted whose PRIMARY unit ≠ best-AS unit (no AS tie; `aligner_disagreement` column)",
+                    GATE_MOL_DISAGREE.load(std::sync::atomic::Ordering::Relaxed)
+                );
+            }
             let mo = GATE_MOL_OUTSIDE.load(std::sync::atomic::Ordering::Relaxed);
             eprintln!(
                 "[copy_assign]   ⚠ {} of those tied molecules have a tied placement OUTSIDE every supplied family \
@@ -2714,7 +2775,7 @@ fn main() -> Result<()> {
             // with `--no-as-tied-only`.
             let widths: Vec<f64> = if args.no_as_tied_only { vec![1.0, 0.98] } else { vec![args.as_tie_ratio] };
             for ratio in widths {
-                let el: Vec<&&AssignRow> = mols.iter().filter(|r| as_tied(&r.as_ev, ratio)).collect();
+                let el: Vec<&&AssignRow> = mols.iter().filter(|r| as_tied(&r.as_ev, ratio) || is_disagreement(&r.read_name)).collect();
                 // ⚠⚠ The AS-tied set is NOT yet O2's subject: it still holds molecules the catalog cannot
                 // explain (origin-rejected — O3's material) and molecules with a single candidate locus
                 // (nothing to choose). The two arms fail this in OPPOSITE ways — gorilla MCL1 is 95.6 %
@@ -3267,6 +3328,7 @@ fn main() -> Result<()> {
         row("orphans", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected && r.n_candidates == 0).count()))?;
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
         row("origin_drop_indels", format!("{}", args.origin_drop_indels))?;
+        row("admit_aligner_disagreement", format!("{}", args.admit_aligner_disagreement))?;
         row("read_star_junctions", format!("{}", args.read_star_junctions))?;
         row("read_star_genomic", format!("{}", args.read_star_genomic && !args.read_star_unit))?;
         row("read_star_catalog_locus", format!("{}", !args.read_star_pad_locus))?;
