@@ -15445,3 +15445,20 @@ with drop-indels, 830 PSV dead heats at margin 0). Pre-existing contested status
 MCL1 64 → 12 assigned (7 primary, n_decisive 12.5, margin 76); MCL7 10 → 0. Escapes `91081887` /
 `ff0b8f16`. ⚠ Gorilla `assigned_copy` is an internal unit id — compare on `catalog_copy_idx`. **Not
 recommended as a default**: it buys 3× the assignments at a quarter of the evidence with a 31 % `other` class.
+
+
+## §6he — ⛔ INDEL PSV COLUMNS ADD NOTHING; two defects exposed (2026-09-09; PREREG 021446fb, outcome appended; user's step-2 hold: "PSVs can also be indels")
+PSV columns were substitution-only by construction (`read_star_columns`: both bases present and different; a
+gapped copy is `None`). Between reference copies, indel events run 0.13 (human) / 0.05 (gorilla MCL1) per
+substitution column, 0.2–0.5 among the most similar pairs, and NO pair is separated by indels alone — indels
+could strengthen margins, never enable an assignment. `--indel-psv` (OFF) adds one column per cluster of ≥ 3 bp
+I/D events (`'1'` = the candidate needs a gap against the read, `'0'` = it does not; same error as a
+substitution column; same-form rule under the two-form star). Human contested 1,143: **0 of 397 convertible
+`tied` become `assigned`; 230 → 223 assigned**; gorilla MCL1 0/23, MCL7 0/5; escapes and flag-off byte-identical.
+Dump-star: 462 tied molecules' indel columns are all consistent with their best copy AND its K = 0 twin (twins
+do not differ by an indel inside a read footprint — ≈ 0.2 events per read from the copy-pair statistics);
+terminal columns (< 20 bp from an end, 306/319 at the start) contradict the best copy 34 % of the time vs 10 %
+internal, and one such column tipped 5 of the 7 lost copy-2 assignments because `psv_score` is not pairwise
+(copies 6/7/8 carry the read's 57 bp segment reference copy 2 lacks and collect matches there where copy 2 is
+`None`; the pairwise LLR still favoured 2 by 34.5). Register rows 793–794. **Not applied: terminal-event
+exclusion (inside the flag) and a pairwise `bk` (shared machinery) — the user's call.** Step-2 defaults still held.

@@ -545,7 +545,7 @@ pub(crate) fn banded_msa_pair_full_matrix(a: &[u8], b: &[u8], band: usize) -> Op
 pub fn read_star_alignments(copy_seqs: &[&[u8]], read_seqs: &[&[u8]]) -> Vec<Vec<Option<Vec<Option<u8>>>>> {
     // full (memory-hungry) form, kept for tests: per read x copy the aligned base at every read position
     let mut out: Vec<Vec<Option<Vec<Option<u8>>>>> = (0..read_seqs.len()).map(|_| vec![None; copy_seqs.len()]).collect();
-    read_star_stream(copy_seqs, read_seqs, "map-hifi", &[], |ri, per_copy, _, _| out[ri] = per_copy.to_vec());
+    read_star_stream(copy_seqs, read_seqs, "map-hifi", &[], |ri, per_copy, _, _, _| out[ri] = per_copy.to_vec());
     out
 }
 
@@ -618,25 +618,26 @@ pub fn take_star_proofs() -> std::collections::HashMap<String, StarProof> {
 /// `copy_bounds[c]` = the unit offsets where copy `c` starts a new exon (its splice boundaries in unit space);
 /// each candidate's `CopyProfile::junctions` becomes the READ positions aligned to those offsets, so the read's
 /// own junction positions (from its CIGAR) can be compared per candidate in one coordinate system (§6fc).
-pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bounds: &[Vec<u32>], preset: &str, windows: &[Option<(usize, usize)>]) -> Vec<ReadStarObs> {
+pub fn read_star_observations(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], copy_bounds: &[Vec<u32>], preset: &str, windows: &[Option<(usize, usize)>], indel_min_len: Option<u32>) -> Vec<ReadStarObs> {
     let mut out: Vec<ReadStarObs> =
         (0..read_seqs.len()).map(|_| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).collect();
-    read_star_stream(copy_seqs, read_seqs, preset, windows, |ri, per_copy, per_pos, edits| {
-        out[ri] = build_star_obs(read_seqs[ri], per_copy, per_pos, edits, copy_bounds);
+    read_star_stream(copy_seqs, read_seqs, preset, windows, |ri, per_copy, per_pos, edits, events| {
+        out[ri] = build_star_obs(read_seqs[ri], per_copy, per_pos, edits, copy_bounds, events, None, indel_min_len);
     });
     out
 }
 
 /// One molecule's raw read-star hits: per copy the aligned base per read position, the copy offset per read
-/// position, and the edit tuple `(n_x, n_aligned, nm, blk, n_i, n_d, unaligned)`.
-pub type StarRaw = (Vec<Option<Vec<Option<u8>>>>, Vec<Option<Vec<Option<u32>>>>, Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>>);
+/// position, the edit tuple `(n_x, n_aligned, nm, blk, n_i, n_d, unaligned)`, and the hit's I/D events as
+/// `(read_pos, b'I' | b'D', len)` in forward read coordinates (PREREG 021446fb `--indel-psv`).
+pub type StarRaw = (Vec<Option<Vec<Option<u8>>>>, Vec<Option<Vec<Option<u32>>>>, Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>>, Vec<Option<Vec<(u32, u8, u32)>>>);
 
 /// The raw hits of every molecule (owned), one minimap2 run.
 pub fn read_star_raw(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], preset: &str, windows: &[Option<(usize, usize)>]) -> Vec<StarRaw> {
     let nc = copy_seqs.len();
-    let mut out: Vec<StarRaw> = (0..read_seqs.len()).map(|_| (vec![None; nc], vec![None; nc], vec![None; nc])).collect();
-    read_star_stream(copy_seqs, read_seqs, preset, windows, |ri, per_copy, per_pos, edits| {
-        out[ri] = (per_copy.to_vec(), per_pos.to_vec(), edits.to_vec());
+    let mut out: Vec<StarRaw> = (0..read_seqs.len()).map(|_| (vec![None; nc], vec![None; nc], vec![None; nc], vec![None; nc])).collect();
+    read_star_stream(copy_seqs, read_seqs, preset, windows, |ri, per_copy, per_pos, edits, events| {
+        out[ri] = (per_copy.to_vec(), per_pos.to_vec(), edits.to_vec(), events.to_vec());
     });
     out
 }
@@ -646,9 +647,12 @@ pub fn read_star_raw(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], preset: &str, win
 /// and it supplies that copy's bases at the read's positions. The exact sequence of NPIP unit 17 aligned to its
 /// own locus with `-x splice` carried 814 inserted bases (an exon the splice mode leaves unspliced) and 0 against
 /// its unit: the genomic form alone rejected true reads at units 10, 12, 17, 25.
-pub fn merge_star_raw(g: StarRaw, u: StarRaw) -> StarRaw {
-    let (mut pc, mut pp, mut ed) = g;
-    let (upc, upp, ued) = u;
+/// Returns the merged raw hits and `form[c]` = true where the UNIT form was taken (the indel-column rule
+/// compares candidates within one form only).
+pub fn merge_star_raw(g: StarRaw, u: StarRaw) -> (StarRaw, Vec<bool>) {
+    let (mut pc, mut pp, mut ed, mut ev) = g;
+    let (upc, upp, ued, uev) = u;
+    let mut form = vec![false; pc.len()];
     let cost = |e: &Option<(u64, u64, u64, u64, u64, u64, u64)>| e.map(|(x, _, _, _, i, d, un)| x + i + d + un);
     for c in 0..pc.len().min(upc.len()) {
         let take_u = match (cost(&ed[c]), cost(&ued[c])) {
@@ -660,15 +664,22 @@ pub fn merge_star_raw(g: StarRaw, u: StarRaw) -> StarRaw {
             pc[c] = upc[c].clone();
             pp[c] = upp[c].clone();
             ed[c] = ued[c];
+            ev[c] = uev[c].clone();
+            form[c] = true;
         }
     }
-    (pc, pp, ed)
+    ((pc, pp, ed, ev), form)
 }
 
 /// Columns, profiles, junction positions and covered intervals of one molecule from its raw hits.
-pub fn build_star_obs(read: &[u8], per_copy: &[Option<Vec<Option<u8>>>], per_pos: &[Option<Vec<Option<u32>>>], edits: &[Option<(u64, u64, u64, u64, u64, u64, u64)>], copy_bounds: &[Vec<u32>]) -> ReadStarObs {
+/// `events[c]` = the hit's I/D events, `forms` = per-copy form flag from `merge_star_raw` (None = one form),
+/// `indel_min_len` = `Some(floor)` appends indel PSV columns (PREREG 021446fb); `None` is byte-identical.
+pub fn build_star_obs(read: &[u8], per_copy: &[Option<Vec<Option<u8>>>], per_pos: &[Option<Vec<Option<u32>>>], edits: &[Option<(u64, u64, u64, u64, u64, u64, u64)>], copy_bounds: &[Vec<u32>], events: &[Option<Vec<(u32, u8, u32)>>], forms: Option<&[bool]>, indel_min_len: Option<u32>) -> ReadStarObs {
     {
-        let (obs, profiles, cols) = read_star_columns(read, per_copy);
+        let (mut obs, mut profiles, mut cols) = read_star_columns(read, per_copy);
+        if let Some(min_len) = indel_min_len {
+            append_indel_columns(per_copy, events, forms, min_len, &mut obs, &mut profiles, &mut cols);
+        }
         let cand: Vec<usize> = per_copy.iter().enumerate().filter(|(_, h)| h.is_some()).map(|(i, _)| i).collect();
         // every column stays; a candidate with no base at a column is `None` there and the PAIRWISE certificate
         // (§6fc) scores each pair on the columns both carry — no intersection over all candidates (that rule made
@@ -711,7 +722,7 @@ pub fn build_star_obs(read: &[u8], per_copy: &[Option<Vec<Option<u8>>>], per_pos
 /// `windows[c]` = the candidate's UNIT in target coordinates (`Some((start, end))`): a hit whose target interval
 /// misses it is no hit for that candidate (§6fm: a target that contains other loci must not vouch for reads from
 /// them). Empty = no filter.
-fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Option<u32>>>], &[Option<(u64, u64, u64, u64, u64, u64, u64)>])>(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], preset: &str, windows: &[Option<(usize, usize)>], mut sink: F) {
+fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Option<u32>>>], &[Option<(u64, u64, u64, u64, u64, u64, u64)>], &[Option<Vec<(u32, u8, u32)>>])>(copy_seqs: &[&[u8]], read_seqs: &[&[u8]], preset: &str, windows: &[Option<(usize, usize)>], mut sink: F) {
     use std::io::{BufRead, Write};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NONCE: AtomicUsize = AtomicUsize::new(0);
@@ -773,9 +784,13 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
     let mut per_pos: Vec<Option<Vec<Option<u32>>>> = vec![None; nc];
     let mut best_match: Vec<u64> = vec![0; nc];
     let mut edits: Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>> = vec![None; nc];
-    let mut flush = |ri: Option<usize>, per_copy: &mut Vec<Option<Vec<Option<u8>>>>, per_pos: &mut Vec<Option<Vec<Option<u32>>>>, best_match: &mut Vec<u64>, edits: &mut Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>>| {
+    let mut events: Vec<Option<Vec<(u32, u8, u32)>>> = vec![None; nc];
+    let mut flush = |ri: Option<usize>, per_copy: &mut Vec<Option<Vec<Option<u8>>>>, per_pos: &mut Vec<Option<Vec<Option<u32>>>>, best_match: &mut Vec<u64>, edits: &mut Vec<Option<(u64, u64, u64, u64, u64, u64, u64)>>, events: &mut Vec<Option<Vec<(u32, u8, u32)>>>| {
         if let Some(ri) = ri {
-            sink(ri, per_copy, per_pos, edits);
+            sink(ri, per_copy, per_pos, edits, events);
+        }
+        for e in events.iter_mut() {
+            *e = None;
         }
         for (((h, pp), b), e) in per_copy.iter_mut().zip(per_pos.iter_mut()).zip(best_match.iter_mut()).zip(edits.iter_mut()) {
             *h = None;
@@ -811,7 +826,7 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
             }
         }
         if cur != Some(ri) {
-            flush(cur, &mut per_copy, &mut per_pos, &mut best_match, &mut edits);
+            flush(cur, &mut per_copy, &mut per_pos, &mut best_match, &mut edits, &mut events);
             cur = Some(ri);
         }
         if nmatch <= best_match[ci] {
@@ -826,6 +841,7 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
         let (mut q, mut t) = (if minus { qlen - qe } else { qs }, ts);
         let mut num = 0usize;
         let (mut n_x, mut n_aligned, mut n_i, mut n_d) = (0u64, 0u64, 0u64, 0u64); // X, =+X, I, D bases (N never counts)
+        let mut ev: Vec<(u32, u8, u32)> = Vec::new(); // I/D events in forward read coordinates
         for ch in cg.bytes() {
             if ch.is_ascii_digit() {
                 num = num * 10 + (ch - b'0') as usize;
@@ -850,11 +866,15 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
                     t += num;
                 }
                 b'I' => {
+                    // forward read positions of the inserted run: q..q+num on '+', qlen-q-num..qlen-q on '-'
+                    ev.push((if minus { (qlen - q - num) as u32 } else { q as u32 }, b'I', num as u32));
                     n_i += num as u64;
                     q += num;
                 }
                 b'S' => q += num,
                 b'D' => {
+                    // the boundary before the next read base: q on '+', qlen-q on '-'
+                    ev.push((if minus { (qlen - q) as u32 } else { q as u32 }, b'D', num as u32));
                     n_d += num as u64;
                     t += num;
                 }
@@ -871,9 +891,97 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
         edits[ci] = Some((n_x, n_aligned, nm, blk, n_i, n_d, unaligned));
         per_copy[ci] = Some(v);
         per_pos[ci] = Some(vp);
+        events[ci] = Some(ev);
     }
-    flush(cur, &mut per_copy, &mut per_pos, &mut best_match, &mut edits);
+    flush(cur, &mut per_copy, &mut per_pos, &mut best_match, &mut edits, &mut events);
     let _ = child.wait();
+}
+
+/// ⭐ PREREG 021446fb `--indel-psv`: indel PSV columns. Every I/D event of length ≥ `min_len` (in forward read
+/// coordinates: an `I` occupies the read bases it inserts, a `D` is the boundary before the next read base)
+/// of every candidate is clustered along the read — a new cluster starts when an event begins more than
+/// `INDEL_TOL` bp after the current cluster's end — and each cluster is ONE column at its first position:
+/// a candidate with an event in it needs a gap against the read here (`'1'`), a candidate that covers the
+/// position without one does not (`'0'`), otherwise `None`. The read's observation is `'0'` (the read is its
+/// own coordinate system). Emitted only if both alleles occur. With `forms` (two-form star), carriers must
+/// share one form and only same-form candidates vote `'0'` — a retained intron is an `I` against the spliced
+/// unit and nothing against the locus, a fake column otherwise. Same per-column error as substitution columns.
+const INDEL_TOL: u32 = 20;
+static INDEL_STATS: std::sync::Mutex<(usize, usize, usize)> = std::sync::Mutex::new((0, 0, 0));
+/// `(molecules with ≥ 1 indel column, indel columns, indel columns whose longest event is ≥ 10 bp)`, drained.
+pub fn take_indel_stats() -> (usize, usize, usize) {
+    std::mem::take(&mut *INDEL_STATS.lock().unwrap())
+}
+fn append_indel_columns(per_copy: &[Option<Vec<Option<u8>>>], events: &[Option<Vec<(u32, u8, u32)>>], forms: Option<&[bool]>, min_len: u32, obs: &mut Vec<Option<u8>>, profiles: &mut [CopyProfile], cols: &mut Vec<u32>) {
+    let nc = per_copy.len();
+    // (start, end, copy, len): end = start + len for I (read bases), start + 1 for D (a boundary)
+    let mut evs: Vec<(u32, u32, usize, u32)> = Vec::new();
+    for (ci, e) in events.iter().enumerate() {
+        if per_copy.get(ci).map_or(true, |h| h.is_none()) {
+            continue;
+        }
+        if let Some(e) = e {
+            for &(pos, kind, len) in e {
+                if len >= min_len {
+                    evs.push((pos, if kind == b'I' { pos + len } else { pos + 1 }, ci, len));
+                }
+            }
+        }
+    }
+    evs.sort_unstable();
+    let (mut n_cols, mut n_ge10) = (0usize, 0usize);
+    let mut i = 0;
+    while i < evs.len() {
+        let (start, mut end, mut max_len) = (evs[i].0, evs[i].1, evs[i].3);
+        let mut members: Vec<usize> = vec![evs[i].2];
+        let mut j = i + 1;
+        while j < evs.len() && evs[j].0 <= end + INDEL_TOL {
+            end = end.max(evs[j].1);
+            max_len = max_len.max(evs[j].3);
+            members.push(evs[j].2);
+            j += 1;
+        }
+        i = j;
+        let pos = start as usize;
+        let covers = |ci: usize| {
+            per_copy[ci].as_ref().map_or(false, |v| {
+                v.get(pos).copied().flatten().is_some() || (pos > 0 && v.get(pos - 1).copied().flatten().is_some())
+            })
+        };
+        let mut alleles: Vec<Option<u8>> =
+            (0..nc).map(|ci| if members.contains(&ci) { Some(b'1') } else if covers(ci) { Some(b'0') } else { None }).collect();
+        if let Some(f) = forms {
+            let carrier_form = f[members[0]];
+            if members.iter().any(|&m| f[m] != carrier_form) {
+                continue;
+            }
+            for ci in 0..nc {
+                if f.get(ci).copied().unwrap_or(false) != carrier_form {
+                    alleles[ci] = None;
+                }
+            }
+        }
+        let n1 = alleles.iter().filter(|a| **a == Some(b'1')).count();
+        let n0 = alleles.iter().filter(|a| **a == Some(b'0')).count();
+        if n1 == 0 || n0 == 0 {
+            continue;
+        }
+        cols.push(start);
+        obs.push(Some(b'0'));
+        for (ci, a) in alleles.into_iter().enumerate() {
+            profiles[ci].alleles.push(a);
+        }
+        n_cols += 1;
+        if max_len >= 10 {
+            n_ge10 += 1;
+        }
+    }
+    if n_cols > 0 {
+        let mut st = INDEL_STATS.lock().unwrap();
+        st.0 += 1;
+        st.1 += n_cols;
+        st.2 += n_ge10;
+    }
 }
 
 /// Per-read columns from `read_star_alignments`: read positions where ≥ 2 copies carry an aligned base and
@@ -2273,6 +2381,8 @@ fn assign_family_detailed_once(
         } else {
             Vec::new()
         };
+        // PREREG 021446fb: indel PSV columns, opt-in
+        let indel_min_len: Option<u32> = p.indel_psv.then_some(p.indel_psv_min_len);
         let alns: Vec<ReadStarObs> = if genomic_spans.is_some() && p.read_star_two_form {
             // ⭐ §6fp: both forms, the better one per (molecule, candidate)
             let unit_seqs: Vec<&[u8]> = copies.iter().map(|c| c.seq.as_slice()).collect();
@@ -2283,12 +2393,12 @@ fn assign_family_detailed_once(
                 .zip(raw_u)
                 .enumerate()
                 .map(|(ri, (g, u))| {
-                    let (pc, pp, ed) = merge_star_raw(g, u);
-                    build_star_obs(read_seqs[ri], &pc, &pp, &ed, &[])
+                    let ((pc, pp, ed, ev), form) = merge_star_raw(g, u);
+                    build_star_obs(read_seqs[ri], &pc, &pp, &ed, &[], &ev, Some(&form), indel_min_len)
                 })
                 .collect()
         } else {
-            read_star_observations(&copy_seqs, &read_seqs, if genomic_spans.is_some() { &[] } else { &copy_bounds }, preset, &windows)
+            read_star_observations(&copy_seqs, &read_seqs, if genomic_spans.is_some() { &[] } else { &copy_bounds }, preset, &windows, indel_min_len)
         };
         if timing {
             eprintln!("[timing]     read-star minimap2 ({} molecules x {} copies): {:.1}s", reps.len(), copies.len(), t_star.elapsed().as_secs_f64());
@@ -2958,6 +3068,44 @@ pub fn assign_family(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn indel_psv_columns_one_per_event_cluster() {
+        // PREREG 021446fb. 60-base read; copy 0 aligned contiguously; copy 1 needs a 5 bp gap over read 10..15
+        // (I) and a 4 bp deletion before read 45 (D), plus a 2 bp event below the floor; copy 2 has no hit.
+        let read: Vec<u8> = b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT".to_vec();
+        let full: Vec<Option<u8>> = read.iter().map(|&b| Some(b)).collect();
+        let mut gapped = full.clone();
+        for p in 10..15 {
+            gapped[p] = None;
+        }
+        let pos: Vec<Option<u32>> = (0..60).map(|i| Some(i as u32)).collect();
+        let per_copy = vec![Some(full), Some(gapped), None];
+        let per_pos = vec![Some(pos.clone()), Some(pos), None];
+        let edits = vec![Some((0, 60, 0, 60, 0, 0, 0)), Some((0, 55, 9, 64, 5, 4, 0)), None];
+        let events = vec![Some(vec![]), Some(vec![(10, b'I', 5), (45, b'D', 4), (20, b'I', 2)]), None];
+        let off = build_star_obs(&read, &per_copy, &per_pos, &edits, &[], &events, None, None);
+        assert!(off.5.is_empty(), "identical bases: no substitution column; flag off adds nothing");
+        let on = build_star_obs(&read, &per_copy, &per_pos, &edits, &[], &events, None, Some(3));
+        assert_eq!(on.5, vec![10, 45], "one column per event >= 3 bp; the 2 bp event is below the floor");
+        assert_eq!(on.1, vec![Some(b'0'), Some(b'0')], "the read observes 'no gap' at its own positions");
+        assert_eq!(on.0, vec![0, 1]);
+        assert_eq!(on.2[0].alleles, vec![Some(b'0'), Some(b'0')], "copy 0 needs no gap");
+        assert_eq!(on.2[1].alleles, vec![Some(b'1'), Some(b'1')], "copy 1 needs a gap at both");
+        // clustering: two events of one copy within 20 bp collapse into one column at the first position
+        let events2 = vec![Some(vec![]), Some(vec![(10, b'I', 5), (18, b'D', 4)]), None];
+        let on2 = build_star_obs(&read, &per_copy, &per_pos, &edits, &[], &events2, None, Some(3));
+        assert_eq!(on2.5, vec![10]);
+        // an event every candidate carries is not a column (the individual's SV, absent from every copy)
+        let events3 = vec![Some(vec![(45, b'D', 57)]), Some(vec![(45, b'D', 57)]), None];
+        let on3 = build_star_obs(&read, &per_copy, &per_pos, &edits, &[], &events3, None, Some(3));
+        assert!(on3.5.is_empty());
+        // same-form rule: the carrier came from the unit form, the other copy from the locus -> no column
+        let forms = vec![false, true, false];
+        let on4 = build_star_obs(&read, &per_copy, &per_pos, &edits, &[], &events, Some(&forms), Some(3));
+        assert!(on4.5.is_empty());
+        let _ = take_indel_stats();
+    }
+
     use super::super::copy_assign::AssignStatus;
     use super::*;
 

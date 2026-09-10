@@ -242,6 +242,12 @@ pub struct AssignParams {
     /// other 8 (dominated by 14–327 UNALIGNED bases, not indels) correctly stay rejected. Default `false`
     /// (byte-identical); `origin_subst_only`, if also set, takes precedence.
     pub origin_drop_indels: bool,
+    /// ⭐ PREREG 021446fb: indel PSV columns in read-star — one column per cluster of I/D events of
+    /// ≥ `indel_psv_min_len` bp along the read (`'1'` = the candidate needs a gap against the read here,
+    /// `'0'` = it does not; the read observes `'0'`). Same per-column error as substitution columns.
+    /// Default `false` (byte-identical).
+    pub indel_psv: bool,
+    pub indel_psv_min_len: u32,
     /// ⭐ §6fc: use the read's splice junctions as pairwise evidence in read-star (a junction present in one
     /// candidate and absent in the other, where both cover the position). Adds assignments (paired 35: 32.1 →
     /// 36.5 %) at a precision cost (MAPQ-60 agreement 99.90 → 99.58 %); default `false`.
@@ -310,6 +316,8 @@ impl Default for AssignParams {
             molecule_pool: false,
             origin_subst_only: false,
             origin_drop_indels: false,
+            indel_psv: false,
+            indel_psv_min_len: 3,
             read_star_junctions: false,
             read_star_genomic: true,
             read_star_catalog_locus: true,

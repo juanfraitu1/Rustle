@@ -306,6 +306,13 @@ struct Args {
     /// off (byte-identical); takes a back seat to `--origin-substitutions-only` if both are set.
     #[arg(long, default_value_t = false)]
     origin_drop_indels: bool,
+    /// ⭐ PREREG 021446fb: indel PSV columns in read-star — I/D events ≥ `--indel-psv-min-len` bp, clustered
+    /// within 20 bp along the read, one column per cluster, the same per-column error as substitution
+    /// columns. Default off (byte-identical).
+    #[arg(long, default_value_t = false)]
+    indel_psv: bool,
+    #[arg(long, default_value_t = 3)]
+    indel_psv_min_len: u32,
     /// ⭐ §6fc: splice junctions as pairwise evidence in read-star (opt-in: +4 points of assignment at −0.3 points
     /// of MAPQ-60 agreement on the paired 35 families).
     #[arg(long, default_value_t = false)]
@@ -1572,6 +1579,8 @@ fn main() -> Result<()> {
         molecule_pool: args.molecule_observations && !args.no_molecule_observations,
         origin_subst_only: args.origin_substitutions_only,
         origin_drop_indels: args.origin_drop_indels,
+        indel_psv: args.indel_psv,
+        indel_psv_min_len: args.indel_psv_min_len,
         read_star_junctions: args.read_star_junctions,
         read_star_genomic: args.read_star_genomic && !args.read_star_unit,
         read_star_catalog_locus: !args.read_star_pad_locus,
@@ -2722,6 +2731,7 @@ fn main() -> Result<()> {
             r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside
         )?;
     }
+    let indel_stats = rustle::vg_family::copy_assign_pipeline::take_indel_stats();
     {
         // §6es hygiene: reads with an aligned base inside a copy. ⚠ Kept for continuity only — it counts
         // secondary-only visitors, so it is NOT the denominator to quote (register 734).
@@ -2752,6 +2762,12 @@ fn main() -> Result<()> {
                 eprintln!(
                     "[copy_assign]   ⭐ §6hd ALIGNER-DISAGREEMENT: {} additional molecules admitted whose PRIMARY unit ≠ best-AS unit (no AS tie; `aligner_disagreement` column)",
                     GATE_MOL_DISAGREE.load(std::sync::atomic::Ordering::Relaxed)
+                );
+            }
+            if args.indel_psv {
+                eprintln!(
+                    "[copy_assign]   ⭐ INDEL-PSV (PREREG 021446fb, floor {} bp): {} molecules gained {} indel columns ({} with an event ≥ 10 bp)",
+                    args.indel_psv_min_len, indel_stats.0, indel_stats.1, indel_stats.2
                 );
             }
             let mo = GATE_MOL_OUTSIDE.load(std::sync::atomic::Ordering::Relaxed);
@@ -3328,6 +3344,11 @@ fn main() -> Result<()> {
         row("orphans", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected && r.n_candidates == 0).count()))?;
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
         row("origin_drop_indels", format!("{}", args.origin_drop_indels))?;
+        row("indel_psv", format!("{}", args.indel_psv))?;
+        row("indel_psv_min_len", format!("{}", args.indel_psv_min_len))?;
+        row("indel_psv_molecules", format!("{}", indel_stats.0))?;
+        row("indel_psv_columns", format!("{}", indel_stats.1))?;
+        row("indel_psv_columns_ge10", format!("{}", indel_stats.2))?;
         row("admit_aligner_disagreement", format!("{}", args.admit_aligner_disagreement))?;
         row("read_star_junctions", format!("{}", args.read_star_junctions))?;
         row("read_star_genomic", format!("{}", args.read_star_genomic && !args.read_star_unit))?;
