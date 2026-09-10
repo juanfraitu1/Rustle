@@ -15645,3 +15645,24 @@ the aligner-placed GTF byte-for-byte (`a4d0f5cd`). The full pre-09-09 escape is 
 --best-by-alignment --no-origin-drop-indels --no-best-by-duel --no-gtf-copy-set`. Assignments untouched
 (human `8a057f68`, MCL1 `c87c7f71`). **The deliverable is now the GTF O2 believes**: evidence-placed transcripts,
 certified isoforms at O2's copy, coin-toss isoforms once with `copies "A,B[,outside]"`.
+
+
+## §6hq — THE EXON-SUM WIDTH IS NOT SYSTEMATICALLY UNDER-REPRESENTED; a self-caught metric trap along the way (2026-09-09; PREREG 64f80dd7, outcome appended)
+User's premise: the de novo (annotation-free-coordinate) read span under-represents a copy's true width,
+and asked whether isoseq/flair snap-and-extend by a fixed amount. `bench/width_deficit.py` compares our own
+`--gtf` assembly's per-copy span (min_reads=3 collapse, `pass1_skeletons`/`assemble_gate` — confirmed reads
++ genome only, no `--families`/`--gff` dependency) against the annotation truth in `copies16.tsv` / the
+gorilla catalogs, bucketing transcripts to copies by positional overlap. **First pass reproduced exactly
+the mistake register row 879 already named**: no reciprocal-containment floor let one readthrough
+transcript (32.7 kb, 54 % inside a 17.8 kb copy) inflate that copy's estimated width by 15 kb, and every
+copy showed a 3–14× OVER-shoot — the opposite sign of the hypothesis. Fixed with an 0.8 containment floor
+(register row 805). **Result: median relative deficit ≈ 0 (−0.1 % human, −0.1 % gorilla MCL1); only 6/13
+well-covered human copies are even nominally under-represented, not the predicted ≥ 80 %.** A containment
+sweep (0.5→0.9) shows the ONLY outliers at floor 0.9 are two low-coverage copies (0 and 72 reads), and every
+over-shoot outlier at looser floors was a single misassembled readthrough transcript, not a biological
+signal. **The one real, clean, cross-tool pattern: ~100 % of whatever small deficit remains sits at the 5'
+(TSS) end; the 3' (TES/polyA) end is called to within 11–30 bp from reads alone, on ours AND flair/StringTie/
+isoseq.** No single additive/multiplicative correction exists (sign and size vary by coverage and the
+containment choice, not by gene length) — the actionable fix is a readthrough/containment guard on the
+ASSEMBLER's own transcript boundaries (the O2 read-star certificate already has an equivalent giant-intron
+guard, §6ft; the `--gtf` assembler does not, apparently). Not yet implemented.
