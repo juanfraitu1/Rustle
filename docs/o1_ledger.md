@@ -15706,3 +15706,22 @@ pending the user's decision** (`--min-boundary-fraction 0.10 --min-boundary-gap 
 **Addendum — default ON at 0.10 (user, 2026-09-10):** `--gtf`'s boundary-outlier demotion is now on by default
 (`--min-boundary-fraction 0` is the escape, byte-identical `888794bf`). Human default GTF `2bbda55a`,
 assignments untouched on both species (`8a057f68`/`c87c7f71`), suite 871/0/11.
+
+
+## §6ht — ⛔ IDENTITY-WEIGHTED DENSITY REFUTED GENOME-WIDE; `identity_gap.py` IS THE RIGHT INSTRUMENT (2026-09-10; PREREG b4b65ebd, outcome appended)
+The advisor's criticism-5 illustration (TBC1D3, human CHM13: density 0.818 → identity-weighted 0.724) was a
+one-family artifact, self-flagged as unvalidated. New `mcl_families --dump-pairs` writes every within-cluster
+edge's identity straight from the graph the catalog was built from (Σnmatch/Σblocklen aggregated, the shipped
+admission rule's own value — fixes the artifact's noted discrepancy). Fresh gorilla fibroblast run, current
+defaults (⚠ NOT the 09-04 `rna_bp1_p9` snapshot — `min_size` alone moved 3→2 on 09-05): 274 clusters, sanity
+gate **274/274** (recomputed density matches reported density exactly). Swept 60 clusters (size 4–40) against
+`identity_gap.py`'s already-validated bimodality test (§6gw) and the `corroborated` column: **both
+predictions refuted.** The gap (density − weighted-density) does not predict a significant `identity_gap.py`
+split (Mann-Whitney p = 0.34; the 5 largest gaps are ALL non-significant, p ≥ 0.19; two of the four real
+splits sit at the SMALLEST gaps measured, 0.013/0.022) and runs the WRONG direction against known repeat-
+clique-like contamination (low-corroborated clusters are LESS discounted, not more). **Mechanism**:
+identity-weighted density is a mean (first moment); subfamily structure is a distributional gap (shape); a
+small uniformly-lower-identity clique and a large near-perfect clique with one outlier pair produce opposite
+rankings on the two statistics. **Verdict: do not adopt identity-weighted density as a reported metric —
+`identity_gap.py` already is the validated answer to criticism 5** (three nulls, worst governs, calibrated on
+TBC1D3 no-split / NPIP split against the published biology, §6gw). Rows 810–811.
