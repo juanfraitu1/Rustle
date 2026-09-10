@@ -15639,3 +15639,9 @@ undecided with a copy set — the post-processor's numbers exactly**, identical 
 splits {15},{16,17} — a fragment-choice edge, no placement changes). Phantom table and lift-aware bakeoff on the
 binary's GTF: identical to §6ho (2 phantoms, 40 sets, 100 % / 95 %). Flag off: GTF byte-identical
 (`a4d0f5cd`), assignments unchanged (`8a057f68`). Debug: `RUSTLE_COPYSET_DEBUG`, `RUSTLE_COPYSET_DEBUG_TID`.
+
+**Addendum — default ON (user, 2026-09-09):** `--gtf` now emits the copy-set GTF; `--no-gtf-copy-set` restores
+the aligner-placed GTF byte-for-byte (`a4d0f5cd`). The full pre-09-09 escape is `--no-as-tied-only
+--best-by-alignment --no-origin-drop-indels --no-best-by-duel --no-gtf-copy-set`. Assignments untouched
+(human `8a057f68`, MCL1 `c87c7f71`). **The deliverable is now the GTF O2 believes**: evidence-placed transcripts,
+certified isoforms at O2's copy, coin-toss isoforms once with `copies "A,B[,outside]"`.

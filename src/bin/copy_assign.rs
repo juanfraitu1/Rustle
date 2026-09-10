@@ -183,9 +183,13 @@ struct Args {
     /// there, or a certificate-assigned read); transcripts at copies without evidence are dropped (phantoms),
     /// a certified read whose copy has no transcript gets a LIFTED placement, and an isoform with no evidence
     /// anywhere is emitted ONCE with `copies "A,B[,outside]"` = the AS-tied placement set of its reads.
-    /// Non-family and single-intron transcripts pass through. Default off (byte-identical GTF).
-    #[arg(long, default_value_t = false)]
+    /// Non-family and single-intron transcripts pass through. ⭐ DEFAULT ON (user, 2026-09-09 §6hp);
+    /// `--no-gtf-copy-set` restores the aligner-placed GTF byte-for-byte.
+    #[arg(long, default_value_t = true)]
     gtf_copy_set: bool,
+    /// Escape for the 2026-09-09 default: the aligner-placed GTF with the old copy attributes (pre-§6hp).
+    #[arg(long, default_value_t = false)]
+    no_gtf_copy_set: bool,
     /// Lift tolerance (bp) per intron boundary when matching an isoform across copies (`--gtf-copy-set`).
     #[arg(long, default_value_t = 5)]
     gtf_lift_tol: u64,
@@ -2032,7 +2036,7 @@ fn main() -> Result<()> {
                     if !inside {
                         flagged.insert(br.name.as_str());
                     }
-                    if args.gtf_copy_set {
+                    if (args.gtf_copy_set && !args.no_gtf_copy_set) {
                         // the copy SET of an undecided isoform (§6hn): catalog indices at the tied placements
                         let hit = targets.iter().position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
                         let mut reg = TIE_SET.get_or_init(Default::default).lock().unwrap();
@@ -2087,7 +2091,7 @@ fn main() -> Result<()> {
                 }
             }
             GATE_MOL_OUTSIDE.fetch_add(n_outside, std::sync::atomic::Ordering::Relaxed);
-            if args.gtf_copy_set {
+            if (args.gtf_copy_set && !args.no_gtf_copy_set) {
                 for br in bam_reads.iter().filter(|br| !tied_owned.contains(&br.name) && !br.is_secondary && !br.is_supplementary) {
                     let bl = aligned_blocks_local(&br.read);
                     let chain: Vec<(u64, u64)> = bl.windows(2).map(|w| (w[0].1, w[1].0)).filter(|&(a, b)| b > a).collect();
@@ -2735,7 +2739,7 @@ fn main() -> Result<()> {
                             *votes.entry(r.catalog_copy_idx.as_str()).or_insert(0) += 1;
                         }
                     }
-                    if args.gtf_copy_set {
+                    if (args.gtf_copy_set && !args.no_gtf_copy_set) {
                         matched_ri.push(ri);
                     }
                 }
@@ -2815,7 +2819,7 @@ fn main() -> Result<()> {
                     t.chrom, es + 1, ee, t.strand, t.gene_tid, uniq_tid, k + 1
                 )).collect();
                 // --gtf-copy-set: multi-intron family transcripts are held back and placed by evidence below
-                if args.gtf_copy_set && t.introns.len() >= 2 && best.is_some() {
+                if (args.gtf_copy_set && !args.no_gtf_copy_set) && t.introns.len() >= 2 && best.is_some() {
                     let (fw, ci, _, _, _) = best.unwrap();
                     let (mut uniq, mut asg, mut abst) = (std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), Vec::new());
                     // unique mappers (gate-dropped primaries) with this chain: evidence at the copy their primary lies in
@@ -2837,7 +2841,7 @@ fn main() -> Result<()> {
                     gtf_lines.extend(elines);
                 }
             }
-            if args.gtf_copy_set && !pending.is_empty() {
+            if (args.gtf_copy_set && !args.no_gtf_copy_set) && !pending.is_empty() {
                 // ⭐ §6hn: group the held transcripts across copies by LIFT, then place each group by evidence.
                 let tol = args.gtf_lift_tol;
                 let gi = match prod_genome.as_ref() { Some(g) => g.clone(), None => { let g = genome_for(&contig)?; prod_genome = Some(g.clone()); g } };
@@ -3684,7 +3688,7 @@ fn main() -> Result<()> {
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
         row("origin_drop_indels", format!("{}", args.origin_drop_indels && !args.no_origin_drop_indels))?;
         row("best_by_duel", format!("{}", args.best_by_duel && !args.no_best_by_duel))?;
-        row("gtf_copy_set", format!("{}", args.gtf_copy_set))?;
+        row("gtf_copy_set", format!("{}", (args.gtf_copy_set && !args.no_gtf_copy_set)))?;
         row("indel_psv", format!("{}", args.indel_psv))?;
         row("indel_psv_min_len", format!("{}", args.indel_psv_min_len))?;
         row("indel_psv_molecules", format!("{}", indel_stats.0))?;

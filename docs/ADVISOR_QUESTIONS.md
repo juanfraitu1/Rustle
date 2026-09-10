@@ -724,6 +724,14 @@ Verbatim intent, and it supersedes Parts 0d–0g where they differ:
    turn, 247/262 = 94.3 % of the assignments abstain (§6hg/§6hk); the hard-locus bakeoff (§6hh) carries 85 % of the
    AS-tied molecules vs flair 47 % / StringTie 44 % / isoseq 73 %. Two widenings were measured and refuted
    (aligner disagreement §6hd, indel PSV columns §6he); the pairwise best (§6hj) shipped.
+   **The deliverable (§6hn–§6hp, default since 2026-09-09):** `copy_assign --gtf` emits the GTF O2 believes —
+   family isoforms grouped across copies by lifting their intron chains, placed only where a unique mapper or
+   a certified read backs them (phantoms dropped), certified isoforms lifted to O2's copy, and coin-toss
+   isoforms emitted ONCE with `copies "A,B[,outside]"`. Measured against the same rule on every tool's GTF
+   (human MCL0): phantom transcripts at twin copies ours 2 / flair 4 / StringTie 15 / isoseq 45; coin-toss
+   isoforms given one arbitrary address ours 0 (40 sets) / flair 76 / StringTie 20 / isoseq 200; certified
+   isoforms at O2's copy ours 100 % vs 78–86 %. Isoform-level pooling was tested and refuted as a placer
+   (71 % excision, row 801); "similar copies produce the same isoform" is measurable: 43 shared groups.
 4. **flair-like, not StringTie-like**: group observed full-length structures (intron-chain collapse), do not
    run a flow model that asserts chains no read carries. That is already the design (§6gr).
 
