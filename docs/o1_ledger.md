@@ -15585,3 +15585,15 @@ copies** (7 ×5, 6 ×4, 23 ×4, 24 ×1; 13/14 beside a sibling ≥ 0.985) and **
 reads only** — 53 of 542, all in the twin groups. The user's question answered: similar copies DO produce the
 same isoforms, measurably; at the twins the reads cannot say which, and that is what the isoform-level
 certificate (§6hm, PREREG isoform_pool) pools for. Register row 800.
+
+
+## §6hm — ⛔ THE POOLED (ISOFORM-LEVEL) CERTIFICATE IS NOT A PLACER (2026-09-09; PREREG 12576433, outcome appended)
+Pooling a chain's AS-tied reads before the pairwise test (`bench/isoform_pool.py`, the binary's arithmetic on
+the `--dump-star` columns): 856 abstaining human reads, 37 % share a chain with another contested read; 78
+groups → 35 isoform-assigned, but 25 of those already held a read-level assignment — **27 abstaining reads
+(3.2 %) gain an address, 10 groups from abstaining reads alone**, all at the twin copies (12, 8, 6, 19). Excision
+of the certified copy: **25/35 = 71 % abstain** (reads: 94 %); the failures move to the twin with pooled margins
+up to 366 — pooling sums the columns the twin shares with every other rival and cannot see the twin itself; the
+origin certificate is blind below ≈ 0.6 %. Row 801. **Step 3 therefore places by read-level evidence only**
+(unique mappers, certified reads) and emits one transcript with a copy SET where neither exists; pooled evidence
+becomes a reported attribute, never a coordinate.

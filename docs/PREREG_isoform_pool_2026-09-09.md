@@ -24,3 +24,18 @@ Single-read groups are the read-level verdicts and are excluded from P2–P4.
 | P5 | where an isoform's UNIQUE mappers sit at copy A and the pooled abstaining reads certify a copy, that copy is A in **≥ 70 %** (report; a certified copy ≠ A can be a second expressing copy) | — |
 | P6 | the 53 evidence-less transcripts (§6hl): pooling gives **≥ 10** of them a certified address | < 4 |
 No shipped behaviour changes in this step; the prototype's arithmetic is later ported to the binary (step 3).
+
+## Outcome (2026-09-09) — `bench/isoform_pool.py`, `bench/isoform_pool_excision.py`; dump `ours_final2_dump`, excised dumps `excise_all/pool/no{2,6,8,12,19,22}`
+| # | verdict |
+|---|---|
+| P1 | ⚠ missed, not refuted: **320/856 = 37.4 %** of the abstaining contested reads share a chain with ≥ 1 other contested read; 63 % are chain singletons — nothing to pool |
+| P2 | ✓ 78 groups → **35 isoform-assigned (45 %)**, 18 tied, 25 ambiguous — but 25 of the 35 already contained a read-level `assigned` read; **only 27 abstaining reads (3.2 %) gain an address**, 10 groups from abstaining reads alone |
+| P3 | ✓ 0 contradictions between the pooled copy and a member read's own certificate |
+| P4 | ⛔ **REFUTED: 25/35 = 71.4 % abstain when the certified copy is removed.** The 10 that do not: 2 → 8 (×4, margins 7–62), 2 → 1, 12 → 19 (**margin 366**), 12 → 9, 19 → 21 (**297**), 8 → 6 (×2) — the twins again, and pooling makes the wrong call MORE confident: the pooled margin is measured against the rivals that remain, all of which the reads beat at the columns the twin shares with them; the only guard is the origin certificate, blind below ≈ 0.6 % over a read |
+| P5 | 6/9 certified copies coincide with the isoform's unique-mapper copy (67 %; report) |
+| P6 | ⚠ missed by one: 9 of the 42 evidence-less groups certified (copies 12 ×4, 8 ×2, 6 ×2, 19) — exactly the twin copies whose excision fails |
+**Reading.** Pooling adds power only inside the certificate's sibling limit, and at the twins that is where
+the wrong copy lives: read-level excision precision 94 % becomes **71 % at the isoform level**. The pooled
+certificate is NOT a placer. What survives for step 3: pooled evidence as a reported attribute, placement by
+read-level evidence only (unique mappers, read-level certificates), and one transcript with a copy SET where
+neither exists.
