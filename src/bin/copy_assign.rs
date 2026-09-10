@@ -190,6 +190,15 @@ struct Args {
     /// Escape for the 2026-09-09 default: the aligner-placed GTF with the old copy attributes (pre-§6hp).
     #[arg(long, default_value_t = false)]
     no_gtf_copy_set: bool,
+    /// ⭐ §6hq/PREREG fd894558: StringTie-style per-locus relative-depth demotion. Per `gene_tid`
+    /// (the locus `collapse_loci_groups` already assigns), `isoform_fraction = n_reads / max(n_reads in the
+    /// locus)`; below this floor a transcript is tagged `low_confidence "true"` and, under `--gtf-copy-set`,
+    /// excluded from evidence/grouping (it never seeds or extends a copy's span) — StringTie's flow
+    /// decomposition reports the identical readthrough at copy 4 as a minor isoform (coverage 6.1 vs the
+    /// dominant 50.5); we collapsed by exact chain with one flat `min_reads` floor, so a 2-read and a
+    /// 50-read chain at the same locus were both just "a transcript." Default `0.0` = off, byte-identical.
+    #[arg(long, default_value_t = 0.0)]
+    min_isoform_fraction: f64,
     /// Lift tolerance (bp) per intron boundary when matching an isoform across copies (`--gtf-copy-set`).
     #[arg(long, default_value_t = 5)]
     gtf_lift_tol: u64,
@@ -2691,10 +2700,24 @@ fn main() -> Result<()> {
                     _ => ci.to_string(),
                 }
             };
+            // ⭐ PREREG fd894558: per-locus read depth, keyed on the SAME `gene_tid` `collapse_loci_groups`
+            // already assigned (threaded into every `TranscriptRec` unconditionally, not only under
+            // --gtf-copy-set). SUM, not max: exact-chain collapse FRAGMENTS one locus's reads across many
+            // near-identical chains (measured: one locus's 41 reads split 9 ways, largest chain only 12), so
+            // no single chain ever reaches the locus's true depth the way a splice-graph "gene" would — the
+            // max badly undercounts it (row 807). The sum is the closer proxy for StringTie's per-locus
+            // coverage; it over-counts only where two OVERLAPPING junction-groups both touch this locus,
+            // which the two-form/one-region sweep does not produce in practice (measured, not assumed).
+            let mut group_total_reads: std::collections::HashMap<&str, u64> = std::collections::HashMap::new();
+            for t in &transcripts {
+                *group_total_reads.entry(t.gene_tid.as_str()).or_insert(0) += t.n_reads as u64;
+            }
             for t in &transcripts {
                 let n = tid_seen.entry(t.tid.as_str()).or_insert(0);
                 *n += 1;
                 let uniq_tid = if *n == 1 { t.tid.clone() } else { format!("{}.{}", t.tid, *n) };
+                let isoform_fraction = t.n_reads as f64 / (*group_total_reads.get(t.gene_tid.as_str()).unwrap_or(&1)).max(1) as f64;
+                let low_confidence = args.min_isoform_fraction > 0.0 && isoform_fraction < args.min_isoform_fraction;
                 // (1) positional: the catalog copy this isoform overlaps most
                 let best = fams.iter().enumerate().flat_map(|(fw, fa)| {
                     fa.copy_spans.iter().enumerate().map(move |(ci, (c, s0, e0))| (fw, ci, c, *s0, *e0))
@@ -2753,6 +2776,11 @@ fn main() -> Result<()> {
                     None => format!(" copy_status \"unadjudicated\"; matched_reads \"{matched}\";"),
                 };
                 let fam_attr = format!("{fam_attr}{copy_attr}");
+                let fam_attr = if args.min_isoform_fraction > 0.0 {
+                    format!("{fam_attr} isoform_fraction \"{isoform_fraction:.3}\"; low_confidence \"{low_confidence}\";")
+                } else {
+                    fam_attr
+                };
                 // §6gp: longest ORF over the strand-oriented exon-sum. Sequence comes from the genome at the
                 // transcript's own exons, so this needs no annotation and no CDS.
                 let orf_aa = if args.productivity {
@@ -2819,7 +2847,7 @@ fn main() -> Result<()> {
                     t.chrom, es + 1, ee, t.strand, t.gene_tid, uniq_tid, k + 1
                 )).collect();
                 // --gtf-copy-set: multi-intron family transcripts are held back and placed by evidence below
-                if (args.gtf_copy_set && !args.no_gtf_copy_set) && t.introns.len() >= 2 && best.is_some() {
+                if (args.gtf_copy_set && !args.no_gtf_copy_set) && t.introns.len() >= 2 && best.is_some() && !low_confidence {
                     let (fw, ci, _, _, _) = best.unwrap();
                     let (mut uniq, mut asg, mut abst) = (std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), Vec::new());
                     // unique mappers (gate-dropped primaries) with this chain: evidence at the copy their primary lies in
@@ -3689,6 +3717,7 @@ fn main() -> Result<()> {
         row("origin_drop_indels", format!("{}", args.origin_drop_indels && !args.no_origin_drop_indels))?;
         row("best_by_duel", format!("{}", args.best_by_duel && !args.no_best_by_duel))?;
         row("gtf_copy_set", format!("{}", (args.gtf_copy_set && !args.no_gtf_copy_set)))?;
+        row("min_isoform_fraction", format!("{}", args.min_isoform_fraction))?;
         row("indel_psv", format!("{}", args.indel_psv))?;
         row("indel_psv_min_len", format!("{}", args.indel_psv_min_len))?;
         row("indel_psv_molecules", format!("{}", indel_stats.0))?;

@@ -31,3 +31,39 @@ as evidence for a copy's span) — the direct fix for the width-bias mechanism (
 | P5 | suite passes; excision sweep (§6hg) numbers on `ours_final2`/`ours_final3`-equivalent assignments are untouched (this flag only touches the `--gtf` emitter, never `copy_assign`'s own O2 verdicts) | any assignment-side number changes |
 Human MCL0 primary; gorilla MCL1 secondary (report only, competitor comparison not repeated — testis
 substrate rule stands). Default stays the user's decision after the measurement.
+
+## Outcome (2026-09-10) — `bakeoff/human/ours_iso10b` (sum-denominator fix), `ours_p0iso*` (byte-identity)
+| # | verdict |
+|---|---|
+| P0 | ✓ flag at 0.0 (implicit and explicit) byte-identical GTF `888794bf`, assignments `8a057f68`, on both the max- and sum-denominator builds |
+| P1 | ⚠ **failed with the originally-specified MAX denominator** (`DN_chr16_15368428_10` scored `isoform_fraction 0.167`, not flagged — its own locus group's max chain is only 12 reads, not the ~50 StringTie sees, because our exact-chain collapse FRAGMENTS one locus's reads across many near-identical chains: this locus has 41 total reads split across 9 chains, largest 12). **Fixed by summing, not maxing, `n_reads` within a `gene_tid` group** (register row 807) — with the sum denominator (41), the transcript scores 0.049 and IS flagged at floor 0.10 |
+| P2 | ⛔⛔ **REFUTED, badly, with the sum denominator: 514/686 = 75.0 % of family transcripts flagged low-confidence** (predicted ≤ 15 %, refuted at > 30 %) |
+Suite 871 / 0 / 11.
+
+### Why P2 fails, and what it reveals (the important part)
+The locus that contains the readthrough transcript has 9 chains at 2, 2, 2, 2, 3, 5, 11, 12, 2 reads (sum
+41). The readthrough chain (2 reads) is **not a statistical outlier in DEPTH** among its siblings — five of
+the other eight chains have the SAME or fewer reads and are perfectly normal alternative isoforms (different
+5' start points from natural read-length/TSS heterogeneity, not artifacts). **`isoform_fraction`
+(whole-transcript relative depth) cannot separate a readthrough from a legitimate low-support alternative
+isoform when both have similarly low absolute read counts** — which is the common case once a locus's true
+depth is spread over many near-identical exact chains (measured here: even the BEST-supported chain at this
+locus is only 12/41 = 29 % of the locus total, so a strict-enough floor to catch the 2-read readthrough
+catches most of the 2–5-read legitimate variants too, and a loose-enough floor to spare them misses the
+readthrough). **The actual distinguishing signal is at the JUNCTION level, not the transcript level**:
+StringTie's flow decomposition scores the SPECIFIC long-range junction (2 reads cross it) against the many
+reads that are present at the same upstream position but TERMINATE before it (the well-supported chains'
+reads) — a per-junction relative test, not a per-transcript one. This is structurally the SAME test §6ft's
+read-through certificate already runs at O2's read-star stage (a giant intron with too few supporting
+molecules), just with the WRONG absolute threshold for this case: that gap is ~13.5 kb, well under the
+existing 50 kb floor, so even the O2-side guard would not have caught it.
+
+### Reading
+`--min-isoform-fraction` is implemented, tested, byte-identical at 0 (default), and does exactly what its own
+definition says — but that definition (relative TRANSCRIPT depth) is the wrong axis for this pipeline's
+exact-chain-collapse fragmentation pattern. **It is not the fix for the readthrough problem.** The correct
+next step is a JUNCTION-level relative-support test in the assembler itself (does this specific junction's
+read count fall far below the read count of the reads present at the same donor site that do NOT take it) —
+a materially different, larger piece of work than this flag, scoped separately. `--min-isoform-fraction`
+stays in the codebase, default off, as a plain (if imperfect for THIS purpose) relative-depth report/filter;
+not recommended as a default and not claimed to solve the readthrough case.

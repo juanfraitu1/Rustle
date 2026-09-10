@@ -15666,3 +15666,20 @@ isoseq.** No single additive/multiplicative correction exists (sign and size var
 containment choice, not by gene length) — the actionable fix is a readthrough/containment guard on the
 ASSEMBLER's own transcript boundaries (the O2 read-star certificate already has an equivalent giant-intron
 guard, §6ft; the `--gtf` assembler does not, apparently). Not yet implemented.
+
+
+## §6hr — ⛔ `--min-isoform-fraction` DOES NOT SOLVE THE READTHROUGH PROBLEM (2026-09-10; PREREG fd894558, outcome appended)
+Implemented (default off, byte-identical): per `gene_tid` (the locus `collapse_loci_groups` assigns by
+shared junctions), `isoform_fraction = n_reads / group total` (SUM, not max — see row 807), a transcript
+below the floor is `low_confidence` and, under `--gtf-copy-set`, excluded from evidence/grouping. P1 (does it
+catch the copy-4 readthrough) passes with the sum fix (0.049 at floor 0.10). **P2 fails badly: 75 % of all
+family transcripts flagged** — the readthrough's locus has 9 chains at 2–12 reads (sum 41); the readthrough
+(2 reads) is NOT a depth outlier among its siblings, five of which have equally few reads and are ordinary
+alternative isoforms (TSS/read-length heterogeneity), not artifacts. **Whole-transcript relative depth
+cannot separate the two classes when both have similarly low absolute counts — the discriminating signal is
+at the JUNCTION level**: the readthrough's SPECIFIC long-range gap (2 reads cross it) is rare among the many
+reads present at the same donor site that terminate before it; that gap is only ~13.5 kb, under the O2-side
+read-through certificate's existing 50 kb floor (§6ft), so no existing mechanism catches it either. The
+correct fix is a junction-level relative-support test in the assembler, a larger, separately-scoped change;
+this flag stays in the code (default off) as an honest relative-depth report, not a readthrough fix. Rows
+807-808.
