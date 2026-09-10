@@ -60,50 +60,33 @@ class Lift:
         return (best[0], best[1]) if best else (None, None)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--gtf", required=True); ap.add_argument("--copies", required=True); ap.add_argument("--paf", required=True)
-    ap.add_argument("--bam", required=True); ap.add_argument("--assign", required=True); ap.add_argument("--family", default="MCL0")
-    ap.add_argument("--tol", type=int, default=5); ap.add_argument("--out")
-    a = ap.parse_args()
-    cop = {}
-    for r in csv.DictReader(open(a.copies), delimiter="\t"):
-        cop[r["copy_idx"]] = (r["chrom"], int(r["start"]), int(r["end"]))
-    span2idx = {f"{c}:{s+1}-{e}": i for i, (c, s, e) in cop.items()}
-    # copy-to-copy lifts, both directions, all fragments; identity for P4
+def build_lifts(paf_path, span2idx):
+    """Copy-to-copy lifts in both directions (all fragments) and pairwise identity, from a minimap2 --eqx PAF
+    over the genomic unit spans (query/target names = "chrom:start1-end")."""
     lifts = defaultdict(list); acc = defaultdict(lambda: [0, 0])
-    for l in open(a.paf):
+    for l in open(paf_path):
         f = l.rstrip().split("\t")
         if f[0] not in span2idx or f[5] not in span2idx or f[0] == f[5]:
             continue
         qi, ti = span2idx[f[0]], span2idx[f[5]]
         cg = next(x for x in f[12:] if x.startswith("cg:Z:"))[5:]
-        qs, qe, ts, te = int(f[2]), int(f[3]), int(f[7]), int(f[8])
-        lifts[(qi, ti)].append(Lift(qs, qe, ts, f[4], cg))
-        # reverse direction: swap roles by re-walking with query/target exchanged
-        rev = []
-        for n, op in re.findall(r"(\d+)([=XIDM])", cg):
-            rev.append(n + {"I": "D", "D": "I"}.get(op, op))
-        # for the reverse map the 'query' is the old target (walked forward) and the old query is the target;
-        # on '-' the old query walks backward, so the reverse lift's target walks backward: emulate by mapping
-        # through the forward Lift inverse instead (simpler and exact): build inverse blocks
-        inv = Lift.__new__(Lift); inv.blocks = []
-        for (q_lo, q_hi, t_lo, s) in lifts[(qi, ti)][-1].blocks:
-            n = q_hi - q_lo
-            inv.blocks.append((t_lo, t_lo + n, q_lo if s > 0 else q_hi - 1, s))
-        # for s<0 the inverse block maps t in [t_lo, t_lo+n) -> q = (q_hi-1) - (t - t_lo): sign -1 with 'q_lo' slot = q_hi-1... use uniform formula
-        inv.blocks = [(tl, th, (ql if s > 0 else ql), s) for (tl, th, ql, s) in inv.blocks]
+        qs, qe, ts = int(f[2]), int(f[3]), int(f[7])
+        fwd = Lift(qs, qe, ts, f[4], cg)
+        lifts[(qi, ti)].append(fwd)
+        inv = Lift.__new__(Lift)
+        inv.blocks = [(tl, tl + (qh - ql), (ql if s > 0 else ql), s) for (ql, qh, tl, s) in fwd.blocks]
+        # for s < 0 the forward block maps q in [ql, qh) to t = tl + (qh-1-q); the inverse maps t in [tl, th) to
+        # q = qh-1-(t-tl) = (ql) + (th-1-t) with th = tl+(qh-ql): store q_lo slot = ql so map() gives ql + (th-1-t)
         inv.blocks.sort(); inv.lo = [b[0] for b in inv.blocks]
-        # map(): for s<0 the stored t_lo slot holds q_hi-1 and map computes t_lo + (q_hi-1-qpos) with (q_lo,q_hi) = (tl,th):
-        # t = (q_hi_old-1) + (th-1-tpos) is WRONG; override map for inverse blocks with sign<0 by storing the start such that
-        # formula t_lo + (q_hi - 1 - qpos) yields q_hi_old-1 - (tpos - tl): choose t_lo = q_hi_old-1 - (th-1-tl) = q_lo_old
-        inv.blocks = [(tl, th, (ql if s > 0 else ql - (th - 1 - tl)), s) for (tl, th, ql, s) in inv.blocks]
-        inv.lo = [b[0] for b in inv.blocks]
         lifts[(ti, qi)].append(inv)
-        acc[tuple(sorted((qi, ti)))][0] += int(f[10])
-        acc[tuple(sorted((qi, ti)))][1] += sum(int(n) for n, op in re.findall(r"(\d+)([=XID])", cg) if op == "X")
+        k = tuple(sorted((qi, ti)))
+        acc[k][0] += int(f[10])
+        acc[k][1] += sum(int(n) for n, op in re.findall(r"(\d+)([=XID])", cg) if op == "X")
     ident = {k: 1 - x / al for k, (al, x) in acc.items()}
+    return lifts, ident
 
+
+def make_lift_pos(lifts, cop):
     def lift_pos(gpos, A, B):
         """genomic position in copy A -> genomic position in copy B (best fragment), with distance-to-block."""
         ca, sa, ea = cop[A]; cb, sb, eb = cop[B]
@@ -114,6 +97,21 @@ def main():
             if t is not None and (best is None or d < best[1]):
                 best = (t, d)
         return (best[0] + sb, best[1]) if best else (None, None)
+    return lift_pos
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--gtf", required=True); ap.add_argument("--copies", required=True); ap.add_argument("--paf", required=True)
+    ap.add_argument("--bam", required=True); ap.add_argument("--assign", required=True); ap.add_argument("--family", default="MCL0")
+    ap.add_argument("--tol", type=int, default=5); ap.add_argument("--out")
+    a = ap.parse_args()
+    cop = {}
+    for r in csv.DictReader(open(a.copies), delimiter="\t"):
+        cop[r["copy_idx"]] = (r["chrom"], int(r["start"]), int(r["end"]))
+    span2idx = {f"{c}:{s+1}-{e}": i for i, (c, s, e) in cop.items()}
+    lifts, ident = build_lifts(a.paf, span2idx)
+    lift_pos = make_lift_pos(lifts, cop)
 
     # transcripts of the family
     tx = {}  # tid -> dict(copy, strand, chain, chrom)
