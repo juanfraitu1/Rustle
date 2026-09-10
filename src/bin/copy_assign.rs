@@ -351,9 +351,13 @@ struct Args {
     /// ⭐ PREREG 819c1615: the read-star best = the candidate whose WORST pairwise duel (the certificate's own
     /// LLR over the columns both carry) is best — a candidate that beats every rival wins; twins fall through
     /// to the column-count score. Fixes the non-pairwise `psv_score` (§6he: 65 of 1,143 human contested rows
-    /// had a best that loses a duel). Governs even with `--best-by-alignment`. Default off (byte-identical).
-    #[arg(long, default_value_t = false)]
+    /// had a best that loses a duel). Governs even with `--best-by-alignment`. ⭐ DEFAULT ON (user, 2026-09-09
+    /// §6hk: +32 human assignments, 0 regressions, excision 21/23); `--no-best-by-duel` is the escape.
+    #[arg(long, default_value_t = true)]
     best_by_duel: bool,
+    /// Escape for the 2026-09-09 default: the read-star best by the column-count score again (pre-§6hk, byte-identical).
+    #[arg(long, default_value_t = false)]
+    no_best_by_duel: bool,
     /// L6: write `<out>.star_reads.tsv` — per molecule its read-star proof: the read positions of its columns,
     /// its base there and every candidate's base (the assignment-proof figure's source). Default OFF.
     #[arg(long, default_value_t = false)]
@@ -1597,7 +1601,7 @@ fn main() -> Result<()> {
         read_star_catalog_locus: !args.read_star_pad_locus,
         sole_candidate: !args.no_sole_candidate,
         best_by_psv: !args.best_by_alignment,
-        best_by_duel: args.best_by_duel,
+        best_by_duel: args.best_by_duel && !args.no_best_by_duel,
         dump_star: args.dump_star,
         read_star_hit_in_unit: !args.no_read_star_hit_in_unit,
         read_star_two_form: !args.read_star_genomic_only,
@@ -3356,7 +3360,7 @@ fn main() -> Result<()> {
         row("orphans", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected && r.n_candidates == 0).count()))?;
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
         row("origin_drop_indels", format!("{}", args.origin_drop_indels && !args.no_origin_drop_indels))?;
-        row("best_by_duel", format!("{}", args.best_by_duel))?;
+        row("best_by_duel", format!("{}", args.best_by_duel && !args.no_best_by_duel))?;
         row("indel_psv", format!("{}", args.indel_psv))?;
         row("indel_psv_min_len", format!("{}", args.indel_psv_min_len))?;
         row("indel_psv_molecules", format!("{}", indel_stats.0))?;

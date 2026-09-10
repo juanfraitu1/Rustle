@@ -15551,3 +15551,25 @@ abstain when copy 2 is excised**; 99.6 % of the other rows untouched; gorilla MC
 passed — contradictory evidence, abstention either way; the certificate is bk-only (row 799). Escapes and
 flag-off byte-identical. **Default = the user's decision (a 3rd default in one day: origin_drop_indels ON,
 disagreement OFF, indel-psv OFF; this one would be ON).**
+
+
+## §6hk — ⭐⭐⭐ `best_by_duel` DEFAULT ON (user, 2026-09-09) — THE SHIPPED O2 PIPELINE AND ITS NUMBERS, FINAL FOR THE DAY
+**Decision (user):** `--best-by-duel` ON (escape `--no-best-by-duel`). The shipped O2 is now: AS-tied gate before the
+certificate (§6gy) → tie-outside never assigned, placement off (§6gz) → read-star best by **pairwise maximin** (§6hj)
+→ pairwise PSV certificate → origin certificate on substitutions + unaligned bases (§6hc/§6hf). Full pre-09-09
+escape: `--no-as-tied-only --best-by-alignment --no-origin-drop-indels --no-best-by-duel`.
+
+**Verification:** default human `8a057f68` (== the measured duel arm), `--no-best-by-duel` `0590d544` (== §6hf),
+gorilla MCL1 `c87c7f71`, MCL58 `1934cbf4`; escapes `91081887` / `ff0b8f16`. Suite **870 / 0 / 11**.
+
+| family | AS-tied (gate) | tie outside | **contested** | **assigned** | tied | ambiguous | in-catalog AS-tied → assigned |
+|---|---|---|---|---|---|---|---|
+| human MCL0 | 10,587 | 8,944 | **1,118** | **262 (23.4 %)** | 512 | 344 | 262 / 1,643 = **15.9 %** |
+| gorilla MCL1 | 719 | 597 | **33** | **4** | 28 | 1 | 4 / 122 |
+| gorilla MCL7 | 99 | 73 | 11 | 0 | 10 | 1 | 0 / 26 |
+| gorilla MCL58 (held back) | 276 | 110 | **40** | **2** | 38 | 0 | 2 / 166 |
+Precision controls on this pipeline: excision sweep over all 26 human copies ****247/262 = 94.3 %** (copy 2: 171/178, copy 22: 42/42, copy 12: 13/18; the same 5 confident sibling moves as §6hg; 219/230 = 95.2 % before the duel default)** (§6hg's protocol
+re-run under the new default, `excise_all/v2`); MCL58's 2 assignments abstain on excision. Bakeoff own-state
+line: 263 assigned / 5,793 tied / 1,601 ambiguous over 7,657 rows; GTF-derived vs O2 copy where we decided
+**166/182 = 0.912**; our GTF carries 182 of the 262 (isoseq 203 — singleton chains, row 798).
+**Superseded:** §6hf's 230 / 531 / 382 (of 1,143) and "14.0 %". ADVISOR_QUESTIONS Part 0h updated in place.
