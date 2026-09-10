@@ -199,6 +199,24 @@ struct Args {
     /// 50-read chain at the same locus were both just "a transcript." Default `0.0` = off, byte-identical.
     #[arg(long, default_value_t = 0.0)]
     min_isoform_fraction: f64,
+    /// ⭐ §6hr/PREREG 35e290a9: the locus-boundary outlier test. Per `gene_tid` group, bucket members by
+    /// their outer boundary (50 bp); a transcript in the FARTHEST bucket is `boundary_low_confidence` iff
+    /// (a) that bucket sits > `--min-boundary-gap` bp past the next-farthest bucket, AND (b) the farthest
+    /// bucket's read total is < this fraction of the group's total reads. Narrower than
+    /// `--min-isoform-fraction` (which over-flagged ordinary heterogeneity, row 808): BOTH depth AND a clear
+    /// positional gap are required, matching the copy-4 readthrough (18.4 kb gap, 2/41 = 4.9 % reads) without
+    /// catching routine alternative-TSS/TES variants that cluster closely. Default `0.0` = off.
+    #[arg(long, default_value_t = 0.0)]
+    min_boundary_fraction: f64,
+    /// Minimum gap (bp) from a group's farthest boundary bucket to its next-farthest, before
+    /// `--min-boundary-fraction` even considers flagging it. ⭐ 5000, not the originally pre-registered 1000
+    /// (PREREG 35e290a9 outcome): at 1000, 2 of 9 human MCL0 flags were ordinary smooth-tail heterogeneity
+    /// (a continuum of alternative termini whose last two points happened to sit > 1000 bp apart by chance,
+    /// not an isolated outlier) — copies 9 and 25, gaps 1400/1150 bp. At 5000 both drop out and the
+    /// remaining 7 are all clean, isolated single-or-few-transcript outliers 10.5–40 kb from a well-
+    /// supported majority cluster.
+    #[arg(long, default_value_t = 5000)]
+    min_boundary_gap: u64,
     /// Lift tolerance (bp) per intron boundary when matching an isoform across copies (`--gtf-copy-set`).
     #[arg(long, default_value_t = 5)]
     gtf_lift_tol: u64,
@@ -2712,12 +2730,73 @@ fn main() -> Result<()> {
             for t in &transcripts {
                 *group_total_reads.entry(t.gene_tid.as_str()).or_insert(0) += t.n_reads as u64;
             }
-            for t in &transcripts {
+            // ⭐ PREREG 35e290a9: the boundary-outlier test, precomputed once per region by transcript INDEX
+            // (a `DenovoTranscript::tid` can collide before the `uniq_tid` disambiguation below, so the key
+            // must be the position in `transcripts`, not the tid string).
+            let mut boundary_far: std::collections::HashMap<usize, (bool, bool, u64, u64)> = std::collections::HashMap::new();
+            if args.min_boundary_fraction > 0.0 {
+                let mut by_locus: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
+                for (i, t) in transcripts.iter().enumerate() {
+                    by_locus.entry(t.gene_tid.as_str()).or_default().push(i);
+                }
+                let bucket = |x: u64| x / 50;
+                for idxs in by_locus.values() {
+                    if idxs.len() < 2 {
+                        continue;
+                    }
+                    let total: u64 = idxs.iter().map(|&i| transcripts[i].n_reads as u64).sum();
+                    // RIGHT (largest `end`): the farthest bucket vs. the next-farthest.
+                    let mut by_end: std::collections::BTreeMap<u64, (u64, Vec<usize>)> = std::collections::BTreeMap::new();
+                    for &i in idxs {
+                        let e = by_end.entry(bucket(transcripts[i].end)).or_insert((0, Vec::new()));
+                        e.0 += transcripts[i].n_reads as u64;
+                        e.1.push(i);
+                    }
+                    if by_end.len() >= 2 {
+                        let mut v: Vec<(u64, u64, Vec<usize>)> = by_end.into_iter().map(|(b, (r, idx))| (b * 50, r, idx)).collect();
+                        v.sort_unstable_by_key(|&(pos, _, _)| pos);
+                        let (far_pos, far_reads, far_idx) = v.pop().unwrap();
+                        let second_pos = v.last().unwrap().0;
+                        let gap = far_pos.saturating_sub(second_pos);
+                        if gap > args.min_boundary_gap && (far_reads as f64 / total.max(1) as f64) < args.min_boundary_fraction {
+                            for i in far_idx {
+                                let e = boundary_far.entry(i).or_insert((false, false, 0, 0));
+                                e.1 = true;
+                                e.3 = gap;
+                            }
+                        }
+                    }
+                    // LEFT (smallest `start`): the farthest bucket vs. the next-farthest.
+                    let mut by_start: std::collections::BTreeMap<u64, (u64, Vec<usize>)> = std::collections::BTreeMap::new();
+                    for &i in idxs {
+                        let e = by_start.entry(bucket(transcripts[i].start)).or_insert((0, Vec::new()));
+                        e.0 += transcripts[i].n_reads as u64;
+                        e.1.push(i);
+                    }
+                    if by_start.len() >= 2 {
+                        let v: Vec<(u64, u64, Vec<usize>)> = by_start.into_iter().map(|(b, (r, idx))| (b * 50, r, idx)).collect();
+                        let (far_pos, far_reads, far_idx) = v[0].clone();
+                        let second_pos = v[1].0;
+                        let gap = second_pos.saturating_sub(far_pos);
+                        if gap > args.min_boundary_gap && (far_reads as f64 / total.max(1) as f64) < args.min_boundary_fraction {
+                            for i in far_idx {
+                                let e = boundary_far.entry(i).or_insert((false, false, 0, 0));
+                                e.0 = true;
+                                e.2 = gap;
+                            }
+                        }
+                    }
+                }
+            }
+            for (ti, t) in transcripts.iter().enumerate() {
                 let n = tid_seen.entry(t.tid.as_str()).or_insert(0);
                 *n += 1;
                 let uniq_tid = if *n == 1 { t.tid.clone() } else { format!("{}.{}", t.tid, *n) };
                 let isoform_fraction = t.n_reads as f64 / (*group_total_reads.get(t.gene_tid.as_str()).unwrap_or(&1)).max(1) as f64;
-                let low_confidence = args.min_isoform_fraction > 0.0 && isoform_fraction < args.min_isoform_fraction;
+                let depth_low = args.min_isoform_fraction > 0.0 && isoform_fraction < args.min_isoform_fraction;
+                let (b_left, b_right, gap_left, gap_right) = boundary_far.get(&ti).copied().unwrap_or((false, false, 0, 0));
+                let boundary_low = b_left || b_right;
+                let low_confidence = depth_low || boundary_low;
                 // (1) positional: the catalog copy this isoform overlaps most
                 let best = fams.iter().enumerate().flat_map(|(fw, fa)| {
                     fa.copy_spans.iter().enumerate().map(move |(ci, (c, s0, e0))| (fw, ci, c, *s0, *e0))
@@ -2776,8 +2855,21 @@ fn main() -> Result<()> {
                     None => format!(" copy_status \"unadjudicated\"; matched_reads \"{matched}\";"),
                 };
                 let fam_attr = format!("{fam_attr}{copy_attr}");
-                let fam_attr = if args.min_isoform_fraction > 0.0 {
-                    format!("{fam_attr} isoform_fraction \"{isoform_fraction:.3}\"; low_confidence \"{low_confidence}\";")
+                let fam_attr = if args.min_isoform_fraction > 0.0 || args.min_boundary_fraction > 0.0 {
+                    let reason = match (depth_low, boundary_low) {
+                        (true, true) => "both",
+                        (true, false) => "depth",
+                        (false, true) => "boundary",
+                        (false, false) => "none",
+                    };
+                    let mut extra = String::new();
+                    if args.min_isoform_fraction > 0.0 {
+                        extra.push_str(&format!(" isoform_fraction \"{isoform_fraction:.3}\";"));
+                    }
+                    if args.min_boundary_fraction > 0.0 {
+                        extra.push_str(&format!(" boundary_gap_left \"{gap_left}\"; boundary_gap_right \"{gap_right}\";"));
+                    }
+                    format!("{fam_attr}{extra} low_confidence \"{low_confidence}\"; low_confidence_reason \"{reason}\";")
                 } else {
                     fam_attr
                 };
@@ -3718,6 +3810,8 @@ fn main() -> Result<()> {
         row("best_by_duel", format!("{}", args.best_by_duel && !args.no_best_by_duel))?;
         row("gtf_copy_set", format!("{}", (args.gtf_copy_set && !args.no_gtf_copy_set)))?;
         row("min_isoform_fraction", format!("{}", args.min_isoform_fraction))?;
+        row("min_boundary_fraction", format!("{}", args.min_boundary_fraction))?;
+        row("min_boundary_gap", format!("{}", args.min_boundary_gap))?;
         row("indel_psv", format!("{}", args.indel_psv))?;
         row("indel_psv_min_len", format!("{}", args.indel_psv_min_len))?;
         row("indel_psv_molecules", format!("{}", indel_stats.0))?;

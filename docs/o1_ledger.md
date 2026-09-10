@@ -15683,3 +15683,22 @@ read-through certificate's existing 50 kb floor (§6ft), so no existing mechanis
 correct fix is a junction-level relative-support test in the assembler, a larger, separately-scoped change;
 this flag stays in the code (default off) as an honest relative-depth report, not a readthrough fix. Rows
 807-808.
+
+
+## §6hs — ⭐⭐⭐ `--min-boundary-fraction` WORKS: the locus-boundary outlier test (2026-09-10; PREREG 35e290a9, outcome appended)
+Reframed from the junction-crossing idea (needs raw-CIGAR assembly-time data) to a transcript-level test using
+data already in hand: per `gene_tid` locus group, bucket members by their outer boundary (50 bp); a transcript
+in the FARTHEST bucket is flagged iff (a) that bucket sits > `--min-boundary-gap` bp past the next-farthest
+(default 5000, raised from the pre-registered 1000 after 2/9 human flags at that floor turned out to be
+ordinary smooth-tail heterogeneity, not isolated outliers — a locus with ~30 alternative termini where the
+last two points happened to be 1.0–1.4 kb apart by chance) AND (b) its read share of the locus total is below
+`--min-boundary-fraction`. **Works cleanly**: human MCL0 7/676 = 1.03 % flagged (vs 75 % for the depth-only
+test, §6hr), gorilla MCL1 2/403 = 0.5 %, every flagged case hand-verified as a genuine isolated outlier
+(5.5–139 kb gaps) except one instructive ambiguous case — copy 0's 15 independently-supported transcripts
+cluster tightly (40 bp) far short of the RefSeq-annotated end, with only 2 low-read transcripts reaching near
+the annotation; correctly flagged conservatively either way, and possibly evidence the annotation itself
+over-extends this LOC-named gene. Modestly improves (not replaces) a copy-aware containment floor in the
+width-deficit scorer (4.8 % vs 3.7 % median relative deficit at containment 0.5) — a narrower, complementary
+mechanism, since it operates purely on the GTF's own locus structure with no external copy catalog. Byte-
+identical at default (both flags 0.0), suite 871/0/11, assignments untouched on both species. **Default: off,
+pending the user's decision** (`--min-boundary-fraction 0.10 --min-boundary-gap 5000` measured as effective).
