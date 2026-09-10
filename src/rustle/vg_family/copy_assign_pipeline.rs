@@ -984,6 +984,16 @@ fn append_indel_columns(per_copy: &[Option<Vec<Option<u8>>>], events: &[Option<V
     }
 }
 
+/// ⭐ PREREG 819c1615: the candidate whose WORST pairwise duel is best (maximin of `llr(k, k')` over the other
+/// candidates); exact ties on the maximin fall through to `key` (the column-count key), so a molecule whose
+/// candidates are twins keeps the old choice. `None` only when `ks` is empty.
+pub(crate) fn maximin_best<K: Ord>(ks: &[usize], llr: impl Fn(usize, usize) -> f64, key: impl Fn(usize) -> K) -> Option<usize> {
+    let worst = |a: usize| ks.iter().filter(|&&k| k != a).map(|&k| llr(a, k)).fold(f64::INFINITY, f64::min);
+    ks.iter().copied().max_by(|&a, &b| {
+        worst(a).partial_cmp(&worst(b)).unwrap_or(std::cmp::Ordering::Equal).then_with(|| key(a).cmp(&key(b)))
+    })
+}
+
 /// Per-read columns from `read_star_alignments`: read positions where ≥ 2 copies carry an aligned base and
 /// not all of them agree. Returns the read's own bases at those positions (the observation, always `Some`)
 /// and one `CopyProfile` per copy (its aligned base per column, `None` where it has no base).
@@ -2515,16 +2525,43 @@ fn assign_family_detailed_once(
                         })
                         .sum()
                 };
-                let bk = (0..cand.len())
-                    .filter(|k| !partner_k.contains(k))
-                    .max_by_key(|&k| {
-                        if p.best_by_psv {
-                            (psv_score(k), matches(k), std::cmp::Reverse(k))
-                        } else {
-                            (0i64, matches(k), std::cmp::Reverse(k))
+                let key = |k: usize| if p.best_by_psv { (psv_score(k), matches(k), std::cmp::Reverse(k)) } else { (0i64, matches(k), std::cmp::Reverse(k)) };
+                let ks: Vec<usize> = (0..cand.len()).filter(|k| !partner_k.contains(k)).collect();
+                let bk = if p.best_by_duel {
+                    // ⭐ PREREG 819c1615 `--best-by-duel`: the best is the MAXIMIN of the pairwise LLRs the certificate
+                    // itself uses (columns both carry; junctions both cover) — a candidate that beats every rival
+                    // is the unique winner; twins (0 both ways) fall through to the old key.
+                    let lr = ((1.0 - p.error_rate) / (p.error_rate / 3.0)).ln();
+                    let lrj = ((1.0 - p.junction_err) / p.junction_err.max(1e-12)).ln();
+                    let covers = |iv: &[(u32, u32)], r: i64| -> bool {
+                        let t = p.boundary_tol.max(0);
+                        iv.iter().any(|&(s, e)| (s as i64) <= r + t && r - t < e as i64)
+                    };
+                    let pair_llr = |a: usize, b: usize| -> f64 {
+                        let mut llr = 0.0f64;
+                        for j in 0..feats.psv_obs.len() {
+                            if let (Some(o), Some(ba), Some(ca)) = (feats.psv_obs[j], profiles[a].alleles[j], profiles[b].alleles[j]) {
+                                if ba != ca {
+                                    if o == ba { llr += lr } else if o == ca { llr -= lr }
+                                }
+                            }
                         }
-                    })
-                    .unwrap();
+                        for &rj in &feats.junctions {
+                            if !(covers(&covered[a], rj) && covers(&covered[b], rj)) {
+                                continue;
+                            }
+                            let in_a = boundary_present(rj, &profiles[a].junctions, p.boundary_tol);
+                            let in_b = boundary_present(rj, &profiles[b].junctions, p.boundary_tol);
+                            if in_a != in_b {
+                                llr += if in_a { lrj } else { -lrj };
+                            }
+                        }
+                        llr
+                    };
+                    maximin_best(&ks, pair_llr, key).expect("a non-partner candidate")
+                } else {
+                    ks.iter().copied().max_by_key(|&k| key(k)).unwrap()
+                };
                 // ⭐ §6ft read-through certificate. A read position the best candidate leaves unaligned is EXPLAINED
                 // when (a) another candidate aligns it — that candidate is a PARTNER (a read-through molecule
                 // spans two loci), not a competitor — or (b) it lies beyond a giant (> 50 kb) intron fewer than 3
@@ -3068,6 +3105,27 @@ pub fn assign_family(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn maximin_best_prefers_the_condorcet_winner_over_the_column_count() {
+        // three candidates; 0 beats 1 and 2 pairwise (min +6.9) but carries fewer columns; 2 carries many
+        // private columns (a high column-count key) yet loses its duel with 0.
+        let llr = |a: usize, b: usize| -> f64 {
+            match (a, b) {
+                (0, 1) => 6.9, (1, 0) => -6.9,
+                (0, 2) => 6.9, (2, 0) => -6.9,
+                (1, 2) => -13.8, (2, 1) => 13.8,
+                _ => 0.0,
+            }
+        };
+        let key = |k: usize| (if k == 2 { 10i64 } else { 1i64 }, std::cmp::Reverse(k));
+        assert_eq!(maximin_best(&[0, 1, 2], llr, key), Some(0), "the candidate that beats every rival wins");
+        assert_eq!(maximin_best(&[1, 2], llr, key), Some(2), "without 0, candidate 2 beats 1");
+        // twins: every duel 0 -> the key decides (candidate 2 by the higher key)
+        assert_eq!(maximin_best(&[0, 1, 2], |_, _| 0.0, key), Some(2));
+        assert_eq!(maximin_best(&[], llr, key), None);
+        assert_eq!(maximin_best(&[1], llr, key), Some(1), "a single candidate is its own winner");
+    }
+
     #[test]
     fn indel_psv_columns_one_per_event_cluster() {
         // PREREG 021446fb. 60-base read; copy 0 aligned contiguously; copy 1 needs a 5 bp gap over read 10..15

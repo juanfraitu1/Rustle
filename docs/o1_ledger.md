@@ -15538,3 +15538,16 @@ runner-up MCL54 83). Shipped defaults: 276 AS-tied, 169 rows, 129 origin-rejecte
 38 tied / 0 ambiguous**; the 38 tied have n_decisive 0 (K = 0 twins); the 2 assignments (copy 2, 2 columns,
 margin 13.8) **both abstain when copy 2 is excised**; escape `5b6402ee`. Origin-rejection 76 % of rows (6/9
 copies are `partner` rows). **The refactored O2 transfers:** abstention dominates, no leak, excision holds.
+
+
+## §6hj — `--best-by-duel`: the read-star best by pairwise MAXIMIN (2026-09-09; PREREG 819c1615, outcome appended)
+The column-count `psv_score` (§6ha) is not pairwise; the verdict is. Behind the flag (OFF), bk = argmax_k
+min_{k'} LLR(k vs k') over the certificate's own pairwise LLR; twins fall through to the old key
+(`maximin_best`, unit-tested). Human contested: **262 assigned / 512 tied / 344 ambiguous (of 1,118)** vs
+230 / 531 / 382 (of 1,143): 0 existing assignments change; **26 of the 65 duel-losing rows assign** (+4 from
+dead heats), 23 of the 30 to copy 2 from bk 6/7/8 — the mis-ranked copy-2 population again — and **21/23
+abstain when copy 2 is excised**; 99.6 % of the other rows untouched; gorilla MCL1/MCL58 statuses identical.
+28 ambiguous rows become origin-rejected: the maximin winner (9 over 12) fails the certificate the old bk
+passed — contradictory evidence, abstention either way; the certificate is bk-only (row 799). Escapes and
+flag-off byte-identical. **Default = the user's decision (a 3rd default in one day: origin_drop_indels ON,
+disagreement OFF, indel-psv OFF; this one would be ON).**

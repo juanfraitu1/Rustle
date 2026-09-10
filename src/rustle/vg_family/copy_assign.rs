@@ -277,6 +277,9 @@ pub struct AssignParams {
     /// toward the true best (human MCL0: 12 of 343 in-family `tied` molecules, `bench/audit_ambiguity.py`).
     /// `false` = the pre-2026-09-09 alignment-based choice (`--best-by-alignment`).
     pub best_by_psv: bool,
+    /// ⭐ PREREG 819c1615: choose the read-star best by the MAXIMIN of the pairwise LLRs (the certificate's own
+    /// evidence) instead of the column-count score; twins fall through to the score. Default `false` (byte-identical).
+    pub best_by_duel: bool,
     /// L6: keep each molecule's read-star proof (its columns, its bases, every candidate's bases) in the
     /// process-wide side table for `copy_assign --dump-star`.
     pub dump_star: bool,
@@ -323,6 +326,7 @@ impl Default for AssignParams {
             read_star_catalog_locus: true,
             sole_candidate: true,
             best_by_psv: true,
+            best_by_duel: false,
             dump_star: false,
             read_star_hit_in_unit: true,
             read_star_two_form: true,
