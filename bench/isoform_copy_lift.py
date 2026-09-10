@@ -120,17 +120,34 @@ def main():
         if line.startswith("#"):
             continue
         f = line.rstrip("\n").split("\t")
-        if len(f) < 9 or f'family_id "{a.family}"' not in f[8] and f[2] == "transcript":
+        if len(f) < 9:
             continue
-        t = re.search(r'transcript_id "([^"]+)"', f[8]).group(1)
+        if a.family and f[2] == "transcript" and f'family_id "{a.family}"' not in f[8]:
+            continue
+        tm = re.search(r'transcript_id[ =]"?([^";]*)"?', f[8])
+        if not tm:
+            continue
+        t = tm.group(1)
         if f[2] == "transcript":
             ci = re.search(r'copy_index "([^"]+)"', f[8]); st = re.search(r'copy_status "([^"]+)"', f[8])
             meta[t] = (ci.group(1) if ci else None, f[6], f[0], st.group(1) if st else None)
         elif f[2] == "exon":
             ex[t].append((int(f[3]) - 1, int(f[4])))
+            meta.setdefault(t, (None, f[6], f[0], None))   # tools without transcript rows
+    def copy_by_overlap(chrom, s, e):
+        best, bo = None, 0
+        for i, (c, cs, ce) in cop.items():
+            if c != chrom: continue
+            ov = min(e, ce) - max(s, cs)
+            if ov > bo: best, bo = i, ov
+        return best
     for t, (ci, strand, chrom, st) in meta.items():
-        if ci is None or t not in ex:
+        if t not in ex:
             continue
+        if ci is None:   # no copy_index attribute (other tools): max-overlap copy, None when outside every copy
+            v = sorted(ex[t]); ci = copy_by_overlap(chrom, v[0][0], v[-1][1])
+            if ci is None:
+                continue
         v = sorted(ex[t]); chain = tuple((p[1], q[0]) for p, q in zip(v, v[1:]))
         tx[t] = dict(copy=ci, strand=strand, chrom=chrom, chain=chain, status=st)
     multi = {t: d for t, d in tx.items() if len(d["chain"]) >= 2}

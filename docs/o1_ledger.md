@@ -15597,3 +15597,29 @@ up to 366 — pooling sums the columns the twin shares with every other rival an
 origin certificate is blind below ≈ 0.6 %. Row 801. **Step 3 therefore places by read-level evidence only**
 (unique mappers, certified reads) and emits one transcript with a copy SET where neither exists; pooled evidence
 becomes a reported attribute, never a coordinate.
+
+
+## §6hn — THE GTF O2 BELIEVES: evidence-placed transcripts and copy SETS (2026-09-09; PREREG 95409846, outcome appended)
+`bench/gtf_copy_set.py` (a post-processor; the binary's `--gtf` is untouched) rewrites the family transcripts of
+`ours_final2.gtf`: an isoform group's addresses = the copies with a unique mapper or a certified read; phantom
+copies dropped (13), certified reads whose transcript sat elsewhere get a LIFTED placement (6; 3 lifts failed),
+isoforms with no evidence emitted ONCE with `copies` = the union of their reads' AS-TIED placements (+ `outside`
+when a tie partner overlaps no unit) — 40 such, all with ≥ 2 addresses (27 include `outside`). 684 → 676 family
+transcripts; the 43 shared isoforms keep every evidence copy. ⚠ The read-star candidate list is NOT the tie
+set (27/40 would have had a 1-element set; amended before re-running, row 802). The exact-locus bakeoff cannot
+see the object (carried −1.7 / −5.6 pts because dropped phantoms orphan their reads' primaries) — hence §6ho.
+
+## §6ho — THE LIFT-AWARE ISOFORM BAKEOFF, and the per-tool PHANTOM table (2026-09-09; PREREG 84e8ed50, outcome appended)
+A tool carries a molecule if a transcript matches the read's chain at its primary copy OR its lift to any copy;
+the tool's address set = the copies where it emits that chain (+ our `copies`). 3,633 hard spliced molecules:
+carried ours **0.848** / flair 0.596 / StringTie 0.524 / isoseq 0.756 (contested: isoseq 0.889 > ours 0.661 —
+lift-aware "carried" rewards duplicates, row 803). **Certified isoforms at O2's copy: ours 100 %, flair 78 %,
+StringTie 82 %, isoseq 86 %. Undecided isoforms: ours reports a SET in 95 %; the competitors' "sets" are
+separate transcripts at several copies.** The same lift rule on every GTF: phantom transcripts **ours-copy-set 2
+(definitional) / ours-raw 14 / flair 4 / StringTie 15 / isoseq 45**; coin-toss isoforms given ONE arbitrary
+address: **0 (ours; 40 emitted once with a copy set) / 39 / 76 / 20 / 200 (isoseq)**; phantoms sit beside a
+≥ 0.985 sibling in 87–100 % of cases for every tool. This is the advisor's "transcripts other assemblers
+struggle to produce", measured: at the twin copies every assembler fabricates addresses; ours is the only GTF
+that drops the phantoms it can see, places certified isoforms by O2, and says "A or B" otherwise.
+**Not yet in the binary** — the emission rule lives in `bench/gtf_copy_set.py`; porting it into `--gtf` is
+the next engineering step (user's call).
