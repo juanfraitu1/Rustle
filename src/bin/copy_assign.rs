@@ -205,8 +205,11 @@ struct Args {
     /// bucket's read total is < this fraction of the group's total reads. Narrower than
     /// `--min-isoform-fraction` (which over-flagged ordinary heterogeneity, row 808): BOTH depth AND a clear
     /// positional gap are required, matching the copy-4 readthrough (18.4 kb gap, 2/41 = 4.9 % reads) without
-    /// catching routine alternative-TSS/TES variants that cluster closely. Default `0.0` = off.
-    #[arg(long, default_value_t = 0.0)]
+    /// catching routine alternative-TSS/TES variants that cluster closely. ⭐ DEFAULT `0.10` (user,
+    /// 2026-09-10 §6hs): measured clean on both species (human 1.03 %, gorilla 0.5 % flagged, 0 false
+    /// positives on hand inspection at the paired `--min-boundary-gap` default). `--min-boundary-fraction 0`
+    /// is the escape (byte-identical to pre-§6hs).
+    #[arg(long, default_value_t = 0.10)]
     min_boundary_fraction: f64,
     /// Minimum gap (bp) from a group's farthest boundary bucket to its next-farthest, before
     /// `--min-boundary-fraction` even considers flagging it. ⭐ 5000, not the originally pre-registered 1000

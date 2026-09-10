@@ -15702,3 +15702,7 @@ width-deficit scorer (4.8 % vs 3.7 % median relative deficit at containment 0.5)
 mechanism, since it operates purely on the GTF's own locus structure with no external copy catalog. Byte-
 identical at default (both flags 0.0), suite 871/0/11, assignments untouched on both species. **Default: off,
 pending the user's decision** (`--min-boundary-fraction 0.10 --min-boundary-gap 5000` measured as effective).
+
+**Addendum — default ON at 0.10 (user, 2026-09-10):** `--gtf`'s boundary-outlier demotion is now on by default
+(`--min-boundary-fraction 0` is the escape, byte-identical `888794bf`). Human default GTF `2bbda55a`,
+assignments untouched on both species (`8a057f68`/`c87c7f71`), suite 871/0/11.
