@@ -239,8 +239,8 @@ pub struct AssignParams {
     /// but I = 57–66 — a near-constant ~60 bp insertion recurring across independent reads at one locus,
     /// the signature of a real reference-vs-haplotype indel (or an alignment representation artifact), not
     /// evidence the read is from elsewhere. Measured on all 40: 32 flip REJECT→pass under this rule; the
-    /// other 8 (dominated by 14–327 UNALIGNED bases, not indels) correctly stay rejected. Default `false`
-    /// (byte-identical); `origin_subst_only`, if also set, takes precedence.
+    /// other 8 (dominated by 14–327 UNALIGNED bases, not indels) correctly stay rejected. **Default `true`
+    /// since 2026-09-09 (user, §6hf)**; `origin_subst_only`, if also set, takes precedence.
     pub origin_drop_indels: bool,
     /// ⭐ PREREG 021446fb: indel PSV columns in read-star — one column per cluster of I/D events of
     /// ≥ `indel_psv_min_len` bp along the read (`'1'` = the candidate needs a gap against the read here,
@@ -315,7 +315,7 @@ impl Default for AssignParams {
             junction_conflict_abstain: false,
             molecule_pool: false,
             origin_subst_only: false,
-            origin_drop_indels: false,
+            origin_drop_indels: true,
             indel_psv: false,
             indel_psv_min_len: 3,
             read_star_junctions: false,

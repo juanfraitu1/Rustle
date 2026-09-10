@@ -304,8 +304,13 @@ struct Args {
     /// tolerance) but I=57–66 — a recurring ~60 bp indel, not evidence of the wrong copy; measured 32/40
     /// flip REJECT→pass, the other 8 (dominated by 14–327 unaligned bases) correctly stay rejected. Default
     /// off (byte-identical); takes a back seat to `--origin-substitutions-only` if both are set.
-    #[arg(long, default_value_t = false)]
+    /// ⭐ DEFAULT ON (user, 2026-09-09 step 2, §6hf): sequence-confirmed on both mechanisms, excision 97.4 % /
+    /// 100 %, indel PSV columns measured separately and kept off. `--no-origin-drop-indels` is the escape.
+    #[arg(long, default_value_t = true)]
     origin_drop_indels: bool,
+    /// Escape for the 2026-09-09 default: the origin certificate counts I+D bases again (pre-§6hf, byte-identical).
+    #[arg(long, default_value_t = false)]
+    no_origin_drop_indels: bool,
     /// ⭐ PREREG 021446fb: indel PSV columns in read-star — I/D events ≥ `--indel-psv-min-len` bp, clustered
     /// within 20 bp along the read, one column per cluster, the same per-column error as substitution
     /// columns. Default off (byte-identical).
@@ -1578,7 +1583,7 @@ fn main() -> Result<()> {
         junction_conflict_abstain: args.junction_conflict_abstain,
         molecule_pool: args.molecule_observations && !args.no_molecule_observations,
         origin_subst_only: args.origin_substitutions_only,
-        origin_drop_indels: args.origin_drop_indels,
+        origin_drop_indels: args.origin_drop_indels && !args.no_origin_drop_indels,
         indel_psv: args.indel_psv,
         indel_psv_min_len: args.indel_psv_min_len,
         read_star_junctions: args.read_star_junctions,
@@ -3343,7 +3348,7 @@ fn main() -> Result<()> {
         row("origin_rejected", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected).count()))?;
         row("orphans", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected && r.n_candidates == 0).count()))?;
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
-        row("origin_drop_indels", format!("{}", args.origin_drop_indels))?;
+        row("origin_drop_indels", format!("{}", args.origin_drop_indels && !args.no_origin_drop_indels))?;
         row("indel_psv", format!("{}", args.indel_psv))?;
         row("indel_psv_min_len", format!("{}", args.indel_psv_min_len))?;
         row("indel_psv_molecules", format!("{}", indel_stats.0))?;

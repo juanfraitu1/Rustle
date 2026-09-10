@@ -15462,3 +15462,36 @@ internal, and one such column tipped 5 of the 7 lost copy-2 assignments because 
 (copies 6/7/8 carry the read's 57 bp segment reference copy 2 lacks and collect matches there where copy 2 is
 `None`; the pairwise LLR still favoured 2 by 34.5). Register rows 793–794. **Not applied: terminal-event
 exclusion (inside the flag) and a pairwise `bk` (shared machinery) — the user's call.** Step-2 defaults still held.
+
+
+## §6hf — ⭐⭐⭐ O2 DEFAULTS DECIDED (user, 2026-09-09, step 2) AND THE HEADLINE NUMBERS RE-BASED (step 3)
+**Decision (user):** `origin_drop_indels` **ON** (escape `--no-origin-drop-indels`), `admit_aligner_disagreement`
+OFF (§6hd, refuted), `indel_psv` OFF (§6he, refuted). The shipped O2 pipeline is therefore: AS-tied gate before
+the certificate (§6gy, `--no-as-tied-only`), tie-outside-catalog never assigned and `placement_assign` off under
+the gate (§6gz), `best_by_psv` (§6ha, `--best-by-alignment`), origin certificate on substitutions + unaligned
+bases (§6hc). The full pre-09-09 escape is now `--no-as-tied-only --best-by-alignment --no-origin-drop-indels`.
+
+**Verification (`bakeoff/human/ours_final*`, `bakeoff/mcl{1,7}_final*`):** the new default reproduces the odi
+arm byte-for-byte (human `0590d544`; 22-column `4048494b`), `--no-origin-drop-indels` reproduces the pre-flip
+run (22-column `1f8157bd`; 14 / 409 / 302), and the full escapes stay `91081887` (human) / `ff0b8f16` (gorilla).
+Gorilla MCL1 `8f8b4f42` (22-col `d6605062`), MCL7 `eb34c7af` (22-col `17b92323`). Suite 869 / 0 / 11.
+
+**Headline O2 numbers on the final pipeline** (contested = AS-tied ∧ origin-pass ∧ ≥ 2 catalog candidates;
+never pooled across species):
+| family | molecules in the swept regions | AS-tied (gate) | of which tie OUTSIDE the catalog | **contested** | **assigned** | tied (of which forced by tie-outside) | ambiguous |
+|---|---|---|---|---|---|---|---|
+| human MCL0 (26 copies, `hsa16.bam`) | 44,134 | 10,587 | 8,944 | **1,143** | **230 (20.1 %)** | 531 (134) | 382 |
+| gorilla MCL1 (`npip3.bam`) | 91,969 | 719 | 597 | **33** | **4 (12.1 %)** | 28 (5) | 1 |
+| gorilla MCL7 | 41,213 | 99 | 73 | **11** | **0** | 10 (5) | 1 |
+| gorilla MCL2 (held back, trap 15) | — | 1 AS-tied | — | uninformative | — | — | — |
+⚠ **The contested denominator moved with the certificate** (759 → 1,143 on human): a molecule is "contested"
+only if the certificate passes it, and dropping the individual's SVs from the certificate passes 384 more. The
+certificate-independent denominator is the in-catalog AS-tied pool: human **230 / 1,643 = 14.0 %**, MCL1
+4 / 122, MCL7 0 / 26. Quote both.
+`bench/tool_bakeoff.py --own ours_final.assignments.tsv`: declared states over all 7,657 rows 231 assigned /
+5,812 tied / 1,614 ambiguous (⚠ includes non-contested rows — not the denominator); derived-vs-own copy where
+we decided **140/153 = 0.915** (the GTF-derived and O2-assigned copies agree). The bakeoff's derived columns
+(placed-in-one-copy 0.606, 0 spanning transcripts) come from the GTF + BAM and are unchanged by the defaults.
+
+**Superseded:** §6gv "759 contested / 69 assigned", §6gz "14 of 759", §6hb "759: 14 / 429 / 316", and
+ADVISOR_QUESTIONS Part 0h "28 on MCL1 / 759 on MCL0" (updated in place). Register rows 791–794 stand.

@@ -717,8 +717,11 @@ Verbatim intent, and it supersedes Parts 0d–0g where they differ:
    The benchmark becomes: **at multi-copy loci, which transcripts do we emit that isoseq collapse / flair emit
    nothing for, and are they attributed to the right copy?**
 3. **O2's scope is confirmed as §6gv shipped it**: AS-tied multimappers only (`--as-tied-only`), unique mappers
-   irrelevant. The honest population is the CONTESTED one — 28 molecules on gorilla MCL1, 759 on human MCL0 —
-   and the "38.7 % assigned" headline is retired.
+   irrelevant. The honest population is the CONTESTED one — under the 2026-09-09 defaults (§6hf): **33 molecules
+   on gorilla MCL1 (4 assigned / 28 tied / 1 ambiguous), 1,143 on human MCL0 (230 / 531 / 382)**; on the
+   certificate-independent in-catalog AS-tied pool, 230 / 1,643 = 14.0 % (human), 4 / 122 (MCL1) — and the
+   "38.7 % assigned" headline is retired. Two widenings were measured and refuted (aligner disagreement §6hd,
+   indel PSV columns §6he).
 4. **flair-like, not StringTie-like**: group observed full-length structures (intron-chain collapse), do not
    run a flow model that asserts chains no read carries. That is already the design (§6gr).
 
