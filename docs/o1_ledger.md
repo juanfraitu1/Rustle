@@ -15495,3 +15495,46 @@ we decided **140/153 = 0.915** (the GTF-derived and O2-assigned copies agree). T
 
 **Superseded:** §6gv "759 contested / 69 assigned", §6gz "14 of 759", §6hb "759: 14 / 429 / 316", and
 ADVISOR_QUESTIONS Part 0h "28 on MCL1 / 759 on MCL0" (updated in place). Register rows 791–794 stand.
+
+
+## §6hg — THE EXCISION SWEEP: every human copy removed in turn (2026-09-09; PREREG 4c832450, outcome appended)
+26 catalogs (`bakeoff/human/excise_all/`), shipped defaults, `bench/o2_excision_sweep.py`. **Pooled: 219/230 =
+95.2 % of the contested assignments abstain when their copy is removed** (copy 2: 149/153, 22: 42/42, 12: 12/16,
+9: 5/5). The 11 that move go to a sibling at identity ≥ 0.988; **5 move confidently (margin 76–186)** from strong
+base assignments (n_decisive 11–17): the read carries ≥ 16 substitutions against the sibling over ~3 kb and the
+origin certificate (0.3 %, alpha 0.001) needs ≈ 19 — **a sibling ≲ 0.6 % diverged over the footprint is
+invisible to the certificate** (the same limit behind O3's ≥ 0.7 % flag; row 796). Removing a copy is NOT
+neutral for the others (P4/P5 refuted in letter): 272 of the other copies' assignments become `tied` because
+the removed copy was their TIE PARTNER (§6gz's tie-outside rule — designed abstention), 137 rows vanish (92
+molecules, open), and **4 one-column assignments (copies 10↔11, identity 0.992, margin 6.9) flip whenever the
+column set changes** — the only genuine instability. Fragile class: **19/230 rest on ≤ 2 columns** inside
+sibling groups (2/8 0.996, 10/11 0.992, 12/19 0.988). Rows 795–796.
+
+## §6hh — THE HARD-LOCUS BAKEOFF (advisor's metric, Part 0h; 2026-09-09; PREREG 5ca5c7e4, outcome appended)
+`bench/hard_locus_bakeoff.py` on `tool_bakeoff.py` calls, human MCL0, hard set = gate rows with a primary in a
+copy span (4,115 of 15,922 region molecules). Fraction of hard molecules CARRIED (chain matches a transcript):
+| set | n | ours | flair | StringTie | isoseq |
+|---|---|---|---|---|---|
+| hard, all | 4,115 | **0.852** | 0.473 | 0.441 | 0.732 |
+| contested | 1,070 | 0.729 | 0.363 | 0.321 | **0.804** |
+| hard, chains carried by ≥ 2 molecules (support-matched, post-hoc) | 3,688 | **0.950** | 0.507 | 0.488 | 0.735 |
+| contested, ≥ 2 | 850 | **0.918** | 0.429 | 0.394 | 0.806 |
+Discordance (ours-not-X : X-not-ours), hard set: flair **15.7 ×**, StringTie **19.2 ×**, isoseq 2.5 × (4.1 × support-
+matched). Copies: ours 21, flair 21, StringTie 17, isoseq 22; vs flair/StringTie we cover copies they miss
+(18; 0/13/15/17/18) and they cover 22 — **no tool carries a hard molecule at copy 22: its 42 O2-assigned reads
+are all singleton chains (the ~490 bp insertion is realized inconsistently by the aligner)**. ⛔ P3 (hard-vs-
+easy `derived_none`) refuted for every tool — the easy set is an unmatched control (row 797); ⛔ P5 on the
+unrestricted contested set: isoseq 0.804 > ours 0.729 — **220 of the 290 contested molecules we do not carry
+are singleton chains** our collapse drops (`min_reads` 3, flair's default too) and isoseq collapse emits as
+single-read transcripts (row 798). Copy attribution of the 230: our GTF carries 153, 140 at O2's copy (92 %);
+the GTF is assignment-independent (regenerated on the final pipeline: identical derived numbers).
+**The claim that survives:** at the hard loci we carry 2–3 × what flair/StringTie carry and, support-matched,
+1.3 × isoseq with 4 × discordance in our favour; unmatched, isoseq's singleton transcripts out-carry us on the
+contested core. Fuzz 0 vs 5 changes nothing beyond 0.01.
+
+## §6hi — THE HELD-BACK FAMILY: gorilla MCL58 (2026-09-09; PREREG 576f7f83, outcome appended)
+Selected outcome-blind (most AS-tied-in-catalog molecules among the 32 never-used sweep_v19 families: 166;
+runner-up MCL54 83). Shipped defaults: 276 AS-tied, 169 rows, 129 origin-rejected, **contested 40 = 2 assigned /
+38 tied / 0 ambiguous**; the 38 tied have n_decisive 0 (K = 0 twins); the 2 assignments (copy 2, 2 columns,
+margin 13.8) **both abstain when copy 2 is excised**; escape `5b6402ee`. Origin-rejection 76 % of rows (6/9
+copies are `partner` rows). **The refactored O2 transfers:** abstention dominates, no leak, excision holds.

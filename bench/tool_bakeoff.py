@@ -16,7 +16,7 @@ States, identical for every arm:
 Nothing here is tool-specific. A tool's own declared state (ours has assigned/undecidable/unadjudicated)
 is reported separately via --own and never enters the derived columns.
 
-usage: tool_bakeoff.py <tool.gtf> <bam> <copies.tsv> --label NAME [--own assignments.tsv] [--out PREFIX]
+usage: tool_bakeoff.py <tool.gtf> <bam> <copies.tsv> --label NAME [--own assignments.tsv] [--out PREFIX] [--restrict names.txt]
 """
 import sys, re, csv, collections, subprocess
 
@@ -32,6 +32,8 @@ label = opt('--label', 'tool')
 FUZZ = int(opt('--fuzz', '0'))
 own_p = opt('--own')
 out_p = opt('--out')
+# PREREG hard_locus_bakeoff: score only the listed molecules (one read name per line)
+restrict = set(l.strip() for l in open(opt('--restrict'))) if opt('--restrict') else None
 
 # ---------------------------------------------------------------- copies
 cop = list(csv.DictReader(open(copies_p), delimiter='\t'))
@@ -134,7 +136,7 @@ for c, (lo, hi) in regions:
     for ln in p.stdout.splitlines():
         f = ln.split('\t', 6)
         name, pos, cig = f[0], int(f[3]) - 1, f[5]
-        if name in seen:
+        if name in seen or (restrict is not None and name not in restrict):
             continue
         seen.add(name)
         ich = introns(pos, cig)
