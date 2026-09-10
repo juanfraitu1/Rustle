@@ -132,6 +132,17 @@ pub struct Assignment {
     /// from) — the soft/Bayesian complement to the hard assign/abstain. An informative prior (copy abundance,
     /// DNA parCN) is applied downstream by re-weighting and renormalizing. Empty for `n == 0`.
     pub posterior: Vec<f64>,
+    /// ⭐ A3 (`docs/OPEN_ITEMS_2026-09-09.md`): whole-family PSV identity between `best_copy` and its NEAREST
+    /// sibling — the competitor that actually governs `p_value` (not necessarily the one governing `min_p`).
+    /// `1.0` when `n <= 1` (no sibling exists to be close to). This is a READ-INDEPENDENT property of the
+    /// family (same two copies are equally hard to tell apart for every read); it explains WHY a thin-evidence
+    /// assignment is thin, it is not itself part of the decision.
+    pub sibling_identity: f64,
+    /// The number of distinguishing PSV/junction positions THIS READ spans against that nearest sibling — the
+    /// "how little evidence" half of A3. An assignment resting on very few columns against a >=0.98-identity
+    /// sibling is the certificate's one genuine precision limit (measured: 19/262 human assignments, register
+    /// row 796/§6hg), not a bug; this field is what makes that visible per row instead of only in aggregate.
+    pub n_cols_vs_nearest_sibling: usize,
 }
 
 /// The decisive log-likelihood-ratio margin `τ` for a target per-read misassignment rate `p`.
@@ -225,6 +236,14 @@ pub struct AssignParams {
     /// that observed the most columns. Replaces "score every record, abstain on contradiction", which measured
     /// placement instead of sequence (ZSCAN5A: 24/24 ambiguous molecules were 1 primary + 5 secondaries).
     pub molecule_pool: bool,
+    /// ⭐ A2 (`docs/OPEN_ITEMS_2026-09-09.md`, register row 799): before reporting a read `origin_rejected`
+    /// (a claim the read is FOREIGN to the family — stronger than plain `Ambiguous`), also test every OTHER
+    /// candidate the read has, not only the PSV-duel winner `bk`. A read failing the certificate at `bk` but
+    /// origin-CONSISTENT with some other candidate (measured: 27 human reads, recombinant/unrepresented-
+    /// haplotype cases) is reported `Ambiguous` instead — both abstain either way; only the stronger,
+    /// here-wrong "foreign to the family" label changes. Default off (byte-identical); this widens which
+    /// reads get the milder label, so the contested `origin_rejected` count moves when it is on.
+    pub origin_consistency_check: bool,
     /// ⭐ §6fc: origin certificate on SUBSTITUTIONS only (indels = isoform structure). Higher yield (NPIP 175 →
     /// 442 assigned, MAPQ<60 31 → 147) but 1 of 20 audited anchors wrong and MAPQ-60 agreement 99.9 → 98.6 %;
     /// the default (`false`) counts every edit (NM) and made no wrong anchor call. Opt-in.
@@ -318,6 +337,7 @@ impl Default for AssignParams {
             iterative_prune: false,
             junction_conflict_abstain: false,
             molecule_pool: false,
+            origin_consistency_check: false,
             origin_subst_only: false,
             origin_drop_indels: true,
             indel_psv: false,
@@ -355,7 +375,9 @@ pub(crate) fn boundary_present(jb: i64, junctions: &[i64], tol: i64) -> bool {
 
 /// Pairwise IsoCon significance: probability that `read`'s evidence supporting `target` over
 /// `competitor` arose by error under H0 "read came from competitor". Also returns the best
-/// attainable p-value (product of per-trial error probabilities over the distinguishing observations).
+/// attainable p-value (product of per-trial error probabilities over the distinguishing observations)
+/// and the number of distinguishing PSV/junction positions the read actually spans (A3, `docs/OPEN_ITEMS_2026-09-09.md`
+/// — the `columns_vs_sibling` count: how much of the certificate's confidence rests on how little evidence).
 /// This is the same computation used inside [`assign_read_editing`], exposed for iterative copy-pruning
 /// and other per-pair analyses.
 pub fn copy_pair_significance(
@@ -364,7 +386,7 @@ pub fn copy_pair_significance(
     competitor: &CopyProfile,
     p: &AssignParams,
     editing_cols: &[bool],
-) -> (f64, f64) {
+) -> (f64, f64, usize) {
     let spanned: Vec<usize> = (0..read.psv_obs.len()).filter(|&j| read.psv_obs[j].is_some()).collect();
     let mut eps: Vec<f64> = Vec::new();
     let mut k = 0usize;
@@ -403,7 +425,34 @@ pub fn copy_pair_significance(
     }
     let p_value = poisson_binomial_upper_tail(k, &eps);
     let min_p = if eps.is_empty() { 1.0 } else { eps.iter().product::<f64>() };
-    (p_value, min_p)
+    (p_value, min_p, eps.len())
+}
+
+/// Whole-family identity between two copies over their SHARED PSV columns (both carry a defined allele) —
+/// NOT restricted to any one read's footprint, since a family's PSV set is fixed and this asks a
+/// read-independent question: "how hard would it ever be, for ANY read, to tell these two copies apart?"
+/// A3 (`docs/OPEN_ITEMS_2026-09-09.md`): the certificate's one genuine precision limit is a sibling this
+/// close (identity >= ~0.985 measured on real siblings) combined with a read that spans very few of the
+/// columns that do differ. Returns 1.0 (maximally indistinguishable) when the two copies share zero PSV
+/// columns with a defined allele on both sides — there is then no PSV evidence that could ever separate
+/// them, which is the same "indistinguishable" verdict as a true 1.0 identity, not a divide-by-zero NaN.
+pub fn copy_pair_identity(a: &CopyProfile, b: &CopyProfile) -> f64 {
+    let n = a.alleles.len().max(b.alleles.len());
+    let mut shared = 0usize;
+    let mut matches = 0usize;
+    for j in 0..n {
+        if let (Some(aa), Some(ba)) = (a.alleles.get(j).copied().flatten(), b.alleles.get(j).copied().flatten()) {
+            shared += 1;
+            if aa == ba {
+                matches += 1;
+            }
+        }
+    }
+    if shared == 0 {
+        1.0
+    } else {
+        matches as f64 / shared as f64
+    }
 }
 
 /// Per-read, per-copy evidence: the SAME log-likelihood + identifiability bound the one-shot gate
@@ -499,7 +548,7 @@ pub(crate) fn read_copy_evidence(
         if c == best {
             continue;
         }
-        let (_pbc, attain) = copy_pair_significance(read, &copies[best], &copies[c], p, editing_cols);
+        let (_pbc, attain, _n_cols) = copy_pair_significance(read, &copies[best], &copies[c], p, editing_cols);
         if attain > min_p {
             min_p = attain;
         }
@@ -553,15 +602,25 @@ pub fn assign_read_editing(
     // p_read = least-significant (max) pairwise p (min_p was already computed by `read_copy_evidence`,
     // relative to the SAME `best`, so it is reused as-is here).
     let mut p_read = 0.0f64;
+    // A3: the competitor that makes `p_read` WORST is the one actually governing the assign/ambiguous
+    // boundary -- its whole-family identity to `best` and how many of its distinguishing columns this read
+    // spans are the two numbers that explain a thin-evidence assignment (`docs/OPEN_ITEMS_2026-09-09.md` A3).
+    let mut nearest_sibling: Option<usize> = None;
+    let mut n_cols_vs_nearest_sibling = 0usize;
     for c in 0..n {
         if c == best {
             continue;
         }
-        let (pbc, _attain) = copy_pair_significance(read, &copies[best], &copies[c], p, editing_cols);
+        let (pbc, _attain, n_cols) = copy_pair_significance(read, &copies[best], &copies[c], p, editing_cols);
         if pbc > p_read {
             p_read = pbc;
+            nearest_sibling = Some(c);
+            n_cols_vs_nearest_sibling = n_cols;
         }
     }
+    let sibling_identity = nearest_sibling
+        .map(|c| copy_pair_identity(&copies[best], &copies[c]))
+        .unwrap_or(1.0);
     let (resolvable, status) = if p.use_margin_gate {
         let resolvable = n_decisive >= 1;
         let status = if !resolvable {
@@ -620,6 +679,8 @@ pub fn assign_read_editing(
         origin_rejected: false,
         n_candidates: 0,
         posterior,
+        sibling_identity,
+        n_cols_vs_nearest_sibling,
     })
 }
 

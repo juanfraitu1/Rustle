@@ -700,7 +700,151 @@ pub(super) fn locus_confident_extent(
         .collect()
 }
 
+/// Enable junction-aware greedy locus growth in place of the shipped representative span
+/// (`RUSTLE_LOCUS_GROWTH_EXTENT=1`, default off = byte-identical). See `locus_growth_extent`;
+/// PREREG `docs/PREREG_locus_growth_extent_2026-09-10.md` (md5 8d5a63fb70875996d599c9f4218cd83c).
+fn growth_extent_enabled() -> bool {
+    std::env::var("RUSTLE_LOCUS_GROWTH_EXTENT").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
+}
 
+/// Gap multiplier `k` for `locus_growth_extent` (`RUSTLE_LOCUS_GROWTH_K`, default 3.0).
+fn growth_k() -> f64 {
+    std::env::var("RUSTLE_LOCUS_GROWTH_K")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|x: &f64| *x > 0.0)
+        .unwrap_or(3.0)
+}
+
+/// Minimum crossing-read fraction for `locus_growth_extent` (`RUSTLE_LOCUS_GROWTH_MIN_FRAC`, default 0.10,
+/// reused unchanged from the already-calibrated `--min-boundary-fraction`, copy_assign.rs §6hs).
+fn growth_min_frac() -> f64 {
+    std::env::var("RUSTLE_LOCUS_GROWTH_MIN_FRAC")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|x: &f64| *x > 0.0)
+        .unwrap_or(0.10)
+}
+
+/// Locus extent grown outward from the union of its junction-collapsed isoforms' own spans (`seeds[i]`,
+/// from `collapse_loci_span_aware_with_members` — NEVER from a single picked representative, which is
+/// what makes `pick_locus_rep`'s stub choice able to set the boundary in the shipped path: 46% of reps
+/// covering a known family member are single-exon stubs, 0.29x true size, vs 0.75x for spliced reps,
+/// `project_locus_boundary_extent`, 08-03/04).
+///
+/// Grows one 50bp bin at a time in each direction, stopping the moment a bin is BOTH farther than `k`
+/// times this locus's OWN internal median read-start spacing (measured ONCE, from inside the seed, before
+/// any extension — recomputing after extending would let a readthrough tail redefine what "normal" means
+/// for its own locus) AND crossed by fewer than `min_frac` of the reads folded in on that side so far. The
+/// compound test and its default `min_frac` are unchanged from `--min-boundary-fraction`
+/// (`copy_assign.rs`), which is what let it correctly keep ~30 smooth alternative-terminus points while
+/// cutting isolated 5.5–139kb readthrough jumps at the isoform level; here it is the rule that DECIDES
+/// what gets folded into the locus, not a post-hoc flag on an already-fixed span.
+///
+/// Consults no OTHER locus's sequence anywhere — unlike the refuted `any-locus homology bounding`
+/// (08-04), which grew a locus by referencing other loci's homology and thereby manufactured the extra
+/// E_r edges that merged components. Growth here only ever reads this locus's own local read geometry, so
+/// it cannot reproduce that mechanism.
+///
+/// A locus whose seed contains fewer than 2 distinct read-start positions is returned unchanged (too
+/// little local information to define a reference spacing — conservative no-op, never deletes a locus).
+pub(super) fn locus_growth_extent(
+    bam_reads: &[BamRead],
+    reps: &[DenovoTranscript],
+    seeds: &[(u64, u64)],
+    k: f64,
+    min_frac: f64,
+) -> Vec<(u64, u64)> {
+    use std::collections::BTreeMap;
+    const BIN: u64 = 50;
+    const MAX_FLANK: u64 = 2_000_000; // bounds cost; a single locus cannot walk an entire chromosome
+    let mut by_chrom: BTreeMap<&str, Vec<(u64, u64)>> = BTreeMap::new();
+    for br in bam_reads {
+        if br.is_supplementary || br.is_secondary {
+            continue;
+        }
+        by_chrom.entry(br.chrom.as_str()).or_default().push((br.read.ref_start, read_ref_end(&br.read)));
+    }
+    for v in by_chrom.values_mut() {
+        v.sort_unstable();
+    }
+
+    reps.iter()
+        .zip(seeds.iter())
+        .map(|(r, &(s0, e0))| {
+            let Some(v) = by_chrom.get(r.chrom.as_str()) else { return (s0, e0) };
+            let lo_bound = s0.saturating_sub(MAX_FLANK);
+            let hi_bound = e0 + MAX_FLANK;
+            let mut bins: BTreeMap<u64, u32> = BTreeMap::new();
+            let mut seed_starts: Vec<u64> = Vec::new();
+            for &(s, e) in v.iter() {
+                if s >= hi_bound {
+                    break;
+                }
+                if e <= lo_bound {
+                    continue;
+                }
+                // Every bin the read's own footprint touches is credited (matches `locus_core_bp`'s
+                // depth treatment — a read supports every base it aligns to, not only its start bin).
+                let bs = s.max(lo_bound) / BIN;
+                let be = e.min(hi_bound).saturating_sub(1) / BIN;
+                for b in bs..=be {
+                    *bins.entry(b).or_insert(0) += 1;
+                }
+                if s >= s0 && s < e0 {
+                    seed_starts.push(s);
+                }
+            }
+            seed_starts.sort_unstable();
+            seed_starts.dedup();
+            if seed_starts.len() < 2 {
+                return (s0, e0);
+            }
+            let mut gaps: Vec<u64> = seed_starts.windows(2).map(|w| w[1] - w[0]).collect();
+            gaps.sort_unstable();
+            let ref_gap = gaps[gaps.len() / 2].max(1);
+
+            let seed_lo_bin = s0 / BIN;
+            let seed_hi_bin = e0.saturating_sub(1) / BIN;
+            let seed_reads: u32 = (seed_lo_bin..=seed_hi_bin).map(|b| *bins.get(&b).unwrap_or(&0)).sum::<u32>().max(1);
+
+            let mut hi_bin = seed_hi_bin;
+            let mut included = seed_reads;
+            while let Some((&nb, &bridge_reads)) = bins.range((hi_bin + 1)..).find(|&(_, &c)| c > 0) {
+                let gap_bp = (nb - hi_bin) * BIN;
+                let frac = bridge_reads as f64 / included as f64;
+                if gap_bp as f64 > k * ref_gap as f64 && frac < min_frac {
+                    break;
+                }
+                included += bridge_reads;
+                hi_bin = nb;
+                if (hi_bin - seed_hi_bin) * BIN > MAX_FLANK {
+                    break;
+                }
+            }
+
+            let mut lo_bin = seed_lo_bin;
+            let mut included_l = seed_reads;
+            while lo_bin > 0 {
+                let Some((&pb, &bridge_reads)) = bins.range(..lo_bin).next_back() else { break };
+                if bridge_reads == 0 {
+                    break;
+                }
+                let gap_bp = (lo_bin - pb) * BIN;
+                let frac = bridge_reads as f64 / included_l as f64;
+                if gap_bp as f64 > k * ref_gap as f64 && frac < min_frac {
+                    break;
+                }
+                included_l += bridge_reads;
+                lo_bin = pb;
+                if (seed_lo_bin - lo_bin) * BIN > MAX_FLANK {
+                    break;
+                }
+            }
+            (lo_bin * BIN, (hi_bin + 1) * BIN)
+        })
+        .collect()
+}
 
 /// Deny a STUB the right to CREATE family membership (`RUSTLE_ER_NO_STUB_EDGES=1`, default off).
 ///
@@ -1041,6 +1185,8 @@ fn gated_family(rep: &DenovoTranscript, bam_reads: &[BamRead], chi: usize, famil
                         origin_rejected: false,
                         n_candidates: 0,
                     posterior: vec![1.0 / chi as f64; chi],
+                    sibling_identity: 1.0,
+                    n_cols_vs_nearest_sibling: 0,
                 },
             )
         })
@@ -1566,6 +1712,8 @@ pub(crate) fn apply_realign_patch(
                         origin_rejected: false,
                         n_candidates: 0,
                         posterior,
+                        sibling_identity: 1.0,
+                        n_cols_vs_nearest_sibling: 0,
                     }
                 }
             };
@@ -1793,6 +1941,8 @@ fn admit_novel_pools_with_admitter<F>(
                         origin_rejected: false,
                         n_candidates: 0,
                         posterior,
+                        sibling_identity: 1.0,
+                        n_cols_vs_nearest_sibling: 0,
                     },
                 ));
                 fa.read_psv_obs.push(obs);
@@ -3677,6 +3827,10 @@ pub fn detect_homology_catalog_genome_wide(
         .map(|v| v != "0" && !v.is_empty())
         .unwrap_or(false);
     let mut pooled_exons: Vec<Vec<Vec<u8>>> = Vec::new();
+    // Per-locus seed span for `RUSTLE_LOCUS_GROWTH_EXTENT` (default off): the union of every isoform
+    // `collapse_loci_span_aware_with_members` collapsed into a locus, captured HERE for the same reason as
+    // `pooled_exons` above — `transcripts` is dropped immediately below.
+    let mut growth_seeds: Option<Vec<(u64, u64)>> = None;
     let mut reps: Vec<DenovoTranscript> = if union_reps {
         union_locus_reps(&transcripts, &cfg.detect, &genome, union_floor)
     } else if let Some(fl) = cothread_rep_floor() {
@@ -3695,6 +3849,20 @@ pub fn detect_homology_catalog_genome_wide(
             rep_idx.len(),
             members.iter().map(|m| m.len()).sum::<usize>(),
             rep_idx.iter().map(|&i| exon_seqs_of(&transcripts[i], 0).len()).sum::<usize>()
+        );
+        rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
+    } else if growth_extent_enabled() {
+        let (rep_idx, members) =
+            crate::vg_family::family_detect::collapse_loci_span_aware_with_members(&transcripts, &cfg.detect);
+        growth_seeds = Some(
+            members
+                .iter()
+                .map(|ms| {
+                    let lo = ms.iter().map(|&i| transcripts[i].start).min().unwrap();
+                    let hi = ms.iter().map(|&i| transcripts[i].end).max().unwrap();
+                    (lo, hi)
+                })
+                .collect(),
         );
         rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
     } else {
@@ -3749,6 +3917,9 @@ pub fn detect_homology_catalog_genome_wide(
     // instead roughly doubles it on a multimapper-rich BAM. `None` when the flag is unset, so the
     // default path pays nothing.
     let global_link = locus_link_min_reads().map(|_| locus_read_linkage(&mapq_reads, &reps));
+    let growth_result = growth_seeds
+        .as_ref()
+        .map(|seeds| locus_growth_extent(&mapq_reads, &reps, seeds, growth_k(), growth_min_frac()));
     drop(mapq_reads);
     let uniq_counts = locus_unique_mapper_counts(&placements_for_uniq, reps.len());
     drop(placements_for_uniq);
@@ -3757,6 +3928,7 @@ pub fn detect_homology_catalog_genome_wide(
         c.core_bp = cores[i];
         c.stub = c.introns.is_empty() && spliced_ev[i];
     }
+    let had_de_extent = de_extent.is_some();
     if let Some(ext) = de_extent {
         let (mut set, mut kept) = (0usize, 0usize);
         for (i, c) in reps.iter_mut().enumerate() {
@@ -3767,6 +3939,18 @@ pub fn detect_homology_catalog_genome_wide(
         }
         eprintln!("[locus-extent] confident-read boundaries: {set} reps re-bounded, \
                    {kept} kept (no qualifying read)");
+    }
+    if let Some(grown) = growth_result {
+        if had_de_extent {
+            eprintln!("[locus-extent] WARNING: RUSTLE_LOCUS_GROWTH_EXTENT and RUSTLE_LOCUS_DE_EXTENT both \
+                       set; growth takes precedence, confident-read boundaries above are overwritten");
+        }
+        for (i, c) in reps.iter_mut().enumerate() {
+            c.start = grown[i].0;
+            c.end = grown[i].1;
+        }
+        eprintln!("[locus-extent] growth boundaries applied to {} reps (k={}, min_frac={})",
+                   grown.len(), growth_k(), growth_min_frac());
     }
     // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent → catalogs byte-identical): dump the rep table
     // that `distinct_locus_reps` (the ">= 2 spatially-distinct loci" certificate) is about to run on, so
@@ -9593,6 +9777,8 @@ mod tests {
                         origin_rejected: false,
                         n_candidates: 0,
                         posterior: vec![0.5, 0.5],
+                        sibling_identity: 1.0,
+                        n_cols_vs_nearest_sibling: 0,
                     },
                 ),
                 (
@@ -9610,6 +9796,8 @@ mod tests {
                         origin_rejected: false,
                         n_candidates: 0,
                         posterior: vec![0.0, 1.0],
+                        sibling_identity: 1.0,
+                        n_cols_vs_nearest_sibling: 0,
                     },
                 ),
             ],
@@ -9737,6 +9925,8 @@ mod tests {
                         origin_rejected: false,
                         n_candidates: 0,
                     posterior: vec![0.5, 0.5],
+                    sibling_identity: 1.0,
+                    n_cols_vs_nearest_sibling: 0,
                 },
             )],
             copy_tids: vec!["c0".into(), "c1".into()],

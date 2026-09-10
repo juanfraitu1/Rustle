@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use rayon::prelude::*;
 
 use super::copy_assign::{
-    assign_read, assign_read_editing, boundary_present, copy_pair_significance, AssignParams, AssignStatus,
+    assign_read, assign_read_editing, boundary_present, copy_pair_identity, copy_pair_significance, AssignParams, AssignStatus,
     Assignment, BubbleGraph, CopyProfile, ReadFeatures,
 };
 use super::copy_split::{intron_chain_of, AlignedRead};
@@ -1916,7 +1916,7 @@ fn find_weak_copies(
         // Recompute read features in the current profile frame so the pairwise certificate uses the
         // surviving copy set and its PSV columns / junction boundaries.
         let feats = read_features(&reads[r.read_index], r.mapped_copy, &fp);
-        let (p_ij, _) = copy_pair_significance(&feats, &fp.profiles[i], &fp.profiles[j], p, &[]);
+        let (p_ij, _, _) = copy_pair_significance(&feats, &fp.profiles[i], &fp.profiles[j], p, &[]);
         if p_ij < thr {
             sig_count[i] += 1;
         }
@@ -2061,6 +2061,8 @@ pub fn assign_family_detailed_pruned(
             origin_rejected: a.origin_rejected,
             n_candidates: a.n_candidates,
             posterior: post_out,
+            sibling_identity: a.sibling_identity,
+            n_cols_vs_nearest_sibling: a.n_cols_vs_nearest_sibling,
         })
     };
 
@@ -2475,6 +2477,8 @@ fn assign_family_detailed_once(
                         origin_rejected: true,
                         n_candidates: 0,
                         posterior: vec![1.0 / copies.len() as f64; copies.len()],
+                        sibling_identity: 1.0,
+                        n_cols_vs_nearest_sibling: 0,
                     };
                     return (
                         ri,
@@ -2639,6 +2643,10 @@ fn assign_family_detailed_once(
                 let competitors = cand.len() - 1 - partners.len();
                 let thr = p.alpha / (competitors.max(1) as f64);
                 let (mut min_p, mut p_read, mut n_dec_min, mut margin_min, mut k0) = (1.0f64, 0.0f64, usize::MAX, f64::INFINITY, false);
+                // A3 (`docs/OPEN_ITEMS_2026-09-09.md`): the candidate `k` that makes `p_read` WORST is the one
+                // actually governing the assign/ambiguous boundary here too.
+                let mut nearest_sibling_k: Option<usize> = None;
+                let mut n_cols_vs_nearest_sibling = 0usize;
                 let mut posterior_ll = vec![0.0f64; cand.len()];
                 for &k in &partners {
                     posterior_ll[k] = f64::NEG_INFINITY; // a partner carries no posterior mass
@@ -2659,7 +2667,7 @@ fn assign_family_detailed_once(
                         })
                         .collect();
                     let feats_pair = ReadFeatures { psv_obs: feats.psv_obs.clone(), psv_qual: Vec::new(), junctions: both };
-                    let (pk, _) = copy_pair_significance(&feats_pair, &profiles[bk], &profiles[k], p, &[]);
+                    let (pk, _, pk_n_cols) = copy_pair_significance(&feats_pair, &profiles[bk], &profiles[k], p, &[]);
                     let (mut dec, mut llr) = (0usize, 0.0f64);
                     for j in 0..feats.psv_obs.len() {
                         if let (Some(o), Some(ba), Some(ca)) = (feats.psv_obs[j], profiles[bk].alleles[j], profiles[k].alleles[j]) {
@@ -2691,7 +2699,11 @@ fn assign_family_detailed_once(
                         k0 = true;
                     }
                     min_p = min_p.min(pk);
-                    p_read = p_read.max(pk);
+                    if pk > p_read {
+                        p_read = pk;
+                        nearest_sibling_k = Some(k);
+                        n_cols_vs_nearest_sibling = pk_n_cols;
+                    }
                     n_dec_min = n_dec_min.min(dec);
                     margin_min = margin_min.min(llr);
                     posterior_ll[k] = -llr;
@@ -2714,6 +2726,9 @@ fn assign_family_detailed_once(
                 for (k, &ci) in cand.iter().enumerate() {
                     full[ci] = post[k];
                 }
+                let sibling_identity = nearest_sibling_k
+                    .map(|k| copy_pair_identity(&profiles[bk], &profiles[k]))
+                    .unwrap_or(1.0);
                 let mut a = Assignment {
                     best_copy: cand[bk],
                     log_lr_margin: if single { 0.0 } else { margin_min },
@@ -2727,6 +2742,8 @@ fn assign_family_detailed_once(
                     origin_rejected: false,
                     n_candidates: cand.len() - partner_k.len(), // family candidates only (§6ft)
                     posterior: full,
+                    sibling_identity,
+                    n_cols_vs_nearest_sibling,
                 };
                 // ⭐ origin certificate: under H0 "the best candidate's unit IS this read's origin", the read's
                 // SUBSTITUTIONS against that unit are Binomial(aligned bases, error_rate) — indels are excluded on
@@ -2775,7 +2792,38 @@ fn assign_family_detailed_once(
                     if nm as f64 > mean && p_tail < p.alpha {
                         a.status = AssignStatus::Ambiguous;
                         a.resolvable = false;
-                        a.origin_rejected = true;
+                        // ⭐ A2 (`docs/OPEN_ITEMS_2026-09-09.md`, register row 799): the certificate was tested
+                        // against `bk` (the PSV-duel winner) ONLY. A read that fails there but is origin-
+                        // CONSISTENT with some other candidate (matches its sequence within the same error
+                        // tolerance — a recombinant/unrepresented-haplotype case, not evidence the read is
+                        // foreign to the family) was reported `origin_rejected`, which claims the read
+                        // belongs to no candidate at all. Both verdicts abstain (Ambiguous either way), but
+                        // "origin_rejected" is a strictly stronger, and here wrong, claim. Test every OTHER
+                        // candidate the same way (raw edit stats, no `bk`-specific readthrough-explained
+                        // adjustment — that adjustment is about `bk`'s own coverage gaps, not transferable);
+                        // only set `origin_rejected` if NONE of them pass either.
+                        let consistent_elsewhere = p.origin_consistency_check && cand.iter().enumerate().any(|(k, &ci)| {
+                            if ci == a.best_copy {
+                                return false;
+                            }
+                            let Some(&Some((ox, oaligned, onm_all, oblk_all, oi, od, ou))) = unit_edits.get(ci) else { return false };
+                            let (onm, oblk) = if p.read_star_genomic {
+                                let oindel = if p.origin_drop_indels { 0 } else { oi + od };
+                                (ox + oindel + ou, oaligned + ou)
+                            } else if p.origin_subst_only {
+                                (ox, oaligned)
+                            } else {
+                                (onm_all, oblk_all)
+                            };
+                            let on = oblk as f64;
+                            let omean = on * r0;
+                            let osd = (on * r0 * (1.0 - r0)).sqrt().max(1e-9);
+                            let oz = (onm as f64 - omean) / osd;
+                            let op_tail = 0.5 * (1.0 - erf_approx(oz / std::f64::consts::SQRT_2));
+                            let _ = k;
+                            !(onm as f64 > omean && op_tail < p.alpha)
+                        });
+                        a.origin_rejected = !consistent_elsewhere;
                     }
                 }
                 if n_explained_unaligned > 0 && !a.origin_rejected {
@@ -3179,11 +3227,13 @@ mod tests {
                 best_copy: 0, log_lr_margin: 0.0, n_decisive: 0, resolvable: false, status: AssignStatus::Tied,
                 p_value: 1.0, min_p_value: 1.0, discovery_coupled: false, junction_conflict: false,
                 origin_rejected, n_candidates, posterior: posterior.clone(),
+                sibling_identity: 1.0, n_cols_vs_nearest_sibling: 0,
             },
             combined: Assignment {
                 best_copy: 0, log_lr_margin: 0.0, n_decisive: 0, resolvable: false, status: AssignStatus::Tied,
                 p_value: 1.0, min_p_value: 1.0, discovery_coupled: false, junction_conflict: false,
                 origin_rejected, n_candidates, posterior,
+                sibling_identity: 1.0, n_cols_vs_nearest_sibling: 0,
             },
             psv_obs: Vec::new(),
             junctions: Vec::new(),
@@ -4089,6 +4139,8 @@ mod tests {
                         origin_rejected: false,
                         n_candidates: 0,
             posterior: vec![],
+            sibling_identity: 1.0,
+            n_cols_vs_nearest_sibling: 0,
         }
     }
     fn rr(read_index: usize, mapped_copy: usize, combined: Assignment) -> ReadResult {

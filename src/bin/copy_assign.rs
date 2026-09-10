@@ -89,6 +89,12 @@ struct RegionWork {
     /// `read_names`. Kept so the output stage can say whether a read has an aligned BASE inside a copy —
     /// a read spliced OVER a copy is no evidence for it (§6es hygiene; ledger §6cm).
     read_blocks: Vec<Vec<(u64, u64)>>,
+    /// Genomic strand per read, parallel to `read_names` — `ts:A` (transcript strand relative to the READ)
+    /// flipped by alignment orientation (`BamRead::ts`'s own doc), falling back to the read's own FLAG 0x10
+    /// when minimap2 emitted no `ts` (an unspliced read has no junction motif to read it from). Kept for
+    /// `--rescue-singletons` (§6hw), whose emitted transcripts otherwise have no strand source of their own
+    /// once `BamRead` is dropped.
+    read_strand: Vec<char>,
     /// Alignment-score evidence per read, parallel to `read_names`. Reported, never decisive — see
     /// `read_conflict::AsEvidence` for why raw AS is length-confounded and `de` makes the call.
     as_ev: Vec<AsEvidence>,
@@ -190,6 +196,26 @@ struct Args {
     /// Escape for the 2026-09-09 default: the aligner-placed GTF with the old copy attributes (pre-§6hp).
     #[arg(long, default_value_t = false)]
     no_gtf_copy_set: bool,
+    /// ⭐ (`docs/OPEN_ITEMS_2026-09-09.md`, 09-10, user request): with `--gtf`, write
+    /// `<out>.read_provenance.tsv` — one row per AS-tied alignment record, naming exactly which transcript
+    /// it contributed to (gate-passed or rescued) or exactly why it did not (excluded_ambiguous,
+    /// excluded_tied, excluded_chain_at_unassigned_locus, excluded_supplementary, ...). "Complete, not
+    /// necessarily good": every record this region's O2 saw gets exactly one row. Default off.
+    #[arg(long, default_value_t = false)]
+    read_provenance: bool,
+    /// ⭐ B2 (`docs/OPEN_ITEMS_2026-09-09.md`, 09-10): with `--gtf`, emit a low-support (`support "N"`,
+    /// N < 3) transcript for any certificate-ASSIGNED read whose own exon chain does not otherwise reach
+    /// `assemble_gate`'s min-reads floor — a real, resolvable read the GTF currently drops on the floor
+    /// entirely (measured: 220/290 such contested-but-uncarried molecules are singletons, §6hh row 798).
+    /// Default off, byte-identical when unset.
+    #[arg(long, default_value_t = false)]
+    rescue_singletons: bool,
+    /// ⭐ A3 (`docs/OPEN_ITEMS_2026-09-09.md`, 09-10): append `sibling_identity` and `n_cols_vs_sibling` to
+    /// `.assignments.tsv` — the whole-family PSV identity between an assigned copy and the competitor
+    /// governing its p_value, and how many distinguishing positions this read spans against it. Reporting
+    /// only; changes no decision. Default off, byte-identical schema when unset.
+    #[arg(long, default_value_t = false)]
+    sibling_report: bool,
     /// ⭐ §6hq/PREREG fd894558: StringTie-style per-locus relative-depth demotion. Per `gene_tid`
     /// (the locus `collapse_loci_groups` already assigns), `isoform_fraction = n_reads / max(n_reads in the
     /// locus)`; below this floor a transcript is tagged `low_confidence "true"` and, under `--gtf-copy-set`,
@@ -278,6 +304,13 @@ struct Args {
     /// wrong copy's AS is unique there is no tie and the gate skipped the read as a "clear best". Human MCL0:
     /// 2,278 such molecules, 64 % carrying ≥ 50 bp of insertion in the primary placement, and `--as-tie-ratio`
     /// does not reach them (0.98 admits 42 %). Default OFF; a gate-only column `aligner_disagreement` marks them.
+    ///
+    /// ⚠⚠ A7 (`docs/OPEN_ITEMS_2026-09-09.md`, register row 791): REFUTED for the reason it was built. PREREG
+    /// 58a5496b predicted this recovers the §6hc blind spot as real assignments; measured 33% assigned
+    /// (<40% predicted), median margin 13.8 (<20 predicted) — most of the widening lands on PSV dead heats
+    /// (margin 0, 830 of the admitted set) or a copy worse than the primary by AS, not the SV-shape mechanism
+    /// it was named for. Kept as a flag (not deleted) only so the PREREG's own negative result stays
+    /// reproducible on request; do not enable it expecting the row-306/791 mechanism to fire.
     #[arg(long)]
     admit_aligner_disagreement: bool,
     /// Also dump the per-read PSV GENOTYPE MATRIX — `<out>.psv_reads.tsv` (each read's base at every PSV column
@@ -360,9 +393,26 @@ struct Args {
     /// Escape for the 2026-09-09 default: the origin certificate counts I+D bases again (pre-§6hf, byte-identical).
     #[arg(long, default_value_t = false)]
     no_origin_drop_indels: bool,
+    /// ⭐ A2 (`docs/OPEN_ITEMS_2026-09-09.md`, register row 799): before calling a read `origin_rejected`
+    /// (foreign to the family), also test every other candidate, not only the PSV-duel winner. A read that
+    /// fails the certificate at its best copy but is origin-consistent with another candidate is reported
+    /// `Ambiguous` instead of `origin_rejected` — both abstain, only the stronger label changes. Default
+    /// off (byte-identical); this WIDENS which reads get the milder label, moving the `origin_rejected`
+    /// count and the contested denominator that's built from it (measured: 27 human reads).
+    #[arg(long, default_value_t = false)]
+    origin_consistency_check: bool,
     /// ⭐ PREREG 021446fb: indel PSV columns in read-star — I/D events ≥ `--indel-psv-min-len` bp, clustered
     /// within 20 bp along the read, one column per cluster, the same per-column error as substitution
     /// columns. Default off (byte-identical).
+    ///
+    /// ⚠⚠ A7 (`docs/OPEN_ITEMS_2026-09-09.md`, register rows 793-794): REFUTED for the reason it was built,
+    /// AND carries a known artifact class it does not exclude. Measured: 0/397 convertible human `tied`
+    /// molecules convert, 0/23 gorilla MCL1, 0/5 MCL7 — reference copies this similar do not differ by an
+    /// indel inside one read's span, so indels strengthen a margin but never break a genuine tie. Separately,
+    /// columns within 20bp of a read END contradict the substitution-best copy 34% of the time (an aligner
+    /// end-gap placement artifact, not real copy evidence) — this flag does not guard against that class.
+    /// Kept as a flag only so the PREREG's negative result stays reproducible; do not enable it expecting it
+    /// to resolve ties.
     #[arg(long, default_value_t = false)]
     indel_psv: bool,
     #[arg(long, default_value_t = 3)]
@@ -1511,6 +1561,14 @@ fn opt_i32(v: Option<i32>) -> String {
 fn opt_f32(v: Option<f32>) -> String {
     v.map_or_else(|| "NA".to_string(), |x| format!("{x:.3}"))
 }
+/// `--read-provenance`: a record's own intron chain as `d1-a1,d2-a2,...`, or `none` for an unspliced record.
+fn fmt_chain(chain: &[(u64, u64)]) -> String {
+    if chain.is_empty() {
+        "none".to_string()
+    } else {
+        chain.iter().map(|(d, a)| format!("{d}-{a}")).collect::<Vec<_>>().join(",")
+    }
+}
 
 /// One assignment-table row (resolved while the region's reads are in scope).
 struct AssignRow {
@@ -1544,6 +1602,11 @@ struct AssignRow {
     /// The catalog `copy_idx` of `assigned_copy` under `--families` (copy_assign SORTS copies and reports its
     /// own index; `family_join.tsv` carries the same map). `NA` without a catalog.
     catalog_copy_idx: String,
+    /// A3 (`docs/OPEN_ITEMS_2026-09-09.md`): whole-family PSV identity between `assigned_copy` and its
+    /// nearest sibling (the competitor governing `p_value`). Emitted only with `--sibling-report`.
+    sibling_identity: f64,
+    /// A3: how many distinguishing PSV/junction positions this read spans against that nearest sibling.
+    n_cols_vs_nearest_sibling: usize,
 }
 /// One family-table row.
 struct FamilyRow {
@@ -1582,6 +1645,15 @@ struct QuantRow {
     anchored: usize,
     /// `anchored >= GATE_MIN_READS`: the copy exists under every tie-break (adversarially invariant) via unique
     /// mappers. FALSE = not guaranteed by unique mappers alone (may still be junction-defined, e.g. DAZ2).
+    ///
+    /// ⚠ A5 (`docs/OPEN_ITEMS_2026-09-09.md`, register row 786): NEAR-VACUOUS under the default AS-tied gate.
+    /// `anchored` counts exactly the unique (MAPQ>0) mappers the gate removes BEFORE the certificate ever
+    /// runs — measured on gorilla MCL1, 52/80 copies "true" by this column collapse to 2/80 once the gate is
+    /// on, because the population this column certifies over has mostly left the certificate's business
+    /// entirely. Kept (not removed) because `junction_invariant` — the OTHER half of the reported OR,
+    /// `n_inv` below — is NOT vacuous the same way (copy-specific splice structure survives the gate); do
+    /// not read a high `tie_invariant` count under `--no-as-tied-only` as evidence of anything under the
+    /// default gate.
     tie_invariant: bool,
     /// `copy_junction_support >= GATE_MIN_READS`: the copy is pinned by >= 3 reads carrying a copy-specific
     /// JUNCTION (identifies it by splice structure regardless of the primary label) — the DAZ2-rescue mechanism.
@@ -1766,6 +1838,7 @@ fn main() -> Result<()> {
         read_star_hit_in_unit: !args.no_read_star_hit_in_unit,
         read_star_two_form: !args.read_star_genomic_only,
         read_star_readthrough: !args.no_readthrough_certificate,
+        origin_consistency_check: args.origin_consistency_check,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
@@ -1817,6 +1890,7 @@ fn main() -> Result<()> {
     let mut exon_graphs: Vec<rustle::vg_family::copy_graph::ExonGraph> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
+    let mut prov_rows: Vec<String> = Vec::new(); // --read-provenance: one row per AS-tied alignment record
     // --absent-copies + opt-in --linearize/--linearize-gate: linearize certificates, one per Stage-2-admitted
     // candidate (Task 4), written to `<out>.linearize.tsv` below (Task 5) when `do_linearize`. Empty otherwise
     // (the cert is skipped in `detect_and_assign`). `--linearize-gate` also uses the verdict to gate admission
@@ -2178,9 +2252,17 @@ fn main() -> Result<()> {
             })
             .collect();
         let read_blocks: Vec<Vec<(u64, u64)>> = bam_reads.iter().map(|r| aligned_blocks_local(&r.read)).collect();
+        let read_strand: Vec<char> = bam_reads
+            .iter()
+            .map(|r| match (r.ts, r.reverse) {
+                (Some('+'), rev) => if rev { '-' } else { '+' },
+                (Some('-'), rev) => if rev { '+' } else { '-' },
+                (_, rev) => if rev { '-' } else { '+' },
+            })
+            .collect();
         let as_ev = as_evidence_per_read(&bam_reads, !args.no_as_tied_only);
         let n_mapped = bam_reads.len();
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, read_spans, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -2224,7 +2306,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads } = work;
+            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads } = work;
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -2369,6 +2451,8 @@ fn main() -> Result<()> {
                             None => "-".to_string(),
                         },
                         catalog_copy_idx: cat_idx_of(a.best_copy),
+                        sibling_identity: a.sibling_identity,
+                        n_cols_vs_nearest_sibling: a.n_cols_vs_nearest_sibling,
                     });
                 }
                 // --vg-realign (report-only): the re-align supplement's per-read decisions for this family.
@@ -3008,6 +3092,11 @@ fn main() -> Result<()> {
                 let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
                 for i in 0..n { let r = find(&mut parent, i); groups.entry(r).or_default().push(i); }
                 let (mut n_kept, mut n_drop, mut n_lift, mut n_lift_fail, mut n_und) = (0usize, 0usize, 0usize, 0usize, 0usize);
+                // ⭐ B1 (`docs/OPEN_ITEMS_2026-09-09.md`): a lift failure used to be an anonymous count — a
+                // certificate-assigned read's evidence at a copy silently had no transcript anywhere, which
+                // contradicts "the GTF O2 believes". Named here (source transcript, source copy, target
+                // copy) and printed explicitly below, so it is auditable instead of a bare "N lifts failed".
+                let mut lift_fail_detail: Vec<(String, String, String)> = Vec::new();
                 let fmt_map = |m: &std::collections::BTreeMap<String, usize>| -> String { let mut v: Vec<(&String, &usize)> = m.iter().collect(); v.sort_by_key(|(k, _)| k.parse::<i64>().unwrap_or(i64::MAX)); v.iter().map(|(k, c)| format!("{k}:{c}")).collect::<Vec<_>>().join(",") };
                 let fmt_set = |s: &std::collections::BTreeSet<String>| -> String { let mut v: Vec<&String> = s.iter().collect(); v.sort_by_key(|k| (k.as_str() == "outside", k.parse::<i64>().unwrap_or(i64::MAX))); v.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(",") };
                 let copyset_debug = std::env::var_os("RUSTLE_COPYSET_DEBUG").is_some();
@@ -3061,7 +3150,11 @@ fn main() -> Result<()> {
                     }
                     let p = &pending[rep];
                     for c in evidence.difference(&have) {
-                        let (Some(a), Some(b)) = (sweep_ci(fw, &p.cidx), sweep_ci(fw, c)) else { n_lift_fail += 1; continue };
+                        let (Some(a), Some(b)) = (sweep_ci(fw, &p.cidx), sweep_ci(fw, c)) else {
+                            n_lift_fail += 1;
+                            lift_fail_detail.push((p.uniq_tid.clone(), p.cidx.clone(), c.clone()));
+                            continue;
+                        };
                         let mut prev = p.t.start;
                         let mut exons: Vec<(u64, u64)> = Vec::new();
                         for &(d, aa) in &p.t.introns { exons.push((prev, d)); prev = aa; }
@@ -3075,7 +3168,11 @@ fn main() -> Result<()> {
                             }
                         }
                         lifted.sort_unstable();
-                        if !ok || lifted.windows(2).any(|w| w[0].1 > w[1].0) { n_lift_fail += 1; continue; }
+                        if !ok || lifted.windows(2).any(|w| w[0].1 > w[1].0) {
+                            n_lift_fail += 1;
+                            lift_fail_detail.push((p.uniq_tid.clone(), p.cidx.clone(), c.clone()));
+                            continue;
+                        }
                         let strand = strand_of.get(c).copied().unwrap_or(p.t.strand);
                         let (chrom, _, _) = &fams[fw].copy_spans[b];
                         let tid = format!("{}_lift{}", p.uniq_tid, c);
@@ -3098,6 +3195,158 @@ fn main() -> Result<()> {
                 }
                 eprintln!("[copy_assign]   ⭐ --gtf-copy-set {contig}:{lo}-{hi}: {} family isoforms placed by evidence, {} phantoms/duplicates dropped, {} lifted placements ({} lifts failed), {} undecided isoforms emitted once with a copy set",
                     n_kept, n_drop, n_lift, n_lift_fail, n_und);
+                // B1: name every lift failure — which transcript, which source copy, which target copy has
+                // evidence but no transcript anywhere. Never quote "N lifts failed" without this list beside it.
+                for (tid, from, to) in &lift_fail_detail {
+                    eprintln!("[copy_assign]     lift_failed: transcript {tid} (source copy {from}) has evidence at copy {to} but could not be placed there");
+                }
+            }
+            // ⭐ B2 (`docs/OPEN_ITEMS_2026-09-09.md`, 09-10) + read-provenance (09-10, same day, user request):
+            // EVIDENCE-BACKED SINGLETON rescue, now paired with a COMPLETE per-record accounting.
+            // `assemble_gate` drops any exon chain with < GATE_MIN_READS (3) reads, so a certificate-
+            // assigned read whose own chain never reaches that floor has NO transcript in the emitted GTF
+            // at all — measured: 220 of 290 contested molecules O2 assigned but the GTF does not carry are
+            // singletons (row 798, §6hh), and the flagship case is copy 22's SV-carrying isoform. The
+            // certificate is a STRONGER claim than "3 reads agree" (a per-read significance test against
+            // every other candidate copy), so a read that clears it deserves a transcript even at support
+            // 1 — tagged, not silently equal to a normal gate-passed model.
+            //
+            // ⚠ CORRECTNESS FIX over the first form of this rescue: that version grouped by a record's own
+            // chain and labelled it with the CERTIFICATE'S assigned copy without checking the record's own
+            // genomic position actually overlaps that copy's span. In a secondary-alignment-heavy region a
+            // molecule's records sit at DIFFERENT loci (primary at A, secondary at B); the fix requires the
+            // rescued record to be the one AT the assigned copy's own span (`fams[..].copy_spans`), else it
+            // is excluded with an explicit `chain_at_unassigned_locus` reason rather than silently mislabelled.
+            //
+            // `--read-provenance`: emit ONE row per AS-tied alignment record covering EVERY exclusion, not
+            // only the rescued ones — "complete, not necessarily good": every record this region's O2 saw
+            // gets exactly one row saying which transcript it became, or exactly why it did not.
+            if args.gtf && (args.rescue_singletons || args.read_provenance) {
+                let existing_chains: std::collections::HashSet<(String, Vec<(u64, u64)>)> =
+                    transcripts.iter().map(|t| (t.chrom.clone(), t.introns.clone())).collect();
+                let tid_of_chain: std::collections::HashMap<(String, Vec<(u64, u64)>), &str> =
+                    transcripts.iter().map(|t| ((t.chrom.clone(), t.introns.clone()), t.tid.as_str())).collect();
+                let copy_span_of = |fid: &str, ci: usize| -> Option<(String, u64, u64)> {
+                    fams.iter().find(|f| f.family_id == fid).and_then(|f| f.copy_spans.get(ci)).cloned()
+                };
+                enum Rec<'a> {
+                    ExcludedNoSpan,
+                    ExcludedSupplementary,
+                    ContributesGatePassed(&'a str),
+                    ExcludedNoCertificate,
+                    ExcludedNotAssigned(&'a str),
+                    ExcludedOffLocus(String),
+                    Eligible { chain: Vec<(u64, u64)>, s0: u64, e0: u64, strand: char, catalog_idx: &'a str },
+                }
+                struct Resc { starts: Vec<u64>, ends: Vec<u64>, introns: Vec<(u64, u64)>, catalog_idx: String, n: usize, fwd: u32, rev: u32 }
+                let mut groups: std::collections::HashMap<Vec<(u64, u64)>, Resc> = std::collections::HashMap::new();
+                let mut classified: Vec<(usize, Rec)> = Vec::with_capacity(bam_reads.len());
+                for (ri, name) in bam_reads.iter().enumerate() {
+                    let is_supplementary = read_spans.get(ri).map_or(false, |&(_, _, f)| f & 2 != 0);
+                    let chain = read_chain.get(ri).cloned().unwrap_or_default();
+                    let key = (contig.clone(), chain.clone());
+                    let rec = if read_blocks.get(ri).map_or(true, |b| b.is_empty()) {
+                        Rec::ExcludedNoSpan
+                    } else if is_supplementary {
+                        Rec::ExcludedSupplementary
+                    } else if let Some(&tid) = tid_of_chain.get(&key) {
+                        Rec::ContributesGatePassed(tid)
+                    } else if let Some(row) = verdict.get(name.as_str()) {
+                        if row.status != "assigned" {
+                            Rec::ExcludedNotAssigned(row.status)
+                        } else {
+                            let blocks = &read_blocks[ri];
+                            let (s0, e0) = (blocks.first().unwrap().0, blocks.last().unwrap().1);
+                            let span = copy_span_of(&row.family_id, row.assigned_copy);
+                            let overlaps = span.as_ref().is_some_and(|(c, s, e)| c == contig && s0 < *e && e0 > *s);
+                            if !overlaps {
+                                Rec::ExcludedOffLocus(row.catalog_copy_idx.clone())
+                            } else {
+                                let strand = read_strand.get(ri).copied().unwrap_or('+');
+                                Rec::Eligible { chain, s0, e0, strand, catalog_idx: row.catalog_copy_idx.as_str() }
+                            }
+                        }
+                    } else {
+                        Rec::ExcludedNoCertificate
+                    };
+                    classified.push((ri, rec));
+                }
+                if args.rescue_singletons {
+                    for (_, rec) in &classified {
+                        if let Rec::Eligible { chain, s0, e0, strand, catalog_idx } = rec {
+                            // `chain` is guaranteed absent from `existing_chains` here: that is exactly the
+                            // condition classification checked before ever producing `Rec::Eligible`.
+                            let e = groups.entry(chain.clone()).or_insert_with(|| Resc {
+                                starts: Vec::new(), ends: Vec::new(), introns: chain.clone(), catalog_idx: catalog_idx.to_string(), n: 0, fwd: 0, rev: 0,
+                            });
+                            e.starts.push(*s0);
+                            e.ends.push(*e0);
+                            e.n += 1;
+                            if *strand == '-' { e.rev += 1 } else { e.fwd += 1 }
+                        }
+                    }
+                }
+                let mut n_rescued = 0usize;
+                let mut rescue_tid_of: std::collections::HashMap<Vec<(u64, u64)>, String> = std::collections::HashMap::new();
+                if args.rescue_singletons {
+                    for (i, (chain, g)) in groups.iter().enumerate() {
+                        let s0 = *g.starts.iter().min().unwrap();
+                        let e0 = *g.ends.iter().max().unwrap();
+                        let tid = format!("RESCUE_{contig}_{s0}_{i}");
+                        let gene = format!("RESCUE_{contig}_{s0}");
+                        // Strand: majority vote of the group's own reads (`read_strand`, `ts` flipped by
+                        // alignment orientation, falling back to the read's own FLAG 0x10 when minimap2
+                        // emitted no `ts`) — a read-specific call, not a flat placeholder. A tie resolves to
+                        // `'+'`, matching `majority_read_strand`'s own convention elsewhere in this codebase.
+                        let strand = if g.rev > g.fwd { '-' } else { '+' };
+                        gtf_lines.push(format!(
+                            "{contig}\trustle\ttranscript\t{}\t{}\t.\t{strand}\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; copies \"{}\"; placed_by \"assigned_read_singleton\"; support \"{}\"; low_confidence \"true\"; low_confidence_reason \"singleton_rescued\";",
+                            s0 + 1, e0, g.catalog_idx, g.n
+                        ));
+                        let mut exons = Vec::new();
+                        let mut prev = s0;
+                        for &(d, a) in &g.introns {
+                            exons.push((prev, d));
+                            prev = a;
+                        }
+                        exons.push((prev, e0));
+                        let order: Vec<(u64, u64)> = if strand == '+' { exons.clone() } else { exons.iter().rev().cloned().collect() };
+                        for (k, &(es, ee)) in order.iter().enumerate() {
+                            gtf_lines.push(format!("{contig}\trustle\texon\t{}\t{}\t.\t{strand}\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; exon_number \"{}\";", es + 1, ee, k + 1));
+                        }
+                        rescue_tid_of.insert(chain.clone(), tid);
+                        n_rescued += 1;
+                    }
+                    if n_rescued > 0 {
+                        eprintln!("[copy_assign]   ⭐ --rescue-singletons {contig}:{lo}-{hi}: {n_rescued} certificate-assigned read(s) emitted as low-support transcripts the min-reads gate dropped");
+                    }
+                }
+                if args.read_provenance {
+                    for (ri, rec) in &classified {
+                        let name = &bam_reads[*ri];
+                        let (chain_str, tid, reason) = match rec {
+                            Rec::ExcludedNoSpan => ("NA".to_string(), "NA".to_string(), "excluded_no_aligned_span"),
+                            Rec::ExcludedSupplementary => ("NA".to_string(), "NA".to_string(), "excluded_supplementary"),
+                            Rec::ContributesGatePassed(tid) => (fmt_chain(&read_chain[*ri]), tid.to_string(), "contributed_gate_passed"),
+                            Rec::ExcludedNoCertificate => ("NA".to_string(), "NA".to_string(), "excluded_no_certificate_row"),
+                            Rec::ExcludedNotAssigned(st) => (fmt_chain(&read_chain[*ri]), "NA".to_string(),
+                                match *st { "ambiguous" => "excluded_ambiguous", "tied" => "excluded_tied", _ => "excluded_unassigned" }),
+                            Rec::ExcludedOffLocus(cidx) => (fmt_chain(&read_chain[*ri]), format!("NA(assigned_copy={cidx})"), "excluded_chain_at_unassigned_locus"),
+                            Rec::Eligible { chain, .. } => {
+                                if !args.rescue_singletons {
+                                    (fmt_chain(chain), "NA".to_string(), "eligible_for_rescue_flag_off")
+                                } else if let Some(t) = rescue_tid_of.get(chain) {
+                                    (fmt_chain(chain), t.clone(), "contributed_rescued_singleton")
+                                } else {
+                                    // defensive only: every `Eligible` chain is grouped and emitted above,
+                                    // so `rescue_tid_of` always has an entry here in practice.
+                                    (fmt_chain(chain), "NA".to_string(), "excluded_unexpected_no_rescue_tid")
+                                }
+                            }
+                        };
+                        prov_rows.push(format!("{name}\t{contig}\t{chain_str}\t{tid}\t{reason}"));
+                    }
+                }
             }
         } // for work in works (serial drain, region order)
     } // serial-drain block
@@ -3174,11 +3423,24 @@ fn main() -> Result<()> {
             r.resolvable_psv, r.resolvable_j, r.junction_only, r.assigned_j, r.uniq_agree, r.uniq
         )?;
     }
+    if args.read_provenance {
+        let mut pvh = std::fs::File::create(format!("{}.read_provenance.tsv", args.out))?;
+        // Scope note (read before quoting): covers every alignment RECORD of every AS-TIED molecule this
+        // region's O2 saw (`--no-as-tied-only` disables the AS-tied gate entirely, and this file with it —
+        // an uncontested unique mapper is not O2's business and gets its transcript the ordinary way). This
+        // is deliberately the secondary-alignment-heavy population, not literally every FLNC read in the BAM.
+        writeln!(pvh, "read_name\tchrom\tchain\ttranscript_id\treason")?;
+        for r in &prov_rows {
+            writeln!(pvh, "{r}")?;
+        }
+        eprintln!("[copy_assign] wrote {}.read_provenance.tsv ({} record(s))", args.out, prov_rows.len());
+    }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
     // `tie_outside_catalog` (§6gz) exists only under the gate, so `--no-as-tied-only` stays byte-identical
     // to the pre-2026-09-09 schema.
     let hdr = "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into\tprimary_local";
-    if args.no_as_tied_only { writeln!(ah, "{hdr}")?; } else { writeln!(ah, "{hdr}\ttie_outside_catalog\taligner_disagreement")?; }
+    let sibling_hdr = if args.sibling_report { "\tsibling_identity\tn_cols_vs_sibling" } else { "" };
+    if args.no_as_tied_only { writeln!(ah, "{hdr}{sibling_hdr}")?; } else { writeln!(ah, "{hdr}\ttie_outside_catalog\taligner_disagreement{sibling_hdr}")?; }
     for r in &assign_rows {
         // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
         // one is assigned to its placement (§6fq) whatever its candidate count
@@ -3189,12 +3451,17 @@ fn main() -> Result<()> {
         } else {
             format!("\t{}\t{}", rustle::vg_family::copy_assign_pipeline::is_tie_outside(&r.read_name) as u8, is_disagreement(&r.read_name) as u8)
         };
+        let sibling = if args.sibling_report {
+            format!("\t{:.4}\t{}", r.sibling_identity, r.n_cols_vs_nearest_sibling)
+        } else {
+            String::new()
+        };
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}{}",
             r.read_name, r.family_id, r.assigned_copy, status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside, sibling
         )?;
     }
     let indel_stats = rustle::vg_family::copy_assign_pipeline::take_indel_stats();
@@ -3385,8 +3652,10 @@ fn main() -> Result<()> {
     // A copy is invariant to the arbitrary primary/secondary label if it is pinned by unique mappers OR by a
     // copy-specific junction (splice structure identifies it regardless of the label). Report the OR bottom line.
     let n_inv = quant_rows.iter().filter(|r| r.tie_invariant || r.junction_invariant).count();
+    let n_inv_junction_only = quant_rows.iter().filter(|r| !r.tie_invariant && r.junction_invariant).count();
     eprintln!(
-        "[copy_assign] tie-break invariance: {}/{} copies invariant (>= {} unique-mapper OR copy-specific-junction reads; FALSE = existence leans on the arbitrary primary label)",
+        "[copy_assign] tie-break invariance: {}/{} copies invariant (>= {} unique-mapper OR copy-specific-junction reads; FALSE = existence leans on the arbitrary primary label). \
+         ⚠ the unique-mapper half is near-vacuous under the default AS-tied gate (A5, register 786) — {n_inv_junction_only} of those {n_inv} are invariant ONLY via copy-specific junctions",
         n_inv, quant_rows.len(), GATE_MIN_READS
     );
 
@@ -4068,6 +4337,8 @@ mod tests {
             origin_rejected: false,
             n_candidates: 0,
             posterior: vec![],
+            sibling_identity: 1.0,
+            n_cols_vs_nearest_sibling: 0,
         })
     }
 

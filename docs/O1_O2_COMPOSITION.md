@@ -81,6 +81,24 @@ its only non-test caller is `o2_materialize.rs:866`, which no binary imports, an
 `RUSTLE_NO_RECOMBINANT_ABSTAIN` is a **vacuous opt-out**. State the claim as *"exactly one path is
 consistent"* — a statement about the given path set, not about the molecule.
 
+⚠ **The certificate is conditional on the column set — say so, and name the audit that checks it**
+(G4, `docs/FRAMING_AUDIT_2026-09-05.md`). `min_p < α/(n−1)` is an error rate **given the columns fed
+to it are the family's true, correctly-attributed PSV set**. §6eu found the column set wrong twice:
+the read-support PSV filter deleted columns belonging to an unexpressed paralog (11 confident wrong
+calls at p 6.7e-9), and a hull-clipped unit let a secondary record carry the decision (190 wrong
+calls at p ≤ 1e-133) — both caught only by an audit OUTSIDE the certificate (MAPQ-60 placement
+agreement, a floor not a score; **never claim O2 beats minimap2 with it**), never by the certificate
+scoring itself confidently wrong. **Status as of 2026-09-10, not fully closed but materially
+narrowed by three independent things that did not exist when G4 was written:** (1) **D3 is closed**
+— `--molecule-observations` (default ON since 09-05) pools every BAM record of a molecule into ONE
+observation vector before scoring, so a secondary record can no longer carry the decision alone,
+which was exactly the second failure mode above; (2) `best_by_duel` (default ON, §6hk) is a second,
+independent pairwise check on top of the single best-vs-runner-up comparison; (3) the excision sweep
+(§6hg-§6hi) is a standing positive control — remove a real copy, confirm its reads correctly abstain
+— that would catch a systematically wrong column set the same way the placement-agreement audit did.
+None of this makes the certificate unconditional; it means the audit surface checking the condition
+has grown from one ad hoc check to three standing ones, two of them now shipped defaults.
+
 ## 3. What the object is, honestly
 
 `BubbleGraph { bubbles, n_copies }` (`copy_assign.rs:41-72`, **SHIPPED-DEFAULT**) is real and runs

@@ -15725,3 +15725,231 @@ small uniformly-lower-identity clique and a large near-perfect clique with one o
 rankings on the two statistics. **Verdict: do not adopt identity-weighted density as a reported metric —
 `identity_gap.py` already is the validated answer to criticism 5** (three nulls, worst governs, calibrated on
 TBC1D3 no-split / NPIP split against the published biology, §6gw). Rows 810–811.
+
+## §6hu — CURRENT O1 STATUS: ZERO-CORROBORATION CLUSTERS ARE REAL BIOLOGY NOT A FALSE MERGE; NPIP'S GAP IS FRAGMENTATION NOT OMISSION (2026-09-10)
+On the same fresh 274-cluster gorilla catalog used for §6ht: 35/274 (12.8%) clusters have `corroborated=0.0`.
+The two largest, MCL0 (48 members, chr20, ~865 bp Gnomon pseudogenes, "neurotrophin-4-like") and MCL5 (23
+members, chr19, "elongin-A3-like"), were hypothesized to be NPIP-style Alu-driven false merges (same density
+≈0.98 + zero-corroboration signature as Gate G). **Refuted on inspection**: repeat-masked coverage
+(`winloci_data/rmsk/substrate3.rm.out`) is only 12.4% (MCL0, mostly SINE) / 7.8% (MCL5, mostly DNA
+transposon) of member span — nowhere near NPIP's Alu-saturated pairs. MCL0 additionally splits into two
+sub-arrays 17.5 Mb apart with cross-array pairwise identity (median 0.9885) nearly matching within-array
+(1.0000) — a real two-locus segmental duplication, not a repeat-bridged artifact. **These are genuine DNA-level
+duplications of transcriptionally silent (annotated-pseudogene) loci; zero RNA corroboration is the correct,
+expected observation, not an admission-rule defect.** Reframes the open question from "is this a false merge"
+to "should a zero-corroboration annotated-pseudogene cluster be surfaced/labeled differently in the O1
+catalog" (scope question, not yet resolved — `keep_unexpressed` stays default ON either way).
+
+Separately checked NPIP recall against the 31-locus human-projection truth (`o1_oracle/npip31.regions`,
+spans 3 contigs: 28 loci NC_073242.2, 2 NC_073244.2, 1 NC_073241.2 — the earlier same-session recall query
+that only scanned NC_073242.2 undercounted the search space). **31/31 truth loci overlap some cluster in
+today's default catalog — recall by presence is NOT the gap.** The gap is fragmentation: the 31 loci land in
+4 different clusters (MCL1 25, MCL51 3, MCL183 2, MCL22 1) instead of being unified as one NPIP family, and
+one true locus (NC_073242.2:28300720-28325984) is split mid-locus between MCL1 and MCL22 by node
+construction. The other 5 fragmenting truth "loci" are all ≤6.5 kb (3 are ≤1.5 kb) — plausibly minimap2
+human-projection noise rather than distinct paralogs, not independently confirmed either way. Rows 812–813.
+
+## §6hv — SOTO'S OWN PUBLISHED FAMILIES AUDITED: 56.5% PSEUDOGENE, 35.9% OF FAMILIES ENTIRELY PSEUDOGENE, 35% CONTAIN A FRAGMENT BUNDLED WITH A FULL COPY (2026-09-10)
+Advisor is expected to require another Soto replication; user's real target is a specific critique — "Soto's
+'families' include pseudogenes and pieces of bigger genes, even though they call them multi-copy gene
+families." Answered with ZERO new data acquisition — a pure audit of Soto's OWN published S1C table
+(`bench/soto/soto_famCN_S1C.tsv`, 2572 members / 605 families, already on disk from the 08-01/02
+replication) plus the already-extracted SD98 exon coordinates (`sd98_gene_exons.tsv`). Script
+`soto_family_audit.py` (scratchpad).
+
+**Pseudogene composition (pure tabulation of their own Biotype column):**
+- **1454/2572 members (56.5%) are pseudogene-biotype** (any subtype: unprocessed/processed/transcribed variants).
+- **287/605 families (47.4%) have ZERO protein-coding member** — the "gene family" contains no actual gene.
+- **217/605 families (35.9%) are ENTIRELY pseudogene-biotype.**
+- **285/605 families (47.1%) are pseudogene-majority.**
+- P0 sanity gate: per-family recount from the raw Biotype column matches S1C's OWN reported "No. Protein
+  Coding"/"No. Unprocessed Pseudogene" columns **exactly, 0/605 mismatches** — the tabulation is a correct
+  re-read of their own numbers, not a new/disputable measurement.
+
+**Fragment-sized members bundled with full-sized ones (own exonic-bp footprint vs the family's own biggest member):**
+Of 420 families with ≥2 members carrying exon-footprint data, **147 (35.0%) contain BOTH a member whose own
+exonic bp is <20% of the family's biggest member AND a member ≥80%** — i.e. a small fragment counted as an
+equal paralogous copy alongside a full-length one. Worst cases reach 100–126× size ratio within one "family"
+(ID_280 `ANKRD20A1`/`ANKRD20A3P`..., ID_215, ID_150). Cross-checked against an independent prior
+classification exercise (`member_exon_profile.tsv`, 07-26, 363-member subset, categories `piece-of-other`/
+`fragment` coined then for an unrelated purpose): of 80 overlapping gene names, **63/80 (79%) were already
+independently classified as pseudogene/fragment/piece-of-other** — the new whole-catalog metric agrees with
+the old hand/algorithmic one where they overlap.
+
+**Verdict**: the critique is fully supported by Soto's own published output, no replication risk, no new
+SEDEF/WGS data needed. This is the number to bring to the advisor, not a fresh binary. See
+[[project_soto_family_pseudogene_fragment_audit]]. The `soto_families` binary design (SD98 + shared-exon
+graph on a fresh v2.0 SEDEF run, no WGS/famCN — user is running SEDEF on the cluster) remains a separate,
+still-open item for an independently-rebuilt (not just re-read) demonstration on our own substrate.
+
+## §6hw — A3 + B2 SHIPPED: sibling-identity reporting + evidence-backed singleton rescue (2026-09-10)
+
+Two O2 loose ends from `docs/OPEN_ITEMS_2026-09-09.md` §A/§B, picked up ahead of an advisor meeting.
+
+**A3 — sibling-identity reporting (`copy_assign.rs`, `copy_assign_pipeline.rs`).** `Assignment` gained
+`sibling_identity` (whole-family PSV identity between the assigned copy and whichever competitor actually
+governs its `p_value` — the one that makes it worst, i.e. the boundary-setting rival, not necessarily the
+one governing `min_p`) and `n_cols_vs_nearest_sibling` (how many distinguishing PSV/junction positions THIS
+read spans against that competitor). Wired through `copy_pair_significance` (now returns `n_cols` as a
+third tuple element — 4 call sites updated), `read_copy_evidence`'s and `assign_read_editing`'s competitor
+loops, and the read-star origin-certificate loop in `copy_assign_pipeline.rs` (tracks `nearest_sibling_k`
+the same way). New `copy_pair_identity(a, b)` computes identity over the two copies' SHARED PSV columns
+genome-wide (not restricted to one read's footprint — the read-independent version of the question, since a
+family's PSV set is fixed). Emitted as two new `.assignments.tsv` columns behind `--sibling-report` (default
+off). Verified: 792/792 tests pass; ran on gorilla MCL1 with/without the flag — the 21 pre-existing columns
+are byte-identical, the two new ones append cleanly with sane values (rows with no real competitor report
+identity 1.0/0 columns by construction; rows with a genuinely divergent-but-evidence-poor competitor report
+low identity, as expected).
+
+**B2 — evidence-backed singleton rescue (`copy_assign.rs`, `--rescue-singletons`).** `assemble_gate` drops
+any exon chain below `GATE_MIN_READS` (3), so a certificate-ASSIGNED read whose own chain never reaches
+that floor gets NO transcript in the GTF at all (§6hh row 798: 220/290 contested-but-uncarried molecules are
+singletons; the flagship case is copy 22's SV-carrying isoform). New block in the `--gtf` region-drain loop:
+build the set of chains already covered by the normal gate-passed `transcripts`; for every read the
+certificate assigned (`verdict[name].status == "assigned"`) whose own chain is NOT in that set, group by
+exact chain and emit a `transcript`+`exon` GTF row directly at its assigned copy (`copies "<catalog_idx>"`),
+tagged `placed_by "assigned_read_singleton"`, `support "<n>"`, `low_confidence "true"`,
+`low_confidence_reason "singleton_rescued"` — bypassing the homology-lift machinery entirely, since the
+certificate already tells us which copy it belongs to. Default off, byte-identical when unset (verified: the
+diff between `--gtf` with/without `--rescue-singletons` on gorilla MCL1 is a PURE APPEND — 14 new
+transcripts / 42 lines, nothing in the base output changed or reordered).
+
+**Fixed same day**: the placeholder `'+'` strand is gone. New `RegionWork.read_strand: Vec<char>` (`ts`
+flipped by alignment orientation per `BamRead::ts`'s own documented rule, falling back to the read's FLAG
+0x10 when no `ts` was emitted) is computed alongside `read_blocks` before `BamRead` is dropped, threaded
+through the drain, and the rescue block now takes a majority vote of the group's own reads (ties to `'+'`,
+matching `majority_read_strand`'s convention). Verified: base `--gtf` output unaffected (diff-clean against
+the pre-fix run); rescued strands on gorilla MCL1 are now a real mix (19 `+` / 23 `-`), not constant.
+⚠ **The `-` strands at copy 13 were the wrong-locus bug, not real noise** — resolved by the correction below.
+
+## §6hx — CORRECTION: B2's rescue mislabelled 11/14 transcripts; fixed + complete per-record provenance shipped (2026-09-10, same day, user-driven)
+
+User's reframe ("just complete, not good — we know what flnc becomes which transcript") surfaced a real bug
+in §6hw's rescue within the hour it shipped: the rescue grouped a certificate-ASSIGNED read's OWN alignment
+record by its chain and labelled it with the CERTIFICATE's assigned copy, without checking that record's own
+genomic position actually overlaps that copy's span. In a secondary-alignment-heavy region a molecule's
+records sit at different loci (primary at A, secondary at B); if the certificate says the molecule is
+really B's, the record used for the rescue must ALSO be the one physically at B — the old code used
+whichever record it was iterating regardless of its own position, so several rescues on gorilla MCL1
+(the `-`-strand ones at nominal copy 13, noted as "worth flagging" in §6hw) were a read's record at some
+OTHER, unrelated locus wearing copy 13's label.
+
+**Fix**: each candidate rescue record's own span is now checked against `fams[..].copy_spans[assigned_copy]`
+before it is allowed to group; failing that check excludes the record with an explicit
+`chain_at_unassigned_locus` reason instead of silently mislabelling it.
+
+**Effect, gorilla MCL1 same region**: rescued transcripts **14 → 3**. The other 11 are the exact bug
+instances, now correctly excluded and visible.
+
+**New: `--read-provenance`** writes `<out>.read_provenance.tsv` — one row per AS-tied alignment record
+(the population `--no-as-tied-only` disables; an uncontested unique mapper is not O2's business and needs
+no accounting here), naming which transcript it became or exactly why not. Gorilla MCL1, 3,018 records:
+2,182 contributed to a gate-passed transcript, 527 ambiguous, 181 tied, 43 supplementary, 43 no certificate
+row, 39 chain-at-unassigned-locus (the bug's population, now correctly excluded), 3 rescued singletons.
+
+Verified: 792/792 tests; base `--gtf` output byte-identical with both new flags off (diff-clean against the
+§6hw baseline).
+
+## §6hy — HARD-LOCUS BAKEOFF RE-RUN, human chr16 MCL0 (26 copies, 65,341 AS-tied records): B2 is a strict superset (2026-09-10)
+
+Re-ran `copy_assign --gtf --gtf-copy-set [--rescue-singletons] --read-provenance` on the SAME substrate as
+the 09-09 hard-locus headline (`bakeoff/human/{hsa16.bam,copies16.tsv,copies16.fa}`, chr16:11963320-80438591).
+**1m35s wall / ~5min CPU** — not a speed concern at this scale.
+
+⚠ **First comparison attempt was confounded and discarded**: diffing against the pre-existing
+`bakeoff/human/hard/ours.calls.tsv` (generated 09-09, before several unrelated GTF-affecting fixes shipped
+later that day) made the `tied`/`ambiguous` strata look like they REGRESSED (0.79→0.63) — a false signal
+from comparing across builds, not from this session's changes. Fixed by regenerating the "before" GTF from
+TODAY's binary with `--rescue-singletons` simply omitted, giving a true same-build A/B.
+
+**Clean result** (`bench/hard_locus_bakeoff.py`, `bench/tool_bakeoff.py`):
+
+| stratum | n | no rescue | `--rescue-singletons` |
+|---|---|---|---|
+| hard (all gate rows) | 4115 | 0.835 | **0.857** |
+| contested | 1046 | 0.673 | **0.737** |
+| **assigned** (B2's target population) | 262 | 0.691 | **0.947** |
+| tied | 450 | 0.696 | 0.696 (bit-for-bit unchanged) |
+| ambiguous | 334 | 0.629 | 0.629 (bit-for-bit unchanged) |
+| easy (untouched by O2) | 11807 | 0.520 | 0.522 |
+
+**Discordance check confirms a strict superset**: `ours-not-rescued: 0, rescued-not-ours: 87` on the hard
+set — 87 additional molecules carried, ZERO regressions. Copy-attribution accuracy on the 262 O2-assigned
+molecules also rose (166/181=92% → 233/248=94%). Matches the design intent exactly: B2 only ever touches
+certificate-ASSIGNED reads, so every other stratum is provably untouched, not merely observed to be similar.
+
+Not yet done: the gorilla-side bakeoff (no flair/StringTie/isoseq comparison GTFs exist for the gorilla MCL1
+substrate — the external-tool comparison only exists on human chr16); a genome-wide (multi-family) timing
+check, since this run was one large single-family region and region COUNT, not record count, is the more
+likely cost driver at scale.
+
+## §6hz — QUICK CLOSES: D7, D4, A5, A7 (docs), B6 (`bench/isoform_bakeoff.py --summary`) (2026-09-10)
+
+Worked through `docs/OPEN_ITEMS_2026-09-09.md`'s cheapest items in one pass, all verified building/running:
+
+- **D7 closed**: `THESIS_OBJECTIVES.md` O1 row now says explicitly "THIS IS THE SHIPPED DEFAULT, not one of
+  two live options" and names E_r/γ-quasi-clique as opt-in only (`gw_family_catalog`, no `--families`).
+- **D4 closed** (materially, per G4's own bar): the required paragraph is written, `O1_O2_COMPOSITION.md`
+  §2 — the certificate is still conditional on the column set, but D3 (secondary records as independent
+  observations) is now CLOSED (`--molecule-observations` default ON since 09-05), and `best_by_duel` +
+  the excision sweep are two more standing audits of the condition that didn't exist when G4 was written.
+- **A5**: `tie_invariant`'s near-vacuousness under the AS-tied gate (52/80→2/80 on gorilla MCL1, register
+  786) is now stated at both the field definition and in the printed `[copy_assign] tie-break invariance`
+  line itself, which now also reports how many of the invariant copies are invariant ONLY via
+  `junction_invariant` — the non-vacuous half. Column kept (schema stability), no longer silently misleading.
+- **A7**: `--admit-aligner-disagreement` and `--indel-psv` now carry their own refutation numbers
+  (rows 791, 793–794) directly in their `--help` text, so enabling either no longer reads as "an untested
+  option" — it's explicitly "kept only so the PREREG stays reproducible."
+- **B6**: new `bench/isoform_bakeoff.py --summary` — the ONE composite to quote instead of "carried" alone
+  (register row 803's own instruction). Per tool: `composite` = carried AND address ⊆ the molecule's own
+  lift-reachable copy set, printed BESIDE the tool's own phantom rate (transcripts with zero backing
+  molecule) — never separable again. Verified on human chr16 hard-locus (3,633 molecules):
+
+  | tool | composite | carried | phantom rate |
+  |---|---|---|---|
+  | ours | **0.846** | 0.873 | **0.664** |
+  | flair | 0.574 | 0.574 | 0.837 |
+  | stringtie | 0.502 | 0.502 | 0.795 |
+  | isoseq | 0.755 | 0.755 | **0.853** |
+
+  Exactly the corrective register row 803 asked for: isoseq's composite equals its raw carried number (its
+  over-claiming isn't caught by the address-subset check, since it lifts to genuinely reachable copies) but
+  its phantom rate — 85.3% of its own emitted transcripts back zero molecules — is right there beside it,
+  not hidden. Ours has the lowest phantom rate of the four (66.4%) and the only nonzero
+  composite-vs-carried gap (small, honestly surfaced, not hidden either).
+
+## §6i0 — A2 CLOSED: `origin_rejected` was tested against the duel winner only (2026-09-10)
+
+Register row 799: a read failing the origin certificate at `bk` (the PSV-duel winner) but origin-consistent
+with some OTHER candidate was reported `origin_rejected` — a claim the read is foreign to the family —
+instead of the milder `Ambiguous`. Both abstain either way (`status`/`resolvable` unchanged); only the
+stronger, here-wrong label was at stake.
+
+**Fix** (`copy_assign_pipeline.rs`, gated `--origin-consistency-check`, default off): before setting
+`origin_rejected`, test every OTHER candidate in `cand` with the SAME z-test against its own `unit_edits`
+row (raw edit stats — the `bk`-specific readthrough-explained adjustment doesn't transfer to another
+candidate, so it's omitted for the other candidates, not reused). If any other candidate passes, the read
+stays `Ambiguous` without the `origin_rejected` flag.
+
+Verified on human chr16 hard-locus (26 copies): byte-identical off (0 diff vs the §6hy baseline); on,
+exactly **39 reads move `origin_rejected → ambiguous`** (1257→1218), zero other rows change. 792/792 tests.
+
+## §6i1 — B1 CLOSED: lift failures are now named, not a bare count (2026-09-10)
+
+`--gtf-copy-set`'s lift step ("place this evidence-copy's isoform at another copy by coordinate lift")
+counted failures (`n_lift_fail`) but never said which transcript/copy pair — "3 lifts failed" with no way
+to know which certificate-assigned reads that leaves with no transcript anywhere. Now collects
+`(source_transcript_id, source_copy, target_copy)` at both failure points and prints each one explicitly.
+No GTF/assignments.tsv change (this is stderr-only); verified byte-identical GTF output on human chr16.
+
+Example (human chr16 hard-locus, real output):
+```
+lift_failed: transcript DN_chr16_16341478_8 (source copy 5) has evidence at copy 8 but could not be placed there
+lift_failed: transcript DN_chr16_22357935_4 (source copy 11) has evidence at copy 12 but could not be placed there
+lift_failed: transcript DN_chr16_30507420_7 (source copy 20) has evidence at copy 12 but could not be placed there
+```
+
+**Session's "close now" list complete**: D7, D4, A5, A7, B6, A2, B1 all closed/materially addressed today
+(§6hw-§6i1), alongside A3 and B2 earlier in the session. Remaining from `docs/OPEN_ITEMS_2026-09-09.md`:
+C1/C2 (competitor excision + gorilla-fibroblast reruns, need cluster compute), D1 (constant-justification
+sweeps), D5/D6 (O3 scope, user decisions), C6 (pick a real O1 hold-out family).

@@ -56,6 +56,13 @@ score — Q8's rule stands: never claim O2 beats minimap2), and list D3 (seconda
 row 691) as open. Q5's shared-read question and Canzar's own multimapper frame land exactly on D3; it needs
 its pre-registered fix before the defense, not after.
 
+> ⚠ **2026-09-10 (D4, `docs/OPEN_ITEMS_2026-09-09.md`): materially addressed, not fully closed.** The
+> required paragraph is now written — `O1_O2_COMPOSITION.md` §2. D3 (secondary records as
+> observations) is CLOSED: `--molecule-observations` shipped default ON 09-05. `best_by_duel` and the
+> excision sweep are two more standing audits of the column set shipped since this was written. See
+> that paragraph for the honest current statement — the certificate is still conditional, it just has
+> more independent checks on the condition now.
+
 ## 3. Standing questions — where the framing leaves each
 | question | status under the gene-family framing |
 |---|---|

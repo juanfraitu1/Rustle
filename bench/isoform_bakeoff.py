@@ -17,6 +17,14 @@ def main():
     for k in ("--assign", "--copies", "--paf", "--bam"):
         ap.add_argument(k, required=True)
     ap.add_argument("--tol", type=int, default=5); ap.add_argument("--min-mult", type=int, default=0)
+    ap.add_argument("--summary", action="store_true",
+                     help="B6 (docs/OPEN_ITEMS_2026-09-09.md): print the ONE composite headline per tool "
+                          "instead of 'carried' alone (register row 803: lift-aware carried rewards a tool "
+                          "that duplicates one isoform across several copies, e.g. isoseq's 45 phantom "
+                          "transcripts / 200 arbitrary addresses). The composite is carried AND "
+                          "address-correct (address subset of the molecule's own lift-reachable copy set) "
+                          "AND reported beside the tool's own phantom rate (transcripts with zero backing "
+                          "molecule) — never quote 'carried' by itself again.")
     ap.add_argument("tools", nargs="+")
     a = ap.parse_args()
     cop = {r["copy_idx"]: (r["chrom"], int(r["start"]), int(r["end"])) for r in csv.DictReader(open(a.copies), delimiter="\t")}
@@ -89,12 +97,18 @@ def main():
             if ok: res[c] = tuple(sorted(lc))
         return res
     carried = {label: {} for label, _ in tools}
+    touched = {label: set() for label, _ in tools}  # (chrom, chain) keys of idx actually matched by >=1 molecule
+    lifted_of = {}  # name -> lc, kept for --summary's address-correctness check
     for name, (chrom, ich, P) in reads.items():
         lc = lifted_chains(chrom, ich, P)
+        lifted_of[name] = lc
         for label, idx in tools:
             addr = set()
             for c, ch in lc.items():
-                addr |= match(idx, chrom, ch)
+                for tch, taddr in idx.get((chrom, len(ch)), ()):
+                    if all(abs(x0 - y0) <= a.tol and abs(x1 - y1) <= a.tol for (x0, x1), (y0, y1) in zip(ch, tch)):
+                        addr |= taddr
+                        touched[label].add((chrom, tch))
             if addr: carried[label][name] = addr
     def is_con(r): return r["origin_rejected"] == "0" and int(r["n_candidates"]) >= 2
     strata = {"hard (spliced, primary in a copy)": set(reads),
@@ -121,6 +135,26 @@ def main():
     for l, _ in tools[1:]:
         print(f"   {l:10s} copies {len(cov[l]):2d}; {ours}-only {sorted(cov[ours]-cov[l], key=int)}  {l}-only {sorted(cov[l]-cov[ours], key=int)}")
     print(f"   discordance on the hard set vs {ours}: " + ", ".join(f"{l}: ours-not-{l} {sum(1 for n in reads if n in carried[ours] and n not in carried[l])} / {l}-not-ours {sum(1 for n in reads if n in carried[l] and n not in carried[ours])}" for l, _ in tools[1:]))
+
+    if a.summary:
+        # B6: the ONE composite to quote — never "carried" alone (register row 803). A molecule counts only
+        # if carried AND its claimed address never reaches beyond copies the molecule's OWN lifted chain
+        # could legitimately sit at (an over-claimed address is exactly the isoseq-duplication failure mode
+        # row 803 found: 45 phantom transcripts, 200 arbitrary addresses, that inflated "carried" alone).
+        print(f"\nP7 (B6) THE composite headline — carried AND address-correct AND the tool's own phantom rate:")
+        n_hard = len(reads)
+        for label, idx in tools:
+            composite = sum(
+                1 for name in reads
+                if name in carried[label] and carried[label][name] <= (set(lifted_of[name].keys()) | {"outside"})
+            )
+            total_tx = sum(len(v) for v in idx.values())
+            n_touched = len(touched[label])
+            phantom = total_tx - n_touched
+            print(f"   {label:10s} composite {composite:4d}/{n_hard} = {composite/max(1,n_hard):.3f}   "
+                  f"(carried {sum(1 for n in reads if n in carried[label])}/{n_hard} = "
+                  f"{sum(1 for n in reads if n in carried[label])/max(1,n_hard):.3f}, "
+                  f"phantom {phantom}/{total_tx} = {phantom/max(1,total_tx):.3f} of its own transcripts)")
 
 
 if __name__ == "__main__":
