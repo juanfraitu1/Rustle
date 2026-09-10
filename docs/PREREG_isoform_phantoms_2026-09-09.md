@@ -26,3 +26,18 @@ too promiscuously).
 | P5 | the 27 `assigned` transcripts are never phantoms (their copy has a certified read by construction) | any |
 Script `bench/isoform_copy_lift.py`. Human only. No shipped behaviour changes; the number is the baseline
 for step 3's emission rule.
+
+## Outcome (2026-09-09) — `bench/isoform_copy_lift.py`, groups in `bakeoff/human/hard/isoform_groups.tsv`
+542 multi-intron family isoforms; 156 same-isoform transcript pairs across copies (154 exact after lift), 452 groups.
+| # | verdict |
+|---|---|
+| P1 | ✓ **143/542 = 26.4 %** of multi-intron isoforms are emitted at ≥ 2 copies (53 groups) |
+| P2 | ⛔ **13/53 = 25 %** of those groups have a copy without evidence (predicted ≥ 50): most multi-copy isoforms are backed at EVERY copy by unique mappers — paralogs share exon structure, and their unique mappers say so |
+| P3 | ✓ **43 genuinely shared groups** (evidence at ≥ 2 copies), up to 7 copies for one chain (9/10/13/14/18/20/21) |
+| P4 | ✓ 14 phantom copies, **13 with a sibling ≥ 0.985** in the group: copies 7 (5), 6 (4), 23 (4), 24 (1) — all `undecidable` transcripts |
+| P5 | ✓ 0 `assigned` transcripts are phantoms |
+Extra: **39 single-copy isoforms sit on abstaining reads only** (an address the aligner's tie-break chose); member
+reads of multi-intron transcripts: 4,029 unique / 2,806 abstaining / 109 assigned. The phantom problem is
+therefore small and sharply localized — **53 transcripts (14 + 39) of 542 have no evidence-backed address**, all in
+the near-identical groups — and the shared-isoform question has a measured answer: paralogs do share isoforms
+(43 groups), and at the twin copies the reads cannot say which twin(s), which is what step 2 pools for.

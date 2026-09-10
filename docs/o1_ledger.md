@@ -15573,3 +15573,15 @@ re-run under the new default, `excise_all/v2`); MCL58's 2 assignments abstain on
 line: 263 assigned / 5,793 tied / 1,601 ambiguous over 7,657 rows; GTF-derived vs O2 copy where we decided
 **166/182 = 0.912**; our GTF carries 182 of the 262 (isoseq 203 — singleton chains, row 798).
 **Superseded:** §6hf's 230 / 531 / 382 (of 1,143) and "14.0 %". ADVISOR_QUESTIONS Part 0h updated in place.
+
+
+## §6hl — ISOFORM PHANTOMS IN THE SHIPPED GTF, measured (2026-09-09; PREREG 62f34c64, outcome appended)
+The GTF places a transcript where the aligner put its reads; O2's copy is an attribute. Lifting every family
+isoform's intron chain through the copy-to-copy alignments (`bench/isoform_copy_lift.py`): **143/542 multi-intron
+isoforms (26 %) are emitted at ≥ 2 copies (53 groups)** — but only **13 groups (25 %) have a copy without
+evidence** (P2 refuted: paralogs share exon structure and unique mappers vouch for each copy); **43 groups are
+genuinely shared** (one chain has independent evidence at 7 copies). The evidence-less transcripts: **14 phantom
+copies** (7 ×5, 6 ×4, 23 ×4, 24 ×1; 13/14 beside a sibling ≥ 0.985) and **39 single-copy isoforms on abstaining
+reads only** — 53 of 542, all in the twin groups. The user's question answered: similar copies DO produce the
+same isoforms, measurably; at the twins the reads cannot say which, and that is what the isoform-level
+certificate (§6hm, PREREG isoform_pool) pools for. Register row 800.
