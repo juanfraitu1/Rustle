@@ -103,6 +103,9 @@ struct RegionWork {
     /// appears here as a certificate row but not as an admitted copy).
     linearize_certs: Vec<(String, LinearizeCertificate, (String, u64, u64))>,
     transcripts: Vec<TranscriptRec>, // FLAIR-style isoforms for the --gtf emit (empty unless --gtf)
+    /// `--gtf-copy-set`: the primaries the AS-tied gate dropped (unique / clear-best mappers) as
+    /// (chrom, start, end, intron chain) — the EVIDENCE that places an isoform at a copy (§6hn)
+    uniq_reads: Vec<(String, u64, u64, Vec<(u64, u64)>)>,
 }
 
 #[derive(Parser, Debug)]
@@ -174,6 +177,18 @@ struct Args {
     /// default off. Pair with `bench/igv_tracks.py` for the copy-coloured reads.
     #[arg(long, default_value_t = false)]
     gtf: bool,
+    /// ⭐ §6hn/§6ho (PREREG 95409846): with `--gtf`, emit the GTF O2 BELIEVES. Family isoforms are grouped
+    /// across copies by lifting their intron chains through copy-to-copy alignments (minimap2 asm20 on the
+    /// copy spans); a group's addresses are the copies with EVIDENCE (a unique mapper whose primary lies
+    /// there, or a certificate-assigned read); transcripts at copies without evidence are dropped (phantoms),
+    /// a certified read whose copy has no transcript gets a LIFTED placement, and an isoform with no evidence
+    /// anywhere is emitted ONCE with `copies "A,B[,outside]"` = the AS-tied placement set of its reads.
+    /// Non-family and single-intron transcripts pass through. Default off (byte-identical GTF).
+    #[arg(long, default_value_t = false)]
+    gtf_copy_set: bool,
+    /// Lift tolerance (bp) per intron boundary when matching an isoform across copies (`--gtf-copy-set`).
+    #[arg(long, default_value_t = 5)]
+    gtf_lift_tol: u64,
     /// ⭐ PRODUCTIVITY (§6gp), with `--gtf`: every transcript gains `orf_aa` — the longest ORF over its
     /// strand-oriented exon-sum — and `productive`, true when that ORF reaches **half the best ORF among the
     /// transcripts assigned to the same family**. The bar is relative on purpose: an absolute amino-acid cut
@@ -1331,6 +1346,117 @@ static GATE_MOL_TIED: std::sync::atomic::AtomicUsize = std::sync::atomic::Atomic
 static GATE_REC_ALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static GATE_REC_TIED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static GATE_MOL_OUTSIDE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// `--gtf-copy-set`: per AS-tied molecule, the CATALOG copy indices at its tied placements and whether a tied
+/// placement lies outside every unit (the copy SET an undecided isoform is emitted with).
+static TIE_SET: std::sync::OnceLock<Mutex<std::collections::HashMap<String, (std::collections::BTreeSet<String>, bool)>>> = std::sync::OnceLock::new();
+fn tie_set_of(name: &str) -> Option<(std::collections::BTreeSet<String>, bool)> {
+    TIE_SET.get_or_init(Default::default).lock().unwrap().get(name).cloned()
+}
+
+/// One minimap2 fragment between two copy spans as blocks `(q_lo, q_hi, t_lo, sign)`: `q ∈ [q_lo, q_hi)` maps
+/// to `t_lo + (q − q_lo)` (sign +) or `t_lo + (q_hi − 1 − q)` (sign −). The inverse of a block is
+/// `(t_lo, t_lo + n, q_lo, sign)` under the same formula. Span-relative, 0-based (§6hn).
+struct LiftBlocks {
+    blocks: Vec<(u64, u64, u64, i8)>,
+}
+impl LiftBlocks {
+    fn from_cigar(qs: u64, qe: u64, ts: u64, minus: bool, cg: &str) -> LiftBlocks {
+        let mut blocks = Vec::new();
+        let (mut q, mut t) = (if minus { qe } else { qs }, ts);
+        let mut num: u64 = 0;
+        for ch in cg.bytes() {
+            if ch.is_ascii_digit() {
+                num = num * 10 + (ch - b'0') as u64;
+                continue;
+            }
+            match ch {
+                b'=' | b'X' | b'M' => {
+                    if minus {
+                        blocks.push((q - num, q, t, -1i8));
+                        q -= num;
+                    } else {
+                        blocks.push((q, q + num, t, 1i8));
+                        q += num;
+                    }
+                    t += num;
+                }
+                b'I' => { if minus { q -= num } else { q += num } }
+                b'D' | b'N' => t += num,
+                _ => {}
+            }
+            num = 0;
+        }
+        blocks.sort_unstable();
+        LiftBlocks { blocks }
+    }
+    fn inverse(&self) -> LiftBlocks {
+        let mut blocks: Vec<(u64, u64, u64, i8)> = self.blocks.iter().map(|&(ql, qh, tl, s)| (tl, tl + (qh - ql), ql, s)).collect();
+        blocks.sort_unstable();
+        LiftBlocks { blocks }
+    }
+    /// `(mapped position, distance to the nearest aligned base)`; `None` when the fragment has no block.
+    fn map(&self, q: u64) -> Option<(u64, u64)> {
+        let at = |&(ql, qh, tl, s): &(u64, u64, u64, i8), x: u64| -> u64 { if s > 0 { tl + (x - ql) } else { tl + (qh - 1 - x) } };
+        let i = self.blocks.partition_point(|b| b.0 <= q);
+        if i > 0 {
+            let b = self.blocks[i - 1];
+            if q < b.1 {
+                return Some((at(&b, q), 0));
+            }
+        }
+        let mut best: Option<(u64, u64)> = None;
+        for j in [i.wrapping_sub(1), i] {
+            if let Some(b) = self.blocks.get(j) {
+                for edge in [b.0, b.1 - 1] {
+                    let d = edge.abs_diff(q);
+                    if best.map_or(true, |(_, bd)| d < bd) {
+                        let base = at(b, edge) as i64 + (q as i64 - edge as i64) * (b.3 as i64);
+                        best = Some((base.max(0) as u64, d));
+                    }
+                }
+            }
+        }
+        best
+    }
+}
+/// All-vs-all copy-span lifts: `(a, b)` → the fragments mapping span `a` (relative) into span `b` (relative).
+fn copy_span_lifts(spans: &[(String, u64, u64)], gi: &GenomeIndex, tag: &str) -> std::collections::HashMap<(usize, usize), Vec<LiftBlocks>> {
+    let mut out: std::collections::HashMap<(usize, usize), Vec<LiftBlocks>> = std::collections::HashMap::new();
+    let fa = format!("{tag}.copyset_spans.fa");
+    {
+        let Ok(mut fh) = std::fs::File::create(&fa) else { return out };
+        for (i, (c, s0, e0)) in spans.iter().enumerate() {
+            let seq = gi.fetch_sequence(c, *s0, *e0).unwrap_or_default();
+            let _ = writeln!(fh, ">{i}");
+            let _ = fh.write_all(&seq);
+            let _ = fh.write_all(b"\n");
+        }
+    }
+    let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+    let res = std::process::Command::new(&mm2)
+        .args(["-c", "-x", "asm20", "--eqx", "-X", "-t", "4"])
+        .arg(&fa)
+        .arg(&fa)
+        .stderr(std::process::Stdio::null())
+        .output();
+    let _ = std::fs::remove_file(&fa);
+    let Ok(res) = res else { return out };
+    for line in String::from_utf8_lossy(&res.stdout).lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 12 {
+            continue;
+        }
+        let (Ok(qi), Ok(qs), Ok(qe), Ok(ti), Ok(ts)) = (f[0].parse::<usize>(), f[2].parse::<u64>(), f[3].parse::<u64>(), f[5].parse::<usize>(), f[7].parse::<u64>()) else { continue };
+        if qi == ti {
+            continue;
+        }
+        let Some(cg) = f[12..].iter().copied().find_map(|t| t.strip_prefix("cg:Z:")) else { continue };
+        let fwd = LiftBlocks::from_cigar(qs, qe, ts, f[4] == "-", cg);
+        out.entry((ti, qi)).or_default().push(fwd.inverse());
+        out.entry((qi, ti)).or_default().push(fwd);
+    }
+    out
+}
 static GATE_MOL_DISAGREE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// §6hd: molecules admitted to the gate by aligner self-disagreement rather than an AS tie.
 static DISAGREE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = std::sync::OnceLock::new();
@@ -1855,6 +1981,7 @@ fn main() -> Result<()> {
         // ⭐ THE AS-TIED GATE (default on). AS evidence needs every placement of a molecule, so it is
         // computed on the full record set; then non-tied molecules leave BEFORE the certificate. A unique
         // mapper is not O2's business and is never assigned. `--no-as-tied-only` skips this block.
+        let mut uniq_reads: Vec<(String, u64, u64, Vec<(u64, u64)>)> = Vec::new();
         if !args.no_as_tied_only {
             let ev = as_evidence_per_read(&bam_reads, !args.no_as_tied_only);
             let mut tied: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -1881,6 +2008,12 @@ fn main() -> Result<()> {
                     .flat_map(|f| f.copies.iter())
                     .map(|c| (c.chrom.clone(), c.start, c.end))
                     .collect();
+                // parallel to `targets`: the catalog copy index of each unit (`--gtf-copy-set`)
+                let target_idx: Vec<String> = sup
+                    .iter()
+                    .flat_map(|f| f.copies.iter())
+                    .map(|c| catalog_index.as_ref().and_then(|ix| ix.get(&c.tid)).map(|(_, i)| i.to_string()).unwrap_or_default())
+                    .collect();
                 let best_as: std::collections::HashMap<&str, i32> = bam_reads
                     .iter()
                     .filter(|br| tied_owned.contains(&br.name) && !br.is_supplementary)
@@ -1898,6 +2031,16 @@ fn main() -> Result<()> {
                     let inside = targets.iter().any(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
                     if !inside {
                         flagged.insert(br.name.as_str());
+                    }
+                    if args.gtf_copy_set {
+                        // the copy SET of an undecided isoform (§6hn): catalog indices at the tied placements
+                        let hit = targets.iter().position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
+                        let mut reg = TIE_SET.get_or_init(Default::default).lock().unwrap();
+                        let e = reg.entry(br.name.clone()).or_insert_with(|| (std::collections::BTreeSet::new(), false));
+                        match hit.and_then(|i| target_idx.get(i)) {
+                            Some(idx) => { e.0.insert(idx.clone()); }
+                            None => e.1 = true,
+                        }
                     }
                 }
                 n_outside = flagged.len();
@@ -1944,6 +2087,13 @@ fn main() -> Result<()> {
                 }
             }
             GATE_MOL_OUTSIDE.fetch_add(n_outside, std::sync::atomic::Ordering::Relaxed);
+            if args.gtf_copy_set {
+                for br in bam_reads.iter().filter(|br| !tied_owned.contains(&br.name) && !br.is_secondary && !br.is_supplementary) {
+                    let bl = aligned_blocks_local(&br.read);
+                    let chain: Vec<(u64, u64)> = bl.windows(2).map(|w| (w[0].1, w[1].0)).filter(|&(a, b)| b > a).collect();
+                    uniq_reads.push((br.chrom.clone(), br.read.ref_start, read_ref_end_local(&br.read), chain));
+                }
+            }
             bam_reads.retain(|br| tied_owned.contains(&br.name));
             GATE_MOL_ALL.fetch_add(n_all, std::sync::atomic::Ordering::Relaxed);
             GATE_MOL_TIED.fetch_add(n_tied, std::sync::atomic::Ordering::Relaxed);
@@ -1996,7 +2146,7 @@ fn main() -> Result<()> {
         let read_blocks: Vec<Vec<(u64, u64)>> = bam_reads.iter().map(|r| aligned_blocks_local(&r.read)).collect();
         let as_ev = as_evidence_per_read(&bam_reads, !args.no_as_tied_only);
         let n_mapped = bam_reads.len();
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, read_spans, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, read_spans, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -2040,7 +2190,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts } = work;
+            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans, read_blocks, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads } = work;
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -2523,6 +2673,20 @@ fn main() -> Result<()> {
             // so no catalog's tids move; the assembler's own id scheme is left for a separate change.
             let mut tid_seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
             let mut prod_genome: Option<std::sync::Arc<GenomeIndex>> = None;
+            // --gtf-copy-set: held-back family transcripts, placed by evidence after the loop
+            struct PendingTx<'a> { fw: usize, cidx: String, tline: String, elines: Vec<String>, t: &'a TranscriptRec, uniq: std::collections::BTreeMap<String, usize>, asg: std::collections::BTreeMap<String, usize>, abst: Vec<String>, uniq_tid: String }
+            let mut pending: Vec<PendingTx> = Vec::new();
+            // unique mappers by (chrom, intron chain) -> their primary spans (evidence for a copy, §6hn)
+            let mut uniq_by_chain: std::collections::HashMap<(&str, &[(u64, u64)]), Vec<(u64, u64)>> = std::collections::HashMap::new();
+            for (c, s0, e0, ch) in &uniq_reads {
+                uniq_by_chain.entry((c.as_str(), ch.as_slice())).or_default().push((*s0, *e0));
+            }
+            let sweep_to_catalog = |fw: usize, ci: usize| -> String {
+                match (&catalog_index, fams[fw].copy_tids.get(ci)) {
+                    (Some(ix), Some(tid)) => ix.get(tid).map(|(_, i)| i.to_string()).unwrap_or_else(|| ci.to_string()),
+                    _ => ci.to_string(),
+                }
+            };
             for t in &transcripts {
                 let n = tid_seen.entry(t.tid.as_str()).or_insert(0);
                 *n += 1;
@@ -2549,6 +2713,7 @@ fn main() -> Result<()> {
                 // (2)+(3) the copy its own reads were assigned to, and how sure that is
                 let mut votes: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
                 let (mut seen, mut matched) = (0usize, 0usize);
+                let mut matched_ri: Vec<usize> = Vec::new();
                 for (ri, ch) in read_chain.iter().enumerate() {
                     if read_spans.get(ri).map_or(true, |sp| sp.2 != 0) {
                         continue; // primaries only
@@ -2569,6 +2734,9 @@ fn main() -> Result<()> {
                         if r.status == "assigned" && !r.origin_rejected {
                             *votes.entry(r.catalog_copy_idx.as_str()).or_insert(0) += 1;
                         }
+                    }
+                    if args.gtf_copy_set {
+                        matched_ri.push(ri);
                     }
                 }
                 let total: usize = votes.values().sum();
@@ -2630,10 +2798,10 @@ fn main() -> Result<()> {
                     None => fam_attr,
                 };
                 let gs = t.start + 1; // GTF is 1-based, end-inclusive (our coords are 0-based half-open)
-                gtf_lines.push(format!(
+                let tline = format!(
                     "{}\trustle\ttranscript\t{}\t{}\t.\t{}\t.\tgene_id \"{}\"; transcript_id \"{}\"; reads \"{}\"; multicopy \"{}\";{}",
                     t.chrom, gs, t.end, t.strand, t.gene_tid, uniq_tid, t.n_reads, multicopy, fam_attr
-                ));
+                );
                 // exons = the gene span minus the introns (the read's spliced structure)
                 let mut prev = t.start;
                 let mut exons: Vec<(u64, u64)> = Vec::new();
@@ -2642,12 +2810,167 @@ fn main() -> Result<()> {
                     prev = a;
                 }
                 exons.push((prev, t.end));
-                for (k, (es, ee)) in exons.iter().enumerate() {
-                    gtf_lines.push(format!(
-                        "{}\trustle\texon\t{}\t{}\t.\t{}\t.\tgene_id \"{}\"; transcript_id \"{}\"; exon_number \"{}\";",
-                        t.chrom, es + 1, ee, t.strand, t.gene_tid, uniq_tid, k + 1
-                    ));
+                let elines: Vec<String> = exons.iter().enumerate().map(|(k, (es, ee))| format!(
+                    "{}\trustle\texon\t{}\t{}\t.\t{}\t.\tgene_id \"{}\"; transcript_id \"{}\"; exon_number \"{}\";",
+                    t.chrom, es + 1, ee, t.strand, t.gene_tid, uniq_tid, k + 1
+                )).collect();
+                // --gtf-copy-set: multi-intron family transcripts are held back and placed by evidence below
+                if args.gtf_copy_set && t.introns.len() >= 2 && best.is_some() {
+                    let (fw, ci, _, _, _) = best.unwrap();
+                    let (mut uniq, mut asg, mut abst) = (std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), Vec::new());
+                    // unique mappers (gate-dropped primaries) with this chain: evidence at the copy their primary lies in
+                    for &(s0, e0) in uniq_by_chain.get(&(t.chrom.as_str(), t.introns.as_slice())).map(|v| v.as_slice()).unwrap_or(&[]) {
+                        if let Some(pc) = fams[fw].copy_spans.iter().position(|(c, a, b)| *c == t.chrom && s0 < *b && e0 > *a) {
+                            *uniq.entry(sweep_to_catalog(fw, pc)).or_insert(0usize) += 1;
+                        }
+                    }
+                    for &ri in &matched_ri {
+                        match verdict.get(bam_reads[ri].as_str()) {
+                            Some(r) if r.status == "assigned" && !r.origin_rejected => { *asg.entry(r.catalog_copy_idx.clone()).or_insert(0usize) += 1; }
+                            Some(_) => abst.push(bam_reads[ri].clone()),
+                            None => {} // an AS-tied read without a row (no catalog placement): no evidence
+                        }
+                    }
+                    pending.push(PendingTx { fw, cidx: sweep_to_catalog(fw, ci), tline, elines, t, uniq, asg, abst, uniq_tid: uniq_tid.clone() });
+                } else {
+                    gtf_lines.push(tline);
+                    gtf_lines.extend(elines);
                 }
+            }
+            if args.gtf_copy_set && !pending.is_empty() {
+                // ⭐ §6hn: group the held transcripts across copies by LIFT, then place each group by evidence.
+                let tol = args.gtf_lift_tol;
+                let gi = match prod_genome.as_ref() { Some(g) => g.clone(), None => { let g = genome_for(&contig)?; prod_genome = Some(g.clone()); g } };
+                let mut lifts_by_fam: std::collections::HashMap<usize, std::collections::HashMap<(usize, usize), Vec<LiftBlocks>>> = std::collections::HashMap::new();
+                let fam_ids: std::collections::BTreeSet<usize> = pending.iter().map(|p| p.fw).collect();
+                for &fw in &fam_ids {
+                    lifts_by_fam.insert(fw, copy_span_lifts(&fams[fw].copy_spans, &gi, &format!("{}.{}", args.out, fw)));
+                }
+                let strand_of: std::collections::HashMap<String, char> = region_families.as_ref().map(|rf| rf.values().flatten().flat_map(|f| f.copies.iter()).map(|c| (c.copy_idx.to_string(), c.strand)).collect()).unwrap_or_default();
+                let sweep_ci = |fw: usize, cidx: &str| -> Option<usize> { (0..fams[fw].copy_spans.len()).find(|&ci| sweep_to_catalog(fw, ci) == cidx) };
+                let lift_pos = |fw: usize, g: u64, a: usize, b: usize| -> Option<(u64, u64)> {
+                    let (_, sa, _) = &fams[fw].copy_spans[a];
+                    let (_, sb, _) = &fams[fw].copy_spans[b];
+                    let rel = g.checked_sub(*sa)?;
+                    lifts_by_fam.get(&fw)?.get(&(a, b))?.iter().filter_map(|l| l.map(rel)).min_by_key(|&(_, d)| d).map(|(t, d)| (t + sb, d))
+                };
+                fn find(p: &mut Vec<usize>, mut x: usize) -> usize { while p[x] != x { p[x] = p[p[x]]; x = p[x]; } x }
+                let n = pending.len();
+                let mut parent: Vec<usize> = (0..n).collect();
+                for i in 0..n {
+                    for j in (i + 1)..n {
+                        let (p, q) = (&pending[i], &pending[j]);
+                        if p.fw != q.fw || p.cidx == q.cidx || p.t.strand != q.t.strand || p.t.introns.len() != q.t.introns.len() { continue; }
+                        let (Some(a), Some(b)) = (sweep_ci(p.fw, &p.cidx), sweep_ci(q.fw, &q.cidx)) else { continue };
+                        // same isoform: every boundary lifts onto the other's within `tol`. The lift may extrapolate
+                        // past an aligned block's end (a last exon beyond the alignment): agreement of the
+                        // extrapolated coordinate is what counts here (the measured rule, `bench/gtf_copy_set.py`);
+                        // the distance-to-block guard applies to PLACEMENT lifts below, not to grouping.
+                        let ok = p.t.introns.iter().zip(q.t.introns.iter()).all(|(&(x0, x1), &(y0, y1))| {
+                            matches!((lift_pos(p.fw, x0, a, b), lift_pos(p.fw, x1, a, b)), (Some((l0, _)), Some((l1, _))) if l0.abs_diff(y0) <= tol && l1.abs_diff(y1) <= tol)
+                        });
+                        if let Some(dbg) = std::env::var_os("RUSTLE_COPYSET_DEBUG_TID") {
+                            if p.uniq_tid == dbg.to_string_lossy() || q.uniq_tid == dbg.to_string_lossy() {
+                                let detail: Vec<String> = p.t.introns.iter().zip(q.t.introns.iter()).map(|(&(x0, x1), &(y0, y1))| format!("{}-{}=>{:?}/{:?} vs {}-{}", x0, x1, lift_pos(p.fw, x0, a, b), lift_pos(p.fw, x1, a, b), y0, y1)).collect();
+                                eprintln!("[copyset] pair {}@{} vs {}@{}: ok={ok} {}", p.uniq_tid, p.cidx, q.uniq_tid, q.cidx, detail.join(" | "));
+                            }
+                        }
+                        if ok { let (ri, rj) = (find(&mut parent, i), find(&mut parent, j)); parent[ri] = rj; }
+                    }
+                }
+                let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+                for i in 0..n { let r = find(&mut parent, i); groups.entry(r).or_default().push(i); }
+                let (mut n_kept, mut n_drop, mut n_lift, mut n_lift_fail, mut n_und) = (0usize, 0usize, 0usize, 0usize, 0usize);
+                let fmt_map = |m: &std::collections::BTreeMap<String, usize>| -> String { let mut v: Vec<(&String, &usize)> = m.iter().collect(); v.sort_by_key(|(k, _)| k.parse::<i64>().unwrap_or(i64::MAX)); v.iter().map(|(k, c)| format!("{k}:{c}")).collect::<Vec<_>>().join(",") };
+                let fmt_set = |s: &std::collections::BTreeSet<String>| -> String { let mut v: Vec<&String> = s.iter().collect(); v.sort_by_key(|k| (k.as_str() == "outside", k.parse::<i64>().unwrap_or(i64::MAX))); v.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(",") };
+                let copyset_debug = std::env::var_os("RUSTLE_COPYSET_DEBUG").is_some();
+                if copyset_debug {
+                    for &fw in &fam_ids {
+                        let l = &lifts_by_fam[&fw];
+                        eprintln!("[copyset] family {fw}: {} copy spans, {} lift pairs ({} fragments); spans: {}", fams[fw].copy_spans.len(), l.len(), l.values().map(|v| v.len()).sum::<usize>(),
+                            fams[fw].copy_spans.iter().enumerate().map(|(ci, (c, s0, e0))| format!("{}={}:{}-{}", sweep_to_catalog(fw, ci), c, s0, e0)).collect::<Vec<_>>().join(" "));
+                    }
+                }
+                for (_, members) in groups {
+                    let fw = pending[members[0]].fw;
+                    if copyset_debug {
+                        eprintln!("[copyset] group: {}", members.iter().map(|&i| format!("{}@{}", pending[i].uniq_tid, pending[i].cidx)).collect::<Vec<_>>().join(" "));
+                    }
+                    let (mut uniq, mut asg) = (std::collections::BTreeMap::<String, usize>::new(), std::collections::BTreeMap::<String, usize>::new());
+                    let mut und: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+                    let mut n_abst = 0usize;
+                    for &i in &members {
+                        for (k, c) in &pending[i].uniq { *uniq.entry(k.clone()).or_insert(0) += c; }
+                        for (k, c) in &pending[i].asg { *asg.entry(k.clone()).or_insert(0) += c; }
+                        for name in &pending[i].abst {
+                            n_abst += 1;
+                            if let Some((set, outside)) = tie_set_of(name) { und.extend(set); if outside { und.insert("outside".to_string()); } }
+                        }
+                    }
+                    let evidence: std::collections::BTreeSet<String> = uniq.keys().chain(asg.keys()).cloned().collect();
+                    let base_attr = format!(" evidence_unique \"{}\"; evidence_assigned \"{}\"; reads_undecided \"{}\";", fmt_map(&uniq), fmt_map(&asg), n_abst);
+                    let rep = *members.iter().max_by_key(|&&i| pending[i].uniq.values().sum::<usize>() + pending[i].asg.values().sum::<usize>() + pending[i].abst.len()).unwrap();
+                    if evidence.is_empty() {
+                        let p = &pending[rep];
+                        gtf_lines.push(format!("{}{} copies \"{}\"; placed_by \"aligner_primary\"; copy_status_final \"undecidable\";", p.tline, base_attr, fmt_set(&und)));
+                        gtf_lines.extend(p.elines.iter().cloned());
+                        n_und += 1;
+                        n_drop += members.len() - 1;
+                        continue;
+                    }
+                    let und_only: std::collections::BTreeSet<String> = und.difference(&evidence).cloned().collect();
+                    let mut have: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+                    for &i in &members {
+                        let p = &pending[i];
+                        if evidence.contains(&p.cidx) {
+                            have.insert(p.cidx.clone());
+                            let by = if uniq.contains_key(&p.cidx) { "unique_mapper" } else { "assigned_read" };
+                            gtf_lines.push(format!("{}{} copies \"{}\"; copies_undecided \"{}\"; placed_by \"{by}\";", p.tline, base_attr, fmt_set(&evidence), fmt_set(&und_only)));
+                            gtf_lines.extend(p.elines.iter().cloned());
+                            n_kept += 1;
+                        } else {
+                            n_drop += 1; // a phantom: nothing at this copy tells it from the evidence copies
+                        }
+                    }
+                    let p = &pending[rep];
+                    for c in evidence.difference(&have) {
+                        let (Some(a), Some(b)) = (sweep_ci(fw, &p.cidx), sweep_ci(fw, c)) else { n_lift_fail += 1; continue };
+                        let mut prev = p.t.start;
+                        let mut exons: Vec<(u64, u64)> = Vec::new();
+                        for &(d, aa) in &p.t.introns { exons.push((prev, d)); prev = aa; }
+                        exons.push((prev, p.t.end));
+                        let mut lifted: Vec<(u64, u64)> = Vec::new();
+                        let mut ok = true;
+                        for &(es, ee) in &exons {
+                            match (lift_pos(fw, es, a, b), lift_pos(fw, ee, a, b)) {
+                                (Some((l0, d0)), Some((l1, d1))) if d0 <= tol && d1 <= tol => lifted.push((l0.min(l1), l0.max(l1))),
+                                _ => { ok = false; break; }
+                            }
+                        }
+                        lifted.sort_unstable();
+                        if !ok || lifted.windows(2).any(|w| w[0].1 > w[1].0) { n_lift_fail += 1; continue; }
+                        let strand = strand_of.get(c).copied().unwrap_or(p.t.strand);
+                        let (chrom, _, _) = &fams[fw].copy_spans[b];
+                        let tid = format!("{}_lift{}", p.uniq_tid, c);
+                        let gene = format!("{}_copy{}", p.t.gene_tid, c);
+                        let attrs = p.tline.splitn(9, '\t').nth(8).unwrap_or("").to_string();
+                        let attrs = attrs.replace(&format!("transcript_id \"{}\"", p.uniq_tid), &format!("transcript_id \"{tid}\""))
+                            .replace(&format!("gene_id \"{}\"", p.t.gene_tid), &format!("gene_id \"{gene}\""));
+                        let attrs = match attrs.find("copy_index \"") {
+                            Some(i) => match attrs[i + 12..].find('"') { Some(j) => format!("{}copy_index \"{c}{}", &attrs[..i], &attrs[i + 12 + j..]), None => attrs },
+                            None => attrs,
+                        };
+                        gtf_lines.push(format!("{}\trustle\ttranscript\t{}\t{}\t.\t{}\t.\t{}{} copies \"{}\"; copies_undecided \"{}\"; placed_by \"assigned_read\"; lifted_from \"{}\";",
+                            chrom, lifted[0].0 + 1, lifted[lifted.len() - 1].1, strand, attrs, base_attr, fmt_set(&evidence), fmt_set(&und_only), p.uniq_tid));
+                        let order: Vec<(u64, u64)> = if strand == '+' { lifted.clone() } else { lifted.iter().rev().cloned().collect() };
+                        for (k, (es, ee)) in order.iter().enumerate() {
+                            gtf_lines.push(format!("{}\trustle\texon\t{}\t{}\t.\t{}\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; exon_number \"{}\";", chrom, es + 1, ee, strand, k + 1));
+                        }
+                        n_lift += 1;
+                    }
+                }
+                eprintln!("[copy_assign]   ⭐ --gtf-copy-set {contig}:{lo}-{hi}: {} family isoforms placed by evidence, {} phantoms/duplicates dropped, {} lifted placements ({} lifts failed), {} undecided isoforms emitted once with a copy set",
+                    n_kept, n_drop, n_lift, n_lift_fail, n_und);
             }
         } // for work in works (serial drain, region order)
     } // serial-drain block
@@ -3361,6 +3684,7 @@ fn main() -> Result<()> {
         row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
         row("origin_drop_indels", format!("{}", args.origin_drop_indels && !args.no_origin_drop_indels))?;
         row("best_by_duel", format!("{}", args.best_by_duel && !args.no_best_by_duel))?;
+        row("gtf_copy_set", format!("{}", args.gtf_copy_set))?;
         row("indel_psv", format!("{}", args.indel_psv))?;
         row("indel_psv_min_len", format!("{}", args.indel_psv_min_len))?;
         row("indel_psv_molecules", format!("{}", indel_stats.0))?;
@@ -3482,6 +3806,31 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lift_blocks_map_both_strands_and_inverse() {
+        // '+': query 0..10 aligned to target 100..110 with a 2-bp query insertion after 4 and a 3-bp deletion after 7
+        let f = LiftBlocks::from_cigar(0, 12, 100, false, "4=2I3=3D3=");
+        assert_eq!(f.map(2), Some((102, 0)));
+        assert_eq!(f.map(6), Some((104, 0)), "after the insertion the query is 2 ahead");
+        assert_eq!(f.map(9), Some((110, 0)), "after the deletion the target is 3 ahead");
+        assert_eq!(f.map(4), Some((104, 1)), "inside the insertion: nearest edge (q=3 -> t=103) plus the offset, distance 1");
+        let inv = f.inverse();
+        assert_eq!(inv.map(102), Some((2, 0)));
+        assert_eq!(inv.map(110), Some((9, 0)));
+        // '-': query span [0,10) reverse-complemented onto target 200..210: query 9 <-> target 200, query 0 <-> target 209
+        let r = LiftBlocks::from_cigar(0, 10, 200, true, "10=");
+        assert_eq!(r.map(9), Some((200, 0)));
+        assert_eq!(r.map(0), Some((209, 0)));
+        let rinv = r.inverse();
+        assert_eq!(rinv.map(200), Some((9, 0)));
+        assert_eq!(rinv.map(209), Some((0, 0)));
+        assert_eq!(rinv.map(205), Some((4, 0)));
+        // round trip on the '+' case
+        for q in [0u64, 3, 7, 9, 11] {
+            if let Some((t, 0)) = f.map(q) { assert_eq!(inv.map(t), Some((q, 0)), "round trip at {q}"); }
+        }
+    }
+
     use super::*;
 
     #[test]

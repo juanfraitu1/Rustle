@@ -15623,3 +15623,19 @@ struggle to produce", measured: at the twin copies every assembler fabricates ad
 that drops the phantoms it can see, places certified isoforms by O2, and says "A or B" otherwise.
 **Not yet in the binary** — the emission rule lives in `bench/gtf_copy_set.py`; porting it into `--gtf` is
 the next engineering step (user's call).
+
+
+## §6hp — `--gtf-copy-set` PORTED INTO THE BINARY (2026-09-09 night; default OFF, the user decides)
+`copy_assign --gtf --gtf-copy-set` now emits the GTF O2 believes without the post-processor: the AS-tied gate
+records each tied molecule's placement set (`TIE_SET`, catalog indices + `outside`) and hands the gate-dropped
+unique mappers to the emitter (`RegionWork::uniq_reads`; ⚠ the emitter's `bam_reads` are the POST-gate reads —
+without this the unique evidence is invisible and 438 of 542 isoforms come out "undecided"); copy-to-copy lifts
+come from an in-process `minimap2 -cx asm20 --eqx -X` over the family's copy spans (`LiftBlocks`, unit-tested on
+both strands and the inverse); isoform groups by lift (agreement of the lifted boundary within `--gtf-lift-tol`
+5 bp, extrapolation past an aligned block allowed — the measured rule; the distance guard applies to PLACEMENT
+lifts only); then the §6hn rule. Human MCL0: **488 placed by evidence / 14 dropped / 6 lifted (3 failed) / 40
+undecided with a copy set — the post-processor's numbers exactly**, identical transcript ids, coordinates and
+`placed_by`; 3 transcripts differ in the `copies` attribute (one group Python links as {15,16,17} the binary
+splits {15},{16,17} — a fragment-choice edge, no placement changes). Phantom table and lift-aware bakeoff on the
+binary's GTF: identical to §6ho (2 phantoms, 40 sets, 100 % / 95 %). Flag off: GTF byte-identical
+(`a4d0f5cd`), assignments unchanged (`8a057f68`). Debug: `RUSTLE_COPYSET_DEBUG`, `RUSTLE_COPYSET_DEBUG_TID`.
