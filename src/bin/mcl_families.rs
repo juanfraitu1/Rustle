@@ -33,6 +33,13 @@ struct Args {
     /// the genomic span, which removed 62.8% of eligible genes in the pilot (§6dc) — the run warns loudly.
     #[arg(long)]
     gff: Option<String>,
+    /// PREREG (identity-weighted density, 09-10): also write `<out>.pairs.tsv` (`cluster_id a b identity`,
+    /// one row per WITHIN-cluster homology edge — `identity_gap.py`'s own input format), reusing
+    /// `g.idents`/`g.edges` directly so a downstream metric is scored on the SAME aggregated identity
+    /// (Σnmatch/Σblocklen per pair, the deferred-exonic path) that decided admission, not a re-derived one.
+    /// Default off; output-only, existing files unchanged.
+    #[arg(long, default_value_t = false)]
+    dump_pairs: bool,
 
     /// MCL inflation. ⭐ With a size-safe prune (§6ec) the anchored families are STABLE from I=2.0 to 4.0
     /// (NPIP 44/44, both tandem halves intact); §6dd's "cliff at 3.6" was the old prune emptying NPIP's
@@ -859,6 +866,37 @@ fn main() -> Result<()> {
         }
     }
 
+    // ⭐ PREREG (identity-weighted density, 09-10): `--dump-pairs` — every WITHIN-cluster edge's identity,
+    // straight from `g.idents` (the same aggregated Σnmatch/Σblocklen value the admission rule computed),
+    // so a downstream density-weighting or identity_gap.py run scores exactly the shipped graph.
+    if args.dump_pairs {
+        let node_idx: std::collections::BTreeMap<&GeneKey, usize> =
+            g.genes.iter().enumerate().map(|(k, gk)| (gk, k)).collect();
+        let mut pf = std::fs::File::create(format!("{}.pairs.tsv", args.out))?;
+        writeln!(pf, "cluster_id\ta\tb\tidentity")?;
+        let mut n_pairs = 0usize;
+        for (i, c) in clusters.iter().enumerate() {
+            for j in 0..c.members.len() {
+                for k in (j + 1)..c.members.len() {
+                    let (Some(&a), Some(&b)) = (node_idx.get(&c.members[j]), node_idx.get(&c.members[k])) else {
+                        continue;
+                    };
+                    let key = if a < b { (a, b) } else { (b, a) };
+                    if let Some(&identity) = g.idents.get(&key) {
+                        writeln!(
+                            pf,
+                            "MCL{i}\t{}:{}-{}\t{}:{}-{}\t{identity:.4}",
+                            c.members[j].0, c.members[j].1, c.members[j].2,
+                            c.members[k].0, c.members[k].1, c.members[k].2
+                        )?;
+                        n_pairs += 1;
+                    }
+                }
+            }
+        }
+        eprintln!("[mcl_families] --dump-pairs: {n_pairs} within-cluster edges -> {}.pairs.tsv", args.out);
+    }
+
     // ⭐ Duplicon-first core refinement (§6eh). Post-MCL, per cluster; clusters.tsv above is untouched.
     let mut core_stats = (0usize, 0usize, 0usize, 0usize, 0usize); // gated clusters, kept-full, trimmed, dropped, untouched clusters
     let mut core_records: Vec<Vec<rustle::vg_family::annotation_families::CoreRecord>> = Vec::new();
@@ -1632,6 +1670,7 @@ fn main() -> Result<()> {
         ("min_size".to_string(), args.min_size.to_string()),
         ("bam".to_string(), args.bam.clone().unwrap_or_else(|| "<unset>".into())),
         ("corroboration_min_reads".to_string(), args.min_reads.to_string()),
+        ("dump_pairs".to_string(), args.dump_pairs.to_string()),
         ("n_nodes".to_string(), g.n_nodes().to_string()),
         ("n_edges".to_string(), g.n_edges().to_string()),
         ("n_clusters".to_string(), clusters.len().to_string()),
