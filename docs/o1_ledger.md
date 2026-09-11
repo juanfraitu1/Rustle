@@ -16252,9 +16252,18 @@ algorithm defect — confirmed by exact single-family reruns (MCL106, MCL117) ma
 DECIMAL once fed the matching assignment layer. ⚠ Re-running MCL111/MCL125 in COMPLETE ISOLATION (not
 combined with the other 75 families) reproduced the SAME residual (15 not 16; 152 not 164) — direct,
 controlled evidence the drift is NOT primarily cross-family AS-tied contamination for these two, even
-though the combined run's own `SharedAcrossFamilies`/`Containment` warnings (18 pairs, e.g. MCL1_073242 vs
-MCL27_073242, 91+22+26 double-claimed molecules) are real and likely add a SECOND, separate contribution
-specifically for the ~9 families named in those warnings (not tested in isolation here) — both factors are
+though the combined run's own `SharedAcrossFamilies`/`Containment` warnings (18 pairs) are real and likely
+add a SECOND, separate contribution specifically for the ~9 families named in those warnings (not tested
+in isolation here) — ⚠**CORRECTION (§6ib, 2026-09-11): the original text here mis-cited the specific
+warning lines** as "MCL1_073242 vs MCL27_073242, 91+22+26 double-claimed molecules" (this error is also
+present, uncorrected, in `6dcf14a8`'s own commit message — not amended, per this project's no-amend
+convention). Verified directly against `rust_run4.log` (still on disk): there are only TWO
+MCL1_073242/MCL27_073242 `SharedAcrossFamilies` lines, `91` and `0` double-claimed molecules — the `22`
+and `26` figures belong to two SEPARATE `MCL27_073242` vs `MCL7_073242` lines, not any MCL1_073242 pair.
+Correct citation: `MCL1_073242/NC_073242.2:21074204-21114708 vs MCL27_073242/21112745-21135807` (91) and
+`MCL1_073242/NC_073242.2:21741643-21769436 vs MCL27_073242/21706067-21741844` (0); separately,
+`MCL27_073242/NC_073242.2:21112745-21135807 vs MCL7_073242/21131622-21131794` (22) and
+`MCL27_073242/NC_073242.2:21706067-21741844 vs MCL7_073242/21674068-21706179` (26). Both factors are
 substrate-comparability confounds (sweep_v13 = 76 isolated single-family runs vs this run's one joint
 76-family sweep, PLUS the 09-06-vs-today O2 binary), neither is an O3 port defect.
 
@@ -16265,3 +16274,107 @@ copy_assign` 19/19 unchanged; byte-identity (flag off) on the human chr16 substr
 Commit: see `src/rustle/vg_family/o3_flag_pass.rs` (`block_overlap`, locus-extent threading, name-sorted
 capping) and `src/bin/copy_assign.rs` (`truth_copy` gate, `copy_span_by_catalog_idx` widened to carry the
 locus extent).
+
+## §6ib — TASK 7 CLOSEOUT: root-causing the 4 flag-flip pairs — 3 explained, 1 exposes a NEW unfixed defect (2026-09-11)
+
+Independent code review of `6dcf14a8` flagged the §6ia citation error (corrected above) and asked for the
+4 scientifically-consequential flag flips (of §6ia's 7 total flag mismatches, 192 pairs) to be root-caused
+individually, not lumped into "input drift": `MCL1_073242` copy `11` (`none`→`missing_copy`), `MCL1_073242`
+copy `15` (`missing_copy`→`untestable`), `MCL27_073242` copy `3` (`none`→`missing_copy`), `MCL6_073244`
+copy `2` (`none`→`missing_copy`). Method: same as §6ia's MCL111/MCL125 tracing — diff each pair's
+rejected/control read pools' `status`/`catalog_copy_idx`/`origin_rejected` between `sweep_v13/fam_<X>/
+A.assignments.tsv` (Python's isolated reference) and `o3_repro_check/rust_run/A.assignments.tsv` (this
+run's joint 76-family sweep), keyed by read name; cross-checked against `SharedAcrossFamilies`/locus-extent
+overlap for cross-family competition. No `copy_assign`/`minimap2` was run for this — pure diff of files
+already on disk (`diff_o3.py`, re-run read-only, plus one-off Python scripts against the two
+`A.assignments.tsv` files and `combined.copies.tsv`).
+
+**Finding: a 4th, previously-undiscovered, still-UNFIXED defect, distinct from `6dcf14a8`'s three.**
+`copy_assign.rs:2525` builds the O3 control/"accepted" pool as `assignment.status ==
+AssignStatus::Assigned && *truth_cidx == cidx` — an extra `status == Assigned` filter with **no
+counterpart in Python**. `bench/o3_flag_pass.py:109`'s `ctl_names` is `truth[n][0] == y and
+A[n]['origin_rejected'] != '1' and A[n]['catalog_copy_idx'] == y` — no status check at all, so
+`ambiguous`/`tied` reads count as "this copy's own accepted evidence" exactly like `assigned` ones. The
+Rust code's OWN inline comment even says the only extra condition beyond non-rejection is the truth check
+(`copy_assign.rs:2516-2524`) — the `status == Assigned` clause contradicts its own documentation, i.e. this
+reads as accidental, not a deliberate design choice that was simply never written up.
+
+Genome-wide sanity check (same joint run, no fixes applied, pure tabulation of `A.assignments.tsv`): of
+235 `(family, copy)` groups with ≥1 non-rejected candidate, **116 have at least one `ambiguous`/`tied`
+member** that Rust's filter silently drops from the control pool; for **8 groups the true (Python-shaped)
+control pool is ≥3 but the assigned-only pool Rust actually uses is <3** — meaning Rust's binary forces
+`Flag::Untestable` (via `detect_missing_copy_pairs`'s `if test.covered_kb > 0.0 && ctl.covered_kb > 0.0`
+gate at `o3_flag_pass.rs:568`, `else { None }`) on a pair Python could and did test. Those 8 groups include
+3 of §6ia's other (non-"scientifically-consequential") flag mismatches verbatim: `MCL20_073242:2`,
+`MCL125_073244:0`, `MCL3_073242:5` — all three are exactly the `none`→`untestable` flips in §6ia's residual
+list, now traced to a specific line, not just "near a threshold."
+
+**Per-pair verdict:**
+
+1. **`MCL1_073242` copy `15` (`missing_copy`→`untestable`) — CONFIRMED-EXPLAINED, primarily by the new
+   defect.** True control candidate pool (origin_rejected≠1, catalog_copy_idx==15): 31 reads, composition
+   IDENTICAL in both runs (27 `ambiguous` + 3 `tied` + 1 `assigned`). Rust's status filter admits only the
+   1 `assigned` read — deterministically below `min_reads=3` regardless of the truth gate, forcing
+   `ctl.covered_kb=0.0` and `Untestable`. Python's real `ctl_names` draws from all 31 (post truth-gate),
+   giving its computed `p=1.110e-16`. Secondary, minor factor: the rejected pool also gains 1 read
+   (`SRR27438213.363157`, `catalog_copy_idx` `11`→`15` between runs — see pair 2 below), but this is
+   irrelevant to the flag flip, which the control-pool collapse alone fully accounts for.
+2. **`MCL1_073242` copy `11` (`none`→`missing_copy`) — CONFIRMED-EXPLAINED, by a combination of established
+   input drift AND the new defect; not independently re-derived to the decimal.** Rejected pool: raw
+   catalog_copy_idx/origin_rejected sets differ by 3 reads moving within-family between sibling copies —
+   `SRR27438212.7878525` (11→13), `SRR27438213.363157` (11→15, the same read as pair 1), `SRR27438212.4986286`
+   (12→11) — net py 16→rust 15, the same MAPQ-0 within-family O2-certificate-reassignment mechanism §6ia
+   already established for MCL111/MCL125. Control pool: true candidates 87 (81 `assigned` + 6 `ambiguous`,
+   identical composition both runs), but Rust's status filter admits only 81 — a 6.9% reduction in the
+   background/control evidence, which (directionally) makes the same observed rejected-side signal look
+   more significant. Both mechanisms push the same direction as observed (py `p=2.559e-3`→rust
+   `p=3.502e-7`, py rate 0.84/kb→rust 1.55/kb); I did not re-run `minimap2` to apportion how much of the
+   swing each contributes, so this is confirmed as a compound of two known mechanisms, not fully
+   decomposed.
+3. **`MCL27_073242` copy `3` (`none`→`missing_copy`) — CONFIRMED-EXPLAINED, primarily by the new defect;
+   rules OUT input drift for this one specifically.** Rejected pool: **zero** differences — all 17
+   (post-truth) / 30 (raw) read names byte-identical between isolated and joint runs, and the catalog row
+   (span + `locus_start`/`locus_end`) is byte-identical between `sweep_v13/fam_MCL27_073242/copies.tsv` and
+   `combined.copies.tsv`, so input drift plays no role here. Control pool: true candidates 28 (26
+   `assigned` + 2 `ambiguous`, identical both runs); Rust's filter admits only 26 — a smaller effect (7%)
+   than copy 15/11 but still directionally consistent with py `p=1.106e-04`→rust `p=1.467e-9`, an
+   increase-in-significance swing with `n_rejected` unchanged (17=17) — exactly what a shrunk control
+   denominator produces. Also checked and recorded as a real but NOT causally connected fact: copy 3's
+   locus extent (`22084503-22129751`) genuinely overlaps two other families' locus extents in the joint
+   catalog — `MCL1_073242` copy `4` (`22098342-22179844`) and `MCL7_073242` copy `8` (`22070305-22099837`)
+   — a form of the cross-family competition the task asked me to check, present in `catalog_overlaps`'
+   raw output even though it fell outside the `.take(10)` truncation of `copy_assign.rs:4662`'s printed
+   `SharedAcrossFamilies` warning list (18 pairs flagged, only 10 printed). I could not find a mechanism by
+   which this geometric overlap alone perturbs copy 3's OWN rejected/control statistics (the truth gate and
+   realignment window are both scoped per-family, confirmed by reading `copy_assign.rs:2434-2530`, which
+   builds `copy_span_by_catalog_idx`/`truth_copy`/`rejected_by_idx`/`accepted_by_idx` fresh inside the `for
+   fa in &fams` loop — no cross-family key collision, even though several families reuse small integer
+   `copy_idx` values), so I am NOT claiming mechanism (b) explains this pair; it is reported only as a
+   verified, non-explanatory side observation.
+4. **`MCL6_073244` copy `2` (`none`→`missing_copy`) — CONFIRMED-EXPLAINED, by input drift alone; the new
+   defect does NOT apply here.** Rejected pool: exactly 1 read (`SRR27438212.1053598`) moves within-family
+   from copy `6`'s isolated-run pool to copy `2`'s joint-run pool (`catalog_copy_idx` 6→2, `origin_rejected`
+   `1` both times) — py 36→rust 37, the clean single-read mechanism already established for MCL111. Control
+   pool: all 178 candidates are `status=assigned` in BOTH runs (0 `ambiguous`/`tied`) — the new defect's
+   filter is a no-op here, confirming it is NOT universal; its impact depends entirely on how
+   MAPQ-0/ambiguous-heavy a given copy's own accepted-read pool is (this family's is not, MCL1_073242's is).
+
+**Summary: of the 4 scientifically-consequential flag flips, all 4 got a confirmed mechanistic explanation**
+— 1 (copy 2) by input drift alone (§6ia's already-established mechanism), 1 (copy 15) fully by the new
+defect, and 2 (copies 11, 3) by a directionally-consistent combination of the two that was not
+decomposed to the decimal without re-running the realignment (out of scope: no `copy_assign`/`minimap2`
+launch in this task). None of the 4 is unexplained; none required a code fix to explain.
+
+**The new defect itself is NOT fixed in this task** — deliberately: fixing `copy_assign.rs:2525` (dropping
+the `assignment.status == AssignStatus::Assigned &&` clause so the control pool matches Python's
+`origin_rejected != '1'`-only criterion) is a one-line change I am confident about, but verifying it
+without a `copy_assign` re-run (explicitly out of scope for this task) would mean asserting a fix works
+without evidence — against this project's verification discipline. Flagging as an open, well-evidenced
+TODO for a follow-up task: expected effect is to raise the Python-agreement rate above 185/192 by
+correctly resolving at least the 3 `none`→`untestable` flips this section traces to the same line
+(`MCL20_073242:2`, `MCL125_073244:0`, `MCL3_073242:5`) plus `MCL1_073242:15`, and to move copies 11/3
+closer to Python's `p` (magnitude not pre-measurable without the fix). Because the defect discards evidence
+(shrinks control pools) rather than fabricating it, its expected direction is toward OVER-flagging
+`missing_copy`/`untestable`, i.e. it is conservative in the wrong direction for O3's stated purpose
+(detect+flag, not silently under-report) — not urgent to ship blind, but worth a dedicated task with its
+own reproduction-gate re-run rather than a same-session patch-and-hope.
