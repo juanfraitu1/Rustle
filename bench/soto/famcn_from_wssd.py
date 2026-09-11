@@ -91,7 +91,40 @@ def lift(table, spans, chrom, start, end):
 
 
 def cn_for_interval(bb, chrom, start, end, tool):
-    """Length-weighted mean CN over the WSSD windows covering [start, end)."""
+    """Length-weighted mean CN over the WSSD windows covering [start, end).
+
+    `tool="pybigwig"`: OPT-IN alternate reader added when `bigBedToBed` was not installed on this machine.
+    Reads the SAME bigBed files in-process via the `pyBigWig` package instead of shelling out --
+    `.entries()` returns the identical (start, end, tab-separated-rest) rows `bigBedToBed` would print,
+    just with chrom/start/end already split out; the CN value is the LAST tab field either way (column 10
+    of bigBedToBed's 1-based output == `rest.split("\t")[-1]` here). Verified to reproduce
+    `bigBedToBed`-derived famCN (via the pre-existing famcn_ours_all.tsv, same 10 samples) within
+    floating-point rounding before being trusted for anything new (docs/o1_ledger.md, follow-up to §6in).
+    """
+    if tool == "pybigwig":
+        import pyBigWig
+        try:
+            bw = pyBigWig.open(bb)
+        except RuntimeError:
+            return None
+        try:
+            entries = bw.entries(chrom, start, end) or []
+        except RuntimeError:
+            entries = []
+        finally:
+            bw.close()
+        tot = n = 0.0
+        for s, e, rest in entries:
+            try:
+                cn = float(rest.rsplit("\t", 1)[-1])
+            except ValueError:
+                continue
+            w = min(e, end) - max(s, start)
+            if w > 0:
+                tot += cn * w
+                n += w
+        return tot / n if n > 0 else None
+
     try:
         out = subprocess.run(
             [tool, f"-chrom={chrom}", f"-start={start}", f"-end={end}", bb, "/dev/stdout"],
@@ -123,12 +156,24 @@ def main():
     ap.add_argument("--samples", type=int, default=8, help="how many samples to median over")
     ap.add_argument("--jobs", type=int, default=8, help="parallel bigBedToBed calls per interval")
     ap.add_argument("--s1e", default="bench/soto/soto_parCN_S1E.tsv")
-    ap.add_argument("--tool", default="bigBedToBed")
+    ap.add_argument("--tool", default="bigBedToBed",
+                    help="bigBedToBed (default, needs the UCSC binary) or 'pybigwig' (reads the same "
+                         "bigBed files in-process via the pyBigWig package, no subprocess/binary needed)")
     ap.add_argument("--id-col", default="family_id")
+    ap.add_argument("--extra-anchors",
+                     help="OPT-IN: TSV (chrom, v2_pos, offset columns) merged into the S1E anchor table, "
+                          "same mechanism/file format as soto_replicate_from_sedef.py --extra-anchors "
+                          "(docs/o1_ledger.md §6il/§6in). Omit for the original behaviour.")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
-    table, spans = build_liftover(a.s1e)
+    extra_anchors = None
+    if a.extra_anchors:
+        extra_anchors = []
+        with open(a.extra_anchors) as fh:
+            for r in csv.DictReader(fh, delimiter="\t"):
+                extra_anchors.append((r["chrom"], int(r["v2_pos"]), int(r["offset"])))
+    table, spans = build_liftover(a.s1e, extra_anchors=extra_anchors)
     print(f"[liftover] fitted over {len(table)} chromosomes; "
           f"{sum(len(v) for v in spans.values())} regime switches guarded", file=sys.stderr)
 

@@ -17348,3 +17348,45 @@ that ID_328 IS recoverable in principle — Soto's own method evidently used som
 specific case, and this investigation shows why and how, without claiming a safe automated route exists.
 
 Related: [[project_soto_full_replication]], [[project_o1_shared_read_edges]].
+
+## §6io — "what if we tried with the topped-up dataset?" (2026-09-11)
+
+§6in's famCN came from only 10 WSSD samples (`famcn_ours_all.tsv`) — was the 57% false-merge rate just
+sampling noise? A local 271-sample WSSD panel already existed on disk (`winloci_data/soto_wssd/`,
+downloaded in an earlier session) but was never used because `bigBedToBed` is not installed on this
+machine. Added a `--tool pybigwig` code path to `famcn_from_wssd.py`'s `cn_for_interval()` (reads the same
+bigBed files in-process via the `pyBigWig` package, no subprocess/binary needed) and `--extra-anchors`
+support to its `main()` (previously only wired into `soto_replicate_from_sedef.py`) — both fully additive,
+default behaviour byte-identical.
+
+**Verified before trusting it**: the pyBigWig path's weighted-mean computation was hand-checked against
+its own raw `.entries()` output for one (gene, sample) pair — exact match (15.505775474102684 both ways).
+Liftover correctness confirmed separately: the v1.0 coordinates it recovers for ID_328's genes match
+`cat_v4.bed` EXACTLY. Recomputed famCN for all 357 currently-unplaced genes across the full 271-sample
+panel in under 90 seconds (`famcn_topped_up_271.tsv`) — bypassing the v2.0->v1.0 liftover round-trip
+entirely for this batch, since `cat_v4.bed` already gives valid v1.0 coordinates directly and the WSSD
+tracks are natively v1.0.
+
+**Answer: no, more samples do not fix it.** ID_328's genes (16.6-17.35) and ID_321's (16.5-17.15) — the two
+true families the weak-edge lever fused together — have per-gene MAD tightened from ~0.7-1.0 (10 samples)
+to ~0.5 (271 samples), but their CN RANGES STILL FULLY OVERLAP. This rules out sample size as the
+explanation: these are two real, distinct biological families that are genuinely CN-degenerate (almost
+certainly co-amplified in the same ancestral tandem-duplication event), not two families an imprecise
+estimate merely failed to tell apart.
+
+Re-ran the full 7-component check with the topped-up data: one previously-accepted spurious component
+(4 different true families) now correctly gets rejected, and one other previously-accepted spurious
+component (the ID_62 case) also drops out — but TWO DIFFERENT, previously-rejected components now pass
+instead, and both are ALSO spurious (3 different true families each). Net: 6 accepted (was 7), still only
+2 clean + 1 partial-with-fusion + 3 pure-spurious — the false-merge rate is unchanged in substance
+(~50-57%), and WHICH specific merges are wrong shifts between runs. **This instability itself is
+disclosable evidence the mechanism is not trustworthy**, independent of the false-merge rate alone: a
+sound decision rule shouldn't flip its verdict on unrelated components just because one input got more
+precise. Ruling from §6in stands unchanged: not adopted.
+
+**What's kept regardless**: the pyBigWig/`--extra-anchors` additions to `famcn_from_wssd.py` are real,
+verified, reusable infrastructure — a faster, subprocess-free path to a much larger sample panel than this
+project had working before, useful for any future famCN need even though it didn't rescue this specific
+lever. New file: `famcn_topped_up_271.tsv`.
+
+Related: [[project_soto_full_replication]], [[project_o1_shared_read_edges]].
