@@ -16673,3 +16673,114 @@ exercise. Not a wasted fix: it closes a real, demonstrated defect class (2 new u
 `own_family_ids_set_excludes_every_member_not_just_the_first` /
 `own_family_ids_set_with_no_external_unit_is_not_other_family`, directly exercise the scenario the bug
 required), even though this run's own numbers don't move.
+
+## §6ie — SOTO REPLICATION RESUMED: fresh unmerged CHM13 v2.0 SEDEF input, 2 real bugs found+fixed, ARI 0.751 / exact 47.7% (2026-09-11)
+
+Soto was sidelined 09-03 as the thesis's primary O1 benchmark (coordinate drift, SD98-only slice, SD-heavy
+sample bias — [[project-soto-descoped-mcl-pivot]]), but the standalone DNA-pipeline REPLICATION exercise
+(distinct from that framing decision, and from the separate O2-validation use of Soto's family truth
+already shipped as `FamilyCertificate::pair_distance`) had one open item since 2026-08-02: the tiling fix
+that took ARI 0.514→0.757 was explicitly flagged as "a proxy — the right input is Soto's unmerged SD98
+unit BED, if it can be obtained" (`bench/soto/tile_sd98_regions.py`). The user obtained it: a self-run,
+satellite-filtered CHM13 v2.0 SEDEF output (`CHM13_SDs.SD90.nosat.bed`, 36,143 native pairwise-alignment
+rows, chrY present confirming v2.0 not v1.0), resuming this thread with real, per-pair SD units instead of
+either the old UCSC-merged blocks or the tiling approximation.
+
+**New scripts**: `bench/soto/soto_replicate_from_sedef.py` (steps 1-4: liftover, CIGAR-block projection,
+shared-exon linking) and `bench/soto/soto_cluster_from_shared.py` (steps 5-6: connected components +
+famCN MAD-split + family/singleton call, factored out of `soto_replicate_clustering.py`'s inline logic so
+both scripts share one implementation rather than risk drift between two copies).
+
+**Disclosed deviation from Soto's literal recipe**: their step 3 (extract SD98 FASTA, map back with
+minimap2) is replaced by directly using SEDEF's OWN already-computed pairwise CIGAR to project exons
+between the two sides of each reported duplication. This is the same "project through the CIGAR, don't
+link by region membership" principle `soto_replicate_clustering.py` already uses (its own "ONE DECISION
+THAT MATTERS"), fed by SEDEF's alignment instead of a second minimap2 run — chosen specifically because it
+cannot reintroduce the exact `-p 0.5`/merge-artifact bug that motivated the 08-02 tiling fix in the first
+place, since minimap2 is not invoked in this script at all.
+
+**Format verified empirically, not assumed**: the file's 34 columns match the gorilla side's
+`GGO_sedef_final.bed` schema exactly. CIGAR semantics were confirmed by direct arithmetic against the
+file's own recorded interval lengths (M+D total == end1-start1, M+I total == end2-start2) rather than
+assumed from generic PAF/SAM convention — **the true convention is the REVERSE of minimap2/PAF** (D
+consumes side1, I consumes side2). Getting this backwards would have silently produced wrong projections;
+it was caught by requiring the row's own numbers to reconcile before trusting any CIGAR, not by assumption.
+
+**Coordinates**: v2.0 lifted to v1.0 (to reuse the CAT v4 v1.0 annotation and Soto's own v1.0 famCN/family
+truth unchanged) via the SAME per-chromosome constant-offset table already built and validated for famCN
+(`bench/soto/famcn_from_wssd.py`, fitted from `soto_parCN_S1E.tsv`'s dual v1.0/v2.0 anchor coordinates) —
+reused verbatim, not re-derived. 153/2,156 pairs (7.1%) dropped for straddling a liftover regime switch on
+either side, never guessed.
+
+### Bug 1: mega-component from an over-broad gene universe
+
+First run (gene universe = the independently-reproduced 5,154-gene SD98 set from `sd98_geneset_v1.tsv`,
+carried over from the 08-01 work) produced one 149-gene "family" — investigated because Soto's own largest
+ordinary family tops out near 54-58. Checked directly: 147/149 of its genes are NOT in Soto's own published
+SD98 set (`In Table S1 (SD98 gene set)` = No), and the two that ARE (CICP18, CICP3, both processed/
+transcribed-processed pseudogenes near the chr1 telomere) are assigned by Soto to FOUR different small
+families (ID_99/ID_100/ID_172/ID_184), not one blob — a direct sign of transitive over-merging through
+non-SD98 "bridge" genes, the same failure mode this project's MCL work already diagnosed for raw
+connected-components over a homology graph ("transitive closure... gives superfamilies... skipping MCL is
+why", register row 474). **Fix**: restrict the gene index to Soto's own precise, published 1,793-gene
+`In Table S1 (SD98 gene set) = Yes` universe (from `soto_famCN_S1C.tsv` directly — this is the canonical
+audited universe the whole 08-02 ARI/exact-match series already scores against; the 5,154-gene set was a
+looser, independently-recomputed SD98 gene-call rule from the OLD merged track and was never meant to
+double as the graph-building universe). Re-running with this restriction alone eliminated the mega-component
+(largest component dropped to 19) with no further code change.
+
+### Bug 2: a mis-ported self-mapping guard rejected nearly every same-chromosome hit
+
+Even after Bug 1's fix, placement was suspiciously low (322-332/1,793 genes, ~18%, vs the tiled approach's
+91.3%) and ARI came out at 0.084 — a severe regression, not an improvement. Traced by hand: picked a real
+Soto family (ID_2, 3 genes on chr16) with zero edges in the output, confirmed dense >=98%-identity SEDEF
+signal genuinely exists connecting exactly those loci (not a coverage gap), then manually replayed the
+exact matching SEDEF row through the script's own functions end-to-end — the manual replay found the
+correct edge every time, proving the projection math itself was right. The bug was a same-chromosome
+"self-mapping" guard (`if same_chrom and p_lo < own_hi_v1 and p_hi > own_lo_v1: continue`) ported by
+analogy from `soto_replicate_clustering.py`'s DIFFERENT scenario (a region's own trivial self-alignment
+when mapped back to the WHOLE genome via minimap2, which genuinely must be excluded). That guard does not
+apply here: SEDEF's own pairwise rows already report two DISTINCT sides of a real duplication, so a
+projection from side2 landing inside side1's own span is the CORRECT, expected outcome (that is where
+side1's gene lives), not a self-hit — the guard's condition was true almost by construction for the
+~64% of qualifying pairs that happen to be same-chromosome, silently discarding real edges. **Fix**:
+removed the guard; the pre-existing `g_own != g_other` check is the correct and sufficient anti-self-link
+condition, since SEDEF's own pair structure cannot produce a genuine self-hit the way a full-genome
+map-back can.
+
+### Determinism fix (no effect on the reported numbers, a reproducibility defect only)
+
+The edge-list writer iterated a `set` per gene without sorting, so row ORDER (never the underlying edge
+set or the final family assignments — separately confirmed byte-identical across runs before this fix)
+varied with Python's per-process string-hash randomization. Fixed to collect-then-sort before writing,
+matching this project's own PYTHONHASHSEED=0 / sorted-output determinism convention
+(`bench/soto/soto_segdup_cn_refine.py`, `rustlib.py`). Re-verified: two independent full runs of both
+scripts now produce byte-identical output at every stage.
+
+### Result: scored against Soto's own published 1,793-gene truth (`soto_famCN_S1C.tsv`, fixed-universe
+methodology — singleton genes get a unique label, never dropped from the comparison, per the 08-02
+correction)
+
+| metric | prior best (08-02 tiling proxy) | this run (native, unmerged SEDEF pairs) |
+|---|---|---|
+| ARI | 0.757 | 0.751 |
+| exact family reproduction | 155/491 (31.6%) | **234/491 (47.7%)** |
+| pair P / R / F1 | 0.820 / 0.706 / 0.758 | 0.925 / 0.634 / 0.752 |
+| genes placed (of 1,793) | 91.3% | 89.6% (1,606/1,793) |
+
+Spot-checked the largest predicted family (54 genes): all 54 map to exactly ONE Soto family (ID_106), zero
+contamination from any other — an exact reproduction of one of Soto's largest ordinary families, not
+another instance of Bug 1.
+
+**Reading the comparison honestly**: essentially the same overall ARI as the tiling workaround, a
+meaningfully HIGHER exact-family-match rate (47.7% vs 31.6%) and pair precision (0.925 vs 0.820), and a
+slightly LOWER pair recall (0.634 vs 0.706) — consistent with SEDEF's own reported pairs being a stricter,
+higher-confidence set than an exhaustive whole-genome minimap2 tiled search (this file's own ≥98%-identity
+subset is 2,003 usable pairs after liftover, well under Soto's own reported 5,384-pair SD98 set — a real,
+disclosed coverage difference, not investigated further here since it reflects the input SEDEF run's own
+parameters, not this pipeline's logic). Net assessment: a cleaner, more defensible replication (no
+minimap2 re-alignment, no arbitrary tiling window) reaching comparable-or-better agreement with Soto's own
+published families than the best prior approach.
+
+Related: [[project_soto_full_replication]], [[project_soto_audit_14agent]],
+[[project-soto-descoped-mcl-pivot]], [[project_soto_cn_data_famcn_vs_parcn]].
