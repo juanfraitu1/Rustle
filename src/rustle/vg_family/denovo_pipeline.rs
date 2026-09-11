@@ -175,8 +175,16 @@ impl DenovoConfig {
         self.conflict.min_reads
     }
 
-    /// Read overrides from `RUSTLE_*` env vars on top of `Default` (currently `RUSTLE_COLLAPSE_ENUMERATE`
-    /// and `RUSTLE_COLLAPSE_EXPRESSED`).
+    /// Read overrides from `RUSTLE_*` env vars on top of `Default`: `RUSTLE_COLLAPSE_ENUMERATE`,
+    /// `RUSTLE_COLLAPSE_EXPRESSED`, `RUSTLE_DNA_FAMILY_FALLBACK`, `RUSTLE_DNA_FAMILY_MAX_SOFTMASK`,
+    /// `RUSTLE_KEEP_READTHROUGH`, `RUSTLE_MISCHAIN_SALVAGE`.
+    ///
+    /// ⚠ `tied_seed` has NO env var here, on purpose (register row 980: an old tied-seed A/B measured "no
+    /// effect" because it assumed one existed and this function silently left it `false` — a plumbing gap,
+    /// not a null result). It is CLI-only, wired by `copy_assign --tied-seed` after this call returns (see
+    /// that binary's `cfg.tied_seed = args.tied_seed`), and is refused outright when `--families` is given
+    /// (line ~2042 below) rather than silently widened by an ambient env var. Do not add one without
+    /// re-deriving why that CLI-only path was chosen.
     pub fn from_env() -> Self {
         DenovoConfig {
             collapse_enumerate: std::env::var("RUSTLE_COLLAPSE_ENUMERATE").ok().as_deref() == Some("1"),

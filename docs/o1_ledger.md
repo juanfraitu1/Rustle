@@ -16128,7 +16128,35 @@ bookkeeping moved.
 
 **Not done** (named by the audit, not in scope of this fix, left for later): `--regions`-overlap can
 still duplicate a `read_provenance.tsv` row per record (no dedup across regions) — low severity, no
-evidence any current run uses overlapping `--regions`; A6's `outside:chrom:start-end` token still breaks
-`bench/isoform_bakeoff.py`'s `sorted(..., key=int)` (the script, not the Rust code, needs a prefix guard) —
-flagged but not fixed this pass, since A6 itself is still uncommitted/partial per the open-items refresh
-below.
+evidence any current run uses overlapping `--regions`.
+
+## §6i8 — FOUR MORE AUDIT ITEMS CLOSED (2026-09-10, same evening)
+
+1. **`bench/isoform_bakeoff.py` no longer crashes on A6's named outside token.** `--name-outside-tie`
+   prints `outside:chrom:start-end` into the real `copies` GTF attribute; the script's tool-index parser
+   only special-cased the bare word `outside` (`- {"outside"}`, `| {"outside"}`) and later does
+   `sorted(cov[...], key=int)`, which throws on the prefixed form. Fixed at the parse site: any token
+   starting with `outside` is normalized to the bare word when building a tool's address set. Verified:
+   ran the fixed script with an A6-on GTF (`a6_offbyone_check.gtf`) as one of the tool args — exits clean,
+   and every composite/carried number it reports is **byte-identical** to the same script run against the
+   A6-off baseline GTF (`ours_a6` vs `ours_base` above), confirming the fix only changes what the label
+   parses to, never what a molecule scores as.
+2. **A6's outside-locus coordinate was off by one.** `AlignedRead::ref_start` is 0-based
+   (`aligned_read_from_record`: `record.alignment_start()?.get() as u64).saturating_sub(1)` — SAM's 1-based
+   POS converted down), but `register_tie_outside_locus`'s caller passed it straight through while every
+   other coordinate this binary writes into a GTF is 1-based (`+ 1` at emission). Fixed: the call site now
+   passes `s0 + 1`. Base `--gtf` output (no A6 flag) re-verified byte-identical; `--rescue-singletons
+   --read-provenance` output also re-verified byte-identical (this fix and the two below touch only the
+   A6/`from_env` code paths).
+3. **`DenovoConfig::from_env`'s doc comment was stale** (claimed 2 env vars, reads 6) and silent about why
+   `tied_seed` has none — fixed the comment to list all 6 and explain `tied_seed` is intentionally CLI-only
+   (`copy_assign --tied-seed`, set after `from_env()` returns), so register row 980's "plumbing gap" is not
+   mistaken for an oversight needing an env var. Doc-only change, no behavior difference.
+4. **Investigated, not a bug**: `family_define --rna-oracle` looked like a parsed-and-never-read flag from
+   a grep, but its own `--help` text already says "Deprecated no-op (the RNA-only refinement is now the
+   default)" — an intentional, self-documented backward-compatibility shim for old invocations, not a
+   hidden defect. Left as is.
+
+Verification for all four: `cargo build --release --all-targets` clean, `cargo test --release --lib`
+792/792 (unchanged). No PREREG needed — none of these change any default's behavior (A6 stays off,
+`from_env`'s only change is a comment, item 4 needed no code change at all).

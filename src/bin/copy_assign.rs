@@ -2146,7 +2146,11 @@ fn main() -> Result<()> {
                     if !inside {
                         flagged.insert(br.name.as_str());
                         // A6: name the outside placement's own locus, not just the fact it exists.
-                        rustle::vg_family::copy_assign_pipeline::register_tie_outside_locus(&br.name, &br.chrom, s0, e0);
+                        // `s0` is 0-based (`AlignedRead::ref_start`); every other coordinate this binary
+                        // emits into a GTF attribute is 1-based (the exon/transcript rows below, `+ 1`), so
+                        // the registered start needs the same `+ 1` or the printed `outside:chrom:start-end`
+                        // token is off by one relative to the file it sits in.
+                        rustle::vg_family::copy_assign_pipeline::register_tie_outside_locus(&br.name, &br.chrom, s0 + 1, e0);
                     }
                     if (args.gtf_copy_set && !args.no_gtf_copy_set) {
                         // the copy SET of an undecided isoform (§6hn): catalog indices at the tied placements

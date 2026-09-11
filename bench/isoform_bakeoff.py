@@ -58,7 +58,11 @@ def main():
             if not chain: continue
             addr = {c}
             m = re.search(r' copies "([^"]*)"', attrs.get(t, ""))
-            if m: addr |= {x for x in m.group(1).split(",") if x}
+            # A6 (`--name-outside-tie`) can print the outside partner as `outside:chrom:start-end` instead
+            # of the bare `outside` this script already special-cases everywhere below (`- {"outside"}`,
+            # `| {"outside"}`) and `sorted(..., key=int)` assumes every other token is a catalog index —
+            # normalize any `outside*` token to the bare word here so both stay correct either way.
+            if m: addr |= {("outside" if x.startswith("outside") else x) for x in m.group(1).split(",") if x}
             idx[(chrom, len(chain))].append((chain, addr))
         tools.append((label, idx))
     def match(idx, chrom, chain):
