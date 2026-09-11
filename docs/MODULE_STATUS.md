@@ -119,7 +119,7 @@ Shared utility with no independent objective claim.
 | module | gate | deciding evidence |
 |---|---|---|
 | `minimizers.rs` | - | MEASURED: no src/bin/*.rs file references `minimizers`; its only three consumers are libraries — src/rustle/vg_family/repeat_catalog.rs:39, src/rustle/vg_family/multi_repeat_bridge.rs:60, src/rustle/vg_family/vg_realign.rs:27 — an |
-| `o3_flag_pass.rs` | - | INFRASTRUCTURE: pure core functions (poisson_tail, finalize_flags) for O3 modules; ported from bench/o3_flag_pass.py's missing-copy detector; all later O3 tasks import from this module. No independent reachability; wired into Task 2 (o3_missing_copy_readmission). |
+| `o3_flag_pass.rs` | - | INFRASTRUCTURE: pure core functions (poisson_tail, finalize_flags) for O3 modules; ported from bench/o3_flag_pass.py's missing-copy detector; all later O3 tasks import from this module. No independent reachability; `poisson_tail` is consumed by Task 4's pair detector (`detect_missing_copy_pairs`), `finalize_flags` is wired into `copy_assign.rs`'s Phase 2 aggregation in Tasks 5-6 (see docs/superpowers/plans/2026-09-10-o3-flag-pass-integration.md). |
 | `seq_utils.rs` | - | MEASURED: `pub(crate) fn reverse_complement` (seq_utils.rs:9) is the file's only item and is used on the default path — denovo_assemble.rs:22 (import) with production uses at denovo_assemble.rs:1414 and :1547 (test mod starts at : |
 
 ## ⚠ Header / reachability mismatches (29)
