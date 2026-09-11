@@ -110,6 +110,156 @@ pub fn finalize_flags(all_pairs: &[RawPair], alpha: f64) -> Vec<FlaggedPair> {
         .collect()
 }
 
+/// Parses one `(\d+)([=XIDNS])` CIGAR run list, e.g. "88=3D510=1I436=" -> [(88,'='),(3,'D'),(510,'='),(1,'I'),(436,'=')].
+fn parse_cigar_ops(cg: &str) -> Vec<(u64, char)> {
+    let mut out = Vec::new();
+    let mut num = 0u64;
+    for ch in cg.chars() {
+        if ch.is_ascii_digit() {
+            num = num * 10 + (ch as u64 - '0' as u64);
+        } else {
+            out.push((num, ch));
+            num = 0;
+        }
+    }
+    out
+}
+
+pub(crate) struct AlignmentSummary {
+    pub covered_kb: f64,
+    pub n_sites: usize,
+    pub per_read: std::collections::HashMap<String, (usize, i64, usize)>,
+}
+
+/// Parses `minimap2 -x splice -c --eqx -N 1` PAF output. Target-position coverage/mismatch tallies (no
+/// query-sequence lookup needed — see the module doc comment on why allele identity is dropped).
+/// PAF columns used: [0]=query name [1]=query len [2]=query start [3]=query end [7]=target start,
+/// [12..]=tags (the `cg:Z:` CIGAR tag).
+pub(crate) fn parse_paf_consistency(paf_text: &str) -> AlignmentSummary {
+    let mut cov: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+    let mut mism: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+    let mut per_read: std::collections::HashMap<String, (usize, i64, usize)> = std::collections::HashMap::new();
+    for line in paf_text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 13 {
+            continue;
+        }
+        let cg = match f[12..].iter().find(|t| t.starts_with("cg:Z:")) {
+            Some(t) => &t[5..],
+            None => continue,
+        };
+        let qlen: i64 = f[1].parse().unwrap_or(0);
+        let qstart: i64 = f[2].parse().unwrap_or(0);
+        let qend: i64 = f[3].parse().unwrap_or(0);
+        let mut t: u64 = f[7].parse().unwrap_or(0);
+        let mut nx: usize = 0;
+        for (num, op) in parse_cigar_ops(cg) {
+            match op {
+                '=' => {
+                    for k in 0..num {
+                        *cov.entry(t + k).or_insert(0) += 1;
+                    }
+                    t += num;
+                }
+                'X' => {
+                    nx += num as usize;
+                    for k in 0..num {
+                        *cov.entry(t + k).or_insert(0) += 1;
+                        *mism.entry(t + k).or_insert(0) += 1;
+                    }
+                    t += num;
+                }
+                'D' | 'N' => t += num,
+                _ => {} // 'I'/'S' advance only the query position, which this function never tracks
+            }
+        }
+        let unal = qlen - (qend - qstart);
+        let aligned_len = (qend - qstart) as usize;
+        let name = f[0].to_string();
+        let better = per_read.get(&name).map_or(true, |&(_, _, prev)| aligned_len > prev);
+        if better {
+            per_read.insert(name, (nx, unal, aligned_len));
+        }
+    }
+    let n_sites = mism
+        .iter()
+        .filter(|(p, &c)| c >= 3 && (c as f64) >= 0.5 * (*cov.get(p).unwrap_or(&0) as f64))
+        .count();
+    let covered_kb = cov.values().filter(|&&c| c >= 3).count() as f64 / 1000.0;
+    AlignmentSummary { covered_kb, n_sites, per_read }
+}
+
+#[cfg(test)]
+mod paf_tests {
+    use super::*;
+
+    #[test]
+    fn single_clean_read_no_mismatches() {
+        // read "r1", qlen 100, aligned 0..100 on target starting at 1000, 100 matched bases
+        let paf = "r1\t100\t0\t100\t+\tY\t2000\t1000\t1100\t100\t100\t60\tcg:Z:100=";
+        let s = parse_paf_consistency(paf);
+        assert_eq!(s.n_sites, 0);
+        assert_eq!(s.per_read.get("r1"), Some(&(0, 0, 100)));
+        assert!((s.covered_kb - 0.0).abs() < 1e-9); // 100 positions >= coverage 3? NO - coverage is 1 here
+    }
+
+    #[test]
+    fn covered_kb_requires_coverage_at_least_three() {
+        // three reads all covering the same 10bp target window -> those 10 positions reach coverage 3
+        let paf = concat!(
+            "r1\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:10=\n",
+            "r2\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:10=\n",
+            "r3\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:10=",
+        );
+        let s = parse_paf_consistency(paf);
+        assert!((s.covered_kb - 0.010).abs() < 1e-9, "10 positions at cov>=3 => 0.010 kb, got {}", s.covered_kb);
+    }
+
+    #[test]
+    fn consistent_mismatch_site_needs_majority_and_floor_of_three() {
+        // 4 reads: 3 mismatch at target pos 5, 1 matches -> count 3 >= 3 AND 3 >= 0.5*4 (cov=4) -> consistent
+        let paf = concat!(
+            "a\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:5=1X4=\n",
+            "b\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:5=1X4=\n",
+            "c\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:5=1X4=\n",
+            "d\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:10=",
+        );
+        let s = parse_paf_consistency(paf);
+        assert_eq!(s.n_sites, 1);
+    }
+
+    #[test]
+    fn mismatch_below_majority_is_not_consistent() {
+        // 4 reads, only 1 mismatches at pos 5 (cov 4, mismatch count 1 < 0.5*4=2) -> not consistent
+        let paf = concat!(
+            "a\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:5=1X4=\n",
+            "b\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:10=\n",
+            "c\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:10=\n",
+            "d\t10\t0\t10\t+\tY\t100\t0\t10\t10\t10\t60\tcg:Z:10=",
+        );
+        let s = parse_paf_consistency(paf);
+        assert_eq!(s.n_sites, 0);
+    }
+
+    #[test]
+    fn keeps_the_longer_alignment_when_a_read_has_two_paf_lines() {
+        let paf = concat!(
+            "r1\t100\t0\t40\t+\tY\t1000\t0\t40\t40\t40\t60\tcg:Z:40=\n",
+            "r1\t100\t0\t90\t+\tY\t1000\t100\t190\t90\t90\t60\tcg:Z:90=",
+        );
+        let s = parse_paf_consistency(paf);
+        assert_eq!(s.per_read.get("r1").map(|&(_, _, len)| len), Some(90));
+    }
+
+    #[test]
+    fn unaligned_bases_is_query_len_minus_aligned_span() {
+        // qlen 100, aligned query 10..90 -> unal = 100 - (90-10) = 20
+        let paf = "r1\t100\t10\t90\t+\tY\t1000\t0\t80\t80\t80\t60\tcg:Z:80=";
+        let s = parse_paf_consistency(paf);
+        assert_eq!(s.per_read.get("r1"), Some(&(0, 20, 80)));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
