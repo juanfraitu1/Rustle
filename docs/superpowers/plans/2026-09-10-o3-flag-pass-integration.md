@@ -654,7 +654,7 @@ below from the real needs rather than trusting this paragraph over the code.
 
 - [ ] **Step 1: Write the implementation** (no separate failing-test step for the minimap2-calling half —
   it needs a real `minimap2` binary on PATH, which unit tests should not depend on; Task 2 already
-  covers the parsing logic in isolation. This step's own correctness is checked by Task 8's reproduction
+  covers the parsing logic in isolation. This step's own correctness is checked by Task 7's reproduction
   gate against the Python's real numbers, which IS the test for this piece.)
 
 Append to `src/rustle/vg_family/o3_flag_pass.rs`:
@@ -870,7 +870,7 @@ which minimap2
 ```
 Confirm it's on PATH (this codebase's whole test suite already assumes this — see
 `denovo_pipeline.rs`'s own tests skipping when `minimap2 --version` fails). If present, this step's real
-validation happens in Task 8 (the reproduction gate) — nothing further to do here now.
+validation happens in Task 7 (the reproduction gate) — nothing further to do here now.
 
 - [ ] **Step 5: Full regression check + commit**
 
