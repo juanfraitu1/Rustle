@@ -494,6 +494,19 @@ fn median(mut v: Vec<f64>) -> Option<f64> {
     Some(v[v.len() / 2])
 }
 
+/// Realignment target window for one Y-copy, extracted as a pure function so Task 7's window-selection
+/// fix (using the catalog's L2 locus extent when present, matching `bench/o3_flag_pass.py`'s `detector()`
+/// lines 45-48) is directly unit-testable without a real `minimap2`/`GenomeIndex`. `locus` is the
+/// catalog's `(locus_start, locus_end)` for this copy when one is recorded; `longest_rejected` is the
+/// length of the longest rejected read, used only in the `None` fallback to pad the bare copy span (so a
+/// read realigned against the window cannot hang off its edge).
+fn locus_or_padded_window(s: u64, e: u64, locus: Option<(u64, u64)>, longest_rejected: u64) -> (u64, u64) {
+    match locus {
+        Some((locus_s, locus_e)) => (locus_s.min(s), locus_e.max(e)),
+        None => (s.saturating_sub(longest_rejected), e + longest_rejected),
+    }
+}
+
 /// Phase 1: one family's raw (uncorrected) missing-copy pair statistics. Skips any Y with fewer than
 /// `params.min_reads` rejected reads (matches the Python's `len(names) < 3: continue` -- not emitted as
 /// Untestable, simply absent from the output). A `minimap2` failure for one Y is logged to stderr and
@@ -502,9 +515,10 @@ fn median(mut v: Vec<f64>) -> Option<f64> {
 /// `copy_span_by_catalog_idx` maps to `(chrom, start, end, locus_extent)`: the realignment TARGET window
 /// mirrors `bench/o3_flag_pass.py`'s `detector()` exactly (lines 45-48) -- `(min(locus_start, start),
 /// max(locus_end, end))` when the catalog carries an L2 locus extent for this copy, else the copy's own
-/// span padded by the longest rejected read on each side. Using the bare copy span unconditionally (the
-/// pre-fix behaviour) mis-sizes the window whenever a copy's locus extent differs from its own span --
-/// found during Task 7's reproduction gate: `covered_kb`/`n_sites`/`rate_per_kb`/`p` all move even when
+/// span padded by the longest rejected read on each side (see [`locus_or_padded_window`], which does this
+/// computation and is unit-tested directly). Using the bare copy span unconditionally (the pre-fix
+/// behaviour) mis-sizes the window whenever a copy's locus extent differs from its own span -- found
+/// during Task 7's reproduction gate: `covered_kb`/`n_sites`/`rate_per_kb`/`p` all move even when
 /// `n_rejected` matches exactly (e.g. MCL117_073244 copy 1: same 4 rejected reads, Python rate 4.27/kb
 /// vs the unfixed Rust 59.81/kb).
 pub fn detect_missing_copy_pairs(
@@ -531,13 +545,8 @@ pub fn detect_missing_copy_pairs(
         let mut rejected_sorted = input.rejected.clone();
         rejected_sorted.sort_by(|a, b| a.0.cmp(&b.0));
         let rejected: Vec<_> = rejected_sorted.into_iter().take(params.max_reads).collect();
-        let (ls, le): (u64, u64) = match locus {
-            Some((locus_s, locus_e)) => ((*locus_s).min(*s), (*locus_e).max(*e)),
-            None => {
-                let pad = rejected.iter().map(|(_, seq)| seq.len() as u64).max().unwrap_or(0);
-                (s.saturating_sub(pad), e + pad)
-            }
-        };
+        let pad = rejected.iter().map(|(_, seq)| seq.len() as u64).max().unwrap_or(0);
+        let (ls, le) = locus_or_padded_window(*s, *e, *locus, pad);
         let target = match genome.fetch_sequence(chrom, ls, le) {
             Some(t) => t,
             None => continue,
@@ -636,5 +645,50 @@ mod pair_detector_tests {
         }];
         let pairs = detect_missing_copy_pairs("F", &spans, &genome, &inputs, &O3Params::default());
         assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn locus_extent_wider_than_the_copy_span_wins() {
+        // Locus extent (40,160) strictly contains the copy span (50,120): the window must widen to the
+        // locus, matching `bench/o3_flag_pass.py`'s `(min(locus_start, start), max(locus_end, end))`.
+        assert_eq!(locus_or_padded_window(50, 120, Some((40, 160)), 999), (40, 160));
+    }
+
+    #[test]
+    fn locus_extent_narrower_than_the_copy_span_does_not_shrink_it() {
+        // Locus extent (60,110) sits INSIDE the copy span (50,120): min/max never shrinks below the
+        // copy's own span, so the window collapses to the bare span, not the narrower locus.
+        assert_eq!(locus_or_padded_window(50, 120, Some((60, 110)), 999), (50, 120));
+    }
+
+    #[test]
+    fn no_locus_falls_back_to_padding_by_the_longest_rejected_read() {
+        // No catalog locus extent recorded (`None`): pad the bare copy span by the longest rejected
+        // read's length on each side.
+        assert_eq!(locus_or_padded_window(1000, 2000, None, 250), (750, 2250));
+        // saturating_sub must not underflow when the pad exceeds the start coordinate.
+        assert_eq!(locus_or_padded_window(100, 200, None, 500), (0, 700));
+    }
+
+    #[test]
+    fn some_locus_branch_of_detect_missing_copy_pairs_does_not_panic() {
+        // Integration-level smoke test for the `Some(locus)` arm inside `detect_missing_copy_pairs`
+        // itself, exercised via a real (if trivial) `PairInput` -- kept below `min_reads` so the call
+        // returns before reaching `realign_batch` (which shells out to a real `minimap2`, unavailable in
+        // unit tests), while still walking the `Some(locus)` destructure and the `locus_or_padded_window`
+        // call above it without error. The window ARITHMETIC itself is covered directly by the three
+        // tests above.
+        let genome = GenomeIndex::from_seqs(&[("chrT", &[b'A'; 300])]);
+        let mut spans = std::collections::HashMap::new();
+        // locus extent (0,300) is wider than the bare copy span (100,200).
+        spans.insert("0".to_string(), ("chrT".to_string(), 100u64, 200u64, Some((0u64, 300u64))));
+        let inputs = vec![PairInput {
+            copy_idx: "0".to_string(),
+            is_partner: false,
+            rejected: vec![("r1".to_string(), vec![b'A'; 50])], // 1 < default min_reads (3)
+            accepted: vec![],
+        }];
+        let pairs = detect_missing_copy_pairs("F", &spans, &genome, &inputs, &O3Params::default());
+        assert!(pairs.is_empty(), "below min_reads, skipped before realign_batch as usual");
     }
 }

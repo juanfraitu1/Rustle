@@ -1343,6 +1343,45 @@ fn block_overlap(read: &rustle::vg_family::copy_split::AlignedRead, s: u64, e: u
     total
 }
 
+/// The O3 detector's "truth" table: for every primary-aligned read, the family's own candidate copy
+/// whose span the read's PRIMARY alignment overlaps MOST (by [`block_overlap`]), independent of O2's own
+/// (possibly MAPQ-0-ambiguous) `catalog_copy_idx` call -- mirrors `bench/o3_flag_pass.py`'s `truth` dict
+/// (lines 84-90: `for a in BAM.fetch(...): ... if o > 0 and (name not in truth or o > truth[name][1]):
+/// truth[name] = (i, o)`). Ties keep the FIRST-seen candidate (Python's strict `>` compare over
+/// `cp.items()`'s insertion order, i.e. `copy_spans`' iteration order here). A candidate copy with no
+/// entry in `catalog_index` (or no `catalog_index` at all) is silently skipped for that read.
+///
+/// Extracted out of `main()`'s per-family loop so the tie-break is directly unit-testable.
+fn best_overlap_truth_copy<'a>(
+    bam_reads: &'a [BamRead],
+    copy_spans: &[(String, u64, u64)],
+    copy_tids: &[String],
+    catalog_index: Option<&CatalogIndex>,
+) -> std::collections::HashMap<&'a str, (String, u64)> {
+    let mut truth_copy: std::collections::HashMap<&str, (String, u64)> = std::collections::HashMap::new();
+    for br in bam_reads.iter().filter(|br| !br.is_secondary && !br.is_supplementary) {
+        let end = read_ref_end_local(&br.read); // cheap span bound, to skip non-overlapping copies fast
+        for (ci, (c, s, e)) in copy_spans.iter().enumerate() {
+            if br.chrom != *c || end <= *s || br.read.ref_start >= *e {
+                continue;
+            }
+            let ov = block_overlap(&br.read, *s, *e);
+            if ov == 0 {
+                continue;
+            }
+            let Some(tid) = copy_tids.get(ci) else { continue };
+            let Some((_, cidx)) = catalog_index.and_then(|ix| ix.get(tid)) else { continue };
+            match truth_copy.get(br.name.as_str()) {
+                Some((_, best_ov)) if *best_ov >= ov => {}
+                _ => {
+                    truth_copy.insert(br.name.as_str(), (cidx.to_string(), ov));
+                }
+            }
+        }
+    }
+    truth_copy
+}
+
 /// Load, VALIDATE and region-bind the `--families` catalog (see the flag's help for the contract).
 ///
 /// Returns `(None, None)` when `--families` was not given — the historical path, untouched.
@@ -2474,28 +2513,9 @@ fn main() -> Result<()> {
                 // `truth_copy[name] = (cidx, overlap)`: the candidate copy whose span the read's PRIMARY
                 // overlaps MOST (ties keep the first-seen candidate, matching Python's strict `>` compare
                 // over `cp.items()`'s insertion order). Built once per family from `bam_reads` (already
-                // resident for the region) instead of a second BAM fetch.
-                let mut truth_copy: std::collections::HashMap<&str, (String, u64)> = std::collections::HashMap::new();
-                for br in bam_reads.iter().filter(|br| !br.is_secondary && !br.is_supplementary) {
-                    let end = read_ref_end_local(&br.read); // cheap span bound, to skip non-overlapping copies fast
-                    for (ci, (c, s, e)) in fa.copy_spans.iter().enumerate() {
-                        if br.chrom != *c || end <= *s || br.read.ref_start >= *e {
-                            continue;
-                        }
-                        let ov = block_overlap(&br.read, *s, *e);
-                        if ov == 0 {
-                            continue;
-                        }
-                        let Some(tid) = fa.copy_tids.get(ci) else { continue };
-                        let Some((_, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) else { continue };
-                        match truth_copy.get(br.name.as_str()) {
-                            Some((_, best_ov)) if *best_ov >= ov => {}
-                            _ => {
-                                truth_copy.insert(br.name.as_str(), (cidx.to_string(), ov));
-                            }
-                        }
-                    }
-                }
+                // resident for the region) instead of a second BAM fetch. Extracted as `best_overlap_truth_copy`
+                // (below) so the tie-break is directly unit-testable.
+                let truth_copy = best_overlap_truth_copy(&bam_reads, &fa.copy_spans, &fa.copy_tids, catalog_index.as_ref());
                 // Group this family's bam_reads by best-candidate catalog_copy_idx, split into rejected
                 // (origin_rejected==true) and accepted (this family's own certificate-passed reads at that
                 // copy). `Assignment` (src/rustle/vg_family/copy_assign.rs:101-146) carries `best_copy: usize`
@@ -2516,13 +2536,20 @@ fn main() -> Result<()> {
                     // Python's `n in truth` gate: rejected reads need a primary overlapping ANY of this
                     // family's copies (grouped by O2's own best-copy call, which may differ from the
                     // truth-copy); control/accepted reads need the primary's OWN best-overlap copy to BE
-                    // the candidate under test (`truth[n][0] == y` in the Python), matching `ctl_names`'s
-                    // extra condition beyond plain non-rejection.
+                    // the candidate under test (`truth[n][0] == y` in the Python) AND not be rejected --
+                    // that is `ctl_names`'s full condition (`bench/o3_flag_pass.py:109`): `truth[n][0] ==
+                    // y and A[n]['origin_rejected'] != '1' and A[n]['catalog_copy_idx'] == y`. Note there is
+                    // NO status/verdict condition -- Python's own inline comment says so explicitly: "any
+                    // MAPQ, any status: NPIP copies have few MAPQ-60 reads". A prior version of this code
+                    // additionally required `assignment.status == AssignStatus::Assigned`, which is NOT in
+                    // Python and is stricter: on `sweep_v13` it collapsed MCL1_073242 copy 15's true
+                    // 31-read control pool to 1 read (forcing `Untestable` instead of Python's real
+                    // verdict) and affected 8 (family, copy) groups genome-wide (docs/o1_ledger.md §6ib).
                     let Some((truth_cidx, _)) = truth_copy.get(br.name.as_str()) else { continue };
                     let entry = (br.name.clone(), br.read.seq.clone());
                     if assignment.origin_rejected {
                         rejected_by_idx.entry(cidx).or_default().push(entry);
-                    } else if assignment.status == AssignStatus::Assigned && *truth_cidx == cidx {
+                    } else if *truth_cidx == cidx {
                         accepted_by_idx.entry(cidx).or_default().push(entry);
                     }
                 }
@@ -4707,6 +4734,77 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn block_overlap_ignores_an_intron_that_merely_spans_the_window() {
+        // ref_start=0, "10M5000N10M": aligned blocks are [0,10) and [5010,5020); the intron covers
+        // [10,5010) with no M/=/X inside it. A window fully inside the intron (e.g. [100,200)) must
+        // score 0 overlap, even though it lies strictly between the read's ref_start and ref_end --
+        // this is the exact bug `read_ref_end_local`-based span checks were vulnerable to.
+        let read = rustle::vg_family::copy_split::AlignedRead {
+            ref_start: 0,
+            cigar: vec![('M', 10), ('N', 5000), ('M', 10)],
+            seq: vec![],
+            qual: vec![],
+        };
+        assert_eq!(block_overlap(&read, 100, 200), 0, "window sits entirely inside the spliced-out intron");
+        // sanity: a window over the trailing M block still scores correctly.
+        assert_eq!(block_overlap(&read, 5010, 5020), 10, "window exactly covers the second aligned block");
+    }
+
+    #[test]
+    fn block_overlap_counts_the_real_match_run_inside_the_window() {
+        // ref_start=100, "50M": a simple hand-computable case -- window [110,130) is fully inside the
+        // aligned block [100,150), so overlap is the window's own width, 20.
+        let read = rustle::vg_family::copy_split::AlignedRead {
+            ref_start: 100,
+            cigar: vec![('M', 50)],
+            seq: vec![],
+            qual: vec![],
+        };
+        assert_eq!(block_overlap(&read, 110, 130), 20);
+        // partial overlap at the trailing edge: window [140,160) vs aligned block ending at 150 -> 10.
+        assert_eq!(block_overlap(&read, 140, 160), 10);
+        // window entirely outside the block -> 0.
+        assert_eq!(block_overlap(&read, 200, 210), 0);
+    }
+
+    #[test]
+    fn best_overlap_truth_copy_picks_the_copy_with_more_overlap() {
+        // A read whose primary alignment ("M",100 from ref_start 0) overlaps copy A's span [0,80) by 80bp
+        // and copy B's span [60,100) by only 40bp -- the truth copy must be A ("best overlap wins").
+        let read = rustle::vg_family::copy_split::AlignedRead { ref_start: 0, cigar: vec![('M', 100)], seq: vec![], qual: vec![] };
+        let br = BamRead {
+            chrom: "chr1".to_string(), read, mapq: 0, name: "r1".to_string(), as_score: 0, de: 0.0,
+            is_supplementary: false, is_secondary: false, reverse: false, ts: None,
+        };
+        let copy_spans = vec![("chr1".to_string(), 0u64, 80u64), ("chr1".to_string(), 60u64, 100u64)];
+        let copy_tids = vec!["tidA".to_string(), "tidB".to_string()];
+        let mut catalog_index: CatalogIndex = std::collections::HashMap::new();
+        catalog_index.insert("tidA".to_string(), ("famA".to_string(), 0usize));
+        catalog_index.insert("tidB".to_string(), ("famB".to_string(), 1usize));
+        let truth = best_overlap_truth_copy(std::slice::from_ref(&br), &copy_spans, &copy_tids, Some(&catalog_index));
+        assert_eq!(truth.get("r1"), Some(&("0".to_string(), 80)), "copy A (80bp overlap) beats copy B (40bp)");
+    }
+
+    #[test]
+    fn best_overlap_truth_copy_ties_keep_the_first_seen_candidate() {
+        // Two candidate copies with EQUAL overlap (50bp each): the first one in `copy_spans`' iteration
+        // order wins, matching Python's strict `>` compare over `cp.items()`'s insertion order -- a later
+        // equal-overlap candidate never displaces it.
+        let read = rustle::vg_family::copy_split::AlignedRead { ref_start: 0, cigar: vec![('M', 100)], seq: vec![], qual: vec![] };
+        let br = BamRead {
+            chrom: "chr1".to_string(), read, mapq: 0, name: "r1".to_string(), as_score: 0, de: 0.0,
+            is_supplementary: false, is_secondary: false, reverse: false, ts: None,
+        };
+        let copy_spans = vec![("chr1".to_string(), 0u64, 50u64), ("chr1".to_string(), 50u64, 100u64)];
+        let copy_tids = vec!["tidA".to_string(), "tidB".to_string()];
+        let mut catalog_index: CatalogIndex = std::collections::HashMap::new();
+        catalog_index.insert("tidA".to_string(), ("famA".to_string(), 0usize));
+        catalog_index.insert("tidB".to_string(), ("famB".to_string(), 1usize));
+        let truth = best_overlap_truth_copy(std::slice::from_ref(&br), &copy_spans, &copy_tids, Some(&catalog_index));
+        assert_eq!(truth.get("r1"), Some(&("0".to_string(), 50)), "copy A (seen first) wins the tie over copy B");
+    }
 
     #[test]
     fn overlapping_regions_on_the_same_contig_are_rejected() {
