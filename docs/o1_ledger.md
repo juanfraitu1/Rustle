@@ -17390,3 +17390,48 @@ project had working before, useful for any future famCN need even though it didn
 lever. New file: `famcn_topped_up_271.tsv`.
 
 Related: [[project_soto_full_replication]], [[project_o1_shared_read_edges]].
+
+## §6ip — "was the file I gave you too conservative?" (2026-09-11)
+
+The original SEDEF input (`CHM13_SDs.SD90.nosat.bed`, 36,143 rows) turns out to have been exactly what its
+name says: filtered to identity >=0.90 ("SD90") with satellite regions excluded ("nosat"). The user
+supplied a second, unfiltered run of the same underlying alignment (`final_human.bed`, 88,756 data rows) —
+confirmed to be a genuinely richer catalog, not a reformat: byte-identical first row (same run), but
+**identity distribution ≥0.98: 4,061 vs 2,156 (+88%)**, plus 39,850 rows at 0.80-0.90 identity and 7,111
+below 0.80 that the old file excluded entirely. Same 34-column schema (confirmed via its own header row,
+oddly placed as the LAST line rather than the first: field21=`fracMatch`, field23=`jck`, field33=`cigar`,
+matching what this project already parses) — verified the CIGAR D=side1/I=side2 convention still holds on
+500 spot-checked sub-0.90-identity rows (0 mismatches) before trusting any of the new content.
+
+**Result, same pipeline (acrofix anchors, median/mean-MAD + islands + full-geneset), input swapped**:
+
+| variant | ARI | exact | pair P/R/F1 | bipartite MICRO P/R | bipartite MACRO P/R | undetected |
+|---|---|---|---|---|---|---|
+| median-MAD+attach+islands, old SEDEF (§6im) | 0.6945 | 236/491 (48.1%) | 0.840/0.594/0.696 | 0.785/0.703 | 0.722/0.708 | 103/491 (21.0%) |
+| **median-MAD+attach+islands, final_human.bed** | **0.6959** | **241/491 (49.1%)** | 0.841/0.595/0.697 | 0.784/0.709 | 0.731/0.718 | **99/491 (20.2%)** |
+| mean-MAD+attach+islands, old SEDEF | 0.6849 | 259/491 (52.7%) | 0.906/0.552/0.686 | 0.813/0.716 | 0.762/0.731 | 92/491 (18.7%) |
+| **mean-MAD+attach+islands, final_human.bed** | **0.6862** | **264/491 (53.8%)** | 0.906/0.554/0.687 | 0.812/0.721 | 0.770/0.739 | **88/491 (17.9%)** |
+
+**A real, if modest, gain — smaller than the >2x row-count increase alone would suggest**, because the
+liftover drop rate jumped from 6.8% to 45% among qualifying (>=0.98-identity) rows. Root-caused per
+chromosome:
+
+- **chrY: 100% dropped, zero anchors — a real, unfixable ceiling.** Soto's own v1.0 SD track and S1E table
+  have no chrY at all (already noted in this pipeline's docstrings); there is no v1.0 target to lift TO.
+- **chrX: 100% dropped, zero anchors — real gap, but doesn't cost anything here.** `soto_parCN_S1E.tsv`
+  has literally zero chrX rows, so no anchor was ever fit. Checked whether this matters for scoring: **zero
+  of the 2,334 genes in Soto's own family-eligible universe are on chrX** — so this gap, while real, has no
+  bearing on matching Soto's benchmark and was not pursued further.
+- **chr13/14/21/22: 44-66% still dropped, chr15: 20.8%** — the acrocentric short arms, even after two
+  rounds of anchor-widening (§6il, §6in). This file's ≥98% rows touch far more distinct loci on these
+  chromosomes (213-298 row-sides each) than the handful of individually-validated anchors cover. **Real,
+  larger opportunity, not pursued this round** — would need a systematically denser anchor set across these
+  short arms (the same direct-realignment validation technique already used twice, just at far more points)
+  rather than more targeted single-locus fixes.
+
+**New best headline for the complete, honest 2,334-gene universe: median-MAD+attach+islands on
+final_human.bed, ARI 0.6959 (49.1% exact); mean-MAD+attach+islands 0.6862 (53.8% exact).** New canonical
+outputs: `shared_exons_2334_finalhuman.tsv`, `replicated_families_2334_{median,mean}_finalhuman.tsv`,
+`final_human_clean.bed` (header-stripped) — all under `winloci_data/soto_replication/`.
+
+Related: [[project_soto_full_replication]].
