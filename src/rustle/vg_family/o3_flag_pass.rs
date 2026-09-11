@@ -425,3 +425,187 @@ mod locus_tests {
         assert!(units_hit.is_empty());
     }
 }
+
+/// One candidate copy Y's test batch (its own origin-rejected reads) and control batch (its own
+/// certificate-accepted reads), both as `(name, sequence)` pairs ready to realign.
+pub struct PairInput {
+    pub copy_idx: String,
+    pub is_partner: bool,
+    pub rejected: Vec<(String, Vec<u8>)>,
+    pub accepted: Vec<(String, Vec<u8>)>,
+}
+
+/// Realigns one batch of reads to a target window via `minimap2 -x splice -c --eqx -N 1`, mirroring
+/// `copy_assign_pipeline.rs`'s `minimap2_msa_pair` temp-file convention (pid+atomic-nonce names,
+/// `RUSTLE_MINIMAP2` env override, `Drop`-based cleanup) so concurrent region-parallel workers never
+/// collide on the same path.
+fn realign_batch(target_seq: &[u8], reads: &[(String, Vec<u8>)]) -> anyhow::Result<AlignmentSummary> {
+    use std::io::Write;
+    if reads.is_empty() {
+        return Ok(AlignmentSummary { covered_kb: 0.0, n_sites: 0, per_read: std::collections::HashMap::new() });
+    }
+    let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+    let dir = std::env::temp_dir();
+    let pid = std::process::id();
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static O3_NONCE: AtomicUsize = AtomicUsize::new(0);
+    let nonce = O3_NONCE.fetch_add(1, Ordering::Relaxed);
+    let ypath = dir.join(format!("rustle_o3_y_{pid}_{nonce}.fa"));
+    let rpath = dir.join(format!("rustle_o3_reads_{pid}_{nonce}.fa"));
+    struct Cleanup(std::path::PathBuf, std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+            let _ = std::fs::remove_file(&self.1);
+        }
+    }
+    let _cl = Cleanup(ypath.clone(), rpath.clone());
+    {
+        let mut y = std::fs::File::create(&ypath)?;
+        y.write_all(b">Y\n")?;
+        y.write_all(target_seq)?;
+        y.write_all(b"\n")?;
+        let mut r = std::fs::File::create(&rpath)?;
+        for (name, seq) in reads {
+            writeln!(r, ">{name}")?;
+            r.write_all(seq)?;
+            r.write_all(b"\n")?;
+        }
+    }
+    let out = std::process::Command::new(&mm2)
+        .args(["-x", "splice", "-c", "--eqx", "-N", "1", "-t", "4"])
+        .arg(&ypath)
+        .arg(&rpath)
+        .output()?;
+    if !out.status.success() {
+        anyhow::bail!("minimap2 failed: {}", String::from_utf8_lossy(&out.stderr));
+    }
+    Ok(parse_paf_consistency(&String::from_utf8_lossy(&out.stdout)))
+}
+
+fn median(mut v: Vec<f64>) -> Option<f64> {
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    Some(v[v.len() / 2])
+}
+
+/// Phase 1: one family's raw (uncorrected) missing-copy pair statistics. Skips any Y with fewer than
+/// `params.min_reads` rejected reads (matches the Python's `len(names) < 3: continue` -- not emitted as
+/// Untestable, simply absent from the output). A `minimap2` failure for one Y is logged to stderr and
+/// that pair is skipped -- see the design doc's Error Handling section for why this must not abort.
+pub fn detect_missing_copy_pairs(
+    family_id: &str,
+    copy_span_by_catalog_idx: &std::collections::HashMap<String, (String, u64, u64)>,
+    genome: &crate::genome::GenomeIndex,
+    inputs: &[PairInput],
+    params: &O3Params,
+) -> Vec<RawPair> {
+    let mut out = Vec::new();
+    for input in inputs {
+        if input.rejected.len() < params.min_reads {
+            continue;
+        }
+        let Some((chrom, s, e)) = copy_span_by_catalog_idx.get(&input.copy_idx) else {
+            continue;
+        };
+        let target = match genome.fetch_sequence(chrom, *s, *e) {
+            Some(t) => t,
+            None => continue,
+        };
+        let rejected: Vec<_> = input.rejected.iter().take(params.max_reads).cloned().collect();
+        let test = match realign_batch(&target, &rejected) {
+            Ok(s) => s,
+            Err(err) => {
+                eprintln!("[o3-flag-pass] realignment failed for {family_id}:{}: {err}", input.copy_idx);
+                continue;
+            }
+        };
+        let accepted: Vec<_> = input.accepted.iter().take(params.max_reads).cloned().collect();
+        let ctl = if accepted.len() >= params.min_reads {
+            match realign_batch(&target, &accepted) {
+                Ok(s) => s,
+                Err(err) => {
+                    eprintln!("[o3-flag-pass] control realignment failed for {family_id}:{}: {err}", input.copy_idx);
+                    AlignmentSummary { covered_kb: 0.0, n_sites: 0, per_read: std::collections::HashMap::new() }
+                }
+            }
+        } else {
+            AlignmentSummary { covered_kb: 0.0, n_sites: 0, per_read: std::collections::HashMap::new() }
+        };
+        // rate floored at 1 site over the control's covered kb, so a control with zero observed sites
+        // never claims a zero rate (which would trivially pass every test) -- design doc, RawPair section.
+        let p_uncorrected = if test.covered_kb > 0.0 && ctl.covered_kb > 0.0 {
+            let rate = (ctl.n_sites.max(1) as f64) / ctl.covered_kb;
+            Some(poisson_tail(test.n_sites, rate * test.covered_kb))
+        } else {
+            None
+        };
+        let mismatches: Vec<f64> = test.per_read.values().map(|&(nx, _, _)| nx as f64).collect();
+        let unaligned: Vec<f64> = test.per_read.values().map(|&(_, unal, _)| unal as f64).collect();
+        let med_mismatch = median(mismatches).unwrap_or(f64::NAN);
+        let med_unaligned = median(unaligned).unwrap_or(f64::NAN);
+        let class = if !med_mismatch.is_nan() && med_mismatch > med_unaligned {
+            Class::Divergent
+        } else {
+            Class::Structural
+        };
+        out.push(RawPair {
+            family_id: family_id.to_string(),
+            copy_idx: input.copy_idx.clone(),
+            is_partner: input.is_partner,
+            n_rejected: input.rejected.len(),
+            n_aligned: rejected.len(),
+            covered_kb: test.covered_kb,
+            n_sites: test.n_sites,
+            ctl_n: accepted.len(),
+            ctl_covered_kb: ctl.covered_kb,
+            ctl_n_sites: ctl.n_sites,
+            p_uncorrected,
+            class,
+            med_mismatch,
+            med_unaligned,
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod pair_detector_tests {
+    use super::*;
+    use crate::genome::GenomeIndex;
+
+    #[test]
+    fn fewer_than_min_reads_is_skipped_entirely() {
+        let genome = GenomeIndex::from_seqs(&[("chrT", &[b'A'; 100])]);
+        let mut spans = std::collections::HashMap::new();
+        spans.insert("0".to_string(), ("chrT".to_string(), 0u64, 100u64));
+        let inputs = vec![PairInput {
+            copy_idx: "0".to_string(),
+            is_partner: false,
+            rejected: vec![("r1".to_string(), vec![b'A'; 50])], // only 1, min_reads default is 3
+            accepted: vec![],
+        }];
+        let pairs = detect_missing_copy_pairs("F", &spans, &genome, &inputs, &O3Params::default());
+        assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn missing_copy_span_is_skipped_not_errored() {
+        let genome = GenomeIndex::from_seqs(&[("chrT", &[b'A'; 100])]);
+        let spans = std::collections::HashMap::new(); // no span for "0"
+        let inputs = vec![PairInput {
+            copy_idx: "0".to_string(),
+            is_partner: false,
+            rejected: vec![
+                ("r1".to_string(), vec![b'A'; 50]),
+                ("r2".to_string(), vec![b'A'; 50]),
+                ("r3".to_string(), vec![b'A'; 50]),
+            ],
+            accepted: vec![],
+        }];
+        let pairs = detect_missing_copy_pairs("F", &spans, &genome, &inputs, &O3Params::default());
+        assert!(pairs.is_empty());
+    }
+}
