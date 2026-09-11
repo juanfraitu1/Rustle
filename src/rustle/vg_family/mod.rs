@@ -38,6 +38,7 @@ pub mod asj_verify; // O3 ASJ analysis layer: confound control (frac_mq0 MAPQ-0 
 pub mod asj_genetic_core; // O3 ASJ DELIVERABLE: the reproducible 54-call genetic core. Pure-TSV row-aligned join of asj_calls_verified.tsv (high_confidence) + asj_calls_strandbias.tsv (sor/sor_pass) -> 3-filter funnel (transversion 475->120, non-LOC 120->76, SOR-clean 76->54) -> asj_genetic_core.tsv (Rust port of asj_genetic_core.py; byte-parity tested, \r\n csv.DictWriter bytes).
 pub mod copy_split; // Joint read-coherence + PSV decomposition into (copy, isoform) units.
 pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy candidates.
+pub mod o3_flag_pass; // O3 flag-pass detector: ports bench/o3_flag_pass.py's missing-copy detector natively; see docs/superpowers/specs/2026-09-10-o3-flag-pass-integration-design.md
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
 pub mod o2_margin_gate; // O2 MARGIN gate: PSV+junction logL assign-with-margin (Rust port of copy_assign.py::assign_read, the gate o2_vg_visualization.materialize_family calls; byte-parity tested). Distinct from copy_assign.rs (the min_p significance gate).
 pub mod o2_columns; // O2 VG-materialization step 2 (crux): per-column paralogous-allele extraction from a BAM on a backbone contig (Rust port of psv_graph_genomewide.py::column_alleles, the pysam-pileup parser; byte-parity tested vs real + adversarial BAMs).

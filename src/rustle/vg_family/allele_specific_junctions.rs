@@ -235,7 +235,7 @@ pub fn bh_fdr(pvals: &[f64]) -> Vec<f64> {
 }
 
 /// Lanczos approximation of `ln Γ(x)`.
-fn lgamma(x: f64) -> f64 {
+pub(crate) fn lgamma(x: f64) -> f64 {
     const G: f64 = 7.0;
     const C: [f64; 9] = [
         0.999_999_999_999_809_9,
