@@ -16378,3 +16378,95 @@ closer to Python's `p` (magnitude not pre-measurable without the fix). Because t
 `missing_copy`/`untestable`, i.e. it is conservative in the wrong direction for O3's stated purpose
 (detect+flag, not silently under-report) — not urgent to ship blind, but worth a dedicated task with its
 own reproduction-gate re-run rather than a same-session patch-and-hope.
+
+## §6ic — TASK 7 FINAL CLOSEOUT: the §6ib defect fixed, tested, and re-verified against Python (2026-09-11)
+
+Follow-up task to §6ib's open TODO: fix `copy_assign.rs:2525`'s over-restrictive control-pool filter,
+add the missing unit-test coverage for Task 7's fixed behaviors (`block_overlap`, the locus-extent window,
+the `truth_copy` best-overlap gate), and re-run the reproduction gate to measure the effect for real.
+
+**The fix.** `copy_assign.rs`'s control/"accepted"-pool branch was:
+```rust
+} else if assignment.status == AssignStatus::Assigned && *truth_cidx == cidx {
+```
+Changed to drop the extra `status == Assigned` clause entirely, matching `bench/o3_flag_pass.py:109`'s
+`ctl_names` exactly (`truth[n][0] == y and A[n]['origin_rejected'] != '1' and A[n]['catalog_copy_idx'] ==
+y` — no status condition, by the Python's own inline comment: "any MAPQ, any status: NPIP copies have few
+MAPQ-60 reads"):
+```rust
+} else if *truth_cidx == cidx {
+```
+The surrounding doc comment (added by `6dcf14a8`, corrected once already by §6ib's citation fix) was
+rewritten to describe the real three-part gate (non-rejection + truth-copy match, i.e. two conditions
+beyond the shared `origin_rejected` check the `if`/`else` already partitions on) and to name the specific
+pairs (`MCL1_073242:15` + the 8-group genome-wide count) §6ib traced to the old, over-restrictive version,
+so a future reader does not have to re-derive why the status check is absent.
+
+**New test coverage** (none of Task 7's fixed behaviors had unit tests before this task):
+1. `src/bin/copy_assign.rs`, `mod tests` — two `block_overlap` tests: an intron (`N`) that spans clean
+   through a target window with no `M`/`=`/`X` inside it scores `0` (the exact bug class the truth-gate
+   fix addresses), plus a hand-computable real-match-run case (partial and full window overlap, and a
+   window entirely outside the aligned block).
+2. `src/rustle/vg_family/o3_flag_pass.rs`, `pair_detector_tests` — the inline `(ls, le)` window
+   computation inside `detect_missing_copy_pairs` was extracted into a new pure function,
+   `locus_or_padded_window(s, e, locus, longest_rejected)`, unit-tested directly for all three cases (locus
+   wider than the copy span widens the window; locus narrower than the copy span does NOT shrink it below
+   the bare span; no locus falls back to padding by the longest rejected read, including a
+   `saturating_sub` underflow check), plus one integration-level smoke test confirming the `Some(locus)`
+   arm of `detect_missing_copy_pairs` itself doesn't panic (kept below `min_reads` so it returns before
+   `realign_batch`'s real `minimap2` dependency, consistent with the file's existing test style).
+3. `src/bin/copy_assign.rs` — the `truth_copy`-building loop (previously inline in `main()`) was extracted
+   into a new pure function, `best_overlap_truth_copy(bam_reads, copy_spans, copy_tids, catalog_index)`,
+   returning the same `HashMap<&str, (String, u64)>` as before with IDENTICAL logic (a pure refactor, no
+   behavior change) — this was judged clean and low-risk (the loop's only external dependencies are
+   `bam_reads`/`fa.copy_spans`/`fa.copy_tids`/`catalog_index`, all already plain function parameters
+   elsewhere in this file), so the task brief's "skip if invasive" escape was not needed. Two new tests:
+   `best_overlap_truth_copy_picks_the_copy_with_more_overlap` (a read overlapping candidate A by 80bp and
+   candidate B by 40bp is attributed to A — "best overlap wins") and
+   `best_overlap_truth_copy_ties_keep_the_first_seen_candidate` (two candidates with EQUAL 50bp overlap:
+   the first one in `copy_spans`' iteration order wins, matching Python's strict `>` compare over
+   `cp.items()`'s insertion order).
+
+**Verification.** `cargo build --release --all-targets`: clean, only pre-existing warnings. `cargo test
+--release --lib`: **816 passed / 0 failed / 11 ignored** (812 baseline + 4 new `o3_flag_pass.rs` tests).
+`cargo test --release --bin copy_assign`: **23 passed / 0 failed** (19 baseline + 4 new tests: 2
+`block_overlap` + 2 `best_overlap_truth_copy`). Byte-identity (flag off), human chr16 substrate
+(`hsa16.bam`/`chm13v2.0.fa`/`copies16.tsv`/`copies16.fa`/`regions16`, `--gtf` only):
+`task7_finalfix_check.gtf` vs `hard_baseline_today.gtf` — byte-identical.
+
+**Real-data re-run**, same 76-family combined substrate as §6ia/§6ib
+(`/mnt/linuxdisk/home/juanfraitu/o3_repro_check/combined.copies.{tsv,fa}` +
+`combined.regions.merged.txt`, `npip3.bam`/`GGO.fasta`/`GGO_genomic.gff`, same escape-flag combination),
+output to a fresh directory (`rust_run_finalfix/`, not overwriting §6ia/§6ib's `rust_run/`). Re-ran
+`diff_o3.py` (path-adjusted copy, `rust_run_finalfix/A.family_join.tsv` in place of `rust_run/...`) against
+the same cached `mcl_ann/adj/o3/v13/flags.tsv`:
+
+| metric | before (§6ia/§6ib) | after (this fix) |
+|---|---|---|
+| flag matches (of 192 Python-tested pairs) | 185/192 (96.4%) | **190/192 (98.96%)** |
+| class matches | 190/192 (99.0%) | 190/192 (99.0%), unchanged |
+| p_poisson relative diff > 1e-6 | 38/192 | 26/192 |
+
+**5 of the 7 pre-fix flag mismatches are now resolved, all confirmed by direct row inspection** (not just
+the aggregate count): `MCL1_073242:15` now reads `flag=missing_copy class=divergent` — Python's own real
+verdict — instead of the pre-fix `untestable` the task brief specifically asked to check (its true 31-read
+control pool, previously collapsed to 1 `assigned` read, is admitted in full now that `ambiguous`/`tied`
+reads count). `MCL27_073242:3`, `MCL20_073242:2`, `MCL125_073244:0`, and `MCL3_073242:5` are now
+**byte-identical to Python on flag, class, AND `n_rejected`** (e.g. `MCL27_073242:3`: `flag=none
+class=divergent n_rej=17` both sides). The remaining **2 flag mismatches, `MCL1_073242:11` and
+`MCL6_073244:2`, are exactly the two §6ib already attributed to input drift (real O2 certificate changes
+between the 2026-09-06 binary that built `sweep_v13` and today's) rather than this defect** — §6ib
+predicted both would survive this exact fix (copy 11 as a not-fully-decomposed compound of drift + the
+defect; copy 2 as drift alone, "the new defect's filter is a no-op here") — matching this run exactly, with
+no new/different mismatches introduced. `MCL1_073242:9` and `MCL252_073244:1`'s 2 pre-existing class
+mismatches (an unrelated `n_rejected` crossing the 3-read minimum between runs, `class=NA` when Rust never
+realigns) are also unchanged, as expected — this fix does not touch that code path.
+
+**Net: Task 7's saga (§6ia, §6ib, §6ic) is closed.** All three real bugs from `6dcf14a8`, the citation
+error from §6ia's correction, the 4th defect diagnosed in §6ib, and its fix verified here are accounted
+for; the only residual mismatches against the 5-day-old Python cache (2/192 flag, 2/192 class) are
+independently confirmed substrate-comparability artifacts, not O3 algorithm defects.
+
+Commit: fix + tests in one commit touching `src/bin/copy_assign.rs` (the filter fix,
+`best_overlap_truth_copy` extraction, 4 new tests) and `src/rustle/vg_family/o3_flag_pass.rs`
+(`locus_or_padded_window` extraction, 4 new tests).
