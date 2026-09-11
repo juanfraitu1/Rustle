@@ -671,13 +671,11 @@ mod pair_detector_tests {
     }
 
     #[test]
-    fn some_locus_branch_of_detect_missing_copy_pairs_does_not_panic() {
-        // Integration-level smoke test for the `Some(locus)` arm inside `detect_missing_copy_pairs`
-        // itself, exercised via a real (if trivial) `PairInput` -- kept below `min_reads` so the call
-        // returns before reaching `realign_batch` (which shells out to a real `minimap2`, unavailable in
-        // unit tests), while still walking the `Some(locus)` destructure and the `locus_or_padded_window`
-        // call above it without error. The window ARITHMETIC itself is covered directly by the three
-        // tests above.
+    fn min_reads_guard_below_threshold_returns_empty() {
+        // Smoke test for detect_missing_copy_pairs when input is below the min_reads threshold.
+        // Verifies the function returns early without crashing when given insufficient rejected reads.
+        // The Some(locus) destructure and locus_or_padded_window call logic are covered separately
+        // by the three locus_or_padded_window unit tests directly above.
         let genome = GenomeIndex::from_seqs(&[("chrT", &[b'A'; 300])]);
         let mut spans = std::collections::HashMap::new();
         // locus extent (0,300) is wider than the bare copy span (100,200).
