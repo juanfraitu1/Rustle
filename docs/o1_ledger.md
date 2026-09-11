@@ -17093,3 +17093,66 @@ targets for anyone investigating the ~30% undetected-family residual further; no
 round.
 
 Related: [[project_soto_full_replication]].
+
+## §6ik — root-causing the 5 largest fully-missed Soto families (2026-09-11)
+
+Prompted by "why are we missing those?" (the 5 largest true families with zero overlap, named in §6ij).
+Dispatched one parallel investigation per family (5-agent workflow), each required to trace concrete
+evidence (real grep/awk/Python output against the actual pipeline files) rather than speculate. All 5
+converged on ONE of three distinct, well-evidenced root causes — none a simple bug to patch:
+
+### 3/5 (ID_176, ID_62, ID_1): `no_eligible_seed_isolated` — an already-adjudicated trade-off, not new
+
+Each of these families has exactly ONE Soto-eligible-biotype gene (protein_coding/unprocessed_pseudogene/
+transcribed_unprocessed_pseudogene/translated_unprocessed_pseudogene) among its true members (10-19 total),
+and in every case that one eligible gene DOES have real, correctly-detected shared-exon edges in
+`shared_exons_2334.tsv` — genuinely linking it to the right non-eligible siblings — but every one of those
+edges has a non-eligible partner. Because `soto_cluster_from_shared.py`'s backbone graph only admits an
+edge when BOTH endpoints are eligible (`if ga in genes and gb in genes`), the lone eligible gene never
+gets a real edge in the filtered graph, is emitted as an isolated singleton with no `family_id`, and
+because `soto_attach_noncoding_members.py`'s attach() only attaches non-eligible genes onto an ALREADY-
+FORMED family (a non-empty `family_id`), none of the correctly-linked non-eligible siblings have anywhere
+to attach either. Net effect: a real, correct shared-exon signal exists in every one of these 3 cases, but
+a family with only one eligible member can mathematically never form a real, multi-gene family under this
+pipeline's own precision-preserving design (§6ih: letting non-eligible biotypes bridge components directly
+was tried and rejected for collapsing precision 0.925→0.730). These 3 misses are the accepted cost of that
+already-made, evidence-based decision, not a bug.
+
+### 1/5 (ID_175): `liftover_regime_switch_drop` — a genuine, potentially fixable gap
+
+TEKT4P2 paralogs + AC134878.2 on the acrocentric short arms of chr13/14/15/21/22. Real ≥0.98-identity
+SEDEF pairs DO connect these exact loci to each other in the raw v2.0 file (e.g.
+chr14:2907780-3085659↔chr21:5671422-5837150 at 0.985615 identity) — this is not a coverage gap. The
+v2.0→v1.0 liftover (`famcn_from_wssd.py`'s `build_liftover`/`lift`, reused unchanged since §6ie) correctly
+places a wide "regime switch" uncertain span (1-4 Mb) on each acrocentric chromosome's short arm, because
+v1.0 and v2.0 rebuilt those regions with different structure and no constant offset is trustworthy there
+— and every one of these genes' own loci sit at or inside that guarded span, so every SEDEF pair touching
+them gets dropped before exon projection ever runs. Soto's own S1C table confirms the biology is real
+(identical SD-unit lists, famCN MAD 0.07, tight agreement) — their own pipeline evidently had a way to
+handle this region (or used a different, non-liftover-dependent coordinate system) that this
+reimplementation's constant-offset shortcut cannot. **Named as a concrete, scoped next step** if pursued
+further: acrocentric short arms need a different (or no) liftover treatment, not investigated this round.
+
+### 1/5 (ID_328): `sedef_coverage_gap_below_98pct` — a real methodological ceiling, not a bug
+
+All 8 members (CU633904.3/.4 paralogs) sit in the classic 5-acrocentric shared-duplicon block at the base
+of chr13/14/15/21/22's short arms. SEDEF DID call this region a segmental duplication (98-198 nearby SD
+rows per locus, cross-linking all five acrocentrics as expected) — but the identity AT these specific gene
+bodies tops out at ~0.913-0.916, well under the 0.98 SD98 cutoff (a targeted ±100kb, ≥0.98-identity scan
+found zero qualifying rows for all 8 genes). Soto's own S1C table shows these genes ARE one real family
+(SD Unit SD10796, Family MAD 0.129, tight famCN agreement ~16.6-17.5) — meaning **Soto's own grouping
+mechanism for this specific family did not go through an SD98 gene-exon pair at all**, but through some
+other (SD-unit / WSSD-CN-based) route their paper's stated SD98+shared-exon recipe does not fully capture
+on its own. This is a genuine ceiling of the SD98-gated replication method itself, not a defect in this
+reimplementation of it.
+
+### Summary
+
+No single fix would recover all 5 — they fail for three structurally different reasons, and 3 of the 5
+are the direct, already-understood cost of a deliberate, evidence-based precision/recall trade-off made
+earlier (§6ih). Of the two genuinely fixable-in-principle gaps, the acrocentric liftover treatment
+(ID_175's cause) is the more scoped, tractable one; ID_328's cause implies Soto's own method has at least
+one family that doesn't strictly follow their own published SD98 recipe, which the paper's prose alone
+would never reveal.
+
+Related: [[project_soto_full_replication]].
