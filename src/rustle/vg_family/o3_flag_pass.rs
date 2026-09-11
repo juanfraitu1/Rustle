@@ -322,7 +322,10 @@ mod tests {
 
 /// Orphan-locus classification (§ "Scope note" in the design doc): OtherFamily > AnnotatedNoUnit >
 /// Unannotated precedence. `all_units_by_chrom`/`genes_by_chrom` built ONCE per run, shared read-only.
-pub(crate) fn classify_orphan_locus(
+/// `pub` (not `pub(crate)`): Task 5 (`src/bin/copy_assign.rs`) is a separate binary crate and calls this
+/// directly per the integration plan's "Consumes" list -- `pub(crate)` here was invisible to it (E0603).
+/// Pure visibility widening, no signature/behavior change; every other item Task 5 needs was already `pub`.
+pub fn classify_orphan_locus(
     chrom: &str,
     start: u64,
     end: u64,
