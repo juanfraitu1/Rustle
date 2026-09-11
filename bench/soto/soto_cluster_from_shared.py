@@ -17,14 +17,33 @@ ELIGIBLE = {"protein_coding", "unprocessed_pseudogene",
             "transcribed_unprocessed_pseudogene", "translated_unprocessed_pseudogene"}
 
 
-def mad(vals):
+def mad_mean(vals):
+    """Mean absolute deviation about the mean -- the paper's own METHODS-text wording ("mean absolute
+    deviation")."""
     if len(vals) < 2:
         return 0.0
     m = sum(vals) / len(vals)
     return sum(abs(v - m) for v in vals) / len(vals)
 
 
-def step5_step6(shared, genes, biotype, famcn, mad_threshold, out_path):
+def mad_median(vals):
+    """Median absolute deviation about the median, UNSCALED (scale=1.0) -- what their actual released
+    code computes (B_SD98_families.ipynb: `stats.median_abs_deviation(wssd_clust_median)`, no `scale=`
+    override, so scipy's own default of 1.0 applies -- NOT the "mean absolute deviation" the paper's own
+    prose describes). Confirmed via two independent reads of the notebook's raw source. Robust to the
+    extreme-CN outliers this project has already documented in famCN distributions (e.g. BET1L=702),
+    which a mean-based statistic is not.
+    """
+    if len(vals) < 2:
+        return 0.0
+    s = sorted(vals)
+    n = len(s)
+    med = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+    dev = sorted(abs(v - med) for v in vals)
+    return dev[n // 2] if n % 2 else (dev[n // 2 - 1] + dev[n // 2]) / 2
+
+
+def step5_step6(shared, genes, biotype, famcn, mad_threshold, out_path, mad_fn=mad_mean):
     """shared: gene -> set(partner genes). genes: set of all SD98 gene ids (for singleton bookkeeping).
     biotype: gene -> biotype string. famcn: gene -> float famCN (genes absent are treated as un-splittable).
     Writes `out_path` in the same TSV shape soto_replicate_clustering.py emits.
@@ -47,13 +66,13 @@ def step5_step6(shared, genes, biotype, famcn, mad_threshold, out_path):
     final = []
     for comp in comps:
         vals = [(famcn[g], g) for g in comp if g in famcn]
-        if len(vals) < 2 or mad([v for v, _ in vals]) < mad_threshold:
+        if len(vals) < 2 or mad_fn([v for v, _ in vals]) < mad_threshold:
             final.append(comp)
             continue
         vals.sort()
         cur, groups = [], []
         for v, g in vals:
-            if cur and mad([x for x, _ in cur] + [v]) >= mad_threshold:
+            if cur and mad_fn([x for x, _ in cur] + [v]) >= mad_threshold:
                 groups.append([g2 for _, g2 in cur])
                 cur = []
             cur.append((v, g))
@@ -94,8 +113,13 @@ def main():
     ap.add_argument("--geneset", required=True)
     ap.add_argument("--famcn", required=True)
     ap.add_argument("--mad", type=float, default=1.0)
+    ap.add_argument("--mad-statistic", choices=["mean", "median"], default="mean",
+                     help="mean = the paper's own METHODS-text wording; median = what their released "
+                          "code (B_SD98_families.ipynb) actually computes (scipy median_abs_deviation, "
+                          "unscaled) -- default stays 'mean' so this flag is opt-in, not a silent change")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    mad_fn = mad_median if a.mad_statistic == "median" else mad_mean
 
     genes, biotype = set(), {}
     with open(a.geneset) as fh:
@@ -119,7 +143,7 @@ def main():
             except (TypeError, ValueError):
                 pass
 
-    n_fam, n_single, n_comps = step5_step6(shared, genes, biotype, famcn, a.mad, a.out)
+    n_fam, n_single, n_comps = step5_step6(shared, genes, biotype, famcn, a.mad, a.out, mad_fn=mad_fn)
     print(f"[step4-input] {len(genes)} SD98 genes, {len(shared)} genes with >=1 shared exon, "
           f"{n_comps} raw components", file=sys.stderr)
     print(f"[done] {n_fam} families, {n_single} singleton/ineligible genes -> {a.out}", file=sys.stderr)

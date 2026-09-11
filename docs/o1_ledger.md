@@ -16784,3 +16784,101 @@ published families than the best prior approach.
 
 Related: [[project_soto_full_replication]], [[project_soto_audit_14agent]],
 [[project-soto-descoped-mcl-pivot]], [[project_soto_cn_data_famcn_vs_parcn]].
+
+## §6if — SOTO'S ACTUAL RELEASED CODE READ DIRECTLY: real MAD-statistic mismatch found and fixed, new best ARI 0.767 (2026-09-11)
+
+Prompted by "is there a way to get exactly or almost exactly Soto's numbers" — every prior reimplementation
+in this project (including §6ie) was built from the paper's own natural-language METHODS text, never from
+their actual released code. Their repo (cited in the paper as "github.com/mydennislab/HSD_", the real slug
+is `mydennislab/HSD_brain_evolution`, found via web search — the paper's own citation is a truncated/wrong
+slug) was fetched and read directly: `section_I&II/B_SD98_families.ipynb` implements exactly the
+famCN-MAD-split + family-assignment step (their own step 5-6, the counterpart to `soto_cluster_from_shared.py`).
+
+### Finding 1: they compute MEDIAN absolute deviation, not MEAN — confirmed by TWO independent reads of the raw notebook source, then independently cross-checked against a real scipy install
+
+```python
+def get_mad(elements):
+    wssd_clust=wssd[wssd.index.isin(elements)]
+    wssd_clust_median=wssd_clust.median(axis=1)
+    return stats.median_abs_deviation(wssd_clust_median)
+```
+`from scipy import stats`, no `scale=` override, so scipy's own default (`scale=1.0`, unscaled) applies —
+**this is the MEDIAN absolute deviation about the median, not the "mean absolute deviation" the paper's own
+prose describes** (which every reimplementation across this whole project, including `project_soto_full_
+replication.md`'s own explicit note "MAD here is mean ABSOLUTE deviation about the mean (their exact
+words)", has computed this entire time). Verified: my own `mad_median()` implementation gives 1.0 on
+`[1,2,3,4,100]`, and a real `scipy.stats.median_abs_deviation([1,2,3,4,100])` call gives 1.0 — exact match.
+Given famCN's well-documented extreme right-skew (BET1L=702, other high-CN outliers per this project's own
+`project_soto_cn_data_famcn_vs_parcn.md`), a median-based statistic is far more robust to exactly the kind
+of outlier that has dogged every mean-based famCN-split attempt in this project's history.
+
+**Result** (same 1,793-gene universe, same shared-exon graph as §6ie, "split" clustering unchanged, only
+the MAD statistic swapped): **ARI 0.7665** (was 0.7510 mean-based / 0.757 the 08-02 tiling result — the
+BEST number this entire multi-week replication effort has produced), pair F1 0.768 (was 0.752), pair
+recall 0.694 (was 0.634) — at the cost of exact-family-match dropping to 42.4% (was 47.7%) and precision
+to 0.859 (was 0.925). A real trade-off, not a strict win on every axis — reported honestly, not
+cherry-picked. Implemented as `mad_mean`/`mad_median` in `bench/soto/soto_cluster_from_shared.py`, selected
+via `--mad-statistic {mean,median}` (default kept at `mean` — a default flip is the user's decision, not
+made unilaterally here, per this project's standing convention).
+
+### Finding 2: their real clustering algorithm FILTERS raw clusters by MAD first (discarding failures outright), then MERGES survivors through coding-gene bridges only — NOT "build one graph, split an over-large component"
+
+Full while-loop recovered via a third, even more targeted fetch (an earlier fetch had truncated it
+mid-loop):
+```python
+i=0
+while True:
+    if any(x in gene_cluster[i] for x in ["protein_coding","unprocessed_pseudogene"]):
+        for cluster in low_dispersion_clusters:
+            if gene_cluster[i] in cluster:
+                gene_cluster = list(set(gene_cluster+cluster))
+    i+=1
+    if i == len(gene_cluster):
+        families.append(sorted(str(c) for c in gene_cluster))
+        break
+```
+Confirmed read-only over `low_dispersion_clusters` (no deletion/consumption), confirmed `high_dispersion_
+clusters` never appear again after the initial MAD split (their own family output file is literally named
+`results/low_dispersion_families.txt`). So their real step 5 is: (a) MAD-filter each RAW shared-exon
+cluster PASS/FAIL, discarding FAIL clusters entirely rather than trying to rescue sub-groups from them
+via any kind of split; (b) for every protein-coding/unprocessed-pseudogene gene in a surviving
+low-dispersion cluster, transitively union in any OTHER low-dispersion cluster reachable through a
+CODING gene specifically — two clusters sharing only a non-coding gene (lncRNA, processed pseudogene)
+are never merged. Every prior reimplementation in this project (including this session's own §6ie) instead
+built ONE full shared-exon graph via unrestricted transitive closure, then greedily split any
+over-dispersed component — answering a "how do you split a bad component" question their code never asks.
+
+**Implemented and tested** as `bench/soto/soto_cluster_dennislab_algorithm.py` (a faithful, separately-named
+port, not folded into the existing script given how structurally different it is). Confirmed by unit test
+that on genuinely DISJOINT input (real connected components, which by construction can never let a gene
+appear in two different clusters) the coding-bridge merge step is provably a no-op — meaning this script,
+fed from THIS project's own full-transitive-closure shared-exon graph, can only test the "discard vs
+split" half of the discrepancy, not the "selective coding-bridge merge" half; the merge logic needs their
+SAME finer initial clustering granularity to matter, which is defined in a separate file
+(`section_I&II/A_SD98_regions.md`, not yet fetched/read).
+
+**Result, tested anyway to see the isolated "discard vs split" effect**: WORSE, not better — ARI 0.541
+(mean-MAD) / 0.564 (median-MAD), pair recall collapses to 0.38-0.41. Diagnosed why: this project's raw
+shared-exon components are built via unrestricted transitive closure across the WHOLE gene universe, so
+they end up larger/noisier BEFORE any MAD filtering than their (evidently finer-grained) raw clusters
+would be — discarding an oversized, noisy component outright loses far more true signal than in a
+pipeline whose raw clusters start smaller and more internally coherent. **Parked, not adopted**: the
+"discard, don't split" rule is confirmed real (read directly from their code, not guessed), but properly
+testing it requires first reproducing their initial clustering step's exact granularity — a further,
+separate investigation, not started this round.
+
+### Bottom line for "did you try everything"
+
+Went past the paper's own METHODS prose to their literally released, executable code (a step this
+replication effort had not previously taken across its whole multi-week history) and found two real,
+previously-unknown discrepancies from the prose description. One (MAD statistic) is adopted and gives
+the best number this project has produced (ARI 0.7665). The other (discard-vs-split with coding-gene-
+gated merging) is faithfully implemented, tested, found to require a further prerequisite fix to be a
+fair comparison, and parked with that exact, named next step rather than silently dropped. **True exact
+reproduction remains not achievable** for a reason already disclosed and unfixable in principle: Soto's
+own step 2 (manual curation removing redundant/read-through-fusion transcripts) is an undocumented human
+judgment call, which their own paper text discloses as producing residual gene-set imprecision (96.19%,
+not 100%) no amount of further code archaeology can close.
+
+Related: [[project_soto_full_replication]], [[project_soto_audit_14agent]],
+[[project_soto_cn_data_famcn_vs_parcn]].
