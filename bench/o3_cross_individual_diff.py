@@ -18,12 +18,41 @@ import csv
 
 
 def load(path):
+    """Load a `<out>.family_join.tsv` into {(catalog_family_id, catalog_copy_idx): o3_flag}.
+
+    A single catalog copy can appear on more than one row of the same file: `copy_assign --families`
+    can independently re-process the same underlying catalog copy under two different LOCALLY-detected
+    `family_id` groupings (column 1) when nearby regions/windows both reach it -- the `catalog_family_id`/
+    `catalog_copy_idx` columns (the stable catalog identity this script joins on) still agree, but the row
+    is duplicated. Silently keeping "whichever row happened to be read last" would be a real bug if the two
+    rows ever disagreed on `o3_flag` -- so this is checked and reported, not assumed away.
+    """
     rows = {}
+    dupe_keys = set()
+    conflicts = []
     with open(path) as fh:
         for r in csv.DictReader(fh, delimiter="\t"):
             if "o3_flag" not in r:
                 raise SystemExit(f"{path}: no o3_flag column -- was --flag-missing-copies set for this run?")
-            rows[(r["catalog_family_id"], r["catalog_copy_idx"])] = r["o3_flag"]
+            k = (r["catalog_family_id"], r["catalog_copy_idx"])
+            if k in rows:
+                dupe_keys.add(k)
+                if rows[k] != r["o3_flag"]:
+                    conflicts.append((k, rows[k], r["o3_flag"]))
+            rows[k] = r["o3_flag"]
+    if conflicts:
+        detail = "; ".join(f"{fam}:{cidx} was {v1!r} then {v2!r}" for (fam, cidx), v1, v2 in conflicts)
+        raise SystemExit(
+            f"{path}: {len(conflicts)} catalog (family_id, copy_idx) key(s) appear on multiple rows with "
+            f"DIFFERING o3_flag values -- cannot pick a winner silently: {detail}"
+        )
+    if dupe_keys:
+        print(
+            f"NOTE: {path}: {len(dupe_keys)} catalog copy key(s) appear on more than one row "
+            f"(same underlying copy processed under >1 local family grouping); every duplicate agreed on "
+            f"o3_flag, so the row count for this file ({sum(1 for _ in open(path)) - 1}) is "
+            f"{len(dupe_keys)} higher than the distinct-copy count used below ({len(rows)})."
+        )
     return rows
 
 
@@ -64,6 +93,13 @@ def main():
     print(f"{len(keys)} copies compared")
     for c, n in sorted(cats.items(), key=lambda kv: -kv[1]):
         print(f"  {c}: {n}")
+    na_only = sum(1 for k in keys if ra.get(k, "NA") == "NA" or rb.get(k, "NA") == "NA")
+    n_both_testable = len(keys) - na_only
+    print(
+        f"\nof these, {n_both_testable} were actually scored by O3 in BOTH arms ({na_only} are present in "
+        f"only one arm's catalog -- excluded/never run in the other -- and so were never testable there at "
+        f"all; do not call the full {len(keys)}-copy union \"testable\")."
+    )
     no_signal_frac = cats["no_signal"] / max(1, len(keys))
     print(
         f"\nno_signal fraction: {no_signal_frac:.3f} -- per the design doc, this should be the "

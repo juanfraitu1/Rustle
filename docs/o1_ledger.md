@@ -16511,6 +16511,20 @@ the containment check at `copy_assign.rs:1447` require) — 1443 inputs -> 731 m
 total span (down from 2610.9 Mb un-filtered; excluding `MCL0`'s cross-chrom spans is most of the
 difference).
 
+⚠ **Arithmetic note, added on review (fix round 1).** "2276 copies"/"2080 copies" above are **catalog
+INPUT row counts** (`testis.catalog.tsv`/`fibroblast.catalog.tsv`, each independently verified to have
+zero duplicate `(family_id, copy_idx)` keys). The **OUTPUT** `family_join.tsv` from each run has that
+same row count (2276 / 2080) but only **2268 / 2072 distinct catalog copies** — 8 catalog copies in each
+run were independently reprocessed under two different LOCALLY-detected `family_id` groupings (column 1,
+distinct from the stable `catalog_family_id`/`catalog_copy_idx` columns this diff joins on), because two
+nearby merged regions both reached the same underlying copy; every one of these 16 duplicate row-pairs
+(8 per arm) was checked directly and **agrees on `o3_flag`** in both files, so the categorization result
+below is unaffected. `bench/o3_cross_individual_diff.py`'s `load()` now detects this instead of silently
+trusting a dict-overwrite: it counts and reports agreeing duplicates, and hard-aborts if any duplicate
+pair ever disagreed (it doesn't, here). This is why the diff below compares **2268** copies, not 2276:
+2268 = testis's distinct-copy count; fibroblast's 2072 distinct copies are a subset of it by construction
+(2268 − 196 zero-read exclusions = 2072), so `set(ra) | set(rb) = 2268` exactly, as it must.
+
 **Runs** (`/mnt/linuxdisk/home/juanfraitu/o3_diff/`, foreground, one at a time, `ulimit -v 20000000`,
 `timeout 14400`, `--skip-poa-diagnostic`, no orphan `copy_assign` before or between): both completed
 well inside budget — testis exit 0 (a few minutes), fibroblast exit 0 (~4 minutes, background-tracked
@@ -16543,10 +16557,15 @@ testis --label-b fibroblast`), 2268 copies compared (union of catalog keys):
 **Bottom line:** the shape-based flag pass behaves as designed on this pair — 90.9% no_signal, well above
 the "overwhelming majority" bar the design doc set as its own sanity gate before trusting anything — and
 does not degenerate into a coin-flip the way the raw read-presence screen (§4l) did. It surfaces exactly
-2 candidates out of 2268 testable copies, one of which (`MCL2288:0`) is not explained by an obvious
-data-quantity confound. Genuinely exploratory: not claimed as a finding, no third individual or PCR
-follow-up performed.
+2 candidates out of the **2072 copies actually scored by O3 in BOTH arms** (2268 total compared, minus the
+196 present only in testis's catalog — excluded from fibroblast's run entirely for the zero-read reason
+above, so never testable there at all; the diff script now prints this 2072 figure directly rather than
+letting the 2268-copy union pass as "testable"). One of the two (`MCL2288:0`) is not explained by an
+obvious data-quantity confound. Genuinely exploratory: not claimed as a finding, no third individual or
+PCR follow-up performed.
 
 Commit: `bench/o3_cross_individual_diff.py` (new) + `bench/merge_regions.py` (new, generic region-merge
-helper). No `src/` changes. Run outputs, logs, and derived catalog/region files live under
+helper); a follow-up commit (fix round 1) hardened `load()` against the duplicate-key case above and
+added the 2072-both-arms-testable line to the script's own output, plus this section's arithmetic note.
+No `src/` changes. Run outputs, logs, and derived catalog/region files live under
 `/mnt/linuxdisk/home/juanfraitu/o3_diff/`, not committed.
