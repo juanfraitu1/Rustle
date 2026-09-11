@@ -17221,3 +17221,61 @@ New canonical outputs: `shared_exons_2334_acrofix.tsv`, `replicated_families_233
 all under `/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_replication/`.
 
 Related: [[project_soto_full_replication]].
+
+## §6im — single-eligible-seed islands: a real, sizeable win (2026-09-11)
+
+Follow-up to "can we try to fix that [the residual gap] and maybe learn from that for our own families
+definition" — targeting §6ik's `no_eligible_seed_isolated` cases (3/5 of the largest fully-missed true
+families: ID_176/ID_62/ID_1). Those have exactly one Soto-eligible-biotype gene among their TRUE members,
+with real, correctly-detected shared-exon edges to non-eligible siblings that the eligible-eligible-only
+backbone filter (§6ih) discards, stranding the eligible gene as a singleton.
+
+**The key argument, provable rather than a threshold**: a raw (full, unfiltered) connected component that
+touches EXACTLY ONE eligible-biotype gene cannot be a promiscuous bridge between two eligible families —
+bridging requires the component to reach >=2 eligible genes, and if it did, it would (by definition of
+"connected component") already BE one component containing both, not two separate ones. So such a
+component's full edges can be admitted wholesale with NONE of the precision risk that killed the naive
+"add all extra genes as graph nodes" attempt (§6ih: precision 0.925->0.730) — that risk is specifically a
+promiscuous gene reaching INTO a second eligible-anchored component, which a single-eligible-seed island
+cannot do by construction. Implemented in `soto_cluster_from_shared.py` (gated behind the existing
+`--full-geneset` flag, byte-identical when omitted — re-verified against the pre-edit script on identical
+input, `sort | md5sum` match).
+
+**Result**: 53 raw components (155 genes total) qualified genome-wide — far more than the 3 named cases,
+since the same isolated-single-eligible-seed pattern recurs broadly, not just in the 3 largest instances.
+
+| variant | ARI | exact | pair P/R/F1 | bipartite MICRO P/R | bipartite MACRO P/R | undetected |
+|---|---|---|---|---|---|---|
+| median-MAD+attach, acrofix only | 0.6827 | 193/491 (39.3%) | 0.837/0.578/0.684 | 0.769/0.632 | 0.621/0.613 | 153/491 (31.2%) |
+| **median-MAD+attach, +islands** | **0.6945** | **236/491 (48.1%)** | 0.840/0.594/0.696 | 0.785/0.703 | 0.722/0.708 | **103/491 (21.0%)** |
+| mean-MAD+attach, acrofix only | 0.6723 | 216/491 (44.0%) | 0.904/0.537/0.674 | 0.800/0.645 | 0.660/0.635 | 142/491 (28.9%) |
+| **mean-MAD+attach, +islands** | **0.6849** | **259/491 (52.7%)** | 0.906/0.552/0.686 | 0.813/0.716 | 0.762/0.731 | **92/491 (18.7%)** |
+
+**Precision held, exactly as the argument predicts**: pair precision moved 0.837->0.840 (median) and
+0.904->0.906 (mean) — a small INCREASE, not the collapse a naive full-bridging rule would cause. Recall
+and every other figure jumped substantially (median exact-match +8.8 points, undetected-family count
+-50/491; mean exact-match +8.7 points, undetected -50/491).
+
+**Confirmed directly**: ID_176 (18 members) and ID_1 (10 members) both drop out of the bipartite scorer's
+undetected list entirely. **ID_62 does NOT recover, and investigating why is itself a correction to
+§6ik's diagnosis**: its one "eligible" member (CHM13_G0037811) does have real edges, but they lead into a
+**210-gene raw component containing 99 other eligible genes** — a genuinely promiscuous shared cluster
+(retrogene/processed-pseudogene-rich, matching its true members' biotypes: 17/19 are
+processed_pseudogene/transcribed_processed_pseudogene) that legitimately spans many unrelated true
+families and is correctly EXCLUDED from wholesale admission by the ">=2 eligible genes" rule. §6ik's
+"exactly one eligible-biotype gene" count was taken over ID_62's own TRUE members, not the actual detected
+graph component it sits in — those are different things, and ID_62 was never really the same shape of
+problem as ID_176/ID_1, just superficially similar-looking from the truth table alone.
+
+**Lesson for O1** (the actual thesis-relevant RNA-side family definition, not this side replication): the
+generalizable principle is "a permissive/promiscuous edge type is safe to admit exactly when doing so
+cannot bridge two independently-anchored components — checked by connected-component structure, not a
+threshold" — a clean, provable admission rule rather than an arbitrary confidence cutoff. Whether this
+maps onto anything in O1's own node/family construction (e.g., weak or multi-mapped read-support edges
+currently excluded wholesale to avoid false merges) is a live question, not yet investigated as of this
+entry — flagged for follow-up, not claimed as already checked against O1's code.
+
+New canonical outputs: `replicated_families_2334_median_islands.tsv`, `replicated_families_2334_mean_islands.tsv`
+(same directory as §6il).
+
+Related: [[project_soto_full_replication]].

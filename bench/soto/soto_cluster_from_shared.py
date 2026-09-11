@@ -22,6 +22,16 @@ and rejected (§6ih: precision 0.925->0.730, the same promiscuous-bridge-gene fa
 mega-component bug). It attaches each extra gene to whichever already-formed family it shares an exon
 with (ties broken by edge count), via soto_attach_noncoding_members.py's attach() -- one implementation,
 imported here, not duplicated.
+
+SINGLE-ELIGIBLE-SEED ISLANDS (docs/o1_ledger.md §6im), also gated by --full-geneset: a raw (full,
+unfiltered) connected component that touches EXACTLY ONE eligible-biotype gene cannot be a promiscuous
+bridge between two eligible families -- bridging requires the component to reach >=2 eligible genes, and
+if it did, it would (by definition of "connected component") already be ONE component containing both,
+not two separate ones. So such a component's full edges are admitted wholesale before clustering, with
+none of the precision risk §6ih measured (that risk is specifically a promiscuous gene reaching INTO a
+second eligible-anchored component). This recovers the §6ik `no_eligible_seed_isolated` case (3/5 of the
+largest fully-missed true families: a lone eligible gene with only non-eligible siblings, correctly
+edge-connected but stranded because the filtered backbone graph has no node for its partners).
 """
 import argparse, csv, os, sys
 from collections import defaultdict
@@ -163,6 +173,46 @@ def main():
                 shared[ga].add(gb)
                 shared[gb].add(ga)
 
+    full_biotype = {}
+    if a.full_geneset:
+        with open(a.full_geneset) as fh:
+            full_rows = list(csv.DictReader(fh, delimiter="\t"))
+        full_genes_all = {r["gene_id"] for r in full_rows}
+        for r in full_rows:
+            full_biotype[r["gene_id"]] = r.get("biotype", "")
+        biotype.update(full_biotype)
+
+        full_adj = defaultdict(set)
+        with open(a.shared) as fh:
+            for r in csv.DictReader(fh, delimiter="\t"):
+                ga, gb = r["gene_a"], r["gene_b"]
+                if ga in full_genes_all and gb in full_genes_all:
+                    full_adj[ga].add(gb)
+                    full_adj[gb].add(ga)
+
+        seen_full, n_islands, n_island_genes = set(), 0, 0
+        for g in full_adj:
+            if g in seen_full:
+                continue
+            stack, comp = [g], []
+            seen_full.add(g)
+            while stack:
+                x = stack.pop()
+                comp.append(x)
+                for y in full_adj[x]:
+                    if y not in seen_full:
+                        seen_full.add(y)
+                        stack.append(y)
+            if sum(1 for x in comp if x in genes) == 1:
+                n_islands += 1
+                n_island_genes += len(comp)
+                for x in comp:
+                    for y in full_adj[x]:
+                        shared[x].add(y)
+                        shared[y].add(x)
+        print(f"[single-eligible-seed] {n_islands} raw component(s) ({n_island_genes} genes total) with "
+              f"exactly one eligible gene -- admitted wholesale", file=sys.stderr)
+
     famcn = {}
     with open(a.famcn) as fh:
         for r in csv.DictReader(fh, delimiter="\t"):
@@ -192,12 +242,10 @@ def main():
             if r["family_id"]:
                 gene_family[r["gene_id"]] = r["family_id"]
 
-    with open(a.full_geneset) as fh:
-        full_genes, full_biotype = set(), {}
-        for r in csv.DictReader(fh, delimiter="\t"):
-            full_genes.add(r["gene_id"])
-            full_biotype[r["gene_id"]] = r.get("biotype", "")
-    extra_genes = full_genes - genes
+    # exclude genes already placed by the single-eligible-seed-island step above (gene_family already
+    # has their real family_id from the rows just read back) -- otherwise attach() would reconsider them
+    # and the write loop below would emit a duplicate row for the same gene_id.
+    extra_genes = full_genes_all - genes - set(gene_family)
     attached = attach(gene_family, extra_genes, a.shared)
 
     fam_size = defaultdict(int)
