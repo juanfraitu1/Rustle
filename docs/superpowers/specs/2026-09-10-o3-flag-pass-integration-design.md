@@ -24,6 +24,29 @@ as a new opt-in flag on `copy_assign`, so that:
 3. Its output lands on **existing** `copy_assign` output files wherever a natural home exists, rather
    than only ever appearing in a disconnected sidecar (**surfaced in existing outputs**).
 
+### Caveat: expected flag rate on the matched substrate is near-zero, and that is correct, not a bug
+
+The standard gorilla substrate (fibroblast IsoSeq) is proven same-CELL-LINE as the mGorGor1 assembly
+itself (SRA-accession match + a 13.5× hom-alt-vs-het internal control, `project_o3_matched_individual.md`).
+On this substrate, a reference-absent copy has very little room to exist by construction — the reference
+*is* this individual's genome. Measured, not assumed: the shipped RNA-side detector already fires
+**0/915** on it, and an independent DNA-side assembly-vs-assembly check (the field's own S1 standard)
+found **0/817** collapse-shaped deficits, a result the literature's own prior (Yoo/Rhie 2025: "1–2 Mbp
+collapse per haplotype") predicts in advance (0.47–0.94 expected in that compartment). **Do not read a
+near-zero `missing_copy` flag rate from `--flag-missing-copies` on this substrate as evidence the port
+is broken — it is the expected result of running a reference-absence detector on a reference that
+already contains the tested individual.**
+
+The one place this project found a real, if thin, residual even under exact-match conditions is a
+one-time exploratory pass, not this detector: 3 candidate loci at ~0.94 identity to every haplotype of
+the diploid assembly, not explained by repeat content, not rescued by either parental haplotype — but
+with only n=3, no PCR validation, and a live undisambiguated confound (cultured fibroblast lines
+accumulate somatic drift from the sequenced germline DNA independent of any real "missing copy").
+TSPY (Rhie et al. 2023, *Nature* 621) is the concrete proof that the large-magnitude version of this
+phenomenon — 10–40 copies across a human population against one reference individual — needs
+**non-matched-individual** data to appear at all. See the "Detecting the real signal" addendum below,
+which is a second, complementary tool this design does not itself build.
+
 ## Non-goals
 
 - Porting `o3_cut_certificate.py` (scores O1 MCL cuts) or `o3_reconstruct.py` (patches consensus at
@@ -271,6 +294,83 @@ Python's own `poisson_tail`).
   `o3_candidate_loci.tsv` are well-formed and the run completes in reasonable time (the realignment step
   adds real minimap2 subprocess cost per candidate Y — worth a rough wall-clock number in the plan, not
   assumed free).
+
+## Follow-on: cross-individual differential (detecting the TSPY-style signal)
+
+Out of scope for the flag-pass port itself, but reuses it entirely — recorded here rather than in a
+separate spec because it is one more invocation of the same module, not a new detector.
+
+### Why this is not speculative — the data already exists
+
+Two independent, already-built gorilla substrates exist on disk today:
+- `/mnt/linuxdisk/home/juanfraitu/fibroblasts/GCA_029281585.2_flnc_mm.bam` — **matched**: proven (SRA
+  accession match + a 13.5× hom-alt-vs-het internal control) to be the exact cell line the mGorGor1
+  assembly was built from.
+- `/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_ds.bam` (parent: `GGO_mm.bam`) — **OR6737, testis, a
+  different animal**. This is not a side dataset: it is the substrate behind `gw_units_v3`, the
+  genome-wide catalog this project's O1 work (including this session's own C6 hold-out pick) is built
+  from. A depth-matched fibroblast replicate, `o1_replicate/fibro_ds.bam`, already exists for exactly
+  this kind of paired comparison.
+
+A prior attempt at exactly this comparison (ledger §4l, "cross-substrate replication," 2026-08-23) found
+O1's family relation transports well across the pair (87.06% edge recovery, ARI 0.9707), but its
+per-family **read-presence** screen (does a copy have ≥1 read in each tissue) came back null with no
+directional bias (33/52 differ, 16/17 split, binomial p=1.0) — and the ledger's own verdict is explicit:
+*"the read-presence screen cannot test the hypothesis — it measures expression."* A copy genuinely absent
+from one individual and a copy merely silenced in one tissue look identical under presence/absence. No
+follow-up built a copy-number-*shaped* test on this pair — that gap is what this section closes.
+
+### The design: diff two flag-pass runs, not two read counts
+
+Run `copy_assign --families mcl_ann/gw_units_v3.units.tsv --flag-missing-copies` twice against the SAME
+catalog — once with `GGO_ds.bam` (testis/OR6737), once with `fibro_ds.bam` (matched fibroblast, already
+depth-matched) — then compare each copy `Y`'s flag between the two runs instead of comparing raw read
+counts. This is the fix for exactly what killed the presence screen: `Flag::MissingCopy` already tests
+the *shape* of a mismatch pattern (consistent-site density against Y's own control), not raw depth, so a
+tissue-driven expression difference that affects both the test and control populations similarly should
+not by itself flip the flag, while a genuine between-individual copy-count difference plausibly would.
+
+Comparison categories (deliberately distinct from a simple boolean diff, to avoid re-making the §4l
+mistake of conflating "no data" with "no signal"):
+
+| Testis flag | Fibroblast flag | Category | Interpretation |
+|---|---|---|---|
+| `MissingCopy` | `None` | **Candidate differential** | Both arms had adequate testable data; only one shows the divergence signature — the interesting case. |
+| `None` | `MissingCopy` | **Candidate differential** | Same, other direction. |
+| `MissingCopy` | `MissingCopy` | Shared | Signal in both individuals against this reference — an O1 catalog-completeness question, not a between-individual one. |
+| `MissingCopy` or `None` | `Untestable` (or vice versa) | Inconclusive | One arm lacked enough control/rejected reads to test at all; report separately, never counted as a confirmed differential. |
+| `Untestable` | `Untestable` | No information | Drop. |
+| `None` | `None` | No signal | Not flagged. |
+
+Only the **Candidate differential** row is the TSPY-style hypothesis; everything else is reported for
+transparency but not claimed as a finding.
+
+### Scope: a comparison script, not new detector code
+
+The diff itself is a join over two already-written `<out>.family_join.tsv` files on `(family_id,
+copy_idx)`, comparing the `o3_flag` column — no realignment, no statistics of its own. This is exactly
+the shape of the existing `bench/` comparison scripts (e.g. `isoform_bakeoff.py` diffing multiple tools'
+GTFs), so it belongs there as a small Python script (`bench/o3_cross_individual_diff.py`), not as more
+Rust: the detector logic already lives in Rust (this design), the cross-run comparison is a lightweight
+join that gains nothing from a native port.
+
+### What's NOT established, and must not be overclaimed
+
+- **This is exploratory, not validated.** There is no known-true-positive gorilla case (no gorilla TSPY
+  equivalent with an independently confirmed answer) to check the comparison against — unlike the
+  human paper's TSPY, where ddPCR and AmpliCoNE independently confirm the count. Any "candidate
+  differential" result is a hypothesis for follow-up (targeted PCR, a third individual, or literature
+  cross-reference for that specific gene family), not a proven missing copy.
+- **The catalog-transport assumption needs its own sanity check before trusting any result**: `gw_units_v3`'s
+  unit definitions were built using the TESTIS reads. §4l's 87% edge-recovery figure is about O1's
+  family *topology* transporting across substrates, not a guarantee that every unit's exact boundary
+  realigns equally well to fibroblast reads for O3's specific consistent-mismatch-site statistic. Before
+  trusting any differential candidate, check that the overwhelming majority of tested pairs land in
+  "no signal" (both `None`) — if the split looks anywhere near even, the catalog itself is the confound,
+  not individual biology.
+- Depth-matching (`fibro_ds.bam` already downsampled to `GGO_ds.bam`'s depth) controls for library-size
+  differences but not for tissue-specific library complexity/duplication-rate differences, which are not
+  independently checked here.
 
 ## Open questions for the plan (not blocking this design, but worth flagging)
 
