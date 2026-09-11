@@ -16944,3 +16944,77 @@ from-scratch gene-set derivation where Soto's own published list isn't available
 problem the way it does here.
 
 Related: [[project_soto_full_replication]].
+
+## §6ih — including pseudogenes/lncRNAs as family members: a real improvement, AND a self-caught scoring flaw (2026-09-11)
+
+Prompted by: "could we somehow also include pseudogenes... make my results more similar to Soto's?"
+Investigated whether §6ie/§6if's gene universe (Soto's own 1,793-gene "family-eligible" set, `In Table S1
+(SD98 gene set)=Yes`) was wrongly excluding real family MEMBERS that just aren't eligible to FOUND a
+family on their own — per Soto's own text: "SD98 genes associated with other gene features, including
+lncRNAs and processed pseudogenes, were also assigned a gene family ID [when they join one]".
+
+### Confirmed: 541 real member genes were entirely absent from every run so far
+
+`soto_famCN_S1C.tsv` has 2,334 unique genes total, not 1,793 — the other 541 (mostly lncRNA 345 /
+processed_pseudogene 290, plus smaller counts of miRNA/IG_V_pseudogene/StringTie-called genes/etc.) carry
+a real Family ID but are flagged `In Table S1=No` (not family-eligible on their own). §6ie/§6if's pipeline
+never loaded these 541 genes at all — not into the graph, not into scoring. Also found: 149 genes in S1C
+have MORE THAN ONE distinct Family ID across duplicate rows (ambiguous ground truth, e.g. CICP18/CICP3
+from §6ie's Bug-1 investigation) — excluded from all scoring below as undecidable for a partition metric,
+disclosed rather than silently resolved.
+
+### First attempt (naive): add all 541 into the shared-exon graph directly — REJECTED, precision collapses
+
+Rebuilt the graph over the full 2,334-gene universe (`soto_replicate_from_sedef.py --geneset
+soto_2334_geneset.tsv`): 2,179/2,334 genes now get an edge (up from 1,606/1,793), but letting these more
+repetitive biotypes act as full graph nodes — able to BRIDGE two otherwise-separate components, not just
+join one — collapses pair precision from 0.925→0.730 (mean-MAD). Same failure mode as §6ie's Bug 1
+(transitive over-merging through promiscuous bridge genes), for the same underlying reason the user
+flagged up front: pseudogenes are numerous and not all overlaps are real paralogy.
+
+### Second attempt: attach non-eligible genes to an ALREADY-FORMED family, never let them merge two — adopted
+
+`bench/soto/soto_attach_noncoding_members.py`: cluster on the eligible-only 1,793-gene backbone exactly as
+before (unchanged), then separately check each of the 541 extra genes for a shared-exon edge to any gene
+ALREADY placed in a family; attach it there (ties broken by edge count, disclosed, not specified in
+Soto's own text). This matches both their paper's prose and the coding-gene-gated bridging in their real
+algorithm (§6if Finding 2) without needing to reimplement that algorithm's finer initial-clustering
+prerequisite. 275/541 extra genes (50.8%) get attached this way; 266 have no edge to any formed family
+and stay unplaced.
+
+### Self-caught: this whole investigation exposed a RECURRENCE of an already-retracted metric trap
+
+Scoring the "no attachment" baseline against the FULL, honest 2,185-gene truth universe (via the new
+`bench/soto/soto_score_against_truth.py`, built and cross-verified against every previously hand-computed
+number in this thread) gives **ARI 0.6394** (median-MAD) / **0.6190** (mean-MAD) — markedly LOWER than the
+0.7665/0.7510 headline reported in §6if. The reason: those headline numbers were scored ONLY over the
+1,793-gene eligible universe, silently excluding the 541 real genes Soto's own table DOES place in a
+family — the SAME shrinking-denominator defect this project's own Soto work already caught and retracted
+once before (`project_soto_full_replication.md`, 2026-08-02: "calling a gene solitary IS a failure to
+reproduce, not an absence of data"). §6if's own 1,793-scoped numbers were accurately labeled at the time
+("scored against Soto's own published 1,793-gene universe") and are not WRONG as described — but they
+answer a narrower question ("how well do we cluster the family-eligible genes") than the complete one
+("how well do we reproduce Soto's real family membership"), and should not be quoted as the project's
+best number without that qualification going forward.
+
+### Final, complete comparison (all numbers via the new `soto_score_against_truth.py`, same script, no
+cherry-picking between ad hoc calculations)
+
+| variant | universe | ARI | exact | pair P/R/F1 |
+|---|---|---|---|---|
+| median-MAD, eligible-only (§6if headline) | 1,793 | 0.7665 | 208/491 (42.4%) | 0.859/0.694/0.768 |
+| mean-MAD, no attach | 2,185 (full, honest) | 0.6190 | 190/491 (38.7%) | 0.925/0.467/0.620 |
+| median-MAD, no attach | 2,185 | 0.6394 | 171/491 (34.8%) | 0.859/0.511/0.641 |
+| **mean-MAD + attach** | 2,185 | **0.6716** | 216/491 (44.0%) | 0.903/0.536/0.673 |
+| **median-MAD + attach** | 2,185 | **0.6820** | 193/491 (39.3%) | 0.837/0.577/0.683 |
+| 2,334-flat-graph (naive, rejected), mean-MAD | 2,185 | 0.6635 | 234/491 (47.7%) | 0.730/0.610/0.665 |
+| 2,334-flat-graph (naive, rejected), median-MAD | 2,185 | 0.6776 | 217/491 (44.2%) | 0.702/0.658/0.679 |
+
+**New headline for the complete, honest universe: median-MAD + attach, ARI 0.6820** — real, positive,
+disclosed progress over the "no attach" baseline on the SAME universe (+0.043 ARI, +4.5 points exact-match,
++6.6 points recall, essentially unchanged precision) via a well-reasoned, non-corrupting mechanism, not a
+metric artifact. The 1,793-only 0.7665 number from §6if remains valid as a description of a narrower
+question and is not retracted, only re-scoped: it is not directly comparable to any number in this
+section's table, and neither figure should be quoted without naming its universe.
+
+Related: [[project_soto_full_replication]], [[project_soto_audit_14agent]].
