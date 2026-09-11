@@ -17279,3 +17279,72 @@ New canonical outputs: `replicated_families_2334_median_islands.tsv`, `replicate
 (same directory as §6il).
 
 Related: [[project_soto_full_replication]].
+
+## §6in — ID_328's real root cause, and a weak-signal lever that DOESN'T ship (2026-09-11)
+
+Follow-up to "can we try to fix that [ID_328] and maybe learn from that for our own families definition."
+§6ik diagnosed ID_328 as `sedef_coverage_gap_below_98pct` — gene-body identity ~0.9139-0.9151, a "real
+methodological ceiling." Investigating further found this framing was INCOMPLETE — two compounding, more
+specific, more tractable causes:
+
+**1. SEDEF's own identity figure is a wide-unit average, not a gene-body figure.** SEDEF calls one ~230kb
+duplication unit per pair (e.g. `chr14:1767931-1999225 x chr15:2176540-2406114`, identity 0.915125) — but
+directly realigning just LOFF_G0000621's ~14kb gene body against v2.0 (minimap2, all-hits) shows it is
+**99.99% identical to its chr15 copy and 99.94% to its chr22 copy** (both would clear SD98 outright), with
+a 97.84% chr13 copy just under. The unit-average dilutes a highly-conserved core with more divergent
+flanking sequence — gating on the row's declared identity gates on the wrong statistic here.
+
+**2. Every one of these units ALSO straddles each acrocentric's own liftover-guard span independently of
+identity.** Confirmed by realigning each side's full row span (plus wide margin) against v1.0: chr14/15/
+21/22/13 all realign end-to-end at 100% (or 99.999%+) identity, single primary hit, at exactly their
+already-known "before"-regime offset — with real margin past both the row's own bounds AND the existing
+§6il anchors. Added 5 more anchors to `acro_extra_anchors.tsv` (chr14 2100000/478, chr15 2510000/-4, chr22
+4800000/-39, chr21 3110000/-1, chr13 5780000/70) — pushes the guarded span's lower edge outward by
+150-370kb per chromosome, verified via the guard's own boolean logic to clear all 5 of ID_328's rows.
+
+**Neither fix alone (nor both together) moves the standard >=98%-identity pipeline** — verified: identical
+stats before/after (`2017 both-sides lifted, 4153 edges`) — because the row's declared identity (~0.914)
+never clears `--min-identity 0.98` in the first place, so it never reaches the liftover check there at all.
+The liftover fix is necessary-but-not-sufficient for this specific case; it's still real, disclosed,
+zero-cost infrastructure (doesn't touch a single existing output) for any other row it might help.
+
+**A second, disclosed, OPT-IN lever was built and tested to close the gap**: `bench/soto/
+soto_weak_edge_cn_merge.py` — lower `--min-identity` to 0.85 (admits the same real SEDEF calls, restricted
+to currently-unplaced/singleton genes only, so it can never touch or bridge an already-formed family),
+then require CORROBORATION via tight agreement in OUR OWN independently-computed famCN
+(`famcn_ours_all.tsv`, NOT Soto's S1C table — non-circular) before accepting a merge. This IS exactly the
+"E_c earns an orthogonal role, used only where the primary graph is blind" pattern from the actual O1 side
+of this project ([[project_o1_shared_read_edges]] §6bi) — same idea, independently arrived at, applied to
+the Soto replication.
+
+**Result, checked against ground truth, not just the aggregate score**: 20 raw weak-edge components, 7
+pass CN agreement (mad<1.0, median, 34 genes). Cross-checked every one against S1C's true Family ID:
+
+| component | genes | outcome |
+|---|---|---|
+| CNWEAKFAM1 | 4 | **clean, correct** — all 4 are true ID_363 |
+| CNWEAKFAM4 | 2 | **clean, correct** — both true ID_144 |
+| CNWEAKFAM0 | 17 | **partial**: correctly unifies all 8 true ID_328 members, but ALSO fuses in all 9 true ID_321 members (different family, same CN by coincidence/shared amplification) |
+| CNWEAKFAM2 | 4 | **spurious** — 4 different true families (ID_186/234/119/139) |
+| CNWEAKFAM3 | 3 | **spurious** — 3 different true families (ID_62/162/347) |
+| CNWEAKFAM5 | 2 | **spurious** — both true Soto SINGLETONS, wrongly merged |
+| CNWEAKFAM6 | 2 | **spurious** — 2 different true families (ID_255/256) |
+
+**4/7 components (57%) are pure false merges; only 2/7 are clean.** The aggregate score barely moves
+(ARI 0.6945→0.6962, precision 0.837→0.833) because the affected gene count is small (34 genes) — but the
+aggregate hides the real reliability picture, which is poor. **Ruling: NOT adopted.** Weak structural
+signal plus CN proximity, even scoped to singletons-only (never bridging an already-formed family), is not
+a safe general trigger — the SAME conclusion the actual O1-side E_c investigation already reached
+independently ([[project_o1_shared_read_edges]]: "repeat-driven cross-homology is universal," fusion rate
+invariant to every depth threshold tested). This is the second, independent time this project has found
+the identical failure mode on two different substrates — worth treating as a general principle, not a
+coincidence: **a weak/promiscuous signal correlating with a real property (shared exon graph, or CN) is
+not thereby safe to admit; it needs a structural guarantee against cross-anchor bridging (§6im's provable
+rule), not just corroboration from a second imperfect signal.**
+
+**What DOES stand, disclosed and kept**: the compound root-cause diagnosis for ID_328 (a real correction
+to §6ik), the deeper liftover anchors (neutral-cost infrastructure), and the confirmed, hand-verified fact
+that ID_328 IS recoverable in principle — Soto's own method evidently used something CN-like for this
+specific case, and this investigation shows why and how, without claiming a safe automated route exists.
+
+Related: [[project_soto_full_replication]], [[project_o1_shared_read_edges]].
