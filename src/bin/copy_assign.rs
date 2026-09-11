@@ -1316,6 +1316,33 @@ fn read_ref_end_local(read: &rustle::vg_family::copy_split::AlignedRead) -> u64 
         + read.cigar.iter().filter(|(op, _)| matches!(op, 'M' | '=' | 'X' | 'D' | 'N')).map(|(_, n)| n).sum::<u64>()
 }
 
+/// Reference-block overlap between an alignment and `[s, e)`, mirroring pysam's `get_blocks()` (used by
+/// `bench/o3_flag_pass.py`'s `truth` dict, lines 88-90: `sum(min(b1,e)-max(b0,s) for b0,b1 in
+/// a.get_blocks() if b1>s and b0<e)`): only `M`/`=`/`X` runs count as aligned reference bases; `D`/`N`
+/// advance the reference position without contributing overlap. A large intron (`N`) that merely SPANS
+/// a target window contributes zero here, unlike `read_ref_end_local`'s span (`ref_start..ref_end`),
+/// which would wrongly count the whole intron as covering it -- Task 7's reproduction-gate fix.
+fn block_overlap(read: &rustle::vg_family::copy_split::AlignedRead, s: u64, e: u64) -> u64 {
+    let mut pos = read.ref_start;
+    let mut total = 0u64;
+    for &(op, n) in &read.cigar {
+        match op {
+            'M' | '=' | 'X' => {
+                let blk_end = pos + n;
+                let lo = pos.max(s);
+                let hi = blk_end.min(e);
+                if hi > lo {
+                    total += hi - lo;
+                }
+                pos = blk_end;
+            }
+            'D' | 'N' => pos += n,
+            _ => {}
+        }
+    }
+    total
+}
+
 /// Load, VALIDATE and region-bind the `--families` catalog (see the flag's help for the contract).
 ///
 /// Returns `(None, None)` when `--families` was not given — the historical path, untouched.
@@ -2412,16 +2439,60 @@ fn main() -> Result<()> {
                         bam_reads.get(ri).map(|br| (br.name.as_str(), (a.origin_rejected, a.n_candidates)))
                     })
                     .collect();
-                // Resolve catalog_copy_idx -> (chrom, start, end): fa.copy_spans is indexed by the SWEEP's
-                // own internal position (`ci`); catalog_copy_idx is the CATALOG's own separate namespace
-                // (see `cat_idx_of`, further down in this same file) -- rebuild the mapping via
+                // Resolve catalog_copy_idx -> (chrom, start, end, locus_extent): fa.copy_spans is indexed by
+                // the SWEEP's own internal position (`ci`); catalog_copy_idx is the CATALOG's own separate
+                // namespace (see `cat_idx_of`, further down in this same file) -- rebuild the mapping via
                 // fa.copy_tids + catalog_index, the same pattern the assignment-row loop already uses.
-                let mut copy_span_by_catalog_idx: std::collections::HashMap<String, (String, u64, u64)> =
+                // The locus extent (§L2, `register_locus_extent`/`locus_extent_of`, populated from the
+                // catalog's `locus_start`/`locus_end` columns by `catalog_input.rs`) is threaded through
+                // here so `detect_missing_copy_pairs` can realign against the SAME target window
+                // `bench/o3_flag_pass.py`'s `detector()` does -- Task 7's reproduction-gate fix: the bare
+                // copy span alone under-/over-sizes the window whenever it differs from the L2 extent.
+                let mut copy_span_by_catalog_idx: std::collections::HashMap<String, (String, u64, u64, Option<(u64, u64)>)> =
                     std::collections::HashMap::new();
                 for (ci, tid) in fa.copy_tids.iter().enumerate() {
                     if let Some((_, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) {
-                        if let Some(span) = fa.copy_spans.get(ci) {
-                            copy_span_by_catalog_idx.insert(cidx.to_string(), span.clone());
+                        if let Some((chrom, s, e)) = fa.copy_spans.get(ci) {
+                            let locus = rustle::vg_family::copy_assign_pipeline::locus_extent_of(tid);
+                            copy_span_by_catalog_idx.insert(cidx.to_string(), (chrom.clone(), *s, *e, locus));
+                        }
+                    }
+                }
+                // Task 7 fix (reproduction-gate finding): `bench/o3_flag_pass.py`'s `truth` dict gates
+                // EVERY read entering the detector on its PRIMARY alignment record physically overlapping
+                // at least one of this family's own copy spans (lines 83-96: `for i, r in cp.items(): for a
+                // in BAM.fetch(c, s, e): ... if a.flag & 2308: continue ...`). `catalog_copy_idx`
+                // (`assignment.best_copy` here) is O2's INFERRED origin call, which for a MAPQ-0
+                // multimapper can point to a copy the read's primary never physically touched -- Python
+                // only trusts a read as "this copy's own abandoned reads" evidence when the primary
+                // actually landed there. Measured without this gate: MCL106 copy 0 tested 25 origin-rejected
+                // reads against Python's 9 (all 16 extra had their primary elsewhere), and genome-wide on
+                // the 76-family sweep_v13 substrate the omission inflated 173 Python-tested pairs to 272
+                // and 50 Python flags to 144, including `structural`-class flags Python's own detector
+                // never produces on this substrate.
+                //
+                // `truth_copy[name] = (cidx, overlap)`: the candidate copy whose span the read's PRIMARY
+                // overlaps MOST (ties keep the first-seen candidate, matching Python's strict `>` compare
+                // over `cp.items()`'s insertion order). Built once per family from `bam_reads` (already
+                // resident for the region) instead of a second BAM fetch.
+                let mut truth_copy: std::collections::HashMap<&str, (String, u64)> = std::collections::HashMap::new();
+                for br in bam_reads.iter().filter(|br| !br.is_secondary && !br.is_supplementary) {
+                    let end = read_ref_end_local(&br.read); // cheap span bound, to skip non-overlapping copies fast
+                    for (ci, (c, s, e)) in fa.copy_spans.iter().enumerate() {
+                        if br.chrom != *c || end <= *s || br.read.ref_start >= *e {
+                            continue;
+                        }
+                        let ov = block_overlap(&br.read, *s, *e);
+                        if ov == 0 {
+                            continue;
+                        }
+                        let Some(tid) = fa.copy_tids.get(ci) else { continue };
+                        let Some((_, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) else { continue };
+                        match truth_copy.get(br.name.as_str()) {
+                            Some((_, best_ov)) if *best_ov >= ov => {}
+                            _ => {
+                                truth_copy.insert(br.name.as_str(), (cidx.to_string(), ov));
+                            }
                         }
                     }
                 }
@@ -2442,10 +2513,16 @@ fn main() -> Result<()> {
                         Some((_, c)) => c.to_string(),
                         None => continue,
                     };
+                    // Python's `n in truth` gate: rejected reads need a primary overlapping ANY of this
+                    // family's copies (grouped by O2's own best-copy call, which may differ from the
+                    // truth-copy); control/accepted reads need the primary's OWN best-overlap copy to BE
+                    // the candidate under test (`truth[n][0] == y` in the Python), matching `ctl_names`'s
+                    // extra condition beyond plain non-rejection.
+                    let Some((truth_cidx, _)) = truth_copy.get(br.name.as_str()) else { continue };
                     let entry = (br.name.clone(), br.read.seq.clone());
                     if assignment.origin_rejected {
                         rejected_by_idx.entry(cidx).or_default().push(entry);
-                    } else if assignment.status == AssignStatus::Assigned {
+                    } else if assignment.status == AssignStatus::Assigned && *truth_cidx == cidx {
                         accepted_by_idx.entry(cidx).or_default().push(entry);
                     }
                 }

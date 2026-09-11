@@ -498,9 +498,18 @@ fn median(mut v: Vec<f64>) -> Option<f64> {
 /// `params.min_reads` rejected reads (matches the Python's `len(names) < 3: continue` -- not emitted as
 /// Untestable, simply absent from the output). A `minimap2` failure for one Y is logged to stderr and
 /// that pair is skipped -- see the design doc's Error Handling section for why this must not abort.
+///
+/// `copy_span_by_catalog_idx` maps to `(chrom, start, end, locus_extent)`: the realignment TARGET window
+/// mirrors `bench/o3_flag_pass.py`'s `detector()` exactly (lines 45-48) -- `(min(locus_start, start),
+/// max(locus_end, end))` when the catalog carries an L2 locus extent for this copy, else the copy's own
+/// span padded by the longest rejected read on each side. Using the bare copy span unconditionally (the
+/// pre-fix behaviour) mis-sizes the window whenever a copy's locus extent differs from its own span --
+/// found during Task 7's reproduction gate: `covered_kb`/`n_sites`/`rate_per_kb`/`p` all move even when
+/// `n_rejected` matches exactly (e.g. MCL117_073244 copy 1: same 4 rejected reads, Python rate 4.27/kb
+/// vs the unfixed Rust 59.81/kb).
 pub fn detect_missing_copy_pairs(
     family_id: &str,
-    copy_span_by_catalog_idx: &std::collections::HashMap<String, (String, u64, u64)>,
+    copy_span_by_catalog_idx: &std::collections::HashMap<String, (String, u64, u64, Option<(u64, u64)>)>,
     genome: &crate::genome::GenomeIndex,
     inputs: &[PairInput],
     params: &O3Params,
@@ -510,14 +519,29 @@ pub fn detect_missing_copy_pairs(
         if input.rejected.len() < params.min_reads {
             continue;
         }
-        let Some((chrom, s, e)) = copy_span_by_catalog_idx.get(&input.copy_idx) else {
+        let Some((chrom, s, e, locus)) = copy_span_by_catalog_idx.get(&input.copy_idx) else {
             continue;
         };
-        let target = match genome.fetch_sequence(chrom, *s, *e) {
+        // Task 7 fix (reproduction-gate finding): the Python caps each side at `max_reads` by NAME order
+        // (`sorted(names)[:max_reads]` / `sorted(n for n in truth if ...)[:max_reads]`), not by collection
+        // order -- irrelevant when a family stays under the cap (most pairs), but for a copy with more
+        // than `max_reads` eligible reads (e.g. MCL121_073244 copy 0's 500-capped control pool) the two
+        // orders sample a DIFFERENT subset, changing `covered_kb`/`n_sites`/`p` even when the uncapped
+        // rejected side matches exactly. Sorting first makes the cap deterministic and Python-identical.
+        let mut rejected_sorted = input.rejected.clone();
+        rejected_sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        let rejected: Vec<_> = rejected_sorted.into_iter().take(params.max_reads).collect();
+        let (ls, le): (u64, u64) = match locus {
+            Some((locus_s, locus_e)) => ((*locus_s).min(*s), (*locus_e).max(*e)),
+            None => {
+                let pad = rejected.iter().map(|(_, seq)| seq.len() as u64).max().unwrap_or(0);
+                (s.saturating_sub(pad), e + pad)
+            }
+        };
+        let target = match genome.fetch_sequence(chrom, ls, le) {
             Some(t) => t,
             None => continue,
         };
-        let rejected: Vec<_> = input.rejected.iter().take(params.max_reads).cloned().collect();
         let test = match realign_batch(&target, &rejected) {
             Ok(s) => s,
             Err(err) => {
@@ -525,7 +549,9 @@ pub fn detect_missing_copy_pairs(
                 continue;
             }
         };
-        let accepted: Vec<_> = input.accepted.iter().take(params.max_reads).cloned().collect();
+        let mut accepted_sorted = input.accepted.clone(); // same name-order cap as `rejected` above
+        accepted_sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        let accepted: Vec<_> = accepted_sorted.into_iter().take(params.max_reads).collect();
         let ctl = if accepted.len() >= params.min_reads {
             match realign_batch(&target, &accepted) {
                 Ok(s) => s,
@@ -583,7 +609,7 @@ mod pair_detector_tests {
     fn fewer_than_min_reads_is_skipped_entirely() {
         let genome = GenomeIndex::from_seqs(&[("chrT", &[b'A'; 100])]);
         let mut spans = std::collections::HashMap::new();
-        spans.insert("0".to_string(), ("chrT".to_string(), 0u64, 100u64));
+        spans.insert("0".to_string(), ("chrT".to_string(), 0u64, 100u64, None));
         let inputs = vec![PairInput {
             copy_idx: "0".to_string(),
             is_partner: false,
