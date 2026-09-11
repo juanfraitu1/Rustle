@@ -1,7 +1,7 @@
 //! O3 flag-pass detector (`docs/superpowers/specs/2026-09-10-o3-flag-pass-integration-design.md`):
 //! ports `bench/o3_flag_pass.py`'s missing-copy detector natively into `copy_assign`.
 //!
-//! **STATUS:** INFRASTRUCTURE  (pure core functions for O3 modules; not independently reachable)
+//! **STATUS:** OPT-IN  (reachable via `copy_assign --flag-missing-copies`, src/bin/copy_assign.rs; default off)
 
 use crate::vg_family::allele_specific_junctions::lgamma;
 
@@ -475,6 +475,13 @@ fn realign_batch(target_seq: &[u8], reads: &[(String, Vec<u8>)]) -> anyhow::Resu
             r.write_all(b"\n")?;
         }
     }
+    // Minor (final whole-branch review): `-t 4` matches the Python reference's own hardcoded thread count,
+    // but this codebase's existing `minimap2_msa_pair` pattern this function is modeled on uses `-t 1`.
+    // Under `copy_assign --region-parallel N` this multiplies to up to 4xN minimap2 threads concurrently
+    // -- on this project's 5-core WSL2 box (see the crash-rule notes), combining `--region-parallel` with
+    // `--flag-missing-copies` could overload the machine. Left at `-t 4` (not changed here -- this is a
+    // documentation-only note), but `--flag-missing-copies` runs on this machine should stay serial
+    // (no `--region-parallel`) until/unless this is revisited.
     let out = std::process::Command::new(&mm2)
         .args(["-x", "splice", "-c", "--eqx", "-N", "1", "-t", "4"])
         .arg(&ypath)

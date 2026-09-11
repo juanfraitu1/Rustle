@@ -1,6 +1,10 @@
 # O3 Flag-Pass Integration Design
 
-**Status**: design, not yet implemented. Written 2026-09-10.
+**Status**: SHIPPED (opt-in). Written 2026-09-10; implemented and wired into `copy_assign
+--flag-missing-copies` (src/bin/copy_assign.rs) across the 8-task plan
+`docs/superpowers/plans/2026-09-10-o3-flag-pass-integration.md` plus one post-review fix round
+(`.superpowers/sdd/2026-09-10-o3-flag-pass-integration/`); default off, byte-identical when the flag is
+unset.
 
 ## Goal
 

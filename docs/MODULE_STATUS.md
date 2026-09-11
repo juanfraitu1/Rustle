@@ -21,11 +21,11 @@ this file must list exactly the module set.
 | tag | count |
 |---|---|
 | **SHIPPED-DEFAULT** | 14 |
-| **OPT-IN** | 12 |
+| **OPT-IN** | 13 |
 | **OTHER-BINARY** | 11 |
 | **REFUTED** | 1 |
 | **TEST-ONLY** | 12 |
-| **INFRASTRUCTURE** | 3 |
+| **INFRASTRUCTURE** | 2 |
 
 ## SHIPPED-DEFAULT (14)
 
@@ -48,7 +48,7 @@ Reachable from a shipped binary with **no env var and no non-default flag**. Thi
 | `readonly_copy_number.rs` | - for the chi_h leg. The depth_cn leg is gated by `--lambda-global` (src/bin/copy_assign.rs:322 doc, consumed  | MEASURED: src/bin/copy_assign.rs:1983 calls chi_h_with_junctions in the unconditional famcn_rows.push loop; src/bin/copy_assign.rs:1354 comments the table as "always emitted" and copy_assign.rs:2071 writes <out>.famcn_readonly.tsv |
 | `rescue_pipeline.rs` | - (no flag, no env var). Suppressed only when copy_assign is run with --families (src/bin/copy_assign.rs:452,  | MEASURED: thin_loci at src/rustle/vg_family/denovo_pipeline.rs:2175 and rescue_thin_loci_iterative at :2176, inside detect_and_assign's per-family `for cf in colocated` loop (prod; test mod starts at denovo_pipeline.rs:7362); dete |
 
-## OPT-IN (12)
+## OPT-IN (13)
 
 Built and wired, but behind a flag that **defaults off**. An arm, not the method — always name the flag when reporting a result from one.
 
@@ -61,7 +61,8 @@ Built and wired, but behind a flag that **defaults off**. An arm, not the method
 | `from_genome.rs` | `--from-genome <BED>` (src/bin/gw_family_catalog.rs:38-39, `#[arg(long)] from_genome: Option<String>`, default | MEASURED: the sole call site of genome_reps/GenomeRepParams in all of src/ is src/bin/gw_family_catalog.rs:628, inside `if let Some(win_bed) = args.from_genome.as_deref() {` at gw_family_catalog.rs:627. The three other grep hits ( |
 | `genome_projection.rs` | `--enumerate-copies` (src/bin/gw_family_catalog.rs:172-173, default false) or `--min-identity 0.98` (gw_family | MEASURED: in gw_family_catalog the projection is fenced by `let enumerate = (args.enumerate_copies // args.min_identity == Some(0.98)) && o1_homology;` at gw_family_catalog.rs:930, with the two project_families_batch calls at :949 |
 | `hidden_copy.rs` | `--collapse-enumerate` (src/bin/gw_family_catalog.rs:177-178, `#[arg(long, default_value_t = false)]`) | MEASURED: detect_hidden_copy's only production caller in src/ is collapse_enumerate.rs:97 inside `pub fn readmit_locus` (collapse_enumerate.rs:91); readmit_locus's only production caller is denovo_pipeline.rs:3853, inside `if cfg. |
-| `linearize.rs` | --linearize / --linearize-gate, both `#[arg(long, default_value_t = false)]` at src/bin/copy_assign.rs:280-281 | MEASURED: the only production call, `super::linearize::linearize_certificate(...)` at src/rustle/vg_family/denovo_pipeline.rs:1838, is reached only through `linearize_cert_if_enabled` (denovo_pipeline.rs:1846) inside the `if do_li |
+| `linearize.rs` | --linearize / --linearize-gate, both `#[arg(long, default_value_t = false)]` at src/bin/copy_assign.rs:280-281 | MEASURED: the only production call, `super::linearize::linearize_certificate(...)` at src/rustle/vg_family/denovo_pipeline.rs:1838, is reached only through `linearize_cert_if_enabled` (denovo_pipeline.rs:1846) inside the `if do_li
+| `o3_flag_pass.rs` | --flag-missing-copies (src/bin/copy_assign.rs:222, `#[arg(long, default_value_t = false)]`); also requires --families (copy_assign.rs:1400-1402 bails if not) | MEASURED: every production call of `poisson_tail`/`finalize_flags`/`detect_missing_copy_pairs`/`classify_orphan_locus` in `src/bin/copy_assign.rs` sits inside an `if args.flag_missing_copies { ... }` block (copy_assign.rs:1927/1945/1960/2462/4173/4211) — none unconditional. `flag_missing_copies` defaults `false`; unset, the whole block short-circuits to `(Vec::new(), Vec::new())` (copy_assign.rs:2462) and no `o3_*` column or `<out>.o3_candidate_loci.tsv` file is ever produced, so the default path is untouched. |
 | `project_all.rs` | --project-all-families, `#[arg(long, default_value_t = false)]` at src/bin/gw_family_catalog.rs:195-196; equiv | MEASURED: the module's only importer is `use rustle::vg_family::project_all::{CopyIn, all_copy_consensuses, known_from_fams, dedup_overlapping, overlaps_any, format_allproj_row};` at src/bin/gw_family_catalog.rs:991, which sits in |
 | `seed_projection.rs` | --seed (src/bin/gw_family_catalog.rs:223-224, `#[arg(long)] seed: Vec<String>`, default = empty vec; project_s | MEASURED: the module's only importer is the `use rustle::vg_family::seed_projection::{...}` inside fn project_seeds at src/bin/gw_family_catalog.rs:238 (prod; that file's test mod starts at :1024); project_seeds is called at gw_fa |
 | `single_copy.rs` | --single-copy-baseline (src/bin/gw_family_catalog.rs:189-190, `#[arg(long, default_value_t = false)] single_co | MEASURED: single_copy_loci's only production caller is src/rustle/vg_family/denovo_pipeline.rs:2704 inside detect_single_copy_baseline_genome_wide, and that function's only caller in the whole tree is src/bin/gw_family_catalog.rs: |
@@ -119,7 +120,6 @@ Shared utility with no independent objective claim.
 | module | gate | deciding evidence |
 |---|---|---|
 | `minimizers.rs` | - | MEASURED: no src/bin/*.rs file references `minimizers`; its only three consumers are libraries — src/rustle/vg_family/repeat_catalog.rs:39, src/rustle/vg_family/multi_repeat_bridge.rs:60, src/rustle/vg_family/vg_realign.rs:27 — an |
-| `o3_flag_pass.rs` | - | INFRASTRUCTURE: pure core functions (poisson_tail, finalize_flags) for O3 modules; ported from bench/o3_flag_pass.py's missing-copy detector; all later O3 tasks import from this module. No independent reachability; `poisson_tail` is consumed by Task 4's pair detector (`detect_missing_copy_pairs`), `finalize_flags` is wired into `copy_assign.rs`'s Phase 2 aggregation in Tasks 5-6 (see docs/superpowers/plans/2026-09-10-o3-flag-pass-integration.md). |
 | `seq_utils.rs` | - | MEASURED: `pub(crate) fn reverse_complement` (seq_utils.rs:9) is the file's only item and is used on the default path — denovo_assemble.rs:22 (import) with production uses at denovo_assemble.rs:1414 and :1547 (test mod starts at : |
 
 ## ⚠ Header / reachability mismatches (29)

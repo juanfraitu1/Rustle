@@ -16478,7 +16478,15 @@ read-presence screen cannot tell real copy-number difference from tissue-express
 `bench/o3_cross_individual_diff.py` (a join over two `--flag-missing-copies family_join.tsv` outputs by
 `o3_flag` category, as drafted in the task-8 brief) and ran it for real on gorilla `gw_units_v3`: testis
 (`GGO_ds.bam`, OR6737, the animal the catalog was built from) vs matched fibroblast (`fibro_ds.bam`,
-depth-matched, different tissue).
+depth-matched) — **two axes differ, not one**: DIFFERENT TISSUE (testis vs fibroblast) AND DIFFERENT
+INDIVIDUAL/ANIMAL (OR6737, testis, is a different animal from KB3781, the fibroblast cell line's
+reference individual — same pairing §4l already established). A signal here cannot be attributed to
+tissue alone.
+
+⚠ **SUPERSEDED (final whole-branch review fix round, 2026-09-11) — see the continuation below.** Fixes 1
+and 2 of that round change real `o3_flag`/`o3_p`/`o3_n_rejected` values on this exact genome-wide data
+(not just wording), so this section's original run below is stale; the corrected headline is in the
+continuation.
 
 **⚠ EXPLORATORY, NOT VALIDATED.** No known-true-positive gorilla case exists to check the "candidate
 differential" result against (no gorilla TSPY equivalent with independent ddPCR/AmpliCoNE confirmation).
@@ -16569,3 +16577,68 @@ helper); a follow-up commit (fix round 1) hardened `load()` against the duplicat
 added the 2072-both-arms-testable line to the script's own output, plus this section's arithmetic note.
 No `src/` changes. Run outputs, logs, and derived catalog/region files live under
 `/mnt/linuxdisk/home/juanfraitu/o3_diff/`, not committed.
+
+### §6id continuation — final whole-branch review fix round: corrected headline is 0 candidates, 2 inconclusive, 0.000 no_signal (2026-09-11)
+
+The final whole-branch review (range `4c401790..827ea2b9`) found the "2 candidate_differential" headline
+above was wrong in the direction that matters: `copy_assign`'s `family_join.tsv` writer used the literal
+`none` for BOTH a genuinely-tested-and-clean copy AND a copy `detect_missing_copy_pairs` never reached at
+all (fewer than 3 rejected reads, or — a separate, independently confirmed bug — a namespace mismatch
+whenever one locally co-located physical family spans more than one true catalog family). Both of this
+section's 2 "candidates" had **0 rejected reads on their clean side** — i.e. that side was never tested,
+not a real negative.
+
+**Fix** (this round, 5 findings total; see `.superpowers/sdd/2026-09-10-o3-flag-pass-integration/
+final-review-fix-report.md` for the full account): the writer now emits a distinct `not_tested` token
+instead of overloading `none`, `bench/o3_cross_individual_diff.py` was updated so a `not_tested` value can
+never count as a clean `none` (it routes to `inconclusive` when paired with `missing_copy`, `no_information`
+when paired with another `untestable`/`not_tested`, and `other` when paired with a real `none` — never
+`no_signal`, `candidate_differential`, or `shared`). A separate namespace-key bug (`RawPair.family_id` was
+the LOCAL co-located family id, not the catalog's own id `JoinRow.family_id` uses — silently missing the
+`o3_flags` lookup whenever they differed) and an orphan-locus span-vs-block-overlap bug were fixed in the
+same round; both are upstream of this diff and could in principle change which copies get a real flag, not
+just the label — re-running was mandatory, not optional.
+
+**Re-run** (same setup as the original run above, reused verbatim: `testis.catalog.tsv`/
+`fibroblast.catalog.tsv`, `same_chrom.regions.merged.txt`, `GGO_ds.bam`/`fibro_ds.bam`,
+`/mnt/linuxdisk/home/juanfraitu/o3_diff/`, foreground, `ulimit -v 20000000`, `timeout 14400`,
+`--skip-poa-diagnostic`, no orphan `copy_assign` before or between): testis exit 0 (~2 min), fibroblast
+exit 0 (~3 min). `testis.family_join.tsv` (2276 rows): **4 `none` / 2266 `not_tested` / 5 `untestable` / 1
+`missing_copy`** — compare the ORIGINAL run's reported "2270 `none` / 5 `untestable` / 1 `missing_copy`":
+2266 of those 2270 were never actually tested. `fibroblast.family_join.tsv` (2080 rows): **0 `none` /
+2074 `not_tested` / 5 `untestable` / 1 `missing_copy`** (original: "2074 `none`" — ALL of it was
+`not_tested`, not one single fibroblast copy was genuinely tested-and-clean).
+
+**Corrected result** (`bench/o3_cross_individual_diff.py fix1/testis.family_join.tsv
+fix1/fibroblast.family_join.tsv --label-a testis --label-b fibroblast`, same 8-duplicate-key-per-arm
+infrastructure quirk as before, both arms agree on `o3_flag` for every duplicate, 2268 copies compared):
+
+| category | n (original) | n (corrected) | note |
+|---|---|---|---|
+| no_signal | 2062 (90.9%) | **0 (0.000)** | there is no `none`/`none` pair left at all — fibroblast has ZERO genuinely-tested-clean copies, testis has 4 |
+| candidate_differential | 2 | **0** | both of the original "candidates" had an untested (not a clean) copy on their other side |
+| inconclusive | 0 | **2** | `MCL2209:0` (missing_copy in testis, `p_threshold=2.0e-4`) and `MCL2288:0` (missing_copy in fibroblast, `p_threshold=1.0e-3`) — SAME two copies as the original "candidates", now correctly labeled: the other side is `not_tested`, not `none` |
+| other | 203 | 200 | 196 fibroblast-excluded (`NA`) copies (unchanged) + 4 (testis's 4 real `none` copies, paired against fibroblast `not_tested` at the same keys) |
+| no_information | 1 | 2066 | both sides `untestable`/`not_tested` — this is what "no data" actually looks like once it is not disguised as `none` |
+| shared | 0 | 0 | unchanged |
+
+⚠⚠ **The design doc's own sanity gate ("no_signal fraction should be the overwhelming majority") is now
+VIOLATED (0.000, not 0.909).** This is not being softened: the honest picture is that this genome-wide
+comparison tested almost nothing — origin-rejected reads (O3's whole input) are rare enough per copy,
+genome-wide, on real data that only 10/2276 testis copies and 6/2080 fibroblast copies ever reached
+`detect_missing_copy_pairs` at all. The 90.9%-no_signal / 2-candidates narrative this section originally
+reported was an artifact of the labeling bug, not a real result — **retracted.** The correct headline for
+this run is: **0 candidate differentials, 2 inconclusive (both previously-reported "candidates", now
+correctly labeled as untested-not-clean), 2072 both-arms-testable copies, 0.000 no_signal fraction.**
+Genuinely exploratory, more so than originally stated: this comparison has essentially no statistical
+power on this substrate as constructed (sparse origin-rejected reads per copy genome-wide), not "90.9%
+confirmed clean."
+
+Bonferroni thresholds this run (printed by the updated script): testis `0.001/5 = 2.0e-4`, fibroblast
+`0.001/1 = 1.0e-3` — both denominators (`n_pairs`, copies with a real p-value) collapsed from the low
+hundreds implied by the original mislabeling to single digits, consistent with the `not_tested` finding
+above.
+
+Commit: this fix round's `src/bin/copy_assign.rs` (Fix 1 namespace partition, Fix 2 `not_tested` token,
+Fix 3 orphan-locus `block_overlap`) + `bench/o3_cross_individual_diff.py` (Fix 2 categorization). Re-run
+outputs under `/mnt/linuxdisk/home/juanfraitu/o3_diff/fix1/`, not committed.

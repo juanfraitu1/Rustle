@@ -1872,6 +1872,13 @@ fn main() -> Result<()> {
     // the --phase copy graph stays AnnotationUnknown, byte-identical to the no-flag path).
     let annotation: Option<Vec<(String, u64, u64)>> =
         args.gff.as_deref().map(parse_annotation).transpose().context("parsing --gff")?;
+    // Minor (final whole-branch review): `bench/o3_flag_pass.py`'s reference requires `--gff` to reach its
+    // `annotated_no_unit` orphan-locus class at all (no gene intervals -> every locus is either
+    // `other_family` or `unannotated`) -- without it, `--flag-missing-copies` silently never produces an
+    // `annotated_no_unit` row rather than erroring, which is easy to miss on a real run.
+    if args.flag_missing_copies && args.gff.is_none() {
+        eprintln!("[copy_assign] WARNING: --flag-missing-copies without --gff can never classify an orphan locus as annotated_no_unit (no gene intervals to test against)");
+    }
 
     // Augment-and-linearize is opt-in: the report (`--linearize`) or the gate (`--linearize-gate`, which
     // implies the report) turns it on. When false, the certificate is skipped entirely inside
@@ -2487,13 +2494,33 @@ fn main() -> Result<()> {
                 // here so `detect_missing_copy_pairs` can realign against the SAME target window
                 // `bench/o3_flag_pass.py`'s `detector()` does -- Task 7's reproduction-gate fix: the bare
                 // copy span alone under-/over-sizes the window whenever it differs from the L2 extent.
-                let mut copy_span_by_catalog_idx: std::collections::HashMap<String, (String, u64, u64, Option<(u64, u64)>)> =
-                    std::collections::HashMap::new();
+                //
+                // Fix 1 (final whole-branch review, confirmed live on Task 8's real output -- 8 rows/arm):
+                // `fa` is a LOCALLY co-located physical family, which can group copies from MORE THAN ONE
+                // true catalog family (`cf`). Keying `copy_span_by_catalog_idx`/`rejected_by_idx`/
+                // `accepted_by_idx` by BARE `cidx` across the whole `fa` (the pre-fix design) had two bugs:
+                // (a) two catalog copies from DIFFERENT `cf`s that happen to share a bare index silently
+                // overwrote each other's window/read-pool entry (pool-mixing corruption), and (b) the pair
+                // detector was called with `&fa.family_id` (the LOCAL id) as `RawPair.family_id`, a
+                // different namespace than `JoinRow.family_id` (always the TRUE `cf`, read at that row's
+                // own construction site further down) -- so the later `o3_flags.get(&(r.family_id,
+                // r.copy_idx))` lookup silently missed for every such row, indistinguishable from "never
+                // tested". Fixed by partitioning `fa`'s own copies by their TRUE `cf` BEFORE building any
+                // lookup map: within one `cf`'s own partition a bare `cidx` is safe (catalog copy indices
+                // are unique within a single catalog family), and `detect_missing_copy_pairs` is called
+                // once per `cf` with that `cf` itself as `family_id`, exactly matching `JoinRow.family_id`.
+                let mut copy_span_by_cf: std::collections::HashMap<
+                    String,
+                    std::collections::HashMap<String, (String, u64, u64, Option<(u64, u64)>)>,
+                > = std::collections::HashMap::new();
                 for (ci, tid) in fa.copy_tids.iter().enumerate() {
-                    if let Some((_, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) {
+                    if let Some((cf, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) {
                         if let Some((chrom, s, e)) = fa.copy_spans.get(ci) {
                             let locus = rustle::vg_family::copy_assign_pipeline::locus_extent_of(tid);
-                            copy_span_by_catalog_idx.insert(cidx.to_string(), (chrom.clone(), *s, *e, locus));
+                            copy_span_by_cf
+                                .entry(cf.clone())
+                                .or_default()
+                                .insert(cidx.to_string(), (chrom.clone(), *s, *e, locus));
                         }
                     }
                 }
@@ -2518,21 +2545,21 @@ fn main() -> Result<()> {
                 let truth_copy = best_overlap_truth_copy(&bam_reads, &fa.copy_spans, &fa.copy_tids, catalog_index.as_ref());
                 // Group this family's bam_reads by best-candidate catalog_copy_idx, split into rejected
                 // (origin_rejected==true) and accepted (this family's own certificate-passed reads at that
-                // copy). `Assignment` (src/rustle/vg_family/copy_assign.rs:101-146) carries `best_copy: usize`
+                // copy), NOW bucketed by (cf, cidx) rather than bare cidx (Fix 1 above -- `cf` here is the
+                // TRUE catalog family of `assignment.best_copy`'s own tid, captured instead of discarded).
+                // `Assignment` (src/rustle/vg_family/copy_assign.rs:101-146) carries `best_copy: usize`
                 // (an index into `copy_tids`/`copy_spans`, the same namespace `ci` uses above -- `.get()`,
                 // not direct indexing, since no invariant here guarantees every family's assignments stay
                 // in range), `status: AssignStatus` (Assigned/Ambiguous/Tied) and `origin_rejected: bool`.
-                let mut rejected_by_idx: std::collections::HashMap<String, Vec<(String, Vec<u8>)>> =
+                let mut rejected_by_cf: std::collections::HashMap<String, std::collections::HashMap<String, Vec<(String, Vec<u8>)>>> =
                     std::collections::HashMap::new();
-                let mut accepted_by_idx: std::collections::HashMap<String, Vec<(String, Vec<u8>)>> =
+                let mut accepted_by_cf: std::collections::HashMap<String, std::collections::HashMap<String, Vec<(String, Vec<u8>)>>> =
                     std::collections::HashMap::new();
                 for &(read_i, ref assignment) in &fa.assignments {
                     let Some(br) = bam_reads.get(read_i) else { continue };
                     let Some(tid) = fa.copy_tids.get(assignment.best_copy) else { continue };
-                    let cidx = match catalog_index.as_ref().and_then(|ix| ix.get(tid)) {
-                        Some((_, c)) => c.to_string(),
-                        None => continue,
-                    };
+                    let Some((cf, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) else { continue };
+                    let cidx = cidx.to_string();
                     // Python's `n in truth` gate: rejected reads need a primary overlapping ANY of this
                     // family's copies (grouped by O2's own best-copy call, which may differ from the
                     // truth-copy); control/accepted reads need the primary's OWN best-overlap copy to BE
@@ -2548,30 +2575,43 @@ fn main() -> Result<()> {
                     let Some((truth_cidx, _)) = truth_copy.get(br.name.as_str()) else { continue };
                     let entry = (br.name.clone(), br.read.seq.clone());
                     if assignment.origin_rejected {
-                        rejected_by_idx.entry(cidx).or_default().push(entry);
+                        rejected_by_cf.entry(cf.clone()).or_default().entry(cidx).or_default().push(entry);
                     } else if *truth_cidx == cidx {
-                        accepted_by_idx.entry(cidx).or_default().push(entry);
+                        accepted_by_cf.entry(cf.clone()).or_default().entry(cidx).or_default().push(entry);
                     }
                 }
-                let mut inputs: Vec<rustle::vg_family::o3_flag_pass::PairInput> = copy_span_by_catalog_idx
-                    .keys()
-                    .map(|cidx| rustle::vg_family::o3_flag_pass::PairInput {
-                        copy_idx: cidx.clone(),
-                        // CatalogCopy::partner is not threaded through FamilyAssignment yet -- default
-                        // false never OVER-claims a partner exclusion (see the design doc's is_partner note).
-                        is_partner: false,
-                        rejected: rejected_by_idx.get(cidx).cloned().unwrap_or_default(),
-                        accepted: accepted_by_idx.get(cidx).cloned().unwrap_or_default(),
-                    })
-                    .collect();
-                // Fix 3 (Task 6, carried forward from Task 5's review): `copy_span_by_catalog_idx.keys()`
-                // iterates a HashMap in nondeterministic order -- sort by `copy_idx` so `o3_raw_pairs`
-                // (and therefore its `family_join.tsv`/`o3_candidate_loci.tsv` row order) is stable
-                // run-to-run, matching this diff's BTreeMap-everywhere determinism discipline elsewhere.
-                inputs.sort_by(|a, b| a.copy_idx.cmp(&b.copy_idx));
-                pairs.extend(rustle::vg_family::o3_flag_pass::detect_missing_copy_pairs(
-                    &fa.family_id, &copy_span_by_catalog_idx, &genome, &inputs, &o3_params,
-                ));
+                // Fix 1: one `detect_missing_copy_pairs` call PER real catalog family (`cf`) present among
+                // this `fa`'s own copies, passing that TRUE `cf` as `family_id` (not `fa.family_id`, the
+                // local co-located id) -- makes `RawPair.family_id` always equal `JoinRow.family_id`, closing
+                // the namespace mismatch above. `cfs` sorted for run-to-run determinism (this diff's
+                // BTreeMap-everywhere discipline elsewhere).
+                let mut cfs: Vec<&String> = copy_span_by_cf.keys().collect();
+                cfs.sort();
+                let empty_rej: std::collections::HashMap<String, Vec<(String, Vec<u8>)>> = std::collections::HashMap::new();
+                let empty_acc: std::collections::HashMap<String, Vec<(String, Vec<u8>)>> = std::collections::HashMap::new();
+                for cf in cfs {
+                    let spans = copy_span_by_cf.get(cf).unwrap();
+                    let rej = rejected_by_cf.get(cf).unwrap_or(&empty_rej);
+                    let acc = accepted_by_cf.get(cf).unwrap_or(&empty_acc);
+                    // Fix 3 (Task 6, carried forward from Task 5's review): iterating a HashMap's `.keys()`
+                    // is nondeterministic order -- sort by `copy_idx` so `o3_raw_pairs` (and therefore its
+                    // `family_join.tsv`/`o3_candidate_loci.tsv` row order) is stable run-to-run.
+                    let mut inputs: Vec<rustle::vg_family::o3_flag_pass::PairInput> = spans
+                        .keys()
+                        .map(|cidx| rustle::vg_family::o3_flag_pass::PairInput {
+                            copy_idx: cidx.clone(),
+                            // CatalogCopy::partner is not threaded through FamilyAssignment yet -- default
+                            // false never OVER-claims a partner exclusion (see the design doc's is_partner note).
+                            is_partner: false,
+                            rejected: rej.get(cidx).cloned().unwrap_or_default(),
+                            accepted: acc.get(cidx).cloned().unwrap_or_default(),
+                        })
+                        .collect();
+                    inputs.sort_by(|a, b| a.copy_idx.cmp(&b.copy_idx));
+                    pairs.extend(rustle::vg_family::o3_flag_pass::detect_missing_copy_pairs(
+                        cf, spans, &genome, &inputs, &o3_params,
+                    ));
+                }
                 // Orphan-locus scan: bam_reads whose primary lands outside every unit of this family,
                 // clustered by proximity (<=5kb gap, matching bench/o3_flag_pass.py), classified via the
                 // shared genome-wide indices built once above.
@@ -2580,9 +2620,13 @@ fn main() -> Result<()> {
                     .iter()
                     .filter(|br| !br.is_secondary && !br.is_supplementary)
                     .filter(|br| {
-                        !fam_units
-                            .iter()
-                            .any(|(c, s, e)| br.chrom == *c && br.read.ref_start < *e && *s < read_ref_end_local(&br.read))
+                        // Fix 3 (final whole-branch review): this used to be a genomic-SPAN overlap check
+                        // (`ref_start < e && s < ref_end`), the exact bug class Task 7 already fixed at the
+                        // pair-detector's truth-overlap gate via `block_overlap()` -- a read whose intron (an
+                        // `N` CIGAR op) merely SPANS a unit without any aligned block actually landing inside
+                        // it was wrongly counted "inside", undercounting orphans. Now uses the same
+                        // aligned-block overlap `block_overlap()` (M/=/X runs only) the truth gate uses.
+                        !fam_units.iter().any(|(c, s, e)| br.chrom == *c && block_overlap(&br.read, *s, *e) > 0)
                     })
                     // Fix 1 (Task 6, revised): restrict to reads that are demonstrably ORPHANED for `fa`
                     // specifically -- present in `fa`'s own assignments (i.e. `fa` actually considered this
@@ -2598,19 +2642,29 @@ fn main() -> Result<()> {
                     })
                     .collect();
                 outside.sort_by(|a, b| (a.chrom.as_str(), a.read.ref_start).cmp(&(b.chrom.as_str(), b.read.ref_start)));
-                let mut clusters: Vec<(String, u64, u64, usize)> = Vec::new();
+                // Minor (final whole-branch review, "n_orphans hardcoded 0" parked in Task 6): a TRUE orphan
+                // (`n_candidates==0`, nowhere to go at all) is a strict subset of this cluster's members
+                // (which also include merely-rejected-but-had-a-candidate reads, per the `fa_verdict` filter
+                // above) -- `fa_verdict` already carries `n_candidates` per read name, matching
+                // `bench/o3_flag_pass.py`'s own `n_orph = sum(1 for a in reads if
+                // A[a.query_name].get('n_candidates','1')=='0')`.
+                let mut clusters: Vec<(String, u64, u64, usize, usize)> = Vec::new();
                 for br in &outside {
                     let end = read_ref_end_local(&br.read);
+                    let is_true_orphan = fa_verdict.get(br.name.as_str()).map_or(false, |&(_, n_cand)| n_cand == 0);
                     if let Some(last) = clusters.last_mut() {
                         if last.0 == br.chrom && br.read.ref_start.saturating_sub(last.2) <= 5000 {
                             last.2 = last.2.max(end);
                             last.3 += 1;
+                            if is_true_orphan {
+                                last.4 += 1;
+                            }
                             continue;
                         }
                     }
-                    clusters.push((br.chrom.clone(), br.read.ref_start, end, 1));
+                    clusters.push((br.chrom.clone(), br.read.ref_start, end, 1, if is_true_orphan { 1 } else { 0 }));
                 }
-                for (chrom, start, end, n_reads) in clusters {
+                for (chrom, start, end, n_reads, n_orphans) in clusters {
                     if n_reads < 3 {
                         continue;
                     }
@@ -2618,7 +2672,7 @@ fn main() -> Result<()> {
                         &chrom, start, end, &fa.family_id, &o3_all_units_by_chrom, &o3_genes_by_chrom,
                     );
                     loci.push(rustle::vg_family::o3_flag_pass::OrphanLocus {
-                        chrom, start, end, n_reads, n_orphans: 0, class,
+                        chrom, start, end, n_reads, n_orphans, class,
                         n_genes_overlapping: n_genes, other_family_units: other_units,
                     });
                 }
@@ -4148,7 +4202,13 @@ fn main() -> Result<()> {
                         let p_str = fp.pair.p_uncorrected.map_or("NA".to_string(), |p| format!("{p:.3e}"));
                         writeln!(jh, "{}\t{flag_str}\t{class_str}\t{rate:.2}\t{p_str}\t{}", r.line, fp.pair.n_rejected)?;
                     }
-                    None => writeln!(jh, "{}\tnone\tNA\t0.00\tNA\t0", r.line)?,
+                    // Fix 2 (final whole-branch review): a genuine `o3_flags` lookup miss (never reached
+                    // `detect_missing_copy_pairs` at all -- skipped for <3 rejected reads, or, before Fix 1,
+                    // lost to the namespace mismatch) is NOT the same thing as "tested and found clean"
+                    // (`none`). Writing the same `none` literal for both conflated them; `not_tested` is a
+                    // distinct token so a reader (and `bench/o3_cross_individual_diff.py`) can tell "we have
+                    // no information" from "we looked and it was negative".
+                    None => writeln!(jh, "{}\tnot_tested\tNA\t0.00\tNA\t0", r.line)?,
                 }
             } else {
                 writeln!(jh, "{}", r.line)?;
