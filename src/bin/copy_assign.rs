@@ -1351,14 +1351,22 @@ fn block_overlap(read: &rustle::vg_family::copy_split::AlignedRead, s: u64, e: u
 /// `cp.items()`'s insertion order, i.e. `copy_spans`' iteration order here). A candidate copy with no
 /// entry in `catalog_index` (or no `catalog_index` at all) is silently skipped for that read.
 ///
+/// Returns `(cf, cidx)` -- the TRUE catalog family id AND copy idx, not bare `cidx` alone (final
+/// whole-branch-review fix round, follow-up): `copy_spans`/`copy_tids` here are `fa`'s ENTIRE co-located
+/// copy set, which can span more than one true catalog family (Fix 1's own finding). Bare `cidx` is not
+/// unique across that whole set -- two copies from DIFFERENT catalog families sharing a bare index would
+/// make the caller's `*truth_cidx == cidx` comparison succeed for the wrong reason whenever a read's true
+/// best-overlap copy is one of that colliding pair and O2's own `assignment.best_copy` names the other.
+/// Confirmed live: Task 8's real data has 3 local families/arm with exactly this bare-cidx collision.
+///
 /// Extracted out of `main()`'s per-family loop so the tie-break is directly unit-testable.
 fn best_overlap_truth_copy<'a>(
     bam_reads: &'a [BamRead],
     copy_spans: &[(String, u64, u64)],
     copy_tids: &[String],
     catalog_index: Option<&CatalogIndex>,
-) -> std::collections::HashMap<&'a str, (String, u64)> {
-    let mut truth_copy: std::collections::HashMap<&str, (String, u64)> = std::collections::HashMap::new();
+) -> std::collections::HashMap<&'a str, ((String, String), u64)> {
+    let mut truth_copy: std::collections::HashMap<&str, ((String, String), u64)> = std::collections::HashMap::new();
     for br in bam_reads.iter().filter(|br| !br.is_secondary && !br.is_supplementary) {
         let end = read_ref_end_local(&br.read); // cheap span bound, to skip non-overlapping copies fast
         for (ci, (c, s, e)) in copy_spans.iter().enumerate() {
@@ -1370,11 +1378,11 @@ fn best_overlap_truth_copy<'a>(
                 continue;
             }
             let Some(tid) = copy_tids.get(ci) else { continue };
-            let Some((_, cidx)) = catalog_index.and_then(|ix| ix.get(tid)) else { continue };
+            let Some((cf, cidx)) = catalog_index.and_then(|ix| ix.get(tid)) else { continue };
             match truth_copy.get(br.name.as_str()) {
                 Some((_, best_ov)) if *best_ov >= ov => {}
                 _ => {
-                    truth_copy.insert(br.name.as_str(), (cidx.to_string(), ov));
+                    truth_copy.insert(br.name.as_str(), ((cf.clone(), cidx.to_string()), ov));
                 }
             }
         }
@@ -2572,11 +2580,16 @@ fn main() -> Result<()> {
                     // Python and is stricter: on `sweep_v13` it collapsed MCL1_073242 copy 15's true
                     // 31-read control pool to 1 read (forcing `Untestable` instead of Python's real
                     // verdict) and affected 8 (family, copy) groups genome-wide (docs/o1_ledger.md §6ib).
-                    let Some((truth_cidx, _)) = truth_copy.get(br.name.as_str()) else { continue };
+                    // Follow-up fix (final whole-branch review, round 2): compare BOTH `truth_cf` and
+                    // `truth_cidx` against this assignment's own `(cf, cidx)` -- bare `cidx` equality alone
+                    // (the pre-fix comparison) can succeed for the WRONG reason when two catalog copies from
+                    // DIFFERENT families share a bare index inside the same `fa` (see `best_overlap_truth_copy`'s
+                    // own doc comment).
+                    let Some(((truth_cf, truth_cidx), _)) = truth_copy.get(br.name.as_str()) else { continue };
                     let entry = (br.name.clone(), br.read.seq.clone());
                     if assignment.origin_rejected {
                         rejected_by_cf.entry(cf.clone()).or_default().entry(cidx).or_default().push(entry);
-                    } else if *truth_cidx == cidx {
+                    } else if truth_cf == cf && *truth_cidx == cidx {
                         accepted_by_cf.entry(cf.clone()).or_default().entry(cidx).or_default().push(entry);
                     }
                 }
@@ -2642,6 +2655,13 @@ fn main() -> Result<()> {
                     })
                     .collect();
                 outside.sort_by(|a, b| (a.chrom.as_str(), a.read.ref_start).cmp(&(b.chrom.as_str(), b.read.ref_start)));
+                // Follow-up fix (final whole-branch review, round 2): `classify_orphan_locus`'s exclusion
+                // test also used to take `&fa.family_id` -- the LOCAL co-located group's own (possibly
+                // arbitrary) label, not necessarily any real catalog family id. Since `fa` can bundle more
+                // than one true catalog family (Fix 1's own finding), the correct "self" set for this
+                // exclusion is EVERY true catalog family id present among `fa`'s own copies -- exactly
+                // `copy_span_by_cf`'s key set, already built above.
+                let own_family_ids: std::collections::HashSet<String> = copy_span_by_cf.keys().cloned().collect();
                 // Minor (final whole-branch review, "n_orphans hardcoded 0" parked in Task 6): a TRUE orphan
                 // (`n_candidates==0`, nowhere to go at all) is a strict subset of this cluster's members
                 // (which also include merely-rejected-but-had-a-candidate reads, per the `fa_verdict` filter
@@ -2669,7 +2689,7 @@ fn main() -> Result<()> {
                         continue;
                     }
                     let (class, n_genes, other_units) = rustle::vg_family::o3_flag_pass::classify_orphan_locus(
-                        &chrom, start, end, &fa.family_id, &o3_all_units_by_chrom, &o3_genes_by_chrom,
+                        &chrom, start, end, &own_family_ids, &o3_all_units_by_chrom, &o3_genes_by_chrom,
                     );
                     loci.push(rustle::vg_family::o3_flag_pass::OrphanLocus {
                         chrom, start, end, n_reads, n_orphans, class,
@@ -4844,7 +4864,11 @@ mod tests {
         catalog_index.insert("tidA".to_string(), ("famA".to_string(), 0usize));
         catalog_index.insert("tidB".to_string(), ("famB".to_string(), 1usize));
         let truth = best_overlap_truth_copy(std::slice::from_ref(&br), &copy_spans, &copy_tids, Some(&catalog_index));
-        assert_eq!(truth.get("r1"), Some(&("0".to_string(), 80)), "copy A (80bp overlap) beats copy B (40bp)");
+        assert_eq!(
+            truth.get("r1"),
+            Some(&(("famA".to_string(), "0".to_string()), 80)),
+            "copy A (80bp overlap) beats copy B (40bp); return value now carries (cf, cidx), not bare cidx"
+        );
     }
 
     #[test]
@@ -4863,7 +4887,11 @@ mod tests {
         catalog_index.insert("tidA".to_string(), ("famA".to_string(), 0usize));
         catalog_index.insert("tidB".to_string(), ("famB".to_string(), 1usize));
         let truth = best_overlap_truth_copy(std::slice::from_ref(&br), &copy_spans, &copy_tids, Some(&catalog_index));
-        assert_eq!(truth.get("r1"), Some(&("0".to_string(), 50)), "copy A (seen first) wins the tie over copy B");
+        assert_eq!(
+            truth.get("r1"),
+            Some(&(("famA".to_string(), "0".to_string()), 50)),
+            "copy A (seen first) wins the tie over copy B; return value now carries (cf, cidx), not bare cidx"
+        );
     }
 
     #[test]

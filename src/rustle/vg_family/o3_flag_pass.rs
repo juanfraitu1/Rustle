@@ -325,11 +325,22 @@ mod tests {
 /// `pub` (not `pub(crate)`): Task 5 (`src/bin/copy_assign.rs`) is a separate binary crate and calls this
 /// directly per the integration plan's "Consumes" list -- `pub(crate)` here was invisible to it (E0603).
 /// Pure visibility widening, no signature/behavior change; every other item Task 5 needs was already `pub`.
+///
+/// `own_family_ids` (final whole-branch-review fix round, follow-up): a SET, not a single id --
+/// `bench/o3_flag_pass.py`'s own exclusion (`u[2] != cp[next(iter(cp))]['family_id'].split('_')[0]`) is
+/// trivially always correct because each Python sweep is ISOLATED to exactly one catalog family. The
+/// caller here is a locally co-located physical sweep group that can legitimately bundle MORE THAN ONE
+/// true catalog family (the same fact Fix 1 addressed for the pair detector) -- passing a single id (the
+/// group's own, possibly arbitrary, local label) would incorrectly classify an orphan cluster's OWN
+/// bundled sibling family's real unit as "OtherFamily" whenever that sibling isn't the one label chosen to
+/// represent the group. `own_family_ids` is every TRUE catalog family id actually present among the
+/// calling group's own copies; a unit belongs to "this same group" (excluded from `OtherFamily`) iff its
+/// `fid` is a member of this set.
 pub fn classify_orphan_locus(
     chrom: &str,
     start: u64,
     end: u64,
-    own_family_id: &str,
+    own_family_ids: &std::collections::HashSet<String>,
     all_units_by_chrom: &std::collections::BTreeMap<String, Vec<(u64, u64, String, String)>>,
     genes_by_chrom: &std::collections::BTreeMap<String, Vec<(u64, u64)>>,
 ) -> (LocusClass, usize, Vec<String>) {
@@ -338,7 +349,7 @@ pub fn classify_orphan_locus(
         .get(chrom)
         .map(|v| {
             v.iter()
-                .filter(|(s, e, fid, _)| overlaps(start, end, *s, *e) && fid != own_family_id)
+                .filter(|(s, e, fid, _)| overlaps(start, end, *s, *e) && !own_family_ids.contains(fid))
                 .take(3)
                 .map(|(_, _, fid, cidx)| format!("{fid}:{cidx}"))
                 .collect()
@@ -375,9 +386,13 @@ mod locus_tests {
         m
     }
 
+    fn myfam() -> std::collections::HashSet<String> {
+        std::collections::HashSet::from(["MYFAM".to_string()])
+    }
+
     #[test]
     fn overlapping_another_familys_unit_wins_other_family() {
-        let (class, _, units_hit) = classify_orphan_locus("chr1", 150, 250, "MYFAM", &units(), &genes());
+        let (class, _, units_hit) = classify_orphan_locus("chr1", 150, 250, &myfam(), &units(), &genes());
         assert_eq!(class, LocusClass::OtherFamily);
         assert_eq!(units_hit, vec!["OTHERFAM:3".to_string()]);
     }
@@ -386,7 +401,7 @@ mod locus_tests {
     fn own_family_unit_does_not_count_as_other_family() {
         let mut u = units();
         u.get_mut("chr1").unwrap().push((150, 250, "MYFAM".to_string(), "0".to_string()));
-        let (class, _, units_hit) = classify_orphan_locus("chr1", 150, 250, "MYFAM", &u, &genes());
+        let (class, _, units_hit) = classify_orphan_locus("chr1", 150, 250, &myfam(), &u, &genes());
         // still hits OTHERFAM's unit at 100-200 too, so still OtherFamily -- verifies own-family rows
         // are excluded, not that the whole overlap set is
         assert_eq!(class, LocusClass::OtherFamily);
@@ -395,7 +410,7 @@ mod locus_tests {
 
     #[test]
     fn no_other_family_unit_but_gene_overlap_is_annotated_no_unit() {
-        let (class, n_genes, units_hit) = classify_orphan_locus("chr1", 550, 650, "MYFAM", &units(), &genes());
+        let (class, n_genes, units_hit) = classify_orphan_locus("chr1", 550, 650, &myfam(), &units(), &genes());
         assert_eq!(class, LocusClass::AnnotatedNoUnit);
         assert_eq!(n_genes, 1);
         assert!(units_hit.is_empty());
@@ -403,7 +418,7 @@ mod locus_tests {
 
     #[test]
     fn nothing_overlapping_is_unannotated() {
-        let (class, n_genes, units_hit) = classify_orphan_locus("chr1", 9000, 9100, "MYFAM", &units(), &genes());
+        let (class, n_genes, units_hit) = classify_orphan_locus("chr1", 9000, 9100, &myfam(), &units(), &genes());
         assert_eq!(class, LocusClass::Unannotated);
         assert_eq!(n_genes, 0);
         assert!(units_hit.is_empty());
@@ -416,15 +431,60 @@ mod locus_tests {
             "chr1".to_string(),
             (0..5).map(|i| (100u64, 200u64, format!("FAM{i}"), "0".to_string())).collect(),
         );
-        let (_, _, units_hit) = classify_orphan_locus("chr1", 100, 200, "MYFAM", &u, &BTreeMap::new());
+        let (_, _, units_hit) = classify_orphan_locus("chr1", 100, 200, &myfam(), &u, &BTreeMap::new());
         assert_eq!(units_hit.len(), 3);
     }
 
     #[test]
     fn unknown_chrom_is_unannotated() {
-        let (class, n_genes, units_hit) = classify_orphan_locus("chrZZZ", 0, 10, "MYFAM", &units(), &genes());
+        let (class, n_genes, units_hit) = classify_orphan_locus("chrZZZ", 0, 10, &myfam(), &units(), &genes());
         assert_eq!(class, LocusClass::Unannotated);
         assert_eq!(n_genes, 0);
+        assert!(units_hit.is_empty());
+    }
+
+    #[test]
+    fn own_family_ids_set_excludes_every_member_not_just_the_first() {
+        // Final whole-branch-review fix round, follow-up: a caller that bundles TWO true catalog
+        // families (e.g. a locally co-located `fa` spanning more than one catalog family, the same fact
+        // Fix 1 addressed for the pair detector) must have BOTH of its own family ids excluded from
+        // `OtherFamily`, not just whichever single label happened to be chosen to represent the group.
+        let mut u = BTreeMap::new();
+        u.insert(
+            "chr1".to_string(),
+            vec![
+                (100, 200, "SIBLING_B".to_string(), "0".to_string()), // bundled INTO the same caller group
+                (100, 200, "TRULY_OTHER".to_string(), "0".to_string()), // NOT part of the caller's group
+            ],
+        );
+        let own = std::collections::HashSet::from(["SIBLING_A".to_string(), "SIBLING_B".to_string()]);
+        let (class, _, units_hit) = classify_orphan_locus("chr1", 100, 200, &own, &u, &BTreeMap::new());
+        assert_eq!(class, LocusClass::OtherFamily, "TRULY_OTHER's unit is real external evidence");
+        assert_eq!(
+            units_hit,
+            vec!["TRULY_OTHER:0".to_string()],
+            "SIBLING_B must be excluded as self (it is in own_family_ids) even though it is not the \
+             single id a bare-string comparison would have used"
+        );
+    }
+
+    #[test]
+    fn own_family_ids_set_with_no_external_unit_is_not_other_family() {
+        // The bundle's OWN two sibling families both overlap the locus; with no truly external unit
+        // present, the class must fall through to AnnotatedNoUnit/Unannotated, not OtherFamily -- the
+        // single-id bug (comparing against only one arbitrary label) would have wrongly reported
+        // OtherFamily here for whichever sibling wasn't the chosen label.
+        let mut u = BTreeMap::new();
+        u.insert(
+            "chr1".to_string(),
+            vec![
+                (100, 200, "SIBLING_A".to_string(), "0".to_string()),
+                (100, 200, "SIBLING_B".to_string(), "0".to_string()),
+            ],
+        );
+        let own = std::collections::HashSet::from(["SIBLING_A".to_string(), "SIBLING_B".to_string()]);
+        let (class, _, units_hit) = classify_orphan_locus("chr1", 100, 200, &own, &u, &genes());
+        assert_eq!(class, LocusClass::Unannotated);
         assert!(units_hit.is_empty());
     }
 }

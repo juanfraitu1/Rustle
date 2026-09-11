@@ -16642,3 +16642,34 @@ above.
 Commit: this fix round's `src/bin/copy_assign.rs` (Fix 1 namespace partition, Fix 2 `not_tested` token,
 Fix 3 orphan-locus `block_overlap`) + `bench/o3_cross_individual_diff.py` (Fix 2 categorization). Re-run
 outputs under `/mnt/linuxdisk/home/juanfraitu/o3_diff/fix1/`, not committed.
+
+### §6id continuation, round 2 — `best_overlap_truth_copy`/`classify_orphan_locus` cf-threading fix: NO further change to the headline (2026-09-11)
+
+A scoped re-review of the round-1 fix found `best_overlap_truth_copy` still compared bare `cidx` (no `cf`)
+when attributing a read's "true" best-overlap copy for the `accepted`/control pool, and
+`classify_orphan_locus` still received `&fa.family_id` (the LOCAL co-located label) instead of the TRUE
+catalog family id(s) present in the calling group — both the same namespace-collision class Fix 1 already
+fixed for the pair-detector's rejected/accepted bucketing maps. Both fixed this round (threading `cf`
+through `best_overlap_truth_copy`'s return type and `classify_orphan_locus`'s own-family-id parameter,
+now a SET of every true catalog family id in the calling group, not a single label). Full account in
+`.superpowers/sdd/2026-09-10-o3-flag-pass-integration/final-review-fix-report.md`.
+
+**Re-ran both Task 8 arms again** (same `testis.catalog.tsv`/`fibroblast.catalog.tsv`/
+`same_chrom.regions.merged.txt`/`GGO_ds.bam`/`fibro_ds.bam` setup, reused verbatim, output prefix
+`fix2/testis`/`fix2/fibroblast`): **byte-identical flag distributions to round 1** —
+`testis.family_join.tsv` 4 `none` / 2266 `not_tested` / 5 `untestable` / 1 `missing_copy`;
+`fibroblast.family_join.tsv` 0 `none` / 2074 `not_tested` / 5 `untestable` / 1 `missing_copy`. The 2
+`inconclusive` pairs' own raw rows (`MCL2209:0`, `MCL2288:0`) are byte-identical to round 1's values
+(same `n_reads`/`rate`/`p`/`n_rejected`). **The corrected headline from the round-1 continuation above is
+UNCHANGED and now the final, verified number: 0 candidate differentials, 2 inconclusive, 2072
+both-arms-testable copies, 0.000 no_signal fraction.** Independently cross-checked by a from-scratch
+Python recount reading the raw TSVs directly (not `bench/o3_cross_individual_diff.py`'s own code path):
+identical category counts, confirming the diff script's arithmetic. As the round-2 dispatch itself
+anticipated, this specific fix's real-world effect was not measurable on either this Task 8 substrate or
+the 76-family reproduction substrate (188/192 pairs/flags, 326 loci rows, both byte-identical to round 1)
+— the bare-cidx-across-families collision this fix closes is confirmed real (Task 8's own data has 3
+local families/arm exhibiting it) but did not happen to change any of the specific values these substrates
+exercise. Not a wasted fix: it closes a real, demonstrated defect class (2 new unit tests added,
+`own_family_ids_set_excludes_every_member_not_just_the_first` /
+`own_family_ids_set_with_no_external_unit_is_not_other_family`, directly exercise the scenario the bug
+required), even though this run's own numbers don't move.
