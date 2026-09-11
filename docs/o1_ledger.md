@@ -16882,3 +16882,65 @@ not 100%) no amount of further code archaeology can close.
 
 Related: [[project_soto_full_replication]], [[project_soto_audit_14agent]],
 [[project_soto_cn_data_famcn_vs_parcn]].
+
+## §6ig — Attempting to mimic Soto's manual "redundant gene" curation step (2026-09-11)
+
+Follow-up to §6if's "true exact reproduction remains unreachable — their step 2 manual curation is an
+undocumented human judgment call". Investigated whether that step can be mechanically approximated,
+prompted by the observation that pseudogenes are numerous enough that a broad exon-based intersect would
+flag a lot of noise. Fetched `section_I&II/A_SD98_regions.md` directly for their exact command (not
+paraphrased):
+
+```bash
+bedtools intersect -wao -s -f 0.9 -a CHM13.combined.v4.txs.sd98.bed \
+-b CHM13.combined.v4.txs.sd98.bed | awk '{if($4!=$10){print}}' | cut -f4,10
+```
+"focusing on transcripts... fully contained (90%) within another gene with a different gene ID" ...
+"After manual curation, we landed on 71 genes that were redundant and removed them" ... "We kept only
+fusion genes that encoded an alternative protein."
+
+### A striking, exact numeric match, confirmed directly (not assumed)
+
+This project's OWN independently-recomputed SD98 gene-call rule (`-f 1` containment + eligible biotype,
+already on record as "1864 genes, precision 90.1% / 96.19%") is, checked directly, a STRICT SUPERSET of
+Soto's exact published 1,793-gene set with **precisely 71 extra genes and zero missing** (`comm -23`/`comm
+-13` on the two sorted gene-ID lists) — the EXACT count of their disclosed manual removal. This is the
+first time this project has connected its own "96.19% precision" number to the SPECIFIC, disclosed
+mechanism that explains the shortfall, rather than treating it as an unexplained residual.
+
+### Detection step: 100% reproducible, confirmed empirically
+
+Built a clean BED6 (chrom/start/end/GENE_ID/score/strand, unmerged transcript spans, no `-split`, matching
+their command's own scope exactly) from `cat_v4.bed` restricted to the same 5,154-gene set, and ran their
+literal command. Result: 680 candidate pairs / 572 unique flagged genes. **All 71 of the actually-removed
+genes appear somewhere in this candidate list (71/71 = 100%)**, split 53 on the "contained" side and the
+remaining 18 on the "container" side of some pair. Their disclosed detection rule, run exactly as
+published, independently rediscovers the complete removal set as candidates — a strong, direct
+confirmation that this part of their method is genuinely reproducible from the paper's own text.
+
+### Selection step: NOT reducible to a simple automated rule, tested and refuted
+
+The candidate pool (572 genes) is ~8x larger than the actual removal set (71), so most flagged
+overlaps are real, distinct biology that Soto kept — consistent with their own "kept only fusion genes
+that encoded an alternative protein" caveat, which requires protein-level judgment no coordinate-only
+rule can supply. Tested the most obvious mechanical proxy — remove the lower-biotype-priority member of
+each candidate pair (pseudogene < lncRNA-tier < protein_coding), breaking same-tier ties by shorter
+transcript span — against the known 71: **67.6% recall at 9.7% precision** (48/71 correctly flagged, but
+449 additional real genes incorrectly marked for removal). Rejected as unusable; not investigated further
+given the paper's own text already predicts exactly this outcome (a judgment call requiring information —
+which annotation "encodes an alternative protein" — this coordinate-only heuristic cannot see).
+
+### Practical bottom line
+
+This does not change any currently-reported ARI/exact-match number: the shared-exon-graph pipeline
+already uses Soto's own exact published 1,793-gene list (`soto_1793_geneset.tsv`, sourced directly from
+`soto_famCN_S1C.tsv`'s own `In Table S1 (SD98 gene set)=Yes` column) as its gene universe, not this
+project's independently-recomputed 1,864-gene approximation — so the 71-gene gap this section closes was
+never actually feeding the family-clustering numbers reported in §6ie/§6if. The value here is narrower but
+real: a fully-reproduced, exact explanation for the previously-unexplained gene-set-precision shortfall
+(96.19%, now traced to a SPECIFIC, disclosed, partially-mechanical step, not an opaque residual), and a
+reusable, validated redundant-candidate DETECTOR (bedtools command + BED6 construction) for any FUTURE
+from-scratch gene-set derivation where Soto's own published list isn't available to short-circuit the
+problem the way it does here.
+
+Related: [[project_soto_full_replication]].
