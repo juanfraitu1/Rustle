@@ -17579,3 +17579,48 @@ residual difference in what each SEDEF run actually calls remains, disclosed rat
 this round. `final_human.bed` alone stays the best single input and the current headline.
 
 Related: [[project_soto_full_replication]].
+
+## §6it — checked Soto's own supplement for a coordinate error; found independent validation instead (2026-09-11)
+
+User located the actual Soto supplementary Excel (`Soto_supplement.xlsx`: readme + S1A-S1G) and asked to
+check it for useful info, suspecting the gene family coordinates might be off. Loaded all 8 sheets via
+`openpyxl`/`pandas`.
+
+**S1E (already used all day) verified byte-accurate**: diffed our existing `soto_parCN_S1E.tsv` against a
+fresh extraction on every pipeline-relevant column (chrom/chromStart/chromEnd/Gene Coords/SD98_v1.0/
+SD98_v2.0/Family ID/...) — 0 differences across 1,833 rows. (A naive full-column diff first showed 3,470
+"differences" — a false alarm from Soto's own two-tier header producing duplicate column names, "parCN<1.5"
+and "parCN=2" each appearing twice for two different population groups (1KGP vs Archaics); collapses when
+read by name. Not a data error, just a trap for naive column-name access — noted, not a bug in anything we
+use.) Cross-checked S1E's "Gene Coords" against our own `cat_v4.bed` for all 1,833 genes: 100% same-
+chromosome overlap, no mismatches.
+
+**Found a genuinely new, richer resource, never used before**: `S1A` ("SD-98 genes... database
+intersections...") has PER-GENE dual coordinates for all 1,793 eligible genes directly —
+`Gene Coords t2t-chm13v1.0` and `Gene Coords t2t-chm13v2.0` in the same row, plus a separate
+`SD-98 Coords` dual-coordinate pair. This is denser and more direct than the SD-region-level anchors this
+whole session derived from S1E + manual realignment.
+
+**Independent validation, not a correction**: extracted all 1,793 gene-level (chrom, v2_pos, offset)
+triples from S1A. Checked TEKT4P2 (chr13/14/15/21) and all 8 ID_328 genes against them directly — EVERY
+offset matches, to the base pair, the values this session derived today via direct minimap2 realignment
+(§6il: chr13 672767, chr14 57685, chr15 585122, chr21 737013; §6in's "before"-regime chr13/14/15/21/22
+offsets). Soto's own team's published per-gene coordinates independently confirm this session's from-
+scratch derivations were correct.
+
+**No new improvement — and that itself confirms §6iq**: merged all 1,793 S1A anchors with the existing
+`acro_extra_anchors.tsv` and re-ran the full `final_human.bed` pipeline. Result: **byte-identical**
+shared-exon edge file to the current best (2,223 genes lifted, 4,192 edges, confirmed via `diff` on sorted
+output, not just matching counts). Soto's own, more authoritative per-gene coordinate table adds nothing
+our existing anchors didn't already cover — independent, higher-authority confirmation that §6iq's
+acrocentric tandem-repeat wall is a genuine assembly-content difference, not a gap in this project's own
+anchor derivation (S1A only has one row per TRUE gene; it can't anchor v2.0's "extra" tandem copies any
+more than our own liftover table could, since those copies have no corresponding row here either).
+
+**Answer to "I think the gene family coordinates are off"**: checked as directly as possible — they are
+not. Every coordinate this session has relied on or derived checks out against Soto's own supplement.
+
+New file: `s1a_gene_anchors.tsv`, `combined_anchors.tsv` (both under `winloci_data/soto_replication/`) —
+kept as disclosed validation data, not wired in as a pipeline default since it changes nothing.
+
+Related: [[project_soto_full_replication]].
