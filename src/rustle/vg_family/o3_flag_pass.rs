@@ -319,3 +319,109 @@ mod tests {
         assert!(flagged.is_empty());
     }
 }
+
+/// Orphan-locus classification (§ "Scope note" in the design doc): OtherFamily > AnnotatedNoUnit >
+/// Unannotated precedence. `all_units_by_chrom`/`genes_by_chrom` built ONCE per run, shared read-only.
+pub(crate) fn classify_orphan_locus(
+    chrom: &str,
+    start: u64,
+    end: u64,
+    own_family_id: &str,
+    all_units_by_chrom: &std::collections::BTreeMap<String, Vec<(u64, u64, String, String)>>,
+    genes_by_chrom: &std::collections::BTreeMap<String, Vec<(u64, u64)>>,
+) -> (LocusClass, usize, Vec<String>) {
+    let overlaps = |a0: u64, a1: u64, b0: u64, b1: u64| a0 < b1 && b0 < a1;
+    let other_family_units: Vec<String> = all_units_by_chrom
+        .get(chrom)
+        .map(|v| {
+            v.iter()
+                .filter(|(s, e, fid, _)| overlaps(start, end, *s, *e) && fid != own_family_id)
+                .take(3)
+                .map(|(_, _, fid, cidx)| format!("{fid}:{cidx}"))
+                .collect()
+        })
+        .unwrap_or_default();
+    let n_genes_overlapping = genes_by_chrom
+        .get(chrom)
+        .map(|v| v.iter().filter(|(s, e)| overlaps(start, end, *s, *e)).count())
+        .unwrap_or(0);
+    let class = if !other_family_units.is_empty() {
+        LocusClass::OtherFamily
+    } else if n_genes_overlapping > 0 {
+        LocusClass::AnnotatedNoUnit
+    } else {
+        LocusClass::Unannotated
+    };
+    (class, n_genes_overlapping, other_family_units)
+}
+
+#[cfg(test)]
+mod locus_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn units() -> BTreeMap<String, Vec<(u64, u64, String, String)>> {
+        let mut m = BTreeMap::new();
+        m.insert("chr1".to_string(), vec![(100, 200, "OTHERFAM".to_string(), "3".to_string())]);
+        m
+    }
+
+    fn genes() -> BTreeMap<String, Vec<(u64, u64)>> {
+        let mut m = BTreeMap::new();
+        m.insert("chr1".to_string(), vec![(500, 600)]);
+        m
+    }
+
+    #[test]
+    fn overlapping_another_familys_unit_wins_other_family() {
+        let (class, _, units_hit) = classify_orphan_locus("chr1", 150, 250, "MYFAM", &units(), &genes());
+        assert_eq!(class, LocusClass::OtherFamily);
+        assert_eq!(units_hit, vec!["OTHERFAM:3".to_string()]);
+    }
+
+    #[test]
+    fn own_family_unit_does_not_count_as_other_family() {
+        let mut u = units();
+        u.get_mut("chr1").unwrap().push((150, 250, "MYFAM".to_string(), "0".to_string()));
+        let (class, _, units_hit) = classify_orphan_locus("chr1", 150, 250, "MYFAM", &u, &genes());
+        // still hits OTHERFAM's unit at 100-200 too, so still OtherFamily -- verifies own-family rows
+        // are excluded, not that the whole overlap set is
+        assert_eq!(class, LocusClass::OtherFamily);
+        assert!(!units_hit.iter().any(|s| s.starts_with("MYFAM:")));
+    }
+
+    #[test]
+    fn no_other_family_unit_but_gene_overlap_is_annotated_no_unit() {
+        let (class, n_genes, units_hit) = classify_orphan_locus("chr1", 550, 650, "MYFAM", &units(), &genes());
+        assert_eq!(class, LocusClass::AnnotatedNoUnit);
+        assert_eq!(n_genes, 1);
+        assert!(units_hit.is_empty());
+    }
+
+    #[test]
+    fn nothing_overlapping_is_unannotated() {
+        let (class, n_genes, units_hit) = classify_orphan_locus("chr1", 9000, 9100, "MYFAM", &units(), &genes());
+        assert_eq!(class, LocusClass::Unannotated);
+        assert_eq!(n_genes, 0);
+        assert!(units_hit.is_empty());
+    }
+
+    #[test]
+    fn other_family_units_capped_at_three() {
+        let mut u = BTreeMap::new();
+        u.insert(
+            "chr1".to_string(),
+            (0..5).map(|i| (100u64, 200u64, format!("FAM{i}"), "0".to_string())).collect(),
+        );
+        let (_, _, units_hit) = classify_orphan_locus("chr1", 100, 200, "MYFAM", &u, &BTreeMap::new());
+        assert_eq!(units_hit.len(), 3);
+    }
+
+    #[test]
+    fn unknown_chrom_is_unannotated() {
+        let (class, n_genes, units_hit) = classify_orphan_locus("chrZZZ", 0, 10, "MYFAM", &units(), &genes());
+        assert_eq!(class, LocusClass::Unannotated);
+        assert_eq!(n_genes, 0);
+        assert!(units_hit.is_empty());
+    }
+}
