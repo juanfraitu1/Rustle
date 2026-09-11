@@ -17480,3 +17480,59 @@ T2T-CHM13 v1.0 and v2.0 in the most repeat-dense part of the genome, matching th
 established finding that these regions are exactly where the two assemblies structurally diverge most.
 
 Related: [[project_soto_full_replication]].
+
+## §6ir — the official, published v1.0 SD dataset (Vollger et al. 2021), replicated natively — worse, disclosed why (2026-09-11)
+
+User located the actual companion dataset for the CHM13 v1.0 segmental-duplication landmark paper (Vollger
+et al. 2021, "Segmental duplications and their variation in a complete human genome," Zenodo
+10.5281/zenodo.4726156) — `chm13.draft_v1.0_plus38Y.SDs.bed`, the PUBLISHED, peer-reviewed, native v1.0
+SEDEF-derived SD calls (82,578 rows; 5,268 at >=98% identity, MORE than `final_human.bed`'s 4,061), plus a
+`.SDs.lowid.bed` supplement (149,416 rows, a separate run, not a strict identity-filtered subset of the
+main file — 0 shared exact tuples checked) and a `gene_duplicon_map.tbl` (an independent, DupMasker-style
+duplicon->gene grouping, a different concept from Soto's SD98 family, not used further here). A `split.sd.bed`
+file turned out to be an unrelated 5kb-tiled synteny/dotplot dataset, not usable for gene-family work.
+
+**The appeal**: since both this file's coordinates AND `cat_v4.bed`'s gene annotation are v1.0-native, this
+sidesteps every acrocentric liftover issue from §6il/§6in/§6iq entirely, by construction — nothing needs
+lifting. New script `bench/soto/soto_replicate_from_v1_sedef.py`, mirroring `soto_replicate_from_sedef.py`'s
+structure and coverage conventions exactly.
+
+**The catch, disclosed up front and confirmed in the result**: this file has NO CIGAR string (44 columns,
+only aggregate match/mismatch/indel COUNTS, not positions) — exons are projected between the two sides of
+a pair via LINEAR-FRACTION interpolation across each side's own outer bounds, not a CIGAR walk. Verified
+`project_linear()` on hand-computed forward/reverse synthetic cases, including an exact round-trip
+(project then project back recovers the original interval) before trusting it on real data.
+
+**Result: worse than the current best on every metric, not a strict improvement despite more raw high-
+identity rows or being the more authoritative source.**
+
+| variant | ARI | exact | pair P/R/F1 | bipartite MICRO P/R | undetected |
+|---|---|---|---|---|---|
+| median-MAD+attach+islands, final_human.bed (§6ip, current best) | 0.6959 | 241/491 (49.1%) | 0.841/0.595/0.697 | 0.784/0.709 | 99/491 (20.2%) |
+| median-MAD+attach+islands, v1-native (Vollger) | 0.6316 | 147/491 (29.9%) | 0.760/0.543/0.633 | 0.739/0.577 | 168/491 (34.2%) |
+| mean-MAD+attach+islands, final_human.bed | 0.6862 | 264/491 (53.8%) | 0.906/0.554/0.687 | - | - |
+| mean-MAD+attach+islands, v1-native (Vollger) | 0.6375 | 165/491 (33.6%) | 0.841/0.515/0.639 | - | - |
+
+**Root cause: precision drops (0.841->0.760 median, 0.906->0.841 mean), not just recall** — the
+linear-fraction approximation projects some exons to the WRONG neighboring gene when real indel content
+sits between a block's edge and the fraction point, especially in the same dense, multi-copy regions this
+whole session has been investigating. More raw >=98%-identity rows (5,268 vs 4,061) did not translate into
+a better result, because the PROJECTION method's precision matters more than the INPUT row count here.
+
+**Tried combining both independent sources (union of edges)**: also worse than `final_human.bed` alone
+(ARI 0.6549/0.6664) — the v1-native edges' extra false-positive-prone links cost more precision than the
+extra true recall they contribute. `final_human.bed` (v2.0, CIGAR-exact) remains the best single input.
+
+**Kept as genuinely valuable, not a wasted detour**: this is now a SECOND, INDEPENDENT, fully-worked
+replication using the actual published author dataset from the CHM13 v1.0 SD landmark paper, entirely
+liftover-free by construction, with a disclosed and quantified reason for its lower score (approximation
+cost, not a liftover artifact or a bug). For "how close do I get implementing their specific method" this
+is strong, concrete material: two independently-sourced SEDEF replications, on two different genome
+versions, with the tradeoffs of each explicitly measured and named.
+
+New files: `bench/soto/soto_replicate_from_v1_sedef.py`, `shared_exons_2334_v1native.tsv`,
+`replicated_families_2334_{median,mean}_v1native.tsv`, `shared_exons_2334_union.tsv`,
+`replicated_families_2334_{median,mean}_union.tsv` — all under `winloci_data/soto_replication/`. Vollger
+et al. source data under `winloci_data/vollger2021/data/`.
+
+Related: [[project_soto_full_replication]].
