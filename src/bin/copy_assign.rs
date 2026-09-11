@@ -1217,6 +1217,30 @@ fn parse_region(s: &str) -> Result<(String, u64, u64)> {
     Ok((chrom.to_string(), lo_s.parse().context("bad region start")?, hi_s.parse().context("bad region end")?))
 }
 
+/// Every `(contig, lo, hi)` from `--region`/`--regions` becomes its own independently-swept `RegionWork`
+/// (own BAM query, own certificate). Two overlapping windows on the same contig would each independently
+/// see and report the physical alignment records in the overlap — silently duplicating rows in
+/// `--read-provenance` (and, unaudited, possibly other per-record outputs). Half-open `[lo, hi)`: touching
+/// (one ends exactly where the next starts) is NOT an overlap.
+fn validate_no_overlapping_regions(by_contig: &std::collections::BTreeMap<String, Vec<(u64, u64)>>) -> Result<()> {
+    for (contig, windows) in by_contig {
+        let mut sorted = windows.clone();
+        sorted.sort_unstable();
+        for w in sorted.windows(2) {
+            let (a_lo, a_hi) = w[0];
+            let (b_lo, b_hi) = w[1];
+            if b_lo < a_hi {
+                anyhow::bail!(
+                    "overlapping --regions on {contig}: {contig}:{a_lo}-{a_hi} and {contig}:{b_lo}-{b_hi} \
+                     would each independently see records in the overlap and duplicate them in \
+                     --read-provenance (and possibly other per-record outputs); merge them into one region"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 /// A swept region, keyed exactly as the sweep iterates it.
 type RegionKey = (String, u64, u64);
 /// `--families`: the supplied catalog families BOUND to the region that will assign them.
@@ -1785,6 +1809,12 @@ fn main() -> Result<()> {
     for (c, lo, hi) in regions {
         by_contig.entry(c).or_default().push((lo, hi));
     }
+    // Each top-level (contig, lo, hi) becomes its own independent `RegionWork` — its own BAM query, its own
+    // certificate, its own `read_provenance` rows. Two overlapping top-level windows would each independently
+    // fetch and report the same physical alignment records in the overlap zone (duplicate provenance rows;
+    // `--read-provenance`'s doc comment promises exactly one row per record). Validated at the boundary
+    // (`--region`/`--regions` is user input), before any read is touched, rather than silently double-counted.
+    validate_no_overlapping_regions(&by_contig)?;
     eprintln!(
         "[copy_assign] sweeping {} region(s) over {} contig(s)",
         by_contig.values().map(|v| v.len()).sum::<usize>(),
@@ -4315,6 +4345,30 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn overlapping_regions_on_the_same_contig_are_rejected() {
+        let mut by_contig = std::collections::BTreeMap::new();
+        by_contig.insert("chr1".to_string(), vec![(100, 200), (150, 250)]);
+        let err = validate_no_overlapping_regions(&by_contig).unwrap_err();
+        assert!(err.to_string().contains("chr1:100-200"), "{err}");
+        assert!(err.to_string().contains("chr1:150-250"), "{err}");
+    }
+
+    #[test]
+    fn touching_regions_are_not_an_overlap() {
+        let mut by_contig = std::collections::BTreeMap::new();
+        by_contig.insert("chr1".to_string(), vec![(100, 200), (200, 300)]);
+        assert!(validate_no_overlapping_regions(&by_contig).is_ok());
+    }
+
+    #[test]
+    fn disjoint_regions_on_different_contigs_are_fine_even_if_the_coordinates_overlap() {
+        let mut by_contig = std::collections::BTreeMap::new();
+        by_contig.insert("chr1".to_string(), vec![(100, 200)]);
+        by_contig.insert("chr2".to_string(), vec![(100, 200)]);
+        assert!(validate_no_overlapping_regions(&by_contig).is_ok());
+    }
 
     #[test]
     fn linearize_tsv_row_formats() {

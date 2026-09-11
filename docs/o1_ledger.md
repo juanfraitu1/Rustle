@@ -16160,3 +16160,42 @@ evidence any current run uses overlapping `--regions`.
 Verification for all four: `cargo build --release --all-targets` clean, `cargo test --release --lib`
 792/792 (unchanged). No PREREG needed — none of these change any default's behavior (A6 stays off,
 `from_env`'s only change is a comment, item 4 needed no code change at all).
+
+## §6i9 — REMAINING FOUR: OVERLAPPING-REGIONS GUARD SHIPPED, TWO DOC-CURRENCY FIXES, ONE CLARIFICATION (2026-09-10, later same session)
+
+1. **`read_provenance.tsv` duplicate-row risk closed with an input-validation guard**, not a dedup pass:
+   `validate_no_overlapping_regions()` (`copy_assign.rs`, next to `parse_region`) rejects any two
+   `--region`/`--regions` windows on the same contig that overlap, BEFORE any read is touched — matches
+   this binary's existing "`--families` fails in the first second" philosophy (line ~1795's own comment)
+   rather than silently tolerating the condition `--read-provenance`'s doc comment already promises can't
+   happen ("exactly one row per record"). Touching windows (one ends exactly where the next starts) are
+   explicitly NOT an overlap. Three new unit tests in `copy_assign.rs`'s own test module (only run via
+   `cargo test --release --bin copy_assign`, not `--lib` — see the test-count note below): a genuine
+   overlap is rejected (error names both windows), touching windows pass, and same-coordinate windows on
+   DIFFERENT contigs pass. Verified live: a deliberately overlapping 2-line `--regions` file is rejected in
+   under a second with an actionable message; the real single-region human chr16 substrate passes the guard
+   and proceeds to its normal sweep unchanged.
+2. **Register row 1059's stale line citations fixed**, keeping the row's own existing "register-era :N"
+   convention rather than silently overwriting: `read_conflict.rs:267→269`,
+   `denovo_pipeline.rs:3186→3932` (call site) `/3752` (function start), the `[o1-perp-o2]` stderr warning
+   `denovo_pipeline.rs:5756→7531`. Row 980 itself (the `tied_seed`/`from_env` plumbing-gap finding) carries
+   no file:line citation of its own — the audit's finding had conflated it with row 1059's citations, which
+   were the ones actually stale.
+3. **The growth-extent PREREG's unfulfilled "md5 recorded below" promise fixed**: appended an addendum to
+   `docs/PREREG_locus_growth_extent_2026-09-10.md` recording its own frozen-body md5
+   (`8d5a63fb70875996d599c9f4218cd83c`, unchanged since commit) and its true status — implemented, env-gated
+   off, NOT measured (the human chr1+chr15 baseline run was killed mid-execution to prioritize this O2
+   batch) — rather than editing the pre-registered text itself.
+4. **Clarification, not a fix**: every "792/792 tests" quoted in §6hw–§6i8 is `cargo test --release --lib`
+   (the library's own test suite) — it does NOT include `src/bin/*.rs`'s own `#[cfg(test)]` modules (like
+   this section's 3 new tests), which only run under `--bin <name>` or `--all-targets`. The 871/0/11 figure
+   quoted in `docs/OPEN_ITEMS_2026-09-09.md`'s header is the full-suite count from 09-09; the two numbers
+   measure different scopes, not a regression between sessions.
+
+Register rows 980/1059's underlying claims (the `tied_seed`/`from_env` gap, the O1⊥O2 scoped exception)
+were re-examined and are NOT bugs to fix: both are already-adjudicated, deliberate design decisions
+([[project_o1_perp_o2_scoped]], and this session's own `from_env` doc-comment fix at §6i8 item 3
+explains why `tied_seed` stays CLI-only). Nothing further done for either.
+
+Build clean, `cargo test --release --lib` 792/792 and `cargo test --release --bin copy_assign` 19/19,
+both unchanged in count except the 3 new tests.

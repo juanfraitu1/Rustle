@@ -96,3 +96,17 @@ No bipartite matching or facility-location step appears anywhere in the growth r
 "NEVER build loci with facility location / bipartite matching" — construction only, `rep_quality.py`'s
 own docstring: bipartite matching is a MEASUREMENT tool, "if it ever influences what a locus or family IS,
 the method is broken"). Growth uses only local read-depth/gap geometry.
+
+## Addendum (2026-09-10, later same session) — the promised md5, and status
+
+This file's own text above (everything before this addendum) was never edited after being written and
+committed (`d690715`); its md5 as pre-registered — and as of this addendum — is
+**`8d5a63fb70875996d599c9f4218cd83c`**. The line-3 promise ("md5 recorded below") was left unfulfilled
+until now, found by a 2026-09-10 audit; recorded here as an addendum rather than by inserting text into
+the frozen body above, so the pre-registration itself stays untouched.
+
+**Status: implemented, NOT measured.** `RUSTLE_LOCUS_GROWTH_EXTENT`/`locus_growth_extent()` shipped in
+`denovo_pipeline.rs` (env-gated off, byte-identical when unset). A human chr1+chr15 baseline run was
+started to gather the P1/P2 numbers above and killed mid-execution to prioritize the O2 loose-ends batch
+(§6hw onward in `docs/o1_ledger.md`) — parked, not abandoned, not refuted. No P1/P2/refutation number in
+this document has been measured yet; do not quote this mechanism as validated or as failed.
