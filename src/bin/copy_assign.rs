@@ -393,6 +393,12 @@ struct Args {
     /// Escape for the 2026-09-09 default: the origin certificate counts I+D bases again (pre-§6hf, byte-identical).
     #[arg(long, default_value_t = false)]
     no_origin_drop_indels: bool,
+    /// ⭐ A6 (`docs/OPEN_ITEMS_2026-09-09.md`, register row 790, 09-10): with `--gtf-copy-set`, name an
+    /// undecided isoform's outside tie partner by its own locus (`outside:chrom:start-end`) instead of the
+    /// bare `outside` bareword — e.g. the EIF3C/EIF3CL class, 8,944 human molecules, previously unnamed and
+    /// unactionable. Default off, byte-identical `copies_undecided` schema when unset.
+    #[arg(long, default_value_t = false)]
+    name_outside_tie: bool,
     /// ⭐ A2 (`docs/OPEN_ITEMS_2026-09-09.md`, register row 799): before calling a read `origin_rejected`
     /// (foreign to the family), also test every other candidate, not only the PSV-duel winner. A read that
     /// fails the certificate at its best copy but is origin-consistent with another candidate is reported
@@ -2139,6 +2145,8 @@ fn main() -> Result<()> {
                     let inside = targets.iter().any(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
                     if !inside {
                         flagged.insert(br.name.as_str());
+                        // A6: name the outside placement's own locus, not just the fact it exists.
+                        rustle::vg_family::copy_assign_pipeline::register_tie_outside_locus(&br.name, &br.chrom, s0, e0);
                     }
                     if (args.gtf_copy_set && !args.no_gtf_copy_set) {
                         // the copy SET of an undecided isoform (§6hn): catalog indices at the tied placements
@@ -2790,6 +2798,15 @@ fn main() -> Result<()> {
             // own join) silently merges them into one impossible model. Disambiguated HERE, in the GTF only,
             // so no catalog's tids move; the assembler's own id scheme is left for a separate change.
             let mut tid_seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+            // B2/read-provenance (below) needs to look up "which gate-passed transcript did this AS-tied
+            // RECORD contribute to", keyed by the record's OWN chain — filled alongside `uniq_tid` so the
+            // answer is the disambiguated id, not the raw (colliding) `t.tid`. A spliced chain is matched by
+            // exact intron equality (unambiguous); an EMPTY chain is not (every unspliced record on the
+            // contig has one) so unspliced transcripts are looked up by span containment instead — the
+            // fix for register 757, which the isoform-vote code below (`ch.is_empty() && ...`) already
+            // applies but this record-classification path had not, and it had recurred there.
+            let mut chain_uniq_tid: std::collections::HashMap<Vec<(u64, u64)>, String> = std::collections::HashMap::new();
+            let mut unspliced_gate_passed: Vec<(u64, u64, String)> = Vec::new();
             let mut prod_genome: Option<std::sync::Arc<GenomeIndex>> = None;
             // --gtf-copy-set: held-back family transcripts, placed by evidence after the loop
             struct PendingTx<'a> { fw: usize, cidx: String, tline: String, elines: Vec<String>, t: &'a TranscriptRec, uniq: std::collections::BTreeMap<String, usize>, asg: std::collections::BTreeMap<String, usize>, abst: Vec<String>, uniq_tid: String }
@@ -2879,6 +2896,11 @@ fn main() -> Result<()> {
                 let n = tid_seen.entry(t.tid.as_str()).or_insert(0);
                 *n += 1;
                 let uniq_tid = if *n == 1 { t.tid.clone() } else { format!("{}.{}", t.tid, *n) };
+                if t.introns.is_empty() {
+                    unspliced_gate_passed.push((t.start, t.end, uniq_tid.clone()));
+                } else {
+                    chain_uniq_tid.entry(t.introns.clone()).or_insert_with(|| uniq_tid.clone());
+                }
                 let isoform_fraction = t.n_reads as f64 / (*group_total_reads.get(t.gene_tid.as_str()).unwrap_or(&1)).max(1) as f64;
                 let depth_low = args.min_isoform_fraction > 0.0 && isoform_fraction < args.min_isoform_fraction;
                 let (b_left, b_right, gap_left, gap_right) = boundary_far.get(&ti).copied().unwrap_or((false, false, 0, 0));
@@ -3098,7 +3120,9 @@ fn main() -> Result<()> {
                 // copy) and printed explicitly below, so it is auditable instead of a bare "N lifts failed".
                 let mut lift_fail_detail: Vec<(String, String, String)> = Vec::new();
                 let fmt_map = |m: &std::collections::BTreeMap<String, usize>| -> String { let mut v: Vec<(&String, &usize)> = m.iter().collect(); v.sort_by_key(|(k, _)| k.parse::<i64>().unwrap_or(i64::MAX)); v.iter().map(|(k, c)| format!("{k}:{c}")).collect::<Vec<_>>().join(",") };
-                let fmt_set = |s: &std::collections::BTreeSet<String>| -> String { let mut v: Vec<&String> = s.iter().collect(); v.sort_by_key(|k| (k.as_str() == "outside", k.parse::<i64>().unwrap_or(i64::MAX))); v.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(",") };
+                // `starts_with("outside")` (not `==`) so this sorts correctly whether A6's
+                // `--name-outside-tie` is on (`outside:chrom:start-end`) or off (bare `outside`).
+                let fmt_set = |s: &std::collections::BTreeSet<String>| -> String { let mut v: Vec<&String> = s.iter().collect(); v.sort_by_key(|k| (k.starts_with("outside"), k.parse::<i64>().unwrap_or(i64::MAX))); v.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(",") };
                 let copyset_debug = std::env::var_os("RUSTLE_COPYSET_DEBUG").is_some();
                 if copyset_debug {
                     for &fw in &fam_ids {
@@ -3115,12 +3139,61 @@ fn main() -> Result<()> {
                     let (mut uniq, mut asg) = (std::collections::BTreeMap::<String, usize>::new(), std::collections::BTreeMap::<String, usize>::new());
                     let mut und: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
                     let mut n_abst = 0usize;
+                    let mut outside_bare = false; // ran out of locus info for >=1 outside tie
+                    let mut outside_raw: Vec<(String, u64, u64)> = Vec::new(); // pre-merge, A6
                     for &i in &members {
                         for (k, c) in &pending[i].uniq { *uniq.entry(k.clone()).or_insert(0) += c; }
                         for (k, c) in &pending[i].asg { *asg.entry(k.clone()).or_insert(0) += c; }
                         for name in &pending[i].abst {
                             n_abst += 1;
-                            if let Some((set, outside)) = tie_set_of(name) { und.extend(set); if outside { und.insert("outside".to_string()); } }
+                            if let Some((set, outside)) = tie_set_of(name) {
+                                und.extend(set);
+                                if outside {
+                                    // A6 (`docs/OPEN_ITEMS_2026-09-09.md`, register row 790): name the outside
+                                    // placement's own locus instead of a bare "outside" — default off so the
+                                    // existing `copies_undecided` schema stays byte-identical.
+                                    let loci = if args.name_outside_tie {
+                                        rustle::vg_family::copy_assign_pipeline::tie_outside_loci(name)
+                                    } else {
+                                        std::collections::BTreeSet::new()
+                                    };
+                                    if loci.is_empty() {
+                                        outside_bare = true;
+                                    } else {
+                                        for l in loci {
+                                            if let Some((c, rest)) = l.split_once(':') {
+                                                if let Some((s, e)) = rest.split_once('-') {
+                                                    if let (Ok(s), Ok(e)) = (s.parse::<u64>(), e.parse::<u64>()) {
+                                                        outside_raw.push((c.to_string(), s, e));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if outside_bare {
+                        und.insert("outside".to_string());
+                    }
+                    if !outside_raw.is_empty() {
+                        // Merge overlapping/near-adjacent (<=1kb gap) outside loci per chromosome — many
+                        // near-identical secondary-alignment coordinates for the SAME outside locus otherwise
+                        // produce hundreds of one-bp-apart entries, which defeats the point of naming it.
+                        outside_raw.sort_unstable();
+                        let mut merged: Vec<(String, u64, u64)> = Vec::new();
+                        for (c, s, e) in outside_raw {
+                            if let Some(last) = merged.last_mut() {
+                                if last.0 == c && s <= last.2 + 1000 {
+                                    last.2 = last.2.max(e);
+                                    continue;
+                                }
+                            }
+                            merged.push((c, s, e));
+                        }
+                        for (c, s, e) in merged {
+                            und.insert(format!("outside:{c}:{s}-{e}"));
                         }
                     }
                     let evidence: std::collections::BTreeSet<String> = uniq.keys().chain(asg.keys()).cloned().collect();
@@ -3222,10 +3295,15 @@ fn main() -> Result<()> {
             // only the rescued ones — "complete, not necessarily good": every record this region's O2 saw
             // gets exactly one row saying which transcript it became, or exactly why it did not.
             if args.gtf && (args.rescue_singletons || args.read_provenance) {
-                let existing_chains: std::collections::HashSet<(String, Vec<(u64, u64)>)> =
-                    transcripts.iter().map(|t| (t.chrom.clone(), t.introns.clone())).collect();
-                let tid_of_chain: std::collections::HashMap<(String, Vec<(u64, u64)>), &str> =
-                    transcripts.iter().map(|t| ((t.chrom.clone(), t.introns.clone()), t.tid.as_str())).collect();
+                // Gate-passed lookup, position-aware for the empty (unspliced) chain — see the comment at
+                // `chain_uniq_tid`'s declaration above. Never match an unspliced record by chain alone.
+                let gate_passed_tid_for = |chain: &[(u64, u64)], s0: u64, e0: u64| -> Option<&str> {
+                    if chain.is_empty() {
+                        unspliced_gate_passed.iter().find(|(ts, te, _)| s0 < *te && *ts < e0).map(|(_, _, tid)| tid.as_str())
+                    } else {
+                        chain_uniq_tid.get(chain).map(|s| s.as_str())
+                    }
+                };
                 let copy_span_of = |fid: &str, ci: usize| -> Option<(String, u64, u64)> {
                     fams.iter().find(|f| f.family_id == fid).and_then(|f| f.copy_spans.get(ci)).cloned()
                 };
@@ -3239,43 +3317,45 @@ fn main() -> Result<()> {
                     Eligible { chain: Vec<(u64, u64)>, s0: u64, e0: u64, strand: char, catalog_idx: &'a str },
                 }
                 struct Resc { starts: Vec<u64>, ends: Vec<u64>, introns: Vec<(u64, u64)>, catalog_idx: String, n: usize, fwd: u32, rev: u32 }
-                let mut groups: std::collections::HashMap<Vec<(u64, u64)>, Resc> = std::collections::HashMap::new();
+                let mut groups: std::collections::BTreeMap<Vec<(u64, u64)>, Resc> = std::collections::BTreeMap::new();
                 let mut classified: Vec<(usize, Rec)> = Vec::with_capacity(bam_reads.len());
                 for (ri, name) in bam_reads.iter().enumerate() {
                     let is_supplementary = read_spans.get(ri).map_or(false, |&(_, _, f)| f & 2 != 0);
                     let chain = read_chain.get(ri).cloned().unwrap_or_default();
-                    let key = (contig.clone(), chain.clone());
                     let rec = if read_blocks.get(ri).map_or(true, |b| b.is_empty()) {
                         Rec::ExcludedNoSpan
                     } else if is_supplementary {
                         Rec::ExcludedSupplementary
-                    } else if let Some(&tid) = tid_of_chain.get(&key) {
-                        Rec::ContributesGatePassed(tid)
-                    } else if let Some(row) = verdict.get(name.as_str()) {
-                        if row.status != "assigned" {
-                            Rec::ExcludedNotAssigned(row.status)
-                        } else {
-                            let blocks = &read_blocks[ri];
-                            let (s0, e0) = (blocks.first().unwrap().0, blocks.last().unwrap().1);
-                            let span = copy_span_of(&row.family_id, row.assigned_copy);
-                            let overlaps = span.as_ref().is_some_and(|(c, s, e)| c == contig && s0 < *e && e0 > *s);
-                            if !overlaps {
-                                Rec::ExcludedOffLocus(row.catalog_copy_idx.clone())
-                            } else {
-                                let strand = read_strand.get(ri).copied().unwrap_or('+');
-                                Rec::Eligible { chain, s0, e0, strand, catalog_idx: row.catalog_copy_idx.as_str() }
-                            }
-                        }
                     } else {
-                        Rec::ExcludedNoCertificate
+                        let blocks = &read_blocks[ri];
+                        let (s0, e0) = (blocks.first().unwrap().0, blocks.last().unwrap().1);
+                        if let Some(tid) = gate_passed_tid_for(&chain, s0, e0) {
+                            Rec::ContributesGatePassed(tid)
+                        } else if let Some(row) = verdict.get(name.as_str()) {
+                            if row.status != "assigned" {
+                                Rec::ExcludedNotAssigned(row.status)
+                            } else {
+                                let span = copy_span_of(&row.family_id, row.assigned_copy);
+                                let overlaps = span.as_ref().is_some_and(|(c, s, e)| c == contig && s0 < *e && e0 > *s);
+                                if !overlaps {
+                                    Rec::ExcludedOffLocus(row.catalog_copy_idx.clone())
+                                } else {
+                                    let strand = read_strand.get(ri).copied().unwrap_or('+');
+                                    Rec::Eligible { chain, s0, e0, strand, catalog_idx: row.catalog_copy_idx.as_str() }
+                                }
+                            }
+                        } else {
+                            Rec::ExcludedNoCertificate
+                        }
                     };
                     classified.push((ri, rec));
                 }
                 if args.rescue_singletons {
                     for (_, rec) in &classified {
                         if let Rec::Eligible { chain, s0, e0, strand, catalog_idx } = rec {
-                            // `chain` is guaranteed absent from `existing_chains` here: that is exactly the
-                            // condition classification checked before ever producing `Rec::Eligible`.
+                            // `chain` is guaranteed to have found no gate-passed match here (that is exactly
+                            // the condition classification checked before ever producing `Rec::Eligible`),
+                            // via `gate_passed_tid_for`'s position-aware lookup — not raw chain membership.
                             let e = groups.entry(chain.clone()).or_insert_with(|| Resc {
                                 starts: Vec::new(), ends: Vec::new(), introns: chain.clone(), catalog_idx: catalog_idx.to_string(), n: 0, fwd: 0, rev: 0,
                             });

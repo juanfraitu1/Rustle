@@ -15953,3 +15953,182 @@ lift_failed: transcript DN_chr16_30507420_7 (source copy 20) has evidence at cop
 (§6hw-§6i1), alongside A3 and B2 earlier in the session. Remaining from `docs/OPEN_ITEMS_2026-09-09.md`:
 C1/C2 (competitor excision + gorilla-fibroblast reruns, need cluster compute), D1 (constant-justification
 sweeps), D5/D6 (O3 scope, user decisions), C6 (pick a real O1 hold-out family).
+
+Committed `d690715`, pushed to `origin/dna-from-genome` (E1 closed; 979c8b1→d690715, fast-forward).
+
+## §6i2 — B8 CLOSED: `--gtf` run on the held-out family MCL58, both fixes hold on unseen data (2026-09-10)
+
+`mcl_ann/sweep_v19/fam_MCL58_073242` (9 copies, NC_073242.2:29933824-35695970), gorilla, never used to
+develop A2/B1/B2/A3/B6. `--gtf --gtf-copy-set --rescue-singletons --read-provenance`:
+
+- 48 isoforms placed, **0 phantoms/duplicates dropped**, 0 lift failures, 4 undecided-with-set, 2 rescued
+  singletons. Contested breakdown 2/38/0 (assigned/tied/ambiguous) — matches the number already on record
+  for this family exactly.
+- **The 2 certificate-assigned molecules' placement** (the specific B8 ask): both are multi-record
+  molecules with secondary alignments at 3 distinct genomic spots each. The B2 overlap-check fix correctly
+  EXCLUDES the two off-locus records (`excluded_chain_at_unassigned_locus`) and correctly RESCUES the one
+  record that actually sits at the assigned copy (`contributed_rescued_singleton`) — for both molecules,
+  cleanly, on data none of this session's fixes were tuned against.
+
+No further code change; this is a held-out validation pass, not a new mechanism.
+
+## §6i3 — A6 CLOSED: the outside tie partner is now named, not a bareword (2026-09-10)
+
+Register row 790 (EIF3C/EIF3CL class, 8,944 human molecules): `copies "A,outside"` never said WHERE
+outside. New `--name-outside-tie` (default off, byte-identical `copies_undecided` schema when unset):
+`register_tie_outside_locus`/`tie_outside_loci` record each outside AS-tied record's own `(chrom, start,
+end)` at the same site `register_tie_outside` already fires; the GTF emitter formats
+`outside:chrom:start-end` instead of the bareword.
+
+⚠ First pass was technically correct but useless: near-identical secondary-alignment coordinates for the
+SAME outside locus (differing by single bp) produced 600+ near-duplicate entries per attribute value.
+Fixed by merging overlapping/within-1kb outside loci per chromosome before formatting — human chr16 now
+shows ~29 consolidated spans instead of 600+, with a recurring `chr16:~28660000-28684000` cluster that is
+exactly the EIF3C/EIF3CL region the register named. Verified: 792/792 tests; base GTF byte-identical off
+(0 diff) both before and after the merge fix.
+
+## §6i4 — B4 CLOSED: `isoform_copy_lift.py` now recognizes lifted placements as evidence (2026-09-10)
+
+The phantom-detection script re-derived "evidence at copy c" independently from raw reads (a unique mapper
+or certified read literally AT c), never reading the binary's own `placed_by` attribute — so a legitimately
+LIFTED placement (`placed_by "assigned_read"`, the certified read lives at another copy in the same
+evidenced group; the binary places it here too) scored as a phantom. Fixed: parse `placed_by` alongside the
+existing (older) `copy_status` attribute, and treat `placed_by == "assigned_read"` as evidence.
+
+Verified on human MCL0 (`hard_new.gtf`, this session's rescue-enabled build): phantom groups **2 → 1**,
+and **P5 (`assigned` transcripts that are phantoms) = 0** — exactly the pass condition B4 specified. The one
+remaining phantom (copy 12) has no `placed_by`/status at all (an older-tool-style row), not a false positive
+from this fix.
+
+## §6i5 — A1 PARTIALLY TRACED: narrowed, not pinned; one of my own hypotheses caught and corrected (2026-09-10)
+
+Traced molecule `5459_8000` (copy 2, n_candidates 19, the example A1 named) through the `no6` excision
+catalog with `RUSTLE_STAR_DEBUG=1`. Facts established:
+
+1. **Self-correction**: first read of `copies_no6.tsv` showed copy 6's row byte-identical to the full
+   catalog's copy 7 (same tid `MCL_chr16_18325161`, same span, same exon list) — I initially concluded this
+   was a duplicate-locus artifact in the excision harness. Checking copy 7's row in the SAME excised catalog
+   showed it holds the FULL catalog's copy 8 coordinates instead — the excision harness cleanly deletes
+   copy 6 and renumbers every later copy down by one. No duplicate-locus bug; my first read was wrong, caught
+   before it was reported as fact.
+2. The molecule is a 26-record multi-mapper with an EXACT 2-way AS tie for best score (2463 via `samtools
+   view` AS:i tags): one record sits directly inside the EXCISED copy's original span
+   (chr16:16391854-16406189), the other survives excision (inside old copy 8, renumbered to 7). Its
+   certificate-assigned copy in the full run (copy 2) is a THIRD, different locus — so "excising an unrelated
+   copy" is imprecise: the excised copy was one of this molecule's own tied-best placements, just not the one
+   the PSV certificate ultimately favored.
+3. AS-tie status is computed from raw BAM records only, independent of which catalog is loaded (confirmed by
+   reading `as_evidence_per_read`'s call site) — so this molecule should register as AS-tied in both runs. The
+   row-vanishing therefore happens downstream of the AS-tie gate, in per-family candidate/target binding, not
+   at the gate itself. `RUSTLE_STAR_DEBUG`'s `[star]` trace never mentions this molecule in the no6 run at
+   all, meaning it drops out BEFORE reaching the certificate stage that print instruments.
+
+**Not yet found**: the exact line that drops it. Needs a new, targeted debug print at candidate/target
+construction (before the certificate), not just grepping the existing trace. Left open rather than guessed at.
+
+## §6i6 — C6: NEW O1 HOLD-OUT FAMILY CHOSEN — FIRST PICK RETRACTED SAME HOUR, REPLACED (2026-09-10)
+
+MCL2 (O1's prior nominal hold-out) is uninformative — only 1 AS-tied read. A replacement was needed, chosen
+by an outcome-blind rule BEFORE any validation result on the candidate is looked at.
+
+**⛔ First pick (repro-catalog MCL4, n=17, NC_073244.2:64.43-65.43 Mb) RETRACTED within the hour.** I wrote
+that it was "never named" in the ledger/register. That was wrong for a reason worth recording: **MCL
+cluster ids are NOT stable across catalogs** — `rna_bp1` (142 clusters, audit46 input) → `rna_bp1_p9`
+(142) → this session's `rna_bp1_p9_repro` (274, min_size 2) → `gw_units_v3` (2,296) all renumber. Matching
+by member coordinates: repro MCL4 = canonical `rna_bp1_p9` MCL5 = **audit46 MCL5** (class LOCAL, bucket
+"SD-corroborated REAL, not adjudicated", §6dy table; the §6eb whole-gene-closure predictions were scored on
+it). Likewise repro MCL3 (n=29, 3 chromosomes — my "structural reject") is the old **MCL4 = the ≥673-copy
+young repeat element of §6dz** (rows 660-672). **audit46 covered ALL 46 clusters with n≥5 on the 3-contig
+slice**, so every n≥5 cluster there has been looked at while O1 rules were being decided; the never-audited
+survivors on the slice top out at n=4. My earlier "previously-adjudicated" id list was also never actually
+applied by the script (only 4 coordinate ranges were) — grep-by-id would have been wrong anyway.
+
+**Corrected method — exclusion by COORDINATES, never by cluster id**, against the canonical genome-wide
+catalog `mcl_ann/gw_units_v3.clusters.tsv` (2,296 clusters, 26 contigs):
+1. drop any cluster with a member on the 3-contig development slice (NC_073241.2/242.2/244.2) or on
+   NC_073247.2 (X — MAGEA / K=0-frontier flagship territory; two previously-named gw clusters have members
+   inside the first X window I looked at, 58-66 Mb);
+2. drop any cluster overlapping a member of a gw cluster ever named in text (gw ids MCL2/3/5/8/12/111 from
+   §6ec-§6ed, MCL27/579/964 from the O3 cuts, and the six sweep-style `MCLn_0732xx` ids), in either gw
+   catalog;
+3. drop any cluster with a member within 100 kb of ANY `NC_0732xx.2 <coordinate>` cited in 301 files
+   (docs/*.md, docs/**, memory/*.md) — 69 cited points over 16 contigs;
+4. structural filters (not outcome metrics): single contig, span ≤ 5 Mb, **median member length ≥ 5 kb**
+   — the last one was added AFTER seeing that the four largest outside-slice single-locus clusters (MCL23
+   n=34 in 310 kb, MCL47, MCL65, MCL76) are arrays of 0.6-3 kb members with SD-corroboration 0.00-0.03,
+   i.e. the tandem-element class §6hu/§6dz already characterised, not gene families. Disclosed as a
+   post-look structural filter; it uses member size, not any O1-rule outcome or the corroboration column.
+5. rank by member count; tie-break lowest id.
+
+777 clusters survive 1-4. **Top = `gw_units_v3` MCL166: n=10, NC_073243.2:23,902,119-24,040,023 (138 kb),
+members 6.8-12.7 kb (median 10.8 kb), evenly spaced ~3.5 kb apart — a compact tandem array of gene-sized
+units; density 1.00, corroborated 1.00** (reported for the record, not used in selection). No other
+`gw_units_v3` cluster touches its span. Member-row md5 `8b757279187bc51eb4dc6fea850361a8` (so a future
+catalog can be checked for the same object). Runners-up under the same rule: MCL185 (n=9, NC_073229.2:70.5 Mb),
+MCL220 (n=8, NC_073229.2:50.1 Mb).
+
+**Prior-use disclosure:** `sweep_gw_v2/fam_MCL166_073243` and `sweep_gw_v3/fam_MCL166_073243` exist — the
+L5 genome-wide O2 sweep (§6fi, 66.9 % @ 44,364) ran every gw family, this one included, as an aggregate; no
+per-family number for it was ever read or written. O1 rules were never evaluated on it.
+
+**MCL166 (gw_units_v3) is O1's designated hold-out family.** Per [[feedback_hold_a_substrate_back]]: not
+inspected for content (gene identity, biotype, repeat content); not to be used for rule-tuning; used ONCE
+when a specific O1 rule is ready for an independent-substrate pass, result reported whatever it is. The
+MCL4 retraction stands as the example of why "never named" must be checked by coordinates.
+
+## §6i7 — REGISTER 757 RECURRED A SECOND TIME, IN THE SAME SESSION'S OWN B2/PROVENANCE CODE (2026-09-10)
+
+A read-only, adversarially-verified audit workflow (4 finders + verify + synthesis) was run over the whole
+repo asking two questions: what's left broken, and does "annotation+MCL vs de-novo bundles as two
+complementary O1 routes" survive the register. Full synthesis: `/tmp/.../wvu36mm7i.output` (session-local,
+not durable — findings acted on below; the framing verdict is answered inline to the user, no doc change
+needed since D7/`THESIS_OBJECTIVES.md` already states the single-definition decision).
+
+**Confirmed and fixed — three bugs in this session's own `--rescue-singletons`/`--read-provenance` code
+(`src/bin/copy_assign.rs`), all in flags that ship default OFF:**
+
+1. **HIGH — register 757 recurred.** The classify loop's gate-passed lookup (`tid_of_chain`, keyed
+   `(contig, intron_chain)`) collided every UNSPLICED AS-tied record onto whichever gate-passed unspliced
+   transcript happened to occupy that HashMap slot — regardless of the record's own genomic position. The
+   isoform-vote code earlier in this same file (`copy_assign.rs:2922-2925`) already carries the correct
+   fix for this exact defect (containment, not chain equality, when the chain is empty) — it had not been
+   applied to the newer classify path. Fixed the same way: `gate_passed_tid_for(chain, s0, e0)` now
+   requires span containment for the empty-chain case, backed by `chain_uniq_tid`/`unspliced_gate_passed`
+   built alongside the region's own `uniq_tid` disambiguation (so the reported id is also now the
+   disambiguated `uniq_tid`, not the raw colliding `t.tid` — folds in the audit's separate F3 finding for
+   free). **Measured effect** (human chr16 hard locus, 65,341 records, `--rescue-singletons
+   --read-provenance`): `contributed_gate_passed` 37,976 → 32,646 (−5,330, 8.1% of all records) — those
+   records were previously mislabeled as contributing to ONE far-away transcript regardless of where they
+   actually aligned (verified case: a record with primary CIGAR `170=1D47=1I160=` at chr16:30,507,421 was
+   claimed to contribute to `DN_chr16_80432901_1`, a transcript 50 Mb away at chr16:80,432,902-80,438,602;
+   after the fix it correctly falls through to its real per-record classification). The 5,330 correctly
+   redistribute to `excluded_ambiguous`/`excluded_no_certificate_row`/`excluded_tied`/`excluded_chain_at_
+   unassigned_locus`; `contributed_rescued_singleton` is unchanged (112, 81 transcripts) — none of the
+   misclassified records were actually rescue-eligible.
+2. **MEDIUM — nondeterministic rescue output.** `groups` (chain → `Resc`) was a `HashMap`, iterated via
+   `.enumerate()` to mint `RESCUE_{contig}_{s0}_{i}` ids — both the id suffix and GTF row order varied with
+   HashMap iteration order. Neighboring code in the same function already uses `BTreeMap` for exactly this
+   reason (line ~3100). Changed to `BTreeMap<Vec<(u64,u64)>, Resc>`. **Verified**: two back-to-back runs on
+   the same substrate are now byte-identical (`hard_new_fixed.gtf` / `hard_new_fixed_rerun.gtf`,
+   `.read_provenance.tsv` likewise) — before the fix, only the position/exon/support content matched
+   run-to-run, not the numeric id suffix.
+3. **Dead code removed**: `existing_chains` (a `HashSet` built but never queried — `.contains` was never
+   called on it) and its misleading comment ("chain is guaranteed absent from `existing_chains` here")
+   were removed; the comment now correctly attributes the guarantee to `gate_passed_tid_for`'s
+   position-aware lookup, which is what actually enforces it.
+
+**Verification, same pattern as every other flag this session**: `cargo build --release --all-targets`
+clean; `cargo test --release --lib` 792/792 (unchanged); base `--gtf` output (no rescue/provenance flags)
+re-run on the human chr16 substrate is **byte-identical** to the pre-fix baseline
+(`hard_baseline_fixed.gtf` vs `hard_baseline_today.gtf`) — the new bookkeeping runs unconditionally inside
+the isoform loop but has zero effect on anything the default path emits. `--gtf-copy-set`'s own counts
+(482 placed / 14 phantoms / 6 lifted / 39 undecided) and `--rescue-singletons`' transcript count (81,
+same support-count distribution) are unchanged by the fix — only the previously-wrong provenance/id
+bookkeeping moved.
+
+**Not done** (named by the audit, not in scope of this fix, left for later): `--regions`-overlap can
+still duplicate a `read_provenance.tsv` row per record (no dedup across regions) — low severity, no
+evidence any current run uses overlapping `--regions`; A6's `outside:chrom:start-end` token still breaks
+`bench/isoform_bakeoff.py`'s `sorted(..., key=int)` (the script, not the Rust code, needs a prefix guard) —
+flagged but not fixed this pass, since A6 itself is still uncommitted/partial per the open-items refresh
+below.

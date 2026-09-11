@@ -130,10 +130,16 @@ def main():
         t = tm.group(1)
         if f[2] == "transcript":
             ci = re.search(r'copy_index "([^"]+)"', f[8]); st = re.search(r'copy_status "([^"]+)"', f[8])
-            meta[t] = (ci.group(1) if ci else None, f[6], f[0], st.group(1) if st else None)
+            # B4 (docs/OPEN_ITEMS_2026-09-09.md, register/6hn P1): the binary's OWN evidence vocabulary is
+            # `placed_by` (unique_mapper / assigned_read / aligner_primary), not `copy_status` (B3's old
+            # vocabulary). A transcript lifted here from another copy's certified read (`placed_by
+            # "assigned_read"`) is legitimate evidence this script's independent re-derivation didn't know
+            # about, and called a phantom instead.
+            pb = re.search(r'placed_by "([^"]+)"', f[8])
+            meta[t] = (ci.group(1) if ci else None, f[6], f[0], st.group(1) if st else None, pb.group(1) if pb else None)
         elif f[2] == "exon":
             ex[t].append((int(f[3]) - 1, int(f[4])))
-            meta.setdefault(t, (None, f[6], f[0], None))   # tools without transcript rows
+            meta.setdefault(t, (None, f[6], f[0], None, None))   # tools without transcript rows
     def copy_by_overlap(chrom, s, e):
         best, bo = None, 0
         for i, (c, cs, ce) in cop.items():
@@ -141,7 +147,7 @@ def main():
             ov = min(e, ce) - max(s, cs)
             if ov > bo: best, bo = i, ov
         return best
-    for t, (ci, strand, chrom, st) in meta.items():
+    for t, (ci, strand, chrom, st, pb) in meta.items():
         if t not in ex:
             continue
         if ci is None:   # no copy_index attribute (other tools): max-overlap copy, None when outside every copy
@@ -149,7 +155,7 @@ def main():
             if ci is None:
                 continue
         v = sorted(ex[t]); chain = tuple((p[1], q[0]) for p, q in zip(v, v[1:]))
-        tx[t] = dict(copy=ci, strand=strand, chrom=chrom, chain=chain, status=st)
+        tx[t] = dict(copy=ci, strand=strand, chrom=chrom, chain=chain, status=st, placed_by=pb)
     multi = {t: d for t, d in tx.items() if len(d["chain"]) >= 2}
     print(f"family {a.family}: {len(tx)} transcripts with a copy, {len(multi)} with >= 2 introns (the denominator)")
 
@@ -228,9 +234,13 @@ def main():
                 uniq_at = sum(1 for t in tl for (_, ec, k) in members[t] if k == "unique" and ec == c)
                 asg_at = sum(1 for t in tl for (_, ec, k) in members[t] if k == "assigned" and ec == c)
                 abst = sum(1 for t in tl for (_, ec, k) in members[t] if k == "abstain")
-                ev[c] = (uniq_at, asg_at, abst, [multi[t]["status"] for t in tl])
-            with_ev = [c for c, (u, s, _, _) in ev.items() if u + s > 0]
-            no_ev = [c for c, (u, s, _, _) in ev.items() if u + s == 0]
+                # B4: a lifted placement (placed_by "assigned_read") IS evidence — the certified read lives
+                # at another copy in this same evidenced group, and the binary deliberately placed its
+                # isoform here too. Only "aligner_primary" (no certificate anywhere) is a true phantom.
+                lifted = any(multi[t].get("placed_by") == "assigned_read" for t in tl)
+                ev[c] = (uniq_at, asg_at, abst, [multi[t]["status"] for t in tl], lifted)
+            with_ev = [c for c, (u, s, _, _, lifted) in ev.items() if u + s > 0 or lifted]
+            no_ev = [c for c, (u, s, _, _, lifted) in ev.items() if u + s == 0 and not lifted]
             groups_multi.append((g, copies, ev, with_ev, no_ev))
             if no_ev: phantom_groups += 1
             if len(with_ev) >= 2: shared_groups += 1
@@ -238,7 +248,7 @@ def main():
                 sib = max((ident.get(tuple(sorted((c, c2))), 0.0) for c2 in copies if c2 != c), default=0.0)
                 phantom_tx.append((c, sib, ev[c][3]))
             rows.append((g, len(ts), ",".join(sorted(copies)), ",".join(sorted(with_ev)), ",".join(sorted(no_ev)),
-                         ";".join(f"{c}:u{u}/a{s}/x{x}" for c, (u, s, x, _) in sorted(ev.items()))))
+                         ";".join(f"{c}:u{u}/a{s}/x{x}" for c, (u, s, x, _, _) in sorted(ev.items()))))
     print(f"\nP1 multi-intron isoforms emitted at >= 2 copies: {n_multi_copy}/{len(multi)} = {100*n_multi_copy/max(1,len(multi)):.1f}%  (pass 10..40)")
     print(f"P2 isoform groups at >= 2 copies: {len(groups_multi)}; with >= 1 copy lacking evidence (phantom): {phantom_groups} = {100*phantom_groups/max(1,len(groups_multi)):.0f}%  (pass >=50)")
     print(f"P3 genuinely shared (evidence at >= 2 copies): {shared_groups}  (pass >=5)")

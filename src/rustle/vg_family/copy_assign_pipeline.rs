@@ -606,6 +606,25 @@ pub fn register_tie_outside(read_name: &str) {
 pub fn is_tie_outside(read_name: &str) -> bool {
     TIE_OUTSIDE.get().map_or(false, |m| m.lock().unwrap().contains(read_name))
 }
+/// ⭐ A6 (`docs/OPEN_ITEMS_2026-09-09.md`, row 790): the outside tie partner's own locus, per molecule — a
+/// molecule can have more than one AS-tied record outside every supplied family's targets, so this is a SET
+/// of `chrom:start-end` strings, not one. Populated at the same site `register_tie_outside` is (the AS-tied
+/// gate, per record); previously only the boolean "some placement was outside" was kept, so `copies
+/// "A,outside"` in the GTF never said WHERE outside — unnamed and unactionable (register row 790, e.g. the
+/// EIF3C/EIF3CL class, 8,944 human molecules).
+static TIE_OUTSIDE_LOCUS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, std::collections::BTreeSet<String>>>> = std::sync::OnceLock::new();
+pub fn register_tie_outside_locus(read_name: &str, chrom: &str, start: u64, end: u64) {
+    TIE_OUTSIDE_LOCUS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .entry(read_name.to_string())
+        .or_default()
+        .insert(format!("{chrom}:{start}-{end}"));
+}
+pub fn tie_outside_loci(read_name: &str) -> std::collections::BTreeSet<String> {
+    TIE_OUTSIDE_LOCUS.get().and_then(|m| m.lock().unwrap().get(read_name).cloned()).unwrap_or_default()
+}
 pub fn take_readthroughs() -> std::collections::HashMap<String, (usize, usize)> {
     READTHROUGH.get().map(|m| std::mem::take(&mut *m.lock().unwrap())).unwrap_or_default()
 }
