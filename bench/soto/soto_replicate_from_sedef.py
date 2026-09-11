@@ -183,9 +183,21 @@ def main():
     ap.add_argument("--min-cov", type=float, default=0.99, help="bedtools -f equivalent")
     ap.add_argument("--out-shared", required=True, help="TSV: gene_a<TAB>gene_b (one row per edge, deduped)")
     ap.add_argument("--limit", type=int, default=0, help="stop after N qualifying rows (0 = no limit; for smoke tests)")
+    ap.add_argument("--extra-anchors",
+                     help="OPT-IN: TSV (chrom, v2_pos, offset columns) of extra, individually-validated "
+                          "liftover anchors -- e.g. from directly aligning a specific gene's own sequence "
+                          "against both genome versions (docs/o1_ledger.md §6il) -- merged into the S1E "
+                          "anchor table before fitting regimes. Omit for the original behaviour "
+                          "(byte-identical to before this flag existed).")
     a = ap.parse_args()
 
-    table, spans = build_liftover(a.s1e)
+    extra_anchors = None
+    if a.extra_anchors:
+        extra_anchors = []
+        with open(a.extra_anchors) as fh:
+            for r in csv.DictReader(fh, delimiter="\t"):
+                extra_anchors.append((r["chrom"], int(r["v2_pos"]), int(r["offset"])))
+    table, spans = build_liftover(a.s1e, extra_anchors=extra_anchors)
     print(f"[liftover] {len(table)} chromosomes with anchors", file=sys.stderr)
 
     genes = set()

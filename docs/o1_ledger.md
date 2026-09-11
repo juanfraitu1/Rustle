@@ -17156,3 +17156,68 @@ one family that doesn't strictly follow their own published SD98 recipe, which t
 would never reveal.
 
 Related: [[project_soto_full_replication]].
+
+## §6il — acrocentric liftover fix for ID_175, implemented and measured (2026-09-11)
+
+Follow-up to §6ik's "ok, lets do that" on the one genuinely-actionable lead: `liftover_regime_switch_drop`
+for ID_175 (TEKT4P2 + AC134878.2 paralogs on the acrocentric short arms). No official v1.1→v2.0 or
+v1.0→v2.0 UCSC/marbl liftOver chain exists (checked web + the marbl/CHM13 GitHub repo directly) — the
+existing local chains are v1.0↔v1.1 only.
+
+**Mechanism**: `famcn_from_wssd.py`'s `build_liftover()` gained an optional `extra_anchors` parameter
+(iterable of `(chrom, v2_pos, offset)` triples merged into the S1E-derived anchor table before fitting
+regimes; omitted = byte-identical to before) and `soto_replicate_from_sedef.py` gained a matching
+`--extra-anchors <TSV>` flag. Fully additive, verified byte-identical when omitted (`sort | md5sum` match
+on `shared_exons_2334.tsv` before vs. after both code changes).
+
+**First anchor attempt was validated-but-ineffective — a real methodological lesson.** Extracted each of
+the 5 acrocentric genes' own v1.0 locus (small padding) via `samtools faidx`, aligned to v2.0 with
+`minimap2 -x asm20 --secondary=no -c --eqx`, and used the resulting offset as one anchor point per
+chromosome. Each individually checked out (100% identity) — but wiring them in produced **zero** change to
+the pipeline (same 153 dropped rows, same 4,142 edges). Root cause: `lift()`'s `GAP_GUARD` is a flat 50 kb
+buffer around the nearest regime-switch anchor, and a narrow-padding anchor sitting almost exactly at the
+gene's own locus only shrunk each chromosome's uncertain span by ~4 kb (chr21's anchor didn't move it at
+all — it was already inside the existing "after" regime). **Validating that one coordinate is correct
+says nothing about how far the constant offset actually extends around it** — the anchor needs enough
+reach past the queried interval to clear GAP_GUARD, not just to be individually right.
+
+**Fix**: re-tested with much wider (60-80 kb) windows extracted further back from each gene's locus and
+realigned. All 5 held **100% identity, zero divergence, single primary hit, at the SAME already-known
+"after"-regime offset** all the way back to the new window edges — direct proof the true structural
+breakpoint sits well outside where the original anchors landed, and that this whole stretch is safely
+inside the "after" regime, not actually straddling anything. New anchors: chr22 (5722017, 28768), chr21
+(5601422, 737013), chr13 (9378706, 672767), chr14 (2847780, 57685), chr15 (4738189, 585122) — the exact
+`(chr14:2907780-3085659, chr21:5671422-5837150)` SEDEF pair driving ID_175 was independently confirmed to
+sit comfortably inside the now-shrunk guarded span on both sides (margins ≥60 kb, well past `GAP_GUARD`).
+
+**Measured effect** (`shared_exons_2334_acrofix.tsv` vs. the §6ih/§6ii baseline; same S1C famcn, same
+scripts): 2,017/2,156 SD98-identity rows now lift both sides (was 2,003; 14 more), 4,153 shared-exon edges
+(was 4,142; +11), 2,193 genes with ≥1 edge (was 2,179; +14).
+
+| variant | ARI | exact | pair P/R/F1 | bipartite MICRO P/R | bipartite MACRO P/R | undetected |
+|---|---|---|---|---|---|---|
+| median-MAD+attach, pre-fix | 0.6820 | 193/491 | 0.837/0.577/0.683 | 0.768/0.630 | 0.618/0.612 | 154/491 (31.4%) |
+| **median-MAD+attach, acrofix** | **0.6827** | 193/491 | 0.837/0.578/0.684 | 0.769/0.632 | 0.621/0.613 | **153/491 (31.2%)** |
+| mean-MAD+attach, pre-fix | 0.6716 | 216/491 | 0.903/0.536/0.673 | 0.799/0.643 | 0.658/0.634 | 143/491 (29.1%) |
+| **mean-MAD+attach, acrofix** | **0.6723** | 216/491 | 0.904/0.537/0.674 | 0.800/0.645 | 0.660/0.635 | **142/491 (28.9%)** |
+
+**Confirmed directly (not just via the aggregate delta)**: ID_175's 5 eligible members (TEKT4P2 x4 +
+AC134878.2), previously 5 isolated singletons, now form one real family (`SEDEFFAM72`, median-MAD run)
+with famCN 12.73-13.10 — tight agreement matching Soto's own S1C table for this family. ID_175 no longer
+appears anywhere in the bipartite scorer's undetected-family list (was #3 of the 5 largest misses in
+§6ij). ID_175's 8 non-eligible members (CR381653.1/LINC01666 lncRNA copies) remain unattached — no shared-
+exon edge to the recovered backbone exists in this data, a separate limitation from the one this fix
+targets. As expected from §6ik's diagnosis, ID_328 (the OTHER large miss, `sedef_coverage_gap_below_98pct`)
+is untouched by this fix — it never was a liftover problem.
+
+**Honest framing**: a single, genuinely correct, disclosed fix that recovers exactly the one family it
+targeted, with every other metric moving by ≤0.001-0.002 (noise-level) and zero regressions anywhere. Not
+a lever that meaningfully changes the headline number — the residual ~30% undetected-family gap is
+dominated by the `no_eligible_seed_isolated` trade-off (§6ik, 3/5 of the largest misses) and the SD98-
+coverage ceiling (§6ik, ID_328), neither of which this fix addresses or was expected to.
+
+New canonical outputs: `shared_exons_2334_acrofix.tsv`, `replicated_families_2334_median_acrofix.tsv`,
+`replicated_families_2334_mean_acrofix.tsv`, `acro_extra_anchors.tsv` (the 5 wide, validated anchors) —
+all under `/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_replication/`.
+
+Related: [[project_soto_full_replication]].

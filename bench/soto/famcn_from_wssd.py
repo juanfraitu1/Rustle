@@ -33,8 +33,16 @@ BASE_URL = "http://t2t.gi.ucsc.edu/chm13/hub/t2t-chm13-v1.0/wssd"
 GAP_GUARD = 50_000  # v2 bp around a regime switch treated as unmappable
 
 
-def build_liftover(s1e_path):
+def build_liftover(s1e_path, extra_anchors=None):
     """Fit a piecewise-constant v2.0 -> v1.0 map from Soto's dual-coordinate anchors.
+
+    `extra_anchors`: OPTIONAL iterable of (chrom, v2_pos, offset) triples to merge in alongside S1E's own
+    anchors, exactly as if they were additional dual-coordinate rows -- e.g. from a direct minimap2
+    realignment of a specific gene's own sequence against both assemblies, used where Soto's own SD98-
+    paralog anchors happen to be sparse enough that a real, single-breakpoint acrocentric region gets
+    treated as one wide "uncertain span" spanning both sides of the true (and already correctly known)
+    breakpoint (docs/o1_ledger.md §6il). Omit for the original behaviour, byte-identical to before this
+    parameter existed -- this is validated per-locus evidence, not a blanket relaxation of the guard.
 
     Returns {chrom: [(v2_from, offset), ...]} sorted by v2_from, plus the anchor count per chromosome.
     """
@@ -46,6 +54,8 @@ def build_liftover(s1e_path):
             if not (m1 and m2) or m1.group(1) != m2.group(1):
                 continue
             anchors[m1.group(1)].append((int(m2.group(2)), int(m1.group(2)) - int(m2.group(2))))
+    for chrom, v2_pos, offset in (extra_anchors or ()):
+        anchors[chrom].append((v2_pos, offset))
     table, spans = {}, {}
     for c, pts in anchors.items():
         pts.sort()
