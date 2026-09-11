@@ -16470,3 +16470,83 @@ independently confirmed substrate-comparability artifacts, not O3 algorithm defe
 Commit: fix + tests in one commit touching `src/bin/copy_assign.rs` (the filter fix,
 `best_overlap_truth_copy` extraction, 4 new tests) and `src/rustle/vg_family/o3_flag_pass.rs`
 (`locus_or_padded_window` extraction, 4 new tests).
+
+## §6id — TASK 8: CROSS-INDIVIDUAL O3 DIFFERENTIAL — RUN, 2/2268 candidates, 90.9% no_signal, EXPLORATORY (2026-09-11)
+
+Follow-on from the design doc's "cross-individual differential" section (closing the gap §4l left: a raw
+read-presence screen cannot tell real copy-number difference from tissue-expression difference). Built
+`bench/o3_cross_individual_diff.py` (a join over two `--flag-missing-copies family_join.tsv` outputs by
+`o3_flag` category, as drafted in the task-8 brief) and ran it for real on gorilla `gw_units_v3`: testis
+(`GGO_ds.bam`, OR6737, the animal the catalog was built from) vs matched fibroblast (`fibro_ds.bam`,
+depth-matched, different tissue).
+
+**⚠ EXPLORATORY, NOT VALIDATED.** No known-true-positive gorilla case exists to check the "candidate
+differential" result against (no gorilla TSPY equivalent with independent ddPCR/AmpliCoNE confirmation).
+Both candidates below are hypotheses for follow-up, not proven missing copies.
+
+**Two `--families` infrastructure limits discovered while trying to run this, unrelated to O3 itself:**
+1. **398 of 1841 `gw_units_v3` families (21.6%) span more than one contig** (`MCL0` alone spans 19) —
+   `copy_assign --families` structurally REFUSES to run at all if ANY supplied family crosses chromosomes
+   (region-scoped by design; error names the family and says "split the catalog or assign per-contig").
+   The brief's "2296 families, 3987 copy rows" catalog-size figures were also both off by one row/family
+   count vs the real file (1841 families, 3986 data rows — the header line was being counted as a row
+   upstream).
+2. **The `--families` "every supplied copy must have >=1 overlapping read" contract (`copy_assign.rs:2255`)
+   hard-aborts the WHOLE run** on the first violation. A pre-flight check (fetch each non-partner,
+   `n_reads>0` catalog copy's own span directly against each BAM) found **0/3986 violations for testis**
+   (expected — the catalog's `n_reads` counts come from this same animal) but **265/3986 for fibroblast**
+   (copies the catalog says are expressed in testis with literally zero overlapping fibroblast reads) —
+   confirmed by actually hitting this exact abort on the first genome-wide attempt.
+
+**Resolution (disclosed scope reduction, not silent):** built same-chromosome-only catalogs for BOTH arms
+(1443/1841 families survive; excludes `MCL0` and all other cross-chrom families — this run says nothing
+about them) and additionally dropped, from the fibroblast catalog only, the 196 (of 265) zero-read
+violations that fall inside a same-chrom family (`testis.catalog.tsv`: 2276 copies/1443 families;
+`fibroblast.catalog.tsv`: 2080 copies, same families). Per-family regions
+(`mcl_ann/gw_units_v3.units.regions`, filtered to the same 1443 families) were merged into
+non-overlapping per-contig windows with a new helper, `bench/merge_regions.py` (generic: merges any
+`...chrom:start-end...`-per-line file per contig, guaranteeing every input interval — e.g. one family's own
+span — lands fully inside exactly one output window, which is what `validate_no_overlapping_regions` /
+the containment check at `copy_assign.rs:1447` require) — 1443 inputs -> 731 merged windows, 1321.8 Mb
+total span (down from 2610.9 Mb un-filtered; excluding `MCL0`'s cross-chrom spans is most of the
+difference).
+
+**Runs** (`/mnt/linuxdisk/home/juanfraitu/o3_diff/`, foreground, one at a time, `ulimit -v 20000000`,
+`timeout 14400`, `--skip-poa-diagnostic`, no orphan `copy_assign` before or between): both completed
+well inside budget — testis exit 0 (a few minutes), fibroblast exit 0 (~4 minutes, background-tracked
+after the harness's 120s foreground cutoff). Smoke-tested first on a 3-copy single-contig family
+(`MCL762`, not the brief's suggested `MCL2`, which turned out to be a 32-copy family dispersed over 14
+contigs up to 216 Mb per contig — not "tiny" at all; the brief's example was wrong).
+
+**Result** (`bench/o3_cross_individual_diff.py testis.family_join.tsv fibroblast.family_join.tsv --label-a
+testis --label-b fibroblast`), 2268 copies compared (union of catalog keys):
+
+| category | n | note |
+|---|---|---|
+| no_signal | 2062 (90.9%) | both `none` — the design doc's predicted overwhelming majority, confirmed |
+| other | 203 | 196 = the fibroblast-excluded zero-read copies (`fb="NA"`, not scored by O3 at all — this is exactly the population a naive presence check would call "missing" and exactly what this method cannot evaluate); 7 = `none`/`untestable` pairs in either order — the design doc's own comparison table calls `{MissingCopy,None} × Untestable` "Inconclusive", but the brief's drafted script (kept as specified) only routes `{MissingCopy}×Untestable` there, so plain `none`/`untestable` falls to `other` — a discrepancy in the brief/design text, not fixed here per the task's own instruction to implement the script materially as drafted |
+| candidate_differential | 2 | see below |
+| no_information | 1 | both `untestable` |
+| shared | 0 | no copy is `missing_copy` in both arms |
+| inconclusive | 0 | (see `other` note above) |
+
+**The 2 candidates**, neither independently checkable:
+- `MCL2209:0` (`NC_073247.2:166165196-166186357`): `missing_copy`/`structural` in testis (34 reads,
+  rate 22.01/kb, p=1.1e-16, n_rejected=14) vs `none` in fibroblast (only 6 reads there) — the low
+  fibroblast read count makes this at least as consistent with "too little fibroblast data to see the
+  same signal" as with a real per-individual difference; not distinguishable from here.
+- `MCL2288:0` (`NC_086018.1:21443000-21447090`): `none` in testis (4 reads) vs `missing_copy`/`divergent`
+  in fibroblast (**22 reads — more data, not less**, rate 7.94/kb, p=8.5e-6, n_rejected=14) — the more
+  interesting of the two precisely because it is NOT explained by a fibroblast data shortfall; still just
+  a single-copy, single-comparison hypothesis with no ddPCR/AmpliCoNE-style check available.
+
+**Bottom line:** the shape-based flag pass behaves as designed on this pair — 90.9% no_signal, well above
+the "overwhelming majority" bar the design doc set as its own sanity gate before trusting anything — and
+does not degenerate into a coin-flip the way the raw read-presence screen (§4l) did. It surfaces exactly
+2 candidates out of 2268 testable copies, one of which (`MCL2288:0`) is not explained by an obvious
+data-quantity confound. Genuinely exploratory: not claimed as a finding, no third individual or PCR
+follow-up performed.
+
+Commit: `bench/o3_cross_individual_diff.py` (new) + `bench/merge_regions.py` (new, generic region-merge
+helper). No `src/` changes. Run outputs, logs, and derived catalog/region files live under
+`/mnt/linuxdisk/home/juanfraitu/o3_diff/`, not committed.
