@@ -17623,4 +17623,19 @@ not. Every coordinate this session has relied on or derived checks out against S
 New file: `s1a_gene_anchors.tsv`, `combined_anchors.tsv` (both under `winloci_data/soto_replication/`) —
 kept as disclosed validation data, not wired in as a pipeline default since it changes nothing.
 
+**Checked the remaining sheets (S1B/S1D/S1F/S1G) for anything else usable** — none carry new sequence/
+coordinate evidence: S1B is chrX-only (already confirmed §6ip: 0 of our 2,334 genes are on chrX), S1F is
+population-genetics Tajima's-D windows, S1G is SSC de novo CNV events on a THIRD genome version
+(T2T-CHM13v1.1) — none clustering-relevant. **S1D ("Predicted evolutionary status of SD98 gene families")
+is not new recovery potential, but IS strong explanatory confirmation**: it records "No. SD98 paralogs"
+SEPARATELY from total family size (from S1C), and for this session's hardest misses it is tiny relative
+to the true family — ID_62 (19 true members): 1 SD98 paralog; ID_181 (15): 1; ID_246/ID_259: 1 each;
+ID_266 (5): 2. **Soto's own table is admitting most of these families' members are not SD98-paralogs by
+their own count** — direct, Soto's-own-data confirmation of §6ik/§6im's `no_eligible_seed_isolated`
+finding (a family with only one real SD98-eligible member cannot be built by the disclosed SD98+shared-
+exon recipe alone, regardless of how faithfully it's implemented). Also notable: most of the hardest
+misses (ID_211/25/280/328/347/78) are flagged "Non-syntenic with chimp" + "Human duplicated gene family"
+— young, human-specific duplications, the structurally hardest class of SD by definition (highest
+identity between copies, least time for the two assemblies' paths to diverge from a shared origin).
+
 Related: [[project_soto_full_replication]].
