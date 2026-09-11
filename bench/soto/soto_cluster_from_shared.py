@@ -9,9 +9,25 @@ original on the SAME shared-exon input (see the "verify" run in the ledger for t
 
 Usage: soto_cluster_from_shared.py --shared shared_exons_from_sedef.tsv --geneset sd98_geneset_v1.tsv
                                     --famcn soto_famCN_S1C.tsv --out replicated_families_sedef.tsv
+
+Add --full-geneset (+ build --shared over that same full universe, see soto_replicate_from_sedef.py's own
+--geneset) to ALSO admit non-family-eligible genes (lncRNA, processed_pseudogene, etc.) as MEMBERS of an
+already-formed family -- Soto's own definition includes them ("SD98 genes associated with other gene
+features... were also assigned a gene family ID [when they join one]"), and the advisor's own framing is
+specifically "replicate Soto, whose definition includes pseudogenes/lncRNAs". Opt-in, off by default: the
+--full-geneset omitted case is BYTE-IDENTICAL to before this flag existed (docs/o1_ledger.md §6ih).
+
+This does NOT add those genes as full graph nodes able to bridge two families together -- that was tried
+and rejected (§6ih: precision 0.925->0.730, the same promiscuous-bridge-gene failure as §6ie's own
+mega-component bug). It attaches each extra gene to whichever already-formed family it shares an exon
+with (ties broken by edge count), via soto_attach_noncoding_members.py's attach() -- one implementation,
+imported here, not duplicated.
 """
-import argparse, csv, sys
+import argparse, csv, os, sys
 from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from soto_attach_noncoding_members import attach  # noqa: E402
 
 ELIGIBLE = {"protein_coding", "unprocessed_pseudogene",
             "transcribed_unprocessed_pseudogene", "translated_unprocessed_pseudogene"}
@@ -117,6 +133,13 @@ def main():
                      help="mean = the paper's own METHODS-text wording; median = what their released "
                           "code (B_SD98_families.ipynb) actually computes (scipy median_abs_deviation, "
                           "unscaled) -- default stays 'mean' so this flag is opt-in, not a silent change")
+    ap.add_argument("--full-geneset",
+                     help="OPT-IN: also admit genes in this (larger) geneset that are NOT in --geneset "
+                          "as MEMBERS of an already-formed family, via a shared exon -- never as a way to "
+                          "found a family or merge two together. --shared must have been built over this "
+                          "SAME full geneset (soto_replicate_from_sedef.py --geneset <this file>), or the "
+                          "extra genes will have no edges to attach through. Omit for the original, "
+                          "eligible-only behaviour (byte-identical to before this flag existed).")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     mad_fn = mad_median if a.mad_statistic == "median" else mad_mean
@@ -127,11 +150,18 @@ def main():
             genes.add(r["gene_id"])
             biotype[r["gene_id"]] = r.get("biotype", "")
 
+    # the BACKBONE clustering step must only ever see eligible-eligible edges -- an edge touching a
+    # --full-geneset-only gene must NOT let step5_step6 treat that gene as a graph node (that is exactly
+    # the naive, rejected approach: docs/o1_ledger.md §6ih measured it collapsing precision 0.925->0.730
+    # by letting non-eligible genes bridge two components together). The unfiltered file is still used
+    # as-is for the attach() call below, which needs the extra genes' own edges.
     shared = defaultdict(set)
     with open(a.shared) as fh:
         for r in csv.DictReader(fh, delimiter="\t"):
-            shared[r["gene_a"]].add(r["gene_b"])
-            shared[r["gene_b"]].add(r["gene_a"])
+            ga, gb = r["gene_a"], r["gene_b"]
+            if ga in genes and gb in genes:
+                shared[ga].add(gb)
+                shared[gb].add(ga)
 
     famcn = {}
     with open(a.famcn) as fh:
@@ -147,6 +177,52 @@ def main():
     print(f"[step4-input] {len(genes)} SD98 genes, {len(shared)} genes with >=1 shared exon, "
           f"{n_comps} raw components", file=sys.stderr)
     print(f"[done] {n_fam} families, {n_single} singleton/ineligible genes -> {a.out}", file=sys.stderr)
+
+    if not a.full_geneset:
+        return
+
+    # --full-geneset given: attach non-eligible members onto the backbone families just written, then
+    # rewrite --out with the combined result (same 6-column shape, extra genes marked in `status`).
+    gene_family = {}
+    rows = []
+    with open(a.out) as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        for r in reader:
+            rows.append(r)
+            if r["family_id"]:
+                gene_family[r["gene_id"]] = r["family_id"]
+
+    with open(a.full_geneset) as fh:
+        full_genes, full_biotype = set(), {}
+        for r in csv.DictReader(fh, delimiter="\t"):
+            full_genes.add(r["gene_id"])
+            full_biotype[r["gene_id"]] = r.get("biotype", "")
+    extra_genes = full_genes - genes
+    attached = attach(gene_family, extra_genes, a.shared)
+
+    fam_size = defaultdict(int)
+    for r in rows:
+        if r["family_id"]:
+            fam_size[r["family_id"]] += 1
+    for f in attached.values():
+        fam_size[f] += 1
+
+    with open(a.out, "w", newline="") as fh:
+        w = csv.writer(fh, delimiter="\t")
+        w.writerow(["gene_id", "biotype", "family_id", "n_members", "famCN", "status"])
+        for r in rows:
+            n = fam_size[r["family_id"]] if r["family_id"] else int(r["n_members"])
+            w.writerow([r["gene_id"], r["biotype"], r["family_id"], n, r["famCN"], r["status"]])
+        for g in sorted(attached):
+            f = attached[g]
+            w.writerow([g, full_biotype.get(g, ""), f, fam_size[f],
+                        f"{famcn[g]:.2f}" if g in famcn else "", "attached_noncoding_member"])
+        for g in sorted(extra_genes - set(attached)):
+            w.writerow([g, full_biotype.get(g, ""), "", 1,
+                        f"{famcn[g]:.2f}" if g in famcn else "", "extra_gene_no_attachment"])
+
+    print(f"[attach] {len(extra_genes)} extra genes from --full-geneset considered, "
+          f"{len(attached)} attached to an existing family -> {a.out} (rewritten)", file=sys.stderr)
 
 
 if __name__ == "__main__":

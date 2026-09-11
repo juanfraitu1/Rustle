@@ -17018,3 +17018,35 @@ question and is not retracted, only re-scoped: it is not directly comparable to 
 section's table, and neither figure should be quoted without naming its universe.
 
 Related: [[project_soto_full_replication]], [[project_soto_audit_14agent]].
+
+## §6ii — `--full-geneset` lever added to `soto_cluster_from_shared.py` (2026-09-11)
+
+Follow-up to §6ih: "since my advisor is so hellbent in replicating Soto... can we have a lever or flag in
+our method to include [pseudogenes/lncRNAs] too if needed". §6ih's pseudogene/lncRNA attachment was a
+separate manual script (`soto_attach_noncoding_members.py`) that had to be chained after the main
+clustering call. Folded into `soto_cluster_from_shared.py` as one opt-in flag, `--full-geneset`, so a
+single invocation controls whether non-eligible-biotype genes get included as attached members.
+
+**A real bug caught before shipping, not just before trusting a number this time**: the first
+implementation attempt passed the FULL (eligible+extra) shared-exon edge file straight into the backbone
+clustering step, unfiltered. Since `step5_step6`'s connected-components computation iterates every gene
+key present in whatever edge dict it's given — it never filtered by the eligible `--geneset` itself, only
+using that set later for singleton bookkeeping — this silently let non-eligible genes act as full graph
+nodes again, degenerating right back into the naive, already-rejected approach from §6ih (verified: it
+produced a different, larger partition, 434 families / 2074 genes placed instead of the expected
+390/1817). Root cause: the "eligible-only" restriction was assumed to come from `--geneset` but was never
+actually enforced against the edge list. **Fix**: filter the edge dict fed to `step5_step6` to
+eligible-eligible edges only (`ga in genes and gb in genes`), while still handing the FULL, unfiltered
+edge file to `attach()` for the separate member-attachment pass. Re-verified after the fix: byte-identical
+to the pre-flag baseline when `--full-geneset` is omitted, and produces the EXACT SAME partition (390
+families, 1,817 genes placed, identical grouping) and the EXACT SAME score (ARI 0.6820, exact 193/491,
+P/R/F1 0.837/0.577/0.683 — matching §6ih's own numbers precisely) as the separate two-script process it
+replaces.
+
+Usage: `soto_cluster_from_shared.py --shared <edges over the FULL genome> --geneset <eligible-only
+geneset> --full-geneset <eligible+extra geneset> --famcn ... --mad-statistic median --out ...` — the
+`--shared` edges file must itself have been built over the full geneset
+(`soto_replicate_from_sedef.py --geneset <the same full geneset>`), or the extra genes will have no
+edges to attach through.
+
+Related: [[project_soto_full_replication]].
