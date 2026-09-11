@@ -2389,26 +2389,29 @@ fn main() -> Result<()> {
         let (o3_raw_pairs, o3_orphan_loci): (Vec<_>, Vec<_>) = if args.flag_missing_copies {
             let mut pairs = Vec::new();
             let mut loci = Vec::new();
-            // Fix 1 (Task 6, carried forward from Task 5's review): whether a read outside `fa`'s own
-            // units is genuinely ORPHANED (rejected everywhere, or had no candidate copy at all) is a
-            // GLOBAL property of the read's own best assignment -- `bench/o3_flag_pass.py:125`'s
-            // `n_candidates=='0' or origin_rejected=='1'` filter is checked against wherever the read
-            // actually landed, not against this one family's assignments (a read outside `fa`'s units was
-            // never assigned TO `fa`, so `fa.assignments` cannot even see it). The drain's
-            // `verdict: HashMap<&str, &AssignRow>` (see the B2/read-provenance block) is built later, in
-            // Pass 2, from `eff_status`/`mol_mapq` machinery this parallel per-region worker does not have;
-            // `Assignment` already carries the same two fields (`origin_rejected`, `n_candidates`) directly,
-            // so this reads them straight off every family THIS REGION considered (not just `fa`) instead.
-            let mut region_verdict: std::collections::HashMap<&str, (bool, usize)> =
-                std::collections::HashMap::new();
-            for fam2 in &fams {
-                for &(ri2, ref a2) in &fam2.assignments {
-                    if let Some(br2) = bam_reads.get(ri2) {
-                        region_verdict.insert(br2.name.as_str(), (a2.origin_rejected, a2.n_candidates));
-                    }
-                }
-            }
+            // Fix 1 (Task 6, revised per review): `bench/o3_flag_pass.py`'s outer loop (lines 76-82)
+            // rebuilds its `A`/`targets` lookup FRESH, per family, from that ONE family's own
+            // `A.assignments.tsv` -- each `fam_*` sweep is a separate, single-family `copy_assign`
+            // invocation. There is no cross-family lookback anywhere in the Python: a read that actually
+            // belongs to a neighboring family is let into the locus cluster and reclassified afterward by
+            // the genome-wide `other_family`/`annotated_no_unit`/`unannotated` classifier
+            // (`bench/o3_flag_pass.py:148-149`, ported as `classify_orphan_locus` below), not excluded
+            // upstream. Pooling every family in `fams` into one map (the previous version of this fix) is
+            // therefore not a faithful port, and has its own bug on top: when two co-located families both
+            // claim the same read (measured as real on this codebase's own data -- see
+            // `copy_assign.rs:771-831`'s `xfam_pass1` docs), a plain `HashMap::insert` lets whichever
+            // family is iterated last silently overwrite the other's verdict, with no reconciliation (that
+            // reconciliation is `xfam_pass1`'s job, and it runs later, in the serial drain, after this
+            // `compute()` closure has already finished). So this is scoped to `fa.assignments` ONLY --
+            // built fresh inside the `for fa in &fams` loop, per family, exactly like the Python.
             for fa in &fams {
+                let fa_verdict: std::collections::HashMap<&str, (bool, usize)> = fa
+                    .assignments
+                    .iter()
+                    .filter_map(|&(ri, ref a)| {
+                        bam_reads.get(ri).map(|br| (br.name.as_str(), (a.origin_rejected, a.n_candidates)))
+                    })
+                    .collect();
                 // Resolve catalog_copy_idx -> (chrom, start, end): fa.copy_spans is indexed by the SWEEP's
                 // own internal position (`ci`); catalog_copy_idx is the CATALOG's own separate namespace
                 // (see `cat_idx_of`, further down in this same file) -- rebuild the mapping via
@@ -2477,14 +2480,15 @@ fn main() -> Result<()> {
                             .iter()
                             .any(|(c, s, e)| br.chrom == *c && br.read.ref_start < *e && *s < read_ref_end_local(&br.read))
                     })
-                    // Fix 1 (Task 6, carried forward from Task 5's review): restrict to reads that are
-                    // demonstrably ORPHANED -- their own best assignment, wherever it landed, was rejected
-                    // or had no candidate at all. Without this, "outside fa's units" alone (every AS-tied
-                    // record whose primary lands anywhere else) massively over-counts: a read cleanly
-                    // assigned to a NEIGHBORING family in this same region would be "outside fa" too, but
-                    // is not an O3 signal at all.
+                    // Fix 1 (Task 6, revised): restrict to reads that are demonstrably ORPHANED for `fa`
+                    // specifically -- present in `fa`'s own assignments (i.e. `fa` actually considered this
+                    // read as a candidate) with that assignment rejected or with no candidate copy at all.
+                    // A read absent from `fa.assignments` is excluded either way, matching the Python: if
+                    // `fa` never considered the read, that says nothing about whether it is an orphan FOR
+                    // `fa`'s purposes. See the `fa_verdict` comment above for why this must not be pooled
+                    // across `fams`.
                     .filter(|br| {
-                        region_verdict
+                        fa_verdict
                             .get(br.name.as_str())
                             .map_or(false, |&(rejected, n_cand)| rejected || n_cand == 0)
                     })
