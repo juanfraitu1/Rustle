@@ -17435,3 +17435,48 @@ outputs: `shared_exons_2334_finalhuman.tsv`, `replicated_families_2334_{median,m
 `final_human_clean.bed` (header-stripped) — all under `winloci_data/soto_replication/`.
 
 Related: [[project_soto_full_replication]].
+
+## §6iq — attempted a systematic dense acrocentric anchor set; found a bigger wall instead (2026-09-11)
+
+Follow-up to "ok, lets do that" on §6ip's proposed next lever: build a systematically denser liftover
+anchor set across the acrocentric short arms, rather than more single-locus fixes. Extracted each
+chromosome's FULL residual guarded span (chr13/14/15/21/22, 0.85-3.75 Mb each after padding) from v2.0 and
+aligned each against its OWN v1.0 chromosome only (not the whole genome — faster, and avoids cross-
+acrocentric confusion) via minimap2, keeping ALL alignment blocks rather than just the primary.
+
+**Finding: this is not an anchor-density problem at all.** On every one of the 5 chromosomes, the same
+signature recurs: dozens of DIFFERENT query segments (each 40-100 kb, evenly spaced at a consistent
+period) all align to the SAME small (15-100 kb) v1.0 target window:
+- chr13: ~70 query segments -> one ~190 kb v1.0 window (chr13:9830085-10020777), mostly MAPQ 0
+- chr14: ~15 query segments -> one ~98 kb v1.0 window (chr14:2777285-2875496), MAPQ 0/60 mixed
+- chr21: ~55 query segments -> one ~63 kb v1.0 window (chr21:6286560-6349728), **MAPQ 60 throughout**
+- chr22: two interleaved periodic units -> two small v1.0 windows (~37 kb and ~14-16 kb)
+- chr15: two interleaved periodic units -> two small v1.0 windows (~49 kb and ~37-87 kb)
+
+chr21's uniform MAPQ 60 is misleading on its own — restricting the target to a single chromosome means
+minimap2 has nowhere else to place these segments, so it confidently assigns EVERY copy to the one
+plausible window even though that window cannot really be the unique target for all of them. **This is the
+signature of a tandem-repeat array that v2.0 assembled with substantially MORE copies than v1.0's assembly
+contains** — a real content difference between assembly versions in exactly the hardest, most repeat-dense
+part of the genome (acrocentric short arms, long known for this), not a gap in this project's own anchor
+table. A single offset (or any piecewise-constant table, however dense) cannot represent a genuinely
+many-to-one relationship; building more anchors here would mean forcing multiple distinct v2.0 loci onto
+one v1.0 position, which is wrong, not conservative.
+
+**Checked the "clean" edges of each gap for real headroom before concluding this**: on every chromosome,
+the alignment blocks immediately adjacent to the already-established §6il/§6in anchors are consistent with
+the SAME already-known offset (re-confirming, not extending, existing anchors by more than ~1-30 kb) before
+the repetitive interior takes over — there is no meaningful additional clean anchor to add. The entire
+residual gap, on all 5 chromosomes, is this repeat-driven, non-1:1 region.
+
+**Ruling: not pursued further, and this is a genuine methodological ceiling, not a defect.** Any gene
+annotated (in the v1.0-based CAT annotation this pipeline compares against) as sitting in one of v2.0's
+"extra" tandem copies likely has no distinct v1.0 gene call to receive it in the first place — v1.0's CAT
+annotation was built on the assembly that collapsed this repeat, so the "missing" comparison target may
+not exist at all, independent of any liftover mechanism. This closes the acrocentric-liftover thread for
+this replication effort: §6il/§6in's targeted, individually-validated fixes captured the genuinely
+recoverable single-locus cases (ID_175, most of ID_328); the remainder is a real content difference between
+T2T-CHM13 v1.0 and v2.0 in the most repeat-dense part of the genome, matching this project's already-
+established finding that these regions are exactly where the two assemblies structurally diverge most.
+
+Related: [[project_soto_full_replication]].
