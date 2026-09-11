@@ -16199,3 +16199,69 @@ explains why `tied_seed` stays CLI-only). Nothing further done for either.
 
 Build clean, `cargo test --release --lib` 792/792 and `cargo test --release --bin copy_assign` 19/19,
 both unchanged in count except the 3 new tests.
+
+## §6ia — TASK 7: `--flag-missing-copies` REPRODUCTION GATE, 3 REAL BUGS FOUND AND FIXED (2026-09-11)
+
+Compared `copy_assign --flag-missing-copies`'s O3 numbers against `bench/o3_flag_pass.py`'s own cached
+§6fl run (`adj/o3/v13`: 76 families, 3-contig substrate `npip3.bam`/`GGO.fasta`/`GGO_genomic.gff`, all
+md5-confirmed) on a single combined run (concatenated `copies.tsv`/`copies.fa` across all 76 `fam_*` dirs
+— no duplicate `tid`s — plus their overlap-merged padding windows as `--regions`, 5 blocks). First attempt
+**disagreed badly**: 272 pairs tested vs Python's 173, 144 flagged vs 50, `structural`-class flags Python
+never produces on this substrate — root-caused to **three genuine port bugs**, none of them the
+family-suffix or floating-point differences the plan anticipated:
+
+1. **Missing the Python's `truth` gate.** `bench/o3_flag_pass.py` only trusts a read as evidence for a
+   copy when the read's PRIMARY alignment physically overlaps that family's own copy span — grouping by O2's
+   inferred `catalog_copy_idx` alone (the Rust port's original behaviour) massively over-included reads
+   whose primary lands elsewhere (MCL106 copy 0: 25 tested vs Python's 9, all 16 extra confirmed by direct
+   inspection to have their primary at a different locus). Fixed: `truth_copy` map built per family from
+   `bam_reads`, gating both the rejected pool (primary overlaps ANY of the family's copies) and the
+   accepted/control pool (primary's BEST-overlap copy IS the candidate under test) exactly as the Python's
+   two call sites differ.
+2. **Overlap must be block-wise, not span-wise.** A read whose intron (CIGAR `N`) merely SPANS a target
+   window (start..end) was wrongly counted as "covering" it under a naive `ref_start..ref_end` overlap —
+   Python's `get_blocks()`-based overlap counts only `M`/`=`/`X` runs. Fixed via a new `block_overlap()`
+   helper walking the CIGAR (2 extra reads on MCL106 copy 0 traced to exactly this: 117kb/377kb introns
+   spanning clean through the target).
+3. **Realignment target window must be the L2 locus extent, not the bare copy span.** Python's `detector()`
+   uses `(min(locus_start,start), max(locus_end,end))` when the catalog carries `locus_start`/`locus_end`
+   (it always does here); the port used the bare copy span unconditionally. Same `n_rejected` count,
+   wildly different `rate_per_kb`/`p` otherwise (MCL117 copy 1: n_rejected 4=4 both sides, Python rate
+   4.27/kb vs the unfixed Rust 59.81/kb) — fixed by threading `locus_extent_of(tid)` (already populated by
+   `catalog_input.rs`, previously unused here) through `copy_span_by_catalog_idx`.
+4. **Minor, same family of bug**: the `max_reads` (500) cap on each side must sample by NAME-sorted order
+   (`sorted(...)[:500]`), not collection order — only visible on copies with >500 eligible reads (MCL121
+   copy 0: n_rejected matched at 107/107 either way, but `p` was 3.75e-05 vs 2.41e-09 pre-fix because the
+   two orders capped the 916-read control pool to different 500-read subsets).
+
+**After all four fixes**, re-run on the same substrate: of 192 pairs Python actually tested, **flag
+matches 185/192 (96.4%), class matches 190/192 (99.0%)**. The 80 catalog copies Python never lists (its
+`len(names) < 3: continue`) appear in Rust's `family_join.tsv` with `o3_flag=none`/`o3_n_rejected=0`
+placeholders — `family_join.tsv` joins EVERY supplied catalog copy by design, not only tested pairs; not a
+discrepancy. Of the 55 pairs with any `n_rejected` difference, 44 are within ±2 reads; traced the two
+largest (MCL111_073244 copy 0, off by 1; MCL125_073244 copy 1, off by 12) to their root by diffing the
+underlying `A.assignments.tsv` core fields (`status`/`catalog_copy_idx`/`origin_rejected`) against
+`sweep_v13`'s cached copy: **1 read** flips `ambiguous`+rejected → `assigned` for MCL111, **50 reads** flip
+the same way for MCL125 — i.e. real, intentional O2 certificate improvements made between `sweep_v13`'s
+2026-09-06 build and today (the `--no-as-tied-only --best-by-alignment --no-best-by-duel
+--no-origin-drop-indels --no-read-star-hit-in-unit --no-placement-assign` escape combination reproduces
+2026-09-06 behaviour almost exactly on isolated single-family reruns — MCL106 273/273 rows byte-identical
+except cosmetic margin/n_decisive digits — but cannot fully undo every fix landed since, some of which have
+no documented off-switch). This is INPUT DRIFT (a different, newer O2 assignment layer), not an O3
+algorithm defect — confirmed by exact single-family reruns (MCL106, MCL117) matching Python to the
+DECIMAL once fed the matching assignment layer. ⚠ Re-running MCL111/MCL125 in COMPLETE ISOLATION (not
+combined with the other 75 families) reproduced the SAME residual (15 not 16; 152 not 164) — direct,
+controlled evidence the drift is NOT primarily cross-family AS-tied contamination for these two, even
+though the combined run's own `SharedAcrossFamilies`/`Containment` warnings (18 pairs, e.g. MCL1_073242 vs
+MCL27_073242, 91+22+26 double-claimed molecules) are real and likely add a SECOND, separate contribution
+specifically for the ~9 families named in those warnings (not tested in isolation here) — both factors are
+substrate-comparability confounds (sweep_v13 = 76 isolated single-family runs vs this run's one joint
+76-family sweep, PLUS the 09-06-vs-today O2 binary), neither is an O3 port defect.
+
+Verification after the fix: `cargo test --release --lib` 812/812 unchanged, `cargo test --release --bin
+copy_assign` 19/19 unchanged; byte-identity (flag off) on the human chr16 substrate
+(`hard_baseline_today.{gtf,family_join.tsv,assignments.tsv}`) still exact.
+
+Commit: see `src/rustle/vg_family/o3_flag_pass.rs` (`block_overlap`, locus-extent threading, name-sorted
+capping) and `src/bin/copy_assign.rs` (`truth_copy` gate, `copy_span_by_catalog_idx` widened to carry the
+locus extent).
