@@ -17536,3 +17536,46 @@ New files: `bench/soto/soto_replicate_from_v1_sedef.py`, `shared_exons_2334_v1na
 et al. source data under `winloci_data/vollger2021/data/`.
 
 Related: [[project_soto_full_replication]].
+
+## §6is — "can we somehow get the CIGAR info?" — yes, by deriving it ourselves (2026-09-11)
+
+§6ir's v1.0-native replication was worse than the v2.0 one specifically because its source file has no
+CIGAR. The Vollger archive itself has none anywhere (checked: only a 3.5KB `sedef.enriched.bed`, an
+unrelated small curated subset). Instead of accepting the approximation, re-derived a REAL CIGAR for every
+qualifying pair by directly realigning each side's own declared interval (`mappy`, minimap2's Python
+binding — installed for this) — new script `bench/soto/soto_replicate_from_v1_sedef_cigar.py`.
+
+**Mechanism, reusing already-validated code, not duplicating it**: `mappy`'s CIGAR uses the STANDARD SAM/
+PAF convention (D=target-only, I=query-only) — the reverse of what `soto_replicate_from_sedef.py`'s
+`build_blocks` expects (D=side1-only, I=side2-only). A tiny `flip_indels()` (swap D<->I in the CIGAR
+string) reconciles the two, letting `cigar_ops`/`build_blocks`/`find_shared_exons` run UNCHANGED, imported
+directly, on a real, freshly-derived CIGAR. Verified `flip_indels` and the mappy-vs-manual weighted-overlap
+math before trusting it; a 50-row smoke test reconciled with 0 CIGAR-length mismatches before the full run.
+chrY rows are skipped (that assembly's chrY is GRCh38's, a separate reference this script doesn't load;
+already confirmed §6ip that zero of our 2,334 genes are on chrY, so this costs nothing).
+
+**Full run: 5,144/5,144 qualifying rows realigned successfully, 0 CIGAR-length mismatches** (~75 min,
+mostly `mappy.Aligner` index-build overhead per pair — CPU-bound, ~1 core, safe to run alongside other
+light work). 2,070 genes get an edge (was 1,927 with linear-fraction), 3,877 edges (was 3,469).
+
+**Result: a real, substantial improvement over the approximation, but still short of the v2.0-based
+replication.**
+
+| variant | ARI | exact | pair P/R/F1 |
+|---|---|---|---|
+| final_human.bed (v2.0, native CIGAR) — current best | 0.6959 / 0.6862 | 49.1% / 53.8% | 0.841/0.595/0.697 (median) |
+| v1-native, linear-fraction (§6ir) | 0.6316 / 0.6375 | 29.9% / 33.6% | 0.760/0.543/0.633 (median) |
+| **v1-native, mappy-derived exact CIGAR** | **0.6618 / 0.6612** | **33.6% / 37.7%** | **0.815/0.559/0.663 (median)** |
+| union, final_human + v1-native linear-fraction | 0.6549 / 0.6664 | 41.1% / 46.2% | 0.723/0.601/0.656 (median) |
+| **union, final_human + v1-native CIGAR-exact** | **0.6736 / 0.6769** | **42.0% / 46.6%** | **0.783/0.593/0.675 (median)** |
+
+(pairs are median-MAD / mean-MAD variants throughout, all +attach+islands)
+
+Precision jumps substantially with real CIGARs (0.760->0.815 median, 0.841->0.880 mean, standalone) —
+confirming the approximation, not the underlying official data, was the main cost in §6ir. But even with
+exact projection, the v1.0-native source (and its union with the v2.0 source) still falls short of
+`final_human.bed` alone: getting the CIGAR right closes most of the gap from §6ir, not all of it — some
+residual difference in what each SEDEF run actually calls remains, disclosed rather than chased further
+this round. `final_human.bed` alone stays the best single input and the current headline.
+
+Related: [[project_soto_full_replication]].
