@@ -17050,3 +17050,46 @@ geneset> --full-geneset <eligible+extra geneset> --famcn ... --mad-statistic med
 edges to attach through.
 
 Related: [[project_soto_full_replication]].
+
+## §6ij — bipartite-matched precision/sensitivity against Soto's families (2026-09-11)
+
+Prompted by: "so what is our sensitivity/precision and bipartite matching to Soto's 'families'?" — a
+metric this thread had not yet reported (only ARI, exact-family-match %, and PAIR-based precision/recall
+so far). New script `bench/soto/soto_bipartite_match_score.py`: uses `scipy.optimize.linear_sum_assignment`
+(the Hungarian algorithm) to find the total-overlap-maximizing 1:1 assignment between predicted and true
+families, then reports precision (overlap / predicted-family-size) and recall/sensitivity
+(overlap / true-family-size) per matched pair, aggregated both MICRO (gene-weighted) and MACRO
+(family-weighted, every family counted equally regardless of size) — this project's own standing METRIC
+TRAPS discipline says never quote one summary without naming which. Verified against a hand-computed
+5-gene/2-family synthetic example (expected micro/macro 0.8/0.8 and 0.833/0.833 exactly reproduced)
+before trusting it on real data.
+
+⚠**SCOPE NOTE, since this project has a standing rule against bipartite matching**: this use is a scoring
+technique applied AFTER two partitions already exist, to compare them — it plays no role in how families
+are defined or genes assigned anywhere in this pipeline. The standing rule ("no bipartite matching or
+facility-location step" — a modeling-choice constraint) is unaffected; grading a finished result against
+an external benchmark this way is a different, unrelated use of the same algorithm.
+
+### Result (2,185-gene complete, honest universe, same as §6ih/§6ii)
+
+| variant | MICRO P/R (sensitivity) | MACRO P/R | true families undetected (0 overlap) |
+|---|---|---|---|
+| median-MAD, no attach | 0.771/0.574 | 0.622/0.575 | 155/491 (31.6%) |
+| **median-MAD + attach** | 0.768/0.630 | 0.618/0.612 | 154/491 (31.4%) |
+| **mean-MAD + attach** | **0.799/0.643** | **0.658/0.634** | **143/491 (29.1%)** |
+
+**A genuine, disclosed metric-dependent split, not resolved in favor of one number**: median-MAD scored
+higher on ARI (§6ih: 0.682 vs 0.672 for mean-MAD), but mean-MAD scores higher on EVERY bipartite-matched
+figure here. This is not a contradiction — ARI rewards overall pairwise partition agreement across the
+whole gene set, while the bipartite match specifically rewards each predicted family being a tight,
+coherent match to its OWN best-corresponding true family; mean-MAD's fewer, slightly larger families
+(406 vs 390) apparently do better on that more localized, per-family measure. **Which MAD statistic is
+"better" depends on which question is being asked — report both, do not pick the one that flatters
+either number.**
+
+**The largest true families entirely missed** (0 overlap with their matched predicted family, median-MAD
++attach run): ID_176 (18 members), ID_62 (14), ID_175 (13), ID_1 (10), ID_328 (8) — named here as concrete
+targets for anyone investigating the ~30% undetected-family residual further; not investigated in this
+round.
+
+Related: [[project_soto_full_replication]].
