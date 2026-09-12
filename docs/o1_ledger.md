@@ -17639,3 +17639,62 @@ misses (ID_211/25/280/328/347/78) are flagged "Non-syntenic with chimp" + "Human
 identity between copies, least time for the two assemblies' paths to diverge from a shared origin).
 
 Related: [[project_soto_full_replication]].
+
+## §6iu — "do we already have all the info from Zenodo, or should we re-run SEDEF ourselves?" (2026-09-11)
+
+Before committing to downloading T2T-CHM13 v1.0 and running SEDEF from scratch (a genuinely heavy,
+multi-hour-to-day undertaking needing the tool installed and compiled), checked whether the Vollger et al.
+data already on disk is complete enough that it's unlikely to be worth it.
+
+**Combining both Zenodo files** (`SDs.bed` + `SDs.lowid.bed`, 0 overlapping exact tuples, i.e. genuinely
+separate runs) gives 5,723 unique >=98%-identity rows, only +8.6% over `SDs.bed` alone (5,268) — a much
+smaller jump than v2.0's own SD90-vs-unfiltered gap was (+88%, §6ip). Ran the merged file through the same
+CIGAR-exact realignment pipeline (§6is) to get a real number rather than infer from row counts alone:
+5,468/5,612 qualifying rows realigned successfully. **Result: essentially unchanged from `SDs.bed` alone**
+— median-MAD+attach+islands ARI 0.6618->0.6619, exact 33.6%->33.8%; mean-MAD 0.6612->0.6612, exact
+37.7%->37.9%. Noise-level movement; the extra ~350 realigned rows connect gene pairs that mostly already
+had an edge from `SDs.bed` alone.
+
+**Answer: we already have essentially everything useful the published data can give us for this
+replication.** A fresh, from-scratch SEDEF run on v1.0 would cost real time (install + compile + a
+multi-hour-to-day genome self-alignment) for an expected gain this evidence suggests is small — the
+combined-file test is the closest direct proxy available without actually doing it, and it came back flat.
+Not recommending the fresh run on this basis; the v2.0-based `final_human.bed` pipeline remains the
+current headline (§6ip: ARI 0.6959/0.6862).
+
+New file: `vollger_merged.bed`, `shared_exons_2334_v1native_cigar_merged.tsv`,
+`replicated_families_2334_{median,mean}_v1native_cigar_merged.tsv` (all under `winloci_data/soto_replication/`).
+
+Related: [[project_soto_full_replication]].
+
+## §6iv — actually ran LiftOff on our own gene set, to answer "why isn't this like LiftOff" with data (2026-09-11)
+
+Advisor keeps comparing this thesis's method to LiftOff. Rather than keep arguing the distinction in the
+abstract, installed LiftOff (worked around a hard-pinned 2021-era `numpy==1.21.0` dependency incompatible
+with this Python via `--no-deps` + modern equivalents) and ran it for real: our 2,334-gene v1.0 CAT
+annotation (converted BED12->GFF3) lifted onto v2.0, `-copies` enabled (LiftOff's own multi-copy-detection
+feature).
+
+**Result: 2,332/2,334 genes lifted (2 unmapped), every one of TEKT4P2's 4 paralogs and ID_328's 8 paralogs
+lifted INDIVIDUALLY at coverage=1.0/sequence_ID=1.0 (perfect), landing exactly at the coordinates this
+session independently derived and validated all day (§6il/§6in/§6it) — and NONE of them appear in
+LiftOff's own `-copies` extra-copy output.** This is not a limitation or a missed setting: each of these
+12 genes was already separately annotated with its own gene_id in the source file, so LiftOff correctly
+treats them as 12 independent known genes to relocate, not as family members to discover. LiftOff answers
+"where did this known gene go in the new assembly" — it has no notion of "these already-separately-known
+genes are one family," because that is not the question `-copies` (or LiftOff generally) asks.
+
+**Where LiftOff's `-copies` DOES map onto something real in this thesis**: it found 68 genuinely new loci
+beyond the original 2,334-gene annotation (e.g. `chr9:40860059-40860516`, coverage=1.0/identity=1.0, not
+previously catalogued) — extra copies of an under-annotated gene, found by aligning its own sequence
+against the whole target genome. That is conceptually the same shape of task as O3 (reference-absent/
+unannotated copy detection), not O1 (family definition). Recommended as a genuine, disclosed comparison
+point for O3 specifically (does O3 independently find these same loci?) rather than a reason to
+restructure O1 — O1's actual task (build family membership from scratch, with no reliable single
+already-annotated seed instance to lift from in the first place) is not the problem LiftOff is designed to
+solve.
+
+New files: `cat_v4_soto2334.gff3` (repo, `bench/soto/`), LiftOff outputs under
+`winloci_data/liftoff_v1_to_v2/` (`lifted_v2.gff3`, `unmapped.txt`, `intermediate/`).
+
+Related: [[project_soto_full_replication]].
