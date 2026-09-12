@@ -18078,3 +18078,36 @@ New/changed files: `src/bin/mcl_refine.rs` (new, +65 lines), `src/bin/mcl_famili
 `/mnt/linuxdisk/home/juanfraitu/ablation_407/` (graph dumps, partition outputs, NPIP scoring script).
 
 Related: [[project_denovo_vs_annotated_gap]], §6iz, §6j0, `docs/O1_DEFINITION_SWITCH.md` §3.
+
+## §6j2 — Proposal #6 added: Rustle already has an unwired bundle-construction primitive (2026-09-11)
+
+User asked "should we add bundles as another proposal?" while §6j1 was still running. Checked before
+answering rather than guessing at the name.
+
+**"Bundle" already exists in this codebase.** `types.rs` defines `Bundle`: "Genomic bundle (locus): chrom,
+range, reads, junctions" — Rustle's own port of the classic StringTie/Cufflinks locus-grouping concept
+(`tools/stringtie/bundle.{h,cpp}` is the vendored reference it was ported from). It is wired into O2's
+GUIDED flow/read-chain transcript-assembly path (`--read-coherence`, `pipeline.rs:7283`) — real, tested,
+shipped machinery, just never for O1. Zero references in `family_detect.rs`, `denovo_pipeline.rs`, or
+`denovo_assemble.rs`.
+
+**Sharper still**: `bam.rs:569`, `record_ref_span_capped`, is explicitly documented — "Used for
+bundle-boundary construction to prevent a single read with a huge intron from bridging two separate loci
+into one mega-bundle" — precisely the failure mode §6iz diagnosed as part of the 58% node-construction loss
+(spans ballooning 2.45-16.62x too long). **It has zero callers anywhere in the codebase.** Built for this
+exact purpose, never wired up.
+
+**Proposal #6: use Rustle's own existing bundle-construction machinery (including the dead giant-intron
+guard) as de novo mode's node-construction step**, instead of trusting an assembled transcript's own span.
+Annotation-free (pure read-overlap grouping, no GFF), reuses already-written/tested code rather than
+inventing new statistics — a materially smaller lift than #1 (SD-core projection, unmeasured at fresh-
+discovery use) or #2 (`from_genome.rs` default-on, genome-wide compute cost unmeasured): closer to "wire up
+dead code and measure" than "build new machinery."
+
+**Disclosed caveat**: not a free lunch — StringTie-style overlap bundling is known to still merge nearby
+loci when reads bridge them, and near-identical paralogs are exactly where that bridging happens most (the
+same phenomenon `record_ref_span_capped`'s own guard exists to blunt, not eliminate). Given §6j1 just
+confirmed #1/#2 are worth building, #6 is now a candidate CHEAPER FIRST STEP on the same node-construction
+problem before committing to #1/#2's bigger engineering cost — queued to execute next.
+
+Related: [[project_denovo_vs_annotated_gap]].
