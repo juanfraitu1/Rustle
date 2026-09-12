@@ -314,6 +314,181 @@ mod tests {
         );
     }
 
+    /// Proposal #1 + #2 COMBINED (docs/o1_ledger.md §6j6): wires both shipped-but-unconnected
+    /// primitives -- `SdPairs::single_span_core` (§6j4, corrects an existing RNA rep's span) and
+    /// `genome_reps`/`windows_from_sd_bed` (§6j5, adds DNA-only reps for RNA-absent loci) -- into ONE
+    /// combined rep set, then runs it through the REAL, UNCHANGED downstream pipeline
+    /// (`family_detect::detect_edges`, `T_CORE=0.13` untouched, then `family_split::decompose_families`,
+    /// the shipped gamma-quasi-clique partition) to measure whether this actually changes real family
+    /// recovery on the 31-locus NPIP oracle, AND at what real precision cost (does any oracle-containing
+    /// family also swallow a non-oracle gene from the same real 392-copy corpus). Baseline reps are the
+    /// REAL, already-computed footprint-off run (§6j3's control) on the real 3-contig NPIP-bearing BAM
+    /// subset -- not synthetic, not re-derived. `#[ignore]`d: needs real gorilla data on disk.
+    #[test]
+    #[ignore]
+    fn stage_c_combining_proposals_1_and_2_measures_real_family_recovery() {
+        use crate::vg_family::annotation_families::SdPairs;
+        use crate::vg_family::family_detect::{detect_edges, DetectParams};
+        use crate::vg_family::family_split::{decompose_families, SplitParams};
+
+        let fa = "/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta";
+        if std::fs::metadata(fa).is_err() { eprintln!("gorilla genome fasta absent; skip"); return; }
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+
+        let copies_tsv = "/mnt/linuxdisk/home/juanfraitu/o1_bundle6/ggo_off.copies.tsv";
+        let copies_fa = "/mnt/linuxdisk/home/juanfraitu/o1_bundle6/ggo_off.copies.fa";
+        let sedef_bed = "/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_sedef_final.bed";
+        let sd_windows_bed = "/mnt/linuxdisk/home/juanfraitu/o1_fromgenome_sd/npip_seeded_windows2.bed";
+        for p in [copies_tsv, copies_fa, sedef_bed, sd_windows_bed] {
+            if std::fs::metadata(p).is_err() { eprintln!("required real-data file {p} absent; skip"); return; }
+        }
+
+        // --- load the real, already-computed baseline RNA reps (footprint OFF, the shipped default) ---
+        let tsv_text = std::fs::read_to_string(copies_tsv).unwrap();
+        let fa_text = std::fs::read_to_string(copies_fa).unwrap();
+        // FASTA records are in the SAME row order as the TSV (both written by the same run, one pass).
+        let seqs: Vec<Vec<u8>> = fa_text.lines().filter(|l| !l.starts_with('>')).map(|l| l.as_bytes().to_vec()).collect();
+        let mut baseline: Vec<DenovoTranscript> = Vec::new();
+        for (i, line) in tsv_text.lines().skip(1).enumerate() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 11 { continue; }
+            let chrom = f[3].to_string();
+            let start: u64 = f[4].parse().unwrap();
+            let end: u64 = f[5].parse().unwrap();
+            let strand = f[7].chars().next().unwrap_or('+');
+            let n_reads: u32 = f[8].parse().unwrap_or(1);
+            let exons: Vec<(u64, u64)> = f[9].split(',').filter_map(|e| {
+                let (s, en) = e.split_once('-')?;
+                Some((s.parse().ok()?, en.parse().ok()?))
+            }).collect();
+            let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+            baseline.push(DenovoTranscript {
+                tid: f[2].to_string(), chrom, start, end, n_reads, strand,
+                introns, seq: seqs.get(i).cloned().unwrap_or_default(), distinguishing_uniq: 0,
+                core_bp: 0, stub: false, tes: None,
+            });
+        }
+        eprintln!("[stage_c] {} baseline RNA reps loaded from the real footprint-OFF run", baseline.len());
+
+        // Bound the compute: the full 391-rep corpus's real pairwise POA edge-confirmation is UNTRACTABLE
+        // (a live run on the unfiltered set was killed after ~5+ min CPU-heavy with no result -- an
+        // independent, real reconfirmation of proposal #3's own finding, §6j0, that `confirm_edge` has
+        // severe, uncapped per-pair cost variance on real production-scale sequences). Restrict to reps
+        // overlapping the SAME SD-seeded window region proposal #2 already validated as safe (62 windows,
+        // 5.44Mb) -- this is not a shortcut around the precision question: it is the single densest real
+        // multi-copy neighborhood on this substrate (all 31 oracle loci plus their real genomic neighbors),
+        // so it is if anything a HARDER, more relevant false-merge test than the full corpus, not a weaker one.
+        let mut sd_windows: Vec<(String, u64, u64)> = Vec::new();
+        for line in std::fs::read_to_string(sd_windows_bed).unwrap().lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() >= 3 { sd_windows.push((f[0].to_string(), f[1].parse().unwrap(), f[2].parse().unwrap())); }
+        }
+        let n_before_bound = baseline.len();
+        baseline.retain(|r| sd_windows.iter().any(|(c, s, e)| &r.chrom == c && r.end > *s && r.start < *e));
+        eprintln!(
+            "[stage_c] bounded baseline to the SD-seeded-window region for tractable real edge-confirmation: \
+             {n_before_bound} -> {} reps",
+            baseline.len()
+        );
+
+        // --- oracle ---
+        let oracle_txt = std::fs::read_to_string("/mnt/linuxdisk/home/juanfraitu/o1_oracle/npip31.regions").unwrap();
+        let oracle: Vec<(String, u64, u64)> = oracle_txt.lines().filter(|l| !l.trim().is_empty()).map(|l| {
+            let (c, rest) = l.trim().split_once(':').unwrap();
+            let (s, e) = rest.split_once('-').unwrap();
+            (c.to_string(), s.parse::<u64>().unwrap() - 1, e.parse::<u64>().unwrap())
+        }).collect();
+        assert_eq!(oracle.len(), 31);
+
+        // --- score helper: real detect_edges + decompose_families, unchanged; report how many distinct
+        //     families the 31 oracle loci fall into, and whether any oracle-containing family also
+        //     contains a non-oracle rep (a real, on-substrate false-merge check, not a synthetic one). ---
+        let score = |reps: &[DenovoTranscript], label: &str| -> (usize, usize, usize) {
+            let dp = DetectParams::default();
+            let edges = detect_edges(reps, &dp);
+            let families = decompose_families(&edges, &SplitParams::default());
+            let mut rep_family: Vec<Option<usize>> = vec![None; reps.len()];
+            for (fi, fam) in families.iter().enumerate() {
+                for &m in &fam.members { rep_family[m] = Some(fi); }
+            }
+            let mut oracle_families: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+            let mut oracle_covered = 0usize;
+            for (oc, os_, oe) in &oracle {
+                if let Some((ri, _)) = reps.iter().enumerate()
+                    .find(|(_, r)| &r.chrom == oc && r.end > *os_ && r.start < *oe) {
+                    oracle_covered += 1;
+                    if let Some(fi) = rep_family[ri] { oracle_families.insert(fi); }
+                }
+            }
+            let mut false_merge_families = 0usize;
+            for &fi in &oracle_families {
+                let has_foreign = families[fi].members.iter().any(|&m| {
+                    !oracle.iter().any(|(oc, os_, oe)|
+                        &reps[m].chrom == oc && reps[m].end > *os_ && reps[m].start < *oe)
+                });
+                if has_foreign { false_merge_families += 1; }
+            }
+            eprintln!(
+                "[stage_c:{label}] {} reps, {} edges, {} families total; oracle: {}/31 covered, spread \
+                 across {} families; {}/{} oracle-containing families also contain a non-oracle member",
+                reps.len(), edges.len(), families.len(), oracle_covered, oracle_families.len(),
+                false_merge_families, oracle_families.len()
+            );
+            (oracle_covered, oracle_families.len(), false_merge_families)
+        };
+
+        // --- BASELINE: the real, unmodified footprint-off RNA reps alone ---
+        let baseline_result = score(&baseline, "baseline (RNA only, uncorrected)");
+
+        // --- PROPOSAL #1: correct spans of baseline reps overlapping an oracle locus ---
+        let sedef_text = std::fs::read_to_string(sedef_bed).unwrap();
+        let sd_pairs = SdPairs::from_bed_str(&sedef_text);
+        let contigs: HashSet<String> = baseline.iter().map(|r| r.chrom.clone())
+            .chain(oracle.iter().map(|(c, _, _)| c.clone())).collect();
+        let genome = GenomeIndex::from_fasta_contigs(fa, &contigs).expect("genome index");
+        let mut corrected = baseline.clone();
+        let mut n_corrected = 0usize;
+        for r in corrected.iter_mut() {
+            let overlaps_oracle = oracle.iter().any(|(oc, os_, oe)| &r.chrom == oc && r.end > *os_ && r.start < *oe);
+            if !overlaps_oracle { continue; }
+            if let Some((cs, ce)) = sd_pairs.single_span_core(&r.chrom, r.start, r.end, 15_000, 2) {
+                if let Some(seq) = genome.fetch_sequence(&r.chrom, cs, ce) {
+                    r.start = cs; r.end = ce; r.introns = vec![]; r.seq = seq;
+                    n_corrected += 1;
+                }
+            }
+        }
+        eprintln!("[stage_c] proposal #1: corrected {n_corrected} of the baseline reps overlapping an oracle locus");
+        let p1_result = score(&corrected, "proposal #1 only (spans corrected)");
+
+        // --- PROPOSAL #2: add SD-seeded DNA-only reps (already-validated §6j5 Stage B windows, reused
+        //     from `sd_windows` loaded above -- same file, same region used to bound the baseline) ---
+        let dna_reps = genome_reps(fa, &sd_windows, &GenomeRepParams::default()).expect("genome_reps");
+        eprintln!("[stage_c] proposal #2: {} SD-seeded DNA-only reps generated", dna_reps.len());
+
+        // --- COMBINED: corrected RNA reps + DNA-only reps, deduped where they land on the same locus ---
+        let mut combined = corrected.clone();
+        let mut n_dup_skipped = 0usize;
+        for d in dna_reps {
+            let dup = combined.iter().any(|r| r.chrom == d.chrom &&
+                r.start.max(d.start) < r.end.min(d.end) &&
+                (r.end.min(d.end) - r.start.max(d.start)) as f64 / (d.end - d.start).max(1) as f64 > 0.8);
+            if dup { n_dup_skipped += 1; continue; }
+            combined.push(d);
+        }
+        eprintln!(
+            "[stage_c] combined: {} total reps ({} DNA-only reps skipped as >80% overlap-duplicates)",
+            combined.len(), n_dup_skipped
+        );
+        let combined_result = score(&combined, "COMBINED (proposal #1 + #2)");
+
+        eprintln!(
+            "[stage_c] SUMMARY (oracle_covered/oracle_families/false_merge_families): baseline {:?}, \
+             prop#1-only {:?}, COMBINED {:?}",
+            baseline_result, p1_result, combined_result
+        );
+    }
+
     #[test]
     fn genome_reps_finds_family_copies_with_genomic_seq_and_no_introns() {
         // Real subset fixture: 3 near-identical NCF1 copies + 2 unrelated decoys, each as its own contig.

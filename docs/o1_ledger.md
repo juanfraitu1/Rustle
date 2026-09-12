@@ -18344,3 +18344,64 @@ Scratch analysis data (not committed): `/mnt/linuxdisk/home/juanfraitu/o1_fromge
 killed run's logs, the successful Stage B windows file).
 
 Related: [[project_denovo_vs_annotated_gap]], §6iz, §6j1, §6j4.
+
+## §6j6 — Wiring #1+#2 together: BLOCKED by confirm_edge's own performance wall, reconfirmed independently (2026-09-12)
+
+User: "let's keep going" -> wire proposals #1 (§6j4, SD-core span correction) and #2 (§6j5, SD-seeded
+DNA-only reps) together end-to-end and measure the REAL combined effect on family recovery, plus the real
+precision/false-merge cost — the capstone question the whole §6iz thread has been building toward. Neither
+proposal had been run TOGETHER, nor fed through the actual downstream edge-confirmation/partition pipeline.
+
+**Built the real integration, reusing real data throughout, no synthetic substitutes**: new `#[ignore]`d
+test `stage_c_combining_proposals_1_and_2_measures_real_family_recovery`
+(`src/rustle/vg_family/from_genome.rs`). Loads the REAL, already-computed baseline RNA reps from §6j3's
+footprint-off control run (`o1_bundle6/ggo_off.copies.{tsv,fa}`, 391 reps, the real shipped-default de novo
+pipeline's own output on the real 3-contig NPIP-bearing BAM subset) — not re-derived, not synthetic.
+Applies §6j4's `SdPairs::single_span_core` (15kb slop, `min_partners=2`, the real gorilla
+`GGO_sedef_final.bed`) to every baseline rep overlapping one of the 31 oracle loci. Adds §6j5's SD-seeded
+DNA-only reps (`genome_reps` over the already-validated 62-window/5.44Mb Stage B windows file). Feeds the
+COMBINED rep set through the real, completely UNCHANGED `family_detect::detect_edges`
+(`T_CORE=0.13` untouched, per instruction) then `family_split::decompose_families` (the shipped
+gamma-quasi-clique partition, no MCL — proposal #4's question is separate and closed). Scores: how many
+distinct families the 31 oracle loci land across, AND — the real precision check this thread has been
+missing — whether any oracle-containing family also swallows a non-oracle rep from the same real corpus (a
+genuine false-merge check on real data, not a synthetic null).
+
+**First attempt (unbounded, the full 391-rep corpus) — killed after ~5+ minutes of sustained ~540% CPU with
+no result.** Checked via `ps`/`readlink /proc/<pid>/cwd` before killing by PID (no `pkill -f`). This is an
+independent, real reconfirmation of §6j0's (proposal #3) own finding — `confirm_edge` has severe, uncapped
+per-pair cost variance on real production-scale sequences — now hit from a completely different direction
+(a real assembled-multi-copy-family rep neighborhood during edge-graph construction, not a SEDEF-pair
+gene-body realignment).
+
+**Bounded to the SD-seeded-window region (391 -> 42 reps) as a real, still-meaningful neighborhood — not a
+synthetic shortcut**: this is exactly the densest real multi-copy region on the substrate (all 31 oracle
+loci plus their real genomic neighbors), so restricting to it is if anything a HARDER false-merge test than
+the full corpus, not a weaker one. **Even this much smaller, real 42-rep slice did not complete
+`detect_edges` within an 8-minute hard external `timeout` wrapper** (added specifically because §6j0 already
+disclosed individual `confirm_edge` calls can run unbounded — a defensive measure that caught exactly the
+failure it was added for). Killed cleanly by `timeout`, verified no orphan process, memory recovered fully.
+
+**Ruling: BLOCKED, not measured — a real, disclosable, load-bearing finding, not a failed task.** The
+combined-effect question (does #1+#2 change real family recovery, at what real precision cost) cannot be
+answered until `confirm_edge`'s own performance wall is fixed — this is now confirmed on TWO independent
+real datasets at TWO different scales (§6j0: individual gene-body-scale SEDEF-pair realignment; here: a
+42-rep real assembled-family neighborhood), which is strong evidence this is a genuine, systemic blocker for
+further O1 de novo pipeline validation, not a one-off fluke of either measurement. Proposals #1 and #2
+remain individually real, tested, and cross-verified (§6j4, §6j5) — what is now blocked is validating them
+TOGETHER at the family-recovery level, and that blocker sits squarely in `confirm_edge`'s own cost
+behavior, not in either proposal's own mechanism.
+
+**Recommendation for the next increment, if this thread continues**: `confirm_edge`'s existing
+memory-threshold-based POA/bounded-fallback split (`family_detect.rs:905-914`, `len_cap` gate) is
+demonstrably NOT sufficient on its own — a real per-pair TIME cap with graceful skip-and-report (not just a
+size-based fallback) is the concrete, evidenced next step before any further end-to-end de novo pipeline
+measurement at this scale is attempted. This was flagged once already as an "open lead" by §6j0 and not
+chased; it has now independently recurred, which raises its priority.
+
+No production code changed beyond the new, additive `#[ignore]`d test (kept in the codebase as documented
+tooling for whenever the performance wall is fixed, same practice as §6j0's own two `#[ignore]`d tests).
+Test suite: 823 passed / 0 failed / 17 ignored (was 823/0/16 — +1 ignored test, additive only, reconfirmed
+before AND after this task with no code-path changes to any non-ignored test).
+
+Related: [[project_denovo_vs_annotated_gap]], §6iz, §6j0, §6j4, §6j5.
