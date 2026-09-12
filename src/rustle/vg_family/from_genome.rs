@@ -489,6 +489,87 @@ mod tests {
         );
     }
 
+    /// DIAGNOSTIC (docs/o1_ledger.md §6j7): §6j6's stage_c hung on the SAME bounded (391->42) rep set this
+    /// re-loads. Instead of running `detect_edges`'s rayon-parallel batch (which hides WHICH pair is slow
+    /// behind aggregate CPU%), this calls `candidate_pairs` once then `confirm_edge` SEQUENTIALLY, one pair
+    /// at a time, printing a start-line BEFORE and a finish-line AFTER each call so a hang is visible as an
+    /// unmatched start-line in the log even if the whole process is later killed by an external `timeout`.
+    /// `#[ignore]`d: needs real gorilla data; run under a shell `timeout`, never bare.
+    #[test]
+    #[ignore]
+    fn stage_d_profile_confirm_edge_per_pair_sequentially() {
+        use crate::vg_family::family_detect::{candidate_pairs, confirm_edge, DetectParams};
+        use std::io::Write;
+        use std::time::Instant;
+
+        let copies_tsv = "/mnt/linuxdisk/home/juanfraitu/o1_bundle6/ggo_off.copies.tsv";
+        let copies_fa = "/mnt/linuxdisk/home/juanfraitu/o1_bundle6/ggo_off.copies.fa";
+        let sd_windows_bed = "/mnt/linuxdisk/home/juanfraitu/o1_fromgenome_sd/npip_seeded_windows2.bed";
+        for p in [copies_tsv, copies_fa, sd_windows_bed] {
+            if std::fs::metadata(p).is_err() { eprintln!("required real-data file {p} absent; skip"); return; }
+        }
+
+        // --- identical loading + bounding to §6j6's stage_c, so this reproduces the EXACT same hang ---
+        let tsv_text = std::fs::read_to_string(copies_tsv).unwrap();
+        let fa_text = std::fs::read_to_string(copies_fa).unwrap();
+        let seqs: Vec<Vec<u8>> = fa_text.lines().filter(|l| !l.starts_with('>')).map(|l| l.as_bytes().to_vec()).collect();
+        let mut baseline: Vec<DenovoTranscript> = Vec::new();
+        for (i, line) in tsv_text.lines().skip(1).enumerate() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 11 { continue; }
+            let chrom = f[3].to_string();
+            let start: u64 = f[4].parse().unwrap();
+            let end: u64 = f[5].parse().unwrap();
+            let strand = f[7].chars().next().unwrap_or('+');
+            let n_reads: u32 = f[8].parse().unwrap_or(1);
+            let exons: Vec<(u64, u64)> = f[9].split(',').filter_map(|e| {
+                let (s, en) = e.split_once('-')?;
+                Some((s.parse().ok()?, en.parse().ok()?))
+            }).collect();
+            let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+            baseline.push(DenovoTranscript {
+                tid: f[2].to_string(), chrom, start, end, n_reads, strand,
+                introns, seq: seqs.get(i).cloned().unwrap_or_default(), distinguishing_uniq: 0,
+                core_bp: 0, stub: false, tes: None,
+            });
+        }
+        let mut sd_windows: Vec<(String, u64, u64)> = Vec::new();
+        for line in std::fs::read_to_string(sd_windows_bed).unwrap().lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() >= 3 { sd_windows.push((f[0].to_string(), f[1].parse().unwrap(), f[2].parse().unwrap())); }
+        }
+        baseline.retain(|r| sd_windows.iter().any(|(c, s, e)| &r.chrom == c && r.end > *s && r.start < *e));
+        eprintln!("[stage_d] {} bounded reps (should match §6j6's 42)", baseline.len());
+        for (i, r) in baseline.iter().enumerate() {
+            eprintln!("[stage_d]   rep[{i}] {}:{}-{} len={} n_reads={}", r.chrom, r.start, r.end, r.seq.len(), r.n_reads);
+        }
+        std::io::stderr().flush().ok();
+
+        let dp = DetectParams::default();
+        let t0 = Instant::now();
+        let pairs = candidate_pairs(&baseline, &dp);
+        eprintln!("[stage_d] candidate_pairs: {} pairs in {:?}", pairs.len(), t0.elapsed());
+        std::io::stderr().flush().ok();
+
+        let mut n_confirmed = 0usize;
+        for (k, &(a, b)) in pairs.iter().enumerate() {
+            let la = baseline[a].seq.len();
+            let lb = baseline[b].seq.len();
+            eprintln!(
+                "[stage_d] START pair {k}/{} : rep[{a}] len={la} x rep[{b}] len={lb} (max={})",
+                pairs.len(), la.max(lb)
+            );
+            std::io::stderr().flush().ok();
+            let t1 = Instant::now();
+            let cr = confirm_edge(&baseline[a].seq, &baseline[b].seq, &dp);
+            let dt = t1.elapsed();
+            if cr.is_some() { n_confirmed += 1; }
+            eprintln!("[stage_d] DONE  pair {k}/{} in {:?} -> {:?}", pairs.len(), dt, cr);
+            std::io::stderr().flush().ok();
+        }
+        eprintln!("[stage_d] ALL {} pairs done, {} confirmed, total {:?}", pairs.len(), n_confirmed, t0.elapsed());
+    }
+
     #[test]
     fn genome_reps_finds_family_copies_with_genomic_seq_and_no_introns() {
         // Real subset fixture: 3 near-identical NCF1 copies + 2 unrelated decoys, each as its own contig.

@@ -18405,3 +18405,60 @@ Test suite: 823 passed / 0 failed / 17 ignored (was 823/0/16 — +1 ignored test
 before AND after this task with no code-path changes to any non-ignored test).
 
 Related: [[project_denovo_vs_annotated_gap]], §6iz, §6j0, §6j4, §6j5.
+
+## §6j7 — "could `CBundlenode` help the confirm_edge wall?" — profiled it directly: NO, and here's why (2026-09-12)
+
+User asked whether `CBundlenode` (flagged in §6j2/§6j3 as an unimplemented, better-evidenced next increment
+for a DIFFERENT problem — the 16.09x oversized `RUSTLE_FOOTPRINT_NODES` case) could also help §6j6's
+`confirm_edge` performance wall. Real, motivated question — profiled it rather than reasoning abstractly.
+
+**Method**: rather than re-running §6j6's whole-batch rayon-parallel `detect_edges` (which hides which pair
+is slow behind aggregate CPU%), added a new `#[ignore]`d diagnostic test,
+`stage_d_profile_confirm_edge_per_pair_sequentially` (`src/rustle/vg_family/from_genome.rs`), that loads the
+SAME 391-rep real baseline, applies the SAME SD-window bound (391->42, verified identical), computes
+`candidate_pairs` once, then calls `confirm_edge` on each of the resulting pairs ONE AT A TIME with a
+per-pair `Instant` timer and immediate flushed start/finish log lines — so a hang shows up as an unmatched
+start-line even if the whole process is later killed. Ran under a hard shell `timeout 300` (never bare);
+killed cleanly at 300s, zero orphans (`ps` confirmed).
+
+**Result: there is no single pathological pair — EVERY pair is uniformly, severely slow.** 192 candidate
+pairs total; of the first 19 (18 completed before the 300s kill), timings ranged **2.51s-19.75s per pair,
+mean 9.26s**, for reps only **791-4,684bp long (median 2,613bp)** — all far under the 20kb `len_cap`, so
+every one of these already takes the FULL poasta POA/Dijkstra path (`contiguous_core_coverage_with`), not
+the linear-fallback path. At ~9s mean x 192 pairs, this alone predicts a ~29-minute serial cost (or several
+minutes even with rayon's parallelism across 5 cores) — fully explaining why the bounded 42-rep run in §6j6
+didn't finish in 8 minutes, with no need to posit one outlier pair.
+
+**Checked for `CBundlenode`-decomposable structure directly, not assumed**: pulled the exon/intron structure
+of the reps involved in the slowest pairs from the real `ggo_off.copies.tsv` — each is a small number (2-4)
+of short exons (~75-300bp) plus ONE large terminal exon that makes up 80-90%+ of the spliced length. This
+LOOKED like a possible over-merge (the same shape as §6j3's oversized-node finding) worth checking for a
+coverage gap. But a direct k-mer-uniqueness check on the actual sequences (`k=15`, real FASTA) found
+**0.82-1.00 distinct-15mer fraction per rep — i.e., each rep is internally NON-repetitive, no low-complexity
+or duplicated-within-itself content**. There is no internal coverage gap or repeat structure for
+`CBundlenode`'s coverage-based decomposition to exploit here — these are genuinely single, coherently
+assembled transcripts, not artificially merged loci.
+
+**Conclusion: the cost is CROSS-PAIR similarity, not WITHIN-PAIR structure** — these are real, close NPIP
+paralogs, and poasta's Dijkstra-based graph search is measurably expensive precisely when aligning two
+HIGHLY SIMILAR sequences to each other (many near-tied-cost paths through the alignment graph), independent
+of whether either individual sequence is internally decomposable. `CBundlenode` targets a different failure
+mode entirely (a bundle that's really two loci glued by a sparse read bridge) and has nothing to offer a
+pair of correctly-formed, genuinely-paralogous transcripts that are simply expensive to align to EACH OTHER.
+**Answer: no, `CBundlenode` does not help this wall.** The two performance-wall findings (§6j2/§6j3's
+oversized-node case, and this one) are real but mechanistically unrelated failure modes that happen to share
+a common flagged fix-candidate; only one of them actually needs it.
+
+**This sharpens, not just reconfirms, §6j6's recommendation**: the needed fix is specifically a hard
+PER-PAIR TIME budget inside `confirm_edge`/`contiguous_core_coverage_with` itself (skip-and-report past a
+wall-clock threshold, independent of sequence length) — not a pre-processing/decomposition step, since there
+is nothing to decompose. This is now the thread's single clearest, most specific next engineering step.
+
+No production code changed beyond the new, additive `#[ignore]`d diagnostic test (kept as documented tooling
+for whenever the time-budget fix is built). Test suite: 823 passed / 0 failed / 18 ignored (was 823/0/17 —
++1 ignored test, additive only, reconfirmed before and after).
+
+New scratch data (not committed): `/mnt/linuxdisk/home/juanfraitu/o1_bundle6/stage_d_run.log` (the killed
+run's full per-pair timing log), `build_stage_d.log`, `full_test_after.log`.
+
+Related: [[project_denovo_vs_annotated_gap]], §6j2, §6j3, §6j6.
