@@ -18201,3 +18201,84 @@ node dumps; the large intermediate subset BAM was deleted after use, per disk hy
 only artifact worth keeping).
 
 Related: [[project_denovo_vs_annotated_gap]], §6j2, §6iz.
+
+## §6j4 — Proposal #1 built: a real, cross-verified span-refinement primitive, with an honestly narrow ceiling on this substrate (2026-09-12)
+
+Executed §6iz's proposal #1 (recommended worth building by §6j1): generalize the validated SD-core
+projection mechanism (§6fu Part 2, `annotation_families::refine_cluster_cores_with`) to fresh boundary
+DISCOVERY on a de novo node with no known family context, instead of its original leave-one-out use inside
+an already-complete family.
+
+**Population check first (before designing anything)**: re-measured the wrong-sized-vs-absent split
+directly against today's tree on the real gorilla node dump (`o1_reps/dump/ggo.nodes.tsv`, 17,925 nodes)
+vs the 31-locus NPIP oracle: **5/31 present (all wrong-sized, coverage 0.007-0.249 of the true span, size
+ratio 0.03-0.70), 26/31 fully absent (zero overlapping node at all).** This sets proposal #1's real ceiling
+BEFORE any design work: it can only ever correct the 5 that exist. The other 26 are proposal #2's problem
+(no node to correct means nothing to refine).
+
+**Why `refine_cluster_cores_with` cannot be called directly**: its depth gate is `(n-1)/2` OTHER KNOWN
+members — meaningless at n=1 (a single de novo node with no established family). Confirmed by reading the
+function in full (`annotation_families.rs:634-720`): for `n < 2` it returns `CoreStatus::Untouched`
+unconditionally.
+
+**Two design iterations, both measured on the 5 real cases, before landing on the one that works:**
+1. Naive min/max union of every SD-pair side touching the node's span, no depth floor: massively
+   over-extends (projected span 2.1-9.3x the true locus's size) — the same unit-averaging-style failure
+   this project has hit before (§6in), now in a new guise (no floor at all lets one busy repeat-adjacent SD
+   row blow up the estimate).
+2. A depth floor set RELATIVE to the locally observed max depth (`>= max_depth/2`, imitating
+   `refine_cluster_cores_with`'s "half" but with no real family to make "half" meaningful): too strict —
+   collapses back to something barely better than the raw node (coverage only 0.078-0.135 in 3/4 measurable
+   cases).
+3. **What works: an ABSOLUTE depth floor, reusing `family_detect::CNT_MIN=2`'s exact principle** ("one hit
+   proves nothing, >=2 independently-agreeing sources do") instead of a family-relative fraction, combined
+   with a 15kb query-window widening (half the §6fu-measured duplicon-scale median, 29,971bp/2 — derived,
+   not picked) around the node's own (too-small) span before looking for SD evidence.
+
+**Shipped as a new, real, tested library primitive — `SdPairs::single_span_core` (`annotation_families.rs`,
+right after the existing `overlapping()` this reuses unmodified)**: depth-sweep over DISTINCT partner
+clusters (SD rows hitting the same sibling copy merge into one source, verified by a dedicated test) within
+the widened query window, admits the segment(s) where distinct-partner depth `>= min_partners`. 4 new unit
+tests (synthetic fixtures: two distinct partners agree -> admitted; one partner only -> `None`; no SD
+evidence -> `None`; overlapping same-partner rows correctly merge to one source, so they do NOT clear a
+`min_partners=2` floor alone) + 1 `#[ignore]`d real-data test.
+
+**Real-data verification, Rust vs the earlier Python prototype — exact agreement to 3 decimals**: ran the
+real `single_span_core` (15kb slop, `min_partners=2`) against the real gorilla SEDEF file
+(`GGO_sedef_final.bed`, the RICHER, unfiltered native SEDEF output — the curated `o1_sd/ggo_sd_final.bed`,
+4,132 rows, had **zero** SD hits anywhere near any of the 5 wrong-sized nodes, confirming §6iu/§6ip's
+richer-file-matters lesson transfers here too) on the 5 real wrong-sized NPIP nodes:
+
+| truth locus | raw node cov/ratio | SD-core cov/ratio |
+|---|---|---|
+| NC_073242.2:29415573-29453211 | 0.007 / 0.645 | **no SD evidence even in the widened window** |
+| NC_073242.2:35184502-35267752 | 0.030 / 0.030 | 0.390 / 0.390 |
+| NC_073244.2:21077140-21105296 | 0.060 / 0.116 | 0.592 / 1.182 |
+| NC_073242.2:28995101-29024611 | 0.055 / 0.055 | 0.567 / 1.072 |
+| NC_073242.2:28300720-28325984 | 0.249 / 0.703 | 0.842 / 1.891 |
+
+4/5 improve, 2 of those land near a correct size ratio (~1.07-1.18); 1/5 has no recoverable SD signal at
+all under this method. **A real, positive, cross-verified result** — not a fluke of the Python prototype,
+since the production Rust implementation reproduces it independently.
+
+**Ruling: PARTIALLY SHIPPED, not fully wired.** Unlike §6j0/§6j3 (which shipped zero production code), this
+adds a new, real, tested, real-data-validated capability to the codebase — but it is not yet called from
+any pipeline (nothing invokes `single_span_core` outside its own tests), and the actual downstream question
+— does the corrected span change whether `confirm_edge`/`contiguous_core_coverage_bounded_with` admits an
+edge that the raw truncated span would have failed — was **not measured this round** (would need extracting
+real genome sequence at both spans and running the real edge-confirmation path; explicitly left as the next
+step, not silently skipped). Honest ceiling on THIS substrate: even a perfect version of this mechanism can
+only ever touch 5 of the 31 NPIP loci; the dominant failure mode (26/31 absent) is proposal #2's territory,
+not this one's. `single_span_core` may also be directly useful there too, as a refinement pass over whatever
+new candidate spans proposal #2's genome-tiled self-alignment produces.
+
+**One unrelated, pre-existing defect noticed while editing nearby, not fixed (out of scope)**: the test
+`paf_records_become_pairs_in_genomic_coordinates` (right after this edit's insertion point) has no
+`#[test]` attribute of its own — an orphaned doc-comment+`#[test]` two items above it silently attaches to
+`links_is_true_only_when_one_pair_holds_both_flanks` instead, so `paf_records_become_pairs_in_genomic_coordinates`
+never runs (confirmed: `dead_code` warning on the fresh build). Flagged, not fixed — unrelated to this task.
+
+Test suite: 822 passed / 0 failed / 14 ignored (was 818/0/13 — +4 new tests, +1 new ignored real-data
+check, additive only).
+
+Related: [[project_denovo_vs_annotated_gap]], [[project_o1_tcore_divergence_sensitivity]], §6fu, §6iz, §6j1.

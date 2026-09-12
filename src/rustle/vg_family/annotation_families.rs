@@ -533,6 +533,95 @@ impl SdPairs {
         self.overlapping(contig, a.0, a.1).any(|(_, _, oc, os, oe)| oc == contig && *oe > b.0 && *os < b.1)
     }
 
+    /// ⭐ §6iz proposal #1 (o1_ledger §6j4): a family-free generalization of `refine_cluster_cores_with`'s
+    /// core rule for a SINGLE genomic interval with no known co-member set — de novo mode's fresh
+    /// boundary-discovery case. `refine_cluster_cores_with`'s depth floor is `(n-1)/2` OTHER KNOWN
+    /// members, which is meaningless with n=1. Here the floor is `min_partners`, an ABSOLUTE minimum of
+    /// DISTINCT partner loci corroborating the same position — the same "one hit proves nothing, two+
+    /// agreeing sources do" principle already used by `family_detect::CNT_MIN` (a k-mer must be owned by
+    /// `>= CNT_MIN` distinct reps to be family-informative). `window_slop` widens the query around
+    /// `[s, e)` before looking for SD evidence, since a truncated/fragmentary de novo node's own span can
+    /// sit well inside the true duplicated block without any SD pair touching its exact, too-small
+    /// boundaries. Returns the merged hull of the depth-passing segments, or `None` when no segment
+    /// clears `min_partners` (including when there is no SD evidence at all near this locus).
+    pub fn single_span_core(
+        &self,
+        contig: &str,
+        s: u64,
+        e: u64,
+        window_slop: u64,
+        min_partners: usize,
+    ) -> Option<(u64, u64)> {
+        let qs = s.saturating_sub(window_slop);
+        let qe = e.saturating_add(window_slop);
+        let mut hits: Vec<(u64, u64, String, u64, u64)> = self
+            .overlapping(contig, qs, qe)
+            .map(|(ss, se, oc, os, oe)| (qs.max(*ss), qe.min(*se), oc.clone(), *os, *oe))
+            .collect();
+        if hits.is_empty() {
+            return None;
+        }
+        // Distinct partner clusters: merge overlapping partner intervals on the SAME partner contig so
+        // several SD rows hitting the same sibling copy corroborate as ONE source, not one per row.
+        hits.sort_by(|a, b| (a.2.clone(), a.3, a.4).cmp(&(b.2.clone(), b.3, b.4)));
+        let mut cluster_id: Vec<usize> = Vec::with_capacity(hits.len());
+        let mut next_id = 0usize;
+        let mut open: Option<(String, u64, u64, usize)> = None;
+        for h in &hits {
+            match &mut open {
+                Some((oc, _os, oe, id)) if *oc == h.2 && h.3 <= *oe => {
+                    *oe = (*oe).max(h.4);
+                    cluster_id.push(*id);
+                }
+                _ => {
+                    let id = next_id;
+                    next_id += 1;
+                    cluster_id.push(id);
+                    open = Some((h.2.clone(), h.3, h.4, id));
+                }
+            }
+        }
+        // Depth sweep over the QUERY window: count DISTINCT partner-cluster ids covering each position.
+        let mut events: Vec<(u64, i32, usize)> = Vec::with_capacity(hits.len() * 2);
+        for (h, &cid) in hits.iter().zip(cluster_id.iter()) {
+            events.push((h.0, 1, cid));
+            events.push((h.1, -1, cid));
+        }
+        events.sort_unstable_by_key(|x| x.0);
+        let mut count: BTreeMap<usize, i32> = BTreeMap::new();
+        let mut depth = 0usize;
+        let mut last: Option<u64> = None;
+        let mut segs: Vec<(u64, u64)> = Vec::new();
+        for (pos, d, cid) in events {
+            if let Some(l) = last {
+                if pos > l && depth >= min_partners {
+                    if let Some(t) = segs.last_mut().filter(|t| t.1 == l) {
+                        t.1 = pos;
+                    } else {
+                        segs.push((l, pos));
+                    }
+                }
+            }
+            let c = count.entry(cid).or_insert(0);
+            if d > 0 {
+                if *c == 0 {
+                    depth += 1;
+                }
+                *c += 1;
+            } else {
+                *c -= 1;
+                if *c == 0 {
+                    depth -= 1;
+                }
+            }
+            last = Some(pos);
+        }
+        if segs.is_empty() {
+            return None;
+        }
+        Some((segs[0].0, segs.last().unwrap().1))
+    }
+
     fn overlapping(&self, contig: &str, s: u64, e: u64) -> impl Iterator<Item = &(u64, u64, String, u64, u64)> {
         let v = self.by_contig.get(contig).map(|v| v.as_slice()).unwrap_or(&[]);
         let lo = s.saturating_sub(self.max_len.get(contig).copied().unwrap_or(0));
@@ -1022,6 +1111,78 @@ mod tests {
         assert!(!sd.links("c2", (7100, 7200), (7300, 7400)));
         // neither flank is in a pair at all
         assert!(!sd.links("c1", (300000, 300100), (400000, 400100)));
+    }
+
+    /// §6iz proposal #1 / §6j4: two distinct partner clusters overlapping the widened query window agree
+    /// on [9900,10600) — the segment where depth>=2 — and disagree (depth 1 only) outside it.
+    #[test]
+    fn single_span_core_admits_the_segment_two_distinct_partners_agree_on() {
+        let bed = "c1\t9800\t10600\tc2\t50000\t50800\nc1\t9900\t10700\tc3\t70000\t70800\n";
+        let sd = SdPairs::from_bed_str(bed);
+        let core = sd.single_span_core("c1", 10000, 10500, 1000, 2);
+        assert_eq!(core, Some((9900, 10600)));
+    }
+
+    /// A single corroborating partner never clears an `min_partners=2` floor -- one hit proves nothing.
+    #[test]
+    fn single_span_core_none_when_only_one_partner_backs_the_locus() {
+        let bed = "c1\t9800\t10600\tc2\t50000\t50800\n";
+        let sd = SdPairs::from_bed_str(bed);
+        assert_eq!(sd.single_span_core("c1", 10000, 10500, 1000, 2), None);
+    }
+
+    /// No SD evidence anywhere near the locus at all.
+    #[test]
+    fn single_span_core_none_when_no_sd_evidence_nearby() {
+        let sd = SdPairs::from_bed_str("");
+        assert_eq!(sd.single_span_core("c1", 10000, 10500, 1000, 2), None);
+    }
+
+    /// Several SD rows hitting the SAME sibling copy (overlapping partner intervals on one partner
+    /// contig) corroborate as ONE source, not one per row -- they must NOT by themselves clear a
+    /// `min_partners=2` floor.
+    #[test]
+    fn single_span_core_merges_overlapping_same_partner_rows_into_one_source() {
+        let bed = "c1\t9800\t10600\tc2\t50000\t50800\nc1\t9850\t10550\tc2\t50050\t50850\n";
+        let sd = SdPairs::from_bed_str(bed);
+        assert_eq!(sd.single_span_core("c1", 10000, 10500, 1000, 2), None);
+    }
+
+    /// §6j4 real-data check (ignored: reads a real, machine-local file; not part of the CI suite). Verifies
+    /// `single_span_core` against the REAL gorilla SD file on the 5 real, currently-wrong-sized NPIP de
+    /// novo nodes measured in the ledger, reproducing (not just asserting-in-the-abstract) the real
+    /// coverage/ratio improvement reported there.
+    #[test]
+    #[ignore]
+    fn single_span_core_real_gorilla_npip_wrong_sized_nodes() {
+        let text = std::fs::read_to_string("/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_sedef_final.bed")
+            .expect("real gorilla SD file must exist for this ad-hoc check");
+        let sd = SdPairs::from_bed_str(&text);
+        // (truth_start, truth_end, node_start, node_end) on their real contigs, from the real ggo.nodes.tsv
+        // dump / npip31.regions oracle (o1_ledger §6j4).
+        let cases: &[(&str, u64, u64, u64, u64)] = &[
+            ("NC_073242.2", 35184502, 35267752, 35228011, 35230492),
+            ("NC_073244.2", 21077140, 21105296, 21075545, 21078820),
+            ("NC_073242.2", 28995101, 29024611, 28995202, 28996824),
+            ("NC_073242.2", 28300720, 28325984, 28319700, 28337466),
+        ];
+        for &(contig, ts, te, ns, ne) in cases {
+            let node_cov = (ne.min(te) as i64 - ns.max(ts) as i64).max(0) as f64 / (te - ts) as f64;
+            let node_ratio = (ne - ns) as f64 / (te - ts) as f64;
+            match sd.single_span_core(contig, ns, ne, 15_000, 2) {
+                Some((cs, ce)) => {
+                    let cov = (ce.min(te) as i64 - cs.max(ts) as i64).max(0) as f64 / (te - ts) as f64;
+                    let ratio = (ce - cs) as f64 / (te - ts) as f64;
+                    println!(
+                        "{contig}:{ts}-{te}  raw_node cov={node_cov:.3} ratio={node_ratio:.3}  -> sd_core {cs}-{ce} cov={cov:.3} ratio={ratio:.3}"
+                    );
+                    assert!(cov > node_cov, "SD-core span should improve coverage vs the raw node span");
+                }
+                None => println!(
+                    "{contig}:{ts}-{te}  raw_node cov={node_cov:.3} ratio={node_ratio:.3}  -> sd_core: NONE (no SD evidence)"
+                ),
+            }
+        }
     }
 
     fn paf_records_become_pairs_in_genomic_coordinates() {
