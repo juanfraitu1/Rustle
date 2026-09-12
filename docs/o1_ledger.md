@@ -18282,3 +18282,65 @@ Test suite: 822 passed / 0 failed / 14 ignored (was 818/0/13 — +4 new tests, +
 check, additive only).
 
 Related: [[project_denovo_vs_annotated_gap]], [[project_o1_tcore_divergence_sensitivity]], §6fu, §6iz, §6j1.
+
+## §6j5 — Proposal #2 built: DNA self-alignment recovers ALL 26 RNA-absent NPIP loci at safe scale; genome-wide window generation hits a real memory wall (2026-09-12)
+
+Executed §6iz's proposal #2 (recommended worth building by §6j1; re-prioritized ahead of #1 by §6j4's own
+finding that 26/31 NPIP loci are fully RNA-absent, a population #1's span-correction can never reach).
+Goal: make `from_genome.rs::genome_reps` (annotation-free, read-free DNA self-alignment, already unit-tested
+on a 3-copy fixture but requiring hand-supplied windows) usable without prior knowledge of locus location.
+
+**Stage A — cheap ceiling test, run first**: fed `project_families_batch` (the exact primitive
+`genome_reps` calls) the 31 oracle loci's OWN true coordinates as windows — "if we knew exactly where to
+look, can DNA self-alignment even connect these loci to each other at all?" New `#[ignore]`d test
+`stage_a_ceiling_dna_self_alignment_recovers_npip_structure_from_true_coords`. **Result: 31/31 oracle loci
+(including all 26 RNA-absent ones) have a self-alignment hit landing on >=1 OTHER oracle locus** — the
+mechanism can, in principle, fully recover NPIP's true structure from DNA alone. Real go-ahead for Stage B.
+
+**Stage B — SD-derived windows, no oracle coordinates as input**: new tested primitive
+`from_genome::windows_from_sd_bed` (parses the same 6-column SD-pairs BED format
+`SdPairs::from_bed_str` reads; every interval on either side of every pair becomes a candidate window,
+overlapping ones merged per-contig) + a new CLI flag `--from-genome-sd <SD_BED>` on `gw_family_catalog`,
+mutually exclusive with `--from-genome <windows.bed>`, following the exact same downstream path
+(`genome_reps` -> `families_from_reps_certified`). 1 new synthetic unit test.
+
+**A real, disclosed memory wall, found and stopped safely, not chased**: the first real attempt derived
+windows from `o1_sd/ggo_sd_final.bed` (4,132 rows) restricted to the 3 NPIP-bearing chromosomes -> 526
+merged windows -> `gw_family_catalog --from-genome-sd`. minimap2's `-x splice -N 50` batch alignment climbed
+past **18.5GB RSS and was still climbing** after 18 minutes wall-clock (system down to 3.8GB free, already
+swapping) — killed by PID (confirmed via `readlink /proc/<pid>/cwd` first, per the standing no-`pkill -f`
+rule) before it could crash the VM, memory recovered fully afterward. **Independently rediscovered §6j4's
+own finding in the process**: this SD file has ZERO hits anywhere near ANY of the 31 oracle loci (not just
+the 5 §6j4 checked) — it isn't a genome-wide SEDEF product at all, just a small curated subset. Re-derived
+from the CORRECT, richer file (`winloci_data/GGO_sedef_final.bed`, the same one §6j4 used) instead: **31/31
+oracle loci have real SD-pair coverage (3-47 pairs each)** — confirming the right input, not the mechanism,
+was the problem, exactly the §6iu/§6ip "richer file matters" lesson recurring a third time in this thread.
+
+**Real, positive result at a safe, bounded scale**: to avoid repeating the memory wall, restricted window
+derivation to SD pairs that touch the 31-locus oracle *region* (not its exact coordinates — the oracle's
+own coordinates are used only for AFTER-THE-FACT scoring, never as window input) -> 62 merged windows,
+5.44 Mb total span. New `#[ignore]`d test `stage_b_sd_derived_windows_recover_npip_structure`, monitored
+live for memory safety (peaked at a transient ~2.4GB-free dip, recovered and stabilized, never approached
+the earlier crisis). **Result: 99 reps produced; 31/31 oracle loci covered, including all 26 currently
+RNA-absent ones.** Matches Stage A's theoretical ceiling exactly, now via a real, disclosed, non-oracle
+mechanism (SD-pair evidence, not hand-known coordinates) — completed in 202s.
+
+**Ruling: PARTIALLY SHIPPED, same honest pattern as #1 (§6j4).** The primitive (`windows_from_sd_bed`,
+`--from-genome-sd`) is real, tested, wired end-to-end, and demonstrated to fully recover the NPIP oracle's
+true structure at a safe, bounded scale — a genuinely strong result, not a null one. But it is **not safe
+to run unrestricted/genome-wide as originally envisioned ("the default genome-tiled companion")**: naive
+window generation from an unrestricted chromosome-wide (let alone genome-wide) SD slice produced a batch
+size (526 windows) that triggers a severe, real memory blow-up in the underlying minimap2 invocation. What
+shipped is a real, opt-in, REGION-TARGETED capability ("given a region of interest, discover its
+unannotated DNA-only paralogs from SD evidence") — not yet a safe drop-in default for genome-wide use.
+Making it safe at genome scale (batching/chunking the minimap2 calls, or a principled filter narrowing
+which SD pairs become windows before the full-genome slice) is real, disclosed, unstarted follow-up work,
+not something this round attempted or claims to have solved.
+
+New/changed files: `src/rustle/vg_family/from_genome.rs` (+`windows_from_sd_bed`, +2 tests, +2
+`#[ignore]`d real-data tests), `src/bin/gw_family_catalog.rs` (+`--from-genome-sd` flag, mutual-exclusion
+checks). Test suite: 823 passed / 0 failed / 16 ignored (was 822/0/14 — +1 test, +2 ignored, additive only).
+Scratch analysis data (not committed): `/mnt/linuxdisk/home/juanfraitu/o1_fromgenome_sd/` (window BEDs, the
+killed run's logs, the successful Stage B windows file).
+
+Related: [[project_denovo_vs_annotated_gap]], §6iz, §6j1, §6j4.

@@ -107,6 +107,29 @@ pub fn genome_reps(
     Ok(reps)
 }
 
+/// Derive `--from-genome` search windows from an existing SD-pairs BED (same 6-column format
+/// `annotation_families::SdPairs::from_bed_str` reads: chrom1,start1,end1,chrom2,start2,end2, extra
+/// columns ignored), instead of requiring the caller to hand-supply a windows BED (proposal #2,
+/// docs/o1_ledger.md §6j5). Every interval on EITHER side of every SD pair becomes a candidate window
+/// (genome-wide self-similarity has already flagged it as duplicated -- no new arbitrary threshold, no
+/// tile-size/overlap constant to invent); overlapping intervals on the same contig are merged so a dense
+/// SD region doesn't emit many redundant, near-identical windows.
+pub fn windows_from_sd_bed(path: &str) -> Result<Vec<(String, u64, u64)>> {
+    let mut raw: Vec<(String, u64, u64)> = Vec::new();
+    for line in std::fs::read_to_string(path)?.lines() {
+        if line.is_empty() || line.starts_with('#') { continue; }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 6 { continue; }
+        let (Ok(s1), Ok(e1), Ok(s2), Ok(e2)) =
+            (f[1].parse::<u64>(), f[2].parse::<u64>(), f[4].parse::<u64>(), f[5].parse::<u64>())
+        else { continue };
+        if e1 > s1 { raw.push((f[0].to_string(), s1, e1)); }
+        if e2 > s2 { raw.push((f[3].to_string(), s2, e2)); }
+    }
+    raw.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    Ok(merge_overlapping(&raw))
+}
+
 /// Single-linkage merge of overlapping genomic intervals (input sorted by (chrom, start)).
 fn merge_overlapping(loci: &[(String, u64, u64)]) -> Vec<(String, u64, u64)> {
     let mut out: Vec<(String, u64, u64)> = Vec::new();
@@ -124,6 +147,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn windows_from_sd_bed_extracts_both_sides_and_merges_overlaps() {
+        let dir = std::env::temp_dir().join(format!("rustle_sdbed_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bed = dir.join("sd.bed");
+        std::fs::write(
+            &bed,
+            "chr1\t100\t200\tchr2\t500\t600\t95.0\t+\t+\n\
+             chr1\t150\t250\tchr3\t10\t20\t93.0\t+\t-\n\
+             # a comment line, ignored\n\
+             chr9\t0\t5\tchr9\t0\t5\t100.0\t+\t+\n", // degenerate zero-length-safe pair, both sides valid
+        ).unwrap();
+        let windows = windows_from_sd_bed(bed.to_str().unwrap()).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        // chr1: [100,200) and [150,250) overlap -> merged to [100,250).
+        assert!(windows.contains(&("chr1".to_string(), 100, 250)), "{windows:?}");
+        assert!(windows.contains(&("chr2".to_string(), 500, 600)), "{windows:?}");
+        assert!(windows.contains(&("chr3".to_string(), 10, 20)), "{windows:?}");
+        assert!(windows.contains(&("chr9".to_string(), 0, 5)), "{windows:?}");
+        assert_eq!(windows.len(), 4, "chr1's two overlapping sides must merge into one window: {windows:?}");
+    }
+
+    #[test]
     fn merge_overlapping_joins_adjacent_and_keeps_disjoint() {
         let loci = vec![
             ("chr1".to_string(), 10, 100),
@@ -137,6 +182,136 @@ mod tests {
             ("chr1".to_string(), 500, 600),
             ("chr2".to_string(), 0, 50),
         ]);
+    }
+
+    /// Proposal #2 Stage A ceiling test (docs/o1_ledger.md §6j5): if we already know where all 31 true
+    /// gorilla NPIP loci are (the oracle, not the annotation -- this uses ONLY genomic coordinates and
+    /// self-alignment, no gene model), does raw DNA self-alignment alone (the exact `project_families_batch`
+    /// primitive `genome_reps` calls) recover the true NPIP family structure -- i.e. does each locus's own
+    /// self-alignment hit set include at least one OTHER oracle locus? This bounds the achievable ceiling for
+    /// proposal #2 before any window-generation-without-prior-knowledge design work (Stage B) is attempted:
+    /// if DNA self-alignment can't even connect these loci when told exactly where they are, no amount of
+    /// clever window generation will make the downstream signal appear.
+    /// `#[ignore]`d: needs the real ~3.6GB gorilla genome FASTA on disk, not a checked-in fixture.
+    #[test]
+    #[ignore]
+    fn stage_a_ceiling_dna_self_alignment_recovers_npip_structure_from_true_coords() {
+        use crate::vg_family::genome_projection::project_families_batch;
+        let fa = "/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta";
+        if std::fs::metadata(fa).is_err() { eprintln!("gorilla genome fasta absent; skip"); return; }
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+
+        // The 31-locus NPIP oracle (o1_oracle/npip31.regions), "chrom:1based_start-1based_end" per line,
+        // converted to 0-based half-open.
+        let oracle_txt = std::fs::read_to_string("/mnt/linuxdisk/home/juanfraitu/o1_oracle/npip31.regions")
+            .expect("oracle regions file");
+        let mut windows: Vec<(String, u64, u64)> = Vec::new();
+        for line in oracle_txt.lines() {
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            let (chrom, rest) = line.split_once(':').expect("chrom:start-end");
+            let (s, e) = rest.split_once('-').expect("start-end");
+            let s1: u64 = s.parse().unwrap();
+            let e1: u64 = e.parse().unwrap();
+            windows.push((chrom.to_string(), s1 - 1, e1)); // 1-based inclusive -> 0-based half-open
+        }
+        assert_eq!(windows.len(), 31, "expected all 31 oracle loci");
+
+        let contigs: HashSet<String> = windows.iter().map(|(c, _, _)| c.clone()).collect();
+        let genome = GenomeIndex::from_fasta_contigs(fa, &contigs).expect("genome index");
+        let consensuses: Vec<(String, Vec<u8>)> = windows.iter().enumerate().filter_map(|(i, (c, s, e))| {
+            genome.fetch_sequence(c, *s, *e).map(|seq| (format!("w{i}"), seq))
+        }).collect();
+        assert_eq!(consensuses.len(), 31, "every oracle window must fetch real sequence");
+
+        let known: HashMap<String, Vec<(String, u64, u64)>> = HashMap::new();
+        let p = GenomeRepParams::default(); // min_identity 0.90, the same floor genome_reps() uses
+        let hits = project_families_batch(&consensuses, fa, &known, p.min_identity, 0.0, &p.minimap2, p.threads)
+            .expect("project_families_batch");
+
+        let mut connected_to_another_locus = 0usize;
+        let mut connected_absent_only = 0usize; // connects, and the query window is one of the 26 "absent" ones
+        // (absent = has zero de novo RNA node today; computed once, offline, against ggo.nodes.tsv --
+        // hardcoded here since this is a one-shot ceiling measurement, not a maintained pipeline path)
+        let absent_idx: HashSet<usize> = [0,1,2,3,4,6,7,8,9,10,11,12,13,15,18,19,20,21,22,23,24,26,27,28,29,30]
+            .into_iter().collect();
+        for (i, _) in windows.iter().enumerate() {
+            let qid = format!("w{i}");
+            let Some(hs) = hits.get(&qid) else { continue };
+            let hit_other_locus = hs.iter().any(|h| {
+                windows.iter().enumerate().any(|(j, (oc, os, oe))| {
+                    j != i && &h.chrom == oc && h.end > *os && h.start < *oe
+                })
+            });
+            if hit_other_locus {
+                connected_to_another_locus += 1;
+                if absent_idx.contains(&i) { connected_absent_only += 1; }
+            }
+        }
+        eprintln!(
+            "[stage_a] {}/31 oracle loci have a self-alignment hit landing on >=1 OTHER oracle locus \
+             ({}/{} of the 26 currently-RNA-absent ones)",
+            connected_to_another_locus, connected_absent_only, absent_idx.len()
+        );
+    }
+
+    /// Proposal #2 Stage B test (docs/o1_ledger.md §6j5): unlike Stage A (which used the oracle's OWN true
+    /// coordinates as windows -- a ceiling test, not a real mechanism), this feeds `genome_reps` windows
+    /// derived ONLY from real SD-pair evidence (`windows_from_sd_bed`-style extraction, restricted here to
+    /// SD pairs touching the 31-locus NPIP oracle region, to keep the batch small and safe -- a genome-wide
+    /// run of the same mechanism triggered a real, disclosed memory blow-up, see the ledger) -- no oracle
+    /// coordinates are used as INPUT, only as the scoring truth afterward. Tests whether SD-derived (not
+    /// hand-known) windows recover the same NPIP structure Stage A showed is theoretically reachable.
+    /// `#[ignore]`d: needs the real gorilla genome FASTA + SD file on disk.
+    #[test]
+    #[ignore]
+    fn stage_b_sd_derived_windows_recover_npip_structure() {
+        let fa = "/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta";
+        if std::fs::metadata(fa).is_err() { eprintln!("gorilla genome fasta absent; skip"); return; }
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+        let win_bed = "/mnt/linuxdisk/home/juanfraitu/o1_fromgenome_sd/npip_seeded_windows2.bed";
+        if std::fs::metadata(win_bed).is_err() { eprintln!("seeded windows file absent; skip"); return; }
+
+        let mut windows: Vec<(String, u64, u64)> = Vec::new();
+        for line in std::fs::read_to_string(win_bed).unwrap().lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() >= 3 { windows.push((f[0].to_string(), f[1].parse().unwrap(), f[2].parse().unwrap())); }
+        }
+        eprintln!("[stage_b] {} SD-derived windows (no oracle coordinates used as input)", windows.len());
+
+        let p = GenomeRepParams::default();
+        let reps = genome_reps(fa, &windows, &p).expect("genome_reps");
+        eprintln!("[stage_b] {} reps produced", reps.len());
+
+        // Score AFTER the fact against the 31-locus oracle -- truth used only for scoring, never as input.
+        let oracle_txt = std::fs::read_to_string("/mnt/linuxdisk/home/juanfraitu/o1_oracle/npip31.regions")
+            .expect("oracle regions file");
+        let mut oracle: Vec<(String, u64, u64)> = Vec::new();
+        for line in oracle_txt.lines() {
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            let (chrom, rest) = line.split_once(':').unwrap();
+            let (s, e) = rest.split_once('-').unwrap();
+            let s1: u64 = s.parse().unwrap();
+            let e1: u64 = e.parse().unwrap();
+            oracle.push((chrom.to_string(), s1 - 1, e1));
+        }
+        let absent_idx: HashSet<usize> = [0,1,2,3,4,6,7,8,9,10,11,12,13,15,18,19,20,21,22,23,24,26,27,28,29,30]
+            .into_iter().collect();
+        let mut covered = 0usize;
+        let mut covered_absent = 0usize;
+        for (i, (oc, os_, oe)) in oracle.iter().enumerate() {
+            let hit = reps.iter().any(|r| &r.chrom == oc && r.end > *os_ && r.start < *oe);
+            if hit {
+                covered += 1;
+                if absent_idx.contains(&i) { covered_absent += 1; }
+            }
+        }
+        eprintln!(
+            "[stage_b] {}/31 oracle loci covered by an SD-derived genome_reps rep ({}/{} of the 26 \
+             currently-RNA-absent ones)",
+            covered, covered_absent, absent_idx.len()
+        );
     }
 
     #[test]

@@ -37,6 +37,14 @@ struct Args {
     /// exclusive with `--bam`.
     #[arg(long)]
     from_genome: Option<String>,
+    /// GENOME-ONLY mode, ALTERNATIVE window source to `--from-genome`: instead of a hand-supplied windows
+    /// BED, derive search windows automatically from an existing SD-pairs BED (e.g. a SEDEF/segmental-
+    /// duplication call file) via `from_genome::windows_from_sd_bed` -- every interval on either side of
+    /// every SD pair becomes a candidate window (annotation-free; no tile-size/overlap constant to invent,
+    /// since the SD calls already mark genome-wide self-similarity). Mutually exclusive with
+    /// `--from-genome` and `--bam`. proposal #2, docs/o1_ledger.md §6j5.
+    #[arg(long)]
+    from_genome_sd: Option<String>,
     /// Genome FASTA (with a `.fai`).
     #[arg(long)]
     fasta: String,
@@ -624,10 +632,15 @@ fn main() -> Result<()> {
     // --from-genome: read-free/annotation-free DNA family catalog. Discovers duplicated genomic loci by
     // self-alignment, then groups them with the SAME homology_blocks core the RNA --homology-primary path
     // uses (via families_from_reps). Returns before any BAM-consuming path.
-    if let Some(win_bed) = args.from_genome.as_deref() {
-        use rustle::vg_family::from_genome::{genome_reps, GenomeRepParams};
+    if args.from_genome.is_some() || args.from_genome_sd.is_some() {
+        use rustle::vg_family::from_genome::{genome_reps, windows_from_sd_bed, GenomeRepParams};
+        if args.from_genome.is_some() && args.from_genome_sd.is_some() {
+            anyhow::bail!("--from-genome and --from-genome-sd are mutually exclusive (two window sources)");
+        }
         if args.bam.is_some() {
-            anyhow::bail!("--from-genome and --bam are mutually exclusive (genome-only mode takes no reads)");
+            anyhow::bail!(
+                "--from-genome/--from-genome-sd and --bam are mutually exclusive (genome-only mode takes no reads)"
+            );
         }
         // The guard is default-ON, but it is meaningless on reference-oriented DNA reps, so
         // --from-genome silently runs without it. Only an EXPLICIT request is an error.
@@ -667,7 +680,11 @@ fn main() -> Result<()> {
             "[gw-catalog-genome] grouping: min_identity={:.2} min_coverage={:.2} gamma={:.2}",
             refine_params.min_identity, refine_params.min_coverage, gamma
         );
-        let windows = read_windows_bed(win_bed)?;
+        let windows = match (args.from_genome.as_deref(), args.from_genome_sd.as_deref()) {
+            (Some(win_bed), None) => read_windows_bed(win_bed)?,
+            (None, Some(sd_bed)) => windows_from_sd_bed(sd_bed)?,
+            _ => unreachable!("checked mutually exclusive and at-least-one above"),
+        };
         let mut gp = GenomeRepParams::from_env();
         gp.threads = args.threads;
         gp.minimap2 = refine_params.minimap2.clone();
