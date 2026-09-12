@@ -17698,3 +17698,58 @@ New files: `cat_v4_soto2334.gff3` (repo, `bench/soto/`), LiftOff outputs under
 `winloci_data/liftoff_v1_to_v2/` (`lifted_v2.gff3`, `unmapped.txt`, `intermediate/`).
 
 Related: [[project_soto_full_replication]].
+
+## §6iw — adapting LiftOff's primitive into a family-definition signal (2026-09-11)
+
+Follow-up to §6iv: "what can we do to adapt the idea of LiftOff to be more like defining families instead
+of copies?" LiftOff's own primitive is "align a gene's OWN sequence against the genome, keep hits above a
+threshold" -- currently used as *one gene -> its few best copies*. Inverted it: every gene's own sequence
+aligned against the whole genome (not LiftOff's capped few-per-gene search, ONE minimap2 call, -N 50
+--secondary=yes -p 0.5, reusing the cached v2.0 index from §6iv), then checked which hits land on ANOTHER
+already-annotated gene's own locus (>=98% identity, hit covers >=90% of that gene's length) -- that's a
+family edge, independent of any SD98/SEDEF duplication call. New script:
+`bench/soto/soto_liftoff_style_families.py`.
+
+**Free check first**: of the 68 extra-copy loci LiftOff's own default `-copies` search found in §6iv, only
+2 land on another gene's locus -- confirming LiftOff's default behavior doesn't really test this (it's
+built to find a few extra copies efficiently, not exhaustively cross-check every gene against every
+other). A real all-vs-all search was needed, and is now built.
+
+**Caught a real bug before trusting the result**: `bedtools getfasta -name` emits FASTA headers as
+`gene_id::chrom:start-end`, not the plain gene_id -- silently broke both the self-hit exclusion and the
+gene_id lookup (0 self-hits reported initially, and edges built from mismatched key formats). Fixed by
+stripping the `::coord` suffix before any lookup; re-verified self-hit count became sane (2,149/2,332).
+
+**Result: a genuinely different, high-precision but lower-recall signal, honestly evaluated, not a strict
+win.**
+
+| variant | ARI | exact | pair P/R/F1 | bipartite MICRO P/R | undetected |
+|---|---|---|---|---|---|
+| final_human.bed (current best) | 0.6959 / 0.6862 | 49.1% / 53.8% | 0.841/0.595/0.697 (median) | 0.784/0.709 | 99/491 (20.2%) |
+| **LiftOff-style (own-sequence realign)** | **0.6752 / 0.6485** | 33.8% / 36.5% | **0.891/0.545/0.676** (median) | 0.794/0.585 | 160/491 (32.6%) |
+| union, final_human + LiftOff-style | 0.6765 / 0.6779 | 44.2% / 49.1% | 0.779/0.600/0.678 (median) | - | - |
+
+Raw edge precision (before any clustering) checked directly against S1C ground truth: **89.3%** (7,700
+same-true-family / 920 different-true-family out of 8,620 edges) — a real, non-circular signal, aligning
+each gene's own sequence directly rather than a wide SD98-called block.
+
+**Confirmed the specific hoped-for effect on ID_328** (§6in's SEDEF-unit-averaging casualty): its genes now
+get real, non-trivial family placements (famCN 16.6-17.5, consistent with the true tight family) — but
+split across 3 different predicted families (SEDEFFAM45/15/236) rather than unified into one. A genuine,
+partial improvement over total isolation, not a full recovery: this signal alone doesn't have enough reach
+to bridge all 8 members into one component. Overall recall is markedly lower than `final_human.bed`
+(ARI's structurally-undetected count roughly 60% higher) — genes whose own sequence doesn't independently
+reach >=98%/>=90%cov against another member's locus (weaker signal than the shared-exon test, which only
+needs an exon-level match after CIGAR/fraction projection) are missed entirely.
+
+**Ruling**: neither standalone nor unioned does this beat `final_human.bed`. Kept and disclosed as a real,
+independently-useful signal at a different point on the precision/recall tradeoff — not adopted as the
+default. Directly answers the advisor's LiftOff question with a constructive, executed adaptation (not
+just "LiftOff doesn't do this"), and confirms the diagnosed §6in mechanism (unit-averaging costs recall)
+by showing a differently-built signal recovers part of what it was blind to.
+
+New files: `gene_v2_coords.bed`, `gene_v2_seqs.fa`, `gene_selfalign.bam`, `shared_exons_liftoffstyle.tsv`,
+`shared_exons_union_liftoff.tsv`, `replicated_families_liftoffstyle_{median,mean}.tsv`,
+`replicated_families_union_liftoff_{median,mean}.tsv` (all under `winloci_data/soto_replication/`).
+
+Related: [[project_soto_full_replication]].
