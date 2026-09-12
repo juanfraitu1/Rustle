@@ -17849,3 +17849,75 @@ New files: `sweep_edges_*.tsv`, `sweep_families_*.tsv` (identity/coverage grid o
 `union_finalhuman_bestliftoff_{median,mean}.tsv` (all under `winloci_data/soto_replication/`).
 
 Related: [[project_soto_full_replication]].
+
+## §6iz — "can we improve de novo mode so it's as similar as possible to annotated mode?" — diagnosis + 5 ranked proposals (2026-09-11)
+
+Pivot from the Soto side-thread back to O1's OWN two shipped-alternative definitions. Ran a 4-agent
+workflow (3 parallel readers + 1 synthesizer) to map both modes precisely off real code/doc citations
+before proposing anything, rather than guess.
+
+**Where the two modes actually live** (they are NOT wired together today — compared only offline,
+head-to-head, in `docs/O1_DEFINITION_SWITCH.md` §2):
+- **De novo mode**: `family_detect.rs` (SHIPPED-DEFAULT) — BAM reads -> Pass-1 skeletons -> assemble gate ->
+  `collapse_loci` -> `confirm_edge` (POA contiguous-core coverage, `T_CORE=0.13` flat floor,
+  `family_detect.rs:41`/`:905`) -> family decomposition. Plus an OFF-by-default DNA self-alignment front
+  end (`from_genome.rs::genome_reps`, `--from-genome <BED>`) feeding the same downstream homology core.
+  Plus a separate OTHER-BINARY alternate (`denovo_pipeline.rs`/`family_define`: pairwise-homology graph,
+  `CORE_MIN=0.19`/`ALN_MIN=0.24`, gamma-quasi-clique partition). No GFF/GTF ever enters any of these.
+- **Annotated mode**: `mcl_families` binary / `annotation_families.rs` — GFF/GTF gene+pseudogene records
+  (deduplicated to one node per physical locus) -> all-vs-all self-alignment (identity>=0.70,
+  `cov_longer`>=0.30, >=300bp) -> MCL graph clustering (inflation 2.8) -> SD-core rule + RNA-unit
+  corroboration ("DNA proposes, RNA disposes").
+
+**The gap is dominated by node construction, not partitioning — ~58% of the loss (`O1_DEFINITION_SWITCH.md`
+§5e).** De novo mode's "node" is whatever an assembled RNA transcript's own extent happens to be (shaped by
+TSS/TES, splicing, expression level), not the true duplicated genomic segment. Seed-free, this degenerates
+at both extremes: spans 2.45-16.62x too long, or (nothing merges) all-singletons
+(`PREREG_annotation_ablation_2026-09-07.md`). Concretely on NPIP: reads-only de novo finds 14/31 loci,
+fragmented across 5-6 families; +annotation seeds -> 30/31 in one family; full annotation (MCL) -> 31/31
+(`O1_DEFINITION_SWITCH.md` §3). A degradation ablation (o1_ledger §6fu Part 1) isolated exactly WHAT the
+annotation contributes: approximate interval PRECISION tolerant to real error (+-5kb jitter still gets
+sensitivity 24/26), not a membership signal per se.
+
+**Already tried and killed in this exact area — do not re-propose:** porting annotated mode's
+genomic-multiplicity/repeat-hub veto into de novo (register row 1222) made NPIP recovery WORSE (12/31 ->
+7/31) because raw genome multiplicity can't distinguish a repeat from a real high-copy family; using
+annotated coordinates as the de novo conflict-graph vertex set (register row 294) mismatches by 24-207kb;
+replacing the de novo definition with cDNA/protein-homology (register row 1072) loses de novo's identity
+outright.
+
+**5 ranked proposals** (all checked against the standing "no bipartite/facility-location" rule and against
+whether they smuggle annotation into "de novo"):
+
+1. **Repoint the already-validated SD-core projection (o1_ledger §6fu Part 2 — non-circular, median
+   coverage 0.936 against an independent held-out span) at de novo nodes for boundary DISCOVERY, not just
+   leave-one-out re-derivation inside an already-known family.** Directly attacks the 58% node-construction
+   term. Real engineering lift; generalizing to fresh discovery (family membership not yet known) is
+   unmeasured.
+2. **Make `from_genome.rs`'s DNA self-alignment front end (`genome_reps`) the default, genome-tiled
+   companion to the RNA front end**, instead of opt-in/caller-supplied-windows. Fixes the "no RNA ever
+   assembles an unexpressed paralog" failure mode no amount of edge/partition tuning can reach. Unit-tested
+   on a 3-copy fixture only; genome-wide compute cost and crash-safety under the WSL2 foreground/serial/
+   small-batch rule is unmeasured.
+3. **Replace the flat `T_CORE=0.13` core-coverage floor (`family_detect.rs:41`, used in `confirm_edge` at
+   `:905` via `contiguous_core_coverage_bounded_with`) with the derived, length-dependent
+   `d_max(L) = 1 - exp(-ln(L)/(T_CORE*L))`** ([[project_o1_tcore_divergence_sensitivity]], validated 20/20
+   on real SEDEF-confirmed pairs realigned at gene-body scale via minimap2). Cheapest to try; directly
+   answers the advisor's "no arbitrary thresholds" objection. Caveat: that validation used minimap2
+   alignments on SEDEF pairs, not the actual POA (`poasta`) contiguous-core mechanism `confirm_edge` uses on
+   real assembled-`DenovoTranscript` reps — needs re-validation against the REAL mechanism/population before
+   being trusted as a drop-in.
+4. **Controlled ablation: hold the node set fixed, swap only the partition algorithm** (MCL on de novo
+   nodes vs gamma-quasi-clique on annotation nodes) to actually isolate whether the remaining ~42% "other"
+   gap is attributable to partitioning at all — the current 58%/42% split comes from two experiments that
+   varied BOTH node set and partition method at once, never a controlled swap.
+5. **(Flagged, not a default) Explicit, provenance-tracked `--seed-from-gff` opt-in** that seeds boundaries
+   only (never substitutes for read/self-alignment homology signal), with output visibly marking
+   seed-assisted vs fully-annotation-free members. Openly trades away "annotation-free" for closeness —
+   `respects_annotation_free_invariant: false`, ranked last, adopt only as a deliberate, disclosed tradeoff.
+
+**Ruling (user decision):** execute in order **3, then 4**, using 4's result to decide whether the bigger
+engineering lifts (1, 2) are worth building at all. Cheapest/most-diagnostic first.
+
+Related: [[project_o1_tcore_divergence_sensitivity]], `docs/O1_DEFINITION_SWITCH.md`,
+`docs/PREREG_annotation_ablation_2026-09-07.md`, `docs/NEGATIVE_RESULTS_REGISTER.md` rows 294/1072/1222.
