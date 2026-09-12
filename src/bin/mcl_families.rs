@@ -111,6 +111,13 @@ struct Args {
     /// SEDEF pairs (BED: chr1 s1 e1 chr2 s2 e2 …, 0-based half-open) for `--core-refine`.
     #[arg(long)]
     sedef: Option<String>,
+    /// Measurement scaffolding (§6iz proposal #4, `docs/o1_ledger.md`): dump the PRE-MCL homology graph
+    /// (`node<TAB>weight` self-row per node, then `u<TAB>v<TAB>weight` per edge, nodes as
+    /// `chrom:start-end`) to this path before partitioning, so a controlled ablation can feed the SAME
+    /// graph into a different partitioner (e.g. `gamma_refine`) instead of re-deriving it. Not consumed by
+    /// any shipped pipeline; default off, no effect on any existing output.
+    #[arg(long)]
+    dump_graph: Option<String>,
     /// ⭐ §6fo: derive the SD-like pairs for the core refinement (and `blocks.tsv`) from the input `--paf`
     /// itself — every alignment between two annotated loci is one pair of genomic intervals — instead of a
     /// SEDEF bed. No external SD caller; the intergenic SD context is not available this way. Ignored when
@@ -736,6 +743,19 @@ fn main() -> Result<()> {
         None
     };
     let g = graph_from_paf_loci(&paf, &exonic, &blocks, &p, loci.as_ref());
+    if let Some(path) = &args.dump_graph {
+        let mut f = std::fs::File::create(path)?;
+        for (&(i, j), &w) in &g.edges {
+            let (ci, si, ei) = &g.genes[i];
+            let (cj, sj, ej) = &g.genes[j];
+            writeln!(f, "{ci}:{si}-{ei}\t{cj}:{sj}-{ej}\t{w:.6}")?;
+        }
+        eprintln!(
+            "[mcl_families] --dump-graph: {} node(s), {} edge(s) -> {path}",
+            g.n_nodes(),
+            g.n_edges()
+        );
+    }
     if let Some(m) = &loci {
         eprintln!(
             "[mcl_families] merge-overlapping-loci ({}): {} PAF record(s) skipped ({} loci with >1 record)",

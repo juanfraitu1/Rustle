@@ -78,6 +78,10 @@ name = "gamma_refine"
 path = "src/bin/gamma_refine.rs"
 
 [[bin]]
+name = "mcl_refine"
+path = "src/bin/mcl_refine.rs"
+
+[[bin]]
 name = "debug_poa"
 path = "src/bin/debug_poa.rs"
 

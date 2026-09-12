@@ -17991,3 +17991,90 @@ Scratch data (not committed): pairs manifests, subset FASTA, PAF files, analysis
 session's scratchpad.
 
 Related: [[project_o1_tcore_divergence_sensitivity]], [[project_denovo_vs_annotated_gap]], §5e, §5g, §6in, §6ix.
+
+## §6j1 — Proposal #4 executed: a controlled partition-algorithm swap, holding the node set fixed (2026-09-11)
+
+Executed §6iz's proposal #4: hold ONE fixed graph and swap ONLY the partitioner (MCL vs gamma-quasi-clique),
+on both the de-novo (RNA/DNA-rep) node universe and the annotation node universe, to isolate whether the
+~42% "other" share of de novo's loss (after the ~58% node-construction attribution, §5e) is actually
+attributable to the partition algorithm.
+
+**New measurement scaffolding, minimal, additive, not wired into any shipped pipeline** (as directed):
+- `src/bin/mcl_refine.rs` (new bin) — mirrors the EXISTING `gamma_refine.rs` exactly: reads an arbitrary
+  weighted edge list (`u<TAB>v<TAB>weight`) on stdin, builds a `HomologyGraph`, calls the real, unmodified
+  `annotation_families::mcl`, prints `cluster_id<TAB>member`. `gamma_refine` already existed for exactly
+  this purpose ("a candidate graph built outside the RNA pipeline can be split by the SAME rule... so any
+  comparison of two catalogs varies the EDGES, not the partitioner") — `mcl_refine` is its mirror image for
+  the other partitioner. Registered in `Cargo.toml`.
+- `src/bin/mcl_families.rs` — one new opt-in flag, `--dump-graph <path>` (default `None`, no effect unless
+  passed): dumps the real, pre-partition `HomologyGraph` edges (`u<TAB>v<TAB>weight`) to a file, so the
+  SAME annotation graph `mcl_families` builds internally can be re-partitioned by `gamma_refine` without
+  reimplementing the GFF/PAF loading chain. No existing output changed; confirmed via full test suite.
+
+**De-novo node universe**: reused `/mnt/linuxdisk/home/juanfraitu/o1_reps/dump/ggo.{nodes,edges}.tsv` — the
+real, already-materialized homology graph (2026-08-21 `gw_family_catalog --homology-primary` gorilla run,
+`RUSTLE_ER_EDGE_DUMP`) that produced the SHIPPED `ggo_reps.families.tsv` (627 families / 2019 members).
+Built a weighted edge list (`identity * coverage`, capped at 1.0, matching `HomologyGraph`'s own convention)
+over the 2,126 nodes that have >=1 edge (4,778 edges) and fed it to BOTH partitioners.
+
+**Annotation node universe**: reused the existing real self-alignment (`/mnt/linuxdisk/home/juanfraitu/
+mcl_ann/allgenes.asm20.paf`, an all-vs-all `minimap2 -x asm20` run over the gorilla GFF's genes) against
+`/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff` (the gorilla-native RefSeq annotation), run
+through the real `mcl_families` binary at CLI defaults (identity>=0.70, cov_longer>=0.30, >=300bp,
+merge-overlapping-loci ON, exonless-span ON) with the new `--dump-graph` flag: **0 nodes fell back to the
+span denominator** (clean GFF/PAF coordinate join), 1,920 nodes / 24,286 edges.
+
+**The 4-cell comparison** (ground truth: the 31-locus gorilla NPIP oracle set reused from §6j0,
+`o1_oracle/npip31.regions`):
+
+| cell | node universe | partitioner | nodes placed in a multi-member block | NPIP loci recovered | NPIP spread across |
+|---|---|---|---|---|---|
+| 1' | de-novo (RNA/DNA-rep) | gamma-quasi-clique (bare `refine_component`) | 2,110/2,126 (99.3%) | **3/31** | 1 block (size 8) |
+| 2 | de-novo (RNA/DNA-rep) | MCL (inflation 2.8, prune 1e-9) | 1,630/2,126 (76.7%) | **3/31** | 1 block (size 8) |
+| 3 | annotation (GFF) | gamma-quasi-clique (bare `refine_component`) | 1,920/1,920 (100%) | 31/31 | 7 blocks (267,92,63,17,14,5,3) |
+| 4 | annotation (GFF) | MCL (production `mcl_families` defaults) | 1,416/1,920 (73.75%) | 31/31 | 9 blocks (281,32,11,9,8,7,4,3,2) |
+
+**The node-construction diagnosis is CONFIRMED, more starkly than the ~58%/42% estimate implied.** On the
+de-novo node universe, swapping the ENTIRE partition algorithm produces **zero** difference: both
+partitioners recover the identical 3/31 NPIP loci in the identical single 8-member block. This is not a
+close call decided by a coin-flip parameter — the other 28 truth loci are either absent as candidate nodes
+entirely, or present with degree 0 (isolated, 2 of the 5 node-present loci never receive an edge at all;
+checked directly against `ggo.nodes.tsv`'s full 17,924-node table, including zero-degree nodes) — no
+partitioner, however good, can cluster a node that was never built or never connected. Where the node set
+IS complete (annotation mode, where every truth locus is a node by construction), recovery is trivially
+31/31 either way; the partitioner's only visible effect there is on **fragmentation** — a real, secondary,
+non-zero effect (7 vs 9 blocks for the same 31 loci) — not on presence/absence.
+
+**A genuine, generalizable secondary finding, independent of NPIP specifically**: MCL leaves a
+substantially higher fraction of connected (degree>=1) nodes as unclustered singletons than gamma-
+quasi-clique does on BOTH graphs (annotation: 73.75% vs 100% placed; de-novo: 76.7% vs 99.3% placed) — a
+real, reproducible property of the two algorithms' behavior on these real degree distributions, not an
+artifact of one run. Flagged as a disclosable observation, not spun into a new proposal: it did not move
+the NPIP-specific number at all (both cells recovered the identical 3/31), and shipped de-novo mode already
+uses gamma-quasi-clique (the higher-coverage choice on this axis).
+
+**Honest caveat, disclosed rather than hidden**: this run's absolute NPIP numbers do **not** match the
+historical "14/31 reads-only de novo / 31/31 one-family annotated" figures quoted in
+`O1_DEFINITION_SWITCH.md` §3 (itself explicitly marked "from the record, not re-run today"). The de-novo
+side used a specific, already-materialized Aug-21 gorilla run (`o1_reps`, `GGO_ds.bam`) and the annotated
+side used bare CLI defaults (no `--sedef`/`--core-refine`/`--fold-within-clusters` beyond the flags this
+run happened to pass) — neither is guaranteed to be the exact configuration that produced the older
+headline numbers, and re-deriving that provenance was out of scope for a partition-only ablation. This does
+**not** weaken the ablation's own conclusion, which only requires internal consistency between cells built
+from the identical graph (confirmed: cells 1'/2 and cells 3/4 each share one graph, varying only the
+partitioner) — but the absolute recovery figures above should not be quoted as a replacement for the
+existing §2/§3 headline numbers.
+
+**Ruling, answering the user's actual question ("use 4's result to decide whether 1/2 are worth
+building")**: **proposals #1 and #2 ARE worth their engineering cost.** This ablation is now direct,
+controlled evidence — not inference from two confounded experiments — that partition-algorithm choice
+cannot substitute for fixing node construction: holding the broken (RNA-derived) node set fixed, the best
+available partitioner swap changes nothing. Proposal #4 is closed; no further partition-algorithm work is
+recommended as a priority ahead of #1/#2.
+
+New/changed files: `src/bin/mcl_refine.rs` (new, +65 lines), `src/bin/mcl_families.rs` (+1 CLI flag,
++13 lines, additive/default-off), `Cargo.toml` (+3 lines, one new `[[bin]]` entry). `818 passed / 0 failed /
+13 ignored` unchanged before/after (`cargo test --release --lib`). Scratch analysis data (not committed):
+`/mnt/linuxdisk/home/juanfraitu/ablation_407/` (graph dumps, partition outputs, NPIP scoring script).
+
+Related: [[project_denovo_vs_annotated_gap]], §6iz, §6j0, `docs/O1_DEFINITION_SWITCH.md` §3.
