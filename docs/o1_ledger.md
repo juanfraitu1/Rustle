@@ -17753,3 +17753,51 @@ New files: `gene_v2_coords.bed`, `gene_v2_seqs.fa`, `gene_selfalign.bam`, `share
 `replicated_families_union_liftoff_{median,mean}.tsv` (all under `winloci_data/soto_replication/`).
 
 Related: [[project_soto_full_replication]].
+
+## §6ix — O1's T_CORE has a provable, length-dependent max-divergence formula, validated 20/20 (2026-09-11)
+
+Prompted by "what is the maximum divergence we can detect something as still a member of a multi-copy gene
+family?" -- asked about the REAL O1 mechanism (`confirm_edge`/`contiguous_core_coverage`,
+`family_graph.rs:690-732`, `T_CORE=0.13`), not the Soto side-project. Answered with a derivation +
+empirical validation, not a guess.
+
+**O1's edge test is not a percent-identity floor** -- it asks whether the longest CONTIGUOUS exact-match
+run covers `>=T_CORE` (0.13) of the shorter sequence's length. Using the standard Erdos-Renyi longest-run-
+of-successes law (expected longest exact-match run between two sequences of length L at per-site
+divergence d is `~= ln(L)/(-ln(1-d))`), solving for the divergence at which this expected run equals the
+required core length gives a closed form:
+
+    d_max(L) = 1 - exp(-ln(L) / (T_CORE * L))
+
+This is DERIVED, not fit -- a real, disclosed, provable relationship (exactly what advisor Canzar says he
+wants: "clean combinatorial structure, provable theorems, no arbitrary thresholds"), in direct contrast to
+Soto's flat, length-independent 98% SD98 identity floor.
+
+**Concrete numbers**, using this project's own real exonic-length distribution (2334-gene SD98 set, n=7377
+transcripts: median 913bp, p25 566bp, p75 1953bp, p90 3706bp):
+
+| L (bp) | d_max | min identity detectable |
+|---|---|---|
+| 100 | 29.8% | 70.2% |
+| 550 (~p25) | 8.5% | 91.5% |
+| 913 (median) | 5.6% | 94.4% |
+| 1950 (~p75) | 2.9% | 97.1% |
+| 3700 (~p90) | 1.7% | 98.3% |
+| 10,000 | 0.7% | 99.3% |
+
+**Empirical validation, 20/20 exact agreement**: sampled 20 real SEDEF-detected pairs from `final_human.bed`
+that also share a true Family ID per Soto's own S1C table (spanning 84.9%-99.9% identity), realigned each
+at GENE-BODY scale (`minimap2 -x asm20 -c --eqx --secondary=no`) -- trying the whole wide SEDEF-called
+duplication block first gave meaningless results (a fresh, independent reconfirmation of §6in's unit-
+averaging finding, since these blocks are often 10-100x longer than the gene body itself), computed the
+true longest exact-match run from the real CIGAR, and compared PASS/FAIL against the formula's prediction.
+**Every one of the 20 pairs agreed: 20/20.** The formula was derived first, tested against real data
+second -- no fitting.
+
+**Practical takeaway**: there is no single "maximum divergence" for O1 -- it is provably a function of
+sequence length. For a typical-length gene in this project's own data (~913bp median), O1 detects family
+membership down to ~94.4% identity, MORE permissive than Soto's flat 98% floor at or below median length,
+and progressively stricter for longer sequences. Worth stating explicitly to the advisor as a derivable
+design property, not a hedge.
+
+Related: [[project_o1_tcore_divergence_sensitivity]], [[project_soto_full_replication]].
