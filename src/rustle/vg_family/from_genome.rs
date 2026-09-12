@@ -324,9 +324,40 @@ mod tests {
     /// family also swallow a non-oracle gene from the same real 392-copy corpus). Baseline reps are the
     /// REAL, already-computed footprint-off run (§6j3's control) on the real 3-contig NPIP-bearing BAM
     /// subset -- not synthetic, not re-derived. `#[ignore]`d: needs real gorilla data on disk.
+    ///
+    /// Body factored into [`stage_c_or_e_body`] so the historical unbudgeted reproduction (this test,
+    /// kept for the record -- it WILL hang if run bare, that is the documented §6j6 finding) and the
+    /// budgeted re-attempt (`stage_e_...`, §6j8) share one real implementation instead of two copies
+    /// that could silently drift apart.
     #[test]
     #[ignore]
     fn stage_c_combining_proposals_1_and_2_measures_real_family_recovery() {
+        stage_c_or_e_body(None, "UNBUDGETED (historical §6j6 hang reproduction -- do not run without `timeout`)");
+    }
+
+    /// §6j8: the SAME real #1+#2 integration as `stage_c_...` above, with `confirm_edge`'s new per-pair
+    /// time budget enabled (500ms -- justified in docs/o1_ledger.md §6j8 from the real per-pair
+    /// distribution measured in §6j7: 192 real pairs at 2.51s-19.75s each, so 500ms is comfortably below
+    /// the observed MINIMUM -- a 5x margin, not a hair's-width cut -- forcing the faithful fallback for
+    /// every pair in this documented hard neighborhood while remaining orders of magnitude above what any
+    /// ordinary/fast pair elsewhere needs. Live wall-clock runs at 2s and 1s budgets on this same
+    /// substrate (§6j8) measured total time scaling roughly with the budget (164s at 2s, 95s at 1s, for
+    /// the baseline cell alone) -- tightening further here trades zero additional fidelity risk (every
+    /// pair in this neighborhood already exceeds even the smallest of these budgets by a wide margin, so
+    /// which ones fall back does not change) for wall-clock headroom to let all three cells complete.
+    /// This is the measurement §6j6 was blocked from getting.
+    /// `#[ignore]`d: needs real gorilla data; run under a shell `timeout`, never bare (should now finish
+    /// well inside it).
+    #[test]
+    #[ignore]
+    fn stage_e_combining_proposals_with_time_budget_measures_real_family_recovery() {
+        stage_c_or_e_body(
+            Some(std::time::Duration::from_millis(500)),
+            "BUDGETED 500ms (§6j8 fix -- the measurement §6j6 was blocked from getting)",
+        );
+    }
+
+    fn stage_c_or_e_body(time_budget: Option<std::time::Duration>, label_suffix: &str) {
         use crate::vg_family::annotation_families::SdPairs;
         use crate::vg_family::family_detect::{detect_edges, DetectParams};
         use crate::vg_family::family_split::{decompose_families, SplitParams};
@@ -404,8 +435,10 @@ mod tests {
         //     families the 31 oracle loci fall into, and whether any oracle-containing family also
         //     contains a non-oracle rep (a real, on-substrate false-merge check, not a synthetic one). ---
         let score = |reps: &[DenovoTranscript], label: &str| -> (usize, usize, usize) {
-            let dp = DetectParams::default();
+            let dp = DetectParams { time_budget, ..DetectParams::default() };
+            let t0 = std::time::Instant::now();
             let edges = detect_edges(reps, &dp);
+            eprintln!("[stage_c/e:{label}] detect_edges took {:?}", t0.elapsed());
             let families = decompose_families(&edges, &SplitParams::default());
             let mut rep_family: Vec<Option<usize>> = vec![None; reps.len()];
             for (fi, fam) in families.iter().enumerate() {
@@ -463,7 +496,9 @@ mod tests {
 
         // --- PROPOSAL #2: add SD-seeded DNA-only reps (already-validated §6j5 Stage B windows, reused
         //     from `sd_windows` loaded above -- same file, same region used to bound the baseline) ---
+        let t_genome_reps = std::time::Instant::now();
         let dna_reps = genome_reps(fa, &sd_windows, &GenomeRepParams::default()).expect("genome_reps");
+        eprintln!("[stage_c/e] genome_reps took {:?}", t_genome_reps.elapsed());
         eprintln!("[stage_c] proposal #2: {} SD-seeded DNA-only reps generated", dna_reps.len());
 
         // --- COMBINED: corrected RNA reps + DNA-only reps, deduped where they land on the same locus ---
@@ -483,8 +518,8 @@ mod tests {
         let combined_result = score(&combined, "COMBINED (proposal #1 + #2)");
 
         eprintln!(
-            "[stage_c] SUMMARY (oracle_covered/oracle_families/false_merge_families): baseline {:?}, \
-             prop#1-only {:?}, COMBINED {:?}",
+            "[stage_c/e] SUMMARY [{label_suffix}] (oracle_covered/oracle_families/false_merge_families): \
+             baseline {:?}, prop#1-only {:?}, COMBINED {:?}",
             baseline_result, p1_result, combined_result
         );
     }

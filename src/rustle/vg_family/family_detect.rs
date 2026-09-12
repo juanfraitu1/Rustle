@@ -168,6 +168,17 @@ pub struct DetectParams {
     /// POA contiguous-core threshold used by span-aware collapse for disjoint-junction isoforms.
     /// Conservative to avoid merging adjacent paralogs.
     pub collapse_span_core: f64,
+    /// Hard wall-clock budget for `confirm_edge`'s exact poasta path (docs/o1_ledger.md §6j8). `None`
+    /// (the default) is BYTE-IDENTICAL to no budget -- no thread spawned, no timing, unconditionally the
+    /// same code path this project has always run. `Some(d)` bounds a real, measured failure mode
+    /// (§6j0/§6j6/§6j7): pairs of near-identical paralogs can cost poasta's Dijkstra search seconds each,
+    /// independent of `len_cap` (a LENGTH bound, not a COST bound) -- on timeout, falls back to the same
+    /// faithful linear-memory metric already used above `len_cap`. See
+    /// `family_graph::contiguous_core_coverage_bounded_budgeted` for the full mechanism and its disclosed
+    /// thread-cannot-be-killed limitation. No env-var override by design (unlike `RUSTLE_POA_MEMO`): every
+    /// other `DetectParams` field is set structurally, not duplicated via environment, and this one follows
+    /// that convention rather than adding a second, possibly-conflicting way to configure it.
+    pub time_budget: Option<std::time::Duration>,
 }
 
 impl Default for DetectParams {
@@ -182,6 +193,7 @@ impl Default for DetectParams {
             max_pairs: MAX_PAIRS,
             collapse_span_aware: true,
             collapse_span_core: COLLAPSE_SPAN_CORE,
+            time_budget: None,
         }
     }
 }
@@ -903,17 +915,19 @@ pub fn candidate_pairs(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usiz
 /// run IS a common substring — so a large read-through "hub" that homologously contains a copy is still
 /// confirmed (the DSFAM45 case) instead of being lost. Below the cap the exact poasta path is unchanged.
 pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
-    use super::family_graph::{contiguous_core_coverage_bounded_with, EDGE_CONFIRM_ASTAR};
+    use super::family_graph::{contiguous_core_coverage_bounded_budgeted, EDGE_CONFIRM_ASTAR};
     let au = upper_cow(a);
     let bu = upper_cow(b);
-    let mut cr = contiguous_core_coverage_bounded_with(&au, &bu, p.len_cap, EDGE_CONFIRM_ASTAR);
+    let mut cr =
+        contiguous_core_coverage_bounded_budgeted(&au, &bu, p.len_cap, EDGE_CONFIRM_ASTAR, p.time_budget);
     if cr < p.t_core {
         // opposite orientation (copies assembled on different strands).
-        let rc = contiguous_core_coverage_bounded_with(
+        let rc = contiguous_core_coverage_bounded_budgeted(
             &au,
             &reverse_complement(&bu),
             p.len_cap,
             EDGE_CONFIRM_ASTAR,
+            p.time_budget,
         );
         if rc > cr {
             cr = rc;

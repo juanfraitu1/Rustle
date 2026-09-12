@@ -18462,3 +18462,105 @@ New scratch data (not committed): `/mnt/linuxdisk/home/juanfraitu/o1_bundle6/sta
 run's full per-pair timing log), `build_stage_d.log`, `full_test_after.log`.
 
 Related: [[project_denovo_vs_annotated_gap]], §6j2, §6j3, §6j6.
+
+## §6j8 — the `confirm_edge` time budget, implemented and verified: real speedup, one new bottleneck found (2026-09-12)
+
+Implemented the fix §6j6/§6j7 identified: a hard wall-clock budget for `confirm_edge`'s exact poasta path,
+falling back to the SAME already-"faithful" linear-memory `longest_common_substring` metric already used
+above `len_cap` when a pair blows the budget, instead of a separate/lesser code path.
+
+**Mechanism**: checked poasta 0.1.0's own Rust API first for a native cost/iteration budget (would be a
+cleaner, deterministic bound than wall-clock) — none exists (searched the whole `aligner` module for
+budget/deadline/step-limit hooks; found none). Implemented a thread+channel deadline instead:
+`family_graph::contiguous_core_coverage_bounded_budgeted(a, b, poasta_cap, astar, budget)` spawns the exact
+(memoized) computation on a thread and `recv_timeout`s on the budget; on timeout, computes
+`longest_common_substring` directly and returns that instead of waiting further. **Disclosed limitation,
+not hidden**: poasta exposes no cancellation, and a Rust thread cannot be forcibly killed — the abandoned
+thread keeps running (and will eventually populate the shared memo with the exact value once it finishes,
+which a LATER call for the same pair could then hit as a cache hit even though an EARLIER call for the
+identical pair got the fallback value). Not a correctness bug (both values are individually right for what
+they compute; a one-shot batch scoring run only asks once per pair) but a real, worth-knowing subtlety for
+any future long-lived/repeatedly-queried use.
+
+**Wired via a new `DetectParams::time_budget: Option<Duration>` field, default `None`** — deliberately NOT
+duplicated as an env-var override (unlike `RUSTLE_POA_MEMO`): every other `DetectParams` field is set
+structurally, and this follows that convention rather than adding a second, possibly-conflicting way to
+configure the same thing. `None` is BYTE-IDENTICAL to today's behavior: no thread spawned, no timing, the
+exact same code path this project has always run — confirmed both by construction (the `None` branch
+returns `contiguous_core_coverage_bounded_with(...)` directly, unchanged) and by the full test suite passing
+unchanged (823/0/18 before, 827/0/19 after: +4 new unit tests, +1 new `#[ignore]`d integration test, 0
+regressions, 0 changes to any existing test's behavior).
+
+**4 new unit tests** (`family_graph.rs`) prove the mechanism itself, deterministically, not by timing luck:
+`budgeted_none_is_byte_identical_to_unbudgeted`, `budgeted_generous_matches_exact_value` (a real,
+sufficiently long budget gives the exact same value as no budget), `budgeted_zero_forces_the_faithful_fallback`
+(a 1-nanosecond budget forces the timeout branch on every call regardless of real compute speed --
+deterministic test of the fallback path itself, no flakiness), `budgeted_above_length_cap_matches_unbudgeted_fallback`
+(the time budget is orthogonal to the existing length cap, not a replacement for it).
+
+**Budget value, chosen and justified from real data, not guessed**: §6j7 measured 192 real candidate pairs
+(one dense NPIP neighborhood) at 2.51s-19.75s each. Live-measured the REAL effect of three budget choices on
+this exact real substrate (the `stage_e_combining_proposals_with_time_budget_measures_real_family_recovery`
+test, mirroring §6j6's blocked `stage_c_...` test via a shared `stage_c_or_e_body` helper so both share one
+real implementation): **2s budget -> 164.4s for the baseline cell's `detect_edges`** (previously: did not
+complete in 5-8 minutes, unbounded); **1s -> 95.4s**; **500ms -> 56.8-59.4s** (two runs, normal system-load
+variance). Runtime scales roughly with the budget, as expected, since EVERY pair in this documented hard
+neighborhood already exceeds even the smallest of these by a wide margin (minimum observed 2.51s vs a
+500ms budget = 5x margin) -- tightening the budget further here costs nothing in fidelity for this
+substrate (no pair here would ever complete within any of these budgets anyway), only wall-clock. Settled
+on **500ms** as the value used for the real re-measurement below: comfortably below the observed minimum
+(forces the fallback for the whole documented hard population) while remaining orders of magnitude above
+what this project's own ~800-test suite implies an ordinary/fast pair needs (hundreds of real+synthetic
+`confirm_edge` calls complete in a few seconds TOTAL elsewhere in the suite).
+
+**Real result: the fix works, unblocking exactly what it was built to unblock** -- both the `baseline`
+(RNA-only) and `proposal #1 only` (span-corrected) cells of the pending #1+#2 integration, previously
+UNABLE to complete at all (§6j6: killed after 5+ min / 8 min timeouts), now complete in under 100s each,
+with real, honest results:
+
+| cell | reps | edges | families | oracle covered | oracle families | false-merge families |
+|---|---|---|---|---|---|---|
+| baseline (RNA only, uncorrected) | 42 | 37 | 11 | 4/31 | 3 | 2/3 |
+| proposal #1 only (spans corrected) | 42 | 27-30* | 9 | 4/31 | 2 | 2/2 |
+
+*(edge count varied 27-30 across repeated runs at sub-second budgets -- expected: a fallback-triggered pair
+can differ from the exact poasta value near the `T_CORE` boundary, since `longest_common_substring` is a
+faithful but not always numerically IDENTICAL estimate of the same quantity; the family/oracle-coverage
+numbers were stable across repeats).
+
+**A genuine, disclosable finding independent of the fix itself**: `oracle_covered` stayed at 4/31 in BOTH
+cells (span-correction didn't add oracle coverage on this specific bounded sub-substrate -- consistent with
+§6j4's finding that only 5/31 NPIP loci have any de novo node at all, and this 42-rep SD-window-bounded
+region apparently contains only 4 of those 5). **More importantly: MOST oracle-containing families in
+BOTH cells already show a false merge (2/3 baseline, 2/2 corrected)** -- i.e. even before proposal #2's DNA
+reps are added, precision is already a live concern at this bounded substrate, not something #2 introduces
+fresh. This sharpens what the still-pending COMBINED measurement needs to show: whether adding DNA-only
+reps makes this existing false-merge rate meaningfully WORSE, or leaves it roughly where it already stood.
+
+**The COMBINED (proposal #2 added) cell did NOT complete -- blocked by a DIFFERENT, newly-found bottleneck,
+not `confirm_edge`.** Across two full attempts (2s and 500ms `confirm_edge` budgets, each under a ~10-minute
+hard `timeout`), execution reliably got past both the `baseline` and `proposal #1 only` cells (now fast,
+per the fix) and then stalled inside `genome_reps(fa, &sd_windows, ...)` itself -- the call never returned
+within the remaining window (confirmed via an added timer: the `[stage_c/e] genome_reps took ...` line
+never printed before the external kill). This is `from_genome.rs`'s own DNA self-alignment mechanism
+(proposal #2, §6j5) being re-invoked fresh inside this integration test -- a real, separate cost center
+(likely re-paying minimap2 index-build/alignment overhead each call) that this task's fix does not touch
+and was not in scope to fix. **Disclosed as a genuinely new, unresolved blocker for the full combined
+measurement**, not glossed over: getting the actual "#1+#2 combined" NPIP recovery + precision numbers
+still needs `genome_reps`' own runtime characterized and bounded (e.g. caching its output across repeated
+test runs, or profiling why a 62-window/5.4Mb self-alignment costs more than several hundred seconds when
+re-invoked here) before it can complete in one sitting.
+
+**Ruling**: the `confirm_edge` time-budget fix itself SHIPS -- real, tested, byte-identical by default,
+demonstrably unblocks the exact real measurement it was built for on two of three cells. The full #1+#2
+combined result remains open, blocked by a newly-identified, different bottleneck (`genome_reps` runtime)
+now queued as the next concrete step for whoever picks this up.
+
+New/changed files: `src/rustle/vg_family/family_graph.rs` (+`contiguous_core_coverage_bounded_budgeted`,
++4 unit tests), `src/rustle/vg_family/family_detect.rs` (`DetectParams::time_budget` field, `confirm_edge`
+wired to the new function), `src/rustle/vg_family/from_genome.rs` (`stage_c_...` factored into
+`stage_c_or_e_body` + new `stage_e_...` budgeted test, timer added around `genome_reps`). Test suite:
+823 passed/0 failed/18 ignored -> 827 passed/0 failed/19 ignored (additive only). Scratch logs (not
+committed): `/tmp/claude-1000/stage_e_run{1,2,3,4}.log`.
+
+Related: [[project_denovo_vs_annotated_gap]], §6j0, §6j6, §6j7.
