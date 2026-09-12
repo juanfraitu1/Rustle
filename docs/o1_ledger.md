@@ -18111,3 +18111,93 @@ confirmed #1/#2 are worth building, #6 is now a candidate CHEAPER FIRST STEP on 
 problem before committing to #1/#2's bigger engineering cost — queued to execute next.
 
 Related: [[project_denovo_vs_annotated_gap]].
+
+## §6j3 — Proposal #6 executed: real evidence redirected the plan mid-flight, real gain found, real new risk found (2026-09-12)
+
+Set out to revive `record_ref_span_capped`/`types.rs::Bundle` per §6j2's original framing. Real evidence
+along the way changed the plan twice — both changes disclosed here, not silently absorbed.
+
+**Redirect #1 — `record_ref_span_capped` is very likely superseded dead code, not a missing capability.**
+Reading `denovo_pipeline.rs` before touching anything found `is_giant_intron_mischain`/`retain_non_mischain`
+(transcript-level, SUPPORT-AWARE: a giant intron carried by few reads is dropped as a mis-chain, one carried
+by MANY reads is kept as a real large gene — smarter than `record_ref_span_capped`'s unconditional per-read
+truncation) and `is_mischained_read`/`split_mischained_reads` (read-level). `retain_non_mischain` **is
+already called from `detect_families`** (`denovo_pipeline.rs:233`), gated by `cfg.filter_readthrough`, which
+**defaults to `true`** (`DenovoConfig::default`/`from_env`, `denovo_pipeline.rs:149/196`). Giant-intron
+transcript-bridging is already guarded in the shipped default path, by a better mechanism than the one §6j2
+proposed reviving. Reviving `record_ref_span_capped` on top of this would be solving an already-solved
+problem with a cruder tool.
+
+**Redirect #2 — the real, current failure mode on this substrate is undersized/absent nodes, not
+ballooned ones.** Directly checked `/mnt/linuxdisk/home/juanfraitu/o1_reps/dump/ggo.nodes.tsv` (the real
+gorilla de-novo node dump `§6j1` already used) against the 31-locus NPIP oracle: only 5/31 loci have ANY
+overlapping de-novo node, and every one of those 5 is UNDERSIZED relative to the true gene span (ratios
+0.03, 0.05, 0.12, 0.65, 0.70 — never oversized). This is the opposite symptom from what
+`record_ref_span_capped`/naive bundle-capping targets (spans too LONG). It matches `footprint_skeletons`'s
+own doc comment almost exactly: "a node currently needs `>= GATE_MIN_READS` reads agreeing on ONE exact
+intron chain... at the loci O1 misses that is unreachable in principle" (`denovo_assemble.rs:398-437`,
+citing `o1_ledger.md` §5e-§5h, §5n, §5m) — **an existing, off-by-default (`RUSTLE_FOOTPRINT_NODES`)
+mechanism already built for precisely this gap**: one node per read-covered region, with NO requirement
+that reads agree on splice structure. This is the closer, better-fitting match to proposal #6's actual
+spirit ("group by physical overlap instead of trusting one transcript's exact structure") than reviving
+`record_ref_span_capped` — so the execution pivoted to measuring THIS existing mechanism instead.
+
+**Real measurement, not a rebuild of the historical §5n/§5m numbers.** Genome-wide `gw_family_catalog
+--homology-primary` on the full `GGO_ds.bam` takes 2h19m/25GB RSS (the run §6j1 reused) — too slow to
+iterate on. Subset the same real BAM to the 3 contigs (`NC_073241.2/242.2/244.2`) spanning all 31 NPIP
+oracle loci (`samtools view`, 365,594/3,961,315 = 9.2% of reads) for a fast, controlled A/B on the identical
+substrate (6-10 min/3.4GB RSS each) — same binary, same real reads, only the env var differs:
+
+| run | NPIP loci with >=1 node | notable spans |
+|---|---|---|
+| footprint OFF (control) | 7/31 | same undersized pattern as the full-genome dump (ratios 0.02-0.70) |
+| **footprint ON** | **12/31** | 5 NEW loci recovered (incl. two much-improved ratios 0.77, 0.64) — **but one NEW node is 16.09x OVERSIZED** (`NC_073242.2:15659850-15683500`, 23,650bp, against a true 1,469bp gene at `15670982-15672452`) |
+
+A real, measured +5/31 gain from flipping ONE existing, already-tested, off-by-default flag — genuine
+evidence the "group by overlap, not exact structure" idea in proposal #6 is directionally right. But also a
+real, measured NEW failure mode: `footprint_skeletons`'s genome-wide branch only checks binary depth
+`>= min_cov` and merges any runs within `max_gap` (5kb default) — it has no notion of a WEAK bridge between
+two real, separate loci, so on at least one real locus it over-merged.
+
+**Two follow-up refinements raised mid-flight (from the user, citing real code the initial brief missed),
+checked directly against this exact new evidence rather than accepted or dismissed on faith:**
+
+1. **Strand-splitting** — StringTie's real `bundle.h` builds bundles PER STRAND; `types.rs::Bundle` already
+   carries `strand: char` (the concept is ported), but `footprint_skeletons`'s genome-wide branch pools
+   BOTH strands' reads into the SAME depth/gap computation before ever consulting strand (confirmed by
+   reading the function body, `denovo_assemble.rs:493-551`; `rev` is only tallied for a post-hoc majority
+   label, never used to split the grouping). **Checked whether this explains the one oversized case above**:
+   `samtools view -F 2308` on `15659850-15683500` — **22/22 primary reads are the SAME strand (reverse)**.
+   This specific over-merge is NOT a strand-mixing artifact. The gap is real and general (confirmed by
+   reading the code) but not the cause of the one concrete failure observed here — reported honestly rather
+   than credited for a fix it didn't make.
+2. **Bundlenode/depth-aware sub-segmentation** — `types.rs::CBundlenode` ("contiguous segment from merged
+   read coverage") already carries a per-segment `cov: f64` field, a strictly finer-grained representation
+   than `footprint_skeletons`'s binary depth-threshold + fixed-gap grouping. **This is the better-evidenced
+   explanation for the observed 16.09x over-merge**: two real, separate low-expression loci within 5kb of
+   each other (or one locus with a genuine coverage dip) get glued into one run because
+   `footprint_skeletons` only asks "is depth `>= min_cov`", never "does depth DIP in the middle" —
+   exactly the signal `CBundlenode`'s per-segment `cov` field carries and the current grouping discards.
+
+**Neither refinement was implemented this round** — confirming whether `CBundlenode` is populated anywhere
+outside the `--read-coherence`/`BundleData` path, and repointing its depth-aware segmentation at
+`footprint_skeletons`'s output, is real new engineering (not a flag flip), and doing it well needs its own
+measurement cycle. Per the explicit instruction to ship what's measured and flag real follow-ups rather
+than open-ended rework this round: **not done, flagged as the natural next increment**, with the concrete
+NPIP over-merge case above as its evidenced starting point (not a hypothetical).
+
+**Ruling: PARKED, not shipped.** `RUSTLE_FOOTPRINT_NODES` is a real, existing, measured win on recall (+5/31
+NPIP loci on this substrate) but introduces a real, measured new precision risk (a confirmed 16x oversized
+merge) that its own grouping rule cannot currently detect. Recommending it as a new default would repeat
+exactly the "aggregate gain masks a per-family cost" trap this project has caught and refused before
+(§6im, §6iw, §6iy) — so it stays off by default until the depth-aware (`CBundlenode`) or strand-aware
+splitting refinement closes the over-merge risk. **No production code was changed this round** — every
+number above came from toggling an existing, already-shipped env var on an already-built binary against
+real data; test suite unchanged (818 passed/0 failed/13 ignored, reconfirmed before starting, no code
+touched since).
+
+Scratch analysis data (not committed): `/mnt/linuxdisk/home/juanfraitu/o1_bundle6/` (`dump_off/`, `dump_on/`
+node dumps; the large intermediate subset BAM was deleted after use, per disk hygiene — the dumps are the
+only artifact worth keeping).
+
+Related: [[project_denovo_vs_annotated_gap]], §6j2, §6iz.
