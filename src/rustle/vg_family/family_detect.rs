@@ -1801,4 +1801,144 @@ mod tests {
         assert_eq!((edges2[0].0, edges2[0].1), (0, 1));
         assert_eq!(fb2, vec![(0, 1)], "the fallback-confirmed pair is reported for audit");
     }
+
+    /// AD-HOC MEASUREMENT (not CI, needs external fixture files) -- o1_ledger.md §6iz/§6j0: dump real
+    /// `confirm_edge` (T_CORE=0.13 POA core-coverage) output over the 31 real curated-NPIP genomic loci
+    /// (`§5e` rung-1 oracle nodes) and the 5 real spliced exon-sum reps (`§5g` rung-1b), to check the
+    /// derived `d_max(L) = 1 - exp(-ln(L)/(0.13*L))` formula against the ACTUAL production mechanism
+    /// (poasta POA / its bounded fallback) instead of the minimap2 proxy the original 20/20 validation used.
+    /// Run with: `RUSTLE_ORACLE_DIR=/mnt/linuxdisk/home/juanfraitu/o1_oracle cargo test --release
+    /// --lib vg_family::family_detect::tests::dump_oracle_npip_core_recip -- --ignored --nocapture
+    /// > /tmp/oracle_core_recip.tsv`
+    #[test]
+    #[ignore = "ad-hoc measurement against external NPIP oracle fixtures, not a CI assertion"]
+    fn dump_oracle_npip_core_recip() {
+        fn read_fasta(path: &str) -> Vec<(String, Vec<u8>)> {
+            let content = std::fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let mut out = Vec::new();
+            let mut name = String::new();
+            let mut seq = Vec::new();
+            for line in content.lines() {
+                if let Some(rest) = line.strip_prefix('>') {
+                    if !name.is_empty() {
+                        out.push((name.clone(), seq.clone()));
+                    }
+                    name = rest.split_whitespace().next().unwrap_or("").to_string();
+                    seq.clear();
+                } else {
+                    seq.extend(line.trim().bytes());
+                }
+            }
+            if !name.is_empty() {
+                out.push((name, seq));
+            }
+            out
+        }
+
+        let dir = std::env::var("RUSTLE_ORACLE_DIR")
+            .unwrap_or_else(|_| "/mnt/linuxdisk/home/juanfraitu/o1_oracle".to_string());
+        let p = DetectParams::default();
+        println!("dataset\tname_a\tname_b\tlen_a\tlen_b\tlen_min\tcore_recip\tt_core_pass");
+        for (dataset, file) in [("genomic31", "oracle_nodes.fa"), ("exonsum5", "oracle_exonsum.fa")] {
+            let path = format!("{dir}/{file}");
+            let seqs = read_fasta(&path);
+            for i in 0..seqs.len() {
+                for j in (i + 1)..seqs.len() {
+                    let (na, a) = &seqs[i];
+                    let (nb, b) = &seqs[j];
+                    let core = confirm_edge(a, b, &p);
+                    let len_min = a.len().min(b.len());
+                    let (core_str, pass) = match core {
+                        Some(v) => (format!("{v:.6}"), v >= p.t_core),
+                        None => ("NA".to_string(), false),
+                    };
+                    println!(
+                        "{dataset}\t{na}\t{nb}\t{}\t{}\t{len_min}\t{core_str}\t{pass}",
+                        a.len(),
+                        b.len()
+                    );
+                }
+            }
+        }
+    }
+
+    /// AD-HOC MEASUREMENT (not CI) -- o1_ledger.md §6iz/§6j0, part 2: the genomic-scale NPIP oracle above
+    /// (25.7 kb mean) is far larger than what `confirm_edge` actually sees in production (spliced
+    /// `DenovoTranscript` reps, real median ~3.1 kb per a real gorilla `gw_family_catalog` run) and some
+    /// pairs there are pathologically slow for the bounded core-coverage fallback. This measurement instead
+    /// uses a MANIFEST of real rep pairs at the REAL production length scale: same-family pairs from a real
+    /// catalog run (`ggo_reps.copies.fa`/`.tsv`, size-2..8 families) as a same-family signal, plus an
+    /// equal-sized random cross-family sample as a contrast population.
+    /// Run with: `RUSTLE_PAIRS_MANIFEST=<tsv with key_a,key_b,ground_truth_same_family>
+    /// RUSTLE_PAIRS_FASTA=<fasta with '>family_id|copy_idx' headers> cargo test --release --lib
+    /// vg_family::family_detect::tests::dump_real_catalog_core_recip -- --ignored --nocapture`
+    #[test]
+    #[ignore = "ad-hoc measurement against an external real-catalog pairs manifest, not a CI assertion"]
+    fn dump_real_catalog_core_recip() {
+        use std::collections::HashMap;
+
+        fn read_fasta_map(path: &str) -> HashMap<String, Vec<u8>> {
+            let content = std::fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let mut out = HashMap::new();
+            let mut name = String::new();
+            let mut seq = Vec::new();
+            for line in content.lines() {
+                if let Some(rest) = line.strip_prefix('>') {
+                    if !name.is_empty() {
+                        out.insert(name.clone(), seq.clone());
+                    }
+                    name = rest.split_whitespace().next().unwrap_or("").to_string();
+                    seq.clear();
+                } else {
+                    seq.extend(line.trim().bytes());
+                }
+            }
+            if !name.is_empty() {
+                out.insert(name, seq);
+            }
+            out
+        }
+
+        let manifest_path = std::env::var("RUSTLE_PAIRS_MANIFEST")
+            .unwrap_or_else(|_| "/tmp/pairs_manifest.tsv".to_string());
+        let fasta_path = std::env::var("RUSTLE_PAIRS_FASTA")
+            .unwrap_or_else(|_| "/tmp/reps_subset.fa".to_string());
+        let seqs = read_fasta_map(&fasta_path);
+        let p = DetectParams::default();
+
+        let manifest = std::fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|e| panic!("read {manifest_path}: {e}"));
+        println!("key_a\tkey_b\tground_truth_same_family\tlen_a\tlen_b\tlen_min\tcore_recip\tt_core_pass");
+        for line in manifest.lines().skip(1) {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 3 {
+                continue;
+            }
+            let (ka, kb, gt) = (f[0].to_string(), f[1].to_string(), f[2].to_string());
+            let a = seqs.get(&ka).unwrap_or_else(|| panic!("missing seq for {ka}")).clone();
+            let b = seqs.get(&kb).unwrap_or_else(|| panic!("missing seq for {kb}")).clone();
+            let len_a = a.len();
+            let len_b = b.len();
+            let len_min = len_a.min(len_b);
+            // A handful of real pairs are pathologically slow/memory-hungry for the exact-POA path even
+            // WELL under `len_cap` (observed live: multi-minute, >1GB RSS on a <4kb pair) -- bound each
+            // pair's compute on its own thread so one adversarial pair cannot stall the whole batch.
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let core = confirm_edge(&a, &b, &p);
+                let _ = tx.send(core);
+            });
+            let core_str_pass = match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+                Ok(Some(v)) => (format!("{v:.6}"), v >= p.t_core),
+                Ok(None) => ("NA".to_string(), false),
+                Err(_) => ("TIMEOUT".to_string(), false),
+            };
+            println!(
+                "{ka}\t{kb}\t{gt}\t{len_a}\t{len_b}\t{len_min}\t{}\t{}",
+                core_str_pass.0, core_str_pass.1
+            );
+        }
+    }
 }

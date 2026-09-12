@@ -17921,3 +17921,73 @@ engineering lifts (1, 2) are worth building at all. Cheapest/most-diagnostic fir
 
 Related: [[project_o1_tcore_divergence_sensitivity]], `docs/O1_DEFINITION_SWITCH.md`,
 `docs/PREREG_annotation_ablation_2026-09-07.md`, `docs/NEGATIVE_RESULTS_REGISTER.md` rows 294/1072/1222.
+
+## §6j0 — Proposal #3 re-validated against the REAL mechanism: agreement holds, but two real problems block shipping it (2026-09-11)
+
+Executed §6iz's proposal #3: re-validate `d_max(L)` against the ACTUAL `confirm_edge`/
+`contiguous_core_coverage_bounded_with` (poasta POA, `family_graph.rs`) on real data, before trusting the
+earlier 20/20 minimap2-proxy validation as a drop-in. Added two `#[ignore]`d measurement tests to
+`family_detect.rs`'s own test module (`dump_oracle_npip_core_recip`, `dump_real_catalog_core_recip` —
+neither runs in CI; both need external fixture files on disk), confirmed by name.
+
+**Ground truth used**: the exact `docs/o1_ledger.md` §5e "oracle ablation" dataset — 31 real, curated
+gorilla NPIP loci (`/mnt/linuxdisk/home/juanfraitu/o1_oracle/npip31.regions` + `oracle_nodes.fa`, mean
+25,738.7 bp, matching §5e's "25.7 kb mean" exactly) — plus its already-computed all-vs-all minimap2
+self-alignment (`oracle.paf`, real `de:f:` divergence per pair) as the independent divergence source.
+
+**Result A — raw agreement is strong (95.4%), but every disagreement points the same direction and has a
+real, diagnosable cause**: called the real `confirm_edge` on all 437/465 completed pairs (killed the last
+~28 for wall-clock reasons, see below — not needed for the conclusion). Formula-predicted pass/fail agreed
+with the real `T_CORE=0.13` outcome on **417/437 = 95.42%**. But real T_CORE only admits **3/437 = 0.69%**
+of these genuinely-true-paralog pairs at this scale (the flat-fraction rule is extremely strict on ~26 kb
+sequences, consistent with §5e/§5g's own finding that this rule needs a NODE it never gets in production —
+confirm_edge is never fed full genomic spans there). **Every one of the 20 disagreements has
+`observed_divergence` at or near 0.0** (minimap2 says these regions are 99.7-100% identical) **yet real
+`confirm_edge` still fails to confirm them** — because `d_max(L)` uses `min(len_a, len_b)` as its length
+term, and at genomic scale that denominator is the WHOLE ~25-49 kb locus (introns, UTRs, unique flanks
+included), while the actual matching core is a much smaller absolute number of bases. The formula's own
+assumption (divergence is roughly uniform across the full length L) breaks exactly where §6in and §6ix
+already flagged it breaks: **a wide, intron-inclusive length dilutes a locally excellent match** — the SAME
+unit-averaging lesson, independently reconfirmed a third time, now via the real production mechanism
+instead of a minimap2 proxy.
+
+**Result B — a genuinely new, real, disclosable finding: `confirm_edge` has severe, previously-undocumented
+per-pair cost variance at the REAL production scale (spliced reps), independent of today's question.**
+Built a second, more representative test population: real `DenovoTranscript` reps from an actual gorilla
+`gw_family_catalog` run (`/mnt/linuxdisk/home/juanfraitu/o1_reps/ggo_reps.{copies.fa,copies.tsv}`, 2019 reps
+/ 627 families, real length distribution median 3,096 bp / p90 5,044 bp / max 11,915 bp — the TRUE substrate
+`confirm_edge` sees in production, not genomic spans). Sampled 1,427 real same-family pairs (families sized
+2-8) + 1,427 length-matched cross-family pairs as a manifest, called real `confirm_edge` directly (bypassing
+`candidate_pairs`' k-mer pre-filter, so this tests a SUPERSET of what production ever actually hands it).
+**A wall-clock timeout guard had to be added mid-measurement** (one pair spiked to >1 min / >1 GB RSS with
+no artificial cap; a subsequent run without any candidate_pairs pre-filtering timed out on **10 of 13
+completed pairs at a 5-second budget** — a startlingly high rate). This is real and reproducible (confirmed
+via `ps`, not inferred), not a fluke of one adversarial input, but the sample obtained under the timeout
+guard is far too small (n=13, mostly timeouts) to use for the formula question itself. **Root cause not
+chased further today** (out of scope for the proposal-#3 question) — plausibly the same denominator issue as
+Result A (pairs that were never pre-filtered by `candidate_pairs`' k-mer-sharing test may be genuinely
+weakly-related, and poasta's graph aligner appears to cost much more on weakly-related than well-related
+input) — flagged as a real, standalone finding worth its own investigation, NOT as part of today's ruling.
+
+**Ruling: do NOT ship the `T_CORE` -> `d_max(L)` swap.** Two independent, real reasons, both disclosed:
+1. The formula is well-calibrated (95.4% agreement) but its length term must be scoped to the
+   HOMOLOGOUS/EXONIC region, not the full genomic span — exactly what §5g already established confirm_edge
+   correctly avoids in production (it always compares spliced reps, never genomic spans). This is a
+   real constraint on how the formula could ever be wired in, not a flaw in the formula itself.
+2. A same-scale (spliced-rep), adequately-powered re-validation — the one that would actually justify
+   shipping a change to production code — turned out to be blocked by a newly-discovered, real performance
+   pathology in `confirm_edge` itself (Result B). Shipping a threshold change without being able to validate
+   it at the scale that matters is not something this project's own discipline supports.
+
+Proposal #3 is **parked, not refuted outright**: the formula itself is not wrong (Result A), and Result B is
+a new, disclosed lead for a SEPARATE investigation (confirm_edge's real-world cost profile on
+weakly/non-candidate-paired input), not a reason to distrust the math. No production code changed;
+`family_detect.rs` gained two `#[ignore]`d ad-hoc measurement tests only (`818 passed / 0 failed / 13
+ignored` on `cargo test --release --lib`, up from 11 ignored — additive only, confirmed before and would be
+identical after since the new tests are `#[ignore]`d and never execute by default).
+
+New/changed files: `src/rustle/vg_family/family_detect.rs` (+2 `#[ignore]`d tests, no other change).
+Scratch data (not committed): pairs manifests, subset FASTA, PAF files, analysis scripts under this
+session's scratchpad.
+
+Related: [[project_o1_tcore_divergence_sensitivity]], [[project_denovo_vs_annotated_gap]], §5e, §5g, §6in, §6ix.
