@@ -247,3 +247,37 @@ de novo copy are reported and excluded from level B for that mode.
 
 **Reporting.** No pass/fail threshold is set in advance: this is a descriptive correspondence check for the advisor.
 What is fixed in advance is the labels, the inputs, the mapping rules, and the two cuts above.
+
+---
+## ADDENDUM H (2026-09-13, after §6jg; before any number below exists) — can alignment COVERAGE (gene structure) separate the literature subclusters?
+
+**Why:** §6jg found identity recovers only the tightest groups; NPIPA/B differ in gene model (Dishuck 2025) and an
+earlier review saw coverage, not identity, separate A from B. User: report sensitivity, precision, bipartite matching.
+
+**Units (one sequence per truth record, same truth table as Addendum G):**
+- GUIDED: the RefSeq transcript of that gene with the longest spliced length among NM_/NR_ models, else among XM_/XR_
+  models; for pseudogenes without transcripts, the exons parented by the gene. Spliced sequence, reverse-complemented
+  on the minus strand.
+- DE NOVO (default and union separately): POOLED — the union of the exon blocks of ALL emitted copies (any family)
+  overlapping the truth record's span, spliced in genomic order, reverse-complemented if the record is on the minus
+  strand. A record with no overlapping copy is missing for that mode.
+
+**Pair statistics** (all-vs-all `minimap2 -x asm20 -c -X -N 50 -p 0.1`, all records per pair): identity =
+Σnmatch/Σblocklen; coverage = min over the two sequences of (merged aligned bases / length); no alignment -> 0.
+
+**Arms:** distance = (i) 1 - identity, (ii) 1 - coverage, (iii) 1 - coverage x identity. UPGMA. Cuts: k = 2 (root split)
+scored against level 1; k = number of distinct level-2 groups among the present records, scored against level 2.
+Level A (the emitted families, §6jg mapping) is re-scored in the same metrics for the record.
+
+**Metrics (per family, per mode, per arm, per level):**
+- pairwise sensitivity = truth co-member pairs placed together / truth co-member pairs;
+- pairwise precision = pairs placed together that are truth co-members / pairs placed together;
+- bipartite matching = one-to-one maximum-overlap assignment of predicted clusters to truth groups (Hungarian):
+  micro recall = Σ matched overlap / records, micro precision = Σ matched overlap / Σ size of matched clusters,
+  macro recall/precision = mean over truth groups (unmatched group = 0), exact matches = truth groups whose matched
+  cluster is identical.
+Missing records are excluded for that mode and reported.
+
+**Reading, fixed in advance:** a level-1 boundary counts as RECOVERED by an arm iff the k=2 cut gives bipartite exact
+matches 2/2 (NPIPA vs NPIPB; TBC1D3 cluster 1 vs 2). Anything less is reported with its numbers, not called recovered.
+Descriptive otherwise; no arm is selected post hoc — all arms are reported.

@@ -18925,3 +18925,66 @@ testis library.
 Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/lit/` (`lit.bam`, `guided.*`, `dn_default.*`, `dn_union.*`,
 `lit_analysis.{py,out}`).
 Related: [[reference_npip_biology]], [[reference_eichler_tbc1d3]], [[project_advisor_npip_fam72_review]], §6jf.
+
+## §6jh — NPIP and TBC1D3 subclusters by gene-structure coverage: no arm separates the major boundaries; guided identity on transcripts comes closest to NPIPA/B (2026-09-13)
+
+Follow-up to §6jg: NPIPA/B differ in gene model, so test alignment coverage instead of identity. Pre-registered as
+Addendum H (`docs/PREREG_core_definition_2026-09-12.md`, md5 43e29fd2) before any number existed. Reported as pairwise
+sensitivity / precision and bipartite (Hungarian, evaluation only) micro/macro recall/precision and exact matches.
+Units: guided = the longest curated RefSeq transcript per gene, spliced; de novo = union of exon blocks of all emitted
+copies overlapping the record, spliced. Arms: UPGMA on 1 - identity, 1 - coverage, 1 - coverage x identity. k = 2 is
+scored against level 1 (RECOVERED iff bipartite exact 2/2); k = number of level-2 groups present is scored against level 2.
+
+**Deviation (disclosed).** NPIPB14P has no model of its own: its exons are parented only by the readthrough
+NR_003610.1 (gene PDXDC2P-NPIPB14P). The first run gave it a 0-bp unit, which every guided k = 2 cut isolated. Per the
+prereg's "missing records are excluded", the rerun treats it as missing for guided (21/22). First run kept as
+`lit_coverage.v1_with_B14P_0bp.out`; the de novo and TBC1D3 numbers are unchanged by the fix.
+
+**Level 1 (k = 2) — boundary recovered by no arm, no mode.**
+
+| family | mode | arm | sens | prec | bip micro R / P | exact |
+|---|---|---|---|---|---|---|
+| NPIP | guided | identity | 0.705 | 0.790 | 0.857 / 0.857 | 0/2 |
+| NPIP | guided | coverage (= cov x id) | 0.571 | 0.533 | 0.619 / 0.619 | 0/2 |
+| NPIP | de novo default | identity | 0.603 | 0.521 | 0.545 / 0.545 | 0/2 |
+| NPIP | de novo default | coverage (= cov x id) | 0.794 | 0.524 | 0.591 / 0.650 | 0/2 |
+| NPIP | de novo + union | identity | 0.556 | 0.556 | 0.636 / 0.636 | 0/2 |
+| NPIP | de novo + union | coverage (= cov x id) | 0.794 | 0.524 | 0.591 / 0.650 | 0/2 |
+| TBC1D3 | guided | identity | 0.625 | 0.455 | 0.667 / 0.667 | 0/2 |
+| TBC1D3 | guided | coverage (= cov x id) | 0.375 | 0.375 | 0.556 / 0.556 | 0/2 |
+| TBC1D3 | de novo (both) | identity | 0.692 | 0.429 | 0.500 / 0.571 | 0/2 |
+| TBC1D3 | de novo (both) | coverage (= cov x id) | 0.385 | 0.417 | 0.625 / 0.625 | 0/2 |
+
+Closest: guided identity on NPIP splits {all 7 NPIPA + B1P, B10P, B2} | {the other 11 NPIPB} — 3 of 21 records on the
+wrong side. The three are pseudogene/short models (981, 880, 1,422 bp); NPIPB8 (1,293 bp) is placed correctly, so length
+alone does not explain it, but unit length and A/B are correlated and not separable here. Coverage does NOT help: de
+novo coverage only peels off {B15, B1P}; guided coverage puts {B3, B4, B5, B11, B12, B13} (the long B models) against
+everything else. TBC1D3 cluster 1/2 is not followed by any cut.
+
+**Level 2 (k = groups present).**
+
+| family | mode | best arm | sens | prec | bip micro R / P | macro R / P | exact |
+|---|---|---|---|---|---|---|---|
+| NPIP (12-13 groups) | guided | identity | 0.438 | 0.538 | 0.714 / 0.750 | 0.778 / 0.722 | 5/12 |
+| NPIP | de novo default | identity | 0.312 | 0.294 | 0.591 / 0.722 | 0.571 / 0.605 | 4/13 |
+| NPIP | de novo + union | identity | 0.312 | 0.294 | 0.591 / 0.722 | 0.571 / 0.605 | 4/13 |
+| TBC1D3 (7 groups) | guided | coverage x identity | 0.500 | 0.500 | 0.889 / 0.889 | 0.929 / 0.929 | 5/7 |
+| TBC1D3 | guided | identity | 0.000 | 0.000 | 0.778 / 0.778 | 0.857 / 0.857 | 5/7 |
+| TBC1D3 (8 present) | de novo (both) | identity | **1.000** | **1.000** | **1.000 / 1.000** | **1.000 / 1.000** | **7/7** |
+
+Coverage arms are worse than identity at level 2 everywhere except guided TBC1D3 (coverage x identity). TBC1D3 pairwise
+numbers rest on 1-2 truth pairs (CDKL, and AE only when the TBC1D3 copy is present) — read the bipartite columns. De novo
+TBC1D3 7/7 is on 8 copies (TBC1D3 itself has no copy, so AE is the singleton E) and uses k taken from the truth.
+
+Level A (emitted families) in the same metrics: guided holds each family whole (L1 sens 1.000, prec 0.545 NPIP / 0.444
+TBC1D3, exact 0/2); de novo L1 sens 0.53-0.56, prec 0.43-0.49.
+
+**Reading.** Gene-structure coverage, measured as pairwise aligned fraction of spliced units, does not separate NPIPA
+from NPIPB or TBC1D3 cluster 1 from 2 in either mode; the §6jg hypothesis is not supported. Identity on spliced
+transcripts gets within 3 records of NPIPA/B in guided mode but not in de novo mode. The fine literature groups are
+partly recovered (TBC1D3 fully by de novo identity, NPIP 4-5 of 12-13 groups exactly). Caveats as §6jg (one haplotype,
+name-mapped TBC1D3 groups, testis library), plus: k at level 2 is taken from the truth, and the de novo pooled units
+include every overlapping copy, not only family members.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/lit/lit_coverage.{py,out}`.
+Related: §6jg, [[reference_npip_biology]], [[reference_eichler_tbc1d3]].
