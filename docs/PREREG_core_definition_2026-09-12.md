@@ -132,3 +132,43 @@ as a report-only row. This is the pre-registered confirmation for LCS @ 0.13 its
   precision >= POA precision - 0.05. Otherwise no flip.
 - Limitations declared: edge level only (the family-level check was on human, §6jb step 2); same substrate and
   label source as step 4, different pairs.
+
+---
+## ADDENDUM D (2026-09-13, after §6jd; before any number below exists) — does the LCS core narrow the DE NOVO <-> GUIDED gap?
+
+User goal (09-13): two O1 modes — DE NOVO (RNA IsoSeq reps) and GUIDED (annotated GFF) — and the aim is to reduce
+the difference between them. §6jd found the default de novo catalog builds E_r edges from minimap2
+(`homology_blocks`), not `confirm_edge`, so the LCS default has not touched it.
+
+**Catalogs (existing, provenance disclosed; not re-run with today's code — a de novo rebuild is 2 h 19 min and
+background jobs are being killed by the harness):**
+- GUIDED: `mcl_ann/gw_units_v3.clusters.tsv` (2026-09-06; mcl_families, GGO_genomic.gff, core_refine + SEDEF, 13,263
+  nodes, 2,296 clusters). One row per member locus (cluster_id, chrom, start, end).
+- DE NOVO: gorilla homology catalog run of 2026-08-21 (`o1_reps`): node set = the 17,924 reps in
+  `dump/ggo.nodes.tsv` + `ggo.er._k11_w5.0.reps.fa`; shipped E_r edges = `dump/ggo.edges.tsv` (4,778).
+  The de novo NODE SET is held fixed across all variants; only the edge definition changes.
+
+**De novo variants** (families = shipped `decompose_families(edges, SplitParams::default())`, `fm_decompose`):
+- V0 shipped E_r edges (weight = min(1, identity x coverage)). Sanity gate: report V0 vs shipped
+  `ggo_reps.families.tsv` co-membership agreement (the shipped catalog adds gates, so exact equality is not required).
+- V1 filter: V0 edges that also pass LCS >= 0.13 x min length (forward, else reverse complement).
+- V2 replace: production `candidate_pairs` + LCS >= 0.13 (= today's default `detect_edges`) over all 17,924 nodes.
+- V3 union: V0 edges plus V2 edges.
+
+**Mapping.** A guided locus is covered by a de novo rep if their spans overlap on the same contig (>= 1 bp). A
+locus's de novo family set = families of all overlapping reps that sit in a multi-member family.
+
+**Gap metrics** (guided universe = loci listed in the guided clusters file):
+- R_G (fixed denominator): of all locus pairs co-clustered in GUIDED, the fraction whose de novo family sets
+  intersect. The denominator depends only on the guided catalog, so it is identical across variants.
+- P_G: of all locus pairs (both in the guided universe) whose de novo family sets intersect, the fraction
+  co-clustered in GUIDED.
+- ARI over guided-universe loci that have >= 1 familied rep (de novo label = family of the max-overlap rep).
+- Coverage (reported): loci with any overlapping rep (fixed); loci with a familied rep (per variant).
+
+**Decision.** A variant NARROWS the gap iff R_G > R_G(V0) AND P_G >= P_G(V0) - 0.05. If several do, the
+recommendation is the one with the highest R_G. If none do, report that the LCS core does not narrow the gap on
+this node set and that node construction (§6j1) remains the dominant difference.
+
+**Limits declared:** catalogs predate today's code (dates above); span-overlap mapping ignores exon structure;
+de novo co-familying of a clustered locus with an unclustered one is not counted in P_G; gorilla only.

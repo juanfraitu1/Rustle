@@ -18814,3 +18814,42 @@ in `homology_blocks`, not from `confirm_edge`. All shipped de novo catalogs on d
 shipped, does NOT yet move the default de novo catalog toward the guided one.
 
 Related: §6jc, §6jb, §6ja, [[project_denovo_vs_annotated_gap]].
+
+## §6je — De novo <-> guided gap: node presence dominates; adding LCS edges to the homology E_r narrows the rest (2026-09-13)
+
+User goal: two O1 modes, DE NOVO (IsoSeq reps) and GUIDED (annotated GFF); reduce the difference. Pre-registered as
+Addendum D of `docs/PREREG_core_definition_2026-09-12.md` (md5 f567d2a3) before any number. Catalogs (existing,
+not rebuilt with today's code): GUIDED `mcl_ann/gw_units_v3` (2026-09-06, 9,565 clustered loci in 2,296 clusters,
+67,844 co-clustered locus pairs); DE NOVO node set = the 17,924 reps of the 2026-08-21 homology run (`o1_reps`),
+held fixed; only the edge definition varies, partitioned by the shipped `decompose_families`. Mapping: span overlap.
+
+Sanity gate: V0 (dumped shipped E_r edges -> decompose) reproduces 5,865/6,467 = 0.907 of the shipped catalog's
+co-member pairs (the shipped catalog adds gates). Node presence (fixed across variants): 2,719/9,565 = 28.4% of
+guided clustered loci have any overlapping de novo rep.
+
+| de novo edges | edges | loci familied | R_G (fixed den.) | P_G | ARI (n) |
+|---|---|---|---|---|---|
+| V0 shipped minimap2 E_r | 4,778 | 971 | 0.0140 | 0.1957 | 0.321 (971) |
+| V1 E_r filtered by LCS >= 0.13 | 392 | 358 | 0.0044 | 0.6410 | 0.632 (358) |
+| V2 LCS replace (candidate_pairs + LCS) | 2,937 | 887 | 0.0065 | 0.6378 | 0.559 (887) |
+| **V3 union (E_r + LCS)** | 7,324 | 1,359 | **0.0156** | **0.2392** | 0.372 (1,359) |
+
+**Pre-registered decision: V3 NARROWS the gap** (R_G 0.0140 -> 0.0156, P_G 0.196 -> 0.239 >= floor 0.146); V1 and V2
+do not (they lose R_G). Only 392/4,778 shipped E_r edges contain an exact core >= 13% of the shorter rep — the
+sensitive minimap2 tier (identity >= 0.60, coverage >= 0.50) admits far more than an exact-core test would.
+
+**Report-only (not pre-registered):** the top 5 guided clusters (157/98/67/60/58 loci) hold 33% of all guided pairs.
+**Only 3,073/67,844 = 4.5% of guided co-clustered pairs have a de novo rep at BOTH loci** — node presence, not the
+edge rule, is by far the largest de novo<->guided difference (§6j1 again, now measured genome-wide). Among those
+reachable pairs, recall V0 0.309 / V1 0.098 / V2 0.144 / **V3 0.344**; per-cluster mean over 806 clusters V0 0.242 /
+V1 0.093 / V2 0.198 / **V3 0.333**. P_G reading: 80% of the pairs the shipped de novo catalog co-families are split
+in the guided one; which side is right is not measured here — the target is agreement.
+
+**Rulings.** (1) Adding LCS-confirmed candidate edges to the homology E_r (V3) is the recommended edge change for
+narrowing the gap; replacing or filtering E_r with LCS widens it. (2) The dominant gap is de novo node presence:
+71.6% of guided clustered loci have no de novo rep (unexpressed or unassembled copies) — proposal #2's DNA
+self-alignment reps (§6j5) are the lever for that, not edges. (3) Before any default change in `homology_blocks`:
+implement V3 as opt-in, rebuild a catalog with today's code, and confirm on a second substrate (hold-a-substrate-back).
+
+Data/scripts: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/gap/` (`gap.py`, `gap.out`, `gap_report_only.*`).
+Related: §6jd, §6j1, §6j5, [[project_denovo_vs_annotated_gap]].
