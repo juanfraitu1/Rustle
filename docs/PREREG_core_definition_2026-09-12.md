@@ -117,3 +117,18 @@ LCS mode is implemented (`DetectParams::edge_core`, `RUSTLE_EDGE_CORE=lcs`, comm
 - Recommendation for a DEFAULT flip (still the user's decision): LCS @ step-3 rule F1 >= POA F1 AND precision
   >= POA precision - 0.05 on the held-out sample. If not met: no flip, report why.
 - Human and gorilla numbers are never pooled.
+
+---
+## ADDENDUM C (2026-09-13, after §6jb; before any number below exists) — confirmation of LCS @ 0.13 on unseen held-out pairs
+
+**Why:** §6jb's flip criterion targeted the step-3 rule (LCS >= 50 bp), which failed; LCS @ 0.13 met the same bar only
+as a report-only row. This is the pre-registered confirmation for LCS @ 0.13 itself.
+- Pool: `step4/labeled_pairs.tsv` (gorilla genome-wide held-out, NPIP development windows excluded), SAME and DIFF
+  pairs <= LEN_CAP, EXCLUDING every pair in the step-4 sample (`step4/bridge/sample_pairs.list`).
+- Sample: seed 20260914, 300 SAME + 300 DIFF (all of a class if fewer).
+- Arms: POA @ 0.13 (production `confirm_edge`, one process per pair, <= 4 at a time, 8 GB cap, 180 s timeout;
+  timeouts reported and excluded from POA; LCS reported with and without them) vs LCS @ 0.13.
+- **Criterion (recommend the default flip to LCS @ 0.13):** on poasta-finished pairs, LCS F1 >= POA F1 AND LCS
+  precision >= POA precision - 0.05. Otherwise no flip.
+- Limitations declared: edge level only (the family-level check was on human, §6jb step 2); same substrate and
+  label source as step 4, different pairs.

@@ -18757,3 +18757,34 @@ New/changed: `from_genome.rs` (`fm_decompose` phase, `#[ignore]`d test only); pr
 register row 814. Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/step{2,3,4}`.
 
 Related: §6ja, §6j9, [[project_denovo_vs_annotated_gap]], [[project_o1_tcore_divergence_sensitivity]].
+
+## §6jc — Pre-registered confirmation: LCS @ 0.13 beats POA @ 0.13 on fresh held-out pairs — criterion MET (2026-09-13)
+
+`docs/PREREG_core_definition_2026-09-12.md` Addendum C (md5 53ae2997), written after §6jb and before any number:
+fresh seeded sample (seed 20260914) of 300 SAME + 300 DIFF from the gorilla genome-wide held-out pool
+(`step4/labeled_pairs.tsv`, NPIP development windows excluded), 0 overlap with the step-4 sample.
+
+| arm (595 poasta-finished: 299 SAME / 296 DIFF) | P | R | F1 | AUC |
+|---|---|---|---|---|
+| POA @ 0.13 | 1.000 | 0.060 | 0.114 | 0.694 |
+| **LCS @ 0.13** | **1.000** | **0.140** | **0.246** | **0.921** |
+| LCS >= 50 bp (report only) | 0.926 | 0.873 | 0.898 | 0.959 |
+
+5 poasta timeouts (1 SAME, 4 DIFF); LCS @ 0.13 is unchanged with them included (TP 42, FP 0).
+**Criterion (LCS F1 >= POA F1 AND precision >= POA precision - 0.05): MET.** It replicates step 4 (POA R 0.063 / LCS
+R 0.143 there). Recommendation per the prereg: flip `DetectParams::edge_core` default to `Lcs` — the flip itself is
+the user's decision — and, if flipped, delete `contiguous_core_coverage_bounded_budgeted` and `time_budget` (the
+leaky budget's only caller is `confirm_edge`).
+
+**Execution notes (no effect on values).** The background run was stopped twice within minutes by the harness's
+low-memory check although the Linux VM had 24 GB free, zero PSI memory pressure, no kernel OOM, and the Windows host
+had 20 GB free; the four pairs in flight at the first stop peaked at <= 691 MB each when re-run alone. The sample was
+finished in foreground batches (<= 4 capped processes, per-pair 8 GB / 180 s caps unchanged). A batch-runner bug
+re-ran 3 timed-out pairs on later batches (one 12 times) until they were marked final; poasta is deterministic, so
+re-runs changed time only. Concurrency and batching are not part of the measured quantity.
+
+**Standing open question:** both 13% rules recall only ~6-14% of gorilla SEDEF-projected paralog pairs genome-wide;
+the exact-core fraction rule is very conservative on divergent paralogs, and the 50 bp absolute floor recovers recall
+only by losing precision at natural prevalence (§6jb, register 814).
+
+Related: §6jb, §6ja, [[project_denovo_vs_annotated_gap]].
