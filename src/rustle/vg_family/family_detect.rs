@@ -179,6 +179,28 @@ pub struct DetectParams {
     /// other `DetectParams` field is set structurally, not duplicated via environment, and this one follows
     /// that convention rather than adding a second, possibly-conflicting way to configure it.
     pub time_budget: Option<std::time::Duration>,
+    /// Which contiguous core `confirm_edge` measures. `Poa` (default) = the global poasta alignment core, the
+    /// shipped behaviour. `Lcs` = the longest exact common substring over `min(len)`, forward then reverse
+    /// complement: linear time, no alignment, no budget. Pre-registered comparison (docs/o1_ledger.md §6ja,
+    /// `docs/PREREG_core_definition_2026-09-12.md`): on 540 Soto-labelled human pairs LCS F1 0.861 / AUC 0.948
+    /// vs POA 0.688 / 0.796 at similar precision. Opt-in via `RUSTLE_EDGE_CORE=lcs` until family-level and
+    /// held-out checks are done.
+    pub edge_core: EdgeCore,
+}
+
+/// Contiguous-core definition used by `confirm_edge` (see [`DetectParams::edge_core`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdgeCore {
+    Poa,
+    Lcs,
+}
+
+/// `RUSTLE_EDGE_CORE` value -> [`EdgeCore`]: `lcs` (case-insensitive) selects LCS, anything else keeps POA.
+pub fn edge_core_from_env_value(v: Option<&str>) -> EdgeCore {
+    match v {
+        Some(s) if s.eq_ignore_ascii_case("lcs") => EdgeCore::Lcs,
+        _ => EdgeCore::Poa,
+    }
 }
 
 impl Default for DetectParams {
@@ -194,6 +216,7 @@ impl Default for DetectParams {
             collapse_span_aware: true,
             collapse_span_core: COLLAPSE_SPAN_CORE,
             time_budget: None,
+            edge_core: EdgeCore::Poa,
         }
     }
 }
@@ -915,9 +938,23 @@ pub fn candidate_pairs(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usiz
 /// run IS a common substring — so a large read-through "hub" that homologously contains a copy is still
 /// confirmed (the DSFAM45 case) instead of being lost. Below the cap the exact poasta path is unchanged.
 pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
-    use super::family_graph::{contiguous_core_coverage_bounded_budgeted, EDGE_CONFIRM_ASTAR};
+    use super::family_graph::{contiguous_core_coverage_bounded_budgeted, longest_common_substring, EDGE_CONFIRM_ASTAR};
     let au = upper_cow(a);
     let bu = upper_cow(b);
+    if p.edge_core == EdgeCore::Lcs {
+        let minlen = au.len().min(bu.len());
+        if minlen == 0 {
+            return None;
+        }
+        let mut cr = longest_common_substring(&au, &bu) as f64 / minlen as f64;
+        if cr < p.t_core {
+            let rc = longest_common_substring(&au, &reverse_complement(&bu)) as f64 / minlen as f64;
+            if rc > cr {
+                cr = rc;
+            }
+        }
+        return (cr >= p.t_core).then_some(cr);
+    }
     let mut cr =
         contiguous_core_coverage_bounded_budgeted(&au, &bu, p.len_cap, EDGE_CONFIRM_ASTAR, p.time_budget);
     if cr < p.t_core {
@@ -1954,5 +1991,56 @@ mod tests {
                 core_str_pass.0, core_str_pass.1
             );
         }
+    }
+
+    #[test]
+    fn edge_core_defaults_to_poa() {
+        assert_eq!(DetectParams::default().edge_core, EdgeCore::Poa);
+    }
+
+    #[test]
+    fn edge_core_env_value_parsing() {
+        assert_eq!(edge_core_from_env_value(None), EdgeCore::Poa);
+        assert_eq!(edge_core_from_env_value(Some("lcs")), EdgeCore::Lcs);
+        assert_eq!(edge_core_from_env_value(Some("LCS")), EdgeCore::Lcs);
+        assert_eq!(edge_core_from_env_value(Some("poa")), EdgeCore::Poa);
+        assert_eq!(edge_core_from_env_value(Some("")), EdgeCore::Poa);
+    }
+
+    #[test]
+    fn lcs_edge_core_admits_a_shared_core_at_different_offsets_and_lengths() {
+        let core = rand_seq(600, 11);
+        let a = cat(&[&rand_seq(400, 12), &core, &rand_seq(300, 13)]);
+        let b = cat(&[&rand_seq(2500, 14), &core, &rand_seq(900, 15)]);
+        let p = DetectParams { edge_core: EdgeCore::Lcs, ..DetectParams::default() };
+        let v = confirm_edge(&a, &b, &p).expect("shared 600 bp core must confirm under LCS");
+        assert!((v - 600.0 / a.len() as f64).abs() < 0.01, "core fraction {v}");
+    }
+
+    #[test]
+    fn lcs_edge_core_uses_the_reverse_complement_orientation() {
+        let core = rand_seq(500, 21);
+        let a = cat(&[&rand_seq(300, 22), &core, &rand_seq(300, 23)]);
+        let b = cat(&[&rand_seq(700, 24), &reverse_complement(&core), &rand_seq(200, 25)]);
+        let p = DetectParams { edge_core: EdgeCore::Lcs, ..DetectParams::default() };
+        let v = confirm_edge(&a, &b, &p).expect("reverse-complement core must confirm under LCS");
+        assert!(v >= 500.0 / a.len() as f64 - 1e-9);
+    }
+
+    #[test]
+    fn lcs_edge_core_rejects_unrelated_sequences() {
+        let a = rand_seq(1500, 31);
+        let b = rand_seq(2200, 32);
+        let p = DetectParams { edge_core: EdgeCore::Lcs, ..DetectParams::default() };
+        assert_eq!(confirm_edge(&a, &b, &p), None);
+    }
+
+    #[test]
+    fn lcs_edge_core_is_case_insensitive() {
+        let core = rand_seq(400, 41);
+        let a = cat(&[&core, &rand_seq(600, 42)]);
+        let b_lower: Vec<u8> = cat(&[&rand_seq(300, 43), &core]).to_ascii_lowercase();
+        let p = DetectParams { edge_core: EdgeCore::Lcs, ..DetectParams::default() };
+        assert!(confirm_edge(&a, &b_lower, &p).is_some());
     }
 }
