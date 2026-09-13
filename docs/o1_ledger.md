@@ -18988,3 +18988,12 @@ include every overlapping copy, not only family members.
 
 Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/lit/lit_coverage.{py,out}`.
 Related: §6jg, [[reference_npip_biology]], [[reference_eichler_tbc1d3]].
+
+**§6jh follow-up — "de novo beats guided on TBC1D3" is not a mode effect** (`lit/lit_tbc_diag.{py}`, same day). With
+8 copies (TBC1D3 has no de novo copy) and k = 7, level 2 is a single decision: is D-K the closest pair. De novo pooled
+units put D-K, E-K and G-H tied at 0.9986 and won on the tie; guided spliced transcripts put E-K at 0.9990 vs D-K 0.9986
+(about one mismatch in 2 kb). On the same 8 copies, guided GENE SPANS (unspliced, ~11 kb) also give 7/7 (D-K rank 1);
+on all 9, gene spans give 5/7 with sens 0.500 prec 0.333, micro 0.889. NPIP, where copy sets match better, has guided
+ahead of de novo (L1 micro 0.857 vs 0.545; L2 exact 5/12 vs 4/13). Reading: TBC1D3 copies are too similar (>= 0.997
+over 2 kb) for spliced-transcript identity to resolve level 2; more sequence (introns) helps, and the comparison must use
+a shared copy set.
