@@ -3462,6 +3462,43 @@ fn tier2_rescue(
         .collect()
 }
 
+/// OPT-IN UNION WITH LCS EDGES (`RUSTLE_ER_UNION_LCS=1`, unset = OFF = byte-identical).
+///
+/// Adds to the minimap2 `E_r` edge set every `candidate_pairs` pair that `confirm_edge` admits under the exact
+/// LCS core (docs/o1_ledger.md §6ja-§6jc). Pre-registered on the gorilla genome-wide catalogs (§6je), the union
+/// narrowed the de novo <-> guided gap (guided-pair recall 0.0140 -> 0.0156, precision 0.196 -> 0.239), while
+/// filtering or replacing `E_r` by LCS widened it. That measurement used `decompose_families` on a fixed node set;
+/// this path partitions with `gamma_quasi_clique_partition` and then applies the coverage split, so it must be
+/// re-measured on a rebuilt catalog before any default change.
+fn er_union_lcs_enabled() -> bool {
+    matches!(std::env::var("RUSTLE_ER_UNION_LCS"), Ok(v) if v != "0" && !v.is_empty())
+}
+
+/// Returns `edges` plus LCS-confirmed candidate pairs it lacks, sorted by pair, and how many were added. An existing
+/// `E_r` edge keeps its alignment identity/coverage. An added edge reports identity 1.0 (an exact common substring)
+/// and coverage = LCS length / shorter rep length — the same meanings as the `E_r` fields.
+fn union_lcs_edges(
+    reps: &[DenovoTranscript],
+    edges: Vec<(usize, usize, f64, f64)>,
+) -> (Vec<(usize, usize, f64, f64)>, usize) {
+    use crate::vg_family::family_detect::{candidate_pairs, confirm_edge, DetectParams, EdgeCore};
+    let p = DetectParams { edge_core: EdgeCore::Lcs, ..DetectParams::default() };
+    let mut by_pair: BTreeMap<(usize, usize), (f64, f64)> =
+        edges.into_iter().map(|(a, b, i, c)| ((a.min(b), a.max(b)), (i, c))).collect();
+    let mut added = 0usize;
+    for (a, b) in candidate_pairs(reps, &p) {
+        let key = (a.min(b), a.max(b));
+        if by_pair.contains_key(&key) {
+            continue;
+        }
+        if let Some(core) = confirm_edge(&reps[a].seq, &reps[b].seq, &p) {
+            by_pair.insert(key, (1.0, core));
+            added += 1;
+        }
+    }
+    (by_pair.into_iter().map(|((a, b), (i, c))| (a, b, i, c)).collect(), added)
+}
+
 /// Flattening wrapper: identical partition, edges without their weights. Every pre-existing caller
 /// keeps its exact signature and output; the weights are available from the `_weighted` core below.
 pub(crate) fn homology_blocks_pooled_with_edges(
@@ -3486,6 +3523,26 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
     gamma: f64,
 ) -> Result<(Vec<Vec<usize>>, Vec<(usize, usize, f64, f64)>)> {
     let edges_w = homology_edges_all_reps_pooled_weighted(reps, pooled, refine)?;
+    let edges_w = if er_union_lcs_enabled() {
+        let n_er = edges_w.len();
+        let before: std::collections::BTreeSet<(usize, usize)> = edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
+        let (union, added) = union_lcs_edges(reps, edges_w);
+        eprintln!("[homology] RUSTLE_ER_UNION_LCS: E_r {n_er} edges + {added} LCS edges = {}", union.len());
+        if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
+            if !prefix.is_empty() {
+                let mut s = String::from("rep_i\trep_j\tnode_key_i\tnode_key_j\tcoverage_lcs_over_min\n");
+                for &(a, b, _, c) in union.iter().filter(|&&(a, b, _, _)| !before.contains(&(a, b))) {
+                    s.push_str(&format!("{a}\t{b}\t{}\t{}\t{c:.6}\n", reps[a].tid, reps[b].tid));
+                }
+                if let Err(e) = std::fs::write(format!("{prefix}.lcs_union_edges.tsv"), s) {
+                    eprintln!("[homology] could not write LCS union edge dump: {e}");
+                }
+            }
+        }
+        union
+    } else {
+        edges_w
+    };
     let edges2: Vec<(usize, usize)> = edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
     // Every edge carries weight 1.0, so the weighted machinery underneath runs UNWEIGHTED. This is a
     // deliberate choice, not an oversight, and it is worth stating because `de` (hence identity) IS
@@ -9063,6 +9120,57 @@ mod tests {
         let block_of = |i: usize| blocks.iter().position(|bl| bl.contains(&i)).unwrap();
         assert_eq!(block_of(0), block_of(1), "identical reps must share a block");
         assert_ne!(block_of(0), block_of(2), "unrelated rep must be a separate block");
+    }
+
+    fn union_rep(tid: &str, start: u64, seq: Vec<u8>) -> DenovoTranscript {
+        DenovoTranscript {
+            tid: tid.into(), chrom: "chrU".into(), start, end: start + seq.len() as u64, n_reads: 5, strand: '+',
+            introns: vec![], seq, distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+        }
+    }
+
+    #[test]
+    fn er_union_lcs_is_off_by_default() {
+        std::env::remove_var("RUSTLE_ER_UNION_LCS");
+        assert!(!er_union_lcs_enabled());
+    }
+
+    #[test]
+    fn union_lcs_edges_adds_an_exact_core_pair_the_er_set_lacks() {
+        let core = rand_seq(500, 0x51);
+        let a = [rand_seq(300, 0x52), core.clone(), rand_seq(250, 0x53)].concat();
+        let b = [rand_seq(900, 0x54), core, rand_seq(400, 0x55)].concat();
+        let c = rand_seq(1100, 0x56);
+        let reps = vec![union_rep("a", 0, a.clone()), union_rep("b", 10_000, b), union_rep("c", 20_000, c)];
+        let (out, added) = union_lcs_edges(&reps, Vec::new());
+        assert_eq!(added, 1);
+        assert_eq!(out.len(), 1);
+        let (i, j, ident, cov) = out[0];
+        assert_eq!((i, j), (0, 1));
+        assert_eq!(ident, 1.0, "an exact common substring is 100% identical over its span");
+        assert!((cov - 500.0 / a.len() as f64).abs() < 0.01, "coverage = LCS / shorter length, got {cov}");
+    }
+
+    #[test]
+    fn union_lcs_edges_keeps_existing_er_edges_untouched_and_does_not_duplicate() {
+        let core = rand_seq(500, 0x61);
+        let a = [rand_seq(300, 0x62), core.clone(), rand_seq(250, 0x63)].concat();
+        let b = [rand_seq(900, 0x64), core, rand_seq(400, 0x65)].concat();
+        let reps = vec![union_rep("a", 0, a), union_rep("b", 10_000, b)];
+        let existing = vec![(0usize, 1usize, 0.87, 0.64)];
+        let (out, added) = union_lcs_edges(&reps, existing.clone());
+        assert_eq!(added, 0);
+        assert_eq!(out, existing, "a pair E_r already joined keeps its alignment identity/coverage");
+    }
+
+    #[test]
+    fn union_lcs_edges_output_is_sorted_by_pair() {
+        let core = rand_seq(500, 0x71);
+        let seqs: Vec<Vec<u8>> = (0..3u64).map(|k| [rand_seq(200 + 50 * k as usize, 0x72 + k), core.clone()].concat()).collect();
+        let reps: Vec<DenovoTranscript> = seqs.into_iter().enumerate().map(|(k, s)| union_rep(&format!("r{k}"), 10_000 * k as u64, s)).collect();
+        let (out, _) = union_lcs_edges(&reps, vec![(1, 2, 0.9, 0.9)]);
+        let keys: Vec<(usize, usize)> = out.iter().map(|&(a, b, _, _)| (a, b)).collect();
+        assert_eq!(keys, vec![(0, 1), (0, 2), (1, 2)]);
     }
 
     /// `--min-identity` must reach BOTH E_r floors on the `--refine` path too, not just on the
