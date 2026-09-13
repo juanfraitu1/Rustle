@@ -18644,3 +18644,58 @@ thread-free by default). Data (not committed): `/mnt/linuxdisk/home/juanfraitu/o
 production values `o1_falsemerge/lcs/bridge/production.tsv`.
 
 Related: [[project_denovo_vs_annotated_gap]], §6j8, §6cr (gate G), NEGATIVE_RESULTS_REGISTER row 813.
+
+## §6ja — Which contiguous-core definition should `confirm_edge` use? Pre-registered test: LCS beats poasta on human (2026-09-12)
+
+User: "is poasta better than minimap2?" -> the real question became which CORE DEFINITION is right. poasta 0.1.0
+runs global-only (EndsFree is `todo!()`), and `family_graph.rs` itself documents global alignment collapsing a
+real core to ~3 bp; §6j9 saw 8/18 true NPIP-family edges rejected that way. minimap2 was not pursued
+(minimizers are a logged rejected criterion). Pre-registered before any comparison was looked at:
+`docs/PREREG_core_definition_2026-09-12.md` (original md5 fc35d505; Addendum A added after the gorilla LABEL
+counts and 23/192 poasta values, md5 1a0005d4). Arms, all at T_CORE 0.13: **POA** (production `confirm_edge`),
+**LCS** (longest common substring / min length, same orientation rule), **LCS-masked** (repeat bases -> N).
+
+**Gorilla arm (NPIP neighbourhood, de novo reps) — underpowered for precision, as the prereg rule says.** Labels
+by SEDEF projection: baseline SAME 189 / DIFF 2 / SAME_LOCUS 1; proposal #1 DIFF 13, all > LEN_CAP (no POA
+value). 273 pairs run on the exact path, one capped process each, 0 failures, <=34 s / <=361 MB per pair.
+Recall on SAME pairs: baseline POA 18/189 (0.095), LCS 37/189 (0.196), LCS-masked 34/189; proposal #1 <= LEN_CAP
+POA 14/125, LCS 29/125, LCS-masked 28/125. Pre-registered A1 (SD-projected overlap strata): **POA-only = 0 in
+every stratum** (LCS >= path core by construction); LCS-only 19 baseline / 15 proposal #1. In the >=0.5
+projected-overlap stratum 143/163 (baseline) and 90/104 (proposal #1) pairs fail BOTH — the dominant recall loss
+is T_CORE's exact-run requirement on divergent paralogs (consistent with d_max(L), not yet checked against SD
+identity), not the choice between the two definitions.
+
+**Human arm — the deciding one.** Reps: one spliced LiftOff-v2.0 transcript per unambiguous Soto SD98 gene (2,131
+reps >= 100 bp, median 1,191 bp). New `fm_pairs` phase ran production `candidate_pairs` + serial LCS: **12,433
+candidate pairs in 10 s**. Labels: SAME = same Soto family (8,097); DIFF = different family and no human SEDEF
+link (1,893); AMBIG 2,342; SAME_LOCUS 101. Seeded sample 300 SAME + 300 DIFF (<= LEN_CAP), poasta per pair in its
+own process (8 GB cap, 180 s timeout, 4 at a time).
+
+| arm (540 scored: 300 SAME / 240 DIFF) | precision | recall | F1 | AUC |
+|---|---|---|---|---|
+| POA (production) | 0.927 | 0.547 | 0.688 | 0.796 |
+| **LCS** | 0.914 | **0.813** | **0.861** | **0.948** |
+| LCS-masked (soft-mask) | 0.954 | 0.413 | 0.577 | 0.680 |
+
+**Prereg decision: LCS meets the bar** (F1 0.861 >= 0.688; precision 0.914 >= 0.927 - 0.05); LCS-masked does not
+(soft-masking destroys real cores: recall 0.413). Checks: (1) **60/300 DIFF pairs never finished poasta in 180 s**
+(median shorter sequence 5.7 kb) and are excluded from the table — LCS calls 0 edges on all 60, so LCS precision
+on the full 300/300 sample is unchanged (TP 244, FP 23, P 0.914). poasta is slowest on long dissimilar pairs,
+i.e. hard negatives — a second, independent cost finding. (2) LCS on ALL labeled pairs <= LEN_CAP (no sampling):
+TP 6,890/8,081 SAME (0.853), FP 139/1,892 DIFF (7.3%).
+
+**Caveats, declared:** one deciding substrate (human, annotated full-length transcripts, not de novo reps);
+Soto families are an imperfect DNA truth; T_CORE 0.13 was tuned for the POA core, so LCS's own best threshold
+is unmeasured (AUC 0.948 vs 0.796 is threshold-free); gorilla agrees on recall direction but cannot test
+precision. Per the hold-a-substrate-back rule, a default change needs a family-level end-to-end run and a
+held-out check first.
+
+**Consequences.** If `confirm_edge` moves to LCS: O(n) suffix automaton, deterministic, minimizer-free, no
+budget — `contiguous_core_coverage_bounded_budgeted` (only caller: `confirm_edge`) and its thread leak can be
+deleted instead of vendoring poasta. Other poasta users (family_rescue, collapse, PSV MSA) do not use the budget
+and are unaffected.
+
+New/changed: `from_genome.rs` (`fm_pairs` phase, `#[ignore]`d test only), `docs/PREREG_core_definition_2026-09-12.md`.
+Data/scripts (not committed): `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/{analysis,human,lcs/bridge}`.
+
+Related: [[project_denovo_vs_annotated_gap]], §6j9, §6j8, [[project_o1_tcore_divergence_sensitivity]].

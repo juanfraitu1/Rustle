@@ -549,6 +549,7 @@ mod tests {
         match phase.as_str() {
             "dump" => fm_dump(&root),
             "bridge" => fm_bridge(&root),
+            "pairs" => fm_pairs(&root),
             other => panic!("unknown RUSTLE_FM_PHASE {other}"),
         }
     }
@@ -942,6 +943,56 @@ mod tests {
         std::fs::write(format!("{dir}/summary.tsv"), &st).unwrap();
         eprintln!("[stage_f:{cell}] {} reps, {} candidates, {} edges ({edges_source}), {} families; oracle {}/31 in {} families; false-merge {}/{}; replica edges {:?}",
             n, pairs.len(), edges.len(), families.len(), oracle_covered, oracle_families.len(), false_merge_families, oracle_families.len(), replica_edges);
+    }
+
+    /// Pairs phase: production `candidate_pairs` over an arbitrary rep set (copies.tsv columns + FASTA in the
+    /// same row order, `$RUSTLE_FM_REPS_TSV` / `$RUSTLE_FM_REPS_FA`), with serial LCS for both orientations.
+    /// Writes `<root>/<$RUSTLE_FM_CELL>/{reps.fa,candidates.tsv}` so the `bridge` phase can run on it. No threads.
+    fn fm_pairs(root: &str) {
+        use crate::vg_family::family_detect::{candidate_pairs, DetectParams};
+        use crate::vg_family::family_graph::{longest_common_substring, upper_cow};
+        use crate::vg_family::seq_utils::reverse_complement;
+        use std::fmt::Write as _;
+        let tsv = std::env::var("RUSTLE_FM_REPS_TSV").expect("RUSTLE_FM_REPS_TSV");
+        let fa = std::env::var("RUSTLE_FM_REPS_FA").expect("RUSTLE_FM_REPS_FA");
+        let cell = std::env::var("RUSTLE_FM_CELL").expect("RUSTLE_FM_CELL");
+        let seqs: Vec<Vec<u8>> = std::fs::read_to_string(&fa).unwrap().lines()
+            .filter(|l| !l.starts_with('>')).map(|l| l.as_bytes().to_vec()).collect();
+        let mut reps: Vec<DenovoTranscript> = Vec::new();
+        for (i, line) in std::fs::read_to_string(&tsv).unwrap().lines().skip(1).enumerate() {
+            let f: Vec<&str> = line.split('\t').collect();
+            let exons: Vec<(u64, u64)> = f[9].split(',').filter_map(|e| {
+                let (s, en) = e.split_once('-')?;
+                Some((s.parse().ok()?, en.parse().ok()?))
+            }).collect();
+            reps.push(DenovoTranscript {
+                tid: f[2].to_string(), chrom: f[3].to_string(), start: f[4].parse().unwrap(), end: f[5].parse().unwrap(),
+                n_reads: f[8].parse().unwrap_or(1), strand: f[7].chars().next().unwrap_or('+'),
+                introns: exons.windows(2).map(|w| (w[0].1, w[1].0)).collect(),
+                seq: seqs[i].clone(), distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            });
+        }
+        let dp = DetectParams::default();
+        assert!(dp.time_budget.is_none());
+        let pairs = candidate_pairs(&reps, &dp);
+        eprintln!("[stage_f:pairs] {} reps -> {} candidate pairs", reps.len(), pairs.len());
+        let dir = format!("{root}/{cell}");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut rf = String::new();
+        for (i, r) in reps.iter().enumerate() {
+            writeln!(rf, ">{i}|{}\n{}", r.tid, String::from_utf8_lossy(&r.seq)).unwrap();
+        }
+        std::fs::write(format!("{dir}/reps.fa"), rf).unwrap();
+        let mut ct = String::from("i\tj\ttid_i\ttid_j\tlen_i\tlen_j\tmin_len\tmax_len\tlcs_fwd_bp\tlcs_rc_bp\n");
+        for &(a, b) in &pairs {
+            let au = upper_cow(&reps[a].seq);
+            let bu = upper_cow(&reps[b].seq);
+            let (la, lb) = (reps[a].seq.len(), reps[b].seq.len());
+            let lf = longest_common_substring(&au, &bu);
+            let lr = longest_common_substring(&au, &reverse_complement(&bu));
+            writeln!(ct, "{a}\t{b}\t{}\t{}\t{la}\t{lb}\t{}\t{}\t{lf}\t{lr}", reps[a].tid, reps[b].tid, la.min(lb), la.max(lb)).unwrap();
+        }
+        std::fs::write(format!("{dir}/candidates.tsv"), ct).unwrap();
     }
 
     /// Bridge phase: PRODUCTION-default (`time_budget: None`) edge values for a list of pairs, serial.
