@@ -18881,3 +18881,47 @@ needed are a genome-wide rebuild and a second substrate (human).
 
 Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/rebuild3/` (`sub3.bam`, `cat_{default,union}.*`, dumps, `score.*`).
 Related: §6je, §6jd, [[project_denovo_vs_annotated_gap]].
+
+## §6jg — NPIP and TBC1D3: do the modes recover the literature subclusters? Family yes, subfamilies only in pieces (2026-09-13)
+
+Advisor request: show NPIP and TBC1D3 first and check the published subclusters. Pre-registered as Addendum G
+(`docs/PREREG_core_definition_2026-09-12.md`, md5 59a355c2), descriptive (no pass/fail). Truth
+(`docs/lit_subclusters_npip_tbc1d3_truth.tsv`, CHM13 v2.0 RefSeq): NPIP 22 records — NPIPA vs NPIPB, and Dishuck 2025
+paralog groups A2/3, A6-9, B3-5, B6-9, B12/13; TBC1D3 9 protein-coding copies — genomic cluster 1 (B,I,G,H,F) vs
+cluster 2 (E,K,D,TBC1D3), and Guitart/Eichler 2024 phylogenetic groups mapped by name (AE = TBC1D3+E, CDKL = D+K, the
+rest singletons; the name mapping is an assumption). Input: all A119b.t2t.bam alignments in 19 windows (every truth
+record ±50 kb + both TBC1D3 cluster spans; 390k records, 37k primary). Modes built today (commit e7bc6d7c code):
+GUIDED mcl_families (185 RefSeq records -> 130 loci -> 21 clusters), DE NOVO default (316 reps -> 49 families, 1 min
+50 s), DE NOVO + LCS union (E_r 467 + 169 LCS edges -> 44 families, 2 min 4 s).
+
+**Level A — emitted families.**
+| mode | NPIP: families holding the 22 records | TBC1D3: families holding the 9 |
+|---|---|---|
+| guided | **1** (all 22 together) | **1** (all 9 together) |
+| de novo default | 5: one with all 7 A + 10 B; B5+B9; B12; B2; B4 | 2 + 1 unassigned: {D,E,F,G,H,I,K}; {B}; TBC1D3 has no copy |
+| de novo + union | 4: same 17; B2+B9; **B4+B5**; B12 | same as default |
+No mode separates NPIPA from NPIPB or TBC1D3 cluster 1 from 2 as families (ARI vs level 1 <= 0). The de novo splits fall
+inside NPIPB, not on the A/B boundary. This matches how the literature treats both: one gene family with internal
+subfamilies; the O1 family (shared duplicon) sits above the subfamily level.
+
+**Level B — within-family identity (UPGMA on 1 - Σnmatch/Σblocklen).**
+- TBC1D3, guided (gene spans, median identity 0.9944): at the paper's own criterion (divergence <= 1.5 x allelic =
+  0.0023) **CDKL = {D, K} is recovered exactly**; AE (TBC1D3 + E) is not; ARI vs groups 0.654. The 2-way root split
+  {B, H} vs rest does not follow cluster 1/2.
+- TBC1D3, de novo (RNA reps, 8/9 copies): cut gives {D, E, K} (CDKL plus E) and {G, H}; ARI 0.364.
+- NPIP, guided (gene spans incl. introns, median 0.956): no pair within 0.0023; root split does not follow A/B.
+- NPIP, de novo: 115/231 rep pairs do not align at all (reps cover different parts of the genes); the cut recovers
+  **A6+A9 and A7+A8** (inside Dishuck's A6-9), and the union adds **B4+B5** (inside B3-5); ARI vs groups 0.210 -> 0.300.
+
+**Reading.** Both modes find each family completely (guided) or nearly (de novo), but subfamilies are only recovered in
+pieces: the tightest published groups (TBC1D3-CDKL; NPIP A6-9 and B3-5 pairs) appear, the major boundaries (NPIPA/B,
+TBC1D3 cluster 1/2) do not. Whole-span identity is the wrong signal for the major boundaries — NPIPA/B differ in gene
+model (start and final exons, Dishuck 2025), and an earlier Soto-slice measurement found coverage, not identity,
+separates A from B (A-A median coverage 0.46 vs A-B 0.12, §24 of the 07-29 review). De novo reps are fragmentary for
+this purpose (half of NPIP pairs unalignable, the AE copy has no rep). Caveats: single haplotype (the literature groups
+were defined on 69 / 169 haplotypes), name-based TBC1D3 group mapping, the 0.0023 cut applied to NPIP by declaration,
+testis library.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/lit/` (`lit.bam`, `guided.*`, `dn_default.*`, `dn_union.*`,
+`lit_analysis.{py,out}`).
+Related: [[reference_npip_biology]], [[reference_eichler_tbc1d3]], [[project_advisor_npip_fam72_review]], §6jf.

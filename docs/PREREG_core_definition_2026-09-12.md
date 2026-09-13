@@ -191,3 +191,59 @@ A genome-wide rebuild (2 h 19 min) does not fit the tool limits, so this check u
   next (hold-a-substrate-back). If not met, report and stop pursuing the union.
 - **Limits declared:** 3 contigs, NPIP-dense (part of the core-definition development region); guided catalog is
   2026-09-06 and genome-wide-clustered (cross-contig partners dropped).
+
+---
+## ADDENDUM F (2026-09-13, after §6jf; before any number below exists) — second substrate: human
+
+**Why:** hold-a-substrate-back. §6jf's rebuilt catalogs are gorilla, NPIP-dense.
+- Reads: `winloci_data/A119b_ds.bam` (human IsoSeq, CHM13 v2.0 coordinates) restricted to **chr15, chr17, chr22**
+  (150,146 + 131,286 + 79,881 = 361,313 primary+secondary records by idxstats — matched in size to the gorilla
+  3-contig subset; SD-rich; chr16/NPIP deliberately excluded). Genome `winloci_data/chm13v2.0.fa`.
+- DE NOVO: `gw_family_catalog --homology-primary --threads 4`, today's code (commit e7bc6d7c or later with no change
+  to the pipeline), default and `RUSTLE_ER_UNION_LCS=1`. Families = emitted `copies.tsv`.
+- GUIDED: `mcl_families` at its current defaults with `--paf <genes all-vs-all> --gff
+  winloci_data/Reference/chm13v2.0_RefSeq_full.gff.gz`; nodes = RefSeq `gene` + `pseudogene` records on the three
+  chromosomes, sequences named `CHROM:START-END` (GFF 1-based); PAF = `minimap2 -x asm20 -c -X -N 50 -p 0.1` (the
+  gorilla recipe, ledger §6?/9836), run with the query genes split into chunks against one full target index. Chunking
+  is verified before use: on one chunk, the chunked records must equal the matching records of an unchunked run over
+  the same queries. Guided reference = `<out>.clusters.tsv` (the pre-refinement clusters, same file role as
+  `gw_units_v3.clusters.tsv`).
+- Metrics and decision exactly as Addendum E (R_G, P_G, ARI; union narrows iff R_G up AND P_G >= default - 0.05).
+- If human agrees with gorilla: recommend making the union the default (user's decision) after a genome-wide rebuild
+  is run where the tool limits allow it. If human disagrees: no default change; report both.
+- Limits declared: three chromosomes; downsampled library; RefSeq-based guided mode (not the gorilla core-refined units).
+
+---
+## ADDENDUM G (2026-09-13, user/advisor pivot; before any number below exists) — do the modes recover the literature subclusters of NPIP and TBC1D3?
+
+**Truth** (`o1_falsemerge/lit/lit_truth.tsv`, CHM13 v2.0 RefSeq records):
+- NPIP (22 records): level 1 = subfamily NPIPA (A1,A2,A5-A9) vs NPIPB (B1P-B15); level 2 = Dishuck 2025 paralog groups
+  A2/3, A6-9, B3-5, B6-9, B12/13, all other copies singletons.
+- TBC1D3 (9 protein-coding copies): level 1 = genomic cluster 1 (proximal 37.1-37.44 Mb: B,I,G,H,F) vs cluster 2
+  (distal 38.91-39.06 Mb: E,K,D,TBC1D3); level 2 = Guitart/Eichler 2024 phylogenetic groups, mapped by name (declared
+  assumption, the paper's per-copy CHM13 table is not on disk): AE = {TBC1D3, TBC1D3E}, CDKL = {TBC1D3D, TBC1D3K},
+  B, F, G, H, I singletons.
+
+**Input.** Full `winloci_data/A119b.t2t.bam`, all alignments inside windows = every truth record ±50 kb, plus the two
+TBC1D3 cluster spans chr17:37,050,000-37,500,000 and 38,850,000-39,110,000 (never member-exon-restricted — the
+subset-BAM trap). One BAM for both families, so cross-family merges are visible.
+
+**Modes.** GUIDED = `mcl_families --paf <all RefSeq gene+pseudogene records inside the windows, all-vs-all
+minimap2 -x asm20 -c -X -N 50 -p 0.1> --gff <uncompressed RefSeq restricted to the window chromosomes>` defaults.
+DE NOVO default and DE NOVO union = `gw_family_catalog --homology-primary` on the window BAM, today's code, without / with
+`RUSTLE_ER_UNION_LCS=1`.
+
+**Level A — emitted families.** Each truth record gets the family of its locus (guided: its cluster via `loci.tsv`
+representative; de novo: the family of the max-overlap emitted copy; none = unassigned). Per family and mode: number of
+families touching the truth records, unassigned count, ARI and purity of the family labels against level 1 and level 2
+(unassigned records count as singletons), and a boundary table (is NPIPA separated from NPIPB? cluster 1 from 2?).
+
+**Level B — within-family identity structure.** Per mode, one sequence per truth record (guided: gene span; de novo:
+the max-overlap copy's sequence). All-vs-all `minimap2 -x asm20 -c -X -N 50 -p 0.1`; pair identity = sum(nmatch) /
+sum(blocklen) over records (0 if none). UPGMA on 1 - identity. Scores: (i) best 2-way cut vs level 1 (ARI); (ii) cut at
+the Guitart criterion, divergence <= 1.5 x allelic variation = 1.5 x 15.3/10 kb = 0.0023, vs level 2 (ARI) for BOTH
+families (the same rule applied to NPIP, declared; Dishuck used phylogenetic support, not a cutoff). Records with no
+de novo copy are reported and excluded from level B for that mode.
+
+**Reporting.** No pass/fail threshold is set in advance: this is a descriptive correspondence check for the advisor.
+What is fixed in advance is the labels, the inputs, the mapping rules, and the two cuts above.
