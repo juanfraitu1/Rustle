@@ -18564,3 +18564,83 @@ wired to the new function), `src/rustle/vg_family/from_genome.rs` (`stage_c_...`
 committed): `/tmp/claude-1000/stage_e_run{1,2,3,4}.log`.
 
 Related: [[project_denovo_vs_annotated_gap]], §6j0, §6j6, §6j7.
+
+## §6j9 — §6j8's "false merges" adjudicated: 0/9 are false merges; the time budget leaks threads (OOM); the LCS fallback is not faithful (2026-09-12)
+
+User: "let's dig into false merges" (§6j8: baseline 2/3, proposal #1 2/2 oracle-containing families flagged).
+
+**1. The first attempt crashed the machine — and that is a finding about §6j8 itself.** A 4-agent diagnosis
+workflow's extraction agent ran two budgeted cells plus an instrumented replica of `confirm_edge` in one
+process. dmesg: `Out of memory: Killed process ... (rustle-1bf49510) anon-rss:25717736kB` (25.7 GB, all RAM),
+load average ~28 on 5 cores; the Claude Code terminal died with it. Mechanism, read directly in
+`family_graph::contiguous_core_coverage_bounded_budgeted`: a bare `std::thread::spawn` per call +
+`recv_timeout`; poasta has no cancellation, so every timed-out pair leaves a detached thread running the full
+alignment. On this neighborhood EVERY pair exceeds 500 ms, and rayon-parallel `detect_edges` stacks them without
+bound. One exact alignment measured here peaks at <=336 MB and <=21 s (18 pairs, one process each), so the
+blow-up is the pile-up, not any single pair. **The budget bounds the caller's wait, not CPU or memory.**
+`time_budget: None` (the default) remains byte-identical and safe. **§6j8 corrections:** its "the fix SHIPS" is
+wrong for any enabled use; its runtimes (57-164 s) and the 27-30 edge wobble are confounded by still-running
+background threads; its "genome_reps never returns" is SUSPECT (it ran right after two budgeted cells in the same
+process while abandoned threads were still grinding; §6j5 ran genome_reps on the same windows successfully) —
+unverified until genome_reps is timed standalone.
+
+**2. Thread-free re-extraction.** `stage_f_falsemerge_evidence_dump` (from_genome.rs, `#[ignore]`) now defaults
+`RUSTLE_FM_REAL=0`/`RUSTLE_FM_REPLICA=0`: no time budget is set, and edges come from a serial LCS emulation of
+`confirm_edge` (forward, then reverse complement only if forward < T_CORE) — exactly what the 500 ms run computed
+minus the memo race. **2.29 s, 556 MB peak, deterministic.** Reproduces §6j8 at family level: baseline 42 reps /
+192 candidates / 38 edges (§6j8: 37) / 11 families / oracle 4/31 in 3 families / flagged 2/3; proposal #1
+42 / 207 / 37 edges (§6j8: 27-30) / 10 families / 4/31 in 2 / flagged 2/2. Dump:
+`/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/lcs/`, analysis `o1_falsemerge/analysis/adjudicate.{py,out}`.
+
+**3. Adjudication — 0 of the 9 "foreign" members is a false merge.** The §6j8 label is "an oracle-containing
+family contains any rep not overlapping one of the 31 human-projected NPIP intervals" — never adjudicated.
+- **Where they are:** all 9 foreign reps (baseline fam0: 2,3,4,23,24; fam1: 1,6,28,29) sit 2.5-7.1 kb outside a
+  DIFFERENT oracle locus (3,4,7,3,18; 22,20,15,23). Proximity alone is weak — the 42 reps were pre-selected by
+  NPIP-seeded SD windows (null: 16/42 reps are within 10 kb outside some oracle locus, 4 inside, 22 farther).
+- **What they are (gorilla RefSeq, GGO_genomic.gff):** each foreign rep lies inside a protein-coding LOC gene that
+  ALSO contains the neighboring oracle interval, and the rep's 3' boundary coincides with that gene's annotated 3'
+  end within 40-100 bp — **11/11** reps in the two flagged families, oracle members 26 and 27 included (e.g. rep1
+  ends 15571513, LOC115933071 ends 15571596; rep28 starts 35555594, LOC109023568 [-] starts 35555497). The
+  human-projected oracle intervals stop short of the gorilla genes' 3' ends. These reps are the **3'-terminal
+  regions of the same NPIP-family genes whose bodies the oracle covers** — SAME_LOCUS, not foreign.
+- **Caveat on names:** RefSeq calls these genes titin / titin-like / NACA-like / SRRM2-like (low-complexity
+  repeat-protein best hits), never "NPIP". Their NPIP identity rests on (a) each containing a human-NPIPB2
+  projection and (b) GGO SEDEF pairs of 100-176 kb at 0.9-8.4% divergence linking each to other oracle loci.
+- **Independent orientation check: 18/18.** Treating a rep's stored sequence as sense when rep strand = gene
+  strand, the predicted match orientation (fwd if both sense or both antisense, else rc) equals the orientation
+  of the shared core in all 18 internal edges. Aside: all 8 single-exon reps carry strand '+', including 6 on
+  minus-strand genes (the known single-exon strand issue; confirm_edge tries both orientations, so edges are
+  unaffected).
+- **Repeats are not the mechanism here (unlike gate G, §6cr):** 7 of 18 shared cores contain 0% RepeatMasker
+  sequence; the repeat-touching ones include the SAME old Alu fragment (AluSx div 27.1, 87 bp) at the same
+  position in all 5 fam1 reps — a duplicated Alu inherited with the segmental duplication, not independent Alu
+  insertions. Rep-level repeat fraction 0.02-0.07. The longest cores (961-1,155 bp exact, reps 27/28/29) are 0%
+  repeat.
+- **Precision elsewhere looks sound:** reps ~25-31 kb from NPIP (families 3, 4, 5 — co-duplicated neighbouring
+  sequence) are kept in their OWN families, not merged with NPIP.
+
+**4. The LCS fallback is NOT faithful — production rejects 8/18 of these edges.** Exact poasta (production
+default, `time_budget: None`, all 18 pairs under LEN_CAP) vs LCS emulation: identical on 10 edges (all the
+long-core ones: 2-4, 2-23, 3-4, 4-23, 6-27, 6-28, 6-29, 27-28, 27-29, 28-29), but **8 edges that LCS admits
+score 0.001-0.068 under poasta** (4-62 bp contiguous core): 1-6/1-27/1-28/1-29 (386 bp LCS -> 4-7 bp), 2-3 (571
+bp -> 4), 3-23 (739 -> 5), 4-24 (128 -> 62), 4-26 (133 -> 5). The code comment's "faithful" holds in one
+direction only: every poasta ungapped run is a common substring, so LCS >= the path core, but LCS can match a
+substring the alignment never places on its path. Consequences: (a) the length-cap fallback (production, for
+pairs > 20 kb — e.g. every proposal-#1 genomic span) is systematically more permissive than the exact path;
+(b) §6j8's cells were effectively all-LCS and do not describe production behaviour. Under production, within
+these families: fam1 keeps {6,27,28,29} and drops rep 1; fam0 keeps {2,3,4,23} and **drops both rep 24 and the
+oracle member 26** — so fam0 would not be an oracle family at all. (Edges outside the flagged families were not
+recomputed; a full serial production-path run of both cells, 192 + 207 pairs, is the remaining step.)
+
+**Rulings.** (1) The "false merge" numbers in §6j8 are retracted: 0/9 real false merges; the defect is the oracle
+intervals truncating gene 3' ends, and a metric that calls any rep outside them "foreign" (a truth-incompleteness
+trap). (2) The §6j8 time budget must not be used enabled until the thread leak is fixed. (3) The LCS fallback's
+"faithful" description is wrong; its permissiveness is a real, measured precision risk for every pair above
+LEN_CAP. (4) NPIP's real problem on this neighborhood is FRAGMENTATION (the 3' ends of 10 copies split across
+2+ families, loci counted as uncovered), not false merging.
+
+New/changed: `src/rustle/vg_family/from_genome.rs` (`stage_f_falsemerge_evidence_dump` + helpers, `#[ignore]`d,
+thread-free by default). Data (not committed): `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/{lcs,analysis}`,
+production values `o1_falsemerge/lcs/bridge/production.tsv`.
+
+Related: [[project_denovo_vs_annotated_gap]], §6j8, §6cr (gate G), NEGATIVE_RESULTS_REGISTER row 813.
