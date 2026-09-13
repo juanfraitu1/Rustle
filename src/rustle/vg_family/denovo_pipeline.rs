@@ -195,7 +195,7 @@ impl DenovoConfig {
             // (readthroughs that connect copies are then NOT filtered). Default (unset) = gates ON = today.
             filter_readthrough: std::env::var("RUSTLE_KEEP_READTHROUGH").ok().as_deref() != Some("1"),
             mischain_salvage: std::env::var("RUSTLE_MISCHAIN_SALVAGE").ok().as_deref() == Some("1"),
-            // Edge-core definition (docs/o1_ledger.md §6ja): RUSTLE_EDGE_CORE=lcs; unset = POA = today.
+            // Edge-core definition (docs/o1_ledger.md §6jd): LCS by default; RUSTLE_EDGE_CORE=poa restores poasta.
             detect: DetectParams {
                 edge_core: crate::vg_family::family_detect::edge_core_from_env_value(
                     std::env::var("RUSTLE_EDGE_CORE").ok().as_deref(),

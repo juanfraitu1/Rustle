@@ -1112,64 +1112,6 @@ pub fn contiguous_core_coverage_bounded_uncached_with(
 /// A*. See [`contiguous_core_coverage_bounded_with`] for the measurement in both directions.
 pub const EDGE_CONFIRM_ASTAR: bool = false;
 
-/// [`contiguous_core_coverage_bounded_with`], additionally bounded by a hard WALL-CLOCK budget on the exact
-/// poasta path -- independent of `poasta_cap` (which bounds by LENGTH only). `budget = None` is
-/// BYTE-IDENTICAL to `contiguous_core_coverage_bounded_with` (no thread spawned, no timing, no behaviour
-/// change) -- this is the default and the only way this function is reached today.
-///
-/// **Why this exists** (docs/o1_ledger.md §6j0/§6j6/§6j7/§6j8): the length cap does not bound COST. A real,
-/// dense neighborhood of near-identical NPIP paralogs measured 192 real candidate pairs at 2.51s-19.75s
-/// EACH (mean 9.26s), on reps only 791-4,684bp long -- far under `poasta_cap` (20,000), so every one of
-/// these already took the exact poasta/Dijkstra path. Profiled directly (§6j7): every pair is uniformly
-/// slow, not one pathological outlier -- the cost is CROSS-PAIR similarity (poasta's Dijkstra search is
-/// measurably expensive aligning two HIGHLY SIMILAR sequences to each other), which no length- or
-/// structure-based pre-filter catches. On timeout, falls back to the SAME faithful linear-memory
-/// `longest_common_substring` metric already used above `poasta_cap` (see that function's doc comment for
-/// why it is faithful, not an approximation).
-///
-/// **Disclosed limitation**: poasta 0.1.0 exposes no cooperative cancellation hook, and a spawned Rust
-/// thread cannot be forcibly killed. On timeout this function stops WAITING and returns the fallback value
-/// immediately, but the abandoned thread keeps running to completion in the background (wasting CPU/memory
-/// for whatever time it actually needed) -- acceptable for a batch process that will eventually finish and
-/// exit regardless, NOT a true preemptive cancellation. A second, related subtlety: the abandoned thread
-/// calls the memoized [`contiguous_core_coverage_bounded_with`] internally, so it WILL eventually populate
-/// the shared memo with the exact (slow) value once it finishes -- a caller that hit the timeout got the
-/// fallback value; a later call for the identical pair may get a memo HIT with the exact value instead, if
-/// the abandoned thread has completed by then. Both values are individually correct for what they compute;
-/// only their ARRIVAL ORDER is nondeterministic. Not a concern for a one-shot batch scoring run (each pair
-/// is scored once), but worth knowing before reusing this across a long-lived, repeatedly-queried process.
-pub fn contiguous_core_coverage_bounded_budgeted(
-    a: &[u8],
-    b: &[u8],
-    poasta_cap: usize,
-    astar: bool,
-    budget: Option<std::time::Duration>,
-) -> f64 {
-    let budget = match budget {
-        Some(d) => d,
-        None => return contiguous_core_coverage_bounded_with(a, b, poasta_cap, astar),
-    };
-    let (tx, rx) = std::sync::mpsc::channel();
-    let a_owned = a.to_vec();
-    let b_owned = b.to_vec();
-    std::thread::spawn(move || {
-        let v = contiguous_core_coverage_bounded_with(&a_owned, &b_owned, poasta_cap, astar);
-        // Receiver may already be gone (timed out) -- send() failing is not an error here.
-        let _ = tx.send(v);
-    });
-    match rx.recv_timeout(budget) {
-        Ok(v) => v,
-        Err(_) => {
-            let minlen = a.len().min(b.len());
-            if minlen == 0 {
-                0.0
-            } else {
-                longest_common_substring(a, b) as f64 / minlen as f64
-            }
-        }
-    }
-}
-
 /// Threshold for the POA contiguous-core coverage family-merge gate, read from
 /// `RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE`. Default `0.0` => gate OFF =>
 /// byte-identical to the pre-gate (jaccard-only) merge behaviour. When `> 0.0`,
@@ -2202,60 +2144,6 @@ mod tests {
             "gate must KEEP the two true copies together (got {g0:?})");
         assert_eq!(g2, vec![2],
             "gate must SPLIT OFF the domain-sharer (got {g2:?})");
-    }
-
-    /// `budget = None` must be byte-identical to `contiguous_core_coverage_bounded_with` -- no thread, no
-    /// timing, unconditionally the same value (docs/o1_ledger.md §6j8).
-    #[test]
-    fn budgeted_none_is_byte_identical_to_unbudgeted() {
-        let a = b"ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG";
-        let b = b"ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCC";
-        let want = contiguous_core_coverage_bounded_with(a, b, 20_000, false);
-        let got = contiguous_core_coverage_bounded_budgeted(a, b, 20_000, false, None);
-        assert_eq!(want, got);
-    }
-
-    /// A generous budget (far longer than this trivially-fast pair could ever need) must also return the
-    /// SAME exact value as the unbudgeted path -- the thread has time to finish normally.
-    #[test]
-    fn budgeted_generous_matches_exact_value() {
-        let a = b"ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG";
-        let b = b"ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCC";
-        let want = contiguous_core_coverage_bounded_with(a, b, 20_000, false);
-        let got = contiguous_core_coverage_bounded_budgeted(
-            a, b, 20_000, false, Some(std::time::Duration::from_secs(30)),
-        );
-        assert_eq!(want, got);
-    }
-
-    /// A budget of ~0 forces the timeout branch on EVERY call, regardless of how fast the real computation
-    /// would have been -- deterministic way to unit-test the fallback path itself. The fallback must equal
-    /// the SAME `longest_common_substring`-based metric documented as "faithful" for the length-cap case.
-    #[test]
-    fn budgeted_zero_forces_the_faithful_fallback() {
-        let a = b"ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG";
-        let b = b"ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCC";
-        let minlen = a.len().min(b.len());
-        let want_fallback = longest_common_substring(a, b) as f64 / minlen as f64;
-        let got = contiguous_core_coverage_bounded_budgeted(
-            a, b, 20_000, false, Some(std::time::Duration::from_nanos(1)),
-        );
-        assert_eq!(got, want_fallback, "a near-zero budget must always take the fallback path");
-    }
-
-    /// Above `poasta_cap`, the budgeted path must behave exactly like the unbudgeted one (both already
-    /// use the linear-memory fallback there) -- the time budget is orthogonal to the length cap, not a
-    /// replacement for it.
-    #[test]
-    fn budgeted_above_length_cap_matches_unbudgeted_fallback() {
-        let a = vec![b'A'; 50];
-        let b = vec![b'A'; 60];
-        let want = contiguous_core_coverage_bounded_with(&a, &b, 10, false);
-        let got_none = contiguous_core_coverage_bounded_budgeted(&a, &b, 10, false, None);
-        let got_budgeted =
-            contiguous_core_coverage_bounded_budgeted(&a, &b, 10, false, Some(std::time::Duration::from_secs(5)));
-        assert_eq!(want, got_none);
-        assert_eq!(want, got_budgeted);
     }
 }
 

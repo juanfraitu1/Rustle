@@ -168,23 +168,12 @@ pub struct DetectParams {
     /// POA contiguous-core threshold used by span-aware collapse for disjoint-junction isoforms.
     /// Conservative to avoid merging adjacent paralogs.
     pub collapse_span_core: f64,
-    /// Hard wall-clock budget for `confirm_edge`'s exact poasta path (docs/o1_ledger.md §6j8). `None`
-    /// (the default) is BYTE-IDENTICAL to no budget -- no thread spawned, no timing, unconditionally the
-    /// same code path this project has always run. `Some(d)` bounds a real, measured failure mode
-    /// (§6j0/§6j6/§6j7): pairs of near-identical paralogs can cost poasta's Dijkstra search seconds each,
-    /// independent of `len_cap` (a LENGTH bound, not a COST bound) -- on timeout, falls back to the same
-    /// faithful linear-memory metric already used above `len_cap`. See
-    /// `family_graph::contiguous_core_coverage_bounded_budgeted` for the full mechanism and its disclosed
-    /// thread-cannot-be-killed limitation. No env-var override by design (unlike `RUSTLE_POA_MEMO`): every
-    /// other `DetectParams` field is set structurally, not duplicated via environment, and this one follows
-    /// that convention rather than adding a second, possibly-conflicting way to configure it.
-    pub time_budget: Option<std::time::Duration>,
-    /// Which contiguous core `confirm_edge` measures. `Poa` (default) = the global poasta alignment core, the
-    /// shipped behaviour. `Lcs` = the longest exact common substring over `min(len)`, forward then reverse
-    /// complement: linear time, no alignment, no budget. Pre-registered comparison (docs/o1_ledger.md §6ja,
-    /// `docs/PREREG_core_definition_2026-09-12.md`): on 540 Soto-labelled human pairs LCS F1 0.861 / AUC 0.948
-    /// vs POA 0.688 / 0.796 at similar precision. Opt-in via `RUSTLE_EDGE_CORE=lcs` until family-level and
-    /// held-out checks are done.
+    /// Which contiguous core `confirm_edge` measures. `Lcs` (default since docs/o1_ledger.md §6jd) = the longest
+    /// exact common substring over `min(len)`, forward then reverse complement: linear time, no alignment.
+    /// `Poa` = the global poasta alignment core (the pre-§6jd behaviour; escape hatch `RUSTLE_EDGE_CORE=poa`).
+    /// Evidence, all pre-registered (`docs/PREREG_core_definition_2026-09-12.md`): human pairs LCS F1 0.861 /
+    /// AUC 0.948 vs POA 0.688 / 0.796 (§6ja); human families ARI 0.681 vs 0.525 (§6jb); held-out gorilla
+    /// precision 1.000 for both with recall 0.143 vs 0.063 (§6jb) and 0.140 vs 0.060 on fresh pairs (§6jc).
     pub edge_core: EdgeCore,
 }
 
@@ -195,11 +184,12 @@ pub enum EdgeCore {
     Lcs,
 }
 
-/// `RUSTLE_EDGE_CORE` value -> [`EdgeCore`]: `lcs` (case-insensitive) selects LCS, anything else keeps POA.
+/// `RUSTLE_EDGE_CORE` value -> [`EdgeCore`]: `poa` (case-insensitive) selects the old poasta core, anything else
+/// (including unset) is the LCS default.
 pub fn edge_core_from_env_value(v: Option<&str>) -> EdgeCore {
     match v {
-        Some(s) if s.eq_ignore_ascii_case("lcs") => EdgeCore::Lcs,
-        _ => EdgeCore::Poa,
+        Some(s) if s.eq_ignore_ascii_case("poa") => EdgeCore::Poa,
+        _ => EdgeCore::Lcs,
     }
 }
 
@@ -215,8 +205,7 @@ impl Default for DetectParams {
             max_pairs: MAX_PAIRS,
             collapse_span_aware: true,
             collapse_span_core: COLLAPSE_SPAN_CORE,
-            time_budget: None,
-            edge_core: EdgeCore::Poa,
+            edge_core: EdgeCore::Lcs,
         }
     }
 }
@@ -938,7 +927,7 @@ pub fn candidate_pairs(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usiz
 /// run IS a common substring — so a large read-through "hub" that homologously contains a copy is still
 /// confirmed (the DSFAM45 case) instead of being lost. Below the cap the exact poasta path is unchanged.
 pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
-    use super::family_graph::{contiguous_core_coverage_bounded_budgeted, longest_common_substring, EDGE_CONFIRM_ASTAR};
+    use super::family_graph::{contiguous_core_coverage_bounded_with, longest_common_substring, EDGE_CONFIRM_ASTAR};
     let au = upper_cow(a);
     let bu = upper_cow(b);
     if p.edge_core == EdgeCore::Lcs {
@@ -956,16 +945,10 @@ pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
         return (cr >= p.t_core).then_some(cr);
     }
     let mut cr =
-        contiguous_core_coverage_bounded_budgeted(&au, &bu, p.len_cap, EDGE_CONFIRM_ASTAR, p.time_budget);
+        contiguous_core_coverage_bounded_with(&au, &bu, p.len_cap, EDGE_CONFIRM_ASTAR);
     if cr < p.t_core {
         // opposite orientation (copies assembled on different strands).
-        let rc = contiguous_core_coverage_bounded_budgeted(
-            &au,
-            &reverse_complement(&bu),
-            p.len_cap,
-            EDGE_CONFIRM_ASTAR,
-            p.time_budget,
-        );
+        let rc = contiguous_core_coverage_bounded_with(&au, &reverse_complement(&bu), p.len_cap, EDGE_CONFIRM_ASTAR);
         if rc > cr {
             cr = rc;
         }
@@ -1775,7 +1758,8 @@ mod tests {
         // over the poasta cap, confirm_edge switches to the linear-memory LCS fallback instead of skipping.
         // DISJOINT random sequences still fail the t_core bar under the fallback -> None (low coverage), NOT
         // an OOM and NOT a blind drop.
-        let p = DetectParams { len_cap: 100, ..DetectParams::default() };
+        // The length cap only exists on the POA path (LCS is linear), so pin the POA core explicitly.
+        let p = DetectParams { len_cap: 100, edge_core: EdgeCore::Poa, ..DetectParams::default() };
         let a = rand_seq(560, 0x1);
         let b = rand_seq(560, 0x2);
         assert!(confirm_edge(&a, &b, &p).is_none(), "disjoint over-cap pair -> low fallback coverage -> None");
@@ -1840,13 +1824,14 @@ mod tests {
             homolog_tx("r0", 0xA1, &core, 0xA2, 5),
             homolog_tx("r1", 0xB1, &core, 0xB2, 5),
         ];
-        let (edges, fb) = detect_edges_reporting(&reps, &DetectParams::default());
+        let poa = DetectParams { edge_core: EdgeCore::Poa, ..DetectParams::default() };
+        let (edges, fb) = detect_edges_reporting(&reps, &poa);
         assert_eq!(edges.len(), 1, "homologous pair confirmed under normal cap");
         assert!(fb.is_empty(), "no fallback used under normal cap");
         // the .0 list still matches plain detect_edges (faithfulness of the delegation).
-        assert_eq!(edges, detect_edges(&reps, &DetectParams::default()));
+        assert_eq!(edges, detect_edges(&reps, &poa));
 
-        let p = DetectParams { len_cap: 5, ..DetectParams::default() };
+        let p = DetectParams { len_cap: 5, edge_core: EdgeCore::Poa, ..DetectParams::default() };
         let (edges2, fb2) = detect_edges_reporting(&reps, &p);
         assert_eq!(edges2.len(), 1, "fallback still confirms the homologous pair (no OOM, no loss)");
         assert_eq!((edges2[0].0, edges2[0].1), (0, 1));
@@ -1889,7 +1874,7 @@ mod tests {
 
         let dir = std::env::var("RUSTLE_ORACLE_DIR")
             .unwrap_or_else(|_| "/mnt/linuxdisk/home/juanfraitu/o1_oracle".to_string());
-        let p = DetectParams::default();
+        let p = DetectParams { edge_core: EdgeCore::Poa, ..DetectParams::default() };
         println!("dataset\tname_a\tname_b\tlen_a\tlen_b\tlen_min\tcore_recip\tt_core_pass");
         for (dataset, file) in [("genomic31", "oracle_nodes.fa"), ("exonsum5", "oracle_exonsum.fa")] {
             let path = format!("{dir}/{file}");
@@ -1973,18 +1958,12 @@ mod tests {
             let len_a = a.len();
             let len_b = b.len();
             let len_min = len_a.min(len_b);
-            // A handful of real pairs are pathologically slow/memory-hungry for the exact-POA path even
-            // WELL under `len_cap` (observed live: multi-minute, >1GB RSS on a <4kb pair) -- bound each
-            // pair's compute on its own thread so one adversarial pair cannot stall the whole batch.
-            let (tx, rx) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
-                let core = confirm_edge(&a, &b, &p);
-                let _ = tx.send(core);
-            });
-            let core_str_pass = match rx.recv_timeout(std::time::Duration::from_secs(5)) {
-                Ok(Some(v)) => (format!("{v:.6}"), v >= p.t_core),
-                Ok(None) => ("NA".to_string(), false),
-                Err(_) => ("TIMEOUT".to_string(), false),
+            // Default edge core (LCS) is linear-time, so no per-pair guard is needed. The old thread +
+            // recv_timeout guard leaked uncancellable poasta threads (docs/o1_ledger.md §6j9); for exact POA
+            // values use `from_genome`'s `bridge` phase, one killable process per pair.
+            let core_str_pass = match confirm_edge(&a, &b, &p) {
+                Some(v) => (format!("{v:.6}"), v >= p.t_core),
+                None => ("NA".to_string(), false),
             };
             println!(
                 "{ka}\t{kb}\t{gt}\t{len_a}\t{len_b}\t{len_min}\t{}\t{}",
@@ -1994,17 +1973,28 @@ mod tests {
     }
 
     #[test]
-    fn edge_core_defaults_to_poa() {
-        assert_eq!(DetectParams::default().edge_core, EdgeCore::Poa);
+    fn poa_edge_core_escape_hatch_confirms_homologous_and_rc_and_rejects_disjoint() {
+        let p = DetectParams { edge_core: EdgeCore::Poa, ..DetectParams::default() };
+        let core = rand_seq(400, 0xC0FE_7001);
+        let a = cat(&[&rand_seq(80, 0xA1), &core, &rand_seq(80, 0xA2)]);
+        let b = cat(&[&rand_seq(80, 0xB1), &core, &rand_seq(80, 0xB2)]);
+        assert!(confirm_edge(&a, &b, &p).expect("POA: homologous pair confirms") >= T_CORE);
+        assert!(confirm_edge(&a, &reverse_complement(&b), &p).is_some(), "POA: opposite-strand copy confirms");
+        assert!(confirm_edge(&rand_seq(560, 0x111), &rand_seq(560, 0x222), &p).is_none(), "POA: disjoint rejected");
+    }
+
+    #[test]
+    fn edge_core_defaults_to_lcs() {
+        assert_eq!(DetectParams::default().edge_core, EdgeCore::Lcs);
     }
 
     #[test]
     fn edge_core_env_value_parsing() {
-        assert_eq!(edge_core_from_env_value(None), EdgeCore::Poa);
+        assert_eq!(edge_core_from_env_value(None), EdgeCore::Lcs);
         assert_eq!(edge_core_from_env_value(Some("lcs")), EdgeCore::Lcs);
-        assert_eq!(edge_core_from_env_value(Some("LCS")), EdgeCore::Lcs);
         assert_eq!(edge_core_from_env_value(Some("poa")), EdgeCore::Poa);
-        assert_eq!(edge_core_from_env_value(Some("")), EdgeCore::Poa);
+        assert_eq!(edge_core_from_env_value(Some("POA")), EdgeCore::Poa);
+        assert_eq!(edge_core_from_env_value(Some("")), EdgeCore::Lcs);
     }
 
     #[test]
