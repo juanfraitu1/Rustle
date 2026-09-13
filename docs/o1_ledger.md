@@ -18788,3 +18788,29 @@ the exact-core fraction rule is very conservative on divergent paralogs, and the
 only by losing precision at natural prevalence (§6jb, register 814).
 
 Related: §6jb, §6ja, [[project_denovo_vs_annotated_gap]].
+
+## §6jd — Default flipped to the LCS edge core; poasta time budget deleted; what changes and what does not (2026-09-13)
+
+User decision after §6jc: (1) `DetectParams::edge_core` defaults to `EdgeCore::Lcs`; `RUSTLE_EDGE_CORE=poa` restores
+the poasta core. (2) `family_graph::contiguous_core_coverage_bounded_budgeted`, `DetectParams::time_budget`, its 4
+unit tests, the budgeted `stage_e` test and the §6j9 dump's budget/replica modes are deleted; the §6j0 catalog
+diagnostic's per-pair thread + `recv_timeout` guard (same uncancellable-thread leak) is removed too. No
+`thread::spawn` remains in `family_detect.rs` / `family_graph.rs` / `from_genome.rs`. Commit c97ebd7c.
+
+**Tests.** 830 passed / 0 failed / 19 ignored (from 833 / 0 / 20: -4 budget unit tests, -1 budgeted ignored test,
++1 new escape-hatch test). No test failed from the flip. Two tests passed but had silently stopped exercising the
+path they are about — `confirm_edge_over_cap_uses_fallback_not_skip` and
+`detect_edges_reporting_uses_fallback_for_oversized_pairs` test the poasta length-cap fallback, which LCS never
+consults — so both now pin `EdgeCore::Poa`; the ignored NPIP-oracle POA measurement is pinned the same way; new
+`poa_edge_core_escape_hatch_confirms_homologous_and_rc_and_rejects_disjoint` keeps the escape hatch covered.
+
+**Which outputs change.** `confirm_edge` is reached only from the DE NOVO side: `copy_assign` without `--families`
+(`detect_and_assign`), the legacy conflict-graph catalogs of `gw_family_catalog` (`--cross-chrom` POA-core
+completion), `detect_families`, and the bench/test diagnostics. **Unchanged:** the GUIDED mode (`mcl_families` /
+`annotation_families.rs`, minimap2 PAF + MCL), and — important for the de novo vs guided gap — the DEFAULT de novo
+catalog of `gw_family_catalog` (homology / `--homology-primary`), whose E_r edges come from a minimap2 self-alignment
+in `homology_blocks`, not from `confirm_edge`. All shipped de novo catalogs on disk (`o1_reps`, `o1_reps2`, `o1_gw`,
+`o1_replicate`, `npip_topup`) were built on that homology path and are unaffected by this flip. So the LCS core, as
+shipped, does NOT yet move the default de novo catalog toward the guided one.
+
+Related: §6jc, §6jb, §6ja, [[project_denovo_vs_annotated_gap]].
