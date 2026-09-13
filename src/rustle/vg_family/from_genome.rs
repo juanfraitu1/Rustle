@@ -550,6 +550,7 @@ mod tests {
             "dump" => fm_dump(&root),
             "bridge" => fm_bridge(&root),
             "pairs" => fm_pairs(&root),
+            "decompose" => fm_decompose(),
             other => panic!("unknown RUSTLE_FM_PHASE {other}"),
         }
     }
@@ -993,6 +994,32 @@ mod tests {
             writeln!(ct, "{a}\t{b}\t{}\t{}\t{la}\t{lb}\t{}\t{}\t{lf}\t{lr}", reps[a].tid, reps[b].tid, la.min(lb), la.max(lb)).unwrap();
         }
         std::fs::write(format!("{dir}/candidates.tsv"), ct).unwrap();
+    }
+
+    /// Decompose phase: the shipped `decompose_families(edges, SplitParams::default())` on an edge list
+    /// (`$RUSTLE_FM_EDGES`: `i<TAB>j<TAB>core` rows, header optional), writing `family_id<TAB>class<TAB>members`
+    /// to `$RUSTLE_FM_FAMILIES_OUT`. Lets two edge definitions be partitioned by the identical code.
+    fn fm_decompose() {
+        use crate::vg_family::family_split::{decompose_families, SplitParams};
+        use std::fmt::Write as _;
+        let edges_path = std::env::var("RUSTLE_FM_EDGES").expect("RUSTLE_FM_EDGES");
+        let out_path = std::env::var("RUSTLE_FM_FAMILIES_OUT").expect("RUSTLE_FM_FAMILIES_OUT");
+        let mut edges: Vec<(usize, usize, f64)> = Vec::new();
+        for line in std::fs::read_to_string(&edges_path).unwrap().lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 3 { continue; }
+            let (Ok(i), Ok(j), Ok(v)) = (f[0].parse::<usize>(), f[1].parse::<usize>(), f[2].parse::<f64>()) else { continue };
+            edges.push((i.min(j), i.max(j), v));
+        }
+        edges.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+        let families = decompose_families(&edges, &SplitParams::default());
+        let mut out = String::from("family_id\tclass\tmembers\n");
+        for (fi, fam) in families.iter().enumerate() {
+            writeln!(out, "{fi}\t{:?}\t{}", fam.class,
+                fam.members.iter().map(|m| m.to_string()).collect::<Vec<_>>().join(",")).unwrap();
+        }
+        std::fs::write(&out_path, out).unwrap();
+        eprintln!("[stage_f:decompose] {} edges -> {} families", edges.len(), families.len());
     }
 
     /// Bridge phase: PRODUCTION-default (`time_budget: None`) edge values for a list of pairs, serial.

@@ -18699,3 +18699,61 @@ New/changed: `from_genome.rs` (`fm_pairs` phase, `#[ignore]`d test only), `docs/
 Data/scripts (not committed): `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/{analysis,human,lcs/bridge}`.
 
 Related: [[project_denovo_vs_annotated_gap]], §6j9, §6j8, [[project_o1_tcore_divergence_sensitivity]].
+
+## §6jb — LCS edge core: opt-in mode, family level, threshold, held-out (2026-09-13)
+
+Four pre-registered steps following §6ja (`docs/PREREG_core_definition_2026-09-12.md`, Addendum B, md5
+ac0e2dc6, written before any step-2/3/4 number).
+
+**Step 1 — opt-in mode (a577d37e).** `DetectParams::edge_core: EdgeCore {Poa (default), Lcs}`, `RUSTLE_EDGE_CORE=lcs`
+via `DenovoConfig::from_env`; `confirm_edge` Lcs branch = longest common substring / min length, forward then
+reverse complement. Default path unchanged by construction. 6 new tests; suite 833 passed / 0 failed / 20 ignored.
+
+**Step 2 — family level, human (development).** 112 candidate-graph components (four largest excluded), 519 reps,
+1,502 pairs; poasta per pair, 120 s cap, 0 timeouts. Families from the shipped `decompose_families` on each edge set
+(new `fm_decompose` phase), scored against Soto families:
+
+| edges | n | ARI | pair P | pair R | pair F1 | exact | singletons |
+|---|---|---|---|---|---|---|---|
+| POA @ 0.13 | 528 | 0.525 | 0.910 | 0.371 | 0.528 | 45/136 | 141 |
+| **LCS @ 0.13** | 1,153 | **0.681** | 0.853 | 0.570 | **0.683** | 84/136 | 30 |
+| LCS >= 50 bp | 1,282 | 0.679 | 0.803 | 0.592 | 0.681 | 91/136 | 4 |
+
+Verdict (pre-registered): **LCS holds at family level** (ARI and pair-F1 both higher); family precision drops
+0.910 -> 0.853.
+
+**Step 3 — threshold (human development pairs, 8,081 SAME / 1,892 DIFF).** Incumbent fraction 0.13: F1 0.912
+(P 0.980, R 0.853). (a) best fraction 0.04: F1 0.971. (b) best absolute LCS >= 50 bp: F1 0.975 (P 0.981, R 0.970).
+(c) Arratia-Waterman null (p = 0.2504, alpha = 1/12,433): k* ~17 bp, admits 1,891/1,892 DIFF, F1 0.895 — every
+candidate already shares 18-mers (`candidate_pairs`), so an unconditional random null sits below the prefilter's
+own floor; a derivable rule needs a null conditioned on the prefilter. Pre-registered pick: (b) 50 bp.
+
+**Step 4 — held-out gorilla, genome-wide.** All 17,867 Aug-21 nodes outside the 62 NPIP development windows;
+29,819 candidate pairs (151 s, 3.7 GB); GGO SEDEF-projection labels SAME 2,393 / DIFF 24,761 / SAME_LOCUS 2,520 /
+AMBIG 145; seeded 300 + 300; poasta 180 s cap, 12 timeouts (all DIFF; LCS reported both ways).
+
+| arm (588 poasta-finished: 300 SAME / 288 DIFF) | P | R | F1 | AUC |
+|---|---|---|---|---|
+| POA @ 0.13 | 1.000 | 0.063 | 0.119 | 0.670 |
+| LCS @ 0.13 | 1.000 | 0.143 | 0.251 | 0.901 |
+| LCS >= 50 bp | 0.921 | 0.817 | 0.866 | 0.946 |
+
+**Pre-registered default-flip criterion for LCS @ step-3 rule: NOT MET** (precision 0.921 < 1.000 - 0.05). Report-only
+rows: LCS @ 0.13 meets the same bar; with the 12 timeouts included LCS >= 50 bp P 0.911 (24 FP). At natural prevalence
+on all 27,154 labelled held-out pairs (LCS only): **LCS @ 0.13 P 0.970 R 0.148 (11 FP); LCS >= 50 bp P 0.459 R 0.822
+(2,320 FP)**; 100 bp P 0.776 R 0.383; 200 bp P 0.950 R 0.198. The 50 bp rule was tuned on a SAME-heavy development set
+and does not transfer (register row 814).
+
+**Rulings.** (1) The absolute 50 bp threshold is rejected. (2) LCS with the incumbent 13% fraction beats POA with
+it on every substrate measured — human edges (F1 0.861 vs 0.688), human families (ARI 0.681 vs 0.525), held-out
+gorilla (same precision 1.000, recall 0.143 vs 0.063, AUC 0.901 vs 0.670; P 0.970 at natural prevalence) — and it
+removes the poasta performance wall and the budget thread leak. (3) The formal flip criterion targeted the 50 bp
+rule, so flipping the default to LCS @ 0.13 on its report-only row would be a deviation; the clean route is one
+more pre-registered held-out confirmation of LCS @ 0.13 on unseen pairs. (4) Both 13% rules recall only ~6-15% of
+gorilla SEDEF-projected paralog pairs genome-wide: the fraction rule is very conservative on divergent paralogs
+(consistent with §6ja A1 and d_max(L)); raising recall without the 50 bp collapse is an open threshold question.
+
+New/changed: `from_genome.rs` (`fm_decompose` phase, `#[ignore]`d test only); prereg copy updated with Addendum B;
+register row 814. Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/step{2,3,4}`.
+
+Related: §6ja, §6j9, [[project_denovo_vs_annotated_gap]], [[project_o1_tcore_divergence_sensitivity]].
