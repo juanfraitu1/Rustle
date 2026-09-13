@@ -18853,3 +18853,31 @@ implement V3 as opt-in, rebuild a catalog with today's code, and confirm on a se
 
 Data/scripts: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/gap/` (`gap.py`, `gap.out`, `gap_report_only.*`).
 Related: §6jd, §6j1, §6j5, [[project_denovo_vs_annotated_gap]].
+
+## §6jf — Opt-in LCS union in `homology_blocks`; rebuilt 3-contig catalogs confirm it narrows the de novo <-> guided gap (2026-09-13)
+
+**Code (50736042).** `RUSTLE_ER_UNION_LCS=1` (unset = byte-identical): after the minimap2 E_r edges are computed in
+`homology_blocks_pooled_with_edges_weighted`, every `candidate_pairs` pair that `confirm_edge` admits under the LCS
+core and E_r lacks is added (identity 1.0, coverage = LCS / shorter length; existing E_r edges keep their metrics),
+before `gamma_quasi_clique_partition`. Both homology callers (`families_from_reps_certified`, the genome-wide catalog)
+use it. Added edges are dumped to `<RUSTLE_ER_EDGE_DUMP>.lcs_union_edges.tsv`. 4 new tests; 834 passed / 0 failed /
+19 ignored.
+
+**Rebuild with today's code** (prereg Addendum E, md5 d5f85b18): a genome-wide rebuild (2 h 19 min) does not fit the
+tool limits, so the 3-contig substrate (NC_073241.2 / NC_073242.2 / NC_073244.2, 365,594 reads) was rebuilt:
+`gw_family_catalog --homology-primary --threads 4`, default 6 min 24 s (68 families, 391 copies — the same 391 reps as
+the §6j3 footprint-off run), union 7 min 12 s (E_r 1,840 + 363 LCS edges -> 94 families, 433 copies); both 3.4 GB peak.
+Guided = `gw_units_v3` loci on the 3 contigs (1,048 loci, 280 clusters with >= 2 loci, 4,469 co-clustered pairs).
+
+| rebuilt de novo catalog | families | loci with a family copy | R_G | P_G | ARI |
+|---|---|---|---|---|---|
+| default | 68 | 178 | 0.0736 | 0.3210 | 0.422 |
+| **RUSTLE_ER_UNION_LCS=1** | 94 | 185 | **0.0911** | **0.3772** | **0.506** |
+
+**Decision (pre-registered): the union NARROWS the gap** on the production pipeline (γ partition + coverage split +
+distinct-locus gate), replicating §6je's direction: guided-pair recall +24% relative, precision and ARI both up.
+Not a default change yet: the 3 contigs are NPIP-dense (part of the core-definition development region); still
+needed are a genome-wide rebuild and a second substrate (human).
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/rebuild3/` (`sub3.bam`, `cat_{default,union}.*`, dumps, `score.*`).
+Related: §6je, §6jd, [[project_denovo_vs_annotated_gap]].

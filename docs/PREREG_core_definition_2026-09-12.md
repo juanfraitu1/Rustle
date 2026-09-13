@@ -172,3 +172,22 @@ this node set and that node construction (§6j1) remains the dominant difference
 
 **Limits declared:** catalogs predate today's code (dates above); span-overlap mapping ignores exon structure;
 de novo co-familying of a clustered locus with an unclustered one is not counted in P_G; gorilla only.
+
+---
+## ADDENDUM E (2026-09-13, after §6je and commit 50736042; before any number below exists) — rebuilt de novo catalog with today's code
+
+**Why:** §6je used an Aug-21 de novo catalog and `decompose_families`; production partitions with
+`gamma_quasi_clique_partition` + coverage split + distinct-locus gate. `RUSTLE_ER_UNION_LCS=1` now exists in code.
+A genome-wide rebuild (2 h 19 min) does not fit the tool limits, so this check uses the 3-contig substrate
+(NC_073241.2, NC_073242.2, NC_073244.2) that fits a foreground call (the same substrate's catalog built in 6 min 22 s).
+- De novo catalogs, today's code (commit 50736042): `gw_family_catalog --bam <GGO_ds.bam restricted to the 3
+  contigs> --fasta GGO.fasta --homology-primary --threads 4`, run twice: DEFAULT and `RUSTLE_ER_UNION_LCS=1`.
+  Families = the emitted `copies.tsv` (family_id, chrom, start, end) — the real production output.
+- Guided: `mcl_ann/gw_units_v3.clusters.tsv` restricted to loci on the 3 contigs; clusters with >= 2 such loci.
+- Mapping and metrics exactly as Addendum D (span overlap; R_G fixed-denominator guided-pair recall; P_G; ARI;
+  node presence), plus the report-only reachable-pair recall and per-cluster mean.
+- **Decision:** the union narrows the gap on rebuilt catalogs iff R_G(union) > R_G(default) AND P_G(union) >=
+  P_G(default) - 0.05. If met, it is still NOT a default change: the genome-wide rebuild and a second substrate come
+  next (hold-a-substrate-back). If not met, report and stop pursuing the union.
+- **Limits declared:** 3 contigs, NPIP-dense (part of the core-definition development region); guided catalog is
+  2026-09-06 and genome-wide-clustered (cross-contig partners dropped).
