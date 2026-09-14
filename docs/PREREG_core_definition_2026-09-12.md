@@ -637,3 +637,38 @@ Literature groups scored as clades: level 1 AMY1 (7) and pancreatic AMY2 (4); le
 **Readings (fixed):** (1) G1 breadth at keep 1: sensitivity and over-merges (MGAM/MGAM2 or other non-amylase genes);
 (2) H vs G1 width by Addendum P2's rule; (3) AMY1 and pancreatic clades recovered counts over the reference and 10
 leave-out runs. Descriptive.
+
+---
+## ADDENDUM S (2026-09-13, after §6jq; before any number below exists) — S1 candidates from either finder; S2 subfamily trees on exons and on introns (NPIP, TBC1D3, AMY)
+
+**AMY truth v2 (evidence gathered before this addendum, from sequence and reads, not from pipeline scores):**
+LOC124905662 (XM_047443612.1, Gnomon model, 36.2 kb, '-'): exons 2-8 (chr1:103,575,076-103,581,258) = AMY2A exons 4-10 at
+99.6-100% identity (blastn); exon 1 (103,611,079-103,611,298) matches AMY2A exon 3 (100% over 198 bp) and lies 29.8 kb
+upstream across the entire opposite-strand AMY1B-like LOC128966568; no A119b.t2t.bam (testis IsoSeq) read has the
+103,581,258 -> 103,611,079 junction (3 reads touch exon 1's block, 3 exon 2's; testis is not the expressing tissue).
+LOC124905664 (6.2 kb) = AMY2A exons 4-10 as well. Both match Bolognini's AMY2Ap (partial AMY2A lacking the 5' end).
+v2 = v1 with LOC124905662's span set to its exons 2-8 block and level 2 of both LOCs = AMY2Ap; units/isoforms stay the
+annotation's transcripts; LOC124905662's gene-span query is re-aligned for the new span. **v1 (Addendum R) and v2 are
+both run and both reported.**
+
+### S1 — candidates from either finder
+Hits = Addendum M passing transcript hits (units) ∪ Addendum O passing gene-body chains, from seeds, ignoring any that
+overlap a seed gene span. Single-linkage clusters over the hits' target spans (transcript hit span; chain clip span).
+Family = the seed family of the cluster's highest-nmatch TRANSCRIPT hit if the cluster has one, else of its
+highest-nmatch chain. Width = H (Addendum P2): that transcript hit's span if present, else the chain's clip span.
+Scores: Addendum M/O breadth and width, next to M0 and G1 recomputed.
+**Reading (fixed):** the union ADDRESSES under-merge across families iff, at keep 1, its sensitivity is >= max(M0, G1) -
+0.02 for NPIP, TBC1D3 and AMY (v1 and v2), with family-named precision >= 0.95 and 0 cross-family assignments.
+
+### S2 — subfamily trees on two sequence classes
+Members = seeds + S1 candidates of the family (leave-out) or all truth records (reference). Per member, two sequences:
+- EXON class: truth/seed records — annotated union exons spliced in transcript orientation; candidates — the target exon
+  blocks of the cluster's best transcript hit (cg runs between N, hit orientation) if present, else the seed's union
+  exons projected through the best chain's CIGAR, spliced;
+- INTRON class: truth/seed records — gene span minus union exons (Addendum O); candidates — the best chain's extrap span
+  minus projected seed exons if a chain exists, else the best transcript hit's span minus its exon blocks.
+Each class: Addendum Q's reference-projected alignment (reference = most total aligned bases) + `iqtree3 -m MFP -B 1000
+-alrt 1000 -T 4 --seed 1`; supported = SH-aLRT > 75. Groups: NPIP (P1's six), TBC1D3 (AE, CDKL, positional check),
+AMY v1 (AMY1, AMY2, pancreatic-like) and v2 (AMY1, AMY2, AMY2Ap).
+**Readings (descriptive):** per family and class, recovered counts over the reference and leave-out runs, plus
+"either class"; expectation stated in advance from the literature — NPIP subfamilies from introns, AMY types from exons.

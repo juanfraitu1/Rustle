@@ -19529,3 +19529,73 @@ supported in each. Caveats: one haplotype; AMY types from RefSeq names; the AMY 
 locus overlapping another copy.
 
 Data: `lit/amy_lo/{truth.tsv,units.*,isoforms.*,genespan.*,o.out,q.out,tree_proj/}`.
+
+## §6jr — Either-finder candidates pass on all three families; exon and intron trees carry different subfamilies (NPIP introns, AMY exons); LOC124905662 is a partial AMY2A copy with a likely mis-joined first exon (2026-09-13)
+
+Pre-registered as Addendum S (`docs/PREREG_core_definition_2026-09-12.md`, md5 57fbbe08). `bench/guided_union.py`.
+Implementation guard added after a first crash (disclosed): a member that never aligns to the tree's reference member
+is an all-gap row IQ-TREE rejects; such members are dropped and listed (AMY half_2 exon 1, half_4 exon 11 -> not treed;
+NPIP half_0/2/3/4 exon 5/6/1/7).
+
+### LOC124905662 (the user's question)
+RefSeq model XM_047443612.1 (Gnomon, predicted; evidence "similarity to 21 ESTs, 15 proteins, 6 long SRA reads"), '-'
+strand, 8 exons over 36.2 kb. **Exons 2-8 (chr1:103,575,076-103,581,258) are AMY2A exons 4-10 at 99.6-100% identity**
+(blastn), the same block as LOC124905664 (6.2 kb, AMY2A exons 4-10) — i.e. both are Bolognini's AMY2Ap, a partial AMY2A
+lacking the 5' end. **Exon 1 (103,611,079-103,611,298) matches AMY2A exon 3 (100% over 198 bp)** but lies 29.8 kb
+upstream, across the whole opposite-strand AMY1B-like gene LOC128966568. Human testis IsoSeq (A119b.t2t.bam): **0 reads
+with the 103,581,258 -> 103,611,079 junction**; 3 reads touch exon 1's block and 3 exon 2's (pancreatic genes are not
+expressed in testis, so absence is weak). Reading: the family assignment ("pancreatic alpha-amylase-like") is right; the
+GENE MODEL/SPAN is most likely a mis-join — an exon-3-like fragment from another pancreatic-derived piece stitched onto
+the AMY2Ap block across an inverted AMY1 copy, which also makes the annotated span swallow LOC128966568. Not proven
+without pancreas RNA. AMY truth v2 (span = exons 2-8, both LOCs typed AMY2Ap) is run next to v1.
+
+### S1 — candidates from either finder (keep 1 decides; 5 replicates)
+
+| family | M0 transcript | G1 gene body | **U either** | U family-named precision | cross-family | reading |
+|---|---|---|---|---|---|---|
+| NPIP | 0.257 | 1.000 | **1.000** | 1.000 | 0 | PASS |
+| TBC1D3 | 1.000 | 1.000 | **1.000** | 1.000 | 0 | PASS |
+| AMY v1 | 0.764 | 0.400 | **0.764** | 1.000 | 0 | PASS |
+| AMY v2 | 0.727 | 0.273 | **0.727** | 1.000 | 0 | PASS |
+
+**The union addresses under-merge on all three families** at keep 1 with no over-merge. ⚠ At keep 50% it LOSES on AMY:
+v1 U 0.800 vs G1 0.933 (M0 0.833); v2 U 0.867 vs G1 0.967. Mechanism (diagnosed): single-linkage over ALL hit spans
+lets a long spliced transcript hit (an AMY2B-derived 22 kb span) or a chain link two neighbouring copies into one
+cluster, and one cluster yields one candidate — e.g. LOC128966568 and LOC124905662 lost into an AMY1B-anchored cluster.
+A locus-construction defect of the union as registered (cluster per hit type, or split clusters at transcript exon
+blocks, would avoid it); NPIP/TBC1D3 half-level U = M0 = 1.000. Width: U inherits transcript widths where a transcript
+hit exists (NPIP/TBC1D3 half = M0) and gene-body widths otherwise (NPIP keep 1: 92 of 127 candidates chain-only,
+Jaccard 0.702, truncated 14.4 / 21).
+
+### S2 — subfamily trees on exons vs introns (supported = SH-aLRT > 75)
+
+| family | group | reference exon | reference intron | leave-out exon | leave-out intron | leave-out either |
+|---|---|---|---|---|---|---|
+| NPIP | NPIPA \| NPIPB | recovered (95/98) | recovered (100/100) | 10/10 | 10/10 | 10/10 |
+| NPIP | A6-9 | recovered | recovered | **8/10** | 6/10 | 9/10 |
+| NPIP | B3-5 | recovered | recovered | 6/10 | **10/10** | 10/10 |
+| NPIP | B6-9 | recovered | recovered | 8/10 | **10/10** | 10/10 |
+| NPIP | B12/13 | no split | recovered | 1/10 | **10/10** | 10/10 |
+| NPIP | named {B3,B4,B5,B11,B12,B13} | no split | recovered | 7/10 | **10/10** | 10/10 |
+| TBC1D3 | AE / CDKL | no / no | no / no | 0 / 0 | 0 / 3 | 0 / 3 |
+| TBC1D3 | positional split NOT supported | **correct** | wrong | 10/10 correct | 9/10 correct | — |
+| AMY v1 | AMY1 | recovered | recovered | 7/9 | 6/10 | 8/10 |
+| AMY v1 | AMY2 (pancreatic) | **recovered (100/100)** | no split | **5/9** | 2/10 | 5/10 |
+| AMY v1 | pancreatic-like pair | **recovered (82/75)** | no split | 2/4 | 0/5 | 2/5 |
+| AMY v2 | AMY1 | recovered | recovered | 8/9 | 8/10 | 9/10 |
+| AMY v2 | AMY2 (pancreatic) | **recovered (100/100)** | no split | 4/9 | 2/10 | 4/10 |
+| AMY v2 | AMY2Ap pair | **recovered (82/77)** | no split | 1/3 | 0/4 | 1/4 |
+
+**Readings (the literature expectations held):** NPIP's fine subfamilies (B3-5, B6-9, B12/13, the named NPIPB subfamily)
+come from INTRONS (10/10) and are weak or absent in exons (B12/13 1/10); A6-9 is the exception, better in exons (8/10).
+AMY's pancreatic types (AMY2, AMY2Ap) come from EXONS (reference 100/100 and 82) and never from introns. TBC1D3: the
+positional cluster split is supported only by the intron tree (reference), never by the exon tree — the positional
+signal lives in non-coding sequence (consistent with proximity-driven gene conversion), coding sequence shows none.
+Reporting clades supported in EITHER class recovers every NPIP group in >= 9/10 runs and the AMY types where exons do.
+
+**Guided mode on three families, as it stands:** members from either finder (no under- or over-merge at keep 1;
+union clustering needs fixing at dense seeds), width from the transcript hit else the gene body, subfamilies as clades
+supported in the exon or the intron tree. Caveats: one haplotype; AMY types from RefSeq names; AMY leave-out trees are
+small (4-12 members); two runs lost most exon members to the reference-alignment guard.
+
+Data: `lit/{guided_lo,amy_lo,amy_lo_v2}/{s.out,s.err,tree_union/}`, `lit/amy_lo/loc662/`.
