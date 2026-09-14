@@ -1315,3 +1315,69 @@ no AJ-3 number is a confirmation; a gain needs its own held-out test.
 
 **Expected in advance:** E1 removes most cross-group pairs in the largest clusters; the hold-out chr19 KRAB-ZNF
 superfamily is the likeliest place for AJ-1 to fail (dense, graded homology where MCL cuts depend on the node set).
+
+---
+## ADDENDUM AK (2026-09-14; user chose the adjudicated truth; before any adjudicated number exists) — an adjudicated two-annotation ground truth, evidence calibrated on agreement pairs, an independent third annotation held out
+
+**Why:** AI/AJ/§6km — two expert annotations through the identical construction agree only at bipartite F ~0.8, and the
+residual is how each annotation models the same genes. User decision (09-14): measure the goal against an ADJUDICATED truth.
+Pairs both annotations group are true. Pairs only one groups are settled by independent evidence or left unscored.
+
+**Construction rule for every annotation: E1** (`mcl_families --min-exonic-bp 1`, defaults otherwise), via
+`bench/node_graph_mcl.py`. The one exception is development RefSeq (`lit/aj_dev/refseq_e1`, same construction).
+
+**Joint loci.** Records of RefSeq and GENCODE/CAT (`bench/annotation_nodes.py`) whose exon unions share >= 1 bp on a contig
+are one locus (union-find; the `--merge-overlapping-loci` rule). Locus exons = union of all member records' exons.
+
+**Opinions.** A record's family comes from `<tag>.clusters.tsv`; a record folded away by the construction takes its
+representative's family via `<tag>.loci.tsv`. For locus u, F_A(u) = the families of u's records in annotation A.
+- A = SAME for (u, v) iff F_A(u) ∩ F_A(v) ≠ ∅.
+- A = DIFF iff both loci have A records and do not share a family.
+- A = NONE otherwise.
+
+**Pair status** (only pairs with at least one SAME are enumerated; every other pair is FALSE):
+- AGREED TRUE: SAME in both annotations.
+- DISPUTED: SAME in exactly one. Adjudicated as:
+  - TRUE if any evidence (below) holds;
+  - FALSE if both loci are coding (a CDS in either annotation) and no evidence holds;
+  - UNSCORED otherwise.
+
+**Evidence (no new constants; the definition's identity 0.70 and coverage 0.30; SEDEF's 1 kb resolution):**
+- (P) Protein. The longest CDS of u, over both annotations, is translated and aligned with miniprot 0.18 to the genomic span
+  of v. P holds iff an alignment has Identity >= 0.70 and covers >= 0.30 of the protein, in either direction.
+- (S) Segmental duplication. There is a UCSC hs1 SEDEF pair (`soto_replication/sd_v1.bed`) with exon bases of u in one side
+  and exon bases of v in the other. The linear projection of u's exonic interval within that side must land within
+  |len_A − len_B| + 1 kb of v's exonic interval in the other side.
+
+**AK-0 (evidence validity; each substrate; gates AK-1).**
+- Evidence sensitivity: among AGREED TRUE pairs with both loci coding, (P or S) holds for >= 0.80.
+- Evidence false-positive rate: among coding pairs whose genes share an HGNC `gene_group_id` but are DIFF in both
+  annotations, (P or S) holds for <= 0.20.
+- Coverage: <= 0.50 of DISPUTED pairs end UNSCORED.
+
+If any of the three fails, the adjudicated truth is NOT VALID on that substrate and AK-1 is not read.
+
+**Truth objects.** TRUE pairs; clusters = connected components of TRUE pairs. Levels:
+- DNA: all loci.
+- RNA: loci with u >= 3 (`interval_expression.py` counts on locus spans), clusters recomputed on the TRUE pairs among expressed
+  loci. This is reported only.
+
+**Scoring (`bench/adjudicated_truth.py score`).** A method's copies are assigned to loci by best overlap.
+- Predicted co-family pairs count TP if TRUE and FP if FALSE; UNSCORED pairs are ignored.
+- Pairwise sensitivity = TP / |TRUE|; precision = TP / (TP + FP).
+- Bipartite R/P/F over the loci in truth clusters (`guided_pipeline.bipartite`).
+
+**Substrates.** Development: chr15/chr17/chr22. **Fresh hold-out, never used: chr5, chr7, chr21** (6,678 RefSeq genes).
+
+**Arms.**
+- **ENSEMBL**: Ensembl rapid-release CHM13 gene set `Homo_sapiens-GCA_009914755.4-2022_07-genes.gff3.gz` (md5 5508409d; gene,
+  ncRNA_gene and pseudogene records; exon union from their transcripts; contigs renamed N -> chrN) under E1. NOT used to build
+  the truth. Caveat fixed in advance: Ensembl derives part of its models from GENCODE and paralogue mapping.
+- REFSEQ_E1 and GENCODE_E1: inputs to the truth — reported, never confirmations.
+- G: guided minimal, 50% RefSeq seeds (seed 1) + candidates, under E1. Its seeds come from a truth input — reported.
+- D: de novo read gene nodes (`bench/read_gene_nodes.py`) + construction under E1, RNA level. Hold-out BAM =
+  `A119b_ds.bam` chr5/7/21.
+
+**AK-1 (decision, hold-out; development reported).** THE GOAL IS MET for the definition on an independent annotation iff AK-0
+passes AND ENSEMBL at DNA level has pairwise sensitivity >= 0.90, pairwise precision >= 0.90 and bipartite F >= 0.90.
+The goal bars are reported for G (DNA) and D (RNA), with "not independent of the truth" stated for G.
