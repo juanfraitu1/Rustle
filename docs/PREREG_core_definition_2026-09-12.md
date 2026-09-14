@@ -1381,3 +1381,53 @@ If any of the three fails, the adjudicated truth is NOT VALID on that substrate 
 **AK-1 (decision, hold-out; development reported).** THE GOAL IS MET for the definition on an independent annotation iff AK-0
 passes AND ENSEMBL at DNA level has pairwise sensitivity >= 0.90, pairwise precision >= 0.90 and bipartite F >= 0.90.
 The goal bars are reported for G (DNA) and D (RNA), with "not independent of the truth" stated for G.
+
+---
+## ADDENDUM AL (2026-09-14; after AK-0 NOT VALID on development; before any method is scored against the revised truth) — edge-level adjudication with nucleotide evidence; the truth construction frozen
+
+**AK development result (fixed, reported):** AK-0 NOT VALID on chr15/17/22.
+- Protein evidence sensitivity on agreed coding pairs was 0.362 (bar 0.80); disputed pairs unscored 0.746 (bar 0.50);
+  hard-negative rate 0.005.
+- Two causes:
+  - Amino-acid Identity is not on the definition's nucleotide scale: agreed direct edges align at 85-95% protein coverage but
+    0.25-0.58 identity (GOLGA6L6 vs GOLGA6L2 / GOLGA8).
+  - Pair-level adjudication tests direct homology for co-membership that is transitive.
+- The chr5/7/21 hold-out was NOT touched.
+
+**Revised truth construction (implemented in `bench/adjudicated_truth.py` build, commit to follow; frozen here):**
+1. **Joint loci** as AK.
+2. **Edges:** each annotation's E1 graph (`<tag>.graph.tsv`), mapped to joint loci.
+   - AGREED edges are present in both graphs.
+   - DISPUTED edges are present in one.
+3. **Evidence X (u -> v):** dc-megablast (BLAST+ `blastn -task dc-megablast -lcase_masking -evalue 1e-5`, soft-masked CHM13
+   v2.0) of u's exon-union sequence (both annotations) against v's genomic span.
+   - Non-overlapping HSPs on the query, greedy by nident, must sum to >= 300 aligned bp at identity >= 0.70 and cover >= 0.30
+     of u's exonic length.
+   - Either direction counts.
+   - These are the definition's own constants; 1e-5 is the BLAST homology convention.
+4. **Evidence S:** SEDEF as AK.
+5. **Graphs.** STRICT = agreed + disputed with (X or S). PERMISSIVE = agreed + all disputed.
+   - Edge weight = mean of the annotations' weights.
+   - MCL (`bench/mcl_port.py`, I = 2.8, prune 1e-9) on each.
+6. **Pair status:**
+   - TRUE if co-clustered in both;
+   - UNSCORED if co-clustered in exactly one;
+   - FALSE otherwise.
+7. **Truth clusters** = connected components of TRUE pairs.
+
+**Validity gate AL-0 (each substrate; development result: 0.861 / 0.006 / 0.198 = VALID):**
+- evidence (X or S) holds for >= 0.80 of agreed edges;
+- evidence holds for <= 0.20 of HGNC hard negatives (coding loci sharing a `gene_group_id`, annotated in both, no edge in
+  either graph);
+- UNSCORED <= 0.50 of TRUE + UNSCORED.
+
+**Scoring:** as AK. Loci are assigned to method families by best overlap; TP on TRUE, FP on FALSE, UNSCORED ignored;
+bipartite on truth clusters.
+
+**Arms and substrates** as AK (ENSEMBL, REFSEQ_E1, GENCODE_E1, G, D). Development chr15/17/22 is reported; the decision is on
+the **fresh hold-out chr5/chr7/chr21**.
+
+**AL-1 (decision, hold-out).** THE GOAL IS MET for the definition on an independent annotation iff AL-0 is VALID on the
+hold-out AND ENSEMBL (DNA level) has pairwise sensitivity >= 0.90, pairwise precision >= 0.90 and bipartite F >= 0.90.
+- G (DNA) and D (RNA, expressed loci u >= 3 on joint-locus spans) are reported against the bars.
+- REFSEQ_E1 / GENCODE_E1 are reported as truth inputs.

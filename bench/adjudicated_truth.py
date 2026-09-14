@@ -134,15 +134,57 @@ def sd_evidence(sd, u, v):
     return False
 
 
+def blast_evidence(a, loci, involved, genome):
+    """X(u -> v): dc-megablast of u's exon-union sequence (both annotations; soft-masked repeats do not seed) against v's
+    genomic span; non-overlapping HSPs (on the query, best nident first) sum to >= 300 aligned bp at identity >= 0.70 and
+    cover >= 0.30 of u's exonic length. Returns the set of (u, v) with X."""
+    q_fa, t_fa, db, out = (f"{a.out}/exons.fa", f"{a.out}/spans.fa", f"{a.out}/spans_db", f"{a.out}/blast.tsv")
+    qlen = {}
+    with open(q_fa, "w") as fq, open(t_fa, "w") as ft:
+        for k in involved:
+            l = loci[k]
+            seq = "".join(genome.fetch(l["chrom"], s, e) for s, e in l["exons"])
+            qlen[k] = len(seq)
+            fq.write(f">L{k}\n{seq}\n")
+            ft.write(f">L{k}\n{genome.fetch(l['chrom'], l['start'], l['end'])}\n")
+    if not os.path.exists(out):
+        subprocess.run([a.blast_bin + "/makeblastdb", "-dbtype", "nucl", "-in", t_fa, "-out", db],
+                       stdout=subprocess.DEVNULL, check=True)
+        with open(out + ".tmp", "w") as fh:
+            subprocess.run([a.blast_bin + "/blastn", "-task", "dc-megablast", "-query", q_fa, "-db", db, "-lcase_masking",
+                            "-evalue", "1e-5", "-max_target_seqs", "100000", "-num_threads", str(a.threads),
+                            "-outfmt", "6 qseqid sseqid qstart qend nident length"], stdout=fh, check=True)
+        os.replace(out + ".tmp", out)
+    hsps = collections.defaultdict(list)
+    for line in open(out):
+        qs_, ss_, q0, q1, nid, ln = line.split("\t")
+        if qs_ != ss_:
+            q0, q1 = sorted((int(q0), int(q1)))
+            hsps[(int(qs_[1:]), int(ss_[1:]))].append((int(nid), int(ln), q0 - 1, q1))
+    hit = set()
+    for (u, v), hs in hsps.items():
+        taken, L, N = [], 0, 0
+        for nid, ln, q0, q1 in sorted(hs, reverse=True):
+            if any(q0 < y and x < q1 for x, y in taken):
+                continue
+            taken.append((q0, q1))
+            L += ln
+            N += nid
+        cov = sum(y - x for x, y in gp.merge(taken)) / max(1, qlen[u])
+        if L >= 300 and N / L >= MIN_ID and cov >= MIN_COV:
+            hit.add((u, v))
+    return hit
+
+
 def cmd_build(a):
+    import mcl_port
     os.makedirs(a.out, exist_ok=True)
     contigs = set(a.contigs.split(","))
     genome = pysam.FastaFile(a.genome)
     anns = [x.split("=", 1) for x in a.ann]
     assert len(anns) == 2, "exactly two --ann"
-    (A, _), (Bn, _) = anns
+    (A, specA), (Bn, specB) = anns
     recs = [r for name, spec in anns for r in load_records(name, spec, contigs)]
-    # joint loci: exon-union overlap across both annotations
     uf = UF()
     by_chrom = collections.defaultdict(list)
     for i, r in enumerate(recs):
@@ -160,36 +202,38 @@ def cmd_build(a):
     groups = collections.defaultdict(list)
     for i in range(len(recs)):
         groups[uf.find(i)].append(i)
-    loci = []
+    loci, rec_locus = [], {}
     for members in groups.values():
         rs = [recs[i] for i in members]
-        ex = gp.merge([b for r in rs for b in r["exons"]])
-        coding = [r for r in rs if r["cds"]]
-        best = max(coding, key=lambda r: sum(e - s for s, e, _ in r["cds"][1])) if coding else None
         loci.append({"chrom": rs[0]["chrom"], "start": min(r["start"] for r in rs), "end": max(r["end"] for r in rs),
-                     "exons": ex, "recs": rs, "coding": bool(coding),
-                     "fam": {n: {r["family"] for r in rs if r["ann"] == n and r["family"]} for n in (A, Bn)},
-                     "has": {n: any(r["ann"] == n for r in rs) for n in (A, Bn)},
-                     "names": sorted({r["name"] for r in rs}), "best_cds": best})
+                     "exons": gp.merge([b for r in rs for b in r["exons"]]), "members": members,
+                     "coding": any(r["cds"] for r in rs), "has": {n: any(r["ann"] == n for r in rs) for n in (A, Bn)},
+                     "names": sorted({r["name"] for r in rs})})
     loci.sort(key=lambda l: (l["chrom"], l["start"], l["end"]))
     for k, l in enumerate(loci):
         l["id"] = k
-    # SAME pairs per annotation
-    same = {A: set(), Bn: set()}
-    for n in (A, Bn):
-        fam_loci = collections.defaultdict(set)
-        for l in loci:
-            for f in l["fam"][n]:
-                fam_loci[f].add(l["id"])
-        for ids in fam_loci.values():
-            same[n].update(itertools.combinations(sorted(ids), 2))
-    cand = same[A] | same[Bn]
-
-    def opinion(n, u, v):
-        if (u, v) in same[n]:
-            return "SAME"
-        return "DIFF" if loci[u]["has"][n] and loci[v]["has"][n] else "NONE"
-    # HGNC hard negatives: coding loci sharing a gene group, DIFF in both annotations
+        for i in l["members"]:
+            rec_locus[(recs[i]["ann"], f"{recs[i]['chrom']}:{recs[i]['start'] + 1}-{recs[i]['end']}")] = k
+    # E1 graph edges of each annotation, on joint loci
+    E = {}
+    unmapped = collections.Counter()
+    for name, spec in anns:
+        tag = spec.split(":", 1)[1]
+        E[name] = {}
+        for line in open(tag + ".graph.tsv"):
+            x, y, w = line.rstrip("\n").split("\t")
+            if x.rsplit(":", 1)[0] not in contigs or y.rsplit(":", 1)[0] not in contigs:
+                continue
+            u, v = rec_locus.get((name, x)), rec_locus.get((name, y))
+            if u is None or v is None:
+                unmapped[name] += 1
+                continue
+            if u != v:
+                k = (min(u, v), max(u, v))
+                E[name][k] = max(E[name].get(k, 0.0), float(w))
+    agreed = set(E[A]) & set(E[Bn])
+    disputed = set(E[A]) ^ set(E[Bn])
+    # HGNC hard negatives: coding loci sharing a gene group, both annotated in both, no edge in either graph
     groups_of = collections.defaultdict(set)
     for r in csv.DictReader(open(a.hgnc), delimiter="\t"):
         for g in r["gene_group_id"].split("|"):
@@ -197,80 +241,58 @@ def cmd_build(a):
                 groups_of[r["symbol"]].add(g)
     grp_loci = collections.defaultdict(set)
     for l in loci:
-        if l["coding"]:
+        if l["coding"] and l["has"][A] and l["has"][Bn]:
             for nm in l["names"]:
                 for g in groups_of.get(nm, ()):
                     grp_loci[g].add(l["id"])
     hard_neg = set()
     for ids in grp_loci.values():
-        for u, v in itertools.combinations(sorted(ids), 2):
-            if opinion(A, u, v) == "DIFF" and opinion(Bn, u, v) == "DIFF":
-                hard_neg.add((u, v))
-    agreed = {p for p in cand if p in same[A] and p in same[Bn]}
-    disputed = cand - agreed
-    need = disputed | {p for p in agreed if loci[p[0]]["coding"] and loci[p[1]]["coding"]} | hard_neg
-    # protein evidence: every coding locus in a needed pair vs every locus in a needed pair
-    involved = sorted({x for p in need for x in p})
-    prot_fa, tgt_fa, mp_out = f"{a.out}/proteins.faa", f"{a.out}/targets.fa", f"{a.out}/miniprot.gff"
-    with open(prot_fa, "w") as fp, open(tgt_fa, "w") as ft:
-        for k in involved:
-            l = loci[k]
-            ft.write(f">L{k}\n{genome.fetch(l['chrom'], l['start'], l['end']).upper()}\n")
-            if l["best_cds"]:
-                r = l["best_cds"]
-                p = translate(genome, r["chrom"], r["cds"][0], r["cds"][1])
-                if len(p) >= 10:
-                    fp.write(f">L{k}\n{p}\n")
-    if not os.path.exists(mp_out):
-        with open(mp_out + ".tmp", "w") as fh:
-            subprocess.run([a.miniprot, "--gff", "-t", str(a.threads), "-N", "1000", "--outn=1000", "--outs=0", "-p", "0",
-                            tgt_fa, prot_fa], stdout=fh, stderr=subprocess.DEVNULL, check=True)
-        os.replace(mp_out + ".tmp", mp_out)
-    prot_hit = set()
-    paf = None
-    for line in open(mp_out):
-        if line.startswith("##PAF"):
-            paf = line.rstrip("\n").split("\t")[1:]
-        elif paf and "\tmRNA\t" in line:
-            ident = next((float(x.split("=")[1]) for x in line.rstrip("\n").split("\t")[8].split(";") if x.startswith("Identity=")), 0.0)
-            qlen, qs, qe = int(paf[1]), int(paf[2]), int(paf[3])
-            if ident >= MIN_ID and qlen and (qe - qs) / qlen >= MIN_COV:
-                u, v = int(paf[0][1:]), int(paf[5][1:])
-                if u != v:
-                    prot_hit.add((min(u, v), max(u, v)))
-            paf = None
+        for p in itertools.combinations(sorted(ids), 2):
+            if p not in E[A] and p not in E[Bn]:
+                hard_neg.add(p)
+    involved = sorted({x for p in (agreed | disputed | hard_neg) for x in p})
+    X = blast_evidence(a, loci, involved, genome)
     sd = load_sedef(a.sedef, contigs)
 
-    def evidence(p):
-        u, v = loci[p[0]], loci[p[1]]
-        P = p in prot_hit
-        S = sd_evidence(sd, u, v) or sd_evidence(sd, v, u)
-        return P, S
-    status = {}
-    ev = {}
-    for p in sorted(need):
-        ev[p] = evidence(p)
-    for p in agreed:
-        status[p] = "TRUE"
-    for p in disputed:
-        P, S = ev[p]
-        if P or S:
-            status[p] = "TRUE"
-        elif loci[p[0]]["coding"] and loci[p[1]]["coding"]:
-            status[p] = "FALSE"
-        else:
-            status[p] = "UNSCORED"
+    def ev(p):
+        u, v = p
+        return ((u, v) in X or (v, u) in X), (sd_evidence(sd, loci[u], loci[v]) or sd_evidence(sd, loci[v], loci[u]))
+    evd = {p: ev(p) for p in sorted(agreed | disputed | hard_neg)}
+    w = lambda p: sum(E[n][p] for n in (A, Bn) if p in E[n]) / sum(1 for n in (A, Bn) if p in E[n])
+    strict = {p: w(p) for p in agreed | {p for p in disputed if any(evd[p])}}
+    permissive = {p: w(p) for p in agreed | disputed}
+    label = {}
+    for tag, graph in (("strict", strict), ("permissive", permissive)):
+        for k, c in enumerate(mcl_port.mcl(graph, a.inflation, a.prune)):
+            for x in c:
+                label[(tag, x)] = (k, len(c))
+
+    def co(tag, u, v):
+        lu, lv = label.get((tag, u)), label.get((tag, v))
+        return lu is not None and lv is not None and lu[0] == lv[0] and lu[1] >= 2
+    cand = set()
+    for tag in ("strict", "permissive"):
+        cl = collections.defaultdict(list)
+        for (t, x), (k, n) in label.items():
+            if t == tag and n >= 2:
+                cl[k].append(x)
+        for ms in cl.values():
+            cand.update(itertools.combinations(sorted(ms), 2))
+    status = {p: ("TRUE" if co("strict", *p) and co("permissive", *p) else "UNSCORED") for p in cand}
     with open(f"{a.out}/loci.tsv", "w") as fh:
-        fh.write(f"locus\tchrom\tstart\tend\tcoding\tnames\t{A}_families\t{Bn}_families\texons\n")
+        fh.write(f"locus\tchrom\tstart\tend\tcoding\thas_{A}\thas_{Bn}\tnames\texons\n")
         for l in loci:
-            fh.write(f"L{l['id']}\t{l['chrom']}\t{l['start']}\t{l['end']}\t{int(l['coding'])}\t{','.join(l['names'])[:500]}\t"
-                     f"{','.join(sorted(l['fam'][A])) or '.'}\t{','.join(sorted(l['fam'][Bn])) or '.'}\t"
-                     f"{','.join(f'{x}-{y}' for x, y in l['exons'])}\n")
+            fh.write(f"L{l['id']}\t{l['chrom']}\t{l['start']}\t{l['end']}\t{int(l['coding'])}\t{int(l['has'][A])}\t"
+                     f"{int(l['has'][Bn])}\t{','.join(l['names'])[:500]}\t{','.join(f'{x}-{y}' for x, y in l['exons'])}\n")
+    with open(f"{a.out}/edges.tsv", "w") as fh:
+        fh.write(f"u\tv\tin_{A}\tin_{Bn}\tblast\tsd\tclass\n")
+        for p in sorted(evd):
+            cls = "agreed" if p in agreed else ("disputed" if p in disputed else "hard_negative")
+            fh.write(f"L{p[0]}\tL{p[1]}\t{int(p in E[A])}\t{int(p in E[Bn])}\t{int(evd[p][0])}\t{int(evd[p][1])}\t{cls}\n")
     with open(f"{a.out}/pairs.tsv", "w") as fh:
-        fh.write(f"u\tv\t{A}\t{Bn}\tprotein\tsd\tstatus\n")
+        fh.write("u\tv\tstatus\n")
         for p in sorted(status):
-            P, S = ev.get(p, ("NA", "NA"))
-            fh.write(f"L{p[0]}\tL{p[1]}\t{opinion(A, *p)}\t{opinion(Bn, *p)}\t{P}\t{S}\t{status[p]}\n")
+            fh.write(f"L{p[0]}\tL{p[1]}\t{status[p]}\n")
     uf2 = UF()
     for p, s in status.items():
         if s == "TRUE":
@@ -284,23 +306,18 @@ def cmd_build(a):
             for x in sorted(ms):
                 l = loci[x]
                 fh.write(f"T{k}\tL{x}\t{l['chrom']}\t{l['start'] + 1}\t{l['end']}\n")
-    # AK-0
-    cod_agreed = [p for p in agreed if loci[p[0]]["coding"] and loci[p[1]]["coding"]]
-    sens = sum(1 for p in cod_agreed if any(ev[p])) / max(1, len(cod_agreed))
-    fpr = sum(1 for p in hard_neg if any(ev[p])) / max(1, len(hard_neg))
-    cnt = collections.Counter(status[p] for p in disputed)
-    unsc = cnt["UNSCORED"] / max(1, len(disputed))
-    by_src = collections.Counter((opinion(A, *p), opinion(Bn, *p), status[p]) for p in disputed)
-    print(f"records {len(recs)}; joint loci {len(loci)}; SAME {A} {len(same[A])}, {Bn} {len(same[Bn])}; "
-          f"agreed TRUE {len(agreed)}; disputed {len(disputed)} -> {dict(cnt)}")
-    for k, v in sorted(by_src.items()):
-        print(f"   disputed {k[0]:4s}/{k[1]:4s} -> {k[2]:8s} {v}")
-    print(f"TRUE pairs {sum(1 for s in status.values() if s == 'TRUE')}; truth clusters {len(comps)} "
-          f"(largest {max(map(len, comps.values())) if comps else 0}); proteins with a hit pair {len(prot_hit)}")
-    ok = sens >= 0.80 and fpr <= 0.20 and unsc <= 0.50
-    print(f"AK-0: evidence sensitivity on agreed coding pairs {sens:.3f} (n={len(cod_agreed)}, >= 0.80); "
-          f"HGNC hard-negative evidence rate {fpr:.3f} (n={len(hard_neg)}, <= 0.20); "
-          f"disputed unscored {unsc:.3f} (<= 0.50) -> {'VALID' if ok else 'NOT VALID'}")
+    n_true = sum(1 for s in status.values() if s == "TRUE")
+    n_uns = len(status) - n_true
+    sens = sum(1 for p in agreed if any(evd[p])) / max(1, len(agreed))
+    fpr = sum(1 for p in hard_neg if any(evd[p])) / max(1, len(hard_neg))
+    dis_kept = sum(1 for p in disputed if any(evd[p]))
+    print(f"records {len(recs)}; joint loci {len(loci)}; graph edges not mapped to a locus {dict(unmapped)}")
+    print(f"edges {A} {len(E[A])}, {Bn} {len(E[Bn])}; agreed {len(agreed)}; disputed {len(disputed)} "
+          f"(with evidence {dis_kept}); hard negatives {len(hard_neg)}")
+    print(f"TRUE pairs {n_true}; UNSCORED {n_uns}; truth clusters {len(comps)} (largest {max(map(len, comps.values())) if comps else 0})")
+    ok = sens >= 0.80 and fpr <= 0.20 and n_uns <= 0.50 * (n_true + n_uns)
+    print(f"GATE: evidence sensitivity on agreed edges {sens:.3f} (>= 0.80); hard-negative evidence rate {fpr:.3f} "
+          f"(<= 0.20); unscored share {n_uns / max(1, n_true + n_uns):.3f} (<= 0.50) -> {'VALID' if ok else 'NOT VALID'}")
 
 
 def cmd_score(a):
@@ -368,8 +385,10 @@ def main():
     for k in ("--out", "--contigs", "--genome", "--sedef", "--hgnc"):
         p.add_argument(k, required=True)
     p.add_argument("--ann", action="append", required=True)
-    p.add_argument("--miniprot", default="/home/juanfra/miniforge3/envs/prot/bin/miniprot")
+    p.add_argument("--blast-bin", default="/home/juanfra/miniforge3/envs/blast/bin")
     p.add_argument("--threads", type=int, default=4)
+    p.add_argument("--inflation", type=float, default=2.8)
+    p.add_argument("--prune", type=float, default=1e-9)
     p = sub.add_parser("score")
     p.add_argument("--truth", required=True)
     p.add_argument("--contigs", required=True)
