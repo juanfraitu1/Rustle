@@ -487,3 +487,38 @@ A hidden record is RECOVERED if a candidate overlaps it; its predicted family is
   the truth strand (positive = extends beyond the truth boundary); truncated = candidate covers < 0.90 of the truth
   span; overextended = candidate extends beyond the truth span by > 0.10 of its length.
 Descriptive; no rule is tuned or selected here. Rules against under/over-merges are pre-registered separately.
+
+---
+## ADDENDUM N (2026-09-13, after §6jm; before any number below exists) — guided-mode rules: iterative expansion and 5' width extension (NPIP, TBC1D3)
+
+**Why:** §6jm: with one seed, NPIP expansion stops at subfamily lines (under-merge); width error is 5' truncation.
+Diagnosis before this addendum: 9/31 records' own seed transcript leaves the 5' end of their own gene span uncovered
+(gene span = union of isoforms; NPIPB9 0.564, TBC1D3G 0.738, NPIPB5 0.777), so part of the truncation is definitional.
+
+**Common to every arm:** Addendum M's truth, leave-out sets (same RNG, levels keep-50% and keep-1, 5 replicates),
+floors (identity >= 0.80, query coverage >= 0.50), blocking (hits overlapping a seed gene span are ignored), single-
+linkage clustering with the highest-nmatch hit deciding the candidate's family, classification, and all Addendum M
+scores. Added score (secondary): family-named precision, counting `other_gene` candidates whose overlapping RefSeq gene
+name or description names the family ("nuclear pore complex-interacting protein"/NPIP; "TBC1 domain family member
+3"/TBC1D3) as members.
+
+**Arms:**
+- M0 — Addendum M (reference; recomputed by the new script, must reproduce §6jm).
+- W1 gene-span projection — extra queries: each seed's gene span (genomic, transcript strand), `minimap2 -c -x asm20
+  -N 100 -p 0.1`; a candidate's span becomes the union of its best transcript hit span and the passing gene-span hits
+  of the same seed gene that overlap it. Candidate set = M0's (W1 changes width only).
+- W2 isoform union — queries: every exon-bearing annotated transcript of each seed gene (139 over 28 genes; NPIPB10P/
+  NPIPB1P gene-exons, NPIPB14P gene span), splice mode as M. Candidates are clustered from all passing isoform hits; a
+  candidate's span = union of the passing hits in its cluster from the best hit's seed gene.
+- I iterative expansion — round 0 = M0. Each new candidate yields a query: the target sequence of its best hit's
+  aligned exon blocks (cg CIGAR runs between N, in the hit's transcript orientation), aligned as M. Passing hits that
+  overlap no seed gene and no existing candidate form new candidates (single-linkage, best hit) and inherit the family
+  of the candidate whose query produced the best hit. Repeat to a fixed point or 10 rounds. Width per candidate = W0.
+- I+W2 — round 0 = W2, then iteration as I.
+Width ceilings reported per arm's width rule: each record's self-projection coverage of its own gene span.
+
+**Readings (fixed, descriptive, no selection or tuning):** (1) iteration CROSSES the NPIP subfamily barrier iff keep-1
+NPIP sensitivity > 0.50 with family-named precision 1.000; (2) a width rule REDUCES truncation iff its truncated count
+is lower than M0's at both levels and its overextended count rises by less than its truncated count falls; (3) any
+cross-family assignment or non-family-named `other_gene` candidate is an over-merge and is listed.
+Rules are developed and read on these two families only; confirmation on another substrate is a later addendum.

@@ -19291,3 +19291,66 @@ Caveats: two families, one genome; index w10 not w5; family-named reclassificati
 transcripts (a truly minimal annotation might only give partial models).
 
 Data: `lit/guided_lo/{units.fa,units.tsv,units.paf,m.out,m.per_rep.tsv,m.candidates.tsv}`.
+
+## §6jn — Guided rules on NPIP/TBC1D3: iteration crosses NPIPB -> NPIPA from some seeds but not on average; isoform and gene-span width rules trade truncation for overextension; zero over-merges (2026-09-13)
+
+Pre-registered as Addendum N (`docs/PREREG_core_definition_2026-09-12.md`, md5 a99c0ab9). `bench/guided_rules.py`
+(M0 reproduces §6jm exactly). Count correction (disclosed): W2 used 133 queries = 130 annotated transcripts over 28
+genes + 3 fallbacks (the addendum said 139). Iteration ran 4 rounds to a fixed point (382 -> 20 -> 4 -> 4 -> 0 new
+candidates over all replicates and arms); 1 min 24 s, 10.3 GB.
+
+**Breadth, keep 1 seed (mean ± SD over 5 replicates):**
+
+| family | arm | sensitivity | precision (registered) | family-named precision | missed | over-merges | pairwise sens / prec | bipartite micro R / P |
+|---|---|---|---|---|---|---|---|---|
+| NPIP | M0 | 0.257 ± 0.026 | 0.771 | 1.000 | 15.6 | 0 | 0.057 / 0.571 | 0.240 / 0.771 |
+| NPIP | W2 | 0.267 ± 0.026 | 0.779 | 1.000 | 15.4 | 0 | 0.062 / 0.583 | 0.248 / 0.779 |
+| NPIP | I | 0.324 ± 0.140 | 0.795 | 1.000 | 14.2 | 0 | 0.110 / 0.621 | 0.300 / 0.800 |
+| NPIP | **I+W2** | **0.476 ± 0.321** | 0.814 | 1.000 | 11.0 | 0 | 0.301 / 0.655 | 0.418 / 0.819 |
+| TBC1D3 | all arms | 1.000 | 0.786-0.800 | 1.000 | 0 | 0 | 1.000 / 0.622 | 0.800 / 0.800 |
+
+At keep 50% every arm has sensitivity 1.000 for both families and family-named precision 1.000. **Over-merges: 0 in
+every arm, level and replicate** (no cross-family assignment, no candidate at a non-family gene, no unannotated one).
+
+**Reading 1 — iteration does NOT cross the NPIP subfamily barrier by the pre-registered bar** (keep-1 sensitivity
+0.324 / 0.476 <= 0.50). Per replicate it is all-or-nothing and asymmetric:
+
+| seed (keep 1) | M0 recovered | I | I+W2 |
+|---|---|---|---|
+| NPIPB13 | 5 NPIPB | 3 NPIPA + 9 NPIPB (4 rounds) | 3 NPIPA + 9 NPIPB |
+| NPIPA7 | 6 NPIPA | 6 NPIPA | 6 NPIPA |
+| NPIPB10P | 5 NPIPB | 5 NPIPB | 5 NPIPB |
+| NPIPA1 | 6 NPIPA | 6 NPIPA | 6 NPIPA |
+| NPIPB15 | 5 NPIPB | 5 NPIPB | **7 NPIPA + 14 NPIPB = all 21** (1 round) |
+
+NPIPA seeds never reach NPIPB; some NPIPB seeds reach NPIPA. The floor is query coverage, so a SHORT query (a partial
+NPIPB-derived candidate, or a short isoform) clears 0.50 on an NPIPA copy while a full NPIPA transcript does not clear it
+on NPIPB's longer models. Whether guided expansion should cross is a scope choice (family vs subfamily); the coverage
+direction is the lever that decides it.
+
+**Width (all records, recovered into the correct family):**
+
+| level | arm | Jaccard median | 5' offset median | truncated | overextended |
+|---|---|---|---|---|---|
+| keep 50% | M0 | 0.877 | -769 bp | 6.8 | 3.0 |
+| keep 50% | W1 gene span | 0.849 | -113 bp | 5.8 | 6.6 |
+| keep 50% | W2 isoforms | 0.802 | -766 bp | 6.4 | 6.6 |
+| keep 1 | M0 | 0.902 | -723 bp | 6.0 | 0.8 |
+| keep 1 | W1 gene span | 0.867 | -179 bp | 5.4 | 3.2 |
+| keep 1 | W2 isoforms | 0.870 | -684 bp | 5.6 | 2.6 |
+
+**Reading 2 — neither width rule reduces truncation by the pre-registered bar:** each lowers truncation by 0.4-1.0 but
+raises overextension by 1.8-3.6. Width ceilings (self-projection covering >= 0.90 of the own gene span): W0 24/31, W1
+31/31, W2 31/31 — the rules can express full width on the source gene, but on paralogs the extra sequence projects past
+the truth (TBC1D3 W2 3' offset median +5.4 kb, from readthrough-length isoforms; W1 NPIP 5' offset -959 -> -241 bp at the
+cost of Jaccard 0.803 -> 0.775).
+
+**Reading 3 — over-merges:** none to list (`n.overmerges.tsv` empty).
+
+**What this says for the guided rules.** On these two families the baseline floors never over-merge, so the rules to
+derive are about under-merge and width: (i) the coverage direction controls whether a minimal annotation reaches across
+subfamilies; (ii) width extension needs a stop signal at the paralog's own boundary (e.g. clip the projected extension
+at the next aligned block's end, or require read or splice-site support) — plain union of isoforms or gene span
+overshoots. Caveats: two families, one genome, 5 replicates, no tuning; readings are descriptive.
+
+Data: `lit/guided_lo/{isoforms.*,genespan.*,iter/,n.out,n.per_rep.tsv,n.overmerges.tsv}`.
