@@ -135,3 +135,19 @@ print("\n## Q summary (counts over runs)")
 for k in sorted(summary):
     print(f"{k[0]:6s} {k[1]:9s} {k[2]:28s} {dict(summary[k])}")
 print(f"\n## agreement with P1 (MAFFT) on RECOVERED calls, over (run, group) cells: {dict(agree)}")
+
+
+def _ms(v):
+    v = [x for x in v if not (isinstance(x, float) and math.isnan(x))]
+    return "nan" if not v else (f"{statistics.mean(v):.3f}±{statistics.stdev(v):.3f}" if len(v) > 1 else f"{v[0]:.3f}")
+
+
+print("\n## P2 — hybrid width on the G1 candidates (median over replicates' medians; counts mean±SD)")
+for level in ("half", "keep1"):
+    for fam in families + ["ALL"]:
+        for scope in ("all", "like-for-like"):
+            for arm in ("M0", "G1-clip", "H", "H-union"):
+                R = [r for r in width_rows if r["level"] == level and r["family"] == fam and r["arm"] == arm and r["scope"] == scope]
+                g = lambda k: _ms([r[k] for r in R])
+                print(f"{level:5s} {fam:6s} {scope:13s} {arm:8s} n {g('n')} tx-boundary {g('tx_frac')} | J {g('jaccard')} "
+                      f"5' {g('off5')} 3' {g('off3')} trunc {g('truncated')} overext {g('overextended')}")

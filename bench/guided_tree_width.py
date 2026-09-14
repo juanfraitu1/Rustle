@@ -34,6 +34,16 @@ GROUPS = {
                "CDKL": {t["name"] for t in truth if t["level2"] == "CDKL"}},
 }
 POSITIONAL = {"TBC1D3": {t["name"] for t in truth if t["level1"] == "cluster1"}}
+# Any other family: its level-1 and level-2 truth groups with >= 2 members (Addendum R).
+for _fam in families:
+    if _fam not in GROUPS:
+        _g = {}
+        for _lvl in ("level1", "level2"):
+            for _v in sorted({t[_lvl] for t in truth if t["family"] == _fam}):
+                _m = {t["name"] for t in truth if t["family"] == _fam and t[_lvl] == _v}
+                if len(_m) >= 2 and f"L1 {_v}" not in _g:
+                    _g[f"{'L1' if _lvl == 'level1' else 'L2'} {_v}"] = _m
+        GROUPS[_fam] = _g
 
 
 # ---------------- newick ----------------

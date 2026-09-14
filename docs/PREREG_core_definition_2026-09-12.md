@@ -611,3 +611,29 @@ rule). The reference row is its own sequence.
 positional check, midpoint-root level-1 partition, readings 1-3 of P1).
 **Comparison with P1:** per (run, literature group) cell, agreement of the RECOVERED / not-recovered call; per run,
 alignment columns kept and wall time. Descriptive.
+
+---
+## ADDENDUM R (2026-09-13, after §6jp; before any AMY number exists) — the guided pipeline on the amylase family (human CHM13), rules unchanged
+
+**Why (user):** test the NPIP/TBC1D3-derived guided pipeline on all AMY genes.
+**Literature level (read before scoring):** Bolognini et al. 2024 Nature (PMC11485256) classify copies as AMY1 (salivary),
+AMY2A and AMY2B (pancreatic), AMY2Ap (partial AMY2A lacking ~4.5 kb of the 5' end) and AMYP1; their haplotype trees use
+unique FLANKING sequence, not gene copies. Yilmaz et al. 2024 Science: AMY2B, AMY2A and AMY1 carry 23, 23 and 36 fixed
+coding variants unique to each type. ⟹ the amylase subclusters are GENE TYPES, not intronic clades as for NPIP.
+
+**Truth (fixed now):** every gene/pseudogene in `chm13v2.0_RefSeq_full.gff.gz` named AMY* or described as amylase on
+chr1p21 (103.3-103.9 Mb) — 12 loci (AMY2B, AMY2A, AMY1A, AMY1B, AMY1C, 4 "alpha-amylase 1B" LOCs, 2 "pancreatic
+alpha-amylase-like" LOCs, AMYP1); width = RefSeq gene span. Level 1 = salivary AMY1 (AMY1A/B/C + the four
+"alpha-amylase 1B" LOCs) | pancreatic AMY2 (AMY2A, AMY2B, the two "pancreatic alpha-amylase-like" LOCs) | AMYP1.
+Level 2 = AMY1 | AMY2A | AMY2B | pancreatic-like | AMYP1. Types of the LOCs come from RefSeq product names (name
+trap disclosed, §6c); LOC124905662's span (36 kb) contains LOC128966568 — a known overlap, not corrected.
+MGAM/MGAM2 (alpha-amylase domain, different family) are a named over-merge check.
+
+**Pipeline and scores (identical rules, no tuning):** seeds/units as Addendum M (longest curated transcript, spliced),
+isoforms and gene spans as Addendum N, leave-out keep 50% / keep 1 with 5 replicates (same RNG rule); arms M0 (Addendum
+M), G1 family by gene body (Addendum O), hybrid width H (Addendum P2), subfamily clades from the reference-projected
+exon-masked gene-body tree (Addendum Q; supported = SH-aLRT > 75); family-named precision uses "amylase|AMY".
+Literature groups scored as clades: level 1 AMY1 (7) and pancreatic AMY2 (4); level 2 pancreatic-like pair.
+**Readings (fixed):** (1) G1 breadth at keep 1: sensitivity and over-merges (MGAM/MGAM2 or other non-amylase genes);
+(2) H vs G1 width by Addendum P2's rule; (3) AMY1 and pancreatic clades recovered counts over the reference and 10
+leave-out runs. Descriptive.

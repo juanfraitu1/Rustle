@@ -19477,3 +19477,55 @@ Caveats: one haplotype, two families, no tuning; SH-aLRT threshold from the pape
 positional split unexplained.
 
 Data: `lit/guided_lo/{p.out,q.out,tree/,tree_proj/}`.
+
+## §6jq — The guided pipeline on the amylase family (CHM13): the unit that holds the family together is family-specific — AMY is held by coding sequence, NPIP by gene body (2026-09-13)
+
+Pre-registered as Addendum R (`docs/PREREG_core_definition_2026-09-12.md`, md5 10740cac), rules unchanged from M-Q.
+**Literature level:** Bolognini et al. 2024 Nature (PMC11485256) type copies as AMY1 (salivary), AMY2A/AMY2B (pancreatic),
+AMY2Ap (partial AMY2A lacking ~4.5 kb of 5' end), AMYP1, and build haplotype trees from unique FLANKING sequence;
+Yilmaz et al. 2024 Science: 23 / 23 / 36 fixed coding variants unique to AMY2B / AMY2A / AMY1 — types are defined on
+coding sequence and expression, not intronic clades. **Truth:** 12 CHM13 RefSeq loci on chr1:103.40-103.80 Mb (7 AMY1-type:
+AMY1A/B/C + 4 "alpha-amylase 1B" LOCs; 4 pancreatic: AMY2A, AMY2B, 2 "pancreatic alpha-amylase-like" LOCs; AMYP1) —
+typed by RefSeq product names (name trap disclosed). Spans vary 6.2-36.2 kb: AMY2B 24.9 kb (3 isoforms), LOC124905662
+36.2 kb containing LOC128966568. AMYP1 has no transcript (gene-span seed). Only chr1 hits; MGAM/MGAM2 never hit.
+Script changes: family-name pattern for AMY, literature groups generated from truth levels for any family, P2 width
+printed by the projection script (no rule change).
+
+**Breadth (5 replicates):**
+
+| level | arm | sensitivity | precision / family-named | over-merges | pairwise sens / prec | bipartite micro R / P |
+|---|---|---|---|---|---|---|
+| keep 50% | M0 transcript | 0.833 ± 0.167 | 1.000 / 1.000 | 0 | 0.693 / 1.000 | 0.833 / 1.000 |
+| keep 50% | G1 gene body | **0.933 ± 0.091** | 1.000 / 1.000 | 0 | 0.867 / 1.000 | 0.933 / 1.000 |
+| keep 1 | M0 transcript | **0.764 ± 0.228** | 1.000 / 1.000 | 0 | 0.611 / 1.000 | 0.764 / 1.000 |
+| keep 1 | G1 gene body | 0.400 ± 0.367 | 1.000 / 1.000 | 0 | 0.255 / 1.000 | 0.436 / 1.000 |
+
+Per seed (keep 1): an AMY1 seed (9 kb body) recovers all 6 AMY1-type copies at identity 0.999 and coverage 1.00 but NO
+AMY2/AMYP1 copy by gene body, while its transcript reaches all 11; the AMY2B seed's 24.9 kb span aligns 5.4-8.7 kb to
+every copy at identity 0.86-0.91 -> coverage 0.22-0.35 < 0.50 -> G1 recovers nothing (the §6a span-inflation trap);
+the LOC124905662 seed (36 kb, two units) recovers 8. **Reading 1:** gene-body membership UNDER-merges AMY at keep 1
+(0.400 vs 0.764) — the opposite of NPIP (§6jo: 0.257 -> 1.000); no over-merge in any arm.
+
+**Width (reading 2, H vs G1-clip, truncated + overextended):** keep 50% H 1.8 + 1.2 = 3.0 vs 1.4 + 1.8 = 3.2 (lower);
+keep 1 H 1.4 + 1.0 = 2.4 vs 0.4 + 1.6 = 2.0 (higher) -> **H does not improve at both levels on AMY.**
+
+**Clades (projected exon-masked gene-body tree, SH-aLRT > 75; reading 3):** reference (12 loci): **AMY1 clade recovered
+(100/100)**; pancreatic AMY2 {AMY2A, AMY2B, 2 LOCs} not a clade; pancreatic-like pair not a clade; midpoint L1 partition
+pairwise 0.889 / 0.706, bipartite 0.833 / 0.833. Leave-out: AMY1 2/8 runs (two keep-1 runs had < 4 members and were not
+treed), AMY2 never. Reference member choice picked the 36 kb LOC124905662 twice — a chimeric locus as reference.
+
+**Reading across the three families.**
+
+| family | what is conserved across the family | unit that recovers members from one seed | subfamily signal |
+|---|---|---|---|
+| NPIP | gene body incl. introns (96% A vs B); gene models differ | gene body (1.000) — transcript fails (0.257) | intronic clades (Dishuck; §6jp 10/10) |
+| TBC1D3 | everything (>= 99%) | both (1.000) | none stable (positional) |
+| AMY | coding sequence (introns ~86% AMY1 vs AMY2) | transcript (0.764) — gene body fails (0.400), also broken by inflated spans | coding types (Yilmaz/Bolognini); AMY1 clade only on gene bodies |
+
+A single unit does not generalise. Two consequences to test next (pre-registered, on all three families): (i) take
+candidates from EITHER finder (transcript OR gene body), since neither over-merged anywhere; (ii) build the subfamily tree
+on the sequence class that carries the family's signal — exons for AMY, introns for NPIP — or both, reporting clades
+supported in each. Caveats: one haplotype; AMY types from RefSeq names; the AMY truth contains a 36 kb readthrough-like
+locus overlapping another copy.
+
+Data: `lit/amy_lo/{truth.tsv,units.*,isoforms.*,genespan.*,o.out,q.out,tree_proj/}`.

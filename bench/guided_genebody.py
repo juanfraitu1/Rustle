@@ -24,7 +24,8 @@ from scipy.optimize import linear_sum_assignment
 W, GFF_ISO, GFF_FULL, FASTA = sys.argv[1:5]
 MIN_ID, MIN_COV, REPS, NULL_DRAWS = 0.80, 0.50, 5, 10000
 FAMNAME = {"NPIP": re.compile(r"nuclear pore complex[- %2C]*interacting protein|NPIP", re.I),
-           "TBC1D3": re.compile(r"TBC1 domain family member 3|TBC1D3", re.I)}
+           "TBC1D3": re.compile(r"TBC1 domain family member 3|TBC1D3", re.I),
+           "AMY": re.compile(r"(?<!gluco)amylase|\bAMY", re.I)}
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 genome = pysam.FastaFile(FASTA)
 
