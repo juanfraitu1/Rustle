@@ -19217,3 +19217,20 @@ Data: `o1_falsemerge/rebuild3/{dna/ggo3_k0.*,cat_dna_k0*,hybrid/,score_k0.*}`, `
 (`gw.*`, `cat_dna_k0.copies.tsv`, `expr_gw.tsv`, `score_k1_holdout.out`, `score_k2.out`, `housekeeping_gw.py`).
 Scripts: `bench/{dna_sd_atoms,interval_expression,score_vs_guided}.py`. No Rust change (lib 840 / 0 / 19).
 Related: §6je, §6jj, [[project_denovo_vs_annotated_gap]].
+
+## §6jl — Scope redefined by the user; Addendum L stopped (2026-09-13)
+
+**Scope (user):** there is no genome-only discovery mode. **De novo** = RNA reads already aligned to loci; the job is to
+cluster those read-supported loci into families (its fair truth is guided restricted to read-supported loci).
+**Guided** = start from the annotation, even a minimal one; find new candidate loci; judge them against a ground truth
+in width — both locus boundaries and family breadth — and derive rules that avoid under- and over-merges; minimal
+annotation is simulated by leave-out. SD atoms (§6jj/§6jk) are therefore not a mode; at most a candidate finder inside
+guided mode, seeded by annotated genes.
+
+**Re-reading §6jk under this scope:** the de novo comparison that counts is against read-supported guided loci
+(genome-wide, 08-21 catalog: R_G 0.1823 / P_G 0.6018), not the full guided catalog (0.0139). The DNA-vs-RNA and hybrid
+decisions stand as measurements but answer a question outside both modes.
+
+**Stopped:** the Addendum L genome-wide RD rebuild (killed ~20 min in, no output) and L1/L2. L1 development numbers on
+rebuild3 (expressed-guided truth): H R_G 0.6356 / P_G 0.6365; U1 = U2 0.6383 / 0.6375; U3 0.6640 / 0.4066. No decision.
+`bench/hybrid_union.py` kept for the record.

@@ -416,3 +416,38 @@ are excluded. Expression from `GGO_ds.bam` (the BAM of the RNA catalog).
 **Decisions:** (i) K0 DNA atoms are CLOSER to guided than RNA iff R_G(DNA) > R_G(RNA) AND P_G(DNA) >= P_G(RNA) - 0.05
 (any-family scorer); (ii) K1 as above. Housekeeping: the 30-gene panel genome-wide, genes in any family, per catalog.
 Runs that exceed resources are reported as not run.
+
+---
+## ADDENDUM L (2026-09-13, after §6jk; before any number below exists) — (1) atoms + RNA-only families; (2) genome-wide RNA rebuild with today's code
+
+### L2 — genome-wide RNA rebuild (runs first; its catalogs are the RNA side of every hold-out below)
+`gw_family_catalog --bam GGO_ds.bam --fasta GGO.fasta --out <p> --homology-primary --threads 4` built at HEAD, with
+`RUSTLE_ER_EDGE_DUMP` (same invocation as `o1_reps/run.sh`, 2026-08-21): arm RD default, then arm RU with
+`RUSTLE_ER_UNION_LCS=1`. A memory guard kills a run (by PID) if MemAvailable + SwapFree < 2 GB; a killed or failed arm
+is reported as not run. Scored on the hold-out contigs (all except the 3 rebuild3 contigs) with
+`bench/score_vs_guided.py`.
+Decisions: (a) K2 and K1 re-evaluated with RD in place of the 08-21 catalog, same bars (DNA closer iff R_G(DNA) >
+R_G(RD) and P_G(DNA) >= P_G(RD) - 0.05; hybrid narrows iff the same holds for H against expressed guided); (b) the
+Addendum E union question genome-wide: RU NARROWS iff R_G(RU) > R_G(RD) AND P_G(RU) >= P_G(RD) - 0.05 (full guided).
+
+### L1 — hybrid atoms plus RNA-only families
+**Why:** §6jk: 22.6% of expressed guided loci have no atom and 36.5% of RNA copies lie outside atoms.
+**Arms** (H = §6jk hybrid, expressed K0 atoms; R = the RNA catalog: dev rebuild3 `cat_default`, hold-out RD):
+- U1 = H + R's families restricted to copies overlapping NO atom (any expression), kept with >= 2 such copies;
+- U2 = H + R's families restricted to copies overlapping no EXPRESSED atom, kept with >= 2 such copies;
+- U3 = H + every R family, whole, that has >= 1 copy overlapping no expressed atom.
+Family ids are kept disjoint (R families prefixed). Truth = expressed guided loci (K1 definition).
+**Selection on development (rebuild3, fixed now):** among U1-U3, those with P_G(any) >= P_G(H) - 0.05; the candidate
+is the one with the highest R_G(any); ties -> higher P_G. If none qualifies, no candidate.
+**Hold-out decision (23 contigs, R = RD):** the candidate NARROWS the hybrid's gap iff R_G(U) > R_G(H) AND P_G(U) >=
+P_G(H) - 0.05 (any-family); best-overlap reported. If RD is not run, the hold-out uses the 08-21 catalog, disclosed.
+
+**L1 ruling (2026-09-13, after development scoring, before the hold-out):** U1 and U2 tie on development in R_G(any)
+0.6383 and P_G(any) 0.6375 (H 0.6356 / 0.6365; U3 P_G 0.4066 fails the precision guard). The fixed tie-break (higher
+P_G) does not separate them. Ruling: the candidate is U1, the arm with fewer copies (854 vs 864; U1's exclusion rule is
+the stricter one). Cost if wrong: U2 is not evaluated on the hold-out; its hold-out numbers are reported as secondary.
+
+**ADDENDUM L — NOT RUN (2026-09-13, user decision).** The genome-wide RD rebuild was stopped ~20 min in (killed by
+PID) and L1/L2 were cancelled after the user redefined scope: no genome-only discovery mode; de novo = cluster loci that
+already have aligned reads; guided = start from annotation (even minimal), find new candidate loci, judge them vs ground
+truth in width, derive under/over-merge rules. Only L1's development numbers exist (rebuild3; reported, no decision).
