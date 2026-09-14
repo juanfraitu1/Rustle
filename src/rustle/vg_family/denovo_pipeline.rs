@@ -1439,6 +1439,107 @@ pub fn retain_non_mischain(
     }
 }
 
+/// `RUSTLE_LOCUS_BRIDGE_CUT=1` enables [`retain_non_bridge`] on the homology catalog path (default off).
+fn locus_bridge_cut_enabled() -> bool {
+    matches!(std::env::var("RUSTLE_LOCUS_BRIDGE_CUT"), Ok(v) if v != "0" && !v.is_empty())
+}
+
+/// Indices of spliced transcripts that BRIDGE two better-supported junction groups (a spliced readthrough).
+///
+/// Spliced transcripts are visited in order (n_reads desc, span desc, index asc) over a union-find on junctions
+/// `(chrom, donor, acceptor)`; a group's support is the summed `n_reads` of the transcripts admitted to it. A
+/// transcript whose junctions touch two or more existing groups EACH supported by more reads than it has is a
+/// bridge and is not admitted; any other transcript unions its junctions and adds its reads. Unspliced transcripts
+/// are never bridges. Prereg Addendum I (`docs/PREREG_core_definition_2026-09-12.md`): TBC1D3-NPEPPSP1 readthrough
+/// transcripts share junctions with both genes and otherwise fuse them into one locus whose rep lies in NPEPPSP1.
+pub fn bridge_transcripts(transcripts: &[DenovoTranscript]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..transcripts.len()).filter(|&i| !transcripts[i].introns.is_empty()).collect();
+    order.sort_by(|&a, &b| {
+        let (ta, tb) = (&transcripts[a], &transcripts[b]);
+        tb.n_reads
+            .cmp(&ta.n_reads)
+            .then((tb.end - tb.start).cmp(&(ta.end - ta.start)))
+            .then(a.cmp(&b))
+    });
+    let mut id: std::collections::HashMap<(&str, u64, u64), usize> = std::collections::HashMap::new();
+    let mut parent: Vec<usize> = Vec::new();
+    let mut support: Vec<u64> = Vec::new();
+    fn find(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        x
+    }
+    let mut bridges = Vec::new();
+    for i in order {
+        let t = &transcripts[i];
+        let mut roots: Vec<usize> = t
+            .introns
+            .iter()
+            .filter_map(|&(d, a)| id.get(&(t.chrom.as_str(), d, a)).copied())
+            .map(|j| find(&mut parent, j))
+            .collect();
+        roots.sort_unstable();
+        roots.dedup();
+        if roots.iter().filter(|&&r| support[r] > t.n_reads as u64).count() >= 2 {
+            bridges.push(i);
+            continue;
+        }
+        let mut root = match roots.first() {
+            Some(&r) => r,
+            None => {
+                parent.push(parent.len());
+                support.push(0);
+                parent.len() - 1
+            }
+        };
+        for &r in roots.iter().skip(1) {
+            parent[r] = root;
+            support[root] += support[r];
+        }
+        for &(d, a) in &t.introns {
+            let j = *id.entry((t.chrom.as_str(), d, a)).or_insert_with(|| {
+                parent.push(parent.len());
+                support.push(0);
+                parent.len() - 1
+            });
+            let rj = find(&mut parent, j);
+            if rj != root {
+                parent[rj] = root;
+                support[root] += support[rj];
+            }
+        }
+        root = find(&mut parent, root);
+        support[root] += t.n_reads as u64;
+    }
+    bridges.sort_unstable();
+    bridges
+}
+
+/// Drop [`bridge_transcripts`] in place, logging each. Runs on transcripts before the locus collapse.
+pub fn retain_non_bridge(transcripts: &mut Vec<DenovoTranscript>, tag: &str) {
+    let drop: std::collections::HashSet<usize> = bridge_transcripts(transcripts).into_iter().collect();
+    if drop.is_empty() {
+        return;
+    }
+    for &i in &drop {
+        let t = &transcripts[i];
+        eprintln!("[{tag}]   bridge {}:{}-{} ({} introns, {} reads)", t.chrom, t.start, t.end, t.introns.len(), t.n_reads);
+    }
+    let mut k = 0;
+    transcripts.retain(|_| {
+        let keep = !drop.contains(&k);
+        k += 1;
+        keep
+    });
+    eprintln!(
+        "[{tag}] bridge cut: dropped {} spliced transcript(s) joining two better-supported junction groups -> {} transcripts",
+        drop.len(),
+        transcripts.len()
+    );
+}
+
 /// Is this READ mis-chained — does its alignment leave the locus through a giant gap?
 ///
 /// True iff any of the read's OWN introns exceeds `giant_bp`. **There is deliberately no support clause**,
@@ -3886,7 +3987,10 @@ pub fn detect_homology_catalog_genome_wide(
         retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
         retain_non_mischain(&mut transcripts, sup, "gw-catalog");
     }
-    let union_reps = std::env::var("RUSTLE_LOCUS_EXON_UNION").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    if locus_bridge_cut_enabled() {
+        retain_non_bridge(&mut transcripts, "gw-catalog");
+    }
+    let union_reps =std::env::var("RUSTLE_LOCUS_EXON_UNION").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
     let union_floor: u32 = std::env::var("RUSTLE_LOCUS_UNION_MIN_READS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -11309,6 +11413,54 @@ mod tests {
         retain_non_mischain(&mut txs, &j, "test");
         assert_eq!(txs.len(), 1);
         assert_eq!(txs[0].start, 0, "the well-supported large gene survives; the mis-chain is dropped");
+    }
+
+    #[test]
+    fn locus_bridge_cut_is_off_by_default() {
+        std::env::remove_var("RUSTLE_LOCUS_BRIDGE_CUT");
+        assert!(!locus_bridge_cut_enabled());
+    }
+
+    /// TBC1D3 shape: two genes, each with its own well-supported chains, and a weaker readthrough sharing
+    /// junctions with both. The readthrough is the bridge; the gene chains stay.
+    #[test]
+    fn bridge_transcripts_flags_the_weaker_readthrough_between_two_genes() {
+        let txs = vec![
+            rep_s(0, 10_000, vec![(1_000, 2_000), (3_000, 4_000)], 37),           // gene A
+            rep_s(500, 9_000, vec![(3_000, 4_000), (5_000, 6_000)], 20),         // gene A isoform
+            rep_s(20_000, 30_000, vec![(21_000, 22_000), (23_000, 24_000)], 25), // gene B
+            rep_s(0, 30_000, vec![(5_000, 6_000), (12_000, 21_000), (21_000, 22_000)], 14), // readthrough
+        ];
+        assert_eq!(bridge_transcripts(&txs), vec![3]);
+        let mut v = txs.clone();
+        retain_non_bridge(&mut v, "test");
+        assert_eq!(v.len(), 3);
+        assert!(v.iter().all(|t| t.end - t.start < 30_000));
+    }
+
+    /// A transcript joining a group with MORE support to one with LESS (or equal) is not a bridge — it is the
+    /// best-supported model of what may be one gene, and must not be cut.
+    #[test]
+    fn bridge_transcripts_keeps_a_link_to_a_group_it_outweighs() {
+        let txs = vec![
+            rep_s(0, 10_000, vec![(1_000, 2_000)], 50),
+            rep_s(20_000, 30_000, vec![(21_000, 22_000)], 5),
+            rep_s(0, 30_000, vec![(1_000, 2_000), (21_000, 22_000)], 10),
+        ];
+        assert!(bridge_transcripts(&txs).is_empty());
+    }
+
+    /// Order matters by construction: the full-length, best-supported isoform is visited first, so two partial
+    /// isoforms of the same gene are unioned through it rather than cut.
+    #[test]
+    fn bridge_transcripts_full_length_isoform_unions_partial_ones_and_ignores_unspliced() {
+        let txs = vec![
+            rep_s(0, 4_000, vec![(1_000, 1_500)], 30),
+            rep_s(3_000, 9_000, vec![(6_000, 7_000)], 30),
+            rep_s(0, 9_000, vec![(1_000, 1_500), (6_000, 7_000)], 40),
+            rep_s(0, 9_000, vec![], 100),
+        ];
+        assert!(bridge_transcripts(&txs).is_empty());
     }
 
     // ---------------------------------------------------------------------------------------------

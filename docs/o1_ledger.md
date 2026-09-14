@@ -18997,3 +18997,70 @@ on all 9, gene spans give 5/7 with sens 0.500 prec 0.333, micro 0.889. NPIP, whe
 ahead of de novo (L1 micro 0.857 vs 0.545; L2 exact 5/12 vs 4/13). Reading: TBC1D3 copies are too similar (>= 0.997
 over 2 kb) for spliced-transcript identity to resolve level 2; more sequence (introns) helps, and the comparison must use
 a shared copy set.
+
+## §6ji — Missing and fragmented members: RNA locus switches, a readthrough bridge cut, DNA mode and guided on NPIP/TBC1D3; the bridge cut fails the gorilla hold-out (2026-09-13)
+
+Pre-registered as Addendum I (`docs/PREREG_core_definition_2026-09-12.md`, md5 ce5314bf) before any arm ran.
+
+**Diagnosis (§6jh follow-up).** All 31 truth records have >= 15 MAPQ>=1 primary IsoSeq reads, so every de novo loss
+is a pipeline loss. TBC1D3 (chr17:39044723-39055625): 404 reads, 54 skeletons (largest 13 introns / 37 reads), 51
+gate-passing transcripts, **0 reps** (`RUSTLE_DEBUG_LOCUS`). TBC1D3-NPEPPSP1 readthrough transcripts (up to 25
+introns) share junctions with both genes, the locus collapse joins them, and the representative is a 2-exon 7-read
+NPEPPSP1 transcript. NPIP: each record is covered by 1-8 de novo copies in 1-6 families (fragmentation, as §6j9).
+
+**New opt-in rule R7, `RUSTLE_LOCUS_BRIDGE_CUT=1`** (`bridge_transcripts` / `retain_non_bridge`, homology catalog path
+only, default off, 4 unit tests): spliced transcripts are visited by (n_reads desc, span desc, index); a union-find over
+junctions carries summed read support; a transcript whose junctions touch >= 2 existing groups each better supported
+than itself is a bridge and is dropped before the locus collapse.
+
+**Development (human CHM13, 19 windows; 31 records).** Collapsed = records sharing their best copy with another record.
+
+| arm | present | NPIP | TBC1D3 | mean copies / record | mean families / record | collapsed | missing |
+|---|---|---|---|---|---|---|---|
+| R0 default | 30 | 22 | 8 | 2.77 | 2.57 | 0 | TBC1D3 |
+| R1 `SPLICED_REP` | 29 | 22 | 7 | 2.10 | 2.00 | 0 | TBC1D3, B |
+| R2 `LOCUS_JUNCTION_ONLY` | 30 | 22 | 8 | 3.67 | 3.37 | 0 | TBC1D3 |
+| R3 `SHARED_EXON_ISOFORMS` | 30 | 22 | 8 | 2.77 | 2.57 | 0 | TBC1D3 |
+| R4 `LOCUS_EXON_UNION` | 30 | 22 | 8 | 2.50 | 2.17 | 2 | TBC1D3I |
+| R5 `LOCUS_GROWTH_EXTENT` | 31 | 22 | 9 | 12.71 | 9.65 | **24** | - |
+| R6 `TIER2_ADMIT` | 31 | 22 | 9 | 3.06 | 2.87 | 0 | - |
+| **R7 bridge cut** | **31** | 22 | 9 | 2.68 | 2.61 | 0 | - |
+| D1 DNA (`--from-genome-sd`, SEDEF) | 31 | 22 | 9 | 1.00 | 1.00 | **21** | - |
+| G guided | 31 | 22 | 9 | 1.00 | 1.00 | 0 | - |
+
+R7 dropped 111 bridge transcripts and gave TBC1D3 a 13-exon 37-read rep. Selection (fixed in Addendum I) -> **R7**.
+No arm reduces NPIP fragmentation. Level A on the shared set (28 records; TBC1D3, B, I excluded), NPIP:
+
+| arm | L1 sens | L1 prec | L1 bip micro R / P | L2 sens | L2 prec | L2 bip micro R / P | L2 exact |
+|---|---|---|---|---|---|---|---|
+| R0 | 0.532 | 0.489 | 0.455 / 0.588 | 0.562 | 0.066 | 0.364 / 0.364 | 1/13 |
+| R7 | 0.690 | 0.509 | 0.545 / 0.632 | 0.812 | 0.076 | 0.318 / 0.318 | 1/13 |
+| D1 | 0.389 | **0.875** | 0.636 / **0.933** | 1.000 | 0.286 | **0.591 / 0.591** | 2/13 |
+| G | 1.000 | 0.545 | 0.682 / 0.682 | 1.000 | 0.069 | 0.182 / 0.182 | 0/13 |
+
+TBC1D3 Level A on 6 shared records is identical for R0, R7, D1 and G (one family; L1 sens 1.000 prec 0.400). Level B
+(identity UPGMA, shared units): TBC1D3 k=5 exact 5/5 for R0, R2, R3, R7 and guided gene spans (guided spliced 3/5);
+NPIP k=12 best = guided spliced and gene span 5/12, de novo arms 2-4/12 (R5 4/12).
+
+**DNA mode.** 60 merged SD windows -> 110 region-level reps (up to 380 kb) -> 8 families; 1 h 42 min, 12.9 GB (the
+prereg's 390 s foreground limit was exceeded; rerun in the background, disclosed). Nodes hold several genes (21/31
+records collapsed), so DNA mode cannot resolve copies at this resolution. Its families are nonetheless informative:
+one family holds all 7 NPIPA plus only NPIPB2; NPIPB splits into {B6, B7, B8, B9} (= Dishuck B6-9 exactly), {B3, B4,
+B5, B11, B12, B13, B14P} (contains B3-5 and B12/13), {B15, B1P} and {B10P}. TBC1D3 cluster 1 and cluster 2 are one
+node each, in one family. The whole-duplicon sequence carries the A/B signal that spliced transcripts lack; the region
+nodes also include flanking LCR16 content, so this is not a gene-level claim.
+
+**Hold-out (gorilla `rebuild3`, 3 contigs, Addendum E scorer).**
+
+| catalog | families | copies | loci with family copy | R_G | P_G | ARI |
+|---|---|---|---|---|---|---|
+| cat_default | 68 | 391 | 178 | 329/4469 = 0.0736 | 0.3210 | 0.4224 |
+| **cat_bridge** | 69 | 391 | 177 | 328/4469 = **0.0734** | 0.3118 | 0.4095 |
+
+30 bridges dropped. **FAILS** the pre-registered bar (R_G > 0.0736): the bridge cut stays opt-in and is registered
+(row 815). It fixes the TBC1D3 shape where it occurs but does not narrow the de novo <-> guided gap on held-out data.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/lit/{arms/,dna/,lit_modes.{py,out},lit_missing_diag.py,dbg/}`,
+`rebuild3/{cat_bridge.*,score_bridge.{py,out}}`. Tests: lib 838 passed / 0 failed / 19 ignored; the `er_rule_rows`
+doctest failure predates this change (indented shell line in a doc comment, 2026-08-14).
+Related: §6jg, §6jh, §6j5, [[project_denovo_vs_annotated_gap]].

@@ -281,3 +281,47 @@ Missing records are excluded for that mode and reported.
 **Reading, fixed in advance:** a level-1 boundary counts as RECOVERED by an arm iff the k=2 cut gives bipartite exact
 matches 2/2 (NPIPA vs NPIPB; TBC1D3 cluster 1 vs 2). Anything less is reported with its numbers, not called recovered.
 Descriptive otherwise; no arm is selected post hoc — all arms are reported.
+
+---
+## ADDENDUM I (2026-09-13, after §6jh; before any arm below is run) — recovering missing / fragmented members: RNA locus construction vs DNA mode vs guided
+
+**Why:** §6jh follow-up diagnosis. All 31 NPIP/TBC1D3 truth records have >= 15 MAPQ>=1 primary IsoSeq reads, so
+de novo losses are pipeline losses. TBC1D3 (chr17:39044723-39055625): 54 skeletons, 51 gate-passing transcripts, 0
+reps — TBC1D3-NPEPPSP1 readthrough transcripts share junctions with both genes, the locus collapse joins them, and the
+representative is a 2-exon 7-read NPEPPSP1 transcript. NPIP: records are covered by 1-8 de novo copies in 1-6 families
+(fragmentation). User: split O1 into RNA and DNA modes and compare both with guided.
+
+**Development substrate (human CHM13, descriptive):** `lit/lit.bam` (19 windows), truth `lit_truth.tsv` (31 records).
+Arms, each a full `gw_family_catalog --homology-primary --threads 5` run on the same BAM, one env switch at a time:
+- R0 default (existing `dn_default`);
+- R1 `RUSTLE_SPLICED_REP=1`; R2 `RUSTLE_LOCUS_JUNCTION_ONLY=1`; R3 `RUSTLE_SHARED_EXON_ISOFORMS=1`;
+  R4 `RUSTLE_LOCUS_EXON_UNION=1`; R5 `RUSTLE_LOCUS_GROWTH_EXTENT=1`; R6 `RUSTLE_TIER2_ADMIT=1`;
+- R7 readthrough-bridge rule (new, opt-in `RUSTLE_LOCUS_BRIDGE_CUT=1`), defined now:
+  on the transcripts that survive the readthrough and mis-chain filters, process spliced transcripts in order
+  (n_reads desc, span desc, input index asc), keeping a union-find over junctions (chrom, donor, acceptor) whose
+  component support = sum of n_reads of transcripts admitted to it. For transcript T, let D = the distinct existing
+  components containing any junction of T with support > T.n_reads. If |D| >= 2, T is a BRIDGE: removed from the
+  transcript set (logged); otherwise T's junctions are unioned and T.n_reads is added to the merged support.
+  Unspliced transcripts are untouched. Nothing else changes.
+- D1 DNA mode: `gw_family_catalog --from-genome-sd` on `HSA_sedef_pairs.bed` restricted to SD pairs with at least one
+  side overlapping a lit window, against a chr16/chr17/chr18 FASTA (equal footing with the windowed BAM; the truth
+  windows themselves are NOT used as DNA windows, which would be circular);
+- G guided (existing `guided.*`).
+(A switch that fails to run or exceeds the 390 s foreground window is reported as not run.)
+
+**Scores per arm:** records present (>= 1 emitted copy overlapping the record); fragmentation = mean emitted copies and
+mean families per present record; collapse = number of records sharing their best-overlap copy with another record;
+Level A (best-overlap family per record) pairwise sensitivity/precision and bipartite micro/macro recall/precision
+and exact matches vs level 1 and level 2 — (a) PRIMARY on the records present in every run arm, (b) on all 31 with
+missing records as singletons. Level B (identity UPGMA, pooled units as §6jh, k=2 vs L1 and k=#groups vs L2) on the
+shared present set for RNA arms; guided with BOTH spliced-transcript and gene-span units, declared now; DNA arm has no
+record-specific unit and is scored at presence/fragmentation/collapse/Level A only.
+
+**Selection on development (fixed now):** the candidate RNA rule is the arm among R1-R7 with the most records present
+that loses no record present in R0; ties -> lower mean families per present record -> higher Level A L2 bipartite micro
+recall on (a). If no arm beats R0 on presence, the candidate is R7 if it recovers TBC1D3, else no candidate.
+
+**Hold-out (gorilla, not looked at for this question):** `rebuild3/sub3.bam` (3 contigs) with the candidate switch,
+scored by `rebuild3/score.py` against guided gw_units_v3 exactly as Addendum E. The candidate NARROWS the de novo <->
+guided gap iff R_G > cat_default's 0.0736 AND P_G >= 0.3210 - 0.05 = 0.2710; loci_with_family_copy reported. A pass
+makes the switch eligible for a default flip (the user's decision); a fail keeps it opt-in and is registered.
