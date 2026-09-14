@@ -775,3 +775,44 @@ raising collapse.
 **Hold-out (gorilla rebuild3, `sub3.bam`):** DN0 vs DN1 scored by `bench/score_vs_guided.py` against EXPRESSED guided
 loci (`hybrid/expr_c3.tsv`, u >= 3): DN1 NARROWS iff R_G(DN1) > R_G(DN0) AND P_G(DN1) >= P_G(DN0) - 0.05 (any-family);
 full guided and best-overlap reported. A failed or resource-limited arm is reported as such. No default changes.
+
+**Addendum V run note (disclosed):** the DN1 gorilla hold-out was launched twice by this session around a terminal
+restart (outputs `cat_dn1_span`, started ~23:02, and `cat_span_union`, ~23:04, identical settings); the later one was
+killed by PID at ~23:20 before finishing. `cat_dn1_span` is the hold-out catalog.
+
+---
+## ADDENDUM W (2026-09-13, before any number below exists) — did some multi-copy gene families arise from duplicons? (human CHM13)
+
+**Question (user):** the conclusion sought is that some multi-copy gene families arose from duplicons. The test must be
+able to say no: a classifier that also calls retrotransposition families "duplicon-borne" does not support it.
+
+**Families (truth = CHM13 RefSeq gene/pseudogene names; regexes fixed now):**
+- Literature core-duplicon families (review PMC6920530: "core or seed duplicons shared between all copies"): NPIP
+  `^NPIP[AB]\d+P?$`, TBC1D3 `^TBC1D3[A-Z]?$`, GOLGA8 `^GOLGA8[A-Z]*P?\d*$`, LRRC37A `^LRRC37A\d*P?$`, RGPD `^RGPD\d+$`,
+  NBPF `^NBPF\d+P?$`, SPATA31 `^SPATA31[A-Z]\d*P?\d*$`, PMS2 `^PMS2(P\d+)?$`, TRIM51 `^TRIM51[A-Z]*P?\d*$`, GUSB
+  `^GUSB(P\d+)?$`.
+- Negative controls, retrotransposition families (a parent gene with processed pseudogenes): GAPDH `^GAPDH(P\d+)?$`,
+  PPIA `^PPIA(P\d+)?$`, EEF1A1 `^EEF1A1(P\d+)?$`.
+- Reported, not in the reading: AMY (`amy_lo_v2/truth.tsv`, 12 loci).
+Members on unplaced/alt contigs are dropped; families capped at 40 members + reference (name-sorted, disclosed).
+
+**Unit and pairs:** member region = gene span extended by one gene-span length on each side (clipped to the contig).
+Reference member = the protein-coding member whose gene span is closest to the family's median protein-coding span
+(ties -> name); for the retro families this is the parent gene (the only protein-coding member). Pairs = reference vs
+each other member. Alignment: `minimap2 -c -x asm20 -N 50 -p 0.1` (member region as query, reference region as
+target); records chained as Addendum O; the pair's chain = the chain overlapping both gene spans with most aligned
+bases; ALIGNED iff chain identity >= 0.80.
+
+**Co-duplicated flank:** for an aligned pair, the chain's extension beyond each gene boundary is measured on both
+members in their own coordinates, sides matched through the chain orientation. The pair is DUPLICON (co-duplicated
+flank) iff on at least one matched side both members' chains extend >= 1,000 bp (`GenomeRepParams::min_block`) beyond
+their gene boundary; otherwise GENE-ONLY. Reported alongside: member intron count (retro signature = member 0 introns,
+reference >= 1), chain identity, extension lengths.
+
+**Family call:** DUPLICON-BORNE iff >= 50% of its aligned pairs are DUPLICON pairs (and >= 2 aligned pairs); else NOT.
+**Core (descriptive):** reference-region bases covered by the chains of >= 90% of aligned members; core length and
+core length / reference gene span.
+
+**Reading (fixed):** the test SUPPORTS "some multi-copy gene families arose from duplicons" iff >= 7 of the 10
+literature core-duplicon families are DUPLICON-BORNE AND <= 1 of the 3 retrotransposition families is DUPLICON-BORNE.
+If >= 2 retro families are called DUPLICON-BORNE the classifier does not discriminate and the test is uninformative.

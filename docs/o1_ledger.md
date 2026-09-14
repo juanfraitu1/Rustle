@@ -19642,3 +19642,38 @@ a held-out family set or substrate is still required.
 
 Data: `lit/guided_t/{t.out,t_addendumT.out,t_addendumU1p.out,t.candidates.tsv,tree_t/}`,
 `lit/amy_lo_t/{t.out,t_addendumT.out,t_addendumU_first.out,t_addendumU1p.out}`.
+
+## §6jt — "Did some multi-copy families arise from duplicons?" First pre-registered test: NOT SUPPORTED (6/10 core-duplicon families vs >= 7), classifier discriminates retrocopies (0/3) (2026-09-13)
+
+Pre-registered as Addendum W (`docs/PREREG_core_definition_2026-09-12.md`, md5 fddbd538). `bench/duplicon_origin.py`.
+Literature core-duplicon families from the review "Human core duplicon gene families: game changers or game players?"
+(PMC6920530: NBPF, RGPD, SMA-GUSBP, PMS2P, SPATA31, TRIM51, GOLGA8, NPIP, TBC1D3, LRRC37; "core or seed duplicons shared
+between all copies"); retrotransposition controls GAPDH, PPIA, EEF1A1. Member region = gene span +/- one gene length;
+pairs = median-length protein-coding reference vs each member (cap 40); asm20 chains; DUPLICON pair = chain identity
+>= 0.80 and >= 1 kb past the gene boundary on a matched side in BOTH members. 6 min 23 s.
+
+| family | kind | members | aligned pairs | DUPLICON pairs | fraction | core bp (core / reference gene) | call |
+|---|---|---|---|---|---|---|---|
+| NPIP | core | 22 | 19 | 19 | 1.000 | 21,590 (0.96) | DUPLICON-BORNE |
+| TBC1D3 | core | 9 | 8 | 8 | 1.000 | 14,733 (1.35) | DUPLICON-BORNE |
+| GOLGA8 | core | 19 | 16 | 9 | 0.562 | 15,021 (1.09) | DUPLICON-BORNE |
+| RGPD | core | 7 | 6 | 4 | 0.667 | 71,153 (0.73) | DUPLICON-BORNE |
+| SPATA31 | core | 22 | 3 | 3 | 1.000 | 9,938 (1.51) | DUPLICON-BORNE |
+| TRIM51 | core | 9 | 8 | 7 | 0.875 | 1,730 (0.20) | DUPLICON-BORNE |
+| LRRC37A | core | 17 | 9 | 2 | 0.222 | 0 | NOT |
+| NBPF | core | 22 | 10 | 2 | 0.200 | 0 | NOT |
+| PMS2 | core | 13 | 10 | 2 | 0.200 | 4,734 (0.12) | NOT |
+| GUSB | core | 20 | 9 | 2 | 0.222 | 0 | NOT |
+| GAPDH | retro | 66 (cap 40) | 1 | 0 | 0 | 416 (0.11) | NOT |
+| PPIA | retro | 91 (cap 40) | 21 | 0 | 0 | 333 (0.05) | NOT |
+| EEF1A1 | retro | 50 (cap 40) | 1 | 0 | 0 | 334 (0.06) | NOT |
+| AMY (reported) | — | 12 | 11 | 11 | 1.000 | 8,185 (0.91) | DUPLICON-BORNE |
+
+**Pre-registered reading: NOT SUPPORTED** (6/10 < 7), with the classifier discriminating (retro 0/3; retro signature —
+intronless member of an intron-bearing parent — 40/40, 37/40, 33/40 in the retro families vs 0-6 in core families).
+Post-hoc diagnosis (not a result): the misses are mostly PARTIAL gene copies inside duplicated segments (e.g. PMS2P10
+extends ~2 kb past both of its ends while the PMS2 side stays inside the gene; LRRC37A*P, GUSBP*, NBPF*P similar), which the
+"both members past their gene boundary" rule scores GENE-ONLY; 7 GOLGA8 pairs sit just under the 1 kb flank bar
+(~900 bp); many NBPF/LRRC37A/GUSB copies fall below 0.80 identity. The discriminating biology is genomic copy (shared
+non-exonic sequence) vs RNA-mediated copy (exon-only homology) — tested next on held-out families (Addendum X).
+Register row 818. Data: `lit/duplicon/{w.out,pairs.tsv}`.
