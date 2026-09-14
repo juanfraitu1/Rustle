@@ -29,7 +29,7 @@ import pysam
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import guided_pipeline as gp  # noqa: E402
 
-CONTIGS = ["NC_073241.2", "NC_073242.2", "NC_073244.2"]
+CONTIGS = os.environ.get("SHAREDEF_CONTIGS", "NC_073241.2,NC_073242.2,NC_073244.2").split(",")
 MAX_INTRON, MIN_PIECE = 271_359, 100
 BATCH_BP = 4_000_000
 COLS = ["idx", "chrom", "start", "end", "strand", "n_exon", "n_reads", "exons"]

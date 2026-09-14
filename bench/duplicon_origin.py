@@ -55,6 +55,7 @@ def merge(iv):
 def load_genes(gff):
     genes, tx_parent, exons = {}, {}, collections.defaultdict(int)
     feat_parent, exon_iv, cds_iv = {}, collections.defaultdict(list), collections.defaultdict(list)
+    cds_tx = collections.defaultdict(list)
     with gzip.open(gff, "rt") as fh:
         for line in fh:
             if line.startswith("#"):
@@ -75,6 +76,7 @@ def load_genes(gff):
                 exon_iv[a.get("Parent", "")].append((int(f[3]) - 1, int(f[4])))
             elif f[2] == "CDS":
                 cds_iv[a.get("Parent", "")].append((int(f[3]) - 1, int(f[4])))
+                cds_tx[a.get("Parent", "")].append((int(f[3]) - 1, int(f[4]), int(f[7]) if f[7] != "." else 0))
             elif "ID" in a and "Parent" in a:
                 feat_parent[a["ID"]] = a["Parent"]
 
@@ -101,12 +103,18 @@ def load_genes(gff):
         gid = owner(p)
         if gid is not None:
             cds[gid] += iv
+    tx_cds = collections.defaultdict(list)
+    for p, segs in cds_tx.items():
+        gid = owner(p)
+        if gid is not None:
+            tx_cds[gid].append(sorted(segs))
     for gid, g in genes.items():
         iv = tx_ex.get(gid) or own_ex.get(gid)
         g["exons"] = merge(iv) if iv else [(g["start0"], g["end"])]
         g["exon_source"] = "transcripts" if tx_ex.get(gid) else "gene" if own_ex.get(gid) else "span"
         g["transcripts"] = tx_lists.get(gid) or ([sorted(own_ex[gid])] if own_ex.get(gid) else [])
         g["cds"] = merge(cds.get(gid, []))
+        g["tx_cds"] = tx_cds.get(gid, [])
     introns = collections.defaultdict(int)
     for tx, p in tx_parent.items():
         introns[p] = max(introns[p], exons.get(tx, 0) - 1)

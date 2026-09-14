@@ -72,6 +72,95 @@ FAMILIES_Z = {
     **{f: (p, "dev_y_" + k) for f, (p, k) in FAMILIES.items() if k in ("retro_pos", "sd_neg")},
 }
 
+# Addendum AE-B: fresh families; Z's fresh families become development
+FAMILIES_AE = {
+    "RPL13": (r"^RPL13(P\d+)?$", "retro_pos"), "RPS6": (r"^RPS6(P\d+)?$", "retro_pos"),
+    "RPL35A": (r"^RPL35A(P\d+)?$", "retro_pos"), "EEF1G": (r"^EEF1G(P\d+)?$", "retro_pos"),
+    "ACTG1": (r"^ACTG1(P\d+)?$", "retro_pos"), "HSPA8": (r"^HSPA8(P\d+)?$", "retro_pos"),
+    "RPL12": (r"^RPL12(P\d+)?$", "retro_pos"), "SET": (r"^SET$|^SETSIP$", "retro_pos"), "ELOA": (r"^ELOA2?$", "retro_pos"),
+    "RBMX": (r"^RBMX(L[123])?$", "retro_pos"), "PPP1R2": (r"^PPP1R2B?$", "retro_pos"),
+    "CDY": (r"^CDYL$|^CDY\d[AB]?$", "retro_pos"), "TAF7": (r"^TAF7L?$", "retro_pos"),
+    "PSG": (r"^PSG\d+$", "sd_neg"), "CT45A": (r"^CT45A\d+$", "sd_neg"), "GAGE": (r"^GAGE\d+[A-Z]?$", "sd_neg"),
+    "XAGE1": (r"^XAGE1[AB]$", "sd_neg"), "TSPY": (r"^TSPY\d+$", "sd_neg"), "CSAG": (r"^CSAG[123][A-C]?$", "sd_neg"),
+    "CCL4L": (r"^CCL4L\d$|^CCL4$", "sd_neg"), "POTE": (r"^POTE[A-M]$", "sd_neg"),
+    **{f: (p, "dev_z_" + k) for f, (p, k) in FAMILIES_Z.items() if k in ("retro_pos", "sd_neg")},
+}
+PROT_COV, PROT_IN_AA, PROT_TOL_AA = 0.50, 7, 5
+COMPL = str.maketrans("ACGTN", "TGCAN")
+
+
+def parent_cds(genome, g):
+    """Longest-CDS transcript: coding sequence (transcript orientation, phase-trimmed), protein, junctions as
+    (nt position, intron length) and junction amino-acid positions."""
+    import codon_divergence as cdv
+    if not g.get("tx_cds"):
+        return None
+    segs = max(g["tx_cds"], key=lambda t: sum(e - b for b, e, _ in t))
+    order = segs if g["strand"] == "+" else segs[::-1]
+    seq = "".join(genome.fetch(g["chrom"], b, e).upper() for b, e, _ in segs)
+    if g["strand"] == "-":
+        seq = seq.translate(COMPL)[::-1]
+    phase = order[0][2]
+    seq = seq[phase:]
+    junctions, pos = [], -phase
+    for k in range(len(order) - 1):
+        pos += order[k][1] - order[k][0]
+        ilen = (order[k + 1][0] - order[k][1]) if g["strand"] == "+" else (order[k][0] - order[k + 1][1])
+        if pos > 0:
+            junctions.append((pos, ilen))
+    cod = seq[:len(seq) - len(seq) % 3]
+    prot = "".join(cdv.CODE.get(cod[i:i + 3], "X") for i in range(0, len(cod), 3)).rstrip("*")
+    return seq, prot, junctions
+
+
+def gap_excluded_identity(line):
+    f = line.split("\t")
+    nm = next((int(x[5:]) for x in f[12:] if x.startswith("NM:i:")), None)
+    cg = next((x[5:] for x in f[12:] if x.startswith("cg:Z:")), "")
+    ops = re.findall(r"(\d+)([MIDNSHP=X])", cg)
+    m = sum(int(n) for n, o in ops if o in "M=X")
+    indel = sum(int(n) for n, o in ops if o in "ID")
+    if nm is None or m == 0:
+        return float("nan")
+    return (m - (nm - indel)) / m
+
+
+def miniprot_junctions(mp, target_fa, prot, junction_aa, outpaf):
+    pfa = outpaf + ".faa"
+    open(pfa, "w").write(f">p\n{prot}\n")
+    out = cached_run(outpaf, [mp, "-t", "1", target_fa, pfa])
+    best = None
+    for line in out.splitlines():
+        f = line.split("\t")
+        if len(f) < 12 or f[0] != "p":
+            continue
+        AS = next((int(x[5:]) for x in f[12:] if x.startswith("AS:i:")), 0)
+        if best is None or AS > best[0]:
+            best = (AS, int(f[1]), int(f[2]), int(f[3]), next((x[5:] for x in f[12:] if x.startswith("cg:Z:")), ""),
+                    int(f[7]), int(f[8]))
+    if best is None:
+        return None
+    AS, qlen, qs, qe, cg, ts, te = best
+    cov = (qe - qs) / qlen if qlen else 0.0
+    intron_q, q = [], qs
+    for n, op in re.findall(r"(\d+)([MIDFGNUV])", cg):
+        n = int(n)
+        if op in "MI":
+            q += n
+        elif op in "NUV":
+            intron_q.append(q)
+            if op in "UV":
+                q += 1
+    lost = retained = 0
+    for j in junction_aa:
+        if not (qs + PROT_IN_AA <= j <= qe - PROT_IN_AA):
+            continue
+        if any(abs(x - j) <= PROT_TOL_AA for x in intron_q):
+            retained += 1
+        else:
+            lost += 1
+    return {"cov": cov, "lost": lost, "retained": retained, "ts": ts, "te": te}
+
 
 def lower_runs(seq, offset=0):
     return [(m.start() + offset, m.end() + offset) for m in re.finditer(r"[a-z]+", seq)]
@@ -258,7 +347,8 @@ def main():
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--amy-truth")
     ap.add_argument("--families")
-    ap.add_argument("--addendum", choices=("y", "z"), default="y")
+    ap.add_argument("--addendum", choices=("y", "z", "ae"), default="y")
+    ap.add_argument("--miniprot", default="miniprot")
     ap.add_argument("--threads", type=int, default=2)
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
@@ -281,7 +371,7 @@ def main():
     print(f"CHANCE RATES (1,000 random pseudo-insertions): POLYA {pa_rate:.3f} -> {'used' if use_pa else 'DROPPED'}; "
           f"TSD {tsd_rate:.3f} -> {'used' if use_tsd else 'DROPPED'}")
 
-    table = FAMILIES if a.addendum == "y" else FAMILIES_Z
+    table = {"y": FAMILIES, "z": FAMILIES_Z, "ae": FAMILIES_AE}[a.addendum]
     wanted = set(a.families.split(",")) if a.families else set(table) | ({"AMY"} if a.addendum == "y" else set())
     fams = {f: (k, [g for n, gs in by_name.items() if re.match(p, n) for g in gs if g["chrom"] in clen])
             for f, (p, k) in table.items() if f in wanted}
@@ -317,6 +407,13 @@ def main():
         pt0, pt1 = parent["start0"] - ps, parent["end"] - ps
         t_block = do.merge([(x - ps, y - ps) for x, y in parent["exons"]] + lower_runs(pseq))
         mrna, junctions = parent_mrna(genome, parent)
+        if a.addendum == "ae":
+            pc = parent_cds(genome, parent)
+            if pc is None:
+                print(f"{fam}: parent {parent['name']} has no CDS; skipped")
+                continue
+            mrna, prot, junctions = pc
+            junction_aa = [jp / 3 for jp, _ in junctions]
         mfa = f"{a.outdir}/{fam}.mrna.fa"
         open(mfa, "w").write(f">mrna\n{mrna}\n")
 
@@ -327,7 +424,8 @@ def main():
                    "member": g["name"], "chrom": g["chrom"], "start0": g["start0"], "end": g["end"], "biotype": g["biotype"],
                    "member_introns": g["introns"], "region_identity": float("nan"), "shared_nonexonic_unique": 0,
                    "mrna_identity": float("nan"), "mrna_qcov": 0.0, "lost": 0, "retained": 0, "ambiguous": 0,
-                   "polya": False, "tsd_len": 0, "polya_ungated": False, "tsd_len_ungated": 0, "class": "UNASSESSED"}
+                   "polya": False, "tsd_len": 0, "polya_ungated": False, "tsd_len_ungated": 0, "level": "",
+                   "prot_cov": float("nan"), "class": "UNASSESSED"}
             region_ok = False
             cand = [c for c in chains if c["q"] == key and c["qs"] < gq1 and gq0 < c["qe"] and c["ts"] < pt1 and pt0 < c["te"]]
             if cand:
@@ -341,14 +439,18 @@ def main():
             mtfa = f"{a.outdir}/{fam}.{key}.target.fa"
             if not os.path.exists(f"{a.outdir}/{fam}.{key}.splice.paf"):
                 open(mtfa, "w").write(f">{key}\n{genome.fetch(g['chrom'], s, e).upper()}\n")
-            sp = parse_paf(cached_run(f"{a.outdir}/{fam}.{key}.splice.paf",
-                                      ["minimap2", "-c", "-x", "splice", "-uf", "-N", "50", "-p", "0.1", "-t", "1", mtfa, mfa]))
+            sptxt = cached_run(f"{a.outdir}/{fam}.{key}.splice.paf",
+                               ["minimap2", "-c", "-x", "splice", "-uf", "-N", "50", "-p", "0.1", "-t", "1", mtfa, mfa])
+            sp = parse_paf(sptxt)
+            for r, line in zip(sp, sptxt.splitlines()):
+                r["gx_id"] = gap_excluded_identity(line)
             sp = [r for r in sp if r["ts"] < gq1 and gq0 < r["te"]]
             mrna_ok = False
             if sp:
                 r = max(sp, key=lambda r: (r["qe"] - r["qs"], r["nm"]))
-                row["mrna_identity"], row["mrna_qcov"] = r["nm"] / r["bl"], (r["qe"] - r["qs"]) / len(mrna)
-                if r["nm"] / r["bl"] >= MIN_ID and r["qe"] - r["qs"] >= 100:
+                ident = r["gx_id"] if a.addendum == "ae" else r["nm"] / r["bl"]
+                row["mrna_identity"], row["mrna_qcov"] = ident, (r["qe"] - r["qs"]) / len(mrna)
+                if ident >= MIN_ID and r["qe"] - r["qs"] >= 100:
                     mrna_ok = True
                     lost, ret, amb = junction_calls(r, junctions)
                     row.update(lost=lost, retained=ret, ambiguous=amb)
@@ -358,8 +460,23 @@ def main():
                     row["polya"], row["tsd_len"] = pa, tl
                     row["polya_ungated"], row["tsd_len_ungated"] = (pa, tl) if reach else \
                         hallmarks(genome, g["chrom"], clen[g["chrom"]], gts, gte, r["strand"], apply_polya=True)
+            prot_ok = False
+            if a.addendum == "ae" and not mrna_ok and row["shared_nonexonic_unique"] < NONEXONIC:
+                if not os.path.exists(mtfa):
+                    open(mtfa, "w").write(f">{key}\n{genome.fetch(g['chrom'], s, e).upper()}\n")
+                mp = miniprot_junctions(a.miniprot, mtfa, prot, junction_aa, f"{a.outdir}/{fam}.{key}.mp.paf")
+                if mp is not None:
+                    row["prot_cov"] = mp["cov"]
+                    if mp["cov"] >= PROT_COV and mp["ts"] < gq1 and gq0 < mp["te"]:
+                        prot_ok = True
+                        row.update(lost=mp["lost"], retained=mp["retained"], ambiguous=0)
+            if a.addendum == "ae":
+                row["level"] = "nucleotide" if mrna_ok else "protein" if prot_ok else ""
             if row["shared_nonexonic_unique"] >= NONEXONIC:
                 row["class"] = "GENOMIC"
+            elif a.addendum == "ae" and (mrna_ok or prot_ok or region_ok):
+                row["class"] = ("RETROCOPY" if (mrna_ok or prot_ok) and row["lost"] >= 1 and row["retained"] == 0
+                                else "UNRESOLVED")
             elif mrna_ok or region_ok:
                 pa = row["polya"] and use_pa
                 ts_ = row["tsd_len"] >= TSD_MIN and use_tsd
@@ -451,6 +568,19 @@ def main():
     k = lambda kind, field: (sum(1 for r in fam_rows if r["kind"] == kind and r[field]), sum(1 for r in fam_rows if r["kind"] == kind))
     rp_r, sd_r = k("retro_pos", "retro_derived"), k("sd_neg", "retro_derived")
     rp_g, sd_g = k("retro_pos", "genomic_derived"), k("sd_neg", "genomic_derived")
+    if not a.families and a.addendum == "ae":
+        print(f"\nAE-B READING: fresh retro positives RETRO-DERIVED {rp_r[0]}/{rp_r[1]}; fresh SD negatives {sd_r[0]}/{sd_r[1]} -> "
+              f"{'SUPPORTED' if rp_r[0] >= 10 and sd_r[0] <= 1 else 'NOT SUPPORTED'}")
+        print(f"reported: GENOMIC-DERIVED fresh SD {sd_g[0]}/{sd_g[1]}, fresh retro {rp_g[0]}/{rp_g[1]}")
+        for dev in ("dev_z_retro_pos", "dev_z_sd_neg"):
+            print(f"DEVELOPMENT {dev}: RETRO-DERIVED {k(dev, 'retro_derived')}, GENOMIC-DERIVED {k(dev, 'genomic_derived')}")
+        lv = collections.Counter((r["kind"], r["level"] or "-", r["class"]) for r in member_rows)
+        print("members by (kind, level, class):", dict(sorted(lv.items())))
+        for n in ("GK2", "CETN1", "NAP1L2", "NAP1L3", "CSTF2T", "UBL4B", "FAM50B"):
+            for r in member_rows:
+                if r["member"] == n:
+                    print(f"  Z-unassessed {n}: level {r['level'] or '-'} nt identity {r['mrna_identity']} protein cover "
+                          f"{r['prot_cov']} lost {r['lost']} retained {r['retained']} -> {r['class']}")
     if not a.families and a.addendum == "z":
         print(f"\nZ READING: fresh retro positives RETRO-DERIVED {rp_r[0]}/{rp_r[1]}; fresh SD negatives {sd_r[0]}/{sd_r[1]} -> "
               f"{'SUPPORTED' if rp_r[0] >= 12 and sd_r[0] <= 1 else 'NOT SUPPORTED'}")
@@ -464,7 +594,7 @@ def main():
             rc = [r for r in member_rows if r["kind"] == kind and r["class"] == "RETROCOPY"]
             print(f"reported {kind} RETROCOPY hallmarks: poly(A) gated {sum(r['polya'] for r in rc)}/{len(rc)}, ungated "
                   f"{sum(r['polya_ungated'] for r in rc)}/{len(rc)}, TSD ungated {sum(r['tsd_len_ungated'] >= TSD_MIN for r in rc)}/{len(rc)}")
-    elif not a.families:
+    elif not a.families and a.addendum == "y":
         print(f"\nR1 RETROCOPY: retro positives RETRO-DERIVED {rp_r[0]}/{rp_r[1]}; SD negatives {sd_r[0]}/{sd_r[1]} -> "
               f"{'SUPPORTED' if rp_r[0] >= 12 and sd_r[0] <= 1 else 'NOT SUPPORTED'}")
         print(f"R2 GENOMIC (repeats excluded): SD negatives GENOMIC-DERIVED {sd_g[0]}/{sd_g[1]}; retro positives "

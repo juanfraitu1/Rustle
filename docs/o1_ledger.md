@@ -20127,3 +20127,43 @@ Any-family P_G under MCL → coarse truth:
 components). Most of it is real chaining under this truth.
 Register rows 826 (AD-1), 827 (AD2a). Data: `lit/codon_ad/ad1.out`,
 `lit/sharedef_ab/{score_ad_mcl.out,score_ad_coarse.out,decompose_ad.out,ad2a.copies.tsv,ad2b.copies.tsv,coarse.clusters.tsv}`.
+
+## §6kc — Retrocopy rule with a coding-sequence, gap-excluded identity and a protein-level fallback: SUPPORTED on fresh families (retro 13/13, SD 0/8); 6 of 7 previously unreachable retrogenes now assessed (2026-09-14)
+
+Pre-registered as Addendum AE-B (md5 85b39fd2). `bench/copy_mechanism.py --addendum ae`. `duplicon_origin.load_genes` now also
+keeps per-transcript CDS with phase (`tx_cds`); earlier outputs are unaffected.
+
+**Rule, changed from Z:**
+- Nucleotide query = parent coding sequence. Identity is gap-excluded: (aligned M − (NM − indels)) / aligned M, >= 0.80
+  over >= 100 bases.
+- When the nucleotide level fails: miniprot of the parent protein, >= 50% cover. A parent CDS junction is RETAINED
+  iff a miniprot intron starts within 5 aa of it.
+- RETROCOPY = not GENOMIC, LOST >= 1 and RETAINED 0 at the first passing level.
+
+**Fresh families.**
+- Retro positives: 13/13 RETRO-DERIVED.
+  - Processed pseudogene families: RPL13, RPS6, RPL35A, EEF1G, ACTG1, HSPA8, RPL12.
+  - Retrogenes: SET-SETSIP, ELOA-ELOA2, RBMX-RBMXL1/2/3, PPP1R2-PPP1R2B, CDYL-CDY1/1B/2A/2B, TAF7L-TAF7.
+- SD negatives: 0/8 RETRO-DERIVED (PSG, CT45A, GAGE, XAGE1, TSPY, CSAG, CCL4L, POTE); 6/8 GENOMIC-DERIVED.
+- **Pre-registered reading: SUPPORTED.**
+
+**Member level (fresh):**
+- Retro positives: 140 RETROCOPY by nucleotide + 19 by protein; 2 UNRESOLVED; 13 UNASSESSED.
+- The protein level carries the old retrogenes: ELOA2, RBMXL2, RBMXL3, CDY1/1B/2A/2B, TAF7, plus 12 processed
+  pseudogenes.
+- SD negatives: 36 GENOMIC, 13 UNRESOLVED, 0 RETROCOPY.
+
+**Development (Z's families under this rule):**
+- Retro 15/16 RETRO-DERIVED (was 10/16 in §6jw); SD 0/10 RETRO-DERIVED.
+- Every SD member assessed at protein level is UNRESOLVED (10/10), so miniprot places introns at retained parent
+  junctions.
+- The seven Z-unassessed retrogenes (§6kb):
+  - GK2, CSTF2T and FAM50B are now reached at nucleotide level (gap-excluded CDS identity 0.882 / 0.818 / 0.812):
+    RETROCOPY.
+  - CETN1 and NAP1L2 are reached at protein level (cover 1.00 / 0.76, 3 and 8 junctions lost): RETROCOPY.
+  - NAP1L3: protein level, 6 lost, 1 retained → UNRESOLVED.
+  - UBL4B: still UNASSESSED.
+- This confirms the §6kb diagnosis: the metric (UTRs, gaps) and protein divergence, not the intron-loss call, limited
+  the rule.
+
+Data: `lit/mechanism_ae/{ae.out,members.tsv}`.

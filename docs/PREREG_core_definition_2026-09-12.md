@@ -1082,3 +1082,44 @@ decides; AD2b is read with the same bar and reported. Gap decomposition (missing
 A COARSE truth merges guided MCL clusters whose loci (expressed or not, on the three contigs) are joined by >= 1 guided
 edge re-derived as in Addendum AB. DN0, LCS union, AB2, AC1-AC3, AD2a, AD2b are scored against it (expressed loci, same
 scorer). Reported: coarse cluster count and pairs, and each catalog's R_G/P_G under both truths.
+
+---
+## ADDENDUM AE (2026-09-14; before any number below exists) — (A) confirm triangle-supported leaders on a fresh gorilla substrate; (B) retrocopy rule with a coding-sequence, gap-excluded identity and a protein-level fallback, on fresh human families
+
+### AE-A Fresh substrate for the grouping clause
+**Substrate (fixed now, chosen by guided-locus and read counts only, before any de novo run):** gorilla contigs
+NC_073233.2, NC_073240.2, NC_073238.2 (1,345 `gw_units_v3` loci; 429,036 reads in `GGO_ds.bam`), none used in
+Addenda AB-AD. `subF.bam` = `samtools view -b GGO_ds.bam <3 contigs>` (the sub3.bam recipe).
+**Catalogs:** DN0 and LCS union built with the same binary as the V/AB work (`lit/dn_v/gw_family_catalog.54154909
+--homology-primary --threads 4`; union = `RUSTLE_ER_UNION_LCS=1`), each with `RUSTLE_ER_EDGE_DUMP`. Expression of the
+guided loci on `subF.bam` with `bench/interval_expression.py`; expressed = u >= 3.
+**Definition arms (code unchanged from AB/AC/AD except the contig list):** AB2 consolidation of the DN0 dump nodes, AC
+read-locus nodes (same rule), AB edges; groupings: components (AC2), leaders (AC3), bridge-split (AD2a), **triangle-
+supported leaders (AD2b, DECIDING)**.
+**Reading (fixed, relative to the union on the same contigs):** triangle-supported leaders CONFIRMED iff any-family
+R_G(triangle) > R_G(union) AND P_G(triangle) >= P_G(union) - 0.05, on expressed guided loci (u >= 3, clusters >= 2
+loci). Other arms, best-overlap and full-guided metrics, and the gap decomposition are reported.
+
+### AE-B Retrocopy rule, fixed metric (human CHM13)
+**Rule (fixed):** as Addendum Z (parent, regions, GENOMIC first with soft-masked bases excluded) except:
+1. NUCLEOTIDE LEVEL: query = the parent's coding sequence (longest-CDS transcript, CDS segments only), `minimap2 -x splice
+   -uf -N 50 -p 0.1` onto the member region; record = the one overlapping the member gene with most aligned query bases;
+   identity = gap-excluded (aligned M bases minus mismatches, over aligned M bases; mismatches = NM minus inserted and
+   deleted bases); passes iff identity >= 0.80 and >= 100 aligned query bases. Junctions = CDS segment boundaries; LOST /
+   RETAINED exactly as Z.
+2. PROTEIN LEVEL, only when the nucleotide record does not pass: `miniprot` of the parent protein onto the member region;
+   passes iff the best alignment covers >= 50% of the parent protein. A parent CDS junction j (amino-acid coordinate)
+   lying >= 7 aa inside the alignment is RETAINED iff an intron operation (N/U/V) starts within 5 aa of j, else LOST.
+3. RETROCOPY iff not GENOMIC and the first passing level has LOST >= 1 and RETAINED = 0; UNRESOLVED if a level passes
+   otherwise; UNASSESSED if neither passes. Family RETRO-DERIVED iff >= 50% of assessed members are RETROCOPY.
+**Fresh families (regexes fixed now; names checked, no alignments run):**
+- Retro positives (13): processed-pseudogene families RPL13 `^RPL13(P\d+)?$`, RPS6 `^RPS6(P\d+)?$`, RPL35A
+  `^RPL35A(P\d+)?$`, EEF1G `^EEF1G(P\d+)?$`, ACTG1 `^ACTG1(P\d+)?$`, HSPA8 `^HSPA8(P\d+)?$`, RPL12 `^RPL12(P\d+)?$`;
+  literature retrogenes SET `^SET$|^SETSIP$`, ELOA `^ELOA2?$`, RBMX `^RBMX(L[123])?$`, PPP1R2 `^PPP1R2B?$`, CDY
+  `^CDYL$|^CDY\d[AB]?$`, TAF7 `^TAF7L?$`.
+- SD negatives (8): PSG `^PSG\d+$`, CT45A `^CT45A\d+$`, GAGE `^GAGE\d+[A-Z]?$`, XAGE1 `^XAGE1[AB]$`, TSPY `^TSPY\d+$`,
+  CSAG `^CSAG[123][A-C]?$`, CCL4L `^CCL4L\d$|^CCL4$`, POTE `^POTE[A-M]$`.
+- Development (reported): Addendum Z's fresh families (16 retro, 10 SD) under this rule.
+**Reading (fixed):** SUPPORTED iff >= 10/13 fresh retro positives RETRO-DERIVED AND <= 1/8 fresh SD negatives
+RETRO-DERIVED. Reported: which level assessed each member, and the Z retrogenes that were UNASSESSED (GK2, CETN1, NAP1L2/3,
+CSTF2T, UBL4B, FAM50B) under this rule.
