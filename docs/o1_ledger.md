@@ -20258,3 +20258,40 @@ reported metric here (any, best-overlap, full guided, pairwise, bipartite). Huma
 - human: 0.558 vs 0.515.
 Pairwise precision is below the union only on gorilla substrate 1 (0.385 vs 0.409).
 Register row 828 (AF-3). Data: `human2/`, `lit/sharedef_H/{score_expr.out,score_full.out,decompose_noUnion.out}`.
+
+## §6kf — Rust port parity EXACT on both gorilla substrates; the RNA-level truth of clause 6 equals the expressed DNA-level truth once the guided graph is exact; where the remaining de novo error sits (2026-09-14)
+
+**AF-1 Rust port** (`src/rustle/vg_family/shared_definition.rs`; `RUSTLE_SHARED_DEFINITION=1` in
+`detect_homology_catalog_genome_wide`; `RUSTLE_SD_READ_LOCUS_SPLIT=1` for the AF-3 variant; `RUSTLE_SD_TARGET_ORDER` fixes
+the target contig order).
+- 9 unit tests: merge, consolidation, depth / split on the prototype toy, read-locus rejection vs split, transcript
+  blocks and hits, gene-body chains, triangle, edge orientation and own-locus guard.
+- Opt-in catalogs vs `bench/denovo_shared_def.py` `ad2b.copies.tsv`, compared as sets of copy coordinates:
+  - substrate 1: 76/76 families, 323 copies, **EXACT** (7 min 50 s, 7.4 GB);
+  - fresh substrate: 72/72 families, 199 copies, **EXACT** (14 min 22 s).
+- Default byte-identity and the full test suite: see §6kg.
+
+**Clause-6 RNA-level truth** (prereg Addendum AG, md5 f5ecbf15; `bench/rna_truth.py`).
+- `mcl_families --dump-graph` regenerates each guided catalog's pre-MCL graph exactly: gorilla 13,263 nodes / 64,336
+  edges; human 2,778 / 28,323, both matching the params certificates.
+- Components of each guided cluster's graph induced on its expressed loci: s1 741 → 741 pairs; fresh s2 242 → 232;
+  new s3 (NC_073230.2 + NC_073228.2) 440 → 430; human 17,428 → 17,421.
+- ⟹ Expressed loci of a guided family are almost always connected through expressed loci. The "unexpressed bridge"
+  class of §6jz/§6ka was an artifact of span-denominator edges. Every de novo miss is a real node, edge or grouping
+  error.
+- Scores on the RNA truth equal those on the expressed DNA truth to 0.01, e.g. triangle s1 bipartite F 0.682, s2 0.696,
+  human 0.558.
+
+**Where triangle's error sits** (s1, post hoc):
+- TP 387, FN 354, FP 619.
+- FN:
+  - 122 pairs split across families although the guided graph has a direct edge (median weight 0.87);
+  - 112 pairs whose de novo node exists but joins no family;
+  - 61 pairs with a missing node;
+  - 59 pairs split with only an indirect guided path.
+- FP: 499 of 619 (81%) come from ONE de novo family of 35 truth loci spanning 8 guided MCL clusters of the KRAB zinc
+  finger superfamily (ZNF91, ZNF675, ZNF430, ZNF486, ZNF254 and LOC ZNF-like). MCL splits the tandem ZNF expansion;
+  the de novo grouping joins it.
+- Fresh s2: FN 187 (106 node present but in no family, 67 missing node, 14 split); FP 20.
+- Node correspondence on s1: 289/304 truth loci have a node; 100 are overlapped by >= 2 nodes; best-node span Jaccard
+  median 0.64; 46 nodes are the best node of >= 2 truth loci (8 span two truth clusters).

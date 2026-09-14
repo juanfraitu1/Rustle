@@ -1155,3 +1155,27 @@ whose supporting reads are the group's reads overlapping any of its segments; a 
 and triangle grouping unchanged.
 **Reading (fixed, on human — AF-3 arm vs the AF-2 primary arm):** SUPPORTED iff missing-node pairs decrease AND R_G(split)
 >= R_G(AC) AND P_G(split) >= P_G(AC) - 0.05. The two gorilla substrates are reported as development.
+
+---
+## ADDENDUM AG (2026-09-14; before any catalog is scored against the truth below) — the RNA-level ground truth of clause 6, and the goal bars
+
+**Why (user goal):** a definition with very high sensitivity, precision and bipartite matching against ground truth.
+Clause 6 of the definition (written in §0★★ before any de novo scoring) says the RNA-level family is the DNA-level
+family graph INDUCED on expressed copies, and that a pair joined only through unexpressed copies is a level
+difference, not a de novo error. Until now de novo catalogs were scored against DNA-level clusters restricted to
+expressed loci, which counts those pairs as misses. The earlier attempt to derive the induced graph (§6jz) was
+unreliable because its edges used span denominators.
+
+**Guided graph (fixed):** `mcl_families --paf allgenes_gw.asm20.paf --gff GGO_genomic.gff --min-exonic-bp 1 --dump-graph`
+reproduces the `gw_units_v3` graph exactly (13,263 nodes, 64,336 edges = its params certificate). Human: the same
+command on `human2/genes.asm20.paf` with `human2/refseq_c15_17_22.gff`, checked against `human2/guided.clusters.tsv`'s
+params certificate (nodes/edges) before use.
+**RNA-level truth (fixed):** within each guided cluster (the scorer's contig set), take its expressed loci (u >= 3);
+map each locus to the graph node(s) overlapping it on the same contig (a cluster locus may fold several annotation
+records; any overlapping node counts); two expressed loci are joined iff connected by a path of graph edges whose
+every node maps to an expressed locus of that cluster; RNA truth clusters = connected components (>= 2 loci).
+**Metrics (fixed, both truths reported):** best-overlap assignment of each truth locus to a catalog family;
+pairwise sensitivity and precision; bipartite micro recall and precision (`guided_pipeline.bipartite`), and their F.
+**Goal bars (declared now, to be met on a HELD-OUT substrate before claiming them):** pairwise sensitivity >= 0.90,
+pairwise precision >= 0.90, bipartite F >= 0.90, on the RNA-level truth. A rule change is adopted only after passing its
+own pre-registered bar on a substrate not used to design it.

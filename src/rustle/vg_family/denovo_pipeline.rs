@@ -4171,6 +4171,10 @@ pub fn detect_homology_catalog_genome_wide(
     // ADDITIONAL full-BAM pass (a genuine genome-wide cost — flagged for Task 4 perf validation); it changes
     // no existing catalog field except which same-strand co-located pairs the merge below collapses.
     let mapq_reads = aligned_reads_from_bam(bam_path, threads)?;
+    // OPT-IN shared definition (`RUSTLE_SHARED_DEFINITION`): its read-locus nodes need the reads' exon blocks,
+    // taken here because the reads are dropped before grouping. `None` (no cost) when unset.
+    let sd_reads = crate::vg_family::shared_definition::enabled()
+        .then(|| crate::vg_family::shared_definition::read_blocks(&mapq_reads));
     let placements_for_uniq = build_read_placements(&mapq_reads, &reps);
     // Read-supported core, measured on the same pass rather than re-reading the BAM. Only consumed when
     // `RUSTLE_ER_CORE_COVERAGE` is set; computing it always keeps the value available to the audit dump.
@@ -4233,6 +4237,25 @@ pub fn detect_homology_catalog_genome_wide(
         }
     }
 
+    // --- OPT-IN: the shared family definition replaces E_r / γ-QC / coverage split / distinct-locus stage ---
+    // (`shared_definition` module docs; prereg Addendum AF-1 requires family-for-family parity with
+    // `bench/denovo_shared_def.py`). Unset: this block is skipped and the catalog is byte-identical.
+    if let Some(sd_reads) = sd_reads {
+        let (nodes, fams, pairs) =
+            crate::vg_family::shared_definition::build(&reps, &sd_reads, &genome, &refine.minimap2, threads)?;
+        let edges4: Vec<(usize, usize, f64, f64)> = pairs.iter().map(|&(a, b)| (a, b, 1.0, 1.0)).collect();
+        let (mut out, mut certs) = (Vec::new(), Vec::new());
+        for f in fams {
+            if f.len() < min_copies.max(2) {
+                continue;
+            }
+            let groups: Vec<Vec<usize>> = f.iter().map(|&i| vec![i]).collect();
+            certs.push(certificate_for_weighted(&groups, &edges4));
+            out.push(f.iter().map(|&i| crate::vg_family::shared_definition::node_transcript(&nodes[i], &genome)).collect());
+        }
+        eprintln!("[gw-catalog-homology] shared definition: {} families (>= {} loci)", out.len(), min_copies.max(2));
+        return Ok((out, certs, Vec::new(), Vec::new(), Vec::new()));
+    }
     // --- E_r edges + γ-quasi-clique blocks ---
     // `er_edges` is kept (not discarded as before) solely to compute each emitted family's λ certificate.
     let (blocks, er_edges) = homology_blocks_pooled_with_edges_weighted(
