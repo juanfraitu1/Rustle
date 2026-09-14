@@ -19234,3 +19234,60 @@ decisions stand as measurements but answer a question outside both modes.
 **Stopped:** the Addendum L genome-wide RD rebuild (killed ~20 min in, no output) and L1/L2. L1 development numbers on
 rebuild3 (expressed-guided truth): H R_G 0.6356 / P_G 0.6365; U1 = U2 0.6383 / 0.6375; U3 0.6640 / 0.4066. No decision.
 `bench/hybrid_union.py` kept for the record.
+
+## §6jm — Guided mode, first look: leave-out expansion on NPIP and TBC1D3 finds every hidden member at 50%, no over-merge, and single-seed expansion stops at subfamily boundaries (2026-09-13)
+
+Pre-registered as Addendum M (`docs/PREREG_core_definition_2026-09-12.md`, md5 37542422), descriptive. Human CHM13,
+truth `lit_truth.tsv` (NPIP 22, TBC1D3 9; width = RefSeq gene span). Seeds = §6jh guided units (NPIPB14P: gene span),
+aligned once with `minimap2 -c -x splice -N 100 -p 0.1` on the prebuilt k15/w10 index (35 s, 10 GB, 684 hits; 389 pass
+identity >= 0.80 and query coverage >= 0.50). Candidates = passing hits from seeds not overlapping any seed gene,
+single-linkage clustered, best hit per cluster. 5 replicates. `bench/guided_leaveout.py`.
+
+**Breadth** (mean ± SD over replicates; items for pairwise/bipartite = hidden records + non-member candidates):
+
+| level | family | hidden | candidates | sensitivity | precision (registered) | missed | wrong family | over: other family / other gene / unannotated | pairwise sens / prec | bipartite micro R / P |
+|---|---|---|---|---|---|---|---|---|---|---|
+| keep 50% | NPIP | 11 | 15.6 | **1.000** | 0.679 | 0 | 0 | 0 / 5.0 / 0 | 1.000 / 0.458 | 0.688 / 0.688 |
+| keep 50% | TBC1D3 | 4 | 6.0 | **1.000** | 0.667 | 0 | 0 | 0 / 2.0 / 0 | 1.000 / 0.400 | 0.667 / 0.667 |
+| keep 1 | NPIP | 21 | 7.0 | **0.257 ± 0.026** | 0.771 | 15.6 | 0 | 0 / 1.6 / 0 | 0.057 / 0.571 | 0.240 / 0.771 |
+| keep 1 | TBC1D3 | 8 | 10.0 | **1.000** | 0.800 | 0 | 0 | 0 / 2.0 / 0 | 1.000 / 0.622 | 0.800 / 0.800 |
+
+**Every "other gene" candidate is an unlisted member of the same family** (secondary, disclosed: a candidate whose
+overlapping RefSeq genes are named or described as the family): CHM13 RefSeq's "NPIP family member B13-like" pseudogenes
+LOC128966608 and LOC124907834, "NPIP family member B15" genes LOC124907808 and LOC124907807, PKD1P6-NPIPP1, and TBC1D3P1 /
+TBC1D3P2 (PDXDC1, PKD1P6, SMG1-like and uncharacterized LOCs are genes overlapping those same loci). Counting them,
+**precision is 1.000 in every replicate at both levels: no over-merge**, no cross-family assignment. The truth table
+(Dishuck/Guitart names, protein-coding TBC1D3 only) is incomplete; guided mode's new candidates are these loci.
+
+**Single-seed expansion stops at subfamily boundaries (keep 1, NPIP):**
+
+| seed | recovered hidden members |
+|---|---|
+| NPIPA7 or NPIPA1 [NPIPA] | all 6 other NPIPA (A1/A7, A2, A5, A6, A8, A9), no NPIPB |
+| NPIPB13 [NPIPB] | B3, B4, B5, B11, B12 |
+| NPIPB10P or NPIPB15 [NPIPB] | B6, B7, B8, B9 + B15 / B10P |
+
+The NPIPA/NPIPB split and Dishuck's B6-9 group appear as the reach of a single seed under the baseline rule (the
+same NPIPB partition as §6ji's region-level DNA families). TBC1D3: any one seed recovers all 8 others (no barrier).
+
+**Width** (recovered hidden records, correct family):
+
+| level | family | n | span Jaccard median | 5' offset median | 3' offset median | truncated (< 0.90 covered) | overextended (> 10%) |
+|---|---|---|---|---|---|---|---|
+| keep 50% | NPIP | 11 | 0.803 ± 0.088 | -959 ± 1,277 bp | -154 ± 143 bp | 5.4 | 3.0 |
+| keep 50% | TBC1D3 | 4 | 0.969 ± 0.034 | -348 ± 428 bp | 0 bp | 1.4 | 0 |
+| keep 1 | NPIP | 5.4 | 0.759 ± 0.100 | -3,956 ± 3,695 bp | -106 ± 220 bp | 3.4 | 0.8 |
+| keep 1 | TBC1D3 | 8 | 0.992 ± 0.003 | -69 ± 46 bp | -1 bp | 2.6 | 0 |
+
+TBC1D3 candidate loci reproduce the gene spans almost exactly. NPIP candidates are mostly 5'-truncated (the seed's
+first exons do not carry to other copies' gene models; NPIPA seeds truncate 5/6 recoveries), with some overextension.
+
+**Reading.** At 50% leave-out the baseline rule recovers every hidden member of both families with no over-merge; the
+only failure mode is under-merge when the annotation is minimal and the family has diverged subfamilies (NPIP with one
+seed), and that under-merge follows the literature's subfamily lines. Width error is 5' truncation, concentrated in
+NPIP. Next: rules — e.g. iterative expansion (candidates become seeds), coverage floor vs subfamily reach, 5' boundary
+extension — pre-registered, developed on one family and confirmed on the other/gorilla.
+Caveats: two families, one genome; index w10 not w5; family-named reclassification is secondary; seeds are curated
+transcripts (a truly minimal annotation might only give partial models).
+
+Data: `lit/guided_lo/{units.fa,units.tsv,units.paf,m.out,m.per_rep.tsv,m.candidates.tsv}`.

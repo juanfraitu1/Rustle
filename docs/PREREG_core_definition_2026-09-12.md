@@ -451,3 +451,39 @@ the stricter one). Cost if wrong: U2 is not evaluated on the hold-out; its hold-
 PID) and L1/L2 were cancelled after the user redefined scope: no genome-only discovery mode; de novo = cluster loci that
 already have aligned reads; guided = start from annotation (even minimal), find new candidate loci, judge them vs ground
 truth in width, derive under/over-merge rules. Only L1's development numbers exist (rebuild3; reported, no decision).
+
+---
+## ADDENDUM M (2026-09-13, after §6jl; before any number below exists) — guided mode leave-out on NPIP and TBC1D3 (descriptive first look)
+
+**Scope (user):** guided mode starts from a minimal annotation, finds new candidate loci, and is judged against ground
+truth in width (locus boundaries AND family breadth). NPIP and TBC1D3, human CHM13.
+
+**Truth:** `lit/lit_truth.tsv` (NPIP 22 records, TBC1D3 9); family = NPIP / TBC1D3; true locus width = RefSeq gene span.
+
+**Seed sequence per record:** the §6jh guided unit (longest NM_/NR_ transcript, else XM_/XR_, else gene-parented exons,
+spliced, transcript orientation); a record with no model (NPIPB14P) uses its gene span. All 31 units are aligned once:
+`minimap2 -c -x splice -N 100 -p 0.1 -t 4` against the prebuilt `chm13v2.0.fa.mmi` (k15 w10, not the splice preset's
+w5 — disclosed). Hit identity = nmatch / block length; query coverage = aligned query fraction.
+
+**Leave-out:** per family, records sorted by name and shuffled with `random.Random(1000 * replicate + family_index)`,
+5 replicates. PRIMARY level: keep ceil(n/2) as seeds (NPIP 11, TBC1D3 5), hide the rest. SECONDARY level: keep 1.
+
+**Candidate loci (baseline rule = the DNA E_r floors):** hits from seed queries with identity >= 0.80 and query
+coverage >= 0.50, whose target span overlaps no seed record's gene span (either family). Overlapping hit spans are
+single-linkage clustered; each cluster's candidate = its highest-nmatch hit (span = that hit's target span, family =
+that hit's seed family).
+
+**Classification:** a candidate overlapping a hidden record is matched to the hidden record it overlaps most; otherwise
+it is `other_gene` if it overlaps any gene/pseudogene in `chm13v2.0_RefSeq_full.gff.gz`, else `unannotated`.
+A hidden record is RECOVERED if a candidate overlaps it; its predicted family is that candidate's family.
+
+**Scores (per family, per level, mean and SD over replicates; also pooled):**
+- Breadth: sensitivity = hidden recovered with the correct family / hidden; under-merge = hidden missed + hidden
+  recovered into the wrong family; precision = candidates whose matched hidden record is in their family / candidates
+  assigned to the family; over-merge = candidates of the family that match another family's record, `other_gene`
+  (named) or `unannotated`. Pairwise sensitivity/precision and bipartite matching over items = hidden records (missed
+  ones as singletons) plus unmatched candidates (each its own truth singleton).
+- Width (hidden records recovered into the correct family): span Jaccard; 5' and 3' boundary offsets in bp relative to
+  the truth strand (positive = extends beyond the truth boundary); truncated = candidate covers < 0.90 of the truth
+  span; overextended = candidate extends beyond the truth span by > 0.10 of its length.
+Descriptive; no rule is tuned or selected here. Rules against under/over-merges are pre-registered separately.
