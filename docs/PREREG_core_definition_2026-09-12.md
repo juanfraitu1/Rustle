@@ -325,3 +325,58 @@ recall on (a). If no arm beats R0 on presence, the candidate is R7 if it recover
 scored by `rebuild3/score.py` against guided gw_units_v3 exactly as Addendum E. The candidate NARROWS the de novo <->
 guided gap iff R_G > cat_default's 0.0736 AND P_G >= 0.3210 - 0.05 = 0.2710; loci_with_family_copy reported. A pass
 makes the switch eligible for a default flip (the user's decision); a fail keeps it opt-in and is registered.
+
+---
+## ADDENDUM J (2026-09-13, after §6ji; before any arm below is run) — (1) RNA fragmentation levers judged on the gap; (2) copy-level DNA nodes
+
+### J1 — RNA fragmentation
+**Why:** §6ji: no arm reduced NPIP fragmentation (2.6 families per record). Diagnosis (R0 `dn_default`): each gene is
+one dominant spliced model plus single-exon debris, mostly '+' pieces inside '-' genes; §6as showed the '+' is the
+unspliced strand placeholder, which blocks the containment collapse; §6cj/§6ck showed reads link the pieces but the
+linked merge runs inside E_r blocks. Both levers were killed or parked under catalog-stability criteria (§6as, §6ck),
+never under the de novo <-> guided gap. This re-evaluates them on the gap; §6as's endpoints are also reported.
+
+**Arms** (`lit.bam`, `gw_family_catalog --homology-primary --threads 5`, one change each vs R0):
+F1 `RUSTLE_COLLAPSE_UNSTRANDED=1`; F2 `RUSTLE_READ_STRAND=1`; F4 `RUSTLE_LOCUS_LINK_MIN_READS=10` (§6ck's K);
+F5 = F1 + F4. Scores exactly as Addendum I (presence, mean copies and families per present record, collapse, Level A
+on the shared present set and on all 31, Level B identity on shared units).
+
+**Selection (fixed now):** among F1, F2, F4, F5, the arms that lose no record present in R0 and do not raise collapse
+above R0's; the candidate is the one with the lowest mean families per present record, provided it is below R0's
+2.57; ties -> higher Level A L2 bipartite micro recall on the shared set. Otherwise no candidate.
+
+**Hold-out (gorilla `rebuild3/sub3.bam`, Addendum E scorer):** NARROWS iff R_G > 0.0736 AND P_G >= 0.2710. Also
+reported, not deciding: families and copies vs cat_default; single-copy housekeeping control = number of the §6as
+panel genes (bench/negative_control/check_housekeeping.py list) located on the 3 contigs in GGO_genomic.gff that
+overlap any emitted family copy, candidate vs cat_default.
+
+### J2 — copy-level DNA nodes (atoms from SD alignment boundaries, edges from the SD alignments)
+**Why:** §6ji D1 merged overlapping SD intervals into 170-380 kb nodes (21/31 records collapsed) and spent 96 of 102
+minutes re-aligning them with minimap2.
+
+**Nodes (atoms), fixed now:** input = the SD pairs (SEDEF) with both sides on the substrate's contigs [human dev:
+`lit/dna/sd_lit.bed` exactly as D1; gorilla hold-out: `GGO_sedef_final.bed` pairs with both sides on the 3 rebuild3
+contigs]. Per chromosome, breakpoints = every SD side start and end; elementary segments = intervals between
+consecutive breakpoints that lie inside at least one side; signature = set of (pair, side) covering the segment.
+Adjacent (touching) segments with identical signatures are merged. Then every segment shorter than 1,000 bp
+(`GenomeRepParams::min_block`) is merged into the touching neighbour whose signature has the larger Jaccard similarity
+to its own (tie -> left; no touching neighbour -> dropped), repeated shortest-first until none remains below 1,000 bp.
+
+**Edges, fixed now:** identity of a pair = matches / (matches + mismatches) from the SEDEF columns (checked equal to
+the file's fracMatch column on every row; any mismatch > 1e-4 aborts). For each SD pair, each atom x overlapping side A
+is projected onto side B by linear interpolation of relative position (reversed when the strands differ); every atom
+y on side B overlapping the projection receives covered bases on both x and y (interval unions per atom pair, over
+all SD pairs, in both directions A->B and B->A). Atom-pair identity = covered-length-weighted mean of the contributing
+pairs' identities. Coverage = min(covered_x / len_x, covered_y / len_y). x == y is skipped.
+
+**Families:** the production DNA grouping with those edges instead of minimap2: edges with identity >= 0.80 and
+coverage >= 0.50 (the `--from-genome` floors), weight 1.0, `gamma_quasi_clique_partition` gamma 0.20, then
+`distinct_locus_reps_grouped` (min_reads 0) and >= 2 copies (new `families_from_edges`, same code path after the
+edge list).
+
+**Development (human, lit):** arm D2 scored exactly as Addendum I (presence, fragmentation, collapse, Level A).
+Reading fixed now: "the NPIPA/NPIPB separation holds at copy level" iff D2 collapse <= 5 of 31 AND D2 NPIP Level A L1
+pairwise precision >= 0.775 (D1's 0.875 - 0.10); otherwise it does not.
+
+**Hold-out (gorilla rebuild3 contigs, Addendum E scorer vs guided gw_units_v3):** DNA atoms are CLOSER to guided than
+the RNA default iff R_G > 0.0736 AND P_G >= 0.2710. Descriptive mode comparison; no default changes.

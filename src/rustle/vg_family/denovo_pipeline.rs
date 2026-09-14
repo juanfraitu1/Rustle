@@ -3699,6 +3699,41 @@ pub fn families_from_reps(
     Ok(families_from_reps_certified(reps, refine, gamma, min_copies, min_reads)?.0)
 }
 
+/// The grouping of [`families_from_reps`] on an edge list the caller already has, instead of aligning `reps`.
+///
+/// `edges` are `(i, j, identity, coverage)` over `reps` indices. An edge is kept iff `i != j`, identity >=
+/// `min_identity` and coverage >= `min_coverage`; kept edges carry weight 1.0 into `gamma_quasi_clique_partition`,
+/// and each block goes through `distinct_locus_reps_grouped(min_reads)` and the >= `min_copies` rule — the path
+/// `families_from_reps_certified` takes with its defaults (no coverage split, unweighted partition). Lets a DNA
+/// front end use segmental-duplication alignments it already has as `E_r` (prereg Addendum J2).
+pub fn families_from_edges(
+    reps: Vec<DenovoTranscript>,
+    edges: &[(usize, usize, f64, f64)],
+    min_identity: f64,
+    min_coverage: f64,
+    gamma: f64,
+    min_copies: usize,
+    min_reads: usize,
+) -> Vec<Vec<DenovoTranscript>> {
+    let kept: BTreeSet<(usize, usize)> = edges
+        .iter()
+        .filter(|&&(i, j, id, cov)| i != j && i < reps.len() && j < reps.len() && id >= min_identity && cov >= min_coverage)
+        .map(|&(i, j, _, _)| (i.min(j), i.max(j)))
+        .collect();
+    let weighted: Vec<(usize, usize, f64)> = kept.iter().map(|&(i, j)| (i, j, 1.0)).collect();
+    let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &weighted, gamma);
+    let mut out = Vec::new();
+    for block in blocks {
+        let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
+        let loci: Vec<DenovoTranscript> =
+            distinct_locus_reps_grouped(copies, min_reads).into_iter().map(|(t, _)| t).collect();
+        if block.len() >= min_copies && loci.len() >= min_copies {
+            out.push(loci);
+        }
+    }
+    out
+}
+
 /// THE STRUCTURAL CERTIFICATE of ONE emitted family, computed on the graph whose nodes are the family's
 /// EMITTED copies (post `coverage_split_block`, post `distinct_locus_reps` — see
 /// `distinct_locus_reps_grouped` for why the node set matters).
@@ -11413,6 +11448,49 @@ mod tests {
         retain_non_mischain(&mut txs, &j, "test");
         assert_eq!(txs.len(), 1);
         assert_eq!(txs[0].start, 0, "the well-supported large gene survives; the mis-chain is dropped");
+    }
+
+    fn locus_at(chrom: &str, start: u64, end: u64) -> DenovoTranscript {
+        DenovoTranscript {
+            tid: format!("DNA_{chrom}_{start}_{end}"),
+            chrom: chrom.into(),
+            start,
+            end,
+            n_reads: 1,
+            strand: '+',
+            ..Default::default()
+        }
+    }
+
+    /// Two dense groups joined by nothing come out as two families; an edge under either floor, a self-edge and
+    /// an out-of-range index are ignored; a lone pair still makes a 2-copy family.
+    #[test]
+    fn families_from_edges_applies_both_floors_and_groups_by_the_partition() {
+        let reps: Vec<DenovoTranscript> = (0..6).map(|k| locus_at("c1", k * 100_000, k * 100_000 + 20_000)).collect();
+        let edges = vec![
+            (0, 1, 0.95, 0.90), (1, 2, 0.95, 0.90), (0, 2, 0.95, 0.90), // family {0,1,2}
+            (3, 4, 0.99, 0.60),                                         // family {3,4}
+            (2, 3, 0.79, 0.90),                                         // identity below floor
+            (4, 5, 0.95, 0.49),                                         // coverage below floor
+            (5, 5, 1.00, 1.00),                                         // self-edge
+            (5, 9, 1.00, 1.00),                                         // out of range
+        ];
+        let mut fams = families_from_edges(reps, &edges, 0.80, 0.50, 0.20, 2, 0);
+        fams.sort_by_key(|f| std::cmp::Reverse(f.len()));
+        let starts: Vec<Vec<u64>> = fams.iter().map(|f| {
+            let mut s: Vec<u64> = f.iter().map(|t| t.start).collect();
+            s.sort_unstable();
+            s
+        }).collect();
+        assert_eq!(starts, vec![vec![0, 100_000, 200_000], vec![300_000, 400_000]]);
+    }
+
+    /// Overlapping nodes are one locus, so a block of two overlapping nodes is not a family (< 2 distinct loci).
+    #[test]
+    fn families_from_edges_requires_two_distinct_loci() {
+        let reps = vec![locus_at("c1", 0, 20_000), locus_at("c1", 10_000, 30_000)];
+        let fams = families_from_edges(reps, &[(0, 1, 0.99, 0.90)], 0.80, 0.50, 0.20, 2, 0);
+        assert!(fams.is_empty());
     }
 
     #[test]

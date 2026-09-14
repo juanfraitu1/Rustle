@@ -19064,3 +19064,87 @@ Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/lit/{arms/,dna/,lit_modes.{p
 `rebuild3/{cat_bridge.*,score_bridge.{py,out}}`. Tests: lib 838 passed / 0 failed / 19 ignored; the `er_rule_rows`
 doctest failure predates this change (indented shell line in a doc comment, 2026-08-14).
 Related: §6jg, §6jh, §6j5, [[project_denovo_vs_annotated_gap]].
+
+## §6jj — RNA fragmentation levers fail the gap hold-out; copy-level DNA nodes (SD atoms) put 4.9x more guided loci in families and are far closer to guided (2026-09-13)
+
+Pre-registered as Addendum J (`docs/PREREG_core_definition_2026-09-12.md`, md5 b345104c) before any arm ran.
+
+### J1 — RNA fragmentation
+
+**Diagnosis (R0, human lit windows).** Each NPIP gene is one dominant spliced model (22/22 genes' main model, mostly
+in one family) plus single-exon debris; the debris is mostly '+' pieces inside '-' genes, and the same ~2.4 kb piece
+recurs across genes (one family holds it in NPIPA5/A8/A9/B3/B7/B13). This is §6as's strand placeholder and §6cj's
+"dominant locus plus debris"; neither lever had been judged on the de novo <-> guided gap.
+
+| arm | present | mean copies / record | mean families / record | collapsed | missing |
+|---|---|---|---|---|---|
+| R0 default | 30 | 2.77 | 2.57 | 0 | TBC1D3 |
+| F1 `COLLAPSE_UNSTRANDED` | 29 | 2.07 | **2.00** | 0 | TBC1D3, TBC1D3B |
+| F2 `READ_STRAND` | 29 | 2.55 | 2.45 | 0 | TBC1D3, TBC1D3B |
+| F4 `LOCUS_LINK_MIN_READS=10` | 30 | 2.70 | 2.53 | 0 | TBC1D3 |
+| F5 = F1 + F4 | 29 | 2.03 | 1.97 | 0 | TBC1D3, TBC1D3B |
+
+NPIP Level A (shared set, n = 22):
+
+| arm | L1 sens | L1 prec | L1 bip micro R / P | L2 sens | L2 prec | L2 bip micro R / P | L2 exact |
+|---|---|---|---|---|---|---|---|
+| R0 | 0.532 | 0.489 | 0.455 / 0.588 | 0.562 | 0.066 | 0.364 / 0.364 | 1/13 |
+| F1 | 0.349 | 0.473 | 0.409 / 0.562 | 0.438 | 0.075 | 0.409 / 0.429 | 1/13 |
+| F2 | 0.405 | 0.477 | 0.409 / 0.529 | 0.438 | 0.065 | 0.409 / 0.409 | 1/13 |
+| F4 | 0.484 | 0.500 | 0.500 / 0.611 | 0.375 | 0.049 | 0.318 / 0.318 | 0/13 |
+| F5 | 0.302 | 0.469 | 0.364 / 0.533 | 0.250 | 0.049 | 0.364 / 0.381 | 0/13 |
+
+F1, F2 and F5 lose TBC1D3B, so the fixed selection excludes them; the candidate is **F4** (one linked merge, 2.57 ->
+2.53). **Gorilla hold-out: FAILS** — cat_link10 R_G 326/4469 = 0.0729 (bar > 0.0736), P_G 0.3190, ARI 0.4196, 68
+families, 389 copies, 178 loci with a family copy; housekeeping 0/3 (as default). Register row 816. F1's larger drop
+in fragmentation was not taken to hold-out (excluded by the pre-registered selection for losing TBC1D3B).
+
+### J2 — copy-level DNA nodes
+
+**Method** (`bench/dna_sd_atoms.py`; `families_from_edges` + `stage_f_falsemerge_evidence_dump` phase `sd_partition`):
+atoms = maximal runs of identical SD-coverage signature between SD alignment boundaries, slivers < 1 kb absorbed into
+the most similar touching neighbour; edges = the SD alignments projected onto atoms (identity from matches /
+(matches + mismatches), checked against fracMatch on every row); families = production grouping (identity >= 0.80,
+coverage >= 0.50, gamma 0.20, distinct loci, >= 2 copies). Implementation reading disclosed: an absorbed sliver takes
+its neighbour's signature, and touching atoms left with identical signatures are re-merged. No minimap2: human atoms
+0.2 s, gorilla 1.7 s (D1: 102 min).
+
+**Development (human lit).** 560 atoms (median 3.5 kb), 5,294 SD-supported pairs, 92 families. NPIPA1 is one 15.2 kb
+atom covering the gene; longer genes span several atoms.
+
+| arm | present | mean atoms / record | mean families / record | collapsed |
+|---|---|---|---|---|
+| D1 region nodes (§6ji) | 31 | 1.00 | 1.00 | 21 |
+| **D2 atoms** | 31 | 4.00 | 3.90 | **0** |
+| D2s atoms, coverage of shorter (secondary) | 31 | 4.06 | 3.06 | 0 |
+| G guided | 31 | 1.00 | 1.00 | 0 |
+
+Best-overlap families: all 22 NPIP genes' main atoms in one family (27 atoms), all 9 TBC1D3 in another (16 atoms) —
+**Level A identical to guided** on both families (NPIP L1 sens 1.000 prec 0.545, bip micro 0.682; L2 micro 0.182).
+**Pre-registered reading: the NPIPA/NPIPB separation does NOT hold at copy level** (collapse 0 <= 5, but L1
+precision 0.545 < 0.775; register row 817). D1's A/B separation (§6ji) came from region-level nodes, i.e. flanking
+duplicon context, not from the genes' own sequence.
+
+**Hold-out (gorilla rebuild3, Addendum E scorer vs guided gw_units_v3).**
+
+| catalog | families | copies | loci with family copy | R_G | P_G | ARI (own loci) |
+|---|---|---|---|---|---|---|
+| RNA cat_default | 68 | 391 | 178 | 0.0736 | 0.3210 | 0.4224 |
+| RNA cat_union | 94 | 433 | 185 | 0.0911 | 0.3772 | 0.5061 |
+| **DNA atoms** | 1,292 | 6,088 | **866** | **0.5585** | **0.4672** | 0.4480 |
+| DNA atoms, coverage of shorter (secondary) | 986 | 6,787 | 899 | 0.6183 | 0.4734 | 0.4536 |
+
+**Pre-registered reading: DNA atoms are CLOSER to guided than the RNA default** (R_G 0.5585 > 0.0736, P_G 0.4672 >=
+0.2710). Robustness (not pre-registered): one best-overlap family per guided locus gives R_G 0.3661 vs 0.0651 and P_G
+0.5362 vs 0.3360 (union 0.0803 / 0.3902). Housekeeping: ATP5F1A overlaps a DNA-atom family (1/3; RNA catalogs 0/3).
+ARI is on each catalog's own covered loci and is not comparable across rows.
+
+**Reading.** Node presence is the gap (§6je): SD atoms give 866 of 1,048 guided loci a family copy against RNA's 178,
+and on NPIP/TBC1D3 reproduce guided exactly without annotation. Caveats: guided families come from gene-sequence
+alignment, so agreement with a DNA-homology mode is partly expected; DNA atoms include copies that are not expressed
+and cannot say which are; the atom resolution is set by SD boundaries (genes > ~20 kb span several atoms); one
+housekeeping gene enters a family (to inspect).
+
+Data: `lit/{arms/F*,arms/D2*,dna2/,lit_modes_j.{py,out}}`, `rebuild3/{dna/,cat_dna_atoms*,cat_link10.*,score_j.*,
+score_link10.*,housekeeping3.py}`. Tests: lib 840 passed / 0 failed / 19 ignored (2 new).
+Related: §6as, §6cj, §6ck, §6je, §6ji, [[project_denovo_vs_annotated_gap]].

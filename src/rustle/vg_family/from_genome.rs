@@ -518,8 +518,48 @@ mod tests {
             "bridge" => fm_bridge(&root),
             "pairs" => fm_pairs(&root),
             "decompose" => fm_decompose(),
+            "sd_partition" => fm_sd_partition(),
             other => panic!("unknown RUSTLE_FM_PHASE {other}"),
         }
+    }
+
+    /// SD-atom phase (prereg Addendum J2): `families_from_edges` on atoms (`$RUSTLE_FM_NODES`: `idx chrom start end`,
+    /// header) and weighted edges (`$RUSTLE_FM_EDGES`: `i j identity coverage`, header), floors 0.80 / 0.50,
+    /// gamma 0.20, min_copies 2, min_reads 0. Writes a `copies.tsv`-shaped table to `$RUSTLE_FM_FAMILIES_OUT`.
+    fn fm_sd_partition() {
+        use crate::vg_family::denovo_pipeline::families_from_edges;
+        use std::fmt::Write as _;
+        let nodes_path = std::env::var("RUSTLE_FM_NODES").expect("RUSTLE_FM_NODES");
+        let edges_path = std::env::var("RUSTLE_FM_EDGES").expect("RUSTLE_FM_EDGES");
+        let out_path = std::env::var("RUSTLE_FM_FAMILIES_OUT").expect("RUSTLE_FM_FAMILIES_OUT");
+        let mut reps = Vec::new();
+        for line in std::fs::read_to_string(&nodes_path).unwrap().lines().skip(1) {
+            let f: Vec<&str> = line.split('\t').collect();
+            let (Ok(s), Ok(e)) = (f[2].parse::<u64>(), f[3].parse::<u64>()) else { panic!("bad node row {line}") };
+            assert_eq!(f[0].parse::<usize>().unwrap(), reps.len(), "node indices must be 0..n in order");
+            reps.push(DenovoTranscript {
+                tid: format!("DNA_{}_{s}_{e}", f[1]),
+                chrom: f[1].to_string(), start: s, end: e, n_reads: 1, strand: '+',
+                introns: vec![], seq: vec![], distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            });
+        }
+        let mut edges = Vec::new();
+        for line in std::fs::read_to_string(&edges_path).unwrap().lines().skip(1) {
+            let f: Vec<&str> = line.split('\t').collect();
+            edges.push((f[0].parse::<usize>().unwrap(), f[1].parse::<usize>().unwrap(),
+                        f[2].parse::<f64>().unwrap(), f[3].parse::<f64>().unwrap()));
+        }
+        let n_nodes = reps.len();
+        let mut fams = families_from_edges(reps, &edges, 0.80, 0.50, 0.20, 2, 0);
+        fams.sort_by(|a, b| b.len().cmp(&a.len()).then((&a[0].chrom, a[0].start).cmp(&(&b[0].chrom, b[0].start))));
+        let mut out = String::from("family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tmax_family_identity\n");
+        for (fi, fam) in fams.iter().enumerate() {
+            for (ci, t) in fam.iter().enumerate() {
+                writeln!(out, "SDFAM{fi}\t{ci}\t{}\t{}\t{}\t{}\t1\t+\t1\t{}-{}\tNA", t.tid, t.chrom, t.start, t.end, t.start, t.end).unwrap();
+            }
+        }
+        std::fs::write(&out_path, out).unwrap();
+        eprintln!("[stage_f:sd_partition] {n_nodes} atoms, {} edges -> {} families", edges.len(), fams.len());
     }
 
     fn fm_dump(root: &str) {
