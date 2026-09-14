@@ -672,3 +672,64 @@ Each class: Addendum Q's reference-projected alignment (reference = most total a
 AMY v1 (AMY1, AMY2, pancreatic-like) and v2 (AMY1, AMY2, AMY2Ap).
 **Readings (descriptive):** per family and class, recovered counts over the reference and leave-out runs, plus
 "either class"; expectation stated in advance from the literature — NPIP subfamilies from introns, AMY types from exons.
+
+---
+## ADDENDUM T (2026-09-13, after §6jr; before any number below exists) — guided fixes F1-F4, one tool, re-run on NPIP/TBC1D3/AMY v2
+
+**Why (user):** apply all necessary fixes so the approach works in guided (this addendum) and de novo (next).
+**Tool:** `bench/guided_pipeline.py` — builds seed units and gene-body queries from the GFF, aligns them, runs the
+leave-out, scores, and builds trees; no exec-reuse of earlier scripts. Its seed units must be identical to the units
+used in §6jm-§6jr (checked; a mismatch aborts).
+
+**F2 — gene-body query = CDS envelope.** Per gene: first to last coding base over all its transcripts' CDS features; if
+no CDS, the exon envelope of the seed unit's transcript; if none, the gene span. Genomic sequence in transcript
+orientation; `minimap2 -c -x asm20 -N 100 -p 0.1`. Chaining, identity >= 0.80 and aligned >= 0.50 x min(L_q, L_t),
+extrapolation and exon projection exactly as Addendum O (exons = union exons clipped to the envelope). Truth widths
+stay the RefSeq gene span; blocking stays seed gene spans.
+
+**F1 — candidate construction.** (1) Transcript hits (Addendum M floors) are leader-clustered: in decreasing nmatch,
+a hit joins the first leader whose span it overlaps by >= 0.50 of BOTH spans (reciprocal), else becomes a leader.
+(2) Gene-body chains likewise, on clip spans. (3) A transcript leader and a chain leader are the same locus iff their
+spans overlap reciprocally >= 0.50, or the transcript leader lies >= 0.90 inside the chain's extrapolated span and that
+chain contains no other transcript leader; components by union-find. Each component is one candidate: family and width
+from its highest-nmatch transcript leader if any (hybrid width), else from its highest-nmatch chain (clip span).
+Reported next to M0 and G1 as in §6jr (their single-linkage construction unchanged) and to §6jr's U.
+
+**F3 — tree reference member.** The member aligned (>= 1 record in the all-vs-all) to the most other members; ties ->
+most total aligned bases -> name. The all-gap guard stays.
+
+**F4 — subfamily step.** Exon and intron classes as Addendum S (intron class = gene-body unit minus exons: seeds and
+reference records use the F2 envelope minus union exons; candidates their chain's extrapolated span minus projected
+exons, else transcript span minus exon blocks). Reference-projected alignment + IQ-TREE, SH-aLRT > 75; clades reported per
+class and "either".
+
+**Bars (fixed):** (B1) for NPIP, TBC1D3 and AMY v2, U sensitivity >= max(M0, G1) - 0.02 at BOTH keep 50% and keep 1,
+family-named precision >= 0.95, 0 cross-family; (B2) either-class clade recovery counts >= §6jr's for every literature
+group (NPIP six groups; AMY v2 AMY1, AMY2, AMY2Ap), counting reference and leave-out runs; (B3) TBC1D3 positional split
+not supported in the exon tree in all runs. A failed bar is reported with its mechanism; nothing is tuned here.
+
+---
+## ADDENDUM U (2026-09-13, after Addendum T's results; post-hoc fixes, disclosed) — chain-first candidates; gene-span intron sequence
+
+**T outcome that motivates U:** B1 PASS on NPIP, TBC1D3, AMY v2 (U sensitivity 1.000 at both levels, no over-merge);
+B3 PASS; **B2 FAIL** — either-class clade counts below §6jr for NPIP A6-9 (8 vs 10), B3-5 (9 vs 11), B6-9 (10 vs 11),
+B12/13 (10 vs 11) and AMY AMY1 (8 vs 10), AMY2 (3 vs 5). Diagnosed: (i) DUPLICATE candidates — transcript hits spanning
+22-73 kb whose first exon aligns to another copy (AMY) and partial transcript hits (NPIP) are not reciprocal-overlap
+merged with the locus's gene-body chain, so one locus enters trees twice (NPIP keep-50% candidates 25.6 vs 15.6; AMY
+keep-1 12.8 for 11 hidden); (ii) the INTRON class was built on the CDS envelope (F2), shorter than the gene span §6jr used.
+
+**U1 — chain-first construction (replaces F1).** Gene-body chains (F2 CDS-envelope queries) are leader-clustered by
+reciprocal overlap >= 0.50 on clip spans; each chain leader is a locus. Each transcript hit (decreasing nmatch) is
+ATTACHED to the chain leader whose extrapolated span contains >= 0.90 of it (largest overlap, then highest nmatch);
+a transcript hit that overlaps any chain leader's extrapolated span but is not contained is DISCARDED (mis-chained or
+partial); transcript hits overlapping no chain leader are leader-clustered by reciprocal overlap and form
+transcript-only loci. Candidate width and family: the best attached transcript hit if any, else the chain (clip span);
+transcript-only loci use their leader.
+**U2 — intron sequence from the gene span.** Seeds' annotated gene spans are also aligned (`asm20`, as `genespan.paf`
+of §6jo) and chained (Addendum O). Intron class: seeds/reference records = annotated gene span minus union exons (§6jr);
+candidates = the extrapolated span of the gene-span chain overlapping the candidate most, minus that seed's union exons
+projected through it; if none, the CDS-envelope chain's; if none, transcript span minus its exon blocks. Exon class as T.
+F2 (finding), F3 (tree reference) unchanged.
+**Bars:** B1, B2, B3 exactly as Addendum T, plus **B4**: hidden records overlapped by more than one candidate <= 5% of
+recovered hidden records at both levels. Families NPIP, TBC1D3, AMY v2. Development only — the same families shaped
+these fixes, so a pass here is not validation; the de novo hold-out follows.
