@@ -1179,3 +1179,24 @@ pairwise sensitivity and precision; bipartite micro recall and precision (`guide
 **Goal bars (declared now, to be met on a HELD-OUT substrate before claiming them):** pairwise sensitivity >= 0.90,
 pairwise precision >= 0.90, bipartite F >= 0.90, on the RNA-level truth. A rule change is adopted only after passing its
 own pre-registered bar on a substrate not used to design it.
+
+---
+## ADDENDUM W (2026-09-14, after §6jt; before any simulated read exists) — can de novo find all amylase loci when every locus is expressed? (simulated IsoSeq)
+
+**Why (user):** in real testis IsoSeq the amylase window was sparse (3,205 primary reads) and de novo missed loci (DN0 9/12,
+DN1 11/12). Simulation removes expression as the limit and asks whether node construction + E_r finds every copy.
+**Truth:** AMY v2 (12 loci, `lit/amy_lo_v2/truth.tsv`).
+**Source transcripts (fixed now):** every exon-bearing RefSeq transcript of the 12 loci (spliced, transcript orientation),
+except LOC124905662, whose model is its exons 2-8 (v2 correction, §6jr); AMYP1 (no model) = the exon blocks of the best
+`minimap2 -x splice` alignment of AMY2A NM_000699.4 inside the AMYP1 span with identity >= 0.80, else its unspliced span.
+**Reads:** `bench/sim_reads.simulate_reads` (substitution 0.003, indel 0.0008, end-truncation up to 30%, deterministic
+seeds), reads >= 300 bp; depth PRIMARY 40 reads per locus split evenly over its transcripts, SECONDARY 10 per locus.
+Named `SIMAMY|<locus>|<transcript>|<i>`. Aligned `minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes` to
+CHM13 (prebuilt k15/w10 index, disclosed), sorted and indexed.
+**Arms:** DN0 `gw_family_catalog --homology-primary` and DN1 = DN0 + `RUSTLE_ER_UNION_GENOMIC_SPAN=1`, at both depths.
+**Scores:** `bench/denovo_subfamilies.py` (presence, families and copies per record, collapse, family-level pairwise
+sensitivity/precision and bipartite, exon/intron clades AMY1, AMY2, AMY2Ap); read level: fraction of primary alignments
+on the source locus and MAPQ distribution per locus type.
+**Readings (fixed):** an arm FINDS ALL AMYLASE LOCI iff 12/12 present, 0 collapsed, and family-level pairwise sensitivity
+and precision both 1.000 (all 12 in one family, nothing else in it); otherwise the missing/split loci are listed with
+their read-level placement. Descriptive otherwise.

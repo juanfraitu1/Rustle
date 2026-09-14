@@ -20373,3 +20373,41 @@ here is a held-out claim.
   - Soft clipping is negligible (§ answer to user: median clip 0 bp; > 50 bp in 1.5% / 1.0% of reads at truth loci;
     supplementary 0.8%).
 - **Not a sequence-family truth:** HGNC gene groups (§6kg).
+
+## §6ju — Simulated IsoSeq: de novo finds all 12 amylase loci in one family at 40 and 10 reads per locus; the real-data misses were expression (2026-09-14)
+
+Pre-registered as Addendum W (`docs/PREREG_core_definition_2026-09-12.md`, md5 207f253e). `bench/amy_sim.py`.
+Sources: 21 transcripts over the 12 AMY v2 loci (RefSeq models; LOC124905662 clipped to exons 2-8; AMYP1 = AMY2A
+NM_000699.4 projected onto its span, 7 exons, 1,060 bp, identity 0.999). Reads: `sim_reads.simulate_reads` (sub 0.003,
+indel 0.0008, <= 30% end truncation), 40 and 10 per locus, `minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1
+--secondary=yes` to CHM13.
+
+**Read placement (primary alignments, 40 per locus):** AMY2A, AMY2B and LOC124905662 40/40 on their own locus (MAPQ > 0);
+every AMY1-type read is MAPQ 0 and its primary lands on the right copy 0-8 times in 40 (LOC128966570: 0); AMYP1 17/40
+and LOC124905664 22/40 (MAPQ 0 — their exonic sequence is identical).
+
+**De novo (binary 54154909):**
+
+| depth | arm | copies / families | present | collapsed | family-level pairwise sens / prec | bipartite R / P | E_r edges |
+|---|---|---|---|---|---|---|---|
+| 40 / locus | DN0 | 12 / 1 | **12/12** | 0 | **1.000 / 1.000** | 1.000 / 1.000 | 66 |
+| 40 / locus | DN1 (span union) | 12 / 1 | 12/12 | 0 | 1.000 / 1.000 | 1.000 / 1.000 | 66 + 0 |
+| 10 / locus | DN0 | 12 / 1 | **12/12** | 0 | **1.000 / 1.000** | 1.000 / 1.000 | 66 |
+| 10 / locus | DN1 | 12 / 1 | 12/12 | 0 | 1.000 / 1.000 | 1.000 / 1.000 | 66 + 0 |
+
+Each copy lies on a distinct locus with the expected structure (10-11 exons for AMY1/AMY2 loci, 7 for LOC124905662,
+LOC124905664, AMYP1), including LOC128966570, whose primaries all went elsewhere (built from tied secondary
+placements). **Pre-registered reading: DN0 and DN1 FIND ALL AMYLASE LOCI at both depths.** The genomic-span union adds
+no edge here: transcript E_r is already complete when every copy is expressed.
+
+**Clades (exon and intron trees on the de novo copies):** AMY1 recovered in both classes at both depths. The exon tree
+separates {7 AMY1} (100/100) from {AMY2B, AMY2A, LOC124905662, LOC124905664, AMYP1} (99.3/100), with AMYP1 and
+LOC124905664 identical; the pre-registered AMY2 and AMY2Ap groups are therefore "no split" only because the truth types
+AMYP1 apart from the partial AMY2A copies it is sequence-identical to (its simulated model is AMY2A-derived).
+
+**Reading.** With every copy expressed, de novo recovers the whole amylase family and its salivary/pancreatic split from
+reads alone, even though every AMY1-type read is multi-mapping. The real testis result (DN0 9/12, DN1 11/12, §6jt) is an
+expression limit, not a node-construction or E_r limit. Caveats: reads come from annotated models with equal
+expression and no pre-mRNA, chimeras or 5' heterogeneity beyond truncation; AMYP1's model is homology-derived.
+
+Data: `lit/amy_sim/{d40,d10}/{sources.fa,sim.bam,placement.tsv,DN0.*,DN1.*,*.d2.out,trees_*}`.
