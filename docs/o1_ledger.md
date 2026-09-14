@@ -20460,3 +20460,46 @@ Further development arms on substrate 1 (RNA truth, guided construction), none a
 Arms:
 - D (end-split read nodes + guided construction) vs the confirmed triangle rule, on the RNA truth;
 - G (50% annotation + discovery + construction) vs seeds only and all annotated, on the DNA truth.
+
+## §6kk — Addendum AH held-out: the read-gene-node definition raises recall and bipartite F over triangle on both substrates but fails the precision guard; guided minimal annotation passes on gorilla s3, misses by 0.013 on human; no de novo or minimal-annotation arm reaches the 0.90 goal bars (2026-09-14)
+
+Pre-registered as Addendum AH (md5 8da9e111; code aa869a08 / 8dd034a8). The background driver was killed by the harness
+("low memory" with 24 GB available, the known WSL quirk) after the s3 triangle step. The remaining steps ran as foreground
+batches (`lit/batch_align.sh`), with commands unchanged. Scoring: `bench/rna_truth.py score`.
+
+**D — de novo** (RNA-level truth):
+
+| substrate | arm | pair sens | pair prec | bipartite R / P / F | reading |
+|---|---|---|---|---|---|
+| gorilla s3 (352 loci, 137 clusters, 430 pairs) | triangle (Rust opt-in, 99 families) | 0.251 | 0.740 | 0.560 / 0.934 / 0.700 | comparator |
+| | **D** (2,563 read gene nodes → 82 families) | 0.456 | 0.571 | 0.645 / 0.904 / **0.753** | F > 0.700 ✓; prec 0.571 < 0.690 ✗ → **NOT SUPPORTED** |
+| human (806 loci, 204 clusters, 17,421 pairs) | triangle | 0.055 | 0.770 | 0.412 / 0.867 / 0.558 | comparator |
+| | **D** (4,831 nodes → 251 families) | 0.146 | 0.432 | 0.479 / 0.834 / **0.608** | F > 0.558 ✓; prec 0.432 < 0.720 ✗ → **NOT SUPPORTED** |
+
+**G — guided with 50% of the annotation** (DNA-level truth):
+
+| substrate | arm | pair sens | pair prec | bipartite R / P / F | reading |
+|---|---|---|---|---|---|
+| gorilla s3 (956 loci, 311 clusters, 1,892 pairs) | all annotated | 0.895 | 0.862 | 0.933 / 0.965 / 0.949 | ceiling |
+| | seeds only (2,394 seeds) | 0.242 | 0.615 | 0.543 / 0.912 / 0.681 | comparator |
+| | **G** (+421 candidates) | 0.561 | 0.653 | 0.707 / 0.909 / **0.795** | F >= 0.781 ✓; prec >= 0.565 ✓ → **SUPPORTED** |
+| human (1,818 loci, 435 clusters, 35,594 pairs) | all annotated | 0.967 | 0.987 | 0.983 / 0.983 / 0.983 | ceiling (same construction on the same slice) |
+| | seeds only (2,986) | 0.210 | 0.595 | 0.523 / 0.881 / 0.656 | comparator |
+| | **G** (+595 candidates) | 0.343 | 0.684 | 0.644 / 0.880 / **0.743** | F 0.743 < 0.756 ✗; prec ✓ → **NOT SUPPORTED** |
+
+**GOAL bars** (pairwise sens >= 0.90, pairwise prec >= 0.90, bipartite F >= 0.90): met only by the definition on FULL
+annotation on human, and that is tautological, because the truth is that construction on that slice. On gorilla s3 even full
+annotation gives pair sens 0.895 / prec 0.862 (the slice vs the genome-wide catalog).
+
+**What the held-out results say, together with the ceiling experiments (§6kg-§6kh):**
+- (1) **De novo.** The read-gene-node rule moves de novo toward the truth on recall and bipartite matching. It buys that with
+  pairwise precision: MCL on read nodes merges more than triangle leaders do. Neither rule is near the goal.
+  - Even with perfect gene partition, RNA-only nodes are capped at bipartite F 0.873-0.893 on development, with pair
+    precision 0.80-0.84.
+  - The cap exists because guided edges rest partly on unexpressed exons, UTRs and introns.
+  - "Very high" agreement with an annotation-derived truth is not reachable from reads alone.
+- (2) **Guided with minimal annotation.** It recovers hidden copies (+0.09 to +0.11 F). Two things limit it:
+  - families with no annotated member are unreachable by construction (87/1,048 loci on development);
+  - path-connected members have no direct homology to any seed.
+- (3) **Goal status.** Only annotation-quality gene models reach the >= 0.90 bars.
+Register rows 829 (D), 830 (G human).

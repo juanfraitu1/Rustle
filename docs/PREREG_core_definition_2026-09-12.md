@@ -1200,3 +1200,29 @@ on the source locus and MAPQ distribution per locus type.
 **Readings (fixed):** an arm FINDS ALL AMYLASE LOCI iff 12/12 present, 0 collapsed, and family-level pairwise sensitivity
 and precision both 1.000 (all 12 in one family, nothing else in it); otherwise the missing/split loci are listed with
 their read-level placement. Descriptive otherwise.
+
+---
+## ADDENDUM AH (2026-09-14; before any held-out number below exists) — the node rule and guided minimal annotation on held-out substrates
+
+**Code frozen at commit aa869a08.** Development (substrate 1, ledger §6kg-§6ki) chose:
+**(D) de novo definition** = `bench/read_gene_nodes.py` nodes (strong 5'/3' end-site clipping, W = 50, FRAC = 0.5, >= 2-read
+linkage split) + the guided catalog's construction (`bench/node_graph_mcl.py`: all-vs-all `minimap2 -x asm20 -c -X -N 50
+-p 0.1` of node spans, chunks <= 3 Mb; `mcl_families --min-exonic-bp 1`; for human the human guided catalog's params,
+i.e. `--min-exonic-bp 0`).
+**(G) guided minimal annotation** = `bench/guided_min.py`: a random 50% of annotated genes on the substrate (seed 1) + candidates
+from seed gene-body chains (identity >= 0.70, aligned >= 0.30 of min(query, extrapolated span), 1 round) + the same
+construction (seed-seed pairs from the annotation PAF; human `--min-exonic-bp 0`).
+
+**Held-out substrates:** gorilla s3 = NC_073230.2 + NC_073228.2 (never used in AB-AG or development); human chr15/17/22 (used
+for AF-2 triangle confirmation only; never for the node rule or the guided minimal design).
+**Truths:** (D) the RNA-level truth of Addendum AG (`lit/truth_rna/rna_s3.clusters.tsv`, `rna_h.clusters.tsv`); (G) the DNA-level
+guided clusters on the substrate (all loci in clusters >= 2).
+**Comparators:** (D) triangle-supported leaders (the confirmed shared definition; gorilla s3 from the Rust opt-in binary
+`gw_family_catalog.sd_wip`, human from `lit/sharedef_H/tri.copies.tsv`); (G) the 50% seeds without candidates, and all
+annotated genes (ceiling).
+**Metrics:** `bench/rna_truth.py score` — pairwise sensitivity/precision and bipartite R/P/F.
+
+**Readings (fixed, each substrate separately, never pooled):**
+- D SUPPORTED iff bipartite F(D) > bipartite F(triangle) AND pairwise precision(D) >= pairwise precision(triangle) - 0.05.
+- G SUPPORTED iff bipartite F(G) >= bipartite F(seeds only) + 0.10 AND pairwise precision(G) >= pairwise precision(seeds only) - 0.05.
+- GOAL bars (Addendum AG), reported for every arm: pairwise sensitivity >= 0.90, pairwise precision >= 0.90, bipartite F >= 0.90.
