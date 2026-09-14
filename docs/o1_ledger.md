@@ -19828,3 +19828,50 @@ identity to the parent is below the 0.80 floor or below what `minimap2 -x splice
 protein-level alignment of the parent to the member, which was not part of this rule. Processed-pseudogene families pass
 8/8.
 Register row 821. Data: `lit/mechanism_z/{z.out,members.tsv}`.
+
+## §6jt — De novo: the genomic-span E_r union helps on the development windows and fails the gorilla hold-out's precision guard; exon/intron clades carried over (2026-09-14)
+
+Pre-registered as Addendum V (`docs/PREREG_core_definition_2026-09-12.md`, md5 145081d0). Binary 54154909. Tools:
+`RUSTLE_ER_UNION_GENOMIC_SPAN=1` (D1, opt-in), `bench/denovo_subfamilies.py` (D2, reusing `bench/guided_pipeline.py`'s trees).
+**Default unchanged and verified:** DN0 on `lit.bam` is byte-identical to §6jg's `dn_default` (copies.tsv md5 f801c72e,
+families.tsv md5 cd521899).
+
+**Development (human A119b IsoSeq, CHM13):**
+
+| window | arm | present | mean families / record | family-level pairwise sens / prec | bipartite micro R / P | clades recovered (either class) |
+|---|---|---|---|---|---|---|
+| NPIP/TBC1D3 (19 windows) | DN0 | 30/31 | 2.57 | 0.592 / 1.000 | 0.774 / 1.000 | NPIPA\|B, A6-9, B6-9, named NPIPB subfamily, CDKL |
+| NPIP/TBC1D3 | DN1 | 30/31 | 2.70 | **0.678** / 1.000 | **0.839** / 1.000 | same |
+| AMY (chr1:103.3-103.9 Mb) | DN0 | 9/12 | 2.22 | 0.318 / 1.000 | 0.583 / 1.000 | none (no family treeable) |
+| AMY | DN1 | **11/12** | **1.45** | **0.682** / 1.000 | **0.833** / 1.000 | **AMY1, AMY2, AMY2Ap** (intron class) |
+
+E_r edges: NPIP/TBC1D3 467 + 703 genomic-span = 1,170 (49 -> 43 families); AMY 50 + 24 = 74 (6 -> 5). The stated
+expectation (DN1 lowers NPIP families per record) did NOT hold (2.57 -> 2.70: more reps join families, so more copies
+per record). In both windows the NPIPA|NPIPB, A6-9, B6-9 and named-subfamily clades come from the INTRON class; the TBC1D3
+positional split is supported only by introns (as guided). AMY's de novo "intron" class is span minus the ASSEMBLED
+exons, so with sparse testis reads it still contains unassembled coding sequence — its type clades are not comparable
+to the guided exon result. Runtime: DN1 19 min vs DN0 2 min on the 19 windows.
+
+**Hold-out (gorilla rebuild3, 3 contigs, against expressed guided loci):**
+
+| arm | families | copies | loci with a family copy | R_G any | P_G any | R_G best | P_G best |
+|---|---|---|---|---|---|---|---|
+| DN0 (`cat_default`) | 68 | 391 | 151 | 0.3887 | 0.3345 | 0.3428 | 0.3588 |
+| DN1 (`cat_dn1_span`) | 88 | 570 | 179 | **0.4116** | **0.2760** | 0.3644 | 0.3435 |
+
+**Pre-registered decision: DN1 does NOT narrow the gap** — R_G rises (0.4116 > 0.3887) but P_G 0.2760 < 0.3345 - 0.05 =
+0.2845. Full guided: R_G 0.0779 vs 0.0736, P_G 0.2630 vs 0.3210. Housekeeping 0/3. E_r 1,840 + 1,772 span edges; runtime
+3 h 34 min vs 6 min 24 s (33x), 6.2 GB. Register row 818. The flag stays opt-in.
+
+**Reading.** Adding gene-body edges does what the guided results predicted on NPIP/TBC1D3/AMY windows (more of each family
+joined, precision held), but on a held-out substrate it admits enough wrong pairs to fail the precision bar, and it is too
+slow as implemented (a second all-vs-all on multi-kb spans). The guided version avoids both because its gene-body query is
+a seed's CDS envelope aligned to the genome, not every rep's full span to every other; a de novo equivalent would restrict
+span edges to rep pairs already linked by a transcript edge or LCS candidate, or use a CDS-like core of each rep. Not
+attempted here.
+
+Also recorded: `bench/guided_pipeline.py`'s tree step gained a guard while this round ran (an edit not made by this
+session, kept): trees with < 100 kept columns or rejected by IQ-TREE are reported as not treed. The guided §6js runs
+predate it; the de novo D2 numbers above were all produced with it.
+
+Data: `lit/dn_v/{lit_DN0,lit_DN1,amy_DN0,amy_DN1}.*`, `lit/dn_v/d2_*.out`, `rebuild3/{cat_dn1_span.*,dn1.err,score_v_expr.out,score_v_full.out}`.
