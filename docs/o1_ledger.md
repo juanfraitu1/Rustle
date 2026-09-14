@@ -20411,3 +20411,26 @@ expression limit, not a node-construction or E_r limit. Caveats: reads come from
 expression and no pre-mRNA, chimeras or 5' heterogeneity beyond truncation; AMYP1's model is homology-derived.
 
 Data: `lit/amy_sim/{d40,d10}/{sources.fa,sim.bam,placement.tsv,DN0.*,DN1.*,*.d2.out,trees_*}`.
+
+## §6ki — Guided mode with half the annotation hidden, genome slice: bipartite F 0.844 against the full guided truth; the definition on full annotation 0.968 (2026-09-14, development, substrate 1)
+
+`bench/guided_min.py`: a random 50% of the 4,465 annotated genes on NC_073241/42/44 (seed 1) are seeds. Hidden copies are
+found by seed gene-body chains to the three contigs (`gene_body_chains` rule, chains overlapping a seed dropped, leader
+clustering, seed exons projected through the chain). Nodes are seeds + candidates. The construction is the guided
+catalog's, on a graph that reuses the annotation all-vs-all PAF for seed-seed pairs and aligns candidate spans against all
+node spans. Truth: `gw_units_v3` clusters on the three contigs, all loci (DNA level): 1,048 loci, 280 clusters, 4,469
+pairs.
+
+| arm | members | pair sens | pair prec | bipartite R / P / F |
+|---|---|---|---|---|
+| all annotated genes (the definition on full annotation) | 1,025 | 0.962 | 0.976 | 0.953 / 0.984 / **0.968** |
+| 50% seeds only | 428 | 0.328 | 0.878 | 0.549 / 0.921 / 0.688 |
+| + candidates, discovery identity >= 0.80, cov >= 0.50 (471) | 960 | 0.744 | 0.879 | 0.745 / 0.923 / 0.825 |
+| **+ candidates, identity >= 0.70, cov >= 0.30 (537)** | 1,028 | **0.797** | 0.865 | 0.770 / 0.933 / **0.844** |
+| same, 3 rounds (candidates seed further search; 855) | 1,345 | 0.798 | 0.863 | 0.769 / 0.926 / 0.840 |
+
+**Where the remaining loss sits** (0.70 arm):
+- 149 hidden truth loci are never found. 87 of them belong to families where NO member was a seed; with random 50% seeds
+  that is unavoidable, since 166 of 280 truth families have two members. 62 are genuine discovery misses.
+- The substrate slice itself costs the full-annotation arm 0.03 F. The construction runs on three contigs instead of
+  genome-wide, and core refinement is absent.
