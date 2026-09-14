@@ -135,9 +135,10 @@ def depth2_exons(block_lists):
     return gp.merge(ex)
 
 
-def split_linked(segments, block_lists):
-    """Addendum AF-3: connected components of segments linked by >= 2 reads overlapping both; yields
-    (segment indices, supporting read count) in order of each component's first segment."""
+def split_linked(segments, block_lists, alpha=0.0):
+    """Addendum AF-3: connected components of segments linked by >= 2 reads overlapping both (and, with alpha > 0, by
+    >= alpha of the reads touching the less-covered of the two); yields (segment indices, supporting read count) in
+    order of each component's first segment."""
     touch = []
     for blocks in block_lists:
         t = sorted({k for k, (s0, e0) in enumerate(segments) for b0, b1 in blocks if b0 < e0 and s0 < b1})
@@ -154,8 +155,9 @@ def split_linked(segments, block_lists):
             parent[x] = parent[parent[x]]
             x = parent[x]
         return x
+    per_seg = collections.Counter(k for t in touch for k in t)
     for (i, j), n in sorted(link.items()):
-        if n >= 2:
+        if n >= 2 and n >= alpha * min(per_seg[i], per_seg[j]):
             parent[find(j)] = find(i)
     comps = collections.defaultdict(list)
     for k in range(len(segments)):
@@ -177,7 +179,7 @@ def cmd_readloci(a):
     reads = []
     for c in CONTIGS:
         for r in bam.fetch(c):
-            if r.is_unmapped or r.is_secondary or r.is_supplementary or r.mapping_quality < 1:
+            if r.is_unmapped or r.is_secondary or r.is_supplementary or r.mapping_quality < a.min_mapq:
                 continue
             strand = "-" if r.is_reverse else "+"
             if r.has_tag("ts") and r.get_tag("ts") == "-":
@@ -224,7 +226,7 @@ def cmd_readloci(a):
         c, strand = reads[members[0]][0], reads[members[0]][1]
         ex = depth2_exons([reads[i][2] for i in members])
         if a.split:
-            for seg_ids, sup in split_linked(ex, [reads[i][2] for i in members]):
+            for seg_ids, sup in split_linked(ex, [reads[i][2] for i in members], a.alpha):
                 sub = [ex[k] for k in seg_ids]
                 if sup < 3 or sum(e0 - s0 for s0, e0 in sub) < MIN_PIECE:
                     continue
@@ -644,6 +646,8 @@ def main():
     p.add_argument("--base", default="ab2")
     p.add_argument("--out", default="ac")
     p.add_argument("--split", action="store_true", help="Addendum AF-3: split chained read groups")
+    p.add_argument("--min-mapq", type=int, default=1, help="read MAPQ floor (default 1 = Addenda AC/AF)")
+    p.add_argument("--alpha", type=float, default=0.0, help="relative link floor for --split (0 = Addendum AF-3)")
     p = sub.add_parser("align")
     p.add_argument("--outdir", required=True)
     p.add_argument("--kind", choices=("tx", "body"), required=True)

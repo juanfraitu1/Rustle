@@ -20295,3 +20295,46 @@ the target contig order).
 - Fresh s2: FN 187 (106 node present but in no family, 67 missing node, 14 split); FP 20.
 - Node correspondence on s1: 289/304 truth loci have a node; 100 are overlapped by >= 2 nodes; best-node span Jaccard
   median 0.64; 46 nodes are the best node of >= 2 truth loci (8 span two truth clusters).
+
+## §6kg — AF-1 default byte-identity PASS; the ceiling: annotation-quality nodes give bipartite F 0.955 under the guided construction, de novo nodes 0.726 — node construction is the bottleneck (2026-09-14)
+
+**AF-1 default path.** `gw_family_catalog` built from this branch, without `RUSTLE_SHARED_DEFINITION`, on the fresh
+substrate: `copies.tsv`, `families.tsv`, `pairs.tsv` and `copies.fa` are all byte-identical to `catF_default` (binary
+54154909). The full library test run is still pending.
+
+**Ceiling experiment (development, substrate 1; RNA-level truth of Addendum AG).** `bench/node_graph_mcl.py` runs the
+guided catalog's own construction on any node set: all-vs-all `minimap2 -x asm20 -c -X -N 50 -p 0.1` of node spans, then
+`mcl_families --min-exonic-bp 1` (identity >= 0.70, cov_longer >= 0.30 on exonic lengths, >= 300 bp, MCL I = 2.8).
+
+| node set | families | pair sens | pair prec | bipartite R / P / F |
+|---|---|---|---|---|
+| LCS union catalog (reference) | 94 | 0.412 | 0.409 | 0.530 / 0.782 / 0.631 |
+| triangle (shared definition, §6kd) | 76 | 0.522 | 0.385 | 0.592 / 0.804 / 0.682 |
+| DNA SD atoms (§6jk) | — | 0.239 | 0.903 | 0.586 / 0.973 / 0.731 |
+| AC de novo nodes + guided construction | 68 | 0.425 | 0.647 | 0.622 / 0.871 / 0.726 |
+| **ORACLE: expressed annotated genes (u >= 3) + guided construction** | 100 | **0.947** | **0.887** | **0.941 / 0.969 / 0.955** |
+
+The oracle alignment lost one of 37 chunks to the 390 s limit.
+
+With nodes of annotation quality, the construction reproduces the RNA-level truth at bipartite F 0.955. The gap from 0.726
+is the de novo NODES.
+
+**Node facts** (substrate 1):
+- Reads cover a median 0.82 of each truth gene's annotated exonic bases (p25 0.45) and span 0.99 of the gene.
+- De novo nodes still reach span Jaccard with the truth locus of only 0.64 (AC), 0.63 (read components split by
+  >= 2-read linkage) and 0.51 (unsplit read groups).
+- MAPQ is not the cause: sub3.bam has 140,223 primary reads at MAPQ >= 0 vs 139,912 at MAPQ >= 1.
+- Relative link floors (alpha 0.1 / 0.25 / 0.5) move Jaccard only to 0.67.
+- Merged nodes are mostly readthrough transcripts across adjacent tandem copies of different families (NC_073242.2
+  RNA3/RNA112 alternations).
+- FN anatomy of AC + guided construction (426):
+  - 232 pairs have no direct de novo edge although both nodes are in the graph;
+  - 61 have an edgeless node;
+  - 61 a missing node;
+  - 38 have the edge but MCL splits them.
+- Examples: a 90.6 kb truth gene is represented by an 8.6 kb node; another node's only hits are 300-600 bp repeat-scale
+  alignments.
+
+**External truth checked and rejected:** HGNC gene groups (downloaded 09-14) are mostly non-homology groups on chr15/17/22
+(microRNAs 190, antisense RNAs 181, lncRNAs 153, snoRNAs 119). The guided MCL scores bipartite F 0.374 against them, so
+they are not a sequence-family truth.
