@@ -20586,3 +20586,61 @@ the MCL partition.**
 
 Under E1, precision is 0.84-0.94 for every arm at RNA level; sensitivity is what remains.
 Register rows 831 (AI), 832 (AJ).
+
+## §6km — Addendum X: provenance-typed de novo catalog (RNA edges, DNA gene-body edges, RNA boundaries, presence categories) — development (2026-09-14; hold-out running)
+
+Pre-registered as Addendum X (commit eee52868). Binary `gw_family_catalog.eee52868`. New opt-in mode
+`RUSTLE_ER_UNION_GENOMIC_SPAN=restricted`: exon-sum (TX) edges are partitioned first; a genomic-span-only (SPAN) pair is
+admitted unless it would join two TX blocks that both hold >= 2 reps (DNA may attach an RNA-isolated rep, never merge two
+RNA-established families). Scorer `bench/provenance_eval.py`. **Reproducibility:** DN0, DN1 and DN0+B on both windows are
+byte-identical to §6jt/§6ji catalogs (copies.tsv `cmp`).
+
+**Edge types (human; edge TRUE iff the two reps' best-overlapping truth loci share a family):**
+
+| window | arm | TX-only | BOTH | SPAN-only admitted | SPAN-only rejected |
+|---|---|---|---|---|---|
+| NPIP/TBC1D3 | DN1 | 103 (9 scored, P 1.000) | 364 (200, 1.000) | 703 (284, 1.000) | — |
+| NPIP/TBC1D3 | DN1r | 103 (9, 1.000) | 364 (200, 1.000) | 301 (110, 1.000) | 402 (174, 1.000) |
+| NPIP/TBC1D3 | DN1r+B | 106 (11, 1.000) | 375 (215, 1.000) | 291 (90, 1.000) | 407 (144, 1.000) |
+| AMY | DN1r | 0 | 50 (40, 1.000) | 17 (17, 1.000) | 7 (7, 1.000) |
+| AMY | DN1r+B | 0 | 57 (47, 1.000) | 9 (9, 1.000) | 8 (8, 1.000) |
+
+Every scored edge of every type is true on the development windows (no NPIP-TBC1D3 edge exists; AMY has one truth family),
+so development cannot measure the precision cost the pre-registration expects in rejected SPAN-only edges — only the
+gorilla hold-out can. Of TX edges, 364/467 (NPIP/TBC1D3) and 50/50 (AMY) are also found on the genomic span.
+
+**Presence categories (R own RNA locus / T reads but no own locus / N < 3 MAPQ>=1 reads):**
+
+| window | arms | R (in family) | T (in family) | N (in family) |
+|---|---|---|---|---|
+| NPIP/TBC1D3 | DN0, DN1, DN1r | 30 (30) | 1 (0): TBC1D3 | 0 |
+| NPIP/TBC1D3 | DN0+B, DN1r+B | **31 (31)** | 0 | 0 |
+| AMY | DN0 | 10 (8): AMY2B, LOC124905662 outside | 0 | 2 (1): LOC124905664 in, AMYP1 out |
+| AMY | DN1, DN1r, DN1r+B | 10 (10) | 0 | 2 (1) |
+| AMY | DN0+B | 10 (9): LOC124905662 outside | 0 | 2 (1) |
+
+The bridge cut turns the TBC1D3 readthrough locus into its own RNA locus (T -> R). On AMY the two N loci have MAPQ-0 reads
+(LOC124905664 u 2 / m0 9; AMYP1 u 0 / m0 9): with MAPQ-0 counted (disclosure, not pre-registered) both are T. AMYP1 has no
+own locus in any arm.
+
+**Family level and clades (`denovo_subfamilies.py`):**
+
+| window | arm | present | family-level pairwise sens / prec | bipartite micro R / P | clades recovered (either class) |
+|---|---|---|---|---|---|
+| NPIP/TBC1D3 | DN0 | 30/31 | 0.592 / 1.000 | 0.774 / 1.000 | NPIPA\|B, A6-9, B6-9, named B, CDKL |
+| NPIP/TBC1D3 | DN1 | 30/31 | 0.678 / 1.000 | 0.839 / 1.000 | same |
+| NPIP/TBC1D3 | DN1r | 30/31 | 0.614 / 1.000 | 0.806 / 1.000 | same |
+| NPIP/TBC1D3 | DN1r+B | **31/31** | **0.775** / 1.000 | **0.903** / 1.000 | NPIPA\|B, A6-9, B6-9, named B; not B3-5, AE, CDKL |
+| NPIP/TBC1D3 | DN0+B | 31/31 | 0.745 / 1.000 | 0.871 / 1.000 | as DN1r+B |
+| AMY | DN0 | 9/12 | 0.318 / 1.000 | 0.583 / 1.000 | AMY1 not |
+| AMY | DN1 | 11/12 | 0.682 / 1.000 | 0.833 / 1.000 | AMY1, AMY2, AMY2Ap |
+| AMY | DN1r | 11/12 | 0.682 / 1.000 | 0.833 / 1.000 | AMY1, AMY2, AMY2Ap |
+| AMY | DN1r+B | 11/12 | 0.682 / 1.000 | 0.833 / 1.000 | AMY1, AMY2, AMY2Ap (exon class also recovers AMY1, AMY2) |
+| AMY | DN0+B | 10/12 | 0.424 / 1.000 | 0.667 / 1.000 | AMY1 not |
+
+Restricted admission keeps all of DN1's AMY gain and 26% of its NPIP/TBC1D3 sensitivity gain (0.592 -> 0.614 vs 0.678).
+With the bridge cut it is the best development arm (0.775 / 0.903, all 31 loci present). Where the bridge cut adds the
+ninth TBC1D3 locus, the TBC1D3 clades AE and CDKL and NPIP B3-5 become evaluable and are not recovered. Runtime (NPIP/TBC1D3):
+DN0 157 s, DN1 673 s, DN1r 734 s, DN1r+B 690 s, DN0+B 151 s.
+
+Data: `lit/prov_x/{lit,amy}_{DN0,DN1,DN1r,DN1rB,DN0B}.*`, `dump_*/`, `d2_*.out`, `*_truth_expr.tsv`.
