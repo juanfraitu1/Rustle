@@ -1123,3 +1123,35 @@ loci). Other arms, best-overlap and full-guided metrics, and the gap decompositi
 **Reading (fixed):** SUPPORTED iff >= 10/13 fresh retro positives RETRO-DERIVED AND <= 1/8 fresh SD negatives
 RETRO-DERIVED. Reported: which level assessed each member, and the Z retrogenes that were UNASSESSED (GK2, CETN1, NAP1L2/3,
 CSTF2T, UBL4B, FAM50B) under this rule.
+
+---
+## ADDENDUM AF (2026-09-14; before any number below exists) — (1) Rust port gate; (2) human substrate; (3) missing nodes
+
+### AF-1 Rust port (engineering gate, not a scientific test)
+`RUSTLE_SHARED_DEFINITION=1` in `detect_homology_catalog_genome_wide` replaces the E_r / γ-QC / coverage-split / distinct-
+locus stage with the Python prototype's construction (`bench/denovo_shared_def.py`): reps -> AB2 consolidation -> AC read-
+locus nodes (from the same MAPQ >= 1 primary reads) -> exon + gene-body edges (minimap2 `-x splice -uf` / `-x asm20`,
+`-N 50 -p 0.1`, onto the BAM's contigs) -> triangle-supported leaders -> families (>= 2 loci). Unset = byte-identical.
+**Gate:** (i) all library tests pass; (ii) on both gorilla substrates the opt-in Rust catalog's family memberships (as
+sets of copy coordinates) equal the Python `ad2b.copies.tsv` exactly; (iii) a default Rust run on the fresh substrate
+reproduces `catF_default.copies.tsv` byte-for-byte. A failed gate is reported with the differing families, not tuned.
+
+### AF-2 Human substrate (third substrate; never pooled with gorilla)
+`human2/sub_h3.bam` (A119b_ds, chr15/chr17/chr22), CHM13 v2.0, guided truth `human2/guided.clusters.tsv` (RefSeq
+gene+pseudogene MCL, built 09-13 before any de novo human catalog). DN0 and LCS union built with binary 54154909 as for
+gorilla; expression of guided loci on `sub_h3.bam` with `interval_expression.py`, expressed = u >= 3. Arms: shared
+definition with AC read-locus nodes and triangle-supported leaders (PRIMARY), components and leaders reported.
+**Reading (fixed):** CONFIRMED on human iff R_G(triangle) > R_G(union) AND P_G(triangle) >= P_G(union) - 0.05 (expressed
+guided, any-family).
+
+### AF-3 Missing nodes — split chained read groups
+**Diagnosis seen before registering (development substrates):** of the expressed guided loci still without a node after
+AC, 14/15 (substrate 1) and 16/31 (substrate 2) belong to a read group whose depth >= 2 exons overlap an existing node
+elsewhere (group span median 133 / 76 kb), so AC rejected the whole group; 1/15 and 13/31 sit in groups of < 3 reads.
+**Rule (fixed):** within each AC read group, depth >= 2 exon segments are computed as in AC; two segments are LINKED iff
+>= 2 reads of the group have exon blocks overlapping both; each connected component of linked segments is a sub-locus
+whose supporting reads are the group's reads overlapping any of its segments; a sub-locus with >= 3 supporting reads and
+>= 100 bp is added as a node iff none of its segments overlaps an AB2 node's exons (n_reads = supporting reads). Edges
+and triangle grouping unchanged.
+**Reading (fixed, on human — AF-3 arm vs the AF-2 primary arm):** SUPPORTED iff missing-node pairs decrease AND R_G(split)
+>= R_G(AC) AND P_G(split) >= P_G(AC) - 0.05. The two gorilla substrates are reported as development.

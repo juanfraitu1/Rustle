@@ -20211,3 +20211,50 @@ read-supported gene-level nodes, with the guided edge rule. That construction be
 gorilla substrates, the second fresh and pre-registered. It is not yet ported to the Rust catalog, and no default is
 changed.
 Data: `rebuildF/`, `lit/sharedef_F/{score_expr.out,score_full.out,decompose.out}`.
+
+## §6ke — Human third substrate: triangle-supported leaders CONFIRMED (bipartite F 0.558 vs union 0.515); split read groups (AF-3) NOT SUPPORTED by 0.0005 recall (2026-09-14)
+
+Pre-registered as Addendum AF-2/AF-3 (md5 117365a5).
+
+**Substrate.**
+- `human2/sub_h3.bam`: A119b_ds chr15/chr17/chr22, 125,002 primary reads; CHM13 v2.0.
+- Guided truth: `human2/guided.clusters.tsv`, RefSeq gene+pseudogene MCL built 09-13 before any de novo human catalog.
+  1,818 loci; 935 expressed (u >= 3); 811 in 205 clusters, 17,428 co-clustered pairs.
+- DN0: 16 min 27 s, 5,770 dump nodes. LCS union: 16 min 42 s; E_r 5,769 + 733 LCS edges.
+
+**Shared definition.**
+- Nodes: 5,689 AB2 loci; +531 AC read-locus nodes (6,220); +783 with the AF-3 split (6,472).
+- Edges: 2,955 exon + 2,528 gene-body edges (3,326 pairs).
+
+| catalog | families | any R_G | P_G | best R_G / P_G | full guided any R_G / P_G | pair sens / prec (best) | bipartite R / P / F |
+|---|---|---|---|---|---|---|---|
+| DN0 | 169 | 0.0604 | 0.4823 | 0.0366 / 0.5913 | 0.0578 / 0.5943 | 0.037 / 0.591 | 0.376 / 0.801 / 0.512 |
+| LCS union (reference) | 197 | 0.0670 | 0.5061 | 0.0381 / 0.6131 | 0.0615 / 0.6131 | 0.038 / 0.613 | 0.381 / 0.796 / 0.515 |
+| components (AC2) | 140 | 0.1606 | 0.1718 | 0.1463 / 0.1894 | — | 0.146 / 0.189 | 0.411 / 0.715 / 0.522 |
+| leaders (AC3) | 246 | 0.0425 | 0.7248 | 0.0294 / 0.7642 | — | 0.029 / 0.764 | 0.382 / 0.868 / 0.531 |
+| **triangle (PRIMARY)** | 220 | **0.0723** | **0.6822** | 0.0551 / 0.7494 | 0.0659 / 0.7364 | 0.055 / 0.749 | **0.412 / 0.865 / 0.558** |
+| triangle + AF-3 split | 239 | 0.0718 | 0.6830 | 0.0554 / 0.7553 | 0.0650 / 0.7406 | — | — |
+
+**AF-2 reading: CONFIRMED on human.** R_G 0.0723 > 0.0670 and P_G 0.6822 >= 0.5061 - 0.05. Triangle beats the union on every
+reported metric here (any, best-overlap, full guided, pairwise, bipartite). Human numbers are never pooled with gorilla.
+
+**AF-3 reading: NOT SUPPORTED.**
+- Missing-node pairs drop from 3,103 to 2,932 (missing-node first) and P_G 0.6830 passes.
+- R_G falls 0.0723 → 0.0718, below the "R_G(split) >= R_G(AC)" bar.
+- Gorilla development was mixed: substrate 1 R 0.605 → 0.626 and P 0.419 → 0.409; substrate 2 R 0.198 → 0.207 and
+  P 0.676 → 0.649; missing-node pairs 61 → 48 and 68 → 70.
+- The split stays out of the definition.
+
+**Decomposition on human** (missing-node first):
+- 16,531 of 17,428 pairs connect only through unexpressed loci at guided level. Treat that as an upper bound (§6jz).
+- DN0 1,052 recovered / 3,997 missing node / 332 missing edge.
+- Triangle 1,260 / 3,103 / 144.
+- The human guided clusters are large (MCL0 has 202 members across chr15/chr17), which caps RNA-level recall for every
+  catalog.
+
+**Summary across the three substrates** (bipartite F, triangle vs LCS union):
+- gorilla substrate 1: 0.682 vs 0.631;
+- gorilla fresh substrate: 0.691 vs 0.644;
+- human: 0.558 vs 0.515.
+Pairwise precision is below the union only on gorilla substrate 1 (0.385 vs 0.409).
+Register row 828 (AF-3). Data: `human2/`, `lit/sharedef_H/{score_expr.out,score_full.out,decompose_noUnion.out}`.

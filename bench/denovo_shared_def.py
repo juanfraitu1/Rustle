@@ -117,6 +117,57 @@ def cmd_nodes(a):
     print(f"AB1 nodes {len(ab1)}; AB2: chain cuts {n_cut}, pieces kept {len(pieces)}, gene-level loci {len(ab2)}")
 
 
+def depth2_exons(block_lists):
+    """Bases covered by >= 2 reads' exon blocks, merged (ends sort before starts at the same coordinate)."""
+    ev = []
+    for blocks in block_lists:
+        for s0, e0 in blocks:
+            ev += [(s0, 1), (e0, -1)]
+    ev.sort()
+    depth, start, ex = 0, None, []
+    for x, d in ev:
+        prev = depth
+        depth += d
+        if prev < 2 <= depth:
+            start = x
+        elif prev >= 2 > depth and start is not None and x > start:
+            ex.append((start, x))
+    return gp.merge(ex)
+
+
+def split_linked(segments, block_lists):
+    """Addendum AF-3: connected components of segments linked by >= 2 reads overlapping both; yields
+    (segment indices, supporting read count) in order of each component's first segment."""
+    touch = []
+    for blocks in block_lists:
+        t = sorted({k for k, (s0, e0) in enumerate(segments) for b0, b1 in blocks if b0 < e0 and s0 < b1})
+        touch.append(t)
+    link = collections.Counter()
+    for t in touch:
+        for i in range(len(t)):
+            for j in range(i + 1, len(t)):
+                link[(t[i], t[j])] += 1
+    parent = list(range(len(segments)))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for (i, j), n in sorted(link.items()):
+        if n >= 2:
+            parent[find(j)] = find(i)
+    comps = collections.defaultdict(list)
+    for k in range(len(segments)):
+        comps[find(k)].append(k)
+    out = []
+    for ks in sorted(comps.values(), key=lambda v: v[0]):
+        kset = set(ks)
+        sup = sum(1 for t in touch if kset.intersection(t))
+        out.append((ks, sup))
+    return out
+
+
 def cmd_readloci(a):
     base = read_nodes(f"{a.outdir}/{a.base}.nodes.tsv")
     base_reps = {}
@@ -171,20 +222,17 @@ def cmd_readloci(a):
         if len(members) < 3:
             continue
         c, strand = reads[members[0]][0], reads[members[0]][1]
-        ev = []
-        for i in members:
-            for s0, e0 in reads[i][2]:
-                ev += [(s0, 1), (e0, -1)]
-        ev.sort()
-        depth, start, ex = 0, None, []
-        for x, d in ev:
-            prev = depth
-            depth += d
-            if prev < 2 <= depth:
-                start = x
-            elif prev >= 2 > depth and start is not None and x > start:
-                ex.append((start, x))
-        ex = gp.merge(ex)
+        ex = depth2_exons([reads[i][2] for i in members])
+        if a.split:
+            for seg_ids, sup in split_linked(ex, [reads[i][2] for i in members]):
+                sub = [ex[k] for k in seg_ids]
+                if sup < 3 or sum(e0 - s0 for s0, e0 in sub) < MIN_PIECE:
+                    continue
+                n_cand += 1
+                if any(bidx.hits(c, s0, e0) for s0, e0 in sub):
+                    continue
+                added.append({"chrom": c, "strand": strand, "n_reads": sup, "exons": sub, "rep_exons": sub})
+            continue
         if sum(e0 - s0 for s0, e0 in ex) < MIN_PIECE:
             continue
         n_cand += 1
@@ -595,6 +643,7 @@ def main():
     p.add_argument("--bam", required=True)
     p.add_argument("--base", default="ab2")
     p.add_argument("--out", default="ac")
+    p.add_argument("--split", action="store_true", help="Addendum AF-3: split chained read groups")
     p = sub.add_parser("align")
     p.add_argument("--outdir", required=True)
     p.add_argument("--kind", choices=("tx", "body"), required=True)
