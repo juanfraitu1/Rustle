@@ -19354,3 +19354,65 @@ at the next aligned block's end, or require read or splice-site support) — pla
 overshoots. Caveats: two families, one genome, 5 replicates, no tuning; readings are descriptive.
 
 Data: `lit/guided_lo/{isoforms.*,genespan.*,iter/,n.out,n.per_rep.tsv,n.overmerges.tsv}`.
+
+## §6jo — The literature's two levels on NPIP/TBC1D3: gene-body membership removes the under-merge (keep-1 NPIP 0.257 -> 1.000, no over-merge); one identity cut does not recover NPIPA/NPIPB (2026-09-13)
+
+**Literature level (read from Dishuck 2025, `Desktop/npip_dishuck_nihpp-2025.02.04.636496v1.md`):** NPIP copies = the
+~19 kb ancestral locus (GRCh38 chr16:14,935,711-14,954,790) aligned to 169 haplotypes (wfmash -p 80; minimap2 map-ont;
+>= 15 kbp aligned); paralogs/subfamilies = IQ-TREE clades (SH-aLRT > 75) on a MAFFT MSA with exons, VNTRs and poorly
+aligned regions trimmed ("15 kbp of intronic sequence"); A/B also supported by IGC within but not between; gene models
+are described per subfamily afterwards. Pre-registered as Addendum O (md5 21382a38). `bench/guided_genebody.py`; the
+null draws use numpy (same rule as `bench/identity_gap.py`, different random stream — disclosed). 41 s, 1.3 GB.
+
+**G1 (family by gene body; 691 chains from 695 asm20 records, 623 pass):**
+
+| level | family | arm | sensitivity | family-named precision | cross-family / unnamed / unannotated | pairwise sens / prec | bipartite micro R / P |
+|---|---|---|---|---|---|---|---|
+| keep 1 | NPIP | M0 (transcript) | 0.257 ± 0.026 | 1.000 | 0 / 0 / 0 | 0.057 / 0.571 | 0.240 / 0.771 |
+| keep 1 | NPIP | **G1** | **1.000 ± 0** | **1.000** | **0 / 0 / 0** | **1.000 / 0.700** | **0.840 / 0.840** |
+| keep 1 | TBC1D3 | M0 and G1 | 1.000 | 1.000 | 0 / 0 / 0 | 1.000 / 0.622 | 0.800 / 0.800 |
+| keep 50% | both | M0 and G1 | 1.000 | 1.000 | 0 / 0 / 0 | NPIP 1.000 / 0.458 (M0), 0.485 (G1) | 0.688 / 0.706 |
+
+Every single seed now recovers all 21 other NPIP (7 NPIPA + 14 NPIPB or 6 + 15), 25 candidates, all hidden records or
+family-named loci. **Reading 1: G1 ADDRESSES the under-merge** (sensitivity 1.000 > 0.50, named precision 1.000, 0
+cross-family).
+
+**G1 width — reading 2: neither variant reduces truncation.**
+
+| level | arm | n | Jaccard | 5' offset median | truncated | overextended |
+|---|---|---|---|---|---|---|
+| keep 50%, ALL | M0 | 15 | 0.877 | -769 bp | 6.8 | 3.0 |
+| keep 50%, ALL | G1-clip | 15 | 0.815 | +2,349 bp | 3.6 | 9.8 |
+| keep 50%, ALL | G1-extrap | 15 | 0.723 | +4,244 bp | 2.2 | 11.8 |
+| keep 1, ALL | M0 | 13.4 | 0.902 | -723 bp | 6.0 | 0.8 |
+| keep 1, ALL | G1-clip | 29 | 0.805 | -2,731 bp | 16.4 | 5.2 |
+| keep 1, ALL | G1-extrap | 29 | 0.781 | -2,319 bp | 15.8 | 6.4 |
+
+Homologous DNA does not stop at a paralog's annotated gene boundary: a longer seed body runs into the paralog's
+duplicated flank (overextension, NPIP 5' +3.7 kb clip at 50%), a shorter one under-covers a longer paralog gene model
+(truncation, keep 1). (Keep-1 widths are over 29 recovered records against M0's 13.4 — not like-for-like.)
+
+**G2 (subfamilies from exon-masked gene-body identity, one identity-gap cut):**
+- Reference (all 22 NPIP bodies): p = 0.029, gap at identity 0.8923, but the components above it form ONE group -> not
+  recovered (L1 exact 0/2). TBC1D3 reference: p = 0.276, no split — **correct** (reading 4).
+- Leave-out: **NPIPA/NPIPB recovered 0/10 runs** (reading 3); split called 5/10. TBC1D3: no split in 9/10 (correct),
+  one split {H, K} vs rest.
+- Two keep-1 runs (seeds NPIPA7, NPIPB10P) cut at identity 0.9759 and gave **{all 7 NPIPA} | {B3, B4, B5, B11, B12, B13}
+  | {B6, B7, B8, B9, B10P, B15} | B2 | B14P | B1P** — L1 pairwise precision 1.000 (sensitivity 0.405, exact 1/2), L2
+  exact 3/13. {B3, B4, B5, B11, B12, B13} is exactly the paper's "human-specific NPIPB subfamily" with the VNTR final
+  coding exon; {B6-B9} is its 16p11.2 group. The other runs cut in the 0.89-0.92 range, where everything connects.
+
+**Post-hoc diagnosis (not pre-registered):** pooling all alignment records is not the cause (330 records, 1 below
+0.85; best-record identity gives the same distributions). Exon-masked identities: within A median 0.983 (min 0.901, the
+long NPIPA2 against A6/A8), **within B 0.852-0.995 (median 0.95), A vs B 0.850-0.967 (median 0.937)** — NPIPB's internal
+divergence overlaps the A/B divergence, so no single cut can separate A from B while keeping B whole. UPGMA on the same
+distances (preview) puts {A1-A9 + B1P + B2} together at k = 4, with B14P (not exon-masked) as an outlier.
+
+**Reading.** At the family level the literature's gene-body unit solves the under-merge on NPIP with no over-merge
+and leaves TBC1D3 intact. At the subfamily level a single identity threshold is the wrong operator: the literature's
+subfamilies are clades of a tree, and NPIPB is as deep inside as A is from B. The two exon-masked runs that matched the
+paper did so as a three-way cut. Width needs a boundary signal that DNA homology cannot give (transcript or read
+support at the paralog). Next candidates: G2 as a tree (clades with support) rather than one cut; boundaries from
+transcript hits where they exist and gene body otherwise.
+
+Data: `lit/guided_lo/{o.out,g2/}`.

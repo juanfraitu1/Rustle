@@ -522,3 +522,42 @@ NPIP sensitivity > 0.50 with family-named precision 1.000; (2) a width rule REDU
 is lower than M0's at both levels and its overextended count rises by less than its truncated count falls; (3) any
 cross-family assignment or non-family-named `other_gene` candidate is an over-merge and is listed.
 Rules are developed and read on these two families only; confirmation on another substrate is a later addendum.
+
+---
+## ADDENDUM O (2026-09-13, after §6jn; before any number below exists) — the literature's two levels: G1 family by gene body, G2 subfamilies from exon-masked gene-body identity (NPIP, TBC1D3)
+
+**Why:** Dishuck 2025 defines NPIP copies by aligning the ~19 kb gene body (>= 80% identity, >= 15 kb aligned) and
+paralogs/subfamilies as ML clades on the MSA with exons, VNTRs and poorly aligned regions removed ("15 kbp of intronic
+sequence"). §6jn: transcript-level under-merge; gene-body alignment reaches 104/105 NPIPA->NPIPB pairs.
+
+**Common:** Addendum M truth, leave-out sets (same RNG; keep 50% and keep 1; 5 replicates), blocking by seed gene
+spans, clustering (single-linkage, highest total nmatch decides family), classification and all M/N scores incl.
+family-named precision. M0 is recomputed as the reference.
+
+**G1 — family by gene body.** Query = each seed's gene span (genomic, transcript orientation), the existing
+`genespan.paf` (`minimap2 -c -x asm20 -N 100 -p 0.1`, k15/w10 index). Records of one query on one chromosome and strand
+are CHAINED greedily in target order when the target gap to the chain end is <= L_q (query length), query order is
+consistent with the strand, and the chain's target span stays <= 2 L_q. Chain identity = sum nmatch / sum block length;
+aligned = union of query intervals; L_t = extrapolated target span (below). ACCEPT iff identity >= 0.80 AND aligned >=
+0.50 x min(L_q, L_t). Width, two variants: G1-clip = chain target span; G1-extrap = chain target span extended by the
+unaligned query ends (strand-aware) — i.e. the projection of the seed's first and last exon boundaries (= gene span
+ends). Breadth is identical for both; width is scored for both. Subfamily reach (NPIPA/NPIPB of recovered records) is
+reported.
+
+**G2 — subfamilies inside a G1 family.** Members = seeds + G1 candidates of that family (per replicate and level) and,
+as the no-leave-out REFERENCE, all truth records of the family. Member sequence = its gene body with exons removed:
+seeds (and reference records) lose their annotated union exons (all isoforms; gene-parented exons; NPIPB14P has none
+and is not masked); a candidate's region is its G1-extrap span, and the seed's union exons are projected base-to-base
+through the chain CIGAR and removed (exons outside aligned blocks cannot be projected and stay). Pieces are
+concatenated in transcript orientation. Pairwise identity = sum nmatch / sum block length over all records of
+`minimap2 -c -x asm20 -X -N 50 -p 0.1` all-vs-all (both directions pooled). Partition = `bench/identity_gap.py`'s rule
+(largest interior gap, outer 10% ignored; gauss/beta/smooth nulls, 10,000 draws, worst p governs): p < 0.05 -> connected
+components of pairs with identity >= the gap midpoint; otherwise one group.
+Scored on truth-record members vs level 1 (NPIPA/NPIPB; TBC1D3 cluster1/2) and level 2: pairwise sensitivity/precision
+and bipartite micro R/P and exact matches.
+
+**Readings (fixed):** (1) G1 ADDRESSES under-merge iff keep-1 NPIP sensitivity > 0.50 with family-named precision >=
+0.95 and 0 cross-family assignments. (2) A G1 width variant REDUCES truncation iff (Addendum N reading 2) vs M0.
+(3) G2 RECOVERS NPIPA/NPIPB in a run iff p < 0.05 and bipartite exact 2/2 vs level 1 on its truth-record members;
+reported for the reference and as a count over leave-out runs. (4) G2 is CORRECT on TBC1D3 iff it does NOT split
+(p >= 0.05), since Guitart's clusters are positional (§6gw). Descriptive; no tuning.
