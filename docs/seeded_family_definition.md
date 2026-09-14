@@ -56,10 +56,12 @@ long introns fail gene-body coverage) (§6jo, §6jq, §6jr).
   retro 0/5, §6ju; repeats excluded 13/13 vs 0/16, §6jv).
 - RETROCOPY: parent introns lost at exon-exon junctions and none retained (processed-pseudogene families 8/8 fresh,
   0/10 SD false calls; §6jw).
-- UNRESOLVED: aligned but neither holds; includes old retrogenes beyond nucleotide alignment (6/8, §6jw).
+- UNRESOLVED: aligned but neither holds. With the coding-sequence gap-excluded identity and the miniprot fallback (§6kc) fresh retro families 13/13, SD 0/8; of the 7 old retrogenes unreachable in §6jw only UBL4B stays unassessed.
 Poly(A) and target-site duplications are reported annotations, not criteria (§6jv).
 
-**4. Family = connected component** of the edge graph. γ = 0.20 is dropped from the definition (never binds on clean
+**4. Family = triangle-supported leader neighbourhood** (§6kd, confirmed on a fresh gorilla substrate): order copies by read support (then degree); an unassigned copy with unassigned neighbours becomes a leader; its family = the leader, its unassigned direct neighbours, and unassigned copies adjacent to >= 2 members of that star. Beat the LCS union on both substrates (fresh: R_G 0.198 vs 0.120, P_G 0.676 vs 0.537). Previously: connected component, kept below for the record.
+
+*Superseded wording:* **Family = connected component** of the edge graph. γ = 0.20 is dropped from the definition (never binds on clean
 node sets, §1★.2). Edge connectivity λ is reported as the certificate (§1★.5). ⚠ **OPEN after §6jz:** with the guided edge
 rule on de novo nodes, components reach the best recall of any de novo catalog (R_G 0.509) but lose precision (P_G 0.310,
 below the pre-registered guard) through transitive chaining (largest component: 85 loci over 16 guided clusters).

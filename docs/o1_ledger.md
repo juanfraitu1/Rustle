@@ -20167,3 +20167,47 @@ keeps per-transcript CDS with phase (`tx_cds`); earlier outputs are unaffected.
   the rule.
 
 Data: `lit/mechanism_ae/{ae.out,members.tsv}`.
+
+## §6kd — Triangle-supported leaders CONFIRMED on a fresh gorilla substrate: recall 0.198 vs LCS union 0.120, precision 0.676 vs 0.537 (2026-09-14)
+
+Pre-registered as Addendum AE-A (md5 85b39fd2). Fresh contigs NC_073233.2 / NC_073240.2 / NC_073238.2, none used in AB-AD.
+`rebuildF/subF.bam` = `samtools view GGO_ds.bam <3 contigs>` (171,251 primary reads).
+
+**Catalogs** (binary `gw_family_catalog.54154909`, `--homology-primary --threads 4`, each with `RUSTLE_ER_EDGE_DUMP`):
+- DN0: 12 min 25 s, 3.7 GB, 2,681 dump nodes.
+- LCS union: 12 min 22 s; E_r 228 + 352 LCS edges.
+- Guided expression on `subF.bam`: 376/1,345 loci with u >= 3.
+
+**Shared-definition nodes and edges** (`SHAREDEF_CONTIGS=...`, code otherwise as AB-AD):
+- AB2: 2,626 loci. Read-locus nodes: +227, giving 2,853.
+- Edges: 171 exon + 200 gene-body edges, 251 pairs.
+
+| arm | families | expressed guided any R_G | P_G | best R_G / P_G | full guided R_G / P_G | missing node / edge / (c) |
+|---|---|---|---|---|---|---|
+| DN0 | 65 | 0.0909 | 0.5789 | 0.0909 / 0.5946 | 0.0080 / 0.4355 | 118 / 23 / 79 |
+| LCS union (reference) | 80 | 0.1198 | 0.5370 | 0.1198 / 0.5800 | 0.0098 / 0.3708 | 118 / 21 / 74 |
+| AB2 components | 51 | 0.1570 | 0.3878 | 0.1529 / 0.3895 | 0.0139 / 0.1865 | — |
+| AC2 nodes + components | 61 | 0.2273 | 0.3767 | 0.2273 / 0.4231 | 0.0240 / 0.2098 | 68 / 22 / 97 |
+| AC3 nodes + leaders | 78 | 0.1942 | 0.7015 | 0.1777 / 0.7049 | 0.0190 / 0.4604 | 68 / 24 / 103 |
+| AD2a bridge-split | 16 | 0.1240 | 0.5172 | 0.1240 / 0.5172 | 0.0151 / 0.2537 | — |
+| **triangle-supported leaders (DECIDING)** | 72 | **0.1983** | **0.6761** | 0.1860 / **0.6818** | 0.0193 / 0.3476 | 68 / 23 / 103 |
+
+**Pre-registered reading: CONFIRMED.**
+- R_G 0.1983 > union 0.1198, and P_G 0.6761 >= 0.5370 - 0.05.
+- The §6kb caveat is resolved: best-overlap P_G is also above the union here (0.6818 vs 0.5800).
+- On full guided, triangle recall is double the union's (0.0193 vs 0.0098), with P_G 0.3476 vs 0.3708, within the
+  guard. That comparison is reported only.
+
+The two substrates agree on the ordering:
+- Components maximise recall with the worst precision.
+- One-hop leaders maximise precision.
+- Triangle support keeps most of the leaders' precision and adds recall. It beats the union on both substrates.
+- The fresh substrate is SD-poorer: 242 expressed pairs vs 741, and 164 of them connect only through unexpressed loci.
+  Absolute recall is therefore low for every catalog.
+- Read-locus nodes again cut missing-node pairs, 118 → 68.
+
+**Consequence for the definition:** the grouping clause (§0★★ clause 4) becomes triangle-supported leaders, on
+read-supported gene-level nodes, with the guided edge rule. That construction beat the shipped opt-in LCS union on two
+gorilla substrates, the second fresh and pre-registered. It is not yet ported to the Rust catalog, and no default is
+changed.
+Data: `rebuildF/`, `lit/sharedef_F/{score_expr.out,score_full.out,decompose.out}`.
