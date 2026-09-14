@@ -19677,3 +19677,60 @@ extends ~2 kb past both of its ends while the PMS2 side stays inside the gene; L
 (~900 bp); many NBPF/LRRC37A/GUSB copies fall below 0.80 identity. The discriminating biology is genomic copy (shared
 non-exonic sequence) vs RNA-mediated copy (exon-only homology) — tested next on held-out families (Addendum X).
 Register row 818. Data: `lit/duplicon/{w.out,pairs.tsv}`.
+
+## §6ju — Genomic copy vs RNA-mediated copy on HELD-OUT families: SUPPORTED (segmental-duplication families 9/9 duplicon-derived, retrotransposition families 0/5) (2026-09-13)
+
+Pre-registered as Addendum X (`docs/PREREG_core_definition_2026-09-12.md`, md5 17e047f9), written after §6jt and before
+any number below. `bench/duplicon_origin.py` (same regions, references, chains and identity floor as W). New per pair:
+SHARED NON-EXONIC = aligned CIGAR bases outside the union exons of BOTH member and reference (counted once per reference
+position when chain records overlap); GENOMIC iff >= 1,000 bp, else RNA-LIKE. Family DUPLICON-DERIVED iff >= 1 aligned pair
+and >= 50% of aligned pairs GENOMIC. Held-out families were not used in W; W's 13 families + AMY are development only.
+Run note: the first single invocation hit the 390 s window (GFF parse under the concurrent gorilla DN1 hold-out, load 9
+on 5 cores); the script now caches the parsed GFF and per-family PAFs, the families ran in batches, and one combined
+invocation from the cache (4.8 s) produced the table. W columns reproduce §6jt exactly (13 family rows; 281/281 pair rows).
+
+**Held-out (deciding):**
+
+| family | kind | members | aligned pairs | GENOMIC pairs | shared non-exonic per pair (bp) | W flank pairs | call |
+|---|---|---|---|---|---|---|---|
+| NOTCH2NL | SD | 5 | 2 | 2 | 116,962; 173,650 | 2 | DUPLICON-DERIVED |
+| SRGAP2 | SD | 4 | 2 | 2 | 105,412; 229,047 | 2 | DUPLICON-DERIVED |
+| ARHGAP11 | SD | 2 | 1 | 1 | 39,050 | 1 | DUPLICON-DERIVED |
+| HYDIN | SD | 2 | 1 | 1 | 338,340 | 0 | DUPLICON-DERIVED |
+| FAM72 | SD | 4 | 3 | 3 | 46,150-49,088 | 3 | DUPLICON-DERIVED |
+| SMN | SD | 2 | 1 | 1 | 98,651 | 1 | DUPLICON-DERIVED |
+| SERF1 | SD | 2 | 1 | 1 | 50,987 | 1 | DUPLICON-DERIVED |
+| ZNG1 | SD | 5 | 4 | 4 | 76,460-133,515 | 4 | DUPLICON-DERIVED |
+| NCF1 | SD | 3 | 2 | 2 | 44,041; 44,473 | 2 | DUPLICON-DERIVED |
+| RPL21 | retro | 138 (cap 40) | 1 | 0 | 243 | 0 | NOT |
+| HMGB1 | retro | 51 (cap 40) | 20 | 0 | all 0 | 0 | NOT |
+| NPM1 | retro | 51 (cap 40) | 18 | 0 | 0-4 | 0 | NOT |
+| RPS2 | retro | 56 (cap 40) | 0 | — | — | — | NOT (no aligned pair) |
+| TUBB | retro | 12 | 5 | 0 | all 0 | 0 | NOT |
+
+**Pre-registered reading: SUPPORTED** (9/9 >= 7 and 0/5 <= 1). The two classes do not approach the 1 kb bar: every held-out
+SD pair shares 39-338 kb of non-exonic sequence, every retro pair <= 243 bp.
+
+**Development (not deciding):** core-duplicon families 9/10 DUPLICON-DERIVED (NPIP 19/19, TBC1D3 8/8, GOLGA8 16/16, RGPD 6/6,
+SPATA31 3/3, TRIM51 8/8, PMS2 10/10, GUSB 8/9, NBPF 9/10; LRRC37A 2/9 → NOT), retro 0/3 (all pairs 0 bp), AMY 11/11. The
+partial-copy misses of W (§6jt) are recovered; LRRC37A fails because 6/9 pairs (identity 0.80-0.90) share <= 680 bp.
+Post-hoc reading of that miss: diverged copies whose introns no longer align under asm20 look RNA-like, so the rule has
+an age (divergence) limit.
+
+**What this does and does not show.**
+- It shows a pre-registered, held-out separation between families copied as GENOMIC SEGMENTS (introns and flanks copied
+  with the gene) and families copied through mRNA (exon-only homology).
+- Descriptive, not pre-registered: for the small held-out genes the shared non-exonic sequence exceeds the gene itself
+  (FAM72 46-49 kb vs an 18 kb reference span; SERF1 51 vs 18 kb; NCF1 44 vs 15 kb; SMN 99 vs 41 kb). The copied unit is
+  a segment larger than the gene, which is the "arose from a duplicon" picture.
+- It does not by itself identify a CORE duplicon (a shared seed with mosaic flanks) as the origin; that needs the
+  per-family core/flank analysis still pending.
+- The held-out SD families were chosen knowing they are segmental duplications. The test measures the rule's recall on
+  them and its specificity on retro families; it is not a discovery.
+- Small n: 4/9 SD families have a single aligned pair.
+- The inherited identity (matches / block length, gaps included) drops indel-rich chains under 0.80:
+  - NOTCH2 0.68, NOTCH2NLB 0.79, SRGAP2C 0.74 are LOW-IDENTITY and not counted.
+  - This costs sensitivity, not specificity.
+- Retro controls RPL21 (1 aligned pair) and RPS2 (0) are nearly uninformative. HMGB1, NPM1, PPIA and TUBB carry the
+  specificity.
+Data: `lit/duplicon_x/{x.out,pairs.tsv}`.

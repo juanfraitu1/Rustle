@@ -816,3 +816,33 @@ core length / reference gene span.
 **Reading (fixed):** the test SUPPORTS "some multi-copy gene families arose from duplicons" iff >= 7 of the 10
 literature core-duplicon families are DUPLICON-BORNE AND <= 1 of the 3 retrotransposition families is DUPLICON-BORNE.
 If >= 2 retro families are called DUPLICON-BORNE the classifier does not discriminate and the test is uninformative.
+
+---
+## ADDENDUM X (2026-09-13, after Addendum W's NOT SUPPORTED result; before any number below exists) — genomic copy vs RNA-mediated copy, judged on HELD-OUT families
+
+**Why:** W's flank rule scored partial gene copies inside duplicated segments as gene-only (PMS2P, GUSBP, LRRC37A*P, NBPF*P)
+and 7 GOLGA8 pairs sat just under 1 kb. The biological distinction the data separate is a GENOMIC copy (shares
+non-exonic sequence — introns or flanks — with its source) vs an RNA-MEDIATED retrocopy (shares only spliced exons).
+The rule below was chosen after seeing W, so W's 13 families are development only; the reading uses families not
+seen before.
+
+**Rule (fixed now):** units, pairs, chaining and the identity floor exactly as W (region = gene span +/- one gene
+length; reference = median-length protein-coding member; asm20 chains; aligned iff chain identity >= 0.80). For an
+aligned pair, SHARED NON-EXONIC = aligned bases (M runs of the chain's CIGARs) whose member position lies outside the
+member's union exons AND whose reference position lies outside the reference's union exons. Union exons = all exon
+features of the gene's transcripts, else the gene's own exon features, else (no exon annotation at all) the whole gene
+span counts as exonic. Pair is GENOMIC iff shared non-exonic >= 1,000 bp; else RNA-LIKE. Family DUPLICON-DERIVED iff it
+has >= 1 aligned pair and >= 50% of its aligned pairs are GENOMIC. W's flank classes are also reported.
+
+**Held-out families (CHM13 RefSeq names; regexes fixed now):**
+- Segmental-duplication families (not in the core-duplicon list): NOTCH2NL `^NOTCH2NL[A-Z]?$|^NOTCH2$`, SRGAP2
+  `^SRGAP2[A-D]?$`, ARHGAP11 `^ARHGAP11[AB]$`, HYDIN `^HYDIN\d?$`, FAM72 `^FAM72[A-D]$`, SMN `^SMN[12]$`, SERF1
+  `^SERF1[AB]$`, ZNG1 `^ZNG1[A-F]$`, NCF1 `^NCF1[BC]?$`.
+- Retrotransposition families: RPL21 `^RPL21(P\d+)?$`, HMGB1 `^HMGB1(P\d+)?$`, NPM1 `^NPM1(P\d+)?$`, RPS2
+  `^RPS2(P\d+)?$`, TUBB `^TUBB(P\d+)?$`. Cap 40 members + reference as W.
+**Development re-score (reported, not deciding):** W's 10 core-duplicon families, 3 retro families and AMY.
+
+**Reading (fixed, held-out only):** SUPPORTED — "multi-copy gene families include duplicon-derived families (shared
+genomic context) distinguishable from retrotransposition-derived families (exon-only homology)" — iff >= 7 of the 9
+held-out segmental-duplication families are DUPLICON-DERIVED AND <= 1 of the 5 held-out retrotransposition families is.
+If >= 2 retro families are DUPLICON-DERIVED the rule does not discriminate; otherwise NOT SUPPORTED.
