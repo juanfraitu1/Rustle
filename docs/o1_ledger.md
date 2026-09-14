@@ -20644,3 +20644,40 @@ ninth TBC1D3 locus, the TBC1D3 clades AE and CDKL and NPIP B3-5 become evaluable
 DN0 157 s, DN1 673 s, DN1r 734 s, DN1r+B 690 s, DN0+B 151 s.
 
 Data: `lit/prov_x/{lit,amy}_{DN0,DN1,DN1r,DN1rB,DN0B}.*`, `dump_*/`, `d2_*.out`, `*_truth_expr.tsv`.
+
+## §6km — Post-AJ exploration (looked-at substrates, no verdicts): the ~0.8 ceiling between two annotations is gene-model content, not repeats, MCL settings or partition instability (2026-09-14)
+
+All numbers below come from chr15/17/22 (development) and chr16/19/20 (AJ hold-out, now looked at). Truth = RefSeq_E1;
+the test is GENCODE_E1 unless stated.
+
+| probe | development F | hold-out F | reading |
+|---|---|---|---|
+| repeat-masked gene-body evidence (`bench/paf_repeat_filter.py`: >= 300 aligned bp outside interspersed repeats), E0 | 0.727 (pair 0.545 / 0.554) | 0.772 (0.600 / 0.424) | masking alone does not fix precision |
+| repeat-masked + E1 | 0.806 | 0.809 | = E1 |
+| MCL port (`pymcl.py`, reproduces Rust 0.9999 / 1.0), weight id×cov / unit / identity × I 1.6-4.0 | 0.777-0.803 | 0.735-0.768 | flat: not the partition settings |
+| GENCODE graph restricted to genes overlapping a RefSeq gene | 0.802 (vs 0.803) | 0.752 (vs 0.742) | GENCODE-only genes do not cause it |
+| RefSeq_E1 MCL under random edge drop 10% / weight noise ±50% (against itself) | 0.925-0.942 / 0.935-0.942 | — | robust to random perturbation |
+| consensus truth (pair true only if both annotations group it; single-annotation pairs unscored): de novo D RNA sens / prec | 0.698 / 0.865 (vs 0.602 / 0.861) | — | modest |
+
+**Missed truth pairs under E1, by cause:**
+
+| cause | development | hold-out |
+|---|---|---|
+| same GENCODE graph component, MCL split | 6.9% | 15.2% |
+| truth locus has no GENCODE gene | 6.8% | 5.6% |
+| locus assigned to a different overlapping gene | 3.3% | 7.6% |
+| no E1 edge, or different components | 2.5% | 8.1% |
+| recovered | 80.0% | 61.7% |
+
+**GENCODE-only edges that join two RefSeq truth clusters (hold-out, 222).** Many are real homology that RefSeq's gene models
+fail to support:
+- OR7A8P–OR7A1P;
+- CYP2G1P–CYP2F2P;
+- NPIPA8 / NPIPB5 / NPIPB13 / NPIPB15, which RefSeq renders as readthrough or LOC models (PKD1P4-NPIPA8, 7,101 exonic bp vs
+  GENCODE NPIPA8 1,606).
+
+Exon-union lengths of the same gene differ 2-3× between the annotations.
+
+**Conclusion.** Under E1 the definition is stable to deleting genes (50%: F 0.97) and to random edge noise (0.93-0.94). The
+remaining 0.2 between two expert annotations is how each annotation models the same genes. A truth derived from ONE
+annotation carries that error, so an independent method cannot be measured against it beyond ~0.8, whatever the method.
