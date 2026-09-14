@@ -20503,3 +20503,86 @@ annotation gives pair sens 0.895 / prec 0.862 (the slice vs the genome-wide cata
   - path-connected members have no direct homology to any seed.
 - (3) **Goal status.** Only annotation-quality gene models reach the >= 0.90 bars.
 Register rows 829 (D), 830 (G human).
+
+## §6kl — Addenda AI/AJ: the human guided truth is not reproducible from an independent annotation (E0 or E1); E1 (exon-to-exon edges) removes the repeat hub clusters and makes the partition deletion-stable, but fails its pre-registered HGNC guard on the hold-out (2026-09-14)
+
+**AI (prereg md5 9d6d48bb).** GENCODE-based T2T CAT annotation (7,388 genes, chr15/17/22) through the human RefSeq
+guided construction (`bench/annotation_nodes.py cat`, `bench/node_graph_mcl.py`, `--min-exonic-bp 0`), scored against
+`human2/guided.clusters.tsv`:
+
+| truth | catalog | pair sens | pair prec | bipartite R / P / F |
+|---|---|---|---|---|
+| DNA (1,818 loci, 435 clusters, 35,594 pairs) | RefSeq, same construction | 0.967 | 0.987 | 0.983 / 0.983 / 0.983 |
+| | **GENCODE/CAT** | 0.461 | 0.411 | 0.588 / 0.769 / **0.666** |
+| RNA (806 loci) | GENCODE/CAT | 0.481 | 0.530 | 0.634 / 0.819 / 0.715 |
+
+**NOT annotation-robust.** Post hoc diagnosis:
+- 71% of false pairs sit in one GENCODE family of 266 genes (114 protein-coding, 102 lncRNA).
+- The RefSeq TRUTH has the same shape. Its MCL0 has 202 loci (96 protein-coding, 89 lncRNA, LINC/SLC/OR/TRIM), and its MCL1
+  joins TBC1D3 with KRT.
+- The human truth was built at `--min-exonic-bp 0`, i.e. without §6dt's exon-to-exon clause, which the gorilla truth uses.
+
+**AJ (prereg md5 de9feffa).** Rule E1 is `--min-exonic-bp 1` with the default `--exonic-both-sides`, i.e. the gorilla truth's
+setting, applied to both annotations.
+- Development substrate: chr15/17/22.
+- Hold-out substrate (fresh): chr16/19/20. RefSeq has 6,074 genes, CAT 7,300; both go through the identical
+  `node_graph_mcl.py` pipeline.
+- Sanity check: E0 rebuilt from `human2/genes.asm20.paf` reproduces `guided.clusters.tsv` byte-for-byte.
+
+| substrate | AJ-2 HGNC guard: same-group pairs E0 -> E1 | cross-group pairs E0 -> E1 | guard | AJ-1 GENCODE_E1 vs RefSeq_E1: sens / prec / F | E0 vs E0 |
+|---|---|---|---|---|---|
+| development | 824 -> 774 (0.939) | 6,309 -> 143 (0.023) | REPAIR | 0.800 / 0.877 / 0.811 | 0.461 / 0.411 / 0.666 |
+| **hold-out** | 935 -> 476 (**0.509**) | 7,171 -> 87 (0.012) | **NOT REPAIR** | **0.617 / 0.529 / 0.789** | 0.418 / 0.470 / 0.709 |
+
+**AJ: NOT SUPPORTED on the hold-out** — the guard fails, and AJ-1 misses all three bars anyway.
+
+Post hoc, the lost "same-group" pairs are of two kinds:
+- **HGNC nomenclature groups, not homology:** "Long independently transcribed non-coding RNAs" 115 -> 4 and "Antisense RNAs"
+  47 -> 0.
+- **KRAB zinc fingers:** C2H2 477 -> 177, KRAB 402 -> 145. All 285/288 of the ZNF–ZNF edges lost that were inspected rest on
+  alignments with ZERO exonic bases on both sides (1-6 kb intronic repeats at ~0.90 identity, e.g. ZNF420–ZNF343,
+  ZNF98–ZNF337-AS1).
+- So E1 drops edges that are not exon homology. The guard's premise ("same HGNC group = homology this construction should
+  see") was wrong for both groups. This explains the failure; it does not change the verdict.
+
+Residual hold-out disagreement under E1:
+- 258/1,016 truth loci are in no GENCODE family; 41 of them have no GENCODE gene at all.
+- 41% of false pairs come from one GENCODE family (PKD1 + PKD1P + NPIPA/NPIPB, i.e. LCR16 duplicons).
+- ZNF families merging 5-7 truth clusters make up most of the rest.
+
+**Regrouping the same E1 graphs (post hoc, looked-at substrates):**
+
+| grouping | development F | hold-out F | notes |
+|---|---|---|---|
+| connected components | 0.747 | 0.821 | hold-out pair 0.534 / 0.652 |
+| triangle-supported edges | 0.818 | 0.717 | development pair 0.774 / 0.793 |
+| MCL | 0.811 | 0.789 | — |
+
+No grouping reaches 0.90 across annotations.
+
+**Node-deletion stability (post hoc, development, RefSeq only).** Drop a random fraction of genes from the PAF, rebuild, and
+score against the full truth restricted to the kept loci. This isolates partition stability from annotation content.
+
+| kept | E0 pair sens / prec / F (2 seeds) | E1 pair sens / prec / F |
+|---|---|---|
+| 90% | 0.870-0.889 / 0.927-0.946 / 0.965-0.972 | 0.975-0.990 / 0.994-0.997 / 0.993-0.994 |
+| 75% | 0.813-0.832 / 0.859-0.881 / 0.943-0.944 | 0.973-0.986 / 0.983-0.996 / 0.977-0.985 |
+| 50% | 0.709-0.713 / 0.810-0.840 / 0.901-0.905 | 0.968-0.977 / 0.976-0.990 / 0.966-0.971 |
+
+The E0 truth moves when 10% of genes are removed (pair sens < 0.90). The E1 truth barely moves at 50%. **Under E1 the
+remaining cross-annotation disagreement is annotation content (which genes exist, their exon models and boundaries), not
+the MCL partition.**
+
+**AJ-3 (report only, development, truth RefSeq_E1).**
+
+| arm | DNA truth (1,261 loci, 8,735 pairs): sens / prec / F | RNA truth (432 loci, 2,034 pairs): sens / prec / F |
+|---|---|---|
+| guided minimal G, E1 | 0.652 / 0.867 / 0.789 | 0.359 / 0.842 / 0.756 |
+| seeds only, E1 | 0.254 / 0.803 / 0.676 | — |
+| de novo D, E1 | 0.145 / 0.627 / 0.530 | 0.602 / 0.861 / 0.728 |
+| G, E0 construction | 0.681 / 0.544 / 0.717 | 0.305 / 0.542 / 0.677 |
+| D, E0 construction | 0.145 / 0.480 / 0.522 | 0.601 / 0.781 / 0.724 |
+| GENCODE, E1 | 0.800 / 0.877 / 0.811 | 0.785 / 0.942 / 0.836 |
+
+Under E1, precision is 0.84-0.94 for every arm at RNA level; sensitivity is what remains.
+Register rows 831 (AI), 832 (AJ).

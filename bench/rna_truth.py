@@ -168,3 +168,29 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def scoped_truth(clusters, contigs, seeds_tsv, out):
+    """Guided-mode scope: keep guided clusters (on the contigs, >= 2 loci) that contain >= 1 locus overlapping a seed
+    gene; all loci of those clusters are kept (hidden members must still be found)."""
+    C = set(contigs.split(","))
+    seeds = collections.defaultdict(list)
+    for line in open(seeds_tsv):
+        if line.startswith("name\t"):
+            continue
+        n, c, s, e, st, sd, ex = line.rstrip("\n").split("\t")
+        if sd == "1":
+            seeds[c].append((int(s), int(e)))
+    rows = [r for r in csv.DictReader(open(clusters), delimiter="\t") if r["chrom"] in C]
+    cnt = collections.Counter(r["cluster_id"] for r in rows)
+    has_seed = set()
+    for r in rows:
+        s, e = int(r["start"]) - 1, int(r["end"])
+        if any(a < e and s < b for a, b in seeds[r["chrom"]]):
+            has_seed.add(r["cluster_id"])
+    with open(out, "w") as fh:
+        fh.write("cluster_id\tchrom\tstart\tend\n")
+        for r in rows:
+            if cnt[r["cluster_id"]] >= 2 and r["cluster_id"] in has_seed:
+                fh.write(f"{r['cluster_id']}\t{r['chrom']}\t{r['start']}\t{r['end']}\n")
+    return len({r["cluster_id"] for r in rows if cnt[r["cluster_id"]] >= 2}), len(has_seed & {r["cluster_id"] for r in rows if cnt[r["cluster_id"]] >= 2})

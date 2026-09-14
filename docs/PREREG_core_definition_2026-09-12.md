@@ -1260,3 +1260,58 @@ run); DN0 and DN1 hold-out catalogs exist (§6jt); DN0+B = §6ji's `cat_bridge`.
 **Hold-out decision (fixed):** DN1r (and separately DN1r+B) NARROWS the de novo <-> expressed-guided gap iff R_G > DN0's
 0.3887 AND P_G >= 0.3345 - 0.05 = 0.2845 (`score_vs_guided.py --expr hybrid/expr_c3.tsv`, any-family). Expected in
 advance: the §6jt precision loss sits in SPAN-only edges that merge two TX blocks (the ones restricted mode rejects).
+
+---
+## ADDENDUM AI (2026-09-14; before any number below exists) — is the guided definition robust to the annotation it starts from?
+
+**Why:** the guided definition reproduces its truth on the same annotation by construction (tautological). A
+non-tautological test gives it an INDEPENDENT annotation of the same genome and scores against the RefSeq-derived truth.
+**Annotation (fixed):** T2T consortium CAT/Liftoff GENCODE-based CHM13 annotation
+`chm13.draft_v2.0.gene_annotation.gff3` (downloaded 09-14, md5 prefix 7e946417), every `gene` on
+chr15/chr17/chr22 (7,388); exon union per gene from its transcripts' exons.
+**Construction (fixed, identical to the human RefSeq guided catalog):** gene spans all-vs-all `minimap2 -x asm20 -c -X -N 50
+-p 0.1` (3 Mb chunks, `bench/node_graph_mcl.py`), `mcl_families` defaults (identity >= 0.70, cov_longer >= 0.30 on
+exonic length, >= 300 bp, MCL I = 2.8, `--min-exonic-bp 0`).
+**Truth:** `human2/guided.clusters.tsv` (RefSeq gene+pseudogene MCL), DNA level (all loci in clusters >= 2); RNA level
+(`lit/truth_rna/rna_h.clusters.tsv`) reported.
+**Reading (fixed):** the guided definition is ANNOTATION-ROBUST iff, on the DNA-level truth, pairwise sensitivity >= 0.90,
+pairwise precision >= 0.90 and bipartite F >= 0.90 (the goal bars). Otherwise NOT, with the failing metric reported.
+
+---
+## ADDENDUM AJ (2026-09-14; after AI's NOT, before any number below exists) — the exon-to-exon edge clause on both annotations, held out
+
+**AI result that motivates this (fixed, already reported):** GENCODE/CAT vs RefSeq truth on chr15/17/22 = pairwise
+sensitivity 0.461, pairwise precision 0.411, bipartite F 0.666 — NOT annotation-robust. Diagnosis (post hoc, looked at):
+71% of false pairs sit in ONE GENCODE family (266 genes: 114 protein-coding, 102 lncRNA), and the RefSeq TRUTH's own
+largest cluster has the same shape (202 loci: 96 protein-coding, 89 lncRNA; MCL1 joins TBC1D3 with KRT). Both were built
+at `--min-exonic-bp 0`, i.e. WITHOUT §6dt's exon-to-exon clause, which the gorilla truth (`gw_units_v3`) uses and which
+removed the gorilla repeat clique (0/33). No E1 human number has been computed.
+
+**Rule E1 (no new constant; the gorilla truth's setting):** `mcl_families --min-exonic-bp 1` (with the default
+`--exonic-both-sides`): an edge needs one alignment record mapping exon bases of one gene onto exon bases of the other, and
+the pair's merged alignments must cover >= 1 exonic base of the longer gene. Everything else unchanged (identity >= 0.70,
+cov_longer >= 0.30, >= 300 bp, I = 2.8, prune 1e-9). E0 = the AI construction (`--min-exonic-bp 0`).
+
+**Substrates.** Development (looked at): chr15/chr17/chr22 — RefSeq truth = `mcl_families` on `human2/genes.asm20.paf` +
+`human2/refseq_c15_17_22.gff`; GENCODE = `lit/annot_gencode/all.paf` + `nodes.gff`. **Hold-out (never looked at): chr16,
+chr19, chr20** — RefSeq = gene+pseudogene records of `winloci_data/Reference/chm13v2.0_RefSeq_full.gff.gz` (exon union
+from exon lines' `gene=`, as `bench/guided_min.py load_genes`); GENCODE = gene records of the CAT GFF (exon union from
+transcripts, as AI); BOTH annotations through the identical `bench/node_graph_mcl.py` prep (3 Mb chunks) / align / mcl.
+
+**AJ-1 (decision, held-out substrate; development reported):** under E1 the definition is ANNOTATION-ROBUST iff GENCODE_E1
+scored against RefSeq_E1 (`bench/rna_truth.py score`, all loci in truth clusters >= 2) has pairwise sensitivity >= 0.90,
+pairwise precision >= 0.90 and bipartite F >= 0.90. E0 vs E0 reported alongside.
+
+**AJ-2 (guard: E1 repairs the truth, it does not degenerate it; each substrate):** HGNC (`hgnc_complete_set.txt`) by
+exact symbol. Over the RefSeq loci, H = pairs whose two gene symbols share >= 1 `gene_group_id`; X = pairs where both
+symbols have a non-empty `gene_group_id` and share none. A locus's symbols = Names of the RefSeq records it contains
+(development: records whose coordinates equal a clusters.tsv row; hold-out: the node's record). REPAIR iff
+|pairs(RefSeq_E1) ∩ H| >= 0.90 × |pairs(RefSeq_E0) ∩ H| AND |pairs(RefSeq_E1) ∩ X| <= 0.50 × |pairs(RefSeq_E0) ∩ X|.
+If AJ-2 fails on the hold-out, AJ-1 is not read as support whatever its value.
+
+**AJ-3 (report only, development):** the human arms of AH (de novo D = read nodes + MCL; guided minimal G) rebuilt under E1
+from their existing PAFs and scored against RefSeq_E1 at DNA and RNA level, with the goal bars. Because the truth changed,
+no AJ-3 number is a confirmation; a gain needs its own held-out test.
+
+**Expected in advance:** E1 removes most cross-group pairs in the largest clusters; the hold-out chr19 KRAB-ZNF
+superfamily is the likeliest place for AJ-1 to fail (dense, graded homology where MCL cuts depend on the node set).
