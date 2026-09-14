@@ -19734,3 +19734,57 @@ an age (divergence) limit.
 - Retro controls RPL21 (1 aligned pair) and RPS2 (0) are nearly uninformative. HMGB1, NPM1, PPIA and TUBB carry the
   specificity.
 Data: `lit/duplicon_x/{x.out,pairs.tsv}`.
+
+## §6jv — Mechanism layer (genomic copy / retrocopy / TE-derived gene): GENOMIC SUPPORTED (13/13 vs 0/16); RETROCOPY NOT SUPPORTED (5/16; hallmark requirement too strict); TE-DERIVED NOT SUPPORTED (ERV-env 5/8 vs >= 6) (2026-09-14)
+
+Pre-registered as Addendum Y (`docs/PREREG_core_definition_2026-09-12.md`, md5 5bb6b87e). `bench/copy_mechanism.py`.
+Inputs: soft-masked CHM13 v2.0; UCSC hs1 RepeatMasker `.out` (downloaded 09-14, md5 5cc807e8 = UCSC md5sum.txt);
+`chm13v2.0_RefSeq_full.gff.gz`. Each member is compared with the family PARENT (protein-coding member with the most
+introns), in order:
+1. GENOMIC = region chain identity >= 0.80 and >= 1 kb aligned bases that are non-exonic AND not soft-masked in both.
+2. RETROCOPY = parent mRNA (`minimap2 -x splice -uf`) loses >= 1 parent junction (<= 30 bp genomic gap across a >= 70 bp
+   parent intron), retains none, AND shows poly(A) or a TSD. With no scorable junction, both poly(A) and TSD are needed.
+3. Otherwise UNRESOLVED.
+TE-DERIVED = >= 50% of the CDS inside RepeatMasker LINE/SINE/LTR/Retroposon records.
+
+**Chance-rate gate** (1,000 random pseudo-insertions, seed 13): poly(A) 0.031, TSD 0.002. Both are under 0.10, so both
+are used.
+
+**Implementation notes, disclosed:**
+- A minus-strand bug in the parent mRNA builder (exon order reversed twice) was found while inspecting the first
+  processed-pseudogene batch: RPL7 pseudogenes aligned in per-exon pieces. It was fixed, a minus-strand unit test was
+  added, and every splice alignment was recomputed before any reading was computed.
+- A `collections.groupby` → `itertools.groupby` crash in the report-only block was fixed.
+- Families ran in batches with cached alignments; one combined invocation produced the readings (9.6 s).
+
+| reading | held-out result | bar | verdict |
+|---|---|---|---|
+| R2 GENOMIC (repeat-masked bases excluded) | SD negatives 13/13 GENOMIC-DERIVED; retro positives 0/16 | >= 10/13 and <= 1/16 | **SUPPORTED** |
+| R1 RETROCOPY | retro positives 5/16 RETRO-DERIVED; SD negatives 0/13 | >= 12/16 and <= 1/13 | **NOT SUPPORTED** |
+| R3 TE-DERIVED | ERV-env genes 5/8; protein-coding negatives 2/200 (1.0%, SERF1A/B at 0.53) | >= 6/8 and <= 5% | **NOT SUPPORTED** |
+
+**R1 per family** (RETROCOPY / members with junction loss and not GENOMIC / assessed):
+- Processed pseudogenes: RPL7 1/32/33, RPL23A 10/28/29, HNRNPA1 9/30/33, PTMA 6/13/13, TPT1 0/1/1, NACA 1/5/5,
+  KRT8 24/35/35, FTH1 4/15/15.
+- Retrogenes: PGK2 0/1/1, GLUD2 0/0/1, UTP14C 1/1/1, TAF1L 0/1/1, RPL10L 0/1/1, PABPC3 1/1/1, POU5F1B 1/1/1,
+  NANOGP8 1/1/1.
+- The SD negatives assign no member to RETROCOPY; 52/54 are GENOMIC and 2 UNRESOLVED.
+- Development: core-duplicon families 7/10 GENOMIC-DERIVED and 0/10 RETRO-DERIVED; W/X retro families RETRO-DERIVED 3/8
+  (GAPDH, RPL21, RPS2); AMY GENOMIC-DERIVED.
+
+**Post-hoc diagnosis (not a result):**
+- Intron loss itself separates the classes almost perfectly. 166/172 assessed held-out retro members lose a parent
+  junction and retain none. That holds for 0/54 SD-negative members and 1/128 core/AMY members.
+- What failed is the added hallmark requirement. Poly(A) was found in only 34/172 retro members and TSD in 32/172,
+  for two reasons:
+  - The poly(A) test runs only when the alignment reaches within 100 bp of the annotated mRNA 3' end. RefSeq's
+    longest 3' UTR often extends past the polyadenylation site of the isoform that was retrotransposed. Example:
+    RPL7P1 aligns mRNA 601-1397 of 1799 and carries AATAAA plus a 23-bp poly(A) exactly at its alignment end, but the
+    test never ran.
+  - TSDs and poly(A) tracts decay with age. The retrogenes that failed (PGK2, GLUD2, TAF1L, RPL10L) are old
+    insertions; the ones that passed (UTP14C, PABPC3, POU5F1B, NANOGP8) are younger.
+- R3: RepeatMasker covers >= 50% of the CDS in ERVW-1, ERV3-1, ERVK3-1, ERVMER34-1 and ERVFRD-1, but only 35-36% in
+  ERVV-1/2 and 0% in ERVH48-1. PNMA genes are unexpectedly covered (6/10 >= 0.5) and L1TD1 0.65, while the
+  Ty3/gypsy-derived RTL/PEG10/ARC genes are 0/14, as expected before looking.
+
+Register rows 819 (R1), 820 (R3). Data: `lit/mechanism_y/{y.out,members.tsv,te.tsv}`.

@@ -846,3 +846,64 @@ has >= 1 aligned pair and >= 50% of its aligned pairs are GENOMIC. W's flank cla
 genomic context) distinguishable from retrotransposition-derived families (exon-only homology)" — iff >= 7 of the 9
 held-out segmental-duplication families are DUPLICON-DERIVED AND <= 1 of the 5 held-out retrotransposition families is.
 If >= 2 retro families are DUPLICON-DERIVED the rule does not discriminate; otherwise NOT SUPPORTED.
+
+---
+## ADDENDUM Y (2026-09-14, after Addendum X was SUPPORTED; before any number below exists) — a per-copy MECHANISM layer: genomic copy, retrocopy, TE-derived gene (human CHM13)
+
+**Why (user):** define the retrotransposition-derived copies positively instead of as "not genomic", using the repeat
+annotation and the soft-masked genome as another layer. Two distinct things are named: RETROCOPIES (a gene copied through
+its mRNA by L1 machinery) and TE-DERIVED genes (the gene's own coding sequence is a domesticated retrotransposon).
+
+**Inputs (fixed):** CHM13 v2.0 soft-masked FASTA (lowercase = repeat-masked); UCSC hs1 RepeatMasker `.out`
+(`winloci_data/rmsk/hs1.repeatMasker.out.gz`, md5 5cc807e8, matches UCSC md5sum.txt); `chm13v2.0_RefSeq_full.gff.gz`.
+
+**Parent (per family):** the protein-coding member with the most annotated introns (ties: name); its mRNA = the exon
+sequence of its transcript with the most exons (ties: longest). Every other member (cap 40, as W) is classified against
+the parent, in this order:
+1. **GENOMIC** iff the region chain (W/X regions and chaining; chain identity >= 0.80) shares >= 1,000 aligned bases that
+   are non-exonic in both copies (X) AND uppercase (not soft-masked) in both copies.
+2. **RETROCOPY** evidence, from the parent mRNA aligned to the member region with `minimap2 -x splice -uf -c` (record =
+   the one overlapping the member gene with the most aligned query bases; identity matches/block >= 0.80; >= 100 aligned
+   query bases):
+   - parent junctions scored = those whose parent intron >= 70 bp and that lie >= 20 query bases inside the record;
+     genomic distance between the member bases aligned to query J-10 and J+10 minus 20: <= 30 bp = LOST, >= 70 bp = RETAINED,
+     otherwise ambiguous (not counted);
+   - POLYA: the record reaches within 100 bp of the mRNA 3' end, and a 15-bp window with >= 12 A (T on the minus strand)
+     starts inside the 60 bp from 10 bp inside to 50 bp beyond the 3' alignment end (transcript orientation);
+   - TSD: an exact direct repeat >= 10 bp (no base > 60% of it) shared between genomic windows [L-40, L+10) and
+     [R-10, R+40), where L / R are the left / right genomic boundaries of the insertion (alignment ends, extended to the far
+     edge of the poly(A) window when POLYA holds).
+   RETROCOPY iff not GENOMIC and [(LOST >= 1 and RETAINED = 0 and (POLYA or TSD)) or (no junction scorable and POLYA and TSD)].
+3. **UNRESOLVED** otherwise (region chain or mRNA record passed but neither rule held). Members with neither passing are
+   UNASSESSED and excluded from family fractions.
+
+**Chance-rate gate (computed first, fixed seed 13):** 1,000 random uppercase-anchored positions on chr1-22,X, a pseudo-
+insertion of 1,000 bp on a random strand; POLYA and TSD evaluated exactly as above. A hallmark whose chance rate > 10% is
+dropped from the RETROCOPY rule (the other hallmark alone then applies; if both drop, only junction evidence applies and
+no-junction members cannot be RETROCOPY).
+
+**TE-DERIVED (per protein-coding member, independent of 1-3):** >= 50% of its union CDS bases (all transcripts) overlap
+RepeatMasker records whose class (text before "/", "?" removed) is LINE, SINE, LTR or Retroposon.
+
+**Family calls:** RETRO-DERIVED iff >= 50% of assessed members are RETROCOPY; GENOMIC-DERIVED iff >= 50% GENOMIC.
+**Report-only:** for RETROCOPY members, whether one shares >= 1 kb uppercase flank with a sibling RETROCOPY (asm20,
+identity >= 0.80) = "retrocopy, then genomic duplication".
+
+**Families (regexes fixed now; names checked to exist, no alignments run):**
+- RETRO positives (held out, 16): processed-pseudogene families RPL7 `^RPL7(P\d+)?$`, RPL23A `^RPL23A(P\d+)?$`, HNRNPA1
+  `^HNRNPA1(P\d+)?$`, PTMA `^PTMA(P\d+)?$`, TPT1 `^TPT1(P\d+)?$`, NACA `^NACA(P\d+)?$`, KRT8 `^KRT8(P\d+)?$`, FTH1
+  `^FTH1(P\d+)?$`; retrogene pairs PGK `^PGK[12]$`, GLUD `^GLUD[12]$`, UTP14 `^UTP14[AC]$`, TAF1L `^TAF1L?$`, RPL10L
+  `^RPL10L?$`, PABPC `^PABPC[13]$`, POU5F1 `^POU5F1B?$`, NANOG `^NANOG(P8)?$`.
+- SD negatives (13): Addendum X's 9 SD families (seen under X, new to this layer) + new DEFB4 `^DEFB4[AB]$`, GTF2H2
+  `^GTF2H2C?$`, SPDYE `^SPDYE\d+[A-Z]?$`, USP17L `^USP17L\d+$`.
+- TE-derived groups: ERV-env `^ERVW-1$|^ERVFRD-1$|^ERVV-[12]$|^ERVH48-1$|^ERVMER34-1$|^ERVK3-1$|^ERV3-1$` (deciding);
+  Ty3/gypsy-derived `^PEG10$|^RTL\d+[A-Z]?$|^ARC$|^ASPRV1$|^NYNRIN$`, PNMA `^PNMA\d+[A-Z]?$`, L1TD1 (reported; expected
+  LOW before looking — ancient domestications are too diverged for RepeatMasker).
+- Development (reported, not deciding): W's 10 core + 3 retro families, X's 5 retro families, AMY.
+
+**Readings (held out, each fixed):**
+- R1 RETROCOPY: SUPPORTED iff >= 12/16 RETRO positives RETRO-DERIVED AND <= 1/13 SD negatives RETRO-DERIVED.
+- R2 GENOMIC with repeats excluded: SUPPORTED iff >= 10/13 SD negatives GENOMIC-DERIVED AND <= 1/16 RETRO positives.
+- R3 TE-DERIVED: SUPPORTED iff >= 6/8 ERV-env genes TE-DERIVED AND <= 5% of protein-coding members of all SD, core and
+  retro families (dev + held out) TE-DERIVED.
+Each reading is reported separately; a failed reading is reported as failed, not re-tuned on these families.
