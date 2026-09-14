@@ -20681,3 +20681,71 @@ Exon-union lengths of the same gene differ 2-3× between the annotations.
 **Conclusion.** Under E1 the definition is stable to deleting genes (50%: F 0.97) and to random edge noise (0.93-0.94). The
 remaining 0.2 between two expert annotations is how each annotation models the same genes. A truth derived from ONE
 annotation carries that error, so an independent method cannot be measured against it beyond ~0.8, whatever the method.
+
+## §6kn — Adjudicated two-annotation truth (user choice, Addenda AK/AL): not achieved on development; chr5/7/21 hold-out untouched; the ~0.8 cross-annotation ceiling survives every variant (2026-09-14)
+
+The user chose an adjudicated ground truth. All results below are on development (chr15/17/22).
+
+**AK (prereg 0d12bf19; pair-level adjudication).**
+- Rule: pairs both annotations group are TRUE; disputed pairs are settled by protein evidence (miniprot Identity >= 0.70,
+  coverage >= 0.30) or SEDEF.
+- Gate AK-0 NOT VALID:
+  - evidence sensitivity on agreed coding pairs 0.362 (bar 0.80);
+  - disputed pairs unscored 0.746 (bar 0.50);
+  - hard-negative rate 0.005.
+- Causes:
+  - amino-acid identity is off the definition's nucleotide scale (agreed direct edges align at 85-95% protein coverage and
+    0.25-0.58 identity, e.g. GOLGA6L6 vs GOLGA6L2 / GOLGA8);
+  - 112/965 agreed pairs are transitive family co-members with no direct edge.
+
+**AL (prereg 9332f52d; edge-level adjudication, frozen before scoring).**
+- Edges present in both E1 graphs are kept.
+- A disputed edge needs dc-megablast exon-union evidence (>= 300 bp, >= 0.70, >= 0.30 coverage, soft-masked) or SEDEF.
+- Clustering: MCL (`bench/mcl_port.py`) on a strict graph and a permissive graph. A pair is TRUE if co-clustered in both,
+  UNSCORED if co-clustered in only one.
+- Gate AL-0 VALID: evidence 0.861 of agreed edges, hard negatives 0.006, unscored 0.198. Truth: 6,420 TRUE pairs, 350 clusters.
+
+**Two defects surfaced in development scoring:**
+1. **Scorer.** It assigned every joint locus by span overlap, so genes nested in a family member's intron inherited its
+   family: REFSEQ_E1 pair precision was 0.418. Fixed to the AG convention (score among truth loci).
+2. **Truth construction.** One union-find across both annotations chains distinct genes through the other annotation's
+   overlapping models: 175 truth loci hold >= 3 RefSeq and >= 3 GENCODE records, and 131 hold > 1 RefSeq family. Even so,
+   REFSEQ_E1, a truth input, scored 0.674 / 0.811.
+
+**AM revision (matched loci, `--joint-loci matched`, development).**
+- Rule: each annotation keeps its own loci; a RefSeq and a GENCODE locus join only as mutual best exonic-overlap partners.
+- Edges: 3,990 agreed, 6,275 disputed (2,363 with evidence).
+- Gate: evidence 0.909, hard negatives 0.007, **unscored 0.566 -> NOT VALID**.
+- Scored anyway, for diagnosis:
+
+| arm | pair sens | pair prec | bipartite F |
+|---|---|---|---|
+| ENSEMBL (independent annotation, E1) | 0.425 | 0.747 | 0.777 |
+| REFSEQ_E1 (truth input) | 0.784 | 0.717 | 0.793 |
+| GENCODE_E1 (truth input) | 0.793 | 0.849 | 0.834 |
+| G (50% seeds, E1) | 0.507 | 0.676 | 0.688 |
+| D (read nodes, E1, DNA level) | 0.196 | 0.648 | 0.543 |
+
+**Identity-floor sweep (E1, GENCODE vs RefSeq).**
+
+| identity floor | development F | chr16/19/20 F |
+|---|---|---|
+| 0.80 | 0.809 | 0.795 |
+| 0.90 | 0.810 | 0.809 |
+| 0.95 | 0.835 | 0.802 |
+
+The hold-out pair precision stays 0.52-0.57.
+
+**Reading.** An arbitrated truth is a third MCL partition. It differs from each of its own inputs by about as much as they
+differ from each other (~0.8), because systematic, gene-model-driven edge differences move MCL cuts. Random noise does not
+(§6kl-§6km). Every variant stays at the ~0.8 ceiling:
+- E0 / E1;
+- repeat masking;
+- MCL weights and inflation;
+- components, triangles;
+- identity 0.70-0.95;
+- consensus scoring;
+- adjudication.
+
+The chr5/chr7/chr21 hold-out was not touched; no AL/AM hold-out number exists.
+Register rows 835 (AK), 836 (AL/AM).

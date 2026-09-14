@@ -176,6 +176,69 @@ def blast_evidence(a, loci, involved, genome):
     return hit
 
 
+def overlap_groups(idx_list, recs):
+    """Union-find over records whose exon unions share >= 1 bp (the `--merge-overlapping-loci` rule)."""
+    uf = UF()
+    by_chrom = collections.defaultdict(list)
+    for i in idx_list:
+        uf.find(i)
+        for s, e in recs[i]["exons"]:
+            by_chrom[recs[i]["chrom"]].append((s, e, i))
+    for blocks in by_chrom.values():
+        blocks.sort()
+        cur_end, cur_i = -1, None
+        for s, e, i in blocks:
+            if cur_i is not None and s < cur_end:
+                uf.union(cur_i, i)
+            if e > cur_end:
+                cur_end, cur_i = e, i
+    groups = collections.defaultdict(list)
+    for i in idx_list:
+        groups[uf.find(i)].append(i)
+    return list(groups.values())
+
+
+def joint_groups(recs, A, Bn, mode):
+    """union (AL): one union-find over both annotations — chains distinct genes through overlapping models of the other
+    annotation (§6kn). matched (AM): each annotation's own loci, then a RefSeq locus and a GENCODE locus are one joint
+    locus iff each is the other's best exonic-overlap partner; everything else stays alone."""
+    if mode == "union":
+        return overlap_groups(list(range(len(recs))), recs)
+    per = {n: overlap_groups([i for i, r in enumerate(recs) if r["ann"] == n], recs) for n in (A, Bn)}
+    blocks = collections.defaultdict(list)
+    for n in (A, Bn):
+        for k, members in enumerate(per[n]):
+            for s, e in gp.merge([b for i in members for b in recs[i]["exons"]]):
+                blocks[recs[members[0]]["chrom"]].append((s, e, n, k))
+    ov = collections.Counter()
+    for bl in blocks.values():
+        bl.sort()
+        active = []
+        for s, e, n, k in bl:
+            active = [x for x in active if x[1] > s]
+            for s2, e2, n2, k2 in active:
+                if n2 != n:
+                    key = (k, k2) if n == A else (k2, k)
+                    ov[key] += min(e, e2) - s
+            active.append((s, e, n, k))
+    best_a, best_b = {}, {}
+    for (ka, kb), bp in ov.items():
+        if bp > best_a.get(ka, (0, None))[0]:
+            best_a[ka] = (bp, kb)
+        if bp > best_b.get(kb, (0, None))[0]:
+            best_b[kb] = (bp, ka)
+    matched_b, groups = set(), []
+    for ka, members in enumerate(per[A]):
+        kb = best_a.get(ka, (0, None))[1]
+        if kb is not None and best_b.get(kb, (0, None))[1] == ka:
+            groups.append(members + per[Bn][kb])
+            matched_b.add(kb)
+        else:
+            groups.append(members)
+    groups += [m for kb, m in enumerate(per[Bn]) if kb not in matched_b]
+    return groups
+
+
 def cmd_build(a):
     import mcl_port
     os.makedirs(a.out, exist_ok=True)
@@ -185,25 +248,9 @@ def cmd_build(a):
     assert len(anns) == 2, "exactly two --ann"
     (A, specA), (Bn, specB) = anns
     recs = [r for name, spec in anns for r in load_records(name, spec, contigs)]
-    uf = UF()
-    by_chrom = collections.defaultdict(list)
-    for i, r in enumerate(recs):
-        uf.find(i)
-        for s, e in r["exons"]:
-            by_chrom[r["chrom"]].append((s, e, i))
-    for c, blocks in by_chrom.items():
-        blocks.sort()
-        cur_end, cur_i = -1, None
-        for s, e, i in blocks:
-            if cur_i is not None and s < cur_end:
-                uf.union(cur_i, i)
-            if e > cur_end:
-                cur_end, cur_i = e, i
-    groups = collections.defaultdict(list)
-    for i in range(len(recs)):
-        groups[uf.find(i)].append(i)
+    groups = joint_groups(recs, A, Bn, a.joint_loci)
     loci, rec_locus = [], {}
-    for members in groups.values():
+    for members in groups:
         rs = [recs[i] for i in members]
         loci.append({"chrom": rs[0]["chrom"], "start": min(r["start"] for r in rs), "end": max(r["end"] for r in rs),
                      "exons": gp.merge([b for r in rs for b in r["exons"]]), "members": members,
@@ -339,9 +386,9 @@ def cmd_score(a):
     tlabel = [uf.find(x) for x in tl]
     print(f"truth: {len(tl)} loci in {len(set(tlabel))} clusters, {len(true_pairs)} TRUE pairs, "
           f"{sum(1 for s in status.values() if s == 'FALSE')} explicit FALSE, {sum(1 for s in status.values() if s == 'UNSCORED')} UNSCORED")
-    order = sorted(loci, key=lambda x: int(x[1:]))
-    if expressed is not None:
-        order = [x for x in order if x in expressed]
+    # pairs are scored among truth loci only (the AG / `rna_truth.py` convention): span overlap cannot place a nested gene
+    # inside a family member's intron, so assigning every joint locus manufactures false pairs (§6kn)
+    order = tl
     print(f"{'catalog':16s} {'pair_sens':>9s} {'pair_prec':>9s} {'bip_R':>6s} {'bip_P':>6s} {'bip_F':>6s}  (TP / FP / ignored)")
     for spec in a.catalogs:
         name, path = spec.split("=", 1)
@@ -388,6 +435,7 @@ def main():
     p.add_argument("--blast-bin", default="/home/juanfra/miniforge3/envs/blast/bin")
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--inflation", type=float, default=2.8)
+    p.add_argument("--joint-loci", choices=("union", "matched"), default="matched")
     p.add_argument("--prune", type=float, default=1e-9)
     p = sub.add_parser("score")
     p.add_argument("--truth", required=True)
