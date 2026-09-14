@@ -117,11 +117,96 @@ def cmd_nodes(a):
     print(f"AB1 nodes {len(ab1)}; AB2: chain cuts {n_cut}, pieces kept {len(pieces)}, gene-level loci {len(ab2)}")
 
 
+def cmd_readloci(a):
+    base = read_nodes(f"{a.outdir}/{a.base}.nodes.tsv")
+    base_reps = {}
+    if os.path.exists(f"{a.outdir}/{a.base}.rep_exons.tsv"):
+        base_reps = {int(r["idx"]): blocks_of(r["rep_exons"]) for r in csv.DictReader(open(f"{a.outdir}/{a.base}.rep_exons.tsv"), delimiter="\t")}
+    bam = pysam.AlignmentFile(a.bam)
+    reads = []
+    for c in CONTIGS:
+        for r in bam.fetch(c):
+            if r.is_unmapped or r.is_secondary or r.is_supplementary or r.mapping_quality < 1:
+                continue
+            strand = "-" if r.is_reverse else "+"
+            if r.has_tag("ts") and r.get_tag("ts") == "-":
+                strand = "+" if strand == "-" else "-"
+            blocks, pos, cur = [], r.reference_start, r.reference_start
+            for op, n in r.cigartuples:
+                if op in (0, 2, 7, 8):
+                    pos += n
+                elif op == 3:
+                    if pos > cur:
+                        blocks.append((cur, pos))
+                    pos += n
+                    cur = pos
+            if pos > cur:
+                blocks.append((cur, pos))
+            reads.append((c, strand, blocks))
+    parent = list(range(len(reads)))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    by = collections.defaultdict(list)
+    for i, (c, strand, blocks) in enumerate(reads):
+        for s0, e0 in blocks:
+            by[(c, strand)].append((s0, e0, i))
+    for iv in by.values():
+        iv.sort()
+        end, owner = -1, None
+        for s0, e0, i in iv:
+            if owner is not None and s0 < end:
+                parent[find(i)] = find(owner)
+            if e0 > end:
+                end, owner = e0, i
+    groups = collections.defaultdict(list)
+    for i in range(len(reads)):
+        groups[find(i)].append(i)
+    bidx = ExonIndex(base)
+    added, n_cand = [], 0
+    for members in groups.values():
+        if len(members) < 3:
+            continue
+        c, strand = reads[members[0]][0], reads[members[0]][1]
+        ev = []
+        for i in members:
+            for s0, e0 in reads[i][2]:
+                ev += [(s0, 1), (e0, -1)]
+        ev.sort()
+        depth, start, ex = 0, None, []
+        for x, d in ev:
+            prev = depth
+            depth += d
+            if prev < 2 <= depth:
+                start = x
+            elif prev >= 2 > depth and start is not None and x > start:
+                ex.append((start, x))
+        ex = gp.merge(ex)
+        if sum(e0 - s0 for s0, e0 in ex) < MIN_PIECE:
+            continue
+        n_cand += 1
+        if any(bidx.hits(c, s0, e0) for s0, e0 in ex):
+            continue
+        added.append({"chrom": c, "strand": strand, "n_reads": len(members), "exons": ex, "rep_exons": ex})
+    nodes = [dict(n, rep_exons=base_reps.get(n["idx"], n["exons"])) for n in base] + added
+    nodes.sort(key=lambda n: (n["chrom"], n["exons"][0][0], n["strand"]))
+    write_nodes(f"{a.outdir}/{a.out}.nodes.tsv", nodes)
+    with open(f"{a.outdir}/{a.out}.rep_exons.tsv", "w") as fh:
+        fh.write("idx\trep_exons\n")
+        for i, n in enumerate(nodes):
+            fh.write(f"{i}\t{fmt(n['rep_exons'])}\n")
+    print(f"reads {len(reads)}; read groups {len(groups)}; candidate loci (>= 3 reads, >= 100 bp at depth >= 2) {n_cand}; "
+          f"added (no overlap with {a.base} exons) {len(added)}; {a.out} nodes {len(nodes)}")
+
+
 def arm_queries(outdir, arm):
     nodes = read_nodes(f"{outdir}/{arm}.nodes.tsv")
     reps = {}
-    if arm == "ab2":
-        reps = {int(r["idx"]): blocks_of(r["rep_exons"]) for r in csv.DictReader(open(f"{outdir}/ab2.rep_exons.tsv"), delimiter="\t")}
+    if os.path.exists(f"{outdir}/{arm}.rep_exons.tsv"):
+        reps = {int(r["idx"]): blocks_of(r["rep_exons"]) for r in csv.DictReader(open(f"{outdir}/{arm}.rep_exons.tsv"), delimiter="\t")}
     for n in nodes:
         n["rep"] = reps.get(n["idx"], n["exons"])
         n["tx_key"] = key_of({"chrom": n["chrom"], "strand": n["strand"], "exons": n["rep"]})
@@ -133,8 +218,13 @@ def arm_queries(outdir, arm):
 def cmd_queries(a):
     genome = pysam.FastaFile(a.genome)
     tx, body = {}, {}
-    for arm in ("ab1", "ab2"):
+    done = {kind: {l[1:].strip() for f in glob.glob(f"{a.outdir}/{kind}.*.fa") for l in open(f) if l.startswith(">")}
+            for kind in ("tx", "body")}
+    for arm in a.arms.split(","):
         for n in arm_queries(a.outdir, arm):
+            if n["tx_key"] in done["tx"] or n["body_key"] in done["body"]:
+                if n["tx_key"] in done["tx"] and n["body_key"] in done["body"]:
+                    continue
             if n["tx_key"] not in tx:
                 s = "".join(genome.fetch(n["chrom"], x, y) for x, y in n["rep"]).upper()
                 tx[n["tx_key"]] = s.translate(gp.COMP)[::-1] if n["strand"] == "-" else s
@@ -151,7 +241,10 @@ def cmd_queries(a):
             bp += L
         if cur:
             batches.append(cur)
-        for i, b in enumerate(batches):
+        items = {k: v for k, v in items.items() if k not in done[kind]}
+        batches = [[k for k in b if k in items] for b in batches]
+        batches = [b for b in batches if b]
+        for i, b in enumerate(batches, start=a.start):
             with open(f"{a.outdir}/{kind}.{i:03d}.fa", "w") as fh:
                 for k in b:
                     seq = items[k] if kind == "tx" else genome.fetch(*items[k]).upper()
@@ -210,8 +303,10 @@ def cmd_families(a):
         by_tx[h["q"]].append(h)
     for c in body_chains:
         by_body[c["q"]].append(c)
-    for arm in ("ab1", "ab2"):
-        nodes = arm_queries(a.outdir, arm)
+    for spec in a.arms.split(","):
+        arm, rest = spec.split("=")
+        nodeset, grouping = rest.split(":")
+        nodes = arm_queries(a.outdir, nodeset)
         idx = ExonIndex(nodes)
         spliced = {n["idx"]: len(n["exons"]) >= 2 for n in nodes}
         edges = collections.Counter()
@@ -243,19 +338,34 @@ def cmd_families(a):
             adj[p[0]].add(p[1])
             adj[p[1]].add(p[0])
         seen, fams = set(), []
-        for n in nodes:
-            if n["idx"] in seen or n["idx"] not in adj:
-                continue
-            comp, stack = [], [n["idx"]]
-            seen.add(n["idx"])
-            while stack:
-                x = stack.pop()
-                comp.append(x)
-                for y in adj[x]:
-                    if y not in seen:
-                        seen.add(y)
-                        stack.append(y)
-            fams.append(sorted(comp))
+        if grouping == "components":
+            for n in nodes:
+                if n["idx"] in seen or n["idx"] not in adj:
+                    continue
+                comp, stack = [], [n["idx"]]
+                seen.add(n["idx"])
+                while stack:
+                    x = stack.pop()
+                    comp.append(x)
+                    for y in adj[x]:
+                        if y not in seen:
+                            seen.add(y)
+                            stack.append(y)
+                fams.append(sorted(comp))
+        elif grouping == "leaders":
+            order = sorted(nodes, key=lambda n: (-n["n_reads"], -len(adj.get(n["idx"], ())), n["chrom"], n["exons"][0][0], n["idx"]))
+            for n in order:
+                i = n["idx"]
+                if i in seen:
+                    continue
+                free = sorted(y for y in adj.get(i, ()) if y not in seen)
+                if not free:
+                    continue
+                seen.add(i)
+                seen.update(free)
+                fams.append(sorted([i] + free))
+        else:
+            sys.exit(f"unknown grouping {grouping}")
         fams = [f for f in fams if len(f) >= 2]
         with open(f"{a.outdir}/{arm}.copies.tsv", "w") as fh:
             fh.write("family_id\tchrom\tstart\tend\tstrand\tn_reads\tnode_idx\n")
@@ -264,7 +374,7 @@ def cmd_families(a):
                     n = nodes[i]
                     fh.write(f"SDF{k}\t{n['chrom']}\t{n['exons'][0][0]}\t{n['exons'][-1][1]}\t{n['strand']}\t{n['n_reads']}\t{i}\n")
         both = len({p for p, _ in pairs})
-        print(f"{arm}: nodes {len(nodes)}; exon edges {edges['exon']}, gene-body edges {edges['body']}, distinct pairs {both}; "
+        print(f"{arm} ({nodeset} nodes, {grouping}): nodes {len(nodes)}; exon edges {edges['exon']}, gene-body edges {edges['body']}, distinct pairs {both}; "
               f"families (>=2 loci) {len(fams)} holding {sum(len(f) for f in fams)} loci")
 
 
@@ -386,6 +496,13 @@ def main():
     p = sub.add_parser("queries")
     p.add_argument("--outdir", required=True)
     p.add_argument("--genome", required=True)
+    p.add_argument("--arms", default="ab1,ab2")
+    p.add_argument("--start", type=int, default=0)
+    p = sub.add_parser("readloci")
+    p.add_argument("--outdir", required=True)
+    p.add_argument("--bam", required=True)
+    p.add_argument("--base", default="ab2")
+    p.add_argument("--out", default="ac")
     p = sub.add_parser("align")
     p.add_argument("--outdir", required=True)
     p.add_argument("--kind", choices=("tx", "body"), required=True)
@@ -393,6 +510,7 @@ def main():
     p.add_argument("--threads", type=int, default=4)
     p = sub.add_parser("families")
     p.add_argument("--outdir", required=True)
+    p.add_argument("--arms", default="ab1=ab1:components,ab2=ab2:components")
     p = sub.add_parser("decompose")
     p.add_argument("--outdir", required=True)
     p.add_argument("--clusters", required=True)
@@ -402,7 +520,7 @@ def main():
                    help="cab = prereg AB order; acb = missing node checked first (sensitivity)")
     p.add_argument("catalogs", nargs="+")
     a = ap.parse_args()
-    {"nodes": cmd_nodes, "queries": cmd_queries, "align": cmd_align, "families": cmd_families, "decompose": cmd_decompose}[a.cmd](a)
+    {"nodes": cmd_nodes, "readloci": cmd_readloci, "queries": cmd_queries, "align": cmd_align, "families": cmd_families, "decompose": cmd_decompose}[a.cmd](a)
 
 
 if __name__ == "__main__":

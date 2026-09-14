@@ -19999,3 +19999,56 @@ test of components with the guided edge rule.
   catalogs, so the re-derived guided edge graph misses many of the guided catalog's edges (MCL on exonic-denominator
   edges was not reproduced). Treat (c) as an upper bound.
 Register row 824. Data: `lit/sharedef_ab/{score_expr.out,score_full.out,decompose.out,decompose_acb.out}`.
+
+## §6ka — The two levers from §6jz: read-locus nodes lift recall to 0.695, leader neighbourhoods lift precision to 0.581, but no pre-registered arm clears both bars (AC3 R_G 0.417 < 0.471) (2026-09-14)
+
+Pre-registered as Addendum AC (md5 12dc50aa). `bench/denovo_shared_def.py` (`readloci`, `families --arms`).
+
+**Lever N (read-locus nodes).**
+- Reads: primary MAPQ >= 1 reads on the three gorilla contigs (139,912), grouped by same-strand exon overlap into 4,841
+  groups.
+- Candidates: 1,935 with >= 3 reads and >= 100 bp at depth >= 2.
+- Added: 233, the candidates that overlap no AB2 node, giving 2,664 nodes. 43 of the 58 node-less expressed guided loci
+  gain a node.
+- Pre-register diagnosis: all 58 node-less loci had >= 3 unique reads (54 with >= 3 spliced reads), so the DN0 pipeline
+  dropped read-supported loci.
+
+**Lever G (leader neighbourhoods).**
+- Order: nodes by reads (then degree).
+- An unassigned node with free neighbours becomes a leader; its family = the leader + its direct free neighbours.
+- There is no chaining through members.
+
+| arm | nodes | grouping | families | largest | expressed guided any R_G | P_G | best R_G / P_G | full guided R_G / P_G |
+|---|---|---|---|---|---|---|---|---|
+| DN0 | pipeline | γ-QC | 68 | — | 0.3887 | 0.3345 | 0.3428 / 0.3588 | 0.0736 / 0.3210 |
+| LCS union (bar) | pipeline | γ-QC | 94 | 37 | 0.4710 | 0.3886 | 0.4116 / 0.4088 | 0.0911 / 0.3772 |
+| AB2 (§6jz) | AB2 | components | 51 | 85 | 0.5088 | 0.3100 | 0.4615 / 0.3008 | 0.0976 / 0.2899 |
+| AC1 | AB2 | leaders | 72 | 23 | 0.3401 | **0.5806** | 0.2645 / 0.5460 | 0.0642 / 0.5345 |
+| AC2 | AB2 + read loci | components | 60 | 93 | **0.6950** | 0.3001 | 0.6073 / 0.2877 | 0.1329 / 0.2777 |
+| **AC3 (primary)** | AB2 + read loci | leaders | 88 | 26 | 0.4170 | 0.5365 | 0.2982 / 0.4732 | 0.0792 / 0.4790 |
+
+**Pre-registered reading: AC3 NOT SUPPORTED.** R_G 0.4170 < 0.4710 (P_G 0.5365 passes). AC1 fails recall and AC2 fails
+precision under the same bar.
+
+**Gap decomposition** (missing-node first, 741 pairs):
+
+| arm | recovered | (a) missing node | (b) missing edge | (c) unexpressed bridge |
+|---|---|---|---|---|
+| AB2 | 377 | 219 | 60 | 85 |
+| AC1 | 252 | 219 | 98 | 172 |
+| AC2 | 515 | 61 | 64 | 101 |
+| AC3 | 309 | 61 | 162 | 209 |
+
+(c) remains an upper bound (§6jz).
+
+**Reading (post hoc, not a result):**
+- The two levers are independent and each does what it was designed for.
+- Lever N removes 72% of missing-node pairs (219 → 61) and is pure gain in recall.
+- Lever G trades recall for precision: stars drop pairs that sit two hops apart (b rises 64 → 162).
+- The arms trace a recall-precision frontier: AC2 0.695/0.300, AB2 0.509/0.310, union 0.471/0.389, AC3 0.417/0.537,
+  AC1 0.340/0.581. No pre-registered point dominates the union on both axes.
+- AC3 has the highest F1 (0.469 vs union 0.426). That is not claimed: an F1 optimum picked after the fact is a known
+  trap (register 814).
+- Caveat on precision: the truth is MCL clusters (inflation 2.8). AB2/AC2's large components span many MCL clusters,
+  and part of that "over-merge" may be MCL splitting one DNA family. This is not separated here.
+Register row 825. Data: `lit/sharedef_ab/{score_ac_expr.out,score_ac_full.out,decompose_ac.out,ac*.copies.tsv}`.

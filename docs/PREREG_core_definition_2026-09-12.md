@@ -1018,3 +1018,32 @@ two loci in a shared family (any-family); otherwise:
 (c) UNEXPRESSED BRIDGE if the two loci are in different components of the guided edge graph induced on the EXPRESSED loci
 of their cluster; else (a) MISSING NODE if either locus overlaps no node of that catalog's node set (DN0/DN1/AB1: the DN0
 dump; union: its own dump; AB2: consolidated loci); else (b) MISSING EDGE. Counts and fractions of 741 are reported.
+
+---
+## ADDENDUM AC (2026-09-14; before any number below exists) — the two levers from §6jz: seed-style grouping and missing nodes
+
+**Seen before registering (diagnosis only, no arm computed):** 58 of the 304 expressed guided loci have no DN0 node; all 58
+carry >= 3 primary MAPQ >= 1 reads and 54 carry >= 3 spliced reads (median locus span 27 kb) — the reads exist, the
+pipeline dropped the loci.
+
+**Lever G — leader neighbourhoods instead of components (the guided rule without annotation):** nodes are ordered by
+n_reads (desc), then edge degree (desc), then chromosome and start. Walking that order, an unassigned node with >= 1
+unassigned neighbour becomes a LEADER and its family = the leader + its unassigned direct neighbours; those are marked
+assigned. A node joins a family only as a direct neighbour of that family's leader (no chaining through members). Families
+with >= 2 loci are emitted. Edges are exactly Addendum AB's.
+
+**Lever N — read-locus nodes for loci the pipeline dropped:** from `sub3.bam` on the three contigs, primary mapped
+reads with MAPQ >= 1 (the expression gate's reads); exon blocks = CIGAR segments between N operations; transcript strand
+= read orientation, flipped when `ts:A:-`. Same-strand reads whose exon blocks overlap by >= 1 bp are grouped (connected
+components); a group with >= 3 reads becomes a candidate locus whose exons are the bases covered by >= 2 reads' blocks
+(merged; exon sum >= 100 bp required). A candidate is ADDED as a node iff its exons overlap no AB2 node's exons (either
+strand). Its representative transcript is its exon sequence and its body runs from first to last exon; edges are
+computed for the added nodes with Addendum AB's alignments and rules (queries not yet aligned are aligned the same way).
+No annotation or guided interval is used to build nodes.
+
+**Arms:** AC1 = AB2 nodes + lever G; AC2 = AB2 nodes + lever N + components; **AC3 (PRIMARY) = AB2 nodes + lever N +
+lever G.**
+**Reading (fixed):** `bench/score_vs_guided.py` on expressed guided loci (as AB), any-family. AC3 SUPPORTED iff R_G >
+0.4710 AND P_G >= 0.3386. AC1 and AC2 are read with the same bar and reported, not deciding. Also reported: best-overlap
+and full-guided metrics, number of added nodes, how many of the 58 node-less expressed guided loci gain a node, and the
+gap decomposition (missing-node-first order) for AC1-AC3.

@@ -41,8 +41,9 @@ the ledger section that earns it; anything not yet tested on a held-out substrat
   (gene-body chain = the locus; a transcript hit attached inside it sets the width; §6js, prereg T/U).
 - De novo mode: loci that carry aligned reads, consolidated to gene level BEFORE any edge is computed. Transcript
   fragments, readthrough and mis-chained spans must not become nodes (node presence is 58% of the de novo <-> guided
-  gap, §6j1/§6je; D1 failed the hold-out because read-derived spans were wrong, §6jy). **OPEN:** consolidation rule
-  (prereg AB).
+  gap, §6j1/§6je; D1 failed the hold-out because read-derived spans were wrong, §6jy). Read-locus nodes for loci the
+  pipeline dropped (>= 3 unique reads, exons at depth >= 2) recover 43/58 node-less expressed loci and cut missing-node
+  pairs 219 -> 61 (§6ka).
 
 **2. Edge = homology between the two copies' genomic sequence, one rule for both modes.** u-v is an edge iff
 - EXON edge: u's spliced transcript aligns to v (identity >= 0.80, >= 0.50 of the transcript), or
@@ -62,7 +63,7 @@ Poly(A) and target-site duplications are reported annotations, not criteria (§6
 node sets, §1★.2). Edge connectivity λ is reported as the certificate (§1★.5). ⚠ **OPEN after §6jz:** with the guided edge
 rule on de novo nodes, components reach the best recall of any de novo catalog (R_G 0.509) but lose precision (P_G 0.310,
 below the pre-registered guard) through transitive chaining (largest component: 85 loci over 16 guided clusters).
-Guided mode never chains (seed neighbourhoods), so the grouping clause is the one still to settle.
+Guided mode never chains (seed neighbourhoods), so the grouping clause is the one still to settle. §6ka: leader neighbourhoods (the seed rule without annotation) raise precision to 0.54-0.58 but cut recall to 0.34-0.42; no pre-registered grouping clears both bars. Part of the component "over-merge" may be the MCL truth splitting DNA families (not separated).
 
 **5. Subfamily = a cluster of a supported, pairwise-compatible split system inside a family** (clusters are nested or
 disjoint; Buneman). Definition and estimator are kept apart:
