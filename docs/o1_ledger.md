@@ -19922,3 +19922,23 @@ both `t.out` files.
 - In the two core-duplicon families (NPIP, TBC1D3), about a third of bubbles conflict with the tree. This is
   consistent with gene conversion or homoplasy; not separated here.
 Register row 822. Data: `lit/split_aa/aa.out`.
+
+## §6jy — De novo D1 (E_r ∪ genomic-span edges) on the gorilla hold-out: does NOT narrow the gap (P_G falls 0.058 > 0.05 guard), 3h34m vs minutes (2026-09-14)
+
+Pre-registered as Addendum V. Catalogs `rebuild3/cat_default` (DN0) and `rebuild3/cat_dn1_span` (DN1,
+`RUSTLE_ER_UNION_GENOMIC_SPAN=1`, binary `gw_family_catalog.54154909`, `--homology-primary --threads 4`, exit 0,
+wall 3:33:44, max RSS 6.2 GB; the genomic-span all-vs-all minimap2 step dominated). Scored with `bench/score_vs_guided.py
+--contigs include:NC_073241.2,NC_073242.2,NC_073244.2`. DN0 reproduces the §6jk RNA_default row exactly.
+
+| truth | catalog | families | copies | any-family R_G | any-family P_G | best-overlap R_G | best-overlap P_G |
+|---|---|---|---|---|---|---|---|
+| expressed guided (u >= 3; 304 loci, 741 pairs) | DN0 | 68 | 391 | 0.3887 | 0.3345 | 0.3428 | 0.3588 |
+| expressed guided | DN1 | 88 | 570 | 0.4116 | 0.2760 | 0.3644 | 0.3435 |
+| full guided (1,048 loci, 4,469 pairs) | DN0 | 68 | 391 | 0.0736 | 0.3210 | 0.0651 | 0.3360 |
+| full guided | DN1 | 88 | 570 | 0.0779 | 0.2630 | 0.0691 | 0.3153 |
+
+**Pre-registered reading: DN1 does NOT narrow the gap.** R_G rises (0.4116 > 0.3887), but P_G falls to 0.2760, below the
+guard 0.3345 - 0.05 = 0.2845. For reference, the shipped opt-in LCS union (§6jf, RNA_union) scored R_G 0.4710 /
+P_G 0.3886 on the same truth, better on both. The human-window gains of D1 (NPIP / TBC1D3 / AMY family-level
+sensitivity, §6js) do not transfer to the gorilla hold-out at an acceptable precision or runtime cost. D1 stays opt-in
+(no default change). Register row 823. Data: `rebuild3/{score_v_expr.out,score_v_full.out}`.
