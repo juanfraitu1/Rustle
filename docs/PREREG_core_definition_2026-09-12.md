@@ -1431,3 +1431,68 @@ the **fresh hold-out chr5/chr7/chr21**.
 hold-out AND ENSEMBL (DNA level) has pairwise sensitivity >= 0.90, pairwise precision >= 0.90 and bipartite F >= 0.90.
 - G (DNA) and D (RNA, expressed loci u >= 3 on joint-locus spans) are reported against the bars.
 - REFSEQ_E1 / GENCODE_E1 are reported as truth inputs.
+
+---
+## ADDENDUM AN (2026-09-14; user request: reconcile the family definition across protein, RNA and DNA space; before any protein number exists) — protein-space families as the annotation-robust anchor
+
+**Why:** gene-model families (DNA/RNA) are reproducible across expert annotations only to ~0.8 (§6kl-§6kn), and the
+residual is gene-model content (UTRs, isoforms, readthroughs, non-coding models). Coding sequences are the part annotations
+agree on best. User: get the CDS, translate, cluster; learn what a family is, and where it stops, in protein, RNA and DNA
+space.
+
+**Protein-space family (fixed; the DNA construction's constants and MCL):**
+- Proteome: one protein per gene, the longest CDS (`annotation_nodes.py` `.cds.tsv`, translated as
+  `adjudicated_truth.translate`, >= 10 aa).
+- All-vs-all BLAST+ `blastp -evalue 1e-5` (defaults otherwise).
+- Per ordered pair, non-overlapping HSPs are chosen greedily by bitscore on the longer protein's coordinates.
+- EDGE iff their union covers >= 0.30 of the longer protein. Weight = identity (Σ nident / Σ length) × coverage.
+- Families = MCL I = 2.8, prune 1e-9 (`bench/mcl_port.py`), size >= 2.
+- Identity strata (edge additionally needs identity >= 0.50, >= 0.70) are reported.
+
+**Cross-annotation scoring:** truth = RefSeq protein families. Each truth gene is assigned the family of the test annotation's
+gene with the greatest CDS-base overlap (a gene with no overlapping coding gene, or whose best gene is in no family,
+is unassigned). Pairwise sensitivity/precision and bipartite R/P/F over truth genes in families >= 2
+(`guided_pipeline.pairwise` / `bipartite`).
+
+**Substrates:** development chr15/17/22 (RefSeq, GENCODE/CAT, Ensembl proteomes from the AI/AK node tables); **hold-out
+chr5/7/21** (never used; node tables built by the same `annotation_nodes.py`).
+
+**AN-1 (decision, hold-out):** protein-space families are ANNOTATION-ROBUST iff GENCODE vs RefSeq at the plain homology level
+has pairwise sensitivity >= 0.90, pairwise precision >= 0.90 and bipartite F >= 0.90. Ensembl vs RefSeq and the strata
+reported. If supported, protein families are the annotation-independent anchor that meets the goal bars across independent
+annotations.
+
+**AN-2 (report, development): nesting of the spaces on coding genes.** Against RefSeq protein families (P), RefSeq E1 DNA
+families (D) and the E1 graph's direct edges:
+- fraction of D co-member pairs co-clustered in P, and of P pairs co-clustered in D;
+- discordant pairs classed by amino-acid identity (blastp) and nucleotide exon evidence (dc-megablast as AL).
+
+**AN-3 (report, development): non-coding copies in protein space.** Pseudogene loci (RefSeq biotype pseudogene /
+transcribed_pseudogene) reached by miniprot (Identity >= 0.70? no — any alignment covering >= 0.30 of a family protein) are
+counted per protein family, with the fraction of RefSeq E1 DNA-family pseudogene members they explain.
+
+**Expected in advance:** P is coarser than D (deep superfamilies: KZFP, OR, keratins); GENCODE vs RefSeq agreement is higher
+in protein space than the gene-model E1 (0.79-0.81); the decisive risk is MCL cuts inside large superfamilies.
+
+**AN revision r1 (2026-09-14; after the development AN scores, before any hold-out node table exists).** Development
+(chr15/17/22, plain homology, truth RefSeq): GENCODE 0.723 / 0.960 / F 0.920, Ensembl 0.753 / 0.939 / F 0.921 (strata 0.50:
+F 0.932 / 0.918; 0.70: F 0.916 / 0.908). 22.9% of missed pairs are RefSeq genes with no overlapping coding gene in GENCODE:
+RefSeq gives CDS to 36 V_segment_pseudogene and 3 C_region_pseudogene records (e.g. IGLVI-70), GENCODE/Ensembl do not.
+**Rule r1: the proteome is translatable genes only — any record whose biotype contains "pseudogene" is excluded, whatever
+its CDS** (pseudogenes enter protein space only through AN-3). Everything else in AN unchanged. AN-1 is decided on r1;
+the unrevised AN is reported on the hold-out alongside.
+
+**AN-1 result on the hold-out chr5/7/21 (r1, plain homology, fixed):** GENCODE vs RefSeq pairwise sensitivity **0.892**,
+precision 0.995, bipartite F 0.928 → **NOT SUPPORTED** (sensitivity 0.008 below the bar). Ensembl 0.897 / 0.995 / 0.924.
+Strata 0.50: GENCODE 0.797 / 1.000 / 0.928; 0.70: 0.758 / 1.000 / 0.915. Unrevised AN: 0.849 / 0.995 / 0.924.
+Post hoc: 9.5% of truth pairs are missed because the RefSeq gene has no overlapping coding GENCODE gene, dominated by T-cell
+receptor beta V segments (TRBV6-9, TRBV7-8, TRBV5-8 absent from the CHM13 CAT annotation; TRBV11-2 annotated lncRNA); the
+all-segment RefSeq families hold 19.6% of the truth pairs (TRBV family of 55 segments).
+
+**AN revision r2 (before any chr1/chr2/chr3 number exists).** Scope: V(D)J recombining antigen-receptor gene segments are not
+independently expressed genes and are excluded from the proteome together with pseudogenes (r1): biotypes containing
+V_segment, D_segment, J_segment, C_region (RefSeq) or starting with IG_ / TR_ (GENCODE, Ensembl). Everything else as AN/r1.
+**AN-1b (decision): fresh hold-out chr1, chr2, chr3** (never used for anything; chosen as the three lowest-numbered unused
+chromosomes, not for content — chr1 carries NBPF, chr2 IGK). Protein-space families (r2) are ANNOTATION-ROBUST iff GENCODE vs
+RefSeq at plain homology has pairwise sensitivity >= 0.90, pairwise precision >= 0.90 and bipartite F >= 0.90. Ensembl, the
+strata, r1 and the development r2 are reported.

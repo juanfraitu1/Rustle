@@ -20749,3 +20749,71 @@ differ from each other (~0.8), because systematic, gene-model-driven edge differ
 
 The chr5/chr7/chr21 hold-out was not touched; no AL/AM hold-out number exists.
 Register rows 835 (AK), 836 (AL/AM).
+
+## §6ko — Protein-space families (Addendum AN): reproducible across independent annotations on a fresh hold-out (GENCODE vs RefSeq 0.935 / 0.999 / F 0.977); how protein, RNA and DNA families relate (2026-09-14)
+
+**User request:** reconcile the family definition with proteins. Get the CDS, translate and cluster, to learn what a family is
+and where it stops in protein, RNA and DNA space.
+
+**Construction (prereg AN md5 52c5e4d8; r1 fa58b9e3; r2 bcdb55d0; `bench/protein_families.py`):**
+- One protein per gene: the longest CDS.
+- All-vs-all blastp, e <= 1e-5.
+- Edge iff non-overlapping HSPs cover >= 0.30 of the longer protein.
+- Weight identity × coverage; MCL I = 2.8.
+- r1 excludes pseudogene biotypes; r2 also excludes V(D)J recombining segments.
+- Cross-annotation score: truth = RefSeq protein families. Each truth gene takes the family of the test gene with the greatest
+  CDS-base overlap.
+
+**Results (GENCODE / Ensembl vs RefSeq; pair sens / pair prec / bipartite F):**
+
+| substrate | rule | GENCODE | Ensembl | verdict |
+|---|---|---|---|---|
+| chr15/17/22 (development) | AN | 0.723 / 0.960 / 0.920 | 0.753 / 0.939 / 0.921 | — |
+| | r1 | 0.878 / 0.972 / 0.937 | 0.923 / 0.964 / 0.941 | — |
+| | r2 | 0.841 / 0.962 / 0.931 | 0.898 / 0.952 / 0.934 | reported |
+| chr5/7/21 (hold-out for AN-1) | r1 | **0.892** / 0.995 / 0.928 | 0.897 / 0.995 / 0.924 | **AN-1 NOT SUPPORTED** (sens 0.008 short) |
+| | AN | 0.849 / 0.995 / 0.924 | 0.854 / 0.995 / 0.920 | reported |
+| | r2 (post hoc) | 0.912 / 0.994 / 0.926 | 0.918 / 0.994 / 0.920 | post hoc |
+| **chr1/2/3 (fresh hold-out for AN-1b)** | **r2** | **0.935 / 0.999 / 0.977** | 0.944 / 0.999 / 0.974 | **AN-1b SUPPORTED** |
+| | r2, aa identity >= 0.50 | 0.867 / 1.000 / 0.968 | 0.882 / 1.000 / 0.960 | strata |
+| | r2, aa identity >= 0.70 | 0.830 / 1.000 / 0.964 | 0.845 / 1.000 / 0.949 | strata |
+
+What the two revisions fixed:
+- **r1:** RefSeq gives CDS to 36 V_segment_pseudogene records; GENCODE and Ensembl do not.
+- **r2:** the TRBV V segments on chr7 are incomplete in CAT (TRBV6-9/7-8/5-8 absent, TRBV11-2 annotated lncRNA). The
+  all-segment families held 19.6% of truth pairs.
+
+Compare the gene-model (DNA E1) families: 0.617 / 0.529 / F 0.789 on the AJ hold-out.
+
+**AN-2 (development, RefSeq, 2,220 coding genes).** Protein families (P) vs E1 DNA families (D):
+- P covers 486 genes and 2,095 pairs; D covers 369 genes and 1,019 pairs; 531 pairs are shared.
+- **D pairs inside P: 0.521. P pairs inside D: 0.253.** The two spaces are NOT nested, in either direction.
+
+| discordant set | pairs | dominant cause | examples |
+|---|---|---|---|
+| P-only | 1,564 | deep homology invisible to nucleotides: 999 at aa < 0.50 and 349 at aa 0.50-0.70 with no >= 300 bp nucleotide record | OR superfamily (OR1A2–OR1R1 aa 0.35), SLC16, KRTAP, CD300; also aa >= 0.70 without nt records (NME1/NME2 0.88) |
+| D-only | 488 | 176 nucleotide-homologous with divergent proteins (nt >= 0.70, aa < 0.50) | GOLGA6L vs GOLGA8: nt 0.83, aa 0.27 |
+| D-only | 162 | co-membership through paths / readthrough neighbours, with no protein edge and no nucleotide record | TBC1D3–DHX40 |
+| D-only | 96 | nucleotide homology outside the CDS (UTR/intron co-duplication, bicistronic loci) | COX10–FBXW10B nt 0.98; SNRPN–SNURF |
+| shared | 531 | recent duplicates | 282 at aa >= 0.70 and nt >= 0.70; 184 at aa 0.50-0.70 and nt >= 0.70 |
+
+RNA restriction (457 expressed coding genes; ⚠ the expression table covers only guided-cluster loci, so this universe leans
+toward D members): D pairs inside P 0.478; P pairs inside D 0.859.
+
+**AN-3 (development): pseudogenes in protein space.**
+- 1,591 RefSeq pseudogene loci; 156 (0.098) are reached by a multi-copy family protein at coverage >= 0.30.
+- Of 538 pseudogenes in DNA families, 105 are reached. The attachment agrees with the DNA family 76/95.
+- Attaching alignments: median identity 0.86.
+- Protein space sees few pseudogenes. Only proteins in multi-copy families were used, so parents that are single-copy
+  proteins are not counted.
+
+**Reading (what a family is in each space):**
+- **Protein space:** homology of translated products. Deep (aa 0.25-0.50 still links ORs, SLCs) and reproducible across
+  independent annotations (F 0.93-0.98), because CDS models agree. Blind to pseudogenes, non-coding copies and V(D)J segments.
+  Splits nucleotide-recent copies whose proteins diverged (GOLGA6/GOLGA8).
+- **DNA space:** duplication units at >= 0.70 nt with exon support. Includes pseudogenes and co-duplicated non-coding
+  sequence. Shallow (misses old paralogs). Reproducible only to ~0.8 across annotations, through gene models.
+- **RNA space:** DNA families restricted to expressed copies. Among expressed coding genes, protein-family pairs are mostly
+  also DNA-family pairs (0.859).
+
+Register row 837 (AN-1 on chr5/7/21).
