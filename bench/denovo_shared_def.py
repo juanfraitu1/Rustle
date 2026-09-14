@@ -364,6 +364,65 @@ def cmd_families(a):
                 seen.add(i)
                 seen.update(free)
                 fams.append(sorted([i] + free))
+        elif grouping == "bridges":
+            ids = sorted(adj)
+            disc, low, bridges, t = {}, {}, set(), 0
+            for root in ids:
+                if root in disc:
+                    continue
+                disc[root] = low[root] = t
+                t += 1
+                stack = [(root, None, iter(sorted(adj[root])))]
+                while stack:
+                    x, par, it = stack[-1]
+                    advanced = False
+                    for y in it:
+                        if y == par:
+                            continue
+                        if y in disc:
+                            low[x] = min(low[x], disc[y])
+                        else:
+                            disc[y] = low[y] = t
+                            t += 1
+                            stack.append((y, x, iter(sorted(adj[y]))))
+                            advanced = True
+                            break
+                    if not advanced:
+                        stack.pop()
+                        if par is not None:
+                            low[par] = min(low[par], low[x])
+                            if low[x] > disc[par]:
+                                bridges.add((min(par, x), max(par, x)))
+            adj2 = {x: {y for y in adj[x] if (min(x, y), max(x, y)) not in bridges} for x in ids}
+            for x in ids:
+                if x in seen or not adj2[x]:
+                    continue
+                comp, stack2 = [], [x]
+                seen.add(x)
+                while stack2:
+                    z = stack2.pop()
+                    comp.append(z)
+                    for y in adj2[z]:
+                        if y not in seen:
+                            seen.add(y)
+                            stack2.append(y)
+                fams.append(sorted(comp))
+            print(f"  bridges removed: {len(bridges)}")
+        elif grouping == "triangle":
+            order = sorted(nodes, key=lambda n: (-n["n_reads"], -len(adj.get(n["idx"], ())), n["chrom"], n["exons"][0][0], n["idx"]))
+            for n in order:
+                i = n["idx"]
+                if i in seen:
+                    continue
+                free = sorted(y for y in adj.get(i, ()) if y not in seen)
+                if not free:
+                    continue
+                star = {i, *free}
+                second = sorted({z for y in star for z in adj.get(y, ()) if z not in seen and z not in star
+                                 and len(adj[z] & star) >= 2})
+                fam = star | set(second)
+                seen.update(fam)
+                fams.append(sorted(fam))
         else:
             sys.exit(f"unknown grouping {grouping}")
         fams = [f for f in fams if len(f) >= 2]
@@ -376,6 +435,66 @@ def cmd_families(a):
         both = len({p for p, _ in pairs})
         print(f"{arm} ({nodeset} nodes, {grouping}): nodes {len(nodes)}; exon edges {edges['exon']}, gene-body edges {edges['body']}, distinct pairs {both}; "
               f"families (>=2 loci) {len(fams)} holding {sum(len(f) for f in fams)} loci")
+
+
+def guided_edges(allg, L, paf_subset):
+    """Guided edges between guided loci re-derived from the all-genes asm20 PAF at the catalog floors (Addendum AB)."""
+    def locus_of(name):
+        c, rng = name.rsplit(":", 1)
+        s, e = rng.split("-")
+        s, e = int(s) - 1, int(e)
+        best = None
+        for x0, x1, gi in L.get(c, []):
+            if x0 >= e:
+                break
+            o = min(e, x1) - max(s, x0)
+            if o > 0 and (best is None or o > best[0]):
+                best = (o, gi)
+        return None if best is None else best[1]
+    gedge, memo = set(), {}
+    for line in open(paf_subset):
+        f = line.split("\t")
+        for nm_ in (f[0], f[5]):
+            if nm_ not in memo:
+                memo[nm_] = locus_of(nm_)
+        u, v = memo[f[0]], memo[f[5]]
+        if u is None or v is None or u == v:
+            continue
+        nm, bl = int(f[9]), int(f[10])
+        longer = max(allg[u][3] - allg[u][2], allg[v][3] - allg[v][2])
+        aligned = max(int(f[3]) - int(f[2]), int(f[8]) - int(f[7]))
+        if bl and nm / bl >= 0.70 and aligned >= 300 and aligned >= 0.30 * longer:
+            gedge.add((min(u, v), max(u, v)))
+    return gedge
+
+
+def cmd_coarsen(a):
+    rows = [r for r in csv.DictReader(open(a.clusters), delimiter="\t") if r["chrom"] in CONTIGS]
+    allg = [(r["cluster_id"], r["chrom"], int(r["start"]) - 1, int(r["end"])) for r in rows]
+    L = collections.defaultdict(list)
+    for gi, x in enumerate(allg):
+        L[x[1]].append((x[2], x[3], gi))
+    for c in L:
+        L[c].sort()
+    gedge = guided_edges(allg, L, a.paf_subset)
+    parent = {x[0]: x[0] for x in allg}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for u, v in gedge:
+        cu, cv = find(allg[u][0]), find(allg[v][0])
+        if cu != cv:
+            parent[cu] = cv
+    with open(a.out, "w") as fh:
+        fh.write("cluster_id\tchrom\tstart\tend\tmcl_cluster\n")
+        for r in rows:
+            fh.write(f"COARSE_{find(r['cluster_id'])}\t{r['chrom']}\t{r['start']}\t{r['end']}\t{r['cluster_id']}\n")
+    n_mcl = len({x[0] for x in allg})
+    n_coarse = len({find(x[0]) for x in allg})
+    print(f"guided edges {len(gedge)}; MCL clusters on contigs {n_mcl} -> coarse clusters {n_coarse}")
 
 
 def cmd_decompose(a):
@@ -398,34 +517,7 @@ def cmd_decompose(a):
     for c in L:
         L[c].sort()
 
-    def locus_of(name):
-        c, rng = name.rsplit(":", 1)
-        s, e = rng.split("-")
-        s, e = int(s) - 1, int(e)
-        best = None
-        for x0, x1, gi in L.get(c, []):
-            if x0 >= e:
-                break
-            o = min(e, x1) - max(s, x0)
-            if o > 0 and (best is None or o > best[0]):
-                best = (o, gi)
-        return None if best is None else best[1]
-    gedge = set()
-    memo = {}
-    for line in open(a.paf_subset):
-        f = line.split("\t")
-        if f[0] not in memo:
-            memo[f[0]] = locus_of(f[0])
-        if f[5] not in memo:
-            memo[f[5]] = locus_of(f[5])
-        u, v = memo[f[0]], memo[f[5]]
-        if u is None or v is None or u == v:
-            continue
-        nm, bl = int(f[9]), int(f[10])
-        longer = max(allg[u][3] - allg[u][2], allg[v][3] - allg[v][2])
-        aligned = max(int(f[3]) - int(f[2]), int(f[8]) - int(f[7]))
-        if bl and nm / bl >= 0.70 and aligned >= 300 and aligned >= 0.30 * longer:
-            gedge.add((min(u, v), max(u, v)))
+    gedge = guided_edges(allg, L, a.paf_subset)
     key_to_g = {(x[1], x[2], x[3]): gi for gi, x in enumerate(allg)}
     lg = [key_to_g[(x[1], x[2], x[3])] for x in loci]
 
@@ -511,6 +603,10 @@ def main():
     p = sub.add_parser("families")
     p.add_argument("--outdir", required=True)
     p.add_argument("--arms", default="ab1=ab1:components,ab2=ab2:components")
+    p = sub.add_parser("coarsen")
+    p.add_argument("--clusters", required=True)
+    p.add_argument("--paf-subset", required=True)
+    p.add_argument("--out", required=True)
     p = sub.add_parser("decompose")
     p.add_argument("--outdir", required=True)
     p.add_argument("--clusters", required=True)
@@ -520,7 +616,7 @@ def main():
                    help="cab = prereg AB order; acb = missing node checked first (sensitivity)")
     p.add_argument("catalogs", nargs="+")
     a = ap.parse_args()
-    {"nodes": cmd_nodes, "readloci": cmd_readloci, "queries": cmd_queries, "align": cmd_align, "families": cmd_families, "decompose": cmd_decompose}[a.cmd](a)
+    {"nodes": cmd_nodes, "readloci": cmd_readloci, "queries": cmd_queries, "align": cmd_align, "families": cmd_families, "coarsen": cmd_coarsen, "decompose": cmd_decompose}[a.cmd](a)
 
 
 if __name__ == "__main__":

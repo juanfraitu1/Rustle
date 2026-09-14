@@ -20052,3 +20052,78 @@ precision under the same bar.
 - Caveat on precision: the truth is MCL clusters (inflation 2.8). AB2/AC2's large components span many MCL clusters,
   and part of that "over-merge" may be MCL splitting one DNA family. This is not separated here.
 Register row 825. Data: `lit/sharedef_ab/{score_ac_expr.out,score_ac_full.out,decompose_ac.out,ac*.copies.tsv}`.
+
+## §6kb — Codon divergence does not explain unreachability uniformly; bridge-split grouping fails precision, but triangle-supported leaders clear the bar as the non-deciding arm (R_G 0.605 / P_G 0.419); a coarser truth explains little of the over-merge (2026-09-14)
+
+Pre-registered as Addendum AD (md5 a8d5094b). New conda env `prot` (miniprot, PAML).
+
+### AD-1 codon divergence (human, `bench/codon_divergence.py`)
+
+Method: longest-CDS proteins, MAFFT, back-translated codon alignment, PAML yn00, and miniprot of the parent protein
+onto the copy region.
+
+| group | pair | protein id | pos1 / pos2 / pos3 id | CDS nt id | codons with >= 2 diffs | dN | dS | miniprot cover / intron loss |
+|---|---|---|---|---|---|---|---|---|
+| unreached | GK-GK2 | 0.884 | 0.93 / 0.95 / 0.77 | 0.881 | 3.6% | 0.066 | 0.382 | 1.00 / yes |
+| unreached | CETN2-CETN1 | 0.837 | 0.91 / 0.89 / 0.49 | 0.766 | 9.9% | 0.105 | 1.257 | 1.00 / yes |
+| unreached | NAP1L1-NAP1L2 | 0.524 | 0.65 / 0.75 / 0.52 | 0.638 | 28.9% | 0.384 | 1.232 | 0.76 / no (120U) |
+| unreached | NAP1L1-NAP1L3 | 0.462 | 0.65 / 0.64 / 0.52 | 0.606 | 35.4% | 0.525 | 0.858 | 0.72 / no |
+| unreached | CSTF2-CSTF2T | 0.778 | 0.85 / 0.92 / 0.63 | 0.798 | 9.6% | 0.129 | 0.635 | 1.00 / no (138U) |
+| unreached | UBL4A-UBL4B | 0.464 | 0.58 / 0.69 / 0.49 | 0.585 | 39.1% | 0.486 | 2.061 | no alignment |
+| unreached | FAM50A-FAM50B | 0.775 | 0.83 / 0.89 / 0.64 | 0.789 | 10.5% | 0.128 | 3.525 | 1.00 / yes |
+| reached | MKRN1-MKRN3 | 0.554 | 0.71 / 0.71 / 0.56 | 0.658 | 29.6% | 0.359 | 0.999 | 1.00 / yes |
+| reached | RPL10-RPL10L | 0.722 | 0.75 / 0.82 / 0.56 | 0.712 | 19.7% | 0.253 | 1.018 | 0.76 / no |
+| reached | PDHA1-PDHA2, PGK1-PGK2 | 0.85-0.87 | p3 0.69 | 0.83-0.86 | 5-8% | 0.07-0.09 | 0.59-0.69 | yes |
+| reached | UTP14C, PABPC3, POU5F1B, GLUD2, TAF1L | 0.90-0.96 | p3 0.93-0.98 | 0.95-0.98 | <= 1.6% | 0.02-0.05 | 0.03-0.08 | yes |
+
+**Pre-registered readings:**
+- SYNONYMOUS SATURATION: 2/7, only CETN1 and FAM50B → NOT SUPPORTED.
+- PROTEIN-LEVEL RESCUE: 3/7, GK2, CETN1 and FAM50B → NOT SUPPORTED.
+
+**What the data do say (post hoc):**
+- The user's codon intuition holds as biochemistry. Among codons that differ at 2 or 3 positions, the synonymous share
+  has median 1.7% and maximum 13.6% over 16 pairs, so once two codon bases differ the amino acid is almost never kept.
+- Position 3 is the least conserved position in 16/16 pairs.
+- Nucleotide unreachability has three different causes, not one:
+  - (i) metric, not codons: GK2, CSTF2T and FAM50B have CDS nucleotide identity 0.79-0.88 and protein identity
+    0.78-0.88, but their nucleotide mRNA records scored 0.748-0.767. UTRs and gap-inclusive identity pulled them under
+    0.80.
+  - (ii) synonymous saturation with a conserved protein: CETN1 (pos3 0.49, dS 1.26, protein 0.84).
+  - (iii) genuinely diverged proteins: NAP1L2, NAP1L3 and UBL4B, with protein identity 0.46-0.52 and 29-39% of codons
+    differing at >= 2 positions. UBL4B is not reached even by miniprot.
+- MKRN3 was reached despite a similarly diverged protein (0.55), through a short conserved segment (mRNA query
+  coverage 0.17).
+- miniprot's "intron" in CSTF2T and NAP1L2 is a single 120-138 bp gap bridging a diverged segment. The copies' own
+  annotated CDS is a single exon, so the pre-registered "no intron" rule was too literal for protein alignments.
+
+### AD-2 grouping (gorilla hold-out; AC nodes, 2,664; AC edges)
+
+| arm | families | largest | 2-locus families | any R_G | P_G | best R_G / P_G | missing node / edge / (c) |
+|---|---|---|---|---|---|---|---|
+| LCS union (bar) | 94 | 37 | — | 0.4710 | 0.3886 | 0.4116 / 0.4088 | 219 / 67 / 106 |
+| AC2 components | 60 | 93 | — | 0.6950 | 0.3001 | 0.6073 / 0.2877 | 61 / 64 / 101 |
+| **AD2a bridge-split (PRIMARY)** | 26 | 78 | 0 | 0.6100 | 0.3023 | 0.5398 / 0.2772 | 61 / 118 / 110 |
+| AD2b triangle-supported leaders | 76 | 49 | 42 | **0.6046** | **0.4191** | 0.5223 / 0.3847 | 61 / 109 / 123 |
+| AC3 leaders | 88 | 26 | — | 0.4170 | 0.5365 | 0.2982 / 0.4732 | 61 / 162 / 209 |
+
+**Pre-registered reading: AD2a NOT SUPPORTED** (P_G 0.3023 < 0.3386).
+- 79 bridges were removed, which also deletes every 2-locus family, since a 2-copy family always has λ = 1.
+- AD2b, the non-deciding arm read with the same bar, CLEARS it: R_G 0.6046 > 0.4710 and P_G 0.4191 >= 0.3386. It is
+  also above the LCS union on both axes.
+- Because AD2b was not the deciding arm and the three AC/AD arms were compared on this substrate, AD2b is a candidate
+  that needs a fresh substrate before adoption. It is not adopted here.
+- Best-overlap P_G for AD2b (0.3847) is below the union's (0.4088).
+
+### AD-3 truth granularity
+
+Coarse truth: MCL clusters joined by a re-derived guided edge, 429 → 401 clusters on the contigs. That is only 28 merges,
+so the result is conservative because re-derived edges are sparse. Expressed co-clustered pairs go from 741 to 1,419.
+Any-family P_G under MCL → coarse truth:
+- AC2 0.300 → 0.354, AB2 0.310 → 0.327, AD2a 0.302 → 0.349, AD2b 0.419 → 0.491.
+- AC3 0.537 → 0.622, union 0.389 → 0.404.
+- Recall falls for all arms (larger denominator).
+
+**Reading:** truth granularity accounts for a small part of the component "over-merge" (+0.02 to +0.05 P_G for
+components). Most of it is real chaining under this truth.
+Register rows 826 (AD-1), 827 (AD2a). Data: `lit/codon_ad/ad1.out`,
+`lit/sharedef_ab/{score_ad_mcl.out,score_ad_coarse.out,decompose_ad.out,ad2a.copies.tsv,ad2b.copies.tsv,coarse.clusters.tsv}`.

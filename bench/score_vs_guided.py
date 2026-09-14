@@ -19,6 +19,7 @@ R = "/mnt/linuxdisk/home/juanfraitu"
 ap = argparse.ArgumentParser()
 ap.add_argument("--contigs", required=True)
 ap.add_argument("--expr")
+ap.add_argument("--clusters", default=None, help="guided clusters TSV (default: gw_units_v3)")
 ap.add_argument("catalogs", nargs="+")
 a = ap.parse_args()
 mode, cs = a.contigs.split(":", 1)
@@ -31,7 +32,7 @@ if a.expr:
         expr[(r["chrom"], int(r["start"]), int(r["end"]))] = int(r["u"])
 
 g = [(r["cluster_id"], r["chrom"], int(r["start"]) - 1, int(r["end"]))
-     for r in csv.DictReader(open(f"{R}/mcl_ann/gw_units_v3.clusters.tsv"), delimiter="\t") if keep_chrom(r["chrom"])]
+     for r in csv.DictReader(open(a.clusters or f"{R}/mcl_ann/gw_units_v3.clusters.tsv"), delimiter="\t") if keep_chrom(r["chrom"])]
 if a.expr:
     g = [x for x in g if expr.get((x[1], x[2], x[3]), 0) >= GATE]
 cnt = collections.Counter(x[0] for x in g)

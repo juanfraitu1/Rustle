@@ -1047,3 +1047,38 @@ lever G.**
 0.4710 AND P_G >= 0.3386. AC1 and AC2 are read with the same bar and reported, not deciding. Also reported: best-overlap
 and full-guided metrics, number of added nodes, how many of the 58 node-less expressed guided loci gain a node, and the
 gap decomposition (missing-node-first order) for AC1-AC3.
+
+---
+## ADDENDUM AD (2026-09-14; before any number below exists) — (1) is nucleotide unreachability of old copies synonymous-codon saturation? (2) intermediate grouping; (3) truth granularity
+
+### AD-1 Codon divergence of unreachable retrogenes (human CHM13)
+**Question (user):** are the copies that nucleotide alignment cannot reach (Addendum Z UNASSESSED) diverged at synonymous
+codon positions while the protein is conserved — and when two of three codon bases differ, can degeneracy still keep the
+amino acid?
+**Pairs (parent = protein-coding member with most introns):** UNREACHED (Z unassessed): GK-GK2, CETN2-CETN1,
+NAP1L1-NAP1L2, NAP1L1-NAP1L3, CSTF2-CSTF2T, UBL4A-UBL4B, FAM50A-FAM50B (7). REACHED (nucleotide mRNA record passed in Y/Z):
+MKRN1-MKRN3, PDHA1-PDHA2, UTP14A-UTP14C, PABPC1-PABPC3, POU5F1-POU5F1B, PGK1-PGK2, GLUD1-GLUD2, TAF1-TAF1L, RPL10-RPL10L (9).
+**Method (fixed):** CDS = the transcript with the longest CDS (RefSeq CDS features, CHM13 soft-masked genome, upper-cased);
+translate (standard code); protein pair aligned with MAFFT (`--auto`); codon alignment by back-translation; over codons
+aligned in both: protein identity, identity at codon positions 1, 2, 3, CDS nucleotide identity, fraction of codons
+differing at 0/1/2/3 positions and the synonymous share of 2- and 3-difference codons; dN and dS by PAML `yn00`
+(Yang-Nielsen). Protein-level reach: `miniprot` of the parent protein onto the member region (gene +/- one gene length);
+REACHED-BY-PROTEIN iff the best alignment covers >= 50% of the parent protein; PROTEIN INTRON LOSS iff that alignment has
+no intron and its protein span covers >= 1 parent CDS junction.
+**Reading (fixed):** SYNONYMOUS SATURATION explains nucleotide unreachability iff in >= 5/7 UNREACHED pairs: identity at
+position 3 < both positions 1 and 2, dS >= 1.0, and protein identity >= 0.70. PROTEIN LEVEL RESCUES iff >= 6/7 UNREACHED
+pairs are REACHED-BY-PROTEIN with PROTEIN INTRON LOSS. The REACHED pairs are reported as the contrast; the synonymous share
+of multi-difference codons is reported for all pairs.
+
+### AD-2 Intermediate grouping on AC nodes and edges (gorilla hold-out)
+- **AD2a (PRIMARY): 2-edge-connected components** — remove every bridge (an edge whose removal disconnects its component),
+  then take components with >= 2 loci. No parameter; every emitted family has edge connectivity lambda >= 2.
+- **AD2b: triangle-supported leaders** — leaders as Addendum AC; the family = leader + free direct neighbours + free nodes
+  adjacent to >= 2 nodes of that star; one pass per leader.
+**Reading (fixed):** as AB/AC: SUPPORTED iff any-family R_G > 0.4710 AND P_G >= 0.3386 on expressed guided loci. AD2a
+decides; AD2b is read with the same bar and reported. Gap decomposition (missing-node first) reported.
+
+### AD-3 Truth granularity (reported, not deciding)
+A COARSE truth merges guided MCL clusters whose loci (expressed or not, on the three contigs) are joined by >= 1 guided
+edge re-derived as in Addendum AB. DN0, LCS union, AB2, AC1-AC3, AD2a, AD2b are scored against it (expressed loci, same
+scorer). Reported: coarse cluster count and pairs, and each catalog's R_G/P_G under both truths.

@@ -63,7 +63,7 @@ Poly(A) and target-site duplications are reported annotations, not criteria (§6
 node sets, §1★.2). Edge connectivity λ is reported as the certificate (§1★.5). ⚠ **OPEN after §6jz:** with the guided edge
 rule on de novo nodes, components reach the best recall of any de novo catalog (R_G 0.509) but lose precision (P_G 0.310,
 below the pre-registered guard) through transitive chaining (largest component: 85 loci over 16 guided clusters).
-Guided mode never chains (seed neighbourhoods), so the grouping clause is the one still to settle. §6ka: leader neighbourhoods (the seed rule without annotation) raise precision to 0.54-0.58 but cut recall to 0.34-0.42; no pre-registered grouping clears both bars. Part of the component "over-merge" may be the MCL truth splitting DNA families (not separated).
+Guided mode never chains (seed neighbourhoods), so the grouping clause is the one still to settle. §6ka: leader neighbourhoods (the seed rule without annotation) raise precision to 0.54-0.58 but cut recall to 0.34-0.42; no pre-registered grouping clears both bars. §6kb: bridge-split components (λ >= 2) fail precision (0.302); triangle-supported leaders (leader + neighbours + nodes adjacent to >= 2 of that star), read as a non-deciding arm, clear both bars (R_G 0.605, P_G 0.419) — the candidate grouping clause, to confirm on a fresh substrate. A coarser truth raises component precision only +0.02-0.05, so most over-merge is real chaining.
 
 **5. Subfamily = a cluster of a supported, pairwise-compatible split system inside a family** (clusters are nested or
 disjoint; Buneman). Definition and estimator are kept apart:
