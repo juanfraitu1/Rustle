@@ -380,3 +380,39 @@ pairwise precision >= 0.775 (D1's 0.875 - 0.10); otherwise it does not.
 
 **Hold-out (gorilla rebuild3 contigs, Addendum E scorer vs guided gw_units_v3):** DNA atoms are CLOSER to guided than
 the RNA default iff R_G > 0.0736 AND P_G >= 0.2710. Descriptive mode comparison; no default changes.
+
+---
+## ADDENDUM K (2026-09-13, after §6jj; before any number below exists) — atom edge fix, DNA+RNA hybrid, genome-wide hold-out
+
+### K0 — atom edges from exact aligned blocks (post-hoc fix, disclosed)
+**Why:** §6jj's housekeeping control fired once (ATP5F1A). Inspection: its 7.7 kb atom pairs with a 1.6 kb processed
+pseudogene; the SEDEF alignment is exons vs retrocopy with intron-sized deletions (1,620 aligned bases), but J2's linear
+interpolation between side endpoints scored coverage 1.00 (true ~0.21). This fix was chosen AFTER seeing the rebuild3
+hold-out, so rebuild3 is development from here on.
+**Rule:** gorilla SEDEF CIGAR (column 33; validated on 8 rows: M aligned, D consumes side A, I consumes side B, side B
+reverse-complemented when strand2 = '-', identity over M reproduces fracMatch to 1e-6). Each M run is an exact block
+A[pa, pa+n) <-> B genomic [b1+pb, b1+pb+n) ('+') or [b2-pb-n, b2-pb) ('-'); atoms are intersected with blocks and
+mapped base-to-base. Covered bases per atom pair = union of mapped aligned bases on each atom; identity = pair fracMatch
+weighted by aligned bases; coverage = min over both atoms (J2 form; coverage-of-shorter reported as secondary). Atoms,
+floors, gamma and grouping unchanged. A row without a CIGAR aborts the run.
+**Development (rebuild3):** report R_G/P_G (any-family and best-overlap), loci with a family copy, housekeeping.
+
+### K1 — DNA+RNA hybrid (atoms as nodes, reads mark expression)
+**Expression:** u(interval) = primary (-F 2308) MAPQ >= 1 reads with >= 1 aligned base (M/=/X) inside the interval;
+EXPRESSED iff u >= 3 (`GATE_MIN_READS`). MAPQ-0 counts reported alongside, not used.
+**Hybrid catalog H:** K0 DNA families restricted to expressed atoms; families with >= 2 expressed atoms are kept.
+**Truth:** guided `gw_units_v3` restricted to expressed loci (u over the guided locus span >= 3), clusters with >= 2
+expressed loci.
+**Compared against that truth:** RNA de novo (dev: rebuild3 `cat_default`; hold-out: `o1_reps/ggo_reps.copies.tsv`,
+production genome-wide catalog of 2026-08-21, older code — disclosed), K0 DNA (all atoms) and H. R_G, P_G any-family
+(Addendum E scorer) and best-overlap.
+**Decision (hold-out only):** H NARROWS the RNA <-> expressed-guided gap iff R_G(H) > R_G(RNA) AND P_G(H) >= P_G(RNA)
+- 0.05. Also reported: RNA copies overlapping an expressed atom; expressed guided loci with no expressed atom.
+
+### K2 — genome-wide hold-out
+**Substrate:** every gorilla contig EXCEPT NC_073241.2 / NC_073242.2 / NC_073244.2. SEDEF pairs with either side on
+those 3 contigs are excluded; guided loci on them are excluded before the >= 2-loci cluster rule; RNA copies on them
+are excluded. Expression from `GGO_ds.bam` (the BAM of the RNA catalog).
+**Decisions:** (i) K0 DNA atoms are CLOSER to guided than RNA iff R_G(DNA) > R_G(RNA) AND P_G(DNA) >= P_G(RNA) - 0.05
+(any-family scorer); (ii) K1 as above. Housekeeping: the 30-gene panel genome-wide, genes in any family, per catalog.
+Runs that exceed resources are reported as not run.

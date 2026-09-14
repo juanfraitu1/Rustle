@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
-"""Prereg Addendum J2: copy-level DNA nodes (atoms from SD alignment boundaries) and edges from the SD alignments.
+"""Prereg Addenda J2/K0: copy-level DNA nodes (atoms from SD alignment boundaries) and edges from the SD alignments.
 
-usage: dna_atoms.py <sd.bed> <human|gorilla> <contig,contig,...> <out_prefix>
+usage: dna_sd_atoms.py <sd.bed> <human|gorilla> <contig,contig,...|@contigs.txt> <out_prefix> [linear|cigar]
+  linear (J2): side A projected onto side B by linear interpolation (gap-blind; the only option without a CIGAR)
+  cigar  (K0): exact aligned blocks from the SEDEF CIGAR (gorilla column 33); a row without a CIGAR aborts
 writes <out>.nodes.tsv (idx chrom start end), <out>.edges.tsv (i j identity coverage; coverage = min over both atoms,
 the pre-registered form) and <out>.edges_shorter.tsv (same, coverage of the SHORTER atom; disclosed secondary).
 """
 import bisect
 import collections
 import heapq
+import re
 import sys
 
 MIN_BLOCK = 1000
-sd_path, fmt, contigs, out = sys.argv[1], sys.argv[2], set(sys.argv[3].split(",")), sys.argv[4]
+sd_path, fmt, out = sys.argv[1], sys.argv[2], sys.argv[4]
+contigs = set(open(sys.argv[3][1:]).read().split()) if sys.argv[3].startswith("@") else set(sys.argv[3].split(","))
+MODE = sys.argv[5] if len(sys.argv) > 5 else "linear"
 # column indices (0-based): matches, mismatches, fracMatch
 COLS = {"human": (18, 19, 22), "gorilla": (16, 17, 20)}[fmt]
+CIGAR_COL = {"gorilla": 32}.get(fmt)
+if MODE == "cigar" and CIGAR_COL is None:
+    sys.exit("ABORT: cigar mode needs a SEDEF table with a CIGAR column")
 
 pairs = []
 bad = 0
@@ -33,14 +41,19 @@ for line in open(sd_path):
         bad += 1
     if a2 <= a1 or b2 <= b1:
         continue
-    pairs.append((f[0], a1, a2, f[8], f[3], b1, b2, f[9], ident))
+    cig = None
+    if MODE == "cigar":
+        if len(f) <= CIGAR_COL or not re.fullmatch(r"(\d+[MID])+", f[CIGAR_COL]):
+            sys.exit(f"ABORT: row without a CIGAR: {line[:120]}")
+        cig = f[CIGAR_COL]
+    pairs.append((f[0], a1, a2, f[8], f[3], b1, b2, f[9], ident, cig))
 if bad:
     sys.exit(f"ABORT: {bad} rows where matches/(matches+mismatches) != fracMatch (column mapping wrong)")
-print(f"[atoms] {len(pairs)} SD pairs on {len(contigs)} contigs; identity column check passed", file=sys.stderr)
+print(f"[atoms] {len(pairs)} SD pairs on {len(contigs)} contigs; identity column check passed; edge mode {MODE}", file=sys.stderr)
 
 # ---------- atoms ----------
 sides = collections.defaultdict(list)  # chrom -> (start, end, sig_id)
-for k, (ca, a1, a2, _, cb, b1, b2, _, _) in enumerate(pairs):
+for k, (ca, a1, a2, _, cb, b1, b2, _, _, _) in enumerate(pairs):
     sides[ca].append((a1, a2, (k, 0)))
     sides[cb].append((b1, b2, (k, 1)))
 
@@ -146,7 +159,48 @@ def overlapping(c, s, e):
 cov_iv = collections.defaultdict(lambda: collections.defaultdict(list))  # (i,j) -> atom -> intervals
 wsum = collections.Counter()
 wid = collections.Counter()
-for ca, a1, a2, sa, cb, b1, b2, sb, ident in pairs:
+def add(xi, x1, x2, yi, y1, y2, ident):
+    key = (min(xi, yi), max(xi, yi))
+    cov_iv[key][xi].append((x1, x2))
+    cov_iv[key][yi].append((y1, y2))
+    wsum[key] += y2 - y1
+    wid[key] += (y2 - y1) * ident
+
+
+def cigar_blocks(a1, b1, b2, sb, cig):
+    """Exact gapless blocks (A start, B genomic start, length, reversed) of one SEDEF alignment."""
+    pa = pb = 0
+    for n, op in re.findall(r"(\d+)([MID])", cig):
+        n = int(n)
+        if op == "M":
+            yield a1 + pa, (b1 + pb if sb == "+" else b2 - pb - n), n
+            pa += n
+            pb += n
+        elif op == "D":
+            pa += n
+        else:
+            pb += n
+
+
+if MODE == "cigar":
+    for ca, a1, a2, sa, cb, b1, b2, sb, ident, cig in pairs:
+        rev = sb == "-"
+        for As, Bs, n in cigar_blocks(a1, b1, b2, sb, cig):
+            for xs, xe, xi in overlapping(ca, As, As + n):
+                u1, u2 = max(xs, As), min(xe, As + n)
+                if u2 <= u1:
+                    continue
+                o1, o2 = u1 - As, u2 - As  # offsets into the block
+                m1, m2 = (Bs + o1, Bs + o2) if not rev else (Bs + n - o2, Bs + n - o1)
+                for ys, ye, yi in overlapping(cb, m1, m2):
+                    if yi == xi:
+                        continue
+                    v1, v2 = max(ys, m1), min(ye, m2)
+                    if v2 <= v1:
+                        continue
+                    x1, x2 = (As + (v1 - Bs), As + (v2 - Bs)) if not rev else (As + (Bs + n - v2), As + (Bs + n - v1))
+                    add(xi, x1, x2, yi, v1, v2, ident)
+for ca, a1, a2, sa, cb, b1, b2, sb, ident, _ in (pairs if MODE == "linear" else []):
     for (c1, p1, p2, s1), (c2, q1, q2, s2) in (((ca, a1, a2, sa), (cb, b1, b2, sb)), ((cb, b1, b2, sb), (ca, a1, a2, sa))):
         LA, LB = p2 - p1, q2 - q1
         same = s1 == s2
@@ -164,11 +218,7 @@ for ca, a1, a2, sa, cb, b1, b2, sb, ident in pairs:
                     x1, x2 = p1 + (o1 - q1) / LB * LA, p1 + (o2 - q1) / LB * LA
                 else:
                     x1, x2 = p1 + (q2 - o2) / LB * LA, p1 + (q2 - o1) / LB * LA
-                key = (min(xi, yi), max(xi, yi))
-                cov_iv[key][xi].append((x1, x2))
-                cov_iv[key][yi].append((o1, o2))
-                wsum[key] += o2 - o1
-                wid[key] += (o2 - o1) * ident
+                add(xi, x1, x2, yi, o1, o2, ident)
 
 
 def union_len(iv):

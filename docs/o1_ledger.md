@@ -19148,3 +19148,72 @@ housekeeping gene enters a family (to inspect).
 Data: `lit/{arms/F*,arms/D2*,dna2/,lit_modes_j.{py,out}}`, `rebuild3/{dna/,cat_dna_atoms*,cat_link10.*,score_j.*,
 score_link10.*,housekeeping3.py}`. Tests: lib 840 passed / 0 failed / 19 ignored (2 new).
 Related: §6as, §6cj, §6ck, §6je, §6ji, [[project_denovo_vs_annotated_gap]].
+
+## §6jk — Atom edges fixed (ATP5F1A was a retrocopy scored by gap-blind projection); DNA+RNA hybrid and genome-wide gorilla hold-out both pass (2026-09-13)
+
+Pre-registered as Addendum K (`docs/PREREG_core_definition_2026-09-12.md`, md5 4ea1b2ad) before any number below.
+
+### K0 — ATP5F1A and the edge fix
+ATP5F1A (NC_073241.2:75,322,349-75,336,975) entered 2-copy family SDFAM837 through one SEDEF pair: its 7,703 bp atom vs
+a 1,641 bp **processed pseudogene** on NC_073242.2 (fracMatch 0.923, CIGAR = exon blocks separated by 140/1,480/515/616/
+1,308/1,680 bp deletions; 1,620 aligned bases). J2's linear interpolation between side endpoints scored coverage 1.000;
+the true two-sided coverage is 0.210. **Fix (post-hoc, disclosed; rebuild3 becomes development):** edges from the exact
+CIGAR blocks (`bench/dna_sd_atoms.py ... cigar`; semantics validated on 8 rows — M aligned, D consumes side A, I side B,
+B reverse-complemented on '-', identity over M = fracMatch to 1e-6). Linear mode stays byte-identical to J2; atoms are
+unchanged. ATP5F1A's edge becomes 0.210 and is rejected; coverage-of-shorter still admits it (0.987) — the two-sided
+form is what excludes retrocopy-to-parent edges.
+
+| rebuild3 (development) | families | copies | loci with family copy | R_G any | P_G any | R_G best | P_G best | housekeeping |
+|---|---|---|---|---|---|---|---|---|
+| RNA cat_default | 68 | 391 | 178 | 0.0736 | 0.3210 | 0.0651 | 0.3360 | 0/3 |
+| DNA atoms J2 (linear) | 1,292 | 6,088 | 866 | 0.5585 | 0.4672 | 0.3661 | 0.5362 | 1/3 |
+| **DNA atoms K0 (CIGAR)** | 1,272 | 5,553 | 851 | 0.5420 | 0.4736 | 0.3441 | 0.5199 | **0/3** |
+
+### K1 — DNA+RNA hybrid (atoms as nodes, reads mark expression)
+Expression = primary MAPQ>=1 reads with an aligned block in the interval, >= 3 (`bench/interval_expression.py`);
+hybrid H = K0 families restricted to expressed atoms, >= 2 per family; truth = guided loci with >= 3 such reads,
+clusters >= 2 (`bench/score_vs_guided.py`, which reproduces the Addendum E scorer's numbers exactly on rebuild3).
+
+| expressed-guided truth | families | copies | loci with family copy | R_G any | P_G any | R_G best | P_G best |
+|---|---|---|---|---|---|---|---|
+| rebuild3 dev (304 loci, 741 pairs): RNA default | 68 | 391 | 151 | 0.3887 | 0.3345 | 0.3428 | 0.3588 |
+| rebuild3 dev: RNA union | 94 | 433 | 156 | 0.4710 | 0.3886 | 0.4116 | 0.4088 |
+| rebuild3 dev: DNA K0 | 1,272 | 5,553 | 239 | 0.7949 | 0.5064 | 0.2389 | 0.9031 |
+| rebuild3 dev: **hybrid H** | 218 | 760 | 212 | 0.6356 | 0.6365 | 0.2335 | 0.8047 |
+| **hold-out** (2,314 loci, 3,357 pairs): RNA `o1_reps` (08-21 code) | 602 | 1,645 | 620 | 0.1823 | 0.6018 | 0.1787 | 0.6369 |
+| hold-out: DNA K0 | 11,778 | 63,272 | 1,666 | 0.6702 | 0.4308 | 0.3032 | 0.8250 |
+| hold-out: **hybrid H** | 1,267 | 3,975 | 1,149 | **0.5174** | **0.6312** | 0.2702 | 0.8193 |
+
+**Pre-registered decision (hold-out): the hybrid NARROWS the RNA <-> expressed-guided gap** (R_G 0.5174 > 0.1823, P_G
+0.6312 >= 0.5518); best-overlap agrees. DNA without the expression filter has higher recall but loses precision
+against expressed truth (0.4308). Reported: 55.7% of RNA copies overlap an expressed atom (63.5% any atom) — 36.5% of
+RNA copies lie outside SEDEF duplications; 38.9% of expressed guided loci have no expressed atom and 22.6% no atom.
+
+### K2 — genome-wide hold-out (23 contigs, the 3 rebuild3 contigs excluded)
+212,629 SD pairs -> 79,331 atoms (median 2.0 kb) -> 996,706 atom pairs in 1 min 28 s (3.2 GB); `families_from_edges`
+34 s, 90 MB -> 11,778 families. Guided: 8,295 loci in 2,039 clusters, 52,537 pairs.
+
+| hold-out vs full guided | families | copies | loci with family copy | R_G any | P_G any | R_G best | P_G best |
+|---|---|---|---|---|---|---|---|
+| RNA `o1_reps` (08-21) | 602 | 1,645 | 770 | 0.0139 | 0.5059 | 0.0136 | 0.5323 |
+| **DNA atoms K0** | 11,778 | 63,272 | **6,529** | **0.5667** | **0.5596** | 0.3627 | 0.8491 |
+
+**Pre-registered decision: DNA atoms are CLOSER to guided than RNA** (R_G 0.5667 > 0.0139, P_G 0.5596 >= 0.4559).
+
+**Housekeeping panel (27 genes on the hold-out contigs):** RNA 7/27, DNA 13/27 — but **guided itself has 8/27 in
+multi-locus clusters** (ACTB 16 loci, EEF1A1 29, GUSB 6, NONO 98, PPIA 41, PSMA1 8, SDHA 5, UBC 4), so the panel is not a
+clean negative control for sequence-homology modes. DNA adds GAPDH, HNRNPA1, HSP90AB1, PCBP1, TARDBP, YWHAZ (classic
+processed-pseudogene sources, or intronic SD atoms of long genes such as PSMA1/SDHA/GUSB) and misses UBC.
+
+**Reading.** On a genome-wide substrate it never saw, the annotation-free DNA mode puts 6,529 of 8,295 guided loci in
+families against RNA's 770, and restricting it to expressed atoms beats the RNA mode on expressed guided loci in both
+recall and precision. Node construction, not grouping, is the RNA mode's gap (§6je), and SD atoms supply the nodes.
+Caveats: the RNA comparator is the 08-21 genome-wide catalog (a rebuild with today's code does not fit the tool
+limits); guided is itself sequence-homology-built, so agreement is partly expected; 22.6% of expressed guided loci
+lie outside SEDEF duplications and 36.5% of RNA copies too (older or <1 kb paralogs), so atoms do not subsume RNA;
+expression uses unique reads only, which undercalls near-identical copies (MAPQ 0).
+
+Data: `o1_falsemerge/rebuild3/{dna/ggo3_k0.*,cat_dna_k0*,hybrid/,score_k0.*}`, `o1_falsemerge/gw_atoms/`
+(`gw.*`, `cat_dna_k0.copies.tsv`, `expr_gw.tsv`, `score_k1_holdout.out`, `score_k2.out`, `housekeeping_gw.py`).
+Scripts: `bench/{dna_sd_atoms,interval_expression,score_vs_guided}.py`. No Rust change (lib 840 / 0 / 19).
+Related: §6je, §6jj, [[project_denovo_vs_annotated_gap]].
