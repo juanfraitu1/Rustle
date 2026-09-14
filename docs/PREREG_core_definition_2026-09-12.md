@@ -907,3 +907,31 @@ identity >= 0.80) = "retrocopy, then genomic duplication".
 - R3 TE-DERIVED: SUPPORTED iff >= 6/8 ERV-env genes TE-DERIVED AND <= 5% of protein-coding members of all SD, core and
   retro families (dev + held out) TE-DERIVED.
 Each reading is reported separately; a failed reading is reported as failed, not re-tuned on these families.
+
+---
+## ADDENDUM Z (2026-09-14, after Addendum Y's R1 failed; before any number below exists) — retrocopy = parent-intron loss, on FRESH held-out families
+
+**Why:** Y's RETROCOPY rule failed on its hallmark requirement (poly(A) gated on reaching the annotated 3' end; hallmarks
+decay with age), while intron loss alone looked near-perfect POST HOC (§6jv). That observation was made on Y's families,
+so every family below is new to W, X and Y; Y's 16 retro + 13 SD families become development.
+
+**Rule (fixed now):** everything as Addendum Y (parent, regions, GENOMIC with soft-masked bases excluded, parent mRNA,
+`minimap2 -x splice -uf`, record selection, mRNA identity >= 0.80 and >= 100 aligned query bases, junction scoring:
+parent intron >= 70 bp, junction >= 20 query bases inside the record, <= 30 bp = LOST, >= 70 bp = RETAINED), except:
+**RETROCOPY iff not GENOMIC AND the mRNA record passes AND LOST >= 1 AND RETAINED = 0.** No scorable junction
+(including every intronless parent) -> UNRESOLVED; intronless parents are outside this rule's scope. Poly(A) (Y's
+definition, and also evaluated without the 3'-reach gate) and TSD are REPORTED as age/confidence annotations only.
+Family RETRO-DERIVED iff >= 50% of assessed members are RETROCOPY; GENOMIC-DERIVED iff >= 50% GENOMIC.
+
+**Fresh families (regexes fixed now; names checked to exist, no alignments run):**
+- Retro positives (16): processed-pseudogene families RPL5 `^RPL5(P\d+)?$`, RPS3A `^RPS3A(P\d+)?$`, RPL31
+  `^RPL31(P\d+)?$`, EEF1B2 `^EEF1B2(P\d+)?$`, HMGN2 `^HMGN2(P\d+)?$`, YBX1 `^YBX1(P\d+)?$`, CYCS `^CYCS(P\d+)?$`,
+  KRT18 `^KRT18(P\d+)?$`; literature retrogenes GK `^GK2?$`, CETN `^CETN[12]$`, NAP1L `^NAP1L[123]$`, MKRN
+  `^MKRN[13]$`, PDHA `^PDHA[12]$`, CSTF2 `^CSTF2T?$`, UBL4 `^UBL4[AB]$`, FAM50 `^FAM50[AB]$`.
+- SD negatives (10): GTF2IRD2 `^GTF2IRD2B?$`, PRAMEF `^PRAMEF\d+$`, SPANX `^SPANX[A-D]\d?$`, FCGR3 `^FCGR3[AB]$`,
+  CFHR `^CFHR[1-5]$`, RH `^RHD$|^RHCE$`, HP `^HPR?$`, CYP2D `^CYP2D[67]$`, OPN1 `^OPN1[LM]W\d?$`, CGB `^CGB\d+$`.
+- Development (reported): Y's 16 retro positives and 13 SD negatives under this rule.
+
+**Reading (fixed):** SUPPORTED iff >= 12/16 fresh retro positives RETRO-DERIVED AND <= 1/10 fresh SD negatives
+RETRO-DERIVED. Also reported, not deciding: GENOMIC-DERIVED counts (expected SD high, retro 0) and member-level
+junction-loss among SD members. TE-DERIVED is not re-tested (reported as CDS repeat coverage only).

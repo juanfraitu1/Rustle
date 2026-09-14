@@ -19788,3 +19788,43 @@ are used.
   Ty3/gypsy-derived RTL/PEG10/ARC genes are 0/14, as expected before looking.
 
 Register rows 819 (R1), 820 (R3). Data: `lit/mechanism_y/{y.out,members.tsv,te.tsv}`.
+
+## §6jw — Retrocopy = parent-intron loss, on FRESH families: NOT SUPPORTED at family level (10/16 vs >= 12) because 6/8 old retrogenes are unassessable; among assessed copies 213/222 RETROCOPY and SD 0/10 families, 0/19 members (2026-09-14)
+
+Pre-registered as Addendum Z (`docs/PREREG_core_definition_2026-09-12.md`, md5 2b5375e1). `bench/copy_mechanism.py
+--addendum z`. The rule is Y's except RETROCOPY = not GENOMIC, parent mRNA record passes (identity >= 0.80, >= 100 aligned
+bases), LOST >= 1 and RETAINED = 0. Poly(A) and TSD are reported only. Every family was new to W/X/Y; Y's families are
+development.
+
+| fresh family | kind | assessed / members | RETROCOPY | GENOMIC | call |
+|---|---|---|---|---|---|
+| RPL5 | processed pseudogenes | 30/35 | 28 | 0 | RETRO-DERIVED |
+| RPS3A | processed pseudogenes | 34/40 | 34 | 0 | RETRO-DERIVED |
+| RPL31 | processed pseudogenes | 33/40 | 32 | 0 | RETRO-DERIVED |
+| EEF1B2 | processed pseudogenes | 8/8 | 7 | 0 | RETRO-DERIVED |
+| HMGN2 | processed pseudogenes | 39/40 | 37 | 0 | RETRO-DERIVED |
+| YBX1 | processed pseudogenes | 5/10 | 4 | 0 | RETRO-DERIVED |
+| CYCS | processed pseudogenes | 32/40 | 30 | 0 | RETRO-DERIVED |
+| KRT18 | processed pseudogenes | 39/40 | 39 | 0 | RETRO-DERIVED |
+| MKRN3, PDHA2 | retrogenes | 1/1 each | 1 each | 0 | RETRO-DERIVED |
+| GK2, CSTF2T, FAM50B | retrogenes | 0/1 each | — | — | not (mRNA identity 0.748, 0.755, 0.767 < 0.80) |
+| CETN1, NAP1L2+NAP1L3, UBL4B | retrogenes | 0 | — | — | not (no splice alignment) |
+| GTF2IRD2, SPANX, FCGR3, RH, HP, CYP2D, OPN1 | SD | 1-4 each | 0 | all | GENOMIC-DERIVED |
+| PRAMEF | SD | 3/19 | 0 | 3 | GENOMIC-DERIVED (16 unassessed: identity < 0.80) |
+| CGB | SD | 5/5 | 0 | 2 | not (3 UNRESOLVED: junctions RETAINED, shared unique non-exonic 545-675 bp) |
+| CFHR | SD | 0/2 | — | — | not (unassessed) |
+
+**Pre-registered reading: NOT SUPPORTED** (10/16 < 12; SD negatives RETRO-DERIVED 0/10).
+- Member level: fresh retro positives 213 RETROCOPY / 9 UNRESOLVED / 40 UNASSESSED. No fresh SD member shows junction
+  loss (0/19 assessed); SD members that align retain parent junctions (RETAINED 1-16).
+- Development (Y's families under this rule): retro 15/16 RETRO-DERIVED (GLUD2 has 1 retained junction); SD 0/13
+  RETRO-DERIVED, 13/13 GENOMIC-DERIVED.
+- Reported hallmarks among RETROCOPY members (fresh): poly(A) with the 3'-reach gate 65/213, without it 111/213; TSD
+  26/213.
+
+**Reading of the failure (post hoc, not a result):** the intron-loss CALL made no error in either direction. The bar fails
+because the family denominator includes old retrogenes (GK2, CETN1, NAP1L2/3, CSTF2T, UBL4B, FAM50B) whose nucleotide
+identity to the parent is below the 0.80 floor or below what `minimap2 -x splice` aligns. Assessing them needs
+protein-level alignment of the parent to the member, which was not part of this rule. Processed-pseudogene families pass
+8/8.
+Register row 821. Data: `lit/mechanism_z/{z.out,members.tsv}`.

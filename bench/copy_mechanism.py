@@ -56,6 +56,22 @@ TE_GROUPS = {
     "PNMA": (r"^PNMA\d+[A-Z]?$", "reported"), "L1TD1": (r"^L1TD1$", "reported"),
 }
 
+# Addendum Z: fresh families; Y's held-out families become development
+FAMILIES_Z = {
+    "RPL5": (r"^RPL5(P\d+)?$", "retro_pos"), "RPS3A": (r"^RPS3A(P\d+)?$", "retro_pos"),
+    "RPL31": (r"^RPL31(P\d+)?$", "retro_pos"), "EEF1B2": (r"^EEF1B2(P\d+)?$", "retro_pos"),
+    "HMGN2": (r"^HMGN2(P\d+)?$", "retro_pos"), "YBX1": (r"^YBX1(P\d+)?$", "retro_pos"),
+    "CYCS": (r"^CYCS(P\d+)?$", "retro_pos"), "KRT18": (r"^KRT18(P\d+)?$", "retro_pos"),
+    "GK": (r"^GK2?$", "retro_pos"), "CETN": (r"^CETN[12]$", "retro_pos"), "NAP1L": (r"^NAP1L[123]$", "retro_pos"),
+    "MKRN": (r"^MKRN[13]$", "retro_pos"), "PDHA": (r"^PDHA[12]$", "retro_pos"), "CSTF2": (r"^CSTF2T?$", "retro_pos"),
+    "UBL4": (r"^UBL4[AB]$", "retro_pos"), "FAM50": (r"^FAM50[AB]$", "retro_pos"),
+    "GTF2IRD2": (r"^GTF2IRD2B?$", "sd_neg"), "PRAMEF": (r"^PRAMEF\d+$", "sd_neg"), "SPANX": (r"^SPANX[A-D]\d?$", "sd_neg"),
+    "FCGR3": (r"^FCGR3[AB]$", "sd_neg"), "CFHR": (r"^CFHR[1-5]$", "sd_neg"), "RH": (r"^RHD$|^RHCE$", "sd_neg"),
+    "HP": (r"^HPR?$", "sd_neg"), "CYP2D": (r"^CYP2D[67]$", "sd_neg"), "OPN1": (r"^OPN1[LM]W\d?$", "sd_neg"),
+    "CGB": (r"^CGB\d+$", "sd_neg"),
+    **{f: (p, "dev_y_" + k) for f, (p, k) in FAMILIES.items() if k in ("retro_pos", "sd_neg")},
+}
+
 
 def lower_runs(seq, offset=0):
     return [(m.start() + offset, m.end() + offset) for m in re.finditer(r"[a-z]+", seq)]
@@ -242,6 +258,7 @@ def main():
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--amy-truth")
     ap.add_argument("--families")
+    ap.add_argument("--addendum", choices=("y", "z"), default="y")
     ap.add_argument("--threads", type=int, default=2)
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
@@ -264,9 +281,10 @@ def main():
     print(f"CHANCE RATES (1,000 random pseudo-insertions): POLYA {pa_rate:.3f} -> {'used' if use_pa else 'DROPPED'}; "
           f"TSD {tsd_rate:.3f} -> {'used' if use_tsd else 'DROPPED'}")
 
-    wanted = set(a.families.split(",")) if a.families else set(FAMILIES) | {"AMY"}
+    table = FAMILIES if a.addendum == "y" else FAMILIES_Z
+    wanted = set(a.families.split(",")) if a.families else set(table) | ({"AMY"} if a.addendum == "y" else set())
     fams = {f: (k, [g for n, gs in by_name.items() if re.match(p, n) for g in gs if g["chrom"] in clen])
-            for f, (p, k) in FAMILIES.items() if f in wanted}
+            for f, (p, k) in table.items() if f in wanted}
     if a.amy_truth and "AMY" in wanted:
         names = {(r["name"], r["chrom"]) for r in csv.DictReader(open(a.amy_truth), delimiter="\t")}
         fams["AMY"] = ("dev_amy", [g for (n, c) in sorted(names) for g in by_name.get(n, []) if g["chrom"] == c])
@@ -309,7 +327,7 @@ def main():
                    "member": g["name"], "chrom": g["chrom"], "start0": g["start0"], "end": g["end"], "biotype": g["biotype"],
                    "member_introns": g["introns"], "region_identity": float("nan"), "shared_nonexonic_unique": 0,
                    "mrna_identity": float("nan"), "mrna_qcov": 0.0, "lost": 0, "retained": 0, "ambiguous": 0,
-                   "polya": False, "tsd_len": 0, "class": "UNASSESSED"}
+                   "polya": False, "tsd_len": 0, "polya_ungated": False, "tsd_len_ungated": 0, "class": "UNASSESSED"}
             region_ok = False
             cand = [c for c in chains if c["q"] == key and c["qs"] < gq1 and gq0 < c["qe"] and c["ts"] < pt1 and pt0 < c["te"]]
             if cand:
@@ -338,13 +356,17 @@ def main():
                     gts, gte = s + r["ts"], s + r["te"]
                     pa, tl = hallmarks(genome, g["chrom"], clen[g["chrom"]], gts, gte, r["strand"], apply_polya=reach)
                     row["polya"], row["tsd_len"] = pa, tl
+                    row["polya_ungated"], row["tsd_len_ungated"] = (pa, tl) if reach else \
+                        hallmarks(genome, g["chrom"], clen[g["chrom"]], gts, gte, r["strand"], apply_polya=True)
             if row["shared_nonexonic_unique"] >= NONEXONIC:
                 row["class"] = "GENOMIC"
             elif mrna_ok or region_ok:
                 pa = row["polya"] and use_pa
                 ts_ = row["tsd_len"] >= TSD_MIN and use_tsd
                 scorable = row["lost"] + row["retained"] + row["ambiguous"] > 0
-                if mrna_ok and row["lost"] >= 1 and row["retained"] == 0 and (pa or ts_ or not (use_pa or use_tsd)):
+                if a.addendum == "z":
+                    row["class"] = "RETROCOPY" if mrna_ok and row["lost"] >= 1 and row["retained"] == 0 else "UNRESOLVED"
+                elif mrna_ok and row["lost"] >= 1 and row["retained"] == 0 and (pa or ts_ or not (use_pa or use_tsd)):
                     row["class"] = "RETROCOPY"
                 elif mrna_ok and not scorable and (use_pa or use_tsd) and (pa or not use_pa) and (ts_ or not use_tsd):
                     row["class"] = "RETROCOPY"
@@ -429,7 +451,20 @@ def main():
     k = lambda kind, field: (sum(1 for r in fam_rows if r["kind"] == kind and r[field]), sum(1 for r in fam_rows if r["kind"] == kind))
     rp_r, sd_r = k("retro_pos", "retro_derived"), k("sd_neg", "retro_derived")
     rp_g, sd_g = k("retro_pos", "genomic_derived"), k("sd_neg", "genomic_derived")
-    if not a.families:
+    if not a.families and a.addendum == "z":
+        print(f"\nZ READING: fresh retro positives RETRO-DERIVED {rp_r[0]}/{rp_r[1]}; fresh SD negatives {sd_r[0]}/{sd_r[1]} -> "
+              f"{'SUPPORTED' if rp_r[0] >= 12 and sd_r[0] <= 1 else 'NOT SUPPORTED'}")
+        print(f"reported: GENOMIC-DERIVED fresh SD {sd_g[0]}/{sd_g[1]}, fresh retro {rp_g[0]}/{rp_g[1]}")
+        for dev in ("dev_y_retro_pos", "dev_y_sd_neg"):
+            print(f"DEVELOPMENT {dev}: RETRO-DERIVED {k(dev, 'retro_derived')}, GENOMIC-DERIVED {k(dev, 'genomic_derived')}")
+        sdm = [r for r in member_rows if r["kind"] == "sd_neg" and r["class"] != "UNASSESSED"]
+        print(f"reported: fresh SD members with junction loss (LOST >= 1, RETAINED = 0): "
+              f"{sum(1 for r in sdm if r['lost'] >= 1 and r['retained'] == 0)}/{len(sdm)}")
+        for kind in ("retro_pos", "dev_y_retro_pos"):
+            rc = [r for r in member_rows if r["kind"] == kind and r["class"] == "RETROCOPY"]
+            print(f"reported {kind} RETROCOPY hallmarks: poly(A) gated {sum(r['polya'] for r in rc)}/{len(rc)}, ungated "
+                  f"{sum(r['polya_ungated'] for r in rc)}/{len(rc)}, TSD ungated {sum(r['tsd_len_ungated'] >= TSD_MIN for r in rc)}/{len(rc)}")
+    elif not a.families:
         print(f"\nR1 RETROCOPY: retro positives RETRO-DERIVED {rp_r[0]}/{rp_r[1]}; SD negatives {sd_r[0]}/{sd_r[1]} -> "
               f"{'SUPPORTED' if rp_r[0] >= 12 and sd_r[0] <= 1 else 'NOT SUPPORTED'}")
         print(f"R2 GENOMIC (repeats excluded): SD negatives GENOMIC-DERIVED {sd_g[0]}/{sd_g[1]}; retro positives "
