@@ -3580,7 +3580,60 @@ fn er_union_lcs_enabled() -> bool {
 /// (register 321), the union only adds pairs; ledger §6js/§6jt: NPIP copies are held together by gene body while AMY
 /// copies are held together by coding sequence, so neither substrate alone serves both.
 pub(crate) fn er_union_genomic_span_enabled() -> bool {
-    matches!(std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN"), Ok(v) if v != "0" && !v.is_empty())
+    span_union_mode(std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN").ok().as_deref()).0
+}
+
+/// `RUSTLE_ER_UNION_GENOMIC_SPAN=restricted`: genomic-span (DNA) edges may attach a rep to an exon-sum (RNA) family but
+/// may never merge two RNA-established families (prereg Addendum X).
+pub(crate) fn er_union_genomic_span_restricted() -> bool {
+    span_union_mode(std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN").ok().as_deref()).1
+}
+
+/// (enabled, restricted) for a value of `RUSTLE_ER_UNION_GENOMIC_SPAN`: unset, empty or "0" = off; "restricted" = on and
+/// restricted; anything else = on (full union).
+fn span_union_mode(v: Option<&str>) -> (bool, bool) {
+    match v {
+        None | Some("") | Some("0") => (false, false),
+        Some("restricted") => (true, true),
+        Some(_) => (true, false),
+    }
+}
+
+/// The genomic-span pairs `restricted` mode admits: `span` pairs absent from `tx`, except those whose two reps lie in two
+/// different gamma blocks of the `tx` graph that both have >= 2 reps. Returns (admitted, rejected).
+pub(crate) fn restrict_span_edges(
+    n: usize,
+    tx: &[(usize, usize, f64, f64)],
+    span: &[(usize, usize, f64, f64)],
+    gamma: f64,
+) -> (Vec<(usize, usize, f64, f64)>, Vec<(usize, usize, f64, f64)>) {
+    let weighted: Vec<(usize, usize, f64)> = tx.iter().map(|&(a, b, _, _)| (a.min(b), a.max(b), 1.0)).collect();
+    let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(n, &weighted, gamma);
+    let mut block_of = vec![usize::MAX; n];
+    let mut size = Vec::with_capacity(blocks.len());
+    for (bi, b) in blocks.iter().enumerate() {
+        for &m in b {
+            if m < n {
+                block_of[m] = bi;
+            }
+        }
+        size.push(b.len());
+    }
+    let present: BTreeSet<(usize, usize)> = tx.iter().map(|&(a, b, _, _)| (a.min(b), a.max(b))).collect();
+    let (mut admitted, mut rejected) = (Vec::new(), Vec::new());
+    for &(a, b, i, c) in span {
+        let key = (a.min(b), a.max(b));
+        if a == b || a >= n || b >= n || present.contains(&key) {
+            continue;
+        }
+        let (ba, bb) = (block_of[a], block_of[b]);
+        if ba != bb && ba != usize::MAX && bb != usize::MAX && size[ba] >= 2 && size[bb] >= 2 {
+            rejected.push((key.0, key.1, i, c));
+        } else {
+            admitted.push((key.0, key.1, i, c));
+        }
+    }
+    (admitted, rejected)
 }
 
 /// `base` plus the pairs of `extra` it lacks, sorted by pair, and how many were added. A pair already in `base` keeps
@@ -3680,6 +3733,28 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
             let span_edges = homology_edges_all_reps_pooled_weighted(reps, None, &span_params)?;
             let n_base = edges_w.len();
             let before: std::collections::BTreeSet<(usize, usize)> = edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
+            let span_edges = if er_union_genomic_span_restricted() {
+                let (admitted, rejected) = restrict_span_edges(reps.len(), &edges_w, &span_edges, gamma);
+                eprintln!(
+                    "[homology] RUSTLE_ER_UNION_GENOMIC_SPAN=restricted: {} genomic-span-only pairs admitted, {} rejected (would merge two exon-sum blocks)",
+                    admitted.len(),
+                    rejected.len()
+                );
+                if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
+                    if !prefix.is_empty() {
+                        let mut out = String::from("rep_i\trep_j\tidentity\tcoverage\n");
+                        for &(a, b, i, c) in &rejected {
+                            out.push_str(&format!("{a}\t{b}\t{i:.6}\t{c:.6}\n"));
+                        }
+                        if let Err(e) = std::fs::write(format!("{prefix}.genomic_span_rejected_edges.tsv"), out) {
+                            eprintln!("[homology] could not write rejected-edge dump: {e}");
+                        }
+                    }
+                }
+                admitted
+            } else {
+                span_edges
+            };
             let (union, added) = union_edge_sets(edges_w, span_edges);
             eprintln!("[homology] RUSTLE_ER_UNION_GENOMIC_SPAN: E_r {n_base} edges + {added} genomic-span edges = {}", union.len());
             if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
@@ -9346,6 +9421,26 @@ mod tests {
             tid: tid.into(), chrom: "chrU".into(), start, end: start + seq.len() as u64, n_reads: 5, strand: '+',
             introns: vec![], seq, distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
         }
+    }
+
+    /// Two exon-sum blocks {0,1} and {2,3} plus an isolated rep 4: a span pair bridging the blocks is rejected, one
+    /// attaching rep 4 is admitted, a pair already in the exon-sum set is ignored.
+    #[test]
+    fn restrict_span_edges_never_merges_two_exon_sum_blocks() {
+        let tx = vec![(0, 1, 0.99, 0.9), (2, 3, 0.99, 0.9)];
+        let span = vec![(1, 2, 0.95, 0.8), (3, 4, 0.95, 0.8), (0, 1, 0.99, 1.0), (4, 4, 1.0, 1.0)];
+        let (admitted, rejected) = restrict_span_edges(5, &tx, &span, 0.20);
+        assert_eq!(admitted, vec![(3, 4, 0.95, 0.8)]);
+        assert_eq!(rejected, vec![(1, 2, 0.95, 0.8)]);
+    }
+
+    #[test]
+    fn span_union_mode_parses_off_full_and_restricted() {
+        assert_eq!(span_union_mode(None), (false, false));
+        assert_eq!(span_union_mode(Some("0")), (false, false));
+        assert_eq!(span_union_mode(Some("")), (false, false));
+        assert_eq!(span_union_mode(Some("1")), (true, false));
+        assert_eq!(span_union_mode(Some("restricted")), (true, true));
     }
 
     #[test]

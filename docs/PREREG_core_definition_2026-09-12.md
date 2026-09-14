@@ -1226,3 +1226,37 @@ annotated genes (ceiling).
 - D SUPPORTED iff bipartite F(D) > bipartite F(triangle) AND pairwise precision(D) >= pairwise precision(triangle) - 0.05.
 - G SUPPORTED iff bipartite F(G) >= bipartite F(seeds only) + 0.10 AND pairwise precision(G) >= pairwise precision(seeds only) - 0.05.
 - GOAL bars (Addendum AG), reported for every arm: pairwise sensitivity >= 0.90, pairwise precision >= 0.90, bipartite F >= 0.90.
+
+---
+## ADDENDUM X (2026-09-14, after §6ju; before any number below exists) — provenance-typed de novo catalog: typed edges, RNA-typed boundaries, presence categories
+
+**Why (user):** separate DNA and RNA evidence. Feasibility check done before this addendum (no scoring): the three
+readthroughs that cost loci (RNPC3->AMY2B, LOC124905668->AMYP1, TBC1D3->NPEPPSP1) contain NO pair of SD-paralogous atoms
+— duplication blocks are larger than genes, so annotation-free DNA structure cannot place gene boundaries; boundaries
+stay RNA evidence (de novo) or annotation (guided). User chose: typed edges, RNA-typed boundaries, presence categories.
+
+**Edge types (provenance).** TX = E_r edges on the rep's assembled exon sequence (production substrate; `<dump>.edges.tsv`);
+SPAN = E_r edges on the rep's genomic span (`<dump>.call2.edges.tsv`, same floors); pairs are typed TX-only, SPAN-only,
+or BOTH. **Restricted DNA admission (new, Rust, opt-in `RUSTLE_ER_UNION_GENOMIC_SPAN=restricted`):** TX edges are
+partitioned first (same gamma_quasi_clique_partition, same gamma); a SPAN-only pair is ADMITTED unless its two reps lie
+in two different TX blocks that both have >= 2 reps (DNA may attach an RNA-isolated rep to a family, never merge two
+RNA-established families); then the usual partition runs on TX ∪ admitted SPAN. `=1` keeps the full union (§6jt).
+**RNA-typed boundary:** `RUSTLE_LOCUS_BRIDGE_CUT=1` (§6ji), reported as an RNA-evidence arm.
+
+**Arms:** DN0 (default), DN1 (full union), DN1r (restricted), DN1r+B (restricted + bridge cut), DN0+B (bridge only), each
+with `RUSTLE_ER_EDGE_DUMP`. Development: human lit windows (`lit.bam`) and the amylase window (`amy.bam`). Hold-out:
+gorilla rebuild3 `sub3.bam` — DN1r first, then DN1r+B (each ~3.5 h; a run that fails or is killed is reported as not
+run); DN0 and DN1 hold-out catalogs exist (§6jt); DN0+B = §6ji's `cat_bridge`.
+
+**Scores (`bench/provenance_eval.py`):**
+1. Per-type edge precision: an edge between reps whose best-overlapping truth loci are both known is TRUE if those loci
+   share a truth family (human windows: truth family; gorilla: guided gw_units_v3 cluster), FALSE otherwise; edges with
+   an endpoint on no truth locus are unscored. Reported for TX-only, SPAN-only admitted, SPAN-only rejected, BOTH.
+2. Presence categories per truth locus (human truth tables; gorilla: guided loci on the 3 contigs): R = an RNA locus of its
+   own (a rep whose span lies >= 50% inside the locus); T = readthrough-only (no R rep, but >= 3 primary MAPQ>=1 reads
+   with aligned bases in the locus — `interval_expression.py` counts; for gorilla `hybrid/expr_c3.tsv`); N = < 3 such
+   reads. Reported: counts per category and the fraction of each category in an emitted family, per arm.
+3. Family level and clades as §6jt (`denovo_subfamilies.py`) on the human windows.
+**Hold-out decision (fixed):** DN1r (and separately DN1r+B) NARROWS the de novo <-> expressed-guided gap iff R_G > DN0's
+0.3887 AND P_G >= 0.3345 - 0.05 = 0.2845 (`score_vs_guided.py --expr hybrid/expr_c3.tsv`, any-family). Expected in
+advance: the §6jt precision loss sits in SPAN-only edges that merge two TX blocks (the ones restricted mode rejects).
