@@ -20338,3 +20338,38 @@ is the de novo NODES.
 **External truth checked and rejected:** HGNC gene groups (downloaded 09-14) are mostly non-homology groups on chr15/17/22
 (microRNAs 190, antisense RNAs 181, lncRNAs 153, snoRNAs 119). The guided MCL scores bipartite F 0.374 against them, so
 they are not a sequence-family truth.
+
+## §6kh — Decomposing the de novo ceiling: exon/UTR completeness costs ~0.09 bipartite F, gene partition ~0.12; end-site gene splitting is the best read-only node rule so far (2026-09-14, development, substrate 1)
+
+All rows use the guided catalog's construction (`bench/node_graph_mcl.py`: all-vs-all asm20 spans, `mcl_families
+--min-exonic-bp 1`) and differ only in NODES. Truth: RNA-level (Addendum AG), 304 loci, 741 pairs. Development: nothing
+here is a held-out claim.
+
+| node set | pair sens | pair prec | bipartite R / P / F |
+|---|---|---|---|
+| full annotation oracle (expressed genes, all annotated exons; 37/37 chunks) | 0.951 | 0.888 | 0.947 / 0.970 / **0.958** |
+| annotation gene partition, exons clipped to MAPQ >= 1 read coverage | 0.858 | 0.801 | 0.816 / 0.939 / **0.873** |
+| AC pipeline nodes (§6kg) | 0.425 | 0.647 | 0.622 / 0.871 / 0.726 |
+| AC nodes extended by overlapping reads | 0.420 | 0.570 | 0.612 / 0.791 / 0.690 (1/39 chunks missing) |
+| read components (exon overlap, split by >= 2-read linkage) | 0.502 | 0.684 | 0.664 / 0.863 / 0.751 |
+| + cut at strong 3' ends only (>= 3 reads within 50 bp, >= 50% of covering reads end there) | 0.471 | 0.617 | 0.655 / 0.881 / 0.751 |
+| **+ cut at strong 5' and 3' ends** | 0.474 | **0.724** | 0.674 / **0.911** / **0.775** |
+
+**Readings (post hoc).**
+- **What the ceiling costs.** Annotation gene boundaries with exons restricted to what reads cover lose 0.085 F: unexpressed
+  exons and UTRs carry guided edges. (Among 240 protein-coding truth loci, UTRs are a median 49% of annotated exonic bases;
+  reads cover a median 100% of CDS but 81% of UTR.) Gene partition from reads loses another 0.10-0.12.
+- **The edge rule is not the lever.** Sweeping cov_longer (0.3 / 0.2 / 0.1) and the exon-to-exon rule (1 / 0) on the
+  clipped oracle and on read components, the guided catalog's own setting (0.3, exon-to-exon on) is best in both:
+  - clipped oracle F 0.873 vs 0.854-0.856 (floor lowered) and 0.679-0.724 (exon rule off);
+  - read components F 0.751 vs 0.739-0.742 and 0.557-0.586.
+- **Edge recall explains the node gap.**
+  - Direct truth edges recovered as direct node edges: oracle 557/561, AC 286/561, read components 313/561.
+  - Of the 100 read-node pairs with no alignment, 89 miss the region where the truth genes align. The homology lies a
+    median 8.8 kb (p90 35 kb) outside the node, in unexpressed exons, UTRs and introns of the annotated gene.
+- **Partition anatomy (read components vs truth genes).**
+  - Nodes: 65 match the gene within 500 bp, 101 are larger, 77 are fragments, 50 are offset, 11 are missing.
+  - Cutting at strong 5' and 3' end sites moves this to 83 / 42 / 119 / 44 / 16.
+  - Soft clipping is negligible (§ answer to user: median clip 0 bp; > 50 bp in 1.5% / 1.0% of reads at truth loci;
+    supplementary 0.8%).
+- **Not a sequence-family truth:** HGNC gene groups (§6kg).
