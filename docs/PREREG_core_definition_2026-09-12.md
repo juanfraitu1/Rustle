@@ -935,3 +935,43 @@ Family RETRO-DERIVED iff >= 50% of assessed members are RETROCOPY; GENOMIC-DERIV
 **Reading (fixed):** SUPPORTED iff >= 12/16 fresh retro positives RETRO-DERIVED AND <= 1/10 fresh SD negatives
 RETRO-DERIVED. Also reported, not deciding: GENOMIC-DERIVED counts (expected SD high, retro 0) and member-level
 junction-loss among SD members. TE-DERIVED is not re-tested (reported as CDS repeat coverage only).
+
+---
+## ADDENDUM AA (2026-09-14; before any split tree below is computed) — subfamilies from variation-graph bubbles: a threshold-free split-dominance tree vs IQ-TREE
+
+**Why (user):** merge the graph view with the tree. In a family variation graph every bubble splits the copies (paths)
+in two; a pairwise-compatible split set is exactly one tree (Buneman 1971; splits-equivalence theorem), and incompatible
+splits are conversion/mosaic/homoplasy signal.
+
+**Inputs (fixed, already on disk, produced by the §6js guided run):** the 66 reference-projected alignments
+`lit/guided_t/tree_t/*.proj.fa` (NPIP, TBC1D3: ref + half x5 + keep1 x5, exon and intron) and `lit/amy_lo_t/tree_t/*.proj.fa`
+(AMY, same design), their IQ-TREE `.treefile`s, `t.candidates.tsv` and `truth.tsv`. Seen before registering: only
+column-completeness counts (e.g. ref NPIP exon has 0 gap-free columns, ref NPIP intron 162 gap-free informative columns);
+no split or tree was computed.
+
+**Rule DT (fixed):**
+1. Bubble = alignment column with no gap/N in any leaf and exactly two nucleotide states, each carried by >= 2 leaves
+   (parsimony-informative biallelic). Columns with gaps, N, >2 states or a singleton state are not used (gaps are not
+   indels here: in a projected alignment they mix deletion and missing sequence).
+2. Split of a bubble = the two leaf sets; support(S) = number of bubbles inducing S.
+3. S and T are incompatible iff all four intersections of their sides are non-empty.
+4. **KEEP S iff support(S) > support(T) for every split T incompatible with S.** (Kept splits are pairwise compatible —
+   two kept incompatible splits would each need more support than the other — hence display as one unrooted tree.)
+   No identity cut, no support threshold, no substitution model.
+5. A literature group is RECOVERED by DT iff a kept split restricted to truth-labelled leaves equals the group or its
+   complement (same test as `clade_calls`); RECOVERED by IQ-TREE iff the same holds for a split with SH-aLRT > 75.
+6. Fewer than 4 leaves or zero bubbles -> not treed (group counts as not recovered for that class).
+
+**Labels:** reference runs use leaf names; leave-out runs label seeds by name and `cand{i}` by its hidden-truth match
+from `t.candidates.tsv` (i = row order within that level/rep, class hidden, match in the same family).
+**Gate (must pass before any DT number is read):** re-deriving the IQ-TREE calls from the treefiles with these labels
+reproduces every per-run call printed in `guided_t/t.out` and `amy_lo_t/t.out`; otherwise stop and report.
+
+**Reported per run and summed:** literature groups recovered (exon, intron, either), TBC1D3 positional split (kept or
+not), number of kept non-trivial splits vs IQ-TREE supported splits, LITERATURE-CONFLICTING splits (kept DT / supported
+IQ splits incompatible, on truth-labelled leaves, with any present literature group), and the CONFLICT INDEX (fraction of
+bubbles whose split is incompatible with >= 1 kept split).
+
+**Reading (fixed):** DT is SUPPORTED as the subfamily definition iff, summed over all runs and literature groups, DT
+"either"-class recoveries >= IQ-TREE "either"-class recoveries AND DT literature-conflicting splits <= IQ-TREE
+literature-conflicting splits. Otherwise NOT SUPPORTED. Per-family and per-class differences are reported, not deciding.

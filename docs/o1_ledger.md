@@ -19875,3 +19875,50 @@ session, kept): trees with < 100 kept columns or rejected by IQ-TREE are reporte
 predate it; the de novo D2 numbers above were all produced with it.
 
 Data: `lit/dn_v/{lit_DN0,lit_DN1,amy_DN0,amy_DN1}.*`, `lit/dn_v/d2_*.out`, `rebuild3/{cat_dn1_span.*,dn1.err,score_v_expr.out,score_v_full.out}`.
+
+## §6jx — Subfamilies as a threshold-free split-dominance tree from variation-graph bubbles: NOT SUPPORTED (literature groups 73 vs IQ-TREE 85), but fewer literature-conflicting splits (49 vs 72); AMY identical to IQ-TREE (2026-09-14)
+
+Pre-registered as Addendum AA (`docs/PREREG_core_definition_2026-09-12.md`, md5 1f597332). `bench/split_tree.py` on the 66
+reference-projected alignments of the §6js guided runs (NPIP, TBC1D3, AMY; reference + 5 half + 5 keep-1 leave-outs;
+exon and intron). Construction:
+- Bubble = informative biallelic gap-free column; support(split) = number of bubbles inducing it.
+- KEEP a split iff its support exceeds that of every incompatible split (four-gamete). Kept splits are pairwise
+  compatible, so they display as one tree (Buneman).
+- There is no identity cut, no support threshold and no substitution model.
+**Gate PASS:** the IQ-TREE calls re-derived from the treefiles with reconstructed labels reproduce every per-run call in
+both `t.out` files.
+
+| family | group | IQ-TREE either (leave-out /10, ref /1) | DT either |
+|---|---|---|---|
+| AMY | AMY1, AMY2, AMY2Ap | 9/10 + 1, 4/10 + 1, 4/7 + 1 | identical in every cell (exon and intron too) |
+| NPIP | NPIPA/NPIPB | 10/10 + 1 | 10/10 + 1 |
+| NPIP | B3-5; named B3,B4,B5,B11,B12,B13 | 10/10 + 1 each | 10/10 + 1 each |
+| NPIP | B12/13 | 10/10 + 1 | 8/10 + 1 |
+| NPIP | A6-9 | 8/10 + 1 | 5/10 + 0 |
+| NPIP | B6-9 | 10/10 + 1 | 6/10 + 0 |
+| TBC1D3 | AE / CDKL | 0 / 1 of 10, ref 0 | 0 / 0, ref 0 |
+| TBC1D3 | positional split (intron) | 3/10 + ref | 0/10, ref 0 |
+
+**Totals:**
+- "Either"-class recoveries: IQ 85, DT 73.
+- Literature-conflicting splits: IQ 72 (SH-aLRT > 75), DT 49.
+- Splits: IQ supported 593, DT kept 371.
+
+**Pre-registered reading: NOT SUPPORTED** (recall 73 < 85, although conflicts 49 <= 72).
+
+**Conflict index on the reference alignments** (share of bubbles incompatible with the kept tree):
+- NPIP intron 0.361 (155 bubbles; exon has 0 gap-free columns).
+- TBC1D3 intron 0.355 (31 bubbles); exon 0.
+- AMY intron 0.015 (337 bubbles); exon 0.
+
+**Post-hoc diagnosis (not a result):**
+- The misses are ties and small counts on gap-free columns, not wrong splits.
+  - In the reference NPIP intron alignment, A6-9 has support 4, tied with the conflicting split {A1, A5, A6, A9}
+    (also 4), so neither is kept.
+  - B6-9 has support 1, tied with conflicting splits of support 1.
+- IQ-TREE uses the gapped columns too: 570 informative columns vs 155 gap-free bubbles.
+- The gap-free restriction removes NPIP exon in the reference run, and 6 of 33 exon alignments have no bubble at all.
+- Where the data are nearly tree-like (AMY, conflict index <= 0.015), the combinatorial tree equals the ML tree.
+- In the two core-duplicon families (NPIP, TBC1D3), about a third of bubbles conflict with the tree. This is
+  consistent with gene conversion or homoplasy; not separated here.
+Register row 822. Data: `lit/split_aa/aa.out`.
