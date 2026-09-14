@@ -975,3 +975,46 @@ bubbles whose split is incompatible with >= 1 kept split).
 **Reading (fixed):** DT is SUPPORTED as the subfamily definition iff, summed over all runs and literature groups, DT
 "either"-class recoveries >= IQ-TREE "either"-class recoveries AND DT literature-conflicting splits <= IQ-TREE
 literature-conflicting splits. Otherwise NOT SUPPORTED. Per-family and per-class differences are reported, not deciding.
+
+---
+## ADDENDUM AB (2026-09-14; before any number below exists) — the shared definition instantiated DE NOVO, gorilla hold-out; and the (a)/(b)/(c) gap decomposition
+
+**Why (user):** one definition for both modes and both levels (`docs/seeded_family_definition.md` §0★★). De novo = read
+loci consolidated to gene level, then the SAME edge rule as guided; families = connected components.
+
+**Substrate (held out; never used to build the guided rule):** gorilla `rebuild3/sub3.bam` contigs NC_073241.2,
+NC_073242.2, NC_073244.2; genome `GGO.fasta` restricted to those contigs. Nodes come from the DN0 run's own node dump
+(`rebuild3/dump_default/ggo.nodes.tsv`: 2,469 read-supported locus representatives with exons; representative sequence =
+genome exon sequence in transcript orientation — checked, no alignment run).
+
+**Arms (fixed):**
+- **AB1 (edge rule only):** nodes = the 2,469 dump nodes unchanged.
+- **AB2 (full definition, PRIMARY):** nodes consolidated to gene level: (i) cut each node's exon chain at every intron
+  longer than 271,359 bp (P99.9 of 1,092,233 annotated GGO_genomic.gff intron lengths, computed before any alignment);
+  pieces with exon sum < 100 bp are dropped; (ii) same-strand pieces whose exon blocks overlap by >= 1 bp are merged
+  (connected components) into one locus: exons = union, n_reads = sum, representative = the member piece with most reads
+  (ties: longest exon sum).
+**Edges (both arms, identical to guided `bench/guided_pipeline.py` finders):**
+- EXON edge u->v: u's representative transcript, `minimap2 -x splice -uf -N 50 -p 0.1` onto the three contigs; a hit with
+  identity (matches/block) >= 0.80 and query coverage >= 0.50 (`transcript_hits`) whose aligned exon blocks overlap v's
+  exon blocks by >= 1 bp.
+- GENE-BODY edge u->v: u's gene body (first exon start .. last exon end, genome forward), `minimap2 -c -x asm20 -N 50
+  -p 0.1` onto the three contigs, chained exactly as `gene_body_chains` (identity >= 0.80, aligned >= 0.50 of
+  min(query, extrapolated target span)); a chain whose target interval overlaps >= 1 exon block of v.
+- Both: hits/chains overlapping u's own span are ignored; when u and v both have >= 2 exons, the implied transcript
+  orientation on v must equal v's strand. Edges are symmetrised.
+**Families:** connected components with >= 2 distinct loci; emitted as `copies.tsv` (family_id, chrom, start, end, ...).
+
+**Primary reading (fixed):** `bench/score_vs_guided.py --contigs include:NC_073241.2,NC_073242.2,NC_073244.2 --expr
+hybrid/expr_c3.tsv`, any-family. AB2 SUPPORTED iff R_G > 0.4710 AND P_G >= 0.3386 (i.e. beats the shipped opt-in LCS
+union's recall, R_G 0.4710, with precision no more than 0.05 below its 0.3886). AB1 is read with the same bar,
+reported, not deciding. Also reported: best-overlap metrics, full-guided metrics, DN0 / union / DN1 rows.
+
+**Gap decomposition (reported, not deciding), for DN0, LCS union, DN1, AB1, AB2:** universe = the 741 co-clustered
+pairs of expressed guided loci. Guided edges between loci on the three contigs are re-derived from
+`mcl_ann/allgenes_gw.asm20.paf` at the guided catalog's floors (identity >= 0.70, >= 300 aligned bp, aligned >= 0.30 of the
+longer interval; gene intervals mapped to the locus they overlap most). Each pair is RECOVERED if the catalog puts the
+two loci in a shared family (any-family); otherwise:
+(c) UNEXPRESSED BRIDGE if the two loci are in different components of the guided edge graph induced on the EXPRESSED loci
+of their cluster; else (a) MISSING NODE if either locus overlaps no node of that catalog's node set (DN0/DN1/AB1: the DN0
+dump; union: its own dump; AB2: consolidated loci); else (b) MISSING EDGE. Counts and fractions of 741 are reported.

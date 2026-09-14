@@ -14,6 +14,7 @@ scripts in `bench/crossspecies/`. Anything not yet measured is marked **OPEN**.
 > heading to jump.
 
 
+- 0★★. CURRENT DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14)
 - ⚠⚠ TIER NOTICE — READ BEFORE QUOTING ANY NUMBER IN THIS DOCUMENT (2026-08-10)
 - 0. What the definition must survive
 - 1★. THE OBJECT, RESTATED — ONE OBJECT AT TWO LEVELS (2026-08-14)
@@ -26,6 +27,67 @@ scripts in `bench/crossspecies/`. Anything not yet measured is marked **OPEN**.
 - 4. Known exposures (state these first, do not wait to be asked)
 - 4a. ⭐⭐⭐ REACH — THE BOUND, AND WHAT SETS IT (2026-08-14)
 - 5. Three false-positive filters that were tried and failed
+
+## 0★★. CURRENT DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14)
+
+Consolidates §1★ (the object at two levels, 08-14) with what ledger §6jm-§6jy established. §1★'s sentence stands:
+nodes are genomic intervals, edges are homology on assembly sequence, RNA decides which intervals are nodes and how far
+they extend, RNA never decides an edge. This section adds how the two modes obtain nodes, the edge rule both modes share,
+the labels every edge carries, the subfamily level, and the exact DNA/RNA relation. Status of each clause is given with
+the ledger section that earns it; anything not yet tested on a held-out substrate is marked **OPEN**.
+
+**1. Node = a copy:** a genomic interval at GENE-BODY width with its exon structure.
+- Guided mode: the annotated genes (seeds) plus candidate loci found by homology search from them, built chain-first
+  (gene-body chain = the locus; a transcript hit attached inside it sets the width; §6js, prereg T/U).
+- De novo mode: loci that carry aligned reads, consolidated to gene level BEFORE any edge is computed. Transcript
+  fragments, readthrough and mis-chained spans must not become nodes (node presence is 58% of the de novo <-> guided
+  gap, §6j1/§6je; D1 failed the hold-out because read-derived spans were wrong, §6jy). **OPEN:** consolidation rule
+  (prereg AB).
+
+**2. Edge = homology between the two copies' genomic sequence, one rule for both modes.** u-v is an edge iff
+- EXON edge: u's spliced transcript aligns to v (identity >= 0.80, >= 0.50 of the transcript), or
+- GENE-BODY edge: u's gene body chains to v's (identity >= 0.80, aligned >= 0.50 of the shorter body).
+The union is required: NPIP copies are held together by gene bodies (introns), AMY copies by coding sequence (AMY2B's
+long introns fail gene-body coverage) (§6jo, §6jq, §6jr).
+
+**3. Edge labels = mechanism** (relative to the family parent, the protein-coding member with the most introns):
+- GENOMIC copy: >= 1 kb aligned non-exonic, non-repeat-masked sequence shared with the parent (held out: SD 9/9 vs
+  retro 0/5, §6ju; repeats excluded 13/13 vs 0/16, §6jv).
+- RETROCOPY: parent introns lost at exon-exon junctions and none retained (processed-pseudogene families 8/8 fresh,
+  0/10 SD false calls; §6jw).
+- UNRESOLVED: aligned but neither holds; includes old retrogenes beyond nucleotide alignment (6/8, §6jw).
+Poly(A) and target-site duplications are reported annotations, not criteria (§6jv).
+
+**4. Family = connected component** of the edge graph. γ = 0.20 is dropped from the definition (never binds on clean
+node sets, §1★.2). Edge connectivity λ is reported as the certificate (§1★.5). ⚠ **OPEN after §6jz:** with the guided edge
+rule on de novo nodes, components reach the best recall of any de novo catalog (R_G 0.509) but lose precision (P_G 0.310,
+below the pre-registered guard) through transitive chaining (largest component: 85 loci over 16 guided clusters).
+Guided mode never chains (seed neighbourhoods), so the grouping clause is the one still to settle.
+
+**5. Subfamily = a cluster of a supported, pairwise-compatible split system inside a family** (clusters are nested or
+disjoint; Buneman). Definition and estimator are kept apart:
+- estimator in use: reference-projected alignment + maximum-likelihood tree, splits with SH-aLRT > 75, on exon and on
+  intron sequence, reported per class and "either" (NPIPA|B 10/10 leave-out; §6jp, §6jr, §6js);
+- the model-free split-dominance estimator on gap-free bubbles is not adequate (73 vs 85 literature groups, §6jx) but
+  equals ML where the data are tree-like (AMY);
+- CONFLICT INDEX (share of bubbles incompatible with the kept tree) is reported per family: NPIP/TBC1D3 introns ~0.36,
+  AMY 0.015 (§6jx) — a family with a high index is not well described by one tree.
+
+**6. DNA level vs RNA level.** The RNA-level graph is the DNA-level graph INDUCED on expressed copies (reads >= 3).
+Components of an induced subgraph refine the restriction of the full graph's components, so every RNA family lies
+inside one DNA family, never across two. A guided pair that is co-clustered at DNA level but not at RNA level falls in
+exactly one class:
+- (a) MISSING NODE — an expressed copy was not built as a de novo node (de novo error);
+- (b) MISSING EDGE — both nodes exist and the two copies are connected through expressed copies, but de novo did not
+  join them (de novo error);
+- (c) UNEXPRESSED BRIDGE — the two copies connect only through unexpressed copies (not an error; a level difference).
+Only (a) and (b) are gap to be closed. First decomposition (§6jz, gorilla hold-out, 741 expressed guided pairs):
+missing edges fall from 126 (DN0) to 60 with the guided edge rule; missing nodes (219 pairs, 29.6%) are now the dominant
+de novo error; (c) is an upper bound only (the guided edge graph could not be re-derived exactly).
+
+**Known exposures:** the 0.80 / 0.50 / 1 kb constants remain (defended by sensitivity sweeps, λ and the length-dependent
+T_CORE d_max(L) formula, not claimed absent); subfamily calls are not in the Rust catalog; the definition's de novo
+instantiation (clauses 1-2 with read loci) is untested on a held-out substrate until prereg AB reads.
 
 ## ⚠⚠ TIER NOTICE — READ BEFORE QUOTING ANY NUMBER IN THIS DOCUMENT (2026-08-10)
 

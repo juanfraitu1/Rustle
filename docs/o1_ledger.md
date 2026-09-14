@@ -19942,3 +19942,60 @@ guard 0.3345 - 0.05 = 0.2845. For reference, the shipped opt-in LCS union (§6jf
 P_G 0.3886 on the same truth, better on both. The human-window gains of D1 (NPIP / TBC1D3 / AMY family-level
 sensitivity, §6js) do not transfer to the gorilla hold-out at an acceptable precision or runtime cost. D1 stays opt-in
 (no default change). Register row 823. Data: `rebuild3/{score_v_expr.out,score_v_full.out}`.
+
+## §6jz — The shared definition instantiated de novo (read loci + guided edge rule + components): highest de novo recall (R_G 0.509) but FAILS the precision guard (P_G 0.310 < 0.339); gap decomposition: missing nodes 219/741 dominate (2026-09-14)
+
+Pre-registered as Addendum AB (md5 7b73c8aa). `bench/denovo_shared_def.py`. Definition written as
+`docs/seeded_family_definition.md` §0★★.
+
+**Nodes and edges.**
+- Nodes: the DN0 run's own 2,469 read-supported locus nodes on the three gorilla hold-out contigs. AB1 uses them
+  unchanged. AB2 cuts at introns > 271,359 bp (0 cuts) and merges same-strand exon-overlapping pieces, giving 2,431
+  gene-level loci.
+- Edges, the guided finders:
+  - exon edge: spliced hit of the representative transcript, `-x splice -uf`, identity >= 0.80, query coverage >= 0.50,
+    overlapping v's exons;
+  - gene-body edge: asm20 chain as `gene_body_chains`, overlapping v's exons.
+  - Own-locus hits are ignored; orientation is checked for spliced pairs.
+- Alignments: 2 transcript batches plus 15 body batches, 2.5 min in total.
+- AB1: 1,043 exon + 230 gene-body edges, 52 families. AB2: 1,022 + 227 edges, 51 families (305 loci).
+
+| catalog | families | copies | expressed guided any R_G | P_G | best R_G | best P_G | full guided any R_G | P_G |
+|---|---|---|---|---|---|---|---|---|
+| DN0 (shipped default) | 68 | 391 | 0.3887 | 0.3345 | 0.3428 | 0.3588 | 0.0736 | 0.3210 |
+| LCS union (opt-in, §6jf) | 94 | 433 | 0.4710 | 0.3886 | 0.4116 | 0.4088 | 0.0911 | 0.3772 |
+| DN1 (§6jy) | 88 | 570 | 0.4116 | 0.2760 | 0.3644 | 0.3435 | 0.0779 | 0.2630 |
+| AB1 | 52 | 309 | 0.5088 | 0.3100 | 0.4615 | 0.3008 | 0.0976 | 0.2899 |
+| **AB2** | 51 | 305 | **0.5088** | **0.3100** | 0.4615 | 0.3008 | 0.0976 | 0.2899 |
+
+**Pre-registered reading: AB2 NOT SUPPORTED.** R_G 0.5088 > 0.4710, but P_G 0.3100 < 0.3386. AB1 fails identically; the
+consolidation changed 38 merges and no pair.
+
+Post hoc: the precision loss sits in transitive components. AB2's largest family (85 loci) spans 16 guided clusters
+plus 28 loci with no guided locus. The LCS union's largest spans 6. Guided mode never chains; it takes seed
+neighbourhoods. Components were the clause taken from the de novo catalog (γ-QC ≈ components), and this is the first
+test of components with the guided edge rule.
+
+**Gap decomposition** (universe: 741 expressed co-clustered guided pairs):
+- Guided edges re-derived from `allgenes_gw.asm20.paf` at the catalog floors: 2,873 edges.
+- Class (c), connecting only through unexpressed loci at guided level: 337 pairs, independent of the catalog.
+
+| catalog | recovered | (a) missing node | (b) missing edge | (c) unexpressed bridge | recovered pairs that are (c) |
+|---|---|---|---|---|---|
+| prereg order (c, a, b): DN0 | 288 | 159 | 126 | 168 | 169 |
+| UNION | 349 | 159 | 67 | 166 | 171 |
+| DN1 | 305 | 159 | 122 | 155 | 182 |
+| AB2 | 377 | 159 | 60 | 145 | 192 |
+| sensitivity order (a, c, b): DN0 | 288 | 219 | 126 | 108 | — |
+| UNION | 349 | 219 | 67 | 106 | — |
+| AB2 | 377 | 219 | 60 | 85 | — |
+
+**Reading of the decomposition (reported):**
+- MISSING EDGES are cut by half with the guided edge rule: 126 (DN0) → 67 (union) → 60 (AB2). They are no longer the
+  main loss.
+- MISSING NODES are identical across catalogs, because all of them share the DN0 node set: 219 unrecovered pairs
+  (29.6%) involve a guided expressed locus with no de novo node. That is now the dominant de novo error.
+- The (c) class is NOT reliable as computed. More than half of it (169-192 pairs) is recovered directly by de novo
+  catalogs, so the re-derived guided edge graph misses many of the guided catalog's edges (MCL on exonic-denominator
+  edges was not reproduced). Treat (c) as an upper bound.
+Register row 824. Data: `lit/sharedef_ab/{score_expr.out,score_full.out,decompose.out,decompose_acb.out}`.
