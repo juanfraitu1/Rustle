@@ -3,7 +3,7 @@
 
 From an annotation (the seeds) it finds new candidate loci with two finders — the seed TRANSCRIPT (spliced alignment)
 and the seed GENE BODY (F2: CDS envelope, asm20 chains) — builds candidates from both without fusing neighbouring
-copies (F1: reciprocal-overlap leader clustering), takes each candidate's width from its transcript hit when it has
+copies (U1: chain-first loci; transcript hits attach inside a gene-body chain or form their own locus), takes each candidate's width from its transcript hit when it has
 one and from its gene body otherwise, and calls subfamilies as supported clades of exon and intron trees built from a
 reference-projected alignment (F3: the reference member is the one aligned to the most members) with IQ-TREE.
 
@@ -11,7 +11,7 @@ usage: guided_pipeline.py --workdir DIR --gff refseq.gff --genes-gff-gz full.gff
                           --mmi genome.mmi --iqtree iqtree3 [--expected-units units.fa] [--reps 5] [--threads 4]
 DIR/truth.tsv columns: family name chrom start0 end strand biotype level1 level2 (width = start0..end).
 Outputs in DIR: units.fa/.paf, envelope.fa/.paf, t.candidates.tsv, t.out (report), tree_t/ (alignments, trees).
-Evaluated in docs/o1_ledger.md §6js (prereg Addendum T).
+Evaluated in docs/o1_ledger.md §6js (prereg Addenda T and U).
 """
 import argparse
 import collections
@@ -143,6 +143,24 @@ class Annotation:
         s, e, _ = self.envelope[name]
         seq = self.genome.fetch(t["chrom"], s, e).upper()
         return rc(seq) if t["strand"] == "-" else seq
+
+    def span_seq(self, name):
+        t = self.rec[name]
+        seq = self.genome.fetch(t["chrom"], t["start0"], t["end"]).upper()
+        return rc(seq) if t["strand"] == "-" else seq
+
+    def exons_in_span(self, name):
+        t = self.rec[name]
+        return self.exons_in_interval(name, t["start0"], t["end"])
+
+    def exons_in_interval(self, name, s0, e0):
+        t = self.rec[name]
+        out = []
+        for s, e in self.union_exons[name]:
+            s, e = max(s, s0), min(e, e0)
+            if e > s:
+                out.append((s - s0, e - s0) if t["strand"] == "+" else (e0 - e, e0 - s))
+        return merge(out)
 
     def exons_in_envelope(self, name):
         t = self.rec[name]
@@ -277,45 +295,49 @@ def single_linkage(hits, seeds, rec):
 
 
 def leaders(hits):
-    """Leader clustering by reciprocal overlap >= RECIP, in decreasing nmatch."""
+    """Leader clustering in decreasing nmatch: a hit joins a leader it overlaps reciprocally >= RECIP, or (chains, U1')
+    whose extrapolated span contains >= CONTAIN of the hit's clip span."""
     lead = []
     for h in sorted(hits, key=lambda h: (-h["nm"], h["chrom"], h["s"])):
-        if not any(L["chrom"] == h["chrom"] and recip(L["s"], L["e"], h["s"], h["e"]) for L in lead):
+        def same(L):
+            if L["chrom"] != h["chrom"]:
+                return False
+            if recip(L["s"], L["e"], h["s"], h["e"]):
+                return True
+            return "xs" in L and ov(h["s"], h["e"], L["xs"], L["xe"]) >= CONTAIN * (h["e"] - h["s"])
+        if not any(same(L) for L in lead):
             lead.append(h)
     return lead
 
 
-def union_fixed(tx_hits, chains, seeds, rec):
-    """F1: transcript leaders and chain leaders, joined only as the same locus."""
-    T = leaders([h for h in tx_hits if h["q"] in seeds and not blocked_by(seeds, rec, h)])
+def chain_first(tx_hits, chains, seeds, rec):
+    """U1: gene-body chain leaders are the loci; a transcript hit is attached to the chain leader whose extrapolated span
+    contains >= CONTAIN of it, discarded if it overlaps a chain leader without being contained (mis-chained or partial),
+    and forms a transcript-only locus (leader-clustered) if it overlaps no chain leader."""
     C = leaders([c for c in chains if c["q"] in seeds and not blocked_by(seeds, rec, c)])
-    parent = list(range(len(T) + len(C)))
-
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-    for j, c in enumerate(C):
-        inside = [i for i, t in enumerate(T) if t["chrom"] == c["chrom"]
-                  and ov(t["s"], t["e"], c["xs"], c["xe"]) >= CONTAIN * (t["e"] - t["s"])]
-        for i, t in enumerate(T):
-            if t["chrom"] != c["chrom"]:
-                continue
-            if recip(t["s"], t["e"], c["s"], c["e"]) or (i in inside and len(inside) == 1):
-                parent[find(i)] = find(len(T) + j)
-    comp = collections.defaultdict(list)
-    for k in range(len(T) + len(C)):
-        comp[find(k)].append(k)
+    attached = collections.defaultdict(list)
+    orphans = []
+    for h in sorted([h for h in tx_hits if h["q"] in seeds and not blocked_by(seeds, rec, h)],
+                    key=lambda h: (-h["nm"], h["chrom"], h["s"])):
+        L = h["e"] - h["s"]
+        hosts = [(ov(h["s"], h["e"], c["xs"], c["xe"]), c["nm"], j) for j, c in enumerate(C) if c["chrom"] == h["chrom"]]
+        inside = [x for x in hosts if x[0] >= CONTAIN * L]
+        touching = [x for x in hosts if x[0] > 0]
+        # U1'': a transcript hit that CONTAINS a chain (e.g. UTRs beyond a CDS envelope) and touches no other locus
+        covers = [j for _, _, j in touching if ov(C[j]["s"], C[j]["e"], h["s"], h["e"]) >= CONTAIN * (C[j]["e"] - C[j]["s"])]
+        if inside:
+            attached[max(inside)[2]].append(h)
+        elif len(touching) == 1 and covers == [touching[0][2]]:
+            attached[covers[0]].append(h)
+        elif not touching:
+            orphans.append(h)
     out = []
-    for ks in comp.values():
-        ts = [T[k] for k in ks if k < len(T)]
-        cs = [C[k - len(T)] for k in ks if k >= len(T)]
-        bt = max(ts, key=lambda h: (h["nm"], -h["s"])) if ts else None
-        bc = max(cs, key=lambda h: (h["nm"], -h["s"])) if cs else None
-        lead = bt or bc
-        out.append({"chrom": lead["chrom"], "s": lead["s"], "e": lead["e"], "family": rec[lead["q"]]["family"],
-                    "tx": bt, "chain": bc})
+    for j, c in enumerate(C):
+        bt = max(attached[j], key=lambda h: (h["nm"], -h["s"])) if attached[j] else None
+        lead = bt or c
+        out.append({"chrom": c["chrom"], "s": lead["s"], "e": lead["e"], "family": rec[lead["q"]]["family"], "tx": bt, "chain": c})
+    for h in leaders(orphans):
+        out.append({"chrom": h["chrom"], "s": h["s"], "e": h["e"], "family": rec[h["q"]]["family"], "tx": h, "chain": None})
     return out
 
 
@@ -555,20 +577,22 @@ def main():
         if bad:
             sys.exit(f"ABORT: seed units differ from {a.expected_units}: {bad}")
         say(f"# seed units identical to {a.expected_units} ({len(rec)} records)")
-    with open(f"{W}/units.fa", "w") as fu, open(f"{W}/envelope.fa", "w") as fe:
+    with open(f"{W}/units.fa", "w") as fu, open(f"{W}/envelope.fa", "w") as fe, open(f"{W}/genespan.fa", "w") as fg:
         for n in sorted(rec):
             fu.write(f">{n}\n{ann.unit_seq[n]}\n")
             fe.write(f">{n}\n{ann.envelope_seq(n)}\n")
+            fg.write(f">{n}\n{ann.span_seq(n)}\n")
     for t in truth:
         s, e, kind = ann.envelope[t["name"]]
         say(f"# unit {t['name']}: {ann.unit_model[t['name']]}; gene-body query {kind} {e - s} bp (gene span {t['end'] - t['start0']} bp)")
-    for fa, preset in (("units", "splice"), ("envelope", "asm20")):
+    for fa, preset in (("units", "splice"), ("envelope", "asm20"), ("genespan", "asm20")):
         with open(f"{W}/{fa}.paf", "w") as fh:
             subprocess.run(["minimap2", "-c", "-x", preset, "-N", "100", "-p", "0.1", "-t", str(a.threads), a.mmi, f"{W}/{fa}.fa"],
                            stdout=fh, stderr=subprocess.DEVNULL, check=True)
     tx_hits = transcript_hits(f"{W}/units.paf")
     chains = gene_body_chains(f"{W}/envelope.paf")
-    say(f"# transcript hits passing {len(tx_hits)}; gene-body chains passing {len(chains)}")
+    span_chains = gene_body_chains(f"{W}/genespan.paf")
+    say(f"# transcript hits passing {len(tx_hits)}; CDS-envelope chains passing {len(chains)}; gene-span chains passing {len(span_chains)}")
 
     genes = collections.defaultdict(list)
     with gzip.open(a.genes_gff_gz, "rt") as fh:
@@ -591,7 +615,7 @@ def main():
         s0, e0, _ = ann.envelope[n]
         ex = [(max(s, s0), min(e, e0)) for s, e in ann.union_exons[n] if min(e, e0) > max(s, s0)]
         exon = "".join(genome.fetch(t["chrom"], s, e) for s, e in merge(ex)).upper()
-        return (rc(exon) if t["strand"] == "-" else exon), ann.seq_minus(t["chrom"], s0, e0, ann.union_exons[n], t["strand"])
+        return (rc(exon) if t["strand"] == "-" else exon), ann.seq_minus(t["chrom"], t["start0"], t["end"], ann.union_exons[n], t["strand"])
 
     def exon_intron_candidate(c):
         if c["tx"] is not None:
@@ -602,7 +626,13 @@ def main():
             b = project_exons(c["chain"], ann.exons_in_envelope(c["chain"]["q"]))
             exon = "".join(genome.fetch(c["chrom"], s, e) for s, e in b).upper()
             exon = rc(exon) if c["chain"]["strand"] == "-" else exon
-        if c["chain"] is not None:
+        sp = [(ov(x["xs"], x["xe"], c["s"], c["e"]), x["nm"], k) for k, x in enumerate(span_chains)
+              if x["chrom"] == c["chrom"] and rec[x["q"]]["family"] == c["family"] and x["q"] in c["seeds"]]
+        sp = [x for x in sp if x[0] > 0]
+        if sp:
+            ch = span_chains[max(sp)[2]]
+            intron = ann.seq_minus(c["chrom"], ch["xs"], ch["xe"], project_exons(ch, ann.exons_in_span(ch["q"])), ch["strand"])
+        elif c["chain"] is not None:
             ch = c["chain"]
             intron = ann.seq_minus(c["chrom"], ch["xs"], ch["xe"], project_exons(ch, ann.exons_in_envelope(ch["q"])), ch["strand"])
         else:
@@ -627,7 +657,9 @@ def main():
                 hidden.update(names[k:])
             arms = {"M0": single_linkage(tx_hits, seeds, rec),
                     "G1": single_linkage([dict(c, s=c["s"], e=c["e"]) for c in chains], seeds, rec),
-                    "U": union_fixed(tx_hits, chains, seeds, rec)}
+                    "U": chain_first(tx_hits, chains, seeds, rec)}
+            for c in arms["U"]:
+                c["seeds"] = seeds
             for arm, cands in arms.items():
                 rp = classify(cands, hidden, rec, genes)
                 for fam in families + ["ALL"]:
@@ -643,13 +675,17 @@ def main():
                     ps, pp = pairwise(ip, itr)
                     br, bp = bipartite(ip, itr) if ip else (float("nan"), float("nan"))
                     wd = [width_stats(rec[n], rp[n]["s"], rp[n]["e"]) for n in H if rp[n] and rp[n]["family"] == rec[n]["family"]]
+                    recovered = [n for n in H if rp[n]]
+                    dup = sum(1 for n in recovered if sum(1 for c in C if c["chrom"] == rec[n]["chrom"]
+                                                          and ov(rec[n]["start0"], rec[n]["end"], c["s"], c["e"]) > 0) > 1)
                     rows.append({"level": level, "rep": rep, "arm": arm, "family": fam, "hidden": len(H), "cands": len(C),
                                  "sens": tp / len(H) if H else float("nan"), "prec": good / len(C) if C else float("nan"),
                                  "named": (good + named) / len(C) if C else float("nan"), "cross": cross,
                                  "unnamed": len(unnamed), "unnamed_genes": ",".join(unnamed),
                                  "pair_s": ps, "pair_p": pp, "bip_R": br, "bip_P": bp, "n_w": len(wd),
                                  "J": statistics.median([w[0] for w in wd]) if wd else float("nan"),
-                                 "trunc": sum(w[1] for w in wd), "overext": sum(w[2] for w in wd)})
+                                 "trunc": sum(w[1] for w in wd), "overext": sum(w[2] for w in wd),
+                                 "dup_frac": dup / len(recovered) if recovered else 0.0})
                 if arm != "U":
                     continue
                 for c in cands:
@@ -674,7 +710,7 @@ def main():
         for r in cand_rows:
             fh.write("\t".join(map(str, r)) + "\n")
 
-    say("\n## breadth and width (M0 transcript and G1 gene body: single-linkage as §6jr; U: F1 construction)")
+    say("\n## breadth and width (M0 transcript and G1 gene body: single-linkage as §6jr; U: chain-first construction, Addendum U)")
     for level in ("half", "keep1"):
         for fam in families + ["ALL"]:
             for arm in ("M0", "G1", "U"):
@@ -682,7 +718,7 @@ def main():
                 g = lambda k: ms([r[k] for r in R])
                 say(f"{level:5s} {fam:6s} {arm:2s} hid {g('hidden')} cand {g('cands')} | sens {g('sens')} prec {g('prec')} "
                     f"named {g('named')} | cross {g('cross')} unnamed {g('unnamed')} | pair {g('pair_s')}/{g('pair_p')} "
-                    f"bip {g('bip_R')}/{g('bip_P')} | W n={g('n_w')} J {g('J')} trunc {g('trunc')} overext {g('overext')}")
+                    f"bip {g('bip_R')}/{g('bip_P')} | W n={g('n_w')} J {g('J')} trunc {g('trunc')} overext {g('overext')} | dup {g('dup_frac')}")
             un = sorted({x for r in rows if r["level"] == level and r["family"] == fam and r["arm"] == "U" for x in r["unnamed_genes"].split(",") if x})
             if un:
                 say(f"            U unnamed other genes: {un}")
@@ -698,6 +734,10 @@ def main():
             verdict.append(ok)
             say(f"  {fam} {level}: U {m['U']:.3f} vs M0 {m['M0']:.3f} / G1 {m['G1']:.3f}; named {pn:.3f}; cross {cr} -> {'ok' if ok else 'FAIL'}")
         say(f"  {fam}: B1 {'PASS' if all(verdict) else 'FAIL'}")
+        d = {level: statistics.mean([r["dup_frac"] for r in rows if r["level"] == level and r["family"] == fam and r["arm"] == "U"])
+             for level in ("half", "keep1")}
+        say(f"  {fam}: B4 duplicate-overlapped recovered records half {d['half']:.3f} keep1 {d['keep1']:.3f} -> "
+            f"{'PASS' if max(d.values()) <= 0.05 else 'FAIL'}")
 
     say("\n## trees (reference-projected alignment, F3 reference; SH-aLRT > 75)")
     summary = collections.defaultdict(collections.Counter)

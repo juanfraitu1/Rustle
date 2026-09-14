@@ -767,6 +767,11 @@ fn main() -> Result<()> {
     if repeat_gate_on() {
         refine_params.intron_fasta = Some(args.fasta.clone());
     }
+    // The genomic-span edge union (`RUSTLE_ER_UNION_GENOMIC_SPAN=1`) computes a second E_r edge set on each rep's genomic
+    // span and needs the reference for it. Set ONLY when the flag is on, so the OFF path stays byte-identical.
+    if std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) {
+        refine_params.intron_fasta = Some(args.fasta.clone());
+    }
     // The repeat-justified edge rule (`RUSTLE_ER_REPEAT_MASKED_EDGES=1`) reads the RepeatMasker soft-mask
     // from the reference, through the case-preserving `repeat_catalog::IndexedFasta` rather than
     // `GenomeIndex` (which uppercases at load). It needs the same field. Set ONLY when the flag is on, so

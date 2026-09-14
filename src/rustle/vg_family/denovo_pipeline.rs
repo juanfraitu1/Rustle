@@ -3575,6 +3575,35 @@ fn er_union_lcs_enabled() -> bool {
     matches!(std::env::var("RUSTLE_ER_UNION_LCS"), Ok(v) if v != "0" && !v.is_empty())
 }
 
+/// `RUSTLE_ER_UNION_GENOMIC_SPAN=1` adds E_r edges computed on each rep's GENOMIC SPAN to the exon-sum edges (default
+/// off). Unlike `--homology-genomic-span`, which REPLACES the substrate and lost 80% of true pairs at c = 0.50
+/// (register 321), the union only adds pairs; ledger §6js/§6jt: NPIP copies are held together by gene body while AMY
+/// copies are held together by coding sequence, so neither substrate alone serves both.
+pub(crate) fn er_union_genomic_span_enabled() -> bool {
+    matches!(std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN"), Ok(v) if v != "0" && !v.is_empty())
+}
+
+/// `base` plus the pairs of `extra` it lacks, sorted by pair, and how many were added. A pair already in `base` keeps
+/// its identity and coverage; an added pair keeps `extra`'s.
+pub(crate) fn union_edge_sets(
+    base: Vec<(usize, usize, f64, f64)>,
+    extra: Vec<(usize, usize, f64, f64)>,
+) -> (Vec<(usize, usize, f64, f64)>, usize) {
+    let mut by_pair: BTreeMap<(usize, usize), (f64, f64)> =
+        base.into_iter().map(|(a, b, i, c)| ((a.min(b), a.max(b)), (i, c))).collect();
+    let mut added = 0usize;
+    for (a, b, i, c) in extra {
+        if a == b {
+            continue;
+        }
+        if let std::collections::btree_map::Entry::Vacant(v) = by_pair.entry((a.min(b), a.max(b))) {
+            v.insert((i, c));
+            added += 1;
+        }
+    }
+    (by_pair.into_iter().map(|((a, b), (i, c))| (a, b, i, c)).collect(), added)
+}
+
 /// Returns `edges` plus LCS-confirmed candidate pairs it lacks, sorted by pair, and how many were added. An existing
 /// `E_r` edge keeps its alignment identity/coverage. An added edge reports identity 1.0 (an exact common substring)
 /// and coverage = LCS length / shorter rep length — the same meanings as the `E_r` fields.
@@ -3641,6 +3670,34 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
             }
         }
         union
+    } else {
+        edges_w
+    };
+    let edges_w = if er_union_genomic_span_enabled() && !refine.homology_genomic_span {
+        if refine.intron_fasta.is_some() {
+            let mut span_params = refine.clone();
+            span_params.homology_genomic_span = true;
+            let span_edges = homology_edges_all_reps_pooled_weighted(reps, None, &span_params)?;
+            let n_base = edges_w.len();
+            let before: std::collections::BTreeSet<(usize, usize)> = edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
+            let (union, added) = union_edge_sets(edges_w, span_edges);
+            eprintln!("[homology] RUSTLE_ER_UNION_GENOMIC_SPAN: E_r {n_base} edges + {added} genomic-span edges = {}", union.len());
+            if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
+                if !prefix.is_empty() {
+                    let mut out = String::from("rep_i\trep_j\tnode_key_i\tnode_key_j\tidentity\tcoverage\n");
+                    for &(a, b, i, c) in union.iter().filter(|&&(a, b, _, _)| !before.contains(&(a, b))) {
+                        out.push_str(&format!("{a}\t{b}\t{}\t{}\t{i:.6}\t{c:.6}\n", reps[a].tid, reps[b].tid));
+                    }
+                    if let Err(e) = std::fs::write(format!("{prefix}.genomic_span_union_edges.tsv"), out) {
+                        eprintln!("[homology] could not write genomic-span union edge dump: {e}");
+                    }
+                }
+            }
+            union
+        } else {
+            eprintln!("[homology] RUSTLE_ER_UNION_GENOMIC_SPAN needs the genome path; edges unchanged");
+            edges_w
+        }
     } else {
         edges_w
     };
@@ -9266,6 +9323,23 @@ mod tests {
             tid: tid.into(), chrom: "chrU".into(), start, end: start + seq.len() as u64, n_reads: 5, strand: '+',
             introns: vec![], seq, distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
         }
+    }
+
+    #[test]
+    fn er_union_genomic_span_is_off_by_default() {
+        std::env::remove_var("RUSTLE_ER_UNION_GENOMIC_SPAN");
+        assert!(!er_union_genomic_span_enabled());
+    }
+
+    /// Existing pairs keep their metrics (orientation-insensitive), missing pairs are added with theirs, self-pairs and
+    /// duplicates in `extra` are ignored.
+    #[test]
+    fn union_edge_sets_keeps_base_metrics_and_adds_only_missing_pairs() {
+        let base = vec![(0, 1, 0.95, 0.80), (2, 3, 0.90, 0.60)];
+        let extra = vec![(1, 0, 0.99, 1.00), (3, 1, 0.85, 0.70), (1, 3, 0.10, 0.10), (2, 2, 1.0, 1.0)];
+        let (out, added) = union_edge_sets(base, extra);
+        assert_eq!(added, 1);
+        assert_eq!(out, vec![(0, 1, 0.95, 0.80), (1, 3, 0.85, 0.70), (2, 3, 0.90, 0.60)]);
     }
 
     #[test]

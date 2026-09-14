@@ -19599,3 +19599,46 @@ supported in the exon or the intron tree. Caveats: one haplotype; AMY types from
 small (4-12 members); two runs lost most exon members to the reference-alignment guard.
 
 Data: `lit/{guided_lo,amy_lo,amy_lo_v2}/{s.out,s.err,tree_union/}`, `lit/amy_lo/loc662/`.
+
+## §6js — Guided fixes consolidated into one tool (`bench/guided_pipeline.py`): members from both finders without duplicates, CDS-envelope gene body, gene-span introns; 2 of 3 families pass every bar, AMY fails one by a mis-joined annotation (2026-09-13)
+
+Pre-registered as Addendum T (md5 c195db89), revised post hoc as Addendum U with amendments U1' and U1'' (all disclosed
+in `docs/PREREG_core_definition_2026-09-12.md`; U1'' was declared the last guided change of this round before it ran).
+Seed units are checked byte-identical to §6jm-§6jr's. Runtime: AMY 1 min 20 s, NPIP+TBC1D3 3 min 40 s.
+
+**What the tool does (final, U1''):** seeds = annotated genes; finder 1 = the seed's longest curated transcript
+(spliced, identity >= 0.80, query coverage >= 0.50); finder 2 = the seed's CDS envelope (asm20 chains, aligned >= 0.50
+of the shorter); loci = gene-body chain leaders (reciprocal overlap >= 0.50, or >= 0.90 inside a leader's extrapolated
+span); a transcript hit attaches to a locus when it lies >= 0.90 inside the chain's extrapolated span, or contains the
+chain and touches no other locus; hits touching a locus otherwise are discarded (mis-chained/partial); transcript hits
+touching no locus form transcript-only loci; width = attached transcript hit, else chain; subfamily clades from exon
+and intron (annotated gene span minus exons) reference-projected trees, reported per class and "either".
+
+**Addendum T (first form, F1 reciprocal-overlap union, CDS-envelope introns):** B1 PASS all three families; B3 PASS;
+B2 FAIL (NPIP A6-9/B3-5/B6-9/B12/13 and AMY1/AMY2 below §6jr) — duplicates (NPIP keep-50% 25.6 candidates vs 15.6; AMY
+transcript hits of 22-73 kb whose first exon aligns to another copy) and short intron sequence.
+
+**Final bars (U1''):**
+
+| family | B1 sensitivity U vs max(M0, G1), keep 50% / keep 1 | named precision | B4 duplicates | B2 clades (either) vs §6jr | B3 |
+|---|---|---|---|---|---|
+| NPIP | 1.000 vs 1.000 / 1.000 vs 1.000 — PASS | 1.000 | 0 / 0 — PASS | 5/6 groups (A6-9 9 vs 10) — FAIL by one run | — |
+| TBC1D3 | 1.000 vs 1.000 / 1.000 vs 1.000 — PASS | 1.000 | 0 / 0 — PASS | AE/CDKL not literature clades (0 before too) | exon tree never supports the positional split (11/11) — PASS |
+| AMY v2 | **0.933 vs 0.967** / 0.945 vs 0.764 — FAIL | 1.000 | 0 / 0.020 — PASS | AMY1 10, AMY2 5, AMY2Ap 5 (>= 10/5/2) — PASS | — |
+
+AMY's B1 miss is one locus in one replicate: LOC124905662's mis-joined model (§6jr) has a 36 kb CDS envelope that
+contains LOC128966568, so containment merges them. A generic "split envelopes at nested genes" rule was checked and
+rejected before running: NPIPB15, NPIPB5 and NPIPB7 envelopes also contain small annotated genes (LOC124907811,
+LOC124907830, a 253 bp CLN3 piece) that are ordinary overlaps. No over-merge anywhere (family-named precision 1.000,
+0 cross-family, 0 unnamed genes).
+
+**Width (U1'', recovered hidden records):** NPIP keep 50% Jaccard 0.803 (truncated 5.8 / 11), keep 1 0.701 (14.6 / 21,
+the cross-subfamily copies with no transcript hit); TBC1D3 0.969 / 0.992; AMY 0.965 / 0.861.
+
+**Reading.** On the development families the consolidated guided method finds every hidden member of NPIP and TBC1D3
+from half or one seed and 93-95% of AMY's, with no over-merge and no duplicate loci, and its exon/intron trees recover
+the literature subfamilies about as well as §6jr's best. These families shaped the fixes, so none of this is validation;
+a held-out family set or substrate is still required.
+
+Data: `lit/guided_t/{t.out,t_addendumT.out,t_addendumU1p.out,t.candidates.tsv,tree_t/}`,
+`lit/amy_lo_t/{t.out,t_addendumT.out,t_addendumU_first.out,t_addendumU1p.out}`.

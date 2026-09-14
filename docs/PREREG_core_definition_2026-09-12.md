@@ -733,3 +733,45 @@ F2 (finding), F3 (tree reference) unchanged.
 **Bars:** B1, B2, B3 exactly as Addendum T, plus **B4**: hidden records overlapped by more than one candidate <= 5% of
 recovered hidden records at both levels. Families NPIP, TBC1D3, AMY v2. Development only — the same families shaped
 these fixes, so a pass here is not validation; the de novo hold-out follows.
+
+**Addendum U amendment U1' (2026-09-13, after the first U run on AMY v2 only; disclosed):** that run gave B1 PASS but
+B4 FAIL at keep 50% (0.233): each duplicate was a complete chain and a PARTIAL chain from a more divergent seed at one
+locus, reciprocal overlap < 0.50. Chain leader clustering now also joins a chain whose clip span lies >= 0.90 inside a
+leader's extrapolated span (the same containment rule transcript hits use). Nothing else changes; NPIP/TBC1D3 have not
+been run under U yet; all three families are re-run under U1'.
+
+**Addendum U amendment U1'' (2026-09-13, after U1' results on all three families; disclosed; LAST change before the
+de novo step):** U1' gave NPIP/TBC1D3 B1 PASS, B4 PASS, B3 PASS, B2 NPIP 5/6 groups >= §6jr (A6-9 9 vs 10); AMY v2 B1
+FAIL at keep 50% (0.933 vs 0.967: LOC124905662's mis-joined 36 kb CDS envelope contains LOC128966568 and absorbs it),
+B2 PASS, B4 PASS. Width regression: TBC1D3 transcript hits (~10.9 kb incl. UTRs) exceed the 9 kb CDS-envelope chain, are
+never "inside" it and were discarded (keep-50% Jaccard 0.969 -> 0.806). Change: a transcript hit is also ATTACHED to a
+chain leader when that chain's clip span lies >= 0.90 inside the transcript hit AND the transcript hit overlaps no other
+chain leader; otherwise the U1' rules apply. All three families are re-run once under U1''; results are reported
+whatever they are, and no further guided change is made in this round.
+
+---
+## ADDENDUM V (2026-09-13, after the guided U1'' runs; before any de novo number below exists) — de novo: gene-body edge union (D1) and exon/intron subfamily clades (D2)
+
+**Scope reminder (user):** de novo = cluster loci that already have aligned RNA reads; its fair truth is read-supported
+loci. Guided lessons carried over: NPIP is held together by gene body, AMY by coding sequence; subfamilies are clades of
+intron (NPIP) or exon (AMY) trees.
+
+**D1 (Rust, opt-in, default off, byte-identical when unset):** `RUSTLE_ER_UNION_GENOMIC_SPAN=1` adds to the exon-sum
+E_r edges the E_r edges computed on each rep's genomic span (the existing `homology_genomic_span` substrate, same floors,
+coverage of the shorter), before the gamma partition; existing pairs keep their metrics. 2 new unit tests.
+**D2:** `bench/denovo_subfamilies.py` — for each emitted family containing a truth record: members = the family's
+copies; each truth record is represented by its best-overlapping copy of that family (other copies unlabelled); exon
+sequence = the copy's spliced sequence from `copies.fa`; intron sequence = the copy's genomic span minus its exon blocks
+(transcript orientation); trees and clade calls exactly as `bench/guided_pipeline.py` (reference-projected alignment,
+F3 reference, IQ-TREE MFP + 1000 UFBoot/SH-aLRT, SH-aLRT > 75, clades per class and either).
+
+**Development (human CHM13 IsoSeq A119b.t2t.bam):** (a) the 19 NPIP/TBC1D3 windows (`lit/lit.bam`), (b) an amylase window
+(chr1:103,300,000-103,900,000 from `A119b.t2t.bam`, `amy.bam`). Arms: DN0 `gw_family_catalog --homology-primary
+--threads 5` (current code); DN1 = DN0 + `RUSTLE_ER_UNION_GENOMIC_SPAN=1`. Scores: records present, mean families and
+copies per present record, collapse; family level (best-overlap family per record vs family truth; AMY v2 truth):
+pairwise sensitivity/precision and bipartite micro R/P; D2 clade calls per literature group (NPIP six, TBC1D3 AE/CDKL +
+positional, AMY AMY1/AMY2/AMY2Ap). Descriptive; expectation stated now: DN1 lowers NPIP families per record without
+raising collapse.
+**Hold-out (gorilla rebuild3, `sub3.bam`):** DN0 vs DN1 scored by `bench/score_vs_guided.py` against EXPRESSED guided
+loci (`hybrid/expr_c3.tsv`, u >= 3): DN1 NARROWS iff R_G(DN1) > R_G(DN0) AND P_G(DN1) >= P_G(DN0) - 0.05 (any-family);
+full guided and best-overlap reported. A failed or resource-limited arm is reported as such. No default changes.
