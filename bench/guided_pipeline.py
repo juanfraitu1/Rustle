@@ -481,15 +481,18 @@ def projected_tree(tag, seqs, outdir, iqtree, threads):
     kept_rows = {n: "".join(rows[n][j] for j in keep) for n in names}
     dropped = [n for n, r in kept_rows.items() if not r.strip("-")]
     members = [n for n in names if n not in dropped]
-    if len(members) < 4 or not keep:
+    if len(members) < 4 or len(keep) < 100:  # too little shared sequence to support any split
         return None, ref, len(keep), dropped
     aln = f"{outdir}/{tag}.proj.fa"
     with open(aln, "w") as fh:
         for n in members:
             fh.write(f">{n}\n{kept_rows[n]}\n")
-    subprocess.run([iqtree, "-s", aln, "-m", "MFP", "-B", "1000", "-alrt", "1000", "-T", str(threads), "--seed", "1",
-                    "--prefix", f"{outdir}/{tag}", "-redo", "-quiet"], check=True, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL, timeout=600)
+    try:
+        subprocess.run([iqtree, "-s", aln, "-m", "MFP", "-B", "1000", "-alrt", "1000", "-T", str(threads), "--seed", "1",
+                        "--prefix", f"{outdir}/{tag}", "-redo", "-quiet"], check=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=600)
+    except subprocess.CalledProcessError:  # e.g. fewer than 4 distinct sequences after IQ-TREE collapses identical rows
+        return None, ref, len(keep), dropped + ["<iqtree refused the alignment>"]
     return parse_newick(open(f"{outdir}/{tag}.treefile").read()), ref, len(keep), dropped
 
 
