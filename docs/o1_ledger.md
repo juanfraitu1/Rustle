@@ -20434,3 +20434,29 @@ pairs.
   that is unavoidable, since 166 of 280 truth families have two members. 62 are genuine discovery misses.
 - The substrate slice itself costs the full-annotation arm 0.03 F. The construction runs on three contigs instead of
   genome-wide, and core refinement is absent.
+
+## §6kj — Node-rule development closed; held-out Addendum AH launched (2026-09-14)
+
+Further development arms on substrate 1 (RNA truth, guided construction), none adopted:
+
+| node set | pair sens | pair prec | bipartite F |
+|---|---|---|---|
+| end split (5' + 3') — CHOSEN | 0.474 | 0.724 | **0.775** |
+| end split, no >= 2-read linkage split | 0.483 | 0.749 | 0.776 |
+| end split + paralog-projection completion (partner spans realigned onto +/- span regions, exons projected; 349/2,327 nodes grew) | 0.513 | 0.685 | 0.751 |
+| end split + exons filled from all alignments incl. secondary (+8.0 Mb exonic) | 0.308 | 0.435 | 0.665 |
+| clipped oracle filled from secondary alignments (annotation partition) | 0.892 | 0.836 | 0.893 |
+| StringTie `-L` gene loci as nodes: partition only — 69 gene matches / 72 larger / 78 fragments / 50 offset / 35 none (end split 83/42/119/44/16) | — | — | not run |
+
+- Soft clipping is negligible and UTR completeness costs ~0.02-0.09 F (§6kh).
+- Secondary-alignment exon filling helps only when the gene partition is right.
+- Guided minimal-annotation discovery misses (§6ki): 54/62 hidden loci whose family has a seed receive no alignment
+  record from any seed (they are path-connected in the truth, not directly homologous). Only 56/2,084 seeds reach the
+  -N 50 cap.
+
+**Addendum AH** (md5 8da9e111; code frozen at aa869a08, comparators 8dd034a8; driver `lit/run_ah.sh`). Held-out:
+- gorilla s3 = NC_073230.2 + NC_073228.2;
+- human chr15/17/22.
+Arms:
+- D (end-split read nodes + guided construction) vs the confirmed triangle rule, on the RNA truth;
+- G (50% annotation + discovery + construction) vs seeds only and all annotated, on the DNA truth.
