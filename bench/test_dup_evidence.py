@@ -78,3 +78,33 @@ def test_valley_bimodal_and_monotone():
     assert de.valley(hist) == 5
     assert de.valley({1: 1000, 2: 500, 3: 250, 4: 100, 5: 50}) is None
     assert de.valley({1: 5}) is None
+
+
+def test_run_atomic_failure(tmp_path):
+    """Test that _run with a failing command leaves no output file and logs the error."""
+    out_file = str(tmp_path / "output.txt")
+    log_file = str(tmp_path / "run.log")
+    with pytest.raises(RuntimeError) as exc_info:
+        de._run([sys.executable, "-c", "import sys; sys.exit(3)"], out=out_file, log=log_file)
+    assert "exit 3" in str(exc_info.value)
+    assert not os.path.exists(out_file), f"Output file should not exist after failure, but found {out_file}"
+    assert not os.path.exists(f"{out_file}.tmp"), f"Tmp file should not exist, but found {out_file}.tmp"
+    assert os.path.exists(log_file), f"Log file should exist after failure"
+    with open(log_file) as f:
+        log_content = f.read()
+    assert "sys.exit(3)" in log_content or "exit 3" in log_content
+
+
+def test_run_atomic_success(tmp_path):
+    """Test that _run with a succeeding command atomically writes to the output file."""
+    out_file = str(tmp_path / "output.txt")
+    log_file = str(tmp_path / "run.log")
+    de._run([sys.executable, "-c", "import sys; sys.stdout.write('hello')"], out=out_file, log=log_file)
+    assert os.path.exists(out_file), f"Output file should exist after success"
+    assert not os.path.exists(f"{out_file}.tmp"), f"Tmp file should be cleaned up after success"
+    with open(out_file) as f:
+        assert f.read() == "hello"
+    assert os.path.exists(log_file), f"Log file should exist after success"
+    with open(log_file) as f:
+        log_content = f.read()
+    assert "sys.stdout.write" in log_content

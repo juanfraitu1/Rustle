@@ -7,6 +7,7 @@ M both sides, D side A, I side B; side B reverse-complemented when strand_b is '
 import csv
 import os
 import re
+import shutil
 import subprocess
 
 PAIR_COLS = ("chrom_a", "start_a", "end_a", "chrom_b", "start_b", "end_b", "strand_a", "strand_b", "identity", "cigar", "source")
@@ -114,35 +115,85 @@ def valley(hist, max_count=100000):
     return None
 
 
-def _run(cmd, out=None):
-    with (open(out, "w") if out else open(os.devnull, "w")) as fh:
-        subprocess.run(cmd, stdout=fh, stderr=subprocess.DEVNULL, check=True)
+def _run(cmd, out=None, log=None):
+    """Run a command, capturing stdout and stderr atomically.
+
+    If out is given, writes stdout to out (using a .tmp file and os.replace on success).
+    If log is given, appends command line and stderr to log.
+    Raises RuntimeError on non-zero exit.
+    """
+    out_tmp = f"{out}.tmp" if out else None
+
+    # Remove stale .tmp files before starting
+    if out_tmp and os.path.exists(out_tmp):
+        if os.path.isdir(out_tmp):
+            shutil.rmtree(out_tmp)
+        else:
+            os.remove(out_tmp)
+
+    # Write command header to log
+    if log:
+        with open(log, "a") as fh:
+            fh.write(f"$ {' '.join(cmd)}\n")
+
+    # Run command, capturing stderr
+    with (open(out_tmp, "w") if out_tmp else open(os.devnull, "w")) as out_fh:
+        result = subprocess.run(cmd, stdout=out_fh, stderr=subprocess.PIPE, text=True)
+
+    # Append stderr to log
+    if log and result.stderr:
+        with open(log, "a") as fh:
+            fh.write(result.stderr)
+
+    # Check for errors
+    if result.returncode != 0:
+        # Clean up tmp file on failure
+        if out_tmp and os.path.exists(out_tmp):
+            if os.path.isdir(out_tmp):
+                shutil.rmtree(out_tmp)
+            else:
+                os.remove(out_tmp)
+        if log:
+            raise RuntimeError(f"{cmd[0]} failed (exit {result.returncode}); see {log}")
+        else:
+            raise RuntimeError(f"{cmd[0]} failed (exit {result.returncode})")
+
+    # Atomically rename temp file to final location on success
+    if out_tmp and os.path.exists(out_tmp):
+        os.replace(out_tmp, out)
 
 
 def cmd_meryl(genome, outdir, threads=4):
     import repeat_evidence as rep
     os.makedirs(outdir, exist_ok=True)
+    log = f"{outdir}/meryl.log"
+
     db = f"{outdir}/kmers.meryl"
     if not os.path.exists(db):
-        _run([MERYL, "count", "k=31", f"threads={threads}", "memory=12", str(genome), "output", db])
+        _run([MERYL, "count", "k=31", f"threads={threads}", "memory=12", str(genome), "output", db], log=log)
+
     hist_path = f"{outdir}/hist.tsv"
     if not os.path.exists(hist_path):
-        _run([MERYL, "histogram", db], hist_path)
+        _run([MERYL, "histogram", db], out=hist_path, log=log)
+
     hist = {int(a): int(b) for a, b in (l.split()[:2] for l in open(hist_path) if l.strip() and l.split()[0].isdigit())}
     c = valley(hist)
     open(f"{outdir}/cmax.txt", "w").write(f"{c if c is not None else 'NA'}\n")
     if c is None:
         print(f"[meryl] no histogram valley: D4 and R4 not available for {genome}")
         return None
+
     for name, ops in (("low", ["less-than", str(c + 1), "[", "greater-than", "1", db, "]"]), ("high", ["greater-than", str(c), db])):
         sub = f"{outdir}/{name}.meryl"
         if not os.path.exists(sub):
-            _run([MERYL] + ops + ["output", sub])
+            _run([MERYL] + ops + ["output", sub], log=log)
         bed = f"{outdir}/{name}_copy.runs.bed"
         if not os.path.exists(bed):
-            _run([MERYL_LOOKUP, "-bed-runs", "-sequence", str(genome), "-mers", sub, "-output", bed])
+            _run([MERYL_LOOKUP, "-bed-runs", "-sequence", str(genome), "-mers", sub, "-output", bed], log=log)
+
     for name, src in (("low", "D4:meryl"), ("high", "R4:meryl")):
         ivs = [(f[0], int(f[1]), int(f[2]), ".") for f in (l.split("\t") for l in open(f"{outdir}/{name}_copy.runs.bed")) if len(f) >= 3]
         rep.write_bed(ivs, f"{outdir}/{name}_copy.bed", src)
+
     print(f"[meryl] C_max = {c}")
     return c
