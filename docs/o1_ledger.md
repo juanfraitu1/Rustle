@@ -21124,3 +21124,31 @@ to pick T. It is shipped opt-in (`--min-shared-exon-frac`); adopting it as the E
 made here.
 
 Data: `lit/ap_ho/{e1,e1s}.*`, `lit/soto_fams/{soto_holdout.py,soto_holdout.out}`, `lit/aj_dev/refseq_e1s.*`.
+
+## §6kt — `min_shared_exon_frac` promoted from opt-in to the shipped default (user decision, 2026-09-14)
+
+Follow-up to §6ks (AP-1 SUPPORTED on held-out chr5/7/21). User: "I think I would prefer it to be default on."
+
+**Change.** `mcl_families`'s `--min-shared-exon-frac` `default_value_t` 0.0 -> 0.30. The `GraphParams` struct's own
+`Default` impl is left at 0.0, matching exactly how `--exonic-both-sides` was flipped in §6ey (struct default `false`,
+CLI default `true`): a unit test elsewhere in `annotation_families.rs` that builds a `GraphParams` via
+`..GraphParams::default()` to exercise an unrelated clause is not silently perturbed by this one.
+
+**Verification.**
+- Blast radius: `GraphParams::default()`/`GraphParams { .. }` used only in `annotation_families.rs`'s own tests and
+  `mcl_families.rs` (grep, whole repo); no `tests/*.rs` integration test invokes the `mcl_families` binary; `mcl_refine`
+  and `gw_family_catalog` do not touch `GraphParams` (confirmed by grep before editing).
+- `cargo test --release --lib`: 852 passed both before and after the flip (the pre-existing, unrelated
+  `module_status_tests` failure from `shared_definition.rs` missing in `docs/MODULE_STATUS.md`, §6ks, is unchanged
+  by this commit either way).
+- Freshly built release binary, run on chr5/7/21 with NO flag: byte-identical to the explicit
+  `--min-shared-exon-frac 0.30` catalog built in §6ks (`ap_ho/e1s.clusters.tsv`).
+
+**⚠ Scope of the flip: code only, not retroactive.** Every guided-truth artifact this session's addenda (AI, AJ, AK,
+AL, AM, AN, AP) scored against — gorilla `gw_units_v3`, `human2/guided.clusters.tsv`, and every `lit/**/e1*` catalog
+built before this commit — was produced by an explicit `mcl_families` call that predates the flip and did not pass
+`--min-shared-exon-frac`, so it reflects the OLD default (0.0), unchanged on disk. The flip governs future runs of the
+rebuilt binary only. Regenerating gorilla's production truth (SEDEF + core-refine, a multi-hour pipeline) or human's is
+a separate task, not undertaken here — flagged for the user to request if wanted.
+
+`--min-shared-exon-frac 0.0` reproduces every catalog in this repo built before 2026-09-14 byte-for-byte.

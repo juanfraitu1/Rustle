@@ -79,23 +79,32 @@ pub struct GraphParams {
     /// (MCL3 27/27 vs 22; the repeat clique 0/33 vs 1/33). ⚠ 300 was anchored to `min_bp` and that
     /// anchor is REFUTED: 300 sits at the EDGE of the 1-200 plateau and costs MCL3 five members.
     pub min_exonic_bp: u64,
-    /// ⭐ §6ks: `min_exonic_bp = 1` (`exonic_both_sides`) is a STRUCTURAL zero/non-zero gate — touch one exonic
-    /// base of each gene, on some single record, however small a sliver of either gene that base is. Measured
-    /// against Soto et al. 2025's family calls (chr1/chr15/17, `docs/o1_ledger.md` §6kr): pairs BOTH definitions
-    /// keep together share a median 52-89% of the smaller gene's exonic length on their best record; pairs we
-    /// join that Soto keeps apart share a median 11-25%, and >=1,000 of those pairs share <5% or none at all —
-    /// co-duplicated neighbours (NBPF beside NOTCH2NL, a lncRNA beside a GOLGA copy) whose single shared exonic
-    /// base rides on flanking segmental-duplication sequence, not on paralogy between the two genes' own models.
+    /// ⭐⭐ §6ks — **`mcl_families` ships this ON at 0.30 (user decision 2026-09-14); the STRUCT default below
+    /// stays 0.0**, the same split as `exonic_both_sides` (struct default `false`, CLI default `true`, §6ey):
+    /// `GraphParams::default()` is the conservative library/test value, so a test exercising an unrelated
+    /// clause via `..GraphParams::default()` is not silently perturbed by this one; `mcl_families.rs`'s own
+    /// `#[arg(default_value_t = 0.30)]` is what actually ships. `--min-shared-exon-frac 0.0` reproduces every
+    /// catalog built before 2026-09-14 byte-for-byte.
+    ///
+    /// `min_exonic_bp = 1` (`exonic_both_sides`) is a STRUCTURAL zero/non-zero gate — touch one exonic base of
+    /// each gene, on some single record, however small a sliver of either gene that base is. Measured against
+    /// Soto et al. 2025's family calls (`docs/o1_ledger.md` §6kr, development chr1/chr15/17): pairs BOTH
+    /// definitions keep together share a median 52-89% of the smaller gene's exonic length on their best
+    /// record; pairs we joined that Soto kept apart shared a median 11-25%, and >=1,000 of those pairs shared
+    /// <5% or none at all — co-duplicated neighbours (NBPF beside NOTCH2NL, a lncRNA beside a GOLGA copy,
+    /// GTF2I-adjacent genes) whose single shared exonic base rides on flanking segmental-duplication sequence,
+    /// not on paralogy between the two genes' own models. **§6ks: T=0.30 held out on FRESH Soto families never
+    /// used to pick it (chr5/7/21) — bipartite F (universe) 0.831 -> 0.881, pairwise precision (universe)
+    /// 0.815 -> 1.000, ZERO Soto-verified true pairs lost on any of the 11 held-out families; TBC1D3's 9-copy
+    /// family (development, reported not tested) stays whole.**
     ///
     /// This is a FRACTION of `min(exonic_len(gene_a), exonic_len(gene_b))`, not an absolute count, so it scales
     /// with the gene rather than penalising short exons: `shared_exon_bases(best record) / smaller_exonic_len`.
     /// `shared_exon_bases` is the same per-record `min(qx, tx)` `exonic_both_sides` already computes (exonic
     /// bases of each gene falling inside that record's own aligned span), maxed over the pair's records — no new
-    /// alignment walk. 0.0 = off ⟹ byte-identical. Implies `exonic_both_sides` (the fraction cannot be computed
-    /// without it; setting this without turning that on has no effect other than the wasted comparison).
-    ///
-    /// ⚠ Not yet a definition change: measured on the 8 named Soto families used to find the rule, not
-    /// pre-registered or held out. `mcl_families --min-shared-exon-frac` exposes it as an opt-in flag.
+    /// alignment walk. Implies `exonic_both_sides` (the fraction cannot be computed without it; setting this
+    /// without turning that on has no effect other than the wasted comparison — `exonic_both_sides` is ALSO
+    /// default-on, so this is inert only behind an explicit `--no-exonic-both-sides`).
     pub min_shared_exon_frac: f64,
 }
 

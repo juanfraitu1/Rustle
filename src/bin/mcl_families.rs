@@ -218,14 +218,18 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_exonic_both_sides: bool,
 
-    /// ⭐ §6ks: the pair's best record must cover this FRACTION of the smaller gene's exonic length with
+    /// ⭐⭐ §6ks: the pair's best record must cover this FRACTION of the smaller gene's exonic length with
     /// shared exon-to-exon evidence (not merely >= 1 bp, `--exonic-both-sides`'s structural floor). Measured
     /// against Soto et al. 2025's family calls: pairs both definitions agree on share a median 52-89% on their
     /// best record; pairs this project alone joined share a median 11-25%, over 1,000 of them <5% — a
     /// co-duplicated neighbour riding one shared base of flanking sequence, not the two genes' own homology.
-    /// Implies `--exonic-both-sides`. 0.0 = off ⟹ byte-identical. Not yet a definition change: measured on 8
-    /// named families, not pre-registered or held out.
-    #[arg(long, default_value_t = 0.0)]
+    /// Implies `--exonic-both-sides` (default on, above). **Default ON at 0.30 (user decision 2026-09-14,
+    /// §6ks)**: T=0.30 was fixed from development (chr1/chr15/17) and held out on FRESH Soto families never
+    /// used to pick it (chr5/chr7/chr21) — bipartite F (universe) 0.831 -> 0.881, pairwise precision (universe)
+    /// 0.815 -> 1.000, zero Soto-verified true pairs lost on any of the 11 held-out families; TBC1D3's 9-copy
+    /// family stays whole (reported, not a discovery test there). `--min-shared-exon-frac 0.0` restores the
+    /// behaviour before 2026-09-14 byte-for-byte — every catalog in this repo built before that date used 0.0.
+    #[arg(long, default_value_t = 0.30)]
     min_shared_exon_frac: f64,
 
     /// ⭐ Units of one family that share EXON bases are one locus (§6fb): the longest exon union represents them,
