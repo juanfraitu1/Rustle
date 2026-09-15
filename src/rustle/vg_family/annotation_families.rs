@@ -79,6 +79,24 @@ pub struct GraphParams {
     /// (MCL3 27/27 vs 22; the repeat clique 0/33 vs 1/33). ⚠ 300 was anchored to `min_bp` and that
     /// anchor is REFUTED: 300 sits at the EDGE of the 1-200 plateau and costs MCL3 five members.
     pub min_exonic_bp: u64,
+    /// ⭐ §6ks: `min_exonic_bp = 1` (`exonic_both_sides`) is a STRUCTURAL zero/non-zero gate — touch one exonic
+    /// base of each gene, on some single record, however small a sliver of either gene that base is. Measured
+    /// against Soto et al. 2025's family calls (chr1/chr15/17, `docs/o1_ledger.md` §6kr): pairs BOTH definitions
+    /// keep together share a median 52-89% of the smaller gene's exonic length on their best record; pairs we
+    /// join that Soto keeps apart share a median 11-25%, and >=1,000 of those pairs share <5% or none at all —
+    /// co-duplicated neighbours (NBPF beside NOTCH2NL, a lncRNA beside a GOLGA copy) whose single shared exonic
+    /// base rides on flanking segmental-duplication sequence, not on paralogy between the two genes' own models.
+    ///
+    /// This is a FRACTION of `min(exonic_len(gene_a), exonic_len(gene_b))`, not an absolute count, so it scales
+    /// with the gene rather than penalising short exons: `shared_exon_bases(best record) / smaller_exonic_len`.
+    /// `shared_exon_bases` is the same per-record `min(qx, tx)` `exonic_both_sides` already computes (exonic
+    /// bases of each gene falling inside that record's own aligned span), maxed over the pair's records — no new
+    /// alignment walk. 0.0 = off ⟹ byte-identical. Implies `exonic_both_sides` (the fraction cannot be computed
+    /// without it; setting this without turning that on has no effect other than the wasted comparison).
+    ///
+    /// ⚠ Not yet a definition change: measured on the 8 named Soto families used to find the rule, not
+    /// pre-registered or held out. `mcl_families --min-shared-exon-frac` exposes it as an opt-in flag.
+    pub min_shared_exon_frac: f64,
 }
 
 impl Default for GraphParams {
@@ -91,6 +109,7 @@ impl Default for GraphParams {
             reject_overlapping: false,
             exonic_both_sides: false,
             min_exonic_bp: 0,
+            min_shared_exon_frac: 0.0,
         }
     }
 }
@@ -125,6 +144,9 @@ pub struct HomologyGraph {
     pub rejected_overlapping: usize,
     /// Pairs dropped by `min_exonic_bp` — the edge rested on no exonic evidence. Reported, never silent.
     pub rejected_no_exonic: usize,
+    /// Pairs dropped by `min_shared_exon_frac` — some exonic evidence existed, but on the best record it
+    /// covered too small a fraction of the smaller gene. Reported, never silent.
+    pub rejected_low_shared_exon: usize,
     /// PAF records between two annotations of ONE locus (`LocusMap`) — a locus aligned to itself —
     /// skipped. Reported, never silent.
     pub same_locus_records: usize,
@@ -365,7 +387,7 @@ pub fn graph_from_paf_loci(
             }
             e.2 += nmatch;
             e.3 += blocklen;
-            if p.exonic_both_sides {
+            if p.exonic_both_sides || p.min_shared_exon_frac > 0.0 {
                 // exon-to-exon: THIS record's interval must touch exon bases on both sides; keep the best record
                 let qx = exon_blocks.get(&qk).map_or(0, |b| exonic_bases_in(b, qk.1, qs, qe));
                 let tx = exon_blocks.get(&tk).map_or(0, |b| exonic_bases_in(b, tk.1, ts, te));
@@ -417,6 +439,16 @@ pub fn graph_from_paf_loci(
             // between the genes
             g.rejected_no_exonic += 1;
             continue;
+        }
+        if p.min_shared_exon_frac > 0.0 {
+            // the same exon-to-exon evidence as above, but as a FRACTION of the smaller gene's exonic length:
+            // one shared base passes the structural gate above yet can be a sliver of either gene's model
+            // (§6ks — co-duplicated neighbours pass at exactly this point).
+            let smaller = da.min(db).max(1);
+            if (exon_exon as f64 / smaller as f64) < p.min_shared_exon_frac {
+                g.rejected_low_shared_exon += 1;
+                continue;
+            }
         }
         // `exonic_overlap` REPLACES the numerator; otherwise keep the span numerator (unioned over the
         // pair's records, so a split alignment is not penalised for being split).
@@ -1409,6 +1441,46 @@ mod tests {
         assert_eq!((g4.n_edges(), g4.rejected_no_exonic), (0, 1));
     }
 
+    /// ⭐ §6ks: `min_exonic_bp = 1` is a zero/non-zero gate — it is satisfied by ONE shared exonic base,
+    /// however small a sliver of either gene's model that base is. `min_shared_exon_frac` asks for a
+    /// FRACTION of the smaller gene's own exonic length instead, which is what separated Soto's agreed
+    /// pairs (median 52-89% shared) from this project's extra pairs (median 11-25%, ledger §6kr).
+    #[test]
+    fn min_shared_exon_frac_rejects_a_small_slice_and_keeps_a_majority_overlap() {
+        let a: GeneKey = ("g1".to_string(), 1, 2000);
+        let b: GeneKey = ("g2".to_string(), 1, 2000);
+        let ex: BTreeMap<GeneKey, u64> = [(a.clone(), 1000u64), (b.clone(), 1000u64)].into_iter().collect();
+        // both genes' only exon is their first 1000 bp (local offsets 0..1000)
+        let bl: BTreeMap<GeneKey, Vec<(u64, u64)>> =
+            [(a.clone(), vec![(1u64, 1001u64)]), (b.clone(), vec![(1u64, 1001u64)])].into_iter().collect();
+
+        // one record overlapping both exons in their first 200 bp only: shared/min(1000,1000) = 0.20
+        let low = paf_line("g1:1-2000", 2000, 0, 200, "g2:1-2000", 2000, 0, 200, 200, 200);
+        let p_off = GraphParams { min_bp: 100, min_exonic_bp: 1, min_cov_longer: 0.1, ..GraphParams::default() };
+        let g_off = graph_from_paf(&low, &ex, &bl, &p_off);
+        assert_eq!(g_off.n_edges(), 1, "off by default: the structural 1-bp floor alone admits it");
+        assert_eq!(GraphParams::default().min_shared_exon_frac, 0.0);
+
+        let p_strict = GraphParams { min_shared_exon_frac: 0.3, ..p_off };
+        let g_strict = graph_from_paf(&low, &ex, &bl, &p_strict);
+        assert_eq!(
+            (g_strict.n_edges(), g_strict.rejected_low_shared_exon),
+            (0, 1),
+            "20% of the smaller gene's exon is not enough at a 0.3 floor"
+        );
+        assert_eq!(g_strict.rejected_no_exonic, 0, "counted under its own field, not the 1-bp one");
+
+        // a majority-overlap record instead (600/1000 = 0.60) must survive the same floor
+        let high = paf_line("g1:1-2000", 2000, 0, 600, "g2:1-2000", 2000, 0, 600, 600, 600);
+        let g_high = graph_from_paf(&high, &ex, &bl, &p_strict);
+        assert_eq!(g_high.n_edges(), 1, "60% shared clears a 0.3 floor");
+        assert_eq!(g_high.rejected_low_shared_exon, 0);
+
+        // independent of `exonic_both_sides`: setting the fraction alone (that flag OFF) still gates
+        let p_alone = GraphParams { min_shared_exon_frac: 0.3, exonic_both_sides: false, ..p_off };
+        assert_eq!(graph_from_paf(&low, &ex, &bl, &p_alone).n_edges(), 0);
+    }
+
     #[test]
     fn sd_blocks_link_hulls_through_one_pair_and_keep_unlinked_hulls_apart() {
         // pair 1: c:1000-5000 <-> c:20000-24000 spans two modules (hulls A=c:1000-2000, B=c:3000-4000 on one
@@ -1550,6 +1622,7 @@ mod tests {
         let d = GraphParams::default();
         assert!(!d.exonic_overlap, "flipping this is a THESIS EDIT, not a code edit");
         assert!(!d.reject_overlapping);
+        assert_eq!(d.min_shared_exon_frac, 0.0, "flipping this is a THESIS EDIT, not a code edit");
     }
 
 

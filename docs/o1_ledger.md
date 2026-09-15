@@ -21069,3 +21069,58 @@ Setup:
 Next, to pre-register and hold out on other Soto families:
 - a shared-exon edge rule;
 - alignment completeness (-N) for > 50-copy families.
+
+## §6ks — Addendum AP: a fraction-based shared-exon floor (`min_shared_exon_frac`) SUPPORTED on fresh, held-out Soto families — same TBC1D3 family, cleaner GTF2H2/TCAF/GTF2I precision, no recall loss (2026-09-14)
+
+Pre-registered as Addendum AP (`docs/PREREG_core_definition_2026-09-12.md`, md5 5f34278a) before any number on chr5/7/21
+existed. Follows §6kr's disagreement audit: `min_exonic_bp=1` (`exonic_both_sides`) is a zero/non-zero structural gate —
+one shared exonic base admits an edge however small a sliver of either gene that base is.
+
+**Implementation (Rust, opt-in, default off ⟹ byte-identical).** `GraphParams::min_shared_exon_frac: f64` /
+`mcl_families --min-shared-exon-frac` (`src/rustle/vg_family/annotation_families.rs`, `src/bin/mcl_families.rs`): the
+pair's best record must reach this FRACTION of `min(exonic_len(a), exonic_len(b))` in exon-to-exon overlap (the existing
+`exonic_both_sides` numerator, reused — no new alignment walk), not merely >= 1 bp. Counted in its own field
+(`rejected_low_shared_exon`), never folded into `rejected_no_exonic`. 2 new unit tests (`min_shared_exon_frac_rejects_a_
+small_slice_and_keeps_a_majority_overlap`; the off-by-default guard extended). `cargo test --lib`: 852 passed (the 2
+`module_status_tests` failures are pre-existing, from `4c5c8bcb`'s `shared_definition.rs` never being added to
+`docs/MODULE_STATUS.md` — unrelated to this change, confirmed by `git log` and unaffected by it either way).
+
+**Threshold, fixed from development (chr1 + chr15/17, §6kr's `disagree_pairs.tsv`, before any chr5/7/21 number existed):**
+
+| | TP (agreed) | FP (this project only) | FN (Soto only) |
+|---|---|---|---|
+| shared-exon-frac median | 0.887 | 0.133 | 0.980 |
+| retained at T=0.30 | 89.8% | 26.8% (73.2% removed) | — |
+
+**T = 0.30**, `--min-exonic-bp 1` kept on, `--exonic-both-sides` default (on).
+
+**Hold-out: chr5, chr7, chr21**, CAT/GENCODE annotation, DNA all-vs-all built today (`lit/ap_ho/`, 7,394 genes, 92
+chunks). 11 Soto families chosen by name before any AP number existed — every single/couple-chromosome Soto family on
+these chromosomes matching §6kr's name pattern (TCAF x2, GTF2H2, GTF2I, GTF2IRD2, GTF2IP2, NAIP, NCF1, OCLN, SERF1,
+SMN), excluding two multi-chromosome sprawling families that are not a single-region test.
+
+| catalog | bipartite F (universe) | pairwise precision (universe) |
+|---|---|---|
+| E1 | 0.831 | 0.815 |
+| **E1 + AP (T=0.30)** | **0.881** | **1.000** |
+
+Per-family true-pair count (Soto pairs we recover) is IDENTICAL between E1 and E1S for every one of the 11 families
+except ID_373 (GTF2IP2, 1 truth pair, 0 recovered by either) — **zero recall loss**. GTF2I (ID_208) precision improves
+0.286 -> 1.000 (universe) by dropping AC008443.6/7, AC018638.8, AC090114.3, AC108010.1, CASTOR3 — GTF2I-adjacent
+genes on the same 7q11.23 duplication that shared < 30% of exons.
+
+**AP-1 (pre-registered decision).** SUPPORTED: bipartite F improved (0.831 -> 0.881, bar was "no worse"), pairwise
+precision improved by 0.185 (bar >= 0.05), and no chosen family lost a recovered true pair.
+
+**TBC1D3 regression check (reported, not a discovery test; same substrate as §6jg-§6ks, chr17 RefSeq E1 vs E1+AP).**
+The 9 protein-coding copies (TBC1D3, B, D, E, F, G, H, I, K) stay ONE family under both E1 and E1S — unshattered.
+Two pseudogene members move: `TBC1D3P1-DHX40P1` (a readthrough model already flagged as contamination, §6ji) was not in
+the main family under either rule; `TBC1D3P7` drops out of the main family under E1S (shares < 30% of its exons with
+the rest) into its own unclustered node.
+
+**Reading.** The fraction floor removes most of the co-duplicated-neighbour false merges §6kr found (NBPF beside
+NOTCH2NL, a GOLGA-adjacent lncRNA, GTF2I-adjacent genes) without costing any Soto-verified true pair on data never used
+to pick T. It is shipped opt-in (`--min-shared-exon-frac`); adopting it as the E1 default is the user's decision, not
+made here.
+
+Data: `lit/ap_ho/{e1,e1s}.*`, `lit/soto_fams/{soto_holdout.py,soto_holdout.out}`, `lit/aj_dev/refseq_e1s.*`.

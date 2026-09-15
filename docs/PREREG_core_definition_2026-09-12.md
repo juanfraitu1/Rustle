@@ -1496,3 +1496,33 @@ V_segment, D_segment, J_segment, C_region (RefSeq) or starting with IG_ / TR_ (G
 chromosomes, not for content — chr1 carries NBPF, chr2 IGK). Protein-space families (r2) are ANNOTATION-ROBUST iff GENCODE vs
 RefSeq at plain homology has pairwise sensitivity >= 0.90, pairwise precision >= 0.90 and bipartite F >= 0.90. Ensembl, the
 strata, r1 and the development r2 are reported.
+
+---
+## ADDENDUM AP (2026-09-14; after §6kr's descriptive disagreement audit; before any min-shared-exon-frac number on a fresh substrate exists) — a fraction-based shared-exon floor, held out on fresh Soto families
+
+**Why:** §6kr found DNA-family false positives (vs Soto 2025) share a median 11-25% of the smaller gene's exonic length on
+their best record, while agreed pairs share 52-89%; the shipped `min_exonic_bp=1` gate only asks for >= 1 bp (a
+zero/non-zero structural floor), not a fraction. Implemented as `GraphParams::min_shared_exon_frac` /
+`mcl_families --min-shared-exon-frac` (Rust, unit-tested, default 0.0 = byte-identical).
+
+**Threshold (fixed from the §6kr disagree_pairs.tsv distribution, chr1 + chr15/17, before any new substrate is built):**
+T = 0.30. At T=0.30 on that development data: 89.8% of agreed (TP) pairs retain >= T; only 26.8% of this-project-only (FP)
+pairs do (73.2% removed). `--min-shared-exon-frac 0.30`, `--min-exonic-bp 1` (the existing structural gate stays on),
+`--exonic-both-sides` default (on).
+
+**Rule (no new definition beyond the constant above):** an edge additionally needs its best record's exon-to-exon overlap
+(the existing `exonic_both_sides` numerator) to reach >= 0.30 of `min(exonic_len(a), exonic_len(b))`.
+
+**Hold-out (never looked at for this rule): chr5, chr7, chr21**, CAT/GENCODE annotation, node tables and all-vs-all PAF
+already built for Addendum AI/AN (`lit/an_ho/gencode`). Soto families chosen by name, before any AP number exists, as
+every Soto-benchmark family (`soto_gene_to_families.tsv`) with >= 1 member on chr5, chr7 or chr21 and a recognizable gene
+name (the same name-matching regex as §6kr) not already used in §6kr's chr1/chr15/17 sample.
+
+**Metrics (`soto_score.py`-style, per chosen family and pooled bipartite over the hold-out families):** pairwise
+sensitivity/precision (universe-only and strict) and bipartite R/P/F, E1 vs E1+AP (T=0.30).
+
+**AP-1 (decision).** The rule is SUPPORTED on the hold-out iff pooled bipartite F (universe-only) under E1+AP is >= E1's
+own F, AND pairwise precision (universe) improves by >= 0.05, AND no chosen family loses more than 1 true (Soto) pair
+that E1 had recovered net of new pairs gained (i.e. it is not winning only by discarding recall it never had). Reported
+regardless of the reading: TBC1D3 (chr17, already used as a regression check, not a discovery test) stays one family of
+9, unshattered.

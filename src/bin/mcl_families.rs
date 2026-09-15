@@ -218,6 +218,16 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_exonic_both_sides: bool,
 
+    /// ⭐ §6ks: the pair's best record must cover this FRACTION of the smaller gene's exonic length with
+    /// shared exon-to-exon evidence (not merely >= 1 bp, `--exonic-both-sides`'s structural floor). Measured
+    /// against Soto et al. 2025's family calls: pairs both definitions agree on share a median 52-89% on their
+    /// best record; pairs this project alone joined share a median 11-25%, over 1,000 of them <5% — a
+    /// co-duplicated neighbour riding one shared base of flanking sequence, not the two genes' own homology.
+    /// Implies `--exonic-both-sides`. 0.0 = off ⟹ byte-identical. Not yet a definition change: measured on 8
+    /// named families, not pre-registered or held out.
+    #[arg(long, default_value_t = 0.0)]
+    min_shared_exon_frac: f64,
+
     /// ⭐ Units of one family that share EXON bases are one locus (§6fb): the longest exon union represents them,
     /// the others go to `<out>.units.merged.tsv`. A base cannot belong to two copies (MCL108: a 1.16-Mb read-followed
     /// unit with two units nested in its exons, 13,000 reads counted three times, all K = 0 ties). Default ON.
@@ -705,6 +715,7 @@ fn main() -> Result<()> {
         reject_overlapping: args.reject_overlapping,
         min_exonic_bp: args.min_exonic_bp,
         exonic_both_sides: args.exonic_both_sides,
+        min_shared_exon_frac: args.min_shared_exon_frac,
     };
 
     let blocks = match &args.gff {
@@ -793,6 +804,12 @@ fn main() -> Result<()> {
         eprintln!(
             "[mcl_families] min-exonic-bp={}: {} pair(s) dropped for resting on no exonic evidence",
             p.min_exonic_bp, g.rejected_no_exonic
+        );
+    }
+    if p.min_shared_exon_frac > 0.0 {
+        eprintln!(
+            "[mcl_families] min-shared-exon-frac={}: {} pair(s) dropped for sharing too small a fraction of exons",
+            p.min_shared_exon_frac, g.rejected_low_shared_exon
         );
     }
     if p.reject_overlapping {
@@ -1647,6 +1664,8 @@ fn main() -> Result<()> {
         ("rejected_overlapping".to_string(), g.rejected_overlapping.to_string()),
         ("min_exonic_bp".to_string(), args.min_exonic_bp.to_string()),
         ("rejected_no_exonic".to_string(), g.rejected_no_exonic.to_string()),
+        ("min_shared_exon_frac".to_string(), args.min_shared_exon_frac.to_string()),
+        ("rejected_low_shared_exon".to_string(), g.rejected_low_shared_exon.to_string()),
         ("merge_overlapping_loci".to_string(), args.merge_overlapping_loci.to_string()),
         ("locus_attribute_edges".to_string(), args.locus_attribute_edges.to_string()),
         ("annotations_folded_into_loci".to_string(), loci.as_ref().map_or(0, |m| m.n_merged()).to_string()),
