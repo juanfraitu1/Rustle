@@ -21678,3 +21678,57 @@ fix the original proposal hoped for.
 
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/q5_junctions/` (`check_overlap.py`,
 `psv_density_check.py`, `psv_density_q5.tsv`, alongside §6l1's existing files).
+
+## §6l3 — IGV output: two real bugs fixed on real data, plus an origin_rejected colour, and a real worked example for the advisor (2026-09-15)
+
+**Motivation.** User asked for advisor-facing deliverables: fix the known IGV gaps (Part 0d/0e), and build an
+MSA-style figure of a family's copies with PSVs, explaining why a given PSV supports a given copy, for a
+hand-picked example rather than every family.
+
+**Two real bugs in `bench/igv_tracks.py`'s PSV VCF track, both fixed.**
+1. **Wrong CHROM.** `chrom_of` picked a VCF row's chromosome by scanning EVERY swept region for one whose
+   `[start,end]` merely contains the PSV's numeric coordinate — wrong whenever two regions on different
+   contigs happen to share overlapping ranges. Fixed by resolving CHROM from the family's OWN span
+   (`<prefix>.quant.tsv`, already loaded elsewhere in the script as `spans`), never from an unrelated
+   region's coordinates.
+2. **Wrong REF/ALT strand.** `DenovoTranscript.seq` — and therefore every `--dump-psv` allele — is stored in
+   TRANSCRIPTION-strand orientation (reverse-complemented for `-`-strand genes, by design, for the spliced↔
+   genomic map). `igv_tracks.py` wrote those bases directly as VCF REF/ALT, which VCF requires to be on the
+   genomic `+` strand — so every `-`-strand family's alleles were the complement of the true genome base.
+   Fixed at the source: added `FamilyAssignment::copy_strand` (`denovo_pipeline.rs`, parallel to
+   `copy_tids`/`copy_psv_alleles`, threaded through all 5 struct-construction sites), a new `strand` column
+   on `--dump-psv`'s `.psv_copies.tsv` (`copy_assign.rs`), and a base-complement step in `igv_tracks.py` for
+   `-`-strand families before writing VCF rows.
+3. **Also added**: a distinct tag/colour (`ORIGIN_REJECTED_RGB`, `<family>_origin_rejected`) for reads whose
+   `origin_rejected` flag is set — previously indistinguishable in IGV from a plain K=0 tie/ambiguous read,
+   even though it is a different abstention reason (a clipped read-through boundary, §6ap/§6fh, not ordinary
+   multimapping).
+
+**Validated on real data, not just compiled.** Full lib suite unchanged at the pre-existing baseline (854
+passed / 2 failed, unrelated). On a real run (gorilla NPIP-region fibroblast substrate, `--dump-psv --dump-star
+--igv`): CHROM now correct on 409/409 VCF rows (checked against `.quant.tsv` directly); REF-vs-genome mismatch
+0/409 after the fix vs. what would have been 686/818 (83.9%) under the OLD behaviour on the same real
+minus-strand alleles — measured before/after on real data, not a synthetic case; the new `_origin_rejected`
+tag/colour confirmed present on 14 real reads, distinct from 32 correctly-still-grey `_tied` reads in the same
+family. (`bcftools` isn't installed in this environment, so the REF check used a direct `pysam` genome-base
+lookup — the same comparison `bcftools norm --check-ref e` performs.)
+
+**Worked example published for the advisor: a real gorilla TRIM5/TRIM6/TRIM34/TRIM22 tandem array.** NPIP and
+TBC1D3 substrates turned out too high-identity on the fibroblast data available (0.9976-0.9984) to produce any
+`assigned` reads at all — an honest negative, reported as such, not papered over. A pre-existing real run
+(gorilla whole-genome IsoSeq HiFi BAM, `NC_073233.2:11,931,351-12,043,802`, family `CAFAM0`) gave a clean,
+decisive, biologically well-known example instead: 4 copies (TRIM6, TRIM34, TRIM5 — the retroviral restriction
+factor TRIM5α, on the opposite strand from its neighbours — and TRIM22, gene identities and coordinates
+independently cross-checked against the RefSeq GFF), 973 molecules, 2,280 aligned columns, 911 resolvable, 898
+(92.3%) assigned, 897/897 unique-mapper agreement, 60 columns where all 4 copies carry a different base. Built
+an HTML artifact (`docs/artifacts/` precedent, `ambiguity-cliff.html`) showing 7 real decisive columns spread
+across the array, 4 real example reads (one assigned to each copy, margins 11,517-12,966, 1,817-2,281 decisive
+columns apiece) with their actual per-column bases including honest `.` (uncovered) cells, and a worked
+walkthrough of exactly how one column's 4-way-distinct alleles rule out 3 candidates at once. Every number on
+the page traces to `<out>.families.tsv`/`.quant.tsv`/`.psv_copies.tsv`/`.psv_cols.tsv`/`.psv_reads.tsv` from
+that one real run — none fabricated or synthetic.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/igv_msa_demo/` (fix-validation run);
+`/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/igv_demo.*` (the TRIM `CAFAM0` source run, real,
+pre-existing, untouched). Code: `bench/igv_tracks.py`, `src/bin/copy_assign.rs`,
+`src/rustle/vg_family/denovo_pipeline.rs`.

@@ -3188,7 +3188,8 @@ fn main() -> Result<()> {
                     }
                     for (ci, tid) in fa.copy_tids.iter().enumerate() {
                         let alleles = fa.copy_psv_alleles.get(ci).map(allele_str).unwrap_or_default();
-                        psv_copy_lines.push(format!("{}\t{}\t{}\t{}", fid, ci, tid, alleles));
+                        let strand = fa.copy_strand.get(ci).copied().unwrap_or('+');
+                        psv_copy_lines.push(format!("{}\t{}\t{}\t{}\t{}", fid, ci, tid, alleles, strand));
                     }
                     for (col, pos) in fa.psv_col_pos.iter().enumerate() {
                         psv_col_lines.push(format!("{}\t{}\t{}", fid, col, pos.map(|x| x as i64).unwrap_or(-1)));
@@ -4603,7 +4604,7 @@ fn main() -> Result<()> {
             writeln!(rh, "{l}")?;
         }
         let mut ch = std::fs::File::create(format!("{}.psv_copies.tsv", args.out))?;
-        writeln!(ch, "family_id\tcopy_index\tcopy_tid\talleles")?;
+        writeln!(ch, "family_id\tcopy_index\tcopy_tid\talleles\tstrand")?;
         for l in &psv_copy_lines {
             writeln!(ch, "{l}")?;
         }

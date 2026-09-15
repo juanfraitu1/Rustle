@@ -485,6 +485,11 @@ pub struct FamilyAssignment {
     /// proves each copy assignment (a read carries one copy's alleles across its covered PSVs).
     pub psv_col_pos: Vec<Option<u64>>,
     pub copy_psv_alleles: Vec<Vec<Option<u8>>>,
+    /// Transcription strand of each copy, parallel to `copy_tids`/`copy_psv_alleles`. `copy_psv_alleles`
+    /// bases are in THIS orientation (from `DenovoTranscript.seq`) — a `-` strand copy's stored allele at
+    /// a PSV column is the complement of the actual genome (`+`-strand) base at `psv_col_pos`. Consumers
+    /// that write alleles against a genomic reference (e.g. a VCF) must complement `-`-strand bases first.
+    pub copy_strand: Vec<char>,
     pub read_psv_obs: Vec<Vec<Option<u8>>>,
     /// Task H2 (VG-harmony): per-copy copy-specific junction offsets, parallel to `copy_psv_alleles`
     /// (`copy_junctions[k]` aligns with `copy_psv_alleles[k]`) — threads O3's junction evidence
@@ -535,6 +540,7 @@ impl FamilyAssignment {
             copy_conversions: Vec::new(),
             psv_col_pos: Vec::new(),
             copy_psv_alleles: Vec::new(),
+            copy_strand: Vec::new(),
             read_psv_obs: Vec::new(),
             copy_junctions: Vec::new(),
             copy_introns: Vec::new(),
@@ -2699,6 +2705,7 @@ pub fn detect_and_assign(
             copy_conversions: detail.copy_conversions.clone(),
             psv_col_pos: detail.psv_col_pos.clone(),
             copy_psv_alleles: detail.copy_psv_alleles.clone(),
+            copy_strand: all_copies.iter().map(|c| c.strand).collect(),
             read_psv_obs: Vec::with_capacity(detail.results.len()),
             copy_junctions: detail.copy_junctions.clone(),
             copy_introns: all_copies.iter().map(|c| c.introns.clone()).collect(),
@@ -10264,6 +10271,7 @@ mod tests {
             copy_conversions: Vec::new(),
             psv_col_pos: vec![Some(100)],
             copy_psv_alleles: copy_psv_alleles.clone(),
+            copy_strand: vec!['+', '+'],
             read_psv_obs: vec![vec![None], vec![Some(b'C')]],
             copy_junctions: copy_junctions.clone(),
             copy_introns: vec![Vec::new(), Vec::new()],
@@ -10392,6 +10400,7 @@ mod tests {
             copy_conversions: Vec::new(),
             psv_col_pos: vec![Some(100), Some(200)],
             copy_psv_alleles: copy_psv_alleles.clone(),
+            copy_strand: vec!['+', '+'],
             read_psv_obs: vec![vec![None, None]],
             copy_junctions: copy_junctions.clone(),
             copy_introns: vec![Vec::new(), Vec::new()],
@@ -10485,6 +10494,7 @@ mod tests {
             copy_conversions: Vec::new(),
             psv_col_pos: vec![Some(10)],
             copy_psv_alleles: vec![vec![Some(backbone[10])]],
+            copy_strand: vec!['+'],
             read_psv_obs: Vec::new(),
             copy_junctions: vec![Vec::new()],
             copy_introns: vec![Vec::new()],

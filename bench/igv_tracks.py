@@ -8,6 +8,8 @@ Produces, from a `copy_assign` run + the BAM it swept:
        HP:i:<idx+1>           (so IGV's haplotype colouring also splits the copies)
      A read's SECONDARY placements get the SAME colour, so you SEE the multimapping reads fan out across
      the copies. Tied / ambiguous reads get their own grey, so the K-frontier is visible, not hidden.
+     origin_rejected reads (clipped read-through boundary, §6ap/§6fh) get their own distinct blue instead
+     of being lumped into the tied/ambiguous grey — a different abstention reason, a different colour.
      A molecule claimed `assigned` by TWO families at once is tagged xf:Z:<stratum> (from
      `<prefix>.xfam_conflicts.tsv`, written under RUSTLE_XFAM_RECONCILE=report/abstain) and, for the
      cross_family_contradiction stratum, drawn near-black — it is not a copy call.
@@ -33,6 +35,9 @@ TIED_RGB = (150, 150, 150)
 AMB_RGB = (200, 200, 200)
 # a molecule claimed `assigned` by two families at once: not a copy call, and not the K=0 wall either.
 CONTESTED_RGB = (30, 30, 30)
+# origin_rejected (§6ap/§6fh): the read spans a clipped read-through boundary and abstains for a DIFFERENT
+# reason than an ordinary K=0 tie/ambiguity — distinct colour so it doesn't read as "just another grey".
+ORIGIN_REJECTED_RGB = (0, 100, 180)
 
 
 def copy_color(idx):
@@ -66,7 +71,8 @@ def load_assignments(path):
         for ln in fh:
             f = ln.rstrip("\n").split("\t")
             amap[(f[0], f[1])] = (int(f[2]), f[3])
-            by_read[f[0]].append((f[1], int(f[2]), f[3]))
+            origin_rejected = len(f) > 15 and f[15] == "1"
+            by_read[f[0]].append((f[1], int(f[2]), f[3], origin_rejected))
     return amap, dict(by_read)
 
 
@@ -118,17 +124,19 @@ def family_of_record(rec, rows, spans):
     if len(rows) == 1:
         return rows[0]
     hits = []
-    for fam, ci, status in rows:
+    for fam, ci, status, origin_rejected in rows:
         for chrom, st, en in spans.get(fam, ()):
             if rec.reference_name == chrom and rec.reference_start < en and (rec.reference_end or 0) > st:
-                hits.append((fam, ci, status))
+                hits.append((fam, ci, status, origin_rejected))
                 break
     return hits[0] if len(hits) == 1 else None
 
 
-def tag_for(family, idx, status):
+def tag_for(family, idx, status, origin_rejected=False):
     if status == "assigned":
         return f"{family}_c{idx}", copy_color(idx), idx + 1
+    if origin_rejected:
+        return f"{family}_origin_rejected", ORIGIN_REJECTED_RGB, None
     if status == "tied":
         return f"{family}_tied", TIED_RGB, None
     return f"{family}_amb", AMB_RGB, None
@@ -147,10 +155,25 @@ def parse_regions(path):
     return regs
 
 
-def write_psv_vcf(out, ca_prefix, regions, contig_lens):
+COMPLEMENT = str.maketrans("ACGTacgt", "TGCAtgca")
+
+
+def write_psv_vcf(out, ca_prefix, regions, contig_lens, spans):
     """PSV VCF (copies as samples) from copy_assign's --dump-psv matrix: <ca_prefix>.psv_cols.tsv (col->genome
-    position) + .psv_copies.tsv (each copy's allele per column). Load in IGV alongside the tagged BAM: each PSV
-    is a variant row whose per-copy genotype (0=ref allele, N=alt) is the reference the reads are matched to."""
+    position) + .psv_copies.tsv (each copy's allele per column, in TRANSCRIPTION-strand orientation — see
+    `FamilyAssignment::copy_strand` in denovo_pipeline.rs). Load in IGV alongside the tagged BAM: each PSV is
+    a variant row whose per-copy genotype (0=ref allele, N=alt) is the reference the reads are matched to.
+
+    Two defects fixed 2026-09-15 (found on real data, `docs/o1_ledger.md` around the IGV-tooling audit):
+    (1) CHROM was picked by scanning ALL swept regions for one whose [start,end] merely CONTAINS the PSV's
+        coordinate, wrong whenever two regions on different contigs share overlapping numeric ranges (16.6%
+        of sites on real data). Fixed by resolving CHROM from `spans` — the family's OWN chrom from
+        `<prefix>.quant.tsv` — never from an unrelated region's coordinates.
+    (2) REF/ALT bases were written as-is from `.psv_copies.tsv`, which stores them in TRANSCRIPTION-strand
+        orientation. A `-`-strand family's alleles are then the complement of the true genome (`+`-strand)
+        base at that VCF POS, so `bcftools norm --check-ref` failed on ~52% of real sites. Fixed by
+        complementing every base of a `-`-strand family's alleles before treating them as genomic REF/ALT.
+    """
     import os
     colf, copf = f"{ca_prefix}.psv_cols.tsv", f"{ca_prefix}.psv_copies.tsv"
     if not (os.path.exists(colf) and os.path.exists(copf)):
@@ -161,12 +184,21 @@ def write_psv_vcf(out, ca_prefix, regions, contig_lens):
         f = ln.rstrip("\n").split("\t")
         if len(f) >= 3 and f[1].isdigit():
             cols[f[0]][int(f[1])] = int(f[2])
-    cops = defaultdict(dict)   # family -> {copy_idx: allele_string}
+    cops = defaultdict(dict)     # family -> {copy_idx: allele_string, genome-strand oriented}
+    fam_strand = {}              # family -> '+'/'-' (from its own copies; a family is single-stranded)
     for ln in open(copf):
         f = ln.rstrip("\n").split("\t")
         if len(f) >= 4 and f[1].isdigit():
-            cops[f[0]][int(f[1])] = f[3]
-    def chrom_of(pos):
+            strand = f[4] if len(f) >= 5 else "+"
+            fam_strand[f[0]] = strand
+            alleles = f[3].translate(COMPLEMENT) if strand == "-" else f[3]
+            cops[f[0]][int(f[1])] = alleles
+    def chrom_of(fam, pos):
+        for c, s, e in spans.get(fam, ()):
+            if s <= pos <= e:
+                return c
+        if spans.get(fam):
+            return spans[fam][0][0]
         for c, s, e in regions:
             if s <= pos <= e:
                 return c
@@ -188,7 +220,7 @@ def write_psv_vcf(out, ca_prefix, regions, contig_lens):
             gts = ["."] * len(samples)
             for ci, b in bases.items():
                 gts[sidx[f"{fam}_c{ci}"]] = "0" if b == ref else str(aidx[b])
-            rows.append((chrom_of(pos), pos + 1, f"{fam}_col{col}", ref, ",".join(alts), fam, gts))
+            rows.append((chrom_of(fam, pos), pos + 1, f"{fam}_col{col}", ref, ",".join(alts), fam, gts))
     vcf = f"{out}.psv.vcf"
     with open(vcf, "w") as fh:
         fh.write("##fileformat=VCFv4.2\n")
@@ -248,8 +280,8 @@ def main():
                 rec.set_tag("YC", f"{rgb[0]},{rgb[1]},{rgb[2]}", "Z")
                 n_tagged += 1
             if info:
-                fam, idx, status = info
-                cp, (r, g, b), hp = tag_for(fam, idx, status)
+                fam, idx, status, origin_rejected = info
+                cp, (r, g, b), hp = tag_for(fam, idx, status, origin_rejected)
                 strat = contested.get(rec.query_name)
                 if strat:
                     # The molecule is claimed by >= 2 families. Say so on the record instead of letting one
@@ -296,7 +328,7 @@ def main():
     ca_prefix = prefix
     reg_chroms = {c for c, _, _ in regions}
     contig_lens = [(c, l) for c, l in bam_contigs if c in reg_chroms]
-    v = write_psv_vcf(a.out, ca_prefix, regions, contig_lens)
+    v = write_psv_vcf(a.out, ca_prefix, regions, contig_lens, spans)
     if v:
         print(f"wrote {v[0]}: {v[1]} PSV sites x {v[2]} copies (IGV variant track — per-copy alleles)")
 
