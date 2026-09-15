@@ -20587,7 +20587,7 @@ the MCL partition.**
 Under E1, precision is 0.84-0.94 for every arm at RNA level; sensitivity is what remains.
 Register rows 831 (AI), 832 (AJ).
 
-## §6km — Addendum X: provenance-typed de novo catalog (RNA edges, DNA gene-body edges, RNA boundaries, presence categories) — development (2026-09-14; hold-out running)
+## §6kp — Addendum X: provenance-typed de novo catalog — restricted DNA admission PASSES the gorilla hold-out (R_G 0.4089, P_G 0.3487 vs DN0 0.3887/0.3345); DNA-only edges are the least precise type (2026-09-14; was headed §6km in bd0d53c4, renumbered after a concurrent §6km)
 
 Pre-registered as Addendum X (commit eee52868). Binary `gw_family_catalog.eee52868`. New opt-in mode
 `RUSTLE_ER_UNION_GENOMIC_SPAN=restricted`: exon-sum (TX) edges are partitioned first; a genomic-span-only (SPAN) pair is
@@ -20644,6 +20644,42 @@ ninth TBC1D3 locus, the TBC1D3 clades AE and CDKL and NPIP B3-5 become evaluable
 DN0 157 s, DN1 673 s, DN1r 734 s, DN1r+B 690 s, DN0+B 151 s.
 
 Data: `lit/prov_x/{lit,amy}_{DN0,DN1,DN1r,DN1rB,DN0B}.*`, `dump_*/`, `d2_*.out`, `*_truth_expr.tsv`.
+
+**Hold-out DN1r (gorilla rebuild3, 3 contigs; binary eee52868; 2 h 29 min, 5.9 GB):** E_r 1,840 TX edges; 1,772
+span-only pairs, of which 1,423 admitted and 349 rejected; 92 families, 561 copies.
+
+| arm | families | copies | loci with a family copy | R_G any | P_G any | R_G best | P_G best |
+|---|---|---|---|---|---|---|---|
+| DN0 (`cat_default`) | 68 | 391 | 151 | 0.3887 | 0.3345 | 0.3428 | 0.3588 |
+| DN1 (`cat_dn1_span`, §6jt) | 88 | 570 | 179 | 0.4116 | 0.2760 | 0.3644 | 0.3435 |
+| **DN1r (`cat_dn1r`)** | 92 | 561 | 180 | **0.4089** | **0.3487** | 0.3644 | 0.3462 |
+
+**Pre-registered decision: DN1r NARROWS the de novo <-> expressed-guided gap** — R_G 0.4089 > 0.3887 AND P_G 0.3487 >=
+0.2845 (it is also above DN0's 0.3345). DN0/DN1 rows reproduce §6jt exactly. Best-overlap P_G is 0.3462 vs DN0's 0.3588
+(not the registered metric; reported). Full guided: R_G 0.0774 / P_G 0.3222 vs DN0 0.0736 / 0.3210 and DN1 0.0779 / 0.2630.
+Housekeeping 0/3 (ALDOA, ATP5F1A, RPL13A).
+
+**Per-type edge precision on the hold-out (pre-registered scoring; truth = guided gw_units_v3 cluster, 1,197 loci):**
+
+| type | edges | scored | TRUE | precision | disclosure: both loci in multi-locus clusters | disclosure: edge inside one emitted family (scored, precision) |
+|---|---|---|---|---|---|---|
+| TX-only | 1,380 | 469 | 129 | 0.275 | 0.291 (444) | 1,011 (399, 0.316) |
+| BOTH | 460 | 245 | 190 | **0.776** | 0.782 (243) | 324 (214, **0.860**) |
+| SPAN-only admitted | 1,423 | 252 | 12 | **0.048** | 0.053 (225) | 332 (59, 0.169) |
+| SPAN-only rejected | 349 | 59 | 5 | 0.085 | 0.088 (57) | 3 (0, —) |
+
+**The stated expectation did not hold at edge level:** rejected span-only edges (0.085) are not less precise than
+admitted ones (0.048); both are far below TX edges. What the restriction removes is not worse edges but the edges that
+would MERGE two RNA families — at catalog level those cost P_G 0.3487 -> 0.2760 (DN1), because one merge of two blocks
+creates |A|x|B| false locus pairs while a wrong attachment of an isolated rep creates at most |A|. Most admitted span-only
+edges never reach a family (1,091/1,423 end outside any single family; the quasi-clique partition drops sparse
+attachments). Edges supported by both RNA and DNA are the most precise type (0.776; 0.860 inside families); about half of
+scored admitted span-only edges are cross-chromosome (122/252). Explanation of the P_G rise above DN0 not tested.
+
+**Presence on the hold-out (guided loci on the 3 contigs):** R 313 (199 in a family), T 121 (22 in a family), N 763 (20 in
+a family); MAPQ-0 counted (disclosure): T 127, N 757.
+
+Data: `rebuild3/{cat_dn1r.*,dn1r.err,dump_dn1r/,score_x_expr.out,score_x_full.out,prov_x_dn1r.out}`. DN1r+B running.
 
 ## §6km — Post-AJ exploration (looked-at substrates, no verdicts): the ~0.8 ceiling between two annotations is gene-model content, not repeats, MCL settings or partition instability (2026-09-14)
 
