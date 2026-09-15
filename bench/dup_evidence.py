@@ -5,7 +5,9 @@ Pair table (TSV, header = PAIR_COLS): 0-based half-open intervals of side A and 
 M both sides, D side A, I side B; side B reverse-complemented when strand_b is '-'), source (D1:sedef, D2:biser, D3:selfaln).
 """
 import csv
+import os
 import re
+import subprocess
 
 PAIR_COLS = ("chrom_a", "start_a", "end_a", "chrom_b", "start_b", "end_b", "strand_a", "strand_b", "identity", "cigar", "source")
 MIN_SD_BP, MIN_SD_ID = 1000, 0.90
@@ -97,3 +99,50 @@ def read_pairs(path):
         out.append((r["chrom_a"], int(r["start_a"]), int(r["end_a"]), r["chrom_b"], int(r["start_b"]), int(r["end_b"]),
                     r["strand_a"], r["strand_b"], float(r["identity"]), r["cigar"], r["source"]))
     return out
+
+
+MERYL = "/home/juanfra/miniforge3/envs/phasing_eval/bin/meryl"
+MERYL_LOOKUP = "/home/juanfra/miniforge3/envs/phasing_eval/bin/meryl-lookup"
+
+
+def valley(hist, max_count=100000):
+    cs = sorted(c for c in hist if 2 <= c <= max_count)
+    for i in range(1, len(cs) - 1):
+        c = cs[i]
+        if hist[c] < hist[cs[i - 1]] and hist[c] < hist[cs[i + 1]] and any(hist[d] > hist[c] for d in cs[i + 1:]):
+            return c
+    return None
+
+
+def _run(cmd, out=None):
+    with (open(out, "w") if out else open(os.devnull, "w")) as fh:
+        subprocess.run(cmd, stdout=fh, stderr=subprocess.DEVNULL, check=True)
+
+
+def cmd_meryl(genome, outdir, threads=4):
+    import repeat_evidence as rep
+    os.makedirs(outdir, exist_ok=True)
+    db = f"{outdir}/kmers.meryl"
+    if not os.path.exists(db):
+        _run([MERYL, "count", "k=31", f"threads={threads}", "memory=12", str(genome), "output", db])
+    hist_path = f"{outdir}/hist.tsv"
+    if not os.path.exists(hist_path):
+        _run([MERYL, "histogram", db], hist_path)
+    hist = {int(a): int(b) for a, b in (l.split()[:2] for l in open(hist_path) if l.strip() and l.split()[0].isdigit())}
+    c = valley(hist)
+    open(f"{outdir}/cmax.txt", "w").write(f"{c if c is not None else 'NA'}\n")
+    if c is None:
+        print(f"[meryl] no histogram valley: D4 and R4 not available for {genome}")
+        return None
+    for name, ops in (("low", ["less-than", str(c + 1), "[", "greater-than", "1", db, "]"]), ("high", ["greater-than", str(c), db])):
+        sub = f"{outdir}/{name}.meryl"
+        if not os.path.exists(sub):
+            _run([MERYL] + ops + ["output", sub])
+        bed = f"{outdir}/{name}_copy.runs.bed"
+        if not os.path.exists(bed):
+            _run([MERYL_LOOKUP, "-bed-runs", "-sequence", str(genome), "-mers", sub, "-output", bed])
+    for name, src in (("low", "D4:meryl"), ("high", "R4:meryl")):
+        ivs = [(f[0], int(f[1]), int(f[2]), ".") for f in (l.split("\t") for l in open(f"{outdir}/{name}_copy.runs.bed")) if len(f) >= 3]
+        rep.write_bed(ivs, f"{outdir}/{name}_copy.bed", src)
+    print(f"[meryl] C_max = {c}")
+    return c

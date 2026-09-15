@@ -71,3 +71,10 @@ def test_normalize_cigar_rejects_invalid_ops():
     # normalize_cigar must raise ValueError for any op other than M, I, D, =, X
     with pytest.raises(ValueError):
         de.normalize_cigar("10M5S")
+
+
+def test_valley_bimodal_and_monotone():
+    hist = {1: 1000, 2: 400, 3: 120, 4: 30, 5: 12, 6: 20, 7: 45, 8: 60, 9: 40, 10: 10}
+    assert de.valley(hist) == 5
+    assert de.valley({1: 1000, 2: 500, 3: 250, 4: 100, 5: 50}) is None
+    assert de.valley({1: 5}) is None
