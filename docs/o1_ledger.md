@@ -21152,3 +21152,90 @@ rebuilt binary only. Regenerating gorilla's production truth (SEDEF + core-refin
 a separate task, not undertaken here — flagged for the user to request if wanted.
 
 `--min-shared-exon-frac 0.0` reproduces every catalog in this repo built before 2026-09-14 byte-for-byte.
+
+## §6ku — Two detectability-limit spikes: minimap2's identity floor is k=19 exact-seed survival plus chaining, not an arbitrary asm20 choice; the DNA-blind/protein-sighted gap runs ~80% down to ~35-40% identity, driven by dS/dN decoupling, NOT single-codon degeneracy rescue (2026-09-14, descriptive, not pre-registered)
+
+User questions: (1) can the advisor's "asm20 doesn't seed under 80%, that's your arbitrary choice" objection be answered
+with something physical; (2) can we measure, level by level, where a family stops being detectable — specifically,
+does the genetic code's degeneracy let protein search rescue pairs where 2/3 codon positions have diverged, even
+though DNA/RNA-level alignment (MSA, minimap2) fails? Two independent spikes, `lit/seedlimit/` and `lit/codonlimit/`.
+
+### A — minimap2 seeding is k=19 exact-match survival, confirmed against the running binary
+
+- asm5/asm10/asm20 all seed with the **identical k=19** (w=19/19/10); they differ almost entirely in DP extension
+  scoring, not seeding. So "asm20 doesn't seed under 80%" is a fact about k=19 exact-match seeding shared by all three
+  presets, not an asm20-specific or chosen number. Confirmed live via `mappy.Aligner(preset=...).k/.w` against the
+  installed binary (minimap2 2.30-r1287) and the upstream man page/preset table.
+- Theoretical seed-survival (exact Markov run-model, P(>=1 run of 19 consecutive matches) in a 2000 bp window):
+  identity 0.70 -> P=0.495; 0.75 -> 0.883; 0.80 -> 0.998. The minimizer-adjusted (w=10) 50%-crossing is **p50=0.701**
+  for a bare exact k-mer; for k=15 (map-ont), p50=0.628; k=12, p50=0.550.
+- Empirical validation, 10,800 real minimap2/mappy alignments on synthetic 2000 bp pairs at known identity (9 identity
+  points x 20 k/w or preset configs x 30 replicates, substitutions-only and with indels):
+
+  | identity -> | .60 | .65 | .70 | .75 | .80 | .85 | .90 | .95 | .99 |
+  |---|---|---|---|---|---|---|---|---|---|
+  | asm20 (k19,w10) | 0 | 0 | 0 | 0 | 10 | 100 | 100 | 100 | 100 |
+  | map-ont (k15,w10) | 0 | 3 | 7 | 67 | 100 | 100 | 100 | 100 | 100 |
+  | k12,w5 | 0 | 23 | 80 | 100 | 100 | 100 | 100 | 100 | 100 |
+
+  (% of 30 replicates producing any alignment.) With indels the cliff shifts <= 5 points higher.
+- Theory vs. empirical: the bare "one exact k-mer exists" model is **systematically optimistic by 8-16 points**
+  (k=19: theory p50=0.701, empirical p50=0.786) because it omits minimizer co-selection in both sequences and
+  minimap2's own chaining gate (default `-n 3`: >=3 chainable seeds). Requiring E[k-mers]=3 instead of >=1 cuts the
+  residual gap from 0.086 to 0.076. The match is qualitatively strong (same sigmoid shape, same rank order across k)
+  and the residual gap is itself reported, not smoothed over.
+- **Over-reporting near the cliff:** at the cliff (asm20, true identity 0.80), the rare alignments that DO form cover
+  only 79% of the query on average (vs. 99.5-100% well past the cliff) and report identity inflated by +0.032 — the
+  diverged flanking bases that fail to seed are excluded from both the numerator and denominator, not counted as
+  mismatches. Modest here (uniform divergence simulated); expected to be much larger on a real gene with a conserved
+  exon core and a diverged UTR/intron flank.
+- **Tunability, quantified:** dropping k=19->12 moves the 50%-point from 0.786 to 0.709 (empirical) at the cost of a
+  **~30,000x** increase in expected genome-scale spurious minimizer hits for a 2 kb query against a 3.1 Gb genome
+  (~4 at k=19,w=10 vs. ~122,500 at k=12,w=5) — exactly the tradeoff minimap2's own `-f` repetitive-minimizer filter
+  exists to manage. A real, adjustable dial, not a wall.
+
+**Quotable summary:** the ~80% floor is what k=19 exact-match seeding produces, confirmed by an exact combinatorial
+model and by 10,800 measured alignments; it is tunable (smaller k reaches lower identity) at a quantified, real cost
+in background noise, not an arbitrary parameter choice.
+
+### B — the DNA-blind/protein-sighted gap is real but ~40-45 points wide, and single-codon degeneracy rescue is NOT the mechanism
+
+- **Baseline degeneracy** (pure combinatorics over the standard code, all single-nt substitutions at each codon
+  position): position 1 synonymous 4.37%, position 2 **0.00%**, position 3 68.85%.
+- **Real gene-family pairs** across the divergence spectrum (CHM13 RefSeq, dN/dS via yn00): young (GPR89A/B,
+  FAM72A-D: nt id 84-100%), medium (GOLGA8A vs B/F/H: nt id 83-99%), old/AD-1-unreached (GK-GK2, CETN2-CETN1,
+  NAP1L1-NAP1L2/3, CSTF2-CSTF2T, UBL4A-UBL4B, FAM50A-FAM50B: nt id 58-88%, dS 0.38-3.53, dN/dS 0.06-0.53).
+- **Detectability sweep** (405 simulated codon-CTMC pairs, GY94-style, cross-checked against yn00; confirmed on the
+  real pairs above): minimap2 `-x asm20` on CDS is 100% through ~91% nt identity, degrading 90->80%, essentially zero
+  by ~79-80% (real: GK-GK2 at 83.2% and PDHA1-PDHA2 at 83.3% still found; CETN2-CETN1 76.6%, NAP1L1-NAP1L2/3 64/61%,
+  CSTF2-CSTF2T 80%, UBL4A-UBL4B 58%, FAM50A-FAM50B 79%, MKRN1-MKRN3 66%, RPL10-RPL10L 71% all MISSED). blastp
+  (e<=1e-3, qcov>=30%) stays at 100% down to ~49% nt identity (~31% aa identity), first cracks at ~41%, gone only at
+  ~34% (~14% aa identity) — every real pair tested, down to UBL4A-UBL4B (58.5% nt / 46.5% aa, e=6e-41), was detected.
+- **The gap is ~80% down to ~35-40% nucleotide identity, roughly 40-45 points wide — not a narrow band near 60%.**
+  60% identity sits well inside the gap, not at either edge.
+- **Mechanism, tested directly against the two candidate explanations:**
+  - (a) **dS/dN decoupling (primary):** across the whole minimap2-failure transition (nt id ~78-90%), dN/dS stays
+    0.10-0.17 — dS already past the conventional saturated threshold (>=1.0) while dN is not. Protein stays far more
+    conserved than nucleotide at the SAME evolutionary distance because purifying selection suppresses nonsynonymous
+    fixation while synonymous sites accumulate freely.
+  - (b) **BLOSUM62 partial credit (real but secondary):** of codons whose amino acid DID change, 26-28% are
+    BLOSUM62-positive substitutions vs. an 11.1% random-amino-acid-pair baseline — a genuine ~2.5x enrichment, but
+    still a minority of individual substitutions.
+  - **Single-codon degeneracy rescue (the user's original hypothesis, re-testing AD-1's own metric): confirmed rare.**
+    Synonymous share of codons with >=2 nt differences on the combined real-pair set reproduces **median 1.7%**
+    exactly (n=21), matching AD-1's earlier number precisely. The simulator's analog gives ~9% (n=54, uniform codon
+    frequencies vs. real usage bias) — still well under half. **"2 of 3 positions differ but the code is degenerate"
+    is the wrong mechanism at the single-codon level in both real and simulated data.**
+  - Neither (a) nor (b) alone explains blastp's actual e-values in the gap zone (1e-40 to 1e-171) at the single-residue
+    level; the missing piece is architectural: blastp integrates weak, partial per-residue evidence over the WHOLE
+    protein length via a length-integrated statistical test (Karlin-Altschul), while minimap2 needs one literal
+    near-exact seed to anchor an alignment at all.
+
+**Corrected answer to the original framing:** individual-codon rescue via degeneracy is not what makes protein search
+succeed where DNA search fails (median 1.7% of doubly/triply-differing codons stay synonymous — matches AD-1). What
+actually does it is aggregate: purifying selection keeps dN 5-10x below dS at the same time depth, so protein
+sequence is intrinsically far more conserved than nucleotide sequence, and a length-integrated protein search can
+detect that conservation long after nucleotide identity has collapsed toward its random floor.
+
+Data and code: `lit/seedlimit/{theory_seed_survival.py,empirical_seeding.py,empirical_results.csv,analysis_output.txt,PRESET_EVIDENCE.txt}`,
+`lit/codonlimit/{degeneracy.py,real_pairs.py,simulate.py,real_detect.py,blosum62.py,real_pairs.tsv,real_detect.tsv}`.
