@@ -21732,3 +21732,42 @@ Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/igv_msa_demo/` (fix-valida
 `/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/igv_demo.*` (the TRIM `CAFAM0` source run, real,
 pre-existing, untouched). Code: `bench/igv_tracks.py`, `src/bin/copy_assign.rs`,
 `src/rustle/vg_family/denovo_pipeline.rs`.
+
+### §6l3 addendum — the TRIM showcase reads were not actually ambiguous; a real AS-tied example added, and a
+real cross-file indexing gotcha caught before it reached the artifact (2026-09-15)
+
+User asked to add alignment scores to the artifact's showcase reads, to prove they were genuinely ambiguous
+before the PSV certificate resolved them. Checking `as_best`/`as_second`/`as_margin` in `assignments.tsv`
+showed the four TRIM reads were the wrong population to make that point: all four have `as_second = NA` — the
+aligner placed each of them uniquely to begin with (only 4/973 reads in the whole family have any recorded
+`as_second` at all, and even those aren't close: margins 1,882-2,603). The certificate there is *confirming*
+an already-unambiguous read, not resolving a tie — stated as such on the artifact rather than implied
+otherwise.
+
+Found a genuine tie instead, on a different real substrate: gorilla fibroblast FLNC HiFi read
+`SRR27438212.5196789` against real NPIP family `MCL1_073242` (26 copies, `NC_073242.2`, the same substrate
+§6fp/§6fq's original NPIP known-origin work used). Its raw aligner scores at the two candidate copies are
+**identical** — `as_best = as_second = 788`, `as_margin = 0` — a real, provable coin-flip at the alignment
+stage, `n_candidates = 2`, `contested = true`. The PSV+junction certificate assigns it anyway: `margin =
+55.238`, `n_decisive = 8`, `p_value = min_p_value = 1.000e-24`, to copy 3 (`MCL_NC_073242.2_16378249`,
+`NC_073242.2:16,378,249-16,543,313`, `-` strand) over copy 1 (`MCL_NC_073242.2_15911024`,
+`NC_073242.2:15,911,024-16,101,041`, `+` strand) — all 8 of the 8 informative PSV columns unanimously favour
+copy 3, none favour copy 1. Verified independently against `assignments.tsv`/`quant.tsv` before use, not
+taken on trust from the agent that found it.
+
+⚠**A real gotcha caught in that verification, worth recording rather than silently working around.** The
+`--dump-star` proof's per-read `columns` field (`pos:read_base:candidate_bases`) does NOT reconcile with a
+separate, direct lookup into `--dump-psv`'s `.psv_copies.tsv` allele strings at the same `col_index` for the
+same two copies — e.g. column 138 read as `'T'` for both copies via a direct `.psv_copies.tsv` query, but the
+same read's `--dump-star` line reports candidate bases `T,C` at that position. The two file formats likely
+carry the family-wide PSV columns and a family's own possibly-pruned/reindexed one under different, not
+directly interchangeable numbering (`copy_psv_alleles` is pruned/remapped during duplicate-copy collapse,
+per `copy_assign_pipeline.rs` — the exact mechanism was not tracked down under time pressure). **Do not
+cross-reference `--dump-star`'s per-read column evidence against a separately-pulled `.psv_copies.tsv` allele
+string by raw `col_index` — read a `--dump-star` line's own self-contained `read_base:candidate_bases` triple
+instead, which is internally consistent by construction.** The artifact's final NPIP table uses only the
+self-contained `--dump-star` triples for exactly this reason.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/as_tied_demo/` (`npip_mcl1.{assignments,families,quant,
+psv_reads,psv_copies,psv_cols,star_reads}.tsv`, `run.log`); source catalog untouched at
+`/mnt/linuxdisk/home/juanfraitu/mcl_ann/sweep_v15/fam_MCL1_073242/`.
