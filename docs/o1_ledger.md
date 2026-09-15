@@ -20946,3 +20946,46 @@ On chr15/17/22 the plain rule gives 19.4% cross-group pairs (OR, keratin type I,
 It is not biological precision. Half of its pairs join genes HGNC places in different groups. At aa >= 0.50, cross-group
 pairs fall to 0.4%, but cross-annotation sensitivity (0.867) is below the 0.90 bar. The goal claim stands only for the
 reproducibility reading, not as "few false positives".
+
+## §6kr — Soto 2025 families by name (descriptive): the DNA definition merges co-duplicated SD neighbours (precision 0.02-0.22 on 5/8 families); protein families are precise but miss partial and non-coding copies; only GPR89 and FAM72 are clean in every method (2026-09-14)
+
+**Families and methods.**
+- Families were chosen by name before scoring:
+  - chr15/17: ARHGAP11 (ID_145), CHRFAM7A/CHRNA7 (ID_178), GOLGA8 (ID_113), LRRC37A (ID_14);
+  - chr1: SRGAP2 (ID_462), NOTCH2NL (ID_400), GPR89 (ID_369), FAM72 (ID_354).
+- All on the CAT annotation, which Soto's gene IDs come from:
+  - DNA = E1 exon-to-exon guided construction on the region's CAT genes (chr1 built today: 5,736 genes -> 276 families);
+  - PROT = r2 protein families, plain homology;
+  - PROT50 = protein families at aa identity >= 0.50.
+- Precision counts pairs among the family and every member of a touching cluster. It is reported two ways:
+  - "univ": only genes in Soto's 2,334-gene universe count;
+  - "strict": every gene counts.
+
+| family (Soto genes) | DNA pair R / P univ / P strict | PROT R / P univ / P strict | PROT50 R / P strict | what the extra members are |
+|---|---|---|---|---|
+| ARHGAP11 (3) | 0.33 / 0.02 / 0.01 | 0.00 / - / 0.00 | 0.00 / 0.00 | DNA: 15q13 SD block (CHRFAM7A, CHRNA7, GOLGA8 copies, ULK4P1-3); PROT: ARHGAP11B is a partial copy (coverage of the longer protein < 0.30) |
+| CHRFAM7A/CHRNA7 (3) | 1.00 / 0.11 / 0.05 | 0.33 / 1.00 / 0.05 | 0.33 / 1.00 | DNA: same 15q13 block; PROT plain: nicotinic subunits CHRNA5/A3/B4/E/B1 (superfamily), removed at aa >= 0.50 |
+| GOLGA8 (26) | 0.51 / 0.17 / 0.07 | 0.20 / 0.43 / 0.43 | 0.20 / 0.43 | GOLGA6L / GOLGA6A-D (DNA and protein) |
+| LRRC37A (10) | 0.33 / 0.22 / 0.06 | 0.13 / 1.00 / 1.00 | 0.13 / 1.00 | DNA: LRRC37A11P, SMURF2P1, RDM1, 17q21 SD neighbours |
+| SRGAP2 B/C/D (4) | 1.00 / 0.60 / 0.40 | 0.50 / 1.00 / 0.50 | 0.50 / 0.50 | SRGAP2-AS1, FP700111.1 (DNA); SRGAP3 (protein, a real older paralog) |
+| NOTCH2NL (6) | 1.00 / 0.07 / 0.04 | 0.67 / 0.13 / 0.11 | 0.40 / 0.07 | ~20 NBPF genes (1q21 NOTCH2NL-NBPF co-duplication; Soto's own family includes NBPF26) |
+| GPR89 (2) | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 | none |
+| FAM72 (4) | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 | none |
+
+**Bipartite F over each region's chosen families (strict / universe genes).**
+
+| region | DNA | PROT | PROT50 |
+|---|---|---|---|
+| chr15/17 | 0.230 / 0.366 | 0.471 / 0.528 | 0.533 / 0.528 |
+| chr1 | 0.390 / 0.500 | 0.526 / 0.566 | 0.500 / 0.538 |
+
+**Reading.** The advisor's expectation holds on Soto's benchmark:
+- **DNA definition.** It over-merges families that sit in the same segmental-duplication block: 15q13 ARHGAP11B / CHRFAM7A /
+  GOLGA8 / ULK4P, 1q21 NOTCH2NL / NBPF, 17q21 LRRC37A neighbours. Precision is 0.02-0.22 on those families, while recall is
+  often 1.00. Soto separates them with shared exons inside SD98 plus copy-number consistency (famCN MAD), which our graph
+  lacks.
+- **Protein definition.** It is precise once deep superfamilies are cut (aa >= 0.50). It misses partial duplicates
+  (ARHGAP11B) and non-coding members, so recall is 0.13-0.50 on 4 families.
+- **Clean everywhere:** only the small, recent, whole-gene families GPR89 and FAM72.
+
+Descriptive, not pre-registered. Data and script: `lit/soto_fams/{soto_score.py,soto_score.out,chr1/}`.
