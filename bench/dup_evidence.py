@@ -295,15 +295,20 @@ def cmd_biser(a):
     import pysam
     os.makedirs(a.outdir, exist_ok=True)
     bed, tmp = f"{a.outdir}/biser.bed", f"{a.outdir}/biser_tmp"
+    bed_tmp = f"{bed}.tmp"
     if not os.path.exists(bed):
-        cmd = [BISER, "-t", str(a.threads), "-o", bed, "--keep-temp", "-T", tmp]
-        if os.path.isdir(tmp):
+        resume = os.path.isdir(tmp)
+        if not resume and os.path.exists(bed_tmp):
+            os.remove(bed_tmp)
+        cmd = [BISER, "-t", str(a.threads), "-o", bed_tmp, "--keep-temp", "-T", tmp]
+        if resume:
             cmd += ["--resume", tmp]
         if not os.path.exists(str(a.genome) + ".fai"):
             pysam.faidx(str(a.genome))
         if not run_budget(cmd + [str(a.genome)], a.budget):
             print("[biser] budget spent; rerun the same command to resume")
             return
+        os.replace(bed_tmp, bed)
     pairs = [p for p in (from_biser(l) for l in open(bed)) if p]
     write_pairs(pairs, f"{a.outdir}/pairs.D2.tsv")
     print(f"[biser] {len(pairs)} pairs -> {a.outdir}/pairs.D2.tsv")
@@ -317,8 +322,13 @@ def cmd_selfaln(a):
     g = pysam.FastaFile(str(a.genome))
     mmi = f"{d}/genome.mmi"
     if not os.path.exists(mmi):
-        subprocess.run(["minimap2", "-x", "asm20", "-t", str(a.threads), "-d", mmi, str(a.genome)], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        mmi_tmp = f"{mmi}.tmp"
+        if os.path.exists(mmi_tmp):
+            os.remove(mmi_tmp)
+        if not run_budget(["minimap2", "-x", "asm20", "-t", str(a.threads), "-d", mmi_tmp, str(a.genome)], a.budget):
+            print("[selfaln] index build did not finish inside the budget; rerun")
+            return
+        os.replace(mmi_tmp, mmi)
     chunks = []
     for c, L in zip(g.references, g.lengths):
         for off in range(0, L, a.chunk_bp):

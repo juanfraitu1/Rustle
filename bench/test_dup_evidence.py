@@ -124,6 +124,7 @@ def test_run_to_tool_output_failure(tmp_path):
 
 
 import subprocess
+import time
 
 TOY = "/tmp/claude-1000/-mnt-c-Users-jfris-Desktop/931c208e-8acb-4dd2-aacb-cf92d5ad051f/scratchpad/biser_probe/toy.fa"
 
@@ -167,3 +168,33 @@ def test_run_to_tool_output_success(tmp_path):
     with open(final_path) as f:
         assert f.read() == "data"
     assert os.path.exists(log_file), f"Log file should exist"
+
+
+def test_run_budget_success_returns_true():
+    assert de.run_budget([sys.executable, "-c", "import sys; sys.exit(0)"], 5) is True
+
+
+def test_run_budget_timeout_kills_whole_process_group(tmp_path):
+    pidfile = tmp_path / "grandchild.pid"
+    code = (
+        "import subprocess, sys, time\n"
+        "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"open(r'{pidfile}', 'w').write(str(p.pid))\n"
+        "time.sleep(60)\n"
+    )
+    assert de.run_budget([sys.executable, "-c", code], 2) is False
+
+    def gone(pid):
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                state = f.read().split()[2]
+            return state == "Z"  # zombie: no longer running, just unreaped
+        except OSError:
+            return True  # FileNotFoundError, or ProcessLookupError from a /proc race
+
+    pid = int(pidfile.read_text())
+    for _ in range(30):
+        if gone(pid):
+            break
+        time.sleep(0.1)
+    assert gone(pid), f"grandchild pid {pid} still alive after run_budget's timeout kill"
