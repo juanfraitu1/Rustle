@@ -20858,3 +20858,44 @@ toward D members): D pairs inside P 0.478; P pairs inside D 0.859.
   also DNA-family pairs (0.859).
 
 Register row 837 (AN-1 on chr5/7/21).
+
+## §6kq — Spike: pseudohaplotype panels for NPIP/TBC1D3 subfamilies — extra haplotypes make allelic divergence measurable and recover TBC1D3-CDKL; AE still not (2026-09-14, throwaway, not pre-registered)
+
+**Question (user).** Published subfamilies are clades over 69 (Guitart 2024, TBC1D3) or 169 (Dishuck 2025, NPIP) haplotypes. Does adding
+haplotypes to CHM13 recover what one haplotype cannot?
+
+**Panels.** CHM13 gene spans (31 truth records) placed with minimap2 asm20 and chained with the guided rules
+(`gene_body_chains` + `leaders`, identity >= 0.80, aligned >= 0.50):
+- Human panel: HG002 v1.1 T2T maternal and paternal chr16/17/18 (downloaded 2026-09-14).
+- Gorilla panel: mGorGor1 maternal and paternal curated assemblies, whole genome.
+
+**Tree.** One pooled reference-projected tree per panel × family: fixed CHM13 exon-excised reference member, IQ-TREE MFP,
+SH-aLRT > 75. Literature groups are scored on CHM13 tips.
+
+**Allelic pairs.** Mutual-nearest cross-haplotype pairs by p-distance on the projected (intronic) columns.
+
+| panel, family | tips (CHM13 / hap1 / hap2) | literature groups (supported clade) | allelic p-dist median | paralog median | allelic pairs that are sister tips |
+|---|---|---|---|---|---|
+| human NPIP | 22 / 26 / 28 | A\|B, B3-5, B12/13, named NPIPB **recovered**; A6-9, B6-9 unsupported | 0.0003 | 0.0190 | 22/59 |
+| human TBC1D3 | 9 / 16 / 17 | **CDKL recovered** (not recovered on CHM13 alone, §6jp); AE no split | 0.0006 | 0.0103 | 12/22 |
+| gorilla NPIP | 22 / 29 / 27 | A\|B, B3-5, B6-9, B12/13, named NPIPB recovered; A6-9 unsupported | 0.0003 | 0.0174 | 21/28 |
+| gorilla TBC1D3 | 9 / 18 / 18 | AE, CDKL no split | 0.0019 | 0.0720 | 13/18 |
+
+**Guitart-style grouping.** Single linkage at 1.5 × the median allelic divergence:
+- Human TBC1D3: CHM13 {TBC1D3D, TBC1D3K} join 7 HG002-maternal and 5 HG002-paternal copies. This is CDKL as a population group.
+- TBC1D3E pairs with one copy per HG002 haplotype. TBC1D3 itself stays apart, so AE does not form.
+- Gorilla TBC1D3 copies never join CHM13 copies, consistent with independent lineage expansion.
+
+**Reading.**
+- With a second individual, allelic divergence becomes measurable (median 0.03-0.06% in human, 20-60× below paralog
+  divergence). The literature's allelic-scaled criterion then recovers TBC1D3-CDKL, and the tree supports it as a clade.
+- AE remains unrecovered.
+- Adding tips costs support for A6-9 and B6-9 in the human panel.
+
+Caveats:
+- One extra human individual (vs 69/169 haplotypes).
+- Allelic pairing is by distance, not synteny.
+- HG002 locus counts include pseudogene and partial copies.
+- Single run, no replicates.
+
+Data and code: `lit/phap/` (`phap.py`, `analyze.out`, `trees/`).
