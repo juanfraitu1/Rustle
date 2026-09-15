@@ -21812,3 +21812,46 @@ Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/trim_conservation/` (`TRIM
 `TRIM22.fa`, `aln_TRIM6_vs_{TRIM34,TRIM5,TRIM22}.txt`, `cds.fa`);
 `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/as_tied_demo/segment_plot/` (`read_vs_2copies_tracks.json`,
 `read_vs_copy{22,23}_genomic.sam`).
+
+### §6l3 RETRACTION — "788 = 788 is a copy-1-vs-copy-3 tie" was wrong; corrected on the live artifact (2026-09-15)
+
+User asked to add NM (edit-distance) evidence alongside the AS-tie claim. Checking where to source a
+comparable NM value required tracing exactly what population `as_evidence_per_read` ranks
+(`src/bin/copy_assign.rs:1613`) — and that surfaced a real error already live on the published artifact.
+
+**What was wrong.** The addendum-1 text (and the artifact) read `assignments.tsv`'s `as_best = as_second =
+788` for read `SRR27438212.5196789` as "the raw aligner scored candidate copy 1 and copy 3 identically." It
+does not mean that. Querying the real input BAM directly: copy 1's own best placement scores **AS 727,
+NM 20** (one record, `NC_073242.2:15969483`) — a clear 61-point gap below 788, never close. The two
+placements that genuinely score 788/788 (NM 5/5) both sit **inside copy 3's own ~165 kb catalog span**,
+9,854 bp apart (`16,422,986` and `16,432,840`) — an internal near-duplicate structure, not a copy-1-vs-copy-3
+contest at all. A second assigned read in the same family (`SRR27178662.505512`) shows the identical pattern
+(copy 1 best AS 254; copy 3's span has >10 internal positions at AS 274/269, several tied at 274) — this is
+evidently systematic to this particular catalog copy's internal structure, not a one-off.
+
+**Root cause, traced in `src/bin/copy_assign.rs`.** A `--families` run does not fetch `bam_reads` over the
+whole bound region; per the `§6dh`-tagged comment at `copy_assign.rs:2307-2314`, it fetches from each
+supplied copy's own neighbourhood specifically ("a dispersed family's hull can be tens of Mb while its copies
+occupy a few hundred kb"). `as_evidence_per_read` (`copy_assign.rs:1613`) then ranks only the records that
+survived that per-copy fetch — for this read, one record from copy 1's window and several from copy 3's —
+so `as_best`/`as_second` are the top-2 AS among records CONFINED TO THE CANDIDATE COPIES' OWN WINDOWS, and
+here that top-2 happens to be two positions inside the SAME copy. `n_candidates`/`candidates` (star_reads.tsv)
+is a separate count of distinct CATALOG copies (`copy_assign_pipeline.rs:2762`) — "2 candidates" and "788=788"
+describe two different populations that happen to share a read.
+
+**What is still true, unaffected by this correction.** The PSV certificate's own conclusion is untouched:
+copy 3, margin 55.238, 8/8 unanimous informative columns, p = 1.000e-24 — all independently re-verified
+earlier this session (§6l3 addendum 2's segment plot) and still correct. What changes is only the claim about
+*why* this molecule was AS-tied: not a genuine cross-copy ambiguity, but the AS-tied gate reacting to an
+internal near-duplicate inside one candidate's own span. Worth keeping as a general note: **an "AS-tied" flag
+does not by itself say whether the tie is between two distinct candidates or two positions inside one of
+them — only the PSV evidence (or, as here, a direct per-copy-window BAM query) can tell you which.**
+
+**Corrected on the live artifact** (same URL, versions 6-7): the "coin flip between copy 1 and copy 3" framing
+is replaced with the true 727-vs-788 (AS) / 20-vs-5 (NM) picture and an explicit correction notice; the
+segment-plot section's claim that the two tracks "match the certified 788-to-788 tie" is removed. This is
+logged as a retraction, not quietly edited, because the false version was live and citable for roughly 15
+minutes across two published versions before being caught.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/fibroblasts/GCA_029281585.2_flnc_mm.bam` (queried directly, not
+copied); no new files produced by this correction beyond the artifact edit itself.
