@@ -35,9 +35,51 @@ Success is measured two ways:
 Each layer = nodes + a typed homology edge + MCL (I = 2.8, prune 1e-9). The rules never change with the input; a thinner
 input only activates fewer layers.
 
+### 1a. Evidence sources are separate from layers
+
+Nothing but the genome is required. Every other source is optional. Each source is converted to one internal format, so the
+layer rules are the same whichever source fed them. The output always records which source was used.
+
+**Duplication evidence (feeds layer G and the copy-number attribute):**
+
+| Source | Cost | Gives | Internal format |
+|---|---|---|---|
+| D1 supplied SD calls (SEDEF/BISER run elsewhere, UCSC SD tracks) | none locally | SD pairs with CIGAR | pair table (two intervals, strand, identity, CIGAR) |
+| D2 BISER run locally | commodity hardware, resumable | SD pairs with CIGAR | pair table |
+| D3 minimap2 self-alignment of the masked genome (`-x asm20 -c -N 50 -p 0.1`, chunked foreground batches) | anywhere minimap2 runs | non-self alignments >= 1 kb at identity >= 0.90 (the SD definition) | pair table |
+| D4 k-mer multiplicity (meryl, k = 31) | cheapest | per-base copy number of unique-to-low-copy sequence (count 2..C_max) | copy-number track, NO pairs |
+
+D4 cannot form families alone. It becomes a per-locus "copies in genome" attribute, and it flags duplicated regions that no
+other source or layer reached (candidate loci for review, reported, never family members).
+
+**Repeat evidence (masks repeats in G/D3 seeding and edge evidence; feeds the transposable-element-derived copy label):**
+
+| Source | Cost | Gives |
+|---|---|---|
+| R1 supplied RepeatMasker / RepeatModeler annotation (`.out`) | none locally | repeat intervals with class (LINE, SINE, LTR, DNA, ...) — the only source that names TE classes |
+| R2 soft-masked assembly (lowercase from the provider) | none | repeat intervals, no class |
+| R3 WindowMasker (installed; k-mer based, de novo) + DustMasker for low complexity | minutes | repeat intervals, no class |
+| R4 k-mer multiplicity (the same meryl database as D4): count > C_max | shared with D4 | high-copy sequence intervals, no class |
+
+**C_max separates duplication from repeat in one k-mer database.**
+- Low-copy k-mers (2..C_max) are duplication evidence.
+- High-copy k-mers (> C_max) are repeat evidence.
+- C_max is not a free constant. It is set per genome at the valley between the two modes of the k-mer multiplicity histogram,
+  and the chosen value is reported.
+- Gorilla development checks the valley against R1: the fraction of high-copy k-mers that fall inside RepeatMasker
+  intervals.
+
+When several sources exist, the order is D1 > D2 > D3 for pairs and R1 > R2 > R3 > R4 for repeats. D4 is always computed
+when meryl runs.
+
+### 1b. Layers
+
+The protein (P) and exon (E) layers never depend on duplication evidence. **Layer G is optional.** With any annotation, P
+and E carry the families. G adds pseudogene/non-coding duplication context and is the only layer in genome-only mode.
+
 | Layer | Nodes | Edge | Requires |
 |---|---|---|---|
-| **G** genomic segment | duplicated segments: SD pairs (BISER, same caller for every species) cut at all SD boundaries (`bench/dna_sd_atoms.py` atom logic) | exact-CIGAR segment alignment, identity >= 0.70, >= 300 bp, two-sided coverage >= 0.30; soft-masked repeats | genome |
+| **G** genomic segment | duplicated segments: pairs from the best available D1–D3 source, cut at all pair boundaries (`bench/dna_sd_atoms.py` atom logic) | exact-CIGAR segment alignment, identity >= 0.70, >= 300 bp, two-sided coverage >= 0.30; repeats masked from the best available R source | genome + (D1, D2 or D3) |
 | **P** protein | one protein per coding gene (longest CDS) from any model source, plus copies placed by miniprot | blastp e <= 1e-5, HSP union covers >= 0.30 of the longer protein (§6ko, r2: no pseudogene biotypes, no V(D)J segments) | any annotation with CDS |
 | **E** exon / gene body | gene models: annotated, lifted, or projected onto new copies | E1: exon-to-exon, identity >= 0.70, >= 300 bp, cov_longer >= 0.30 (`mcl_families --min-exonic-bp 1`) | any gene models |
 
@@ -51,12 +93,17 @@ input only activates fewer layers.
 Pseudogenes attach to P families by miniprot, as in AN-3. Layer disagreement is reported with the §6ko cause types:
 deep protein-only homology, protein-divergent duplicates, and co-duplicated non-coding sequence.
 
+**Per-locus attributes from optional sources** (written to the cross-layer map when available):
+- copies-in-genome (D4);
+- repeat overlap fraction and TE class (R1; class only from R1);
+- the transposable-element-derived label, i.e. §6jv's mechanism layer, available only with R1.
+
 **What each input activates:**
 
 | Input | Layers |
 |---|---|
-| Genome only | G (no gene labels) |
-| Genome + partial annotation (native subsample or human lift) | G + P + E; gene labels = annotation + discovered copies |
+| Genome only | G if D2 or D3 can run (always, locally), with repeats from R2–R4; D4 attribute; no gene labels |
+| Genome + partial annotation (native subsample or human lift) | P + E always; G when duplication pairs exist; gene labels = annotation + discovered copies |
 | Genome + full native annotation | all three; this is the truth (arm T) |
 
 **Species:** gorilla = development; **orangutan = hold-out**; chimpanzee = report only. All are NCBI T2T v2.0 assemblies
@@ -69,17 +116,32 @@ with RefSeq annotations (GGO/PTR/PPY `_genomic.gff` in `winloci_data`) and soft-
 and KRT), about 9k genes. Orthology comes from the whole-genome Liftoff placement of human genes, not from chromosome names;
 this handles the gorilla t(5;17). All homology is computed within the substrate.
 
-**Shared preparation.**
-- BISER on the substrate chromosomes (batched with `--resume`).
-- Gorilla BISER vs SEDEF agreement reported.
+**Shared preparation (per species, substrate chromosomes).**
+- Duplication pairs from every source available for that species:
+  - gorilla: D1 SEDEF (exists), D2 BISER, D3 self-alignment;
+  - orangutan and chimpanzee: D2, D3 (no SEDEF exists for them).
+- One meryl k-mer database per genome (D4 + R4) and its histogram valley (C_max).
+- Repeat masks:
+  - gorilla: R1 (GCF_029281585.2 RepeatMasker .out exists), R2, R3, R4;
+  - orangutan and chimpanzee: R2, R3, R4.
 
 **Arm T (truth; hidden from every other arm).** Native RefSeq through all three layers:
 - E_T: E1 families;
 - P_T: protein families, r2;
 - G segments labelled with native genes.
 
-**Arm 1 (genome only).** BISER pairs → segments → segment graph → MCL → segment families. No gene labels are produced. For
+**Arm 1 (genome only).** Pairs → segments → segment graph → MCL → segment families. No gene labels are produced. For
 scoring only, each truth gene takes the segment family of the segments covering most of its exons.
+
+**Evidence-source comparison (gorilla development only).** How much does lacking a source cost?
+- **Duplication sweep** at the default repeat source (R2): arm 1 and arm 2a with G from D1 / D2 / D3 / no G.
+- **Repeat sweep** at D3 (the source most sensitive to masking): R1 / R2 / R3 / R4.
+- **D4 alone:**
+  - the fraction of truth multi-copy loci flagged as duplicated (copy number >= 2);
+  - the fraction of loci flagged but in no truth family.
+
+The source defaults for the orangutan hold-out are fixed in the pre-registration from this comparison. They are restricted
+to sources orangutan has (D2/D3, R2–R4), so the hold-out is the realistic "no cluster, no curated repeats" setting.
 
 **Arm 2a (native subsample, controlled).**
 1. Keep 50% of native genes (seed 1).
@@ -97,7 +159,7 @@ available", never as empty families.
 
 ## 3. Evaluation
 
-**Truth isolation.** Each arm receives an explicit input manifest: genome, BISER calls, allowed annotation file. The
+**Truth isolation.** Each arm receives an explicit input manifest: genome, the duplication and repeat sources it may use (D1–D4, R1–R4), and the allowed annotation file. The
 orchestrator refuses to run an arm whose manifest names the native GFF, except arm T and arm 2a's subsample file (written by
 arm T's prep).
 
@@ -121,7 +183,8 @@ before any orangutan number exists. Proposed fixed readings (orangutan):
 |---|---|---|
 | AO-1 | human-lifted protein layer (arm 2b P vs P_T) | goal met iff pair sens >= 0.90, pair prec >= 0.90, bipartite F >= 0.90 |
 | AO-2 | native-subsample protein and exon layers (arm 2a P vs P_T, E vs E_T) | goal bars reported; SUPPORTED iff P meets them |
-| AO-3 | genome-only segment families at gene level (arm 1 vs E_T) | reported against the bars and against §6jk's gorilla 0.567 recall |
+| AO-3 | genome-only segment families at gene level (arm 1 vs E_T, with the local sources fixed from the gorilla comparison) | reported against the bars and against §6jk's gorilla 0.567 recall |
+| AO-5 | D4 k-mer copy number alone | fraction of truth multi-copy loci flagged (copy number >= 2) and of flagged loci in no truth family; reported |
 | AO-4 | cross-species consistency (arm 2b vs human) | reported; no bar in v1 |
 
 Chimpanzee is scored with the same readings, reported only.
@@ -133,7 +196,9 @@ New (bench/, Python, same conventions as the AI–AN tools):
 | file | responsibility |
 |---|---|
 | `ape_substrate.py` | Liftoff human → target (batched); orthologous substrate chromosomes; substrate FASTA/GFF subsets; the 50% native subsample; per-arm input manifests |
-| `sd_segments.py` | BISER run (batched, `--resume`); BISER → `dna_sd_atoms.py` format adapter (validated on toy rows and on gorilla vs SEDEF); segment families (MCL) |
+| `dup_evidence.py` | D1 adapters (SEDEF, BISER, UCSC SD BED) → pair table; D2 BISER run (batched, `--resume`); D3 chunked minimap2 self-alignment → pair table (>= 1 kb, >= 0.90, non-self); D4 meryl count + per-base low-copy track; source priority and provenance |
+| `repeat_evidence.py` | R1 RepeatMasker `.out` → intervals + class; R2 lowercase runs; R3 WindowMasker + DustMasker; R4 meryl high-copy intervals; C_max from the histogram valley; one interval format + provenance |
+| `sd_segments.py` | pair table + repeat intervals → segments (`dna_sd_atoms.py` atom logic, CIGAR mode) → segment edges → segment families (MCL) |
 | `protein_projection.py` | miniprot placement of a proteome on a genome → new coding copies (node table + `.cds.tsv`) and pseudogene attachments |
 | `layers_map.py` | cross-layer map per locus; cause classes of layer disagreement; cross-species consistency metrics |
 | `evidence_arms.py` | orchestrator: arm → manifest → layers → outputs; truth-isolation guard |
@@ -142,17 +207,26 @@ Reused: `annotation_nodes.py`, `protein_families.py`, `node_graph_mcl.py`, `guid
 `rna_truth.py`, `adjudicated_truth.translate`, `dna_sd_atoms.py`, `lit/batch_align.sh`.
 
 **Testing.**
-- Unit tests on toy inputs: BISER row parsing and CIGAR blocks, segment cutting, new-copy selection from miniprot rows,
-  the truth-isolation guard, consistency metric.
+- Unit tests on toy inputs:
+  - SEDEF/BISER/UCSC/PAF row parsing into the pair table, and CIGAR blocks;
+  - RepeatMasker `.out` and lowercase-run parsing;
+  - the C_max valley on a synthetic bimodal histogram;
+  - the low-copy / high-copy split of a toy meryl dump;
+  - segment cutting;
+  - new-copy selection from miniprot rows;
+  - the truth-isolation guard;
+  - the consistency metric.
 - Reproduction checks:
   - `protein_families.py` on human chr1/2/3 reproduces §6ko (0.935 / 0.999 / 0.977);
   - E1 on the gorilla substrate matches the corresponding `gw_units_v3` clusters, with the difference reported;
   - `dna_sd_atoms.py` on gorilla SEDEF reproduces §6jk atoms.
-- BISER vs SEDEF on gorilla is reported before BISER feeds any arm.
+- On gorilla, D2 and D3 pairs are compared with D1 SEDEF (pair recall/precision by reciprocal overlap), and R2/R3/R4 masks
+  with R1 RepeatMasker (base-level overlap). Both comparisons are reported before those sources feed any arm.
 
 **Error handling.**
-- Missing inputs → the layer is "not available".
+- Missing inputs → the layer or attribute is "not available", and the source actually used is recorded per output.
 - Liftoff unmapped and partially mapped genes are counted and reported.
+- A histogram without a clear valley (no second mode) leaves C_max undefined: R4 and D4 are then "not available" for that genome, never a guessed cutoff.
 - miniprot frameshift/stop-containing placements go to the pseudogene attachment path, not the proteome.
 - BISER runs are resumable.
 - Every long step is a foreground batch.
