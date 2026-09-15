@@ -21433,3 +21433,34 @@ small sample; whether a real case exists that both (a) has a clean, primary-plac
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/gwfam248/{fam4.units.*, regions.plain, B.*, C.*}`,
 `.../gwfam195/{fam.units.*, regions.plain, C.*}`. Code: `src/bin/copy_assign.rs`,
 `src/rustle/vg_family/catalog_input.rs`, `tests/copy_assign_families.rs`.
+
+## §6ky — `docs/ADVISOR_QUESTIONS.md` refreshed end to end against everything since the 09-09 pass (2026-09-15)
+
+User's ask: the ledger is large; rather than retroactively tag it (already tried once, per Part 1.5's own
+account, and abandoned as unreliable — 11/22 = a coin flip against known outcomes), audit the advisor-facing
+summary document against current state and mark what's superseded, retracted, or missing.
+
+Ran a 5-agent parallel audit, one per contiguous ledger range from §6hq (the line after the last pass) to
+§6kx, each producing a section-cited digest of what changed against every part/question of
+`ADVISOR_QUESTIONS.md` it touched. Rewrote the document from those digests. Substantive changes: **Q1
+superseded** (SD-core → triangle-supported leaders, confirmed on 3 substrates 2026-09-14, opt-in, not yet
+shipped default; NPIP's "31/31, one family" corrected to "31/31 present, 4 clusters — fragmentation not
+omission," §6hu); **Q2 gained its most consequential addition** (the annotation-vs-annotation ceiling, F
+0.67–0.81, §6kl — reframes every sub-0.8 F-score elsewhere as bounded by truth quality, plus protein-space
+families §6ko with their self-caught superfamily-artifact qualification); **Q9 rewritten** with the guided
+subfamily pipeline (NPIP A|B clean 10/10, TBC1D3 1.000/1.000, AMY near-miss on an annotation defect, all
+human CHM13 only, §6jm–§6js) and the pseudohaplotype extension (TBC1D3-CDKL recovered, TBC1D3-AE never, even
+at 23 haplotypes, §6kq); **Part 3 gained 5 new/expanded concessions** (the ceiling, RNA-node cap even with a
+perfect partition, O3's near-zero genome-wide statistical power — §6id Task 8's corrected 10/2276 and
+6/2080 — the excision-generalization negative and the two real-candidate `not_tested` results §6kv–§6kx, and
+the no-universal-subfamily-unit finding); Part 0b's Soto framing sharpened with the full-catalogue audit
+(§6hv) and the min_shared_exon_frac fix; Part 1.1/1.2 gained the derived T_CORE formula (§6ix) and the
+minimap2 seed-survival mechanism (§6ku) as the sharpest available answers to "your thresholds are arbitrary."
+Stale counts corrected throughout (register 836→838, ~330 ledger sections not 120, defaults flipped 1→3,
+test baseline 824→854). Q3/Q4/Q6/Q7/Q8/Q10/Q11 were checked against the full range and found unaffected —
+stated so explicitly in the document rather than left ambiguous.
+
+The raw ledger itself was NOT retroactively tagged, per the standing rule above; `NEGATIVE_RESULTS_REGISTER.md`
+and `O3_STATUS.md` remain the live "what's disproven / current status" documents, `ADVISOR_QUESTIONS.md` is now
+the live "what does this mean for the standing questions" document, and this section is the pointer between
+them for whoever refreshes it next.

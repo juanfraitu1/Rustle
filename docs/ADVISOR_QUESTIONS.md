@@ -1,8 +1,13 @@
 # The advisor's standing questions — and what the codebase can answer
 
-> **2026-09-06 pass.** Q1, Q2, Q4, Q5, Q8 and Part 3 items 7–9 rewritten to the SD-core definition and the read-star O2
-> (§6ev–§6fo). Paragraphs marked as the OLD node's measurements are kept as history. Q6 (apes) is unchanged and
-> still unanswered.
+> **2026-09-15 pass.** Full refresh against everything since 09-09 (§6hq–§6kx, ~90 ledger sections). The
+> definition in Q1 changed AGAIN since the last pass — SD-core is superseded by triangle-supported leaders
+> (confirmed, not yet shipped default) — and Q9 gained a working answer on the advisor's own NPIP/TBC1D3
+> example, plus a third literature family (AMY). Part 2 (Q1, Q2, Q9) and Part 3 carry the biggest changes;
+> Q3/Q4/Q6/Q7/Q8/Q10/Q11 are unchanged and were re-checked against the range, not just left alone.
+>
+> **2026-09-06 pass (history).** Q1, Q2, Q4, Q5, Q8 and Part 3 items 7–9 rewritten to the SD-core definition and
+> the read-star O2 (§6ev–§6fo). Paragraphs marked as the OLD node's measurements are kept as history.
 
 > **Audience.** Stefan Canzar, who assumes a good number is luck or overfitting until shown
 > otherwise. This document is written for that reading. Every claim carries the number that
@@ -14,10 +19,12 @@
 > order below is deliberate: Part 1 is the cross-examination he will actually run; Part 2 is the
 > per-question evidence; Part 3 is what we concede unprompted; Part 4 is what to put on screen.
 
-**Provenance.** Derivations in [`o1_ledger.md`](o1_ledger.md) (120 sections), negatives in
-[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**836 rows**), status in
-[`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md). Test baseline **824 passed /
-0 failed / 11 ignored**.
+**Provenance.** Derivations in [`o1_ledger.md`](o1_ledger.md) (~210 sections as of §6kx), negatives in
+[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**838 rows**), status in
+[`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md), current O1 definition in
+[`seeded_family_definition.md`](seeded_family_definition.md) §0★★, current O3 status in
+[`O3_STATUS.md`](O3_STATUS.md). Test baseline **854 lib tests passed / 2 failed (pre-existing, unrelated:
+`shared_definition.rs` missing a `docs/MODULE_STATUS.md` entry) / 19 ignored**.
 
 ---
 
@@ -28,27 +35,47 @@ path set**. Two graphs at two granularities — never "one decision rule", never
 variation graph" (`NEGATIVE_RESULTS_REGISTER.md:472`, `:1086`, `:1090` kill both, and `:1090` is
 annotated as exactly what would irritate him). It also carries the corrections this file needs:
 ⚠ **§1.2's "four free numbers" is wrong** — ~25 constants are default-reachable, +6 added
-2026-09-03 in `mcl_families.rs`. ⚠ **The excision abstention result (§Q-abstention) is not a run
+2026-09-03 in `mcl_families.rs`, **+1 more 2026-09-14** (`--min-shared-exon-frac`, §6kt, now a
+shipped default at 0.30). ⚠ **The excision abstention result (§Q-abstention) is not a run
 of the shipped gate** — it is the robust-z of `de`, not the α-certificate.
 
 ---
 
 ## Part 0b — What Soto 2025 is, and what it is not (READ BEFORE QUOTING ANY SOTO NUMBER)
 
-⚠⚠ **Soto's catalogue is a 98 %-identity SEGMENTAL-DUPLICATION catalogue, not a gene-family catalogue**
-(§6fz, register 741, measured 2026-09-07 against CHM13 RefSeq biotypes):
+⚠⚠ **Soto's catalogue is a 98 %-identity SEGMENTAL-DUPLICATION catalogue, not a gene-family catalogue.** Two
+independent measurements agree, at increasing severity: a 362-member biotype cross-reference (§6fz, register
+741) found 38.7 % protein-coding / 46.4 % pseudogene; **auditing the full published catalogue directly**
+(§6hv, 2,572 members / 605 families, straight from Soto's own S1C table, 0/605 mismatches against their own
+reported columns) is worse:
 
-| what its 362 members overlap | n | share |
-|---|---|---|
-| protein_coding | 140 | **38.7 %** |
-| transcribed_pseudogene | 110 | 30.4 % |
-| pseudogene | 58 | 16.0 % |
-| lncRNA | 39 | 10.8 % |
-| no annotated gene at all | 11 | 3.0 % |
+| what the FULL catalogue's members are (by biotype) | share |
+|---|---|
+| pseudogene-biotype | **56.5 %** |
+| families with zero protein-coding member | 47.4 % |
+| families entirely pseudogene | 35.9 % |
+| families pseudogene-majority | 47.1 % |
 
-**Fewer than two in five members are protein-coding genes; 46.4 % are pseudogenes. Of the 76 multi-member
-families, 60 MIX biotypes.** Within-family length spread: median **3.1×**, 24 families above 5×, 12 above 20×,
-extreme `ID_14` at **583.7×** (0.1 kb to 65.4 kb) — one "family" holding a 100-bp fragment and a 65-kb gene.
+**35.0 % of multi-member families bundle a fragment (< 20 % of the family's own longest member's exonic bp)
+alongside a full-length member (≥ 80 %)** — worst cases 100–126× size ratio (`ID_280`, `ID_215`, `ID_150`).
+Within-family length spread on the 362-member slice: median **3.1×**, 24 families above 5×, 12 above 20×,
+extreme `ID_14` at **583.7×** (0.1 kb to 65.4 kb).
+
+⭐ **The fix is validated and shipped (2026-09-14).** Naming Soto's own families directly and scoring our DNA
+definition against them (§6kr) found the failure mode precisely: co-duplicated SD-block *neighbours* get
+merged in, at pair precision **0.01–0.07** for 5 of 8 named families (only `GPR89` and `FAM72` were clean,
+1.00/1.00) — root cause, the exonic-overlap gate needed only ≥ 1 shared bp (false-merge pairs share a median
+11–25 % of their exonic length; true pairs share 52–89 %). `mcl_families --min-shared-exon-frac` (a fraction
+floor, not just "≥ 1 bp") was pre-registered on development (chr1/15/17) *before* touching a fresh hold-out,
+then run on 11 Soto-named families never used to build it (chr5/7/21): bipartite F 0.831→0.881, universe
+pairwise precision 0.815→**1.000**, **zero recall loss**, TBC1D3's 9-copy family stays whole. **User decision:
+shipped as the default (0.30) 2026-09-14** — non-retroactive; every catalog on disk before that date (gorilla
+`gw_units_v3`, the human `guided.clusters.tsv`, every pre-09-14 `e1*` build) still reflects the old default.
+
+⭐ **A second finding worth citing on its own: Soto nests inside ours.** On chr1, every one of the Soto-named
+families we tested sits inside exactly one of ours, and a 98 %-identity subfamily cut recovers them
+(bipartite F 0.390→0.700 strict, 0.500→0.742 universe) — Soto reads as a finer partition of the same object,
+not a different one, at least on that chromosome (chr15/17 did not cut as cleanly).
 
 ⟹ **What this means for the thesis.** A recall number against Soto is partly a count of how many pseudogene
 fragments a method admits. A method that defines a family as a set of *genes* will lose members there **by
@@ -136,6 +163,18 @@ the sentence he keeps asking for. **Do this before Wednesday.**
 question — it asks whether our isoforms are as good as theirs, when the point is that ours carry a copy
 assignment and theirs cannot.
 
+⭐ **Updated 2026-09-10 (§6hw–§6i4): the 85 % headline improved to 94.7 % on exactly the population O2
+targets, with a proven no-regression guarantee.** Sibling-identity reporting, evidence-backed singleton
+rescue and full read-provenance shipped, then the SAME hard-locus substrate (human chr16 MCL0, 65,341 AS-tied
+records) was re-run: hard-locus carried **0.835→0.857**, contested **0.673→0.737**, and the population B2
+actually targets (O2's assigned reads) **0.691→0.947** — tied/ambiguous and the easy population unchanged bit
+for bit. A discordance check found **0 regressions, 87 additional molecules carried**: a proven strict
+superset, not a trade. Confirmed on **held-out MCL58** (§6i2, never used to develop the fix): 0 phantoms, 0
+lift failures, both certificate-assigned molecules correctly placed. One composite metric now exists
+(`bench/isoform_bakeoff.py --summary`, §6hz, chr16, 3,633 molecules): ours **0.846** composite / **0.664**
+phantom rate vs flair 0.574/0.837, StringTie 0.502/0.795, isoseq 0.755/0.853 — isoseq's high raw "carried"
+number was hiding an 85.3 % phantom rate.
+
 ---
 
 ## Part 0e — "Not a transcriptome assembler" AND "compare to flair/StringTie": the earlier reading
@@ -195,6 +234,20 @@ Only the held-out one did. That is the procedure to state when he asks about ove
 decides a change is named in the pre-registration before the change, and it is one the change was not built
 on.* We have the failed instance to show, which is worth more than a list of successes.
 
+⭐ **And a mirror instance where the same discipline shipped a rule, not just refuted one** (§6ks/§6kt,
+2026-09-14): `min_shared_exon_frac`'s threshold (0.30) was fixed on development (chr1/15/17) *before* any
+number from the held-out substrate existed; the held-out run (11 Soto-named families on chr5/7/21, never used
+to pick 0.30) passed clean — bipartite F 0.831→0.881, precision 0.815→1.000, zero recall loss — and only then
+was it promoted to the shipped default. Two outcomes from the identical procedure, both stated: one killed a
+rule, one shipped one.
+
+⭐ A second, still-unused hold-out object now exists for O1 rules specifically (§6i6): `gw_units_v3` MCL166
+(10 members, `NC_073243.2:23.9–24.0 Mb`), chosen by excluding every coordinate/id cited anywhere in the repo
+(301 files checked) — its own first candidate (MCL4) was retracted within the hour because **MCL cluster ids
+are not stable across catalog rebuilds** (four re-numberings of the same catalog checked), so "never named"
+had to be verified by coordinates, not ids. Worth mentioning unprompted: even picking a quarantined substrate
+is a place we caught our own mistake.
+
 ---
 
 ## Part 0g — Yes, this is assembler-shaped work. Say so, then say what full-length changes
@@ -246,15 +299,29 @@ denial.**
 
 | | count |
 |---|---:|
-| Routes attempted and killed, each with the number that killed it | **836** |
-| Ledger sections (each an attempt, an audit, or a retraction) | **120** |
-| `RUSTLE_*` behaviour flags in `src/` | **135** |
+| Routes attempted and killed, each with the number that killed it | **838** |
+| Ledger sections (each an attempt, an audit, or a retraction) | **~330** |
+| `RUSTLE_*` behaviour flags in `src/` | **135+** (not recounted since 09-06; only grows) |
 | …of which the shipped default path turns **ON** | **7** |
-| Defaults flipped in the last month of work | **1** (`NODE_MIN_READS` 3 → 2, §6ac) |
+| Defaults flipped since 2026-09-06 | **2**: LCS edge core (§6jd, replacing poasta in `confirm_edge`) and `min_shared_exon_frac` (§6kt, 0.30) — both on top of the earlier `NODE_MIN_READS` 3→2 (§6ac) |
 
-⭐ **The accounting is the answer.** ~950 hypotheses were tested; **one** default changed. If the
-survivors were a chance tail we would have shipped dozens of them — the selection pressure that
-produces overfitting is *adopting* winners, and the adoption rate here is under 0.2%.
+⭐ **The accounting is the answer.** Well over a thousand hypotheses have now been tested across the whole
+project; **three** defaults have ever changed. If the survivors were a chance tail we would have shipped
+dozens of them — the selection pressure that produces overfitting is *adopting* winners, and the adoption
+rate here remains under 0.5%.
+
+⭐⭐ **New, and the sharpest available answer to "your thresholds are arbitrary" specifically** (§6ix, §6ku,
+2026-09-11/09-14): two of the project's threshold questions are no longer tuned constants at all —
+- **O1's core-divergence test has a closed-form formula, not a fitted number.** `d_max(L) = 1 −
+  exp(−ln(L)/(T_CORE·L))` is *derived*, then validated **20/20** against real SEDEF pairs at gene-body scale
+  (e.g. 94.4 % minimum identity detectable at the median 913 bp exon length) — a theorem-shaped answer, which
+  is the form Canzar has explicitly said he wants, not a swept plateau.
+- **Minimap2's own identity floor is explained, not assumed.** All three asm presets (asm5/asm10/asm20) seed
+  at the identical k = 19; an exact run-length model predicts the seeding success curve, confirmed on **10,800
+  real alignments** (asm20: 0 % success ≤ 0.75 identity, 10 % at 0.80, 100 % at ≥ 0.85 — matching the
+  plateau's own measured wall in §1.2 below to the point). Lowering k to 12 would move the 50 %-point from
+  0.786 to 0.709 identity at the cost of a **~30,000×** rise in genome-scale spurious minimizer hits — so the
+  floor is a stated, quantified trade, not folklore.
 
 ⭐⭐ **And the audit that looked specifically for winners to adopt found none.** §6aa classified
 every boolean behaviour flag on the O1 path by measured verdict and concluded ***"every measured
@@ -333,6 +400,13 @@ that drifted:
 | edge identity floor (asm20 tier) | **0.80** | `denovo_pipeline.rs:3765` |
 | edge coverage floor, **of the shorter** | **0.50** | `denovo_pipeline.rs:3766` |
 | quasi-clique density γ | **0.20** | `family_definition.rs:173` |
+| shared-exon fraction (guided mode, `mcl_families`) | **0.30**, default since 09-14 | `annotation_families.rs` |
+
+⭐ See §1.1 above for the two thresholds that stopped being *tuned constants* at all in this window: O1's
+core-divergence test now has a derived closed-form formula (§6ix), and minimap2's own identity floor is
+explained by an exact seeding model, not assumed (§6ku). The shared-exon fraction above followed the same
+"fix on development, confirm on a substrate never used to pick it" discipline as everything else in this
+table (§6ks/§6kt, walked through in Part 0b).
 
 ⭐ **γ is not sitting on a tuned optimum — it is sitting on a *measured* one, and the sweep was run
 by an arm that was trying to beat it.** §6bg swept γ upward against the seeded catalog looking for
@@ -359,11 +433,18 @@ priced without a positive stratum; NPIP labels **21 of 678** copies.
 
 ### 1.3 "Everything you have is one family."
 
-**Concede immediately — the number is worse than he will guess.**
+**Concede immediately — the number is still large, though it has moved less than the ledger's growth would
+suggest.** **189 of ~330 ledger sections (57 %) mention NPIP**, almost the same fraction as the earlier
+66/120. Every early O1 decision was scored on that one panel, which is itself a **minimap2 projection of
+human NPIP onto the gorilla assembly**.
 
-**66 of 120 ledger sections mention NPIP or its 31-locus panel.** Every O1 decision between
-2026-08-25 and 2026-09-01 was scored on that one panel, which is itself a **minimap2 projection of
-human NPIP onto the gorilla assembly**. The clean control has **n = 3**.
+⭐ **Two more literature families are now worked, mitigating but not removing the concession.** TBC1D3 (29
+sections) and AMY (23 sections) both went through the same guided-mode pipeline as NPIP (§6jm–§6js, Q9
+below) and TBC1D3 passes every pre-registered bar at 1.000/1.000. ⚠ **Say the limit plainly: both are
+human CHM13 only** — neither has been re-run on the gorilla substrate the thesis is actually about, so the
+clean gorilla control is still effectively **n = 1** (NPIP), and the human n = 3 (NPIP/TBC1D3/AMY) answers a
+different, narrower question: "does the method generalise to other literature families at all," not "does it
+generalise on the thesis organism."
 
 **What survives the objection anyway** — results measured where NPIP cannot reach:
 
@@ -411,7 +492,13 @@ persuasive than any surviving number:
   the annotation carries on **552 genes**. Two instrument defects were found on the way — a
   large-gene attractor putting `"titin"` on 26 endpoints, and a size-matched null that a *spatial*
   predictor walks straight through (the first headline was pure co-location: cross-chromosome edges
-  in the target band scored **0.36×, below chance**)
+  in the target band scored **0.36%, below chance**)
+- ⭐**§6j9 (2026-09-13) — a truth set's own intervals can manufacture "false merges."** A prior result
+  had flagged 9 apparent false merges against a human-projected oracle; every one turned out to be the
+  same NPIP-family gene's own 3′-terminal region, past where the oracle's projected interval happened
+  to stop (11/11 within 40–100 bp of the true annotated 3′ end). **0 of 9 were real.** The generalizable
+  trap: a truth set built by projection can be too *short*, and a method that reaches past it looks
+  wrong when it is the truth interval that is incomplete.
 
 ⭐⭐ **The one non-circular O2 result, and it is the one to lead with.** In the excision run copy A
 is deleted and its reads migrate to locus B, so their true origin is A **by construction** — labels
@@ -429,7 +516,7 @@ information about whether the read belongs.
 
 ### 1.5 "You would not show me the failures."
 
-Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **836 rows, each with
+Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **838 rows, each with
 the number that killed it**, and the two admitted exception classes (**NO-POWER**, and killed-by-
 argument) marked as such rather than hidden. Then hand him the ledger's own index note: an earlier
 auto-derived verdict tag scored **11/22 = 50% — a coin flip — against sections whose outcome was
@@ -444,32 +531,53 @@ feature deleted because it was not reliable enough to be honest.
 
 ### Q1. "Do you have a method that identifies multi-copy gene families?"
 
-**Yes — the SD-core definition (accepted 2026-09-05, §6ev; `docs/THESIS_OBJECTIVES.md`).** A family is a set of
-annotated loci, pre-clustered by MCL over their pairwise genomic homology, in which each member shares a
-duplicated core segment with at least half of the others; a member's unit is its read-supported exon chain, its
-locus the read-supported extent clipped at every other catalog unit (§6fh, §6fm). The core comes from SEDEF's
-segmental-duplication calls where they exist and **can be derived from the catalog's own alignments where they
-do not** (`--core-from-paf`, §6fo: on NPIP the two agree on 30 of 32 members and give the same LCR16a core).
-The old E_r/γ-quasi-clique definition is kept opt-in (`gw_family_catalog`) so the change can be audited.
+⚠⚠ **The definition changed again since the last pass, and this is the honest way to say it: the current best
+definition is confirmed but not yet the shipped default.** As of 2026-09-14 (`docs/seeded_family_definition.md`
+§0★★): a family's nodes are read-supported gene-level loci (annotation-guided or, for de novo mode, the guided
+edge rule over read loci); edges come from the guided rule or, de novo, the LCS core (§6jd, replacing poasta as
+`confirm_edge`'s default); **and grouping is by TRIANGLE-SUPPORTED LEADERS**, not MCL over a shared duplicon
+core. This is a genuinely different rule from the SD-core definition this section described in the last pass —
+not a refinement of it.
 
-**On his own example it is the better representation.** Old: NPIP fragmented into 5–6 families, 14–30 of the
-31 loci recovered depending on seeds (§5j, §6be). New: 31/31 loci, one family of 29 units on three contigs,
-LCR16u (SMG1P/SLC7A5P/PDXDC) separate, the 9 ABCC1/SORL1 chimeric models trimmed to the 23-kb LCR16a core or
-dropped and kept as candidates with `member_status` (§6eh–§6ei, §6fh). Block versus family is a certificate,
-29 versus 48 loci (§6eg).
+**Why the change, briefly.** Instantiating the shared definition with plain connected components clears
+recall but fails the precision guard on a fresh gorilla hold-out (§6jz, R_G 0.509/P_G 0.310 < 0.339 bar).
+Triangle-supported leaders — group only where a leader's neighbours are mutually connected, not just each
+connected to the leader — clears it: **confirmed pre-registered on three independent substrates**, each named
+as the deciding arm before it ran: a second gorilla substrate (§6kd, Addendum AE-A: R_G 0.198/P_G 0.676 vs the
+prior best opt-in catalog's 0.120/0.537, beating it on both axes) and human (§6ke, Addendum AF-2: bipartite F
+0.558 vs 0.515). It has been **ported to Rust and validated byte-exact** against the Python prototype on both
+gorilla substrates (§6kf: 76/76 and 72/72 families, every copy). ⚠ **It is opt-in only**
+(`RUSTLE_SHARED_DEFINITION=1`) — the unflagged build is verified byte-identical to the prior default (§6kg),
+so nothing shipped has silently changed, and no default has been flipped to it yet.
 
-**On false merges it is not worse where the benchmark can see, and it sees more.** Paired on the Soto slice
+⚠⚠ **The remaining gap is now measured to be annotation content, not the grouping rule** — the single most
+important thing to lead with if he pushes on "why isn't this F 0.95." Running the identical construction on
+annotation-quality nodes reaches bipartite F **0.955**; on de novo nodes, only **0.726** (§6kg). See Q2 below
+for the sharper version of this: even two independently-built *reference annotations* only agree with each
+other at F 0.67–0.81 through the identical construction, which caps what any node-construction fix can reach.
+
+**A complementary, human-only third path exists for literature subfamilies specifically** (guided_pipeline.py,
+§6jm–§6js) — gene-body membership plus reference-projected phylogenetic trees, built and validated on the
+advisor's own NPIP example plus two more (TBC1D3, AMY). See Q9, where it belongs; it is not a competitor to
+the definition above, it answers a finer-grained question (subfamily structure) the definition above does not
+attempt.
+
+⚠⚠ **The NPIP headline from the last pass does not survive on the current default catalog and must be
+corrected before he catches it.** "31/31 loci, one family" was true of the 2026-09-05 SD-core build. Re-run on
+the fresh 2026-09-10 default catalog (§6hu): **all 31 loci are still present** (recall by presence holds), but
+they now land in **4 different clusters** (25/3/2/1), with one true locus split mid-locus between two of them
+by node construction. **Say this plainly as fragmentation, not omission** — every locus is found, the method
+currently under-merges rather than losing anything — and do not repeat the one-family number without the
+correction.
+
+**On false merges, historical (SD-core, 2026-09-05) numbers, kept for the record.** Paired on the Soto slice
 (`docs/O1_DEFINITION_SWITCH.md`): pair precision in the adjudicable [0.90, 1) band **0.974 → 0.954**, CIs
 overlapping; recall on pairs both methods detect **0.874 → 0.940**; recall on all Soto pairs **0.173 → 0.580**;
 families exact 21/33 → 40/56. SEDEF corroborates 39 of 46 three-contig clusters, the repeat library names 3
-artefacts (§6dy–§6dz). ⚠ The old 1.33 % false-merge rate was a different instrument (window sets) and is not
-comparable; do not quote the two side by side. ⚠ The 21 genome-wide MCL cuts certified by shared reads at
-≥ 0.90 identity (§6fn, row 721) are the known false SPLITS; say so before he asks.
-
-⚠ **The binding constraint moved with the node.** Under the old definition node construction cost ~58 % of the
-loss (§5e); under the new one the node is the read-supported chain and the remaining losses are the annotation
-(loci the GFF has no model for, §6ev P3) and the special cases recorded on 2026-09-06 (partial paralogues below
-the coverage threshold, nested units).
+artefacts (§6dy–§6dz). ⚠ **These numbers describe the SD-core definition and predate `min_shared_exon_frac`**
+(Part 0b) — the DNA definition they were measured on has since been shown to over-merge co-duplicated SD-block
+neighbours on named Soto families (§6kr, pair precision as low as 0.01–0.07) and fixed (shipped default,
+§6kt). Do not quote the pre-fix numbers as the current false-merge rate.
 
 ### Q2. "Are these real families, or artifacts and overfitting?"
 
@@ -491,6 +599,30 @@ zinc-finger stems and the target band scores **0/8**. ⚠ Say what this does and
 shows **the annotation cannot adjudicate these edges**, not that the edges are wrong. Also: **88 of 121 families (72.7%) have no segmental-duplication containment
 at any floor**, and only **5** have per-family external adjudication. **Zero experimental
 validation** — no ddPCR, qPCR, or FISH.
+
+⭐⭐⭐ **New, and it reframes every F-score below ~0.8 anywhere in this document: two independent reference
+annotations only agree with EACH OTHER at F 0.67–0.81** (§6kl, 2026-09-14). Running GENCODE and RefSeq through
+the *identical* guided construction and scoring one against the other as truth gives bipartite F **0.666**
+plain, **0.789–0.811** with the exon-to-exon edge clause — and this ceiling is stable under node deletion
+(F barely moves removing half the genes at random) while it *fails* its own pre-registered guard on a fresh
+hold-out (chr16/19/20: same-HGNC-group pair retention 0.939→0.509, driven by KRAB-ZNF and lncRNA nomenclature
+groups that are not real homology groups — a caution about the human RefSeq truth's own quality, not just
+about our method). **Conclusion stated in the ledger: under the exon-clause fix, remaining disagreement is
+annotation gene-model content, not the partition** — so no independently-built method, ours included, can be
+expected to clear ~F 0.8 against a single annotation's truth, because two annotations do not clear it against
+each other. Cite this before conceding any F-score in the 0.6–0.8 range as a shortfall.
+
+⭐⭐ **New: protein-space (translatable-gene-only) families reproduce across independent annotations near the
+project's own goal bars — with a self-caught qualification worth leading with, not hiding.** blastp + coverage
++ MCL on translatable genes, scored GENCODE-vs-RefSeq on a fresh hold-out (chr1/2/3, §6ko): sensitivity
+**0.935**, precision **0.999**, bipartite **F 0.977** — well above the DNA ceiling above. ⚠ **But the first
+pass of this same result was a superfamily artifact**, caught in the same session: 49.5% of pairs cross real
+HGNC gene groups (every olfactory receptor as one 74-gene family, all GPCRs, all kinases). Restricting to
+amino-acid identity ≥ 0.50 fixes the cross-group contamination (0.4%) but drops cross-annotation sensitivity to
+**0.867 — below our own 0.90 bar**. Say both halves: the method *can* reproduce at the goal bars, and the
+first number that looked like it had was checked and found to be measuring something else. Protein-space and
+DNA-space families are also **not nested** in either direction (§6ko, AN-2) — they are different objects, not
+one a coarsening of the other.
 
 ### Q3. "Does the method borrow information across the family?"
 
@@ -600,19 +732,47 @@ certificate (NPIP 13 → 12 at 99.85 %, row 711).
 
 ### Q9. "NPIPA and NPIPB should be distinct subfamilies."
 
-⭐ **2026-09-05, on the thesis definition (SD-core family, `rna_units_v3` MCL3, §6ew):** the 29 gorilla NPIP loci
-land on CHM13 as **17 NPIPB-only, 3 NPIPA2+NPIPB13, 9 ABCC1/SORL1 chimeras** (5 trimmed to the LCR16a core, 4
-dropped) — none on NPIPA alone. Identity (0.9015 vs 0.9007) and exonic coverage (0.588 vs 0.533) do not separate
-the A-landing from the B-landing loci, and MCL keeps all 20 in one cluster from inflation 1.4 to 4.0; its first
-cut is exactly the four core-0 chimeras. Say: *"in gorilla the A/B split is not a cut; the catalog reports the
-CHM13 landing per locus, and the family's first partition coincides with the core rule's drop arm."* ⚠ The
-coverage-splits-A-from-B answer below is from the EARLIER E_r graph and does not transfer (row 695).
+⚠ **On the gorilla SD-core definition (2026-09-05, still true of that substrate/mode):** the 29 gorilla NPIP
+loci land on CHM13 as **17 NPIPB-only, 3 NPIPA2+NPIPB13, 9 ABCC1/SORL1 chimeras** — none on NPIPA alone.
+Identity (0.9015 vs 0.9007) does not separate the A-landing from the B-landing loci; coverage does (A↔A 0.46,
+A↔B 0.12, B↔B 0.06, vs identity 0.99/0.96/0.99). This remains true on that gorilla catalog and mode; it has
+not been superseded there. **What changed is that we now have a mode that resolves the split, tested on the
+advisor's own example.**
 
-**He was right, and the method already agreed.** ⭐ **Identity cannot separate them; coverage can** —
-A↔A median coverage **0.46**, A↔B **0.12**, B↔B **0.06**, while identity is **0.99 / 0.96 / 0.99**.
-On identity NPIP is one clique; the **coverage floor** is what splits it. ⚠ Superseded detail: the
-dominant failure is now **fragmentation** (14 members → 13 families), not contamination — and
-**§5j** finds NPIP is **one family fragmented into 5–6**, not three real subfamilies.
+⭐⭐⭐ **2026-09-13 (§6jm–§6js): a clean NPIPA|NPIPB split now exists, on human CHM13, via guided mode.** The
+fix is the UNIT, not a new threshold: switching membership from transcript-based to **gene body** eliminates
+the under-merge outright (keep-one-seed sensitivity 0.257→**1.000**, precision 1.000, 0 cross-family) — every
+single NPIP seed of either subfamily now recovers every other member. A single identity cut on gene bodies
+still fails (NPIPB's internal divergence, 0.852–0.995, overlaps A-vs-B divergence, 0.850–0.967) — the fix that
+actually works is a **reference-projected phylogenetic tree on exon-masked introns**, which recovers
+NPIPA|NPIPB in **10/10 leave-out runs** plus the full reference, and every named Dishuck 2025 subfamily
+(B3-5, B6-9, B12/13) in 10/10 — at ~15× the speed of MAFFT+IQ-TREE. The consolidated tool
+(`bench/guided_pipeline.py`, §6js) hits NPIP sensitivity **1.000** at both keep-levels with 0 duplicate loci.
+
+⭐⭐ **TBC1D3 is worked as a second literature family and passes every bar (§6js): 1.000/1.000, 0 duplicates.**
+TBC1D3-CDKL is recovered exactly (0.9944 median divergence). **AMY is a third (§6jq–§6js, Bolognini
+2024/Yilmaz 2024): narrowly misses one bar (0.933 vs 0.967)** — diagnosed to a single mis-annotated RefSeq
+model whose 36 kb CDS envelope wrongly swallows a neighbouring gene, not a method defect.
+
+⚠⚠ **The unit that works is family-specific, and this is a concession, not a footnote.** NPIP needs gene
+body/introns (its transcript unit fails at 0.257 sensitivity); AMY needs coding sequence/exons (its gene-body
+unit fails at 0.400; transcript succeeds at 0.764); TBC1D3 tolerates either. There is no single "the" unit —
+the guided pipeline works because it takes the union of two finders and lets the tree pick the informative
+sequence class per family.
+
+⚠ **Two more things to say before he asks.** First, this is a **region-level vs copy-level** distinction, not
+just a unit one (§6ji/§6jj): the whole-duplicon span (gene body plus flanking sequence) DOES carry an
+A/B-consistent split; the gene body alone, without flanking context, does not — the A/B signal lives partly
+in flanking duplicon sequence. Second, **everything above is human CHM13 only** — none of it has been re-run
+on the gorilla substrate the thesis is about; the gorilla SD-core paragraph above is still the only gorilla
+answer we have.
+
+⭐ **A second-haplotype extension answers one more piece and confirms one persistent gap (§6kq, throwaway
+spike, not pre-registered).** Adding a second haplotype (HG002, then a 23-haplotype HPRC panel) makes allelic
+divergence directly measurable (human NPIP allelic p-distance median 0.0003 vs paralog 0.0190) and recovers
+groups a single reference cannot resolve — **TBC1D3-CDKL**, not recoverable from CHM13 alone (§6jp). **TBC1D3
+subfamily AE is never recovered, in any configuration tried, including the full 23-haplotype panel** — an
+honest, still-open negative to state alongside the CDKL positive, not hide behind it.
 
 ⭐ **Our measured precision on NPIP is understated**, because Soto's set is CAT-bounded: a real copy
 CAT missed scores as a false positive. The defensible exhibit is **chr16:28,659,994 — 21 exons,
@@ -634,31 +794,68 @@ only move that buys credibility for what is below it.
 1. **No experimental validation.** No ddPCR, qPCR, or FISH. Every number is computational.
 2. **The external corroboration covers the wrong end** of the identity distribution (Q2).
 3. **72.7% of families have no external adjudication of any kind**; 5 of 121 have per-family review.
-4. **The project is NPIP-bound** — 66/120 sections, clean control n = 3.
+4. **The project is NPIP-bound on the thesis organism** — 189/~330 sections, clean gorilla control n = 1.
+   TBC1D3 and AMY are now also worked (Q9), but human CHM13 only; neither has been re-run on gorilla.
 5. **Half the tandem-read cases are undetermined** (Q5).
 6. **No ape catalog is reproducible by the current binary** (Q6).
 7. **O1's remaining losses are the annotation and three recorded special cases**, not the definition: loci
    the GFF has no model for (§6ev P3), partial paralogues below the coverage threshold with hundreds of
    cross-mapping reads, nested units of two families, and members whose reads fall outside the chain (§6fn).
-   The 2026-09-05 thresholds are a measured plateau (§6ez), not a proof.
+   ⭐**Quantified further (2026-09-14, §6kg/§6kh):** running the identical guided construction on
+   annotation-quality nodes reaches F 0.955; on de novo nodes, only F 0.726, decomposed into exon/UTR
+   completeness (~0.09 F) and gene partition (~0.10-0.12 F). Even with a *perfect* read-only gene partition,
+   RNA-only nodes cap at F 0.873-0.893 (§6kk) — some of what a guided edge needs is unexpressed sequence no
+   RNA-only node can ever see.
 8. **O2's wall is local identity within sequencing error**: a copy whose expressed segment is 99.85 %
    identical to another's is absorbed with a valid certificate (row 711). Above that wall the certificate
    is measured (0 wrong anchors, 1.0000 placement agreement); below it, the reads are an allele.
-9. **O3 flags a sequence, not a copy.** A flag means ≥ 3 reads consistently at least 0.7 % from every locus
-   the assembly holds (§6fl–§6fn); RNA alone cannot say whether that is a copy absent from the reference or
-   a diverged haplotype. On the intact catalogs 34.7 % (3 contigs) and 13.9 % (genome-wide) of the candidate
-   pairs carry it — above the pre-registered 25 % on the three contigs (row 718) — and the reference-absent
-   class proper is small (4 and 23 unannotated loci); most "missing" origins are annotated loci without a
-   unit or MCL cuts. The old collapse-deficit screen (0/816) is a different instrument and is retired.
+9. **The annotation-vs-annotation ceiling (2026-09-14, §6kl): two independent reference annotations only
+   agree with each other at bipartite F 0.67-0.81** through the identical guided construction, and this is
+   stable under 50% random node deletion — i.e. it is annotation gene-model content, not a partition defect.
+   No method, including ours, should be expected to clear ~F 0.8 against a single annotation's truth. See Q2.
+10. **O3 flags a sequence, not a copy, and the RNA-only missing-copy signature does not generalize past the
+    two families it was found on.** A flag means ≥ 3 reads consistently at least 0.7 % from every locus the
+    assembly holds (§6fl–§6fn); RNA alone cannot say whether that is a copy absent from the reference or a
+    diverged haplotype. On the original intact catalogs 34.7 % (3 contigs) and 13.9 % (genome-wide) of
+    candidate pairs carry it; the reference-absent class proper is small (4 and 23 unannotated loci).
+    ⚠⚠ **New and important (2026-09-15, §6kv-§6kx): 5 fresh pre-registered excision targets on ordinary
+    tandem SD families (not NPIP/ZNF875, identity 0.909-0.969, comparable range) all FAIL to reproduce the
+    signature** — 99-100% of each excised copy's reads become untraceable "orphans" rather than
+    origin-rejecting with a pattern; the formal test can't even run (0-2 usable reads per target).
+    **The one real, non-synthetic, DNA-confirmed positive found so far** (GWFAM195, a haplotype where the
+    paternal genome independently proves 4 copies against the reference's 2) shows the consistent-mismatch
+    signature above background with NO excision at all — but only as a raw rate (2.0-2.3 sites/kb vs <1/kb
+    background), not the clean "one rejected group, one candidate" shape, because the two known copies are
+    too similar (>99.5%) for the certificate to separate. `copy_assign` was extended to support
+    cross-chromosome families for a second real candidate (GWFAM248); the native Poisson
+    `--flag-missing-copies` test now runs correctly on both real candidates and returns **`not_tested` on
+    both**, for two distinct, traced, non-bug reasons (marginal secondary-only reads in one case; too few
+    rejections in the other). **Say plainly: the signature is real on ≥2 named families (NPIP, ZNF875,
+    GWFAM195) but is not shown to be a general detector**, and the two real cases in hand are individually
+    too marginal to fire the formal statistical test.
+11. **O3's real-world statistical power is near zero genome-wide, independent of the above** (§6id Task 8,
+    corrected result): of 2,276/2,080 testable copies genome-wide (testis vs fibroblast), only **10 and 6
+    respectively ever reach the statistical test at all** — origin-rejected reads are too sparse outside
+    hand-picked families. The design's own sanity gate is violated. Say this as a power problem, separate
+    from concession 10's specificity problem.
+12. **There is no single "unit" for family/subfamily membership — it is family-specific** (§6jq-§6js, Q9):
+    NPIP needs gene body/introns, AMY needs coding sequence/exons, TBC1D3 tolerates either. The guided
+    subfamily pipeline works only by taking the union of two finders and letting a tree pick the
+    informative sequence class per family, which is itself worth conceding as an absence of a
+    parameter-free, one-size rule.
 
 ---
 
 ## Part 4 — What to put on screen, in this order
 
-1. **The register** (635 killed routes) and the deleted verdict-tag note — establishes the
+1. **The register** (838 killed routes) and the deleted verdict-tag note — establishes the
    discipline before any result is shown.
-2. **The forking-paths accounting** (Part 1.1): ~950 tested, **1** default changed, and §6aa's
-   audit finding nothing to flip.
+2. **The forking-paths accounting** (Part 1.1): well over a thousand hypotheses tested, **3**
+   defaults ever changed, and §6aa's audit finding nothing to flip.
+2b. **The annotation-vs-annotation ceiling** (§6kl, Q2): two independent reference annotations only
+   agree with each other at F 0.67-0.81 through the identical construction. Show this before showing any
+   F-score of ours in that range — it reframes "our method only reaches 0.7-0.8" as bounded by truth
+   quality, not defect, and it is the single most consequential number added since the last pass.
 3. **The pre-registered human panel** (§6bt.2) — a gorilla-derived clause, a human substrate it
    never saw, the prediction pushed to git before the run, **5/5 and 9/9**, and the one case it
    said it could not fix left unfixed. Show the commit timestamp.
@@ -683,15 +880,15 @@ chosen. `REPRODUCE.md` pins the **one** that is — three contigs, ~40 minutes, 
 
 | question | verdict | evidence |
 |---|---|---|
-| Q1 method exists | ⭐ SD-core definition; NPIP 31/31 one family; Soto precision within CI, recall ×3.4 | §6ev, §6fh, §6fo, `O1_DEFINITION_SWITCH.md` |
-| Q2 real vs overfit | ⚠ **narrowly** defensible; three external instruments | §6dy–§6dz, §6eh, Part 1 |
+| Q1 method exists | ⭐ triangle-supported leaders (confirmed 3 substrates, opt-in, not yet default); NPIP 31/31 present but fragmented into 4 clusters; guided_pipeline as a human-only third path | §6kb–§6kg, §6hu, `seeded_family_definition.md` |
+| Q2 real vs overfit | ⚠ **narrowly** defensible; ⭐ annotation-vs-annotation ceiling F 0.67-0.81 bounds every F-score; protein-space families reproduce at goal bars (self-corrected once) | §6kl, §6ko, §6dy–§6dz, §6eh, Part 1 |
 | Q3 borrowing | ⛔ no (inert) / ⭐ `E_c` splits | §6bd, §6bi |
 | Q4 isoforms | ⭐ structure and origin separated by the genomic read-star | §6fd |
 | Q5 tandem reads | ⭐ K = 0 tie / clipped locus / nested special case | §6fh, §6fj, row 721 |
 | Q6 portability | ⭐ tissue/animal · ⛔ apes | §4l, §5p |
 | Q7 boundaries | ⭐ premise false | §6ay, §6ba |
 | Q8 1/k | ⭐ never used; certified assignment measured (0 wrong anchors, 1.0000 agreement) | §6fa–§6fj, `sweep_v14` |
-| Q9 NPIP subfamilies | ⭐ answered on his own example | §5j, fam72 review |
+| Q9 NPIP subfamilies | ⭐⭐ NPIPA\|NPIPB split now recovered clean (10/10) via guided gene-body units + reference-projected intron trees; TBC1D3 1.000/1.000, AMY near-miss (annotation defect) — all human CHM13, not yet gorilla; TBC1D3-AE still never recovered | §6jm–§6js, §6kq |
 | Q10 non-canonical | ⭐ he is right; recurs | §6au, §6av, §6aw |
 | Q11 PSV | ⭐ answered | §6aj |
 
@@ -721,8 +918,10 @@ Verbatim intent, and it supersedes Parts 0d–0g where they differ:
    on gorilla MCL1 (4 assigned / 28 tied / 1 ambiguous), 1,118 on human MCL0 (262 / 512 / 344)**, held-back
    MCL58 40 (2 / 38 / 0); on the certificate-independent in-catalog AS-tied pool, 262 / 1,643 = 15.9 % (human),
    4 / 122 (MCL1) — and the "38.7 % assigned" headline is retired. Precision: excision of every human copy in
-   turn, 247/262 = 94.3 % of the assignments abstain (§6hg/§6hk); the hard-locus bakeoff (§6hh) carries 85 % of the
-   AS-tied molecules vs flair 47 % / StringTie 44 % / isoseq 73 %. Two widenings were measured and refuted
+   turn, 247/262 = 94.3 % of the assignments abstain (§6hg/§6hk); the hard-locus bakeoff (§6hh) carried 85 % of the
+   AS-tied molecules vs flair 47 % / StringTie 44 % / isoseq 73 % — **updated 09-10 to 94.7 % on the
+   population O2 actually targets, a proven strict superset; see Part 0d/0h item 3 above.** Two widenings
+   were measured and refuted
    (aligner disagreement §6hd, indel PSV columns §6he); the pairwise best (§6hj) shipped.
    **The deliverable (§6hn–§6hp, default since 2026-09-09):** `copy_assign --gtf` emits the GTF O2 believes —
    family isoforms grouped across copies by lifting their intron chains, placed only where a unique mapper or
