@@ -21034,3 +21034,38 @@ understate copy identity (GPR89A/B 0.91).
   both directions (neither nests), and some "extra" genes are genuine homology (ULK4P in CHRFAM7A).
 
 Data: `lit/soto_fams/{soto_project.py,soto_project_span.out}`.
+
+**§6kr disagreement audit — where Soto is right and we are wrong** (descriptive, eight families).
+
+Setup:
+- Every gene pair among the chosen Soto families plus members of our touching DNA families.
+- Status: TP = both join; FP = we join, Soto separates; FN = Soto joins, we separate.
+- Evidence per pair:
+  - our direct E1 edge, or only a same-component path;
+  - the best gene-span record's gapless identity;
+  - **shared-exon fraction**: CIGAR-exact bases where an exon base of one gene aligns to an exon base of the other, divided by
+    the smaller exonic length (Soto's shared-exon idea, measured on our alignments).
+
+`lit/soto_fams/{soto_disagree.py,disagree_pairs.tsv}`
+
+| region | TP: n, shared-exon median | FP: n, shared-exon median, pairs with < 0.05 or no record | FN: n, same component, no record, shared >= 0.50 |
+|---|---|---|---|
+| chr15/17 | 257, 0.89 | 2,385, 0.11, **1,067** | 195, 186, **103**, **60** |
+| chr1 | 41, 0.52 | 387, 0.25, **166** | 0 |
+
+**Findings.**
+1. **We join genes that share no exons.** Soto's shared-exon criterion is right here:
+   - NBPF–NOTCH2NL (59 pairs), EVI5–NBPF, GOLGA–LINC / CHRNB / VPS33B-DT / AC104758;
+   - overlapping and antisense models.
+
+   E1 requires only >= 1 exonic base on each side in one record, so co-duplicated neighbours pass.
+   Candidate fix: a shared-exon fraction instead of 1 bp (TP median 0.89 / 0.52 vs FP 0.11 / 0.25).
+2. **We split GOLGA8 where Soto keeps it (MCL cut).** 60 FN pairs share >= 50% of exons at 97-99.9% gapless identity; 186/195
+   FN pairs are in the same graph component and most have no direct edge (e.g. GOLGA8O/N with the AC091057.4 copies).
+3. **Missing alignment records in dense families.** 103/195 chr15/17 FN pairs have no gene-span record at all. The most
+   aligned GOLGA8 / AC091057.4 genes reach 85-96 distinct targets, so the `-N 50 -p 0.1` all-vs-all plausibly drops pairs.
+   Hypothesis, not yet verified.
+
+Next, to pre-register and hold out on other Soto families:
+- a shared-exon edge rule;
+- alignment completeness (-N) for > 50-copy families.
