@@ -4,11 +4,16 @@
 Pair table (TSV, header = PAIR_COLS): 0-based half-open intervals of side A and side B, strands, identity, CIGAR (M/I/D;
 M both sides, D side A, I side B; side B reverse-complemented when strand_b is '-'), source (D1:sedef, D2:biser, D3:selfaln).
 """
+import argparse
 import csv
+import glob
 import os
 import re
 import shutil
+import signal
 import subprocess
+import sys
+import time
 
 PAIR_COLS = ("chrom_a", "start_a", "end_a", "chrom_b", "start_b", "end_b", "strand_a", "strand_b", "identity", "cigar", "source")
 MIN_SD_BP, MIN_SD_ID = 1000, 0.90
@@ -247,3 +252,159 @@ def cmd_meryl(genome, outdir, threads=4):
 
     print(f"[meryl] C_max = {c}")
     return c
+
+
+BISER = "/home/juanfra/miniforge3/envs/biser/bin/biser"
+
+
+def run_budget(cmd, budget, stdout=None):
+    """Run cmd in its own process group; on budget expiry kill the WHOLE group (BISER workers, Liftoff's minimap2) so no
+    orphan survives (WSL crash rule). Returns True if it finished."""
+    proc = subprocess.Popen(cmd, stdout=stdout or subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        rc = proc.wait(timeout=budget)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+        return False
+    if rc != 0:
+        raise subprocess.CalledProcessError(rc, cmd)
+    return True
+
+
+def nonrepeat_aligned(p, merged):
+    import repeat_evidence as rep
+    ca, a1, a2, cb, b1, b2, sa, sb, ident, cig, _ = p
+    oa, ob, tot = 0, 0, 0
+    for n, o in re.findall(r"(\d+)([MID])", cig):
+        n = int(n)
+        if o == "M":
+            ga = (a1 + oa, a1 + oa + n)
+            gb = (b2 - ob - n, b2 - ob) if sb == "-" else (b1 + ob, b1 + ob + n)
+            tot += min(n - rep.masked_bases(merged, ca, *ga), n - rep.masked_bases(merged, cb, *gb))
+            oa += n
+            ob += n
+        elif o == "D":
+            oa += n
+        else:
+            ob += n
+    return tot
+
+
+def cmd_biser(a):
+    import pysam
+    os.makedirs(a.outdir, exist_ok=True)
+    bed, tmp = f"{a.outdir}/biser.bed", f"{a.outdir}/biser_tmp"
+    if not os.path.exists(bed):
+        cmd = [BISER, "-t", str(a.threads), "-o", bed, "--keep-temp", "-T", tmp]
+        if os.path.isdir(tmp):
+            cmd += ["--resume", tmp]
+        if not os.path.exists(str(a.genome) + ".fai"):
+            pysam.faidx(str(a.genome))
+        if not run_budget(cmd + [str(a.genome)], a.budget):
+            print("[biser] budget spent; rerun the same command to resume")
+            return
+    pairs = [p for p in (from_biser(l) for l in open(bed)) if p]
+    write_pairs(pairs, f"{a.outdir}/pairs.D2.tsv")
+    print(f"[biser] {len(pairs)} pairs -> {a.outdir}/pairs.D2.tsv")
+
+
+def cmd_selfaln(a):
+    import pysam
+    import repeat_evidence as rep
+    d = f"{a.outdir}/selfaln"
+    os.makedirs(d, exist_ok=True)
+    g = pysam.FastaFile(str(a.genome))
+    mmi = f"{d}/genome.mmi"
+    if not os.path.exists(mmi):
+        subprocess.run(["minimap2", "-x", "asm20", "-t", str(a.threads), "-d", mmi, str(a.genome)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    chunks = []
+    for c, L in zip(g.references, g.lengths):
+        for off in range(0, L, a.chunk_bp):
+            chunks.append((c, off, min(L, off + a.chunk_bp)))
+    t0 = time.time()
+    done = 0
+    for i, (c, s, e) in enumerate(chunks):
+        paf = f"{d}/c{i:05d}.paf"
+        if os.path.exists(paf):
+            done += 1
+            continue
+        if time.time() - t0 > a.budget:
+            break
+        q = f"{d}/c{i:05d}.fa"
+        open(q, "w").write(f">{c}@{s}\n{g.fetch(c, s, e).upper()}\n")
+        with open(paf + ".tmp", "w") as fh:
+            ok = run_budget(["minimap2", "-x", "asm20", "-c", "-N", "50", "-p", "0.1", "-t", str(a.threads), mmi, q],
+                            max(30, a.budget - (time.time() - t0)), stdout=fh)
+        if not ok:
+            os.remove(paf + ".tmp")
+            print(f"[selfaln] chunk {i} did not finish inside the budget; rerun (a chunk that never fits needs -f 0.001)")
+            break
+        os.replace(paf + ".tmp", paf)
+        os.remove(q)
+        done += 1
+    print(f"[selfaln] {done}/{len(chunks)} chunks aligned")
+    if done < len(chunks):
+        return
+    merged = rep.merge(rep.read_bed(a.repeats))
+    pairs = []
+    for paf in sorted(glob.glob(f"{d}/c*.paf")):
+        for line in open(paf):
+            p = from_selfpaf(line)
+            if p and nonrepeat_aligned(p, merged) >= MIN_SD_BP:
+                pairs.append(p)
+    write_pairs(pairs, f"{a.outdir}/pairs.D3.tsv")
+    print(f"[selfaln] {len(pairs)} pairs -> {a.outdir}/pairs.D3.tsv")
+
+
+def cmd_d1(a):
+    contigs = set(a.contigs.split(","))
+    pairs = [p for p in (from_sedef(l, a.fmt) for l in open(a.sedef) if not l.startswith("#")) if p and p[0] in contigs and p[3] in contigs]
+    write_pairs(pairs, a.out)
+    print(f"[d1] {len(pairs)} pairs -> {a.out}")
+
+
+def cmd_to_sedef(a):
+    with open(a.out, "w") as fh:
+        for p in read_pairs(a.pairs):
+            if p[9]:
+                fh.write(to_sedef_gorilla(p) + "\n")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("biser")
+    p.add_argument("--genome", required=True)
+    p.add_argument("--outdir", required=True)
+    p.add_argument("--threads", type=int, default=4)
+    p.add_argument("--budget", type=int, default=560)
+    p = sub.add_parser("selfaln")
+    p.add_argument("--genome", required=True)
+    p.add_argument("--outdir", required=True)
+    p.add_argument("--repeats", required=True)
+    p.add_argument("--chunk-bp", type=int, default=2_000_000)
+    p.add_argument("--budget", type=int, default=540)
+    p.add_argument("--threads", type=int, default=4)
+    p = sub.add_parser("d1")
+    p.add_argument("--sedef", required=True)
+    p.add_argument("--fmt", required=True)
+    p.add_argument("--contigs", required=True)
+    p.add_argument("--out", required=True)
+    p = sub.add_parser("meryl")
+    p.add_argument("--genome", required=True)
+    p.add_argument("--outdir", required=True)
+    p.add_argument("--threads", type=int, default=4)
+    p = sub.add_parser("to-sedef")
+    p.add_argument("--pairs", required=True)
+    p.add_argument("--out", required=True)
+    a = ap.parse_args()
+    if a.cmd == "meryl":
+        cmd_meryl(a.genome, a.outdir, a.threads)
+    else:
+        {"biser": cmd_biser, "selfaln": cmd_selfaln, "d1": cmd_d1, "to-sedef": cmd_to_sedef}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    main()

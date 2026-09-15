@@ -123,6 +123,39 @@ def test_run_to_tool_output_failure(tmp_path):
     assert os.path.exists(log_file), f"Log file should exist"
 
 
+import subprocess
+
+TOY = "/tmp/claude-1000/-mnt-c-Users-jfris-Desktop/931c208e-8acb-4dd2-aacb-cf92d5ad051f/scratchpad/biser_probe/toy.fa"
+
+
+def test_nonrepeat_aligned_minus_strand():
+    import repeat_evidence as rep
+    merged = rep.merge([("B", 0, 100, ".")])  # side B's first 100 bp are repeat
+    # side B '-' : the first CIGAR block on B maps to B's END; B = 0..1000, block 1000M covers all of B
+    pair = ("A", 0, 1000, "B", 0, 1000, "+", "-", 0.95, "1000M", "D3:selfaln")
+    assert de.nonrepeat_aligned(pair, merged) == 900
+    pair2 = ("A", 0, 1000, "B", 0, 950, "+", "-", 0.95, "100M50D850M", "D3:selfaln")
+    # block1 A 0-100 / B 850-950 (no repeat) = 100; block2 A 150-1000 / B 0-850: B repeat 0-100 -> 750
+    assert de.nonrepeat_aligned(pair2, merged) == 850
+
+
+def test_toy_biser_and_selfaln_find_the_duplication(tmp_path):
+    out = tmp_path / "ev"
+    r = subprocess.run([sys.executable, "bench/dup_evidence.py", "biser", "--genome", TOY, "--outdir", str(out), "--threads", "2"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    p2 = de.read_pairs(out / "pairs.D2.tsv")
+    assert any({x[0], x[3]} == {"chrA", "chrB"} and x[2] - x[1] > 15000 for x in p2)
+    (tmp_path / "empty.bed").write_text("")
+    for _ in range(3):
+        r = subprocess.run([sys.executable, "bench/dup_evidence.py", "selfaln", "--genome", TOY, "--outdir", str(out),
+                            "--repeats", str(tmp_path / "empty.bed"), "--chunk-bp", "100000", "--budget", "120"],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    p3 = de.read_pairs(out / "pairs.D3.tsv")
+    assert any({x[0], x[3]} == {"chrA", "chrB"} and x[2] - x[1] > 15000 and x[8] > 0.9 for x in p3)
+
+
 def test_run_to_tool_output_success(tmp_path):
     """Test that _run_to with a tool-named output atomically moves it to final path on success."""
     final_path = str(tmp_path / "tool_output")
