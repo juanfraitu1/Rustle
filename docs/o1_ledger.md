@@ -20679,7 +20679,12 @@ scored admitted span-only edges are cross-chromosome (122/252). Explanation of t
 **Presence on the hold-out (guided loci on the 3 contigs):** R 313 (199 in a family), T 121 (22 in a family), N 763 (20 in
 a family); MAPQ-0 counted (disclosure): T 127, N 757.
 
-Data: `rebuild3/{cat_dn1r.*,dn1r.err,dump_dn1r/,score_x_expr.out,score_x_full.out,prov_x_dn1r.out}`. DN1r+B running.
+Data: `rebuild3/{cat_dn1r.*,dn1r.err,dump_dn1r/,score_x_expr.out,score_x_full.out,prov_x_dn1r.out}`.
+
+**Hold-out DN1r+B: NOT RUN (killed).** Launched 17:46 with the same binary; the harness killed it at ~17:59 for low
+memory during the genomic-span all-vs-all (a concurrent session's whole-genome `minimap2 -d` index held 13 GB). No catalog
+was written; the partial dump `rebuild3/dump_dn1rb/` (TX edges only) is not used. Per Addendum X it is reported as not run
+until a complete rerun exists.
 
 ## §6km — Post-AJ exploration (looked-at substrates, no verdicts): the ~0.8 ceiling between two annotations is gene-model content, not repeats, MCL settings or partition instability (2026-09-14)
 
