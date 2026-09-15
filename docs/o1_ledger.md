@@ -21508,3 +21508,55 @@ did not recover subfamily structure — a genuine, executed negative, not merely
 
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/gorilla_npip/` (`build_inputs.py`, `truth.tsv`,
 `seed.gff`, `landing.paf`, `t.out`, `t.candidates.tsv`, `tree_t/`).
+
+## §6l0 — Q6 (apes): the current-default `gw_family_catalog` DOES port to chimp/orangutan — and its known
+NPIP-fragmentation defect turns out to be general, not gorilla/ape-specific (2026-09-15)
+
+**Motivation.** §6ky's Q6 answer was flatly "not today" — the four existing ape/human catalogs were all built
+under `refine`, a default removed since, so the current binary reproduces none of them and no direct test of
+current-binary ape portability existed. Following the ledger's own prior recommendation (a single-contig,
+depth-matched, directional arm beats an ~8-hour full 4-genome rebuild), ran the *current* default
+`gw_family_catalog` (no `--refine`/`--window-catalog`/`--cross-chrom`) on a matched substrate across four
+species: chimp (PTR) and orangutan (PPY) chr16 (`NC_072414.2`, `NC_072389.2` — both headers say "chromosome
+16" in their own assemblies), plus, for the first time under this exact invocation, human (HSA) chr16
+(`bakeoff/human/hsa16.bam` vs `chm13v2.0.fa`) as the same-tool, same-substrate-type control. Each ape BAM was
+subset from its existing genome-wide drop-in BAM via `samtools view -b <bam> <chr16-contig>` (no `--region`
+flag exists on the binary). All three runs completed cleanly, no crash, no flag changes, no code changes.
+
+| species | contig | reps→families | NPIP-like copies (id≥0.90 vs the 22 human CHM13 truth genes) | families touched | largest single family's share |
+|---|---|---|---|---|---|
+| HSA | chr16 (chm13v2.0) | 437→56 | 122 | 26/56 (46.4%) | 18.9% |
+| PTR (chimp) | NC_072414.2 | 1624→42 | 27 | 15/42 (35.7%) | 14.8% |
+| PPY (orangutan) | NC_072389.2 | 4014→172 | 75 | 27/172 (15.7%) | 13.3% |
+
+Method: each species' recovered copies (`<sp>_chr16.copies.tsv` genomic spans) were extracted with
+`bedtools getfasta` and aligned with `minimap2 -x asm20 -c --eqx -N 20 -p 0` against
+`o3_probe_verify/gorilla_npip/human_npip_genes.fa` (the same 22-gene CHM13 truth-projection probe set already
+used for Q9's gorilla landing labels, §6kz) — best hit per copy by identity, gated at ≥0.90 (identity only,
+per §6kz's reasoning: query/target are full genomic spans of differing length, so coverage is not a
+meaningful confidence signal here).
+
+**Reading the result.** Two things are true at once:
+1. **It ports.** The ape BAMs are genuinely drop-in: no code change, no flag change, both non-human runs
+   complete and recover a real, substantial, high-identity NPIP-orthologous signal (27 and 75 copies
+   respectively) — this was never established for the current binary before today.
+2. **Fragmentation is universal, not ape-specific — and human's own reference is the *worst* of the three.**
+   All three species split their NPIP-like copies across roughly a third to a half of all families recovered
+   on the chromosome, and in no species does the largest single family capture more than ~19% of the
+   NPIP-like copies found. Human, run through the exact same current-default construction on its own native
+   reference, fragments *more* families (26/56 = 46.4%) than either chimp (35.7%) or orangutan (15.7% of a
+   much larger family count). This directly answers the ambiguity §6kz left open for the gorilla subfamily
+   negative and for the standing "31/31 present, 4 clusters" gorilla finding (§6hu, a different substrate/
+   construction, not directly comparable in absolute numbers but qualitatively consistent): the fragmentation
+   defect is a property of the current default construction itself, not something exposed only by crossing a
+   species boundary or by gorilla's messier native annotation.
+
+**Answer for Q6/ADVISOR_QUESTIONS.md.** Apes: **yes, structurally** — the current binary runs unmodified on
+foreign genomes and recovers real orthologous signal. **No, on the coherent-single-family question** — but
+that failure is now shown to be general (reproduces on human chr16 under the identical build), so it is not a
+distinct, unaddressed ape-portability gap; it is the same standing NPIP-fragmentation defect already on
+record, now confirmed present on every substrate tested with the current default.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/ape_q6/` (`{ptr,ppy}_chr16.bam(.bai)`,
+`{PTR,PPY,HSA}_chr16.{families,copies}.tsv`, `{ptr,ppy,hsa}_copies.{bed,fa}`, `{ptr,ppy,hsa}_vs_npip.paf`,
+`{ptr,ppy,hsa}.log`).

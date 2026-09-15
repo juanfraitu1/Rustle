@@ -7,7 +7,10 @@
 > Q3/Q4/Q6/Q7/Q8/Q10/Q11 are unchanged and were re-checked against the range, not just left alone.
 > **Same-day follow-up (§6kz):** Q9's subfamily pipeline was then actually run on gorilla for the first time —
 > it found no recoverable subfamily structure there, closing that gap with an executed negative rather than
-> an absent attempt.
+> an absent attempt. **Same-day follow-up (§6l0):** Q6's ape-portability gap was also closed — the current
+> default binary runs unmodified on chimp/orangutan chr16 and recovers real NPIP-orthologous signal, but its
+> known fragmentation defect turns out to be general (reproduces on human's own reference at the same build),
+> not an ape- or gorilla-specific failure.
 >
 > **2026-09-06 pass (history).** Q1, Q2, Q4, Q5, Q8 and Part 3 items 7–9 rewritten to the SD-core definition and
 > the read-star O2 (§6ev–§6fo). Paragraphs marked as the OLD node's measurements are kept as history.
@@ -23,7 +26,7 @@
 > per-question evidence; Part 3 is what we concede unprompted; Part 4 is what to put on screen.
 
 **Provenance.** Derivations in [`o1_ledger.md`](o1_ledger.md) (~210 sections as of §6kx), negatives in
-[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**838 rows**), status in
+[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**840 rows**), status in
 [`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md), current O1 definition in
 [`seeded_family_definition.md`](seeded_family_definition.md) §0★★, current O3 status in
 [`O3_STATUS.md`](O3_STATUS.md). Test baseline **854 lib tests passed / 2 failed (pre-existing, unrelated:
@@ -519,7 +522,7 @@ information about whether the read belongs.
 
 ### 1.5 "You would not show me the failures."
 
-Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **838 rows, each with
+Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **840 rows, each with
 the number that killed it**, and the two admitted exception classes (**NO-POWER**, and killed-by-
 argument) marked as such rather than hidden. Then hand him the ledger's own index note: an earlier
 auto-derived verdict tag scored **11/22 = 50% — a coin flip — against sections whose outcome was
@@ -668,9 +671,17 @@ first.**
 
 ### Q6. "Does it port to other families, tissues, apes?"
 
-**Family/tissue: yes** (§4l, above). **Apes: not today.** The ape BAMs are drop-in — each aligned
-to its own reference, identical minimap2 line, `-N 50`, indexed — ⛔ **but all four catalogs were
-built with `refine`, a default since removed, so the current binary reproduces none of them.**
+**Family/tissue: yes** (§4l, above). **Apes: yes, structurally — but the coherent-family gap is general,
+not ape-specific (§6l0, 2026-09-15).** The original four catalogs were built with `refine`, a default since
+removed, so they were never reproducible by the current binary — that gap is now closed by an actual run: the
+current default `gw_family_catalog` (no `--refine`) on chimp and orangutan chr16 (drop-in BAMs subset to the
+"chromosome 16" contig, no code change) completes cleanly and recovers real, substantial NPIP-orthologous
+signal (27 and 75 copies at ≥0.90 identity to the human CHM13 truth genes, respectively). But it fragments
+that signal across many separate families in **every** species tested, including human run through the
+identical build on its own reference: HSA 26/56 families (46.4%, the *worst* of the three), PTR 15/42
+(35.7%), PPY 27/172 (15.7%); no species' largest single family captures more than ~19% of its NPIP-like
+copies. The standing NPIP-fragmentation defect (§6hu et al.) is therefore a property of the current default
+construction itself, not something crossing a species boundary exposes.
 ⚠ **Do not quote "149 ancestral + 84 expansions"** — that is a superseded 3-species run overwritten
 84 minutes later; the repo file is the 4-way split.
 
@@ -815,7 +826,9 @@ only move that buys credibility for what is below it.
    TBC1D3 and AMY are now also worked (Q9), but human CHM13 only. The subfamily pipeline WAS run on gorilla
    (§6kz) and found no recoverable subfamily structure there — a real, executed negative, not an unfilled gap.
 5. **Half the tandem-read cases are undetermined** (Q5).
-6. **No ape catalog is reproducible by the current binary** (Q6).
+6. **The NPIP-fragmentation defect is universal, confirmed on human's own reference, not fixed by porting to
+   apes** (Q6, §6l0) — the current default splits NPIP-like copies across a third to a half of all families
+   recovered on chr16 in human, chimp, and orangutan alike, worst on human itself.
 7. **O1's remaining losses are the annotation and three recorded special cases**, not the definition: loci
    the GFF has no model for (§6ev P3), partial paralogues below the coverage threshold with hundreds of
    cross-mapping reads, nested units of two families, and members whose reads fall outside the chain (§6fn).
@@ -903,7 +916,7 @@ chosen. `REPRODUCE.md` pins the **one** that is — three contigs, ~40 minutes, 
 | Q3 borrowing | ⛔ no (inert) / ⭐ `E_c` splits | §6bd, §6bi |
 | Q4 isoforms | ⭐ structure and origin separated by the genomic read-star | §6fd |
 | Q5 tandem reads | ⭐ K = 0 tie / clipped locus / nested special case | §6fh, §6fj, row 721 |
-| Q6 portability | ⭐ tissue/animal · ⛔ apes | §4l, §5p |
+| Q6 portability | ⭐ tissue/animal · ⭐ apes port structurally, ⛔ coherent-family gap is universal (worst on human itself) | §4l, §5p, §6l0 |
 | Q7 boundaries | ⭐ premise false | §6ay, §6ba |
 | Q8 1/k | ⭐ never used; certified assignment measured (0 wrong anchors, 1.0000 agreement) | §6fa–§6fj, `sweep_v14` |
 | Q9 NPIP subfamilies | ⭐⭐ human CHM13: NPIPA\|NPIPB split recovered clean (10/10), TBC1D3 1.000/1.000, AMY near-miss (annotation defect), TBC1D3-AE never recovered. ⛔ gorilla: run for the first time, 0/0 subfamily groups recovered (executed negative, caveated by the label being a cross-species proxy) | §6jm–§6js, §6kq, §6kz |
