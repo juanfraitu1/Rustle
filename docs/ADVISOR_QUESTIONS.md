@@ -26,7 +26,7 @@
 > per-question evidence; Part 3 is what we concede unprompted; Part 4 is what to put on screen.
 
 **Provenance.** Derivations in [`o1_ledger.md`](o1_ledger.md) (~210 sections as of §6kx), negatives in
-[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**840 rows**), status in
+[`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) (**841 rows**), status in
 [`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md), current O1 definition in
 [`seeded_family_definition.md`](seeded_family_definition.md) §0★★, current O3 status in
 [`O3_STATUS.md`](O3_STATUS.md). Test baseline **854 lib tests passed / 2 failed (pre-existing, unrelated:
@@ -522,7 +522,7 @@ information about whether the read belongs.
 
 ### 1.5 "You would not show me the failures."
 
-Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **840 rows, each with
+Hand him [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) — **841 rows, each with
 the number that killed it**, and the two admitted exception classes (**NO-POWER**, and killed-by-
 argument) marked as such rather than hidden. Then hand him the ledger's own index note: an earlier
 auto-derived verdict tag scored **11/22 = 50% — a coin flip — against sections whose outcome was

@@ -21619,3 +21619,62 @@ narrower and more defensible claim than either "half is unknown" or "it's mostly
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/q5_junctions/` (`reconstruct.py`, `pairs.tsv`,
 `exons_3contig.gff`, `gff_introns.pkl`, `pairs_classified.tsv`, `build_probes.py`, `probes.fa`, `ptr.paf`,
 `ptr.mm2.log`, `ppy.paf`, `ppy.mm2.log`).
+
+## §6l2 — Feasibility spike: scoring a read-through overhang against candidate copies with O2's PSV certificate — architecturally clean, empirically too thin and catalog-dependent to build (2026-09-15)
+
+**Motivation.** User asked whether a non-linear/graph reference (vg-style) could avoid read-through
+mis-chaining. Established that this project's two existing "vg" uses (O2's per-family PSV assignment graph,
+`copy_assign.rs`; §6cz's minimizer-multiplicity repeat oracle) are downstream tools, not primary-alignment
+references, and that a pangenome graph doesn't remove a real read-through anyway (it represents allelic/
+haplotype variation, not the fact that one real molecule spans two loci in this individual). Proposed instead:
+extend O2's existing certificate — which already resolves ordinary MAPQ-0 ambiguity between near-identical
+copies — to score a read-through's clipped-off overhang against candidate downstream copies, instead of
+today's clip-and-abstain (`origin_rejected`). Ran this as a two-stage feasibility spike, no code changes.
+
+**Stage 1 — architecture: no blocker found.** The clip (`mcl_families.rs`'s `read_extent`/
+`clip_extents_to_neighbours`) only ever manipulates CIGAR-derived coordinates; it never touches read
+sequence, and both copies of a read-through pair are already staged into the same family object before
+clipping runs. At `copy_assign` time the full unclipped read is realigned against the clipped target — the
+overhang isn't discarded, it just has nowhere to land. O2's certificate math (`read_copy_evidence`/
+`assign_read_editing`) consumes an abstract per-column `ReadFeatures` vector built from any `ref_start`+CIGAR
+alignment, with no MAPQ requirement anywhere in the type — so a locally-realigned overhang could in principle
+be scored through the identical certificate as an ordinary ambiguous read. `discover_psvs` is a self-contained
+pairwise-alignment primitive that runs on as few as 2 copies, no full catalog needed. Conclusion: nothing in
+the code architecture rules this out.
+
+**Stage 2 — empirical density, tested on two independent gorilla populations, both come back thin.**
+*Population A* (14 read-through junctions independently confirmed real by cross-species RNA, §6gc-§6gg,
+`xfix3.readthrough.tsv`): extracted each downstream copy's 250 bp acceptor window and aligned it against every
+sibling copy of that family (minimap2 asm20, >=200/250 bp coverage to count a hit). **4/14 (29%) had no
+alignable sibling in that window at all; of the 10 that did, exactly 5/10 were byte-identical to the nearest
+sibling (zero PSVs — nothing to find, regardless of engineering effort) and those zero-diff failures
+clustered at nearest-copy identity 0.984-0.999, i.e. precisely the near-identical cases the extension would
+matter most for.** The other 5/10 (viable, 1-20 diffs) sat in already-more-diverged families where the
+original assignment was less ambiguous to begin with. Net 5/14 = 36% plausible benefit, skewed away from the
+hard cases.
+
+*Population B* (widened check, §6l1's independently-reconstructed 33 canonical-unannotated junctions, near-
+zero overlap with Population A — only 2/33 share a coordinate with Population A's 14, both against the same
+underlying junction): 13/33 (39%) of the automated junction calls had an acceptor coordinate falling outside
+the nominal downstream copy's own bounds (a real limitation of the reconstruction's junction-picking rule,
+excluded rather than force-fit). Of the 20 well-formed pairs, only **3/20 (15%) had any sibling aligning at
+all** — mostly genuine absence of homology in that window (confirmed with a relaxed minimap2 preset, not a
+threshold artifact), not 0-diff near-misses this time. Diff counts for the 3 that did align: 8, 2, 0. The much
+lower alignable rate here traces to this catalog's families spanning far broader within-family divergence
+(`max_family_identity` 0.67-0.97) than the original's tight NPIP-style catalog (`nearest_ident` up to 0.999) —
+many same-"family" siblings in a looser catalog just aren't close enough at the exon level to share detectable
+homology in any one specific 250 bp window.
+
+**Verdict: not worth building as a general feature.** Two independent gorilla populations both show a modest,
+inconsistent yield (36% and 15%) that is highly catalog-dependent (how tightly a given family clusters its
+near-identical members) and, in the one case where the failure mode was measurable directly, concentrated
+*away* from the hardest, highest-value near-identical cases — the population clip-and-abstain exists to
+handle. A pangenome/graph reference would not have changed this result: the limiting factor is that a real
+70bp-scale PSV frequently does not exist in the specific 150-300 bp window a read-through overhang actually
+covers, which is a fact about the sequence, not about how it is aligned. This does not foreclose a narrower,
+opt-in use (score the overhang only when a cheap pre-check finds >=1 PSV in that exact window, cost ~0 and
+never worse than today) but that is a small enhancement with unpredictable per-family payoff, not the general
+fix the original proposal hoped for.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/q5_junctions/` (`check_overlap.py`,
+`psv_density_check.py`, `psv_density_q5.tsv`, alongside §6l1's existing files).
