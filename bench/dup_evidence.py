@@ -13,6 +13,9 @@ MIN_SD_BP, MIN_SD_ID = 1000, 0.90
 
 def normalize_cigar(cg):
     ops = [(int(n), "M" if o in "=X" else o) for n, o in re.findall(r"(\d+)([MIDNSHP=X])", cg)]
+    for n, o in ops:
+        if o not in ("M", "I", "D"):
+            raise ValueError(f"Invalid CIGAR operation: {o}")
     out = []
     for n, o in ops:
         if out and out[-1][1] == o:
@@ -50,6 +53,10 @@ def from_selfpaf(line):
     side B = query with the record's strand, so minimap2's CIGAR (D = target, I = query) already has SEDEF semantics.
     Keeps canonical non-self records >= MIN_SD_BP at identity >= MIN_SD_ID."""
     f = line.rstrip("\n").split("\t")
+    if len(f) < 12:
+        return None
+    if "@" not in f[0]:
+        return None
     qc, off = f[0].rsplit("@", 1)
     qs, qe = int(off) + int(f[2]), int(off) + int(f[3])
     tc, ts, te = f[5], int(f[7]), int(f[8])

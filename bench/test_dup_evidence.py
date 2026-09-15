@@ -1,6 +1,8 @@
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dup_evidence as de  # noqa: E402
 
@@ -56,3 +58,16 @@ def test_pairs_file_roundtrip(tmp_path):
     p = ("chrA", 0, 1000, "chrB", 10, 1010, "+", "-", 0.9123, "1000M", "D2:biser")
     de.write_pairs([p], tmp_path / "x.pairs.tsv")
     assert de.read_pairs(tmp_path / "x.pairs.tsv") == [p]
+
+
+def test_from_selfpaf_malformed_lines():
+    # short line with fewer than 12 tab fields
+    assert de.from_selfpaf("chr1\t100") is None
+    # 13-field PAF line whose query name has no "@"
+    assert de.from_selfpaf(paf("chr2", 5000, 0, 2000, "+", "chr1", 9000, 5000, 7000, 1900, 2000, "2000M")) is None
+
+
+def test_normalize_cigar_rejects_invalid_ops():
+    # normalize_cigar must raise ValueError for any op other than M, I, D, =, X
+    with pytest.raises(ValueError):
+        de.normalize_cigar("10M5S")
