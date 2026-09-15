@@ -68,15 +68,37 @@ def cmd_lift(a):
     os.makedirs(a.out, exist_ok=True)
     bdir = f"{a.out}/batches"
     os.makedirs(bdir, exist_ok=True)
-    if not glob.glob(f"{bdir}/*.gff"):
+    mgfile = f"{bdir}/max_genes.txt"
+    if glob.glob(f"{bdir}/*.gff"):
+        if os.path.exists(mgfile):
+            prev = open(mgfile).read().strip()
+            if prev != str(a.max_genes):
+                print(f"[lift] batches were generated with --max-genes {prev}, not {a.max_genes}; "
+                      f"delete {bdir} and rerun to regenerate")
+                sys.exit(1)
+        else:
+            open(mgfile, "w").write(str(a.max_genes))
+    else:
+        # (re)generating batches: reused batch indices could otherwise be mistaken for already-lifted
+        for pat in ("*.lifted.gff3", "*.unmapped.txt", "*.liftoff.log"):
+            for p in glob.glob(f"{bdir}/{pat}"):
+                os.remove(p)
         for h in HUMAN_CHROMS:
             lines = subprocess.run(["tabix", HUMAN_GFF, h], capture_output=True, text=True, check=True).stdout.splitlines(True)
             for i, b in enumerate(gff_batches(lines, a.max_genes)):
                 open(f"{bdir}/{h}.{i:03d}.gff", "w").writelines(b)
+        open(mgfile, "w").write(str(a.max_genes))
     from dup_evidence import run_budget
     mmi = a.target + ".mmi"
     if not os.path.exists(mmi):
-        ok = run_budget(["minimap2", "-d", mmi + ".tmp", a.target, "-t", str(a.threads)], a.budget)
+        mmi_log = f"{mmi}.log"
+        try:
+            ok = run_budget(["minimap2", "-d", mmi + ".tmp", a.target, "-t", str(a.threads)], a.budget, log=mmi_log)
+        except subprocess.CalledProcessError as e:
+            if os.path.exists(mmi + ".tmp"):
+                os.remove(mmi + ".tmp")
+            print(f"[lift] index build failed (exit {e.returncode}); see {mmi_log}")
+            sys.exit(1)
         if not ok:
             if os.path.exists(mmi + ".tmp"):
                 os.remove(mmi + ".tmp")
@@ -90,8 +112,16 @@ def cmd_lift(a):
     import shutil
     b = todo[0]
     out = b.replace(".gff", ".lifted.gff3")
-    ok = run_budget([LIFTOFF, "-g", b, "-o", out + ".tmp", "-u", b.replace(".gff", ".unmapped.txt"), "-dir",
-                     f"{a.out}/liftoff_tmp", "-p", str(a.threads), "-m", shutil.which("minimap2"), a.target, HUMAN_FA], a.budget)
+    blog = b.replace(".gff", ".liftoff.log")
+    try:
+        ok = run_budget([LIFTOFF, "-g", b, "-o", out + ".tmp", "-u", b.replace(".gff", ".unmapped.txt"), "-dir",
+                         f"{a.out}/liftoff_tmp", "-p", str(a.threads), "-m", shutil.which("minimap2"), a.target, HUMAN_FA],
+                        a.budget, log=blog)
+    except subprocess.CalledProcessError as e:
+        if os.path.exists(out + ".tmp"):
+            os.remove(out + ".tmp")
+        print(f"[lift] {os.path.basename(b)} failed (exit {e.returncode}); see {blog}")
+        sys.exit(1)
     if not ok:
         if os.path.exists(out + ".tmp"):
             os.remove(out + ".tmp")

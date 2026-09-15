@@ -257,19 +257,27 @@ def cmd_meryl(genome, outdir, threads=4):
 BISER = "/home/juanfra/miniforge3/envs/biser/bin/biser"
 
 
-def run_budget(cmd, budget, stdout=None):
+def run_budget(cmd, budget, stdout=None, log=None):
     """Run cmd in its own process group; on budget expiry kill the WHOLE group (BISER workers, Liftoff's minimap2) so no
-    orphan survives (WSL crash rule). Returns True if it finished."""
-    proc = subprocess.Popen(cmd, stdout=stdout or subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    orphan survives (WSL crash rule). Returns True if it finished.
+
+    If log is given, the child's stderr is appended to that file instead of DEVNULL."""
+    log_fh = open(log, "a") if log else None
     try:
-        rc = proc.wait(timeout=budget)
-    except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait()
-        return False
-    if rc != 0:
-        raise subprocess.CalledProcessError(rc, cmd)
-    return True
+        proc = subprocess.Popen(cmd, stdout=stdout or subprocess.DEVNULL, stderr=log_fh or subprocess.DEVNULL,
+                                 start_new_session=True)
+        try:
+            rc = proc.wait(timeout=budget)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            return False
+        if rc != 0:
+            raise subprocess.CalledProcessError(rc, cmd)
+        return True
+    finally:
+        if log_fh:
+            log_fh.close()
 
 
 def nonrepeat_aligned(p, merged):

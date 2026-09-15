@@ -174,6 +174,14 @@ def test_run_budget_success_returns_true():
     assert de.run_budget([sys.executable, "-c", "import sys; sys.exit(0)"], 5) is True
 
 
+def test_run_budget_log_captures_stderr_on_failure(tmp_path):
+    log = tmp_path / "run.log"
+    code = "import sys; sys.stderr.write('boom\\n'); sys.exit(1)"
+    with pytest.raises(subprocess.CalledProcessError):
+        de.run_budget([sys.executable, "-c", code], 5, log=str(log))
+    assert "boom" in log.read_text()
+
+
 def test_run_budget_timeout_kills_whole_process_group(tmp_path):
     pidfile = tmp_path / "grandchild.pid"
     code = (
