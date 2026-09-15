@@ -108,3 +108,29 @@ def test_run_atomic_success(tmp_path):
     with open(log_file) as f:
         log_content = f.read()
     assert "sys.stdout.write" in log_content
+
+
+def test_run_to_tool_output_failure(tmp_path):
+    """Test that _run_to with a tool-named output that fails leaves no files behind."""
+    final_path = str(tmp_path / "tool_output")
+    log_file = str(tmp_path / "run.log")
+    cmd = [sys.executable, "-c", "import sys; open(sys.argv[1], 'w').write('partial'); sys.exit(5)", "TMPPATH"]
+    with pytest.raises(RuntimeError) as exc_info:
+        de._run_to(cmd, final_path, log=log_file)
+    assert "exit 5" in str(exc_info.value)
+    assert not os.path.exists(final_path), f"Final output should not exist after failure"
+    assert not os.path.exists(f"{final_path}.tmp"), f"Tmp file should be cleaned up after failure"
+    assert os.path.exists(log_file), f"Log file should exist"
+
+
+def test_run_to_tool_output_success(tmp_path):
+    """Test that _run_to with a tool-named output atomically moves it to final path on success."""
+    final_path = str(tmp_path / "tool_output")
+    log_file = str(tmp_path / "run.log")
+    cmd = [sys.executable, "-c", "import sys; open(sys.argv[1], 'w').write('data')", "TMPPATH"]
+    de._run_to(cmd, final_path, log=log_file)
+    assert os.path.exists(final_path), f"Final output should exist after success"
+    assert not os.path.exists(f"{final_path}.tmp"), f"Tmp file should be cleaned up after success"
+    with open(final_path) as f:
+        assert f.read() == "data"
+    assert os.path.exists(log_file), f"Log file should exist"

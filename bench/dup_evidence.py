@@ -163,6 +163,56 @@ def _run(cmd, out=None, log=None):
         os.replace(out_tmp, out)
 
 
+def _run_to(cmd_template, final, log=None):
+    """Run a command with a tool-named output, atomically producing the final output.
+
+    cmd_template: list with "TMPPATH" placeholder replaced by final.tmp
+    final: final output path (directory or file)
+    log: log file path
+    """
+    final_tmp = f"{final}.tmp"
+
+    # Remove stale .tmp files before starting
+    if os.path.exists(final_tmp):
+        if os.path.isdir(final_tmp):
+            shutil.rmtree(final_tmp)
+        else:
+            os.remove(final_tmp)
+
+    # Replace placeholder with tmp path
+    cmd = [final_tmp if x == "TMPPATH" else x for x in cmd_template]
+
+    # Write command header to log
+    if log:
+        with open(log, "a") as fh:
+            fh.write(f"$ {' '.join(cmd)}\n")
+
+    # Run command
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    # Append stderr to log
+    if log and result.stderr:
+        with open(log, "a") as fh:
+            fh.write(result.stderr)
+
+    # Check for errors
+    if result.returncode != 0:
+        # Clean up tmp file on failure
+        if os.path.exists(final_tmp):
+            if os.path.isdir(final_tmp):
+                shutil.rmtree(final_tmp)
+            else:
+                os.remove(final_tmp)
+        if log:
+            raise RuntimeError(f"{cmd[0]} failed (exit {result.returncode}); see {log}")
+        else:
+            raise RuntimeError(f"{cmd[0]} failed (exit {result.returncode})")
+
+    # Atomically rename temp file/dir to final location on success
+    if os.path.exists(final_tmp):
+        os.replace(final_tmp, final)
+
+
 def cmd_meryl(genome, outdir, threads=4):
     import repeat_evidence as rep
     os.makedirs(outdir, exist_ok=True)
@@ -170,7 +220,7 @@ def cmd_meryl(genome, outdir, threads=4):
 
     db = f"{outdir}/kmers.meryl"
     if not os.path.exists(db):
-        _run([MERYL, "count", "k=31", f"threads={threads}", "memory=12", str(genome), "output", db], log=log)
+        _run_to([MERYL, "count", "k=31", f"threads={threads}", "memory=12", str(genome), "output", "TMPPATH"], db, log=log)
 
     hist_path = f"{outdir}/hist.tsv"
     if not os.path.exists(hist_path):
@@ -186,10 +236,10 @@ def cmd_meryl(genome, outdir, threads=4):
     for name, ops in (("low", ["less-than", str(c + 1), "[", "greater-than", "1", db, "]"]), ("high", ["greater-than", str(c), db])):
         sub = f"{outdir}/{name}.meryl"
         if not os.path.exists(sub):
-            _run([MERYL] + ops + ["output", sub], log=log)
+            _run_to([MERYL] + ops + ["output", "TMPPATH"], sub, log=log)
         bed = f"{outdir}/{name}_copy.runs.bed"
         if not os.path.exists(bed):
-            _run([MERYL_LOOKUP, "-bed-runs", "-sequence", str(genome), "-mers", sub, "-output", bed], log=log)
+            _run_to([MERYL_LOOKUP, "-bed-runs", "-sequence", str(genome), "-mers", sub, "-output", "TMPPATH"], bed, log=log)
 
     for name, src in (("low", "D4:meryl"), ("high", "R4:meryl")):
         ivs = [(f[0], int(f[1]), int(f[2]), ".") for f in (l.split("\t") for l in open(f"{outdir}/{name}_copy.runs.bed")) if len(f) >= 3]
