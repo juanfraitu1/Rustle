@@ -141,10 +141,14 @@ fn without_families_ids_are_minted_and_no_join_file_is_written() {
 
 // ---- 3. the LOUD-FAILURE contract ------------------------------------------------------------------
 
-/// A cross-chrom catalog family is structurally unassignable by a region-scoped binary. It must be
-/// REFUSED, never truncated to the copies that happen to fall in the region.
+/// 2026-09-15: a cross-chromosome catalog family is no longer refused. `copy_assign` gathers its reads
+/// directly from every one of its copies' own chromosomes and pools them, so the AS-tied certificate
+/// compares a read against the family's FULL copy set — never one truncated to a single region's contig.
+/// The fixture's `read_cross_0/1/2` are built exactly for this: identical sequence, identical AS score
+/// (100), one placed at MAPQ 60 on `c1:1` and a second, equally-scoring placement at MAPQ 0 on `c2:1` — a
+/// real tie ACROSS chromosomes that only a cross-chromosome-aware certificate can see as one molecule.
 #[test]
-fn a_cross_chrom_family_is_refused_not_truncated() {
+fn a_cross_chrom_family_is_assigned_not_refused() {
     let d = scratch("xchrom");
     // GWFAM0 of the committed catalog: c1:0-260 + c2:0-260.
     let tsv = std::fs::read_to_string(format!("{FIX}/out_default.copies.tsv")).unwrap();
@@ -154,10 +158,45 @@ fn a_cross_chrom_family_is_refused_not_truncated() {
         .collect::<Vec<_>>()
         .join("\n");
     let fam = write(&d, "x.copies.tsv", &format!("{only0}\n"));
-    let (o, _out) = run(&d, &["--families", &fam]);
-    assert!(!o.status.success(), "a cross-chrom family must abort the run");
+    // The committed `run()` helper hardcodes a c1-only `--region`; this family also needs c2 covered, so
+    // sweep both contigs directly via `--regions`.
+    let regions = write(&d, "regions.txt", "c1:0-600\nc2:0-320\n");
+    let out = d.join("o");
+    let out_s = out.to_str().expect("utf-8 path").to_string();
+    let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
+        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+        .args(["--regions", &regions, "--out", &out_s])
+        .args(["--families", &fam, "--copies-fa", &format!("{FIX}/out_default.copies.fa")])
+        .output()
+        .expect("copy_assign failed to spawn");
+    assert!(o.status.success(), "a cross-chrom family must now be assignable:\n{}", stderr(&o));
     let e = stderr(&o);
-    assert!(e.contains("spans 2 chromosomes") && e.contains("truncating"), "{e}");
+    assert!(e.contains("spans 2 chromosomes"), "expected the cross-chrom banner in:\n{e}");
+    assert!(e.contains("cross-chromosome pass"), "{e}");
+
+    let quant = read(&out_s, "quant.tsv");
+    let mut tids = col(&quant, 2);
+    tids.sort();
+    assert_eq!(tids, vec!["DN_c1_0_2", "DN_c2_0_2"], "both cross-chrom copies must be assignable: {quant}");
+
+    // The property this fix actually guarantees: read_cross_0/1/2's records on BOTH c1 and c2 survive the
+    // per-region read-gathering and dedup (before the fix a same-name, same-offset record on a SECOND
+    // chromosome was silently collapsed onto the first one — the exact truncation this feature exists to
+    // avoid) and the run completes rather than refusing the family outright.
+    let assignments = read(&out_s, "assignments.tsv");
+    let cross_rows: Vec<&str> = assignments.lines().filter(|l| l.contains("read_cross_")).collect();
+    assert_eq!(cross_rows.len(), 3, "all 3 read_cross_* molecules must appear in the assignment output:\n{assignments}");
+    // ⚠ NOT ASSERTED HERE (a known, separate limitation, not something this fix touches): whether a
+    // molecule genuinely AS-tied ACROSS two chromosomes is scored as `n_candidates == 2` by the deeper
+    // PSV/mosaic certificate (`assign_family_detailed_once` / `best_overlap_copy` in
+    // `copy_assign_pipeline.rs`) depends on `AlignedRead`, which carries NO chromosome field at all — its
+    // overlap math compares bare numeric ranges. For a family whose copies sit on DIFFERENT chromosomes
+    // but at OVERLAPPING numeric coordinates (as `c1:0-260` and `c2:0-260` deliberately do here), that
+    // layer can pick the wrong "best overlap" copy for a record having nothing to do with its real
+    // chromosome. This is safe for a family whose copies' coordinates do not numerically coincide across
+    // chromosomes (checked by hand for the real target this feature was built for), but is not a general
+    // guarantee — fixing it means threading chromosome through `AlignedRead` and every PSV/mosaic call
+    // site that compares positions, a much larger change than the read-gathering fix here.
 }
 
 /// A supplied copy outside every swept region would never have its reads read. Loud, not skipped.

@@ -89,6 +89,13 @@ struct RegionWork {
     /// `read_names`. Kept so the output stage can say whether a read has an aligned BASE inside a copy —
     /// a read spliced OVER a copy is no evidence for it (§6es hygiene; ledger §6cm).
     read_blocks: Vec<Vec<(u64, u64)>>,
+    /// Each record's OWN chromosome, parallel to `read_names`. For every region this binary ever swept
+    /// before cross-chromosome family support, every record here shares `contig` — so this used to be
+    /// redundant with the struct's own `contig` field and nothing read it. A cross-chromosome family's
+    /// `RegionWork` pools records from several chromosomes into one work unit, and `contig` (kept for
+    /// logging/back-compat) is then just one of them — `xfam_pass1`'s cross-family reconciliation needs
+    /// each record's real chromosome, not the work unit's label, so it reads this instead.
+    read_chrom: Vec<String>,
     /// Genomic strand per read, parallel to `read_names` — `ts:A` (transcript strand relative to the READ)
     /// flipped by alignment orientation (`BamRead::ts`'s own doc), falling back to the read's own FLAG 0x10
     /// when minimap2 emitted no `ts` (an unspliced read has no junction motif to read it from). Kept for
@@ -741,11 +748,19 @@ struct Args {
     /// the given copies). `--min-copies`/`--win` are not applied: the catalog already decided membership.
     ///
     /// # Contract (all loud, none silent)
-    /// Every supplied copy must (a) be named by the `copies.tsv` header columns, (b) belong to a
-    /// SAME-CHROMOSOME family (a cross-chrom family — RABL2's 5 contigs — is structurally unassignable by a
-    /// region-scoped binary and is refused, never truncated), (c) fall inside exactly one `--region` /
-    /// `--regions` entry, (d) have a sequence (see `--copies-fa`), and (e) have at least one overlapping
-    /// read in the BAM. A violation aborts the run.
+    /// Every supplied copy must (a) be named by the `copies.tsv` header columns, (b) fall inside some
+    /// `--region`/`--regions` entry on its OWN chromosome (c) have a sequence (see `--copies-fa`), and
+    /// (d) have at least one overlapping read in the BAM. A violation aborts the run.
+    ///
+    /// A CROSS-CHROMOSOME family (RABL2's 5 contigs) is not truncated to whichever copies happen to fall
+    /// in one region (2026-09-15): its reads are gathered directly from every one of its copies' own
+    /// (chromosome, span) windows and pooled before assignment, via a synthetic `~xchrom~<family_id>`
+    /// sweep key (see `catalog_input::group_families`/`load_supplied_families`). ⚠ KNOWN LIMITATION: the
+    /// deeper PSV/mosaic certificate (`assign_family_detailed_once`, `best_overlap_copy`) still compares
+    /// bare numeric positions with no chromosome field at all (`AlignedRead` carries none) — for a
+    /// cross-chromosome family whose copies happen to sit at OVERLAPPING numeric coordinates on different
+    /// chromosomes, that layer can attribute a read to the wrong copy. Safe whenever a family's per-
+    /// chromosome coordinate ranges do not numerically coincide; not a general guarantee.
     #[arg(long)]
     families: Option<String>,
 
@@ -935,7 +950,7 @@ fn xfam_pass1(
                     fid: fids[g][f].as_str(),
                     copy: a.best_copy,
                     span,
-                    rec: (work.contig.clone(), rs, re, fl),
+                    rec: (work.read_chrom.get(*ri).cloned().unwrap_or_else(|| work.contig.clone()), rs, re, fl),
                 });
             }
         }
@@ -1264,7 +1279,11 @@ type RegionFamilies = std::collections::BTreeMap<RegionKey, Vec<CatalogFamily>>;
 /// Flank loaded around each supplied copy when gathering a dispersed family's reads (§6dh). Comfortably
 /// above any long read, so a read reaching into a copy from outside its span is still collected.
 const COPY_READ_PAD: u64 = 50_000;
-type RegionWindows = std::collections::BTreeMap<RegionKey, Vec<(u64, u64)>>;
+/// Padded read-fetch windows for a swept region: `(chrom, lo, hi)` rather than bare `(lo, hi)` because a
+/// CROSS-CHROMOSOME family's windows are not all on the region key's own contig — see `load_supplied_families`.
+/// For every other region this is a redundant per-window copy of the key's own contig (harmless: `compute`
+/// fetches each window from its own tagged chrom either way, and for those windows that is always `contig`).
+type RegionWindows = std::collections::BTreeMap<RegionKey, Vec<(String, u64, u64)>>;
 /// `--families`: catalog `tid` -> `(catalog family_id, catalog copy_idx)`. The JOIN KEY. Built from the
 /// supplied table (never from the assignment output), so `<out>.family_join.tsv` reports the catalog's own
 /// identity for a copy rather than an index this binary re-derived.
@@ -1392,7 +1411,7 @@ fn best_overlap_truth_copy<'a>(
 
 /// Load, VALIDATE and region-bind the `--families` catalog (see the flag's help for the contract).
 ///
-/// Returns `(None, None)` when `--families` was not given — the historical path, untouched.
+/// Returns `(None, None, None)` when `--families` was not given — the historical path, untouched.
 ///
 /// Everything here is a hard error. The one thing this function must never do is drop a supplied copy:
 /// a copy silently missing from O2's roster is indistinguishable, downstream, from a copy O2 legitimately
@@ -1448,27 +1467,42 @@ fn load_supplied_families(
         }
         None => None,
     };
+    // Cross-chromosome families (2026-09-15) never bind to a single swept region — see `cross_chrom` below
+    // and its own containment check, per chromosome. Only single-chromosome families go through the
+    // region-binding contract that follows, unchanged from every catalog built before this date.
+    let (same_chrom, cross_chrom): (Vec<CatalogFamily>, Vec<CatalogFamily>) =
+        fams.into_iter().partition(|f| !f.is_cross_chrom());
+    // Which single real region (if exactly one) contains `[start, end)` on `chrom`. Shared by the
+    // same-chromosome path (checked once for the whole family span) and the cross-chromosome path
+    // (checked once per chromosome the family touches) — same containment contract either way.
+    let contained_in = |chrom: &str, start: u64, end: u64| -> Vec<(u64, u64)> {
+        by_contig
+            .get(chrom)
+            .map(|rs| rs.iter().copied().filter(|&(lo, hi)| start >= lo && end <= hi).collect())
+            .unwrap_or_default()
+    };
     // Bind each family to the ONE swept region that contains it. Containment (not overlap) is required:
     // a family straddling a region boundary would be assigned against the reads of only part of its own
     // span, which is the truncation this mode exists to prevent.
     let mut bound: RegionFamilies = RegionFamilies::new();
-    for f in fams {
-        let hits: Vec<RegionKey> = by_contig
-            .get(&f.chrom)
-            .map(|rs| {
-                rs.iter()
-                    .filter(|&&(lo, hi)| f.start >= lo && f.end <= hi)
-                    .map(|&(lo, hi)| (f.chrom.clone(), lo, hi))
-                    .collect()
-            })
-            .unwrap_or_default();
+    // Per-family, per-chromosome clip bounds: the (lo, hi) of the one real region each chromosome's span
+    // falls inside, keyed by the region key the family is BOUND to (same-chrom: its one real key;
+    // cross-chrom: its one synthetic key) so the window builder below can look them up uniformly.
+    let mut clip_bounds: std::collections::BTreeMap<RegionKey, std::collections::BTreeMap<String, (u64, u64)>> =
+        std::collections::BTreeMap::new();
+    for f in same_chrom {
+        let hits = contained_in(&f.chrom, f.start, f.end);
         match hits.len() {
             0 => anyhow::bail!(
                 "--families: {} ({}:{}-{}) lies outside every --region/--regions entry, so its reads would \
                  never be read. Add a region containing it, or remove it from the catalog.",
                 f.family_id, f.chrom, f.start, f.end
             ),
-            1 => bound.entry(hits[0].clone()).or_default().push(f),
+            1 => {
+                let key: RegionKey = (f.chrom.clone(), hits[0].0, hits[0].1);
+                clip_bounds.entry(key.clone()).or_default().insert(f.chrom.clone(), hits[0]);
+                bound.entry(key).or_default().push(f);
+            }
             n => anyhow::bail!(
                 "--families: {} ({}:{}-{}) is contained in {n} different swept regions, so which reads it \
                  would be assigned against is ambiguous. De-duplicate the region list.",
@@ -1476,26 +1510,81 @@ fn load_supplied_families(
             ),
         }
     }
+    // CROSS-CHROMOSOME FAMILIES (2026-09-15): each of this family's per-chromosome spans (`chrom_spans`)
+    // must individually sit inside some supplied region on ITS OWN chromosome — the same containment
+    // contract as above, just checked once per chromosome instead of once for the whole (meaningless,
+    // multi-chromosome) family span. There is no single real region to bind such a family to, so it is
+    // bound instead to a SYNTHETIC region key (`~xchrom~<family_id>`, guaranteed not to collide with a
+    // real contig name — no FASTA/BAM contig starts with `~`) that `main` adds to the swept list
+    // alongside the real ones. `compute` fetches each of that key's windows from the window's OWN tagged
+    // chromosome (see `RegionWindows`'s doc) rather than the key's, so the same assignment logic that
+    // runs per real region pools this family's reads across every chromosome it touches and compares them
+    // against its FULL copy set — never a truncated one.
+    let mut n_cross_chrom = 0usize;
+    for f in cross_chrom {
+        let key: RegionKey = (format!("~xchrom~{}", f.family_id), 0, 0);
+        let mut per_chrom_bounds: std::collections::BTreeMap<String, (u64, u64)> = std::collections::BTreeMap::new();
+        for (chrom, (start, end)) in f.chrom_spans() {
+            let hits = contained_in(&chrom, start, end);
+            match hits.len() {
+                0 => anyhow::bail!(
+                    "--families: {} ({chrom}:{start}-{end}, one of its {} chromosomes) lies outside every \
+                     --region/--regions entry, so its reads on {chrom} would never be read. Add a region \
+                     containing it, or remove it from the catalog.",
+                    f.family_id,
+                    f.chrom_spans().len()
+                ),
+                1 => {
+                    per_chrom_bounds.insert(chrom, hits[0]);
+                }
+                n => anyhow::bail!(
+                    "--families: {} ({chrom}:{start}-{end}) is contained in {n} different swept regions on \
+                     {chrom}, so which reads it would be assigned against is ambiguous. De-duplicate the \
+                     region list.",
+                    f.family_id
+                ),
+            }
+        }
+        eprintln!(
+            "[copy_assign] --families: {} spans {} chromosomes ({}) — {} copies will be assigned together \
+             via the cross-chromosome pass (key {:?}), not truncated to one region.",
+            f.family_id,
+            f.chrom_spans().len(),
+            f.chrom_spans().keys().cloned().collect::<Vec<_>>().join(","),
+            f.copies.len(),
+            key.0
+        );
+        n_cross_chrom += 1;
+        clip_bounds.insert(key.clone(), per_chrom_bounds);
+        bound.entry(key).or_default().push(f);
+    }
     // ⭐ DISPERSED-FAMILY READ WINDOWS (§6dh). A family binds to the ONE region containing its whole
     // span, but a genuinely DISPERSED family (NPIP: 38 copies over 89.5 Mb) makes that region enormous
     // and loading it whole costs 254,726 primaries to assign copies occupying a few hundred kb — it OOMs.
     // A read that overlaps NO copy can never be assigned to one, so the region's reads are gathered from
     // the union of the copies' own neighbourhoods instead. The anti-truncation guarantee is preserved:
-    // every copy's reads are still loaded in full.
-    let mut windows: std::collections::BTreeMap<RegionKey, Vec<(u64, u64)>> =
-        std::collections::BTreeMap::new();
+    // every copy's reads are still loaded in full. Each window carries its OWN chrom (`c.chrom`, not the
+    // region key's) so a cross-chrom family's windows on different chromosomes are never merged together,
+    // and is clipped to the bounds of the one real region THAT chromosome's span was found inside (never
+    // the key's own bounds, which for a cross-chrom family's synthetic key are meaningless placeholders).
+    let mut windows: RegionWindows = std::collections::BTreeMap::new();
     for (k, fs) in &bound {
-        let mut w: Vec<(u64, u64)> = fs
+        let bounds_for = clip_bounds.get(k);
+        let mut w: Vec<(String, u64, u64)> = fs
             .iter()
             .flat_map(|f| f.copies.iter())
-            .map(|c| (c.start.saturating_sub(COPY_READ_PAD), c.end + COPY_READ_PAD))
+            .filter_map(|c| {
+                let (rlo, rhi) = *bounds_for?.get(&c.chrom)?;
+                let (lo, hi) = (c.start.saturating_sub(COPY_READ_PAD).max(rlo), (c.end + COPY_READ_PAD).min(rhi));
+                (lo < hi).then_some((c.chrom.clone(), lo, hi))
+            })
             .collect();
         w.sort_unstable();
-        let mut merged: Vec<(u64, u64)> = Vec::with_capacity(w.len());
-        for (lo, hi) in w {
+        let mut merged: Vec<(String, u64, u64)> = Vec::with_capacity(w.len());
+        for (chrom, lo, hi) in w {
             match merged.last_mut() {
-                Some(last) if lo <= last.1 => last.1 = last.1.max(hi),
-                _ => merged.push((lo, hi)),
+                Some(last) if last.0 == chrom && lo <= last.2 => last.2 = last.2.max(hi),
+                _ => merged.push((chrom, lo, hi)),
             }
         }
         windows.insert(k.clone(), merged);
@@ -1503,10 +1592,11 @@ fn load_supplied_families(
     let n_fam: usize = bound.values().map(|v| v.len()).sum();
     let n_copy: usize = bound.values().flatten().map(|f| f.copies.len()).sum();
     eprintln!(
-        "[copy_assign] --families {path}: {n_fam} famil{} / {n_copy} copies bound to {} region(s); sequences \
-         from {}",
+        "[copy_assign] --families {path}: {n_fam} famil{} / {n_copy} copies bound to {} region(s) ({} \
+         cross-chromosome); sequences from {}",
         if n_fam == 1 { "y" } else { "ies" },
         bound.len(),
+        n_cross_chrom,
         if seqs.is_some() { "--copies-fa (the catalog's own bytes)" } else { "--fasta (rebuilt at the catalog's exon coordinates)" },
     );
     Ok((Some(bound), seqs, Some(windows)))
@@ -2157,9 +2247,20 @@ fn main() -> Result<()> {
     // ranges). Out-of-order parallel processing over this flat list lets the globally-heaviest families —
     // which live on DIFFERENT contigs — overlap, while the serial drain below (in this same order) keeps
     // CAFAM ids + every row byte-identical to the serial sweep.
-    let flat: Vec<(&String, u64, u64)> = by_contig
+    // Cross-chromosome families (2026-09-15) are bound to a SYNTHETIC key (`~xchrom~<family_id>`, never a
+    // real contig from `by_contig`/`--regions`) that exists only in `region_families`'s keys — append them
+    // here so the sweep actually visits them. `compute` recognizes such a key purely by its `region_windows`
+    // entry tagging every window with the REAL chromosome to fetch from (never the key's own placeholder).
+    let flat: Vec<(String, u64, u64)> = by_contig
         .iter()
-        .flat_map(|(c, ranges)| ranges.iter().map(move |&(lo, hi)| (c, lo, hi)))
+        .flat_map(|(c, ranges)| ranges.iter().map(move |&(lo, hi)| (c.clone(), lo, hi)))
+        .chain(
+            region_families
+                .iter()
+                .flat_map(|rf| rf.keys())
+                .filter(|k| k.0.starts_with("~xchrom~"))
+                .cloned(),
+        )
         .collect();
     // Bounded LRU cache of loaded contig genomes — so a worker on any contig reuses an already-loaded genome
     // instead of reloading, and at most ~capacity contig sequences are resident (the memory bound; Arc keeps
@@ -2181,30 +2282,58 @@ fn main() -> Result<()> {
         genome_cache.lock().unwrap().put(contig.to_string(), g.clone());
         Ok(g)
     };
+    // A region's genome, generalized to however many chromosomes its windows actually touch. The
+    // single-element case (every region before cross-chromosome families existed) delegates to the
+    // cached `genome_for` above and is therefore byte-for-byte the same load as before; a cross-chromosome
+    // family's multi-element set builds one combined, uncached `GenomeIndex` instead (cross-chromosome
+    // families are rare enough that a dedicated per-contig cache slot for them is not worth the complexity).
+    let genome_for_multi = |contigs: &std::collections::BTreeSet<String>| -> Result<Arc<GenomeIndex>> {
+        match contigs.len() {
+            1 => genome_for(contigs.iter().next().expect("len == 1")),
+            _ => {
+                let wanted: HashSet<String> = contigs.iter().cloned().collect();
+                Ok(Arc::new(
+                    GenomeIndex::from_fasta_contigs(&args.fasta, &wanted).with_context(|| {
+                        format!("loading {} for cross-chromosome contigs {:?}", args.fasta, contigs)
+                    })?,
+                ))
+            }
+        }
+    };
     // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta alignment
     // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
     // only the read NAMES + computed `fams` are returned — so collecting every region's result is lightweight.
     let compute = |contig: &String, lo: u64, hi: u64| -> Result<RegionWork> {
-        let genome = genome_for(contig)?;
-        let t_read = std::time::Instant::now();
         // §6dh: on the --families path, gather from the supplied copies' own neighbourhoods rather than
         // the whole bound region — a dispersed family's hull can be tens of Mb while its copies occupy a
-        // few hundred kb, and a read overlapping no copy can never be assigned to one.
-        let wins: Vec<(u64, u64)> = region_windows
+        // few hundred kb, and a read overlapping no copy can never be assigned to one. Cross-chromosome
+        // families (2026-09-15) push windows tagged with a chromosome OTHER than `contig` (their synthetic
+        // key's own "chromosome" is a placeholder, not a real one) — already clipped to the one real region
+        // each window's own chromosome was found inside (`load_supplied_families`), so no clipping happens
+        // here any more.
+        let wins: Vec<(String, u64, u64)> = region_windows
             .as_ref()
             .and_then(|w| w.get(&(contig.clone(), lo, hi)))
-            .map(|v| v.iter().map(|&(a, b)| (a.max(lo), b.min(hi))).filter(|&(a, b)| a < b).collect())
-            .unwrap_or_else(|| vec![(lo, hi)]);
+            .cloned()
+            .unwrap_or_else(|| vec![(contig.clone(), lo, hi)]);
+        // The genome this region's assignment needs: every chromosome any window actually reads from —
+        // for every region before cross-chromosome families existed this is the single-element set
+        // `{contig}`, so `genome_for_multi` delegates to the ORIGINAL cached single-contig `genome_for`
+        // and behaviour is unchanged; a cross-chromosome family's windows pull in its other chromosomes.
+        let win_contigs: std::collections::BTreeSet<String> = wins.iter().map(|(c, _, _)| c.clone()).collect();
+        let genome = genome_for_multi(&win_contigs)?;
+        let t_read = std::time::Instant::now();
         let (primary, mut bam_reads) = {
             let mut pr: Vec<_> = Vec::new();
             let mut br: Vec<_> = Vec::new();
             let mut seen = std::collections::HashSet::new();
-            for &(wlo, whi) in &wins {
+            for (wchrom, wlo, whi) in &wins {
+                let (wlo, whi) = (*wlo, *whi);
                 let (p, b) = match &bam_cache {
-                    Some(c) => c.reads_in_region(&args.bam, contig, wlo, whi),
-                    None => reads_in_region(&args.bam, contig, wlo, whi, args.threads),
+                    Some(c) => c.reads_in_region(&args.bam, wchrom, wlo, whi),
+                    None => reads_in_region(&args.bam, wchrom, wlo, whi, args.threads),
                 }
-                .with_context(|| format!("reading {contig}:{wlo}-{whi}"))?;
+                .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?;
                 // Windows are disjoint after merging, but a read spanning a boundary is returned by
                 // both queries; key on (name, start) so one molecule is never two witnesses.
                 for x in p {
@@ -2217,17 +2346,26 @@ fn main() -> Result<()> {
                     br.push(x);
                 }
             }
+            // ⚠ Must include `chrom`, not just `(name, ref_start)`: before cross-chromosome families
+            // (2026-09-15) every record `compute` ever saw shared one contig, so `ref_start` alone was
+            // already a sufficient tiebreaker. A cross-chromosome family's windows span several real
+            // contigs in one call, and a read placed at the SAME offset on two of them (a real, distinct
+            // alignment record each) would otherwise collide onto one key and the second record would be
+            // silently dropped as a "duplicate" — exactly the kind of silent truncation this whole feature
+            // exists to avoid.
             let mut bseen = std::collections::HashSet::new();
             br.retain(|x: &rustle::vg_family::denovo_assemble::BamRead| {
-                bseen.insert((x.name.clone(), x.read.ref_start))
+                bseen.insert((x.name.clone(), x.chrom.clone(), x.read.ref_start))
             });
             (pr, br)
         };
         if timing && wins.len() > 1 {
             eprintln!(
-                "[timing] {contig}:{lo}-{hi} gathered from {} copy window(s) ({:.1} Mb of {:.1} Mb hull)",
+                "[timing] {contig}:{lo}-{hi} gathered from {} copy window(s) ({:.1} Mb across {} \
+                 chromosome(s), of {:.1} Mb hull)",
                 wins.len(),
-                wins.iter().map(|&(a, b)| (b - a) as f64).sum::<f64>() / 1e6,
+                wins.iter().map(|(_, a, b)| (b - a) as f64).sum::<f64>() / 1e6,
+                win_contigs.len(),
                 (hi - lo) as f64 / 1e6
             );
         }
@@ -2442,6 +2580,7 @@ fn main() -> Result<()> {
             Vec::new()
         };
         let read_names: Vec<String> = bam_reads.iter().map(|r| r.name.clone()).collect();
+        let read_chrom: Vec<String> = bam_reads.iter().map(|r| r.chrom.clone()).collect();
         let read_mapqs: Vec<u8> = bam_reads.iter().map(|r| r.mapq).collect();
         let read_spans: Vec<(u64, u64, u8)> = bam_reads
             .iter()
@@ -2701,14 +2840,14 @@ fn main() -> Result<()> {
         } else {
             (Vec::new(), Vec::new())
         };
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
         Some(pool) => pool.install(|| {
-            flat.par_iter().map(|&(c, lo, hi)| compute(c, lo, hi)).collect::<Result<Vec<_>>>()
+            flat.par_iter().map(|(c, lo, hi)| compute(c, *lo, *hi)).collect::<Result<Vec<_>>>()
         })?,
-        None => flat.iter().map(|&(c, lo, hi)| compute(c, lo, hi)).collect::<Result<Vec<_>>>()?,
+        None => flat.iter().map(|(c, lo, hi)| compute(c, *lo, *hi)).collect::<Result<Vec<_>>>()?,
     };
     // PASS 1 (read-only): cross-family reconciliation. It must run BEFORE the drain, not as a post-pass
     // over `assign_rows`, because a molecule's status is emitted from `fa.assignments` at FOUR sites
@@ -2745,7 +2884,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci } = work;
+            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci } = work;
             // O3 Phase 2 (Task 6): fold this region's raw pair stats + orphan loci into the genome-wide
             // vectors. Nothing is written here -- the Bonferroni threshold in `finalize_flags` needs every
             // region's pairs first, so `family_join.tsv`/`o3_candidate_loci.tsv` are written once, after

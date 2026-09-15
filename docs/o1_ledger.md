@@ -21239,3 +21239,197 @@ detect that conservation long after nucleotide identity has collapsed toward its
 
 Data and code: `lit/seedlimit/{theory_seed_survival.py,empirical_seeding.py,empirical_results.csv,analysis_output.txt,PRESET_EVIDENCE.txt}`,
 `lit/codonlimit/{degeneracy.py,real_pairs.py,simulate.py,real_detect.py,blosum62.py,real_pairs.tsv,real_detect.tsv}`.
+
+## §6kv — Excision extension (PREREG `docs/PREREG_excision_extension_2026-09-15.md`): the missing-copy signature does NOT generalize past NPIP/ZNF875 — 5/5 new targets orphan instead of origin-rejecting (2026-09-15)
+
+Advisor's ask, restated RNA-only (no WGS): erase an almost-identical copy, see whether its reads get redistributed
+among survivors or go unmapped, and look for a general "a copy is missing" pattern. `docs/PREREG_excision_2026-09-05.md`
+answered this for NPIP (4 copies, identity 0.966-0.987) and one ZNF875 pair (>0.99): P1-P3 held, a consistent-sites-
+per-kb signature exists in the origin-rejected reads. This entry asks whether that signature is general or specific
+to those two families.
+
+**Targets** (pre-registered by pairwise identity + read count, before running anything; `sweep_v13`'s 3-contig O3
+dev substrate, same BAM/FASTA as the original run): `znf578_x4` (MCL4_073244, 17 members, ZNF578/ZNF808, X=copy 4,
+139 reads, identity to nearest sibling 0.927-0.929), `znf430_x2` (MCL9_073244, 9 members, ZNF430/LOC115931567,
+X=copy 2, 210 reads, 0.931-0.936), `loc_x6` (MCL6_073244, 7 members, LOC101129171/92/101130248/101134578/101136009,
+X=copy 6, 561 reads, 0.908-0.915), `znf823_x4` (MCL43_073244, 5 members, ZNF823, X=copy 4, 99 reads, 0.969 — the
+closest match of the five, comparable to the original NPIP targets), `znf91_x1` (MCL30_073244, 3 members, ZNF91,
+X=copy 1, 215 reads, 0.909). All five are ordinary tandem SD arrays, not NPIP's retrogene/gene-conversion topology.
+
+**Result: fail rule triggers.** `bench/o2_excision.py`'s own read-fate count (X's MAPQ-60 reads, before any flag
+rule): `znf578_x4` 142/142 (100%) O3 orphan; `znf430_x2` 213/213 (100%); `loc_x6` 585/587 (99.7%) orphan + 2
+origin-rejected; `znf823_x4` 150/150 (100%) — the highest-identity, highest-coverage target of the five, still
+100% orphan; `znf91_x1` 218/220 (99%) orphan + 2 origin-rejected. Formal verification (`bench/o3_flag_pass.py
+--dirs`, same detector/Poisson rule as §6fl, `rna_units_v11.units.tsv`/`GGO_genomic.gff`): **0 pairs tested, 0/5
+flagged `missing_copy`** — there are not even enough origin-rejected reads (0, 0, 2, 0, 2) to run the test.
+
+This is a different failure mode than either P1 or P3 failing on their own terms: X's reads are not silently
+misassigned (P1 would still hold, trivially — 0% silent misassignment), and they are not origin-rejected-but-
+inconsistent either. `copy_assign` does not emit an assignment row for them at all — "O3 orphan (touches no
+remaining candidate)". Region-window truncation is ruled out directly: each family's single `regions` window
+(e.g. `NC_073244.2:64421384-65431558` for `znf578_x4`) fully contains every sibling's locus, including X's, so
+the reads are fetched; they simply fail to clear whatever alignment/score threshold `copy_assign` requires against
+every surviving candidate. Leading hypothesis, not yet tested: the identity numbers above are whole-locus
+(exon+intron) minimap2 asm20 identity, which is dominated by long intronic/intergenic stretches; the RNA reads
+only sample exons, and if these five families' exons have diverged (or degraded) faster than their introns —
+plausible for LOC-labelled, likely lower-constraint loci, unlike NPIP's actively transcribed paralogs — the
+effective per-read identity to any sibling could sit well below the whole-locus number and below whatever
+`copy_assign` needs to consider a candidate at all.
+
+**What this means for the advisor's question.** The signature §6fl/§6fn built (consistent mismatch sites among
+origin-rejected reads) is not a general missing-copy detector from RNA reads alone — it is contingent on the
+excised copy's reads still being *placeable but wrong* after removal, which held for NPIP and ZNF875 but not for
+these five families. A general RNA-only detector would need to also catch the "reads vanish entirely" case, which
+is a different, and on this evidence more common, failure mode when a copy goes missing — and that case carries no
+per-read mismatch pattern to build a Poisson test from; the only observable signal is orphaned/unmapped read count
+itself, exactly the "or unmapped" branch the advisor's question already named as the alternative to redistribution.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/mcl_ann/adj/o3/excise_x2/{znf578_x4,znf430_x2,loc_x6,znf823_x4,znf91_x1}/`
+(each an `o2_excision.py` output dir) and `.../excise_x2/verify/` (the `o3_flag_pass.py --dirs` run).
+Negative-results register row 838.
+
+Substrate note: `sweep_v13`/`rna_units_v11` is the pre-§6fm/§6ft generation — the same one the ORIGINAL 5-target
+excision (`adj/o3/excise_x`, reproduced in §6fl) used, deliberately, for an apples-to-apples comparison. Later
+`copy_assign` features (`read_star_hit_in_unit`, read-through certificate, partners, unexpressed-member polish —
+§6fm/§6fp/§6ft, `sweep_v14`-`v17`) postdate it and were not in effect here; none of them bear on read-star
+placement identity/score, which is what produced the O3-orphan outcome, so re-running on `sweep_v17` is a
+possible follow-up but not expected to change the qualitative result.
+
+## §6kw — The first non-synthetic, real-ground-truth positive: a DNA-confirmed haplotype-CNV family shows the
+missing-copy consistent-site signature blind, without excising anything (2026-09-15)
+
+Advisor's redirect (RNA-only, real ground truth over synthetic excision): `docs/O3_STATUS.md`'s standing open
+item #2 — "put `LOC134757045` in front of the RNA detector" — was executed for the first time. Re-derived the
+candidate from scratch (its own working files from 09-03 do not survive on disk): probe-aligned it against
+`o3_hapcnv/{mat,pat}.chr.fa` and reproduced the ledger's numbers exactly (3 matched units at id 0.9957/0.9780/
+0.9739, 2 maternal-only units at id 0.9961, no paternal counterpart) and pinned its true reference coordinates
+(`NC_073240.2:20,412,776-22,186,467`, confirmed byte-identical to `pat CM054574.2` at those positions). **Result:
+zero primary reads, zero MAPQ, at any of the 3 existing reference copies in fibroblast IsoSeq** — the flagship
+real candidate is transcriptionally silent, exactly the standing caveat, now confirmed precisely instead of
+asserted.
+
+**Re-screened for a real AND expressed candidate.** `GGO_gwcat` (494 autosomal multi-copy families, `avg_reads`
+already computed) filtered to `avg_reads>=10` and longest-copy<=20kb (225 probes survive) — first attempt used
+`copies.fa`'s SPLICED (exon-concatenated) sequence as the probe against genomic DNA under `-x asm20`, which is
+wrong (a multi-exon transcript vs. genomic DNA under a non-splice-aware preset fails to chain across introns) and
+gave near-zero hits; fixed by extracting the GENOMIC span directly from the reference FASTA. Full-length
+(cov>=0.90) identity>=0.94 hits counted per family against mat/pat/reference: **4 families differ between
+haplotypes; 2 have the reference matching the smaller side (a real deficiency)**: `GWFAM102` (messier — one
+member unannotated, the "extra" MAT copy only 93-94% identical, a probable fragment) and **`GWFAM195`**
+(`NC_073229.2:136,502,876-136,554,623`, two RFPL4B-like paralogs, `LOC101148313`/`LOC115935025`) — reference/MAT
+carries 2 units 47.7 kb apart; PAT carries 4, same 47.7 kb period, id 0.9950-0.9965 to the matched pair — clean,
+full-length, regular tandem array, **2 units genuinely absent from the reference**, and BOTH reference copies are
+expressed (19 and 16 primary reads, confirmed directly in the current fibroblast BAM, matching the historical
+catalog's 22/18).
+
+**Built this one family fresh with the current pipeline** (a local GFF slice + self-PAF, `mcl_families --emit-
+units --bam --fasta`, avoiding hand-built `copies.tsv`/`core_hull` fields) and ran `copy_assign` blind — no
+excision, nothing removed, this deficiency is already real. Result: **AS-tied gate dominates (33 of 34 contested
+molecules tied, 1 ambiguous, 0 assigned)** — at 99.5-99.8% identity between the reference's own 2 copies, the
+certificate can't confidently call ANY of them, let alone something more divergent; this independently
+reproduces, on brand-new real data, the project's standing "≥0.98 identity is not reachable" ceiling
+([[project_o3_flag_pass]], `O3_STATUS.md` item 5). The clean single-candidate "consistent sites per kb" statistic
+therefore cannot be computed the way the excision experiments computed it (no clear origin-rejected group with
+one best candidate Y).
+
+**But the raw mismatch pattern is the more useful, more general signal, and it fires clearly.** Reads at BOTH
+reference copies carry a small set of CONSISTENT, high-base-quality, cleanly biallelic mismatch positions (`≥3
+reads AND ≥50%` of covering reads, matching §6ff's own gate) against the reference model: copy0 (`LOC101148313`)
+**5 sites, 2.28/kb, at 47-89% variant fraction (4 of 5 sites ≥84%)**; copy1 (`LOC115935025`) **4 sites, 2.01/kb,
+at 56% variant fraction**. Both densities sit well above the <1/kb background this project has used as the
+control rate everywhere else (§6fl/§6fm). Confirmed NOT a reference-file mismatch (the BAM's own `NC_073229.2`
+`@SQ` length is byte-identical to the FASTA used for the probe/family build) and NOT scattered alignment noise
+(`samtools mpileup` at every site shows a clean two-allele split with mostly Q40 bases, not a smear).
+
+**Read with real caution, and say so precisely.** Copy1's 56% variant fraction is barely distinguishable from
+ordinary heterozygosity (50% expected in a diploid); it is not, on its own, decisive. **Copy0's fraction (84-89%
+at 4 of 5 sites) is the load-bearing number** — a true single-copy heterozygous SNP cannot produce an 84-89%
+alternate-allele majority, and this locus has independent DNA proof (the PAT-side 4-unit array) that more true
+sequence sources exist than the reference represents. The natural reading: reads from the reference-invisible
+PAT-side units (near-identical to both reference copies) pile onto whichever reference copy they resemble most,
+inflating its apparent "variant" rate above ordinary heterozygosity, unevenly across the two reference
+candidates. This is NOT the "one clean rejected group -> one candidate Y" shape the excision pre-registration
+predicted; it is the blind, real-data version of the SAME underlying statistic (§6fl's own "elevated consistent-
+site rate at a known locus" reading), now shown once on a case where the excess copies are independently proven
+to exist and the reference is independently proven to lack them.
+
+**What this changes about the advisor's question.** The one non-synthetic, DNA-ground-truthed test case now run
+end-to-end says: the consistent-mismatch statistic DOES fire above background on real, un-excised data with a
+real missing copy — but only where the missing copy's identity to survivors sits below the ~0.98 ceiling (as it
+does here); the ONE ceiling-violating real case found (`LOC134757045`-family) is untestable for lack of
+expression, and no real case with identity in the informative 0.90-0.98 band and BOTH excision-style "clean
+single rejected group" structure has been found yet.
+
+Data/code: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/` (`screen.py` — the 225-probe mat/pat/reference
+scan, fixed to use genomic not spliced sequence; `gwfam195/` — the fresh `mcl_families`/`copy_assign` build and
+`A.assignments.tsv`). `pri_provenance.tsv` (`o3_hapcnv/`) gives the mat/pat source of every primary chromosome
+and was reused, not rebuilt.
+
+## §6kx — `copy_assign` gains cross-chromosome families (user decision, 2026-09-15); the native O3 Poisson
+test runs on both real haplotype-CNV candidates and reports `not_tested` on both, for two different,
+principled reasons
+
+**The code change.** GWFAM248 (§6kw's plan) needed `copy_assign --families` to accept a family whose copies
+sit on different chromosomes — previously refused outright (`catalog_input::group_families`: "a cross-chrom
+family cannot be assigned here without silently truncating its copy set"). Removed the refusal; `copy_assign`
+now gathers such a family's reads directly from every one of its copies' own `(chromosome, span)` windows via
+a synthetic `~xchrom~<family_id>` sweep key (`load_supplied_families`/`compute` in `src/bin/copy_assign.rs`),
+pools them, and runs the identical AS-tied certificate against the family's FULL copy set. Fixed a real bug
+this change exposed along the way: the `BamRead` dedup key was `(name, ref_start)` with no chromosome — before
+cross-chrom families existed every record `compute` ever saw shared one contig, so this was safe; a
+same-named read at the same numeric offset on TWO chromosomes (built deliberately into the
+`same_chrom_supplement` fixture's `read_cross_0/1/2`, apparently prepared for exactly this future test) would
+otherwise silently collapse onto one key, exactly the truncation this whole feature exists to prevent. Fixed
+by adding `chrom` to the key. `genome_for` generalized to `genome_for_multi` (delegates to the original cached
+single-contig path when only one chromosome is needed — byte-identical for every existing catalog).
+
+**⚠ Known, documented limitation, not fixed here.** The deeper PSV/mosaic certificate
+(`assign_family_detailed_once`, `best_overlap_copy` in `copy_assign_pipeline.rs`) compares bare numeric
+positions with NO chromosome field at all — `AlignedRead` never carried one, because every prior caller
+guaranteed single-chromosome input. For a cross-chrom family whose copies' coordinates happen to numerically
+coincide across chromosomes, that layer could attribute a read to the wrong copy. Checked by hand for GWFAM248
+(no two of its 4 copies' ranges overlap numerically) — safe here, not a general guarantee. A full fix means
+threading chromosome through `AlignedRead` and every PSV/mosaic call site, a materially larger change than
+this one. By contrast, `best_overlap_truth_copy` (used by the native O3 detector below) already checks
+`br.chrom != *c` explicitly and needed no change.
+
+**Tests.** `catalog_input.rs`: replaced the now-obsolete refusal test with `a_cross_chrom_family_is_grouped_
+not_refused`, `chrom_spans_gives_one_min_max_span_per_chromosome`, `is_cross_chrom_is_false_for_a_single_
+chromosome_family`. `tests/copy_assign_families.rs`: replaced `a_cross_chrom_family_is_refused_not_truncated`
+with `a_cross_chrom_family_is_assigned_not_refused`, using the fixture's pre-built cross-chromosome tie. Full
+suite: 854/856 lib tests (the same 2 pre-existing, unrelated `module_status_tests` failures — `shared_
+definition.rs` missing from `docs/MODULE_STATUS.md`, predates this session); `copy_assign_families` (11/11)
+and `copy_assign_xfam` (10/10) — the two suites this change actually touches — both 100%. The remaining
+integration suites (`gw_family_catalog_*`, unrelated to this change) were not forced to completion on this
+machine (memory-heavy, repeatedly OOM-killed by the harness even alone — a pre-existing property of those
+tests, not of this change).
+
+**Running the real families through it.** `--flag-missing-copies` (already a native Rust port of `bench/
+o3_flag_pass.py`'s Poisson test, from an earlier session's SDD plan — nothing new needed implementing) run on
+both real haplotype-CNV candidates:
+
+- **GWFAM248** (cross-chromosome, 4 copies): `family_join.tsv` reports **`not_tested`** for all 4 copies,
+  `o3_n_rejected=0`, despite `assignments.tsv` showing 3 real origin-rejected/ambiguous molecules clustered on
+  copy2 (`NC_073238.2:31467877`, the copy nearest the DNA-confirmed maternal-only 5th paralog) with a shared
+  8-site mismatch signature between the 2 that overlap. Root cause, traced and confirmed correct: the
+  detector's "control" pool (`best_overlap_truth_copy`) only counts a read's PRIMARY, non-secondary record
+  toward "this read's own best-overlap copy is candidate Y" — and all 3 molecules are SECONDARY-only, heavily
+  soft-clipped (685-718 bp of ~700-800 bp clipped) fragments whose real primary placement is elsewhere in the
+  genome entirely. The detector is not broken; it correctly declines to build a Poisson test on evidence this
+  marginal. The qualitative signal (ambiguous reads consistently landing nearest the DNA-confirmed missing
+  copy) is suggestive, not decisive.
+- **GWFAM195** (2 copies, §6kw): `not_tested` on both copies, `o3_n_rejected=0` — of its 34 AS-tied
+  molecules, 33 are `tied` (`origin_rejected=false` by definition of a tie) and only 1 is `ambiguous`
+  (`origin_rejected=true`), below whatever count the detector needs to build a control pool.
+
+**Where this leaves the real-data question.** The native Poisson flag test, now confirmed to run correctly on
+cross-chromosome families (no crash, no wrong pairing for either candidate checked), has not positively
+flagged either real, DNA-confirmed haplotype-CNV case found so far — for principled, traced, non-overclaimed
+reasons in each case (GWFAM195: too-similar copies collapse everything into ties, no rejections; GWFAM248: the
+one family with real rejections has them only in low-confidence secondary fragments). Two real candidates is a
+small sample; whether a real case exists that both (a) has a clean, primary-placed rejected-read pool and
+(b) sits below the ~0.98 identity ceiling has not yet been found.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/gwfam248/{fam4.units.*, regions.plain, B.*, C.*}`,
+`.../gwfam195/{fam.units.*, regions.plain, C.*}`. Code: `src/bin/copy_assign.rs`,
+`src/rustle/vg_family/catalog_input.rs`, `tests/copy_assign_families.rs`.

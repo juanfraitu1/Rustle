@@ -23,9 +23,10 @@
 //!
 //! * the TSV must carry the `gw_family_catalog` header and every required column (parsed BY NAME, so a
 //!   future appended column cannot shift the meaning of a field);
-//! * a family's copies must all sit on ONE chromosome — `copy_assign` is region-scoped, so a cross-chrom
-//!   family (RABL2's 5 contigs) is STRUCTURALLY unassignable here and must say so rather than be truncated
-//!   to whichever copies happened to fall in the region;
+//! * a CROSS-CHROMOSOME family (RABL2's 5 contigs) is not truncated to whichever copies happen to fall in
+//!   one swept region: `copy_assign` gathers reads for such a family from every one of its copies' own
+//!   (chromosome, span) windows directly (2026-09-15; see `catalog_input::group_families`'s doc and
+//!   `copy_assign.rs`'s cross-chromosome pass) instead of binding it to a single region;
 //! * the exon blocks must be well formed and reconstruct the copy's own `start`/`end` and `n_exon`;
 //! * with `--copies-fa`, EVERY supplied copy must have a FASTA record whose header coordinates match its
 //!   TSV row (the header is `>{family_id}|{copy_idx}|{chrom}:{start}-{end}|{strand}|nexon={n}`);
@@ -72,6 +73,11 @@ pub struct CatalogCopy {
 }
 
 /// A catalog FAMILY: its rows grouped by `family_id`, in first-seen (file) order.
+///
+/// `chrom`/`start`/`end` are meaningful only when [`CatalogFamily::is_cross_chrom`] is false — they are the
+/// single-chromosome span every catalog family had until 2026-09-15. A cross-chromosome family's real
+/// extent is a SET of per-chromosome spans, not one triple; use [`CatalogFamily::chrom_spans`] for that
+/// family instead of reading these three fields.
 #[derive(Clone, Debug)]
 pub struct CatalogFamily {
     pub family_id: String,
@@ -79,6 +85,25 @@ pub struct CatalogFamily {
     pub start: u64,
     pub end: u64,
     pub copies: Vec<CatalogCopy>,
+}
+
+impl CatalogFamily {
+    /// True when this family's copies do not all share one chromosome.
+    pub fn is_cross_chrom(&self) -> bool {
+        self.copies.windows(2).any(|w| w[0].chrom != w[1].chrom)
+    }
+
+    /// Per-chromosome `(min start, max end)` span across this family's own copies, one entry per distinct
+    /// chromosome. For a same-chromosome family this is a single-entry map equal to `(chrom, (start, end))`.
+    pub fn chrom_spans(&self) -> BTreeMap<String, (u64, u64)> {
+        let mut m: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+        for c in &self.copies {
+            let e = m.entry(c.chrom.clone()).or_insert((c.start, c.end));
+            e.0 = e.0.min(c.start);
+            e.1 = e.1.max(c.end);
+        }
+        m
+    }
 }
 
 /// A `<out>.copies.fa` record: the sequence plus the header fields it is keyed by, so the header can be
@@ -323,12 +348,16 @@ pub fn parse_copies_fa(text: &str) -> Result<SeqIndex> {
     Ok(out)
 }
 
-/// Group parsed rows into families, in first-seen order, enforcing the SAME-CHROMOSOME contract.
+/// Group parsed rows into families, in first-seen order.
 ///
-/// A cross-chrom catalog family is not a `copy_assign` object: this binary is region-scoped, so honouring
-/// only the copies that fall in the region would silently assign reads against a TRUNCATED roster — which
-/// tightens the Bonferroni certificate over the wrong K and mislabels reads whose true copy is on another
-/// contig. Refuse instead.
+/// A cross-chromosome family (RABL2's 5 contigs) used to be refused outright: `copy_assign`'s region sweep
+/// bound a family to the ONE region containing its whole span, so honouring only the copies that fall in
+/// one region would have silently assigned reads against a TRUNCATED roster. As of 2026-09-15 `copy_assign`
+/// instead gathers such a family's reads directly from every one of its copies' own windows, across however
+/// many chromosomes they sit on, and pools them before assignment — so the roster is never truncated and
+/// this function no longer needs to reject the family. `chrom`/`start`/`end` on the returned
+/// [`CatalogFamily`] are only meaningful for a same-chromosome family; call [`CatalogFamily::is_cross_chrom`]
+/// before trusting them.
 pub fn group_families(copies: Vec<CatalogCopy>) -> Result<Vec<CatalogFamily>> {
     let mut order: Vec<String> = Vec::new();
     let mut by_id: BTreeMap<String, Vec<CatalogCopy>> = BTreeMap::new();
@@ -341,18 +370,11 @@ pub fn group_families(copies: Vec<CatalogCopy>) -> Result<Vec<CatalogFamily>> {
     let mut out = Vec::new();
     for fid in order {
         let mut cs = by_id.remove(&fid).expect("family id was recorded in `order`");
-        let chroms: std::collections::BTreeSet<&str> = cs.iter().map(|c| c.chrom.as_str()).collect();
-        if chroms.len() > 1 {
-            bail!(
-                "--families: {fid} spans {} chromosomes ({}) — copy_assign is REGION-scoped, so a \
-                 cross-chrom family cannot be assigned here without silently truncating its copy set. \
-                 Split the catalog or assign this family per-contig.",
-                chroms.len(),
-                chroms.into_iter().collect::<Vec<_>>().join(",")
-            );
-        }
-        // Same ordering guarantee `colocated_families`/`colocated_from_copies` give the assignment step.
-        cs.sort_by_key(|c| c.start);
+        // Same ordering guarantee `colocated_families`/`colocated_from_copies` give the assignment step;
+        // sorting by `(chrom, start)` rather than bare `start` is identical to the old order for every
+        // same-chromosome family (the only case that existed before cross-chrom support) and gives a
+        // well-defined, chromosome-grouped order for a cross-chrom one.
+        cs.sort_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
         let chrom = cs[0].chrom.clone();
         let start = cs.iter().map(|c| c.start).min().unwrap_or(0);
         let end = cs.iter().map(|c| c.end).max().unwrap_or(0);
@@ -588,16 +610,45 @@ mod tests {
         assert_eq!((fams[0].start, fams[0].end), (100, 600));
     }
 
+    /// 2026-09-15: a cross-chromosome family is no longer refused — `copy_assign` gathers its reads
+    /// directly from every one of its copies' own chromosomes instead of binding it to one region.
     #[test]
-    fn a_cross_chrom_family_is_refused_loudly_never_truncated() {
+    fn a_cross_chrom_family_is_grouped_not_refused() {
         let t = format!(
             "{HDR}\n{}\n{}\n",
             row("GWFAM0", 0, "c1", 0, 60, "0-60", 1),
             row("GWFAM0", 1, "c2", 0, 60, "0-60", 1),
         );
-        let e = group_families(parse_copies_tsv(&t).unwrap()).unwrap_err().to_string();
-        assert!(e.contains("spans 2 chromosomes"), "{e}");
-        assert!(e.contains("truncating"), "{e}");
+        let fams = group_families(parse_copies_tsv(&t).unwrap()).unwrap();
+        assert_eq!(fams.len(), 1);
+        assert!(fams[0].is_cross_chrom());
+        assert_eq!(fams[0].copies.iter().map(|c| c.chrom.as_str()).collect::<Vec<_>>(), vec!["c1", "c2"]);
+    }
+
+    #[test]
+    fn chrom_spans_gives_one_min_max_span_per_chromosome() {
+        let t = format!(
+            "{HDR}\n{}\n{}\n{}\n",
+            row("GWFAM0", 0, "c1", 100, 200, "100-200", 1),
+            row("GWFAM0", 1, "c1", 300, 400, "300-400", 1),
+            row("GWFAM0", 2, "c2", 50, 60, "50-60", 1),
+        );
+        let fams = group_families(parse_copies_tsv(&t).unwrap()).unwrap();
+        assert!(fams[0].is_cross_chrom());
+        let spans = fams[0].chrom_spans();
+        assert_eq!(spans.get("c1"), Some(&(100, 400)));
+        assert_eq!(spans.get("c2"), Some(&(50, 60)));
+    }
+
+    #[test]
+    fn is_cross_chrom_is_false_for_a_single_chromosome_family() {
+        let t = format!(
+            "{HDR}\n{}\n{}\n",
+            row("GWFAM0", 0, "c1", 0, 60, "0-60", 1),
+            row("GWFAM0", 1, "c1", 100, 160, "100-160", 1),
+        );
+        let fams = group_families(parse_copies_tsv(&t).unwrap()).unwrap();
+        assert!(!fams[0].is_cross_chrom());
     }
 
     #[test]
