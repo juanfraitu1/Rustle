@@ -20924,3 +20924,25 @@ Caveat: mutual-nearest pairs across individuals with different copy numbers incl
 TBC1D3 "allelic" median (0.16% here vs 0.06% for HG002 alone).
 
 Data: `lit/phap/{hprc/,hprc_trees/,hprc_report.out,hprc.py,hprc_tree.py}`.
+
+**§6ko qualification (2026-09-14, post hoc) — the plain-homology protein families are superfamilies.** HGNC gene groups
+on RefSeq chr1/2/3 protein families (r2):
+
+| edge rule | families | genes | pairs | same HGNC group | both grouped, disjoint | largest | cross-annotation sens / prec / F (§6ko) |
+|---|---|---|---|---|---|---|---|
+| plain (e <= 1e-5, cov >= 0.30) | 239 | 1,073 | 8,485 | 44.1% | **49.5%** | 74 | 0.935 / 0.999 / 0.977 |
+| aa identity >= 0.50 | 230 | 699 | 1,590 | 83.9% | **0.4%** | 27 | 0.867 / 1.000 / 0.968 |
+| aa identity >= 0.70 | 149 | 414 | 575 | 67.8% | 1.9% | 14 | 0.830 / 1.000 / 0.964 |
+
+The largest plain families on chr1/2/3:
+- all olfactory receptors in one family (74 genes);
+- class-A GPCRs, chemokine receptors with opioid, orexin and relaxin receptors (46);
+- protein kinases: PKC, MAPKAPK, NEK, Src-family FGR/LCK (42);
+- RAS/RAB/Rho GTPases (33).
+
+On chr15/17/22 the plain rule gives 19.4% cross-group pairs (OR, keratin type I, myosin, kinase families).
+
+**Reading.** The §6ko "goal met" row measures that two annotations agree, and they agree on the same superfamily merges.
+It is not biological precision. Half of its pairs join genes HGNC places in different groups. At aa >= 0.50, cross-group
+pairs fall to 0.4%, but cross-annotation sensitivity (0.867) is below the 0.90 bar. The goal claim stands only for the
+reproducibility reading, not as "few false positives".
