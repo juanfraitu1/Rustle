@@ -20989,3 +20989,48 @@ reproducibility reading, not as "few false positives".
 - **Clean everywhere:** only the small, recent, whole-gene families GPR89 and FAM72.
 
 Descriptive, not pre-registered. Data and script: `lit/soto_fams/{soto_score.py,soto_score.out,chr1/}`.
+
+**§6kr projection — are Soto's families a finer level inside ours?** (descriptive, same eight families)
+
+1. **Nesting (our DNA E1 families).**
+   - chr1: every chosen Soto family lies inside exactly ONE of our families.
+     - SRGAP2 B/C/D: 1 of ours (6 genes).
+     - NOTCH2NL: 1 of ours (29 genes: NOTCH2NL + NBPF + unassigned Soto genes).
+     - GPR89: 1 (exact).
+     - FAM72: 1 (exact).
+   - chr15/17: only CHRFAM7A/CHRNA7 is nested.
+     - ARHGAP11 spans 2 of ours, GOLGA8 3, LRRC37A 4 (+2 unclustered).
+     - Our 68-gene 15q13 family holds 11 Soto families.
+2. **Projection.** Inside each of our families, subfamilies = connected components of gene-span alignments with gapless
+   identity >= 0.98 (SEDEF fracMatch-style, Soto's SD98 scale) and span >= 0.50 of the shorter gene. The PAF is the
+   construction's own `all.paf`.
+
+   | region | family level bipartite F (strict / universe) | subfamily at 0.98: F (strict / universe) | pairwise sens / prec (universe) |
+   |---|---|---|---|
+   | chr1 | 0.390 / 0.500 | **0.700 / 0.742** | 0.816 / 0.500 |
+   | chr15/17 | 0.230 / 0.366 | **0.562 / 0.681** | 0.360 / 0.707 |
+
+Per family at 0.98 (recall / precision, strict):
+
+| family | recall | precision | extra members |
+|---|---|---|---|
+| GPR89 | 1.00 | 1.00 | none |
+| FAM72 | 1.00 | 1.00 | none |
+| SRGAP2 | 1.00 | 0.40 | SRGAP2-AS1 and FP700111.1, overlapping/antisense models at the same loci |
+| NOTCH2NL | 1.00 | 0.33 | NBPF10/19/20 at >= 98%, the 1q21 co-duplication |
+| CHRFAM7A | 1.00 | 0.14 | ULK4P1-3; CHRFAM7A is itself a CHRNA7 / FAM7A (ULK4-derived) fusion, so this is real homology |
+| GOLGA8 | 0.25 (6 subfamilies) | 0.64 | — |
+| LRRC37A | 0.21 | 0.07 | ARL17B etc., 17q21 co-duplication |
+| ARHGAP11 | 0.33 | 0.02 | ARHGAP11B joins 15q13 GOLGA8-region loci |
+
+Caveat: an exon-union identity version was run first and discarded. Concatenated exon unions of differing CAT models
+understate copy identity (GPR89A/B 0.91).
+
+**Reading.**
+- On chr1 the view holds: Soto's families are a finer level nested in ours, and a Soto-scale 98% cut recovers them (F 0.74).
+  The residual extras are antisense/overlapping models and NBPF units that duplicated with NOTCH2NL; Soto removes those with
+  copy-number consistency.
+- On 15q13/17q21, the high-identity units carry several genes each. Our families and Soto's cut the region differently in
+  both directions (neither nests), and some "extra" genes are genuine homology (ULK4P in CHRFAM7A).
+
+Data: `lit/soto_fams/{soto_project.py,soto_project_span.out}`.
