@@ -20899,3 +20899,28 @@ Caveats:
 - Single run, no replicates.
 
 Data and code: `lit/phap/` (`phap.py`, `analyze.out`, `trees/`).
+
+**§6kq extension — 23 haplotypes (CHM13 + HG002 mat/pat + 20 HPRC release-2 mat/pat).** Setup:
+- Individuals: every third of the 29 Year-1 samples with a release-2 trio assembly, namely HG00438, HG00735, HG01106, HG01258,
+  HG01891, HG01978, HG02486, HG02622, HG02886, HG03540.
+- Same locus rules as §6kq: NPIP 584 copies, TBC1D3 358.
+- IQ-TREE GTR+F+G4, UFBoot + SH-aLRT, on TBC1D3 only (about 32 min). The NPIP tree was not built.
+- Grouping: single linkage at 1.5 × the median divergence of mutual-nearest cross-haplotype pairs.
+
+| family | allelic median (90th pct) | paralog median | groups on the tree | allelic-scaled groups (CHM13 members; copies on haplotypes) |
+|---|---|---|---|---|
+| NPIP | 0.064% (0.22%) | 1.88% | not built | **B3-5 one group (87 copies on 23 haps); B12/13 one group (64 on 23)**; A6-9 splits into A6+A9 (30 on 21) and A7+A8 (33 on 21); A1, A2, B11 one group each on 23 haps; B6, B7, B8, B9 separate and rare (1-9 copies on 1-5 haps); A\|B and the named NPIPB subfamily are deeper than the allelic scale |
+| TBC1D3 | 0.163% (0.355%) | 1.28% | **CDKL recovered; AE no split** | single linkage CHAINS all 9 CHM13 copies + 265 others into one group: with 23 haplotypes, intermediate copies bridge the near-identical paralogs |
+
+**Reading.**
+- For NPIP, allelic-scaled grouping reproduces the population groups B3-5 and B12/13 across all 23 haplotypes. A6-9
+  resolves into two allelic-scale pairs. The B6-9 copies are rare across haplotypes, consistent with a copy-number-variable
+  16p11.2 group.
+- For TBC1D3, the tree clade recovers CDKL, but single linkage over many haplotypes chains the family: the literature's
+  criterion has to be applied to tree clades, not to a linkage graph.
+- AE stays unrecovered in every analysis.
+
+Caveat: mutual-nearest pairs across individuals with different copy numbers include non-orthologous pairs, which inflates the
+TBC1D3 "allelic" median (0.16% here vs 0.06% for HG002 alone).
+
+Data: `lit/phap/{hprc/,hprc_trees/,hprc_report.out,hprc.py,hprc_tree.py}`.
