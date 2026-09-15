@@ -21560,3 +21560,62 @@ record, now confirmed present on every substrate tested with the current default
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/ape_q6/` (`{ptr,ppy}_chr16.bam(.bai)`,
 `{PTR,PPY,HSA}_chr16.{families,copies}.tsv`, `{ptr,ppy,hsa}_copies.{bed,fa}`, `{ptr,ppy,hsa}_vs_npip.paf`,
 `{ptr,ppy,hsa}.log`).
+
+## §6l1 — Q5: a real minority of the "we do not know" bin is now cross-species-confirmed biology (2026-09-15)
+
+**Motivation.** §6ax left Q5's largest bin as a flat concession: 73/153 = 47.7% of same-family tandem-copy
+shared-read junctions are canonical but unannotated, and "nothing about the plurality" could be said either
+way — real biology or minimap2 artifact. Applied the same tool already validated for read-throughs (§6gc-§6gg:
+30/42, later 6/14 real survivors, confirmed via independent chimp/orangutan RNA) to this bin: if a junction's
+exact splice site recurs in ape RNA from an independent individual, library, tissue and species, that is
+evidence of real biology; non-replication proves nothing (the original test's own asymmetry, restated below).
+
+**Reconstruction is NOT exact, and that is stated rather than smoothed over.** The original 152-primary/153-pair
+population and its per-junction table were never saved (§6ax was "one region query, no pipeline run"). Rebuilt
+from the same source files (`arm_f2/cat.copies.tsv`, `npip3.bam`) with the documented rule (`-F 2308`,
+same-family same-chrom pairs within minimap2's 250 kb `-G` bound, primaries with aligned CIGAR blocks in both
+copies): **60 copy-pairs, 90 distinct copies (orig. 89), 14 distinct families (orig. 14 exactly), 165 spanning
+primary observations (orig. 152/153)** — family and copy counts match closely, the primary-observation count
+runs ~8% high, plausibly the window or block-overlap criterion being slightly looser than the original's. Per
+pair, classified the dominant copy-joining junction as annotated / canonical-unannotated / noncanonical
+(donor-acceptor dinucleotide vs. a GFF-derived intron set from all 3 contigs): **annotated 6/60 (10.0%),
+canonical-unannotated 33/60 (55.0%), noncanonical-unannotated 20/60 (33.3%), no-junction 1/60.** This reproduces
+§6ax's qualitative shape (canonical-unannotated the plurality; the noncanonical/artifact-leaning bin near
+§6ax's "≥31%"; annotated/real the smallest bin) closely enough to trust the *composition*, not closely enough
+to call it a replication of the exact numbers.
+
+**Cross-species probe test on the 33 canonical-unannotated junctions.** Built 300 bp probes (150 bp exon flank
+each side of the junction, midpoint at position 150 — identical convention to `bench/xspecies_junction_probes.py`
+and §6gc), plus 33 scrambled negative controls and 60 positive controls (ordinary annotated introns on the same
+3 contigs). Streamed `PTR_mm.bam`/`PPY_mm.bam` via `samtools fasta | minimap2 -x map-hifi --secondary=no`
+against the probes; a probe replicates if a read's alignment covers the midpoint with >=50 bp aligned each side.
+
+| | TEST (33) | NEG control (33) | POS control (60) |
+|---|---|---|---|
+| chimp (PTR) | 14/33 = 42.4% (strict 12/33 = 36.4%) | 0/33 = 0.0% | 48/60 = 80.0% |
+| orangutan (PPY) | 11/33 = 33.3% (strict 10/33 = 30.3%) | 0/33 = 0.0% | 41/60 = 68.3% |
+
+("strict" = mapq>=10, dv<=0.02.) Negative controls confirm specificity (0% in both species, both thresholds).
+Positive controls clear the original PREREG's >=60% bar in both apes — comfortably above the read-through
+test's own positive control (39%, not expression-matched), consistent with these being ordinary annotated
+introns rather than lineage-specific read-throughs. **10/33 = 30.3% of the undetermined junctions replicate in
+BOTH apes at the raw threshold; 7/33 = 21.2% at the strict threshold.** 15/33 = 45.5% replicate in at least one
+ape (same at both thresholds). Junctions confirmed in both apes at the strict threshold: GWFAM111 (copy 0-1),
+GWFAM112 (9-10), GWFAM27 (11-12 and 13-14), GWFAM79 (35-36), GWFAM89 (12-13 and 13-14).
+
+**Answer for Q5/ADVISOR_QUESTIONS.md.** The flat "nothing about the plurality" concession is now partly
+resolved, ON THIS RECONSTRUCTED POPULATION (60 pairs, not an exact replay of §6ax's original 153 — the two
+counts are comparable in scale and composition, not identical, so do not add their percentages together):
+of the 33 canonical-but-unannotated pairs, **21-30% are cross-species-confirmed** — the same splice site used
+by an independent individual, library, tissue and species cannot be produced by an artifact of our own
+alignment or chaining. The remaining 70-79% of that bin is still undetermined, not shown to be artifact:
+non-replication is not evidence of artifact (the same asymmetry §6gc-§6gg already flagged — lineage-specific
+splicing or low ape-side expression at that locus are equally consistent with a real, gorilla-specific
+junction). The honest statement for Q5 going forward: **the "canonical-unannotated" bin is no longer a
+uniform unknown — a real, cross-species-confirmed minority (roughly a fifth to a third, on this
+reconstruction) sits inside it alongside a majority that remains genuinely undetermined**, which is a
+narrower and more defensible claim than either "half is unknown" or "it's mostly real."
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/q5_junctions/` (`reconstruct.py`, `pairs.tsv`,
+`exons_3contig.gff`, `gff_introns.pkl`, `pairs_classified.tsv`, `build_probes.py`, `probes.fa`, `ptr.paf`,
+`ptr.mm2.log`, `ppy.paf`, `ppy.mm2.log`).

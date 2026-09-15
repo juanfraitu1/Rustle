@@ -662,9 +662,18 @@ assignments into false ties, row 714). (iii) Two families' units over one place 
 are recorded as a special case, not resolved. ⚠ The paragraph below is the OLD node's measurement (152
 primaries, 0.306 %) and its intron-annotation argument; keep it as history, do not quote it as current.
 
-⛔ **But half is undetermined and must be conceded: 73/153 = 47.7% are canonical-but-unannotated =
-"we do not know."** Defensible statement: **≥31% minimap2 artifact, ~18% real, nothing about the
-plurality.**
+⚠ **Half was undetermined; a real minority of it is now cross-species-confirmed (§6l1, 2026-09-15).**
+Original concession: 73/153 = 47.7% are canonical-but-unannotated = "we do not know" (≥31% minimap2
+artifact, ~18% real, nothing about the plurality). Reconstructed the analogous population fresh (exact
+per-junction table was never saved) — 60 pairs, composition close to but not identical to the original
+(6/60 annotated, 33/60 canonical-unannotated, 20/60 noncanonical) — and ran the same cross-species probe
+test already validated for read-throughs (§6gc-§6gg) on the 33 canonical-unannotated junctions: built
+150+150 bp exon-flank probes, streamed independent chimp and orangutan RNA reads against them. **21-30% of
+that bin replicate in BOTH apes** (30.3% raw threshold, 21.2% strict mapq/dv threshold), 45.5% in at least
+one; negative controls 0%, positive controls 68-80% (clearing the original PREREG bar in both species). The
+plurality is no longer a uniform unknown: a real, independently-confirmed minority (roughly a fifth to a
+third, on this reconstruction) sits inside it, alongside a majority that remains genuinely undetermined —
+non-replication is not evidence of artifact, only absence of confirmation.
 ⚠ Trap: §6aq's discriminator is **degenerate below ~3 bridging junctions** (one intron ⟹ modal
 share 1.00 *by construction*); a naive tally gave a garbage 39/59 = 66%. **Check the junction count
 first.**
@@ -825,7 +834,9 @@ only move that buys credibility for what is below it.
 4. **The project is NPIP-bound on the thesis organism** — 189/~330 sections, clean gorilla control n = 1.
    TBC1D3 and AMY are now also worked (Q9), but human CHM13 only. The subfamily pipeline WAS run on gorilla
    (§6kz) and found no recoverable subfamily structure there — a real, executed negative, not an unfilled gap.
-5. **Half the tandem-read cases are undetermined** (Q5).
+5. **Most of the tandem-read "undetermined" bin is still undetermined** (Q5, §6l1) — a cross-species-confirmed
+   minority (~21-30% of the canonical-unannotated cases, on a fresh reconstruction) is now real biology, but
+   the majority remains an open question; non-replication in ape RNA is not evidence of artifact.
 6. **The NPIP-fragmentation defect is universal, confirmed on human's own reference, not fixed by porting to
    apes** (Q6, §6l0) — the current default splits NPIP-like copies across a third to a half of all families
    recovered on chr16 in human, chimp, and orangutan alike, worst on human itself.
@@ -915,7 +926,7 @@ chosen. `REPRODUCE.md` pins the **one** that is — three contigs, ~40 minutes, 
 | Q2 real vs overfit | ⚠ **narrowly** defensible; ⭐ annotation-vs-annotation ceiling F 0.67-0.81 bounds every F-score; protein-space families reproduce at goal bars (self-corrected once) | §6kl, §6ko, §6dy–§6dz, §6eh, Part 1 |
 | Q3 borrowing | ⛔ no (inert) / ⭐ `E_c` splits | §6bd, §6bi |
 | Q4 isoforms | ⭐ structure and origin separated by the genomic read-star | §6fd |
-| Q5 tandem reads | ⭐ K = 0 tie / clipped locus / nested special case | §6fh, §6fj, row 721 |
+| Q5 tandem reads | ⭐ K = 0 tie / clipped locus / nested special case; ⭐ 21-30% of the canonical-unannotated "unknown" bin now cross-species-confirmed real, majority still undetermined | §6fh, §6fj, row 721, §6l1 |
 | Q6 portability | ⭐ tissue/animal · ⭐ apes port structurally, ⛔ coherent-family gap is universal (worst on human itself) | §4l, §5p, §6l0 |
 | Q7 boundaries | ⭐ premise false | §6ay, §6ba |
 | Q8 1/k | ⭐ never used; certified assignment measured (0 wrong anchors, 1.0000 agreement) | §6fa–§6fj, `sweep_v14` |
