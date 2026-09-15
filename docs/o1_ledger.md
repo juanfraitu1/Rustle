@@ -21771,3 +21771,44 @@ self-contained `--dump-star` triples for exactly this reason.
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/as_tied_demo/` (`npip_mcl1.{assignments,families,quant,
 psv_reads,psv_copies,psv_cols,star_reads}.tsv`, `run.log`); source catalog untouched at
 `/mnt/linuxdisk/home/juanfraitu/mcl_ann/sweep_v15/fam_MCL1_073242/`.
+
+### §6l3 addendum 2 — a conservation toggle and a read-vs-2-copies segment plot, both independently verified against real sequence (2026-09-15)
+
+Two more artifact additions, both requiring fresh, independent computation rather than a rearrangement of
+data already on the page.
+
+**Conservation toggle.** The PSV matrix explanation above (§6l3 addendum) states correctly that the file
+never records agreement, but doesn't by itself prove real conservation exists nearby. Fetched all 4 TRIM
+genes' real CDS directly from `GGO.fasta` (independent of `--dump-psv`, whose file structurally cannot answer
+this) and globally aligned each to TRIM6 with `edlib`: **82.0% identity TRIM6 vs TRIM34, 82.5% vs TRIM5, 79.7%
+vs TRIM22** over the full coding sequence (1,410-1,412 aligned positions per pair) — real, substantial,
+biologically ordinary paralog-level conservation (TRIM ligand-recognition domains are known to evolve fast
+under host-virus selection, so ~80% rather than NPIP's ~99% is expected, not a red flag). Per-exon breakdown:
+every one of TRIM6's 8 CDS exons falls in the 72-96% range: none near 0%, none near 100% — the artifact's
+already-shown divergent 20bp window (TRIM6 11,931,382-11,931,401, inside exon 1) is a real, verified local dip,
+not representative of that exon or the gene as a whole. Found and independently re-verified a genuine
+byte-identical 20bp window 249bp downstream (TRIM6 CDS pos 550-569, genome 11,938,831-11,938,850, inside exon
+2): 17 of 20 positions agree across all four genes, confirmed both by the fork's `edlib` alignment and by my
+own direct motif search in each gene's raw fetched FASTA (`GTCATTTGCTGG` found at CDS offsets 552/339/333/339
+in TRIM6/34/5/22 respectively, with the surrounding 20bp context matching). The artifact now has a real toggle
+(plain JS, `hidden` attribute, no framework) switching between the two real windows.
+
+**Segment plot (read-vs-2-copies).** For the AS-tied NPIP read (`SRR27438212.5196789`, §6l3 addendum), built a
+per-position identity track along the read's own 813bp length against each candidate copy, from a FRESH,
+INDEPENDENT realignment (`minimap2 -x map-hifi --eqx` against genomic sequence fetched directly from
+`GGO.fasta`, no reuse of the pipeline's own `--dump-psv`/`--dump-star` code path): **798/813 match vs copy 1
+(98.4%), 808/813 match vs copy 3 (99.4%)** — close enough in aggregate that a single alignment score genuinely
+cannot separate them, consistent with the certified 788-vs-788 tie (the fresh alignment's own raw score isn't
+expected to reproduce 788=788 exactly, different tool/parameters; only the per-position match/mismatch pattern
+is used from it). ⭐**This independently reproduces all 8 of `star_reads.tsv`'s claimed decisive columns as
+mismatches against copy 1 and NON-mismatches against copy 3, with zero exceptions** — a completely separate
+computation confirming the same 8 sites and the same winner. This resolves the addendum-1 open question in
+`star_reads.tsv`'s favor: its self-contained `read_base:candidate_bases` triples are correct; the earlier-found
+discrepancy is specific to a direct `.psv_copies.tsv` lookup (or its indexing), not to `--dump-star`'s own
+output. Root cause still not tracked down — the standing advice stands: never cross-reference `--dump-star`
+data against a separate `.psv_copies.tsv` lookup by raw `col_index`.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/trim_conservation/` (`TRIM6.fa`/`TRIM34.fa`/`TRIM5.fa`/
+`TRIM22.fa`, `aln_TRIM6_vs_{TRIM34,TRIM5,TRIM22}.txt`, `cds.fa`);
+`/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/as_tied_demo/segment_plot/` (`read_vs_2copies_tracks.json`,
+`read_vs_copy{22,23}_genomic.sam`).
