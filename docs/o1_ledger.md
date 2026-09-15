@@ -21464,3 +21464,47 @@ The raw ledger itself was NOT retroactively tagged, per the standing rule above;
 and `O3_STATUS.md` remain the live "what's disproven / current status" documents, `ADVISOR_QUESTIONS.md` is now
 the live "what does this mean for the standing questions" document, and this section is the pointer between
 them for whoever refreshes it next.
+
+## §6kz — Q9's guided subfamily pipeline run on gorilla for the first time: it does not close the gap
+(2026-09-15)
+
+Directly answers the refresh's own flagged gap (§6ky, Q9: "everything above is human CHM13 only"). Gorilla has
+no independently-published Dishuck-style NPIP subfamily labels of its own, so the only available truth proxy
+is CHM13-landing: each of the 24 gorilla NPIP loci with a unit (`rna_units_v4` MCL3, the same catalog §6ew
+scored) probe-aligned (minimap2 asm20) against the 22 human NPIP genes in `docs/lit_subclusters_npip_tbc1d3_
+truth.tsv`'s own CHM13 sequence; **id >= 0.90 confident landing, else "chimeric"**: B2 (5), B11 (4), B1P (2),
+B7/B5/B3/B4/B10P (1 each, untestable as clades), chimeric (8, no confident landing at all) — zero landed on an
+A-gene, consistent with §6ew. Built a synthetic seed GFF from the catalog's own exon chains (bypassing
+gorilla's own mis-annotated gene names — "titin-like"/"NACA-like" — entirely) and ran `bench/guided_pipeline.py`
+unmodified (family named `NPIP_GGO` so the generic group-builder applies instead of the human-specific NPIP
+branch), genome-wide against the gorilla assembly, IQ-TREE installed fresh via conda for this (`iqtree3`
+3.1.3, none was present before).
+
+**Two independent parts of the pipeline both fail on gorilla, for two different reasons.**
+1. **The finder-level bars (B1/B4) fail**, unlike on human: named precision 0.756-0.923 at "half" level
+   (bar >= 0.95) and duplicate-overlap 0.200 at "keep1" (bar <= 0.05) — gorilla's sparser/messier native
+   annotation (many unnamed `LOC1xxxxxxxx` neighbours) makes the "is this candidate a named same-family gene"
+   classification noisier than on CHM13. Sensitivity itself is fine (1.000/0.983 at "half").
+2. **The tree-based subfamily test finds ZERO recoverable clades, in the reference run (all 24 loci, no
+   leave-out) or across every leave-out replicate.** B2, B11 and B1P — each with enough members to test —
+   show "no split" on BOTH the exon tree and the intron tree, every single time, at trees built from
+   4,818-15,266 informative columns (not a data-starvation artefact). Only "chimeric" recovered once, in a
+   tiny 8-leaf keep1 replicate, most likely a leave-out-size artefact rather than real structure.
+
+**Read this result with the honest caveat already on record, not despite it.** The label being tested
+(CHM13-landing) is itself a cross-species projection, not an independently-validated gorilla ground truth —
+unlike NPIP/TBC1D3/AMY on human, where Dishuck/Guitart/Bolognini-Yilmaz groups are literature facts. So a
+negative here is compatible with two different explanations: (a) the projected label is simply too noisy to
+be a real clade signal, or (b) gorilla's own NPIP paralogs genuinely lack the subfamily-tree structure the
+human ones have (plausible and consistent with prior diagnosis, §6jl and this project's earlier finding this
+same day that ~1/3 of NPIP alignment columns conflict via gene conversion — exactly the kind of signal that
+would erase a subfamily tree without erasing raw sequence divergence). This run cannot distinguish (a) from
+(b); it only establishes that the human recipe, applied as-is to gorilla, does not produce a positive result
+either way.
+
+**Answer for Q9/ADVISOR_QUESTIONS.md: still not closed on gorilla, now for a stated reason rather than by
+absence of an attempt.** The guided subfamily pipeline was run on the thesis organism for the first time and
+did not recover subfamily structure — a genuine, executed negative, not merely an unfilled gap.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/gorilla_npip/` (`build_inputs.py`, `truth.tsv`,
+`seed.gff`, `landing.paf`, `t.out`, `t.candidates.tsv`, `tree_t/`).

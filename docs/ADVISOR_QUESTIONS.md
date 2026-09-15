@@ -5,6 +5,9 @@
 > (confirmed, not yet shipped default) — and Q9 gained a working answer on the advisor's own NPIP/TBC1D3
 > example, plus a third literature family (AMY). Part 2 (Q1, Q2, Q9) and Part 3 carry the biggest changes;
 > Q3/Q4/Q6/Q7/Q8/Q10/Q11 are unchanged and were re-checked against the range, not just left alone.
+> **Same-day follow-up (§6kz):** Q9's subfamily pipeline was then actually run on gorilla for the first time —
+> it found no recoverable subfamily structure there, closing that gap with an executed negative rather than
+> an absent attempt.
 >
 > **2026-09-06 pass (history).** Q1, Q2, Q4, Q5, Q8 and Part 3 items 7–9 rewritten to the SD-core definition and
 > the read-star O2 (§6ev–§6fo). Paragraphs marked as the OLD node's measurements are kept as history.
@@ -763,9 +766,23 @@ sequence class per family.
 ⚠ **Two more things to say before he asks.** First, this is a **region-level vs copy-level** distinction, not
 just a unit one (§6ji/§6jj): the whole-duplicon span (gene body plus flanking sequence) DOES carry an
 A/B-consistent split; the gene body alone, without flanking context, does not — the A/B signal lives partly
-in flanking duplicon sequence. Second, **everything above is human CHM13 only** — none of it has been re-run
-on the gorilla substrate the thesis is about; the gorilla SD-core paragraph above is still the only gorilla
-answer we have.
+in flanking duplicon sequence. Second, the above is human CHM13 only.
+
+⚠⚠ **Updated same day (2026-09-15, §6kz): run on gorilla for the first time, and it does not close the gap.**
+Gorilla has no independently-published subfamily labels of its own, so the test used the only available proxy
+(CHM13-landing: each gorilla locus's best-identity human NPIP match, id ≥ 0.90) on the same 24-locus catalog
+§6ew scored, built a synthetic seed GFF from the catalog's own exon chains (gorilla's native annotation
+mis-names these loci "titin-like"/"NACA-like"), and ran the identical, unmodified pipeline. **Two independent
+failures, not one:** the finder-level bars fail (named precision 0.76-0.92 vs the 0.95 bar, gorilla's sparser
+annotation makes "same-family other gene" noisier to call), and — the actual subfamily question — **the tree
+recovers zero of the CHM13-landing-derived groups (B2 n=5, B11 n=4, B1P n=2), in the reference run or any
+leave-out replicate, on either exon or intron trees, at 4,800-15,000+ informative columns (not a
+data-starvation artefact).** ⚠ Say the caveat honestly: because the label is a cross-species projection, not
+an independent gorilla ground truth, this negative cannot distinguish "the label is too noisy to be a real
+clade" from "gorilla's own paralogs genuinely lack the subfamily structure human's have" — plausible given
+gene conversion (this project's own same-day finding that ~1/3 of NPIP alignment columns conflict via gene
+conversion is exactly the kind of signal that erases a subfamily tree without erasing raw divergence). Either
+way: **the gorilla gap in this answer is now closed by an executed, reported negative, not an absent attempt.**
 
 ⭐ **A second-haplotype extension answers one more piece and confirms one persistent gap (§6kq, throwaway
 spike, not pre-registered).** Adding a second haplotype (HG002, then a 23-haplotype HPRC panel) makes allelic
@@ -795,7 +812,8 @@ only move that buys credibility for what is below it.
 2. **The external corroboration covers the wrong end** of the identity distribution (Q2).
 3. **72.7% of families have no external adjudication of any kind**; 5 of 121 have per-family review.
 4. **The project is NPIP-bound on the thesis organism** — 189/~330 sections, clean gorilla control n = 1.
-   TBC1D3 and AMY are now also worked (Q9), but human CHM13 only; neither has been re-run on gorilla.
+   TBC1D3 and AMY are now also worked (Q9), but human CHM13 only. The subfamily pipeline WAS run on gorilla
+   (§6kz) and found no recoverable subfamily structure there — a real, executed negative, not an unfilled gap.
 5. **Half the tandem-read cases are undetermined** (Q5).
 6. **No ape catalog is reproducible by the current binary** (Q6).
 7. **O1's remaining losses are the annotation and three recorded special cases**, not the definition: loci
@@ -888,7 +906,7 @@ chosen. `REPRODUCE.md` pins the **one** that is — three contigs, ~40 minutes, 
 | Q6 portability | ⭐ tissue/animal · ⛔ apes | §4l, §5p |
 | Q7 boundaries | ⭐ premise false | §6ay, §6ba |
 | Q8 1/k | ⭐ never used; certified assignment measured (0 wrong anchors, 1.0000 agreement) | §6fa–§6fj, `sweep_v14` |
-| Q9 NPIP subfamilies | ⭐⭐ NPIPA\|NPIPB split now recovered clean (10/10) via guided gene-body units + reference-projected intron trees; TBC1D3 1.000/1.000, AMY near-miss (annotation defect) — all human CHM13, not yet gorilla; TBC1D3-AE still never recovered | §6jm–§6js, §6kq |
+| Q9 NPIP subfamilies | ⭐⭐ human CHM13: NPIPA\|NPIPB split recovered clean (10/10), TBC1D3 1.000/1.000, AMY near-miss (annotation defect), TBC1D3-AE never recovered. ⛔ gorilla: run for the first time, 0/0 subfamily groups recovered (executed negative, caveated by the label being a cross-species proxy) | §6jm–§6js, §6kq, §6kz |
 | Q10 non-canonical | ⭐ he is right; recurs | §6au, §6av, §6aw |
 | Q11 PSV | ⭐ answered | §6aj |
 
