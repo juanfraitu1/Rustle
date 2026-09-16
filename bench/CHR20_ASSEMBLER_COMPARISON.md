@@ -292,6 +292,59 @@ by ≤0.3 percentage points, in the negative direction. **Conclusion: the prior 
 generalizes from the multi-copy Soto substrate to this ordinary chromosome — freshly re-derived here, not
 assumed.** Not worth enabling for general assembly either. Left off by default; no code change.
 
+## Follow-up: fuzzy junction merging at the pre-registered tolerance (672bp) — NEGATIVE (2026-09-15)
+
+`RUSTLE_JUNCTION_FUZZ_BP` merges de-novo skeletons whose intron chains match in count and are within a
+per-junction tolerance, instead of requiring a byte-exact match (design spec:
+`docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md`; tolerance pre-registered from real
+chr20 alignment jitter, `docs/PREREG_junction_fuzz_2026-09-15.md`, final corrected value 672bp — see that
+doc's own methodology-correction section for why the first pass at this measurement, 0bp, was itself wrong).
+
+**A real wiring bug was found and fixed first.** The feature's initial wiring (commit `5a2a0928`) targeted
+`detect_and_assign`'s own `pass1_skeletons_robust` call site in `denovo_pipeline.rs` — but that call site's
+output feeds only the multi-copy family / O1 detection oracle, never `--gtf`'s own transcript emission.
+`--gtf` performs a SEPARATE, independent recomputation directly in `src/bin/copy_assign.rs` via
+`pass1_skeletons` (not `_robust`), explicitly commented in the existing codebase as "independent of the
+assignment." The original wiring was therefore a genuine no-op relative to this feature's actual target —
+setting the env var to any value never changed chr20's gffcompare score, regardless of tolerance. This was
+caught during this acceptance run (transcript count didn't move at all on the first attempt) rather than
+accepted at face value, traced to the root cause, and fixed (commit `768c65f4`) by wiring the merge into
+`copy_assign.rs`'s actual `--gtf` block instead. The `denovo_pipeline.rs` wiring was reverted (with the
+mistake documented in place, not silently deleted) — root cause was a plan-writing-time tracing error, not
+an implementer defect; the original Task 3 diff correctly built exactly what its own brief specified, and
+its review correctly verified byte-identical-when-unset and "only the intended call site touched" — both
+true, neither addressing whether that call site's output ever reaches `--gtf` at all.
+
+**Command** (same substrate, same `chr20_ref.gtf`, corrected binary): `RUSTLE_JUNCTION_FUZZ_BP=672` +
+`bakeoff_chr20_ours.sh`'s invocation, output to `ours_fuzzy/`.
+
+**Real effect on the GTF: substantial, unlike the TSS/TES-snap follow-up above.** 976 → 836 transcripts
+(-14.3%) — the merge genuinely fires at this tolerance on real chr20 data.
+
+**Real effect on gffcompare: net negative, not a no-op.**
+
+| | Query mRNAs | Matching intron chains | Matching transcripts | Matching loci | Transcript Sn/Pr | Intron-chain Sn/Pr | Exon Sn/Pr | Intron Sn/Pr |
+|---|---|---|---|---|---|---|---|---|
+| Baseline (unset) | 976 | 345 | 347 | 208 | 7.6 / 35.6 | 8.0 / 44.6 | 18.0 / 71.0 | 18.6 / 86.1 |
+| Fuzzy merge (672bp) | 836 | 284 | 286 | 206 | 6.3 / 34.2 | 6.6 / 44.9 | 17.4 / 72.4 | 17.9 / 88.8 |
+
+Matching intron chains dropped 345→284 and matching transcripts 347→286 — fewer real, correct matches
+against the reference, not more. Sensitivity falls at every level except a flat intron-chain precision
+(44.6→44.9) and small exon/intron precision gains (71.0→72.4, 86.1→88.8). **Reading**: at 672bp, the merge
+is not primarily consolidating fragmented copies of the SAME true transcript — it is combining genuinely
+DIFFERENT real transcripts whose junctions happen to land within 672bp of each other for unrelated reasons,
+producing a hybrid "consensus" intron chain that then matches NEITHER original reference transcript. The
+small precision upticks are consistent with this: fewer, more conservative transcripts, but built from
+merged evidence that more often disagrees with any single real annotation.
+
+**This is not "no benefit"; it is a measured cost.** Unlike the TSS/TES-snap follow-up above,
+`RUSTLE_JUNCTION_FUZZ_BP` at its pre-registered value should NOT be enabled — it makes chr20's already-weak
+numbers modestly worse on the metrics that matter most (transcript- and intron-chain-level sensitivity and
+match counts). Left off by default (already the case); no further tuning attempted, per this project's own
+pre-registration discipline — the value was fixed before this run, and is not being re-picked now that the
+result is unfavorable. A smaller tolerance, chosen by a different rule, might behave differently, but that
+would be a new, separately pre-registered experiment, not a retry of this one.
+
 ## Files
 
 - `bench/prep_chr20_ref.sh` — chr20 BAM/FASTA/reference-GTF extraction (incl. the GFF3 resort fix).
