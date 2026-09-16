@@ -7,7 +7,9 @@
 //! rules and thresholds are frozen in `docs/superpowers/specs/2026-09-16-gtf-refine-and-dedup-fix-design.md`.
 //! Not validated until the pre-registered held-out chr17 run.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+#[allow(unused_imports)]
+use std::collections::HashSet;
 
 use crate::genome::GenomeIndex;
 use crate::vg_family::denovo_assemble::{PrimaryRead, Skeleton};
