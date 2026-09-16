@@ -265,6 +265,33 @@ in intron-chain/transcript recall and a larger novel-locus count — the expecte
 primary design target is copy-level recall inside multi-copy families, tested here with that machinery
 idle.
 
+## Follow-up: does TSS/TES boundary snapping help on THIS substrate? (2026-09-15, negative)
+
+`RUSTLE_TSS_SNAP` (start/end quantile → sharp-peak snapping) and `RUSTLE_TES_EXTEND` (3'-peak sequence
+extension) are real, opt-in, off-by-default mechanisms in `denovo_assemble.rs`/`denovo_pipeline.rs`. Both
+were previously validated only on the Soto multi-copy-family benchmark (chr1/7/15/16), where they were
+found to move almost nothing (2/43 copy boundaries, paired p=0.69) and kept opt-in "for absence of benefit
+rather than demonstrated harm." That verdict had never been tested against a general/ordinary-locus,
+gffcompare-style target — chr20 is exactly that test.
+
+**Command**: `RUSTLE_TSS_SNAP=1 RUSTLE_TES_EXTEND=1` + the same `bakeoff_chr20_ours.sh` invocation, output to
+`ours_tessnap/`, scored against the same `chr20_ref.gtf`.
+
+**Real effect on the GTF**: 48 of 976 transcripts got a different start/end coordinate (confirmed by diffing
+transcript lines) — the flags are genuinely reachable and active on this substrate, not a no-op.
+
+**Real effect on gffcompare**: none, at the level gffcompare measures.
+
+| | Matching intron chains | Matching transcripts | Matching loci | Base Sn/Pr | Transcript Sn/Pr |
+|---|---|---|---|---|---|
+| Baseline (flags off) | 345 | 347 | 208 | 11.6 / 69.3 | 7.6 / 35.6 |
+| TSS_SNAP + TES_EXTEND | 345 | 347 | 208 | 11.3 / 69.0 | 7.6 / 35.6 |
+
+Every transcript/intron-chain/locus match count is IDENTICAL; base/exon-level sensitivity and precision move
+by ≤0.3 percentage points, in the negative direction. **Conclusion: the prior "no benefit" verdict
+generalizes from the multi-copy Soto substrate to this ordinary chromosome — freshly re-derived here, not
+assumed.** Not worth enabling for general assembly either. Left off by default; no code change.
+
 ## Files
 
 - `bench/prep_chr20_ref.sh` — chr20 BAM/FASTA/reference-GTF extraction (incl. the GFF3 resort fix).
