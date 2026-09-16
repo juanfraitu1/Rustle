@@ -29,5 +29,7 @@ if [ "$SQ_FLAG" = "--sqanti" ]; then
   mkdir -p "$W/sqanti3/$LABEL"; cd "$SQANTI3_DIR"
   python sqanti3_qc.py --isoforms "$GTF" --refGTF "$W/${CHROM}_ref.gtf" --refFasta "$W/${CHROM}.fa" \
     -o "$LABEL" -d "$W/sqanti3/$LABEL" --report skip -t 4 > "$W/sqanti3/$LABEL.qc.log" 2>&1
-  echo "SQANTI3 $LABEL exit=$?"
+  # (fix round 3, cheap hardening) no trailing `echo ... exit=$?` here: under `set -euo pipefail` this line
+  # is only ever reached after the python call above succeeds, so exit=$? would always print 0 -- dropped as
+  # always-0 and misleading, same reasoning as bakeoff_chrom_ours.sh's dropped exit=$? line (fix round 2).
 fi
