@@ -29,7 +29,7 @@ use rustle::vg_family::denovo_assemble::{
     assemble_gate, assemble_gate_with, merge_fuzzy_skeletons, pass1_skeletons, reads_in_region,
     tied_secondary_reads_in_region, BamIndexCache, BamRead, PrimaryRead, GATE_MIN_READS,
 };
-use rustle::vg_family::gtf_refine::{apply_post_filters, fragment_supported_spliced, strict_chain_strand};
+use rustle::vg_family::gtf_refine::{apply_post_filters, fragment_supported_spliced, refine_tss, strict_chain_strand, TSS_WINDOW_BP};
 use rustle::vg_family::catalog_input::{
     group_families, parse_copies_fa, parse_copies_tsv, to_colocated, CatalogFamily, SeqIndex,
 };
@@ -57,6 +57,7 @@ struct GtfRefine {
     subset: bool,
     mono: bool,
     fragsupport: bool,
+    tss: bool,
 }
 
 /// Parses `--gtf-refine`'s comma-separated component list. Unknown components are a hard error.
@@ -68,9 +69,10 @@ fn parse_gtf_refine(items: &[String]) -> Result<GtfRefine> {
             "subset" => r.subset = true,
             "mono" => r.mono = true,
             "fragsupport" => r.fragsupport = true,
-            "all" => r = GtfRefine { strand: true, subset: true, mono: true, fragsupport: true },
+            "tss" => r.tss = true,
+            "all" => r = GtfRefine { strand: true, subset: true, mono: true, fragsupport: true, tss: true },
             other => anyhow::bail!(
-                "--gtf-refine: unknown component '{other}' (expected strand, subset, mono, fragsupport, all)"
+                "--gtf-refine: unknown component '{other}' (expected strand, subset, mono, fragsupport, tss, all)"
             ),
         }
     }
@@ -230,7 +232,8 @@ struct Args {
     /// Comma-separated components: `strand` (single-exon strand from read orientation, margin 0.90),
     /// `subset` (drop own truncated sub-chain models), `mono` (drop single-exon models inside an own spliced
     /// exon or at spliced-read-dominated loci), `fragsupport` (count 3'-anchored truncated reads toward a
-    /// chain's support, assign-or-abstain), or `all`. Annotation-free. Requires `--gtf`. Default: none
+    /// chain's support, assign-or-abstain), `tss` (5' end = densest window of exact-read 5' ends, W =
+    /// `TSS_WINDOW_BP`), or `all`. Annotation-free. Requires `--gtf`. Default: none
     /// (byte-identical). Thresholds are frozen by the spec; not validated until the held-out chr17 run.
     #[arg(long, value_delimiter = ',')]
     gtf_refine: Vec<String>,
@@ -2737,6 +2740,7 @@ fn main() -> Result<()> {
             } else {
                 iso
             };
+            let iso = if gtf_refine.tss { refine_tss(iso, &primary, TSS_WINDOW_BP) } else { iso };
             let groups = collapse_loci_groups(&iso);
             iso.iter()
                 .enumerate()
@@ -5687,8 +5691,12 @@ mod tests {
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         assert_eq!(parse_gtf_refine(&s(&[])).unwrap(), GtfRefine::default());
         let r = parse_gtf_refine(&s(&["strand", "mono"])).unwrap();
-        assert!(r.strand && r.mono && !r.subset && !r.fragsupport);
-        assert_eq!(parse_gtf_refine(&s(&["all"])).unwrap(), GtfRefine { strand: true, subset: true, mono: true, fragsupport: true });
+        assert!(r.strand && r.mono && !r.subset && !r.fragsupport && !r.tss);
+        assert!(parse_gtf_refine(&s(&["tss"])).unwrap().tss);
+        assert_eq!(
+            parse_gtf_refine(&s(&["all"])).unwrap(),
+            GtfRefine { strand: true, subset: true, mono: true, fragsupport: true, tss: true }
+        );
         assert!(parse_gtf_refine(&s(&["bogus"])).is_err());
     }
 }

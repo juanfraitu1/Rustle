@@ -234,6 +234,62 @@ pub fn apply_post_filters(
     models.into_iter().enumerate().filter(|(i, _)| !removed.contains(i)).map(|(_, m)| m).collect()
 }
 
+/// `tss` window W (bp): chosen once on chr20 by `bench/tss_window_sim.py` (max models within 50 bp of the
+/// chain-matched reference TSS, ties → smaller W; grid 10/25/50/100) and frozen before the chr17
+/// pre-registration. Do not tune.
+pub const TSS_WINDOW_BP: u64 = 50;
+
+/// Spec `tss` rule: the read 5' end with the most read 5' ends inside the `window`-bp window extending
+/// downstream from it (`'+'`: `[p, p + W]`; `'-'`: `[p - W, p]`), ties to the most upstream. `None` when
+/// `ends` is empty. One or two ends never move off the most upstream one.
+pub fn densest_five_prime(ends: &[u64], window: u64, strand: char) -> Option<u64> {
+    let mut v = ends.to_vec();
+    v.sort_unstable();
+    let mut best: Option<(usize, u64)> = None;
+    if strand == '-' {
+        for &hi in v.iter().rev() {
+            let c = v.partition_point(|&x| x <= hi) - v.partition_point(|&x| x < hi.saturating_sub(window));
+            if best.map_or(true, |(b, _)| c > b) {
+                best = Some((c, hi));
+            }
+        }
+    } else {
+        for &lo in &v {
+            let c = v.partition_point(|&x| x <= lo.saturating_add(window)) - v.partition_point(|&x| x < lo);
+            if best.map_or(true, |(b, _)| c > b) {
+                best = Some((c, lo));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// `tss` (spec addendum): move each stranded multi-exon model's 5' end to `densest_five_prime` over the 5'
+/// ends of reads with exactly its intron chain on its chromosome. Single-exon models, unstranded models,
+/// models with no exact reads, and every 3' end are unchanged. Only `start`/`end` change — `seq` is not
+/// recomputed, because the `--gtf` block consumes coordinates only.
+pub fn refine_tss(mut models: Vec<DenovoTranscript>, reads: &[PrimaryRead], window: u64) -> Vec<DenovoTranscript> {
+    let mut by_chain: HashMap<(&str, &[(u64, u64)]), Vec<&PrimaryRead>> = HashMap::new();
+    for r in reads.iter().filter(|r| !r.introns.is_empty()) {
+        by_chain.entry((r.chrom.as_str(), r.introns.as_slice())).or_default().push(r);
+    }
+    for m in models.iter_mut() {
+        if m.introns.is_empty() || (m.strand != '+' && m.strand != '-') {
+            continue;
+        }
+        let Some(exact) = by_chain.get(&(m.chrom.as_str(), m.introns.as_slice())) else { continue };
+        let ends: Vec<u64> = exact.iter().map(|r| if m.strand == '+' { r.ref_start } else { r.ref_end }).collect();
+        if let Some(p) = densest_five_prime(&ends, window, m.strand) {
+            if m.strand == '+' {
+                m.start = p;
+            } else {
+                m.end = p;
+            }
+        }
+    }
+    models
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,5 +451,62 @@ mod tests {
     fn subset_never_removes_either_of_two_identical_chains() {
         let dup = tx(150, 750, '+', container().introns.clone());
         assert!(subset_removals(&[container(), dup]).is_empty());
+    }
+
+    #[test]
+    fn densest_five_prime_skips_a_lone_upstream_outlier_on_both_strands() {
+        assert_eq!(densest_five_prime(&[100, 500, 505, 510], 25, '+'), Some(500));
+        assert_eq!(densest_five_prime(&[2000, 900, 905, 910], 25, '-'), Some(910));
+    }
+
+    #[test]
+    fn densest_five_prime_ties_keep_the_most_upstream_window() {
+        assert_eq!(densest_five_prime(&[100, 110, 500, 510], 25, '+'), Some(100));
+        assert_eq!(densest_five_prime(&[100, 110, 500, 510], 25, '-'), Some(510));
+    }
+
+    #[test]
+    fn densest_five_prime_never_moves_one_or_two_reads() {
+        assert_eq!(densest_five_prime(&[100], 25, '+'), Some(100));
+        assert_eq!(densest_five_prime(&[100, 900], 25, '+'), Some(100));
+        assert_eq!(densest_five_prime(&[100, 900], 25, '-'), Some(900));
+        assert_eq!(densest_five_prime(&[], 25, '+'), None);
+    }
+
+    #[test]
+    fn densest_five_prime_window_is_inclusive() {
+        assert_eq!(densest_five_prime(&[100, 400, 425], 25, '+'), Some(400));
+        assert_eq!(densest_five_prime(&[100, 400, 425], 24, '+'), Some(100));
+    }
+
+    #[test]
+    fn refine_tss_moves_only_stranded_multi_exon_5prime_ends_from_exact_chain_reads() {
+        let chain = vec![(200, 300), (400, 500), (600, 700)];
+        let minus = vec![(200, 300), (400, 500)];
+        let other = vec![(200, 300), (400, 500), (600, 650)];
+        let on_c2 = |s: u64| PrimaryRead { chrom: "c2".into(), ref_start: s, ref_end: 800, introns: chain.clone(), reverse: false };
+        let mut reads = vec![
+            read(10, 800, chain.clone()), // lone upstream outlier
+            read(150, 800, chain.clone()),
+            read(155, 800, chain.clone()),
+            read(160, 800, chain.clone()),
+            read(520, 800, vec![(600, 700)]), // fragment: its chain differs, never counts
+            read(20, 800, other.clone()),     // other chain: if counted, the window at 10 would win (4 > 3)
+            read(21, 800, other.clone()),
+            read(22, 800, other.clone()),
+        ];
+        reads.extend([on_c2(190), on_c2(191), on_c2(192), on_c2(193)]); // other chromosome: would win if counted
+        for e in [990, 840, 845, 850] {
+            reads.push(read(100, e, minus.clone())); // '-' model: outlier 990, cluster 840..850
+        }
+        let models = vec![
+            tx(10, 800, '+', chain.clone()),
+            tx(100, 990, '-', minus.clone()),
+            tx(1000, 1200, '+', vec![]),             // single-exon: unchanged
+            tx(5000, 6000, '+', vec![(5100, 5200)]), // no exact reads: unchanged
+            tx(10, 800, '.', chain.clone()),         // unstranded: unchanged
+        ];
+        let spans: Vec<(u64, u64)> = refine_tss(models, &reads, 25).iter().map(|t| (t.start, t.end)).collect();
+        assert_eq!(spans, vec![(150, 800), (100, 850), (1000, 1200), (5000, 6000), (10, 800)]);
     }
 }
