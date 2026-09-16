@@ -97,6 +97,43 @@ fn families_without_copies_fa_rebuilds_the_sequences_from_the_genome() {
     assert_eq!(tids, vec!["DN_c1_250_2", "DN_c1_380_2"]);
 }
 
+/// `--discover-copies` is opt-in and REPORT ONLY (Task 5): with the flag unset, the binary must never
+/// even know the feature exists -- every other output file must come out byte-for-byte identical to a
+/// run with the flag added. This is the single most important untested claim from the copy-discovery
+/// feature itself (Tasks 1-4), so it is checked directly against the real binary, not the library code.
+#[test]
+fn discover_copies_off_by_default_is_byte_identical() {
+    // Two separate scratch dirs give the two runs distinct --out prefixes (the `run()` helper always
+    // writes to `<dir>/o`), mirroring `without_families_ids_are_minted_and_no_join_file_is_written`'s
+    // plain (non-`--families`) invocation above.
+    let d_off = scratch("discover_off");
+    let (o_off, out_off) = run(&d_off, &["--no-refine"]);
+    assert!(o_off.status.success(), "flag-off run failed:\n{}", stderr(&o_off));
+
+    let d_on = scratch("discover_on");
+    let (o_on, out_on) = run(&d_on, &["--no-refine", "--discover-copies"]);
+    assert!(o_on.status.success(), "flag-on run failed:\n{}", stderr(&o_on));
+
+    for ext in ["assignments.tsv", "families.tsv", "quant.tsv"] {
+        let off_path = format!("{out_off}.{ext}");
+        let on_path = format!("{out_on}.{ext}");
+        let a = std::fs::read(&off_path).unwrap_or_else(|e| panic!("read {off_path}: {e}"));
+        let b = std::fs::read(&on_path).unwrap_or_else(|e| panic!("read {on_path}: {e}"));
+        assert_eq!(a, b, "--discover-copies must not perturb .{ext} (unset vs set)");
+    }
+
+    // The flag's own report is additive, not a rename of an existing file: absent when unset, present
+    // (even if empty of candidate rows) when set.
+    assert!(
+        std::fs::metadata(format!("{out_off}.discovered_copies.tsv")).is_err(),
+        "discovered_copies.tsv must not exist without --discover-copies"
+    );
+    assert!(
+        std::fs::metadata(format!("{out_on}.discovered_copies.tsv")).is_ok(),
+        "discovered_copies.tsv must exist with --discover-copies"
+    );
+}
+
 // ---- 2. the JOIN KEY -------------------------------------------------------------------------------
 
 /// The whole point: rows must carry the CATALOG's `family_id`, and `<out>.family_join.tsv` must name the
