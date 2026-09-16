@@ -461,12 +461,18 @@ fn copies_fa_without_families_is_an_error() {
 /// (`merge_fuzzy_skeletons`'s own proven no-op) before the merge function is ever called. That is a real,
 /// valid off-state parity contract and this test genuinely exercises it.
 ///
-/// WHAT THIS DOES NOT PROVE (confirmed 2026-09-16, final whole-branch review): `--gtf` on the
-/// `same_chrom_supplement` fixture emits a 0-BYTE `.gtf` file -- there is nothing in this fixture for a
-/// merge to fire on, at any tolerance (independently confirmed: re-running this fixture at
-/// `RUSTLE_JUNCTION_FUZZ_BP=200` produces output byte-identical to unset). So this test would stay GREEN
-/// even if the entire feature were deleted, the `fuzz_bp > 0` guard in `copy_assign.rs` were removed, or the
-/// merge were called unconditionally -- it cannot and does not exercise the feature's ON-state at all. The
+/// WHAT THIS DOES NOT PROVE, and a correction of an earlier claim here (confirmed 2026-09-16, Task 5
+/// fix round 1): this comment used to say `--gtf` on the `same_chrom_supplement` fixture emits a
+/// 0-BYTE `.gtf` file. That was true of the pre-2026-09-16 dedup behaviour (still reproducible today
+/// via `RUSTLE_LEGACY_PLACEMENT_DEDUP=1`, and on the committed pre-fix `copy_assign` binary) -- both
+/// measured 0 `.gtf` lines on this exact invocation. This branch's cross-window dedup fix changed
+/// that: the CURRENT binary emits 9 `.gtf` rows on this fixture. Re-measuring the second claim against
+/// that current binary: `RUSTLE_JUNCTION_FUZZ_BP=200` vs unset on this fixture is NO LONGER
+/// byte-identical (9 rows unset vs 6 rows at `FUZZ_BP=200` -- the merge now has real chains to act on).
+/// The test below only asserts unset == explicit-`0`, which stays true and is a real no-op check
+/// either way (`tolerance_bp == 0` short-circuits before `merge_fuzzy_skeletons` is ever called,
+/// independent of how many rows exist), so this test's own assertions are unaffected by the dedup fix
+/// -- but it still cannot and does not exercise the merge's ON-state (tolerance > 0) at all. The
 /// positive-control evidence that the merge fires correctly (and, at its pre-registered tolerance, harmfully)
 /// on real `--gtf` output lives elsewhere: `bench/CHR20_ASSEMBLER_COMPARISON.md`'s real chr20 acceptance run
 /// (976 -> 836 transcripts, matching intron chains 345 -> 284, a real measured effect), and
@@ -497,8 +503,12 @@ fn junction_fuzz_off_state_parity_unset_vs_explicit_zero() {
 }
 
 /// `--gtf-refine` is validated up front: it needs `--gtf`, and an unknown component is an error. Its ON-state
-/// behaviour is not exercised here -- this fixture's `--gtf` emits 0 rows -- it is proven by the gtf_refine
-/// unit tests and the chr20 fidelity anchors (docs/superpowers/plans/2026-09-16-gtf-refine-and-dedup-fix.md, Task 6).
+/// behaviour is not exercised here: with the current (2026-09-16 dedup-fixed) binary this fixture's `--gtf`
+/// emits 9 rows (measured via `cmp`), but none of them trigger any `--gtf-refine` rule -- `--gtf-refine all`
+/// produces byte-identical output (every `.tsv`/`.gtf`) to unset on this exact invocation. So the third
+/// assertion below (`--gtf-refine all` succeeds) proves only accept-and-run, not that any rule actually
+/// fired. ON-state evidence lives elsewhere: the `gtf_refine` unit tests (`src/rustle/vg_family/gtf_refine.rs`)
+/// and the chr20 fidelity anchors (docs/superpowers/plans/2026-09-16-gtf-refine-and-dedup-fix.md, Task 6).
 #[test]
 fn gtf_refine_requires_gtf_and_known_components() {
     let d = scratch("gtf_refine_cli");
