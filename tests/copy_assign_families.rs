@@ -100,23 +100,45 @@ fn families_without_copies_fa_rebuilds_the_sequences_from_the_genome() {
 /// `--discover-copies` is opt-in and REPORT ONLY (Task 5): with the flag unset, the binary must never
 /// even know the feature exists -- every other output file this invocation unconditionally produces
 /// (`assignments.tsv`, `families.tsv`, `quant.tsv`, plus the two always-written files `famcn_readonly.tsv`
-/// and `params.tsv`, see `src/bin/copy_assign.rs:4286` and `:4839`) must come out byte-for-byte identical
+/// and `params.tsv`, see `src/bin/copy_assign.rs:4286` and `:4886`) must come out byte-for-byte identical
 /// to a run with the flag added. This is the single most important untested claim from the copy-discovery
 /// feature itself (Tasks 1-4), so it is checked directly against the real binary, not the library code.
+///
+/// ⚠ Runs under `--families` (final whole-branch review, Finding 5). The original version of this test
+/// used the PLAIN invocation, which on this fixture yields header-only `assignments.tsv`/`families.tsv`/
+/// `quant.tsv` in BOTH arms: the byte-parity assertion was real but VACUOUS -- it compared empty files and
+/// never entered the per-family discovery path at all. With `--families GWFAM1` + `--copies-fa`, both arms
+/// produce non-empty assignment/quant output AND `--discover-copies` actually runs its per-family
+/// clustering, so the parity being asserted is parity of a real result.
 #[test]
 fn discover_copies_off_by_default_is_byte_identical() {
     // Two separate scratch dirs give the two runs distinct --out prefixes (the `run()` helper always
-    // writes to `<dir>/o`), mirroring `without_families_ids_are_minted_and_no_join_file_is_written`'s
-    // plain (non-`--families`) invocation above.
+    // writes to `<dir>/o`), but the CATALOG must be one shared file: `params.tsv` records the `--families`
+    // path verbatim, so two per-dir copies of the same table would differ there for a reason that has
+    // nothing to do with this flag.
+    let d_cat = scratch("discover_cat");
+    let fam = write(&d_cat, "cat.copies.tsv", GWFAM1_TSV);
+
     let d_off = scratch("discover_off");
-    let (o_off, out_off) = run(&d_off, &["--no-refine"]);
+    let (o_off, out_off) =
+        run(&d_off, &["--families", &fam, "--copies-fa", &format!("{FIX}/out_default.copies.fa")]);
     assert!(o_off.status.success(), "flag-off run failed:\n{}", stderr(&o_off));
 
     let d_on = scratch("discover_on");
-    let (o_on, out_on) = run(&d_on, &["--no-refine", "--discover-copies"]);
+    let (o_on, out_on) = run(
+        &d_on,
+        &["--families", &fam, "--copies-fa", &format!("{FIX}/out_default.copies.fa"), "--discover-copies"],
+    );
     assert!(o_on.status.success(), "flag-on run failed:\n{}", stderr(&o_on));
 
-    for ext in ["assignments.tsv", "families.tsv", "quant.tsv", "famcn_readonly.tsv", "params.tsv"] {
+    // The parity comparison is only meaningful if these files actually carry rows.
+    assert!(!col(&read(&out_off, "quant.tsv"), 2).is_empty(), "the flag-off arm must produce real quant rows");
+    assert!(
+        !col(&read(&out_off, "assignments.tsv"), 0).is_empty(),
+        "the flag-off arm must produce real assignment rows"
+    );
+
+    for ext in ["assignments.tsv", "families.tsv", "quant.tsv", "famcn_readonly.tsv", "params.tsv", "family_join.tsv"] {
         let off_path = format!("{out_off}.{ext}");
         let on_path = format!("{out_on}.{ext}");
         let a = std::fs::read(&off_path).unwrap_or_else(|e| panic!("read {off_path}: {e}"));
@@ -130,10 +152,123 @@ fn discover_copies_off_by_default_is_byte_identical() {
         std::fs::metadata(format!("{out_off}.discovered_copies.tsv")).is_err(),
         "discovered_copies.tsv must not exist without --discover-copies"
     );
-    assert!(
-        std::fs::metadata(format!("{out_on}.discovered_copies.tsv")).is_ok(),
-        "discovered_copies.tsv must exist with --discover-copies"
+    let report = read(&out_on, "discovered_copies.tsv");
+    assert_eq!(
+        report.lines().next(),
+        Some("family_id\tchrom\tstart\tend\tstrand\tn_supporting_reads\tread_names\tnearest_copy_tid\tnearest_copy_distance"),
+        "the report header must carry the strand column (final whole-branch review, Finding 4): {report}"
     );
+}
+
+/// ⚠ THE CROSS-FAMILY POOLING BUG, at the real-binary level (final whole-branch review, Finding 1).
+///
+/// Pre-fix, `cluster_tie_partners` was handed the WHOLE region's AS-tied read list once per family, so one
+/// out-of-catalog site was emitted once per family in the region, with the identical `read_names` list
+/// under a different `family_id` -- confirmed on real data, where one site came out under 3-8 ids.
+///
+/// The catalog here is built to make that visible with the committed fixture BAM. It holds THREE families
+/// over one region set:
+///   * `GWFAM1` (c1:250-460 + c1:380-550) -- owns `read_same_0/1/2`, whose two AS-tied placements both sit
+///     inside its own copies, so it legitimately discovers nothing;
+///   * `GWFAM0` (c1:0-260 + c2:0-260) -- also considers `read_same_*` (their primary overlaps c1:0-260),
+///     and their OTHER max-AS placement at c1:380-550 is outside every GWFAM0 copy: the one legitimate
+///     candidate row, present both before and after the fix;
+///   * `FAMX` (c1:0-59 + c1:100-150) -- a DECOY at the far end of the same region. No `read_same_*`
+///     placement comes near it, so `FAMX` never considers those reads (it has no `assignments.tsv` row for
+///     them at all) and must report nothing. Pre-fix it reported `c1:250-550` naming
+///     `read_same_0,read_same_1,read_same_2` -- reads that were never its to reason about. VERIFIED by
+///     re-introducing the bug against this exact catalog: the buggy binary emits that extra `FAMX` row and
+///     this test fails; the fixed binary emits only the `GWFAM0` row.
+#[test]
+fn discovered_copies_are_never_pooled_across_families() {
+    let d = scratch("discover_xfam");
+    // FAMX (decoy) + GWFAM1 (same-chrom) + GWFAM0 (cross-chrom), swept over both contigs. No
+    // `--copies-fa`: FAMX is synthetic, so the sequences are rebuilt from the genome at the catalog's own
+    // exon coordinates (the documented fallback, pinned by
+    // `families_without_copies_fa_rebuilds_the_sequences_from_the_genome` above).
+    const FAMX_TSV: &str = "FAMX\t0\tX0\tc1\t0\t59\t1\t+\t3\t0-59\n\
+FAMX\t1\tX1\tc1\t100\t150\t1\t+\t3\t100-150\n";
+    let tsv = std::fs::read_to_string(format!("{FIX}/out_default.copies.tsv")).unwrap();
+    let fam0: String = tsv.lines().filter(|l| l.starts_with("GWFAM0\t")).collect::<Vec<_>>().join("\n");
+    // GWFAM1_TSV already carries the header row; FAMX/GWFAM0 rows append to it.
+    let (hdr, gwfam1) = GWFAM1_TSV.split_at(GWFAM1_TSV.find('\n').unwrap() + 1);
+    let fam = write(&d, "three.copies.tsv", &format!("{hdr}{FAMX_TSV}{gwfam1}{fam0}\n"));
+    let regions = write(&d, "regions.txt", "c1:0-600\nc2:0-320\n");
+    let out = d.join("o");
+    let out_s = out.to_str().expect("utf-8 path").to_string();
+    let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
+        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+        .args(["--regions", &regions, "--out", &out_s])
+        .args(["--families", &fam])
+        .arg("--discover-copies")
+        .output()
+        .expect("copy_assign failed to spawn");
+    assert!(o.status.success(), "run failed:\n{}", stderr(&o));
+
+    // All three families must really be in play -- otherwise "no cross-family attribution" is vacuous.
+    let mut fams: Vec<String> = col(&read(&out_s, "families.tsv"), 0);
+    fams.sort();
+    fams.dedup();
+    assert_eq!(
+        fams,
+        vec!["FAMX".to_string(), "GWFAM0".to_string(), "GWFAM1".to_string()],
+        "all three catalog families must be assigned"
+    );
+
+    let report = read(&out_s, "discovered_copies.tsv");
+    // The decoy considered none of the region's AS-tied reads, so it must claim nothing.
+    assert!(
+        !col(&report, 0).iter().any(|f| f == "FAMX"),
+        "FAMX considered no AS-tied read yet claims a candidate -- cross-family pooling:\n{report}"
+    );
+    // Non-vacuous: this fixture really does yield a candidate (GWFAM0's own tied reads have a max-AS
+    // placement at c1:380-550, outside every GWFAM0 copy). Without a row, everything below is empty-set
+    // true and the test would prove nothing.
+    assert!(report.lines().skip(1).any(|l| !l.trim().is_empty()), "expected at least one candidate:\n{report}");
+
+    // (1) THE DIRECT INVARIANT: every read named by a discovered row must be a read the REPORTING family
+    // actually considered. `assignments.tsv` is that ground truth, emitted from the same `fa.assignments`
+    // `discover_copies_for_family` now restricts on. Pre-fix, a family was handed the whole region's tied
+    // reads, so a row could name reads that appear nowhere under its own family_id.
+    let assignments = read(&out_s, "assignments.tsv");
+    let mut considered: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+    for l in assignments.lines().skip(1).filter(|l| !l.trim().is_empty()) {
+        let f: Vec<&str> = l.split('\t').collect();
+        considered.entry(f[1].to_string()).or_default().insert(f[0].to_string());
+    }
+
+    // (2) and no two families may claim the SAME site with the SAME supporting reads.
+    let mut by_site: std::collections::HashMap<(String, String, String, String), Vec<String>> =
+        std::collections::HashMap::new();
+    for l in report.lines().skip(1).filter(|l| !l.trim().is_empty()) {
+        let f: Vec<&str> = l.split('\t').collect();
+        assert_eq!(f.len(), 9, "row must have 9 columns (strand included): {l}");
+        let (fid, names) = (f[0].to_string(), f[6]);
+        let mine = considered.get(&fid).cloned().unwrap_or_default();
+        for n in names.split(',') {
+            assert!(
+                mine.contains(n),
+                "{fid} reports read {n}, which it never considered (not in its assignments.tsv rows) \
+                 -- cross-family pooling:\n{report}\n{assignments}"
+            );
+        }
+        by_site
+            .entry((f[1].to_string(), f[2].to_string(), f[3].to_string(), names.to_string()))
+            .or_default()
+            .push(fid);
+    }
+    for (site, ids) in &by_site {
+        assert_eq!(ids.len(), 1, "site {site:?} reported under {ids:?} -- cross-family pooling:\n{report}");
+    }
+    // Strand must be a real call, never blank or a placeholder character.
+    for s in col(&report, 4) {
+        assert!(s == "+" || s == "-", "strand column must be + or -, got {s:?}:\n{report}");
+    }
+    // And the distance column must never be a raw `u64::MAX` sentinel (final whole-branch review, Minor 6).
+    for d in col(&report, 8) {
+        assert_ne!(d, "18446744073709551615", "absent nearest copy must print NA:\n{report}");
+    }
 }
 
 // ---- 2. the JOIN KEY -------------------------------------------------------------------------------
