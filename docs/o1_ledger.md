@@ -21855,3 +21855,50 @@ minutes across two published versions before being caught.
 
 Data: `/mnt/linuxdisk/home/juanfraitu/fibroblasts/GCA_029281585.2_flnc_mm.bam` (queried directly, not
 copied); no new files produced by this correction beyond the artifact edit itself.
+
+## §6l4 — Identity-vs-AS-tie table: real ties concentrate at LOW identity, not high (2026-09-15)
+
+Advisor pushback (relayed by user): another student's multi-copy families are reportedly ~99% identical,
+always AS-tied, with almost no PSVs, and he reads that as "reality" — implying this project's own worked
+examples are a lucky/easy minority. Answered with §6aj's existing catalog-wide numbers (median identity 0.83,
+86.3% below 0.90, 0/490 pairs zero-PSV) plus Part 3 item 8's own conceded wall (>=99.85% local identity does
+overwhelm the certificate) — both already on record, not new. User then asked for a real identity-bin vs
+AS-tied-rate table to document this.
+
+**Real numbers, the same §6aj 12-family/490-pair/79,175-read dump** (`/mnt/linuxdisk/home/juanfraitu/mec/psv.*`,
+independently re-derived pairwise identity via `edlib`, PSV counts via direct allele-string comparison — not
+reusing cached figures):
+
+| identity | pairs | PSVs (min-max) | reads | exact AS-tied |
+|---|---|---|---|---|
+| <90% | 484 | 4-3,680 | 78,436 | 72 (0.092%) |
+| 90-95% | 0 | - | - | - |
+| 95-99.5% | 6 | 11-21 | 739 | 24 (3.25%) |
+| >=99.5% | 0 | - | - | - |
+
+0/490 pairs have zero PSVs (independently reproduces §6aj exactly); minimum 11 PSVs even at the single tightest
+pair (99.33%, family GWFAM48). 96/79,175 = 0.121% of reads are exact AS ties overall.
+
+⚠**A forked agent's first-pass summary overstated this — caught before publishing.** It reported AS-tied
+reads "concentrate almost entirely in GWFAM48" (24/96). Independently recomputing directly from
+`mec/psv.assignments.tsv` (`as_best == as_second`, excluding `NA`): tied reads are actually spread across
+**7 different families** (GWFAM55:23, GWFAM66:7, GWFAM48:24, GWFAM96:2, GWFAM113:24, GWFAM104:10,
+GWFAM118:6), and checking pairwise identity within each of the 6 non-GWFAM48 families found EVERY one of
+their pairs sits below 90% identity (family maxima: 0.87, 0.54, 0.82, 0.75, 0.68, 0.62). **72 of the 96 exact
+AS ties (75%) occur in families whose most-similar pair is still under 90% identity — the opposite of what
+the "AS-tied because near-identical" story predicts.** GWFAM48 (the one family with pairs up to 99.33%)
+accounts for only 24/96 = 25% of ties. A second real defect the fork's method could not resolve and flagged
+honestly rather than papering over: `assigned_copy` for `status=tied` rows is a placeholder, so a specific
+tied read cannot be cheaply attributed to one exact candidate pair within a family that has several — the
+per-bin read/tie counts for 95-99% and 99-99.5% (originally reported separately, both drawing on the SAME
+GWFAM48 reads) were merged into one 95-99.5% row here rather than left double-counted.
+
+**Answer for the advisor:** true AS ties are rare everywhere (~0.1-3%, never "almost all"), PSVs never vanish
+even at 99.33% identity in this catalog, and most real ties happen at LOW identity — for a reason unrelated to
+"these two copies are practically identical" (plausibly the same within-copy internal-repeat mechanism §6l3
+found, though not confirmed per-read here). The premise that high identity is what drives AS-tied status does
+not hold in this substrate.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/identity_vs_astie/` (`pairwise_identity.tsv`,
+`pairwise_identity_psv.tsv`, `identity_bin_summary.tsv` — note the last file's per-bin read/tie counts for the
+two high bins are the pre-merge, double-counted version; use the corrected table above).
