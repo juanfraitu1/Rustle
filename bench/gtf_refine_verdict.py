@@ -71,7 +71,7 @@ def tss_metrics(classification):
 
 
 def tss_verdict(base, abl):
-    e5 = abl['p'] > base['p'] and abl['g'] >= base['g']
+    e5 = base['n'] > 0 and abl['n'] > 0 and abl['p'] > base['p'] and abl['g'] >= base['g']
     return dict(E5_tss=e5, tss_verdict='SUPPORTED' if e5 else 'REFUTED', baseline_tss=base, abl_tss=abl)
 
 
@@ -80,6 +80,8 @@ def self_test():
     assert tss_verdict(tb, dict(n=100, within=45, p=0.45, g=60))['tss_verdict'] == 'SUPPORTED'
     assert tss_verdict(tb, dict(n=100, within=40, p=0.40, g=70))['tss_verdict'] == 'REFUTED'  # p tie fails
     assert tss_verdict(tb, dict(n=100, within=45, p=0.45, g=59))['tss_verdict'] == 'REFUTED'  # guard fails
+    assert tss_verdict(dict(n=0, within=0, p=0.0, g=0), dict(n=100, within=45, p=0.45, g=60))['tss_verdict'] == 'REFUTED'  # base n=0
+    assert tss_verdict(tb, dict(n=0, within=0, p=0.0, g=0))['tss_verdict'] == 'REFUTED'  # abl n=0
     b = set(range(100))
     nj = {('c', '+', '1', '2')}
     assert verdict(b, (35.0, 44.0), nj, b | {100}, (40.0, 48.0), nj)['verdict'] == 'SUPPORTED'

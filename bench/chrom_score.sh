@@ -16,9 +16,12 @@ mkdir -p "$W/gffcompare"; cd "$W/gffcompare"
   echo "gffcompare_version: $(gffcompare --version 2>&1 | head -1)"
 } > "$LABEL.provenance.txt"
 
-# gffcompare, no flags beyond -r/-o (no -R/-Q -- those change precision and would confound E2).
+# gffcompare, no flags beyond -r/-o (no -R/-Q -- those change precision and would confound E2). Output goes
+# to files only (log + .stats) -- no scored metric (Query mRNAs / Transcript level / Intron chain level /
+# etc.) is printed here, per the PREREG's no-peeking rule (docs/PREREG_gtf_refine_chr17_2026-09-16.md,
+# "Failure policy"): nothing from .stats/.tmap/classification/junctions may be inspected before
+# bench/gtf_refine_verdict.py computes the verdict.
 gffcompare -r "$W/${CHROM}_ref.gtf" -o "$LABEL" "$GTF" > "$LABEL.gffcompare.log" 2>&1
-sed -n '/Query mRNAs/p;/Transcript level/p;/Intron chain level/p;/Locus level/p;/Matching transcripts/p' "$LABEL.stats"
 
 if [ "$SQ_FLAG" = "--sqanti" ]; then
   echo "sqanti3_commit: $(git -C "$SQANTI3_DIR" rev-parse HEAD 2>/dev/null || echo unknown)" >> "$LABEL.provenance.txt"

@@ -191,10 +191,12 @@ never substituted for them.
   numerators, not from the denominator).
 - The verdict is computed by `bench/gtf_refine_verdict.py` (this commit) — no other script or manual
   arithmetic decides E1–E5.
-- **E5 zero-row edge case**: if `n = 0` for either the BASELINE or the ABL_TSS arm (no full-splice-match
-  multi-exon SQANTI3 rows at all), `p = 0.0` for that arm (`tss_metrics()`'s `within / n if n else 0.0`) and
-  the TSS verdict is REFUTED. This is declared now, before any chr17 number exists, so that a degenerate
-  denominator is never argued into a SUPPORTED reading after the fact.
+- **E5 zero-row edge case**: if `n = 0` for either arm, E5 fails. `tss_metrics()` still sets `p = 0.0` for a
+  zero-row arm (`within / n if n else 0.0`), but `tss_verdict()` additionally requires `base['n'] > 0` AND
+  `abl['n'] > 0` before comparing `p`/`g` at all — without this guard a zero-row BASELINE (`p = 0.0`) would
+  let ANY positive ABL_TSS `p` trivially satisfy `p(abl_tss) > p(baseline)` and read as SUPPORTED. This is
+  declared now, before any chr17 number exists, so that a degenerate denominator is never argued into a
+  SUPPORTED reading after the fact.
 
 ## Decision rules (frozen)
 
@@ -213,7 +215,9 @@ by `bench/gtf_refine_verdict.py`'s `verdict()`, this commit):
   ends differ)**: over SQANTI3 rows with `structural_category == full-splice_match` and `subcategory !=
   mono-exon`, let `p` = fraction with `|diff_to_TSS| <= 50` (unrounded) and `g` = count with
   `|diff_to_gene_TSS| <= 50`. E5 holds iff `p(abl_tss) > p(baseline)` AND `g(abl_tss) >= g(baseline)` (the
-  guard keeps real alternative TSSs from being penalised). **TSS verdict**: SUPPORTED if E5 holds, else
+  guard keeps real alternative TSSs from being penalised); E5 additionally requires `n(abl_tss) > 0` AND
+  `n(baseline) > 0` — if `n = 0` for either arm, E5 fails (see the E5 zero-row edge case in "Scoring
+  conventions"). **TSS verdict**: SUPPORTED if E5 holds, else
   REFUTED. Reported next to, not merged into, the E1–E4 verdict. 50 bp is SQANTI3's own reference_match
   tolerance, not a new threshold. (The E5/TSS-verdict numbers above are computed by
   `bench/gtf_refine_verdict.py`'s `tss_verdict()`, this commit.)
@@ -221,15 +225,18 @@ by `bench/gtf_refine_verdict.py`'s `verdict()`, this commit):
 No threshold, window, or component may be changed after any chr17 number is seen; a changed rule is a new,
 separately pre-registered experiment on a different substrate. (Spec's exact wording, Part 3.)
 
-Note on E2 for the self-review record: "strict" applies independently to BOTH the transcript-level and
+Note on E2: "strict" applies independently to BOTH the transcript-level and
 intron-chain-level precision comparisons (`bun_pr[0] > base_pr[0] and bun_pr[1] > base_pr[1]` in
 `gtf_refine_verdict.py`) — a tie or a loss on either one fails E2, even if the other precision improves.
 
 ## Run protocol (frozen)
 
-This commit freezes the decision rules; it does not by itself freeze how the runs are executed and scored.
-This section closes that gap. The five scripts below are committed together with this PREREG (same commit),
-so their content is frozen at the same instant as the rules above.
+The decision rules above (E1–E5, the component definitions) were frozen at commit `3b096012`, before any
+chr17 data existed (see "Frozen file versions" below). Freezing the rules does not by itself freeze HOW the
+runs are executed and scored; this section closes that gap. The five scripts below, this PREREG document, and
+`bench/gtf_refine_verdict.py` are committed together, so their content is frozen at the same instant as each
+other — not necessarily at `3b096012` itself, since a later commit that touches none of `src/`, `Cargo.toml`,
+or `Cargo.lock` (such as this one) is allowed to update them.
 
 **Scripts** (all under `bench/`, chromosome-parameterized siblings of the chr20 bakeoff scripts — the chr20
 scripts themselves are never modified):
@@ -241,8 +248,12 @@ scripts themselves are never modified):
   context only.
 - `bench/chrom_score.sh` — gffcompare (+ optional SQANTI3) for one label.
 
-**Exact commands, chr17** (`CHROM=chr17`; `W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17`):
+**Exact commands, chr17** (`CHROM=chr17`; run from the repo root):
 ```
+W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17
+
+CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo build --release --bin copy_assign > /mnt/linuxdisk/home/juanfraitu/bakeoff/chr17_build.log 2>&1
+
 bash bench/prep_chrom_ref.sh chr17
 
 bash bench/bakeoff_chrom_ours.sh chr17 baseline
@@ -272,8 +283,8 @@ BASELINE: no `--gtf-refine` flag, `RUSTLE_LEGACY_PLACEMENT_DEDUP` unset (fixed d
 BUNDLE: `--gtf-refine all`. ABL_TSS: `--gtf-refine tss` only, scored for E5 only. legacy: fixed dedup binary
 run with `RUSTLE_LEGACY_PLACEMENT_DEDUP=1` (the ONLY named exception to the blanket `RUSTLE_*` unset below).
 The four other ablations run one named component each. SQANTI3 (`--sqanti`) is run for exactly five labels:
-`baseline`, `bundle`, `abl_tss`, `stringtie`, `flair` — matching the spec's Part 3 Runs paragraph and the
-plan's Task 11 file list. `legacy`, `abl_strand`, `abl_subset`, `abl_mono`, `abl_fragsupport` get gffcompare
+`baseline`, `bundle`, `abl_tss`, `stringtie`, `flair` — matching the spec's Part 3 Runs paragraph.
+`legacy`, `abl_strand`, `abl_subset`, `abl_mono`, `abl_fragsupport` get gffcompare
 only.
 
 **Environment policy.** `bench/bakeoff_chrom_ours.sh` force-unsets every environment variable whose name
@@ -283,16 +294,40 @@ regardless of what the calling shell happens to have exported. This is what keep
 `RUSTLE_JUNCTION_MAJORITY`, `RUSTLE_JUNCTION_NC_MAX_BP`, and any future `RUSTLE_*` variable off for every
 scored arm without having to enumerate them individually in this document.
 
+`bench/bakeoff_chrom_ours.sh` also enforces the `RUSTLE_LEGACY_PLACEMENT_DEDUP` label/value pairing itself,
+before running the binary: label `legacy` **refuses to run (exit 3)** unless `RUSTLE_LEGACY_PLACEMENT_DEDUP=1`
+is set in the calling shell; every other label **refuses to run (exit 3)** if `RUSTLE_LEGACY_PLACEMENT_DEDUP`
+is set to anything at all. This makes the pairing a runtime-checked precondition, not just documentation.
+
+**Frozen file versions.** Two different things are frozen at two different points, and they are not the same
+commit. The RULES (the component definitions above) and the SRC TARGET for the binary are frozen at commit
+`3b096012` (the commit that froze these rules, made before any chr17 data existed). The frozen PREREG document itself,
+the five scripts, and `bench/gtf_refine_verdict.py` are the versions committed in the LAST commit that
+modifies any of them, made before any chr17 output exists — this is verifiable at run time with
+`git log -1 -- docs/PREREG_gtf_refine_chr17_2026-09-16.md bench/prep_chrom_ref.sh bench/bakeoff_chrom_ours.sh bench/bakeoff_chrom_stringtie.sh bench/bakeoff_chrom_flair.sh bench/chrom_score.sh bench/gtf_refine_verdict.py`
+(every listed file must show a commit dated before the first chr17 output; if this command's answer changes
+after chr17 data exists, the test is VOID under the failure policy below).
+
 **Binary provenance.** The binary must be built from a tree whose `src/`, `Cargo.toml`, and `Cargo.lock` are
-byte-identical to commit `3b096012` (the commit that carries this PREREG and `bench/gtf_refine_verdict.py`)
-— chosen as the base because it is the commit that froze the rules being tested; a later commit is
-acceptable ONLY if it touches none of `src/`, `Cargo.toml`, `Cargo.lock`. `bench/bakeoff_chrom_ours.sh`
-checks this itself (`git -C <repo> diff --quiet 3b096012 HEAD -- src Cargo.toml Cargo.lock`) before every
-run and **refuses to run (exit 3)** if they differ. On every run it writes `run_provenance.txt` into the
-label's own output directory (`$W/<label>/run_provenance.txt`) containing: the date; `git rev-parse HEAD` of
-the repo; the src-identity check result; the binary's path and `sha256sum`; every currently-set `RUSTLE_*`
+byte-identical to commit `3b096012` — chosen as the base because it is the commit that froze the rules being
+tested; a later commit is acceptable ONLY if it touches none of `src/`, `Cargo.toml`, `Cargo.lock`. The
+"Exact commands, chr17" block above rebuilds the binary from the repo working tree immediately before
+`bench/prep_chrom_ref.sh` runs. `bench/bakeoff_chrom_ours.sh` independently checks the working tree itself
+against `3b096012` on every invocation (not against `HEAD`, so uncommitted edits are caught too): (a)
+`git -C <repo> diff --quiet 3b096012 -- src Cargo.toml Cargo.lock` and (b)
+`git -C <repo> status --porcelain -- src Cargo.toml Cargo.lock` is empty (so untracked new files under
+`src/` are caught too). Either check failing, or a git error from either command, is recorded as
+`SRC-CHANGED` and the script **refuses to run (exit 3)**. On every run it writes `run_provenance.txt` into
+the label's own output directory (`$W/<label>/run_provenance.txt`) containing: the date; `git rev-parse HEAD`
+of the repo; the src-identity check result; the binary's path and `sha256sum`; every currently-set `RUSTLE_*`
 variable (after the unset step — so an unexpected non-empty listing here, beyond
 `RUSTLE_LEGACY_PLACEMENT_DEDUP`, is itself evidence of a problem); and the exact command line used.
+
+**All eight `run_provenance.txt` files written by the ours-label runs** (`baseline`, `bundle`, `abl_tss`,
+`legacy`, `abl_strand`, `abl_subset`, `abl_mono`, `abl_fragsupport`) **must record the identical
+`binary_sha256` value, else the entire test is VOID.** This is checked by the scoring step (see
+"Verdict-script invocation and argument mapping" below) before `bench/gtf_refine_verdict.py` is invoked — a
+logged-but-uncompared sha256 would not by itself catch a rebuild or a swapped binary between arms.
 
 **Tool versions.** gffcompare: pinned by the environment to v0.12.10; `bench/chrom_score.sh` runs
 `gffcompare --version` fresh for every label and writes it to `$W/gffcompare/<label>.provenance.txt`, along
@@ -306,15 +341,31 @@ exactly as in `bench/bakeoff_chr20_stringtie.sh` / `bench/bakeoff_chr20_flair.sh
 `correct`-skip and PATH workarounds); their versions are not separately pinned or logged, since both arms are
 context only and never enter a verdict.
 
-**Verdict-script invocation and argument mapping** (copied from the plan's Task 12 Step 1,
-`docs/superpowers/plans/2026-09-16-gtf-refine-and-dedup-fix.md`; gffcompare writes the `.tmap`/`.refmap` next
-to the query GTF, i.e. in `$W/<label>/`, as `<label>.<gtf basename>.tmap`, NOT in `$W/gffcompare/`):
+**Binary provenance check before scoring.** Before the verdict script is invoked, verify that every
+ours-label run recorded the same `binary_sha256` (see "Binary provenance" above):
+```
+W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17
+SHAS=$(for L in baseline bundle abl_tss legacy abl_strand abl_subset abl_mono abl_fragsupport; do
+  awk -F': ' '/^binary_sha256:/{print $2}' "$W/$L/run_provenance.txt"
+done | sort -u)
+if [ "$(printf '%s\n' "$SHAS" | grep -c .)" -ne 1 ]; then
+  echo "VOID: binary_sha256 differs across ours-label run_provenance.txt files:" >&2
+  printf '%s\n' "$SHAS" >&2
+  exit 1
+fi
+```
+If this check fails, the test is VOID for every arm — report it together with every E1–E5/TSS verdict still
+computable from the outputs already produced (per the failure policy below); do not proceed to the verdict
+script.
+
+**Verdict-script invocation and argument mapping.** gffcompare writes the `.tmap`/`.refmap` next
+to the query GTF, i.e. in `$W/<label>/`, as `<label>.<gtf basename>.tmap`, NOT in `$W/gffcompare/`:
 ```
 W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17
 BT=$(ls $W/baseline/baseline.*.tmap); NT=$(ls $W/bundle/bundle.*.tmap)
 python3 bench/gtf_refine_verdict.py "$BT" $W/gffcompare/baseline.stats $W/sqanti3/baseline/baseline_junctions.txt \
   "$NT" $W/gffcompare/bundle.stats $W/sqanti3/bundle/bundle_junctions.txt \
-  $W/sqanti3/baseline/baseline_classification.txt $W/sqanti3/abl_tss/abl_tss_classification.txt > /tmp/t9_verdict.json
+  $W/sqanti3/baseline/baseline_classification.txt $W/sqanti3/abl_tss/abl_tss_classification.txt > $W/verdict.json
 ```
 Argument mapping: `BASE_TMAP` = baseline's `.tmap` (in `$W/baseline/`); `BASE_STATS` =
 `$W/gffcompare/baseline.stats`; `BASE_JUNCTIONS` = `$W/sqanti3/baseline/baseline_junctions.txt`;
@@ -324,13 +375,23 @@ Argument mapping: `BASE_TMAP` = baseline's `.tmap` (in `$W/baseline/`); `BASE_ST
 `$W/sqanti3/abl_tss/abl_tss_classification.txt` (E5/TSS verdict only — BASELINE's classification file is
 reused as the E5 baseline arm; ABL_TSS supplies the only-5'-end-differs comparison).
 
-**Failure policy.** Infrastructure failures (a tool fails to install, a path is wrong, disk fills up, a
-process is killed by the OOM/crash-avoidance rules) may be fixed and the run repeated — that is not a rule
-change. In contrast: ANY change to `src/`, `Cargo.toml`, `Cargo.lock`, any of the five scripts above, or
-`bench/gtf_refine_verdict.py` AFTER a chr17 output has been generated voids the test for every arm already
-run — it is reported as VOID, not silently re-run and not quietly patched over. An E4 novel-junction
-violation is scored as E4 FAILING regardless of its cause (implementation bug or otherwise) — a violation is
-never explained away into a passing E4.
+**Failure policy.** An INFRASTRUCTURE FIX is a change made OUTSIDE the frozen files: a tool install, a conda
+environment fix, freeing disk space, restarting a process killed by the OOM/crash-avoidance rules, or editing
+any file NOT in the frozen list below. Infrastructure fixes may be applied and the run repeated — that is not
+a rule change. The FROZEN FILES are: `src/`, `Cargo.toml`, `Cargo.lock`; the five scripts
+(`bench/prep_chrom_ref.sh`, `bench/bakeoff_chrom_ours.sh`, `bench/bakeoff_chrom_stringtie.sh`,
+`bench/bakeoff_chrom_flair.sh`, `bench/chrom_score.sh`); `bench/gtf_refine_verdict.py`; and this PREREG
+document itself. Editing ANY frozen file, for ANY reason (including a claimed bug fix), AFTER any chr17
+output has been generated is NEVER an infrastructure fix — it VOIDS the test for every arm already run. A
+VOID is always reported TOGETHER WITH every verdict computable from the outputs already produced before the
+edit — it is never silently discarded, never silently re-run, and never quietly patched over. An E4
+novel-junction violation is scored as E4 FAILING regardless of its cause (implementation bug or otherwise) —
+a violation is never explained away into a passing E4.
+
+No `.stats`, `.tmap`, `_classification.txt`, or `_junctions.txt` content — no scored value from any of
+them, not just the raw file — is inspected (read, printed, or grepped) by any person or script before
+`bench/gtf_refine_verdict.py` computes the verdict. `bench/chrom_score.sh` writes gffcompare and SQANTI3
+output to files only and prints no scored metric to stdout.
 
 ## Known limits (declared now)
 

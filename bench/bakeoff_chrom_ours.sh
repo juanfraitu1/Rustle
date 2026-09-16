@@ -16,7 +16,19 @@ CHROM=${1:?CHROM}; LABEL=${2:?LABEL}; shift 2
 W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_${CHROM}
 BIN=/mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BASE_COMMIT=3b096012  # docs/PREREG_gtf_refine_chr17_2026-09-16.md's commit -- the frozen rules (Task 10)
+BASE_COMMIT=3b096012  # src/Cargo.* freeze target (the commit that froze these rules); NOT necessarily the
+                       # PREREG doc's own latest commit -- see docs/PREREG_gtf_refine_chr17_2026-09-16.md
+                       # "Frozen file versions"
+
+if [ "$LABEL" = legacy ]; then
+  if [ "${RUSTLE_LEGACY_PLACEMENT_DEDUP:-}" != "1" ]; then
+    echo "REFUSING to run: label 'legacy' requires RUSTLE_LEGACY_PLACEMENT_DEDUP=1 (got '${RUSTLE_LEGACY_PLACEMENT_DEDUP:-unset}')." >&2
+    exit 3
+  fi
+elif [ -n "${RUSTLE_LEGACY_PLACEMENT_DEDUP:-}" ]; then
+  echo "REFUSING to run: label '$LABEL' requires RUSTLE_LEGACY_PLACEMENT_DEDUP to be unset (got '$RUSTLE_LEGACY_PLACEMENT_DEDUP')." >&2
+  exit 3
+fi
 
 for v in $(compgen -e | grep '^RUSTLE_' || true); do
   [ "$v" = RUSTLE_LEGACY_PLACEMENT_DEDUP ] || unset "$v"
@@ -25,7 +37,13 @@ done
 LEN=$(awk -v c="$CHROM" '$1==c {print $2}' "$W/${CHROM}.fa.fai")
 mkdir -p "$W/$LABEL"; cd "$W/$LABEL"
 
-if git -C "$REPO_DIR" diff --quiet "$BASE_COMMIT" HEAD -- src Cargo.toml Cargo.lock; then
+# Working-tree check against BASE_COMMIT (not HEAD): catches uncommitted AND untracked src/Cargo.* edits,
+# not just committed ones. Either check failing, or a git error from either command, -> SRC-CHANGED.
+DIFF_STATUS=ok
+git -C "$REPO_DIR" diff --quiet "$BASE_COMMIT" -- src Cargo.toml Cargo.lock || DIFF_STATUS=changed
+STATUS_OUT=$(git -C "$REPO_DIR" status --porcelain -- src Cargo.toml Cargo.lock 2>&1) || DIFF_STATUS=changed
+[ -z "$STATUS_OUT" ] || DIFF_STATUS=changed
+if [ "$DIFF_STATUS" = ok ]; then
   SRC_STATUS=src-identical
 else
   SRC_STATUS=SRC-CHANGED
@@ -51,4 +69,3 @@ fi
 
 "$BIN" --gtf --bam "$W/${CHROM}.bam" --fasta "$W/${CHROM}.fa" --region "${CHROM}:1-${LEN}" "$@" --out ours \
   > ours.stdout.log 2> ours.stderr.log
-echo "$LABEL exit=$? transcripts=$(awk -F'\t' '$3=="transcript"' ours.gtf | wc -l)"
