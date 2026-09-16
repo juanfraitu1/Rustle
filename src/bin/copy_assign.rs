@@ -27,7 +27,7 @@ use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
     assemble_gate, merge_fuzzy_skeletons, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region,
-    BamIndexCache, BamRead, GATE_MIN_READS,
+    BamIndexCache, BamRead, PrimaryRead, GATE_MIN_READS,
 };
 use rustle::vg_family::catalog_input::{
     group_families, parse_copies_fa, parse_copies_tsv, to_colocated, CatalogFamily, SeqIndex,
@@ -1419,6 +1419,34 @@ fn best_overlap_truth_copy<'a>(
     truth_copy
 }
 
+/// Pool a region's per-window primary reads. A read spanning a window boundary is returned by every window it
+/// overlaps and must count once, so dedup runs ACROSS windows only: a read is dropped iff an EARLIER window
+/// already contributed the same `(chrom, ref_start, ref_end, introns)`. Identical placement implies the read
+/// also overlaps that earlier window, so such a match is exactly a boundary duplicate, while distinct
+/// molecules with identical placement are all kept. `legacy_placement_dedup`
+/// (`RUSTLE_LEGACY_PLACEMENT_DEDUP=1`) reproduces the pre-2026-09-16 behaviour, which also collapsed distinct
+/// molecules inside one window (human chr20, one window: 25,341 primaries -> 11,755).
+fn dedup_primary_across_windows(per_window: Vec<Vec<PrimaryRead>>, legacy_placement_dedup: bool) -> Vec<PrimaryRead> {
+    let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<(String, u64, u64, Vec<(u64, u64)>)> = std::collections::HashSet::new();
+    for window in per_window {
+        let mut kept_here = Vec::new();
+        for x in window {
+            let key = (x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone());
+            if legacy_placement_dedup {
+                if seen.insert(key) {
+                    out.push(x);
+                }
+            } else if !seen.contains(&key) {
+                kept_here.push(key);
+                out.push(x);
+            }
+        }
+        seen.extend(kept_here);
+    }
+    out
+}
+
 /// `--discover-copies`: the candidate new copies ONE family's own AS-tied reads point at.
 ///
 /// ⚠ Fix (final whole-branch review, Critical): the pre-fix code inlined this in the `fams.iter()`
@@ -2390,9 +2418,8 @@ fn main() -> Result<()> {
         let genome = genome_for_multi(&win_contigs)?;
         let t_read = std::time::Instant::now();
         let (primary, mut bam_reads) = {
-            let mut pr: Vec<_> = Vec::new();
+            let mut per_window_primary: Vec<Vec<PrimaryRead>> = Vec::new();
             let mut br: Vec<_> = Vec::new();
-            let mut seen = std::collections::HashSet::new();
             for (wchrom, wlo, whi) in &wins {
                 let (wlo, whi) = (*wlo, *whi);
                 let (p, b) = match &bam_cache {
@@ -2400,18 +2427,17 @@ fn main() -> Result<()> {
                     None => reads_in_region(&args.bam, wchrom, wlo, whi, args.threads),
                 }
                 .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?;
-                // Windows are disjoint after merging, but a read spanning a boundary is returned by
-                // both queries; key on (name, start) so one molecule is never two witnesses.
-                for x in p {
-                    // PrimaryRead has no name; its (chrom, span, intron chain) identifies the placement.
-                    if seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone())) {
-                        pr.push(x);
-                    }
-                }
+                // A read spanning a window boundary is returned by both queries; the cross-window dedup
+                // below counts it once without collapsing distinct molecules (see
+                // `dedup_primary_across_windows`).
+                per_window_primary.push(p);
                 for x in b {
                     br.push(x);
                 }
             }
+            let legacy_dedup =
+                matches!(std::env::var("RUSTLE_LEGACY_PLACEMENT_DEDUP"), Ok(v) if v != "0" && !v.is_empty());
+            let pr = dedup_primary_across_windows(per_window_primary, legacy_dedup);
             // ⚠ Must include `chrom`, not just `(name, ref_start)`: before cross-chromosome families
             // (2026-09-15) every record `compute` ever saw shared one contig, so `ref_start` alone was
             // already a sufficient tiebreaker. A cross-chromosome family's windows span several real
@@ -5556,5 +5582,37 @@ mod tests {
         let got = parse_annotation(gff.to_str().unwrap()).unwrap();
         std::fs::remove_file(&gff).ok();
         assert_eq!(got, vec![("chr1".to_string(), 999u64, 2000u64)], "GFF cols 3/4, 1-based start -> 0-based");
+    }
+
+    fn pr_read(chrom: &str, s: u64, e: u64, introns: Vec<(u64, u64)>) -> PrimaryRead {
+        PrimaryRead { chrom: chrom.into(), ref_start: s, ref_end: e, introns, reverse: false }
+    }
+
+    #[test]
+    fn dedup_keeps_distinct_molecules_with_identical_placement_in_one_window() {
+        let w = vec![vec![
+            pr_read("c1", 100, 500, vec![(200, 300)]),
+            pr_read("c1", 100, 500, vec![(200, 300)]),
+            pr_read("c1", 120, 500, vec![(200, 300)]),
+        ]];
+        assert_eq!(dedup_primary_across_windows(w.clone(), false).len(), 3, "distinct molecules must all count");
+        assert_eq!(dedup_primary_across_windows(w, true).len(), 2, "legacy placement dedup collapses identical placements");
+    }
+
+    #[test]
+    fn dedup_counts_each_boundary_spanning_molecule_once() {
+        let a = pr_read("c1", 900, 1100, vec![]);
+        let w = vec![
+            vec![a.clone(), a.clone(), pr_read("c1", 100, 200, vec![])],
+            vec![a.clone(), a.clone(), pr_read("c1", 1200, 1300, vec![])],
+        ];
+        // two distinct molecules share a placement across the boundary: each window returns both.
+        assert_eq!(dedup_primary_across_windows(w, false).len(), 4);
+    }
+
+    #[test]
+    fn dedup_never_merges_across_chromosomes() {
+        let w = vec![vec![pr_read("c1", 100, 200, vec![])], vec![pr_read("c2", 100, 200, vec![])]];
+        assert_eq!(dedup_primary_across_windows(w, false).len(), 2);
     }
 }
