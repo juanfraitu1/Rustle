@@ -98,8 +98,10 @@ fn families_without_copies_fa_rebuilds_the_sequences_from_the_genome() {
 }
 
 /// `--discover-copies` is opt-in and REPORT ONLY (Task 5): with the flag unset, the binary must never
-/// even know the feature exists -- every other output file must come out byte-for-byte identical to a
-/// run with the flag added. This is the single most important untested claim from the copy-discovery
+/// even know the feature exists -- every other output file this invocation unconditionally produces
+/// (`assignments.tsv`, `families.tsv`, `quant.tsv`, plus the two always-written files `famcn_readonly.tsv`
+/// and `params.tsv`, see `src/bin/copy_assign.rs:4286` and `:4839`) must come out byte-for-byte identical
+/// to a run with the flag added. This is the single most important untested claim from the copy-discovery
 /// feature itself (Tasks 1-4), so it is checked directly against the real binary, not the library code.
 #[test]
 fn discover_copies_off_by_default_is_byte_identical() {
@@ -114,7 +116,7 @@ fn discover_copies_off_by_default_is_byte_identical() {
     let (o_on, out_on) = run(&d_on, &["--no-refine", "--discover-copies"]);
     assert!(o_on.status.success(), "flag-on run failed:\n{}", stderr(&o_on));
 
-    for ext in ["assignments.tsv", "families.tsv", "quant.tsv"] {
+    for ext in ["assignments.tsv", "families.tsv", "quant.tsv", "famcn_readonly.tsv", "params.tsv"] {
         let off_path = format!("{out_off}.{ext}");
         let on_path = format!("{out_on}.{ext}");
         let a = std::fs::read(&off_path).unwrap_or_else(|e| panic!("read {off_path}: {e}"));
