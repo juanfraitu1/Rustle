@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix `copy_assign`'s within-window primary-read dedup bug (measuring its O2/de novo impact first), add an opt-in annotation-free `--gtf-refine` bundle for `--gtf`, reproduce the chr20 simulation numbers exactly, and validate on held-out chr17 under pre-registered rules.
+**Goal:** Fix `copy_assign`'s within-window primary-read dedup bug (measuring its O2/de novo impact first), add an opt-in annotation-free `--gtf-refine` bundle for `--gtf` (five components; `tss` added by the 2026-09-16 addendum, Tasks 7–9), reproduce the chr20 simulation numbers exactly, and validate on held-out chr17 under pre-registered rules.
 
 **Architecture:** The dedup fix is a bin-private pure function in `src/bin/copy_assign.rs` (cross-window dedup only, with a `RUSTLE_LEGACY_PLACEMENT_DEDUP` escape hatch). The bundle's logic lives in a new pure lib module `src/rustle/vg_family/gtf_refine.rs`, wired ONLY into the `if args.gtf` block of `copy_assign.rs` behind `--gtf-refine`. Data tasks use generalized bench scripts under `bench/` and write outputs to `/mnt/linuxdisk`.
 
@@ -18,7 +18,8 @@
 - No `--gtf-refine` component reads the annotation.
 - Thresholds are exactly the spec's: strand margin 0.90; subset overhang ≤ 5 bp only at a non-terminal container exon; mono coverage ≥ 50% of the model length; fragment emission `exact + fragments >= cfg.pass1_min_reads` (default 2); assign-or-abstain fragments.
 - O2 (`--families`) byte-identity between fixed and legacy dedup is a HARD STOP condition (Task 2).
-- No chr17 file may be generated before `docs/PREREG_gtf_refine_chr17_2026-09-16.md` is committed (Task 7). No threshold/rule change after any chr17 number is seen.
+- `tss` (addendum): 5' end = densest window of exact-chain read 5' ends, ties to the most upstream, multi-exon stranded models only, applied after `mono`; its window `TSS_WINDOW_BP` is chosen once on chr20 (Task 7) and frozen before the pre-registration.
+- No chr17 file may be generated before `docs/PREREG_gtf_refine_chr17_2026-09-16.md` is committed (Task 10). No threshold/rule change after any chr17 number is seen.
 - WSL2 rules: build with `CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target`, `--release`; redirect cargo/tool output to a file, then tail it; ONE heavy command at a time in the foreground; never background, never `pkill -f`; big outputs under `/mnt/linuxdisk/home/juanfraitu/`.
 
 ---
@@ -980,7 +981,486 @@ git commit -m "docs: chr20 fidelity anchors for the dedup fix and --gtf-refine"
 
 ---
 
-### Task 7: Pre-register the chr17 evaluation (before any chr17 data exists)
+### Task 7: `tss` window selection by simulation on chr20 (ADDENDUM)
+
+**Files:**
+- Create: `bench/tss_window_sim.py`
+- Modify: `bench/CHR20_ASSEMBLER_COMPARISON.md` (append a dated section)
+
+**Interfaces:**
+- Consumes: `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/fidelity/fixed_none/ours.gtf` (Task 6, the A1 model set); `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/chr20_ref.gtf`; `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/diagnostics/sensloss_chr20bam_primary_reads.pkl` (all chr20 primaries, `-F 2308`, no placement dedup; tuples `(name, chrom, start, end, is_reverse, ts_strand, chain)`, 0-based half-open).
+- Produces: `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/fidelity/tss_sim/{summary.tsv, chosen_W.txt, tss_W10.gtf, tss_W25.gtf, tss_W50.gtf, tss_W100.gtf}`. `chosen_W.txt` holds one integer consumed by Task 8.
+
+- [ ] **Step 1: Write `bench/tss_window_sim.py`**
+
+```python
+#!/usr/bin/env python3
+"""Choose the `tss` densest-5'-start window W on chr20 (development substrate) and write one simulated GTF per
+W for the Rust fidelity check (docs/superpowers/specs/2026-09-16-gtf-refine-and-dedup-fix-design.md, `tss`
+addendum).
+
+usage: tss_window_sim.py MODELS_GTF REF_GTF READS_PKL OUT_DIR
+       tss_window_sim.py --self-test
+MODELS_GTF: fixed-dedup, no-refine `copy_assign --gtf` output (A1). READS_PKL: chr20 primaries (-F 2308, no
+placement dedup) as (name, chrom, start, end, is_reverse, ts_strand, chain) tuples, 0-based half-open.
+"""
+import bisect
+import collections
+import os
+import pickle
+import re
+import statistics
+import sys
+
+GRID = (10, 25, 50, 100)
+TOL = 50  # SQANTI3's reference_match tolerance
+
+
+def densest_five_prime(ends, window, strand):
+    """Spec rule. '+': smallest p in ends maximizing #{x: p <= x <= p+W}. '-': largest p maximizing
+    #{x: p-W <= x <= p}. None for no ends."""
+    if not ends:
+        return None
+    v = sorted(ends)
+    best, best_pos = -1, None
+    if strand == '+':
+        for lo in v:  # ascending: strict '>' keeps the smallest (most upstream) on ties
+            c = bisect.bisect_right(v, lo + window) - bisect.bisect_left(v, lo)
+            if c > best:
+                best, best_pos = c, lo
+    else:
+        for hi in reversed(v):  # descending: strict '>' keeps the largest (most upstream on '-') on ties
+            c = bisect.bisect_right(v, hi) - bisect.bisect_left(v, hi - window)
+            if c > best:
+                best, best_pos = c, hi
+    return best_pos
+
+
+def parse_models(path):
+    """transcript_id -> dict(chrom, strand, exons, start, end, introns) from exon rows (0-based half-open)."""
+    tx = collections.OrderedDict()
+    for line in open(path):
+        if line.startswith('#'):
+            continue
+        f = line.rstrip('\n').split('\t')
+        if len(f) < 9 or f[2] != 'exon':
+            continue
+        tid = re.search(r'transcript_id "([^"]+)"', f[8]).group(1)
+        d = tx.setdefault(tid, dict(chrom=f[0], strand=f[6], exons=[]))
+        d['exons'].append((int(f[3]) - 1, int(f[4])))
+    for d in tx.values():
+        d['exons'].sort()
+        d['start'], d['end'] = d['exons'][0][0], d['exons'][-1][1]
+        d['introns'] = tuple((a[1], b[0]) for a, b in zip(d['exons'], d['exons'][1:]))
+    return tx
+
+
+def five(m):
+    return m['start'] if m['strand'] == '+' else m['end']
+
+
+def simulate(models, by_chain, window):
+    """tid -> new 5' end for every stranded multi-exon model (unchanged when it has no exact reads)."""
+    out = {}
+    for tid, m in models.items():
+        if not m['introns'] or m['strand'] not in ('+', '-'):
+            continue
+        ex = by_chain.get((m['chrom'], m['introns']), [])
+        pos = [s if m['strand'] == '+' else e for s, e in ex]
+        out[tid] = densest_five_prime(pos, window, m['strand']) if pos else five(m)
+    return out
+
+
+def metrics(models, new5, ref_by_chain, ref_by_intron):
+    within = moved_in = moved_out = guard = changed = n_fsm = 0
+    diffs = []
+    for tid, p in new5.items():
+        m = models[tid]
+        cur = five(m)
+        changed += p != cur
+        refs = ref_by_chain.get((m['chrom'], m['strand'], m['introns']))
+        if refs:
+            n_fsm += 1
+            d_new = min(abs(p - t) for t in refs)
+            d_old = min(abs(cur - t) for t in refs)
+            diffs.append(d_new)
+            within += d_new <= TOL
+            moved_in += d_old > TOL and d_new <= TOL
+            moved_out += d_old <= TOL and d_new > TOL
+        near = set()
+        for it in m['introns']:
+            near |= ref_by_intron.get((m['chrom'], m['strand'], it), set())
+        guard += any(abs(p - t) <= TOL for t in near)
+    return dict(n_multi_stranded=len(new5), n_changed=changed, n_fsm_chain=n_fsm, n_within50=within,
+                n_moved_in=moved_in, n_moved_out=moved_out,
+                median_abs_diff=statistics.median(diffs) if diffs else 'NA', n_guard_within50=guard)
+
+
+def write_gtf(models_gtf, models, new5, path):
+    with open(path, 'w') as out:
+        for line in open(models_gtf):
+            f = line.rstrip('\n').split('\t')
+            if len(f) >= 9 and f[2] in ('transcript', 'exon'):
+                tid = re.search(r'transcript_id "([^"]+)"', f[8]).group(1)
+                if tid in new5:
+                    m = models[tid]
+                    if m['strand'] == '+' and int(f[3]) - 1 == m['start']:
+                        f[3] = str(new5[tid] + 1)
+                    elif m['strand'] == '-' and int(f[4]) == m['end']:
+                        f[4] = str(new5[tid])
+                    line = '\t'.join(f) + '\n'
+            out.write(line)
+
+
+def main(models_gtf, ref_gtf, reads_pkl, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+    models = parse_models(models_gtf)
+    ref_by_chain = collections.defaultdict(list)
+    ref_by_intron = collections.defaultdict(set)
+    for r in parse_models(ref_gtf).values():
+        if r['introns']:
+            ref_by_chain[(r['chrom'], r['strand'], r['introns'])].append(five(r))
+            for it in r['introns']:
+                ref_by_intron[(r['chrom'], r['strand'], it)].add(five(r))
+    by_chain = collections.defaultdict(list)
+    reads = pickle.load(open(reads_pkl, 'rb'))
+    for (_name, chrom, s, e, _rev, _ts, chain) in reads:
+        if chain:
+            by_chain[(chrom, tuple(chain))].append((s, e))
+    print(f'models={len(models)} primaries={len(reads)}', file=sys.stderr)
+    baseline = {tid: five(m) for tid, m in models.items() if m['introns'] and m['strand'] in ('+', '-')}
+    rows = [dict(W='none', **metrics(models, baseline, ref_by_chain, ref_by_intron))]
+    for w in GRID:
+        new5 = simulate(models, by_chain, w)
+        rows.append(dict(W=w, **metrics(models, new5, ref_by_chain, ref_by_intron)))
+        write_gtf(models_gtf, models, new5, f'{out_dir}/tss_W{w}.gtf')
+    cols = list(rows[0].keys())
+    with open(f'{out_dir}/summary.tsv', 'w') as fh:
+        fh.write('\t'.join(cols) + '\n')
+        for r in rows:
+            fh.write('\t'.join(str(r[c]) for c in cols) + '\n')
+    graded = [r for r in rows if r['W'] != 'none']
+    chosen = min(graded, key=lambda r: (-r['n_within50'], r['W']))['W']
+    open(f'{out_dir}/chosen_W.txt', 'w').write(f'{chosen}\n')
+    print(open(f'{out_dir}/summary.tsv').read() + f'chosen_W={chosen}')
+
+
+def self_test():
+    assert densest_five_prime([100, 500, 505, 510], 25, '+') == 500
+    assert densest_five_prime([2000, 900, 905, 910], 25, '-') == 910
+    assert densest_five_prime([100, 110, 500, 510], 25, '+') == 100
+    assert densest_five_prime([100, 110, 500, 510], 25, '-') == 510
+    assert densest_five_prime([100], 25, '+') == 100
+    assert densest_five_prime([100, 900], 25, '+') == 100
+    assert densest_five_prime([100, 900], 25, '-') == 900
+    assert densest_five_prime([], 25, '+') is None
+    assert densest_five_prime([100, 400, 425], 25, '+') == 400
+    assert densest_five_prime([100, 400, 425], 24, '+') == 100
+    print('self-test OK')
+
+
+if __name__ == '__main__':
+    if sys.argv[1:] == ['--self-test']:
+        self_test()
+    else:
+        main(*sys.argv[1:5])
+```
+
+- [ ] **Step 2: Self-test, then run on chr20**
+
+```bash
+python3 bench/tss_window_sim.py --self-test
+W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20
+python3 bench/tss_window_sim.py $W/fidelity/fixed_none/ours.gtf $W/chr20_ref.gtf \
+  $W/diagnostics/sensloss_chr20bam_primary_reads.pkl $W/fidelity/tss_sim > /tmp/t7_tss.log 2>&1; echo EXIT=$?; cat /tmp/t7_tss.log
+```
+Expected: `self-test OK`; `primaries=25341` (if not, report the actual count and stop — the pickle is not the no-dedup chr20 primary set); a summary with rows `none, 10, 25, 50, 100` and `chosen_W=<n>`. Sanity: for W=`none`, `n_changed` = 0; `n_moved_in`/`n_moved_out` = 0.
+
+- [ ] **Step 3: Append the selection section** to `bench/CHR20_ASSEMBLER_COMPARISON.md`: "Follow-up: `tss` window selection (development, chr20, 2026-09-16)" — the summary table verbatim, the chosen W, the selection rule in one line (max `n_within50`, ties → smaller W), and one line stating W is now frozen for chr17.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add bench/tss_window_sim.py bench/CHR20_ASSEMBLER_COMPARISON.md
+git commit -m "bench: choose the tss densest-start window on chr20 by simulation"
+```
+
+---
+
+### Task 8: `tss` component in Rust (ADDENDUM)
+
+**Files:**
+- Modify: `src/rustle/vg_family/gtf_refine.rs` (new constant + two functions + tests)
+- Modify: `src/bin/copy_assign.rs` (`GtfRefine.tss`, parser, CLI doc, wiring, the existing parse unit test)
+- Modify: `docs/MODULE_STATUS.md` (only if the `gtf_refine.rs` row enumerates components — add `tss`)
+
+**Interfaces:**
+- Consumes: Task 7's `chosen_W.txt` value (the controller passes it in the dispatch); Task 3/4 test helpers `read(s, e, introns) -> PrimaryRead` (chrom `c1`, forward) and `tx(s, e, strand, introns) -> DenovoTranscript`; `apply_post_filters` wiring from Task 5.
+- Produces: `pub const TSS_WINDOW_BP: u64`; `pub fn densest_five_prime(ends: &[u64], window: u64, strand: char) -> Option<u64>`; `pub fn refine_tss(models: Vec<DenovoTranscript>, reads: &[PrimaryRead], window: u64) -> Vec<DenovoTranscript>`; `--gtf-refine tss` (and `all` = five components).
+
+- [ ] **Step 1: Write the failing tests** (append inside `mod tests` in `gtf_refine.rs`)
+
+```rust
+    #[test]
+    fn densest_five_prime_skips_a_lone_upstream_outlier_on_both_strands() {
+        assert_eq!(densest_five_prime(&[100, 500, 505, 510], 25, '+'), Some(500));
+        assert_eq!(densest_five_prime(&[2000, 900, 905, 910], 25, '-'), Some(910));
+    }
+
+    #[test]
+    fn densest_five_prime_ties_keep_the_most_upstream_window() {
+        assert_eq!(densest_five_prime(&[100, 110, 500, 510], 25, '+'), Some(100));
+        assert_eq!(densest_five_prime(&[100, 110, 500, 510], 25, '-'), Some(510));
+    }
+
+    #[test]
+    fn densest_five_prime_never_moves_one_or_two_reads() {
+        assert_eq!(densest_five_prime(&[100], 25, '+'), Some(100));
+        assert_eq!(densest_five_prime(&[100, 900], 25, '+'), Some(100));
+        assert_eq!(densest_five_prime(&[100, 900], 25, '-'), Some(900));
+        assert_eq!(densest_five_prime(&[], 25, '+'), None);
+    }
+
+    #[test]
+    fn densest_five_prime_window_is_inclusive() {
+        assert_eq!(densest_five_prime(&[100, 400, 425], 25, '+'), Some(400));
+        assert_eq!(densest_five_prime(&[100, 400, 425], 24, '+'), Some(100));
+    }
+
+    #[test]
+    fn refine_tss_moves_only_stranded_multi_exon_5prime_ends_from_exact_chain_reads() {
+        let chain = vec![(200, 300), (400, 500), (600, 700)];
+        let minus = vec![(200, 300), (400, 500)];
+        let other = vec![(200, 300), (400, 500), (600, 650)];
+        let on_c2 = |s: u64| PrimaryRead { chrom: "c2".into(), ref_start: s, ref_end: 800, introns: chain.clone(), reverse: false };
+        let mut reads = vec![
+            read(10, 800, chain.clone()), // lone upstream outlier
+            read(150, 800, chain.clone()),
+            read(155, 800, chain.clone()),
+            read(160, 800, chain.clone()),
+            read(520, 800, vec![(600, 700)]), // fragment: its chain differs, never counts
+            read(20, 800, other.clone()),     // other chain: if counted, the window at 10 would win (4 > 3)
+            read(21, 800, other.clone()),
+            read(22, 800, other.clone()),
+        ];
+        reads.extend([on_c2(190), on_c2(191), on_c2(192), on_c2(193)]); // other chromosome: would win if counted
+        for e in [990, 840, 845, 850] {
+            reads.push(read(100, e, minus.clone())); // '-' model: outlier 990, cluster 840..850
+        }
+        let models = vec![
+            tx(10, 800, '+', chain.clone()),
+            tx(100, 990, '-', minus.clone()),
+            tx(1000, 1200, '+', vec![]),             // single-exon: unchanged
+            tx(5000, 6000, '+', vec![(5100, 5200)]), // no exact reads: unchanged
+            tx(10, 800, '.', chain.clone()),         // unstranded: unchanged
+        ];
+        let spans: Vec<(u64, u64)> = refine_tss(models, &reads, 25).iter().map(|t| (t.start, t.end)).collect();
+        assert_eq!(spans, vec![(150, 800), (100, 850), (1000, 1200), (5000, 6000), (10, 800)]);
+    }
+```
+
+In `src/bin/copy_assign.rs`, replace the body of `gtf_refine_parses_components_all_and_rejects_unknown` with:
+```rust
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(parse_gtf_refine(&s(&[])).unwrap(), GtfRefine::default());
+        let r = parse_gtf_refine(&s(&["strand", "mono"])).unwrap();
+        assert!(r.strand && r.mono && !r.subset && !r.fragsupport && !r.tss);
+        assert!(parse_gtf_refine(&s(&["tss"])).unwrap().tss);
+        assert_eq!(
+            parse_gtf_refine(&s(&["all"])).unwrap(),
+            GtfRefine { strand: true, subset: true, mono: true, fragsupport: true, tss: true }
+        );
+        assert!(parse_gtf_refine(&s(&["bogus"])).is_err());
+```
+
+- [ ] **Step 2: Run tests, confirm they fail**
+
+```bash
+CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo test --release --lib gtf_refine > /tmp/t8_red.log 2>&1; grep -n "error\[" /tmp/t8_red.log | head
+```
+Expected: compile errors (`densest_five_prime`, `refine_tss` not found).
+
+- [ ] **Step 3: Implement in `gtf_refine.rs`** (above `#[cfg(test)]`; replace `<W>` with the integer from Task 7's `chosen_W.txt`, given in your dispatch)
+
+```rust
+/// `tss` window W (bp): chosen once on chr20 by `bench/tss_window_sim.py` (max models within 50 bp of the
+/// chain-matched reference TSS, ties → smaller W; grid 10/25/50/100) and frozen before the chr17
+/// pre-registration. Do not tune.
+pub const TSS_WINDOW_BP: u64 = <W>;
+
+/// Spec `tss` rule: the read 5' end with the most read 5' ends inside the `window`-bp window extending
+/// downstream from it (`'+'`: `[p, p + W]`; `'-'`: `[p - W, p]`), ties to the most upstream. `None` when
+/// `ends` is empty. One or two ends never move off the most upstream one.
+pub fn densest_five_prime(ends: &[u64], window: u64, strand: char) -> Option<u64> {
+    let mut v = ends.to_vec();
+    v.sort_unstable();
+    let mut best: Option<(usize, u64)> = None;
+    if strand == '-' {
+        for &hi in v.iter().rev() {
+            let c = v.partition_point(|&x| x <= hi) - v.partition_point(|&x| x < hi.saturating_sub(window));
+            if best.map_or(true, |(b, _)| c > b) {
+                best = Some((c, hi));
+            }
+        }
+    } else {
+        for &lo in &v {
+            let c = v.partition_point(|&x| x <= lo.saturating_add(window)) - v.partition_point(|&x| x < lo);
+            if best.map_or(true, |(b, _)| c > b) {
+                best = Some((c, lo));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// `tss` (spec addendum): move each stranded multi-exon model's 5' end to `densest_five_prime` over the 5'
+/// ends of reads with exactly its intron chain on its chromosome. Single-exon models, unstranded models,
+/// models with no exact reads, and every 3' end are unchanged. Only `start`/`end` change — `seq` is not
+/// recomputed, because the `--gtf` block consumes coordinates only.
+pub fn refine_tss(mut models: Vec<DenovoTranscript>, reads: &[PrimaryRead], window: u64) -> Vec<DenovoTranscript> {
+    let mut by_chain: HashMap<(&str, &[(u64, u64)]), Vec<&PrimaryRead>> = HashMap::new();
+    for r in reads.iter().filter(|r| !r.introns.is_empty()) {
+        by_chain.entry((r.chrom.as_str(), r.introns.as_slice())).or_default().push(r);
+    }
+    for m in models.iter_mut() {
+        if m.introns.is_empty() || (m.strand != '+' && m.strand != '-') {
+            continue;
+        }
+        let Some(exact) = by_chain.get(&(m.chrom.as_str(), m.introns.as_slice())) else { continue };
+        let ends: Vec<u64> = exact.iter().map(|r| if m.strand == '+' { r.ref_start } else { r.ref_end }).collect();
+        if let Some(p) = densest_five_prime(&ends, window, m.strand) {
+            if m.strand == '+' {
+                m.start = p;
+            } else {
+                m.end = p;
+            }
+        }
+    }
+    models
+}
+```
+
+- [ ] **Step 4: Wire it into `src/bin/copy_assign.rs`**
+
+- Import: extend the `gtf_refine` use line to `use rustle::vg_family::gtf_refine::{apply_post_filters, fragment_supported_spliced, refine_tss, strict_chain_strand, TSS_WINDOW_BP};`.
+- `GtfRefine`: add field `tss: bool`. `parse_gtf_refine`: add arm `"tss" => r.tss = true,`; make `"all"` set all five fields; the unknown-component message lists `strand, subset, mono, fragsupport, tss, all`.
+- CLI doc comment on `gtf_refine`: add "`tss` (5' end = densest window of exact-read 5' ends, W = `TSS_WINDOW_BP`)" to the component list.
+- In the `if args.gtf` block, directly after the `apply_post_filters` statement and before `collapse_loci_groups`:
+```rust
+            let iso = if gtf_refine.tss { refine_tss(iso, &primary, TSS_WINDOW_BP) } else { iso };
+```
+- Before editing, confirm that after this point `iso` is consumed only by `collapse_loci_groups(&iso)` and the `TranscriptRec` map (coordinates only); if anything reads `seq`, report NEEDS_CONTEXT.
+
+- [ ] **Step 5: Run tests and build**
+
+```bash
+CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo test --release --lib gtf_refine > /tmp/t8_green.log 2>&1; grep -n "test result\|warning.*gtf_refine\|gtf_refine.rs" /tmp/t8_green.log
+CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo test --release --bin copy_assign > /tmp/t8_bin.log 2>&1; grep -n "test result" /tmp/t8_bin.log
+CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo test --release --test copy_assign_families > /tmp/t8_int.log 2>&1; grep -n "test result" /tmp/t8_int.log
+```
+Expected: gtf_refine 20 passed (15 + 5), no warning lines into `gtf_refine.rs` or `copy_assign.rs`; copy_assign bin 28 passed; copy_assign_families 15 passed.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/rustle/vg_family/gtf_refine.rs src/bin/copy_assign.rs docs/MODULE_STATUS.md
+git commit -m "feat: tss densest-start 5' end component for --gtf-refine"
+```
+
+---
+
+### Task 9: chr20 fidelity + SQANTI3 check for `tss` (ADDENDUM)
+
+**Files:**
+- Modify: `bench/gtf_refine_chr20_fidelity.sh` (add arm `fixed_tss` = fixed dedup + `--gtf-refine tss`)
+- Modify: `bench/CHR20_ASSEMBLER_COMPARISON.md` (append results to the Task 7 section)
+
+**Interfaces:**
+- Consumes: Task 7's `tss_sim/tss_W<chosen>.gtf`; Task 8's binary.
+- Produces: `fidelity/fixed_tss/ours.gtf` + gffcompare; re-run `fidelity/fixed_all/` (now five components); SQANTI3 on `fixed_none` and `fixed_tss` under `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/sqanti3_tss/<label>/`.
+
+- [ ] **Step 1: Build, add the arm, run `fixed_tss` and `fixed_all`** (each a separate foreground call)
+
+```bash
+CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo build --release --bin copy_assign > /tmp/t9_build.log 2>&1; echo EXIT=$?
+bash bench/gtf_refine_chr20_fidelity.sh fixed_tss > /tmp/t9_fixed_tss.log 2>&1; cat /tmp/t9_fixed_tss.log
+bash bench/gtf_refine_chr20_fidelity.sh fixed_all > /tmp/t9_fixed_all.log 2>&1; cat /tmp/t9_fixed_all.log
+```
+Expected for `fixed_tss`: query mRNAs 1022, matching transcripts 350, transcript 7.7/34.2, intron chain 8.1/42.9 (identical to A1 — multi-exon ends are not scored).
+
+- [ ] **Step 2: EXACT per-transcript check vs the simulation**
+
+```bash
+W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20; CW=$(cat $W/fidelity/tss_sim/chosen_W.txt)
+python3 - "$W/fidelity/fixed_tss/ours.gtf" "$W/fidelity/tss_sim/tss_W${CW}.gtf" <<'EOF'
+import collections, re, sys
+def keys(path):
+    tx = collections.defaultdict(lambda: dict(ex=[]))
+    for line in open(path):
+        f = line.rstrip('\n').split('\t')
+        if len(f) < 9 or f[2] != 'exon':
+            continue
+        t = tx[re.search(r'transcript_id "([^"]+)"', f[8]).group(1)]
+        t['chrom'], t['strand'] = f[0], f[6]
+        t['ex'].append((int(f[3]) - 1, int(f[4])))
+    out = collections.Counter()
+    for t in tx.values():
+        ex = sorted(t['ex'])
+        out[(t['chrom'], t['strand'], tuple((a[1], b[0]) for a, b in zip(ex, ex[1:])), ex[0][0], ex[-1][1])] += 1
+    return out
+a, b = keys(sys.argv[1]), keys(sys.argv[2])
+print('rust', sum(a.values()), 'sim', sum(b.values()), 'only_rust', sum((a - b).values()), 'only_sim', sum((b - a).values()))
+for k in list((a - b).elements())[:20]: print('only_rust', k)
+for k in list((b - a).elements())[:20]: print('only_sim', k)
+EOF
+```
+Expected: `only_rust 0 only_sim 0`. Any difference: explain every transcript (classify intended spec difference / simulation bug / Rust bug). A Rust bug → DONE_WITH_CONCERNS with evidence, no code change.
+
+- [ ] **Step 3: SQANTI3 on `fixed_none` and `fixed_tss`** (one per call; if a run exceeds the 10-min tool cap, background it and end your turn with `WAITING PID=<pid> <label>`)
+
+```bash
+W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20
+for L in fixed_none fixed_tss; do  # run the loop body once per label, as separate calls
+  source /home/juanfra/miniforge3/etc/profile.d/conda.sh; conda activate sqanti3
+  mkdir -p $W/sqanti3_tss/$L; cd /mnt/linuxdisk/home/juanfraitu/_from_wsl/tools/SQANTI3
+  python sqanti3_qc.py --isoforms $W/fidelity/$L/ours.gtf --refGTF $W/chr20_ref.gtf --refFasta $W/chr20.fa \
+    -o $L -d $W/sqanti3_tss/$L --report skip -t 4 > $W/sqanti3_tss/$L.qc.log 2>&1; echo "$L exit=$?"
+done
+```
+
+- [ ] **Step 4: E5-style metrics on chr20 (descriptive)**
+
+```bash
+W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20
+python3 - $W/sqanti3_tss/fixed_none/fixed_none_classification.txt $W/sqanti3_tss/fixed_tss/fixed_tss_classification.txt <<'EOF'
+import csv, sys
+for path in sys.argv[1:]:
+    n = within = gene = 0
+    for r in csv.DictReader(open(path), delimiter='\t'):
+        if r['structural_category'] != 'full-splice_match' or r['subcategory'] == 'mono-exon':
+            continue
+        n += 1
+        try: within += abs(float(r['diff_to_TSS'])) <= 50
+        except ValueError: pass
+        try: gene += abs(float(r['diff_to_gene_TSS'])) <= 50
+        except ValueError: pass
+    print(path.split('/')[-1], 'n', n, 'p', round(within / n, 4), 'within', within, 'g', gene)
+EOF
+```
+Report both rows (no pass/fail on chr20; this is development confirmation with SQANTI3's own reference choice).
+
+- [ ] **Step 5: Append results and commit**
+
+Append to the Task 7 section of `bench/CHR20_ASSEMBLER_COMPARISON.md`: `fixed_tss` gffcompare line vs A1; the per-transcript check result; the SQANTI3 p/within/g table for `fixed_none` vs `fixed_tss`; the new `fixed_all` dev row (labelled development-only).
+
+```bash
+git add bench/gtf_refine_chr20_fidelity.sh bench/CHR20_ASSEMBLER_COMPARISON.md
+git commit -m "bench: chr20 fidelity and SQANTI3 5'-end check for tss"
+```
+
+---
+
+### Task 10: Pre-register the chr17 evaluation (before any chr17 data exists)
 
 **Files:**
 - Create: `docs/PREREG_gtf_refine_chr17_2026-09-16.md`
@@ -997,7 +1477,8 @@ Expected: `No such file or directory`. If it exists, STOP and report BLOCKED (th
 #!/usr/bin/env python3
 """Pre-registered verdict for the held-out --gtf-refine evaluation (docs/PREREG_gtf_refine_chr17_2026-09-16.md).
 
-usage: gtf_refine_verdict.py BASE_TMAP BASE_STATS BASE_JUNCTIONS BUNDLE_TMAP BUNDLE_STATS BUNDLE_JUNCTIONS
+usage: gtf_refine_verdict.py BASE_TMAP BASE_STATS BASE_JUNCTIONS BUNDLE_TMAP BUNDLE_STATS BUNDLE_JUNCTIONS \
+           BASE_CLASSIFICATION ABL_TSS_CLASSIFICATION
        gtf_refine_verdict.py --self-test
 """
 import csv
@@ -1045,7 +1526,36 @@ def verdict(base_eq, base_pr, base_nj, bun_eq, bun_pr, bun_nj):
                 n_base_novel_junctions=len(base_nj), n_bundle_novel_junctions=len(bun_nj))
 
 
+def tss_metrics(classification):
+    """E5 inputs over SQANTI3 multi-exon full-splice matches: n, p = fraction |diff_to_TSS| <= 50 (unrounded),
+    g = count |diff_to_gene_TSS| <= 50. Rows with a non-numeric diff count in n but not in p/g."""
+    n = within = gene = 0
+    with open(classification) as fh:
+        for r in csv.DictReader(fh, delimiter='\t'):
+            if r['structural_category'] != 'full-splice_match' or r['subcategory'] == 'mono-exon':
+                continue
+            n += 1
+            try:
+                within += abs(float(r['diff_to_TSS'])) <= 50
+            except ValueError:
+                pass
+            try:
+                gene += abs(float(r['diff_to_gene_TSS'])) <= 50
+            except ValueError:
+                pass
+    return dict(n=n, within=within, p=within / n if n else 0.0, g=gene)
+
+
+def tss_verdict(base, abl):
+    e5 = abl['p'] > base['p'] and abl['g'] >= base['g']
+    return dict(E5_tss=e5, tss_verdict='SUPPORTED' if e5 else 'REFUTED', baseline_tss=base, abl_tss=abl)
+
+
 def self_test():
+    tb = dict(n=100, within=40, p=0.40, g=60)
+    assert tss_verdict(tb, dict(n=100, within=45, p=0.45, g=60))['tss_verdict'] == 'SUPPORTED'
+    assert tss_verdict(tb, dict(n=100, within=40, p=0.40, g=70))['tss_verdict'] == 'REFUTED'  # p tie fails
+    assert tss_verdict(tb, dict(n=100, within=45, p=0.45, g=59))['tss_verdict'] == 'REFUTED'  # guard fails
     b = set(range(100))
     nj = {('c', '+', '1', '2')}
     assert verdict(b, (35.0, 44.0), nj, b | {100}, (40.0, 48.0), nj)['verdict'] == 'SUPPORTED'
@@ -1061,9 +1571,10 @@ if __name__ == '__main__':
     if sys.argv[1:] == ['--self-test']:
         self_test()
         sys.exit(0)
-    bt, bs, bj, nt, ns, nj_ = sys.argv[1:7]
+    bt, bs, bj, nt, ns, nj_, bc, tc = sys.argv[1:9]
     res = verdict(eq_refs(bt), precisions(bs), novel_canonical_junctions(bj),
                   eq_refs(nt), precisions(ns), novel_canonical_junctions(nj_))
+    res.update(tss_verdict(tss_metrics(bc), tss_metrics(tc)))
     print(json.dumps(res, indent=1))
 ```
 
@@ -1074,7 +1585,7 @@ Expected: `self-test OK`.
 
 - [ ] **Step 4: Write the PREREG doc**
 
-Follow the house style of `docs/PREREG_core_definition_2026-09-12.md` (title line stating it was written before any score is computed; `## Question`; method; decision rules). Content must include, verbatim from the spec: the substrate (chr17 of `human_testis.t2t.bam`, CHM13 genome, chr17 subset of `chm13v2.0_RefSeq_full.gff.gz` prepared exactly like `bench/prep_chr20_ref.sh`, outputs under `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17/`); the two compared arms (BASELINE = fixed dedup, no `--gtf-refine`; BUNDLE = fixed dedup, `--gtf-refine all`); the frozen component rules and thresholds; the descriptive-only runs (legacy, four single-component ablations, StringTie `-L`, FLAIR unguided); E1–E4 and the verdict rule exactly as in the spec; the scoring conventions: `'='` = distinct `ref_id` with `class_code == '='` in the gffcompare `.tmap`; precision = the one-decimal value in the gffcompare `.stats` line (a tie at one decimal fails E2); novel junction = distinct `(chrom, strand, genomic_start_coord, genomic_end_coord)` with `junction_category == novel` and `canonical == canonical` in SQANTI3's `_junctions.txt`; the verdict is computed by `bench/gtf_refine_verdict.py` (this commit); and the sentence "No threshold, component, or rule may change after any chr17 number is seen."
+Follow the house style of `docs/PREREG_core_definition_2026-09-12.md` (title line stating it was written before any score is computed; `## Question`; method; decision rules). Content must include, verbatim from the spec: the substrate (chr17 of `human_testis.t2t.bam`, CHM13 genome, chr17 subset of `chm13v2.0_RefSeq_full.gff.gz` prepared exactly like `bench/prep_chr20_ref.sh`, outputs under `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17/`); the compared arms (BASELINE = fixed dedup, no `--gtf-refine`; BUNDLE = fixed dedup, `--gtf-refine all` = all five components; ABL_TSS = fixed dedup, `--gtf-refine tss`, scored for E5 only); the frozen component rules and thresholds, including the `tss` rule with the literal frozen value of `TSS_WINDOW_BP` (read it from `src/rustle/vg_family/gtf_refine.rs` and cite Task 7's selection section); the descriptive-only runs (legacy, the other four single-component ablations, StringTie `-L`, FLAIR unguided); E1–E4 and their verdict rule, and E5 and the separate TSS verdict, exactly as in the spec; the E5 scoring convention (SQANTI3 `_classification.txt` rows with `structural_category == full-splice_match` and `subcategory != mono-exon`; `p` unrounded; non-numeric diffs count in n only); the scoring conventions: `'='` = distinct `ref_id` with `class_code == '='` in the gffcompare `.tmap`; precision = the one-decimal value in the gffcompare `.stats` line (a tie at one decimal fails E2); novel junction = distinct `(chrom, strand, genomic_start_coord, genomic_end_coord)` with `junction_category == novel` and `canonical == canonical` in SQANTI3's `_junctions.txt`; the verdict is computed by `bench/gtf_refine_verdict.py` (this commit); and the sentence "No threshold, component, or rule may change after any chr17 number is seen."
 
 - [ ] **Step 5: Commit** (this commit must precede any chr17 file)
 
@@ -1085,14 +1596,14 @@ git commit -m "docs: pre-register the held-out chr17 --gtf-refine evaluation"
 
 ---
 
-### Task 8: chr17 substrate and all runs
+### Task 11: chr17 substrate and all runs
 
 **Files:**
 - Create: `bench/prep_chrom_ref.sh`, `bench/bakeoff_chrom_ours.sh`, `bench/bakeoff_chrom_stringtie.sh`, `bench/bakeoff_chrom_flair.sh`, `bench/chrom_score.sh`
 
 **Interfaces:**
-- Consumes: the committed PREREG (Task 7).
-- Produces under `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17/`: `chr17.bam`, `chr17.fa`, `chr17_ref.gtf`; `<label>/ours.gtf` for labels `baseline`, `bundle`, `legacy`, `abl_strand`, `abl_subset`, `abl_mono`, `abl_fragsupport`; `stringtie/st.gtf`; `flair/flair.isoforms.gtf`; `gffcompare/<label>.{stats,tmap-in-query-dir}` for all 9; `sqanti3/<label>/<label>_{classification,junctions}.txt` for `baseline`, `bundle`, `stringtie`, `flair`.
+- Consumes: the committed PREREG (Task 10).
+- Produces under `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17/`: `chr17.bam`, `chr17.fa`, `chr17_ref.gtf`; `<label>/ours.gtf` for labels `baseline`, `bundle`, `legacy`, `abl_strand`, `abl_subset`, `abl_mono`, `abl_fragsupport`, `abl_tss`; `stringtie/st.gtf`; `flair/flair.isoforms.gtf`; `gffcompare/<label>.{stats,tmap-in-query-dir}` for all 10; `sqanti3/<label>/<label>_{classification,junctions}.txt` for `baseline`, `bundle`, `abl_tss`, `stringtie`, `flair`.
 
 - [ ] **Step 1: Confirm the PREREG commit exists**
 
@@ -1142,7 +1653,7 @@ fi
 ```
 (gffcompare writes the `.tmap`/`.refmap` next to the query GTF as `<dir>/<LABEL>.<gtf basename>.tmap`.)
 
-- [ ] **Step 3: Rebuild, then run everything serially in the foreground** (redirect each to a log; expect a long total runtime — FLAIR and the four SQANTI3 runs dominate)
+- [ ] **Step 3: Rebuild, then run everything serially in the foreground** (redirect each to a log; expect a long total runtime — FLAIR and the five SQANTI3 runs dominate)
 
 ```bash
 CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo build --release --bin copy_assign > /tmp/t8_build.log 2>&1; echo "EXIT=$?"
@@ -1150,7 +1661,7 @@ bash bench/prep_chrom_ref.sh chr17 > /tmp/t8_prep.log 2>&1; echo "prep EXIT=$?";
 bash bench/bakeoff_chrom_ours.sh chr17 baseline > /tmp/t8_baseline.log 2>&1; cat /tmp/t8_baseline.log
 bash bench/bakeoff_chrom_ours.sh chr17 bundle --gtf-refine all > /tmp/t8_bundle.log 2>&1; cat /tmp/t8_bundle.log
 RUSTLE_LEGACY_PLACEMENT_DEDUP=1 bash bench/bakeoff_chrom_ours.sh chr17 legacy > /tmp/t8_legacy.log 2>&1; cat /tmp/t8_legacy.log
-for c in strand subset mono fragsupport; do
+for c in strand subset mono fragsupport tss; do
   bash bench/bakeoff_chrom_ours.sh chr17 abl_$c --gtf-refine $c > /tmp/t8_abl_$c.log 2>&1; cat /tmp/t8_abl_$c.log
 done
 bash bench/bakeoff_chrom_stringtie.sh chr17 > /tmp/t8_st.log 2>&1; echo "stringtie EXIT=$?"; tail -3 /tmp/t8_st.log
@@ -1159,10 +1670,11 @@ W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17
 for l in legacy abl_strand abl_subset abl_mono abl_fragsupport; do bash bench/chrom_score.sh chr17 $l $W/$l/ours.gtf; done
 bash bench/chrom_score.sh chr17 baseline $W/baseline/ours.gtf --sqanti
 bash bench/chrom_score.sh chr17 bundle $W/bundle/ours.gtf --sqanti
+bash bench/chrom_score.sh chr17 abl_tss $W/abl_tss/ours.gtf --sqanti
 bash bench/chrom_score.sh chr17 stringtie $W/stringtie/st.gtf --sqanti
 bash bench/chrom_score.sh chr17 flair $W/flair/flair.isoforms.gtf --sqanti
 ```
-Do NOT compute or look at the E1–E4 verdict in this task (Task 9 applies the pre-registered script). If any tool fails, report BLOCKED with the log tail; do not change any rule or threshold.
+Do NOT compute or look at the E1–E5 verdicts in this task (Task 12 applies the pre-registered script). If any tool fails, report BLOCKED with the log tail; do not change any rule or threshold.
 
 - [ ] **Step 4: Commit the scripts** (data stays out of git)
 
@@ -1173,38 +1685,39 @@ git commit -m "bench: chromosome-parameterized assembler bakeoff scripts; chr17 
 
 ---
 
-### Task 9: Apply the pre-registered verdict and write it up
+### Task 12: Apply the pre-registered verdicts and write them up
 
 **Files:**
 - Create: `bench/CHR17_GTF_REFINE_VALIDATION.md`
-- Modify (only if the verdict is PARTIAL or REFUTED): `docs/NEGATIVE_RESULTS_REGISTER.md` (one new row in its existing format)
+- Modify (only if the E1–E4 verdict is PARTIAL or REFUTED, or the TSS verdict is REFUTED): `docs/NEGATIVE_RESULTS_REGISTER.md` (one new row per failed verdict, in its existing format)
 
-- [ ] **Step 1: Compute the verdict with the committed script (no edits to it)**
+- [ ] **Step 1: Compute the verdicts with the committed script (no edits to it)**
 
 ```bash
 W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr17
 BT=$(ls $W/baseline/baseline.*.tmap); NT=$(ls $W/bundle/bundle.*.tmap)
 python3 bench/gtf_refine_verdict.py "$BT" $W/gffcompare/baseline.stats $W/sqanti3/baseline/baseline_junctions.txt \
-  "$NT" $W/gffcompare/bundle.stats $W/sqanti3/bundle/bundle_junctions.txt > /tmp/t9_verdict.json
+  "$NT" $W/gffcompare/bundle.stats $W/sqanti3/bundle/bundle_junctions.txt \
+  $W/sqanti3/baseline/baseline_classification.txt $W/sqanti3/abl_tss/abl_tss_classification.txt > /tmp/t9_verdict.json
 cat /tmp/t9_verdict.json
 git log --oneline -1 -- bench/gtf_refine_verdict.py docs/PREREG_gtf_refine_chr17_2026-09-16.md
 ```
-(Confirm with `git log` that the script and PREREG are unchanged since Task 7's commit.)
+(Confirm with `git log` that the script and PREREG are unchanged since Task 10's commit.)
 
 - [ ] **Step 2: Gather descriptive tables**
 
-- gffcompare summary (query mRNAs, matching transcripts, transcript / intron-chain / locus Sn and Pr) for all 9 labels, from `$W/gffcompare/<label>.stats`.
-- SQANTI3 structural category counts for `baseline`, `bundle`, `stringtie`, `flair` (column 6 of each `_classification.txt`, as in `bench/chr20_score.sh`).
+- gffcompare summary (query mRNAs, matching transcripts, transcript / intron-chain / locus Sn and Pr) for all 10 labels, from `$W/gffcompare/<label>.stats`.
+- SQANTI3 structural category counts for `baseline`, `bundle`, `abl_tss`, `stringtie`, `flair` (column 6 of each `_classification.txt`, as in `bench/chr20_score.sh`), plus the E5 metrics (n, within, p, g) for the same five.
 - The `lost_refs` list from the verdict JSON, each with what the bundle emitted at that reference (from the bundle `.tmap`/`.refmap`).
 - Distinct canonical novel junctions: baseline, bundle, and how many of the bundle's are absent from the baseline.
 
 - [ ] **Step 3: Write `bench/CHR17_GTF_REFINE_VALIDATION.md`**
 
-Sections: purpose and link to the PREREG commit; substrate; exact commands; the verdict JSON verbatim with E1–E4 spelled out; the descriptive tables; the ablation table (each component alone vs baseline); StringTie/FLAIR context; an honest one-paragraph reading. State the verdict plainly whatever it is; do not reinterpret a failed endpoint.
+Sections: purpose and link to the PREREG commit; substrate; exact commands; the verdict JSON verbatim with E1–E4 spelled out and the separate E5/TSS verdict spelled out; the descriptive tables; the ablation table (each component alone vs baseline); StringTie/FLAIR context; an honest one-paragraph reading. State the verdict plainly whatever it is; do not reinterpret a failed endpoint.
 
 - [ ] **Step 4: Register a negative result if applicable**
 
-If the verdict is PARTIAL or REFUTED, add one row to `docs/NEGATIVE_RESULTS_REGISTER.md` in its existing column format (check the last row number), citing the PREREG doc and the failed endpoint(s) with the real numbers.
+If the E1–E4 verdict is PARTIAL or REFUTED, or the TSS verdict is REFUTED, add one row per failed verdict to `docs/NEGATIVE_RESULTS_REGISTER.md` in its existing column format (check the last row number), citing the PREREG doc and the failed endpoint(s) with the real numbers.
 
 - [ ] **Step 5: Commit**
 
