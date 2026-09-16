@@ -410,6 +410,32 @@ simulation) to adjudicate on this substrate.
   development number only, never simulated as a combination, not validation.
 - No Rust bug and no simulation bug found: there was no deviation to explain.
 
+## Follow-up: `tss` window selection (development, chr20, 2026-09-16)
+
+Chooses the `tss` densest-5'-start window W (spec addendum, `docs/superpowers/specs/2026-09-16-gtf-refine-and-dedup-fix-design.md`)
+by Python simulation on chr20 (A1 model set, `fixed_none/ours.gtf`) before it is frozen as a Rust constant.
+Command: `python3 bench/tss_window_sim.py $W/fidelity/fixed_none/ours.gtf $W/chr20_ref.gtf $W/diagnostics/sensloss_chr20bam_primary_reads.pkl $W/fidelity/tss_sim`
+(`W=/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20`). `models=1022 primaries=25341`.
+
+| W | n_multi_stranded | n_changed | n_fsm_chain | n_within50 | n_moved_in | n_moved_out | median_abs_diff | n_guard_within50 |
+|---|---|---|---|---|---|---|---|---|
+| none | 812 | 0 | 348 | 246 | 0 | 0 | 29.0 | 467 |
+| 10 | 812 | 314 | 348 | 297 | 65 | 14 | 15.0 | 525 |
+| 25 | 812 | 263 | 348 | 296 | 63 | 13 | 17.0 | 523 |
+| 50 | 812 | 174 | 348 | 303 | 63 | 6 | 19.0 | 529 |
+| 100 | 812 | 73 | 348 | 278 | 35 | 3 | 25.0 | 498 |
+
+Selection rule: max `n_within50`, ties -> smaller W → **chosen W = 50** (303 within 50 bp, vs 246 at
+`none` and 297/296/278 at W=10/25/100).
+
+`n_within50` at `none` (246 of 348 FSM-chain models) vs the SQANTI3 legacy observation (243 of 345
+full-splice-match multi-exon models) — same ballpark, not identical (different model set: fixed dedup vs
+legacy dedup; different reference-matching method: this script's own chain/TSS join vs SQANTI3's own
+reference choice); no adjustment made.
+
+W = 50 is now **frozen** for the Rust `TSS_WINDOW_BP` constant (Task 8) and for the held-out chr17 test
+(Task 10-12); it may not be re-picked after chr17 data is seen.
+
 ## Files
 
 - `bench/prep_chr20_ref.sh` — chr20 BAM/FASTA/reference-GTF extraction (incl. the GFF3 resort fix).
