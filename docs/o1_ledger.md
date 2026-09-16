@@ -22063,3 +22063,90 @@ open, not guessed at.
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/discover_copies_test/` (`run.discovered_copies.tsv`,
 `run.assignments.tsv`, `run.families.tsv`, `run.family_join.tsv`, `run.famcn_readonly.tsv`, `run.params.tsv`,
 `run.quant.tsv`).
+
+## §6l6 addendum (post-final-review fix) — the 189-row report was inflated by a cross-family pooling bug and
+intron-chained cluster spans; corrected re-run gives 28 rows, and the core negative finding SURVIVES (2026-09-15)
+
+A final whole-branch review of the `--discover-copies` branch (seeing the whole 11-commit diff at once,
+plus §6l6's own real output) found one Critical bug and four Important gaps that no single task's isolated
+diff review caught. Fixed in `f48c8543` (code), `62334a0c` (MODULE_STATUS.md), `b2bdbf3a` (tests). §6l6's
+text above is left standing; this addendum states what in it is wrong and gives the corrected numbers.
+
+**What was wrong (1): cross-family pooling — the `family_id` column.** The wiring block passed the FULL
+region's AS-tied read list to EVERY family, and took `existing_copies` from a
+`colocated.iter().find(|cf| cf.family_id == fa.family_id)` join whose `unwrap_or_default()` silently yields
+an EMPTY exclusion list whenever the ids do not line up. Measured on the §6l6 output itself: the 189 rows
+covered only **42 distinct `(chrom, start, end)` sites**, each duplicated up to **8 times** under 8
+different `family_id`s with the byte-identical `read_names` list (e.g.
+`NC_073244.2:64,530,420-64,549,224` with `SRR27438212.1225684,SRR27438212.7096136`, 8 rows).
+
+**What was wrong (2): intron-inflated spans.** `copy_discovery::ref_end` summed `N` into the placement span
+— the exact bug class `block_overlap` (`src/bin/copy_assign.rs:1354-1373`) exists to fix at the O3 truth
+gate. A spliced-out intron counted as covered reference, so (a) a catalog copy that only an intron SPANS
+could wrongly exclude a real candidate, and (b) 500 bp merging chained whole introns into megaclusters. Old
+cluster widths: min 81 / median 3,581 / **max 657,105 bp**. Placements now carry ALIGNED BLOCKS (one
+`(start,end)` per `M`/`=`/`X` run); exclusion is per-placement, clustering per-block. New widths: min 17 /
+median 184 / **max 1,681 bp**.
+
+**Exact command re-run** (identical to §6l6's, same `--out` prefix, which overwrote the pre-fix files):
+```
+BIN=/mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign
+"$BIN" --families /mnt/linuxdisk/home/juanfraitu/mec/batch.copies.tsv \
+       --bam /mnt/linuxdisk/home/juanfraitu/npip_cat/npip3.bam \
+       --fasta /mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta \
+       --regions /mnt/linuxdisk/home/juanfraitu/mec/regions.txt \
+       --copies-fa /mnt/linuxdisk/home/juanfraitu/npip_cat/arm_f2/cat.copies.fa \
+       --out /mnt/linuxdisk/home/juanfraitu/o3_probe_verify/discover_copies_test/run \
+       --discover-copies
+```
+Exit 0, 26.094 s real. Stderr: `[copy_assign] --families ...: 12 families / 101 copies bound to 2 region(s)
+(0 cross-chromosome)` ... `[copy_assign] --discover-copies: 28 candidate copies -> ...run.discovered_copies.tsv`.
+
+**Corrected numbers.** `run.discovered_copies.tsv` = 29 lines (1 header + **28 rows**), down from 190 lines
+/ 189 rows. **28 rows / 28 distinct `(chrom, start, end)` sites — zero duplication.** Five family ids, not
+twelve: GWFAM66 9, GWFAM113 8, GWFAM104 6, **GWFAM55 4**, GWFAM48 1 (was: GWFAM66 31, GWFAM83 30, GWFAM55
+28, GWFAM48 24, GWFAM96/119/118/115/112/111 10 each, GWFAM113 8, GWFAM104 8). Strand (the new column, the
+design doc's Open Question finally implemented — majority vote over supporting placements' FLAG 0x10, ties
+`+`): 16 `+` / 12 `-`. `nearest_copy_distance` is `NA` on 0 rows (every candidate shares a chromosome with
+one of its family's copies), so the `18446744073709551615` sentinel the same review flagged was never
+reached on this substrate either before or after.
+**Attribution invariant, checked directly on the real output:** all **63 read-mentions across the 28 rows**
+name a read that appears under that same `family_id` in `run.assignments.tsv` (57 assignment rows over the
+same 5 families). **0 violations.**
+
+**The three "it works elsewhere" example rows quoted in §6l6 are RETRACTED — all three are gone.**
+* `NC_073242.2:16,356,916-16,543,313 (n=55)` — 186,397 bp wide, and emitted under 8 different family_ids
+  (GWFAM55, GWFAM83, GWFAM66, GWFAM48, ...) with the identical 55-name read list. An intron-chained
+  megacluster, not a locus.
+* `NC_073242.2:31,336,954-31,462,119 (n=86)` — same, 125,165 bp wide, 8 family_ids, identical 86-name list.
+* `NC_073242.2:21,670,068-21,672,486 (n=6)` — the one quoted as "real multi-read support in the same
+  neighborhood as the known candidate". Its six reads (`SRR27438212.3115637`, `.1108355`, `.7689503`,
+  `.6406215`, `.8978350`, `SRR27178663.198187`) appear in **NO family's `assignments.tsv` row in this run** —
+  not one of them was considered by any family. It was a pure pooling artifact.
+
+**What GWFAM55 actually has now** (all four rows, all with reads GWFAM55 itself considered):
+`NC_073242.2:21,701,365-21,703,046` strand `+` n=3 (`SRR27438212.5207305,SRR27438212.381004,SRR27438212.9370014`),
+3,125 bp before copy `DN_NC_073242.2_21706171_14`; `21,679,729-21,680,291` strand `-` n=2
+(`SRR27438212.5425631,SRR27178663.21789`), 25,880 bp from that copy; `30,584,228-30,585,834` strand `-` n=2
+and `31,447,675-31,449,281` strand `-` n=2 (both `SRR27438213.42662,SRR27438212.3652728`).
+
+**⭐ The core negative finding SURVIVES, and is now better supported than in §6l6.** No row at or near
+`NC_073242.2:21,674,468`: the nearest GWFAM55 row starts 5,261 bp away, at 21,679,729. Re-verified from the
+BAM rather than assumed — `samtools view -F 2308 npip3.bam NC_073242.2:21672000-21677000`, restricted to
+records with reference-consumed length <= 2,000 bp (the same filter §6l6 used), returns **exactly one
+record**: `SRR27178663.557589` itself at 21,674,468, CIGAR `173=1X19=`, span 193 bp. n=1 against
+`TIE_PARTNER_MIN_SUPPORT = 2`. And the read IS in GWFAM55's corrected read pool
+(`run.assignments.tsv`: `SRR27178663.557589  GWFAM55  ...  ambiguous`), so the new per-family restriction is
+NOT what keeps it out — the >=2 corroboration bar is, exactly as §6l6 concluded. §6l5's second example
+`SRR27438212.6728466` is likewise still absent, with a second independent reason under the corrected code:
+it appears in no family's `assignments.tsv` row in this run at all, so GWFAM55 never considers it.
+
+**Reading.** §6l6's headline ("the acceptance test's literal pass criterion is NOT met; both §6l5 reads are
+singleton ties") stands unchanged. What does NOT stand is §6l6's consolation paragraph: the "189 rows
+including several GWFAM55 clusters with real multi-read support" was an artifact of duplicating 42 sites
+across families and of chaining exon blocks through introns. The honest corrected version is **28 distinct
+candidate sites across 5 of the 12 families, median 184 bp wide, every supporting read demonstrably one the
+reporting family considered** — a much smaller and much more defensible yield from the same run.
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/discover_copies_test/` (re-run in place; the pre-fix
+`run.*.tsv` files quoted in §6l6 above were overwritten, their relevant contents reproduced here).
