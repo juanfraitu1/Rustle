@@ -1419,6 +1419,53 @@ fn best_overlap_truth_copy<'a>(
     truth_copy
 }
 
+/// `--discover-copies`: the candidate new copies ONE family's own AS-tied reads point at.
+///
+/// ⚠ Fix (final whole-branch review, Critical): the pre-fix code inlined this in the `fams.iter()`
+/// closure and passed the WHOLE region's tied-read list to EVERY family, so one identical out-of-catalog
+/// site -- identical read-name list and all -- was reported under 3-8 different `family_id` values in real
+/// output. The design spec's own step 3 says clustering happens "across all reads IN A FAMILY". The read
+/// set a family actually considered is exactly `fa.assignments`, whose `usize` is the region-global
+/// `bam_reads` index (see the `RecKey` doc comment above), so this restricts `tied` to those names first.
+///
+/// ⚠ Second half of the same fix: `existing_copies` used to come from a `colocated.iter().find(|cf|
+/// cf.family_id == fa.family_id)` join, which silently yielded an EMPTY exclusion list (`unwrap_or_default`)
+/// whenever no `ColocatedFamily` carried that id -- and `fa` can bundle more than one true catalog family
+/// (see the O3 block's own Fix 1 comment in `main`), so the join can and does fail on real input, making
+/// every catalog copy invisible to `inside_any_copy`. `fa.copy_spans` / `fa.copy_tids` are parallel arrays
+/// already assembled on `FamilyAssignment` -- the copies THIS family was assigned against, no join needed.
+///
+/// Residual, deliberately unchanged: the reported `family_id` is `fa.family_id`, the LOCAL co-located
+/// group's id. When one `fa` bundles several true catalog families that label is one group, not one catalog
+/// family -- but then `existing_copies` spans all of them too, so the exclusion stays conservative (a
+/// candidate is only reported when it is outside EVERY copy the group holds).
+fn discover_copies_for_family(
+    fa: &FamilyAssignment,
+    bam_reads: &[BamRead],
+    tied: &[(String, Vec<rustle::vg_family::copy_discovery::TiePlacement>)],
+) -> Vec<rustle::vg_family::copy_discovery::DiscoveredCopy> {
+    let considered: std::collections::HashSet<&str> = fa
+        .assignments
+        .iter()
+        .filter_map(|&(ri, _)| bam_reads.get(ri).map(|br| br.name.as_str()))
+        .collect();
+    let mine: Vec<(String, Vec<rustle::vg_family::copy_discovery::TiePlacement>)> =
+        tied.iter().filter(|(name, _)| considered.contains(name.as_str())).cloned().collect();
+    let existing_copies: Vec<(String, u64, u64, String)> = fa
+        .copy_spans
+        .iter()
+        .zip(fa.copy_tids.iter())
+        .map(|((chrom, start, end), tid)| (chrom.clone(), *start, *end, tid.clone()))
+        .collect();
+    rustle::vg_family::copy_discovery::cluster_tie_partners(
+        &mine,
+        &fa.family_id,
+        &existing_copies,
+        rustle::vg_family::copy_discovery::TIE_PARTNER_MERGE_DISTANCE_BP,
+        rustle::vg_family::copy_discovery::TIE_PARTNER_MIN_SUPPORT,
+    )
+}
+
 /// Load, VALIDATE and region-bind the `--families` catalog (see the flag's help for the contract).
 ///
 /// Returns `(None, None, None)` when `--families` was not given — the historical path, untouched.
@@ -1783,6 +1830,11 @@ fn opt_i32(v: Option<i32>) -> String {
 }
 fn opt_f32(v: Option<f32>) -> String {
     v.map_or_else(|| "NA".to_string(), |x| format!("{x:.3}"))
+}
+/// `NA` for an absent distance (`--discover-copies`: a candidate on a chromosome this family has no copy
+/// on), otherwise the value. Same convention as [`opt_i32`].
+fn opt_u64(v: Option<u64>) -> String {
+    v.map_or_else(|| "NA".to_string(), |x| x.to_string())
 }
 /// `--read-provenance`: a record's own intron chain as `d1-a1,d2-a2,...`, or `none` for an unspliced record.
 fn fmt_chain(chain: &[(u64, u64)]) -> String {
@@ -2858,25 +2910,12 @@ fn main() -> Result<()> {
         // placements into candidate new copies. Gated the same way as the O3 block above -- empty Vec, no
         // allocation, when the flag is unset.
         let discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy> = if args.discover_copies {
+            // The region's AS-tied reads are extracted ONCE; `discover_copies_for_family` then restricts
+            // them, per family, to the reads that family actually considered (`fa.assignments`) before
+            // clustering. Pooling them across families is the cross-family attribution bug the final
+            // whole-branch review caught -- see that function's own doc comment.
             let tied = rustle::vg_family::copy_discovery::tie_partner_placements(&bam_reads);
-            let empty: Vec<ColocatedFamily> = Vec::new();
-            let colocated = supplied.as_ref().unwrap_or(&empty);
-            fams.iter()
-                .flat_map(|fa| {
-                    let existing_copies: Vec<(String, u64, u64, String)> = colocated
-                        .iter()
-                        .find(|cf| cf.family_id == fa.family_id)
-                        .map(|cf| cf.copies.iter().map(|c| (c.chrom.clone(), c.start, c.end, c.tid.clone())).collect())
-                        .unwrap_or_default();
-                    rustle::vg_family::copy_discovery::cluster_tie_partners(
-                        &tied,
-                        &fa.family_id,
-                        &existing_copies,
-                        rustle::vg_family::copy_discovery::TIE_PARTNER_MERGE_DISTANCE_BP,
-                        rustle::vg_family::copy_discovery::TIE_PARTNER_MIN_SUPPORT,
-                    )
-                })
-                .collect()
+            fams.iter().flat_map(|fa| discover_copies_for_family(fa, &bam_reads, &tied)).collect()
         } else {
             Vec::new()
         };
@@ -4463,12 +4502,16 @@ fn main() -> Result<()> {
     // `catalog_index`, same as the O3 orphan-loci block above.
     if args.discover_copies {
         let mut dh = std::fs::File::create(format!("{}.discovered_copies.tsv", args.out))?;
-        writeln!(dh, "family_id\tchrom\tstart\tend\tn_supporting_reads\tread_names\tnearest_copy_tid\tnearest_copy_distance")?;
+        writeln!(dh, "family_id\tchrom\tstart\tend\tstrand\tn_supporting_reads\tread_names\tnearest_copy_tid\tnearest_copy_distance")?;
         for d in &all_discovered {
             writeln!(
-                dh, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                d.family_id, d.chrom, d.start, d.end, d.n_supporting_reads,
-                d.read_names.join(","), d.nearest_copy_tid, d.nearest_copy_distance
+                dh, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                d.family_id, d.chrom, d.start, d.end, d.strand, d.n_supporting_reads,
+                d.read_names.join(","), d.nearest_copy_tid,
+                // `NA` when the family has no copy on this chromosome at all (`nearest_copy_tid == "NA"`),
+                // the same convention `opt_i32`/`opt_f32` use above -- never a `u64::MAX` sentinel printed
+                // verbatim as 18446744073709551615.
+                opt_u64(d.nearest_copy_distance)
             )?;
         }
         eprintln!(
@@ -4840,6 +4883,13 @@ fn main() -> Result<()> {
     // The M2 landing spot this binary lacked: it writes 24 output files and no params certificate, so an
     // ON and an OFF arm of ANY env-driven knob were previously indistinguishable from their outputs.
     // A NEW file changes no existing byte, so writing it unconditionally is compatible with the OFF gate.
+    //
+    // ⚠ DELIBERATE OMISSION, do not "fix": there is NO `discover_copies` row here. This table is written
+    // unconditionally, so adding a row for `--discover-copies` would make `params.tsv` differ between the
+    // flag-off and flag-on arms -- breaking that flag's own byte-identity contract (and the regression that
+    // pins it, `discover_copies_off_by_default_is_byte_identical` in tests/copy_assign_families.rs, which
+    // compares `params.tsv` explicitly). The flag announces itself by the PRESENCE of its own additive
+    // output file, `<out>.discovered_copies.tsv`, instead.
     {
         let mut ph = std::fs::File::create(format!("{}.params.tsv", args.out))?;
         writeln!(ph, "key\tvalue")?;
@@ -5092,6 +5142,92 @@ mod tests {
             Some(&(("famA".to_string(), "0".to_string()), 50)),
             "copy A (seen first) wins the tie over copy B; return value now carries (cf, cidx), not bare cidx"
         );
+    }
+
+    #[test]
+    fn discover_copies_is_attributed_only_to_the_family_that_considered_the_read() {
+        // ⚠ THE CROSS-FAMILY POOLING BUG (final whole-branch review, Critical). Two families, A and B,
+        // in the SAME region. One AS-tied read (`tied`) is in family A's `assignments` and NOT in B's.
+        // Its two max-AS placements are 1000-1100 (inside A's own catalog copy) and 5000-5100 (out of
+        // catalog) -- so A should report the 5000-5100 site and B should report NOTHING AT ALL, because
+        // that read was never B's to reason about. Pre-fix, the whole region's tied list was handed to
+        // every family, so the identical site with the identical read list came out under both ids.
+        use rustle::vg_family::copy_assign::Assignment;
+        use rustle::vg_family::copy_discovery::tie_partner_placements;
+        let mk = |name: &str, start: u64, as_score: i32| BamRead {
+            chrom: "chr1".to_string(),
+            read: rustle::vg_family::copy_split::AlignedRead {
+                ref_start: start, cigar: vec![('M', 100)], seq: vec![], qual: vec![],
+            },
+            mapq: 0, name: name.to_string(), as_score, de: 0.0,
+            is_supplementary: false, is_secondary: start != 1000, reverse: false, ts: None,
+        };
+        // Two reads, each AS-tied across two placements; only `tied_a` belongs to family A.
+        let bam_reads = vec![
+            mk("tied_a", 1000, 200), mk("tied_a", 5000, 200),
+            mk("tied_b", 2000, 300), mk("tied_b", 7000, 300),
+        ];
+        let assign = || Assignment {
+            best_copy: 0, log_lr_margin: 0.0, n_decisive: 0, resolvable: false,
+            status: AssignStatus::Tied, p_value: 1.0, min_p_value: 1.0, discovery_coupled: false,
+            junction_conflict: false, origin_rejected: false, n_candidates: 0,
+            posterior: vec![1.0], sibling_identity: 1.0, n_cols_vs_nearest_sibling: 0,
+        };
+        let mut fam_a = FamilyAssignment::empty();
+        fam_a.family_id = "FAM_A".to_string();
+        fam_a.copy_tids = vec!["tidA".to_string()];
+        fam_a.copy_spans = vec![("chr1".to_string(), 900, 1200)]; // contains the 1000-1100 placement
+        fam_a.assignments = vec![(0, assign()), (1, assign())]; // indices of tied_a's two records
+        let mut fam_b = FamilyAssignment::empty();
+        fam_b.family_id = "FAM_B".to_string();
+        fam_b.copy_tids = vec!["tidB".to_string()];
+        fam_b.copy_spans = vec![("chr1".to_string(), 1900, 2200)]; // contains the 2000-2100 placement
+        fam_b.assignments = vec![(2, assign()), (3, assign())]; // indices of tied_b's two records
+
+        let tied = tie_partner_placements(&bam_reads);
+        assert_eq!(tied.len(), 2, "both reads are AS-tied across two placements each");
+
+        // min_support is 2, so a single read cannot clear it -- give each family's own read a second,
+        // co-located supporter that the OTHER family still never considered.
+        let bam_reads = {
+            let mut v = bam_reads;
+            v.push(mk("tied_a2", 1000, 200));
+            v.push(mk("tied_a2", 5050, 200));
+            v.push(mk("tied_b2", 2000, 300));
+            v.push(mk("tied_b2", 7050, 300));
+            v
+        };
+        fam_a.assignments.extend([(4, assign()), (5, assign())]);
+        fam_b.assignments.extend([(6, assign()), (7, assign())]);
+        let tied = tie_partner_placements(&bam_reads);
+
+        let a = discover_copies_for_family(&fam_a, &bam_reads, &tied);
+        let b = discover_copies_for_family(&fam_b, &bam_reads, &tied);
+
+        assert_eq!(a.len(), 1, "family A must report exactly its own out-of-catalog site: {a:#?}");
+        assert_eq!(a[0].family_id, "FAM_A");
+        assert_eq!((a[0].chrom.as_str(), a[0].start, a[0].end), ("chr1", 5000, 5150));
+        assert_eq!(a[0].read_names, vec!["tied_a".to_string(), "tied_a2".to_string()]);
+        assert_eq!(a[0].nearest_copy_tid, "tidA");
+        // and the 7000 site, which only family B's reads support, must NOT appear under A:
+        assert!(!a.iter().any(|d| d.start >= 7000), "family A must not inherit family B's reads: {a:#?}");
+
+        assert_eq!(b.len(), 1, "family B likewise reports only its own site: {b:#?}");
+        assert_eq!(b[0].family_id, "FAM_B");
+        assert_eq!((b[0].chrom.as_str(), b[0].start, b[0].end), ("chr1", 7000, 7150));
+        assert!(!b.iter().any(|d| d.start == 5000), "family B must not inherit family A's reads: {b:#?}");
+
+        // The second half of the same fix: `existing_copies` comes from `fa.copy_spans`/`copy_tids`, so a
+        // family with NO catalog copy at the tie's own position still excludes its own copies -- here,
+        // stripping A's copy set makes the 1000-1100 placement surface as a candidate too (proof the
+        // exclusion list is really being read from the family, not silently empty).
+        let mut fam_a_no_copies = fam_a.clone();
+        fam_a_no_copies.copy_spans.clear();
+        fam_a_no_copies.copy_tids.clear();
+        let a2 = discover_copies_for_family(&fam_a_no_copies, &bam_reads, &tied);
+        assert_eq!(a2.len(), 2, "with no catalog copies both of A's tied sites are out-of-catalog: {a2:#?}");
+        assert_eq!(a2[0].nearest_copy_tid, "NA");
+        assert_eq!(opt_u64(a2[0].nearest_copy_distance), "NA", "no copy at all -> NA distance, not a sentinel");
     }
 
     #[test]
