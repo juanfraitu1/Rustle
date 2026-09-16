@@ -358,6 +358,58 @@ pre-registration discipline — the value was fixed before this run, and is not 
 result is unfavorable. A smaller tolerance, chosen by a different rule, might behave differently, but that
 would be a new, separately pre-registered experiment, not a retry of this one.
 
+## Follow-up: Rust fidelity of the dedup fix and `--gtf-refine` (2026-09-16)
+
+Checks that the Rust implementation of the dedup fix (Task 1) and `--gtf-refine` (`strand`/`subset`/`mono`/
+`fragsupport`) reproduces the Python simulation's gffcompare numbers on real chr20 data, per
+`docs/superpowers/specs/2026-09-16-gtf-refine-and-dedup-fix-design.md` ("Fidelity anchors"). Binary at HEAD
+`c44857ac`. Command: `bash bench/gtf_refine_chr20_fidelity.sh` (all seven arms, one `copy_assign --gtf` run per
+arm + `gffcompare -r chr20_ref.gtf`, ~7-11s each). Outputs: `human_chr20/fidelity/<arm>/`.
+
+**Expected vs observed** (exp = pre-registered spec anchor; obs = this run; Tx = transcript level, IC =
+intron-chain level; blank exp cells were not pre-registered for that arm):
+
+| Arm | Anchor kind | Query mRNAs exp/obs | Matching tx exp/obs | Tx Sn exp/obs | Tx Pr exp/obs | IC Sn exp/obs | IC Pr exp/obs | Locus Pr exp/obs | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `legacy_none` | EXACT | 976/976 | 347/347 | 7.6/7.6 | 35.6/35.6 | 8.0/8.0 | 44.6/44.6 | —/46.1 | MATCH |
+| `fixed_none` (A1) | EXACT | 1022/1022 | 350/350 | 7.7/7.7 | 34.2/34.2 | 8.1/8.1 | 42.9/42.9 | —/44.9 | MATCH |
+| `fixed_fragsupport` (B3) | EXACT | 1054/1054 | 362/362 | 7.9/7.9 | 34.3/34.3 | 8.4/8.4 | 42.7/42.7 | —/45.9 | MATCH |
+| `legacy_subset` | EXACT | 913/913 | 347/347 | 7.6/7.6 | 38.0/38.0 | 8.0/8.0 | 48.6/48.6 | —/46.1 | MATCH |
+| `legacy_strand` | APPROX | ≈976/976 | ≈349/349 | —/7.6 | —/35.8 | —/8.0 | —/44.6 | ≈50.4/50.4 | MATCH |
+| `legacy_strand_subset_mono` (P5) | APPROX | ≈820/820 | ≈349/349 | —/7.6 | ≈42.6/42.6 | —/8.0 | —/48.6 | ≈52.2/52.2 | MATCH |
+| `fixed_all` | dev only, never simulated | n/a/886 | n/a/364 | n/a/8.0 | n/a/41.1 | n/a/8.4 | n/a/46.6 | n/a/52.3 | not validation |
+
+`legacy_none/ours.gtf` `cmp` byte-identical to `human_chr20/ours/ours.gtf`: **PASS**.
+
+**Per-transcript reproduction check** (beyond the summary stats: diffed each arm's GTF against the matching
+simulation GTF named in the brief by `(chrom, strand, intron chain)` for multi-exon models and `(chrom,
+strand, start, end)` for single-exon models — confirms the actual transcript sets agree, not just their
+counts):
+
+| Arm vs simulation GTF | n_tx ours | n_tx sim | in both | only ours | only sim |
+|---|---|---|---|---|---|
+| `fixed_none` vs `sensloss_sim/A1_no_placement_dedup.gtf` | 1022 | 1022 | 1022 | 0 | 0 |
+| `fixed_fragsupport` vs `sensloss_sim/B3_fragment3p_unique_support2.gtf` | 1054 | 1054 | 1054 | 0 | 0 |
+| `legacy_subset` vs `precdissect_gffc/sub_own_ovh5.gtf` | 913 | 913 | 913 | 0 | 0 |
+| `legacy_strand` vs `precdissect_gffc/mono_strand_from_read_vote_ge90.gtf` | 976 | 976 | 976 | 0 | 0 |
+| `legacy_strand_subset_mono` vs `precdissect_gffc/P5_P1_plus_monoSplicedReadDominated.gtf` | 820 | 820 | 820 | 0 | 0 |
+
+**Deviation table**: none — every EXACT and APPROXIMATE anchor matched to the stated precision, and every
+per-transcript diff above shows 0 transcripts only-in-ours or only-in-sim, so there is no defect (Rust or
+simulation) to adjudicate on this substrate.
+
+**Conclusions:**
+- All 4 EXACT anchors reproduce exactly, at both the gffcompare-summary and the individual-transcript
+  intron-chain/strand level (0/1022, 0/1054, 0/913 transcripts differ from the matching simulation GTF).
+- Both APPROXIMATE anchors also reproduce exactly (0 gap against the ±5 query-mRNA / ±0.5 precision-point
+  tolerance), including on the per-transcript check (0/976, 0/820 differ) — the two named intended
+  differences (legacy-dedup vote over deduplicated cluster reads vs the simulation's vote over all
+  overlapping unspliced primaries; FLAG-only vs FLAG⊕ts spliced-read strand) produced no observable
+  divergence on real chr20 data.
+- `fixed_all`: 886 queries, 364 matching transcripts, Tx Sn/Pr 8.0/41.1, IC Sn/Pr 8.4/46.6, locus Pr 52.3 —
+  development number only, never simulated as a combination, not validation.
+- No Rust bug and no simulation bug found: there was no deviation to explain.
+
 ## Files
 
 - `bench/prep_chr20_ref.sh` — chr20 BAM/FASTA/reference-GTF extraction (incl. the GFF3 resort fix).
@@ -365,5 +417,8 @@ would be a new, separately pre-registered experiment, not a retry of this one.
 - `bench/bakeoff_chr20_stringtie.sh` — StringTie, long-read mode, no annotation.
 - `bench/bakeoff_chr20_flair.sh` — FLAIR, unguided (incl. the FLAIR 3.0.0 workarounds above).
 - `bench/chr20_score.sh` — gffcompare (x3 + multicopy=false subset) + SQANTI3 QC (x3) driver.
+- `bench/gtf_refine_chr20_fidelity.sh` — the seven dedup-fix/`--gtf-refine` fidelity arms above (optional arm
+  label argument to run one arm at a time).
 - Large outputs (BAMs, GTFs, SQANTI3 intermediates) live under
-  `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/` and are NOT in git.
+  `/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/` and are NOT in git (fidelity arms under its
+  `fidelity/<arm>/` subdirectory).
