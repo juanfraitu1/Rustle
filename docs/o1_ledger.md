@@ -22145,8 +22145,21 @@ it appears in no family's `assignments.tsv` row in this run at all, so GWFAM55 n
 singleton ties") stands unchanged. What does NOT stand is §6l6's consolation paragraph: the "189 rows
 including several GWFAM55 clusters with real multi-read support" was an artifact of duplicating 42 sites
 across families and of chaining exon blocks through introns. The honest corrected version is **28 distinct
-candidate sites across 5 of the 12 families, median 184 bp wide, every supporting read demonstrably one the
-reporting family considered** — a much smaller and much more defensible yield from the same run.
+candidate sites across 5 of the 12 co-located groups, median 184 bp wide, every supporting read demonstrably
+one the reporting co-located group considered** — a much smaller and much more defensible yield from the
+same run. (One `fa` can in principle bundle more than one true catalog family — `copy_span_by_cf`,
+`copy_assign.rs:2725-2739` — in which case the reported `family_id` names the local group, not necessarily
+one catalog family; on this substrate all 12 groups are 1:1 with a catalog family, so this residual is
+documented, not exercised, here.)
+
+**Named limitation, not fixed this round: a row is a candidate ALIGNED-BLOCK CLUSTER, not a candidate
+copy.** Clustering is per-block (Finding 2's fix), so a novel multi-exon copy supported by only 2-3 reads
+can fragment into several rows, one per exon, each independently only needing its own 2 supporting reads —
+this is more chances for a coincidental 2-read cluster than the pre-fix per-placement scheme had, not
+"the same >=2 bar" applied unchanged. None of the 28 rows above are known to be fragments of one real copy
+(no two rows share a family with abutting coordinates on this run), but the code does not currently detect
+or merge that case. Follow-up (not built): regroup blocks connected by a shared supporting placement into
+one reported candidate with an `exon_blocks` column, mirroring `catalog_input::exon_blocks_str`.
 
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/discover_copies_test/` (re-run in place; the pre-fix
 `run.*.tsv` files quoted in §6l6 above were overwritten, their relevant contents reproduced here).

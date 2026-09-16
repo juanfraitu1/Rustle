@@ -6,6 +6,14 @@
 //! false`): `discover_copies_for_family` calls [`cluster_tie_partners`] once per family inside that
 //! flag's own `if args.discover_copies {` block. REPORT ONLY -- the result is written to
 //! `<out>.discovered_copies.tsv` and never mutates the input catalog or this run's own assignments.
+//!
+//! ⚠ A [`DiscoveredCopy`] row is a candidate ALIGNED-BLOCK CLUSTER, not necessarily a whole candidate
+//! copy: clustering is per-block (see [`aligned_blocks`]), so a genuine multi-exon copy supported by only
+//! a few reads can fragment into several rows, one per exon, each independently only needing its own
+//! `TIE_PARTNER_MIN_SUPPORT` reads -- more chances for a coincidental cluster than a per-placement scheme
+//! would give. Not detected or merged here (docs/o1_ledger.md §6l6 addendum, "Named limitation"); a
+//! follow-up would regroup blocks sharing a supporting placement into one candidate with its own
+//! `exon_blocks` column, mirroring `catalog_input::exon_blocks_str`.
 
 use std::collections::{HashMap, HashSet};
 use crate::vg_family::copy_split::AlignedRead;
@@ -55,9 +63,10 @@ pub struct TiePlacement {
 /// Duplicates `block_overlap`'s CIGAR walk (`src/bin/copy_assign.rs`) rather than calling it: that
 /// function is `bin`-private and not visible from a `lib` module in this crate layout -- the same
 /// documented reason this module already duplicated `read_ref_end_local`'s span before the block fix.
-/// `D` and `N` advance the reference cursor without emitting a block, so a deletion splits a run here
-/// (harmless: consumers only ever ask whether SOME block overlaps a window, and the cluster envelope is a
-/// min/max over blocks).
+/// `D` and `N` advance the reference cursor without emitting a block, so a deletion splits a run here too
+/// (matching `block_overlap`) -- usually immaterial since alignment `D` runs are short, but a `D` longer
+/// than `TIE_PARTNER_MERGE_DISTANCE_BP` would split one placement into two reported clusters, same as a
+/// real gap between two placements. Not observed on the real substrate this module was built against.
 pub fn aligned_blocks(read: &AlignedRead) -> Vec<(u64, u64)> {
     let mut pos = read.ref_start;
     let mut out = Vec::new();
