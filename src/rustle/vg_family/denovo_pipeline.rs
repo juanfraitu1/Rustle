@@ -2202,23 +2202,25 @@ pub fn detect_and_assign(
     // Same `k` as the O1 catalogs: one canonical extent per locus across objectives (see `detect_families`).
     let salvaged = if supplied { None } else { maybe_salvage_mischain(primary_reads, cfg) };
     let seed_reads: &[PrimaryRead] = salvaged.as_deref().unwrap_or(primary_reads);
+    // NOTE (Task 5 acceptance test, 2026-09-15): RUSTLE_JUNCTION_FUZZ_BP is intentionally NOT wired here.
+    // This `skeletons` value feeds the multi-copy family / O1 detection oracle (colocated_families, the
+    // conflict/homology graph, REFINE) below -- exactly the pipeline the design spec
+    // (docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md, "Non-goal") says this feature must
+    // NOT touch without separately validating against the multi-copy family test suite first. It was
+    // wired in here by an earlier pass (commit 5a2a0928) on the mistaken assumption that this is "the ONE
+    // pass1_skeletons_robust call site that actually serves --gtf's pure de novo path" -- it is not: the
+    // `--gtf` isoform emission is a SEPARATE, independent recomputation in `src/bin/copy_assign.rs`
+    // (`if args.gtf { let skeletons = pass1_skeletons(&primary, ...); ... }`, explicitly commented
+    // "independent of the assignment"), which never reads this function's `skeletons`/`reps`/`fams`
+    // output. Wiring the merge here was therefore both a no-op for the feature's actual target (chr20
+    // gffcompare scoring of `--gtf` output was unaffected) and an unreviewed change to the shared,
+    // already-validated family-detection front end. See `bench/CHR20_ASSEMBLER_COMPARISON.md`'s
+    // 2026-09-15 fuzzy-junction-merge follow-up section for the real-data evidence. The correct wiring is
+    // in `src/bin/copy_assign.rs` at the actual `--gtf` transcript-assembly site.
     let skeletons = if supplied {
         Vec::new()
     } else {
-        let sk = pass1_skeletons_robust(seed_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
-        // Opt-in (RUSTLE_JUNCTION_FUZZ_BP, default off): merge skeletons whose intron chains match in count
-        // and differ only by a pre-registered per-junction tolerance -- docs/PREREG_junction_fuzz_2026-09-15.md,
-        // docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md. Zero effect when unset (tolerance
-        // 0 is `merge_fuzzy_skeletons`'s own explicit no-op), so every existing catalog stays byte-identical.
-        let fuzz_bp: u64 = std::env::var("RUSTLE_JUNCTION_FUZZ_BP")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
-        if fuzz_bp > 0 {
-            crate::vg_family::denovo_assemble::merge_fuzzy_skeletons(sk, fuzz_bp)
-        } else {
-            sk
-        }
+        pass1_skeletons_robust(seed_reads, cfg.pass1_min_reads, cfg.min_terminal_support)
     };
     // TIED-SEED (opt-in): assemble the tied-seed skeletons into their OWN reps, kept ENTIRELY OUT of the
     // primary `reps` / conflict / refine / assignment pipeline. K=0 tied reps mixed into `reps` add spurious

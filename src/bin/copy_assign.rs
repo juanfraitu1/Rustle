@@ -26,8 +26,8 @@ use rustle::vg_family::linearize::LinearizeCertificate;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
-    assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache, BamRead,
-    GATE_MIN_READS,
+    assemble_gate, merge_fuzzy_skeletons, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region,
+    BamIndexCache, BamRead, GATE_MIN_READS,
 };
 use rustle::vg_family::catalog_input::{
     group_families, parse_copies_fa, parse_copies_tsv, to_colocated, CatalogFamily, SeqIndex,
@@ -2627,6 +2627,18 @@ fn main() -> Result<()> {
         // Recomputed here only under --gtf (cheap: pass1/gate are ~0s); independent of the assignment.
         let transcripts: Vec<TranscriptRec> = if args.gtf {
             let skeletons = pass1_skeletons(&primary, cfg.pass1_min_reads);
+            // Opt-in (RUSTLE_JUNCTION_FUZZ_BP, default off): merge skeletons whose intron chains match in
+            // count and differ only by a pre-registered per-junction tolerance --
+            // docs/PREREG_junction_fuzz_2026-09-15.md, docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md.
+            // This IS the "--gtf pure de novo path" call site the design targets (traced 2026-09-15: the
+            // `detect_and_assign`/`pass1_skeletons_robust` skeletons feed only the multi-copy family/O1
+            // oracle below and are never read by this block). Zero effect when unset (tolerance 0 is
+            // `merge_fuzzy_skeletons`'s own explicit no-op), so every existing catalog stays byte-identical.
+            let fuzz_bp: u64 = std::env::var("RUSTLE_JUNCTION_FUZZ_BP")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let skeletons = if fuzz_bp > 0 { merge_fuzzy_skeletons(skeletons, fuzz_bp) } else { skeletons };
             let iso = assemble_gate(&skeletons, &genome, &cfg.gate);
             let groups = collapse_loci_groups(&iso);
             iso.iter()
