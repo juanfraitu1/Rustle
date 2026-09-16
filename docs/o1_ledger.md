@@ -22014,8 +22014,10 @@ than adjusting `TIE_PARTNER_MERGE_DISTANCE_BP`/`TIE_PARTNER_MIN_SUPPORT` first, 
 3. **The site is a singleton in this BAM.** Scanned every record overlapping `NC_073242.2:21,672,000-
    21,677,000` (a 5kb window, well past the 500bp `TIE_PARTNER_MERGE_DISTANCE_BP` on both sides) with
    reference-consumed length <=2,000bp (a short local placement comparable to the known read's 193bp, not
-   one of the many multi-megabase spliced-isoform reads merely passing through this coordinate as an intron):
-   exactly one record, `SRR27178663.557589` itself. Three other short-ish records start nearby
+   one of the many multi-megabase spliced-isoform reads merely passing through this coordinate as an intron),
+   restricted to primary alignments (this project's own standing `-F 2308` convention — the unfiltered window
+   has 9 such records once secondary/supplementary alignments of the same few read names are included):
+   exactly one primary record, `SRR27178663.557589` itself. Three other short-ish records start nearby
    (`SRR27438212.8385497` at 21,673,668, AS=981; `SRR27438212.1350174` at 21,673,707, AS=1527;
    `SRR27438212.10263969` at 21,673,723, AS=1102) but checking each one's FULL placement set shows none is
    AS-tied there — each has a strictly higher AS elsewhere (1141 at 18,274,555; 1835 at 36,033,082; 1142 at
@@ -22025,8 +22027,10 @@ than adjusting `TIE_PARTNER_MERGE_DISTANCE_BP`/`TIE_PARTNER_MIN_SUPPORT` first, 
    working exactly as designed, not a bug.
 4. Cross-checked §6l5's second cited GWFAM55 example (`SRR27438212.6728466`, AS=1543 tied between two
    out-of-catalog positions, 99,243,914 and 99,666,047, both near copy 7): also absent from
-   `run.discovered_copies.tsv`, and also a singleton on direct BAM inspection — its own full placement set
-   was pulled and no other read ties at either exact coordinate.
+   `run.discovered_copies.tsv`, and also a singleton on direct BAM inspection — its placement set within the
+   swept `--regions` window (`NC_073242.2:15582833-100189113`) was pulled and no other read ties at either
+   exact coordinate. (This read has two further placements outside that window, both with strictly higher
+   AS — legitimately out of scope for a region-restricted run, not evidence against the tie inside it.)
 
 **Not an off-by-a-small-margin issue.** Checked explicitly, per the brief's instruction, whether this was a
 "550bp vs 500bp"-style near-miss before considering any constant change: it is not. The shortfall is 1
