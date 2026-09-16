@@ -26,9 +26,10 @@ use rustle::vg_family::linearize::LinearizeCertificate;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
-    assemble_gate, merge_fuzzy_skeletons, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region,
-    BamIndexCache, BamRead, PrimaryRead, GATE_MIN_READS,
+    assemble_gate, assemble_gate_with, merge_fuzzy_skeletons, pass1_skeletons, reads_in_region,
+    tied_secondary_reads_in_region, BamIndexCache, BamRead, PrimaryRead, GATE_MIN_READS,
 };
+use rustle::vg_family::gtf_refine::{apply_post_filters, fragment_supported_spliced, strict_chain_strand};
 use rustle::vg_family::catalog_input::{
     group_families, parse_copies_fa, parse_copies_tsv, to_colocated, CatalogFamily, SeqIndex,
 };
@@ -47,6 +48,33 @@ fn re_attr(attrs: &str, key: &str) -> Option<String> {
     let i = attrs.find(&pat)? + pat.len();
     let j = attrs[i..].find('"')? + i;
     Some(attrs[i..j].to_string())
+}
+
+/// Parsed `--gtf-refine` components. `Default` (every field `false`) is the byte-identical unset path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct GtfRefine {
+    strand: bool,
+    subset: bool,
+    mono: bool,
+    fragsupport: bool,
+}
+
+/// Parses `--gtf-refine`'s comma-separated component list. Unknown components are a hard error.
+fn parse_gtf_refine(items: &[String]) -> Result<GtfRefine> {
+    let mut r = GtfRefine::default();
+    for it in items.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        match it {
+            "strand" => r.strand = true,
+            "subset" => r.subset = true,
+            "mono" => r.mono = true,
+            "fragsupport" => r.fragsupport = true,
+            "all" => r = GtfRefine { strand: true, subset: true, mono: true, fragsupport: true },
+            other => anyhow::bail!(
+                "--gtf-refine: unknown component '{other}' (expected strand, subset, mono, fragsupport, all)"
+            ),
+        }
+    }
+    Ok(r)
 }
 
 /// One assembled isoform (FLAIR-style intron-chain collapse), kept for the optional `--gtf` emit. `gene_tid`
@@ -198,6 +226,14 @@ struct Args {
     /// default off. Pair with `bench/igv_tracks.py` for the copy-coloured reads.
     #[arg(long, default_value_t = false)]
     gtf: bool,
+    /// Opt-in refinement of `--gtf`'s de novo isoforms (docs/superpowers/specs/2026-09-16-gtf-refine-and-dedup-fix-design.md).
+    /// Comma-separated components: `strand` (single-exon strand from read orientation, margin 0.90),
+    /// `subset` (drop own truncated sub-chain models), `mono` (drop single-exon models inside an own spliced
+    /// exon or at spliced-read-dominated loci), `fragsupport` (count 3'-anchored truncated reads toward a
+    /// chain's support, assign-or-abstain), or `all`. Annotation-free. Requires `--gtf`. Default: none
+    /// (byte-identical). Thresholds are frozen by the spec; not validated until the held-out chr17 run.
+    #[arg(long, value_delimiter = ',')]
+    gtf_refine: Vec<String>,
     /// ⭐ §6hn/§6ho (PREREG 95409846): with `--gtf`, emit the GTF O2 BELIEVES. Family isoforms are grouped
     /// across copies by lifting their intron chains through copy-to-copy alignments (minimap2 asm20 on the
     /// copy spans); a group's addresses are the copies with EVIDENCE (a unique mapper whose primary lies
@@ -2056,6 +2092,13 @@ fn main() -> Result<()> {
     if args.igv {
         args.dump_psv = true; // --igv is a bundle: the PSV matrix feeds bench/igv_tracks.py -> tagged BAM + PSV VCF
     }
+    // --gtf-refine: validated up front (before any BAM read or region processed), same spirit as the
+    // --copies-fa/--flag-missing-copies checks in `load_supplied_families` -- a misspelled component or a
+    // flag given without its prerequisite fails in the first instant rather than after an hour of alignment.
+    let gtf_refine = parse_gtf_refine(&args.gtf_refine)?;
+    if gtf_refine != GtfRefine::default() && !args.gtf {
+        anyhow::bail!("--gtf-refine is only meaningful with --gtf");
+    }
     // --gff: parsed ONCE before the sweep into the annotation axis intervals (None => every in-genome copy in
     // the --phase copy graph stays AnnotationUnknown, byte-identical to the no-flag path).
     let annotation: Option<Vec<(String, u64, u64)>> =
@@ -2652,7 +2695,21 @@ fn main() -> Result<()> {
         // FLAIR-style isoform assembly for the optional GTF (intron-chain collapse -> gate -> gene grouping).
         // Recomputed here only under --gtf (cheap: pass1/gate are ~0s); independent of the assignment.
         let transcripts: Vec<TranscriptRec> = if args.gtf {
-            let skeletons = pass1_skeletons(&primary, cfg.pass1_min_reads);
+            // --gtf-refine fragsupport: unspliced (and footprint) nodes exactly as before; spliced chains from
+            // every >=1-read chain plus assign-or-abstain 3'-anchored fragments (gtf_refine.rs).
+            let skeletons = if gtf_refine.fragsupport {
+                let mut sk: Vec<_> = pass1_skeletons(&primary, cfg.pass1_min_reads)
+                    .into_iter()
+                    .filter(|s| s.introns.is_empty() || s.footprint)
+                    .collect();
+                let all_chains = pass1_skeletons(&primary, 1);
+                sk.extend(fragment_supported_spliced(&all_chains, &primary, cfg.pass1_min_reads, |c, ch| {
+                    strict_chain_strand(&genome, c, ch)
+                }));
+                sk
+            } else {
+                pass1_skeletons(&primary, cfg.pass1_min_reads)
+            };
             // Opt-in (RUSTLE_JUNCTION_FUZZ_BP, default off): merge skeletons whose intron chains match in
             // count and differ only by a pre-registered per-junction tolerance --
             // docs/PREREG_junction_fuzz_2026-09-15.md, docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md.
@@ -2670,7 +2727,16 @@ fn main() -> Result<()> {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0);
             let skeletons = if fuzz_bp > 0 { merge_fuzzy_skeletons(skeletons, fuzz_bp) } else { skeletons };
-            let iso = assemble_gate(&skeletons, &genome, &cfg.gate);
+            let iso = if gtf_refine.strand {
+                assemble_gate_with(&skeletons, &genome, &cfg.gate, true, 0.90)
+            } else {
+                assemble_gate(&skeletons, &genome, &cfg.gate)
+            };
+            let iso = if gtf_refine.subset || gtf_refine.mono {
+                apply_post_filters(iso, &primary, gtf_refine.subset, gtf_refine.mono)
+            } else {
+                iso
+            };
             let groups = collapse_loci_groups(&iso);
             iso.iter()
                 .enumerate()
@@ -5614,5 +5680,15 @@ mod tests {
     fn dedup_never_merges_across_chromosomes() {
         let w = vec![vec![pr_read("c1", 100, 200, vec![])], vec![pr_read("c2", 100, 200, vec![])]];
         assert_eq!(dedup_primary_across_windows(w, false).len(), 2);
+    }
+
+    #[test]
+    fn gtf_refine_parses_components_all_and_rejects_unknown() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(parse_gtf_refine(&s(&[])).unwrap(), GtfRefine::default());
+        let r = parse_gtf_refine(&s(&["strand", "mono"])).unwrap();
+        assert!(r.strand && r.mono && !r.subset && !r.fragsupport);
+        assert_eq!(parse_gtf_refine(&s(&["all"])).unwrap(), GtfRefine { strand: true, subset: true, mono: true, fragsupport: true });
+        assert!(parse_gtf_refine(&s(&["bogus"])).is_err());
     }
 }

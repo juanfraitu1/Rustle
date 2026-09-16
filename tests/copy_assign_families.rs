@@ -495,3 +495,18 @@ fn junction_fuzz_off_state_parity_unset_vs_explicit_zero() {
         assert_eq!(a, b, "RUSTLE_JUNCTION_FUZZ_BP unset vs explicit 0 must be byte-identical for .{ext}");
     }
 }
+
+/// `--gtf-refine` is validated up front: it needs `--gtf`, and an unknown component is an error. Its ON-state
+/// behaviour is not exercised here -- this fixture's `--gtf` emits 0 rows -- it is proven by the gtf_refine
+/// unit tests and the chr20 fidelity anchors (docs/superpowers/plans/2026-09-16-gtf-refine-and-dedup-fix.md, Task 6).
+#[test]
+fn gtf_refine_requires_gtf_and_known_components() {
+    let d = scratch("gtf_refine_cli");
+    let (o, _) = run(&d, &["--no-refine", "--gtf-refine", "all"]);
+    assert!(!o.status.success(), "--gtf-refine without --gtf must fail");
+    assert!(stderr(&o).contains("--gtf-refine is only meaningful with --gtf"), "{}", stderr(&o));
+    let (o, _) = run(&d, &["--no-refine", "--gtf", "--gtf-refine", "bogus"]);
+    assert!(!o.status.success(), "an unknown component must fail");
+    let (o, _) = run(&d, &["--no-refine", "--gtf", "--gtf-refine", "all"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+}
