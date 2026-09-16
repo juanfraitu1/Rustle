@@ -21,7 +21,7 @@ this file must list exactly the module set.
 | tag | count |
 |---|---|
 | **SHIPPED-DEFAULT** | 14 |
-| **OPT-IN** | 13 |
+| **OPT-IN** | 14 |
 | **OTHER-BINARY** | 11 |
 | **REFUTED** | 1 |
 | **TEST-ONLY** | 12 |
@@ -48,7 +48,7 @@ Reachable from a shipped binary with **no env var and no non-default flag**. Thi
 | `readonly_copy_number.rs` | - for the chi_h leg. The depth_cn leg is gated by `--lambda-global` (src/bin/copy_assign.rs:322 doc, consumed  | MEASURED: src/bin/copy_assign.rs:1983 calls chi_h_with_junctions in the unconditional famcn_rows.push loop; src/bin/copy_assign.rs:1354 comments the table as "always emitted" and copy_assign.rs:2071 writes <out>.famcn_readonly.tsv |
 | `rescue_pipeline.rs` | - (no flag, no env var). Suppressed only when copy_assign is run with --families (src/bin/copy_assign.rs:452,  | MEASURED: thin_loci at src/rustle/vg_family/denovo_pipeline.rs:2175 and rescue_thin_loci_iterative at :2176, inside detect_and_assign's per-family `for cf in colocated` loop (prod; test mod starts at denovo_pipeline.rs:7362); dete |
 
-## OPT-IN (13)
+## OPT-IN (14)
 
 Built and wired, but behind a flag that **defaults off**. An arm, not the method — always name the flag when reporting a result from one.
 
@@ -56,6 +56,7 @@ Built and wired, but behind a flag that **defaults off**. An arm, not the method
 |---|---|---|
 | `absent_copy.rs` | --absent-copies (src/bin/copy_assign.rs:255-256, default_value_t = false); second route --vg-realign (src/bin/ | MEASURED: the only production call to absent_copy::admit_candidate is src/rustle/vg_family/denovo_pipeline.rs:2252, guarded by `if absent_copies {` at denovo_pipeline.rs:2233; the second entry admit_novel_pools (denovo_pipeline.rs |
 | `collapse_enumerate.rs` | --collapse-enumerate (src/bin/gw_family_catalog.rs:177-178, default_value_t = false) or env RUSTLE_COLLAPSE_EN | MEASURED: `if cfg.collapse_enumerate {` at denovo_pipeline.rs:3852 guards the readmit_locus call at :3853; the enclosing branch at :3841 requires collapse_enumerate // collapse_expressed // dna_family_fallback, and DenovoConfig::d |
+| `copy_discovery.rs` | --discover-copies (src/bin/copy_assign.rs:352-353, `#[arg(long, default_value_t = false)] discover_copies: bool`) | MEASURED: every production reference to `copy_discovery::` sits inside an `if args.discover_copies {` block in src/bin/copy_assign.rs -- `tie_partner_placements` at copy_assign.rs:2917 and `discover_copies_for_family` (copy_assign.rs:1442, which calls `cluster_tie_partners`) at copy_assign.rs:2918, both under the gate opened at copy_assign.rs:2912; the `<out>.discovered_copies.tsv` writer at copy_assign.rs:4503-4521 is gated by the same flag. Unset, the block short-circuits to `Vec::new()` (copy_assign.rs:2919-2921), no file is written, and output is byte-identical (regression: `discover_copies_off_by_default_is_byte_identical`, tests/copy_assign_families.rs). |
 | `copy_graph.rs` | --phase (src/bin/copy_assign.rs:235-236, default_value_t = false) | MEASURED: the only production construction sites are build_copy_graph at src/bin/copy_assign.rs:1958 and build_exon_graph at :1973, both inside the `if args.phase {` block opened at src/bin/copy_assign.rs:1902; the <out>.exon.gfa  |
 | `em_copy_assign.rs` | `--em` (src/bin/copy_assign.rs:310-311, `#[arg(long, default_value_t = false)]`) OR `--vg-realign` (src/bin/co | MEASURED: em_assign_family has exactly two production call sites — src/bin/copy_assign.rs:1853, wrapped in `if args.em {` at copy_assign.rs:1852; and denovo_pipeline.rs:1586 via recompute_realign_abundance, whose sole production c |
 | `from_genome.rs` | `--from-genome <BED>` (src/bin/gw_family_catalog.rs:38-39, `#[arg(long)] from_genome: Option<String>`, default | MEASURED: the sole call site of genome_reps/GenomeRepParams in all of src/ is src/bin/gw_family_catalog.rs:628, inside `if let Some(win_bed) = args.from_genome.as_deref() {` at gw_family_catalog.rs:627. The three other grep hits ( |
