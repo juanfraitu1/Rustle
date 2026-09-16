@@ -123,6 +123,10 @@ struct RegionWork {
     o3_raw_pairs: Vec<rustle::vg_family::o3_flag_pass::RawPair>,
     /// O3: candidate orphan-read loci outside every unit of this family. Empty unless `--flag-missing-copies`.
     o3_orphan_loci: Vec<rustle::vg_family::o3_flag_pass::OrphanLocus>,
+    /// Read-seeded copy discovery: candidate new copies clustered from AS-tied reads' out-of-catalog
+    /// placements. Empty unless `--discover-copies`. Report only (Task 4 drains this to
+    /// `<out>.discovered_copies.tsv`) -- never feeds back into this run's own catalog or assignments.
+    discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy>,
 }
 
 #[derive(Parser, Debug)]
@@ -341,6 +345,12 @@ struct Args {
     /// genome position). The raw per-molecule evidence behind each assignment, for the proof visualization.
     #[arg(long, default_value_t = false)]
     dump_psv: bool,
+    /// Cluster AS-tied reads' out-of-catalog placements into candidate new copies, written to
+    /// `<out>.discovered_copies.tsv`. Report only -- never mutates the input catalog or this run's own
+    /// assignments (two-pass: inspect the report, append accepted rows to the catalog by hand, re-run).
+    /// Default off; unset, output is byte-identical to a run without this flag.
+    #[arg(long, default_value_t = false)]
+    discover_copies: bool,
     /// One-flag IGV bundle: implies `--dump-psv` (the PSV genotype matrix), so a subsequent
     /// `bench/igv_tracks.py --assignments <out>.assignments.tsv --bam <bam> --regions <regions> --out <out>`
     /// emits `<out>.tagged.bam` (reads coloured by assigned copy), `<out>.copies.bed`, and `<out>.psv.vcf`
@@ -2840,7 +2850,33 @@ fn main() -> Result<()> {
         } else {
             (Vec::new(), Vec::new())
         };
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci })
+        // Read-seeded copy discovery (opt-in, --discover-copies): cluster AS-tied reads' out-of-catalog
+        // placements into candidate new copies. Gated the same way as the O3 block above -- empty Vec, no
+        // allocation, when the flag is unset.
+        let discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy> = if args.discover_copies {
+            let tied = rustle::vg_family::copy_discovery::tie_partner_placements(&bam_reads);
+            let empty: Vec<ColocatedFamily> = Vec::new();
+            let colocated = supplied.as_ref().unwrap_or(&empty);
+            fams.iter()
+                .flat_map(|fa| {
+                    let existing_copies: Vec<(String, u64, u64, String)> = colocated
+                        .iter()
+                        .find(|cf| cf.family_id == fa.family_id)
+                        .map(|cf| cf.copies.iter().map(|c| (c.chrom.clone(), c.start, c.end, c.tid.clone())).collect())
+                        .unwrap_or_default();
+                    rustle::vg_family::copy_discovery::cluster_tie_partners(
+                        &tied,
+                        &fa.family_id,
+                        &existing_copies,
+                        rustle::vg_family::copy_discovery::TIE_PARTNER_MERGE_DISTANCE_BP,
+                        rustle::vg_family::copy_discovery::TIE_PARTNER_MIN_SUPPORT,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -2884,7 +2920,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci } = work;
+            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered: _discovered } = work;
             // O3 Phase 2 (Task 6): fold this region's raw pair stats + orphan loci into the genome-wide
             // vectors. Nothing is written here -- the Bonferroni threshold in `finalize_flags` needs every
             // region's pairs first, so `family_join.tsv`/`o3_candidate_loci.tsv` are written once, after
