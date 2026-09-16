@@ -21,7 +21,7 @@ this file must list exactly the module set.
 | tag | count |
 |---|---|
 | **SHIPPED-DEFAULT** | 14 |
-| **OPT-IN** | 14 |
+| **OPT-IN** | 15 |
 | **OTHER-BINARY** | 11 |
 | **REFUTED** | 1 |
 | **TEST-ONLY** | 12 |
@@ -48,7 +48,7 @@ Reachable from a shipped binary with **no env var and no non-default flag**. Thi
 | `readonly_copy_number.rs` | - for the chi_h leg. The depth_cn leg is gated by `--lambda-global` (src/bin/copy_assign.rs:322 doc, consumed  | MEASURED: src/bin/copy_assign.rs:1983 calls chi_h_with_junctions in the unconditional famcn_rows.push loop; src/bin/copy_assign.rs:1354 comments the table as "always emitted" and copy_assign.rs:2071 writes <out>.famcn_readonly.tsv |
 | `rescue_pipeline.rs` | - (no flag, no env var). Suppressed only when copy_assign is run with --families (src/bin/copy_assign.rs:452,  | MEASURED: thin_loci at src/rustle/vg_family/denovo_pipeline.rs:2175 and rescue_thin_loci_iterative at :2176, inside detect_and_assign's per-family `for cf in colocated` loop (prod; test mod starts at denovo_pipeline.rs:7362); dete |
 
-## OPT-IN (14)
+## OPT-IN (15)
 
 Built and wired, but behind a flag that **defaults off**. An arm, not the method — always name the flag when reporting a result from one.
 
@@ -60,6 +60,7 @@ Built and wired, but behind a flag that **defaults off**. An arm, not the method
 | `copy_graph.rs` | --phase (src/bin/copy_assign.rs:235-236, default_value_t = false) | MEASURED: the only production construction sites are build_copy_graph at src/bin/copy_assign.rs:1958 and build_exon_graph at :1973, both inside the `if args.phase {` block opened at src/bin/copy_assign.rs:1902; the <out>.exon.gfa  |
 | `em_copy_assign.rs` | `--em` (src/bin/copy_assign.rs:310-311, `#[arg(long, default_value_t = false)]`) OR `--vg-realign` (src/bin/co | MEASURED: em_assign_family has exactly two production call sites — src/bin/copy_assign.rs:1853, wrapped in `if args.em {` at copy_assign.rs:1852; and denovo_pipeline.rs:1586 via recompute_realign_abundance, whose sole production c |
 | `from_genome.rs` | `--from-genome <BED>` (src/bin/gw_family_catalog.rs:38-39, `#[arg(long)] from_genome: Option<String>`, default | MEASURED: the sole call site of genome_reps/GenomeRepParams in all of src/ is src/bin/gw_family_catalog.rs:628, inside `if let Some(win_bed) = args.from_genome.as_deref() {` at gw_family_catalog.rs:627. The three other grep hits ( |
+| `gtf_refine.rs` | `--gtf-refine` (wired in Task 5 of docs/superpowers/plans/2026-09-16-gtf-refine-and-dedup-fix.md); reached only from src/bin/copy_assign.rs's `if args.gtf` block | PLANNED: wiring harness and integration tests land in Task 5 and later tasks in the same plan; this module provides `strict_chain_strand` and `fragment_supported_spliced` functions for opt-in refinement of GTF de novo isoform sets. |
 | `genome_projection.rs` | `--enumerate-copies` (src/bin/gw_family_catalog.rs:172-173, default false) or `--min-identity 0.98` (gw_family | MEASURED: in gw_family_catalog the projection is fenced by `let enumerate = (args.enumerate_copies // args.min_identity == Some(0.98)) && o1_homology;` at gw_family_catalog.rs:930, with the two project_families_batch calls at :949 |
 | `hidden_copy.rs` | `--collapse-enumerate` (src/bin/gw_family_catalog.rs:177-178, `#[arg(long, default_value_t = false)]`) | MEASURED: detect_hidden_copy's only production caller in src/ is collapse_enumerate.rs:97 inside `pub fn readmit_locus` (collapse_enumerate.rs:91); readmit_locus's only production caller is denovo_pipeline.rs:3853, inside `if cfg. |
 | `linearize.rs` | --linearize / --linearize-gate, both `#[arg(long, default_value_t = false)]` at src/bin/copy_assign.rs:280-281 | MEASURED: the only production call, `super::linearize::linearize_certificate(...)` at src/rustle/vg_family/denovo_pipeline.rs:1838, is reached only through `linearize_cert_if_enabled` (denovo_pipeline.rs:1846) inside the `if do_li

@@ -66,6 +66,7 @@ pub mod catalog_input; // O1->O2 FILE contract: parse a gw_family_catalog copies
 pub mod shared_definition; // OPT-IN RUSTLE_SHARED_DEFINITION: the shared family definition (seeded_family_definition.md §0★★) on the homology catalog: gene-level read-supported nodes + guided edge finders + triangle-supported leaders.
 pub mod seed_projection; // `--seed`: a QUERY over the EMITTED catalog (the block containing s), never a term in the definition; the node set stays seed-free.
 pub mod copy_discovery; // Discovery of candidate gene-family copies from read alignment ties.
+pub mod gtf_refine; // Opt-in refinement of copy_assign --gtf's de novo isoform set (--gtf-refine).
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
