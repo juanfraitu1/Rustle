@@ -453,3 +453,34 @@ fn copies_fa_without_families_is_an_error() {
     assert!(!o.status.success());
     assert!(stderr(&o).contains("only meaningful with --families"), "{}", stderr(&o));
 }
+
+// ---- 4. RUSTLE_JUNCTION_FUZZ_BP regression --------------------------------------------------------
+
+/// `RUSTLE_JUNCTION_FUZZ_BP` unset and explicitly `0` are the same "off" state -- both must produce
+/// byte-identical output. This is the directly-testable form of "unset is a no-op": the fixture this file
+/// uses (`same_chrom_supplement`) is small enough that a real merge may or may not trigger at any given
+/// tolerance, but unset-vs-zero must ALWAYS agree regardless, since both resolve to `tolerance_bp == 0`
+/// (`merge_fuzzy_skeletons`'s own proven no-op, Task 2) before the merge function is ever called.
+#[test]
+fn junction_fuzz_unset_and_explicit_zero_are_byte_identical() {
+    let d_unset = scratch("junction_fuzz_unset");
+    let (o_unset, out_unset) = run(&d_unset, &["--no-refine", "--gtf"]);
+    assert!(o_unset.status.success(), "unset run failed:\n{}", stderr(&o_unset));
+
+    let d_zero = scratch("junction_fuzz_zero");
+    let out_s_zero = d_zero.join("o").to_str().expect("utf-8 path").to_string();
+    let o_zero = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
+        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+        .args(["--region", "c1:200-600", "--out", &out_s_zero])
+        .args(["--no-refine", "--gtf"])
+        .env("RUSTLE_JUNCTION_FUZZ_BP", "0")
+        .output()
+        .expect("copy_assign failed to spawn");
+    assert!(o_zero.status.success(), "explicit-zero run failed:\n{}", String::from_utf8_lossy(&o_zero.stderr));
+
+    for ext in ["assignments.tsv", "families.tsv", "quant.tsv", "gtf"] {
+        let a = std::fs::read(format!("{out_unset}.{ext}")).unwrap_or_else(|e| panic!("read {out_unset}.{ext}: {e}"));
+        let b = std::fs::read(format!("{out_s_zero}.{ext}")).unwrap_or_else(|e| panic!("read {out_s_zero}.{ext}: {e}"));
+        assert_eq!(a, b, "RUSTLE_JUNCTION_FUZZ_BP unset vs explicit 0 must be byte-identical for .{ext}");
+    }
+}
