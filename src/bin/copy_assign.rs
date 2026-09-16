@@ -2146,6 +2146,10 @@ fn main() -> Result<()> {
     // drained, so nothing downstream of `compute()` can act on these until the loop below finishes.
     let mut o3_all_raw_pairs: Vec<rustle::vg_family::o3_flag_pass::RawPair> = Vec::new();
     let mut o3_all_orphan_loci: Vec<rustle::vg_family::o3_flag_pass::OrphanLocus> = Vec::new();
+    // `--discover-copies`: read-seeded candidate copies found while scanning each region, accumulated the
+    // same way as the O3 vectors above -- `RegionWork.discovered` is already gated on `args.discover_copies`
+    // at the `compute()` call site, so this just drains whatever each region produced.
+    let mut all_discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy> = Vec::new();
     // `--families`: one row per ASSIGNED copy, naming the catalog row it came from. The explicit join
     // between `<out>.quant.tsv` and the O1 `copies.tsv`, and the place a copy that failed to survive
     // assignment would be visible as a missing row.
@@ -2920,13 +2924,14 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered: _discovered } = work;
+            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered } = work;
             // O3 Phase 2 (Task 6): fold this region's raw pair stats + orphan loci into the genome-wide
             // vectors. Nothing is written here -- the Bonferroni threshold in `finalize_flags` needs every
             // region's pairs first, so `family_join.tsv`/`o3_candidate_loci.tsv` are written once, after
             // this whole drain loop finishes.
             o3_all_raw_pairs.extend(o3_raw_pairs);
             o3_all_orphan_loci.extend(o3_orphan_loci);
+            all_discovered.extend(discovered);
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -4451,6 +4456,25 @@ fn main() -> Result<()> {
             )?;
         }
         eprintln!("[copy_assign] wrote {}.o3_candidate_loci.tsv ({} loci)", args.out, o3_all_orphan_loci.len());
+    }
+
+    // `--discover-copies`: read-seeded candidate copies accumulated across every region above. Report only
+    // -- never mutates the input catalog or this run's own assignment output. Independent of `--families`/
+    // `catalog_index`, same as the O3 orphan-loci block above.
+    if args.discover_copies {
+        let mut dh = std::fs::File::create(format!("{}.discovered_copies.tsv", args.out))?;
+        writeln!(dh, "family_id\tchrom\tstart\tend\tn_supporting_reads\tread_names\tnearest_copy_tid\tnearest_copy_distance")?;
+        for d in &all_discovered {
+            writeln!(
+                dh, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                d.family_id, d.chrom, d.start, d.end, d.n_supporting_reads,
+                d.read_names.join(","), d.nearest_copy_tid, d.nearest_copy_distance
+            )?;
+        }
+        eprintln!(
+            "[copy_assign] --discover-copies: {} candidate cop{} -> {}.discovered_copies.tsv",
+            all_discovered.len(), if all_discovered.len() == 1 { "y" } else { "ies" }, args.out
+        );
     }
 
     // FACULTATIVE long-read phasing output (dependency-free): phase set (PS) per family, each haplotype's
