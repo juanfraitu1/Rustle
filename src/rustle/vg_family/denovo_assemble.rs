@@ -341,6 +341,131 @@ footprint: false,
     skels
 }
 
+/// Merge skeletons whose intron chains are structurally identical (same intron count) and differ only by
+/// <= `tolerance_bp` at every corresponding donor/acceptor position. Single-linkage: if A merges with B
+/// and B merges with C, all three end up in one group even if A and C alone exceed the tolerance (same
+/// chaining pattern as `cluster_tie_partners`, `src/rustle/vg_family/copy_discovery.rs`). Pure function
+/// over `Skeleton` values -- no BAM/env access, unit-testable with synthetic skeletons.
+///
+/// `tolerance_bp == 0` is an explicit no-op (returns `skeletons` unchanged) -- every opt-in mechanism in
+/// this codebase must be byte-identical to "not called" at its off value.
+///
+/// A `footprint: true` skeleton's `introns` are uncovered READ-COVERAGE gaps, not real splice junctions
+/// (see `Skeleton::footprint`'s own doc comment) -- jitter tolerance is meaningless for it, so it is never
+/// merged with anything, including another footprint.
+///
+/// ⚠ MEASURED NET-NEGATIVE at its pre-registered tolerance (672bp, `docs/PREREG_junction_fuzz_2026-09-15.md`)
+/// on real chr20 data: matching intron chains 345 -> 284, matching transcripts 347 -> 286 vs the baseline
+/// (`bench/CHR20_ASSEMBLER_COMPARISON.md`'s "fuzzy junction merging" follow-up section). At that tolerance
+/// the merge more often combines genuinely DIFFERENT real transcripts than it reconciles fragments of the
+/// same one. Stays opt-in / default off for this reason, not merely "untested" -- do not enable it without
+/// re-registering a new tolerance via a fresh, separate experiment.
+pub fn merge_fuzzy_skeletons(skeletons: Vec<Skeleton>, tolerance_bp: u64) -> Vec<Skeleton> {
+    if tolerance_bp == 0 {
+        return skeletons;
+    }
+    fn within_tol(a: &Skeleton, b: &Skeleton, tol: u64) -> bool {
+        !a.footprint
+            && !b.footprint
+            && a.chrom == b.chrom
+            && !a.introns.is_empty()
+            && a.introns.len() == b.introns.len()
+            // At the actual wired call site (`pass1_skeletons` -> `pass1_skeletons_robust_with`, which
+            // builds every skeleton this function ever sees in production), `read_strand` is ALWAYS
+            // `Some(majority_read_strand(..))` -- see that function's construction of `Skeleton` values --
+            // so this check is fully LIVE there: it genuinely blocks merges between known-opposite-strand
+            // skeletons, not a mostly-dormant fallback. The `_ => true` arm exists to safely handle OTHER
+            // producers of `Skeleton` values elsewhere in this codebase that this function might also be
+            // called with in the future (e.g. `tied_seed_skeletons`'s spliced branch, which sets `None`
+            // because a tied-secondary read's strand comes from junction motifs, never read orientation) --
+            // an absent signal on either side must not block the merge there; a KNOWN disagreement must.
+            && match (a.read_strand, b.read_strand) {
+                (Some(sa), Some(sb)) => sa == sb,
+                _ => true,
+            }
+            && a.introns.iter().zip(&b.introns).all(|(x, y)| {
+                x.0.abs_diff(y.0) <= tol && x.1.abs_diff(y.1) <= tol
+            })
+    }
+    let n = skeletons.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut [usize], x: usize) -> usize {
+        if parent[x] != x {
+            parent[x] = find(parent, parent[x]);
+        }
+        parent[x]
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if within_tol(&skeletons[i], &skeletons[j], tolerance_bp) {
+                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                if ri != rj {
+                    parent[ri] = rj;
+                }
+            }
+        }
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for i in 0..n {
+        let r = find(&mut parent, i);
+        groups.entry(r).or_default().push(i);
+    }
+    groups
+        .into_values()
+        .map(|idxs| {
+            if idxs.len() == 1 {
+                return skeletons[idxs[0]].clone();
+            }
+            let members: Vec<&Skeleton> = idxs.iter().map(|&i| &skeletons[i]).collect();
+            let n_introns = members[0].introns.len();
+            let mut merged_introns = Vec::with_capacity(n_introns);
+            for slot in 0..n_introns {
+                // most-common EXACT value at this slot, weighted by each skeleton's own n_reads;
+                // ties broken by the lowest coordinate (never an average/invented coordinate).
+                let mut counts: std::collections::BTreeMap<(u64, u64), u32> = std::collections::BTreeMap::new();
+                for m in &members {
+                    *counts.entry(m.introns[slot]).or_insert(0) += m.n_reads;
+                }
+                let mut items: Vec<((u64, u64), u32)> = counts.into_iter().collect();
+                items.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+                merged_introns.push(items[0].0);
+            }
+            // representative for chrom/start/end/read_strand: more reads wins, ties -> lower start.
+            let mut reps: Vec<&Skeleton> = members.clone();
+            reps.sort_by(|a, b| b.n_reads.cmp(&a.n_reads).then(a.start.cmp(&b.start)));
+            let rep = reps[0];
+            // MONOTONICITY GUARD. The per-slot vote above picks each slot's winner independently, so slot
+            // `i` can come from one member and slot `i+1` from another. Each member's OWN chain is always
+            // monotonic (a real read's introns never overlap or go backwards), but nothing guarantees the
+            // CROSS-member combination is: if the two winning members disagree about where the shared
+            // intron pair sits, the synthesized chain can invert (e.g. slot 1's start landing before slot
+            // 0's end) -- an exon boundary like `(2500, 2400)` that no single input skeleton, and no real
+            // read, ever produced. Left unchecked this does not panic: `GenomeIndex::fetch_sequence`
+            // returns `None` for `start >= end`, `build_spliced_seq` propagates that via `?`, and
+            // `assemble_gate` just `continue`s past a `None` result -- silently discarding the whole merged
+            // transcript with zero diagnostic. Guard here instead: validate the synthesized chain is
+            // strictly well-formed (`start < end` per intron, non-decreasing / non-overlapping across
+            // slots), and if not, fall back to the highest-n_reads member's OWN original intron chain (a
+            // chain a real read actually observed) rather than ship an invented, invalid one.
+            let synthesized_is_valid = merged_introns.iter().all(|&(s, e)| s < e)
+                && merged_introns.windows(2).all(|w| w[1].0 >= w[0].1);
+            let merged_introns = if synthesized_is_valid { merged_introns } else { rep.introns.clone() };
+            Skeleton {
+                chrom: rep.chrom.clone(),
+                start: rep.start,
+                end: rep.end,
+                n_reads: members.iter().map(|m| m.n_reads).sum(),
+                introns: merged_introns,
+                tied_seeded: members.iter().any(|m| m.tied_seeded),
+                read_strand: rep.read_strand,
+                footprint: false, // guaranteed by within_tol excluding footprints from ever reaching here
+                read_rev: members.iter().map(|m| m.read_rev).sum(),
+                read_tot: members.iter().map(|m| m.read_tot).sum(),
+            }
+        })
+        .collect()
+}
+
 /// Is the footprint-node pass enabled? `RUSTLE_FOOTPRINT_NODES=1`; unset = OFF = byte-identical.
 pub fn footprint_nodes_enabled() -> bool {
     matches!(std::env::var("RUSTLE_FOOTPRINT_NODES"), Ok(v) if v != "0" && !v.is_empty())
@@ -3018,5 +3143,134 @@ footprint: false,
             PrimaryRead { chrom: "chr2".into(), ref_start: 5, ref_end: 400, introns: vec![(100, 200)], reverse: false },
         ];
         assert_eq!(split_mischained_reads(&reads, &HashMap::new(), 50_000, 3), reads);
+    }
+
+    #[test]
+    fn fuzzy_merge_combines_skeletons_within_tolerance() {
+        let mk = |start: u64, end: u64, introns: Vec<(u64, u64)>, n_reads: u32| Skeleton {
+            chrom: "chr1".into(), start, end, n_reads, introns, tied_seeded: false,
+            read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: n_reads,
+        };
+        let a = mk(1000, 5000, vec![(1500, 2500), (3000, 4000)], 5);
+        let b = mk(1003, 5000, vec![(1502, 2497), (3001, 3998)], 3); // every junction within 5bp of a's
+        let out = merge_fuzzy_skeletons(vec![a, b], 5);
+        assert_eq!(out.len(), 1, "within-tolerance skeletons must merge into one");
+        assert_eq!(out[0].n_reads, 8, "reads sum across the merge");
+        assert_eq!(out[0].introns, vec![(1500, 2500), (3000, 4000)], "the higher-n_reads skeleton's exact junctions win each slot (5 reads > 3)");
+    }
+
+    #[test]
+    fn fuzzy_merge_never_merges_different_intron_counts() {
+        let mk = |introns: Vec<(u64, u64)>| Skeleton {
+            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 5, introns, tied_seeded: false,
+            read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: 5,
+        };
+        let a = mk(vec![(1500, 2500)]);
+        let b = mk(vec![(1500, 2500), (3000, 4000)]); // one more intron than a
+        let out = merge_fuzzy_skeletons(vec![a, b], 1000); // huge tolerance, must still not merge
+        assert_eq!(out.len(), 2, "different intron counts must never merge regardless of tolerance");
+    }
+
+    #[test]
+    fn fuzzy_merge_never_merges_beyond_tolerance() {
+        let mk = |don: u64| Skeleton {
+            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 5, introns: vec![(don, don + 1000)],
+            tied_seeded: false, read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: 5,
+        };
+        let a = mk(1500);
+        let b = mk(1520); // 20bp away
+        let out = merge_fuzzy_skeletons(vec![a, b], 5); // tolerance 5, gap is 20
+        assert_eq!(out.len(), 2, "a junction beyond tolerance must never merge");
+    }
+
+    #[test]
+    fn fuzzy_merge_chains_single_linkage_through_an_intermediate() {
+        let mk = |don: u64| Skeleton {
+            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 1, introns: vec![(don, don + 1000)],
+            tied_seeded: false, read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: 1,
+        };
+        let a = mk(1500);
+        let b = mk(1504); // within 5 of a
+        let c = mk(1508); // within 5 of b, but 8 away from a (beyond tolerance 5 if compared directly)
+        let out = merge_fuzzy_skeletons(vec![a, b, c], 5);
+        assert_eq!(out.len(), 1, "single-linkage chaining must merge all three through b, matching cluster_tie_partners' own tested behavior");
+        assert_eq!(out[0].n_reads, 3);
+    }
+
+    #[test]
+    fn fuzzy_merge_at_zero_tolerance_is_a_no_op() {
+        let mk = |don: u64| Skeleton {
+            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 1, introns: vec![(don, don + 1000)],
+            tied_seeded: false, read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: 1,
+        };
+        let a = mk(1500);
+        let b = mk(1500); // exact duplicate, would merge at ANY tolerance >= 0 by the within_tol test
+        let out = merge_fuzzy_skeletons(vec![a, b], 0);
+        assert_eq!(out.len(), 2, "tolerance_bp=0 must be an explicit no-op, matching every other opt-in flag's off-state contract -- byte-identical to not calling this function at all");
+    }
+
+    #[test]
+    fn fuzzy_merge_never_merges_a_footprint_skeleton() {
+        let mk = |footprint: bool| Skeleton {
+            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 5, introns: vec![(1500, 2500)],
+            tied_seeded: false, read_strand: Some('+'), footprint, read_rev: 0, read_tot: 5,
+        };
+        let a = mk(true);
+        let b = mk(false); // identical introns, but a is a footprint (uncovered-gap semantics, not real junctions)
+        let out = merge_fuzzy_skeletons(vec![a, b], 1000);
+        assert_eq!(out.len(), 2, "a footprint skeleton's 'introns' are read-coverage gaps, not splice junctions -- never eligible for jitter-tolerance merging");
+    }
+
+    #[test]
+    fn fuzzy_merge_respects_known_strand_disagreement_but_unknown_strand_never_blocks() {
+        // Resolves the design spec's open question. At the actual wired call site (`pass1_skeletons` ->
+        // `pass1_skeletons_robust_with`), `read_strand` is ALWAYS `Some(..)`, so the KNOWN-disagreement half
+        // of this test is the one that is live in production. The `None` half covers OTHER producers of
+        // `Skeleton` values this function might also see (e.g. `tied_seed_skeletons`'s spliced branch) --
+        // for those, an absent signal must not block an otherwise-valid merge.
+        let mk = |strand: Option<char>| Skeleton {
+            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 5, introns: vec![(1500, 2500)],
+            tied_seeded: false, read_strand: strand, footprint: false, read_rev: 0, read_tot: 5,
+        };
+        let plus = mk(Some('+'));
+        let minus = mk(Some('-')); // identical introns, but KNOWN opposite strand
+        let out = merge_fuzzy_skeletons(vec![plus, minus], 1000);
+        assert_eq!(out.len(), 2, "two skeletons with KNOWN opposite strand must never merge, even with identical junctions");
+
+        let known = mk(Some('+'));
+        let unknown = mk(None); // strand not yet determined on this side
+        let out2 = merge_fuzzy_skeletons(vec![known, unknown], 1000);
+        assert_eq!(out2.len(), 1, "an absent strand signal on one side must not block a merge on otherwise-matching junctions");
+    }
+
+    #[test]
+    fn fuzzy_merge_falls_back_to_a_real_chain_when_the_per_slot_vote_would_invert() {
+        // Reviewer-supplied 3-skeleton example (final whole-branch review, 2026-09-16). Each skeleton's OWN
+        // intron chain is individually valid and monotonic, and every pair is within tolerance (so all
+        // three merge into one group), but the per-slot majority vote picks slot 0 from `p` (heaviest
+        // there) and slot 1 from the value `q` and `r` happen to SHARE (their combined weight, 4+8=12,
+        // outweighs p's 10 at that slot) -- a cross-member combination no single skeleton ever observed.
+        // Naively that vote would synthesize `[(1000, 2500), (2400, 3000)]`: slot 1 STARTS (2400) before
+        // slot 0 ENDS (2500), an inverted "exon" no real read produced. Unguarded, `fetch_sequence` would
+        // reject it (`start >= end`) and `assemble_gate` would silently drop the merged transcript with no
+        // diagnostic. This asserts the guard instead falls back to `p`'s own real, observed chain verbatim.
+        let mk = |start, end, introns: Vec<(u64, u64)>, n_reads: u32| Skeleton {
+            chrom: "chr1".into(), start, end, n_reads, introns, tied_seeded: false,
+            read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: n_reads,
+        };
+        let p = mk(900, 3100, vec![(1000, 2500), (2600, 3000)], 10); // heaviest overall AND at slot 0
+        let q = mk(1200, 3100, vec![(1300, 1800), (2400, 3000)], 4); // shares slot 1's exact value with r
+        let r = mk(1000, 3100, vec![(1100, 1900), (2400, 3000)], 8); // combined with q: 12 > p's 10 at slot 1
+
+        let out = merge_fuzzy_skeletons(vec![p.clone(), q, r], 800);
+        assert_eq!(out.len(), 1, "all three must merge into one group at this tolerance");
+        assert_eq!(
+            out[0].introns, p.introns,
+            "must fall back to a real member's own observed chain, not the inverted synthesized one"
+        );
+        assert!(
+            out[0].introns.windows(2).all(|w| w[1].0 >= w[0].1),
+            "the emitted chain must be monotonic -- exactly what the fallback guarantees"
+        );
     }
 }
