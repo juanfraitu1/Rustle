@@ -2205,7 +2205,20 @@ pub fn detect_and_assign(
     let skeletons = if supplied {
         Vec::new()
     } else {
-        pass1_skeletons_robust(seed_reads, cfg.pass1_min_reads, cfg.min_terminal_support)
+        let sk = pass1_skeletons_robust(seed_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+        // Opt-in (RUSTLE_JUNCTION_FUZZ_BP, default off): merge skeletons whose intron chains match in count
+        // and differ only by a pre-registered per-junction tolerance -- docs/PREREG_junction_fuzz_2026-09-15.md,
+        // docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md. Zero effect when unset (tolerance
+        // 0 is `merge_fuzzy_skeletons`'s own explicit no-op), so every existing catalog stays byte-identical.
+        let fuzz_bp: u64 = std::env::var("RUSTLE_JUNCTION_FUZZ_BP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        if fuzz_bp > 0 {
+            crate::vg_family::denovo_assemble::merge_fuzzy_skeletons(sk, fuzz_bp)
+        } else {
+            sk
+        }
     };
     // TIED-SEED (opt-in): assemble the tied-seed skeletons into their OWN reps, kept ENTIRELY OUT of the
     // primary `reps` / conflict / refine / assignment pipeline. K=0 tied reps mixed into `reps` add spurious
