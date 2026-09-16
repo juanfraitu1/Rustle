@@ -75,6 +75,38 @@ rules, §6js — every statement is "for NPIP and TBC1D3", never a general order
   gene between EXPR(L) groups (groups only grow or merge). Not guaranteed: clause-4 leaders remain read-order
   dependent; de novo families are not nested inside guided families.
 
+### ⚠ AUDIT AMENDMENT (2026-09-16, after the NPIP/TBC1D3 audit) — conventions later runs must follow
+Found while auditing `bench/LAYER_ORDER_NPIP_TBC1D3.md` (its "Audit notes" section). Each item fixes a place where two
+readings gave different numbers.
+- **Layer universe.** P's universe = every gene of U with a §6ko protein, including coding genes P does not place with a
+  member (they are their own group). D's universe = every gene of U that is a node of a catalog. The group tables must
+  carry these rows. Outside its universe a gene is "not in layer", never a singleton.
+- **Vacuous containment.** c(X ⊇ Y) over 0 pairs is not 1. A tournament comparison with 0 pairs on either side is NA, not
+  "above". Report the group-level n (groups with ≥ 2 genes) next to every pair count. Call an order "transitive" only when
+  all layer pairs are scored on one common gene set.
+- **JOIN (amended).** Vertices are the finer layer's WHOLE groups (for a catalog: the whole catalog cluster, not the part
+  inside U). U is re-closed after enforcement. Score on the coarse layer's universe and on the enforced layer's own
+  universe, and say which.
+- **REFINE (amended).** Where a gene of the finer layer is outside the coarser layer's universe, what REFINE does with it is
+  a free choice. Report every variant: *attach* (P: to the refined part with the largest summed edge weight; C: stays
+  with the largest part of its clade), *single* (its own group), and for C *together* (a clade's outside genes form one
+  part). Any statement that compares REFINE with JOIN must hold under every variant, or be stated per variant.
+- **EXPR.** The primary count is *any-overlap* (reads ≥ 3, primary `-F 2308`, a CIGAR block overlapping an exon), as
+  defined above. "Unique" read counts are secondary, and they depend on which overlapping records exist (readthrough
+  records take reads from the copies they span). Always report a threshold sweep. EXPR(L) ⊆ L holds by construction; it is
+  a code check, not a result.
+- **T2 needs a precondition.** For layer-specific edge sets E_L and E_M, T2 holds when, inside every L group, E_M ⊆ E_L
+  (every M edge between two genes of one L group is also an L edge). Without it T2 fails. Counterexample: L = D, M = a
+  REFINE of P inside D; genes a, b, c in one D group; P edge a–b; the only D path a–c–b; c unexpressed. Then EXPR(M) =
+  {a, b}, but in EXPR(L) a and b are unconnected singletons and are dropped. With co-membership edges the precondition
+  always holds, so T2 is guaranteed there and is not evidence.
+- **C layer.** The ordered subfamily layer is the §0★★ clause-5 split system (supported SH-aLRT > 75 splits of either
+  reference tree, pairwise compatible; cluster = smaller side; partitions: maximal and minimal clusters). The
+  literature-anchored clades are a CIRCULAR reference column. C lies inside one family by construction (Non-goals), so
+  "P/D above C" is expected. The only empirical content is whether P or D splits a clade pair.
+- **D in the NPIP/TBC1D3 study** is the §6kl RefSeq E1 catalog (0.70/0.30 edges, MCL), not clause 2/4. That catalog failed
+  its HGNC guard on chr16/19/20, and GENCODE E1 merges PKD1 into NPIP. Headline rows must say "E1".
+
 ## Substrates and scoring protocol
 
 - Genome/annotation: T2T-CHM13 v2.0; RefSeq `chm13v2.0_RefSeq_full.gff.gz` (never `HSA_genomic.gff`) for D/S; the

@@ -87,6 +87,13 @@ exactly one class:
 Only (a) and (b) are gap to be closed. First decomposition (§6jz, gorilla hold-out, 741 expressed guided pairs):
 missing edges fall from 126 (DN0) to 60 with the guided edge rule; missing nodes (219 pairs, 29.6%) are now the dominant
 de novo error; (c) is an upper bound only (the guided edge graph could not be re-derived exactly).
+⚠ *Scope of the nesting sentence (2026-09-16).* It holds for connected components of ONE graph. It does not hold for the
+clause-4 leader grouping (memory `project_leader_rule_breaks_nesting`). Across two layers with different edge sets (the
+layer operators of `docs/superpowers/specs/2026-09-16-family-layer-order-design.md`), "M refines L ⇒ EXPR(M) refines
+EXPR(L)" (T2) additionally needs E_M ⊆ E_L inside every L group. Counterexample: genes a, b, c in one L group; an M edge
+a–b; the only L path is a–c–b; c is unexpressed. Then EXPR(M) = {a, b}, while in EXPR(L) a and b are dropped as
+unconnected singletons. On NPIP/TBC1D3 (human, testis) the precondition holds for all 30 refinement pairs tested, so the
+0 T2 violations there are guaranteed, not evidence (`bench/LAYER_ORDER_NPIP_TBC1D3.md` §8).
 
 **Known exposures:** the 0.80 / 0.50 / 1 kb constants remain (defended by sensitivity sweeps, λ and the length-dependent
 T_CORE d_max(L) formula, not claimed absent); subfamily calls are not in the Rust catalog; the definition's de novo
