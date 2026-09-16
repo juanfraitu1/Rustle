@@ -21902,3 +21902,39 @@ not hold in this substrate.
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/identity_vs_astie/` (`pairwise_identity.tsv`,
 `pairwise_identity_psv.tsv`, `identity_bin_summary.tsv` — note the last file's per-bin read/tie counts for the
 two high bins are the pre-merge, double-counted version; use the corrected table above).
+
+## §6l5 — Why most low-identity AS-ties happen: an incomplete candidate set, not two similar copies (2026-09-15)
+
+Follow-up on §6l4's surprise (72/96 real AS-ties sit in <90%-identity families). For all 72, queried the real
+BAM (`npip_cat/npip3.bam`) directly within each family's own catalog-copy spans (`mec/psv.quant.tsv`) and
+classified where the tied pair of placements actually sit. Independently spot-checked one example myself
+against the raw BAM before trusting it (below) — matched exactly.
+
+| category | n | what it is |
+|---|---|---|
+| one placement in a catalog copy, tied partner OUTSIDE every catalog copy in the family | 43 (60%) |
+| **neither** tied placement is inside any catalog copy | 22 (31%) |
+| genuine tie between two different, real catalog copies | 6 (8%) |
+| §6l3-style internal duplicate (both tied records inside one copy) | 1 (1%) |
+
+**90% of these ties (categories 1+2) are not about two catalog copies resembling each other — the read's
+equally-good tie partner usually isn't a catalog member at all.** Verified example: read
+`SRR27178663.557589` (GWFAM55) ties AS=188 between position 21,169,786 (inside copy 1's span,
+21,112,745-21,170,707) and position 21,674,468 — 31.7 kb *before* copy 2 starts (21,706,171), outside every
+catalog copy. A second example (`SRR27438212.6728466`, GWFAM55) ties AS=1543 between two positions BOTH
+outside every catalog copy (11 kb before copy 7 and ~410 kb past its end) — real sequence, real equal scores,
+neither a cataloged member. Of the 6 genuine two-copy ties, one (`SRR27438212.9541025`, copy1 vs copy2,
+AS=1931 both, NM 65/65) confirms real cross-copy ties do happen even in a <90%-identity family, driven by a
+locally conserved ~1.9 kb subregion, not the pair's bulk identity.
+
+**Reading:** this is a real, likely-fixable gap, not acceptable noise or a biology finding. Because
+`--families` fetches reads from each candidate copy's own NEIGHBORHOOD (§6l3), not just its exact span, the
+per-read AS ranking already reaches some real sequence just outside the catalog — and that sequence often
+ties. That is consistent with an UNDETECTED/UNCATALOGUED paralogous copy sitting near an existing one (O1/O3's
+own standing completeness gap, not a new defect), showing up downstream as a spurious O2 "AS-tied" flag. Net:
+"AS-tied ⟺ near-identical copies" does not hold for the low-identity majority of ties in this catalog; most of
+them are a catalog-completeness symptom instead. Aligned-length-vs-tie-rate check was not completed (flagged,
+not guessed at).
+
+Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/low_identity_ties/` (`tied_reads.tsv`, `classified_v2.tsv`,
+`investigate.py`, `reclassify.py`).
