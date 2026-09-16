@@ -93,6 +93,36 @@ pub fn cluster_tie_partners(
         .collect()
 }
 
+use std::collections::HashMap;
+use crate::vg_family::denovo_assemble::BamRead;
+
+fn ref_end(br: &BamRead) -> u64 {
+    br.read.ref_start
+        + br.read.cigar.iter().filter(|(op, _)| matches!(op, 'M' | '=' | 'X' | 'D' | 'N')).map(|(_, n)| *n).sum::<u64>()
+}
+
+pub fn tie_partner_placements(bam_reads: &[BamRead]) -> Vec<(String, Vec<(String, u64, u64)>)> {
+    let mut by_name: HashMap<&str, Vec<&BamRead>> = HashMap::new();
+    for br in bam_reads.iter().filter(|b| !b.is_supplementary) {
+        by_name.entry(br.name.as_str()).or_default().push(br);
+    }
+    let mut out = Vec::new();
+    for (name, placements) in by_name {
+        if placements.len() < 2 {
+            continue;
+        }
+        let max_as = placements.iter().map(|b| b.as_score).max().unwrap();
+        let tied: Vec<&&BamRead> = placements.iter().filter(|b| b.as_score == max_as).collect();
+        if tied.len() >= 2 {
+            out.push((
+                name.to_string(),
+                tied.into_iter().map(|b| (b.chrom.clone(), b.read.ref_start, ref_end(b))).collect(),
+            ));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +173,27 @@ mod tests {
         let tied = vec![("read1".to_string(), vec![("chr1".to_string(), 5000, 5100)])];
         let out = cluster_tie_partners(&tied, "FAM0", &existing, 500, 2);
         assert!(out.is_empty(), "a single supporting read must not clear min_support=2");
+    }
+
+    #[test]
+    fn tie_partner_placements_finds_reads_tied_at_their_own_max_as() {
+        use crate::vg_family::denovo_assemble::BamRead;
+        use crate::vg_family::copy_split::AlignedRead;
+        let mk = |name: &str, chrom: &str, start: u64, as_score: i32| BamRead {
+            chrom: chrom.into(),
+            read: AlignedRead { ref_start: start, cigar: vec![('M', 100)], seq: vec![], qual: vec![] },
+            mapq: 0, name: name.into(), as_score, de: 0.0,
+            is_supplementary: false, is_secondary: as_score != 200, reverse: false, ts: None,
+        };
+        let reads = vec![
+            mk("tied_read", "chr1", 1000, 200),   // best
+            mk("tied_read", "chr1", 5000, 200),   // tied with the above
+            mk("tied_read", "chr1", 9000, 150),   // worse, not part of the tie
+            mk("unique_read", "chr1", 2000, 300), // only one placement, never tied
+        ];
+        let out = tie_partner_placements(&reads);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0, "tied_read");
+        assert_eq!(out[0].1.len(), 2, "only the 2 max-scoring placements, not the 150-scoring one");
     }
 }
