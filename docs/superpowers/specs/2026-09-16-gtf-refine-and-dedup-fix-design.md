@@ -59,14 +59,13 @@ first; if it reveals changes the user does not want in the default, flipping the
 - **O2 (`--families`)**: `assignments.tsv`, `quant.tsv`, `families.tsv`, `family_join.tsv` BYTE-IDENTICAL
   fixed vs legacy on the real `mec/run_psv.sh` substrate (`mec/batch.copies.tsv`, `mec/regions.txt`,
   `npip_cat/npip3.bam`, `npip_cat/arm_f2/cat.copies.fa`). Reason: under `--families` the skeleton front end is
-  empty and rescue is skipped; the reads used for assignment (`bam_reads`) were never deduplicated.
+  empty and rescue is skipped; the reads used for assignment (`bam_reads`) are deduplicated separately and
+  correctly, by `(name, chrom, ref_start)`.
   **If not byte-identical: STOP and report before any further task.**
 - **De novo `copy_assign` (no `--families`)** on the same regions: expected to CHANGE (pass-1 floors, mischain
   junction support, thin-loci rescue all see more reads). Report families/copies/assignment-status deltas;
   descriptive, no pass/fail.
 - **chr20 `--gtf`** (no refine): exact reproduction of simulation arm A1 — see Fidelity.
-- Report-only diagnostic: count cross-window duplicate primary records in `bam_reads` on the O2 substrate
-  (`bam_reads` is never deduplicated; a boundary-spanning read appears once per window). No fix in scope.
 
 ## Part 2 — `--gtf-refine`
 
