@@ -436,6 +436,64 @@ reference choice); no adjustment made.
 W = 50 is now **frozen** for the Rust `TSS_WINDOW_BP` constant (Task 8) and for the held-out chr17 test
 (Task 10-12); it may not be re-picked after chr17 data is seen.
 
+## Follow-up: chr20 fidelity + SQANTI3 check for `tss` (2026-09-16)
+
+Checks that the Rust `tss` component (Task 8, `refine_tss`, `TSS_WINDOW_BP` = 50) reproduces the frozen
+simulation transcript-by-transcript on real chr20 data, then records SQANTI3's own view of the 5'-end
+change. Binary at HEAD `5bfca11b`. Command: `bash bench/gtf_refine_chr20_fidelity.sh fixed_tss` (fixed dedup
++ `--gtf-refine tss`); outputs at `human_chr20/fidelity/fixed_tss/`.
+
+**gffcompare, `fixed_tss` vs A1 (`fixed_none`)** (Tx = transcript level, IC = intron-chain level):
+
+| Arm | Query mRNAs | Matching tx | Tx Sn/Pr | IC Sn/Pr | Loci | Locus Pr |
+|---|---|---|---|---|---|---|
+| `fixed_none` (A1) | 1022 | 350 | 7.7/34.2 | 8.1/42.9 | 468 | 44.9 |
+| `fixed_tss` | 1022 | 350 | 7.7/34.2 | 8.1/42.9 | 469 | 44.8 |
+
+Transcript-level and intron-chain-level lines are **identical** to A1, as expected: gffcompare scores
+multi-exon matches by intron chain, and `tss` only moves the 5'-most exon's start coordinate — it does not
+add, drop, split, or re-chain any transcript. Locus level differs by one locus (469 vs 468, Pr 44.8 vs
+44.9): moving a 5' end changed one locus's genomic span enough to change gffcompare's overlap-based locus
+grouping. This is the anticipated "locus-level may differ (grouping)" case, not a defect.
+
+**Per-transcript EXACT check vs the frozen simulation** (`fidelity/fixed_tss/ours.gtf` vs
+`fidelity/tss_sim/tss_W50.gtf`, keyed by `(chrom, strand, intron chain, first-exon start, last-exon end)`
+per the brief's script):
+
+```
+rust 1022 sim 1022 only_rust 0 only_sim 0
+```
+
+Every one of the 1022 transcripts (including their post-`tss` 5' ends) agrees between the Rust binary and
+the Python simulation. No differing transcript to classify; no Rust bug, no simulation bug.
+
+**SQANTI3, `fixed_none` vs `fixed_tss`** (`sqanti3_tss/<label>/`, `--refGTF chr20_ref.gtf --refFasta
+chr20.fa --report skip`; descriptive only, no pass/fail on chr20). `n` = full-splice-match multi-exon
+models (SQANTI3's own reference join, not this repo's); `p` = fraction with `|diff_to_TSS| <= 50`; `within`
+= that count; `g` = count with `|diff_to_gene_TSS| <= 50`:
+
+| Label | n | p | within | g |
+|---|---|---|---|---|
+| `fixed_none` | 348 | 0.7069 | 246 | 268 |
+| `fixed_tss` | 348 | 0.8707 | 303 | 319 |
+
+`within` at both labels (246, 303) matches the `tss_window_sim.py` `n_within50` column at `none` and `W=50`
+above exactly, on the same real chr20 SQANTI3 run this time (not just the earlier simulation-side
+comparison) — independent confirmation that `refine_tss` moves 5' ends the way the simulation predicted.
+
+**`fixed_all` (now five components: `strand,subset,mono,fragsupport,tss`), dev-only** — re-run after adding
+`tss` to `all`:
+
+| Arm | Query mRNAs | Matching tx | Tx Sn/Pr | IC Sn/Pr | Loci | Locus Pr |
+|---|---|---|---|---|---|---|
+| `fixed_all` (four components, 2026-09-16 earlier run) | 886 | 364 | 8.0/41.1 | 8.4/46.6 | 417 | 52.3 |
+| `fixed_all` (five components, this run) | 886 | 364 | 8.0/41.1 | 8.4/46.6 | 417 | 52.3 |
+
+Unchanged in every field, including locus count/precision: on this substrate none of the loci that
+`strand,subset,mono,fragsupport` already narrowed down to had their genomic span altered enough by `tss`'s
+5'-end move to change locus grouping (unlike the `fixed_none` vs `fixed_tss` pair above, where one locus's
+grouping did move). Development number only, never simulated as a combination, not validation.
+
 ## Files
 
 - `bench/prep_chr20_ref.sh` — chr20 BAM/FASTA/reference-GTF extraction (incl. the GFF3 resort fix).

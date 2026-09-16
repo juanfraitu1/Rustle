@@ -28,6 +28,7 @@ run_arm() {
     legacy_none) arm legacy_none 1 '' ;;
     fixed_none) arm fixed_none 0 '' ;;
     fixed_fragsupport) arm fixed_fragsupport 0 fragsupport ;;
+    fixed_tss) arm fixed_tss 0 tss ;;
     legacy_subset) arm legacy_subset 1 subset ;;
     legacy_strand) arm legacy_strand 1 strand ;;
     legacy_strand_subset_mono) arm legacy_strand_subset_mono 1 strand,subset,mono ;;
