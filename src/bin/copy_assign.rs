@@ -2634,6 +2634,11 @@ fn main() -> Result<()> {
             // `detect_and_assign`/`pass1_skeletons_robust` skeletons feed only the multi-copy family/O1
             // oracle below and are never read by this block). Zero effect when unset (tolerance 0 is
             // `merge_fuzzy_skeletons`'s own explicit no-op), so every existing catalog stays byte-identical.
+            // ⚠ MEASURED NET-NEGATIVE at the pre-registered 672bp tolerance on real chr20 data: matching
+            // intron chains 345 -> 284, matching transcripts 347 -> 286 vs baseline
+            // (`bench/CHR20_ASSEMBLER_COMPARISON.md`'s "fuzzy junction merging" follow-up). Left off by
+            // default for this reason, not merely because it is untested -- do not enable it without
+            // re-registering a new tolerance via a fresh, separate experiment.
             let fuzz_bp: u64 = std::env::var("RUSTLE_JUNCTION_FUZZ_BP")
                 .ok()
                 .and_then(|v| v.parse().ok())
