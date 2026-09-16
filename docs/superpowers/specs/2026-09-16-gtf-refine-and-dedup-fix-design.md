@@ -69,16 +69,16 @@ first; if it reveals changes the user does not want in the default, flipping the
 
 ## Part 2 — `--gtf-refine`
 
-CLI: `--gtf-refine <list>` (comma-separated: `strand`, `subset`, `mono`, `fragsupport`, or `all`; default
-empty). Affects ONLY the `if args.gtf { ... }` block in `src/bin/copy_assign.rs` (the site that calls
+CLI: `--gtf-refine <list>` (comma-separated: `strand`, `subset`, `mono`, `fragsupport`, `tss`, or `all`;
+default empty; `all` = all five — `tss` added by the 2026-09-16 addendum below). Affects ONLY the `if args.gtf { ... }` block in `src/bin/copy_assign.rs` (the site that calls
 `pass1_skeletons(&primary, ...)`). Empty list ⇒ byte-identical output. No component reads the annotation, so
 the bundle is usable in both de novo and guided modes. Pure logic lives in a new lib module
 `src/rustle/vg_family/gtf_refine.rs` (registered OPT-IN in `docs/MODULE_STATUS.md`), unit-tested with
 synthetic data.
 
 Pipeline order when enabled: (1) pass-1 with `fragsupport` → (2) `assemble_gate_with(..., use_read_strand =
-strand enabled, strand_margin = 0.90)` → (3) post-filters `subset`, then `mono` → (4) existing
-`collapse_loci_groups` and GTF writing. Thresholds below are FIXED (chosen on chr20; not to be tuned on chr17).
+strand enabled, strand_margin = 0.90)` → (3) post-filters `subset`, then `mono` → (3b) `tss` 5'-end
+refinement → (4) existing `collapse_loci_groups` and GTF writing. Thresholds below are FIXED (chosen on chr20; not to be tuned on chr17).
 
 ### `fragsupport` — 3'-anchored fragment support (chr20 arm B3)
 
@@ -122,6 +122,42 @@ Applied after `subset`, to single-exon models only:
    minimap2's `ts` tag; `PrimaryRead` carries no `ts`. FLAG agrees with motif strand in 99.95% of chr20
    spliced primaries, so the effect is expected to be ~0 and is checked in Fidelity.)
 
+### `tss` — densest 5'-start window (ADDENDUM 2026-09-16, user-approved before any chr17 data)
+
+Why: the transcript 5' end is currently the most extreme exact read, so one outlier read sets it. On chr20
+(legacy run, SQANTI3 full-splice matches, multi-exon) 80/345 models start >50 bp upstream of the matched
+reference TSS vs 7/269 for FLAIR, and the overshoot grows with support (≥10 reads: 53 overshoot vs 70 within
+50 bp; 2 reads: 5 vs 58) — the signature of an extreme-read boundary. gffcompare transcript/intron-chain
+metrics ignore multi-exon ends, so E1–E4 cannot reward this; it gets its own endpoint (E5).
+
+Rule, applied after `mono` (step 3b), to each model with ≥1 intron and strand `'+'` or `'-'` (single-exon
+models and all 3' ends unchanged):
+- Exact reads = primary reads (the same post-dedup-fix `primary` set) on the model's chrom whose intron chain
+  equals the model's exactly. Fragments never count (their 5' ends are truncated by definition). A model with
+  0 exact reads is left unchanged.
+- 5' ends: `'+'` → `ref_start`; `'-'` → `ref_end`. Sort ascending as `v`.
+- `'+'`: for each i, `c_i = #{x in v : v[i] <= x <= v[i] + W}`; choose the maximal `c_i`, ties → smallest i
+  (most upstream); new `start = v[i]`.
+- `'-'`: for each j, `c_j = #{x in v : v[j] - W <= x <= v[j]}`; choose the maximal `c_j`, ties → largest j
+  (most upstream on `'-'`); new `end = v[j]`.
+- Consequences (not extra rules): the 5' end can only move downstream of the most extreme read or stay; it
+  stays strictly upstream of the first donor (`'+'`) / downstream of the last acceptor (`'-'`) because every
+  exact read does; a model with 1–2 exact reads never changes (two reads within W: the upstream window holds
+  both; more than W apart: a 1–1 tie keeps the most upstream read), so small models are untouched without
+  any read-count cutoff. A change needs ≥2 reads clustered downstream of ≥1 outlier.
+
+**W is chosen on chr20 (development substrate) and then frozen as a constant** (`TSS_WINDOW_BP` in
+`gtf_refine.rs`):
+- Python simulation over W ∈ {10, 25, 50, 100} on the fixed-dedup, no-refine model set (A1,
+  `fidelity/fixed_none/ours.gtf`) with chr20 primaries (`-F 2308`, no placement dedup).
+- Selection metric: among A1 multi-exon models whose (strand, intron chain) equals ≥1 chr20 reference
+  transcript's, count models with `min |model 5' end − ref TSS| <= 50` over those references. Choose the W
+  maximizing the count; ties → smaller W. Also reported (descriptive): models changed, models moved from
+  ≤50 to >50 bp, median |5' diff|, and the count within 50 bp of any TSS of a reference sharing ≥1 intron.
+- The Rust `tss` output (fixed dedup + `tss`) must reproduce the chosen-W simulation GTF exactly per
+  transcript, including start/end (EXACT fidelity anchor). SQANTI3 on chr20 fixed/no-refine vs fixed+`tss`
+  is descriptive confirmation with SQANTI3's own reference choice.
+
 ## Part 3 — fidelity on chr20, then held-out chr17
 
 ### Fidelity anchors (chr20, Rust implementation; gffcompare vs `chr20_ref.gtf`)
@@ -147,6 +183,10 @@ strand):
 | legacy dedup + `strand` | 976 | 349 | locus Pr 50.4 |
 | legacy dedup + `strand,subset,mono` (P5) | 820 | 349 | transcript Pr 42.6, locus Pr 52.2 |
 
+EXACT (addendum): fixed dedup + `tss` (chosen W) — Rust GTF identical per transcript (chain, strand, start,
+end) to the chosen-W simulation GTF; transcript-level and intron-chain-level gffcompare numbers identical to
+A1 by construction (multi-exon ends are not scored).
+
 Also reported (development numbers, not validation): fixed dedup + `all` on chr20 — never simulated as a
 combination.
 
@@ -161,7 +201,7 @@ FAMILIES — not for assembly tuning, so it remains held out for this purpose. O
 
 Runs: ours BASELINE (fixed dedup, no refine) and ours BUNDLE (fixed dedup, `--gtf-refine all`) — both
 gffcompare + SQANTI3; ours legacy (current shipped behavior, context); ablations (each component alone,
-gffcompare only); StringTie `-L` and FLAIR (unguided, same workarounds as chr20) — both gffcompare + SQANTI3,
+gffcompare only — except `abl_tss`, which also gets SQANTI3 because E5 is scored on it); StringTie `-L` and FLAIR (unguided, same workarounds as chr20) — both gffcompare + SQANTI3,
 context only.
 
 **Pre-registered decision rules** (bundle vs baseline; must be committed in
@@ -175,6 +215,13 @@ context only.
 - **Verdict**: SUPPORTED if E1–E4 all hold. PARTIAL if E3 and E4 hold and exactly one of E1/E2 holds.
   REFUTED otherwise. Ablations, SQANTI3 category tables, the multicopy-tagged subset, and StringTie/FLAIR are
   descriptive only.
+- **E5 5' ends (addendum; a separate claim with its own verdict, scored `abl_tss` vs BASELINE so only 5'
+  ends differ)**: over SQANTI3 rows with `structural_category == full-splice_match` and `subcategory !=
+  mono-exon`, let `p` = fraction with `|diff_to_TSS| <= 50` (unrounded) and `g` = count with
+  `|diff_to_gene_TSS| <= 50`. E5 holds iff `p(abl_tss) > p(baseline)` AND `g(abl_tss) >= g(baseline)` (the
+  guard keeps real alternative TSSs from being penalised). **TSS verdict**: SUPPORTED if E5 holds, else
+  REFUTED. Reported next to, not merged into, the E1–E4 verdict. 50 bp is SQANTI3's own reference_match
+  tolerance, not a new threshold.
 No threshold, window, or component may be changed after any chr17 number is seen; a changed rule is a new,
 separately pre-registered experiment on a different substrate.
 
@@ -183,13 +230,17 @@ separately pre-registered experiment on a different substrate.
 - Unit tests (`gtf_refine.rs`): fragment compatibility (suffix vs prefix by strand, intron-compatibility
   rejection at both ends, ambiguous fragment abstains, unspliced reads ignored, emission threshold), subset
   overhang rules (terminal vs non-terminal container exon, 5 bp boundary, strand mismatch never removes),
-  mono containment (strand-aware), spliced-dominance counts.
+  mono containment (strand-aware), spliced-dominance counts; `tss`: `'+'` picks the upstream edge of the
+  densest cluster past a lone upstream outlier, `'-'` mirror, tie → most upstream, 1–2-read models
+  unchanged, window boundary inclusive, fragments/other-chain reads ignored, single-exon and 0-exact-read
+  models unchanged.
 - Unit test for the dedup rule: two distinct reads with identical placement in one window are both kept; the
   same read returned by two windows is kept once.
 - Integration (`tests/copy_assign_families.rs` conventions): `--gtf-refine` empty ⇒ byte-identical outputs;
   `RUSTLE_LEGACY_PLACEMENT_DEDUP=1` ⇒ byte-identical to the pre-fix binary (compare against output generated
-  from the base commit). The fixture's `--gtf` emits 0 rows (known), so ON-state behavior is proven by the
-  unit tests and the chr20 exact fidelity anchors, and this limitation is stated in the test's doc comment.
+  from the base commit). The fixture's `--gtf` emitted 0 rows before the dedup fix and emits 9 after it,
+  none of which trigger a refine rule, so ON-state behavior is proven by the unit tests and the chr20 exact
+  fidelity anchors, and this limitation is stated in the test's doc comment.
 
 ## Global constraints
 
@@ -198,7 +249,8 @@ separately pre-registered experiment on a different substrate.
 - `--gtf-refine` empty ⇒ byte-identical to the fixed-dedup binary.
 - Never modify `pass1_skeletons_robust`, `detect_and_assign`, or `gw_family_catalog`; `--gtf-refine` touches
   only the `if args.gtf` block.
-- No component uses the annotation. Thresholds exactly as written above.
+- No component uses the annotation. Thresholds exactly as written above. `tss`'s window W is chosen once on
+  chr20 by the stated metric and frozen as a constant before the pre-registration is committed.
 - O2 byte-identity is a hard stop condition.
 - WSL2 rules: builds with `CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target`, one heavy run at a
   time in the foreground, output redirected to files, never `pkill -f`, big outputs under `/mnt/linuxdisk`.
