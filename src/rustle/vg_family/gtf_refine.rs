@@ -380,4 +380,20 @@ mod tests {
         let spans: Vec<(u64, u64)> = kept.iter().map(|t| (t.start, t.end)).collect();
         assert_eq!(spans, vec![(100, 800), (5000, 5100)]);
     }
+
+    #[test]
+    fn mono_with_no_overlapping_reads_is_removed() {
+        let m = tx(420, 480, '+', vec![]);
+        // Empty reads: U=SI=SE=0, so SI >= U (0 >= 0) is true -> removed (chr20 sim pins the >= operator)
+        assert_eq!(mono_spliced_dominated_removals(&[m.clone()], &HashSet::new(), &[]), HashSet::from([0]));
+        // Reads on different chromosome or not overlapping: same result (no overlaps -> U=0 -> removed)
+        let non_overlap = PrimaryRead { chrom: "c2".into(), ref_start: 500, ref_end: 600, introns: vec![], reverse: false };
+        assert_eq!(mono_spliced_dominated_removals(&[m], &HashSet::new(), &[non_overlap]), HashSet::from([0]));
+    }
+
+    #[test]
+    fn subset_never_removes_either_of_two_identical_chains() {
+        let dup = tx(150, 750, '+', container().introns.clone());
+        assert!(subset_removals(&[container(), dup]).is_empty());
+    }
 }
