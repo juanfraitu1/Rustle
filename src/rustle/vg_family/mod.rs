@@ -51,7 +51,6 @@ pub mod read_conflict; // OPERATIONAL family criterion: read cross-mapping confl
 pub mod denovo_assemble; // Integration: Pass-1 read-coherence skeletons + general-purpose assemble gate.
 pub mod denovo_pipeline; // Integration: de-novo family DETECTION driver (pass1->gate->collapse->detect->split).
 pub mod copy_assign_pipeline; // Integration: per-read COPY ASSIGNMENT driver (PSV + junction, discover+assign).
-pub mod copy_discovery; // Discovery of candidate gene-family copies from read alignment ties.
 pub mod copy_graph; // Copy-graph objects: pure builder for variation graphs over family copies (Task 1).
 pub mod rescue_pipeline; // Integration: family-aware RESCUE thin-locus scan (borrow-strength copy recovery).
 pub mod genome_projection; // Liftoff-style famCN copy enumeration (spec §7): project a family consensus onto the genome via in-engine minimap2 to enumerate near-identical genomic copies, recovering K=0 collapses.
@@ -66,6 +65,7 @@ pub mod linearize; // Task 1: augment-and-linearize certificate (dinucleotide-pr
 pub mod catalog_input; // O1->O2 FILE contract: parse a gw_family_catalog copies.tsv (+ copies.fa) back into the copy set `copy_assign --families` assigns to, keeping the catalog's own ids as the JOIN KEY.
 pub mod shared_definition; // OPT-IN RUSTLE_SHARED_DEFINITION: the shared family definition (seeded_family_definition.md §0★★) on the homology catalog: gene-level read-supported nodes + guided edge finders + triangle-supported leaders.
 pub mod seed_projection; // `--seed`: a QUERY over the EMITTED catalog (the block containing s), never a term in the definition; the node set stays seed-free.
+pub mod copy_discovery; // Discovery of candidate gene-family copies from read alignment ties.
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1

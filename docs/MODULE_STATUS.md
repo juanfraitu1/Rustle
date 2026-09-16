@@ -24,7 +24,7 @@ this file must list exactly the module set.
 | **OPT-IN** | 13 |
 | **OTHER-BINARY** | 11 |
 | **REFUTED** | 1 |
-| **TEST-ONLY** | 12 |
+| **TEST-ONLY** | 13 |
 | **INFRASTRUCTURE** | 2 |
 
 ## SHIPPED-DEFAULT (14)
@@ -104,6 +104,7 @@ Implemented, **measured**, and the measurement went against it. Kept deliberatel
 | `asj_strand_bias.rs` | - | MEASURED: the only src/ references outside its own file are doc comments — asj_verify.rs:5 and :256 (`///`) and asj_genetic_core.rs:11/:58 (`//!`, `///`). Zero call sites for StrandBiasEngine/sor/strand_table/fisher_strand_p; own  |
 | `asj_verify.rs` | - | MEASURED: zero callers of AsjVerifyEngine/parse_calls/verified_line anywhere in src/ or tests/ outside the module; own tests at asj_verify.rs:369. Critically, the like-named binary src/bin/asj_verify.rs does NOT use it — it import |
 | `consensus.rs` | - | MEASURED: grep for `consensus::` / consensus_vetoes / map_junctions_to_edges / family_consensus_vetoes over all of src/ and tests/ returns ZERO hits outside consensus.rs itself. Its three pub fns are consensus.rs:36, :67, :105; th |
+| `copy_discovery.rs` | - | MEASURED: grep for `copy_discovery::`/`cluster_tie_partners`/`DiscoveredCopy` over all of src/ and tests/ returns ZERO hits outside copy_discovery.rs itself. No shipped binary can reach it; only #[cfg(test)] runs the 4 tests. |
 | `diagnostic.rs` | - | MEASURED: classify_internal, classify_external and cigar_has_long_indel have ZERO production callers — the only src/ references are the re-export at mod.rs:66 and the field TYPE at types.rs:109 (`pub rescue_class: Option<crate::vg |
 | `multi_repeat_bridge_tests.rs` | - | MEASURED: the file is pulled in only by `#[cfg(test)] #[path = "multi_repeat_bridge_tests.rs"] mod tests;` at src/rustle/vg_family/multi_repeat_bridge.rs:640-642 — it is not declared in mod.rs and has no other reference in the tre |
 | `o2_columns.rs` | - | MEASURED: the sole non-test consumer of `column_alleles` (o2_columns.rs:83) is `use super::o2_columns::column_alleles;` at src/rustle/vg_family/o2_materialize.rs:44, and o2_materialize itself is imported by no binary (o2_materiali |
