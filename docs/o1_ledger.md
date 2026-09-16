@@ -21959,7 +21959,11 @@ batch.copies.tsv` and writes its outputs at prefix `psv` (i.e. `mec/psv.assignme
 `mec/psv.quant.tsv`, ...); "`mec/psv.*`" in §6l4/§6l5 names those OUTPUT files, not an input catalog named
 `psv.copies.tsv` — no such input file was ever written. Confirmed `mec/batch.copies.tsv` is the right
 substrate: `grep GWFAM55 mec/batch.copies.tsv` and `grep GWFAM55 npip_cat/arm_f2/cat.copies.tsv` return
-byte-identical 8-row blocks (copies 0-7, same coordinates/exon lists/identity to 6 decimal places).
+identical 8-row blocks (copies 0-7, same coordinates/exon lists/identity to 6 decimal places) once line
+endings are normalized (`cmp`/`diff` first showed a difference; `file` traced it to `mec/batch.copies.tsv`
+using CRLF line terminators against `npip_cat/arm_f2/cat.copies.tsv`'s plain LF — `tr -d '\r'` then gives an
+exact `diff` match; not a content difference, and irrelevant to parsing since Rust's `str::lines()` already
+strips a trailing `\r`).
 `npip_cat/arm_f2/cat.copies.tsv` is the full catalog (679 lines / 678 copies across many contigs);
 `mec/batch.copies.tsv` is a 101-copy/12-family subset of it restricted to the two spans in
 `mec/regions.txt` (`NC_073244.2:8711735-70533365`, `NC_073242.2:15582833-100189113`) — the exact
