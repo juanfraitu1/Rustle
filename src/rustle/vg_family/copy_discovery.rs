@@ -2,6 +2,9 @@
 //!
 //! **STATUS:** INFRASTRUCTURE
 
+use std::collections::HashMap;
+use crate::vg_family::denovo_assemble::BamRead;
+
 pub const TIE_PARTNER_MERGE_DISTANCE_BP: u64 = 500;
 pub const TIE_PARTNER_MIN_SUPPORT: usize = 2;
 
@@ -93,9 +96,6 @@ pub fn cluster_tie_partners(
         .collect()
 }
 
-use std::collections::HashMap;
-use crate::vg_family::denovo_assemble::BamRead;
-
 fn ref_end(br: &BamRead) -> u64 {
     br.read.ref_start
         + br.read.cigar.iter().filter(|(op, _)| matches!(op, 'M' | '=' | 'X' | 'D' | 'N')).map(|(_, n)| *n).sum::<u64>()
@@ -112,7 +112,7 @@ pub fn tie_partner_placements(bam_reads: &[BamRead]) -> Vec<(String, Vec<(String
             continue;
         }
         let max_as = placements.iter().map(|b| b.as_score).max().unwrap();
-        let tied: Vec<&&BamRead> = placements.iter().filter(|b| b.as_score == max_as).collect();
+        let tied: Vec<&BamRead> = placements.iter().copied().filter(|b| b.as_score == max_as).collect();
         if tied.len() >= 2 {
             out.push((
                 name.to_string(),
@@ -120,6 +120,8 @@ pub fn tie_partner_placements(bam_reads: &[BamRead]) -> Vec<(String, Vec<(String
             ));
         }
     }
+    // Sort by read name for deterministic output order (HashMap iteration is randomized).
+    out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
 
