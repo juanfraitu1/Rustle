@@ -456,13 +456,24 @@ fn copies_fa_without_families_is_an_error() {
 
 // ---- 4. RUSTLE_JUNCTION_FUZZ_BP regression --------------------------------------------------------
 
-/// `RUSTLE_JUNCTION_FUZZ_BP` unset and explicitly `0` are the same "off" state -- both must produce
-/// byte-identical output. This is the directly-testable form of "unset is a no-op": the fixture this file
-/// uses (`same_chrom_supplement`) is small enough that a real merge may or may not trigger at any given
-/// tolerance, but unset-vs-zero must ALWAYS agree regardless, since both resolve to `tolerance_bp == 0`
-/// (`merge_fuzzy_skeletons`'s own proven no-op, Task 2) before the merge function is ever called.
+/// WHAT THIS PROVES: `RUSTLE_JUNCTION_FUZZ_BP` unset and explicitly `0` are the same "off" state -- both
+/// must produce byte-identical `--gtf` output, since both resolve to `tolerance_bp == 0`
+/// (`merge_fuzzy_skeletons`'s own proven no-op) before the merge function is ever called. That is a real,
+/// valid off-state parity contract and this test genuinely exercises it.
+///
+/// WHAT THIS DOES NOT PROVE (confirmed 2026-09-16, final whole-branch review): `--gtf` on the
+/// `same_chrom_supplement` fixture emits a 0-BYTE `.gtf` file -- there is nothing in this fixture for a
+/// merge to fire on, at any tolerance (independently confirmed: re-running this fixture at
+/// `RUSTLE_JUNCTION_FUZZ_BP=200` produces output byte-identical to unset). So this test would stay GREEN
+/// even if the entire feature were deleted, the `fuzz_bp > 0` guard in `copy_assign.rs` were removed, or the
+/// merge were called unconditionally -- it cannot and does not exercise the feature's ON-state at all. The
+/// positive-control evidence that the merge fires correctly (and, at its pre-registered tolerance, harmfully)
+/// on real `--gtf` output lives elsewhere: `bench/CHR20_ASSEMBLER_COMPARISON.md`'s real chr20 acceptance run
+/// (976 -> 836 transcripts, matching intron chains 345 -> 284, a real measured effect), and
+/// `merge_fuzzy_skeletons`'s own unit tests (`denovo_assemble.rs`, `fuzzy_merge_*`), which exercise the merge
+/// logic directly on synthetic skeletons.
 #[test]
-fn junction_fuzz_unset_and_explicit_zero_are_byte_identical() {
+fn junction_fuzz_off_state_parity_unset_vs_explicit_zero() {
     let d_unset = scratch("junction_fuzz_unset");
     let (o_unset, out_unset) = run(&d_unset, &["--no-refine", "--gtf"]);
     assert!(o_unset.status.success(), "unset run failed:\n{}", stderr(&o_unset));

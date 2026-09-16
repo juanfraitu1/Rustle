@@ -44,4 +44,17 @@ Per-junction max(|donor_offset|, |acceptor_offset|) [correct for AND-semantics]:
 - 95th percentile: 4374
 
 ## Decision (fixed now, before Task 5 runs)
-`RUSTLE_JUNCTION_FUZZ_BP` = 672 (the per-junction max 90th percentile from the corrected statistic). This rule (90th percentile of real, freshly-measured per-junction max tolerance) was chosen in the design spec BEFORE the corrected script ran and is not changed based on Task 5's result.
+`RUSTLE_JUNCTION_FUZZ_BP` = 672 (the per-junction max 90th percentile from the corrected statistic).
+
+**Provenance, stated accurately (corrected 2026-09-16, final whole-branch review).** The design spec's
+ORIGINAL pre-registered rule (`docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md`, "Tolerance
+selection" step 2) was the 90th percentile of the POOLED donor+acceptor offset distribution from step 1
+("Pool these into a real empirical distribution") — which gave **0bp** (see "Result (initial run)" above).
+The per-junction-max statistic was NOT pre-registered from the start; it is a disclosed, post-hoc
+methodology correction (see "Methodology correction" above) — the same "post-hoc fixes, disclosed" pattern
+this project already uses elsewhere (e.g. `docs/PREREG_core_definition_2026-09-12.md`'s Addendum U and its
+amendments U1'/U1''). It was substituted AFTER the pooled result (0bp) was seen but, crucially, BEFORE any
+gffcompare/SQANTI3 score from this feature was ever computed. That timing — not a claim that the statistic
+itself was chosen unchanged from the outset — is what makes the correction legitimate: no score from this
+feature existed yet to have motivated picking a number that would merge more aggressively. Not changed based
+on Task 5's result.

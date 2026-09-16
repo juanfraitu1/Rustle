@@ -337,6 +337,19 @@ producing a hybrid "consensus" intron chain that then matches NEITHER original r
 small precision upticks are consistent with this: fewer, more conservative transcripts, but built from
 merged evidence that more often disagrees with any single real annotation.
 
+A second, independent explanation for why the tolerance ended up this large: `nearest()`
+(`bench/measure_junction_jitter.py`) matches each read junction to its annotated intron by DONOR-site
+distance only. A real read junction that shares a donor with an annotated intron but uses a genuinely
+DIFFERENT acceptor — an alternative 3′ splice site, intron retention, or simply a different real transcript
+at the same donor — still gets "matched" by this method, and its (often large) acceptor-side offset is
+counted as if it were alignment jitter, when it may be real biological/splicing diversity instead. Since the
+donor axis is p90 = p95 = 0 by construction (donor-site proximity is literally the matching criterion), the
+per-junction-max statistic (672bp) is arithmetically just the acceptor-offset distribution relabeled — so
+part of that 672bp may reflect genuine alternative-splicing scatter at shared donors, not just alignment
+noise. This does not change the negative verdict above (the acceptance run's own gffcompare numbers stand on
+their own regardless of why the tolerance was large), but it gives a second, complete explanation for why a
+tolerance this wide was capable of merging genuinely different real transcripts.
+
 **This is not "no benefit"; it is a measured cost.** Unlike the TSS/TES-snap follow-up above,
 `RUSTLE_JUNCTION_FUZZ_BP` at its pre-registered value should NOT be enabled — it makes chr20's already-weak
 numbers modestly worse on the metrics that matter most (transcript- and intron-chain-level sensitivity and
