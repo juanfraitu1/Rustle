@@ -84,6 +84,7 @@ def self_test():
     nj = {('c', '+', '1', '2')}
     assert verdict(b, (35.0, 44.0), nj, b | {100}, (40.0, 48.0), nj)['verdict'] == 'SUPPORTED'
     assert verdict(b, (35.0, 44.0), nj, b, (35.0, 48.0), nj)['verdict'] == 'PARTIAL'  # E2 fails on tx Pr tie
+    assert verdict(b, (35.0, 44.0), nj, b, (40.0, 44.0), nj)['verdict'] == 'PARTIAL'  # E2 fails on IC Pr tie
     assert verdict(b, (35.0, 44.0), nj, b - {0}, (40.0, 48.0), nj)['verdict'] == 'PARTIAL'  # E1 fails, 1 lost <= 1%
     assert verdict(b, (35.0, 44.0), nj, b - {0, 1}, (40.0, 48.0), nj)['verdict'] == 'REFUTED'  # E3: 2 lost > 1
     assert verdict(b, (35.0, 44.0), nj, b, (40.0, 48.0), set())['verdict'] == 'REFUTED'  # E4 fails
@@ -95,6 +96,8 @@ if __name__ == '__main__':
     if sys.argv[1:] == ['--self-test']:
         self_test()
         sys.exit(0)
+    if len(sys.argv) != 9:
+        sys.exit(__doc__)
     bt, bs, bj, nt, ns, nj_, bc, tc = sys.argv[1:9]
     res = verdict(eq_refs(bt), precisions(bs), novel_canonical_junctions(bj),
                   eq_refs(nt), precisions(ns), novel_canonical_junctions(nj_))

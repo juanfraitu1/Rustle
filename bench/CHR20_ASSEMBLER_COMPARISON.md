@@ -436,6 +436,25 @@ reference choice); no adjustment made.
 W = 50 is now **frozen** for the Rust `TSS_WINDOW_BP` constant (Task 8) and for the held-out chr17 test
 (Task 10-12); it may not be re-picked after chr17 data is seen.
 
+**Known limits of `tss` (development observations, chr20, W = 50)** — cited by
+`docs/PREREG_gtf_refine_chr17_2026-09-16.md`'s "Known limits" section:
+
+| Observation | Value |
+|---|---|
+| Chain-matched (FSM) models with the reference TSS upstream of every exact read (`fixed_none`, i.e. `tss` cannot reach the true TSS for these regardless of W) | 22 of 348 |
+| Ceiling this implies (348 − 22) | 326 of 348 |
+| Models moved to within 50 bp of a matching reference TSS (`n_moved_in`, W = 50) | 63 |
+| Models moved out of 50 bp of a matching reference TSS (`n_moved_out`, W = 50) | 6 |
+| Worst `n_moved_out` case: `DN_chr20_37420188_3` (132 reads, gene ROMO1) — SQANTI3 `diff_to_TSS`, `fixed_none` → `fixed_tss` | −8 → −168 (subcategory `reference_match` → `alternative_5end`) |
+
+`n_moved_in`/`n_moved_out` = 63/6 are the `tss_window_sim.py` W=50 row's own columns (the "Follow-up: `tss`
+window selection" table above). The `DN_chr20_37420188_3` row was read directly from
+`sqanti3_tss/fixed_none/fixed_none_classification.txt` and `sqanti3_tss/fixed_tss/fixed_tss_classification.txt`
+line 503 in each file (same transcript, same exon count 3, same matched reference `rna-XM_054323022.1`): the
+majority of this model's 132 reads are 5'-truncated relative to the one full-length read, so the densest-window
+rule moves the 5' end away from (not toward) the true TSS — the single largest regression among the six
+`moved_out` cases at W = 50.
+
 ## Follow-up: chr20 fidelity + SQANTI3 check for `tss` (2026-09-16)
 
 Checks that the Rust `tss` component (Task 8, `refine_tss`, `TSS_WINDOW_BP` = 50) reproduces the frozen
