@@ -19,6 +19,29 @@ information we have". Two findings block a yes:
 The user asked to (a) find the adequate layer order empirically rather than assume it, and (b) have the SD layer
 derive the Soto et al. 2025 (Cell) human gene families.
 
+## ⭐ SCOPE AMENDMENT (user, 2026-09-16 13:56): NPIP + TBC1D3 ONLY, descriptive — run this first
+
+The advisor is only interested in NPIP and TBC1D3 for now. The chromosome-wide study below (Phases A/B, held-out
+chr8–11, pre-registration) is DEFERRED, kept as the follow-up for when a general order claim is needed.
+
+Scoped study (human T2T-CHM13; descriptive; NOT pre-registered because both families were used to develop the DNA
+rules, §6js — every statement is "for NPIP and TBC1D3", never a general order claim):
+- **Universe U:** annotated NPIP and TBC1D3 members (RefSeq CHM13 names `NPIP*`, `TBC1D3*`, incl. pseudogenes) ∪
+  every gene that ANY layer below places in the same group as a member (closure, genome-wide, cross-chromosome
+  allowed). Without the closure every containment is trivially 1.
+- **Layers on U:** P (§6ko tables), D (guided catalog, no SD filter), S1, S2, S3 (as defined below), EXPR (testis
+  reads ≥ 3 per gene, primary `-F 2308`, overlapping exons), and **C — subfamily clades** (existing §6jp/§6jr
+  results: NPIPA|NPIPB, NPIPB3-5 / B6-9 / B12-13; TBC1D3 clusters) as the finest layer.
+- **Truths:** Soto family IDs containing NPIP/TBC1D3 members (for S), literature subfamilies (for C), HGNC gene
+  groups (for P/D), the guided annotation truth (for D).
+- **Outputs:** per-layer group membership table on U; containment matrix c(X ⊇ Y) and group-level nesting for all
+  layer pairs; the resulting tournament order (reported with a cycle if one exists); per-layer truth agreement
+  before/after enforcing nesting (JOIN above D, REFINE below D, EXPR per layer); a gene-level disagreement list
+  (which genes P joins that D does not, which co-duplicated neighbours S splits from D, which members are
+  unexpressed). SD-layer selection among S1/S2/S3 by agreement with Soto on these families (descriptive).
+- **Report:** `bench/LAYER_ORDER_NPIP_TBC1D3.md` (terse tables); results under
+  `/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/`.
+
 ## Definitions
 
 ### Layers (each computed independently first, on the same gene universe)
