@@ -161,7 +161,7 @@ draws the whole nested stack as a dendrogram (§0★★★.3).
 
 | level | name | test | source |
 |---|---|---|---|
-| L0 | superfamily (guided-only) | t_0 = t_P ∨ t_D | §6ko edge ∨ clause 2 |
+| L0 | superfamily (guided-only) | t_0 = t_P ∨ t_D | §6ko edge ∨ clause 2 — ⚠ **withdrawn as a level by §0★★★.7** (2026-09-17); kept here as the object the amendment replaces |
 | L1 | family | t_1 = t_D | clause 2 |
 | L2 | shared-exon unit | t_2 = t_1 ∧ f_ex ≥ 0.30 | adapted from §6ks, §6kt |
 | L3 | ≥ 0.98 identity unit (not the subfamily) | t_3 = t_2 ∧ w_98 ≥ 0.98 | SD98 convention (spec layer S2) |
@@ -524,7 +524,7 @@ recover the precision. Values are expressed-guided any R_G / P_G, where expresse
     set by the seed set.
   - Readthrough records become nodes in both modes: the exclusion rule (§0★★★.1; §0★★★.5 option (iv)) is proposed, not
     adopted.
-- **L0: guided-only as specified, and known degenerate under the plain §6ko edge** (the TBC1D3 component has ≥ 4,522
+- **L0 is withdrawn as a level (§0★★★.7, 2026-09-17).** It was guided-only as specified, and degenerate under the plain §6ko edge (the TBC1D3 component has ≥ 4,522
   genes, 965 never searched). Not OPEN.
 - **OPEN: precision and recall of L1–L3.**
   - **NPIP/TBC1D3 results** (human CHM13; `bench/NESTED_LATTICE_NPIP_TBC1D3.md` §0; descriptive, and NPIP and TBC1D3
@@ -589,6 +589,57 @@ recover the precision. Values are expressed-guided any R_G / P_G, where expresse
   >   §12).
   > - The 17:03 table stored identities at 4 decimals. The §0★★★.3 tie counts were rechecked at full precision and are
   >   unchanged.
+
+### 0★★★.7 AMENDMENT (2026-09-17, user-approved direction): TWO PARALLEL STACKS REPLACE THE L0 JOIN; CERTIFICATES ARE THE REPORTING UNIT
+
+PROPOSED, like the rest of §0★★★; §0★★ clause 4 stays the current definition and no code changes. Evidence:
+`bench/FAMILY_CERTIFICATES_NPIP_TBC1D3.md` and `bench/LATTICE_RULE_STRENGTHENERS.md` (commit 37cc97f0), both
+independently recomputed. Development families, one assembly: the measurements below motivate the change, they do not
+validate it.
+
+**(a) The join is dropped as a level.** L0 = t_P ∨ t_D is not a level of the lattice any more. Measured at the shipped
+cuts on genome alignments and a complete proteome search: the join puts NPIP in a component of 358 nodes (332
+non-members) and TBC1D3 in one of 5,450 (5,438) — it destroys the isolation that the protein graph has on its own.
+Lemma 0(ii) is why: a join keeps every chain of either kind of evidence, so the weaker-isolating side sets the result.
+
+**(b) Two parallel stacks.** One evidence graph, two chains of levels, no level that mixes them:
+- **DNA stack** (both modes): L1 = t_D, L2 = L1 ∧ f_ex ≥ 0.30, L3 = L2 ∧ w_98 ≥ 0.98, unchanged.
+- **Protein stack** (guided only, as t_P is annotation-derived): P1 = t_P. A finer P2 = t_P ∧ (amino-acid identity
+  ≥ θ) is available; it is not adopted without a held-out cut.
+Each stack nests by construction (T1, T1′, T2 hold inside a stack exactly as proven in §0★★★.2; the proofs never used
+a common top). A family claim names its stack: "NPIP is a family at P1" is a different statement from "at L1".
+
+**(c) The meet is where the stacks meet, and it is a floor, not a top.** M = t_P ∧ t_D refines both L1 and P1
+(Lemma 0(i) twice), so it sits below both stacks, never above them. Measured: M admits **no** non-member for either
+family (NPIP 26 nodes, TBC1D3 12, zero outside) but breaks NPIP into 6 parts and TBC1D3 into 4. Report it as the
+two-evidence floor; do not call it a family level while it fragments.
+
+**(d) Certificates replace "the group at the shipped cut" as the reporting unit.** For a set S on a weighted level:
+h_join(S) = max weight of a boundary edge, h_split(S) = the bottleneck of S's maximum spanning tree; S is an exact
+component exactly for cuts in (h_join, h_split]. A family claim at a level requires a non-empty interval that contains
+that level's cut, and the interval is reported as the margin. This is the threshold-free form of a level: the cut is a
+cut, the margin is the claim (§0★★★.3).
+
+**(e) Evidence conditions are part of the definition of t_P.** The protein test qualifies only when E-values are
+computed against a fixed `-dbsize` (H2) and the cover is the union of HSP intervals on the longer protein (H3). The
+shipped greedy cover of `protein_families.edges_from` does not qualify. With the qualifying form on all 20,088
+CHM13 proteins: **the 21 NPIP proteins are an exact component of P1 for every cover cut in (0.128250, 0.840580], with
+the shipped 0.30 inside and no protein outside** — the first certified family-level statement in this project.
+TBC1D3 is the control and fails it: exact only in (0.688525, 0.900000], and 5,275 proteins at the shipped cut.
+
+**(f) What this amendment does NOT fix, stated first.** No DNA level certifies either family, and a 320-row sweep of
+monotone strengtheners (two-sided coverage, shared exon of the longer copy, reciprocity) plus two node rules never
+made NPIP's margin positive. The boundary is held by a queue of co-duplicated neighbours at identity 1.000 — CLN3
+(253 bp), EIF3CL, LOC100190986, LOC124907830/845, LOC128966632 (5,598 bp, "SMG1-like") — the §6kr over-merge, not a
+threshold artefact. Strengthening lowers h_split as fast as h_join: over-merge turns into fragmentation without
+passing through exactness. Bipartite F rose in every one of those rows while no certificate appeared, so F is not a
+guard for isolation. Node rules (minimum exonic length, contained records) delete nodes, which is not monotone, and
+past 300 bp they start deleting NPIP members.
+
+**(g) Open, unchanged by this amendment.** Precision and recall of L1-L3 and of P1 on a held-out substrate
+(§0★★★.6 reserves the substrates); an exact monotone form of the gene-body disjunct (the shipped chains are greedy,
+so every DNA row above depends on a non-monotone ingredient); the node rule for readthroughs and embedded records;
+de novo mode has no protein stack, so §0★★'s "one graph for both modes" still holds for the DNA stack only.
 
 ## 0★★. CURRENT DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14)
 
