@@ -671,7 +671,9 @@ When a set's certificate interval is non-empty but does not contain the level's 
 a CUT WINDOW and is not grounds for changing any rule. Two are on record at L3 (w_98) under §0★★★.7c at k = 2, δ = 0, on
 CHM13 RefSeq guided evidence:
 - four of the five Dishuck Iso-Seq groups (B3-5, B6-9, B12/13, B15) are **simultaneously** exact connected components
-  for any cut in (0.997129, 0.997680], where the unconjoined graph makes no two of them simultaneously exact;
+  for any cut in (0.997129, 0.997680], where the unconjoined graph has only one exact group at any cut. ⚠ The conjunct
+  adds **three** of them (B3-5, B6-9, B12/13); **B15 is already exact in the baseline with an identical interval**
+  (0.992435, 0.999517], so "four" must never be quoted as four gains (adversarial review, 2026-09-17);
 - NPIPB is exact in (0.980559, 0.983454], missing the shipped 0.98 by **0.000559**, its boundary held not by a foreign
   record but by NPIPA1 at exactly 0.980559 via NPIPB2 — the NPIPA/NPIPB split itself.
 
