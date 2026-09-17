@@ -8,12 +8,13 @@ scripts in `bench/crossspecies/`. Anything not yet measured is marked **OPEN**.
 
 ## INDEX
 
-> **Index.** 12 sections; this is the map. **The titles carry the verdicts** — no tag is derived
+> **Index.** 14 sections; this is the map. **The titles carry the verdicts** — no tag is derived
 > here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
 > sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
 > heading to jump.
 
 
+- 0★★★. NESTED EDGE-TEST LATTICE (2026-09-16) — PROPOSED: nesting theorems proven, T3 conditional, precision OPEN; §0★★ stays current
 - 0★★. CURRENT DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14)
 - ⚠⚠ TIER NOTICE — READ BEFORE QUOTING ANY NUMBER IN THIS DOCUMENT (2026-08-10)
 - 0. What the definition must survive
@@ -27,6 +28,567 @@ scripts in `bench/crossspecies/`. Anything not yet measured is marked **OPEN**.
 - 4. Known exposures (state these first, do not wait to be asked)
 - 4a. ⭐⭐⭐ REACH — THE BOUND, AND WHAT SETS IT (2026-08-14)
 - 5. Three false-positive filters that were tried and failed
+
+## 0★★★. NESTED EDGE-TEST LATTICE (2026-09-16) — PROPOSED: nesting theorems proven, T3 conditional, precision OPEN; §0★★ stays current
+
+User-approved design (2026-09-16 16:39). PROPOSED: nothing in §0★★ is withdrawn, and §0★★ stays the current definition;
+clauses 4 and 6 carry cross-references to this section. Lemma 0, T1, T1′, T2 and T3(a) are proven below and need only
+nested tests. T3(b) is proven only under hypotheses: H1 and H2 for more copies, H1–H3 for more homology. The shipped
+tests and de novo nodes do not meet them (§0★★★.6). No lattice level has a measured precision or recall.
+Inputs: spec `docs/superpowers/specs/2026-09-16-family-layer-order-design.md` (Definitions, AUDIT AMENDMENT);
+`bench/LAYER_ORDER_NPIP_TBC1D3.md`. `LO/` below = `/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/`. Random-
+instance checks of the main claims, against the definitions and against the shipped functions:
+`LO/lattice/proofcheck_math/lattice_bruteforce{,2}.py` → `.out` (re-run 2026-09-16, byte-identical output,
+`LO/lattice/corrections_rerun/`).
+
+**Why.**
+- (1) Clause 6's "every RNA family lies inside one DNA family" is a theorem for connected components, and for
+  components of subgraph-monotone edge filters (counter-hypothesis 6). It is not a theorem for leader or MCL groupings.
+  It fails for the clause-4 leaders:
+  - 6-node counterexample: reads A 100, B 50, C 10, D 5, E 4, U 0; edges A–B, A–U, U–C, B–C, C–D, D–E. On the DNA
+    graph the leader families are {A, B, U, C} and {D, E}. On the graph induced on expressed copies (U dropped) they
+    are {A, B}, {C, D} and the singleton {E}. {C, D} crosses two DNA families (re-derived in `lattice_bruteforce2.out`).
+  - One real violation on gorilla NPIP. It was measured on graphs with the looser guided cutoffs 0.70/0.30, not
+    clause-2 0.80/0.50, in an ephemeral report, and has not been re-derived (memory `project_leader_rule_breaks_nesting`).
+- (2) Independently built layers are not nested. Only 0.521 of E1 DNA-family pairs are also protein-family pairs, and
+  only 0.253 of protein-family pairs are DNA-family pairs (§6ko AN-2). Across such layers the expression view nests
+  only if E_M ⊆ E_L inside every L group (§0★★ clause-6 note).
+
+The lattice makes nesting hold by construction. Every level is the set of connected components of ONE evidence graph
+under nested edge tests, so nesting is a theorem at every level, including the expression view. The price is paid at
+L0, which is the JOIN of protein and DNA components (Lemma 0(ii)): protein space's splits are thrown away. §6ko AN-2 has
+488 D-only pairs, among them GOLGA6L vs GOLGA8 at nt 0.83 / aa 0.27, which L0 keeps together. The only measurement of
+JOIN against REFINE is the NPIP/TBC1D3 layer-order study (development families; `bench/LAYER_ORDER_NPIP_TBC1D3.md` §7).
+On Soto TBC1D3, REFINE has bipartite F 1.000 against JOIN 0.818 (U-restricted) and 0.643 (whole groups). On HGNC, no
+JOIN-vs-REFINE ranking holds under every convention.
+
+*Picture.* There is one Venn diagram per level, and each is drawn inside the one above it (T1′). A sample's RNA diagram
+is drawn inside the DNA diagram of the same level (T2). A new separating test adds a finer diagram (T3a). On a frozen
+node set and under H1–H3, more copies or more homology can only grow or fuse circles (T3b). Sweeping one threshold
+draws the whole nested stack as a dendrogram (§0★★★.3).
+
+### 0★★★.1 Objects
+
+- **Nodes V = copies** (§0★★ clause 1). Guided mode: annotated gene bodies, plus candidate loci found from them. De novo
+  mode: read-supported loci, consolidated to gene level.
+  - *Within one run*, a node's interval, exon structure, representative transcript and (guided mode) longest-CDS protein
+    are fixed before any edge is evaluated.
+  - *Across runs they are not fixed in general.* De novo extents are read-derived. Nodes are loci that carry aligned
+    reads, read-locus nodes need exons at depth ≥ 2 (§0★★ clause 1, §6ka), and "RNA decides which intervals are nodes
+    and how far they extend" (§0★★ preamble, §1★). Guided candidate-locus widths are set by the seed's transcript hit or
+    gene-body chain (clause 1, §6js), so they depend on the seed set.
+  - Consequence: any statement that compares two node sets (T3(b), and T2 across samples in de novo mode) applies only
+    to a **frozen** node set: annotated gene bodies, or de novo nodes built once and pinned. Node presence and extent are
+    the documented dominant error. Node presence is 58% of the de novo ↔ guided gap (§6j1/§6je), and §4 says "Node
+    extent, not homology, is the recurring failure". T3 assumes that error away.
+  - *Readthrough records (both modes; proposed node rule, OPEN).* Clause 1 keeps readthrough spans out of de novo nodes
+    only. Annotated readthrough records are gene records, so nothing stops them becoming guided nodes. On NPIP/TBC1D3
+    they chain families at every level, L3 included (§0★★★.5). Proposed rule: exclude records annotated as readthrough
+    before any edge is evaluated, in both modes. Not adopted: it would also remove the NPIP member PKD1P6-NPIPP1, which
+    is itself annotated as a readthrough (`LO/lattice/nodes.tsv`), so the rule must be scored first.
+- **Evidence.** A record set A is computed against a fixed assembly and a fixed target set. It holds:
+  - DNA genome-alignment records: each node's spliced transcript (`-x splice -uf`) and gene body (`-x asm20`) aligned to
+    the genome (clause 2 as instantiated in `bench/denovo_shared_def.py`);
+  - blastp HSPs between node proteins (§6ko; guided mode only, see t_P);
+  - SD calls (SEDEF). They are carried on the edge and reported, and no test below uses them.
+
+  For an unordered pair e = {u, v}, ev(e) ⊆ A is the set of records that link u and v. A DNA record links u→v when its
+  query is u's sequence, its target does not overlap u's own locus, and its target touches v: for a transcript record,
+  an aligned exon block overlaps v's exons; for a gene-body record, the target intersects v's gene body. For gene-body
+  evidence the exon requirement sits on the chain, in t_D below, as in the shipped loop (`bench/denovo_shared_def.py`
+  `cmd_families`, where a chain on the genome may also contain records just outside v's body). An HSP links the two
+  proteins it aligns. SEDEF calls have no query sequence; they are attached to pairs by mapping their intervals back onto the nodes'
+  exons (the `S2` map-back). A record r carries these
+  fields: identity, aligned fraction, protein coverage of the longer protein, E-value, and, for DNA records, shared-exon
+  bases sx(r) = min(exon bases of u in r, exon bases of v in r) (§6ks). **R_D(e)** ⊆ ev(e) is the set of the pair's DNA
+  genome-alignment records (transcript and gene-body records; no HSPs, no SEDEF calls).
+- **E = every pair with ev(e) ≠ ∅.** Each edge carries all of its evidence. There is one graph for all levels.
+- **Tests.** Each test is written in a monotone form (H3, §0★★★.2): an existential over records or over sets of
+  records, or a threshold on a maximum over records. Where the shipped function differs, the difference is stated.
+  - **t_D** (clause 2; §6jo, §6jq, §6jr). True if either of these exists:
+    - an exon record: u's spliced transcript on v, or v's on u, with identity ≥ 0.80 over ≥ 0.50 of the transcript.
+      This is one record, so the test is monotone as shipped.
+    - a gene-body chain: a set S ⊆ R_D(e) of gene-body records of u on v's locus, or of v on u's locus (one chromosome
+      and strand, collinear), with pooled identity Σnm/Σbl ≥ 0.80, aligned ≥ 0.50 of the shorter body, and a target
+      span that overlaps ≥ 1 exonic base of the target copy. "Some such set exists" is monotone by form. It is not
+      implemented.
+    - *Sense condition, both disjuncts (as shipped in `cmd_families`).* When both copies are spliced (≥ 2 exons), the
+      witness must be sense to the target copy. For an exon record, the aligned transcript strand must equal the target
+      copy's strand. For a chain, the target copy's strand must equal the query copy's strand when the chain is '+', and
+      the opposite strand when it is '−'. The condition filters single records or chains, so monotonicity is unchanged.
+
+    *The shipped body test differs and is not monotone* (`bench/guided_pipeline.py` `gene_body_chains`, used by
+    `denovo_shared_def.py`). Chains are formed greedily from all of u's records on the chromosome and strand (gap ≤ query
+    length, span ≤ 2 × query length). Identity is pooled over the whole chain. The coverage denominator is min(query
+    body, extrapolated target span), not the shorter of u's and v's bodies. Adding one low-identity record can extend a
+    passing chain and pull its pooled identity below 0.80, which deletes the edge. `lattice_bruteforce2.out` has a hand
+    example (record A, 570/600, passes; adding record B, 120/400, 50 bp downstream, fails) and 203 of 5,000 random
+    instances in which the edge is lost.
+  - **t_P** (the §6ko edge). Both nodes carry a protein: the annotated longest CDS, ≥ 10 aa, r2 biotype rule. True if, in
+    either query direction, the union of all HSP intervals at e ≤ 1e-5 covers ≥ 0.30 of the longer protein. This union
+    form is monotone by form, since an added HSP can only enlarge the union (0 of 5,000 random instances violate
+    π_0 ≤ π′_0|V with it).
+
+    *The shipped test differs and is not monotone* (`bench/protein_families.py` `edges_from`). It selects
+    non-overlapping HSPs greedily by bitscore and measures their cover. A new high-bitscore HSP can block two earlier
+    ones and lower the cover. In 399 of 5,000 random instances an old edge is lost. A 3-protein hand example (lengths
+    200, 150, 120) moves copy 2 from {1, 2} to {2, 3} (`lattice_bruteforce2.out`). Greedy cover ≤ union cover, so the
+    union form admits a superset of the shipped edges and gives an L0 at least as coarse.
+
+    **L0 is guided-only as specified.** The protein comes from annotation fields: the longest annotated CDS and the
+    biotype filter. De novo read-locus nodes carry neither. An ORF called from read-derived transcripts would itself be
+    read-derived (breaks H1). A read-independent protein, such as an ORF on the fixed node's exons in assembly sequence
+    with a biotype-free filter, is neither specified nor measured. Until it is, §0★★'s "one graph for both modes" holds
+    for L1–L3 only.
+  - **f_ex(e)** = max over r ∈ R_D(e) of sx(r) / min(exonic length of u, exonic length of v). This is *adapted from*
+    §6ks/§6kt (`min_shared_exon_frac`, `annotation_families.rs`). That code takes the same maximum, but only over E1
+    records (asm20 gene-vs-gene records that passed identity ≥ 0.70 and ≥ 300 bp), and it was validated on E1 MCL
+    catalogs, not on this graph. As defined here, f_ex puts no identity or length floor on r; the E1 floor is a choice
+    of the shipped code.
+  - **w_98(e)** = max identity over r ∈ R_D(e) with sx(r) ≥ 0.30 × min(exonic length of u, exonic length of v). One
+    record must witness both the shared-exon fraction and the identity. That is the SD98 reading: one ≥ 98% duplication
+    covering the shared exons.
+    - Separate maxima, with the fraction from one record and the identity from another, are looser. A record with
+      identity 0.85 and exon fraction 0.90, together with a record with identity 0.99 and exon fraction 0.001, passes
+      separate maxima and fails the single-record form (direct check, `LO/lattice/corrections_rerun/rerun_checks.out`).
+    - Both forms are monotone, so the theorems hold for either. This section fixes the single-record form. Gap-inclusive
+      or gap-excluded identity must be chosen before a run.
+    - The NPIP/TBC1D3 run (`bench/NESTED_LATTICE_NPIP_TBC1D3.md`) first used an identity pooled over all E1 records of
+      the pair, which is not monotone. After its audit it uses the single-record w_98 with gap-excluded identity as the
+      primary L3. The gap convention is stated there as a choice: it was the run's convention before any result.
+      Pooled and gap-inclusive identities are reported as variants, marked non-monotone where they are. Its f_ex keeps
+      the shipped E1-record restriction, also stated as a choice.
+
+| level | name | test | source |
+|---|---|---|---|
+| L0 | superfamily (guided-only) | t_0 = t_P ∨ t_D | §6ko edge ∨ clause 2 |
+| L1 | family | t_1 = t_D | clause 2 |
+| L2 | shared-exon unit | t_2 = t_1 ∧ f_ex ≥ 0.30 | adapted from §6ks, §6kt |
+| L3 | ≥ 0.98 identity unit (not the subfamily) | t_3 = t_2 ∧ w_98 ≥ 0.98 | SD98 convention (spec layer S2) |
+
+*Level names* (renames and the gene-body linkage wording of this section approved by the user, 2026-09-16 19:04). The design named L2 "duplication unit (SD)" and L3 "subfamily". Neither name is used here.
+- L2 uses no SD evidence, and f_ex ≥ 0.30 also holds for retrocopy–parent pairs. A spliced parent transcript aligned to
+  its processed pseudogene shares nearly all exon bases (f_ex ≈ 1). Mechanism (GENOMIC / RETROCOPY / UNRESOLVED) is the
+  clause-3 edge label, which is orthogonal to L2.
+- Clause 5 stays the subfamily definition. §6jo showed that a single identity cut is the wrong operator for subfamilies.
+  NPIPB's internal exon-masked identity (0.852-0.995) overlaps the A–B range (0.850-0.967), so no single cut separates
+  A from B while keeping B whole. L3 is a lattice level (it keeps T1–T3) and an SD98-style identity cut. It is not a
+  subfamily call. The split-support alternative (§0★★★.4) is still to be discussed and is not substituted.
+
+t_3 ⇒ t_2 ⇒ t_1 ⇒ t_0 holds for every evidence set, by the form of the tests. Each finer level adds a conjunct, and L0
+adds a disjunct.
+
+**Constants.** Every one is a named cut (§0★★★.3):
+- t_D: 0.80 and 0.50, in both disjuncts;
+- t_P: e ≤ 1e-5, cover ≥ 0.30, protein ≥ 10 aa, plus the r2 biotype rule, which is not numeric;
+- t_2: 0.30;
+- t_3: 0.98, and its same-record 0.30;
+- expression view: reads ≥ 3.
+
+De novo node construction carries its own constants: read-locus nodes need ≥ 3 unique reads and exons at depth ≥ 2 (§6ka).
+
+- **Levels.** G_k = (V, E_k), where E_k = {e ∈ E : t_k(ev(e))}. The level-k groups π_k are the connected components of
+  G_k, singletons included. Hiding size-1 groups in a report changes no containment.
+- **Expression view.** X ⊆ V is the set of expressed copies. The level-k RNA groups are the components of the induced
+  subgraph G_k[X]. Two read-count conventions exist:
+  - *any-overlap* (the lattice's choice): primary reads (`-F 2308`) of any MAPQ with a CIGAR block overlapping an exon of
+    the fixed node by ≥ 1 bp, strand ignored, reads ≥ 3 (spec EXPR; `bench/LAYER_ORDER_NPIP_TBC1D3.md` §8;
+    `LO/heavy/scripts/expr_counts.py`);
+  - *u ≥ 3*: primary reads with MAPQ ≥ 1 and ≥ 1 aligned block inside the node interval (`bench/interval_expression.py`).
+    This is "expressed" in §6jz-§6kf and in every number in §0★★★.5.
+
+  MAPQ depends on the assembly, which H2 fixes. On a frozen node set, any other sample, tissue or read threshold is just
+  another X. In de novo mode another sample also yields other nodes (H1), so its RNA groups are not an induced subgraph
+  of the same G_k.
+- **Notation.** Partition σ refines π (σ ≤ π) iff every block of σ lies inside one block of π. The restriction of π to X
+  is π|X = {A ∩ X : A ∈ π, A ∩ X ≠ ∅}.
+
+### 0★★★.2 Theorems
+
+T1, T1′, T2 and T3(a) need only the nesting of the tests, which holds by form. They need no hypothesis on nodes or
+evidence. T3(b) needs H1 and H2, plus H3 when records are added.
+
+**Lemma 0 (components preserve order and joins).**
+- (i) For edge sets F ⊆ F′ on V: comp(F) ≤ comp(F′).
+- (ii) comp(F ∪ F′) = comp(F) ∨ comp(F′), the join in the partition lattice.
+- (iii) comp(F ∩ F′) ≤ comp(F) ∧ comp(F′). Equality is not guaranteed.
+
+*Proof.*
+- (i) A path in F is a path in F′. Each F-component is therefore connected in F′ and lies inside one F′-component.
+- (ii) By (i), comp(F ∪ F′) is coarser than both comp(F) and comp(F′), so it is coarser than their join. Conversely,
+  each edge of F ∪ F′ has both endpoints in one block of comp(F) or of comp(F′), so in one block of the join. Following
+  paths, each component of F ∪ F′ lies in one block of the join.
+- (iii) Apply (i) to F ∩ F′ ⊆ F and to F ∩ F′ ⊆ F′.
+- Strictness in (iii): take V = {a, b, c}, F = {ab, bc}, F′ = {ac, bc}. Both give the partition {abc}, but
+  F ∩ F′ = {bc} gives {a}, {bc}. ∎
+
+*Consequence.* L0 = comp(E_P) ∨ comp(E_D) exactly: the superfamily is the join of the protein components and the DNA
+components. This is the spec's JOIN operator applied to components instead of MCL groups. L2 and L3 are not the meet of
+their conjuncts' partitions and can be strictly finer.
+
+**T1 (levels nest).** π_{k+1} ≤ π_k for k = 0, 1, 2.
+*Proof.* t_{k+1} ⇒ t_k gives E_{k+1} ⊆ E_k. Apply Lemma 0(i). ∎
+
+**T1′ (all levels form one tree of sets).** The union of π_0, …, π_3 is laminar: any two groups are either disjoint or
+nested. Take as tree nodes the pairs (k, A) with A ∈ π_k. The parent of (k, A) is (k−1, A′), where A′ is the unique
+block of π_{k−1} that contains A. These nodes form a rooted forest of depth 4, which becomes a tree once V is added as
+the root.
+*Proof.* Take A ∈ π_i and B ∈ π_j with i ≤ j. By T1, iterated, B lies inside some A′ ∈ π_i. A and A′ are blocks of one
+partition. If A = A′, then B ⊆ A. If A ≠ A′, then A ∩ B ⊆ A ∩ A′ = ∅. The parent is unique by the same argument with
+j = i + 1. ∎
+
+**T2 (the expression view nests at every level, unconditionally).** For every X ⊆ V and every k:
+- (a) comp(G_{k+1}[X]) ≤ comp(G_k[X]);
+- (b) comp(G_k[X]) ≤ π_k|X;
+- (c) comp(G_j[X]) ≤ π_k|X for every j ≥ k. For a fixed X, the expressed groups of all levels, ⋃_k comp(G_k[X]), form
+  a laminar family. Adding the restrictions π_k|X breaks laminarity: the restriction of one level can cross the
+  expressed partition of a coarser level (718 of 14,410 random (instance, X) draws; explicit case under *Limit*).
+
+*Proof.*
+- (a) E_{k+1} ∩ X² ⊆ E_k ∩ X². Apply Lemma 0(i) on the vertex set X.
+- (b) A path in G_k[X] is also a path in G_k. So each component of G_k[X] lies inside one G_k component, and inside X.
+- (c) Chain (a) and (b). Laminarity of ⋃_k comp(G_k[X]) follows from (a) as in T1′. ∎
+
+*Why this removes the audit's precondition.* The layer-order audit (spec AUDIT AMENDMENT; §0★★ clause-6 note) showed
+that "M refines L ⇒ EXPR(M) refines EXPR(L)" needs E_M ⊆ E_L inside every L group. Its counterexample is a finer layer
+that keeps an edge which is not an L edge, although its endpoints are L-connected through a path: a P edge a–b inside a
+D group whose only D path is a–c–b. Here E_M = E_{k+1} ⊆ E_k = E_L on all of V, by construction of the tests, so the
+precondition holds for every pair of levels and every X. The spec's EXPR computes components of the expressed subgraph
+inside each L group and keeps only groups with ≥ 2 genes. For a lattice level it therefore equals comp(G_k[X]) minus
+singleton groups, because by (b) no component of G_k[X] crosses a G_k group (0 of 14,410 random draws differ).
+
+*Limit: what T2 does not say.* Pooled views are not laminar in three cases:
+- **Full-graph and expressed groups across levels.** Take V = {x, a, c, b} and X = {x, a, b}. x–a passes t_j only. a–c
+  and c–b pass t_i, where i > j, so they also pass t_j. Then {x, a} ∈ comp(G_j[X]) and {a, c, b} ∈ π_i share only a.
+  The restriction π_i|X = {{a, b}, {x}} also crosses comp(G_j[X]) = {{x, a}, {b}}. Pooling full and expressed groups
+  across levels gives 3,764 crossings in 14,410 random draws.
+- **Nested samples at different levels.** For X ⊆ X′, a coarser level on X can cross a finer level on X′ (take X′ = V
+  in the case above).
+- **Two incomparable samples, even at one level.** V = {a, b, c, d} with edges a–c, c–b, b–d. X = {a, b, c} gives
+  {a, b, c}; X′ = {a, b, d} gives {b, d} and {a}.
+
+Nesting runs one way only. For X ⊆ X′ and j ≥ i, comp(G_j[X]) ≤ comp(G_i[X′])|X: an expressed group at a finer or
+equal level lies inside one group, at a coarser or equal level, of any superset view (T2(a), then T3(c)). Expressed
+level j against full level i ≤ j: 0 of 14,410 random draws cross.
+Because T1 and T2 are theorems, a zero-violation count on data is a code check, not evidence (as in
+`bench/LAYER_ORDER_NPIP_TBC1D3.md` §8).
+
+**T3 (more information only merges or only splits; no copy changes group).** Three hypotheses:
+- **H1, fixed node content.** Each node's interval, exon structure, representative transcript and protein are the
+  same before and after: a frozen node set. H1 fails in de novo mode across read sets, and for guided candidates across
+  seed sets (§0★★★.1 Nodes).
+- **H2, pairwise evidence.** ev(u, v) depends only on u, v, the fixed assembly and the fixed target set. It does not
+  depend on which other nodes exist.
+- **H3, monotone tests.** If ev ⊆ ev′, then t_k(ev) ⇒ t_k(ev′). Per test:
+  - the t_D exon disjunct (one record): holds;
+  - the t_D body disjunct: holds for the existential form of §0★★★.1; **fails for the shipped `gene_body_chains`**
+    (greedy chaining, pooled identity; 203 of 5,000 random instances lose the edge);
+  - t_P: holds for the union-cover form; **fails for the shipped `edges_from`** (greedy HSP selection). Of 5,000 random
+    instances with ev ⊆ ev′, 399 lose an old edge, 29 violate π_0 ≤ π′_0|V, and 16 move a copy;
+  - f_ex and w_98: maxima over records, so H3 holds.
+
+  Any test on a single best record or chain, a pooled identity or a greedy selection must be re-checked, because a new
+  record can replace or dilute an old passing one.
+
+**(a) Stronger tests** (information = a new discriminating criterion). Let t′ be any replacement stack with t′_j ⇒ t_j
+for every j and t′_{j+1} ⇒ t′_j.
+- Then π′_j ≤ π_j for every j, and π′_j = π_j wherever t′_j = t_j. This is splits only: if u and v were apart at level
+  j, they stay apart.
+- The new stack is nested, so T1, T1′ and T2 hold for it.
+
+Two special cases:
+- **Conjoin s from level k down:** t′_j = t_j ∧ s for j ≥ k, and t′_j = t_j for j < k. Inserting a new level
+  t_{k−1} ∧ s between L_{k−1} and L_k is the same operation applied from the new level down. L_k … L_3 are unchanged
+  when t_k ⇒ s already holds.
+- **Strengthen one disjunct:** t′_0 = (t_P ∧ s) ∨ t_D, with t′_j = t_j for j ≥ 1. Still t′_0 ⇒ t_0 and
+  t_1 = t_D ⇒ t′_0, and L1–L3 are untouched. Conjoining s from L0 down would instead also cut L1–L3. With
+  s = aa ≥ 0.50, it would delete every DNA edge touching a protein-less copy.
+
+*Proof.* t′_j ⇒ t_j gives E′_j ⊆ E_j. Apply Lemma 0(i). This step needs neither H1 nor H2. ∎ (Random instances,
+conjoin-from-k and inserted level: 0 of 5,000.)
+
+**(b) More copies or more homology.**
+- *More copies* (V ⊆ V′, with the same record-generation procedure). Under H1 and H2, an old pair's evidence is
+  unchanged, so each of its tests gives the same answer whatever the test's form. H3 is not needed. For t_P, however,
+  H2 fails as shipped (counter-hypothesis 2).
+- *More homology* (new records for old pairs, ev(e) ⊆ ev′(e)). Under H1 and H2, new records for an old pair can only
+  come from a changed or added search procedure, such as another aligner or a more sensitive setting. This case needs
+  H3 as well. It holds for the monotone test forms of §0★★★.1, and not for the shipped t_P or body-chain code.
+
+Under these hypotheses, for every k:
+- π_k ≤ π′_k|V. This is merges only: for u, v ∈ V, u ~_k v ⇒ u ~′_k v.
+- A new copy either forms its own group or joins existing groups, possibly merging them.
+- No copy moves. A move would separate two copies that were together, and that is excluded.
+
+*Proof.* For every old pair, H1 and H2 (and H3, when records are added) give t_k(ev(e)) ⇒ t_k(ev′(e)), so E_k ⊆ E′_k.
+Old nodes that were isolated stay vertices of V′. Apply Lemma 0(i) on V′ and restrict to V. ∎ (Random instances: 0 of
+5,000 with monotone per-record tests; with the shipped t_P, 29 violations and 16 moves.)
+
+**(c) More expression on one graph** (X ⊆ X′, same G_k). comp(G_k[X]) ≤ comp(G_k[X′])|X. This is Lemma 0(i) on the
+induced graphs, and it needs nothing beyond a fixed graph. Comparing samples on different de novo node sets is outside
+(c), because H1 fails there. With the any-overlap count on fixed nodes, X only grows with more reads. With unique-read
+counts it can shrink (counter-hypothesis 5).
+
+**Counter-hypotheses.** Items 1-5 each break T3(b) or the expression view. Item 6 marks where third-node filters are
+still allowed.
+1. **Node content that is not fixed (breaks H1).** Read-extended or re-consolidated de novo nodes change the denominators
+   of clause 2 (≥ 0.50 of the transcript or of the shorter body) and of f_ex (the smaller exonic length). Guided
+   candidate widths change with the seed set. An edge can then disappear, which splits a group and can move a copy.
+   Across de novo runs with different read sets, T3 needs the extents to be frozen.
+2. **Evidence that depends on other nodes or on the target set (breaks H2).**
+   - blastp E-values scale with database size. `bench/protein_families.py` builds the database from the node set's own
+     proteins, so adding proteins can push an existing HSP above 1e-5 and delete a t_P edge, which splits L0. Any L0
+     monotonicity claim first needs a fixed `-dbsize` or a bitscore floor.
+   - Secondary-alignment filters (`-N`, `-p`) make a record's existence depend on the other targets. They are harmless
+     while the target (genome or contig subset) is fixed, and not when it grows.
+   - Best-hit, reciprocal-best-hit and relative-score tests are not monotone.
+   - Ties must be broken by a canonical order, or the evidence is not a function of the pair. The component containing
+     TBC1D3 PC2 has ≥ 4,522 genes (965 never searched) under the shipped HSP order and ≥ 4,528 (968 never searched)
+     under a stable file order (`bench/LAYER_ORDER_NPIP_TBC1D3.md` §2).
+3. **Non-monotone tests (breaks H3 when records are added).** Two shipped cases: the greedy HSP selection of t_P, and the
+   greedy chaining with pooled identity of the gene-body test (§0★★★.1; H3 above). Pooled pair-level identities, such as
+   E1's Σnmatch/Σblocklen in `annotation_families.rs`, have the same defect. Fix: use the monotone forms of §0★★★.1, or
+   restrict T3(b) to more copies.
+4. **Grouping that depends on the group instead of components of an edge test.**
+   - Clause-4 leaders: the read order decides which edges are used (6-node counterexample under "Why").
+   - MCL: flow normalisation runs over the whole component, so a new node re-weights it.
+   - Split-system clusters: support depends on every taxon. In §6kq, adding haplotypes cost support for NPIP A6-9 and
+     B6-9 in the human panel.
+   - Guided seed neighbourhoods: membership depends on which records are seeds, and candidate widths move with them.
+5. **Unique-read expression.** A new record, such as a readthrough, can take a read's uniqueness away. X then shrinks
+   and groups split. TBC1D3P1-DHX40P1 has 72 any-overlap reads and 0 unique reads (`bench/LAYER_ORDER_NPIP_TBC1D3.md`
+   §8).
+6. **Filters that use third nodes are allowed if they are monotone.** Let φ be a filter on edge sets with
+   H ⊆ G ⇒ φ(H) ⊆ φ(G), and define level k as comp(φ(G_k)). Then T1, T1′, T2 and T3 still hold under the same
+   hypotheses: every proof above only uses the inclusion of edge sets, and φ preserves inclusion.
+   - Examples:
+     - triangle support Δ(G) = {e : e lies on a triangle of G}, which equals the 3-truss (every edge of Δ(G) lies on a
+       triangle whose other two edges are also in Δ(G));
+     - the 4-truss (each edge on ≥ 2 triangles), which is genuinely stricter;
+     - "e lies on a cycle", which is bridge removal (§6kb AD2a).
+   - Adding a node can create a triangle. That adds an edge (a merge), consistent with T3(b).
+   - Removing nodes, as the expression view does, can destroy a triangle. That is a split, consistent with T2.
+   - The view must be fixed as either comp(Δ(G_k[X])) or comp(Δ(G_k)[X]). Both nest, since Δ(G_k[X]) ⊆ Δ(G_k)[X], but
+     they differ (in 672 of 2,000 random instances).
+   - Random instances for Δ, 0 counterexamples in 5,000 each: T1; both T2 views; T3(a); T3(b); 3-truss = Δ.
+
+### 0★★★.3 Filtration view: thresholds are cuts, not definitions
+
+Fix a base test b and one numeric field w ∈ [0, 1], and let E(c) = {e : b(e) ∧ w(e) ≥ c}. Example: b = t_2 and w = w_98
+give the L3 sweep, since t_3 = t_2 ∧ w_98 ≥ 0.98.
+- **Nested partitions.** If c ≥ c′, then E(c) ⊆ E(c′), so comp(E(c)) ≤ comp(E(c′)) (Lemma 0). Lowering c from 1 gives
+  a nested sequence of partitions, with at most (number of distinct w values + 1) distinct members.
+- **The sequence is the single-linkage dendrogram of (V, b-edges, w).** u and v are together at cut c iff h(u, v) ≥ c.
+  Here h(u, v) is the bottleneck: the maximum, over b-paths from u to v, of the minimum w on the path. h can be read off
+  a maximum spanning forest (Kruskal, O(|E| log |E|)). With h(u, u) := 1, 1 − h is a **pseudo-ultrametric** on each
+  b-component. Distinct copies with h = 1 get distance 0, and ties at 1.0 are common on real data. In the 17:03 build of
+  `LO/lattice/edges.tsv` (md5 fbc40bd0, kept as `LO/lattice/pre_correction_1712/edges.tsv`), among non-same-locus pairs,
+  E1 identity is 1.0 for 2,946 of 82,491 and shared-exon fraction is 1.0 for 5,138 of 84,679. The full-precision
+  corrected build gives the same counts (`LO/lattice/corrections_pass2/doc_numbers.out`). (Random instances, 0 counterexamples in 5,000 each: cut ⇔ h ≥ c; Kruskal gives h;
+  partition count bound; ultrametric inequality.)
+- **T3(b) for the whole dendrogram.** Under H1 and H2, adding copies never lowers h(u, v): old paths remain, and h is a
+  maximum over paths. Adding records never lowers h provided b is monotone and w is a maximum over records (H3). **T2 for
+  the whole dendrogram:** h computed on G[X] is ≤ h computed on G.
+- **What the constants are.** Each level constant picks one cut of a sweep, once w is defined for that sweep:
+  - L3: w = w_98 over b = t_2;
+  - L2: w = f_ex over b = t_1;
+  - the identity of t_D: w_id(e) = max identity over exon records with ≥ 0.50 transcript coverage and over body chains
+    with ≥ 0.50 aligned. The 0.80 and the 0.50 of t_D apply jointly to one record or chain, so w must be a maximum over
+    the witnesses that meet the other threshold. Sweeping a t_D constant moves L0–L3 at once: L0 through its DNA
+    disjunct, and L2 and L3 because t_2 and t_3 contain t_1;
+  - L0: the sweep has the form t_P ∨ (w ≥ c). It is still nested, but it is a single-linkage dendrogram only if t_P
+    edges are given w = 1.
+
+  Report the dendrogram (h per pair, merge heights per group). A constant is a named cut defended by its sweep, not a
+  claim that the constant is right.
+- **Two fields at once.** Sweeping two fields jointly (for example identity × coverage) gives a two-parameter family.
+  It is nested in each coordinate but has no single dendrogram. Report one-field sweeps with the other fields fixed.
+- **Literature (not re-checked here).** Carlsson & Mémoli (JMLR 2010) characterise single linkage as the unique
+  hierarchical clustering method that satisfies their axioms. Their setting is finite metric spaces, with functoriality
+  under maps that do not increase distances. The edge graph is not such an input until it is turned into one, for
+  example by shortest-path distance with edge length 1 − w, infinite across components. The uniqueness statement
+  applies to that derived space, not to the sparse graph itself. The known cost of single linkage is chaining
+  (§0★★★.5).
+
+### 0★★★.4 Where the existing groupings sit (none is a lattice level; all stay report-only)
+
+| grouping | why it is not a level | what it keeps | status |
+|---|---|---|---|
+| §6ko protein families (MCL, I = 2.8) | MCL cut, not components; not monotone in nodes (counter-hypothesis 4). NPIP PC1 is an exact component; TBC1D3 PC2 is an MCL cut inside a component of ≥ 4,522 genes (965 never searched) of the plain §6ko edge graph (`LO/integrate_slim/p_components.out`) | L0 uses the §6ko edge (in its union-cover form), not its MCL families | report-only |
+| MCL guided catalogs and truths (`mcl_families` E0/E1/E1S: gorilla `gw_units_v3`, human `human2/guided.clusters.tsv`, the RefSeq E1 catalog "D" of `bench/LAYER_ORDER_NPIP_TBC1D3.md`) | 0.70 / 0.30 edges, not clause 2; MCL cut; anything built after the §6kt flip applies f_ex ≥ 0.30, the L2 conjunct. In D, MCL0 and MCL7 are joined by weight-1.000 edges through PKD1P*-NPIP readthroughs (report §2) | truths for scoring, never against a level that uses the same conjunct (§0★★★.6) | report-only; RefSeq E1 failed its HGNC guard on chr16/19/20 (§6kl) |
+| guided seed neighbourhoods (§6js, `bench/guided_pipeline.py`: a seed family plus the candidate loci its transcript and gene-body searches find) | membership depends on which records are seeds, and candidate widths move with them (H1); not components of an edge test (counter-hypothesis 4) | the "guided mode never chains" property (§6jz) | report-only; under the lattice, guided mode groups by components and loses that property (§0★★★.5) |
+| clause-4 triangle-supported leaders | read-order dependent; which edges count depends on earlier assignments; not a monotone filter; 6-node nesting counterexample ("Why") | A leader family computed on a graph H is connected in H: the leader, its neighbours, and nodes adjacent to ≥ 2 members of that star (`bench/denovo_shared_def.py`, grouping `triangle`). It therefore lies inside one level-k group of the graph it was computed on (G_k or G_k[X]), and inside one group at every coarser level (0 of 10,000 random instances fail). Leaders on G_k[X] and leaders on G_k need not nest (430 of 10,000 do not) | the confirmed de novo grouping (§6kd, §6ke) until §0★★★.6 is measured |
+| clause-5 split system (C_tree) and literature clades | Co-membership in a supported cluster depends on every taxon in the tree, so it is not pairwise evidence (§6kq). Candidate L3 test: "t_2 ∧ u, v in a common supported cluster", computed once on V and induced on X. It keeps T1, T1′ and T2 and loses T3(b) | the subfamily definition (clause 5) | L3 alternative to discuss; not substituted for w_98 ≥ 0.98 |
+| spec layer operators JOIN / REFINE | They act on groups, not edges. REFINE can keep a finer-layer edge that is not an L edge although its endpoints are L-connected through a path (in the audit counterexample, a P edge a–b inside a D group whose only D path is a–c–b), which is exactly where T2 fails. The lattice conjoins tests per edge instead | L0 is JOIN applied to components (Lemma 0(ii)) | replaced by edge-level conjunction for lattice levels |
+
+The NPIP/TBC1D3 layer-order study measured these report-only groupings, not lattice levels
+(`bench/LAYER_ORDER_NPIP_TBC1D3.md`; development families). Its findings:
+- The P vs D order is undetermined. The two tie under the spec reading, and the result depends on convention: of 9
+  variants beyond the spec reading, 6 give D > P, 2 give P > D and 1 ties.
+- P and D split 0 clade pairs.
+- The T2 precondition held for all 30 refinement pairs, so the 0 T2 violations there are guaranteed, not evidence.
+
+### 0★★★.5 The cost, stated first: components chain
+
+The closest measured instance of L1 on de novo nodes is §6jz AB2 / §6ka AC2: connected components of the guided-finder
+edges. Those are exon records plus gene-body chains with the shipped extrapolated-span denominator, so this is close to
+L1 but not identical to it. Components have the best recall of the AB–AF arms and the lowest precision among them on
+every substrate. DN1 (§6jy), which is not an AB–AF arm, is lower still on the gorilla hold-out (P_G 0.2760). Leaders
+recover the precision. Values are expressed-guided any R_G / P_G, where expressed = u ≥ 3 (MAPQ ≥ 1, node interval;
+§0★★★.1). Human and gorilla are never pooled.
+
+| substrate (ledger) | nodes | components (closest measured instance of L1) | bridge-split components (AD2a) | triangle-supported leaders | one-hop leaders |
+|---|---|---|---|---|---|
+| gorilla hold-out, AB2 nodes (§6jz, §6ka) | 2,431 | AB2 0.5088 / 0.3100 (fails the 0.3386 guard) | — | — | AC1 0.3401 / 0.5806 |
+| gorilla hold-out, + read-locus nodes (§6ka, §6kb) | 2,664 | AC2 0.6950 / 0.3001 | 0.6100 / 0.3023 (deciding arm, NOT SUPPORTED) | AD2b 0.6046 / 0.4191 | AC3 0.4170 / 0.5365 |
+| gorilla fresh (§6kd) | 2,853 | AC2 0.2273 / 0.3767 | 0.1240 / 0.5172 (reported arm) | 0.1983 / 0.6761 | AC3 0.1942 / 0.7015 |
+| human chr15/17/22 (§6ke) | 6,220 | AC2 0.1606 / 0.1718 (bipartite F 0.522) | — | 0.0723 / 0.6822 (bipartite F 0.558) | AC3 0.0425 / 0.7248 |
+
+- **The chaining is real, not an artefact of truth granularity.** AB2's largest component has 85 loci spread over 16
+  guided clusters (§6jz). A coarser truth raises component P_G by only +0.02 to +0.05 (§6kb AD-3). The same failure mode
+  appeared earlier: the blind transitive-closure variant `ER_CC` scores below its own null, 0.3000 vs 0.3408, and it
+  fails by lumping (§1★.2).
+- **Bridge removal did not fix it where it was decided.** Bridge removal is a monotone filter (counter-hypothesis 6).
+  It failed on the gorilla hold-out with P_G 0.3023 (§6kb AD2a), and it deletes every 2-copy family. On the fresh
+  substrate, as a reported arm, it scored P_G 0.5172 at R_G 0.1240, against P_G 0.3767 at R_G 0.2273 for components
+  (§6kd).
+- **L0 on the plain §6ko edge is known degenerate.** The component holding TBC1D3 has ≥ 4,522 genes, 965 never searched
+  (§0★★★.4).
+  - On the protein edge set alone, strengthening t_P to t_P ∧ aa ≥ 0.50 gives components {21 NPIP} and {9 TBC1D3 + USP6 +
+    USP32} (`bench/LAYER_ORDER_NPIP_TBC1D3.md` §2; `LO/integrate_slim/p_variants.out`; re-derived on
+    `LO/lattice/edges.tsv`). Making the same replacement inside L0's disjunct is a T3(a) stronger stack (splits only).
+  - L0 with that disjunct strengthened, (t_P ∧ aa ≥ 0.50) ∨ t_D, has not been measured with clause 2.
+  - An approximate run keeps NPIPA1 and TBC1D3 in ONE component.
+    - The approximation: clause 2 as gene-body chains on the E1 gene-body PAF plus an exon proxy. Both require the hit
+      to overlap v's exons and apply the shipped strand check for spliced pairs. Same-locus pairs are excluded; DNA
+      records exist only for chr15/17/22 and chr16/19/20; 1,909 proteins in V were never searched. The sizes are lower
+      bounds only with respect to unsearched proteins and uncovered chromosomes. The clause-2 approximation itself can
+      admit or reject edges that clause 2 would not, so the sizes are indicative only.
+    - On V the component has 1,017 genes with the shorter-body denominator and 1,369 with the extrapolated-span
+      denominator. Without the v-exon and strand requirements (the first version of the run): 2,300 and 2,426.
+  - Shortest path, 7 hops, the same with and without those requirements: NPIPA1 – NPIPB9 (aa 0.577 and DNA) –
+    BNIP3P16 – ZNF28 (DNA) – ZNF232 (aa 0.553) – KRT17P4 – LGALS9B – TBC1D3 (DNA).
+  - The DNA edges alone put NPIPA1 in a component of 341 genes and TBC1D3 in one of 97 on V (shorter-body denominator;
+    373 and 105 with the extrapolated span). Without the v-exon and strand requirements: 604 and 897 (684 and 941).
+  - Data: `LO/lattice/corrections_pass2/doc_numbers.out` and `bench/NESTED_LATTICE_NPIP_TBC1D3.md` §3 and §5. The
+    figures without the requirements are in `LO/lattice/corrections_rerun/rerun_checks.out`, audited in
+    `LO/lattice/proofcheck_math/l0_aa50_path.out`.
+  - The aa ≥ 0.50 test is not adopted in any case: its cross-annotation sensitivity is 0.867 (§6ko qualification).
+- **Guided mode loses "never chains".** Under the lattice, guided mode also groups by components instead of seed
+  neighbourhoods and MCL cuts. It therefore loses the "guided mode never chains" property (§6jz). The example below is
+  an approximate L3 on NPIP/TBC1D3 (human CHM13).
+  - Construction: S1 edges (RefSeq E1 at 0.70/0.30 plus shared-exon fraction ≥ 0.30, `LO/light/S1.edges.tsv`) whose
+    SEDEF SD98 map-back `max_identity` is ≥ 0.98 (`LO/heavy/S2.edges.tsv`). That keeps 133 of 641 edges.
+  - Member-holding components include a 14-node component: the 7 NPIPA copies (A1, A2, A5–A9), PKD1P1, PKD1P2 and PKD1P3,
+    and the readthrough records PKD1P3-NPIPA1, PKD1P4-NPIPA8, PKD1P5-LOC105376752 and LOC131696449. Another component is
+    {DHX40, DHX40P1, RNFT1-DT, TBC1D3P1-DHX40P1}.
+  - Example edges (E1 weight / S2 identity): PKD1P3-NPIPA1–PKD1P1 0.980 / 0.9972; PKD1P3-NPIPA1–NPIPA9 0.989 / 0.9869.
+    The readthrough edges in these components have E1 weight 0.911–0.998.
+  - With the 56 records annotated as readthrough removed, the NPIPA copies form their own 7-node component, and PKD1P1
+    with PKD1P3 a 2-node one.
+  - Approximation: E1 0.70/0.30 edges, not clause 2; SEDEF identity, not w_98.
+  - Data: `LO/lattice/corrections_rerun/{rerun_checks.out,readthrough_removed.out}`; audit
+    `LO/lattice/proofcheck_consistency/{s1_and_s2_components.out,readthrough_edges.out}`.
+- **T3(b) makes chaining grow with data.** More copies can only merge groups. An illustration, not a T3(b) instance:
+  with 23 haplotypes, single linkage chains all 9 CHM13 TBC1D3 copies with 265 other copies (§6kq extension). That run
+  cut at 1.5 × the TBC1D3 allelic median of 0.163%, about 0.24% p-distance, which is about 8× finer than L3's 2%. It
+  also added haplotypes, which changes the assembly and falls outside H2.
+- **L3's 0.98 cut sits close to these families' paralog divergence.** Median CHM13 paralog p-distance is 0.0190 for NPIP
+  and 0.0103 for TBC1D3 (§6kq; measured on projected intronic columns, a different identity from w_98). L3 is
+  therefore likely to be threshold-sensitive on NPIP and TBC1D3; report the §0★★★.3 sweep.
+
+**Precision-recovery options and which theorems each keeps:**
+
+| option | T1 / T1′ | T2 | T3 | cost / evidence |
+|---|---|---|---|---|
+| (i) Stricter pairwise tests: use L2 (f_ex ≥ 0.30) as the working family, or add a separating test (T3(a)) | kept (it is a level) | kept | kept | On guided MCL catalogs with the E1 form of f_ex (§6ks, 11 held-out Soto families): bipartite F 0.831 → 0.881, pairwise precision 0.815 → 1.000, zero recall loss. Never measured on de novo components or with the adapted f_ex: OPEN |
+| (ii) Triangle-support filter: level k = comp(Δ(G_k)), where Δ = the 3-truss; or the stricter 4-truss | kept (Δ is monotone under subgraphs) | kept (the view must be fixed; counter-hypothesis 6) | kept: a new node can create a triangle, which is a merge | Dissolves every component with no triangle, including every 2-copy family and every path. That is the same cost that rules out λ ≥ 2 as a membership criterion: enforcing it "would therefore delete every 2-copy family, and 2 is the modal family size" (§1★.5). Triangle-supported leaders kept 42 two-locus families on gorilla hold-out 1 (§6kb) because the leader keeps its direct neighbours. Still chains through a copy shared by two triangles. comp(Δ(G)) ≤ comp(G minus bridges) (0 of 5,000 random instances fail), so this is at least as fine as the failed AD2a. Measured descriptively on NPIP/TBC1D3 only (development families; `bench/NESTED_LATTICE_NPIP_TBC1D3.md` §8): L1 groups 341 → 230 (NPIP) and 97 → 63 (TBC1D3); PKD1 and PKD1P1/P2/P3/P6 stay with NPIP at L1–L3; the Soto 2-copy family {TBC1D3P3, TBC1D3P4} (ID_469) is dissolved at L3. Precision not measured |
+| (iii) Leaders as a report-only grouping outside the stack | kept for the lattice | kept for the lattice, not for leader groups (6-node counterexample) | kept for the lattice, not for leaders (read order) | Precision measured (§6kd, §6ke). Each leader family lies inside one lattice group of its level (§0★★★.4) |
+| (iv) Node rule: exclude annotated readthrough records before edges, in both modes | kept | kept | kept (applied to the frozen node set before any edge) | On the approximate guided L3 above it separates NPIPA from PKD1P1/PKD1P3. It also drops the NPIP member PKD1P6-NPIPP1. Not scored |
+
+### 0★★★.6 Status
+
+- **PROVEN** by the proofs in §0★★★.2 (random-instance checks in `LO/lattice/proofcheck_math/`, 0 counterexamples,
+  re-run with identical output):
+  - Lemma 0, T1, T1′, and T2 for every X, requiring only nested tests;
+  - T3(a), for any stronger nested stack;
+  - T3(b) for more copies, under H1 and H2, whatever the test form;
+  - T3(b) for more homology, under H1–H3, for the monotone test forms of §0★★★.1 only;
+  - T3(c), on one fixed graph.
+- **Hypotheses the shipped code and data do not yet meet:**
+  - H3 for t_P: `protein_families.edges_from` selects HSPs greedily (counter-hypothesis 3).
+  - H3 for the gene-body disjunct of t_D: `guided_pipeline.gene_body_chains` chains greedily and pools identity
+    (counter-hypothesis 3). Pooled E1 identities have the same defect.
+  - H2 for t_P: E-values depend on database size (counter-hypothesis 2).
+  - H1 in de novo mode, where extents are re-derived from reads on every run, and for guided candidate widths, which are
+    set by the seed set.
+  - Readthrough records become nodes in both modes: the exclusion rule (§0★★★.1; §0★★★.5 option (iv)) is proposed, not
+    adopted.
+- **L0: guided-only as specified, and known degenerate under the plain §6ko edge** (the TBC1D3 component has ≥ 4,522
+  genes, 965 never searched). Not OPEN.
+- **OPEN: precision and recall of L1–L3.**
+  - **NPIP/TBC1D3 results** (human CHM13; `bench/NESTED_LATTICE_NPIP_TBC1D3.md` §0; descriptive, and NPIP and TBC1D3
+    are development families, §6js, so no precision claim). T1/T2: 0 violations in 302 checks, guaranteed by construction.
+    Components chain: one L0 group of 5,764 genes holds both families; L1 groups are 341 (NPIP, 26 members) and 97
+    (TBC1D3, 16); L2 142 and 24; L3 55 (25) and 11 (11). Soto in-group pair precision, NPIP / TBC1D3: L2 0.187 / 0.392,
+    L3 0.259 / 1.000 (partly by construction). (P ∧ aa ≥ 0.50) ∨ D still joins the two families (1,017 genes). The
+    3-truss removes 33% / 35% of the L1 groups and dissolves the Soto 2-copy family {TBC1D3P3, TBC1D3P4}.
+  - **That run used approximations and choices, not the tests exactly as written in §0★★★.1** (report §0, §1, §10).
+    Its T3(b) is untested, because its tests meet neither H2 nor H3.
+    - t_P: the shipped greedy HSP cover, not the union cover (fails H3). 4,430 of 20,088 proteins were searched, and
+      E-values were not saved.
+    - t_D, approximated: records are all-vs-all gene-body alignments inside two chromosome-trio catalogs (chr15/17/22,
+      chr16/19/20), not genome alignments, and no spliced-transcript record exists. The body disjunct uses the shipped
+      greedy chains (fails H3) with the shorter-body denominator. The exon disjunct is a proxy: records at identity
+      ≥ 0.80 that overlap v's exons must cover ≥ 0.50 of u's exon union. Both apply the v-exon and sense conditions.
+    - f_ex over E1 records only (≥ 300 bp, identity ≥ 0.70); a record without exon features counts as one exon spanning
+      its body.
+    - w_98 in the single-record form, with gap-excluded identity (a choice).
+    - Pairs whose annotated intervals intersect are excluded from every test, the protein test included. That goes
+      beyond the own-locus rule above. Readthrough records stay nodes.
+    - Expression: the any-overlap convention, reads ≥ 3.
+  - Held-out test: not yet run. Pre-register first, on substrates unused by the rules the lattice imports:
+    - human: the spec's reserved chr8/9/10/11. Not chr15/17/22 (development for §6ko, §6kl AJ and §6ke); not chr1/15/17
+      (§6ks fixed T = 0.30 there against Soto disagreement pairs); not chr5/7/21 (§6ko and §6ks hold-out); not chr1/2/3
+      (§6ko AN-1b); not chr16/19/20 (§6kl hold-out).
+    - gorilla: a new contig set. Not NC_073241.2 / NC_073242.2 / NC_073244.2 (§6jy–§6kb), and not NC_073233.2 /
+      NC_073240.2 / NC_073238.2 (§6kd).
+    - Name the truth for each level before any number exists. Never score a level against a truth built with the same
+      conjunct. No guided truth that applies f_ex ≥ 0.30 may score L2 or L3; that covers every `mcl_families` build after
+      the §6kt flip unless it passes `--min-shared-exon-frac 0.0`. No Soto truth may be used on chr1/15/17 at any level.
+      A Soto truth at L3 shares the 0.98 SD98 convention, so agreement there is partly by construction and must be
+      reported as such.
+    - The clause-4 leader arms already scored on §6kd and §6ke sit on used substrates. They are comparisons, not a
+      held-out baseline.
+    - chr8–11 is also the reserved held-out of the deferred chromosome-wide layer-order study (spec, SCOPE AMENDMENT).
+      Either freeze both pre-registrations before either study touches chr8–11, or reserve other chromosomes for one
+      of them.
+- **Until those measurements exist, §0★★ clause 4 (triangle-supported leaders) stays the confirmed de novo grouping.**
+  No Rust code or catalog changes.
+
+  > *Audit notes (2026-09-16 corrections pass).*
+  > - The audit's L0 figures (a 2,426-gene joint component; 684 and 941 for DNA edges alone) reproduce exactly with the
+  >   extrapolated-span body denominator and without the v-exon/strand requirements (column `d_c2xloose_approx`). The
+  >   saved `LO/lattice/corrections_rerun/rerun_checks.out` was computed on the 17:03 table, now kept as
+  >   `LO/lattice/pre_correction_1712/edges.tsv` (md5 fbc40bd0); re-running that script on the current table gives the
+  >   strict columns instead. On the current table, `LO/lattice/corrections_pass2/doc_numbers.out` reproduces every
+  >   figure. With the shorter-body denominator the same loose columns give 2,300, 604 and 897; the 7-hop path is
+  >   unchanged. The tie counts moved with the rebuild too, from the audit's 2,940 of 70,563 and 5,129 of 72,366 to 2,946
+  >   of 82,491 and 5,138 of 84,679. Both variants are quoted above.
+  > - The audit proposed listing guided seed neighbourhoods as `guided_pipeline` `leaders`. That function groups hits into
+  >   candidate loci, which is node construction, not copies into families, so the §0★★★.4 row names the seed
+  >   neighbourhood itself.
+  >
+  > *Audit notes (2026-09-16, correction pass of the NPIP/TBC1D3 lattice report).*
+  > - The report's audit found that its L1 omitted the §0★★★.1 requirement that a DNA record's target overlap v's exons.
+  >   The run now applies that requirement and the shipped strand check (validated against `denovo_shared_def.py` on
+  >   78,423 of 78,423 pairs). So the §0★★★.5 sizes above changed from 2,300 / 604 / 897 to 1,017 / 341 / 97. The
+  >   earlier figures stay quoted as the variant without the requirements.
+  > - The audit's own corrected sizes (L1 378 / 111; L2 and L3 unchanged) omit the strand check. They reproduce exactly
+  >   in the report's "v-exon overlap, no strand check" variant. With the strand check, L2 and L3 also shrink (report
+  >   §12).
+  > - The 17:03 table stored identities at 4 decimals. The §0★★★.3 tie counts were rechecked at full precision and are
+  >   unchanged.
 
 ## 0★★. CURRENT DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14)
 
@@ -60,6 +622,15 @@ long introns fail gene-body coverage) (§6jo, §6jq, §6jr).
 Poly(A) and target-site duplications are reported annotations, not criteria (§6jv).
 
 **4. Family = triangle-supported leader neighbourhood** (§6kd, confirmed on a fresh gorilla substrate): order copies by read support (then degree); an unassigned copy with unassigned neighbours becomes a leader; its family = the leader, its unassigned direct neighbours, and unassigned copies adjacent to >= 2 members of that star. Beat the LCS union on both gorilla substrates (fresh: R_G 0.198 vs 0.120, P_G 0.676 vs 0.537) and on human chr15/17/22 (§6ke: R_G 0.072 vs 0.067, P_G 0.682 vs 0.506; bipartite F 0.558 vs 0.515). Ported to Rust as `RUSTLE_SHARED_DEFINITION=1` (`vg_family::shared_definition`), family-for-family identical to the Python prototype (AF-1). Previously: connected component, kept below for the record.
+→ *Cross-reference to §0★★★ (2026-09-16, PROPOSED).* In the nested edge-test lattice the family level is L1: the connected
+components of the clause-2 edges. L0 superfamily (guided-only), L2 shared-exon unit and L3 ≥ 0.98 identity unit are
+nested edge tests on the same graph; clause 5 stays the subfamily definition. The leader rule is **not** a lattice
+level, because it depends on read order and is not a monotone edge filter. It would become a report-only grouping. Each
+leader family still lies inside one L1 group of the graph it is computed on. **Unchanged until §0★★★.6 is measured:**
+this clause stays the confirmed de novo grouping. Components, the closest measured instance of L1, are the chaining
+construction. Their P_G is 0.30-0.31 on the gorilla hold-out (AB2, AC2), 0.38 on the fresh gorilla substrate (AC2) and
+0.17 on human (AC2). This rule scored 0.42 on the gorilla hold-out (§6kb), 0.68 on the fresh gorilla substrate (§6kd)
+and 0.68 on human (§6ke). Table in §0★★★.5; species are never pooled.
 
 *Superseded wording:* **Family = connected component** of the edge graph. γ = 0.20 is dropped from the definition (never binds on clean
 node sets, §1★.2). Edge connectivity λ is reported as the certificate (§1★.5). ⚠ **OPEN after §6jz:** with the guided edge
@@ -94,6 +665,13 @@ EXPR(L)" (T2) additionally needs E_M ⊆ E_L inside every L group. Counterexampl
 a–b; the only L path is a–c–b; c is unexpressed. Then EXPR(M) = {a, b}, while in EXPR(L) a and b are dropped as
 unconnected singletons. On NPIP/TBC1D3 (human, testis) the precondition holds for all 30 refinement pairs tested, so the
 0 T2 violations there are guaranteed, not evidence (`bench/LAYER_ORDER_NPIP_TBC1D3.md` §8).
+→ *Cross-reference to §0★★★ T2 (2026-09-16, PROPOSED).* For lattice levels, the RNA groups at level k are the components
+of G_k[X], at every level k. E_{k+1} ⊆ E_k holds on all of V by construction, so the E_M ⊆ E_L precondition above is
+always met. Nesting is then unconditional, both across levels and RNA-inside-DNA, for one graph on one node set.
+**Unchanged:** nesting still fails for leaders, MCL catalogs and independently built layers. Pooled views are not
+laminar: full-graph and expressed groups from different levels, nested samples at different levels, and two different
+samples even at one level (§0★★★.2, T2 limit). In de novo mode another sample also changes the nodes (H1), so a
+comparison across samples is not covered.
 
 **Known exposures:** the 0.80 / 0.50 / 1 kb constants remain (defended by sensitivity sweeps, λ and the length-dependent
 T_CORE d_max(L) formula, not claimed absent); subfamily calls are not in the Rust catalog; the definition's de novo
