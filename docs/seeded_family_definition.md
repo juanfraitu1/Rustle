@@ -641,6 +641,56 @@ past 300 bp they start deleting NPIP members.
 so every DNA row above depends on a non-monotone ingredient); the node rule for readthroughs and embedded records;
 de novo mode has no protein stack, so §0★★'s "one graph for both modes" still holds for the DNA stack only.
 
+
+#### 0★★★.7c Shared-junction diagnostic (opt-in, never a default, not part of any shipped cut)
+
+Measured 2026-09-17 and NOT adopted as a default (`bench/JUNCTION_AND_READTHROUGH_RULES.md`; data
+`/mnt/linuxdisk/home/juanfraitu/rule_adopt/`, declarations frozen 14:47:18).
+
+A witness record may additionally be required to carry at least k of the query copy's splice junctions onto junctions
+of the target copy, donor and acceptor each within δ bp, where each copy's junctions come from its node's fixed
+definition (guided: the union of its annotated transcripts' introns; de novo: the node's own exon structure) and never
+from the evidence. The conjunct is a predicate on the record and the two fixed definitions alone, so the weighted graph
+remains a threshold graph and the D1 certificate applies unchanged; monotonicity in k and δ, and w(conjoined) ≤
+w(unconjoined), were verified exhaustively (0 violations in 63,408 cells). The only setting with evidence is k = 2,
+δ = 0 (δ = 4 and 8 are bit-identical at k ≤ 2; at k = 3 six cells per arm differ).
+
+**Its cost is arm-dependent and must be quoted whenever it is used.** On annotated junctions it costs nothing — 0
+members isolated, 0 member pairs lost, NPIP's outside count 96 → 10, and all six 1.000000 blockers (CLN3, EIF3CL,
+LOC100190986, LOC124907830, LOC124907845, LOC128966632) lose every NPIP edge. On read-supported junctions it isolates
+NPIPB12 and breaks NPIP into two components (24 member pairs lost). On de novo node structure it destroys NPIPB4,
+NPIPB12 and NPIPB13 and breaks NPIP into 5-6 and TBC1D3 into 8-10 components. It never certifies NPIP: h_join falls only
+to 0.999363 (PKD1P–NPIP readthroughs take the boundary) against h_split 0.971665.
+
+A "guarded" variant that exempts pairs in which either copy has no junction is REFUTED, not merely weaker: it leaves
+NPIP's h_join at exactly 1.000000 at every k, δ, level and arm.
+
+#### 0★★★.7d Cut windows are reported, not acted on
+
+When a set's certificate interval is non-empty but does not contain the level's shipped cut, the interval is reported as
+a CUT WINDOW and is not grounds for changing any rule. Two are on record at L3 (w_98) under §0★★★.7c at k = 2, δ = 0, on
+CHM13 RefSeq guided evidence:
+- four of the five Dishuck Iso-Seq groups (B3-5, B6-9, B12/13, B15) are **simultaneously** exact connected components
+  for any cut in (0.997129, 0.997680], where the unconjoined graph makes no two of them simultaneously exact;
+- NPIPB is exact in (0.980559, 0.983454], missing the shipped 0.98 by **0.000559**, its boundary held not by a foreign
+  record but by NPIPA1 at exactly 0.980559 via NPIPB2 — the NPIPA/NPIPB split itself.
+
+Neither window is a validation: one assembly, one annotation, two development families. A held-out pre-registration is
+required before either is quoted as a finding.
+
+#### 0★★★.7e Readthrough node rule (opt-in, measured, not adopted)
+
+A record annotated as a readthrough is not a node when it is REDUNDANT: its exons contain ≥ f of the exonic bases of
+another record that is itself a node. Measured at f = 0.50 / 0.80 / 0.90 / 1.00: 178 / 128 / 92 / 20 of the 209
+readthrough nodes are dropped, and **no NPIP or TBC1D3 member is dropped at any f** — PKD1P6-NPIPP1, the NPIP member
+that is itself a readthrough, contains at most 0.0038 of any other node and therefore always survives. The blunt form
+("drop every readthrough record", §0★★★.1) does delete it and is refused for that reason.
+
+The rule is invisible on its own (NPIP's h_join stays 1.000000 at every f and level, because the boundary records are
+not readthroughs) and it has a structural limit: **a containment rule can only see nodes.** PDXDC2P-NPIPB14P contains
+the NPIP member NPIPB14P, which has no exon feature in RefSeq and so never became a node; the readthrough is therefore
+not "redundant" and survives every f, holding NPIP's L2 boundary at 1.000000 by itself once §0★★★.7c is applied.
+
 ## 0★★. CURRENT DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14)
 
 Consolidates §1★ (the object at two levels, 08-14) with what ledger §6jm-§6jy established. §1★'s sentence stands:
