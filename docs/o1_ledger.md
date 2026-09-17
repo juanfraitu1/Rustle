@@ -14931,7 +14931,7 @@ TBC1D3F and TBC1D3E** (Guitart's 1.35 Mbp), giving cluster 1 = {B, I, G, H, F} a
 homogenisation predicts. **Our I = 5.0 cut crosses the boundary** (MCL1 = 5 of cluster 1 + E and TBC1D3;
 MCL2 = {D, K}), and **D/K is the single most similar pair of all 36 (0.9986)**, 11.6 kb apart, both exactly
 12,610 bp — a recent tandem sister pair. ⟹ The method found the strongest real sequence signal and correctly
-declined to invent a split where gene conversion erased one.
+declined to invent a split where gene conversion erased one. [§6l7: "no sequence signal" withdrawn — Guitart groups nest inside the clusters; "{D,K} = strongest real signal" suspended pending TBC1D3D's group]
 
 ### ⛔ NPIP — INFLATION never finds A/B (P1 FAILED, replicating §6ew)
 | inflation | outcome |
@@ -18889,7 +18889,9 @@ Advisor request: show NPIP and TBC1D3 first and check the published subclusters.
 (`docs/lit_subclusters_npip_tbc1d3_truth.tsv`, CHM13 v2.0 RefSeq): NPIP 22 records — NPIPA vs NPIPB, and Dishuck 2025
 paralog groups A2/3, A6-9, B3-5, B6-9, B12/13; TBC1D3 9 protein-coding copies — genomic cluster 1 (B,I,G,H,F) vs
 cluster 2 (E,K,D,TBC1D3), and Guitart/Eichler 2024 phylogenetic groups mapped by name (AE = TBC1D3+E, CDKL = D+K, the
-rest singletons; the name mapping is an assumption). Input: all A119b.t2t.bam alignments in 19 windows (every truth
+rest singletons; the name mapping is an assumption). [§6l7 CORRECTED 2026-09-16: the original name map was wrong for
+7/9 copies — Guitart/Eichler 2024 phylogenetic groups read per copy from Fig 6B/6C give M = B+H, CDKL = K+TBC1D3,
+rest singletons; D's AE label is figure-only, sequence leans CDKL] Input: all A119b.t2t.bam alignments in 19 windows (every truth
 record ±50 kb + both TBC1D3 cluster spans; 390k records, 37k primary). Modes built today (commit e7bc6d7c code):
 GUIDED mcl_families (185 RefSeq records -> 130 loci -> 21 clusters), DE NOVO default (316 reps -> 49 families, 1 min
 50 s), DE NOVO + LCS union (E_r 467 + 169 LCS edges -> 44 families, 2 min 4 s).
@@ -18907,15 +18909,19 @@ subfamilies; the O1 family (shared duplicon) sits above the subfamily level.
 **Level B — within-family identity (UPGMA on 1 - Σnmatch/Σblocklen).**
 - TBC1D3, guided (gene spans, median identity 0.9944): at the paper's own criterion (divergence <= 1.5 x allelic =
   0.0023) **CDKL = {D, K} is recovered exactly**; AE (TBC1D3 + E) is not; ARI vs groups 0.654. The 2-way root split
-  {B, H} vs rest does not follow cluster 1/2.
-- TBC1D3, de novo (RNA reps, 8/9 copies): cut gives {D, E, K} (CDKL plus E) and {G, H}; ARI 0.364.
+  {B, H} vs rest does not follow cluster 1/2. [§6l7 CORRECTED 2026-09-16: at 0.0023 the cut is {D, K}, which recovers
+  no Fig 6C group (ARI −0.038; 0.000 with D excluded; 0.372 with D in CDKL, still 0/2 groups exact); the 2-way root
+  split {B, H} vs rest is exactly group M]
+- TBC1D3, de novo (RNA reps, 8/9 copies): cut gives {D, E, K} (CDKL plus E) and {G, H}; ARI 0.364. [§6l7 CORRECTED
+  2026-09-16: cut gives {D, E, K} and {G, H}; ARI −0.061 vs Fig 6C (0.364 under the superseded name map)]
 - NPIP, guided (gene spans incl. introns, median 0.956): no pair within 0.0023; root split does not follow A/B.
 - NPIP, de novo: 115/231 rep pairs do not align at all (reps cover different parts of the genes); the cut recovers
   **A6+A9 and A7+A8** (inside Dishuck's A6-9), and the union adds **B4+B5** (inside B3-5); ARI vs groups 0.210 -> 0.300.
 
 **Reading.** Both modes find each family completely (guided) or nearly (de novo), but subfamilies are only recovered in
 pieces: the tightest published groups (TBC1D3-CDKL; NPIP A6-9 and B3-5 pairs) appear, the major boundaries (NPIPA/B,
-TBC1D3 cluster 1/2) do not. Whole-span identity is the wrong signal for the major boundaries — NPIPA/B differ in gene
+TBC1D3 cluster 1/2) do not. [§6l7 CORRECTED 2026-09-16: the tightest published NPIP groups (A6-9, B3-5 pairs) appear;
+for TBC1D3 only the root split (= group M) matches a published group; the major boundaries claim is unaffected] Whole-span identity is the wrong signal for the major boundaries — NPIPA/B differ in gene
 model (start and final exons, Dishuck 2025), and an earlier Soto-slice measurement found coverage, not identity,
 separates A from B (A-A median coverage 0.46 vs A-B 0.12, §24 of the 07-29 review). De novo reps are fragmentary for
 this purpose (half of NPIP pairs unalignable, the AE copy has no rep). Caveats: single haplotype (the literature groups
@@ -18986,6 +18992,13 @@ partly recovered (TBC1D3 fully by de novo identity, NPIP 4-5 of 12-13 groups exa
 name-mapped TBC1D3 groups, testis library), plus: k at level 2 is taken from the truth, and the de novo pooled units
 include every overlapping copy, not only family members.
 
+[§6l7 CORRECTED 2026-09-16 — the TBC1D3 level-2 table above and this paragraph used the superseded name-mapped
+truth. Under Fig 6C: guided coverage × identity 4/7 (sens 0, micro 0.778/0.778); guided identity 3/7 (micro
+0.667/0.750); de novo identity 4/7 (micro 0.750/0.857) — every TBC1D3 pairwise sensitivity is 0 (no cut recovers
+M or CDKL); the best arm is de novo COVERAGE at 5/7, not de novo identity. "TBC1D3 fully by de novo identity"
+is corrected to "TBC1D3 by no arm (best 5/7, all exact matches singletons)"; "name-mapped TBC1D3 groups" is
+corrected to "figure-derived TBC1D3 groups". Full detail: §6l7.]
+
 Data: `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/lit/lit_coverage.{py,out}`.
 Related: §6jg, [[reference_npip_biology]], [[reference_eichler_tbc1d3]].
 
@@ -18997,6 +19010,10 @@ on all 9, gene spans give 5/7 with sens 0.500 prec 0.333, micro 0.889. NPIP, whe
 ahead of de novo (L1 micro 0.857 vs 0.545; L2 exact 5/12 vs 4/13). Reading: TBC1D3 copies are too similar (>= 0.997
 over 2 kb) for spliced-transcript identity to resolve level 2; more sequence (introns) helps, and the comparison must use
 a shared copy set.
+
+[§6l7 CORRECTED 2026-09-16: under Fig 6C, level 2 is a single decision — is B-H the closest pair — and it never is
+(rank 16/28 spliced, 6/28 gene span and de novo); all three unit types give 4/7 on the shared 8 copies, so the
+"not a mode effect" reading holds. ("Is D-K the closest pair" above used the superseded name-mapped truth.)]
 
 ## §6ji — Missing and fragmented members: RNA locus switches, a readthrough bridge cut, DNA mode and guided on NPIP/TBC1D3; the bridge cut fails the gorilla hold-out (2026-09-13)
 
@@ -19040,6 +19057,7 @@ No arm reduces NPIP fragmentation. Level A on the shared set (28 records; TBC1D3
 
 TBC1D3 Level A on 6 shared records is identical for R0, R7, D1 and G (one family; L1 sens 1.000 prec 0.400). Level B
 (identity UPGMA, shared units): TBC1D3 k=5 exact 5/5 for R0, R2, R3, R7 and guided gene spans (guided spliced 3/5);
+[§6l7: under Fig 6C the 6 shared records are all singletons (trivial); 5/5 holds only if D is CDKL — suspended]
 NPIP k=12 best = guided spliced and gene span 5/12, de novo arms 2-4/12 (R5 4/12).
 
 **DNA mode.** 60 merged SD windows -> 110 region-level reps (up to 380 kb) -> 8 families; 1 h 42 min, 12.9 GB (the
@@ -19396,7 +19414,7 @@ duplicated flank (overextension, NPIP 5' +3.7 kb clip at 50%), a shorter one und
 - Reference (all 22 NPIP bodies): p = 0.029, gap at identity 0.8923, but the components above it form ONE group -> not
   recovered (L1 exact 0/2). TBC1D3 reference: p = 0.276, no split — **correct** (reading 4).
 - Leave-out: **NPIPA/NPIPB recovered 0/10 runs** (reading 3); split called 5/10. TBC1D3: no split in 9/10 (correct),
-  one split {H, K} vs rest.
+  one split {H, K} vs rest. [§6l7: the {H, K} split crosses Fig 6C groups M and CDKL]
 - Two keep-1 runs (seeds NPIPA7, NPIPB10P) cut at identity 0.9759 and gave **{all 7 NPIPA} | {B3, B4, B5, B11, B12, B13}
   | {B6, B7, B8, B9, B10P, B15} | B2 | B14P | B1P** — L1 pairwise precision 1.000 (sensitivity 0.405, exact 1/2), L2
   exact 3/13. {B3, B4, B5, B11, B12, B13} is exactly the paper's "human-specific NPIPB subfamily" with the VNTR final
@@ -19435,9 +19453,14 @@ regenerated byte-identically (0/22 FASTAs differ from `g2/`).
 | NPIP | B6-9 | 5/10 | recovered | **10/10** | recovered |
 | NPIP | B12/13 | 10/10 | recovered | **10/10** | recovered |
 | NPIP | paper's named subfamily {B3, B4, B5, B11, B12, B13} | 10/10 | recovered | **10/10** | recovered |
-| TBC1D3 | AE | 1/10 | no split | 0/10 | no split |
-| TBC1D3 | CDKL | 2/10 | no split | 3/10 | no split |
+| TBC1D3 | AE (superseded name map, §6l7) | 1/10 | no split | 0/10 | no split |
+| TBC1D3 | CDKL (superseded name map, §6l7) | 2/10 | no split | 3/10 | no split |
+| TBC1D3 | [§6l7 CORRECTED] M {B,H} | 10/10 | recovered (100/100) | 9/10 | recovered (100/100) |
+| TBC1D3 | [§6l7 CORRECTED] CDKL {K,TBC1D3} (figure-dependent) | 2/10 | recovered (84.2/76) | 4/10 | recovered (83.5/77) |
 | TBC1D3 | positional cluster1\|cluster2 NOT supported (reading 3) | 8/10 correct | **supported (wrong)** | 9/10 correct | **supported (wrong)** |
+
+[§6l7 CORRECTED 2026-09-16: same intronic input for both methods (§1.5); CDKL UFBoot < 80 throughout; CDKL fails if
+TBC1D3D turns out to belong to CDKL (unresolved, see bench/TBC1D3_GUITART_TRUTH_CORRECTION.md).]
 
 Agreement between the two alignments on RECOVERED calls: 76/88 (run, group) cells. MAFFT's reference miss is NPIPB2 —
 a 0.107-substitution branch placed outside the otherwise 100/100 NPIPB clade. Midpoint rooting gives an exact
@@ -19519,7 +19542,7 @@ treed), AMY2 never. Reference member choice picked the 36 kb LOC124905662 twice 
 | family | what is conserved across the family | unit that recovers members from one seed | subfamily signal |
 |---|---|---|---|
 | NPIP | gene body incl. introns (96% A vs B); gene models differ | gene body (1.000) — transcript fails (0.257) | intronic clades (Dishuck; §6jp 10/10) |
-| TBC1D3 | everything (>= 99%) | both (1.000) | none stable (positional) |
+| TBC1D3 | everything (>= 99%) | both (1.000) | none stable (positional) [§6l7 CORRECTED: M {B,H} stable (ref 100/100, leave-out 9-10/10); CDKL {K,TBC1D3} reference only, figure-dependent] |
 | AMY | coding sequence (introns ~86% AMY1 vs AMY2) | transcript (0.764) — gene body fails (0.400), also broken by inflated spans | coding types (Yilmaz/Bolognini); AMY1 clade only on gene bodies |
 
 A single unit does not generalise. Two consequences to test next (pre-registered, on all three families): (i) take
@@ -19577,7 +19600,8 @@ Jaccard 0.702, truncated 14.4 / 21).
 | NPIP | B6-9 | recovered | recovered | 8/10 | **10/10** | 10/10 |
 | NPIP | B12/13 | no split | recovered | 1/10 | **10/10** | 10/10 |
 | NPIP | named {B3,B4,B5,B11,B12,B13} | no split | recovered | 7/10 | **10/10** | 10/10 |
-| TBC1D3 | AE / CDKL | no / no | no / no | 0 / 0 | 0 / 3 | 0 / 3 |
+| TBC1D3 | AE / CDKL (superseded name map, §6l7) | no / no | no / no | 0 / 0 | 0 / 3 | 0 / 3 |
+| TBC1D3 | [§6l7 CORRECTED] M / CDKL | no / no | recovered 100/100 / recovered 84/77 | 0 / 0 | 9 / 4 | 9 / 4 |
 | TBC1D3 | positional split NOT supported | **correct** | wrong | 10/10 correct | 9/10 correct | — |
 | AMY v1 | AMY1 | recovered | recovered | 7/9 | 6/10 | 8/10 |
 | AMY v1 | AMY2 (pancreatic) | **recovered (100/100)** | no split | **5/9** | 2/10 | 5/10 |
@@ -19591,6 +19615,8 @@ come from INTRONS (10/10) and are weak or absent in exons (B12/13 1/10); A6-9 is
 AMY's pancreatic types (AMY2, AMY2Ap) come from EXONS (reference 100/100 and 82) and never from introns. TBC1D3: the
 positional cluster split is supported only by the intron tree (reference), never by the exon tree — the positional
 signal lives in non-coding sequence (consistent with proximity-driven gene conversion), coding sequence shows none.
+[§6l7 CORRECTED 2026-09-16: in this exon alignment neither Fig 6C group (M, CDKL) is recovered; the §6js exon
+alignment recovers M at 77.7/71 — do not read the groups as intron-only.]
 Reporting clades supported in EITHER class recovers every NPIP group in >= 9/10 runs and the AMY types where exons do.
 
 **Guided mode on three families, as it stands:** members from either finder (no under- or over-merge at keep 1;
@@ -19623,7 +19649,7 @@ transcript hits of 22-73 kb whose first exon aligns to another copy) and short i
 | family | B1 sensitivity U vs max(M0, G1), keep 50% / keep 1 | named precision | B4 duplicates | B2 clades (either) vs §6jr | B3 |
 |---|---|---|---|---|---|
 | NPIP | 1.000 vs 1.000 / 1.000 vs 1.000 — PASS | 1.000 | 0 / 0 — PASS | 5/6 groups (A6-9 9 vs 10) — FAIL by one run | — |
-| TBC1D3 | 1.000 vs 1.000 / 1.000 vs 1.000 — PASS | 1.000 | 0 / 0 — PASS | AE/CDKL not literature clades (0 before too) | exon tree never supports the positional split (11/11) — PASS |
+| TBC1D3 | 1.000 vs 1.000 / 1.000 vs 1.000 — PASS | 1.000 | 0 / 0 — PASS | AE/CDKL not literature clades (0 before too) [§6l7 RETRACTED 2026-09-16: Fig 6C M {B,H} recovered (ref exon 77.7/71, intron 100/100; leave-out 9/10); CDKL {K,TBC1D3} intron ref 83.5/77, leave-out 5/10, figure-dependent — B2 still excludes TBC1D3, bar verdict unaffected] | exon tree never supports the positional split (11/11) — PASS |
 | AMY v2 | **0.933 vs 0.967** / 0.945 vs 0.764 — FAIL | 1.000 | 0 / 0.020 — PASS | AMY1 10, AMY2 5, AMY2Ap 5 (>= 10/5/2) — PASS | — |
 
 AMY's B1 miss is one locus in one replicate: LOC124905662's mis-joined model (§6jr) has a 36 kb CDS envelope that
@@ -19840,8 +19866,8 @@ families.tsv md5 cd521899).
 
 | window | arm | present | mean families / record | family-level pairwise sens / prec | bipartite micro R / P | clades recovered (either class) |
 |---|---|---|---|---|---|---|
-| NPIP/TBC1D3 (19 windows) | DN0 | 30/31 | 2.57 | 0.592 / 1.000 | 0.774 / 1.000 | NPIPA\|B, A6-9, B6-9, named NPIPB subfamily, CDKL |
-| NPIP/TBC1D3 | DN1 | 30/31 | 2.70 | **0.678** / 1.000 | **0.839** / 1.000 | same |
+| NPIP/TBC1D3 (19 windows) | DN0 | 30/31 | 2.57 | 0.592 / 1.000 | 0.774 / 1.000 | NPIPA\|B, A6-9, B6-9, named NPIPB subfamily, CDKL [§6l7 suspended: absent under Fig 6C; recovered only if D is CDKL] |
+| NPIP/TBC1D3 | DN1 | 30/31 | 2.70 | **0.678** / 1.000 | **0.839** / 1.000 | same [§6l7 suspended: absent under Fig 6C; recovered only if D is CDKL] |
 | AMY (chr1:103.3-103.9 Mb) | DN0 | 9/12 | 2.22 | 0.318 / 1.000 | 0.583 / 1.000 | none (no family treeable) |
 | AMY | DN1 | **11/12** | **1.45** | **0.682** / 1.000 | **0.833** / 1.000 | **AMY1, AMY2, AMY2Ap** (intron class) |
 
@@ -19896,11 +19922,12 @@ both `t.out` files.
 | NPIP | B12/13 | 10/10 + 1 | 8/10 + 1 |
 | NPIP | A6-9 | 8/10 + 1 | 5/10 + 0 |
 | NPIP | B6-9 | 10/10 + 1 | 6/10 + 0 |
-| TBC1D3 | AE / CDKL | 0 / 1 of 10, ref 0 | 0 / 0, ref 0 |
+| TBC1D3 | AE / CDKL (superseded name map, §6l7) | 0 / 1 of 10, ref 0 | 0 / 0, ref 0 |
+| TBC1D3 | [§6l7 CORRECTED] M / CDKL | 9/10 + ref / 5/10 + ref | 10/10 + ref / 0/10 |
 | TBC1D3 | positional split (intron) | 3/10 + ref | 0/10, ref 0 |
 
 **Totals:**
-- "Either"-class recoveries: IQ 85, DT 73.
+- "Either"-class recoveries: IQ 85, DT 73. [§6l7 CORRECTED 2026-09-16: Fig 6C truth 100 vs 84, conflicts 67 vs 47; D excluded 97/84; D in CDKL 94/84 — NOT SUPPORTED throughout]
 - Literature-conflicting splits: IQ 72 (SH-aLRT > 75), DT 49.
 - Splits: IQ supported 593, DT kept 371.
 
@@ -20627,11 +20654,11 @@ own locus in any arm.
 
 | window | arm | present | family-level pairwise sens / prec | bipartite micro R / P | clades recovered (either class) |
 |---|---|---|---|---|---|
-| NPIP/TBC1D3 | DN0 | 30/31 | 0.592 / 1.000 | 0.774 / 1.000 | NPIPA\|B, A6-9, B6-9, named B, CDKL |
-| NPIP/TBC1D3 | DN1 | 30/31 | 0.678 / 1.000 | 0.839 / 1.000 | same |
-| NPIP/TBC1D3 | DN1r | 30/31 | 0.614 / 1.000 | 0.806 / 1.000 | same |
-| NPIP/TBC1D3 | DN1r+B | **31/31** | **0.775** / 1.000 | **0.903** / 1.000 | NPIPA\|B, A6-9, B6-9, named B; not B3-5, AE, CDKL |
-| NPIP/TBC1D3 | DN0+B | 31/31 | 0.745 / 1.000 | 0.871 / 1.000 | as DN1r+B |
+| NPIP/TBC1D3 | DN0 | 30/31 | 0.592 / 1.000 | 0.774 / 1.000 | NPIPA\|B, A6-9, B6-9, named B, CDKL [§6l7 suspended: recovered only if D is CDKL] |
+| NPIP/TBC1D3 | DN1 | 30/31 | 0.678 / 1.000 | 0.839 / 1.000 | same [§6l7 suspended: recovered only if D is CDKL] |
+| NPIP/TBC1D3 | DN1r | 30/31 | 0.614 / 1.000 | 0.806 / 1.000 | same [§6l7 suspended: recovered only if D is CDKL] |
+| NPIP/TBC1D3 | DN1r+B | **31/31** | **0.775** / 1.000 | **0.903** / 1.000 | NPIPA\|B, A6-9, B6-9, named B; not B3-5, AE, CDKL [§6l7 CORRECTED: Fig 6C CDKL IS recovered here, intron tree 85.2/62; M unsupported; reverses if D is CDKL] |
+| NPIP/TBC1D3 | DN0+B | 31/31 | 0.745 / 1.000 | 0.871 / 1.000 | as DN1r+B [§6l7 CORRECTED: Fig 6C CDKL recovered, intron tree 85.0/63; M unsupported; reverses if D is CDKL] |
 | AMY | DN0 | 9/12 | 0.318 / 1.000 | 0.583 / 1.000 | AMY1 not |
 | AMY | DN1 | 11/12 | 0.682 / 1.000 | 0.833 / 1.000 | AMY1, AMY2, AMY2Ap |
 | AMY | DN1r | 11/12 | 0.682 / 1.000 | 0.833 / 1.000 | AMY1, AMY2, AMY2Ap |
@@ -20640,7 +20667,11 @@ own locus in any arm.
 
 Restricted admission keeps all of DN1's AMY gain and 26% of its NPIP/TBC1D3 sensitivity gain (0.592 -> 0.614 vs 0.678).
 With the bridge cut it is the best development arm (0.775 / 0.903, all 31 loci present). Where the bridge cut adds the
-ninth TBC1D3 locus, the TBC1D3 clades AE and CDKL and NPIP B3-5 become evaluable and are not recovered. Runtime (NPIP/TBC1D3):
+ninth TBC1D3 locus, the TBC1D3 clades AE and CDKL and NPIP B3-5 become evaluable and are not recovered.
+[§6l7 CORRECTED 2026-09-16: where the bridge cut adds the ninth locus, Fig 6C CDKL becomes evaluable and IS recovered
+in the intron tree (DN1r+B 85.2/62, DN0+B 85.0/63); M is unsupported; if D is CDKL this reverses — suspended. The NPIP
+B3-5 clause is unaffected.]
+Runtime (NPIP/TBC1D3):
 DN0 157 s, DN1 673 s, DN1r 734 s, DN1r+B 690 s, DN0+B 151 s.
 
 Data: `lit/prov_x/{lit,amy}_{DN0,DN1,DN1r,DN1rB,DN0B}.*`, `dump_*/`, `d2_*.out`, `*_truth_expr.tsv`.
@@ -20859,7 +20890,7 @@ toward D members): D pairs inside P 0.478; P pairs inside D 0.859.
 
 Register row 837 (AN-1 on chr5/7/21).
 
-## §6kq — Spike: pseudohaplotype panels for NPIP/TBC1D3 subfamilies — extra haplotypes make allelic divergence measurable and recover TBC1D3-CDKL; AE still not (2026-09-14, throwaway, not pre-registered)
+## §6kq — Spike: pseudohaplotype panels for NPIP/TBC1D3 subfamilies — extra haplotypes make allelic divergence measurable and recover TBC1D3-CDKL; AE still not (2026-09-14, throwaway, not pre-registered) [§6l7 CORRECTED 2026-09-16: TBC1D3 subgroup claims in this section corrected — see §6l7]
 
 **Question (user).** Published subfamilies are clades over 69 (Guitart 2024, TBC1D3) or 169 (Dishuck 2025, NPIP) haplotypes. Does adding
 haplotypes to CHM13 recover what one haplotype cannot?
@@ -20877,18 +20908,23 @@ SH-aLRT > 75. Literature groups are scored on CHM13 tips.
 | panel, family | tips (CHM13 / hap1 / hap2) | literature groups (supported clade) | allelic p-dist median | paralog median | allelic pairs that are sister tips |
 |---|---|---|---|---|---|
 | human NPIP | 22 / 26 / 28 | A\|B, B3-5, B12/13, named NPIPB **recovered**; A6-9, B6-9 unsupported | 0.0003 | 0.0190 | 22/59 |
-| human TBC1D3 | 9 / 16 / 17 | **CDKL recovered** (not recovered on CHM13 alone, §6jp); AE no split | 0.0006 | 0.0103 | 12/22 |
+| human TBC1D3 | 9 / 16 / 17 | **CDKL recovered** (not recovered on CHM13 alone, §6jp); AE no split [§6l7 CORRECTED: M recovered; CDKL {K,TBC1D3} no split] | 0.0006 | 0.0103 | 12/22 |
 | gorilla NPIP | 22 / 29 / 27 | A\|B, B3-5, B6-9, B12/13, named NPIPB recovered; A6-9 unsupported | 0.0003 | 0.0174 | 21/28 |
-| gorilla TBC1D3 | 9 / 18 / 18 | AE, CDKL no split | 0.0019 | 0.0720 | 13/18 |
+| gorilla TBC1D3 | 9 / 18 / 18 | AE, CDKL no split [§6l7 CORRECTED: M recovered (100/100); CDKL 76.2/81 (figure-dependent)] | 0.0019 | 0.0720 | 13/18 |
 
 **Guitart-style grouping.** Single linkage at 1.5 × the median allelic divergence:
 - Human TBC1D3: CHM13 {TBC1D3D, TBC1D3K} join 7 HG002-maternal and 5 HG002-paternal copies. This is CDKL as a population group.
 - TBC1D3E pairs with one copy per HG002 haplotype. TBC1D3 itself stays apart, so AE does not form.
 - Gorilla TBC1D3 copies never join CHM13 copies, consistent with independent lineage expansion.
+[§6l7 CORRECTED 2026-09-16: CHM13 {D,K} join 12 HG002 copies, but TBC1D3 stays apart, so Fig 6C CDKL does not form in
+any truth variant; B and H also fall in separate components.]
 
 **Reading.**
 - With a second individual, allelic divergence becomes measurable (median 0.03-0.06% in human, 20-60× below paralog
   divergence). The literature's allelic-scaled criterion then recovers TBC1D3-CDKL, and the tree supports it as a clade.
+  [§6l7 RETRACTED 2026-09-16: this sentence and the "AE remains unrecovered" line below are withdrawn — see §6l7 (M
+  recovered by the human/gorilla panels; CDKL not recovered with HG002 or 23 haplotypes; AE untestable, at most 1
+  CHM13 copy).]
 - AE remains unrecovered.
 - Adding tips costs support for A6-9 and B6-9 in the human panel.
 
@@ -20910,7 +20946,7 @@ Data and code: `lit/phap/` (`phap.py`, `analyze.out`, `trees/`).
 | family | allelic median (90th pct) | paralog median | groups on the tree | allelic-scaled groups (CHM13 members; copies on haplotypes) |
 |---|---|---|---|---|
 | NPIP | 0.064% (0.22%) | 1.88% | not built | **B3-5 one group (87 copies on 23 haps); B12/13 one group (64 on 23)**; A6-9 splits into A6+A9 (30 on 21) and A7+A8 (33 on 21); A1, A2, B11 one group each on 23 haps; B6, B7, B8, B9 separate and rare (1-9 copies on 1-5 haps); A\|B and the named NPIPB subfamily are deeper than the allelic scale |
-| TBC1D3 | 0.163% (0.355%) | 1.28% | **CDKL recovered; AE no split** | single linkage CHAINS all 9 CHM13 copies + 265 others into one group: with 23 haplotypes, intermediate copies bridge the near-identical paralogs |
+| TBC1D3 | 0.163% (0.355%) | 1.28% | **CDKL recovered; AE no split** [§6l7 CORRECTED: M unsupported (registered; any-match 99.8/100); CDKL no split] | single linkage CHAINS all 9 CHM13 copies + 265 others into one group: with 23 haplotypes, intermediate copies bridge the near-identical paralogs |
 
 **Reading.**
 - For NPIP, allelic-scaled grouping reproduces the population groups B3-5 and B12/13 across all 23 haplotypes. A6-9
@@ -20919,6 +20955,9 @@ Data and code: `lit/phap/` (`phap.py`, `analyze.out`, `trees/`).
 - For TBC1D3, the tree clade recovers CDKL, but single linkage over many haplotypes chains the family: the literature's
   criterion has to be applied to tree clades, not to a linkage graph.
 - AE stays unrecovered in every analysis.
+[§6l7 RETRACTED 2026-09-16: the two bullets above ("the tree clade recovers CDKL" and "AE stays unrecovered in every
+analysis") are withdrawn — see §6l7 (M unsupported by the last-match rule, any-match 99.8/100; CDKL no split; AE
+untestable).]
 
 Caveat: mutual-nearest pairs across individuals with different copy numbers include non-orthologous pairs, which inflates the
 TBC1D3 "allelic" median (0.16% here vs 0.06% for HG002 alone).
@@ -21450,7 +21489,8 @@ omission," §6hu); **Q2 gained its most consequential addition** (the annotation
 families §6ko with their self-caught superfamily-artifact qualification); **Q9 rewritten** with the guided
 subfamily pipeline (NPIP A|B clean 10/10, TBC1D3 1.000/1.000, AMY near-miss on an annotation defect, all
 human CHM13 only, §6jm–§6js) and the pseudohaplotype extension (TBC1D3-CDKL recovered, TBC1D3-AE never, even
-at 23 haplotypes, §6kq); **Part 3 gained 5 new/expanded concessions** (the ceiling, RNA-node cap even with a
+at 23 haplotypes, §6kq) [§6l7 CORRECTED 2026-09-16: TBC1D3 group M recovered by CHM13 trees and the HG002/gorilla
+panels; CDKL figure-dependent; AE untestable]; **Part 3 gained 5 new/expanded concessions** (the ceiling, RNA-node cap even with a
 perfect partition, O3's near-zero genome-wide statistical power — §6id Task 8's corrected 10/2276 and
 6/2080 — the excision-generalization negative and the two real-candidate `not_tested` results §6kv–§6kx, and
 the no-universal-subfamily-unit finding); Part 0b's Soto framing sharpened with the full-catalogue audit
@@ -21493,7 +21533,9 @@ branch), genome-wide against the gorilla assembly, IQ-TREE installed fresh via c
 
 **Read this result with the honest caveat already on record, not despite it.** The label being tested
 (CHM13-landing) is itself a cross-species projection, not an independently-validated gorilla ground truth —
-unlike NPIP/TBC1D3/AMY on human, where Dishuck/Guitart/Bolognini-Yilmaz groups are literature facts. So a
+unlike NPIP/TBC1D3/AMY on human, where Dishuck/Guitart/Bolognini-Yilmaz groups are literature facts [§6l7 CORRECTED
+2026-09-16: where Dishuck/Bolognini-Yilmaz groups are literature facts and Guitart's per-copy TBC1D3 labels were read
+post hoc from a figure (one copy unresolved)]. So a
 negative here is compatible with two different explanations: (a) the projected label is simply too noisy to
 be a real clade signal, or (b) gorilla's own NPIP paralogs genuinely lack the subfamily-tree structure the
 human ones have (plausible and consistent with prior diagnosis, §6jl and this project's earlier finding this
@@ -22163,3 +22205,410 @@ one reported candidate with an `exon_blocks` column, mirroring `catalog_input::e
 
 Data: `/mnt/linuxdisk/home/juanfraitu/o3_probe_verify/discover_copies_test/` (re-run in place; the pre-fix
 `run.*.tsv` files quoted in §6l6 above were overwritten, their relevant contents reproduced here).
+
+## §6l7 — TBC1D3 Guitart truth correction: the name-mapped subfamily truth was wrong for 7/9 copies (2026-09-16)
+
+**Source of record:** `bench/TBC1D3_GUITART_TRUTH_CORRECTION.md` (2026-09-16, post-hoc truth amendment; nothing
+else was edited or committed at derivation time). This section carries that report's §2 (impact on all 33
+inventory items) verbatim, as the append-only historical record for every inline `[§6l7 ...]` marker added
+elsewhere in this ledger on 2026-09-16.
+
+**One-paragraph summary (see the source report's §0 for full detail).** The TBC1D3 level-2 truth used throughout
+§6jg-§6kz was a name-based guess (AE = {TBC1D3, TBC1D3E}, CDKL = {TBC1D3D, TBC1D3K}), explicitly flagged at the
+time as a "declared assumption" because Guitart et al. 2024's per-copy CHM13 table was not on disk. Re-derived
+from Fig 6B/6C (vector-geometry arrow-to-copy matching, cross-checked against CHM13/GRCh38 sequence distances
+and population trees), the corrected per-copy truth is **M = {TBC1D3B, TBC1D3H}** (robust: figure, sequence and
+population trees all agree) and **CDKL = {TBC1D3K, TBC1D3}** (figure-dependent: TBC1D3K's arrow is hand-placed,
+UFBoot < 80 throughout); **TBC1D3D's group is unresolved** (figure says AE, sequence leans CDKL). Three truth
+variants are scored throughout: **F** (figure, all 9 copies), **S** (F with D excluded — not "sequence-safe",
+still keeps K in CDKL), **V3** (F with D moved into CDKL). The old and new pair sets share no pair
+(ARI(old, F) = −0.059). Every claim below is scored under all three.
+
+### Impact of the correction on all 33 inventory items
+
+Each row gives the item's location, the old claim, the result under F, S and V3, and the action. Line numbers
+below are as of HEAD b378435a (the ledger commit current when the correction report's audit was performed);
+see the inline `[§6l7 ...]` markers elsewhere in this document for where each correction was actually applied
+on 2026-09-16.
+
+#### inv01 — truth TSV
+**Where:** `docs/lit_subclusters_npip_tbc1d3_truth.tsv:24-32`, plus 3 copies.
+**Old claim:** AE={T,E}, CDKL={D,K}, other copies singletons.
+
+| truth | result |
+|---|---|
+| F | M={B,H}, CDKL={K,T}; ARI(old, F) −0.059 (`R00/rescore_truth.out:64`) |
+| S | F without D |
+| V3 | adds pairs {D,K} and {D,T}; ARI(old, V3) 0.280 (`:92`) |
+
+**RELABEL.** New TSV written. {T,E} and the B/H singletons are refuted by sequence; {D,K} is not.
+
+#### inv02 — core prereg
+**Where:** `PREREG_core…:223-225, 579, 671, 772`; AA at 960-975.
+**Old claim:** the name map, and AA totals that include the TBC1D3 groups.
+
+| truth | result |
+|---|---|
+| F | AA IQ-TREE 100 vs DT 84 (`gt:81`) |
+| S | 97 vs 84 (`gt:122`) |
+| V3 | 94 vs 84 (`WC/aa_v3.out:5`) |
+
+**RELABEL** through a new addendum (AQ). The AA verdict is unaffected.
+
+#### inv03 — known-subclusters prereg
+**Where:** `PREREG_known_subclusters…:22, 29, 36` (P2-P4).
+**Old claim:** "within human, the copies are ONE clade"; P3's {D,K} cut is a sister pair.
+
+| truth | result |
+|---|---|
+| F | P2/P3/P4 literal verdicts unchanged. Every group nests inside a cluster (`RA/inv04/run.stdout:45`; paper l.405-406). {D,K} crosses AE/CDKL. |
+| S | groups nest; {D,K} untestable (`:47`, `:61`) |
+| V3 | groups nest (`AU/r6_6gw/r6.out:22`); {D,K} is within CDKL |
+
+**RETRACT** "ONE clade". **SUSPEND** P3's reading. The verdicts are unaffected.
+
+#### inv04 — §6gw and register row 778
+**Where:** ledger 14928-14934; `NEGATIVE_RESULTS_REGISTER.md:1387`.
+**Old claim:** no bimodality; D/K is the top pair (0.9986), "a recent tandem sister pair"; the method "found the
+strongest real sequence signal"; "no sequence signal to find".
+
+| truth | result |
+|---|---|
+| F | Table and detectors reproduce (`RA/inv04/run.stdout:2-4,16`). Within-group identity p 0.0688 (`:10`). The I=5.0 cut scores sensitivity 0.500, precision 0.045, ARI −0.021 (`:31`). |
+| S | p 0.0238 (`:12`); I=5.0 ARI −0.050 (`:37`) |
+| V3 | p 0.0040; I=5.0 ARI −0.042 (`AU/r6_6gw/r6.out:18,20`) |
+
+**RETRACT** "no signal to find". **SUSPEND** "{D,K} is the real signal". The I=5.0 cut breaks CDKL in every
+variant, but that rests on K being in CDKL, which is only moderate.
+
+#### inv05 — §6jg (done)
+**Where:** 18891, 18909-18911, 18917.
+**Old claim:** "CDKL={D,K} recovered exactly", ARI 0.654; de novo 0.364; "the tightest published group appears".
+
+| truth | result |
+|---|---|
+| F | Guided cut ARI −0.038, 0/2 groups exact (`R04/variants.out:104`); de novo −0.061 (`:108`) |
+| S | 0.000 with no predicted pairs (`:152`); de novo −0.068 (`:157`) |
+| V3 | 0.372, sensitivity 0.25, 0/2 exact (`AU/r1_upgma/r1.out:56`) |
+
+**RETRACT.** New observation: the guided root split {B,H}|rest equals M exactly under F, S and V3 (`r1.out:53,55,57`).
+
+#### inv06 — §6jh level 2 (done)
+**Where:** 18971-18977, 18985, 18993-18995.
+**Old claim:** de novo identity 7/7, "TBC1D3 fully by de novo identity"; guided coverage × identity 5/7; "is D-K
+the closest pair"; gene spans 7/7.
+
+| truth | result |
+|---|---|
+| F | De novo identity 4/7; guided coverage × identity 4/7; guided identity 3/7; the best is de novo coverage at 5/7. Every pairwise sensitivity is 0 (`R05/summary_L2_tbc1d3.tsv:21-27`). On the shared 8 copies every unit type gives 4/7 (`:35-37`). |
+| S | De novo identity 3/6, guided 2/6 (`RB/inv29_denovo_gap/cov_S.out:12,29`); all unit types 3/6 (`diag_S.out:28,34,40`) |
+| V3 | Fails. V3 needs a B-H merge, and B-H ranks 6/28 (`R05/diag_fig6.out:28`; `AU/r8…out:15`) |
+
+**RETRACT.** "Not a mode effect" still holds.
+
+#### inv07 — §6ji level B
+**Where:** 19042.
+**Old claim:** 5/5 on the shared 6 copies for R0, R2, R3, R7 and gene spans.
+
+| truth | result |
+|---|---|
+| F | All 6 copies are singletons: trivial 6/6 (`RA/inv07/rescore_levelB_FS.out:12,61,75`) |
+| S | trivial 5/5 (`:13,62,76`) |
+| V3 | The restricted truth equals OLD ({D,K} plus singletons), so 5/5 stands (`AU/r8_restricted_partitions.out:1-5`) |
+
+**SUSPEND.** Selection R7 is unaffected (`:82,84,86`).
+
+#### inv08 — lit_modes_j level B
+**Where:** `LIT/lit_modes_j.out:108-116` (never quoted).
+**Old claim:** 6/6 on the shared 7 copies for R0, F4 and gene spans.
+
+| truth | result |
+|---|---|
+| F | trivial 7/7 (`RA/inv08/rescore_modes_j_FS.out:5,17,29`) |
+| S | trivial 6/6 (`:6,18,30`) |
+| V3 | equals OLD (`r8…out:6-10`) |
+
+**SUSPEND.** The J1 candidate F4 is unaffected (`:36,41,46`).
+
+#### inv09 — §6jo G2
+**Where:** 19397-19399.
+**Old claim:** G2 no split is "correct"; one leave-out run splits {H,K}.
+
+| truth | result |
+|---|---|
+| F | No-split runs: pair 1.000/0.056, bipartite 0.222 (`glo:354`). half_3 {H,K}: 0.000/0.000 (`:366`). |
+| S | 1.000/0.071, bipartite 0.250; half_3 0.000 (`:355,367`) |
+| V3 | {H,K} still crosses M and CDKL |
+
+**RELABEL.** Positional "correct" is unaffected. G2 recovers no Guitart group in 11/11 runs.
+
+#### inv10 — §6jp
+**Where:** 19438-19440, 19453-19456, 19476.
+**Old claim:** AE 1/10 (MAFFT) and 0/10 (projection); CDKL 2/10 and 3/10; no split on the reference.
+
+| truth | result |
+|---|---|
+| F | M: reference 100/100 in both; leave-out 10/10 MAFFT, 9/10 projection (`glo:56,111,228,254`). CDKL: reference 84.2/76 and 83.5/77; leave-out 2/10 and 4/10 (`glo:227,253`). |
+| S | M as F. CDKL: leave-out 3/10 and 4/10; reference "unsupported" by the last-match rule, RECOVERED by any-match (`glo:58-59,113-114,243,269`). |
+| V3 | M as F. CDKL reference unsupported, 0.0/43 and 0.0/39 (`AU/r2_trees/r2.out:10,23`). |
+
+**RETRACT** the AE/CDKL cells. M is a robust positive; CDKL holds under F only. The positional calls are
+unaffected (`glo:229,232,255,258`). Both methods use one input FASTA (§1.5 of the source report).
+
+#### inv11 — §6jq table cell
+**Where:** 19522.
+**Old claim:** "none stable (positional)".
+
+| truth | result |
+|---|---|
+| F | M stable; CDKL on the reference only |
+| S | M stable; CDKL by any-match only |
+| V3 | M stable; CDKL not recovered |
+
+**RETRACT** the cell.
+
+#### inv12 — §6jr
+**Where:** 19580, 19591-19594.
+**Old claim:** AE/CDKL no/no; intron leave-out 0/3; "coding shows none".
+
+| truth | result |
+|---|---|
+| F | S2 exon alignment (2,152 sites): no split on the reference, 0/10 leave-out (`glo:299-303`). Intron: M 100/100 and CDKL 84/77 on the reference (`:221`); leave-out M 9/10, CDKL 4/10 (`:325-326`). |
+| S | CDKL reference intron: 0/39 by the last-match rule, 84/77 by any-match (`glo:223-224`); leave-out 4/10 (`:341`) |
+| V3 | M as F; CDKL reference unsupported (`r2.out:49`) |
+
+**RETRACT** the cells. The positional reading is unaffected. Do **not** read the groups as intron-only: the
+§6js exon alignment recovers M at 77.7/71 (`r2.out:57`).
+
+#### inv13 — §6js B2 cell
+**Where:** 19626.
+**Old claim:** "AE/CDKL not literature clades (0 before too)".
+
+| truth | result |
+|---|---|
+| F | M: reference exon 77.7/71 and intron 100/100. Leave-out either class: IQ-TREE 9/10 (exon 4, intron 8); DT 10/10 plus the reference. CDKL: IQ-TREE intron reference 83.5/77, leave-out 5/10; DT 0 (`gt:48-75`; `RA/guided_t/ref_supports.out:2,5`). |
+| S | M as F. CDKL: 3/10 registered, 5/10 any-match; reference unsupported (`gt:90,110,175`). |
+| V3 | M 9/10 strict; CDKL 0/10 (`r2.out:266-273`) |
+
+**RETRACT** the cell text. The bar verdicts are unaffected: B2 excludes TBC1D3, and the B3 exon tree is never
+positional (`gt:60-61,76-77`).
+
+#### inv14 — §6jt D2
+**Where:** 19843-19844.
+**Old claim:** the DN0 and DN1 cells include CDKL.
+
+| truth | result |
+|---|---|
+| F | CDKL absent (no T copy); DN1 intron M unsupported (`d2:9,15`) |
+| S | same as F (`d2:10,16`) |
+| V3 | CDKL RECOVERED as the partial pair {D,K}: DN0 83.6/73, DN1 82.0/75 (`AU/r7_d2/r7.out:10,20`) |
+
+**SUSPEND.** The positional statement is unaffected (`d2:8,14`).
+
+#### inv15 — §6jx and register row 822
+**Where:** 19899-19907; register `:1433`.
+**Old claim:** TBC1D3 AE/CDKL IQ-TREE 0 / 1 of 10, DT 0/0; totals 85 vs 73, conflicts 72 vs 49; NOT SUPPORTED.
+
+| truth | result |
+|---|---|
+| F | M: IQ-TREE 9/10 plus reference, DT 10/10 plus reference. CDKL: IQ-TREE 5/10 plus reference, DT 0. Totals 100 vs 84; conflicts 67 vs 47 (`gt:48-82`). |
+| S | CDKL: IQ-TREE 3/10, reference unsupported. Totals 97 vs 84; conflicts 60 vs 44 (`gt:89-123`). |
+| V3 | Totals 94 vs 84; conflicts 62 vs 44 (`WC/aa_v3.out:4-6`) |
+
+**RELABEL** the TBC1D3 row. The verdict is unaffected: M-only gives 94/84 (`WC/aa_v3.out:11`), and any-match
+under F and S gives 101/84 (`gt:166,207`).
+
+#### inv16 — §6kp
+**Where:** 20630-20634, 20641-20643.
+**Old claim:** the bridge cut makes AE/CDKL evaluable, and they are "not recovered".
+
+| truth | result |
+|---|---|
+| F | CDKL RECOVERED in the intron trees of DN1r+B (85.2/62) and DN0+B (85.0/63). M unsupported (59.4/58) (`d2:39,45`; `r7.out:38,48`). CDKL absent in DN0, DN1 and DN1r. |
+| S | same as F (`d2:40,46`) |
+| V3 | DN0+B and DN1r+B: CDKL no split. DN0, DN1, DN1r: recovered (`r7.out:10,20,30,40,50`). The original reading comes back. |
+
+**SUSPEND.** "No de novo catalog recovers M" holds under F, S and V3.
+
+#### inv17 — §6kq
+**Where:** 20862 (heading), 20880, 20882, 20885-20886, 20891-20892, 20913, 20919-20921.
+**Old claims:**
+- HG002 panel: "CDKL recovered (not on CHM13 alone)", AE no split.
+- Gorilla panel: AE and CDKL no split.
+- Single linkage: {D,K} plus 12 HG002 copies is "CDKL as a population group".
+- 23 haplotypes: CDKL recovered.
+- AE is never recovered.
+
+| truth | result |
+|---|---|
+| F | Human panel: M RECOVERED (97.7/100, 91.8/98, 100/100), CDKL no split (`ph:2`). Gorilla panel: M 100/100, CDKL 76.2/81 (`ph:5`). HPRC: M unsupported by the last-match rule, RECOVERED by any-match (99.8/100); CDKL no split (`ph:8`). Human single linkage forms neither group (`ph:15`). CHM13 alone recovers CDKL (`glo:56,111`). |
+| S | Tree calls as F (`ph:3,6,9`). CHM13-alone CDKL by any-match only. |
+| V3 | CDKL: human no split, gorilla unsupported 0.0/68, HPRC no split (`AU/r3_phap/r3.out:9,21,33`). CHM13 reference unsupported, leave-out 0/10 (`r2.out:10,23,266`). |
+
+**RETRACT:**
+- "The HG002 and 23-haplotype panels recover CDKL".
+- "{D,K} plus 12 copies is the CDKL population group". T sits outside that component (`ph:13`), so the group
+  fails under every variant.
+- "AE is never recovered". This is untestable: AE has at most 1 CHM13 copy.
+
+**SUSPEND** "not recoverable from CHM13 alone" and the gorilla CDKL call.
+
+**New positive:** M, in the human and gorilla panels.
+
+#### inv18 — §6ky Q9 summary
+**Where:** 21450-21453.
+**Old claim:** "TBC1D3-CDKL recovered, TBC1D3-AE never, even at 23 haplotypes".
+**F, S, V3:** as inv17.
+**RETRACT** the clause. Family-level 1.000/1.000 is unaffected.
+
+#### inv19 — §6kz framing
+**Where:** 21494-21497.
+**Old claim:** the Guitart groups are "literature facts".
+**RELABEL** the wording. This item is not rescorable.
+
+#### inv20 — ADVISOR_QUESTIONS
+**Where:** `ADVISOR_QUESTIONS.md:775-776`.
+**Old claim:** "passes every bar … TBC1D3-CDKL is recovered exactly (0.9944 median divergence)".
+
+| truth | result |
+|---|---|
+| F | The bars stand. {D,K} crosses groups (ARI −0.038). 0.9944 is the median gene-span identity (`LIT/lit_analysis.out:48`), not a divergence. |
+| S | ARI 0.000 |
+| V3 | ARI 0.372, sensitivity 0.25 |
+
+**RETRACT** the CDKL sentence. The bars are unaffected.
+
+#### inv21 — ADVISOR_QUESTIONS
+**Where:** `ADVISOR_QUESTIONS.md:810-812, 933`.
+**Old claim:** a second haplotype recovers CDKL, which is "not recoverable from CHM13 alone"; "AE never recovered".
+
+| truth | result |
+|---|---|
+| F | HG002 and HPRC: CDKL no split. CHM13 alone recovers it (`glo:56,111`). |
+| S | CHM13 alone: any-match only |
+| V3 | CHM13 alone: not recovered. Panels: no split. |
+
+**RETRACT** "the second haplotype recovers CDKL" and "AE never". **SUSPEND** "not from CHM13 alone".
+
+#### inv22 — LAYER_ORDER report
+**Where:** `bench/LAYER_ORDER_NPIP_TBC1D3.md:18, 19, 75, 131-135, 155, 251, 253-254, 263, 388`.
+**Old claims:**
+- Literature C has 0 TBC1D3 pairs.
+- C_L1 ⊇ C_fine holds by construction.
+- "AE and CDKL have no supported split".
+- C_tree_top 0.444 and C_tree_min 0.667 for TBC1D3.
+
+| truth | result |
+|---|---|
+| F | Literature C = M (exon 77.7/71, intron 100/100; compatible) plus CDKL (intron 83.5/77; conflicts with {E,K}) (`lo:8-10,79-80`). 52 tournament rows and 18 verdicts change, all TBC1D3; no pooled verdict changes (`lo:71`). C_L1 ⊇ C_fine is 0/2 for TBC1D3. C_tree_top 0.556, C_tree_min 0.778 (`lo:93,99`). |
+| S | Literature C as F. C_tree_top 0.625, C_tree_min 0.875 (`lo:94,100`). |
+| V3 | Literature C = M only (`r2.out:61-62,74-75`). C_tree_top 0.667, C_tree_min 0.889 (`AU/r5_lattice/r5.out:11-12`). |
+
+**RETRACT** "0 pairs", "no supported split" and "by construction" for TBC1D3. **RELABEL** the numbers. "P and D
+split 0 clade pairs" is unaffected (`lo:114-115`).
+
+#### inv23 — NESTED_LATTICE report
+**Where:** `bench/NESTED_LATTICE_NPIP_TBC1D3.md:442, 684-685`.
+**Old claim:** lattice F 0.222 at every level; report-only C_tree_min 0.667 and C_tree_top 0.444; L2 groups AE
+(T,E) and CDKL (D,K).
+
+| truth | result |
+|---|---|
+| F | Lattice 0.222 (`lat:38`); C_tree_min 0.778, C_tree_top 0.556 |
+| S | Lattice 0.250 (`lat:63`); 0.875 / 0.625 (`lat:68-69`) |
+| V3 | Lattice 0.333; 0.889 / 0.667 (`r5.out:10-12`) |
+
+**RELABEL.** "The lattice does not resolve TBC1D3 subgroups" holds: all 9 copies form one group at every level
+(`lat:80-86`).
+
+#### inv24 — code: guided_pipeline
+**Where:** `bench/guided_pipeline.py:509`.
+**Old behaviour:** `literature_groups()` hard-codes ("AE","CDKL").
+
+| truth | result |
+|---|---|
+| F | Returns AE={D} and CDKL={K,T}; **M is silently dropped** (`RB/code_checks/code_checks.out:5`) |
+| S | AE={}; M dropped (`:6`) |
+| V3 | same defect |
+
+**RELABEL** the code (fix proposed in the source report's §6, not applied by the 2026-09-16 documentation-only
+correction pass — see §5 of this section for why).
+
+#### inv25 — code: guided_tree_width
+**Where:** `bench/guided_tree_width.py:33-34`.
+**Old behaviour:** GROUPS hard-codes AE/CDKL.
+**F:** M dropped (`code_checks.out:8`). **S:** M dropped (`:9`). **V3:** same defect.
+**RELABEL** the code (proposed, not applied — see §5).
+
+#### inv26 — code: lit scripts
+**Where:** `LIT/lit_tbc_diag.py:33`; lit_analysis, lit_coverage, lit_modes and lit_modes_j read `LIT/lit_truth.tsv`.
+**Old behaviour:** hard-coded truth pairs (D,K) and (T,E).
+**F:** neither is a truth pair (`code_checks.out:18`). **S:** same (`:19`). **V3:** (D,K) is a truth pair.
+**RELABEL** the code (proposed, not applied — outside the repo, see §5).
+
+#### inv27 — code: layer-order
+**Where:** `truths_universe.py:211-212`; `lattice_truth.py:13`; `lo_*`; `lattice_edges.py:738-754`.
+**Old behaviour:** annotations say "mapped by name (AE = TBC1D3+E, CDKL = D+K)" and "positional AE/CDKL".
+**F, S, V3:** the propagation code is truth-agnostic; inv22 and inv23 reproduce the originals through it. Only
+`layer_c.py`, through `literature_groups`, drops M.
+**RELABEL** the annotation text (`bench/layer_order/lattice_truth.py:13` applied 2026-09-16; the `truths_universe.py`
+and `lattice_edges.py` copies live outside this repo — see §5).
+
+#### inv28 — memory: population unit
+**Where:** `project_tbc1d3_subclusters_population_unit.md:14, 21-24`; `MEMORY.md:83`.
+**Old claim:** "AE and CDKL each merge 2 genes"; §6kq CDKL recovered (not from CHM13 alone), AE never; 23
+haplotypes still give CDKL.
+**F, S, V3:** as inv17. CDKL merges 4 GRCh38 genes (C, D, K, L); AE merges 2 (A, E) (`snap:108`).
+**RETRACT** the panel-CDKL claims and "each merge 2". **SUSPEND** "not from CHM13 alone". (Applied by the
+controller before this pass, per the task's own instruction — not touched here.)
+
+#### inv29 — memory: de novo gap
+**Where:** `project_denovo_vs_annotated_gap.md:391-393, 399-400, 403-404`.
+**Old claim:** as inv05 and inv06. **F, S, V3:** as inv05 and inv06.
+**RETRACT.**
+
+#### inv30 — memory: two modes
+**Where:** `project_two_modes_scope.md:198`.
+**Old claim:** the bridge cut "loses TBC1D3 AE/CDKL". **F, S, V3:** as inv16.
+**SUSPEND.**
+
+#### inv31 — memory: leader nesting
+**Where:** `project_leader_rule_breaks_nesting.md:26-27`.
+**Old claim:** ADVISOR misstates CDKL; "tree 3/10".
+
+| truth | result |
+|---|---|
+| F | The conclusion holds and is stronger. Projection CDKL 4/10 plus reference (`glo:253,256`). |
+| S | 4/10; reference by any-match only (`glo:269,272,277`) |
+| V3 | reference unsupported (`r2.out:23`) |
+
+**RELABEL.**
+
+#### inv32 — memory: layer order
+**Where:** `project_npip_tbc1d3_layer_order.md:19-20`.
+**Old claim:** "TBC1D3 has no literature clades".
+**F:** literature C = M + CDKL (`lo:8-10`). **S:** as F. **V3:** M (`r2.out:61,74`).
+**RETRACT** that clause. The clause-5 groups are unaffected. (Applied by the controller before this pass.)
+
+#### inv33 — positional cluster1|cluster2 calls
+**Where:** ledger §6jg-§6jx; `lattice_filtration.py:211`; `LAYER_ORDER:75`.
+**Old claim:** the boundary is recovered exactly 0/2; the reference intron tree supports it ("wrong"); leave-out
+runs are mostly "correct".
+**F:** identical to OLD in every rescore (`glo:229,232,255,258,301,304,327,330`; `gt:63,79`; `d2:8,14`). **S:**
+identical (`glo:245,248,271,274`; `gt:104,120`). **V3:** the positional scorer uses level 1 only.
+**UNAFFECTED.** The interpretation is weaker: every Guitart group nests inside one cluster (`RA/inv04/run.stdout:45,47`).
+
+**Tally:** retract (any part) = inv03, 04, 05, 06, 10, 11, 12, 13, 17, 18, 20, 21, 22, 28, 29, 32 (16). Suspend
+only = inv07, 08, 14, 16, 30 (5). Relabel = inv01, 02, 09, 15, 19, 23, 24, 25, 26, 27, 31 (11). Unaffected =
+inv33 (1). Heavy = none.
+
+### §5 note on this pass (2026-09-16 documentation-only correction)
+
+This ledger section was added, and the inline `[§6l7 ...]` markers elsewhere in this document were inserted,
+as a **documentation-only** correction pass: no past ledger text was deleted or silently rewritten (every
+correction is an appended, dated marker next to the original statement), no code behaviour was changed, and
+the truth TSV `docs/lit_subclusters_npip_tbc1d3_truth.tsv` was deliberately left byte-identical (it still
+reproduces every registered number under the old truth; the corrected truth lives in the source report and its
+`R00/truth_guitart_fig.tsv`). The code fixes proposed in the source report's §6 (items 3-9: `literature_groups()`
+and `GROUPS["TBC1D3"]` deriving groups dynamically from `level2` instead of hard-coding "AE"/"CDKL") are
+behaviour changes and were deliberately **not applied** in this pass; they are recorded here as outstanding.

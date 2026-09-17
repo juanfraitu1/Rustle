@@ -439,7 +439,7 @@ HGNC) (`LAT/truth.out`).
 | literature NPIPA\|NPIPB | NPIP | 22 (lit leaves) | 0.651 | 0.651 | 0.651 | 0.619 | 0.651 | 0.651 | 0.619 | 0.743 | 0.619 | 0.706 | 0.651 | C_L1 1.000 (circular) |
 | literature L2 | NPIP | 21 (C_tree leaves) | 0.238 | 0.238 | 0.238 | 0.238 | 0.238 | 0.238 | 0.238 | 0.667 | 0.238 | 0.762 | 0.238 | C_tree_min 0.833 (1.000 / 0.250); C_tree_top 0.667 |
 | literature L2 | NPIP | 22 (lit leaves) | 0.227 | 0.227 | 0.227 | 0.273 | 0.227 | 0.227 | 0.273 | 0.682 | 0.273 | 0.773 | 0.227 | C_fine 1.000 (circular) |
-| literature L2 | TBC1D3 | 9 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | C_tree_min 0.667; C_tree_top 0.444 |
+| literature L2 | TBC1D3 | 9 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | 0.222 | C_tree_min 0.667; C_tree_top 0.444 [corrected 2026-09-16: **C_tree_min 0.778; C_tree_top 0.556** under Fig 6C — see `bench/TBC1D3_GUITART_TRUTH_CORRECTION.md`] |
 
 **Pair precision / recall on all of U** (T-truth-U-pairs), L0 → L3:
 
@@ -682,7 +682,9 @@ them in one group. By T2b the split can only refine the L0 group.
   - Soto needs the exon-overlap mapping (flag ok only), and it shares the SD98 and shared-exon conventions with L2/L3.
   - Literature C is circular for C_L1 / C_fine, and clause 5 (C_tree) was developed on NPIP.
   - TBC1D3's literature L1 (cluster1/cluster2) is positional; its literature L2 has only two non-trivial groups, AE
-    (TBC1D3, E) and CDKL (D, K).
+    (TBC1D3, E) and CDKL (D, K). [corrected 2026-09-16: its literature L2 has two non-trivial groups read post hoc
+    from Guitart Fig 6B/6C, M (B, H) and CDKL (K, TBC1D3); TBC1D3D's group is unresolved. See
+    `bench/TBC1D3_GUITART_TRUTH_CORRECTION.md`.]
   - V-scope recall is conditioned on the lattice's own closure.
 - **Not done:**
   - Leaders as a report-only grouping.

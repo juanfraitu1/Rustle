@@ -15,8 +15,8 @@
 |---|---|---|
 | order P vs D (E1) | **Not determined.** Under the spec's P-universe rule the two tie: pooled 246/255 both ways (group level 1/2 vs 1/2); NPIP 210/210 both ways, which is **one group each** (1/1); TBC1D3 36/45 both ways (0/1). On the 28 genes that lie in every layer's universe, P and D are the **same partition** (207/207 both ways). The tie moves with the conventions: of 9 variants beyond the spec reading, 6 give D > P, 2 give P > D, 1 ties (§6). | `IS/tournament.tsv`, `IS/pd_variants.tsv` |
 | C vs P and D | **By construction**, C lies below P and D: clades sit inside one family, and P and D each keep every family in one group. The measured content is narrower: **P and D split 0 clade pairs**, for the literature clades and for the §0★★ clause-5 split system (C_tree). | `IS/disagree_clades.tsv` |
-| TBC1D3 and C | Literature C has **0** TBC1D3 pairs, so every literature-C comparison is **NA**, not "above". The clause-5 split system does have TBC1D3 subfamilies, {B,F,G,H} and {TBC1D3,D,E,K}; both lie inside P's and D's TBC1D3 group (12 of 12 pairs). | `IS/tournament.tsv` |
-| order inside C | Literature levels C_L1 ⊇ C_mid ⊇ C_fine hold **by construction**, since C_mid := C_mid_ab ∨ C_fine. **As built, C_fine is above C_mid_ab** (0.267 [15] vs 0.250 [16]). C_tree_top ⊇ C_tree_min holds by construction. | `IS/tournament.tsv` |
+| TBC1D3 and C | [corrected 2026-09-16] Literature C has **2** TBC1D3 pairs from Guitart Fig 6C: M={B,H} (supported, compatible) and CDKL={K,TBC1D3} (intron tree 83.5/77, conflicts with {E,K}); both lie inside P's and D's TBC1D3 group. With D in CDKL only M remains. (Was: "0 TBC1D3 pairs, every literature-C comparison NA" — see `bench/TBC1D3_GUITART_TRUTH_CORRECTION.md`.) The clause-5 split system does have TBC1D3 subfamilies, {B,F,G,H} and {TBC1D3,D,E,K}; both lie inside P's and D's TBC1D3 group (12 of 12 pairs). | `IS/tournament.tsv` |
+| order inside C | Literature levels C_L1 ⊇ C_mid ⊇ C_fine hold **by construction**, since C_mid := C_mid_ab ∨ C_fine. **As built, C_fine is above C_mid_ab** (0.267 [15] vs 0.250 [16]). C_tree_top ⊇ C_tree_min holds by construction. [corrected 2026-09-16] **This "by construction" claim fails for TBC1D3** under the Fig 6C truth: C_L1 ⊇ C_fine 0/2 (positional L1 cleared); pooled 0.889 [18] 4/6. | `IS/tournament.tsv` |
 | cost of forcing P and D to nest (TBC1D3, HGNC, bipartite F) | JOIN, U-restricted: 0.917. JOIN, whole catalog groups: 0.857. REFINE with USP6NL attached: 0.957. REFINE with USP6NL as a singleton: 0.909. **No JOIN-vs-REFINE ranking holds under every convention.** Each side turns on one gene: DHX40 for JOIN, USP6NL/TBC1D26 for REFINE. On Soto (TBC1D3), REFINE scores 1.000 under both conventions and JOIN 0.818 or 0.643. | `IS/truth_agreement.tsv` |
 | truth recall, layer-independent | HGNC group 2227 ("TBC1 domain family members") is **superfamily-level**: 57 symbols, 54 RefSeq genes. P recovers 54 of 423 member-anchored pairs (**R 0.128**, P 1.000). D recovers 45 of 198 (R 0.227, P 0.714). For Soto, every RefSeq gene that maps into a member-holding family is already in U, so the U-based Soto scores are not inflated by the closure. | `IS/truth_member_anchored.tsv` |
 | EXPR, any-overlap reads ≥ 3 (spec rule, primary) | NPIP: **13 of 27** members expressed. TBC1D3: **0 of 19**. Unique reads give 9; unique ignoring the 6 readthroughs that overlap a member gives 11. Sweep for t = 1..5 in §8. | `IS/member_expression.tsv`, `IS/expr_sweep.tsv` |
@@ -72,7 +72,7 @@ Checks:
 | 6 | D catalogs cover chromosome trios only | Genes outside both catalogs are *not in D*. No 6-chromosome catalog was built | NPIPB1P, TBC1D3P6, LOC124905656, LOC100420289 and USP6NL are outside D (probe in §9) |
 | 7 | `truth_guided` E1 is D itself | E1 is not a truth. D vs E0 is reported only as construction sensitivity | §7 |
 | 8 | C is literature-circular | **Audit:** the ordered C layer is now the clause-5 split system (C_tree). Literature C is a circular reference column | §5 |
-| 9 | TBC1D3 cluster1/cluster2 are positional labels | Cleared in *literature* C_L1. In the clause-5 split system, {TBC1D3,D,E,K} vs {B,F,G,H,I} is a supported compatible split (intron 83/71), so it stays in C_tree | Literature C: 0 TBC1D3 pairs (NA). C_tree: 12 top pairs |
+| 9 | TBC1D3 cluster1/cluster2 are positional labels | Cleared in *literature* C_L1. In the clause-5 split system, {TBC1D3,D,E,K} vs {B,F,G,H,I} is a supported compatible split (intron 83/71), so it stays in C_tree | [corrected 2026-09-16] Literature C: 2 TBC1D3 pairs (M, CDKL). C_tree: 12 top pairs. (Was: "0 TBC1D3 pairs (NA)".) |
 | 10 | The universe still carried the deferred S1 layer | U = members ∪ P ∪ D ∪ C | 79 → **68 genes** |
 | 11-19 | `truth_guided` clusters; duplicate node keys; fold flags; weak truths; EXPR rows; seed_family; RNFT1 reads; unique definition | As before. **Audit:** any-overlap is now the primary count, and unique_mr has been added | §8 |
 | 20 | As-built `C_mid` is not a hierarchy level | `C_mid` := C_mid_ab ∨ C_fine. **Audit:** C_mid_ab stays in every main table | §5 |
@@ -124,7 +124,8 @@ Checks:
 | **C_tree_min** | 0.023 [171] 0/1 | 0.021 [190] 0/1 | 0.087 [46] 0/3 | — | 0.036 [112] 0/2 | 0.148 [27] 0/3 | 0.067 [15] 0/1 | 0.250 [16] 0/4 |
 | **C_L1** | 0.509 [171] 0/1 | 0.533 [210] 0/1 | 1.000 [46] 3/3 | 1.000 [4] 4/4 | — | 1.000 [27] 3/3 | 1.000 [15] 1/1 | 1.000 [16] 4/4 |
 
-**TBC1D3** (P/D genes 11; C_tree 9):
+**TBC1D3** (P/D genes 11; C_tree 9), **old literature truth (name-mapped AE/CDKL, superseded 2026-09-16 — kept
+for the historical record, see `bench/TBC1D3_GUITART_TRUTH_CORRECTION.md`):**
 
 | X ⊇ Y | P | D | C_tree_top | C_tree_min | C_L1 / C_mid / C_mid_ab / C_fine |
 |---|---|---|---|---|---|
@@ -133,6 +134,24 @@ Checks:
 | **C_tree_top** | 0.333 [36] 0/1 | 0.333 [36] 0/1 | — | 1.000 [7] 2/2 | vac [0] |
 | **C_tree_min** | 0.194 [36] 0/1 | 0.194 [36] 0/1 | 0.583 [12] 1/2 | — | vac [0] |
 | **C_L1 / C_mid / C_mid_ab / C_fine** | 0.000 [36] 0/1 | 0.000 [36] 0/1 | 0.000 [12] 0/2 | 0.000 [7] 0/2 | vac [0] |
+
+[corrected 2026-09-16, `RB/inv22_layer_order/containment_old_vs_new.tsv`] **Under the Fig 6C truth (F),
+literature C_mid and C_fine gain 2 real TBC1D3 pairs (M, CDKL) and can no longer be collapsed into one vacuous
+column with C_L1/C_mid_ab, which stay at 0 pairs:**
+
+| X ⊇ Y | P | D | C_tree_top | C_tree_min | C_L1 | C_mid | C_mid_ab | C_fine |
+|---|---|---|---|---|---|---|---|---|
+| **P** | — | 0.800 [45] 0/1 | 1.000 [12] 2/2 | 1.000 [7] 2/2 | vac [0] | **1.000 [2] 2/2** | vac [0] | **1.000 [2] 2/2** |
+| **D** | 0.800 [45] 0/1 | — | 1.000 [12] 2/2 | 1.000 [7] 2/2 | vac [0] | **1.000 [2] 2/2** | vac [0] | **1.000 [2] 2/2** |
+| **C_tree_top** | 0.333 [36] 0/1 | 0.333 [36] 0/1 | — | 1.000 [7] 2/2 | vac [0] | **1.000 [2] 2/2** | vac [0] | **1.000 [2] 2/2** |
+| **C_tree_min** | 0.194 [36] 0/1 | 0.194 [36] 0/1 | 0.583 [12] 1/2 | — | vac [0] | **1.000 [2] 2/2** | vac [0] | **1.000 [2] 2/2** |
+| **C_L1** | 0.000 [36] 0/1 | 0.000 [36] 0/1 | 0.000 [12] 0/2 | 0.000 [7] 0/2 | — | **0.000 [2] 0/2** | vac [0] | **0.000 [2] 0/2** |
+| **C_mid** | **0.056 [36] 0/1** | **0.056 [36] 0/1** | **0.167 [12] 0/2** | **0.286 [7] 1/2** | vac [0] | — | vac [0] | **1.000 [2] 2/2** |
+| **C_mid_ab** | 0.000 [36] 0/1 | 0.000 [36] 0/1 | 0.000 [12] 0/2 | 0.000 [7] 0/2 | vac [0] | **0.000 [2] 0/2** | — | **0.000 [2] 0/2** |
+| **C_fine** | **0.056 [36] 0/1** | **0.056 [36] 0/1** | **0.167 [12] 0/2** | **0.286 [7] 1/2** | vac [0] | **1.000 [2] 2/2** | vac [0] | — |
+
+Bold = a cell whose value differs from the old (name-mapped) table above. C_mid and C_fine each contain BOTH
+Fig 6C groups (M, CDKL); C_L1 and C_mid_ab remain 0 TBC1D3 pairs, unchanged.
 
 **One common gene set** (`IS/tournament_common_genes.tsv`):
 - The set is the 28 genes in every universe (P ∩ D ∩ C_tree ∩ C_lit): NPIP 19, TBC1D3 9.
@@ -152,7 +171,7 @@ X is above Y iff c(X ⊇ Y) > c(Y ⊇ X). A comparison is NA when either side ha
 |---|---|---|
 | P vs D | **undetermined**. Tie under the spec reading; the verdict changes with conventions (table below) | NPIP: one P group vs one D group (1/1). TBC1D3: 36/45 both ways (0/1). Pooled: 246/255 both ways (1/2) |
 | P, D above C_tree / literature C | **by construction** that c(C ⊇ P) < 1 (subfamilies are finer than the family). **Measured:** c(P ⊇ C) = c(D ⊇ C) = 1, i.e. 0 clade pairs split | §5; `IS/disagree_clades.tsv` |
-| C_L1 ⊇ C_mid ⊇ C_fine | **by construction** (literature hierarchy; C_mid := C_mid_ab ∨ C_fine) | as built, C_fine above C_mid_ab: 0.267 [15] vs 0.250 [16] |
+| C_L1 ⊇ C_mid ⊇ C_fine | **by construction** (literature hierarchy; C_mid := C_mid_ab ∨ C_fine) | as built, C_fine above C_mid_ab: 0.267 [15] vs 0.250 [16]. [corrected 2026-09-16] Fails for TBC1D3: C_L1 ⊇ C_fine 0/2 (positional L1 cleared); pooled 0.889 [18] 4/6. |
 | C_tree_top ⊇ C_tree_min | **by construction** (maximal vs minimal clusters of one laminar system) | 1.000 [11] 6/6 |
 | TBC1D3: P, D vs literature C | **NA** (0 literature pairs) | — |
 | TBC1D3: P, D vs C_tree | P, D above C_tree_top: 1.000 [12] vs 0.333 [36] | not vacuous |
@@ -248,10 +267,10 @@ Reading (B):
 | C_L1 (CIRCULAR) | literature L1 | 1.000 / 1.000 / 1.000 (22) | — | — |
 | C_mid_ab (CIRCULAR) | named NPIPB subfamily | 1.000 / 1.000 / 1.000 (22) | — | — |
 | C_mid (= C_mid_ab ∨ C_fine) | named ∨ L2 | **not scored: identical by construction** | | |
-| C_fine (CIRCULAR) | literature L2 | 1.000 / 1.000 / 1.000 (22) | P NA / R 0.000 / F NA (0 predicted pairs) | 1.000 / 0.889 / 0.967 (31) |
+| C_fine (CIRCULAR) | literature L2 | 1.000 / 1.000 / 1.000 (22) | P NA / R 0.000 / F NA (0 predicted pairs) [corrected 2026-09-16: **1.000 / 1.000 / 1.000 (9, circular)**] | 1.000 / 0.889 / 0.967 (31) [corrected: **1.000 / 1.000 / 1.000 (31)**] |
 | C_tree_top (clause 5) | literature L1 | 1.000 / 0.411 / 0.765 (21) | — | — |
-| C_tree_top (clause 5) | literature L2 | 0.348 / 1.000 / 0.667 (21) | 0.167 / 1.000 / 0.444 (9) | 0.310 / 1.000 / 0.600 (30) |
-| C_tree_min (clause 5) | literature L2 | 1.000 / 0.250 / 0.833 (21) | 0.286 / 1.000 / 0.667 (9) | 0.545 / 0.333 / 0.778 (30) |
+| C_tree_top (clause 5) | literature L2 | 0.348 / 1.000 / 0.667 (21) | 0.167 / 1.000 / 0.444 (9) [corrected 2026-09-16: **0.167 / 1.000 / 0.556 (9)**] | 0.310 / 1.000 / 0.600 (30) [corrected: **0.310 / 1.000 / 0.633 (30)**] |
+| C_tree_min (clause 5) | literature L2 | 1.000 / 0.250 / 0.833 (21) | 0.286 / 1.000 / 0.667 (9) [corrected 2026-09-16: **0.286 / 1.000 / 0.778 (9)**] | 0.545 / 0.333 / 0.778 (30) [corrected: **0.545 / 0.333 / 0.815 (30)**] |
 | C_tree rooted at its most balanced split (variant) | literature L1 | 1.000 / 1.000 / 1.000 (21) | — | — |
 
 Literature groups vs the compatible split system (`IS/ctree_literature_groups.tsv`):
@@ -260,7 +279,9 @@ Literature groups vs the compatible split system (`IS/ctree_literature_groups.ts
   - B12/13 (intron 98.9/100) conflicts with the exon split {B12,B3,B4,B5} (90.3/89).
   - **The named NPIPB subfamily** {B3,B4,B5,B11,B12,B13} (intron 99.6/100) conflicts with {B10P,B11,B15,B6-9} (exon 86.6/75).
 - So C_fine (B12/13) and C_mid_ab (named) each contain one group that fails the compatibility rule.
-- TBC1D3 AE and CDKL have no supported split in either tree.
+- TBC1D3 AE and CDKL have no supported split in either tree. [corrected 2026-09-16: this used the superseded
+  name-mapped truth. Under Fig 6C, TBC1D3 M is supported (exon 77.7/71, intron 100/100) and compatible; CDKL is
+  supported only in the intron tree (83.5/77, UFBoot 77) and conflicts with {E,K} (exon 78.0/70).]
 
 ## 8. EXPR operator (testis; primary rule any-overlap, reads ≥ 3)
 
@@ -385,7 +406,9 @@ Why any and unique differ (co-hit reads; `lo_expr_cohits.py` → `IS/expr_cohits
   - HGNC gives no group to any NPIP gene and is superfamily-level for TBC1D3.
   - Soto needs an exon-overlap mapping (20 of 68 U genes are not flag ok).
   - Literature C is circular.
-  - TBC1D3 L2 groups are an assumed name mapping (§6jg).
+  - TBC1D3 L2 groups are an assumed name mapping (§6jg). [corrected 2026-09-16: TBC1D3 L2 groups read per copy
+    from Guitart Fig 6B/6C (post hoc); TBC1D3D unresolved (figure AE, sequence CDKL). See
+    `bench/TBC1D3_GUITART_TRUTH_CORRECTION.md`.]
 - **EXPR:** one sparse tissue; 0 expressed TBC1D3 members; no split at t ≥ 2; T2 guaranteed on these data.
 
 ## 11. Reproduce (foreground, in order)

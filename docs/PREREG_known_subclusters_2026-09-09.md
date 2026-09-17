@@ -20,6 +20,7 @@
 - ⭐⭐ **"complete lineage-specific stratification … into distinct clades for human, Pan, gorilla …"**, taken as
   evidence of **recurrent duplication or gene conversion of all gene family copies in each lineage**
   (l. 148–151). ⟹ within human, the copies are ONE clade; **clusters 1 and 2 are POSITIONAL, not phylogenetic**.
+  [2026-09-16: withdrawn — Guitart's phylogenetic groups nest inside clusters 1/2 ("specific to either cluster 1 or 2"); see bench/TBC1D3_GUITART_TRUTH_CORRECTION.md]
 - The 43 bp ORF deletion is shared by **all** cluster-1 and cluster-2 copies and absent from orphans (l. 241).
 
 ## ⭐ The two families therefore predict OPPOSITE outcomes — that is what makes this a test
@@ -33,7 +34,7 @@
 |---|---|---|
 | **P1** | Somewhere on the inflation ladder, NPIP splits into groups that align with **A vs B** | no inflation separates A from B at better than chance |
 | **P2** | TBC1D3 clusters 1 and 2 are **NOT** recovered as the first cut; the ladder's cuts cross the positional boundary | a cut cleanly reproduces cluster 1 vs cluster 2 |
-| **P3** | TBC1D3's observed I = 5.0 cut (**{D,K} vs the other seven**) is a **sister-pair**, not a cluster boundary — D and K sit 11.6 kb apart and are both 12,610 bp | D and K fall in different positional clusters |
+| **P3** | TBC1D3's observed I = 5.0 cut (**{D,K} vs the other seven**) is a **sister-pair**, not a cluster boundary — D and K sit 11.6 kb apart and are both 12,610 bp | D and K fall in different positional clusters [suspended: TBC1D3D's group is unresolved (figure AE, sequence CDKL)] |
 | **P4** | Pairwise identity among the 9 human TBC1D3 paralogues is **uniformly high** with no bimodality at the cluster boundary, consistent with IGC homogenisation | identity is clearly bimodal by cluster |
 | **P5** ⚠ | For NPIP, the finer groups (**B3–B5**, **B6–B9**) require *more* inflation than the A/B split, if they appear at all | a finer group separates before A/B |
 

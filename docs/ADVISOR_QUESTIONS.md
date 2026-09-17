@@ -773,7 +773,9 @@ NPIPA|NPIPB in **10/10 leave-out runs** plus the full reference, and every named
 (`bench/guided_pipeline.py`, §6js) hits NPIP sensitivity **1.000** at both keep-levels with 0 duplicate loci.
 
 ⭐⭐ **TBC1D3 is worked as a second literature family and passes every bar (§6js): 1.000/1.000, 0 duplicates.**
-TBC1D3-CDKL is recovered exactly (0.9944 median divergence). **AMY is a third (§6jq–§6js, Bolognini
+[corrected 2026-09-16] Guitart Fig 6C group M {TBC1D3B, TBC1D3H} is a supported clade on the CHM13 reference
+(intron 100/100, exon 77.7/71; leave-out 9/10). [Withdrawn: "CDKL recovered exactly (0.9944 median divergence)"
+— that cut {D,K} is not a Fig 6C group, and 0.9944 is an identity, not a divergence.] **AMY is a third (§6jq–§6js, Bolognini
 2024/Yilmaz 2024): narrowly misses one bar (0.933 vs 0.967)** — diagnosed to a single mis-annotated RefSeq
 model whose 36 kb CDS envelope wrongly swallows a neighbouring gene, not a method defect.
 
@@ -805,11 +807,12 @@ conversion is exactly the kind of signal that erases a subfamily tree without er
 way: **the gorilla gap in this answer is now closed by an executed, reported negative, not an absent attempt.**
 
 ⭐ **A second-haplotype extension answers one more piece and confirms one persistent gap (§6kq, throwaway
-spike, not pre-registered).** Adding a second haplotype (HG002, then a 23-haplotype HPRC panel) makes allelic
-divergence directly measurable (human NPIP allelic p-distance median 0.0003 vs paralog 0.0190) and recovers
-groups a single reference cannot resolve — **TBC1D3-CDKL**, not recoverable from CHM13 alone (§6jp). **TBC1D3
-subfamily AE is never recovered, in any configuration tried, including the full 23-haplotype panel** — an
-honest, still-open negative to state alongside the CDKL positive, not hide behind it.
+spike, not pre-registered).** [corrected 2026-09-16] Adding a second haplotype (HG002, then a 23-haplotype
+HPRC panel) makes allelic divergence directly measurable (human NPIP allelic p-distance median 0.0003 vs
+paralog 0.0190). With the Fig 6C truth the HG002 and gorilla panels recover group M; CDKL {K,TBC1D3} is not
+recovered with HG002 or 23 haplotypes. [Withdrawn: "TBC1D3-CDKL, not recoverable from CHM13 alone" (wrong name
+map — under Fig 6C, CHM13 alone recovers CDKL, and the panels do not) and "AE never recovered" (AE has at most
+one CHM13 copy, so this is untestable, not a negative result).]
 
 ⭐ **Our measured precision on NPIP is understated**, because Soto's set is CAT-bounded: a real copy
 CAT missed scores as a false positive. The defensible exhibit is **chr16:28,659,994 — 21 exons,
@@ -930,7 +933,7 @@ chosen. `REPRODUCE.md` pins the **one** that is — three contigs, ~40 minutes, 
 | Q6 portability | ⭐ tissue/animal · ⭐ apes port structurally, ⛔ coherent-family gap is universal (worst on human itself) | §4l, §5p, §6l0 |
 | Q7 boundaries | ⭐ premise false | §6ay, §6ba |
 | Q8 1/k | ⭐ never used; certified assignment measured (0 wrong anchors, 1.0000 agreement) | §6fa–§6fj, `sweep_v14` |
-| Q9 NPIP subfamilies | ⭐⭐ human CHM13: NPIPA\|NPIPB split recovered clean (10/10), TBC1D3 1.000/1.000, AMY near-miss (annotation defect), TBC1D3-AE never recovered. ⛔ gorilla: run for the first time, 0/0 subfamily groups recovered (executed negative, caveated by the label being a cross-species proxy) | §6jm–§6js, §6kq, §6kz |
+| Q9 NPIP subfamilies | ⭐⭐ human CHM13: NPIPA\|NPIPB split recovered clean (10/10), TBC1D3 1.000/1.000, AMY near-miss (annotation defect), TBC1D3 group M recovered; CDKL figure-dependent [corrected 2026-09-16, was: "TBC1D3-AE never recovered"]. ⛔ gorilla: run for the first time, 0/0 subfamily groups recovered (executed negative, caveated by the label being a cross-species proxy) | §6jm–§6js, §6kq, §6kz |
 | Q10 non-canonical | ⭐ he is right; recurs | §6au, §6av, §6aw |
 | Q11 PSV | ⭐ answered | §6aj |
 

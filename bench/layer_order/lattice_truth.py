@@ -10,7 +10,10 @@ F is NA when the truth or the prediction has 0 same-group pairs.
 
 Truths (per gene, lattice/nodes.tsv): HGNC gene_group_id (superfamily-level for TBC1D3); Soto family (flag ok: matched,
 not weak, not ambiguous — exon-overlap mapping of light/scripts/soto_map.py); literature L1 NPIPA|NPIPB (NPIP only);
-literature L2 paralog groups (NPIP A/B groups; TBC1D3 positional AE/CDKL as in the prior study).
+literature L2 paralog groups (NPIP A/B groups; TBC1D3 Guitart Fig 6B/6C groups M, CDKL — phylogenetic, read post hoc;
+not positional. CORRECTED 2026-09-16, was: "TBC1D3 positional AE/CDKL as in the prior study" — the name-mapped
+AE/CDKL truth was wrong for 7/9 copies; see bench/TBC1D3_GUITART_TRUTH_CORRECTION.md. Comment only, no behaviour
+change: this module reads level2 from whatever truth TSV it is pointed at.).
 
 Gene sets:
   U     the 68-gene universe of the prior study, per family side (NPIP / TBC1D3 / pooled).
