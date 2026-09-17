@@ -22612,3 +22612,77 @@ reproduces every registered number under the old truth; the corrected truth live
 `R00/truth_guitart_fig.tsv`). The code fixes proposed in the source report's §6 (items 3-9: `literature_groups()`
 and `GROUPS["TBC1D3"]` deriving groups dynamically from `level2` instead of hard-coding "AE"/"CDKL") are
 behaviour changes and were deliberately **not applied** in this pass; they are recorded here as outstanding.
+
+## §6l8 — NPIP de novo node construction (development): the gene-body edge already gives family recall 1.000; three node fixes do not close the strict-precision gap — NO CANDIDATE (2026-09-17)
+
+**Question (user).** Can de novo (Iso-Seq) nodes be made to behave like annotated DNA nodes, so that the shipped
+shared-definition comparison (`shared_definition.rs`: one `-x splice -uf` run on each node's representative
+transcript, one `-x asm20` run on its gene body, whole-genome target) gives NPIP family sensitivity / precision /
+bipartite matching as close as possible to guided mode?
+
+**Substrate (development only).** Human CHM13, 27 NPIP truth copies (`docs/lit_subclusters_npip_dishuck_check.tsv`),
+reads = `samtools view -b -M -L` of the 19 literature windows + 15 chr16 copy windows (18 intervals) from
+`A119b.t2t.bam`; the edge procedure and triangle leaders held fixed; scorer = the frozen NPIP scorer of
+`bench/NPIP_PER_MEMBER_METRICS.md` §2. NPIP is a development family on copy-centred windows: nothing below is
+validation, and no held-out test was run. Every step declared its arms and decision rule before any metric and was
+recomputed by an independent agent (no numeric error in any of the four).
+
+**1. Factor-swap ladder** (`bench/NPIP_NODE_LADDER.md`, 63a0843c; data `/mnt/linuxdisk/home/juanfraitu/npip_ladder/`).
+
+| arm | nodes | FAMILY R / P NPIP-only / F | P strict | full-length copies |
+|---|---|---|---|---|
+| A0 | RefSeq genes | 1.000 / 1.000 / 1.000 | 0.600 | 27/27 |
+| A1 | RefSeq genes with >= 3 reads | 1.000 / 1.000 / 1.000 | 0.675 | 27/27 |
+| A2 | A0, every RefSeq transcript its own splice query | 1.000 / 1.000 / 1.000 | 0.600 (families = A0) | 27/27 |
+| A3a | A1, exons/body from read depth >= 2 | 1.000 / 1.000 / 1.000 | 0.692 | 26/27 |
+| A3b | A1, most-read chain as representative (weak: 13/27 unspliced) | 1.000 / 1.000 / 1.000 | 0.659 | 27/27 |
+| A4 | shipped `RUSTLE_SHARED_DEFINITION` (Rust = mirror: 560 nodes, 1,919 pairs, 68 families) | 1.000 / 1.000 / 1.000 | **0.290** | **5/27** |
+
+The gene-body edge carries NPIP membership in every arm (the default catalog without it had R 0.704 on the 15
+chr16 copy windows, `bench/NPIP_PER_MEMBER_WHOLECHR16.md`); a transcript set changes nothing. The declared "largest F drop"
+rule saturated (FAMILY P NPIP-only is 1.000 by construction). The de novo loss is node quality: the A4 NPIP family
+holds 93 nodes (27 copies + 23 NPIP-exon fragments + 43 other loci) against 40 in A1.
+
+**2. Fragment folding** (data `/mnt/linuxdisk/home/juanfraitu/sd_fold/charz/`). Cause located: all 363 single-exon
+catalog nodes carry the placeholder '+' (`build_spliced_seq`: `read_strand.or(strand).unwrap_or('+')`,
+`RUSTLE_READ_STRAND` unset), and `consolidate()` groups by (chrom, strand). 38/47 placeholder extras have >= 50%
+spliced reads; 25/47 overlap no spliced node; the "antisense" extras of the ladder report are mostly the placeholder
+(7 of the 8 read-decisive ones match the containing gene's strand). Fold rules (F strict; F0 = A4 = 0.450):
+F1 (single-exon placeholder >= 50% inside one spliced node's exons) 0.462, 0 families lost; F2 (>= 1 bp) 0.495 but
+empties a 2-node family; F4 (+ intronic pieces) 0.370; F5 (strand-blind single-exon consolidation, the §6as-killed
+idea) 0.553 keep (R 0.963) / 0.574 merge, 1 family lost, 29 changed. Full-length copies 5/27 under every rule.
+
+**3. Read-group nodes** (`bench/NPIP_READ_GROUP_NODES.md`, c45c3261; data `/mnt/linuxdisk/home/juanfraitu/sd_readgroup/`).
+G3 (single-exon reps take the read-majority strand) F strict 0.486; nodes built from read overlap groups (G1a/G1b,
+with the AF-3 split G2a/G2b, G1b/G2b giving unspliced reads the strand of overlapping spliced reads) reached
+0.581 / 0.818 / 0.482 / 0.659 under the frozen mapping — but they chain neighbouring copies into 0.11-1.03 Mb nodes
+(19 copies share 9 nodes; spliced reads with 100-351 kb N gaps bridge; the AF-3 split does not break them).
+
+**4. Re-score with fixed instruments + last arm** (`bench/NPIP_NODE_RESCORE.md`, d6623960; data
+`/mnt/linuxdisk/home/juanfraitu/sd_rescore/`). SCORER v2 = one-to-one copy→node Hungarian on exon bp (a copy whose
+node went to another copy is MISSING). GATE v2 = every family on the substrate scored against A1's families
+(A1 = 1.000; pass iff R >= G0 − 0.02 and F >= G0 − 0.02). G4 = G3 with unspliced reads first taking the spliced strand.
+
+| arm | v2 FAMILY R | v2 F strict | missing by collision | gate R / F | gate |
+|---|---|---|---|---|---|
+| A1 | 1.000 | 0.806 | 0 | 1.000 / 1.000 | sanity |
+| G0 (= A4) | 1.000 | 0.450 | 0 | 0.760 / 0.838 | reference |
+| F1 | 1.000 | 0.462 | 0 | 0.760 / 0.838 | pass |
+| G3 | 1.000 | **0.486** | 0 | 0.766 / 0.839 | pass |
+| G4 | 1.000 | 0.486 | 0 | 0.760 / 0.830 | pass |
+| G1a / G1b | 0.704 / 0.630 | 0.458 / 0.607 | 7 / 8 | 0.551 / 0.652 · 0.503 / 0.618 | fail |
+| G2a / G2b | 0.778 / 0.667 | 0.412 / 0.500 | 5 / 6 | 0.545 / 0.636 · 0.515 / 0.616 | fail |
+
+**Decision (pre-declared): NO CANDIDATE.** The best gate-passing arm (G3 = G4) gains +0.036 F strict, below the 0.05
+bar; it is all precision (84 vs 93 nodes in the NPIP family) and raises substrate-wide gate P strict 0.483 → 0.527,
+so it is not NPIP-specific, but it stays 0.32 below A1. Register row 843.
+
+**Instrument lessons.** (i) A copy→node mapping that lets several copies share a node rewards node merging (G1b 0.818
+> A1 0.806 under M1). (ii) A safety gate must pass the annotated target first: the footprint-Jaccard "families lost"
+gate of step 3 rejected A1 as well (65 families "lost"). (iii) At FAMILY level P NPIP-only is 1.000 by construction.
+
+**Open (hypothesis, not measured).** The remaining extras may be read-supported transcribed pieces inside the NPIP
+duplications that have no annotated gene — a question of what counts as a locus, not of node construction. Testing
+it means classifying G3's remaining extra nodes. Disk note: the ladder's Rust run wrote a 3.1 GB `target.fa` to
+`/tmp` (vhdx); later runs set `TMPDIR` on `/mnt/linuxdisk`. The prebuilt whole-CHM13 indexes stay in
+`npip_ladder/idx/` (24 GB).
