@@ -22904,3 +22904,45 @@ already-matched locus). **Nothing is adopted on this evidence.** The next run mu
 membership-preserving family clause with a threshold calibrated to the measured relabelling noise floor, plus an
 explicit no-scatter test, and be evaluated on U00/U40 or a fresh gorilla arm — substrates that did not produce this
 table.
+
+### §6m0 addendum 4 — the leader rule's noise floor, measured; V4 decided on held-back substrates (2026-09-18)
+
+`bench/V4_HELDOUT_NOISE_CALIBRATED.md`, verifier ok. Thresholds frozen (md5 4b9a0420, 10:12:02) before any held-back
+V4 number existed.
+
+**The noise floor of `triangle_leaders`, measured by 30 relabellings of the UNCHANGED V0 graph per substrate** (same
+nodes, edges, read counts, degrees; only tie-break order changes):
+
+| substrate | families lost | scatter | membership preserved (p5) |
+|---|---|---|---|
+| S-IDEAL | 0 in 30/30 | 0 | 252/252 |
+| U00 | 0 in 30/30 | 0 | 256/260 |
+| U20 | **1 in 17/30** | 0 | 261/264 |
+| U40 | **1 in 14/30** | 0 | 271/273 |
+
+So the previous round's blocking evidence — "one family lost on U20" — is reproduced by pure index relabelling in 17
+of 30 draws. **Scatter is the informative axis**: 0 in all 120 relabellings across four substrates, because the
+tie-break noise drops pendant nodes out of families but never splits one across two.
+
+**V4 on the held-back substrates** (U00, U40, never previously panelled): passes (b) family clause v2, (c) junk
+unchanged, (d) FAMILY R, (e) no V0 node removed, on both. It **fails clause (a) on U00 by one copy** — it needs 2
+copies to gain same-strand coverage and gains 1 (NPIPB12). On U40 it clears all four NPIP wrong-strand copies (4 → 0)
+with 4 gains. **Not adoptable under the rule as registered.**
+
+**But both family charges against V4 are artefacts, and the U40 one is new**: V0 family 61 there is ARL17B (minus,
+5 exons) plus four single-exon PLUS-strand fragments — a strand-merged family that V4 correctly separates. On S-IDEAL
+the "lost" family is a pair V4 merges into a near-clique.
+
+**Why U00 cannot reward V4**: its only remaining wrong-strand copies are TBC1D3P1 and TBC1D3P3, junction-less loci
+whose blocking node has no MEASURED strand — precisely what V4 is defined not to touch. A substrate with 3
+wrong-strand copies, 2 of them structurally out of scope, cannot produce 2 gains.
+
+**Comparative cost** (reported, not gating, because both precision conventions are conditioned on the prediction):
+V4 removes 0 V0 nodes and costs P_cand −0.006 (U00) / −0.017 (U40); V1 removes 0 but costs −0.023 / −0.031 and adds
+232 / 440 nodes against V4's 56 / 246; V3 removes 8 / 20 V0 nodes, loses 5 TBC1D3 copies to the 'U' label on each
+substrate, and fails the family clause on both.
+
+**Three clauses are known-weak and must not be reused as written**: (d) is vacuous wherever one family absorbs all 27
+NPIP copies (FAMILY R = 1.0000 for every arm on U00, U20 and U40); (c) is a 1-3 node test; and on S-IDEAL the null has
+zero width, so family clause v2 degenerates to "change nothing" there. The relabelling null also measures only
+tie-break instability — a null that perturbed edges would be wider, so this calibration is the permissive end.

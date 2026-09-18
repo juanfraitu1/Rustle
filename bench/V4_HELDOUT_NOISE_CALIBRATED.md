@@ -1,0 +1,109 @@
+# V4 on held-back substrates, with the leader rule's noise floor measured and the family clause calibrated to it (agent 1 of 2)
+
+Declarations written BEFORE any number: `/mnt/linuxdisk/home/juanfraitu/v4_heldout/DECLARATIONS.txt`, md5 `c67a323bbca265f360f4194bee5f2438`, frozen 2026-09-18T10:02:12-07:00 (re-verified unchanged at the end of the run). Calibrated thresholds frozen after Part 1 and before any V1/V3/V4 family number on U00 or U40 existed: `/mnt/linuxdisk/home/juanfraitu/v4_heldout/NOISE_FLOOR_FROZEN.txt`, md5 `4b9a042045482d2501ef5c1b1423fe37`, 2026-09-18T10:12:02-07:00 (also re-verified). All outputs under `/mnt/linuxdisk/home/juanfraitu/v4_heldout/` (`out/`, `map/`, `logs/`), `TMPDIR` under `v4_heldout/tmp`. **Nothing in `src/` was modified, nothing was committed, no subagent was spawned, no MAPQ gate was lowered, no index was rebuilt, no node table was rebuilt.** minimap2 ran 4 times, 5.2 min wall total, one at a time, foreground, peak RSS 19.9 GB; 8,303 tx (21.0 Mbp) and 4,374 body (99.3 Mbp) md5 keys were novel, while 33,720 tx and 11,627 body keys were served from the captured PAFs under `strand_v4/map/`, `strand_v4/verify/map/`, `strand_fix/map/`, `npip_ladder/union/` and `npip_ideal/` (a 79% / 73% cache hit rate; the previous round's 22 min of mapping did not have to be repeated).
+
+> **Verifier corrections, applied by the orchestrator** (verifier ok = true; one finding reverses the sign of both family charges against V4):
+> 1. **NEW: the U40 "family lost" is itself a strand artefact.** V0 family 61 is ARL17B (chr17, minus, 5 exons) plus **four single-exon PLUS-strand fragments**. V4 separating them is the correct partition — the clause charged V4 for fixing a strand-merged family.
+> 2. **Same on S-IDEAL** (continuity only): the "lost" family is a 2-node pair that V4 merges into a near-clique, as previously found.
+> 3. **V3's membership-preservation cells do not reproduce** (builder 253/260 and 259/273; verifier 258/260 and 267/273), a difference of the order of the V0 nodes V3 removes.
+> 4. **Clause (a) lets V3 pass on U40 while its same-strand count NET FALLS** (4 gains, 5 losses) — the clause counts gains and opposite-strand copies, not the net.
+> 5. **The frozen U40 membership threshold is convention-dependent** and sits exactly on the value it tests (271/273 against 271/273).
+> 6. **`P_cand`'s denominator is the non-junk node set, i.e. conditioned on the prediction** — the reason precision was reported but not gated stands.
+> 7. Minor: every unmeasured-strand base node already carried `'+'`, so the two V4 strand-restore conventions are byte-identical; and 2 duplicate node keys on U40 give added/removed counts a ±2 ambiguity.
+
+## 0. Answer first
+
+**V4 is not adoptable under the rule as written: it passes every clause on U40 and fails exactly one clause on U00 — (a), by one copy.** On U00 it gains 1 copy above same-strand coverage 0.5 (NPIPB12) where the rule demands 2; the other half of (a), a strict decrease in wrong-strand best nodes, passes (3 → 2). Clauses (b), (c), (d) and (e) pass on both held-back substrates, including the noise-calibrated family clause v2, which V4 passes on U00 with room to spare and on U40 exactly at the frozen threshold.
+
+**The family objection that blocked V4 last round does not survive the measurement.** With 30 relabellings instead of 5, "one family lost" is produced by pure index relabelling of the unchanged V0 graph in 17/30 draws on U20 and 14/30 on U40. V4's single lost family on U40 is inside that null, so family clause v2 passes there. On U00, where the null is exactly zero, V4 loses zero families.
+
+**The U00 failure is mechanistic, not noise, and it is V4 behaving as designed.** The copy V4 does not fix is TBC1D3P3, a single-exon locus at `chr17:20492254-20499503 '-'` whose blocker is a single-exon '+' base node with 20 reads and no junction. Its strand was never measured, so V4 refuses to suppress it; V1 does suppress it and adds a mirror '-' read node. The same is true of TBC1D3P1. Those two junction-less loci are the entire residual wrong-strand set on both held-back substrates, for V1 and V4 alike.
+
+## 1. Part 1 — the noise floor, measured properly
+
+For each substrate the V0 graph was taken unchanged — same node objects, same edge set, same `n_reads`, same degree multiset, all asserted per draw — and the shipped `triangle_leaders` re-run 30 times with the node indices relabelled (permutation k from `random.Random(20260918 + k)`, k = 1..30; no identity permutation). A permutation touches nothing the rule reads except the final index tie-break in its leader order key `(-n_reads, -degree, chrom, first exon start, index)`.
+
+| substrate | nodes | edges | V0 families | lost min/med/p95/max | lost distribution | scatter | membership min/med/max | membership p5 | mean best J min |
+|---|---|---|---|---|---|---|---|---|---|
+| S-IDEAL | 5,428 | 3,577 | 252 | 0/0/0/0 | {0: 30} | 0 in all 30 | 252/252 in all 30 | 1.0000 | 1.0000 |
+| U00 | 7,207 | 5,156 | 260 | 0/0/0/0 | {0: 30} | 0 in all 30 | 256 / 258 / 260 of 260 | 0.9846 | 0.9976 |
+| U20 | 8,292 | 6,180 | 264 | 0/1/1/1 | {0: 13, **1: 17**} | 0 in all 30 | 260 / 263 / 264 of 264 | 0.9886 | 0.9943 |
+| U40 | 8,565 | 5,700 | 273 | 0/0/1/1 | {0: 16, **1: 14**} | 0 in all 30 | 270 / 272 / 273 of 273 | 0.9927 | 0.9961 |
+
+Three things follow, and they matter more than the V4 verdict.
+
+1. **On U20 and U40 the greedy leader rule loses a family from its own unchanged graph roughly half the time.** The previous round's blocking evidence on U20 — one family of 264 — is indistinguishable from this. The verifier's 5-seed estimate is confirmed at 30 seeds.
+2. **On S-IDEAL the null has zero width.** The rule is exactly reproducible there: 0 lost, 0 scatter, membership 252/252 in all 30 draws. A clause calibrated to this null degenerates into "change nothing", which any variant that adds a node can fail for reasons unrelated to the change being wrong. S-IDEAL is therefore the wrong substrate to calibrate on, and it is the substrate on which V4's family failure was most loudly reported last round.
+3. **Scatter is the axis that carries signal.** Across all 120 relabellings on four substrates, scatter is 0 every single time. The rule's tie-break noise drops pendant nodes *out* of families; it never splits a family across two. "No V0 family is scattered" is a strict, noise-free test; "no family is lost" is not.
+
+The frozen clause (verbatim from the pre-registration, with its reading fixed in advance as the worseness tail, i.e. `lost <= P95`, `scatter <= P95`, `membership >= P5`, `orphaned == 0`) became: IDEAL lost ≤ 0, scatter ≤ 0, membership ≥ 252/252; **U00 lost ≤ 0, scatter ≤ 0, membership ≥ 256/260**; U20 lost ≤ 1, scatter ≤ 0, membership ≥ 261/264; **U40 lost ≤ 1, scatter ≤ 0, membership ≥ 271/273**; orphaned == 0 everywhere.
+
+A declared diagnostic outside the clause: the same 30-relabelling null run on **V4's own graph** gives U00 lost {0: 30}, scatter 0, membership p5 0.9846, and U40 lost {0: 16, 1: 14}, scatter 0, membership p5 0.9853 — statistically the same as V0's. Calibrating the clause on the V0 graph is fair to V4.
+
+## 2. Part 2 — the decision, on U00 and U40
+
+| substrate | variant | (a) strand | (b) family clause v2 | (c) junk | (d) FAMILY R | (e) no node lost | verdict |
+|---|---|---|---|---|---|---|---|
+| U00 | V1 | PASS 3→2, 2 gains | PASS lost 0, scatter 0, 259/260 | PASS 22→22 | PASS 1.000 | PASS −0/+232 | passes all five |
+| U00 | V3 | FAIL 3→1, 1 gain | FAIL lost 1, memb 253/260, orph 1 | PASS | PASS | FAIL −8 | fails |
+| U00 | **V4** | **FAIL 3→2, 1 gain** | PASS lost 0, scatter 0, 259/260 | PASS 22→22 | PASS 1.000 | PASS −0/+56 | **fails** |
+| U40 | V1 | PASS 6→2, 5 gains | PASS lost 1, scatter 0, 271/273 | PASS 31→31 | PASS 1.000 | PASS −0/+440 | passes all five |
+| U40 | V3 | PASS 6→1, 4 gains | FAIL lost 4, scatter 1, 259/273, orph 1 | PASS 31→30 | PASS | FAIL −20 | fails |
+| U40 | **V4** | **PASS 6→2, 4 gains** | **PASS lost 1 ≤ 1, scatter 0, 271/273** | PASS 31→31 | PASS 1.000 | PASS −0/+246 | **passes all five** |
+
+Continuity only, deciding nothing: S-IDEAL V4 passes (a), (c), (d), (e) and fails (b) (lost 1 > 0, scatter 1 > 0, membership 251/252 < 252/252 — all three against a zero-width null); U20 V4 passes all five. Every previously published cell reproduced exactly: S-IDEAL 252 families and 972 nodes in families, U20 264 and 1,351, U20 V0 6,180 edges, panel-a `P_cand` 0.9897 and 0.6433, FAMILY R 0.8519 → 0.9259 on S-IDEAL, containment 0 removed with +174 / +3 and 0 with +292 / +116.
+
+**Where the gain is, and that it is not double-counted.** U00: V0 already has 38 of 46 truth copies at same-strand coverage > 0.5; V4 has 39 = 38 carried + 1 new + 0 lost. U40: V0 has 33; V4 has 37 = 33 carried + 4 new + 0 lost. V4 loses no copy anywhere. V3, by contrast, carries only 33 (U00) and 28 (U40) and *loses* 5 copies on each — all TBC1D3, all still present at `frac_copy` 1.000 but relabelled 'U' by its consolidate.
+
+**What V4 adds and removes.** It removes zero V0 nodes on every substrate (so clause (e) is a real pass, not a tie). It adds 56 nodes on U00 and 246 on U40, against V1's 232 and 440 — V4 keeps 24% of V1's additions on U00 and 56% on U40. The additions are overwhelmingly '-' strand (U40 top: chr19− 32, chr3− 17, chr7− 17), as expected when every unspliced-only locus in the catalog is labelled '+'.
+
+**Junk and precision.** Genome-wide junk is unmoved: 22 → 22 on U00, 31 → 31 on U40 (chr16–18 panel 34 → 35 and 49 → 50, i.e. +1 node each). Precision, reported and non-gating: `P_cand` 0.7569 → 0.7514 on U00 (−0.0055) and 0.6401 → 0.6228 on U40 (−0.0173) for V4, against V1's −0.0233 and −0.0308. `P_old` tracks `P_cand` to within 0.0003 in every cell.
+
+## 3. Opening every family the clause flagged
+
+All three flagged V0 families across the two held-back substrates have the same shape, and it is the shape the null produces: **a degree-1 pendant node keeps its only edge, but its neighbour is claimed by an earlier leader, so the greedy rule leaves the pendant in no family.** No homology evidence is lost in any of them, and `orphaned` is 0 everywhere.
+
+- **U40 family 61 (the one lost family, best J 0.4621).** A 5-exon '−' hub at `chr17:47136193-47223769` plus four single-exon '+' pendants at 47388735–47420484, each degree 1. V4 adds `chr17:47361440-47441293 '−'` (10 exons, 13 reads), whose span *contains* all four pendants; the hub pairs with it and the four fragments drop out. This is a fragmented locus being replaced by one spliced node on the strand the reads actually support, scored as a lost family.
+- **U00 family 218 (best J 0.6425, the one membership break).** A `chr22:51281002-51282295 '+'` single-exon node, degree 1, whose only neighbour is claimed by a larger family that V4 has grown from 2 to 3 nodes.
+- **U40 family 31 (best J 0.8804, the second membership break).** One degree-1 node of eight on chr19 dropped; the other seven stay together, and the family gains a '−' node at the same locus.
+
+For continuity: on U20 V4 the two flagged families are the already-known `chr15:30285739-30291421 '−'` degree-1 case and the same chr2/chr22 pendant as U00. On S-IDEAL, V4's scatter = 1 is V0 family 3 (25 nodes) losing its largest member (`chr16:18741286-18857007 '−'`, 20.3 kb) to a neighbouring family and one 5-exon node to the near-clique family 50 — the only case in this run where a variant genuinely splits a family, and it is on the substrate that cannot decide.
+
+## 4. What I would put in front of the advisor
+
+The honest one-line summary is: **V4 does exactly what it claims — it clears every wrong-strand NPIP copy on both held-back substrates, removes no node, disturbs no family beyond the leader rule's own noise, and costs 0.6–1.7 points of locus precision — and it fails the rule on a counting bar (2 gains) that the least-damaged substrate cannot supply.** The blocking evidence from the previous round is gone; what replaces it is a bar that V4 misses by one junction-less pseudogene.
+
+I did not re-register clause (a) after seeing this, and I recommend against doing so in a follow-up that re-scores U00. The clean move is a fresh gorilla arm, where V0's strand damage is not already down to three copies, plus a pre-registered version of clause (a) that is stated per unit of available damage (e.g. "V4 recovers at least half of the copies V1 recovers, and loses none") rather than as an absolute count.
+VERIFICATION (independent recompute) — agent 2 of 2
+
+SETUP. My declarations: /mnt/linuxdisk/home/juanfraitu/v4_heldout/verify/VDECL.txt, md5 5eb1b54dfa5015893d71cfdb70938b68, written 2026-09-18T10:20:40-07:00 before any verifier number existed. My code is x1..x17 + xlib.py in that directory; I read the builder's DECLARATIONS.txt, NOISE_FLOOR_FROZEN.txt and out/*.json but no builder script, and I did not use v4_heldout/map/. My PAF cache roots were my own strand_v4/verify/map/ plus strand_fix/map/, npip_ladder/union/, npip_ideal/; I checked that adding the builder root strand_v4/map/ changes the missing-query count by zero (8,303 tx / 4,374 body either way), so nothing I used came from a builder mapping. I mapped those 12,677 absent md5 keys myself with the shipped flags (-c -N 50 -p 0.1 -x splice -uf / -x asm20) against the prebuilt npip_ladder/idx indexes: 1 tx chunk 21.0 Mbp at 2:38 and 3 body chunks at 0:47/0:50/0:33, all rc=0, no truncation.
+
+1. DECLARATION AND FREEZE ORDER — CHECKS OUT, with one limit.
+DECLARATIONS.txt 10:02:12, md5 c67a323b... matches its own .md5. NOISE_FLOOR_FROZEN.txt 10:12:02, md5 4b9a0420... matches, and names the parent declaration's md5. The four V0 null files precede the freeze (noise_U00 10:11:11, U40 10:11:29, IDEAL 10:11:34, U20 10:11:38) and every held-back V4 quantity follows it (graph_U00 10:12:12, graph_U40 10:12:16, panel_* 10:13:25-29, scorer 10:14:32, verdicts 10:16:52). LIMIT: graph_*.pkl was rewritten after the noise run consumed a V0 graph, so mtimes alone cannot prove no V4 family number existed before 10:12:02. What can be said positively is stronger: I reproduced every frozen threshold from the V0 graph alone without touching a V4 number, the frozen values ARE the null's P95/P5 rather than values chosen to admit V4, the U00 lost threshold is the tightest possible (0), the U40 membership threshold lands exactly on V4's value with no margin (a post-hoc fit would have left slack), and the freeze does not rescue V4 — V4 still fails.
+
+2. RELABELLING NULL — REPRODUCED, and the builder's key claim confirmed.
+Own permutation code, own assertions per draw: no identity permutation; edge set identical after mapping back; edge count, degree multiset and n_reads multiset all preserved. Under the builder's convention (gather), N=30, seeds random.Random(20260918+k):
+  S-IDEAL 5,428 nodes / 3,577 edges / 252 families: lost {0:30}, scatter {0:30}, membership 252/252 in all 30 (P5 1.0000), mean best J 1.0000. Null has zero width — matches.
+  U00 7,207 / 5,156 / 260: lost {0:30}, scatter {0:30}, membership min 256/260, median 258/260, P5 = 256/260 = 0.984615, mean best J min 0.9976 — matches.
+  U20 8,292 / 6,180 / 264: lost {1:17, 0:13}, scatter {0:30}, membership min 260/264, P5 = 261/264 = 0.988636, mean best J min 0.9943 — matches exactly, including the 17-of-30 figure.
+  U40 8,565 / 5,700 / 273: lost {1:14, 0:16}, scatter {0:30}, membership min 270/273, median 272/273, P5 = 271/273 = 0.992674, mean best J min 0.9961 — matches exactly.
+V4-own-graph diagnostic, same protocol: U00 lost {0:30}, scatter 0, P5 0.984615; U40 lost {1:14, 0:16}, scatter 0, P5 0.985348. Matches; V4's graph is neither more nor less stable than V0's, so calibrating on V0 is fair to V4.
+The central inherited claim IS confirmed: "one family lost" on U20 is produced by pure index relabelling of the unchanged V0 graph in 17 of 30 draws (20 of 30 under the alternative convention). Scatter was 0 in all 300 relabellings I ran (4 substrates x 2 conventions x 30, plus 2 V4-graph runs x 30), so "scatter > 0" really is the strict, noise-free axis and "one family lost" really is not.
+
+3. REBUILD AND DIFF — EXACT PARITY EVERYWHERE.
+I rebuilt V0/V1/V3/V4 for U00 and U40 from strand_fix/aln/{U00,U40}.bam with my own mirror. Node key sets are IDENTICAL to the builder's declared input pickles strand_fix/verify/vnodes_{U00,U40}_{V0,V1,V3,V4}.pkl — zero keys on either side, all eight cells (out_parity.json). Counts: U00 7,207 / 7,439 / 7,258 / 7,263; U40 8,565 / 9,005 / 8,796 / 8,811.
+Graphs and families, built from my own queries and my own minimap2 runs, reproduce graph_U00.json and graph_U40.json field for field — n_nodes, n_pairs, n_exon_edges, n_body_edges, n_families, largest, loci_in_families — in all 8 cells. U00 V0 5,156 edges (4,774 exon / 2,790 body), 260 families, 1,200 nodes in families; U40 V0 5,700 (5,300 / 3,403), 273 families, 1,362 nodes. V4: U00 260 families / 1,207 nodes, U40 273 / 1,382.
+Scorer v3 reproduces every cell: copies (U00 opposite 3->2, ss>0.5 38->39; U40 6->2, 33->37), junk genome-wide (U00 22->22, U40 31->31) and chr16/17/18 panel (34->35, 49->50), node delta (removed 0, added 56 and 246), FAMILY R 1.0000 everywhere, FAMILY P strict 0.600->0.587 and 0.403->0.380, and — after I recomputed it genome-wide — precision to the last digit (n_matched 5,438->5,441 and 5,463->5,468; n_candidates 7,185->7,241 and 8,534->8,780; P_cand 0.7569->0.7514 and 0.6401->0.6228). Family panel: lost/scatter/membership/orphaned for V4 are 0 / 0 / 259/260 / 0 on U00 and 1 / 0 / 271/273 / 0 on U40, matching; mean best exon-bp Jaccard 0.99809 (U00) and 0.98998 (U40), largest-family best J 1.0000 and 0.957878. The only numbers I could not reproduce are V3's membership fractions (see corrections).
+
+4. CLAUSES, EVALUATED FROM MY NUMBERS — THE RECOMMENDATION FOLLOWS.
+U00 V4: (a) FAIL — N_opposite 3->2 strictly decreases, but gains = 1 (NPIPB12) and the clause requires 2. (b) PASS — lost 0<=0, scatter 0<=0, membership 259/260 = 0.9962 >= 0.9846, orphaned 0; passes under both permutation conventions. (c) PASS — junk 22->22. (d) PASS — 1.0000 -> 1.0000. (e) PASS — removed 0, added 56. VERDICT: fails.
+U40 V4: (a) PASS — 6->2, 4 gains (LOC124907834, NPIPA5, NPIPB12, NPIPB1P), 0 losses. (b) PASS — lost 1<=1, scatter 0<=0, membership 271/273 = 0.992674 >= 0.992674 (exact tie under the frozen convention, one-family margin under the other), orphaned 0. (c) PASS — 31->31. (d) PASS. (e) PASS — removed 0, added 246. VERDICT: passes all five.
+V4 HELD-BACK VERDICT: NOT ADOPTABLE. The builder's recommendation "DO NOT ADOPT V4 now" follows from the rule as pre-registered, and I reach it independently. I also reproduce V1 passing all five on both held-back substrates and V3 failing both.
+
+5. TRAP AUDIT.
+(a) Is any gain denominator shrinkage or an already-correct copy? NO. The denominator is the fixed 46 truth copies. Explicit accounting: U00 39 = 38 carried + 1 gain - 0 loss; U40 37 = 33 carried + 4 gain - 0 loss. Every gain is ss_frac 0.0000 -> 1.0000 (NPIPB12, LOC124907834, NPIPB1P) or 0.0000 -> 0.7645 (NPIPA5) — no hairline crossings of 0.5. And V4's gain set is exactly V0's opposite-strand set minus {TBC1D3P1, TBC1D3P3} on BOTH substrates.
+(b) Could clause (a) have passed on U00? Barely. N_opposite(V0, U00) = 3 = {NPIPB12, TBC1D3P1, TBC1D3P3}, and the latter two are single-exon junction-less chr17 loci (best_frac 1.000 on the wrong strand, ss_frac 0.027 and 0.000) whose blocking node has no measured strand — precisely what V4 is defined not to touch. The reachable gain on U00 is 1; the clause demands 2. The builder's mechanistic reading is independently confirmed.
+(c) Can the other clauses fail? Largely no, on these substrates. (d) FAMILY R is 1.0000 in V0 and in all four arms on both substrates — a free pass that can only catch a regression. (c) V4's genome-wide junk change is 0 against an allowance of +3 nodes or +10%. (e) V4 and V1 never remove nodes by construction. And clause (b)'s scatter and orphaned sub-tests are 0 in all 300 relabellings and 0 for V4 on both arms. So three of five clauses were effectively free for V4, and clause (b) reduced to lost + membership. The whole decision rests on clause (a)'s gain count and two family quantities.
+(d) Is a family "loss" a merge of a near-clique? On S-IDEAL, yes, confirmed (V0 fam 157, 2 nodes, best_J 0.4933, into a 4-node variant family with 5 of 6 internal edges). On the held-back substrates it is something else and worse for the instrument: both charges against V4 are V4 installing the correct-strand, correct-span node at a real locus (ARL17A on U40, RABL2B on U00) and the V0 wrong-strand fragment falling out as a claimed pendant. See corrections.
+
+6. WHAT I WOULD ADD TO THE REPORT. The rule under which V4 fails is a rule under which V1 — the variant the previous round rejected — passes all five clauses on both held-back substrates, and V1's genome-wide P_cand falls 0.0233 (U00) and 0.0308 (U40), both outside the previous round's 0.02 allowance (I recomputed both). The flip from "V1 rejected, V4 blocked" to "V1 adoptable, V4 not" is produced by the rule change between rounds, not by anything V1 or V4 does. Combined with (5b), (5c) and the 08:35 provenance of clause (a)'s U00 value, the honest summary is: on the held-back substrates V4 passed the only blind, non-vacuous clause on both, and was rejected by a pre-existing clause whose threshold of 2 exceeds the 1 wrong-strand copy V4 can structurally reach on U00. The builder's own conclusion — that the right move is not to re-register clause (a) after seeing this, but to re-test on a fresh gorilla arm where the strand-damage ceiling is not nearly saturated — is the correct one, and I would strengthen it: on a substrate with only 3 wrong-strand copies, an absolute-count clause has no usable dynamic range, and the family clause as built actively penalises the fixes V4 makes.
