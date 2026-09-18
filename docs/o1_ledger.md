@@ -22835,3 +22835,38 @@ numbers are flat, and two component-level cells regress slightly (P strict 0.341
 (4) **The 5 remaining short NPIP copies are not an isoform problem**: NPIPB12 has 0 same-strand primary MAPQ >= 1
 reads; NPIPB13, NPIPB4 and NPIPB14P have only an opposite-strand node at their locus, which strand-strict widening
 cannot reach. That, not isoform coverage, is the next thing in the way.
+
+### §6m0 addendum 2 — the strand asymmetry, and why the realistic simulation flipped the verdict (2026-09-18)
+
+`bench/STRAND_ASYMMETRY_AND_REALISTIC_SIM.md` (independently recomputed: all 16 arm × variant node sets key-for-key).
+Nothing shipped from this run.
+
+**The asymmetry is real:** read groups and consolidation are keyed by (chrom, strand), but `with_read_locus_nodes`
+suppresses a candidate whenever ANY node's exon overlaps it — `ExonIndex` carries no strand — so a wrong-strand node
+blocks the right-strand one and strand-strict widening cannot repair it. Variants measured in the mirror: V1
+strand-aware suppression, V2 unknown-strand placeholder, V3 = both, V4 (verifier-built) = V1 restricted to blockers
+whose strand was measured.
+
+**On the idealized substrate V3 looks like a clean win** — NPIPB13 0.028 → 0.944 and NPIPB4 0.033 → 1.000, NPIP
+full-length 22/27 → 24/27, +4 nodes / −2, 0 families lost. **On the realistic substrate built here it does not
+survive**: V3 loses 1-3 families on every unspliced arm, and V1 adds 232-440 nodes.
+
+**Why the realistic arm matters, quantitatively:** the `'+'` placeholder is rare on the idealized substrate (451 of
+5,360 base nodes, 8.4%) and common on realistic input — 43.0% / 60.9% / 71.1% of base nodes have an intron-less
+representative at 0% / 20% / 40% designed-unspliced, and **100% of those claim `'+'` in all four substrates**. 5′
+truncation alone turns 28% of spliced-class reads into single-block alignments. So the placeholder path is only
+exercisable with unspliced and truncated reads — the answer to "should we include that in our simulations" is yes,
+and it is the single change that reversed the recommendation.
+
+**Two instrument findings that matter more than the variants.** (1) The declared clause (iii), locus precision =
+matched / nodes against a fixed expressed-record set, **cannot credit a strand fix**: a correct new node at a locus
+whose record is already matched by the wrong-strand node lowers P by construction (denominator conditioned on the
+prediction). Every "(iii) FAIL" above is partly this. (2) Clause (i) does not discriminate on realistic input, where
+NPIPB13/B4 are already correct in the baseline; the copy actually strand-blocked there is NPIPB12, which the strand
+change fixes (frac_copy 0.042 → 1.000 on U00) — while on the idealized substrate NPIPB12 stays 0.0423 in every
+variant because it has no same-strand MAPQ ≥ 1 read at all (an O2 problem; no MAPQ gate was touched).
+
+**Reading.** Do not adopt V1/V2/V3/V4 on these numbers. The next run needs a metric that can credit a strand fix
+(per-copy same-strand node presence and coverage; junk counted as nodes overlapping no record, not as precision) and a
+genome-wide family panel rather than the 48-57 families of chr16/17/18. V2's unknown-strand MERGING is what loses
+families; the suppression half (V1/V4) loses none on the 0% and 20% arms.
