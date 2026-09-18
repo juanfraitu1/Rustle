@@ -23047,3 +23047,42 @@ one (CORO7-PAM16) touches neither split.
 **Reading.** Readthroughs are neither the cause of the over-merge nor a route to the certificate. Two obstructions
 remain, both named: the small junction-poor records (which the conjunct removes), and NPIP's own readthrough-annotated
 member, which is a real copy and cannot be deleted. §0★★★.7e's readthrough rule stays opt-in and stays invisible.
+
+### §6m1 addendum — PKD1P6-NPIPP1 is a REAL fused transcript, not a mis-annotation (2026-09-18)
+
+Question raised by the user after §6m1: the residual NPIP DNA boundary runs through its own member
+PKD1P6-NPIPP1's PKD1 half — is that fused copy real?
+
+Test = the §6jr method (spanning-read check that settled the AMY LOC124905662 mis-join, which had 0 reads).
+Substrate `A119b.t2t.bam`, chr16:15,100,000-15,165,000, `-F 2308`.
+
+| check | result |
+|---|---|
+| fusion junction (NPIP half -> PKD1 half) | chr16:15,120,015-15,126,650 (6,636 bp intron) |
+| reads carrying that exact junction | **110** |
+| MAPQ | 60 for all 110 (min = median = max) |
+| splice motif (forward `CT..AC` on '-') | canonical **GT-AG** |
+| read structure | median 12 junctions/read; modal 8 junctions upstream + 0-8 downstream; span 15,105,346-15,219,230 |
+| reads confined to the NPIP half / PKD1P6 half | 277 / 82 |
+| transcript accessions | `NR_123721.1`, `NR_123722.1` — curated `NR_`, not Gnomon `XM_`/`XR_` |
+| independent support for the copy | Dishuck lists the locus as NPIP paralog A4 |
+
+Not a one-off architecture — RefSeq annotates four PKD1P-NPIP fusions on chr16, two expressed here:
+
+| fused record | fusion intron | reads | MAPQ 60 |
+|---|---|---|---|
+| PKD1P6-NPIPP1 | 15,120,015-15,126,650 | 110 | 110 |
+| PKD1P5-LOC105376752 | 18,382,664-18,389,108 | 447 | 0 |
+| PKD1P4-NPIPA8 | 18,335,487-18,343,876 | 1 | 0 |
+| PKD1P3-NPIPA1 | 14,910,307-14,915,938 | 0 | 0 |
+
+The PKD1P5 pile (447 reads, ALL MAPQ 0) shows the region does generate ambiguous placement, which makes the
+110 unique-mapping reads at PKD1P6-NPIPP1 more meaningful, not less: that junction's flanks are separable
+from its paralogs. Caveats: one testis library (absence at PKD1P3/P4 is weak evidence); MAPQ 60 from a single
+aligner in an SD is strong but not proof.
+
+**Consequence.** The boundary edge blocking NPIP's DNA certificate is NOT removable by calling it a
+mis-annotation. PKD1P6-NPIPP1 is simultaneously an NPIP copy and a PKD1 copy. Any fix must be in how the
+definition treats a node spanning two parent families (overlapping/soft membership, or a chimera node rule),
+not in cleaning the annotation. Closes the "readthrough annotation-unit" item parked in
+`docs/PENDING_2026-09-17.md`.
