@@ -23143,3 +23143,57 @@ not where the family definition loses. Kept as a reporting option, OFF by defaul
 a claim concerns a family that contains a chimera (NPIP does; TBC1D3 does not) so the claim can be shown
 independent of the policy. Only 1 of 27 NPIP members and 0 of 19 TBC1D3 members are flagged — the set is
 too small to move a family metric even when the label is perfect.
+
+## §6m3 — the NODE CUT rule: split a chimeric record at its parent boundary. SAFE (loses no member) but HARMFUL on every other axis — NOT ADOPTED (2026-09-18)
+
+Pre-registered `docs/PREREG_node_cut_2026-09-18.md` (md5 `2af3393070d6c2ded8db3cd89c0a6dc3`, commit
+376f6a93... see the prereg commit) before any metric. Answers the user's question *"What would entail that
+a node is in two families? Can we later cut them somehow?"* — the answer pre-registered was: a record is in
+two families because its PIECES are, one each, so levels stay node partitions and T1/T1′/T2 survive.
+Report `bench/NODE_CUT_RULE.md`; scripts `/mnt/linuxdisk/home/juanfraitu/node_cut/{cut,score,fresh}.py`.
+
+**Correctness.** Records are re-emitted from the PAFs `family_cert` already stored — NO new alignment. Of
+8,669 baseline rows, the **7,444 touching no cut node are byte-identical** (0 differing, 0 added, 0 lost).
+
+**The cut (NC-5).** 209 readthrough primary nodes → **195 cut**, 14 `uncut` and reported. Node set
+58,563 → 58,758 (+390 pieces, −195 originals). Higher than the 173/181 known beforehand because the
+pre-registered complement rule handles records where only ONE half is a gene record — which is what makes
+PKD1P6-NPIPP1 cuttable.
+
+**NC-1 (safety) PASSED.** Pairwise sensitivity unchanged at every level, both families, both truth
+mappings: NPIP 0.926, TBC1D3 0.386 / 0.263. No member lost. The pre-registered majority-exon-bp mapping and
+the name-matched alternative picked the SAME piece every time, so that ambiguity never bound.
+
+**NC-2 (deciding, FRESH arm) FAILED at every level.** Five pre-named Soto families scorable in this graph
+(ID_305, ID_380, ID_453, ID_454, ID_480). Bar: precision +0.05, no recall loss. Measured:
+
+| level | universe | pairwise precision | ΔF |
+|---|---|---|---|
+| L1a/L1b | 28 → **288** (+929%) | 0.074 → **0.004** (−0.070) | −0.250 |
+| L2 | 28 → **224** (+700%) | 0.074 → **0.005** (−0.069) | −0.243 |
+| L3 | 24 → **202** (+742%) | 0.100 → **0.005** (−0.095) | −0.291 |
+
+The sensitivity rise (0.667 → 0.954) is the §6m0 merge-read-as-recall trap: one component swallowed everything.
+
+**DEV arm.** NPIP universe +14.6% to +19.8%, F −0.027 to −0.048, precision down at every level. The single
+improving cell (TBC1D3 L1a/L1b, ΔF +0.046) came with a −10.5% universe ⇒ reported as shrinkage under NC-4.
+
+**NC-3 NO, as pre-declared.** All intervals empty, h_split = −inf; NPIP h_join stays 1.0000; **TBC1D3 L3
+gets worse** (h_join 0.9614 → 0.9916).
+
+**Why it fails — two general mechanisms.**
+1. **Cutting doubles rather than separates.** After the cut, **7 of 8** chimeras have BOTH halves inside
+   NPIP's L2 component (6 of 6 at L3). The "PKD1 half" is itself homologous to the NPIP-family segmental
+   duplication, so it does not leave. One outsider becomes two.
+2. **A shorter node is an easier node.** Re-denominating coverage on the piece's own length lets a piece
+   clear the coverage floor against MORE targets than the whole record: `PDXDC2P-NPIPB14P#1` (2,626 bp) has
+   degree **50** where the whole 49-degree record had 49; 19 piece nodes carry 282 degree; L2 edges rise
+   1,337 → 1,417. **The cut ADDS edges.** This is the §6cr `min_cov_longer` invariant reappearing.
+
+**What survives.** The theory answer (pieces, not overlapping clusters, keep T1/T1′/T2) and the
+applicability finding (195/209 have a single clean cut point). What does not survive is the expectation
+that it improves anything.
+
+**Constraint for the next node rule:** never shrink a node without re-denominating coverage on the ORIGINAL
+length, and check first whether both pieces stay inside the family's component — that check alone would
+have predicted this result before any scoring.
