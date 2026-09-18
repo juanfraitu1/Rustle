@@ -23434,3 +23434,50 @@ Dropping 40 probable artifacts nearly TRIPLES complete-chain recovery.
 `build_spliced_seq` as well**. Next: split that 343-skeleton bucket into (a) fetch failure, (b) no canonical
 junction anywhere in the chain, (c) ONE bad junction in an otherwise canonical chain. Only (c) is
 recoverable and only (c) deserves a rule.
+
+## §6m8 — the `build_spliced_seq` bucket split: 69% is ONE bad junction in an otherwise canonical chain, and `RUSTLE_JUNCTION_MAJORITY` recovers it (2026-09-18)
+
+Follow-up to §6m7, which localised the whole pass-1 → GTF loss to `build_spliced_seq` returning `None`.
+Report `bench/JUNCTION_MAJORITY_CHR16.md`.
+
+**The default is STRICT.** In `build_spliced_seq_with`, `junction_strand` returning `None` for ANY junction
+rejects the whole transcript — i.e. failure mode (c), *one bad junction in an otherwise canonical chain*, is
+the SHIPPED behaviour. `RUSTLE_JUNCTION_MAJORITY=1` takes strand by canonical majority and tolerates a
+non-canonical junction whose intron is <= `RUSTLE_JUNCTION_NC_MAX_BP` (10 kb), still rejecting a spliced
+model with no canonical junction at all and a real strand conflict. **This is why §6m7 found
+`RUSTLE_JUNCTION_NC_MAX_BP` to be a no-op: `nc_max` is only read in majority mode.**
+
+**The three-way split (k=0, 27 NPIP windows), of §6m7's 343 rejected skeletons:**
+
+| bucket | skeletons | share |
+|---|---|---|
+| **(c) recoverable — one/few non-canonical junctions in an otherwise canonical chain** | **238** | **69.4%** |
+| (a)+(b) no canonical junction anywhere / strand conflict / fetch failure | 105 | 30.6% |
+
+`rej_seq` 343 → 105, kept 750 → 988. At k=3: 485 → 152, kept 1,124 → 1,457.
+
+**What it recovers (canonical-only truth, §6m7):**
+
+| arm | tx | canonical 9-copy (94) | canonical all-26 (209) | complete |
+|---|---|---|---|---|
+| k=0 strict (baseline) | 750 | 65 (69%) | 151 (72%) | 8/26 |
+| k=3 strict | 1,124 | 67 | 161 (77%) | 9/26 |
+| **k=0 MAJORITY** | 987 | **72 (77%)** | **162 (78%)** | **9/26** |
+| **k=3 MAJORITY** | 1,456 | **74 (79%)** | **170 (81%)** | **10/26** |
+
+Majority alone is worth +7 cluster / +11 family junctions — MORE than the widening — and they compose:
+k=3 + majority = +9 / +19 over baseline, complete chains 8 → 10.
+
+**Cost, measured:** junctions 613 → 759 (**+146 added, 0 removed**); **140 of the 146 (95.9%) are carried by
+real reads**; 78 (53.4%) canonical. Median transcript span 14,480 → 14,602 bp; >100 kb transcripts 74 → 76;
+max span unchanged at 593,043. The over-merge/engulfment failure the flag's comment warns about does not
+appear.
+
+⚠⚠**NOT the full chr16 arm the comment demands.** `build_spliced_seq_with` says the known harm "was measured
+ON chr16" and requires a chr16 arm before flipping. This is **27 NPIP windows on chr16**, not a genome-wide
+chr16 run, and the documented harm is genome-wide-shaped (families 121 → 117, copies 678 → 700,
+strictly-engulfed 60 → 63). **Necessary, not sufficient — the default must NOT be flipped on this.** The
+genome-wide chr16 catalog arm, priced on families/copies/engulfment, is the next experiment.
+
+**Recommendation:** use `RUSTLE_JUNCTION_MAJORITY=1` for pseudogene-family reconstruction work now; leave the
+default alone until that arm exists.
