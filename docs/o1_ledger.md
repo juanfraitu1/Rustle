@@ -22946,3 +22946,38 @@ substrate, and fails the family clause on both.
 NPIP copies (FAMILY R = 1.0000 for every arm on U00, U20 and U40); (c) is a 1-3 node test; and on S-IDEAL the null has
 zero width, so family clause v2 degenerates to "change nothing" there. The relabelling null also measures only
 tie-break instability — a null that perturbed edges would be wider, so this calibration is the permissive end.
+
+### §6m0 addendum 5 — gorilla tiebreak: V4 repairs the strand defect on real data, and fails the family clause for a REAL reason (2026-09-18)
+
+`bench/V4_GORILLA_TIEBREAK.md`, verifier ok. Substrate: gorilla Iso-Seq on NC_073241/242/244.2, the shipped
+de novo node set (parity: the binary replay reproduces `2469 reps -> 2431 gene-level loci + 233 read-locus nodes =
+2664 nodes` and `1194 exon + 297 gene-body edges, 76 families holding 323 loci`, with byte-identical query FASTAs).
+
+**The gorilla null has ZERO WIDTH**: 30 relabellings of the unchanged V0 graph give 0 families lost, 0 scatter,
+76/76 membership, mean best Jaccard 1.000 — gorilla behaves like S-IDEAL and U00, not like U20/U40 where a lost
+family was index noise in 14-17 of 30 draws. V4's own graph has the same zero-width null, so its partition changes
+are deterministic, not tie-break noise.
+
+**V4 repairs the strand defect on real data.** Membership loci whose best node is on the opposite strand: **9 → 3**
+(loci with any same-strand node 14 → 18; mean same-strand coverage 0.086 → 0.164; 1 locus crosses 0.5, 0.091 →
+0.733). The three residuals are not suppression failures: two have only 2 same-strand reads (below MIN_LOCUS_READS),
+and the third already has a same-strand node. V4 removes no node, adds 86 (V1 adds 138), and keeps junk inside the
+allowance (+18 of 46.4) where **V1 fails it (+49)** — V1 fixes exactly the same six loci, so it is strictly dominated.
+
+**It fails the family clause, and this one is not an artefact.** 2 families lost, 3 scattered, membership 71/76
+against a zero-width null. Six of the flagged families are the correct-strand spliced node displacing a single-exon
+`'+'` placeholder — but there is a genuine cost underneath: V0 family 2 splits, two `'+'` fragments at the NPIPB14P
+and NPIPB6 loci break off as their own 2-node family, and **membership-locus FAMILY R falls 0.68 → 0.64** for both
+variants. Precision (reported, non-gating): P_cand 0.829 → 0.813 (V4) / 0.806 (V1); record recall rises 0.924 → 0.934
+for both.
+
+**Verdict: V4 is NOT adopted** (a PASS, b FAIL, c PASS, d PASS on gorilla; passed everything but the copy-count clause
+on U40; failed the copy-count clause on U00). The strand asymmetry is documented as **measured, repairable, and not
+yet repairable without a partition cost**.
+
+**The next thing to test is named by the failure**: when a measured-strand spliced node is installed at a locus, the
+superseded single-exon placeholder fragment is still a node, and it is those orphaned fragments that split the family.
+A variant that retires a placeholder fragment once a same-strand spliced node contains its exons (the
+redundant-containment idea of §0★★★.7e, applied to nodes rather than readthrough records) is the obvious candidate,
+and it must be developed on gorilla — now burned for V1/V4 — and decided on the chimp de novo arm, which no strand
+variant has touched.
