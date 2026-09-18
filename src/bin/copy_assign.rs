@@ -26,7 +26,8 @@ use rustle::vg_family::linearize::LinearizeCertificate;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
-    assemble_gate, merge_fuzzy_skeletons, pass1_skeletons_widened, reads_in_region, tied_secondary_reads_in_region,
+    assemble_gate, assemble_gate_census, merge_fuzzy_skeletons, pass1_skeletons_widened, reads_in_region,
+    tied_secondary_reads_in_region,
     BamIndexCache, BamRead, GATE_MIN_READS,
 };
 use rustle::vg_family::catalog_input::{
@@ -2658,7 +2659,21 @@ fn main() -> Result<()> {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0);
             let skeletons = if fuzz_bp > 0 { merge_fuzzy_skeletons(skeletons, fuzz_bp) } else { skeletons };
-            let iso = assemble_gate(&skeletons, &genome, &cfg.gate);
+            // §6m6 follow-up: localise where pass-1 skeletons die before the GTF. `RUSTLE_GATE_CENSUS=1`
+            // only PRINTS — the transcripts are the same objects either way.
+            let iso = if matches!(std::env::var("RUSTLE_GATE_CENSUS"), Ok(v) if v != "0" && !v.is_empty()) {
+                let use_rs = matches!(std::env::var("RUSTLE_READ_STRAND"), Ok(v) if v != "0" && !v.is_empty());
+                let margin: f64 = std::env::var("RUSTLE_READ_STRAND_MARGIN")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(0.90);
+                let (iso, c) = assemble_gate_census(&skeletons, &genome, &cfg.gate, use_rs, margin);
+                eprintln!(
+                    "[gate-census] {} skeletons -> kept {} | rejected: reads {} span {} seq(motif/coords) {} len {}",
+                    c.total(), c.kept, c.rej_reads, c.rej_span, c.rej_seq, c.rej_len
+                );
+                iso
+            } else {
+                assemble_gate(&skeletons, &genome, &cfg.gate)
+            };
             let groups = collapse_loci_groups(&iso);
             iso.iter()
                 .enumerate()

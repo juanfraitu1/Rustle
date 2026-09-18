@@ -1934,14 +1934,53 @@ pub fn assemble_gate_with(
     use_read_strand: bool,
     strand_margin: f64,
 ) -> Vec<DenovoTranscript> {
+    assemble_gate_census(skeletons, genome, p, use_read_strand, strand_margin).0
+}
+
+/// Per-stage rejection census for [`assemble_gate_census`] (§6m6 follow-up). Every skeleton that enters the
+/// gate leaves through exactly one of these counters, so `kept + the four rejections == skeletons.len()`
+/// is an invariant the tests assert — a census that does not add up cannot localise anything.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct GateCensus {
+    /// pooled/per-isoform read support below `min_reads`
+    pub rej_reads: usize,
+    /// genomic span above `max_span`
+    pub rej_span: usize,
+    /// `build_spliced_seq`/`build_footprint_seq` returned `None` (non-canonical junction motifs, or
+    /// coordinates absent from the assembly). ⚠ The pseudogene suspect: a degraded splice site here
+    /// silently deletes an otherwise well-supported chain.
+    pub rej_seq: usize,
+    /// spliced length outside `[min_spliced, max_spliced]`
+    pub rej_len: usize,
+    pub kept: usize,
+}
+
+impl GateCensus {
+    pub fn total(&self) -> usize {
+        self.rej_reads + self.rej_span + self.rej_seq + self.rej_len + self.kept
+    }
+}
+
+/// [`assemble_gate_with`] that also reports WHY each skeleton was rejected. Same filters in the same order,
+/// so the returned transcripts are identical to `assemble_gate_with`'s.
+pub fn assemble_gate_census(
+    skeletons: &[Skeleton],
+    genome: &GenomeIndex,
+    p: &GateParams,
+    use_read_strand: bool,
+    strand_margin: f64,
+) -> (Vec<DenovoTranscript>, GateCensus) {
     let support: Vec<u32> =
         if p.pool_locus_support { locus_support(skeletons) } else { skeletons.iter().map(|s| s.n_reads).collect() };
     let mut out = Vec::new();
+    let mut census = GateCensus::default();
     for (i, sk) in skeletons.iter().enumerate() {
         if support[i] < p.min_reads {
+            census.rej_reads += 1;
             continue;
         }
         if sk.end.saturating_sub(sk.start) > p.max_span {
+            census.rej_span += 1;
             continue;
         }
         // A FOOTPRINT's `introns` are UNCOVERED GAPS, not splice junctions, so the canonical-motif test
@@ -1955,7 +1994,7 @@ pub fn assemble_gate_with(
                 if sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None },
             ) {
                 Some(v) => v,
-                None => continue,
+                None => { census.rej_seq += 1; continue }
             }
         } else { match build_spliced_seq(
             genome,
@@ -1969,11 +2008,13 @@ pub fn assemble_gate_with(
             if use_read_strand && sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None },
         ) {
             Some(v) => v,
-            None => continue,
+            None => { census.rej_seq += 1; continue }
         }};
         if seq.len() < p.min_spliced || seq.len() > p.max_spliced {
+            census.rej_len += 1;
             continue;
         }
+        census.kept += 1;
         let n_exon = sk.introns.len() + 1;
         out.push(DenovoTranscript {
             tid: format!("DN_{}_{}_{}", sk.chrom, sk.start, n_exon),
@@ -1986,7 +2027,7 @@ pub fn assemble_gate_with(
             seq,
          ..Default::default() });
     }
-    out
+    (out, census)
 }
 
 /// Position-aware seeding for UNSPLICED (empty-intron-chain) reads: single-linkage span-overlap
@@ -2626,6 +2667,28 @@ footprint: false,
         assert_eq!(pass1_skeletons_robust(&reads, 2, 1), vec![skel("c1", 1, 9000, 4, &[(200, 300)])]);
         // k=2 trims it to the 2nd-smallest start (100) and 2nd-largest end (520).
         assert_eq!(pass1_skeletons_robust(&reads, 2, 2), vec![skel("c1", 100, 520, 4, &[(200, 300)])]);
+    }
+
+    #[test]
+    fn gate_census_accounts_for_every_skeleton_and_matches_the_plain_gate() {
+        // c1 has a canonical GT..AG intron at [80,100); the gate keeps a supported skeleton and the census
+        // must place EVERY skeleton in exactly one bucket.
+        let g = genome_one_intron(b"GT", b"AG");
+        let p = GateParams { min_reads: 2, max_span: 10_000, min_spliced: 1, max_spliced: 100_000,
+                             pool_locus_support: false };
+        let skels = vec![
+            skel("c1", 0, 180, 5, &[(80, 100)]),      // kept
+            skel("c1", 0, 180, 1, &[(80, 100)]),      // rejected: reads
+            skel("c1", 0, 90_000, 5, &[(80, 100)]),   // rejected: span
+        ];
+        let (out, c) = assemble_gate_census(&skels, &g, &p, false, 0.90);
+        assert_eq!(c.total(), skels.len(), "every skeleton must land in exactly one bucket");
+        assert_eq!(c.kept, out.len());
+        assert_eq!((c.rej_reads, c.rej_span), (1, 1));
+        // the census path must return exactly what the plain gate returns
+        let plain = assemble_gate_with(&skels, &g, &p, false, 0.90);
+        assert_eq!(out.len(), plain.len());
+        assert!(out.iter().zip(&plain).all(|(a, b)| a.tid == b.tid && a.seq == b.seq && a.introns == b.introns));
     }
 
     #[test]
