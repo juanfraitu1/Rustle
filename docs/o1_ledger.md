@@ -22981,3 +22981,34 @@ A variant that retires a placeholder fragment once a same-strand spliced node co
 redundant-containment idea of §0★★★.7e, applied to nodes rather than readthrough records) is the obvious candidate,
 and it must be developed on gorilla — now burned for V1/V4 — and decided on the chimp de novo arm, which no strand
 variant has touched.
+
+### §6m0 addendum 6 — V5 is a no-op by construction, V5b is refuted on chimp, and the V4 family cost is not a containment problem (2026-09-18)
+
+`bench/V5_RETIRE_PLACEHOLDER.md`, verifier ok. Development: gorilla. Decision substrate: **chimp de novo**, untouched
+by any strand variant, its own null frozen first (30 relabellings: 0 lost, 0 scatter, 43/43 membership, mean best
+Jaccard 1.000 — zero width, like gorilla, S-IDEAL and U00).
+
+**V5 (retire a single-exon unmeasured-strand placeholder once a measured-strand spliced node contains it) is
+IDENTICALLY V4 at every containment threshold** — 0 retirements at f = 1.00 / 0.90 / 0.50 on both substrates. The
+reason is structural, and measured: V4's own relabel makes an unmeasured base node block a candidate of EITHER
+strand, so no node V4 installs can overlap, let alone contain, an unmeasured single-exon node. Of the 86 nodes V4
+adds on gorilla, all 86 overlap a base node and those are **98 measured opposite-strand, 0 unmeasured**; on chimp
+96 / 0.
+
+**V5b** (strand counts as measured only when a junction read carries it; declared in an addendum before any of its
+numbers) retires 41 nodes on gorilla, still fails the family clause there, and is **REFUTED on chimp**: scatter
+1 → 3, membership 41/43 → 39/43, two new splits that V4 did not have, with no gain on strand or on FAMILY R. In both
+new splits the retired node was holding the family's triangle together.
+
+**The decisive diagnosis:** the two `'+'` fragments that split gorilla V0 family 2 have **no new node at their loci at
+all**, so no containment or retirement rule can reach them. The V4 family cost is not redundant containment.
+
+**What V4 is worth, restated with both substrates:** gorilla opposite-strand membership loci 9 → 3, chimp 2 → 1 with
+LOC112205831 going 0.000 → **0.981** same-strand coverage; no node removed; junk inside allowance; precision −0.016
+(gorilla) and comparable on chimp. Its cost is deterministic, not noise: 3 genuine family splits on gorilla (families
+2, 4, 11), 1 on chimp, and membership-locus FAMILY R 0.68 → 0.64 on gorilla.
+
+**Both family nulls are zero width, so the clause literally reads "change nothing"**, and it charges V4 for
+fix-driven MERGES as well as splits — on chimp, families 32, 7 and 2 are absorbed whole into the enlarged family 1
+and are scored as lost. A clause that separated merges from splits would charge V4 only for the 3 + 1 real splits.
+That is the next thing to fix, and it is a scoring question, not a node-construction question.
