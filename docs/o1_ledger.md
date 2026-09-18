@@ -23565,3 +23565,43 @@ is still 162. Those are the chains with NO canonical junction anywhere, strand c
 (170/209, 10/26, +146 junctions of which 96% read-supported). The read floor at 1 buys +7 junctions for
 +1,359 transcripts and should only be used where recall matters more than precision. Do NOT relax the
 canonical requirement further — it is measured at exactly zero benefit.
+
+### §6m9 addendum — microintrons/microexons, and why the idealized BAM ingests nothing (2026-09-18)
+
+User: *"can we simulate reads that can fulfil all of those junctions? Also could it be that there are some
+microexons/microintrons that we are not counting?"*
+
+**A. Microexons: NOT an issue here.** NPIP annotated exons n=275, min **25 bp**, median 129; only **2** are
+< 30 bp and 26 are < 50 bp. Nothing is being skipped for being a microexon.
+
+**B. Microintrons: REAL, and they are the artifacts.** NPIP annotated introns n=249, **min 1 bp**,
+median 1,338.
+
+| class | n | median intron bp | < 50 bp | observed as `N` | observed as a >= 10 bp `D` gap |
+|---|---|---|---|---|---|
+| canonical | 209 | 1,359 | **1** | 205 | 0 |
+| **non-canonical** | 40 | 718 | **10** | 4 | **0** |
+
+The shortest non-canonical "introns" are **1, 1, 1, 1, 2, 2, 6, 12, 12, 29 bp**. A 1-2 bp intron is not an
+intron — it is adjacent exon blocks split by a base or two in the GFF. ⭐**The microintron hypothesis is
+correct in substance but points the other way: these are annotation artifacts, not junctions we failed to
+count.** Checked explicitly and ruled out: **0 of the 40 are hiding as a `D` (deletion) gap in the CIGAR**,
+so nothing is lost by extracting junctions from `N` alone. The §6m7 canonical filter already removes all 10
+short ones (they are all non-canonical), so no truth change is needed — this is independent confirmation
+that the filter selects real artifacts.
+
+**C. Why `npip_ideal/bam/ideal.bam` assembles nothing — DIAGNOSED.** Single-region test,
+`chr16:28621032-28647151`: samtools sees **480 primary records**, all spliced, forming **16 distinct intron
+chains**; `copy_assign` reports **"16 primary"**. The pipeline keeps ONE witness per distinct
+(position, CIGAR) — by design, so alignment redundancy cannot manufacture read support — and the substrate
+emits **30 byte-identical reads per transcript**. Every chain therefore arrives at `n_reads = 1`, below
+`pass1_min_reads`, and 0 skeletons are built. Nothing is wrong with the BAM or the reader.
+
+⭐**So yes, we CAN simulate reads that cover every junction — but they must be DISTINGUISHABLE.** The
+simulator must vary each read's 5'/3' ends (and, to be useful, model real 5' truncation) instead of emitting
+identical full-length copies. Until then, the ideal substrate cannot exercise the assembler at all, and its
+numbers must not be quoted (see §6m8 addendum and `npip_ideal/DECLARATIONS.txt` C0).
+
+⚠**And a simulation built from the annotation would encode the 1-2 bp artifacts into the reads**, then
+"recover" them — the circularity C0 warns about. A useful simulation must be built from the CANONICAL
+transcript set (209 junctions), which makes it an algorithmic-ceiling test and nothing more.
