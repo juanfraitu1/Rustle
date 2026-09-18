@@ -23335,3 +23335,50 @@ codebase. (3) A DISPERSED family needs its copy set supplied (O1's job) or a non
 
 **Next lever by measured value:** port read-isoform widening into the assembler (up to +21 junctions,
 60.4% -> 80.2%), then the all-alignment pool (+6, -> 85.8%). O2 moves neither.
+
+## §6m6 — assembler read-isoform widening PORTED (opt-in) and single-exon strand fixed; W-2 FAILED, and §6m5's "+21 junctions" projection is RETRACTED (2026-09-18)
+
+Pre-registered `docs/PREREG_assembler_widening_2026-09-18.md` (md5 `6d586b2d5ec6d7a6b15e014ef7fa5349`).
+Report `bench/ASSEMBLER_WIDENING.md`; code `eb73ebd2`. Lib suite **880 passed / 0 failed** (3 new tests).
+
+**Shipped (opt-in):** `denovo_assemble::pass1_skeletons_widened(..., isoform_k)` — a chain is admitted if
+`n >= min_reads` OR every one of its junctions has >= `isoform_k` reads (per `(chrom, junction)` over all
+spliced reads). Never concatenates; can only ADD skeletons. `copy_assign --read-isoform-k`, **default 0**.
+`pass1_skeletons_robust_with` delegates at 0 ⇒ existing callers byte-identical.
+
+| arm | tx | single-exon '+' frac | 9-copy (106) | all 26 (249) | complete |
+|---|---|---|---|---|---|
+| k=0 baseline | 750 | 1.000 | 65 (61%) | 151 (61%) | 3/26 |
+| k=2 | 1201 | 1.000 | 67 (63%) | 162 (65%) | 3/26 |
+| k=3 | 1124 | 1.000 | 67 (63%) | 161 (65%) | 3/26 |
+| k=5 | 1052 | 1.000 | 66 | 156 | 3/26 |
+| k=8 | 997 | 1.000 | 65 | 153 | 3/26 |
+| k=3 + `RUSTLE_GATE_MIN_READS=2` | 1124 | 1.000 | 67 | 161 | 3/26 |
+| **`RUSTLE_READ_STRAND=1`** | 750 | **0.753** | 65 | 151 | 3/26 |
+
+Targets: primary-read union 85/106 (80%); §6m4 ceiling 91/106 (86%).
+
+**W-1 PASSED** (k=0 byte-identical). **W-3 PASSED** on coverage but the trade is poor: **+50% transcripts
+for +2 junctions**. **S-1 PASSED** — `RUSTLE_READ_STRAND=1` takes the single-exon `'+'` fraction 1.000 →
+0.753 (the 97 single-exon models were ALL `'+'` while 653 spliced split 327/326). **S-2 PASSED** (coverage
+unchanged, as pre-declared: single-exon models carry no junctions).
+
+⚠**W-2 FAILED and §6m5's projection is RETRACTED.** §6m5 wrote "worth up to +21 junctions, 60.4% → 80.2%".
+**Measured +2 (cluster) / +10 (all 26).** The projection assumed every read-visible junction was
+recoverable by a per-chain admission rule; it is not.
+
+⭐**Where the 18 still-missing junctions go — REOPENED, and it is NOT what §6m5 said.** Of the 18 missing at
+k=3: median depth 19, median 18 distinct carrier chains, and a median of **9 carrier chains in which EVERY
+junction already has >= 3 reads**; only **4 of 18** have no qualifying chain. So for 14 of 18 a qualifying
+skeleton IS admitted at pass 1 and still never reaches the GTF — and `RUSTLE_GATE_MIN_READS=2` changed
+NOTHING. **The loss sits between pass-1 admission and GTF emission and is not the read floor.** Untested
+candidates: `assemble_gate`'s `max_span`/`min_spliced`/`max_spliced`/`pool_locus_support`,
+`collapse_loci_groups`, or the `--gtf-copy-set` evidence rule. Instrument that next — not more reads, not a
+bigger k.
+
+**Change 3 (all-alignment pool) NOT RUN.** It needs a code change (`reads_in_region` takes primaries) and
+the whole remaining headroom is +6 junctions; not spent after W-2 failed at the larger lever. Recorded as
+NOT DONE, not as done-and-negative.
+
+**Recommendation.** Keep `--read-isoform-k` default 0. `RUSTLE_READ_STRAND=1` is worth proposing as a
+default on its own prior evidence (386/400 = 0.965 vs 0.4867 for the constant `'+'`), independently of this.
