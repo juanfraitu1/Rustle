@@ -23197,3 +23197,54 @@ that it improves anything.
 **Constraint for the next node rule:** never shrink a node without re-denominating coverage on the ORIGINAL
 length, and check first whether both pieces stay inside the family's component — that check alone would
 have predicted this result before any scoring.
+
+### §6m3 addendum — can the chimeras and the NPIP copies be RECONSTRUCTED faithfully from RNA? Junctions yes, complete copy-assigned transcripts almost never (2026-09-18)
+
+User question after §6m3. Substrate `A119b.t2t.bam` (human testis Iso-Seq on CHM13), `-F 2308`, annotated
+exons from `dna_cert.load_nodes()` (⚠0-based half-open; read junctions are 1-based — the standing
+`SAM POS 1-based, exons 0-based` invariant, which a first pass got wrong and reported 0/249 support).
+
+**A. The five NPIP-touching chimeric records**
+
+| record | junctions | any MAPQ | MAPQ>=30 | >=5 unique | full-chain reads | MAPQ 0 share |
+|---|---|---|---|---|---|---|
+| PKD1P6-NPIPP1 | 29 | 26 | 26 | 24 | **0** | 2/1693 |
+| PDXDC2P-NPIPB14P | 25 | **25** | **25** | 24 | **0** | 2/1531 |
+| PKD1P3-NPIPA1 | 38 | 34 | 32 | 26 | **0** | 6/850 |
+| PKD1P5-LOC105376752 | 40 | 32 | 25 | 20 | **0** | 143/1014 |
+| PKD1P4-NPIPA8 | 34 | 19 | **8** | 0 | **0** | **154/212** |
+
+PDXDC2P-NPIPB14P has every junction uniquely supported, yet no read carries the whole chain.
+PKD1P4-NPIPA8 is barely reconstructable at all (73% of its reads are MAPQ 0).
+
+**B. The 26 spliced NPIP members (249 annotated junctions)**
+
+| criterion | result |
+|---|---|
+| junctions supported at ANY MAPQ | 188 (75.5%) |
+| junctions supported at MAPQ >= 30 | 167 (67.1%) |
+| junctions with >= 5 uniquely-mapped reads | 124 (49.8%) |
+| reads in these windows at MAPQ 0 | 3,973 / 15,911 (25.0%) |
+| members with >= 1 uniquely-supported junction | 24/26 |
+| **members with ALL junctions uniquely supported** | **5/26** |
+| **members with a unique read carrying the COMPLETE chain** | **3/26** |
+
+**Two independent ceilings.**
+1. **Completeness** — no read spans a whole record for any chimera or for 23 of 26 NPIP copies, so
+   reconstruction must CHAIN junctions across reads, and deciding which junctions share a molecule in a
+   near-identical family is exactly O2. Same wall as §6m0 (read-isoform widening lifted full-length NPIP
+   5/27 -> 14-18/27 and never reached 27).
+2. **Copy-specificity** — support decays 75.5% -> 67.1% -> 49.8% as uniqueness is demanded; 25% of reads
+   are MAPQ 0. "The junction is real" and "the junction is THIS copy's" are different claims and only the
+   first is established for 21 of 26 members.
+
+**Third observation, unresolved.** Uniquely-supported junctions NOT in the record's annotation are common
+(66 for PKD1P6-NPIPP1, 65 for NPIPB2, 40 for NPIPA1). Real unannotated isoforms vs cross-copy leakage is
+not separated by this measurement.
+
+⚠ "≥1 uniquely-supported junction" (24/26) is a much weaker bar than the earlier 13/27 testis-expression
+call, which is transcript-level. The two are not in conflict; do not quote them as the same quantity.
+
+**Reading for the thesis.** RNA confirms the annotation's junctions for most copies but yields a complete,
+copy-assigned transcript for only 3 of 26. The gap between those two numbers is precisely the O1 -> O2
+boundary.
