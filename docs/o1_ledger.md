@@ -23281,3 +23281,57 @@ isoforms vs wrong-copy reads — the decision that is O2.
 
 ⭐**PRE-DECLARED CEILING for any locus-assembler work on this substrate: complete-chain recovery ≤ 10/26 and
 junction coverage ≤ 83.9%. A result above either is a bug (or truth leakage), not a success.**
+
+## §6m5 — LOCUS ASSEMBLY at NPIP: the bottleneck is EXACT-CHAIN COLLAPSE, not ambiguity and not depth. O2 contributed 0 junctions (2026-09-18)
+
+Pre-registered `docs/PREREG_locus_assembly_2026-09-18.md` (md5 `02237f9d6da31ec694a8e53cd8cbdf2b`) before the
+run. User: *"get all the reads (isoforms) at a locus and reconstruct the full length locus? For ambiguous
+ones we need O2."* No new algorithm — `copy_assign` run as shipped (rebuilt `--release`).
+Report `bench/LOCUS_ASSEMBLY_NPIP.md`; data `/mnt/linuxdisk/home/juanfraitu/locus_asm/`.
+
+**Arm A (annotation-free, 27 per-copy windows) found 0 FAMILIES.** NPIP is DISPERSED: 26 chr16 copies from
+11.96 to 80.44 Mb, **median gap 265,515 bp**, max 45.2 Mb. `copy_assign` detects CO-LOCATED copies, so one
+copy per window gives it nothing to pair. It still assembled 750 transcripts (653 spliced).
+
+**Arm C (copies supplied, chr16:11.9-19.0 Mb, 9 co-located copies) isolates O2.** 106 annotated junctions:
+
+| read set / arm | junctions | complete chains |
+|---|---|---|
+| primary-read union (baseline) | 85 (80.2%) | 2/9 |
+| ALL-alignment union (§6m4 ceiling) | 91 (85.8%) | 4/9 |
+| **arm A — assembler, no O2** | **64 (60.4%)** | **0/9** |
+| **arm C — assembler + O2** | **64 (60.4%)** | **0/9** |
+
+**AS-1 integrity PASSED** (nothing exceeds the ceiling). **AS-2 FAILS both bars** (60.4% < 75.5%; 0/9).
+**Arm C is identical to arm A on every copy — O2 changed the reconstruction by exactly zero junctions.**
+Whole-family arm A: 149/249 (59.8%), 3/26 exact.
+
+**AS-5, O2 did run and abstained properly.** 23,884 molecules → 1,456 AS-tied entered the certificate → 955
+evaluated (294 origin-rejected = O3's) → **661 CONTESTED: assigned 206 (31.2%), tied 176, ambiguous 279**.
+69% of contested molecules refused. But 206 assignments cannot add an isoform, and the chains they support
+were already carried by unique reads.
+
+⭐**THE MECHANISM.** Of the 85 annotated junctions visible in primary reads, the assembler emits 65 and drops
+20. Not a depth floor — 10 of the 20 have depth >= 10, five at **255-287 reads**:
+
+| | n | median depth | median #distinct chains | **median largest single chain** |
+|---|---|---|---|---|
+| emitted | 65 | 126 | 63 | **32 reads** |
+| dropped | 20 | 12 | 11 | **2 reads** |
+
+The five high-depth casualties are spread over 117-134 distinct intron chains each, largest chain 42 reads.
+**The assembler collapses reads by EXACT intron chain and applies a per-chain floor; a junction carried by
+287 reads across 131 chains produces no chain large enough to survive.** Dropped junctions have a median
+largest-chain of 2 reads vs 32 for kept ones — a 16x difference, and the whole story.
+
+This is §6m0's fragmentation finding relocated from `shared_definition` to the assembler. **`shared_definition`
+already ships the fix** — read-isoform widening (`widen_with_read_isoforms`, k=5: admit a chain when every
+junction has >= k support, instead of requiring one exact chain to clear a floor). `copy_assign` lacks it.
+
+**Conclusions.** (1) O2 is NOT the reconstruction bottleneck — 0 junctions contributed; its deliverable is
+assignment (206 resolved, 455 refused). (2) The bottleneck is exact-chain collapse and the fix exists in the
+codebase. (3) A DISPERSED family needs its copy set supplied (O1's job) or a non-co-located detector.
+(4) §6m4's ceiling still binds: <= 4/9 here, <= 10/26 family-wide.
+
+**Next lever by measured value:** port read-isoform widening into the assembler (up to +21 junctions,
+60.4% -> 80.2%), then the all-alignment pool (+6, -> 85.8%). O2 moves neither.
