@@ -22686,3 +22686,59 @@ duplications that have no annotated gene — a question of what counts as a locu
 it means classifying G3's remaining extra nodes. Disk note: the ladder's Rust run wrote a 3.1 GB `target.fa` to
 `/tmp` (vhdx); later runs set `TMPDIR` on `/mnt/linuxdisk`. The prebuilt whole-CHM13 indexes stay in
 `npip_ladder/idx/` (24 GB).
+
+## §6l9 — The shared-junction conjunct is an ANNOTATION-side rule: it replicates on human, gorilla and chimp wherever junctions come from annotation, and fails wherever they come from reads or de novo nodes (2026-09-17)
+
+**Reports (all independently recomputed):** `bench/NPIP_IDEAL_EXPRESSION.md`, `bench/JUNCTION_AND_READTHROUGH_RULES.md`
+(commit ae215616), `bench/CROSS_SPECIES_NPIP_CONJUNCT.md`, `bench/NPIP_MEMBERSHIP_RESCORE.md`. Definition text:
+`docs/seeded_family_definition.md` §0★★★.7c-7e. Register row 844.
+
+**The rule.** t_J(k, δ): a witness record qualifies only if it carries ≥ k of the query copy's splice junctions onto
+junctions of the target copy, donor and acceptor each within δ bp, with each copy's junctions taken from its node's
+FIXED definition, never from the evidence (so the graph stays a threshold graph and the D1 certificate applies).
+Only k = 2, δ = 0 has evidence.
+
+**Where it replicates (junctions from annotation).**
+
+| substrate | arm | h_join before → after | members isolated | components | member pairs lost |
+|---|---|---|---|---|---|
+| human CHM13 | guided-annotated | 1.000000 → 0.999363 | 0 | 1 | 0 of 310 |
+| gorilla (NC_073241/242/244.2) | guided-annotated | 1.000000 → 0.988399 | 0 | 1 | 0 at L1 |
+| chimp (NC_072416.2), native NPIP names | guided-annotated | 1.000000 → 0.998233 | 0 of 42 | 1 | 5 of 758 |
+
+The *kind* of record removed replicates too: human CLN3 (253 bp, 1 exon) and EIF3CL; gorilla 8× snoRNA U13 (104 bp)
+and LOC115932701 (258 bp, embedded — the size twin of CLN3); chimp boundary nodes 30 → 9.
+
+**Where it fails (junctions from evidence).** Human ideal substrate, every locus expressed: isolates NPIPB12 and
+splits NPIP in two. Human de novo nodes: destroys NPIPB4, B12, B13. Gorilla de novo (the advisor's priority arm):
+h_join 0.997868 → 0.000000 **by annihilating the member subgraph** — 12 nodes → 12 singletons, 21/21 member pairs
+lost. Mechanism is node quality: 7 of those 12 nodes carry ZERO junctions, 1 carries one, 4 carry ≥ 2, and those 4
+share no witness record. Gorilla read-supported junctions: 14 of 25 member records have no junction at ≥ 3 reads
+(human ideal: 1). The GUARDED variant restores h_join to exactly 1.000000 everywhere, in every species — it re-admits
+precisely the records the conjunct removes.
+
+**No level certifies any family anywhere.** The only "certificates" found are degenerate: they occur after a member
+is deleted, leaving the rest with no boundary edge at all (h_join = 0.000000, so every cut "works").
+
+**Truth-construction findings, which cost this line two runs.**
+- Requiring two projections (liftoff + identity landing) to agree on the SAME human copy admits 2 gorilla / 3 chimp
+  copies: with paralogs 92-97% identical, "which copy" is an orthology call decided by margins < 0.02 — an O2-style
+  tie imported into an O1 truth.
+- The membership reading (both projections land, copy identity not required) gives 25 gorilla / 19 chimp, but merges
+  neighbouring copies into loci up to 290 kb: 14 of chimp's 47 natively named NPIP records fall outside every
+  membership locus, and 30 of 49 surviving boundary nodes are themselves NPIP-family records.
+- ⚠ **New metric trap:** a truth set holding a minority of the real family puts most genuine copies at the BOUNDARY,
+  so any boundary-cutting rule scores well. Size the truth set to the family before testing such a rule.
+- The one passing row (chimp, native names) is partly circular — node set and truth set come from the same GFF — and
+  its anti-trap clause ("no NPIP-family record survives at the boundary") is vacuous there by construction.
+
+**Reading.** t_J is a rule about annotated gene models, not about read evidence. It is therefore useful for the guided
+mode and for reporting, and it is the wrong instrument for the de novo objective, whose nodes frequently carry no
+junctions at all. The de novo gap remains node construction (§6l8), not edge admission.
+
+**Parked by the user (2026-09-17):** the readthrough question — whether a record that contains a copy is itself a copy
+— is set aside for now. It is the standing obstruction to any DNA-level certificate (§0★★★.7e), and the
+redundant-containment form is measured and safe (no member dropped at any f) but cannot see a copy that never became
+a node. Unresolved and inherited: which junction reading is correct when a gene-body chain's donor and acceptor come
+from different records of the chain (two independent implementations disagree on 358 of 42,622 witness rows; no
+h_join or member-pair count changes either way).
