@@ -23012,3 +23012,38 @@ LOC112205831 going 0.000 → **0.981** same-strand coverage; no node removed; ju
 fix-driven MERGES as well as splits — on chimp, families 32, 7 and 2 are absorbed whole into the enlarged family 1
 and are scored as lost. A clause that separated merges from splits would charge V4 only for the 3 + 1 real splits.
 That is the next thing to fix, and it is a scoring question, not a node-construction question.
+
+## §6m1 — The no-readthrough counterfactual: removing readthroughs does not rescue the family definition, and the last obstruction is internal (2026-09-18)
+
+`bench/NO_READTHROUGH_COUNTERFACTUAL.md`, verifier ok (with 7 corrections applied). Answers the user's question
+"what if the problem is readthroughs — build a version with none at all". Readthrough = a RefSeq record whose
+description says so: **209 records**, of which **exactly one is a family member** (PKD1P6-NPIPP1, an NPIP copy).
+
+**Arm A, real guided data.**
+- **Removing all 209 alone changes nothing**: NPIP's h_join stays at exactly **1.000000 at all four DNA levels**. The
+  boundary is handed to a different class — CLN3, EIF3CL, LOC100190986, LOC124907830/845, LOC128966632 — none of them
+  a readthrough. (The verifier notes this class description is level-dependent.)
+- **No-RT + the shared-junction conjunct certifies NPIP at all four levels — vacuously**: h_join = 0.000000, i.e. the
+  survivors have no boundary edge at all, and it is bought by deleting the member PKD1P6-NPIPP1.
+- **Member-preserving (drop the 208 non-members, keep the member) + t_J**: all 26 members present, 0 member pairs
+  lost, and **L2's interval becomes non-empty for the first time, (0.746986, 0.989040]** — the shipped cut 0.30 sits
+  below the window. L1-id misses by 0.0066, L3 by 0.0082.
+- **The residual boundary is INTERNAL**: NPIP's entire outside is then PKD1, PKD1P1, PKD1P2, PKD1P3, and **every
+  boundary edge is reached through NPIP's own member PKD1P6-NPIPP1's PKD1 half**. A set whose boundary runs through
+  one of its own members cannot be isolated by any predicate on pairs. That is the end of the line for edge rules.
+- TBC1D3 is bit-identical before and after at every level: its problem was never readthroughs.
+
+**Arm B, the simulated world with no readthrough reads.** It produces **more** nodes, not fewer (5,444 vs 5,428); no
+NPIP copy loses its node (26/26); multi-locus nodes fall 196 → 179, but the cheap control (delete readthrough-derived
+nodes post hoc) already gives 177, so the reduction is simply the removal of those nodes. **Readthrough loci do not
+vanish**: 58 treatment nodes still overlap the now-nonexistent record's exons (44 in the control) — the footprint
+fragments into the constituent genes. ⚠ And the world is not clean: **783 of 38,594 surviving transcripts (2.03%)
+still overlap another gene's exons**, because annotated genes overlap each other independently of readthroughs.
+
+**Arm C.** The family splits V4 causes are **not** readthrough-related: every fragment involved is a single-exon
+`'+'` placeholder. **Gorilla's annotation contains zero readthrough-described records genome-wide**, and chimp's only
+one (CORO7-PAM16) touches neither split.
+
+**Reading.** Readthroughs are neither the cause of the over-merge nor a route to the certificate. Two obstructions
+remain, both named: the small junction-poor records (which the conjunct removes), and NPIP's own readthrough-annotated
+member, which is a real copy and cannot be deleted. §0★★★.7e's readthrough rule stays opt-in and stays invisible.
