@@ -23382,3 +23382,55 @@ NOT DONE, not as done-and-negative.
 
 **Recommendation.** Keep `--read-isoform-k` default 0. `RUSTLE_READ_STRAND=1` is worth proposing as a
 default on its own prior evidence (386/400 = 0.965 vs 0.4867 for the constant `'+'`), independently of this.
+
+## §6m7 — the NPIP "ceiling" was NON-CANONICAL JUNCTIONS, not missing reads. §6m4's depth framing is WITHDRAWN (2026-09-18)
+
+Instrumentation of the pass-1 → GTF path, the step §6m6 narrowed to. Report `bench/GATE_CENSUS_NPIP.md`;
+code `7a1dc257` (`assemble_gate_census` + `GateCensus`, invariant `kept + 4 buckets == input` asserted;
+printed by `copy_assign` under `RUSTLE_GATE_CENSUS=1`, print-only). Lib suite **881 passed / 0 failed**.
+
+**1. The gate's only real filter is the sequence/motif test.**
+
+| arm | skeletons | kept | rej reads | rej span | **rej seq** | rej len |
+|---|---|---|---|---|---|---|
+| k=0 | 1,093 | 750 | 0 | 0 | **343 (31.4%)** | 0 |
+| k=3 | 2,978 | 1,124 | **1,369** | 0 | 485 | 0 |
+
+At the default NOTHING is lost to the read floor, span cap or length window — the whole pass-1 → GTF loss
+is `build_spliced_seq` returning `None`. At k=3 the widening adds 1,885 skeletons and the read floor kills
+1,369, which is exactly why §6m6's W-2 failed. ⚠**`RUSTLE_JUNCTION_NC_MAX_BP=1e8` and
+`RUSTLE_GATE_MIN_READS=2` both leave the census BIT-IDENTICAL** — neither published knob reaches this path;
+what binds is the "at least one canonical junction" requirement, not the non-canonical size tolerance.
+
+**2. Why — and it overturns §6m4.** Strand-aware motifs of all 249 annotated NPIP junctions vs whether ANY
+alignment (primary or secondary) carries them:
+
+| | observed | NOT observed |
+|---|---|---|
+| canonical (GT-AG/GC-AG/AT-AC) | **205** | 4 |
+| non-canonical | 4 | **36** |
+
+P(observed\|canonical) = **0.981**; P(observed\|non-canonical) = **0.100**. Canonical total = **209**, which
+is EXACTLY the 209/249 §6m4 called the all-alignment ceiling. 209 are `GT..AG`; the remainder are one-sided
+variants (`GT..AA` x6, `GT..TG` x5, `GT..GA` x3, ...) — the signature of annotation, not biology. No copy
+has zero canonical junctions; 17 of 26 carry at least one non-canonical one.
+
+⚠⚠**§6m4's "40 of 249 junctions (16.1%) have no read anywhere — absent information, not misassignment" is
+WITHDRAWN.** The information is not absent because the library is shallow; those junctions are very likely
+NOT REAL. The corollary claim that "a second library is what the 16.1% motivates" is withdrawn too — a
+second library will not create `GT..AA` sites. The assembler refusing to splice through them is CORRECT.
+
+**3. Rescored against a canonical-only truth (no change to the assembler):**
+
+| arm | all junctions (9-copy / all 26) | canonical-only (9-copy / all 26) | complete chains |
+|---|---|---|---|
+| k=0 | 65/106, 151/249 | 65/94, 151/209 | 3/26 → **8/26** |
+| k=3 | 67/106, 161/249 | 67/94, 161/209 | 3/26 → **9/26** |
+
+Dropping 40 probable artifacts nearly TRIPLES complete-chain recovery.
+
+**Still open.** Against the canonical truth the assembler still reaches only 151/209 (72%) at k=0 and
+161/209 (77%) at k=3 — **~48 canonical junctions are still lost, and the census says they die at
+`build_spliced_seq` as well**. Next: split that 343-skeleton bucket into (a) fetch failure, (b) no canonical
+junction anywhere in the chain, (c) ONE bad junction in an otherwise canonical chain. Only (c) is
+recoverable and only (c) deserves a rule.
