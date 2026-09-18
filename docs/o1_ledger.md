@@ -23248,3 +23248,36 @@ call, which is transcript-level. The two are not in conflict; do not quote them 
 **Reading for the thesis.** RNA confirms the annotation's junctions for most copies but yields a complete,
 copy-assigned transcript for only 3 of 26. The gap between those two numbers is precisely the O1 -> O2
 boundary.
+
+### §6m4 — ASSEMBLY CEILING at an NPIP locus: all alignments + a PERFECT O2 reaches 10/26 complete chains, not 26/26 (2026-09-18)
+
+User: *"can we try to get all the reads (isoforms) at a locus and reconstruct the full length locus? For
+ambiguous ones we need O2"*. Measured the CEILING before building anything.
+
+`A119b.t2t.bam` was built with **`-ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes`** — secondary
+alignments ARE retained (chr16:15-19 Mb: 72,677 secondary vs 43,932 primary), so the O2 candidate pool exists.
+
+**Junction coverage of the 249 annotated junctions across the 26 spliced NPIP members:**
+
+| read set | junctions covered | complete chains recovered |
+|---|---|---|
+| primary, MAPQ >= 30 (unambiguous today) | 167 (67.1%) | **5/26** |
+| primary, any MAPQ | 188 (75.5%) | **7/26** |
+| **ALL alignments incl. secondary (= perfect O2)** | **209 (83.9%)** | **10/26** |
+| consistent reads only (read chain ⊆ copy chain), primary | 128 (51.4%) | 3/26 |
+| consistent reads only, ALL alignments | 184 (73.9%) | 6/26 |
+
+**The decisive number: 40 of 249 junctions (16.1%) have NO read anywhere in this library — no primary, no
+secondary, any MAPQ.** For those copies the information is absent, not misassigned, so no assembler and no
+O2 can recover them. Worst cases: NPIPA2 9/15, NPIPB6 10/13, NPIPB9 8/12, NPIPB4 7/11, NPIPB2 8/11,
+PKD1P6-NPIPP1 27/29.
+
+**Reading.** Pulling in every alignment and assigning it perfectly is worth real points — junction coverage
+75.5% → 83.9%, complete chains 7/26 → 10/26 — so the assembler + O2 architecture is the right one. But its
+deliverable on this library cannot be "reconstruct every copy"; it is "reconstruct what is expressed and
+FLAG the rest" (which is O3). Note also that the CONSISTENT-read numbers are lower than the permissive ones
+(6/26 vs 10/26): the difference is reads carrying junctions outside the copy's annotated chain, i.e. novel
+isoforms vs wrong-copy reads — the decision that is O2.
+
+⭐**PRE-DECLARED CEILING for any locus-assembler work on this substrate: complete-chain recovery ≤ 10/26 and
+junction coverage ≤ 83.9%. A result above either is a bug (or truth leakage), not a success.**
