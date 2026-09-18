@@ -22742,3 +22742,57 @@ redundant-containment form is measured and safe (no member dropped at any f) but
 a node. Unresolved and inherited: which junction reading is correct when a gene-body chain's donor and acceptor come
 from different records of the chain (two independent implementations disagree on 358 of 42,622 witness rows; no
 h_join or member-pair count changes either way).
+
+## §6m0 — The locus-formation gap to annotated loci: cause found (one rep per locus), one lever that works (read-isoform widening), and a measured observability ceiling on the rest (2026-09-17)
+
+**User goal:** "close the gap between the annotated loci all by all comparison's precision, recall and bipartite
+matching and the way we are forming loci that encompass all isoforms of a particular gene". Reports (all independently
+recomputed): `bench/LOCUS_WIDTH_GAP.md`, `bench/READ_ISOFORM_LOCUS.md`, `bench/GAP_CLOSED_FRACTION.md`.
+
+**1. Cause.** The catalog emits ONE representative per locus **before** `shared_definition::consolidate` runs, so
+consolidation has nothing to merge and a node's exon set *is* one isoform: 705 of 710 nodes on the human ideal
+substrate, 2,660 of 2,664 on gorilla, and ~522 of 534 reps 1:1 with a locus on human testis. That is why NPIP
+(4.0 annotated transcripts per copy) gets 11 of 27 full-length nodes on a substrate where every locus is expressed,
+while TBC1D3 (2.74) gets 14 of 16.
+
+**2. The width ideas in the goal do not touch it.** Terminal-intron retention leaves the exon-level metric unchanged
+and **breaks the family** (FAMILY R 1.000 → 0.778); fixed extension of 250-2,000 bp moves only span-based numbers
+(locus span F 0.402 → 0.419 on testis); folding single-exon fragments gains ≤ 0.002 locus F on human and +0.021 on
+gorilla, where it costs 6 records their node.
+
+**3. The lever that works: read-isoform widening.** Keep every intron chain whose junctions each carry ≥ k reads; the
+node exon union is the union of those chains plus the shipped exons (it can only widen); the tx queries are one per
+chain with the max taken over them (never concatenated — concatenation cost 20 recall points historically).
+
+| arm | full-length NPIP copies (dev) | mean copy coverage | FAMILY P strict | FAMILY F strict | FAMILY R |
+|---|---|---|---|---|---|
+| shipped | 5/27 | 0.517 | 0.290 | 0.450 | 1.000 |
+| k = 3 | 18/27 | 0.822 | 0.175 | 0.298 | 1.000 |
+| k = 5 | 17/27 | 0.767 | 0.351 | 0.515 | 0.963 |
+| k = 8 | 14/27 | 0.732 | 0.388 | 0.553 | 0.963 |
+| **annotated ceiling** | 27/27 | 1.000 | 0.667 | 0.788 | **0.963** |
+
+The annotated arm's own FAMILY R is 0.963, so k = 5/8 give up nothing there that the annotation does not.
+k = 8 closes **30.5%** of the family F-strict gap and **40.9%** of the full-length-copy gap; k = 3 closes 18.4% of the
+isoform-containment gap on held-out chimp but costs P strict (0.290 → 0.175) and raises neighbour-swallowing to +32.7%.
+
+**4. Node admission is a different lever and its gains are denominator shrinkage.** A junction-or-reads-or-length
+floor lifts held-out locus F 0.612 → 0.823, but restricting the shipped matching to the surviving nodes already
+reproduces 87-97% of that, and 92 of 841 expressed records lose their node. 82 of those 92 are MULTI-EXON records whose
+node carries no junction with ≥ 3 reads — so a size/low-read clause cannot rescue them.
+
+**5. The ceiling on the rest is observability, not rules.** Taking EVERY observed intron chain, with no threshold,
+closes only **34.4%** of the containment gap on held-out chimp; an ORACLE that deletes every node overlapping no
+expressed record (annotation as input, so an upper bound, not a construction) closes only **52.1%** of the locus-F gap.
+On real testis reads 282 of 560 nodes overlap no expressed annotated record at all, and 61-67% of the exon bases
+widening adds are intronic within an annotated gene span.
+
+**6. Reading.** The gap has two disjoint halves — isoform coverage inside a locus (fixable by widening, with a
+precision cost that k controls) and node admission (fixable only by deleting, which loses real genes) — and no
+construction tested clears both. The reachable part is the family-level one: **read-isoform widening at k = 5-8 is the
+construction to take forward**, with FAMILY R held at the annotated ceiling. The remainder is bounded by what the reads
+observe, which is a substrate property, and is the honest answer to "why do we not reach the annotated numbers".
+
+⚠ Instrument findings from this line, both now in the metric-traps register: a decision rule must be stated RELATIVE TO
+THE ANNOTATED ARM (the first version was infeasible — the annotation itself failed it), and isoform containment
+computed over matched records only is conditioned on the prediction.
