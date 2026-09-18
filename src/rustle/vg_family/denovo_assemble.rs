@@ -259,8 +259,43 @@ pub fn pass1_skeletons_robust_with(
     min_terminal_support: u32,
     snap: Option<(u64, f64)>,
 ) -> Vec<Skeleton> {
+    pass1_skeletons_widened(reads, min_reads, min_terminal_support, snap, 0)
+}
+
+/// `pass1_skeletons_robust_with` plus READ-ISOFORM WIDENING (§6m5, port of
+/// `shared_definition::widen_with_read_isoforms`).
+///
+/// The defect it fixes: skeletons are grouped by EXACT intron chain and then filtered on that chain's own
+/// read count, so a junction carried by many reads spread over many distinct chains produces no group large
+/// enough to survive and the junction vanishes. Measured on the NPIP cluster (§6m5): junctions the assembler
+/// DROPPED have a median largest-single-chain of 2 reads against 32 for the ones it kept, and five dropped
+/// junctions carry 255-287 reads each, spread over 117-134 distinct chains.
+///
+/// The rule: a chain is also admitted when EVERY one of its junctions has at least `isoform_k` reads
+/// supporting it, counted per `(chrom, junction)` over all spliced reads in the region — support is judged
+/// per JUNCTION, never per chain. Chains are never concatenated (concatenation cost 20 recall points when it
+/// was tried on the `shared_definition` side), so this can only ADD skeletons, never merge or extend one.
+///
+/// `isoform_k == 0` is the explicit no-op: the admission set is exactly `n >= min_reads`, byte-identical to
+/// not calling this at all.
+pub fn pass1_skeletons_widened(
+    reads: &[PrimaryRead],
+    min_reads: u32,
+    min_terminal_support: u32,
+    snap: Option<(u64, f64)>,
+    isoform_k: u32,
+) -> Vec<Skeleton> {
     use std::collections::BTreeMap;
     let k = min_terminal_support.max(1) as usize;
+    // Per-junction read support over every spliced read in the region, the quantity the widening tests.
+    let mut jsup: BTreeMap<(&str, (u64, u64)), u32> = BTreeMap::new();
+    if isoform_k > 0 {
+        for r in reads {
+            for &j in &r.introns {
+                *jsup.entry((r.chrom.as_str(), j)).or_insert(0) += 1;
+            }
+        }
+    }
     // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc, n_reverse).
     let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)> = BTreeMap::new();
     // all starts/ends per group, populated only when `snap` is on
@@ -296,7 +331,14 @@ pub fn pass1_skeletons_robust_with(
     }
     let mut skels: Vec<Skeleton> = groups
         .into_iter()
-        .filter(|(_, (n, _, _, _))| *n >= min_reads)
+        .filter(|((chrom, introns), (n, _, _, _))| {
+            *n >= min_reads
+                || (isoform_k > 0
+                    && !introns.is_empty()
+                    && introns
+                        .iter()
+                        .all(|j| jsup.get(&(*chrom, *j)).copied().unwrap_or(0) >= isoform_k))
+        })
         .map(|((chrom, introns), (n, starts, ends, n_rev))| {
             // robust boundary = the k-th supported value (or the outermost available if the group is smaller).
             let si = k.min(starts.len()).saturating_sub(1);
@@ -2584,6 +2626,56 @@ footprint: false,
         assert_eq!(pass1_skeletons_robust(&reads, 2, 1), vec![skel("c1", 1, 9000, 4, &[(200, 300)])]);
         // k=2 trims it to the 2nd-smallest start (100) and 2nd-largest end (520).
         assert_eq!(pass1_skeletons_robust(&reads, 2, 2), vec![skel("c1", 100, 520, 4, &[(200, 300)])]);
+    }
+
+    #[test]
+    fn widening_admits_a_junction_carried_by_many_small_chains() {
+        // The §6m5 defect in miniature: junction (200,300) is carried by 4 reads, but every read has a
+        // DIFFERENT chain, so no exact-chain group reaches min_reads=3 and the junction vanishes.
+        let reads = [
+            pr("c1", 100, 500, &[(200, 300), (350, 400)]),
+            pr("c1", 100, 500, &[(200, 300), (360, 410)]),
+            pr("c1", 100, 500, &[(200, 300), (370, 420)]),
+            pr("c1", 100, 500, &[(200, 300), (380, 430)]),
+        ];
+        // OFF (k=0) = today: every group has 1 read, none reaches 3.
+        assert!(pass1_skeletons_widened(&reads, 3, 1, None, 0).is_empty());
+        // k=4: (200,300) has 4 reads but each second junction has only 1, so NOTHING is admitted --
+        // support is judged per junction, and EVERY junction of a chain must clear the bar.
+        assert!(pass1_skeletons_widened(&reads, 3, 1, None, 4).is_empty());
+        // k=1: now every junction clears, so all four chains are admitted -- and the junction survives.
+        let sk = pass1_skeletons_widened(&reads, 3, 1, None, 1);
+        assert_eq!(sk.len(), 4);
+        assert!(sk.iter().all(|s| s.introns.contains(&(200, 300))));
+    }
+
+    #[test]
+    fn widening_at_zero_is_byte_identical_and_only_ever_adds() {
+        let reads = [
+            pr("c1", 100, 500, &[(200, 300)]),
+            pr("c1", 101, 501, &[(200, 300)]),
+            pr("c1", 100, 500, &[(250, 350)]),
+        ];
+        // k=0 must reproduce the un-widened call exactly.
+        assert_eq!(
+            pass1_skeletons_widened(&reads, 2, 1, None, 0),
+            pass1_skeletons_robust(&reads, 2, 1)
+        );
+        // widening can only ADD: every skeleton present at k=0 is still present at k=2, unchanged.
+        let off = pass1_skeletons_widened(&reads, 2, 1, None, 0);
+        let on = pass1_skeletons_widened(&reads, 2, 1, None, 2);
+        assert!(off.iter().all(|s| on.contains(s)));
+        assert!(on.len() >= off.len());
+    }
+
+    #[test]
+    fn widening_never_admits_an_unspliced_group() {
+        // Unspliced reads have an empty chain; the widening clause requires a non-empty chain, so it can
+        // never resurrect the chromosome-wide pooling `cluster_unspliced` exists to prevent.
+        let reads = [pr("c1", 100, 500, &[]), pr("c1", 120, 520, &[])];
+        let on = pass1_skeletons_widened(&reads, 9, 1, None, 1);
+        assert!(on.iter().all(|s| !s.introns.is_empty() || s.n_reads >= 1));
+        assert!(on.iter().all(|s| s.introns.is_empty()), "only cluster_unspliced may emit these");
     }
 
     #[test]

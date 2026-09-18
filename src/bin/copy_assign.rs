@@ -26,7 +26,7 @@ use rustle::vg_family::linearize::LinearizeCertificate;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
-    assemble_gate, merge_fuzzy_skeletons, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region,
+    assemble_gate, merge_fuzzy_skeletons, pass1_skeletons_widened, reads_in_region, tied_secondary_reads_in_region,
     BamIndexCache, BamRead, GATE_MIN_READS,
 };
 use rustle::vg_family::catalog_input::{
@@ -151,6 +151,17 @@ struct Args {
     /// Output prefix; writes `<out>.families.tsv` and `<out>.assignments.tsv`.
     #[arg(long)]
     out: String,
+    /// ⭐ §6m5 / PREREG `docs/PREREG_assembler_widening_2026-09-18.md`: READ-ISOFORM WIDENING for the
+    /// `--gtf` assembly. The assembler groups reads by EXACT intron chain and filters on that chain's own
+    /// read count, so a junction carried by many reads spread over many chains produces no surviving group
+    /// and the junction disappears (measured on NPIP: dropped junctions have a median largest-chain of 2
+    /// reads vs 32 for kept ones; five dropped junctions carry 255-287 reads over 117-134 chains). With
+    /// `k > 0` a chain is ALSO admitted when every one of its junctions has >= k reads supporting it,
+    /// counted per junction over all spliced reads in the region. Chains are never concatenated. Port of
+    /// `shared_definition::widen_with_read_isoforms`, which ships at k=5. **Default 0 = OFF, byte-identical.**
+    #[arg(long, default_value_t = 0)]
+    read_isoform_k: u32,
+
     /// Minimum copies for a co-located family. Two-copy homologous families are the majority and were
     /// invisible to assignment at the old default of 3; lowering it to 2 changes default family detection
     /// on its own, independently of `--homology-primary`.
@@ -2626,7 +2637,10 @@ fn main() -> Result<()> {
         // FLAIR-style isoform assembly for the optional GTF (intron-chain collapse -> gate -> gene grouping).
         // Recomputed here only under --gtf (cheap: pass1/gate are ~0s); independent of the assignment.
         let transcripts: Vec<TranscriptRec> = if args.gtf {
-            let skeletons = pass1_skeletons(&primary, cfg.pass1_min_reads);
+            // §6m5 / PREREG 6d586b2d: read-isoform widening. `--read-isoform-k 0` (the default) is the
+            // explicit no-op, so this line is byte-identical to the previous `pass1_skeletons` call.
+            let skeletons =
+                pass1_skeletons_widened(&primary, cfg.pass1_min_reads, 1, None, args.read_isoform_k);
             // Opt-in (RUSTLE_JUNCTION_FUZZ_BP, default off): merge skeletons whose intron chains match in
             // count and differ only by a pre-registered per-junction tolerance --
             // docs/PREREG_junction_fuzz_2026-09-15.md, docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md.
