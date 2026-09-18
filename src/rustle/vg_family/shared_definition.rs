@@ -16,6 +16,8 @@
 //! 4. FAMILIES — triangle-supported leader neighbourhoods (confirmed on a fresh gorilla substrate, §6kd).
 //!
 //! Every tie-break mirrors the prototype so the two produce the same families on the same inputs (AF-1 gate).
+//!
+//! **STATUS:** OPT-IN  (docs/MODULE_STATUS.md; reached only when `RUSTLE_SHARED_DEFINITION` is set)
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
@@ -49,6 +51,21 @@ pub fn split_enabled() -> bool {
     env_on("RUSTLE_SD_READ_LOCUS_SPLIT")
 }
 
+/// Default junction-support floor for read-isoform widening (§6m0: k = 5 keeps FAMILY R at the annotated
+/// ceiling 0.963 and lifts FAMILY F strict 0.450 -> 0.515 on the development substrate; lower k buys more
+/// isoforms at the cost of precision, higher k the reverse).
+pub const ISOFORM_MIN_READS: u64 = 5;
+
+/// Read-isoform widening is ON by default; `RUSTLE_SD_READ_ISOFORM=0` restores the single-representative node.
+pub fn isoform_enabled() -> bool {
+    !matches!(std::env::var("RUSTLE_SD_READ_ISOFORM"), Ok(v) if v == "0")
+}
+
+/// `RUSTLE_SD_ISOFORM_K`: junction-support floor k, default [`ISOFORM_MIN_READS`].
+pub fn isoform_k() -> u64 {
+    std::env::var("RUSTLE_SD_ISOFORM_K").ok().and_then(|v| v.parse().ok()).unwrap_or(ISOFORM_MIN_READS)
+}
+
 /// One node of the copy graph: a gene-level locus with its exons and the exons of its representative transcript.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SdNode {
@@ -57,6 +74,9 @@ pub struct SdNode {
     pub n_reads: u64,
     pub exons: Vec<(u64, u64)>,
     pub rep_exons: Vec<(u64, u64)>,
+    /// Spliced query chains for this node: the representative chain, plus every read-supported isoform
+    /// admitted by [`widen_with_read_isoforms`] (§6m0). Always non-empty; `[rep_exons]` when widening is off.
+    pub tx_chains: Vec<Vec<(u64, u64)>>,
 }
 
 impl SdNode {
@@ -148,7 +168,7 @@ pub fn nodes_from_reps(reps: &[DenovoTranscript]) -> Vec<SdNode> {
         .map(|r| {
             let mut exons = crate::vg_family::catalog_input::exon_blocks(r.start, r.end, &r.introns);
             exons.sort();
-            SdNode { chrom: r.chrom.clone(), strand: r.strand, n_reads: r.n_reads as u64, rep_exons: exons.clone(), exons }
+            SdNode { chrom: r.chrom.clone(), strand: r.strand, n_reads: r.n_reads as u64, tx_chains: vec![exons.clone()], rep_exons: exons.clone(), exons }
         })
         .collect()
 }
@@ -163,13 +183,13 @@ pub fn consolidate(ab1: &[SdNode]) -> Vec<SdNode> {
         let mut cur = vec![n.exons[0]];
         for &b in &n.exons[1..] {
             if b.0 > cur.last().unwrap().1 && b.0 - cur.last().unwrap().1 > MAX_INTRON {
-                pieces.push(SdNode { exons: cur.clone(), rep_exons: cur.clone(), ..n.clone() });
+                pieces.push(SdNode { exons: cur.clone(), rep_exons: cur.clone(), tx_chains: vec![cur.clone()], ..n.clone() });
                 cur = vec![b];
             } else {
                 cur.push(b);
             }
         }
-        pieces.push(SdNode { rep_exons: cur.clone(), exons: cur, ..n.clone() });
+        pieces.push(SdNode { rep_exons: cur.clone(), tx_chains: vec![cur.clone()], exons: cur, ..n.clone() });
     }
     pieces.retain(|p| exon_sum(&p.exons) >= MIN_PIECE);
     let items: Vec<((String, char), Vec<(u64, u64)>)> =
@@ -189,6 +209,7 @@ pub fn consolidate(ab1: &[SdNode]) -> Vec<SdNode> {
                 strand: rep.strand,
                 n_reads: g.iter().map(|&i| pieces[i].n_reads).sum(),
                 exons: merge(g.iter().flat_map(|&i| pieces[i].exons.iter().copied()).collect()),
+                tx_chains: vec![rep.exons.clone()],
                 rep_exons: rep.exons.clone(),
             }
         })
@@ -361,7 +382,7 @@ pub fn with_read_locus_nodes(base: &[SdNode], reads: &[ReadBlocks], split: bool)
             if sub.iter().any(|&(s, e)| !bidx.hits(&chrom, s, e).is_empty()) {
                 return;
             }
-            added.push(SdNode { chrom: chrom.clone(), strand, n_reads: n as u64, rep_exons: sub.clone(), exons: sub });
+            added.push(SdNode { chrom: chrom.clone(), strand, n_reads: n as u64, tx_chains: vec![sub.clone()], rep_exons: sub.clone(), exons: sub });
         };
         if split {
             for (ks, sup) in split_linked(&ex, &lists) {
@@ -376,6 +397,79 @@ pub fn with_read_locus_nodes(base: &[SdNode], reads: &[ReadBlocks], split: bool)
     nodes.extend(added);
     nodes.sort_by(|a, b| (a.chrom.as_str(), a.start(), a.strand).cmp(&(b.chrom.as_str(), b.start(), b.strand)));
     (nodes, n_added)
+}
+
+/// Read-isoform widening (§6m0, ledger 2026-09-17). For each node, every intron chain observed in its own
+/// same-strand primary reads whose junctions are EACH carried by >= `k` reads becomes a spliced query, and its
+/// blocks are merged into the node's exon union. A node can only widen: its previous exons and representative
+/// chain are always kept, and no node is created, removed or merged here.
+///
+/// Why: the catalog emits one representative per locus before [`consolidate`] runs, so a node's exon set is one
+/// isoform (705/710 nodes on the human ideal substrate). Widening lifts full-length NPIP copies from 5/27 to
+/// 17/27 at k = 5 with FAMILY R held at the annotated arm's own 0.963.
+pub fn widen_with_read_isoforms(nodes: &[SdNode], reads: &[ReadBlocks], k: u64) -> (Vec<SdNode>, usize) {
+    let idx = ExonIndex::new(nodes);
+    // Per node: chain (intron vector) -> (support, min start, max end).
+    let mut per_node: Vec<BTreeMap<Vec<(u64, u64)>, (u64, u64, u64)>> =
+        vec![BTreeMap::new(); nodes.len()];
+    for r in reads {
+        if r.blocks.len() < 2 {
+            continue;
+        }
+        let introns: Vec<(u64, u64)> = r.blocks.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+        let (first, last) = (r.blocks[0].0, r.blocks[r.blocks.len() - 1].1);
+        let mut seen: BTreeSet<usize> = BTreeSet::new();
+        for &(s, e) in &r.blocks {
+            for v in idx.hits(&r.chrom, s, e) {
+                if nodes[v].strand == r.strand {
+                    seen.insert(v);
+                }
+            }
+        }
+        for v in seen {
+            let ent = per_node[v].entry(introns.clone()).or_insert((0, u64::MAX, 0));
+            ent.0 += 1;
+            ent.1 = ent.1.min(first);
+            ent.2 = ent.2.max(last);
+        }
+    }
+    let mut widened = 0usize;
+    let out: Vec<SdNode> = nodes
+        .iter()
+        .enumerate()
+        .map(|(v, n)| {
+            // A junction is supported when >= k reads of this node carry it, counted over all of the node's chains.
+            let mut junc: BTreeMap<(u64, u64), u64> = BTreeMap::new();
+            for (chain, &(sup, _, _)) in &per_node[v] {
+                for &j in chain {
+                    *junc.entry(j).or_insert(0) += sup;
+                }
+            }
+            let mut chains: Vec<Vec<(u64, u64)>> = n.tx_chains.clone();
+            let mut exons = n.exons.clone();
+            let mut added = false;
+            for (chain, &(_, first, last)) in &per_node[v] {
+                if chain.iter().any(|j| junc.get(j).copied().unwrap_or(0) < k) {
+                    continue;
+                }
+                let blocks = crate::vg_family::catalog_input::exon_blocks(first, last, chain);
+                if blocks.is_empty() || chains.iter().any(|c| *c == blocks) {
+                    continue;
+                }
+                exons.extend(blocks.iter().copied());
+                chains.push(blocks);
+                added = true;
+            }
+            if !added {
+                return n.clone();
+            }
+            widened += 1;
+            chains.sort();
+            chains.dedup();
+            SdNode { exons: merge(exons), tx_chains: chains, ..n.clone() }
+        })
+        .collect();
+    (out, widened)
 }
 
 /// One PAF record (the fields the finders use).
@@ -530,7 +624,12 @@ pub fn gene_body_chains(recs: &[PafRec]) -> Vec<Chain> {
 
 /// Query keys shared by nodes with the same representative transcript / gene body (the prototype's dedupe keys).
 pub fn tx_key(n: &SdNode) -> String {
-    let ex: Vec<String> = n.rep_exons.iter().map(|(a, b)| format!("{a}-{b}")).collect();
+    tx_key_for(n, &n.rep_exons)
+}
+
+/// The query key of one spliced chain of a node (the same form as [`tx_key`], which is this for `rep_exons`).
+pub fn tx_key_for(n: &SdNode, chain: &[(u64, u64)]) -> String {
+    let ex: Vec<String> = chain.iter().map(|(a, b)| format!("{a}-{b}")).collect();
     format!("{}|{}|{}", n.chrom, n.strand, ex.join(","))
 }
 
@@ -551,9 +650,11 @@ pub fn edges(
         let (us, ue) = (nu.start(), nu.end());
         // (kind, chrom, s, e, hit_s, hit_e, orientation on the target)
         let mut cand: Vec<(u8, &str, u64, u64, u64, u64, char)> = Vec::new();
-        for h in tx_by_key.get(&tx_key(nu)).map(|v| v.as_slice()).unwrap_or(&[]) {
-            for (s, e) in tx_exon_blocks(h) {
-                cand.push((0, &h.chrom, s, e, h.ts, h.te, h.strand));
+        for chain in &nu.tx_chains {
+            for h in tx_by_key.get(&tx_key_for(nu, chain)).map(|v| v.as_slice()).unwrap_or(&[]) {
+                for (s, e) in tx_exon_blocks(h) {
+                    cand.push((0, &h.chrom, s, e, h.ts, h.te, h.strand));
+                }
             }
         }
         for c in chains_by_key.get(&body_key(nu)).map(|v| v.as_slice()).unwrap_or(&[]) {
@@ -671,6 +772,19 @@ pub fn build(
         "[shared-definition] {} reps -> {} gene-level loci + {} read-locus nodes{} = {} nodes",
         reps.len(), ab2.len(), n_added, if split_enabled() { " (split)" } else { "" }, nodes.len()
     );
+    let nodes = if isoform_enabled() {
+        let k = isoform_k();
+        let (w, n_widened) = widen_with_read_isoforms(&nodes, reads, k);
+        let queries: usize = w.iter().map(|n| n.tx_chains.len()).sum();
+        eprintln!(
+            "[shared-definition] read-isoform widening k={k}: {n_widened} of {} nodes widened, {queries} spliced queries",
+            w.len()
+        );
+        w
+    } else {
+        eprintln!("[shared-definition] read-isoform widening OFF (RUSTLE_SD_READ_ISOFORM=0)");
+        nodes
+    };
     let dir = std::env::temp_dir().join(format!("rustle_sd_{}_{}", std::process::id(), reps.len()));
     std::fs::create_dir_all(&dir)?;
     let (target, txfa, bodyfa) = (dir.join("target.fa"), dir.join("tx.fa"), dir.join("body.fa"));
@@ -698,11 +812,14 @@ pub fn build(
         let mut ft = std::io::BufWriter::new(std::fs::File::create(&txfa)?);
         let mut fb = std::io::BufWriter::new(std::fs::File::create(&bodyfa)?);
         for n in &nodes {
-            let (tk, bk) = (tx_key(n), body_key(n));
-            if tx_seen.insert(tk.clone()) {
-                writeln!(ft, ">{tk}")?;
-                ft.write_all(&spliced_seq(genome, &n.chrom, &n.rep_exons, n.strand))?;
-                writeln!(ft)?;
+            let bk = body_key(n);
+            for chain in &n.tx_chains {
+                let tk = tx_key_for(n, chain);
+                if tx_seen.insert(tk.clone()) {
+                    writeln!(ft, ">{tk}")?;
+                    ft.write_all(&spliced_seq(genome, &n.chrom, chain, n.strand))?;
+                    writeln!(ft)?;
+                }
             }
             if body_seen.insert(bk.clone()) {
                 writeln!(fb, ">{bk}")?;
@@ -755,7 +872,59 @@ mod tests {
     use super::*;
 
     fn node(chrom: &str, strand: char, reads: u64, exons: &[(u64, u64)]) -> SdNode {
-        SdNode { chrom: chrom.into(), strand, n_reads: reads, exons: exons.to_vec(), rep_exons: exons.to_vec() }
+        SdNode { chrom: chrom.into(), strand, n_reads: reads, exons: exons.to_vec(), rep_exons: exons.to_vec(), tx_chains: vec![exons.to_vec()] }
+    }
+
+    #[test]
+    fn read_isoform_widening_admits_supported_chains_and_only_widens() {
+        // One node with a 2-exon representative; reads carry a second isoform with an extra exon.
+        let n = node("chr1", '+', 10, &[(100, 200), (500, 600)]);
+        let rb = |blocks: &[(u64, u64)]| ReadBlocks { chrom: "chr1".into(), strand: '+', blocks: blocks.to_vec() };
+        let mut reads: Vec<ReadBlocks> = Vec::new();
+        for _ in 0..5 {
+            reads.push(rb(&[(100, 200), (300, 350), (500, 600)]));
+        }
+        // A third chain seen twice only: below k, so it must not be admitted.
+        for _ in 0..2 {
+            reads.push(rb(&[(100, 200), (700, 800)]));
+        }
+        let (out, widened) = widen_with_read_isoforms(&[n.clone()], &reads, 5);
+        assert_eq!(widened, 1);
+        let w = &out[0];
+        // Only widens: every original exon block survives, and the rep chain stays a query.
+        for e in &n.exons {
+            assert!(w.exons.iter().any(|x| x.0 <= e.0 && e.1 <= x.1), "{e:?} lost");
+        }
+        assert!(w.tx_chains.contains(&n.rep_exons));
+        assert_eq!(w.rep_exons, n.rep_exons);
+        // The supported isoform is now a query and its exon is in the union.
+        assert_eq!(w.tx_chains.len(), 2);
+        assert!(w.exons.iter().any(|&(a, b)| a <= 300 && 350 <= b));
+        // The 2-read chain contributed nothing.
+        assert!(!w.exons.iter().any(|&(a, b)| a <= 700 && 800 <= b));
+    }
+
+    #[test]
+    fn read_isoform_widening_is_inert_without_support_and_on_unspliced_reads() {
+        let n = node("chr1", '-', 4, &[(100, 200), (500, 600)]);
+        let unspliced = ReadBlocks { chrom: "chr1".into(), strand: '-', blocks: vec![(100, 600)] };
+        let wrong_strand = ReadBlocks { chrom: "chr1".into(), strand: '+', blocks: vec![(100, 200), (300, 350), (500, 600)] };
+        let reads: Vec<ReadBlocks> = std::iter::repeat(unspliced).take(9)
+            .chain(std::iter::repeat(wrong_strand).take(9)).collect();
+        let (out, widened) = widen_with_read_isoforms(&[n.clone()], &reads, 5);
+        assert_eq!(widened, 0);
+        assert_eq!(out[0], n);
+    }
+
+    #[test]
+    fn isoform_knobs_default_to_on_at_k_five() {
+        if std::env::var("RUSTLE_SD_READ_ISOFORM").is_err() {
+            assert!(isoform_enabled());
+        }
+        if std::env::var("RUSTLE_SD_ISOFORM_K").is_err() {
+            assert_eq!(isoform_k(), 5);
+            assert_eq!(ISOFORM_MIN_READS, 5);
+        }
     }
 
     #[test]

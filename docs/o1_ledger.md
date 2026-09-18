@@ -22796,3 +22796,42 @@ observe, which is a substrate property, and is the honest answer to "why do we n
 ⚠ Instrument findings from this line, both now in the metric-traps register: a decision rule must be stated RELATIVE TO
 THE ANNOTATED ARM (the first version was infeasible — the annotation itself failed it), and isoform containment
 computed over matched records only is conditioned on the prediction.
+
+### §6m0 addendum — read-isoform widening ADOPTED at k = 5 inside `RUSTLE_SHARED_DEFINITION`, and what it reaches on simulated data (2026-09-17, user's call)
+
+**Shipped** (`src/rustle/vg_family/shared_definition.rs`): `widen_with_read_isoforms` runs inside `build()` after
+`with_read_locus_nodes`. For each node, every intron chain observed in its own same-strand reads whose junctions are
+EACH carried by >= k reads becomes an extra spliced query and its blocks merge into the node's exon union. A node can
+only widen — exons and the representative chain are kept, and no node is created, removed or merged. New API:
+`SdNode.tx_chains`, `tx_key_for`, `ISOFORM_MIN_READS = 5`, `isoform_enabled()` (off with `RUSTLE_SD_READ_ISOFORM=0`),
+`isoform_k()` (`RUSTLE_SD_ISOFORM_K`); `edges()` takes the max over a node's chains, never a concatenated query.
+Scope: the opt-in shared-definition path only; the default catalog is untouched. Library suite 877 passed / 0 failed
+(the two pre-existing `MODULE_STATUS.md` failures are fixed here: `shared_definition.rs` now declares
+`**STATUS:** OPT-IN` and is registered).
+
+**Measured on the idealized simulated substrate** (every locus expressed, error-free full-length reads;
+`bench/IDEAL_WIDENING_K5.md`, independently recomputed genome-wide with diff 0):
+
+| metric | off | k = 5 | annotated arm | label |
+|---|---|---|---|---|
+| isoform containment, all 701 records (C1 / C2) | 0.579 / 0.460 | **0.934 / 0.919** | 1.000 | CLOSED (84% / 85%) |
+| annotated junctions present in a node query | 0.709 | **0.985** | 1.000 | CLOSED (95%) |
+| matched-pair exon recall | 0.858 | **0.993** | 1.000 | CLOSED (95%) |
+| NPIP full-length copies | 11/27 | **22/27** | 26/27 | PARTIAL (73%) |
+| TBC1D3 full-length copies | 17/19 | **19/19** | 19/19 | PERFECT |
+| locus bipartite R / P / F | 0.960 / 0.948 / 0.954 | 0.959 / 0.947 / 0.953 | 1.000 | FLAT |
+| FAMILY R / P strict / F strict (triangle) | 0.852 / 0.821 / 0.836 | identical | 0.963 / 0.619 / 0.754 | FLAT |
+
+Parity: with `RUSTLE_SD_READ_ISOFORM=0` the run writes a `tx.fa` byte-identical to the published capture
+(md5 7d8de17f…) and reproduces the node line exactly — the new path is inert when disabled.
+
+**Four honest limits.** (1) **k could not be measured here**: the simulation emits 30 identical reads per transcript,
+so the minimum junction support over all 37,260 (node, chain) instances is exactly 30 and every k <= 30 admits the same
+chains — k = 3/5/8 are byte-identical. The k = 5 default rests on the real-data numbers in §6m0, not on this run.
+(2) **The circularity is tight**: 95.8% of the spliced node queries are byte-exact annotated transcript chains, because
+the reads were simulated from those transcripts. (3) **Node identity does not move**: locus-level and family-level
+numbers are flat, and two component-level cells regress slightly (P strict 0.3418 -> 0.3375, F strict 0.5094 ->
+0.5047). Widening fixes node CONTENT, not node COUNT — consistent with §6m0's two-disjoint-levers finding.
+(4) **The 5 remaining short NPIP copies are not an isoform problem**: NPIPB12 has 0 same-strand primary MAPQ >= 1
+reads; NPIPB13, NPIPB4 and NPIPB14P have only an opposite-strand node at their locus, which strand-strict widening
+cannot reach. That, not isoform coverage, is the next thing in the way.
