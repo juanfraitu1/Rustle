@@ -23481,3 +23481,46 @@ genome-wide chr16 catalog arm, priced on families/copies/engulfment, is the next
 
 **Recommendation:** use `RUSTLE_JUNCTION_MAJORITY=1` for pseudogene-family reconstruction work now; leave the
 default alone until that arm exists.
+
+### §6m8 addendum — what is missing to reach 26/26, and whether idealized reads would supply it (2026-09-18)
+
+User: *"What is missing to find all 26 complete, could we find them with idealized simulated reads?"*
+
+**A. The deficit, decomposed (best arm: `--read-isoform-k 3` + `RUSTLE_JUNCTION_MAJORITY=1`, canonical truth).**
+10/26 copies complete; **39 of 209 canonical junctions still missing**. For each, is the junction present in
+ANY alignment (primary or secondary) of the real library?
+
+| cause | junctions | share |
+|---|---|---|
+| **missing BUT read-observed — the ALGORITHM loses it** | **35** | **90%** |
+| missing with no read anywhere — data/expression | 4 | 10% |
+
+Per copy, the deficit is small and broad rather than concentrated: 16 copies are short, 12 of them by 1-3
+junctions. The exception is PKD1P6-NPIPP1 (28 canonical, 18 emitted, 10 missing — 9 of the 10 read-observed).
+
+⭐**So the answer to "what is missing" is: NOT reads. 90% of the remaining deficit is information already in
+the BAM that the assembler does not emit.** Idealized reads can only supply the other 10% (4 junctions),
+which alone would move at most 2-3 copies to complete.
+
+**B. Idealized substrate — RUN ATTEMPTED, INCONCLUSIVE, not a result.** `npip_ideal/bam/ideal.bam`
+(same aligner settings, error-free full-length reads, 30 per transcript) has reads at every NPIP copy by
+POS (30-487 per window; NPIPB12 the only 0). But `copy_assign` ingested only 2-18 primary reads per window
+against 431 on the real BAM, and emitted 8 transcripts (k=0) / 36 (k=3+majority) — worse than real data,
+which is not a credible measurement of anything.
+Ruled out so far: header/contig mismatch (identical @SQ), `--eqx` CIGARs (the real BAM has them too), the
+`RUSTLE_FLAGFREE_SITES` molecule dedup (off by default, and it hashes the read name), and a base-quality
+requirement (`alignment_read_from_record` has none; the ideal reads carry `*`). ⚠The "0 mapped reads"
+lines in the log are the FAMILY pass and appear in the real run too — a red herring.
+**Not diagnosed; do not quote the ideal numbers above as a ceiling or as evidence about the method.**
+
+⚠**Even if it ran, `npip_ideal/DECLARATIONS.txt` C0 forbids the obvious reading:** reads are simulated from
+the same annotation that defines the truth, so *"this substrate CANNOT measure how faithfully node
+construction recovers annotation (that is circular by construction)"* and every result is an upper bound.
+A high complete-chain count there would be the definition of the substrate, not a finding. Its one
+legitimate use is a NEGATIVE: if 26/26 is unreachable even with every locus fully expressed, that is
+informative (C0.1(iii)).
+
+**Conclusion.** Idealized reads are the wrong instrument for this question. The measured deficit is 90%
+algorithmic, and the circularity statement means the simulation cannot certify the algorithmic half anyway.
+The next real lever is the 105 skeletons still rejected at `build_spliced_seq` after majority mode plus
+whatever drops the 35 read-observed junctions — instrument the emission path, not the reads.
