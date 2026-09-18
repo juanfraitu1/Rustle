@@ -23605,3 +23605,48 @@ numbers must not be quoted (see §6m8 addendum and `npip_ideal/DECLARATIONS.txt`
 ⚠**And a simulation built from the annotation would encode the 1-2 bp artifacts into the reads**, then
 "recover" them — the circularity C0 warns about. A useful simulation must be built from the CANONICAL
 transcript set (209 junctions), which makes it an algorithmic-ceiling test and nothing more.
+
+## §6n0 — NPIP ceiling simulation: 25/26 complete with full-length reads. The assembler has NO algorithmic defect; 5' TRUNCATION costs 6 of 26 copies (2026-09-18)
+
+Pre-registered `docs/PREREG_npip_sim_2026-09-18.md` (md5 `17be6b031092b79b343421fa0dd14f1e`) before a single
+read existed. Report `bench/NPIP_SIM_CEILING.md`, commit `ee640950`; data `/mnt/linuxdisk/home/juanfraitu/npip_sim/`.
+
+**Substrate.** 26 canonical transcripts (one per spliced NPIP copy), built by merging each copy's exon
+blocks across every non-canonical junction — **209 canonical retained, 40 artifacts merged away**, asserted
+against the §6m7 truth. 30 error-free reads per transcript with independently jittered ends. Same aligner
+settings as both existing BAMs.
+
+- **SIM-4 PASSED**: distinct (chrom,pos,CIGAR)/total = **0.990** (FL) / **0.999** (TR) — the §6m9 dedup
+  collapse that made `npip_ideal` unusable is fixed by jitter alone.
+- **SIM-0 PASSED**: FL reads present **208/209** junctions (25/26 copies whole); TR 203/209 (20/26).
+  The single FL miss (NPIPB8) is the ALIGNER failing to reproduce a junction from its own source sequence.
+
+| arm | tx | junctions/209 | **complete** | exact |
+|---|---|---|---|---|
+| **SIM full-length (FL)** | **26** | **208 (99.5%)** | **25/26** | **25/26** |
+| SIM 5'-truncated (TR) | 138 | 193 (92.3%) | 19/26 | 18/26 |
+| real data (same arm, same truth) | 1,456 | 170 (81.3%) | 10/26 | — |
+
+⭐**SIM-1 bar was >= 24/26. Measured 25/26 — PASSED.** The FL arm emits exactly 26 transcripts, one per
+copy, and scores **208/208 against the junctions its reads actually contain**. Gate census: 26 skeletons,
+26 kept, 0 rejected on any axis.
+
+⭐**THE DEFICIT IS NOW FULLY DECOMPOSED:**
+
+| step | complete | cost |
+|---|---|---|
+| perfect full-length reads | 25/26 | 1 lost to an aligner artifact |
+| + 5' truncation | 19/26 | **−6 copies** |
+| + real-library effects (depth, multimapping, error, expression) | 10/26 | **−9 copies** |
+
+**5' truncation alone costs 6 of 26 copies** — the largest single identified factor, and a property of the
+Iso-Seq library rather than of the code.
+
+⚠**SIM-3 (binding):** transcripts derive from the annotation that defines the truth, so this is an UPPER
+BOUND on the assembler for NPIP and nothing else. It is NOT evidence that node construction recovers
+annotation, that the family definition works, or that O1 works.
+
+**Consequence.** Chasing the assembler further is the wrong move — it is at 208/208 on what it is given.
+The remaining levers are (a) recovering 5' ends and (b) the real-library effects. ⚠Note §6m6 already
+measured a chaining-style fix for (a) — read-isoform widening — at only +2 junctions on real data, so the
+protocol side of (a), not another chaining rule, is where the headroom is.
