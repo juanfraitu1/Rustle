@@ -22870,3 +22870,37 @@ variant because it has no same-strand MAPQ ≥ 1 read at all (an O2 problem; no 
 (per-copy same-strand node presence and coverage; junk counted as nodes overlapping no record, not as precision) and a
 genome-wide family panel rather than the 48-57 families of chr16/17/18. V2's unknown-strand MERGING is what loses
 families; the suppression half (V1/V4) loses none on the 0% and 20% arms.
+
+### §6m0 addendum 3 — V4 under scorer v3: passes every informative clause, fails one that is below its own noise floor (2026-09-18)
+
+`bench/STRAND_V4_SCORER_V3.md`, genome-wide family panel (252 families on S-IDEAL, 264 on U20), verifier ok.
+
+**V4** = strand-aware suppression restricted to blockers whose strand was MEASURED from junction motifs, no
+consolidate change. **It passes clauses (i), (iii), (iv) and (v) on both substrates and fails only clause (ii), by one
+family of 252 and one of 264** — and both failures are instrument artefacts:
+- S-IDEAL: the four nodes involved carry 5 of the 6 possible edges; V0 splits that near-clique across three families
+  and V4 unites it. The Jaccard falls to 0.4933 because the family GREW. An improvement scored as a loss.
+- U20: re-running triangle leaders on the UNCHANGED V0 graph with node indices relabelled — same nodes, edges, read
+  counts, degrees — produces family changes of the same size. **Clause (ii) sits below the leader rule's own noise
+  floor there.**
+
+**What V4 buys** (copies whose best node is on the opposite strand; same-strand coverage):
+
+| substrate | V0 opposite-strand copies | V4 | copies recovered |
+|---|---|---|---|
+| S-IDEAL | 5 (NPIP 3) | 3 (NPIP 1) | NPIPB13 0.000 → 0.944, NPIPB4 0.000 → 1.000 |
+| U00 | 3 | 2 | NPIPB12 |
+| U20 | 5 (NPIP 3) | 2 (NPIP 0) | NPIPB12, NPIPB1P, LOC124907834 — each 0.000 → 1.000 same-strand coverage |
+| U40 | 6 (NPIP 4) | 2 (NPIP 0) | 4 copies |
+
+V4 adds 3 nodes on S-IDEAL and 116 on U20 (V1 adds 174 / 292), loses no V0 node, and keeps FAMILY R (S-IDEAL
+0.8519 → 0.9259; U20 1.0000 both, where the clause is vacuous because the best family holds 80-87 nodes).
+
+**Instrument state, which is now the blocking item.** Clause (ii) conflates three events — a family destroyed, a
+family that grew, and a family reshuffled by the greedy leader assignment — and only the first matters. Clause (iii)
+is a 1-node test on S-IDEAL, clause (v) is saturated on U20, and scorer v3's candidate-restricted precision does not
+repair the denominator trap it was written for (it charges a variant MORE for adding a correct node at an
+already-matched locus). **Nothing is adopted on this evidence.** The next run must pre-register a
+membership-preserving family clause with a threshold calibrated to the measured relabelling noise floor, plus an
+explicit no-scatter test, and be evaluated on U00/U40 or a fresh gorilla arm — substrates that did not produce this
+table.
