@@ -23524,3 +23524,44 @@ informative (C0.1(iii)).
 algorithmic, and the circularity statement means the simulation cannot certify the algorithmic half anyway.
 The next real lever is the 105 skeletons still rejected at `build_spliced_seq` after majority mode plus
 whatever drops the 35 read-observed junctions — instrument the emission path, not the reads.
+
+## §6m9 — the emission path localised without new instrumentation, and NOT enforcing canonical junctions gains exactly ZERO (2026-09-18)
+
+Two questions from the user: instrument where the 35 read-observed junctions die, and *"do we need to only
+enforce canonical junctions, what if we don't?"* Both answered with existing flags — no code change.
+Substrate: 27 NPIP windows, `A119b.t2t.bam`, canonical truth of §6m7 (209 of 249).
+
+| arm | tx | junctions emitted | canonical/209 | complete | **non-canonical/40** |
+|---|---|---|---|---|---|
+| k=3 strict | 1,124 | 776 | 161 (77%) | 9/26 | **0** |
+| k=3 + `RUSTLE_JUNCTION_MAJORITY=1` | 1,456 | 946 | 170 (81%) | 10/26 | **0** |
+| + `--no-gtf-copy-set` | 1,456 | 946 | **170 (identical)** | 10/26 | **0** |
+| + `RUSTLE_JUNCTION_NC_MAX_BP` UNBOUNDED | 1,496 | 966 | **170 (+0)** | 10/26 | **0** |
+| + `RUSTLE_GATE_MIN_READS=1` | **2,815** | 1,144 | **177 (85%)** | **11/26** | **0** |
+
+**1. `--gtf-copy-set` is RULED OUT.** Turning it off changes nothing — same transcript count, same 170.
+The "transcripts at copies without evidence are dropped" rule is not what loses the 35.
+
+**2. Unbounded non-canonical tolerance is RULED OUT.** Lifting `nc_max` from 10 kb to 1 Gb admits 40 more
+skeletons and 20 more junctions and recovers **zero** annotated junctions — pure noise.
+
+**3. ⭐The answer to "what if we don't enforce canonical junctions": NOTHING CHANGES. 0 of the 40
+non-canonical annotated junctions is recovered in ANY arm**, including the most permissive one (majority +
+unbounded nc_max + read floor 1). This is independent confirmation of §6m7 from the opposite direction:
+those junctions are not recovered because **they are not in the reads** (36 of 40 unobserved), not because a
+filter rejects them. Relaxing canonicity cannot manufacture evidence that does not exist, and it costs
+transcripts.
+
+**4. The gate READ FLOOR does hold real junctions, at a bad price.** `RUSTLE_GATE_MIN_READS=1` takes
+rejections 1,369 → 0 and recovers **+7 canonical junctions (170 → 177) and one more complete copy (10 → 11)**
+— but nearly DOUBLES the transcript count (1,456 → 2,815). ⚠Earlier `=2` looked like a no-op only because
+most of the widened skeletons sit at pooled support 1, not 2; the env var does reach `GateParams::default()`.
+
+**Residual.** At the most permissive setting 32 of 209 canonical junctions are still missing and `rej_seq`
+is still 162. Those are the chains with NO canonical junction anywhere, strand conflicts, or fetch failures
+— the (a)+(b) bucket of §6m8, which by construction no relaxation of the canonical rule can rescue.
+
+**Recommendation unchanged:** `--read-isoform-k 3` + `RUSTLE_JUNCTION_MAJORITY=1` is the defensible arm
+(170/209, 10/26, +146 junctions of which 96% read-supported). The read floor at 1 buys +7 junctions for
++1,359 transcripts and should only be used where recall matters more than precision. Do NOT relax the
+canonical requirement further — it is measured at exactly zero benefit.
