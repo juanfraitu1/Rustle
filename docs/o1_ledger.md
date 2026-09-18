@@ -23086,3 +23086,60 @@ mis-annotation. PKD1P6-NPIPP1 is simultaneously an NPIP copy and a PKD1 copy. An
 definition treats a node spanning two parent families (overlapping/soft membership, or a chimera node rule),
 not in cleaning the annotation. Closes the "readthrough annotation-unit" item parked in
 `docs/PENDING_2026-09-17.md`.
+
+## §6m2 — `--chimera-policy`: a truth-side lever for known readthrough records. Well-defined, clean label, NOT ADOPTED — every gain is denominator shrinkage (2026-09-18)
+
+Pre-registered as `docs/PREREG_chimera_policy_2026-09-18.md` (md5 `57f578ff0c4e2e4829d7c72bdfc5bb26`,
+commit 376f6a93) BEFORE any metric under any policy existed. User request: *"maybe could we have some or
+more chimeras accepted if they are known and a lever to determine if we count them or not for precision,
+sensitivity and bipartite matching"*. Report `bench/CHIMERA_POLICY.md`; scripts
+`/mnt/linuxdisk/home/juanfraitu/chimera_policy/{arm_a,arm_b}.py`.
+
+This is an EVALUATION lever only — no edge test, grouping operator or threshold changes.
+
+**The label is clean and already curated.** RefSeq flags readthroughs in the GFF `description=` field:
+209 gene/pseudogene records genome-wide, 12 on chr16, 5 touching NPIP (`PKD1P6-NPIPP1`, `PKD1P3-NPIPA1`,
+`PKD1P4-NPIPA8`, `PKD1P5-LOC105376752`, `PDXDC2P-NPIPB14P` — including the one §0★★★.7e said a containment
+rule cannot see). It is annotation-side, so it does not condition any denominator on a prediction. On the
+CAT/GENCODE held-out substrate the equivalent is the name rule `A-B` with both halves present as gene
+records: 137 genome-wide, 15 on chr5/7/21. Already on disk as `lattice_rules/S5_readthroughs.tsv`.
+
+Three policies, one per run, all three always reported: **strict** (baseline), **exclude** (chimera removed
+from truth AND prediction, symmetric), **multi** (chimera carries both halves' truth labels; bipartite via
+the standard row-duplication reduction).
+
+**Correctness check:** `strict` on arm A reproduces `soto_holdout.out` cell-for-cell.
+
+**CP-1 ROBUST.** E1S beats E1 under all three policies on both views (universe F 0.831 → 0.881, prec
+0.815 → 1.000; strict F 0.667 → 0.761, prec 0.400 → 0.629). The shipped `--min-shared-exon-frac 0.30`
+default is NOT conditional on chimera handling.
+
+**CP-2 NO-OP on the held-out substrate, structurally.** All twelve arm-A cells move by exactly 0.000 —
+because 0 of the 15 chr5/7/21 chimeras falls inside the scored universe (43 genes E1 / 38 E1S) and only 1
+of 15 is in Soto's universe at all. Per the pre-registered rule the lever's scope is restricted in writing
+to families that actually contain a chimera.
+
+**CP-3 + CP-5: four cells cleared the ΔF ≥ 0.02 bar and ALL FOUR were disqualified by the denominator guard.**
+
+| family | level | policy | ΔF vs strict | universe change | CP-5 |
+|---|---|---|---|---|---|
+| NPIP | L2 | exclude | +0.040 | −15.4% | ⚠ shrinkage, not a gain |
+| NPIP | L3 | exclude | +0.029 | −11.9% | ⚠ shrinkage, not a gain |
+| TBC1D3 | L1a/L1b | exclude | +0.059 | −13.2% | ⚠ shrinkage, not a gain |
+| NPIP | L1a/L1b | exclude | +0.014 | −9.8% | under the bar anyway |
+
+`multi` never clears the bar (max +0.018, TBC1D3 L1a/L1b) and at NPIP L3 it is **negative** (−0.006): a
+second truth label the prediction cannot match costs more than the flexibility buys. Full table in the
+report.
+
+**CP-4 NO, exactly as pre-declared.** Every (h_join, h_split] is empty at every level under every policy,
+with h_split = −inf throughout (the truth family is not connected at the shipped cut). h_join stays 1.0000
+under all three policies; `exclude` changes exactly one visible boundary edge (NPIP L3
+`PKD1P5-LOC105376752` → `LOC124907845`, 0.9994 → 0.9993). §6m1 reproduced by a second mechanism: the
+binding constraint is CLN3, EIF3CL and the LOC lncRNAs at identity 1.000, none of them a chimera.
+
+**Reading.** The lever answers the question it was built for, and the answer is that chimera handling is
+not where the family definition loses. Kept as a reporting option, OFF by default, worth running whenever
+a claim concerns a family that contains a chimera (NPIP does; TBC1D3 does not) so the claim can be shown
+independent of the policy. Only 1 of 27 NPIP members and 0 of 19 TBC1D3 members are flagged — the set is
+too small to move a family metric even when the label is perfect.
