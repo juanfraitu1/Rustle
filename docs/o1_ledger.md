@@ -23798,3 +23798,33 @@ comparable size. A precision cost on copy boundaries, not on family structure.
 that is the user's call, and one chromosome is one substrate (the standing hold-a-substrate-back rule wants
 a second chromosome or the gorilla contigs to agree before a shipped default moves). Recorded so the
 decision can be made on numbers instead of on the comment's caution.
+
+### §6n4 addendum — TBC1D3 carried through the reconstruction ladder for the first time (2026-09-18)
+
+Everything from §6m5 onward had been NPIP-only. Running the same arms on the 12 spliced TBC1D3 copies
+(`tbc.regions`, chr17 + chr1), same canonical truth construction:
+
+| family / arm | tx | canonical junctions | recall | complete copies |
+|---|---|---|---|---|
+| NPIP, primary (k=3 + majority) | 1,456 | 170/209 | 81.3% | 10/26 |
+| **NPIP, + secondary (best)** | 13,132 | **197/209** | **94.3%** | **20/26** |
+| TBC1D3, primary (k=3 + majority) | 339 | 117/150 | 78.0% | 4/12 |
+| **TBC1D3, + secondary (best)** | 2,511 | **147/150** | **98.0%** | **10/12** |
+
+⭐**TBC1D3 reaches 98.0% of its canonical junctions and 10/12 complete copies — better than NPIP on both
+axes**, and `RUSTLE_GTF_SECONDARY` helps it MORE (+30 junctions, +6 copies, vs +27/+10 for NPIP relative to
+family size). The 147 recovered is exactly the number of TBC1D3 junctions any alignment observes, i.e. it is
+AT its data ceiling.
+
+⚠**Two corrections this forces:**
+1. **TBC1D3's annotation is far cleaner than NPIP's** — 150 canonical of 155 annotated (96.8%) against
+   NPIP's 209/249 (83.9%). The §6m7 artifact problem is an NPIP problem, not a family-definition problem.
+2. **The memory note "TBC1D3 0/19 expressed in testis" must not be read as "unreconstructable".** All 12
+   spliced copies carry read-observed junctions here (147/155, 94.8%). That note is a transcript-level
+   expression call and is a different quantity — do not quote the two together.
+
+**Family-level (lattice) metrics are UNCHANGED by any of today's work** — today's flags alter the `--gtf`
+reconstruction path, not the guided `records.tsv` the levels are computed on. Current values stand at the
+§6m2 baseline: NPIP L1a/L1b R 0.211 P 0.213 F 0.212 (pairwise sens 0.926, prec 0.044), L2 F 0.287, L3
+F 0.311; TBC1D3 L1a/L1b R 0.316 P 0.387 F 0.348 (sens 0.386, prec 0.142), L2 F 0.471, L3 **F 0.690 with
+P 1.000**.
