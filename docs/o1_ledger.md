@@ -24249,3 +24249,50 @@ so the two optima are not comparable and neither supports the other. §6o5 remai
 
 **Conclusion: MCL + the shared-exon conjunct stays the definition.** Neither a different operator (§6o2:
 percolation 0.695, louvain 0.598) nor a simpler threshold rule (0.729 mean) beats it.
+
+## §6o7 — RNA-side definition search on TWO substrates with leave-one-substrate-out: nothing beats the shipped triangle-leader rule (2026-09-18)
+
+The goal run's RNA half. Two genuine RNA-side substrates with identity-weighted edges over read-derived
+nodes, each with its own guided truth, **never pooled** (human/gorilla rule):
+- **HUMAN chr15/17/22**: `human2/dumpH_default` (5,770 nodes, 5,769 edges), truth `human2/guided.clusters.tsv`
+  → 206 clusters / 2,293 labelled nodes.
+- **GORILLA**: `o1_reps/dump` (17,923 nodes, 4,778 edges), truth `mcl_ann/gw_units_v3.clusters.tsv`
+  → 739 clusters / 2,427 labelled nodes.
+
+Scorer: node-independent truth (clusters with >= 2 labelled nodes), unclustered nodes get singleton
+predictions. ⚠**Absolute values are NOT comparable to §6ke's** (that used its own decomposition; this maps
+each RNA node to the maximally-overlapping guided locus). They are internally consistent for RANKING
+definitions, which is all they are used for.
+
+**1. Components of edges above an identity cut — WORSE than the shipped rule, and LORO fails.**
+
+| cut | HUMAN F | GORILLA F |
+|---|---|---|
+| 0.70 | **0.321** | 0.551 |
+| 0.80 | 0.305 | **0.583** |
+| 0.90 | 0.269 | 0.574 |
+| 0.97 | 0.228 | 0.540 |
+
+LORO: pick on gorilla (0.80) → human **F 0.305**; pick on human (0.70) → gorilla **F 0.551**. Recall is the
+casualty (human R 0.12-0.21): a bare identity cut shatters the RNA graph.
+
+**2. Triangle leaders (shipped) + an identity cut — no gain, and LORO is NEGATIVE.**
+
+| definition | HUMAN F | GORILLA F |
+|---|---|---|
+| **triangle leaders, no cut (SHIPPED)** | **0.285** | **0.572** |
+| + id >= 0.80 | 0.250 | **0.589** |
+| + id >= 0.90 | 0.249 | 0.570 |
+
+LORO: pick on gorilla (0.80) → human **F 0.250 vs 0.285 shipped (−0.035, WORSE)**; pick on human (no cut)
+→ gorilla unchanged. **The gorilla-only +0.017 does not transfer.**
+
+⭐**Conclusion: the shipped §0★★ clause-4 triangle-supported leader rule remains the best RNA-level
+definition.** Neither a simpler rule (identity components) nor an augmented one (leaders + identity cut)
+beats it under leave-one-substrate-out.
+
+⚠**The goal is NOT met at the RNA level.** The shipped rule has HIGH PRECISION (bipartite P 0.775 human /
+0.863 gorilla; §6ke reports 0.865) but **LOW RECALL** (R 0.175 human / 0.428 gorilla; §6ke 0.412). F is
+0.29-0.57 depending on substrate and scorer. **Recall, not precision, is the unmet half**, and it is a
+node/edge availability problem — most guided-truth loci have no expressed RNA node or no edge — not a
+grouping-rule problem. That matches §6m0 (58% of the de novo↔guided gap is node construction).
