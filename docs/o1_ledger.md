@@ -24729,3 +24729,42 @@ numbers EXACTLY (976 mRNAs / 456 loci, 345 chains, 11.6/69.3, 8.0/44.6, 7.6/35.6
 incomplete-splice_match (**217 ours vs 79 StringTie**), i.e. 5′-truncated pieces of real transcripts —
 the same signature §6p4 localised (TBC1D3 5′UTR 75.3% covered vs 3′UTR 100%). Intron-level precision stays
 **85.3-86.1%**.
+
+## §6p7 — precision and recall levers on chr20, and what `-R`/`-Q` really do (2026-09-19)
+
+Report `bench/PRECISION_LEVERS_CHR20.md`, filter `bench/ism_collapse.py`, commit eabd17ce.
+gffcompare vs `chr20_ref.gtf`, shared denominators (no `-R`/`-Q`):
+
+| arm | mRNAs | intron-chain Sn / **Pr** | transcript Sn / Pr | **matching chains** |
+|---|---|---|---|---|
+| **MAX RECALL** (`--read-isoform-k 3` + majority) | 1,275 | **8.4** / 33.4 | 7.9 / 28.2 | **358** |
+| baseline | 976 | 8.0 / 44.6 | 7.6 / 35.6 | 345 |
+| recall flags + ISM collapse | 856 | 7.7 / 47.3 | 7.3 / 38.7 | 329 |
+| **MAX PRECISION** (baseline + ISM collapse) | 784 | 7.6 / **51.9** | 7.1 / 41.6 | 324 |
+| StringTie | 712 | 7.7 / 47.4 | 7.3 / **47.1** | 331 |
+| FLAIR | 820 | 6.2 / 35.1 | 5.8 / 32.3 | 264 |
+
+⭐**ISM COLLAPSE is the precision lever.** `bench/ism_collapse.py` drops any transcript whose intron chain
+is a CONTIGUOUS SUB-CHAIN of another emitted transcript's chain (same contig/strand) — 5′-truncated
+fragments of something longer we already emit; single-exon transcripts only when contained in a multi-exon
+span. Pure GTF post-filter, assembler untouched. **Baseline intron-chain precision 44.6 → 51.9, the best of
+any arm or tool including StringTie's 47.4**, at essentially unchanged sensitivity (8.0 → 7.6); drops 192
+of 976 transcripts, costs 21 matching chains.
+
+This is §6p4's fragment problem, confirmed: the excess was ISM (217 vs StringTie's 79), not wrong junctions
+— intron-level precision was already 85-86%.
+
+⚠**Transcript-level precision still trails StringTie after the collapse (41.6 vs 47.1)** because that metric
+also requires matching ENDS. Our 5′/3′ boundaries are less exact; a separate problem, not fixed here.
+
+**`-R`/`-Q` (the user asked about `-q -r`; the meaningful flags are uppercase).** `-R` keeps only reference
+transcripts overlapping the query; `-Q` keeps only query transcripts overlapping the reference. With
+`-R -Q` every tool's sensitivity roughly doubles (ours 8.4 → 19.2, StringTie 7.7 → 16.6) as chr20's
+unexpressed genes leave the denominator — **a much more honest read of performance on what is actually
+expressed.**
+
+⚠⚠**But both make the denominator TOOL-DEPENDENT** (each tool gets its own reference and query subset), so
+**cross-tool Sn/Pr under `-R -Q` is NOT like-for-like.** Under `-R -Q` base+ISM appears to beat StringTie on
+both axes (17.4/53.3 vs 16.6/48.7) while its absolute matching-chain count is LOWER (324 vs 331) — the
+contradiction is the denominator, not the biology. **Use `-R -Q` to characterise one tool; use shared
+denominators or the absolute matching-chain count to compare tools.**
