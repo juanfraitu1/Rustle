@@ -24768,3 +24768,38 @@ expressed.**
 both axes (17.4/53.3 vs 16.6/48.7) while its absolute matching-chain count is LOWER (324 vs 331) — the
 contradiction is the denominator, not the biology. **Use `-R -Q` to characterise one tool; use shared
 denominators or the absolute matching-chain count to compare tools.**
+
+## §6p8 — assembly polish: `--assemble-only` reaches StringTie's precision band (2026-09-19)
+
+Prereg `docs/PREREG_assembly_polish_2026-09-19.md`, report `bench/ASSEMBLY_POLISH.md`.
+Shipped: `copy_assign --assembly-polish <none|mono|full>` (+ `--polish-mono-quantile`, default 0.75).
+`none` is byte-identical to the previous emit.
+
+Two post-assembly filters over the emitted GTF, using only the `reads "N"` attribute — no reference, no
+annotation, so both are legal de novo:
+
+- **`mono`** — a single-exon transcript has no junction evidence, so it must reach the upper quartile of
+  the run's own multi-exon read support. chr20 and chr11 independently self-tuned to a floor of 8.
+- **`full`** = `mono` + a **support-aware ISM collapse**: drop a chain that is a contiguous sub-chain of
+  another unless it carries at least as much read support as its container.
+
+⭐**chr20: `full` beats StringTie 3.0.1 on all four gffcompare axes** — matching intron chains 337 vs 331,
+intron-chain Sn/Pr 7.9/50.8 vs 7.7/47.4, transcript Sn/Pr 7.4/49.6 vs 7.3/47.1, from 682 vs 712 mRNAs.
+
+⭐**Held out on chr11** (chosen before any chr11 number existed; 10,534 reference transcripts): H2/H3/H4
+pass, **H1 fails by 0.5 points**. `full` costs 3.50% of matching chains (715 → 690) against a ≤3% bar, and
+StringTie keeps a ~2-point precision lead there (48.3/47.2 vs 50.2/50.0). The recall lead replicates
+cleanly: 690 vs 648 chains (+6.5%), and 761 at `k3 mono`.
+
+⭐**The `mono` floor is free on both chromosomes: 0 matching chains and 0 sensitivity lost**, transcript
+precision +8.0 (chr20) / +6.7 (chr11), novel loci 123 → 23 and 208 → 49. Every one of our 179 chr20
+single-exon predictions was junk against RefSeq. The ISM collapse is the paid half of the rule (−8 chains
+chr20, −25 chr11) and is reported separately for that reason.
+
+⚠The ISM pass is order-dependent (a fragment dropped by one container cannot serve as a container itself).
+Both implementations now sort containers by chain length then transcript id; before that fix the Rust and
+Python drop sets disagreed on 1 of 2,059 chr11 transcripts. They are now byte-identical and run-to-run
+deterministic.
+
+⚠Reading of the goal: **sensitivity is outperformed on both chromosomes; precision is outperformed on
+chr20 and only MATCHED on chr11.** Do not claim a precision win over StringTie in general.

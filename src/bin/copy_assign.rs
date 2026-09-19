@@ -177,6 +177,27 @@ struct Args {
     #[arg(long, default_value_t = false)]
     assemble_only: bool,
 
+    /// ⭐ ASSEMBLY POLISH (§6p8). Post-assembly precision filters over the emitted GTF, using only the
+    /// `reads "N"` attribute — no reference and no annotation, so this is legal in de novo mode.
+    ///
+    /// * `none` (default) — byte-identical to the unfiltered emit.
+    /// * `mono` — the MONO-EXONIC SUPPORT FLOOR. A single-exon transcript carries no junction evidence at
+    ///   all, so it must reach the upper quartile of the multi-exon read support in the same run
+    ///   (`--polish-mono-quantile`). Self-tuning: the threshold is read off this run's own distribution.
+    ///   Measured cost on chr20 and held-out chr11: **zero matching intron chains, zero sensitivity**;
+    ///   gain: transcript precision 35.6 → 43.6 (chr20) and 34.8 → 41.5 (chr11).
+    /// * `full` — `mono` plus the SUPPORT-AWARE ISM COLLAPSE: drop a transcript whose intron chain is a
+    ///   contiguous sub-chain of another's on the same contig/strand, unless it carries at least as much
+    ///   read support as its container. Adds ~6 more precision points but costs chains (345 → 337 on
+    ///   chr20, 715 → 690 on chr11), so it is a deliberate recall/precision trade, not a free win.
+    #[arg(long, default_value = "none", value_parser = ["none", "mono", "full"])]
+    assembly_polish: String,
+
+    /// Quantile of the multi-exon `reads` distribution used as the mono-exonic support floor under
+    /// `--assembly-polish`. 0.75 reproduces the validated setting.
+    #[arg(long, default_value_t = 0.75)]
+    polish_mono_quantile: f64,
+
     /// Minimum copies for a co-located family. Two-copy homologous families are the majority and were
     /// invisible to assignment at the old default of 3; lowering it to 2 changes default family detection
     /// on its own, independently of `--homology-primary`.
@@ -2043,6 +2064,137 @@ fn linearize_tsv_row(fam: &str, loc: (&str, u64, u64), c: &LinearizeCertificate)
         if c.perm_p.is_nan() { "NA".to_string() } else { format!("{:.4}", c.perm_p) },
         verdict_str(c.verdict)
     )
+}
+
+
+/// §6p8 assembly polish: drop low-evidence transcripts from an emitted GTF using only the `reads "N"`
+/// attribute. `mode` is "none" (no-op), "mono" (mono-exonic support floor) or "full" (floor + the
+/// support-aware ISM collapse). Returns (ism_dropped, mono_dropped, floor) for the log line.
+///
+/// Validated in `bench/ASSEMBLY_POLISH.md` against `docs/PREREG_assembly_polish_2026-09-19.md`: the mono
+/// floor costs zero matching intron chains on both chr20 and the held-out chr11; the ISM collapse trades
+/// chains for precision.
+fn polish_gtf_lines(lines: &mut Vec<String>, mode: &str, mono_quantile: f64) -> (usize, usize, u64) {
+    use std::collections::{HashMap, HashSet};
+    if mode == "none" {
+        return (0, 0, 0);
+    }
+    // exons per transcript, in genomic order, plus the transcript's read support
+    let mut exons: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
+    let mut key: HashMap<String, (String, String)> = HashMap::new(); // tid -> (contig, strand)
+    let mut reads: HashMap<String, u64> = HashMap::new();
+    for line in lines.iter() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 {
+            continue;
+        }
+        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        if let Some(r) = re_attr(f[8], "reads").and_then(|v| v.parse::<u64>().ok()) {
+            let e = reads.entry(tid.clone()).or_insert(0);
+            *e = (*e).max(r);
+        }
+        if f[2] != "exon" {
+            continue;
+        }
+        let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else { continue };
+        exons.entry(tid.clone()).or_default().push((a - 1, b));
+        key.entry(tid).or_insert_with(|| (f[0].to_string(), f[6].to_string()));
+    }
+    let mut chain: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
+    let mut span: HashMap<String, (i64, i64)> = HashMap::new();
+    for (tid, ex) in exons.iter_mut() {
+        ex.sort_unstable();
+        chain.insert(tid.clone(), (0..ex.len().saturating_sub(1)).map(|i| (ex[i].1, ex[i + 1].0)).collect());
+        span.insert(tid.clone(), (ex[0].0, ex[ex.len() - 1].1));
+    }
+
+    let mut drop: HashSet<String> = HashSet::new();
+    if mode == "full" {
+        // a fragment survives only if it carries at least as much support as the chain that contains it
+        let supported = |frag: &str, cont: &str| -> bool {
+            let rc = reads.get(cont).copied().unwrap_or(0);
+            rc > 0 && reads.get(frag).copied().unwrap_or(0) >= rc
+        };
+        let mut groups: HashMap<(String, String), Vec<String>> = HashMap::new();
+        for (tid, k) in key.iter() {
+            groups.entry(k.clone()).or_default().push(tid.clone());
+        }
+        for (_, tids) in groups.iter() {
+            // deterministic: longest chain first, ties broken by transcript id. Both the container
+            // scan and the mono-exonic host search depend on this order, so it must not come from a
+            // HashMap's iteration order.
+            let mut multi: Vec<&String> = tids.iter().filter(|t| !chain[*t].is_empty()).collect();
+            multi.sort_by(|a, b| chain[*b].len().cmp(&chain[*a].len()).then_with(|| a.cmp(b)));
+            for x in multi.iter() {
+                if drop.contains(*x) {
+                    continue;
+                }
+                let cx = &chain[*x];
+                for y in multi.iter() {
+                    if x == y || drop.contains(*y) {
+                        continue;
+                    }
+                    let cy = &chain[*y];
+                    if cy.len() >= cx.len() {
+                        continue;
+                    }
+                    let sub = (0..=cx.len() - cy.len()).any(|k| &cx[k..k + cy.len()] == cy.as_slice());
+                    if sub && !supported(y, x) {
+                        drop.insert((*y).clone());
+                    }
+                }
+            }
+            let mut tids: Vec<&String> = tids.iter().collect();
+            tids.sort();
+            for t in tids {
+                if !chain[t].is_empty() || drop.contains(t) {
+                    continue;
+                }
+                let s = span[t];
+                let host = multi.iter().find(|m| !drop.contains(**m) && span[**m].0 <= s.0 && s.1 <= span[**m].1);
+                if let Some(h) = host {
+                    if !supported(t, h) {
+                        drop.insert(t.clone());
+                    }
+                }
+            }
+        }
+    }
+    let n_ism = drop.len();
+
+    // mono-exonic support floor, read off this run's own multi-exon distribution
+    let mut multi_reads: Vec<u64> = chain
+        .iter()
+        .filter(|(t, c)| !c.is_empty() && !drop.contains(*t))
+        .map(|(t, _)| reads.get(t).copied().unwrap_or(0))
+        .collect();
+    multi_reads.sort_unstable();
+    let floor = if multi_reads.is_empty() || mono_quantile <= 0.0 {
+        0
+    } else {
+        multi_reads[((mono_quantile * multi_reads.len() as f64) as usize).min(multi_reads.len() - 1)]
+    };
+    if floor > 0 {
+        for (t, c) in chain.iter() {
+            if c.is_empty() && !drop.contains(t) && reads.get(t).copied().unwrap_or(0) < floor {
+                drop.insert(t.clone());
+            }
+        }
+    }
+    let n_mono = drop.len() - n_ism;
+    if !drop.is_empty() {
+        lines.retain(|line| {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 9 {
+                return true;
+            }
+            match re_attr(f[8], "transcript_id") {
+                Some(t) => !drop.contains(&t),
+                None => true,
+            }
+        });
+    }
+    (n_ism, n_mono, floor)
 }
 
 fn main() -> Result<()> {
@@ -4220,6 +4372,17 @@ fn main() -> Result<()> {
             eprintln!("[copy_assign] wrote {}.productivity.tsv ({} isoform(s) with an ORF, bar = half the family median ORF)",
                 args.out, prod_rows.len());
         }
+        if args.assembly_polish != "none" {
+            let before = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
+            let (n_ism, n_mono, floor) =
+                polish_gtf_lines(&mut gtf_lines, &args.assembly_polish, args.polish_mono_quantile);
+            let after = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
+            eprintln!(
+                "[copy_assign] ⭐ ASSEMBLY POLISH ({}): {before} transcripts -> ISM dropped {n_ism} -> \
+                 mono floor {floor} reads dropped {n_mono} -> {after} kept",
+                args.assembly_polish
+            );
+        }
         let mut gh = std::fs::File::create(format!("{}.gtf", args.out))?;
         for line in &gtf_lines {
             writeln!(gh, "{line}")?;
@@ -5114,6 +5277,69 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// §6p8: build a tiny GTF and check both polish passes. Layout on chr1/+:
+    ///  - LONG   2 introns, 9 reads   (the container)
+    ///  - SHORT  1 intron  = LONG's first intron, 2 reads   -> ISM-dropped (2 < 9)
+    ///  - STRONG 1 intron  = LONG's first intron, 9 reads   -> kept (support ties the container)
+    ///  - MONOHI single exon inside LONG's span, 9 reads    -> kept
+    ///  - MONOLO single exon inside LONG's span, 1 read     -> dropped by the ISM pass (host = LONG)
+    ///  - FREE   single exon at its own locus, 1 read       -> dropped only by the mono floor
+    #[test]
+    fn polish_drops_unsupported_fragments_and_bare_mono_loci() {
+        fn gtf(tid: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
+            let at = format!("gene_id \"g_{tid}\"; transcript_id \"{tid}\";");
+            let mut v = vec![format!(
+                "chr1\trustle\ttranscript\t{}\t{}\t.\t+\t.\t{at} reads \"{reads}\";",
+                exons[0].0, exons[exons.len() - 1].1
+            )];
+            for (k, (s, e)) in exons.iter().enumerate() {
+                v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t+\t.\t{at} exon_number \"{}\";", k + 1));
+            }
+            v
+        }
+        let build = || {
+            let mut l = Vec::new();
+            l.extend(gtf("LONG", 9, &[(100, 200), (300, 400), (500, 600)]));
+            l.extend(gtf("SHORT", 2, &[(100, 200), (300, 400)]));
+            l.extend(gtf("STRONG", 9, &[(100, 200), (300, 400)]));
+            l.extend(gtf("MONOHI", 9, &[(310, 390)]));
+            l.extend(gtf("MONOLO", 1, &[(320, 380)]));
+            l.extend(gtf("FREE", 1, &[(9000, 9500)]));
+            l
+        };
+        let tids = |l: &[String]| -> Vec<String> {
+            l.iter()
+                .filter(|x| x.contains("\ttranscript\t"))
+                .filter_map(|x| re_attr(x.split('\t').nth(8).unwrap(), "transcript_id"))
+                .collect()
+        };
+
+        // none is a no-op
+        let mut l = build();
+        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75), (0, 0, 0));
+        assert_eq!(l, build());
+
+        // mono: floor = p75 of {9, 2, 9} = 9, so both 1-read mono transcripts go, MONOHI stays
+        let mut l = build();
+        let (ism, mono, floor) = polish_gtf_lines(&mut l, "mono", 0.75);
+        assert_eq!((ism, floor), (0, 9));
+        assert_eq!(mono, 2);
+        assert_eq!(tids(&l), vec!["LONG", "SHORT", "STRONG", "MONOHI"]);
+
+        // full: SHORT is an unsupported sub-chain, MONOLO an unsupported mono inside LONG
+        let mut l = build();
+        let (ism, mono, _) = polish_gtf_lines(&mut l, "full", 0.75);
+        assert_eq!(ism, 2);
+        assert_eq!(mono, 1); // FREE has no host, so only the floor removes it
+        assert_eq!(tids(&l), vec!["LONG", "STRONG", "MONOHI"]);
+
+        // quantile 0 disables the floor entirely
+        let mut l = build();
+        let (_, mono, floor) = polish_gtf_lines(&mut l, "full", 0.0);
+        assert_eq!((mono, floor), (0, 0));
+        assert!(tids(&l).contains(&"FREE".to_string()));
+    }
+
     #[test]
     fn lift_blocks_map_both_strands_and_inverse() {
         // '+': query 0..10 aligned to target 100..110 with a 2-bp query insertion after 4 and a 3-bp deletion after 7
