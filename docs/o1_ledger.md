@@ -24863,3 +24863,24 @@ we match 0).
 
 ⚠The quantile 0.82 is the midpoint of a window {0.80, 0.85} found by looking at four chromosomes, so it
 is FITTED on four and validated on two; chr9 passed, chr5 did not. Report it that way.
+
+## §6q2 — chr5's two cells are a measured limit, not a tuning gap (2026-09-19)
+
+Report `bench/ASSEMBLY_POLISH.md` §6q2. Two more attempts refuted; the six-chromosome ceiling stays 28/30.
+
+⛔**`--polish-ism-3p`** (collapse only 3'-anchored sub-chains, on §6p4's 5'-truncation finding): 19-21/30
+against 28/30 unrestricted, at every fraction 0.02-0.05. Mid-chain and 5'-anchored sub-chains are junk at
+a similar rate. **§6p4's 5'-truncation signature says where the fragments COME FROM, not which sub-chains
+are safe to keep** (register 861).
+
+⛔**Single-exon recall is not intrinsically recoverable** (register 862). chr5's two matching single-exon
+predictions were traced: both pass the shadow rule and both carry **2 reads — the minimum possible** —
+against a self-tuned floor of 11 on that deep chromosome. Length does not separate either: among
+shadow-surviving single-exon predictions, the share of NON-matching ones longer than the shortest matching
+one is 49% (chr20), 82% (chr11), 73% (chr7), 72% (chr5); only chr14 separates. Admitting chr5's 2 matches
+costs ~120 junk transcripts, i.e. more transcript precision than the sensitivity cell is worth.
+
+⭐**POOLED over the six chromosomes (46,077 reference mRNAs): 2,800 matching intron chains vs StringTie's
+2,761 (+1.4%) and 2,808 vs 2,785 matching transcripts, from FEWER emitted transcripts (6,006 vs 6,167) —
+so transcript precision 46.8% vs 45.2% and sensitivity 6.09% vs 6.04%.** ⚠A pooled figure hides the
+per-chromosome variation; chr5 is a real miss inside it. Report both.

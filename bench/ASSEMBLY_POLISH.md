@@ -235,3 +235,45 @@ off. With six chromosomes consulted, the search was stopped rather than continue
 ⚠**Provenance of q = 0.82:** it is the midpoint of the window {0.80, 0.85} that was found by scoring four
 chromosomes, so it is **fitted on four and validated on two** — chr9 passed 5/5, chr5 did not. The shadow
 rule itself was designed on chr20 alone.
+
+
+---
+
+# §6q2 — why chr5's two cells do not close, and the pooled view
+
+Two further attempts, both refuted:
+
+| attempt | six-chromosome cells | why |
+|---|---|---|
+| `--polish-ism-3p`: collapse only 3'-anchored sub-chains, on §6p4's 5'-truncation finding | 19-21/30 at F = 0.02-0.05 | mid-chain and 5'-anchored sub-chains are junk at a similar rate; sparing them costs chr11/chr7/chr14 precision and still does not buy chr5 its chains (row 861) |
+| `--polish-ism-escape` × fraction 0.025-0.035 × quantile 0.82/0.86 | 21-26/30 | chr7 and chr14 start losing chains before chr5 recovers its own |
+
+## Single-exon recall is not intrinsically recoverable (row 862)
+
+chr5's two matching single-exon predictions were traced through the filters:
+
+| | length | reads | passes shadow | passes floor (11) |
+|---|---|---|---|---|
+| `DN_chr5_80803957_1` | 1,853 | **2** | yes | **no** |
+| `DN_chr5_122133896_1` | 599 | **2** | yes | **no** |
+
+Both pass the shadow rule and both sit at the **minimum possible read support**, against a self-tuned
+floor of 11 on that deep chromosome. Length does not rescue them either — among the single-exon
+predictions that survive the shadow rule, the share of non-matching ones LONGER than the shortest matching
+one is 49% (chr20), 82% (chr11), 73% (chr7), 72% (chr5); only chr14 separates (1/136). Admitting chr5's
+two matches means admitting ~120 junk transcripts with them, which costs more transcript precision than
+the sensitivity cell is worth. **Within the single-exon class, true positives are not separable from
+artifacts by read support, length, or genomic context.**
+
+## Pooled over the six chromosomes (46,077 reference mRNAs)
+
+| | ours | StringTie 3.0.1 |
+|---|---|---|
+| emitted mRNAs | **6,006** | 6,167 |
+| **matching intron chains** | **2,800** | 2,761 (+39, **+1.4%**) |
+| matching transcripts | **2,808** | 2,785 (+23, +0.8%) |
+| transcript precision | **46.8%** | 45.2% |
+| transcript sensitivity | **6.09%** | 6.04% |
+
+⚠A pooled figure hides the per-chromosome variation that the table above shows, and chr5 is a real miss
+inside it. It is reported as a genome-scale summary, not as a substitute for the per-chromosome verdict.
