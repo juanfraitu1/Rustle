@@ -23967,3 +23967,40 @@ pooled-mean trap.
 `PKD1P3-NPIPA1` are secondary-dominated. So the readthroughs holding NPIP's DNA boundary are not one
 phenomenon — some are unambiguous molecules, others exist there mainly as multimapping echoes, and only the
 latter would be touched by a secondary-alignment policy.
+
+## §6n9 — secondary-dominated readthrough filter SHIPPED (opt-in): the evidence-based discrimination register 844 said was missing (2026-09-18)
+
+User request after §6n8. `bench/readthrough_secondary_filter.py` + classification table
+`bench/readthrough_secondary_class.tsv` (189 records with fusion-junction support). Pure rule
+`classify(counts, max_secondary_frac)` with a `--self-test`; **`--max-secondary-frac` defaults to 1.0 = flags
+nothing**, the explicit no-op. 0.50 is the "secondary-majority" setting.
+
+**Rule.** A readthrough is FLAGGED when the reads carrying its FUSION junction are mostly SECONDARY, i.e.
+the record's defining junction exists at that locus mainly as a multimapping echo of a molecule placed
+primarily elsewhere. No support at all ⇒ never flagged (absence of evidence is not evidence of borrowing).
+Threshold is strict `>`, so exactly 0.50 survives.
+
+**At 0.50 it flags 9 of 189**, and the discrimination is exactly the one register 844 wanted:
+
+| record | primary | secondary | secondary frac | flagged |
+|---|---|---|---|---|
+| ERV3-1-ZNF117 | 30 | 3,721 | 0.9920 | **yes** |
+| **PKD1P4-NPIPA8** | 10 | 1,150 | 0.9914 | **yes** |
+| SLX1A-SULT1A3 | 2 | 122 | 0.9839 | **yes** |
+| **PKD1P3-NPIPA1** | 214 | 628 | 0.7458 | **yes** |
+| **PDXDC2P-NPIPB14P** | 726 | 1 | 0.0014 | no |
+| **PKD1P6-NPIPP1** | 110 | 3 | 0.0265 | no |
+
+⭐**Register 844's objection is answered.** The blunt "drop every readthrough" rule was refused because it
+deletes `PKD1P6-NPIPP1`, a genuine NPIP member (110 primary MAPQ-60 reads, canonical GT-AG, §6m1 addendum).
+This filter keeps it and `PDXDC2P-NPIPB14P`, and flags only the records whose evidence is borrowed. Note
+`SLX1A-SULT1A3`, one of the chimeras sitting in NPIP's L2 component (§6m3), is flagged too.
+
+⚠**Scope, and the trap not to fall into (§6n8).** The MEDIAN readthrough in every class is purely
+primary-supported and supplementary support is 0.1% overall — these are contiguous alignments, not split
+ones. **This flags a small minority by design (9/189) and must NOT be read as "readthroughs are
+artifacts".** It marks where the evidence is BORROWED, nothing more.
+
+**Not done:** wiring the flag into a node rule and measuring the certificate/family effect. The filter
+produces the classification; whether dropping those 9 changes anything is a separate pre-registered test,
+and §6m3 is the warning that node rules which shrink the node set have non-obvious costs.
