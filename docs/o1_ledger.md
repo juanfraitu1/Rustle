@@ -24385,3 +24385,50 @@ the missing ingredient** — candidates: Soto families restricted to expressed l
 (§6ko), or the Dishuck NPIP Iso-Seq groups. Until one exists, the honest report is the shipped definition's
 high precision (bipartite P 0.775-0.901) plus an explicit statement that recall is bounded by the truth's
 RNA-alignable fraction, measured here at 5.0%.
+
+## §6p0 — ⭐AN RNA-LEVEL DEFINITION THAT SCORES HIGH ON ALL THREE AXES, against RNA-derived truth, with a held-out family check (2026-09-18)
+
+The goal run's answer. Report `bench/RNA_LEVEL_DEFINITION.md`, commits b11175ab / 5973b420.
+
+> **Family = connected component of the L3 edge graph** (t1 AND f_ex >= 0.30 AND gap-excluded
+> identity **w_98 >= 0.995**), raised from the shipped 0.98.
+
+**Against the Dishuck Iso-Seq groups (RNA-derived, independent of our alignment gate), NPIP:**
+
+| L3 cut | R | P | **F** | pairwise sens | pairwise prec |
+|---|---|---|---|---|---|
+| **0.980 (SHIPPED)** | 0.222 | 0.222 | **0.222** | 1.000 | 0.157 |
+| 0.985 / 0.990 | 0.667 | 0.667 | **0.667** | 1.000 | 0.500 |
+| **0.995** | **0.833** | **0.833** | **0.833** | **1.000** | 0.667 |
+| 0.999 | 0.722 | 1.000 | 0.839 | 0.500 | 1.000 |
+
+Second NPIP view (Dishuck subfamilies): shipped 0.98 F 0.679 → 0.985 **F 0.773 at P 1.000**. Mean F over
+the two views: shipped **0.451** → 0.985 **0.720** → 0.995 **0.758**. Both views agree 0.98 is too low;
+they differ on the optimum (iso 0.995, lit 0.985), so the defensible recommendation is the **range
+0.985-0.995**.
+
+⭐**HELD-OUT FAMILY CHECK — TBC1D3, Guitart Fig 6C truth** (population/sequence-derived, independent, and
+never used to choose the cut). Its two robust multi-copy groups are M = {TBC1D3B, TBC1D3H} and
+CDKL = {TBC1D3K, TBC1D3}:
+
+| L3 cut | M together? | CDKL together? | component size |
+|---|---|---|---|
+| 0.980 (shipped) | YES | YES | 10 |
+| **0.985 / 0.990 / 0.995** | **YES** | **YES** | **9** |
+| 0.997 | YES | YES | 8 |
+| **0.999** | **no** | **no** | — |
+
+**Both truth pairs survive the whole recommended range while the component TIGHTENS (10 → 9 → 8)** — recall
+held, precision improved, on a family whose truth played no part in choosing the cut. **0.999 is refuted
+on both families** (NPIP sens 1.000 → 0.500; TBC1D3 both pairs lost).
+
+**Why the earlier RNA numbers looked hopeless (§6o8/§6o9).** They were scored against the guided DNA truth,
+of which **only 6.7% of within-family pairs align at all as spliced RNA** — the 0.052 ceiling was the
+alignable fraction, not an edge defect. Mapping artifact and node fragmentation were both refuted first.
+
+⚠**Caveats.** NPIP is a development family and the cut was chosen on its truths (the trend is monotone and
+large, 0.222 → 0.833, not a knife-edge). Truth sets are small (18 and 27 nodes; TBC1D3 contributes 2 pairs).
+An alignability-derived RNA truth tried earlier was **circular** and discarded — the Dishuck and Guitart
+truths are not.
+
+**Recommendation: raise the L3 cut from 0.98 to 0.995 (range 0.985-0.995).** Not changed; the user's call.
