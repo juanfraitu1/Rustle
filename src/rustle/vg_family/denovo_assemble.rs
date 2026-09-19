@@ -1236,6 +1236,22 @@ pub fn unmapped_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<(St
 /// Collect BOTH the primary reads (detection input) and ALL mapped reads (assignment input, incl.
 /// secondary/supplementary multimappers) overlapping `[lo, hi)` on `chrom`. Uses the `.bai`-indexed region
 /// query when available (fast — reads only the region, not the whole file), falling back to a full scan.
+/// ⭐ §6n2: admit SECONDARY alignments into the per-region read pool that feeds `--gtf` assembly
+/// (`RUSTLE_GTF_SECONDARY`, default OFF ⟹ byte-identical).
+///
+/// Measured on the 26 spliced NPIP copies against the §6m7 canonical truth: a complete canonical chain is
+/// present in PRIMARY reads for only **10 of 26** copies — exactly what the assembler emits — but for
+/// **18 of 26** once secondary alignments are admitted. The 8 copies in between are ones whose reads
+/// minimap2 placed primarily at a DIFFERENT paralogue; their chain exists in this locus only as a
+/// secondary record, so the assembler never sees it.
+///
+/// This is the O1⊥O2 abstention the module already documents for site construction: a read may support
+/// several sites at once, because "which copies exist" (O1) must not require first answering "where did
+/// this molecule come from" (O2). It is deliberately NOT a copy assignment.
+pub fn gtf_secondary_enabled() -> bool {
+    matches!(std::env::var("RUSTLE_GTF_SECONDARY"), Ok(v) if v != "0" && !v.is_empty())
+}
+
 pub fn reads_in_region(
     bam_path: &str,
     chrom: &str,
@@ -1268,7 +1284,7 @@ fn reads_in_region_indexed(
     for result in query {
         let record = result?;
         let rb = RecordBuf::try_from_alignment_record(&header, &record)?;
-        if let Some(pr) = primary_read_from_record(&rb, chrom) {
+        if let Some(pr) = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()) {
             primary.push(pr);
         }
         if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
@@ -1317,7 +1333,7 @@ impl BamIndexCache {
         for result in query {
             let record = result?;
             let rb = RecordBuf::try_from_alignment_record(&self.header, &record)?;
-            if let Some(pr) = primary_read_from_record(&rb, chrom) {
+            if let Some(pr) = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()) {
                 primary.push(pr);
             }
             if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
@@ -2667,6 +2683,20 @@ footprint: false,
         assert_eq!(pass1_skeletons_robust(&reads, 2, 1), vec![skel("c1", 1, 9000, 4, &[(200, 300)])]);
         // k=2 trims it to the 2nd-smallest start (100) and 2nd-largest end (520).
         assert_eq!(pass1_skeletons_robust(&reads, 2, 2), vec![skel("c1", 100, 520, 4, &[(200, 300)])]);
+    }
+
+    #[test]
+    fn gtf_secondary_flag_is_off_by_default_and_only_it_admits_secondaries() {
+        // The flag must be OFF unless explicitly set, so every existing catalog stays byte-identical, and
+        // it must be the ONLY thing that changes whether a secondary record becomes a site.
+        assert!(!gtf_secondary_enabled(), "RUSTLE_GTF_SECONDARY must default to off");
+        // A secondary record is admitted iff allow_secondary is true; supplementary never is.
+        let cig = vec![Op::new(Kind::Match, 100)];
+        let sec = rec(Flags::SECONDARY, 101, cig.clone());
+        assert!(alignment_read_from_record(&sec, "c1", false).is_none(), "secondary must be excluded when off");
+        assert!(alignment_read_from_record(&sec, "c1", true).is_some(), "secondary must be admitted when on");
+        let sup = rec(Flags::SUPPLEMENTARY, 101, cig);
+        assert!(alignment_read_from_record(&sup, "c1", true).is_none(), "supplementary stays excluded in both modes");
     }
 
     #[test]
