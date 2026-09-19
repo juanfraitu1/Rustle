@@ -24519,3 +24519,39 @@ being the optimum on the 268-family set, whereas 0.995 trades 0.034 of Soto mean
 **Action: L3 moved 0.995 → 0.985** (still a raise from the shipped 0.98, and the same value the §6p0 range
 `0.985-0.995` already named as its lower bound). Revert to 0.995 if the NPIP Iso-Seq truth is weighted
 above breadth.
+
+## §6p3 — SELF-TUNING THE L3 CUT: three parameter-free rules tried, ALL FAIL. The threshold encodes biology the graph does not contain (2026-09-19)
+
+User: *"can we make that parameter more self-tuning?"* — the advisor's "no arbitrary thresholds" goal.
+Three data-driven rules, each replacing the fixed cut with something derived from the graph:
+
+| rule | NPIP iso F | NPIP lit F | mean | verdict |
+|---|---|---|---|---|
+| **largest gap** in each component's sorted internal weights | 0.222 | 0.679 | **0.451** | picks median cut **0.9688** — lands back at old-0.98 behaviour |
+| **maximum persistence** (single-linkage lifetime, the certificate's own quantity) | 0.222 | 0.679 | **0.451** | persistence rewards the BIG over-merged blobs, not tight subfamilies |
+| **weight quantile** (cut = q-th quantile of the L3 weights) | 0.833 @ q=0.75 | 0.683 | **0.758** | works HERE (ties fixed 0.995) but **degenerates elsewhere** |
+| fixed 0.985 (current) | 0.667 | 0.773 | 0.720 | — |
+
+**The quantile rule looked promising and then failed the generalisation test.** Run on the three guided
+catalogs its derived cuts collapse to the ceiling:
+
+| rule | chr5/7/21 | chr15/17 | chr1 | mean F | derived cuts |
+|---|---|---|---|---|---|
+| quantile 0.70 | 0.621 | 0.500 | 0.602 | **0.575** | **1.0000 / 1.0000** / 0.9853 |
+| quantile 0.75 | 0.621 | 0.500 | 0.567 | 0.563 | 1.0000 / 1.0000 / 0.9899 |
+| **fixed 0.985** | 0.698 | 0.697 | 0.597 | **0.664** | — |
+
+Those catalogs' weight distributions are dominated by near-identical SD pairs, so their median weight is
+~1.0 and any quantile rule cuts at the ceiling, dissolving everything.
+
+⭐**Conclusion: the L3 cut cannot be self-tuned from graph topology or from its own weight distribution.**
+The two are structurally different objects — the lattice graph's median L3 weight is 0.9826, the guided
+catalogs' is ~1.0000 — so no single distribution-derived rule transfers.
+
+**What the threshold actually encodes is biology, not an arbitrary choice** — and that is the defensible
+answer for the advisor. `docs/seeded_family_definition.md` already records the anchor: **median CHM13
+paralog p-distance is 0.0190 for NPIP, i.e. identity ~0.981**, and the measured optimum is 0.985. The cut
+is one notch above measured paralog divergence. **A principled self-tuning rule would estimate paralog
+divergence per substrate from an independent source (a tree, or SEDEF SD identities) and set the cut from
+it — not read it off the edge weights, which are the thing being thresholded.** Untested; that is the
+concrete next design.
