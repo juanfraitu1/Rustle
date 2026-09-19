@@ -24224,3 +24224,28 @@ leave-one-out here, because `records.tsv` is NPIP/TBC1D3-scoped and no second la
 
 **What would make it a candidate:** a lattice graph for a second region (chr5/7/21 or chr1) so the cut can
 be picked on one and reported on the other, exactly as §6o3 did. That build is the blocking dependency.
+
+## §6o6 — plain identity-threshold components are consistently WORSE than MCL + the shared-exon conjunct (LORO, 3 regions) (2026-09-18)
+
+Testing whether the simplest possible definition — connected components of edges above an identity cut —
+can replace MCL, and whether the RNA-side 0.990 optimum (§6o5) reproduces on the guided graph.
+
+| identity cut | chr5/7/21 | chr15/17 | chr1 | mean F |
+|---|---|---|---|---|
+| 0.900 | 0.731 | 0.675 | 0.687 | 0.698 |
+| 0.950 | 0.747 | 0.706 | 0.701 | 0.718 |
+| **0.970** | **0.759** | 0.703 | **0.723** | **0.729** |
+| 0.980 | 0.746 | 0.674 | 0.700 | 0.707 |
+| 0.990 | 0.715 | 0.643 | 0.650 | 0.669 |
+| 0.995 | 0.680 | 0.582 | 0.578 | 0.613 |
+
+**LORO picks 0.970 in all three folds** (F 0.759 / 0.703 / 0.723) — a stable interior optimum, so the
+identity cut is a real lever. **But it never reaches MCL + f_ex 0.60** (F 0.845 / 0.733 / 0.779, §6o3):
+worse in every region, by 0.086 / 0.030 / 0.056.
+
+⚠**The RNA-side 0.990 (§6o5) is NOT corroborated here — the guided optimum is 0.970.** These are different
+quantities (gene-vs-gene `asm20` identity vs the lattice's gap-excluded `w_98` over f_ex-passing records),
+so the two optima are not comparable and neither supports the other. §6o5 remains development-only.
+
+**Conclusion: MCL + the shared-exon conjunct stays the definition.** Neither a different operator (§6o2:
+percolation 0.695, louvain 0.598) nor a simpler threshold rule (0.729 mean) beats it.
