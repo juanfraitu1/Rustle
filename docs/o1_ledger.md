@@ -24156,3 +24156,40 @@ construction, F 0.79-0.81) means **chr5/7/21's 0.845 is at or above the ceiling 
 single-annotation truth** — saturated, not headroom. Soto is also itself a cover (§6n7).
 
 **Candidate for the shipped default; NOT changed.** The decision is the user's.
+
+## §6o4 — the RNA-side of the goal: f_ex SATURATES there, and the §6n9 readthrough filter gives a small real gain while "drop all readthroughs" is denominator shrinkage (2026-09-18)
+
+Testing whether §6o3's guided-side lever transfers to the RNA-side copy graph (lattice L2, NPIP/TBC1D3
+region, 423 nodes). Truth = Soto families with >= 2 nodes present (10 families / 52 genes), scored on the
+Soto-labelled universe — the analogue of the guided scorer's `g in ss.universe`.
+⚠Without that universe filter the same run reports pairwise precision 0.05, which is a truth-COVERAGE
+artifact (the truth labels 52 of 423 nodes), not over-merge. Do not quote unfiltered RNA-side precision.
+
+**1. The f_ex lever saturates on the RNA side.**
+
+| L2 f_ex cut | R | P | F | pairwise sens | prec |
+|---|---|---|---|---|---|
+| **0.30 (shipped)** | 0.558 | 0.569 | **0.563** | 0.908 | 0.290 |
+| 0.40 | 0.558 | 0.580 | 0.569 | 0.890 | 0.299 |
+| **0.60 / 0.80 / 0.90** | 0.558 | 0.592 | **0.574** | 0.890 | 0.300 |
+
+Only **+0.011 F**, flat from 0.60 upward — against **+0.022 mean F and +0.062 precision** on the guided
+side (§6o3). **The guided-side gain does not transfer; the RNA-side weak axis is precision (0.300) and f_ex
+does not reach it.**
+
+**2. Readthrough removal, with the denominator guard applied:**
+
+| arm | nodes | truth genes | R | P | **F** | sens | prec | verdict |
+|---|---|---|---|---|---|---|---|---|
+| baseline | 423 | 52 | 0.558 | 0.569 | **0.563** | 0.908 | 0.290 | — |
+| **drop §6n9 SECONDARY-DOMINATED (9 nodes)** | 419 | 50 | 0.580 | 0.592 | **0.586** | 0.902 | 0.302 | **+0.023 F at −3.8% denominator — a real gain** |
+| drop ALL readthroughs (register 844) | 411 | 45 | 0.644 | 0.659 | **0.652** | 0.942 | 0.352 | ⚠ **−13.5% truth genes ⇒ denominator shrinkage, not a gain** |
+
+⭐**The §6n9 filter is vindicated as the better of the two rules.** Dropping every readthrough looks better
+(F 0.652) but removes 7 of 52 truth genes — it wins by deleting members, exactly why register 844 refused
+it. The evidence-based filter removes 9 nodes, costs 2 truth genes, and still gains +0.023 F.
+
+**Goal status.** Guided side: F 0.845 / precision 0.898 on chr5/7/21 at f_ex 0.60 (§6o3, LORO-validated).
+RNA side: F 0.586 after the readthrough filter, with recall already high (sens 0.902) and **precision 0.302
+the binding constraint**. The guided↔RNA gap remains the project's central problem and f_ex is not the
+lever for it.
