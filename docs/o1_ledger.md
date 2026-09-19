@@ -24555,3 +24555,35 @@ is one notch above measured paralog divergence. **A principled self-tuning rule 
 divergence per substrate from an independent source (a tree, or SEDEF SD identities) and set the cut from
 it — not read it off the edge weights, which are the thing being thresholded.** Untested; that is the
 concrete next design.
+
+## §6p4 — WHERE THE INFORMATION IS LOST: not CDS, not 3'UTR — it is the 5'UTR, and only where truncation bites (2026-09-19)
+
+User: *"how do we determine where info is being lost; the DNA contains introns, exons and UTRs, are we
+losing any of those?"* Split every NPIP and TBC1D3 copy's annotated gene into feature classes and measured
+per-base read coverage (`-F 2308`, real testis library).
+
+| family | 5'UTR | CDS | 3'UTR | intron |
+|---|---|---|---|---|
+| **NPIP** | 10,402 bp → **98.0%** | 39,067 bp → **99.8%** | 792 bp → **98.9%** | 428,597 bp → 77.3% |
+| **TBC1D3** | 6,525 bp → **75.3%** | 15,462 bp → **99.8%** | 967 bp → **100.0%** | 88,699 bp → 93.7% |
+
+⭐**CDS is essentially COMPLETE in both families (99.8%). No coding sequence is being lost.**
+
+⭐**The one real loss is TBC1D3's 5'UTR: 24.7% of its bases are never covered** — while its 3'UTR is
+**100.0%** covered. That asymmetry is the exact signature of **5' truncation in a polyA-anchored protocol**:
+the 3' end is always reached, the 5' end is lost. It independently corroborates §6n0, where the simulation
+measured 5' truncation as costing 6 of 26 NPIP copies, and it localises the loss to a specific feature
+class rather than "reads are short".
+
+NPIP does not show the effect (5'UTR 98.0%), consistent with its deeper expression in this library.
+
+**Intron coverage is high in both (77.3% / 93.7%)**, i.e. there is substantial intronic signal — pre-mRNA
+or retained introns. That is what the gene-body chain edges are built from, and it is NOT a loss.
+
+**Consequences for the definition.**
+- Any family rule built on **CDS is safe** — the evidence is essentially complete.
+- Any rule relying on **transcript 5' ends (TSS position, 5'UTR structure, first-exon identity) is
+  unreliable for TBC1D3-like families**, where a quarter of the 5'UTR is unobserved. ⚠This is a concrete
+  reason the §6l1/FAM90A-style "first-intron difference" subfamily criteria were fragile.
+- It also explains why §6n2's secondary read pool helped so much: it recovers reads whose 5' portion
+  aligned elsewhere, which is precisely the truncation-affected end.
