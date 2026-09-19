@@ -169,3 +169,96 @@ on the development chromosome subject to beating StringTie there selected a cell
 recall/precision balance. The shipped recommendation is Addendum A's `k = 0, F = 0.02`. Register row 855.
 
 Full numbers: `bench/ASSEMBLY_POLISH.md` §6p9. Ledger §6p9.
+
+---
+
+# Addendum C — the shadow rule and the final setting (§6q0), written before chr5/chr9 exist
+
+## Why a new rule
+
+At `k=0, F=0.02` the only miss was chr11 transcript precision (49.2 vs 50.0), and it was measured to be
+**single-exon transcripts, not chains**: chr11 emitted 36 to StringTie's 16. Removing all of them fixed
+chr11 but cost chr14 two real matching transcripts, so a discriminator was needed, not a blanket policy.
+
+## The discriminator, designed on chr20 alone
+
+On chr20's 177 unfiltered single-exon predictions (2 of which match a reference transcript):
+
+| feature | matching | non-matching |
+|---|---|---|
+| overlaps a same-strand multi-exon EXON | 0 / 2 | 24 / 175 |
+| overlaps an ANY-strand multi-exon EXON | 1 / 2 | 41 / 175 |
+| overlaps a same-strand multi-exon SPAN | 0 / 2 | 28 / 175 |
+| overlaps an anti-strand multi-exon SPAN | **2 / 2** | 46 / 175 |
+
+**`--polish-mono-shadow`**: drop a single-exon transcript that overlaps any multi-exon EXON on either
+strand, or any same-strand multi-exon SPAN. A single-exon read pile has no splice motif, so its strand
+label carries no evidence — which is why exon overlap is taken on either strand. Anti-strand SPAN overlap
+is deliberately NOT a criterion: both chr20 matches have one. Of the chr20 single-exon predictions that
+survive the read floor and match a reference, the rule removes none.
+
+## The mono floor quantile
+
+With the shadow rule on, `--polish-mono-quantile` was swept over {0.75, 0.80, 0.85, 0.90, 0.95} on the
+four chromosomes already in use. The 20-cell scorecard: 0.75 → 19/20 (chr11 transcript Pr 49.8), **0.80
+→ 20/20**, **0.85 → 20/20**, 0.90 → 19/20 (chr14 transcript Sn), 0.95 → 19/20 (same).
+
+⚠**That window was chosen by looking at all four chromosomes, so it is a fitted value, not a validated
+one.** The registered setting is the **midpoint of the passing window, q = 0.82**, which maximises the
+distance to both observed failure edges, and it is tested on two chromosomes that do not yet exist in this
+project.
+
+## Registered setting
+
+```
+copy_assign --assemble-only --assembly-polish full \
+            --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82
+```
+
+## Held-out test: chr5 and chr9, both untouched
+
+**Hypotheses:**
+- **C1 (primary)** — on **both** chr5 and chr9, all four gffcompare rates and the matching-intron-chain
+  count are ≥ StringTie's, i.e. 5/5 on each, 10/10 over the two.
+- **C2** — matching intron chains ≥ StringTie's on both.
+- **C3** — the setting is still 20/20 on chr20/11/7/14 at q = 0.82 (a consistency check on the midpoint,
+  not a held-out result).
+
+A miss on either new chromosome is reported as a miss, with the number, and the fitted nature of q is
+reported whatever the outcome.
+
+---
+
+# VERDICTS for Addendum C (recorded after chr5 and chr9; nothing above was edited)
+
+Registered setting: `--assemble-only --assembly-polish full --polish-isoform-fraction 0.02
+--polish-mono-shadow --polish-mono-quantile 0.82`.
+
+| | chr5 ★ | chr9 ★ |
+|---|---|---|
+| C1 all four rates and the chain count ≥ StringTie | ⛔ **3/5** | ✅ **5/5** |
+| C2 matching intron chains ≥ StringTie | 473 vs 476 ⛔ | 405 vs 403 ✅ |
+
+**C1 fails on chr5, passes on chr9.** C3 holds: the midpoint q = 0.82 is 5/5 on all four development
+chromosomes. **Overall 28 of 30 cells** across six chromosomes; five of six chromosomes are 5/5.
+
+**The chr5 miss is recall, not precision** (chr5 precision is 47.6/47.2 against StringTie's 45.5/45.3).
+Two cells: matching intron chains 473 vs 476 (−0.6%) and transcript Sn 5.8 vs 5.9. Its causes were
+measured separately:
+- the 3 chains are lost in the **ISM collapse**, which is harsher at chr5's depth (519,887 records, the
+  deepest of the six); the mono filters cost chr5 **zero** chains (485 → 485).
+- the transcript-Sn cell is **single-exon recall**: StringTie matches 5 single-exon reference transcripts
+  on chr5 (matching transcripts 481 vs chains 476) and we match 0.
+
+Four attempts to close chr5 were measured and all made the six-chromosome scorecard worse or equal:
+
+| attempt | result |
+|---|---|
+| `--polish-ism-escape` (self-tuned absolute escape for the ISM pass) | recovers chr5's chains 473 → 476 but costs chr11 its precision lead → **27/30** (row 858) |
+| the same escape at quantile 0.86 / 0.90 / 0.94 | 27, 27, 26 / 30 |
+| drop the ISM pass entirely and raise F to 0.05–0.16 | **9–12 / 30** — F is a blunt per-locus instrument and removes true minor isoforms (row 859) |
+| mono floor taken from the single-exon distribution instead of the multi-exon one (q 0.82/0.90/0.95) | 27, 27, **28** / 30 — never better, and chr5's two cells are untouched because they are not mono cells |
+| `--read-isoform-k 3` with the full polish | **18/30**; precision falls on every one of the six (row 855 confirmed a second time) |
+
+No further search was run: with six chromosomes consulted, continuing to tune would be fitting the panel
+rather than the problem.

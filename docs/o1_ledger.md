@@ -24833,3 +24833,33 @@ is strictly worse than not adding it. Register row 855.
 
 ⚠No single F is 5/5 on all four (chr11 wants 0.03, chr7 wants 0.02) — never quote a per-chromosome best
 as the rule.
+
+## §6q0/§6q1 — the shadow rule: 28/30 cells against StringTie over six chromosomes (2026-09-19)
+
+Prereg `docs/PREREG_assembly_polish_2026-09-19.md` Addendum C, report `bench/ASSEMBLY_POLISH.md`.
+Shipped: `--polish-mono-shadow`, `--polish-ism-escape` (both default off).
+
+⭐**SHIPPED RECOMMENDATION:**
+`copy_assign --assemble-only --assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82`
+
+**Shadow rule (§6q0).** Drop a single-exon transcript that overlaps any multi-exon EXON on EITHER strand,
+or any SAME-strand multi-exon SPAN. A single-exon read pile has no splice motif, so its strand label
+carries no evidence — which is why exon overlap is taken on either strand. ⚠**Anti-strand SPAN overlap is
+NOT a criterion: both chr20 matching single-exon predictions have one** (register 857).
+
+⭐**28 of 30 (chromosome × metric) cells match or outperform StringTie 3.0.1** over chr20/11/7/14/5/9.
+**Five of six chromosomes are 5/5, including held-out chr9.** Matching intron chains: 335/331, 683/648,
+515/515, 389/388, 473/476, 405/403.
+
+⚠**chr5 misses two cells, both RECALL** (its precision is 47.6/47.2 vs 45.5/45.3): matching chains 473 vs
+476, and transcript Sn 5.8 vs 5.9. Causes measured: the 3 chains are lost in the ISM collapse, which is
+harsher at chr5's depth (519,887 records, deepest of the six) — the mono filters cost chr5 zero chains;
+the transcript-Sn cell is single-exon recall (StringTie matches 5 single-exon reference transcripts there,
+we match 0).
+
+⛔Four closing attempts all scored worse or equal: ISM escape 27/30 (row 858); no-ISM with a larger F
+9-12/30 (row 859); mono floor from the single-exon distribution ≤28/30 (row 860); `--read-isoform-k 3`
+18/30 (row 855, confirmed a second time — its precision falls on ALL SIX).
+
+⚠The quantile 0.82 is the midpoint of a window {0.80, 0.85} found by looking at four chromosomes, so it
+is FITTED on four and validated on two; chr9 passed, chr5 did not. Report it that way.

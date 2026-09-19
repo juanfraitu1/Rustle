@@ -164,3 +164,74 @@ a per-chromosome best as if it were the rule — F = 0.02 is the one that was fi
 reference GTF from `chm13v2.0_RefSeq_full.gff.gz` via `/mnt/linuxdisk/tmp/gff2gtf.py` — validated to
 reproduce gffread's `chr20_ref.gtf` transcript count exactly (4,574 = 4,574); `gffread` is not installed.
 StringTie 3.0.1 `-L -p 4` on the same BAM in every case. FLAIR was run on chr20 only.
+
+
+---
+
+# §6q0 — the shadow rule and the final setting (six chromosomes)
+
+## Shipped recommendation
+
+```
+copy_assign --assemble-only --assembly-polish full \
+            --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82
+```
+
+**`--polish-mono-shadow`**: drop a single-exon transcript that overlaps any multi-exon EXON on **either**
+strand, or any **same-strand** multi-exon SPAN. A single-exon read pile has no splice motif, so its strand
+label carries no evidence — hence either-strand exon overlap. Designed on chr20's 177 unfiltered
+single-exon predictions:
+
+| feature | matches a reference | matches none |
+|---|---|---|
+| same-strand multi-exon EXON | 0 / 2 | 24 / 175 |
+| any-strand multi-exon EXON | 1 / 2 | 41 / 175 |
+| same-strand multi-exon SPAN | 0 / 2 | 28 / 175 |
+| anti-strand multi-exon SPAN | **2 / 2** | 46 / 175 |
+
+⚠Anti-strand SPAN overlap is deliberately **not** a criterion — every true positive has one (register 857).
+
+## Result: 28 of 30 cells over six chromosomes
+
+ours / StringTie 3.0.1 `-L -p 4`; bold = ours at least matches. ★ = held out after the rule was fixed.
+
+| | chr20 | chr11 | chr7 | chr14 | **chr5 ★** | **chr9 ★** |
+|---|---|---|---|---|---|---|
+| reference transcripts | 4,574 | 10,534 | 8,726 | 6,241 | 8,174 | 7,874 |
+| **matching intron chains** | **335**/331 | **683**/648 | **515**/515 | **389**/388 | 473/**476** | **405**/403 |
+| intron-chain Sn | **7.8**/7.7 | **7.0**/6.6 | **6.4**/6.4 | **7.1**/7.1 | **6.3**/6.3 | **5.5**/5.5 |
+| intron-chain Pr | **51.9**/47.4 | **50.3**/50.2 | **44.7**/43.5 | **43.8**/42.0 | **47.6**/45.5 | **44.3**/42.8 |
+| transcript Sn | **7.4**/7.3 | **6.5**/6.2 | **5.9**/5.9 | **6.3**/6.3 | 5.8/**5.9** | **5.2**/5.2 |
+| transcript Pr | **51.5**/47.1 | **50.1**/50.0 | **44.5**/43.0 | **43.5**/41.9 | **47.2**/45.3 | **44.0**/42.8 |
+| emitted mRNAs | 652/712 | 1,367/1,307 | 1,162/1,199 | 897/935 | 1,002/1,061 | 926/953 |
+| verdict | 5/5 | 5/5 | 5/5 | 5/5 | **3/5** | 5/5 |
+
+⭐**Five of six chromosomes match or outperform StringTie on every metric, including held-out chr9.**
+Against FLAIR (chr20, the only chromosome it was run on) the margin is far wider: 335 vs 264 chains.
+
+## The chr5 miss, measured
+
+Both missing cells are **recall**; chr5's precision is comfortably ahead (47.6/47.2 vs 45.5/45.3).
+
+- **matching chains 473 vs 476.** The chr5 ladder localises it: raw 485 → mono+shadow 485 (**the
+  single-exon filters cost chr5 zero chains**) → +ISM+fraction 473. The ISM collapse is harsher at chr5's
+  depth, which is the deepest of the six (519,887 records vs 327k–520k).
+- **transcript Sn 5.8 vs 5.9.** Single-exon recall: StringTie's matching transcripts exceed its matching
+  chains by 5 on chr5 (481 vs 476), i.e. it matches 5 single-exon reference transcripts; we match 0.
+
+## Four attempts to close chr5, all measured, none kept
+
+| attempt | six-chromosome cells | why not |
+|---|---|---|
+| `--polish-ism-escape` at q = 0.82 | 27/30 | recovers chr5's chains (473 → 476) but costs chr11 its precision lead (row 858) |
+| the escape at q = 0.86 / 0.90 / 0.94 | 27 / 27 / 26 | chr14 and chr9 transcript Sn start failing |
+| drop the ISM pass, raise F to 0.05–0.16 | 9–12/30 | F is per-locus and removes true minor isoforms wholesale (row 859) |
+| mono floor from the single-exon distribution | ≤ 28/30 | never better, and chr5's two cells are not single-exon cells (row 860) |
+| `--read-isoform-k 3` with the full polish | 18/30 | precision falls on **all six** (row 855, confirmed again) |
+
+`--polish-ism-escape` is kept as an explicit recall/precision dial with both endpoints measured, default
+off. With six chromosomes consulted, the search was stopped rather than continue fitting the panel.
+
+⚠**Provenance of q = 0.82:** it is the midpoint of the window {0.80, 0.85} that was found by scoring four
+chromosomes, so it is **fitted on four and validated on two** — chr9 passed 5/5, chr5 did not. The shadow
+rule itself was designed on chr20 alone.

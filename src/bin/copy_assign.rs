@@ -198,6 +198,36 @@ struct Args {
     #[arg(long, default_value_t = 0.75)]
     polish_mono_quantile: f64,
 
+    /// §6q1 ISM ABSOLUTE ESCAPE for `--assembly-polish full`. Keep a sub-chain fragment when its own read
+    /// support reaches the run's `--polish-mono-quantile` level of multi-exon support, even if its
+    /// container is deeper still. The ISM collapse gets harsher as coverage grows, and the deepest
+    /// chromosome measured (chr5, 519,887 records) is the only one where it pushes matching intron chains
+    /// below StringTie's (473 vs 476).
+    ///
+    /// ⚠**Not a good default, and measured as such (register row 858):** turning it on recovers chr5's
+    /// chains (473 → 476, a tie) but costs chr11 its precision lead (50.3 → 49.9 intron-chain, 50.1 → 49.7
+    /// transcript), for a net 27/30 against 28/30 with it off. It is a deliberate recall/precision dial
+    /// with both endpoints measured, not an improvement. Reuses the existing quantile, so it adds no new
+    /// constant.
+    #[arg(long, default_value_t = false)]
+    polish_ism_escape: bool,
+
+    /// ⭐ §6q0 SHADOW RULE for `--assembly-polish`: a single-exon transcript that lies in a spliced gene's
+    /// shadow is that gene's unspliced, intronic or antisense signal, not an independent single-exon gene.
+    /// Unlike the ISM host rule it needs neither containment nor a support test. Drop a single-exon
+    /// transcript when it
+    ///   * overlaps any EXON of a multi-exon transcript, on EITHER strand (a mono read pile has no splice
+    ///     motif, so its strand label carries no evidence and antisense overlap is not informative of
+    ///     independence), or
+    ///   * overlaps the SPAN of a multi-exon transcript on the SAME strand (its own gene's introns).
+    ///
+    /// Measured on chr20 (development): of 175 single-exon predictions that match no reference transcript
+    /// it removes a large share, and of the single-exon predictions that survive the read floor AND match
+    /// a reference transcript it removes **none** — the one chr20 survivor has only an anti-strand SPAN
+    /// overlap, which is deliberately not a criterion.
+    #[arg(long, default_value_t = false)]
+    polish_mono_shadow: bool,
+
     /// ⭐ §6p9 LOCUS ISOFORM FRACTION for `--assembly-polish`. Drop a transcript whose read support is
     /// below this fraction of the BEST-supported transcript at the same `gene_id`; the dominant isoform of
     /// a locus is never dropped. This is StringTie's `-f` criterion (fraction of the locus maximum), and it
@@ -2090,6 +2120,8 @@ fn polish_gtf_lines(
     mode: &str,
     mono_quantile: f64,
     isoform_fraction: f64,
+    mono_shadow: bool,
+    ism_absolute_escape: bool,
 ) -> (usize, usize, usize, u64) {
     use std::collections::{HashMap, HashSet};
     if mode == "none" {
@@ -2128,12 +2160,32 @@ fn polish_gtf_lines(
         span.insert(tid.clone(), (ex[0].0, ex[ex.len() - 1].1));
     }
 
+    // §6q1 the run's own "well-supported transcript" level: the mono_quantile-th percentile of multi-exon
+    // read support. It is the mono-exonic floor AND the ISM pass's absolute escape, so a run with deep
+    // coverage does not lose well-supported short isoforms merely because their containers are deeper.
+    let mut multi_all: Vec<u64> = chain
+        .iter()
+        .filter(|(_, c)| !c.is_empty())
+        .map(|(t, _)| reads.get(t).copied().unwrap_or(0))
+        .collect();
+    multi_all.sort_unstable();
+    let support_level = if multi_all.is_empty() || mono_quantile <= 0.0 {
+        0
+    } else {
+        multi_all[((mono_quantile * multi_all.len() as f64) as usize).min(multi_all.len() - 1)]
+    };
+
     let mut drop: HashSet<String> = HashSet::new();
     if mode == "full" {
-        // a fragment survives only if it carries at least as much support as the chain that contains it
+        // a fragment survives if it carries at least as much support as the chain that contains it, OR if
+        // it is itself a well-supported transcript by this run's own standard
         let supported = |frag: &str, cont: &str| -> bool {
+            let rf = reads.get(frag).copied().unwrap_or(0);
+            if ism_absolute_escape && support_level > 0 && rf >= support_level {
+                return true;
+            }
             let rc = reads.get(cont).copied().unwrap_or(0);
-            rc > 0 && reads.get(frag).copied().unwrap_or(0) >= rc
+            rc > 0 && rf >= rc
         };
         let mut groups: HashMap<(String, String), Vec<String>> = HashMap::new();
         for (tid, k) in key.iter() {
@@ -2189,6 +2241,7 @@ fn polish_gtf_lines(
         .map(|(t, _)| reads.get(t).copied().unwrap_or(0))
         .collect();
     multi_reads.sort_unstable();
+    // computed over the SURVIVORS of the ISM pass, which is why it can differ from `support_level`
     let floor = if multi_reads.is_empty() || mono_quantile <= 0.0 {
         0
     } else {
@@ -2197,6 +2250,59 @@ fn polish_gtf_lines(
     if floor > 0 {
         for (t, c) in chain.iter() {
             if c.is_empty() && !drop.contains(t) && reads.get(t).copied().unwrap_or(0) < floor {
+                drop.insert(t.clone());
+            }
+        }
+    }
+    // §6q0 same-strand shadow: a single-exon transcript on a spliced gene's own footprint is that gene's
+    // unspliced signal, not a gene. Anti-strand overlap is deliberately NOT a criterion.
+    if mono_shadow {
+        // multi-exon EXONS keyed by contig alone (either strand), and multi-exon SPANS keyed by
+        // contig+strand (same strand only)
+        let mut exons_any: HashMap<&str, Vec<(i64, i64)>> = HashMap::new();
+        let mut spans_same: HashMap<(&str, &str), Vec<(i64, i64)>> = HashMap::new();
+        for (t, c) in chain.iter() {
+            if c.is_empty() || drop.contains(t) {
+                continue;
+            }
+            let Some(k) = key.get(t) else { continue };
+            spans_same.entry((k.0.as_str(), k.1.as_str())).or_default().push(span[t]);
+            if let Some(ex) = exons.get(t) {
+                exons_any.entry(k.0.as_str()).or_default().extend(ex.iter().copied());
+            }
+        }
+        // merge each interval list so the overlap probe is a single sorted scan
+        let merge = |v: &mut Vec<(i64, i64)>| {
+            v.sort_unstable();
+            let mut out: Vec<(i64, i64)> = Vec::with_capacity(v.len());
+            for &(a, b) in v.iter() {
+                match out.last_mut() {
+                    Some(last) if a <= last.1 => last.1 = last.1.max(b),
+                    _ => out.push((a, b)),
+                }
+            }
+            *v = out;
+        };
+        for v in exons_any.values_mut() {
+            merge(v);
+        }
+        for v in spans_same.values_mut() {
+            merge(v);
+        }
+        // merged and disjoint: the only candidate is the last interval starting at or before `e`
+        let hits = |v: &Vec<(i64, i64)>, s: i64, e: i64| -> bool {
+            let hi = v.partition_point(|&(a, _)| a <= e);
+            hi > 0 && v[hi - 1].1 >= s
+        };
+        let mut mono: Vec<&String> =
+            chain.iter().filter(|(t, c)| c.is_empty() && !drop.contains(*t)).map(|(t, _)| t).collect();
+        mono.sort();
+        for t in mono {
+            let Some(k) = key.get(t) else { continue };
+            let (s, e) = span[t];
+            let exon_hit = exons_any.get(k.0.as_str()).is_some_and(|v| hits(v, s, e));
+            let span_hit = spans_same.get(&(k.0.as_str(), k.1.as_str())).is_some_and(|v| hits(v, s, e));
+            if exon_hit || span_hit {
                 drop.insert(t.clone());
             }
         }
@@ -4428,6 +4534,8 @@ fn main() -> Result<()> {
                 &args.assembly_polish,
                 args.polish_mono_quantile,
                 args.polish_isoform_fraction,
+                args.polish_mono_shadow,
+                args.polish_ism_escape,
             );
             let after = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
             eprintln!(
@@ -5369,26 +5477,26 @@ mod tests {
 
         // none is a no-op
         let mut l = build();
-        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0), (0, 0, 0, 0));
+        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0, false, false), (0, 0, 0, 0));
         assert_eq!(l, build());
 
         // mono: floor = p75 of {9, 2, 9} = 9, so both 1-read mono transcripts go, MONOHI stays
         let mut l = build();
-        let (ism, mono, _, floor) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0);
+        let (ism, mono, _, floor) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0, false, false);
         assert_eq!((ism, floor), (0, 9));
         assert_eq!(mono, 2);
         assert_eq!(tids(&l), vec!["LONG", "SHORT", "STRONG", "MONOHI"]);
 
         // full: SHORT is an unsupported sub-chain, MONOLO an unsupported mono inside LONG
         let mut l = build();
-        let (ism, mono, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0);
+        let (ism, mono, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0, false, false);
         assert_eq!(ism, 2);
         assert_eq!(mono, 1); // FREE has no host, so only the floor removes it
         assert_eq!(tids(&l), vec!["LONG", "STRONG", "MONOHI"]);
 
         // quantile 0 disables the floor entirely
         let mut l = build();
-        let (_, mono, _, floor) = polish_gtf_lines(&mut l, "full", 0.0, 0.0);
+        let (_, mono, _, floor) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false);
         assert_eq!((mono, floor), (0, 0));
         assert!(tids(&l).contains(&"FREE".to_string()));
     }
@@ -5423,18 +5531,76 @@ mod tests {
         };
         // TINY is 1% of BIG, so F = 0.02 removes it; SOLO is its own locus's dominant and survives
         let mut l = build();
-        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02);
+        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02, false, false);
         assert_eq!(frac, 1);
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
         // F below TINY's share keeps everything
         let mut l = build();
-        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005);
+        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005, false, false);
         assert_eq!(frac, 0);
         assert_eq!(tids(&l), vec!["BIG", "TINY", "SOLO"]);
         // even a huge F never empties a locus: the dominant of each gene_id survives
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.99);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.99, false, false);
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
+    }
+
+    /// §6q0/§6q1: the shadow rule drops single-exon transcripts in a spliced gene's shadow (exon overlap
+    /// on EITHER strand, or same-strand span overlap) but not one whose only overlap is an anti-strand
+    /// SPAN; and the ISM escape keeps a well-supported fragment its container would otherwise absorb.
+    #[test]
+    fn polish_shadow_and_ism_escape() {
+        fn gtf(tid: &str, strand: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
+            let at = format!("gene_id \"g_{tid}\"; transcript_id \"{tid}\";");
+            let mut v = vec![format!(
+                "chr1\trustle\ttranscript\t{}\t{}\t.\t{strand}\t.\t{at} reads \"{reads}\";",
+                exons[0].0, exons[exons.len() - 1].1
+            )];
+            for (k, (s, e)) in exons.iter().enumerate() {
+                v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at} exon_number \"{}\";", k + 1));
+            }
+            v
+        }
+        let tids = |l: &[String]| -> Vec<String> {
+            l.iter()
+                .filter(|x| x.contains("\ttranscript\t"))
+                .filter_map(|x| re_attr(x.split('\t').nth(8).unwrap(), "transcript_id"))
+                .collect()
+        };
+        // PLUS spans 100..600 on '+' with exons 100-200/300-400/500-600 (introns 201-299, 401-499)
+        let shadow = || {
+            let mut l = Vec::new();
+            l.extend(gtf("PLUS", "+", 20, &[(100, 200), (300, 400), (500, 600)]));
+            l.extend(gtf("SAMEEX", "+", 20, &[(150, 190)]));  // same-strand exon  -> drop
+            l.extend(gtf("ANTIEX", "-", 20, &[(150, 190)]));  // anti-strand exon  -> drop
+            l.extend(gtf("SAMEIN", "+", 20, &[(220, 280)]));  // same-strand intron (span) -> drop
+            l.extend(gtf("ANTIIN", "-", 20, &[(220, 280)]));  // anti-strand SPAN only -> KEEP
+            l.extend(gtf("FAR", "+", 20, &[(9000, 9500)]));   // no overlap -> KEEP
+            l
+        };
+        let mut l = shadow();
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, true, false);
+        assert_eq!(tids(&l), vec!["PLUS", "ANTIIN", "FAR"]);
+        // shadow off leaves them all
+        let mut l = shadow();
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false);
+        assert_eq!(tids(&l).len(), 6);
+
+        // ISM escape: FRAG's chain is a sub-chain of DEEP's; 10 reads is below DEEP's 100 but reaches the
+        // support level of the multi-exon set {100, 10, 10}, so at quantile 0 it escapes
+        let ism = || {
+            let mut l = Vec::new();
+            l.extend(gtf("DEEP", "+", 100, &[(100, 200), (300, 400), (500, 600)]));
+            l.extend(gtf("FRAG", "+", 10, &[(100, 200), (300, 400)]));
+            l.extend(gtf("OTHER", "-", 10, &[(9000, 9100), (9300, 9400)]));
+            l
+        };
+        let mut l = ism();
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false);
+        assert_eq!(tids(&l), vec!["DEEP", "OTHER"], "without the escape the fragment is absorbed");
+        let mut l = ism();
+        polish_gtf_lines(&mut l, "full", 0.10, 0.0, false, true);
+        assert_eq!(tids(&l), vec!["DEEP", "FRAG", "OTHER"], "with the escape a well-supported fragment survives");
     }
 
     #[test]
