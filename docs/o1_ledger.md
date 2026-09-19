@@ -23893,3 +23893,40 @@ virtue independent of what the node set is.**
 
 **Answer: NO. Keep MCL at the DNA level.** §6n5's Louvain candidate is scoped to the RNA-side copy graph
 only, and even there it remains untested on a held-out substrate and still costs the T1/T1′ nesting theorems.
+
+## §6n7 — Soto's families ARE a refinement of ours at L1/L2 (~80-90%), EXACT for NPIP; L3 is where we overtake them (2026-09-18)
+
+User: *"can we test if at some point we can replicate their families as a subset of ours? I ask since NPIP
+is one family for us but several for them."* Report `bench/SOTO_AS_A_REFINEMENT.md`, commit d2719f0c.
+Test: for each Soto family with >= 2 genes in our node set, how many of OUR groups do its members span?
+Span = 1 ⟹ their family is a subset of one of ours.
+
+⭐**First, a fact that reframes it: Soto's families are themselves a COVER, not a partition.** 148 of their
+2,333 genes are in >= 2 families (104 in two, 25 in three, 6 in four, 6 in five, **7 in six**). So the right
+statement is containment of each Soto family in one of ours, never a partition refinement on their side.
+
+| level | Soto fams (>=2) | **contained in ONE of ours** | rate | **NPIP-side (6 fams)** | our NPIP parts | TBC1D3 parts |
+|---|---|---|---|---|---|---|
+| L1a | 10 | 9 | **90.0%** | **6/6** | 2 | 2 |
+| L1b | 10 | 9 | **90.0%** | **6/6** | 2 | 2 |
+| **L2** | 10 | 8 | **80.0%** | **6/6** | 2 | 2 |
+| L3 | 10 | **2** | **20.0%** | **0/6** | 2 | 4 |
+
+⭐**The user's case is confirmed exactly: NPIP is ONE family for us and SIX for Soto (ID_149, ID_151-155),
+and at L1a/L1b/L2 all six lie entirely inside our NPIP group.** Their families are a subfamily level of
+ours — the nested-lattice story, measured.
+
+⭐**L3 is the crossover.** Containment collapses to 2/10 overall and **0/6** on the NPIP side: at L3 we cut
+FINER than Soto, so we split their families instead of refining them. **Soto sits between our L2 and L3.**
+
+**Held-out confirmation (chr5/7/21 MCL catalogs, never used to develop this):**
+E1 **61/76 = 80.3%**, E1S **55/72 = 76.4%** — independently reproduces the ~80% containment.
+
+**Failures are a SIZE effect, not spread evenly:** E1 containment is **53/59 (89.8%)** for Soto families of
+<= 3 genes but only **8/17 (47.1%)** above that. Consistent with §6kr's hand-picked eight (chr1 4/4 nested;
+chr15/17 only CHRFAM7A, with GOLGA8 spanning 3 of ours and LRRC37A 4 — all large).
+
+**Reading for the thesis.** "We disagree with Soto" is the wrong framing. **Above L3 we are a COARSENING of
+Soto at ~80-90%, and the residual is concentrated in their large families.** That is a far more tractable
+claim and it is the form §0★★★ needs. ⚠Quote the chr5/7/21 numbers (held-out); the 10-family lattice table
+is descriptive, NPIP/TBC1D3 being development families.
