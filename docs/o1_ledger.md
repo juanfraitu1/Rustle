@@ -23650,3 +23650,41 @@ annotation, that the family definition works, or that O1 works.
 The remaining levers are (a) recovering 5' ends and (b) the real-library effects. ⚠Note §6m6 already
 measured a chaining-style fix for (a) — read-isoform widening — at only +2 junctions on real data, so the
 protocol side of (a), not another chaining rule, is where the headroom is.
+
+## §6n1 — the 5'-recovery ceiling on REAL data, and a bigger defect it exposes: 18/26 copies already have ONE read carrying the whole chain, yet only 10 are emitted (2026-09-18)
+
+Measured to answer "how can we do 5' recovery". Real `A119b.t2t.bam`, 26 spliced NPIP copies, canonical
+truth (209 junctions), all alignments (`-F 2048`).
+
+| estimator | junctions / 209 | **copies complete** |
+|---|---|---|
+| best SINGLE read per copy | 186 | **18/26** |
+| **UNION of all reads, support >= 1** | **205** | **22/26** ← the 5'-recovery ORACLE |
+| UNION at support >= 3 | 204 | 22/26 |
+| **shipped assembler today** (k=3 + majority) | **170** | **10/26** |
+
+("complete" for a single read = that read's junction set CONTAINS all of the copy's canonical junctions.)
+
+⭐⭐**THE HEADLINE IS NOT TRUNCATION. 18 of 26 copies already have at least one read carrying their entire
+canonical chain, and the assembler emits only 10.** That 8-copy gap involves no 5' recovery at all — the
+information sits whole inside single reads and is dropped anyway.
+
+⚠**This qualifies §6n0.** The ceiling simulation found the assembler flawless (25/26, 208/208) on a clean
+locus with 26 transcripts. On a real locus carrying hundreds of chains it drops complete chains that exist.
+Both are true: the defect is one of SELECTION among many chains, and it only manifests at real-data
+complexity, so a clean-substrate ceiling test cannot see it. **"Stop optimising the assembler" (§6n0's
+closing recommendation) is withdrawn — it holds for the gate, not for chain selection.**
+
+**Priority order, by measured size:**
+
+| lever | gain | nature |
+|---|---|---|
+| emit the complete chain that a single read already carries | **10 → 18 copies (+8)** | selection defect, real-data only |
+| 5' recovery = per-locus UNION of read-observed junctions | **18 → 22 copies (+4)** | the actual 5'-recovery mechanism |
+| the last 4 copies | 22 → 26 | junctions absent from EVERY read — needs better data, not code |
+
+**The 5'-recovery mechanism itself, concretely:** support >= 1 and support >= 3 give the SAME 22/26, so no
+depth tuning is involved. The union is what matters: build the locus splice graph from read-observed
+junctions and emit the maximal 3'-anchored path, instead of requiring one exact observed chain to clear a
+floor. ⚠§6m6's read-isoform widening was a per-CHAIN approximation of this and returned only +2 junctions;
+the union is a per-JUNCTION/graph construction and is worth +4 copies at the oracle.
