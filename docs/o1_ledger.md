@@ -24079,3 +24079,44 @@ over-merge cases. So the precision story is region-dependent in a way the chr5/7
 **How to quote this from now on:** *"bipartite F ≈ 0.63 over all 72 Soto families on the held-out
 chromosomes (P 0.86, R 0.49); F 0.89 on the 11-family subset the rule was tuned against."* Never the second
 number alone.
+
+## §6o2 — ⚠CORRECTION to §6o1, and the operator question settled on held-out data: MCL wins, F 0.807 (2026-09-18)
+
+⚠⚠**§6o1 IS WRONG AND IS RETRACTED.** It scored "all Soto families" using `use` = families with >= 2 genes
+**in the clustering**. That conditions the TRUTH SET on the PREDICTION — trap #1 on this project's own list.
+Genes of families that fell below the cut were relabelled `other:` and counted as non-family, which is a
+truth error, not a model error.
+
+**Correct scoring:** the truth set is families with >= 2 genes **in the NODE SET** (prediction-independent);
+unclustered genes get singleton PREDICTIONS so recall is still penalised properly.
+
+| region (FIXED, node-independent truth) | fams | genes | R | P | **F** | pairwise sens | prec | §6o1 said |
+|---|---|---|---|---|---|---|---|---|
+| chr5/7/21 E1 (held-out) | 82 | 289 | 0.772 | 0.845 | **0.807** | 0.848 | 0.822 | 0.630 |
+| **chr5/7/21 E1S (SHIPPED)** | 82 | 289 | 0.758 | 0.862 | **0.807** | 0.834 | 0.851 | 0.628 |
+| chr15/17 E1 | 131 | 445 | 0.645 | 0.749 | **0.693** | 0.599 | **0.367** | 0.623 |
+| chr1 E1 | 55 | 211 | 0.649 | 0.774 | **0.706** | 0.572 | **0.475** | 0.569 |
+
+**The honest overall band is F 0.69-0.81, not 0.57-0.63.** Node coverage is NOT the limiter — all 331 Soto
+genes on chr5/7/21 have a node (100%); 87.9% of them are clustered into a family.
+
+⭐**Operator question settled on 82 HELD-OUT families (contrast §6n5, which ranked on NPIP/TBC1D3
+development families):**
+
+| definition | R | P | **F** | pairwise sens | prec |
+|---|---|---|---|---|---|
+| **MCL E1 / E1S (shipped)** | 0.772 / 0.758 | 0.845 / 0.862 | **0.807** | 0.848 / 0.834 | 0.822 / 0.851 |
+| 3-clique percolation | 0.654 | 0.741 | 0.695 | 0.848 | 0.443 |
+| 4-clique percolation | 0.592 | 0.750 | 0.662 | 0.816 | 0.519 |
+| 3-truss / 4-truss components | 0.584 / 0.554 | 0.642 / 0.681 | 0.612 / 0.611 | 0.864 / 0.825 | 0.305 / 0.375 |
+| **louvain** | 0.587 | 0.610 | **0.598** | 0.878 | 0.353 |
+| greedy modularity | 0.582 | 0.604 | 0.593 | 0.878 | 0.277 |
+| components @ best identity (0.97) | 0.681 | 0.858 | 0.759 | 0.662 | 0.838 |
+
+⚠**§6n5's Louvain lead does NOT generalise**: F 0.598 here against MCL's 0.807. Ranking operators on
+development families was misleading exactly as §6n5's own caveat warned. **MCL stays.** No simple identity
+threshold beats it either (best 0.97 → F 0.759).
+
+⭐**Where the remaining gap actually is: PRECISION on chr15/17 (0.367) and chr1 (0.475)**, against 0.851 on
+chr5/7/21. Those regions hold the sprawling over-merge families §6kr named (GOLGA8, LRRC37A,
+NBPF/NOTCH2NL). **That is the target for the RNA-level definition goal — not the clustering operator.**
