@@ -24935,3 +24935,37 @@ isoforms or mis-assemblies); calling them FSM would mean changing the reference,
 34 chr20 rejects have the same profile as StringTie's 32 (NNC 14/15, ISM 7/7, NIC 4/5). The polish's
 contribution is removing the categories that genuinely ARE artifacts, which is why the FSM SHARE rises
 while the FSM count falls slightly.
+
+## §6q6 — isoseq collapse and FLAIR: arms and mechanisms (2026-09-19)
+
+Report `bench/ISOSEQ_FLAIR_MECHANISMS.md`.
+
+⭐**FLAIR 3.0.0 now runs on all six chromosomes** (it previously existed only on chr20). ⚠A second,
+BROKEN FLAIR install at `_from_wsl/miniforge3/envs/flair` shadows the working one — `flair collapse`
+shells out to `filter_transcriptome_align.py` by bare name and dies with `ModuleNotFoundError: No module
+named 'flair'`. Fix: shims in `/mnt/linuxdisk/tmp/flair_shims` execing each `site-packages/flair/*.py`
+with the active env's python, prepended to PATH.
+
+⭐**Pooled over six chromosomes (46,077 reference mRNAs): ours 2,809 matching chains / 46.6% transcript
+precision, StringTie 2,761 / 45.2%, FLAIR 2,309 / 32.0%**, from 6,049 / 6,167 / 7,279 emitted.
+SQANTI3 rules-filter PASS: **94.3% / 93.6% / 71.8%**; FSM 46.6% / 45.4% / 32.9%. FLAIR's only lead is the
+lowest ISM fraction (7.5%) — its `--no_redundant` is more aggressive than ours, bought with 858
+artifact-category transcripts (11.8% vs our 5.9%).
+
+⛔**`isoseq collapse` is NOT RUNNABLE on this substrate (register 865)** — it needs native PacBio ZMW read
+names and read-group metadata; ours is an SRA-derived minimap2 BAM. 0-1 transcripts from 25,341 chr20
+alignments under every flag combination. Implement its mechanisms instead.
+
+⭐**Mechanism audit: we already had all of them but one.** isoseq's default 5'-shorter-exon collapse and
+FLAIR's `--no_redundant` ≡ our support-aware ISM collapse (§6p8); FLAIR `-s` ≡ our mono floor / ISM ratio;
+StringTie `-f` ≡ `--polish-isoform-fraction` (§6p9); isoseq's 5'/3' end windows are subsumed because our
+loci already collapse by exact chain. **The one we lacked was the fuzzy junction tolerance**, implemented
+as `--polish-fuzzy-junction` (+ `--polish-fuzzy-ism`), default 0 = byte-identical.
+
+⛔**REFUTED at isoseq's own default (register 866): 5 bp gives 15/30 cells against 28/30 at 0 bp**, costing
+81 matching chains for +0.24 points of precision; 2 bp is neutral. Merge-only and merge+ISM cost the same,
+so the damage is the MERGE. ⭐**Cause: our pass-1 already enforces canonical GT-AG (§6m8), so a sub-5 bp
+junction difference surviving into our GTF is a REAL tandem splice site — on chr20 the modal offset among
+the 25 pairs 5 bp merges is 3 bp, the NAGNAG signature** — and the merge deletes whichever variant has
+less read support. isoseq needs the tolerance because it collapses raw alignments with no motif
+constraint; we do not.

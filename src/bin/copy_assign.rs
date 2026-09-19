@@ -211,6 +211,31 @@ struct Args {
     #[arg(long, default_value_t = false)]
     polish_ism_3p: bool,
 
+    /// ⭐ §6q6 FUZZY JUNCTION TOLERANCE for `--assembly-polish` — the mechanism `isoseq collapse` calls
+    /// `--max-fuzzy-junction` (its default is 5). Two intron chains count as the SAME chain when they have
+    /// the same number of junctions and every corresponding donor/acceptor is within N bp.
+    ///
+    /// ⛔**REFUTED as a default at isoseq's own setting (register row 866).** 0 and 2 bp are 28/30 cells
+    /// against StringTie; **5 bp collapses to 15/30, costing 81 matching intron chains** over six
+    /// chromosomes for +0.24 points of transcript precision. Our pass-1 already enforces canonical GT-AG
+    /// motifs, so a sub-5 bp junction difference that survives into our GTF is a real tandem splice site
+    /// rather than alignment noise — on chr20 the modal offset among the pairs 5 bp merges is **3 bp, the
+    /// NAGNAG signature** — and the merge deletes whichever variant has less read support, which is not
+    /// always the annotated one. `isoseq collapse` needs the tolerance because it collapses raw
+    /// alignments without a motif constraint; we do not.
+    ///
+    /// Duplicates are merged into the best-supported member, whose `reads` attribute is left untouched
+    /// (the polish never rewrites support, only removes rows). By default the tolerance applies ONLY to
+    /// that near-duplicate merge; `--polish-fuzzy-ism` extends it to the ISM sub-chain test as well.
+    #[arg(long, default_value_t = 0)]
+    polish_fuzzy_junction: i64,
+
+    /// Extend `--polish-fuzzy-junction` to the ISM sub-chain containment test, which is what `isoseq
+    /// collapse` does. Measured as a near no-op on top of the merge — the two halves cost the same
+    /// (register row 866), so the damage is the merge itself, not the containment test.
+    #[arg(long, default_value_t = false)]
+    polish_fuzzy_ism: bool,
+
     /// ⭐ §6q4 FRACTION EXEMPTION for `--assembly-polish`. Exempt a transcript from
     /// `--polish-isoform-fraction` when its OWN read support reaches the run's `--polish-mono-quantile`
     /// level of multi-exon support. The fraction test is purely relative, so at a deep locus it discards
@@ -2155,6 +2180,8 @@ fn polish_gtf_lines(
     ism_3p_anchored: bool,
     ism_ratio: f64,
     fraction_exempt: bool,
+    fuzzy: i64,
+    fuzzy_ism: bool,
 ) -> (usize, usize, usize, u64) {
     use std::collections::{HashMap, HashSet};
     if mode == "none" {
@@ -2208,7 +2235,50 @@ fn polish_gtf_lines(
         multi_all[((mono_quantile * multi_all.len() as f64) as usize).min(multi_all.len() - 1)]
     };
 
+    // §6q6 fuzzy junction comparison (isoseq's `--max-fuzzy-junction`): equality and sub-chain
+    // containment up to a per-junction tolerance.
+    let near = |a: (i64, i64), b: (i64, i64)| (a.0 - b.0).abs() <= fuzzy && (a.1 - b.1).abs() <= fuzzy;
+    let chain_eq = |x: &[(i64, i64)], y: &[(i64, i64)]| -> bool {
+        x.len() == y.len() && x.iter().zip(y.iter()).all(|(&a, &b)| near(a, b))
+    };
+
     let mut drop: HashSet<String> = HashSet::new();
+
+    // §6q6 pass 0: merge near-duplicate chains into their best-supported member. Runs before the ISM
+    // collapse so a wobbled duplicate cannot act as a container, and before the mono floor so it cannot
+    // shift the support quantile.
+    if fuzzy > 0 {
+        let mut buckets: HashMap<(&str, &str, usize), Vec<&String>> = HashMap::new();
+        for (t, c) in chain.iter() {
+            if c.is_empty() {
+                continue;
+            }
+            if let Some(k) = key.get(t) {
+                buckets.entry((k.0.as_str(), k.1.as_str(), c.len())).or_default().push(t);
+            }
+        }
+        let mut keys: Vec<_> = buckets.keys().copied().collect();
+        keys.sort();
+        for bk in keys {
+            let mut ts = buckets.remove(&bk).unwrap();
+            // best-supported first, ties by id, so the kept representative is deterministic
+            ts.sort_by(|a, b| {
+                reads.get(*b).copied().unwrap_or(0).cmp(&reads.get(*a).copied().unwrap_or(0)).then_with(|| a.cmp(b))
+            });
+            for i in 0..ts.len() {
+                if drop.contains(ts[i]) {
+                    continue;
+                }
+                for j in (i + 1)..ts.len() {
+                    if !drop.contains(ts[j]) && chain_eq(&chain[ts[i]], &chain[ts[j]]) {
+                        drop.insert(ts[j].clone());
+                    }
+                }
+            }
+        }
+    }
+    let n_fuzzy = drop.len();
+
     if mode == "full" {
         // a fragment survives if it carries at least as much support as the chain that contains it, OR if
         // it is itself a well-supported transcript by this run's own standard
@@ -2253,7 +2323,13 @@ fn polish_gtf_lines(
                     } else {
                         (0..=cx.len() - cy.len()).collect()
                     };
-                    let sub = offsets.iter().any(|&k| &cx[k..k + cy.len()] == cy.as_slice());
+                    let tol = if fuzzy_ism { fuzzy } else { 0 };
+                    let sub = offsets.iter().any(|&k| {
+                        cx[k..k + cy.len()]
+                            .iter()
+                            .zip(cy.iter())
+                            .all(|(&a, &b)| (a.0 - b.0).abs() <= tol && (a.1 - b.1).abs() <= tol)
+                    });
                     if sub && !supported(y, x) {
                         drop.insert((*y).clone());
                     }
@@ -2275,7 +2351,7 @@ fn polish_gtf_lines(
             }
         }
     }
-    let n_ism = drop.len();
+    let n_ism = drop.len() - n_fuzzy;
 
     // mono-exonic support floor, read off this run's own multi-exon distribution
     let mut multi_reads: Vec<u64> = chain
@@ -2350,7 +2426,7 @@ fn polish_gtf_lines(
             }
         }
     }
-    let n_mono = drop.len() - n_ism;
+    let n_mono = drop.len() - n_ism - n_fuzzy;
 
     // §6p9 locus isoform fraction: a transcript far below the best-supported isoform of its own locus is
     // a minor-flow artifact. The locus dominant is never dropped, so no locus is ever emptied.
@@ -2381,7 +2457,7 @@ fn polish_gtf_lines(
             }
         }
     }
-    let n_frac = drop.len() - n_ism - n_mono;
+    let n_frac = drop.len() - n_ism - n_mono - n_fuzzy;
 
     if !drop.is_empty() {
         lines.retain(|line| {
@@ -2395,7 +2471,7 @@ fn polish_gtf_lines(
             }
         });
     }
-    (n_ism, n_mono, n_frac, floor)
+    (n_ism + n_fuzzy, n_mono, n_frac, floor)
 }
 
 fn main() -> Result<()> {
@@ -4585,6 +4661,8 @@ fn main() -> Result<()> {
                 args.polish_ism_3p,
                 args.polish_ism_ratio,
                 args.polish_fraction_exempt,
+                args.polish_fuzzy_junction,
+                args.polish_fuzzy_ism,
             );
             let after = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
             eprintln!(
@@ -5526,26 +5604,26 @@ mod tests {
 
         // none is a no-op
         let mut l = build();
-        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0, false, false, false, 1.0, false), (0, 0, 0, 0));
+        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0, false, false, false, 1.0, false, 0, false), (0, 0, 0, 0));
         assert_eq!(l, build());
 
         // mono: floor = p75 of {9, 2, 9} = 9, so both 1-read mono transcripts go, MONOHI stays
         let mut l = build();
-        let (ism, mono, _, floor) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0, false, false, false, 1.0, false);
+        let (ism, mono, _, floor) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0, false, false, false, 1.0, false, 0, false);
         assert_eq!((ism, floor), (0, 9));
         assert_eq!(mono, 2);
         assert_eq!(tids(&l), vec!["LONG", "SHORT", "STRONG", "MONOHI"]);
 
         // full: SHORT is an unsupported sub-chain, MONOLO an unsupported mono inside LONG
         let mut l = build();
-        let (ism, mono, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0, false, false, false, 1.0, false);
+        let (ism, mono, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0, false, false, false, 1.0, false, 0, false);
         assert_eq!(ism, 2);
         assert_eq!(mono, 1); // FREE has no host, so only the floor removes it
         assert_eq!(tids(&l), vec!["LONG", "STRONG", "MONOHI"]);
 
         // quantile 0 disables the floor entirely
         let mut l = build();
-        let (_, mono, _, floor) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false);
+        let (_, mono, _, floor) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false);
         assert_eq!((mono, floor), (0, 0));
         assert!(tids(&l).contains(&"FREE".to_string()));
     }
@@ -5580,18 +5658,61 @@ mod tests {
         };
         // TINY is 1% of BIG, so F = 0.02 removes it; SOLO is its own locus's dominant and survives
         let mut l = build();
-        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02, false, false, false, 1.0, false);
+        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02, false, false, false, 1.0, false, 0, false);
         assert_eq!(frac, 1);
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
         // F below TINY's share keeps everything
         let mut l = build();
-        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005, false, false, false, 1.0, false);
+        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005, false, false, false, 1.0, false, 0, false);
         assert_eq!(frac, 0);
         assert_eq!(tids(&l), vec!["BIG", "TINY", "SOLO"]);
         // even a huge F never empties a locus: the dominant of each gene_id survives
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.99, false, false, false, 1.0, false);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.99, false, false, false, 1.0, false, 0, false);
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
+    }
+
+    /// §6q6: fuzzy junction tolerance merges near-duplicate chains into the best-supported member, and
+    /// leaves chains that differ by more than the tolerance alone.
+    #[test]
+    fn polish_fuzzy_junction_merges_near_duplicates() {
+        fn gtf(tid: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
+            let at = format!("gene_id \"g_{tid}\"; transcript_id \"{tid}\";");
+            let mut v = vec![format!(
+                "chr1\trustle\ttranscript\t{}\t{}\t.\t+\t.\t{at} reads \"{reads}\";",
+                exons[0].0, exons[exons.len() - 1].1
+            )];
+            for (k, (s, e)) in exons.iter().enumerate() {
+                v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t+\t.\t{at} exon_number \"{}\";", k + 1));
+            }
+            v
+        }
+        let tids = |l: &[String]| -> Vec<String> {
+            l.iter()
+                .filter(|x| x.contains("\ttranscript\t"))
+                .filter_map(|x| re_attr(x.split('\t').nth(8).unwrap(), "transcript_id"))
+                .collect()
+        };
+        // WOBBLE's acceptor sits 3 bp from BEST's (the NAGNAG distance); FAR's is 9 bp away
+        let build = || {
+            let mut l = Vec::new();
+            l.extend(gtf("BEST", 30, &[(100, 200), (300, 400)]));
+            l.extend(gtf("WOBBLE", 5, &[(100, 200), (303, 400)]));
+            l.extend(gtf("FAR", 5, &[(100, 200), (309, 400)]));
+            l
+        };
+        // tolerance 0 (the default): nothing merges
+        let mut l = build();
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false);
+        assert_eq!(tids(&l).len(), 3);
+        // tolerance 5: WOBBLE folds into BEST (the better-supported member survives), FAR does not
+        let mut l = build();
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 5, false);
+        assert_eq!(tids(&l), vec!["BEST", "FAR"]);
+        // tolerance 10: FAR folds in too
+        let mut l = build();
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 10, false);
+        assert_eq!(tids(&l), vec!["BEST"]);
     }
 
     /// §6q0/§6q1: the shadow rule drops single-exon transcripts in a spliced gene's shadow (exon overlap
@@ -5628,11 +5749,11 @@ mod tests {
             l
         };
         let mut l = shadow();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, true, false, false, 1.0, false);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false);
         assert_eq!(tids(&l), vec!["PLUS", "ANTIIN", "FAR"]);
         // shadow off leaves them all
         let mut l = shadow();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false);
         assert_eq!(tids(&l).len(), 6);
 
         // ISM escape: FRAG's chain is a sub-chain of DEEP's; 10 reads is below DEEP's 100 but reaches the
@@ -5645,10 +5766,10 @@ mod tests {
             l
         };
         let mut l = ism();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false);
         assert_eq!(tids(&l), vec!["DEEP", "OTHER"], "without the escape the fragment is absorbed");
         let mut l = ism();
-        polish_gtf_lines(&mut l, "full", 0.10, 0.0, false, true, false, 1.0, false);
+        polish_gtf_lines(&mut l, "full", 0.10, 0.0, false, true, false, 1.0, false, 0, false);
         assert_eq!(tids(&l), vec!["DEEP", "FRAG", "OTHER"], "with the escape a well-supported fragment survives");
     }
 
