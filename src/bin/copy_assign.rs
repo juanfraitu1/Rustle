@@ -198,6 +198,17 @@ struct Args {
     #[arg(long, default_value_t = 0.75)]
     polish_mono_quantile: f64,
 
+    /// ⭐ §6p9 LOCUS ISOFORM FRACTION for `--assembly-polish`. Drop a transcript whose read support is
+    /// below this fraction of the BEST-supported transcript at the same `gene_id`; the dominant isoform of
+    /// a locus is never dropped. This is StringTie's `-f` criterion (fraction of the locus maximum), and it
+    /// is the lever that closes the class-`j` gap — on held-out chr11 we emitted 589 "novel junction
+    /// combination" transcripts against StringTie's 481, which is the whole of our precision deficit there.
+    ///
+    /// Distinct from `--min-isoform-fraction`, which is a fraction of the locus TOTAL and only tags
+    /// `low_confidence`; this one removes rows. Default 0.0 = off.
+    #[arg(long, default_value_t = 0.0)]
+    polish_isoform_fraction: f64,
+
     /// Minimum copies for a co-located family. Two-copy homologous families are the majority and were
     /// invisible to assignment at the old default of 3; lowering it to 2 changes default family detection
     /// on its own, independently of `--homology-primary`.
@@ -2074,15 +2085,21 @@ fn linearize_tsv_row(fam: &str, loc: (&str, u64, u64), c: &LinearizeCertificate)
 /// Validated in `bench/ASSEMBLY_POLISH.md` against `docs/PREREG_assembly_polish_2026-09-19.md`: the mono
 /// floor costs zero matching intron chains on both chr20 and the held-out chr11; the ISM collapse trades
 /// chains for precision.
-fn polish_gtf_lines(lines: &mut Vec<String>, mode: &str, mono_quantile: f64) -> (usize, usize, u64) {
+fn polish_gtf_lines(
+    lines: &mut Vec<String>,
+    mode: &str,
+    mono_quantile: f64,
+    isoform_fraction: f64,
+) -> (usize, usize, usize, u64) {
     use std::collections::{HashMap, HashSet};
     if mode == "none" {
-        return (0, 0, 0);
+        return (0, 0, 0, 0);
     }
     // exons per transcript, in genomic order, plus the transcript's read support
     let mut exons: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
     let mut key: HashMap<String, (String, String)> = HashMap::new(); // tid -> (contig, strand)
     let mut reads: HashMap<String, u64> = HashMap::new();
+    let mut gene: HashMap<String, String> = HashMap::new();
     for line in lines.iter() {
         let f: Vec<&str> = line.split('\t').collect();
         if f.len() < 9 {
@@ -2092,6 +2109,9 @@ fn polish_gtf_lines(lines: &mut Vec<String>, mode: &str, mono_quantile: f64) -> 
         if let Some(r) = re_attr(f[8], "reads").and_then(|v| v.parse::<u64>().ok()) {
             let e = reads.entry(tid.clone()).or_insert(0);
             *e = (*e).max(r);
+        }
+        if let Some(g) = re_attr(f[8], "gene_id") {
+            gene.entry(tid.clone()).or_insert(g);
         }
         if f[2] != "exon" {
             continue;
@@ -2182,6 +2202,35 @@ fn polish_gtf_lines(lines: &mut Vec<String>, mode: &str, mono_quantile: f64) -> 
         }
     }
     let n_mono = drop.len() - n_ism;
+
+    // §6p9 locus isoform fraction: a transcript far below the best-supported isoform of its own locus is
+    // a minor-flow artifact. The locus dominant is never dropped, so no locus is ever emptied.
+    if isoform_fraction > 0.0 {
+        let mut best: HashMap<&str, u64> = HashMap::new();
+        for (t, g) in gene.iter() {
+            if drop.contains(t) {
+                continue;
+            }
+            let r = reads.get(t).copied().unwrap_or(0);
+            let e = best.entry(g.as_str()).or_insert(0);
+            *e = (*e).max(r);
+        }
+        let mut candidates: Vec<&String> = gene.keys().filter(|t| !drop.contains(*t)).collect();
+        candidates.sort();
+        for t in candidates {
+            let Some(g) = gene.get(t) else { continue };
+            let b = best.get(g.as_str()).copied().unwrap_or(0);
+            if b == 0 {
+                continue;
+            }
+            let r = reads.get(t).copied().unwrap_or(0);
+            if r < b && (r as f64) < isoform_fraction * b as f64 {
+                drop.insert(t.clone());
+            }
+        }
+    }
+    let n_frac = drop.len() - n_ism - n_mono;
+
     if !drop.is_empty() {
         lines.retain(|line| {
             let f: Vec<&str> = line.split('\t').collect();
@@ -2194,7 +2243,7 @@ fn polish_gtf_lines(lines: &mut Vec<String>, mode: &str, mono_quantile: f64) -> 
             }
         });
     }
-    (n_ism, n_mono, floor)
+    (n_ism, n_mono, n_frac, floor)
 }
 
 fn main() -> Result<()> {
@@ -4374,13 +4423,17 @@ fn main() -> Result<()> {
         }
         if args.assembly_polish != "none" {
             let before = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
-            let (n_ism, n_mono, floor) =
-                polish_gtf_lines(&mut gtf_lines, &args.assembly_polish, args.polish_mono_quantile);
+            let (n_ism, n_mono, n_frac, floor) = polish_gtf_lines(
+                &mut gtf_lines,
+                &args.assembly_polish,
+                args.polish_mono_quantile,
+                args.polish_isoform_fraction,
+            );
             let after = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
             eprintln!(
                 "[copy_assign] ⭐ ASSEMBLY POLISH ({}): {before} transcripts -> ISM dropped {n_ism} -> \
-                 mono floor {floor} reads dropped {n_mono} -> {after} kept",
-                args.assembly_polish
+                 mono floor {floor} reads dropped {n_mono} -> isoform fraction {} dropped {n_frac} -> {after} kept",
+                args.assembly_polish, args.polish_isoform_fraction
             );
         }
         let mut gh = std::fs::File::create(format!("{}.gtf", args.out))?;
@@ -5316,28 +5369,72 @@ mod tests {
 
         // none is a no-op
         let mut l = build();
-        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75), (0, 0, 0));
+        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0), (0, 0, 0, 0));
         assert_eq!(l, build());
 
         // mono: floor = p75 of {9, 2, 9} = 9, so both 1-read mono transcripts go, MONOHI stays
         let mut l = build();
-        let (ism, mono, floor) = polish_gtf_lines(&mut l, "mono", 0.75);
+        let (ism, mono, _, floor) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0);
         assert_eq!((ism, floor), (0, 9));
         assert_eq!(mono, 2);
         assert_eq!(tids(&l), vec!["LONG", "SHORT", "STRONG", "MONOHI"]);
 
         // full: SHORT is an unsupported sub-chain, MONOLO an unsupported mono inside LONG
         let mut l = build();
-        let (ism, mono, _) = polish_gtf_lines(&mut l, "full", 0.75);
+        let (ism, mono, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0);
         assert_eq!(ism, 2);
         assert_eq!(mono, 1); // FREE has no host, so only the floor removes it
         assert_eq!(tids(&l), vec!["LONG", "STRONG", "MONOHI"]);
 
         // quantile 0 disables the floor entirely
         let mut l = build();
-        let (_, mono, floor) = polish_gtf_lines(&mut l, "full", 0.0);
+        let (_, mono, _, floor) = polish_gtf_lines(&mut l, "full", 0.0, 0.0);
         assert_eq!((mono, floor), (0, 0));
         assert!(tids(&l).contains(&"FREE".to_string()));
+    }
+
+    /// §6p9: the locus isoform fraction removes minor flows and never empties a locus. Two transcripts
+    /// share `gene_id "g_LOCUS"`: BIG with 100 reads and TINY with 1 (1% of the locus best).
+    #[test]
+    fn polish_isoform_fraction_drops_minor_flows_but_keeps_the_dominant() {
+        fn gtf(tid: &str, gene: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
+            let at = format!("gene_id \"{gene}\"; transcript_id \"{tid}\";");
+            let mut v = vec![format!(
+                "chr1\trustle\ttranscript\t{}\t{}\t.\t+\t.\t{at} reads \"{reads}\";",
+                exons[0].0, exons[exons.len() - 1].1
+            )];
+            for (k, (s, e)) in exons.iter().enumerate() {
+                v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t+\t.\t{at} exon_number \"{}\";", k + 1));
+            }
+            v
+        }
+        let build = || {
+            let mut l = Vec::new();
+            l.extend(gtf("BIG", "g_LOCUS", 100, &[(100, 200), (300, 400), (500, 600)]));
+            l.extend(gtf("TINY", "g_LOCUS", 1, &[(100, 200), (350, 400), (500, 600)]));
+            l.extend(gtf("SOLO", "g_OTHER", 1, &[(9000, 9100), (9300, 9400)]));
+            l
+        };
+        let tids = |l: &[String]| -> Vec<String> {
+            l.iter()
+                .filter(|x| x.contains("\ttranscript\t"))
+                .filter_map(|x| re_attr(x.split('\t').nth(8).unwrap(), "transcript_id"))
+                .collect()
+        };
+        // TINY is 1% of BIG, so F = 0.02 removes it; SOLO is its own locus's dominant and survives
+        let mut l = build();
+        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02);
+        assert_eq!(frac, 1);
+        assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
+        // F below TINY's share keeps everything
+        let mut l = build();
+        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005);
+        assert_eq!(frac, 0);
+        assert_eq!(tids(&l), vec!["BIG", "TINY", "SOLO"]);
+        // even a huge F never empties a locus: the dominant of each gene_id survives
+        let mut l = build();
+        polish_gtf_lines(&mut l, "full", 0.0, 0.99);
+        assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
     }
 
     #[test]

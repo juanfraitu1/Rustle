@@ -81,3 +81,86 @@ the paid half; they are reported separately for that reason and `mono` is the sa
 ⚠Both chromosomes are ordinary human autosomes measured against a single annotation; the
 `docs/o1_ledger.md` §6kl/§6km ground-truth ceiling applies, and neither chromosome measures the
 project's multi-copy contribution.
+
+
+---
+
+# §6p9 — the locus isoform fraction closes the gap (four chromosomes)
+
+The chr11 precision deficit above was **entirely class `j`** ("novel junction combination"): 589 of them
+against StringTie's 481, which is the whole 119-transcript non-matching excess (773 vs 654). Every other
+gffcompare class code was at parity or better. A `j` transcript shares junctions with a reference
+transcript but its chain does not match — a minor alternative flow at a locus we already reconstruct.
+
+**`--polish-isoform-fraction F`** (new): drop a transcript whose `reads` is below `F ×` the best-supported
+transcript at the same `gene_id`; the locus dominant is never dropped, so no locus is emptied. This is
+StringTie's `-f` criterion, which the assembler had never applied. (`--min-isoform-fraction` is a
+different thing: a fraction of the locus TOTAL, and it only tags `low_confidence`.)
+
+F was chosen on chr20 alone by the Addendum-A rule — largest F with ≤1% chain loss — which returned
+**F = 0.02**. Two further chromosomes were then built from scratch to test it: **chr7** and **chr14**,
+neither previously touched by this project.
+
+## Recommended setting: `--assemble-only --assembly-polish full --polish-isoform-fraction 0.02`
+
+| | chr20 (dev) | chr11 | chr7 | chr14 |
+|---|---|---|---|---|
+| reference transcripts | 4,574 | 10,534 | 8,726 | 6,241 |
+| **matching intron chains** | **335** / 331 | **683** / 648 | **515** / 515 | **389** / 388 |
+| matching transcripts | **336** / 335 | **685** / 653 | **518** / 516 | 391 / **392** |
+| intron-chain Sn | **7.8** / 7.7 | **7.0** / 6.6 | 6.4 / 6.4 | **7.1** / 7.1 |
+| intron-chain Pr | **51.9** / 47.4 | **50.3** / 50.2 | **44.7** / 43.5 | **43.8** / 42.0 |
+| transcript Sn | **7.4** / 7.3 | **6.5** / 6.2 | 5.9 / 5.9 | **6.3** / 6.3 |
+| transcript Pr | **50.6** / 47.1 | 49.2 / **50.0** | **43.6** / 43.0 | **42.5** / 41.9 |
+| emitted mRNAs | 664 / 712 | 1,393 / 1,307 | 1,188 / 1,199 | 921 / 935 |
+
+(ours / StringTie 3.0.1 `-L -p 4`; bold = ours at least matches.)
+
+⭐**Scorecard: 19 of 20 (chromosome × metric) cells match or outperform StringTie.** The single miss is
+chr11 transcript precision, 49.2 vs 50.0.
+
+⭐**On matching intron chains — "does it find real transcripts" — we match or beat StringTie on all four
+chromosomes**, including both chromosomes built after the rule was fixed.
+
+## The remaining chr11 miss, measured
+
+It is mono-exonic transcripts, not chains. At this setting chr11 keeps 36 single-exon predictions to
+StringTie's 16; they contribute 2 matches. Removing all of them gives chr11 transcript precision 50.3
+(> 50.0, 5/5) — but costs chr14 two real matching transcripts and drops chr14 to 4/5. Single-exon
+predictions are therefore mostly, but not always, junk, and no single-exon policy is 5/5 everywhere:
+
+| policy | chr20 | chr11 | chr7 | chr14 |
+|---|---|---|---|---|
+| mono floor at p75 (shipped) | 5/5 | **4/5** | 5/5 | 5/5 |
+| drop every single-exon transcript | 5/5 | 5/5 | 5/5 | **4/5** |
+
+## Negative result: the (k, F) grid rule picked a worse cell
+
+Addendum B registered a second selection — over `k ∈ {0,3} × F`, take the cell where all four rates and
+the chain count beat StringTie on chr20 and maximise chains — which returned **k = 3, F = 0.05**. Held
+out, that cell is *worse*: 5/5 on chr20 and chr14 but **3/5 on chr11 and 1/5 on chr7** (chr7: 514 chains
+vs 515, chain Pr 42.7 vs 43.5, transcript Pr 40.9 vs 43.0). Its primary hypothesis B3 (chr14) passes and
+B1/B2 fail on two chromosomes. Adding recall with `--read-isoform-k 3` and buying it back with a larger
+F is a worse trade than not adding it: **k = 0 with F = 0.02 dominates the k = 3 arms on every held-out
+chromosome.** Register row 855.
+
+## Per-chromosome F sensitivity (post-hoc, NOT a validated selection)
+
+| F (`full`, k=0) | chr20 chains/transPr | chr11 | chr7 | chr14 |
+|---|---|---|---|---|
+| 0.00 | 337 / 49.6 | 690 / 47.2 | 519 / 42.4 | 393 / 41.1 |
+| **0.02** | **335 / 50.6** | **683 / 49.2** | **515 / 43.6** | **389 / 42.5** |
+| 0.03 | 335 / 51.9 | 679 / 50.5 | 511 / 44.3 | 385 / 43.4 |
+| 0.05 | 329 / 53.6 | 653 / 52.6 | 496 / 44.8 | 381 / 44.6 |
+| 0.08 | 321 / 54.5 | 623 / 54.4 | 482 / 45.4 | 368 / 45.3 |
+
+⚠ chr11 alone would prefer F = 0.03 (5/5) and chr7 alone F = 0.02; no F is 5/5 on all four. Do not quote
+a per-chromosome best as if it were the rule — F = 0.02 is the one that was fixed in advance on chr20.
+
+## Substrates built for this work
+
+`bakeoff/human_chr{11,7,14}`, each: chromosome BAM sliced from `human_testis.t2t.bam` (**not** the deeper
+`A119b.t2t.bam`, which the chr20 bakeoff does not use), chromosome FASTA from `chm13v2.0.fa`, and a
+reference GTF from `chm13v2.0_RefSeq_full.gff.gz` via `/mnt/linuxdisk/tmp/gff2gtf.py` — validated to
+reproduce gffread's `chr20_ref.gtf` transcript count exactly (4,574 = 4,574); `gffread` is not installed.
+StringTie 3.0.1 `-L -p 4` on the same BAM in every case. FLAIR was run on chr20 only.

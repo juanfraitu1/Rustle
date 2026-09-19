@@ -13,7 +13,11 @@ Two filters, both using ONLY the emitted `reads "N"` attribute -- no reference, 
    self-tuning: `--mono-quantile 0.75` of the multi-exon `reads` distribution. `--mono-floor N`
    overrides it with a fixed value; `--mono-quantile 0` disables the filter.
 
-usage: assembly_polish.py IN.gtf OUT.gtf [--support-ratio 1.0] [--mono-quantile 0.75] [--mono-floor N]
+3. Locus isoform fraction (`--isoform-fraction F`, §6p9) -- drop a transcript whose read support is below
+   F x the best-supported transcript at the same `gene_id`. The locus dominant is never dropped. This is
+   StringTie's `-f` criterion; F = 0.02 is the validated setting.
+
+usage: assembly_polish.py IN.gtf OUT.gtf [--support-ratio 1.0] [--mono-quantile 0.75] [--isoform-fraction 0.02]
 """
 import sys, re, collections, argparse
 
@@ -25,9 +29,12 @@ ap.add_argument("--mono-quantile", type=float, default=0.75,
                 help="mono-exonic floor = this quantile of multi-exon read support; 0 disables")
 ap.add_argument("--mono-floor", type=int, default=None, help="fixed mono-exonic read floor (overrides --mono-quantile)")
 ap.add_argument("--no-ism", action="store_true", help="skip filter 1")
+ap.add_argument("--isoform-fraction", type=float, default=0.0,
+                help="drop a transcript below this fraction of the best-supported transcript at the same gene_id "
+                     "(StringTie's -f); the locus dominant is never dropped. 0 = off, 0.02 = the validated setting")
 a = ap.parse_args()
 
-rows = collections.defaultdict(list); reads = {}
+rows = collections.defaultdict(list); reads = {}; gene = {}
 for l in open(a.inp):
     if l.startswith('#'): continue
     f = l.rstrip('\n').split('\t')
@@ -39,6 +46,8 @@ for l in open(a.inp):
         rows[t].append((f[0], f[6], int(f[3]) - 1, int(f[4])))
     r = re.search(r'reads "(\d+)"', f[8])
     if r: reads[t] = max(reads.get(t, 0), int(r.group(1)))
+    g = re.search(r'gene_id "([^"]+)"', f[8])
+    if g: gene.setdefault(t, g.group(1))
 
 chain = {}; span = {}
 for t, ex in rows.items():
@@ -84,6 +93,19 @@ if floor:
     for t in chain:
         if not chain[t][2] and t not in drop and reads.get(t, 0) < floor: drop.add(t)
 
+# §6p9 locus isoform fraction: a transcript far below the best-supported isoform of its own locus is a
+# minor-flow artifact. The locus dominant is never dropped, so no locus is ever emptied.
+n_frac = 0
+if a.isoform_fraction > 0:
+    best = collections.defaultdict(int)
+    for t, g in gene.items():
+        if t not in drop: best[g] = max(best[g], reads.get(t, 0))
+    for t in sorted(gene):
+        if t in drop: continue
+        b = best[gene[t]]; r = reads.get(t, 0)
+        if b and r < b and r < a.isoform_fraction * b:
+            drop.add(t); n_frac += 1
+
 with open(a.out, "w") as fo:
     for l in open(a.inp):
         if l.startswith('#'): fo.write(l); continue
@@ -93,4 +115,5 @@ with open(a.out, "w") as fo:
         if m and m.group(1) in drop: continue
         fo.write(l)
 print(f"{len(rows)} transcripts -> ISM {n_ism} dropped (ratio {a.support_ratio}) "
-      f"-> mono floor {floor} dropped {len(drop) - n_ism} -> {len(rows) - len(drop)} kept", file=sys.stderr)
+      f"-> mono floor {floor} dropped {len(drop) - n_ism - n_frac} "
+      f"-> isoform fraction {a.isoform_fraction} dropped {n_frac} -> {len(rows) - len(drop)} kept", file=sys.stderr)

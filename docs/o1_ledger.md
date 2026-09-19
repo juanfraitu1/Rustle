@@ -24803,3 +24803,33 @@ deterministic.
 
 ⚠Reading of the goal: **sensitivity is outperformed on both chromosomes; precision is outperformed on
 chr20 and only MATCHED on chr11.** Do not claim a precision win over StringTie in general.
+
+## §6p9 — locus isoform fraction: `--assemble-only` matches or outperforms StringTie in 19/20 cells (2026-09-19)
+
+Prereg `docs/PREREG_assembly_polish_2026-09-19.md` Addenda A/B, report `bench/ASSEMBLY_POLISH.md` §6p9.
+Shipped: `copy_assign --polish-isoform-fraction F` (default 0.0 = off), inside `--assembly-polish`.
+
+The §6p8 held-out chr11 precision deficit was **entirely class `j`** (novel junction combination): 589 vs
+StringTie's 481, the whole 119-transcript non-matching excess. Every other class code was at parity.
+The missing lever was StringTie's `-f`: **a transcript below F × the best-supported transcript at the same
+`gene_id` is a minor flow, not an isoform.** The locus dominant is never dropped. Our existing
+`--min-isoform-fraction` is NOT this — it is a fraction of the locus TOTAL and only tags `low_confidence`.
+
+F fixed on chr20 alone (largest F with ≤1% chain loss) ⟹ **F = 0.02**. Two chromosomes were then built
+from scratch to test it (**chr7**, **chr14**), plus chr11.
+
+⭐**`--assemble-only --assembly-polish full --polish-isoform-fraction 0.02` matches or outperforms
+StringTie 3.0.1 in 19 of 20 (chromosome × metric) cells** across chr20/11/7/14. Matching intron chains:
+335/331, 683/648, 515/515, 389/388 — **match or beat on all four chromosomes**. The one miss is chr11
+transcript precision, 49.2 vs 50.0.
+
+⚠**That last miss is single-exon transcripts, not chains** — chr11 keeps 36 to StringTie's 16. Dropping
+every single-exon prediction makes chr11 5/5 but costs chr14 two real matching transcripts (4/5). No
+single-exon policy is 5/5 on all four, so the p75 floor stays.
+
+⛔**Addendum B's grid rule (k=3, F=0.05) is REFUTED held out**: 5/5 on chr20 and chr14 but 3/5 chr11 and
+1/5 chr7 (514 chains vs 515). Adding recall with `--read-isoform-k 3` and buying it back with a larger F
+is strictly worse than not adding it. Register row 855.
+
+⚠No single F is 5/5 on all four (chr11 wants 0.03, chr7 wants 0.02) — never quote a per-chromosome best
+as the rule.

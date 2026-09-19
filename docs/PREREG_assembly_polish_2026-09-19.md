@@ -63,3 +63,109 @@ No threshold was re-tuned on chr11 — the floor it self-selected (8, then 9 und
 own read distribution, which is the rule working as written, not a fit.
 
 Full numbers: `bench/ASSEMBLY_POLISH.md`. Ledger: §6p8.
+
+---
+
+# Addendum A — locus isoform fraction (§6p9), written before the sweep
+
+The held-out chr11 failure is entirely class `j` ("novel junction combination"): we emit 589 against
+StringTie's 481, which is the whole of the 119-transcript non-matching excess (773 vs 654). Every other
+class code is at parity or better. A `j` transcript shares junctions with a reference transcript but its
+full chain does not match — a minor alternative flow at a locus we already reconstruct.
+
+**New filter: `--polish-isoform-fraction F`.** Drop a transcript whose `reads` is below `F ×` the
+best-supported transcript at the same `gene_id`. The locus dominant is never dropped, so no locus is
+emptied. This is StringTie's `-f` criterion, which our assembler has never applied (the existing
+`--min-isoform-fraction` is a fraction of the locus TOTAL and only tags `low_confidence`).
+
+**Selection rule, fixed now:** F is swept on **chr20 only** and chosen as the LARGEST value at which
+matching intron chains fall by at most **1%** from the unswept arm. No other criterion. Whatever F that
+rule returns is then applied unchanged to the held-out chromosomes.
+
+**Held-out chromosomes: chr11 and chr7.** chr11 has so far only been used to *diagnose* the class
+composition above — no threshold has been fitted to it — but because it has now been inspected, a
+completely untouched third chromosome (chr7) is added and is the primary held-out test.
+
+**Hypotheses:**
+- **A1** — on BOTH held-out chromosomes, matching intron chains fall by ≤ 2% from the unswept arm.
+- **A2** — on BOTH held-out chromosomes, transcript-level precision meets or exceeds StringTie's.
+- **A3** — on BOTH held-out chromosomes, matching intron chains still exceed StringTie's.
+
+A2 is the goal's bar. A1 and A3 are the guards that stop A2 being bought with recall.
+
+---
+
+# Addendum B — the (k, F) operating point (§6p9), written before any chr14 number exists
+
+## What Addendum A returned, and why it was not enough
+
+Its rule ("largest F with ≤1% chain loss on chr20") returned **F = 0.02**. Verdicts:
+
+| | chr11 | chr7 |
+|---|---|---|
+| A1 chain loss ≤ 2% | −1.01% ✅ | −0.77% ✅ |
+| A2 transcript precision ≥ StringTie | 49.2 vs 50.0 ⛔ **FAIL** | 43.6 vs 43.0 ✅ |
+| A3 matching chains > StringTie | 683 vs 648 ✅ | 515 vs 515 — a tie, **not** "exceed" ⛔ |
+
+So F = 0.02 is not an operating point that matches or outperforms everywhere. The sweep also showed no
+single F does: F = 0.03 dominates StringTie on all four axes on chr20 AND chr11 but loses 4 chains on
+chr7, while F = 0.02 matches chr7 and misses chr11's precision by 0.8.
+
+## The corrected reading
+
+F trades chains for precision along one axis, so it cannot fix both ends alone. The other knob —
+`--read-isoform-k 3` with `RUSTLE_JUNCTION_MAJORITY=1` — moves the OTHER way: it adds candidate chains at
+a precision cost. Pairing them (generate more, then filter by locus share) is the actual two-sided lever.
+
+## Selection rule, fixed now, on chr20 ONLY
+
+Over the (k ∈ {0, 3}) × (F ∈ {0, .02, .03, .05, .08, .12}) grid already measured on chr20: take the cells
+where **all four gffcompare rates are ≥ StringTie's AND matching intron chains ≥ StringTie's**, and among
+them pick the one with the **most matching intron chains**. Ties break toward the smaller F.
+
+Applied to the chr20 grid this returns **k = 3, F = 0.05** (338 chains; 7.9/49.9 and 7.4/48.3 against
+StringTie's 331, 7.7/47.4, 7.3/47.1). No held-out chromosome was consulted.
+
+## Held-out test
+
+chr11 and chr7 have both now been inspected, so the primary held-out test is a **fourth, completely
+untouched chromosome: chr14**. chr11 and chr7 are reported as secondary replication.
+
+**Hypotheses (the goal's bar, stated for each of the three test chromosomes):**
+- **B1** — matching intron chains ≥ StringTie's.
+- **B2** — all four gffcompare rates ≥ StringTie's.
+- **B3 (primary)** — B1 and B2 both hold on **chr14**, the untouched chromosome.
+
+Anything short of B1 ∧ B2 on a chromosome is reported as a miss on that chromosome, with the number.
+
+---
+
+# VERDICTS for Addenda A and B (recorded after chr7 and chr14; nothing above was edited)
+
+## Addendum A — F = 0.02, tested on chr11, chr7 and chr14
+
+| | chr11 | chr7 | chr14 |
+|---|---|---|---|
+| A1 chain loss ≤ 2% from F = 0 | −1.01% ✅ | −0.77% ✅ | −1.02% ✅ |
+| A2 transcript precision ≥ StringTie | 49.2 vs 50.0 ⛔ | 43.6 vs 43.0 ✅ | 42.5 vs 41.9 ✅ |
+| A3 matching chains > StringTie | 683 vs 648 ✅ | 515 vs 515 — a tie, not "exceed" ⛔ | 389 vs 388 ✅ |
+
+Over the four chromosomes and the five gffcompare quantities, F = 0.02 matches or outperforms StringTie
+in **19 of 20 cells**; the miss is chr11 transcript precision. On matching intron chains alone it matches
+or beats on all four. A3's chr7 tie is a "match", which the goal's wording admits but the hypothesis as
+written did not.
+
+## Addendum B — k = 3, F = 0.05
+
+| | chr11 | chr7 | chr14 (primary) |
+|---|---|---|---|
+| B1 matching chains ≥ StringTie | 679 vs 648 ✅ | 514 vs 515 ⛔ | 403 vs 388 ✅ |
+| B2 all four rates ≥ StringTie | 4/4 → transcript Pr 48.6 vs 50.0 ⛔ | 1/4 ⛔ | ✅ |
+| B3 B1 ∧ B2 on chr14 | — | — | ✅ **PASS** |
+
+B3, the primary hypothesis, passes. B1/B2 fail on chr11 and chr7, and the cell is strictly worse held out
+than Addendum A's. **Conclusion: the selection rule in Addendum B was the wrong rule** — maximising chains
+on the development chromosome subject to beating StringTie there selected a cell that overfits chr20's
+recall/precision balance. The shipped recommendation is Addendum A's `k = 0, F = 0.02`. Register row 855.
+
+Full numbers: `bench/ASSEMBLY_POLISH.md` §6p9. Ledger §6p9.
