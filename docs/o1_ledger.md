@@ -24296,3 +24296,39 @@ beats it under leave-one-substrate-out.
 0.29-0.57 depending on substrate and scorer. **Recall, not precision, is the unmet half**, and it is a
 node/edge availability problem — most guided-truth loci have no expressed RNA node or no edge — not a
 grouping-rule problem. That matches §6m0 (58% of the de novo↔guided gap is node construction).
+
+## §6o8 — ⭐THE GOAL IS UNATTAINABLE WITH THE CURRENT RNA EDGE GRAPH: pairwise recall CEILING is 0.052 (human) / 0.229 (gorilla), because >50% of truth families have NO EDGE at all (2026-09-18)
+
+The decisive measurement of the goal run. For each guided-truth cluster with >= 2 RNA nodes, how many of
+its member PAIRS are joined by ANY path in the FULL edge graph (no cut, most permissive grouping possible)?
+That is the maximum pairwise recall ANY grouping rule can reach on these graphs.
+
+| | HUMAN chr15/17/22 | GORILLA |
+|---|---|---|
+| truth clusters (>= 2 nodes) | 206 | 739 |
+| their nodes | 2,293 | 2,427 |
+| **nodes with ANY edge** | **634 (27.6%)** | **837 (34.5%)** |
+| **PAIRWISE RECALL CEILING** | **14,591 / 282,374 = 0.052** | **1,118 / 4,873 = 0.229** |
+| clusters wholly inside one component | 5 / 206 (2.4%) | 86 / 739 (11.6%) |
+| **clusters with NO edge on ANY member** | **104 / 206 (50.5%)** | **400 / 739 (54.1%)** |
+
+⭐⭐⭐**No definition can exceed 5.2% pairwise recall on the human RNA graph, or 22.9% on gorilla — whatever
+operator, threshold or conjunct is used.** Over HALF of the truth families have not a single edge among
+their members, and only 2.4% / 11.6% of families are even contained in one component.
+
+**This closes the goal question.** The search over definitions (§6o6, §6o7: identity components, trusses,
+clique percolation, louvain, triangle leaders ± identity cut, all with leave-one-substrate-out) was
+searching inside a space whose recall was capped at 0.05-0.23 before it began. The shipped triangle-leader
+rule already delivers HIGH PRECISION (bipartite P 0.775-0.865); **recall is not a grouping problem and no
+grouping rule will fix it.**
+
+**Where the work must go instead — in priority order, with the measured target:**
+1. **EDGE CONSTRUCTION.** Only 27.6% / 34.5% of truth-family nodes carry any edge. This is the single
+   binding constraint; everything else is downstream of it.
+2. **NODE EXPRESSION/COMPLETENESS.** §6n2's secondary read pool took NPIP complete chains 10/26 → 20/26 and
+   junction recovery 81% → 94%; whether better nodes also create edges is untested and is the natural next
+   experiment, since the two are coupled.
+3. Grouping rules — **already saturated**. Do not spend further effort here until (1) moves.
+
+⚠Absolute F values in §6o7 use this section's truth mapping and are not comparable to §6ke's; the ranking
+and this ceiling are what they establish.
