@@ -24120,3 +24120,39 @@ threshold beats it either (best 0.97 → F 0.759).
 ⭐**Where the remaining gap actually is: PRECISION on chr15/17 (0.367) and chr1 (0.475)**, against 0.851 on
 chr5/7/21. Those regions hold the sprawling over-merge families §6kr named (GOLGA8, LRRC37A,
 NBPF/NOTCH2NL). **That is the target for the RNA-level definition goal — not the clustering operator.**
+
+## §6o3 — `--min-shared-exon-frac` 0.30 → 0.60: mean bipartite F 0.764 → 0.786, leave-one-region-out validated (2026-09-18)
+
+Toward the standing goal (an RNA-level family definition with high precision, recall and bipartite
+matching). Report `bench/FEX_SWEEP_LORO.md`, commit 9208a525. §6o2 scorer (node-independent truth); all
+arms rebuilt with the CURRENT binary and `--min-exonic-bp 1` so only `--min-shared-exon-frac` varies.
+⚠A first rebuild omitted `--min-exonic-bp 1`, which makes the flag INERT (`rejected_low_shared_exon 0`) and
+produced a spurious "the shipped rule makes chr15/17 and chr1 worse" reading — discarded before reporting.
+
+| f_ex | mean F (3 regions) | min F | mean pairwise precision |
+|---|---|---|---|
+| 0.00 | 0.735 | 0.693 | 0.555 |
+| **0.30 (shipped)** | 0.764 | 0.723 | 0.665 |
+| 0.40 | 0.772 | 0.737 | 0.685 |
+| **0.60** | **0.786** | 0.733 | 0.727 |
+| 0.70 | 0.784 | 0.733 | **0.760** |
+
+Per region at 0.60: chr5/7/21 **F 0.845** (R 0.783 P 0.918, pairwise prec 0.898); chr15/17 F 0.733;
+chr1 F 0.779.
+
+⭐**LEAVE-ONE-REGION-OUT — the value is never chosen on the region it is reported on:**
+
+| held out | picked on the other two | F @ 0.30 | F @ picked | delta |
+|---|---|---|---|---|
+| chr5/7/21 | 0.60 | 0.807 | **0.845** | **+0.039** |
+| chr15/17 | 0.60 | 0.723 | **0.733** | **+0.009** |
+| chr1 | 0.70 | 0.761 | **0.773** | **+0.012** |
+
+**Never worse in any fold; 0.60 picked in 2 of 3.** Cost: small recall/sensitivity drop (chr15/17 sens
+0.555 → 0.524). chr5/7/21 gains on BOTH axes.
+
+⚠**Caveats.** Three regions is a weak LORO. And §6km's ground-truth ceiling (GENCODE vs RefSeq, same
+construction, F 0.79-0.81) means **chr5/7/21's 0.845 is at or above the ceiling for agreement with a
+single-annotation truth** — saturated, not headroom. Soto is also itself a cover (§6n7).
+
+**Candidate for the shipped default; NOT changed.** The decision is the user's.
