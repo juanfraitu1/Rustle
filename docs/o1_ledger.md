@@ -24332,3 +24332,56 @@ grouping rule will fix it.**
 
 ⚠Absolute F values in §6o7 use this section's truth mapping and are not comparable to §6ke's; the ranking
 and this ceiling are what they establish.
+
+## §6o9 — ⭐THE RNA RECALL CEILING IS A TRUTH ARTIFACT, NOT AN EDGE DEFECT: only 6.7% of guided-truth family pairs align at all as spliced RNA (2026-09-18)
+
+Chasing §6o8's ceiling (pairwise recall 0.052 human). Three hypotheses tested, two refuted:
+
+**1. Is the ceiling an artifact of my node→truth mapping? NO — it is robust.** The mapping is tight
+(median overlap fraction 1.000; 91.7% of labelled nodes >= 0.90 inside their truth locus), and tightening
+the requirement barely moves anything:
+
+| min overlap frac | clusters | nodes w/ edge | recall ceiling | no-edge families |
+|---|---|---|---|---|
+| 0.00 | 206 | 27.6% | 0.052 | 104/206 (50%) |
+| 0.90 | 180 | 26.1% | 0.048 | 89/180 (49%) |
+| **0.99** | 177 | 25.6% | **0.047** | 86/177 (49%) |
+
+**2. Is it node FRAGMENTATION (the §6m0/§6n2 story)? NO.** Edge rate is flat across every completeness
+stratum: exon_bp <500 **31.5%**, 500-1500 19.9%, 1500-3000 26.8%, >=3000 **32.9%**; single-exon **27.8%** vs
+spliced **27.0%**; median exon_bp with-edge 2,459 vs no-edge 2,251. Node completeness does not predict
+whether a node has an edge.
+
+**3. ⭐DO THE TRUTH FAMILIES EVEN ALIGN AS RNA? MOSTLY NOT — and this is the answer.** Extracted the spliced
+sequence of every RNA node in 120 sampled truth families and aligned all-vs-all within family
+(`minimap2 -x asm20 -c -X -N 50 -p 0.1`):
+
+| within-family pairs (1,431 over 120 families) | |
+|---|---|
+| align at all | **96 (6.7%)** |
+| pass the shipped edge gate (id >= 0.80, cov >= 0.50) | **71 (5.0%)** |
+
+**5.0% alignable vs a 5.2% recall ceiling — the ceiling IS the alignable fraction.** Edge construction is
+already at its limit. The guided truth is an MCL over annotated GENE SPANS (genomic, intron-containing);
+two genes in one DNA-level family need not have alignable spliced products. **Scoring an RNA-level
+definition against a DNA-level truth demands pairs that do not exist as RNA.**
+
+**Scored against an RNA-level truth instead** (DNA families cut into their RNA-alignable components:
+45 families / 103 nodes), the shipped connected-component definition gives:
+
+| | |
+|---|---|
+| bipartite | **R 0.621, P 0.901, F 0.736** (vs F 0.285 against the DNA truth) |
+| pairwise | sensitivity 0.416, precision 0.492 |
+| recall ceiling on this truth | 0.416 — **the definition ACHIEVES it exactly** |
+
+⚠⚠**BUT THIS IS CIRCULAR AND MUST NOT BE QUOTED AS A RESULT.** The RNA-level truth is defined BY
+alignability under the same gate (id >= 0.80, cov >= 0.50) that builds the edges, so recall at the ceiling
+is close to true by construction. It demonstrates internal consistency, not correctness.
+
+**What this means for the goal.** "High precision AND recall at the RNA level" is not achievable against a
+DNA-derived truth, and is vacuous against an alignability-derived one. **A non-circular RNA-level truth is
+the missing ingredient** — candidates: Soto families restricted to expressed loci, protein-level families
+(§6ko), or the Dishuck NPIP Iso-Seq groups. Until one exists, the honest report is the shipped definition's
+high precision (bipartite P 0.775-0.901) plus an explicit statement that recall is bounded by the truth's
+RNA-alignable fraction, measured here at 5.0%.
