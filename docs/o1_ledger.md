@@ -23767,3 +23767,34 @@ and §6n2's 9x cost stands. **Do not re-propose an AS-based collapse evaluated p
 a **genome-wide best-AS pre-pass per molecule** (one extra BAM scan, name → best AS) so the comparison is
 global; only then can a clear loser be identified. Until that exists, §6n2's recommendation is unchanged:
 use `RUSTLE_GTF_SECONDARY=1` for "which copies exist" (O1) and never for quantification.
+
+## §6n4 — the chr16 arm for `RUSTLE_JUNCTION_MAJORITY` is RUN: the feared family FUSION does not occur; the real cost is +8.9% engulfment (2026-09-18)
+
+`build_spliced_seq_with`'s comment requires a chr16 arm before the flag can be a default; §6m8's 27 NPIP
+windows explicitly were not it. Full chr16 RNA catalog, both ways, nothing else changed
+(`gw_family_catalog --bam chr16.bam`, 682,958 primary reads, ~57 min/arm).
+Report `bench/CHR16_JUNCTION_MAJORITY_ARM.md`; data `/mnt/linuxdisk/home/juanfraitu/chr16_arm/`.
+
+| metric | OFF | ON | delta | feared direction |
+|---|---|---|---|---|
+| **families** | 282 | **290** | **+8** | FEWER (fusion) — **DID NOT HAPPEN** |
+| copies | 1,404 | 1,418 | +14 (+1.0%) | more |
+| **strictly-engulfed** | 79 | **86** | **+7 (+8.9%)** | more |
+| **max family size** | 71 | **71** | **0** | bigger — **DID NOT HAPPEN** |
+| families of size 2 | 127 | 134 | +7 | — |
+| median family size | 3.0 | 3.0 | 0 | — |
+
+(documented harm: families 121 → 117, copies 678 → 700, engulfed 60 → 63)
+
+⭐**The failure the flag was held back for — family fusion — does not occur at chr16 scale.** Families go UP,
+the largest family is unchanged at 71, median size unchanged. The +8 are almost all new 2-COPY families
+(+7): the flag recovers small families the strict motif rule was deleting outright, it does not glue
+existing ones together.
+
+**The real price is engulfment, +7 copies (+8.9%)** — same direction as the documented harm (+5%) and
+comparable size. A precision cost on copy boundaries, not on family structure.
+
+**Status: the blocking condition is satisfied and its specific fear refuted. The default is NOT flipped** —
+that is the user's call, and one chromosome is one substrate (the standing hold-a-substrate-back rule wants
+a second chromosome or the gorilla contigs to agree before a shipped default moves). Recorded so the
+decision can be made on numbers instead of on the comment's caution.
