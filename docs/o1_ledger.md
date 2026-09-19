@@ -23860,3 +23860,36 @@ contribution, and carries a resolution limit.**
 
 **Status: nothing adopted.** The single candidate worth a pre-registered held-out test is Louvain, and that
 test must price the nesting loss as a cost rather than omit it.
+
+## §6n6 — Louvain does NOT replace MCL at the DNA level: worse on both catalogs, both views, with pairwise precision collapsing 0.815 → 0.144 (2026-09-18)
+
+Follow-up to §6n5, which found Louvain the best full-coverage operator on the RNA-side L2 graph. Question:
+does it also beat MCL on the guided DNA homology graph? **Non-development substrate** — the 11 held-out
+chr5/7/21 Soto families of §6ks, scored with `soto_holdout`'s own scorer (MCL reproduces §6ks exactly, which
+is the correctness check). Same graph (`ap_ho/{e1,e1s}.graph.tsv`), same `loci.tsv` fold-in, only the
+grouping operator changes. Louvain is deterministic here too (647 / 585 clusters at both seeds tested).
+
+| catalog / operator | view | genes | R | P | **F** | pairwise sens | pairwise prec |
+|---|---|---|---|---|---|---|---|
+| E1 MCL (shipped) | universe | 35 | 0.771 | 0.900 | **0.831** | 0.500 | **0.815** |
+| **E1 Louvain** | universe | 49 | 0.531 | 0.565 | **0.547** | 0.545 | **0.144** |
+| E1 MCL | strict | 43 | 0.628 | 0.711 | **0.667** | 0.500 | 0.400 |
+| **E1 Louvain** | strict | 123 | 0.211 | 0.217 | **0.214** | 0.545 | **0.010** |
+| E1S MCL (shipped) | universe | 33 | 0.788 | 1.000 | **0.881** | 0.500 | 1.000 |
+| **E1S Louvain** | universe | 38 | 0.711 | 0.818 | **0.761** | 0.500 | 0.524 |
+| E1S MCL | strict | 38 | 0.711 | 0.818 | **0.761** | 0.500 | 0.629 |
+| **E1S Louvain** | strict | 56 | 0.482 | 0.529 | **0.505** | 0.500 | 0.091 |
+
+Soto true pairs recovered: E1 MCL 22/44 vs Louvain 24/44; E1S both 22/44. **Louvain buys at most 2 extra
+true pairs and pays 0.815 → 0.144 in pairwise precision.**
+
+⭐**WHY — and it explains §6n5 at the same time.** MCL leaves genes UNCLUSTERED: 1,867 of 2,715 on E1
+(and 1,514 of 2,176 on E1S). Louvain assigns **all 2,715**. At the RNA-side L2 level, full coverage was an
+ADVANTAGE (§6n5: it kept all 13 two-copy components while the truss/percolation operators dissolved them).
+At the DNA level it is a LIABILITY, because the DNA graph contains every annotated gene with any homology
+edge and **most genes genuinely belong to no multi-copy family**. An operator that partitions everything
+manufactures families there. **MCL's pruning is doing real work, and "covers 100% of nodes" is not a
+virtue independent of what the node set is.**
+
+**Answer: NO. Keep MCL at the DNA level.** §6n5's Louvain candidate is scoped to the RNA-side copy graph
+only, and even there it remains untested on a held-out substrate and still costs the T1/T1′ nesting theorems.
