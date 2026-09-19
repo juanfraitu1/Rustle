@@ -23828,3 +23828,35 @@ reconstruction path, not the guided `records.tsv` the levels are computed on. Cu
 §6m2 baseline: NPIP L1a/L1b R 0.211 P 0.213 F 0.212 (pairwise sens 0.926, prec 0.044), L2 F 0.287, L3
 F 0.311; TBC1D3 L1a/L1b R 0.316 P 0.387 F 0.348 (sens 0.386, prec 0.142), L2 F 0.471, L3 **F 0.690 with
 P 1.000**.
+
+## §6n5 — clustering-operator bakeoff on the L2 graph: several beat components, but every triangle-based one dissolves the modal family size. Louvain is the only survivor, and it costs the nesting theorems (2026-09-18, DESCRIPTIVE)
+
+⚠**NPIP and TBC1D3 are DEVELOPMENT families — picking a winner here is the dev-set selection trap. Nothing
+adopted.** Report `bench/CLUSTERING_OPERATOR_BAKEOFF.md`, commit 8d71183e. Same L2 graph throughout
+(369 nodes, 1,106 edges, cut 0.30); only the grouping rule changes.
+
+| operator | NPIP F | sens | prec | TBC1D3 F | prec | nodes covered | **2-copy comps kept** | deterministic |
+|---|---|---|---|---|---|---|---|---|
+| connected components (baseline) | 0.287 | 0.926 | 0.081 | 0.471 | 0.286 | 100% | 13/13 | yes |
+| 3-truss | 0.308 | 0.926 | 0.093 | 0.511 | 0.347 | 51.5% | **0/13** | yes |
+| 4-truss | 0.335 | 0.926 | 0.111 | 0.686 | 0.725 | **32.2%** | **0/13** | yes |
+| 3-clique percolation | 0.515 | 0.926 | 0.265 | 0.686 | 0.725 | 51.5% | **0/13** | yes |
+| **4-clique percolation** | **0.536** | 0.926 | 0.288 | 0.686 | 0.725 | **32.2%** | **0/13** | yes |
+| **louvain** | 0.515 | 0.855 | **0.472** | 0.471 | 0.286 | **100%** | **13/13** | **yes (sd 0.000, 5 seeds)** |
+| greedy modularity | 0.515 | 0.926 | 0.265 | 0.471 | 0.286 | 100% | 13/13 | yes |
+| label propagation | 0.515 | 0.926 | 0.265 | 0.686-0.727 | 0.725 | 100% | 13/13 | **NO (sd 0.019)** |
+
+⭐**The F column is a trap on its own.** 4-clique percolation's best-in-table 0.536 is bought by covering
+only 32.2% of nodes and dissolving **all 13 two-copy components** — and 2 is the modal family size (§1★.5).
+That is the same cost that ruled out the truss options in §0★★★, now measured.
+
+⭐**Louvain is the only operator that improves the baseline at full coverage AND determinism:** NPIP
+F 0.287 → 0.515, precision **0.081 → 0.472 (5.8x)**, 13/13 two-copy components kept, identical over 5 seeds.
+Its costs, which travel with it: NPIP sensitivity 0.926 → 0.855 and 3 parts not 2; **TBC1D3 unchanged**; and
+⚠**modularity is not laminar — it breaks the T1/T1′ nesting theorems that are §0★★★'s theoretical
+contribution, and carries a resolution limit.**
+
+**Label propagation is seed-dependent (TBC1D3 F 0.686-0.727) ⇒ out as a definition regardless of score.**
+
+**Status: nothing adopted.** The single candidate worth a pre-registered held-out test is Louvain, and that
+test must price the nesting loss as a cost rather than omit it.
