@@ -23731,3 +23731,39 @@ paralogues (by construction — that is what a secondary record is). **Use for "
 
 **Not done:** collapsing the echoes (one representative per molecule across placements) should keep the +10
 copies and undo most of the 9x. Untested, and the obvious next step.
+
+## §6n3 — echo collapse by AS-tie: IMPLEMENTED and REFUTED. The multimapper echoes are not clear losers WITHIN SCOPE, so a region-local AS filter cannot see them (2026-09-18)
+
+Follow-up to §6n2, whose +10 complete copies came with a 9x transcript cost (1,456 → 13,132) in multimapper
+echoes. The proposed collapse: admit a secondary only when its alignment score is close to that molecule's
+best — a clear loser is a spurious echo of the real placement elsewhere. Code `denovo_assemble::as_tie_keep`
++ `gtf_secondary_as_ratio()` / `RUSTLE_GTF_SECONDARY_AS_RATIO`, **default 0.0 = admit all ⇒ byte-identical**.
+Lib suite **883 passed / 0 failed** (1 new unit test pinning the rule: primaries never dropped, missing AS
+kept, ratio 0 a no-op).
+
+**Measured: NO EFFECT AT ANY WIDTH.**
+
+| `RUSTLE_GTF_SECONDARY_AS_RATIO` | transcripts |
+|---|---|
+| 0.0 (admit all) | 13,132 |
+| 0.98 | **13,132** |
+| 1.0 (exact ties only) | **13,132** |
+
+⚠ First attempt read the AS tag with a `data().get(Tag::ALIGNMENT_SCORE)` path that silently returned
+`None`, making every record "unscored ⇒ keep". Fixed by reusing the module's own `record_as()`; the numbers
+above are AFTER that fix, so the null is real and not a plumbing artifact. **The AS tag IS present**
+(`AS:i:1302`, `AS:i:2522`) and the filter DOES fire: in the NPIPB2 window, 29 molecules have >= 2 scored
+placements and all 29 have a runner-up/best ratio below 0.90 (median **0.296**).
+
+**Why it changes nothing: SCOPE.** The filter can only compare placements that land inside the swept
+regions, and those regions are just the 26 NPIP copies. Per region, **83.4%** of molecules contribute
+exactly one record, so their in-scope "best" is themselves and they are always kept. A molecule whose true
+home lies outside the swept windows looks locally like a best placement. Dropping the 29 genuine in-window
+losers is far too few to move a 13,132-transcript GTF. This is the same region-local limitation the
+codebase already documents for `--as-tied-only` ("placements on other contigs are invisible").
+
+**Status.** The knob is shipped, correct, tested and inert at its default — but it is NOT the echo collapse,
+and §6n2's 9x cost stands. **Do not re-propose an AS-based collapse evaluated per region.** The real fix is
+a **genome-wide best-AS pre-pass per molecule** (one extra BAM scan, name → best AS) so the comparison is
+global; only then can a clear loser be identified. Until that exists, §6n2's recommendation is unchanged:
+use `RUSTLE_GTF_SECONDARY=1` for "which copies exist" (O1) and never for quantification.

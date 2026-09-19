@@ -1252,6 +1252,51 @@ pub fn gtf_secondary_enabled() -> bool {
     matches!(std::env::var("RUSTLE_GTF_SECONDARY"), Ok(v) if v != "0" && !v.is_empty())
 }
 
+/// AS-tie width for `RUSTLE_GTF_SECONDARY` (`RUSTLE_GTF_SECONDARY_AS_RATIO`).
+///
+/// §6n2 admitted EVERY secondary record and bought +10 complete NPIP copies at a 9x transcript cost, because
+/// a secondary whose alignment score is far below that molecule's best is a CLEAR LOSER — its chain at this
+/// locus is a spurious echo of the real placement elsewhere. This keeps only placements the aligner could
+/// not separate: a secondary is admitted iff `AS >= ratio * (best AS for that molecule in the region)`.
+///
+/// **Default 0.0 = admit all**, so it is byte-identical to §6n2's measured behaviour until set. 1.0 = exact
+/// ties only. The same principle (and the same 0.98 default width) as `copy_assign --as-ratio`, applied to
+/// site construction instead of assignment.
+pub fn gtf_secondary_as_ratio() -> f64 {
+    std::env::var("RUSTLE_GTF_SECONDARY_AS_RATIO").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0)
+}
+
+/// Which records of a region survive the AS-tie filter, by index into `recs`.
+///
+/// Pure function over (is_secondary, name, as_score) so the rule is unit-testable without a BAM. A primary
+/// is always kept. With `ratio <= 0.0` every secondary is kept (the §6n2 behaviour). A secondary with no AS,
+/// or whose molecule has no scored best, is kept — absence of evidence is not evidence of a loser.
+pub fn as_tie_keep(recs: &[(bool, String, Option<i32>)], ratio: f64) -> Vec<bool> {
+    if ratio <= 0.0 {
+        return vec![true; recs.len()];
+    }
+    let mut best: std::collections::HashMap<&str, i32> = std::collections::HashMap::new();
+    for (_, name, as_score) in recs {
+        if let Some(a) = as_score {
+            let e = best.entry(name.as_str()).or_insert(i32::MIN);
+            if *a > *e {
+                *e = *a;
+            }
+        }
+    }
+    recs.iter()
+        .map(|(is_sec, name, as_score)| {
+            if !*is_sec {
+                return true;
+            }
+            match (as_score, best.get(name.as_str())) {
+                (Some(a), Some(b)) if *b > 0 => (*a as f64) >= ratio * (*b as f64),
+                _ => true,
+            }
+        })
+        .collect()
+}
+
 pub fn reads_in_region(
     bam_path: &str,
     chrom: &str,
@@ -1281,14 +1326,32 @@ fn reads_in_region_indexed(
     let query = reader.query(&header, &index, &region)?;
     let mut primary = Vec::new();
     let mut bam_reads = Vec::new();
+    // Buffer the region so the AS-tie filter can see every placement of a molecule before deciding
+    // (§6n3). With the ratio at its 0.0 default nothing is dropped and this is the §6n2 behaviour.
+    let mut buf: Vec<RecordBuf> = Vec::new();
     for result in query {
         let record = result?;
-        let rb = RecordBuf::try_from_alignment_record(&header, &record)?;
-        if let Some(pr) = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()) {
-            primary.push(pr);
+        buf.push(RecordBuf::try_from_alignment_record(&header, &record)?);
+    }
+    let keys: Vec<(bool, String, Option<i32>)> = buf
+        .iter()
+        .map(|rb| {
+            (
+                rb.flags().is_secondary(),
+                rb.name().map(|n| n.to_string()).unwrap_or_default(),
+                record_as(rb),
+            )
+        })
+        .collect();
+    let keep = as_tie_keep(&keys, gtf_secondary_as_ratio());
+    for (i, rb) in buf.iter().enumerate() {
+        if keep[i] {
+            if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {
+                primary.push(pr);
+            }
         }
-        if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
-            let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(&rb));
+        if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(rb) {
+            let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(rb));
             bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
         }
     }
@@ -2683,6 +2746,24 @@ footprint: false,
         assert_eq!(pass1_skeletons_robust(&reads, 2, 1), vec![skel("c1", 1, 9000, 4, &[(200, 300)])]);
         // k=2 trims it to the 2nd-smallest start (100) and 2nd-largest end (520).
         assert_eq!(pass1_skeletons_robust(&reads, 2, 2), vec![skel("c1", 100, 520, 4, &[(200, 300)])]);
+    }
+
+    #[test]
+    fn as_tie_keep_drops_only_clear_loser_secondaries() {
+        let r = |sec: bool, n: &str, a: Option<i32>| (sec, n.to_string(), a);
+        let recs = vec![
+            r(false, "m1", Some(1000)),  // primary, always kept
+            r(true, "m1", Some(995)),    // near-tie -> kept at 0.98
+            r(true, "m1", Some(400)),    // clear loser -> dropped at 0.98
+            r(true, "m2", None),         // no AS -> kept (absence of evidence)
+            r(true, "m3", Some(500)),    // molecule has no other placement here -> its own best -> kept
+        ];
+        assert_eq!(as_tie_keep(&recs, 0.0), vec![true; 5], "ratio 0 must be the admit-all no-op");
+        assert_eq!(as_tie_keep(&recs, 0.98), vec![true, true, false, true, true]);
+        // exact ties only: the 995 secondary now loses too, the primary still does not
+        assert_eq!(as_tie_keep(&recs, 1.0), vec![true, false, false, true, true]);
+        // a primary is never dropped, whatever the ratio
+        assert!(as_tie_keep(&recs, 1.0)[0]);
     }
 
     #[test]
