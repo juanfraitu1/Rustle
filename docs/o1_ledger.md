@@ -24637,3 +24637,28 @@ this is precisely the extension the §0★★★ lattice was built to accept.
 **Caveats.** NPIP is a development family; TBC1D3's held-out check is 2 positive pairs. The two Dishuck
 views are what define "family" vs "subfamily" here, so the rule is calibrated to that pair of granularities
 and should be re-checked when another RNA-derived truth at two levels exists.
+
+### §6p5 addendum — L4 IMPLEMENTED with a substructure trigger (2026-09-19)
+
+`lattice_rules/engine.py`: `L4_CUT = 0.995`, `L4_MIN_PARTS = 2`, `L4_MIN_PART_SIZE = 2`, and
+`l4_refine(aggs, l3_groups, selective=True)`. Labels carry an `L3:`/`L4:` prefix so the level actually used
+is visible in every output. Definition doc updated (commit 407078b2).
+
+**Two triggers were tried and rejected before the one that shipped:**
+1. **Certificate-based** ("refine L3 groups that fail h_join < h_split") — **vacuous**: components of a
+   THRESHOLDED graph are certified by construction (every boundary edge is below the cut, every internal
+   spanning edge above it), so all 38 groups certify and the trigger never fires. ⚠Worth remembering: the
+   certificate only bites for EXTERNALLY-specified sets, never for the threshold's own components.
+2. **"≥ 3 parts of ≥ 2"** — too strict, fires on 1 group, reverts to L3-only numbers.
+
+**Shipped trigger: refine only where the L3 group splits into >= 2 parts of >= 2 nodes.**
+
+| arm | groups refined | lit F | iso F | mean |
+|---|---|---|---|---|
+| L3 only | 0 | **0.773** | 0.667 | 0.720 |
+| **L4 SELECTIVE (shipped)** | **4 of 38** | 0.714 | **0.833** | **0.774** |
+| L4 everywhere | 38 | 0.683 | **0.833** | 0.758 |
+
+Selective captures the **entire** subfamily gain (iso 0.833, identical to L4-everywhere) while touching 4
+groups instead of 38, and retains bipartite P 1.000 / pairwise precision 1.000 on the coarse view.
+Verified: 52 of 221 nodes are refined under `selective=True`, 153 under `selective=False`.
