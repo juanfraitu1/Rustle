@@ -29,6 +29,8 @@ ap.add_argument("--mono-quantile", type=float, default=0.75,
                 help="mono-exonic floor = this quantile of multi-exon read support; 0 disables")
 ap.add_argument("--mono-floor", type=int, default=None, help="fixed mono-exonic read floor (overrides --mono-quantile)")
 ap.add_argument("--no-ism", action="store_true", help="skip filter 1")
+ap.add_argument("--fraction-exempt", action="store_true",
+                help="exempt a transcript from the fraction filter when its own support reaches the run's level")
 ap.add_argument("--isoform-fraction", type=float, default=0.0,
                 help="drop a transcript below this fraction of the best-supported transcript at the same gene_id "
                      "(StringTie's -f); the locus dominant is never dropped. 0 = off, 0.02 = the validated setting")

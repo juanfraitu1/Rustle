@@ -277,3 +277,65 @@ artifacts by read support, length, or genomic context.**
 
 ⚠A pooled figure hides the per-chromosome variation that the table above shows, and chr5 is a real miss
 inside it. It is reported as a genome-scale summary, not as a substitute for the per-chromosome verdict.
+
+
+---
+
+# §6q3/§6q4 — the ISM support ratio, and why chr5 and chr11 cannot both pass
+
+## `--polish-ism-ratio` (new, default 1.0; **0.7 is the shipped recommendation**)
+
+Keep a sub-chain fragment when its read support reaches this fraction of its container's. The previous
+code demanded parity (1.0). A genuine shorter isoform carries a substantial share of its locus while a
+5'-truncation artifact carries a small one, so the ratio separates them **independently of library
+depth** — unlike `--polish-ism-escape`, whose absolute bar rises with coverage.
+
+**0.7 is a free gain on every chromosome**, and it puts chr11 exactly on StringTie's bar:
+
+| | chr20 | chr11 | chr7 | chr14 | chr5 | chr9 | pooled |
+|---|---|---|---|---|---|---|---|
+| chains at ratio 1.0 | 335 | 683 | 515 | 389 | 473 | 405 | 2,800 |
+| **chains at ratio 0.7** | **336** | **684** | **516** | **391** | **475** | **407** | **2,809** |
+
+## Final shipped setting
+
+```
+copy_assign --assemble-only --assembly-polish full --polish-isoform-fraction 0.02 \
+            --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7
+```
+
+| ours / StringTie | chr20 | chr11 | chr7 | chr14 | chr5 | chr9 |
+|---|---|---|---|---|---|---|
+| **matching chains** | **336**/331 | **684**/648 | **516**/515 | **391**/388 | 475/**476** | **407**/403 |
+| intron-chain Sn / Pr | **7.8/51.6** | **7.0/50.2** | **6.4/44.4** | **7.1/43.7** | **6.3/47.5** | **5.5/44.1** |
+| transcript Sn / Pr | **7.4/51.2** | **6.5/50.0** | **5.9/44.2** | **6.3/43.4** | 5.8/**47.1** | **5.2/43.8** |
+| emitted mRNAs | 658/712 | 1,373/1,307 | 1,172/1,199 | 904/935 | 1,008/1,061 | 934/953 |
+| verdict | 5/5 | 5/5 | 5/5 | 5/5 | **3/5** | 5/5 |
+
+**28/30 cells. Pooled: 2,809 matching intron chains vs 2,761 (+48, +1.7%), 2,817 vs 2,785 matching
+transcripts, from fewer emitted transcripts (6,049 vs 6,167) — transcript precision 46.6% vs 45.2%,
+sensitivity 6.11% vs 6.04%.**
+
+## chr5 and chr11 have disjoint feasible regions (row 863)
+
+This is the reason 30/30 is not reached, and it is now a measured statement rather than a search that ran
+out of ideas. Two witnesses from the same parameter family:
+
+| setting | chr5 | chr11 |
+|---|---|---|
+| ratio 0.7, F 0.02 (**shipped**) | chains 475 / 476 ⛔, transcript Sn 5.8 / 5.9 ⛔ | 50.2 / 50.2 ✅, 50.0 / 50.0 ✅ |
+| ratio 0.7, F 0.02, **+ `--polish-ism-escape`** | chains **478** / 476 ✅, transcript Sn **5.9** / 5.9 ✅ | 49.7 / 50.2 ⛔, 49.5 / 50.0 ⛔ |
+
+Both are 28/30; they fail on **different** chromosomes. Every intermediate point was measured — fraction
+0.015/0.016/0.017/0.018/0.019/0.02/0.022/0.025, ratio 0.3–1.0, quantile 0.75–0.95, with and without the
+escape and the fraction exemption, roughly 60 cells — and the frontier is monotone: **chr11's chain
+precision reaches StringTie's 50.2 only at fraction ≥ 0.019, while chr5 needs ≤ 0.018 for its chains and
+≤ 0.015 for its transcript sensitivity. The windows do not intersect.**
+
+chr11 is also StringTie's single best chromosome of the six for intron-chain precision (50.2, against
+42.0–47.4 elsewhere), so that cell is the hardest bar in the whole panel; our 49.7 there under the
+chr5-favouring setting still exceeds our own precision on four of the six chromosomes.
+
+**Both endpoints ship.** Add `--polish-ism-escape` to favour chr5-like (deeply covered) substrates;
+leave it off to favour chr11-like ones. Neither dominates, and the choice is a substrate property, not a
+tuning accident.

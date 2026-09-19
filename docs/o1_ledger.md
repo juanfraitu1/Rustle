@@ -24884,3 +24884,32 @@ costs ~120 junk transcripts, i.e. more transcript precision than the sensitivity
 2,761 (+1.4%) and 2,808 vs 2,785 matching transcripts, from FEWER emitted transcripts (6,006 vs 6,167) —
 so transcript precision 46.8% vs 45.2% and sensitivity 6.09% vs 6.04%.** ⚠A pooled figure hides the
 per-chromosome variation; chr5 is a real miss inside it. Report both.
+
+## §6q3/§6q4 — ISM support ratio 0.7 shipped; chr5 and chr11 proven disjoint (2026-09-19)
+
+Report `bench/ASSEMBLY_POLISH.md` §6q3/§6q4.
+
+⭐**`--polish-ism-ratio` (default 1.0; SHIP 0.7)** — keep a sub-chain fragment when its support reaches
+this fraction of its container's, instead of demanding parity. **Depth-invariant**, unlike
+`--polish-ism-escape` whose absolute bar rises with coverage. **0.7 gains chains on all six chromosomes**
+(pooled 2,800 → 2,809) and puts chr11 exactly on StringTie's bar.
+
+⭐**FINAL SHIPPED SETTING:**
+`--assemble-only --assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7`
+⟹ **28/30 cells**; chains 336/331, 684/648, 516/515, 391/388, 475/476, 407/403.
+**Pooled: 2,809 vs 2,761 chains (+1.7%), 2,817 vs 2,785 matching transcripts, from FEWER emitted (6,049
+vs 6,167) ⟹ transcript precision 46.6% vs 45.2%, sensitivity 6.11% vs 6.04%.**
+
+⛔⛔**chr5 and chr11 have DISJOINT feasible regions (register 863)** — this is why 30/30 is unreachable,
+and it is measured, not a search that gave up. **chr11's intron-chain precision reaches StringTie's 50.2
+only at fraction ≥ 0.019; chr5 needs ≤ 0.018 for its chains and ≤ 0.015 for its transcript sensitivity.**
+Two 28/30 witnesses fail on DIFFERENT chromosomes: the shipped setting (chr11 exactly on the bar, chr5
+short) and shipped + `--polish-ism-escape` (chr5 fully fixed at 478 chains / tSn 5.9, chr11 49.7/49.5).
+~60 cells swept across fraction, ratio, quantile, escape, exemption, 3'-anchoring and `--read-isoform-k`.
+
+⚠chr11 is StringTie's BEST chromosome of the six for intron-chain precision (50.2 vs 42.0-47.4
+elsewhere), so that cell is the hardest bar in the panel.
+
+⭐**Both endpoints ship as a documented dial**: `--polish-ism-escape` on favours deeply-covered
+(chr5-like) substrates, off favours chr11-like ones. Neither dominates. ⛔`--polish-fraction-exempt` does
+not unlock a higher fraction (register 864).

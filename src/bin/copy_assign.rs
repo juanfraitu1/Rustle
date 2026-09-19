@@ -211,6 +211,23 @@ struct Args {
     #[arg(long, default_value_t = false)]
     polish_ism_3p: bool,
 
+    /// ⭐ §6q4 FRACTION EXEMPTION for `--assembly-polish`. Exempt a transcript from
+    /// `--polish-isoform-fraction` when its OWN read support reaches the run's `--polish-mono-quantile`
+    /// level of multi-exon support. The fraction test is purely relative, so at a deep locus it discards
+    /// isoforms that carry plenty of absolute evidence merely because the dominant isoform is deeper
+    /// still; the exemption makes the filter say "a minor flow AND thinly supported" instead of "a minor
+    /// flow". It reuses the existing quantile, so it adds no new constant.
+    #[arg(long, default_value_t = false)]
+    polish_fraction_exempt: bool,
+
+    /// ⭐ §6q3 ISM SUPPORT RATIO for `--assembly-polish full`. Keep a sub-chain fragment when its read
+    /// support reaches this fraction of its container's. 1.0 (the default) demands parity; a genuine
+    /// shorter isoform typically carries a substantial share of its locus, while a 5'-truncation artifact
+    /// carries a small one, so the ratio separates them **independently of library depth** — unlike
+    /// `--polish-ism-escape`, whose absolute bar rises with coverage.
+    #[arg(long, default_value_t = 1.0)]
+    polish_ism_ratio: f64,
+
     /// §6q1 ISM ABSOLUTE ESCAPE for `--assembly-polish full`. Keep a sub-chain fragment when its own read
     /// support reaches the run's `--polish-mono-quantile` level of multi-exon support, even if its
     /// container is deeper still. The ISM collapse gets harsher as coverage grows, and the deepest
@@ -2136,6 +2153,8 @@ fn polish_gtf_lines(
     mono_shadow: bool,
     ism_absolute_escape: bool,
     ism_3p_anchored: bool,
+    ism_ratio: f64,
+    fraction_exempt: bool,
 ) -> (usize, usize, usize, u64) {
     use std::collections::{HashMap, HashSet};
     if mode == "none" {
@@ -2199,7 +2218,7 @@ fn polish_gtf_lines(
                 return true;
             }
             let rc = reads.get(cont).copied().unwrap_or(0);
-            rc > 0 && rf >= rc
+            rc > 0 && (rf as f64) >= ism_ratio * rc as f64
         };
         let mut groups: HashMap<(String, String), Vec<String>> = HashMap::new();
         for (tid, k) in key.iter() {
@@ -2354,6 +2373,9 @@ fn polish_gtf_lines(
                 continue;
             }
             let r = reads.get(t).copied().unwrap_or(0);
+            if fraction_exempt && support_level > 0 && r >= support_level {
+                continue;
+            }
             if r < b && (r as f64) < isoform_fraction * b as f64 {
                 drop.insert(t.clone());
             }
@@ -4561,6 +4583,8 @@ fn main() -> Result<()> {
                 args.polish_mono_shadow,
                 args.polish_ism_escape,
                 args.polish_ism_3p,
+                args.polish_ism_ratio,
+                args.polish_fraction_exempt,
             );
             let after = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
             eprintln!(
@@ -5502,26 +5526,26 @@ mod tests {
 
         // none is a no-op
         let mut l = build();
-        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0, false, false, false), (0, 0, 0, 0));
+        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0, false, false, false, 1.0, false), (0, 0, 0, 0));
         assert_eq!(l, build());
 
         // mono: floor = p75 of {9, 2, 9} = 9, so both 1-read mono transcripts go, MONOHI stays
         let mut l = build();
-        let (ism, mono, _, floor) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0, false, false, false);
+        let (ism, mono, _, floor) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0, false, false, false, 1.0, false);
         assert_eq!((ism, floor), (0, 9));
         assert_eq!(mono, 2);
         assert_eq!(tids(&l), vec!["LONG", "SHORT", "STRONG", "MONOHI"]);
 
         // full: SHORT is an unsupported sub-chain, MONOLO an unsupported mono inside LONG
         let mut l = build();
-        let (ism, mono, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0, false, false, false);
+        let (ism, mono, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0, false, false, false, 1.0, false);
         assert_eq!(ism, 2);
         assert_eq!(mono, 1); // FREE has no host, so only the floor removes it
         assert_eq!(tids(&l), vec!["LONG", "STRONG", "MONOHI"]);
 
         // quantile 0 disables the floor entirely
         let mut l = build();
-        let (_, mono, _, floor) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false);
+        let (_, mono, _, floor) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false);
         assert_eq!((mono, floor), (0, 0));
         assert!(tids(&l).contains(&"FREE".to_string()));
     }
@@ -5556,17 +5580,17 @@ mod tests {
         };
         // TINY is 1% of BIG, so F = 0.02 removes it; SOLO is its own locus's dominant and survives
         let mut l = build();
-        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02, false, false, false);
+        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02, false, false, false, 1.0, false);
         assert_eq!(frac, 1);
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
         // F below TINY's share keeps everything
         let mut l = build();
-        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005, false, false, false);
+        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005, false, false, false, 1.0, false);
         assert_eq!(frac, 0);
         assert_eq!(tids(&l), vec!["BIG", "TINY", "SOLO"]);
         // even a huge F never empties a locus: the dominant of each gene_id survives
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.99, false, false, false);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.99, false, false, false, 1.0, false);
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
     }
 
@@ -5604,11 +5628,11 @@ mod tests {
             l
         };
         let mut l = shadow();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, true, false, false);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, true, false, false, 1.0, false);
         assert_eq!(tids(&l), vec!["PLUS", "ANTIIN", "FAR"]);
         // shadow off leaves them all
         let mut l = shadow();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false);
         assert_eq!(tids(&l).len(), 6);
 
         // ISM escape: FRAG's chain is a sub-chain of DEEP's; 10 reads is below DEEP's 100 but reaches the
@@ -5621,10 +5645,10 @@ mod tests {
             l
         };
         let mut l = ism();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false);
         assert_eq!(tids(&l), vec!["DEEP", "OTHER"], "without the escape the fragment is absorbed");
         let mut l = ism();
-        polish_gtf_lines(&mut l, "full", 0.10, 0.0, false, true, false);
+        polish_gtf_lines(&mut l, "full", 0.10, 0.0, false, true, false, 1.0, false);
         assert_eq!(tids(&l), vec!["DEEP", "FRAG", "OTHER"], "with the escape a well-supported fragment survives");
     }
 
