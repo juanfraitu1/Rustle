@@ -24042,3 +24042,40 @@ dissolution ⇒ reference bias. ⚠A subtlety worth pre-registering: **secondary
 reference-absence signature.** It means the read has a BETTER placement elsewhere in THIS reference
 (within-reference ambiguity), which a graph may not fix and could worsen by adding paths. Reference absence
 is the opposite profile — good primary support with poor identity — which §6n9's flagged set does not show.
+
+## §6o1 — OVERALL family metrics on ALL Soto families, not the 11 pre-chosen: F drops 0.893 → 0.628, and the loss is RECALL (2026-09-18)
+
+User: *"what is overall precision/recall and bipartite matching for current families? Can we test some other
+ones to ensure the claim holds?"* The published §6ks/§6kt headline (E1S bipartite F 0.881) is scored on
+**11 families chosen by name** — every single/couple-chromosome Soto family on chr5/7/21 matching §6kr's
+pattern. This scores **every** Soto family with >= 2 genes in each catalog, and adds two further regions.
+
+| region / family set | fams | genes | R | P | **F** | pairwise sens | pairwise prec |
+|---|---|---|---|---|---|---|---|
+| chr5/7/21 E1 (held-out) — 11 pre-chosen | 10 | 33 | 0.788 | 0.897 | **0.839** | 0.512 | 0.815 |
+| chr5/7/21 E1 — **ALL** | 76 | 440 | 0.502 | 0.844 | **0.630** | 0.395 | 0.822 |
+| chr5/7/21 **E1S (SHIPPED)** — 11 pre-chosen | 10 | 31 | 0.806 | 1.000 | **0.893** | 0.512 | 1.000 |
+| chr5/7/21 **E1S — ALL** | 72 | 434 | 0.493 | 0.863 | **0.628** | 0.391 | 0.858 |
+| chr15/17 E1 — ALL | 104 | 488 | 0.541 | 0.733 | **0.623** | 0.370 | 0.367 |
+| chr1 E1 — ALL | 44 | 292 | 0.452 | 0.767 | **0.569** | 0.153 | 0.475 |
+
+(The 11-family rows give 10 families and F 0.893 rather than §6ks's 11 and 0.881 because this scorer
+requires >= 2 members present in the catalog, which drops ID_373 — it recovers 0 pairs under either rule.)
+
+⚠⚠**THE HEADLINE NUMBER DOES NOT GENERALISE. On the shipped E1S catalog, moving from the 11 hand-picked
+families to all 72 costs F 0.893 → 0.628 (−0.265) and bipartite R 0.806 → 0.493.** Three independent
+regions all land at **F 0.57–0.63**, so that band, not 0.88, is the honest overall figure.
+
+⭐**Precision survives; RECALL is what collapses.** Pairwise precision is 0.858 over all 72 (vs 1.000 on the
+11) and bipartite P stays 0.844–0.863 on chr5/7/21. Bipartite R falls 0.806 → 0.493 and pairwise
+sensitivity 0.512 → 0.391. We are not over-merging more on the wider set — **we are failing to recover
+families we simply do not reconstruct.** Consistent with §6n7: containment of Soto inside us holds at ~80%,
+but the large Soto families are the ones we split, and recall is where that shows.
+
+⚠**chr15/17 and chr1 are worse on PRECISION specifically** (0.367 and 0.475 vs 0.858) — those regions
+contain the sprawling families (GOLGA8, LRRC37A, NBPF/NOTCH2NL) that §6kr already identified as our
+over-merge cases. So the precision story is region-dependent in a way the chr5/7/21 headline hides.
+
+**How to quote this from now on:** *"bipartite F ≈ 0.63 over all 72 Soto families on the held-out
+chromosomes (P 0.86, R 0.49); F 0.89 on the 11-family subset the rule was tuned against."* Never the second
+number alone.
