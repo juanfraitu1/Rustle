@@ -24004,3 +24004,41 @@ artifacts".** It marks where the evidence is BORROWED, nothing more.
 **Not done:** wiring the flag into a node rule and measuring the certificate/family effect. The filter
 produces the classification; whether dropping those 9 changes anything is a separate pre-registered test,
 and §6m3 is the warning that node rules which shrink the node set have non-obvious costs.
+
+## §6o0 — would a GRAPH reference dissolve these readthroughs? Evidence says NO: the supporting reads are RESIDENT, not reference-forced (2026-09-18)
+
+User (O3 framing, avoiding reference bias): *"could a graph like reference avoid readthroughs that might
+look like real biology but be in fact artifacts?"* No graph or alternative human assembly is on disk (only
+CHM13 + ape BAMs), so the graph test itself cannot be run today. But the discriminating signal is
+measurable on the linear alignment, and it answers the question for THESE readthroughs.
+
+**The mechanism to test.** A linear reference manufactures a readthrough when a molecule's true source
+locus is ABSENT or COLLAPSED in it: the aligner must place the read somewhere, and the best available
+placement may span two adjacent paralogs. Such a forced read should show **elevated divergence, soft
+clipping, and/or depressed MAPQ**. A resident read should not.
+
+**Measured on the PRIMARY reads carrying a readthrough fusion junction (`-F 0x900`):**
+
+| class | reads | MAPQ 60 | MAPQ 0 | median `de` | median soft-clip fraction |
+|---|---|---|---|---|---|
+| unflagged (primary-resident) | 7,597 | **97.2%** | 0.0% | **0.0020** | **0.000** |
+| flagged (secondary-dominated, §6n9) | 355 | 80.8% | 1.1% | 0.0026 | **0.000** |
+
+⭐**Neither class shows the reference-forced signature.** Divergence is ~0.2% in both, soft-clipping is zero
+in both, and even the secondary-dominated records are 80.8% MAPQ 60. These reads align as residents of the
+loci they are placed at. **A graph reference would therefore be unlikely to dissolve them** — there is no
+"missing true locus" tension visible in the alignments.
+
+⚠**IMPORTANT LIMIT, and it is the O3-relevant one.** This test can only examine reads that are ALREADY
+placed here. It is blind to (a) molecules whose true locus is absent and which failed to map at all, and
+(b) molecules that landed somewhere else entirely. **So it is evidence that THESE readthroughs are not
+artifacts — not evidence that reference bias is absent in general.** The unmapped/elsewhere population is
+exactly O3's subject and is untouched by this measurement.
+
+**The graph test that would settle it, when assets exist.** Build a local graph or alternative reference
+containing the candidate missing copies (HPRC haplotypes, or the ape assemblies where NPIP/PKD1 copy count
+differs), realign the fusion-junction reads, and ask whether the junction persists. Persistence ⇒ biology;
+dissolution ⇒ reference bias. ⚠A subtlety worth pre-registering: **secondary-dominance is NOT the
+reference-absence signature.** It means the read has a BETTER placement elsewhere in THIS reference
+(within-reference ambiguity), which a graph may not fix and could worsen by adding paths. Reference absence
+is the opposite profile — good primary support with poor identity — which §6n9's flagged set does not show.
