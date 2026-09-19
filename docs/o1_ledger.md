@@ -24693,3 +24693,39 @@ comparisons are against.
 ⚠**It is NOT the multi-copy product.** Tied-AS multimapper resolution, copy assignment and the family
 definition are the project's contribution and all live outside this mode. A "0 families" line in
 `--assemble-only` output is correct by design, not a defect.
+
+### §6p6 addendum — CORRECTION to the byte-identity claim, and the chr20 gffcompare re-run (2026-09-19)
+
+**1. `--assemble-only` is NOT byte-identical in general.** It is identical where no families are detected
+(the 27 NPIP windows, 14,730 rows). Where detection fires — chr16:11.9-19.0 Mb, 8 families / 1,081
+assignments — assemble-only emits **2,791 transcripts vs full mode's 2,777: 14 extra, 0 missing, and all
+2,777 shared ones byte-identical.** Cause: `--gtf-copy-set` (default ON) uses the detected families to drop
+phantom transcripts at copies without evidence, and with no families it cannot fire. **Assemble-only is a
+strict SUPERSET of the full mode's transcripts, never a subset.** Speedup on that region: **7.2 s vs 557 s
+(77x)**.
+
+**2. chr20 gffcompare re-run** (`bench/GFFCOMPARE_CHR20_2026_09_19.md`, commit 5f165a19), same substrate and
+reference as the 09-15 report, all tools at defaults:
+
+| tool | query mRNAs | **matching intron chains** | intron-chain Sn / Pr | transcript Sn / Pr |
+|---|---|---|---|---|
+| **ours, today's settings** (`--read-isoform-k 3` + majority) | 1,275 | **358** | **8.4** / 33.4 | **7.9** / 28.2 |
+| ours, baseline flags | 976 | 345 | 8.0 / 44.6 | 7.6 / 35.6 |
+| **StringTie** | 712 | 331 | 7.7 / **47.4** | 7.3 / **47.1** |
+| FLAIR | 820 | 264 | 6.2 / 35.1 | 5.8 / 32.3 |
+
+⭐**On reference intron chains correctly reconstructed we lead: 358 vs StringTie 331 (+8.2%) and FLAIR 264
+(+35.6%).** StringTie wins precision decisively (47.4 vs 33.4) — expected from its network-flow model and
+712 vs 1,275 transcripts; no claim is made against it there.
+
+⚠**Today's flags are a RECALL setting**: +13 true chains for +299 emitted transcripts (precision 44.6 →
+33.4). **The baseline flags remain the precision-oriented choice** and still beat StringTie on sensitivity
+(345 vs 331) at much closer precision (44.6 vs 47.4).
+
+⭐**Validation:** the baseline arm run through `--assemble-only` reproduces the 09-15 published chr20
+numbers EXACTLY (976 mRNAs / 456 loci, 345 chains, 11.6/69.3, 8.0/44.6, 7.6/35.6).
+
+**The precision gap is FRAGMENTS, not false junctions:** the 09-15 SQANTI3 breakdown attributes it to
+incomplete-splice_match (**217 ours vs 79 StringTie**), i.e. 5′-truncated pieces of real transcripts —
+the same signature §6p4 localised (TBC1D3 5′UTR 75.3% covered vs 3′UTR 100%). Intron-level precision stays
+**85.3-86.1%**.

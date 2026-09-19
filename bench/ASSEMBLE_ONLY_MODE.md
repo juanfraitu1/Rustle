@@ -32,8 +32,14 @@ assignment in this mode, and an empty file is the honest record of that rather t
 | full mode | 53.3 s | 525,840 KB | 14,730 |
 | **`--assemble-only`** | **17.3 s** | 520,640 KB | 14,730 |
 
-⭐**The GTF is BYTE-IDENTICAL between the two modes, at 3.1x the speed.** That is the property that matters:
-the mode removes work, not output. Lib suite **883 passed / 0 failed**.
+⭐**The GTF is BYTE-IDENTICAL between the two modes here, at 3.1x the speed.** Lib suite **883 passed / 0 failed**.
+
+⚠**CORRECTION — identity holds only where NO families are detected.** On a region where detection fires
+(chr16:11.9-19.0 Mb, full mode finds 8 families / 1,081 assignments), the GTFs DIFFER: assemble-only emits
+**2,791 transcripts vs full mode's 2,777** — **14 extra, 0 missing, and all 2,777 shared ones byte-identical**.
+The cause is `--gtf-copy-set` (default ON), which uses the detected families to drop "phantom" transcripts at
+copies with no evidence; with no families that rule cannot fire. The speedup there is far larger: **7.2 s vs
+557 s (77x)**. So: assemble-only is a strict superset of the full mode's transcripts, never a subset.
 
 ## Composes with the assembly knobs
 
