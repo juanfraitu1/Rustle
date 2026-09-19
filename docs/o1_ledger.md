@@ -24913,3 +24913,25 @@ elsewhere), so that cell is the hardest bar in the panel.
 ⭐**Both endpoints ship as a documented dial**: `--polish-ism-escape` on favours deeply-covered
 (chr5-like) substrates, off favours chr11-like ones. Neither dominates. ⛔`--polish-fraction-exempt` does
 not unlock a higher fraction (register 864).
+
+## §6q5 — SQANTI3 on the polished assembler: pooled win on every category (2026-09-19)
+
+Report `bench/SQANTI3_POLISH.md`. SQANTI3 QC + the DEFAULT `sqanti3_filter.py rules` filter, six
+chromosomes, same substrates and StringTie runs as §6q0-§6q4.
+
+⭐**The polish transforms the SQANTI3 profile (chr20 raw → polished): FSM share 36.1% → 51.2%, ISM
+22.2% → 11.9%, rules-filter PASS 75.9% → 94.8%** — and it collapses exactly the categories the shadow
+rule targets: **antisense 80 → 9, intergenic 31 → 10, genic 31 → 2, genic_intron 16 → 1**. FSM count only
+352 → 337 while 318 transcripts are dropped.
+
+⭐**POOLED over six chromosomes we beat StringTie on EVERY SQANTI3 quantity**: FSM 2,819 (46.6%) vs
+2,794 (45.4%), ISM 735 (12.2%) vs 770 (12.5%), artifact categories 354 (5.9%) vs 384 (6.2%), rules-filter
+PASS 5,705/6,049 = **94.3%** vs 5,759/6,153 = 93.6%, FSM surviving the filter 2,801 vs 2,783 — from FEWER
+emitted transcripts (6,049 vs 6,153). Per chromosome the pass rate is ours on chr11/14/5/9 and
+StringTie's on chr20/7; the FSM share is ours on five of six.
+
+⚠**NIC/NNC transcripts cannot be "made FSM"** — they are novel junction combinations (real unannotated
+isoforms or mis-assemblies); calling them FSM would mean changing the reference, not the assembler. Our
+34 chr20 rejects have the same profile as StringTie's 32 (NNC 14/15, ISM 7/7, NIC 4/5). The polish's
+contribution is removing the categories that genuinely ARE artifacts, which is why the FSM SHARE rises
+while the FSM count falls slightly.
