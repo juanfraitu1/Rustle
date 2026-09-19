@@ -23930,3 +23930,40 @@ chr15/17 only CHRFAM7A, with GOLGA8 spanning 3 of ours and LRRC37A 4 — all lar
 Soto at ~80-90%, and the residual is concentrated in their large families.** That is a far more tractable
 claim and it is the form §0★★★ needs. ⚠Quote the chr5/7/21 numbers (held-out); the 10-family lattice table
 is descriptive, NPIP/TBC1D3 being development families.
+
+## §6n8 — readthroughs joining paralogs are PRIMARY, not split alignments: supplementary support is 0.1%. Secondary matters only for a handful of outliers (2026-09-18)
+
+User: *"Are the readthroughs that are joining nearby paralogs primary alignments or are they mostly
+secondary or supplementary?"* Test: for each of the 195 readthrough records with an identified fusion point
+(`node_cut/cuts.tsv`), count the records carrying that exact FUSION junction, split by SAM flag class.
+141 of 195 have any support. 13,899 supporting records total.
+
+| class | records | share |
+|---|---|---|
+| primary | 7,952 | **57.2%** |
+| secondary | 5,938 | 42.7% |
+| **supplementary** | **9** | **0.1%** |
+
+⭐**Supplementary is essentially zero.** These are NOT split/chimeric alignments of one molecule across two
+loci — the fusion junction sits inside a single contiguous alignment. Whatever else a readthrough is, the
+aligner is not manufacturing it by splitting a read.
+
+**Paralog-rich vs ordinary** (paralog-rich = a half's name root has >= 3 gene records):
+
+| class | n | primary | secondary | **median per-record secondary fraction** | secondary-majority records |
+|---|---|---|---|---|---|
+| joining a paralog-rich root | 124 | 4,661 (44.2%) | 5,892 (55.8%) | **0.000** | **7/124** |
+| ordinary two-gene readthrough | 17 | 3,291 (98.5%) | 46 (1.4%) | **0.000** | 2/17 |
+
+⚠**Read the median, not the pooled share.** The TYPICAL readthrough in BOTH classes is purely
+primary-supported (median secondary fraction 0.000), and only 7 of 124 paralog-rich records are
+secondary-majority. The 44%/56% pooled split is driven by a few very-high-count outliers:
+`ERV3-1-ZNF117` (30 primary / **3,721 secondary**), `PKD1P4-NPIPA8` (10 / **1,150**),
+`PKD1P3-NPIPA1` (214 / 628). Quoting "paralog-joining readthroughs are mostly secondary" would be the
+pooled-mean trap.
+
+**Within the NPIP set it is genuinely mixed:** `PDXDC2P-NPIPB14P` 726 primary / 1 secondary and
+`PKD1P6-NPIPP1` 110 primary at MAPQ 60 (§6m1 addendum) are primary-only; `PKD1P4-NPIPA8` and
+`PKD1P3-NPIPA1` are secondary-dominated. So the readthroughs holding NPIP's DNA boundary are not one
+phenomenon — some are unambiguous molecules, others exist there mainly as multimapping echoes, and only the
+latter would be touched by a secondary-alignment policy.
