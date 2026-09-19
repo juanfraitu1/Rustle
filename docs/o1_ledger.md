@@ -24432,3 +24432,50 @@ An alignability-derived RNA truth tried earlier was **circular** and discarded �
 truths are not.
 
 **Recommendation: raise the L3 cut from 0.98 to 0.995 (range 0.985-0.995).** Not changed; the user's call.
+
+## §6p1 — L3 RAISED to 0.995 (shipped); the MERGED-LOCUS layer; and node fragmentation measured (2026-09-19)
+
+Three user requests after §6p0.
+
+**1. L3 cut raised 0.98 → 0.995 (commit 3b2b3279).** `lattice_rules/engine.py` now carries `L3_CUT = 0.995`
+and `docs/seeded_family_definition.md` §0★★★ records the evidence and the range 0.985-0.995.
+⚠**Every lattice number recorded before today was computed at 0.98** — set `L3_CUT = 0.98` to reproduce one.
+
+**2. MERGED-LOCUS LAYER** (`bench/MERGED_LOCI_LAYER.md`, `bench/merged_loci_layer.tsv`, commit a29202dd).
+A genuine fusion belongs to TWO parent families; the levels must stay PARTITIONS or T1/T1′ fail, so dual
+membership is recorded as a **cover layer on top of the partition**, never as a level.
+Admission = curated readthrough AND >= 3 PRIMARY reads on the fusion junction AND not secondary-dominated
+(§6n9) — the discrimination register 844 wanted.
+
+| merged locus | primary | secondary | own L3 component | families bridged |
+|---|---|---|---|---|
+| **PDXDC2P-NPIPB14P** | 726 | 1 | **1 (singleton)** | 14 |
+| **PKD1P6-NPIPP1** | 110 | 3 | **1 (singleton)** | 6 |
+| BOLA2-SMG1P6 | 60 | 51 | 11 | 4 |
+| SLX1B-SULT1A4 | 120 | 4 | 8 | 1 |
+
+⭐**Raising L3 to 0.995 already isolates the two NPIP-side fusions as SINGLETON components** — the records
+that held NPIP's certificate boundary through §6m1-§6m3. The layer now records what they bridge instead of
+letting them merge it. ⚠`BOLA2-SMG1P6` is borderline (secondary fraction 0.46, passes only under the 0.50
+threshold); bridged-family counts come from L2 neighbours so they include co-duplicated SD neighbours
+(CLN3, LOC lncRNAs) — read them as "what it touches", not "what it is a member of".
+
+**3. NODE FRAGMENTATION — measured, and a merge is SAFE but is NOT the recall fix.**
+Human RNA dump, 5,770 nodes. Same chrom+strand proximity merge:
+
+| rule | groups | nodes covered | nodes removed | groups with >=2 labelled | **SAME truth label** | false merges |
+|---|---|---|---|---|---|---|
+| strict overlap (gap 0) | 75 | 156 | 81 (1.4%) | 33 | **32 (97%)** | 1 (3%) |
+| gap <= 1,000 bp | 288 | 608 | 320 (5.5%) | 106 | **102 (96%)** | 4 (4%) |
+| **gap <= 5,000 bp** | 895 | 2,228 | **1,333 (23%)** | 356 | **341 (96%)** | 15 (4%) |
+| gap <= 10,000 bp | 1,069 | 3,201 | 2,132 (37%) | 405 | 370 (91%) | 35 (9%) |
+
+⭐**A merge at gap <= 5 kb consolidates 23% of nodes at 96% label consistency**; consistency falls to 91% at
+10 kb, so 5 kb is the knee. Fragmentation against the annotation is real — 444 guided loci contain >= 2 RNA
+nodes (195 with 2, 108 with 6+).
+
+⚠**But it will NOT fix recall.** §6o9 measured edge presence as FLAT across every completeness stratum
+(exon_bp <500 31.5% … >=3000 32.9%; single-exon 27.8% vs spliced 27.0%), and §6o9 located the recall
+ceiling in the TRUTH (only 6.7% of guided-truth pairs align as spliced RNA). **Merge fragments for node
+economy and copy-counting accuracy, not as a recall lever.** ⚠The 96% is measured on the 40% of groups with
+>= 2 labelled members; the rest are unlabelled and unchecked.
