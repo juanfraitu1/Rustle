@@ -24587,3 +24587,53 @@ or retained introns. That is what the gene-body chain edges are built from, and 
   reason the §6l1/FAM90A-style "first-intron difference" subfamily criteria were fragile.
 - It also explains why §6n2's secondary read pool helped so much: it recovers reads whose 5' portion
   aligned elsewhere, which is precisely the truncation-affected end.
+
+## §6p5 — ⭐AN EMPIRICAL RULE THAT DOES HELP: stop forcing one cut to serve two granularities — ADD L4. Both levels then beat any single cut (2026-09-19)
+
+User: *"can we learn any empirical rule that can help our metrics?"* Learned from labelled pairs
+(`records.tsv` primary rows, Dishuck RNA truth), then validated across truth views and a held-out family.
+
+**1. Which feature actually discriminates?** Over 325 labelled pairs (24 positive / 301 negative), best
+single-feature accuracy:
+
+| feature | pos median | neg median | best threshold | accuracy | sens | spec |
+|---|---|---|---|---|---|---|
+| **id_gx** (gap-excluded identity) | 0.9986 | 0.9787 | **0.9971** | **0.978** | 0.750 | 0.997 |
+| identity | 0.9955 | 0.9567 | 0.9945 | 0.966 | 0.583 | 0.997 |
+| fex_longer | 0.6026 | 0.2576 | 0.9050 | 0.929 | 0.250 | 0.983 |
+| cov_longer | 1.0000 | 0.7407 | 0.9997 | 0.905 | 0.792 | 0.914 |
+| sx_frac | 1.0000 | 0.7547 | 0.9995 | 0.840 | 0.667 | 0.854 |
+| coverage | 1.0879 | 1.0669 | — | 0.923 | 0.000 | 0.997 |
+
+**`id_gx` is confirmed empirically as the right quantity** — it is already what L3 uses. No conjunct beat it
+(`id_gx & cov_longer` variants: 0.750-0.792 sens at lower spec).
+
+**2. Held-out family check (TBC1D3 Guitart, 2 positive / 4 negative pairs):**
+
+| rule | NPIP iso (fit) | NPIP lit (view 2) | **TBC1D3 (HELD OUT)** |
+|---|---|---|---|
+| L3 shipped `id_gx >= 0.985` | sens 1.000 spec 0.814 | sens 0.503 spec 0.986 | sens 1.000 **spec 0.000** |
+| learned `id_gx >= 0.9971` | sens 0.750 spec 0.992 | sens 0.105 spec 1.000 | sens 1.000 **spec 0.750** |
+
+On the held-out family the tighter cut takes specificity **0.000 → 0.750 at no recall cost** — but it
+collapses recall on NPIP's coarser `lit` view (0.503 → 0.105). **That is not one threshold failing; it is
+two different granularities being asked of one number.**
+
+⭐**3. THE RULE: add a level rather than compromise.**
+
+| level | cut | vs `lit` (coarser) | vs `iso` (Iso-Seq groups, finer) |
+|---|---|---|---|
+| **L3 = family** | **id_gx >= 0.985** | **F 0.773** (bipartite P **1.000**, pairwise precision **1.000**) | 0.667 |
+| **L4 = subfamily (NEW)** | **id_gx >= 0.995** | 0.683 | **F 0.833** |
+
+**Each level beats any single cut on its matched truth** — one cut at 0.985 gives iso only 0.667, one at
+0.995 gives lit only 0.683. Adding L4 gains **+0.166 F on the Iso-Seq groups while L3 keeps 0.773 at
+precision 1.000**.
+
+⭐**Nesting is FREE: 30/30 L4 groups lie inside exactly one L3 group, 0 violations.** Since 0.995 >= 0.985
+the L4 test is a subgraph-monotone filter, so T1 (nesting) and T1′ (laminar) hold by the existing proofs —
+this is precisely the extension the §0★★★ lattice was built to accept.
+
+**Caveats.** NPIP is a development family; TBC1D3's held-out check is 2 positive pairs. The two Dishuck
+views are what define "family" vs "subfamily" here, so the rule is calibrated to that pair of granularities
+and should be re-checked when another RNA-derived truth at two levels exists.
