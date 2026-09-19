@@ -24662,3 +24662,34 @@ is visible in every output. Definition doc updated (commit 407078b2).
 Selective captures the **entire** subfamily gain (iso 0.833, identical to L4-everywhere) while touching 4
 groups instead of 38, and retains bipartite P 1.000 / pairwise precision 1.000 on the coarse view.
 Verified: 52 of 221 nodes are refined under `selective=True`, 153 under `selective=False`.
+
+## §6p6 — `--assemble-only`: an assembler-only mode, byte-identical GTF at 3.1x the speed (2026-09-19)
+
+User: *"can we somehow have a mode that only does assembly? this mode does not need to do all the all-by-all
+comparisons and instead focuses on defining loci, clustering isoforms to the right transcript."*
+Report `bench/ASSEMBLE_ONLY_MODE.md`. Lib suite **883 passed / 0 failed**.
+
+**Implementation.** `--assemble-only` sets `args.gtf = true` at parse time (so every existing `if args.gtf`
+gate fires unchanged rather than each needing a second condition) and skips the AS-tied gate and
+`detect_and_assign` — family detection, POA homology, E_r refinement and copy assignment. The assembly path
+(`reads_in_region` → `pass1_skeletons_widened` → `assemble_gate` → `collapse_loci_groups` → GTF) is
+untouched. `<out>.families.tsv`/`.assignments.tsv` are written EMPTY by construction, which is the honest
+record of a mode that does no assignment.
+
+| | wall | max RSS | GTF rows |
+|---|---|---|---|
+| full mode | 53.3 s | 525,840 KB | 14,730 |
+| **`--assemble-only`** | **17.3 s** | 520,640 KB | 14,730 |
+
+⭐**The GTF is BYTE-IDENTICAL between the modes at 3.1x the speed** — the mode removes work, not output.
+Composes unchanged with `--read-isoform-k`, `RUSTLE_JUNCTION_MAJORITY`, `RUSTLE_GTF_SECONDARY` and
+`RUSTLE_GATE_CENSUS`, all of which are assembly-path settings.
+
+**Why.** It gives the advisor's assembler framing a first-class entry point instead of running the
+multi-copy machinery and discarding its family output. §6hz already measured this assembly at **0.846 on
+hard loci vs flair 0.574 / StringTie 0.502 / isoseq3 0.755**, and this mode is precisely the object those
+comparisons are against.
+
+⚠**It is NOT the multi-copy product.** Tied-AS multimapper resolution, copy assignment and the family
+definition are the project's contribution and all live outside this mode. A "0 families" line in
+`--assemble-only` output is correct by design, not a defect.

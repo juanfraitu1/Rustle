@@ -163,6 +163,20 @@ struct Args {
     #[arg(long, default_value_t = 0)]
     read_isoform_k: u32,
 
+    /// ⭐ ASSEMBLER-ONLY MODE (§6p6). Skip family detection, homology refinement and copy assignment
+    /// entirely, and run ONLY the assembly path: reads -> intron-chain skeletons -> `assemble_gate` ->
+    /// `collapse_loci_groups` -> GTF. This is the "define loci and cluster isoforms into transcripts"
+    /// product, with none of the all-vs-all comparison work.
+    ///
+    /// It implies `--gtf` (the assembly IS the output) and leaves `<out>.families.tsv` /
+    /// `<out>.assignments.tsv` empty by construction — there is no assignment in this mode, and an empty
+    /// file is the honest record of that rather than a missing one.
+    ///
+    /// Composes with the assembly knobs: `--read-isoform-k`, `RUSTLE_JUNCTION_MAJORITY`,
+    /// `RUSTLE_GTF_SECONDARY`, `RUSTLE_GATE_CENSUS`.
+    #[arg(long, default_value_t = false)]
+    assemble_only: bool,
+
     /// Minimum copies for a co-located family. Two-copy homologous families are the majority and were
     /// invisible to assignment at the old default of 3; lowering it to 2 changes default family detection
     /// on its own, independently of `--homology-primary`.
@@ -2033,6 +2047,16 @@ fn linearize_tsv_row(fam: &str, loc: (&str, u64, u64), c: &LinearizeCertificate)
 
 fn main() -> Result<()> {
     let mut args = Args::parse();
+    // §6p6: --assemble-only IS the assembly product, so it implies --gtf. Setting it here means every
+    // existing `if args.gtf` gate fires unchanged rather than each one needing a second condition.
+    if args.assemble_only {
+        args.gtf = true;
+        eprintln!(
+            "[copy_assign] ASSEMBLE-ONLY: family detection, homology refinement and copy assignment are \
+             SKIPPED; running loci + isoform assembly only. `<out>.families.tsv`/`.assignments.tsv` will be \
+             empty by construction."
+        );
+    }
     // §6eu: the pipeline reads RUSTLE_PSV_READFILTER; an explicit env value wins, else the flag decides.
     if std::env::var_os("RUSTLE_PSV_READFILTER").is_none() {
         std::env::set_var("RUSTLE_PSV_READFILTER", if args.psv_read_filter { "1" } else { "0" });
@@ -2627,12 +2651,18 @@ fn main() -> Result<()> {
             GATE_REC_TIED.fetch_add(bam_reads.len(), std::sync::atomic::Ordering::Relaxed);
         }
         let t_da = std::time::Instant::now();
-        let (fams, fallback, dna_needs, linearize_certs) = detect_and_assign(
-            &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
-            args.absent_copies, do_linearize, args.linearize_gate, &args.fasta,
-            supplied.as_deref(),
-        );
-        if timing {
+        // §6p6 --assemble-only: the assembly path below needs `primary` and nothing detect_and_assign
+        // produces, so skip it outright. Empty results keep every downstream writer on its normal path.
+        let (fams, fallback, dna_needs, linearize_certs) = if args.assemble_only {
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new())
+        } else {
+            detect_and_assign(
+                &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
+                args.absent_copies, do_linearize, args.linearize_gate, &args.fasta,
+                supplied.as_deref(),
+            )
+        };
+        if timing && !args.assemble_only {
             eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
         }
         // FLAIR-style isoform assembly for the optional GTF (intron-chain collapse -> gate -> gene grouping).
