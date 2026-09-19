@@ -24193,3 +24193,34 @@ it. The evidence-based filter removes 9 nodes, costs 2 truth genes, and still ga
 RNA side: F 0.586 after the readthrough filter, with recall already high (sens 0.902) and **precision 0.302
 the binding constraint**. The guided↔RNA gap remains the project's central problem and f_ex is not the
 lever for it.
+
+## §6o5 — the RNA-side level that matches Soto is w_98 ≈ 0.990, one notch above the shipped L3: F 0.586 → 0.659 and pairwise precision 0.302 → 0.656 (2026-09-18, DEVELOPMENT ONLY)
+
+§6n7 predicted Soto sits BETWEEN our L2 and L3. This sweeps the L3 identity cut to find it. Same scorer as
+§6o4 (Soto-labelled universe, §6n9 readthrough filter applied). **Truth-gene count is constant at 49
+across every L3 row — no denominator shrinkage anywhere in this table.**
+
+| level / cut | genes | R | P | **F** | pairwise sens | pairwise prec |
+|---|---|---|---|---|---|---|
+| L2 f_ex >= 0.30 | 50 | 0.580 | 0.592 | 0.586 | 0.902 | 0.302 |
+| L3 w_98 >= 0.900 / 0.950 / 0.970 | 49 | 0.592 | 0.592 | 0.592 | 0.928 | 0.302 |
+| **L3 w_98 >= 0.980 (SHIPPED)** | 49 | 0.612 | 0.625 | **0.619** | 0.885 | 0.321 |
+| L3 w_98 >= 0.985 | 49 | 0.612 | 0.682 | 0.645 | 0.435 | 0.623 |
+| **L3 w_98 >= 0.990** | 49 | 0.612 | 0.714 | **0.659** | 0.411 | **0.656** |
+| L3 w_98 >= 0.995 | 49 | 0.469 | 0.657 | 0.548 | 0.297 | 0.653 |
+| L3 w_98 >= 0.999 | 49 | 0.306 | 0.882 | 0.455 | 0.057 | 0.667 |
+
+⭐**A clear interior optimum at 0.990**: F 0.586 (L2) → 0.619 (shipped L3) → **0.659**, with pairwise
+precision **0.302 → 0.656, a 2.2x gain, while bipartite recall HOLDS at 0.612**. It falls away by 0.995.
+This is exactly the level §6n7's refinement analysis predicted, arrived at independently.
+
+⚠**Pairwise sensitivity is the cost**: 0.885 (shipped) → 0.411 at 0.990. Bipartite R holds but the pairwise
+view shows the families are being cut finer; whether that is "matching Soto" or "over-splitting" is what a
+held-out test has to decide.
+
+⚠⚠**DEVELOPMENT ONLY — NOT A CANDIDATE YET.** This is ONE region (NPIP/TBC1D3), 10 Soto families and 49
+genes, and 0.990 was chosen on it. That is the dev-set-optimum trap. Unlike §6o3's f_ex result there is NO
+leave-one-out here, because `records.tsv` is NPIP/TBC1D3-scoped and no second lattice region exists.
+
+**What would make it a candidate:** a lattice graph for a second region (chr5/7/21 or chr1) so the cut can
+be picked on one and reported on the other, exactly as §6o3 did. That build is the blocking dependency.
