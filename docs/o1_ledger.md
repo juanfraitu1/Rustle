@@ -23688,3 +23688,46 @@ depth tuning is involved. The union is what matters: build the locus splice grap
 junctions and emit the maximal 3'-anchored path, instead of requiring one exact observed chain to clear a
 floor. ⚠§6m6's read-isoform widening was a per-CHAIN approximation of this and returned only +2 junctions;
 the union is a per-JUNCTION/graph construction and is worth +4 copies at the oracle.
+
+## §6n2 — 5' RECOVERY DELIVERED: `RUSTLE_GTF_SECONDARY` takes complete NPIP chains 10/26 → 20/26. §6n1's "selection defect" was really the primary-only read pool (2026-09-18)
+
+Report `bench/GTF_SECONDARY_POOL.md`; code `174651df`. Lib suite **882 passed / 0 failed**.
+
+**The diagnosis.** Chasing §6n1's 8-copy gap (18/26 copies have a read carrying the whole canonical chain,
+only 10 emitted):
+
+| read pool | copies with a complete canonical chain available |
+|---|---|
+| **PRIMARY only** | **10/26** |
+| primary + secondary | **18/26** |
+
+**10/26 is EXACTLY what the assembler emits — it was never dropping anything; it was already at the
+primary-only ceiling.** The 8 copies in between hold their complete chain at that locus ONLY as a secondary
+record (minimap2 placed those reads primarily at a different NPIP paralogue).
+⚠**§6n1's framing is corrected: this is a READ-POOL SCOPE decision, not a selection defect.**
+
+**The change.** `reads_in_region` builds its pool with `alignment_read_from_record(.., gtf_secondary_enabled())`
+instead of `primary_read_from_record`. `RUSTLE_GTF_SECONDARY` default OFF ⇒ byte-identical (verified: the OFF
+arm reproduces §6m8's `mj3.gtf` byte for byte). Supplementary excluded in both modes. This is the O1⊥O2
+abstention the module already documents — a read may support several sites at once — and is NOT a copy
+assignment; the certificate path is untouched.
+
+| arm | tx | canonical/209 | **complete** | chains containing the full set |
+|---|---|---|---|---|
+| primary only (shipped default) | 1,456 | 170 (81%) | **10/26** | 7 |
+| **+ secondary** | **13,132** | **197 (94%)** | **20/26** | **15** |
+| oracle (union of all alignments) | — | 205 (98%) | 22/26 | — |
+
+⭐**+10 copies and +27 junctions — the largest single gain in this line of work** — reaching 90% of the way
+to the all-alignment oracle.
+
+⚠**COST: 9x transcripts (1,456 → 13,132)**, almost all multimapper echoes of the same molecule at several
+paralogues (by construction — that is what a secondary record is). **Use for "which junctions/copies exist"
+(O1). Do NOT use for "how much of what" — quantification/expression — until the echoes are collapsed.**
+
+**Running total on the NPIP ladder, canonical truth:** 151/209 & 8/26 (§6m7 baseline) → 170 & 10/26
+(§6m8 majority + widening) → **197 & 20/26 (§6n2)**. The remaining 6 copies: 2 need the union oracle's last
+8 junctions, 4 have junctions absent from every alignment.
+
+**Not done:** collapsing the echoes (one representative per molecule across placements) should keep the +10
+copies and undo most of the 9x. Untested, and the obvious next step.
