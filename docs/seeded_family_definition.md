@@ -164,7 +164,7 @@ draws the whole nested stack as a dendrogram (§0★★★.3).
 | L0 | superfamily (guided-only) | t_0 = t_P ∨ t_D | §6ko edge ∨ clause 2 — ⚠ **withdrawn as a level by §0★★★.7** (2026-09-17); kept here as the object the amendment replaces |
 | L1 | family | t_1 = t_D | clause 2 |
 | L2 | shared-exon unit | t_2 = t_1 ∧ f_ex ≥ 0.30 | adapted from §6ks, §6kt |
-| L3 | ≥ 0.995 identity unit (not the subfamily) | t_3 = t_2 ∧ w_98 ≥ **0.995** | ⭐**raised from 0.98 on 2026-09-19** (user decision, §6p0): vs the Dishuck **Iso-Seq** truth — RNA-derived and independent of this pipeline's gate — NPIP scores bipartite R=P=F **0.833**, pairwise sensitivity **1.000**, against F 0.222 at 0.98. Held out on TBC1D3's Guitart truth (no part in the choice): both robust groups survive 0.980-0.997 while the component tightens 10→9→8. **0.999 refuted on both.** Defensible range 0.985-0.995. ⚠Every lattice number recorded before that date used 0.98 |
+| L3 | ≥ 0.985 identity unit (not the subfamily) | t_3 = t_2 ∧ w_98 ≥ **0.985** | ⭐**raised from 0.98 on 2026-09-19** (user decision, §6p0): vs the Dishuck **Iso-Seq** truth — RNA-derived and independent of this pipeline's gate — NPIP scores bipartite R=P=F **0.833**, pairwise sensitivity **1.000**, against F 0.222 at 0.98. Held out on TBC1D3's Guitart truth (no part in the choice): both robust groups survive 0.980-0.997 while the component tightens 10→9→8. **0.999 refuted on both.** ⚠**§6p2: re-tested on 268 MORE families (Soto, 3 catalogs) — 0.995 does NOT generalise (mean F 0.630 vs the old 0.98's 0.658); the cross-substrate optimum is 0.985 (0.664), which also keeps most of the NPIP gain. Point estimate is 0.985.** ⚠Every lattice number recorded before 2026-09-19 used 0.98 |
 
 *Level names* (renames and the gene-body linkage wording of this section approved by the user, 2026-09-16 19:04). The design named L2 "duplication unit (SD)" and L3 "subfamily". Neither name is used here.
 - L2 uses no SD evidence, and f_ex ≥ 0.30 also holds for retrocopy–parent pairs. A spliced parent transcript aligned to
@@ -375,7 +375,7 @@ still allowed.
 ### 0★★★.3 Filtration view: thresholds are cuts, not definitions
 
 Fix a base test b and one numeric field w ∈ [0, 1], and let E(c) = {e : b(e) ∧ w(e) ≥ c}. Example: b = t_2 and w = w_98
-give the L3 sweep, since t_3 = t_2 ∧ w_98 ≥ 0.995 (0.98 before 2026-09-19, §6p0).
+give the L3 sweep, since t_3 = t_2 ∧ w_98 ≥ 0.985 (0.98 before 2026-09-19; §6p0/§6p2).
 - **Nested partitions.** If c ≥ c′, then E(c) ⊆ E(c′), so comp(E(c)) ≤ comp(E(c′)) (Lemma 0). Lowering c from 1 gives
   a nested sequence of partitions, with at most (number of distinct w values + 1) distinct members.
 - **The sequence is the single-linkage dendrogram of (V, b-edges, w).** u and v are together at cut c iff h(u, v) ≥ c.

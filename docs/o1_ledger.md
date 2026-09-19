@@ -24479,3 +24479,43 @@ nodes (195 with 2, 108 with 6+).
 ceiling in the TRUTH (only 6.7% of guided-truth pairs align as spliced RNA). **Merge fragments for node
 economy and copy-counting accuracy, not as a recall lever.** ⚠The 96% is measured on the 40% of groups with
 >= 2 labelled members; the rest are unlabelled and unchecked.
+
+## §6p2 — ⚠TESTING THE NEW L3 CUT ON 268 MORE FAMILIES: 0.995 does NOT generalise; the cross-substrate optimum is 0.985 (2026-09-19)
+
+§6p0 picked 0.995 on NPIP (Dishuck Iso-Seq/subfamily truths) with a 2-pair held-out check on TBC1D3. User
+asked to test other families. Built an **L3-equivalent** graph for the three guided catalogs — t1 gate
+(identity >= 0.80, coverage >= 0.50), edge weight = **gap-excluded identity** `nm/msum` from the PAF CIGARs,
+the same quantity `w_98` measures — and swept the cut against the Soto truth. **268 families total.**
+
+| cut | chr5/7/21 (82 fams) | chr15/17 (131) | chr1 (55) | mean F |
+|---|---|---|---|---|
+| 0.950 | 0.698 | 0.662 | 0.516 | 0.625 |
+| 0.970 | 0.701 | **0.700** | 0.544 | 0.648 |
+| **0.980 (old L3)** | 0.693 | 0.698 | 0.582 | **0.658** |
+| **0.985** | 0.698 | 0.697 | **0.597** | **0.664** ← optimum |
+| 0.990 | 0.710 | 0.669 | 0.567 | 0.649 |
+| **0.995 (NEW L3)** | **0.716** | 0.638 | 0.537 | **0.630** |
+| 0.997 | 0.690 | 0.587 | 0.519 | 0.599 |
+
+⚠⚠**0.995 is best ONLY on chr5/7/21 and is worse than the old 0.98 on average** (0.630 vs 0.658), losing
+0.060 on chr15/17 and 0.045 on chr1. **The cross-substrate optimum is 0.985.**
+
+⚠**This test is partly circular in FAVOUR of 0.98**: Soto's families use the SD98 (0.98) convention, which
+`docs/seeded_family_definition.md` already flags ("agreement there is partly by construction"). That makes
+0.98's showing here an overestimate — and makes 0.985's win, one notch above the convention, the more
+meaningful signal.
+
+**Reconciling the two analyses:**
+
+| cut | NPIP mean F (RNA truth, §6p0) | Soto mean F (268 fams) |
+|---|---|---|
+| 0.980 | 0.451 | 0.658 |
+| **0.985** | **0.720** | **0.664** ← best on Soto, near-best on NPIP |
+| 0.995 | **0.758** | 0.630 |
+
+**0.985 is the value that survives both.** It captures nearly all of the NPIP gain (0.720 of 0.758) while
+being the optimum on the 268-family set, whereas 0.995 trades 0.034 of Soto mean F for 0.038 of NPIP.
+
+**Action: L3 moved 0.995 → 0.985** (still a raise from the shipped 0.98, and the same value the §6p0 range
+`0.985-0.995` already named as its lower bound). Revert to 0.995 if the NPIP Iso-Seq truth is weighted
+above breadth.
