@@ -25076,3 +25076,30 @@ polish byte-for-byte.
 look in `archive/bench/X`.** 529 scripts now sit under `archive/` with their paths preserved, as tracked
 moves, so `git log --follow` works. Seven doc-named paths exist nowhere and **predate this cleanup**:
 three were deleted in earlier `chore: prune` commits (`667f2e5c`, `a7d003a3`) and four were never tracked.
+
+## §6r0 — a reduced file tree was BUILT AND RUN before trusting it (2026-09-19)
+
+Rather than reason about which files a cleanup may drop, the reduced set was materialised in a scratch
+directory and exercised. It caught two real defects, one of them pre-existing and serious.
+
+⭐**The reduced tree works.** 905 files / 37 MB (from 2,620 / 195 MB): fresh `cargo build --release` in a
+clean target dir, **lib+bins 883/0**, **24 integration suites ok**, and the `REPRODUCE.md` chr20 command
+returns **658 mRNAs / 336 chains / 7.8-51.6 / 7.4-51.2 — a GTF byte-identical to the full repo's**. The
+Python parity oracle and `tools/refseq_gff_to_gtf.py` (4,574 = 4,574) also reproduce.
+
+⛔**Defect 1 (register 871)** — the keep rule dropped `bench/multi_copy_eval/merge_sweep_exons.tsv` and
+`family_merge_default_merges_near_identical_paralogs` panicked. `family_graph.rs` builds that path with
+`concat!(env!("CARGO_MANIFEST_DIR"), "/bench/...")`, so a grep for `"bench/..."` never sees it.
+`tools/cleanup_wave3_outputs.py` now DERIVES the needed-data list from the sources with `"/?(bench|…)/…"`
+instead of hardcoding it.
+
+⛔⛔**Defect 2 (register 872), pre-existing and unrelated to any cleanup — A FRESH CLONE OF THE REPO
+FAILED 10 INTEGRATION TESTS.** `.gitignore`'s broad `*.fa` / `*.bam` / `*.fa.fai` rules silently
+untracked the inputs of `tests/copy_assign_xfam.rs`; the work machine passed only because the files were
+present from when they were generated. 28 KB now tracked behind explicit negations, and a fresh clone of
+the fixed repo passes all four integration suites. ⚠**This is what an external reviewer would have hit
+on their first `cargo test`.**
+
+Wave 3 is staged in `tools/cleanup_wave3_outputs.py` (dry-run default): **keep 905 / archive 1,720**,
+i.e. all source, docs and fixtures plus the three data files the Rust sources actually read
+(`bench/family_rna_refine.tsv`, `bench/multi_copy_eval/merge_sweep_exons.tsv`, `bench/FALSE_NEGATIVES.md`).
