@@ -25388,3 +25388,24 @@ the 20 s it measured; the defect is gone with the file.
 ⚠Ports had to preserve **first-seen ordering** (Python dicts are insertion-ordered and the byte comparison
 depends on it) and the exact tuple sort `(start, end, source, strand)`. A `HashMap` + explicit order `Vec`
 does it; a `BTreeMap` would silently reorder and break identity.
+
+### §6r9 addendum — `scripts/`, `tools/demo/` and friends removed (2026-09-20)
+
+Wave 2 inverted only `bench/`; `scripts/` and the `tools/` subdirectories were never swept. Applying the
+same criterion: **0 of 58 scripts in `scripts/`, `tools/demo/`, `tools/trace_analysis/` and
+`tools/parity_decisions/` are named by any authoritative doc**, and 0 are referenced by Rust. All 58
+removed; re-checked afterwards, **0 kept scripts reference a removed file**.
+
+`scripts/` was already known to be dead: it holds parity tools for the `rustle` binary deleted in
+`2e046730`. Tracked files **910 → 851**, Python **391 → 342**.
+
+⛔**Register 886 — my own closure check produced FALSE POSITIVES.** It flagged `scripts/soto_map.py`,
+`expr_counts.py` and `layer_protein_bounded.py` as needed because `bench/layer_order/*.py` import those
+names. **None of the three is in the repo at all**: `lattice_edges.py` prepends
+`/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/light/scripts` to `sys.path` and imports from
+there. Resolve imports against the paths a script actually searches, not basenames in the tree.
+
+⚠⛔**Register 887, found while doing it: the Tier-1 lattice tools do NOT run from a fresh clone.** 18 of
+`bench/layer_order/*.py` hardcode `/mnt/c/Users/jfris/Desktop/Rustle/...` and `/mnt/linuxdisk/...` through
+`sys.path.insert`, and `lattice_edges.py` needs an untracked `soto_map`. Same class as the untracked test
+fixtures (row 872) — green here, broken for anyone else. Not fixed in this pass; recorded.
