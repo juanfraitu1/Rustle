@@ -122,3 +122,14 @@ analysis/family_graphs/data/gff_cache.rds
 analysis/family_graphs/data/*_cache.rds
 bench/*_debug*.jsonl
 bench/st_debug*.jsonl
+
+# --- test fixture INPUTS (2026-09-19) -------------------------------------------------------------
+# The broad `*.fa` / `*.bam` / `*.fa.fai` rules above silently untracked the inputs of
+# tests/copy_assign_xfam.rs, so a FRESH CLONE failed 10 integration tests while the work machine
+# passed (the files existed locally from when they were generated). Negate them explicitly.
+# The generated siblings under same_chrom_supplement/out_* stay ignored -- see the note above.
+!/tests/fixtures/xfam_conflict/copies.fa
+!/tests/fixtures/xfam_conflict/genome.fa
+!/tests/fixtures/xfam_conflict/genome.fa.fai
+!/tests/fixtures/xfam_conflict/reads.bam
+!/tests/fixtures/xfam_conflict/reads.bam.bai
