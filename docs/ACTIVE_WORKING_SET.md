@@ -1,5 +1,9 @@
 # Active working set — what is actually in use (2026-09-19)
 
+> Wave 1 of the cleanup has been APPLIED (§6q8): 101 tracked files `git mv`-ed into `archive/`,
+> 33 untracked source files moved to `archive/untracked/`, 50 caches/logs deleted. Tests 883/0 + 28/0,
+> and the `bench/assembly_polish.py` parity oracle still reproduces the Rust polish byte-for-byte.
+
 Companion to `docs/CLEANUP_CANDIDATES.md`, which marks what is *probably dead*. This file marks what is
 **live**, so the audit stops treating it as a candidate: `tools/audit_cleanup_candidates.py` anchors any
 file named by a top-level `docs/*.md`, so everything listed here is protected by being listed here.
@@ -53,9 +57,18 @@ grep -ohE '(bench|tools|scripts|analysis)/[A-Za-z0-9_./-]+\.(py|sh)' \
      docs/o1_ledger.md docs/NEGATIVE_RESULTS_REGISTER.md docs/PREREG_*.md | sort -u
 ```
 
-Five are already classed as supersedable and are the archive-first candidates within this tier:
-`bench/denovo_shared_def.py`, `bench/o3_flag_pass.py`, `bench/vg_repeat_catalog.py` (SUPERSEDED-PORTED),
-`bench/gw_rebuild.sh`, `bench/gw_rebuild_v2.sh` (SUPERSEDED-CITED).
+⚠**Five Tier-2 scripts were moved by wave 1 (§6q8) and now live under `archive/`.** The ledger and
+register still name their original paths, so follow them there:
+
+| ledger path | now at |
+|---|---|
+| `bench/denovo_shared_def.py` | `archive/bench/denovo_shared_def.py` |
+| `bench/o3_flag_pass.py` | `archive/bench/o3_flag_pass.py` |
+| `bench/vg_repeat_catalog.py` | `archive/bench/vg_repeat_catalog.py` |
+| `bench/gw_rebuild.sh` | `archive/bench/gw_rebuild.sh` |
+| `bench/gw_rebuild_v2.sh` | `archive/bench/gw_rebuild_v2.sh` |
+
+They are tracked moves, so `git log --follow` and `git show HEAD~1:<old path>` both still work.
 
 ## Tier 3 — anchored only transitively (the review pool)
 
