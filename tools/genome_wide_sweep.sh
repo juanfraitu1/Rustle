@@ -8,14 +8,16 @@
 #     `assigned` at an exact tie (margin 0.000), and `families.tsv` moved with it.
 #   * One process per contig gave 1.76x on 4 chromosomes (426s -> 242s) with every GTF byte-identical.
 #
-# MEMORY IS THE BINDING CONSTRAINT, NOT CPU: peak RSS is 8.4-11.8 GB for ONE chromosome, so 4 concurrent
-# chromosomes OOM-killed a 25 GB box (exit 137). Default concurrency here is 2. Raise it only if you have
-# measured headroom: roughly 12 GB per slot.
+# MEMORY WAS THE BINDING CONSTRAINT AND IS NOW MOSTLY GONE. Peak RSS used to be 8.4-11.8 GB for ONE
+# chromosome -- read bases and qualities held for every alignment -- so 4 concurrent chromosomes
+# OOM-killed a 25 GB box (exit 137). `--assemble-only` now drops both at parse time (assembly never reads
+# them; only O2 does), taking peak RSS to 3.5-4.5 GB. 4 concurrent chromosomes then fit and give 3.74x
+# (426s -> 114s, byte-identical). Budget ~4.5 GB per slot.
 #
-# usage: genome_wide_sweep.sh --bam IN.bam --fasta GENOME.fa --outdir DIR [--jobs 2] [--contigs "chr1 chr2"]
+# usage: genome_wide_sweep.sh --bam IN.bam --fasta GENOME.fa --outdir DIR [--jobs 4] [--contigs "chr1 chr2"]
 set -euo pipefail
 
-BAM=""; FA=""; OUT=""; JOBS=2; CONTIGS=""
+BAM=""; FA=""; OUT=""; JOBS=4; CONTIGS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --bam) BAM=$2; shift 2 ;;

@@ -1140,6 +1140,24 @@ pub struct BamRead {
 /// record — the per-read input copy ASSIGNMENT consumes (`copy_assign_pipeline`). The sequence keeps
 /// soft-clipped bases (excludes hard-clips), matching `copy_split::allele_at`'s CIGAR walk. `as_score` is
 /// 0 if the tag is absent. `None` if unmapped.
+/// §6r8: when set, [`aligned_read_from_record`] leaves `AlignedRead::seq`/`qual` EMPTY.
+///
+/// Those two vectors are the whole memory story: they hold each read's full base and quality strings, so
+/// on A119b chr16 (1.78M HiFi reads) peak RSS is 8.4-11.8 GB for ONE chromosome, which is what OOM-killed
+/// four concurrent chromosomes on a 25 GB box. **The assembly path never reads them** — every `.seq`/
+/// `.qual` use in this module is test code; the real consumers are PSV allele calling (`copy_split`),
+/// `denovo_pipeline` and `copy_assign_pipeline`, i.e. O2. So `--assemble-only`, which skips O2 entirely,
+/// can drop them and keep byte-identical output.
+///
+/// A flag rather than a parameter because `aligned_read_from_record` has several call sites and this must
+/// not change any of their signatures. Default false = every existing path is unchanged.
+pub static SKIP_READ_SEQUENCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether read sequence/quality should be dropped at parse time (see [`SKIP_READ_SEQUENCE`]).
+pub fn skip_read_sequence() -> bool {
+    SKIP_READ_SEQUENCE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, String, i32, f32, bool, bool)> {
     if record.flags().is_unmapped() {
         return None;
@@ -1151,10 +1169,11 @@ pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, 
         .iter()
         .map(|op| (cigar_kind_to_char(op.kind()), op.len() as u64))
         .collect();
-    let seq: Vec<u8> = record.sequence().as_ref().to_vec();
+    let skip_seq = skip_read_sequence();
+    let seq: Vec<u8> = if skip_seq { Vec::new() } else { record.sequence().as_ref().to_vec() };
     // Per-base Phred qualities, parallel to `seq` (both keep soft-clips). Empty if the BAM
     // carried no quality string -> the PSV likelihood falls back to the flat error rate.
-    let qual: Vec<u8> = record.quality_scores().as_ref().to_vec();
+    let qual: Vec<u8> = if skip_seq { Vec::new() } else { record.quality_scores().as_ref().to_vec() };
     let mapq = record.mapping_quality().map(|q| q.get()).unwrap_or(0);
     let name = record.name().map(|n| n.to_string()).unwrap_or_default();
     let as_score = record_as(record).unwrap_or(0);

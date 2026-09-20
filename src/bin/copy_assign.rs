@@ -2548,6 +2548,11 @@ fn main() -> Result<()> {
     // existing `if args.gtf` gate fires unchanged rather than each one needing a second condition.
     if args.assemble_only {
         args.gtf = true;
+        // §6r8: assembly never reads a read's bases or qualities (only its CIGAR/introns), and O2 — the
+        // only consumer — is skipped in this mode. Dropping them at parse time is where the memory is:
+        // peak RSS was 8.4-11.8 GB for one chromosome, which capped concurrency at 2 and OOM-killed 4.
+        rustle::vg_family::denovo_assemble::SKIP_READ_SEQUENCE
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         eprintln!(
             "[copy_assign] ASSEMBLE-ONLY: family detection, homology refinement and copy assignment are \
              SKIPPED; running loci + isoform assembly only. `<out>.families.tsv`/`.assignments.tsv` will be \

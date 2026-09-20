@@ -25343,3 +25343,27 @@ nothing either (1/2/4/8 all 45-47 s, CPU 99%) — the residue is per-record `Rec
 `henriksson-lab/minimap2-pure-rs` is a genuine port claiming 10-20% but is self-described as
 **"an LLM-mediated faithful (hopefully) translation"** and **"experimental"**, with 29 stars. Our all-vs-all
 already saturates 4.2 cores. Not adopted; if ever tested, the gate is PAF-identity against C minimap2, not speed.
+
+### §6r8 addendum — the memory was the speed (2026-09-20)
+
+⭐⭐**`AlignedRead::seq`/`qual` were the whole memory story, and the assembly path never reads them.**
+Every `.seq`/`.qual` use in `denovo_assemble.rs` is test code; the real consumers (`copy_split` PSV
+alleles, `denovo_pipeline`, `copy_assign_pipeline`) are O2, which `--assemble-only` skips by definition.
+Dropping both at parse time behind `SKIP_READ_SEQUENCE` (set only by `--assemble-only`, default false so
+every other path is untouched):
+
+| | before | after |
+|---|---|---|
+| chr20 peak RSS | 8,413,704 KB | **3,475,772 KB** (−59%) |
+| chr21 peak RSS | 11,778,500 KB | **4,468,028 KB** (−62%) |
+| chr20 wall | ~50-56 s | **42.1 s** |
+| chr21 wall | ~76-81 s | **58.8 s** |
+| 4 chromosomes, 4-way | **OOM-killed** | **114 s** |
+
+⭐⭐⭐**End to end: 4 chromosomes 426 s serial → 114 s at `--jobs 4` = 3.74×, every GTF byte-identical to
+the original serial run.** `tools/genome_wide_sweep.sh` now defaults to `--jobs 4` (~4.5 GB per slot).
+
+⚠The ordering of the session matters as a lesson: the crate-level levers the goal named were already in
+place or refuted (882), the threading flag was both useless and *wrong* (880/881), multithreaded BGZF did
+nothing (883), and my own streaming "win" was noise (884). **The only real win came from profiling
+`maxRSS`, not CPU** (885).
