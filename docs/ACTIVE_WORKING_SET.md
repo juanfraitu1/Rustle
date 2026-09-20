@@ -32,7 +32,8 @@ What the current §6q7 workflow actually invokes. Touch these with care; they ar
 | script | role | last used |
 |---|---|---|
 | `bench/assembly_polish.py` | Python mirror of the Rust `--assembly-polish` passes; byte-identical parity oracle | §6q6, 2026-09-19 |
-| `bench/readthrough_secondary_filter.py` | secondary-dominated readthrough flagging (opt-in) | §6n9/§6o0 |
+| `readthrough_filter` (Rust bin) | ⭐ secondary-dominated readthrough flagging (opt-in, `--max-secondary-frac`, default 1.0 = no-op). Needs no `samtools` and no off-repo `dna_cert`; `--nodes`/`--exonless` default to the family_cert substrate | §6s4, 2026-09-20 |
+| `bench/readthrough_secondary_filter.py` | the Python it was ported from; kept as the byte-parity oracle | §6n9/§6o0 |
 | `gff_to_gtf` (Rust bin) | RefSeq GFF3 → gffread-style GTF; validated at 4,574 = 4,574 vs `chr20_ref.gtf`. **Needed because `gffread` is not installed on this machine.** | §6p9-§6r9 |
 | `locus_bed` (Rust bin) | loci as BED + one-to-one match against an annotation (`size_ratio`) | §6r5-§6r9 |
 | `tools/audit_cleanup_candidates.py` | this audit; read-only, re-runnable | §6q8 |
