@@ -1,1 +1,0 @@
-[STRINGTIE_EXACT] Default mode: StringTie-exact (disable with RUSTLE_STRINGTIE_EXACT=0). Gated sites: junction post-good_junc merge filters, alt-junction demotion, fwd_to_sink past_seed gate, onpath_long reach relaxation, novel_splice_rescue; RunConfig: junction_canonical_tolerance forced to 0 after compat preset. See src/rustle/stringtie_parity.rs for details.

@@ -25103,3 +25103,24 @@ on their first `cargo test`.**
 Wave 3 is staged in `tools/cleanup_wave3_outputs.py` (dry-run default): **keep 905 / archive 1,720**,
 i.e. all source, docs and fixtures plus the three data files the Rust sources actually read
 (`bench/family_rna_refine.tsv`, `bench/multi_copy_eval/merge_sweep_exons.tsv`, `bench/FALSE_NEGATIVES.md`).
+
+## §6r1 — waves 3 applied and the notebook moved behind a tag (2026-09-19)
+
+⭐**The working tree is now 906 files — source, documentation and test fixtures only** (from 2,620).
+`tools/cleanup_wave3_outputs.py` archived 1,720 committed experiment outputs, then `archive/` itself was
+tagged **`notebook-2026-09-19`** and removed from the tree. Nothing is lost:
+`git checkout notebook-2026-09-19 -- archive/<path>`.
+
+⚠**Bug caught mid-run**: wave 3's first version treated files already under `archive/` as "not kept" and
+moved them to `archive/archive/`, nesting waves 1-2 and breaking the redirect rule. Flattened back (0
+collisions) and the tool now skips `archive/` explicitly.
+
+⭐**Validated end to end, not argued**: fresh `git clone` into a scratch directory → `cargo build
+--release` clean → **lib+bins 883/0**, **18 integration suites, 0 failures** → the `REPRODUCE.md` chr20
+command run with the CLONE's binary returns **658 mRNAs / 336 chains / 7.8-51.6 / 7.4-51.2, a GTF
+byte-identical to the pre-cleanup output**, and `bench/assembly_polish.py` from the clone still matches
+the Rust polish byte-for-byte.
+
+⚠A plain `git clone` still downloads the full history (~419 MB) — removing files from the tip does not
+remove them from history. `git clone --depth 1` gives only the 906 files. Rewriting history with
+`filter-repo` would shrink it but **invalidate every commit SHA cited in this ledger**, so it is refused.

@@ -58,11 +58,20 @@ grep -ohE '(bench|tools|scripts|analysis)/[A-Za-z0-9_./-]+\.(py|sh)' \
      docs/o1_ledger.md docs/NEGATIVE_RESULTS_REGISTER.md docs/PREREG_*.md | sort -u
 ```
 
-## Finding a script a document names
+## Finding a script or output a document names
 
-**If a document names `bench/X` and it is not there, look in `archive/bench/X`.** Waves 1 and 2 (§6q8,
-§6q9) moved 529 scripts under `archive/` preserving their paths, and they are tracked moves, so
-`git log --follow <old path>` and `git show <rev>:<old path>` both still work.
+The working tree holds **906 files: source, documentation and test fixtures only.** Everything else —
+1,720 superseded scripts, one-off probes and committed experiment outputs — lives at the git tag
+**`notebook-2026-09-19`**, not on disk.
+
+```sh
+git ls-tree -r notebook-2026-09-19 archive/ | grep <name>      # find it
+git checkout notebook-2026-09-19 -- archive/bench/<name>.py    # bring it back
+git show notebook-2026-09-19:archive/bench/<name>.py           # just read it
+```
+
+**So: if a document names `bench/X` and it is not there, it is `archive/bench/X` at that tag.** All of it
+went in as tracked `git mv`s, so `git log --follow <old path>` still works too.
 
 Seven paths named in older documents exist nowhere and predate this cleanup: three were deleted in
 earlier `chore: prune` commits (`667f2e5c`, `a7d003a3` — recoverable from history) and four were never

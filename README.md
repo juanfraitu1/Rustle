@@ -11,6 +11,10 @@ substrate the objectives are built on, not the contribution:
 | **O2** | copy assignment under ambiguity — assign-or-abstain, never 1/k | defended on **abstention**, not reassignment |
 | **O3** | reference-absent / unannotated copies — detect and flag | two complementary detectors |
 
+> **The tree holds source, docs and fixtures only (906 files).** The lab notebook — superseded scripts
+> and committed experiment outputs — is at the git tag `notebook-2026-09-19`; see
+> [`docs/ACTIVE_WORKING_SET.md`](docs/ACTIVE_WORKING_SET.md) for how to reach it.
+>
 > **Want to run it?** [`REPRODUCE.md`](REPRODUCE.md) — build, tools, data, the exact commands and the
 > numbers they should return. Substrate provenance: [`docs/DATA.md`](docs/DATA.md). What each file in the
 > tree is for: [`docs/ACTIVE_WORKING_SET.md`](docs/ACTIVE_WORKING_SET.md).
