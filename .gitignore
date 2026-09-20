@@ -20,9 +20,8 @@
 !/README.md
 !/AGENTS.md
 !/AGENT_HANDOFF.md
-!/analyze_missed_patterns.py
-!/find_missed_loci.py
-!/analyze_novel.py
+!/REPRODUCE.md
+!/LICENSE
 
 # 4. Recursively allow content in these directories
 !/.cargo/**
