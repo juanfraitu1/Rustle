@@ -87,3 +87,24 @@ not in bulk.
 | KEEP-CITED (anchored, mostly transitively) | 575 | 423 of them Tier 3 |
 | candidates | 397 | see `docs/CLEANUP_CANDIDATES.md` |
 | all files audited | 2,926 | 1,479 candidates, 343 MB |
+
+## Third-party tools — NOT vendored
+
+The repo vendors no third-party assemblers. Install them yourself:
+
+| tool | install | used by |
+|---|---|---|
+| StringTie | `conda install -c bioconda stringtie` | `bench/bakeoff_*_stringtie.sh`, `bench/gw_threeway.sh` (they take `$STRINGTIE` or resolve it on `PATH`) |
+| gffcompare | `conda install -c bioconda gffcompare` | every bakeoff |
+| FLAIR 3.0.0 | `conda create -n flair -c bioconda flair` | §6q6. ⚠A second, broken FLAIR install can shadow the working one; see the shim note above |
+| SQANTI3 | checkout + its conda env | §6q5 |
+| isoseq | `conda install -c bioconda isoseq` | ⚠needs native PacBio read names AND a relaxed `--min-aln-coverage`; the lab's runs are in `~/Desktop/isoseq_upload/` |
+| gffread | not installed here — `tools/refseq_gff_to_gtf.py` stands in for `gffread -T` | reference GTF construction |
+
+⚠**`tools/stringtie` was a git submodule and was removed (§6q8).** Its URL was `../stringtie`, a relative
+path to a sibling checkout that does not exist — so `git clone --recursive` failed for anyone, including
+on the original machine. The 55 MB checkout was moved to `~/Desktop/stringtie` locally; nothing in the
+repo needs it.
+
+⚠**Tool builds differ across the six-chromosome panel**: chr20's StringTie arm is 3.0.1 (that vendored
+build), chr11/7/14/5/9 are 3.0.3 (conda). Register row 870.

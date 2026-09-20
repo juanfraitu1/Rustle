@@ -20,6 +20,8 @@ Both passes are order-deterministic (containers sorted by chain length then tran
 implementation is byte-identical to the Python reference `bench/assembly_polish.py` on both chromosomes,
 and run-to-run identical.
 
+⚠**StringTie build caveat:** StringTie 3.0.1 on chr20 (the vendored `tools/stringtie` build) and **3.0.3 on chr11/7/14/5/9** (conda) — the submodule was removed mid-session, so the panel is not on a single StringTie build; the lab's A119b/GGO arms are 3.0.1.
+
 ## Result
 
 Human testis Iso-Seq on CHM13 (`human_testis.t2t.bam`), RefSeq reference, gffcompare v0.12.10.
@@ -35,7 +37,7 @@ Human testis Iso-Seq on CHM13 (`human_testis.t2t.bam`), RefSeq reference, gffcom
 | k3 raw | 1,275 | 8.4 / 33.4 | 7.9 / 28.2 | **358** | 123/458 |
 | k3 `mono` | 1,130 | 8.4 / 33.4 | 7.9 / 31.8 | **358** | 48/350 |
 | k3 `full` | 794 | 8.1 / 45.1 | 7.6 / 43.8 | 347 | 26/326 |
-| StringTie 3.0.1 `-L -p 4` | 712 | 7.7 / 47.4 | 7.3 / 47.1 | 331 | 19/359 |
+| StringTie `-L -p 4` (⚠3.0.1 on chr20, 3.0.3 on chr11/7/14/5/9) | 712 | 7.7 / 47.4 | 7.3 / 47.1 | 331 | 19/359 |
 | FLAIR 3.0.0 | 820 | 6.2 / 35.1 | 5.8 / 32.3 | 264 | 61/335 |
 
 ⭐**On chr20 `k0 full` beats StringTie on all four gffcompare axes** — matching chains 337 vs 331,
@@ -51,7 +53,7 @@ intron-chain 7.9/50.8 vs 7.7/47.4, transcript 7.4/49.6 vs 7.3/47.1 — with 30 f
 | k3 raw | 2,720 | 7.8 / 32.5 | 7.2 / 28.1 | **761** | 208/876 |
 | k3 `mono` | 2,437 | 7.8 / 32.5 | 7.2 / 31.3 | **761** | 77/671 |
 | k3 `full` | 1,727 | 7.4 / 43.2 | 6.9 / 42.0 | 723 | 54/637 |
-| StringTie 3.0.1 `-L -p 4` | 1,307 | 6.6 / **50.2** | 6.2 / **50.0** | 648 | 40/653 |
+| StringTie `-L -p 4` (⚠3.0.1 on chr20, 3.0.3 on chr11/7/14/5/9) | 1,307 | 6.6 / **50.2** | 6.2 / **50.0** | 648 | 40/653 |
 
 ## Pre-registered hypotheses — verdicts
 
@@ -114,7 +116,7 @@ neither previously touched by this project.
 | transcript Pr | **50.6** / 47.1 | 49.2 / **50.0** | **43.6** / 43.0 | **42.5** / 41.9 |
 | emitted mRNAs | 664 / 712 | 1,393 / 1,307 | 1,188 / 1,199 | 921 / 935 |
 
-(ours / StringTie 3.0.1 `-L -p 4`; bold = ours at least matches.)
+(ours / StringTie `-L -p 4` (⚠3.0.1 on chr20, 3.0.3 on chr11/7/14/5/9); bold = ours at least matches.)
 
 ⭐**Scorecard: 19 of 20 (chromosome × metric) cells match or outperform StringTie.** The single miss is
 chr11 transcript precision, 49.2 vs 50.0.
@@ -163,7 +165,7 @@ a per-chromosome best as if it were the rule — F = 0.02 is the one that was fi
 `A119b.t2t.bam`, which the chr20 bakeoff does not use), chromosome FASTA from `chm13v2.0.fa`, and a
 reference GTF from `chm13v2.0_RefSeq_full.gff.gz` via `/mnt/linuxdisk/tmp/gff2gtf.py` — validated to
 reproduce gffread's `chr20_ref.gtf` transcript count exactly (4,574 = 4,574); `gffread` is not installed.
-StringTie 3.0.1 `-L -p 4` on the same BAM in every case. FLAIR was run on chr20 only.
+StringTie `-L -p 4` (⚠3.0.1 on chr20, 3.0.3 on chr11/7/14/5/9) on the same BAM in every case. FLAIR was run on chr20 only.
 
 
 ---
@@ -193,7 +195,7 @@ single-exon predictions:
 
 ## Result: 28 of 30 cells over six chromosomes
 
-ours / StringTie 3.0.1 `-L -p 4`; bold = ours at least matches. ★ = held out after the rule was fixed.
+ours / StringTie `-L -p 4` (⚠3.0.1 on chr20, 3.0.3 on chr11/7/14/5/9); bold = ours at least matches. ★ = held out after the rule was fixed.
 
 | | chr20 | chr11 | chr7 | chr14 | **chr5 ★** | **chr9 ★** |
 |---|---|---|---|---|---|---|

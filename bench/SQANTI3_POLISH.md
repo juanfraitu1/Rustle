@@ -6,7 +6,7 @@ are full-splice matches?
 SQANTI3 (conda env `sqanti3`, checkout `/mnt/linuxdisk/home/juanfraitu/_from_wsl/tools/SQANTI3/`):
 `sqanti3_qc.py --isoforms <gtf> --refGTF chrN_ref.gtf --refFasta chrN.fa --report skip -t 4`, then
 `sqanti3_filter.py rules --sqanti_class <classification> --filter_gtf <corrected.gtf> --skip_report`
-(the default rules filter, nothing customised). Same six chromosomes and the same StringTie 3.0.1 `-L -p 4`
+(the default rules filter, nothing customised). Same six chromosomes and the same StringTie `-L -p 4` (⚠3.0.1 on chr20, 3.0.3 on chr11/7/14/5/9)
 runs as `bench/ASSEMBLY_POLISH.md`.
 
 Our arm is the shipped setting:

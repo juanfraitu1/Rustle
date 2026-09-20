@@ -8,7 +8,12 @@ BAM=/mnt/c/Users/jfris/Desktop/GGO.bam
 FASTA=/mnt/c/Users/jfris/Desktop/GGO.fasta
 FAI=/mnt/c/Users/jfris/Desktop/GGO.fasta.fai
 GFF=/mnt/c/Users/jfris/Desktop/GGO_genomic.gff
-ST=/mnt/c/Users/jfris/Desktop/Rustle/tools/stringtie/stringtie
+# StringTie resolution. The vendored `tools/stringtie` submodule was removed from the repo (its URL
+# `../stringtie` pointed at a sibling checkout that does not exist, so `git clone --recursive` failed
+# for anyone else). Set $STRINGTIE, or install it (`conda install -c bioconda stringtie`) and let PATH
+# resolve it. On the original machine the old checkout was moved to ~/Desktop/stringtie.
+ST="${STRINGTIE:-$(command -v stringtie || true)}"
+[ -x "$ST" ] || { echo "stringtie not found: set \$STRINGTIE or install it (conda install -c bioconda stringtie)" >&2; exit 127; }
 RUSTLE=/mnt/c/Users/jfris/Desktop/Rustle/target/release/rustle
 GFFCMP=/home/juanfra/miniforge3/bin/gffcompare
 SAMTOOLS=/home/juanfra/miniforge3/bin/samtools

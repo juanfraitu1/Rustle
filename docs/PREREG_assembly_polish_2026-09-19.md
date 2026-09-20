@@ -23,7 +23,7 @@ Two post-assembly filters on the `--assemble-only` GTF, using only the emitted
 | raw | 976 | 8.0 / 44.6 | 7.6 / 35.6 | 345 |
 | +ISM (ratio 1.0) | 842 | 7.9 / 50.8 | 7.4 / 40.3 | 337 |
 | +mono floor (p75 = 8) | 682 | 7.9 / 50.8 | 7.4 / 49.6 | 337 |
-| StringTie 3.0.1 `-L -p 4` | 712 | 7.7 / 47.4 | 7.3 / 47.1 | 331 |
+| StringTie `-L -p 4` (⚠3.0.1 on chr20, 3.0.3 on chr11/7/14/5/9) | 712 | 7.7 / 47.4 | 7.3 / 47.1 | 331 |
 
 ## Held-out substrate: chr11, same BAM (`human_testis.t2t.bam`), same reference source
 

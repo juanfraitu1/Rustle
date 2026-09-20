@@ -1,6 +1,6 @@
 # Cleanup candidates — likely dead / likely superseded files
 
-Generated 2026-09-19 at `dna-from-genome@14d7c874` by `tools/audit_cleanup_candidates.py` (re-run it; this file is overwritten). **Read-only: nothing was moved, edited or deleted.** Full per-file table: `docs/cleanup_candidates.tsv` (filter on `class` and `confidence`).
+Generated 2026-09-19 at `dna-from-genome@567e092e` by `tools/audit_cleanup_candidates.py` (re-run it; this file is overwritten). **Read-only: nothing was moved, edited or deleted.** Full per-file table: `docs/cleanup_candidates.tsv` (filter on `class` and `confidence`).
 
 ⚠ A mark is a *candidate*, not a verdict. Before deleting anything: (1) grep the path once more, (2) check the `ledger_sections` / `anchor_citers` columns, (3) prefer `git mv` into an archive directory over `rm` for anything tracked, (4) remember `bench/` data can be slow to regenerate (AGENTS.md §2).
 
@@ -12,7 +12,7 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 
 | class | confidence | rule | files | bytes |
 |---|---|---|---:|---:|
-| **PROTECTED** | - | build/config files, Rust sources and tests (Rust reachability is docs/MODULE_STATUS.md's job, enforced by module_status_tests), and the anchor docs themselves. Never a candidate. | 158 | 6M |
+| **PROTECTED** | - | build/config files, Rust sources and tests (Rust reachability is docs/MODULE_STATUS.md's job, enforced by module_status_tests), and the anchor docs themselves. Never a candidate. | 157 | 6M |
 | **TEMP** | high | Python/pytest caches; untracked or git-ignored files at the repo root; untracked *.log / *err* / *out* / *.patch.txt / checkpoint files that nothing cites. | 0 | 0B |
 | **REFUTED-MODULE** | medium | Rust module whose `//! **STATUS:**` header is REFUTED and that no other file names (a REFUTED module that is still imported, e.g. collapse_gate.rs, stays PROTECTED). | 0 | 0B |
 | **SUPERSEDED-PORTED** | medium | Python script that a Rust source line declares it ports ('Port of', 'Faithful Rust port of', 'Mirrors', 'migration'); 'low' when only a function or part is ported (`x.py::f`, `x.py loaders`). The Python may still serve as a parity oracle or golden-fixture generator -- check tests before deleting. | 23 | 580K |
@@ -26,7 +26,7 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 | **UNCITED-RECENT** | low | Not cited, touched within 30 days: may be work in progress. | 30 | 1M |
 | **KEEP-CITED** | - | Anchored directly or transitively. Not a candidate. | 1218 | 222M |
 
-**1395 candidates** of 2878 files (0 high, 710 medium, 685 low confidence).
+**1395 candidates** of 2877 files (0 high, 658 medium, 737 low confidence).
 
 ## Candidates by directory
 
@@ -54,7 +54,7 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 | `tools/` |  |  |  |  |  |  |  | 3 | 4 |  | 4 |
 | `wf3/ledger/` |  |  |  |  |  |  |  |  |  | 7 | 0 |
 | `bench/identifiability_boundary/` |  |  |  |  |  |  |  | 5 | 1 |  | 0 |
-| `(root)` |  |  |  |  |  |  |  | 1 | 4 |  | 8 |
+| `(root)` |  |  |  |  |  |  |  | 1 | 4 |  | 7 |
 | `bench/ggo19_needy_top5_refs/` |  |  |  |  |  |  |  | 5 |  |  | 0 |
 | `bench/o1_fresh_emission_validation/` |  |  |  |  |  |  | 1 |  | 4 |  | 15 |
 | `archive/untracked/` |  |  |  |  | 4 |  |  |  |  |  | 29 |

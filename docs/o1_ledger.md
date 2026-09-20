@@ -24783,7 +24783,7 @@ annotation, so both are legal de novo:
 - **`full`** = `mono` + a **support-aware ISM collapse**: drop a chain that is a contiguous sub-chain of
   another unless it carries at least as much read support as its container.
 
-⭐**chr20: `full` beats StringTie 3.0.1 on all four gffcompare axes** — matching intron chains 337 vs 331,
+⭐**chr20: `full` beats StringTie on all four gffcompare axes** — matching intron chains 337 vs 331,
 intron-chain Sn/Pr 7.9/50.8 vs 7.7/47.4, transcript Sn/Pr 7.4/49.6 vs 7.3/47.1, from 682 vs 712 mRNAs.
 
 ⭐**Held out on chr11** (chosen before any chr11 number existed; 10,534 reference transcripts): H2/H3/H4
@@ -24819,7 +24819,7 @@ F fixed on chr20 alone (largest F with ≤1% chain loss) ⟹ **F = 0.02**. Two c
 from scratch to test it (**chr7**, **chr14**), plus chr11.
 
 ⭐**`--assemble-only --assembly-polish full --polish-isoform-fraction 0.02` matches or outperforms
-StringTie 3.0.1 in 19 of 20 (chromosome × metric) cells** across chr20/11/7/14. Matching intron chains:
+StringTie in 19 of 20 (chromosome × metric) cells** across chr20/11/7/14. Matching intron chains:
 335/331, 683/648, 515/515, 389/388 — **match or beat on all four chromosomes**. The one miss is chr11
 transcript precision, 49.2 vs 50.0.
 
