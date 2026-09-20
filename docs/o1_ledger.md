@@ -24969,3 +24969,38 @@ junction difference surviving into our GTF is a REAL tandem splice site — on c
 the 25 pairs 5 bp merges is 3 bp, the NAGNAG signature** — and the merge deletes whichever variant has
 less read support. isoseq needs the tolerance because it collapses raw alignments with no motif
 constraint; we do not.
+
+## §6q7 — against the lab's own isoseq/StringTie/FLAIR runs, human AND gorilla (2026-09-19)
+
+Report `bench/LAB_DATASET_BAKEOFF.md`. Their runs (`~/Desktop/isoseq_upload/`,
+`~/Desktop/benchmark_collapse/`) were **reused as-is; nothing was re-run**. Only our arm was produced.
+
+⚠⚠**SUBSTRATE CORRECTION (register 867): the §6p8-§6q6 six-chromosome bakeoff used the WRONG LIBRARY for
+comparing to the lab's numbers.** Theirs use `A119b.t2t.bam` (1,104,846 chr20 records) and `GGO_mm.bam`;
+ours used `human_testis.t2t.bam` (188,864 chr20 records, ~6× shallower). Our chr20 output is 658
+transcripts on one and 5,844 on the other — **tool numbers are NOT transferable between them.**
+
+⭐**A119b chr20**: ours shipped 1,064 chains @ 24.8/19.9 and 23.3/18.2 **beats StringTie (861, 20.1/16.8,
+19.0/15.1) and FLAIR (1,026, 23.9/7.6) on all five metrics**. isoseq collapse gets 1,253 chains but at
+**3.0% chain precision from 64,384 transcripts**. `--read-isoform-k 3` + `RUSTLE_JUNCTION_MAJORITY=1`
+gives **1,259 chains — past isoseq — from 20,699 transcripts**, beating it on 4 of 5 (transcript Sn 27.7
+vs 28.0).
+
+⭐**GORILLA NC_073244.2 (the thesis substrate, 5,936 reference transcripts)**: ours shipped 1,575 chains @
+28.4/38.9 **beats StringTie (1,374, 24.7/37.0) and FLAIR (1,393, 25.1/23.6) on all five**, and
+**k3+majority+polish BEATS isoseq OUTRIGHT on every metric — 1,688 chains @ 31.9% vs its 1,655 @ 9.0%,
+from a quarter of the transcripts.**
+
+⭐**Depth behaviour of the polish, measured on A119b chr20**: mono floor + shadow stay **FREE at 6× depth**
+(0 chains lost, transcript precision 7.1 → 10.0); **the isoform fraction costs 65 chains there against ~2
+on the shallow library** ⇒ it is the depth-sensitive component and the binding constraint on both species.
+⚠Our RAW chr20 output (1,184) is already 69 chains BELOW isoseq before any filtering, so loosening the
+polish cannot close that gap — the chains must be assembled.
+
+⛔**Register 868: no single setting beats isoseq AND StringTie AND FLAIR at once.** They sit at opposite
+ends of the frontier. **Gorilla is 8 chains and 2.5 precision points away** (1,647 @ 34.5 vs the required
+≥1,655 @ ≥37.0, i.e. ~330 non-matching transcripts to shed); **human needs ~13,000 shed** and is not close.
+⛔Register 869: `--polish-fuzzy-junction 5` costs 126 chains on gorilla too — the §6q6 canonical-GT-AG
+explanation holds cross-species; 2 bp neutral on both.
+⚠**Register 865 RETRACTED**: isoseq collapse IS runnable (needs PacBio-style read names AND a relaxed
+`--min-aln-coverage` **together**), and the results already existed. Check for existing results first.
