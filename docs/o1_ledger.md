@@ -25249,3 +25249,32 @@ chr20, `human_testis`, min reciprocal overlap 0.10:
 0.676). ⚠**Our q25 0.676 is the §6p4 5′-truncation signature at locus level** — a quarter of matched loci
 are appreciably short. ⚠943 of 1,231 annotated chr20 loci go unmatched by every tool (not expressed in
 this library), so unmatched ≠ error.
+
+## §6r6 — pipeline state test against O1, O2 and the advisor's questions (2026-09-19)
+
+Report `docs/PIPELINE_STATE_TEST_2026-09-19.md`. Everything below was RUN today against the current
+binary; the dossier `docs/ADVISOR_QUESTIONS.md` (last revised 09-16) predates §6o2–§6r5 and is stale in
+five named places.
+
+⭐**O1 PASSES end to end.** From scratch: chr16 RefSeq gene+pseudogene bodies (2,082) → minimap2 asm20
+all-vs-all (79,207 records) → `mcl_families --min-exonic-bp 1 --min-shared-exon-frac 0.60` → **380 nodes,
+627 edges, 90 families, 271 members, largest 26**. ⭐**All 21 chr16 NPIP genes land in ONE cluster, none
+missing** — the advisor's own example — with 5 unnamed `LOC` loci alongside (not adjudicated). Other
+clusters are coherent unprompted: SMG1+SMG1P1…P7 (11), PLA2G10EP…KP (7), and the PKD1P family, which
+clusters SEPARATELY from NPIP.
+⚠This is the GUIDED mode. The dossier's "NPIP in 4 clusters (25/3/2/1)" is the DE NOVO catalog (§6hu);
+today's run does NOT show that fragmentation fixed — it shows the edge+grouping rule is sound when the
+nodes are right, exactly as §6kg said (annotation nodes F 0.955 vs de novo 0.726).
+⚠**chr20 correctly yields 0 families**: gene-body alignments there have median cov_longer 0.0026, p99
+0.286, below the 0.30 floor. An empty answer on a family-poor chromosome is the rule working.
+⛔**Register 878**: a PAF named by GENE SYMBOL gives a SILENT 0-node graph (exit 0, no error) because
+`parse_gene_key` keys on `chrom:start-end`. Cost a full all-vs-all to find.
+
+⭐**O2 works and abstains, which is the honest verdict.** On the YAGs (§6r4): 94.0% of 3,641 contested
+molecules come back TIED, 0.3% assigned, and **never a 1/k split** — the direct answer to Q8. ⚠But as a
+copy-resolution method on the hardest real case it resolves 0.3%; only DAZ and RBMY yield any assignment.
+**Never present O2 as solving YAG copy assignment.**
+
+⚠**Q7 is now measurable and not flattering**: §6r5's locus size ratio is median 0.994 but **q25 0.676** —
+a quarter of matched loci are appreciably short, the §6p4 5′-truncation signature at locus level.
+⚠**Q9 untested today**: this run puts NPIPA and NPIPB in one L3 cluster; the subfamily split is L4's job.
