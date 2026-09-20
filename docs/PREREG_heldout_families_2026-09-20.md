@@ -50,8 +50,17 @@ mcl_families --paf chrN.paf --gff chm13.gff --min-exonic-bp 1 --min-shared-exon-
 The root is the symbol with a trailing copy-suffix stripped by ONE fixed regex, applied blind:
 
 ```
-root = re.sub(r'(P\d*|[-_]?\d+|[A-Z])$', '', symbol)   applied repeatedly until stable
+root = re.sub(r'(?:P\d+|\d+|[A-Z])$', '', symbol)      applied ONCE, not repeatedly
 ```
+
+> ⚠ **AMENDMENT, 2026-09-20, before any held-out chromosome was scored** (chr2's all-vs-all was still
+> running; no cluster file existed yet, and none had been opened). The regex as first committed said
+> *"applied repeatedly until stable"*, which **over-strips**: `TBC1D3K → TBC1D3 → TBC1D → TBC1 → TBC`
+> and `GOLGA6L2 → GOLGA6L → GOLGA6 → GOLGA → GOLG`. That would have merged genuinely distinct families
+> into one truth set and made the truth, not the method, the thing under test. Changed to a **single
+> pass**. Disclosed here rather than silently: the amendment is to the TRUTH CONSTRUCTION, made before
+> any score was computed, and it makes the test **harder**, not easier — a single pass splits NPIP into
+> NPIPA and NPIPB, so the method must now recover finer families than "one NPIP blob".
 
 - Genes whose symbol begins `LOC` are **excluded from truth** (unnamed loci carry no nomenclature claim)
   but are **left in the input**, so they can still cost us precision. This is deliberate: it is the
