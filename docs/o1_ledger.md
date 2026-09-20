@@ -25156,3 +25156,31 @@ passes isoseq; the polish can only trade along the frontier below it.
 is lost only if no surviving transcript still covers it (here 65 sole covers, 0 redundant). And
 gffcompare writes `.tmap` **next to the input GTF**, not into `-o <dir>`; my first pass globbed the `-o`
 directory, got an empty class map, and reported a vacuous "0 real losses".
+
+## §6r3 — should O2 emit transcripts from secondary alignments? Measured: no (2026-09-19)
+
+The proposal was to let O2 add transcripts for reads it assigns via secondary alignments. Before building
+it, the population it would serve was measured on the **gorilla thesis substrate** with a real catalog —
+78 families / 509 copies over 25 contigs, full `GGO_mm.bam`, 26 min.
+
+| | |
+|---|---|
+| molecules in the swept regions | 8,071,303 |
+| AS-tied | 24,543 (0.30%) |
+| reaching adjudication | 91 |
+| origin-rejected as O3's | 70 |
+| **CONTESTED (O2's actual subject)** | **21** |
+| assigned / tied / ambiguous | **2 (9.5%)** / 1 (4.8%) / 18 (85.7%) |
+
+⛔**An emit path would add transcripts for 2 molecules (register 875).** ⭐**All 91 are
+`secondary-only visitors` — 0 have a primary alignment in any catalog copy — so this IS exactly the
+population the proposal targets. It is simply almost empty.** Register 603 already established the shape
+of the bug (emitting per BAM RECORD gave 4,616 contradicting molecules of 7,121; one result per
+(molecule, family) fixed it), and §6n2 established where secondaries DO pay: the assembler's read pool
+(complete NPIP chains 10/26 → 20/26).
+
+⚠**§6r3's second finding (register 876), which is the one worth acting on: O2's decision set is bounded
+by CATALOG COVERAGE, not by aligner ambiguity.** 24,543 molecules are genuinely AS-tied, but only 91 land
+in ≥2 copies of a 509-copy catalog. On human chr20 with NO catalog, contested was 0 by construction; on a
+9-family gorilla catalog, also 0. **"Contested = 21" measures the catalog, not the biology** — so no
+conclusion about O2's population size is available until the catalog is grown.
