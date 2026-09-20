@@ -59,6 +59,18 @@ grep -ohE '(bench|tools|scripts|analysis)/[A-Za-z0-9_./-]+\.(py|sh)' \
      docs/o1_ledger.md docs/NEGATIVE_RESULTS_REGISTER.md docs/PREREG_*.md | sort -u
 ```
 
+## What is in the folder but not in the repository
+
+The working folder is not the repository. After §6s7 it is **289 MB**, of which `.git` is 257 MB; a
+clone is **40 MB / 587 files**. Untracked caches and old run output (210 MB — ~107 one-off GTFs, a
+103 MB `ri_kmer_ckpt.npz`, 16 run logs, the retired R scripts' data) were moved to
+**`~/Desktop/Rustle_attic`**, which has its own README. None of it was ever committed, so none of it
+is recoverable from git; delete that folder when you no longer want the old outputs.
+
+⚠ `.gitignore` is an **allowlist** (`*`, then negations). A new top-level file is invisible to git
+until it is negated there — that is how `REPRODUCE.md` stayed out of every clone (register 900).
+After adding a root file, check `git ls-files --error-unmatch <file>`.
+
 ## Finding a script or output a document names
 
 The working tree holds **585 files: source, documentation and test fixtures only** — 189 `.py` and
