@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ⛔ STALE (§6s2): this script invokes a binary named `rustle`, the monolithic assembler
+# deleted in 2e046730 ("retire(2/2): delete the StringTie assembler + network-flow island").
+# Cargo builds no such bin — see Cargo.toml [[bin]]. It has not been runnable since that commit.
+# Kept because documents cite it as the provenance of recorded numbers; DO NOT expect it to run.
+# The current pipeline entry point is `copy_assign` (its CLI is NOT a drop-in for rustle's).
 # 4-way attribution harness (SERIAL, resumable). Adds a rustle GUIDED-BASELINE
 # (rustle -G st.gtf, NO --vg) per chromosome to the three-way scorecard, so the
 # VG-only-vs-StringTie recoveries can be split into:

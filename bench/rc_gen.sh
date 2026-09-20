@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ⛔ STALE (§6s2): this script invokes a binary named `rustle`, the monolithic assembler
+# deleted in 2e046730 ("retire(2/2): delete the StringTie assembler + network-flow island").
+# Cargo builds no such bin — see Cargo.toml [[bin]]. It has not been runnable since that commit.
+# Kept because documents cite it as the provenance of recorded numbers; DO NOT expect it to run.
+# The current pipeline entry point is `copy_assign` (its CLI is NOT a drop-in for rustle's).
 # Generate read-coherence (#1) transcriptomes genome-wide: rustle -G st --read-chain,
 # per-chrom (SERIAL, OOM-safe), reusing cached StringTie guides /tmp/gw/st_$C.gtf.
 # Output: /tmp/gw/rc_$C.gtf (additive read-coherence over the -G flow baseline gd_$C.gtf).

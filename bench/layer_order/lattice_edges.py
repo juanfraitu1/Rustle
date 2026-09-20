@@ -64,7 +64,6 @@ import time
 
 sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench'))
 sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench', 'layer_order'))
-sys.path.insert(0, "/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/light/scripts")
 from lattice_common import (CAT_CHROMS, DUMP, DUMP_S1, HEAVY, INT, LIGHT, OUT, PAF, tsv, write)  # noqa: E402
 
 T0 = time.time()

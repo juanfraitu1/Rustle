@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ⛔ STALE (§6s2): this script invokes a binary named `rustle`, the monolithic assembler
+# deleted in 2e046730 ("retire(2/2): delete the StringTie assembler + network-flow island").
+# Cargo builds no such bin — see Cargo.toml [[bin]]. It has not been runnable since that commit.
+# Kept because documents cite it as the provenance of recorded numbers; DO NOT expect it to run.
+# The current pipeline entry point is `copy_assign` (its CLI is NOT a drop-in for rustle's).
 # Genome-wide PSV-linkage attribution harness (SERIAL, resumable). Adds a
 # rustle --vg-layer2-psv-linkage output (pl_$C.gtf) per chromosome, on top of the
 # existing three-way scorecard outputs (st_$C.gtf / vg_$C.gtf / ref_$C.gff3 from
