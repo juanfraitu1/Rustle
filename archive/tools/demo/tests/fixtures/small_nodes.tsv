@@ -1,0 +1,5 @@
+source	chrom	bdstart	bdend	strand	node_idx	start	end	cov	hardstart	hardend	nchildren	nparents
+rustle	chr_test	1000	4500	-	0	1000	1200	12.5	1	0	1	0
+rustle	chr_test	1000	4500	-	1	2000	2300	15.0	0	0	2	1
+rustle	chr_test	1000	4500	-	2	3000	3150	11.0	0	0	1	1
+rustle	chr_test	1000	4500	-	3	4000	4500	13.0	0	1	0	2

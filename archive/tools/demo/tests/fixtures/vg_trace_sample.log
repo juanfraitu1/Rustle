@@ -1,0 +1,7 @@
+[VG] family_id=1 bundles=2 multimappers=4
+[VG] em_iter=0 read_id=READ_42 copy=copy1 weight=0.333
+[VG] em_iter=0 read_id=READ_42 copy=copy2 weight=0.333
+[VG] em_iter=0 read_id=READ_42 copy=copy3 weight=0.334
+[VG] em_iter=2 read_id=READ_42 copy=copy1 weight=0.95
+[VG] em_iter=2 read_id=READ_42 copy=copy2 weight=0.03
+[VG] em_iter=2 read_id=READ_42 copy=copy3 weight=0.02

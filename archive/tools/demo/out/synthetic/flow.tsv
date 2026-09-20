@@ -1,0 +1,4 @@
+source	chrom	bdstart	bdend	strand	bundle_run	iter_idx	path_len	path_nodes	bottleneck	total_flow_after
+rustle	chr_test	9997	13503	-	1	1	4	0,1,4,5	27.0000	27.0000
+rustle	chr_test	997	4503	-	2	1	4	0,1,4,5	33.0000	33.0000
+rustle	chr_test	997	4503	-	3	1	4	0,1,3,4	20.0000	20.0000

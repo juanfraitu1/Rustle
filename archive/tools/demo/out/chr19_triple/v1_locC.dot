@@ -1,0 +1,13 @@
+digraph G {
+  rankdir=LR;
+  node [fontname="Helvetica" fontsize=10];
+  edge [fontname="Helvetica" fontsize=9];
+  labelloc="t"; label="LOC101137218"; fontsize=14;
+  n1 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#1\n[104868814-104869801]\ncov=2412.0"];
+  n2 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#2\n[104880910-104881045]\ncov=270.0"];
+  n3 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#3\n[104886346-104886449]\ncov=206.0"];
+  n4 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#4\n[104887274-104887402]\ncov=241.0"];
+  n1 -> n2 [color="#C0504D" label="junction\nbn=270.0" penwidth=5.0];
+  n2 -> n3 [color="#C0504D" label="junction\nbn=206.0" penwidth=5.0];
+  n3 -> n4 [color="#C0504D" label="junction\nbn=206.0" penwidth=5.0];
+}
