@@ -41,6 +41,7 @@ lru = "0.12" # src/bin/copy_assign.rs contig cache
 rand = "0.8"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
+flate2 = "1.1" # src/bin/gff_to_gtf.rs — plain .gz GFF3 input (bgzf is noodles' job)
 poasta = "0.1.0"
 
 [profile.release]
@@ -131,3 +132,11 @@ path = "tests/regression/vg_family_diagnostic.rs"
 
 [dev-dependencies]
 tempfile = "3"
+
+[[bin]]
+name = "gff_to_gtf"
+path = "src/bin/gff_to_gtf.rs"
+
+[[bin]]
+name = "locus_bed"
+path = "src/bin/locus_bed.rs"

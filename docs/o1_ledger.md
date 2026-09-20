@@ -25367,3 +25367,24 @@ the original serial run.** `tools/genome_wide_sweep.sh` now defaults to `--jobs 
 place or refuted (882), the threading flag was both useless and *wrong* (880/881), multithreaded BGZF did
 nothing (883), and my own streaming "win" was noise (884). **The only real win came from profiling
 `maxRSS`, not CPU** (885).
+
+## §6r9 — Python → Rust: the reproduce path no longer needs Python (2026-09-20)
+
+Two ports and one deletion, each verified byte-identical before the Python was removed.
+
+| removed | replaced by | verification |
+|---|---|---|
+| `tools/refseq_gff_to_gtf.py` | **`gff_to_gtf`** bin | byte-identical on chr20/chr16/chr7, **7.4× faster** (2.7 s vs 20 s) |
+| `bench/locus_bed.py` | **`locus_bed`** bin | `loci.bed`, `ref_loci.bed`, `locus_match.tsv` all byte-identical, 4× faster |
+| `bench/ism_collapse.py` | `assembly_polish.py --support-ratio 999 --mono-quantile 0` (itself mirrored by `--assembly-polish`) | byte-identical on chr20, 784 transcripts both ways |
+
+⭐**`REPRODUCE.md` and `docs/DATA.md` now call the binaries, so the documented workflow needs no Python at
+all** — `cargo build --release` gives a user everything those two files ask for.
+
+⚠**`refseq_gff_to_gtf.py` had its body DUPLICATED** — an earlier docstring edit appended rather than
+replaced, so the script ran the whole conversion twice and printed its summary line twice. That is most of
+the 20 s it measured; the defect is gone with the file.
+
+⚠Ports had to preserve **first-seen ordering** (Python dicts are insertion-ordered and the byte comparison
+depends on it) and the exact tuple sort `(start, end, source, strand)`. A `HashMap` + explicit order `Vec`
+does it; a `BTreeMap` would silently reorder and break identity.

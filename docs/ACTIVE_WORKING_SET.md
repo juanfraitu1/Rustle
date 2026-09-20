@@ -32,9 +32,9 @@ What the current §6q7 workflow actually invokes. Touch these with care; they ar
 | script | role | last used |
 |---|---|---|
 | `bench/assembly_polish.py` | Python mirror of the Rust `--assembly-polish` passes; byte-identical parity oracle | §6q6, 2026-09-19 |
-| `bench/ism_collapse.py` | standalone ISM collapse used for the chr20 precision levers | §6p7 |
 | `bench/readthrough_secondary_filter.py` | secondary-dominated readthrough flagging (opt-in) | §6n9/§6o0 |
-| `tools/refseq_gff_to_gtf.py` | RefSeq GFF3 → gffread-style GTF; validated at 4,574 = 4,574 vs `chr20_ref.gtf`. **Needed because `gffread` is not installed on this machine.** | §6p9-§6q7 |
+| `gff_to_gtf` (Rust bin) | RefSeq GFF3 → gffread-style GTF; validated at 4,574 = 4,574 vs `chr20_ref.gtf`. **Needed because `gffread` is not installed on this machine.** | §6p9-§6r9 |
+| `locus_bed` (Rust bin) | loci as BED + one-to-one match against an annotation (`size_ratio`) | §6r5-§6r9 |
 | `tools/audit_cleanup_candidates.py` | this audit; read-only, re-runnable | §6q8 |
 | `bench/layer_order/lattice_*.py` | the §0★★★ nested edge-test lattice (levels, edges, filtration, truth, report) | §6p1-§6p5 |
 
@@ -129,3 +129,17 @@ repo needs it.
 
 ⚠**Tool builds differ across the six-chromosome panel**: chr20's StringTie arm is 3.0.1 (that vendored
 build), chr11/7/14/5/9 are 3.0.3 (conda). Register row 870.
+
+## Retired because Rust replaced them (§6r9)
+
+Removed from the tree; recover from history with `git show <rev>:<path>` (they are ordinary deletions,
+after the `notebook-2026-09-19` tag, so the archive redirect above does not cover them).
+
+| removed | replaced by | evidence |
+|---|---|---|
+| `tools/refseq_gff_to_gtf.py` | **`gff_to_gtf`** binary | byte-identical on chr20/chr16/chr7, **7.4× faster** (2.7 s vs 20 s) |
+| `bench/locus_bed.py` | **`locus_bed`** binary | all three outputs byte-identical, 4× faster (0.10 s vs 0.40 s) |
+| `bench/ism_collapse.py` | `bench/assembly_polish.py --support-ratio 999 --mono-quantile 0`, itself mirrored by `--assembly-polish` | byte-identical on chr20 (784 transcripts both ways) |
+
+⚠The Python `refseq_gff_to_gtf.py` had its body DUPLICATED (an earlier docstring edit appended instead of
+replacing), so it did the whole conversion twice — which is most of why it measured 20 s.

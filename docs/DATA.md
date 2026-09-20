@@ -18,13 +18,13 @@ quoted on one cannot be compared with a tool arm run on the other.
 
 ⚠ **Never use `Reference/HSA_genomic.gff`** — it drops 29.1% of loci. Use `chm13v2.0_RefSeq_full.gff.gz`.
 
-Per-chromosome reference GTFs are built with `tools/refseq_gff_to_gtf.py` (a stand-in for `gffread -T`,
+Per-chromosome reference GTFs are built with the `gff_to_gtf` binary (a stand-in for `gffread -T`,
 which is not installed on the work machine; validated to reproduce gffread's `chr20_ref.gtf` transcript
 count exactly, 4,574 = 4,574):
 
 ```sh
-python3 tools/refseq_gff_to_gtf.py chm13v2.0_RefSeq_full.gff.gz chr20 chr20_ref.gtf
-python3 tools/refseq_gff_to_gtf.py GGO_genomic.gff NC_073244.2 ggo_ref.gtf
+target/release/gff_to_gtf chm13v2.0_RefSeq_full.gff.gz chr20 chr20_ref.gtf
+target/release/gff_to_gtf GGO_genomic.gff NC_073244.2 ggo_ref.gtf
 ```
 
 ## Iso-Seq libraries

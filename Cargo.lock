@@ -964,6 +964,7 @@ dependencies = [
  "anyhow",
  "clap",
  "fixedbitset",
+ "flate2",
  "fxhash",
  "lru",
  "noodles 0.85.0",
