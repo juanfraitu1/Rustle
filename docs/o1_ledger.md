@@ -25218,3 +25218,34 @@ one the proposal addressed.
 
 ⚠Catalog-format note: `--families` requires an **`exons` column** (comma-separated 0-based half-open
 `start-end` blocks) that the older `HSA_gwcat.copies.tsv` does not carry, and the parser rejects CRLF.
+
+## §6r5 — TPM in the GTF and a locus BED (2026-09-19)
+
+Report `bench/TPM_AND_LOCUS_BED.md`. Both requested so an external user can run this and see abundance
+and locus extent without reading the ledger.
+
+⭐**`--gtf-tpm`** adds `cov` and `TPM` to every transcript line from the `reads` support already recorded.
+Default off, byte-identical unset. **Count-based, `TPM_i = reads_i / Σ reads * 1e6`, chosen by
+measurement, not preference:** against StringTie's own TPM over the 507 chr20 intron chains both tools
+call, count-based gives **ρ 0.879** and the short-read length-normalised convention only **0.714** — a
+long read is one molecule, so dividing by length down-weights transcripts sequenced end to end. Against
+FLAIR's isoform counts, ρ 0.755. Emitted TPM sums to exactly 1,000,000 and reproduces ρ 0.879 end to end.
+
+⭐**`bench/locus_bed.py`** collapses a GTF to loci (one record per `gene_id`), writes BED, and matches
+predicted ↔ annotated loci **one-to-one, greedily on reciprocal overlap**, reporting
+`size_ratio = pred_span / ref_span`. ⚠**Evaluation only — loci are never built with bipartite matching**
+(standing constraint); and the greedy pass is a LOWER BOUND on the optimal assignment, labelled as such.
+
+chr20, `human_testis`, min reciprocal overlap 0.10:
+
+| | loci | matched | median size ratio | ±10% | 2× |
+|---|---|---|---|---|---|
+| **ours** | 357 | 288 | **0.994** | **55.6%** | **79.5%** |
+| StringTie | 359 | 315 | 0.979 | 53.7% | 77.1% |
+| FLAIR | 429 | 290 | 0.994 | 47.2% | 72.4% |
+
+⭐Our loci are the right size at the median and hold the largest share within ±10% and within 2×.
+⚠StringTie matches MORE annotated loci (315 vs 288) while agreeing less well in extent (q25 0.586 vs our
+0.676). ⚠**Our q25 0.676 is the §6p4 5′-truncation signature at locus level** — a quarter of matched loci
+are appreciably short. ⚠943 of 1,231 annotated chr20 loci go unmatched by every tool (not expressed in
+this library), so unmatched ≠ error.

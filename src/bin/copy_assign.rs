@@ -236,6 +236,17 @@ struct Args {
     #[arg(long, default_value_t = false)]
     polish_fuzzy_ism: bool,
 
+    /// ⭐ §6r5 TPM IN THE GTF. Add `cov` and `TPM` to every transcript line, from the `reads` support the
+    /// assembler already records. **Count-based, NOT length-normalised**: a long read is one molecule, so
+    /// `TPM_i = reads_i / sum(reads) * 1e6`. Measured on chr20 against StringTie's own TPM over the 507
+    /// intron chains both tools call: count-based **rho 0.879**, length-normalised only **0.714** — so the
+    /// short-read convention is the wrong one here and is not offered. Against FLAIR's isoform counts,
+    /// rho 0.755 (388 shared chains). `cov` is reads per kb of spliced length, for orientation only.
+    ///
+    /// Default off: with it unset the GTF is byte-identical to a run without this flag.
+    #[arg(long, default_value_t = false)]
+    gtf_tpm: bool,
+
     /// §6r2 ABSOLUTE FLOOR EXEMPTION for `--polish-isoform-fraction`: never drop a transcript carrying at
     /// least this many reads for being a minor fraction of its locus. Distinct from
     /// `--polish-fraction-exempt`, whose bar is the run's `--polish-mono-quantile` of multi-exon support
@@ -2485,6 +2496,52 @@ fn polish_gtf_lines(
     (n_ism + n_fuzzy, n_mono, n_frac, floor)
 }
 
+
+/// §6r5: add `cov` and `TPM` to every transcript line of an emitted GTF, from its `reads` attribute.
+///
+/// Count-based by design — `TPM_i = reads_i / sum_j(reads_j) * 1e6` — because a long read is one molecule,
+/// so dividing by transcript length would down-weight long transcripts that were sequenced end to end.
+/// Measured against StringTie's TPM on chr20 (507 shared intron chains): count-based rho 0.879,
+/// length-normalised 0.714. Returns the number of transcript lines annotated.
+fn annotate_tpm(lines: &mut [String]) -> usize {
+    let reads_of = |line: &str| -> Option<f64> {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 || f[2] != "transcript" {
+            return None;
+        }
+        re_attr(f[8], "reads").and_then(|v| v.parse::<f64>().ok())
+    };
+    let total: f64 = lines.iter().filter_map(|l| reads_of(l)).sum();
+    if total <= 0.0 {
+        return 0;
+    }
+    // spliced length per transcript id, from its exon lines
+    let mut len: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for line in lines.iter() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 || f[2] != "exon" {
+            continue;
+        }
+        let (Some(t), Ok(a), Ok(b)) = (re_attr(f[8], "transcript_id"), f[3].parse::<i64>(), f[4].parse::<i64>())
+        else {
+            continue;
+        };
+        *len.entry(t).or_insert(0) += b - a + 1;
+    }
+    let mut n = 0;
+    for line in lines.iter_mut() {
+        let Some(r) = reads_of(line) else { continue };
+        let tid = {
+            let f: Vec<&str> = line.split('\t').collect();
+            re_attr(f[8], "transcript_id")
+        };
+        let l = tid.and_then(|t| len.get(&t).copied()).unwrap_or(0).max(1) as f64;
+        line.push_str(&format!(" cov \"{:.6}\"; TPM \"{:.6}\";", r / (l / 1000.0), r / total * 1e6));
+        n += 1;
+    }
+    n
+}
+
 fn main() -> Result<()> {
     let mut args = Args::parse();
     // §6p6: --assemble-only IS the assembly product, so it implies --gtf. Setting it here means every
@@ -4682,6 +4739,10 @@ fn main() -> Result<()> {
                  mono floor {floor} reads dropped {n_mono} -> isoform fraction {} dropped {n_frac} -> {after} kept",
                 args.assembly_polish, args.polish_isoform_fraction
             );
+        }
+        if args.gtf_tpm {
+            let n = annotate_tpm(&mut gtf_lines);
+            eprintln!("[copy_assign] ⭐ TPM: annotated {n} transcript lines with count-based `TPM` and `cov` (§6r5)");
         }
         let mut gh = std::fs::File::create(format!("{}.gtf", args.out))?;
         for line in &gtf_lines {
