@@ -1,7 +1,3 @@
-import os
-
-# §6r9: repo root from THIS file, so the tool runs from any clone.
-_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
 #!/usr/bin/env python3
 """Controlled in-silico validation of the read-coherence + PSV copy-split in the
 co-located / collapsed-tandem regime, and an empirical map of the IDENTIFIABILITY
@@ -47,6 +43,11 @@ per configuration so reruns are byte-identical.
 """
 
 from __future__ import annotations
+
+import os
+
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
 
 import random
 from dataclasses import dataclass
