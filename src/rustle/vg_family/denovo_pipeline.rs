@@ -5355,7 +5355,9 @@ pub(crate) struct ErRuleSite {
 /// data-dependent** — no counts, no lengths, no paths. Emitted verbatim by BOTH E_r call sites as
 /// `<prefix>.rule.tsv` (O1) and `<prefix>.refine.rule.tsv` (O2), so
 ///
-///     diff <prefix>.rule.tsv <prefix>.refine.rule.tsv
+/// ```text
+/// diff <prefix>.rule.tsv <prefix>.refine.rule.tsv
+/// ```
 ///
 /// is the answer to "do O1 and O2 use the same rule?". An EMPTY diff is the certificate; any line is the
 /// drift. This is what row X.2 of `docs/OBJECTIVES_AND_VERIFICATION.md` recorded as missing: the previous
