@@ -25052,3 +25052,27 @@ own commands. **Always re-derive a quoted number from the arm the documented com
 
 ⚠Also fixed: `README.md` claimed `docs/ONE_METHOD.md` "was deleted in eff1248" and then linked to it
 twice. The file exists; the note was stale.
+
+## §6q9b — wave 2: `bench/` inverted (2026-09-19)
+
+`tools/cleanup_wave2_bench.py` (new, dry-run by default). `bench/` was the lab notebook — **781 tracked
+scripts, of which only ~20% were reachable from anything recording a result**. Rather than triage the
+rest (the audit's transitive anchoring is unreliable in both directions — its own KEEP-CITED control was
+4/12 dead), the default was **inverted**: keep exactly what an authoritative document names, plus the
+closure of what those keepers import; archive everything else.
+
+Authoritative = ledger, register, pre-registrations, top-level docs (README, REPRODUCE, AGENTS,
+`docs/*.md`), **the `bench/*.md` write-ups** (a script named by a report is that report's provenance),
+and the Rust sources and tests.
+
+⭐**331 named + 22 import closure = 353 kept; 428 archived. `bench/` scripts 781 → 353.**
+
+Safety checks before applying: **0 kept scripts import a sibling that would be archived** (the closure is
+complete), and `bench/_shared.py` — which looked load-bearing — is imported by **nothing**. After
+applying: tests 883/0 + 28/0, and the `assembly_polish.py` parity oracle still reproduces the Rust
+polish byte-for-byte.
+
+⚠**Redirect rule, now in `docs/ACTIVE_WORKING_SET.md`: if a document names `bench/X` and it is not there,
+look in `archive/bench/X`.** 529 scripts now sit under `archive/` with their paths preserved, as tracked
+moves, so `git log --follow` works. Seven doc-named paths exist nowhere and **predate this cleanup**:
+three were deleted in earlier `chore: prune` commits (`667f2e5c`, `a7d003a3`) and four were never tracked.

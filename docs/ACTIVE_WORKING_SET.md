@@ -1,8 +1,9 @@
 # Active working set — what is actually in use (2026-09-19)
 
-> Wave 1 of the cleanup has been APPLIED (§6q8): 101 tracked files `git mv`-ed into `archive/`,
-> 33 untracked source files moved to `archive/untracked/`, 50 caches/logs deleted. Tests 883/0 + 28/0,
-> and the `bench/assembly_polish.py` parity oracle still reproduces the Rust polish byte-for-byte.
+> Waves 1 and 2 APPLIED (§6q8, §6q9). Wave 1: 101 tracked files → `archive/`, 33 untracked source →
+> `archive/untracked/`, 50 caches/logs deleted. Wave 2: **`bench/` inverted — 428 of 781 scripts archived,
+> leaving 353** (the 331 an authoritative document names, plus a 22-script import closure). After both:
+> tests 883/0 + 28/0, and `bench/assembly_polish.py` still reproduces the Rust polish byte-for-byte.
 
 Companion to `docs/CLEANUP_CANDIDATES.md`, which marks what is *probably dead*. This file marks what is
 **live**, so the audit stops treating it as a candidate: `tools/audit_cleanup_candidates.py` anchors any
@@ -56,6 +57,17 @@ ledger claim unreproducible. Archive, never delete. Enumerate them with:
 grep -ohE '(bench|tools|scripts|analysis)/[A-Za-z0-9_./-]+\.(py|sh)' \
      docs/o1_ledger.md docs/NEGATIVE_RESULTS_REGISTER.md docs/PREREG_*.md | sort -u
 ```
+
+## Finding a script a document names
+
+**If a document names `bench/X` and it is not there, look in `archive/bench/X`.** Waves 1 and 2 (§6q8,
+§6q9) moved 529 scripts under `archive/` preserving their paths, and they are tracked moves, so
+`git log --follow <old path>` and `git show <rev>:<old path>` both still work.
+
+Seven paths named in older documents exist nowhere and predate this cleanup: three were deleted in
+earlier `chore: prune` commits (`667f2e5c`, `a7d003a3` — recoverable from history) and four were never
+tracked (`bench/em_coverage_sweep.py`, `bench/sun_catalog_fast.py`,
+`bench/soto/soto_segdup_cn_refine.py`, `bench/copy_recovery_eval/results_genomewide/gw_run.sh`).
 
 ⚠**Five Tier-2 scripts were moved by wave 1 (§6q8) and now live under `archive/`.** The ledger and
 register still name their original paths, so follow them there:
