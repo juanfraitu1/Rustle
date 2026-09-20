@@ -25124,3 +25124,35 @@ the Rust polish byte-for-byte.
 ⚠A plain `git clone` still downloads the full history (~419 MB) — removing files from the tip does not
 remove them from history. `git clone --depth 1` gives only the 906 files. Rewriting history with
 `filter-repo` would shrink it but **invalidate every commit SHA cited in this ledger**, so it is refused.
+
+## §6r2 — the depth-aware isoform fraction: premise refuted (2026-09-19)
+
+The §6q7 open item was "make `--polish-isoform-fraction` depth-aware — it costs 65 matching chains on
+A119b chr20 against ~2 on the shallow library". **Measuring what it actually removes refutes the
+premise** (register 873).
+
+Of the 1,411 transcripts it drops on A119b chr20, exactly **65 are the sole cover of a reference chain**
+(0 are redundant duplicates), and those 65 carry a **median of 2 reads, max 9** — 1.1% of their locus best.
+They are the thin tail, not well-supported minor isoforms that a ratio mis-scales at depth. So there is
+nothing to recalibrate: an absolute escape just re-admits junk alongside them.
+
+`--polish-fraction-min-reads` (new, default 0 = byte-identical) prices that trade exactly:
+
+| floor | mRNAs | chains | chain Pr | transcript Pr |
+|---|---|---|---|---|
+| 0 (shipped) | 5,844 | 1,064 | 19.9 | 18.2 |
+| 3 | 6,303 | **1,092** | 18.8 | 17.3 |
+| 5 | 5,963 | 1,074 | 19.6 | 18.0 |
+| 8 | 5,866 | 1,066 | 19.8 | 18.2 |
+
+~15 junk transcripts per chain recovered, and **1,092 is still far from isoseq's 1,253**. Kept as a
+documented recall dial, off by default.
+
+⭐**Conclusion: the human recall gap is an ASSEMBLY problem, not a polish-calibration one.**
+`--read-isoform-k 3` + `RUSTLE_JUNCTION_MAJORITY=1` reaches 1,259 chains and is the only lever that
+passes isoseq; the polish can only trade along the frontier below it.
+
+⚠**Method note (register 874)**: "chains lost by a filter" ≠ removed transcripts with class `=` — a chain
+is lost only if no surviving transcript still covers it (here 65 sole covers, 0 redundant). And
+gffcompare writes `.tmap` **next to the input GTF**, not into `-o <dir>`; my first pass globbed the `-o`
+directory, got an empty class map, and reported a vacuous "0 real losses".
