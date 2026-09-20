@@ -126,9 +126,6 @@ path = "src/bin/parcn.rs"
 name = "vg_family_family_graph"
 path = "tests/regression/vg_family_family_graph.rs"
 
-[[test]]
-name = "vg_family_diagnostic"
-path = "tests/regression/vg_family_diagnostic.rs"
 
 [dev-dependencies]
 tempfile = "3"

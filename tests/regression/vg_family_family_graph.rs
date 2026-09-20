@@ -32,7 +32,7 @@ fn mk_bundle_with_reads(start: u64, end: u64, exons: Vec<(u64, u64)>) -> Bundle 
         junction_stats: JunctionStats::default(),
         junction_pair_stats: Default::default(),
         bundlenodes: None, read_bnodes: None, bnode_colors: None,
-        synthetic: false, rescue_class: None,
+        synthetic: false,
         hp_tag: None, ps_tag: None,
     }
 }

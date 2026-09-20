@@ -1,7 +1,7 @@
 //! Variation-graph family analysis for novel gene-family copies.
 //!
 //! Builds a per-exon family graph (`family_graph`) over paralog copies and
-//! drives structural detectors (mosaic, segdup, hidden_copy, positional) plus
+//! drives structural detectors (mosaic, hidden_copy) plus
 //! k-mer-based novel-copy rescue. See `docs/o3_missing_copy_evidence.md` for why
 //! the aligner misses the reads this module rescues.
 //!
@@ -20,11 +20,7 @@ pub mod recombinant_split; // O1 over-merge-gate: recombinant-bridge SPLIT gate 
 pub mod multi_repeat_bridge; // O1 over-merge-gate: multi-repeat-bridge gate (characterize/gate_cut/split_families_repeat_bridge + locus_node_set/load_node_mult; Rust port of multi_repeat_bridge_gate.py WIRED path; byte-parity tested).
 pub mod driver; // O1 family-definition DRIVER: build_catalog/write_outputs/load_repeat_mult/apply_demote orchestration (Rust port of family_rna_refine.py; reproduces the shipped catalog md5 dca64cbd).
 pub mod family_graph;
-pub mod diagnostic;
-pub mod positional;
-pub mod consensus; // cross-copy consensus error-correction (subtractive precision lever)
 pub mod mosaic;
-pub mod segdup;
 pub mod hidden_copy;
 pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collapse-enumerate): pure three-signal admission decision (hidden_copy flagged + balanced alt fraction + >=2 genome-projected loci).
 // `phasing` (within-locus DIPLOID MEC) was DELETED 2026-08-10: zero call sites, and the flag it
@@ -33,9 +29,6 @@ pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collaps
 // one locus — where O2 is k-copy over 4-letter alleles across a family. Verdict + evidence:
 // docs/copy_assignment_definition.md §10.
 pub mod allele_specific_junctions; // ASJ: junctions whose usage depends on a molecule's het-SNP allele.
-pub mod asj_strand_bias; // O3 ASJ analysis layer: StrandOddsRatio (SOR) strand-bias filter over asj_calls.tsv (Rust port of asj_strand_bias.py; reuses O2 noodles indexed-BAM fetch + CIGAR walk + allele_specific_junctions::fisher_exact_2x2; byte-parity tested vs GGO_mm.bam).
-pub mod asj_verify; // O3 ASJ analysis layer: confound control (frac_mq0 MAPQ-0 fraction at the anchor + anchor->junction dist + high_confidence) over asj_calls.tsv -> asj_calls_verified.tsv (Rust port of asj_verify.py; reuses the O2 noodles indexed-BAM fetch w/ 600-cap; byte-parity tested vs GGO.bam).
-pub mod asj_genetic_core; // O3 ASJ DELIVERABLE: the reproducible 54-call genetic core. Pure-TSV row-aligned join of asj_calls_verified.tsv (high_confidence) + asj_calls_strandbias.tsv (sor/sor_pass) -> 3-filter funnel (transversion 475->120, non-LOC 120->76, SOR-clean 76->54) -> asj_genetic_core.tsv (Rust port of asj_genetic_core.py; byte-parity tested, \r\n csv.DictWriter bytes).
 pub mod copy_split; // Joint read-coherence + PSV decomposition into (copy, isoform) units.
 pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy candidates.
 pub mod o3_flag_pass; // O3 flag-pass detector: ports bench/o3_flag_pass.py's missing-copy detector natively; see docs/superpowers/specs/2026-09-10-o3-flag-pass-integration-design.md
@@ -68,7 +61,6 @@ pub mod seed_projection; // `--seed`: a QUERY over the EMITTED catalog (the bloc
 pub mod copy_discovery; // Discovery of candidate gene-family copies from read alignment ties.
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
-pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
 
 #[cfg(test)]
 mod module_status_tests {

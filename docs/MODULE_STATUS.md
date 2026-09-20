@@ -1,5 +1,17 @@
 # Module status — what is SHIPPED vs what was TRIED
 
+> **2026-09-20 (§6s0) — 11 modules in this table were REMOVED, not just marked.** The survey below
+> had already MEASURED them as having zero production callers; they were still compiling. Removed:
+> asj_genetic_core.rs, asj_strand_bias.rs, asj_verify.rs (the dropped ASJ objective — a closed island
+> whose like-named *binaries* never imported it), consensus.rs, segdup.rs, positional.rs,
+> diagnostic.rs, and util's bitset/bitvec/coord/hard_counters. positional and diagnostic were pinned
+> only by two *type-only* struct fields (`Bundle.rescue_class`, `RunConfig.vg_candidate_loci`) and one
+> re-export — 3 lines, now gone. Also removed: `apply_compat_preset`, `apply_stringtie_exact_overrides`,
+> `stringtie_exact()` and 26 dead `vg_*` config fields (all uncalled StringTie/VG-HMM-era residue).
+> **Recover any of it from tag `retired-modules-2026-09-20`.** Test suite 931 passed / 0 failed; the
+> 46 tests lost were tests OF the removed dead modules. `multi_repeat_bridge_tests.rs` was deliberately
+> KEPT — it covers the live `multi_repeat_bridge` O1 gate.
+
 Generated 2026-09-03 by a 4-agent reachability survey of every `src/rustle/vg_family/` module
 (ledger §6dj). Each tag was assigned by **tracing callers up to a binary in `src/bin/`**, never by
 reading the module's own header.
@@ -102,18 +114,11 @@ Implemented, **measured**, and the measurement went against it. Kept deliberatel
 
 | module | gate | deciding evidence |
 |---|---|---|
-| `asj_genetic_core.rs` | - | MEASURED: grep for `genetic_core`/`GeneticCore`/`parse_verified`/`parse_strandbias` across src/ and tests/ returns nothing outside asj_genetic_core.rs except the mod.rs:36 declaration; its own tests start at asj_genetic_core.rs:47 |
-| `asj_strand_bias.rs` | - | MEASURED: the only src/ references outside its own file are doc comments — asj_verify.rs:5 and :256 (`///`) and asj_genetic_core.rs:11/:58 (`//!`, `///`). Zero call sites for StrandBiasEngine/sor/strand_table/fisher_strand_p; own  |
-| `asj_verify.rs` | - | MEASURED: zero callers of AsjVerifyEngine/parse_calls/verified_line anywhere in src/ or tests/ outside the module; own tests at asj_verify.rs:369. Critically, the like-named binary src/bin/asj_verify.rs does NOT use it — it import |
-| `consensus.rs` | - | MEASURED: grep for `consensus::` / consensus_vetoes / map_junctions_to_edges / family_consensus_vetoes over all of src/ and tests/ returns ZERO hits outside consensus.rs itself. Its three pub fns are consensus.rs:36, :67, :105; th |
-| `diagnostic.rs` | - | MEASURED: classify_internal, classify_external and cigar_has_long_indel have ZERO production callers — the only src/ references are the re-export at mod.rs:66 and the field TYPE at types.rs:109 (`pub rescue_class: Option<crate::vg |
 | `multi_repeat_bridge_tests.rs` | - | MEASURED: the file is pulled in only by `#[cfg(test)] #[path = "multi_repeat_bridge_tests.rs"] mod tests;` at src/rustle/vg_family/multi_repeat_bridge.rs:640-642 — it is not declared in mod.rs and has no other reference in the tre |
 | `o2_columns.rs` | - | MEASURED: the sole non-test consumer of `column_alleles` (o2_columns.rs:83) is `use super::o2_columns::column_alleles;` at src/rustle/vg_family/o2_materialize.rs:44, and o2_materialize itself is imported by no binary (o2_materiali |
 | `o2_margin_gate.rs` | - | MEASURED: the only non-test import of `assign_read_margin` (o2_margin_gate.rs:75) is `use super::o2_margin_gate::{assign_read_margin, BTOL, ERR, JW, MARGIN};` at src/rustle/vg_family/o2_materialize.rs:45 (used at o2_materialize.rs |
 | `o2_materialize.rs` | - | MEASURED: `grep -rn o2_materialize src/` yields, outside the file itself, only mod.rs:42 and four DOC-COMMENT mentions in src/bin/copy_assign.rs:129, :130, :131, :1414 (the `--read-cap` help text) plus the runtime warning string a |
-| `positional.rs` | - | MEASURED: `scan_genome_for_all_families` (positional.rs:214) and `scan_genome_for_family_loci` (positional.rs:370) have ZERO callers in src/ or tests/ — `grep -rn 'positional::/scan_genome_for' src/ tests/` returns exactly one lin |
 | `recombinant_abstain.rs` | RUSTLE_NO_RECOMBINANT_ABSTAIN (recombinant_abstain.rs:72, read at :81, documented DEFAULT-ON opt-out) — VACUOU | MEASURED: the module's only non-test caller is apply_abstain_to_vg at src/rustle/vg_family/o2_materialize.rs:866 (prod; that file's test mod starts at :1133) — but o2_materialize is imported by ZERO binaries. grep for "o2_material |
-| `segdup.rs` | RUSTLE_VG_SEGDUP_WINDOW / _MIN_ID / _MIN_FLANK / _MIN_EACH / _BAND (segdup.rs:109-117, inside SegdupParams::fr | MEASURED: grep for flank_homology_extent, flank_homology_extent_banded, SegdupParams, SegdupExtent and call_segdup_extent across src/ and tests/ returns ZERO hits outside src/rustle/vg_family/segdup.rs itself, whose only remaining |
 
 ## INFRASTRUCTURE (2)
 
@@ -148,14 +153,7 @@ Each describes itself as doing something its callers do not support.
 | `read_conflict.rs` | SHIPPED-DEFAULT | MEASURED: the header at src/rustle/vg_family/read_conflict.rs:22-23 says "The remaining integration is plumbing per-locus secondary placements (`secondary_index` / `tied_secondary_reads_in_region`) into the detection stage" — i.e. it presents the module as NOT |
 | `readonly_copy_number.rs` | SHIPPED-DEFAULT | MEASURED (minor, but it is a severed claim): readonly_copy_number.rs:10 is a dangling fragment — "//!  families e.g. `chi_H=1` on a locus whose true copy number is ~11." — the sentence it belonged to is gone, so the stated lower-bound caveat reads as a floatin |
 | `rescue_pipeline.rs` | SHIPPED-DEFAULT | - (header calls it "integration stage 4b", which matches). Scope note only: gw_family_catalog does NOT call detect_and_assign (it imports detect_conflict_catalog_genome_wide* / detect_homology_catalog_genome_wide at gw_family_catalog.rs:19-24), so rescue is de |
-| `asj_genetic_core.rs` | TEST-ONLY | Header (asj_genetic_core.rs:1-4) calls this 'the O3 DELIVERABLE' producing the 54-call genetic core, and mod.rs:36 repeats 'O3 ASJ DELIVERABLE' — but no shipped binary can produce that file; only #[cfg(test)] runs the funnel. |
-| `asj_strand_bias.rs` | TEST-ONLY | Header (asj_strand_bias.rs:1-10) describes the SOR filter as running 'ON TOP of the shipped asj_calls.tsv', implying a live analysis stage; nothing in src/bin/ invokes it. |
-| `asj_verify.rs` | TEST-ONLY | Header (asj_verify.rs:1-16) says it 'writes bench/asj_calls_verified.tsv' as the SECOND analysis layer over the shipped calls; the shipped binary of the same name writes <prefix>.asj_verified.tsv from its own inline code and never touches this module. |
-| `consensus.rs` | TEST-ONLY | Header (consensus.rs:1-5) and mod.rs:26 both bill it as 'the one SUBTRACTIVE precision lever' that 'VETOES a low-coverage copy's off-consensus junction' — present tense, as if in the pipeline. No shipped binary can reach it. |
-| `diagnostic.rs` | TEST-ONLY | Header (diagnostic.rs:5-10) says classify_internal is 'fast, always runs on every rescued read' and that classify_external runs 'when config.vg_rescue_diagnostic == true'. Neither ever runs: the first has no caller at all, and no code path assigns rescue_class |
 | `o2_columns.rs` | TEST-ONLY | INFERRED: o2_columns.rs:5-9 says this "is what feeds `super::o2_margin_gate`" as part of a live pipeline; in Rust it feeds a chain that terminates in an `#[ignore]`d test. |
 | `o2_margin_gate.rs` | TEST-ONLY | MEASURED: o2_margin_gate.rs:5-7 describes itself as "the gate that `bench/o2_vg_visualization.py::materialize_family` (the O2 VG-materialization pipeline) actually calls" — true of the PYTHON, but the Rust port has no Rust binary above it. Reading the header a |
 | `o2_materialize.rs` | TEST-ONLY | MEASURED: copy_assign advertises a `--read-cap` CLI flag whose help (src/bin/copy_assign.rs:129-131) names `o2_materialize::READ_CAP` / `MaterializeConfig::read_cap`, which makes the module look wired from the flag list; copy_assign.rs:1414-1418 then admits it |
-| `positional.rs` | TEST-ONLY | MEASURED: positional.rs:13-15 claims "The resulting candidates are then injected into the family graph as 'ghost' copies in Phase 2 so HMM scoring can target them" — there is no Phase-2 injection; the field meant to carry them (types.rs:937) is written by nobo |
 | `recombinant_abstain.rs` | TEST-ONLY | MEASURED, and this is the sharpest one in the slice: recombinant_abstain.rs:18 calls apply_abstain_to_vg "the DEFAULT-ON gate leg", and :30 documents RUSTLE_NO_RECOMBINANT_ABSTAIN as its opt-out. Nothing on any binary's path calls it, so "default-ON" is true o |
-| `segdup.rs` | TEST-ONLY | MEASURED: segdup.rs:1-8 says the signal "comes from the GENOME sequence (which the VG already loads for family discovery), anchored at the gene the family discovered" — phrasing that reads as wired into discovery. Nothing in discovery, or anywhere else, calls  |

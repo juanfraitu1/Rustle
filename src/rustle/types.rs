@@ -102,11 +102,6 @@ pub struct Bundle {
     /// (see src/rustle/vg_family/rescue.rs). Synthetic bundles bypass
     /// transcript_isofrac and cross-bundle pairwise-contained filters.
     pub synthetic: bool,
-    /// Diagnostic classification bucket for this synthetic bundle (None for
-    /// real bundles). Set by `vg_family::diagnostic::classify_internal` and
-    /// optionally refined by `classify_external` when
-    /// `config.vg_rescue_diagnostic == true`.
-    pub rescue_class: Option<crate::vg_family::diagnostic::RescueClass>,
     /// VG family this bundle belongs to (None for non-VG or non-synthetic bundles).
     /// Populated for synthetic bundles created by vg_family rescue.
     pub vg_family_id: Option<usize>,
@@ -695,7 +690,6 @@ impl BundleData {
             read_bnodes: None,
             bnode_colors: None,
             synthetic: false,
-            rescue_class: None,
             vg_family_id: None,
             hp_tag: None,
             ps_tag: None,
@@ -915,8 +909,6 @@ pub struct RunConfig {
     /// Single-copy assembly mode: skip VG family discovery, process each bundle independently (--single-copy-mode).
     /// Mutually exclusive with vg_mode.
     pub single_copy_mode: bool,
-    /// Minimum shared multi-mapping reads to link bundles into a family group [default: 3].
-    pub vg_min_shared_reads: usize,
     /// GTF/GFF file for template-based family assembly (GTF ingestion mode).
     pub ingress_gtf: Option<std::path::PathBuf>,
     /// Grouping strategy for GTF ingestion: "ByGene" or "ByOverlap" [default: ByGene].
@@ -925,119 +917,7 @@ pub struct RunConfig {
     /// When set, Rustle uses manifest-defined loci to group bundles into FamilyGroups instead
     /// of multi-mapper discovery or GTF ingestion. Requires --vg.
     pub family_manifest: Option<std::path::PathBuf>,
-    /// Maximum EM iterations for multi-mapping resolution [default: 20].
-    pub vg_em_max_iter: usize,
-    /// Discover novel gene copies from poorly-mapped/unmapped reads (--vg-discover-novel).
-    pub vg_discover_novel: bool,
-    pub vg_scan_novel_loci: bool,
-    /// Output of the family-profile genome scan, keyed by `FamilyGroup.family_id`
-    /// (or its single-strand sub-family id). Populated mid-pipeline when
-    /// `--vg-scan-novel-loci` is set or when --vg-discover-novel needs
-    /// positional priors. Phase 2 of the positional rescue path.
-    pub vg_candidate_loci: std::collections::HashMap<usize, Vec<crate::vg_family::positional::CandidateLocus>>,
-    /// Output path for family group report TSV (--vg-report).
-    pub vg_report: Option<std::path::PathBuf>,
-    /// Multi-mapping solver: em or flow [default: em].
-    pub vg_solver: VgSolver,
-    /// Use SNPs for copy assignment (--vg-snp).
-    pub vg_snp: bool,
-    /// Phased assembly using HP tags (--vg-phase).
-    pub vg_phase: bool,
-    /// Minimum reads to create a novel copy bundle [default: 3].
-    pub vg_min_novel_reads: usize,
-    /// `kmer` (legacy) or `hmm` (new). Default `kmer` until validation flips it.
-    pub vg_discover_novel_mode: String,
-    /// Enable external minimap2 verification of rescued reads.
-    pub vg_rescue_diagnostic: bool,
-    /// Sequences for multi-mapped reads (read_name_hash → bytes), populated
-    /// at BAM-parse time when `vg_solver == VgSolver::On`. Empty for other
-    /// solvers (sequence collection has memory cost). Consumed by the
-    /// pre-assembly EM for per-copy read scoring.
-    pub vg_multimap_sequences: std::collections::HashMap<u64, Vec<u8>>,
-    /// Forward log-odds threshold for HMM rescue (nats).
-    pub vg_rescue_min_loglik: f64,
-    /// Mask regions for the novel-copy LOO experiment. Reads whose primary
-    /// alignment overlaps any region in this list are treated as **unaligned**:
-    /// they're excluded from bundle building (no normal transcript) and
-    /// included in the HMM rescue pool (sequence used; alignment ignored).
-    /// Useful for verifying `--vg-discover-novel` actually recovers a paralog
-    /// from its sequence alone. Repeatable: `--vg-mask-region chrom:start-end`.
-    pub vg_mask_regions: Vec<(String, u64, u64)>,
-    /// Skip families with > N copies during EM (`--vg-em-max-copies`).
-    /// Default 20 — bigger groups are usually noise (mtDNA, repetitive
-    /// elements, very large gene-family clusters where pairwise-ID is
-    /// either ~100% or below useful threshold).
-    pub vg_em_max_copies: usize,
-    /// HMM-EM compute budget per family: skip if `n_copies × max(n_multimap_reads, 10)`
-    /// exceeds this value.  The per-(read, copy) forward DP is the dominant
-    /// cost, so the work scales with this product.  Replaces the cruder
-    /// `n_copies` cap as the primary gate.  Default 2000 — comfortably allows
-    /// NBPF-class families (25 copies × ~30 reads = 750) while still rejecting
-    /// mtDNA-style runaway cases.  Set via `--vg-em-max-work`.
-    pub vg_em_max_work: usize,
-    /// Additive junction-match bonus added to HMM-EM's per-(read, copy)
-    /// log-likelihood.  `0.0` = off (default behaviour).  Each missing
-    /// junction (a junction observed in the read's CIGAR that the copy's
-    /// expected junctions don't contain, within ±10 bp tolerance) costs
-    /// `vg_junction_bonus` nats — i.e. the *structural* mismatch signal
-    /// the HMM emission scoring can't see for highly divergent paralogs.
-    /// Recommended range: 1.0–3.0 nats per missed junction.  See
-    /// `--vg-junction-bonus`.
-    pub vg_junction_bonus: f64,
-    /// Exon-length penalty coefficient added to HMM-EM's per-(read, copy)
-    /// log-likelihood. For each exon a read spans, the contribution is
-    /// `-vg_exon_len_penalty * |len_read_exon − len_copy_exon|`. Targets the
-    /// divergent-paralog failure mode where copies differ primarily in
-    /// indels/cassette structure rather than substitutions (the HMM emission
-    /// can't see this).  `0.0` = off (default).  Suggested range 0.005–0.02
-    /// (in nats per bp of length mismatch).  See `--vg-exon-len-penalty`.
-    pub vg_exon_len_penalty: f64,
-    /// Skip intronless families during EM (`--vg-em-skip-intronless`).
-    /// Default true — intronless paralogs (e.g. olfactory receptors) yield
-    /// degenerate single-node family graphs that are uninformative for
-    /// HMM scoring. Per the loo_assembly cross-family test, OR cluster:
-    /// 0/0 reads rescued.
-    pub vg_em_skip_intronless: bool,
-    /// Family-quality filter: minimum total multi-mapping reads per family
-    /// (post-discovery). Below this, a "family" is more likely random
-    /// alignment artifacts than a real multi-copy paralog cluster.
-    pub vg_family_min_shared: usize,
-    /// Family-quality filter: maximum copies per family. Above this, a
-    /// "family" is more likely a repetitive element / mega-cluster than
-    /// a real paralog group.
-    pub vg_family_max_copies: usize,
-    /// Family-quality filter: minimum shared multi-mapping reads per copy
-    /// (multimap_reads / n_copies). Sparse mega-clusters (one cross-mapper
-    /// linking many bundles) fail this; real paralogs maintain ≥0.5 reads/copy.
-    pub vg_family_min_shared_per_copy: f64,
-    /// Family-quality filter: maximum coefficient of variation (CV) of
-    /// per-copy intron counts. Real paralogs of the same gene have similar
-    /// exon structure (CV typically <0.3); mixed-gene clusters that happen
-    /// to share a multi-mapper have wildly different exon counts (CV often
-    /// >1.0). Single-exon paralog clusters skip this check.
-    pub vg_family_max_exon_cv: f64,
-    /// Family-quality filter: minimum mean pairwise Jaccard of intron-length
-    /// sets across copies (binned at 50bp). The graph-structural signal —
-    /// real paralogs share intron lengths; TE-bridge cross-cluster merges
-    /// (chr19-GOLGA8 ↔ chr17-TBC1D3 spurious link) have Jaccard near 0.
-    /// Single-exon paralog clusters skip this check.
-    pub vg_family_min_primitive_jaccard: f64,
-    /// Family-quality filter (optional, requires --genome-fasta): minimum
-    /// mean pairwise k-mer Jaccard of family-graph per-copy SEQUENCES.
-    /// The 6th signal — catches mild TE-bridges that pass intron-length
-    /// Jaccard by coincidence (similar intron sizes between unrelated genes)
-    /// but have no actual sequence similarity. Requires building the family
-    /// graph, so skipped when --genome-fasta is not provided. Set to 0
-    /// (default) to disable this signal.
-    pub vg_family_min_kmer_jaccard: f64,
 
-    /// POA-aligned mean pairwise %-identity threshold for the family-quality
-    /// filter. More sensitive than k-mer Jaccard at moderate divergence: aligns
-    /// per-copy node sequences with POA and counts matches per aligned column.
-    /// Min-hash-prescreens then runs full POA only on families that pass a
-    /// loose Jaccard prefilter. Default 0 (disabled). Stays DNA-side; requires
-    /// --genome-fasta. Recommended starting threshold: 0.30.
-    pub vg_family_min_poa_identity: f64,
     /// Layer-2 family variation graph (default OFF; opt-in `--vg-layer2` /
     /// `RUSTLE_VG_LAYER2`). With it off, `--vg` is Layer-1-baseline-identical.
     pub vg_layer2: bool,
@@ -1102,90 +982,7 @@ impl RunConfig {
         self.max_junction_paths = self.max_junction_paths.max(8000);
     }
 
-    /// Long-read standard density: modest `-f` floors and a junction-path cap. Tuned to
-    /// **recover sensitivity** vs an over-tight preset: redundancy is already reduced by
-    /// `print_predcluster` (pairwise, longunder, dedup). We intentionally do **not** force
-    /// `filter_contained` or per-splice graph pruning in the default path—those crushed gffcompare
-    /// Sn on full BAM. For maximum precision, pass `--filter-contained` and/or
-    /// `--per-splice-site-isofrac 0.02`, or set `RUSTLE_STRICT_PRESET=strict`.
-    pub fn apply_compat_preset(&mut self) {
-        let strict = std::env::var("RUSTLE_STRICT_PRESET")
-            .map(|s| s.eq_ignore_ascii_case("strict"))
-            .unwrap_or(false);
 
-        if strict {
-            const ISO_STRICT: f64 = 0.025;
-            self.transcript_isofrac = self.transcript_isofrac.max(ISO_STRICT);
-            self.pairwise_isofrac = self.pairwise_isofrac.max(ISO_STRICT);
-            self.lowisofrac = self.lowisofrac.max(ISO_STRICT);
-            if self.max_junction_paths > 400 {
-                self.max_junction_paths = 400;
-            }
-            self.filter_contained = true;
-            self.per_splice_site_isofrac = self.per_splice_site_isofrac.max(0.02);
-            return;
-        }
-
-        // the original algorithm uses isofrac=0.01 (the default) for long-read mode (-L).
-        // isofrac=0.05 is only for --conservative mode.
-        // lowisofrac stays at 0.02 (header const, not changed for long reads).
-        // The keep_min_abundance floor is set to 0 to match the original algorithm (no floor).
-        const ISO: f64 = 0.01;
-        const LOW_ISO: f64 = 0.02;
-        self.transcript_isofrac = self.transcript_isofrac.max(ISO);
-        self.pairwise_isofrac = self.pairwise_isofrac.max(ISO);
-        self.lowisofrac = self.lowisofrac.max(LOW_ISO);
-        self.transcript_isofrac_keep_min = 0.0;
-        if self.max_junction_paths > 600 {
-            self.max_junction_paths = 600;
-        }
-        // In long-read mode, the original algorithm only emits transcripts backed by complete read paths
-        // (transfrags). It never enumerates novel junction combinations via DFS — that was
-        // designed for short reads where no single read spans the full transcript. In LR mode,
-        // junction-path DFS is the dominant FP source (~71% of overemission), generating
-        // combinatorial A→B→C paths from reads that only individually span A→B and B→C.
-        // Similarly, terminal_alt_acceptor_rescue and micro_exon_insertion_rescue are rustle
-        // extensions that the original algorithm never performs; disabling them in LR debug mode removes
-        // ~2,376 FP transcripts (1,868 + 508) at no sensitivity cost.
-        if self.long_reads {
-            self.emit_junction_paths = false;
-            self.emit_terminal_alt_acceptor = false;
-            self.emit_micro_exon_rescue = false;
-            // Per-splice-site isofrac: remove junctions below 1% of their donor's total traffic.
-            // Testing on GGO_19 (long reads, 1839-transcript ground truth) shows isofrac=1%
-            // gains +2 TPs (+0.1pp sensitivity) while removing 48 j-FP transcripts (+0.9pp
-            // precision), with zero net sensitivity cost. Higher thresholds (2-3%) hurt TPs.
-            self.per_splice_site_isofrac = self.per_splice_site_isofrac.max(1.0);
-            // LR aligners produce shifted splice site calls (same junction ±1-30bp).
-            // Coalescing with 2bp tolerance leaves many near-identical junctions that
-            // create tiny graph nodes (1-10bp) and fragment transfrags.  10bp tolerance
-            // merges the shifted copies into the strongest representative.
-            //
-            // Skip under `RUSTLE_STRINGTIE_EXACT`: StringTie's cgroup / partition dump does not
-            // apply this Rustle-specific merge before bundlenode construction.
-            if !crate::types::stringtie_exact() {
-                self.junction_canonical_tolerance = self.junction_canonical_tolerance.max(10);
-            }
-        }
-        // filter_contained and retained_intron_filter are too aggressive for sensitivity;
-        // they're available via CLI but not forced by the compatibility preset.
-    }
-
-    /// When `RUSTLE_STRINGTIE_EXACT=1`, undo Rustle-only tuning that diverges from StringTie's
-    /// rlink inputs **before** bundle/cgroup construction (junction stats → read exons).
-    ///
-    /// Call **after** [`Self::apply_compat_preset`] so long-read defaults are applied first,
-    /// then selectively tightened for bit-identical parity work (e.g. `partition_geometry` vs
-    /// `PARITY_PARTITION_TSV`).
-    pub fn apply_stringtie_exact_overrides(&mut self) {
-        if !crate::types::stringtie_exact() {
-            return;
-        }
-        // Compat LR preset raises `junction_canonical_tolerance` to ≥10bp to merge noisy
-        // aligner splice shifts. StringTie's cgroup / CBundle bundlenode pass does not apply
-        // that same merge before `post_bundle_partition`, so partition signatures drift.
-        self.junction_canonical_tolerance = 0;
-    }
 
     /// Assembly mode: always long-read.
     pub fn assembly_mode(&self) -> AssemblyMode {
@@ -1278,36 +1075,9 @@ impl Default for RunConfig {
             ref_junction_witness: false,
             vg_mode: false,
             single_copy_mode: false,
-            vg_min_shared_reads: 3,
             ingress_gtf: None,
             ingress_grouping: "ByGene".to_string(),
             family_manifest: None,
-            vg_em_max_iter: 20,
-            vg_discover_novel: false,
-            vg_scan_novel_loci: false,
-            vg_candidate_loci: std::collections::HashMap::new(),
-            vg_report: None,
-            vg_solver: VgSolver::On,
-            vg_snp: false,
-            vg_phase: false,
-            vg_min_novel_reads: 3,
-            vg_discover_novel_mode: "kmer".to_string(),
-            vg_rescue_diagnostic: false,
-            vg_rescue_min_loglik: 30.0,
-            vg_multimap_sequences: std::collections::HashMap::new(),
-            vg_mask_regions: Vec::new(),
-            vg_em_max_copies: 40,
-            vg_em_max_work: 2000,
-            vg_junction_bonus: 0.0,
-            vg_exon_len_penalty: 0.0,
-            vg_em_skip_intronless: true,
-            vg_family_min_shared: 10,
-            vg_family_max_copies: 30,
-            vg_family_min_shared_per_copy: 1.0,
-            vg_family_max_exon_cv: 1.5,
-            vg_family_min_primitive_jaccard: 0.20,
-            vg_family_min_kmer_jaccard: 0.05,  // bimodal split on full GGO; no-op without --genome-fasta
-            vg_family_min_poa_identity: 0.0,   // opt-in; requires --genome-fasta
             vg_layer2: false,
             vg_layer2_new_copies: false,
             vg_layer2_psv_linkage: false,
@@ -1349,8 +1119,3 @@ mod layer2_config_tests {
     }
 }
 
-/// RUSTLE_STRINGTIE_EXACT meta-flag (default ON), relocated verbatim from the retired `stringtie_parity`
-/// module during the assembler carve. `RUSTLE_STRINGTIE_EXACT=0` opts out of StringTie-exact mode.
-pub(crate) fn stringtie_exact() -> bool {
-    !matches!(std::env::var("RUSTLE_STRINGTIE_EXACT"), Ok(ref v) if v == "0")
-}

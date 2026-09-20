@@ -6,7 +6,9 @@
 //! (`copy_assign`, `gw_family_catalog`, `asj`, `asj_verify`) import only these.
 //!
 //! The legacy StringTie assembler + network-flow stack (~50k lines, ~55 modules) was RETIRED on
-//! 2026-07-14; see `docs/RETIREMENT_AND_MIGRATION.md`. Build new work in `vg_family`.
+//! 2026-07-14; see `docs/RETIREMENT_AND_MIGRATION.md`. Its last residue (the StringTie-exact
+//! preset apparatus, the VG-HMM rescue cluster, and the dropped ASJ objective's modules) was removed
+//! 2026-09-20; recover from tag `retired-modules-2026-09-20`. Build new work in `vg_family`.
 
 pub mod util; // bitset, bitvec, constants, coord, hard_counters (crate-wide low-level utilities)
 pub mod types; // RunConfig, Bundle, Junction, all shared data types
