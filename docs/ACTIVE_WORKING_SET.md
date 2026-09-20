@@ -61,14 +61,15 @@ grep -ohE '(bench|tools|scripts|analysis)/[A-Za-z0-9_./-]+\.(py|sh)' \
 
 ## Finding a script or output a document names
 
-The working tree holds **906 files: source, documentation and test fixtures only.** Everything else —
-1,720 superseded scripts, one-off probes and committed experiment outputs — lives at the git tag
-**`notebook-2026-09-19`**, not on disk.
+The working tree holds **585 files: source, documentation and test fixtures only** — 189 `.py` and
+8 `.sh`, down from 342/30 before §6s1-§6s5. Everything else lives at a git tag, not on disk:
+**`notebook-2026-09-19`** (1,720 entries: the §6r9 sweep) and **`notebook-2026-09-20`** (251 entries:
+the retired-era R/probes and 157 superseded provenance scripts). Check the newer tag first.
 
 ```sh
-git ls-tree -r notebook-2026-09-19 archive/ | grep <name>      # find it
-git checkout notebook-2026-09-19 -- archive/bench/<name>.py    # bring it back
-git show notebook-2026-09-19:archive/bench/<name>.py           # just read it
+git ls-tree -r notebook-2026-09-20 archive/ | grep <name>      # find it (then try -09-19)
+git checkout notebook-2026-09-20 -- archive/bench/<name>.py    # bring it back
+git show notebook-2026-09-20:archive/bench/<name>.py           # just read it
 ```
 
 **So: if a document names `bench/X` and it is not there, it is `archive/bench/X` at that tag.** All of it
@@ -104,11 +105,11 @@ not in bulk.
 
 | | files | note |
 |---|---|---|
-| scripts in repo | 973 | `.py` + `.sh` under bench/tools/scripts/analysis |
-| named directly in ledger/register/prereg | 152 | Tier 2 |
-| KEEP-CITED (anchored, mostly transitively) | 575 | 423 of them Tier 3 |
-| candidates | 397 | see `docs/CLEANUP_CANDIDATES.md` |
-| all files audited | 2,926 | 1,479 candidates, 343 MB |
+| scripts in repo | 197 | `.py` + `.sh`, after §6s5 (was 973 at the §6q8 audit) |
+| named directly in ledger/register/prereg | 152 | Tier 2 — the KEEP seed |
+| archived at `notebook-2026-09-20` | 251 | R figures, VG-HMM/StringTie probes, superseded provenance |
+| archived at `notebook-2026-09-19` | 1,720 | the §6r9 sweep |
+| Rust | 80 `.rs` / 69,824 LOC | vs 189 `.py` / 35,915 LOC — Rust is now ~2x the Python |
 
 ## Third-party tools — NOT vendored
 
