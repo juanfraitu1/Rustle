@@ -25278,3 +25278,32 @@ copy-resolution method on the hardest real case it resolves 0.3%; only DAZ and R
 ⚠**Q7 is now measurable and not flattering**: §6r5's locus size ratio is median 0.994 but **q25 0.676** —
 a quarter of matched loci are appreciably short, the §6p4 5′-truncation signature at locus level.
 ⚠**Q9 untested today**: this run puts NPIPA and NPIPB in one L3 cluster; the subfamily split is L4's job.
+
+## §6r7 — O1 DE NOVO tested end to end: recall 1.000, the defect is purity (2026-09-19)
+
+The advisor's mode. Reads only, annotation used **only to score**. A119b chr16 (1,787,427 records) →
+`copy_assign --assemble-only` + shipped polish → 9,629 transcripts → **2,550 de novo loci** → minimap2
+asm20 all-vs-all (127,784) → `mcl_families --min-exonic-bp 1 --min-shared-exon-frac 0.60`.
+
+| | de novo raw | de novo +5 kb merge | guided |
+|---|---|---|---|
+| families (≥2) | 70 | 44 | 90 |
+| **NPIP covered** | **21/21** | **21/21** | **21/21** |
+| dominant cluster covers | **20/21** | 17/21 | **21/21 (one cluster)** |
+| NPIP-touching loci / clusters | 37 in 9 | 30 in 7 | 26 in 1 |
+| median loci per NPIP gene | 2 | 1 | 1 |
+
+⭐**De novo recall by presence is 1.000** — all 21 NPIP genes covered by a clustered de novo locus, none
+lost — and **one dominant cluster covers 20 of 21** (only NPIPB5 sits exclusively outside). §6hu's "every
+locus is found, the method under-merges rather than losing anything" re-verified on the current binary and
+the deep library.
+
+⚠⚠**The defect is PURITY, not recall: 37 clustered loci touch 21 genes (median 2 per gene) and 16 land in
+8 further clusters.** That is the guided↔de novo gap in one sentence — guided puts 21/21 in a single
+cluster, de novo finds everything and splits it. Consistent with §6kg (annotation nodes F 0.955, de novo
+0.726) and §6m0 (one rep per locus emitted before consolidation).
+
+⛔**Register 879: the §6p1 5 kb same-strand merge does NOT close it.** It fixes node fragmentation exactly
+as recorded (median 2 → 1, 42.7% of loci consolidated) but the dominant cluster's coverage **falls
+20/21 → 17/21** and families drop 70 → 44. §6p1 already said it is node economy, not a recall lever; this
+confirms it at family level.

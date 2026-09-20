@@ -29,10 +29,7 @@ Other clusters are biologically coherent without being tuned for: **SMG1 + SMG1P
 note the PKD1P–NPIP readthroughs cluster **separately from NPIP**, which is the §6m1/§6q boundary story.
 
 ⚠**Two honest qualifications.**
-1. This is the **guided/annotation-node mode**. The dossier's "NPIP lands in 4 clusters (25/3/2/1)" is about
-   the **de novo read-node catalog** (§6hu) — both can be true, and today's run does **not** show the
-   fragmentation is fixed. It shows the edge+grouping rule is sound when the nodes are right, which is
-   exactly what §6kg said (annotation nodes F 0.955, de novo nodes 0.726).
+1. This is the **guided/annotation-node mode**; the de novo mode is tested separately below.
 2. **chr20 yields 0 families, correctly.** Its gene-body alignments have median cov_longer 0.0026 and p99
    0.286, below the 0.30 floor — chr20 simply has no gene-body-level paralog pairs at this stringency. An
    empty answer on a family-poor chromosome is the rule working.
@@ -40,6 +37,37 @@ note the PKD1P–NPIP readthroughs cluster **separately from NPIP**, which is th
 ⚠A trap worth recording: `mcl_families` keys the PAF on `chrom:start-end` (`parse_gene_key`). Feeding a PAF
 whose records are named by **gene symbol** silently yields **0 nodes, 0 edges** with no error — my first run
 did exactly that. Keep `samtools faidx`'s native names.
+
+
+## O1 DE NOVO — ⭐ TESTED, and this is the mode that matters
+
+Reads only, no annotation anywhere in the construction. **A119b chr16** (1,787,427 records, 682,958
+primary) → `copy_assign --assemble-only` with the shipped polish → 9,629 transcripts → collapsed to
+**2,550 de novo loci** (one per `gene_id`) → `minimap2 -x asm20` all-vs-all (127,784 records) →
+`mcl_families` with the same shipped flags. The annotation is used **only to score**, never to build.
+
+| | de novo, raw loci | de novo, +5 kb same-strand merge | guided (above) |
+|---|---|---|---|
+| families (≥2) | 70 | 44 | 90 |
+| graph | 864 nodes / 1,836 edges | 233 / 397 | 380 / 627 |
+| **NPIP genes covered** | **21/21** | **21/21** | **21/21** |
+| dominant cluster covers | **20/21** | 17/21 | **21/21 (one cluster)** |
+| NPIP-touching loci / clusters | 37 in 9 | 30 in 7 | 26 in 1 |
+| median de novo loci per NPIP gene | **2** | **1** | 1 |
+
+⭐**Recall by presence is 1.000 in de novo mode: all 21 NPIP genes are covered by a clustered de novo
+locus, none lost** — and **one dominant cluster covers 20 of 21** (only NPIPB5 sits exclusively outside).
+That is the ledger's "every locus is found; the method under-merges rather than losing anything" (§6hu),
+re-verified today on the current binary and the deep library.
+
+⚠**The defect is purity, not recall: 37 clustered loci touch 21 genes (median 2 per gene), and 16 of them
+land in 8 further clusters.** That is the guided↔de novo gap in one line — guided puts 21/21 in a single
+cluster; de novo finds everything but splits it.
+
+⛔**The §6p1 5 kb same-strand merge does NOT fix this at family level (register 879).** It does what it was
+recorded to do — node fragmentation falls from a median of 2 loci per gene to **1**, consolidating 42.7%
+of all loci — but the dominant cluster's coverage **drops 20/21 → 17/21**. Node economy, not recall, exactly
+as §6p1 warned; it should not be turned on to chase this number.
 
 ## O2 — assign copies under ambiguity — ⭐ TESTED, and the honest verdict is "abstains, correctly"
 
@@ -69,7 +97,7 @@ the catalog first.
 
 | | question | status |
 |---|---|---|
-| Q1 | a method that identifies families? | ⭐**TESTED today**, chr16, 90 families, NPIP 21/21. ⚠dossier text is stale (describes triangle-leaders as opt-in; the shipped rule is MCL + `--min-shared-exon-frac 0.60`) |
+| Q1 | a method that identifies families? | ⭐**TESTED today in BOTH modes**: guided 21/21 in one cluster; **de novo 21/21 covered, 20/21 in the dominant cluster**, fragmenting into 9. ⚠dossier text is stale (describes triangle-leaders as opt-in; the shipped rule is MCL + `--min-shared-exon-frac 0.60`) |
 | Q2 | real, or artifacts/overfitting? | CARRIED. Forking-paths accounting still the strongest card; ⚠the "~0.83 band" concession stands |
 | Q3 | borrow information across the family? | CARRIED |
 | Q4 | could two near-identical copies give the same isoforms? | ⭐**Answered by §6r4**: on YAGs 94% of contested molecules are *tied* — the copies are that similar |
