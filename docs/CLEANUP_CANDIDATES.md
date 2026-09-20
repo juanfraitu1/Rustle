@@ -1,6 +1,6 @@
 # Cleanup candidates — likely dead / likely superseded files
 
-Generated 2026-09-16 at `dna-from-genome@ff669dc7` by `tools/audit_cleanup_candidates.py` (re-run it; this file is overwritten). **Read-only: nothing was moved, edited or deleted.** Full per-file table: `docs/cleanup_candidates.tsv` (filter on `class` and `confidence`).
+Generated 2026-09-19 at `dna-from-genome@174ae65a` by `tools/audit_cleanup_candidates.py` (re-run it; this file is overwritten). **Read-only: nothing was moved, edited or deleted.** Full per-file table: `docs/cleanup_candidates.tsv` (filter on `class` and `confidence`).
 
 ⚠ A mark is a *candidate*, not a verdict. Before deleting anything: (1) grep the path once more, (2) check the `ledger_sections` / `anchor_citers` columns, (3) prefer `git mv` into an archive directory over `rm` for anything tracked, (4) remember `bench/` data can be slow to regenerate (AGENTS.md §2).
 
@@ -8,50 +8,49 @@ Generated 2026-09-16 at `dna-from-genome@ff669dc7` by `tools/audit_cleanup_candi
 
 A file is **anchored** if a path-like token naming it (full path, unique path suffix, unique basename, output prefix, a glob matching exactly 1 file, an enclosing directory of ≤40 files, or a Python `import` resolved against the importing script's directory and its parents) appears in an anchor source: `docs/o1_ledger.md`, `docs/NEGATIVE_RESULTS_REGISTER.md`, `docs/PREREG_*.md`, top-level `docs/*.md`, `docs/experiments/*.md`, `README.md`, the auto-memory directory, Rust `src/`/`tests/`, or `Cargo.toml`. Anchoring then propagates: a file named by an anchored script or anchored markdown write-up is anchored, index sidecars (`.fai`, `.bai`) follow their parent, and a script that names anchored data (its generator — the naming line looks like a write) is anchored; a script that merely reads anchored data is not. An ambiguous bare basename (e.g. `reads.fa`, found in many directories) never anchors on its own. Citations from `docs/archive/`, `docs/superpowers/`, `AGENTS.md` and un-anchored scripts are *weak*: recorded, not counted.
 
-## Rules (applied in this order; stale cutoff = 2026-08-17)
+## Rules (applied in this order; stale cutoff = 2026-08-20)
 
 | class | confidence | rule | files | bytes |
 |---|---|---|---:|---:|
-| **PROTECTED** | - | build/config files, Rust sources and tests (Rust reachability is docs/MODULE_STATUS.md's job, enforced by module_status_tests), and the anchor docs themselves. Never a candidate. | 152 | 6M |
+| **PROTECTED** | - | build/config files, Rust sources and tests (Rust reachability is docs/MODULE_STATUS.md's job, enforced by module_status_tests), and the anchor docs themselves. Never a candidate. | 158 | 6M |
 | **TEMP** | high | Python/pytest caches; untracked or git-ignored files at the repo root; untracked *.log / *err* / *out* / *.patch.txt / checkpoint files that nothing cites. | 73 | 17M |
 | **REFUTED-MODULE** | medium | Rust module whose `//! **STATUS:**` header is REFUTED and that no other file names (a REFUTED module that is still imported, e.g. collapse_gate.rs, stays PROTECTED). | 0 | 0B |
 | **SUPERSEDED-PORTED** | medium | Python script that a Rust source line declares it ports ('Port of', 'Faithful Rust port of', 'Mirrors', 'migration'); 'low' when only a function or part is ported (`x.py::f`, `x.py loaders`). The Python may still serve as a parity oracle or golden-fixture generator -- check tests before deleting. | 23 | 580K |
 | **SUPERSEDED-VERSION** | medium | Older member of a version series in the same directory (_v1.._vN, foo/foo2/foo3, dated _YYYY-MM-DD copies, foo vs foo_fix/_final/_new) that nothing anchors. 'high' when the newest member IS anchored. | 26 | 17M |
-| **SUPERSEDED-CITED** | low | Older member of a version series that IS anchored: provenance for a recorded result -- archive, don't delete. | 9 | 628K |
-| **LEGACY-ASSEMBLER** | medium | Not anchored, and its path or first 200 lines name StringTie-era assembler machinery (bundle/transfrag/parity/gffcompare/...) -- the assembler layer was retired (docs/RETIREMENT_AND_MIGRATION.md). | 53 | 490K |
-| **AMBIGUOUS-CITE** | low | Not anchored; an anchor source names it only by a bare basename shared by several files, a directory too large (>40 files) or a glob matching several files -- may or may not mean this copy. | 588 | 31M |
-| **ORPHAN** | medium | Not anchored; named only by files that are themselves not anchored (e.g. a figure named only by its un-cited plotting script). | 294 | 145M |
-| **UNCITED-STALE** | medium | Not named by anything (wide globs / big directories / scripts' ambiguous basenames ignored), last touched more than 30 days ago. | 363 | 118M |
+| **SUPERSEDED-CITED** | low | Older member of a version series that IS anchored: provenance for a recorded result -- archive, don't delete. | 10 | 633K |
+| **LEGACY-ASSEMBLER** | medium | Not anchored, and its path or first 200 lines name StringTie-era assembler machinery (bundle/transfrag/parity/gffcompare/...) -- the assembler layer was retired (docs/RETIREMENT_AND_MIGRATION.md). | 52 | 482K |
+| **AMBIGUOUS-CITE** | low | Not anchored; an anchor source names it only by a bare basename shared by several files, a directory too large (>40 files) or a glob matching several files -- may or may not mean this copy. | 617 | 31M |
+| **ORPHAN** | medium | Not anchored; named only by files that are themselves not anchored (e.g. a figure named only by its un-cited plotting script). | 258 | 141M |
+| **UNCITED-STALE** | medium | Not named by anything (wide globs / big directories / scripts' ambiguous basenames ignored), last touched more than 30 days ago. | 393 | 118M |
 | **PROBABLE-PROVENANCE** | - | Not cited by name, but it sits in an experiment directory (below bench/, docs/, ...) holding anchored files, or under a folder whose anchored README/write-up covers it -- usually an output of that experiment written under a computed name and cited as a folder. Verification judged 5/6 such files provenance: not a candidate. | 105 | 283K |
-| **UNCITED-RECENT** | low | Not cited, touched within 30 days: may be work in progress. | 66 | 1M |
-| **KEEP-CITED** | - | Anchored directly or transitively. Not a candidate. | 1116 | 92M |
+| **UNCITED-RECENT** | low | Not cited, touched within 30 days: may be work in progress. | 28 | 1M |
+| **KEEP-CITED** | - | Anchored directly or transitively. Not a candidate. | 1184 | 96M |
 
-**1495 candidates** of 2868 files (78 high, 731 medium, 686 low confidence).
+**1480 candidates** of 2927 files (78 high, 724 medium, 678 low confidence).
 
 ## Candidates by directory
 
 | directory | TEMP | REFUTED-MODULE | SUPERSEDED-PORTED | SUPERSEDED-VERSION | SUPERSEDED-CITED | LEGACY-ASSEMBLER | AMBIGUOUS-CITE | ORPHAN | UNCITED-STALE | UNCITED-RECENT | kept |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `bench/` | 39 |  | 23 | 14 | 2 | 16 | 152 | 107 | 158 | 5 | 641 |
+| `bench/` | 39 |  | 23 | 14 | 2 | 16 | 152 | 107 | 157 | 5 | 690 |
 | `bench/soto/` | 2 |  |  | 2 |  |  | 322 |  |  |  | 131 |
 | `analysis/family_graphs/` |  |  |  |  |  |  | 24 | 72 | 46 |  | 62 |
 | `bench/psv_split_stringtie/` |  |  |  |  |  |  |  |  | 80 |  | 0 |
-| `scripts/` |  |  |  |  |  | 22 | 1 | 12 | 27 |  | 2 |
+| `scripts/` |  |  |  |  |  | 22 | 1 | 11 | 27 |  | 3 |
 | `bench/graph_align_experiment_structural/` |  |  |  |  |  |  | 50 |  |  |  | 0 |
 | `tools/demo/` |  |  |  |  |  | 6 | 15 | 22 | 7 |  | 1 |
-| `docs/` |  |  |  | 6 | 7 |  | 10 |  | 1 | 15 | 104 |
-| `(root)` | 23 |  |  | 4 |  |  |  | 3 | 4 |  | 6 |
-| `bench/o1_gene_family_audit/` |  |  |  |  |  |  | 5 |  |  | 24 | 3 |
-| `bench/fixtures/` |  |  |  |  |  |  |  | 26 |  |  | 0 |
+| `docs/` |  |  |  | 6 | 8 |  | 11 |  | 1 | 15 | 112 |
+| `(root)` | 23 |  |  | 4 |  |  |  | 2 | 4 |  | 7 |
+| `bench/o1_gene_family_audit/` |  |  |  |  |  |  | 5 |  | 24 |  | 3 |
+| `bench/fixtures/` |  |  |  |  |  |  | 24 |  |  |  | 2 |
 | `bench/slides/` |  |  |  |  |  |  |  | 16 |  |  | 3 |
 | `bench/ggo19_needy_top15_refs/` |  |  |  |  |  |  |  | 11 |  |  | 0 |
-| `bench/o1_provenance_witness_prototype/` |  |  |  |  |  |  | 1 |  |  | 10 | 13 |
+| `bench/o1_provenance_witness_prototype/` |  |  |  |  |  |  | 1 |  | 10 |  | 13 |
 | `figures/` |  |  |  |  |  |  | 1 |  | 10 |  | 0 |
 | `tools/trace_analysis/` |  |  |  |  |  | 7 |  |  | 3 |  | 0 |
-| `bench/mini3/` |  |  |  |  |  |  |  | 3 | 6 |  | 0 |
-| `bench/o1_fresh_emission_validation/` | 2 |  |  |  |  |  | 1 |  |  | 4 | 15 |
-| `bench/sim/` |  |  |  |  |  |  |  | 3 | 4 |  | 0 |
-| `tools/` |  |  |  |  |  |  |  | 3 | 4 |  | 2 |
+| `bench/o1_fresh_emission_validation/` | 2 |  |  |  |  |  | 1 |  | 4 |  | 15 |
+| `bench/sim/` |  |  |  |  |  |  | 4 |  | 3 |  | 0 |
+| `tools/` |  |  |  |  |  |  |  | 3 | 4 |  | 3 |
 | `wf3/ledger/` |  |  |  |  |  |  |  |  |  | 7 | 0 |
 | `bench/identifiability_boundary/` |  |  |  |  |  |  |  | 5 | 1 |  | 0 |
 | `bench/ggo19_needy_top5_refs/` |  |  |  |  |  |  |  | 5 |  |  | 0 |
@@ -60,7 +59,6 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 | `bench/tandem_attribution/` | 1 |  |  |  |  |  | 1 | 1 | 1 |  | 3 |
 | `bench/compara_e/` |  |  |  |  |  |  |  | 1 | 1 |  | 0 |
 | `bench/te_bridge_check/` |  |  |  |  |  |  |  |  | 2 |  | 0 |
-| `docs/experiments/` |  |  |  |  |  |  |  | 2 |  |  | 1 |
 | `test_data/vg_hmm/` |  |  |  |  |  |  |  | 2 |  |  | 0 |
 | `bench/crossspecies/` | 1 |  |  |  |  |  |  |  |  |  | 27 |
 | `bench/family_filter_chr19/` |  |  |  |  |  |  |  |  | 1 |  | 0 |
@@ -73,7 +71,6 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 | `bench/psv_sizing/` | 1 |  |  |  |  |  |  |  |  |  | 7 |
 | `examples/` |  |  |  |  |  |  |  |  |  | 1 | 0 |
 | `tests/regression/` |  |  |  |  |  | 1 |  |  |  |  | 2 |
-| `tools/parity_decisions/` |  |  |  |  |  | 1 |  |  |  |  | 0 |
 | `bench/__pycache__/` | 1 |  |  |  |  |  |  |  |  |  | 0 |
 
 ## TEMP (73)
@@ -160,7 +157,7 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 - `bench/asj_verify.py` [tracked, low] → superseded by `src/rustle/vg_family/asj_verify.rs,src/rustle/vg_family/mod.rs` (still-used-by:bench/asj_fig.py;asj-objective-dropped;match:exact+glob-wide+import+suffix)
 - `bench/copy_assign.py` [tracked, low] → superseded by `src/rustle/vg_family/copy_assign.rs,src/rustle/vg_family/copy_assign_pipeline.rs,src/rustle/vg_family/denovo_pipeline.rs,src/rustle/vg_family/mod.rs,src/rustle/vg_family/o2_margin_gate.rs` (partial-port;still-used-by:bench/align_error_dna_test.py;match:exact+glob-wide+import+suffix)
 - `bench/denovo_assemble_gate.py` [tracked, low] → superseded by `src/rustle/vg_family/denovo_assemble.rs` (still-used-by:bench/genome_rna_overlay_readcontent.py;match:exact+glob-wide+suffix)
-- `bench/denovo_shared_def.py` [tracked, low] → superseded by `src/rustle/vg_family/shared_definition.rs` (still-used-by:bench/layer_order/lattice_check_c2.py;match:exact+glob-wide+import+suffix)
+- `bench/denovo_shared_def.py` [tracked, low] → superseded by `src/rustle/vg_family/shared_definition.rs` (still-used-by:bench/layer_order/lattice_check_c2.py;named-beside-stale-language-by:docs/ACTIVE_WORKING_SET.md;match:exact+glob-wide+import+suffix)
 - `bench/family_copy_number.py` [tracked, low] → superseded by `src/rustle/vg_family/mod.rs` (partial-port;still-used-by:bench/rna_copy_number_depth.py;match:exact+glob-wide+suffix)
 - `bench/family_er_pr.py` [tracked, low] → superseded by `src/rustle/vg_family/mod.rs` (partial-port;still-used-by:bench/divergence_floor.py;match:exact+glob-wide+import+suffix)
 - `bench/family_rescue.py` [tracked, medium] → superseded by `src/rustle/vg_family/family_rescue.rs,src/rustle/vg_family/rescue_pipeline.rs` (match:exact+glob-wide+suffix)
@@ -168,7 +165,7 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 - `bench/genome_family_def.py` [tracked, low] → superseded by `src/rustle/vg_family/mod.rs` (still-used-by:bench/colinear_multiexon_gate.py;match:exact+glob-wide+import+suffix)
 - `bench/multi_repeat_bridge_gate.py` [tracked, low] → superseded by `src/rustle/vg_family/mod.rs,src/rustle/vg_family/multi_repeat_bridge.rs` (still-used-by:bench/divergence_floor.py;match:exact+glob-wide+import+suffix)
 - `bench/o2_vg_visualization.py` [tracked, low] → superseded by `src/rustle/vg_family/mod.rs,src/rustle/vg_family/o2_materialize.rs` (partial-port;still-used-by:bench/gen_o2_margin_gate_fixture.py;match:exact+glob-wide+import+suffix)
-- `bench/o3_flag_pass.py` [tracked, medium] → superseded by `src/bin/copy_assign.rs,src/rustle/vg_family/o3_flag_pass.rs` (match:exact+glob-wide+suffix)
+- `bench/o3_flag_pass.py` [tracked, medium] → superseded by `src/bin/copy_assign.rs,src/rustle/vg_family/o3_flag_pass.rs` (named-beside-stale-language-by:docs/ACTIVE_WORKING_SET.md;match:exact+glob-wide+suffix)
 - `bench/poa_family_definition.py` [tracked, low] → superseded by `src/rustle/vg_family/family_graph.rs` (still-used-by:bench/candidate_generation_recall.py;match:exact+glob-wide+import+suffix)
 - `bench/psv_graph_genomewide.py` [tracked, low] → superseded by `src/rustle/vg_family/mod.rs,src/rustle/vg_family/o2_columns.rs` (partial-port;still-used-by:bench/a1_read_sda_smoketest.py;named-beside-stale-language-by:memory:project_psv_aware_vg.md;match:exact+glob-wide+import+suffix)
 - `bench/recombinant_abstain.py` [tracked, low] → superseded by `src/rustle/vg_family/mod.rs,src/rustle/vg_family/recombinant_abstain.rs` (still-used-by:bench/gen_recombinant_abstain_fixture.py;match:exact+glob-wide+import+suffix)
@@ -176,7 +173,7 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 - `bench/recombination_bridge_detector.py` [tracked, low] → superseded by `src/rustle/vg_family/bridge_detector.rs,src/rustle/vg_family/mod.rs` (still-used-by:bench/colinear_multiexon_gate.py;match:exact+glob-wide+import+suffix)
 - `bench/rna_only_edge_oracle.py` [tracked, low] → superseded by `src/rustle/vg_family/mod.rs` (still-used-by:bench/colinear_multiexon_gate.py;match:exact+glob-wide+import+suffix)
 - `bench/twopass_denovo_gw_pass1.py` [tracked, medium] → superseded by `src/rustle/vg_family/denovo_assemble.rs` (match:exact+glob-wide+suffix)
-- `bench/vg_repeat_catalog.py` [tracked, low] → superseded by `src/rustle/vg_family/minimizers.rs,src/rustle/vg_family/mod.rs,src/rustle/vg_family/repeat_catalog.rs` (still-used-by:bench/family_rna_refine.py;match:exact+glob-wide+import+suffix)
+- `bench/vg_repeat_catalog.py` [tracked, low] → superseded by `src/rustle/vg_family/minimizers.rs,src/rustle/vg_family/mod.rs,src/rustle/vg_family/repeat_catalog.rs` (still-used-by:bench/family_rna_refine.py;named-beside-stale-language-by:docs/ACTIVE_WORKING_SET.md;match:exact+glob-wide+import+suffix)
 
 ## SUPERSEDED-VERSION (26)
 

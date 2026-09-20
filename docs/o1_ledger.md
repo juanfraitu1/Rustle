@@ -25004,3 +25004,28 @@ ends of the frontier. **Gorilla is 8 chains and 2.5 precision points away** (1,6
 explanation holds cross-species; 2 bp neutral on both.
 ⚠**Register 865 RETRACTED**: isoseq collapse IS runnable (needs PacBio-style read names AND a relaxed
 `--min-aln-coverage` **together**), and the results already existed. Check for existing results first.
+
+## §6q8 — script/file stocktake: what is live is now marked (2026-09-19)
+
+⭐**`docs/ACTIVE_WORKING_SET.md`** (new) marks what is IN USE, as the counterpart to
+`docs/CLEANUP_CANDIDATES.md` which marks what is probably dead. Because
+`tools/audit_cleanup_candidates.py` anchors any file a top-level `docs/*.md` names, **listing a file there
+protects it from the audit.** Three tiers: Tier 1 = the live pipeline (Rust bins + 6 script families +
+the off-repo lattice engine, FLAIR shims and bakeoff substrates); Tier 2 = the **152 scripts named
+directly in the ledger/register/preregs**, which are provenance for published numbers (archive, never
+delete); Tier 3 = the **423 scripts anchored only transitively** — the real review pool.
+
+Audit re-run at `174ae65a` (it was 3 days stale and predates all of §6p/§6q): **2,927 files, 1,480
+candidates, 343 MB.** Of 973 scripts, 152 are named directly, 575 KEEP-CITED, 397 candidates.
+
+⚠**Transitive anchoring over-keeps**: the 2026-09-16 round-1 verification found the KEEP-CITED control
+itself 4/12 dead against a ≤25% bar. Tier 3 needs per-file checks, never a bulk sweep.
+
+⭐**`tools/cleanup_wave1.sh`** (new, DRY RUN BY DEFAULT) handles the five highest-confidence classes with
+**three dispositions so nothing irreplaceable is destroyed**: 101 tracked → `git mv` into `archive/`;
+33 untracked SOURCE files → `archive/untracked/` (they exist only there — the first draft would have
+`rm`-ed 17 root probe scripts and 16 other untracked files); 50 caches/logs → `rm -rf` (the first draft
+used `rm -f`, which cannot remove the 9 `__pycache__` directories). Not yet applied.
+
+⚠Largest single candidate is `bench/ri_kmer_ckpt.npz` at **107.9 MB** (ORPHAN) — review individually;
+`bench/soto/` holds 326 candidates / 29.1 MB, almost all AMBIGUOUS-CITE.
