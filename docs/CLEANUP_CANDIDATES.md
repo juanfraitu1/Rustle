@@ -1,6 +1,6 @@
 # Cleanup candidates — likely dead / likely superseded files
 
-Generated 2026-09-19 at `dna-from-genome@567e092e` by `tools/audit_cleanup_candidates.py` (re-run it; this file is overwritten). **Read-only: nothing was moved, edited or deleted.** Full per-file table: `docs/cleanup_candidates.tsv` (filter on `class` and `confidence`).
+Generated 2026-09-19 at `dna-from-genome@137ce2e2` by `tools/audit_cleanup_candidates.py` (re-run it; this file is overwritten). **Read-only: nothing was moved, edited or deleted.** Full per-file table: `docs/cleanup_candidates.tsv` (filter on `class` and `confidence`).
 
 ⚠ A mark is a *candidate*, not a verdict. Before deleting anything: (1) grep the path once more, (2) check the `ledger_sections` / `anchor_citers` columns, (3) prefer `git mv` into an archive directory over `rm` for anything tracked, (4) remember `bench/` data can be slow to regenerate (AGENTS.md §2).
 
@@ -19,14 +19,14 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 | **SUPERSEDED-VERSION** | medium | Older member of a version series in the same directory (_v1.._vN, foo/foo2/foo3, dated _YYYY-MM-DD copies, foo vs foo_fix/_final/_new) that nothing anchors. 'high' when the newest member IS anchored. | 9 | 75K |
 | **SUPERSEDED-CITED** | low | Older member of a version series that IS anchored: provenance for a recorded result -- archive, don't delete. | 12 | 540K |
 | **LEGACY-ASSEMBLER** | medium | Not anchored, and its path or first 200 lines name StringTie-era assembler machinery (bundle/transfrag/parity/gffcompare/...) -- the assembler layer was retired (docs/RETIREMENT_AND_MIGRATION.md). | 52 | 482K |
-| **AMBIGUOUS-CITE** | low | Not anchored; an anchor source names it only by a bare basename shared by several files, a directory too large (>40 files) or a glob matching several files -- may or may not mean this copy. | 620 | 31M |
+| **AMBIGUOUS-CITE** | low | Not anchored; an anchor source names it only by a bare basename shared by several files, a directory too large (>40 files) or a glob matching several files -- may or may not mean this copy. | 622 | 31M |
 | **ORPHAN** | medium | Not anchored; named only by files that are themselves not anchored (e.g. a figure named only by its un-cited plotting script). | 256 | 38M |
 | **UNCITED-STALE** | medium | Not named by anything (wide globs / big directories / scripts' ambiguous basenames ignored), last touched more than 30 days ago. | 393 | 118M |
 | **PROBABLE-PROVENANCE** | - | Not cited by name, but it sits in an experiment directory (below bench/, docs/, ...) holding anchored files, or under a folder whose anchored README/write-up covers it -- usually an output of that experiment written under a computed name and cited as a folder. Verification judged 5/6 such files provenance: not a candidate. | 107 | 294K |
 | **UNCITED-RECENT** | low | Not cited, touched within 30 days: may be work in progress. | 30 | 1M |
 | **KEEP-CITED** | - | Anchored directly or transitively. Not a candidate. | 1218 | 222M |
 
-**1395 candidates** of 2877 files (0 high, 658 medium, 737 low confidence).
+**1397 candidates** of 2879 files (0 high, 658 medium, 739 low confidence).
 
 ## Candidates by directory
 
@@ -41,7 +41,7 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 | `tools/demo/` |  |  |  |  |  |  | 15 | 22 | 7 |  | 1 |
 | `scripts/` |  |  |  |  |  |  | 1 | 11 | 27 |  | 3 |
 | `bench/o1_gene_family_audit/` |  |  |  |  |  |  | 5 |  | 24 |  | 3 |
-| `docs/` |  |  |  |  |  |  | 10 |  | 1 | 16 | 112 |
+| `docs/` |  |  |  |  |  |  | 11 |  | 1 | 16 | 112 |
 | `bench/fixtures/` |  |  |  |  |  |  | 24 |  |  |  | 2 |
 | `archive/scripts/` |  |  |  |  |  | 22 |  |  |  |  | 0 |
 | `bench/slides/` |  |  |  |  |  |  |  | 16 |  |  | 3 |
@@ -53,8 +53,8 @@ A file is **anchored** if a path-like token naming it (full path, unique path su
 | `bench/sim/` |  |  |  |  |  |  | 4 |  | 3 |  | 0 |
 | `tools/` |  |  |  |  |  |  |  | 3 | 4 |  | 4 |
 | `wf3/ledger/` |  |  |  |  |  |  |  |  |  | 7 | 0 |
+| `(root)` |  |  |  |  |  |  | 1 | 1 | 4 |  | 7 |
 | `bench/identifiability_boundary/` |  |  |  |  |  |  |  | 5 | 1 |  | 0 |
-| `(root)` |  |  |  |  |  |  |  | 1 | 4 |  | 7 |
 | `bench/ggo19_needy_top5_refs/` |  |  |  |  |  |  |  | 5 |  |  | 0 |
 | `bench/o1_fresh_emission_validation/` |  |  |  |  |  |  | 1 |  | 4 |  | 15 |
 | `archive/untracked/` |  |  |  |  | 4 |  |  |  |  |  | 29 |

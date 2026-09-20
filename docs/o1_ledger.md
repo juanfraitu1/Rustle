@@ -25029,3 +25029,26 @@ used `rm -f`, which cannot remove the 9 `__pycache__` directories). Not yet appl
 
 ⚠Largest single candidate is `bench/ri_kmer_ckpt.npz` at **107.9 MB** (ORPHAN) — review individually;
 `bench/soto/` holds 326 candidates / 29.1 MB, almost all AMBIGUOUS-CITE.
+
+## §6q9 — REPRODUCE.md and docs/DATA.md: the repo is now runnable by someone else (2026-09-19)
+
+⭐**`REPRODUCE.md`** (top level, linked from the README): build → third-party tools → data → the exact
+commands and **the number each should return**, every figure re-verified against its `gffcompare` stats
+file before being written down. ⭐**`docs/DATA.md`**: provenance for all three Iso-Seq libraries and both
+reference builds, precise enough to rebuild — the aligner version and full flag string for each.
+
+⚠**Two accessions still have to be filled in by the user** — `A119b` (PacBio movie
+`m64404e_240606_134033`) and `GGO_OR6737` are lab-internal. The public one is recorded: the six-chromosome
+panel's library is **ENA `ERR13885926`**, read off its own read names.
+
+⚠**The three libraries were aligned with DIFFERENT minimap2 invocations**: `human_testis.t2t.bam` is
+2.30-r1287 **without `-uf`**, while `A119b.t2t.bam` and `GGO_mm.bam` are 2.31-r1302 **with `-uf`**. Both
+facts now sit in `docs/DATA.md`; `-uf` forces the transcript strand, so this is not a cosmetic difference.
+
+⚠Caught while writing it: the draft documented the **polished** high-recall command but quoted the
+**raw** arm's 1,259 chains. On A119b chr20 `recall_raw` is 20,699 mRNAs / 1,259 chains @ 29.4/8.2 and
+`recall_polished` is 7,437 / 1,101 @ 25.7/16.4 — a 158-chain difference. Both are now given, with their
+own commands. **Always re-derive a quoted number from the arm the documented command actually produces.**
+
+⚠Also fixed: `README.md` claimed `docs/ONE_METHOD.md` "was deleted in eff1248" and then linked to it
+twice. The file exists; the note was stale.

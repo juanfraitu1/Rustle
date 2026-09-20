@@ -11,17 +11,21 @@ substrate the objectives are built on, not the contribution:
 | **O2** | copy assignment under ambiguity — assign-or-abstain, never 1/k | defended on **abstention**, not reassignment |
 | **O3** | reference-absent / unannotated copies — detect and flag | two complementary detectors |
 
-> **Start here:** [`docs/METHOD_PSEUDOCODE.md`](docs/METHOD_PSEUDOCODE.md) — the method step by step, every
+> **Want to run it?** [`REPRODUCE.md`](REPRODUCE.md) — build, tools, data, the exact commands and the
+> numbers they should return. Substrate provenance: [`docs/DATA.md`](docs/DATA.md). What each file in the
+> tree is for: [`docs/ACTIVE_WORKING_SET.md`](docs/ACTIVE_WORKING_SET.md).
+>
+> **Start here for the method:** [`docs/METHOD_PSEUDOCODE.md`](docs/METHOD_PSEUDOCODE.md) — the method step by step, every
 > constant verified against the source. Then [`docs/o1_ledger.md`](docs/o1_ledger.md) for the running
 > record of what has been measured, [`docs/NUMBERS.md`](docs/NUMBERS.md) for the load-bearing figures with
 > the trap each one avoids, and [`docs/NEGATIVE_RESULTS_REGISTER.md`](docs/NEGATIVE_RESULTS_REGISTER.md)
 > — **consult it before proposing an approach**, it records what has already been refuted.
 
 > ⚠ **The sections below describe the assembly ENGINE** (splice graph, max-flow decomposition, VG mode).
-> They are accurate about the code and are *not* the thesis contribution. `docs/ONE_METHOD.md`, which the
-> engine sections used to reference, was deleted in `eff1248` as a stale assembler doc; its live
-> replacements are [`docs/ONE_METHOD.md`](docs/ONE_METHOD.md) and
-> [`docs/METHOD_PSEUDOCODE.md`](docs/METHOD_PSEUDOCODE.md).
+> They are accurate about the code and are *not* the thesis contribution. The live method docs are
+> [`docs/ONE_METHOD.md`](docs/ONE_METHOD.md) and
+> [`docs/METHOD_PSEUDOCODE.md`](docs/METHOD_PSEUDOCODE.md). (An earlier note here said `ONE_METHOD.md`
+> had been deleted and then linked to it twice; the file exists.)
 
 
 ## INDEX
