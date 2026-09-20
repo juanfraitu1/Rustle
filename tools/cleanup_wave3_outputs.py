@@ -46,7 +46,10 @@ def main():
         if f.startswith('bench/'): return f.endswith(('.py','.sh','.md'))
         return True
 
-    k=[f for f in files if keep(f)]; move=[f for f in files if not keep(f)]
+    # NOTE: files already under archive/ are SKIPPED, not moved -- an earlier version treated them as
+    # 'not kept' and nested archive/ inside archive/archive/, breaking the redirect rule (§6r1).
+    k=[f for f in files if keep(f)]
+    move=[f for f in files if not keep(f) and not f.startswith('archive/')]
     size=lambda L: sum(os.path.getsize(x) for x in L if os.path.exists(x))
     print(f"KEEP   {len(k):>5d} files {size(k)/1e6:>7.1f} MB")
     print(f"MOVE   {len(move):>5d} files {size(move)/1e6:>7.1f} MB")
