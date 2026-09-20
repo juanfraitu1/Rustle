@@ -30,11 +30,16 @@ Outputs: lattice/truth.tsv, lattice/truth_ingroup.tsv, lattice/truth.out
 """
 import collections
 import sys
+import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench/layer_order")
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench', 'layer_order'))
 from lattice_common import INT, OUT, tsv, write  # noqa: E402
 
 LOG = []

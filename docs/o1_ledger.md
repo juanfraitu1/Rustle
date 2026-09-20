@@ -25409,3 +25409,16 @@ there. Resolve imports against the paths a script actually searches, not basenam
 `bench/layer_order/*.py` hardcode `/mnt/c/Users/jfris/Desktop/Rustle/...` and `/mnt/linuxdisk/...` through
 `sys.path.insert`, and `lattice_edges.py` needs an untracked `soto_map`. Same class as the untracked test
 fixtures (row 872) — green here, broken for anyone else. Not fixed in this pass; recorded.
+
+### §6r9 addendum 2 — in-repo absolute paths removed (2026-09-20)
+
+30 Python files hardcoded `/mnt/c/Users/jfris/Desktop/Rustle`, **17 of them as `sys.path.insert`**, so the
+lattice tools' imports resolved on exactly one machine. All now derive the repo root from `__file__`
+(`_RUSTLE_REPO`). Verified: all 342 Python files still parse, `lattice_common` imports cleanly with
+`cwd=/tmp`, and **zero hardcoded repo paths remain in code** (the 14 grep hits left are inside the
+explanatory comment the fix added).
+
+⚠Two things this does NOT fix, and they are the reason register 887 stays open: `lattice_edges.py`
+imports `soto_map`, tracked nowhere and present only under `/mnt/linuxdisk/.../light/scripts`; and 97
+scripts reference `/mnt/linuxdisk` **substrate** paths, which are data locations documented in
+`docs/DATA.md` and legitimately machine-specific.

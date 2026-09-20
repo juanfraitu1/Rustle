@@ -7,8 +7,13 @@ Output: lattice/report_tables.md
 import collections
 import csv
 import sys
+import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench/layer_order")
+
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench', 'layer_order'))
 from lattice_common import LEVELS, OUT, components, fnum, tests, tsv  # noqa: E402
 
 L = []

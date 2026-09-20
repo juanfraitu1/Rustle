@@ -1,3 +1,7 @@
+import os
+
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
 """DNA-derived PSV identifiability catalog (Phase 1, reference-only). See
 docs/superpowers/specs/2026-06-21-dna-psv-catalog-design.md.
 
@@ -8,12 +12,12 @@ import collections, json, os, re, subprocess, sys, tempfile
 import pysam
 sys.path.insert(0, os.path.dirname(__file__))
 
-FAM_TSV  = "/mnt/c/Users/jfris/Desktop/Rustle/bench/denovo_families.tsv"
+FAM_TSV  = os.path.join(_RUSTLE_REPO, 'bench', 'denovo_families.tsv')
 FASTA    = "/home/juanfra/winloci_scratch/GGO.fasta"
 GFF      = "/home/juanfra/winloci_scratch/GGO_genomic.gff"
 SCRATCH  = "/home/juanfra/winloci_scratch/dna_catalog"
-OUT_TSV  = "/mnt/c/Users/jfris/Desktop/Rustle/bench/dna_psv_catalog.tsv"
-OUT_MD   = "/mnt/c/Users/jfris/Desktop/Rustle/bench/dna_psv_catalog_summary.md"
+OUT_TSV  = os.path.join(_RUSTLE_REPO, 'bench', 'dna_psv_catalog.tsv')
+OUT_MD   = os.path.join(_RUSTLE_REPO, 'bench', 'dna_psv_catalog_summary.md')
 WIN, COLOC_WIN, MAX_MEMBERS = 40_000, 2_000_000, 200
 
 _fa = pysam.FastaFile(FASTA)

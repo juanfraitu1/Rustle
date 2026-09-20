@@ -1,8 +1,13 @@
+
+import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #!/usr/bin/env python3
 """PC2 component and outside neighbours under two equal-bitscore HSP orders: shipped (protein_families.edges_from:
 sorted(rows, reverse=True), ties broken by the remaining tuple fields) vs stable file order (verify_slim_protein/v_core.py)."""
 import collections, csv, sys
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench")
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench'))
 from protein_families import edges_from, pair_hsps
 L = "/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/light"
 idx = {r["pid"]: r for r in csv.DictReader(open(f"{L}/work/P/proteins.index.tsv"), delimiter="\t")}

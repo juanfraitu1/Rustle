@@ -19,9 +19,14 @@ Outputs (lattice/):
 import collections
 import csv
 import sys
+import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 import time
 
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench/layer_order")
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench', 'layer_order'))
 from lattice_common import (LEVELS, OUT, components, fnum, groups, refines, split_counts, tests, truss3, tsv,  # noqa: E402
                             write)
 

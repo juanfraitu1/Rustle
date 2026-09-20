@@ -2,6 +2,9 @@
 """Figure: Dataset 1 — ideal-coverage top-up. Real per-gene coverage distribution with the
 under-covered tail (topped up to 40x) highlighted."""
 import os
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -34,6 +37,6 @@ ax.set_title("Dataset 1: 'ideal coverage' GGO — top up only what the real data
              fontsize=11.5, color=NAVY, fontweight="bold")
 for s in ax.spines.values():
     s.set_color("#cccccc")
-out = "/mnt/c/Users/jfris/Desktop/Rustle/bench/topup_coverage.png"
+out = os.path.join(_RUSTLE_REPO, 'bench', 'topup_coverage.png')
 fig.tight_layout(); fig.savefig(out, dpi=160, facecolor="white")
 print("saved", out)

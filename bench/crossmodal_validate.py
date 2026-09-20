@@ -1,3 +1,7 @@
+import os
+
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
 #!/usr/bin/env python3
 """Cross-modal validation of the RNA E_r family catalog (companion spec Axes B + C).
 
@@ -16,7 +20,7 @@ import subprocess, sys, os, collections
 
 SC = "/tmp/claude-1000/-mnt-c-Users-jfris-Desktop/fae6260a-25c9-415b-a8a3-d36c0bc4ca96/scratchpad/xval"
 CAT = sys.argv[1] if len(sys.argv) > 1 else f"{SC}/rna98"
-ORACLE = "/mnt/c/Users/jfris/Desktop/Rustle/bench/diploid_cn_oracle.tsv"
+ORACLE = os.path.join(_RUSTLE_REPO, 'bench', 'diploid_cn_oracle.tsv')
 BT = "/home/juanfra/miniforge3/bin/bedtools"
 
 def sh(cmd):

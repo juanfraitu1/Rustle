@@ -16,10 +16,15 @@ Outputs (integrate_slim/):
 import collections
 import csv
 import sys
+import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 import time
 
 sys.path.insert(0, "/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/light/scripts")
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench")
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench'))
 import layer_protein_bounded as lpb  # noqa: E402
 import mcl_port  # noqa: E402
 

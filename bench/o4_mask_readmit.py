@@ -18,6 +18,9 @@ CONTROL: the identical pipeline against the UNMASKED contig must admit 0 AC_ (th
 Run: /home/juanfra/miniforge3/bin/python bench/o4_mask_readmit.py
 """
 import os
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
+
 import subprocess
 import sys
 
@@ -26,7 +29,7 @@ import pysam
 SCRATCH = "/home/juanfra/winloci_scratch"
 GENOME = f"{SCRATCH}/GGO.fasta"
 BAM = f"{SCRATCH}/GGO_mm.bam"
-BIN = "/mnt/c/Users/jfris/Desktop/Rustle/target/release/copy_assign"
+BIN = os.path.join(_RUSTLE_REPO, 'target', 'release', 'copy_assign')
 MM2 = "/home/juanfra/miniforge3/bin/minimap2"
 SAM = "/home/juanfra/miniforge3/bin/samtools"
 WORK = "/tmp/claude-1000/-mnt-c-Users-jfris-Desktop/03f0156d-63b6-4d0f-bf09-862bddee491c/scratchpad/o4_mask"

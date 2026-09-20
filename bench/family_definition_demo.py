@@ -1,3 +1,7 @@
+import os
+
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
 #!/usr/bin/env python3
 """FORMAL DEFINITION DEMONSTRATION — find multi-copy gene families from IsoSeq reads, with an honest FP/FN ledger.
 
@@ -31,8 +35,8 @@ import json
 import pysam
 
 BAM = "/home/juanfra/winloci_scratch/GGO.bam"
-OUT_TSV = "/mnt/c/Users/jfris/Desktop/Rustle/bench/family_definition_demo.tsv"
-OUT_JSON = "/mnt/c/Users/jfris/Desktop/Rustle/bench/family_definition_demo.json"
+OUT_TSV = os.path.join(_RUSTLE_REPO, 'bench', 'family_definition_demo.tsv')
+OUT_JSON = os.path.join(_RUSTLE_REPO, 'bench', 'family_definition_demo.json')
 
 # operating point (the shipped Rust de-tie defaults) — hardcoded so this demo cannot be clobbered by a sweep.
 DELTA, DE_MAX, MIN_READS = 0.005, 0.05, 3

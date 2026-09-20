@@ -32,6 +32,9 @@ Run: /home/juanfra/miniforge3/bin/python bench/genome_rna_overlay.py
 """
 import json
 import os
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
+
 import random
 import re
 import sys
@@ -47,7 +50,7 @@ BENCH = os.path.dirname(os.path.abspath(__file__))
 META = "/home/juanfra/winloci_scratch/denovo_transcripts.meta.tsv"
 GFF = "/home/juanfra/winloci_scratch/GGO_genomic.gff"
 SEDEF = next((p for p in ["/mnt/c/Users/jfris/Desktop/final.bed",
-                          "/mnt/c/Users/jfris/Desktop/Rustle/final.bed"] if os.path.exists(p)), None)
+                          os.path.join(_RUSTLE_REPO, 'final.bed')] if os.path.exists(p)), None)
 RNA_FAM = os.path.join(BENCH, "denovo_families.tsv")
 GFAM_ANNOT = os.path.join(BENCH, "genome_families_annotated.tsv")
 GFAM_PC = os.path.join(BENCH, "genome_families_protein_coding.tsv")

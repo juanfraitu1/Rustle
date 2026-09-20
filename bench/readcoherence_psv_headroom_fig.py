@@ -1,3 +1,7 @@
+import os
+
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
 #!/usr/bin/env python3
 """Figure: read-coherence recall vs PSV copy-resolution are DISJOINT (the headroom no-go).
 
@@ -97,6 +101,6 @@ axR.text(5, 0.5,
 fig.suptitle("Headroom probe: does threading PSVs through the molecule graph pay off?",
              fontsize=14.5, fontweight="bold", color=NAVY, y=0.995)
 
-out = "/mnt/c/Users/jfris/Desktop/Rustle/bench/readcoherence_psv_headroom.png"
+out = os.path.join(_RUSTLE_REPO, 'bench', 'readcoherence_psv_headroom.png')
 fig.savefig(out, dpi=185, bbox_inches="tight", facecolor="white")
 print("saved", out)

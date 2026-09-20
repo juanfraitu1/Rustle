@@ -30,8 +30,13 @@ usage: lattice_filtration.py                 primary L1 (clause-2 approx with v-
 import collections
 import csv
 import sys
+import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench/layer_order")
+
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench', 'layer_order'))
 from lattice_common import ID_COL, OUT, SEF_MIN, UF, components, fnum, groups, tests, tsv, write  # noqa: E402
 
 FIELDS = ("w98_gapexcl", "w98_gapincl", "pooled_gapexcl", "pooled_gapincl")

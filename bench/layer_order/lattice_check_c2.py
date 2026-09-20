@@ -17,17 +17,21 @@ d_c2_genebody runs the same target/strand code with the shorter-body denominator
 import collections
 import csv
 import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 import random
 import sys
 
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench")
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench/layer_order")
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench'))
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench', 'layer_order'))
 import denovo_shared_def as dsd  # noqa: E402
 import guided_pipeline as gp  # noqa: E402
 from lattice_common import LIGHT, OUT, PAF, tsv  # noqa: E402
 
 # node exon unions per body key, exactly as lattice_edges.py builds them (exec its head; stops before the pair evaluation)
-_src = open("/mnt/c/Users/jfris/Desktop/Rustle/bench/layer_order/lattice_edges.py").read()
+_src = open(os.path.join(_RUSTLE_REPO, 'bench', 'layer_order', 'lattice_edges.py')).read()
 _g = {"__name__": "check_c2"}
 exec(compile(_src[:_src.index("# ------------------------------------------------------------------------------------------------ DNA pair attributes")],
              "lattice_edges_head", "exec"), _g)

@@ -1,3 +1,7 @@
+import os
+
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
 import pysam, re, collections
 bam=pysam.AlignmentFile("/home/juanfra/winloci_scratch/GGO.bam","rb")
 DN=re.compile(r'DN_(N[CW]_\d+\.\d+)_(\d+)_(\d+)$')
@@ -76,8 +80,8 @@ for (s1,s2) in [(161251228,161458538),(164381222,164442447),(164397061,164426194
     r=classify_pair("NC_073247.2",s1,s2)
     print("MAGEA",s1,s2,"->",{k:r[k] for k in('n_xmap','nm_same','nm_diff','frac_same')} if r and r['n_xmap']>0 else r)
 
-FAM_TSV = "/mnt/c/Users/jfris/Desktop/Rustle/bench/denovo_families.tsv"
-OUT_TSV = "/mnt/c/Users/jfris/Desktop/Rustle/bench/copy_resolution_census.tsv"
+FAM_TSV = os.path.join(_RUSTLE_REPO, 'bench', 'denovo_families.tsv')
+OUT_TSV = os.path.join(_RUSTLE_REPO, 'bench', 'copy_resolution_census.tsv')
 
 # Memoize the BAM-fetch hot path. classify_pair calls fetch_locus by global name (late binding),
 # so rebinding the global here makes exhaustive pairing bounded by distinct loci, not pair count.

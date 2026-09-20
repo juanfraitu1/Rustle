@@ -29,11 +29,16 @@ import collections
 import csv
 import re
 import sys
+import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 sys.path.insert(0, "/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/light/scripts")
 import soto_map  # noqa: E402
 
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench")
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench'))
 from protein_families import excluded  # noqa: E402  (§6ko r2 filter)
 
 LIGHT = "/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/light"
@@ -41,7 +46,7 @@ HEAVY = "/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/heavy"
 INT = "/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/integrate_slim"
 H = "/mnt/linuxdisk/home/juanfraitu/o1_falsemerge"
 HGNC = "/mnt/linuxdisk/home/juanfraitu/winloci_data/hgnc/hgnc_complete_set.txt"
-LIT = "/mnt/c/Users/jfris/Desktop/Rustle/docs/lit_subclusters_npip_tbc1d3_truth.tsv"
+LIT = os.path.join(_RUSTLE_REPO, 'docs', 'lit_subclusters_npip_tbc1d3_truth.tsv')
 CATALOGS = {
     "c15_17_22": dict(kind="regions", path=f"{H}/human2/genes.regions", D=f"{LIGHT}/work/D/c15_17_22.e1",
                       E0=f"{H}/human2/guided", E1=f"{H}/lit/aj_dev/refseq_e1"),

@@ -23,13 +23,16 @@ Run: /home/juanfra/miniforge3/bin/python bench/copy_vs_allele_structural.py
 """
 import json
 import os
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
+
 from bisect import bisect_right
 from collections import defaultdict
 
 R = "/home/juanfra/winloci_scratch/refabsent"
 GW = f"{R}/gw_promoted"
 SEDEF = next((p for p in ["/mnt/c/Users/jfris/Desktop/final.bed",
-                          "/mnt/c/Users/jfris/Desktop/Rustle/final.bed"] if os.path.exists(p)), None)
+                          os.path.join(_RUSTLE_REPO, 'final.bed')] if os.path.exists(p)), None)
 HET_LO, HET_HI = 2.0, 20.0   # divergence window (%) where a variant could plausibly be a het allele
 
 

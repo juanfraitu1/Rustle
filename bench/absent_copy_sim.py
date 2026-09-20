@@ -45,6 +45,9 @@ Requirements:
 
 import argparse
 import os
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
+
 import subprocess
 import sys
 import tempfile
@@ -54,7 +57,7 @@ import pysam
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-BINARY_DEFAULT = "/mnt/c/Users/jfris/Desktop/Rustle/target/release/copy_assign"
+BINARY_DEFAULT = os.path.join(_RUSTLE_REPO, 'target', 'release', 'copy_assign')
 SAMTOOLS = os.environ.get("SAMTOOLS", "/home/juanfra/miniforge3/bin/samtools")
 MINIMAP2 = os.environ.get("MINIMAP2", "/home/juanfra/miniforge3/bin/minimap2")
 N_READS_PER_COPY = 30   # primary reads per copy per locus

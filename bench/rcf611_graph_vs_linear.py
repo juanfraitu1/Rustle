@@ -14,6 +14,10 @@ Run: /home/juanfra/miniforge3/bin/python bench/rcf611_graph_vs_linear.py
 import collections
 import json
 import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
+
 import random
 import subprocess
 import sys
@@ -21,7 +25,7 @@ import tempfile
 
 import pysam
 
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench")
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench'))
 import family_def_vg_coherence as V
 from family_def_vg_coherence import build_cdna, build_families
 

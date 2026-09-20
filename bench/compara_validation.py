@@ -78,6 +78,9 @@ Run:
 """
 
 import os
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
+
 import sys
 import json
 import csv
@@ -98,7 +101,7 @@ W = 10                       # rustle minimizer w
 T_RUSTLE = 0.30              # FAMILY_MERGE_JACCARD_DEFAULT
 T_OPT = 0.06                 # data-optimal whole-gene threshold from prior work
 
-BASE = "/mnt/c/Users/jfris/Desktop/Rustle/bench"
+BASE = os.path.join(_RUSTLE_REPO, 'bench')
 RESULTS = os.path.join(BASE, "copy_recovery_eval", "results")
 UNIVERSE_TSV = os.path.join(RESULTS, "universe.tsv")
 GENE_FA = os.path.join(RESULTS, "gene_rep.fa")

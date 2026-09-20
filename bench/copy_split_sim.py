@@ -1,3 +1,7 @@
+import os
+
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
 #!/usr/bin/env python3
 """Controlled in-silico validation of the read-coherence + PSV copy-split in the
 co-located / collapsed-tandem regime, and an empirical map of the IDENTIFIABILITY
@@ -527,7 +531,7 @@ if __name__ == "__main__":
 
     demo = run_demo()
     sweep = run_sweep()
-    make_figure(demo, sweep, "/mnt/c/Users/jfris/Desktop/Rustle/bench/copy_split_sim.png")
+    make_figure(demo, sweep, os.path.join(_RUSTLE_REPO, 'bench', 'copy_split_sim.png'))
 
     cov_full, sf_full = summarize_boundary(sweep)
     print()

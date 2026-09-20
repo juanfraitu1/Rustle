@@ -2,6 +2,9 @@
 """Figure: the 5-equally-good-places copy-assignment identifiability benchmark."""
 import json
 import os
+# §6r9: repo root from THIS file, so the tool runs from any clone.
+_RUSTLE_REPO = os.path.dirname(os.path.abspath(__file__))
+
 
 import matplotlib
 matplotlib.use("Agg")
@@ -44,6 +47,6 @@ fig.suptitle(f"Benchmark: 5 near-identical copies, '5 equally good places' (base
              "coordinates cannot assign reads to a copy — PSVs can, iff ≥K columns clear the error floor",
              fontsize=12.5, fontweight="bold", color=NAVY, y=1.02)
 fig.tight_layout(rect=[0, 0, 1, 0.9])
-out = "/mnt/c/Users/jfris/Desktop/Rustle/bench/sim5x_benchmark.png"
+out = os.path.join(_RUSTLE_REPO, 'bench', 'sim5x_benchmark.png')
 fig.savefig(out, dpi=160, facecolor="white", bbox_inches="tight")
 print("saved", out)

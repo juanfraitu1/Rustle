@@ -1,9 +1,14 @@
+
+import os
+# §6r9: repo root from THIS file, so the tool runs from any clone (it used to hardcode
+# /mnt/c/Users/jfris/Desktop/Rustle, which only ever worked on one machine).
+_RUSTLE_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #!/usr/bin/env python3
 """P interpretation check: is each member P cluster an exact connected component of the §6ko graph over all saved blastp
 searches (light/work/P/blastp.tsv), or an MCL cut inside a larger component? Also: the shipped §6ko dev table family that
 holds the TBC1D3 genes (o1_falsemerge/lit/pfam_dev/r2_refseq.families.tsv)."""
 import collections, csv, sys
-sys.path.insert(0, "/mnt/c/Users/jfris/Desktop/Rustle/bench")
+sys.path.insert(0, os.path.join(_RUSTLE_REPO, 'bench'))
 from protein_families import edges_from, pair_hsps
 L = "/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/light"
 idx = {r["pid"]: r for r in csv.DictReader(open(f"{L}/work/P/proteins.index.tsv"), delimiter="\t")}
