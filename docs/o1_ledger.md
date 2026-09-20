@@ -25184,3 +25184,37 @@ by CATALOG COVERAGE, not by aligner ambiguity.** 24,543 molecules are genuinely 
 in ≥2 copies of a 509-copy catalog. On human chr20 with NO catalog, contested was 0 by construction; on a
 9-family gorilla catalog, also 0. **"Contested = 21" measures the catalog, not the biology** — so no
 conclusion about O2's population size is available until the catalog is grown.
+
+## §6r4 — the Y ampliconic genes are where O2 finally has a population (2026-09-19)
+
+User's call: the YAGs are the natural candidate set. They are — by 173×. Guided catalog built from the
+CHM13 RefSeq annotation (`bakeoff/hsa_chrY/yag.copies.{tsv,fa}`): **8 families / 30 copies** — BPY2 ×3,
+CDY ×4, DAZ ×4, HSFY ×2, PRY ×2, RBMY ×6, TSPY ×7, VCY ×2 — against human testis **A119b chrY**
+(603,346 records, 41,464 primary), 96 s.
+
+| | gorilla autosomes (78 fam / 509 copies) | **human YAGs (8 fam / 30 copies)** |
+|---|---|---|
+| molecules swept | 8,071,303 | 23,408 |
+| AS-tied | 24,543 (**0.30%**) | 12,439 (**53.1%**) |
+| **CONTESTED** | **21** | **3,641** |
+| assigned | 2 (9.5%) | **12 (0.3%)** |
+| tied | 1 | **3,423 (94.0%)** |
+| ambiguous | 18 | 206 (5.7%) |
+
+⭐**53% of chrY molecules are AS-tied** against 0.30% genome-wide on gorilla autosomes — the YAGs are the
+MAPQ-0 problem in concentrated form, and the right substrate for every future O2 measurement.
+
+⭐⭐**And O2 assigns 0.3% of them.** 94.0% come back **tied** — the evidence is genuinely balanced between
+copies, so the certificate abstains rather than guessing. That is assign-or-abstain doing exactly what it
+was built for on the hardest real case, but it is also a hard statement: **at this divergence the Y
+ampliconic arrays are not copy-resolvable from PSVs alone.** Per family (assigned / tied / ambiguous):
+DAZ 9/700/5867, RBMY 3/588/131, HSFY 0/2009/350, BPY 0/37/673, CDY 0/48/219, TSPY 0/48/74, PRY 0/57/55,
+VCY 0/1/12. **Only DAZ and RBMY yield any assignment at all.**
+
+⚠**This does not revive the "O2 emits transcripts from secondaries" proposal (§6r3, register 875).** There
+are 7,161 secondary-only visitors here, but O2 decides 12 molecules in total, so an emit path still adds
+almost nothing. **The binding constraint is decidability, not emission** — a different problem from the
+one the proposal addressed.
+
+⚠Catalog-format note: `--families` requires an **`exons` column** (comma-separated 0-based half-open
+`start-end` blocks) that the older `HSA_gwcat.copies.tsv` does not carry, and the parser rejects CRLF.
