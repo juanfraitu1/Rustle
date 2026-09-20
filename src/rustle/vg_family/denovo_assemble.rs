@@ -1319,15 +1319,56 @@ fn reads_in_region_indexed(
 ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
     let bai_path = format!("{bam_path}.bai");
     anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
-    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+    // §6r8: a profile put `reads_in_region` at 58.9s of a 116s chr16 `--assemble-only` run — 51% of wall
+    // time — so the default `Builder::build_from_path` reader was replaced here. **The win is the 1 MB
+    // BufReader, NOT the worker threads**: measured on A119b chr16, reads_in_region falls 58.9s -> 46.8s
+    // (total 116.1s -> 101.5s, GTF byte-identical), but 1, 2, 4 and 8 workers all land at 45-47s and CPU
+    // stays at 99%. BGZF inflation is therefore NOT the bottleneck on this path; the remaining ~45s is
+    // per-record `RecordBuf` decode and allocation (1.78M reads ≈ 25 µs/read). `MultithreadedReader` is
+    // kept because it costs nothing and helps on slower storage, but do not credit it for the speedup.
+    // `RUSTLE_BAM_THREADS` overrides; default is min(4, available_parallelism).
+    let bam_threads = std::env::var("RUSTLE_BAM_THREADS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism().map(|n| n.get().min(4)).unwrap_or(1)
+        })
+        .max(1);
+    let file = std::fs::File::open(bam_path)?;
+    let buf = std::io::BufReader::with_capacity(1 << 20, file);
+    let worker = std::num::NonZeroUsize::new(bam_threads).unwrap_or(std::num::NonZeroUsize::MIN);
+    let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(worker, buf);
+    let mut reader = noodles_bam::io::Reader::from(bgzf);
     let header = reader.read_header()?;
     let index = noodles_bam::bai::read(&bai_path)?;
     let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
     let query = reader.query(&header, &index, &region)?;
     let mut primary = Vec::new();
     let mut bam_reads = Vec::new();
-    // Buffer the region so the AS-tie filter can see every placement of a molecule before deciding
-    // (§6n3). With the ratio at its 0.0 default nothing is dropped and this is the §6n2 behaviour.
+    let ratio = gtf_secondary_as_ratio();
+    // §6r8 STREAMING FAST PATH. The AS-tie filter needs every placement of a molecule before it can
+    // decide, so the region is buffered — but `as_tie_keep` is documented and unit-tested as the
+    // ADMIT-ALL NO-OP at `ratio <= 0.0`, which is the default. Buffering for a filter that keeps
+    // everything cost a `Vec<RecordBuf>` over the whole region plus a parallel `keys` vector holding a
+    // freshly allocated `String` per record: on A119b chr16 that is 1.78M of each, and peak RSS for one
+    // chromosome was 8.4-11.8 GB, which is what made 4 concurrent chromosomes OOM a 25 GB box.
+    // So at the default ratio, stream instead and never build either vector. Same records, same order,
+    // byte-identical output; the buffered path below is unchanged for ratio > 0.
+    if ratio <= 0.0 {
+        let allow_secondary = gtf_secondary_enabled();
+        for result in query {
+            let record = result?;
+            let rb = RecordBuf::try_from_alignment_record(&header, &record)?;
+            if let Some(pr) = alignment_read_from_record(&rb, chrom, allow_secondary) {
+                primary.push(pr);
+            }
+            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
+                let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(&rb));
+                bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
+            }
+        }
+        return Ok((primary, bam_reads));
+    }
     let mut buf: Vec<RecordBuf> = Vec::new();
     for result in query {
         let record = result?;
@@ -1343,7 +1384,7 @@ fn reads_in_region_indexed(
             )
         })
         .collect();
-    let keep = as_tie_keep(&keys, gtf_secondary_as_ratio());
+    let keep = as_tie_keep(&keys, ratio);
     for (i, rb) in buf.iter().enumerate() {
         if keep[i] {
             if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {

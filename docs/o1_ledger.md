@@ -25307,3 +25307,39 @@ cluster, de novo finds everything and splits it. Consistent with §6kg (annotati
 as recorded (median 2 → 1, 42.7% of loci consolidated) but the dominant cluster's coverage **falls
 20/21 → 17/21** and families drop 70 → 44. §6p1 already said it is node economy, not a recall lever; this
 confirms it at family level.
+
+## §6r8 — making genome-wide validation fast: what actually works (2026-09-20)
+
+Goal was "speed it up with bitsets/hashbrown/lru/caches/serde, or a Rust minimap2". **Profiled first, and
+almost none of that was the problem** (register 882): `lru`, `serde`, `fxhash`, `fixedbitset`, `rayon` are
+already dependencies, the release profile is already `opt-level=3 / lto=fat / codegen-units=1 /
+panic=abort`, and `hashbrown` was added and REMOVED on 2026-08-09 as linking nothing.
+
+⭐**THE ANSWER: one process per contig, 2 at a time.** 4 chromosomes, 426 s serial → **242 s (1.76×)**,
+every GTF byte-identical. Shipped as `tools/genome_wide_sweep.sh` (contigs longest-first, bounded
+concurrency, default `--jobs 2`).
+
+⛔⛔**`--region-threads` is the wrong tool AND has a correctness bug.**
+- **1.02× speedup**: 25m44s vs a 26m11s serial baseline on the 25-contig gorilla run, at 128% CPU. CPU hit
+  375% early then fell to 158% — the parallel `compute` map is a small share of wall time (register 880).
+- **NOT byte-identical, despite its docstring saying it is** (register 881): one molecule comes back
+  `tied` serially and **`assigned`** under `--region-threads 4`, with `families.tsv` `assigned_j` 1 → 2.
+  Margin is 0.000 — an exact tie broken by visit order. `.gtf` matched, which hid it.
+
+⚠**MEMORY, NOT CPU, IS THE BINDING CONSTRAINT.** Peak RSS is **8.4-11.8 GB for ONE chromosome**, so 4
+concurrent chromosomes OOM-killed a 25 GB box (exit 137). ~12 GB per slot; 2 is the safe ceiling here.
+
+⭐**Profile of `--assemble-only` (A119b chr16, 1.78M reads): `reads_in_region` is 58.9 s of 116 s — 51%.**
+Two changes landed there, both byte-identical: a 1 MB `BufReader` on the indexed path, and a streaming
+fast path that skips the AS-tie `Vec<RecordBuf>` buffer at the default ratio (where `as_tie_keep` is a
+documented no-op).
+⚠**But a clean A/B refuted my own speedup claim for the streaming path (register 884)** — streaming
+53.4/49.3 s vs buffered 48.9/52.9 s, maxRSS identical to the kilobyte. Run-to-run noise on this box is
+±4 s on a 50 s run, which is larger than most of the effects being chased. ⛔Multithreaded BGZF workers do
+nothing either (1/2/4/8 all 45-47 s, CPU 99%) — the residue is per-record `RecordBuf` decode at ~25 µs/read
+(register 883).
+
+⚠**On a Rust minimap2**: `minimap2-rs` is *"Bindings to libminimap2"* — the same C code, so no speedup;
+`henriksson-lab/minimap2-pure-rs` is a genuine port claiming 10-20% but is self-described as
+**"an LLM-mediated faithful (hopefully) translation"** and **"experimental"**, with 29 stars. Our all-vs-all
+already saturates 4.2 cores. Not adopted; if ever tested, the gate is PAF-identity against C minimap2, not speed.
