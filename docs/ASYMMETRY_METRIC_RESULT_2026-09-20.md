@@ -54,6 +54,34 @@ conjunct inside MCL, which buys +0.136 precision and only survives inside MCL (r
 *feeding MCL and the conjunct*, rather than feeding connected components. This bakeoff varied the
 scalar while holding the operator at its weakest setting.
 
+## ⭐ And it DOES help — but only in the right operator (POST-HOC)
+
+The pre-registered bakeoff held the operator at connected components, its weakest setting. Feeding the
+same scalars to **MCL (I = 2.8, the shipped default)** instead, t still selected on chr16:
+
+| arm | held-out F | sens | prec |
+|---|---|---|---|
+| Jaccard → components (B, incumbent) | 0.6044 | 0.713 | 0.639 |
+| guarded containment → components (E3) | 0.6177 | 0.809 | 0.562 |
+| Jaccard → **MCL** | 0.6134 | 0.730 | 0.623 |
+| ⭐ **guarded containment → MCL** | **0.6648** | 0.804 | **0.650** |
+| A− — MCL alone, **shipped** identity/cov metric | 0.6394 | 0.814 | 0.586 |
+| A — shipped: MCL + exon conjunct | 0.7016 | 0.808 | 0.722 |
+
+⭐ **Guarded containment inside MCL beats the shipped pipeline's own metric at the same operator
+setting: 0.6648 vs 0.6394, +0.0254** — and it does so while *raising* precision (0.586 → 0.650), not
+trading it away. The same metric in connected components was NEUTRAL (+0.013). **The metric is worth
++0.047 more inside MCL than outside it.**
+
+⚠ This is **post-hoc** — the pre-registration fixed the operator at connected components, so this arm
+was not committed in advance and is reported as exploratory. The adoption test is different again:
+guarded containment inside the Rust `mcl_families`, *with* the exon conjunct, which is the remaining
+0.037 to the shipped number.
+
+⭐ It is the same lesson as r911 from the other direction: **a scalar cannot be judged at the operator's
+weakest setting.** Jaccard gains only +0.009 from MCL; guarded containment gains +0.047, because MCL's
+flow can exploit the extra asymmetric edges that connected components turn into hubs.
+
 ## Limits
 
 - 238 true pairs over three chromosomes; the asymmetric stratum is 59 of them.
