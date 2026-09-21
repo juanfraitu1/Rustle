@@ -61,6 +61,29 @@ def truth_families(genes):
     return {r: sorted(v) for r, v in by_root.items() if len(v) >= 3}
 
 
+def soto_families(s1c, genes, chrom):
+    """Soto et al. 2025 published families (S1C `Family ID`), restricted to >= 3 members on `chrom`.
+
+    External, published, SD-derived truth on the same CHM13 assembly. Matched to RefSeq by `Gene Name`.
+    A gene carrying more than one distinct Family ID is EXCLUDED (the project's settled rule: a
+    partition needs one label per gene; see bench/soto/soto_score_against_truth.py).
+    """
+    import csv as _csv
+    on_chrom = set(genes.values())
+    ids = collections.defaultdict(set)
+    for r in _csv.DictReader(open(s1c), delimiter='\t'):
+        fid = (r.get('Family ID') or '').strip()
+        nm = (r.get('Gene Name') or '').strip()
+        if fid and fid != 'N/A' and nm:
+            ids[nm].add(fid)
+    fam = collections.defaultdict(set)
+    for nm, fids in ids.items():
+        if len(fids) != 1 or nm not in on_chrom:
+            continue
+        fam[next(iter(fids))].add(nm)
+    return {f: sorted(v) for f, v in fam.items() if len(v) >= 3}
+
+
 def predicted_clusters(clusters_tsv, genes):
     """cluster_id -> [symbols] (members that resolve to a named gene; LOC members are KEPT)."""
     out = collections.defaultdict(list)
@@ -112,10 +135,11 @@ def main():
     ap.add_argument('--clusters', required=True)
     ap.add_argument('--chrom', required=True)
     ap.add_argument('--json')
+    ap.add_argument('--soto', help='score against Soto S1C published families instead of symbol roots')
     a = ap.parse_args()
 
     genes = load_genes(a.gff, a.chrom)
-    truth = truth_families(genes)
+    truth = soto_families(a.soto, genes, a.chrom) if a.soto else truth_families(genes)
     pred = predicted_clusters(a.clusters, genes)
     per = score(truth, pred)
     if per is None:

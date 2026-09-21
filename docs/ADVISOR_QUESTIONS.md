@@ -439,6 +439,16 @@ priced without a positive stratum; NPIP labels **21 of 678** copies.
 
 ### 1.3 "Everything you have is one family."
 
+> ⭐ **UPDATED 2026-09-20 (§6s8, `docs/HELDOUT_FAMILIES_RESULT_2026-09-20.md`).** The concession below
+> still describes the LEDGER's history correctly, but the n has moved: a **pre-registered** test now
+> scores **53 families across 8 chromosomes**, and on the three chromosomes the shipped threshold was
+> never selected on (chr2/chr8/chr10, 20 families) it reaches **pooled F 0.7016 with 20/20 families
+> touched**, against **0.7183** on the chr5/7/21 LORO set it *was* selected on — Δ = **−0.017**, inside
+> a bar committed before the run. **The worst chromosome in the whole panel is chr5, a development
+> chromosome.** ⚠ Keep saying what it is not: Soto is the truth-source the threshold was tuned against,
+> so the chromosome is held out, not the truth.
+
+
 **Concede immediately — the number is still large, though it has moved less than the ledger's growth would
 suggest.** **189 of ~330 ledger sections (57 %) mention NPIP**, almost the same fraction as the earlier
 66/120. Every early O1 decision was scored on that one panel, which is itself a **minimap2 projection of
