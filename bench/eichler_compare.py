@@ -48,17 +48,19 @@ def main():
     n = 0
     for r in rows:
         m = num(r, 'as_margin')
-        if m is None:
-            continue
         n += 1
-        eich = 'assign' if m >= a.threshold else 'discard'
+        # ⚠ A read with NO rival placement has margin NA, and nothing is within T of it, so Eichler
+        # ASSIGNS it. An earlier version of this tool skipped those rows and undercounted his
+        # assignments by 1,522 on the YAG substrate (2,536 instead of 4,058) -- the Rust
+        # `--eichler-margin` implementation exposed it.
+        eich = 'assign' if (m is None or m >= a.threshold) else 'discard'
         ours = (r.get('status') or '').strip()
         joint[(ours, eich)] += 1
-        margins['>=T' if m >= a.threshold else ('0' if m == 0 else '0<m<T')] += 1
+        margins['no rival' if m is None else ('>=T' if m >= a.threshold else ('0' if m == 0 else '0<m<T'))] += 1
 
-    print(f"reads with an AS margin: {n}   (Eichler threshold T = {a.threshold:g})\n")
+    print(f"reads: {n}   (Eichler threshold T = {a.threshold:g})\n")
     print("AS-margin distribution")
-    for k in ('0', '0<m<T', '>=T'):
+    for k in ('0', '0<m<T', '>=T', 'no rival'):
         print(f"  margin {k:6s} {margins[k]:>7}  {100*margins[k]/n if n else 0:>5.1f}%")
 
     ours_vals = sorted({k[0] for k in joint})

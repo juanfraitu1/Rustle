@@ -404,6 +404,22 @@ struct Args {
     /// only; changes no decision. Default off, byte-identical schema when unset.
     #[arg(long, default_value_t = false)]
     sibling_report: bool,
+    /// ⭐ §6u6: append the EICHLER-STYLE AS-margin call beside ours, for the head-to-head the advisor
+    /// asks for. The rule he cites: assign a multi-mapper to its best alignment iff no rival scores
+    /// within T units of it, else discard as ambiguous. Two columns are appended:
+    /// `eichler_call` (`assign`/`discard`) and `eichler_same_copy` (1/0/NA — whether OUR assigned copy
+    /// is the read's best-AS placement, decidable only where both rules assign).
+    ///
+    /// ⚠ The two rules barely share a subject and the counts are NOT comparable without saying so:
+    /// under the default AS-tied gate every surviving read has margin 0, so Eichler discards 100% of
+    /// them by construction. Run with `--no-as-tied-only` for the honest comparison — measured on the
+    /// Y ampliconic genes, 69.8% of reads have margin 0 and his rule discards 83.7% of the
+    /// multi-mapping population, which is precisely O2's subject (`docs/EICHLER_COMPARISON_2026-09-21.md`).
+    ///
+    /// ⚠ T is a convention, not a constant: 4,687 assignments at T=1 vs 1,588 at T=20 on that substrate.
+    /// Reporting only; changes no decision. Default off, byte-identical schema when unset.
+    #[arg(long)]
+    eichler_margin: Option<i32>,
     /// ⭐ §6hq/PREREG fd894558: StringTie-style per-locus relative-depth demotion. Per `gene_tid`
     /// (the locus `collapse_loci_groups` already assigns), `isoform_fraction = n_reads / max(n_reads in the
     /// locus)`; below this floor a transcript is tagged `low_confidence "true"` and, under `--gtf-copy-set`,
@@ -4786,7 +4802,9 @@ fn main() -> Result<()> {
     // to the pre-2026-09-09 schema.
     let hdr = "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into\tprimary_local";
     let sibling_hdr = if args.sibling_report { "\tsibling_identity\tn_cols_vs_sibling" } else { "" };
-    if args.no_as_tied_only { writeln!(ah, "{hdr}{sibling_hdr}")?; } else { writeln!(ah, "{hdr}\ttie_outside_catalog\taligner_disagreement{sibling_hdr}")?; }
+    // §6u6: appended LAST so every existing column keeps its position.
+    let eichler_hdr = if args.eichler_margin.is_some() { "\teichler_call\teichler_same_copy" } else { "" };
+    if args.no_as_tied_only { writeln!(ah, "{hdr}{sibling_hdr}{eichler_hdr}")?; } else { writeln!(ah, "{hdr}\ttie_outside_catalog\taligner_disagreement{sibling_hdr}{eichler_hdr}")?; }
     for r in &assign_rows {
         // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
         // one is assigned to its placement (§6fq) whatever its candidate count
@@ -4802,12 +4820,28 @@ fn main() -> Result<()> {
         } else {
             String::new()
         };
+        // §6u6: Eichler's rule. A read with NO rival placement (margin None) has nothing within T, so
+        // he assigns it; otherwise he needs a margin of at least T. `eichler_same_copy` is decidable
+        // only where BOTH rules assign — his pick is the read's best-AS placement, which is exactly
+        // what `primary_local` marks for our assigned copy.
+        let eichler = match args.eichler_margin {
+            None => String::new(),
+            Some(t) => {
+                let assigns = r.as_ev.margin().is_none_or(|m| m >= t);
+                let same = if assigns && r.status == "assigned" {
+                    (r.primary_local as u8).to_string()
+                } else {
+                    "NA".to_string()
+                };
+                format!("\t{}\t{}", if assigns { "assign" } else { "discard" }, same)
+            }
+        };
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}{}{}",
             r.read_name, r.family_id, r.assigned_copy, status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside, sibling
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside, sibling, eichler
         )?;
     }
     let indel_stats = rustle::vg_family::copy_assign_pipeline::take_indel_stats();
