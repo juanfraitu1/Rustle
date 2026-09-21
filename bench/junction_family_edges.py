@@ -82,6 +82,8 @@ def main():
         ap.add_argument(x, required=True)
     ap.add_argument('--k', type=int, required=True)
     ap.add_argument('--tol', type=int, default=10)
+    ap.add_argument('--read-junctions', help='TSV chrom/donor/acceptor/support; UNION with annotated '
+                                             '(§6u2: reads add ~150%% more junctions to spliced genes)')
     a = ap.parse_args()
 
     st = exon_structure(a.gff, a.chrom)
@@ -91,6 +93,29 @@ def main():
         js = [(d - base, ac - base) for d, ac in junctions_of(segs)]
         if js:
             jn[name] = js
+    if a.read_junctions:
+        import bisect as _bi
+        spans = sorted((int(k.rsplit(':', 1)[1].split('-')[0]),
+                        int(k.rsplit(':', 1)[1].split('-')[1]), k) for k in st)
+        starts = [x[0] for x in spans]
+        for line in open(a.read_junctions):
+            f = line.rstrip('\n').split('\t')
+            if len(f) < 3:
+                continue
+            d, ac = int(f[1]), int(f[2])
+            i = _bi.bisect_right(starts, d) - 1
+            j = i
+            while j >= 0 and j > i - 40:
+                s_, e_, k = spans[j]
+                if s_ <= d and ac <= e_:
+                    base = s_
+                    jn.setdefault(k, [])
+                    cand = (d - base, ac - base)
+                    if not any(abs(cand[0] - x) <= a.tol and abs(cand[1] - y) <= a.tol for x, y in jn[k]):
+                        jn[k].append(cand)
+                j -= 1
+        for k in jn:
+            jn[k].sort()
     spliced = set(jn)
 
     shared = collections.Counter()
