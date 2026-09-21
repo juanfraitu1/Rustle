@@ -91,3 +91,32 @@ and bipartite F together, never F alone.
 Test 1 negative ⟹ dual membership is not worth its precision cost even where the truth is a cover, and
 the partition is the right shape for the definition — which is itself an answer to the advisor.
 Test 2 negative ⟹ J_N is a scorer, not a definitional ingredient, closing the last live lead from §6u3.
+
+---
+
+## OUTCOME (appended 2026-09-21, after scoring)
+
+**NEITHER ADOPTED**, on two independent truths.
+
+Bar 1 was > +0.02 pooled F. Against the **Soto cover** truth (76 families, 8 development chromosomes;
+baseline sens 0.7029 / prec 0.6150 / F 0.6197):
+
+- **Test 1 (cover prediction): REFUTED.** k>=2 **-0.0045**, k>=3 -0.0059, k>=4 -0.0055, with 6 families
+  better and **17 worse** at k>=2. The +0.0098 seen on the first four chromosomes (35 families) was a
+  small-sample sign flip that reversed as the truth grew. Register 845's re-open condition is discharged.
+- **Test 2 (J_N as MCL weight): does not clear.** +0.0102, precision +0.016 with sensitivity flat — but
+  only 7 of 76 families move and chr2 `ID_176` alone is +0.635 of the +0.772 total; without it, +0.002.
+
+Against the **independent §6ko protein referee** (289 families / 1,718 members; baseline F 0.3028), added
+after the user pointed out that Soto must not be the sole truth: cover k>=2 **-0.0032**, J_N gate>=5
+**-0.0013**. **J_N's Soto gain does not replicate.** Both rules are negative on both truths.
+
+Guards: precision fell 0.028 for cover k>=2 (inside the 0.03 allowance) and rose for J_N; coverage moved
+< 0.2pp everywhere. ⚠**Guard B as written was vacuous** — it named "matched 2-member truth families", but
+the shipped truth floor is >= 3 members, so no 2-member truth family exists. The faithful substitute
+(matched 3-member families, the smallest that exist) is reported in every table and never fell.
+
+**Held-out (chr4+chr9) was an exact no-op** — dF 0.0000, 0 of 9 families moved, both rules, every
+parameter. It could not have decided anything; the decision rests on development.
+
+Full result: `docs/COVER_AND_JN_DEFINITION_2026-09-21.md`. Register rows 941-947.

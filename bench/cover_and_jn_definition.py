@@ -35,6 +35,23 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mcl_port  # noqa: E402
 
 
+def protein_truth(gff_full, genome, chrom, workdir, min_members=3):
+    """§6ko's protein families as an INDEPENDENT referee: longest CDS per gene, translated in-house,
+    all-vs-all blastp e <= 1e-5, edge iff non-overlapping HSPs cover >= 0.30 of the longer protein,
+    MCL I = 2.8, r2 biotype exclusions.
+
+    ⚠Independent of our genomic alignment gate AND of Soto's SD/WSSD construction -- but NOT of the
+    RefSeq annotation, since it reads CDS from the same GFF. It is amino-acid evidence about the
+    PRODUCT, and §6u5 measured it as COARSER than either comparator, so it checks a ranking rather
+    than producing one."""
+    from soto_vs_us_referee import protein_referee
+    lab = protein_referee(gff_full, genome, chrom, workdir)
+    fam = collections.defaultdict(set)
+    for g, f in lab.items():
+        fam[f].add(g)
+    return {f: sorted(v) for f, v in fam.items() if len(v) >= min_members}
+
+
 def read_graph(path):
     adj = collections.defaultdict(dict)
     nodes = set()
@@ -190,7 +207,13 @@ def run(a):
         adj, nodes = read_graph(f'{a.graphs}/{c}.graph.tsv')
         names = gene_names(a.gff, c)
         on = {names[n] for n in nodes if n in names}
-        truth = truth_families(cover, set(names.values()), drop)
+        if a.truth == 'protein':
+            # ⚠protein_referee numbers families PF{i} independently PER CHROMOSOME, so the ids collide
+            # across chromosomes and a per-family diff keyed on the bare id compares different families.
+            truth = {f'{c}:{k}': v for k, v in
+                     protein_truth(a.gff_full, a.genome, c, a.referee_workdir).items()}
+        else:
+            truth = truth_families(cover, set(names.values()), drop)
         if not truth:
             print(f'  {c}: no truth family >= 3 members, skipped', file=sys.stderr); continue
 
@@ -214,7 +237,7 @@ def run(a):
         print(f'  {c}: {len(nodes)} nodes, {len(truth)} truth families '
               f'({sum(len(v) for v in truth.values())} members)', file=sys.stderr)
 
-    print(f"\ncover truth | chroms {a.chroms} | ambiguous names "
+    print(f"\nTRUTH = {a.truth.upper()} | chroms {a.chroms} | ambiguous names "
           f"{'DROPPED' if a.drop_ambiguous else 'kept'} ({len(ambiguous)})")
     print(f"  {'arm':16s} {'fams':>5} {'sens':>7} {'prec':>7} {'F':>7} {'dF':>8} "
           f"{'matched':>8} {'3-mem hit':>10} {'cov%':>6} {'2-grp':>6}")
@@ -256,12 +279,21 @@ def main():
     ap = argparse.ArgumentParser()
     for x in ('--graphs', '--gff', '--soto', '--chroms'):
         ap.add_argument(x, required=True)
+    ap.add_argument('--truth', default='soto', choices=['soto', 'protein'],
+                    help='soto = the published COVER; protein = the independent §6ko referee. '
+                         'Soto has its own over/under-merges, so a candidate must not lose on either.')
+    ap.add_argument('--gff-full', default='/mnt/linuxdisk/tmp/regress/chm13.gff',
+                    help='GFF WITH CDS records (protein truth only)')
+    ap.add_argument('--genome', default='/mnt/linuxdisk/home/juanfraitu/refcache/chm13v2.0.fa')
+    ap.add_argument('--referee-workdir', default='/mnt/linuxdisk/tmp/referee')
     ap.add_argument('--test', default='both', choices=['cover', 'jn', 'both'])
     ap.add_argument('--per-family', action='store_true',
                     help='per-family movement vs baseline -- register 917: a pooled gain can be 2 families')
     ap.add_argument('--drop-ambiguous', action='store_true',
                     help='sensitivity arm: drop the names that are multi-family only by gene-ID collision')
-    run(ap.parse_args())
+    args = ap.parse_args()
+    os.makedirs(args.referee_workdir, exist_ok=True)
+    run(args)
 
 
 if __name__ == '__main__':

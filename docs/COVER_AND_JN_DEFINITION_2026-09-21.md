@@ -100,3 +100,84 @@ either rule.
 - Six reusable chromosome graphs now exist at `/mnt/linuxdisk/tmp/famgraph/`; the Soto truth universe is
   ~97 families genome-wide at >= 3 members, of which 76 are now in the development set — so the ceiling
   on statistical power for ANY future family-definition test is now known and nearly exhausted.
+
+---
+
+# 7. Soto is not the only truth — both candidates re-scored on an independent referee
+
+**User, 2026-09-21:** *"Soto should not be the only ground truth, they have some epic fails in their
+logic too and to my knowledge some of the family members are overmerged/undermerged, we should use it
+as a middle ground."* Correct, and §6u5 (r934) had already flagged that every Soto-scored number is
+**agreement**, not precision. Everything in §§1-6 above is therefore re-scored here.
+
+**Second truth: the §6ko protein-family referee** — longest CDS per gene, translated in-house, all-vs-all
+blastp e <= 1e-5, edge iff non-overlapping HSPs cover >= 0.30 of the longer protein, MCL I=2.8, r2
+biotype exclusions. Independent of our genomic alignment gate AND of Soto's SD/WSSD construction (it is
+amino-acid evidence about the product), though not of the RefSeq annotation it reads CDS from.
+Symbol-root truth was NOT used: register 902 voided it (it calls `MIR`, `RNA5S`, `ZNF`, `C16orf`
+naming classes "families").
+
+It is also far larger: **289 families / 1,718 members** over the 8 development chromosomes, against
+Soto's 76 / 342 — so it relieves the power ceiling of row 944.
+
+## 7.1 Both candidates are negative on the independent truth too
+
+| arm | sens | prec | F | dF | better/worse/unchanged |
+|---|---|---|---|---|---|
+| **baseline MCL** | 0.2759 | 0.4146 | **0.3028** | — | — |
+| cover k>=2 | 0.2777 | 0.4079 | 0.2996 | **-0.0032** | 2 / 11 / 276 |
+| cover k>=3 | 0.2769 | 0.4128 | 0.3025 | -0.0003 | 2 / 7 / 280 |
+| cover k>=4 | 0.2767 | 0.4133 | 0.3027 | -0.0001 | 1 / 3 / 285 |
+| J_N gate>=3 | 0.2759 | 0.4129 | 0.3015 | **-0.0013** | 2 / 4 / 283 |
+| J_N gate>=5 | 0.2759 | 0.4129 | 0.3015 | -0.0013 | 2 / 4 / 283 |
+| J_N gate>=8 | 0.2759 | 0.4146 | 0.3028 | -0.0000 | 1 / 2 / 286 |
+
+⚠Absolute F is low by construction — protein families include ancient homology that our recent-duplication
+gate (identity >= 0.7, cov >= 0.3) deliberately excludes — so this table ranks arms, it does not measure us.
+
+⭐**J_N's +0.0102 Soto gain does NOT replicate: it is -0.0013 here.** The one family carrying that gain
+(chr2 `ID_176`) is a Soto artifact of scale. **Both candidates are now refuted on two independent truths**,
+which is a stronger result than §§2-5 alone.
+
+⚠A bug was found and fixed en route: `protein_referee` numbers families `PF{i}` independently per
+chromosome, so per-family diffs keyed on the bare id compared different families across chromosomes
+(reported sum dF +10.0 against a pooled -0.0032). Keys are now chromosome-qualified. Pooled figures were
+never affected.
+
+## 7.2 Auditing Soto: under-merge YES, over-merge NO
+
+On the **118 genes both truths place** (Soto pairs 343, referee pairs 590, our pairs 471):
+
+| relation | pairs | reading |
+|---|---|---|
+| S ∩ R | **343** | every Soto pair survives the referee |
+| **S \ R** (Soto joins, referee splits) | **0** | **no over-merge detected — 0 of 24 Soto families** |
+| **R \ S** (referee joins, Soto splits) | **247** | under-merge candidates |
+
+The over-merge half of the concern is **not supported**: the referee never splits a Soto family.
+
+The under-merge half **is**, once the referee's coarseness is controlled for. Of the 247:
+
+- **164 (66.4%) carry no sequence homology edge at all** — ancient paralogy only the protein referee
+  sees. Soto is *right* to exclude these; its families are recent duplications.
+- **83 (33.6%) carry a direct homology edge**, median aggregated identity **0.858**, with **71 at >= 0.80,
+  37 at >= 0.90, 30 at >= 0.95** — recent duplicates by any standard, which Soto splits.
+  (Control: pairs both truths join have median identity 0.962.)
+
+## 7.3 What that costs us
+
+| scored against | precision | recall |
+|---|---|---|
+| Soto alone | **0.7113** (TP 335, FP 136) | 0.9767 |
+| Soto, not charging the 83 referee-corroborated pairs | **0.8875** | 0.9767 |
+
+**61% of our apparent false positives against Soto (83 of 136) are corroborated by an independent
+protein family AND a direct sequence edge.** 53 remain uncorroborated.
+
+⚠**This is a bounded correction, not a new scoring truth.** The sequence edge is our own gate's evidence,
+so folding these pairs into a truth we then score ourselves on would condition the denominator on the
+prediction (register 770). It is a LOWER BOUND on how much Soto understates our precision, and it is the
+right thing to quote beside any Soto number — never instead of one.
+
+⟹ **Soto is a middle ground, as asked: a high-precision, low-coverage reference.** Its pairs are
+trustworthy (0 over-merges, and we recover 97.7% of them), its omissions are not evidence of our error.
