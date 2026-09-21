@@ -439,6 +439,17 @@ priced without a positive stratum; NPIP labels **21 of 678** copies.
 
 ### 1.3 "Everything you have is one family."
 
+> ⭐⭐ **2026-09-20 (§6t1, `docs/DOMINANT_GAP_RESOLVED_2026-09-20.md`) — if he raises §6o8's "recall is
+> capped at 0.052", that number is about a population this thesis is not about.** The cap is a
+> **divergence cliff**: stratified by protein identity, two paralogues' spliced RNAs align at **99.1%
+> above 0.95** and **0.9% below 0.60**, and 69% of pairs in any family truth sit below 0.60. Building
+> the non-circular RNA-level truth §6o9 asked for (protein families) did **not** move the ceiling —
+> chr2 0.082 / chr10 0.048 / chr16 0.055 — because the ceiling is the truth's age distribution, not an
+> edge defect. ⭐ **On the thesis substrate there is no ceiling: FAM90A 136/136 = 100%, NPIP 155/171 =
+> 90.6%.** Quote the SCOPE (families still nucleotide-alignable, protein identity ≳ 0.80), not a recall
+> number against ancient paralogues.
+
+
 > ⭐ **UPDATED 2026-09-20 (§6s8, `docs/HELDOUT_FAMILIES_RESULT_2026-09-20.md`).** The concession below
 > still describes the LEDGER's history correctly, but the n has moved: a **pre-registered** test now
 > scores **53 families across 8 chromosomes**, and on the three chromosomes the shipped threshold was
