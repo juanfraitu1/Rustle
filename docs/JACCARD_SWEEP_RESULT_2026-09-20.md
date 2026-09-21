@@ -52,6 +52,32 @@ sequence into the family.
    components would keep the precision win and drop MCL entirely. That is a smaller rule than the
    current one and is the obvious thing to test next.
 
+## The synthesis I proposed was tested, and it FAILED
+
+The decomposition above suggested an obvious move: keep the cheap conjunct, drop the expensive operator.
+Tested as arm C (`bench/jaccard_plus_exon.py`, J ≥ 0.50 AND f_ex ≥ 0.60, connected components):
+
+| arm | F | sens | prec |
+|---|---|---|---|
+| A — shipped: MCL + conjunct | **0.7016** | 0.808 | 0.722 |
+| B — Jaccard alone | 0.6044 | 0.713 | 0.639 |
+| **C — Jaccard + conjunct, no MCL** | **0.5869** | **0.606** | 0.656 |
+
+⛔ **C is worse than B.** Adding the conjunct to connected components *costs* 0.018 F, where adding it to
+MCL *gained* 0.062. Sensitivity is what breaks: 0.713 → 0.606.
+
+⭐ **The reason vindicates MCL in a way the decomposition alone did not show.** A hard pairwise conjunct
+deletes edges. MCL's flow can route around a deleted edge — two members still reach each other through
+a third — whereas connected components cannot: the deleted edge is the only path, and the family splits.
+**So MCL is not +0.035 of operator sophistication; it is what makes the conjunct affordable.** The two
+are not separable components whose gains add, and the decomposition table above must not be read as if
+they were.
+
+⚠ This is not an artifact of my approximation. `jaccard_plus_exon.py` computes f_ex as an **upper bound**
+on the true shared-exon fraction (it projects the aligned interval onto each gene's exons independently
+rather than requiring a base be exonic on both sides), so arm C sees a **more permissive** conjunct than
+`mcl_families` applies — and sensitivity still collapsed.
+
 ## Limits
 
 - 27 Soto families over three chromosomes; one assembly, one annotation.
