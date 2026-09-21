@@ -113,3 +113,70 @@ Secondary, also committed now:
 - Not substitute a different truth definition after seeing the result. If this truth is judged unfit, the
   whole test is reported as void — not replaced with one that scores better.
 - Not quote the pooled number without the per-chromosome table, including the worst chromosome.
+
+---
+
+# TEST 1 IS VOID — and TEST 2, pre-registered before any Soto scoring
+
+## Test 1 verdict: the truth was unfit, exactly as §6 warned
+
+Scored on the **development** chromosomes only (chr2/chr6 were never opened for this):
+
+| | truth families | touched | mean F | exact |
+|---|---|---|---|---|
+| chr16 (development, NPIP) | 55 | 19 | **0.215** | 1 |
+| chr17 (development, TBC1D3) | 86 | 32 | **0.220** | 3 |
+
+The development set scores **below this pre-registration's own FAIL bar (0.40)**, which means the truth,
+not the method, is what failed. The evidence is in what it counts as a "family": of chr16's 36 wholly
+missed truth families the largest are **MIR (46 members), RNA5S (31), ZNF (29), C16orf (12), SNORA,
+SNORD, RN7SK, CDH, PRSS** — microRNA and rRNA gene classes, ancient protein-coding families, and
+`C16orf`, which is not a family at all but the naming convention "open reading frame on chromosome 16".
+The method's stated scope is *recent, sequence-similar* multi-copy families (identity ≥ 0.7,
+cov_longer ≥ 0.3); it is correct to leave those alone. Meanwhile the families it does recover are exactly
+the real recent duplications: **NOMO F = 1.000**, HERC2, SMG1 (7/7), HBA, CLEC18, ABHD17A.
+
+⚠ Filtering by GFF biotype (external annotation, not our output) removes only **9 of the 36** misses
+(6 miRNA, 2 snoRNA, 1 tRNA) and leaves 21 protein-coding nomenclature classes, so **no symbol-root truth
+can be rescued by scoping**. Per §6 of this pre-registration the test is reported **VOID**, not replaced
+with a better-scoring variant of itself.
+
+⭐ One real finding survives it: with the amended single-pass root, **NPIPA (7 members) is scored as
+wholly missed** — the method puts all 21 NPIP genes in ONE cluster, so bipartite matching gives that
+cluster to NPIPB and leaves NPIPA unmatched. That is a genuine limitation and it is advisor question
+**Q9 ("NPIPA and NPIPB should be distinct subfamilies")** reappearing as a measurement.
+
+## Test 2 — external, duplication-aware truth on chromosomes outside the threshold's selection set
+
+**Truth: Soto et al. 2025 published families** (`bench/soto/soto_famCN_S1C.tsv`, `Family ID` column) —
+an external, published, SD-derived family assignment on the same CHM13 assembly. A truth family is one
+with **≥ 3 members on the chromosome being scored**, matched to RefSeq by `Gene Name`.
+
+**Why these chromosomes.** `--min-shared-exon-frac 0.60` was chosen by LORO on **chr5 / chr7 / chr21**
+(§6o2–§6o6, `bench/FEX_SWEEP_LORO.md`), scoring **F 0.845 / precision 0.898** — and the ledger itself
+records the caveat *"three regions is a weak LORO"*. So:
+
+| arm | chromosomes | Soto families | why |
+|---|---|---|---|
+| **development** | chr5, chr7, chr21 | 3 + 12 + ? | the LORO set the 0.60 threshold was selected on |
+| ⭐ **held out** | **chr2, chr8** | 7 + 5 | **zero mentions in both the ledger and the register** |
+| ⭐ **held out** | chr10 | 8 | 1 ledger mention, 0 register — effectively unexposed |
+| reference | chr16, chr17 | 15 + 15 | development families (NPIP, TBC1D3) |
+
+**Both arms are scored by the SAME scorer** (`bench/heldout_family_score.py`, bipartite
+sensitivity/precision/F) so the comparison is not against a differently-computed published number.
+
+**The bar, committed now:**
+
+| held-out pooled F (chr2 + chr8 + chr10) vs development pooled F (chr5/7/21) | verdict |
+|---|---|
+| held-out ≥ development − 0.10 | ⭐ **HOLDS** — the threshold was not fitted to its selection set |
+| development − 0.25 ≤ held-out < development − 0.10 | ⚠ **PARTIAL** — real degradation; report as a limit |
+| held-out < development − 0.25 | ⛔ **FAILS** — overfitted to chr5/7/21. Say so; do not retune |
+
+Secondary: **≥ 1 exact (F = 1.000) family recovery on a zero-exposure chromosome** (chr2 or chr8).
+
+⚠ **Stated limitation before the run.** Soto is the truth-source the 0.60 threshold was tuned against,
+so what is held out here is the **chromosome**, not the truth-source. LORO is designed against exactly
+the per-family overfitting at issue, but this is not an independent-truth test and will not be described
+as one.
