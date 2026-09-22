@@ -25,9 +25,12 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sim_reads import simulate_reads  # noqa: E402
 
-TX = {'mRNA', 'transcript', 'ncRNA', 'lncRNA', 'pseudogenic_transcript', 'primary_transcript',
-      'tRNA', 'rRNA', 'snRNA', 'snoRNA', 'miRNA', 'misc_RNA',
-      'V_gene_segment', 'C_gene_segment', 'J_gene_segment'}
+# ⚠RefSeq spells it `lnc_RNA`, not `lncRNA` (919 records on chr16 alone), and 534 chr16 pseudogene
+# exons carry `Parent=gene-...` with NO transcript record at all -- both are handled below, or 59% of
+# chr16's genes silently produce no reads.
+TX = {'mRNA', 'transcript', 'ncRNA', 'lnc_RNA', 'lncRNA', 'pseudogenic_transcript',
+      'primary_transcript', 'tRNA', 'rRNA', 'snRNA', 'snoRNA', 'miRNA', 'misc_RNA',
+      'V_gene_segment', 'C_gene_segment', 'J_gene_segment', 'ncRNA_gene'}
 RC = str.maketrans('ACGTacgtN', 'TGCAtgcaN')
 
 
@@ -40,7 +43,7 @@ def load_transcripts(gff, chrom):
         f = line.rstrip('\n').split('\t')
         if len(f) < 9 or f[0] != chrom:
             continue
-        if f[2] in ('gene', 'pseudogene'):
+        if f[2] in ('gene', 'pseudogene', 'ncRNA_gene'):
             n = re.search(r'Name=([^;]+)', f[8]); i = re.search(r'ID=([^;]+)', f[8])
             if n and i:
                 gene_of[i.group(1)] = n.group(1)
@@ -50,8 +53,15 @@ def load_transcripts(gff, chrom):
                 t2g[i.group(1)] = gene_of[p.group(1)]; strand[i.group(1)] = f[6]
         elif f[2] == 'exon':
             p = re.search(r'Parent=([^;,]+)', f[8])
-            if p and p.group(1) in t2g:
-                ex[p.group(1)].append((int(f[3]), int(f[4])))
+            if not p:
+                continue
+            par = p.group(1)
+            if par in t2g:
+                ex[par].append((int(f[3]), int(f[4])))
+            elif par in gene_of:
+                # exon parented straight to the gene (pseudogenes): the gene IS the transcript
+                t2g.setdefault(par, gene_of[par]); strand.setdefault(par, f[6])
+                ex[par].append((int(f[3]), int(f[4])))
     out = {}
     for t, e in ex.items():
         e.sort()
