@@ -99,3 +99,65 @@ If both triggers fail, it strengthens the case that node-level over-merge from r
 cannot be resolved by ANY local, per-junction rule (post-hoc cut, pre-assembly read split, or merge-side
 bridge-fraction) — three structurally different attack angles, all refuted, would be a strong, specific
 finding in its own right, not just an absence of success.
+
+---
+
+## OUTCOME (appended 2026-09-21, after scoring)
+
+**REFUTED on the primary bar for both triggers.** Per-copy correctness on chr16 (universe ~1,327-1,332,
+baseline 705/1327 = 0.5313):
+
+| arm | correct | rate | delta | collisions | false-merge |
+|---|---|---|---|---|---|
+| baseline | 705 | 0.5313 | — | 212 | 26.6% |
+| Trigger 1 (chimeric-bridge) | 705 | 0.5313 | **+0.00pp** | 212 | 26.6% |
+| Trigger 2 (turnover) | 718 | 0.5390 | **+0.78pp** | 207 | 26.4% |
+
+Bar was **>= +2.0pp**. Trigger 1 moved nothing at all; Trigger 2 moved in the right direction on every
+guard (correctness up, collisions down, false-merge rate down) but well short of the bar. Pooled
+family-definition F (both truths) was byte-identical to baseline for both triggers — neither split
+touched a locus that changes which cluster a truth gene resolves to.
+
+**Trigger 1 flagged 63 reads genome-wide, Trigger 2 flagged 1,926 — and NEITHER flagged a single read at
+any of the three known over-merge sites this whole investigation is about** (NPIPB4/RRN3P1's shared
+locus, CDR2's 91 kb engulfing locus, PKD1P6-NPIPP1). Checked directly, not assumed.
+
+## Why Trigger 1 cannot work here — confirmed mechanistically, not just observed
+
+Checked one of the 66 individual reads that independently span CDR2's full 91,627 bp engulfing region
+(8-10 introns each, not an outlier — 66 separate reads show this same wide structure). Its own junctions
+are shared by 7 to 777 other reads each. Merging all 560 distinct neighbour spans collapses to **ONE**
+group, not two: every "side" of the apparent bridge is itself connected to the other side by yet more
+reads of intermediate, overlapping span (tandem, physically adjacent genes in a segmental duplication).
+`is_chimeric_bridge`'s design assumes an OUTLIER read bridges two otherwise-separate, cleanly-spanning
+populations — that assumption fails whenever the "bridge" itself is the well-replicated, dominant
+structure at a locus, which register 852/[[project_pkd1p6_npipp1_is_real]] already established is the
+normal case here, not the exception (PKD1P6-NPIPP1: 110 MAPQ-60 reads, a real fusion, not rare artifact).
+
+**This is register 846's finding (a) — transitivity defeats separation — reproduced at a completely
+different pipeline stage.** 846 found post-hoc node-cutting fails because both cut halves stay in the
+same family component via transitive edges elsewhere. Here, PRE-assembly read-level bridge detection
+fails for the identical structural reason one stage earlier: there is no clean disjoint pair to detect in
+the first place, because overlapping intermediate reads chain the whole region into one transitively
+connected population. Two structurally different attack angles (post-hoc node cut, pre-assembly read
+split), at two different pipeline stages, both defeated by the same underlying biology.
+
+## Held-out substrate
+
+Not run. Bar 4 required clearing the primary development bar first ("at the SAME trigger parameters
+chosen on chr16"); neither trigger did, so there is no rule to carry to chr9.
+
+## Conclusion
+
+Three independent, structurally different attempts at fixing readthrough-driven over-merge are now
+refuted on this substrate: register 846 (post-hoc parent-boundary node cut), register 815 (junction-based
+bridge cut, won on dev/failed gorilla holdout), and this session's read-level chimeric-bridge and
+turnover triggers (failed on development itself, with a confirmed mechanism). The common thread across
+all three: **whatever signal is used to identify "this should be split" is looking for an outlier or a
+sharp discontinuity, and the dominant over-merge cases on this substrate are neither** — they are
+well-supported, densely-replicated readthrough transcription through tandemly duplicated, physically
+overlapping genes, which is nearly indistinguishable, read by read, from one long real transcript.
+**A future attempt needs a signal that does not depend on rarity or population-level asymmetry** — for
+example, external evidence (annotation-independent expression breaks, or genuinely orthogonal molecular
+evidence) rather than anything derivable from the read population's own internal structure, since that
+structure is, at these loci, exactly what a genuine multi-gene readthrough looks like.
