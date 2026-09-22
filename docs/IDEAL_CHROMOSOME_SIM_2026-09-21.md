@@ -82,3 +82,88 @@ The gap between the ideal ceiling (0.9578 corrected) and real data (0.5759 corre
 than discriminating them) — and it is the first to show the algorithm is clean when the phenomenon is
 removed. ⟹ **the open lever remains a readthrough-aware node SPLIT**, and it now has a measured ceiling
 to aim at.
+
+---
+
+# 8. Does the idealized version hold a better FAMILY definition?
+
+**User, 2026-09-21.** §6v1 scored only the NODE-construction endpoint. This runs the actual family
+definition (`mcl_families --min-exonic-bp 1 --min-shared-exon-frac 0.60`, the shipped Rust binary, same
+recipe as `dn16_fam3`) on the A_ideal and A_rt assembled loci, and scores the resulting clusters against
+**both** independent truths from §6u8/§6u9 (Soto cover, protein referee), restricted to chr16.
+
+⚠**n is small** — chr16 alone has 15 Soto families / 36 protein-referee families. Per-family movement
+swings are large at this n (§6u8's lesson); read the direction, not the third decimal.
+
+## 8.1 Pipeline
+
+For each arm: exon-merged locus spans from the assembled GTF -> region list -> `samtools faidx` body
+extraction -> `minimap2 -x asm20 -c --eqx -P` all-vs-all -> shipped `mcl_families` with the locus's own
+exon-union GFF3 (mirroring `dn16.gff3`'s format exactly) -> `.clusters.tsv`. A fourth arm, **GUIDED**
+(annotation records used directly as nodes, no assembly at all — `chr16_guided.clusters.tsv`, already on
+disk), stands in as the ceiling: perfect nodes, no simulation needed.
+
+## 8.2 Result
+
+| arm | clusters >=2 | vs **Soto cover** (15 fams) | vs **protein referee** (36 fams) |
+|---|---|---|---|
+| **GUIDED** (annotation nodes) | 90 | sens 0.4567 / prec 0.4294 / **F 0.4174** | sens 0.2046 / prec 0.3203 / **F 0.2248** |
+| **A_ideal** de novo | 56 | sens 0.3692 / prec 0.3649 / **F 0.3561** | sens 0.1722 / prec 0.2968 / **F 0.1944** |
+| REAL de novo | 70 | sens 0.3372 / prec 0.3255 / **F 0.3166** | sens 0.1681 / prec 0.2172 / **F 0.1805** |
+| A_rt de novo | 51 | sens 0.3136 / prec 0.3182 / **F 0.3068** | sens 0.1329 / prec 0.2603 / **F 0.1570** |
+
+**Yes — modestly, and the direction holds on both independent truths.** A_ideal beats real de novo by
++0.0395 F (Soto) and +0.0139 F (protein referee). A_rt falls below REAL on both truths despite injecting
+readthrough onto otherwise-ideal reads — consistent with §6v1's own finding that the injected 7.51% rate
+slightly overshoots the real defect (12 -> 188 genuine over-merges vs 139 real), so this is not a
+contradiction: an aggressive dose of the one thing being tested does more damage than the full complexity
+of real data, which is itself evidence the mechanism is right.
+
+Per-family (Soto), 3 better / 6 worse / 6 unchanged: the pooled gain is real but not one-sided — a caveat
+consistent with n=15.
+
+## 8.3 The bigger finding: node CORRECTNESS is fixed, node COVERAGE is not
+
+**A_ideal falls well short of GUIDED — F 0.3561 vs 0.4174 (Soto), 0.1944 vs 0.2248 (referee) — despite
+§6v1 showing node correctness is nearly solved (0.9578 corrected).** The reason is not over-merge (that
+was measured and is nearly gone) and not fragmentation-as-scored-by-§6u7 (per-copy correctness is high).
+It is **node COVERAGE**: how many of the truth genes have ANY node representing them in the homology
+graph at all.
+
+| arm | graph nodes | Soto truth genes (58 on chr16) represented as SOME node |
+|---|---|---|
+| GUIDED | 380 | **47 / 58 = 81.0%** |
+| A_ideal | 324 | **34 / 58 = 58.6%** |
+
+A 22.4-point coverage gap, under perfect reads and no readthrough. Of the 24 genes missing a node in
+A_ideal, 17 (71%) DO have an assembled locus — the locus exists, it is just absent from the graph,
+meaning either it never accumulated enough exonic content to clear the `identity >= 0.70 / cov_longer >=
+0.30 / >= 300bp` edge floor, or (below) it never gets scoring credit at all:
+
+**Of the 13 genes missing in A_ideal but present in GUIDED (the true assembly-attributable set), 5
+(38%) are a SCORING ARTIFACT, not an assembly failure.** RefSeq itself carries curated **readthrough/
+fusion gene records** overlapping almost exactly the same span — `PKD1P3-NPIPA1` (42,950 bp) sits over
+`NPIPA1`'s 14,597 bp span at 37,168 bp overlap; `PKD1P4-NPIPA8`, `PDXDC2P-NPIPB14P`, `BOLA2-SMG1P6`
+do the same for `NPIPA8`, `NPIPB14P`, `SLX1B`. The de novo locus's homology signal for the real gene IS
+present (verified directly on the PAF: NPIPA1's locus has 10+ alignment records at 0.83-0.99 identity to
+other loci) — but a **max-overlap, one-name-per-locus resolver, applied at scoring time, hands the whole
+locus's credit to the bigger fusion-named record**, which then has no truth family to match, so the real
+gene registers as "no node" though its sequence was correctly assembled and correctly grouped. This is
+the family-definition-scoring analogue of §6v1's "unscoreable (annotation overlap)" category, applied
+here for the first time to the CLUSTER-naming step rather than the per-copy node step.
+
+The remaining ~8 (ABCC6, HERC2P5, HERC2P8, NPIPB10P, NPIPB7, PKD1, PKD1P6, SMG1P6) have no bigger
+co-located record and are candidates for a genuine remaining edge-construction gap — short or
+low-coverage assembled loci that never accumulate enough exonic content relative to their full-length
+siblings to clear the coverage floor. This was not run to ground on this pass and is the natural next
+target.
+
+## 8.4 Consequence
+
+The answer to "does the idealized version hold a better family definition" is **yes, but only partly for
+the reason expected.** Fixing readthrough (§6v1's target) recovers a real, if modest, family-definition
+gain — confirmed on two independent truths. But it does not close most of the gap to a perfect-node
+ceiling, because **most of that remaining gap is not a node-construction defect at all**: at least 38% of
+it is an artifact of how RefSeq's own curated fusion-gene names get resolved at scoring time, in exactly
+the same region (PKD1/NPIP tandem duplication) already flagged by §6u7/§6v1/§6v0 as ground zero for
+readthrough. The rest is a real, smaller, and as-yet uncharacterized edge-coverage gap.
