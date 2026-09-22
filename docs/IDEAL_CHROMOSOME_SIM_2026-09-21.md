@@ -318,3 +318,79 @@ deliberately left off after the chr16 arm test — *"fear refuted, default still
 call"*). What this session adds beyond §6m8: independent confirmation on unrelated genes (SMG1P6,
 NPIPB7, vs §6m8's chr16-wide aggregate), and a NEW consequence not previously measured — this specific
 loss reaches the family-definition score, not just transcript-recovery counts.
+
+---
+
+# 11. Including non-canonical junctions on REAL chr16 data: measured, not assumed
+
+**User, 2026-09-21: "can we include the non-canonical junctions too? ... for now I think my advisor will
+be skeptical the method really works for any family if we cannot recall all members."** Ran
+`RUSTLE_JUNCTION_MAJORITY=1` through the full pipeline on REAL chr16 (same `--assemble-only
+--assembly-polish full` recipe that produced `dn16.gtf`), rebuilt the locus graph and family clusters
+the same way as every other arm this session, and scored against both truths.
+
+## 11.1 Assembly and family-definition effect
+
+| | strict (baseline) | `RUSTLE_JUNCTION_MAJORITY=1` |
+|---|---|---|
+| transcripts kept (polish) | 9,629 | 10,093 (+464, +4.8%) |
+| de novo loci | 2,550 | 2,544 |
+| graph nodes | 864 | 869 |
+| clusters >= 2 members | 70 | 70 |
+
+| | vs Soto cover (15 fams) | vs protein referee (36 fams) |
+|---|---|---|
+| strict | F 0.3166 | F 0.1805 |
+| `JUNCTION_MAJORITY=1` | F 0.3184 (+0.0018) | F 0.1817 (+0.0012) |
+
+Pooled F is essentially flat — negligible, in either direction, at this n. Per-family (Soto): 2 better, 1
+worse, 12 unchanged.
+
+## 11.2 The number the advisor's question is actually about: individual-member recall
+
+| | Soto truth genes on chr16 (58) covered as SOME node |
+|---|---|
+| GUIDED (annotation, ceiling) | 47 / 58 = 81.0% |
+| REAL de novo, strict | 34 / 58 = 58.6% |
+| REAL de novo, `JUNCTION_MAJORITY=1` | **35 / 58 = 60.3%** |
+
+**+1 gene recovered (`NPIPB2`), 0 lost.** Small, but unambiguous and free on this measure: no truth gene
+that strict canonicity covered was dropped by relaxing it.
+
+⚠**§6v4's exact repro genes behave differently on real data than in the ideal simulation.** On real chr16
+reads (natural depth variation, not my controlled 10-reads-per-transcript scheme), `NPIPB7` and `SMG1P6`
+are **already covered under strict canonicity** — the non-canonical-junction truncation §6v4 demonstrated
+unambiguously in the clean simulation does not reproduce identically on these same two genes at real
+depth, most likely because real read population diversity gives some reads a slightly different
+alignment path across the junction that the clean, uniform simulated set didn't have. The mechanism from
+§6v4 is still correct (independently verified against the raw GFF, and directly confirmed by the
+before/after test) — it just isn't the reason these particular two genes are missing on REAL data.
+`ABCC6`, `HERC2P5`, `PKD1P6` remain uncovered under BOTH arms, for the reasons already established in
+§9 (real exon-structure divergence, no transcript model, fusion-naming) — this lever cannot and should
+not be expected to fix those.
+
+## 11.3 What this does and does not answer for the advisor
+
+**Does not, on its own, close the recall gap.** 23 of 58 Soto truth genes are still missing a node under
+`JUNCTION_MAJORITY=1`, against 24 under strict — a gap of 1, not 24. The 22-point remaining difference to
+the guided ceiling (81.0%) is NOT primarily a canonical-junction problem on real data; §9's three-way
+breakdown (no transcript model / fusion-naming / real exon divergence) accounts for at least several of
+the specific genes checked, and the rest is uncharacterized. **"Recall all members" needs more than one
+lever** — this is one confirmed, safe, small piece of it, not the fix.
+
+**Known cost, already measured genome-wide** (§6n4, `bench/CHR16_JUNCTION_MAJORITY_ARM.md`): strictly-
+engulfed copies 79 -> 86 (+8.9%), a precision cost on copy BOUNDARIES, not on family structure (max family
+size and family fusion were unaffected — the flag's specific feared harm was refuted there).
+
+## 11.4 Recommendation
+
+Given zero measured node losses here, a real (if small) recall gain, and an already-refuted specific fear
+at genome-wide scale, this is a low-risk, well-evidenced choice for the user to adopt. Two distinct
+decisions, kept separate:
+
+1. **Use `RUSTLE_JUNCTION_MAJORITY=1` in this session's own family-definition / recall-focused bench
+   runs going forward.** Zero code change, fully reversible, and directly what was asked for "for now."
+2. **Flip the compiled default in `denovo_pipeline.rs`** (`env_num("RUSTLE_MISCHAIN_...")`/junction
+   majority default) so every future run gets it without the env var. This is a bigger, harder-to-reverse
+   change than (1) and is NOT done here — it is the user's call, per the standing rule this project has
+   already applied twice to this exact flag.
