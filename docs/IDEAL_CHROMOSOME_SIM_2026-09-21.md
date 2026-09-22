@@ -241,3 +241,80 @@ narrows what remains open after §6v1/§6v2: the readthrough-aware node split is
 this residual set is small, mostly structural rather than algorithmic, and the one live thread worth a
 follow-up is specifically **compact, exon-dense transcript assembly**, not readthrough or node
 over-merge.
+
+---
+
+# 10. Root cause of the NPIPB7/SMG1P6 fragmentation: a NON-CANONICAL junction in RefSeq's own annotation
+
+**User, 2026-09-21: "let's run the diagnostics to figure out why NPIPB7/SMG1P6 fragment."** Isolated to a
+precise, confirmed mechanism, ruling out three alternatives along the way.
+
+## 10.1 Ruled out, in order
+
+1. **Read alignment**: all 10 simulated reads' PRIMARY alignments (`-F 2308`) land within 150 bp of each
+   other at the true locus, with CIGARs that correctly reconstruct the full transcript. For SMG1P6, all
+   10 reads carry the **exact same 17-intron chain**, every intron at 10/10 support — zero disagreement.
+2. **Assembly polish**: re-ran with `--assemble-only` and NO `--assembly-polish` flag at all. The raw,
+   unpolished GTF is **byte-identical in the fragmented region** to the polished one — the loss happens
+   before polish ever runs.
+3. **A minimal single-read / identical-duplicate repro**: running the assembler on 1 read, or on 5
+   byte-identical copies of 1 read, produces **empty output** for both genes — consistent with the
+   project's documented dedup rule (`sims need -N 50 and must VARY read ends`) collapsing identical
+   reads to one effective molecule, below whatever minimum-support floor applies. Not informative about
+   the fragmentation itself, but rules out a naive "not enough reads" framing.
+
+## 10.2 The actual cause: a non-canonical splice junction in the gene's OWN RefSeq exon model
+
+Checking every intron's splice motif (donor/acceptor dinucleotide, strand-corrected) against the genome
+directly:
+
+| gene | biotype | introns | first non-canonical junction |
+|---|---|---|---|
+| **SMG1P6** | `transcribed_pseudogene` | 17, all GT-AG except one | intron 15 of 17: `chr16:29721738-29725407` (3,670 bp), motif **AT-AG** |
+| **NPIPB7** | `protein_coding` | 8, all GT-AG except the last 3 | introns 6-8 of 8: `chr16:28752509-28760135` (TA-GA), `chr16:28760195-28761928` (GT-GG), `chr16:28762017-28778548` (GG-TT) |
+
+**Verified independent of my own pipeline**: the exon coordinates flanking each non-canonical junction
+match the RAW, un-processed GFF `exon` records for these transcripts exactly (`rna-NR_135312.1`,
+`rna-NM_001396030.1`) — this is RefSeq's own curated exon model, not an artifact of my extraction or of
+simulated sequencing error.
+
+The shipped assembler enforces canonical (GT-AG / GC-AG / AT-AC) splice motifs when building a spliced
+transcript model, and — confirmed by direct test — **truncates the transcript at the first non-canonical
+junction it encounters, discarding everything on the far side, even when every read agrees perfectly and
+completely on the true structure.** This is not a bug introduced by imperfect reads; it fires on reads
+that are already ideal.
+
+## 10.3 Confirmation: `RUSTLE_JUNCTION_MAJORITY=1` recovers it
+
+This project already has a named, documented mitigation for exactly this failure mode
+([[project_junction_majority_chr16]] / §6m8: *"strict canonicity is 69.4% of pass-1 -> GTF loss"*).
+Re-ran A_ideal with it set:
+
+| gene | default (strict canonicity) | `RUSTLE_JUNCTION_MAJORITY=1` |
+|---|---|---|
+| **SMG1P6** | 2 exons, 224 bp (1 of 17 introns) | **FULL RECOVERY**: `chr16:29708443-29728813`, matching the annotated span almost exactly, gene_id suffix `_18` = 18 exons |
+| **NPIPB7** | 4 exons, 1,282 bp | **PARTIAL RECOVERY**: `chr16:28739068-28762017`, reaching well past the original truncation point but still short of the transcript's far end (which carries THREE consecutive non-canonical junctions, not one) |
+
+SMG1P6 recovers completely because it has exactly one non-canonical junction; NPIPB7 only partially
+recovers because it has three in a row near its 3' end, and majority-rule rescue apparently reaches
+through isolated non-canonical junctions more readily than a consecutive run of them.
+
+## 10.4 Consequence for the family-definition question and for cluster2
+
+This closes the last open item from §9: **NPIPB7 and SMG1P6 are not a fragmentation mystery — they are
+the SAME already-documented canonical-junction mechanism as §6m8, now shown to explain 2 of the "8
+residual genes" at the individual-gene level**, and shown for the first time to survive into (and cost)
+the FAMILY-DEFINITION endpoint specifically, not just the chr16-wide pass-1-to-GTF loss rate §6m8
+originally measured.
+
+**isoseq cluster2 cannot help here either.** The reads are already fully confirmed correct, complete,
+and unambiguous (§10.1.1) — this defect lives entirely inside Rustle's own assembler, downstream of
+anything a PacBio read-processing tool touches. My prior answer treating these two genes as an open,
+possibly cluster2-fixable lead is **superseded**: it is neither a read-quality problem nor an unexplained
+one.
+
+**This is the user's call, not a default to flip unilaterally** (memory records the default was
+deliberately left off after the chr16 arm test — *"fear refuted, default still not flipped, user's
+call"*). What this session adds beyond §6m8: independent confirmation on unrelated genes (SMG1P6,
+NPIPB7, vs §6m8's chr16-wide aggregate), and a NEW consequence not previously measured — this specific
+loss reaches the family-definition score, not just transcript-recovery counts.
