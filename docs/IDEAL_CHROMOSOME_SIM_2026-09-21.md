@@ -394,3 +394,43 @@ decisions, kept separate:
    majority default) so every future run gets it without the env var. This is a bigger, harder-to-reverse
    change than (1) and is NOT done here — it is the user's call, per the standing rule this project has
    already applied twice to this exact flag.
+
+---
+
+# 12. The full remaining recall gap, classified (not just the original 8-gene sample)
+
+**User, 2026-09-21: "keep exploring reasons for false positives/false negatives."** After the default
+flip (§11 above, now committed), 23 of 58 Soto truth genes on chr16 still lack a node. Classified all 23
+— not a hand-picked sample — by the same three mechanisms §9 found on 8 genes, checked directly against
+the raw GFF and the new-default assembled GTF.
+
+| category | count | share |
+|---|---|---|
+| **A — no transcript model in RefSeq at all** | 6 | 26.1% |
+| **B — a bigger co-located annotation record wins the naming contest** | 8 | 34.8% |
+| **C — a locus exists but captures only a fraction of the gene** | 9 | 39.1% |
+
+**A (unfixable by construction): `ABHD17AP7`, `ABHD17AP8`, `ABHD17AP9`, `HERC2P5`, `NPIPB14P`, `PKD1P6`.**
+A THIRD pseudogene trio (`ABHD17AP7/8/9`) joins `HERC2P5`/`HERC2P8`/`NPIPB10P` in having zero annotated
+exon structure — no sequence exists to simulate or sequence, real or synthetic.
+
+**B (scoring artifact, not construction failure): `MIR3179-1`, `MIR3179-2`, `PKD1P1`, `PKD1P6-NPIPP1`,
+`RRN3`, `SLX1B`, `SULT1A3`, `SULT1A4`.** Extends §9's mechanism (a bigger fusion/co-located annotation
+record wins a max-overlap, one-name-per-locus resolver's contest) to double the count. One striking case:
+**`PDXDC1` (168,469 bp) sits over BOTH `PKD1P6-NPIPP1` and `RRN3`** — even the FUSION gene itself loses
+its naming contest to a still-larger neighbouring record in this densely tandem-duplicated region. There
+is also a CHAIN: `SULT1A3`/`SULT1A4` lose to the fusion names `SLX1A-SULT1A3`/`SLX1B-SULT1A4`, which
+themselves land in category C (locus exists, captures little) — the naming collision and the coverage gap
+compound for this pair.
+
+**C (the open, still-uncharacterized lever): `ABCC6`, `ABCC6P1`, `ABCC6P2`, `CDR2`, `NPIPB4`, `RRN3P1`,
+`RRN3P2`, `SLC7A5P2`, `SLX1A-SULT1A3`.** A real locus exists for 7 of 9; `ABCC6P1`/`ABCC6P2` have no
+locus at all despite carrying their own transcript record. This is the same shape of gap NPIPB7/SMG1P6
+were before §6v4 diagnosed them — and NPIPB7/SMG1P6 are confirmed NO LONGER in this list, a clean
+positive control that the junction-majority fix reached exactly the class of gene it was built for. This
+category is where the next diagnostic effort belongs.
+
+⭐ This reframes the "22-point gap" from §11: it was never one problem. A quarter is a true annotation
+ceiling, a third is a scoring resolver artifact (the real sequence is very likely already correctly
+grouped, just credited to the wrong name), and just over a third is a genuine, unexplained construction
+gap — the only slice comparable in kind to what junction-majority just fixed.
