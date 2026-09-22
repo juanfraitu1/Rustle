@@ -167,3 +167,77 @@ ceiling, because **most of that remaining gap is not a node-construction defect 
 it is an artifact of how RefSeq's own curated fusion-gene names get resolved at scoring time, in exactly
 the same region (PKD1/NPIP tandem duplication) already flagged by §6u7/§6v1/§6v0 as ground zero for
 readthrough. The rest is a real, smaller, and as-yet uncharacterized edge-coverage gap.
+
+---
+
+# 9. The 8 residual genes: three distinct mechanisms, not one
+
+**User, 2026-09-21.** Diagnosed each of the 8 genes from §8.3 (ABCC6, HERC2P5, HERC2P8, NPIPB10P,
+NPIPB7, PKD1, PKD1P6, SMG1P6) individually against the raw annotation, the assembled GTF, and the PAF.
+
+## 9.1 Three categories, verified against the raw GFF and the assembled loci
+
+| category | genes | mechanism | fixable by better assembly / reads? |
+|---|---|---|---|
+| **A — no transcript model exists** | HERC2P5, HERC2P8, NPIPB10P (3) | Verified on the raw GFF: these `pseudogene` records have **zero** child `transcript`/`mRNA`/`exon` records of any kind — RefSeq assigns them a genomic span and nothing else | **No.** There is no sequence to simulate and (if real biology matches the annotation) no transcription to sequence. Not an assembly or read-quality question at all. |
+| **B — fusion/readthrough truth-naming** | PKD1P6 (1) | Verified on the raw GFF: `PKD1P6`'s only two `transcript` records (`rna-NR_123721.1`, `rna-NR_123722.1`, 30 and 18 exons) are children of `gene-PKD1P6-NPIPP1`, **not** of `gene-PKD1P6`. Standalone PKD1P6 has no transcript of its own — its real transcription, when it occurs, produces the readthrough molecule, not a PKD1P6-only one. Joins §8.3's 5 fusion-name cases (NPIPA1, NPIPA8, NPIPB14P, SLX1B, PKD1P6-vs-`PDXDC1`) at **6 of 13** now. | **No.** This is the same phenomenon the whole session has been chasing (§6u7/§6v0/§6v1), now showing up as a truth-side naming artifact rather than a node over-merge. Full-length confidence changes nothing about which curated gene name a real fusion molecule maps to. |
+| **C — real paralog, real assembly, genuine exon-structure mismatch or fragmentation** | ABCC6, NPIPB7, SMG1P6 (3) | See 9.2 below — two different sub-mechanisms | Partially — see 9.2 |
+
+## 9.2 Category C in detail
+
+**ABCC6**: both ABCC6's locus (4,831 bp exonic, vs its real transcripts' 4,463-4,550 bp — essentially
+COMPLETE) and its true paralog ABCC6P1's locus (`DN_chr16_18504057_9`, 2,660 bp exonic, vs its own
+2,664 bp transcript — also essentially complete) assemble correctly and independently. The PAF shows a
+strong genomic alignment between them (23,511 bp aligned at 97.85% identity). **The edge still fails**,
+almost certainly at the `--min-shared-exon-frac 0.6` conjunct: `exonic_denominator=true` means the
+coverage/sharing test is computed over EXON-restricted alignment, not the raw genomic span, and ABCC6P1
+is a `transcribed_pseudogene` — very likely a retro/processed duplicate whose own annotated exon
+structure has diverged from ABCC6's spliced mRNA (fewer/different exon boundaries after duplication).
+This is register 925's already-documented finding — *"half of family relationships have an INTRONLESS
+member"* — measured here on a NEW pair with everything else held ideal. **Not an assembly defect: the
+two loci are each correctly and completely reconstructed; the paralogs' real, annotated exon structures
+are what differ.**
+
+**NPIPB7, SMG1P6**: genuinely fragmented, unlike ABCC6. Comparing locus exonic content to the gene's
+OWN transcript length (not genomic span, which is misleading for intron-rich genes): NPIPB7's locus
+captures 464 of 2,254 bp (20.6%) of its single 10-exon transcript; SMG1P6's captures 326 of 2,623 bp
+(12.4%) of its single 18-exon transcript. Both are unusually **exon-dense, compact transcripts**
+(NPIPB7 ~225 bp/exon, SMG1P6 ~146 bp/exon) — a real under-assembly, not a coverage or truncation
+artifact (A_ideal reads are full-length, error rate 0.001, jitter only 0-30 bp per end). This is a
+genuinely open lead: whether minimap2's spliced alignment or the assembly/polish step is what drops
+these small exons was not run to ground this pass.
+
+## 9.3 Does isoseq cluster2 help?
+
+**For 6 of 8 (categories A and B): no, and it cannot in principle.** Category A has no transcript to
+sequence in the first place, real or simulated — cluster2 clusters reads, and there would be no reads.
+Category B is a truth/naming problem: PKD1P6's real biological molecule, when transcribed, IS the
+PKD1P6-NPIPP1 fusion. cluster2 would correctly report a confident, full-length, HQ isoform for that
+fusion — which is precisely what §6v0 already established cannot be resolved by full-length-ness,
+because the fusion **is** the genuine complete molecule.
+
+**For ABCC6 (category C, exon-structure divergence): no.** Both loci are already reconstructed
+essentially completely from these ideal simulated reads; the problem is the exon-conjunct correctly
+detecting that the two paralogs' real, annotated splice structures differ. Better read processing
+cannot change what the paralog's real exon structure is.
+
+**For NPIPB7 and SMG1P6 (fragmented, compact transcripts): plausibly yes, and this is the one candidate
+worth testing.** `isoseq cluster2` calls a consensus directly from the FLNC read sequences (POA-style,
+before any genome alignment), which could recover a clean, complete transcript model for a compact
+multi-exon gene even where individual per-read spliced alignments to the genome are imperfect on small
+exons — a different failure surface than a reference-guided splice-alignment assembler faces. This is
+speculative: the exact cause of the fragmentation (minimap2's splice seeding on <150-225 bp exons, vs
+an assembly/polish-step filter) was not isolated this pass, so cluster2's benefit here is a hypothesis
+to test, not a demonstrated fix — and it is a narrow win even if confirmed (2 of 8 genes here, and an
+unknown fraction of chr16 more broadly).
+
+## 9.4 Bottom line
+
+Of the 8 residual genes, **6 have no assembly-side fix available at all** (3 have no transcript to
+recover, 3 map to a real fusion). Only **2 (ABCC6, NPIPB7... correction: ABCC6 is unfixable by
+assembly too — so really only NPIPB7 and SMG1P6, 2 of 8)** are candidates for a genuine, fixable
+assembly gap, and `cluster2` is a plausible but unproven lever for exactly those two. This further
+narrows what remains open after §6v1/§6v2: the readthrough-aware node split is still the dominant lever;
+this residual set is small, mostly structural rather than algorithmic, and the one live thread worth a
+follow-up is specifically **compact, exon-dense transcript assembly**, not readthrough or node
+over-merge.
