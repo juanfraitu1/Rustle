@@ -434,3 +434,74 @@ category is where the next diagnostic effort belongs.
 ceiling, a third is a scoring resolver artifact (the real sequence is very likely already correctly
 grouped, just credited to the wrong name), and just over a third is a genuine, unexplained construction
 gap — the only slice comparable in kind to what junction-majority just fixed.
+
+---
+
+# 13. Category C dissolves: most of it is the SAME naming-collision mechanism as Category B
+
+**§6v7's Category C ("locus exists, captures only a fraction — the open lever") does not survive
+individual diagnosis.** Checked all 9 genes directly: for each, whether its own de novo locus shares its
+assembled span with a bigger neighbouring annotated gene that wins the max-overlap resolver's contest —
+exactly §6v2/§6v3/§6v7's Category B mechanism, but checked against the ASSEMBLED LOCUS's span (which can
+reach much further than any one gene's own annotation, via readthrough) rather than the raw annotation
+overlap Category B originally checked. **§6v7's Category B check only looked for a bigger annotation
+record overlapping the target gene's OWN span — it missed collisions mediated by a shared DE NOVO locus.**
+
+## 13.1 Five of nine are the same collision mechanism, now via the assembled locus
+
+| gene | shared de novo locus | naming-contest winner |
+|---|---|---|
+| `NPIPB4` | `DN_chr16_22407829_6` (65,081 bp) | **`LOC112268174`** (23,535/23,536 bp = 99.996% of its own span) |
+| `RRN3P1` | *same locus as NPIPB4* | **`LOC112268174`** |
+| `RRN3P2` | `DN_chr16_29356116_18` (329,561 bp) | **`SNX29P2`** (62,762/62,763 bp) |
+| `SLC7A5P2` | `DN_chr16_21397764_13` (75,080 bp) | **`SMG1P3`** (55,284/55,285 bp) |
+| `SLX1A-SULT1A3` | `DN_chr16_30478427_6` (3,688 bp) | **`SLX1A`** (3,687 bp) |
+
+In every case the winning neighbour claims essentially its ENTIRE own span inside the shared locus — these
+are not marginal calls. `NPIPB4` and `RRN3P1` even share the exact same super-locus and both lose to the
+same third gene. Register 690's finding (readthrough units chain multiple genes together, CDR2 among
+them, MCL7's unit reaching 133 kb over 8 genes) is the same phenomenon, now traced to its scoring
+consequence gene by gene.
+
+## 13.2 CDR2: a new, fourth mechanism — the truth label isn't corroborated by CDR2's own sequence
+
+CDR2 does NOT lose its own naming contest (its 28,680 bp overlap is the largest in its locus). Its Soto
+family is `ID_39 = {CDR2, RRN3, RRN3P1, RRN3P2, AC009021.1, AC009093.9}`. The locus DOES have a strong PAF
+hit to RRN3P2's locus (98.78% identity, 7,112 bp aligned, well above every mcl_families floor) — but
+decoding the exact aligned coordinates places it at `chr16:21780339-21787538`, inside **`RRN3P3`**'s span
+(21779755-21798544), not CDR2's (21842595-21871275). `RRN3P3` is not in Soto's S1C at all. So the real,
+strong homology signal in this locus belongs to an uncharacterized passenger gene riding along in the same
+readthrough-fused locus as CDR2 — the exon-conjunct is CORRECT to refuse crediting it to CDR2, since CDR2's
+own exons genuinely do not align to RRN3P2. **CDR2's truth-family membership may reflect co-duplication
+(physical proximity to an RRN3-family paralog) rather than CDR2 itself carrying RRN3-family sequence
+homology** — worth flagging as a possible truth-label question, not assumed as a pipeline defect.
+
+## 13.3 What's left once the collisions and CDR2 are pulled out
+
+- **`ABCC6`**: wins its own naming contest; §9's original diagnosis stands — real, annotated exon-structure
+  divergence from its paralog `ABCC6P1` (a `transcribed_pseudogene`), not a construction or naming defect.
+- **`ABCC6P1`, `ABCC6P2`**: no locus assembled at all. Real-data read counts are low (5 and 12 primary
+  reads respectively, on a locus with real biological expression that may simply be scarce in this
+  sample) — a genuine depth limitation, not an algorithmic one.
+
+## 13.4 Corrected tally: the whole remaining gap, four mechanisms
+
+| mechanism | genes | share of 23 |
+|---|---|---|
+| **A — no transcript model in RefSeq** | 6 | 26.1% |
+| **B — naming collision with a bigger neighbour (annotation- or locus-mediated)** | **13** (8 original + 5 reclassified) | **56.5%** |
+| **CDR2 — truth label not corroborated by the gene's own sequence** | 1 | 4.3% |
+| **D — real construction/depth gap** (`ABCC6` divergence, `ABCC6P1/2` low depth) | 3 | 13.0% |
+
+**The single dominant mechanism across the ENTIRE remaining recall gap is naming collision — 56.5% of it
+— not an edge-construction or assembly defect.** In every collision case checked, the actual homology
+signal is very likely already correctly captured by the assembler; it is being credited to the wrong gene
+name by a simplistic max-overlap, one-name-per-locus resolver. This reframes where the next lever should
+go: not into further assembly fixes, but into how a multi-gene locus's homology is attributed to truth
+labels — e.g. crediting a locus to every gene whose exons it substantially covers, rather than
+winner-take-all by span.
+
+⚠ This same resolver is used throughout this session's OWN scoring pipeline (`score_family_def.py`,
+`cover_and_jn_definition.py`), not only in some downstream consumer — so this is very likely **undercounting
+this project's own measured recall** wherever a de novo locus spans more than one gene, on every chromosome
+scored this session, not only chr16's 23 genes.
