@@ -104,3 +104,75 @@ python3 bench/read_bridged_merge.py --gtf dn16.gtf --bam chr16.bam \
 ```
 ⚠ The max-overlap tie-break must be deterministic (sorted by node id); dict iteration order moved 5
 genes between runs and made the headline irreproducible (705 vs 710).
+
+---
+
+# 7. Follow-up: a weaker per-read ask, more reads, and full-length-ness
+
+**User, 2026-09-21:** *"Can we lower the ask to 1 and more reads? These are long reads so I think they
+should be trusted more. Also maybe that is an aspect to take into consideration, that they are full
+length."* All three tested on chr16 de novo (primary, `-F 2308`, MAPQ >= 60).
+
+Labels: a bridged same-strand locus pair is TRUE if both loci have the same annotated home gene
+(should merge) and FALSE otherwise (readthrough-joined).
+
+## 7.1 Lowering the per-read ask to 1 bp DOES help the signal
+
+| statistic | AUC at >= 25 bp unique | AUC at **>= 1 bp** |
+|---|---|---|
+| bridge COUNT (the §6u7 statistic) | 0.656 | 0.665 |
+| **min bridge FRACTION** | 0.654 | **0.670** |
+| bridges by a read covering one locus | 0.610 | 0.630 |
+| min fraction among covering reads | 0.567 | 0.580 |
+
+⭐The weaker ask is better, and the best statistic becomes the **fraction** rather than the count —
+2,187 bridged pairs instead of 2,033. The intuition was right.
+
+## 7.2 But the "most reads should cross" premise fails
+
+Median **min bridge fraction is 0.029 for pairs that SHOULD merge** (vs 0.008 for readthrough pairs).
+Even where two de novo loci are one gene, only ~3% of the locus's reads bridge them. A fraction rule
+therefore separates only as well as the count does.
+
+## 7.3 Full-length-ness cannot separate these — two measurements and a reason
+
+- **The clipping test is vacuous**: **97.1%** of primary MAPQ-60 reads already have <= 50 bp soft-clip at
+  BOTH ends (626,142 of 644,672). Restricting to them changes nothing (AUC 0.646 vs 0.656) because it
+  restricts almost nothing.
+- **The coverage test is worse**: requiring a read to cover >= 90% of a locus's exonic union scores AUC
+  **0.580**, median 0.000 in BOTH classes — a de novo locus's exon union is the union over all isoforms,
+  so almost no single read covers it.
+- ⭐**The reason is structural, not technical.** These are Kinnex S-reads (`movie/zmw/ccs/start_end`), so a
+  bridging read IS a genuine full-length molecule whose two ends are the transcript's real ends. Being
+  full-length makes the bridge MORE trustworthy — and that is exactly why it cannot license a merge: **a
+  readthrough transcript is a real full-length molecule that spans two genes.** The evidence is sound;
+  the inference "therefore one gene" is what fails.
+
+## 7.4 End-to-end: precision plateaus at 0.74, so the merge still does not pay
+
+Merge precision (share of merged pairs that are same-gene) against the operating point, at 1 bp:
+
+| rule | pairs merged | precision | recall |
+|---|---|---|---|
+| frac >= 0.01 | 1,317 | 0.609 | 0.734 |
+| frac >= 0.05 | 671 | 0.680 | 0.418 |
+| frac >= 0.20 | 229 | 0.707 | 0.148 |
+| frac >= 0.05 & count >= 25 | 316 | **0.734** | 0.212 |
+| frac >= 0.20 & count >= 3 | 213 | **0.742** | 0.145 |
+| frac >= 0.70 | 14 | 0.786 | 0.010 |
+
+**Precision never exceeds ~0.74 at any usable recall** — roughly a quarter of merges still fuse distinct
+genes. Scored on §6u7's per-copy endpoint (universe 1,329; baseline 705 correct = 0.5305):
+
+| rule | merges | correct | rate | delta |
+|---|---|---|---|---|
+| frac >= 0.05 & count >= 25 | 221 | 666 | 0.5011 | **-2.93pp** |
+| frac >= 0.10 & count >= 3 | 278 | 665 | 0.5004 | -3.01pp |
+| frac >= 0.20 & count >= 3 | 170 | 684 | 0.5147 | -1.58pp |
+| frac >= 0.30 & count >= 3 | 99 | 692 | 0.5207 | -0.98pp |
+| frac >= 0.50 | 48 | 701 | 0.5275 | -0.30pp |
+| frac >= 0.70 | 14 | 707 | 0.5320 | **+0.15pp** |
+
+Only the most extreme point is positive, at **14 merges across 2,550 loci** — far below §6u7's
+pre-registered **+2.0pp** bar and indistinguishable from noise. ⟹ §6u7's refutation stands, now with a
+sharper cause: **the merge fails on a precision CEILING (~0.74), not on a badly chosen threshold.**
