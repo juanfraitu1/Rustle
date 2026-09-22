@@ -715,6 +715,13 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
                 // model whose giant intron crosses a locus cannot absorb it. This must accompany
                 // RUSTLE_JUNCTION_MAJORITY: relaxing the junction gate alone admits longer models that then
                 // BRIDGE separate loci through exactly this span-based rule (chr16 66 -> 34 copies).
+                // ⚠ RUSTLE_JUNCTION_MAJORITY's default flipped to ON 2026-09-21 WITHOUT also flipping this
+                // flag: the validated full chr16 arm (`bench/CHR16_JUNCTION_MAJORITY_ARM.md`, §6n4) ran
+                // `gw_family_catalog` with junction-majority alone (this flag at its own default, off,
+                // in both arms) and the feared fusion did not occur there (families 282->290, max size
+                // unchanged at 71). That test used `gw_family_catalog`, not this exact code path's every
+                // caller, so the concern this comment states remains logically live beyond chr16 --
+                // re-test before trusting this pairing is unnecessary on a new substrate.
                 let (ov, minlen) = if exonic_collapse {
                     let (eov, la, lb) = exonic_overlap(a, b);
                     (eov, la.min(lb).max(1))

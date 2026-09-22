@@ -172,8 +172,9 @@ struct Args {
     /// `<out>.assignments.tsv` empty by construction — there is no assignment in this mode, and an empty
     /// file is the honest record of that rather than a missing one.
     ///
-    /// Composes with the assembly knobs: `--read-isoform-k`, `RUSTLE_JUNCTION_MAJORITY`,
-    /// `RUSTLE_GTF_SECONDARY`, `RUSTLE_GATE_CENSUS`.
+    /// Composes with the assembly knobs: `--read-isoform-k`, `RUSTLE_JUNCTION_MAJORITY` (default ON since
+    /// 2026-09-21; `=0` restores the old strict-canonicity behaviour), `RUSTLE_GTF_SECONDARY`,
+    /// `RUSTLE_GATE_CENSUS`.
     #[arg(long, default_value_t = false)]
     assemble_only: bool,
 

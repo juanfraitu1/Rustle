@@ -1680,7 +1680,10 @@ pub fn build_spliced_seq(
     introns: &[(u64, u64)],
     read_strand: Option<char>,
 ) -> Option<(Vec<u8>, char)> {
-    let majority = matches!(std::env::var("RUSTLE_JUNCTION_MAJORITY"), Ok(v) if v != "0" && !v.is_empty());
+    // DEFAULT FLIPPED 2026-09-21 (user's call; see the MAJORITY comment below for the evidence trail).
+    // Majority is now the default; `RUSTLE_JUNCTION_MAJORITY=0` is the only way back to the old STRICT
+    // behaviour for byte-for-byte reproduction of any pre-2026-09-21 catalog.
+    let majority = !matches!(std::env::var("RUSTLE_JUNCTION_MAJORITY"), Ok(v) if v == "0");
     let nc_max: u64 = std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000);
     build_spliced_seq_with(genome, chrom, start, end, introns, read_strand, majority, nc_max)
 }
@@ -1753,15 +1756,16 @@ pub fn build_spliced_seq_with(
     majority: bool,
     nc_max: u64,
 ) -> Option<(Vec<u8>, char)> {
-    // Strand from the junction motifs. STRICT (default): every junction must be canonical and they must all
-    // agree, otherwise the whole transcript is discarded. That is unforgiving in a specific way -- ONE odd
-    // junction throws away an arbitrarily deep, otherwise-clean multi-exon model. NPIPB12 (RefSeq
-    // NM_001395932.1) is exactly this: 9 junctions, 8 canonical CT..AC, and intron 1 is CT..AT. Its
-    // 109-read, 10-exon skeleton is dropped here, which is why the member is missing from the catalogue and
-    // why neither extra coverage nor a lower homology floor recovered it
-    // (bench/soto/merge_quality_analysis.md §24b, §24d).
+    // Strand from the junction motifs. STRICT (`RUSTLE_JUNCTION_MAJORITY=0`, the behaviour of every catalog
+    // built before 2026-09-21): every junction must be canonical and they must all agree, otherwise the
+    // whole transcript is discarded. That is unforgiving in a specific way -- ONE odd junction throws away
+    // an arbitrarily deep, otherwise-clean multi-exon model. NPIPB12 (RefSeq NM_001395932.1) is exactly
+    // this: 9 junctions, 8 canonical CT..AC, and intron 1 is CT..AT. Its 109-read, 10-exon skeleton is
+    // dropped here, which is why the member is missing from the catalogue and why neither extra coverage
+    // nor a lower homology floor recovered it (bench/soto/merge_quality_analysis.md §24b, §24d).
     //
-    // MAJORITY (`RUSTLE_JUNCTION_MAJORITY`): decide strand by the canonical majority and tolerate a minority
+    // MAJORITY (`RUSTLE_JUNCTION_MAJORITY`, DEFAULT since 2026-09-21): decide strand by the canonical
+    // majority and tolerate a minority
     // of non-canonical junctions. Still requires at least one canonical junction, and still rejects a
     // genuine strand CONFLICT (both strands well represented), so a chimeric model is not admitted.
     // ⚠ A blanket relaxation is NET-HARMFUL, measured: chr16 copies 66 -> 34 and families 20 -> 11, because
@@ -1791,12 +1795,28 @@ pub fn build_spliced_seq_with(
     // COST on that arm: families 121 -> 117, copies 678 -> 700, strictly-engulfed 60 -> 63, NPIP loci
     // held at 14/31 (no recall gain), single-copy housekeeping control 3/3 PASS.
     //
-    // ⚠⚠ WHY IT IS STILL OFF, AND THE ONE THING THAT WOULD CHANGE THAT: the chr16 harm above was
-    // measured ON chr16, and that arm ran on NC_073241.2 / NC_073242.2 / NC_073244.2. THE FAILURE MODE
-    // IS NOT REACHABLE ON THOSE CONTIGS, so its absence there is NOT evidence against it -- an arm that
-    // cannot exhibit a failure does not test it. **REQUIRED BEFORE FLIPPING: a chr16 arm.** Do not read
-    // the clean pass above as a green light; it is a pass on a substrate where the known failure cannot
-    // occur.
+    // ── THE CHR16 ARM WAS RUN, AND THE DEFAULT WAS FLIPPED ON IT (2026-09-21). ──
+    // §6n4 (`bench/CHR16_JUNCTION_MAJORITY_ARM.md`) ran the full chr16 RNA catalog both ways
+    // (`gw_family_catalog`, 682,958 primary reads): families 282 -> 290 (+8, almost all new 2-copy
+    // families -- the flag recovers small families the strict rule deleted, it does not fuse existing
+    // ones), max family size unchanged at 71, median family size unchanged. The fusion this flag was held
+    // back for DOES NOT OCCUR at chr16 scale. The real price is +8.9% strictly-engulfed copies (79 -> 86)
+    // -- a precision cost on copy BOUNDARIES, not on family structure.
+    //
+    // Independently, §6v4/§6v5 (2026-09-21, `docs/IDEAL_CHROMOSOME_SIM_2026-09-21.md` §10-11) confirmed
+    // the mechanism at the single-gene level on a fresh, unrelated pair (SMG1P6, NPIPB7: one and three
+    // non-canonical junctions respectively, verified against the raw GFF, independent of assembly or
+    // read quality) and re-measured the recall effect on REAL chr16 through the family-DEFINITION scoring
+    // pipeline: +1 truth gene recovered, 0 lost, pooled family F essentially unchanged.
+    //
+    // ⚠ ONE SUBSTRATE. Both validating arms are chr16 -- the `family_detect.rs` `RUSTLE_COLLAPSE_EXONIC`
+    // pairing warning (a relaxed junction gate can admit longer models that bridge loci through the
+    // SPAN-based collapse rule specifically) was not independently tested here, since the validated arms
+    // left it at its own default (off) throughout and the feared harm did not manifest at that scale, but
+    // the underlying concern remains logically live for other chromosomes/substrates. The standing
+    // "hold a substrate back" rule was not fully satisfied (no second chromosome, no gorilla contig) before
+    // this flip; the decision to flip anyway, accepting that gap, was the user's, made explicitly on
+    // 2026-09-21. `RUSTLE_JUNCTION_MAJORITY=0` reproduces every catalog built before this date exactly.
     let mut strand: Option<char> = None;
     if majority {
         let (mut plus, mut minus) = (0usize, 0usize);
@@ -2320,14 +2340,21 @@ mod locus_support_tests {
         let g = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
         let introns = vec![(100, 200), (300, 400), (500, 600)];
 
-        std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
+        // DEFAULT FLIPPED 2026-09-21: unset now means MAJORITY; `=0` is STRICT.
+        std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "0");
         assert!(build_spliced_seq(&g, "c1", 0, 700, &introns, None).is_none(),
-                "strict mode must drop a transcript with one non-canonical junction");
+                "strict mode (=0) must drop a transcript with one non-canonical junction");
 
         std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "1");
         let got = build_spliced_seq(&g, "c1", 0, 700, &introns, None);
         assert!(got.is_some(), "majority mode must keep it");
         assert_eq!(got.unwrap().1, '-', "strand comes from the two canonical CT..AC junctions");
+
+        // The flipped DEFAULT (unset) must behave exactly like the explicit "1" above.
+        std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
+        let got_default = build_spliced_seq(&g, "c1", 0, 700, &introns, None);
+        assert!(got_default.is_some(), "unset (the new default) must behave as majority mode");
+        assert_eq!(got_default.unwrap().1, '-', "unset default matches explicit majority mode exactly");
 
         // REGRESSION: an UNSPLICED candidate has no junctions, so the canonical counters are vacuously
         // (0, 0). The majority path used to read that as "no strand evidence" and reject, which silently
@@ -2336,12 +2363,12 @@ mod locus_support_tests {
         // of disagreement. Both modes must agree here.
         let un: Vec<(u64, u64)> = vec![];
         let strict_unspliced = {
-            std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
+            std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "0");
             build_spliced_seq(&g, "c1", 0, 100, &un, None)
         };
         std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "1");
         let majority_unspliced = build_spliced_seq(&g, "c1", 0, 100, &un, None);
-        assert!(strict_unspliced.is_some(), "strict mode admits an unspliced model (control)");
+        assert!(strict_unspliced.is_some(), "strict mode (=0) admits an unspliced model (control)");
         assert!(
             majority_unspliced.is_some(),
             "majority mode must NOT reject an unspliced candidate -- it has no junctions to be canonical"

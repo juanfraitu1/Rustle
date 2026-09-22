@@ -7,6 +7,13 @@ What to install, what to run, and what number should come back. Substrate proven
 ⚠ **This is not an assembler project.** The assembly-only mode below is the substrate the thesis
 objectives stand on, not the contribution — see `README.md` and `docs/METHOD_PSEUDOCODE.md`.
 
+⚠⚠ **`RUSTLE_JUNCTION_MAJORITY` default flipped to ON 2026-09-21** (register row 960;
+`docs/IDEAL_CHROMOSOME_SIM_2026-09-21.md` §10–11; `bench/CHR16_JUNCTION_MAJORITY_ARM.md`). A non-canonical
+splice junction no longer discards an otherwise-canonical, well-supported transcript outright. Every
+number quoted below that does NOT explicitly set `RUSTLE_JUNCTION_MAJORITY=1` in its own command (i.e.
+most of §4's "Expected numbers") was measured under the OLD strict default and has not been re-run under
+the new one — set `RUSTLE_JUNCTION_MAJORITY=0` to reproduce those numbers exactly.
+
 ## 1. Build
 
 Rust 1.93.1, edition 2021, no submodules.

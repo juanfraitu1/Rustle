@@ -5450,7 +5450,14 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
             "repeat_masked_edges".into(),
             std::env::var("RUSTLE_ER_REPEAT_MASKED_EDGES").unwrap_or_else(|_| "<unset>".into()),
         ),
-        ("junction_majority".into(), std::env::var("RUSTLE_JUNCTION_MAJORITY").unwrap_or_else(|_| "<unset>".into())),
+        // DEFAULT FLIPPED 2026-09-21: unset means ON (majority); only "0" is strict. Report the EFFECTIVE
+        // state, not the raw env var, so an unset run's params.tsv does not read as "nothing happening"
+        // when a real default is in force (the M2 defect this file's neighbouring rows already guard).
+        ("junction_majority".into(), match std::env::var("RUSTLE_JUNCTION_MAJORITY") {
+            Ok(v) if v == "0" => "0 (strict, explicit)".into(),
+            Ok(v) => format!("{v} (majority)"),
+            Err(_) => "1 (majority, default)".into(),
+        }),
         // Changes WHICH SKELETONS BECOME NODES, so an ON and an OFF catalog must not have byte-identical
         // params.tsv (the M2 defect).
         ("gate_min_reads".into(), super::denovo_assemble::gate_min_reads().to_string()),
