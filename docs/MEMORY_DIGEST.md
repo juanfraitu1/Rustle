@@ -385,3 +385,18 @@ compaction; the topic files named in each remain the live record.
 
 - - [advisor Stefan Canzar](reference_advisor_canzar.md) — multimapping = max facility location in his 2016 work; wants clean graphs + theorems, dislikes 1/k and minimizers. [interests](project_advisor_interests.md) · [thesis framing](project_thesis_framing_family_vg.md).
 
+
+## Compacted 2026-09-21 — full text of index lines moved out of MEMORY.md
+
+MEMORY.md had reached 25.8 KB against a 24.4 KB load limit (13 of 112 lines being silently dropped).
+The four lines below are fully superseded by §6t7's "ASYMMETRY THREAD CLOSED" summary (kept in
+MEMORY.md) and are archived here verbatim; nothing in them is contradicted, they are just no longer
+load-bearing on their own.
+
+- ⭐⭐⭐09-20 §6t3 [[project_cleanup_audit]] — **ADVISOR'S JACCARD SWEEP TESTED**: his one-line rule (components of J≥t) = **F 0.6044 vs shipped 0.7016 = 86%** (⚠CLOSE), t transfers. ⭐r910 decomposition: **operator +0.035, exon conjunct +0.062** (conjunct = pure precision, **0.586→0.722 for −0.007 sens**). ⛔⛔**r911 my "drop MCL keep conjunct" synthesis FAILED (0.5869, worse than B)** — a hard conjunct DELETES edges, MCL routes around, components can't ⇒ **MCL is what makes the conjunct AFFORDABLE; gains are NOT additive.**
+
+- ⭐⭐⭐09-20 §6t4 [[project_cleanup_audit]] — ⛔**DP CHAINING REFUTED as a family-edge score, REDUNDANT BY CONSTRUCTION**: chained+symmetric reproduces global Jaccard **to every digit** because the best chain uses >1 anchor in only **34/40,645 = 0.08%** of pairs — **each PAF record IS already a maximal minimap2 chain**. Gain could only exist BELOW minimap2 at minimizer level. ⛔r913 containment norm `min(la,lb)` OVERCORRECTS r359 ⇒ long genes become HUBS (864 pairs ≥1.0, largest comp 171 vs 23, prec .164 vs .639).
+
+- ⭐⭐⭐09-20 §6t5 [[project_cleanup_audit]] — ⛔**r914 OCHIAI FAILS** (= jaccard exactly, **0/59** asymmetric true pairs) — shape isn't the problem, ONE THRESHOLD is. ⭐⭐**r915 the asymmetry blind spot is 25% of true pairs** (59/238; jaccard/ochiai/dice all **0.0%**, containment 91.5%). ⭐⭐⭐**r916 guarded containment → MCL = F .6648 vs shipped metric's .6394 (+0.025) AND precision .586→.650**; only +0.013 in components ⇒ **a scalar can't be judged at the operator's weakest setting** (mirror of r911). ADOPTION TEST: guarded containment in Rust `mcl_families` WITH the conjunct.
+
+- ⚠09-20 §6t6 r917 — guarded-containment WEIGHTS inside the FULL shipped rule (via `--dump-graph`, conjunct kept, only weight swapped): **F 0.7256 vs 0.7123 (+0.0133), sens AND prec both up** (first arm all day with no trade). ⛔**But it is TWO FAMILIES: per-family 2 better / 0 worse / 18 unchanged, 2 of 3 chroms move.** POST-HOC + measured in `mcl_port.py` (NOT bit-identical to Rust MCL, 245 vs 168 clusters chr2) ⇒ shipped 0.7016 is NOT the comparator. **NOT a basis to change the definition.**
