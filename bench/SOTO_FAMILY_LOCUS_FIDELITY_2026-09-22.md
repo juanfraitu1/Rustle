@@ -78,6 +78,8 @@ the population.
 ## Reproduce
 
 ```sh
-python3 bench/soto_family_locus_fidelity.py --gtf ours_genome.gtf \
+python3 bench/locus_probes.py soto-fidelity --gtf ours_genome.gtf \
   --gff chm13v2.0_RefSeq_full.gff.gz --soto bench/soto/soto_famCN_S1C.tsv --out soto_fid
 ```
+
+> **Generator (2026-09-22 consolidation):** `python3 bench/locus_probes.py soto-fidelity ...` — the original `bench/soto_family_locus_fidelity.py` was folded in verbatim and verified identical on its documented inputs (§6z3); the register rows above cite this file.

@@ -145,3 +145,8 @@ path = "src/bin/readthrough_filter.rs"
 [[bin]]
 name = "family_score"
 path = "src/bin/family_score.rs"
+
+
+[[bin]]
+name = "mcl_port"
+path = "src/bin/mcl_port.rs"

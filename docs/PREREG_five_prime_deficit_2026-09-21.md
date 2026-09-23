@@ -177,3 +177,5 @@ The 5′ boundary error decomposes into three parts, and only one of them is fix
 
 ⚠**Not adopted, not implemented** — this is the measurement and the rule it licenses. Item 3 needs its
 own pre-registered arm with an end-to-end score before any default changes.
+
+> **Generator (2026-09-22 consolidation):** `python3 bench/locus_probes.py five-prime ...` — the original `bench/five_prime_deficit.py` was folded in verbatim and verified identical on its documented inputs (§6z3); the register rows above cite this file.

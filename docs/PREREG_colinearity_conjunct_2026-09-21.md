@@ -103,3 +103,5 @@ exact 76-pair population and none clears even a 0.40 precision bar.** The shippe
 asymmetric true pairs remains the correct call: no known signal recovers them without an unacceptable
 false-positive cost. Lowering the coverage/identity floor is not recommended, with or without a
 colinearity guard — the guard has no separating power to contribute.
+
+> **Generator (2026-09-22 consolidation):** `python3 bench/locus_probes.py colinearity ...` — the original `bench/colinearity_conjunct.py` was folded in verbatim and verified identical on its documented inputs (§6z3); the register rows above cite this file.

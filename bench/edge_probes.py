@@ -166,7 +166,7 @@ def p2_antichains(below, nodes):
         if len(c) < 2:
             continue
         rel = {x: below.get(x, set()) for x in c}
-        rest = sorted(c, key=lambda n: -len(rel.get(n, ())))
+        rest = sorted(sorted(c), key=lambda n: -len(rel.get(n, ())))   # ⚠ name-sort first: the stable degree-sort otherwise inherits set order (hash-seed dependent)
         while rest:
             chain = []
             for n in rest:

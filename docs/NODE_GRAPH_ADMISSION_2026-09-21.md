@@ -132,7 +132,7 @@ cd /mnt/linuxdisk/tmp/regress          # dn16.paf, dn16.graph.tsv, chr16.genes.g
 python3 bench/node_graph_admission.py --paf dn16.paf --graph dn16.graph.tsv --gff chr16.genes.gff
 
 # Finding 3 — positional partner discontinuity, length-matched
-python3 bench/partner_discontinuity.py --paf dn16.paf --gff chr16.genes.gff \
+python3 bench/locus_probes.py partner-discontinuity --paf dn16.paf --gff chr16.genes.gff \
   --locus chr16:22357769-22422849 --locus chr16:21779645-21871278 --locus chr16:14975608-15166427
 ```
 
@@ -141,3 +141,5 @@ by that locus's length), because the shipped `--min-exonic-bp 1` config takes th
 accumulates every record for a pair. A best-single-record approximation **overstates** the effect
 (78.0% vs 66.4% longer-partner; ratio 9.79× vs 3.92×) — the agreement check (866 vs the shipped 864) is
 what licenses the decomposition and should be re-checked on any other chromosome before quoting it.
+
+> **Generator (2026-09-22 consolidation):** `python3 bench/locus_probes.py partner-discontinuity ...` — the original `bench/partner_discontinuity.py` was folded in verbatim and verified identical on its documented inputs (§6z3); the register rows above cite this file.
