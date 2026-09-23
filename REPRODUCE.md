@@ -131,6 +131,13 @@ shallow library, and making it depth-aware is the top open item.
 ```sh
 target/release/mcl_families --min-exonic-bp 1 --min-shared-exon-frac 0.60 ...
 ```
+Score the resulting clusters against a family truth (sensitivity / precision / one-to-one bipartite F /
+collapse — the standing reporting rule) with the native scorer, byte-identical to the retired
+`bench/mode_family_score.py` including scipy's assignment tie-breaking:
+
+```sh
+target/release/family_score --clusters run.clusters.tsv --gff chr20_ref.gff --soto bench/soto/soto_famCN_S1C.tsv --chrom chr20 [--family NPIP]
+```
 ⚠ `--min-shared-exon-frac` is **inert without `--min-exonic-bp 1`**. The RNA-level definition is
 components of L3 at `w_98 >= 0.985`, with L4 (0.995) applied selectively; see
 `docs/seeded_family_definition.md` §0★★ and ledger §6p0/§6p1/§6p5.

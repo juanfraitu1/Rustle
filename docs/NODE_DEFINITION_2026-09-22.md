@@ -103,7 +103,7 @@ python3 bench/node_graph_admission.py --paf dn16.paf --graph dn16.graph.tsv --gf
 mcl_families --paf dn16.paf --gff dn16.gff3 --min-exonic-bp 1 --min-shared-exon-frac 0.60 \
   --min-cov-shorter 0.70 --out ARM
 # scoring (protein referee truth built by bench/soto_vs_us_referee.py's protein_referee)
-python3 bench/mode_family_score.py --clusters ARM.clusters.tsv --gff chr16.genes.gff \
+family_score --clusters ARM.clusters.tsv --gff chr16.genes.gff \
   --soto REFEREE.tsv --chrom chr16
 ```
 

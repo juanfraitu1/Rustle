@@ -141,3 +141,7 @@ path = "src/bin/locus_bed.rs"
 [[bin]]
 name = "readthrough_filter"
 path = "src/bin/readthrough_filter.rs"
+
+[[bin]]
+name = "family_score"
+path = "src/bin/family_score.rs"
