@@ -285,135 +285,15 @@ pub fn pass1_skeletons_widened(
     snap: Option<(u64, f64)>,
     isoform_k: u32,
 ) -> Vec<Skeleton> {
-    use std::collections::BTreeMap;
-    // `RUSTLE_TERMINAL_K` overrides the fixed rank; it exists for §6w6's CONTROL arms (k=1, k=3), which
-    // are what decide whether any gain from the quantile below is ADAPTIVITY or just a different constant.
-    let k = std::env::var("RUSTLE_TERMINAL_K")
-        .ok()
-        .and_then(|v| v.parse::<u32>().ok())
-        .filter(|v| *v > 0)
-        .unwrap_or(min_terminal_support)
-        .max(1) as usize;
-    // ⭐ §6w6 / `docs/PREREG_depth_adaptive_k_2026-09-22.md`: a fixed RANK is a MOVING QUANTILE. With n
-    // reads the k-th most extreme sits ~k/n into the tail, so k=2 is 75% of the way in at n=2 but 5% at
-    // n=30 — measured as a depth drift in two independent places (register 975: human median d5
-    // +19 bp at n=2 → −40 bp at n≥30; register 978: under-capture 28.2%→11.2% while over-extension
-    // 12.7%→25.5%). `RUSTLE_TERMINAL_QUANTILE=q` takes the clamp(round(q·n), 1, n)-th value instead,
-    // which GROWS shallow loci and PULLS IN deep ones. Unset (or 0) is byte-identical to the fixed rank.
-    let term_q: f64 = std::env::var("RUSTLE_TERMINAL_QUANTILE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .filter(|v: &f64| *v > 0.0 && *v < 1.0)
-        .unwrap_or(0.0);
-    let adaptive = term_q > 0.0;
-    // the exact order statistic needs every terminal, not the k-most-extreme the fixed rank retains
-    let keep_all = snap.is_some() || adaptive;
-    // Per-junction read support over every spliced read in the region, the quantity the widening tests.
-    let mut jsup: BTreeMap<(&str, (u64, u64)), u32> = BTreeMap::new();
-    if isoform_k > 0 {
-        for r in reads {
-            for &j in &r.introns {
-                *jsup.entry((r.chrom.as_str(), j)).or_insert(0) += 1;
-            }
-        }
-    }
-    // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc, n_reverse).
-    let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)> = BTreeMap::new();
-    // all starts/ends per group, populated only when `snap` is on
-    let mut allpos: BTreeMap<(&str, Vec<(u64, u64)>), (Vec<u64>, Vec<u64>)> = BTreeMap::new();
+    // §6zb: push-all-then-finish over the accumulator below — byte-identical to the former single-pass
+    // body (the accumulator IS that body, split so a streaming reader can feed it one record at a time
+    // without materialising the reads; see `docs/PREREG_streaming_assembly_2026-09-23.md`).
+    let mut acc = Pass1Acc::new(min_terminal_support, snap);
+    let jsup = if isoform_k > 0 { Some(junction_support(reads)) } else { None };
     for r in reads {
-        if r.introns.is_empty() {
-            continue; // unspliced reads are seeded position-aware below (empty chain would pool chromosome-wide)
-        }
-        let e = groups
-            .entry((r.chrom.as_str(), r.introns.clone()))
-            .or_insert((0, Vec::new(), Vec::new(), 0));
-        e.0 += 1;
-        e.3 += u32::from(r.reverse);
-        if keep_all {
-            let a = allpos
-                .entry((r.chrom.as_str(), r.introns.clone()))
-                .or_insert((Vec::new(), Vec::new()));
-            a.0.push(r.ref_start);
-            a.1.push(r.ref_end);
-        }
-        // keep the k smallest starts (ascending)
-        let pos = e.1.partition_point(|&x| x <= r.ref_start);
-        if pos < k {
-            e.1.insert(pos, r.ref_start);
-            e.1.truncate(k);
-        }
-        // keep the k largest ends (descending)
-        let pos = e.2.partition_point(|&x| x >= r.ref_end);
-        if pos < k {
-            e.2.insert(pos, r.ref_end);
-            e.2.truncate(k);
-        }
+        acc.push_read(r);
     }
-    let mut skels: Vec<Skeleton> = groups
-        .into_iter()
-        .filter(|((chrom, introns), (n, _, _, _))| {
-            *n >= min_reads
-                || (isoform_k > 0
-                    && !introns.is_empty()
-                    && introns
-                        .iter()
-                        .all(|j| jsup.get(&(*chrom, *j)).copied().unwrap_or(0) >= isoform_k))
-        })
-        .map(|((chrom, introns), (n, starts, ends, n_rev))| {
-            // robust boundary = the k-th supported value (or the outermost available if the group is smaller).
-            // Under RUSTLE_TERMINAL_QUANTILE the rank is recomputed per group from that group's own depth,
-            // using the FULL terminal lists in `allpos` (the `groups` lists are truncated to the fixed k).
-            let (starts, ends) = if adaptive {
-                match allpos.get(&(chrom, introns.clone())) {
-                    Some((all_s, all_e)) => {
-                        let mut s2 = all_s.clone();
-                        let mut e2 = all_e.clone();
-                        s2.sort_unstable();
-                        e2.sort_unstable_by(|a, b| b.cmp(a));
-                        (s2, e2)
-                    }
-                    None => (starts, ends),
-                }
-            } else {
-                (starts, ends)
-            };
-            let kg = if adaptive {
-                let n_here = starts.len().max(1);
-                ((term_q * n_here as f64).round() as usize).clamp(1, n_here)
-            } else {
-                k
-            };
-            let si = kg.min(starts.len()).saturating_sub(1);
-            let ei = kg.min(ends.len()).saturating_sub(1);
-            let (mut start, mut end) = (starts[si], ends[ei]);
-            if let Some((win, frac)) = snap {
-                if let Some((all_s, all_e)) = allpos.get(&(chrom, introns.clone())) {
-                    start = snap_boundary(all_s, start, win, frac, true);
-                    end = snap_boundary(all_e, end, win, frac, false);
-                    if end <= start {
-                        // a snap must never invert or empty the skeleton; fall back to the quantile pair
-                        start = starts[si];
-                        end = ends[ei];
-                    }
-                }
-            }
-            Skeleton {
-                chrom: chrom.to_string(),
-                start,
-                end,
-                n_reads: n,
-                introns,
-                tied_seeded: false,
-footprint: false,
-                read_strand: Some(majority_read_strand(n_rev, n)),
-                read_rev: n_rev, read_tot: n,
-            }
-        })
-        .collect();
-    // position-aware seeding of the unspliced reads (the fix): single-linkage span-overlap clustering
-    // per chromosome instead of pooling every unspliced read on a chromosome into one giant group.
-    skels.extend(cluster_unspliced(reads, min_reads, k));
+    let mut skels = acc.finish(min_reads, isoform_k, jsup.as_ref());
     // FOOTPRINT PASS (`RUSTLE_FOOTPRINT_NODES`, default off = byte-identical). Runs LAST and only where
     // nothing else claimed the region, so it can add nodes and never change one the other passes made.
     if footprint_nodes_enabled() {
@@ -424,6 +304,200 @@ footprint: false,
         skels.extend(extra);
     }
     skels
+}
+
+/// Per-junction read support over every spliced read, the quantity `--read-isoform-k` tests.
+pub fn junction_support(reads: &[PrimaryRead]) -> std::collections::BTreeMap<(String, (u64, u64)), u32> {
+    let mut jsup = std::collections::BTreeMap::new();
+    for r in reads {
+        for &j in &r.introns {
+            *jsup.entry((r.chrom.clone(), j)).or_insert(0) += 1;
+        }
+    }
+    jsup
+}
+
+/// §6zb PASS-1 ACCUMULATOR (`docs/PREREG_streaming_assembly_2026-09-23.md`). The former body of
+/// [`pass1_skeletons_widened`], split into `push` (one read at a time) and `finish`, so the region reader
+/// can reduce each spliced record to its group's `(n, k-smallest starts, k-largest ends, n_reverse)` on
+/// arrival and never hold a `PrimaryRead`/`BamRead` per record. Unspliced reads are retained (they are
+/// seeded by position in `cluster_unspliced`, which needs their spans). State is O(distinct chains).
+pub struct Pass1Acc {
+    k: usize,
+    term_q: f64,
+    keep_all: bool,
+    snap: Option<(u64, f64)>,
+    // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc, n_reverse).
+    groups: std::collections::BTreeMap<(String, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)>,
+    // all starts/ends per group, populated only when `snap` / the adaptive quantile needs them
+    allpos: std::collections::BTreeMap<(String, Vec<(u64, u64)>), (Vec<u64>, Vec<u64>)>,
+    /// Unspliced reads, in arrival order, for the position-aware seeding pass.
+    pub unspliced: Vec<PrimaryRead>,
+    /// Reads pushed (spliced + unspliced).
+    pub n_pushed: usize,
+}
+
+impl Pass1Acc {
+    pub fn new(min_terminal_support: u32, snap: Option<(u64, f64)>) -> Self {
+        // `RUSTLE_TERMINAL_K` overrides the fixed rank; it exists for §6w6's CONTROL arms (k=1, k=3), which
+        // are what decide whether any gain from the quantile below is ADAPTIVITY or just a different constant.
+        let k = std::env::var("RUSTLE_TERMINAL_K")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(min_terminal_support)
+            .max(1) as usize;
+        // ⭐ §6w6 / `docs/PREREG_depth_adaptive_k_2026-09-22.md`: a fixed RANK is a MOVING QUANTILE. With n
+        // reads the k-th most extreme sits ~k/n into the tail, so k=2 is 75% of the way in at n=2 but 5% at
+        // n=30 — measured as a depth drift in two independent places (register 975: human median d5
+        // +19 bp at n=2 → −40 bp at n≥30; register 978: under-capture 28.2%→11.2% while over-extension
+        // 12.7%→25.5%). `RUSTLE_TERMINAL_QUANTILE=q` takes the clamp(round(q·n), 1, n)-th value instead,
+        // which GROWS shallow loci and PULLS IN deep ones. Unset (or 0) is byte-identical to the fixed rank.
+        let term_q: f64 = std::env::var("RUSTLE_TERMINAL_QUANTILE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|v: &f64| *v > 0.0 && *v < 1.0)
+            .unwrap_or(0.0);
+        let adaptive = term_q > 0.0;
+        // the exact order statistic needs every terminal, not the k-most-extreme the fixed rank retains
+        let keep_all = snap.is_some() || adaptive;
+        Pass1Acc {
+            k,
+            term_q,
+            keep_all,
+            snap,
+            groups: std::collections::BTreeMap::new(),
+            allpos: std::collections::BTreeMap::new(),
+            unspliced: Vec::new(),
+            n_pushed: 0,
+        }
+    }
+
+    pub fn push_read(&mut self, r: &PrimaryRead) {
+        self.push(&r.chrom, r.ref_start, r.ref_end, &r.introns, r.reverse);
+    }
+
+    /// One read. An unspliced read is retained whole (empty chain would pool chromosome-wide; it is
+    /// seeded position-aware in `finish`); a spliced read is reduced to its group's counters.
+    pub fn push(&mut self, chrom: &str, ref_start: u64, ref_end: u64, introns: &[(u64, u64)], reverse: bool) {
+        self.n_pushed += 1;
+        if introns.is_empty() {
+            self.unspliced.push(PrimaryRead {
+                chrom: chrom.to_string(),
+                ref_start,
+                ref_end,
+                introns: Vec::new(),
+                reverse,
+            });
+            return;
+        }
+        let k = self.k;
+        let e = self
+            .groups
+            .entry((chrom.to_string(), introns.to_vec()))
+            .or_insert((0, Vec::new(), Vec::new(), 0));
+        e.0 += 1;
+        e.3 += u32::from(reverse);
+        if self.keep_all {
+            let a = self
+                .allpos
+                .entry((chrom.to_string(), introns.to_vec()))
+                .or_insert((Vec::new(), Vec::new()));
+            a.0.push(ref_start);
+            a.1.push(ref_end);
+        }
+        // keep the k smallest starts (ascending)
+        let pos = e.1.partition_point(|&x| x <= ref_start);
+        if pos < k {
+            e.1.insert(pos, ref_start);
+            e.1.truncate(k);
+        }
+        // keep the k largest ends (descending)
+        let pos = e.2.partition_point(|&x| x >= ref_end);
+        if pos < k {
+            e.2.insert(pos, ref_end);
+            e.2.truncate(k);
+        }
+    }
+
+    /// Skeletons: every group with `>= min_reads` reads (or, under `--read-isoform-k`, every junction
+    /// supported `>= isoform_k` times per `jsup`), then the position-aware unspliced seeds.
+    pub fn finish(
+        self,
+        min_reads: u32,
+        isoform_k: u32,
+        jsup: Option<&std::collections::BTreeMap<(String, (u64, u64)), u32>>,
+    ) -> Vec<Skeleton> {
+        let (k, term_q, snap, allpos, unspliced) = (self.k, self.term_q, self.snap, self.allpos, self.unspliced);
+        let adaptive = term_q > 0.0;
+        let mut skels: Vec<Skeleton> = self
+            .groups
+            .into_iter()
+            .filter(|((chrom, introns), (n, _, _, _))| {
+                *n >= min_reads
+                    || (isoform_k > 0
+                        && !introns.is_empty()
+                        && jsup.is_some_and(|js| {
+                            introns.iter().all(|j| js.get(&(chrom.clone(), *j)).copied().unwrap_or(0) >= isoform_k)
+                        }))
+            })
+            .map(|((chrom, introns), (n, starts, ends, n_rev))| {
+                // robust boundary = the k-th supported value (or the outermost available if the group is
+                // smaller). Under RUSTLE_TERMINAL_QUANTILE the rank is recomputed per group from that group's
+                // own depth, using the FULL terminal lists in `allpos` (the `groups` lists are truncated to k).
+                let (starts, ends) = if adaptive {
+                    match allpos.get(&(chrom.clone(), introns.clone())) {
+                        Some((all_s, all_e)) => {
+                            let mut s2 = all_s.clone();
+                            let mut e2 = all_e.clone();
+                            s2.sort_unstable();
+                            e2.sort_unstable_by(|a, b| b.cmp(a));
+                            (s2, e2)
+                        }
+                        None => (starts, ends),
+                    }
+                } else {
+                    (starts, ends)
+                };
+                let kg = if adaptive {
+                    let n_here = starts.len().max(1);
+                    ((term_q * n_here as f64).round() as usize).clamp(1, n_here)
+                } else {
+                    k
+                };
+                let si = kg.min(starts.len()).saturating_sub(1);
+                let ei = kg.min(ends.len()).saturating_sub(1);
+                let (mut start, mut end) = (starts[si], ends[ei]);
+                if let Some((win, frac)) = snap {
+                    if let Some((all_s, all_e)) = allpos.get(&(chrom.clone(), introns.clone())) {
+                        start = snap_boundary(all_s, start, win, frac, true);
+                        end = snap_boundary(all_e, end, win, frac, false);
+                        if end <= start {
+                            // a snap must never invert or empty the skeleton; fall back to the quantile pair
+                            start = starts[si];
+                            end = ends[ei];
+                        }
+                    }
+                }
+                Skeleton {
+                    chrom,
+                    start,
+                    end,
+                    n_reads: n,
+                    introns,
+                    tied_seeded: false,
+                    footprint: false,
+                    read_strand: Some(majority_read_strand(n_rev, n)),
+                    read_rev: n_rev,
+                    read_tot: n,
+                }
+            })
+            .collect();
+        // position-aware seeding of the unspliced reads (the fix): single-linkage span-overlap clustering
+        // per chromosome instead of pooling every unspliced read on a chromosome into one giant group.
+        skels.extend(cluster_unspliced(&unspliced, min_reads, k));
+        skels
+    }
 }
 
 /// Merge skeletons whose intron chains are structurally identical (same intron count) and differ only by
@@ -1334,6 +1408,19 @@ pub fn gtf_secondary_as_ratio() -> f64 {
 /// is always kept. With `ratio <= 0.0` every secondary is kept (the §6n2 behaviour). A secondary with no AS,
 /// or whose molecule has no scored best, is kept — absence of evidence is not evidence of a loser.
 pub fn as_tie_keep(recs: &[(bool, String, Option<i32>)], ratio: f64) -> Vec<bool> {
+    as_tie_keep_with(recs, ratio, None)
+}
+
+/// `as_tie_keep` with an optional GENOME-WIDE best-AS table (§6z7, `docs/PREREG_locus_read_pool_2026-09-22.md`).
+///
+/// r850 found the region-local rule inert: 83.4% of molecules contribute ONE record per region, so their
+/// in-scope "best" is themselves. With a table of each molecule's best AS over the whole BAM, the bar for a
+/// secondary is `max(local best, global best)`, which is the filter the region could not see.
+pub fn as_tie_keep_with(
+    recs: &[(bool, String, Option<i32>)],
+    ratio: f64,
+    global: Option<&std::collections::HashMap<u64, i32>>,
+) -> Vec<bool> {
     if ratio <= 0.0 {
         return vec![true; recs.len()];
     }
@@ -1351,12 +1438,52 @@ pub fn as_tie_keep(recs: &[(bool, String, Option<i32>)], ratio: f64) -> Vec<bool
             if !*is_sec {
                 return true;
             }
-            match (as_score, best.get(name.as_str())) {
-                (Some(a), Some(b)) if *b > 0 => (*a as f64) >= ratio * (*b as f64),
+            let local = best.get(name.as_str()).copied();
+            let g = global.and_then(|t| t.get(&read_name_hash(name)).copied());
+            let b = match (local, g) {
+                (Some(l), Some(g)) => Some(l.max(g)),
+                (l, g) => l.or(g),
+            };
+            match (as_score, b) {
+                (Some(a), Some(b)) if b > 0 => (*a as f64) >= ratio * (b as f64),
                 _ => true,
             }
         })
         .collect()
+}
+
+/// Deterministic 64-bit hash of a read name (SipHash with the fixed default keys), the key of the
+/// genome-wide best-AS table so 21 M names cost ~12 bytes each instead of a `String`.
+pub fn read_name_hash(name: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    name.hash(&mut h);
+    h.finish()
+}
+
+/// Genome-wide best AS per molecule, from `RUSTLE_GTF_SECONDARY_AS_TABLE=<tsv>` (`name<TAB>best_as[...]`,
+/// one row per molecule, built by one scan of the whole BAM). Loaded once per process; `None` when unset or
+/// unreadable (then the region-local rule stands, exactly as before).
+pub fn global_best_as() -> Option<&'static std::collections::HashMap<u64, i32>> {
+    static TABLE: std::sync::OnceLock<Option<std::collections::HashMap<u64, i32>>> = std::sync::OnceLock::new();
+    TABLE
+        .get_or_init(|| {
+            use std::io::BufRead;
+            let path = std::env::var("RUSTLE_GTF_SECONDARY_AS_TABLE").ok().filter(|p| !p.is_empty())?;
+            let f = std::fs::File::open(&path).ok()?;
+            let mut m = std::collections::HashMap::new();
+            for line in std::io::BufReader::with_capacity(1 << 20, f).lines().map_while(Result::ok) {
+                let mut it = line.split('\t');
+                if let (Some(name), Some(best)) = (it.next(), it.next()) {
+                    if let Ok(b) = best.parse::<i32>() {
+                        m.insert(read_name_hash(name), b);
+                    }
+                }
+            }
+            eprintln!("[as-table] {} molecules loaded from {path}", m.len());
+            Some(m)
+        })
+        .as_ref()
 }
 
 pub fn reads_in_region(
@@ -1446,7 +1573,7 @@ fn reads_in_region_indexed(
             )
         })
         .collect();
-    let keep = as_tie_keep(&keys, ratio);
+    let keep = as_tie_keep_with(&keys, ratio, global_best_as());
     for (i, rb) in buf.iter().enumerate() {
         if keep[i] {
             if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {
@@ -1465,6 +1592,84 @@ fn reads_in_region_indexed(
 /// queries (the per-region copy-assignment loop, thousands of regions at genome scale) does not re-parse the
 /// multi-MB index for every region. Re-opening the file handle per query is ~free; parsing the index is not.
 /// `reads_in_region` returns exactly what the free function [`reads_in_region`]'s indexed path returns.
+/// §6zb STREAMING PASS-1 over one region (`docs/PREREG_streaming_assembly_2026-09-23.md`): the indexed
+/// query through the multithreaded BGZF reader on LAZY records — flags, alignment start and the CIGAR ops
+/// only, the ops handed to the very same `exons_from_cigar` the materialised path uses — each record reduced
+/// into `acc` on arrival. No `RecordBuf` (its sequence/quality decode was ~18 s of chr21's 42 s read), no
+/// `BamRead`, no names, no tags, nothing retained per read. Returns the mapped non-supplementary record
+/// count (the old `n_mapped` log figure).
+///
+/// `dedupe_coords` reproduces the driver's historical `(chrom, start, end, chain)` key (default; see
+/// `--keep-coordinate-duplicates`), as a 64-bit hash set of that key; `fetched` are the windows already
+/// read for this region (a record overlapping one was fetched there — the window rule).
+#[allow(clippy::too_many_arguments)]
+pub fn stream_pass1_region(
+    bam_path: &str,
+    chrom: &str,
+    lo: u64,
+    hi: u64,
+    allow_secondary: bool,
+    dedupe_coords: bool,
+    fetched: &[(String, u64, u64)],
+    acc: &mut Pass1Acc,
+) -> Result<usize> {
+    use std::hash::{Hash, Hasher};
+    let bai_path = format!("{bam_path}.bai");
+    anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
+    let bam_threads = std::env::var("RUSTLE_BAM_THREADS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get().min(4)).unwrap_or(1))
+        .max(1);
+    let file = std::fs::File::open(bam_path)?;
+    let buf = std::io::BufReader::with_capacity(1 << 20, file);
+    let worker = std::num::NonZeroUsize::new(bam_threads).unwrap_or(std::num::NonZeroUsize::MIN);
+    let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(worker, buf);
+    let mut reader = noodles_bam::io::Reader::from(bgzf);
+    let header = reader.read_header()?;
+    let index = noodles_bam::bai::read(&bai_path)?;
+    let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
+    let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut n_mapped = 0usize;
+    let mut ops: Vec<noodles_sam::alignment::record::cigar::Op> = Vec::with_capacity(256);
+    for result in reader.query(&header, &index, &region)? {
+        let record = result?;
+        let flags = record.flags();
+        if flags.is_unmapped() || flags.is_supplementary() {
+            continue;
+        }
+        let Some(start) = record.alignment_start() else { continue };
+        let ref_start = (usize::from(start?) as u64).saturating_sub(1);
+        ops.clear();
+        for op in record.cigar().iter() {
+            ops.push(op?);
+        }
+        let cigar = noodles_sam::alignment::record_buf::Cigar::from(ops.clone());
+        let Ok(exons) = crate::bam::exons_from_cigar(ref_start, &cigar) else { continue };
+        if exons.is_empty() {
+            continue;
+        }
+        n_mapped += 1; // every record `aligned_read_from_record` would have kept
+        if flags.is_secondary() && !allow_secondary {
+            continue;
+        }
+        let ref_end = exons.last().map(|e| e.1).unwrap_or(ref_start);
+        let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+        if fetched.iter().any(|(c, l, h)| c == chrom && ref_start < *h && ref_end > *l) {
+            continue;
+        }
+        if dedupe_coords {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (chrom, ref_start, ref_end, &introns).hash(&mut h);
+            if !seen.insert(h.finish()) {
+                continue;
+            }
+        }
+        acc.push(chrom, ref_start, ref_end, &introns, flags.is_reverse_complemented());
+    }
+    Ok(n_mapped)
+}
+
 pub struct BamIndexCache {
     header: noodles_sam::Header,
     index: noodles_bam::bai::Index,
@@ -1496,14 +1701,42 @@ impl BamIndexCache {
         let query = reader.query(&self.header, &self.index, &region)?;
         let mut primary = Vec::new();
         let mut bam_reads = Vec::new();
+        let ratio = gtf_secondary_as_ratio();
+        if ratio <= 0.0 {
+            for result in query {
+                let record = result?;
+                let rb = RecordBuf::try_from_alignment_record(&self.header, &record)?;
+                if let Some(pr) = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()) {
+                    primary.push(pr);
+                }
+                if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
+                    let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(&rb));
+                    bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
+                }
+            }
+            return Ok((primary, bam_reads));
+        }
+        // §6z7: this cached path is the one `copy_assign` actually takes (the index cache opens whenever a
+        // `.bai` exists), and until now it applied NO AS-tie filter, so `RUSTLE_GTF_SECONDARY_AS_RATIO`
+        // never reached the assembler through it. Same buffered filter as `reads_in_region_indexed`.
+        let mut buf: Vec<RecordBuf> = Vec::new();
         for result in query {
             let record = result?;
-            let rb = RecordBuf::try_from_alignment_record(&self.header, &record)?;
-            if let Some(pr) = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()) {
-                primary.push(pr);
+            buf.push(RecordBuf::try_from_alignment_record(&self.header, &record)?);
+        }
+        let keys: Vec<(bool, String, Option<i32>)> = buf
+            .iter()
+            .map(|rb| (rb.flags().is_secondary(), rb.name().map(|n| n.to_string()).unwrap_or_default(), record_as(rb)))
+            .collect();
+        let keep = as_tie_keep_with(&keys, ratio, global_best_as());
+        for (i, rb) in buf.iter().enumerate() {
+            if keep[i] {
+                if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {
+                    primary.push(pr);
+                }
             }
-            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
-                let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(&rb));
+            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(rb) {
+                let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(rb));
                 bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
             }
         }

@@ -116,3 +116,15 @@ memory never exceeded ~5 GB used and batches landed in **150-180 s each**.
 /mnt/linuxdisk/tmp/gw22/flair_fast.sh CHR ...  # per contig; genome-wide needs a cluster
 gffcompare -r ref_genome.gtf -o cmp_ours ours_genome.gtf
 ```
+
+## Addendum (§6z5/§6z6, later the same day) — the lab's own tool runs, both species
+
+The lab's genome-wide StringTie 3.0.1 / FLAIR 3.0.1 / isoseq collapse outputs (`../benchmark_collapse/`,
+`../isoseq_upload/`, same BAMs) were scored against the annotation with the pre-registered 15-cell rule in
+`docs/PREREG_external_tool_bakeoff_2026-09-22.md`: **gorilla 10/15, human chr20/21/22 12/15**; the human
+whole-genome FLAIR/isoseq rows are scored on the cluster (`benchmark_collapse/score_vs_annotation.sh`, our
+GTFs shipped there). Ours vs the lab's StringTie 3.0.1 genome-wide: 22.2/16.8 vs 18.1/15.0 intron chain,
+38,859 vs 31,792 matching chains. What the tools match and we do not is single-read isoforms (register
+1057), plus one real defect — `copy_assign`'s coordinate de-duplication of primary reads (register 1058,
+`docs/PREREG_primary_dedupe_2026-09-22.md`), fixed behind `--keep-coordinate-duplicates` and NOT made the
+default because the shipped polish was fitted on the de-duplicated counts.

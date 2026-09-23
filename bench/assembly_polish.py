@@ -34,6 +34,8 @@ ap.add_argument("--fraction-exempt", action="store_true",
 ap.add_argument("--isoform-fraction", type=float, default=0.0,
                 help="drop a transcript below this fraction of the best-supported transcript at the same gene_id "
                      "(StringTie's -f); the locus dominant is never dropped. 0 = off, 0.02 = the validated setting")
+ap.add_argument("--retained-ratio", type=float, default=0.0,
+                help="§6za retained-intron filter (copy_assign --polish-retained-ratio): drop a transcript when another transcript's junction lies inside one of its exons with support >= ratio x its reads; 0 = off")
 a = ap.parse_args()
 
 rows = collections.defaultdict(list); reads = {}; gene = {}
@@ -51,11 +53,11 @@ for l in open(a.inp):
     g = re.search(r'gene_id "([^"]+)"', f[8])
     if g: gene.setdefault(t, g.group(1))
 
-chain = {}; span = {}
+chain = {}; span = {}; exons = {}
 for t, ex in rows.items():
     ex.sort(key=lambda x: x[2])
     chain[t] = (ex[0][0], ex[0][1], tuple((ex[i][3], ex[i + 1][2]) for i in range(len(ex) - 1)))
-    span[t] = (ex[0][2], ex[-1][3])
+    span[t] = (ex[0][2], ex[-1][3]); exons[t] = [(e[2], e[3]) for e in ex]
 
 drop = set()
 
@@ -108,6 +110,26 @@ if a.isoform_fraction > 0:
         if b and r < b and r < a.isoform_fraction * b:
             drop.add(t); n_frac += 1
 
+# §6za retained-intron filter (mirrors copy_assign's `--polish-retained-ratio`): drop T when a junction of another
+# transcript at its locus (same gene_id, same strand) lies strictly inside one of T's exons and that junction's
+# support over the survivors is >= ratio x T's reads. One pass; support fixed before any drop.
+n_ret = 0
+if getattr(a, 'retained_ratio', 0) and a.retained_ratio > 0:
+    support = collections.defaultdict(int); gj = collections.defaultdict(set)
+    for t, (ch, st, c) in chain.items():
+        if t in drop: continue
+        for j in c: support[(ch, st, j)] += reads.get(t, 0)
+        if t in gene: gj[(gene[t], st)].update(c)
+    newly = set()
+    for t in sorted(chain):
+        if t in drop or t not in gene: continue
+        ch, st, c = chain[t]; own = set(c); rt = reads.get(t, 0)
+        for j in gj.get((gene[t], st), ()):
+            if j in own: continue
+            if any(x0 < j[0] and j[1] < x1 for x0, x1 in exons[t]) and support[(ch, st, j)] >= a.retained_ratio * rt:
+                newly.add(t); break
+    n_ret = len(newly); drop |= newly
+
 with open(a.out, "w") as fo:
     for l in open(a.inp):
         if l.startswith('#'): fo.write(l); continue
@@ -118,4 +140,4 @@ with open(a.out, "w") as fo:
         fo.write(l)
 print(f"{len(rows)} transcripts -> ISM {n_ism} dropped (ratio {a.support_ratio}) "
       f"-> mono floor {floor} dropped {len(drop) - n_ism - n_frac} "
-      f"-> isoform fraction {a.isoform_fraction} dropped {n_frac} -> {len(rows) - len(drop)} kept", file=sys.stderr)
+      f"-> isoform fraction {a.isoform_fraction} dropped {n_frac} -> retained-intron dropped {n_ret} -> {len(rows) - len(drop)} kept", file=sys.stderr)

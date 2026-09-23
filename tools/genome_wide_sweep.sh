@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ⚠ 2026-09-23 (§6zb): for `--assemble-only` this script is SUPERSEDED by `copy_assign --genome-wide` — one
+# process, streaming pass-1, per-contig polish, ~2 GB peak for the whole human genome and byte-identical
+# to this sweep's concatenated output apart from the O2-only `matched_reads` attribute. Kept for the
+# non-streaming configurations (`--read-isoform-k`, `RUSTLE_FOOTPRINT_NODES`, `--materialize-reads`).
+#
 # Genome-wide `--assemble-only` sweep, one process per contig, with bounded concurrency.
 #
 # WHY PROCESSES AND NOT `--region-threads` (§6r8, register 880/881):
@@ -32,7 +37,8 @@ done
 
 BIN=${COPY_ASSIGN:-target/release/copy_assign}
 [ -x "$BIN" ] || BIN=$(command -v copy_assign) || { echo "copy_assign not found; set \$COPY_ASSIGN" >&2; exit 127; }
-POLISH=${POLISH:-"--assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7"}
+# 2026-09-23 (§6za): strict junctions + retained-intron ratio 10 are the binary defaults under --assemble-only; listed here explicitly.
+POLISH=${POLISH:-"--assembly-junctions strict --assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7 --polish-retained-ratio 10"}
 
 mkdir -p "$OUT"
 # contigs with at least one alignment, longest first so the stragglers start early

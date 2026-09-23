@@ -67,11 +67,26 @@ attribute — no reference, no annotation, so they are legal de novo.
 target/release/copy_assign --assemble-only \
   --bam chr20.bam --fasta chr20.fa --region chr20:1-66210255 --out raw
 
-# the shipped polish
-target/release/copy_assign --assemble-only \
+# the shipped polish (2026-09-23 defaults: strict canonical junctions for the transcript product and the
+# retained-intron filter at ratio 10 are ON by default under --assemble-only; both flags are shown explicitly)
+target/release/copy_assign --assemble-only --assembly-junctions strict \
+  --assembly-polish full --polish-isoform-fraction 0.02 \
+  --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7 --polish-retained-ratio 10 \
+  --bam chr20.bam --fasta chr20.fa --region chr20:1-66210255 --out polished
+
+# ⭐ 2026-09-23 (§6zb): genome-wide in ONE process — the assemble-only path streams the BAM (no reads held,
+# O(distinct chains) memory per contig) and polishes per contig, so no batch script is needed:
+#   whole human A119b genome ≈ 2 GB peak; gorilla ≈ 1 GB. `--materialize-reads` restores the old path.
+target/release/copy_assign --assemble-only --genome-wide \
+  --assembly-polish full --polish-isoform-fraction 0.02 \
+  --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7 --polish-retained-ratio 10 \
+  --bam A119b.t2t.bam --fasta chm13v2.0.fa --out genome
+
+# the 2026-09-22 output, byte-for-byte (majority-tolerated junctions, no retained-intron filter)
+target/release/copy_assign --assemble-only --assembly-junctions majority --polish-retained-ratio 0 \
   --assembly-polish full --polish-isoform-fraction 0.02 \
   --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7 \
-  --bam chr20.bam --fasta chr20.fa --region chr20:1-66210255 --out polished
+  --bam chr20.bam --fasta chr20.fa --region chr20:1-66210255 --out polished_0922
 
 # high-recall levers (use on deep libraries; see the caveat below). Without the polish flags this is
 # the raw high-recall arm; add them back for the polished one -- the two give very different counts.
@@ -109,8 +124,9 @@ gffcompare -r chr20_ref.gtf -o cmp polished.gtf && cat cmp.stats
 **`human_testis.t2t.bam`, chr20** (188,864 records) — `polished` should give **658 mRNAs, 336 matching
 intron chains, intron-chain 7.8/51.6, transcript 7.4/51.2**.
 
-**`A119b.t2t.bam`, chr20** (1,104,846 records) — `polished` gives **5,844 mRNAs, 1,064 chains,
-24.8/19.9, 23.3/18.2**. `recall_raw` gives **20,699 mRNAs and 1,259 chains at 29.4/8.2** — past isoseq's
+**`A119b.t2t.bam`, chr20** (1,104,846 records) — `polished` (2026-09-23 defaults) gives **5,522 mRNAs,
+1,059 chains, 24.7/21.0, 23.2/19.2**; `polished_0922` gives 5,844 mRNAs, 1,064 chains, 24.8/19.9, 23.3/18.2
+(`docs/PREREG_assembly_precision_levers_2026-09-23.md`: held-out gorilla precision 33.1 → 35.6 for −0.46% chains). `recall_raw` gives **20,699 mRNAs and 1,259 chains at 29.4/8.2** — past isoseq's
 1,253 — while `recall_polished` gives 7,437 mRNAs and 1,101 chains at 25.7/16.4. Against the lab's arms
 on the same BAM: StringTie 861 chains at 20.1/16.8, FLAIR 1,026 at 23.9/7.6, isoseq collapse 1,253 at
 29.2/**3.0** from 64,384 transcripts.

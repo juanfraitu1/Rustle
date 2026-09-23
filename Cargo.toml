@@ -150,3 +150,6 @@ path = "src/bin/family_score.rs"
 [[bin]]
 name = "mcl_port"
 path = "src/bin/mcl_port.rs"
+[[bin]]
+name = "bam_null_probe"
+path = "src/bin/bam_null_probe.rs"

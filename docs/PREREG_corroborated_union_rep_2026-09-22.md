@@ -53,3 +53,44 @@ U's loss without clearing the baseline. ⚠If C2 does clear B, the natural follo
 additive, so that is a separate arm, not a claim.
 
 I will not change the arms, the substrates, the metrics or the bar after seeing any number.
+
+## Prediction refined BEFORE scoring (2026-09-22 19:3x, chain arm B still running; no arm scored)
+
+Two measurements taken while the arms run change my prediction from ⚠ PARTIAL to **⛔ NO**, and I am writing
+that down before any number arrives:
+
+1. **r1051** — rep incompleteness does predict eviction (AUC 0.605, survives depth residualisation), so the
+   union targets the right *population*…
+2. **…but the wrong *sequence*.** For evicted loci, the corroborated exons the rep dropped lie under the
+   partner's best alignment in only **48%** of cases (median **0.00**, ≥0.5 in 10%); for admitted loci
+   87% / median 0.19. The bases a union would add are mostly NOT homologous to the partner, so they
+   enlarge the coverage denominator without adding aligned bases — register 303's mechanism, exon by exon.
+   Corroboration (≥2 transcripts) does not select for homology, so C2/C3 should fail the same way as U,
+   only less.
+3. **Structural, at the DNA level**: `mcl_families` nodes are genomic spans and the rep's exon model enters
+   only as `cov_longer`'s exonic DENOMINATOR. Completing a rep can therefore only *raise* that denominator;
+   it cannot add aligned bases. Any recovery would have to come from the RNA-level E_r path inside
+   `gw_family_catalog`, where the spliced rep itself is aligned — and point 2 says that adds mostly
+   unaligned sequence.
+
+**Refined prediction: ⛔ — U loses copies/families vs B; C2 and C3 lose less but do not beat B.** If C2
+beats B, point 2 is wrong about which exons corroboration selects, and that would be the interesting result.
+
+---
+
+# OUTCOME (2026-09-22, partial) — chain STOPPED by the user after arms B and U; C2 running was killed
+
+`gw_family_catalog` on chr20 (`/mnt/linuxdisk/tmp/ppar/chr20.bam`), scored against the chr20 protein referee
+(42 families / 152 genes) with `family_score`; Soto has no scoreable chr20 family.
+
+| arm | families | copies | mean copy span | sens | prec | F | collapsed |
+|---|---|---|---|---|---|---|---|
+| **B** shipped single-chain rep | **127** | **800** | 5.0 kb | **0.158** | **0.667** | **0.255** | **0** |
+| U union rep (`RUSTLE_LOCUS_EXON_UNION=1`) | 84 | 579 | 18.5 kb | 0.132 | 0.488 | 0.207 | 5 |
+
+⛔ **U loses on every axis, as the refined prediction said** (−43 families, −221 copies, F −0.048, and 5
+collapses where B has 0): the union rep is 3.7× longer and the extra length is denominator, not aligned
+bases (r1052). C2/C3 (corroborated union, ≥2/≥3 transcripts per exon) were **not completed** — the user
+stopped the chain to move to the assembler comparison. The verdict rests on B vs U here plus r1052/r1053
+offline; the corroborated arms remain unmeasured on this driver and the prereg's prediction for them
+("lose less, do not beat B") is unverified.

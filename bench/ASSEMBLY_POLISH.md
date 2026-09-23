@@ -341,3 +341,12 @@ chr5-favouring setting still exceeds our own precision on four of the six chromo
 **Both endpoints ship.** Add `--polish-ism-escape` to favour chr5-like (deeply covered) substrates;
 leave it off to favour chr11-like ones. Neither dominates, and the choice is a substrate property, not a
 tuning accident.
+
+## 2026-09-23 addendum — two precision levers became the `--assemble-only` defaults (§6za, register 1074-1076)
+
+`--assembly-junctions strict` (the transcript product no longer inherits the §6m8 family-recovery tolerance
+for non-canonical junctions) and `--polish-retained-ratio 10` (drop a chain whose exon contains another
+transcript's junction carrying ≥ 10× its reads — the aligner's short-exon read-through, r1070). Held-out
+gorilla, 26 contigs: intron-chain precision 33.1 → 35.6 for −0.46% matching chains; human chr20-22 16.0 →
+18.7 for −1.6%. Pre-registration and tables: `docs/PREREG_assembly_precision_levers_2026-09-23.md`. The
+2026-09-22 output is `--assembly-junctions majority --polish-retained-ratio 0`, byte-for-byte.

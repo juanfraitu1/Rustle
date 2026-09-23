@@ -149,6 +149,17 @@ struct Args {
     /// genome-wide sweep. Regions are grouped by contig so each contig is loaded ONCE.
     #[arg(long)]
     regions: Option<String>,
+    /// §6zb: sweep EVERY contig with mapped reads (from the BAM index), each as one region, in one process —
+    /// meant for `--assemble-only`, whose streaming pass-1 keeps memory at O(distinct chains) per contig, so
+    /// no batching script is needed. Mutually exclusive with `--region`/`--regions`.
+    #[arg(long, default_value_t = false)]
+    genome_wide: bool,
+    /// §6zb: force the historical read-materialising path under `--assemble-only` (every record kept as
+    /// `PrimaryRead` + `BamRead`, the O2 AS-tied gate run). Same transcripts; the only output difference is
+    /// the O2-only `matched_reads` attribute (tied reads per transcript), which the streaming path reports as
+    /// 0 because it never evaluates ties. Costs ~2.4 GB per million records and ~4× the wall time.
+    #[arg(long, default_value_t = false)]
+    materialize_reads: bool,
     /// Output prefix; writes `<out>.families.tsv` and `<out>.assignments.tsv`.
     #[arg(long)]
     out: String,
@@ -177,6 +188,18 @@ struct Args {
     /// `RUSTLE_GATE_CENSUS`.
     #[arg(long, default_value_t = false)]
     assemble_only: bool,
+
+    /// ⭐ §6za JUNCTION MODE for the `--assemble-only` transcript product
+    /// (`docs/PREREG_assembly_precision_levers_2026-09-23.md`): `strict` = every junction of a transcript
+    /// must be canonical (GT-AG / GC-AG / AT-AC) on one strand; `majority` = the §6m8 family-recovery rule
+    /// that tolerates a minority of short non-canonical junctions when a canonical majority fixes the
+    /// strand. The majority rule was adopted for FAMILY recovery (NPIPB12); measured on the transcript
+    /// product it admits chains that are annotation-exact at 1.2% (human chr20-22, 9.7% of the output)
+    /// and 0.0% (gorilla NC_073244.2), against 16-37% for the rest (register 1069). Default `strict`
+    /// under `--assemble-only`; ignored otherwise (the family paths keep `RUSTLE_JUNCTION_MAJORITY`'s
+    /// default). An explicit `RUSTLE_JUNCTION_MAJORITY` in the environment always wins.
+    #[arg(long, default_value = "strict")]
+    assembly_junctions: String,
 
     /// ⭐ ASSEMBLY POLISH (§6p8). Post-assembly precision filters over the emitted GTF, using only the
     /// `reads "N"` attribute — no reference and no annotation, so this is legal in de novo mode.
@@ -254,6 +277,19 @@ struct Args {
     /// (≈12 reads on a deep library) and which therefore recovers nothing here. 0 = off.
     #[arg(long, default_value_t = 0)]
     polish_fraction_min_reads: u64,
+
+    /// ⭐ §6za RETAINED-INTRON FILTER for `--assembly-polish` (`docs/PREREG_assembly_precision_levers_2026-09-23.md`).
+    /// Drop a transcript when a junction of ANOTHER transcript at its locus (same `gene_id`, same strand)
+    /// lies strictly inside one of its exons and that junction's support — the reads of every surviving
+    /// transcript at the locus that carries it — is at least this many times the transcript's own reads.
+    /// The simulation of r1070 showed the aligner reading through a short exon consistently across the
+    /// reads of one molecule, which yields exactly such a chain at ≥ 2 reads; genuine retained-intron
+    /// isoforms carry a substantial share of their locus and survive at a high ratio. Reads-only, so legal
+    /// de novo. Held-out gorilla at 10: intron-chain precision 33.1 → 34.3, matching chains −0.42%, the
+    /// dropped set 3.4% annotation-exact against 34.2% for the kept set. **Default 10 (2026-09-23,
+    /// user's call)**; 0 = off (the pre-2026-09-23 output).
+    #[arg(long, default_value_t = 10.0)]
+    polish_retained_ratio: f64,
 
     /// ⭐ §6q4 FRACTION EXEMPTION for `--assembly-polish`. Exempt a transcript from
     /// `--polish-isoform-fraction` when its OWN read support reaches the run's `--polish-mono-quantile`
@@ -907,6 +943,18 @@ struct Args {
     /// Diagnostic: use to isolate the effect of junction-incidence pooling.
     #[arg(long, default_value_t = false)]
     no_pool_locus_support: bool,
+
+    /// §6z6 (`docs/PREREG_primary_dedupe_2026-09-22.md`): keep PRIMARY reads that share
+    /// (chrom, start, end, intron chain) with another read of the region instead of collapsing them to one.
+    /// The historical key (default) was written to drop a record fetched twice from two overlapping copy
+    /// windows, but it also collapses DISTINCT molecules with identical coordinates — 25-32% of primary
+    /// records on A119b, ~23% of its 2-read chains pushed below pass-1's floor. With this flag a record is
+    /// dropped only if it overlaps a window already fetched for the region (a true double-fetch).
+    /// ⛔ Not the default: the shipped polish was fitted on de-duplicated counts and loses more matching
+    /// chains than the raw assembly gains (human dev −147, gorilla held-out −1,096 at +3.2 pts precision).
+    /// Byte-identical when unset.
+    #[arg(long, default_value_t = false)]
+    keep_coordinate_duplicates: bool,
 
     /// Seed candidate loci from AS-tied secondary reads that share an intron chain, even with no primary
     /// (recovers covered-but-tied K=0 copies as detected-but-unassignable). Implies fetching tied secondaries.
@@ -2218,10 +2266,11 @@ fn polish_gtf_lines(
     fuzzy: i64,
     fuzzy_ism: bool,
     fraction_min_reads: u64,
-) -> (usize, usize, usize, u64) {
+    retained_ratio: f64,
+) -> (usize, usize, usize, u64, usize) {
     use std::collections::{HashMap, HashSet};
     if mode == "none" {
-        return (0, 0, 0, 0);
+        return (0, 0, 0, 0, 0);
     }
     // exons per transcript, in genomic order, plus the transcript's read support
     let mut exons: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
@@ -2336,12 +2385,29 @@ fn polish_gtf_lines(
             // HashMap's iteration order.
             let mut multi: Vec<&String> = tids.iter().filter(|t| !chain[*t].is_empty()).collect();
             multi.sort_by(|a, b| chain[*b].len().cmp(&chain[*a].len()).then_with(|| a.cmp(b)));
+            // §6zb: the container scan is O(m²) over every multi-exon transcript of the contig+strand (chr1:
+            // ~30k ⇒ ~10⁹ pair tests, 240 s of a 306 s run). A contiguous sub-chain's FIRST junction is one of
+            // the container's junctions, so indexing candidates by first junction visits exactly the pairs
+            // the full scan would drop, in the same `multi` order — byte-identical at tolerance 0. A fuzzy ISM
+            // (tolerance > 0) cannot use exact-junction buckets and keeps the full scan.
+            let exact_index = !(fuzzy_ism && fuzzy > 0);
+            let mut by_first: HashMap<(i64, i64), Vec<&String>> = HashMap::new();
+            if exact_index {
+                for y in multi.iter() {
+                    by_first.entry(chain[*y][0]).or_default().push(y);
+                }
+            }
             for x in multi.iter() {
                 if drop.contains(*x) {
                     continue;
                 }
                 let cx = &chain[*x];
-                for y in multi.iter() {
+                let candidates: Vec<&String> = if exact_index {
+                    cx.iter().flat_map(|j| by_first.get(j).into_iter().flatten().copied()).collect()
+                } else {
+                    multi.clone()
+                };
+                for y in candidates.iter() {
                     if x == y || drop.contains(*y) {
                         continue;
                     }
@@ -2371,15 +2437,43 @@ fn polish_gtf_lines(
                     }
                 }
             }
+            // §6zb: the mono-exonic host search was a linear scan of `multi` per single-exon transcript (O(mono ×
+            // multi), the other half of chr1's 240 s). Host = the FIRST surviving multi in `multi` order whose span
+            // contains the mono's span. Offline: monos by end descending, multis inserted by end descending into
+            // a prefix-min Fenwick over their (sorted) starts holding their `multi` rank; the query is the min
+            // rank among starts ≤ mono.start. Same host as the scan, so byte-identical.
+            let alive: Vec<(usize, (i64, i64))> =
+                multi.iter().enumerate().filter(|(_, m)| !drop.contains(**m)).map(|(r, m)| (r, span[*m])).collect();
+            let mut starts: Vec<i64> = alive.iter().map(|(_, s)| s.0).collect();
+            starts.sort_unstable();
+            starts.dedup();
+            let nfen = starts.len();
+            let mut fen: Vec<usize> = vec![usize::MAX; nfen + 1];
+            let mut by_end: Vec<(i64, usize, i64)> = alive.iter().map(|(r, s)| (s.1, *r, s.0)).collect();
+            by_end.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
             let mut tids: Vec<&String> = tids.iter().collect();
             tids.sort();
-            for t in tids {
-                if !chain[t].is_empty() || drop.contains(t) {
-                    continue;
+            let mut monos: Vec<(&String, (i64, i64))> =
+                tids.iter().filter(|t| chain[**t].is_empty() && !drop.contains(**t)).map(|t| (*t, span[*t])).collect();
+            monos.sort_by(|a, b| b.1 .1.cmp(&a.1 .1).then_with(|| a.0.cmp(b.0)));
+            let mut p = 0usize;
+            for (t, s) in monos {
+                while p < by_end.len() && by_end[p].0 >= s.1 {
+                    let mut i = starts.partition_point(|&x| x < by_end[p].2) + 1;
+                    while i <= nfen {
+                        fen[i] = fen[i].min(by_end[p].1);
+                        i += i & i.wrapping_neg();
+                    }
+                    p += 1;
                 }
-                let s = span[t];
-                let host = multi.iter().find(|m| !drop.contains(**m) && span[**m].0 <= s.0 && s.1 <= span[**m].1);
-                if let Some(h) = host {
+                let mut i = starts.partition_point(|&x| x <= s.0);
+                let mut best = usize::MAX;
+                while i > 0 {
+                    best = best.min(fen[i]);
+                    i -= i & i.wrapping_neg();
+                }
+                if best != usize::MAX {
+                    let h = multi[best];
                     if !supported(t, h) {
                         drop.insert(t.clone());
                     }
@@ -2498,6 +2592,52 @@ fn polish_gtf_lines(
     }
     let n_frac = drop.len() - n_ism - n_mono - n_fuzzy;
 
+    // §6za retained-intron filter, over the survivors of every step above, in one pass (support and the
+    // candidate junction sets are fixed before any drop, so the result does not depend on order).
+    let mut n_ret = 0usize;
+    if retained_ratio > 0.0 {
+        let mut support: HashMap<(&str, &str, (i64, i64)), u64> = HashMap::new();
+        let mut gj: HashMap<(&str, &str), Vec<(i64, i64)>> = HashMap::new();
+        for (t, c) in chain.iter() {
+            if drop.contains(t) {
+                continue;
+            }
+            let Some(k) = key.get(t) else { continue };
+            let r = reads.get(t).copied().unwrap_or(0);
+            for &j in c.iter() {
+                *support.entry((k.0.as_str(), k.1.as_str(), j)).or_insert(0) += r;
+            }
+            if let Some(g) = gene.get(t) {
+                gj.entry((g.as_str(), k.1.as_str())).or_default().extend(c.iter().copied());
+            }
+        }
+        for v in gj.values_mut() {
+            v.sort_unstable();
+            v.dedup();
+        }
+        let mut cands: Vec<&String> = chain.keys().filter(|t| !drop.contains(*t)).collect();
+        cands.sort();
+        let mut newly: HashSet<String> = HashSet::new();
+        for t in cands {
+            let (Some(g), Some(k), Some(ex)) = (gene.get(t), key.get(t), exons.get(t)) else { continue };
+            let Some(js) = gj.get(&(g.as_str(), k.1.as_str())) else { continue };
+            let own: HashSet<(i64, i64)> = chain[t].iter().copied().collect();
+            let rt = reads.get(t).copied().unwrap_or(0);
+            for &j in js.iter() {
+                if own.contains(&j) {
+                    continue;
+                }
+                let inside = ex.iter().any(|&(a, b)| a < j.0 && j.1 < b);
+                if inside && (support.get(&(k.0.as_str(), k.1.as_str(), j)).copied().unwrap_or(0) as f64) >= retained_ratio * rt as f64 {
+                    newly.insert(t.clone());
+                    break;
+                }
+            }
+        }
+        n_ret = newly.len();
+        drop.extend(newly);
+    }
+
     if !drop.is_empty() {
         lines.retain(|line| {
             let f: Vec<&str> = line.split('\t').collect();
@@ -2510,7 +2650,7 @@ fn polish_gtf_lines(
             }
         });
     }
-    (n_ism + n_fuzzy, n_mono, n_frac, floor)
+    (n_ism + n_fuzzy, n_mono, n_frac, floor, n_ret)
 }
 
 
@@ -2575,6 +2715,22 @@ fn main() -> Result<()> {
              SKIPPED; running loci + isoform assembly only. `<out>.families.tsv`/`.assignments.tsv` will be \
              empty by construction."
         );
+        // §6za: the transcript product uses strict canonical junctions by default; the family paths are
+        // untouched because this runs only under --assemble-only, and an explicit env value wins.
+        match args.assembly_junctions.as_str() {
+            "strict" => {
+                if std::env::var_os("RUSTLE_JUNCTION_MAJORITY").is_none() {
+                    std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "0");
+                }
+            }
+            "majority" => {}
+            other => anyhow::bail!("--assembly-junctions must be `strict` or `majority`, got `{other}`"),
+        }
+        eprintln!(
+            "[copy_assign] ASSEMBLE-ONLY junctions: {} (RUSTLE_JUNCTION_MAJORITY={})",
+            args.assembly_junctions,
+            std::env::var("RUSTLE_JUNCTION_MAJORITY").unwrap_or_else(|_| "unset (majority)".into())
+        );
     }
     // §6eu: the pipeline reads RUSTLE_PSV_READFILTER; an explicit env value wins, else the flag decides.
     if std::env::var_os("RUSTLE_PSV_READFILTER").is_none() {
@@ -2602,15 +2758,31 @@ fn main() -> Result<()> {
     let do_linearize = args.linearize || args.linearize_gate;
 
     // collect the regions, then group by contig so each contig loads ONCE (memory-bounded sweep).
-    let regions: Vec<(String, u64, u64)> = match (&args.region, &args.regions) {
-        (Some(r), None) => vec![parse_region(r)?],
-        (None, Some(f)) => std::fs::read_to_string(f)
+    let regions: Vec<(String, u64, u64)> = match (&args.region, &args.regions, args.genome_wide) {
+        (Some(r), None, false) => vec![parse_region(r)?],
+        (None, Some(f), false) => std::fs::read_to_string(f)
             .with_context(|| format!("reading {f}"))?
             .lines()
             .filter(|l| !l.trim().is_empty())
             .map(parse_region)
             .collect::<Result<_>>()?,
-        _ => anyhow::bail!("provide exactly one of --region or --regions"),
+        (None, None, true) => {
+            // §6zb: every reference sequence with >= 1 mapped record in the .bai, in header order
+            use noodles_csi::binning_index::ReferenceSequence as _;
+            let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(&args.bam)?;
+            let header = reader.read_header()?;
+            let index = noodles_bam::bai::read(format!("{}.bai", args.bam)).context("--genome-wide needs a .bai")?;
+            let mut v = Vec::new();
+            for (i, (name, rs)) in header.reference_sequences().iter().enumerate() {
+                let mapped = index.reference_sequences().get(i).and_then(|r| r.metadata()).map(|m| m.mapped_record_count()).unwrap_or(0);
+                if mapped > 0 {
+                    v.push((String::from_utf8_lossy(name).to_string(), 0, usize::from(rs.length()) as u64));
+                }
+            }
+            eprintln!("[copy_assign] --genome-wide: {} contig(s) with mapped reads", v.len());
+            v
+        }
+        _ => anyhow::bail!("provide exactly one of --region, --regions or --genome-wide"),
     };
     let mut by_contig: std::collections::BTreeMap<String, Vec<(u64, u64)>> = std::collections::BTreeMap::new();
     for (c, lo, hi) in regions {
@@ -2944,10 +3116,54 @@ fn main() -> Result<()> {
         let win_contigs: std::collections::BTreeSet<String> = wins.iter().map(|(c, _, _)| c.clone()).collect();
         let genome = genome_for_multi(&win_contigs)?;
         let t_read = std::time::Instant::now();
-        let (primary, mut bam_reads) = {
+        // §6zb streaming pass-1 (`docs/PREREG_streaming_assembly_2026-09-23.md`): under --assemble-only with
+        // no read-level extras, reduce every record on arrival and never materialise the reads. Every other
+        // configuration takes the historical path below unchanged.
+        let streaming = args.assemble_only
+            && !args.materialize_reads
+            && args.read_isoform_k == 0
+            && !rustle::vg_family::denovo_assemble::footprint_nodes_enabled()
+            && !(args.recover_copies || args.tied_seed)
+            && rustle::vg_family::denovo_assemble::gtf_secondary_as_ratio() <= 0.0;
+        let mut streamed: Option<Vec<rustle::vg_family::denovo_assemble::Skeleton>> = None;
+        let mut n_mapped_streamed = 0usize;
+        if streaming {
+            let mut acc = rustle::vg_family::denovo_assemble::Pass1Acc::new(1, None);
+            let mut fetched: Vec<(String, u64, u64)> = Vec::new();
+            for (wchrom, wlo, whi) in &wins {
+                n_mapped_streamed += rustle::vg_family::denovo_assemble::stream_pass1_region(
+                    &args.bam, wchrom, *wlo, *whi,
+                    rustle::vg_family::denovo_assemble::gtf_secondary_enabled(),
+                    !args.keep_coordinate_duplicates,
+                    if args.keep_coordinate_duplicates { &fetched } else { &[] },
+                    &mut acc,
+                )
+                .with_context(|| format!("streaming {wchrom}:{wlo}-{whi}"))?;
+                fetched.push((wchrom.clone(), *wlo, *whi));
+            }
+            streamed = Some(acc.finish(cfg.pass1_min_reads, 0, None));
+        }
+        let (primary, mut bam_reads) = if streaming { (Vec::new(), Vec::new()) } else {
             let mut pr: Vec<_> = Vec::new();
             let mut br: Vec<_> = Vec::new();
+            // Windows already fetched for this region. A read spanning a window boundary is returned by
+            // both queries (every reader yields each record overlapping `[lo, hi)`), so a record from
+            // window i that overlaps an EARLIER window j was necessarily fetched by j and is skipped here.
+            //
+            // ⚠ §6z6 (`docs/PREREG_primary_dedupe_2026-09-22.md`): this used to key on
+            // `(chrom, ref_start, ref_end, intron_chain)` — PrimaryRead has no name — which also collapsed
+            // DISTINCT molecules with identical coordinates. On A119b that key dropped 25-32% of primary
+            // records per chromosome and pushed ~23% of the 2-read chains below pass-1's floor (chr20:
+            // 3,732 of 16,166; traced at ZBTB21, two MAPQ-60 reads with the exact RefSeq chain). With a
+            // single window — the whole `--assemble-only` path — nothing is dropped now.
+            //
+            // ⛔ MEASURED (same prereg, OUTCOME): the raw assembly does gain chains (+81 on human
+            // chr20/21/22), but the SHIPPED POLISH was fitted on the de-duplicated counts and, fed the
+            // true counts, removes more matching chains than the fix adds (polished −147 human dev,
+            // −1,096 gorilla held-out, with gorilla precision +3.2 pts). So the historical key stays the
+            // DEFAULT (byte-identical) and the window rule is opt-in via `--keep-coordinate-duplicates`.
             let mut seen = std::collections::HashSet::new();
+            let mut fetched: Vec<(String, u64, u64)> = Vec::new();
             for (wchrom, wlo, whi) in &wins {
                 let (wlo, whi) = (*wlo, *whi);
                 let (p, b) = match &bam_cache {
@@ -2955,17 +3171,21 @@ fn main() -> Result<()> {
                     None => reads_in_region(&args.bam, wchrom, wlo, whi, args.threads),
                 }
                 .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?;
-                // Windows are disjoint after merging, but a read spanning a boundary is returned by
-                // both queries; key on (name, start) so one molecule is never two witnesses.
                 for x in p {
-                    // PrimaryRead has no name; its (chrom, span, intron chain) identifies the placement.
-                    if seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone())) {
+                    let keep = if args.keep_coordinate_duplicates {
+                        !fetched.iter().any(|(c, l, h)| c == &x.chrom && x.ref_start < *h && x.ref_end > *l)
+                    } else {
+                        // historical key: PrimaryRead has no name; (chrom, span, intron chain) stands in
+                        seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone()))
+                    };
+                    if keep {
                         pr.push(x);
                     }
                 }
                 for x in b {
                     br.push(x);
                 }
+                fetched.push((wchrom.clone(), wlo, whi));
             }
             // ⚠ Must include `chrom`, not just `(name, ref_start)`: before cross-chromosome families
             // (2026-09-15) every record `compute` ever saw shared one contig, so `ref_start` alone was
@@ -3045,7 +3265,7 @@ fn main() -> Result<()> {
         // computed on the full record set; then non-tied molecules leave BEFORE the certificate. A unique
         // mapper is not O2's business and is never assigned. `--no-as-tied-only` skips this block.
         let mut uniq_reads: Vec<(String, u64, u64, Vec<(u64, u64)>)> = Vec::new();
-        if !args.no_as_tied_only {
+        if !args.no_as_tied_only && !streaming {
             let ev = as_evidence_per_read(&bam_reads, !args.no_as_tied_only);
             let mut tied: std::collections::HashSet<&str> = std::collections::HashSet::new();
             let mut all: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -3189,8 +3409,10 @@ fn main() -> Result<()> {
         let transcripts: Vec<TranscriptRec> = if args.gtf {
             // §6m5 / PREREG 6d586b2d: read-isoform widening. `--read-isoform-k 0` (the default) is the
             // explicit no-op, so this line is byte-identical to the previous `pass1_skeletons` call.
-            let skeletons =
-                pass1_skeletons_widened(&primary, cfg.pass1_min_reads, 1, None, args.read_isoform_k);
+            let skeletons = match streamed.take() {
+                Some(s) => s,
+                None => pass1_skeletons_widened(&primary, cfg.pass1_min_reads, 1, None, args.read_isoform_k),
+            };
             // Opt-in (RUSTLE_JUNCTION_FUZZ_BP, default off): merge skeletons whose intron chains match in
             // count and differ only by a pre-registered per-junction tolerance --
             // docs/PREREG_junction_fuzz_2026-09-15.md, docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md.
@@ -3263,7 +3485,7 @@ fn main() -> Result<()> {
             })
             .collect();
         let as_ev = as_evidence_per_read(&bam_reads, !args.no_as_tied_only);
-        let n_mapped = bam_reads.len();
+        let n_mapped = if streaming { n_mapped_streamed } else { bam_reads.len() };
         // O3 (Task 5, Phase 1 of the flag-pass wiring): per-family raw pair statistics + orphan-locus scan.
         // Only runs when the flag is set -- the `if` guards every allocation and every minimap2 realign
         // call, so the unset path is untouched (byte-identical `RegionWork` in every other field).
@@ -4740,26 +4962,51 @@ fn main() -> Result<()> {
                 args.out, prod_rows.len());
         }
         if args.assembly_polish != "none" {
+            // §6zb: the polish runs PER CONTIG. Its mono-exonic floor is a quantile of the run's own
+            // multi-exon support, validated per chromosome (§6p8-§6q4) and reproduced by the per-contig
+            // sweep; a `--genome-wide` run in one process must not pool that quantile across contigs. For a
+            // single-region run this is exactly the former single call (one contig), byte-identical.
             let before = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
-            let (n_ism, n_mono, n_frac, floor) = polish_gtf_lines(
-                &mut gtf_lines,
-                &args.assembly_polish,
-                args.polish_mono_quantile,
-                args.polish_isoform_fraction,
-                args.polish_mono_shadow,
-                args.polish_ism_escape,
-                args.polish_ism_3p,
-                args.polish_ism_ratio,
-                args.polish_fraction_exempt,
-                args.polish_fuzzy_junction,
-                args.polish_fuzzy_ism,
-                args.polish_fraction_min_reads,
-            );
+            let mut contigs: Vec<String> = Vec::new();
+            for l in gtf_lines.iter() {
+                if let Some(c) = l.split('\t').next() {
+                    if !l.starts_with('#') && contigs.last().map_or(true, |p| p != c) && !contigs.iter().any(|p| p == c) {
+                        contigs.push(c.to_string());
+                    }
+                }
+            }
+            let (mut n_ism, mut n_mono, mut n_frac, mut n_ret) = (0usize, 0usize, 0usize, 0usize);
+            let mut floors: Vec<u64> = Vec::new();
+            let mut polished: Vec<String> = Vec::with_capacity(gtf_lines.len());
+            for c in &contigs {
+                let mut part: Vec<String> = gtf_lines.iter().filter(|l| !l.starts_with('#') && l.split('\t').next() == Some(c.as_str())).cloned().collect();
+                let (a, b, d, floor, e) = polish_gtf_lines(
+                    &mut part,
+                    &args.assembly_polish,
+                    args.polish_mono_quantile,
+                    args.polish_isoform_fraction,
+                    args.polish_mono_shadow,
+                    args.polish_ism_escape,
+                    args.polish_ism_3p,
+                    args.polish_ism_ratio,
+                    args.polish_fraction_exempt,
+                    args.polish_fuzzy_junction,
+                    args.polish_fuzzy_ism,
+                    args.polish_fraction_min_reads,
+                    args.polish_retained_ratio,
+                );
+                n_ism += a; n_mono += b; n_frac += d; n_ret += e; floors.push(floor);
+                polished.extend(part);
+            }
+            let comments: Vec<String> = gtf_lines.iter().filter(|l| l.starts_with('#')).cloned().collect();
+            gtf_lines = comments.into_iter().chain(polished).collect();
             let after = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
+            let floor_s = if floors.len() == 1 { floors[0].to_string() } else { format!("{:?} (per contig)", floors) };
             eprintln!(
                 "[copy_assign] ⭐ ASSEMBLY POLISH ({}): {before} transcripts -> ISM dropped {n_ism} -> \
-                 mono floor {floor} reads dropped {n_mono} -> isoform fraction {} dropped {n_frac} -> {after} kept",
-                args.assembly_polish, args.polish_isoform_fraction
+                 mono floor {floor_s} reads dropped {n_mono} -> isoform fraction {} dropped {n_frac} -> \
+                 retained-intron ratio {} dropped {n_ret} -> {after} kept",
+                args.assembly_polish, args.polish_isoform_fraction, args.polish_retained_ratio
             );
         }
         if args.gtf_tpm {
@@ -5717,26 +5964,26 @@ mod tests {
 
         // none is a no-op
         let mut l = build();
-        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0), (0, 0, 0, 0));
+        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0), (0, 0, 0, 0, 0));
         assert_eq!(l, build());
 
         // mono: floor = p75 of {9, 2, 9} = 9, so both 1-read mono transcripts go, MONOHI stays
         let mut l = build();
-        let (ism, mono, _, floor) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0);
+        let (ism, mono, _, floor, _) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!((ism, floor), (0, 9));
         assert_eq!(mono, 2);
         assert_eq!(tids(&l), vec!["LONG", "SHORT", "STRONG", "MONOHI"]);
 
         // full: SHORT is an unsupported sub-chain, MONOLO an unsupported mono inside LONG
         let mut l = build();
-        let (ism, mono, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0);
+        let (ism, mono, _, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(ism, 2);
         assert_eq!(mono, 1); // FREE has no host, so only the floor removes it
         assert_eq!(tids(&l), vec!["LONG", "STRONG", "MONOHI"]);
 
         // quantile 0 disables the floor entirely
         let mut l = build();
-        let (_, mono, _, floor) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0);
+        let (_, mono, _, floor, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!((mono, floor), (0, 0));
         assert!(tids(&l).contains(&"FREE".to_string()));
     }
@@ -5771,17 +6018,17 @@ mod tests {
         };
         // TINY is 1% of BIG, so F = 0.02 removes it; SOLO is its own locus's dominant and survives
         let mut l = build();
-        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02, false, false, false, 1.0, false, 0, false, 0);
+        let (_, _, frac, _, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02, false, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(frac, 1);
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
         // F below TINY's share keeps everything
         let mut l = build();
-        let (_, _, frac, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005, false, false, false, 1.0, false, 0, false, 0);
+        let (_, _, frac, _, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005, false, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(frac, 0);
         assert_eq!(tids(&l), vec!["BIG", "TINY", "SOLO"]);
         // even a huge F never empties a locus: the dominant of each gene_id survives
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.99, false, false, false, 1.0, false, 0, false, 0);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.99, false, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
     }
 
@@ -5816,21 +6063,56 @@ mod tests {
         };
         // tolerance 0 (the default): nothing merges
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(tids(&l).len(), 3);
         // tolerance 5: WOBBLE folds into BEST (the better-supported member survives), FAR does not
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 5, false, 0);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 5, false, 0, 0.0);
         assert_eq!(tids(&l), vec!["BEST", "FAR"]);
         // tolerance 10: FAR folds in too
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 10, false, 0);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 10, false, 0, 0.0);
         assert_eq!(tids(&l), vec!["BEST"]);
     }
 
     /// §6q0/§6q1: the shadow rule drops single-exon transcripts in a spliced gene's shadow (exon overlap
     /// on EITHER strand, or same-strand span overlap) but not one whose only overlap is an anti-strand
     /// SPAN; and the ISM escape keeps a well-supported fragment its container would otherwise absorb.
+    #[test]
+    #[test]
+    /// §6za: a chain whose exon contains another transcript's junction carrying >= ratio x its reads is
+    /// dropped; the same chain survives when the spanning junction is not dominant enough, and at ratio 0.
+    fn polish_retained_intron_drops_the_read_through_and_keeps_the_minor_isoform() {
+        let mk = |tid: &str, reads: u32, exons: &[(u32, u32)]| -> Vec<String> {
+            let mut v = vec![format!(
+                "c\tr\ttranscript\t{}\t{}\t.\t+\t.\tgene_id \"G\"; transcript_id \"{tid}\"; reads \"{reads}\";",
+                exons[0].0, exons[exons.len() - 1].1
+            )];
+            for (a, b) in exons {
+                v.push(format!("c\tr\texon\t{a}\t{b}\t.\t+\t.\tgene_id \"G\"; transcript_id \"{tid}\";"));
+            }
+            v
+        };
+        // SPLICED: 100-200, 300-400, 500-600, 700-800 with 50 reads; RETAIN: 100-200, 300-600, 700-800 with 4
+        // reads — its middle exon contains SPLICED's 401-499 intron, and its chain is NOT a contiguous
+        // sub-chain of SPLICED's (it skips one junction), so the ISM pass leaves it to this rule.
+        let base = || {
+            let mut l = mk("SPLICED", 50, &[(100, 200), (300, 400), (500, 600), (700, 800)]);
+            l.extend(mk("RETAIN", 4, &[(100, 200), (300, 600), (700, 800)]));
+            l
+        };
+        let mut l = base();
+        let (_, _, _, _, n_ret) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 10.0);
+        assert_eq!(n_ret, 1, "50 >= 10 x 4: the read-through chain is dropped");
+        assert!(!l.iter().any(|x| x.contains("\"RETAIN\"")) && l.iter().any(|x| x.contains("\"SPLICED\"")));
+        let mut l = base();
+        let (_, _, _, _, n_ret) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 20.0);
+        assert_eq!(n_ret, 0, "50 < 20 x 4: a minor isoform with real share survives");
+        let mut l = base();
+        let (_, _, _, _, n_ret) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        assert_eq!(n_ret, 0, "ratio 0 is off");
+    }
+
     #[test]
     fn polish_shadow_and_ism_escape() {
         fn gtf(tid: &str, strand: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
@@ -5862,11 +6144,11 @@ mod tests {
             l
         };
         let mut l = shadow();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(tids(&l), vec!["PLUS", "ANTIIN", "FAR"]);
         // shadow off leaves them all
         let mut l = shadow();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(tids(&l).len(), 6);
 
         // ISM escape: FRAG's chain is a sub-chain of DEEP's; 10 reads is below DEEP's 100 but reaches the
@@ -5879,10 +6161,10 @@ mod tests {
             l
         };
         let mut l = ism();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0);
+        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(tids(&l), vec!["DEEP", "OTHER"], "without the escape the fragment is absorbed");
         let mut l = ism();
-        polish_gtf_lines(&mut l, "full", 0.10, 0.0, false, true, false, 1.0, false, 0, false, 0);
+        polish_gtf_lines(&mut l, "full", 0.10, 0.0, false, true, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(tids(&l), vec!["DEEP", "FRAG", "OTHER"], "with the escape a well-supported fragment survives");
     }
 
