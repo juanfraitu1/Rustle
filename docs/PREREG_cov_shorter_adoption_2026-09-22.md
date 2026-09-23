@@ -167,3 +167,5 @@ usable range is not a tuned constant — the specific property the advisor asks 
 the flat region) dominates the 0.90 chosen from §6x4's ceiling**: held-out chr2 0.243 vs 0.239, chr8 0.440,
 chr10 0.197, guided dev 0.322 vs 0.317. ⚠It also means the flag cannot be tuned for more — this is its
 ceiling on this substrate.
+
+> **Scorer (2026-09-22 port):** every `bench/mode_family_score.py` number above is reproduced byte-for-byte by `target/release/family_score` (same flags; 732/732 parity, scipy's assignment tie-breaking included — r1045/r1046). The Python was retired in §6z2.

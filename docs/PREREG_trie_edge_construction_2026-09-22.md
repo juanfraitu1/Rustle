@@ -101,3 +101,5 @@ Predicted ⛔ with precision ~0.25 by the r1024 mechanism. **Correct, and the me
 exactly r1024's single-chromosome value, now on a 771-pair reachable population.** The one thing I did not
 predict is that reachability would be as high as 64.5%; I had assumed short genes would be the binding
 limit, and they are not.
+
+> **Generator (2026-09-22 consolidation):** `python3 bench/edge_probes.py intron-chain ...` — the original `bench/intron_chain_edges.py` was folded in verbatim (§6z2); the register rows above cite this file.

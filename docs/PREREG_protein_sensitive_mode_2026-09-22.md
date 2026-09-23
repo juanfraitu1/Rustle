@@ -117,3 +117,5 @@ coverage." **Wrong on which number decided**: cross-family stayed flat on two of
 (3→3, 49→49) and it was the *coverage* that failed, at +0.0 to +0.6 pts. The prediction that de novo ORFs
 would be noisier than annotated CDS was right in direction but I attributed the cost to false merges when
 it is simply that the edges are redundant with nucleotide ones.
+
+> **Generator (2026-09-22 consolidation):** `python3 bench/edge_probes.py protein-denovo ...` — the original `bench/protein_sensitive_mode.py` was folded in verbatim (§6z2); the register rows above cite this file.

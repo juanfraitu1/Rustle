@@ -133,3 +133,5 @@ completeness**, because a bigger truth adds genes to the denominator faster than
 De novo did move most in *rank* (last → 2nd), just not in score. The prediction confused *recovering a
 deleted true positive* (raises precision) with *adding an unrecovered truth member* (lowers sensitivity);
 the second is larger because these arms miss more of the family than they mis-assign.
+
+> **Scorer (2026-09-22 port):** every `bench/mode_family_score.py` number above is reproduced byte-for-byte by `target/release/family_score` (same flags; 732/732 parity, scipy's assignment tie-breaking included — r1045/r1046). The Python was retired in §6z2.

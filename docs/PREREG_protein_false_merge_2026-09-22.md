@@ -132,3 +132,5 @@ question is whether it is a tail or the bulk." **The mechanism was right and the
 the bulk (90–97.5%), and the optimistic rate was not 0.00% either (0.544/0.500/1.000/0.000 — on 1–3 pair
 denominators). I also committed in advance to reporting the uncorroborated fraction as *unmeasured* rather
 than *false*; the symbol-root diagnostic is what let me go further and say what it actually is.
+
+> **Generator (2026-09-22 consolidation):** `python3 bench/edge_probes.py protein-false-merge ...` — the original `bench/protein_false_merge.py` was folded in verbatim (§6z2); the register rows above cite this file.

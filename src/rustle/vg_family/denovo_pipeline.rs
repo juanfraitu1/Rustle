@@ -6395,13 +6395,21 @@ fn cothread_locus_reps(
     out
 }
 
+/// ⭐ §6y9/r1040: minimum member transcripts that must place an exon on an interval for the UNION rep to
+/// keep it (`RUSTLE_LOCUS_UNION_MIN_TX`, unset/0/1 = off = the historical union, byte-identical). The rep's
+/// own exons are always kept. Exists because register 303's refutation of the plain union was driven by
+/// exons seen in exactly ONE transcript -- 63.5% of what the union adds.
+fn union_min_tx() -> u32 {
+    std::env::var("RUSTLE_LOCUS_UNION_MIN_TX").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
 fn union_locus_reps(
     transcripts: &[DenovoTranscript],
     detect: &crate::vg_family::family_detect::DetectParams,
     genome: &GenomeIndex,
     min_chain_reads: u32,
 ) -> Vec<DenovoTranscript> {
-    use crate::vg_family::family_detect::{locus_groups, union_locus_geometry};
+    use crate::vg_family::family_detect::{locus_groups, union_locus_geometry_corroborated};
     use crate::vg_family::seq_utils::reverse_complement;
     let mut out = Vec::new();
     let (mut dropped, mut widened) = (0usize, 0usize);
@@ -6411,7 +6419,8 @@ fn union_locus_reps(
             .max_by_key(|&&i| (transcripts[i].n_reads, transcripts[i].end - transcripts[i].start))
             .expect("locus group is never empty");
         let base = &transcripts[rep_i];
-        let Some((start, end, introns)) = union_locus_geometry(transcripts, &members, min_chain_reads)
+        let Some((start, end, introns)) =
+            union_locus_geometry_corroborated(transcripts, &members, min_chain_reads, union_min_tx())
         else {
             dropped += 1;
             continue;

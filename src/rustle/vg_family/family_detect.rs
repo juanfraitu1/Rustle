@@ -369,6 +369,27 @@ pub(crate) fn union_locus_geometry(
     members: &[usize],
     min_chain_reads: u32,
 ) -> Option<(u64, u64, Vec<(u64, u64)>)> {
+    union_locus_geometry_corroborated(transcripts, members, min_chain_reads, 0)
+}
+
+/// ⭐ §6y9/r1040: the union rep, restricted to CORROBORATED exons.
+///
+/// `RUSTLE_LOCUS_EXON_UNION` was refuted (register 303: Soto recall 65.5% -> 44.8%) because "widened reps
+/// inflate their own coverage denominator and fall below the 0.50 floor". Measured on chr20
+/// (`a119b_polished.gtf`, 505 multi-transcript loci), the union it builds is mostly noise: of the 3,483
+/// exons a non-rep transcript contributes, **63.5% appear in exactly ONE transcript** while only **36.5%
+/// appear in >= 2**. The existing `min_chain_reads` floor (default 3) does not separate these -- it admits
+/// **74.8%** of them, because a single chain can carry plenty of reads.
+///
+/// `min_exon_tx` filters per EXON instead of per TRANSCRIPT: a merged interval survives only if at least
+/// that many member transcripts place an exon on it. The REP's own exons are always kept, so the result is
+/// never smaller than today's single-chain rep. `0` = off = the historical behaviour, byte-identical.
+pub(crate) fn union_locus_geometry_corroborated(
+    transcripts: &[DenovoTranscript],
+    members: &[usize],
+    min_chain_reads: u32,
+    min_exon_tx: u32,
+) -> Option<(u64, u64, Vec<(u64, u64)>)> {
     let mut ex: Vec<(u64, u64)> = Vec::new();
     for &i in members {
         if transcripts[i].n_reads >= min_chain_reads {
@@ -384,6 +405,33 @@ pub(crate) fn union_locus_geometry(
         match merged.last_mut() {
             Some(last) if a <= last.1 => last.1 = last.1.max(b),
             _ => merged.push((a, b)),
+        }
+    }
+    if min_exon_tx > 1 && !merged.is_empty() {
+        // the locus rep, chosen exactly as `pick_locus_rep` does, so its exons are never dropped
+        let rep_i = *members
+            .iter()
+            .max_by_key(|&&i| (transcripts[i].n_reads, transcripts[i].end - transcripts[i].start))
+            .expect("locus group is never empty");
+        let rep_ex = exons_of(&transcripts[rep_i]);
+        let overlaps = |iv: &(u64, u64), xs: &[(u64, u64)]| xs.iter().any(|e| e.0 < iv.1 && iv.0 < e.1);
+        let kept: Vec<(u64, u64)> = merged
+            .iter()
+            .filter(|iv| {
+                if overlaps(iv, &rep_ex) {
+                    return true;
+                }
+                let n = members
+                    .iter()
+                    .filter(|&&i| transcripts[i].n_reads >= min_chain_reads)
+                    .filter(|&&i| overlaps(iv, &exons_of(&transcripts[i])))
+                    .count() as u32;
+                n >= min_exon_tx
+            })
+            .copied()
+            .collect();
+        if !kept.is_empty() {
+            merged = kept;
         }
     }
     let start = merged[0].0;

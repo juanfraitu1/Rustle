@@ -122,3 +122,5 @@ content for whatever interval it is given". It does not — it **joins node head
 records**, so SD regions matching no record made every node fall back to span and produced **0 clusters**
 (register 899's "silent 0 nodes"). Both variants above exist because the fix required inventing an exon
 model for a DNA region, which is itself a choice the mode has to make and the prereg had not anticipated.
+
+> **Scorer (2026-09-22 port):** every `bench/mode_family_score.py` number above is reproduced byte-for-byte by `target/release/family_score` (same flags; 732/732 parity, scipy's assignment tie-breaking included — r1045/r1046). The Python was retired in §6z2.

@@ -158,3 +158,5 @@ and the only precision movement anywhere (de novo chr16, +0.025) buys **+0.001 F
 certificate on edges, this tests SD core fraction as a *member-removal* rule post-MCL. **They are opposite
 operators and the 318 result is not evidence for this one** — an error I made in the prediction and am
 recording rather than quietly dropping.
+
+> **Scorer (2026-09-22 port):** every `bench/mode_family_score.py` number above is reproduced byte-for-byte by `target/release/family_score` (same flags; 732/732 parity, scipy's assignment tie-breaking included — r1045/r1046). The Python was retired in §6z2.

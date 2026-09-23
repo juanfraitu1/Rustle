@@ -141,3 +141,5 @@ I predicted ⚠ PARTIAL with **both** naive objects failing — P1 over-merging 
 M's, and 17–57 held-out); it failed for a different reason — it is not distinguishable from its own null.
 ⭐**Predicting the right verdict for the wrong mechanism is not a successful prediction**, and the null arm
 (P3) is the only reason the distinction was visible at all. It was worth including.
+
+> **Generator (2026-09-22 consolidation):** `python3 bench/edge_probes.py poset ...` — the original `bench/containment_poset.py` was folded in verbatim (§6z2); the register rows above cite this file.

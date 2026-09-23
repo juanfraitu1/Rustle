@@ -81,3 +81,5 @@ measured the ceiling.
 ⚠ Also caught mid-run: I first built the oracle PAF with `-N 50 -p 0.1 -X --secondary=yes` (48,176 records)
 when the baseline used `-x asm20 -c --eqx -P` (127,773). **An arm is not comparable until its aligner
 invocation is copied from the baseline's own log**, not from the config a different arm happened to use.
+
+> **Scorer (2026-09-22 port):** every `bench/mode_family_score.py` number above is reproduced byte-for-byte by `target/release/family_score` (same flags; 732/732 parity, scipy's assignment tie-breaking included — r1045/r1046). The Python was retired in §6z2.
