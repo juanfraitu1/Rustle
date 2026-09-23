@@ -55,6 +55,23 @@ struct Args {
     #[arg(long, default_value_t = 0.30)]
     min_cov_longer: f64,
 
+    /// ⭐ §6x4 CONTAINMENT ESCAPE — `0.0` = OFF (default), and OFF is byte-identical to every catalog
+    /// built before 2026-09-22. When `> 0.0`, a pair ALSO passes the coverage gate if the alignment
+    /// covers at least this fraction of the SHORTER gene's exonic length, even when `cov_longer` fails.
+    ///
+    /// Motivation (§6x3/r1002): of the 1,026 chr16 de novo loci that fail admission, 679 are evicted by a
+    /// LONGER partner while aligning along a median 1.00 of their own length at passing identity and
+    /// `alen` — nothing is wrong with them except the denominator. Splitting the giant cannot fix it
+    /// (r1001: median 4.83x shrink required, a binary split gives 2x) and boundary pull-in is negative
+    /// (§6w6).
+    ///
+    /// ⚠⚠ **Never enable without the exon conjunct** (`--min-exonic-bp 1 --min-shared-exon-frac`).
+    /// §6x4 measured the difference on chr16: guarded at 0.90 admits 216 of the 679 at a largest-component
+    /// cost of 2.1x baseline; UNGUARDED the same norm runs 5.7-16.3x — which is register 913's refuted
+    /// `min(la,lb)` hub failure. The guard is the result, not the norm.
+    #[arg(long, default_value_t = 0.0)]
+    min_cov_shorter: f64,
+
     #[arg(long, default_value_t = 300)]
     min_bp: u64,
 
@@ -714,6 +731,7 @@ fn main() -> Result<()> {
     let p = GraphParams {
         min_identity: args.min_identity,
         min_cov_longer: args.min_cov_longer,
+        min_cov_shorter: args.min_cov_shorter,
         min_bp: args.min_bp,
         exonic_overlap: args.exonic_overlap,
         reject_overlapping: args.reject_overlapping,
@@ -1717,6 +1735,9 @@ fn main() -> Result<()> {
         ("n_nodes".to_string(), g.n_nodes().to_string()),
         ("n_edges".to_string(), g.n_edges().to_string()),
         ("n_clusters".to_string(), clusters.len().to_string()),
+        // §6x4, appended LAST so every existing positional reader of params.tsv is unaffected (r936).
+        ("min_cov_shorter".to_string(), p.min_cov_shorter.to_string()),
+        ("admitted_by_containment".to_string(), g.admitted_by_containment.to_string()),
     ] {
         writeln!(ph, "{k}\t{v}")?;
     }

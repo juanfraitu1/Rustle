@@ -286,7 +286,28 @@ pub fn pass1_skeletons_widened(
     isoform_k: u32,
 ) -> Vec<Skeleton> {
     use std::collections::BTreeMap;
-    let k = min_terminal_support.max(1) as usize;
+    // `RUSTLE_TERMINAL_K` overrides the fixed rank; it exists for §6w6's CONTROL arms (k=1, k=3), which
+    // are what decide whether any gain from the quantile below is ADAPTIVITY or just a different constant.
+    let k = std::env::var("RUSTLE_TERMINAL_K")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(min_terminal_support)
+        .max(1) as usize;
+    // ⭐ §6w6 / `docs/PREREG_depth_adaptive_k_2026-09-22.md`: a fixed RANK is a MOVING QUANTILE. With n
+    // reads the k-th most extreme sits ~k/n into the tail, so k=2 is 75% of the way in at n=2 but 5% at
+    // n=30 — measured as a depth drift in two independent places (register 975: human median d5
+    // +19 bp at n=2 → −40 bp at n≥30; register 978: under-capture 28.2%→11.2% while over-extension
+    // 12.7%→25.5%). `RUSTLE_TERMINAL_QUANTILE=q` takes the clamp(round(q·n), 1, n)-th value instead,
+    // which GROWS shallow loci and PULLS IN deep ones. Unset (or 0) is byte-identical to the fixed rank.
+    let term_q: f64 = std::env::var("RUSTLE_TERMINAL_QUANTILE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v: &f64| *v > 0.0 && *v < 1.0)
+        .unwrap_or(0.0);
+    let adaptive = term_q > 0.0;
+    // the exact order statistic needs every terminal, not the k-most-extreme the fixed rank retains
+    let keep_all = snap.is_some() || adaptive;
     // Per-junction read support over every spliced read in the region, the quantity the widening tests.
     let mut jsup: BTreeMap<(&str, (u64, u64)), u32> = BTreeMap::new();
     if isoform_k > 0 {
@@ -309,7 +330,7 @@ pub fn pass1_skeletons_widened(
             .or_insert((0, Vec::new(), Vec::new(), 0));
         e.0 += 1;
         e.3 += u32::from(r.reverse);
-        if snap.is_some() {
+        if keep_all {
             let a = allpos
                 .entry((r.chrom.as_str(), r.introns.clone()))
                 .or_insert((Vec::new(), Vec::new()));
@@ -341,8 +362,30 @@ pub fn pass1_skeletons_widened(
         })
         .map(|((chrom, introns), (n, starts, ends, n_rev))| {
             // robust boundary = the k-th supported value (or the outermost available if the group is smaller).
-            let si = k.min(starts.len()).saturating_sub(1);
-            let ei = k.min(ends.len()).saturating_sub(1);
+            // Under RUSTLE_TERMINAL_QUANTILE the rank is recomputed per group from that group's own depth,
+            // using the FULL terminal lists in `allpos` (the `groups` lists are truncated to the fixed k).
+            let (starts, ends) = if adaptive {
+                match allpos.get(&(chrom, introns.clone())) {
+                    Some((all_s, all_e)) => {
+                        let mut s2 = all_s.clone();
+                        let mut e2 = all_e.clone();
+                        s2.sort_unstable();
+                        e2.sort_unstable_by(|a, b| b.cmp(a));
+                        (s2, e2)
+                    }
+                    None => (starts, ends),
+                }
+            } else {
+                (starts, ends)
+            };
+            let kg = if adaptive {
+                let n_here = starts.len().max(1);
+                ((term_q * n_here as f64).round() as usize).clamp(1, n_here)
+            } else {
+                k
+            };
+            let si = kg.min(starts.len()).saturating_sub(1);
+            let ei = kg.min(ends.len()).saturating_sub(1);
             let (mut start, mut end) = (starts[si], ends[ei]);
             if let Some((win, frac)) = snap {
                 if let Some((all_s, all_e)) = allpos.get(&(chrom, introns.clone())) {

@@ -782,8 +782,16 @@ fn read_star_stream<F: FnMut(usize, &[Option<Vec<Option<u8>>>], &[Option<Vec<Opt
     // reporting floor for a copy's hit relative to the read's best hit (minimap2 -p). 0.3 by default; a copy
     // below it is not a candidate. `RUSTLE_STAR_P=0` reports every chain (the test of that floor, §6fc).
     let p_arg = std::env::var("RUSTLE_STAR_P").unwrap_or_else(|_| "0.3".to_string());
-    // minimap2 threads: the alignment IS the wall time (NPIP: 81 s at 2 threads, 42 s at 4, §6fe)
-    let t_arg = std::env::var("RUSTLE_STAR_THREADS").unwrap_or_else(|_| "4".to_string());
+    // minimap2 threads: the alignment IS the wall time (NPIP: 81 s at 2 threads, 42 s at 4, §6fe).
+    // ⭐ §6w9: raised 4 -> 8. This phase is 78% of O2's `detect_and_assign` (chrY YAG: read-star 54.5 s of
+    // 69.9 s), and within it the GENOMIC `-x splice` form costs 52.1 s against the spliced unit form's
+    // 6.4 s. Interleaved on a 5-CORE box, 8 threads beat 4 both on the phase (47.0 s vs 52.6 s median) and
+    // end to end (75.8 s vs 83.9 s, ~10%), with `assignments/families/famcn_readonly/quant.tsv` all
+    // BYTE-IDENTICAL. Oversubscription wins because minimap2's threads stall on the shared output lock.
+    // ⚠ Evidence is ONE substrate on ONE box; `RUSTLE_STAR_THREADS` still overrides.
+    // ⛔ Not the lever: `-G 100k` (byte-identical but SLOWER, 52.9 s vs 49.2 s — minimap2 derives chaining
+    // parameters from G) and query dedup (only 5.5% of the 6,576 molecules are exact duplicates).
+    let t_arg = std::env::var("RUSTLE_STAR_THREADS").unwrap_or_else(|_| "8".to_string());
     let mut child = match std::process::Command::new(&mm2)
         .args(["-c", "--eqx", "-x", preset, "--secondary=yes", "-p", &p_arg, "-N", &n_arg, "-t", &t_arg])
         .arg(&refp)

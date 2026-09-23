@@ -38,6 +38,16 @@ pub struct GraphParams {
     pub min_identity: f64,
     /// Minimum fraction of the LONGER sequence covered by the alignment (see the module note).
     pub min_cov_longer: f64,
+    /// ⭐ §6x4 CONTAINMENT ESCAPE. `0.0` = OFF, and OFF is byte-identical to every catalog built before
+    /// 2026-09-22. When `> 0.0`, a pair ALSO passes if the alignment covers at least this fraction of the
+    /// SHORTER sequence, even when `cov_longer` fails.
+    ///
+    /// ⚠ This is the norm register 913 refuted — *unguarded*. §6x4 measured why: with the exon conjunct
+    /// OFF the largest component runs 5.7-16.3x baseline; with it ON and this floor >= 0.70 it holds at
+    /// 2.1x while admitting 216 of the 679 loci that `cov_longer` evicts despite them aligning along
+    /// ~100% of their own length (§6x3/r1002). ⚠⚠**Never enable this without the exon conjunct**
+    /// (`exonic_both_sides` + `min_shared_exon_frac`) — the guard is what separates 2x from 16x.
+    pub min_cov_shorter: f64,
     /// Minimum alignment block length in bp.
     pub min_bp: u64,
     /// ⭐ Charge `cov_longer`'s NUMERATOR in EXONIC bases too, instead of aligned genomic span.
@@ -113,6 +123,7 @@ impl Default for GraphParams {
         Self {
             min_identity: 0.70,
             min_cov_longer: 0.30,
+            min_cov_shorter: 0.0,
             min_bp: 300,
             exonic_overlap: false,
             reject_overlapping: false,
@@ -156,6 +167,9 @@ pub struct HomologyGraph {
     /// Pairs dropped by `min_shared_exon_frac` — some exonic evidence existed, but on the best record it
     /// covered too small a fraction of the smaller gene. Reported, never silent.
     pub rejected_low_shared_exon: usize,
+    /// ⭐ §6x4: pairs admitted ONLY by the containment escape (`min_cov_shorter`), i.e. `cov_longer` failed
+    /// and `cov_shorter` passed. Always 0 when the escape is off. Reported, never silent.
+    pub admitted_by_containment: usize,
     /// PAF records between two annotations of ONE locus (`LocusMap`) — a locus aligned to itself —
     /// skipped. Reported, never silent.
     pub same_locus_records: usize,
@@ -429,7 +443,10 @@ pub fn graph_from_paf_loci(
     for ((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon)) in acc {
         let da = exonic_len.get(&ak).copied().unwrap_or(0);
         let db = exonic_len.get(&bk).copied().unwrap_or(0);
-        let (gk, iv, den) = if da >= db { (&ak, aiv, da) } else { (&bk, biv, db) };
+        let a_is_longer = da >= db;
+        let (gk, iv, den) = if a_is_longer { (&ak, aiv.clone(), da) } else { (&bk, biv.clone(), db) };
+        // §6x4: the SHORTER side of the same pair, kept for the containment escape below.
+        let (sk, siv, sden) = if a_is_longer { (&bk, biv, db) } else { (&ak, aiv, da) };
         let Some(blocks) = exon_blocks.get(gk) else {
             g.exonic_overlap_missing += 1;
             continue;
@@ -467,11 +484,41 @@ pub fn graph_from_paf_loci(
             merged.iter().map(|&(s0, e0)| e0 - s0).sum::<u64>()
         };
         let cov_longer = (numer as f64 / den.max(1) as f64).min(1.0);
-        if cov_longer < p.min_cov_longer {
+        // ⭐ §6x4 CONTAINMENT ESCAPE. `min_cov_shorter == 0.0` skips this block entirely, so `cov_eff`
+        // is `cov_longer` and both the gate and the edge weight are byte-identical to every prior catalog.
+        let mut cov_eff = cov_longer;
+        // ⛔ r1010: a positional-overlap guard was tried here and REFUTED — see the register. Two de novo
+        // loci that overlap on the genome are frequently genuine tandem copies, so refusing the escape for
+        // them cost more than it saved (chr16 de novo F .230 -> .199, BELOW baseline .214) while doing
+        // nothing for the SD-region node set it was designed to protect (.175 either way).
+        if p.min_cov_shorter > 0.0 && cov_longer < p.min_cov_longer {
+            let merged_s = merge_intervals(siv);
+            let numer_s = if p.exonic_overlap {
+                exon_blocks
+                    .get(sk)
+                    .map_or(0, |b| merged_s.iter().map(|&(s0, e0)| exonic_bases_in(b, sk.1, s0, e0)).sum())
+            } else {
+                merged_s.iter().map(|&(s0, e0)| e0 - s0).sum::<u64>()
+            };
+            let cov_shorter = (numer_s as f64 / sden.max(1) as f64).min(1.0);
+            if cov_shorter >= p.min_cov_shorter {
+                g.admitted_by_containment += 1;
+                // ⭐⭐ §6x8: the weight MUST be `cov_shorter`. Charging the pair's mutual coverage instead
+                // (r1019) makes the whole flag a NO-OP — every arm returns to its baseline F to three
+                // decimals — because the escaped edge is then too weak for MCL to route through.
+                // **The gain comes from the WEIGHT, not from the admission**: putting the node in the
+                // graph changes nothing; ranking its edge highly is what changes the partition.
+                cov_eff = cov_shorter;
+            }
+        }
+        if cov_eff < p.min_cov_longer && cov_eff < p.min_cov_shorter {
+            continue;
+        }
+        if p.min_cov_shorter <= 0.0 && cov_eff < p.min_cov_longer {
             continue;
         }
         let identity = nmatch as f64 / blocklen.max(1) as f64;
-        let w = identity * cov_longer;
+        let w = identity * cov_eff;
         let (an, bn) = match loci {
             Some(l) => (l.representative(&ak).clone(), l.representative(&bk).clone()),
             None => (ak, bk),
@@ -1448,6 +1495,42 @@ mod tests {
         paf3.push_str(&paf_line("c:1201-2200", 1000, 200, 400, "c:9001-11000", 2000, 400, 600, 195, 200));
         let g4 = graph_from_paf(&paf3, &ex, &bl, &both);
         assert_eq!((g4.n_edges(), g4.rejected_no_exonic), (0, 1));
+    }
+
+    /// ⭐ §6x4/§6x5 CONTAINMENT ESCAPE (`min_cov_shorter`).
+    ///
+    /// The population it exists for (§6x3/r1002): a SHORT locus that aligns along ~100% of its own length
+    /// to a LONG partner, at passing identity and `alen`, and is rejected only because `cov_longer`
+    /// divides by the long partner's exonic length. Short S (400 bp exonic) aligns end to end onto long
+    /// L (4,000 bp exonic): `cov_longer` = 400/4000 = 0.10 < 0.30, `cov_shorter` = 400/400 = 1.00.
+    #[test]
+    fn min_cov_shorter_admits_a_fully_contained_locus_and_is_a_no_op_when_zero() {
+        let paf = paf_line("c:1001-1400", 400, 0, 400, "c:5001-9000", 4000, 0, 400, 390, 400);
+        let mut ex = BTreeMap::new();
+        ex.insert(("c".to_string(), 1001, 1400), 400);
+        ex.insert(("c".to_string(), 5001, 9000), 4000);
+        let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+        bl.insert(("c".to_string(), 1001, 1400), vec![(1000, 1400)]);
+        bl.insert(("c".to_string(), 5001, 9000), vec![(5000, 9000)]);
+        // OFF (the shipped default) — cov_longer 0.10 < 0.30, so no edge, and the counter stays 0.
+        let off = GraphParams { min_exonic_bp: 1, exonic_both_sides: true, ..GraphParams::default() };
+        let g_off = graph_from_paf(&paf, &ex, &bl, &off);
+        assert_eq!((g_off.n_edges(), g_off.admitted_by_containment), (0, 0));
+        // ON at 0.90 — cov_shorter 1.00 clears it, and the admission is counted, never silent.
+        let on = GraphParams { min_cov_shorter: 0.90, ..off };
+        let g_on = graph_from_paf(&paf, &ex, &bl, &on);
+        assert_eq!((g_on.n_edges(), g_on.admitted_by_containment), (1, 1));
+        // the weight uses the coverage that actually admitted the pair, not the failing cov_longer
+        let w = *g_on.edges.values().next().unwrap();
+        assert!((w - 0.975).abs() < 1e-6, "identity 0.975 * cov_shorter 1.0, got {w}");
+        // ON but above the pair's containment — still rejected, so the floor is a real threshold.
+        let strict = GraphParams { min_cov_shorter: 0.90, min_cov_longer: 0.30, ..off };
+        let g_strict = graph_from_paf(
+            &paf_line("c:1001-1400", 400, 0, 200, "c:5001-9000", 4000, 0, 200, 195, 200),
+            &ex, &bl, &strict,
+        );
+        assert_eq!((g_strict.n_edges(), g_strict.admitted_by_containment), (0, 0),
+            "cov_shorter 200/400 = 0.50 < 0.90 and cov_longer 0.05 < 0.30");
     }
 
     /// ⭐ §6ks: `min_exonic_bp = 1` is a zero/non-zero gate — it is satisfied by ONE shared exonic base,
