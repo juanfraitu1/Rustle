@@ -473,3 +473,7 @@ near-silent (~2–6 genuine reads, see O2), so this is the design concept, not a
   recovery exists, and the former DAZ3 showcase is a retracted false positive (see O2).
 - O5's **GOLGA6L7 splitter** is unsolved.
 - Default de-novo (non-`--vg`) headline held at **95.6 / 90.5** throughout — none of the VG work regressed it.
+
+---
+
+> **Moved documents (wave 4, 2026-09-23).** Files this document cites that were pruned from the working tree — `docs/o1_investigations.md`, `docs/OBJECTIVES_AND_VERIFICATION.md`, `docs/o3_missing_copy_evidence.md`, `docs/NUMBERS.md`, `docs/ONE_METHOD.md`, `docs/METHOD_PSEUDOCODE.md`, `docs/OPEN_ITEMS_2026-09-09.md`, `docs/superpowers/` — are at git tag `notebook-2026-09-23` (`git checkout notebook-2026-09-23 -- <path>`) and in `~/Desktop/Rustle_attic/2026-09-23/` (see its `MANIFEST.tsv`). The citations above are provenance and were left as written.

@@ -23,7 +23,7 @@ also left *retracted findings* in shipped docstrings (the `RUSTLE_LOCUS_EXON_UNI
 "broke up the component fusing 40 of 83 Soto families", which memory records as *"a 40-family blob that
 does not exist in pipeline output; real worst fusion: 2"*).
 
-⭐ **Only 14 of 52 modules are reachable at defaults.** `TEST-ONLY` is not a
+⭐ **Only 14 of 53 modules are reachable at defaults.** `TEST-ONLY` is not a
 criticism — an idea that was built and left switched off is a legitimate outcome. The point is to be able
 to tell which is which without re-deriving it.
 
@@ -34,7 +34,7 @@ this file must list exactly the module set.
 |---|---|
 | **SHIPPED-DEFAULT** | 14 |
 | **OPT-IN** | 14 |
-| **OTHER-BINARY** | 11 |
+| **OTHER-BINARY** | 12 |
 | **REFUTED** | 1 |
 | **TEST-ONLY** | 12 |
 | **INFRASTRUCTURE** | 2 |
@@ -82,7 +82,7 @@ Built and wired, but behind a flag that **defaults off**. An arm, not the method
 | `single_copy.rs` | --single-copy-baseline (src/bin/gw_family_catalog.rs:189-190, `#[arg(long, default_value_t = false)] single_co | MEASURED: single_copy_loci's only production caller is src/rustle/vg_family/denovo_pipeline.rs:2704 inside detect_single_copy_baseline_genome_wide, and that function's only caller in the whole tree is src/bin/gw_family_catalog.rs: |
 | `vg_realign.rs` | --vg-realign or --vg-realign-correct (src/bin/copy_assign.rs:340-341 and :346-347, both `default_value_t = fal | MEASURED: the correction leg is guarded by `if cfg.vg_realign` at src/rustle/vg_family/denovo_pipeline.rs:2356 (call at :2376), and DenovoConfig's default is `vg_realign: false` / `vg_realign_admit: false` at denovo_pipeline.rs:14 |
 
-## OTHER-BINARY (11)
+## OTHER-BINARY (12)
 
 Live, but only from a binary other than `gw_family_catalog` / `copy_assign`.
 
@@ -90,6 +90,7 @@ Live, but only from a binary other than `gw_family_catalog` / `copy_assign`.
 |---|---|---|
 | `allele_specific_junctions.rs` | - | MEASURED: src/bin/asj.rs:10-12 imports bh_fdr/scan_gene_asj/scan_gene_asj_multisnp/scan_gene_copy_specific_junctions/AsjParams and src/bin/asj_verify.rs:18 imports anchor_junction_dist/is_transversion; no reference from gw_family_ |
 | `annotation_families.rs` | - | MEASURED: sole caller is src/bin/mcl_families.rs:18-20 (build_clusters, graph_from_paf, mcl, Cluster, GeneKey, GraphParams). The one other hit, family_detect.rs:207, is a doc comment (`/// Iterative path-halving union-find (matche |
+| `o3_rna.rs` | - | MEASURED: sole caller is src/bin/o3_rna_flag.rs (`use rustle::vg_family::o3_rna::*`, §6ze RNA-only O3 chain: two_means/split_pile/consistency/patched_consensus/home/verdict/confirmed); no reference from gw_family_catalog or copy_assign. |
 | `bridge_detector.rs` | - | MEASURED: production callers are driver.rs:39/:397/:402 (load_skeletons, load_strand, ExonFetcher), recombinant_split.rs:47 and multi_repeat_bridge.rs:55 — and all three roll up to driver::build_catalog, whose only caller is src/b |
 | `driver.rs` | - | MEASURED: driver::build_catalog is called at src/bin/family_define.rs:144 and driver::write_outputs at :186 (module imported at family_define.rs:18); no other src/ file references `driver::`. Binary: family_define. |
 | `edge_oracle.rs` | - | MEASURED: the only production consumers of load_pair_core_str/load_universal_aln/load_allele/demote_gene are driver.rs:302-304 and driver.rs:468, and driver.rs's only caller in all of src/bin/ is src/bin/family_define.rs:149 (`dri |

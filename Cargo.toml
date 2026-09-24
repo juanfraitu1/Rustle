@@ -153,3 +153,7 @@ path = "src/bin/mcl_port.rs"
 [[bin]]
 name = "bam_null_probe"
 path = "src/bin/bam_null_probe.rs"
+
+[[bin]]
+name = "o3_rna_flag"
+path = "src/bin/o3_rna_flag.rs"

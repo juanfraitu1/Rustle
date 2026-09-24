@@ -173,3 +173,37 @@ retracted in later ones — the ledger is append-only, so **the latest section w
 - **`isoseq collapse` needs PacBio-style read names AND a relaxed `--min-aln-coverage`** together; with
   SRA-style names it silently skips every read (register row 865, itself a retraction).
 - Two datasets (`A119b`, `GGO_OR6737`) still need public accessions filled into `docs/DATA.md`.
+
+## O3, RNA-only: flag a possible reference-absent copy and hand it to DNA (§6ze, 2026-09-23)
+
+`docs/PREREG_o3_rna_only_2026-09-23.md`. One BAM (primaries with `de:f` and `--eqx`), a locus set, the primary
+genome and its minimap2 splice index; optional annotation GFF (IG/TR screen), `--confirm` genomes (a
+haplotype assembly: DNA confirmation) and `--foreign` genomes (another species: contamination screen).
+
+```bash
+# scan in contig batches (a laptop-sized foreground job each), then align once per genome
+o3_rna_flag --bam READS.bam --fasta GENOME.fa --loci GENES.gff --gff GENES.gff --index x \
+            --contigs chr1,chr2,... --out run_b1 --scan-only
+o3_rna_flag --bam READS.bam --fasta GENOME.fa --loci GENES.gff --index GENOME.splice.mmi \
+            --confirm pat=PAT.splice.mmi --confirm mat=MAT.splice.mmi --foreign human=CHM13.splice.mmi \
+            --out run --from-scan run_b1,run_b2
+```
+
+Output `run.o3_rna.tsv` (one row per expressed locus; verdict ∈ contamination / foreign_species /
+hypermutation / rna_editing / scattered / unannotated_paralogue / reference_absent_candidate, plus
+`expected_dna_depth_ratio` and per-genome confirmation) and `run.consensus.fa` (the hidden copy's spliced
+consensus — the probe for a DNA k-mer/depth check). Positive control: `/mnt/linuxdisk/tmp/gw22/o3/simB.py`
+(40/40 at 2% divergence, all confirmed).
+
+---
+
+> **Moved documents (wave 4, 2026-09-23).** Files this document cites that were pruned from the working tree — `docs/o1_investigations.md`, `docs/OBJECTIVES_AND_VERIFICATION.md`, `docs/o3_missing_copy_evidence.md`, `docs/NUMBERS.md`, `docs/ONE_METHOD.md`, `docs/METHOD_PSEUDOCODE.md`, `docs/OPEN_ITEMS_2026-09-09.md`, `docs/superpowers/` — are at git tag `notebook-2026-09-23` (`git checkout notebook-2026-09-23 -- <path>`) and in `~/Desktop/Rustle_attic/2026-09-23/` (see its `MANIFEST.tsv`). The citations above are provenance and were left as written.
+
+## O2 read-level accuracy on a catalog (§6zf, 2026-09-23)
+
+```bash
+python3 bench/o2_read_truth_sim.py CAT.copies.tsv CAT.copies.fa GENOME.splice.mmi run 20260923   # reads from every copy, mapped genome-wide
+copy_assign --bam run.bam --fasta GENOME.fa --regions whole_chromosomes.txt --families CAT.copies.tsv --copies-fa CAT.copies.fa --out run_o2
+CATALOG_TSV=CAT.copies.tsv python3 bench/o2_read_truth_score.py run run_o2      # OWN / PRIMARY / ANY readings, per divergence bin
+```
+Expected (human chr16 catalog `chr16_arm/on`, copies < 300 bp dropped): OWN 157/157 correct, 0 wrong, 1,088 abstain of 1,259 MAPQ-0 reads.

@@ -1,4 +1,14 @@
-# Active working set — what is actually in use (2026-09-19)
+# Active working set — what is actually in use (2026-09-19; wave 4 applied 2026-09-23)
+
+> **Wave 4 (2026-09-23, `tools/cleanup_wave4_attic.sh`):** 73 entries / 3.6 MB moved to
+> `~/Desktop/Rustle_attic/2026-09-23/` (manifest there): 23 superseded documents (the pre-September method
+> docs `ONE_METHOD`/`NUMBERS`/`OBJECTIVES_AND_VERIFICATION`/`o1_investigations`/`METHOD_PSEUDOCODE`, the old
+> README, `OPEN_ITEMS_2026-09-09`, `o3_missing_copy_evidence`, the sdd specs/plans in `docs/superpowers/`,
+> `docs/{archive,artifacts,experiments}/`, four stale `bench/*.md`), 27 earlier data tables from the 09-04/05
+> sweeps, 4 superseded scripts (the applied cleanup waves, `family_vg_report.py`; ⚠ `bench/mcl_port.py` was moved and put back — 8 scripts import it as a library, the Rust `mcl_port` bin ports only its CLI),
+> and 19 caches/run outputs. Tracked files were `git rm --cached` after tagging HEAD `notebook-2026-09-23`.
+> `docs/CLEANUP_CANDIDATES.md` and its TSV (the 09-22 audit) went with them; re-run
+> `tools/audit_cleanup_candidates.py` to regenerate.
 
 > Waves 1 and 2 APPLIED (§6q8, §6q9). Wave 1: 101 tracked files → `archive/`, 33 untracked source →
 > `archive/untracked/`, 50 caches/logs deleted. Wave 2: **`bench/` inverted — 428 of 781 scripts archived,

@@ -2966,3 +2966,7 @@ Recorded so they are not re-proposed.
 3. **Coding fraction as a per-locus certificate** — runs *backwards*: annotated NPIP loci have median
    mRNA coverage **0.080**, non-annotated loci **0.443**; NPIPB2/A1/B8/B15 score **0.000**. Consequently
    the inference "gorilla loci with no coding sequence are flank, not gene" is **withdrawn**.
+
+---
+
+> **Moved documents (wave 4, 2026-09-23).** Files this document cites that were pruned from the working tree — `docs/o1_investigations.md`, `docs/OBJECTIVES_AND_VERIFICATION.md`, `docs/o3_missing_copy_evidence.md`, `docs/NUMBERS.md`, `docs/ONE_METHOD.md`, `docs/METHOD_PSEUDOCODE.md`, `docs/OPEN_ITEMS_2026-09-09.md`, `docs/superpowers/` — are at git tag `notebook-2026-09-23` (`git checkout notebook-2026-09-23 -- <path>`) and in `~/Desktop/Rustle_attic/2026-09-23/` (see its `MANIFEST.tsv`). The citations above are provenance and were left as written.
