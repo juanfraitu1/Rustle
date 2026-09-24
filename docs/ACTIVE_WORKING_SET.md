@@ -5,12 +5,12 @@
 > `asj_verify` (dropped objective), `debug_poa`, `bam_null_probe` (probes), `index_bam`, `bam_header`, `filter_bam_by_as`
 > (samtools does these), `gamma_refine`, `mcl_refine` (measurement scaffolding), `family_define` (legacy parity fixture
 > whose input table was already retired)), and with them the 12 library modules only they reached (see
-> `docs/MODULE_STATUS.md`; `lgamma` inlined into `o3_flag_pass`). `mcl_families --from-gtf` runs the de novo family
+> `docs/MODULE_STATUS.md`; `lgamma` inlined into `missing_copy_flag_pass`). `mcl_families --from-gtf` runs the de novo family
 > stage in one command (loci from the assembled GTF → all-vs-all → MCL), replacing the scratch `loci_from_gtf.py` +
 > a hand-run minimap2. **`tools/rustle_pipeline.sh`** runs every stage (assemble → families → catalog → assign → o3)
 > with the shipped defaults; verified end to end on a one-contig testis slice (10.6 min, 15.7 GB peak from the index
-> loads). Python 42 → 38 by merging the O2 sim/score pair (`o2_read_truth.py sim|score`) and the bakeoff pair
-> (`o2_tool_bakeoff.py calls|compare`) and inlining two single-use helpers. Speed: `o3_rna_flag` decodes
+> loads). Python 42 → 38 by merging the O2 sim/score pair (`copy_assign_read_truth.py sim|score`) and the bakeoff pair
+> (`copy_assign_tool_bakeoff.py calls|compare`) and inlining two single-use helpers. Speed: `missing_copy_flag` decodes
 > insertion-carrying reads once in pass 1 (a structural-only locus no longer re-queries the BAM): 42 → 28 s on an
 > 80 Mb contig, identical output. Tests 799 + integration, 0 failures.
 > **Wave 5 (2026-09-23, `tools/cleanup_wave5_scripts.sh`, user: "only O1, O2, O3, the Soto replication and the live
@@ -20,7 +20,7 @@
 > generators (their imports were archived in wave 2, the JSON fixtures they made are committed), the Python parity
 > oracles of ported Rust bins (`assembly_polish.py`, `readthrough_secondary_filter.py`, `o1_eval.py`, `igv_tracks.py`),
 > the bench shell scripts, and `family_rna_refine.tsv` (r1033). The O3 scratch simulations were consolidated into one
-> kept script, `bench/o3_sim_copies.py` (modes transcript / genomic / shuffled). Verified: 42/42 compile, no kept
+> kept script, `bench/missing_copy_sim.py` (modes transcript / genomic / shuffled). Verified: 42/42 compile, no kept
 > script imports a moved one.
 > **Wave 4 (2026-09-23, `tools/cleanup_wave4_attic.sh`):** 73 entries / 3.6 MB moved to
 > `~/Desktop/Rustle_attic/2026-09-23/` (manifest there): 23 superseded documents (the pre-September method
@@ -130,7 +130,7 @@ register still name their original paths, so follow them there:
 | ledger path | now at |
 |---|---|
 | `bench/denovo_shared_def.py` | `archive/bench/denovo_shared_def.py` |
-| `bench/o3_flag_pass.py` | `archive/bench/o3_flag_pass.py` |
+| `bench/missing_copy_flag_pass.py` | `archive/bench/missing_copy_flag_pass.py` |
 | `bench/vg_repeat_catalog.py` | `archive/bench/vg_repeat_catalog.py` |
 | `bench/gw_rebuild.sh` | `archive/bench/gw_rebuild.sh` |
 | `bench/gw_rebuild_v2.sh` | `archive/bench/gw_rebuild_v2.sh` |

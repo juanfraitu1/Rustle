@@ -1,4 +1,4 @@
-//! O3, RNA-only (§6ze, `docs/PREREG_o3_rna_only_2026-09-23.md`): everything that can be said about a possible
+//! Missing copies from RNA alone (thesis objective O3; §6ze, `docs/PREREG_o3_rna_only_2026-09-23.md`): everything that can be said about a possible
 //! reference-absent copy from one BAM, stopping where only DNA can go (copy number).
 //!
 //! **STATUS:** OTHER-BINARY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)

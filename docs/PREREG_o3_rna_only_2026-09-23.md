@@ -97,6 +97,8 @@ consistency rule removes; precision 0.2–0.5. Testis rate higher than fibroblas
 
 I will not change thresholds, the verdict order, the confirmation rule or the bar after seeing any number.
 
+> **Renamed 2026-09-24 (publishing names):** the binary `o3_rna_flag` is now `missing_copy_flag`, its module `o3_rna.rs` is `missing_copy.rs`, the output `<out>.o3_rna.tsv` is `<out>.missing_copies.tsv`, and the simulation script is `bench/missing_copy_sim.py`. The text below keeps the names it was written with.
+
 ---
 
 ## Addendum 1 (2026-09-23, after the first KB3781 pass, before any foreign-genome alignment) — a cross-species screen

@@ -3,7 +3,7 @@
 //! The thesis lives entirely in `vg_family`: O1 family definition, O2 copy assignment under MAPQ-0
 //! ambiguity, O3 allele-specific junctions, O4 reference-absent copies — over `genome` plus the
 //! foundational IO/type modules (`util`, `types`, `bam`). The four thesis binaries
-//! (`copy_assign`, `gw_family_catalog`, `o3_rna_flag`, `mcl_families`) import only these.
+//! (`copy_assign`, `gw_family_catalog`, `missing_copy_flag`, `mcl_families`) import only these.
 //!
 //! The legacy StringTie assembler + network-flow stack (~50k lines, ~55 modules) was RETIRED on
 //! 2026-07-14; see `docs/RETIREMENT_AND_MIGRATION.md`. Its last residue (the StringTie-exact

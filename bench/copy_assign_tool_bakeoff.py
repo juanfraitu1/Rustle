@@ -3,9 +3,9 @@
 two modes.
 
   calls    Derive a per-molecule COPY CALL from any isoform tool's GTF, by one identical rule.
-           usage: o2_tool_bakeoff.py calls <tool.gtf> <bam> <copies.tsv> --label NAME [--own assignments.tsv] [--out PREFIX] [--restrict names.txt] [--fuzz N]
+           usage: copy_assign_tool_bakeoff.py calls <tool.gtf> <bam> <copies.tsv> --label NAME [--own assignments.tsv] [--out PREFIX] [--restrict names.txt] [--fuzz N]
   compare  PREREG hard_locus_bakeoff (5ca5c7e4): compare per-tool derived calls (tool_bakeoff.py --out *.calls.tsv)
-           usage: o2_tool_bakeoff.py compare --assign ours.assignments.tsv [--gtf ours.gtf] [--bam B --min-mult N] ours=a.calls.tsv flair=b.calls.tsv ...
+           usage: copy_assign_tool_bakeoff.py compare --assign ours.assignments.tsv [--gtf ours.gtf] [--bam B --min-mult N] ours=a.calls.tsv flair=b.calls.tsv ...
 
 Derive a per-molecule COPY CALL from any isoform tool's GTF, by one identical rule.
 

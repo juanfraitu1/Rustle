@@ -121,9 +121,9 @@ struct RegionWork {
     /// (chrom, start, end, intron chain) — the EVIDENCE that places an isoform at a copy (§6hn)
     uniq_reads: Vec<(String, u64, u64, Vec<(u64, u64)>)>,
     /// O3: this family's raw (uncorrected) missing-copy pair statistics. Empty unless `--flag-missing-copies`.
-    o3_raw_pairs: Vec<rustle::vg_family::o3_flag_pass::RawPair>,
+    o3_raw_pairs: Vec<rustle::vg_family::missing_copy_flag_pass::RawPair>,
     /// O3: candidate orphan-read loci outside every unit of this family. Empty unless `--flag-missing-copies`.
-    o3_orphan_loci: Vec<rustle::vg_family::o3_flag_pass::OrphanLocus>,
+    o3_orphan_loci: Vec<rustle::vg_family::missing_copy_flag_pass::OrphanLocus>,
     /// Read-seeded copy discovery: candidate new copies clustered from AS-tied reads' out-of-catalog
     /// placements. Empty unless `--discover-copies`. Report only (Task 4 drains this to
     /// `<out>.discovered_copies.tsv`) -- never feeds back into this run's own catalog or assignments.
@@ -424,17 +424,17 @@ struct Args {
     #[arg(long, default_value_t = false)]
     rescue_singletons: bool,
     /// O3 (`docs/superpowers/specs/2026-09-10-o3-flag-pass-integration-design.md`): port of
-    /// `bench/o3_flag_pass.py`'s missing-copy detector. Requires `--families`. Adds `o3_flag`/`o3_class`/
-    /// `o3_rate_per_kb`/`o3_p`/`o3_n_rejected` columns to `<out>.family_join.tsv` and writes
-    /// `<out>.o3_candidate_loci.tsv`. Default off, byte-identical when unset.
+    /// `bench/missing_copy_flag_pass.py`'s missing-copy detector. Requires `--families`. Adds `missing_copy_flag`/`missing_copy_class`/
+    /// `missing_copy_rate_per_kb`/`missing_copy_p`/`missing_copy_n_rejected` columns to `<out>.family_join.tsv` and writes
+    /// `<out>.missing_copy_loci.tsv`. Default off, byte-identical when unset.
     #[arg(long, default_value_t = false)]
     flag_missing_copies: bool,
     /// O3: Bonferroni alpha for the genome-wide missing-copy threshold (`alpha / n_pairs`).
     #[arg(long, default_value_t = 0.001)]
-    o3_alpha: f64,
+    missing_copy_alpha: f64,
     /// O3: cap on reads realigned per side (test/control) per candidate copy, for wall-clock control.
     #[arg(long, default_value_t = 500)]
-    o3_max_reads: usize,
+    missing_copy_max_reads: usize,
     /// ⭐ A3 (`docs/OPEN_ITEMS_2026-09-09.md`, 09-10): append `sibling_identity` and `n_cols_vs_sibling` to
     /// `.assignments.tsv` — the whole-family PSV identity between an assigned copy and the competitor
     /// governing its p_value, and how many distinguishing positions this read spans against it. Reporting
@@ -1572,7 +1572,7 @@ fn read_ref_end_local(read: &rustle::vg_family::copy_split::AlignedRead) -> u64 
 }
 
 /// Reference-block overlap between an alignment and `[s, e)`, mirroring pysam's `get_blocks()` (used by
-/// `bench/o3_flag_pass.py`'s `truth` dict, lines 88-90: `sum(min(b1,e)-max(b0,s) for b0,b1 in
+/// `bench/missing_copy_flag_pass.py`'s `truth` dict, lines 88-90: `sum(min(b1,e)-max(b0,s) for b0,b1 in
 /// a.get_blocks() if b1>s and b0<e)`): only `M`/`=`/`X` runs count as aligned reference bases; `D`/`N`
 /// advance the reference position without contributing overlap. A large intron (`N`) that merely SPANS
 /// a target window contributes zero here, unlike `read_ref_end_local`'s span (`ref_start..ref_end`),
@@ -1600,7 +1600,7 @@ fn block_overlap(read: &rustle::vg_family::copy_split::AlignedRead, s: u64, e: u
 
 /// The O3 detector's "truth" table: for every primary-aligned read, the family's own candidate copy
 /// whose span the read's PRIMARY alignment overlaps MOST (by [`block_overlap`]), independent of O2's own
-/// (possibly MAPQ-0-ambiguous) `catalog_copy_idx` call -- mirrors `bench/o3_flag_pass.py`'s `truth` dict
+/// (possibly MAPQ-0-ambiguous) `catalog_copy_idx` call -- mirrors `bench/missing_copy_flag_pass.py`'s `truth` dict
 /// (lines 84-90: `for a in BAM.fetch(...): ... if o > 0 and (name not in truth or o > truth[name][1]):
 /// truth[name] = (i, o)`). Ties keep the FIRST-seen candidate (Python's strict `>` compare over
 /// `cp.items()`'s insertion order, i.e. `copy_spans`' iteration order here). A candidate copy with no
@@ -2743,7 +2743,7 @@ fn main() -> Result<()> {
     // the --phase copy graph stays AnnotationUnknown, byte-identical to the no-flag path).
     let annotation: Option<Vec<(String, u64, u64)>> =
         args.gff.as_deref().map(parse_annotation).transpose().context("parsing --gff")?;
-    // Minor (final whole-branch review): `bench/o3_flag_pass.py`'s reference requires `--gff` to reach its
+    // Minor (final whole-branch review): `bench/missing_copy_flag_pass.py`'s reference requires `--gff` to reach its
     // `annotated_no_unit` orphan-locus class at all (no gene intervals -> every locus is either
     // `other_family` or `unannotated`) -- without it, `--flag-missing-copies` silently never produces an
     // `annotated_no_unit` row rather than erroring, which is easy to miss on a real run.
@@ -2845,13 +2845,13 @@ fn main() -> Result<()> {
     // design constraint ("no allocation happens on the unset path") -- a 3-field POD with no side effect,
     // so this changes nothing observable, just tidiness.
     let o3_params = if args.flag_missing_copies {
-        rustle::vg_family::o3_flag_pass::O3Params {
-            alpha: args.o3_alpha,
-            max_reads: args.o3_max_reads,
+        rustle::vg_family::missing_copy_flag_pass::O3Params {
+            alpha: args.missing_copy_alpha,
+            max_reads: args.missing_copy_max_reads,
             min_reads: 3,
         }
     } else {
-        rustle::vg_family::o3_flag_pass::O3Params::default()
+        rustle::vg_family::missing_copy_flag_pass::O3Params::default()
     };
 
     let lambda = resolve_lambda(args.lambda_global, args.lambda_file.as_deref().and_then(read_lambda_file));
@@ -2923,8 +2923,8 @@ fn main() -> Result<()> {
     // O3 Phase 2 (Task 6): accumulated across the WHOLE serial drain (every region, every family) -- the
     // genome-wide Bonferroni flag threshold in `finalize_flags` can only be computed once every region has
     // drained, so nothing downstream of `compute()` can act on these until the loop below finishes.
-    let mut o3_all_raw_pairs: Vec<rustle::vg_family::o3_flag_pass::RawPair> = Vec::new();
-    let mut o3_all_orphan_loci: Vec<rustle::vg_family::o3_flag_pass::OrphanLocus> = Vec::new();
+    let mut o3_all_raw_pairs: Vec<rustle::vg_family::missing_copy_flag_pass::RawPair> = Vec::new();
+    let mut o3_all_orphan_loci: Vec<rustle::vg_family::missing_copy_flag_pass::OrphanLocus> = Vec::new();
     // `--discover-copies`: read-seeded candidate copies found while scanning each region, accumulated the
     // same way as the O3 vectors above -- `RegionWork.discovered` is already gated on `args.discover_copies`
     // at the `compute()` call site, so this just drains whatever each region produced.
@@ -3492,13 +3492,13 @@ fn main() -> Result<()> {
         let (o3_raw_pairs, o3_orphan_loci): (Vec<_>, Vec<_>) = if args.flag_missing_copies {
             let mut pairs = Vec::new();
             let mut loci = Vec::new();
-            // Fix 1 (Task 6, revised per review): `bench/o3_flag_pass.py`'s outer loop (lines 76-82)
+            // Fix 1 (Task 6, revised per review): `bench/missing_copy_flag_pass.py`'s outer loop (lines 76-82)
             // rebuilds its `A`/`targets` lookup FRESH, per family, from that ONE family's own
             // `A.assignments.tsv` -- each `fam_*` sweep is a separate, single-family `copy_assign`
             // invocation. There is no cross-family lookback anywhere in the Python: a read that actually
             // belongs to a neighboring family is let into the locus cluster and reclassified afterward by
             // the genome-wide `other_family`/`annotated_no_unit`/`unannotated` classifier
-            // (`bench/o3_flag_pass.py:148-149`, ported as `classify_orphan_locus` below), not excluded
+            // (`bench/missing_copy_flag_pass.py:148-149`, ported as `classify_orphan_locus` below), not excluded
             // upstream. Pooling every family in `fams` into one map (the previous version of this fix) is
             // therefore not a faithful port, and has its own bug on top: when two co-located families both
             // claim the same read (measured as real on this codebase's own data -- see
@@ -3522,7 +3522,7 @@ fn main() -> Result<()> {
                 // The locus extent (§L2, `register_locus_extent`/`locus_extent_of`, populated from the
                 // catalog's `locus_start`/`locus_end` columns by `catalog_input.rs`) is threaded through
                 // here so `detect_missing_copy_pairs` can realign against the SAME target window
-                // `bench/o3_flag_pass.py`'s `detector()` does -- Task 7's reproduction-gate fix: the bare
+                // `bench/missing_copy_flag_pass.py`'s `detector()` does -- Task 7's reproduction-gate fix: the bare
                 // copy span alone under-/over-sizes the window whenever it differs from the L2 extent.
                 //
                 // Fix 1 (final whole-branch review, confirmed live on Task 8's real output -- 8 rows/arm):
@@ -3554,7 +3554,7 @@ fn main() -> Result<()> {
                         }
                     }
                 }
-                // Task 7 fix (reproduction-gate finding): `bench/o3_flag_pass.py`'s `truth` dict gates
+                // Task 7 fix (reproduction-gate finding): `bench/missing_copy_flag_pass.py`'s `truth` dict gates
                 // EVERY read entering the detector on its PRIMARY alignment record physically overlapping
                 // at least one of this family's own copy spans (lines 83-96: `for i, r in cp.items(): for a
                 // in BAM.fetch(c, s, e): ... if a.flag & 2308: continue ...`). `catalog_copy_idx`
@@ -3594,7 +3594,7 @@ fn main() -> Result<()> {
                     // family's copies (grouped by O2's own best-copy call, which may differ from the
                     // truth-copy); control/accepted reads need the primary's OWN best-overlap copy to BE
                     // the candidate under test (`truth[n][0] == y` in the Python) AND not be rejected --
-                    // that is `ctl_names`'s full condition (`bench/o3_flag_pass.py:109`): `truth[n][0] ==
+                    // that is `ctl_names`'s full condition (`bench/missing_copy_flag_pass.py:109`): `truth[n][0] ==
                     // y and A[n]['origin_rejected'] != '1' and A[n]['catalog_copy_idx'] == y`. Note there is
                     // NO status/verdict condition -- Python's own inline comment says so explicitly: "any
                     // MAPQ, any status: NPIP copies have few MAPQ-60 reads". A prior version of this code
@@ -3630,10 +3630,10 @@ fn main() -> Result<()> {
                     let acc = accepted_by_cf.get(cf).unwrap_or(&empty_acc);
                     // Fix 3 (Task 6, carried forward from Task 5's review): iterating a HashMap's `.keys()`
                     // is nondeterministic order -- sort by `copy_idx` so `o3_raw_pairs` (and therefore its
-                    // `family_join.tsv`/`o3_candidate_loci.tsv` row order) is stable run-to-run.
-                    let mut inputs: Vec<rustle::vg_family::o3_flag_pass::PairInput> = spans
+                    // `family_join.tsv`/`missing_copy_loci.tsv` row order) is stable run-to-run.
+                    let mut inputs: Vec<rustle::vg_family::missing_copy_flag_pass::PairInput> = spans
                         .keys()
-                        .map(|cidx| rustle::vg_family::o3_flag_pass::PairInput {
+                        .map(|cidx| rustle::vg_family::missing_copy_flag_pass::PairInput {
                             copy_idx: cidx.clone(),
                             // CatalogCopy::partner is not threaded through FamilyAssignment yet -- default
                             // false never OVER-claims a partner exclusion (see the design doc's is_partner note).
@@ -3643,12 +3643,12 @@ fn main() -> Result<()> {
                         })
                         .collect();
                     inputs.sort_by(|a, b| a.copy_idx.cmp(&b.copy_idx));
-                    pairs.extend(rustle::vg_family::o3_flag_pass::detect_missing_copy_pairs(
+                    pairs.extend(rustle::vg_family::missing_copy_flag_pass::detect_missing_copy_pairs(
                         cf, spans, &genome, &inputs, &o3_params,
                     ));
                 }
                 // Orphan-locus scan: bam_reads whose primary lands outside every unit of this family,
-                // clustered by proximity (<=5kb gap, matching bench/o3_flag_pass.py), classified via the
+                // clustered by proximity (<=5kb gap, matching bench/missing_copy_flag_pass.py), classified via the
                 // shared genome-wide indices built once above.
                 let fam_units: Vec<(String, u64, u64)> = fa.copy_spans.clone();
                 let mut outside: Vec<&BamRead> = bam_reads
@@ -3688,7 +3688,7 @@ fn main() -> Result<()> {
                 // (`n_candidates==0`, nowhere to go at all) is a strict subset of this cluster's members
                 // (which also include merely-rejected-but-had-a-candidate reads, per the `fa_verdict` filter
                 // above) -- `fa_verdict` already carries `n_candidates` per read name, matching
-                // `bench/o3_flag_pass.py`'s own `n_orph = sum(1 for a in reads if
+                // `bench/missing_copy_flag_pass.py`'s own `n_orph = sum(1 for a in reads if
                 // A[a.query_name].get('n_candidates','1')=='0')`.
                 let mut clusters: Vec<(String, u64, u64, usize, usize)> = Vec::new();
                 for br in &outside {
@@ -3710,10 +3710,10 @@ fn main() -> Result<()> {
                     if n_reads < 3 {
                         continue;
                     }
-                    let (class, n_genes, other_units) = rustle::vg_family::o3_flag_pass::classify_orphan_locus(
+                    let (class, n_genes, other_units) = rustle::vg_family::missing_copy_flag_pass::classify_orphan_locus(
                         &chrom, start, end, &own_family_ids, &o3_all_units_by_chrom, &o3_genes_by_chrom,
                     );
-                    loci.push(rustle::vg_family::o3_flag_pass::OrphanLocus {
+                    loci.push(rustle::vg_family::missing_copy_flag_pass::OrphanLocus {
                         chrom, start, end, n_reads, n_orphans, class,
                         n_genes_overlapping: n_genes, other_family_units: other_units,
                     });
@@ -3783,7 +3783,7 @@ fn main() -> Result<()> {
             let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered } = work;
             // O3 Phase 2 (Task 6): fold this region's raw pair stats + orphan loci into the genome-wide
             // vectors. Nothing is written here -- the Bonferroni threshold in `finalize_flags` needs every
-            // region's pairs first, so `family_join.tsv`/`o3_candidate_loci.tsv` are written once, after
+            // region's pairs first, so `family_join.tsv`/`missing_copy_loci.tsv` are written once, after
             // this whole drain loop finishes.
             o3_all_raw_pairs.extend(o3_raw_pairs);
             o3_all_orphan_loci.extend(o3_orphan_loci);
@@ -5296,9 +5296,9 @@ fn main() -> Result<()> {
         // every region has drained into `o3_all_raw_pairs` -- `finalize_flags`'s threshold is
         // `alpha / n_pairs_with_a_p_value` over the WHOLE run, so it cannot be computed per-region or
         // per-family. Keyed by `(family_id, copy_idx)`, the same join key `JoinRow` now carries.
-        let o3_flags: std::collections::HashMap<(String, String), rustle::vg_family::o3_flag_pass::FlaggedPair> =
+        let o3_flags: std::collections::HashMap<(String, String), rustle::vg_family::missing_copy_flag_pass::FlaggedPair> =
             if args.flag_missing_copies {
-                rustle::vg_family::o3_flag_pass::finalize_flags(&o3_all_raw_pairs, args.o3_alpha)
+                rustle::vg_family::missing_copy_flag_pass::finalize_flags(&o3_all_raw_pairs, args.missing_copy_alpha)
                     .into_iter()
                     .map(|fp| ((fp.pair.family_id.clone(), fp.pair.copy_idx.clone()), fp))
                     .collect()
@@ -5317,13 +5317,13 @@ fn main() -> Result<()> {
                 match o3_flags.get(&(r.family_id.clone(), r.copy_idx.clone())) {
                     Some(fp) => {
                         let flag_str = match fp.flag {
-                            rustle::vg_family::o3_flag_pass::Flag::MissingCopy => "missing_copy",
-                            rustle::vg_family::o3_flag_pass::Flag::Untestable => "untestable",
-                            rustle::vg_family::o3_flag_pass::Flag::NoFlag => "none",
+                            rustle::vg_family::missing_copy_flag_pass::Flag::MissingCopy => "missing_copy",
+                            rustle::vg_family::missing_copy_flag_pass::Flag::Untestable => "untestable",
+                            rustle::vg_family::missing_copy_flag_pass::Flag::NoFlag => "none",
                         };
                         let class_str = match fp.pair.class {
-                            rustle::vg_family::o3_flag_pass::Class::Divergent => "divergent",
-                            rustle::vg_family::o3_flag_pass::Class::Structural => "structural",
+                            rustle::vg_family::missing_copy_flag_pass::Class::Divergent => "divergent",
+                            rustle::vg_family::missing_copy_flag_pass::Class::Structural => "structural",
                         };
                         let rate = if fp.pair.covered_kb > 0.0 { fp.pair.n_sites as f64 / fp.pair.covered_kb } else { 0.0 };
                         let p_str = fp.pair.p_uncorrected.map_or("NA".to_string(), |p| format!("{p:.3e}"));
@@ -5367,13 +5367,13 @@ fn main() -> Result<()> {
     // orphan locus is about reads with nowhere to go, not about the catalog join -- so this sits OUTSIDE
     // the `if let Some(ix) = &catalog_index` block above, gated only on the flag itself.
     if args.flag_missing_copies {
-        let mut lh = std::fs::File::create(format!("{}.o3_candidate_loci.tsv", args.out))?;
+        let mut lh = std::fs::File::create(format!("{}.missing_copy_loci.tsv", args.out))?;
         writeln!(lh, "chrom\tstart\tend\tn_reads\tn_orphans\tclass\tn_genes_overlapping\tother_family_units")?;
         for l in &o3_all_orphan_loci {
             let class_str = match l.class {
-                rustle::vg_family::o3_flag_pass::LocusClass::OtherFamily => "other_family",
-                rustle::vg_family::o3_flag_pass::LocusClass::AnnotatedNoUnit => "annotated_no_unit",
-                rustle::vg_family::o3_flag_pass::LocusClass::Unannotated => "unannotated",
+                rustle::vg_family::missing_copy_flag_pass::LocusClass::OtherFamily => "other_family",
+                rustle::vg_family::missing_copy_flag_pass::LocusClass::AnnotatedNoUnit => "annotated_no_unit",
+                rustle::vg_family::missing_copy_flag_pass::LocusClass::Unannotated => "unannotated",
             };
             writeln!(
                 lh, "{}\t{}\t{}\t{}\t{}\t{class_str}\t{}\t{}",
@@ -5381,7 +5381,7 @@ fn main() -> Result<()> {
                 if l.other_family_units.is_empty() { "-".to_string() } else { l.other_family_units.join(";") },
             )?;
         }
-        eprintln!("[copy_assign] wrote {}.o3_candidate_loci.tsv ({} loci)", args.out, o3_all_orphan_loci.len());
+        eprintln!("[copy_assign] wrote {}.missing_copy_loci.tsv ({} loci)", args.out, o3_all_orphan_loci.len());
     }
 
     // `--discover-copies`: read-seeded candidate copies accumulated across every region above. Report only

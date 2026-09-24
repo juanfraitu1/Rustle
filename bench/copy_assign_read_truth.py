@@ -2,9 +2,9 @@
 """O2 read-level truth (docs/PREREG_o2_read_truth_2026-09-23.md), one script, two modes.
 
   sim    O2 read-level truth simulation (PREREG_o2_read_truth_2026-09-23): reads from every copy of every multi-copy
-         usage: o2_read_truth.py sim copies.tsv copies.fa INDEX.mmi OUT_PREFIX SEED
+         usage: copy_assign_read_truth.py sim copies.tsv copies.fa INDEX.mmi OUT_PREFIX SEED
   score  Per-read scoring of copy_assign --families output (one row per read x family). Three readings of the table:
-         usage: CATALOG_TSV=cat.copies.tsv o2_read_truth.py score PREFIX O2PREFIX
+         usage: CATALOG_TSV=cat.copies.tsv copy_assign_read_truth.py score PREFIX O2PREFIX
 
 sim: every copy of every multi-copy family gets HiFi-model reads (jittered, trimmed) named `family|copy|i`, mapped
 genome-wide with the shipped minimap2 settings; also writes per-copy closest-sibling identity.

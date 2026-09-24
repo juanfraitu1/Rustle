@@ -1,6 +1,6 @@
 # bench/ — the analysis scripts and per-topic reports
 
-Regenerated 2026-09-24 after waves 5–6. **38 scripts**, each part of a current objective result, the Soto replication,
+Regenerated 2026-09-24 after waves 5–6. **39 scripts**, each part of a current objective result, the Soto replication,
 or the shared infrastructure; every retired analysis script is at git tags `notebook-2026-09-23b` / `-23c` and in
 `~/Desktop/Rustle_attic/`. Reports (`*.md`) are the per-topic records the ledger and register cite; not pruned.
 
@@ -11,7 +11,7 @@ or the shared infrastructure; every retired analysis script is at git tags `note
 | `soto/rustlib.py` | Canonical primitives for the bench scripts — ONE implementation of each rule that has been got wrong. |
 | `sim_reads.py` | Shared full-length HiFi transcript-read simulator (deterministic). IsoSeq reads are full-length, |
 
-## O1 — RNA-level definition machinery (nested edge-test lattice) and the guided mode with its truths
+## Family definition — RNA-level definition machinery (nested edge-test lattice) and the guided mode with its truths
 
 | script | what it does |
 |---|---|
@@ -39,20 +39,21 @@ or the shared infrastructure; every retired analysis script is at git tags `note
 | `mcl_port.py` | Python MCL comparator — now a thin shim over the bit-faithful Rust bin `mcl_port` (§6z3, r1047). |
 | `ideal_chromosome_sim.py` | Ideal-scenario chromosome simulation, per `docs/PREREG_ideal_chromosome_sim_2026-09-21.md` |
 
-## O2 — read-level truth (sim + score), excision robustness, hard-locus tool bakeoff (calls + compare), Eichler comparator
+## Copy assignment — read-level truth (sim + score), excision robustness, hard-locus tool bakeoff (calls + compare), Eichler comparator
 
 | script | what it does |
 |---|---|
-| `o2_read_truth.py` | O2 read-level truth (docs/PREREG_o2_read_truth_2026-09-23.md), one script, two modes. |
-| `o2_excision.py` | PREREG adj/excise: remove copy X from a family, rerun copy_assign (genomic read-star default), follow X's |
-| `o2_tool_bakeoff.py` | O2 hard-locus tool bakeoff (docs/PREREG_tool_bakeoff_2026-09-08.md, PREREG hard_locus_bakeoff 5ca5c7e4), one script, |
+| `copy_assign_read_truth.py` | O2 read-level truth (docs/PREREG_o2_read_truth_2026-09-23.md), one script, two modes. |
+| `copy_assign_excision.py` | PREREG adj/excise: remove copy X from a family, rerun copy_assign (genomic read-star default), follow X's |
+| `copy_assign_tool_bakeoff.py` | O2 hard-locus tool bakeoff (docs/PREREG_tool_bakeoff_2026-09-08.md, PREREG hard_locus_bakeoff 5ca5c7e4), one script, |
 | `eichler_compare.py` | Eichler-style AS-margin assignment, computed alongside ours and compared. |
 
-## O3 — simulations behind the RNA-only chain (transcript / genomic / shuffled)
+## Missing copies — simulations behind the RNA-only chain (transcript / genomic / shuffled) and the tandem-copy simulator
 
 | script | what it does |
 |---|---|
-| `o3_sim_copies.py` | O3 simulations with truth (docs/PREREG_o3_reference_bias_2026-09-23.md arm A, docs/PREREG_o3_rna_only_2026-09-23.md |
+| `tandem_copy_sim.py` | Tandem-copy simulator: plant k copies of a real two-exon gene (tandem or interleaved) at identity p, map, classify every read's exon placements, run assembler/catalog/assignment (§6zg) |
+| `missing_copy_sim.py` | O3 simulations with truth (docs/PREREG_o3_reference_bias_2026-09-23.md arm A, docs/PREREG_o3_rna_only_2026-09-23.md |
 
 ## Soto 2025 replication chain and scorer
 

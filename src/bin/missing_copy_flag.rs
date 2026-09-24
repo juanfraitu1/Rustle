@@ -1,4 +1,5 @@
-//! `o3_rna_flag` — O3 as far as RNA can carry it (§6ze, `docs/PREREG_o3_rna_only_2026-09-23.md`).
+//! `missing_copy_flag` — flag expressed copies the reference does not contain, from RNA alone
+//! (thesis objective O3; §6ze, `docs/PREREG_o3_rna_only_2026-09-23.md`).
 //!
 //! For every locus: the per-read `de` divergence mixture (S2 statistic), PSV consistency of the divergent
 //! sub-pile, a spliced patched consensus, a whole-genome home search, the hypermutation / contamination /
@@ -6,12 +7,12 @@
 //! are given — whether the consensus has a near-perfect home there (the DNA confirmation, here the parental
 //! haplotypes of the assembly's own animal).
 //!
-//! usage: o3_rna_flag --bam B --fasta PRIMARY.fa --loci LOCI.{gtf,gff,bed} --index PRIMARY.mmi --out PREFIX
+//! usage: missing_copy_flag --bam B --fasta PRIMARY.fa --loci LOCI.{gtf,gff,bed} --index PRIMARY.mmi --out PREFIX
 //!        [--gff ANNOTATION.gff] [--confirm NAME=GENOME.mmi ...] [--m-min 0.10] [--delta-min 0.01]
 //!        [--min-reads 10] [--min-sub 3] [--max-reads 2000] [--pi 0.002] [--threads 2] [--contigs c1,c2]
 //!        [--foreign NAME=GENOME.mmi ...] [--scan-only] [--from-scan PREFIX1,PREFIX2,...]
 //!
-//! Outputs `<PREFIX>.o3_rna.tsv` (one row per locus with >= --min-reads reads) and `<PREFIX>.consensus.fa`.
+//! Outputs `<PREFIX>.missing_copy.tsv` (one row per locus with >= --min-reads reads) and `<PREFIX>.consensus.fa`.
 //! Heavy work (one minimap2 run per genome index) happens once at the end, never per locus. A genome-wide run
 //! on a 5-core laptop is split: `--scan-only` (BAM scan + mixture + consistency + consensus for a contig batch,
 //! writes `<PREFIX>.scan.tsv` + `<PREFIX>.consensus.fa`), then one `--from-scan A,B,C` call that aligns every
@@ -20,7 +21,7 @@
 use anyhow::{Context, Result};
 use noodles_sam::alignment::record_buf::RecordBuf;
 use rustle::vg_family::denovo_assemble::aligned_read_from_record;
-use rustle::vg_family::o3_rna::*;
+use rustle::vg_family::missing_copy::*;
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -201,7 +202,7 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
         Some(cs) => loci.into_iter().filter(|l| cs.contains(&l.1)).collect(),
         None => loci,
     };
-    eprintln!("[o3_rna_flag] {} loci", loci.len());
+    eprintln!("[missing_copy_flag] {} loci", loci.len());
     let ig: HashMap<String, Vec<(u64, u64)>> = match &args.gff {
         Some(g) => load_ig_tr(g)?,
         None => HashMap::new(),
@@ -297,7 +298,7 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             let (id, chrom, start, end, name) = &loci[order[k]];
             n_scanned += 1;
             if n_scanned % 2000 == 0 {
-                eprintln!("[o3_rna_flag] {n_scanned}/{} loci, {n_enough} with reads, {n_fired} fired", loci.len());
+                eprintln!("[missing_copy_flag] {n_scanned}/{} loci, {n_enough} with reads, {n_fired} fired", loci.len());
             }
             if pile1.len() < args.min_reads {
                 continue;
@@ -440,14 +441,14 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             rows.push(row);
         }
     }
-    eprintln!("[o3_rna_flag] scanned {n_scanned}, with >= {} reads {n_enough}, fired {n_fired}", args.min_reads);
+    eprintln!("[missing_copy_flag] scanned {n_scanned}, with >= {} reads {n_enough}, fired {n_fired}", args.min_reads);
     let scan_path = format!("{}.scan.tsv", args.out);
     let mut f = std::fs::File::create(&scan_path)?;
     writeln!(f, "{SCAN_HEAD}")?;
     for r in &rows {
         writeln!(f, "{}", r.to_scan_line())?;
     }
-    eprintln!("[o3_rna_flag] wrote {scan_path} and {cons_path}");
+    eprintln!("[missing_copy_flag] wrote {scan_path} and {cons_path}");
     Ok(rows)
 }
 
@@ -477,7 +478,7 @@ fn main() -> Result<()> {
                 let fa = std::fs::read(format!("{p}.consensus.fa")).with_context(|| format!("{p}.consensus.fa"))?;
                 out_fa.write_all(&fa)?;
             }
-            eprintln!("[o3_rna_flag] resumed {} rows from {} scan batches", rows.len(), prefixes.len());
+            eprintln!("[missing_copy_flag] resumed {} rows from {} scan batches", rows.len(), prefixes.len());
             (rows, merged)
         }
     };
@@ -492,7 +493,7 @@ fn main() -> Result<()> {
     for (gname, gidx) in &genomes {
         let mut by: HashMap<String, Vec<Hit>> = HashMap::new();
         if n_fired > 0 {
-            eprintln!("[o3_rna_flag] aligning {n_fired} consensus sequences to {gname} ({gidx})");
+            eprintln!("[missing_copy_flag] aligning {n_fired} consensus sequences to {gname} ({gidx})");
             for h in parse_paf_hits(&minimap2_batch(gidx, &cons_fasta, args.threads.max(2))?) {
                 by.entry(h.query.clone()).or_default().push(h);
             }
@@ -500,7 +501,7 @@ fn main() -> Result<()> {
         hits_by.push((gname.clone(), by));
     }
 
-    let tsv_path = format!("{}.o3_rna.tsv", args.out);
+    let tsv_path = format!("{}.missing_copy.tsv", args.out);
     let mut tsv = std::fs::File::create(&tsv_path)?;
     let mut head: Vec<String> = SCAN_HEAD.split('\t').map(String::from).collect();
     head.extend(["class", "delta_over_pi", "consistency", "host_identity", "other_identity", "other_locus", "verdict", "expected_dna_depth_ratio"].into_iter().map(String::from));
@@ -564,10 +565,10 @@ fn main() -> Result<()> {
     }
     let mut vc: Vec<_> = counts.iter().collect();
     vc.sort();
-    eprintln!("[o3_rna_flag] verdicts: {vc:?}");
+    eprintln!("[missing_copy_flag] verdicts: {vc:?}");
     if n_conf > 0 {
-        eprintln!("[o3_rna_flag] reference_absent_candidate {n_candidates}, confirmed by a confirm genome {n_confirmed}");
+        eprintln!("[missing_copy_flag] reference_absent_candidate {n_candidates}, confirmed by a confirm genome {n_confirmed}");
     }
-    eprintln!("[o3_rna_flag] wrote {tsv_path}");
+    eprintln!("[missing_copy_flag] wrote {tsv_path}");
     Ok(())
 }

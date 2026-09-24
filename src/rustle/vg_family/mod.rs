@@ -7,7 +7,7 @@
 //!
 //! **STATUS:** INFRASTRUCTURE  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
-pub mod o3_rna; // O3 RNA-only chain: divergence mixture -> PSV consistency -> patched consensus -> home search -> screens -> verdict (§6ze).
+pub mod missing_copy; // O3 RNA-only chain: divergence mixture -> PSV consistency -> patched consensus -> home search -> screens -> verdict (§6ze).
 pub mod seq_utils; // small sequence utilities (reverse_complement); relocated from the retired assembler vg.rs.
 pub mod collapse_gate; // O2: admit a COLLAPSED single-rep locus as a multi-copy family (ambiguity test, then chi(H)).
 pub mod minimizers; // O1 over-merge-gate FOUNDATION: canonical (k,w)-minimizers (Rust port of vg_repeat_catalog.py `minimizers`; byte-parity tested).
@@ -25,7 +25,7 @@ pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collaps
 // docs/copy_assignment_definition.md §10.
 pub mod copy_split; // Joint read-coherence + PSV decomposition into (copy, isoform) units.
 pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy candidates.
-pub mod o3_flag_pass; // O3 flag-pass detector: ports bench/o3_flag_pass.py's missing-copy detector natively; see docs/superpowers/specs/2026-09-10-o3-flag-pass-integration-design.md
+pub mod missing_copy_flag_pass; // O3 flag-pass detector: ports bench/missing_copy_flag_pass.py's missing-copy detector natively; see docs/superpowers/specs/2026-09-10-o3-flag-pass-integration-design.md
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
 pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
 pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.

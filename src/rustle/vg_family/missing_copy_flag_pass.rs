@@ -1,5 +1,5 @@
 //! O3 flag-pass detector (`docs/superpowers/specs/2026-09-10-o3-flag-pass-integration-design.md`):
-//! ports `bench/o3_flag_pass.py`'s missing-copy detector natively into `copy_assign`.
+//! ports `bench/missing_copy_flag_pass.py`'s missing-copy detector natively into `copy_assign`.
 //!
 //! **STATUS:** OPT-IN  (reachable via `copy_assign --flag-missing-copies`, src/bin/copy_assign.rs; default off)
 
@@ -102,7 +102,7 @@ impl Default for O3Params {
     }
 }
 
-/// P(X >= k) for X ~ Poisson(lam). Mirrors `bench/o3_flag_pass.py`'s `poisson_tail` exactly (same
+/// P(X >= k) for X ~ Poisson(lam). Mirrors `bench/missing_copy_flag_pass.py`'s `poisson_tail` exactly (same
 /// closed-form sum, same edge cases): k==0 -> 1.0 always true; lam<=0 with k>=1 -> 0.0 (a Poisson(0) is
 /// a point mass at 0).
 pub fn poisson_tail(k: usize, lam: f64) -> f64 {
@@ -354,7 +354,7 @@ mod tests {
 /// Pure visibility widening, no signature/behavior change; every other item Task 5 needs was already `pub`.
 ///
 /// `own_family_ids` (final whole-branch-review fix round, follow-up): a SET, not a single id --
-/// `bench/o3_flag_pass.py`'s own exclusion (`u[2] != cp[next(iter(cp))]['family_id'].split('_')[0]`) is
+/// `bench/missing_copy_flag_pass.py`'s own exclusion (`u[2] != cp[next(iter(cp))]['family_id'].split('_')[0]`) is
 /// trivially always correct because each Python sweep is ISOLATED to exactly one catalog family. The
 /// caller here is a locally co-located physical sweep group that can legitimately bundle MORE THAN ONE
 /// true catalog family (the same fact Fix 1 addressed for the pair detector) -- passing a single id (the
@@ -589,7 +589,7 @@ fn median(mut v: Vec<f64>) -> Option<f64> {
 }
 
 /// Realignment target window for one Y-copy, extracted as a pure function so Task 7's window-selection
-/// fix (using the catalog's L2 locus extent when present, matching `bench/o3_flag_pass.py`'s `detector()`
+/// fix (using the catalog's L2 locus extent when present, matching `bench/missing_copy_flag_pass.py`'s `detector()`
 /// lines 45-48) is directly unit-testable without a real `minimap2`/`GenomeIndex`. `locus` is the
 /// catalog's `(locus_start, locus_end)` for this copy when one is recorded; `longest_rejected` is the
 /// length of the longest rejected read, used only in the `None` fallback to pad the bare copy span (so a
@@ -607,7 +607,7 @@ fn locus_or_padded_window(s: u64, e: u64, locus: Option<(u64, u64)>, longest_rej
 /// that pair is skipped -- see the design doc's Error Handling section for why this must not abort.
 ///
 /// `copy_span_by_catalog_idx` maps to `(chrom, start, end, locus_extent)`: the realignment TARGET window
-/// mirrors `bench/o3_flag_pass.py`'s `detector()` exactly (lines 45-48) -- `(min(locus_start, start),
+/// mirrors `bench/missing_copy_flag_pass.py`'s `detector()` exactly (lines 45-48) -- `(min(locus_start, start),
 /// max(locus_end, end))` when the catalog carries an L2 locus extent for this copy, else the copy's own
 /// span padded by the longest rejected read on each side (see [`locus_or_padded_window`], which does this
 /// computation and is unit-tested directly). Using the bare copy span unconditionally (the pre-fix
@@ -744,7 +744,7 @@ mod pair_detector_tests {
     #[test]
     fn locus_extent_wider_than_the_copy_span_wins() {
         // Locus extent (40,160) strictly contains the copy span (50,120): the window must widen to the
-        // locus, matching `bench/o3_flag_pass.py`'s `(min(locus_start, start), max(locus_end, end))`.
+        // locus, matching `bench/missing_copy_flag_pass.py`'s `(min(locus_start, start), max(locus_end, end))`.
         assert_eq!(locus_or_padded_window(50, 120, Some((40, 160)), 999), (40, 160));
     }
 

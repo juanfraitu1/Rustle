@@ -177,7 +177,7 @@ retracted in later ones — the ledger is append-only, so **the latest section w
   SRA-style names it silently skips every read (register row 865, itself a retraction).
 - Two datasets (`A119b`, `GGO_OR6737`) still need public accessions filled into `docs/DATA.md`.
 
-## O3, RNA-only: flag a possible reference-absent copy and hand it to DNA (§6ze, 2026-09-23)
+## Missing copies from RNA alone: flag, characterise, screen, hand to DNA (thesis O3; §6ze, 2026-09-23)
 
 `docs/PREREG_o3_rna_only_2026-09-23.md`. One BAM (primaries with `de:f` and `--eqx`), a locus set, the primary
 genome and its minimap2 splice index; optional annotation GFF (IG/TR screen), `--confirm` genomes (a
@@ -185,14 +185,14 @@ haplotype assembly: DNA confirmation) and `--foreign` genomes (another species: 
 
 ```bash
 # scan in contig batches (a laptop-sized foreground job each), then align once per genome
-o3_rna_flag --bam READS.bam --fasta GENOME.fa --loci GENES.gff --gff GENES.gff --index x \
+missing_copy_flag --bam READS.bam --fasta GENOME.fa --loci GENES.gff --gff GENES.gff --index x \
             --contigs chr1,chr2,... --out run_b1 --scan-only
-o3_rna_flag --bam READS.bam --fasta GENOME.fa --loci GENES.gff --index GENOME.splice.mmi \
+missing_copy_flag --bam READS.bam --fasta GENOME.fa --loci GENES.gff --index GENOME.splice.mmi \
             --confirm pat=PAT.splice.mmi --confirm mat=MAT.splice.mmi --foreign human=CHM13.splice.mmi \
             --out run --from-scan run_b1,run_b2
 ```
 
-Output `run.o3_rna.tsv` (one row per expressed locus; `class` ∈ divergent / structural / both — the structural
+Output `run.missing_copy.tsv` (one row per expressed locus; `class` ∈ divergent / structural / both — the structural
 detector (exon-order rearrangements carried as ≥ 50 bp insertions, addendum 2) is on by default; verdict ∈
 contamination / foreign_species / hypermutation / rna_editing / scattered / unannotated_paralogue /
 reference_absent_candidate, plus
@@ -204,12 +204,12 @@ consensus — the probe for a DNA k-mer/depth check). Positive control: `/mnt/li
 
 > **Moved documents (wave 4, 2026-09-23).** Files this document cites that were pruned from the working tree — `docs/o1_investigations.md`, `docs/OBJECTIVES_AND_VERIFICATION.md`, `docs/o3_missing_copy_evidence.md`, `docs/NUMBERS.md`, `docs/ONE_METHOD.md`, `docs/METHOD_PSEUDOCODE.md`, `docs/OPEN_ITEMS_2026-09-09.md`, `docs/superpowers/` — are at git tag `notebook-2026-09-23` (`git checkout notebook-2026-09-23 -- <path>`) and in `~/Desktop/Rustle_attic/2026-09-23/` (see its `MANIFEST.tsv`). The citations above are provenance and were left as written.
 
-## O2 read-level accuracy on a catalog (§6zf, 2026-09-23)
+## Copy-assignment accuracy with read-level truth (thesis O2; §6zf, 2026-09-23)
 
 ```bash
-python3 bench/o2_read_truth.py sim CAT.copies.tsv CAT.copies.fa GENOME.splice.mmi run 20260923   # reads from every copy, mapped genome-wide
+python3 bench/copy_assign_read_truth.py sim CAT.copies.tsv CAT.copies.fa GENOME.splice.mmi run 20260923   # reads from every copy, mapped genome-wide
 copy_assign --bam run.bam --fasta GENOME.fa --regions whole_chromosomes.txt --families CAT.copies.tsv --copies-fa CAT.copies.fa --out run_o2
-CATALOG_TSV=CAT.copies.tsv python3 bench/o2_read_truth.py score run run_o2      # OWN / PRIMARY / ANY readings, per divergence bin
+CATALOG_TSV=CAT.copies.tsv python3 bench/copy_assign_read_truth.py score run run_o2      # OWN / PRIMARY / ANY readings, per divergence bin
 ```
 Expected (human chr16 catalog `chr16_arm/on`, copies < 300 bp dropped): OWN 157/157 correct, 0 wrong, 1,088 abstain of 1,259 MAPQ-0 reads.
 
@@ -219,5 +219,14 @@ Expected (human chr16 catalog `chr16_arm/on`, copies < 300 bp dropped): OWN 157/
 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index GENOME.splice.mmi --gff ANNOT.gff \
     [--confirm pat=PAT.splice.mmi --confirm mat=MAT.splice.mmi] [--foreign human=CHM13.splice.mmi] [--threads 4]
 # stages, each also runnable alone: assemble -> families (mcl_families --from-gtf) -> catalog (gw_family_catalog)
-#   -> assign (copy_assign --families) -> o3 (o3_rna_flag scan + align). Products all carry the --out prefix.
+#   -> assign (copy_assign --families) -> flag (missing_copy_flag scan + align). Products all carry the --out prefix.
 ```
+
+## Tandem-copy simulations: what the aligner and the pipeline do with near-identical adjacent copies (§6zg, 2026-09-24)
+
+```bash
+python3 bench/tandem_copy_sim.py --fasta chr20.fa --gtf chr20_ref.gtf --out t --layout tandem --copies 2 \
+    --sweep 0.9,0.95,0.98,0.99,0.995,1.0 --pipeline --bin target/release      # also --layout interleaved, --copies 3
+```
+Per read: same/other copy, cross-copy chain, MAPQ, AS tie; per condition: assembler transcripts (chimeric), catalog
+copies, assignment. Expected (`docs/PREREG_tandem_copy_sim_2026-09-24.md`): 0 cross-copy chains below identity 1.0.

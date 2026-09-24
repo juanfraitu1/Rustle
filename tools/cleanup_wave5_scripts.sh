@@ -42,12 +42,12 @@ bench/ideal_chromosome_sim.py
 # --- O2: the read-level truth, the excision robustness test, the hard-locus tool bakeoff, the Eichler comparator
 bench/o2_read_truth_sim.py
 bench/o2_read_truth_score.py
-bench/o2_excision.py
+bench/copy_assign_excision.py
 bench/hard_locus_bakeoff.py
 bench/tool_bakeoff.py
 bench/eichler_compare.py
 # --- O3: the simulations behind the RNA-only chain (one script, three modes)
-bench/o3_sim_copies.py
+bench/missing_copy_sim.py
 # --- Soto 2025 replication chain (ARI 0.6959) and its scorer
 bench/soto/soto_replicate_from_sedef.py
 bench/soto/soto_replicate_clustering.py

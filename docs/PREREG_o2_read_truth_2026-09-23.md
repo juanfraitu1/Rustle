@@ -63,6 +63,8 @@ transfers.
 
 I will not change the read model, the bins, the denominators or the bar after seeing any number.
 
+> **Renamed 2026-09-24 (publishing names):** `bench/o2_read_truth.py` is now `bench/copy_assign_read_truth.py`; the pipeline driver stage is `assign`.
+
 ---
 
 ## Addendum 1 (2026-09-23, after the first human run, before the gorilla run is scored)

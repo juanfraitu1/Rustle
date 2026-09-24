@@ -125,5 +125,5 @@ name = "mcl_port"
 path = "src/bin/mcl_port.rs"
 
 [[bin]]
-name = "o3_rna_flag"
-path = "src/bin/o3_rna_flag.rs"
+name = "missing_copy_flag"
+path = "src/bin/missing_copy_flag.rs"

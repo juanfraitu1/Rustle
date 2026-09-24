@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
-"""O3 simulations with truth (docs/PREREG_o3_reference_bias_2026-09-23.md arm A, docs/PREREG_o3_rna_only_2026-09-23.md
+"""Missing-copy simulations with truth (thesis objective O3; (docs/PREREG_o3_reference_bias_2026-09-23.md arm A, docs/PREREG_o3_rna_only_2026-09-23.md
 control + addendum 2): reads from K annotated chr genes plus an EXTRA COPY that is absent from the reference, mapped to
 the unmodified reference with the shipped minimap2 settings.
 
 modes
   transcript  each transcript of the gene mutated independently at divergence d (arm A: where do the copy's reads go?)
-  genomic     the gene SPAN mutated once, every transcript read off it (one real genomic copy: the o3_rna_flag positive
-              control); also writes <out>.copies.fa/.mmi, the mutated spans, usable as an o3_rna_flag --confirm genome
+  genomic     the gene SPAN mutated once, every transcript read off it (one real genomic copy: the missing_copy_flag positive
+              control); also writes <out>.copies.fa/.mmi, the mutated spans, usable as an missing_copy_flag --confirm genome
   shuffled    the extra copy's transcript has exons 2 and 3 swapped (+ divergence d): how minimap2 represents an
               exon-order rearrangement (insertion vs clip vs supplementary), the structural detector's control
 
-usage: o3_sim_copies.py MODE REF.gtf REF.fa CHROM K DIVERGENCE OUT_PREFIX SEED
+usage: missing_copy_sim.py MODE REF.gtf REF.fa CHROM K DIVERGENCE OUT_PREFIX SEED
 Read names carry the truth: `template|gene|tx|i` / `extra|gene|tx|i` (`shuffled|gene|i` in shuffled mode)."""
 import sys, re, random, collections, subprocess, statistics
 import pysam
 sys.path.insert(0, __file__.rsplit('/', 1)[0]); from sim_reads import simulate_reads
 
+if len(sys.argv) != 9 or sys.argv[1] not in ('transcript', 'genomic', 'shuffled'):
+    sys.exit(__doc__)
 MODE, gtf, fa_p, CHROM, K, div, out, seed = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]), float(sys.argv[6]), sys.argv[7], int(sys.argv[8])
 assert MODE in ('transcript', 'genomic', 'shuffled')
 fa = pysam.FastaFile(fa_p); rng = random.Random(seed)
@@ -77,7 +79,7 @@ with open(out + '.genes.txt', 'w') as fh:
 subprocess.run(f"{MM2} {fa_p} {out}.fq 2>/dev/null | samtools sort -@2 -o {out}.bam - && samtools index {out}.bam", shell=True, check=True)
 if MODE == 'genomic':
     subprocess.run(f"minimap2 -x splice:hq -d {out}.copies.mmi {out}.copies.fa 2>/dev/null", shell=True, check=True)
-print(f'[o3_sim_copies {MODE} d={div}] {len(chosen)} genes, {n} reads -> {out}.bam', flush=True)
+print(f'[missing_copy_sim {MODE} d={div}] {len(chosen)} genes, {n} reads -> {out}.bam', flush=True)
 
 # --- classify the reads' placements
 recs = collections.defaultdict(list)
