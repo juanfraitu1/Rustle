@@ -58,7 +58,7 @@ elevated-divergence pile at the template — exactly the O3 flag-pass statistic.
 # ARM A — OUTCOME (2026-09-23): ⛔ **claim refuted at every divergence tested; the extra copy is a divergence pile at its template**
 
 chr20, 40 genes (106 transcripts), 10 reads per template transcript and 10 per extra-copy transcript per
-level, shipped minimap2 against the unmodified chr20 (`/mnt/linuxdisk/tmp/gw22/o3/simA.py`):
+level, shipped minimap2 against the unmodified chr20 (`/mnt/linuxdisk/tmp/gw22/o3/simA.py`; consolidated with simB/simC as `bench/o3_sim_copies.py`, mode `transcript`):
 
 | divergence of the extra copy | extra-copy reads | unmapped | primary elsewhere | AS-tied / MAPQ 0 | **absorbed at the template locus** | median `de` at the locus (template reads: 0.0015) |
 |---|---|---|---|---|---|---|

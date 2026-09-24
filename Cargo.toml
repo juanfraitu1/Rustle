@@ -74,29 +74,11 @@ panic = "unwind"
 name = "mcl_families"
 path = "src/bin/mcl_families.rs"
 
-[[bin]]
-name = "gamma_refine"
-path = "src/bin/gamma_refine.rs"
 
-[[bin]]
-name = "mcl_refine"
-path = "src/bin/mcl_refine.rs"
 
-[[bin]]
-name = "debug_poa"
-path = "src/bin/debug_poa.rs"
 
-[[bin]]
-name = "bam_header"
-path = "src/bin/bam_header.rs"
 
-[[bin]]
-name = "filter_bam_by_as"
-path = "src/bin/filter_bam_by_as.rs"
 
-[[bin]]
-name = "index_bam"
-path = "src/bin/index_bam.rs"
 
 [[bin]]
 name = "copy_assign"
@@ -106,17 +88,8 @@ path = "src/bin/copy_assign.rs"
 name = "gw_family_catalog"
 path = "src/bin/gw_family_catalog.rs"
 
-[[bin]]
-name = "asj"
-path = "src/bin/asj.rs"
 
-[[bin]]
-name = "asj_verify"
-path = "src/bin/asj_verify.rs"
 
-[[bin]]
-name = "family_define"
-path = "src/bin/family_define.rs"
 
 [[bin]]
 name = "parcn"
@@ -150,9 +123,6 @@ path = "src/bin/family_score.rs"
 [[bin]]
 name = "mcl_port"
 path = "src/bin/mcl_port.rs"
-[[bin]]
-name = "bam_null_probe"
-path = "src/bin/bam_null_probe.rs"
 
 [[bin]]
 name = "o3_rna_flag"

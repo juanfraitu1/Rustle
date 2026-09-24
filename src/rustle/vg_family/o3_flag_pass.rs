@@ -3,7 +3,34 @@
 //!
 //! **STATUS:** OPT-IN  (reachable via `copy_assign --flag-missing-copies`, src/bin/copy_assign.rs; default off)
 
-use crate::vg_family::allele_specific_junctions::lgamma;
+
+// `lgamma` lived in the retired ASJ module (dropped objective, tag notebook-2026-09-23c); kept here verbatim.
+/// Lanczos approximation of `ln Γ(x)`.
+pub(crate) fn lgamma(x: f64) -> f64 {
+    const G: f64 = 7.0;
+    const C: [f64; 9] = [
+        0.999_999_999_999_809_9,
+        676.520_368_121_885_1,
+        -1259.139_216_722_402_8,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
+        12.507_343_278_686_905,
+        -0.138_571_095_265_720_1,
+        9.984_369_578_019_572e-6,
+        1.505_632_735_149_311_6e-7,
+    ];
+    if x < 0.5 {
+        std::f64::consts::PI.ln() - (std::f64::consts::PI * x).sin().ln() - lgamma(1.0 - x)
+    } else {
+        let x = x - 1.0;
+        let t = x + G + 0.5;
+        let mut a = C[0];
+        for (i, &c) in C.iter().enumerate().skip(1) {
+            a += c / (x + i as f64);
+        }
+        0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + a.ln()
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Class {

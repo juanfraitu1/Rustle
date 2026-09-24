@@ -269,6 +269,139 @@ pub fn patched_consensus(template: &PileRead, sites: &[PsvSite], ref_seq: &[u8],
     (seq, blocks)
 }
 
+/// One read carrying a reference exon it also skips: minimap2 keeps the longest colinear exon run and encodes a
+/// displaced exon as an INSERTION (addendum 2). `exon` is the matched stretch inside one of the read's intron gaps.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rearrangement {
+    pub name: String,
+    /// reference position of the insertion (0-based, the base after which the read inserts)
+    pub ins_ref_pos: u64,
+    pub ins_len: usize,
+    pub exon: (u64, u64),
+    pub identity: f64,
+    /// the matched exon is ALSO covered by the read's aligned blocks: the exon appears twice in the read
+    /// (tandem / rolling-circle duplication, the circRNA class), not a rearrangement
+    pub duplicated: bool,
+}
+
+/// Best ungapped placement of `ins` inside `target`: 12-mer seed votes on the offset (refined ± 16), then the
+/// longest stretch of the overlap with <= 10% mismatches. Returns `(target_start, matched_len, identity)` of that
+/// stretch, or `None` when no stretch reaches `min_len`.
+fn place_insertion(ins: &[u8], target: &[u8], min_len: usize) -> Option<(usize, usize, f64)> {
+    const K: usize = 12;
+    if ins.len() < K || target.len() < K {
+        return None;
+    }
+    let mut index: HashMap<&[u8], Vec<usize>> = HashMap::new();
+    for i in 0..=target.len() - K {
+        index.entry(&target[i..i + K]).or_default().push(i);
+    }
+    let mut votes: HashMap<i64, u32> = HashMap::new();
+    let mut i = 0;
+    while i + K <= ins.len() {
+        if let Some(ps) = index.get(&ins[i..i + K]) {
+            for &p in ps.iter().take(8) {
+                *votes.entry(p as i64 - i as i64).or_insert(0) += 1;
+            }
+        }
+        i += 4;
+    }
+    let (&off0, _) = votes.iter().max_by_key(|(o, c)| (**c, std::cmp::Reverse(**o)))?;
+    let mut best: Option<(usize, usize, f64)> = None;
+    for off in off0 - 16..=off0 + 16 {
+        let start = off.max(0) as usize;
+        let ins_start = (start as i64 - off) as usize;
+        if ins_start >= ins.len() || start >= target.len() {
+            continue;
+        }
+        let n = (ins.len() - ins_start).min(target.len() - start);
+        // mismatch prefix sums, then the longest window with mismatches <= 10% of its length
+        let mut pre = vec![0u32; n + 1];
+        for k in 0..n {
+            pre[k + 1] = pre[k] + (!ins[ins_start + k].eq_ignore_ascii_case(&target[start + k])) as u32;
+        }
+        let (mut lo, mut run): (usize, Option<(usize, usize)>) = (0, None);
+        for hi in 1..=n {
+            while lo < hi && (pre[hi] - pre[lo]) as f64 > 0.10 * (hi - lo) as f64 {
+                lo += 1;
+            }
+            if run.map_or(true, |(a, b)| hi - lo > b - a) {
+                run = Some((lo, hi));
+            }
+        }
+        if let Some((a, b)) = run {
+            let len = b - a;
+            let idn = 1.0 - (pre[b] - pre[a]) as f64 / len as f64;
+            if len >= min_len && best.map_or(true, |x| len > x.1) {
+                best = Some((start + a, len, idn));
+            }
+        }
+    }
+    best
+}
+
+/// Exon-order rearrangements among `reads` (addendum 2): every insertion >= `min_ins` is searched in the locus
+/// reference (`ref_seq`, starting at `ref_offset`); a stretch of >= 50 bp at >= 0.90 identity that is not at the
+/// insertion point itself is reference sequence the read carries OUT OF ORDER. If that stretch is also covered by
+/// the read's aligned blocks the exon appears twice (`duplicated`: tandem / rolling-circle); otherwise the read
+/// skips it (`rearranged`).
+pub fn find_rearrangements(reads: &[&PileRead], ref_seq: &[u8], ref_offset: u64, min_ins: usize) -> Vec<Rearrangement> {
+    let mut out = Vec::new();
+    for r in reads {
+        let (mut rp, mut qp) = (r.ref_start, 0usize);
+        let mut blocks: Vec<(u64, u64)> = Vec::new();
+        let mut inserts: Vec<(u64, usize, usize)> = Vec::new(); // (ref pos, query pos, len)
+        for &(op, n) in &r.ops {
+            match op {
+                '=' | 'X' | 'M' | 'D' => {
+                    match blocks.last_mut() {
+                        Some(b) if b.1 == rp => b.1 = rp + n,
+                        _ => blocks.push((rp, rp + n)),
+                    }
+                    rp += n;
+                    if op != 'D' {
+                        qp += n as usize;
+                    }
+                }
+                'N' => rp += n,
+                'I' => {
+                    if n as usize >= min_ins {
+                        inserts.push((rp, qp, n as usize));
+                    }
+                    qp += n as usize;
+                }
+                'S' => qp += n as usize,
+                _ => {}
+            }
+        }
+        for (ins_ref_pos, q, len) in inserts {
+            let Some(ins) = r.seq.get(q..q + len) else { continue };
+            let Some((start, mlen, idn)) = place_insertion(ins, ref_seq, 50) else { continue };
+            let exon = (ref_offset + start as u64, ref_offset + (start + mlen) as u64);
+            let covered: i64 = blocks.iter().map(|&(bs, be)| (be.min(exon.1) as i64 - bs.max(exon.0) as i64).max(0)).sum();
+            let duplicated = covered >= (mlen as i64) / 2;
+            out.push(Rearrangement { name: r.name.clone(), ins_ref_pos, ins_len: len, exon, identity: idn, duplicated });
+        }
+    }
+    out
+}
+
+/// Clusters of `rearranged` (not duplicated) reads sharing the same matched exon (± `tol` bp) and insertion
+/// site (± `tol` bp); returns clusters with >= `min_reads` reads, largest first.
+pub fn rearrangement_clusters(rs: &[Rearrangement], tol: u64, min_reads: usize) -> Vec<Vec<Rearrangement>> {
+    let mut clusters: Vec<Vec<Rearrangement>> = Vec::new();
+    for r in rs.iter().filter(|r| !r.duplicated) {
+        let near = |a: u64, b: u64| a.abs_diff(b) <= tol;
+        match clusters.iter_mut().find(|c| near(c[0].exon.0, r.exon.0) && near(c[0].exon.1, r.exon.1) && near(c[0].ins_ref_pos, r.ins_ref_pos)) {
+            Some(c) => c.push(r.clone()),
+            None => clusters.push(vec![r.clone()]),
+        }
+    }
+    let mut out: Vec<Vec<Rearrangement>> = clusters.into_iter().filter(|c| c.len() >= min_reads).collect();
+    out.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a[0].exon.0.cmp(&b[0].exon.0)));
+    out
+}
+
 /// The sub-pile read with the longest aligned reference span (deterministic tie-break on name).
 pub fn template_read<'a>(sub: &[&'a PileRead]) -> Option<&'a PileRead> {
     sub.iter()
@@ -440,6 +573,9 @@ pub struct VerdictInput {
     /// best identity of the consensus in a FOREIGN genome (`--foreign`, e.g. human for a gorilla library)
     pub foreign_identity: Option<f64>,
     pub delta: f64,
+    /// the locus fired on the exon-order rearrangement detector only (no divergence mixture): the PSV
+    /// consistency and editing rules do not apply (addendum 2)
+    pub structural_only: bool,
 }
 
 pub fn verdict(v: &VerdictInput) -> Verdict {
@@ -454,11 +590,13 @@ pub fn verdict(v: &VerdictInput) -> Verdict {
     if v.is_ig_tr {
         return Verdict::Hypermutation;
     }
-    if v.n_psv >= 5 && v.editing_frac >= 0.8 {
-        return Verdict::RnaEditing;
-    }
-    if v.n_psv < 3 || v.shared_frac < 0.5 {
-        return Verdict::Scattered;
+    if !v.structural_only {
+        if v.n_psv >= 5 && v.editing_frac >= 0.8 {
+            return Verdict::RnaEditing;
+        }
+        if v.n_psv < 3 || v.shared_frac < 0.5 {
+            return Verdict::Scattered;
+        }
     }
     if let (Some(h), Some(o)) = (v.host_identity, v.other_identity) {
         if o > h {
@@ -726,8 +864,10 @@ mod tests {
 
     #[test]
     fn verdict_order_and_confirmation() {
-        let base = VerdictInput { run_p: 1.0, run_top_frac: 0.0, is_ig_tr: false, n_psv: 6, shared_frac: 0.9, editing_frac: 0.0, host_identity: Some(0.98), other_identity: Some(0.95), foreign_identity: None, delta: 0.02 };
+        let base = VerdictInput { run_p: 1.0, run_top_frac: 0.0, is_ig_tr: false, n_psv: 6, shared_frac: 0.9, editing_frac: 0.0, host_identity: Some(0.98), other_identity: Some(0.95), foreign_identity: None, delta: 0.02, structural_only: false };
         assert_eq!(verdict(&base), Verdict::ReferenceAbsentCandidate);
+        assert_eq!(verdict(&VerdictInput { n_psv: 0, shared_frac: 0.0, structural_only: true, ..base }), Verdict::ReferenceAbsentCandidate);
+        assert_eq!(verdict(&VerdictInput { n_psv: 0, structural_only: true, other_identity: Some(0.999), ..base }), Verdict::UnannotatedParalogue);
         assert_eq!(verdict(&VerdictInput { foreign_identity: Some(0.999), ..base }), Verdict::ForeignSpecies);
         assert_eq!(verdict(&VerdictInput { foreign_identity: Some(0.985), ..base }), Verdict::ReferenceAbsentCandidate); // not near-perfect
         assert_eq!(verdict(&VerdictInput { foreign_identity: Some(0.999), is_ig_tr: true, ..base }), Verdict::ForeignSpecies); // before the IG screen
@@ -741,6 +881,42 @@ mod tests {
         assert!(!confirmed(Some(0.998), Some(0.995), 0.02)); // no margin: the consensus was barely patched
         assert!(!confirmed(Some(0.985), Some(0.96), 0.02)); // not a near-perfect home
         assert!(!confirmed(None, Some(0.98), 0.02));
+    }
+
+    #[test]
+    fn rearranged_exon_is_found_as_an_insertion_matching_a_skipped_exon() {
+        // reference: E1 (0..60) intron (60..160) E2 (160..220) intron (220..320) E3 (320..380) intron E4 (480..540)
+        let mut rf = vec![b'A'; 540];
+        let gen = |seed: u64| -> Vec<u8> {
+            let mut x = seed;
+            (0..60).map(|_| { x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407); b"ACGT"[((x >> 33) % 4) as usize] }).collect()
+        };
+        let (e1, e2, e3, e4) = (gen(1), gen(2), gen(3), gen(4));
+        rf[0..60].copy_from_slice(&e1); rf[160..220].copy_from_slice(&e2); rf[320..380].copy_from_slice(&e3); rf[480..540].copy_from_slice(&e4);
+        // read with exons 2 and 3 swapped: E1 E3 E2 E4. minimap2-style: E1 aligned, N to E3, E3 aligned, E2 inserted, N to E4.
+        let mut seq = Vec::new(); seq.extend(&e1); seq.extend(&e3); seq.extend(&e2); seq.extend(&e4);
+        let read = PileRead { name: "r1".into(), de: 0.002, ref_start: 0, ops: vec![('=', 60), ('N', 260), ('=', 60), ('I', 60), ('N', 100), ('=', 60)], seq };
+        let rs = find_rearrangements(&[&read], &rf, 0, 50);
+        assert_eq!(rs.len(), 1);
+        assert_eq!(rs[0].exon, (160, 220));
+        assert!(rs[0].identity > 0.99 && !rs[0].duplicated);
+        assert_eq!(rs[0].ins_ref_pos, 380);
+        // a read that carries E2 twice (in place AND inserted) is a duplication, not a rearrangement
+        let mut seq2 = Vec::new(); seq2.extend(&e1); seq2.extend(&e2); seq2.extend(&e2); seq2.extend(&e3);
+        let read2 = PileRead { name: "r2".into(), de: 0.002, ref_start: 0, ops: vec![('=', 60), ('N', 100), ('=', 60), ('I', 60), ('N', 100), ('=', 60)], seq: seq2 };
+        let rs2 = find_rearrangements(&[&read2], &rf, 0, 50);
+        assert_eq!(rs2.len(), 1);
+        assert!(rs2[0].duplicated);
+        // an insertion of random sequence matches no gap
+        let read3 = PileRead { name: "r3".into(), de: 0.002, ref_start: 0, ops: vec![('=', 60), ('I', 60), ('N', 100), ('=', 60)], seq: [e1.clone(), vec![b'C'; 60], e2.clone()].concat() };
+        assert!(find_rearrangements(&[&read3], &rf, 0, 50).is_empty());
+        // clustering: three reads with the same rearrangement fire, a lone one does not
+        let three: Vec<Rearrangement> = (0..3).map(|i| Rearrangement { name: format!("x{i}"), ins_ref_pos: 380 + i, ins_len: 60, exon: (160 + i, 220 + i), identity: 0.98, duplicated: false }).collect();
+        let mut all = three.clone();
+        all.push(Rearrangement { name: "lone".into(), ins_ref_pos: 100, ins_len: 70, exon: (900, 970), identity: 0.95, duplicated: false });
+        let cl = rearrangement_clusters(&all, 20, 3);
+        assert_eq!(cl.len(), 1);
+        assert_eq!(cl[0].len(), 3);
     }
 
     #[test]

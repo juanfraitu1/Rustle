@@ -120,7 +120,7 @@ computed on is what remains after this screen.
 
 # OUTCOME (2026-09-23)
 
-## Positive control (simulated, chr20, 40 genes with one extra genomic copy; `o3/simB.py`)
+## Positive control (simulated, chr20, 40 genes with one extra genomic copy; `bench/o3_sim_copies.py genomic`, formerly `o3/simB.py`)
 
 | divergence | fired / 40 | `reference_absent_candidate` | confirmed against the mutated copies (`--confirm`) | median n_psv / shared_frac / host identity / confirm identity |
 |---|---|---|---|---|
@@ -191,3 +191,68 @@ sweep-based scan (one sequential pass per contig, RecordBuf decode only for fire
 contig 4:20 → 0:12), `--scan-only` / `--from-scan` batching for laptops, one minimap2 call per genome,
 `--confirm` and `--foreign` genomes, the pre-registered verdict, `expected_dna_depth_ratio`, the consensus
 FASTA. Genome-wide gorilla: scan 3.5 min + align 4 min (three 13 GB indexes, 17 GB peak).
+
+---
+
+## Addendum 2 (2026-09-23, 21:14) — the exon-order rearrangement detector, ON BY DEFAULT
+
+**What was measured first** (`bench/o3_sim_copies.py shuffled`, formerly `o3/shuf/simC.py`; 10 chr20 genes, extra copy with exons 2 and 3
+swapped): the shuffled copy's reads are NOT lost — 100% map to the template as one MAPQ-60 primary with no soft
+clip — but minimap2 keeps the longest colinear exon run and encodes the displaced exon as an INSERTION of exon
+size (median 170 bp; 86–90% of shuffled reads carry an insertion ≥ 50 bp vs 0% of template reads), with one
+intron fewer (an apparent exon skip); NM jumps 3 → 172 while gap-compressed `de` stays 0.0015 → 0.0023. So the
+divergence mixture is blind to a structural copy and the assembler would call it an isoform.
+
+**Rule, fixed before any real locus is scanned with it.** Pass 1 also records, per locus, the reads whose CIGAR
+carries an insertion ≥ 50 bp. A locus with ≥ 3 such reads is decoded and each such read is tested: the inserted
+sequence is searched (12-mer seeds, then direct comparison) inside every intron gap (`N`) of the SAME read; a
+hit at ≥ 0.90 identity over ≥ 90% of the insertion means the read carries a reference exon it also skips —
+an **exon-order rearrangement** (`rearranged`). If that matched exon is ALSO covered by the read's aligned blocks
+(the exon appears twice in the read) it is a tandem/rolling-circle duplication (`duplicated_exon`: the circRNA /
+back-splice class), not a rearrangement. Reads are clustered by (matched exon ± 20 bp, insertion site ± 20 bp);
+**a cluster of ≥ 3 `rearranged` reads fires the locus as `structural`** (status `fired_structural`, or
+`fired_both` with the mixture). The structural sub-pile is the cluster; its consensus is the template read's own
+sequence (the copy's transcript in read order); the screens (run exclusivity, IG/TR, foreign genome) and the home
+search apply unchanged, so an existing paralogue with that exon order elsewhere in the reference resolves to
+`unannotated_paralogue`. The verdict table gains a `class` column: `divergent` / `structural` / `both`.
+
+**Validation, committed now.** (i) `simC` at d = 0 and 2%: the shuffled genes must fire `structural` — bar
+≥ 9/10 at both divergences (⭐), 6–8 (⚠), fewer (⛔) — and at d = 2% they must ALSO fire the mixture (`fired_both`).
+(ii) Negative control: the simB 2% BAM (40 genes, unshuffled copies): 0 structural fires expected; any fire is
+inspected. (iii) Real data: KB3781 fibroblast and OR6737 testis rescanned; the count of `structural` loci and of
+`duplicated_exon` clusters is reported, with the verdict funnel, and NOT judged (no truth); the largest clusters
+are listed for inspection. Divergence statistic stays `de` (the validated S2 rule is not re-fitted); the
+structural detector is a second, independent trigger.
+
+### Addendum 2 — OUTCOME (2026-09-23, 22:45)
+
+**Simulation (`simC`, 10 shuffled genes):** ⭐ 9/10 fire `structural` at d = 0 and 9/10 `both` at d = 2%; the
+miss (LINC01260) has its swapped exons under the 50 bp insertion floor (minimap2 absorbs them without an
+insertion). Negative control (simB 2%, 40 unshuffled copies): 0 structural fires, 70 mixture fires as before.
+On the way the matcher had to change from "the whole insertion inside one intron gap" to "a ≥ 50 bp stretch of
+the insertion at ≥ 0.90 identity anywhere in the locus": minimap2 represents the displaced exon
+inconsistently (partial anchor blocks, composite insertions), so only a partial, locus-wide match is robust.
+
+**KB3781 fibroblast (real, with the haplotypes as DNA truth):** 74 loci fire structural only and 25 both
+(62 distinct sub-piles over 99 annotated loci; cluster size median 7, q3 43). Verdicts of the structural class:
+**64 `reference_absent_candidate`, 8 `unannotated_paralogue`, 2 hypermutation**; of the 64 candidates,
+**20 are CONFIRMED by a parental haplotype** (the read-order transcript aligns at ≥ 0.99 to pat or mat while
+it is 0.67–0.95 to the primary host) — against 1/53 for the divergence class. The confirmed ones are large,
+haplotype-specific exon-order differences: CDK11B/SLC35E2B (cluster 448 reads, primary/pat 0.675, mat
+0.991), CCN3 (90 reads, mat 0.9994), RNF168 (68, mat 0.9994), FBXL2/UBP1 (50, mat 0.998), NIPAL2 (33, mat
+0.9998). These are copies whose exon order is absent from the primary and present on the other haplotype —
+reference-absent at the structural level, detected from RNA and confirmed by DNA, exactly the class the
+divergence mixture cannot see. The 44 unconfirmed (GPC6 77 reads, EIF2S2 52, EXT1 45, ARL15 41, CXCL13 30…)
+sit at 0.64–0.94 to primary, pat and mat alike: absent from the whole diploid assembly; cDNA template
+switching is the artefact class to exclude next (a read-specific junction would not cluster at one exon and
+one insertion site ± 20 bp, but recurrent switching at homologous exons could), which is again a DNA question.
+
+**OR6737 testis (different animal, no DNA):** 81 structural only + 29 both; **63 candidates (36 sub-piles)**,
+2 `unannotated_paralogue`, 16 hypermutation. **The same loci recur across the two animals**: RNF168 (126
+reads), SLC35E2B/CDK11B (60), ARL15 (41) — a rearrangement seen in two individuals from two tissues and, for
+CDK11B/RNF168, present on KB3781's maternal haplotype: a segregating structural variant (or a primary-
+assembly exon-order error), not a library artefact.
+
+**Cost:** the structural branch decodes every locus with ≥ 3 insertion-carrying reads, so the scan is
+slower on deep libraries (fibroblast batches ~8 min each, testis ~25 min); the align phase is unchanged.
+The detector is on by default (no flag); `class` ∈ divergent / structural / both is a column of the table.

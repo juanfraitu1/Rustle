@@ -161,10 +161,10 @@ where both the certificate's exactness and the table's defect are visible.
   "accuracy" numbers were read off one family at a time.
 - **What to ship next:** a cross-family arbitration pass in `copy_assign` (candidate set = the union of every
   catalog copy a read's placements touch; one certificate over the union; a sole candidate in one family is
-  not a decision when the read has candidates elsewhere). Re-score with `bench/o2_read_truth_score.py` — the
+  not a decision when the read has candidates elsewhere). Re-score with `bench/o2_read_truth.py score` — the
   OWN numbers are the target it should reach.
 - The MAPQ-60 stratum is the aligner's: 100.0% (human) / 100.0% (gorilla) correct by placement, as required.
 
-Scripts: `bench/o2_read_truth_sim.py` (simulate + map + closest-sibling identity),
-`bench/o2_read_truth_score.py` (per-read scoring under the OWN / PRIMARY / ANY readings); runs in
+Scripts: `bench/o2_read_truth.py sim` (simulate + map + closest-sibling identity),
+`bench/o2_read_truth.py score` (per-read scoring under the OWN / PRIMARY / ANY readings); runs in
 `/mnt/linuxdisk/tmp/gw22/o2sim/` (`h16*`, `g44*`, `gsd*`).

@@ -1,5 +1,27 @@
 # Active working set — what is actually in use (2026-09-19; wave 4 applied 2026-09-23)
 
+> **Wave 6 (2026-09-23/24, consolidation; user: "fewer scripts, more cohesive and reusable, faster"):**
+> Rust binaries **20 → 10** (retired to tag `notebook-2026-09-23c` / `~/Desktop/Rustle_attic/2026-09-23c/`: `asj`,
+> `asj_verify` (dropped objective), `debug_poa`, `bam_null_probe` (probes), `index_bam`, `bam_header`, `filter_bam_by_as`
+> (samtools does these), `gamma_refine`, `mcl_refine` (measurement scaffolding), `family_define` (legacy parity fixture
+> whose input table was already retired)), and with them the 12 library modules only they reached (see
+> `docs/MODULE_STATUS.md`; `lgamma` inlined into `o3_flag_pass`). `mcl_families --from-gtf` runs the de novo family
+> stage in one command (loci from the assembled GTF → all-vs-all → MCL), replacing the scratch `loci_from_gtf.py` +
+> a hand-run minimap2. **`tools/rustle_pipeline.sh`** runs every stage (assemble → families → catalog → assign → o3)
+> with the shipped defaults; verified end to end on a one-contig testis slice (10.6 min, 15.7 GB peak from the index
+> loads). Python 42 → 38 by merging the O2 sim/score pair (`o2_read_truth.py sim|score`) and the bakeoff pair
+> (`o2_tool_bakeoff.py calls|compare`) and inlining two single-use helpers. Speed: `o3_rna_flag` decodes
+> insertion-carrying reads once in pass 1 (a structural-only locus no longer re-queries the BAM): 42 → 28 s on an
+> 80 Mb contig, identical output. Tests 799 + integration, 0 failures.
+> **Wave 5 (2026-09-23, `tools/cleanup_wave5_scripts.sh`, user: "only O1, O2, O3, the Soto replication and the live
+> parts"):** `bench/` reduced from 212 Python scripts to **42** (list = the script's KEEP block + its import closure;
+> `bench/README.md` is the reviewable inventory). 180 entries moved to `~/Desktop/Rustle_attic/2026-09-23b/` after
+> tagging HEAD `notebook-2026-09-23b`: every refuted-arm and one-off probe script, the 13 `gen_*_fixture.py`
+> generators (their imports were archived in wave 2, the JSON fixtures they made are committed), the Python parity
+> oracles of ported Rust bins (`assembly_polish.py`, `readthrough_secondary_filter.py`, `o1_eval.py`, `igv_tracks.py`),
+> the bench shell scripts, and `family_rna_refine.tsv` (r1033). The O3 scratch simulations were consolidated into one
+> kept script, `bench/o3_sim_copies.py` (modes transcript / genomic / shuffled). Verified: 42/42 compile, no kept
+> script imports a moved one.
 > **Wave 4 (2026-09-23, `tools/cleanup_wave4_attic.sh`):** 73 entries / 3.6 MB moved to
 > `~/Desktop/Rustle_attic/2026-09-23/` (manifest there): 23 superseded documents (the pre-September method
 > docs `ONE_METHOD`/`NUMBERS`/`OBJECTIVES_AND_VERIFICATION`/`o1_investigations`/`METHOD_PSEUDOCODE`, the old

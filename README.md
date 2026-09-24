@@ -27,12 +27,14 @@ output. `docs/DATA.md` lists the BAMs, genomes and annotations those recipes rea
 the repository). `docs/MODULE_STATUS.md` says which modules are reachable at defaults, which are opt-in, and
 which only a side binary uses — enforced by a test.
 
-Main binaries (`src/bin/`): `copy_assign` (loci → isoform assembly → GTF; `--assemble-only` is the assembler,
-`--genome-wide` streams a whole BAM; O2 assignment and the O3 flag pass live here too), `mcl_families`,
-`family_define`, `mcl_refine`, `gw_family_catalog` (O1), `o3_rna_flag` (O3), and the helpers `gff_to_gtf`,
-`locus_bed`, `readthrough_filter`, `family_score`, `mcl_port`, `parcn`, `gamma_refine`, `filter_bam_by_as`,
-`index_bam`, `bam_header`. `bench/` holds the analysis scripts and per-topic reports that the record cites;
-`tools/` the sweep and audit scripts.
+Main binaries (`src/bin/`, ten): the five pipeline stages — `copy_assign` (`--assemble-only --genome-wide`
+streams a whole BAM into loci and isoforms; `--families` is the O2 assignment; the O3 flag pass lives here
+too), `mcl_families` (O1 family definition; `--from-gtf` runs the de novo stage from an assembled GTF in one
+command), `gw_family_catalog` (the copy catalog O2 consumes), `o3_rna_flag` (O3) — and five comparators and
+converters: `family_score`, `mcl_port`, `readthrough_filter`, `locus_bed`, `gff_to_gtf`, `parcn`.
+`tools/rustle_pipeline.sh STAGE` runs any stage, or all of them, with the shipped defaults. `bench/` holds the
+38 analysis scripts the record cites (`bench/README.md` lists each one); `tools/` the sweep, audit and attic
+scripts.
 
 ## The record
 

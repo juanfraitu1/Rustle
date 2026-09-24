@@ -11,12 +11,31 @@ Writes the node table (idx order = sorted by chrom, start), `<OUT>.names.tsv` (i
 (idx, strand, CDS segments `start-end:phase` of the gene's transcript with the longest CDS; genes without CDS omitted).
 """
 import collections
+import re
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import guided_min  # noqa: E402
 import guided_pipeline as gp  # noqa: E402
+
+
+def load_genes(gff, contigs):
+    genes, exons = {}, collections.defaultdict(list)
+    for line in open(gff):
+        if line.startswith("#"):
+            continue
+        f = line.rstrip("\n").split("\t")
+        if len(f) < 9 or f[0] not in contigs:
+            continue
+        if f[2] in ("gene", "pseudogene"):
+            n = re.search(r"(?:^|;)Name=([^;]+)", f[8])
+            if n:
+                genes[n.group(1)] = (f[0], int(f[3]) - 1, int(f[4]), f[6])
+        elif f[2] == "exon":
+            g = re.search(r"(?:^|;)gene=([^;]+)", f[8])
+            if g:
+                exons[g.group(1)].append((int(f[3]) - 1, int(f[4])))
+    return genes, {n: gp.merge(exons.get(n) or [(g[1], g[2])]) for n, g in genes.items()}
 
 
 def attrs(col):
@@ -35,7 +54,7 @@ def longest(cds_by_tx):
 
 
 def refseq(gff, contigs):
-    genes, exons = guided_min.load_genes(gff, contigs)
+    genes, exons = load_genes(gff, contigs)
     biotype, n_records = {}, collections.Counter()
     cds = collections.defaultdict(lambda: collections.defaultdict(list))
     for line in open(gff):

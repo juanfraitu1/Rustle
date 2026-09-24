@@ -27,7 +27,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mcl_port  # noqa: E402
 from protein_edge_gap import longest_cds, protein_edges, translate  # noqa: E402
 from protein_families import excluded  # noqa: E402
-from neighbourhood_jaccard import gene_names  # noqa: E402
 
 
 def protein_referee(gff, genome, chrom, workdir):
@@ -103,6 +102,20 @@ def pair_scores(label_of, ref):
     r = tp / len(true) if true else 0.0
     f = 0.0 if p + r == 0 else 2 * p * r / (p + r)
     return p, r, f, len(pred), len(true), tp
+
+
+def gene_names(gff, chrom):
+    n = {}
+    for line in open(gff):
+        if line.startswith('#'):
+            continue
+        f = line.rstrip('\n').split('\t')
+        if len(f) < 9 or f[0] != chrom or f[2] not in ('gene', 'pseudogene'):
+            continue
+        m = re.search(r'Name=([^;]+)', f[8])
+        if m:
+            n[f'{f[0]}:{f[3]}-{f[4]}'] = m.group(1)
+    return n
 
 
 def main():

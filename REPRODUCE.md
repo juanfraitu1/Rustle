@@ -145,7 +145,10 @@ shallow library, and making it depth-aware is the top open item.
 ## 5. Family definition (the actual objectives)
 
 ```sh
-target/release/mcl_families --min-exonic-bp 1 --min-shared-exon-frac 0.60 ...
+# de novo family stage in ONE command (2026-09-23): loci from the assembled GTF, all-vs-all, MCL
+target/release/mcl_families --from-gtf run.gtf --fasta GENOME.fa --min-exonic-bp 1 --min-shared-exon-frac 0.60 --out run.fam
+#   (writes run.fam.loci.gff3 / .loci.fa / .loci.paf, then run.fam.clusters.tsv; the older two-step form:)
+target/release/mcl_families --paf all_vs_all.paf --gff loci.gff3 --min-exonic-bp 1 --min-shared-exon-frac 0.60 ...
 ```
 Score the resulting clusters against a family truth (sensitivity / precision / one-to-one bipartite F /
 collapse — the standing reporting rule) with the native scorer, byte-identical to the retired
@@ -189,8 +192,10 @@ o3_rna_flag --bam READS.bam --fasta GENOME.fa --loci GENES.gff --index GENOME.sp
             --out run --from-scan run_b1,run_b2
 ```
 
-Output `run.o3_rna.tsv` (one row per expressed locus; verdict ∈ contamination / foreign_species /
-hypermutation / rna_editing / scattered / unannotated_paralogue / reference_absent_candidate, plus
+Output `run.o3_rna.tsv` (one row per expressed locus; `class` ∈ divergent / structural / both — the structural
+detector (exon-order rearrangements carried as ≥ 50 bp insertions, addendum 2) is on by default; verdict ∈
+contamination / foreign_species / hypermutation / rna_editing / scattered / unannotated_paralogue /
+reference_absent_candidate, plus
 `expected_dna_depth_ratio` and per-genome confirmation) and `run.consensus.fa` (the hidden copy's spliced
 consensus — the probe for a DNA k-mer/depth check). Positive control: `/mnt/linuxdisk/tmp/gw22/o3/simB.py`
 (40/40 at 2% divergence, all confirmed).
@@ -202,8 +207,17 @@ consensus — the probe for a DNA k-mer/depth check). Positive control: `/mnt/li
 ## O2 read-level accuracy on a catalog (§6zf, 2026-09-23)
 
 ```bash
-python3 bench/o2_read_truth_sim.py CAT.copies.tsv CAT.copies.fa GENOME.splice.mmi run 20260923   # reads from every copy, mapped genome-wide
+python3 bench/o2_read_truth.py sim CAT.copies.tsv CAT.copies.fa GENOME.splice.mmi run 20260923   # reads from every copy, mapped genome-wide
 copy_assign --bam run.bam --fasta GENOME.fa --regions whole_chromosomes.txt --families CAT.copies.tsv --copies-fa CAT.copies.fa --out run_o2
-CATALOG_TSV=CAT.copies.tsv python3 bench/o2_read_truth_score.py run run_o2      # OWN / PRIMARY / ANY readings, per divergence bin
+CATALOG_TSV=CAT.copies.tsv python3 bench/o2_read_truth.py score run run_o2      # OWN / PRIMARY / ANY readings, per divergence bin
 ```
 Expected (human chr16 catalog `chr16_arm/on`, copies < 300 bp dropped): OWN 157/157 correct, 0 wrong, 1,088 abstain of 1,259 MAPQ-0 reads.
+
+## The whole pipeline in one driver (2026-09-23)
+
+```bash
+tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index GENOME.splice.mmi --gff ANNOT.gff \
+    [--confirm pat=PAT.splice.mmi --confirm mat=MAT.splice.mmi] [--foreign human=CHM13.splice.mmi] [--threads 4]
+# stages, each also runnable alone: assemble -> families (mcl_families --from-gtf) -> catalog (gw_family_catalog)
+#   -> assign (copy_assign --families) -> o3 (o3_rna_flag scan + align). Products all carry the --out prefix.
+```

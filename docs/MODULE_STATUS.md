@@ -9,7 +9,7 @@
 > re-export — 3 lines, now gone. Also removed: `apply_compat_preset`, `apply_stringtie_exact_overrides`,
 > `stringtie_exact()` and 26 dead `vg_*` config fields (all uncalled StringTie/VG-HMM-era residue).
 > **Recover any of it from tag `retired-modules-2026-09-20`.** Test suite 931 passed / 0 failed; the
-> 46 tests lost were tests OF the removed dead modules. `multi_repeat_bridge_tests.rs` was deliberately
+> 46 tests lost were tests OF the removed dead modules. multi_repeat_bridge_tests.rs (retired 2026-09-23 with its module) was deliberately
 > KEPT — it covers the live `multi_repeat_bridge` O1 gate.
 
 Generated 2026-09-03 by a 4-agent reachability survey of every `src/rustle/vg_family/` module
@@ -32,14 +32,21 @@ this file must list exactly the module set.
 
 | tag | count |
 |---|---|
-| **SHIPPED-DEFAULT** | 14 |
+| **SHIPPED-DEFAULT** | 15 |
 | **OPT-IN** | 14 |
-| **OTHER-BINARY** | 12 |
+| **OTHER-BINARY** | 5 |
 | **REFUTED** | 1 |
-| **TEST-ONLY** | 12 |
+| **TEST-ONLY** | 0 |
 | **INFRASTRUCTURE** | 2 |
 
-## SHIPPED-DEFAULT (14)
+> **2026-09-23 wave 6 (consolidation):** the binaries `asj`, `asj_verify`, `debug_poa`, `bam_null_probe`, `index_bam`,
+> `bam_header`, `filter_bam_by_as`, `gamma_refine`, `mcl_refine` and the legacy `family_define` were retired (tag
+> `notebook-2026-09-23c`, `~/Desktop/Rustle_attic/2026-09-23c/`), and with them the 12 modules only they reached
+> (`driver`, `edge_oracle`, `family_definition`, `family_loaders`, `multi_repeat_bridge(+_tests)`, `o2_columns`,
+> `o2_margin_gate`, `o2_materialize`, `recombinant_abstain`, `recombinant_split`, `allele_specific_junctions`; the
+> `lgamma` helper `o3_flag_pass` used is inlined there). Counts below were recomputed from the remaining rows.
+
+## SHIPPED-DEFAULT (15)
 
 Reachable from a shipped binary with **no env var and no non-default flag**. This is the method.
 
@@ -82,23 +89,16 @@ Built and wired, but behind a flag that **defaults off**. An arm, not the method
 | `single_copy.rs` | --single-copy-baseline (src/bin/gw_family_catalog.rs:189-190, `#[arg(long, default_value_t = false)] single_co | MEASURED: single_copy_loci's only production caller is src/rustle/vg_family/denovo_pipeline.rs:2704 inside detect_single_copy_baseline_genome_wide, and that function's only caller in the whole tree is src/bin/gw_family_catalog.rs: |
 | `vg_realign.rs` | --vg-realign or --vg-realign-correct (src/bin/copy_assign.rs:340-341 and :346-347, both `default_value_t = fal | MEASURED: the correction leg is guarded by `if cfg.vg_realign` at src/rustle/vg_family/denovo_pipeline.rs:2356 (call at :2376), and DenovoConfig's default is `vg_realign: false` / `vg_realign_admit: false` at denovo_pipeline.rs:14 |
 
-## OTHER-BINARY (12)
+## OTHER-BINARY (5)
 
 Live, but only from a binary other than `gw_family_catalog` / `copy_assign`.
 
 | module | gate | deciding evidence |
 |---|---|---|
-| `allele_specific_junctions.rs` | - | MEASURED: src/bin/asj.rs:10-12 imports bh_fdr/scan_gene_asj/scan_gene_asj_multisnp/scan_gene_copy_specific_junctions/AsjParams and src/bin/asj_verify.rs:18 imports anchor_junction_dist/is_transversion; no reference from gw_family_ |
 | `annotation_families.rs` | - | MEASURED: sole caller is src/bin/mcl_families.rs:18-20 (build_clusters, graph_from_paf, mcl, Cluster, GeneKey, GraphParams). The one other hit, family_detect.rs:207, is a doc comment (`/// Iterative path-halving union-find (matche |
 | `o3_rna.rs` | - | MEASURED: sole caller is src/bin/o3_rna_flag.rs (`use rustle::vg_family::o3_rna::*`, §6ze RNA-only O3 chain: two_means/split_pile/consistency/patched_consensus/home/verdict/confirmed); no reference from gw_family_catalog or copy_assign. |
 | `bridge_detector.rs` | - | MEASURED: production callers are driver.rs:39/:397/:402 (load_skeletons, load_strand, ExonFetcher), recombinant_split.rs:47 and multi_repeat_bridge.rs:55 — and all three roll up to driver::build_catalog, whose only caller is src/b |
-| `driver.rs` | - | MEASURED: driver::build_catalog is called at src/bin/family_define.rs:144 and driver::write_outputs at :186 (module imported at family_define.rs:18); no other src/ file references `driver::`. Binary: family_define. |
-| `edge_oracle.rs` | - | MEASURED: the only production consumers of load_pair_core_str/load_universal_aln/load_allele/demote_gene are driver.rs:302-304 and driver.rs:468, and driver.rs's only caller in all of src/bin/ is src/bin/family_define.rs:149 (`dri |
-| `family_definition.rs` | - | MEASURED: distinct_loci's only production call is driver.rs:231; refine_families' only production call is driver.rs:386 — both reachable only from src/bin/family_define.rs:149. refine_component/induced_density have one further pro |
-| `family_loaders.rs` | - | MEASURED: every production call is in driver.rs — load_meta :290, load_annot :291, load_raw_families :292, load_edges_str :294, build_genes_dict :296, components_from_edges :371 — and driver.rs is reached only from src/bin/family_ |
-| `multi_repeat_bridge.rs` | family_define; default-ON there (driver.rs:143 `repeat_bridge_gate: true`), opt-OUT via --no-repeat-bridge-gat | MEASURED: the only production callers are src/rustle/vg_family/driver.rs:434 (`load_node_mult`) and driver.rs:444 (`split_families_repeat_bridge`), inside `if opt.repeat_bridge_gate` (driver.rs:432); `driver::build_catalog` is inv |
 | `parcn.rs` | binary `parcn` (Cargo.toml:116-118, path src/bin/parcn.rs); no flag inside it gates the module — the whole bin | MEASURED: the only importer is src/bin/parcn.rs:15-18 (`use rustle::vg_family::parcn::{assign_locus, dedup_loci, format_family_row, format_parcn_row, parse_copies_fa, sun_positions, tabulate, Assignment, CopySun, Locus};`); no oth |
-| `recombinant_split.rs` | family_define only; DEFAULT-ON there, opt out with --no-split-recombinants or RUSTLE_NO_SPLIT_RECOMBINANTS=1 ( | MEASURED: sole production caller is `recombinant_split::split_block` at src/rustle/vg_family/driver.rs:274 (driver.rs test mod starts at :531), inside split_families_recombinant which runs under `if opt.split_recombinants` at driv |
 | `repeat_catalog.rs` | family_define only. `load_skeletons` runs under `if opt.repeat_bridge_gate` (driver.rs:432; DEFAULT-ON, opt ou | MEASURED: the only production entry points are `repeat_catalog::load_skeletons` at src/rustle/vg_family/driver.rs:433 and `repeat_catalog::dn_exons` at src/rustle/vg_family/multi_repeat_bridge.rs:61 — both on the bin/family_define |
 
 ## REFUTED (1)
@@ -109,17 +109,12 @@ Implemented, **measured**, and the measurement went against it. Kept deliberatel
 |---|---|---|
 | `collapse_gate.rs` | --collapse-gate (src/bin/copy_assign.rs:393-394, default_value_t = false); DenovoConfig::default sets collapse | MEASURED (the refutation is a recorded measurement in-tree): collapse_gate.rs:17-21 — 'DEFAULT OFF. The instrument is not what this module's name claims, and a control proved it… Run genome-wide, the gate fires on EEF1A1 … and rep |
 
-## TEST-ONLY (12)
+## TEST-ONLY (0)
 
 **No non-test callers anywhere in `src/`.** Dead in every shipped binary. Not deleted, but nothing it claims is in effect.
 
 | module | gate | deciding evidence |
 |---|---|---|
-| `multi_repeat_bridge_tests.rs` | - | MEASURED: the file is pulled in only by `#[cfg(test)] #[path = "multi_repeat_bridge_tests.rs"] mod tests;` at src/rustle/vg_family/multi_repeat_bridge.rs:640-642 — it is not declared in mod.rs and has no other reference in the tre |
-| `o2_columns.rs` | - | MEASURED: the sole non-test consumer of `column_alleles` (o2_columns.rs:83) is `use super::o2_columns::column_alleles;` at src/rustle/vg_family/o2_materialize.rs:44, and o2_materialize itself is imported by no binary (o2_materiali |
-| `o2_margin_gate.rs` | - | MEASURED: the only non-test import of `assign_read_margin` (o2_margin_gate.rs:75) is `use super::o2_margin_gate::{assign_read_margin, BTOL, ERR, JW, MARGIN};` at src/rustle/vg_family/o2_materialize.rs:45 (used at o2_materialize.rs |
-| `o2_materialize.rs` | - | MEASURED: `grep -rn o2_materialize src/` yields, outside the file itself, only mod.rs:42 and four DOC-COMMENT mentions in src/bin/copy_assign.rs:129, :130, :131, :1414 (the `--read-cap` help text) plus the runtime warning string a |
-| `recombinant_abstain.rs` | RUSTLE_NO_RECOMBINANT_ABSTAIN (recombinant_abstain.rs:72, read at :81, documented DEFAULT-ON opt-out) — VACUOU | MEASURED: the module's only non-test caller is apply_abstain_to_vg at src/rustle/vg_family/o2_materialize.rs:866 (prod; that file's test mod starts at :1133) — but o2_materialize is imported by ZERO binaries. grep for "o2_material |
 
 ## INFRASTRUCTURE (2)
 
@@ -144,8 +139,6 @@ Each describes itself as doing something its callers do not support.
 | `seed_projection.rs` | OPT-IN | - (the header's own thesis — that --seed is a QUERY over the emitted catalog, not a term in the definition — is exactly what the code does: it reads `fams` AFTER emit_catalog and never feeds the node set). |
 | `single_copy.rs` | OPT-IN | MEASURED (mild): the header calls this "the λ_global baseline that calibrates depth_cn = E_fam / λ_global", which implies a live pipeline coupling. There is none — the coupling is by FILE: gw_family_catalog writes <out>.lambda_global.tsv (gw_family_catalog.rs: |
 | `vg_realign.rs` | OPT-IN | - (the header states "Default OFF => every output byte-identical" at vg_realign.rs:14, which matches the code). Worth noting only that the header's first line, "significance-gated (correct + discover)", describes two legs behind two DIFFERENT defaults-off swit |
-| `edge_oracle.rs` | OTHER-BINARY | Soft mismatch worth flagging: the //! header (edge_oracle.rs:1) calls this 'the E_r RNA-homology edge oracle'. The E_r edge oracle that the SHIPPED catalog actually runs is a different implementation (family_detect::confirm_edge / detect_edges, denovo_pipeline |
-| `family_definition.rs` | OTHER-BINARY | THE BIG ONE. family_definition.rs:1 announces itself as 'O1 multi-copy family-definition predicate `distinct_loci`' and denovo_pipeline.rs:6 states outright that 'the ≥2-distinct-loci certificate is `family_definition::distinct_loci`'. It is not. The shipped g |
 | `repeat_catalog.rs` | OTHER-BINARY | MEASURED, and load-bearing: repeat_catalog.rs:5-10 claims "This is the piece the repeat-bridge GATE consumes at runtime ... this module builds exactly those multiplicities" and repeat_catalog.rs:44 defines M_OP=5 as the gate threshold. The gate does NOT build  |
 | `collapse_gate.rs` | REFUTED | The module NAME and mod.rs:9's one-liner ('admit a COLLAPSED single-rep locus as a multi-copy family') both still assert collapse detection; the header body itself retracts that ('detects unresolvable PARALOGY, not collapse'). Name and claim disagree, header a |
 | `catalog_input.rs` | SHIPPED-DEFAULT | The header (catalog_input.rs:1-15) is entirely about the O1→O2 FILE CONTRACT (parse_copies_tsv/parse_copies_fa/group_families/to_colocated). That half is OPT-IN: it runs only under `--families` (src/bin/copy_assign.rs:452, Option<String> default None), consume |
@@ -154,7 +147,3 @@ Each describes itself as doing something its callers do not support.
 | `read_conflict.rs` | SHIPPED-DEFAULT | MEASURED: the header at src/rustle/vg_family/read_conflict.rs:22-23 says "The remaining integration is plumbing per-locus secondary placements (`secondary_index` / `tied_secondary_reads_in_region`) into the detection stage" — i.e. it presents the module as NOT |
 | `readonly_copy_number.rs` | SHIPPED-DEFAULT | MEASURED (minor, but it is a severed claim): readonly_copy_number.rs:10 is a dangling fragment — "//!  families e.g. `chi_H=1` on a locus whose true copy number is ~11." — the sentence it belonged to is gone, so the stated lower-bound caveat reads as a floatin |
 | `rescue_pipeline.rs` | SHIPPED-DEFAULT | - (header calls it "integration stage 4b", which matches). Scope note only: gw_family_catalog does NOT call detect_and_assign (it imports detect_conflict_catalog_genome_wide* / detect_homology_catalog_genome_wide at gw_family_catalog.rs:19-24), so rescue is de |
-| `o2_columns.rs` | TEST-ONLY | INFERRED: o2_columns.rs:5-9 says this "is what feeds `super::o2_margin_gate`" as part of a live pipeline; in Rust it feeds a chain that terminates in an `#[ignore]`d test. |
-| `o2_margin_gate.rs` | TEST-ONLY | MEASURED: o2_margin_gate.rs:5-7 describes itself as "the gate that `bench/o2_vg_visualization.py::materialize_family` (the O2 VG-materialization pipeline) actually calls" — true of the PYTHON, but the Rust port has no Rust binary above it. Reading the header a |
-| `o2_materialize.rs` | TEST-ONLY | MEASURED: copy_assign advertises a `--read-cap` CLI flag whose help (src/bin/copy_assign.rs:129-131) names `o2_materialize::READ_CAP` / `MaterializeConfig::read_cap`, which makes the module look wired from the flag list; copy_assign.rs:1414-1418 then admits it |
-| `recombinant_abstain.rs` | TEST-ONLY | MEASURED, and this is the sharpest one in the slice: recombinant_abstain.rs:18 calls apply_abstain_to_vg "the DEFAULT-ON gate leg", and :30 documents RUSTLE_NO_RECOMBINANT_ABSTAIN as its opt-out. Nothing on any binary's path calls it, so "default-ON" is true o |

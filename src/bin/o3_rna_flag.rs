@@ -83,8 +83,10 @@ fn parse_args() -> Result<Args> {
     })
 }
 
-/// Primary reads (`-F 2308`) overlapping a region, capped by name order.
-fn pile(reader: &mut noodles_bam::io::Reader<noodles_bgzf::MultithreadedReader<std::io::BufReader<std::fs::File>>>, header: &noodles_sam::Header, index: &noodles_bam::bai::Index, chrom: &str, lo: u64, hi: u64, cap: usize) -> Result<Vec<PileRead>> {
+/// Primary reads (`-F 2308`) overlapping a region, capped by name order. With `only`, records whose name is not
+/// in the set are skipped BEFORE the RecordBuf decode (the decode is the cost: a structural-only locus needs its
+/// few insertion-carrying reads, not the whole pile).
+fn pile(reader: &mut noodles_bam::io::Reader<noodles_bgzf::MultithreadedReader<std::io::BufReader<std::fs::File>>>, header: &noodles_sam::Header, index: &noodles_bam::bai::Index, chrom: &str, lo: u64, hi: u64, cap: usize, only: Option<&std::collections::HashSet<&str>>) -> Result<Vec<PileRead>> {
     let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi.max(lo + 1)).parse()?;
     let mut out = Vec::new();
     for result in reader.query(header, index, &region)? {
@@ -92,6 +94,12 @@ fn pile(reader: &mut noodles_bam::io::Reader<noodles_bgzf::MultithreadedReader<s
         let flags = record.flags();
         if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
             continue;
+        }
+        if let Some(set) = only {
+            let keep = record.name().map_or(false, |n| set.contains(std::str::from_utf8(n.as_ref()).unwrap_or("")));
+            if !keep {
+                continue;
+            }
         }
         let rb = RecordBuf::try_from_alignment_record(header, &record)?;
         let Some((read, _mapq, name, _as, de, _sup, _sec)) = aligned_read_from_record(&rb) else { continue };
@@ -144,33 +152,45 @@ struct Row {
     /// fraction of the consensus blocks (the template's exons) that carry >= 1 PSV site — a real copy's
     /// PSVs spread over the transcript, an alignment artefact's cluster in one block (informational)
     psv_blocks_frac: f64,
+    /// addendum 2: reads with an insertion >= 50 bp; reads whose insertion is a skipped exon (rearranged);
+    /// reads whose insertion is an exon they also align (duplicated); the largest rearrangement cluster
+    n_bigins: usize,
+    n_rearr: usize,
+    n_dup: usize,
+    struct_cluster: usize,
+    rearr_exon: String,
+    rearr_site: u64,
+    /// "fired" (mixture) / "fired_structural" / "fired_both" / "no_mixture"
+    status: String,
 }
 
-const SCAN_HEAD: &str = "locus\tname\tchrom\tstart\tend\tn_reads\tstatus\tm\tde_high\tdelta\tn_sub\tn_host\tn_psv\tshared_frac\tediting_frac\trun_p\trun_top\trun_top_frac\tn_runs\tig_tr\tcons_len\tcons_blocks\tsub_hash\tpsv_blocks_frac";
+const SCAN_HEAD: &str = "locus\tname\tchrom\tstart\tend\tn_reads\tstatus\tm\tde_high\tdelta\tn_sub\tn_host\tn_psv\tshared_frac\tediting_frac\trun_p\trun_top\trun_top_frac\tn_runs\tig_tr\tcons_len\tcons_blocks\tsub_hash\tpsv_blocks_frac\tn_bigins\tn_rearr\tn_dup\tstruct_cluster\trearr_exon\trearr_site";
 
 impl Row {
     fn to_scan_line(&self) -> String {
         [
             self.id.clone(), self.name.clone(), self.chrom.clone(), self.start.to_string(), self.end.to_string(), self.n_reads.to_string(),
-            (if self.fired { "fired" } else { "no_mixture" }).to_string(),
+            self.status.clone(),
             format!("{:.6}", self.m), format!("{:.6}", self.d_high), format!("{:.6}", self.delta), self.n_sub.to_string(), self.n_host.to_string(),
             self.n_psv.to_string(), format!("{:.6}", self.shared_frac), format!("{:.6}", self.editing_frac), format!("{:.3e}", self.run_p), self.run_top.clone(),
             format!("{:.6}", self.run_top_frac), self.n_runs.to_string(), (self.is_ig_tr as u8).to_string(), self.cons_len.to_string(), self.cons_blocks.to_string(), self.sub_hash.clone(),
             format!("{:.3}", self.psv_blocks_frac),
+            self.n_bigins.to_string(), self.n_rearr.to_string(), self.n_dup.to_string(), self.struct_cluster.to_string(), self.rearr_exon.clone(), self.rearr_site.to_string(),
         ]
         .join("\t")
     }
     fn from_scan_line(line: &str) -> Option<Row> {
         let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 24 {
+        if f.len() < 30 {
             return None;
         }
         Some(Row {
             id: f[0].into(), name: f[1].into(), chrom: f[2].into(), start: f[3].parse().ok()?, end: f[4].parse().ok()?, n_reads: f[5].parse().ok()?,
-            fired: f[6] == "fired", m: f[7].parse().ok()?, d_high: f[8].parse().ok()?, delta: f[9].parse().ok()?, n_sub: f[10].parse().ok()?, n_host: f[11].parse().ok()?,
+            fired: f[6].starts_with("fired"), status: f[6].to_string(), m: f[7].parse().ok()?, d_high: f[8].parse().ok()?, delta: f[9].parse().ok()?, n_sub: f[10].parse().ok()?, n_host: f[11].parse().ok()?,
             n_psv: f[12].parse().ok()?, shared_frac: f[13].parse().ok()?, editing_frac: f[14].parse().ok()?, run_p: f[15].parse().ok()?, run_top: f[16].into(),
             run_top_frac: f[17].parse().ok()?, n_runs: f[18].parse().ok()?, is_ig_tr: f[19] == "1", cons_len: f[20].parse().ok()?, cons_blocks: f[21].parse().ok()?, sub_hash: f[22].into(),
             psv_blocks_frac: f[23].parse().ok()?,
+            n_bigins: f[24].parse().ok()?, n_rearr: f[25].parse().ok()?, n_dup: f[26].parse().ok()?, struct_cluster: f[27].parse().ok()?, rearr_exon: f[28].into(), rearr_site: f[29].parse().ok()?,
         })
     }
 }
@@ -212,7 +232,11 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
         let Some(len) = header.reference_sequences().get(chrom.as_bytes()).map(|r| usize::from(r.length())) else { continue };
         let mut order: Vec<usize> = idxs.clone();
         order.sort_by_key(|&i| (loci[i].2, loci[i].3));
-        let mut piles: Vec<Vec<(String, f64)>> = vec![Vec::new(); order.len()];
+        let mut piles: Vec<Vec<(String, f64, u32)>> = vec![Vec::new(); order.len()];
+        // insertion-carrying reads (>= 50 bp), decoded ONCE here while the record is in hand and attached to every
+        // locus they overlap; the structural branch reads them from here instead of re-querying the BAM per locus
+        let mut ins_reads: Vec<Vec<std::sync::Arc<PileRead>>> = vec![Vec::new(); order.len()];
+        const INS_CAP: usize = 300;
         let region: noodles_core::Region = format!("{chrom}:1-{len}").parse()?;
         let de_tag = noodles_sam::alignment::record::data::field::Tag::new(b'd', b'e');
         let (mut ptr, mut active): (usize, Vec<usize>) = (0, Vec::new());
@@ -225,11 +249,14 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             let Some(start) = record.alignment_start() else { continue };
             let rs = (usize::from(start?) as u64).saturating_sub(1);
             let mut span = 0u64;
+            let mut max_ins = 0u32;
             for op in record.cigar().iter() {
                 let op = op?;
                 use noodles_sam::alignment::record::cigar::op::Kind;
-                if matches!(op.kind(), Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch | Kind::Deletion | Kind::Skip) {
-                    span += op.len() as u64;
+                match op.kind() {
+                    Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch | Kind::Deletion | Kind::Skip => span += op.len() as u64,
+                    Kind::Insertion => max_ins = max_ins.max(op.len() as u32),
+                    _ => {}
                 }
             }
             let re = rs + span;
@@ -246,14 +273,27 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
                 _ => 0.0,
             };
             let name = record.name().map(|n| n.to_string()).unwrap_or_default();
+            let decoded: Option<std::sync::Arc<PileRead>> = if max_ins >= 50 {
+                let rb = RecordBuf::try_from_alignment_record(&header, &record)?;
+                aligned_read_from_record(&rb).map(|(read, _mapq, name, _as, de, _sup, _sec)| std::sync::Arc::new(PileRead { name, de: de as f64, ref_start: read.ref_start, ops: read.cigar, seq: read.seq }))
+            } else {
+                None
+            };
             for &k in &active {
                 let l = &loci[order[k]];
                 if l.2 < re && l.3 > rs {
-                    piles[k].push((name.clone(), de));
+                    piles[k].push((name.clone(), de, max_ins));
+                    if let Some(d) = &decoded {
+                        if ins_reads[k].len() < INS_CAP {
+                            ins_reads[k].push(d.clone());
+                        }
+                    }
                 }
             }
         }
+        let mut ins_reads = ins_reads;
         for (k, mut pile1) in piles.into_iter().enumerate() {
+            let ins_here: Vec<PileRead> = std::mem::take(&mut ins_reads[k]).into_iter().map(|a| (*a).clone()).collect();
             let (id, chrom, start, end, name) = &loci[order[k]];
             n_scanned += 1;
             if n_scanned % 2000 == 0 {
@@ -266,60 +306,136 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             pile1.sort_by(|a, b| a.0.cmp(&b.0));
             pile1.truncate(args.max_reads);
             let de: Vec<f64> = pile1.iter().map(|x| x.1).collect();
-            let fires = match two_means(&de) {
+            let fires_mixture = match two_means(&de) {
                 Some((m, _, delta, mid)) => m >= args.m_min && m <= 0.5 && delta >= args.delta_min && de.iter().filter(|&&d| d > mid).count() >= args.min_sub,
                 None => false,
             };
+            let bigins: std::collections::HashSet<&str> = pile1.iter().filter(|x| x.2 >= 50).map(|x| x.0.as_str()).collect();
+            let fires = fires_mixture || bigins.len() >= 3;
             let is_ig_tr = ig.get(chrom).map_or(false, |v| v.iter().any(|(s, e)| *s < *end && *e > *start));
-            let mut row = Row { id: id.clone(), name: name.clone(), chrom: chrom.clone(), start: *start, end: *end, n_reads: pile1.len(), fired: false, m: 0.0, d_high: 0.0, delta: 0.0, n_sub: 0, n_host: 0, n_psv: 0, shared_frac: 0.0, editing_frac: 0.0, run_p: 1.0, run_top: String::new(), run_top_frac: 0.0, n_runs: 0, is_ig_tr, cons_len: 0, cons_blocks: 0, sub_hash: String::new(), psv_blocks_frac: 0.0 };
+            let mut row = Row { id: id.clone(), name: name.clone(), chrom: chrom.clone(), start: *start, end: *end, n_reads: pile1.len(), fired: false, m: 0.0, d_high: 0.0, delta: 0.0, n_sub: 0, n_host: 0, n_psv: 0, shared_frac: 0.0, editing_frac: 0.0, run_p: 1.0, run_top: String::new(), run_top_frac: 0.0, n_runs: 0, is_ig_tr, cons_len: 0, cons_blocks: 0, sub_hash: String::new(), psv_blocks_frac: 0.0, n_bigins: bigins.len(), n_rearr: 0, n_dup: 0, struct_cluster: 0, rearr_exon: String::new(), rearr_site: 0, status: "no_mixture".to_string() };
             if !fires {
                 rows.push(row);
                 continue;
             }
-            // PASS 2: decode this locus's reads (same cap, same name order => the same pile as pass 1)
-            let reads = pile(&mut reader, &header, &index, chrom, *start, *end, args.max_reads)?;
-            if let Some(split) = split_pile(&reads, args.m_min, args.delta_min, args.min_sub) {
-                n_fired += 1;
-                let sub: Vec<&PileRead> = split.sub.iter().map(|&i| &reads[i]).collect();
-                let host: Vec<&PileRead> = split.host.iter().map(|&i| &reads[i]).collect();
-                let lo = sub.iter().map(|r| r.ref_start).min().unwrap_or(*start).min(*start);
-                let hi = sub.iter().map(|r| r.ref_start + r.ops.iter().filter(|(o, _)| matches!(o, '=' | 'X' | 'M' | 'D' | 'N')).map(|(_, n)| *n).sum::<u64>()).max().unwrap_or(*end).max(*end);
-                let ref_seq = genome.fetch_sequence(chrom, lo, hi).unwrap_or_default();
-                let c = consistency(&sub, &host, &ref_seq, lo);
-                let (run_p, run_top, run_top_frac, n_runs) = run_screen(&sub, &host);
-                if let Some(t) = template_read(&sub) {
-                    let (seq, blocks) = patched_consensus(t, &c.sites, &ref_seq, lo);
-                    row.cons_len = seq.len();
-                    row.cons_blocks = blocks.len();
-                    if !blocks.is_empty() {
-                        let with = blocks.iter().filter(|(a, b)| c.sites.iter().any(|s| s.pos >= *a && s.pos < *b)).count();
-                        row.psv_blocks_frac = with as f64 / blocks.len() as f64;
+            // PASS 2: decode this locus's reads (same cap, same name order => the same pile as pass 1). A locus that
+            // fires only on the structural trigger decodes just its insertion-carrying reads; the mixture branch
+            // needs every read (host and sub-pile), so it decodes the whole pile.
+            let reads = if fires_mixture {
+                pile(&mut reader, &header, &index, chrom, *start, *end, args.max_reads, None)?
+            } else {
+                ins_here // structural-only: the insertion reads captured in pass 1, no second BAM query
+            };
+            let span_of = |r: &PileRead| r.ref_start + r.ops.iter().filter(|(o, _)| matches!(o, '=' | 'X' | 'M' | 'D' | 'N')).map(|(_, n)| *n).sum::<u64>();
+            let mut wrote_consensus = false;
+            let mut mixture_fired = false;
+            if fires_mixture {
+                if let Some(split) = split_pile(&reads, args.m_min, args.delta_min, args.min_sub) {
+                    mixture_fired = true;
+                    let sub: Vec<&PileRead> = split.sub.iter().map(|&i| &reads[i]).collect();
+                    let host: Vec<&PileRead> = split.host.iter().map(|&i| &reads[i]).collect();
+                    let lo = sub.iter().map(|r| r.ref_start).min().unwrap_or(*start).min(*start);
+                    let hi = sub.iter().map(|r| span_of(r)).max().unwrap_or(*end).max(*end);
+                    let ref_seq = genome.fetch_sequence(chrom, lo, hi).unwrap_or_default();
+                    let c = consistency(&sub, &host, &ref_seq, lo);
+                    let (run_p, run_top, run_top_frac, n_runs) = run_screen(&sub, &host);
+                    if let Some(t) = template_read(&sub) {
+                        let (seq, blocks) = patched_consensus(t, &c.sites, &ref_seq, lo);
+                        row.cons_len = seq.len();
+                        row.cons_blocks = blocks.len();
+                        if !blocks.is_empty() {
+                            let with = blocks.iter().filter(|(a, b)| c.sites.iter().any(|s| s.pos >= *a && s.pos < *b)).count();
+                            row.psv_blocks_frac = with as f64 / blocks.len() as f64;
+                        }
+                        if !seq.is_empty() {
+                            writeln!(cons_fa, ">{id}")?;
+                            cons_fa.write_all(&seq)?;
+                            writeln!(cons_fa)?;
+                            wrote_consensus = true;
+                        }
                     }
-                    if !seq.is_empty() {
-                        writeln!(cons_fa, ">{id}")?;
-                        cons_fa.write_all(&seq)?;
-                        writeln!(cons_fa)?;
+                    let mut names: Vec<&str> = sub.iter().map(|r| r.name.as_str()).collect();
+                    names.sort();
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    names.hash(&mut h);
+                    row.m = split.m;
+                    row.d_high = split.d_high;
+                    row.delta = split.delta;
+                    row.n_sub = sub.len();
+                    row.n_host = host.len();
+                    row.n_psv = c.sites.len();
+                    row.shared_frac = c.shared_frac;
+                    row.editing_frac = c.editing_frac;
+                    row.run_p = run_p;
+                    row.run_top = run_top;
+                    row.run_top_frac = run_top_frac;
+                    row.n_runs = n_runs;
+                    row.sub_hash = format!("{:016x}", h.finish());
+                }
+            }
+            // STRUCTURAL branch (addendum 2): reads with an insertion >= 50 bp whose inserted sequence is an exon
+            // they skip; a cluster of >= 3 sharing the same exon and insertion site fires the locus
+            let mut structural_fired = false;
+            if bigins.len() >= 3 {
+                let big: Vec<&PileRead> = reads.iter().filter(|r| bigins.contains(r.name.as_str())).collect();
+                let lo = big.iter().map(|r| r.ref_start).min().unwrap_or(*start).min(*start);
+                let hi = big.iter().map(|r| span_of(r)).max().unwrap_or(*end).max(*end);
+                let ref_seq = genome.fetch_sequence(chrom, lo, hi).unwrap_or_default();
+                let rs = find_rearrangements(&big, &ref_seq, lo, 50);
+                row.n_rearr = rs.iter().filter(|r| !r.duplicated).count();
+                row.n_dup = rs.iter().filter(|r| r.duplicated).count();
+                let clusters = rearrangement_clusters(&rs, 20, 3);
+                if let Some(cl) = clusters.first() {
+                    structural_fired = true;
+                    row.struct_cluster = cl.len();
+                    row.rearr_exon = format!("{}:{}-{}", chrom, cl[0].exon.0, cl[0].exon.1);
+                    row.rearr_site = cl[0].ins_ref_pos;
+                    let names: std::collections::HashSet<&str> = cl.iter().map(|r| r.name.as_str()).collect();
+                    let sub: Vec<&PileRead> = reads.iter().filter(|r| names.contains(r.name.as_str())).collect();
+                    let host: Vec<&PileRead> = reads.iter().filter(|r| !names.contains(r.name.as_str())).collect();
+                    // structural-only loci decoded just the insertion reads: n_host below counts those, not the pile;
+                    // the pile size is n_reads and the run screen compares the cluster against the other decoded reads
+                    if !mixture_fired {
+                        let (run_p, run_top, run_top_frac, n_runs) = run_screen(&sub, &host);
+                        row.run_p = run_p;
+                        row.run_top = run_top;
+                        row.run_top_frac = run_top_frac;
+                        row.n_runs = n_runs;
+                        row.n_sub = sub.len();
+                        row.n_host = host.len();
+                        let mut nm: Vec<&str> = sub.iter().map(|r| r.name.as_str()).collect();
+                        nm.sort();
+                        use std::hash::{Hash, Hasher};
+                        let mut h = std::collections::hash_map::DefaultHasher::new();
+                        nm.hash(&mut h);
+                        row.sub_hash = format!("{:016x}", h.finish());
+                    }
+                    if !wrote_consensus {
+                        // the copy's transcript in READ order: the longest rearranged read's own sequence
+                        if let Some(t) = sub.iter().max_by_key(|r| (r.seq.len(), std::cmp::Reverse(r.name.clone()))) {
+                            if !t.seq.is_empty() {
+                                writeln!(cons_fa, ">{id}")?;
+                                cons_fa.write_all(&t.seq)?;
+                                writeln!(cons_fa)?;
+                                row.cons_len = t.seq.len();
+                                row.cons_blocks = 0;
+                                wrote_consensus = true;
+                            }
+                        }
                     }
                 }
-                let mut names: Vec<&str> = sub.iter().map(|r| r.name.as_str()).collect();
-                names.sort();
-                use std::hash::{Hash, Hasher};
-                let mut h = std::collections::hash_map::DefaultHasher::new();
-                names.hash(&mut h);
-                row.fired = true;
-                row.m = split.m;
-                row.d_high = split.d_high;
-                row.delta = split.delta;
-                row.n_sub = sub.len();
-                row.n_host = host.len();
-                row.n_psv = c.sites.len();
-                row.shared_frac = c.shared_frac;
-                row.editing_frac = c.editing_frac;
-                row.run_p = run_p;
-                row.run_top = run_top;
-                row.run_top_frac = run_top_frac;
-                row.n_runs = n_runs;
-                row.sub_hash = format!("{:016x}", h.finish());
+            }
+            row.fired = mixture_fired || structural_fired;
+            row.status = match (mixture_fired, structural_fired) {
+                (true, true) => "fired_both",
+                (true, false) => "fired",
+                (false, true) => "fired_structural",
+                (false, false) => "no_mixture",
+            }
+            .to_string();
+            if row.fired {
+                n_fired += 1;
             }
             rows.push(row);
         }
@@ -387,7 +503,7 @@ fn main() -> Result<()> {
     let tsv_path = format!("{}.o3_rna.tsv", args.out);
     let mut tsv = std::fs::File::create(&tsv_path)?;
     let mut head: Vec<String> = SCAN_HEAD.split('\t').map(String::from).collect();
-    head.extend(["delta_over_pi", "consistency", "host_identity", "other_identity", "other_locus", "verdict", "expected_dna_depth_ratio"].into_iter().map(String::from));
+    head.extend(["class", "delta_over_pi", "consistency", "host_identity", "other_identity", "other_locus", "verdict", "expected_dna_depth_ratio"].into_iter().map(String::from));
     for (g, _) in hits_by.iter().skip(1).take(n_conf) {
         head.push(format!("conf_{g}_identity"));
         head.push(format!("conf_{g}_locus"));
@@ -410,10 +526,13 @@ fn main() -> Result<()> {
             let best_in = |by: &HashMap<String, Vec<Hit>>| by.get(&r.id).and_then(|hs| hs.iter().filter(|h| h.qcov >= 0.8).max_by(|a, b| a.identity.partial_cmp(&b.identity).unwrap()).cloned());
             let foreign_best: Vec<Option<Hit>> = hits_by.iter().skip(1 + n_conf).map(|(_, by)| best_in(by)).collect();
             let foreign_id = foreign_best.iter().filter_map(|h| h.as_ref().map(|h| h.identity)).fold(None, |m: Option<f64>, x| Some(m.map_or(x, |m| m.max(x))));
-            let v = verdict(&VerdictInput { run_p: r.run_p, run_top_frac: r.run_top_frac, is_ig_tr: r.is_ig_tr, n_psv: r.n_psv, shared_frac: r.shared_frac, editing_frac: r.editing_frac, host_identity: host_id, other_identity: other_id, foreign_identity: foreign_id, delta: r.delta });
+            let structural_only = r.status == "fired_structural";
+            let class = match r.status.as_str() { "fired_both" => "both", "fired_structural" => "structural", _ => "divergent" };
+            let v = verdict(&VerdictInput { run_p: r.run_p, run_top_frac: r.run_top_frac, is_ig_tr: r.is_ig_tr, n_psv: r.n_psv, shared_frac: r.shared_frac, editing_frac: r.editing_frac, host_identity: host_id, other_identity: other_id, foreign_identity: foreign_id, delta: r.delta.max(if structural_only { 0.02 } else { 0.0 }), structural_only });
             *counts.entry(v.as_str()).or_insert(0) += 1;
             let consistent = if r.n_psv >= 3 && r.shared_frac >= 0.5 { "copy_consistent" } else { "scattered" };
             f.extend([
+                class.to_string(),
                 format!("{:.1}", r.delta / args.pi),
                 consistent.to_string(),
                 host_id.map(|x| format!("{x:.4}")).unwrap_or_else(|| "NA".into()),

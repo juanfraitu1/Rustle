@@ -25,9 +25,22 @@ use std::io::Write;
 #[derive(Parser, Debug)]
 #[command(about = "Multi-copy gene families by MCL over annotation sequence, corroborated by RNA")]
 struct Args {
-    /// All-vs-all PAF of the annotated gene sequences (headers `CONTIG:START-END`, GFF 1-based).
-    #[arg(long)]
+    /// All-vs-all PAF of the locus sequences (`minimap2 -x asm20 -c -X`). Not needed with `--from-gtf`.
+    #[arg(long, default_value = "")]
     paf: String,
+
+    /// One-command de novo family stage: derive the loci from an assembled GTF (`copy_assign --assemble-only`
+    /// output; locus = `gene_id` group, span = min/max over its transcripts, representative = the transcript
+    /// with most `reads` (tie: longer span), exons = the representative's), write `<out>.loci.gff3` and
+    /// `<out>.loci.fa` (genomic spans, `--fasta` required), run the all-vs-all (`minimap2 -x asm20 -c -X -N 50
+    /// -p 0.1 --secondary=yes`) to `<out>.loci.paf`, then proceed as with `--paf <out>.loci.paf --gff
+    /// <out>.loci.gff3`. Replaces the former scratch step `loci_from_gtf.py` + a hand-run minimap2.
+    #[arg(long)]
+    from_gtf: Option<String>,
+
+    /// minimap2 threads for `--from-gtf`.
+    #[arg(long, default_value_t = 4)]
+    threads: usize,
 
     /// GFF supplying each gene's EXON-UNION length. ⚠ Without it the coverage denominator falls back to
     /// the genomic span, which removed 62.8% of eligible genes in the pilot (§6dc) — the run warns loudly.
@@ -702,6 +715,14 @@ fn has_block_in(br: &rustle::vg_family::denovo_assemble::BamRead, m: &GeneKey) -
 
 fn main() -> Result<()> {
     let mut args = Args::parse();
+    if let Some(gtf) = args.from_gtf.clone() {
+        let fasta = args.fasta.clone().context("--from-gtf needs --fasta (the genome the GTF was assembled on)")?;
+        let (gff3, fa, paf) = loci_from_gtf(&gtf, &fasta, &args.out, args.threads)?;
+        args.gff = Some(gff3);
+        args.paf = paf;
+        eprintln!("[mcl_families] --from-gtf: loci in {fa}");
+    }
+    anyhow::ensure!(!args.paf.is_empty(), "--paf is required unless --from-gtf is given");
     // §6er (S2): the unit is the catalog row. Stages engage on their inputs; escape hatches reproduce the
     // record-level catalogs (`--no-merge-overlapping-loci`, `--no-core-refine`, `--no-emit-units`).
     if args.no_merge_overlapping_loci {
@@ -1908,4 +1929,99 @@ mod tests {
         reads.push(br(1090, &[('M', 20), ('N', 80_000), ('M', 30)]));
         assert_eq!(read_extent(&reads, &chain, 3), Some((1000, 81_140)));
     }
+}
+
+/// `--from-gtf`: the de novo locus set of an assembled GTF, as the family stage consumes it (see the flag doc).
+/// Returns `(loci.gff3, loci.fa, loci.paf)` paths.
+fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(String, String, String)> {
+    use std::collections::{BTreeMap, HashMap, HashSet};
+    use std::io::{BufRead, Write};
+    fn attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
+        let pat = format!("{key} \"");
+        let i = s.find(&pat)? + pat.len();
+        let j = s[i..].find('"')? + i;
+        Some(&s[i..j])
+    }
+    let f = std::fs::File::open(gtf).with_context(|| format!("opening {gtf}"))?;
+    let mut exons: HashMap<String, Vec<(String, u64, u64)>> = HashMap::new();
+    let mut gene_of: HashMap<String, String> = HashMap::new();
+    let mut strand: HashMap<String, String> = HashMap::new();
+    let mut reads: HashMap<String, u64> = HashMap::new();
+    let mut gene_order: Vec<String> = Vec::new();
+    for line in std::io::BufReader::new(f).lines() {
+        let line = line?;
+        if line.starts_with('#') {
+            continue;
+        }
+        let r: Vec<&str> = line.split('\t').collect();
+        if r.len() < 9 {
+            continue;
+        }
+        let Some(t) = attr(r[8], "transcript_id") else { continue };
+        if r[2] == "transcript" {
+            let g = attr(r[8], "gene_id").unwrap_or(t).to_string();
+            if !gene_of.values().any(|x| *x == g) {
+                gene_order.push(g.clone());
+            }
+            gene_of.insert(t.to_string(), g);
+            strand.insert(t.to_string(), r[6].to_string());
+            reads.insert(t.to_string(), attr(r[8], "reads").and_then(|v| v.parse().ok()).unwrap_or(0));
+        } else if r[2] == "exon" {
+            exons.entry(t.to_string()).or_default().push((r[0].to_string(), r[3].parse()?, r[4].parse()?));
+        }
+    }
+    let mut txs_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (t, g) in &gene_of {
+        txs_of.entry(g.clone()).or_default().push(t.clone());
+    }
+    let gff3 = format!("{out}.loci.gff3");
+    let fa_path = format!("{out}.loci.fa");
+    let paf = format!("{out}.loci.paf");
+    let mut g3 = std::fs::File::create(&gff3)?;
+    writeln!(g3, "##gff-version 3")?;
+    let mut spans: Vec<(String, u64, u64)> = Vec::new();
+    for g in &gene_order {
+        let Some(ts) = txs_of.get(g) else { continue };
+        let all: Vec<&(String, u64, u64)> = ts.iter().flat_map(|t| exons.get(t).into_iter().flatten()).collect();
+        if all.is_empty() {
+            continue;
+        }
+        let chrom = all[0].0.clone();
+        let (s, e) = (all.iter().map(|x| x.1).min().unwrap(), all.iter().map(|x| x.2).max().unwrap());
+        let span_of = |t: &String| exons.get(t).map(|v| v.iter().map(|x| x.2).max().unwrap() - v.iter().map(|x| x.1).min().unwrap()).unwrap_or(0);
+        let mut sorted_ts = ts.clone();
+        sorted_ts.sort();
+        let rep = sorted_ts.iter().max_by_key(|t| (reads.get(*t).copied().unwrap_or(0), span_of(t))).unwrap().clone();
+        let st = strand.get(&rep).cloned().unwrap_or_else(|| ".".into());
+        writeln!(g3, "{chrom}\t.\tgene\t{s}\t{e}\t.\t{st}\t.\tID=gene-{g};Name={g}")?;
+        let mut ex = exons.get(&rep).cloned().unwrap_or_default();
+        ex.sort_by_key(|x| x.1);
+        for (_, a, b) in ex {
+            writeln!(g3, "{chrom}\t.\texon\t{a}\t{b}\t.\t{st}\t.\tParent=gene-{g};gene={g}")?;
+        }
+        spans.push((chrom, s, e));
+    }
+    let contigs: HashSet<String> = spans.iter().map(|x| x.0.clone()).collect();
+    let genome = rustle::genome::GenomeIndex::from_fasta_contigs(fasta, &contigs)?;
+    let mut fa = std::fs::File::create(&fa_path)?;
+    for (c, s, e) in &spans {
+        let seq = genome.fetch_sequence(c, s - 1, *e).with_context(|| format!("{c}:{s}-{e} not in {fasta}"))?;
+        writeln!(fa, ">{c}:{s}-{e}")?;
+        fa.write_all(&seq)?;
+        writeln!(fa)?;
+    }
+    drop(fa);
+    eprintln!("[mcl_families] --from-gtf: {} loci -> all-vs-all", spans.len());
+    let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+    let out_paf = std::fs::File::create(&paf)?;
+    let status = std::process::Command::new(&mm2)
+        .args(["-x", "asm20", "-c", "-X", "-N", "50", "-p", "0.1", "--secondary=yes", "-t", &threads.to_string()])
+        .arg(&fa_path)
+        .arg(&fa_path)
+        .stdout(out_paf)
+        .stderr(std::process::Stdio::null())
+        .status()
+        .with_context(|| format!("running {mm2}"))?;
+    anyhow::ensure!(status.success(), "minimap2 all-vs-all failed");
+    Ok((gff3, fa_path, paf))
 }

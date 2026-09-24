@@ -1433,7 +1433,7 @@ mod tests {
 
     fn load_panel() -> Vec<(String, Vec<u8>)> {
         let path = concat!(env!("CARGO_MANIFEST_DIR"),
-                           "/bench/multi_copy_eval/merge_sweep_exons.tsv");
+                           "/src/rustle/vg_family/testdata/merge_sweep_exons.tsv");
         let raw = std::fs::read_to_string(path).expect("read committed exon panel");
         raw.lines().filter_map(|l| {
             let mut it = l.splitn(2, '\t');
