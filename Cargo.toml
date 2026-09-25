@@ -127,3 +127,7 @@ path = "src/bin/mcl_port.rs"
 [[bin]]
 name = "missing_copy_flag"
 path = "src/bin/missing_copy_flag.rs"
+
+[[bin]]
+name = "as_table"
+path = "src/bin/as_table.rs"

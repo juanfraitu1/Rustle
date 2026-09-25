@@ -1,6 +1,6 @@
 # bench/ — the analysis scripts and per-topic reports
 
-Regenerated 2026-09-24 after waves 5–6. **39 scripts**, each part of a current objective result, the Soto replication,
+Regenerated 2026-09-24 after waves 5–6. **40 scripts**, each part of a current objective result, the Soto replication,
 or the shared infrastructure; every retired analysis script is at git tags `notebook-2026-09-23b` / `-23c` and in
 `~/Desktop/Rustle_attic/`. Reports (`*.md`) are the per-topic records the ledger and register cite; not pruned.
 
@@ -32,6 +32,7 @@ or the shared infrastructure; every retired analysis script is at git tags `note
 | `annotation_nodes.py` | Prereg Addenda AI/AJ/AK: gene-level node tables from an annotation, for `bench/node_graph_mcl.py prep`. |
 | `protein_families.py` | Prereg Addendum AN: protein-space multi-copy gene families, and cross-annotation scoring by CDS overlap. |
 | `locus_reads.py` | Counting reads at a locus — the ONE correct way, and the wrong way named so it cannot be reached |
+| `identity_spectrum.py` | Which edge tier (asm20 / sensitive k11 / protein) recovers which Ensembl Compara paralogue pairs, by identity band; miss diagnosis (seeding vs coverage) (§6zh) |
 | `heldout_family_score.py` | Score `mcl_families` clusters against symbol-root truth families, per |
 | `soto_vs_us_referee.py` | Us vs Soto, scored against a NEUTRAL referee. |
 | `rna_truth_from_protein.py` | Build a NON-CIRCULAR RNA-level truth from protein families, and measure the ceiling it implies. |

@@ -317,6 +317,14 @@ pub struct AssignParams {
     /// when another candidate aligns it (a partner, not a competitor) or when it lies beyond a giant unsupported
     /// intron of the molecule's own record (the O1 mis-chain rule); explained positions leave the certificate.
     pub read_star_readthrough: bool,
+    /// ⭐ UNION CERTIFICATE (`copy_assign --union-certificate`, `denovo_pipeline::union_certificate_pass`,
+    /// 2026-09-24): the caller has put EVERY AS-tied placement of these molecules into `copies` — the copies
+    /// of every family a tied placement touches plus one genome-built pseudo-copy per tie locus outside the
+    /// catalog — so the §6gz "an unscored competitor forbids assignment" demotion (`is_tie_outside`) does
+    /// not apply: the outside placement IS scored here. Also suppresses the process-wide read-through
+    /// registration, whose copy index would be in the union's frame and would overwrite the per-family entry
+    /// the drain's `readthrough_into` column reads. Default `false` = every existing path unchanged.
+    pub tie_outside_scored: bool,
 }
 
 impl Default for AssignParams {
@@ -352,6 +360,7 @@ impl Default for AssignParams {
             read_star_hit_in_unit: true,
             read_star_two_form: true,
             read_star_readthrough: true,
+            tie_outside_scored: false,
         }
     }
 }

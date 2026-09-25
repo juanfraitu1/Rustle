@@ -230,3 +230,26 @@ python3 bench/tandem_copy_sim.py --fasta chr20.fa --gtf chr20_ref.gtf --out t --
 ```
 Per read: same/other copy, cross-copy chain, MAPQ, AS tie; per condition: assembler transcripts (chimeric), catalog
 copies, assignment. Expected (`docs/PREREG_tandem_copy_sim_2026-09-24.md`): 0 cross-copy chains below identity 1.0.
+
+## Identity spectrum against Ensembl Compara (§6zh, 2026-09-24)
+
+```bash
+# truth: BioMart paralogue table for one chromosome (useast mirror), then the three edge tiers on the expressed loci
+python3 bench/identity_spectrum.py --gtf chr16_assembled.gtf --ref chr16_ref.gtf --fasta chm13v2.0.fa --chrom chr16 \
+    --compara compara_chr16.tsv --out chr16 --mmseqs mmseqs      # recall by Compara identity band, precision by ours
+# the same truth at the FAMILY level: score a gw_family_catalog copies.tsv (transitive families, not direct edges);
+# --universe fixes the recall denominator to the tier run's expressed pairs (§6zi, rows 1097-1098)
+python3 bench/identity_spectrum.py --gtf x --ref chr16_ref.gtf --fasta x --chrom chr16 --compara compara_chr16.tsv \
+    --out chr16_cat --catalog chr16.copies.tsv --universe chr16.truth_pairs.tsv
+# seeding loci with GOOD secondaries (rows 1060/1100): one pass over the BAM, then the assembler reads the table
+as_table --bam reads.bam --out reads.molecules.tsv --threads 4          # 66 s / 0.8 GB on an 11.7 GB gorilla BAM
+RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO=0.98 RUSTLE_GTF_SECONDARY_AS_TABLE=reads.molecules.tsv \
+    copy_assign --assemble-only ...                 # the pipeline driver does this by default (--no-seed-secondaries turns it off)
+# copy assignment with ONE certificate per tied read over every placement it touches (catalog copies across
+# families + outside loci built from the genome); opt-in — on the chr16 truth sim it removes every foreign claim
+# (844 -> 0) and every wrong row, and ties the reads whose tied partner is an identical genomic twin (row 1103)
+copy_assign --families cat.copies.tsv --copies-fa cat.copies.fa --union-certificate --bam reads.bam --fasta ref.fa --out o2
+# deep human libraries whose node set is dominated by unspliced Alu stubs (chr16: 85% single-exon copies, all-pair
+# precision 0.27): RUSTLE_ER_COVERAGE_LONGER_FLOOR=0.30 doubles precision (0.53) for 8/103 pairs, but costs 24% of
+# referee pairs on gorilla — opt-in, never the default (§6zj, row 1099)
+```

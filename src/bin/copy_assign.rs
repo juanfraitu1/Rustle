@@ -128,6 +128,9 @@ struct RegionWork {
     /// placements. Empty unless `--discover-copies`. Report only (Task 4 drains this to
     /// `<out>.discovered_copies.tsv`) -- never feeds back into this run's own catalog or assignments.
     discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy>,
+    /// `--union-certificate`: what the union pass did in this region (its side-file rows + counts). Default
+    /// (empty) unless the flag is on -- the pass runs INSIDE the worker because it needs the read sequences.
+    union: rustle::vg_family::denovo_pipeline::UnionSummary,
 }
 
 #[derive(Parser, Debug)]
@@ -565,6 +568,25 @@ struct Args {
     /// Default off; unset, output is byte-identical to a run without this flag.
     #[arg(long, default_value_t = false)]
     discover_copies: bool,
+    /// ⭐ UNION CERTIFICATE (register rows 1092/1093, 2026-09-24). With `--families`, every AS-tied molecule
+    /// whose tied placements touch copies of >= 2 supplied families and/or >= 1 locus outside every supplied
+    /// unit gets ONE certificate over the UNION of those candidates — all copies of every family touched,
+    /// plus one pseudo-copy per outside locus built from `--fasta` over the placement's aligned blocks — and
+    /// the verdict is applied to every family's row for it: the winning family's row `assigned` (with the
+    /// union's evidence), every other family's row `tied`; an outside winner or a union abstention ties /
+    /// abstains every row. Cures the per-family table's cross-family double claims (904 foreign `assigned`
+    /// rows on the chr16 truth simulation) and the §6gz demotion of correct votes whose outside tie partner
+    /// was merely never scored. A molecule with a tied placement in another region (its primary record not
+    /// loaded in the worker) is counted and left as today. Requires `--families` and the AS-tied gate.
+    /// Writes `<out>.union_certificate.tsv` (+ a `union_certificate` row in `params.tsv`); default off =
+    /// every existing output byte-identical. What the pass changes is `fa.assignments` (every status emit
+    /// site) and the touched families' `assigned_*`/`resolvable_*` counters; what it does NOT recompute:
+    /// `quant.tsv` `abundance`/`ci` and the `--prior abundance` weighting (the per-family EM, pre-union),
+    /// `n_hard` (counts `best_copy` regardless of status, so a union-tied row still counts at its per-family
+    /// best copy), `uniq`/`uniq_agree`, `--dump-star` proofs and `readthrough_into` (registered by the
+    /// per-family pass). Read `n_soft` and the statuses under this flag, not those columns.
+    #[arg(long, default_value_t = false)]
+    union_certificate: bool,
     /// One-flag IGV bundle: implies `--dump-psv` (the PSV genotype matrix), so a subsequent
     /// `bench/igv_tracks.py --assignments <out>.assignments.tsv --bam <bam> --regions <regions> --out <out>`
     /// emits `<out>.tagged.bam` (reads coloured by assigned copy), `<out>.copies.bed`, and `<out>.psv.vcf`
@@ -1709,6 +1731,9 @@ fn load_supplied_families(
         }
         if args.flag_missing_copies {
             anyhow::bail!("--flag-missing-copies requires --families (it tests catalog copies for a missing sibling)");
+        }
+        if args.union_certificate {
+            anyhow::bail!("--union-certificate requires --families (the union is over the supplied families' copies)");
         }
         return Ok((None, None, None));
     };
@@ -2913,6 +2938,12 @@ fn main() -> Result<()> {
     // Cross-family reconciliation mode (see `XfamMode`). Parsed HERE, before any read is touched, so an
     // unrecognized value fails in the first second rather than silently running as `off`.
     let xfam_mode = XfamMode::from_env()?;
+    if args.union_certificate && args.no_as_tied_only {
+        anyhow::bail!(
+            "--union-certificate is defined on AS-tied molecules (their tied placements are the candidates) and \
+             needs the AS-tied gate; drop --no-as-tied-only."
+        );
+    }
     // locus from a de-novo tid `DN_<chrom>_<start>_<n>` (chrom may contain `_`, so split from the right).
     fn parse_locus(tid: &str) -> Option<(String, u64)> {
         let rest = tid.strip_prefix("DN_")?;
@@ -2929,6 +2960,8 @@ fn main() -> Result<()> {
     // same way as the O3 vectors above -- `RegionWork.discovered` is already gated on `args.discover_copies`
     // at the `compute()` call site, so this just drains whatever each region produced.
     let mut all_discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy> = Vec::new();
+    // `--union-certificate`: every region's union rows + counts, drained in region order (side file + summary).
+    let mut union_all = rustle::vg_family::denovo_pipeline::UnionSummary::default();
     // `--families`: one row per ASSIGNED copy, naming the catalog row it came from. The explicit join
     // between `<out>.quant.tsv` and the O1 `copies.tsv`, and the place a copy that failed to survive
     // assignment would be visible as a missing row.
@@ -3124,7 +3157,11 @@ fn main() -> Result<()> {
             && args.read_isoform_k == 0
             && !rustle::vg_family::denovo_assemble::footprint_nodes_enabled()
             && !(args.recover_copies || args.tied_seed)
-            && rustle::vg_family::denovo_assemble::gtf_secondary_as_ratio() <= 0.0;
+            // GOOD seeding (r1060/r1100) streams too once a genome-wide best-AS table is loaded: the
+            // streaming reader applies `AS >= ratio x table best` itself (`stream_pass1_region`); without a
+            // table the ratio needs the region's buffered records to know a local best, as before.
+            && (rustle::vg_family::denovo_assemble::gtf_secondary_as_ratio() <= 0.0
+                || rustle::vg_family::denovo_assemble::global_best_as().is_some());
         let mut streamed: Option<Vec<rustle::vg_family::denovo_assemble::Skeleton>> = None;
         let mut n_mapped_streamed = 0usize;
         if streaming {
@@ -3392,7 +3429,7 @@ fn main() -> Result<()> {
         let t_da = std::time::Instant::now();
         // §6p6 --assemble-only: the assembly path below needs `primary` and nothing detect_and_assign
         // produces, so skip it outright. Empty results keep every downstream writer on its normal path.
-        let (fams, fallback, dna_needs, linearize_certs) = if args.assemble_only {
+        let (mut fams, fallback, dna_needs, linearize_certs) = if args.assemble_only {
             (Vec::new(), Vec::new(), Vec::new(), Vec::new())
         } else {
             detect_and_assign(
@@ -3404,6 +3441,36 @@ fn main() -> Result<()> {
         if timing && !args.assemble_only {
             eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
         }
+        // ⭐ --union-certificate: one certificate over the union of each cross-family / outside-tied
+        // molecule's candidates, applied to every family's row IN PLACE (`fa.assignments`), so the four
+        // status emit sites in the drain agree by construction. It must run HERE: the read sequences the
+        // certificate aligns exist only inside this worker (`RegionWork` drops them), which is why
+        // `xfam_pass1` -- which runs later, without them -- can only report or demote, never re-score.
+        let union = match (args.union_certificate && !args.assemble_only, supplied.as_deref()) {
+            (true, Some(sup)) => {
+                let t_u = std::time::Instant::now();
+                let label = |fid: &str, tid: &str, ci: usize| -> String {
+                    match catalog_index.as_ref().and_then(|ix| ix.get(tid)) {
+                        Some((cf, idx)) => format!("{cf}:{idx}"),
+                        None => format!("{fid}:#{ci}"),
+                    }
+                };
+                let s = rustle::vg_family::denovo_pipeline::union_certificate_pass(
+                    &mut fams, sup, &bam_reads, &genome, &params, &label,
+                );
+                eprintln!(
+                    "[union] {contig}:{lo}-{hi}: {} molecule(s) in scope, {} scored in {} group(s): assigned to a \
+                     family {}, to an outside locus {}, tied {}, ambiguous {}, no result {}; {} left as today (a \
+                     tie partner in another region: no primary record loaded here); {} outside pseudo-cop(y/ies) \
+                     unbuildable; {} row(s) added ({:.1}s)",
+                    s.n_in_scope, s.n_scored(), s.n_groups, s.n_assigned_family, s.n_assigned_outside, s.n_tied,
+                    s.n_ambiguous, s.n_no_result, s.n_other_region, s.n_pseudo_unbuildable, s.n_rows_added,
+                    t_u.elapsed().as_secs_f64()
+                );
+                s
+            }
+            _ => rustle::vg_family::denovo_pipeline::UnionSummary::default(),
+        };
         // FLAIR-style isoform assembly for the optional GTF (intron-chain collapse -> gate -> gene grouping).
         // Recomputed here only under --gtf (cheap: pass1/gate are ~0s); independent of the assignment.
         let transcripts: Vec<TranscriptRec> = if args.gtf {
@@ -3736,7 +3803,7 @@ fn main() -> Result<()> {
         } else {
             Vec::new()
         };
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -3780,7 +3847,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered } = work;
+            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union } = work;
             // O3 Phase 2 (Task 6): fold this region's raw pair stats + orphan loci into the genome-wide
             // vectors. Nothing is written here -- the Bonferroni threshold in `finalize_flags` needs every
             // region's pairs first, so `family_join.tsv`/`missing_copy_loci.tsv` are written once, after
@@ -3788,6 +3855,7 @@ fn main() -> Result<()> {
             o3_all_raw_pairs.extend(o3_raw_pairs);
             o3_all_orphan_loci.extend(o3_orphan_loci);
             all_discovered.extend(discovered);
+            union_all.absorb(union);
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -5696,6 +5764,30 @@ fn main() -> Result<()> {
         assign_rows.len()
     );
 
+    // ---- <out>.union_certificate.tsv (--union-certificate only) ------------------------------------
+    // The union verdict per touched molecule. A NEW file, like `xfam_conflicts.tsv`: the OFF arm's outputs
+    // stay byte-identical, and the ON arm announces itself by this file plus its `params.tsv` row.
+    if args.union_certificate {
+        let mut uh = std::fs::File::create(format!("{}.union_certificate.tsv", args.out))?;
+        writeln!(uh, "read_name\tn_candidates\tcandidates\twinner\tn_decisive\tmargin\tp_value\tverdict")?;
+        for r in &union_all.rows {
+            writeln!(
+                uh,
+                "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{}",
+                r.read_name, r.n_candidates, r.candidates, r.winner, r.n_decisive, r.margin, r.p_value, r.verdict
+            )?;
+        }
+        eprintln!(
+            "[union] --union-certificate: {} molecule(s) in scope over every region, {} scored in {} group(s) \
+             (assigned to a family {}, to an outside locus {}, tied {}, ambiguous {}, no result {}), {} left as \
+             today (tie partner in another region), {} pseudo-copies unbuildable, {} row(s) added -> \
+             {}.union_certificate.tsv",
+            union_all.n_in_scope, union_all.n_scored(), union_all.n_groups, union_all.n_assigned_family,
+            union_all.n_assigned_outside, union_all.n_tied, union_all.n_ambiguous, union_all.n_no_result,
+            union_all.n_other_region, union_all.n_pseudo_unbuildable, union_all.n_rows_added, args.out
+        );
+    }
+
     // ---- <out>.xfam_conflicts.tsv (report/abstain only) -------------------------------------------
     // The NEW information goes to a NEW file: adding a column to any existing output would break the OFF
     // arm's byte-identity, which is the gate this change is judged on.
@@ -5785,6 +5877,9 @@ fn main() -> Result<()> {
             Ok(())
         };
         row("xfam_reconcile", xfam_mode.as_str().to_string())?;
+        if args.union_certificate {
+            row("union_certificate", "true".to_string())?;
+        }
         row("posterior_prior", if prior_abundance { "abundance".into() } else { "uniform".to_string() })?;
         row("margin", format!("{}", args.margin))?;
         row("error_rate", format!("{}", args.error_rate))?;

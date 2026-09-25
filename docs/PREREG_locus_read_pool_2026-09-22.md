@@ -201,3 +201,42 @@ paralogue receives a molecule, so its only cost is the invisible-locus half, whi
   Rust `as_table` bin (one BAM scan → the table) so the recipe has no `samtools|awk|sort` step, and then the
   user's call on the flip.
 - **The advisor's mis-seeding concern:** negligible at the locus level (register 1061).
+
+---
+
+# ADDENDUM 3 — 2026-09-24 (§6zk): GOOD at ratio 0.80 (user's ask), written before the arms run
+
+User: "can we reduce the AS ratio to 0.8, that is the usual default for multimappers in minimap2". (minimap2's
+`-p 0.8` is the secondary-to-primary chaining-score ratio for REPORTING a secondary; the GOOD arm's ratio is
+AS ≥ r × the molecule's genome-wide best AS. At r = 0.80 the pool admits roughly every secondary minimap2 would
+report by default, so this arm asks whether the whole default-reportable tie set seeds better than the 0.98 tie.)
+
+Arms: `hsa20_GOOD0.80` and `ggo44_GOOD0.80`, the r1060 chain unchanged (`chain.sh`, existing molecules tables),
+compared with P and GOOD0.98 (chr20 F .075 / .099, prec .857 / .889, collapsed 1 / 0; gorilla F .030 / .089,
+prec 1.000 / 1.000, collapsed 12 / 12). Known: 0.98–0.90 were ratio-insensitive (chr20 identical, gorilla
+F .089/.091/.089).
+
+| outcome (held-out gorilla, family level) | verdict |
+|---|---|
+| F ≥ GOOD0.98 + 0.02 with precision ≥ 0.98 and collapsed ≤ 12 | ⭐ 0.80 becomes the GOOD ratio |
+| \|F − GOOD0.98\| < 0.02 | ⚠ NEUTRAL — the pool is ratio-insensitive down to 0.80; keep 0.98 (the narrowest pool that gives the gain, fewest echoes) unless chr20 says otherwise |
+| F < GOOD0.98 − 0.02, or precision < 0.98, or collapsed > 12 | ⛔ 0.80 admits ALL's echoes; keep 0.98 |
+
+**Predicted:** ⚠ on family F, with loci and transcripts creeping up toward ALL (0.90 already had +5% loci on
+gorilla) and gorilla collapsed staying ≤ 12. I will not change the bar after seeing any number.
+
+## ADDENDUM 3 OUTCOME (2026-09-24)
+
+| arm | loci | transcripts | clusters | sens | prec | F | collapsed | no-locus |
+|---|---|---|---|---|---|---|---|---|
+| ggo44 P | 1,113 | 4,279 | 23 | 0.015 | 1.000 | 0.030 | 12 | 705 |
+| ggo44 GOOD0.98 | 1,145 | 4,329 | 24 | 0.046 | 1.000 | 0.089 | 12 | 682 |
+| **ggo44 GOOD0.80** | 1,213 | 4,036 | 26 | 0.045 | 1.000 | **0.086** | 9 | 679 |
+| hsa20 P | 1,856 | 6,121 | 6 | 0.039 | 0.857 | 0.075 | 1 | 143 |
+| hsa20 GOOD0.98 | 1,896 | 6,175 | 7 | 0.053 | 0.889 | 0.099 | 0 | 142 |
+| **hsa20 GOOD0.80** | 2,072 | 6,004 | 8 | 0.059 | 0.900 | **0.111** | **6** | 132 |
+
+**⚠ NEUTRAL by the bar** (held-out gorilla ΔF −0.003; precision 1.000; collapsed 12 → 9). chr20 moves +0.012
+(below the 0.02 line) but collapsed goes 0 → 6 with loci +9% — the start of ALL's over-merge (ALL: collapsed 18,
+loci ×2.7). **Keep 0.98**: it is the narrowest pool that gives the whole held-out gain, and 0.80 buys nothing
+on the held-out substrate while admitting the first echoes on the development one.

@@ -1473,12 +1473,22 @@ pub fn global_best_as() -> Option<&'static std::collections::HashMap<u64, i32>> 
             let f = std::fs::File::open(&path).ok()?;
             let mut m = std::collections::HashMap::new();
             for line in std::io::BufReader::with_capacity(1 << 20, f).lines().map_while(Result::ok) {
+                if line.starts_with('#') {
+                    continue; // `as_table` provenance header (`#as_table\tbam=...`)
+                }
                 let mut it = line.split('\t');
                 if let (Some(name), Some(best)) = (it.next(), it.next()) {
                     if let Ok(b) = best.parse::<i32>() {
                         m.insert(read_name_hash(name), b);
                     }
                 }
+            }
+            if m.is_empty() {
+                // an empty or unparseable table must not take the streaming path (whose filter would then
+                // never fire = admit-all secondaries, §6n2's regime); with `None` the buffered region-local
+                // rule applies exactly as if the env were unset
+                eprintln!("[as-table] WARNING: 0 molecules parsed from {path} — table IGNORED (region-local AS-tie rule applies)");
+                return None;
             }
             eprintln!("[as-table] {} molecules loaded from {path}", m.len());
             Some(m)
@@ -1563,13 +1573,16 @@ fn reads_in_region_indexed(
         let record = result?;
         buf.push(RecordBuf::try_from_alignment_record(&header, &record)?);
     }
+    // A supplementary record's AS is not a placement's score (it is a chimeric segment), so it must not set
+    // the local best — the genome-wide table (`as_table`, `-F 2052`) never sees it, and the streaming path's
+    // bar is the table's; keeping the two paths' decisions identical means excluding it here too.
     let keys: Vec<(bool, String, Option<i32>)> = buf
         .iter()
         .map(|rb| {
             (
                 rb.flags().is_secondary(),
                 rb.name().map(|n| n.to_string()).unwrap_or_default(),
-                record_as(rb),
+                if rb.flags().is_supplementary() { None } else { record_as(rb) },
             )
         })
         .collect();
@@ -1632,6 +1645,16 @@ pub fn stream_pass1_region(
     let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
     let mut n_mapped = 0usize;
     let mut ops: Vec<noodles_sam::alignment::record::cigar::Op> = Vec::with_capacity(256);
+    // GOOD seeding on the streaming path (r1060/r1100, `docs/PREREG_locus_read_pool_2026-09-22.md`): with
+    // `RUSTLE_GTF_SECONDARY_AS_RATIO` > 0 and a genome-wide best-AS table (`RUSTLE_GTF_SECONDARY_AS_TABLE`,
+    // built by `as_table`), a secondary is kept only when `AS >= ratio x best`. This is `as_tie_keep_with`'s
+    // rule with the local-best half dropped: for a table built from the SAME BAM the global best is >= every
+    // local best, so the two paths agree. No entry / no AS = keep (absence of evidence), as there. Names and
+    // tags are decoded ONLY for secondaries under this rule, so the default path stays untouched.
+    let tie_ratio = if allow_secondary { gtf_secondary_as_ratio() } else { 0.0 };
+    let tie_table = if tie_ratio > 0.0 { global_best_as() } else { None };
+    let mut n_tie_dropped = 0usize;
+    let mut n_tie_unknown = 0usize; // secondaries whose molecule the table does not know (kept; a table from ANOTHER BAM shows here)
     for result in reader.query(&header, &index, &region)? {
         let record = result?;
         let flags = record.flags();
@@ -1653,6 +1676,23 @@ pub fn stream_pass1_region(
         if flags.is_secondary() && !allow_secondary {
             continue;
         }
+        if flags.is_secondary() && tie_ratio > 0.0 {
+            let best = tie_table.and_then(|t| {
+                record
+                    .name()
+                    .and_then(|n| std::str::from_utf8(n.as_ref()).ok())
+                    .and_then(|n| t.get(&read_name_hash(n)).copied())
+            });
+            if best.is_none() {
+                n_tie_unknown += 1;
+            }
+            if let (Some(a), Some(b)) = (lazy_record_as(&record), best) {
+                if b > 0 && (a as f64) < tie_ratio * (b as f64) {
+                    n_tie_dropped += 1;
+                    continue;
+                }
+            }
+        }
         let ref_end = exons.last().map(|e| e.1).unwrap_or(ref_start);
         let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
         if fetched.iter().any(|(c, l, h)| c == chrom && ref_start < *h && ref_end > *l) {
@@ -1667,7 +1707,33 @@ pub fn stream_pass1_region(
         }
         acc.push(chrom, ref_start, ref_end, &introns, flags.is_reverse_complemented());
     }
+    if n_tie_dropped > 0 || n_tie_unknown > 0 {
+        eprintln!(
+            "[stream-pass1] {chrom}:{lo}-{hi}: {n_tie_dropped} secondary record(s) below {tie_ratio} x genome-wide best AS dropped; {n_tie_unknown} kept with NO table entry{}",
+            if n_tie_unknown > 0 { " — WARNING: the table may come from a different BAM" } else { "" }
+        );
+    }
     Ok(n_mapped)
+}
+
+/// `AS:i` of a LAZY BAM record (the streaming path's counterpart of `record_as`).
+fn lazy_record_as(record: &noodles_bam::Record) -> Option<i32> {
+    use noodles_sam::alignment::record::data::field::{Tag, Value};
+    for entry in noodles_sam::alignment::Record::data(record).iter() {
+        let (tag, value) = entry.ok()?;
+        if tag == Tag::ALIGNMENT_SCORE {
+            return match value {
+                Value::Int8(v) => Some(v as i32),
+                Value::UInt8(v) => Some(v as i32),
+                Value::Int16(v) => Some(v as i32),
+                Value::UInt16(v) => Some(v as i32),
+                Value::Int32(v) => Some(v),
+                Value::UInt32(v) => Some(v as i32),
+                _ => None,
+            };
+        }
+    }
+    None
 }
 
 pub struct BamIndexCache {
@@ -1726,7 +1792,13 @@ impl BamIndexCache {
         }
         let keys: Vec<(bool, String, Option<i32>)> = buf
             .iter()
-            .map(|rb| (rb.flags().is_secondary(), rb.name().map(|n| n.to_string()).unwrap_or_default(), record_as(rb)))
+            .map(|rb| {
+                (
+                    rb.flags().is_secondary(),
+                    rb.name().map(|n| n.to_string()).unwrap_or_default(),
+                    if rb.flags().is_supplementary() { None } else { record_as(rb) }, // as above: no supplementary AS in the local best
+                )
+            })
             .collect();
         let keep = as_tie_keep_with(&keys, ratio, global_best_as());
         for (i, rb) in buf.iter().enumerate() {

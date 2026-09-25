@@ -1340,6 +1340,23 @@ pub struct FamilyProfiles {
     pub n_cols: usize,
 }
 
+/// `FamilyProfiles` with NO PSV columns (`n_cols == 0`, empty alleles): the per-copy junction boundaries,
+/// `gen2off` and strand only. For the read-star pooled certificate, whose columns are star-projected from
+/// the molecule's own alignments and which never reads these; see `assign_family_detailed_once`.
+pub fn family_profiles_without_columns(copies: &[&DenovoTranscript]) -> FamilyProfiles {
+    FamilyProfiles {
+        profiles: copies
+            .iter()
+            .enumerate()
+            .map(|(ci, c)| CopyProfile { copy_id: ci, alleles: Vec::new(), junctions: copy_boundaries(c) })
+            .collect(),
+        copy_gpos: vec![Vec::new(); copies.len()],
+        gen2off: copies.iter().map(|c| gen2off(c)).collect(),
+        strand: copies.iter().map(|c| c.strand).collect(),
+        n_cols: 0,
+    }
+}
+
 /// Build the per-copy `CopyProfile`s (PSV alleles + intron boundaries), the genomic PSV positions, and the
 /// per-copy `gen2off`/strand — everything a read needs, computed ONCE per family (not per read).
 pub fn build_family_profiles(
@@ -2227,7 +2244,15 @@ fn assign_family_detailed_once(
     const MAX_MOSAIC_SITES: usize = 250; // cap PSV sites per detect_mosaic (it is O(sites^2)); stride-sample
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
     let t_psv = std::time::Instant::now();
-    let fp0 = build_family_profiles(copies, genome);
+    // UNION CERTIFICATE on the read-star path (`p.tie_outside_scored`): the star-projected columns are the
+    // evidence and these copy-vs-copy columns are never read, so the O(copies) banded-DP discovery is skipped
+    // -- a union holds up to ~150 copies and a merged locus candidate can be a 150-kb unspliced span, which
+    // made the discovery, not the certificate, the cost. Every other path builds the profiles as before.
+    let fp0 = if p.tie_outside_scored && p.molecule_pool && mol_names.is_some() {
+        family_profiles_without_columns(copies)
+    } else {
+        build_family_profiles(copies, genome)
+    };
     if timing {
         eprintln!(
             "[timing]     build_family_profiles/discover_psvs ({} copies, {} cols): {:.1}s",
@@ -2853,7 +2878,8 @@ fn assign_family_detailed_once(
                         a.origin_rejected = !consistent_elsewhere;
                     }
                 }
-                if n_explained_unaligned > 0 && !a.origin_rejected {
+                // (union certificate: the partner index would be in the union's frame — see `tie_outside_scored`)
+                if n_explained_unaligned > 0 && !a.origin_rejected && !p.tie_outside_scored {
                     if let Some((pc, _)) = partner_best {
                         register_readthrough(&names[ri], pc, n_explained_unaligned);
                     } else {
@@ -2888,7 +2914,9 @@ fn assign_family_detailed_once(
                 // ⭐ §6gz: a tie partner outside every target of the supplied families was never scored, so
                 // no verdict among THIS family's copies can be an assignment. Applies after the L3 promotion
                 // above, which is exactly the path that leaked 4,706 EIF3C reads into an NPIP copy.
-                if a.status == AssignStatus::Assigned && is_tie_outside(&names[ri]) {
+                // Under the UNION certificate (`p.tie_outside_scored`) the outside placement is one of
+                // `copies` and has just been scored, so the rule's premise does not hold and it is skipped.
+                if a.status == AssignStatus::Assigned && !p.tie_outside_scored && is_tie_outside(&names[ri]) {
                     a.status = AssignStatus::Tied;
                     a.resolvable = false;
                     a.posterior = vec![1.0 / copies.len() as f64; copies.len()];

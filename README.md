@@ -28,13 +28,13 @@ output. `docs/DATA.md` lists the BAMs, genomes and annotations those recipes rea
 the repository). `docs/MODULE_STATUS.md` says which modules are reachable at defaults, which are opt-in, and
 which only a side binary uses — enforced by a test.
 
-Main binaries (`src/bin/`, ten): the pipeline stages — `copy_assign` (`--assemble-only --genome-wide`
+Main binaries (`src/bin/`, eleven): the pipeline stages — `copy_assign` (`--assemble-only --genome-wide`
 streams a whole BAM into loci and isoforms; `--families` is the copy assignment; `--flag-missing-copies` the
 pairwise missing-copy test), `mcl_families` (family definition; `--from-gtf` runs the de novo stage from an
 assembled GTF in one command), `gw_family_catalog` (the copy catalog the assignment consumes),
-`missing_copy_flag` (missing copies from RNA) — and five comparators and converters: `family_score`, `mcl_port`, `readthrough_filter`, `locus_bed`, `gff_to_gtf`, `parcn`.
+`missing_copy_flag` (missing copies from RNA), `as_table` (one pass over a BAM → each molecule's genome-wide best alignment score; the pipeline's assemble stage seeds loci with the tied secondaries it names, `--no-seed-secondaries` to opt out) — and five comparators and converters: `family_score`, `mcl_port`, `readthrough_filter`, `locus_bed`, `gff_to_gtf`, `parcn`.
 `tools/rustle_pipeline.sh assemble|families|catalog|assign|flag|all` runs any stage, or all of them, with the shipped defaults. `bench/` holds the
-39 analysis scripts the record cites (`bench/README.md` lists each one); `tools/` the sweep, audit and attic
+40 analysis scripts the record cites (`bench/README.md` lists each one); `tools/` the sweep, audit and attic
 scripts.
 
 ## The record

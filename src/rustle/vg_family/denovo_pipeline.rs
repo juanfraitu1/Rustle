@@ -2835,6 +2835,686 @@ pub fn detect_and_assign(
     (out, fallback, dna_needs, linearize_certs)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// UNION CERTIFICATE (`copy_assign --union-certificate`, 2026-09-24; register rows 1092/1093).
+//
+// `copy_assign --families` judges each AS-tied molecule INSIDE EACH FAMILY separately: one row per read ×
+// family, each family comparing the molecule against its own copies only. Measured on the chr16 truth
+// simulation: 946/1,259 tied molecules have tied placements in several families, giving 904 foreign
+// "assigned" rows and PRIMARY/ANY accuracy 0.29/0.09 against the aligner's 0.49; and the §6gz rule demotes
+// 95 molecules whose within-family vote is strong and correct because one tied placement lies at a locus
+// outside every supplied family and was never scored.
+//
+// This pass runs ONE certificate per molecule over the UNION of its candidates — the copies of every family a
+// tied placement touches (or that already holds a row for it), plus one pseudo-copy per outside tie locus
+// built from the genome over that placement's aligned blocks, with same-locus duplicates (one genomic locus
+// the O1 partition holds in two families) merged — and applies the verdict to every family's row consistently. It is the absent-copy Stage-2 pattern (`assign_family_detailed` over an augmented copy set,
+// then merge back) applied ACROSS families instead of within one.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// One row of `<out>.union_certificate.tsv`: the union verdict for one molecule the pass touched.
+#[derive(Clone, Debug)]
+pub struct UnionRow {
+    pub read_name: String,
+    pub n_candidates: usize,
+    /// Comma-joined candidate labels in union order (`<family>:<copy>` or `outside:<chrom>:<start>-<end>`).
+    pub candidates: String,
+    /// The winning candidate's label; `-` when the union abstained or produced no result.
+    pub winner: String,
+    pub n_decisive: usize,
+    pub margin: f64,
+    pub p_value: f64,
+    /// `assigned_family` | `assigned_outside` | `tied` | `ambiguous` | `no_result`.
+    pub verdict: String,
+}
+
+/// What one region's pass did, for the stderr summary; `rows` drains to the side file.
+#[derive(Clone, Debug, Default)]
+pub struct UnionSummary {
+    pub rows: Vec<UnionRow>,
+    /// molecules meeting the scope test (rows in >= 1 family; tied placements in >= 2 families and/or outside)
+    pub n_in_scope: usize,
+    /// in scope but no PRIMARY record loaded here: a tie partner lies in another region — left as today
+    pub n_other_region: usize,
+    /// distinct candidate sets = `assign_family_detailed` calls
+    pub n_groups: usize,
+    pub n_assigned_family: usize,
+    pub n_assigned_outside: usize,
+    pub n_tied: usize,
+    pub n_ambiguous: usize,
+    /// scored, but the certificate produced no result for the molecule (record-level path only)
+    pub n_no_result: usize,
+    /// outside placements whose pseudo-copy could not be built from the genome (contig absent)
+    pub n_pseudo_unbuildable: usize,
+    /// rows created for a winning family that had produced none for the molecule
+    pub n_rows_added: usize,
+}
+
+impl UnionSummary {
+    /// Fold another region's summary into this one (the drain runs region by region).
+    pub fn absorb(&mut self, o: UnionSummary) {
+        self.rows.extend(o.rows);
+        self.n_in_scope += o.n_in_scope;
+        self.n_other_region += o.n_other_region;
+        self.n_groups += o.n_groups;
+        self.n_assigned_family += o.n_assigned_family;
+        self.n_assigned_outside += o.n_assigned_outside;
+        self.n_tied += o.n_tied;
+        self.n_ambiguous += o.n_ambiguous;
+        self.n_no_result += o.n_no_result;
+        self.n_pseudo_unbuildable += o.n_pseudo_unbuildable;
+        self.n_rows_added += o.n_rows_added;
+    }
+    /// molecules the pass actually scored
+    pub fn n_scored(&self) -> usize {
+        self.n_in_scope - self.n_other_region
+    }
+}
+
+/// Per molecule (sorted by name), the indices into `bam_reads` of its AS-TIED placements: the
+/// non-supplementary records at the molecule's maximum `AS`, for molecules with at least two of them. The
+/// same tie definition the binary's §6gz registration and `copy_discovery::tie_partner_placements` use
+/// (exact AS equality — the gate's own `--as-tie-ratio` admits near-ties as MOLECULES, but a placement is a
+/// tie partner only at the maximum).
+pub fn tied_record_indices(bam_reads: &[BamRead]) -> BTreeMap<String, Vec<usize>> {
+    let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (i, br) in bam_reads.iter().enumerate().filter(|(_, b)| !b.is_supplementary) {
+        by_name.entry(br.name.as_str()).or_default().push(i);
+    }
+    by_name
+        .into_iter()
+        .filter_map(|(name, idx)| {
+            let max_as = idx.iter().map(|&i| bam_reads[i].as_score).max()?;
+            let tied: Vec<usize> = idx.into_iter().filter(|&i| bam_reads[i].as_score == max_as).collect();
+            (tied.len() >= 2).then(|| (name.to_string(), tied))
+        })
+        .collect()
+}
+
+/// A record's aligned blocks as EXONS: `M`/`=`/`X`/`D` extend the current block, `N` closes it (a deletion
+/// lies within an exon; only a spliced-out intron separates two). 0-based half-open genomic intervals —
+/// the binary's `aligned_blocks_local` walk, not `copy_discovery::aligned_blocks` (which also splits on `D`).
+pub fn exon_blocks_of(read: &AlignedRead) -> Vec<(u64, u64)> {
+    let mut pos = read.ref_start;
+    let mut cur: Option<(u64, u64)> = None;
+    let mut out = Vec::new();
+    for &(op, n) in &read.cigar {
+        match op {
+            'M' | '=' | 'X' | 'D' => {
+                cur = Some((cur.map_or(pos, |c| c.0), pos + n));
+                pos += n;
+            }
+            'N' => {
+                if let Some(c) = cur.take() {
+                    out.push(c);
+                }
+                pos += n;
+            }
+            _ => {}
+        }
+    }
+    if let Some(c) = cur {
+        out.push(c);
+    }
+    out
+}
+
+/// A record's transcript strand ON THE GENOME: minimap2's `ts:A` (relative to the read) flipped by the
+/// alignment orientation, falling back to FLAG 0x10 when there is no `ts` (an unspliced record has no motif
+/// to read it from) — the rule the binary's `read_strand` column uses.
+pub fn record_genomic_strand(br: &BamRead) -> char {
+    match (br.ts, br.reverse) {
+        (Some('+'), rev) => if rev { '-' } else { '+' },
+        (Some('-'), rev) => if rev { '+' } else { '-' },
+        (_, rev) => if rev { '-' } else { '+' },
+    }
+}
+
+/// The `DenovoTranscript` of an OUTSIDE tie locus — a copy the catalog does not hold — built from the genome
+/// over one placement's aligned blocks: exons = the blocks, introns = the `N` gaps, strand = the record's.
+/// The sequence is built the way a catalog copy is rebuilt without `--copies-fa` (`build_spliced_seq`), so a
+/// spliced chain's strand comes from its junction motifs exactly as a catalog copy's would; when that refuses
+/// the chain (a non-canonical junction the read nevertheless carries), the blocks are concatenated as aligned
+/// and reverse-complemented on `-`, so the placement is still scored rather than silently dropped. `tid` =
+/// `outside:<chrom>:<start1>-<end>` (1-based start — the token `register_tie_outside_locus` emits).
+pub fn outside_pseudo_copy(chrom: &str, blocks: &[(u64, u64)], strand: char, genome: &GenomeIndex) -> Option<DenovoTranscript> {
+    let (&(start, _), &(_, end)) = (blocks.first()?, blocks.last()?);
+    let introns: Vec<(u64, u64)> = blocks.windows(2).map(|w| (w[0].1, w[1].0)).filter(|&(a, b)| b > a).collect();
+    let (seq, strand) = match super::denovo_assemble::build_spliced_seq(genome, chrom, start, end, &introns, Some(strand)) {
+        Some(v) => v,
+        None => {
+            let mut s = Vec::new();
+            for &(a, b) in blocks {
+                s.extend(genome.fetch_sequence(chrom, a, b)?);
+            }
+            (if strand == '-' { super::bridge_detector::revcomp(&s) } else { s }, strand)
+        }
+    };
+    if seq.is_empty() {
+        return None;
+    }
+    Some(DenovoTranscript {
+        tid: format!("outside:{chrom}:{}-{end}", start + 1),
+        chrom: chrom.to_string(),
+        start,
+        end,
+        n_reads: 1,
+        strand,
+        introns,
+        seq,
+        ..Default::default()
+    })
+}
+
+/// One member of a union candidate: a catalog copy `(index into fams, copy index, side-file label)` or an
+/// outside tie locus (pseudo-copy, by its `tid`). A candidate normally has one member; catalog copies of
+/// DIFFERENT families whose unit spans overlap (one genomic locus the O1 partition holds twice -- 140 such
+/// pairs in the chr16 catalog) and any pseudo-copy overlapping them are ONE locus for the genomic read-star
+/// (the same DNA, so identical hits), and are merged into one candidate with several members.
+#[derive(Clone, Debug)]
+enum Member {
+    Family(usize, usize, String),
+    Outside(String),
+}
+
+/// A row that the union verdict ties: the same shape the §6gz demotion gives a row (status only; the
+/// row's own certificate numbers stay, as they do there).
+fn tie_row(a: &mut Assignment, n_copies: usize) {
+    a.status = AssignStatus::Tied;
+    a.resolvable = false;
+    a.posterior = vec![1.0 / n_copies.max(1) as f64; n_copies];
+}
+
+/// `families.tsv` counters derived purely from `combined` per row, recomputed after the pass moved statuses
+/// (`assigned_j`, `resolvable_j`; on the read-star path `psv` IS `combined`, so those two follow). `uniq`/
+/// `uniq_agree` need each row's `mapped_copy`, which `FamilyAssignment` does not keep -- left as computed.
+fn recount_after_union(fa: &mut FamilyAssignment, psv_is_combined: bool) {
+    fa.assigned_j = fa.assignments.iter().filter(|(_, a)| a.status == AssignStatus::Assigned).count();
+    fa.resolvable_j = fa.assignments.iter().filter(|(_, a)| a.n_decisive >= 1).count();
+    if psv_is_combined {
+        fa.assigned_psv = fa.assigned_j;
+        fa.resolvable_psv = fa.resolvable_j;
+    }
+}
+
+/// The union posterior projected onto ONE family's copies (renormalized); when it carries no mass there,
+/// one-hot at `one_hot` if given, else uniform. `pos_of` maps `(family, copy)` to the union index.
+fn project_posterior(
+    n_f: usize,
+    f: usize,
+    pos_of: &std::collections::HashMap<(usize, usize), usize>,
+    union_post: &[f64],
+    one_hot: Option<usize>,
+) -> Vec<f64> {
+    let mut post: Vec<f64> =
+        (0..n_f).map(|k| pos_of.get(&(f, k)).and_then(|&u| union_post.get(u)).copied().unwrap_or(0.0)).collect();
+    let z: f64 = post.iter().sum();
+    if z > 0.0 {
+        for x in &mut post {
+            *x /= z;
+        }
+    } else if let Some(ci) = one_hot.filter(|&ci| ci < n_f) {
+        post = vec![0.0; n_f];
+        post[ci] = 1.0;
+    } else {
+        post = vec![1.0 / n_f.max(1) as f64; n_f];
+    }
+    post
+}
+
+/// Exons of a candidate as genomic intervals (its span minus its introns), and their total length.
+fn exon_intervals(t: &DenovoTranscript) -> Vec<(u64, u64)> {
+    let mut out = Vec::with_capacity(t.introns.len() + 1);
+    let mut prev = t.start;
+    for &(d, a) in &t.introns {
+        if d > prev {
+            out.push((prev, d));
+        }
+        prev = a.max(prev);
+    }
+    if t.end > prev {
+        out.push((prev, t.end));
+    }
+    out
+}
+
+/// Aligned-bp overlap of two exon interval lists (both sorted, same chromosome assumed by the caller).
+fn exonic_overlap(a: &[(u64, u64)], b: &[(u64, u64)]) -> u64 {
+    a.iter().map(|&(s, e)| b.iter().map(|&(s2, e2)| e.min(e2).saturating_sub(s.max(s2))).sum::<u64>()).sum()
+}
+
+/// Merge candidates that are ONE LOCUS into one candidate. Input: `(chrom, start, end, member, transcript,
+/// label)` in union order; output: one `(transcript, members, label)` per connected component of the
+/// same-locus graph, in order of first appearance, labels joined with `+`.
+///
+/// Same locus = same chromosome and EXONIC overlap >= 50% of the shorter member's exonic length (the
+/// `same_locus` rule the O2 truth scorer uses; `prune_same_locus`'s "one is an unspliced span of the other"
+/// in spirit). ⚠ Not "spans overlap": a 2-kb unit overlapping the first 27 bp of a 152-kb 14-exon unit
+/// (`GWFAM50:1` / `GWFAM164:2` on chr16) is NOT the same locus, and merging them let the big unit's
+/// intronic span hide an NM-identical inverted twin of the small one 100 kb away as "the same candidate" —
+/// 10 assignments that were a coin toss on member order, not a certificate.
+///
+/// The component is represented by its LONGEST-EXONIC member's own transcript (its sequence, introns and
+/// span, so its unit form and its target are exactly what the per-family pass used) — never by an
+/// unspliced union span, which would be a new target that can swallow other loci. The other members are
+/// aliases for the verdict only: `union_certificate_pass` assigns the member the molecule lies in most.
+fn merge_same_locus(
+    raw: Vec<(String, u64, u64, Member, DenovoTranscript, String)>,
+) -> Vec<(DenovoTranscript, Vec<Member>, String)> {
+    let n = raw.len();
+    let exons: Vec<Vec<(u64, u64)>> = raw.iter().map(|r| exon_intervals(&r.4)).collect();
+    let exonic_len: Vec<u64> = exons.iter().map(|v| v.iter().map(|&(s, e)| e - s).sum()).collect();
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(p: &mut Vec<usize>, i: usize) -> usize {
+        let mut r = i;
+        while p[r] != r {
+            r = p[r];
+        }
+        let mut c = i;
+        while p[c] != r {
+            let nx = p[c];
+            p[c] = r;
+            c = nx;
+        }
+        r
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if raw[i].0 != raw[j].0 || raw[i].1 >= raw[j].2 || raw[j].1 >= raw[i].2 {
+                continue;
+            }
+            let ov = exonic_overlap(&exons[i], &exons[j]);
+            let shorter = exonic_len[i].min(exonic_len[j]);
+            if shorter > 0 && 2 * ov >= shorter {
+                let (a, b) = (find(&mut parent, i), find(&mut parent, j));
+                if a != b {
+                    parent[b.max(a)] = a.min(b);
+                }
+            }
+        }
+    }
+    let mut comps: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for i in 0..n {
+        let r = find(&mut parent, i);
+        comps.entry(r).or_default().push(i);
+    }
+    let mut raw: Vec<Option<(String, u64, u64, Member, DenovoTranscript, String)>> = raw.into_iter().map(Some).collect();
+    let mut out = Vec::new();
+    for (_, idxs) in comps {
+        // representative: the longest-exonic member (first on a tie)
+        let rep = idxs.iter().copied().fold(idxs[0], |best, i| if exonic_len[i] > exonic_len[best] { i } else { best });
+        let mut members = Vec::with_capacity(idxs.len());
+        let mut labels = Vec::with_capacity(idxs.len());
+        let mut rep_t: Option<DenovoTranscript> = None;
+        for &i in &idxs {
+            let (_, _, _, m, t, label) = raw[i].take().expect("taken once");
+            members.push(m);
+            labels.push(label);
+            if i == rep {
+                rep_t = Some(t);
+            }
+        }
+        out.push((rep_t.expect("the representative is a member"), members, labels.join("+")));
+    }
+    out
+}
+
+/// ONE certificate over the UNION of a molecule's candidates, applied to every family's row in place. See
+/// the section comment above.
+///
+/// `supplied` = the `--families` catalog as materialized (`catalog_input::to_colocated`), which is where each
+/// copy's SEQUENCE lives (`FamilyAssignment` keeps only tids and spans); a family whose copies are not all
+/// in it contributes no candidates. `copy_label(family_id, tid, ci)` names a catalog copy in the side file.
+///
+/// SCOPE. A molecule is touched when its AS-tied placements (`tied_record_indices`) touch >= 1 locus outside
+/// every unit, or when >= 2 candidate-bearing families are involved -- a family is involved when a tied
+/// placement overlaps one of its units (the §6gz registration's own inside/outside test: record SPAN vs
+/// unit span, same chromosome) OR when it already holds a row for the molecule (the molecule aligned there
+/// at a lower score and that family judged it alone: the `sole candidate` foreign claims, e.g. a
+/// 0.4%-divergent locus claiming a read whose exact twin lies elsewhere). A molecule none of whose loaded
+/// records is its PRIMARY has a tied placement in a region this worker never loaded; it is counted
+/// (`n_other_region`) and left as today -- a partner that was not loaded cannot be scored. (A missing
+/// SECONDARY elsewhere is not detectable from the loaded records; that blind spot is the AS-tied gate's own
+/// region-local one.)
+///
+/// CANDIDATES = every copy of every involved family, plus one pseudo-copy per outside locus
+/// (`outside_pseudo_copy`), with same-locus duplicates (exonic overlap >= 50% of the shorter) merged into
+/// one candidate represented by the longest member (`merge_same_locus`).
+/// Molecules with the same candidate set share one `assign_family_detailed` call -- one PSV-profile build
+/// and one read-star minimap2 run per group, as the per-family pass already pools per family; the
+/// certificate itself is per molecule.
+///
+/// VERDICT, per molecule: union assigns a candidate with a catalog member ⟹ the member whose unit the
+/// molecule's tied placement covers most (aligned-block overlap; first in union order on a tie) gets its
+/// family's row `Assigned` to that copy with the union's `n_decisive`/`margin`/`p_value`/`min_p` and its
+/// posterior mass over that family's copies; every other row (other families, and the other members'
+/// families of a merged locus) `Tied` -- one molecule, one claim; union assigns a candidate with no catalog
+/// member (an outside locus) ⟹ every row `Tied`, the winner is the side file's; union `Tied`/`Ambiguous` ⟹
+/// every row takes that status, the union's numbers and the union's posterior projected onto that
+/// family's copies (its consistent zone; uniform where the union put no mass on the family). The §6gz demotion is skipped inside the union run
+/// (`AssignParams::tie_outside_scored`) -- the outside placement was scored.
+///
+/// ⚠ Under the exact AS-tie gate two tied placements score identically, so they are identical over the
+/// read (measured: NM equal at the true copy and at every tied partner for 157/157 molecules the chr16
+/// truth simulation's per-family table had assigned) -- the union can REJECT non-tied candidates and must
+/// TIE identical ones; it cannot choose between placements the aligner could not, and does not pretend to.
+///
+/// ⚠ Run with `RUSTLE_PSV_READFILTER=0` (the binary sets it): a group is often ONE molecule, which has no
+/// pileup for the read-support column filter to validate against. (Below `PSV_MIN_JUDGE_COV` the filter keeps
+/// a column, so a single two-record molecule survives it either way.)
+pub fn union_certificate_pass(
+    fams: &mut [FamilyAssignment],
+    supplied: &[ColocatedFamily],
+    bam_reads: &[BamRead],
+    genome: &GenomeIndex,
+    p: &AssignParams,
+    copy_label: &dyn Fn(&str, &str, usize) -> String,
+) -> UnionSummary {
+    use std::collections::HashMap;
+    let mut sum = UnionSummary::default();
+    // catalog copies by tid (the sequence lives here), then per family in `copy_tids` order
+    let by_tid: HashMap<&str, &DenovoTranscript> =
+        supplied.iter().flat_map(|f| f.copies.iter()).map(|c| (c.tid.as_str(), c)).collect();
+    let fam_copies: Vec<Option<Vec<&DenovoTranscript>>> = fams
+        .iter()
+        .map(|fa| fa.copy_tids.iter().map(|t| by_tid.get(t.as_str()).copied()).collect())
+        .collect();
+    // every unit of every candidate-bearing family: (f, chrom, start, end) -- the §6gz `targets`
+    let units: Vec<(usize, &str, u64, u64)> = fams
+        .iter()
+        .enumerate()
+        .filter(|(f, _)| fam_copies[*f].is_some())
+        .flat_map(|(f, fa)| fa.copy_spans.iter().map(move |(c, s, e)| (f, c.as_str(), *s, *e)))
+        .collect();
+    // molecule -> its rows: (f, index into fams[f].assignments)
+    let mut rows_of: HashMap<&str, Vec<(usize, usize)>> = HashMap::new();
+    for (f, fa) in fams.iter().enumerate() {
+        for (k, (ri, _)) in fa.assignments.iter().enumerate() {
+            if let Some(br) = bam_reads.get(*ri) {
+                rows_of.entry(br.name.as_str()).or_default().push((f, k));
+            }
+        }
+    }
+    // group key = the candidate set (deterministic: BTree everywhere, molecules sorted by name inside)
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    struct Key {
+        fams: Vec<usize>,
+        outside: Vec<(String, Vec<(u64, u64)>, char)>,
+    }
+    // molecule -> does ANY loaded record (tied or not) carry the primary flag? minimap2 picks the primary by
+    // chaining score, so a molecule's primary can sit below its tied secondaries in AS (the gate's own
+    // `best_as` is the max over all non-supplementary records); testing only the tied records would file such
+    // a molecule under "tie partner in another region" although every placement is loaded (review 2026-09-24).
+    let mut primary_loaded: HashSet<&str> = HashSet::new();
+    for br in bam_reads.iter() {
+        if !br.is_secondary && !br.is_supplementary {
+            primary_loaded.insert(br.name.as_str());
+        }
+    }
+    let mut groups: BTreeMap<Key, Vec<(String, Vec<usize>)>> = BTreeMap::new();
+    for (name, recs) in tied_record_indices(bam_reads) {
+        let Some(rows) = rows_of.get(name.as_str()) else { continue };
+        let mut cand_fams: BTreeSet<usize> = BTreeSet::new();
+        let mut outside: BTreeSet<(String, Vec<(u64, u64)>, char)> = BTreeSet::new();
+        for &ri in &recs {
+            let br = &bam_reads[ri];
+            let (s0, e0) = (br.read.ref_start, read_ref_end(&br.read));
+            let mut inside = false;
+            for &(f, c, a, b) in &units {
+                if c == br.chrom && s0 < b && e0 > a {
+                    cand_fams.insert(f);
+                    inside = true;
+                }
+            }
+            if !inside {
+                outside.insert((br.chrom.clone(), exon_blocks_of(&br.read), record_genomic_strand(br)));
+            }
+        }
+        for &(f, _) in rows {
+            if fam_copies[f].is_some() {
+                cand_fams.insert(f);
+            }
+        }
+        if cand_fams.len() < 2 && outside.is_empty() {
+            continue;
+        }
+        sum.n_in_scope += 1;
+        if !primary_loaded.contains(name.as_str()) {
+            sum.n_other_region += 1;
+            continue;
+        }
+        let key = Key { fams: cand_fams.into_iter().collect(), outside: outside.into_iter().collect() };
+        groups.entry(key).or_default().push((name, recs));
+    }
+    sum.n_groups = groups.len();
+    let p_union = AssignParams { tie_outside_scored: true, dump_star: false, iterative_prune: false, ..*p };
+    let mut touched: BTreeSet<usize> = BTreeSet::new();
+    for (key, mols) in groups {
+        // the union copy set: every copy of every candidate family, then the pseudo-copies; overlapping
+        // spans merged into locus candidates
+        let mut raw: Vec<(String, u64, u64, Member, DenovoTranscript, String)> = Vec::new();
+        for &f in &key.fams {
+            for (ci, c) in fam_copies[f].as_ref().expect("candidate families have catalog copies").iter().enumerate() {
+                let label = copy_label(&fams[f].family_id, &c.tid, ci);
+                raw.push((c.chrom.clone(), c.start, c.end, Member::Family(f, ci, label.clone()), (*c).clone(), label));
+            }
+        }
+        for (chrom, blocks, strand) in &key.outside {
+            match outside_pseudo_copy(chrom, blocks, *strand, genome) {
+                Some(t) => {
+                    let label = t.tid.clone();
+                    raw.push((t.chrom.clone(), t.start, t.end, Member::Outside(label.clone()), t, label));
+                }
+                None => sum.n_pseudo_unbuildable += 1,
+            }
+        }
+        let merged = merge_same_locus(raw);
+        let mut copies: Vec<DenovoTranscript> = Vec::with_capacity(merged.len());
+        let mut origin: Vec<Vec<Member>> = Vec::with_capacity(merged.len());
+        let mut labels: Vec<String> = Vec::with_capacity(merged.len());
+        let mut pos_of: HashMap<(usize, usize), usize> = HashMap::new();
+        for (t, members, label) in merged {
+            for m in &members {
+                if let Member::Family(f, ci, _) = m {
+                    pos_of.insert((*f, *ci), copies.len());
+                }
+            }
+            copies.push(t);
+            origin.push(members);
+            labels.push(label);
+        }
+        // every tied record of the group's molecules, named, so the certificate takes each molecule as one unit
+        let mut reads: Vec<AlignedRead> = Vec::new();
+        let mut names: Vec<String> = Vec::new();
+        for (name, recs) in &mols {
+            for &ri in recs {
+                reads.push(bam_reads[ri].read.clone());
+                names.push(name.clone());
+            }
+        }
+        let results: HashMap<&str, super::copy_assign_pipeline::ReadResult> = if copies.len() >= 2 {
+            let refs: Vec<&DenovoTranscript> = copies.iter().collect();
+            let d = assign_family_detailed(&refs, &reads, &p_union, Some(genome), Some(&names));
+            d.results.into_iter().map(|r| (names[r.read_index].as_str(), r)).collect()
+        } else {
+            HashMap::new()
+        };
+        let candidates = labels.join(",");
+        for (name, recs) in &mols {
+            let rows = &rows_of[name.as_str()];
+            let Some(r) = results.get(name.as_str()) else {
+                sum.n_no_result += 1;
+                sum.rows.push(UnionRow {
+                    read_name: name.clone(), n_candidates: copies.len(), candidates: candidates.clone(),
+                    winner: "-".into(), n_decisive: 0, margin: 0.0, p_value: 1.0, verdict: "no_result".into(),
+                });
+                continue;
+            };
+            let a = &r.combined;
+            // the catalog member of the winning candidate the molecule lies in most (aligned-block overlap
+            // of its tied records with the member's unit; first member on a tie)
+            let winning_member: Option<(usize, usize, String)> = if a.status == AssignStatus::Assigned {
+                let mut best: Option<((usize, usize, String), u64)> = None;
+                for m in origin.get(a.best_copy).map(|v| v.as_slice()).unwrap_or(&[]) {
+                    if let Member::Family(f, ci, label) = m {
+                        let (c, s, e) = &fams[*f].copy_spans[*ci];
+                        let ov: u64 = recs
+                            .iter()
+                            .map(|&ri| {
+                                let br = &bam_reads[ri];
+                                if br.chrom != *c {
+                                    return 0;
+                                }
+                                exon_blocks_of(&br.read).iter().map(|&(bs, be)| be.min(*e).saturating_sub(bs.max(*s))).sum()
+                            })
+                            .max()
+                            .unwrap_or(0);
+                        if best.as_ref().map_or(true, |(_, b)| ov > *b) {
+                            best = Some(((*f, *ci, label.clone()), ov));
+                        }
+                    }
+                }
+                best.map(|(m, _)| m)
+            } else {
+                None
+            };
+            let (verdict, winner) = match (a.status, winning_member) {
+                (AssignStatus::Assigned, Some((f, ci, label))) => {
+                    // the winning family's row: the union's verdict and evidence; its posterior = the union's
+                    // mass over this family's copies, renormalized (one-hot at the winner if it carries none)
+                    let post = project_posterior(fams[f].copy_tids.len(), f, &pos_of, &a.posterior, Some(ci));
+                    let mut have_row = false;
+                    for &(g, k) in rows {
+                        let fa = &mut fams[g];
+                        let n_g = fa.copy_tids.len();
+                        let (_, ass) = &mut fa.assignments[k];
+                        if g == f {
+                            have_row = true;
+                            ass.status = AssignStatus::Assigned;
+                            ass.best_copy = ci;
+                            ass.resolvable = true;
+                            ass.n_decisive = a.n_decisive;
+                            ass.log_lr_margin = a.log_lr_margin;
+                            ass.p_value = a.p_value;
+                            ass.min_p_value = a.min_p_value;
+                            ass.origin_rejected = false;
+                            ass.sibling_identity = a.sibling_identity;
+                            ass.n_cols_vs_nearest_sibling = a.n_cols_vs_nearest_sibling;
+                            ass.n_candidates = a.n_candidates; // the UNION's frame, so `sole_candidate` cannot print 1 for a 100-copy union
+                            ass.posterior = post.clone();
+                        } else {
+                            tie_row(ass, n_g);
+                        }
+                        touched.insert(g);
+                    }
+                    if !have_row {
+                        // the winning family produced no row for this molecule (record-level path: no PSV
+                        // observation there); the verdict needs a home, so one is added on its tied record
+                        // at that family, with the parallel per-row vectors extended alongside
+                        let ri = recs
+                            .iter()
+                            .copied()
+                            .find(|&ri| {
+                                let br = &bam_reads[ri];
+                                fams[f].copy_spans.iter().any(|(c, s, e)| {
+                                    *c == br.chrom && br.read.ref_start < *e && read_ref_end(&br.read) > *s
+                                })
+                            })
+                            .unwrap_or(recs[0]);
+                        let fa = &mut fams[f];
+                        fa.assignments.push((
+                            ri,
+                            Assignment {
+                                best_copy: ci,
+                                log_lr_margin: a.log_lr_margin,
+                                n_decisive: a.n_decisive,
+                                resolvable: true,
+                                status: AssignStatus::Assigned,
+                                p_value: a.p_value,
+                                min_p_value: a.min_p_value,
+                                discovery_coupled: false,
+                                junction_conflict: false,
+                                origin_rejected: false,
+                                n_candidates: a.n_candidates,
+                                posterior: post,
+                                sibling_identity: a.sibling_identity,
+                                n_cols_vs_nearest_sibling: a.n_cols_vs_nearest_sibling,
+                            },
+                        ));
+                        fa.read_psv_obs.push(vec![None; fa.psv_cols]);
+                        fa.read_junctions.push(Vec::new());
+                        fa.n_reads += 1;
+                        sum.n_rows_added += 1;
+                        touched.insert(f);
+                    }
+                    sum.n_assigned_family += 1;
+                    ("assigned_family", label)
+                }
+                (AssignStatus::Assigned, None) => {
+                    for &(g, k) in rows {
+                        let fa = &mut fams[g];
+                        let n_g = fa.copy_tids.len();
+                        tie_row(&mut fa.assignments[k].1, n_g);
+                        touched.insert(g);
+                    }
+                    sum.n_assigned_outside += 1;
+                    ("assigned_outside", labels.get(a.best_copy).cloned().unwrap_or_else(|| "-".into()))
+                }
+                (AssignStatus::Tied, _) => {
+                    // the union's own tie: its posterior (the consistent zone), projected per family
+                    for &(g, k) in rows {
+                        let fa = &mut fams[g];
+                        let n_g = fa.copy_tids.len();
+                        let post = project_posterior(n_g, g, &pos_of, &a.posterior, None);
+                        let ass = &mut fa.assignments[k].1;
+                        tie_row(ass, n_g);
+                        ass.posterior = post;
+                        ass.n_decisive = a.n_decisive;
+                        ass.log_lr_margin = a.log_lr_margin;
+                        ass.p_value = a.p_value;
+                        ass.min_p_value = a.min_p_value;
+                        touched.insert(g);
+                    }
+                    sum.n_tied += 1;
+                    ("tied", "-".to_string())
+                }
+                (AssignStatus::Ambiguous, _) => {
+                    for &(g, k) in rows {
+                        let fa = &mut fams[g];
+                        let post = project_posterior(fa.copy_tids.len(), g, &pos_of, &a.posterior, None);
+                        let ass = &mut fa.assignments[k].1;
+                        ass.status = AssignStatus::Ambiguous;
+                        ass.resolvable = false;
+                        ass.posterior = post;
+                        ass.n_decisive = a.n_decisive;
+                        ass.log_lr_margin = a.log_lr_margin;
+                        ass.p_value = a.p_value;
+                        ass.min_p_value = a.min_p_value;
+                        ass.origin_rejected = a.origin_rejected;
+                        touched.insert(g);
+                    }
+                    sum.n_ambiguous += 1;
+                    ("ambiguous", "-".to_string())
+                }
+            };
+            sum.rows.push(UnionRow {
+                read_name: name.clone(),
+                n_candidates: copies.len(),
+                candidates: candidates.clone(),
+                winner,
+                n_decisive: a.n_decisive,
+                margin: a.log_lr_margin,
+                p_value: a.p_value,
+                verdict: verdict.to_string(),
+            });
+        }
+    }
+    for f in touched {
+        recount_after_union(&mut fams[f], p.molecule_pool);
+    }
+    sum
+}
+
 /// GENOME-WIDE de-tie READ-CONFLICT family catalog (interest I / O1) — the principled, threshold-free
 /// family definition run at scale, replacing the per-region scan and the similarity-threshold POA catalog
 /// (`detect_families` uses `detect_edges` = `core_recip≥0.13`, an arbitrary bar that over-merges; THIS uses
@@ -4565,7 +5245,8 @@ impl Default for RefineParams {
     fn default() -> Self {
         RefineParams {
             min_identity: 0.80,
-            min_coverage: 0.50,
+            // `RUSTLE_ER_MIN_COVERAGE` (§6zi single-rule prereg): the coverage floor on the shorter sequence; 0.50 shipped.
+            min_coverage: std::env::var("RUSTLE_ER_MIN_COVERAGE").ok().and_then(|v| v.parse().ok()).unwrap_or(0.50),
             minimap2: std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string()),
             threads: 4,
             include_introns: false,
@@ -12442,5 +13123,226 @@ mod tests {
         assert_eq!(cert.n, 2);
         assert_eq!(cert.lambda, 1);
         assert!(cert.lambda < 2, "cut_certified=false here is NOT a defect flag");
+    }
+
+    // ---- union certificate (`union_certificate_pass`) -----------------------------------------------
+
+    /// Two catalog families on one contig, each two single-exon 600 bp copies over ONE backbone: family UA's
+    /// copies differ from each other at 8 PSV offsets (`pa`: a0 `A`, a1 `C`), family UB's at 8 others (`pb`),
+    /// and an OUTSIDE locus `c` (in no family) at 8 more (`pc`); the backbone carries `G` at all 24, so every
+    /// copy is distinguishable from every other. Support: 3 uniquely-placed reads per catalog copy. Two
+    /// AS-tied molecules: `M1` carries a1's transcript with records at UA copy 0 (primary) and UB copy 1;
+    /// `M2` carries the outside locus's transcript with records at UA copy 0 (primary) and at `c`.
+    fn union_fixture() -> (GenomeIndex, Vec<ColocatedFamily>, Vec<BamRead>) {
+        let mut x = rand_seq(600, 0x0A11_CE5E);
+        let pa: Vec<usize> = (0..8).map(|i| 40 + 60 * i).collect();
+        let pb: Vec<usize> = pa.iter().map(|p| p + 20).collect();
+        let pc: Vec<usize> = pa.iter().map(|p| p + 40).collect();
+        for &p in pa.iter().chain(&pb).chain(&pc) {
+            x[p] = b'G';
+        }
+        let variant = |pos: &[usize], base: u8| {
+            let mut s = x.clone();
+            for &p in pos {
+                s[p] = base;
+            }
+            s
+        };
+        let (a0, a1, b0, b1, c) =
+            (variant(&pa, b'A'), variant(&pa, b'C'), variant(&pb, b'A'), variant(&pb, b'C'), variant(&pc, b'T'));
+        let mut g = rand_seq(20_000, 0xF1A7_F1A7);
+        let loci: [(usize, &Vec<u8>); 5] = [(1000, &a0), (3000, &a1), (8000, &b0), (10_000, &b1), (15_000, &c)];
+        for (at, s) in loci {
+            g[at..at + 600].copy_from_slice(s);
+        }
+        let genome = GenomeIndex::from_seqs(&[("u1", &g)]);
+        let copy = |tid: &str, at: u64, seq: &[u8]| DenovoTranscript {
+            tid: tid.into(), chrom: "u1".into(), start: at, end: at + 600, n_reads: 3, strand: '+',
+            introns: vec![], seq: seq.to_vec(), ..Default::default()
+        };
+        let fam = |id: &str, copies: Vec<DenovoTranscript>| ColocatedFamily {
+            family_id: id.into(), chrom: "u1".into(), start: copies[0].start, end: copies[1].end, copies,
+        };
+        let supplied = vec![
+            fam("UA", vec![copy("a0", 1000, &a0), copy("a1", 3000, &a1)]),
+            fam("UB", vec![copy("b0", 8000, &b0), copy("b1", 10_000, &b1)]),
+        ];
+        let rec = |name: &str, at: u64, seq: &[u8], secondary: bool, as_score: i32, mapq: u8| BamRead {
+            chrom: "u1".into(),
+            read: AlignedRead { ref_start: at, cigar: vec![('M', 600)], seq: seq.to_vec(), qual: vec![] },
+            mapq, name: name.into(), as_score, de: 0.0, is_supplementary: false, is_secondary: secondary,
+            reverse: false, ts: None,
+        };
+        let mut bam = Vec::new();
+        for (i, (at, s)) in loci.iter().enumerate().take(4) {
+            for k in 0..3 {
+                bam.push(rec(&format!("sup{i}_{k}"), *at as u64, s, false, 600, 60));
+            }
+        }
+        bam.push(rec("M1", 1000, &a1, false, 590, 0));
+        bam.push(rec("M1", 10_000, &a1, true, 590, 0));
+        bam.push(rec("M2", 1000, &c, false, 590, 0));
+        bam.push(rec("M2", 15_000, &c, true, 590, 0));
+        (genome, supplied, bam)
+    }
+
+    /// `(family_id, assignment)` for every row of molecule `name`, in family order.
+    fn rows_named(fams: &[FamilyAssignment], bam: &[BamRead], name: &str) -> Vec<(String, Assignment)> {
+        fams.iter()
+            .flat_map(|fa| {
+                fa.assignments
+                    .iter()
+                    .filter(|(ri, _)| bam[*ri].name == name)
+                    .map(move |(_, a)| (fa.family_id.clone(), a.clone()))
+            })
+            .collect()
+    }
+
+    /// Today's per-family rows (`detect_and_assign` over the supplied catalog, record-level certificate so no
+    /// external aligner is needed), then the union pass over a clone: `(before, after, summary, bam)`.
+    fn run_union_fixture() -> (Vec<FamilyAssignment>, Vec<FamilyAssignment>, UnionSummary, Vec<BamRead>) {
+        let (genome, supplied, bam) = union_fixture();
+        let p = super::super::copy_assign::AssignParams::default();
+        let (fams, _, _, _) = detect_and_assign(
+            &[], &bam, &genome, &DenovoConfig::default(), 5_000_000, 2, &p, &[], false, false, false, "",
+            Some(&supplied),
+        );
+        let before = fams.clone();
+        let mut after = fams;
+        let s = union_certificate_pass(&mut after, &supplied, &bam, &genome, &p, &|fid, _tid, ci| format!("{fid}:{ci}"));
+        (before, after, s, bam)
+    }
+
+    /// THE CLAUSE: a molecule tied across two families gets ONE verdict -- the true family's row is
+    /// `Assigned` to the right copy with the union's evidence, the other family's row is `Tied`; every row
+    /// the pass did not touch is exactly what it was.
+    #[test]
+    fn union_certificate_assigns_the_true_family_and_ties_the_other() {
+        let (before, after, s, bam) = run_union_fixture();
+        let b = rows_named(&before, &bam, "M1");
+        assert_eq!(b.len(), 2, "today: one row per family for M1, {b:?}");
+        let a = rows_named(&after, &bam, "M1");
+        assert_eq!(a.len(), 2);
+        let ua = a.iter().find(|(f, _)| f == "UA").map(|(_, x)| x).expect("UA row");
+        let ub = a.iter().find(|(f, _)| f == "UB").map(|(_, x)| x).expect("UB row");
+        assert_eq!(ua.status, AssignStatus::Assigned, "{ua:?}");
+        assert_eq!(ua.best_copy, 1, "M1 carries a1's transcript");
+        assert!(ua.n_decisive >= 1 && ua.p_value < 1e-3, "{ua:?}");
+        assert_eq!(ua.posterior.len(), 2, "posterior stays in UA's own copy frame");
+        assert_eq!(ub.status, AssignStatus::Tied, "{ub:?}");
+        let r = s.rows.iter().find(|r| r.read_name == "M1").expect("a side-file row for M1");
+        assert_eq!((r.verdict.as_str(), r.winner.as_str(), r.n_candidates), ("assigned_family", "UA:1", 4), "{r:?}");
+        assert!(r.candidates.contains("UA:0") && r.candidates.contains("UB:1"), "{}", r.candidates);
+        // untouched rows are byte-for-byte today's
+        for k in 0..4 {
+            for j in 0..3 {
+                let n = format!("sup{k}_{j}");
+                let (x, y) = (rows_named(&before, &bam, &n), rows_named(&after, &bam, &n));
+                assert_eq!(x.len(), y.len(), "{n}");
+                for ((fx, ax), (fy, ay)) in x.iter().zip(y.iter()) {
+                    assert_eq!(fx, fy);
+                    assert_eq!((ax.status, ax.best_copy, ax.n_decisive), (ay.status, ay.best_copy, ay.n_decisive), "{n}");
+                }
+            }
+        }
+        assert_eq!(s.n_other_region, 0);
+        assert_eq!(s.n_assigned_family, 1);
+    }
+
+    /// An OUTSIDE tie locus is scored as a pseudo-copy built from the genome: when it wins, no family may
+    /// claim the molecule (every row `Tied`) and the side file names the locus.
+    #[test]
+    fn union_certificate_outside_locus_wins_and_ties_every_family() {
+        let (before, after, s, bam) = run_union_fixture();
+        let b = rows_named(&before, &bam, "M2");
+        assert_eq!(b.len(), 1, "today: UA alone judged M2 (its record at a0), {b:?}");
+        let a = rows_named(&after, &bam, "M2");
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].0, "UA");
+        assert_eq!(a[0].1.status, AssignStatus::Tied, "{:?}", a[0].1);
+        let r = s.rows.iter().find(|r| r.read_name == "M2").expect("a side-file row for M2");
+        assert_eq!(r.verdict, "assigned_outside", "{r:?}");
+        assert_eq!(r.winner, "outside:u1:15001-15600", "1-based start, the §6gz token");
+        assert_eq!(r.n_candidates, 3, "a0, a1 and the pseudo-copy");
+        assert_eq!(s.n_assigned_outside, 1);
+        assert_eq!(s.n_pseudo_unbuildable, 0);
+    }
+
+    /// The pass is a no-op on molecules out of scope: a copy of `fams` it never touched is unchanged, and
+    /// the summary says so.
+    #[test]
+    fn union_certificate_scope_is_the_tied_cross_family_and_outside_molecules_only() {
+        let (before, after, s, bam) = run_union_fixture();
+        assert_eq!(s.n_in_scope, 2, "M1 (two families) and M2 (outside) only");
+        assert_eq!(s.rows.len(), 2);
+        let names: std::collections::BTreeSet<&str> = bam.iter().map(|b| b.name.as_str()).collect();
+        for n in names {
+            if n == "M1" || n == "M2" {
+                continue;
+            }
+            let (x, y) = (rows_named(&before, &bam, n), rows_named(&after, &bam, n));
+            assert_eq!(x.len(), y.len());
+            for ((fx, ax), (fy, ay)) in x.iter().zip(y.iter()) {
+                assert_eq!((fx, ax.status, ax.best_copy), (fy, ay.status, ay.best_copy), "{n}");
+            }
+        }
+    }
+
+    /// Same-locus candidates are ONE candidate: two catalog copies of different families with substantial
+    /// exonic overlap collapse into their longest member's own transcript, labels joined; a tiny span overlap
+    /// (a short unit against the first bases of a long multi-exon unit) does NOT merge, and neither does an
+    /// intron-only overlap.
+    #[test]
+    fn merge_same_locus_collapses_substantial_exonic_overlap_only() {
+        let g: Vec<u8> = rand_seq(20_000, 7);
+        let t = |tid: &str, s: u64, e: u64, introns: Vec<(u64, u64)>| DenovoTranscript {
+            tid: tid.into(), chrom: "m1".into(), start: s, end: e, strand: '+', introns,
+            seq: g[s as usize..e as usize].to_vec(), ..Default::default()
+        };
+        let fam = |f: usize, ci: usize| Member::Family(f, ci, format!("F{f}:{ci}"));
+        let raw = vec![
+            // A:0 100-700 and B:0 400-900: 300 bp exonic overlap = 60% of B:0's 500 -> merged, rep = A:0 (600 > 500)
+            ("m1".to_string(), 100, 700, fam(0, 0), t("x", 100, 700, vec![]), "F0:0".to_string()),
+            ("m1".to_string(), 400, 900, fam(1, 0), t("z", 400, 900, vec![]), "F1:0".to_string()),
+            // A:1 2000-2600 disjoint
+            ("m1".to_string(), 2000, 2600, fam(0, 1), t("y", 2000, 2600, vec![]), "F0:1".to_string()),
+            // C:0 5000-5600 against a long 2-exon unit D:0 5573-15000 (exon 5573-5700, intron, exon 14000-15000):
+            // 27 bp exonic overlap of C:0's 600 -> NOT merged (the GWFAM50:1 / GWFAM164:2 lesson)
+            ("m1".to_string(), 5000, 5600, fam(2, 0), t("c", 5000, 5600, vec![]), "F2:0".to_string()),
+            ("m1".to_string(), 5573, 15_000, fam(3, 0), t("d", 5573, 15_000, vec![(5700, 14_000)]), "F3:0".to_string()),
+            // an outside locus inside D:0's INTRON: span overlap, zero exonic overlap -> NOT merged
+            ("m1".to_string(), 8000, 8600, Member::Outside("outside:m1:8001-8600".into()), t("o", 8000, 8600, vec![]), "outside:m1:8001-8600".to_string()),
+        ];
+        let m = merge_same_locus(raw);
+        let labels: Vec<&str> = m.iter().map(|x| x.2.as_str()).collect();
+        assert_eq!(labels, vec!["F0:0+F1:0", "F0:1", "F2:0", "F3:0", "outside:m1:8001-8600"], "{labels:?}");
+        assert_eq!(m[0].0.tid, "x", "the longest-exonic member's OWN transcript represents the locus");
+        assert_eq!((m[0].0.start, m[0].0.end), (100, 700));
+        assert_eq!(m[0].1.len(), 2);
+        assert_eq!(m[3].0.tid, "d");
+    }
+
+    #[test]
+    fn exon_blocks_of_extends_through_deletions_and_splits_on_introns() {
+        let r = AlignedRead { ref_start: 10, cigar: vec![('S', 5), ('M', 100), ('D', 5), ('=', 50), ('N', 1000), ('X', 20), ('I', 3), ('M', 7)], seq: vec![], qual: vec![] };
+        assert_eq!(exon_blocks_of(&r), vec![(10, 165), (1165, 1192)]);
+    }
+
+    #[test]
+    fn tied_record_indices_takes_max_as_non_supplementary_records_of_multi_record_molecules() {
+        let rec = |name: &str, at: u64, as_score: i32, supp: bool| BamRead {
+            chrom: "c".into(),
+            read: AlignedRead { ref_start: at, cigar: vec![('M', 10)], seq: vec![], qual: vec![] },
+            mapq: 0, name: name.into(), as_score, de: 0.0, is_supplementary: supp, is_secondary: at > 0, reverse: false, ts: None,
+        };
+        let bam = vec![
+            rec("a", 0, 100, false), rec("a", 500, 100, false), rec("a", 900, 90, false), rec("a", 1200, 100, true),
+            rec("b", 0, 100, false), rec("b", 300, 99, false),
+            rec("c", 0, 50, false),
+        ];
+        let t = tied_record_indices(&bam);
+        assert_eq!(t.get("a"), Some(&vec![0usize, 1]), "max-AS records only; the supplementary one never counts");
+        assert!(!t.contains_key("b"), "a clear best is not a tie");
+        assert!(!t.contains_key("c"), "a single record is not a tie");
     }
 }
