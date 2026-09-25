@@ -26,12 +26,13 @@ use super::copy_assign_pipeline::{
     assign_family_detailed, assign_family_detailed_pruned, best_overlap_copy, build_family_profiles,
     copy_boundaries, detect_editing_columns, freeze_merge, gen2off, read_ref_end, FamilyProfiles,
 };
-use super::family_graph::contiguous_core_coverage_bounded;
 use super::copy_split::{
     split_locus_copies, discover_locus_psvs, AlignedRead, CollapsedCandidate, CopyIsoform,
 };
+#[cfg(test)]
+use super::denovo_assemble::pass1_skeletons;
 use super::denovo_assemble::{
-    aligned_reads_from_bam, assemble_gate, pass1_skeletons, pass1_skeletons_robust, primary_reads_from_bam,
+    assemble_gate, pass1_skeletons_robust, primary_reads_from_bam,
     reads_in_region, split_mischained_reads, tied_seed_skeletons, BamRead, GateParams, PrimaryRead,
     GATE_MIN_READS, PASS1_MIN_READS,
 };
@@ -406,8 +407,7 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>, p: &DetectParams) -> Vec<Deno
             {
                 let au = crate::vg_family::family_graph::upper_cow(&a.seq);
                 let bu = crate::vg_family::family_graph::upper_cow(&b.seq);
-                let core = contiguous_core_coverage_bounded(&au, &bu, p.len_cap);
-                if core >= p.collapse_span_core {
+                if crate::vg_family::family_graph::core_coverage_reaches(&au, &bu, p.len_cap, p.collapse_span_core) {
                     return true;
                 }
             }
@@ -505,7 +505,7 @@ pub struct FamilyAssignment {
     /// `read_psv_obs`/`assignments` (`read_junctions[i]` aligns with `read_psv_obs[i]`/`assignments[i]`).
     pub read_junctions: Vec<Vec<i64>>,
     /// Task 5 (opt-in via `DenovoConfig::vg_realign`, default OFF): the VG re-align supplement's per-read
-    /// decisions for this family (`vg_realign::run_family_realign`) — empty unless `vg_realign` is set.
+    /// decisions for this family (`vg_realign::apply_realign`'s `records`) — empty unless `vg_realign` is set.
     /// REPORT-ONLY: not consumed by `assignments`/`copy_tids`/anything else above.
     pub realign_records: Vec<crate::vg_family::vg_realign::RealignRecord>,
 }
@@ -582,16 +582,42 @@ pub struct FallbackEdge {
 pub(super) fn build_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscript]) -> Vec<ReadPlacements> {
     use std::collections::BTreeMap;
     let mut by_name: BTreeMap<&str, Vec<Placement>> = BTreeMap::new();
+    // Per-chromosome index of reps sorted by start, with the widest rep span: a rep overlapping [s, e) has
+    // start < e and start > s - max_span, so only that window of the sorted list is scanned (was: every rep
+    // for every record, O(records x reps)). The winner is the same: max overlap, ties to the HIGHEST rep index
+    // — what `Iterator::max_by_key` over `reps.iter().enumerate()` returned (it keeps the LAST maximum).
+    let mut idx: std::collections::HashMap<&str, (Vec<(u64, usize)>, u64)> = std::collections::HashMap::new();
+    for (i, rep) in reps.iter().enumerate() {
+        let e = idx.entry(rep.chrom.as_str()).or_default();
+        e.0.push((rep.start, i));
+        e.1 = e.1.max(rep.end.saturating_sub(rep.start));
+    }
+    for v in idx.values_mut() {
+        v.0.sort_unstable();
+    }
     for br in bam_reads {
         if br.is_supplementary {
             continue; // chimeric/split read is not a multimapping alternative placement
         }
         let read_end = read_ref_end(&br.read);
-        let best = reps
-            .iter()
-            .enumerate()
-            .filter(|(_, rep)| br.chrom == rep.chrom && br.read.ref_start < rep.end && read_end > rep.start)
-            .max_by_key(|(_, rep)| rep.end.min(read_end) - rep.start.max(br.read.ref_start));
+        let best: Option<(usize, &DenovoTranscript)> = idx.get(br.chrom.as_str()).and_then(|(starts, max_span)| {
+            let lo = br.read.ref_start.saturating_sub(*max_span);
+            let first = starts.partition_point(|&(st, _)| st < lo);
+            let mut best: Option<(u64, usize)> = None;
+            for &(st, i) in &starts[first..] {
+                if st >= read_end {
+                    break;
+                }
+                let rep = &reps[i];
+                if br.read.ref_start < rep.end && read_end > rep.start {
+                    let ov = rep.end.min(read_end) - rep.start.max(br.read.ref_start);
+                    if best.map_or(true, |(bo, bi)| (ov, i) > (bo, bi)) {
+                        best = Some((ov, i));
+                    }
+                }
+            }
+            best.map(|(_, i)| (i, &reps[i]))
+        });
         if let Some((li, _)) = best {
             let aln_len = br.read.cigar.iter()
                 .filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32;
@@ -609,15 +635,6 @@ pub(super) fn build_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscr
 /// relative floor (10% of the locus max) was slightly worse.
 fn core_depth_floor() -> u32 {
     std::env::var("RUSTLE_ER_CORE_DEPTH").ok().and_then(|v| v.parse().ok()).unwrap_or(10)
-}
-
-/// Coverage floor applied against the read-supported CORE instead of the called span
-/// (`RUSTLE_ER_CORE_COVERAGE`, unset = off = byte-identical). The core is a tighter target than the span,
-/// so the equivalent demand is a HIGHER floor: 0.80 on the core corresponds to 0.50 on the span.
-fn core_cov_floor() -> Option<f64> {
-    let v = std::env::var("RUSTLE_ER_CORE_COVERAGE").ok()?;
-    if v.is_empty() || v == "0" { return None; }
-    v.parse::<f64>().ok().filter(|x| *x > 0.0)
 }
 
 
@@ -954,118 +971,6 @@ pub(super) fn locus_has_spliced_evidence(
 ///
 /// Depth counts every primary read overlapping the span, matching what `samtools depth` reports there, so
 /// the value is independent of how reads were attributed to loci.
-/// Read floor for the LINKED-LOCUS merge (`RUSTLE_LOCUS_LINK_MIN_READS`). `None` = off (default).
-///
-/// The co-located merge in `distinct_locus_reps_grouped` opens with `same_pos` and skips every
-/// non-overlapping pair. Measured on the 26-locus NPIP substrate (ledger §6cj), that gate is the
-/// wrong shape for the dominant node-construction defect: the catalog emits **3.08 loci per gene**,
-/// one dominant multi-exon locus plus single-exon debris, and **26 of 34 within-gene fragment pairs
-/// are DISJOINT** — so the only merge that exists never examines them.
-///
-/// The evidence it ignores is large and specific: **30.1% of reads have aligned blocks touching two
-/// or more loci of one gene** (94.3% at NPIPB6, one pair joined by 560 reads; 721 reads joining a
-/// pair at NPIPB14P), and **93.3% of that linkage support is WITHIN a single gene**. It is also
-/// heterogeneous — NPIPB9's fragments are joined by 9 reads — which is why this is a FLOOR and not a
-/// blanket merge.
-fn locus_link_min_reads() -> Option<u32> {
-    let v = std::env::var("RUSTLE_LOCUS_LINK_MIN_READS").ok()?;
-    if v.is_empty() || v == "0" {
-        return None;
-    }
-    v.parse::<u32>().ok().filter(|x| *x > 0)
-}
-
-/// A read's ALIGNED reference blocks — the exonic segments, with `N` (intron) breaking the run.
-///
-/// `read_ref_end` deliberately counts `N` toward the span because it answers "where does this
-/// alignment end"; this answers the different question "which reference bases does it actually
-/// align to", which is the only one that can witness a locus.
-fn read_exon_blocks(read: &AlignedRead) -> Vec<(u64, u64)> {
-    let mut out = Vec::new();
-    let mut p = read.ref_start;
-    let mut cur: Option<(u64, u64)> = None;
-    for &(op, len) in &read.cigar {
-        match op {
-            'M' | '=' | 'X' | 'D' => {
-                cur = Some(match cur {
-                    Some((s, _)) => (s, p + len),
-                    None => (p, p + len),
-                });
-                p += len;
-            }
-            'N' => {
-                if let Some(b) = cur.take() {
-                    out.push(b);
-                }
-                p += len;
-            }
-            _ => {}
-        }
-    }
-    if let Some(b) = cur {
-        out.push(b);
-    }
-    out
-}
-
-/// Per-pair count of reads whose ALIGNED BLOCKS touch both reps — the linked-locus signal.
-///
-/// ⚠ **Blocks, not the read's span.** A read that splices *over* a locus contributes no aligned base
-/// there and is not evidence for it — the project's standing rule (`N` in an RNA CIGAR is intron,
-/// spliced OUT). Using the outer span instead would count every read that merely reaches across a
-/// gap, which is exactly how a mis-chained model manufactures support.
-///
-/// ⚠ Primary alignments only (`-F 2308`): secondaries and supplementaries are skipped, so one
-/// physical molecule is never counted as two witnesses linking the same pair.
-///
-/// Returns a sparse map keyed by `(lo, hi)` rep indices.
-pub(super) fn locus_read_linkage(
-    bam_reads: &[BamRead],
-    reps: &[DenovoTranscript],
-) -> std::collections::HashMap<(usize, usize), u32> {
-    use std::collections::{BTreeMap, HashMap};
-    // reps indexed per chromosome, sorted by start, with the widest span on that chromosome so the
-    // backward scan from a binary search is bounded rather than a full sweep.
-    let mut by_chrom: BTreeMap<&str, (Vec<(u64, u64, usize)>, u64)> = BTreeMap::new();
-    for (i, r) in reps.iter().enumerate() {
-        let e = by_chrom.entry(r.chrom.as_str()).or_insert_with(|| (Vec::new(), 0));
-        e.0.push((r.start, r.end, i));
-        e.1 = e.1.max(r.end.saturating_sub(r.start));
-    }
-    for (v, _) in by_chrom.values_mut() {
-        v.sort_unstable();
-    }
-    let mut out: HashMap<(usize, usize), u32> = HashMap::new();
-    let mut touched: Vec<usize> = Vec::new();
-    for br in bam_reads {
-        if br.is_supplementary || br.is_secondary {
-            continue;
-        }
-        let Some((v, widest)) = by_chrom.get(br.chrom.as_str()) else { continue };
-        touched.clear();
-        for (bs, be) in read_exon_blocks(&br.read) {
-            // reps whose start < be, scanning back while a rep could still reach bs
-            let hi = v.partition_point(|&(s, _, _)| s < be);
-            let lo = v.partition_point(|&(s, _, _)| s + *widest < bs);
-            for &(s, e, idx) in &v[lo..hi] {
-                if s < be && bs < e && !touched.contains(&idx) {
-                    touched.push(idx);
-                }
-            }
-        }
-        if touched.len() < 2 {
-            continue;
-        }
-        touched.sort_unstable();
-        for a in 0..touched.len() {
-            for b in (a + 1)..touched.len() {
-                *out.entry((touched[a], touched[b])).or_insert(0) += 1;
-            }
-        }
-    }
-    out
-}
-
 pub(super) fn locus_core_bp(bam_reads: &[BamRead], reps: &[DenovoTranscript], min_depth: u32) -> Vec<u64> {
     use std::collections::BTreeMap;
     let mut by_chrom: BTreeMap<&str, Vec<(u64, u64)>> = BTreeMap::new();
@@ -1081,13 +986,19 @@ pub(super) fn locus_core_bp(bam_reads: &[BamRead], reps: &[DenovoTranscript], mi
     for v in by_chrom.values_mut() {
         v.sort_unstable();
     }
+    // widest read per chromosome: a read with s + max_len <= r.start ends at or before r.start and adds no
+    // event, so each rep's scan can start at the first read past that bound (was: from index 0 per rep)
+    let max_len: std::collections::HashMap<&str, u64> =
+        by_chrom.iter().map(|(c, v)| (*c, v.iter().map(|&(s, e)| e.saturating_sub(s)).max().unwrap_or(0))).collect();
     reps.iter()
         .map(|r| {
             let Some(v) = by_chrom.get(r.chrom.as_str()) else { return 0 };
+            let ml = max_len.get(r.chrom.as_str()).copied().unwrap_or(0);
+            let first = v.partition_point(|&(s, _)| s.saturating_add(ml) <= r.start);
             // Sweep only the read endpoints that fall in this rep's span; a position's depth changes only
             // there, so counting covered bases between consecutive events is exact.
             let mut events: Vec<(u64, i32)> = Vec::new();
-            for &(s, e) in v.iter() {
+            for &(s, e) in v[first..].iter() {
                 if s >= r.end {
                     break;
                 }
@@ -1331,9 +1242,25 @@ pub fn retain_non_readthrough(
     tag: &str,
 ) {
     let min_distinct = env_num("RUSTLE_READTHROUGH_MIN_DISTINCT", READTHROUGH_MIN_DISTINCT);
+    // Same predicate as `is_unspliced_readthrough`, over a per-chromosome list of supported junctions sorted
+    // by donor: engulfed junctions have start <= donor and acceptor <= end (so donor < end), found by a binary
+    // search and a scan of that window (was: the whole junction map per single-exon transcript).
+    let mut jidx: std::collections::HashMap<&str, Vec<(u64, u64)>> = std::collections::HashMap::new();
+    for ((chrom, d, a), &n) in support.iter() {
+        if n >= READTHROUGH_MIN_SUPPORT {
+            jidx.entry(chrom.as_str()).or_default().push((*d, *a));
+        }
+    }
+    for v in jidx.values_mut() {
+        v.sort_unstable();
+    }
     let mut dropped = Vec::new();
     transcripts.retain(|t| {
-        let rt = is_unspliced_readthrough(t, support, READTHROUGH_MIN_SUPPORT, min_distinct);
+        let rt = t.introns.is_empty()
+            && jidx.get(t.chrom.as_str()).map_or(0, |v| {
+                let first = v.partition_point(|&(d, _)| d < t.start);
+                v[first..].iter().take_while(|&&(d, _)| d <= t.end).filter(|&&(_, a)| a <= t.end).count()
+            }) >= min_distinct;
         if rt {
             dropped.push(format!("{}:{}-{} ({} reads)", t.chrom, t.start, t.end, t.n_reads));
         }
@@ -2202,21 +2129,6 @@ pub fn detect_and_assign(
     // Same `k` as the O1 catalogs: one canonical extent per locus across objectives (see `detect_families`).
     let salvaged = if supplied { None } else { maybe_salvage_mischain(primary_reads, cfg) };
     let seed_reads: &[PrimaryRead] = salvaged.as_deref().unwrap_or(primary_reads);
-    // NOTE (Task 5 acceptance test, 2026-09-15): RUSTLE_JUNCTION_FUZZ_BP is intentionally NOT wired here.
-    // This `skeletons` value feeds the multi-copy family / O1 detection oracle (colocated_families, the
-    // conflict/homology graph, REFINE) below -- exactly the pipeline the design spec
-    // (docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md, "Non-goal") says this feature must
-    // NOT touch without separately validating against the multi-copy family test suite first. It was
-    // wired in here by an earlier pass (commit 5a2a0928) on the mistaken assumption that this is "the ONE
-    // pass1_skeletons_robust call site that actually serves --gtf's pure de novo path" -- it is not: the
-    // `--gtf` isoform emission is a SEPARATE, independent recomputation in `src/bin/copy_assign.rs`
-    // (`if args.gtf { let skeletons = pass1_skeletons(&primary, ...); ... }`, explicitly commented
-    // "independent of the assignment"), which never reads this function's `skeletons`/`reps`/`fams`
-    // output. Wiring the merge here was therefore both a no-op for the feature's actual target (chr20
-    // gffcompare scoring of `--gtf` output was unaffected) and an unreviewed change to the shared,
-    // already-validated family-detection front end. See `bench/CHR20_ASSEMBLER_COMPARISON.md`'s
-    // 2026-09-15 fuzzy-junction-merge follow-up section for the real-data evidence. The correct wiring is
-    // in `src/bin/copy_assign.rs` at the actual `--gtf` transcript-assembly site.
     let skeletons = if supplied {
         Vec::new()
     } else {
@@ -2931,34 +2843,6 @@ pub fn tied_record_indices(bam_reads: &[BamRead]) -> BTreeMap<String, Vec<usize>
         .collect()
 }
 
-/// A record's aligned blocks as EXONS: `M`/`=`/`X`/`D` extend the current block, `N` closes it (a deletion
-/// lies within an exon; only a spliced-out intron separates two). 0-based half-open genomic intervals —
-/// the binary's `aligned_blocks_local` walk, not `copy_discovery::aligned_blocks` (which also splits on `D`).
-pub fn exon_blocks_of(read: &AlignedRead) -> Vec<(u64, u64)> {
-    let mut pos = read.ref_start;
-    let mut cur: Option<(u64, u64)> = None;
-    let mut out = Vec::new();
-    for &(op, n) in &read.cigar {
-        match op {
-            'M' | '=' | 'X' | 'D' => {
-                cur = Some((cur.map_or(pos, |c| c.0), pos + n));
-                pos += n;
-            }
-            'N' => {
-                if let Some(c) = cur.take() {
-                    out.push(c);
-                }
-                pos += n;
-            }
-            _ => {}
-        }
-    }
-    if let Some(c) = cur {
-        out.push(c);
-    }
-    out
-}
-
 /// A record's transcript strand ON THE GENOME: minimap2's `ts:A` (relative to the read) flipped by the
 /// alignment orientation, falling back to FLAG 0x10 when there is no `ts` (an unspliced record has no motif
 /// to read it from) — the rule the binary's `read_strand` column uses.
@@ -2987,7 +2871,7 @@ pub fn outside_pseudo_copy(chrom: &str, blocks: &[(u64, u64)], strand: char, gen
             for &(a, b) in blocks {
                 s.extend(genome.fetch_sequence(chrom, a, b)?);
             }
-            (if strand == '-' { super::bridge_detector::revcomp(&s) } else { s }, strand)
+            (if strand == '-' { super::seq_utils::revcomp_keep_case(&s) } else { s }, strand)
         }
     };
     if seq.is_empty() {
@@ -3267,7 +3151,7 @@ pub fn union_certificate_pass(
                 }
             }
             if !inside {
-                outside.insert((br.chrom.clone(), exon_blocks_of(&br.read), record_genomic_strand(br)));
+                outside.insert((br.chrom.clone(), br.read.exon_blocks(), record_genomic_strand(br)));
             }
         }
         for &(f, _) in rows {
@@ -3365,7 +3249,7 @@ pub fn union_certificate_pass(
                                 if br.chrom != *c {
                                     return 0;
                                 }
-                                exon_blocks_of(&br.read).iter().map(|&(bs, be)| be.min(*e).saturating_sub(bs.max(*s))).sum()
+                                br.read.exon_blocks().iter().map(|&(bs, be)| be.min(*e).saturating_sub(bs.max(*s))).sum()
                             })
                             .max()
                             .unwrap_or(0);
@@ -4043,11 +3927,11 @@ pub(crate) fn coverage_edges_all_reps(
         return Ok(BTreeSet::new());
     }
     let mut edges: BTreeSet<(usize, usize)> =
-        nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, min_cov, None, params)?
+        nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, min_cov, params)?
             .into_iter()
             .collect();
     if params.nucleotide_sensitive {
-        edges.extend(nucleotide_edges(&seqs, ER_SENSITIVE_SEED, params.sensitive_identity, min_cov, None, params)?);
+        edges.extend(nucleotide_edges(&seqs, ER_SENSITIVE_SEED, params.sensitive_identity, min_cov, params)?);
     }
     Ok(edges)
 }
@@ -4104,22 +3988,9 @@ pub(crate) fn homology_blocks(
     refine: &RefineParams,
     gamma: f64,
 ) -> Result<Vec<Vec<usize>>> {
-    homology_blocks_pooled(reps, None, refine, gamma)
+    Ok(homology_blocks_pooled_with_edges_weighted(reps, None, refine, gamma)?.0)
 }
 
-/// As `homology_blocks`, optionally pooling every isoform's exons into the shared-exon rule.
-pub(crate) fn homology_blocks_pooled(
-    reps: &[DenovoTranscript],
-    pooled: Option<&[Vec<Vec<u8>>]>,
-    refine: &RefineParams,
-    gamma: f64,
-) -> Result<Vec<Vec<usize>>> {
-    Ok(homology_blocks_pooled_with_edges(reps, pooled, refine, gamma)?.0)
-}
-
-/// As `homology_blocks_pooled`, additionally returning the `E_r` edge set the blocks were cut from.
-/// The blocks are bit-identical to `homology_blocks_pooled`'s — this only stops throwing the edges away,
-/// because the λ certificate needs the graph, not just the partition of it.
 /// TIER-2 ADMISSION (`RUSTLE_TIER2_ADMIT=1`, unset = OFF = byte-identical).
 ///
 /// WHAT IT DOES. After reps are built, find read clusters that NO rep covers, build each one's
@@ -4384,21 +4255,9 @@ fn union_lcs_edges(
     (by_pair.into_iter().map(|((a, b), (i, c))| (a, b, i, c)).collect(), added)
 }
 
-/// Flattening wrapper: identical partition, edges without their weights. Every pre-existing caller
-/// keeps its exact signature and output; the weights are available from the `_weighted` core below.
-pub(crate) fn homology_blocks_pooled_with_edges(
-    reps: &[DenovoTranscript],
-    pooled: Option<&[Vec<Vec<u8>>]>,
-    refine: &RefineParams,
-    gamma: f64,
-) -> Result<(Vec<Vec<usize>>, Vec<(usize, usize)>)> {
-    let (blocks, edges_w) = homology_blocks_pooled_with_edges_weighted(reps, pooled, refine, gamma)?;
-    Ok((blocks, edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect()))
-}
-
-/// As above, but RETURNS the per-edge identity and coverage instead of discarding them. They are already
-/// computed here (see the note below); the only change is that they now reach the caller, so a REPORTED
-/// certificate can carry them. This does NOT re-weight the partition — see the `RUSTLE_ER_WEIGHTED_PARTITION`
+/// The `E_r` homology blocks, optionally pooling every isoform's exons into the shared-exon rule, together
+/// with the edge set they were cut from and each edge's identity and coverage. The weights are already
+/// computed here (see the note below); they reach the caller so a REPORTED certificate can carry them. This does NOT re-weight the partition — see the `RUSTLE_ER_WEIGHTED_PARTITION`
 /// note below and ledger §5q/§6r: `induced_density` discards weights, γ is inert on 79% of families, and
 /// identity weights < 1 lower every density, so weighting the TEST would split MORE.
 pub(crate) fn homology_blocks_pooled_with_edges_weighted(
@@ -4518,22 +4377,7 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
     Ok((blocks, edges_w))
 }
 
-/// Group a rep set into families with the shared engine (`homology_blocks`) and keep those spanning
-/// >= `min_copies` spatially-distinct loci. Used by the DNA `--from-genome` path; the RNA genome-wide
-/// homology catalog keeps its collapse-aware loop but shares `homology_blocks` for the grouping itself,
-/// so both substrates are grouped by the same engine. `min_reads` is the `distinct_locus_reps`
-/// same-strand-merge floor (0 for DNA — no reads; distinct genomic loci are still kept).
-pub fn families_from_reps(
-    reps: Vec<DenovoTranscript>,
-    refine: &RefineParams,
-    gamma: f64,
-    min_copies: usize,
-    min_reads: usize,
-) -> Result<Vec<Vec<DenovoTranscript>>> {
-    Ok(families_from_reps_certified(reps, refine, gamma, min_copies, min_reads)?.0)
-}
-
-/// The grouping of [`families_from_reps`] on an edge list the caller already has, instead of aligning `reps`.
+/// The grouping of [`families_from_reps_certified`] on an edge list the caller already has, instead of aligning `reps`.
 ///
 /// `edges` are `(i, j, identity, coverage)` over `reps` indices. An edge is kept iff `i != j`, identity >=
 /// `min_identity` and coverage >= `min_coverage`; kept edges carry weight 1.0 into `gamma_quasi_clique_partition`,
@@ -4659,8 +4503,13 @@ fn pair_distances(n: usize, edges: &[(usize, usize)]) -> Vec<Vec<u32>> {
     out
 }
 
-/// As `families_from_reps`, additionally returning one `FamilyCertificate` per emitted family, in the
-/// SAME order. The family list is bit-identical to `families_from_reps`' — the certificate is derived
+/// Group a rep set into families with the shared engine (`homology_blocks`) and keep those spanning
+/// >= `min_copies` spatially-distinct loci. Used by the DNA `--from-genome` path; the RNA genome-wide
+/// homology catalog keeps its collapse-aware loop but shares `homology_blocks` for the grouping itself,
+/// so both substrates are grouped by the same engine. `min_reads` is the `distinct_locus_reps`
+/// same-strand-merge floor (0 for DNA — no reads; distinct genomic loci are still kept).
+///
+/// Also returns one `FamilyCertificate` per emitted family, in the SAME order. The certificate is derived
 /// from the graph that was already built and is never consulted to decide membership.
 pub fn families_from_reps_certified(
     reps: Vec<DenovoTranscript>,
@@ -4799,6 +4648,59 @@ pub fn detect_homology_catalog_genome_wide(
     Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily>, // DNA-family fallback (RNA-orphans)
 )> {
     // --- reps (identical to the conflict path's rep build) ---
+    // CACHE (2026-09-24, `RUSTLE_CACHE_DIR`, see `run_cache`): everything from here to the read statistics
+    // (both BAM passes, the gate, the filters and the locus collapse) reduces to `reps`; downstream reads only
+    // `reps` (plus `genome` for the opt-in re-admission paths). With the cache on and a matching key, `reps`
+    // is loaded instead of recomputed. Opt-ins that carry OTHER state across the boundary (shared definition,
+    // pooled isoform exons, read linkage, tier-2 rescue) are not cached.
+    let t_phase = std::time::Instant::now();
+    let cacheable = !crate::vg_family::shared_definition::enabled()
+        && !std::env::var("RUSTLE_SHARED_EXON_ISOFORMS").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
+        && !tier2_enabled();
+    let reps_entry = crate::vg_family::run_cache::cache_root().filter(|_| cacheable).map(|root| {
+        use crate::vg_family::run_cache as rc;
+        let bai = format!("{bam_path}.bai");
+        let fai = format!("{fasta_path}.fai");
+        let key = format!(
+            "rustle catalog reps v1\nexe\t{}\nbam\t{}\nbai\t{}\nfasta\t{}\nfai\t{}\ncfg\t{:?}\n{}",
+            rc::exe_fingerprint(),
+            rc::file_fingerprint(bam_path),
+            rc::file_fingerprint(&bai),
+            rc::file_fingerprint(fasta_path),
+            rc::file_fingerprint(&fai),
+            cfg,
+            rc::env_fingerprint(rc::DOWNSTREAM_ONLY_ENV)
+        );
+        rc::Entry::new(&root, "reps", key)
+    });
+    let cached_reps: Option<Vec<DenovoTranscript>> = reps_entry.as_ref().filter(|e| e.is_hit()).and_then(|e| {
+        match crate::vg_family::run_cache::read_reps(&e.dir) {
+            Ok(r) => {
+                eprintln!(
+                    "[cache] representatives loaded from {} ({} reps; BAM passes and collapse skipped — collapse \
+                     statistics, [rep-audit] and debug-locus traces print only when they are recomputed)",
+                    e.dir.display(),
+                    r.len()
+                );
+                Some(r)
+            }
+            Err(err) => {
+                eprintln!("[cache] unreadable entry {} ({err:#}); recomputing", e.dir.display());
+                None
+            }
+        }
+    });
+    let (reps, genome, pooled_exons, sd_reads) = if let Some(reps) = cached_reps {
+        // `genome` is read downstream only by the opt-in K=0 re-admission paths; load it only then (an empty
+        // contig set would make `from_fasta_contigs` load the WHOLE genome: 12 s on CHM13)
+        let genome = if cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback {
+            let contigs: HashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
+            GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?
+        } else {
+            GenomeIndex::empty()
+        };
+        (reps, genome, Vec::new(), None)
+    } else {
     let reads = primary_reads_from_bam(bam_path, threads)?;
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
@@ -4947,14 +4849,16 @@ pub fn detect_homology_catalog_genome_wide(
     // record each rep's count of MAPQ>0 (unambiguous) placements as `distinguishing_uniq`. This is an
     // ADDITIONAL full-BAM pass (a genuine genome-wide cost — flagged for Task 4 perf validation); it changes
     // no existing catalog field except which same-strand co-located pairs the merge below collapses.
-    let mapq_reads = aligned_reads_from_bam(bam_path, threads)?;
+    // Coordinates-only reader (2026-09-24): nothing below reads `.seq`/`.qual` (placements, core bp, spliced
+    // evidence, the extent/linkage options, `read_blocks`), so the sequence/quality decode is skipped.
+    let mapq_reads = crate::vg_family::denovo_assemble::aligned_reads_from_bam_coords(bam_path, threads)?;
     // OPT-IN shared definition (`RUSTLE_SHARED_DEFINITION`): its read-locus nodes need the reads' exon blocks,
     // taken here because the reads are dropped before grouping. `None` (no cost) when unset.
     let sd_reads = crate::vg_family::shared_definition::enabled()
         .then(|| crate::vg_family::shared_definition::read_blocks(&mapq_reads));
     let placements_for_uniq = build_read_placements(&mapq_reads, &reps);
-    // Read-supported core, measured on the same pass rather than re-reading the BAM. Only consumed when
-    // `RUSTLE_ER_CORE_COVERAGE` is set; computing it always keeps the value available to the audit dump.
+    // Read-supported core, measured on the same pass rather than re-reading the BAM. Reported as `core_bp`
+    // in the audit dump (the core-denominator edge rule that used to consume it was removed 2026-09-24).
     let cores = locus_core_bp(&mapq_reads, &reps, core_depth_floor());
     let spliced_ev = locus_has_spliced_evidence(&mapq_reads, &reps, 3);
     // Boundaries are derived from the SAME borrow, before the reads are dropped. Cloning them instead
@@ -4965,7 +4869,6 @@ pub fn detect_homology_catalog_genome_wide(
     // `de_extent` above: the reads are dropped on the next line to keep peak RSS down, and cloning them
     // instead roughly doubles it on a multimapper-rich BAM. `None` when the flag is unset, so the
     // default path pays nothing.
-    let global_link = locus_link_min_reads().map(|_| locus_read_linkage(&mapq_reads, &reps));
     let growth_result = growth_seeds
         .as_ref()
         .map(|seeds| locus_growth_extent(&mapq_reads, &reps, seeds, growth_k(), growth_min_frac()));
@@ -5017,6 +4920,18 @@ pub fn detect_homology_catalog_genome_wide(
     // --- OPT-IN: the shared family definition replaces E_r / γ-QC / coverage split / distinct-locus stage ---
     // (`shared_definition` module docs; prereg Addendum AF-1 requires family-for-family parity with
     // `bench/denovo_shared_def.py`). Unset: this block is skipped and the catalog is byte-identical.
+    if let Some(e) = reps_entry.as_ref() {
+        match e.staging().and_then(|st| {
+            crate::vg_family::run_cache::write_reps(&st, &reps)?;
+            e.commit(&st)
+        }) {
+            Ok(()) => eprintln!("[cache] representatives written to {}", e.dir.display()),
+            Err(err) => eprintln!("[cache] could not write {} ({err:#}); continuing", e.dir.display()),
+        }
+    }
+    (reps, genome, pooled_exons, sd_reads)
+    };
+    let t_reps = t_phase.elapsed().as_secs_f64();
     if let Some(sd_reads) = sd_reads {
         let (nodes, fams, pairs) =
             crate::vg_family::shared_definition::build(&reps, &sd_reads, &genome, &refine.minimap2, threads)?;
@@ -5041,6 +4956,7 @@ pub fn detect_homology_catalog_genome_wide(
         refine,
         gamma,
     )?;
+    let t_edges = t_phase.elapsed().as_secs_f64() - t_reps;
     let n_blocks = blocks.len(); // captured before the loop below consumes `blocks` (for the diagnostic eprintln)
     // Within-family COVERAGE split (see `coverage_split_block`). Applied to the formed blocks, so it can
     // only split. `RUSTLE_COVERAGE_SPLIT=0` restores the pre-split catalog.
@@ -5072,26 +4988,7 @@ pub fn detect_homology_catalog_genome_wide(
         // The linkage map is in GLOBAL rep indices and the merge works in LOCAL ones, so it is
         // re-indexed here rather than inside — the same positional hazard the certificate comments warn
         // about, one dimension up.
-        let local_link: Option<Vec<Vec<u32>>> = global_link.as_ref().map(|g| {
-            let k = block.len();
-            let mut m = vec![vec![0u32; k]; k];
-            for a in 0..k {
-                for b in (a + 1)..k {
-                    let (ga, gb) = (block[a].min(block[b]), block[a].max(block[b]));
-                    let v = g.get(&(ga, gb)).copied().unwrap_or(0);
-                    m[a][b] = v;
-                    m[b][a] = v;
-                }
-            }
-            m
-        });
-        // ≥2 spatially-distinct loci certificate. `locus_min_reads()`, not `cfg.conflict.min_reads`: this
-        // path builds no conflict graph (see the accessor's doc comment).
-        let grouped = distinct_locus_reps_grouped_linked(
-            copies.clone(),
-            cfg.locus_min_reads(),
-            local_link.as_deref(),
-        );
+        let grouped = distinct_locus_reps_grouped(copies.clone(), cfg.locus_min_reads());
         let loci: Vec<DenovoTranscript> = grouped.iter().map(|(t, _)| t.clone()).collect();
         if block.len() >= min_copies && loci.len() >= min_copies {
             // λ certificate on the EMITTED node set (post-merge), never on the pre-merge block.
@@ -5145,6 +5042,10 @@ pub fn detect_homology_catalog_genome_wide(
         Vec::new()
     };
     eprintln!("[gw-catalog-homology] {} γ-quasi-clique blocks -> {} families (>= {} distinct loci)", n_blocks, out.len(), min_copies);
+    eprintln!(
+        "[gw-catalog-timing] representatives {t_reps:.1} s (BAM passes + collapse, or cache) | E_r edges + blocks {t_edges:.1} s | families {:.1} s",
+        t_phase.elapsed().as_secs_f64() - t_reps - t_edges
+    );
     if !collapsed.is_empty() {
         eprintln!("[gw-catalog-homology] collapse-enumerate: {} K=0-collapsed families re-admitted (copy-number only)", collapsed.len());
     }
@@ -5464,7 +5365,6 @@ pub fn refine_families_exon_sum(
                 &prim_seed_ref,
                 prim_floor,
                 params.min_coverage,
-                None,
                 params,
                 Some(&format!("refine.core.{core_substrate}")),
             )? {
@@ -5512,7 +5412,6 @@ pub fn refine_families_exon_sum(
                     &prim_seed_ref,
                     prim_floor,
                     params.min_coverage,
-                    None,
                     params,
                     Some(&format!("refine.additive.{SUBSTRATE_GENOMIC_SPAN}")),
                 )? {
@@ -5550,7 +5449,6 @@ pub fn refine_families_exon_sum(
                     ER_SENSITIVE_SEED,
                     params.sensitive_identity,
                     params.min_coverage,
-                    None,
                     params,
                 )? {
                     edge_set.insert(e);
@@ -5692,7 +5590,6 @@ pub fn refine_families_exon_sum(
             // right about the code and wrong about the run.
             let site = ErRuleSite {
                 substrate_genomic: params.include_introns,
-                core_lens_supplied: false,
                 genomic_tier,
             };
             let rule = er_rule_rows(params, &site);
@@ -5763,7 +5660,7 @@ fn refine_copy_seq(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec
 
 /// Hard-mask every RepeatMasker soft-masked base of `seqs` in place, returning `(reps_masked, bases_masked)`.
 ///
-/// Reads the SAME intervals `refine_copy_seq` used, through `repeat_catalog::IndexedFasta`, which returns
+/// Reads the SAME intervals `refine_copy_seq` used, through `genome::IndexedFasta`, which returns
 /// bytes verbatim and so preserves the lowercase soft-mask that `GenomeIndex` destroys (`genome.rs:38/104/188`
 /// uppercase at load, and a test pins that). Case is POSITIONAL, so a '-' strand rep needs its mask
 /// REVERSED, not reverse-complemented.
@@ -5777,7 +5674,7 @@ fn hard_mask_repeats(
     fasta: &str,
     genomic_span: bool,
 ) -> Result<(usize, u64)> {
-    use crate::vg_family::repeat_catalog::IndexedFasta;
+    use crate::genome::IndexedFasta;
     let fa = IndexedFasta::open(fasta)
         .map_err(|e| anyhow::anyhow!("repeat mask: cannot open {fasta} (need a .fai sidecar): {e}"))?;
     // Build every mask BEFORE mutating anything, so a mismatch anywhere leaves `seqs` untouched.
@@ -6025,8 +5922,6 @@ pub(crate) struct ErRuleSite {
     /// `true` ⟹ the primary tier aligns the GENOMIC span; `false` ⟹ the spliced exon-sum. This is the
     /// CORE substrate only; a site may additionally union a second one in — see `genomic_tier`.
     pub substrate_genomic: bool,
-    /// `true` ⟹ per-rep read-supported core lengths were passed, so `RUSTLE_ER_CORE_COVERAGE` can bite.
-    pub core_lens_supplied: bool,
     /// The additive genomic-span leg's state, taken from `additive_genomic_tier()` at the site — never
     /// re-derived here.
     pub genomic_tier: GenomicTier,
@@ -6096,14 +5991,9 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
              precision sign is truth-dependent) -- see bench/FALSE_NEGATIVES.md"
                 .into(),
         ),
-        ("coverage_denominator".into(), match (core_cov_floor(), site.core_lens_supplied) {
-            (Some(f), true) => format!("core(min)@floor={f:.6} else span"),
-            // The core denominator is only reachable where core lengths were passed. Saying "core" at a
-            // site that never supplies them would describe a rule the binary cannot run.
-            (Some(f), false) => format!("span(min) [RUSTLE_ER_CORE_COVERAGE={f:.6} UNREACHABLE here: no core lens]"),
-            (None, _) if longer => "span(max)".into(),
-            (None, _) => "span(min)".into(),
-        }),
+        // (The opt-in read-supported-core denominator, RUSTLE_ER_CORE_COVERAGE, was refuted — pipeline
+        // −0.072 F1 — and removed 2026-09-24; the row keeps its unset value.)
+        ("coverage_denominator".into(), if longer { "span(max)".into() } else { "span(min)".into() }),
         ("coverage_form".into(), ER_COVERAGE_FORM.into()),
         ("identity_metric".into(), "1-de (fallback nmatch/blocklen when de:f: absent)".into()),
         (
@@ -6115,11 +6005,13 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
             },
         ),
         ("edge_rule".into(), "ANY single record clearing both floors".into()),
-        ("summed_coverage".into(), std::env::var("RUSTLE_ER_SUM_COVERAGE").unwrap_or_else(|_| "<unset>".into())),
+        // The opt-in summed-coverage rule (RUSTLE_ER_SUM_COVERAGE) was refuted (register r1097) and removed
+        // 2026-09-24; the row keeps the value every run without it printed, so rule.tsv stays comparable.
+        ("summed_coverage".into(), "<unset>".into()),
         ("drop_stub_edges".into(), er_no_stub_edges().to_string()),
         (
             "locus_link_min_reads".into(),
-            locus_link_min_reads().map(|v| v.to_string()).unwrap_or_else(|| "<unset>".into()),
+            "<unset>".into(), // switch removed 2026-09-24 (r816 refuted); row kept so params.tsv is unchanged
         ),
         ("shared_exon_mode".into(), std::env::var("RUSTLE_SHARED_EXON").unwrap_or_else(|_| "<unset>".into())),
         ("repeat_hub_gate".into(), std::env::var("RUSTLE_ER_REPEAT_GATE").unwrap_or_else(|_| "<unset>".into())),
@@ -6196,10 +6088,9 @@ pub(crate) fn nucleotide_edges(
     mm_args: &[&str],
     min_id: f64,
     min_cov: f64,
-    cores: Option<&[u64]>,
     params: &RefineParams,
 ) -> Result<Vec<(usize, usize)>> {
-    nucleotide_edges_tagged(seqs, mm_args, min_id, min_cov, cores, params, None)
+    nucleotide_edges_tagged(seqs, mm_args, min_id, min_cov, params, None)
 }
 
 /// As `nucleotide_edges`, but LABELS the PAF/`.args` this call drops under `RUSTLE_ER_EDGE_DUMP`.
@@ -6213,11 +6104,10 @@ pub(crate) fn nucleotide_edges_tagged(
     mm_args: &[&str],
     min_id: f64,
     min_cov: f64,
-    cores: Option<&[u64]>,
     params: &RefineParams,
     dump_tag: Option<&str>,
 ) -> Result<Vec<(usize, usize)>> {
-    Ok(nucleotide_edges_scored(seqs, mm_args, min_id, min_cov, cores, params, dump_tag, None)?
+    Ok(nucleotide_edges_scored(seqs, mm_args, min_id, min_cov, params, dump_tag, None)?
         .into_iter()
         .map(|(i, j, _ident, _cov)| (i, j))
         .collect())
@@ -6303,13 +6193,12 @@ fn nucleotide_edges_scored(
     mm_args: &[&str],
     min_id: f64,
     min_cov: f64,
-    cores: Option<&[u64]>,
     params: &RefineParams,
     dump_tag: Option<&str>,
     guard_exempt: Option<&dyn Fn(usize, usize) -> bool>,
 ) -> Result<Vec<(usize, usize, f64, f64)>> {
     nucleotide_edges_scored_disclosed(
-        seqs, mm_args, min_id, min_cov, cores, params, dump_tag, guard_exempt, None,
+        seqs, mm_args, min_id, min_cov, params, dump_tag, guard_exempt, None,
     )
 }
 
@@ -6317,16 +6206,14 @@ fn nucleotide_edges_scored(
 /// very same exemplar record that supplied the returned `(identity, coverage)`.
 ///
 /// A SEPARATE map, deliberately: nothing that participates in the edge DECISION is widened or moved, so
-/// the returned edge set is bit-for-bit what it was. Entries appear only for edges whose exemplar came
-/// from a real PAF record — an edge admitted by the opt-in summed-coverage rule has no single certifying
-/// record and therefore no entry, which the dump prints as `NA` rather than inventing.
+/// the returned edge set is bit-for-bit what it was. Every edge's exemplar comes from a real PAF record, so
+/// every edge has an entry.
 #[allow(clippy::too_many_arguments)]
 fn nucleotide_edges_scored_disclosed(
     seqs: &[Vec<u8>],
     mm_args: &[&str],
     min_id: f64,
     min_cov: f64,
-    cores: Option<&[u64]>,
     params: &RefineParams,
     dump_tag: Option<&str>,
     // Pair-level exemption from the orientation guard, supplied by the caller because only it knows what
@@ -6358,30 +6245,73 @@ fn nucleotide_edges_scored_disclosed(
         }
     }
     let _cl = Cleanup(path.clone());
+    let mut query_fnv = crate::vg_family::run_cache::Fnv::default();
+    let mut query_bytes = 0usize;
     {
         let mut f = std::fs::File::create(&path)?;
         for (i, s) in seqs.iter().enumerate() {
-            writeln!(f, ">{i}")?;
+            let head = format!(">{i}\n");
+            f.write_all(head.as_bytes())?;
             f.write_all(s)?;
-            writeln!(f)?;
+            f.write_all(b"\n")?;
+            query_fnv.update(head.as_bytes());
+            query_fnv.update(s);
+            query_fnv.update(b"\n");
+            query_bytes += head.len() + s.len() + 1;
         }
     }
+    // PAF CACHE (`RUSTLE_CACHE_DIR`, see `run_cache`): the all-vs-all is a pure function of the query bytes,
+    // the command line (threads included) and the minimap2 build, so a matching entry is replayed instead of
+    // re-aligned; the parse below then sees the identical byte stream.
+    let paf_entry = crate::vg_family::run_cache::cache_root().map(|root| {
+        let key = format!(
+            "rustle er paf v1\ncmd\t{}\nminimap2\t{}\nquery_fnv\t{:016x}\nquery_bytes\t{}\nn_seqs\t{}\n",
+            er_tier_cmdline(&params.minimap2, params.threads, mm_args),
+            crate::vg_family::run_cache::minimap2_version(&params.minimap2),
+            query_fnv.finish(),
+            query_bytes,
+            seqs.len()
+        );
+        crate::vg_family::run_cache::Entry::new(&root, "paf", key)
+    });
+    // a hit that cannot be opened (another run replacing the entry) falls back to running minimap2
+    let replay: Option<std::fs::File> = paf_entry
+        .as_ref()
+        .filter(|e| e.is_hit())
+        .and_then(|e| std::fs::File::open(e.dir.join("out.paf")).ok());
+    let paf_hit = replay.is_some();
     // ⚠⚠ STREAMED, NOT BUFFERED (2026-08-19). This used `.output()`, which holds the ENTIRE
     // all-vs-all PAF in a `Vec<u8>` before parsing a single line. Per-family that is nothing; genome-wide
     // it is the whole 12,415-rep all-vs-all through the sensitive `-k11 -w5` tier, and it is what made the
     // genome-wide catalog unrunnable — a run reached 23.7 GB RSS + 10.2 GB swap, `D` state, ~11% CPU
     // (the parent blocked accumulating the child's stdout) and had to be killed at 1h34m.
     // Memory is now bounded by one line regardless of PAF size. Records, order and edges are unchanged.
-    let mut child = er_tier_command(&params.minimap2, params.threads, mm_args)
-        .arg(&path)
-        .arg(&path)
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("failed to run minimap2 ('{}') for refinement: {e}", params.minimap2))?;
-    let child_stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("minimap2 stdout pipe unavailable"))?;
+    let (mut child, child_stdout): (Option<std::process::Child>, Box<dyn std::io::Read>) = if let Some(f) = replay {
+        let e = paf_entry.as_ref().expect("a replay implies an entry");
+        eprintln!("[cache] all-vs-all PAF replayed from {} (minimap2 skipped)", e.dir.display());
+        (None, Box::new(f))
+    } else {
+        let mut child = er_tier_command(&params.minimap2, params.threads, mm_args)
+            .arg(&path)
+            .arg(&path)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("failed to run minimap2 ('{}') for refinement: {e}", params.minimap2))?;
+        let out = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("minimap2 stdout pipe unavailable"))?;
+        (Some(child), Box::new(out))
+    };
+    // tee into a staging entry while streaming (committed only after minimap2 exits 0 and every write succeeded)
+    let mut paf_cache_poisoned = false;
+    let mut paf_cache_w: Option<(std::path::PathBuf, std::io::BufWriter<std::fs::File>)> = if paf_hit {
+        None
+    } else {
+        paf_entry.as_ref().and_then(|e| e.staging().ok()).and_then(|st| {
+            std::fs::File::create(st.join("out.paf")).ok().map(|f| (st, std::io::BufWriter::new(f)))
+        })
+    };
     // Opt-in: hand the parity differ the EXACT bytes this rule was applied to. Without this the Python
     // mirror has to re-run minimap2 itself, and any difference in that invocation (the on-disk fixture PAF
     // was made with `-x asm20 ... -N 200 -p 0.02` and NO `-X`, i.e. both orientations of every pair) is
@@ -6407,32 +6337,8 @@ fn nucleotide_edges_scored_disclosed(
         }
     }
     let mut n_records = 0usize;
-    // OPTIONAL summed-coverage rule (`RUSTLE_ER_SUM_COVERAGE=1`, default off = byte-identical).
-    //
-    // The default rule evaluates coverage on ONE record and never sums, so two loci sharing 60% of the
-    // shorter sequence across three separate blocks get no edge. That is exactly what a SHATTERED locus
-    // representative produces: reads in segmental duplications fragment into many exact intron chains
-    // (GTF2IP14: 287 reads over 222 distinct chains, the winner holding 13), so the rep describes a
-    // fragment and fails the 0.50 floor against its own paralogs. Measured: 32 of the 61 Soto members that
-    // no mode finds have a >=3-read chain available, i.e. the locus is buildable and is lost here.
-    //
-    // Summing raises the NUMERATOR and leaves the sequences untouched, unlike the exon-union substrate,
-    // which lengthened them and inflated the denominator instead (that cost 20 recall points).
-    //
-    // Guards, because summing is what the per-record rule exists to prevent:
-    //   - only records on the SAME strand for that pair are summed (a real fragmented gene is collinear;
-    //     a repeat matches in both orientations),
-    //   - only records whose query span is >= `min_block` bp count, so a swarm of short repeat hits
-    //     cannot accumulate past the floor,
-    //   - query intervals are UNIONed, never added, so overlapping records cannot double-count.
-    let sum_cov = std::env::var("RUSTLE_ER_SUM_COVERAGE")
-        .map(|v| v != "0" && !v.is_empty())
-        .unwrap_or(false);
-    let min_block: f64 = std::env::var("RUSTLE_ER_SUM_MIN_BLOCK")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(200.0);
-    let mut sum_blocks: BTreeMap<(usize, usize, char), (Vec<(u64, u64)>, f64, f64)> = BTreeMap::new();
+    // (An opt-in summed-coverage rule, `RUSTLE_ER_SUM_COVERAGE` + `RUSTLE_ER_SUM_MIN_BLOCK`, unioned several
+    // same-strand records per pair; refuted — register H row and r1097 — and removed 2026-09-24.)
 
     // Value = the EXEMPLAR (identity, coverage) for reporting only; membership is decided exactly as before.
     let mut edge_set: BTreeMap<(usize, usize), (f64, f64)> = BTreeMap::new();
@@ -6445,6 +6351,11 @@ fn nucleotide_edges_scored_disclosed(
         n_records += 1;
         if let Some(w) = dump_w.as_mut() {
             let _ = writeln!(w, "{line}");
+        }
+        if let Some((_, w)) = paf_cache_w.as_mut() {
+            if writeln!(w, "{line}").is_err() {
+                paf_cache_poisoned = true; // a dropped line must never be committed as a complete PAF
+            }
         }
         let line = line.as_str();
         let f: Vec<&str> = line.split('\t').collect();
@@ -6485,14 +6396,8 @@ fn nucleotide_edges_scored_disclosed(
                 nmatch / alnlen
             }
         };
-        // Denominator: the shorter SPAN by default, or the shorter READ-SUPPORTED CORE when
-        // `RUSTLE_ER_CORE_COVERAGE` is set and both cores were measured. The span is produced by the
-        // pipeline itself, so a boundary error moves the criterion that decides membership; the core is
-        // depth-defined and a readthrough tail never enters it. Falls back to the span whenever either core
-        // is 0 (not measured), so the rule can never become MORE permissive through missing data.
-        // The floor must travel WITH the denominator. The core is a strictly smaller target than the span
-        // (measured core/span median 0.41, quartiles 0.10-0.68), so the same fraction means a different
-        // demand; applying the span's 0.50 to a core denominator silently makes the rule LOOSER.
+        // Denominator: the shorter SPAN. (A read-supported-CORE denominator, `RUSTLE_ER_CORE_COVERAGE`, was
+        // refuted — pipeline −0.072 F1, "one floor is a different demand per locus" — and removed 2026-09-24.)
         // `RUSTLE_ER_COVERAGE_LONGER=1` divides by the LONGER sequence instead of the shorter, i.e. it
         // demands that BOTH members be covered (equivalently BLAST's qcovs AND scovs clearing the floor).
         // Default off = byte-identical.
@@ -6533,30 +6438,15 @@ fn nucleotide_edges_scored_disclosed(
         // denominator also supplies the aligned span:
         //     default (shorter):  ql <= tl ? (qe-qs)/ql : (te-ts)/tl
         //     COVERAGE_LONGER:    ql >= tl ? (qe-qs)/ql : (te-ts)/tl
-        //     CORE_COVERAGE:      the side whose CORE was selected supplies the span
         // This is NOT a null change — it removes edges whose apparent coverage was borrowed from the
         // other sequence's axis, and it can add edges where the target side is the better-covered one.
         let longer_cov = matches!(std::env::var("RUSTLE_ER_COVERAGE_LONGER"), Ok(v) if v != "0" && !v.is_empty());
         // `true` = the QUERY side supplies both numerator and denominator; `false` = the TARGET side.
         // Note this choice is orientation-independent: if a record arrived with q and t swapped, the
         // flag flips with it and the SAME physical sequence is still selected.
-        let mut side_is_query = if longer_cov { ql >= tl } else { ql <= tl };
-        let span_denom = if longer_cov { ql.max(tl).max(1.0) } else { ql.min(tl).max(1.0) };
-        let (shorter, floor) = match core_cov_floor() {
-            Some(f) => match (cores.and_then(|c| c.get(q)), cores.and_then(|c| c.get(t))) {
-                (Some(&a), Some(&b)) if a > 0 && b > 0 => {
-                    let d = if longer_cov { a.max(b) } else { a.min(b) };
-                    // The core denominator can select the OPPOSITE side from the span, so recompute the
-                    // axis against the cores rather than inheriting the span's answer.
-                    side_is_query = if longer_cov { a >= b } else { a <= b };
-                    ((d as f64).max(1.0), f)
-                }
-                // Core unmeasured for this pair: fall back to the span AND to the span's floor, so missing
-                // data can never make the rule more permissive.
-                _ => (span_denom, min_cov),
-            },
-            None => (span_denom, min_cov),
-        };
+        let side_is_query = if longer_cov { ql >= tl } else { ql <= tl };
+        let shorter = if longer_cov { ql.max(tl).max(1.0) } else { ql.min(tl).max(1.0) };
+        let floor = min_cov;
         let aln_on_denom_axis = if side_is_query { qe - qs } else { te - ts };
         let cov = aln_on_denom_axis / shorter;
         // SECOND floor on the LONGER sequence, additive to the clause above (BLAST qcovs AND scovs).
@@ -6594,30 +6484,33 @@ fn nucleotide_edges_scored_disclosed(
                 flanks.insert(k, er_edge_flank(ql, qs, qe, tl, ts, te, q < t));
             }
         }
-        // M1 applies here too: the summed rule unions intervals into the SAME denominator, so the
-        // intervals must be measured on the denominator's axis or the union is a sum of two coordinate
-        // systems. `min_block` is likewise a length on that axis.
-        let (aln_s, aln_e) = if side_is_query { (qs, qe) } else { (ts, te) };
-        if sum_cov && ident >= min_id && aln_on_denom_axis >= min_block {
-            let entry = sum_blocks
-                .entry((q.min(t), q.max(t), strand))
-                .or_insert_with(|| (Vec::new(), shorter, ident));
-            entry.0.push((aln_s as u64, aln_e as u64));
-            entry.1 = entry.1.min(shorter);
-            entry.2 = entry.2.max(ident);
-        }
     }
     // ---- the child is done: status check + dump finalisation ----
     // ⚠ SEMANTICS PRESERVED: a non-zero minimap2 exit is still SILENTLY an empty edge set (the family
     // dissolves). Streaming means we discover that AFTER parsing, so whatever was accumulated is
     // discarded here rather than returned.
-    let status = child
-        .wait()
-        .map_err(|e| anyhow::anyhow!("waiting for minimap2 ('{}'): {e}", params.minimap2))?;
+    let (status_ok, status) = match child.as_mut() {
+        Some(c) => {
+            let st = c
+                .wait()
+                .map_err(|e| anyhow::anyhow!("waiting for minimap2 ('{}'): {e}", params.minimap2))?;
+            (st.success(), st.to_string())
+        }
+        None => (true, "replayed from cache".to_string()),
+    };
     if let Some(mut w) = dump_w.take() {
         let _ = w.flush();
     }
-    if !status.success() {
+    if let Some((st, mut w)) = paf_cache_w.take() {
+        let committed = status_ok
+            && !paf_cache_poisoned
+            && w.flush().is_ok()
+            && paf_entry.as_ref().map_or(false, |e| e.commit(&st).is_ok());
+        if !committed {
+            let _ = std::fs::remove_dir_all(&st);
+        }
+    }
+    if !status_ok {
         if std::env::var("RUSTLE_ER_EDGE_DUMP").is_ok() {
             eprintln!(
                 "[er-dump] ⚠ minimap2 EXITED NON-ZERO ({}) for args {:?} on {} seqs -> ZERO edges. \
@@ -6650,42 +6543,9 @@ fn nucleotide_edges_scored_disclosed(
             mm_args
         );
     }
-    if sum_cov {
-        let mut added = 0usize;
-        for ((a, b, _strand), (mut iv, shorter, best_ident)) in sum_blocks {
-            if edge_set.contains_key(&(a, b)) {
-                continue;
-            }
-            iv.sort_unstable();
-            let mut union_len = 0u64;
-            let mut cur: Option<(u64, u64)> = None;
-            for (s0, e0) in iv {
-                match cur {
-                    Some((cs, ce)) if s0 <= ce => cur = Some((cs, ce.max(e0))),
-                    Some((cs, ce)) => {
-                        union_len += ce - cs;
-                        cur = Some((s0, e0));
-                    }
-                    None => cur = Some((s0, e0)),
-                }
-            }
-            if let Some((cs, ce)) = cur {
-                union_len += ce - cs;
-            }
-            let union_cov = union_len as f64 / shorter.max(1.0);
-            if union_cov >= min_cov {
-                edge_set.insert((a, b), (best_ident, union_cov));
-                added += 1;
-            }
-        }
-        if added > 0 {
-            eprintln!("[summed-coverage] {added} additional edge(s) from collinear blocks >= {min_block} bp");
-        }
-    }
     if let Some(out) = disclose {
         out.clear();
-        // Summed-coverage edges (opt-in) are inserted into `edge_set` with no certifying record, so they
-        // are simply absent here; the filter is the assertion that this map never outruns the edge set.
+        // The filter is the assertion that this map never outruns the edge set.
         out.extend(flanks.iter().filter(|(k, _)| edge_set.contains_key(k)).map(|(k, v)| (*k, *v)));
     }
     Ok(edge_set.into_iter().map(|((i, j), (id, cov))| (i, j, id, cov)).collect())
@@ -6696,7 +6556,6 @@ fn nucleotide_edges_scored_disclosed(
 /// coverage thresholds, while the caller deliberately controls the substrate and orientation semantics.
 fn nucleotide_rule_edge_set(
     seqs: &[Vec<u8>],
-    cores: Option<&[u64]>,
     params: &RefineParams,
     dump_tag: &str,
 ) -> Result<BTreeSet<(usize, usize)>> {
@@ -6707,7 +6566,6 @@ fn nucleotide_rule_edge_set(
         &seed_ref,
         floor,
         params.min_coverage,
-        cores,
         params,
         Some(dump_tag), None)?
     .into_iter()
@@ -6723,7 +6581,6 @@ fn nucleotide_rule_edge_set(
                 ER_SENSITIVE_SEED,
                 params.sensitive_identity,
                 params.min_coverage,
-                cores,
                 params,
                 Some(dump_tag), None)?
             .into_iter()
@@ -6816,7 +6673,6 @@ pub fn write_joint_rna_dna_certificate(
     };
     let rna_seqs: Vec<Vec<u8>> = nodes.iter().map(|n| n.rep.seq.clone()).collect();
     let dna_seqs: Vec<Vec<u8>> = nodes.iter().map(|n| refine_copy_seq(&n.rep, Some(&genome))).collect();
-    let core_lens: Vec<u64> = nodes.iter().map(|n| n.rep.core_bp).collect();
 
     let mut rna_params = params.clone();
     rna_params.homology_genomic_span = false;
@@ -6824,7 +6680,7 @@ pub fn write_joint_rna_dna_certificate(
     let rna_edges = if nodes.is_empty() {
         BTreeSet::new()
     } else {
-        nucleotide_rule_edge_set(&rna_seqs, Some(&core_lens), &rna_params, "joint_rna")?
+        nucleotide_rule_edge_set(&rna_seqs, &rna_params, "joint_rna")?
     };
 
     let mut dna_params = params.clone();
@@ -6835,7 +6691,7 @@ pub fn write_joint_rna_dna_certificate(
     let dna_edges = if nodes.is_empty() {
         BTreeSet::new()
     } else {
-        nucleotide_rule_edge_set(&dna_seqs, None, &dna_params, "joint_dna")?
+        nucleotide_rule_edge_set(&dna_seqs, &dna_params, "joint_dna")?
     };
 
     let union: BTreeSet<(usize, usize)> = rna_edges.union(&dna_edges).copied().collect();
@@ -7611,9 +7467,6 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
         }
     }
     let seqs = seqs;
-    // Parallel to `seqs` by construction (both are built 1:1 from `reps`), which is what lets
-    // `nucleotide_edges` index cores by the same PAF sequence id.
-    let core_lens: Vec<u64> = reps.iter().map(|r| r.core_bp).collect();
     // SCOPED ORIENTATION GUARD (`RUSTLE_ER_GUARD_SCOPED`, default OFF = byte-identical).
     //
     // The guard rejects every minus-strand record. That is right when both strands were MEASURED, and
@@ -7658,11 +7511,6 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
             None
         };
     let drop_stub_edges = er_no_stub_edges();
-    if let Some(fl) = core_cov_floor() {
-        let have = core_lens.iter().filter(|&&c| c > 0).count();
-        eprintln!("[homology] E_r coverage denominator: READ-SUPPORTED CORE (depth >= {}, floor {fl:.2}); \
-                   measured for {have}/{} reps, rest fall back to span", core_depth_floor(), reps.len());
-    }
     // SHARED-EXON mode (`RUSTLE_SHARED_EXON=1`): replace the exon-sum rule with Soto's criterion --
     // any single shared exon links two loci. Not a tier that unions in; it REPLACES the nucleotide runs,
     // so the two definitions can be compared rather than blended.
@@ -7715,7 +7563,7 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
         let seed = primary_seed_args();
         let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
         let mut tier_flanks: BTreeMap<(usize, usize), ErEdgeFlank> = BTreeMap::new();
-        let scored = nucleotide_edges_scored_disclosed(&seqs, &seed_ref, params.min_identity, params.min_coverage, Some(&core_lens), params, Some("er"), guard_exempt.as_ref().map(|f| f as &dyn Fn(usize, usize) -> bool), Some(&mut tier_flanks))?;
+        let scored = nucleotide_edges_scored_disclosed(&seqs, &seed_ref, params.min_identity, params.min_coverage, params, Some("er"), guard_exempt.as_ref().map(|f| f as &dyn Fn(usize, usize) -> bool), Some(&mut tier_flanks))?;
         for (i, j, ident, cov) in scored {
             *prov.entry((i, j)).or_insert(0) |= TIER_ASM20;
             if record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_ASM20) {
@@ -7733,7 +7581,6 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
             ER_SENSITIVE_SEED,
             params.sensitive_identity,
             params.min_coverage,
-            Some(&core_lens),
             params,
             Some("er"), None, Some(&mut tier_flanks))?;
         for (i, j, ident, cov) in scored {
@@ -8103,7 +7950,6 @@ fn write_er_edge_dump(
         // the difference at all; it printed an empty diff across it before.
         &ErRuleSite {
             substrate_genomic: genomic_span_active,
-            core_lens_supplied: true,
             genomic_tier: GenomicTier::NotPresent,
         },
     );
@@ -8141,9 +7987,11 @@ fn write_er_edge_dump(
                 .unwrap_or_else(|| "NA".into())
         }),
         ("env.RUSTLE_ER_SENSITIVE_ONLY".into(), env("RUSTLE_ER_SENSITIVE_ONLY")),
-        ("env.RUSTLE_ER_SUM_COVERAGE".into(), env("RUSTLE_ER_SUM_COVERAGE")),
-        ("env.RUSTLE_ER_SUM_MIN_BLOCK".into(), env("RUSTLE_ER_SUM_MIN_BLOCK")),
-        ("env.RUSTLE_ER_CORE_COVERAGE".into(), env("RUSTLE_ER_CORE_COVERAGE")),
+        // Removed switches (2026-09-24): their rows keep the `<unset>` every run printed, so params.tsv files
+        // from before and after the removal stay line-for-line comparable.
+        ("env.RUSTLE_ER_SUM_COVERAGE".into(), "<unset>".into()),
+        ("env.RUSTLE_ER_SUM_MIN_BLOCK".into(), "<unset>".into()),
+        ("env.RUSTLE_ER_CORE_COVERAGE".into(), "<unset>".into()),
         ("env.RUSTLE_ER_CORE_DEPTH".into(), env("RUSTLE_ER_CORE_DEPTH")),
         ("env.RUSTLE_ER_COVERAGE_LONGER".into(), env("RUSTLE_ER_COVERAGE_LONGER")),
         ("env.RUSTLE_ER_NO_STUB_EDGES".into(), env("RUSTLE_ER_NO_STUB_EDGES")),
@@ -8163,7 +8011,7 @@ fn write_er_edge_dump(
         // (`family_detect::locus_reps`) AND the unspliced-strand collapse clause (`collapse_parent`), yet
         // an ON and an OFF pair of SPLICED_REP arms had byte-identical params.tsv until this row existed.
         ("env.RUSTLE_READ_STRAND_MARGIN".into(), env("RUSTLE_READ_STRAND_MARGIN")),
-        ("env.RUSTLE_SPLICED_REP".into(), env("RUSTLE_SPLICED_REP")),
+        ("env.RUSTLE_SPLICED_REP".into(), "<unset>".into()), // switch removed 2026-09-24; row kept so params.tsv is unchanged
         // Also an opt-in that changes the EDGE RULE, so a catalog must be able to name it. Omitting
         // this row is the M2 defect from the read-strand work, repeated: without it an ON and an OFF
         // arm have byte-identical params.tsv and a null result cannot be distinguished from a flag
@@ -8414,34 +8262,7 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<D
 /// "never judge a change to what a NODE IS on node-level metrics".
 fn distinct_locus_reps_grouped(
     copies: Vec<DenovoTranscript>,
-    min_reads: usize,
-) -> Vec<(DenovoTranscript, Vec<usize>)> {
-    distinct_locus_reps_grouped_linked(copies, min_reads, None)
-}
-
-/// As `distinct_locus_reps_grouped`, plus the OPT-IN linked-locus merge (`RUSTLE_LOCUS_LINK_MIN_READS`).
-///
-/// `link[i][j]` is the number of reads whose aligned blocks touch both copy `i` and copy `j`
-/// (`locus_read_linkage`, in the caller's local index space). When the flag is set and a SAME-STRAND
-/// pair clears the floor, the pair merges **whether or not their spans overlap** — which is the whole
-/// point, since 26 of 34 measured within-gene fragment pairs are disjoint and the `same_pos` gate
-/// below never examines them (ledger §6cj).
-///
-/// ⚠⚠ **THIS IS A SECOND PLACE WHERE O1's NODE SET CONSULTS READ EVIDENCE.** The existing one is the
-/// `reads_distinguish` branch below, which this function already counts and reports unconditionally so
-/// it can never be silently load-bearing; this leg is counted and reported the same way. It is **not**
-/// an O1 ⊥ O2 violation — that rule governs FAMILY MEMBERSHIP (`E_r` versus `E_c`), and node
-/// construction is upstream of it and already built from reads — but "O1's node set is not a function
-/// of sequence alone" becomes true for a second reason whenever this fires, and any number derived
-/// from a run with it on must say so.
-///
-/// ⚠ Same strand is required. Read linkage across an antisense pair is the sense/antisense artifact the
-/// strand rules below exist to adjudicate, and merging on it would bypass them.
-fn distinct_locus_reps_grouped_linked(
-    copies: Vec<DenovoTranscript>,
-    min_reads: usize,
-    link: Option<&[Vec<u32>]>,
-) -> Vec<(DenovoTranscript, Vec<usize>)> {
+    min_reads: usize) -> Vec<(DenovoTranscript, Vec<usize>)> {
     let n = copies.len();
     // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent): log every co-located pair this merge examines
     // and its verdict, so "how many merges does the >=2-distinct-loci certificate perform, and at what
@@ -8458,29 +8279,9 @@ fn distinct_locus_reps_grouped_linked(
     // the sole place O1's node set consults read evidence. Reported unconditionally below so the
     // O1 ⊥ O2 exception can never be silently load-bearing. See the block comment at the branch.
     let mut read_leg_decisions: usize = 0;
-    // Same discipline for the opt-in linked-locus leg (§6cj): counted here and reported below, so a
-    // run in which it fired can never present its node set as a function of sequence alone.
-    let mut link_leg_decisions: usize = 0;
     for i in 0..n {
         for j in (i + 1)..n {
             let (a, b) = (&copies[i], &copies[j]);
-            // OPT-IN linked-locus leg (§6cj), evaluated BEFORE `same_pos` because the pairs it exists
-            // for are precisely the ones that gate discards. Same chromosome and same strand only.
-            if let (Some(floor), Some(m)) = (locus_link_min_reads(), link) {
-                let n_link = m.get(i).and_then(|row| row.get(j)).copied().unwrap_or(0);
-                if n_link >= floor && a.chrom == b.chrom && a.strand == b.strand {
-                    if audit {
-                        eprintln!(
-                            "[locus-audit]\t{}\t{}\t{}\t{}\t{}\t-\t{}\t{}\t{}\t{}\t-\t-\t{}\tLINKED_MERGE",
-                            a.chrom, a.start, a.end, a.strand, a.n_reads,
-                            b.start, b.end, b.strand, b.n_reads, n_link
-                        );
-                    }
-                    link_leg_decisions += 1;
-                    uf_union(&mut parent, i, j);
-                    continue;
-                }
-            }
             let same_pos = a.chrom == b.chrom && a.end.min(b.end) > a.start.max(b.start);
             if !same_pos {
                 continue;
@@ -8612,13 +8413,6 @@ fn distinct_locus_reps_grouped_linked(
              function of sequence alone for this run — disclose it with any number derived from it."
         );
     }
-    if link_leg_decisions > 0 {
-        eprintln!(
-            "[o1-perp-o2] WARNING: {link_leg_decisions} pair(s) were merged by READ LINKAGE \
-             (RUSTLE_LOCUS_LINK_MIN_READS), not by sequence or position. O1's node set is NOT a \
-             function of sequence alone for this run — disclose it with any number derived from it."
-        );
-    }
     // representative per locus = MOST reads (the real copy, not the minority artifact), then widest span.
     let key = |t: &DenovoTranscript| (t.n_reads, t.end - t.start);
     let roots: Vec<usize> = (0..n).map(|i| uf_find(&mut parent, i)).collect();
@@ -8646,6 +8440,160 @@ mod tests {
     use super::super::copy_split::AlignedRead;
     use super::super::family_detect::collapse_loci;
     use super::*;
+
+    /// Deterministic LCG for the oracle tests below (no `rand` dependency).
+    struct Lcg(u64);
+    impl Lcg {
+        fn next(&mut self, m: u64) -> u64 {
+            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (self.0 >> 33) % m.max(1)
+        }
+    }
+
+    fn random_reps(r: &mut Lcg, n: usize) -> Vec<DenovoTranscript> {
+        let chroms = ["c1", "c2", "c3"];
+        (0..n)
+            .map(|i| {
+                let s = r.next(4000);
+                let e = s + 1 + r.next(1200);
+                let introns = if r.next(3) == 0 { vec![] } else { vec![(s + (e - s) / 3, s + (e - s) / 2 + 1)] };
+                DenovoTranscript {
+                    tid: format!("r{i}"),
+                    chrom: chroms[r.next(3) as usize].to_string(),
+                    start: s,
+                    end: e,
+                    n_reads: 1 + r.next(9) as u32,
+                    strand: '+',
+                    introns,
+                    ..Default::default()
+                }
+            })
+            .collect()
+    }
+
+    fn random_reads(r: &mut Lcg, n: usize) -> Vec<BamRead> {
+        let chroms = ["c1", "c2", "c3", "c4"];
+        (0..n)
+            .map(|_| {
+                let start = r.next(4500);
+                let mut cigar = vec![('M', 1 + r.next(600))];
+                if r.next(2) == 0 {
+                    cigar.push(('N', 1 + r.next(900)));
+                    cigar.push(('M', 1 + r.next(300)));
+                }
+                BamRead {
+                    chrom: chroms[r.next(4) as usize].to_string(),
+                    read: AlignedRead { ref_start: start, cigar, seq: vec![], qual: vec![] },
+                    mapq: r.next(61) as u8,
+                    name: format!("q{}", r.next((n / 2).max(1) as u64)), // shared names = multi-record molecules
+                    as_score: r.next(500) as i32,
+                    de: r.next(100) as f32 / 1000.0,
+                    is_supplementary: r.next(10) == 0,
+                    is_secondary: r.next(3) == 0,
+                    reverse: false,
+                    ts: None,
+                }
+            })
+            .collect()
+    }
+
+    /// The pre-2026-09-24 body of `build_read_placements`, kept verbatim as the oracle for the indexed rewrite.
+    fn naive_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscript]) -> Vec<ReadPlacements> {
+        let mut by_name: BTreeMap<&str, Vec<Placement>> = BTreeMap::new();
+        for br in bam_reads {
+            if br.is_supplementary {
+                continue;
+            }
+            let read_end = read_ref_end(&br.read);
+            let best = reps
+                .iter()
+                .enumerate()
+                .filter(|(_, rep)| br.chrom == rep.chrom && br.read.ref_start < rep.end && read_end > rep.start)
+                .max_by_key(|(_, rep)| rep.end.min(read_end) - rep.start.max(br.read.ref_start));
+            if let Some((li, _)) = best {
+                let aln_len = br.read.cigar.iter()
+                    .filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32;
+                by_name.entry(br.name.as_str()).or_default().push(Placement {
+                    locus: li, de: br.de, mapq: br.mapq, as_score: br.as_score, aln_len,
+                });
+            }
+        }
+        by_name.into_values().collect()
+    }
+
+    /// The pre-2026-09-24 body of `locus_core_bp` (scan from the first read for every rep), the oracle.
+    fn naive_core_bp(bam_reads: &[BamRead], reps: &[DenovoTranscript], min_depth: u32) -> Vec<u64> {
+        let mut by_chrom: BTreeMap<&str, Vec<(u64, u64)>> = BTreeMap::new();
+        for br in bam_reads {
+            if br.is_supplementary {
+                continue;
+            }
+            by_chrom.entry(br.chrom.as_str()).or_default().push((br.read.ref_start, read_ref_end(&br.read)));
+        }
+        for v in by_chrom.values_mut() {
+            v.sort_unstable();
+        }
+        reps.iter()
+            .map(|r| {
+                let Some(v) = by_chrom.get(r.chrom.as_str()) else { return 0 };
+                let mut events: Vec<(u64, i32)> = Vec::new();
+                for &(s, e) in v.iter() {
+                    if s >= r.end {
+                        break;
+                    }
+                    if e > r.start {
+                        events.push((s.max(r.start), 1));
+                        events.push((e.min(r.end), -1));
+                    }
+                }
+                if events.is_empty() {
+                    return 0;
+                }
+                events.sort_unstable();
+                let (mut depth, mut prev, mut core) = (0i32, events[0].0, 0u64);
+                for (pos, delta) in events {
+                    if depth >= min_depth as i32 && pos > prev {
+                        core += pos - prev;
+                    }
+                    depth += delta;
+                    prev = pos;
+                }
+                core
+            })
+            .collect()
+    }
+
+    #[test]
+    fn indexed_rewrites_match_their_naive_originals_on_random_multi_contig_inputs() {
+        let mut r = Lcg(0x9E37_79B9_7F4A_7C15);
+        for trial in 0..60 {
+            // many small reps on few contigs => equal overlaps (ties) and nested spans are common
+            let n_reps = 1 + r.next(50) as usize;
+            let reps = random_reps(&mut r, n_reps);
+            let reads = random_reads(&mut r, 300);
+            assert_eq!(build_read_placements(&reads, &reps), naive_read_placements(&reads, &reps), "placements, trial {trial}");
+            for depth in [1u32, 2, 5] {
+                assert_eq!(locus_core_bp(&reads, &reps, depth), naive_core_bp(&reads, &reps, depth), "core_bp, trial {trial}");
+            }
+            // readthrough: the same kept set as the per-transcript predicate over the whole junction map
+            let mut support: std::collections::HashMap<(String, u64, u64), usize> = std::collections::HashMap::new();
+            let n_junctions = r.next(80) as usize;
+            for _ in 0..n_junctions {
+                let d = r.next(5000);
+                let a = d + 1 + r.next(800);
+                support.insert((["c1", "c2", "c3"][r.next(3) as usize].to_string(), d, a), r.next(4) as usize);
+            }
+            let min_distinct = env_num("RUSTLE_READTHROUGH_MIN_DISTINCT", READTHROUGH_MIN_DISTINCT);
+            let expect: Vec<String> = reps
+                .iter()
+                .filter(|t| !is_unspliced_readthrough(t, &support, READTHROUGH_MIN_SUPPORT, min_distinct))
+                .map(|t| t.tid.clone())
+                .collect();
+            let mut kept = reps.clone();
+            retain_non_readthrough(&mut kept, &support, "test");
+            assert_eq!(kept.iter().map(|t| t.tid.clone()).collect::<Vec<_>>(), expect, "readthrough, trial {trial}");
+        }
+    }
 
     // ── B1: THE SHIPPED TIER IS CENTRALISED, AND STAYING CENTRALISED IS ENFORCED ─────────────────
     //
@@ -8759,7 +8707,7 @@ mod tests {
         let short = long[2000..4000].to_vec();
         let p = RefineParams { threads: 1, ..Default::default() };
         let scored =
-            nucleotide_edges_scored(&[long, short], ER_SENSITIVE_SEED, 0.60, 0.50, None, &p, None, None)
+            nucleotide_edges_scored(&[long, short], ER_SENSITIVE_SEED, 0.60, 0.50, &p, None, None)
                 .expect("alignment");
         assert_eq!(scored.len(), 1, "the pair must produce exactly one edge");
         let cov = scored[0].3;
@@ -8844,7 +8792,6 @@ mod tests {
             ER_SENSITIVE_SEED,
             0.60,
             0.50,
-            None,
             &permissive,
             None,
             None,
@@ -8866,7 +8813,6 @@ mod tests {
             ER_SENSITIVE_SEED,
             0.60,
             0.50,
-            None,
             &guarded,
             None,
             None, // the scoped exemption is opt-in; this test pins the UNSCOPED guard
@@ -8878,46 +8824,6 @@ mod tests {
     /// The other half of the typed rule: reference-oriented DNA reps must continue to admit a real
     /// inverted duplication. This exercises the same `families_from_reps_certified` grouping core used by
     /// `gw_family_catalog --from-genome`, not only the PAF parser in isolation.
-    #[test]
-    /// §6cj: the linked-locus merge must join DISJOINT fragments that reads connect — the pairs the
-    /// `same_pos` gate skips — while leaving everything else exactly as it was. 26 of 34 measured
-    /// within-gene fragment pairs are disjoint, so a merge that only looks at overlapping spans cannot
-    /// see the dominant node-construction defect at all.
-    fn linked_locus_merge_joins_disjoint_fragments_reads_connect() {
-        let rep = |start: u64, end: u64, strand: char, n_reads: u32, introns: Vec<(u64, u64)>| {
-            DenovoTranscript {
-                tid: format!("t{start}"), chrom: "c1".into(), start, end, strand, n_reads,
-                introns, seq: vec![b'A'; 100], distinguishing_uniq: 0, core_bp: 0, stub: false,
-                tes: None,
-            }
-        };
-        // a spliced locus and a DISJOINT single-exon fragment 20 kb away, same strand
-        let copies = vec![
-            rep(1_000, 3_000, '+', 200, vec![(1_500, 2_500)]),
-            rep(23_000, 23_400, '+', 5, vec![]),
-        ];
-        // no linkage -> the existing merge cannot see the pair, and both survive
-        let none = distinct_locus_reps_grouped(copies.clone(), 3);
-        assert_eq!(none.len(), 2, "disjoint copies must stay separate without read linkage");
-
-        let linked = vec![vec![0, 40], vec![40, 0]];
-        std::env::set_var("RUSTLE_LOCUS_LINK_MIN_READS", "10");
-        let merged = distinct_locus_reps_grouped_linked(copies.clone(), 3, Some(&linked));
-        // below the floor, the same pair must NOT merge -- the floor is what makes this a rule
-        let weak = vec![vec![0, 4], vec![4, 0]];
-        let unmerged = distinct_locus_reps_grouped_linked(copies.clone(), 3, Some(&weak));
-        // opposite strand must never merge on linkage alone
-        let mut anti = copies.clone();
-        anti[1].strand = '-';
-        let antisense = distinct_locus_reps_grouped_linked(anti, 3, Some(&linked));
-        std::env::remove_var("RUSTLE_LOCUS_LINK_MIN_READS");
-
-        assert_eq!(merged.len(), 1, "40 linking reads must merge the disjoint fragment into its locus");
-        assert_eq!(merged[0].0.n_reads, 200, "the representative is the most-supported copy");
-        assert_eq!(merged[0].1.len(), 2, "the merge group must record both members");
-        assert_eq!(unmerged.len(), 2, "4 linking reads is below the floor of 10 -- must not merge");
-        assert_eq!(antisense.len(), 2, "opposite-strand pairs must not merge on read linkage");
-    }
 
     #[test]
     /// §6by: the co-membership certificate must report the SHORTEST path, distinguish a direct edge
@@ -9074,7 +8980,6 @@ mod tests {
     fn orientation_rule_is_explicit_in_the_certificate() {
         let site = ErRuleSite {
             substrate_genomic: false,
-            core_lens_supplied: true,
             genomic_tier: GenomicTier::NotPresent,
         };
         let off = er_rule_rows(&RefineParams::default(), &site);
@@ -9224,15 +9129,15 @@ mod tests {
         let saved = std::env::var("RUSTLE_ER_SENSITIVE_ONLY").ok();
         std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY");
         let p = RefineParams::default();
-        let site = |cores: bool| ErRuleSite {
+        let site = ErRuleSite {
             substrate_genomic: false,
-            core_lens_supplied: cores,
             genomic_tier: GenomicTier::NotPresent,
         };
-        // O1: `homology_edges_all_reps_pooled` — exon-sum substrate, core lengths supplied.
-        let o1 = er_rule_rows(&p, &site(true));
-        // O2: `refine_families_exon_sum` — exon-sum substrate, no core lengths (it passes `cores: None`).
-        let o2 = er_rule_rows(&p, &site(false));
+        // O1 (`homology_edges_all_reps_pooled`) and O2 (`refine_families_exon_sum`), both on the exon-sum
+        // substrate. (They used to differ in whether core lengths were supplied; the core denominator that
+        // made that matter was removed 2026-09-24.)
+        let o1 = er_rule_rows(&p, &site);
+        let o2 = er_rule_rows(&p, &site);
         match saved {
             Some(v) => std::env::set_var("RUSTLE_ER_SENSITIVE_ONLY", v),
             None => std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY"),
@@ -9273,7 +9178,6 @@ mod tests {
             &p,
             &ErRuleSite {
                 substrate_genomic: false,
-                core_lens_supplied: true,
                 genomic_tier: GenomicTier::NotPresent,
             },
         );
@@ -9281,7 +9185,6 @@ mod tests {
             &p,
             &ErRuleSite {
                 substrate_genomic: false,
-                core_lens_supplied: false,
                 genomic_tier: additive_genomic_tier(&p, true),
             },
         );
@@ -9328,7 +9231,6 @@ mod tests {
             &p,
             &ErRuleSite {
                 substrate_genomic: false,
-                core_lens_supplied: true,
                 genomic_tier: GenomicTier::NotPresent,
             },
         );
@@ -9336,7 +9238,6 @@ mod tests {
             &p,
             &ErRuleSite {
                 substrate_genomic: false,
-                core_lens_supplied: false,
                 genomic_tier: additive_genomic_tier(&p, true),
             },
         );
@@ -9963,19 +9864,19 @@ mod tests {
         // the banned names legitimately appear in this very guard's own ban list. That false-positives
         // the guard, which is worse than the leak it looks for: a test that cries wolf gets relaxed.
         let mut scanned = body.clone();
-        // ⚠ ALL THREE names are required, and the reason has now recurred twice.
+        // ⚠ BOTH names are required, and the reason has now recurred three times.
         // `distinct_locus_reps` became a one-line wrapper when the λ certificate needed the merge
         // groups, moving the E_c call (`reads_distinguish`) into `distinct_locus_reps_grouped`; then
         // 2026-09-02 `distinct_locus_reps_grouped` became a wrapper in turn when the linked-locus leg
-        // (§6ck) needed an extra parameter, moving the body into `..._grouped_linked`. Each time, a
-        // scan of the old name alone would read an EMPTY body and pass VACUOUSLY.
+        // (§6ck) needed an extra parameter, moving the body into `..._grouped_linked`; on 2026-09-24 that
+        // leg was deleted (r816 refuted) and the body moved BACK into `distinct_locus_reps_grouped`. Each time,
+        // a scan of the old name alone would read an EMPTY body and pass VACUOUSLY.
         // ⭐ The `used || !disclosed` assertion below caught it both times — a guard that fails when its
         // own scan stops covering the code it polices, which is the only kind worth having. Add the new
         // name here whenever this body moves again; do not delete the disclosed entry to make it pass.
         for helper in [
             "fn distinct_locus_reps(",
             "fn distinct_locus_reps_grouped(",
-            "fn distinct_locus_reps_grouped_linked(",
         ] {
             if let Some(h) = src.find(helper) {
                 let open = h + src[h..].find('{').expect("helper has no body");
@@ -10031,21 +9932,15 @@ mod tests {
                  in the spec — O1 just became sequence-alone at the node and should say so."
             );
         }
-        // Accepts `homology_blocks(` or `homology_blocks_pooled(` -- both route through
-        // `homology_edges_all_reps*`, i.e. E_r alone. The pooled variant only widens which EXONS feed the
+        // Accepts `homology_blocks(` or `homology_blocks_pooled_with_edges_weighted(` -- both route through
+        // `homology_edges_all_reps*`, i.e. E_r alone. The pooled form only widens which EXONS feed the
         // shared-exon rule (every isoform's, not just the representative's); it introduces no read-assignment
-        // and no conflict edge, so the O1-from-sequence-alone invariant is unchanged.
-        // `homology_blocks_pooled_with_edges(` is accepted for the same reason as the pooled variant: it
-        // returns the SAME blocks and additionally hands back the E_r edge set the blocks were cut from,
-        // which the λ certificate reports on. It introduces no new edge source — λ is computed from E_r
-        // and nothing else — so the O1-from-sequence-alone invariant is unchanged.
-        // `..._with_edges_weighted(` is the same function returning the identity/coverage it already
-        // computed instead of discarding them (ledger §5q). Same blocks, same edge SET, same source —
-        // the weights are REPORTED on the copy and never re-enter the partition, so the invariant holds.
+        // and no conflict edge, so the O1-from-sequence-alone invariant is unchanged. It also hands back the
+        // E_r edge set the blocks were cut from (which the λ certificate reports on) with the identity/coverage
+        // already computed (ledger §5q): same blocks, same edge SET, same source — the weights are REPORTED on
+        // the copy and never re-enter the partition, so the invariant holds.
         assert!(
             body.contains("homology_blocks(")
-                || body.contains("homology_blocks_pooled(")
-                || body.contains("homology_blocks_pooled_with_edges(")
                 || body.contains("homology_blocks_pooled_with_edges_weighted("),
             "the homology catalog must still form families via homology_blocks* (E_r)"
         );
@@ -13039,7 +12934,7 @@ mod tests {
         // Confirm via the pipeline's own aligner: BOTH nt tiers must find NO edge at this divergence.
         let p = RefineParams::default();
         let sensitive_edges = nucleotide_edges(
-            &[seq_a.clone(), seq_b.clone()], ER_SENSITIVE_SEED, 0.60, 0.50, None, &p,
+            &[seq_a.clone(), seq_b.clone()], ER_SENSITIVE_SEED, 0.60, 0.50, &p,
         ).unwrap();
         assert!(sensitive_edges.is_empty(), "pair must be genuinely nt-unresolvable (< 0.60), got {:?}", sensitive_edges);
 
@@ -13323,9 +13218,9 @@ mod tests {
     }
 
     #[test]
-    fn exon_blocks_of_extends_through_deletions_and_splits_on_introns() {
+    fn exon_blocks_extend_through_deletions_and_split_on_introns() {
         let r = AlignedRead { ref_start: 10, cigar: vec![('S', 5), ('M', 100), ('D', 5), ('=', 50), ('N', 1000), ('X', 20), ('I', 3), ('M', 7)], seq: vec![], qual: vec![] };
-        assert_eq!(exon_blocks_of(&r), vec![(10, 165), (1165, 1192)]);
+        assert_eq!(r.exon_blocks(), vec![(10, 165), (1165, 1192)]);
     }
 
     #[test]

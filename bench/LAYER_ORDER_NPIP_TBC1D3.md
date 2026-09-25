@@ -3,7 +3,9 @@
 2026-09-16, **revised after audit** (see §12 Audit notes). Spec: `docs/superpowers/specs/2026-09-16-family-layer-order-design.md`
 (SCOPE AMENDMENT; Definitions, incl. the AUDIT AMENDMENT). Results: `/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/integrate_slim/`
 (abbreviated `IS/` below). The pre-audit report, tables and scripts are kept in `IS/pre_audit_snapshot/`. Scripts:
-`bench/layer_order/lo_*.py`. Not committed.
+`bench/layer_order/npip_tbc1d3.py {expr-recount,corrected-tables,layer-order}`, with the library `lattice_common.py`
+(wave 7, 2026-09-24; the old `lo_*.py` files are at git tag `notebook-2026-09-24`). The variant/probe scripts of §11 are
+archived at `notebook-2026-09-20:archive/bench/layer_order/`.
 
 "D" in this report is the **§6kl RefSeq E1 guided catalog** (identity ≥ 0.70, coverage ≥ 0.30, MCL), **not** §0★★ clause
 2/4. On chr16/19/20, the exact catalog used for NPIP, E1 **failed its pre-registered HGNC guard** (§6kl: 935 → 476,
@@ -39,9 +41,9 @@
 |---|---|---|---|---|
 | **P** | §6ko (`bench/protein_families.py`): longest CDS, r2 biotype filter, ≥ 10 aa, blastp e ≤ 1e-5 against a 20,088-protein genome-wide database (§6ko used chromosome-trio databases), coverage ≥ 0.30 of the longer protein, weight = identity × coverage, MCL I = 2.8. MCL runs on the neighbourhood N_k. The builder's **stopping rule** accepted k = 2: the first k in {2, 3} whose member clusters equal those at k + 1. | `light/scripts/README.md`, reconstructed. Rounds 1-5 ran with a one-shot `layer_protein.py round N` that was later removed; its argv was not saved. Stability: `lo_p_variants.py` → `IS/P_stability_plain.tsv` | **34**: every U gene with a protein, incl. PKD1 and DHX40 as `P\|other` | PC1 = 21 NPIP. PC2 = 9 TBC1D3 + TBC1D26 + USP6NL |
 | **D = E1** | `mcl_families --min-exonic-bp 1 --min-shared-exon-frac 0.0 --dump-graph`: identity ≥ 0.70, aligned ≥ 0.30 of the longer gene's exon union, ≥ 300 bp, ≥ 1 exonic bp on both sides, overlapping loci folded (a folded record **inherits** the cluster of its locus), MCL 2.8 / 1e-9 | c15_17_22: argv in `light/work/D/c15_17_22.e1.err`; `clusters.tsv` md5 aef97aa0 = `lit/aj_dev/refseq_e1`. c16_19_20: md5 8e753e3c = `lit/aj_ho/refseq/e1`, the catalog that failed the HGNC guard (§6kl) | **63** (chr15/17/22 and chr16/19/20 only) | MCL0 (30 genes, NPIP), MCL7 (10, the PKD1 group), MCL4 (22, TBC1D3) |
-| **C_tree** (clause 5, ordered) | §0★★ clause 5. Take all SH-aLRT > 75 splits of the §6js exon **or** intron IQ-TREE, restricted to leaves common to both trees; cluster = the smaller side; keep splits compatible with every other kept split (Buneman). C_tree_top = maximal clusters; C_tree_min = minimal clusters | `light/C.supported_clades.tsv`; `lo_analysis.c_tree` → `IS/ctree_clusters.tsv` | **30** leaves (21 NPIP + 9 TBC1D3; NPIPB14P is missing from the exon tree) | top: NPIPA (7), {B10P,B15,B6-9}, {B12,B13,B3-5}, TBC1D3 {B,F,G,H}, {TBC1D3,D,E,K}. min: {A6,A9}, {A7,A8}, {B3,B5}, {B8,B9}, {B,H}, {TBC1D3,D,E,K} |
+| **C_tree** (clause 5, ordered) | §0★★ clause 5. Take all SH-aLRT > 75 splits of the §6js exon **or** intron IQ-TREE, restricted to leaves common to both trees; cluster = the smaller side; keep splits compatible with every other kept split (Buneman). C_tree_top = maximal clusters; C_tree_min = minimal clusters | `light/C.supported_clades.tsv`; `lattice_common.c_tree` → `IS/ctree_clusters.tsv` | **30** leaves (21 NPIP + 9 TBC1D3; NPIPB14P is missing from the exon tree) | top: NPIPA (7), {B10P,B15,B6-9}, {B12,B13,B3-5}, TBC1D3 {B,F,G,H}, {TBC1D3,D,E,K}. min: {A6,A9}, {A7,A8}, {B3,B5}, {B8,B9}, {B,H}, {TBC1D3,D,E,K} |
 | literature C (CIRCULAR reference) | `light/scripts/layer_c.py`: a literature group is kept when some split of either tree has SH-aLRT > 75. TBC1D3 cluster1/2 are positional labels and were cleared (§3 #9) | `light/work/C.out` | 31 leaves | C_L1: NPIPA, NPIPB. C_mid_ab (as built): named NPIPB {B3,B4,B5,B11,B12,B13}. C_mid = C_mid_ab ∨ C_fine. C_fine: A6-9, B3-5, B6-9, B12/13 |
-| **EXPR** | Primary reads (`-F 2308`). **any** (primary, spec): a CIGAR block overlaps an exon by ≥ 1 bp, strand ignored. *unique*: the read hits exactly one RefSeq record genome-wide. *unique_mr*: same, but ignoring the 6 readthrough records that overlap a member on the same strand (PKD1P3-NPIPA1, LOC131696449, PKD1P4-NPIPA8, PKD1P5-LOC105376752, PDXDC2P-NPIPB14P, TBC1D3P1-DHX40P1) | `heavy/scripts/expr_counts.py`. Recount: `lo_expr_recount.py --ignore …`, 0 of 321 genes differ on any/unique; unique_mr rises for NPIPA1 0→9, NPIPA9 0→3, NPIPB14P 0→2, TBC1D3P1 0→1 | all 68 U genes | — |
+| **EXPR** | Primary reads (`-F 2308`). **any** (primary, spec): a CIGAR block overlaps an exon by ≥ 1 bp, strand ignored. *unique*: the read hits exactly one RefSeq record genome-wide. *unique_mr*: same, but ignoring the 6 readthrough records that overlap a member on the same strand (PKD1P3-NPIPA1, LOC131696449, PKD1P4-NPIPA8, PKD1P5-LOC105376752, PDXDC2P-NPIPB14P, TBC1D3P1-DHX40P1) | `heavy/scripts/expr_counts.py`. Recount: `npip_tbc1d3.py expr-recount --ignore …`, 0 of 321 genes differ on any/unique; unique_mr rises for NPIPA1 0→9, NPIPA9 0→3, NPIPB14P 0→2, TBC1D3P1 0→1 | all 68 U genes | — |
 
 Checks:
 - **P stability.** Member clusters are identical from k = 2 to k = 8 (|N_k| = 59, 138, 466, 727, 1,230, 1,972, 2,760; at k = 8, 2 unsearched genes were dropped). The stopping rule is therefore not binding here (`IS/p_variants.out`).
@@ -413,30 +415,39 @@ Why any and unique differ (co-hit reads; `lo_expr_cohits.py` → `IS/expr_cohits
 
 ## 11. Reproduce (foreground, in order)
 
-```
-python3 bench/layer_order/lo_expr_recount.py IS/expr_recount.tsv --ignore PKD1P3-NPIPA1,LOC131696449,PKD1P4-NPIPA8,PKD1P5-LOC105376752,PDXDC2P-NPIPB14P,TBC1D3P1-DHX40P1 USP6NL LOC100420408 LOC100420311 TBC1D29P LOC124905656 LOC100420289   # 25 s
-python3 bench/layer_order/lo_corrected_tables.py > IS/corrected_tables.out   # light/*.corrected.tsv (6 s)
-python3 bench/layer_order/lo_p_variants.py > IS/p_variants.out               # P stability k=1..8, aa>=0.50, N_2 clusters (10 s)
-python3 bench/layer_order/lo_analysis.py > IS/analysis.stdout                 # containment, tournaments, enforcement, truths A/B, EXPR, disagreements (4 s)
-python3 bench/layer_order/lo_pd_variants.py > IS/pd_variants.out              # P~D variants, GENCODE E1 mapping, leave-out (5 s)
-python3 bench/layer_order/lo_crosscheck.py > IS/crosscheck.out                # independent P/D/C_L1 re-derivation from the original tables
-python3 bench/layer_order/lo_p_components.py > IS/p_components.out            # PC1/PC2 component vs MCL cut
-python3 bench/layer_order/lo_d_groups_cut.py > IS/d_groups_cut.out            # D group cuts; TBC1D26 raw catalog edges
-python3 bench/layer_order/lo_expr_cohits.py IS/expr_cohits.tsv TBC1D3P1-DHX40P1 DHX40P1 DHX40 RNFT1-DT NPIPA1 NPIPA9 NPIPB7 TBC1D26 PKD1P6-NPIPP1 NPIPB9 NPIPB14P TBC1D3P1 TBC1D3 TBC1D3E > IS/expr_cohits.out   # 35 s
-bash    bench/layer_order/lo_offcatalog_probe.sh                             # IS/probe/* (rerun identical)
-```
+Wave 7 (2026-09-24) replaced the three `lo_*.py` scripts with subcommands of `bench/layer_order/npip_tbc1d3.py`. The old
+files are at git tag `notebook-2026-09-24`. Every stage **overwrites** its outputs under the root. The default root is
+the frozen `/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3`, so to rerun, copy `light/ heavy/ integrate_slim/
+lattice/` and pass `--root COPY` (or set `LO_ROOT`). `npip_tbc1d3.py all --with-check-c2 --root COPY` runs this block's
+three live stages and `NESTED_LATTICE_NPIP_TBC1D3.md` §11. It also writes the stdout of the first two stages to
+`IS/expr_recount.out` and `IS/corrected_tables.out`.
 
 ```
-python3 bench/layer_order/lo_p_tie_order.py > IS/p_tie_order_component.out    # PC2 component under shipped vs stable HSP tie order (8 s)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY expr-recount COPY/integrate_slim/expr_recount.tsv --ignore PKD1P3-NPIPA1,LOC131696449,PKD1P4-NPIPA8,PKD1P5-LOC105376752,PDXDC2P-NPIPB14P,TBC1D3P1-DHX40P1 USP6NL LOC100420408 LOC100420311 TBC1D29P LOC124905656 LOC100420289 > IS/expr_recount.out   # 26 s (was lo_expr_recount.py)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY corrected-tables > IS/corrected_tables.out   # light/*.corrected.tsv (3 s) (was lo_corrected_tables.py)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY layer-order > IS/analysis.stdout             # containment, tournaments, enforcement, truths A/B, EXPR, disagreements (4 s) (was lo_analysis.py)
 ```
+
+`IS/P_N2_clusters.tsv` is a **frozen input** of `layer-order`. The archived `lo_p_variants.py` wrote it, and that script
+also needs the off-repo `light/scripts/layer_protein_bounded.py`. The other scripts of the original block were archived
+in §6s5 (b1a6eaa2) and are at git tag `notebook-2026-09-20:archive/bench/layer_order/`. Their outputs are frozen in
+`IS/`:
+`lo_p_variants.py` (`IS/p_variants.out`, `P_*.tsv`), `lo_pd_variants.py` (`IS/pd_variants.{out,tsv}`, `pd_leave_out.tsv`,
+`gencode_map.tsv`), `lo_crosscheck.py`, `lo_p_components.py`, `lo_d_groups_cut.py`, `lo_expr_cohits.py`
+(`IS/expr_cohits.*`), `lo_offcatalog_probe.sh` (`IS/probe/`) and `lo_p_tie_order.py` (`IS/p_tie_order_component.out`).
+
+Rerun check (wave 7). The old scripts, with only the repo-root path fixed, and the new stages give byte-identical
+outputs. Two of them, `IS/expr_groups.tsv` and `IS/expr_sweep.tsv`, plus `IS/analysis.out`, break ties by Python's
+string-hash seed. The frozen files hold one random seed's tie order: the same rows and numbers, some in another order.
+The CLI pins `PYTHONHASHSEED=0`. `NESTED_LATTICE_NPIP_TBC1D3.md` §11 has the details.
 
 ## 12. Audit notes (each finding → resolution)
 
 | # | finding (severity) | resolution |
 |---|---|---|
 | 1 | REFINE's outside-universe convention was unstated; "REFINE costs less than JOIN on both references" (important) | **Fixed.** Every variant is reported (§7): P attach/single, C attach/single/together. The directional sentence is replaced by per-variant F: HGNC REFINE 0.957 / 0.909 vs JOIN 0.917 / 0.857; Soto REFINE 1.000 / 1.000 vs JOIN 0.818 / 0.643. Stated: "no ranking holds under every convention; n = 1 gene each side". C_L1 in D 126 → 112 (single, together); in P 87 (single), 90 (together). Spec REFINE definition amended |
-| 2 | P universe rule; group tables missing P\|other and TBC1D26 rows (important) | **Fixed.** `lo_corrected_tables.py` writes PKD1/DHX40 `P\|other` rows and TBC1D26 → MCL24 and asserts both tables equal the universe labels (`IS/corrected_tables.out`). P-universe rule stated in §2 and in the spec. The verifier's 32-gene rule gives **P > D** (246/246 vs 246/255); the pre-audit tables gave a tie at 1.000. Both are in the §6 variant table, not framed as "drop one gene" |
-| 3 | The order "D ~ P > C_L1 > C_mid > C_fine, transitive" was mostly built into the construction (critical) | **Fixed.** §0/§6 rewritten: P~D undetermined; C below P/D by construction, with the measured content "0 clade pairs split"; within-C orders by construction; TBC1D3 literature-C comparisons NA (the tournament verdict is now NA for 0-pair sides, `lo_analysis.verdict`); group-level n in every cell; "transitive" dropped and a one-common-gene-set tournament added (28 genes: P = D, 207/207; verdicts identical to the full universes; no intransitive triple); the as-built C_mid_ab is in the main tables (C_fine above C_mid_ab 0.267 vs 0.250) |
+| 2 | P universe rule; group tables missing P\|other and TBC1D26 rows (important) | **Fixed.** `corrected-tables` (was `lo_corrected_tables.py`) writes PKD1/DHX40 `P\|other` rows and TBC1D26 → MCL24 and asserts both tables equal the universe labels (`IS/corrected_tables.out`). P-universe rule stated in §2 and in the spec. The verifier's 32-gene rule gives **P > D** (246/246 vs 246/255); the pre-audit tables gave a tie at 1.000. Both are in the §6 variant table, not framed as "drop one gene" |
+| 3 | The order "D ~ P > C_L1 > C_mid > C_fine, transitive" was mostly built into the construction (critical) | **Fixed.** §0/§6 rewritten: P~D undetermined; C below P/D by construction, with the measured content "0 clade pairs split"; within-C orders by construction; TBC1D3 literature-C comparisons NA (the tournament verdict is now NA for 0-pair sides, `npip_tbc1d3.py` `verdict`); group-level n in every cell; "transitive" dropped and a one-common-gene-set tournament added (28 genes: P = D, 207/207; verdicts identical to the full universes; no intransitive triple); the as-built C_mid_ab is in the main tables (C_fine above C_mid_ab 0.267 vs 0.250) |
 | 4 | Principled alternatives break the tie (important) | **Fixed.** §6 variant table with 9 variants plus leave-out. §6ko AN-2 ("TBC1D3–DHX40") and the §6ko qualification (superfamilies) are cited. aa ≥ 0.50 components are reported but **not adopted as the P layer**: it would be a post hoc rule change, and it does not resolve P~D. Components give **P > D** (USP6 and USP32 join the TBC1D3 group; D pairs neither), while the aa ≥ 0.50 MCL clusters give D > P. The audit's D > P came from the MCL reading only. Reproduced: leave-two-out 66 / 66 / 2,146 |
 | 5 | D is not §0★★ clause 2/4; failed guard; GENCODE behaviour unmentioned (important) | **Relabel route** (the finding's second option): "E1" in the headline rows, plus the failed-guard and GENCODE sentence at the top. In addition, the real GENCODE E1 catalogs were mapped onto U (`IS/gencode_map.tsv`). GENCODE puts PKD1 in the NPIP group (confirmed), and also CLN3 and USP6. Verdict **D > P** for NPIP (190/231 vs 190/190) and pooled, robust to a ≥ 0.5 mapping filter. No clause-2/4 rebuild on chr1/4/10/16/17/18 (not attempted in this correction pass) |
 | 6 | Truth recall conditioned on the prediction; HGNC 2227 is superfamily-level; F rewards singletons (important) | **Fixed.** New (B) member-anchored, layer-independent scores (§7): HGNC 2227 has 57 symbols, 54 RefSeq genes. P R 0.128 (P 1.000); D R 0.227 (P 0.714). For Soto, every mapped family gene is already in U, so (A) is not inflated. "Superfamily-level" is stated wherever HGNC precision is quoted. Bipartite F is NA when either side has 0 pairs (C_fine TBC1D3 now P NA / R 0.000 / F NA) |

@@ -34,8 +34,10 @@ pairwise missing-copy test), `mcl_families` (family definition; `--from-gtf` run
 assembled GTF in one command), `gw_family_catalog` (the copy catalog the assignment consumes),
 `missing_copy_flag` (missing copies from RNA), `as_table` (one pass over a BAM → each molecule's genome-wide best alignment score; the pipeline's assemble stage seeds loci with the tied secondaries it names, `--no-seed-secondaries` to opt out) — and five comparators and converters: `family_score`, `mcl_port`, `readthrough_filter`, `locus_bed`, `gff_to_gtf`, `parcn`.
 `tools/rustle_pipeline.sh assemble|families|catalog|assign|flag|all` runs any stage, or all of them, with the shipped defaults. `bench/` holds the
-40 analysis scripts the record cites (`bench/README.md` lists each one); `tools/` the sweep, audit and attic
-scripts.
+9 Python files behind the record's analysis commands: the library `lib.py`, the subcommand scripts `score.py`,
+`sim.py` and `truth.py`, `guided_pipeline.py`, `mcl_port.py`, and the `layer_order/` and `soto/` chains
+(`bench/README.md` lists each one, and maps every retired script name to its current command); `tools/` the pipeline
+driver and the cleanup-audit script.
 
 ## The record
 
@@ -47,6 +49,6 @@ scripts.
 ## Pruned material
 
 Earlier documents, run outputs and retired scripts are not deleted: tracked files are at the git tags
-`notebook-2026-09-19`, `notebook-2026-09-20`, `retired-modules-2026-09-20` and `notebook-2026-09-23`
-(`git checkout <tag> -- <path>`), and everything moved out of the working tree sits in
-`~/Desktop/Rustle_attic/` with a manifest per wave.
+`notebook-2026-09-19`, `notebook-2026-09-20`, `retired-modules-2026-09-20`, `notebook-2026-09-23`,
+`notebook-2026-09-23b`, `notebook-2026-09-23c` and `notebook-2026-09-24` (`git checkout <tag> -- <path>`), and
+everything moved out of the working tree sits in `~/Desktop/Rustle_attic/` with a manifest per wave.

@@ -1685,7 +1685,9 @@ Three alternatives were swept and none is shippable today:
   N = 2,000 leaves 67 of 383. The `cov ≥ 0.50 OR aln ≥ N` hybrid degenerates at both ends. This is the
   eighth absolute-threshold rule swept and killed on this project, and it failed the same way:
   *the hidden oracle is not the number, it is the assumption that one number exists.*
-- **Union-of-records coverage** (`RUSTLE_ER_SUM_COVERAGE=1`, already implemented, default off).
+- **Union-of-records coverage** (`RUSTLE_ER_SUM_COVERAGE=1`). ⛔ **REMOVED FROM THE CODE 2026-09-24** after
+  register r1097 (60–90 recall Δ 0.000, the ≥90% band falls 0.903→0.806); the re-run note below is moot.
+  Recover the implementation from tag `notebook-2026-09-24`. History kept as written:
   ⚠ Note this is the rule P4b's table below calls "the shipped rule" — it is not; it is default OFF.
   ⚠ **M1 changed this path's output and only this path's.** On the `sc` parity fixture, with a
   **byte-identical PAF**, the Rust edge set moved by **4 edges in each direction (95 shared of 99)**

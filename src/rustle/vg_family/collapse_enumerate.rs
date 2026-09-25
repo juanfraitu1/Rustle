@@ -237,7 +237,7 @@ pub fn readmit_dna_family_batch(
     let known: HashMap<String, Vec<(String, u64, u64)>> =
         candidates.iter().map(|(id, ch, lo, hi, _)| (id.clone(), vec![(ch.clone(), *lo, *hi)])).collect();
     let proj = project_families_batch(&consensuses, fasta_path, &known, min_identity, 0.90, minimap2, threads).unwrap_or_default();
-    let fa = crate::vg_family::repeat_catalog::IndexedFasta::open(fasta_path).ok();
+    let fa = crate::genome::IndexedFasta::open(fasta_path).ok();
     let mut out = Vec::new();
     for (id, chrom, lo, hi, _seq) in candidates {
         // repeat gate: reject re-admitted loci that are repeat-dominated (soft-mask >= max_softmask).

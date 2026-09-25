@@ -1,23 +1,18 @@
 //! Rustle — multi-copy gene-family analysis over long-read RNA (great-ape pan-transcriptomics).
 //!
 //! The thesis lives entirely in `vg_family`: O1 family definition, O2 copy assignment under MAPQ-0
-//! ambiguity, O3 allele-specific junctions, O4 reference-absent copies — over `genome` plus the
-//! foundational IO/type modules (`util`, `types`, `bam`). The four thesis binaries
-//! (`copy_assign`, `gw_family_catalog`, `missing_copy_flag`, `mcl_families`) import only these.
+//! ambiguity, O3 reference-absent / missing copies (detect and flag) — over `genome` plus two small
+//! foundational modules (`types` for the deterministic hash aliases, `bam` for BAM opening and CIGAR
+//! exon blocks). Every binary in `src/bin/` imports only these.
 //!
 //! The legacy StringTie assembler + network-flow stack (~50k lines, ~55 modules) was RETIRED on
-//! 2026-07-14; see `docs/RETIREMENT_AND_MIGRATION.md`. Its last residue (the StringTie-exact
-//! preset apparatus, the VG-HMM rescue cluster, and the dropped ASJ objective's modules) was removed
-//! 2026-09-20; recover from tag `retired-modules-2026-09-20`. Build new work in `vg_family`.
+//! 2026-07-14; see `docs/RETIREMENT_AND_MIGRATION.md`. Its residue was removed in three steps:
+//! 2026-09-20 (StringTie-exact presets, the VG-HMM rescue cluster, the dropped ASJ objective's modules;
+//! tag `retired-modules-2026-09-20`) and 2026-09-24 (the bundle/read types, `RunConfig`, the dead half
+//! of `bam`, `util::constants`, and the `minimizers`/`bridge_detector`/`repeat_catalog` modules; tag
+//! `notebook-2026-09-24`). Build new work in `vg_family`.
 
-pub mod util; // bitset, bitvec, constants, coord, hard_counters (crate-wide low-level utilities)
-pub mod types; // RunConfig, Bundle, Junction, all shared data types
-pub mod bam; // BAM parsing / read ingestion
-pub mod genome; // genome / chromosome metadata (GenomeIndex)
-pub mod vg_family; // THESIS LAYER: O1 family detect/split, O2 copy_assign, O3 ASJ, O4 absent-copy
-
-pub use types::{
-    cjunctions_to_junction_stats, junction_stats_to_cjunctions, AssemblyMode, Bundle, BundleData,
-    CBundlenode, CExon, CJunction, CMaxIntv, CPred, CPrediction, GArray, GEdge, GPVec, GVec,
-    Junction, JunctionStats, RunConfig,
-};
+pub mod types; // FixedBuild / DetHashMap / DetHashSet (deterministic FxHash containers)
+pub mod bam; // open_bam + CIGAR -> exon blocks
+pub mod genome; // genome / chromosome metadata (GenomeIndex, IndexedFasta)
+pub mod vg_family; // THESIS LAYER: O1 family definition, O2 copy assignment, O3 missing copies

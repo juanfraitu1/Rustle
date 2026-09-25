@@ -25422,3 +25422,80 @@ explanatory comment the fix added).
 imports `soto_map`, tracked nowhere and present only under `/mnt/linuxdisk/.../light/scripts`; and 97
 scripts reference `/mnt/linuxdisk` **substrate** paths, which are data locations documented in
 `docs/DATA.md` and legitimately machine-specific.
+
+### §6r9 addendum 3 — wave 7: `bench/layer_order/` 12 files → 2, and it now runs from a clone (2026-09-24)
+
+⛔**Register 1104: register 887's fix did not work.** `_RUSTLE_REPO` was one `dirname` short in 9 of the 12 files, so
+it resolved to `bench/`. §6r9's check imported only `lattice_common`, which has no path logic. At HEAD 727326fc,
+`lattice_edges`, `lo_analysis`, `lo_corrected_tables` and `lattice_check_c2` failed on import or on their first read.
+`lattice_check_c2` had been dead twice over: it imported the archived `denovo_shared_def` (wave 1), and it `exec`'d
+`lattice_edges.py`'s head without the `__file__` that §6r9 introduced.
+
+**Wave 7** folded the 12 files into `bench/layer_order/npip_tbc1d3.py`, one subcommand per old script (`expr-recount`,
+`corrected-tables`, `layer-order`, `lattice-{edges,expr,levels,truth,filtration,check-c2,report}`, `all`), and the
+library `lattice_common.py`. The library keeps its name and exports because the off-repo `LAT/corrections_pass2/*.py`
+import it by path. Each stage's body is the old code, moved verbatim. The shared pieces became one function each:
+GFF exon index + samtools count loop, `IntervalIndex` (the archived `ExonIndex`), Soto mapping, HGNC lookup,
+E1-catalog context, `c_tree`, and the scorers. `--root` / `LO_ROOT` selects the results tree.
+
+**Acceptance: byte identity on copies of the frozen tree.** The baseline was the old scripts from tag
+`notebook-2026-09-24` with only the path fix (plus, for `lattice_check_c2`, the archived module and `__file__`) under
+`PYTHONHASHSEED=0`. Against it, `all --with-check-c2` gave **61/61 outputs identical**, except the timing tokens of 3
+logs, and stdout identical; the per-stage subcommands gave the same. `check_c2.out` equals the frozen 2026-09-16 file,
+and `doc_numbers.out` / `strand_diag.out` reproduce byte for byte.
+
+⚠**Found on the way: 7 outputs depended on the hash seed.** Ties were broken by set iteration order. The outputs are
+`IS/expr_groups.tsv`, `IS/expr_sweep.tsv`, `IS/analysis.out`, `LAT/{member_groups,groups,triangle_drops}.tsv` and
+`LAT/report_tables.md`. The frozen files carry one random seed's order: the same rows and numbers, some in another
+order. The CLI re-executes with `PYTHONHASHSEED=0`. Under seed 1, the unpinned new code equals the old code under seed
+1, so the move preserved every set-construction sequence, not just seed 0's.
+
+Old file:line citations (this ledger L22550–22555, L22594, §6r9; `bench/TBC1D3_GUITART_TRUTH_CORRECTION.md`) resolve at
+tag `notebook-2026-09-24`. The old → new table is in `docs/ACTIVE_WORKING_SET.md`.
+
+### §6r9 addendum 4 — wave 7: `bench/soto/` 9 scripts → 1, and the Soto replication runs from a clone (2026-09-24)
+
+**Wave 7 folded the 8 Soto-replication scripts into `bench/soto/soto_replication.py`.** It has one subcommand per step:
+`genesets` (new), `edges` (was `soto_replicate_from_sedef.py`), `cluster` (`soto_cluster_from_shared.py`), `dennislab`
+(`soto_cluster_dennislab_algorithm.py`), `famcn` (`famcn_from_wssd.py`), and `score` (`--only pairs` =
+`soto_score_against_truth.py`, `--only bipartite` = `soto_bipartite_match_score.py`, plain `score` = both). Two scripts
+were dropped, not ported. `soto_attach_noncoding_members.py` is `cluster --full-geneset` (§6ii) and keeps `attach()`.
+`soto_replicate_clustering.py`, the minimap2 map-back path superseded in §6ie, keeps `load_exons()`. Flags and default
+statistics are unchanged (`cluster` mean, `dennislab` median). `--s1e` and `score --truth` now default to the in-repo
+files. `bench/soto/rustlib.py` had 0 importers and was removed. Its citations (`docs/seeded_family_definition.md`,
+register 1044, this ledger L16757, the `denovo_pipeline.rs` doc comments) resolve at tag `notebook-2026-09-24`. The
+old-to-new table is in the module docstring and in `docs/ACTIVE_WORKING_SET.md`. The recipe is in `REPRODUCE.md` §5a.
+
+⚠**Before this step, the replication did not run from a clone.** `soto_parCN_S1E.tsv` (needed by `edges` and `famcn`)
+and `acro_extra_anchors.tsv` (the §6il/§6in anchors on the headline) were archived in wave 3 (`cd37ccb0`) and never
+restored. The two genesets were hand-made files with no generator. **Fixed:** both inputs were restored byte for byte
+from `cd37ccb0^` into `bench/soto/`. `genesets` derives the genesets from S1C: the 2,334-gene file is byte-identical to
+`soto_2334_geneset.tsv`, and the 1,793-gene file has the same (gene_id, biotype) set as `soto_1793_geneset.tsv`. The
+frozen step-1 output `shared_exons_2334_finalhuman.tsv` (127 KB) is now next to the module, so `cluster` and `score` need
+neither the 54 MB SEDEF BED nor the 84 MB CAT BED.
+
+**Acceptance: byte identity against the old scripts from the tag, on the recorded inputs.**
+- `cluster`, median and mean: identical to the old script and to the frozen `replicated_families_2334_{median,mean}_finalhuman.tsv`,
+  including from the in-repo edges plus `genesets` output, under PYTHONHASHSEED 0/1/2/unset. The eligible-only and
+  default-statistic arms are identical too. A 300-trial random-input property test of the CLI found 0 mismatches.
+- `score` reproduces every §6ip number exactly, byte-identical to old score + old bipartite stdout, including under
+  `--eligible-only-universe` and `--show-worst`. Median: ARI 0.6959, 241/491, 0.841/0.595/0.697, MICRO 0.784/0.709,
+  MACRO 0.731/0.718, 99/491 undetected. Mean: 0.6862, 264/491, 0.906/0.554/0.687, MICRO 0.812/0.721, MACRO 0.770/0.739,
+  88/491. `genesets`, `cluster` and `score` for both statistics take 4.2 s.
+- `edges` was run per chromosome (25 SEDEF chunks, never the whole file in one process): old and new are identical per
+  chunk, stdout and stderr. The union of the chunks is **byte-identical to the frozen 4,192-edge file**. The summed
+  counters equal `finalhuman.err`: 88,756 rows, 4,060 at identity ≥ 0.98, 2,223 lifted, 0 CIGAR mismatches, 56,051
+  projections. Seven flag variants were also identical (no anchors, the 1,793 geneset, 0.95/0.90, `--limit`).
+- `dennislab` is identical on 3 inputs × 3 statistic settings × 2 seeds. It equals the on-disk §6if
+  `replicated_families_dennislab_{mean,median}.tsv`, and scores ARI 0.5411 / 0.5643 (§6if: 0.541 / 0.564).
+- `famcn --tool pybigwig` (miniforge python, 3 local WSSD samples) is identical on the id328 intervals with
+  `--extra-anchors`, where the lifted coordinates equal the recorded `id328_cn_validate10.tsv`, and on 10
+  non-acrocentric S1E intervals. The `bigBedToBed` path was not run (the binary is not installed); its code is
+  AST-identical to the old one.
+
+⚠Left for later: at the tag, `tools/cleanup_wave5_scripts.sh` lists the 8 old paths and `rustlib.py` as KEEP.
+Re-run unchanged, it would move `soto_replication.py` to the attic. When this was written, another step had deleted
+that script from the working tree, so it matters only if the script is restored. The prereg anchor `bench/soto_vs_us_referee.py:131`
+(`PREREG_sedef_core_refine_2026-09-22.md:56`, frozen) is the exact-coordinate join. That join is line 134 at `c28c195a`,
+line 147 at the tag, and now in `bench/score.py` `cmd_referee` (wave 7, P1, which also fixed that script's missing
+`import re`).

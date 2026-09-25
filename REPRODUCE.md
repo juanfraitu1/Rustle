@@ -161,6 +161,31 @@ target/release/family_score --clusters run.clusters.tsv --gff chr20_ref.gff --so
 components of L3 at `w_98 >= 0.985`, with L4 (0.995) applied selectively; see
 `docs/seeded_family_definition.md` §0★★ and ledger §6p0/§6p1/§6p5.
 
+### 5a. Soto 2025 family replication (concordance, not independent: register T15 / 858; ledger §6ie–§6ip)
+
+The chain uses Soto's own famCN (S1C), CAT v4 genes and gene universe, so it measures **concordance** with Soto, and
+the famCN leg is circular (register 858). In repo: `bench/soto/soto_famCN_S1C.tsv`, `soto_parCN_S1E.tsv`,
+`acro_extra_anchors.tsv`, and `shared_exons_2334_finalhuman.tsv` (the frozen output of `edges`). Not in repo:
+`final_human_clean.bed` (CHM13 v2.0 SEDEF, 88,756 rows, header stripped) and `cat_v4.bed` (CAT v4, CHM13 v1.0), under
+`winloci_data/soto_replication/`.
+
+```sh
+S=bench/soto/soto_replication.py
+python3 $S genesets --out-eligible g1793.tsv --out-full g2334.tsv
+python3 $S edges --sedef final_human_clean.bed --geneset g2334.tsv --cat-bed cat_v4.bed \
+    --extra-anchors bench/soto/acro_extra_anchors.tsv --out-shared shared.tsv        # 4,192 edges
+#   (or skip it: bench/soto/shared_exons_2334_finalhuman.tsv is this step's frozen output)
+python3 $S cluster --shared shared.tsv --geneset g1793.tsv --full-geneset g2334.tsv \
+    --famcn bench/soto/soto_famCN_S1C.tsv --mad-statistic median --out rep_median.tsv
+python3 $S score --predicted rep_median.tsv          # --truth defaults to bench/soto/soto_famCN_S1C.tsv
+```
+Expected (median / mean MAD): ARI **0.6959 / 0.6862**, exact 241/491 / 264/491, pair P/R/F1 0.841/0.595/0.697 /
+0.906/0.554/0.687; bipartite MICRO 0.784/0.709 / 0.812/0.721, MACRO 0.731/0.718 / 0.770/0.739, undetected 99/491 /
+88/491. `rep_{median,mean}.tsv` are byte-identical to the frozen `replicated_families_2334_{median,mean}_finalhuman.tsv`
+(re-verified 2026-09-24; `genesets` + `cluster` + `score` for both statistics take about 4 s). `famcn` (WSSD famCN
+at arbitrary intervals) needs pyBigWig (the miniforge python) or `bigBedToBed`; `score` needs scikit-learn, numpy
+and scipy.
+
 ## 6. Before proposing anything
 
 `docs/NEGATIVE_RESULTS_REGISTER.md` (870 rows) records what has already been refuted, with the reason.
@@ -197,21 +222,41 @@ detector (exon-order rearrangements carried as ≥ 50 bp insertions, addendum 2)
 contamination / foreign_species / hypermutation / rna_editing / scattered / unannotated_paralogue /
 reference_absent_candidate, plus
 `expected_dna_depth_ratio` and per-genome confirmation) and `run.consensus.fa` (the hidden copy's spliced
-consensus — the probe for a DNA k-mer/depth check). Positive control: `/mnt/linuxdisk/tmp/gw22/o3/simB.py`
-(40/40 at 2% divergence, all confirmed).
+consensus — the probe for a DNA k-mer/depth check). Positive control:
+`python3 bench/sim.py missing-copy genomic REF.gtf REF.fa chr20 40 0.02 simB SEED` (40/40 at 2% divergence, all
+confirmed — measured with the out-of-repo `/mnt/linuxdisk/tmp/gw22/o3/simB.py`, whose mutations were seeded by Python's
+per-process `hash()`; `sim.py` seeds with `stable_seed()` since wave 7, so re-measure before quoting).
 
 ---
 
 > **Moved documents (wave 4, 2026-09-23).** Files this document cites that were pruned from the working tree — `docs/o1_investigations.md`, `docs/OBJECTIVES_AND_VERIFICATION.md`, `docs/o3_missing_copy_evidence.md`, `docs/NUMBERS.md`, `docs/ONE_METHOD.md`, `docs/METHOD_PSEUDOCODE.md`, `docs/OPEN_ITEMS_2026-09-09.md`, `docs/superpowers/` — are at git tag `notebook-2026-09-23` (`git checkout notebook-2026-09-23 -- <path>`) and in `~/Desktop/Rustle_attic/2026-09-23/` (see its `MANIFEST.tsv`). The citations above are provenance and were left as written.
 
+> **Renamed bench scripts (wave 7, 2026-09-24).** The 21 top-level `bench/*.py` scripts became `bench/lib.py`
+> (shared helpers) and three subcommand scripts: `bench/score.py` (scorers), `bench/sim.py` (simulators) and
+> `bench/truth.py` (truth builders); `bench/guided_pipeline.py` and `bench/mcl_port.py` stay. Each new module's
+> docstring maps old command -> new command, and the old files are at git tag `notebook-2026-09-24`
+> (`git show notebook-2026-09-24:bench/<old>.py`). Every replaced scorer and the two hash-free simulators were checked
+> byte-identical on recorded inputs; the O2/O3 simulators (`sim.py copies`, `sim.py missing-copy`) now use stable
+> seeds, so their reads differ from every earlier run.
+> The 8 `bench/soto/*.py` Soto-replication scripts became `bench/soto/soto_replication.py` (subcommands `genesets`,
+> `edges`, `cluster`, `dennislab`, `famcn`, `score`; §5a), checked byte-identical on the recorded inputs, and
+> `bench/soto/rustlib.py` (0 importers) left the tree; both are at the same tag.
+> The 12 `bench/layer_order/*.py` files became `lattice_common.py` (library) and `npip_tbc1d3.py` (one subcommand per
+> stage; recipes in `bench/LAYER_ORDER_NPIP_TBC1D3.md` and `bench/NESTED_LATTICE_NPIP_TBC1D3.md` §11).
+> `bench/README.md` has the full old-name → new-command table, including the names these scripts had before 2026-09-24.
+
 ## Copy-assignment accuracy with read-level truth (thesis O2; §6zf, 2026-09-23)
 
 ```bash
-python3 bench/copy_assign_read_truth.py sim CAT.copies.tsv CAT.copies.fa GENOME.splice.mmi run 20260923   # reads from every copy, mapped genome-wide
+python3 bench/sim.py copies CAT.copies.tsv CAT.copies.fa GENOME.splice.mmi run 20260923   # reads from every copy, mapped genome-wide
 copy_assign --bam run.bam --fasta GENOME.fa --regions whole_chromosomes.txt --families CAT.copies.tsv --copies-fa CAT.copies.fa --out run_o2
-CATALOG_TSV=CAT.copies.tsv python3 bench/copy_assign_read_truth.py score run run_o2      # OWN / PRIMARY / ANY readings, per divergence bin
+python3 bench/score.py reads --catalog CAT.copies.tsv run run_o2      # OWN / PRIMARY / ANY readings, per divergence bin
 ```
 Expected (human chr16 catalog `chr16_arm/on`, copies < 300 bp dropped): OWN 157/157 correct, 0 wrong, 1,088 abstain of 1,259 MAPQ-0 reads.
+⚠ That run's per-copy read seeds came from Python's per-process `hash()` (wave-7 defect B2), so it cannot be regenerated
+read for read; `score.py reads` reproduces the numbers exactly on the recorded run (`/mnt/linuxdisk/tmp/gw22/o2sim/h16`,
+`h16_o2`). `sim.py copies` now seeds with `stable_seed()`, so a fresh simulation draws different reads: re-measure
+(genome-wide mapping, not yet re-run) before quoting these numbers for a new run.
 
 ## The whole pipeline in one driver (2026-09-23)
 
@@ -220,12 +265,17 @@ tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index
     [--confirm pat=PAT.splice.mmi --confirm mat=MAT.splice.mmi] [--foreign human=CHM13.splice.mmi] [--threads 4]
 # stages, each also runnable alone: assemble -> families (mcl_families --from-gtf) -> catalog (gw_family_catalog)
 #   -> assign (copy_assign --families) -> flag (missing_copy_flag scan + align). Products all carry the --out prefix.
+# Intermediates are cached in run.cache/ (default; --no-cache off): the catalog's collapsed representatives and every
+# all-vs-all PAF, keyed by the binary, the BAM/FASTA and every upstream setting. A re-run that changes only the edge
+# rule replays them (human chr16 catalog 358 s cold -> 0.9 s warm; gorilla families 225 s -> 0.6 s; byte-identical).
+tools/rustle_pipeline.sh catalog --bam READS.bam --fasta GENOME.fa --out run --inspect   # + edge tables, collapse stats
+tools/rustle_pipeline.sh cache-ls --out run                                               # what run.cache holds
 ```
 
 ## Tandem-copy simulations: what the aligner and the pipeline do with near-identical adjacent copies (§6zg, 2026-09-24)
 
 ```bash
-python3 bench/tandem_copy_sim.py --fasta chr20.fa --gtf chr20_ref.gtf --out t --layout tandem --copies 2 \
+python3 bench/sim.py tandem --fasta chr20.fa --gtf chr20_ref.gtf --out t --layout tandem --copies 2 \
     --sweep 0.9,0.95,0.98,0.99,0.995,1.0 --pipeline --bin target/release      # also --layout interleaved, --copies 3
 ```
 Per read: same/other copy, cross-copy chain, MAPQ, AS tie; per condition: assembler transcripts (chimeric), catalog
@@ -235,12 +285,12 @@ copies, assignment. Expected (`docs/PREREG_tandem_copy_sim_2026-09-24.md`): 0 cr
 
 ```bash
 # truth: BioMart paralogue table for one chromosome (useast mirror), then the three edge tiers on the expressed loci
-python3 bench/identity_spectrum.py --gtf chr16_assembled.gtf --ref chr16_ref.gtf --fasta chm13v2.0.fa --chrom chr16 \
+python3 bench/score.py spectrum --gtf chr16_assembled.gtf --ref chr16_ref.gtf --fasta chm13v2.0.fa --chrom chr16 \
     --compara compara_chr16.tsv --out chr16 --mmseqs mmseqs      # recall by Compara identity band, precision by ours
 # the same truth at the FAMILY level: score a gw_family_catalog copies.tsv (transitive families, not direct edges);
 # --universe fixes the recall denominator to the tier run's expressed pairs (§6zi, rows 1097-1098)
-python3 bench/identity_spectrum.py --gtf x --ref chr16_ref.gtf --fasta x --chrom chr16 --compara compara_chr16.tsv \
-    --out chr16_cat --catalog chr16.copies.tsv --universe chr16.truth_pairs.tsv
+python3 bench/score.py pairs --members chr16.copies.tsv --genes chr16_ref.gtf --chrom chr16 \
+    --truth compara:compara_chr16.tsv --universe chr16.truth_pairs.tsv     # numbers unchanged (byte-identical, wave 7)
 # seeding loci with GOOD secondaries (rows 1060/1100): one pass over the BAM, then the assembler reads the table
 as_table --bam reads.bam --out reads.molecules.tsv --threads 4          # 66 s / 0.8 GB on an 11.7 GB gorilla BAM
 RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO=0.98 RUSTLE_GTF_SECONDARY_AS_TABLE=reads.molecules.tsv \

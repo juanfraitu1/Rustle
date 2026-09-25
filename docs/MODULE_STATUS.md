@@ -33,11 +33,11 @@ this file must list exactly the module set.
 | tag | count |
 |---|---|
 | **SHIPPED-DEFAULT** | 15 |
-| **OPT-IN** | 14 |
-| **OTHER-BINARY** | 5 |
+| **OPT-IN** | 15 |
+| **OTHER-BINARY** | 3 |
 | **REFUTED** | 1 |
 | **TEST-ONLY** | 0 |
-| **INFRASTRUCTURE** | 2 |
+| **INFRASTRUCTURE** | 1 |
 
 > **2026-09-23 wave 6 (consolidation):** the binaries `asj`, `asj_verify`, `debug_poa`, `bam_null_probe`, `index_bam`,
 > `bam_header`, `filter_bam_by_as`, `gamma_refine`, `mcl_refine` and the legacy `family_define` were retired (tag
@@ -46,6 +46,14 @@ this file must list exactly the module set.
 > `o2_margin_gate`, `o2_materialize`, `recombinant_abstain`, `recombinant_split`, `allele_specific_junctions`; the
 > `lgamma` helper `missing_copy_flag_pass` used is inlined there). Counts below were recomputed from the remaining rows.
 
+> **2026-09-24 wave 7 (dead-code cleanup):** the modules minimizers, bridge_detector and repeat_catalog were REMOVED — no
+> binary reached them once wave 6 retired driver / multi_repeat_bridge / recombinant_split. Their live survivors moved:
+> IndexedFasta to the crate-root genome module (not a vg_family module); revcomp (renamed `revcomp_keep_case`),
+> hw_distance and aln_id to seq_utils. The dead FamilyGraph half of family_graph went too (its header now describes the
+> live contiguous-core kernel, so its mismatch row is gone). Outside vg_family: the crate-root types module shrank to the
+> three hash aliases, the bam module to `open_bam` + `exons_from_cigar`, and util was deleted. Recover any of it from tag
+> `notebook-2026-09-24`. Counts below were recomputed from the remaining rows.
+
 ## SHIPPED-DEFAULT (15)
 
 Reachable from a shipped binary with **no env var and no non-default flag**. This is the method.
@@ -53,7 +61,7 @@ Reachable from a shipped binary with **no env var and no non-default flag**. Thi
 | module | gate | deciding evidence |
 |---|---|---|
 | `catalog_input.rs` | - | MEASURED: catalog_input::exon_blocks_str is called at src/bin/gw_family_catalog.rs:317 (inside fn exon_blocks, :313), used at :484 to write the copies.tsv exon-blocks column inside emit_catalog (:320), which main calls uncondition |
-| `copy_assign.rs` | - | MEASURED: copy_assign::assign_read is called at copy_assign_pipeline.rs:719 (fn assign_one_read), reached via assign_family_detailed, which detect_and_assign calls unconditionally at denovo_pipeline.rs:2229; detect_and_assign is i |
+| `copy_assign.rs` | - | MEASURED 2026-09-24: copy_assign::assign_read_editing is called by copy_assign_pipeline.rs `assign_family_detailed_once`, reached via `assign_family_detailed`, which `detect_and_assign` calls unconditionally. (The earlier citation, `assign_read` via `assign_one_read`, is a test-only driver, now `#[cfg(test)]`.) |
 | `copy_assign_pipeline.rs` | - | MEASURED: assign_family_detailed is called unconditionally at denovo_pipeline.rs:2229 (Stage-1 of detect_and_assign, the function src/bin/copy_assign.rs:1567 drives); the module is imported wholesale at denovo_pipeline.rs:23-25 (b |
 | `copy_split.rs` | - | MEASURED: split_locus_copies is called unconditionally at denovo_pipeline.rs:2346 (the collapsed_copies count inside detect_and_assign, no enclosing flag check — contrast the flagged uses at :1393 under recover_collapsed_candidate |
 | `denovo_assemble.rs` | - | MEASURED: imported unconditionally by both flagship binaries — src/bin/copy_assign.rs:27-30 (assemble_gate, pass1_skeletons, reads_in_region, BamIndexCache, BamRead, GATE_MIN_READS) and used at src/bin/gw_family_catalog.rs:1006 (r |
@@ -68,12 +76,13 @@ Reachable from a shipped binary with **no env var and no non-default flag**. Thi
 | `readonly_copy_number.rs` | - for the chi_h leg. The depth_cn leg is gated by `--lambda-global` (src/bin/copy_assign.rs:322 doc, consumed  | MEASURED: src/bin/copy_assign.rs:1983 calls chi_h_with_junctions in the unconditional famcn_rows.push loop; src/bin/copy_assign.rs:1354 comments the table as "always emitted" and copy_assign.rs:2071 writes <out>.famcn_readonly.tsv |
 | `rescue_pipeline.rs` | - (no flag, no env var). Suppressed only when copy_assign is run with --families (src/bin/copy_assign.rs:452,  | MEASURED: thin_loci at src/rustle/vg_family/denovo_pipeline.rs:2175 and rescue_thin_loci_iterative at :2176, inside detect_and_assign's per-family `for cf in colocated` loop (prod; test mod starts at denovo_pipeline.rs:7362); dete |
 
-## OPT-IN (14)
+## OPT-IN (15)
 
 Built and wired, but behind a flag that **defaults off**. An arm, not the method — always name the flag when reporting a result from one.
 
 | module | gate | deciding evidence |
 |---|---|---|
+| `run_cache.rs` | RUSTLE_CACHE_DIR (unset = nothing read or written) | MEASURED 2026-09-24: `gw_family_catalog` caches the collapsed representatives (`reps/<key>/`) and the E_r all-vs-all PAF (`paf/<key>/`); a warm run is byte-identical to a cold run and to a run without the cache (gorilla NC_073244.2, human chr16). |
 | `absent_copy.rs` | --absent-copies (src/bin/copy_assign.rs:255-256, default_value_t = false); second route --vg-realign (src/bin/ | MEASURED: the only production call to absent_copy::admit_candidate is src/rustle/vg_family/denovo_pipeline.rs:2252, guarded by `if absent_copies {` at denovo_pipeline.rs:2233; the second entry admit_novel_pools (denovo_pipeline.rs |
 | `collapse_enumerate.rs` | --collapse-enumerate (src/bin/gw_family_catalog.rs:177-178, default_value_t = false) or env RUSTLE_COLLAPSE_EN | MEASURED: `if cfg.collapse_enumerate {` at denovo_pipeline.rs:3852 guards the readmit_locus call at :3853; the enclosing branch at :3841 requires collapse_enumerate // collapse_expressed // dna_family_fallback, and DenovoConfig::d |
 | `copy_discovery.rs` | --discover-copies (src/bin/copy_assign.rs:352-353, `#[arg(long, default_value_t = false)] discover_copies: bool`) | MEASURED: every production reference to `copy_discovery::` sits inside an `if args.discover_copies {` block in src/bin/copy_assign.rs -- `tie_partner_placements` at copy_assign.rs:2917 and `discover_copies_for_family` (copy_assign.rs:1442, which calls `cluster_tie_partners`) at copy_assign.rs:2918, both under the gate opened at copy_assign.rs:2912; the `<out>.discovered_copies.tsv` writer at copy_assign.rs:4503-4521 is gated by the same flag. Unset, the block short-circuits to `Vec::new()` (copy_assign.rs:2919-2921), no file is written, and output is byte-identical (regression: `discover_copies_off_by_default_is_byte_identical`, tests/copy_assign_families.rs). |
@@ -89,7 +98,7 @@ Built and wired, but behind a flag that **defaults off**. An arm, not the method
 | `single_copy.rs` | --single-copy-baseline (src/bin/gw_family_catalog.rs:189-190, `#[arg(long, default_value_t = false)] single_co | MEASURED: single_copy_loci's only production caller is src/rustle/vg_family/denovo_pipeline.rs:2704 inside detect_single_copy_baseline_genome_wide, and that function's only caller in the whole tree is src/bin/gw_family_catalog.rs: |
 | `vg_realign.rs` | --vg-realign or --vg-realign-correct (src/bin/copy_assign.rs:340-341 and :346-347, both `default_value_t = fal | MEASURED: the correction leg is guarded by `if cfg.vg_realign` at src/rustle/vg_family/denovo_pipeline.rs:2356 (call at :2376), and DenovoConfig's default is `vg_realign: false` / `vg_realign_admit: false` at denovo_pipeline.rs:14 |
 
-## OTHER-BINARY (5)
+## OTHER-BINARY (3)
 
 Live, but only from a binary other than `gw_family_catalog` / `copy_assign`.
 
@@ -97,9 +106,7 @@ Live, but only from a binary other than `gw_family_catalog` / `copy_assign`.
 |---|---|---|
 | `annotation_families.rs` | - | MEASURED: sole caller is src/bin/mcl_families.rs:18-20 (build_clusters, graph_from_paf, mcl, Cluster, GeneKey, GraphParams). The one other hit, family_detect.rs:207, is a doc comment (`/// Iterative path-halving union-find (matche |
 | `missing_copy.rs` | - | MEASURED: sole caller is src/bin/missing_copy_flag.rs (`use rustle::vg_family::missing_copy::*`, §6ze RNA-only O3 chain: two_means/split_pile/consistency/patched_consensus/home/verdict/confirmed); no reference from gw_family_catalog or copy_assign. |
-| `bridge_detector.rs` | - | MEASURED: production callers are driver.rs:39/:397/:402 (load_skeletons, load_strand, ExonFetcher), recombinant_split.rs:47 and multi_repeat_bridge.rs:55 — and all three roll up to driver::build_catalog, whose only caller is src/b |
 | `parcn.rs` | binary `parcn` (Cargo.toml:116-118, path src/bin/parcn.rs); no flag inside it gates the module — the whole bin | MEASURED: the only importer is src/bin/parcn.rs:15-18 (`use rustle::vg_family::parcn::{assign_locus, dedup_loci, format_family_row, format_parcn_row, parse_copies_fa, sun_positions, tabulate, Assignment, CopySun, Locus};`); no oth |
-| `repeat_catalog.rs` | family_define only. `load_skeletons` runs under `if opt.repeat_bridge_gate` (driver.rs:432; DEFAULT-ON, opt ou | MEASURED: the only production entry points are `repeat_catalog::load_skeletons` at src/rustle/vg_family/driver.rs:433 and `repeat_catalog::dn_exons` at src/rustle/vg_family/multi_repeat_bridge.rs:61 — both on the bin/family_define |
 
 ## REFUTED (1)
 
@@ -116,22 +123,20 @@ Implemented, **measured**, and the measurement went against it. Kept deliberatel
 | module | gate | deciding evidence |
 |---|---|---|
 
-## INFRASTRUCTURE (2)
+## INFRASTRUCTURE (1)
 
 Shared utility with no independent objective claim.
 
 | module | gate | deciding evidence |
 |---|---|---|
-| `minimizers.rs` | - | MEASURED: no src/bin/*.rs file references `minimizers`; its only three consumers are libraries — src/rustle/vg_family/repeat_catalog.rs:39, src/rustle/vg_family/multi_repeat_bridge.rs:60, src/rustle/vg_family/vg_realign.rs:27 — an |
-| `seq_utils.rs` | - | MEASURED: `pub(crate) fn reverse_complement` (seq_utils.rs:9) is the file's only item and is used on the default path — denovo_assemble.rs:22 (import) with production uses at denovo_assemble.rs:1414 and :1547 (test mod starts at : |
+| `seq_utils.rs` | - | MEASURED 2026-09-24: `reverse_complement` is used on the default path (denovo_assemble.rs, family_detect.rs, family_rescue.rs, denovo_pipeline.rs); `revcomp_keep_case` by denovo_pipeline.rs `outside_pseudo_copy` and by vg_realign.rs; `aln_id`/`hw_distance` by vg_realign.rs (opt-in). The last three moved here from the removed `bridge_detector.rs`. |
 
-## ⚠ Header / reachability mismatches (29)
+## ⚠ Header / reachability mismatches (13)
 
 Each describes itself as doing something its callers do not support.
 
 | module | tag | the mismatch |
 |---|---|---|
-| `minimizers.rs` | INFRASTRUCTURE | INFERRED: minimizers.rs:3-9 calls itself "the FOUNDATION + byte-parity crux of the O1 over-merge-gate migration" and says "Every gate that rests on the repeat catalog ... consumes the output of this ONE function" — true, but every one of those gates is reachab |
 | `absent_copy.rs` | OPT-IN | Header (absent_copy.rs:1-21) documents the five gates as if the module were always live and only mentions that gate 1's floor is env-overridable; it never says the module itself is unreachable at defaults. |
 | `copy_graph.rs` | OPT-IN | Header (copy_graph.rs:1-3) presents it as 'Copy-graph objects (v1)' — the vehicle for making 'a reference-absent copy visibly an arm the reference does not take' — with no indication that nothing builds one unless --phase is passed. |
 | `em_copy_assign.rs` | OPT-IN | TWO mismatches. (1) The //! header (em_copy_assign.rs:20-22) says 'the coupling to Task 1's ReadEvidence.logl arrives in Task 3' — stale; em_assign_family (em_copy_assign.rs:269) already does that coupling. (2) The docstring at em_copy_assign.rs:258 asserts 'I |
@@ -139,10 +144,8 @@ Each describes itself as doing something its callers do not support.
 | `seed_projection.rs` | OPT-IN | - (the header's own thesis — that --seed is a QUERY over the emitted catalog, not a term in the definition — is exactly what the code does: it reads `fams` AFTER emit_catalog and never feeds the node set). |
 | `single_copy.rs` | OPT-IN | MEASURED (mild): the header calls this "the λ_global baseline that calibrates depth_cn = E_fam / λ_global", which implies a live pipeline coupling. There is none — the coupling is by FILE: gw_family_catalog writes <out>.lambda_global.tsv (gw_family_catalog.rs: |
 | `vg_realign.rs` | OPT-IN | - (the header states "Default OFF => every output byte-identical" at vg_realign.rs:14, which matches the code). Worth noting only that the header's first line, "significance-gated (correct + discover)", describes two legs behind two DIFFERENT defaults-off swit |
-| `repeat_catalog.rs` | OTHER-BINARY | MEASURED, and load-bearing: repeat_catalog.rs:5-10 claims "This is the piece the repeat-bridge GATE consumes at runtime ... this module builds exactly those multiplicities" and repeat_catalog.rs:44 defines M_OP=5 as the gate threshold. The gate does NOT build  |
 | `collapse_gate.rs` | REFUTED | The module NAME and mod.rs:9's one-liner ('admit a COLLAPSED single-rep locus as a multi-copy family') both still assert collapse detection; the header body itself retracts that ('detects unresolvable PARALOGY, not collapse'). Name and claim disagree, header a |
 | `catalog_input.rs` | SHIPPED-DEFAULT | The header (catalog_input.rs:1-15) is entirely about the O1→O2 FILE CONTRACT (parse_copies_tsv/parse_copies_fa/group_families/to_colocated). That half is OPT-IN: it runs only under `--families` (src/bin/copy_assign.rs:452, Option<String> default None), consume |
-| `family_graph.rs` | SHIPPED-DEFAULT | YES — the header describes the DEAD half. family_graph.rs:1-8 defines the module as 'union of per-copy splice graphs ... Nodes are exon-equivalence classes'. That object has no production caller: FamilyGraph (family_graph.rs:48), JunctionEdge (:40), extract_co |
 | `mosaic.rs` | SHIPPED-DEFAULT | MEASURED — THE BIGGEST ONE IN THIS SLICE: mosaic.rs:14-15 states "Default-OFF in the pipeline (RUSTLE_VG_MOSAIC_ON)". `grep -rn 'RUSTLE_VG_MOSAIC_ON\/MOSAIC_ON' src/ tests/` returns exactly ONE hit — that docstring line itself. The env var is never read; the d |
 | `read_conflict.rs` | SHIPPED-DEFAULT | MEASURED: the header at src/rustle/vg_family/read_conflict.rs:22-23 says "The remaining integration is plumbing per-locus secondary placements (`secondary_index` / `tied_secondary_reads_in_region`) into the detection stage" — i.e. it presents the module as NOT |
 | `readonly_copy_number.rs` | SHIPPED-DEFAULT | MEASURED (minor, but it is a severed claim): readonly_copy_number.rs:10 is a dangling fragment — "//!  families e.g. `chi_H=1` on a locus whose true copy number is ~11." — the sentence it belonged to is gone, so the stated lower-bound caveat reads as a floatin |

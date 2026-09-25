@@ -58,11 +58,8 @@ pub struct TiePlacement {
     pub reverse: bool,
 }
 
-/// Every `M`/`=`/`X` run of an alignment as its own reference interval `[pos, pos + n)`.
-///
-/// Duplicates `block_overlap`'s CIGAR walk (`src/bin/copy_assign.rs`) rather than calling it: that
-/// function is `bin`-private and not visible from a `lib` module in this crate layout -- the same
-/// documented reason this module already duplicated `read_ref_end_local`'s span before the block fix.
+/// Every `M`/`=`/`X` run of an alignment as its own reference interval `[pos, pos + n)`. The copy_assign
+/// binary's `block_overlap` (pysam `get_blocks()` semantics) is computed from these blocks.
 /// `D` and `N` advance the reference cursor without emitting a block, so a deletion splits a run here too
 /// (matching `block_overlap`) -- usually immaterial since alignment `D` runs are short, but a `D` longer
 /// than `TIE_PARTNER_MERGE_DISTANCE_BP` would split one placement into two reported clusters, same as a

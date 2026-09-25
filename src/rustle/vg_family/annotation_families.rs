@@ -808,9 +808,6 @@ pub fn sd_blocks(hulls: &[(String, u64, u64)], sd: &SdPairs) -> (Vec<usize>, Vec
 /// `inclusive` (§6ft polish 2): the majority counts the locus itself — a member's core is the part shared with
 /// at least half of the FAMILY (depth + 1 ≥ n/2) instead of half of the OTHER members ((n − 1)/2). Only the
 /// boundary case moves (NPIP: a 7-kb fragment shared with 15 of 31 others).
-pub fn refine_cluster_cores(members: &[GeneKey], sd: &SdPairs) -> Vec<CoreRecord> {
-    refine_cluster_cores_with(members, sd, false)
-}
 pub fn refine_cluster_cores_with(members: &[GeneKey], sd: &SdPairs, inclusive: bool) -> Vec<CoreRecord> {
     let n = members.len();
     if n < 2 {

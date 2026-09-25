@@ -566,6 +566,10 @@ fn refine_enabled(o1_homology: bool, no_refine_flag: bool) -> bool {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    // Bound rayon's global pool to --threads: the locus collapse runs its POA alignments with `par_iter`, and
+    // an unbounded pool would run one poasta alignment per core whatever --threads says (09-12: poasta
+    // OOM at 25.7 GB). `.ok()`: a pool already built (tests) is left as it is.
+    rayon::ThreadPoolBuilder::new().num_threads(args.threads.max(1)).build_global().ok();
     // O1 mode. Homology (E_r) is THE mode and the default; the two conflict-graph catalogs are legacy and
     // must now be asked for by name. Derived once here rather than read off `args.homology_primary`, which
     // is a no-op compatibility flag and would be true even when a legacy catalog was requested.
@@ -631,7 +635,7 @@ fn main() -> Result<()> {
 
     // --from-genome: read-free/annotation-free DNA family catalog. Discovers duplicated genomic loci by
     // self-alignment, then groups them with the SAME homology_blocks core the RNA --homology-primary path
-    // uses (via families_from_reps). Returns before any BAM-consuming path.
+    // uses (via families_from_reps_certified). Returns before any BAM-consuming path.
     if args.from_genome.is_some() || args.from_genome_sd.is_some() {
         use rustle::vg_family::from_genome::{genome_reps, windows_from_sd_bed, GenomeRepParams};
         if args.from_genome.is_some() && args.from_genome_sd.is_some() {
@@ -773,7 +777,7 @@ fn main() -> Result<()> {
         refine_params.intron_fasta = Some(args.fasta.clone());
     }
     // The repeat-justified edge rule (`RUSTLE_ER_REPEAT_MASKED_EDGES=1`) reads the RepeatMasker soft-mask
-    // from the reference, through the case-preserving `repeat_catalog::IndexedFasta` rather than
+    // from the reference, through the case-preserving `genome::IndexedFasta` rather than
     // `GenomeIndex` (which uppercases at load). It needs the same field. Set ONLY when the flag is on, so
     // the OFF path stays byte-identical.
     if std::env::var("RUSTLE_ER_REPEAT_MASKED_EDGES").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) {

@@ -110,11 +110,6 @@ impl MosaicParams {
         if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_READS") { p.family_min_supporting_reads = v; }
         p
     }
-
-    /// Per-read error rate clamped to [eps_floor, eps_cap]; `None` → eps_cap (fail-safe).
-    pub fn eps_for(&self, de: Option<f32>) -> f64 {
-        de.map(|d| (d as f64).clamp(self.eps_floor, self.eps_cap)).unwrap_or(self.eps_cap)
-    }
 }
 
 /// Pure per-read detector. `obs` = ordered per-site match structure; `eps` = per-site error

@@ -1,11 +1,10 @@
 //! VG re-align supplement -- re-align poor-fit/unmapped reads to O1's family copy-paths,
 //! significance-gated (correct + discover). Task 1: candidate selection. Task 3: re-align a
-//! candidate read to the family's copy-paths (identity-based, DRY on `bridge_detector::aln_id`)
-//! and route unmapped reads to candidate families by shared minimizers. Task 4: gate the
-//! re-align correction behind a min_p significance certificate (same `epsilon^delta` form as
+//! candidate read to the family's copy-paths (identity-based, DRY on `seq_utils::aln_id`).
+//! Task 4: gate the re-align correction behind a min_p significance certificate (same `epsilon^delta` form as
 //! `copy_assign::read_copy_evidence`), and greedily pool reads that fit no existing copy into
-//! candidate novel-copy clusters. Task 5: wire Tasks 1/3/4 into a per-family driver
-//! (`run_family_realign`) and, behind `DenovoConfig::vg_realign`, into the pipeline where it FEEDS BACK:
+//! candidate novel-copy clusters. Task 5: wire Tasks 1/3/4, behind `DenovoConfig::vg_realign`, into the
+//! pipeline where it FEEDS BACK:
 //! `apply_realign_patch` CORRECTS per-read copy assignments (re-thread the hard read through the copy-paths,
 //! take the best-fitting path, same epsilon^delta significance certificate as the PSV gate); `admit_novel_pools`
 //! may ADMIT novel-read clusters as new copies (widening the roster — the O4-frontier leg); then the EM copy
@@ -13,20 +12,16 @@
 //! `<out>.vg_realign.tsv` dump is a separate, additive report; "report-only" referred only to that file.)
 //!
 //! VG re-align END-TO-END plan, Task 1: `align_traceback` + `path_obs_at`. There is no `edlib`
-//! crate; `bridge_detector::hw_distance` is a hand-rolled 2-row DP that gives the HW/infix edit
+//! crate; `seq_utils::hw_distance` is a hand-rolled 2-row DP that gives the HW/infix edit
 //! DISTANCE only, no alignment path. To re-extract a read's base at a copy-path's PSV columns
 //! (follow-up (c) in `bench/VG_REALIGN.md`) we need the actual traceback, so this keeps a full DP
 //! + backtrack matrix (not the rolling 2-row form) and reconstructs the aligned columns.
 //!
 //! **STATUS:** OPT-IN — --vg-realign or --vg-realign-correct (src/bin/copy_assign.rs:340-341 and :346-347, both `default_value_t = false`; combined into cfg.vg_realign at cop  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
-use std::collections::HashSet;
-
-use crate::vg_family::bridge_detector::{aln_id, hw_distance, revcomp};
-use crate::vg_family::copy_assign_pipeline::best_overlap_copy;
+use crate::vg_family::seq_utils::{aln_id, hw_distance, revcomp_keep_case};
 use crate::vg_family::denovo_assemble::BamRead;
 use crate::vg_family::family_detect::DenovoTranscript;
-use crate::vg_family::minimizers::minimizers;
 
 /// Backtrack pointer for one DP cell of `align_traceback`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -42,7 +37,7 @@ enum Trace {
 }
 
 /// HW/infix alignment of `query` against `target`, WITH the traceback path (unlike
-/// `bridge_detector::hw_distance`, which only returns the distance via a rolling 2-row DP).
+/// `seq_utils::hw_distance`, which only returns the distance via a rolling 2-row DP).
 ///
 /// Same semantics as `hw_distance`: `query` is rows, `target` is columns; row 0 is `0` across
 /// every target column (free leading gap on `target`); the alignment ends at the min-cost cell in
@@ -157,16 +152,16 @@ pub fn path_obs_at(
 /// garbage alignment: the wrong or `None` `path_obs` bases that then feed the EM as bogus PSV
 /// evidence.
 ///
-/// Fix: try both `read_seq` and `revcomp(read_seq)` against `copy_seq` via `hw_distance` (the same
+/// Fix: try both `read_seq` and `revcomp_keep_case(read_seq)` against `copy_seq` via `hw_distance` (the same
 /// distance `aln_id` uses internally) and return whichever orientation fits better (ties keep the
 /// forward/as-given orientation). Callers must align (and extract `path_obs_at` from) THIS
 /// returned, oriented sequence -- not the raw `read_seq` -- so the observed bases end up in the
 /// copy's own transcription-strand frame, directly comparable to `copy_psv_alleles`.
 pub fn orient_for_copy(read_seq: &[u8], copy_seq: &[u8]) -> Vec<u8> {
     let d_fwd = hw_distance(read_seq, copy_seq);
-    let d_rev = hw_distance(&revcomp(read_seq), copy_seq);
+    let d_rev = hw_distance(&revcomp_keep_case(read_seq), copy_seq);
     if d_rev < d_fwd {
-        revcomp(read_seq)
+        revcomp_keep_case(read_seq)
     } else {
         read_seq.to_vec()
     }
@@ -218,14 +213,14 @@ pub struct RealignHit {
     pub id_linear: f64,
 }
 
-/// Re-align `read_seq` to every copy-path in `copy_seqs`, reusing `bridge_detector::aln_id` as
+/// Re-align `read_seq` to every copy-path in `copy_seqs`, reusing `seq_utils::aln_id` as
 /// the fit score (best infix identity, tries both orientations). Returns the best-fitting copy
 /// plus (for Task 4's accept comparison) the fit to `linear_copy`'s sequence, if given.
 ///
 /// Returns `None` when `copy_seqs` is empty, or when the best fit is below `MIN_ALN_ID`: a read
 /// that fits no copy-path at all is not a re-align candidate for this family.
-/// `aln_id` with the SHORTER sequence as the query — the idiom already used by
-/// `bridge_detector::exon_match_tensor` (bridge_detector.rs:363-364, "align the SHORTER as the query").
+/// `aln_id` with the SHORTER sequence as the query — the idiom the retired
+/// `bridge_detector::exon_match_tensor` used ("align the SHORTER as the query").
 ///
 /// ⛔ WHY THIS EXISTS (ledger §6df). `aln_id` is `1 - hw_distance(q, t) / len(q)` with free end-gaps on the
 /// TARGET only, so a target SHORTER than the query cannot contain it and the identity is CAPPED at
@@ -267,35 +262,6 @@ pub fn realign_to_paths(
     };
 
     Some(RealignHit { best_copy, id_best, id_linear })
-}
-
-/// Route an unmapped read to candidate families by shared canonical minimizers: compute the
-/// read's minimizer value-set (`minimizers(seq, MINIMIZER_K, MINIMIZER_W)`, values only -- the
-/// masked flag doesn't matter for routing) and, for each `(family_id, consensus)` pair, count
-/// how many minimizer values the read shares with that family's consensus. Returns the
-/// `family_id`s meeting `count >= min_shared`, sorted ascending.
-pub fn route_unmapped(
-    seq: &[u8],
-    family_consensuses: &[(usize, Vec<u8>)],
-    min_shared: usize,
-) -> Vec<usize> {
-    use crate::vg_family::minimizers::{MINIMIZER_K, MINIMIZER_W};
-
-    let read_mins: HashSet<u64> =
-        minimizers(seq, MINIMIZER_K, MINIMIZER_W).into_iter().map(|(v, _)| v).collect();
-
-    let mut hits: Vec<usize> = family_consensuses
-        .iter()
-        .filter_map(|(family_id, consensus)| {
-            let cons_mins: HashSet<u64> =
-                minimizers(consensus, MINIMIZER_K, MINIMIZER_W).into_iter().map(|(v, _)| v).collect();
-            let shared = read_mins.intersection(&cons_mins).count();
-            (shared >= min_shared).then_some(*family_id)
-        })
-        .collect();
-
-    hits.sort_unstable();
-    hits
 }
 
 /// Task 4's verdict on a candidate re-alignment: either correct the read's copy attribution to
@@ -469,103 +435,13 @@ pub struct RealignApply {
     /// through `absent_copy::admit_candidate` with the real genome + remap.
     pub novel_pools: Vec<Vec<usize>>,
     /// One record per candidate read processed (`"reassigned"`, `"rejected"`, or
-    /// `"novel-candidate"`), same shape as `run_family_realign`'s output.
+    /// `"novel-candidate"`).
     pub records: Vec<RealignRecord>,
-}
-
-/// Task 5: run the VG re-align supplement (Tasks 1/3/4) over ONE co-located family's reads.
-///
-/// For every non-supplementary read in `bam_reads`: compute `mapq` (`read.mapq`), `clip_frac` (total
-/// soft-clipped CIGAR bases / read length -- `read.seq` keeps soft-clips per
-/// `aligned_read_from_record`'s doc, so this is exact), and `div` (`read.de`, minimap2's `de:f` gap-
-/// compressed per-base divergence tag -- already parsed onto `BamRead`, so no NM/CIGAR recomputation is
-/// needed). `linear_copy` is the copy index the read's own linear alignment overlaps most in this family
-/// (`best_overlap_copy`, the SAME greatest-ref-overlap rule `assign_family_detailed` uses internally to
-/// seed each read's `mapped_copy`).
-///
-/// Reads failing `is_candidate` produce NO record at all (clean primary fit -- nothing to reconsider).
-/// Candidates are re-aligned to every copy's spliced consensus (`DenovoTranscript::seq`, already spliced
-/// by the assembly stage -- no re-splicing needed) via `realign_to_paths`; `None` (fits no copy-path at
-/// all) is tagged `"novel-candidate"`. A hit is run through `accept_realignment`'s significance
-/// certificate: `Reassign` -> `"reassigned"`, `Reject` -> `"rejected"`.
-///
-/// REPORT-ONLY / ADDITIVE: this function only classifies reads into a decision log. It does not mutate
-/// `bam_reads`/`copies`, does not feed a `"reassigned"` verdict back into the EM/PSV assignment, and does
-/// not admit `"novel-candidate"` reads into the copy set -- that deeper wiring (`pool_novel` +
-/// `absent_copy::admit_candidate`) is an explicit follow-up, out of scope here.
-pub fn run_family_realign(
-    bam_reads: &[BamRead],
-    copies: &[DenovoTranscript],
-    params: &RealignParams,
-    error_rate: f64,
-    alpha: f64,
-) -> Vec<RealignRecord> {
-    let copy_seqs: Vec<Vec<u8>> = copies.iter().map(|c| c.seq.clone()).collect();
-    let copy_refs: Vec<&DenovoTranscript> = copies.iter().collect();
-
-    let mut out = Vec::new();
-    for br in bam_reads {
-        if br.is_supplementary {
-            continue;
-        }
-        let read_len = br.read.seq.len();
-        let clip: u64 = br.read.cigar.iter().filter(|&&(op, _)| op == 'S').map(|&(_, n)| n).sum();
-        let clip_frac = if read_len > 0 { clip as f64 / read_len as f64 } else { 0.0 };
-        let div = br.de as f64;
-
-        if !is_candidate(br.mapq, div, clip_frac, params) {
-            continue;
-        }
-
-        let linear_copy = best_overlap_copy(&br.read, &copy_refs);
-        let linear_copy_i64 = linear_copy.map(|c| c as i64).unwrap_or(-1);
-
-        let record = match realign_to_paths(&br.read.seq, &copy_seqs, linear_copy) {
-            None => RealignRecord {
-                read_name: br.name.clone(),
-                action: "novel-candidate".to_string(),
-                target_copy: -1,
-                id_best: 0.0,
-                linear_copy: linear_copy_i64,
-            },
-            Some(hit) => {
-                let id_best = hit.id_best;
-                // Report-only leg: no PSV frames here, so bound the decisive count by the copies'
-                // OWN divergence — there cannot be more decisive sites than the two copies differ at (§6df).
-                let n_dec = match linear_copy {
-                    Some(lc) if lc != hit.best_copy => {
-                        let raw = ((hit.id_best - hit.id_linear) * read_len as f64).round().max(0.0) as usize;
-                        let (a, b) = (hit.best_copy.min(lc), hit.best_copy.max(lc));
-                        raw.min(crate::vg_family::bridge_detector::hw_distance(&copy_seqs[a], &copy_seqs[b]))
-                    }
-                    _ => 0,
-                };
-                match accept_realignment(&hit, linear_copy, n_dec, error_rate, alpha) {
-                    RealignAction::Reassign(best_copy) => RealignRecord {
-                        read_name: br.name.clone(),
-                        action: "reassigned".to_string(),
-                        target_copy: best_copy as i64,
-                        id_best,
-                        linear_copy: linear_copy_i64,
-                    },
-                    RealignAction::Reject => RealignRecord {
-                        read_name: br.name.clone(),
-                        action: "rejected".to_string(),
-                        target_copy: -1,
-                        id_best,
-                        linear_copy: linear_copy_i64,
-                    },
-                }
-            }
-        };
-        out.push(record);
-    }
-    out
 }
 
 /// VG re-align END-TO-END plan, Task 2: apply the per-read decisions (Tasks 1/3/4) into a
 /// ready-to-consume correction map + novel-copy candidate pools, over reads spanning potentially
-/// SEVERAL families at once (unlike `run_family_realign`'s one-family driver).
+/// SEVERAL families at once.
 ///
 /// `copies`/`copy_seqs` are parallel (one spliced consensus per copy, `copy_seqs[k] ==
 /// copies[k].seq` is the expected caller invariant but only `copy_seqs` is actually read here --
@@ -590,7 +466,7 @@ pub fn run_family_realign(
 ///
 /// Reads failing `is_candidate` are skipped entirely (no record, no correction, no pooling) --
 /// a clean primary fit has nothing to reconsider. Supplementary alignments (`is_supplementary`)
-/// are also skipped, mirroring `run_family_realign`.
+/// are also skipped.
 pub fn apply_realign(
     bam_reads: &[BamRead],
     copies: &[DenovoTranscript],
@@ -722,7 +598,7 @@ pub fn apply_realign(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vg_family::bridge_detector::hw_distance;
+    use crate::vg_family::seq_utils::hw_distance;
     use crate::vg_family::copy_split::AlignedRead;
 
     #[test]
@@ -814,42 +690,6 @@ mod tests {
 
         // Empty copy_seqs -> always None regardless of the read.
         assert!(realign_to_paths(&read, &[], None).is_none());
-    }
-
-    #[test]
-    fn route_unmapped_matches_by_minimizers() {
-        // Two family consensuses, long enough (>= MINIMIZER_K + several windows) to produce
-        // multiple minimizers.
-        let consensus_a = pseudo_seq(10, 150);
-        let consensus_b = pseudo_seq(20, 150);
-
-        // A read that's an exact interior substring of family A's consensus -- interior so its
-        // minimizer windows are fully contained in windows also present in the full consensus,
-        // guaranteeing shared minimizer VALUES (not just positions).
-        let read: Vec<u8> = consensus_a[40..100].to_vec();
-
-        let families = vec![(0usize, consensus_a.clone()), (1usize, consensus_b.clone())];
-
-        // Sanity: the read and consensus B should share few/no minimizers (unrelated random
-        // sequences), while read and consensus A share several -- confirm before picking
-        // min_shared so the test isn't tuned to a lucky threshold.
-        use crate::vg_family::minimizers::{MINIMIZER_K, MINIMIZER_W};
-        let mins_of = |s: &[u8]| -> HashSet<u64> {
-            minimizers(s, MINIMIZER_K, MINIMIZER_W).into_iter().map(|(v, _)| v).collect()
-        };
-        let read_mins = mins_of(&read);
-        let a_mins = mins_of(&consensus_a);
-        let b_mins = mins_of(&consensus_b);
-        let shared_a = read_mins.intersection(&a_mins).count();
-        let shared_b = read_mins.intersection(&b_mins).count();
-        assert!(shared_a >= 2, "expected several shared minimizers with A, got {shared_a}");
-        assert!(shared_b < shared_a, "B should share fewer minimizers than A ({shared_b} vs {shared_a})");
-
-        let min_shared = shared_b + 1; // strictly above B's count, at or below A's count
-        assert!(min_shared <= shared_a, "min_shared {min_shared} must still be reachable by A");
-
-        let routed = route_unmapped(&read, &families, min_shared);
-        assert_eq!(routed, vec![0], "expected only family A routed, got {routed:?}");
     }
 
     #[test]
@@ -959,7 +799,7 @@ mod tests {
         assert!(clusters.is_empty(), "expected no clusters to meet min_reads = 3, got {clusters:?}");
     }
 
-    /// Minimal `DenovoTranscript` builder for the `run_family_realign` tests -- unspliced (no introns),
+    /// Minimal `DenovoTranscript` builder for the `apply_realign` tests -- unspliced (no introns),
     /// mirroring how `copy_assign_pipeline`'s own tests construct copies.
     fn transcript(tid: &str, chrom: &str, start: u64, seq: Vec<u8>) -> DenovoTranscript {
         let end = start + seq.len() as u64;
@@ -977,54 +817,6 @@ mod tests {
             de,
             is_supplementary: false,
             is_secondary: false, reverse: false, ts: None }
-    }
-
-    #[test]
-    fn run_family_realign_reassigns_misplaced_low_mapq_read() {
-        let copy0_seq = pseudo_seq(1, 200);
-        let copy1_seq = pseudo_seq(2, 200);
-        // A substitution-variant of copy 1 (2 flipped bases) -- still >99% identical to copy 1, and only
-        // ~50% identical to the unrelated copy 0 (random same-length sequences).
-        let mut read_seq = copy1_seq.clone();
-        for &pos in &[20usize, 100usize] {
-            let orig = read_seq[pos];
-            read_seq[pos] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != orig).unwrap();
-        }
-
-        // Copy 0 at chr1:0-200, copy 1 at chr1:5000-5200 -- distinct, non-overlapping loci.
-        let copy0 = transcript("copy0", "chr1", 0, copy0_seq);
-        let copy1 = transcript("copy1", "chr1", 5000, copy1_seq);
-        let copies = vec![copy0, copy1];
-
-        // The read is "linearly placed" (BAM ref_start) inside copy 0's span -- so its coordinate-overlap
-        // locus (linear_copy) is copy 0 -- but its SEQUENCE is really copy 1's, and its MAPQ is low
-        // (ambiguous multimapper), so it's a Task-1 candidate.
-        let br = bam_read("readA", "chr1", 0, read_seq, 3, 0.0);
-
-        let records = run_family_realign(&[br], &copies, &RealignParams::default(), 0.003, 1e-3);
-        assert_eq!(records.len(), 1, "expected exactly one record, got {records:?}");
-        let rec = &records[0];
-        assert_eq!(rec.read_name, "readA");
-        assert_eq!(rec.linear_copy, 0, "read's linear (BAM-coordinate) placement must be copy 0");
-        assert_eq!(rec.action, "reassigned");
-        assert_eq!(rec.target_copy, 1, "the read's true best-fit copy is copy 1");
-        assert!(rec.id_best > 0.9, "id_best = {} should be a strong fit to copy 1", rec.id_best);
-    }
-
-    #[test]
-    fn run_family_realign_clean_read_produces_no_record() {
-        let copy0_seq = pseudo_seq(1, 200);
-        let copy1_seq = pseudo_seq(2, 200);
-        let copy0 = transcript("copy0", "chr1", 0, copy0_seq.clone());
-        let copy1 = transcript("copy1", "chr1", 5000, copy1_seq);
-        let copies = vec![copy0, copy1];
-
-        // A read that is exactly copy 0's sequence, high MAPQ, no clipping, on copy 0's own locus --
-        // a clean primary fit, not a Task-1 candidate at all.
-        let br = bam_read("readB", "chr1", 0, copy0_seq, 60, 0.0);
-
-        let records = run_family_realign(&[br], &copies, &RealignParams::default(), 0.003, 1e-3);
-        assert!(records.is_empty(), "a clean high-MAPQ read must produce no record, got {records:?}");
     }
 
     // -----------------------------------------------------------------------------------------
@@ -1142,7 +934,7 @@ mod tests {
     /// C1: a `-`-strand copy's `copy_seqs[k]` is TRANSCRIPTION strand, i.e. the reverse complement
     /// of the forward-genome sequence at that locus. A read is always FORWARD-GENOME (`read.seq`,
     /// per BAM convention), so a read that is truly this copy's source material arrives as
-    /// `revcomp(copy_seq)`, not `copy_seq` itself. `realign_to_paths`/`aln_id` already handle this
+    /// `revcomp_keep_case(copy_seq)`, not `copy_seq` itself. `realign_to_paths`/`aln_id` already handle this
     /// (they try both orientations for the identity SCORE), so the correction is still detected --
     /// but before the C1 fix, `apply_realign`'s `align_traceback`/`path_obs_at` aligned the raw
     /// forward `read.seq` literally against `copy_seq`, producing a ~0.5-identity garbage
@@ -1171,7 +963,7 @@ mod tests {
 
         // The read is FORWARD-GENOME: the reverse complement of copy 1's transcription-strand
         // consensus. Low MAPQ (a Task-1 candidate) and linearly misattributed to copy 0.
-        let read_seq = crate::vg_family::bridge_detector::revcomp(&copy1_seq);
+        let read_seq = revcomp_keep_case(&copy1_seq);
         let br = bam_read("readA", "chr1", 0, read_seq, 3, 0.0);
         let linear_copy_of = vec![Some(0usize)];
 

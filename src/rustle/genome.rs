@@ -1,9 +1,14 @@
-//! Minimal FASTA loader and splice consensus checks for junction validation.
+//! Minimal FASTA loaders and splice consensus checks for junction validation.
+//!
+//! - `GenomeIndex` loads whole contigs (uppercased) into memory.
+//! - `IndexedFasta` reads `[start, end)` straight from the file through its `.fai`, case preserved
+//!   (soft-mask kept) — moved here from the removed `vg_family::repeat_catalog` (2026-09-24).
 
 use crate::types::DetHashMap as HashMap;
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::os::unix::fs::FileExt;
 
 #[derive(Debug, Clone, Default)]
 pub struct GenomeIndex {
@@ -40,6 +45,12 @@ impl GenomeIndex {
             }
         }
         Ok(Self { seqs })
+    }
+
+    /// A genome with no contigs loaded — for callers that provably fetch nothing (the catalog's cache-hit path
+    /// when no re-admission option is on). `from_fasta_contigs` with an EMPTY set loads the whole genome instead.
+    pub fn empty() -> Self {
+        Self { seqs: Default::default() }
     }
 
     /// Load ONLY the named contigs, seeking to each via the FASTA `.fai` index so
@@ -189,12 +200,6 @@ impl GenomeIndex {
         Ok(Some(seq))
     }
 
-    #[inline]
-    fn base(&self, chrom: &str, pos0: u64) -> Option<u8> {
-        let seq = self.seqs.get(chrom)?;
-        seq.get(pos0 as usize).copied()
-    }
-
     /// Fetch a subsequence from the genome (0-based half-open coordinates).
     pub fn fetch_sequence(&self, chrom: &str, start: u64, end: u64) -> Option<Vec<u8>> {
         let seq = self.seqs.get(chrom)?;
@@ -215,40 +220,6 @@ impl GenomeIndex {
     /// Length of a chromosome's sequence, or 0 if not present.
     pub fn chrom_len(&self, chrom: &str) -> u64 {
         self.seqs.get(chrom).map(|s| s.len() as u64).unwrap_or(0)
-    }
-
-    /// Check reference-like splice consensus at intron boundaries.
-    /// Junction coordinates are donor=left exon end, acceptor=right exon start (0-based half-open).
-    /// The intron spans [donor, acceptor) — first intron base is at `donor`, last at `acceptor - 1`.
-    pub fn is_consensus_splice(
-        &self,
-        chrom: &str,
-        donor: u64,
-        acceptor: u64,
-        strand: Option<i8>,
-    ) -> bool {
-        // First two bases of intron: positions donor, donor+1 (0-based)
-        let plus_left_1 = self.base(chrom, donor);
-        let plus_left_2 = self.base(chrom, donor.saturating_add(1));
-        // Last two bases of intron: positions acceptor-2, acceptor-1 (0-based)
-        let plus_right_2 = acceptor.checked_sub(2).and_then(|p| self.base(chrom, p));
-        let plus_right_1 = acceptor.checked_sub(1).and_then(|p| self.base(chrom, p));
-
-        let plus_ok = matches!(plus_left_1, Some(b'G'))
-            && matches!(plus_left_2, Some(b'T') | Some(b'C'))
-            && matches!(plus_right_2, Some(b'A'))
-            && matches!(plus_right_1, Some(b'G'));
-
-        let minus_ok = matches!(plus_left_1, Some(b'C'))
-            && matches!(plus_left_2, Some(b'T'))
-            && matches!(plus_right_1, Some(b'C'))
-            && matches!(plus_right_2, Some(b'A') | Some(b'G'));
-
-        match strand {
-            Some(1) => plus_ok,
-            Some(-1) => minus_ok,
-            _ => plus_ok || minus_ok,
-        }
     }
 
     /// Canonical splice site (annotation-free, FASTA only). `donor` = left-exon-end,
@@ -362,6 +333,87 @@ fn is_low_complexity_window(w: &[u8]) -> bool {
         }
     }
     distinct < 3
+}
+
+// ===========================================================================
+// Case-carrying indexed FASTA (pysam.FastaFile.fetch equivalent)
+// ===========================================================================
+
+#[derive(Clone, Copy, Debug)]
+struct FaiRecord {
+    length: u64,
+    offset: u64,
+    linebases: u64,
+    linewidth: u64,
+}
+
+/// Minimal `.fai`-indexed FASTA reader returning bytes VERBATIM (soft-mask lowercase
+/// preserved), matching `pysam.FastaFile.fetch(chrom, start, end)` on 0-based
+/// half-open coordinates. Needed because `GenomeIndex` upper-cases and so
+/// cannot feed a soft-mask computation.
+pub struct IndexedFasta {
+    file: File,
+    index: std::collections::HashMap<String, FaiRecord>,
+}
+
+impl IndexedFasta {
+    /// Open `path` and read its `path.fai` sidecar
+    /// (`name \t length \t offset \t linebases \t linewidth`).
+    pub fn open(path: &str) -> std::io::Result<Self> {
+        let fai_text = std::fs::read_to_string(format!("{}.fai", path))?;
+        let mut index = std::collections::HashMap::new();
+        for line in fai_text.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 5 {
+                continue;
+            }
+            let rec = FaiRecord {
+                length: f[1].parse().unwrap_or(0),
+                offset: f[2].parse().unwrap_or(0),
+                linebases: f[3].parse().unwrap_or(0),
+                linewidth: f[4].parse().unwrap_or(0),
+            };
+            if rec.linebases == 0 || rec.linewidth == 0 {
+                continue;
+            }
+            index.insert(f[0].to_string(), rec);
+        }
+        let file = File::open(path)?;
+        Ok(Self { file, index })
+    }
+
+    /// Fetch `[start, end)` (0-based half-open) verbatim, or `None` if the contig is
+    /// unknown. An empty/degenerate interval yields `Some(vec![])` (pysam returns "").
+    /// Bytes are read straight from the file at their `.fai`-computed offsets, skipping
+    /// the per-line newline, so lowercase soft-mask is preserved exactly.
+    pub fn fetch(&self, chrom: &str, start: i64, end: i64) -> Option<Vec<u8>> {
+        let rec = self.index.get(chrom)?;
+        let mut s = start.max(0) as u64;
+        let mut e = end.max(0) as u64;
+        if e > rec.length {
+            e = rec.length;
+        }
+        if s > rec.length {
+            s = rec.length;
+        }
+        if s >= e {
+            return Some(Vec::new());
+        }
+        let mut out = Vec::with_capacity((e - s) as usize);
+        let (lb, lw) = (rec.linebases, rec.linewidth);
+        let mut p = s;
+        while p < e {
+            let line = p / lb;
+            let col = p % lb;
+            let byte_off = rec.offset + line * lw + col;
+            let take = std::cmp::min(lb - col, e - p); // bases left on this line
+            let mut buf = vec![0u8; take as usize];
+            self.file.read_exact_at(&mut buf, byte_off).ok()?;
+            out.extend_from_slice(&buf);
+            p += take;
+        }
+        Some(out)
+    }
 }
 
 #[cfg(test)]
@@ -637,5 +689,70 @@ mod tests {
         assert!(!g.is_rt_switch("c1", 8, 24, 4), "N-runs are not real repeats");
         // donor < repeat_len -> false (no room)
         assert!(!g.is_rt_switch("c1", 2, 24, 4));
+    }
+
+    /// Case-carrying FASTA reader sanity on a tiny synthetic multi-line FASTA + `.fai`
+    /// (validates the fai offset math + soft-mask/lowercase preservation without the
+    /// 3.4G genome). Also exercises clamping + empty-interval behaviour.
+    #[test]
+    fn indexed_fasta_case_carrying() {
+        let dir = std::env::temp_dir();
+        let base = dir.join(format!("rustle_faidx_{}.fa", std::process::id()));
+        let fa_path = base.to_str().unwrap().to_string();
+        // 26 bases across 3 lines of linebases=10 (linewidth=11 with '\n'); mixed case.
+        let seq = "ACGTacgtNN"; // line 1 (10)
+        let seq2 = "GGGGcccctt"; // line 2 (10)
+        let seq3 = "AAAAaa"; //     line 3 (6)
+        std::fs::write(&fa_path, format!(">c1\n{seq}\n{seq2}\n{seq3}\n")).unwrap();
+        // .fai: name length offset linebases linewidth ; offset = len(">c1\n") = 4
+        std::fs::write(format!("{fa_path}.fai"), "c1\t26\t4\t10\t11\n").unwrap();
+
+        let fa = IndexedFasta::open(&fa_path).unwrap();
+        let whole: Vec<u8> = format!("{seq}{seq2}{seq3}").into_bytes();
+        // full sequence, verbatim case
+        assert_eq!(fa.fetch("c1", 0, 26).unwrap(), whole);
+        // an interior slice straddling two lines, preserving lowercase
+        assert_eq!(fa.fetch("c1", 4, 14).unwrap(), b"acgtNNGGGG".to_vec());
+        // clamped end
+        assert_eq!(fa.fetch("c1", 20, 999).unwrap(), b"AAAAaa".to_vec());
+        // empty / unknown
+        assert_eq!(fa.fetch("c1", 5, 5).unwrap(), Vec::<u8>::new());
+        assert_eq!(fa.fetch("nope", 0, 3), None);
+
+        let _ = std::fs::remove_file(&fa_path);
+        let _ = std::fs::remove_file(format!("{fa_path}.fai"));
+    }
+
+    /// If the real genome is present, prove the case-carrying reader matches pysam by
+    /// re-fetching 12 loci's exon sequences and comparing to the pysam bytes recorded in
+    /// `vg_family/testdata/indexed_fasta_pysam_fixture.json` (trimmed from the retired
+    /// `repeat_catalog_fixture.json`). Skipped (passes) when the 3.4G genome is unavailable (e.g. CI).
+    #[test]
+    fn indexed_fasta_matches_pysam_on_real_genome() {
+        let genome = "/home/juanfra/winloci_scratch/GGO.fasta"; // test-only; not a shipped default
+        if !std::path::Path::new(&format!("{genome}.fai")).exists() {
+            eprintln!("real genome absent -> skipping pysam cross-check");
+            return;
+        }
+        let fx: serde_json::Value =
+            serde_json::from_str(include_str!("vg_family/testdata/indexed_fasta_pysam_fixture.json"))
+                .expect("parse indexed_fasta fixture json");
+        let fa = match IndexedFasta::open(genome) {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        let mut n = 0usize;
+        for locus in fx["loci"].as_array().unwrap() {
+            let chrom = locus["chrom"].as_str().unwrap();
+            let want = locus["seq"].as_str().unwrap().as_bytes();
+            let mut got = Vec::new();
+            for p in locus["exons"].as_array().unwrap() {
+                let a = p.as_array().unwrap();
+                got.extend(fa.fetch(chrom, a[0].as_i64().unwrap(), a[1].as_i64().unwrap()).unwrap());
+            }
+            assert_eq!(got, want, "pysam vs IndexedFasta MISMATCH at {chrom}");
+            n += 1;
+        }
+        assert!(n >= 12, "fixture holds 12 loci, read {n}");
     }
 }

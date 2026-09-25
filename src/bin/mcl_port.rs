@@ -1,5 +1,6 @@
 //! `mcl_port` — bit-faithful Rust port of `bench/mcl_port.py`, the Python MCL used as the like-for-like
-//! COMPARATOR by eight bench scripts (§6y0/§6y7 arms, the protein referee, `adjudicated_truth`, ...).
+//! COMPARATOR by the bench scorers (through `bench/lib.py::mcl` since wave 7: the §6y0/§6y7 arms, the protein
+//! referee, `truth.py adjudicated`, ...).
 //!
 //! ⚠ This is NOT the shipped `annotation_families::mcl`. Register 917 records that `mcl_port.py` is
 //! deliberately not bit-identical to it (245 vs 168 clusters on chr2), and those scripts were designed

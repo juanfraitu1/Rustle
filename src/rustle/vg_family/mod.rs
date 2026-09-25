@@ -1,20 +1,18 @@
 //! Variation-graph family analysis for novel gene-family copies.
 //!
-//! Builds a per-exon family graph (`family_graph`) over paralog copies and
-//! drives structural detectors (mosaic, hidden_copy) plus
-//! k-mer-based novel-copy rescue. See `docs/o3_missing_copy_evidence.md` for why
+//! Family detection and definition (O1), copy assignment under MAPQ-0 ambiguity (O2) and
+//! missing/reference-absent copies (O3), with the structural detectors (mosaic, hidden_copy)
+//! and k-mer-based novel-copy rescue they use. See `docs/o3_missing_copy_evidence.md` for why
 //! the aligner misses the reads this module rescues.
 //!
 //! **STATUS:** INFRASTRUCTURE  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 pub mod missing_copy; // O3 RNA-only chain: divergence mixture -> PSV consistency -> patched consensus -> home search -> screens -> verdict (§6ze).
-pub mod seq_utils; // small sequence utilities (reverse_complement); relocated from the retired assembler vg.rs.
+pub mod run_cache; // on-disk cache of the catalog's representatives and all-vs-all PAFs (RUSTLE_CACHE_DIR), for fast re-runs and analysis.
+pub mod seq_utils; // small sequence utilities: reverse_complement, revcomp_keep_case, hw_distance/aln_id (edlib-HW identity).
 pub mod collapse_gate; // O2: admit a COLLAPSED single-rep locus as a multi-copy family (ambiguity test, then chi(H)).
-pub mod minimizers; // O1 over-merge-gate FOUNDATION: canonical (k,w)-minimizers (Rust port of vg_repeat_catalog.py `minimizers`; byte-parity tested).
 pub mod annotation_families;
-pub mod repeat_catalog; // O1 over-merge-gate: node-multiplicity REPEAT CATALOG (load_skeletons/dn_exons/NodeCatalog; Rust port of vg_repeat_catalog.py catalog-production core; byte-parity tested).
-pub mod bridge_detector; // O1 over-merge-gate SHARED LIBRARY: exon graph (family_exons/exon_match_tensor/build_graph/colinear_cov/subfams + aln_id HW-DP; Rust port of recombination_bridge_detector.py library core; byte-parity tested).
-pub mod family_graph;
+pub mod family_graph; // contiguous-core homology kernel (POA MSA, core coverage + LCS fallback, memo) used by detection, edge confirmation and rescue.
 pub mod mosaic;
 pub mod hidden_copy;
 pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collapse-enumerate): pure three-signal admission decision (hidden_copy flagged + balanced alt fraction + >=2 genome-projected loci).
@@ -50,7 +48,6 @@ pub mod shared_definition; // OPT-IN RUSTLE_SHARED_DEFINITION: the shared family
 pub mod seed_projection; // `--seed`: a QUERY over the EMITTED catalog (the block containing s), never a term in the definition; the node set stays seed-free.
 pub mod copy_discovery; // Discovery of candidate gene-family copies from read alignment ties.
 
-pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 
 #[cfg(test)]
 mod module_status_tests {

@@ -12,6 +12,16 @@
 #
 # usage: tools/rustle_pipeline.sh STAGE --bam B --fasta G --out PREFIX [--index G.splice.mmi] [--gff ANNOT.gff]
 #        [--confirm NAME=X.mmi ...] [--foreign NAME=X.mmi ...] [--threads N] [--bin DIR] [--no-seed-secondaries]
+#        [--no-cache] [--inspect]
+#   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
+# CACHE (default on, --no-cache turns it off): families and catalog keep their expensive intermediates in
+#   PREFIX.cache/ (RUSTLE_CACHE_DIR): the catalog's collapsed representatives (reps/<key>/reps.tsv + reps.fa, both
+#   BAM passes and the locus collapse) and every all-vs-all PAF (paf/<key>/out.paf). A re-run that changes only
+#   downstream settings (the E_r edge rule, gamma, coverage split) replays them: human chr16 358 s -> 0.9 s,
+#   byte-identical outputs. Keys cover the binary, BAM/FASTA (+ indexes) and every upstream RUSTLE_* setting.
+# --inspect: also write the analyst dumps — catalog edge tables (PREFIX.cache/inspect/catalog.*: reps.fa, PAF,
+#   edges.tsv, nodes.tsv, rule.tsv, params.tsv), per-round collapse statistics in the catalog log, and the
+#   assignment evidence (PREFIX.assign.psv_*.tsv, PREFIX.assign.posterior.tsv).
 # Loci are seeded from primaries PLUS secondaries within 2% of the molecule's GENOME-WIDE best alignment score
 #   (one `as_table` pass over the BAM -> PREFIX.molecules.tsv, reused if present): on the held-out gorilla contig
 #   this finds 30 more loci (97% annotated) and doubles the >=90%-identity referee pairs joined, at pair precision
@@ -23,18 +33,39 @@
 # `families` as the guided locus set instead of the de novo one. Every product carries the PREFIX.
 set -euo pipefail
 STAGE=${1:-all}; shift || true
-BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_SEC=1
+BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_SEC=1; CACHE=1; INSPECT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
     --gff) GFF=$2; shift 2;; --threads) THREADS=$2; shift 2;; --bin) BIN=$2; shift 2;;
     --confirm) CONFIRM+=(--confirm "$2"); shift 2;; --foreign) FOREIGN+=(--foreign "$2"); shift 2;;
     --seed-secondaries) SEED_SEC=1; shift;; --no-seed-secondaries) SEED_SEC=0; shift;;
+    --cache) CACHE=1; shift;; --no-cache) CACHE=0; shift;; --inspect) INSPECT=1; shift;;
     *) echo "unknown argument $1" >&2; exit 2;;
   esac
 done
+if [ "$STAGE" = cache-clear ]; then
+  [ -n "$OUT" ] || { echo "cache-clear needs --out PREFIX" >&2; exit 2; }
+  [ -d "$OUT.cache" ] && du -sh "$OUT.cache" && rm -rf "$OUT.cache"
+  exit 0
+fi
+if [ "$STAGE" = cache-ls ]; then
+  [ -n "$OUT" ] || { echo "cache-ls needs --out PREFIX" >&2; exit 2; }
+  for d in "$OUT".cache/*/*/; do
+    [ -f "$d/DONE" ] || continue
+    printf '%s\t%s\t%s\n' "$(du -sh "$d" | cut -f1)" "${d%/}" "$(head -1 "$d/key.tsv")"
+  done
+  exit 0
+fi
 [ -n "$BAM" ] && [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "need --bam, --fasta, --out" >&2; exit 2; }
 export TMPDIR=${TMPDIR:-/tmp}
+if [ "$CACHE" = 1 ]; then export RUSTLE_CACHE_DIR="$OUT.cache"; else unset RUSTLE_CACHE_DIR; fi
+INSPECT_CAT=(); INSPECT_ASSIGN=()
+if [ "$INSPECT" = 1 ]; then
+  mkdir -p "$OUT.cache/inspect"
+  INSPECT_CAT=("RUSTLE_ER_EDGE_DUMP=$OUT.cache/inspect/catalog" RUSTLE_COLLAPSE_STATS=1)
+  INSPECT_ASSIGN=(--dump-psv --posterior)
+fi
 POLISH="--assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7 --polish-retained-ratio 10"
 say() { echo "[rustle_pipeline] $(date +%H:%M:%S) $*" >&2; }
 
@@ -60,14 +91,14 @@ stage_families() {
 }
 stage_catalog() {
   say "catalog: gw_family_catalog on $BAM"
-  "$BIN/gw_family_catalog" --bam "$BAM" --fasta "$FASTA" --threads "$THREADS" --out "$OUT.cat" > "$OUT.catalog.log" 2>&1
+  env "${INSPECT_CAT[@]}" "$BIN/gw_family_catalog" --bam "$BAM" --fasta "$FASTA" --threads "$THREADS" --out "$OUT.cat" > "$OUT.catalog.log" 2>&1
   say "catalog: $(awk 'NR>1' "$OUT.cat.copies.tsv" | wc -l) copies in $(awk 'NR>1 && $2>=2' "$OUT.cat.families.tsv" | wc -l) multi-copy families"
 }
 stage_assign() {
   say "assign: per-read copy assignment on $OUT.cat"
   samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":1-"$3}' > "$OUT.regions.txt"
   "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
-    --families "$OUT.cat.copies.tsv" --copies-fa "$OUT.cat.copies.fa" --out "$OUT.assign" > "$OUT.assign.log" 2>&1
+    --families "$OUT.cat.copies.tsv" --copies-fa "$OUT.cat.copies.fa" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1
   say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family)"
 }
 stage_flag() {

@@ -31,7 +31,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::family_graph::{contiguous_core_coverage_bounded, upper_cow};
+use super::family_graph::{core_coverage_reaches, upper_cow};
 use super::family_rescue::window_canon_code;
 use crate::vg_family::seq_utils::reverse_complement;
 
@@ -570,13 +570,9 @@ fn locus_reps(transcripts: &[DenovoTranscript], parent: &[usize]) -> Vec<usize> 
         let r = uf_find(&mut ptmp, i);
         comp.entry(r).or_default().push(i);
     }
-    // Opt-in `RUSTLE_SPLICED_REP`: compare SPLICED evidence to UNSPLICED evidence in aggregate before
-    // choosing, instead of letting one pooled unspliced cluster outvote each spliced isoform individually.
-    // See `bench/soto/merge_quality_analysis.md` §20. Default off -> byte-identical.
-    let spliced_rep = matches!(std::env::var("RUSTLE_SPLICED_REP"), Ok(v) if v != "0" && !v.is_empty());
     let mut reps: Vec<usize> = comp
         .into_values()
-        .map(|members| pick_locus_rep(transcripts, &members, spliced_rep))
+        .map(|members| pick_locus_rep(transcripts, &members))
         .collect();
     reps.sort_unstable();
     reps
@@ -593,11 +589,9 @@ fn locus_reps(transcripts: &[DenovoTranscript], parent: &[usize]) -> Vec<usize> 
 /// SRGAP2C emits a 1-exon/96-read copy though its biggest spliced chain has 46 reads. The locus is then
 /// represented by what is frequently INTRONIC pre-mRNA (§14), and the family fails any isoform test.
 ///
-/// With `spliced_rep`, spliced chains at a locus are treated as what they are — ISOFORMS of one
-/// transcription unit, not competitors — and their reads are summed before the comparison. The winning
-/// CLASS then supplies the representative. A genuinely intronless locus has no spliced members, so its
-/// unspliced cluster still wins; nothing forces a spliced representative where none exists.
-fn pick_locus_rep(transcripts: &[DenovoTranscript], members: &[usize], spliced_rep: bool) -> usize {
+/// (`RUSTLE_SPLICED_REP`, which summed spliced vs unspliced evidence before choosing, was removed on 2026-09-24:
+/// register M row "chr7 F1 0.570 -> 0.411, chr16 0.910 -> 0.761".)
+fn pick_locus_rep(transcripts: &[DenovoTranscript], members: &[usize]) -> usize {
     let best = |cands: &[usize]| -> usize {
         *cands
             .iter()
@@ -609,24 +603,6 @@ fn pick_locus_rep(transcripts: &[DenovoTranscript], members: &[usize], spliced_r
             })
             .unwrap()
     };
-    if spliced_rep {
-        let spliced: Vec<usize> = members
-            .iter()
-            .copied()
-            .filter(|&i| !transcripts[i].introns.is_empty())
-            .collect();
-        if !spliced.is_empty() {
-            let spl: u64 = spliced.iter().map(|&i| transcripts[i].n_reads as u64).sum();
-            let unspl: u64 = members
-                .iter()
-                .filter(|&&i| transcripts[i].introns.is_empty())
-                .map(|&i| transcripts[i].n_reads as u64)
-                .sum();
-            if spl >= unspl {
-                return best(&spliced);
-            }
-        }
-    }
     best(members)
 }
 
@@ -722,7 +698,7 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
 
     // Phase 2: iterative span-aware merge of locus representatives.
     //
-    // Under `RUSTLE_SPLICED_REP`, an INTRONLESS transcript is treated as having UNKNOWN strand rather than
+    // Under `RUSTLE_COLLAPSE_UNSTRANDED`, an INTRONLESS transcript is treated as having UNKNOWN strand rather than
     // `+`. Strand is derived from canonical junction motifs, so a cluster with no junctions has none to
     // derive from and its `+` is a placeholder. The merge condition `a.strand == b.strand` nevertheless
     // treats that placeholder as evidence, which makes an unspliced cluster unmergeable with any MINUS-strand
@@ -731,24 +707,49 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
     // unspliced cluster never even meets the spliced evidence, survives as an independent locus, and is
     // emitted as its own single-exon copy (§14, §20).
     //
-    // `RUSTLE_COLLAPSE_UNSTRANDED` UN-WELDS that clause from `RUSTLE_SPLICED_REP`. `RUSTLE_SPLICED_REP`
-    // also changes WHICH transcript represents a locus (`pick_locus_rep` above), and it is that leg the
-    // end-to-end regression was attributed to (chr7 F1 0.570 -> 0.411, chr16 0.910 -> 0.761). The two
-    // effects cannot be separated while one variable gates both, so this one turns on the STRAND clause
-    // ALONE, leaving rep selection at its default. Threshold-free in the `is_chimeric_bridge` sense: it
-    // asks whether the strand field was MEASURED, not how large a number is. With NEITHER variable set the
-    // `else` branch below is reached unchanged, so the OFF arm is byte-identical by construction.
+    // History: this clause used to be welded to `RUSTLE_SPLICED_REP`, which also changed WHICH transcript
+    // represents a locus and was refuted end to end (chr7 F1 0.570 -> 0.411, chr16 0.910 -> 0.761; removed
+    // 2026-09-24). `RUSTLE_COLLAPSE_UNSTRANDED` turns on the STRAND clause alone. Threshold-free in the
+    // `is_chimeric_bridge` sense: it asks whether the strand field was MEASURED, not how large a number is.
+    // Unset, the `else` branch below is reached unchanged, so the OFF arm is byte-identical by construction.
     let unstranded_unspliced =
-        matches!(std::env::var("RUSTLE_SPLICED_REP"), Ok(v) if v != "0" && !v.is_empty())
-            || matches!(std::env::var("RUSTLE_COLLAPSE_UNSTRANDED"), Ok(v) if v != "0" && !v.is_empty());
+        matches!(std::env::var("RUSTLE_COLLAPSE_UNSTRANDED"), Ok(v) if v != "0" && !v.is_empty());
     let exonic_collapse =
         matches!(std::env::var("RUSTLE_COLLAPSE_EXONIC"), Ok(v) if v != "0" && !v.is_empty());
+    // SPEED (2026-09-24, byte-identical): the merge decisions of one round depend only on that round's
+    // representatives, never on unions made earlier in the same round, so the round's union SET — and hence
+    // the partition `locus_reps` reads — is independent of pair order. Two consequences are exploited:
+    //   - only SPAN-OVERLAPPING same-contig pairs are visited (a sweep over reps sorted by (chrom, start)):
+    //     a pair with no span overlap has `ov == 0` under both the span and the exonic measure, so it can
+    //     never merge; the old all-pairs loop visited n^2/2 pairs per round (chr16: ~25k reps);
+    //   - the POA core-coverage calls (the expensive step: 257 of 292 s on a gorilla contig, ~3,300 of
+    //     3,495 s on human chr16) run in parallel via rayon, exactly as `confirm_edge` already does, and
+    //     their verdicts are applied afterwards. Each pair keeps its original (lower rep index, higher)
+    //     orientation, so every call sees the same arguments as before.
+    use rayon::prelude::*;
+    let t_collapse = std::time::Instant::now();
+    let (mut n_rounds, mut n_visited, mut n_poa) = (0usize, 0usize, 0usize);
+    let mut slowest: (f64, usize, usize) = (0.0, 0, 0); // (seconds, len a, len b) of the slowest POA call
     loop {
+        n_rounds += 1;
         let reps = locus_reps(transcripts, &parent);
-        let mut merged = false;
-        for i in 0..reps.len() {
-            let a = &transcripts[reps[i]];
-            for j in (i + 1)..reps.len() {
+        let mut order: Vec<usize> = (0..reps.len()).collect();
+        order.sort_by(|&x, &y| {
+            let (a, b) = (&transcripts[reps[x]], &transcripts[reps[y]]);
+            (a.chrom.as_str(), a.start, x).cmp(&(b.chrom.as_str(), b.start, y))
+        });
+        let mut poa_pairs: Vec<(usize, usize)> = Vec::new();
+        let mut merges: Vec<(usize, usize)> = Vec::new();
+        for (oi, &x) in order.iter().enumerate() {
+            let (sx_chrom, sx_end) = (&transcripts[reps[x]].chrom, transcripts[reps[x]].end);
+            for &y in &order[oi + 1..] {
+                let ty = &transcripts[reps[y]];
+                if &ty.chrom != sx_chrom || ty.start >= sx_end {
+                    break; // sorted by (chrom, start): no later rep overlaps x's span
+                }
+                let (i, j) = if x < y { (x, y) } else { (y, x) };
+                n_visited += 1;
+                let a = &transcripts[reps[i]];
                 let b = &transcripts[reps[j]];
                 // Strand blocks a merge only when BOTH sides actually have a junction-derived strand.
                 let strand_conflict = if unstranded_unspliced {
@@ -782,26 +783,66 @@ fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<us
                 }
                 let containment = ov as f64 / minlen as f64;
                 if containment >= COLLAPSE_CONTAIN_FRAC {
-                    uf_union(&mut parent, reps[i], reps[j]);
-                    merged = true;
+                    merges.push((i, j));
                     continue;
                 }
-                // Disjoint-junction isoforms with similar length: require strong POA core coverage.
-                let au = upper_cow(&a.seq);
-                let bu = upper_cow(&b.seq);
-                let core = contiguous_core_coverage_bounded(&au, &bu, p.len_cap);
-                if core >= p.collapse_span_core {
-                    uf_union(&mut parent, reps[i], reps[j]);
-                    merged = true;
-                }
+                // Disjoint-junction isoforms with similar length: require strong POA core coverage
+                // (evaluated below, in parallel).
+                poa_pairs.push((i, j));
             }
         }
+        n_poa += poa_pairs.len();
+        let poa_merge: Vec<(bool, f64)> = poa_pairs
+            .par_iter()
+            .map(|&(i, j)| {
+                let t = std::time::Instant::now();
+                let au = upper_cow(&transcripts[reps[i]].seq);
+                let bu = upper_cow(&transcripts[reps[j]].seq);
+                // exact substring bound first (skips the hopeless alignments), then the POA core
+                let m = core_coverage_reaches(&au, &bu, p.len_cap, p.collapse_span_core);
+                (m, t.elapsed().as_secs_f64())
+            })
+            .collect();
+        for (&(i, j), &(_, secs)) in poa_pairs.iter().zip(&poa_merge) {
+            if secs > slowest.0 {
+                slowest = (secs, transcripts[reps[i]].seq.len(), transcripts[reps[j]].seq.len());
+            }
+        }
+        let poa_secs: f64 = poa_merge.iter().map(|x| x.1).sum();
+        if collapse_stats_enabled() {
+            eprintln!("[collapse] round {n_rounds}: {} reps, {} POA pairs, {poa_secs:.1} CPU-s in POA", reps.len(), poa_pairs.len());
+        }
+        for (&(i, j), &(m, _)) in poa_pairs.iter().zip(&poa_merge) {
+            if m {
+                merges.push((i, j));
+            }
+        }
+        // Replay the round's unions in (i, j) lexicographic order — exactly the order the all-pairs loop
+        // applied them — so `parent` (and every component ROOT, which `locus_groups` orders its output by
+        // under RUSTLE_LOCUS_EXON_UNION / RUSTLE_COTHREAD_REP) is identical, not just the partition.
+        merges.sort_unstable();
+        for &(i, j) in &merges {
+            uf_union(&mut parent, reps[i], reps[j]);
+        }
+        let merged = !merges.is_empty();
         if !merged {
             break;
         }
     }
+    if collapse_stats_enabled() || t_collapse.elapsed().as_secs() >= 30 {
+        eprintln!(
+            "[collapse] {} transcripts: {n_rounds} round(s), {n_visited} span-overlapping pairs, {n_poa} POA calls, {:.1} s wall; slowest POA {:.1} s ({} x {} bp)",
+            transcripts.len(), t_collapse.elapsed().as_secs_f64(), slowest.0, slowest.1, slowest.2
+        );
+    }
 
     parent
+}
+
+/// `RUSTLE_COLLAPSE_STATS=1`: per-round POA counts of the locus collapse on stderr (the summary line is
+/// printed anyway whenever the collapse takes >= 30 s).
+fn collapse_stats_enabled() -> bool {
+    matches!(std::env::var("RUSTLE_COLLAPSE_STATS"), Ok(v) if v != "0" && !v.is_empty())
 }
 
 /// One representative transcript index per collapse locus. Behavior-preserving thin wrapper over
@@ -1322,35 +1363,6 @@ mod tests {
         assert!(eov2 as f64 / lb2 as f64 >= COLLAPSE_CONTAIN_FRAC, "real isoform still merges");
     }
 
-    #[test]
-    fn spliced_rep_beats_a_read_richer_unspliced_pool_but_only_when_spliced_evidence_wins() {
-        // The SRGAP2C shape: three spliced isoform-chains of 20/16/10 reads (46 total) at one locus, plus a
-        // single pooled unspliced cluster of 40. The default rule takes the 40-read unspliced cluster
-        // because it beats every individual chain; the aggregate rule sees 46 > 40 and takes the best chain.
-        let mk = |i: usize, reads: u32, introns: Vec<(u64, u64)>| DenovoTranscript {
-            tid: format!("t{i}"), chrom: "c1".into(), start: 100, end: 900,
-            n_reads: reads, strand: '+', introns, seq: b"ACGT".to_vec(), ..Default::default()
-        };
-        let tx = vec![
-            mk(0, 20, vec![(200, 300)]),
-            mk(1, 16, vec![(200, 400)]),
-            mk(2, 10, vec![(250, 300)]),
-            mk(3, 40, vec![]),            // pooled unspliced cluster — read-richest single member
-        ];
-        let members: Vec<usize> = (0..4).collect();
-        assert_eq!(pick_locus_rep(&tx, &members, false), 3, "default rule takes the unspliced pool");
-        assert_eq!(pick_locus_rep(&tx, &members, true), 0, "aggregate rule takes the best spliced chain");
-
-        // A genuinely INTRONLESS locus has no spliced member, so nothing is forced: the unspliced cluster
-        // still represents it. This is what keeps histones and processed pseudogenes correct.
-        let only_unspliced = vec![mk(0, 5, vec![]), mk(1, 30, vec![])];
-        assert_eq!(pick_locus_rep(&only_unspliced, &[0, 1], true), 1);
-
-        // When unspliced evidence genuinely dominates (40 vs 12), the spliced side does NOT win -- the rule
-        // is a fair aggregate comparison, not an unconditional preference for splicing.
-        let weak_spliced = vec![mk(0, 12, vec![(200, 300)]), mk(1, 40, vec![])];
-        assert_eq!(pick_locus_rep(&weak_spliced, &[0, 1], true), 1);
-    }
 
     #[test]
     fn collapse_loci_groups_maps_isoforms_to_their_gene_rep() {
@@ -1564,8 +1576,10 @@ mod tests {
     /// Save-and-restore for the three variables `collapse_parent` reads, so an ambient value in the
     /// caller's shell cannot decide the result and neither test leaks into the other.
     fn with_collapse_env<T>(set: &[(&str, &str)], f: impl FnOnce() -> T) -> T {
-        const VARS: [&str; 3] =
-            ["RUSTLE_SPLICED_REP", "RUSTLE_COLLAPSE_UNSTRANDED", "RUSTLE_COLLAPSE_EXONIC"];
+        // Held across the whole set/run/restore window. (The lock was declared but never taken, so the two
+        // tests below raced each other under the multi-threaded harness; fixed 2026-09-24.)
+        let _g = COLLAPSE_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        const VARS: [&str; 2] = ["RUSTLE_COLLAPSE_UNSTRANDED", "RUSTLE_COLLAPSE_EXONIC"];
         let prior: Vec<(&str, Option<String>)> =
             VARS.iter().map(|k| (*k, std::env::var(k).ok())).collect();
         for k in VARS {

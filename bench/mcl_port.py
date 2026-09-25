@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Python MCL comparator — now a thin shim over the bit-faithful Rust bin `mcl_port` (§6z3, r1047).
 
-Kept because eight bench scripts `import mcl_port` and call `mcl(edges, ...)`; their numbers were designed
+Kept because the bench scorers call it (since wave 7 through `lib.mcl`) as `mcl(edges, ...)`; their numbers were designed
 against THIS algorithm (register 917: deliberately not bit-identical to the shipped
 `annotation_families::mcl`, 245 vs 168 clusters on chr2). The Rust bin reproduces the former
 numpy/scipy implementation exactly — same clusters, same cluster order, same member order — verified on

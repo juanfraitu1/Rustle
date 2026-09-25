@@ -7,8 +7,9 @@ layer-order study.
   §0★★★ (the lattice definition this run instantiates); `docs/superpowers/specs/2026-09-16-family-layer-order-design.md`
   (Definitions, AUDIT AMENDMENT); `bench/LAYER_ORDER_NPIP_TBC1D3.md`.
 - **Results:** `/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3/lattice/`, written `LAT/` below.
-- **Scripts:** `bench/layer_order/lattice_*.py`.
-- **Traceability:** every table is regenerated from the result files by `lattice_report_tables.py`, which writes
+- **Scripts:** `bench/layer_order/npip_tbc1d3.py lattice-*`, with the library `bench/layer_order/lattice_common.py`
+  (wave 7, 2026-09-24; the old `lattice_*.py` files are at git tag `notebook-2026-09-24`; §11 maps old to new).
+- **Traceability:** every table is regenerated from the result files by `npip_tbc1d3.py lattice-report`, which writes
   `LAT/report_tables.md`. Sections there are named T-…, and each table below cites its section. Numbers are formatted from
   unrounded values.
 - **Status:** descriptive. Not pre-registered. Both families were used to develop the DNA rules (§6js). Not committed.
@@ -17,7 +18,7 @@ layer-order study.
   bring the tests closer to the definition (`docs/seeded_family_definition.md` §0★★★.1):
   1. **Unrounded thresholds.** The 17:03 edge table stored identities at 4 decimals, which let 2 edges below 0.98 into L3.
   2. **L1 checks the target side, as the shipped clause 2 does.** The hit must overlap v's exons, and spliced pairs
-     must pass the shipped strand check (`bench/denovo_shared_def.py`). The 17:12 L1 is kept as the variant
+     must pass the shipped strand check (`bench/denovo_shared_def.py`, archived: `notebook-2026-09-19:archive/bench/denovo_shared_def.py`). The 17:12 L1 is kept as the variant
      "no v-exon/strand".
   3. **L3 uses the single-record w_98 (gap-excluded identity), not a pooled identity.** Gap exclusion is a choice. It
      is the convention the 17:12 run fixed before any result. Pooled identities are kept as variants and are not
@@ -149,7 +150,7 @@ component gene, or nested records. 2,218 of the table's pairs are same-locus.
 | shared exon: `d_shared_exon_bp`, `d_shared_exon_frac`, `d_shared_exon_denominator`; `d_shared_exon_frac_allrec` | the same PAF records (primary: ≥ 300 bp, ≥ 0.70; `allrec`: all records) | **Exact** mcl_families quantity (S1 dumps 9,780 of 9,780). **It is taken from the single best record**, so a copy pair whose alignment is split into many records can score low: TBC1D3–TBC1D3P1-DHX40P1 scores 0.151 at pooled identity 0.983. 2,358 PAF pairs have no qualifying record: their fraction is 0 and their E1 identity is NA |
 | L3 identity: `d_w98_gapexcl` (primary), `d_w98_gapincl`; pooled `d_e1_identity_gapexcl`, `d_e1_identity` | the same records | w_98 is NA when no single record witnesses shared-exon ≥ 0.30 (9,962 pairs have a gap-excluded w_98). Short records can reach 1.000: LOC100190986 (2,453-bp lncRNA) vs NPIPB5 at w_98 1.000 |
 | S2: `s2_max_identity`, `s2_n_shared_exons`, `s2_n_projected_exon_pairs`, `s2_same_locus` | `heavy/S2.edges.tsv` (3,971 edges; 321 genes of the SD98 closure, all mapped) | Only 2,637 pairs in V have one. Missing ⇒ the S2 identity variant is unsatisfiable |
-| clade support: `ctree_family`, `ctree_smallest_common_cluster`, `ctree_support`, `ctree_same_top_cluster` | `lo_analysis.c_tree` on `light/C.supported_clades.tsv` (clause-5 split system) | Annotation only; used by no test. 246 pairs annotated (30 leaves) |
+| clade support: `ctree_family`, `ctree_smallest_common_cluster`, `ctree_support`, `ctree_same_top_cluster` | `lattice_common.c_tree` on `light/C.supported_clades.tsv` (clause-5 split system) | Annotation only; used by no test. 246 pairs annotated (30 leaves) |
 
 **Closure** (T-closure; `LAT/closure.tsv`).
 
@@ -412,7 +413,7 @@ exon union equals the whole body.
 **Metrics:**
 
 - Pairwise precision and recall.
-- Bipartite F with one-to-one Jaccard matching (`lo_analysis.bip_jaccard`). F is NA when either side has 0 pairs.
+- Bipartite F with one-to-one Jaccard matching (`lattice_common.bip_jaccard`). F is NA when either side has 0 pairs.
 - **In-group pair precision:** all labelled genes of the anchor's group, members and pulled-in non-members.
 
 **Scorer check:** the scorer reproduces 12 of 12 rows of `integrate_slim/truth_agreement.tsv` (P and D as built; Soto and
@@ -612,7 +613,8 @@ Under the 17:12 tests, unrounded: L1 604 → 340 (44% removed) and 897 → 78 (9
 
 ## 9. Expression views (testis, `human_testis.t2t.bam`; T-expr)
 
-**Counts.** `lattice_expr.py` counts all 8,070 V genes with the `lo_expr_recount.py` rule, using primary reads (`-F 2308`).
+**Counts.** `npip_tbc1d3.py lattice-expr` counts all 8,070 V genes with the `expr-recount` rule (one function,
+`lattice_common.count_reads`), using primary reads (`-F 2308`).
 
 - **Any-overlap:** a read counts for a gene if one of its blocks overlaps an exon of the gene, at any MAPQ.
 - **Unique:** the read's blocks hit exons of exactly one RefSeq record genome-wide.
@@ -694,16 +696,36 @@ them in one group. By T2b the split can only refine the L0 group.
 
 ## 11. Reproduce (foreground, in order; `LAT` = the results directory)
 
+Wave 7 (2026-09-24) replaced the 8 `lattice_*.py` scripts with one CLI, `bench/layer_order/npip_tbc1d3.py`, with one
+subcommand per old script. The old scripts are at git tag `notebook-2026-09-24`. Every stage **overwrites** its outputs
+under the root. The default root is the frozen `/mnt/linuxdisk/home/juanfraitu/layer_order/npip_tbc1d3`, so to rerun,
+copy `light/ heavy/ integrate_slim/ lattice/` and pass `--root COPY` (or set `LO_ROOT`). `npip_tbc1d3.py all
+--with-check-c2 --root COPY` runs both reproduce blocks: this one and `LAYER_ORDER_NPIP_TBC1D3.md` §11.
+
 ```
-python3 bench/layer_order/lattice_edges.py                  # LAT/{edges,nodes,closure,edges_all_c2}.tsv, edges_build.out (63 s, 2.5 GB)
-python3 bench/layer_order/lattice_expr.py                   # LAT/expr_counts.tsv, expr_counts.out                     (39 s)
-python3 bench/layer_order/lattice_levels.py                 # LAT/{levels,member_groups,groups,sanity,expr_views,chaining,triangle_drops}.tsv, levels.out (39 s)
-python3 bench/layer_order/lattice_truth.py                  # LAT/truth.tsv, truth_ingroup.tsv, truth.out               (4 s)
-python3 bench/layer_order/lattice_filtration.py             # LAT/filtration.txt, filtration_groups.tsv, filtration_appearance.tsv (5 s)
-python3 bench/layer_order/lattice_filtration.py --l1 c2_loose   # the same with suffix .17_03_tests_exact (17:12 L1 groups) (5 s)
-python3 bench/layer_order/lattice_check_c2.py               # LAT/check_c2.out (shipped chains and shipped v-exon/strand loop) (31 s)
-python3 bench/layer_order/lattice_report_tables.py          # LAT/report_tables.md (every table in this report)          (25 s)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY lattice-edges      # LAT/{edges,nodes,closure,edges_all_c2}.tsv, edges_build.out (64 s, 2.5 GB)   (was lattice_edges.py)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY lattice-expr       # LAT/expr_counts.tsv, expr_counts.out                     (43 s)   (was lattice_expr.py)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY lattice-levels     # LAT/{levels,member_groups,groups,sanity,expr_views,chaining,triangle_drops}.tsv, levels.out (44 s)   (was lattice_levels.py)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY lattice-truth      # LAT/truth.tsv, truth_ingroup.tsv, truth.out               (8 s)   (was lattice_truth.py)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY lattice-filtration # LAT/filtration.txt, filtration_groups.tsv, filtration_appearance.tsv (5 s)   (was lattice_filtration.py)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY lattice-filtration --l1 c2_loose   # the same with suffix .17_03_tests_exact (17:12 L1 groups) (5 s)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY lattice-check-c2   # LAT/check_c2.out (shipped chains and shipped v-exon/strand loop) (31 s)   (was lattice_check_c2.py)
+python3 bench/layer_order/npip_tbc1d3.py --root COPY lattice-report     # LAT/report_tables.md (every table in this report)          (26 s)   (was lattice_report_tables.py)
 ```
+
+Rerun check (wave 7, on a copy of the frozen directory). The old scripts, with only the repo-root path fixed, and the
+new CLI give byte-identical files for all 61 outputs of both reproduce blocks. The exceptions are the timing tokens of
+`edges_build.out`, `expr_counts.out` and `levels.out`. `check_c2.out` also equals the frozen 2026-09-16 file. Four
+caveats:
+- `lattice_check_c2.py` had not run since 2026-09-19. It imported the archived `denovo_shared_def`, and it `exec`'d the
+  head of `lattice_edges.py`, which has needed `__file__` since §6r9. The baseline needed both patched.
+- Seven outputs depend on Python's string-hash seed: ties are broken by set iteration order. They are
+  `LAT/{member_groups,groups,triangle_drops}.tsv`, `LAT/report_tables.md`, `IS/expr_groups.tsv`, `IS/expr_sweep.tsv`
+  and `IS/analysis.out`.
+- The frozen files hold one random seed's tie order: the same rows and numbers, some in another order. The CLI pins
+  `PYTHONHASHSEED=0`.
+- `LAT/corrections_pass2/{doc_numbers,strand_diag}.py` import the new `lattice_common` by path. Rerun on the new
+  outputs, they reproduce their frozen `.out` files byte for byte.
 
 Shared definitions (paths, the four tests and their variants, union-find, 3-truss, split counts) live in
 `bench/layer_order/lattice_common.py`. The rebuild check against the 17:03 table is

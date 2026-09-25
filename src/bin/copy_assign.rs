@@ -24,9 +24,10 @@ use rustle::vg_family::denovo_assemble::longest_orf;
 use rustle::vg_family::absent_copy::DnaNeedsRecord;
 use rustle::vg_family::linearize::LinearizeCertificate;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
+use rustle::vg_family::copy_assign_pipeline::read_ref_end;
 use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
-    assemble_gate, assemble_gate_census, merge_fuzzy_skeletons, pass1_skeletons_widened, reads_in_region,
+    assemble_gate, assemble_gate_census, pass1_skeletons_widened, reads_in_region,
     tied_secondary_reads_in_region,
     BamIndexCache, BamRead, GATE_MIN_READS,
 };
@@ -1559,65 +1560,20 @@ fn build_catalog_index(rf: &RegionFamilies) -> CatalogIndex {
     ix
 }
 
-/// Reference end (0-based, exclusive) of an aligned read. Local mirror of
-/// `copy_assign_pipeline::read_ref_end` (which is `pub(crate)`), used only for the "every supplied copy has
-/// reads" contract check below.
-/// Aligned blocks of a read (0-based half-open): `M`/`=`/`X`/`D` extend, `N` closes.
-fn aligned_blocks_local(read: &rustle::vg_family::copy_split::AlignedRead) -> Vec<(u64, u64)> {
-    let mut out = Vec::new();
-    let mut p = read.ref_start;
-    let mut cur: Option<(u64, u64)> = None;
-    for &(op, n) in &read.cigar {
-        match op {
-            'M' | '=' | 'X' | 'D' => {
-                cur = Some((cur.map_or(p, |c| c.0), p + n));
-                p += n;
-            }
-            'N' => {
-                if let Some(c) = cur.take() {
-                    out.push(c);
-                }
-                p += n;
-            }
-            _ => {}
-        }
-    }
-    if let Some(c) = cur {
-        out.push(c);
-    }
-    out
-}
-
-fn read_ref_end_local(read: &rustle::vg_family::copy_split::AlignedRead) -> u64 {
-    read.ref_start
-        + read.cigar.iter().filter(|(op, _)| matches!(op, 'M' | '=' | 'X' | 'D' | 'N')).map(|(_, n)| n).sum::<u64>()
-}
-
 /// Reference-block overlap between an alignment and `[s, e)`, mirroring pysam's `get_blocks()` (used by
 /// `bench/missing_copy_flag_pass.py`'s `truth` dict, lines 88-90: `sum(min(b1,e)-max(b0,s) for b0,b1 in
 /// a.get_blocks() if b1>s and b0<e)`): only `M`/`=`/`X` runs count as aligned reference bases; `D`/`N`
 /// advance the reference position without contributing overlap. A large intron (`N`) that merely SPANS
-/// a target window contributes zero here, unlike `read_ref_end_local`'s span (`ref_start..ref_end`),
+/// a target window contributes zero here, unlike `read_ref_end`'s span (`ref_start..ref_end`),
 /// which would wrongly count the whole intron as covering it -- Task 7's reproduction-gate fix.
 fn block_overlap(read: &rustle::vg_family::copy_split::AlignedRead, s: u64, e: u64) -> u64 {
-    let mut pos = read.ref_start;
-    let mut total = 0u64;
-    for &(op, n) in &read.cigar {
-        match op {
-            'M' | '=' | 'X' => {
-                let blk_end = pos + n;
-                let lo = pos.max(s);
-                let hi = blk_end.min(e);
-                if hi > lo {
-                    total += hi - lo;
-                }
-                pos = blk_end;
-            }
-            'D' | 'N' => pos += n,
-            _ => {}
-        }
-    }
-    total
+    rustle::vg_family::copy_discovery::aligned_blocks(read)
+        .into_iter()
+        .map(|(b0, b1)| {
+            let (lo, hi) = (b0.max(s), b1.min(e));
+            if hi > lo { hi - lo } else { 0 }
+        })
+        .sum()
 }
 
 /// The O3 detector's "truth" table: for every primary-aligned read, the family's own candidate copy
@@ -1645,7 +1601,7 @@ fn best_overlap_truth_copy<'a>(
 ) -> std::collections::HashMap<&'a str, ((String, String), u64)> {
     let mut truth_copy: std::collections::HashMap<&str, ((String, String), u64)> = std::collections::HashMap::new();
     for br in bam_reads.iter().filter(|br| !br.is_secondary && !br.is_supplementary) {
-        let end = read_ref_end_local(&br.read); // cheap span bound, to skip non-overlapping copies fast
+        let end = read_ref_end(&br.read); // cheap span bound, to skip non-overlapping copies fast
         for (ci, (c, s, e)) in copy_spans.iter().enumerate() {
             if br.chrom != *c || end <= *s || br.read.ref_start >= *e {
                 continue;
@@ -2726,6 +2682,9 @@ fn annotate_tpm(lines: &mut [String]) -> usize {
 
 fn main() -> Result<()> {
     let mut args = Args::parse();
+    // Bound rayon's GLOBAL pool to --threads (the locus collapse's POA alignments use `par_iter`; the
+    // `--region-threads` path installs its own scoped pool and is unaffected). Output-neutral.
+    rayon::ThreadPoolBuilder::new().num_threads(args.threads.max(1)).build_global().ok();
     // §6p6: --assemble-only IS the assembly product, so it implies --gtf. Setting it here means every
     // existing `if args.gtf` gate fires unchanged rather than each one needing a second condition.
     if args.assemble_only {
@@ -3277,7 +3236,7 @@ fn main() -> Result<()> {
                             .filter(|br| {
                                 br.chrom == c.chrom
                                     && br.read.ref_start < c.end
-                                    && read_ref_end_local(&br.read) > c.start
+                                    && read_ref_end(&br.read) > c.start
                             })
                             .count();
                         // §6ft: a catalog copy the catalog itself marks unexpressed (`n_reads 0`, an annotated model
@@ -3347,7 +3306,7 @@ fn main() -> Result<()> {
                     if br.as_score < best_as[br.name.as_str()] {
                         continue; // not one of the tied placements
                     }
-                    let (s0, e0) = (br.read.ref_start, read_ref_end_local(&br.read));
+                    let (s0, e0) = (br.read.ref_start, read_ref_end(&br.read));
                     let inside = targets.iter().any(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
                     if !inside {
                         flagged.insert(br.name.as_str());
@@ -3377,7 +3336,7 @@ fn main() -> Result<()> {
                 // its best-AS record(s), both by unit-span overlap (same `targets` as above). Disagree ⟹ admit.
                 if args.admit_aligner_disagreement {
                     let unit_of = |br: &rustle::vg_family::denovo_assemble::BamRead| -> Option<usize> {
-                        let (s0, e0) = (br.read.ref_start, read_ref_end_local(&br.read));
+                        let (s0, e0) = (br.read.ref_start, read_ref_end(&br.read));
                         targets.iter().position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a)
                     };
                     let mut prim: std::collections::HashMap<&str, Option<usize>> = std::collections::HashMap::new();
@@ -3415,9 +3374,9 @@ fn main() -> Result<()> {
             GATE_MOL_OUTSIDE.fetch_add(n_outside, std::sync::atomic::Ordering::Relaxed);
             if (args.gtf_copy_set && !args.no_gtf_copy_set) {
                 for br in bam_reads.iter().filter(|br| !tied_owned.contains(&br.name) && !br.is_secondary && !br.is_supplementary) {
-                    let bl = aligned_blocks_local(&br.read);
+                    let bl = br.read.exon_blocks();
                     let chain: Vec<(u64, u64)> = bl.windows(2).map(|w| (w[0].1, w[1].0)).filter(|&(a, b)| b > a).collect();
-                    uniq_reads.push((br.chrom.clone(), br.read.ref_start, read_ref_end_local(&br.read), chain));
+                    uniq_reads.push((br.chrom.clone(), br.read.ref_start, read_ref_end(&br.read), chain));
                 }
             }
             bam_reads.retain(|br| tied_owned.contains(&br.name));
@@ -3480,23 +3439,8 @@ fn main() -> Result<()> {
                 Some(s) => s,
                 None => pass1_skeletons_widened(&primary, cfg.pass1_min_reads, 1, None, args.read_isoform_k),
             };
-            // Opt-in (RUSTLE_JUNCTION_FUZZ_BP, default off): merge skeletons whose intron chains match in
-            // count and differ only by a pre-registered per-junction tolerance --
-            // docs/PREREG_junction_fuzz_2026-09-15.md, docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md.
-            // This IS the "--gtf pure de novo path" call site the design targets (traced 2026-09-15: the
-            // `detect_and_assign`/`pass1_skeletons_robust` skeletons feed only the multi-copy family/O1
-            // oracle below and are never read by this block). Zero effect when unset (tolerance 0 is
-            // `merge_fuzzy_skeletons`'s own explicit no-op), so every existing catalog stays byte-identical.
-            // ⚠ MEASURED NET-NEGATIVE at the pre-registered 672bp tolerance on real chr20 data: matching
-            // intron chains 345 -> 284, matching transcripts 347 -> 286 vs baseline
-            // (`bench/CHR20_ASSEMBLER_COMPARISON.md`'s "fuzzy junction merging" follow-up). Left off by
-            // default for this reason, not merely because it is untested -- do not enable it without
-            // re-registering a new tolerance via a fresh, separate experiment.
-            let fuzz_bp: u64 = std::env::var("RUSTLE_JUNCTION_FUZZ_BP")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
-            let skeletons = if fuzz_bp > 0 { merge_fuzzy_skeletons(skeletons, fuzz_bp) } else { skeletons };
+            // (The opt-in fuzzy junction merge, RUSTLE_JUNCTION_FUZZ_BP, sat here; measured net-negative on chr20 —
+            // register r842 — and removed 2026-09-24, tag `notebook-2026-09-24`.)
             // §6m6 follow-up: localise where pass-1 skeletons die before the GTF. `RUSTLE_GATE_CENSUS=1`
             // only PRINTS — the transcripts are the same objects either way.
             let iso = if matches!(std::env::var("RUSTLE_GATE_CENSUS"), Ok(v) if v != "0" && !v.is_empty()) {
@@ -3537,12 +3481,12 @@ fn main() -> Result<()> {
             .map(|r| {
                 (
                     r.read.ref_start,
-                    read_ref_end_local(&r.read),
+                    read_ref_end(&r.read),
                     (r.is_secondary as u8) | ((r.is_supplementary as u8) << 1),
                 )
             })
             .collect();
-        let read_blocks: Vec<Vec<(u64, u64)>> = bam_reads.iter().map(|r| aligned_blocks_local(&r.read)).collect();
+        let read_blocks: Vec<Vec<(u64, u64)>> = bam_reads.iter().map(|r| r.read.exon_blocks()).collect();
         let read_strand: Vec<char> = bam_reads
             .iter()
             .map(|r| match (r.ts, r.reverse) {
@@ -3759,7 +3703,7 @@ fn main() -> Result<()> {
                 // A[a.query_name].get('n_candidates','1')=='0')`.
                 let mut clusters: Vec<(String, u64, u64, usize, usize)> = Vec::new();
                 for br in &outside {
-                    let end = read_ref_end_local(&br.read);
+                    let end = read_ref_end(&br.read);
                     let is_true_orphan = fa_verdict.get(br.name.as_str()).map_or(false, |&(_, n_cand)| n_cand == 0);
                     if let Some(last) = clusters.last_mut() {
                         if last.0 == br.chrom && br.read.ref_start.saturating_sub(last.2) <= 5000 {
@@ -4005,7 +3949,7 @@ fn main() -> Result<()> {
                     });
                 }
                 // --vg-realign (report-only): the re-align supplement's per-read decisions for this family.
-                // Empty unless --vg-realign was passed (cfg.vg_realign gates run_family_realign itself).
+                // Empty unless --vg-realign was passed (cfg.vg_realign gates apply_realign itself).
                 for r in &fa.realign_records {
                     vg_realign_lines.push(format!(
                         "{}\t{}\t{}\t{}\t{:.6}\t{}",
@@ -4553,13 +4497,7 @@ fn main() -> Result<()> {
                         }
                     }
                     if t.strand == '-' {
-                        seq.reverse();
-                        for b in seq.iter_mut() {
-                            *b = match *b {
-                                b'A' => b'T', b'T' => b'A', b'C' => b'G', b'G' => b'C',
-                                b'a' => b't', b't' => b'a', b'c' => b'g', b'g' => b'c', x => x,
-                            };
-                        }
+                        seq = rustle::vg_family::seq_utils::revcomp_keep_case(&seq);
                     }
                     Some(longest_orf(&seq) / 3)
                 } else {
@@ -6295,7 +6233,7 @@ mod tests {
         // ref_start=0, "10M5000N10M": aligned blocks are [0,10) and [5010,5020); the intron covers
         // [10,5010) with no M/=/X inside it. A window fully inside the intron (e.g. [100,200)) must
         // score 0 overlap, even though it lies strictly between the read's ref_start and ref_end --
-        // this is the exact bug `read_ref_end_local`-based span checks were vulnerable to.
+        // this is the exact bug `read_ref_end`-based span checks were vulnerable to.
         let read = rustle::vg_family::copy_split::AlignedRead {
             ref_start: 0,
             cigar: vec![('M', 10), ('N', 5000), ('M', 10)],
@@ -6546,7 +6484,6 @@ mod tests {
     #[test]
     fn build_copy_graph_maps_family_to_graph() {
         use rustle::vg_family::denovo_pipeline::FamilyAssignment;
-        use rustle::vg_family::copy_graph::CopyStatus;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.n_copies = 2;

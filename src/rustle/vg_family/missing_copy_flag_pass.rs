@@ -137,21 +137,6 @@ pub fn finalize_flags(all_pairs: &[RawPair], alpha: f64) -> Vec<FlaggedPair> {
         .collect()
 }
 
-/// Parses one `(\d+)([=XIDNS])` CIGAR run list, e.g. "88=3D510=1I436=" -> [(88,'='),(3,'D'),(510,'='),(1,'I'),(436,'=')].
-fn parse_cigar_ops(cg: &str) -> Vec<(u64, char)> {
-    let mut out = Vec::new();
-    let mut num = 0u64;
-    for ch in cg.chars() {
-        if ch.is_ascii_digit() {
-            num = num * 10 + (ch as u64 - '0' as u64);
-        } else {
-            out.push((num, ch));
-            num = 0;
-        }
-    }
-    out
-}
-
 pub(crate) struct AlignmentSummary {
     pub covered_kb: f64,
     pub n_sites: usize,
@@ -180,7 +165,7 @@ pub(crate) fn parse_paf_consistency(paf_text: &str) -> AlignmentSummary {
         let qend: i64 = f[3].parse().unwrap_or(0);
         let mut t: u64 = f[7].parse().unwrap_or(0);
         let mut nx: usize = 0;
-        for (num, op) in parse_cigar_ops(cg) {
+        for (num, op) in super::shared_definition::cigar_ops(cg) {
             match op {
                 '=' => {
                     for k in 0..num {

@@ -20,6 +20,8 @@ use noodles_sam::alignment::RecordBuf;
 
 use super::copy_split::AlignedRead;
 use super::family_detect::DenovoTranscript;
+// `AS:i` / `de:f` / `ts:A` readers, generic over `RecordBuf` and lazy records (shared with `as_table`).
+use crate::bam::{record_as, record_de, record_ts};
 use crate::genome::GenomeIndex;
 use crate::vg_family::seq_utils::reverse_complement;
 
@@ -324,12 +326,11 @@ pub fn junction_support(reads: &[PrimaryRead]) -> std::collections::BTreeMap<(St
 /// seeded by position in `cluster_unspliced`, which needs their spans). State is O(distinct chains).
 pub struct Pass1Acc {
     k: usize,
-    term_q: f64,
     keep_all: bool,
     snap: Option<(u64, f64)>,
     // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc, n_reverse).
     groups: std::collections::BTreeMap<(String, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)>,
-    // all starts/ends per group, populated only when `snap` / the adaptive quantile needs them
+    // all starts/ends per group, populated only when `snap` needs them
     allpos: std::collections::BTreeMap<(String, Vec<(u64, u64)>), (Vec<u64>, Vec<u64>)>,
     /// Unspliced reads, in arrival order, for the position-aware seeding pass.
     pub unspliced: Vec<PrimaryRead>,
@@ -339,31 +340,14 @@ pub struct Pass1Acc {
 
 impl Pass1Acc {
     pub fn new(min_terminal_support: u32, snap: Option<(u64, f64)>) -> Self {
-        // `RUSTLE_TERMINAL_K` overrides the fixed rank; it exists for §6w6's CONTROL arms (k=1, k=3), which
-        // are what decide whether any gain from the quantile below is ADAPTIVITY or just a different constant.
-        let k = std::env::var("RUSTLE_TERMINAL_K")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            .filter(|v| *v > 0)
-            .unwrap_or(min_terminal_support)
-            .max(1) as usize;
-        // ⭐ §6w6 / `docs/PREREG_depth_adaptive_k_2026-09-22.md`: a fixed RANK is a MOVING QUANTILE. With n
-        // reads the k-th most extreme sits ~k/n into the tail, so k=2 is 75% of the way in at n=2 but 5% at
-        // n=30 — measured as a depth drift in two independent places (register 975: human median d5
-        // +19 bp at n=2 → −40 bp at n≥30; register 978: under-capture 28.2%→11.2% while over-extension
-        // 12.7%→25.5%). `RUSTLE_TERMINAL_QUANTILE=q` takes the clamp(round(q·n), 1, n)-th value instead,
-        // which GROWS shallow loci and PULLS IN deep ones. Unset (or 0) is byte-identical to the fixed rank.
-        let term_q: f64 = std::env::var("RUSTLE_TERMINAL_QUANTILE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .filter(|v: &f64| *v > 0.0 && *v < 1.0)
-            .unwrap_or(0.0);
-        let adaptive = term_q > 0.0;
-        // the exact order statistic needs every terminal, not the k-most-extreme the fixed rank retains
-        let keep_all = snap.is_some() || adaptive;
+        // The boundary is the k-th most extreme terminal, k = `min_terminal_support`. A depth-adaptive rank
+        // (`RUSTLE_TERMINAL_QUANTILE`, with its `RUSTLE_TERMINAL_K` control arms) was measured WORSE at every
+        // quantile (register r979-r982, `docs/PREREG_depth_adaptive_k_2026-09-22.md`) and removed 2026-09-24.
+        let k = min_terminal_support.max(1) as usize;
+        // the snap needs every terminal, not the k-most-extreme the fixed rank retains
+        let keep_all = snap.is_some();
         Pass1Acc {
             k,
-            term_q,
             keep_all,
             snap,
             groups: std::collections::BTreeMap::new(),
@@ -428,8 +412,7 @@ impl Pass1Acc {
         isoform_k: u32,
         jsup: Option<&std::collections::BTreeMap<(String, (u64, u64)), u32>>,
     ) -> Vec<Skeleton> {
-        let (k, term_q, snap, allpos, unspliced) = (self.k, self.term_q, self.snap, self.allpos, self.unspliced);
-        let adaptive = term_q > 0.0;
+        let (k, snap, allpos, unspliced) = (self.k, self.snap, self.allpos, self.unspliced);
         let mut skels: Vec<Skeleton> = self
             .groups
             .into_iter()
@@ -443,30 +426,9 @@ impl Pass1Acc {
             })
             .map(|((chrom, introns), (n, starts, ends, n_rev))| {
                 // robust boundary = the k-th supported value (or the outermost available if the group is
-                // smaller). Under RUSTLE_TERMINAL_QUANTILE the rank is recomputed per group from that group's
-                // own depth, using the FULL terminal lists in `allpos` (the `groups` lists are truncated to k).
-                let (starts, ends) = if adaptive {
-                    match allpos.get(&(chrom.clone(), introns.clone())) {
-                        Some((all_s, all_e)) => {
-                            let mut s2 = all_s.clone();
-                            let mut e2 = all_e.clone();
-                            s2.sort_unstable();
-                            e2.sort_unstable_by(|a, b| b.cmp(a));
-                            (s2, e2)
-                        }
-                        None => (starts, ends),
-                    }
-                } else {
-                    (starts, ends)
-                };
-                let kg = if adaptive {
-                    let n_here = starts.len().max(1);
-                    ((term_q * n_here as f64).round() as usize).clamp(1, n_here)
-                } else {
-                    k
-                };
-                let si = kg.min(starts.len()).saturating_sub(1);
-                let ei = kg.min(ends.len()).saturating_sub(1);
+                // smaller).
+                let si = k.min(starts.len()).saturating_sub(1);
+                let ei = k.min(ends.len()).saturating_sub(1);
                 let (mut start, mut end) = (starts[si], ends[ei]);
                 if let Some((win, frac)) = snap {
                     if let Some((all_s, all_e)) = allpos.get(&(chrom.clone(), introns.clone())) {
@@ -498,131 +460,6 @@ impl Pass1Acc {
         skels.extend(cluster_unspliced(&unspliced, min_reads, k));
         skels
     }
-}
-
-/// Merge skeletons whose intron chains are structurally identical (same intron count) and differ only by
-/// <= `tolerance_bp` at every corresponding donor/acceptor position. Single-linkage: if A merges with B
-/// and B merges with C, all three end up in one group even if A and C alone exceed the tolerance (same
-/// chaining pattern as `cluster_tie_partners`, `src/rustle/vg_family/copy_discovery.rs`). Pure function
-/// over `Skeleton` values -- no BAM/env access, unit-testable with synthetic skeletons.
-///
-/// `tolerance_bp == 0` is an explicit no-op (returns `skeletons` unchanged) -- every opt-in mechanism in
-/// this codebase must be byte-identical to "not called" at its off value.
-///
-/// A `footprint: true` skeleton's `introns` are uncovered READ-COVERAGE gaps, not real splice junctions
-/// (see `Skeleton::footprint`'s own doc comment) -- jitter tolerance is meaningless for it, so it is never
-/// merged with anything, including another footprint.
-///
-/// ⚠ MEASURED NET-NEGATIVE at its pre-registered tolerance (672bp, `docs/PREREG_junction_fuzz_2026-09-15.md`)
-/// on real chr20 data: matching intron chains 345 -> 284, matching transcripts 347 -> 286 vs the baseline
-/// (`bench/CHR20_ASSEMBLER_COMPARISON.md`'s "fuzzy junction merging" follow-up section). At that tolerance
-/// the merge more often combines genuinely DIFFERENT real transcripts than it reconciles fragments of the
-/// same one. Stays opt-in / default off for this reason, not merely "untested" -- do not enable it without
-/// re-registering a new tolerance via a fresh, separate experiment.
-pub fn merge_fuzzy_skeletons(skeletons: Vec<Skeleton>, tolerance_bp: u64) -> Vec<Skeleton> {
-    if tolerance_bp == 0 {
-        return skeletons;
-    }
-    fn within_tol(a: &Skeleton, b: &Skeleton, tol: u64) -> bool {
-        !a.footprint
-            && !b.footprint
-            && a.chrom == b.chrom
-            && !a.introns.is_empty()
-            && a.introns.len() == b.introns.len()
-            // At the actual wired call site (`pass1_skeletons` -> `pass1_skeletons_robust_with`, which
-            // builds every skeleton this function ever sees in production), `read_strand` is ALWAYS
-            // `Some(majority_read_strand(..))` -- see that function's construction of `Skeleton` values --
-            // so this check is fully LIVE there: it genuinely blocks merges between known-opposite-strand
-            // skeletons, not a mostly-dormant fallback. The `_ => true` arm exists to safely handle OTHER
-            // producers of `Skeleton` values elsewhere in this codebase that this function might also be
-            // called with in the future (e.g. `tied_seed_skeletons`'s spliced branch, which sets `None`
-            // because a tied-secondary read's strand comes from junction motifs, never read orientation) --
-            // an absent signal on either side must not block the merge there; a KNOWN disagreement must.
-            && match (a.read_strand, b.read_strand) {
-                (Some(sa), Some(sb)) => sa == sb,
-                _ => true,
-            }
-            && a.introns.iter().zip(&b.introns).all(|(x, y)| {
-                x.0.abs_diff(y.0) <= tol && x.1.abs_diff(y.1) <= tol
-            })
-    }
-    let n = skeletons.len();
-    let mut parent: Vec<usize> = (0..n).collect();
-    fn find(parent: &mut [usize], x: usize) -> usize {
-        if parent[x] != x {
-            parent[x] = find(parent, parent[x]);
-        }
-        parent[x]
-    }
-    for i in 0..n {
-        for j in (i + 1)..n {
-            if within_tol(&skeletons[i], &skeletons[j], tolerance_bp) {
-                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
-                if ri != rj {
-                    parent[ri] = rj;
-                }
-            }
-        }
-    }
-    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
-    for i in 0..n {
-        let r = find(&mut parent, i);
-        groups.entry(r).or_default().push(i);
-    }
-    groups
-        .into_values()
-        .map(|idxs| {
-            if idxs.len() == 1 {
-                return skeletons[idxs[0]].clone();
-            }
-            let members: Vec<&Skeleton> = idxs.iter().map(|&i| &skeletons[i]).collect();
-            let n_introns = members[0].introns.len();
-            let mut merged_introns = Vec::with_capacity(n_introns);
-            for slot in 0..n_introns {
-                // most-common EXACT value at this slot, weighted by each skeleton's own n_reads;
-                // ties broken by the lowest coordinate (never an average/invented coordinate).
-                let mut counts: std::collections::BTreeMap<(u64, u64), u32> = std::collections::BTreeMap::new();
-                for m in &members {
-                    *counts.entry(m.introns[slot]).or_insert(0) += m.n_reads;
-                }
-                let mut items: Vec<((u64, u64), u32)> = counts.into_iter().collect();
-                items.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-                merged_introns.push(items[0].0);
-            }
-            // representative for chrom/start/end/read_strand: more reads wins, ties -> lower start.
-            let mut reps: Vec<&Skeleton> = members.clone();
-            reps.sort_by(|a, b| b.n_reads.cmp(&a.n_reads).then(a.start.cmp(&b.start)));
-            let rep = reps[0];
-            // MONOTONICITY GUARD. The per-slot vote above picks each slot's winner independently, so slot
-            // `i` can come from one member and slot `i+1` from another. Each member's OWN chain is always
-            // monotonic (a real read's introns never overlap or go backwards), but nothing guarantees the
-            // CROSS-member combination is: if the two winning members disagree about where the shared
-            // intron pair sits, the synthesized chain can invert (e.g. slot 1's start landing before slot
-            // 0's end) -- an exon boundary like `(2500, 2400)` that no single input skeleton, and no real
-            // read, ever produced. Left unchecked this does not panic: `GenomeIndex::fetch_sequence`
-            // returns `None` for `start >= end`, `build_spliced_seq` propagates that via `?`, and
-            // `assemble_gate` just `continue`s past a `None` result -- silently discarding the whole merged
-            // transcript with zero diagnostic. Guard here instead: validate the synthesized chain is
-            // strictly well-formed (`start < end` per intron, non-decreasing / non-overlapping across
-            // slots), and if not, fall back to the highest-n_reads member's OWN original intron chain (a
-            // chain a real read actually observed) rather than ship an invented, invalid one.
-            let synthesized_is_valid = merged_introns.iter().all(|&(s, e)| s < e)
-                && merged_introns.windows(2).all(|w| w[1].0 >= w[0].1);
-            let merged_introns = if synthesized_is_valid { merged_introns } else { rep.introns.clone() };
-            Skeleton {
-                chrom: rep.chrom.clone(),
-                start: rep.start,
-                end: rep.end,
-                n_reads: members.iter().map(|m| m.n_reads).sum(),
-                introns: merged_introns,
-                tied_seeded: members.iter().any(|m| m.tied_seeded),
-                read_strand: rep.read_strand,
-                footprint: false, // guaranteed by within_tol excluding footprints from ever reaching here
-                read_rev: members.iter().map(|m| m.read_rev).sum(),
-                read_tot: members.iter().map(|m| m.read_tot).sum(),
-            }
-        })
-        .collect()
 }
 
 /// Is the footprint-node pass enabled? `RUSTLE_FOOTPRINT_NODES=1`; unset = OFF = byte-identical.
@@ -1022,48 +859,6 @@ pub fn tied_secondary_reads(aln: &[(String, bool, i32, f32, PrimaryRead)], as_ra
         .collect()
 }
 
-/// Read the `AS:i` alignment score from a record (the gate signal). `None` if absent.
-fn record_as(record: &RecordBuf) -> Option<i32> {
-    use noodles_sam::alignment::record::data::field::{Tag, Value};
-    for entry in noodles_sam::alignment::Record::data(record).iter() {
-        let (tag, value) = entry.ok()?;
-        if tag == Tag::ALIGNMENT_SCORE {
-            return match value {
-                Value::Int8(v) => Some(v as i32),
-                Value::UInt8(v) => Some(v as i32),
-                Value::Int16(v) => Some(v as i32),
-                Value::UInt16(v) => Some(v as i32),
-                Value::Int32(v) => Some(v),
-                Value::UInt32(v) => Some(v as i32),
-                _ => None,
-            };
-        }
-    }
-    None
-}
-
-/// Read the `de:f` (gap-compressed per-base divergence) tag from a record — the conflict-criterion signal.
-/// `None` if absent. `de` is a custom 2-char tag carrying a float.
-/// Read the `ts:A` transcript-strand tag (`+`/`-`), `None` if absent.
-pub fn record_ts(record: &RecordBuf) -> Option<char> {
-    use noodles_sam::alignment::record::data::field::Tag;
-    use noodles_sam::alignment::record_buf::data::field::Value;
-    match record.data().get(&Tag::new(b't', b's'))? {
-        Value::Character(c) => Some(*c as char),
-        _ => None,
-    }
-}
-
-fn record_de(record: &RecordBuf) -> Option<f32> {
-    use noodles_sam::alignment::record::data::field::Tag;
-    use noodles_sam::alignment::record_buf::data::field::Value;
-    let de_tag = Tag::new(b'd', b'e');
-    match record.data().get(&de_tag)? {
-        Value::Float(v) => Some(*v),
-        _ => None,
-    }
-}
-
 /// Like `primary_read_from_record` but ALSO accepts SECONDARY alignments, returning `(PrimaryRead, read_name,
 /// is_secondary, AS, de)` for the tie gate. AS ratio is the default gate; the `de:f` gap-compressed divergence
 /// is carried so the de-tie gate (`RUSTLE_TIED_SEED_DE`) can use the same criterion the conflict graph uses.
@@ -1327,44 +1122,52 @@ pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<BamR
     Ok(out)
 }
 
-/// Whether a record's flags mark it an UNMAPPED PRIMARY read — the filter behind
-/// `unmapped_reads_from_bam`, i.e. the mirror image of `primary_read_from_record`'s mapped-primary
-/// filter: unmapped is required, secondary/supplementary are excluded (a "primary" record here means
-/// neither secondary nor supplementary, matching SAM's use of the term for unmapped records too).
-fn is_unmapped_primary(flags: noodles_sam::alignment::record::Flags) -> bool {
-    flags.is_unmapped() && !flags.is_secondary() && !flags.is_supplementary()
-}
-
-/// From a slice of records, collect `(read_name, sequence)` for every UNMAPPED PRIMARY record with a
-/// non-empty sequence — the testable transform behind `unmapped_reads_from_bam` (this is the input to
-/// the VG re-align supplement's unmapped-read minimizer routing stage). Unit-tested directly against
-/// in-memory `RecordBuf`s, without needing a BAM fixture with an unmapped record.
-fn collect_unmapped(records: &[RecordBuf]) -> Vec<(String, Vec<u8>)> {
-    records
-        .iter()
-        .filter(|r| is_unmapped_primary(r.flags()))
-        .filter_map(|r| {
-            let seq: Vec<u8> = r.sequence().as_ref().to_vec();
-            if seq.is_empty() {
-                return None;
-            }
-            let name = r.name().map(|n| n.to_string()).unwrap_or_default();
-            Some((name, seq))
-        })
-        .collect()
-}
-
-/// Scan every UNMAPPED PRIMARY record in a BAM into `(read_name, sequence)` pairs. I/O driver, mirroring
-/// `primary_reads_from_bam`'s reader setup. Unmapped reads carry no alignment position, so there is no
-/// `.bai` region query to use here — this is always a full-file scan. Applies the identical
-/// `collect_unmapped` filter to each record while streaming, so the whole BAM is never buffered.
-pub fn unmapped_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<(String, Vec<u8>)>> {
+/// [`aligned_reads_from_bam`] WITHOUT read sequence and quality, decoded from LAZY records (no `RecordBuf`).
+///
+/// Every `BamRead` field except `read.seq`/`read.qual` (left empty) is identical to what
+/// `aligned_reads_from_bam` builds: chrom, `ref_start`, CIGAR ops, MAPQ (absent = 0), name, `AS` (absent =
+/// 0), `de` (absent = 0.0), flags, strand, `ts`. For consumers that only place reads — the catalog's
+/// post-collapse pass (`build_read_placements`, `locus_core_bp`, `locus_has_spliced_evidence`, the extent and
+/// linkage options), none of which reads `.seq`/`.qual` — this skips the sequence/quality decode and copies
+/// that dominated that pass (human chr16: 155 s and most of a 13.8 GB peak).
+pub fn aligned_reads_from_bam_coords(bam_path: &str, threads: usize) -> Result<Vec<BamRead>> {
     let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
     let header = reader.read_header()?;
-    let mut record = RecordBuf::default();
+    let contigs: Vec<String> = header.reference_sequences().keys().map(|k| format!("{k}")).collect();
     let mut out = Vec::new();
-    while reader.read_record_buf(&header, &mut record)? > 0 {
-        out.extend(collect_unmapped(std::slice::from_ref(&record)));
+    for result in reader.records() {
+        let record = result?;
+        let Some(chrom) = record.reference_sequence_id().and_then(|r| r.ok()).and_then(|id| contigs.get(id)) else {
+            continue;
+        };
+        let flags = record.flags();
+        if flags.is_unmapped() {
+            continue;
+        }
+        let Some(start) = record.alignment_start() else { continue };
+        let ref_start = (usize::from(start?) as u64).saturating_sub(1);
+        let mut cigar: Vec<(char, u64)> = Vec::new();
+        for op in record.cigar().iter() {
+            let op = op?;
+            cigar.push((cigar_kind_to_char(op.kind()), op.len() as u64));
+        }
+        let mapq = record.mapping_quality().map(|q| q.get()).unwrap_or(0);
+        let name = record.name().map(|n| n.to_string()).unwrap_or_default();
+        // first occurrence of each tag wins; a malformed data field is an error, as it is when `RecordBuf`
+        // decodes the record
+        let (as_score, de, ts) = crate::bam::record_as_de_ts(&record)?;
+        out.push(BamRead {
+            chrom: chrom.clone(),
+            read: AlignedRead { ref_start, cigar, seq: Vec::new(), qual: Vec::new() },
+            mapq,
+            name,
+            as_score: as_score.unwrap_or(0),
+            de: de.unwrap_or(0.0),
+            is_supplementary: flags.is_supplementary(),
+            is_secondary: flags.is_secondary(),
+            reverse: flags.is_reverse_complemented(),
+            ts,
+        });
     }
     Ok(out)
 }
@@ -1686,7 +1489,7 @@ pub fn stream_pass1_region(
             if best.is_none() {
                 n_tie_unknown += 1;
             }
-            if let (Some(a), Some(b)) = (lazy_record_as(&record), best) {
+            if let (Some(a), Some(b)) = (record_as(&record), best) {
                 if b > 0 && (a as f64) < tie_ratio * (b as f64) {
                     n_tie_dropped += 1;
                     continue;
@@ -1716,25 +1519,6 @@ pub fn stream_pass1_region(
     Ok(n_mapped)
 }
 
-/// `AS:i` of a LAZY BAM record (the streaming path's counterpart of `record_as`).
-fn lazy_record_as(record: &noodles_bam::Record) -> Option<i32> {
-    use noodles_sam::alignment::record::data::field::{Tag, Value};
-    for entry in noodles_sam::alignment::Record::data(record).iter() {
-        let (tag, value) = entry.ok()?;
-        if tag == Tag::ALIGNMENT_SCORE {
-            return match value {
-                Value::Int8(v) => Some(v as i32),
-                Value::UInt8(v) => Some(v as i32),
-                Value::Int16(v) => Some(v as i32),
-                Value::UInt16(v) => Some(v as i32),
-                Value::Int32(v) => Some(v),
-                Value::UInt32(v) => Some(v as i32),
-                _ => None,
-            };
-        }
-    }
-    None
-}
 
 pub struct BamIndexCache {
     header: noodles_sam::Header,
@@ -1841,65 +1625,6 @@ pub fn tied_secondary_reads_in_region(
         }
     }
     Ok(tied_secondary_reads(&aln, as_ratio))
-}
-
-/// PRIMARY mapped `AlignedRead`s (seq + CIGAR) overlapping `[lo, hi)` on `chrom` — the ASJ scan input
-/// (secondary/supplementary excluded, matching the python). Indexed query; errs without a `.bai`.
-pub fn primary_aligned_reads_in_region(
-    bam_path: &str,
-    chrom: &str,
-    lo: u64,
-    hi: u64,
-) -> Result<Vec<crate::vg_family::copy_split::AlignedRead>> {
-    let bai_path = format!("{bam_path}.bai");
-    anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
-    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
-    let header = reader.read_header()?;
-    let index = noodles_bam::bai::read(&bai_path)?;
-    let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
-    let query = reader.query(&header, &index, &region)?;
-    let mut out = Vec::new();
-    for result in query {
-        let rb = RecordBuf::try_from_alignment_record(&header, &result?)?;
-        let f = rb.flags();
-        if f.is_unmapped() || f.is_secondary() || f.is_supplementary() {
-            continue;
-        }
-        if let Some((read, _, _, _, _, _, _)) = aligned_read_from_record(&rb) {
-            out.push(read);
-        }
-    }
-    Ok(out)
-}
-
-/// Fraction of PRIMARY reads covering `pos` (0-based) that are MAPQ-0 (multimapping) — the ASJ confound
-/// control. A HIGH fraction at a het-ASJ anchor flags a collapsed-paralog masquerade (the two "alleles" are
-/// paralog copies); a LOW fraction means genuine within-gene heterozygosity. (For copy-specific junctions the
-/// reading inverts: multimapping is expected.) Capped at 600 reads, matching the python.
-pub fn frac_mq0_at(bam_path: &str, chrom: &str, pos: u64) -> Result<f64> {
-    let bai_path = format!("{bam_path}.bai");
-    anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
-    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
-    let header = reader.read_header()?;
-    let index = noodles_bam::bai::read(&bai_path)?;
-    let region: noodles_core::Region = format!("{chrom}:{}-{}", pos + 1, pos + 1).parse()?;
-    let query = reader.query(&header, &index, &region)?;
-    let (mut n, mut z) = (0u32, 0u32);
-    for result in query {
-        let rb = RecordBuf::try_from_alignment_record(&header, &result?)?;
-        let f = rb.flags();
-        if f.is_unmapped() || f.is_secondary() || f.is_supplementary() {
-            continue;
-        }
-        n += 1;
-        if rb.mapping_quality().map(|q| q.get()).unwrap_or(0) == 0 {
-            z += 1;
-        }
-        if n >= 600 {
-            break;
-        }
-    }
-    Ok(if n > 0 { z as f64 / n as f64 } else { 0.0 })
 }
 
 /// Full-scan fallback (no index): one pass, region-filtered.
@@ -3491,49 +3216,6 @@ footprint: false,
         assert!(is_supp, "supplementary flag must be surfaced");
     }
 
-    // ---- collect_unmapped (the unmapped_reads_from_bam filter, unit-tested without a BAM fixture) ----
-
-    /// Build a minimal record with the given flags, name, and sequence (no alignment position — mirrors
-    /// an unmapped record straight off a BAM).
-    fn unmapped_rec(flags: Flags, name: &str, seq: &[u8]) -> RecordBuf {
-        use noodles_sam::alignment::record_buf::Sequence;
-        RecordBuf::builder()
-            .set_flags(flags)
-            .set_name(name)
-            .set_sequence(Sequence::from(seq.to_vec()))
-            .build()
-    }
-
-    #[test]
-    fn collect_unmapped_keeps_only_unmapped_primary() {
-        let records = vec![
-            // unmapped primary -> kept.
-            unmapped_rec(Flags::UNMAPPED, "read_unmapped", b"ACGTACGT"),
-            // mapped primary -> excluded (not unmapped).
-            unmapped_rec(Flags::default(), "read_mapped", b"TTTTTTTT"),
-            // unmapped but flagged secondary -> excluded (not a primary record).
-            unmapped_rec(Flags::UNMAPPED | Flags::SECONDARY, "read_unmapped_secondary", b"GGGGGGGG"),
-            // unmapped but flagged supplementary -> excluded.
-            unmapped_rec(Flags::UNMAPPED | Flags::SUPPLEMENTARY, "read_unmapped_supp", b"CCCCCCCC"),
-            // unmapped primary with an empty sequence -> excluded.
-            unmapped_rec(Flags::UNMAPPED, "read_unmapped_noseq", b""),
-        ];
-        let out = collect_unmapped(&records);
-        assert_eq!(
-            out,
-            vec![("read_unmapped".to_string(), b"ACGTACGT".to_vec())],
-            "only the unmapped PRIMARY record with a non-empty sequence survives"
-        );
-    }
-
-    #[test]
-    fn is_unmapped_primary_flag_matrix() {
-        assert!(is_unmapped_primary(Flags::UNMAPPED));
-        assert!(!is_unmapped_primary(Flags::default()));
-        assert!(!is_unmapped_primary(Flags::UNMAPPED | Flags::SECONDARY));
-        assert!(!is_unmapped_primary(Flags::UNMAPPED | Flags::SUPPLEMENTARY));
-    }
-
     // ---- cluster_unspliced ----
 
     #[test]
@@ -3844,134 +3526,5 @@ footprint: false,
             PrimaryRead { chrom: "chr2".into(), ref_start: 5, ref_end: 400, introns: vec![(100, 200)], reverse: false },
         ];
         assert_eq!(split_mischained_reads(&reads, &HashMap::new(), 50_000, 3), reads);
-    }
-
-    #[test]
-    fn fuzzy_merge_combines_skeletons_within_tolerance() {
-        let mk = |start: u64, end: u64, introns: Vec<(u64, u64)>, n_reads: u32| Skeleton {
-            chrom: "chr1".into(), start, end, n_reads, introns, tied_seeded: false,
-            read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: n_reads,
-        };
-        let a = mk(1000, 5000, vec![(1500, 2500), (3000, 4000)], 5);
-        let b = mk(1003, 5000, vec![(1502, 2497), (3001, 3998)], 3); // every junction within 5bp of a's
-        let out = merge_fuzzy_skeletons(vec![a, b], 5);
-        assert_eq!(out.len(), 1, "within-tolerance skeletons must merge into one");
-        assert_eq!(out[0].n_reads, 8, "reads sum across the merge");
-        assert_eq!(out[0].introns, vec![(1500, 2500), (3000, 4000)], "the higher-n_reads skeleton's exact junctions win each slot (5 reads > 3)");
-    }
-
-    #[test]
-    fn fuzzy_merge_never_merges_different_intron_counts() {
-        let mk = |introns: Vec<(u64, u64)>| Skeleton {
-            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 5, introns, tied_seeded: false,
-            read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: 5,
-        };
-        let a = mk(vec![(1500, 2500)]);
-        let b = mk(vec![(1500, 2500), (3000, 4000)]); // one more intron than a
-        let out = merge_fuzzy_skeletons(vec![a, b], 1000); // huge tolerance, must still not merge
-        assert_eq!(out.len(), 2, "different intron counts must never merge regardless of tolerance");
-    }
-
-    #[test]
-    fn fuzzy_merge_never_merges_beyond_tolerance() {
-        let mk = |don: u64| Skeleton {
-            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 5, introns: vec![(don, don + 1000)],
-            tied_seeded: false, read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: 5,
-        };
-        let a = mk(1500);
-        let b = mk(1520); // 20bp away
-        let out = merge_fuzzy_skeletons(vec![a, b], 5); // tolerance 5, gap is 20
-        assert_eq!(out.len(), 2, "a junction beyond tolerance must never merge");
-    }
-
-    #[test]
-    fn fuzzy_merge_chains_single_linkage_through_an_intermediate() {
-        let mk = |don: u64| Skeleton {
-            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 1, introns: vec![(don, don + 1000)],
-            tied_seeded: false, read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: 1,
-        };
-        let a = mk(1500);
-        let b = mk(1504); // within 5 of a
-        let c = mk(1508); // within 5 of b, but 8 away from a (beyond tolerance 5 if compared directly)
-        let out = merge_fuzzy_skeletons(vec![a, b, c], 5);
-        assert_eq!(out.len(), 1, "single-linkage chaining must merge all three through b, matching cluster_tie_partners' own tested behavior");
-        assert_eq!(out[0].n_reads, 3);
-    }
-
-    #[test]
-    fn fuzzy_merge_at_zero_tolerance_is_a_no_op() {
-        let mk = |don: u64| Skeleton {
-            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 1, introns: vec![(don, don + 1000)],
-            tied_seeded: false, read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: 1,
-        };
-        let a = mk(1500);
-        let b = mk(1500); // exact duplicate, would merge at ANY tolerance >= 0 by the within_tol test
-        let out = merge_fuzzy_skeletons(vec![a, b], 0);
-        assert_eq!(out.len(), 2, "tolerance_bp=0 must be an explicit no-op, matching every other opt-in flag's off-state contract -- byte-identical to not calling this function at all");
-    }
-
-    #[test]
-    fn fuzzy_merge_never_merges_a_footprint_skeleton() {
-        let mk = |footprint: bool| Skeleton {
-            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 5, introns: vec![(1500, 2500)],
-            tied_seeded: false, read_strand: Some('+'), footprint, read_rev: 0, read_tot: 5,
-        };
-        let a = mk(true);
-        let b = mk(false); // identical introns, but a is a footprint (uncovered-gap semantics, not real junctions)
-        let out = merge_fuzzy_skeletons(vec![a, b], 1000);
-        assert_eq!(out.len(), 2, "a footprint skeleton's 'introns' are read-coverage gaps, not splice junctions -- never eligible for jitter-tolerance merging");
-    }
-
-    #[test]
-    fn fuzzy_merge_respects_known_strand_disagreement_but_unknown_strand_never_blocks() {
-        // Resolves the design spec's open question. At the actual wired call site (`pass1_skeletons` ->
-        // `pass1_skeletons_robust_with`), `read_strand` is ALWAYS `Some(..)`, so the KNOWN-disagreement half
-        // of this test is the one that is live in production. The `None` half covers OTHER producers of
-        // `Skeleton` values this function might also see (e.g. `tied_seed_skeletons`'s spliced branch) --
-        // for those, an absent signal must not block an otherwise-valid merge.
-        let mk = |strand: Option<char>| Skeleton {
-            chrom: "chr1".into(), start: 1000, end: 5000, n_reads: 5, introns: vec![(1500, 2500)],
-            tied_seeded: false, read_strand: strand, footprint: false, read_rev: 0, read_tot: 5,
-        };
-        let plus = mk(Some('+'));
-        let minus = mk(Some('-')); // identical introns, but KNOWN opposite strand
-        let out = merge_fuzzy_skeletons(vec![plus, minus], 1000);
-        assert_eq!(out.len(), 2, "two skeletons with KNOWN opposite strand must never merge, even with identical junctions");
-
-        let known = mk(Some('+'));
-        let unknown = mk(None); // strand not yet determined on this side
-        let out2 = merge_fuzzy_skeletons(vec![known, unknown], 1000);
-        assert_eq!(out2.len(), 1, "an absent strand signal on one side must not block a merge on otherwise-matching junctions");
-    }
-
-    #[test]
-    fn fuzzy_merge_falls_back_to_a_real_chain_when_the_per_slot_vote_would_invert() {
-        // Reviewer-supplied 3-skeleton example (final whole-branch review, 2026-09-16). Each skeleton's OWN
-        // intron chain is individually valid and monotonic, and every pair is within tolerance (so all
-        // three merge into one group), but the per-slot majority vote picks slot 0 from `p` (heaviest
-        // there) and slot 1 from the value `q` and `r` happen to SHARE (their combined weight, 4+8=12,
-        // outweighs p's 10 at that slot) -- a cross-member combination no single skeleton ever observed.
-        // Naively that vote would synthesize `[(1000, 2500), (2400, 3000)]`: slot 1 STARTS (2400) before
-        // slot 0 ENDS (2500), an inverted "exon" no real read produced. Unguarded, `fetch_sequence` would
-        // reject it (`start >= end`) and `assemble_gate` would silently drop the merged transcript with no
-        // diagnostic. This asserts the guard instead falls back to `p`'s own real, observed chain verbatim.
-        let mk = |start, end, introns: Vec<(u64, u64)>, n_reads: u32| Skeleton {
-            chrom: "chr1".into(), start, end, n_reads, introns, tied_seeded: false,
-            read_strand: Some('+'), footprint: false, read_rev: 0, read_tot: n_reads,
-        };
-        let p = mk(900, 3100, vec![(1000, 2500), (2600, 3000)], 10); // heaviest overall AND at slot 0
-        let q = mk(1200, 3100, vec![(1300, 1800), (2400, 3000)], 4); // shares slot 1's exact value with r
-        let r = mk(1000, 3100, vec![(1100, 1900), (2400, 3000)], 8); // combined with q: 12 > p's 10 at slot 1
-
-        let out = merge_fuzzy_skeletons(vec![p.clone(), q, r], 800);
-        assert_eq!(out.len(), 1, "all three must merge into one group at this tolerance");
-        assert_eq!(
-            out[0].introns, p.introns,
-            "must fall back to a real member's own observed chain, not the inverted synthesized one"
-        );
-        assert!(
-            out[0].introns.windows(2).all(|w| w[1].0 >= w[0].1),
-            "the emitted chain must be monotonic -- exactly what the fallback guarantees"
-        );
     }
 }

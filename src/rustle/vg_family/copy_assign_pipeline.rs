@@ -22,9 +22,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use rayon::prelude::*;
 
 use super::copy_assign::{
-    assign_read, assign_read_editing, boundary_present, copy_pair_identity, copy_pair_significance, AssignParams, AssignStatus,
+    assign_read_editing, boundary_present, copy_pair_identity, copy_pair_significance, AssignParams, AssignStatus,
     Assignment, BubbleGraph, CopyProfile, ReadFeatures,
 };
+#[cfg(test)]
+use super::copy_assign::assign_read;
 use super::copy_split::{intron_chain_of, AlignedRead};
 use super::family_detect::DenovoTranscript;
 use super::family_graph::poa_msa_with_costs;
@@ -64,7 +66,7 @@ fn exons_of(t: &DenovoTranscript) -> Vec<(u64, u64)> {
 }
 
 /// Reference end (0-based exclusive) of an aligned read = ref_start + reference-consuming CIGAR.
-pub(crate) fn read_ref_end(read: &AlignedRead) -> u64 {
+pub fn read_ref_end(read: &AlignedRead) -> u64 {
     let mut end = read.ref_start;
     for &(op, len) in &read.cigar {
         if matches!(op, 'M' | '=' | 'X' | 'D' | 'N') {
@@ -1474,7 +1476,9 @@ fn restrict_family_profiles(fp: &FamilyProfiles, keep: &[bool]) -> FamilyProfile
 }
 
 /// Assign one read to a copy, reading its PSV bases in `mapped_copy`'s genomic frame (reverse-complemented
-/// for a `-` copy) and its intron boundaries via that copy's `gen2off`.
+/// for a `-` copy) and its intron boundaries via that copy's `gen2off`. Test driver only (via
+/// `assign_family`); the pipeline assigns through `assign_family_detailed`.
+#[cfg(test)]
 pub fn assign_one_read(
     read: &AlignedRead,
     mapped_copy: usize,
@@ -3184,7 +3188,8 @@ pub fn event_microhomology(
 
 /// Assign every read over a co-located family to a copy. Each read is mapped to the copy whose genomic span
 /// it overlaps most (reads overlapping no copy are skipped). Returns `(read_index, Assignment)`. Mirrors
-/// `assign_family`.
+/// python `assign_family`. Test driver only; the pipeline uses `assign_family_detailed`.
+#[cfg(test)]
 pub fn assign_family(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],

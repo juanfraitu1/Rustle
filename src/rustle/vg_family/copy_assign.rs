@@ -13,7 +13,7 @@
 //!
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
-use super::copy_split::{allele_at, intron_chain_of, AlignedRead};
+use super::copy_split::{allele_at, AlignedRead};
 
 /// Per-copy feature profile over the family's PSV columns + intron-boundary set.
 #[derive(Clone, Debug)]
@@ -700,12 +700,6 @@ pub fn assign_read_editing(
 /// integration layer (they need per-copy exon context) and supplied separately.
 pub fn read_psv_obs(read: &AlignedRead, psv_positions: &[u64]) -> Vec<Option<u8>> {
     psv_positions.iter().map(|&p| allele_at(read, p)).collect()
-}
-
-/// The read's intron donors/acceptors (genomic), straight from its CIGAR N ops -- the raw input the
-/// integration layer maps into transcription-spliced boundary offsets.
-pub fn read_introns(read: &AlignedRead) -> Vec<(u64, u64)> {
-    intron_chain_of(read)
 }
 
 #[cfg(test)]

@@ -25,62 +25,22 @@ import statistics
 import subprocess
 import sys
 
-import numpy as np
-import pysam
-from scipy.optimize import linear_sum_assignment
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# generic helpers live in lib.py since wave 7 (2026-09-24); re-exported so gp.ov / gp.merge / gp.rc / gp.pairwise /
+# gp.bipartite keep resolving (bipartite = lib.bipartite_items, the ITEM-level metric). bench/layer_order/ now imports
+# them from lib directly and uses only gp.gene_body_chains.
+from lib import COMP, ov, merge, rc, pairwise, bipartite_items as bipartite  # noqa: E402,F401
 
 MIN_ID, MIN_COV, RECIP, CONTAIN = 0.80, 0.50, 0.50, 0.90
-COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 FAMNAME = {"NPIP": re.compile(r"nuclear pore complex[- %2C]*interacting protein|NPIP", re.I),
            "TBC1D3": re.compile(r"TBC1 domain family member 3|TBC1D3", re.I),
            "AMY": re.compile(r"(?<!gluco)amylase|\bAMY", re.I)}
 
 
-# ---------------------------------------------------------------- small helpers
-def ov(a0, a1, b0, b1):
-    return max(0, min(a1, b1) - max(a0, b0))
-
-
-def merge(iv):
-    out = []
-    for s, e in sorted(iv):
-        if out and s <= out[-1][1]:
-            out[-1][1] = max(out[-1][1], e)
-        else:
-            out.append([s, e])
-    return [(s, e) for s, e in out]
-
-
+# ---------------------------------------------------------------- small helpers (ov, merge, rc, pairwise, bipartite: lib.py)
 def recip(a0, a1, b0, b1):
     o = ov(a0, a1, b0, b1)
     return o >= RECIP * (a1 - a0) and o >= RECIP * (b1 - b0)
-
-
-def rc(s):
-    return s.translate(COMP)[::-1]
-
-
-def pairwise(pred, true):
-    tp = fp = fn = 0
-    for i in range(len(pred)):
-        for j in range(i + 1, len(pred)):
-            a, b = pred[i] == pred[j], true[i] == true[j]
-            tp += a and b
-            fp += a and not b
-            fn += b and not a
-    return (tp / (tp + fn) if tp + fn else float("nan")), (tp / (tp + fp) if tp + fp else float("nan"))
-
-
-def bipartite(pred, true):
-    P, T = sorted(set(pred), key=str), sorted(set(true), key=str)
-    M = np.zeros((len(T), len(P)), dtype=int)
-    for p, t in zip(pred, true):
-        M[T.index(t), P.index(p)] += 1
-    r, c = linear_sum_assignment(-M)
-    matched = sum(M[i, j] for i, j in zip(r, c))
-    sp = M.sum(axis=0)
-    msize = sum(sp[j] for i, j in zip(r, c) if M[i, j] > 0)
-    return matched / len(pred), (matched / msize if msize else float("nan"))
 
 
 def ms(v):
@@ -555,6 +515,7 @@ def main():
     ap.add_argument("--reps", type=int, default=5)
     ap.add_argument("--threads", type=int, default=4)
     a = ap.parse_args()
+    import pysam
     W = a.workdir
     genome = pysam.FastaFile(a.genome)
     truth = list(csv.DictReader(open(f"{W}/truth.tsv"), delimiter="\t"))

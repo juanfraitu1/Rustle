@@ -45,25 +45,6 @@ struct Mol {
     primary_as: i32,
 }
 
-fn record_as(record: &noodles_bam::Record) -> Option<i32> {
-    use noodles_sam::alignment::record::data::field::{Tag, Value};
-    for entry in noodles_sam::alignment::Record::data(record).iter() {
-        let (tag, value) = entry.ok()?;
-        if tag == Tag::ALIGNMENT_SCORE {
-            return match value {
-                Value::Int8(v) => Some(v as i32),
-                Value::UInt8(v) => Some(v as i32),
-                Value::Int16(v) => Some(v as i32),
-                Value::UInt16(v) => Some(v as i32),
-                Value::Int32(v) => Some(v),
-                Value::UInt32(v) => Some(v as i32),
-                _ => None,
-            };
-        }
-    }
-    None
-}
-
 fn main() -> Result<()> {
     let args = Args::parse();
     let t0 = std::time::Instant::now();
@@ -80,7 +61,7 @@ fn main() -> Result<()> {
             continue;
         }
         n_records += 1;
-        let as_ = record_as(&record).unwrap_or(0);
+        let as_ = rustle::bam::record_as(&record).unwrap_or(0);
         let name = match record.name() {
             Some(n) => n.to_string(),
             None => continue,

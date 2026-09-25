@@ -239,7 +239,6 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
         let mut ins_reads: Vec<Vec<std::sync::Arc<PileRead>>> = vec![Vec::new(); order.len()];
         const INS_CAP: usize = 300;
         let region: noodles_core::Region = format!("{chrom}:1-{len}").parse()?;
-        let de_tag = noodles_sam::alignment::record::data::field::Tag::new(b'd', b'e');
         let (mut ptr, mut active): (usize, Vec<usize>) = (0, Vec::new());
         for result in reader.query(&header, &index, &region)? {
             let record = result?;
@@ -269,10 +268,7 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             if active.is_empty() {
                 continue;
             }
-            let de = match record.data().get(&de_tag) {
-                Some(Ok(noodles_sam::alignment::record::data::field::Value::Float(v))) => v as f64,
-                _ => 0.0,
-            };
+            let de = rustle::bam::record_de(&record).map_or(0.0, |v| v as f64);
             let name = record.name().map(|n| n.to_string()).unwrap_or_default();
             let decoded: Option<std::sync::Arc<PileRead>> = if max_ins >= 50 {
                 let rb = RecordBuf::try_from_alignment_record(&header, &record)?;

@@ -11,25 +11,20 @@ path = "src/rustle/lib.rs"
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0"
 
-# BAM/SAM/CRAM parsing - pure Rust, no system dependencies. The cram + fasta features
-# come from the SAME noodles 0.85 group as noodles-sam 0.66, so RecordBuf types unify
-# across all three input formats (native SAM/BAM/CRAM via one RecordBuf pipeline).
-noodles = { version = "0.85", features = ["bam", "sam", "cram", "fasta"] }
+# BAM parsing - pure Rust, no system dependencies.
 noodles-bam = "0.70"
 noodles-bgzf = "0.33"
 noodles-sam = "0.66"
 noodles-csi = "0.40"
 noodles-core = "0.15"
 
-# REMOVED 2026-08-09, all three declared but referenced NOWHERE in src/ or tests/ (verified by grep,
-# including behind cfg): `hashbrown` (the "fast hashmap" was never adopted — the tree uses std maps via
-# types::DetHashMap), `memmap2` (no memory-mapped I/O exists), `roaring` (no bitset junction matching
-# exists; the one bitset in the tree is util/bitset.rs on `fixedbitset`). They linked nothing, so removing
-# them changes no behaviour and costs no runtime — it only stops compiling them, and with lto=fat +
-# codegen-units=1 on this box that is real build time on every clean build.
-fixedbitset = "0.5" # util/bitset.rs
+# REMOVED 2026-08-09, declared but referenced NOWHERE in src/ or tests/: `hashbrown`, `memmap2`, `roaring`.
+# REMOVED 2026-09-24 for the same reason: `fixedbitset` (util/bitset.rs went 2026-09-20), `rand`, `serde`, and
+# the umbrella `noodles` crate with its cram/fasta features (only the dead SAM/CRAM transcoder in bam.rs used
+# it). `serde_json` is test-only now (dev-dependency). Removing them changes no behaviour and costs no runtime;
+# with lto=fat + codegen-units=1 it only stops compiling them.
 
-# Fast hashing (used in types.rs / junction_set.rs)
+# Fast deterministic hashing (types.rs: DetHashMap / DetHashSet)
 fxhash = "0.2"
 
 # Parallel processing
@@ -37,10 +32,6 @@ rayon = "1.10"
 
 lru = "0.12" # src/bin/copy_assign.rs contig cache
 
-# Random sampling for rarefaction analysis
-rand = "0.8"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0"
 flate2 = "1.1" # src/bin/gff_to_gtf.rs — plain .gz GFF3 input (bgzf is noodles' job)
 poasta = "0.1.0"
 
@@ -95,13 +86,10 @@ path = "src/bin/gw_family_catalog.rs"
 name = "parcn"
 path = "src/bin/parcn.rs"
 
-[[test]]
-name = "vg_family_family_graph"
-path = "tests/regression/vg_family_family_graph.rs"
-
 
 [dev-dependencies]
 tempfile = "3"
+serde_json = "1.0" # test fixtures (seq_utils aln_id parity, genome IndexedFasta vs pysam)
 
 [[bin]]
 name = "gff_to_gtf"

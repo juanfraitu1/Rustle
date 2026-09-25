@@ -181,6 +181,37 @@ pub struct AlignedRead {
     pub qual: Vec<u8>,
 }
 
+impl AlignedRead {
+    /// The read's aligned blocks as EXONS, 0-based half-open: `M`/`=`/`X`/`D` extend the current block, `N`
+    /// closes it (a deletion lies within an exon; only a spliced-out intron separates two). Clips and
+    /// insertions consume no reference. Compare `copy_discovery::aligned_blocks`, which also splits on `D`,
+    /// and `copy_assign_pipeline::read_ref_end`, which counts `N` toward the span.
+    pub fn exon_blocks(&self) -> Vec<(u64, u64)> {
+        let mut pos = self.ref_start;
+        let mut cur: Option<(u64, u64)> = None;
+        let mut out = Vec::new();
+        for &(op, n) in &self.cigar {
+            match op {
+                'M' | '=' | 'X' | 'D' => {
+                    cur = Some((cur.map_or(pos, |c| c.0), pos + n));
+                    pos += n;
+                }
+                'N' => {
+                    if let Some(c) = cur.take() {
+                        out.push(c);
+                    }
+                    pos += n;
+                }
+                _ => {}
+            }
+        }
+        if let Some(c) = cur {
+            out.push(c);
+        }
+        out
+    }
+}
+
 /// Phred quality `q` -> per-base error probability `10^(-q/10)`, clamped to `[1e-4, 0.25]`
 /// (HiFi QVs run very high; the floor avoids `ln(0)` and the cap avoids over-trusting a
 /// pathologically low QV). A missing/zero QV maps to the cap, i.e. maximally uninformative.
@@ -189,36 +220,6 @@ pub fn phred_err(q: u8) -> f64 {
         return 0.25;
     }
     (10f64.powf(-(q as f64) / 10.0)).clamp(1e-4, 0.25)
-}
-
-/// Like [`allele_at`], but also returns the Phred quality of the aligned base (or `None` when
-/// `qual` is empty/short). Walks the CIGAR once.
-pub fn allele_qual_at(read: &AlignedRead, ref_pos: u64) -> (Option<u8>, Option<u8>) {
-    let mut ref_cur = read.ref_start;
-    let mut seq_cur: u64 = 0;
-    for &(op, len) in &read.cigar {
-        match op {
-            'M' | '=' | 'X' => {
-                if ref_pos >= ref_cur && ref_pos < ref_cur + len {
-                    let idx = (seq_cur + (ref_pos - ref_cur)) as usize;
-                    return (read.seq.get(idx).copied(), read.qual.get(idx).copied());
-                }
-                ref_cur += len;
-                seq_cur += len;
-            }
-            'N' | 'D' => {
-                if ref_pos >= ref_cur && ref_pos < ref_cur + len {
-                    return (None, None);
-                }
-                ref_cur += len;
-            }
-            'I' | 'S' => {
-                seq_cur += len;
-            }
-            _ => {}
-        }
-    }
-    (None, None)
 }
 
 /// Read base aligned to reference position ref_pos (0-based), or None if ref_pos is not a

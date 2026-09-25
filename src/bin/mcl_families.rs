@@ -16,7 +16,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::vg_family::annotation_families::{
-    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks, mcl, sd_blocks, refine_cluster_cores, Cluster, CoreStatus,
+    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks, mcl, sd_blocks, Cluster, CoreStatus,
     GeneKey, GraphParams, SdPairs,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -430,29 +430,7 @@ fn gene_strands(gff: &str) -> Result<BTreeMap<GeneKey, char>> {
 
 /// Aligned blocks and introns of a read, 0-based half-open on the reference (`D` extends a block; `N` closes it).
 fn blocks_and_introns(br: &rustle::vg_family::denovo_assemble::BamRead) -> (Vec<(u64, u64)>, Vec<(u64, u64)>) {
-    let (mut blocks, mut introns): (Vec<(u64, u64)>, Vec<(u64, u64)>) = (Vec::new(), Vec::new());
-    let mut p = br.read.ref_start;
-    let mut cur: Option<(u64, u64)> = None;
-    for &(op, n) in &br.read.cigar {
-        match op {
-            'M' | '=' | 'X' | 'D' => {
-                cur = Some((cur.map_or(p, |c| c.0), p + n));
-                p += n;
-            }
-            'N' => {
-                if let Some(c) = cur.take() {
-                    blocks.push(c);
-                }
-                introns.push((p, p + n));
-                p += n;
-            }
-            _ => {}
-        }
-    }
-    if let Some(c) = cur {
-        blocks.push(c);
-    }
-    (blocks, introns)
+    (br.read.exon_blocks(), rustle::vg_family::copy_split::intron_chain_of(&br.read))
 }
 
 /// The mis-chain rule shared by the chain and the extent (§6el; one shipped constant pair: 50 kb / `min_reads`):
@@ -1286,20 +1264,7 @@ fn main() -> Result<()> {
                     seq.extend_from_slice(&part);
                 }
                 if strand == '-' {
-                    seq.reverse();
-                    for b in seq.iter_mut() {
-                        *b = match *b {
-                            b'A' => b'T',
-                            b'T' => b'A',
-                            b'C' => b'G',
-                            b'G' => b'C',
-                            b'a' => b't',
-                            b't' => b'a',
-                            b'c' => b'g',
-                            b'g' => b'c',
-                            x => x,
-                        };
-                    }
+                    seq = rustle::vg_family::seq_utils::revcomp_keep_case(&seq);
                 }
                 let (sd_depth, core_bp) = core_records
                     .get(i)
@@ -1647,13 +1612,7 @@ fn main() -> Result<()> {
                     seq.extend_from_slice(&part);
                 }
                 if a.strand == '-' {
-                    seq.reverse();
-                    for x in seq.iter_mut() {
-                        *x = match *x {
-                            b'A' => b'T', b'T' => b'A', b'C' => b'G', b'G' => b'C',
-                            b'a' => b't', b't' => b'a', b'c' => b'g', b'g' => b'c', y => y,
-                        };
-                    }
+                    seq = rustle::vg_family::seq_utils::revcomp_keep_case(&seq);
                 }
                 writeln!(
                     ut,
@@ -1948,6 +1907,9 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
     let mut strand: HashMap<String, String> = HashMap::new();
     let mut reads: HashMap<String, u64> = HashMap::new();
     let mut gene_order: Vec<String> = Vec::new();
+    // genes already in `gene_order` (was a scan of every `gene_of` value per transcript line: O(T^2) on a
+    // whole-genome GTF); same first-appearance order for any GTF whose transcript_ids do not switch gene
+    let mut seen_genes: HashSet<String> = HashSet::new();
     for line in std::io::BufReader::new(f).lines() {
         let line = line?;
         if line.starts_with('#') {
@@ -1960,7 +1922,7 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
         let Some(t) = attr(r[8], "transcript_id") else { continue };
         if r[2] == "transcript" {
             let g = attr(r[8], "gene_id").unwrap_or(t).to_string();
-            if !gene_of.values().any(|x| *x == g) {
+            if seen_genes.insert(g.clone()) {
                 gene_order.push(g.clone());
             }
             gene_of.insert(t.to_string(), g);
@@ -2013,9 +1975,35 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
     drop(fa);
     eprintln!("[mcl_families] --from-gtf: {} loci -> all-vs-all", spans.len());
     let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+    let mm_args: Vec<String> = ["-x", "asm20", "-c", "-X", "-N", "50", "-p", "0.1", "--secondary=yes", "-t"]
+        .iter()
+        .map(|s| s.to_string())
+        .chain(std::iter::once(threads.to_string()))
+        .collect();
+    // PAF cache (`RUSTLE_CACHE_DIR`, see `rustle::vg_family::run_cache`): keyed by the loci FASTA bytes, the
+    // command line and the minimap2 build; a hit copies the cached PAF instead of re-aligning.
+    use rustle::vg_family::run_cache as rc;
+    let paf_entry = rc::cache_root().map(|root| {
+        let bytes = std::fs::read(&fa_path).unwrap_or_default();
+        let key = format!(
+            "rustle families paf v1\ncmd\t{mm2} {}\nminimap2\t{}\nquery_fnv\t{:016x}\nquery_bytes\t{}\n",
+            mm_args.join(" "),
+            rc::minimap2_version(&mm2),
+            rc::fnv1a64(&bytes),
+            bytes.len()
+        );
+        rc::Entry::new(&root, "paf", key)
+    });
+    if let Some(e) = paf_entry.as_ref().filter(|e| e.is_hit()) {
+        // a replay that fails (another run replacing the entry) falls through to running minimap2
+        if std::fs::copy(e.dir.join("out.paf"), &paf).is_ok() {
+            eprintln!("[cache] all-vs-all PAF replayed from {} (minimap2 skipped)", e.dir.display());
+            return Ok((gff3, fa_path, paf));
+        }
+    }
     let out_paf = std::fs::File::create(&paf)?;
     let status = std::process::Command::new(&mm2)
-        .args(["-x", "asm20", "-c", "-X", "-N", "50", "-p", "0.1", "--secondary=yes", "-t", &threads.to_string()])
+        .args(&mm_args)
         .arg(&fa_path)
         .arg(&fa_path)
         .stdout(out_paf)
@@ -2023,5 +2011,14 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
         .status()
         .with_context(|| format!("running {mm2}"))?;
     anyhow::ensure!(status.success(), "minimap2 all-vs-all failed");
+    if let Some(e) = paf_entry.as_ref() {
+        let stored = e.staging().and_then(|st| {
+            std::fs::copy(&paf, st.join("out.paf"))?;
+            e.commit(&st)
+        });
+        if let Err(err) = stored {
+            eprintln!("[cache] could not store the PAF ({err:#}); continuing");
+        }
+    }
     Ok((gff3, fa_path, paf))
 }

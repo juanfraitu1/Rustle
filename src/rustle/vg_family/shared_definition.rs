@@ -514,7 +514,9 @@ pub fn parse_paf(text: &str) -> Vec<PafRec> {
         .collect()
 }
 
-fn cigar_ops(cg: &str) -> Vec<(u64, char)> {
+/// A PAF `cg:Z:` CIGAR string as `(length, op)` runs, e.g. "88=3D510=1I436=" -> [(88,'='),(3,'D'),(510,'='),
+/// (1,'I'),(436,'=')]. Also used by `missing_copy_flag_pass`.
+pub(crate) fn cigar_ops(cg: &str) -> Vec<(u64, char)> {
     let mut out = Vec::new();
     let mut n: u64 = 0;
     for c in cg.chars() {
