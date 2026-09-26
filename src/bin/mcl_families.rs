@@ -188,6 +188,16 @@ struct Args {
     /// a locus with < `--min-reads` reads keeps its GFF exons (reported). Needs `--bam` and `--fasta`.
     /// Measured (§6el): with these units O2's junction-anchored agreement went 7/11 -> 5/5 and the control
     /// 52/52 -> 57/57 — the GFF model was the cause of O2's confident wrong calls. Default OFF
+    ///
+    /// ⭐ WITH `--from-gtf` (the de novo families stage; user decision 2026-09-25: copy assignment consumes the
+    /// SAME families) the unit is the LOCUS REPRESENTATIVE and no `--bam` is needed: `<out>.copies.tsv` /
+    /// `<out>.copies.fa` / `<out>.copies.regions` / `<out>.copies.merged.tsv`, one copy per member of every
+    /// cluster of `clusters.tsv` (`family_id` = `cluster_id`), in the `gw_family_catalog` copies contract
+    /// (columns 1-11 identical: `copy_assign --families/--copies-fa` and `bench/sim.py copies` read it as they read
+    /// the legacy catalog). Copy = the representative transcript (`tid` = its `transcript_id`, exons = its exons,
+    /// sequence = its spliced exon sum, `n_reads` = its `reads`), source `locus_rep`; see `write_locus_rep_copies`.
+    /// The read-chain units above are the annotation mode's and are not written. Without `--emit-units` a
+    /// `--from-gtf` run is byte-identical to before.
     #[arg(long, default_value_t = false)]
     emit_units: bool,
     /// Escape hatch: do NOT emit units even though `--bam` and `--fasta` are given (§6er: units are emitted
@@ -691,13 +701,410 @@ fn has_block_in(br: &rustle::vg_family::denovo_assemble::BamRead, m: &GeneKey) -
     matches!(cur, Some((s, e)) if s < hi && lo < e)
 }
 
+/// A RepeatMasker `.out` (curated library) as sorted interspersed-repeat intervals per contig (0-based half-open).
+fn load_rmsk(path: &str) -> Result<BTreeMap<String, Vec<(u64, u64)>>> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
+    let mut m: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() < 11 || f[0].parse::<u64>().is_err() {
+            continue;
+        }
+        let class = f[10].split('/').next().unwrap_or("");
+        if !matches!(class, "LINE" | "SINE" | "LTR" | "Retroposon" | "DNA" | "RC" | "Unknown") {
+            continue;
+        }
+        if let (Ok(a), Ok(b)) = (f[5].parse::<u64>(), f[6].parse::<u64>()) {
+            m.entry(f[4].to_string()).or_default().push((a - 1, b));
+        }
+    }
+    for v in m.values_mut() {
+        v.sort_unstable();
+    }
+    Ok(m)
+}
+
+/// Interspersed-repeat fraction of an exon chain (`None` when the contig has no RepeatMasker interval at all).
+fn rep_frac_in(rmsk: &BTreeMap<String, Vec<(u64, u64)>>, chrom: &str, exons: &[(u64, u64)]) -> Option<f64> {
+    let v = rmsk.get(chrom)?;
+    let (mut tot, mut inter) = (0u64, 0u64);
+    for &(s, e) in exons {
+        tot += e - s;
+        let i = v.partition_point(|x| x.1 <= s);
+        for &(a, b) in &v[i..] {
+            if a >= e {
+                break;
+            }
+            inter += b.min(e).saturating_sub(a.max(s));
+        }
+    }
+    Some(inter as f64 / tot.max(1) as f64)
+}
+
+/// Header of `<out>.copies.tsv` (`--from-gtf --emit-units`). Columns 1-11 are `gw_family_catalog`'s `copies.tsv`
+/// header, in its order, so `copy_assign --families` (parsed by name), `bench/sim.py copies` (positional 1-9) and
+/// every reader of the legacy catalog read it unchanged; the rest are appended.
+const COPIES_HEADER: &str = "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tmax_family_identity\
+     \tsource\tgene_id\tcore_hull\tsd_depth\tcore_bp\trep_frac\tmember_status\tlocus_start\tlocus_end";
+
+/// Counts of one `write_locus_rep_copies` call (the params certificate and the log).
+#[derive(Debug, Default, Clone, PartialEq)]
+struct RepCopyStats {
+    /// rows written to `copies.tsv`
+    copies: usize,
+    /// families with >= 1 copy / with >= 2 copies
+    families: usize,
+    multi_copy_families: usize,
+    /// members folded into an exon-overlapping copy of the same family (`copies.merged.tsv`)
+    merged: usize,
+    /// members skipped because the core rule dropped them and `--no-units-include-dropped` was given
+    skipped_dropped: usize,
+    dropped_emitted: usize,
+    noncoding: usize,
+    /// copies whose representative has `reads 0` (or no `reads` attribute)
+    unexpressed: usize,
+    /// representatives with strand `.`, written as `+` (the copies contract has no unstranded copy)
+    unstranded: usize,
+    /// loci sharing one `(chrom, start, end)` with another `gene_id` (one graph node; the representative with more
+    /// reads is the copy)
+    key_collisions: usize,
+    /// representatives whose exons overlapped or abutted and were coalesced into one block
+    coalesced: usize,
+}
+
+/// Genome bases at `exons` (0-based half-open, ascending), concatenated, reverse-complemented on `-`: a copy's
+/// spliced sequence in transcription orientation, as `gw_family_catalog` writes `copies.fa`.
+fn spliced_exon_sum(genome: &rustle::genome::GenomeIndex, chrom: &str, exons: &[(u64, u64)], strand: char) -> Result<Vec<u8>> {
+    let mut seq: Vec<u8> = Vec::new();
+    for &(s, e) in exons {
+        let part = genome
+            .fetch_sequence(chrom, s, e)
+            .with_context(|| format!("copies: {chrom}:{s}-{e} is not in --fasta"))?;
+        seq.extend_from_slice(&part);
+    }
+    if strand == '-' {
+        seq = rustle::vg_family::seq_utils::revcomp_keep_case(&seq);
+    }
+    Ok(seq)
+}
+
+/// ⭐ `--from-gtf --emit-units` (user decision 2026-09-25 16:00: ONE default de novo family definition, and copy
+/// assignment consumes the SAME families): write the families as a COPY TABLE in the `copy_assign --families /
+/// --copies-fa` contract. One copy per member locus of every reported cluster (the rows of `clusters.tsv`,
+/// `family_id` = its `cluster_id`); the copy IS the locus representative — its exons (the positional exon sum),
+/// its spliced sequence, its `transcript_id` (`tid`, which joins back to the assembled GTF), its `reads`
+/// (`n_reads`) and its strand. No BAM is read: the de novo loci already are read-derived.
+///
+/// `max_family_identity` = the identity of the best families-stage edge (genomic-span `-x asm20` alignment, the
+/// one the admission rule scored) from this locus to another member, `NA` when it has no direct edge. ⚠ The legacy
+/// catalog's column of that name is an exon-sum alignment identity: same role, different alignment.
+/// `locus_start`/`locus_end` = the de novo locus span (all its transcripts), clipped at the exon-chain ends of the
+/// neighbouring copies on the contig (the L2 rule, `clip_extents_to_neighbours`).
+/// Also applied as for read-chain units: `--no-units-include-dropped`, `--coding-core`, and the §6fb merge of
+/// copies of one family that share exon bases (a no-op after `--fold-within-clusters`, kept as the guarantee that
+/// no base belongs to two copies of one family). Writes `<out>.copies.tsv/.fa/.regions/.merged.tsv`.
+#[allow(clippy::too_many_arguments)]
+fn write_locus_rep_copies(
+    out: &str,
+    fasta: &str,
+    clusters: &[Cluster],
+    g: &rustle::vg_family::annotation_families::HomologyGraph,
+    core_records: &[Vec<rustle::vg_family::annotation_families::CoreRecord>],
+    loci: &[GtfLocus],
+    rmsk: Option<&BTreeMap<String, Vec<(u64, u64)>>>,
+    include_dropped: bool,
+    merge_overlapping: bool,
+    coding_core: bool,
+) -> Result<RepCopyStats> {
+    struct RepCopy {
+        member: GeneKey,
+        gene_id: String,
+        tid: String,
+        reads: u64,
+        strand: char,
+        exons: Vec<(u64, u64)>,
+        seq: Vec<u8>,
+        ident: Option<f64>,
+        hull_col: String,
+        sd_depth: String,
+        core_bp: String,
+        status: &'static str,
+        orf: usize,
+        locus: (u64, u64),
+    }
+    let mut st = RepCopyStats::default();
+    // representative per graph node (`loci.gff3` gene line = the node key, GFF 1-based)
+    let mut rep_of: BTreeMap<GeneKey, &GtfLocus> = BTreeMap::new();
+    for l in loci {
+        let k: GeneKey = (l.chrom.clone(), l.start, l.end);
+        match rep_of.get(&k) {
+            Some(prev) => {
+                st.key_collisions += 1;
+                if l.rep_reads > prev.rep_reads {
+                    rep_of.insert(k, l);
+                }
+            }
+            None => {
+                rep_of.insert(k, l);
+            }
+        }
+    }
+    let contigs: std::collections::HashSet<String> =
+        clusters.iter().flat_map(|c| c.members.iter().map(|m| m.0.clone())).collect();
+    // ⚠ `from_fasta_contigs` with an EMPTY set loads the whole genome: no family, no genome
+    let genome = if contigs.is_empty() {
+        rustle::genome::GenomeIndex::empty()
+    } else {
+        rustle::genome::GenomeIndex::from_fasta_contigs(fasta, &contigs)?
+    };
+    let node_idx: BTreeMap<&GeneKey, usize> = g.genes.iter().enumerate().map(|(k, gk)| (gk, k)).collect();
+    let mut staged: Vec<(String, Vec<RepCopy>, Vec<Option<usize>>)> = Vec::new();
+    for (i, c) in clusters.iter().enumerate() {
+        let fid = format!("MCL{i}");
+        let mut pending: Vec<RepCopy> = Vec::new();
+        for (mi, m) in c.members.iter().enumerate() {
+            let rec = core_records.get(i).and_then(|v| v.get(mi));
+            let status: &'static str = match rec.map(|r| r.status) {
+                Some(CoreStatus::Dropped) => "dropped",
+                Some(CoreStatus::KeptTrimmed) => "kept_trimmed",
+                Some(_) => "kept_full",
+                None => "ungated",
+            };
+            if status == "dropped" && !include_dropped {
+                st.skipped_dropped += 1;
+                continue;
+            }
+            let l = rep_of.get(m).with_context(|| {
+                format!("copies: family member {}:{}-{} is not a locus of the --from-gtf GTF (a failed join)", m.0, m.1, m.2)
+            })?;
+            // the representative's exons, 0-based half-open; overlapping or abutting blocks coalesced
+            let mut exons: Vec<(u64, u64)> = Vec::with_capacity(l.rep_exons.len());
+            let mut coalesced = false;
+            for &(_, a, b) in &l.rep_exons {
+                let (s, e) = (a.saturating_sub(1), b);
+                match exons.last_mut() {
+                    Some(p) if s <= p.1 => {
+                        p.1 = p.1.max(e);
+                        coalesced = true;
+                    }
+                    _ => exons.push((s, e)),
+                }
+            }
+            anyhow::ensure!(!exons.is_empty(), "copies: locus {} has a representative without exons", l.gene_id);
+            if coalesced {
+                st.coalesced += 1;
+            }
+            let strand = match l.strand.as_str() {
+                "+" => '+',
+                "-" => '-',
+                _ => {
+                    st.unstranded += 1;
+                    '+'
+                }
+            };
+            let seq = spliced_exon_sum(&genome, &m.0, &exons, strand)?;
+            let ident = node_idx.get(m).and_then(|&a| {
+                c.members
+                    .iter()
+                    .filter_map(|o| node_idx.get(o).copied())
+                    .filter(|&b| b != a)
+                    .filter_map(|b| g.idents.get(&(a.min(b), a.max(b))).copied())
+                    .reduce(f64::max)
+            });
+            let hull_col = match rec.and_then(|r| r.hull) {
+                Some((a, b)) => format!("{}-{}", a.saturating_sub(1), b),
+                None => "NA".to_string(),
+            };
+            let (sd_depth, core_bp) =
+                rec.map(|r| (r.max_depth.to_string(), r.core_bp.to_string())).unwrap_or_else(|| ("NA".into(), "NA".into()));
+            let (us, ue) = (exons[0].0, exons.last().unwrap().1);
+            if status == "dropped" {
+                st.dropped_emitted += 1;
+            }
+            pending.push(RepCopy {
+                member: m.clone(),
+                gene_id: l.gene_id.clone(),
+                tid: l.rep.clone(),
+                reads: l.rep_reads,
+                strand,
+                orf: if coding_core { longest_orf(&seq) } else { 0 },
+                exons,
+                seq,
+                ident,
+                hull_col,
+                sd_depth,
+                core_bp,
+                status,
+                locus: (m.1.saturating_sub(1).min(us), m.2.max(ue)),
+            });
+        }
+        // copies in genomic order within the family (the catalog's order)
+        pending.sort_by(|a, b| {
+            (a.member.0.as_str(), a.exons[0].0, a.exons.last().unwrap().1, a.tid.as_str())
+                .cmp(&(b.member.0.as_str(), b.exons[0].0, b.exons.last().unwrap().1, b.tid.as_str()))
+        });
+        // CODING CORE: the family's best ORF is the reference (see `--coding-core`)
+        if coding_core {
+            let best_orf = pending.iter().filter(|u| u.status != "dropped").map(|u| u.orf).max().unwrap_or(0);
+            if best_orf > 0 {
+                for u in pending.iter_mut() {
+                    if u.status != "dropped" && u.orf * 2 < best_orf {
+                        u.status = "noncoding";
+                        st.noncoding += 1;
+                    }
+                }
+            }
+        }
+        // §6fb: copies of one family that share exon bases are one copy (kept before dropped, then the longest
+        // exon union represents them)
+        let n = pending.len();
+        let mut merged_into: Vec<Option<usize>> = vec![None; n];
+        if merge_overlapping {
+            let mut parent: Vec<usize> = (0..n).collect();
+            fn find(p: &mut [usize], mut x: usize) -> usize {
+                while p[x] != x {
+                    p[x] = p[p[x]];
+                    x = p[x];
+                }
+                x
+            }
+            for a in 0..n {
+                for b in (a + 1)..n {
+                    if pending[a].member.0 != pending[b].member.0 {
+                        continue;
+                    }
+                    let share = pending[a].exons.iter().any(|&(s1, e1)| pending[b].exons.iter().any(|&(s2, e2)| s1 < e2 && s2 < e1));
+                    if share {
+                        let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+                        if ra != rb {
+                            parent[ra.max(rb)] = ra.min(rb);
+                        }
+                    }
+                }
+            }
+            let rank = |u: &RepCopy| (u.status != "dropped", u.exons.iter().map(|(s, e)| e - s).sum::<u64>());
+            let mut rep_of_root: BTreeMap<usize, usize> = BTreeMap::new();
+            for k in 0..n {
+                let r = find(&mut parent, k);
+                let e = rep_of_root.entry(r).or_insert(k);
+                if rank(&pending[k]) > rank(&pending[*e]) {
+                    *e = k;
+                }
+            }
+            for k in 0..n {
+                let rep = rep_of_root[&find(&mut parent, k)];
+                if rep != k {
+                    merged_into[k] = Some(rep);
+                }
+            }
+        }
+        staged.push((fid, pending, merged_into));
+    }
+    // L2: every copy's locus extent stops at the exon-chain ends of the copies (of any family) around it
+    let mut clipped: Vec<Vec<(u64, u64)>> = staged.iter().map(|(_, p, _)| p.iter().map(|u| u.locus).collect()).collect();
+    {
+        let mut by_ctg: BTreeMap<&str, Vec<(usize, usize)>> = BTreeMap::new();
+        for (fi, (_, pending, merged_into)) in staged.iter().enumerate() {
+            for (k, u) in pending.iter().enumerate() {
+                if merged_into[k].is_none() {
+                    by_ctg.entry(u.member.0.as_str()).or_default().push((fi, k));
+                }
+            }
+        }
+        for ks in by_ctg.values() {
+            let spans: Vec<(u64, u64, (u64, u64))> = ks
+                .iter()
+                .map(|&(fi, k)| {
+                    let u = &staged[fi].1[k];
+                    (u.exons[0].0, u.exons.last().unwrap().1, u.locus)
+                })
+                .collect();
+            for (&(fi, k), c) in ks.iter().zip(clip_extents_to_neighbours(&spans)) {
+                clipped[fi][k] = c;
+            }
+        }
+    }
+    let mut ct = std::io::BufWriter::new(std::fs::File::create(format!("{out}.copies.tsv"))?);
+    let mut cf = std::io::BufWriter::new(std::fs::File::create(format!("{out}.copies.fa"))?);
+    let mut cr = std::io::BufWriter::new(std::fs::File::create(format!("{out}.copies.regions"))?);
+    let mut cm = std::io::BufWriter::new(std::fs::File::create(format!("{out}.copies.merged.tsv"))?);
+    writeln!(ct, "{COPIES_HEADER}")?;
+    writeln!(cm, "family_id\tmerged_member\tmerged_tid\tinto_member\tinto_tid")?;
+    for (fi, (fid, pending, merged_into)) in staged.iter().enumerate() {
+        let mut idx = 0usize;
+        let mut hulls: BTreeMap<&str, (u64, u64)> = BTreeMap::new();
+        for (k, u) in pending.iter().enumerate() {
+            if let Some(rep) = merged_into[k] {
+                let r = &pending[rep];
+                writeln!(
+                    cm,
+                    "{fid}\t{}:{}-{}\t{}\t{}:{}-{}\t{}",
+                    u.member.0, u.member.1, u.member.2, u.tid, r.member.0, r.member.1, r.member.2, r.tid
+                )?;
+                st.merged += 1;
+                continue;
+            }
+            let chrom = u.member.0.as_str();
+            let (us, ue) = (u.exons[0].0, u.exons.last().unwrap().1);
+            let rep_col = rmsk
+                .and_then(|r| rep_frac_in(r, chrom, &u.exons))
+                .map(|v| format!("{v:.3}"))
+                .unwrap_or_else(|| "NA".into());
+            writeln!(
+                ct,
+                "{fid}\t{idx}\t{}\t{chrom}\t{us}\t{ue}\t{}\t{}\t{}\t{}\t{}\tlocus_rep\t{}\t{}\t{}\t{}\t{rep_col}\t{}\t{}\t{}",
+                u.tid,
+                u.exons.len(),
+                u.strand,
+                u.reads,
+                u.exons.iter().map(|(s, e)| format!("{s}-{e}")).collect::<Vec<_>>().join(","),
+                u.ident.map(|v| format!("{v:.6}")).unwrap_or_else(|| "NA".into()),
+                u.gene_id,
+                u.hull_col,
+                u.sd_depth,
+                u.core_bp,
+                u.status,
+                clipped[fi][k].0,
+                clipped[fi][k].1
+            )?;
+            writeln!(cf, ">{fid}|{idx}|{chrom}:{us}-{ue}|{}|nexon={}", u.strand, u.exons.len())?;
+            cf.write_all(&u.seq)?;
+            writeln!(cf)?;
+            let h = hulls.entry(chrom).or_insert((us, ue));
+            h.0 = h.0.min(us);
+            h.1 = h.1.max(ue);
+            if u.reads == 0 {
+                st.unexpressed += 1;
+            }
+            st.copies += 1;
+            idx += 1;
+        }
+        for (ctg, (a, b)) in hulls {
+            writeln!(cr, "{fid}\t{ctg}:{}-{}", a.saturating_sub(5_000).max(1), b + 5_000)?;
+        }
+        if idx >= 1 {
+            st.families += 1;
+        }
+        if idx >= 2 {
+            st.multi_copy_families += 1;
+        }
+    }
+    for w in [&mut ct, &mut cf, &mut cr, &mut cm] {
+        w.flush()?;
+    }
+    Ok(st)
+}
+
 fn main() -> Result<()> {
     let mut args = Args::parse();
+    // `--from-gtf`: the de novo loci (their representatives become the copy table under `--emit-units`)
+    let mut gtf_loci_list: Option<Vec<GtfLocus>> = None;
     if let Some(gtf) = args.from_gtf.clone() {
         let fasta = args.fasta.clone().context("--from-gtf needs --fasta (the genome the GTF was assembled on)")?;
-        let (gff3, fa, paf) = loci_from_gtf(&gtf, &fasta, &args.out, args.threads)?;
+        let (gff3, fa, paf, loci) = loci_from_gtf(&gtf, &fasta, &args.out, args.threads)?;
         args.gff = Some(gff3);
         args.paf = paf;
+        gtf_loci_list = Some(loci);
         eprintln!("[mcl_families] --from-gtf: loci in {fa}");
     }
     anyhow::ensure!(!args.paf.is_empty(), "--paf is required unless --from-gtf is given");
@@ -1116,7 +1523,52 @@ fn main() -> Result<()> {
     let mut readthrough_units = 0usize;
     let mut noncoding_units = 0usize; // --coding-core: members demoted for not preserving the family's frame
     let mut rt_rejected = (0usize, 0usize, 0usize); // (opposite strand, duplicate flanks, donor not ours)
-    if args.emit_units {
+    // ⭐ `--from-gtf --emit-units`: the copy table of the de novo families (`write_locus_rep_copies`); the read-chain
+    // units below are the ANNOTATION mode's (`--paf --gff --bam`), unchanged.
+    let mut rep_copy_stats: Option<RepCopyStats> = None;
+    if args.emit_units && gtf_loci_list.is_some() {
+        anyhow::ensure!(
+            !args.emit_readthrough_units,
+            "--emit-readthrough-units is not available with --from-gtf: a read-through between two de novo loci is \
+             an assembled transcript of its own, not a unit to add"
+        );
+        anyhow::ensure!(
+            !(args.no_cross_family_exon_overlap && !args.allow_cross_family_exon_overlap),
+            "--no-cross-family-exon-overlap is not available with --from-gtf (a copy is the locus representative \
+             as assembled; it is never trimmed)"
+        );
+        let fasta = args.fasta.as_ref().ok_or_else(|| anyhow::anyhow!("--from-gtf --emit-units needs --fasta"))?;
+        let rmsk = match &args.rmsk {
+            Some(path) => Some(load_rmsk(path)?),
+            None => None,
+        };
+        let s = write_locus_rep_copies(
+            &args.out,
+            fasta,
+            &clusters,
+            &g,
+            &core_records,
+            gtf_loci_list.as_deref().unwrap_or(&[]),
+            rmsk.as_ref(),
+            args.units_include_dropped,
+            args.merge_overlapping_units && !args.no_merge_overlapping_units,
+            args.coding_core,
+        )?;
+        unit_stats.2 = s.skipped_dropped;
+        unit_stats.3 = s.merged;
+        units_dropped_emitted = s.dropped_emitted;
+        units_unexpressed = s.unexpressed;
+        noncoding_units = s.noncoding;
+        eprintln!(
+            "[mcl_families] copies (--from-gtf --emit-units): {} cop(ies) = locus representatives in {} famil(ies) \
+             ({} with >= 2 copies) -> {}.copies.tsv/.fa/.regions; {} merged into an exon-overlapping copy of the same \
+             family, {} dropped member(s) skipped, {} unstranded representative(s) written as +, {} (chrom,start,end) \
+             collision(s), {} representative(s) with coalesced exons",
+            s.copies, s.families, s.multi_copy_families, args.out, s.merged, s.skipped_dropped, s.unstranded,
+            s.key_collisions, s.coalesced
+        );
+        rep_copy_stats = Some(s);
+    } else if args.emit_units {
         let bam = args.bam.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --bam"))?;
         let fasta = args.fasta.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --fasta"))?;
         let genome = rustle::genome::GenomeIndex::from_fasta(fasta)?;
@@ -1132,44 +1584,10 @@ fn main() -> Result<()> {
         writeln!(ut, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\tsource\tcore_hull\tsd_depth\tcore_bp\tnearest_ident\trep_frac\tmember_status\tlocus_start\tlocus_end")?;
         // curated repeats (optional --rmsk): per contig, sorted interspersed intervals
         let rmsk: BTreeMap<String, Vec<(u64, u64)>> = match &args.rmsk {
-            Some(path) => {
-                let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
-                let mut m: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
-                for line in text.lines() {
-                    let f: Vec<&str> = line.split_whitespace().collect();
-                    if f.len() < 11 || f[0].parse::<u64>().is_err() {
-                        continue;
-                    }
-                    let class = f[10].split('/').next().unwrap_or("");
-                    if !matches!(class, "LINE" | "SINE" | "LTR" | "Retroposon" | "DNA" | "RC" | "Unknown") {
-                        continue;
-                    }
-                    if let (Ok(a), Ok(b)) = (f[5].parse::<u64>(), f[6].parse::<u64>()) {
-                        m.entry(f[4].to_string()).or_default().push((a - 1, b));
-                    }
-                }
-                for v in m.values_mut() {
-                    v.sort_unstable();
-                }
-                m
-            }
+            Some(path) => load_rmsk(path)?,
             None => BTreeMap::new(),
         };
-        let rep_frac = |chrom: &str, exons: &[(u64, u64)]| -> Option<f64> {
-            let v = rmsk.get(chrom)?;
-            let (mut tot, mut inter) = (0u64, 0u64);
-            for &(s, e) in exons {
-                tot += e - s;
-                let i = v.partition_point(|x| x.1 <= s);
-                for &(a, b) in &v[i..] {
-                    if a >= e {
-                        break;
-                    }
-                    inter += b.min(e).saturating_sub(a.max(s));
-                }
-            }
-            Some(inter as f64 / tot.max(1) as f64)
-        };
+        let rep_frac = |chrom: &str, exons: &[(u64, u64)]| -> Option<f64> { rep_frac_in(&rmsk, chrom, exons) };
         let node_idx: BTreeMap<&GeneKey, usize> = g.genes.iter().enumerate().map(|(k, gk)| (gk, k)).collect();
         // every family's units are staged first: the L2 clipping (below) needs EVERY unit on a contig, whatever
         // its family — a locus never contains another catalog unit
@@ -1721,6 +2139,20 @@ fn main() -> Result<()> {
     ] {
         writeln!(ph, "{k}\t{v}")?;
     }
+    // `--from-gtf --emit-units` only (appended LAST, and only then, so every other run's params.tsv is unchanged)
+    if let Some(s) = &rep_copy_stats {
+        for (k, v) in [
+            ("copies_from_gtf", "true".to_string()),
+            ("copies_written", s.copies.to_string()),
+            ("copies_families", s.families.to_string()),
+            ("copies_multi_copy_families", s.multi_copy_families.to_string()),
+            ("copies_unstranded_as_plus", s.unstranded.to_string()),
+            ("copies_gene_key_collisions", s.key_collisions.to_string()),
+            ("copies_exons_coalesced", s.coalesced.to_string()),
+        ] {
+            writeln!(ph, "{k}\t{v}")?;
+        }
+    }
 
     let members: usize = clusters.iter().map(|c| c.members.len()).sum();
     let largest = clusters.iter().map(|c| c.members.len()).max().unwrap_or(0);
@@ -1795,14 +2227,6 @@ mod tests {
         assert_eq!(clip_extents_to_neighbours(&[(10, 20, (5, 50))]), vec![(5, 50)]);
     }
 
-    /// L2: the extent spans the kept segment of every PRIMARY record with a block in the chain, through
-    /// ordinary introns; secondaries and supplementaries never count; a record spliced over the chain with no
-    /// block in it contributes nothing; a giant unsupported intron is cut (mis-chain rule).
-    #[test]
-    /// A read-through junction is an intron of a read that HAS a block in the chain and whose far end
-    /// leaves the chain downstream. A read spliced over the chain with no block in it contributes nothing,
-    /// and an ordinary intron inside the chain is not a candidate.
-    #[test]
     /// The ORF scan is frame-aware, takes the LONGEST ATG..stop across the three forward frames, is
     /// case-insensitive, and reports 0 when no complete ORF exists. A frameshift shortens it, which is the
     /// whole point of `--coding-core` (the rule compares this length to the family's best, never to a
@@ -1822,6 +2246,10 @@ mod tests {
         assert_eq!(longest_orf(b"ATGTAAGGGATGAAACCCTAA"), 12);
     }
 
+    /// A read-through junction is an intron of a read that HAS a block in the chain and whose far end
+    /// leaves the chain downstream. A read spliced over the chain with no block in it contributes nothing,
+    /// and an ordinary intron inside the chain is not a candidate.
+    #[test]
     fn leaving_introns_are_downstream_junctions_of_reads_anchored_in_the_chain() {
         let chain = [(1000u64, 1100u64), (4000, 4120)];
         // no block in the chain: nothing, however far the intron reaches
@@ -1845,6 +2273,136 @@ mod tests {
         assert!(leaving_introns(&b, &i, &[]).is_empty());
     }
 
+    /// `--from-gtf` loci: a locus is a `gene_id` group spanning all its transcripts; its representative is the
+    /// transcript with the most reads, ties to the longer span, then to the LAST transcript_id; a gene without
+    /// exons is not a locus; the representative's exons come back sorted.
+    #[test]
+    fn gtf_loci_takes_the_most_read_transcript_ties_to_the_longer_span_then_the_last_id() {
+        let gtf = "\
+c1\tr\ttranscript\t101\t400\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\"; reads \"5\";
+c1\tr\texon\t101\t200\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\";
+c1\tr\texon\t301\t400\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\";
+c1\tr\ttranscript\t101\t450\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T2\"; reads \"5\";
+c1\tr\texon\t301\t450\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T2\";
+c1\tr\texon\t101\t200\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T2\";
+c1\tr\ttranscript\t51\t90\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T0\"; reads \"1\";
+c1\tr\texon\t51\t90\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T0\";
+c1\tr\ttranscript\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Ta\"; reads \"3\";
+c1\tr\texon\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Ta\";
+c1\tr\ttranscript\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Tb\"; reads \"3\";
+c1\tr\texon\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Tb\";
+c1\tr\ttranscript\t5001\t5100\t.\t+\t.\tgene_id \"G3\"; transcript_id \"Tx\"; reads \"9\";
+";
+        let loci = gtf_loci(std::io::Cursor::new(gtf)).unwrap();
+        assert_eq!(loci.len(), 2, "G3 has no exon: not a locus");
+        assert_eq!(
+            loci[0],
+            GtfLocus {
+                gene_id: "G1".into(),
+                chrom: "c1".into(),
+                start: 51,
+                end: 450,
+                rep: "T2".into(),
+                rep_reads: 5,
+                strand: "+".into(),
+                rep_exons: vec![("c1".into(), 101, 200), ("c1".into(), 301, 450)],
+            }
+        );
+        assert_eq!((loci[1].rep.as_str(), loci[1].strand.as_str(), loci[1].rep_reads), ("Tb", "-", 3));
+    }
+
+    /// ⭐ The `--from-gtf --emit-units` copy table is read by `copy_assign --families/--copies-fa` exactly as the
+    /// legacy catalog is: header columns 1-11 are the catalog's; every row passes `parse_copies_tsv`; the FASTA
+    /// passes `parse_copies_fa` and `to_colocated`; the sequence is the representative's spliced exon sum
+    /// (reverse-complemented on `-`); copies are in genomic order; `max_family_identity` is the best direct
+    /// edge; an exon-overlapping member of the same family is merged; `.` strand is written as `+`; the locus
+    /// extent is the de novo locus span clipped at the neighbouring copy's chain.
+    #[test]
+    fn locus_rep_copies_are_in_the_catalog_contract() {
+        use rustle::vg_family::annotation_families::HomologyGraph;
+        use rustle::vg_family::catalog_input::{group_families, parse_copies_fa, parse_copies_tsv, to_colocated};
+        let dir = tempfile::tempdir().unwrap();
+        let mut x: u64 = 12345;
+        let mut rnd = |n: usize| -> String {
+            (0..n)
+                .map(|_| {
+                    x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    b"ACGT"[(x >> 62) as usize] as char
+                })
+                .collect()
+        };
+        let (c1, c2) = (rnd(4000), rnd(2000));
+        let fasta = dir.path().join("g.fa");
+        std::fs::write(&fasta, format!(">c1\n{c1}\n>c2 description\n{c2}\n")).unwrap();
+        let locus = |g: &str, chrom: &str, s: u64, e: u64, rep: &str, reads: u64, st: &str, ex: &[(u64, u64)]| GtfLocus {
+            gene_id: g.into(),
+            chrom: chrom.into(),
+            start: s,
+            end: e,
+            rep: rep.into(),
+            rep_reads: reads,
+            strand: st.into(),
+            rep_exons: ex.iter().map(|&(a, b)| (chrom.to_string(), a, b)).collect(),
+        };
+        let loci = vec![
+            locus("G1", "c1", 101, 900, "T1", 7, "+", &[(101, 200), (301, 400)]),
+            locus("G2", "c1", 2001, 2900, "T2", 4, "-", &[(2001, 2100), (2301, 2500)]),
+            locus("G3", "c2", 101, 600, "T3", 0, ".", &[(101, 600)]),
+            locus("G5", "c1", 151, 260, "T5", 9, "+", &[(151, 260)]), // shares exon bases with G1
+            locus("G4", "c1", 3001, 3500, "T4", 2, "+", &[(3001, 3500)]), // no family
+        ];
+        let key = |l: &GtfLocus| -> GeneKey { (l.chrom.clone(), l.start, l.end) };
+        let mut g = HomologyGraph::default();
+        g.genes = vec![key(&loci[0]), key(&loci[1]), key(&loci[2]), key(&loci[3])];
+        g.idents.insert((0, 1), 0.95);
+        g.idents.insert((0, 2), 0.90);
+        g.idents.insert((0, 3), 0.99);
+        let clusters = vec![Cluster {
+            members: vec![key(&loci[1]), key(&loci[0]), key(&loci[2]), key(&loci[3])],
+            density: 1.0,
+            frac_in: 1.0,
+            corroborated: None,
+        }];
+        let out = dir.path().join("fam").to_string_lossy().to_string();
+        let st = write_locus_rep_copies(&out, &fasta.to_string_lossy(), &clusters, &g, &[], &loci, None, true, true, false)
+            .unwrap();
+        assert_eq!((st.copies, st.families, st.multi_copy_families, st.merged, st.unstranded), (3, 1, 1, 1, 1));
+        let tsv = std::fs::read_to_string(format!("{out}.copies.tsv")).unwrap();
+        let header: Vec<&str> = tsv.lines().next().unwrap().split('\t').collect();
+        assert_eq!(
+            header[..11],
+            ["family_id", "copy_idx", "tid", "chrom", "start", "end", "n_exon", "strand", "n_reads", "exons", "max_family_identity"]
+        );
+        let copies = parse_copies_tsv(&tsv).unwrap();
+        let got: Vec<(&str, usize, &str, u64, u64, char, u32)> =
+            copies.iter().map(|c| (c.tid.as_str(), c.copy_idx, c.chrom.as_str(), c.start, c.end, c.strand, c.n_reads)).collect();
+        assert_eq!(
+            got,
+            vec![("T1", 0, "c1", 100, 400, '+', 7), ("T2", 1, "c1", 2000, 2500, '-', 4), ("T3", 2, "c2", 100, 600, '+', 0)]
+        );
+        assert_eq!(copies[0].exons, vec![(100, 200), (300, 400)]);
+        // the L2 extent: the locus span, clipped at the neighbouring copy's chain on the contig
+        assert_eq!(copies.iter().map(|c| c.locus.unwrap()).collect::<Vec<_>>(), vec![(100, 900), (2000, 2900), (100, 600)]);
+        let ident: Vec<&str> = tsv.lines().skip(1).map(|l| l.split('\t').nth(10).unwrap()).collect();
+        assert_eq!(ident, vec!["0.990000", "0.950000", "0.900000"], "best direct edge, merged member's included");
+        let merged = std::fs::read_to_string(format!("{out}.copies.merged.tsv")).unwrap();
+        assert_eq!(merged.lines().nth(1).unwrap(), "MCL0\tc1:151-260\tT5\tc1:101-900\tT1");
+        let fa = std::fs::read_to_string(format!("{out}.copies.fa")).unwrap();
+        let seqs = parse_copies_fa(&fa).unwrap();
+        let rc = |s: &str| -> String {
+            s.bytes().rev().map(|b| match b { b'A' => 'T', b'C' => 'G', b'G' => 'C', _ => 'A' }).collect()
+        };
+        assert_eq!(String::from_utf8(seqs[&("MCL0".to_string(), 0)].seq.clone()).unwrap(), format!("{}{}", &c1[100..200], &c1[300..400]));
+        assert_eq!(String::from_utf8(seqs[&("MCL0".to_string(), 1)].seq.clone()).unwrap(), rc(&format!("{}{}", &c1[2000..2100], &c1[2300..2500])));
+        let genome = rustle::genome::GenomeIndex::from_fasta(&fasta.to_string_lossy()).unwrap();
+        let fams = group_families(copies).unwrap();
+        assert_eq!(fams.len(), 1);
+        let (cf, _) = to_colocated(&fams[0], Some(&seqs), &genome).unwrap();
+        assert_eq!(cf.copies.len(), 3);
+        let regions = std::fs::read_to_string(format!("{out}.copies.regions")).unwrap();
+        assert_eq!(regions, "MCL0\tc1:1-7500\nMCL0\tc2:1-5600\n");
+    }
+
     /// The target is the unit whose chain contains the first base AFTER the intron; the source never
     /// matches itself, and a junction landing between units resolves to nothing.
     #[test]
@@ -1863,6 +2421,10 @@ mod tests {
         assert_eq!(readthrough_target((1000, 4010), "c1", 0, &units), None);
     }
 
+    /// L2: the extent spans the kept segment of every PRIMARY record with a block in the chain, through
+    /// ordinary introns; secondaries and supplementaries never count; a record spliced over the chain with no
+    /// block in it contributes nothing; a giant unsupported intron is cut (mis-chain rule).
+    #[test]
     fn read_extent_is_the_union_of_kept_segments_of_primaries_with_a_block_in_the_chain() {
         let chain = [(1000u64, 1100u64)];
         assert_eq!(read_extent(&[], &chain, 3), None);
@@ -1890,18 +2452,36 @@ mod tests {
     }
 }
 
-/// `--from-gtf`: the de novo locus set of an assembled GTF, as the family stage consumes it (see the flag doc).
-/// Returns `(loci.gff3, loci.fa, loci.paf)` paths.
-fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(String, String, String)> {
+/// One de novo locus of an assembled GTF (`--from-gtf`): a `gene_id` group, its span (GFF 1-based, min/max over the
+/// exons of all its transcripts) and its REPRESENTATIVE — the transcript with the most `reads`, ties to the longer
+/// span, then to the lexicographically last `transcript_id` (the order `max_by_key` has always resolved ties in).
+/// The representative's exons are the locus's exons in `loci.gff3` and, with `--emit-units`, the copy's exons in
+/// `copies.tsv`: the "positional exon sum" (read-derived coordinates, genome bases).
+#[derive(Clone, Debug, PartialEq)]
+struct GtfLocus {
+    gene_id: String,
+    chrom: String,
+    start: u64,
+    end: u64,
+    rep: String,
+    rep_reads: u64,
+    /// The representative's strand column, verbatim (`.` when the transcript line had none).
+    strand: String,
+    /// The representative's exons, GFF 1-based closed, sorted by start (stable).
+    rep_exons: Vec<(String, u64, u64)>,
+}
+
+/// Parse an assembled GTF into its loci, in first-appearance order of `gene_id` (genes without exons are left out).
+/// ⚠ `loci.gff3`, and through it the whole family graph, is written from exactly this list: any change here must
+/// be cmp-checked on the families stage products.
+fn gtf_loci<R: std::io::BufRead>(reader: R) -> Result<Vec<GtfLocus>> {
     use std::collections::{BTreeMap, HashMap, HashSet};
-    use std::io::{BufRead, Write};
     fn attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
         let pat = format!("{key} \"");
         let i = s.find(&pat)? + pat.len();
         let j = s[i..].find('"')? + i;
         Some(&s[i..j])
     }
-    let f = std::fs::File::open(gtf).with_context(|| format!("opening {gtf}"))?;
     let mut exons: HashMap<String, Vec<(String, u64, u64)>> = HashMap::new();
     let mut gene_of: HashMap<String, String> = HashMap::new();
     let mut strand: HashMap<String, String> = HashMap::new();
@@ -1910,7 +2490,7 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
     // genes already in `gene_order` (was a scan of every `gene_of` value per transcript line: O(T^2) on a
     // whole-genome GTF); same first-appearance order for any GTF whose transcript_ids do not switch gene
     let mut seen_genes: HashSet<String> = HashSet::new();
-    for line in std::io::BufReader::new(f).lines() {
+    for line in reader.lines() {
         let line = line?;
         if line.starts_with('#') {
             continue;
@@ -1936,12 +2516,7 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
     for (t, g) in &gene_of {
         txs_of.entry(g.clone()).or_default().push(t.clone());
     }
-    let gff3 = format!("{out}.loci.gff3");
-    let fa_path = format!("{out}.loci.fa");
-    let paf = format!("{out}.loci.paf");
-    let mut g3 = std::fs::File::create(&gff3)?;
-    writeln!(g3, "##gff-version 3")?;
-    let mut spans: Vec<(String, u64, u64)> = Vec::new();
+    let mut out = Vec::new();
     for g in &gene_order {
         let Some(ts) = txs_of.get(g) else { continue };
         let all: Vec<&(String, u64, u64)> = ts.iter().flat_map(|t| exons.get(t).into_iter().flatten()).collect();
@@ -1955,13 +2530,42 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
         sorted_ts.sort();
         let rep = sorted_ts.iter().max_by_key(|t| (reads.get(*t).copied().unwrap_or(0), span_of(t))).unwrap().clone();
         let st = strand.get(&rep).cloned().unwrap_or_else(|| ".".into());
-        writeln!(g3, "{chrom}\t.\tgene\t{s}\t{e}\t.\t{st}\t.\tID=gene-{g};Name={g}")?;
         let mut ex = exons.get(&rep).cloned().unwrap_or_default();
         ex.sort_by_key(|x| x.1);
-        for (_, a, b) in ex {
+        out.push(GtfLocus {
+            gene_id: g.clone(),
+            chrom,
+            start: s,
+            end: e,
+            rep_reads: reads.get(&rep).copied().unwrap_or(0),
+            rep,
+            strand: st,
+            rep_exons: ex,
+        });
+    }
+    Ok(out)
+}
+
+/// `--from-gtf`: the de novo locus set of an assembled GTF, as the family stage consumes it (see the flag doc).
+/// Returns `(loci.gff3, loci.fa, loci.paf)` paths and the loci themselves (for `--emit-units`' copy table).
+fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(String, String, String, Vec<GtfLocus>)> {
+    use std::collections::HashSet;
+    use std::io::Write;
+    let f = std::fs::File::open(gtf).with_context(|| format!("opening {gtf}"))?;
+    let loci = gtf_loci(std::io::BufReader::new(f))?;
+    let gff3 = format!("{out}.loci.gff3");
+    let fa_path = format!("{out}.loci.fa");
+    let paf = format!("{out}.loci.paf");
+    let mut g3 = std::fs::File::create(&gff3)?;
+    writeln!(g3, "##gff-version 3")?;
+    let mut spans: Vec<(String, u64, u64)> = Vec::new();
+    for l in &loci {
+        let (chrom, s, e, st, g) = (&l.chrom, l.start, l.end, &l.strand, &l.gene_id);
+        writeln!(g3, "{chrom}\t.\tgene\t{s}\t{e}\t.\t{st}\t.\tID=gene-{g};Name={g}")?;
+        for (_, a, b) in &l.rep_exons {
             writeln!(g3, "{chrom}\t.\texon\t{a}\t{b}\t.\t{st}\t.\tParent=gene-{g};gene={g}")?;
         }
-        spans.push((chrom, s, e));
+        spans.push((chrom.clone(), s, e));
     }
     let contigs: HashSet<String> = spans.iter().map(|x| x.0.clone()).collect();
     let genome = rustle::genome::GenomeIndex::from_fasta_contigs(fasta, &contigs)?;
@@ -1998,7 +2602,7 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
         // a replay that fails (another run replacing the entry) falls through to running minimap2
         if std::fs::copy(e.dir.join("out.paf"), &paf).is_ok() {
             eprintln!("[cache] all-vs-all PAF replayed from {} (minimap2 skipped)", e.dir.display());
-            return Ok((gff3, fa_path, paf));
+            return Ok((gff3, fa_path, paf, loci));
         }
     }
     let out_paf = std::fs::File::create(&paf)?;
@@ -2020,5 +2624,5 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
             eprintln!("[cache] could not store the PAF ({err:#}); continuing");
         }
     }
-    Ok((gff3, fa_path, paf))
+    Ok((gff3, fa_path, paf, loci))
 }
