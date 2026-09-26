@@ -14,8 +14,9 @@ scripts in `bench/crossspecies/`. Anything not yet measured is marked **OPEN**.
 > heading to jump.
 
 
-- 0★★★. NESTED EDGE-TEST LATTICE (2026-09-16) — PROPOSED: nesting theorems proven, T3 conditional, precision OPEN; §0★★ stays current
-- 0★★. CURRENT DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14)
+- 0★. THE SHIPPED DEFAULT (2026-09-25, user decision) — ONE DE NOVO FAMILY DEFINITION AT THE RNA LEVEL: reads → seeded loci → positional exon sums → families (the driver's `families` stage); READ THIS FIRST
+- 0★★★. NESTED EDGE-TEST LATTICE (2026-09-16) — PROPOSED: nesting theorems proven, T3 conditional, precision OPEN; a design, not the default (§0★)
+- 0★★. DESIGN DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14; opt-in `RUSTLE_SHARED_DEFINITION`, NOT the shipped default: §0★)
 - ⚠⚠ TIER NOTICE — READ BEFORE QUOTING ANY NUMBER IN THIS DOCUMENT (2026-08-10)
 - 0. What the definition must survive
 - 1★. THE OBJECT, RESTATED — ONE OBJECT AT TWO LEVELS (2026-08-14)
@@ -29,7 +30,55 @@ scripts in `bench/crossspecies/`. Anything not yet measured is marked **OPEN**.
 - 4a. ⭐⭐⭐ REACH — THE BOUND, AND WHAT SETS IT (2026-08-14)
 - 5. Three false-positive filters that were tried and failed
 
-## 0★★★. NESTED EDGE-TEST LATTICE (2026-09-16) — PROPOSED: nesting theorems proven, T3 conditional, precision OPEN; §0★★ stays current
+## 0★. THE SHIPPED DEFAULT (2026-09-25, user decision) — ONE DE NOVO FAMILY DEFINITION AT THE RNA LEVEL
+
+**What ships, stated once.** Everything below this section (§0★★★, §0★★, §1★ and the older sections) is design
+history, proposals or opt-in machinery; where it says "current definition" it means the design reference of its date.
+The default is:
+
+1. **Reads → loci.** `tools/rustle_pipeline.sh assemble`: `copy_assign --assemble-only --genome-wide
+   --assembly-junctions strict` + the polish flags, from primary alignments plus secondary alignments scoring ≥ 98% of
+   the read's genome-wide best alignment score (`RUSTLE_GTF_SECONDARY_AS_RATIO=0.98` with the `as_table` best-AS
+   table; register 1060). A locus is one `gene_id` of the assembled GTF.
+2. **Locus → representative: the positional exon sum.** The locus's representative is the transcript with the most
+   reads (ties: the longer span). Its exon coordinates come from the reads; its bases from the genome ("exon-sum:
+   the reference bases at the candidate's exon ranges", `docs/PSEUDOCODE_2026-09-08.md`). Loci whose exon unions
+   overlap are folded into one node.
+3. **Representatives → families.** `tools/rustle_pipeline.sh families` = `mcl_families --from-gtf --min-exonic-bp 1
+   --min-shared-exon-frac 0.60`: all-vs-all of the loci's genomic spans (`minimap2 -x asm20 -c -X -N 50 -p 0.1
+   --secondary=yes`); an edge needs ≥ 300 bp at ≥ 70% identity, coverage ≥ 0.30 of the longer locus's exonic length,
+   exonic bases on both sides, and one record joining exons to exons over ≥ 60% of the smaller locus's exonic length
+   (`annotation_families.rs`); Markov clustering, inflation 2.8; families of ≥ 2 loci. Nucleotide only.
+4. **The same families feed copy assignment.** With `--emit-units` the stage writes the copy table
+   `PREFIX.fam.copies.tsv/.fa` (one copy per member locus: its representative's exons and spliced exon sum, in the
+   contract `copy_assign --families` reads; `docs/PREREG_families_copy_table_2026-09-25.md`). O2 assigns tied reads
+   among the copies of these families.
+5. **Guided mode** (Fig. 7): the same family rule on the annotated gene and pseudogene bodies. The thesis goal is to
+   reduce the difference between the two modes.
+
+**Not the default.**
+- `gw_family_catalog` (the `catalog` stage: primaries only, span-aware POA collapse, exon-sum k11 E_r edges,
+  γ-quasi-clique) is **LEGACY**: kept runnable and scored only as a labelled comparison.
+- **Protein** is an **optional, manually invoked extra-sensitive step** (`tools/protein_attach.py`;
+  `docs/PREREG_protein_attach_2026-09-25.md`): for families with disconnected or strongly diverged members it
+  attaches missing loci at the protein level to ONE existing family, never merges families, never runs by default;
+  it appears only in a supplementary figure. `gw_family_catalog --protein-tail` stays an opt-in of the legacy catalog.
+  The §0★★ clause-3 "miniprot fallback" is a label idea from the ledger, not code.
+- `RUSTLE_SHARED_DEFINITION` (§0★★ clause 4 leaders), the SD-core certification, the nested lattice (§0★★★) and the
+  representative variants `RUSTLE_LOCUS_EXON_UNION` / `RUSTLE_LOCUS_UNION_MIN_TX` / `RUSTLE_COTHREAD_REP` are opt-in
+  or proposed (register rows 303, 1041, 1055, 393/484/841 for the representative variants).
+- **The closed loop** (families → union-certificate assignment of tied reads → each assigned read given to its copy
+  → re-assembly) is a pre-registered pass-2 experiment (`docs/PREREG_tied_read_loop_2026-09-25.md`), not part of the
+  definition; families are frozen from pass 1 in it (register 395).
+
+**How it is judged** (`docs/PREREG_genome_wide_families_2026-09-25.md`, Amendment 1; `figures/README.md`). External
+references only in the main figures: Ensembl Compara (human; pairs by protein-identity band in Fig. 6, families at
+Primates in Fig. 7), Soto 2025 (labelled not independent: the 0.60 threshold was chosen against it, register 903),
+Liftoff copies (the self-lift's record / extra-copy pairs, every species; Figs 7 and 8). The annotation's
+protein-homology families are a secondary reference of the supplementary figures only (fold-level families, mostly
+outside the nucleotide regime: register 1101).
+
+## 0★★★. NESTED EDGE-TEST LATTICE (2026-09-16) — PROPOSED: nesting theorems proven, T3 conditional, precision OPEN; a design, not the default (§0★)
 
 User-approved design (2026-09-16 16:39). PROPOSED: nothing in §0★★ is withdrawn, and §0★★ stays the current definition;
 clauses 4 and 6 carry cross-references to this section. Lemma 0, T1, T1′, T2 and T3(a) are proven below and need only
@@ -694,7 +743,11 @@ not readthroughs) and it has a structural limit: **a containment rule can only s
 the NPIP member NPIPB14P, which has no exon feature in RefSeq and so never became a node; the readthrough is therefore
 not "redundant" and survives every f, holding NPIP's L2 boundary at 1.000000 by itself once §0★★★.7c is applied.
 
-## 0★★. CURRENT DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14)
+## 0★★. DESIGN DEFINITION — ONE COPY GRAPH FOR BOTH MODES AND BOTH LEVELS (2026-09-14; opt-in `RUSTLE_SHARED_DEFINITION`, NOT the shipped default: §0★)
+
+> ⚠ 2026-09-25: this section was titled "CURRENT DEFINITION". It is the design reference of 2026-09-14 and its
+> clause 4 ships only as the opt-in `RUSTLE_SHARED_DEFINITION`; clause 3's miniprot fallback is not code. The default
+> that ships is §0★ (the driver's `families` stage).
 
 Consolidates §1★ (the object at two levels, 08-14) with what ledger §6jm-§6jy established. §1★'s sentence stands:
 nodes are genomic intervals, edges are homology on assembly sequence, RNA decides which intervals are nodes and how far

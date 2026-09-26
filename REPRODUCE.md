@@ -255,8 +255,13 @@ python3 bench/score.py reads --catalog CAT.copies.tsv run run_o2      # OWN / PR
 Expected (human chr16 catalog `chr16_arm/on`, copies < 300 bp dropped): OWN 157/157 correct, 0 wrong, 1,088 abstain of 1,259 MAPQ-0 reads.
 ⚠ That run's per-copy read seeds came from Python's per-process `hash()` (wave-7 defect B2), so it cannot be regenerated
 read for read; `score.py reads` reproduces the numbers exactly on the recorded run (`/mnt/linuxdisk/tmp/gw22/o2sim/h16`,
-`h16_o2`). `sim.py copies` now seeds with `stable_seed()`, so a fresh simulation draws different reads: re-measure
-(genome-wide mapping, not yet re-run) before quoting these numbers for a new run.
+`h16_o2`). `sim.py copies` now seeds with `stable_seed()`, so a fresh simulation draws different reads.
+**Re-measured 2026-09-25 with the stable seed 20260925** (`python3 figures/make.py data fig4`, which runs exactly the
+three commands above, mapping in 8 read-disjoint parts — `sim.py copies --parts 8`, identical records): human 28,453
+reads, 1,263 MAPQ-0; OWN 163 correct, 0 wrong, 0 conflict, 1,084 abstain, 16 not scored; ANY 60 correct / 432 wrong /
+156 conflict; `--union-certificate` 0 assigned (1,255 of the 1,263 tied reads have an NM-identical genomic twin; row 1103 measured all 990 scored molecules of the hash-seeded run). Gorilla
+(`hom_c234`, 11,448 reads): 30 MAPQ-0, 0 assigned. Tables: `figures/data/fig4_assignability_upset.tsv`,
+`fig5_assign_accuracy_bands.tsv`.
 
 ## The whole pipeline in one driver (2026-09-23)
 
@@ -303,3 +308,17 @@ copy_assign --families cat.copies.tsv --copies-fa cat.copies.fa --union-certific
 # precision 0.27): RUSTLE_ER_COVERAGE_LONGER_FLOOR=0.30 doubles precision (0.53) for 8/103 pairs, but costs 24% of
 # referee pairs on gorilla — opt-in, never the default (§6zj, row 1099)
 ```
+
+## Publication figures (2026-09-25)
+
+`figures/` builds every figure of the paper from tidy tables with provenance headers (`figures/README.md`): gffcompare
+intron chains (fig 1), SQANTI3 (fig 2), transcripts built from tied secondary alignments (fig 3), the copy-assignability
+UpSet (fig 4), copy-assignment accuracy and the hard-locus benchmark (fig 5), family recall across the identity
+spectrum (fig 6) and de novo vs guided family recovery (fig 7).
+
+```bash
+python3 figures/make.py data figN      # regenerate one figure's tables (foreground, cached; costs in figures/README.md)
+python3 figures/make.py plot all       # render figures/out/*.{pdf,png,svg}
+python3 figures/make.py check          # every table present with provenance; every figure renders
+```
+Every number in `figures/captions/*.md` is read from `figures/data/*.tsv`.
