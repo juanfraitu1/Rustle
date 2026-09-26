@@ -4630,6 +4630,429 @@ pub(crate) fn certificate_for_weighted(
     }
 }
 
+/// Exit status meaning "bounded work done, progress kept, call the same command again": a `--piecewise` catalog
+/// call with pieces pending, or a resumable all-vs-all wrapper out of budget (EX_TEMPFAIL).
+pub const RESUMABLE_EXIT: i32 = 75;
+
+/// Error text of an E_r all-vs-all whose aligner exited [`RESUMABLE_EXIT`]; `gw_family_catalog` exits 75 on it.
+pub const MINIMAP2_RESUMABLE: &str = "the all-vs-all aligner stopped with its progress kept (exit 75): call again";
+
+/// What the homology catalog returns: the families, one λ certificate per family (SAME order), and the three
+/// opt-in copy-number re-admission lists (K=0 collapsed, K0_COLLAPSED_EXPRESSED, DNA-family fallback).
+pub type HomologyCatalog = (
+    Vec<Vec<DenovoTranscript>>,
+    Vec<FamilyCertificate>,
+    Vec<crate::vg_family::collapse_enumerate::CollapsedFamily>,
+    Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
+    Vec<crate::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
+);
+
+/// The representatives boundary: the reps, the genome (loaded downstream only for the opt-in K=0 re-admissions),
+/// the pooled isoform exons (`RUSTLE_SHARED_EXON_ISOFORMS`) and the shared-definition read blocks.
+type CatalogReps = (
+    Vec<DenovoTranscript>,
+    GenomeIndex,
+    Vec<Vec<Vec<u8>>>,
+    Option<Vec<crate::vg_family::shared_definition::ReadBlocks>>,
+);
+
+/// Can the representatives be cached (and built piecewise)? Opt-ins that carry OTHER state across the boundary
+/// (shared definition, pooled isoform exons, tier-2 rescue) cannot.
+fn catalog_reps_cacheable() -> bool {
+    !crate::vg_family::shared_definition::enabled()
+        && !std::env::var("RUSTLE_SHARED_EXON_ISOFORMS").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
+        && !tier2_enabled()
+}
+
+/// Everything a representatives cache key covers after its first line: the executable, BAM + index, FASTA +
+/// index, the `DenovoConfig`, and every upstream `RUSTLE_*` setting (see `run_cache`).
+fn catalog_reps_key_body(bam_path: &str, fasta_path: &str, cfg: &DenovoConfig) -> String {
+    use crate::vg_family::run_cache as rc;
+    let bai = format!("{bam_path}.bai");
+    let fai = format!("{fasta_path}.fai");
+    format!(
+        "exe\t{}\nbam\t{}\nbai\t{}\nfasta\t{}\nfai\t{}\ncfg\t{:?}\n{}",
+        rc::exe_fingerprint(),
+        rc::file_fingerprint(bam_path),
+        rc::file_fingerprint(&bai),
+        rc::file_fingerprint(fasta_path),
+        rc::file_fingerprint(&fai),
+        cfg,
+        rc::env_fingerprint(rc::DOWNSTREAM_ONLY_ENV)
+    )
+}
+
+/// Representatives cache key: `span` = `None` is the whole-BAM key (unchanged byte for byte), `Some` one
+/// `--piecewise` piece (`contig=chr1` for a whole contig, `contig=chr1:lo-hi` for a read-free sub-range).
+fn catalog_reps_key(bam_path: &str, fasta_path: &str, cfg: &DenovoConfig, span: Option<&crate::bam::ContigSpan>) -> String {
+    let head = match span {
+        None => "rustle catalog reps v1\n".to_string(),
+        Some(sp) => format!("rustle catalog reps v1 contig={}\n", sp.label()),
+    };
+    head + &catalog_reps_key_body(bam_path, fasta_path, cfg)
+}
+
+/// `genome` for representatives that were LOADED (cache hit or merged pieces) rather than built: read downstream
+/// only by the opt-in K=0 re-admission paths, so it is loaded only then (an empty contig set would make
+/// `from_fasta_contigs` load the WHOLE genome: 12 s on CHM13).
+fn genome_for_loaded_reps(reps: &[DenovoTranscript], fasta_path: &str, cfg: &DenovoConfig) -> Result<GenomeIndex> {
+    Ok(if cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback {
+        let contigs: HashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
+        GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?
+    } else {
+        GenomeIndex::empty()
+    })
+}
+
+/// How much of the piecewise representatives stage one call may do ([`detect_homology_catalog_piecewise`]).
+#[derive(Clone, Debug, Default)]
+pub struct PieceBudget {
+    /// Compute at most this many pieces per call (0 = no limit).
+    pub max_pieces: usize,
+    /// Do not START a piece predicted to end after this many seconds of the call (0 = no limit). The first piece
+    /// of a call always runs; later ones are predicted from the call's own seconds-per-record so far and the
+    /// piece's record count in the `.bai`.
+    pub budget_s: f64,
+    /// Split a contig holding more than this many records into sub-ranges of about this many, cut only at
+    /// positions no record crosses (`crate::bam::read_free_cuts`; 0 = whole contigs only). The cut plan of a
+    /// contig is one pass over its records, cached (`plan/<key>/pieces.tsv`) and counted as one unit of work.
+    pub piece_records: u64,
+    /// Compute exactly this piece (its label, e.g. `chr13:65273-15760749`, as the log prints it) and nothing
+    /// else, whatever the budget, then stop: for scheduling one known-heavy piece in a call of its own. Its
+    /// contig's cut plan must already be cached (any earlier call plans it).
+    pub only: Option<String>,
+}
+
+impl PieceBudget {
+    pub fn limited(&self) -> bool {
+        self.max_pieces > 0 || self.budget_s > 0.0 || self.only.is_some()
+    }
+}
+
+/// Outcome of one [`detect_homology_catalog_piecewise`] call.
+pub enum Piecewise {
+    /// Pieces remain, or this call computed pieces under a budget: nothing downstream ran; call again.
+    /// `total` counts the pieces known so far; `unplanned` contigs still need their cut plan.
+    Pending { done: usize, total: usize, unplanned: usize, computed: usize },
+    /// Every piece was cached: the merged representatives went through the whole catalog.
+    Done(HomologyCatalog),
+}
+
+/// Why the piecewise mode cannot reproduce the genome-wide representatives under the current settings, if so.
+pub fn piecewise_unsupported_reason() -> Option<String> {
+    let on = |k: &str| std::env::var(k).map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    if !catalog_reps_cacheable() {
+        return Some(
+            "RUSTLE_SHARED_DEFINITION / RUSTLE_SHARED_EXON_ISOFORMS / RUSTLE_TIER2_ADMIT carry state across the \
+             representatives boundary (tier-2 re-reads the whole BAM and compares across contigs)"
+                .into(),
+        );
+    }
+    for k in ["RUSTLE_FOOTPRINT_NODES", "RUSTLE_LOCUS_EXON_UNION"] {
+        if on(k) {
+            return Some(format!("{k} builds representatives in an order the per-contig merge does not reproduce"));
+        }
+    }
+    if cothread_rep_floor().is_some() {
+        return Some("RUSTLE_COTHREAD_REP builds representatives in an order the per-contig merge does not reproduce".into());
+    }
+    None
+}
+
+/// Interleave per-contig representative sets into the order ONE genome-wide build produces.
+///
+/// Why this order: the genome-wide representatives are sorted by the index of their transcript, and transcripts
+/// follow pass-1's skeleton order — first every SPLICED skeleton, keyed `(chrom, intron chain)` in a `BTreeMap`
+/// (so by contig name in byte order, then chain), then every UNSPLICED seed, clustered per chromosome in a
+/// `BTreeMap` (contig name in byte order, then position). A contig's own build has the same two runs in the same
+/// relative order. So the genome-wide list is: the spliced reps of every piece, pieces in contig-name byte order,
+/// then the unspliced reps of every piece in the same order. A piece whose reps do not form one spliced run
+/// followed by one unspliced run, or that holds a rep of another contig, breaks that argument and is an error
+/// rather than a silently different catalog.
+///
+/// Sub-contig pieces (cut at positions no record crosses) keep the same argument within a contig: a spliced
+/// skeleton's reads all span its intron chain, so a chain lies wholly on one side of a cut and chains left of it
+/// sort (first donor first) before chains right of it; unspliced seeds are sorted by position. So the pieces of a
+/// contig are placed by their start, and the rule above applies unchanged.
+pub fn merge_piece_reps(
+    mut pieces: Vec<(crate::bam::ContigSpan, Vec<DenovoTranscript>)>,
+) -> Result<Vec<DenovoTranscript>> {
+    pieces.sort_by(|a, b| (a.0.contig.as_bytes(), a.0.lo).cmp(&(b.0.contig.as_bytes(), b.0.lo)));
+    for (sp, reps) in &pieces {
+        let c = sp.label();
+        anyhow::ensure!(
+            reps.iter().all(|r| r.chrom == sp.contig),
+            "piece {c}: holds a representative of another contig"
+        );
+        if let Some(first) = reps.iter().position(|r| r.introns.is_empty()) {
+            anyhow::ensure!(
+                reps[first..].iter().all(|r| r.introns.is_empty()),
+                "piece {c}: a spliced representative follows an unspliced one, so the genome-wide order cannot be \
+                 reconstructed"
+            );
+        }
+    }
+    let (mut spliced, mut unspliced) = (Vec::new(), Vec::new());
+    for (_, reps) in pieces {
+        for r in reps {
+            if r.introns.is_empty() {
+                unspliced.push(r);
+            } else {
+                spliced.push(r);
+            }
+        }
+    }
+    spliced.extend(unspliced);
+    Ok(spliced)
+}
+
+/// Cache key of a contig's cut plan (`--piece-records`): the plan is a pure function of the BAM (+ index), the
+/// contig and the target size, and of `crate::bam::read_free_cuts`, whose version is the `vN` below — bump it
+/// when that function changes. (Not the executable: a plan costs a pass over the contig, ~7 us per record on
+/// human A119b, and must survive rebuilds that do not touch it. The pieces themselves ARE keyed by the executable.)
+fn piece_plan_key(bam_path: &str, contig: &str, piece_records: u64) -> String {
+    use crate::vg_family::run_cache as rc;
+    format!(
+        "rustle catalog piece plan v2\ncontig\t{contig}\npiece_records\t{piece_records}\nbam\t{}\nbai\t{}\n",
+        rc::file_fingerprint(bam_path),
+        rc::file_fingerprint(&format!("{bam_path}.bai"))
+    )
+}
+
+/// The contig of a piece label (`chr13:65273-15760749` -> `chr13`, `chr13:65273-end` -> `chr13`, `chrM` -> `chrM`);
+/// only a trailing `:<digits>-<digits|end>` is a range, so a contig name holding `:` survives.
+fn piece_label_contig(label: &str) -> &str {
+    if let Some((c, range)) = label.rsplit_once(':') {
+        if let Some((a, b)) = range.split_once('-') {
+            if !a.is_empty() && a.bytes().all(|x| x.is_ascii_digit()) && (b == "end" || (!b.is_empty() && b.bytes().all(|x| x.is_ascii_digit()))) {
+                return c;
+            }
+        }
+    }
+    label
+}
+
+/// `pieces.tsv`: one `lo<TAB>hi<TAB>records` row per piece (`hi` = `end` for the open end).
+fn write_piece_plan(dir: &std::path::Path, cuts: &[(crate::bam::ContigSpan, u64)]) -> Result<()> {
+    let mut t = String::from("lo\thi\trecords\n");
+    for (sp, n) in cuts {
+        let hi = if sp.hi == u64::MAX { "end".to_string() } else { sp.hi.to_string() };
+        t.push_str(&format!("{}\t{hi}\t{n}\n", sp.lo));
+    }
+    std::fs::write(dir.join("pieces.tsv"), t)?;
+    Ok(())
+}
+
+fn read_piece_plan(dir: &std::path::Path, contig: &str) -> Result<Vec<(crate::bam::ContigSpan, Option<u64>)>> {
+    let mut out = Vec::new();
+    for line in std::fs::read_to_string(dir.join("pieces.tsv"))?.lines().skip(1) {
+        let f: Vec<&str> = line.split('\t').collect();
+        anyhow::ensure!(f.len() == 3, "pieces.tsv: bad row {line:?}");
+        let hi = if f[1] == "end" { u64::MAX } else { f[1].parse()? };
+        out.push((crate::bam::ContigSpan { contig: contig.to_string(), lo: f[0].parse()?, hi }, Some(f[2].parse()?)));
+    }
+    anyhow::ensure!(!out.is_empty(), "pieces.tsv: empty plan for {contig}");
+    if out.len() == 1 {
+        out[0].0 = crate::bam::ContigSpan::whole(contig);
+    }
+    Ok(out)
+}
+
+/// Peak resident set of this process so far (`VmHWM`), for the per-piece log line.
+fn process_peak_rss() -> String {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| s.lines().find(|l| l.starts_with("VmHWM:")).map(|l| l[6..].trim().to_string()))
+        .unwrap_or_else(|| "?".into())
+}
+
+/// The homology catalog with its representatives built ONE PIECE AT A TIME — a contig, or with
+/// `budget.piece_records` a sub-range of a large contig cut where no record crosses — each piece cached as its own
+/// entry (`RUSTLE_CACHE_DIR/reps/<key>/`, first key line `rustle catalog reps v1 contig=<name>[:lo-hi]`), so a
+/// genome-wide catalog runs as a sequence of bounded, resumable calls.
+///
+/// A call computes the missing pieces its `budget` allows, in BAM-header order (contigs the `.bai` places no
+/// record on are not pieces). While pieces remain — or when a budgeted call computed any — it returns
+/// [`Piecewise::Pending`] and nothing downstream runs. A call that finds every piece cached merges them
+/// ([`merge_piece_reps`]), caches the merged set (`rustle catalog reps v1 piecewise-merge`) and continues through
+/// the same downstream code as [`detect_homology_catalog_genome_wide`] (the k11 all-vs-all of ALL representatives,
+/// E_r edges, blocks, families), so families may still cross contigs exactly as in one run.
+#[allow(clippy::too_many_arguments)]
+pub fn detect_homology_catalog_piecewise(
+    bam_path: &str,
+    fasta_path: &str,
+    threads: usize,
+    min_copies: usize,
+    cfg: &DenovoConfig,
+    refine: &RefineParams,
+    gamma: f64,
+    budget: PieceBudget,
+) -> Result<Piecewise> {
+    use crate::vg_family::run_cache as rc;
+    let t_phase = std::time::Instant::now();
+    if let Some(why) = piecewise_unsupported_reason() {
+        anyhow::bail!("--piecewise cannot reproduce the genome-wide representatives: {why}");
+    }
+    let root = rc::cache_root().ok_or_else(|| {
+        anyhow::anyhow!("--piecewise keeps its pieces in the cache: set RUSTLE_CACHE_DIR (the pipeline driver sets PREFIX.cache)")
+    })?;
+    use crate::bam::ContigSpan;
+    let contigs: Vec<(String, Option<u64>)> =
+        crate::bam::contig_record_counts(bam_path)?.into_iter().filter(|(_, n)| *n != Some(0)).collect();
+    let split = |n: Option<u64>| budget.piece_records > 0 && n.is_some_and(|x| x > budget.piece_records);
+    // Every UNIT of work (a contig's cut plan, or one piece) runs if it is the call's first, or if the budget
+    // predicts it fits (this call's seconds per record so far x the unit's records).
+    let (mut computed, mut spent_s, mut spent_records) = (0usize, 0.0f64, 0u64);
+    let may_start = |computed: usize, spent_s: f64, spent_records: u64, records: Option<u64>| -> bool {
+        computed == 0
+            || ((budget.max_pieces == 0 || computed < budget.max_pieces)
+                && (budget.budget_s <= 0.0 || {
+                    let rate = if spent_records > 0 { spent_s / spent_records as f64 } else { 0.0 };
+                    t_phase.elapsed().as_secs_f64() + rate * records.unwrap_or(0) as f64 <= budget.budget_s
+                }))
+    };
+    // pieces in header order (sub-ranges in coordinate order); a contig still without its cut plan is `unplanned`
+    let mut pieces: Vec<(ContigSpan, Option<u64>, rc::Entry)> = Vec::new();
+    let mut unplanned = 0usize;
+    for (c, n) in &contigs {
+        let spans: Option<Vec<(ContigSpan, Option<u64>)>> = if !split(*n) {
+            Some(vec![(ContigSpan::whole(c), *n)])
+        } else {
+            let pe = rc::Entry::new(&root, "plan", piece_plan_key(bam_path, c, budget.piece_records));
+            if pe.is_hit() {
+                Some(read_piece_plan(&pe.dir, c)?)
+            } else if match &budget.only {
+                Some(label) => piece_label_contig(label) == c.as_str(),
+                None => may_start(computed, spent_s, spent_records, *n),
+            } {
+                let t0 = std::time::Instant::now();
+                let cuts = crate::bam::read_free_cuts(bam_path, c, budget.piece_records)?;
+                let st = pe.staging()?;
+                write_piece_plan(&st, &cuts)?;
+                pe.commit(&st)?;
+                let dt = t0.elapsed().as_secs_f64();
+                computed += 1;
+                spent_s += dt;
+                spent_records += n.unwrap_or(0);
+                eprintln!(
+                    "[piecewise] plan {c}: {} records -> {} read-free pieces of <= ~{} records ({}), {dt:.1} s",
+                    n.map_or("?".to_string(), |x| x.to_string()),
+                    cuts.len(),
+                    budget.piece_records,
+                    cuts.iter().map(|(sp, m)| format!("{}:{m}", sp.label())).collect::<Vec<_>>().join(" ")
+                );
+                Some(cuts.into_iter().map(|(sp, m)| (sp, Some(m))).collect())
+            } else {
+                None
+            }
+        };
+        match spans {
+            Some(v) => {
+                for (sp, m) in v {
+                    let e = rc::Entry::new(&root, "reps", catalog_reps_key(bam_path, fasta_path, cfg, Some(&sp)));
+                    pieces.push((sp, m, e));
+                }
+            }
+            None => unplanned += 1,
+        }
+    }
+    // the merged set is keyed by every piece, so a change of plan (or of --piece-records) re-merges
+    let merge_key = (unplanned == 0).then(|| {
+        format!(
+            "rustle catalog reps v1 piecewise-merge\n{}pieces\t{}\n",
+            catalog_reps_key_body(bam_path, fasta_path, cfg),
+            pieces.iter().map(|(sp, _, _)| sp.label()).collect::<Vec<_>>().join(",")
+        )
+    });
+    let merge_entry = merge_key.map(|k| rc::Entry::new(&root, "reps", k));
+    let merged: Option<Vec<DenovoTranscript>> = match merge_entry.as_ref().filter(|e| e.is_hit()) {
+        Some(e) => match rc::read_reps(&e.dir) {
+            Ok(r) => Some(r),
+            Err(err) => {
+                eprintln!("[piecewise] unreadable merged entry {} ({err:#}); re-merging", e.dir.display());
+                None
+            }
+        },
+        None => None,
+    };
+    let reps = if let Some(r) = merged {
+        eprintln!(
+            "[piecewise] merged representatives loaded from {} ({} reps)",
+            merge_entry.as_ref().map(|e| e.dir.display().to_string()).unwrap_or_default(),
+            r.len()
+        );
+        r
+    } else {
+        let total = pieces.len();
+        for (i, (sp, n, e)) in pieces.iter().enumerate() {
+            let wanted = match &budget.only {
+                Some(label) => *label == sp.label(),
+                None => may_start(computed, spent_s, spent_records, *n),
+            };
+            if e.is_hit() || !wanted {
+                continue;
+            }
+            let t0 = std::time::Instant::now();
+            let (r, _, _, _) = build_catalog_reps(bam_path, fasta_path, threads, cfg, refine, Some(sp))?;
+            let st = e.staging()?;
+            rc::write_reps(&st, &r)?;
+            e.commit(&st)?;
+            let dt = t0.elapsed().as_secs_f64();
+            computed += 1;
+            spent_s += dt;
+            spent_records += n.unwrap_or(0);
+            eprintln!(
+                "[piecewise] piece {}/{total} {}: {} records, {} representatives, {dt:.1} s, process peak RSS {} -> {}",
+                i + 1,
+                sp.label(),
+                n.map_or("?".to_string(), |x| x.to_string()),
+                r.len(),
+                process_peak_rss(),
+                e.dir.display()
+            );
+        }
+        let done = pieces.iter().filter(|p| p.2.is_hit()).count();
+        if done < total || unplanned > 0 || (budget.limited() && computed > 0) || budget.only.is_some() {
+            eprintln!(
+                "[piecewise] {done} of {total} pieces cached{} ({computed} units computed in this call); {}",
+                if unplanned > 0 { format!(", {unplanned} contig(s) still to plan") } else { String::new() },
+                if done < total || unplanned > 0 {
+                    "re-run to continue"
+                } else {
+                    "the next call merges them and builds the catalog"
+                }
+            );
+            return Ok(Piecewise::Pending { done, total, unplanned, computed });
+        }
+        let mut loaded = Vec::with_capacity(total);
+        for (sp, _, e) in &pieces {
+            loaded.push((sp.clone(), rc::read_reps(&e.dir)?));
+        }
+        let reps = merge_piece_reps(loaded)?;
+        let me = merge_entry.as_ref().expect("every contig is planned here");
+        match me.staging().and_then(|st| {
+            rc::write_reps(&st, &reps)?;
+            me.commit(&st)
+        }) {
+            Ok(()) => eprintln!("[piecewise] merged {} representatives from {total} pieces -> {}", reps.len(), me.dir.display()),
+            Err(err) => eprintln!("[piecewise] could not write {} ({err:#}); continuing", me.dir.display()),
+        }
+        reps
+    };
+    let genome = genome_for_loaded_reps(&reps, fasta_path, cfg)?;
+    Ok(Piecewise::Done(homology_catalog_from_reps(
+        (reps, genome, Vec::new(), None),
+        bam_path,
+        fasta_path,
+        threads,
+        min_copies,
+        cfg,
+        refine,
+        gamma,
+        t_phase,
+    )?))
+}
+
 /// GENOME-WIDE homology-primary (E_r) family catalog. reps → E_r edges → γ-quasi-clique blocks →
 /// ≥2 distinct loci → families. Chrom/strand-agnostic; a superset of the conflict catalog.
 pub fn detect_homology_catalog_genome_wide(
@@ -4654,25 +5077,10 @@ pub fn detect_homology_catalog_genome_wide(
     // is loaded instead of recomputed. Opt-ins that carry OTHER state across the boundary (shared definition,
     // pooled isoform exons, read linkage, tier-2 rescue) are not cached.
     let t_phase = std::time::Instant::now();
-    let cacheable = !crate::vg_family::shared_definition::enabled()
-        && !std::env::var("RUSTLE_SHARED_EXON_ISOFORMS").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
-        && !tier2_enabled();
-    let reps_entry = crate::vg_family::run_cache::cache_root().filter(|_| cacheable).map(|root| {
-        use crate::vg_family::run_cache as rc;
-        let bai = format!("{bam_path}.bai");
-        let fai = format!("{fasta_path}.fai");
-        let key = format!(
-            "rustle catalog reps v1\nexe\t{}\nbam\t{}\nbai\t{}\nfasta\t{}\nfai\t{}\ncfg\t{:?}\n{}",
-            rc::exe_fingerprint(),
-            rc::file_fingerprint(bam_path),
-            rc::file_fingerprint(&bai),
-            rc::file_fingerprint(fasta_path),
-            rc::file_fingerprint(&fai),
-            cfg,
-            rc::env_fingerprint(rc::DOWNSTREAM_ONLY_ENV)
-        );
-        rc::Entry::new(&root, "reps", key)
-    });
+    let cacheable = catalog_reps_cacheable();
+    let reps_entry = crate::vg_family::run_cache::cache_root()
+        .filter(|_| cacheable)
+        .map(|root| crate::vg_family::run_cache::Entry::new(&root, "reps", catalog_reps_key(bam_path, fasta_path, cfg, None)));
     let cached_reps: Option<Vec<DenovoTranscript>> = reps_entry.as_ref().filter(|e| e.is_hit()).and_then(|e| {
         match crate::vg_family::run_cache::read_reps(&e.dir) {
             Ok(r) => {
@@ -4690,18 +5098,53 @@ pub fn detect_homology_catalog_genome_wide(
             }
         }
     });
-    let (reps, genome, pooled_exons, sd_reads) = if let Some(reps) = cached_reps {
-        // `genome` is read downstream only by the opt-in K=0 re-admission paths; load it only then (an empty
-        // contig set would make `from_fasta_contigs` load the WHOLE genome: 12 s on CHM13)
-        let genome = if cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback {
-            let contigs: HashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
-            GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?
-        } else {
-            GenomeIndex::empty()
-        };
+    let state = if let Some(reps) = cached_reps {
+        let genome = genome_for_loaded_reps(&reps, fasta_path, cfg)?;
         (reps, genome, Vec::new(), None)
     } else {
-    let reads = primary_reads_from_bam(bam_path, threads)?;
+        let built = build_catalog_reps(bam_path, fasta_path, threads, cfg, refine, None)?;
+        if let Some(e) = reps_entry.as_ref() {
+            match e.staging().and_then(|st| {
+                crate::vg_family::run_cache::write_reps(&st, &built.0)?;
+                e.commit(&st)
+            }) {
+                Ok(()) => eprintln!("[cache] representatives written to {}", e.dir.display()),
+                Err(err) => eprintln!("[cache] could not write {} ({err:#}); continuing", e.dir.display()),
+            }
+        }
+        built
+    };
+    homology_catalog_from_reps(state, bam_path, fasta_path, threads, min_copies, cfg, refine, gamma, t_phase)
+}
+
+/// The catalog's collapsed locus REPRESENTATIVES: both BAM passes, the gate, the filters and the locus collapse,
+/// plus the state the opt-in paths carry past that boundary (see [`CatalogReps`]).
+///
+/// `span` = `None` reads the whole BAM (the genome-wide catalog, unchanged). `Some` reads only one contig, or
+/// one sub-range of a contig cut where no record crosses (one `--piecewise` piece). Every step here is LOCAL: reads are keyed and clustered per contig (pass-1
+/// groups by `(chrom, intron chain)`, unspliced reads cluster per chromosome, junction support and the
+/// readthrough / mis-chain filters are keyed by `(chrom, donor, acceptor)`), the span-overlap collapse and its POA
+/// only compare same-contig pairs, and every read statistic (placements, core, spliced evidence, unique mappers)
+/// attributes a record to a representative on the record's own contig. Within a contig every grouping is by
+/// shared junction or by span overlap, and a read-free cut separates both (a chain's reads all span the chain; an
+/// unspliced pile links only reads that overlap). A piece therefore holds exactly the genome-wide representatives
+/// of its span, in the same relative order; [`merge_piece_reps`] restores the
+/// genome-wide interleaving. Opt-ins that break this (`tier2_rescue` re-reads the whole BAM and compares across
+/// contigs; the footprint / exon-union / co-thread reps) are refused by [`piecewise_unsupported_reason`].
+fn build_catalog_reps(
+    bam_path: &str,
+    fasta_path: &str,
+    threads: usize,
+    cfg: &DenovoConfig,
+    refine: &RefineParams,
+    span: Option<&crate::bam::ContigSpan>,
+) -> Result<CatalogReps> {
+    let reads = crate::vg_family::denovo_assemble::primary_reads_from_bam_in(bam_path, threads, span)?;
+    // a contig piece with no primary read has no representative (and an EMPTY contig set would make
+    // `from_fasta_contigs` load the whole genome)
+    if span.is_some() && reads.is_empty() {
+        return Ok((Vec::new(), GenomeIndex::empty(), Vec::new(), None));
+    }
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
@@ -4851,7 +5294,7 @@ pub fn detect_homology_catalog_genome_wide(
     // no existing catalog field except which same-strand co-located pairs the merge below collapses.
     // Coordinates-only reader (2026-09-24): nothing below reads `.seq`/`.qual` (placements, core bp, spliced
     // evidence, the extent/linkage options, `read_blocks`), so the sequence/quality decode is skipped.
-    let mapq_reads = crate::vg_family::denovo_assemble::aligned_reads_from_bam_coords(bam_path, threads)?;
+    let mapq_reads = crate::vg_family::denovo_assemble::aligned_reads_from_bam_coords_in(bam_path, threads, span)?;
     // OPT-IN shared definition (`RUSTLE_SHARED_DEFINITION`): its read-locus nodes need the reads' exon blocks,
     // taken here because the reads are dropped before grouping. `None` (no cost) when unset.
     let sd_reads = crate::vg_family::shared_definition::enabled()
@@ -4916,22 +5359,29 @@ pub fn detect_homology_catalog_genome_wide(
             );
         }
     }
+    Ok((reps, genome, pooled_exons, sd_reads))
+}
 
+/// The catalog DOWNSTREAM of the representatives boundary: E_r edges, γ-quasi-clique blocks, the coverage
+/// split, the ≥2-distinct-loci gate and the opt-in re-admissions. Shared by [`detect_homology_catalog_genome_wide`]
+/// and [`detect_homology_catalog_piecewise`], so a merged piece set continues exactly as one genome-wide run does.
+#[allow(clippy::too_many_arguments)]
+fn homology_catalog_from_reps(
+    state: CatalogReps,
+    bam_path: &str,
+    fasta_path: &str,
+    threads: usize,
+    min_copies: usize,
+    cfg: &DenovoConfig,
+    refine: &RefineParams,
+    gamma: f64,
+    t_phase: std::time::Instant,
+) -> Result<HomologyCatalog> {
+    let (reps, genome, pooled_exons, sd_reads) = state;
+    let t_reps = t_phase.elapsed().as_secs_f64();
     // --- OPT-IN: the shared family definition replaces E_r / γ-QC / coverage split / distinct-locus stage ---
     // (`shared_definition` module docs; prereg Addendum AF-1 requires family-for-family parity with
     // `bench/denovo_shared_def.py`). Unset: this block is skipped and the catalog is byte-identical.
-    if let Some(e) = reps_entry.as_ref() {
-        match e.staging().and_then(|st| {
-            crate::vg_family::run_cache::write_reps(&st, &reps)?;
-            e.commit(&st)
-        }) {
-            Ok(()) => eprintln!("[cache] representatives written to {}", e.dir.display()),
-            Err(err) => eprintln!("[cache] could not write {} ({err:#}); continuing", e.dir.display()),
-        }
-    }
-    (reps, genome, pooled_exons, sd_reads)
-    };
-    let t_reps = t_phase.elapsed().as_secs_f64();
     if let Some(sd_reads) = sd_reads {
         let (nodes, fams, pairs) =
             crate::vg_family::shared_definition::build(&reps, &sd_reads, &genome, &refine.minimap2, threads)?;
@@ -5058,6 +5508,7 @@ pub fn detect_homology_catalog_genome_wide(
     debug_assert_eq!(out.len(), certs.len(), "one certificate per emitted family, same order");
     Ok((out, certs, collapsed, expressed, dna_families))
 }
+
 
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
 /// point (`bench/validate_exon_sum.py`): minimap2 asm20, identity >= 0.80 (asm20's native divergence
@@ -6489,14 +6940,14 @@ fn nucleotide_edges_scored_disclosed(
     // ⚠ SEMANTICS PRESERVED: a non-zero minimap2 exit is still SILENTLY an empty edge set (the family
     // dissolves). Streaming means we discover that AFTER parsing, so whatever was accumulated is
     // discarded here rather than returned.
-    let (status_ok, status) = match child.as_mut() {
+    let (status_ok, status, status_code) = match child.as_mut() {
         Some(c) => {
             let st = c
                 .wait()
                 .map_err(|e| anyhow::anyhow!("waiting for minimap2 ('{}'): {e}", params.minimap2))?;
-            (st.success(), st.to_string())
+            (st.success(), st.to_string(), st.code())
         }
-        None => (true, "replayed from cache".to_string()),
+        None => (true, "replayed from cache".to_string(), Some(0)),
     };
     if let Some(mut w) = dump_w.take() {
         let _ = w.flush();
@@ -6509,6 +6960,12 @@ fn nucleotide_edges_scored_disclosed(
         if !committed {
             let _ = std::fs::remove_dir_all(&st);
         }
+    }
+    // EXIT 75 = a resumable all-vs-all wrapper (`RUSTLE_MINIMAP2=tools/mm2_shard.sh`) ran out of its budget with
+    // its progress kept. That is NOT an empty edge set: it is an error the binaries turn into their own exit 75
+    // ("call again"). minimap2 itself never exits 75, so every real run is unchanged.
+    if status_code == Some(RESUMABLE_EXIT) {
+        anyhow::bail!("{MINIMAP2_RESUMABLE} ('{}', args {:?})", params.minimap2, mm_args);
     }
     if !status_ok {
         if std::env::var("RUSTLE_ER_EDGE_DUMP").is_ok() {
@@ -9874,7 +10331,13 @@ mod tests {
         // ⭐ The `used || !disclosed` assertion below caught it both times — a guard that fails when its
         // own scan stops covering the code it polices, which is the only kind worth having. Add the new
         // name here whenever this body moves again; do not delete the disclosed entry to make it pass.
+        // 2026-09-25: the catalog body itself moved into two helpers when `--piecewise` needed the
+        // representatives built per contig — `build_catalog_reps` (reads -> reps, where
+        // `locus_unique_mapper_counts` lives) and `homology_catalog_from_reps` (reps -> families). The entry
+        // point is now a thin wrapper over them, so both are scanned here.
         for helper in [
+            "fn build_catalog_reps(",
+            "fn homology_catalog_from_reps(",
             "fn distinct_locus_reps(",
             "fn distinct_locus_reps_grouped(",
         ] {
@@ -9939,15 +10402,17 @@ mod tests {
         // E_r edge set the blocks were cut from (which the λ certificate reports on) with the identity/coverage
         // already computed (ledger §5q): same blocks, same edge SET, same source — the weights are REPORTED on
         // the copy and never re-enter the partition, so the invariant holds.
+        // `scanned`, not `body`: since 2026-09-25 the entry point is a wrapper and the path lives in
+        // `build_catalog_reps` + `homology_catalog_from_reps` (see the helper list above).
         assert!(
-            body.contains("homology_blocks(")
-                || body.contains("homology_blocks_pooled_with_edges_weighted("),
+            scanned.contains("homology_blocks(")
+                || scanned.contains("homology_blocks_pooled_with_edges_weighted("),
             "the homology catalog must still form families via homology_blocks* (E_r)"
         );
         // The path must not reach into ConflictParams either -- that reads as an E_c dependency even where
         // only the shared read-count scalar is wanted. `locus_min_reads()` is the path-neutral accessor.
         assert!(
-            !body.contains("cfg.conflict."),
+            !scanned.contains("cfg.conflict."),
             "use cfg.locus_min_reads() on the homology path, not cfg.conflict.*"
         );
         // ⚠ AND THE ACCESSOR IS AN ALIAS, WHICH IS WHY THE ASSERT ABOVE PASSES WHILE THE DEPENDENCY
@@ -13239,5 +13704,144 @@ mod tests {
         assert_eq!(t.get("a"), Some(&vec![0usize, 1]), "max-AS records only; the supplementary one never counts");
         assert!(!t.contains_key("b"), "a clear best is not a tie");
         assert!(!t.contains_key("c"), "a single record is not a tie");
+    }
+}
+
+/// `--piecewise`: the per-contig representatives, merged, must be the genome-wide representatives in the
+/// genome-wide order. These pin the ORDER argument (`merge_piece_reps`); the per-contig readers are pinned in
+/// `denovo_assemble::piecewise_reader_tests`, and the whole chain by `cmp` on real data (V2, 2026-09-25).
+#[cfg(test)]
+mod piecewise_tests {
+    use super::*;
+    use crate::bam::ContigSpan;
+    use crate::vg_family::denovo_assemble::{pass1_skeletons_robust, PrimaryRead};
+
+    fn rep(chrom: &str, start: u64, introns: Vec<(u64, u64)>) -> DenovoTranscript {
+        DenovoTranscript { chrom: chrom.into(), start, end: start + 5_000, introns, ..Default::default() }
+    }
+
+    fn w(c: &str) -> ContigSpan {
+        ContigSpan::whole(c)
+    }
+
+    fn sub(c: &str, lo: u64, hi: u64) -> ContigSpan {
+        ContigSpan { contig: c.into(), lo, hi }
+    }
+
+    fn key(v: &[DenovoTranscript]) -> Vec<(String, u64, usize)> {
+        v.iter().map(|r| (r.chrom.clone(), r.start, r.introns.len())).collect()
+    }
+
+    #[test]
+    fn merge_puts_spliced_before_unspliced_and_contigs_in_byte_order() {
+        let pieces = vec![
+            (w("c2"), vec![rep("c2", 10, vec![(20, 30)]), rep("c2", 5, vec![])]),
+            (w("c1"), vec![rep("c1", 7, vec![(9, 11)]), rep("c1", 3, vec![(4, 6)]), rep("c1", 1, vec![])]),
+            (w("c10"), vec![rep("c10", 2, vec![])]),
+            (w("c3"), vec![]),
+        ];
+        let merged = merge_piece_reps(pieces).unwrap();
+        // byte order: c1 < c10 < c2 < c3; spliced run first, each piece keeping its own order
+        assert_eq!(
+            key(&merged),
+            vec![
+                ("c1".into(), 7, 1),
+                ("c1".into(), 3, 1),
+                ("c2".into(), 10, 1),
+                ("c1".into(), 1, 0),
+                ("c10".into(), 2, 0),
+                ("c2".into(), 5, 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn merge_refuses_what_breaks_the_order_argument() {
+        let mixed = vec![(w("c1"), vec![rep("c1", 1, vec![]), rep("c1", 9, vec![(10, 20)])])];
+        assert!(merge_piece_reps(mixed).is_err(), "a spliced rep after an unspliced one cannot be placed");
+        let foreign = vec![(w("c1"), vec![rep("c2", 1, vec![(10, 20)])])];
+        assert!(merge_piece_reps(foreign).is_err(), "a piece holding another contig's rep is an error");
+    }
+
+    /// The order argument at its source: pass-1 over ALL reads yields the skeletons (hence transcripts, hence
+    /// representatives) in exactly the order that merging the per-contig pass-1 outputs by `merge_piece_reps`
+    /// produces — contig names chosen so byte order differs from any natural order (c1 < c10 < c2).
+    #[test]
+    fn genome_wide_pass1_order_is_the_merge_of_per_contig_pass1() {
+        let pr = |c: &str, s: u64, e: u64, introns: &[(u64, u64)]| PrimaryRead {
+            chrom: c.into(),
+            ref_start: s,
+            ref_end: e,
+            introns: introns.to_vec(),
+            reverse: false,
+        };
+        let mut reads = Vec::new();
+        for c in ["c2", "c10", "c1"] {
+            for k in 0..3u64 {
+                // two spliced chains and one unspliced pile per contig, 3 reads each
+                reads.push(pr(c, 100 + k, 900, &[(300, 500)]));
+                reads.push(pr(c, 50 + k, 2_000, &[(200, 400), (600, 1_500)]));
+                reads.push(pr(c, 5_000 + k, 5_600, &[]));
+                reads.push(pr(c, 9_000 + k, 9_300, &[]));
+            }
+        }
+        let as_reps = |sk: Vec<crate::vg_family::denovo_assemble::Skeleton>| -> Vec<DenovoTranscript> {
+            sk.into_iter()
+                .map(|s| DenovoTranscript {
+                    chrom: s.chrom,
+                    start: s.start,
+                    end: s.end,
+                    introns: s.introns,
+                    n_reads: s.n_reads,
+                    ..Default::default()
+                })
+                .collect()
+        };
+        let whole = as_reps(pass1_skeletons_robust(&reads, 3, 1));
+        let full = |v: &[DenovoTranscript]| -> Vec<(String, u64, u64, Vec<(u64, u64)>, u32)> {
+            v.iter().map(|r| (r.chrom.clone(), r.start, r.end, r.introns.clone(), r.n_reads)).collect()
+        };
+        assert_eq!(whole.len(), 12, "fixture: 2 chains + 2 piles on each of 3 contigs");
+        // whole contigs, and c1 also cut at its read-free positions 5,000 and 9,000 (given in shuffled order)
+        for cut_c1 in [false, true] {
+            let spans: Vec<ContigSpan> = if cut_c1 {
+                vec![w("c2"), sub("c1", 9_000, u64::MAX), w("c10"), sub("c1", 0, 5_000), sub("c1", 5_000, 9_000)]
+            } else {
+                vec![w("c2"), w("c10"), w("c1")]
+            };
+            let pieces: Vec<(ContigSpan, Vec<DenovoTranscript>)> = spans
+                .into_iter()
+                .map(|sp| {
+                    let rs: Vec<PrimaryRead> = reads
+                        .iter()
+                        .filter(|r| r.chrom == sp.contig && r.ref_start >= sp.lo && r.ref_start < sp.hi)
+                        .cloned()
+                        .collect();
+                    let reps = as_reps(pass1_skeletons_robust(&rs, 3, 1));
+                    (sp, reps)
+                })
+                .collect();
+            let merged = merge_piece_reps(pieces).unwrap();
+            assert_eq!(full(&merged), full(&whole), "cut c1: {cut_c1}");
+        }
+    }
+
+    #[test]
+    fn a_piece_label_names_its_contig() {
+        assert_eq!(piece_label_contig("chr13:65273-15760749"), "chr13");
+        assert_eq!(piece_label_contig("chr13:65273-end"), "chr13");
+        assert_eq!(piece_label_contig("chrM"), "chrM");
+        assert_eq!(piece_label_contig("HLA-A*01:01:01:01"), "HLA-A*01:01:01:01", "a colon in a name is not a range");
+        for sp in [sub("NC_072418.2", 0, 15_632_461), sub("c", 9, u64::MAX), w("c")] {
+            assert_eq!(piece_label_contig(&sp.label()), sp.contig, "round trip of {}", sp.label());
+        }
+    }
+
+    #[test]
+    fn a_budget_is_limited_only_when_set() {
+        assert!(!PieceBudget::default().limited());
+        assert!(PieceBudget { max_pieces: 1, ..Default::default() }.limited());
+        assert!(PieceBudget { budget_s: 300.0, ..Default::default() }.limited());
+        assert!(!PieceBudget { piece_records: 1_000_000, ..Default::default() }.limited(), "splitting is not a budget");
     }
 }

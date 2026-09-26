@@ -11,6 +11,10 @@
 //!   `detect_homology_catalog_genome_wide` after both BAM passes and the locus collapse (human chr16: ~260 of
 //!   ~370 s). Files: `reps.tsv` (one row per representative, in representative-index order), `reps.fa` (the
 //!   exact sequence bytes, one line each), `key.tsv` (the full key material), `DONE`.
+//!   Under `gw_family_catalog --piecewise` the same kind holds one entry PER CONTIG (key line
+//!   `rustle catalog reps v1 contig=<name>`) and one for their merge (`rustle catalog reps v1 piecewise-merge`),
+//!   same files; see `denovo_pipeline::detect_homology_catalog_piecewise`. A contig split by `--piece-records` has
+//!   one entry per read-free sub-range (`contig=<name>:<lo>-<hi>`) and its cut plan in **`plan/<key>/pieces.tsv`**.
 //! * **`paf/<key>/`** — one all-vs-all minimap2 PAF per (query bytes, command line, minimap2 version):
 //!   `out.paf`, `key.tsv`, `DONE`.
 //!
@@ -126,6 +130,7 @@ impl Entry {
         let required: &'static [&'static str] = match kind {
             "reps" => &["reps.tsv", "reps.fa"],
             "paf" => &["out.paf"],
+            "plan" => &["pieces.tsv"],
             _ => &[],
         };
         Entry { dir, key, required }

@@ -19,9 +19,26 @@ use std::io::Write;
 use rustle::vg_family::denovo_pipeline::{
     detect_single_copy_baseline_genome_wide,
     detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
-    detect_homology_catalog_genome_wide, families_from_reps_certified, family_protein_coheres,
-    homology_refine_params, refine_families_exon_sum, write_joint_rna_dna_certificate, DenovoConfig,
-    certificates_for_families, FamilyCertificate, RefineParams, Substrate};
+    detect_homology_catalog_genome_wide, detect_homology_catalog_piecewise, families_from_reps_certified,
+    family_protein_coheres, homology_refine_params, refine_families_exon_sum, write_joint_rna_dna_certificate,
+    DenovoConfig, certificates_for_families, FamilyCertificate, PieceBudget, Piecewise, RefineParams, Substrate,
+    MINIMAP2_RESUMABLE, RESUMABLE_EXIT};
+
+/// Exit status of a call that left work for the next call: `--piecewise` pieces pending (or computed under a
+/// budget with the merge still to do), or a resumable all-vs-all wrapper (`RUSTLE_MINIMAP2=tools/mm2_shard.sh`)
+/// out of budget. EX_TEMPFAIL: "call again", not a failure.
+const PIECES_PENDING_EXIT: i32 = RESUMABLE_EXIT;
+
+/// Turn "the all-vs-all wrapper ran out of budget" into exit 75 instead of an error, so a driver can call again.
+fn resumable<T>(r: Result<T>) -> Result<T> {
+    match r {
+        Err(e) if format!("{e:#}").contains(MINIMAP2_RESUMABLE) => {
+            eprintln!("[gw-catalog] {e:#}; no catalog written in this call (exit {PIECES_PENDING_EXIT})");
+            std::process::exit(PIECES_PENDING_EXIT);
+        }
+        r => r,
+    }
+}
 use rustle::vg_family::family_detect::DenovoTranscript;
 
 #[derive(Parser, Debug)]
@@ -230,6 +247,38 @@ struct Args {
     /// `bench/crossspecies` probe) is not seed-invariant and is not what this queries.
     #[arg(long)]
     seed: Vec<String>,
+    /// GENOME-WIDE IN BOUNDED PIECES (default homology catalog only; needs RUSTLE_CACHE_DIR, which the pipeline
+    /// driver sets). The representatives — both BAM passes, the gate and the span-overlap collapse with its POA,
+    /// none of which ever compares two contigs — are built ONE CONTIG AT A TIME and each contig is cached as its
+    /// own entry (`reps/<key>/`, key line `rustle catalog reps v1 contig=<name>`; --piece-records also cuts large
+    /// contigs at positions no read crosses). When every contig is cached,
+    /// the pieces are merged into the order one whole-BAM build produces and the catalog continues exactly as one
+    /// run: the k11 all-vs-all of ALL representatives, E_r edges, blocks and families, which still cross contigs.
+    /// Checked equal to the one-run catalog with `cmp` (reps.tsv, reps.fa, the all-vs-all PAF, the --inspect
+    /// edge/node dumps and every product; 2026-09-25, 4-contig chimp slice, with whole-contig pieces and with
+    /// --piece-records sub-contig pieces). With --max-pieces / --budget-s a call does bounded work and exits 75
+    /// (EX_TEMPFAIL) while work remains: call again until it exits 0.
+    #[arg(long, default_value_t = false)]
+    piecewise: bool,
+    /// With --piecewise: compute at most N contig pieces in this call (0 = no limit). A budgeted call that
+    /// computed any piece stops before the merge, so the merge (and its all-vs-all) is always a call of its own.
+    #[arg(long, default_value_t = 0)]
+    max_pieces: usize,
+    /// With --piecewise: do not START a piece predicted to end after S seconds of this call (0 = no limit),
+    /// predicted from this call's own seconds per BAM record and the piece's record count in the .bai. The first
+    /// piece of a call always runs.
+    #[arg(long, default_value_t = 0.0)]
+    budget_s: f64,
+    /// With --piecewise: split a contig holding more than N BAM records into pieces of about N, cut only where
+    /// no record (any flag) crosses, so each piece is still exact (0 = one piece per contig). A contig's cut plan
+    /// is one pass over its records, cached, and counts as one unit of --max-pieces / --budget-s work.
+    #[arg(long, default_value_t = 0)]
+    piece_records: u64,
+    /// With --piecewise: compute exactly this piece (its label as the log prints it, e.g. `chr13:65273-15760749`
+    /// or `chrM`) and nothing else, whatever the budget, then exit 75 — for running one known-heavy piece in a
+    /// call of its own. Its contig's cut plan must already be cached (any earlier call plans it).
+    #[arg(long)]
+    piece: Option<String>,
 }
 
 /// `--seed`: project each seed onto the EMITTED catalog and report the block containing it.
@@ -606,6 +655,21 @@ fn main() -> Result<()> {
             "--joint-dna-rna currently requires the standard nucleotide E_r tiers; RUSTLE_SHARED_EXON is a different edge definition"
         );
     }
+    if (args.max_pieces > 0 || args.budget_s > 0.0 || args.piece_records > 0 || args.piece.is_some()) && !args.piecewise {
+        anyhow::bail!("--max-pieces / --budget-s / --piece-records / --piece shape a --piecewise run; pass --piecewise");
+    }
+    if args.piecewise
+        && (!o1_homology
+            || args.from_genome.is_some()
+            || args.from_genome_sd.is_some()
+            || args.single_copy_baseline
+            || args.bam.is_none())
+    {
+        anyhow::bail!(
+            "--piecewise builds the default homology catalog from a --bam; it does not apply to --cross-chrom, \
+             --window-catalog, --from-genome(-sd) or --single-copy-baseline"
+        );
+    }
     if args.cross_chrom {
         eprintln!(
             "[gw-catalog] WARNING: --cross-chrom builds O1 from the READ-CONFLICT graph (E_c), not sequence\n\
@@ -789,8 +853,29 @@ fn main() -> Result<()> {
         Vec<rustle::vg_family::collapse_enumerate::CollapsedFamily>,
         Vec<rustle::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
         Vec<rustle::vg_family::collapse_enumerate::ExpressedCollapsedFamily>,
-    ) = if o1_homology {
-        detect_homology_catalog_genome_wide(
+    ) = if o1_homology && args.piecewise {
+        let budget = PieceBudget {
+            max_pieces: args.max_pieces,
+            budget_s: args.budget_s,
+            piece_records: args.piece_records,
+            only: args.piece.clone(),
+        };
+        let gamma = std::env::var("RUSTLE_GENOME_GAMMA").ok().and_then(|v| v.parse().ok()).unwrap_or(0.20);
+        match resumable(detect_homology_catalog_piecewise(
+            bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, gamma, budget,
+        ))? {
+            Piecewise::Done(catalog) => catalog,
+            Piecewise::Pending { done, total, unplanned, computed } => {
+                eprintln!(
+                    "[gw-catalog] --piecewise: {done} of {total} pieces cached{}; {computed} units computed in this \
+                     call; no catalog written yet — call again (exit {PIECES_PENDING_EXIT})",
+                    if unplanned > 0 { format!(" (+{unplanned} contig(s) still to plan)") } else { String::new() }
+                );
+                std::process::exit(PIECES_PENDING_EXIT);
+            }
+        }
+    } else if o1_homology {
+        resumable(detect_homology_catalog_genome_wide(
             bam,
             &args.fasta,
             args.threads,
@@ -801,7 +886,7 @@ fn main() -> Result<()> {
             // callers cannot drift apart. Default 0.20; 0.40 is the high-precision setting, which splits
             // low-density blocks instead of admitting them as one family.
             std::env::var("RUSTLE_GENOME_GAMMA").ok().and_then(|v| v.parse().ok()).unwrap_or(0.20),
-        )?
+        ))?
     } else if args.cross_chrom {
         // CONFLICT catalogs build no E_r graph, so there is no λ to certify: an EMPTY certificate vector
         // makes the column print "NA" rather than a fabricated 0.

@@ -2,8 +2,10 @@
 # rustle_pipeline.sh — the whole pipeline, one command per stage, shipped defaults (2026-09-23).
 #
 #   assemble  reads -> loci -> isoform GTF                              copy_assign --assemble-only --genome-wide
-#   families  gene families from the de novo loci (all-vs-all -> MCL)   mcl_families --from-gtf
-#   catalog   the copy catalog the assignment stage consumes            gw_family_catalog
+#   families  gene families from the de novo loci (all-vs-all -> MCL)   mcl_families --from-gtf --emit-units
+#             = THE default de novo family definition (user decision 2026-09-25): one copy per member locus =
+#             its representative transcript (PREFIX.fam.copies.tsv/.fa, the copy table copy assignment consumes)
+#   catalog   LEGACY copy catalog (gw_family_catalog; kept, not the default definition)
 #   assign    per-read copy assignment on the catalog (assign/abstain)  copy_assign --families
 #   flag      copies the reference does not contain, from RNA alone     missing_copy_flag --scan-only / --from-scan
 #             (+ optional DNA confirmation against --confirm genomes)
@@ -12,8 +14,18 @@
 #
 # usage: tools/rustle_pipeline.sh STAGE --bam B --fasta G --out PREFIX [--index G.splice.mmi] [--gff ANNOT.gff]
 #        [--confirm NAME=X.mmi ...] [--foreign NAME=X.mmi ...] [--threads N] [--bin DIR] [--no-seed-secondaries]
-#        [--no-cache] [--inspect]
+#        [--no-cache] [--inspect] [--piecewise [--max-pieces N] [--budget-s S] [--piece-records R] [--piece LABEL]]
 #   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
+# --piecewise (catalog only; needs the cache): the catalog's representatives (both BAM passes + the span-overlap
+#   collapse and its POA, none of which compares two contigs) are built one CONTIG per piece, each cached in
+#   PREFIX.cache/reps/; when all are cached they are merged into the one-run order and the catalog continues as one
+#   run (the k11 all-vs-all of ALL representatives, edges, families; families still cross contigs). Same products
+#   as without it (cmp-checked 2026-09-25). --max-pieces N / --budget-s S bound one call: it computes that much,
+#   appends to PREFIX.catalog.log and EXITS 75 while work remains (pieces pending, or the merge still to do) — call
+#   it again until it exits 0. --piece-records R also cuts a contig of more than R BAM records into pieces of ~R
+#   at positions no record crosses (still exact; human chr1 alone exceeds 10 min as one piece); --piece LABEL
+#   computes that one piece only (as the log labels it, e.g. chr13:65273-15760749), for a known-heavy piece. The all-vs-all
+#   itself can be sharded through RUSTLE_MINIMAP2 (tools/mm2_shard.sh).
 # CACHE (default on, --no-cache turns it off): families and catalog keep their expensive intermediates in
 #   PREFIX.cache/ (RUSTLE_CACHE_DIR): the catalog's collapsed representatives (reps/<key>/reps.tsv + reps.fa, both
 #   BAM passes and the locus collapse) and every all-vs-all PAF (paf/<key>/out.paf). A re-run that changes only
@@ -23,17 +35,21 @@
 #   edges.tsv, nodes.tsv, rule.tsv, params.tsv), per-round collapse statistics in the catalog log, and the
 #   assignment evidence (PREFIX.assign.psv_*.tsv, PREFIX.assign.posterior.tsv).
 # Loci are seeded from primaries PLUS secondaries within 2% of the molecule's GENOME-WIDE best alignment score
-#   (one `as_table` pass over the BAM -> PREFIX.molecules.tsv, reused if present): on the held-out gorilla contig
-#   this finds 30 more loci (97% annotated) and doubles the >=90%-identity referee pairs joined, at pair precision
-#   1.000 (register rows 1060/1100/1101); the streaming assembler applies the filter at no memory cost (validated
-#   identical to the buffered path). --no-seed-secondaries restores primaries-only seeding (2026-09-24 default flip).
+#   (one `as_table` pass over the BAM -> PREFIX.molecules.tsv, reused if present): on gorilla NC_073244.2 (the
+#   seeding pre-registration's verdict contig) this finds 30 more loci (97% annotated) and joins more
+#   >=90%-identity referee pairs (21 -> 26 of 83 on genes with >= 2 exonic primary reads; all of the gain is one
+#   tandem array) at pair precision 1.000 (rows 1060/1100/1101/1116); the streaming assembler applies the filter
+#   at no memory cost (validated identical to the buffered path). --no-seed-secondaries restores primaries-only seeding (2026-09-24 default flip).
 #   The table is only as genome-wide as the BAM: on a region SLICE it admits secondaries whose real best lies
 #   outside the slice (tes44: 4,210 transcripts vs 3,911 with the full-BAM table) — give the driver the full BAM.
-# The splice index is needed by `flag` (home search); the annotation by `flag` (IG/TR screen) and, when given, by
-# `families` as the guided locus set instead of the de novo one. Every product carries the PREFIX.
+# The splice index is needed by `flag` (home search); the annotation (--gff) by `flag` only (IG/TR screen).
+# `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
+# pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
+# (guided_families) runs its recipe step by step. Every product carries the PREFIX.
 set -euo pipefail
 STAGE=${1:-all}; shift || true
 BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_SEC=1; CACHE=1; INSPECT=0
+PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
@@ -41,6 +57,8 @@ while [ $# -gt 0 ]; do
     --confirm) CONFIRM+=(--confirm "$2"); shift 2;; --foreign) FOREIGN+=(--foreign "$2"); shift 2;;
     --seed-secondaries) SEED_SEC=1; shift;; --no-seed-secondaries) SEED_SEC=0; shift;;
     --cache) CACHE=1; shift;; --no-cache) CACHE=0; shift;; --inspect) INSPECT=1; shift;;
+    --piecewise) PIECEWISE=1; shift;; --max-pieces) MAX_PIECES=$2; shift 2;; --budget-s) BUDGET_S=$2; shift 2;;
+    --piece-records) PIECE_RECORDS=$2; shift 2;; --piece) PIECE=$2; shift 2;;
     *) echo "unknown argument $1" >&2; exit 2;;
   esac
 done
@@ -83,15 +101,46 @@ stage_assemble() {
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1
   say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.gtf" | wc -l) transcripts"
 }
+# families: the de novo families AND their copy table (--emit-units with --from-gtf: PREFIX.fam.copies.tsv/.fa/.regions,
+# the gw_family_catalog copies contract, one copy per member locus = its representative transcript and its spliced exon
+# sum). clusters.tsv / loci.* are byte-identical to a run without it (cmp-checked 2026-09-25,
+# docs/PREREG_families_copy_table_2026-09-25.md); the copy table is a new product. A binary older than the copy table
+# (its --help does not name <out>.copies.tsv) still writes the families, with a warning and no copy table.
 stage_families() {
   say "families: gene families on the de novo loci of $OUT.gtf"
+  local copies=() help
+  help=$("$BIN/mcl_families" --help 2>&1 || true)
+  case "$help" in
+    *'<out>.copies.tsv'*) copies=(--emit-units);;
+    *) say "families: WARNING $BIN/mcl_families predates the families copy table; rebuild it to write $OUT.fam.copies.tsv";;
+  esac
   "$BIN/mcl_families" --from-gtf "$OUT.gtf" --fasta "$FASTA" --threads "$THREADS" \
-    --min-exonic-bp 1 --min-shared-exon-frac 0.60 --out "$OUT.fam" > "$OUT.families.log" 2>&1
+    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
+  if [ ${#copies[@]} -gt 0 ]; then
+    say "families: $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies (locus representatives) in $(awk 'NR>1' "$OUT.fam.copies.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.fam.copies.tsv)"
+  fi
 }
+# catalog: LEGACY (2026-09-25). gw_family_catalog's copy catalog (primaries only, span-aware POA collapse, exon-sum k11
+# edges, gamma-quasi-clique) was the O2 roster before the families stage wrote its own copy table; kept runnable for
+# comparison and for the runs made with it. The default de novo family definition is the families stage.
 stage_catalog() {
   say "catalog: gw_family_catalog on $BAM"
-  env "${INSPECT_CAT[@]}" "$BIN/gw_family_catalog" --bam "$BAM" --fasta "$FASTA" --threads "$THREADS" --out "$OUT.cat" > "$OUT.catalog.log" 2>&1
+  if [ "$PIECEWISE" = 1 ]; then
+    [ "$CACHE" = 1 ] || { echo "catalog --piecewise keeps its pieces in PREFIX.cache: drop --no-cache" >&2; exit 2; }
+    local rc=0
+    echo "=== [rustle_pipeline] $(date '+%F %T') catalog --piecewise --max-pieces $MAX_PIECES --budget-s $BUDGET_S --piece-records $PIECE_RECORDS" >> "$OUT.catalog.log"
+    env "${INSPECT_CAT[@]}" "$BIN/gw_family_catalog" --bam "$BAM" --fasta "$FASTA" --threads "$THREADS" --out "$OUT.cat" \
+      --piecewise --max-pieces "$MAX_PIECES" --budget-s "$BUDGET_S" --piece-records "$PIECE_RECORDS" ${PIECE:+--piece "$PIECE"} \
+      >> "$OUT.catalog.log" 2>&1 || rc=$?
+    if [ "$rc" = 75 ]; then
+      say "catalog: $(grep -oE '[0-9]+ of [0-9]+ pieces cached[^;]*|all-vs-all aligner stopped with its progress kept' "$OUT.catalog.log" | tail -1); call again to continue (exit 75)"
+      exit 75
+    fi
+    [ "$rc" = 0 ] || { say "catalog failed (exit $rc), see $OUT.catalog.log"; exit "$rc"; }
+  else
+    env "${INSPECT_CAT[@]}" "$BIN/gw_family_catalog" --bam "$BAM" --fasta "$FASTA" --threads "$THREADS" --out "$OUT.cat" > "$OUT.catalog.log" 2>&1
+  fi
   say "catalog: $(awk 'NR>1' "$OUT.cat.copies.tsv" | wc -l) copies in $(awk 'NR>1 && $2>=2' "$OUT.cat.families.tsv" | wc -l) multi-copy families"
 }
 stage_assign() {

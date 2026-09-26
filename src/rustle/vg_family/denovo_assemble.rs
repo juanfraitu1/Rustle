@@ -890,6 +890,19 @@ pub fn any_read_from_record(record: &RecordBuf, chrom: &str) -> Option<(PrimaryR
 /// Scan every PRIMARY mapped alignment in a BAM into `PrimaryRead`s (the Pass-1 input). I/O driver:
 /// opens the BAM, reads the header for reference names, and applies `primary_read_from_record`.
 pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<PrimaryRead>> {
+    primary_reads_from_bam_in(bam_path, threads, None)
+}
+
+/// [`primary_reads_from_bam`] over the whole BAM (`span` = `None`, the same code path as always) or over ONE
+/// contig or contig sub-range (`Some`): the reader is positioned through the `.bai` ([`crate::bam::seek_to_span`]),
+/// skips records starting before the span, and stops at the first record past it or of another contig, so the
+/// result is exactly the whole-file result restricted to the span, in the same order. Used by the catalog's
+/// `--piecewise` mode.
+pub fn primary_reads_from_bam_in(
+    bam_path: &str,
+    threads: usize,
+    span: Option<&crate::bam::ContigSpan>,
+) -> Result<Vec<PrimaryRead>> {
     // FLAG-FREE SITE CONSTRUCTION (opt-in, `RUSTLE_FLAGFREE_SITES=1`; default off ⟹ byte-identical).
     //
     // The advisor's objection: for a read multimapping across near-identical paralogs the alignment scores
@@ -910,6 +923,14 @@ pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<Prim
         .unwrap_or(false);
     let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
     let header = reader.read_header()?;
+    // one contig (or sub-range): start at its first record; a span the index places no record in has nothing
+    let only: Option<usize> = match span {
+        None => None,
+        Some(sp) => match crate::bam::seek_to_span(&mut reader, &header, bam_path, sp)? {
+            Some(id) => Some(id),
+            None => return Ok(Vec::new()),
+        },
+    };
     let mut record = RecordBuf::default();
     let mut out = Vec::new();
     let (mut n_prim, mut n_sec, mut n_dup) = (0usize, 0usize, 0usize);
@@ -917,6 +938,18 @@ pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<Prim
     let mut sec_flag: Vec<bool> = Vec::new();
     let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
     while reader.read_record_buf(&header, &mut record)? > 0 {
+        if let (Some(id), Some(sp)) = (only, span) {
+            match record.reference_sequence_id() {
+                Some(r) if r == id => {}
+                Some(r) if r < id => continue,
+                _ => break, // the next contig, or the unplaced reads at the end of the file
+            }
+            match sp.place(record.alignment_start().map(|p| (p.get() as u64).saturating_sub(1))) {
+                std::cmp::Ordering::Less => continue,
+                std::cmp::Ordering::Greater => break,
+                std::cmp::Ordering::Equal => {}
+            }
+        }
         let chrom = match record
             .reference_sequence_id()
             .and_then(|id| header.reference_sequences().get_index(id))
@@ -1131,12 +1164,46 @@ pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<BamR
 /// linkage options), none of which reads `.seq`/`.qual` — this skips the sequence/quality decode and copies
 /// that dominated that pass (human chr16: 155 s and most of a 13.8 GB peak).
 pub fn aligned_reads_from_bam_coords(bam_path: &str, threads: usize) -> Result<Vec<BamRead>> {
+    aligned_reads_from_bam_coords_in(bam_path, threads, None)
+}
+
+/// [`aligned_reads_from_bam_coords`] over the whole BAM (`None`, the same code path as always) or over ONE contig
+/// or contig sub-range (`Some`), positioned and bounded exactly as [`primary_reads_from_bam_in`] is.
+pub fn aligned_reads_from_bam_coords_in(
+    bam_path: &str,
+    threads: usize,
+    span: Option<&crate::bam::ContigSpan>,
+) -> Result<Vec<BamRead>> {
     let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
     let header = reader.read_header()?;
     let contigs: Vec<String> = header.reference_sequences().keys().map(|k| format!("{k}")).collect();
+    let only: Option<usize> = match span {
+        None => None,
+        Some(sp) => match crate::bam::seek_to_span(&mut reader, &header, bam_path, sp)? {
+            Some(id) => Some(id),
+            None => return Ok(Vec::new()),
+        },
+    };
     let mut out = Vec::new();
     for result in reader.records() {
         let record = result?;
+        if let (Some(id), Some(sp)) = (only, span) {
+            match record.reference_sequence_id() {
+                Some(Ok(r)) if r == id => {}
+                Some(Ok(r)) if r < id => continue,
+                Some(Err(_)) => continue, // skipped below as well, exactly as the whole-file scan skips it
+                _ => break,
+            }
+            let start0 = match record.alignment_start() {
+                Some(Ok(p)) => Some((usize::from(p) as u64).saturating_sub(1)),
+                _ => None,
+            };
+            match sp.place(start0) {
+                std::cmp::Ordering::Less => continue,
+                std::cmp::Ordering::Greater => break,
+                std::cmp::Ordering::Equal => {}
+            }
+        }
         let Some(chrom) = record.reference_sequence_id().and_then(|r| r.ok()).and_then(|id| contigs.get(id)) else {
             continue;
         };
@@ -1299,6 +1366,188 @@ pub fn global_best_as() -> Option<&'static std::collections::HashMap<u64, i32>> 
         .as_ref()
 }
 
+// ================================================================ the closed loop: read-home table (pass 2)
+
+/// ⭐ THE CLOSED LOOP's pass-2 read filter (`RUSTLE_READ_HOME_TABLE=<tsv>`; opt-in, unset ⟹ byte-identical).
+/// `docs/PREREG_tied_read_loop_2026-09-25.md` §1.4.
+///
+/// A copy assignment (the union certificate, `copy_assign --families ... --union-certificate`) gives some molecules
+/// ONE home copy; `bench/loop_home.py` lists them with the home span. With the table set, the assembler's read pool
+/// (the pass-1 skeleton input -- never the reads a copy assignment sees) takes, for a LISTED molecule, exactly its
+/// mapped non-supplementary records with an aligned block (M/=/X) overlapping a home span by >= 1 bp, primary or
+/// secondary and whatever its AS, and drops every other record of that molecule, THE PRIMARY INCLUDED. Unlisted
+/// molecules follow the caller's base rule unchanged (primaries only, or the AS-tie seeding rule).
+///
+/// This deliberately feeds O2 back into O1's node set, so it is a named pass-2 product and never a default; the
+/// families that produced the assignment stay frozen from pass 1 (register r395). No EM, no fractional reads
+/// (r579): a molecule moves only on an `assigned` verdict.
+///
+/// Format: TSV `read_name  chrom  start  end  [anything]`, 0-based half-open; `#` lines and a header whose first
+/// field is `read_name` are skipped; a molecule may carry several rows (several home intervals). A table that is set
+/// but unreadable or malformed is FATAL (a pass-2 arm silently run without its table would be the base arm under
+/// another name). ⚠ Set it only on the pass-2 assemble call: every pass-1 pool reader of this module applies it.
+#[derive(Debug, Default)]
+pub struct ReadHomeTable {
+    contigs: Vec<String>,
+    homes: std::collections::HashMap<u64, Vec<(u32, u64, u64)>>,
+}
+
+impl ReadHomeTable {
+    pub fn parse(text: &str) -> Result<Self> {
+        use anyhow::Context as _;
+        let mut t = ReadHomeTable::default();
+        let mut index: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        for (ln, line) in text.lines().enumerate() {
+            if line.trim().is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let f: Vec<&str> = line.split('\t').collect();
+            if f[0] == "read_name" {
+                continue;
+            }
+            anyhow::ensure!(f.len() >= 4, "read-home table line {}: expected read_name, chrom, start, end", ln + 1);
+            let start: u64 = f[2].parse().with_context(|| format!("read-home table line {}: bad start {:?}", ln + 1, f[2]))?;
+            let end: u64 = f[3].parse().with_context(|| format!("read-home table line {}: bad end {:?}", ln + 1, f[3]))?;
+            anyhow::ensure!(end > start, "read-home table line {}: empty home span {start}-{end}", ln + 1);
+            let ci = match index.get(f[1]) {
+                Some(&i) => i,
+                None => {
+                    let i = t.contigs.len() as u32;
+                    t.contigs.push(f[1].to_string());
+                    index.insert(f[1].to_string(), i);
+                    i
+                }
+            };
+            t.homes.entry(read_name_hash(f[0])).or_default().push((ci, start, end));
+        }
+        Ok(t)
+    }
+
+    /// Molecules listed (distinct read names).
+    pub fn n_molecules(&self) -> usize {
+        self.homes.len()
+    }
+
+    /// The decision for one record of molecule `name` placed at `chrom:ref_start` with CIGAR `ops`: `None` = the
+    /// molecule is not listed (the caller's base rule applies), `Some(true)` = keep it (an aligned block lies on a
+    /// home), `Some(false)` = drop it (a placement away from home).
+    pub fn decide(&self, name: &str, chrom: &str, ref_start: u64, ops: &[noodles_sam::alignment::record::cigar::Op]) -> Option<bool> {
+        let homes = self.homes.get(&read_name_hash(name))?;
+        Some(homes.iter().any(|&(ci, s, e)| self.contigs[ci as usize] == chrom && aligned_blocks_overlap(ref_start, ops, s, e)))
+    }
+}
+
+/// Does any aligned block (M/=/X run; `D` and `N` advance the reference without aligning) of a record starting at
+/// 0-based `ref_start` overlap `[s, e)`? The rule `bench/loop_home.py` checks with pysam's `get_blocks()`.
+pub fn aligned_blocks_overlap(ref_start: u64, ops: &[noodles_sam::alignment::record::cigar::Op], s: u64, e: u64) -> bool {
+    let mut pos = ref_start;
+    for op in ops {
+        let len = op.len() as u64;
+        match op.kind() {
+            Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch => {
+                if pos < e && pos + len > s {
+                    return true;
+                }
+                pos += len;
+            }
+            Kind::Deletion | Kind::Skip => pos += len,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The read-home table named by `RUSTLE_READ_HOME_TABLE`, loaded once per process; `None` when unset or empty.
+pub fn read_home_table() -> Option<&'static ReadHomeTable> {
+    static TABLE: std::sync::OnceLock<Option<ReadHomeTable>> = std::sync::OnceLock::new();
+    TABLE
+        .get_or_init(|| {
+            let path = std::env::var("RUSTLE_READ_HOME_TABLE").ok().filter(|p| !p.is_empty())?;
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("RUSTLE_READ_HOME_TABLE={path}: cannot read the table: {e}"));
+            let t = ReadHomeTable::parse(&text).unwrap_or_else(|e| panic!("RUSTLE_READ_HOME_TABLE={path}: {e:#}"));
+            eprintln!("[read-home] {} molecule(s) with a home copy loaded from {path}", t.n_molecules());
+            Some(t)
+        })
+        .as_ref()
+}
+
+/// What the read-home filter did to the records it decided (prereg §2): `kept` = at home and in the base pool,
+/// `added` = at home but outside the base pool (R_add), `dropped` = away from home and in the base pool (R_drop),
+/// `dropped_inert` = away from home and outside the base pool anyway. Counted before coordinate de-duplication.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HomeCounts {
+    pub kept: usize,
+    pub added: usize,
+    pub dropped: usize,
+    pub dropped_inert: usize,
+}
+
+impl HomeCounts {
+    pub fn record(&mut self, keep: bool, base_admits: bool) {
+        match (keep, base_admits) {
+            (true, true) => self.kept += 1,
+            (true, false) => self.added += 1,
+            (false, true) => self.dropped += 1,
+            (false, false) => self.dropped_inert += 1,
+        }
+    }
+    fn any(&self) -> bool {
+        self.kept + self.added + self.dropped + self.dropped_inert > 0
+    }
+}
+
+static HOME_TOTALS: [std::sync::atomic::AtomicUsize; 4] = [
+    std::sync::atomic::AtomicUsize::new(0),
+    std::sync::atomic::AtomicUsize::new(0),
+    std::sync::atomic::AtomicUsize::new(0),
+    std::sync::atomic::AtomicUsize::new(0),
+];
+
+/// One log line per region the filter touched, with the running process totals (the last line is the run's G0
+/// counts; `bench/loop_home.py g0` reads it).
+fn home_report(chrom: &str, lo: u64, hi: u64, c: &HomeCounts) {
+    if !c.any() {
+        return;
+    }
+    use std::sync::atomic::Ordering::Relaxed;
+    let tot: Vec<usize> = [c.kept, c.added, c.dropped, c.dropped_inert]
+        .iter()
+        .zip(HOME_TOTALS.iter())
+        .map(|(v, t)| t.fetch_add(*v, Relaxed) + v)
+        .collect();
+    eprintln!(
+        "[read-home] {chrom}:{lo}-{hi}: kept_at_home {} added_at_home {} dropped_away {} dropped_away_outside_pool {} | totals kept_at_home {} R_add {} R_drop {} dropped_away_outside_pool {}",
+        c.kept, c.added, c.dropped, c.dropped_inert, tot[0], tot[1], tot[2], tot[3]
+    );
+}
+
+/// The home decision for a materialised record: `None` when no table is set, the molecule is not listed, or the
+/// record is one no pass-1 pool ever takes (unmapped, supplementary, unnamed).
+fn home_decide_buf(t: Option<&ReadHomeTable>, rb: &RecordBuf, chrom: &str) -> Option<bool> {
+    let t = t?;
+    let f = rb.flags();
+    if f.is_unmapped() || f.is_supplementary() {
+        return None;
+    }
+    let name = std::str::from_utf8(rb.name()?.as_ref()).ok()?;
+    let start = (rb.alignment_start()?.get() as u64).saturating_sub(1);
+    t.decide(name, chrom, start, rb.cigar().as_ref())
+}
+
+/// Apply a home decision to a materialised record: push its pass-1 read when kept (a secondary is taken whatever the
+/// base rule says), and count it against `base_admits` (would the caller's base rule have taken it?).
+fn home_apply_buf(keep: bool, rb: &RecordBuf, chrom: &str, base_admits: bool, primary: &mut Vec<PrimaryRead>, c: &mut HomeCounts) {
+    if keep {
+        if let Some(pr) = alignment_read_from_record(rb, chrom, true) {
+            c.record(true, base_admits);
+            primary.push(pr);
+        }
+    } else if alignment_read_from_record(rb, chrom, true).is_some() {
+        c.record(false, base_admits);
+    }
+}
+
 pub fn reads_in_region(
     bam_path: &str,
     chrom: &str,
@@ -1318,6 +1567,17 @@ fn reads_in_region_indexed(
     chrom: &str,
     lo: u64,
     hi: u64,
+) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
+    reads_in_region_indexed_with(bam_path, chrom, lo, hi, read_home_table())
+}
+
+/// [`reads_in_region_indexed`] with the read-home table passed explicitly (tests; `None` = no filter).
+fn reads_in_region_indexed_with(
+    bam_path: &str,
+    chrom: &str,
+    lo: u64,
+    hi: u64,
+    home: Option<&ReadHomeTable>,
 ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
     let bai_path = format!("{bam_path}.bai");
     anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
@@ -1356,12 +1616,18 @@ fn reads_in_region_indexed(
     // chromosome was 8.4-11.8 GB, which is what made 4 concurrent chromosomes OOM a 25 GB box.
     // So at the default ratio, stream instead and never build either vector. Same records, same order,
     // byte-identical output; the buffered path below is unchanged for ratio > 0.
+    // the closed loop's pass-2 filter (`RUSTLE_READ_HOME_TABLE`, opt-in): `home` is `None` unless set, and then only
+    // the listed molecules' records take the `home_*` branch below; everything else is the unchanged base rule
+    let mut hc = HomeCounts::default();
     if ratio <= 0.0 {
         let allow_secondary = gtf_secondary_enabled();
         for result in query {
             let record = result?;
             let rb = RecordBuf::try_from_alignment_record(&header, &record)?;
-            if let Some(pr) = alignment_read_from_record(&rb, chrom, allow_secondary) {
+            if let Some(home_keep) = home_decide_buf(home, &rb, chrom) {
+                let base = alignment_read_from_record(&rb, chrom, allow_secondary).is_some();
+                home_apply_buf(home_keep, &rb, chrom, base, &mut primary, &mut hc);
+            } else if let Some(pr) = alignment_read_from_record(&rb, chrom, allow_secondary) {
                 primary.push(pr);
             }
             if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
@@ -1369,6 +1635,7 @@ fn reads_in_region_indexed(
                 bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
             }
         }
+        home_report(chrom, lo, hi, &hc);
         return Ok((primary, bam_reads));
     }
     let mut buf: Vec<RecordBuf> = Vec::new();
@@ -1391,7 +1658,10 @@ fn reads_in_region_indexed(
         .collect();
     let keep = as_tie_keep_with(&keys, ratio, global_best_as());
     for (i, rb) in buf.iter().enumerate() {
-        if keep[i] {
+        if let Some(home_keep) = home_decide_buf(home, rb, chrom) {
+            let base = keep[i] && alignment_read_from_record(rb, chrom, gtf_secondary_enabled()).is_some();
+            home_apply_buf(home_keep, rb, chrom, base, &mut primary, &mut hc);
+        } else if keep[i] {
             if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {
                 primary.push(pr);
             }
@@ -1401,6 +1671,7 @@ fn reads_in_region_indexed(
             bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
         }
     }
+    home_report(chrom, lo, hi, &hc);
     Ok((primary, bam_reads))
 }
 
@@ -1418,6 +1689,9 @@ fn reads_in_region_indexed(
 /// `dedupe_coords` reproduces the driver's historical `(chrom, start, end, chain)` key (default; see
 /// `--keep-coordinate-duplicates`), as a 64-bit hash set of that key; `fetched` are the windows already
 /// read for this region (a record overlapping one was fetched there — the window rule).
+///
+/// The closed loop's pass-2 filter (`RUSTLE_READ_HOME_TABLE`, [`ReadHomeTable`]) applies here as on the buffered
+/// paths; unset, nothing below changes.
 #[allow(clippy::too_many_arguments)]
 pub fn stream_pass1_region(
     bam_path: &str,
@@ -1428,6 +1702,22 @@ pub fn stream_pass1_region(
     dedupe_coords: bool,
     fetched: &[(String, u64, u64)],
     acc: &mut Pass1Acc,
+) -> Result<usize> {
+    stream_pass1_region_with(bam_path, chrom, lo, hi, allow_secondary, dedupe_coords, fetched, acc, read_home_table())
+}
+
+/// [`stream_pass1_region`] with the read-home table passed explicitly (tests; `None` = no filter).
+#[allow(clippy::too_many_arguments)]
+pub fn stream_pass1_region_with(
+    bam_path: &str,
+    chrom: &str,
+    lo: u64,
+    hi: u64,
+    allow_secondary: bool,
+    dedupe_coords: bool,
+    fetched: &[(String, u64, u64)],
+    acc: &mut Pass1Acc,
+    home: Option<&ReadHomeTable>,
 ) -> Result<usize> {
     use std::hash::{Hash, Hasher};
     let bai_path = format!("{bam_path}.bai");
@@ -1458,6 +1748,7 @@ pub fn stream_pass1_region(
     let tie_table = if tie_ratio > 0.0 { global_best_as() } else { None };
     let mut n_tie_dropped = 0usize;
     let mut n_tie_unknown = 0usize; // secondaries whose molecule the table does not know (kept; a table from ANOTHER BAM shows here)
+    let mut hc = HomeCounts::default();
     for result in reader.query(&header, &index, &region)? {
         let record = result?;
         let flags = record.flags();
@@ -1476,23 +1767,56 @@ pub fn stream_pass1_region(
             continue;
         }
         n_mapped += 1; // every record `aligned_read_from_record` would have kept
-        if flags.is_secondary() && !allow_secondary {
-            continue;
-        }
-        if flags.is_secondary() && tie_ratio > 0.0 {
-            let best = tie_table.and_then(|t| {
-                record
-                    .name()
-                    .and_then(|n| std::str::from_utf8(n.as_ref()).ok())
-                    .and_then(|n| t.get(&read_name_hash(n)).copied())
-            });
-            if best.is_none() {
-                n_tie_unknown += 1;
+        // the closed loop's pass-2 filter (`RUSTLE_READ_HOME_TABLE`, opt-in; `home` is `None` unless set): a LISTED
+        // molecule's record is kept iff an aligned block lies on its home copy, whatever its flag and AS, and
+        // dropped otherwise; an unlisted molecule takes the unchanged base rule in the `else` branch
+        let home_keep: Option<bool> = match home {
+            None => None,
+            Some(t) => record
+                .name()
+                .and_then(|n| std::str::from_utf8(n.as_ref()).ok())
+                .and_then(|n| t.decide(n, chrom, ref_start, &ops)),
+        };
+        if let Some(keep) = home_keep {
+            // would the base rule have admitted it? (for the R_add / R_drop counts only)
+            let base = if !flags.is_secondary() {
+                true
+            } else if !allow_secondary {
+                false
+            } else if tie_ratio > 0.0 {
+                let best = tie_table.and_then(|t| {
+                    record
+                        .name()
+                        .and_then(|n| std::str::from_utf8(n.as_ref()).ok())
+                        .and_then(|n| t.get(&read_name_hash(n)).copied())
+                });
+                !matches!((record_as(&record), best), (Some(a), Some(b)) if b > 0 && (a as f64) < tie_ratio * (b as f64))
+            } else {
+                true
+            };
+            hc.record(keep, base);
+            if !keep {
+                continue;
             }
-            if let (Some(a), Some(b)) = (record_as(&record), best) {
-                if b > 0 && (a as f64) < tie_ratio * (b as f64) {
-                    n_tie_dropped += 1;
-                    continue;
+        } else {
+            if flags.is_secondary() && !allow_secondary {
+                continue;
+            }
+            if flags.is_secondary() && tie_ratio > 0.0 {
+                let best = tie_table.and_then(|t| {
+                    record
+                        .name()
+                        .and_then(|n| std::str::from_utf8(n.as_ref()).ok())
+                        .and_then(|n| t.get(&read_name_hash(n)).copied())
+                });
+                if best.is_none() {
+                    n_tie_unknown += 1;
+                }
+                if let (Some(a), Some(b)) = (record_as(&record), best) {
+                    if b > 0 && (a as f64) < tie_ratio * (b as f64) {
+                        n_tie_dropped += 1;
+                        continue;
+                    }
                 }
             }
         }
@@ -1516,6 +1840,7 @@ pub fn stream_pass1_region(
             if n_tie_unknown > 0 { " — WARNING: the table may come from a different BAM" } else { "" }
         );
     }
+    home_report(chrom, lo, hi, &hc);
     Ok(n_mapped)
 }
 
@@ -1552,11 +1877,16 @@ impl BamIndexCache {
         let mut primary = Vec::new();
         let mut bam_reads = Vec::new();
         let ratio = gtf_secondary_as_ratio();
+        let home = read_home_table(); // the closed loop's pass-2 filter, as in `reads_in_region_indexed`
+        let mut hc = HomeCounts::default();
         if ratio <= 0.0 {
             for result in query {
                 let record = result?;
                 let rb = RecordBuf::try_from_alignment_record(&self.header, &record)?;
-                if let Some(pr) = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()) {
+                if let Some(home_keep) = home_decide_buf(home, &rb, chrom) {
+                    let base = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()).is_some();
+                    home_apply_buf(home_keep, &rb, chrom, base, &mut primary, &mut hc);
+                } else if let Some(pr) = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()) {
                     primary.push(pr);
                 }
                 if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
@@ -1564,6 +1894,7 @@ impl BamIndexCache {
                     bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
                 }
             }
+            home_report(chrom, lo, hi, &hc);
             return Ok((primary, bam_reads));
         }
         // §6z7: this cached path is the one `copy_assign` actually takes (the index cache opens whenever a
@@ -1586,7 +1917,10 @@ impl BamIndexCache {
             .collect();
         let keep = as_tie_keep_with(&keys, ratio, global_best_as());
         for (i, rb) in buf.iter().enumerate() {
-            if keep[i] {
+            if let Some(home_keep) = home_decide_buf(home, rb, chrom) {
+                let base = keep[i] && alignment_read_from_record(rb, chrom, gtf_secondary_enabled()).is_some();
+                home_apply_buf(home_keep, rb, chrom, base, &mut primary, &mut hc);
+            } else if keep[i] {
                 if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {
                     primary.push(pr);
                 }
@@ -1596,6 +1930,7 @@ impl BamIndexCache {
                 bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
             }
         }
+        home_report(chrom, lo, hi, &hc);
         Ok((primary, bam_reads))
     }
 }
@@ -1640,6 +1975,8 @@ fn reads_in_region_scan(
     let mut record = RecordBuf::default();
     let mut primary = Vec::new();
     let mut bam_reads = Vec::new();
+    let home = read_home_table(); // the closed loop's pass-2 filter (base rule here: primaries only)
+    let mut hc = HomeCounts::default();
     while reader.read_record_buf(&header, &mut record)? > 0 {
         let rchrom = match record
             .reference_sequence_id()
@@ -1659,7 +1996,10 @@ fn reads_in_region_scan(
         if start >= hi || end <= lo {
             continue;
         }
-        if let Some(pr) = primary_read_from_record(&record, chrom) {
+        if let Some(home_keep) = home_decide_buf(home, &record, chrom) {
+            let base = primary_read_from_record(&record, chrom).is_some();
+            home_apply_buf(home_keep, &record, chrom, base, &mut primary, &mut hc);
+        } else if let Some(pr) = primary_read_from_record(&record, chrom) {
             primary.push(pr);
         }
         if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&record) {
@@ -1667,6 +2007,7 @@ fn reads_in_region_scan(
             bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
         }
     }
+    home_report(chrom, lo, hi, &hc);
     Ok((primary, bam_reads))
 }
 
@@ -3526,5 +3867,359 @@ footprint: false,
             PrimaryRead { chrom: "chr2".into(), ref_start: 5, ref_end: 400, introns: vec![(100, 200)], reverse: false },
         ];
         assert_eq!(split_mischained_reads(&reads, &HashMap::new(), 50_000, 3), reads);
+    }
+}
+
+/// The per-contig readers behind the catalog's `--piecewise` mode must return EXACTLY what the whole-file scan
+/// returns on that contig, in the same order — that is the whole exactness argument of the mode.
+#[cfg(test)]
+mod piecewise_reader_tests {
+    use super::*;
+    use crate::vg_family::copy_assign_pipeline::read_ref_end;
+    use noodles_core::Position;
+    use noodles_sam::alignment::io::Write as _;
+    use noodles_sam::alignment::Record as _;
+    use noodles_sam::alignment::record::cigar::{op::Kind, Op};
+    use noodles_sam::alignment::record::{Flags, MappingQuality};
+    use noodles_sam::header::record::value::{map::ReferenceSequence, Map};
+    use std::num::NonZeroUsize;
+
+    /// A coordinate-sorted BAM over 4 contigs (c3 holds no record) plus an unplaced unmapped read at the end,
+    /// indexed with noodles' own indexer (which writes the per-reference metadata `seek_to_contig` reads).
+    fn fixture_bam(dir: &std::path::Path) -> String {
+        let len = NonZeroUsize::try_from(1_000_000usize).unwrap();
+        let header = noodles_sam::Header::builder()
+            .add_reference_sequence("c1", Map::<ReferenceSequence>::new(len))
+            .add_reference_sequence("c2", Map::<ReferenceSequence>::new(len))
+            .add_reference_sequence("c3", Map::<ReferenceSequence>::new(len))
+            .add_reference_sequence("c4", Map::<ReferenceSequence>::new(len))
+            .build();
+        let mk = |name: &str, rid: usize, pos: usize, flags: Flags, ops: Vec<Op>| {
+            RecordBuf::builder()
+                .set_name(name)
+                .set_flags(flags)
+                .set_reference_sequence_id(rid)
+                .set_alignment_start(Position::try_from(pos).unwrap())
+                .set_mapping_quality(MappingQuality::new(60).unwrap())
+                .set_cigar(ops.into_iter().collect())
+                .build()
+        };
+        let m = |n: usize| Op::new(Kind::Match, n);
+        let n = |n: usize| Op::new(Kind::Skip, n);
+        let mut recs = Vec::new();
+        // c1: spliced primary, unspliced primary, a secondary and a supplementary
+        recs.push(mk("r1", 0, 101, Flags::default(), vec![m(50), n(200), m(50)]));
+        recs.push(mk("r2", 0, 120, Flags::REVERSE_COMPLEMENTED, vec![m(300)]));
+        recs.push(mk("r3", 0, 5_001, Flags::SECONDARY, vec![m(80), n(100), m(20)]));
+        recs.push(mk("r4", 0, 9_001, Flags::SUPPLEMENTARY, vec![m(60)]));
+        // c2: many records, so its start is not at a block boundary and several blocks are crossed; 30 piles of
+        // 100 overlapping reads, 10 kb apart, so there are read-free positions to cut at (between piles only)
+        for k in 0..30usize {
+            for i in 0..100usize {
+                recs.push(mk(&format!("s{k}_{i}"), 1, 1 + k * 10_000 + i * 3, Flags::default(), vec![m(40), n(500), m(40)]));
+            }
+        }
+        // c3: nothing. c4: two reads, one placed-unmapped
+        recs.push(mk("t1", 3, 7, Flags::default(), vec![m(10)]));
+        recs.push(mk("t2", 3, 7, Flags::UNMAPPED, vec![]));
+        let path = dir.join("fixture.bam");
+        {
+            let mut w = noodles_bam::io::Writer::new(std::fs::File::create(&path).unwrap());
+            w.write_header(&header).unwrap();
+            for r in &recs {
+                w.write_alignment_record(&header, r).unwrap();
+            }
+            // an unplaced unmapped read at the end of the file
+            let u = RecordBuf::builder().set_name("u").set_flags(Flags::UNMAPPED).build();
+            w.write_alignment_record(&header, &u).unwrap();
+            w.try_finish().unwrap();
+        }
+        // index it (noodles' own indexer, as in noodles-bam's query tests)
+        let mut reader = noodles_bam::io::Reader::new(std::fs::File::open(&path).unwrap());
+        let header = reader.read_header().unwrap();
+        let mut indexer = noodles_csi::binning_index::Indexer::default();
+        let mut chunk_start = reader.get_ref().virtual_position();
+        let mut record = noodles_bam::Record::default();
+        while reader.read_record(&mut record).unwrap() != 0 {
+            let chunk_end = reader.get_ref().virtual_position();
+            let ctx = match (
+                record.reference_sequence_id().transpose().unwrap(),
+                record.alignment_start().transpose().unwrap(),
+                record.alignment_end().transpose().unwrap(),
+            ) {
+                (Some(id), Some(start), Some(end)) => Some((id, start, end, !record.flags().is_unmapped())),
+                _ => None,
+            };
+            indexer
+                .add_record(ctx, noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(chunk_start, chunk_end))
+                .unwrap();
+            chunk_start = chunk_end;
+        }
+        let index: noodles_bam::bai::Index = indexer.build(header.reference_sequences().len());
+        noodles_bam::bai::write(dir.join("fixture.bam.bai"), &index).unwrap();
+        path.display().to_string()
+    }
+
+    #[test]
+    fn per_contig_readers_equal_the_whole_file_restricted_to_the_contig() {
+        let dir = std::env::temp_dir().join(format!("rustle_piecewise_reader_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bam = fixture_bam(&dir);
+        let whole = primary_reads_from_bam_in(&bam, 2, None).unwrap();
+        let whole_aln = aligned_reads_from_bam_coords_in(&bam, 2, None).unwrap();
+        assert_eq!(whole.len(), 2 + 3_000 + 1, "fixture: primaries on c1, c2 and c4");
+        let mut n_seen = (0usize, 0usize);
+        for c in ["c1", "c2", "c3", "c4"] {
+            let piece = primary_reads_from_bam_in(&bam, 2, Some(&crate::bam::ContigSpan::whole(c))).unwrap();
+            let expect: Vec<PrimaryRead> = whole.iter().filter(|r| r.chrom == c).cloned().collect();
+            assert_eq!(piece, expect, "primary reads of {c}");
+            let piece_aln: Vec<String> =
+                aligned_reads_from_bam_coords_in(&bam, 2, Some(&crate::bam::ContigSpan::whole(c))).unwrap().iter().map(|r| format!("{r:?}")).collect();
+            let expect_aln: Vec<String> =
+                whole_aln.iter().filter(|r| r.chrom == c).map(|r| format!("{r:?}")).collect();
+            assert_eq!(piece_aln, expect_aln, "all mapped records of {c}");
+            n_seen.0 += piece.len();
+            n_seen.1 += piece_aln.len();
+        }
+        assert_eq!(n_seen, (whole.len(), whole_aln.len()), "the pieces partition the whole-file scan");
+        assert!(primary_reads_from_bam_in(&bam, 2, Some(&crate::bam::ContigSpan::whole("c3"))).unwrap().is_empty(), "an empty contig reads nothing");
+        assert!(primary_reads_from_bam_in(&bam, 2, Some(&crate::bam::ContigSpan::whole("chrNope"))).is_err(), "an unknown contig is an error");
+        // sub-contig spans cut at read-free positions, at most 450 records where possible: 7 spans of 4 piles and
+        // one of 2; each span reads exactly the records that START inside it, and no record crosses a cut
+        let cuts = crate::bam::read_free_cuts(&bam, "c2", 450).unwrap();
+        let sizes: Vec<u64> = cuts.iter().map(|(_, n)| *n).collect();
+        assert_eq!(sizes, vec![400, 400, 400, 400, 400, 400, 400, 200], "{cuts:?}");
+        assert_eq!(cuts[0].0.lo, 0);
+        assert_eq!(cuts[7].0.hi, u64::MAX);
+        // no read-free position within reach: one larger span rather than an inexact cut
+        assert_eq!(crate::bam::read_free_cuts(&bam, "c2", 50).unwrap().len(), 30, "a pile is never cut");
+        let c2: Vec<&BamRead> = whole_aln.iter().filter(|r| r.chrom == "c2").collect();
+        for w in cuts.windows(2) {
+            let x = w[0].0.hi;
+            assert_eq!(x, w[1].0.lo, "spans are consecutive");
+            assert!(
+                c2.iter().all(|r| !(r.read.ref_start < x && read_ref_end(&r.read) > x)),
+                "no record crosses the cut at {x}"
+            );
+        }
+        let mut joined: Vec<PrimaryRead> = Vec::new();
+        for (sp, _) in &cuts {
+            let got = primary_reads_from_bam_in(&bam, 2, Some(sp)).unwrap();
+            let expect: Vec<PrimaryRead> =
+                whole.iter().filter(|r| r.chrom == "c2" && r.ref_start >= sp.lo && r.ref_start < sp.hi).cloned().collect();
+            assert_eq!(got, expect, "primary reads of {}", sp.label());
+            let got_aln: Vec<String> =
+                aligned_reads_from_bam_coords_in(&bam, 2, Some(sp)).unwrap().iter().map(|r| format!("{r:?}")).collect();
+            let expect_aln: Vec<String> = c2
+                .iter()
+                .filter(|r| r.read.ref_start >= sp.lo && r.read.ref_start < sp.hi)
+                .map(|r| format!("{r:?}"))
+                .collect();
+            assert_eq!(got_aln, expect_aln, "all mapped records of {}", sp.label());
+            joined.extend(got);
+        }
+        let whole_c2: Vec<PrimaryRead> = whole.iter().filter(|r| r.chrom == "c2").cloned().collect();
+        assert_eq!(joined, whole_c2, "the spans partition the contig, in order");
+        assert_eq!(crate::bam::read_free_cuts(&bam, "c2", 0).unwrap().len(), 30, "one span per pile at max 0");
+        // c1: r1/r2 overlap, r3 and r4 each start past every earlier end -> cuts at 5000 and 9000
+        let c1: Vec<(u64, u64)> = crate::bam::read_free_cuts(&bam, "c1", 1).unwrap().iter().map(|(sp, _)| (sp.lo, sp.hi)).collect();
+        assert_eq!(c1, vec![(0, 5_000), (5_000, 9_000), (9_000, u64::MAX)]);
+        let counts = crate::bam::contig_record_counts(&bam).unwrap();
+        let names: Vec<&str> = counts.iter().map(|(c, _)| c.as_str()).collect();
+        assert_eq!(names, ["c1", "c2", "c3", "c4"], "header order");
+        assert_eq!(counts[2].1, Some(0), "c3 has no record");
+        assert_eq!(counts[1].1, Some(3_000));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// The closed loop's pass-2 read filter (`RUSTLE_READ_HOME_TABLE`, `docs/PREREG_tied_read_loop_2026-09-25.md`
+/// §1.4): the table parser, the keep/drop rule, and the streaming and buffered pass-1 readers agreeing on a fixture.
+/// Every test passes the table explicitly (no environment variable: tests share one process).
+#[cfg(test)]
+mod read_home_tests {
+    use super::*;
+    use noodles_core::Position;
+    use noodles_sam::alignment::io::Write as _;
+    use noodles_sam::alignment::Record as _;
+    use noodles_sam::alignment::record::cigar::{op::Kind, Op};
+    use noodles_sam::alignment::record::{Flags, MappingQuality};
+    use noodles_sam::header::record::value::{map::ReferenceSequence, Map};
+    use std::num::NonZeroUsize;
+
+    fn m(n: usize) -> Op {
+        Op::new(Kind::Match, n)
+    }
+
+    #[test]
+    fn parse_skips_header_and_comments_and_keeps_every_home_of_a_molecule() {
+        let t = ReadHomeTable::parse(
+            "# built by loop_home.py\nread_name\tchrom\tstart\tend\tsource\nr1\tc1\t100\t200\tunion\nr1\tc2\t5\t9\tunion\n\nr2\tc1\t0\t1\n",
+        )
+        .unwrap();
+        assert_eq!(t.n_molecules(), 2);
+        assert_eq!(t.homes[&read_name_hash("r1")].len(), 2);
+        assert_eq!(t.contigs, vec!["c1".to_string(), "c2".to_string()]);
+        assert_eq!(ReadHomeTable::parse("").unwrap().n_molecules(), 0);
+    }
+
+    #[test]
+    fn parse_refuses_malformed_rows() {
+        assert!(ReadHomeTable::parse("r1\tc1\t100\n").is_err(), "too few columns");
+        assert!(ReadHomeTable::parse("r1\tc1\tx\t200\n").is_err(), "bad start");
+        assert!(ReadHomeTable::parse("r1\tc1\t200\t200\n").is_err(), "empty span");
+    }
+
+    #[test]
+    fn aligned_blocks_count_match_ops_only() {
+        // 10S 50M 2000N 50M 5I 20M 30D 10M : blocks [1000,1050) [3050,3100) [3100,3120) [3150,3160)
+        let ops = vec![
+            Op::new(Kind::SoftClip, 10), m(50), Op::new(Kind::Skip, 2000), m(50), Op::new(Kind::Insertion, 5), m(20),
+            Op::new(Kind::Deletion, 30), m(10),
+        ];
+        assert!(aligned_blocks_overlap(1000, &ops, 1049, 1050), "last base of block 1");
+        assert!(!aligned_blocks_overlap(1000, &ops, 1050, 3050), "inside the intron only");
+        assert!(!aligned_blocks_overlap(1000, &ops, 990, 1000), "the soft clip does not reach back");
+        assert!(!aligned_blocks_overlap(1000, &ops, 3120, 3150), "inside the deletion only");
+        assert!(aligned_blocks_overlap(1000, &ops, 3155, 4000), "the block after the deletion");
+        assert!(!aligned_blocks_overlap(1000, &ops, 3160, 9000), "past the end");
+    }
+
+    #[test]
+    fn decide_keeps_at_home_drops_away_and_ignores_unlisted_molecules() {
+        let t = ReadHomeTable::parse("r1\tc1\t50000\t50200\nr2\tc2\t0\t100\n").unwrap();
+        let ops = vec![m(100)];
+        assert_eq!(t.decide("r0", "c1", 50000, &ops), None, "unlisted: the base rule applies");
+        assert_eq!(t.decide("r1", "c1", 50100, &ops), Some(true));
+        assert_eq!(t.decide("r1", "c1", 1000, &ops), Some(false), "the primary away from home is dropped too");
+        assert_eq!(t.decide("r2", "c1", 0, &ops), Some(false), "same coordinates, other contig");
+    }
+
+    #[test]
+    fn home_counts_split_by_base_admission() {
+        let mut c = HomeCounts::default();
+        c.record(true, true);
+        c.record(true, false);
+        c.record(false, true);
+        c.record(false, true);
+        c.record(false, false);
+        assert_eq!(c, HomeCounts { kept: 1, added: 1, dropped: 2, dropped_inert: 1 });
+    }
+
+    fn rec(name: &str, flags: Flags, rid: usize, pos: usize, ops: Vec<Op>) -> RecordBuf {
+        RecordBuf::builder()
+            .set_name(name)
+            .set_flags(flags)
+            .set_reference_sequence_id(rid)
+            .set_alignment_start(Position::try_from(pos).unwrap())
+            .set_mapping_quality(MappingQuality::new(60).unwrap())
+            .set_cigar(ops.into_iter().collect())
+            .build()
+    }
+
+    #[test]
+    fn buffered_apply_takes_a_home_secondary_and_counts_against_the_base_rule() {
+        let t = ReadHomeTable::parse("r1\tc1\t50000\t50200\n").unwrap();
+        let sec_home = rec("r1", Flags::SECONDARY, 0, 50_001, vec![m(100)]);
+        let prim_away = rec("r1", Flags::default(), 0, 1_001, vec![m(100)]);
+        let sup_home = rec("r1", Flags::SUPPLEMENTARY, 0, 50_001, vec![m(100)]);
+        let other = rec("r9", Flags::default(), 0, 1_001, vec![m(100)]);
+        assert_eq!(home_decide_buf(None, &sec_home, "c1"), None, "no table, no decision");
+        assert_eq!(home_decide_buf(Some(&t), &sup_home, "c1"), None, "a supplementary never enters a pool");
+        assert_eq!(home_decide_buf(Some(&t), &other, "c1"), None);
+        let (mut pool, mut c) = (Vec::new(), HomeCounts::default());
+        let d = home_decide_buf(Some(&t), &sec_home, "c1").unwrap();
+        home_apply_buf(d, &sec_home, "c1", false, &mut pool, &mut c);
+        let d = home_decide_buf(Some(&t), &prim_away, "c1").unwrap();
+        home_apply_buf(d, &prim_away, "c1", true, &mut pool, &mut c);
+        assert_eq!(pool.len(), 1);
+        assert_eq!((pool[0].ref_start, pool[0].ref_end), (50_000, 50_100));
+        assert_eq!(c, HomeCounts { kept: 0, added: 1, dropped: 1, dropped_inert: 0 });
+    }
+
+    /// One contig, coordinate-sorted, indexed with noodles' own indexer (as the piecewise-reader fixture).
+    fn fixture_bam(dir: &std::path::Path) -> String {
+        let len = NonZeroUsize::try_from(1_000_000usize).unwrap();
+        let header = noodles_sam::Header::builder()
+            .add_reference_sequence("c1", Map::<ReferenceSequence>::new(len))
+            .build();
+        let recs = vec![
+            rec("m1", Flags::default(), 0, 1_001, vec![m(100)]),           // listed; primary away from home
+            rec("m2", Flags::default(), 0, 1_001, vec![m(100)]),           // unlisted primary
+            rec("m7", Flags::default(), 0, 1_001, vec![m(100)]),           // listed with its home on another contig
+            rec("m1", Flags::SECONDARY, 0, 50_001, vec![m(100)]),          // listed; secondary at home
+            rec("m2", Flags::SECONDARY, 0, 50_001, vec![m(100)]),          // unlisted secondary (base: primaries only)
+            rec("m3", Flags::default(), 0, 50_021, vec![m(50)]),           // listed; primary at home
+            rec("m4", Flags::default(), 0, 69_001, vec![m(50), Op::new(Kind::Skip, 2_000), m(50)]), // intron over home
+        ];
+        let path = dir.join("home.bam");
+        {
+            let mut w = noodles_bam::io::Writer::new(std::fs::File::create(&path).unwrap());
+            w.write_header(&header).unwrap();
+            for r in &recs {
+                w.write_alignment_record(&header, r).unwrap();
+            }
+            w.try_finish().unwrap();
+        }
+        let mut reader = noodles_bam::io::Reader::new(std::fs::File::open(&path).unwrap());
+        let header = reader.read_header().unwrap();
+        let mut indexer = noodles_csi::binning_index::Indexer::default();
+        let mut chunk_start = reader.get_ref().virtual_position();
+        let mut record = noodles_bam::Record::default();
+        while reader.read_record(&mut record).unwrap() != 0 {
+            let chunk_end = reader.get_ref().virtual_position();
+            let ctx = match (
+                record.reference_sequence_id().transpose().unwrap(),
+                record.alignment_start().transpose().unwrap(),
+                record.alignment_end().transpose().unwrap(),
+            ) {
+                (Some(id), Some(start), Some(end)) => Some((id, start, end, !record.flags().is_unmapped())),
+                _ => None,
+            };
+            indexer
+                .add_record(ctx, noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(chunk_start, chunk_end))
+                .unwrap();
+            chunk_start = chunk_end;
+        }
+        let index: noodles_bam::bai::Index = indexer.build(header.reference_sequences().len());
+        noodles_bam::bai::write(dir.join("home.bam.bai"), &index).unwrap();
+        path.display().to_string()
+    }
+
+    fn spans(v: &[PrimaryRead]) -> Vec<(u64, u64, usize)> {
+        v.iter().map(|r| (r.ref_start, r.ref_end, r.introns.len())).collect()
+    }
+
+    /// The streaming reader's pool: every pushed read (the fixture's only spliced read is m4, which the table
+    /// drops, so `unspliced` is the whole pool when `n_pushed` equals its length).
+    fn streamed(bam: &str, home: Option<&ReadHomeTable>) -> (usize, Vec<PrimaryRead>) {
+        let mut acc = Pass1Acc::new(1, None);
+        stream_pass1_region_with(bam, "c1", 0, 1_000_000, false, false, &[], &mut acc, home).unwrap();
+        (acc.n_pushed, acc.unspliced)
+    }
+
+    #[test]
+    fn streaming_and_buffered_readers_apply_the_same_home_rule() {
+        let dir = tempfile::tempdir().unwrap();
+        let bam = fixture_bam(dir.path());
+        // no table and an EMPTY table: the base pool (primaries only here), identical on both readers
+        let empty = ReadHomeTable::parse("read_name\tchrom\tstart\tend\n").unwrap();
+        let (base_buf, _) = reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, None).unwrap();
+        let (empty_buf, _) = reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, Some(&empty)).unwrap();
+        assert_eq!(base_buf, empty_buf);
+        assert_eq!(spans(&base_buf), vec![(1000, 1100, 0), (1000, 1100, 0), (1000, 1100, 0), (50020, 50070, 0), (69000, 71100, 1)]);
+        let (n0, un0) = streamed(&bam, None);
+        let (n0e, un0e) = streamed(&bam, Some(&empty));
+        assert_eq!((n0, &un0), (n0e, &un0e));
+        assert_eq!(n0, 5);
+        assert_eq!(spans(&un0), spans(&base_buf[..4]));
+        // the table: m1 goes home (its secondary replaces its primary), m3 stays, m4 and m7 have no record at home
+        let t = ReadHomeTable::parse("m1\tc1\t50000\t50200\nm3\tc1\t50000\t50200\nm4\tc1\t70000\t70100\nm7\tc2\t0\t5000\n").unwrap();
+        let (buf, bam_reads) = reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, Some(&t)).unwrap();
+        assert_eq!(spans(&buf), vec![(1000, 1100, 0), (50000, 50100, 0), (50020, 50070, 0)], "m2, m1 at home, m3");
+        assert_eq!(bam_reads.len(), 7, "the assignment input is never filtered");
+        let (n, un) = streamed(&bam, Some(&t));
+        assert_eq!(n, 3);
+        assert_eq!(spans(&un), spans(&buf));
     }
 }
