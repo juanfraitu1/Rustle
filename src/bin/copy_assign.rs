@@ -132,6 +132,9 @@ struct RegionWork {
     /// `--union-certificate`: what the union pass did in this region (its side-file rows + counts). Default
     /// (empty) unless the flag is on -- the pass runs INSIDE the worker because it needs the read sequences.
     union: rustle::vg_family::denovo_pipeline::UnionSummary,
+    /// `RUSTLE_READTHROUGH_JUNCTIONS`: this region's flagged junctions and pool removals. Default (empty,
+    /// `rule` = `None`) unless the knob is set.
+    readthrough: rustle::vg_family::denovo_assemble::ReadthroughFlags,
 }
 
 #[derive(Parser, Debug)]
@@ -189,7 +192,16 @@ struct Args {
     ///
     /// Composes with the assembly knobs: `--read-isoform-k`, `RUSTLE_JUNCTION_MAJORITY` (default ON since
     /// 2026-09-21; `=0` restores the old strict-canonicity behaviour), `RUSTLE_GTF_SECONDARY`,
-    /// `RUSTLE_GATE_CENSUS`.
+    /// `RUSTLE_GATE_CENSUS`, and `RUSTLE_READTHROUGH_JUNCTIONS=off|r|rq1|list:<path>` (opt-in, unset/`off`
+    /// byte-identical; `docs/PREREG_readthrough_ends_representatives_2026-09-25.md`): per region (= per contig under
+    /// `--genome-wide`), junctions whose donor's transcripts mostly end inside the intron (`U >= 20*S`; `rq1` also
+    /// needs B's own start cluster and first exon, `3*V1 >= 5*S`) are flagged from the primary reads, and every pool
+    /// alignment carrying one leaves before pass 1; writes `<out>.readthrough_junctions.tsv` + `params.tsv` rows
+    /// (`RUSTLE_READTHROUGH_JUNCTIONS_ALL=1` adds `<out>.readthrough_junctions.all.tsv`, every junction with S >= 2).
+    /// `list:<path>` (the prereg's NULL arm) flags the junctions listed in a TSV instead (header naming contig|chrom,
+    /// donor|intron_start_1b, acceptor|intron_end_1b, strand; 1-based inclusive intron: the scorer's
+    /// `readthrough_eval.py null` list or an arm's own `<out>.readthrough_junctions.tsv`), same removal and outputs
+    /// (`rule` = `list`).
     #[arg(long, default_value_t = false)]
     assemble_only: bool,
 
@@ -2716,6 +2728,46 @@ fn main() -> Result<()> {
             std::env::var("RUSTLE_JUNCTION_MAJORITY").unwrap_or_else(|_| "unset (majority)".into())
         );
     }
+    // RUSTLE_READTHROUGH_JUNCTIONS (docs/PREREG_readthrough_ends_representatives_2026-09-25.md): parsed before any
+    // read is touched, so a mistyped arm fails in the first second instead of running as the base arm.
+    let rt_switch = rustle::vg_family::denovo_assemble::ReadthroughSwitch::from_env()?;
+    let rt_rule = rt_switch.as_ref().map(|s| s.rule);
+    if let Some(rule) = rt_rule {
+        anyhow::ensure!(
+            args.assemble_only,
+            "RUSTLE_READTHROUGH_JUNCTIONS={} filters the --assemble-only read pool (pass 1); set it only with --assemble-only",
+            rule.as_str()
+        );
+        match rt_switch.as_ref().and_then(|s| s.list.as_ref()) {
+            Some(list) => {
+                // every listed contig must be a reference sequence of the BAM (a list for another assembly or naming
+                // scheme would remove nothing: the base arm under another name)
+                let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(&args.bam)?;
+                let header = reader.read_header()?;
+                let lens: std::collections::HashMap<String, u64> = header
+                    .reference_sequences()
+                    .iter()
+                    .map(|(name, rs)| (String::from_utf8_lossy(name).to_string(), usize::from(rs.length()) as u64))
+                    .collect();
+                list.check_contigs(|c| lens.get(c).copied())?;
+                eprintln!(
+                    "[readthrough] RUSTLE_READTHROUGH_JUNCTIONS=list:{}: {} listed junction(s) on {} contig(s); alignments \
+                     carrying a listed junction leave the read pool before pass 1 (the NULL arm)",
+                    list.path,
+                    list.len(),
+                    list.junctions.len()
+                );
+            }
+            None => eprintln!(
+                "[readthrough] RUSTLE_READTHROUGH_JUNCTIONS={}: alignments carrying a flagged readthrough junction leave the \
+                 read pool before pass 1 (R: U >= 20*S{})",
+                rule.as_str(),
+                if rule == rustle::vg_family::denovo_assemble::ReadthroughRule::Rq1 { "; Q1: 3*V1 >= 5*S" } else { "" }
+            ),
+        }
+    }
+    let rt_dump_all = rt_rule.is_some()
+        && matches!(std::env::var("RUSTLE_READTHROUGH_JUNCTIONS_ALL"), Ok(v) if v != "0" && !v.is_empty());
     // §6eu: the pipeline reads RUSTLE_PSV_READFILTER; an explicit env value wins, else the flag decides.
     if std::env::var_os("RUSTLE_PSV_READFILTER").is_none() {
         std::env::set_var("RUSTLE_PSV_READFILTER", if args.psv_read_filter { "1" } else { "0" });
@@ -2921,6 +2973,8 @@ fn main() -> Result<()> {
     let mut all_discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy> = Vec::new();
     // `--union-certificate`: every region's union rows + counts, drained in region order (side file + summary).
     let mut union_all = rustle::vg_family::denovo_pipeline::UnionSummary::default();
+    // `RUSTLE_READTHROUGH_JUNCTIONS`: every region's flagged junctions + removals, drained in region order.
+    let mut readthrough_all = rustle::vg_family::denovo_assemble::ReadthroughFlags::default();
     // `--families`: one row per ASSIGNED copy, naming the catalog row it came from. The explicit join
     // between `<out>.quant.tsv` and the O1 `copies.tsv`, and the place a copy that failed to survive
     // assignment would be visible as a missing row.
@@ -3123,8 +3177,11 @@ fn main() -> Result<()> {
                 || rustle::vg_family::denovo_assemble::global_best_as().is_some());
         let mut streamed: Option<Vec<rustle::vg_family::denovo_assemble::Skeleton>> = None;
         let mut n_mapped_streamed = 0usize;
+        // RUSTLE_READTHROUGH_JUNCTIONS: the region's flags and removals (default = off, nothing flagged)
+        let mut readthrough = rustle::vg_family::denovo_assemble::ReadthroughFlags::default();
         if streaming {
             let mut acc = rustle::vg_family::denovo_assemble::Pass1Acc::new(1, None);
+            acc.readthrough = rt_switch.as_ref().map(|s| s.stats());
             let mut fetched: Vec<(String, u64, u64)> = Vec::new();
             for (wchrom, wlo, whi) in &wins {
                 n_mapped_streamed += rustle::vg_family::denovo_assemble::stream_pass1_region(
@@ -3135,10 +3192,22 @@ fn main() -> Result<()> {
                     &mut acc,
                 )
                 .with_context(|| format!("streaming {wchrom}:{wlo}-{whi}"))?;
+                if let Some(rt) = acc.readthrough.as_mut() {
+                    rt.window_done(wchrom, *wlo, *whi);
+                }
                 fetched.push((wchrom.clone(), *wlo, *whi));
+            }
+            // flags from the whole region's primaries, then the flagged chains leave BEFORE pass 1 finishes
+            if let Some(rt) = acc.readthrough.take() {
+                readthrough = rt.flag(&genome, rt_dump_all);
+                let (chains, reads) = acc.drop_chains_with(&readthrough);
+                readthrough.chains_removed = chains;
+                readthrough.alignments_removed = reads;
             }
             streamed = Some(acc.finish(cfg.pass1_min_reads, 0, None));
         }
+        // the buffered paths' statistics, fed from the materialised records below (never on the streaming path)
+        let mut rt_buf = if streaming { None } else { rt_switch.as_ref().map(|s| s.stats()) };
         let (primary, mut bam_reads) = if streaming { (Vec::new(), Vec::new()) } else {
             let mut pr: Vec<_> = Vec::new();
             let mut br: Vec<_> = Vec::new();
@@ -3178,6 +3247,13 @@ fn main() -> Result<()> {
                         pr.push(x);
                     }
                 }
+                if let Some(rt) = rt_buf.as_mut() {
+                    // every primary spliced record of the window, before the pool's own rules (as streaming)
+                    for x in &b {
+                        rt.push_bam_read(x);
+                    }
+                    rt.window_done(wchrom, wlo, whi);
+                }
                 for x in b {
                     br.push(x);
                 }
@@ -3196,6 +3272,17 @@ fn main() -> Result<()> {
             });
             (pr, br)
         };
+        // RUSTLE_READTHROUGH_JUNCTIONS on the buffered path: flag from the region's primaries (gathered above, before
+        // the AS-tied gate trims `bam_reads`), then drop the pool reads carrying a flagged junction BEFORE pass 1 and
+        // `--read-isoform-k`'s junction support. Unset, `primary` passes through untouched.
+        let primary = match rt_buf.take() {
+            Some(rt) => {
+                readthrough = rt.flag(&genome, rt_dump_all);
+                readthrough.filter_pool(primary)
+            }
+            None => primary,
+        };
+        readthrough.report(contig, lo, hi);
         if timing && wins.len() > 1 {
             eprintln!(
                 "[timing] {contig}:{lo}-{hi} gathered from {} copy window(s) ({:.1} Mb across {} \
@@ -3747,7 +3834,7 @@ fn main() -> Result<()> {
         } else {
             Vec::new()
         };
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -3791,7 +3878,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union } = work;
+            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough } = work;
             // O3 Phase 2 (Task 6): fold this region's raw pair stats + orphan loci into the genome-wide
             // vectors. Nothing is written here -- the Bonferroni threshold in `finalize_flags` needs every
             // region's pairs first, so `family_join.tsv`/`missing_copy_loci.tsv` are written once, after
@@ -3800,6 +3887,7 @@ fn main() -> Result<()> {
             o3_all_orphan_loci.extend(o3_orphan_loci);
             all_discovered.extend(discovered);
             union_all.absorb(union);
+            readthrough_all.absorb(readthrough);
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -5726,6 +5814,22 @@ fn main() -> Result<()> {
         );
     }
 
+    // ---- <out>.readthrough_junctions.tsv (RUSTLE_READTHROUGH_JUNCTIONS only) ----------------------
+    // A NEW file, written only when the knob is set, so the unset / `off` outputs stay byte-identical.
+    if let Some(rule) = rt_rule {
+        let path = format!("{}.readthrough_junctions.tsv", args.out);
+        readthrough_all.write_tsv(&path)?;
+        if rt_dump_all {
+            readthrough_all.write_all_tsv(&format!("{}.readthrough_junctions.all.tsv", args.out))?;
+        }
+        eprintln!(
+            "[readthrough] RUSTLE_READTHROUGH_JUNCTIONS={}: {} junction(s) with S>=2, {} canonical R-pass, {} flagged; \
+             {} pool chain(s) / {} pool alignment(s) removed before pass 1 -> {path}",
+            rule.as_str(), readthrough_all.n_junctions, readthrough_all.n_r_pass, readthrough_all.rows.len(),
+            readthrough_all.chains_removed, readthrough_all.alignments_removed
+        );
+    }
+
     // ---- <out>.xfam_conflicts.tsv (report/abstain only) -------------------------------------------
     // The NEW information goes to a NEW file: adding a column to any existing output would break the OFF
     // arm's byte-identity, which is the gate this change is judged on.
@@ -5817,6 +5921,19 @@ fn main() -> Result<()> {
         row("xfam_reconcile", xfam_mode.as_str().to_string())?;
         if args.union_certificate {
             row("union_certificate", "true".to_string())?;
+        }
+        // RUSTLE_READTHROUGH_JUNCTIONS: rows only when set (the unset / `off` params.tsv stays byte-identical)
+        if let Some(rule) = rt_rule {
+            row("readthrough_junctions", rule.as_str().to_string())?;
+            row("readthrough_junctions_flagged", format!("{}", readthrough_all.rows.len()))?;
+            row("readthrough_junctions_chains_removed", format!("{}", readthrough_all.chains_removed))?;
+            row("readthrough_junctions_alignments_removed", format!("{}", readthrough_all.alignments_removed))?;
+            // the list arm only: which list, and how many distinct junctions it holds (flagged = those on the
+            // assembled regions)
+            if let Some(list) = rt_switch.as_ref().and_then(|s| s.list.as_ref()) {
+                row("readthrough_junctions_list", list.path.clone())?;
+                row("readthrough_junctions_listed", format!("{}", list.len()))?;
+            }
         }
         row("posterior_prior", if prior_abundance { "abundance".into() } else { "uniform".to_string() })?;
         row("margin", format!("{}", args.margin))?;
