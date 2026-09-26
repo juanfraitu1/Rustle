@@ -469,3 +469,15 @@ Reading: at the transcript and locus level R is beneficial everywhere measured (
 precision, more genes whose annotated 3′ end is recovered, ≤ 0.8% of matched chains and ≤ 0.6% of loci lost; the
 matched random removal changes fused loci by 1-7%). The family-level clause is unmeasured, so no default flip is
 recommended by this prereg; measuring G5 needs genome-wide families of BASE and R on ≥ 1 human and ≥ 1 ape sample.
+
+### Outcome addendum (2026-09-26 01:46): the family clause G5 on human_testis and chimp_PTR
+
+Genome-wide families (`tools/rustle_pipeline.sh families`, frozen binaries, shard wrapper) of BASE and R:
+- **human_testis vs Ensembl Compara families at Primates (426 families):** bipartite F .2740 → .2751, sensitivity
+  .1599 → .1607, precision .9545 → .9548 (Soto 2025, descriptive: unchanged .2385). Non-inferior (tolerance −.005): pass.
+- **chimp_PTR vs Liftoff (record, extra copy) pairs:** pair recall .1172 → .1172 (equal): pass. Loci found in the Liftoff
+  framework .5464 → .5451 annotated (−0.2%), extra copies equal; one-to-one reciprocal loci 10,156 → 10,192.
+- Families 338 → 337 (human testis), 379 → 378 (chimp); largest family unchanged (no hub).
+**Verdict (unchanged): R = keep opt-in.** The family clause passes where measured, but A1 misses on chimp_PTR
+(−9.5% vs the 10% bar), so "passing everything" cannot be reached; G4 extra copies / G5 remain unmeasured on the other
+four substrates and would not change that. The default flip is the user's call.
