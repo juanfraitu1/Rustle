@@ -55,14 +55,14 @@ inside the subcommands that use them.
 | `score.py adjudicated` | `adjudicated_truth.py score` | Catalogs vs the AK adjudicated two-annotation truth. | `PREREG_core_definition_2026-09-12` Addendum AK |
 | `score.py protein` | `protein_families.py score` | Cross-annotation protein-family scoring by CDS overlap. | Addendum AN; ledger §6ko |
 | `score.py eichler` | `eichler_compare.py` | The Eichler-style AS-margin assignment, compared with ours. | register 935-936; `EICHLER_COMPARISON_2026-09-21` |
-| `score.py reads` | `copy_assign_read_truth.py score` | Copy assignment against per-read truth: OWN / PRIMARY / ANY readings, per divergence bin. | §6zf; `PREREG_o2_read_truth_2026-09-23`; REPRODUCE |
-| `score.py bakeoff-calls` | `copy_assign_tool_bakeoff.py calls` | Per-molecule copy calls derived from a tool's GTF. | §6hz; `PREREG_tool_bakeoff_2026-09-08` |
-| `score.py bakeoff-compare` | `copy_assign_tool_bakeoff.py compare` | Compares the per-tool calls on the hard (AS-tied) vs easy molecules. | PREREG hard_locus_bakeoff (5ca5c7e4) |
+| `score.py reads` | `copy_assign_read_truth.py score` | Copy assignment against per-read truth: OWN / PRIMARY / ANY readings, per divergence bin. Opt-in `--per-read OUT.tsv`: one row per scored read with its verdict under each reading (stdout unchanged). | §6zf; `PREREG_o2_read_truth_2026-09-23`; REPRODUCE |
+| `score.py bakeoff-calls` | `copy_assign_tool_bakeoff.py calls` | Per-molecule copy calls derived from a tool's GTF. Opt-in `--tx-out OUT.tsv`: per in-copy transcript, the molecules whose chain it carries. | §6hz; `PREREG_tool_bakeoff_2026-09-08` |
+| `score.py bakeoff-compare` | `copy_assign_tool_bakeoff.py compare` | Compares the per-tool calls on the hard (AS-tied) vs easy molecules. Opt-in `--tx-support LABEL=TX.tsv` (repeatable): the precision-side section (in-copy transcripts carrying >= 1 molecule / >= 1 hard molecule). | PREREG hard_locus_bakeoff (5ca5c7e4) |
 | `score.py locus-reads` | `locus_reads.py` | The correct read count at a locus: reads with an aligned block inside it, not reads that splice over it. | THESIS_OBJECTIVES rules 12-13 (§6cm) |
 | `sim.py chromosome` | `ideal_chromosome_sim.py` | Ideal-chromosome read simulation (arms `ideal` / `trunc` / `rt`). | `PREREG_ideal_chromosome_sim_2026-09-21`; register 950 |
 | `sim.py missing-copy` | `missing_copy_sim.py` | Missing-copy simulations with truth; modes `transcript` / `genomic` / `shuffled`. | `PREREG_o3_reference_bias_2026-09-23` (r1089), `PREREG_o3_rna_only_2026-09-23`; REPRODUCE positive control |
 | `sim.py tandem` | `tandem_copy_sim.py` | Tandem / interleaved copy simulation; `--pipeline` also runs assembler, catalog and assignment. | §6zg, register 1095; REPRODUCE |
-| `sim.py copies` | `copy_assign_read_truth.py sim` | Read-truth simulation from every copy of a catalog, mapped genome-wide. | §6zf; REPRODUCE |
+| `sim.py copies` | `copy_assign_read_truth.py sim` | Read-truth simulation from every copy of a catalog, mapped genome-wide. `--parts K [--max-parts-per-call M]` maps in K read-disjoint parts (identical records), resumable, so one call stays short. | §6zf; REPRODUCE |
 | `sim.py excise` | `copy_assign_excision.py` | Removes copy X from a family, reruns `copy_assign`, and looks for the missing-copy signature. | PREREG adj/excise |
 | `truth.py nodes` | `annotation_nodes.py` | Gene-level node tables from RefSeq / CAT / Ensembl. | Addenda AI/AJ/AK |
 | `truth.py adjudicated` | `adjudicated_truth.py build` | Builds the AK two-annotation truth. | Addendum AK |

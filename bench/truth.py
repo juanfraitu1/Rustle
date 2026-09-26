@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Truth builders: annotation node tables, the adjudicated two-annotation truth, protein-space families, and the
-protein referee (wave 7, 2026-09-24; old scripts at git tag `notebook-2026-09-24`).
+"""Truth builders: annotation node tables, the adjudicated two-annotation truth, protein-space families, the
+protein-homology families (formerly "the protein referee") and Ensembl Compara paralogues (wave 7, 2026-09-24;
+old scripts at git tag `notebook-2026-09-24`).
 
 Old -> new (every old command keeps its arguments):
   annotation_nodes.py {refseq|cat|ensembl} GFF CONTIGS OUT   -> truth.py nodes {refseq|cat|ensembl} GFF CONTIGS OUT
@@ -10,9 +11,14 @@ Old -> new (every old command keeps its arguments):
                                                                 numpy-era build byte for byte)
   protein_families.py build --nodes N --genome FA ...        -> truth.py protein --nodes N --genome FA ...
   (inline in rna_truth_from_protein.py / soto_vs_us_referee.py)
-                                                             -> truth.py protein-referee --gff G --genome FA --chrom C
+                                                             -> truth.py protein-homology --gff G --genome FA --chrom C
                                                                 --out PREFIX [--threads N]  (writes PREFIX.families.tsv,
-                                                                `Gene Name` / `Family ID`, ids PF<i>)
+                                                                `Gene Name` / `Family ID`, ids PF<i>); `protein-referee`
+                                                                is the deprecated alias (2026-09-25). --chrom ALL = one
+                                                                genome-wide set, sharded resumable blastp, a third
+                                                                column `Contig`
+  (new 2026-09-25)                                           -> truth.py compara --out PREFIX [--release 116]
+                                                                (genome-wide Ensembl Compara paralogues, BioMart)
   adjudicated_truth.py score / protein_families.py score     -> score.py adjudicated / score.py protein
 Library names:
   protein_families.excluded / pair_hsps / edges_from / load_genes -> truth.excluded / pair_hsps / edges_from / load_genes
@@ -21,7 +27,8 @@ Library names:
 
 ⚠ Two protein sets are both called "§6ko" and are NOT the same (audit D13/D14): `truth.py protein` translates the
 annotation_nodes `.cds.tsv` with `lib.translate_phased` and keeps per ORDERED pair the greedy HSP union on the longer
-protein (`edges_from`); the referee (`protein-referee`, `score.py referee|rna-ceiling|edge-gap`) takes the longest
+protein (`edges_from`); the protein-homology families (formerly "the protein referee"; `protein-homology`,
+`score.py referee|rna-ceiling|edge-gap`) take the longest
 CDS per `gene=` symbol, translates with `lib.translate_refseq` and uses `protein_edges` (unordered pairs, HSPs whose
 QUERY is the longer protein, closed intervals). Both are kept as they were.
 
@@ -159,7 +166,8 @@ def write_proteins(fa, chrom, cds, faa):
 
 
 def protein_referee(gff, fa, chrom, out, threads, reuse_faa=False):
-    """The protein REFEREE on one chromosome (§6ko rule, not re-tuned): longest CDS per gene, r2 exclusions
+    """The protein-homology families (formerly "the protein REFEREE"; function name kept) on one chromosome (§6ko
+    rule, not re-tuned): longest CDS per gene, r2 exclusions
     (pseudogenes + V(D)J segments), translated, all-vs-all blastp, `protein_edges`, MCL I = 2.8.
     Returns {'PF<i>': sorted members} for MCL clusters with >= 2 members (i = MCL cluster index).
 
@@ -192,17 +200,406 @@ def protein_referee(gff, fa, chrom, out, threads, reuse_faa=False):
     return truth
 
 
-def cmd_protein_referee(a):
+def protein_edges_stream(paths, plen):
+    """`protein_edges` over an HSP table read ONCE, line by line, from `paths` in order (the concatenated query
+    shards), never holding it in memory. Same edges as `protein_edges` on the concatenated file (checked on every
+    recorded per-contig table): a pair's HSPs whose query is the STRICTLY longer protein all sit in that query's
+    output block, so the pair is decided when the block ends; a pair of EQUAL-length proteins uses the HSPs of both
+    directions (as `protein_edges` does), so its HSPs are kept to the end. A query id that reappears after its block
+    ended is an error (the streamed result would be wrong)."""
+    ed, eq, done = set(), collections.defaultdict(list), set()
+
+    def greedy_cov(rows, longer):
+        taken = []
+        for r in sorted(rows, reverse=True):
+            lo, hi = min(r[1], r[2]), max(r[1], r[2])
+            if all(hi < t0 or lo > t1 for t0, t1 in taken):
+                taken.append((lo, hi))
+        return sum(hi - lo + 1 for lo, hi in taken) / longer
+
+    def flush(q, block):
+        for s, rows in block.items():
+            if greedy_cov(rows, plen[q]) >= 0.30:
+                ed.add(tuple(sorted((q, s))))
+
+    cur, block = None, None
+    for path in paths:
+        for line in open(path):
+            q, s, nid, ln, q0, q1, s0, s1, bits = line.rstrip('\n').split('\t')
+            if q != cur:
+                if cur is not None:
+                    flush(cur, block)
+                    done.add(cur)
+                if q in done:
+                    raise ValueError(f'{path}: query {q} has two separate output blocks; the HSP table cannot be streamed')
+                cur, block = q, collections.defaultdict(list)
+            if q == s:
+                continue
+            lq, ls = plen.get(q, 0), plen.get(s, 0)
+            if lq > ls:
+                block[s].append((float(bits), int(q0), int(q1)))
+            elif lq == ls and lq:
+                eq[tuple(sorted((q, s)))].append((float(bits), int(q0), int(q1), q, s))
+    if cur is not None:
+        flush(cur, block)
+    for (a, b), v in eq.items():
+        if greedy_cov(v, plen[a]) >= 0.30:
+            ed.add((a, b))
+    return ed
+
+
+def protein_homology_ids(keys):
+    """(contig, gene) -> the protein's FASTA / BLAST id: the gene name when no other contig of the run has a protein
+    of that name, else NAME@CONTIG (X/Y pseudoautosomal copies). One contig -> plain names, as the per-chromosome
+    table always had."""
+    n = collections.Counter(g for _, g in keys)
+    return {(c, g): (g if n[g] == 1 else f'{g}@{c}') for c, g in keys}
+
+
+def blastp_version():
+    out = subprocess.run([BLAST + '/blastp', '-version'], capture_output=True, text=True, check=True).stdout
+    return out.splitlines()[0].strip()
+
+
+def blastp_sharded(faa, prefix, threads, shard_size, budget_s=0.0, max_shards=0, t0=None):
+    """All-vs-all blastp of `faa` against ONE database built from the whole `faa` (PREFIX_db), run as contiguous
+    query shards, each written to PREFIX.blastp.shards/<start>-<end>.tsv (0-based query range [start, end) in .faa
+    order; via a .tmp and a rename, so a shard file exists only when complete). Same command as
+    `blastp_all_vs_all`; blastp computes each query's E-values against the fixed database and writes queries in input
+    order, so the shards concatenated in range order are the one-run table (checked with cmp on per-contig runs).
+    Resumable: finished shards are kept, and the next shard starts where the finished ones end, so --shard-size may be
+    changed between calls (e.g. smaller when one dense shard does not fit the budget) without losing work. The cache
+    is keyed by PREFIX.blastp.shards/manifest.json (md5 of the .faa, blastp version, arguments): a different key
+    discards the shards and the database. --budget-s: no shard is started that the slowest shard so far would not
+    finish in time, and a running shard is killed (its .tmp removed) when the budget runs out. Returns (shard paths
+    in order, queries covered by them, queries in total)."""
+    import hashlib
+    import json
+    import shutil
+    import time
+    t0 = time.time() if t0 is None else t0
+    sd = prefix + '.blastp.shards'
+    recs, name = [], None
+    for line in open(faa):
+        if line.startswith('>'):
+            name = line[1:].strip()
+        else:
+            recs.append((name, line.strip()))
+    n = len(recs)
+    cmd = ['-evalue', '1e-5', '-max_target_seqs', '100000', '-num_threads', str(threads), '-outfmt',
+           '6 qseqid sseqid nident length qstart qend sstart send bitscore']
+    key = {'faa_md5': hashlib.md5(open(faa, 'rb').read()).hexdigest(), 'n_proteins': n,
+           'blastp': blastp_version(), 'args': cmd[:4] + cmd[6:]}
+    man = os.path.join(sd, 'manifest.json')
+    old = json.load(open(man)) if os.path.exists(man) else None
+    pdir, pbase = os.path.dirname(os.path.abspath(prefix)), os.path.basename(prefix)
+    if old != key:
+        if old is not None:
+            print(f'[protein-homology] {sd}: cache key changed ({", ".join(k for k in key if old.get(k) != key[k])}); '
+                  f'discarding its shards and the database', file=sys.stderr)
+        shutil.rmtree(sd, ignore_errors=True)
+        for p in os.listdir(pdir):
+            if p.startswith(pbase + '_db.'):
+                os.remove(os.path.join(pdir, p))
+        os.makedirs(sd)
+        subprocess.run([BLAST + '/makeblastdb', '-dbtype', 'prot', '-in', faa, '-out', prefix + '_db'],
+                       stdout=subprocess.DEVNULL, check=True)
+        with open(man + '.tmp', 'w') as fh:
+            json.dump(key, fh, indent=1, sort_keys=True)
+        os.replace(man + '.tmp', man)
+    have = {}
+    for fn in os.listdir(sd):
+        m = re.fullmatch(r'(\d+)-(\d+)\.tsv', fn)
+        if m:
+            have[int(m.group(1))] = (int(m.group(2)), os.path.join(sd, fn))
+    times_path = os.path.join(sd, 'times.tsv')
+    slowest = max((float(l.split('\t')[2]) for l in open(times_path) if not l.startswith('start')), default=0.0) \
+        if os.path.exists(times_path) else 0.0
+    done, start, ran = [], 0, 0
+    while start < n:
+        if start in have:
+            end, path = have[start]
+            done.append(path)
+            start = end
+            continue
+        if max_shards and ran >= max_shards:
+            break
+        end = min(n, start + shard_size)
+        timeout = None
+        if budget_s:
+            elapsed = time.time() - t0
+            if elapsed + slowest > budget_s:
+                print(f'[protein-homology] budget: {elapsed:.0f} s used, slowest shard {slowest:.0f} s, budget '
+                      f'{budget_s:.0f} s -> stopping before queries {start}-{end}', file=sys.stderr)
+                break
+            timeout = budget_s - elapsed
+        out = os.path.join(sd, f'{start:06d}-{end:06d}.tsv')
+        qf = out[:-len('.tsv')] + '.query.faa'
+        with open(qf, 'w') as fh:
+            for nm, sq in recs[start:end]:
+                fh.write(f'>{nm}\n{sq}\n')
+        ts = time.time()
+        try:
+            with open(out + '.tmp', 'w') as fh:
+                subprocess.run([BLAST + '/blastp', '-query', qf, '-db', prefix + '_db'] + cmd, stdout=fh, check=True,
+                               timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.remove(out + '.tmp')
+            print(f'[protein-homology] budget: shard {start}-{end} killed after {time.time() - ts:.0f} s (budget '
+                  f'{budget_s:.0f} s); it restarts on the next call — if one shard alone exceeds the budget, re-run '
+                  f'with a smaller --shard-size (finished shards are kept)', file=sys.stderr)
+            break
+        wall = time.time() - ts
+        os.replace(out + '.tmp', out)
+        os.remove(qf)
+        rows = sum(1 for _ in open(out))
+        new = not os.path.exists(times_path)
+        with open(times_path, 'a') as fh:
+            if new:
+                fh.write('start\tend\twall_s\thsp_rows\tbytes\n')
+            fh.write(f'{start}\t{end}\t{wall:.1f}\t{rows}\t{os.path.getsize(out)}\n')
+        slowest = max(slowest, wall)
+        ran += 1
+        done.append(out)
+        print(f'[protein-homology] queries {start}-{end} of {n}: {wall:.0f} s, {rows} HSP rows', file=sys.stderr,
+              flush=True)
+        start = end
+    return done, start, n
+
+
+def write_if_changed(path, text):
+    """Write `text` to `path` unless the file already holds exactly it (keeps the mtime, so caches stay fresh)."""
+    if os.path.exists(path) and open(path).read() == text:
+        return
+    with open(path + '.tmp', 'w') as fh:
+        fh.write(text)
+    os.replace(path + '.tmp', path)
+
+
+def protein_homology(gff, fa, chroms, out, threads, shard_size, budget_s=0.0, max_shards=0):
+    """Protein-homology families over one contig, a list of contigs, or every contig (chroms 'ALL'), with the
+    sharded, resumable blastp (`blastp_sharded`) and the streamed edge rule (`protein_edges_stream`). Same rule as
+    `protein_referee` (longest CDS per gene, r2 exclusions, >= 10 aa, blastp e <= 1e-5 against the whole set, edge iff
+    greedy non-overlapping HSPs on the longer protein cover >= 0.30 of it, MCL I = 2.8, families >= 2 genes); genes
+    are (contig, symbol), so a symbol on two contigs is two genes. Writes OUT.proteins.faa, OUT.proteins.tsv (id,
+    contig, gene, aa), OUT.edges.tsv and returns {'PF<i>': sorted protein ids}, {id: (contig, gene)} — or None
+    when shards remain (budget or --max-shards)."""
+    import time
+    t0 = time.time()
+    contigs = None if chroms == 'ALL' else set(chroms.split(','))
+    cds, bt, order = lib.longest_cds_all(gff, contigs)
+    cds = {k: v for k, v in cds.items() if not excluded(bt.get(k, ''), 2)}
+    ids = protein_homology_ids(cds)
+    faa_lines, tsv_lines, plen, where = [], ['id\tcontig\tgene\taa\n'], {}, {}
+    for (c, g), (st, segs) in cds.items():
+        p = lib.translate_refseq(fa, c, st, segs)
+        if len(p) >= 10:
+            i = ids[(c, g)]
+            plen[i] = len(p); where[i] = (c, g)
+            faa_lines.append(f'>{i}\n{p}\n'); tsv_lines.append(f'{i}\t{c}\t{g}\t{len(p)}\n')
+    write_if_changed(out + '.proteins.faa', ''.join(faa_lines))
+    write_if_changed(out + '.proteins.tsv', ''.join(tsv_lines))
+    print(f'[protein-homology] {len(order)} contigs, {len(plen)} proteins '
+          f'({sum(1 for i in plen if i != where[i][1])} named NAME@CONTIG), {time.time() - t0:.0f} s',
+          file=sys.stderr, flush=True)
+    paths, covered, n = blastp_sharded(out + '.proteins.faa', out, threads, shard_size, budget_s, max_shards, t0)
+    if covered < n:
+        return None, where, (covered, n)
+    pedges = protein_edges_stream(paths, plen)
+    with open(out + '.edges.tsv.tmp', 'w') as fh:
+        fh.write('a\tb\n')
+        for x, y in sorted(pedges):
+            fh.write(f'{x}\t{y}\n')
+    os.replace(out + '.edges.tsv.tmp', out + '.edges.tsv')
+    fams = lib.mcl({(x, y): 1.0 for x, y in pedges}, inflation=2.8)
+    truth = {}
+    for i, mem in enumerate(fams):
+        m = sorted(set(mem))
+        if len(m) >= 2:
+            truth[f'PF{i}'] = m
+    return truth, where, (n, n)
+
+
+def cmd_protein_homology(a):
+    """Protein-homology families (formerly "the protein referee"): groups of annotated protein-coding genes built from
+    protein sequence alone. Each gene contributes one protein, the translation of its longest annotated CDS (>= 10 aa);
+    pseudogenes and V(D)J recombining segments (IG/TR V, D, J and C) are excluded. Two genes are joined when an
+    all-vs-all BLASTP search (E-value <= 1e-5) finds non-overlapping alignments, chosen greedily by bit score, that
+    together cover >= 30% of the longer protein; no identity threshold. The unweighted graph is partitioned with MCL
+    (inflation 2.8); a family is any cluster of >= 2 genes. No RNA read and no Rustle output is used.
+
+    --chrom C (one contig, no --shard-size): the per-chromosome table, byte for byte the old `protein-referee`
+    (PREFIX.proteins.faa, PREFIX.blastp.tsv cached on existence, PREFIX.families.tsv `Gene Name`, `Family ID`).
+    --chrom ALL (every contig of the GFF) or C1,C2,...: one protein set over those contigs, one BLAST database of the
+    whole set (E-values depend on its size), queries in shards of --shard-size (default 1000) under
+    PREFIX.blastp.shards/ (resumable; --budget-s / --max-shards stop cleanly between or inside shards, exit status
+    75 = shards remain, re-run the same command), HSP table streamed; genes are (contig, symbol) and
+    PREFIX.families.tsv gains a third column `Contig` (old two-column readers still work; `lib.read_families` keys
+    CONTIG:NAME). --shard-size with one contig runs the sharded path on it (two-column output), which is how the
+    shard concatenation was checked against the one-run table."""
     import pysam
+    if a.cmd == 'protein-referee':
+        print('truth.py protein-referee is deprecated: use `truth.py protein-homology` (same arguments)', file=sys.stderr)
     fa = pysam.FastaFile(a.genome)
-    truth = protein_referee(a.gff, fa, a.chrom, a.out, a.threads)
-    with open(a.out + '.families.tsv', 'w') as fh:
-        fh.write('Gene Name\tFamily ID\n')
+    multi = a.chrom == 'ALL' or ',' in a.chrom
+    if not multi and not a.shard_size:
+        truth = protein_referee(a.gff, fa, a.chrom, a.out, a.threads)
+        with open(a.out + '.families.tsv', 'w') as fh:
+            fh.write('Gene Name\tFamily ID\n')
+            for fid, mem in truth.items():
+                for g in mem:
+                    fh.write(f'{g}\t{fid}\n')
+        print(f'{a.chrom}: protein-homology families {len(truth)} over {sum(map(len, truth.values()))} genes '
+              f'-> {a.out}.families.tsv')
+        return
+    truth, where, (done, n) = protein_homology(a.gff, fa, a.chrom, a.out, a.threads, a.shard_size or 1000,
+                                               a.budget_s, a.max_shards)
+    if truth is None:
+        print(f'{a.chrom}: protein-homology INCOMPLETE — blastp done for {done}/{n} query proteins; re-run the same '
+              f'command to continue')
+        sys.exit(75)
+    with open(a.out + '.families.tsv.tmp', 'w') as fh:
+        fh.write('Gene Name\tFamily ID\tContig\n' if multi else 'Gene Name\tFamily ID\n')
         for fid, mem in truth.items():
-            for g in mem:
-                fh.write(f'{g}\t{fid}\n')
-    print(f'{a.chrom}: protein referee {len(truth)} families over {sum(map(len, truth.values()))} genes '
-          f'-> {a.out}.families.tsv')
+            for i in mem:
+                fh.write(f'{where[i][1]}\t{fid}\t{where[i][0]}\n' if multi else f'{where[i][1]}\t{fid}\n')
+    os.replace(a.out + '.families.tsv.tmp', a.out + '.families.tsv')
+    ncontig = len({where[i][0] for m in truth.values() for i in m})
+    cross = sum(1 for m in truth.values() if len({where[i][0] for i in m}) > 1)
+    print(f'{a.chrom}: protein-homology families {len(truth)} over {sum(map(len, truth.values()))} genes on '
+          f'{ncontig} contigs ({cross} families span > 1 contig) -> {a.out}.families.tsv')
+
+
+# ================================================================ Ensembl Compara paralogues (BioMart)
+# Release -> the BioMart host that serves it. www.ensembl.org/biomart now answers 308 -> jun2026.archive (the legacy
+# site, release 116), where only GET works (POST: 405). Checked 2026-09-25: this host's chromosome-16 query below is
+# byte for byte /mnt/linuxdisk/tmp/gw22/spectrum/compara_chr16.tsv (the table of registers 1096-1101, exported
+# 2026-09-24 from useast.ensembl.org), so that table is Ensembl release 116.
+ENSEMBL_BIOMART = {116: 'https://jun2026.archive.ensembl.org'}
+COMPARA_ATTRS = ('external_gene_name', 'hsapiens_paralog_associated_gene_name', 'hsapiens_paralog_perc_id',
+                 'hsapiens_paralog_perc_id_r1', 'hsapiens_paralog_subtype', 'hsapiens_paralog_chromosome')
+HUMAN_CHROMS = tuple([str(i) for i in range(1, 23)] + ['X', 'Y', 'MT'])
+
+
+def biomart_query(chrom):
+    """The paralogue query of the chr16 table: genes on `chrom` that have a human paralogue (filter
+    with_hsapiens_paralog), one row per (gene, paralogue), BioMart-deduplicated (uniqueRows=1), no header; the
+    completion stamp ('[success]' as the last line) proves the answer was not cut short."""
+    attrs = ''.join(f'<Attribute name="{x}"/>' for x in COMPARA_ATTRS)
+    return ('<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE Query><Query virtualSchemaName="default" formatter="TSV" '
+            'header="0" uniqueRows="1" count="" datasetConfigVersion="0.6" completionStamp="1">'
+            '<Dataset name="hsapiens_gene_ensembl" interface="default">'
+            f'<Filter name="chromosome_name" value="{chrom}"/><Filter name="with_hsapiens_paralog" excluded="0"/>'
+            f'{attrs}</Dataset></Query>')
+
+
+def http_get(url, tries=6, timeout=300, wait=20):
+    """GET with retries (the legacy BioMart answers 'Service unavailable' pages intermittently); returns text."""
+    import time
+    import urllib.request
+    last = None
+    for k in range(tries):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as r:
+                return r.read().decode()
+        except Exception as e:   # network errors and HTTP 5xx alike: retry
+            last = e
+        time.sleep(wait * (k + 1))
+    raise RuntimeError(f'GET failed {tries} times: {last}')
+
+
+def biomart_release(host):
+    """The Ensembl release a BioMart host serves, from its registry (database="ensembl_mart_<N>")."""
+    import time
+    for k in range(6):
+        txt = http_get(f'{host}/biomart/martservice?type=registry')
+        m = re.search(r'database="ensembl_mart_(\d+)"', txt)
+        if m:
+            return int(m.group(1))
+        time.sleep(15 * (k + 1))   # an HTML 'Service unavailable' page, not the registry
+    raise RuntimeError(f'{host}: no ensembl_mart_<release> in the BioMart registry (service unavailable?)')
+
+
+def cmd_compara(a):
+    """Genome-wide Ensembl Compara human paralogue pairs from BioMart, one query per chromosome (1-22, X, Y, MT),
+    with the columns of the chr16 table (gene, paralogue, perc_id, perc_id_r1, subtype, paralogue chromosome).
+
+    Each chromosome is cached as PREFIX.parts/<chrom>.tsv (the six columns exactly as BioMart returns them; the
+    chr16 part is byte for byte the recorded chr16 table) with PREFIX.parts/<chrom>.json (release, host, UTC date,
+    rows, md5). A part is fetched only when missing or from another release, so an interrupted run resumes;
+    --budget-s stops between chromosomes (exit status 75 = parts remain). When every part is present, writes
+    PREFIX.tsv: '#' header lines (source, Ensembl release, fetch dates, columns; readers split on tabs and skip them)
+    then the rows of every part in chromosome order with a SEVENTH column, the gene's own chromosome (old readers use
+    the first six; `lib.load_compara` uses the seventh to give one chromosome's table from the genome-wide one)."""
+    import datetime
+    import hashlib
+    import json
+    import time
+    import urllib.parse
+    t0 = time.time()
+    host = (a.host or ENSEMBL_BIOMART.get(a.release, '')).rstrip('/')
+    if not host:
+        sys.exit(f'no BioMart host known for release {a.release}; pass --host (an Ensembl archive site serving it)')
+    rel = biomart_release(host)
+    if rel != a.release:
+        sys.exit(f'{host} serves Ensembl release {rel}, not {a.release}')
+    t0 = time.time()   # the budget counts fetches only (a --budget-s of 1 fetches exactly one chromosome)
+    pd = a.out + '.parts'
+    os.makedirs(pd, exist_ok=True)
+    chroms = a.chroms.split(',') if a.chroms else list(HUMAN_CHROMS)
+    for c in chroms:
+        tsv, meta = f'{pd}/{c}.tsv', f'{pd}/{c}.json'
+        if os.path.exists(tsv) and os.path.exists(meta) and json.load(open(meta)).get('release') == rel:
+            continue
+        if a.budget_s and time.time() - t0 > a.budget_s:
+            print(f'[compara] budget {a.budget_s:.0f} s used; stopping before chromosome {c}', file=sys.stderr)
+            break
+        q = biomart_query(c)
+        for attempt in range(6):
+            ts = time.time()
+            txt = http_get(f'{host}/biomart/martservice?' + urllib.parse.urlencode({'query': q}))
+            if txt.endswith('[success]\n') and '<html' not in txt[:2000].lower():
+                break
+            print(f'[compara] chromosome {c}: incomplete or error answer ({len(txt)} bytes), retrying',
+                  file=sys.stderr, flush=True)
+            time.sleep(20 * (attempt + 1))
+        else:
+            sys.exit(f'[compara] chromosome {c}: no complete answer after 6 attempts')
+        body = txt[:-len('[success]\n')]
+        with open(tsv + '.tmp', 'w') as fh:
+            fh.write(body)
+        now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        with open(meta + '.tmp', 'w') as fh:
+            json.dump({'chromosome': c, 'release': rel, 'host': host, 'date_utc': now, 'rows': body.count('\n'),
+                       'md5': hashlib.md5(body.encode()).hexdigest(), 'seconds': round(time.time() - ts, 1),
+                       'query': q}, fh, indent=1, sort_keys=True)
+        os.replace(tsv + '.tmp', tsv)
+        os.replace(meta + '.tmp', meta)
+        print(f'[compara] chromosome {c}: {body.count(chr(10))} rows in {time.time() - ts:.0f} s', file=sys.stderr,
+              flush=True)
+    missing = [c for c in chroms if not os.path.exists(f'{pd}/{c}.tsv')]
+    if missing:
+        print(f'compara INCOMPLETE: {len(chroms) - len(missing)}/{len(chroms)} chromosomes fetched '
+              f'(missing {",".join(missing)}); re-run the same command to continue')
+        sys.exit(75)
+    metas = [json.load(open(f'{pd}/{c}.json')) for c in chroms]
+    dates = sorted(m['date_utc'] for m in metas)
+    rows = 0
+    with open(a.out + '.tsv.tmp', 'w') as fh:
+        fh.write(f'# Ensembl Compara human paralogues, Ensembl release {rel}, BioMart {host} (dataset '
+                 f'hsapiens_gene_ensembl, filter with_hsapiens_paralog, uniqueRows=1), one query per chromosome '
+                 f'{",".join(chroms)}\n')
+        fh.write(f'# fetched (UTC): {dates[0]} .. {dates[-1]}; written by bench/truth.py compara\n')
+        fh.write('# columns: ' + ' '.join(COMPARA_ATTRS) + ' chromosome_name (the gene\'s own chromosome = the query '
+                 'chromosome)\n')
+        for c, m in zip(chroms, metas):
+            for ln in open(f'{pd}/{c}.tsv'):
+                fh.write(ln.rstrip('\n') + f'\t{c}\n')
+                rows += 1
+    os.replace(a.out + '.tsv.tmp', a.out + '.tsv')
+    for c, m in zip(chroms, metas):
+        print(f'{c}\t{m["rows"]}\t{m["date_utc"]}')
+    print(f'compara: release {rel}, {rows} rows over {len(chroms)} chromosomes -> {a.out}.tsv')
 
 
 def cmd_protein(a):
@@ -721,12 +1118,30 @@ def main(argv=None):
     p.add_argument("--threads", type=int, default=4)
     p.set_defaults(func=cmd_protein)
 
-    p = sub.add_parser("protein-referee", help="the protein referee as a Gene Name / Family ID table (new)",
-                       description=protein_referee.__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    for k in ("--gff", "--genome", "--chrom", "--out"):
+    p = sub.add_parser("protein-homology", aliases=["protein-referee"],
+                       help="protein-homology families (Gene Name / Family ID [/ Contig]); alias protein-referee "
+                       "(deprecated, the old name)",
+                       description=cmd_protein_homology.__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    for k in ("--gff", "--genome", "--out"):
         p.add_argument(k, required=True)
+    p.add_argument("--chrom", required=True, help="one contig, a comma-separated list, or ALL (every GFF contig)")
     p.add_argument("--threads", default="4")
-    p.set_defaults(func=cmd_protein_referee)
+    p.add_argument("--shard-size", type=int, default=0, help="queries per blastp shard (default: 1000 for ALL or a "
+                   "list; one contig without it = the old one-run path)")
+    p.add_argument("--budget-s", type=float, default=0.0, help="wall-clock budget of this call (GFF pass included); "
+                   "exit 75 when shards remain")
+    p.add_argument("--max-shards", type=int, default=0, help="run at most N new shards in this call (a pilot)")
+    p.set_defaults(func=cmd_protein_homology)
+
+    p = sub.add_parser("compara", help="genome-wide Ensembl Compara human paralogues from BioMart (per chromosome, "
+                       "cached)", description=cmd_compara.__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--out", required=True, help="PREFIX: writes PREFIX.tsv and PREFIX.parts/")
+    p.add_argument("--release", type=int, default=116, help="Ensembl release (checked against the host's registry)")
+    p.add_argument("--host", help="BioMart host serving that release (default: the known host of --release)")
+    p.add_argument("--chroms", help="comma-separated chromosomes (default 1-22,X,Y,MT)")
+    p.add_argument("--budget-s", type=float, default=0.0, help="stop between chromosomes after this many seconds "
+                   "(exit 75)")
+    p.set_defaults(func=cmd_compara)
 
     a = ap.parse_args(argv)
     a.func(a)

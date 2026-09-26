@@ -31,6 +31,10 @@ Two things with the same old name are DIFFERENT metrics and keep distinct names 
 Two "§6ko" translations likewise: `translate_refseq` (protein_edge_gap's, ignores CDS phase, truncates at the first
 stop when the protein starts with M) and `translate_phased` (adjudicated_truth's, honours the first segment's phase).
 
+Genome-wide (2026-09-25): `longest_cds_all` (longest_cds + gene_biotypes over many contigs in one pass, genes keyed
+(contig, symbol)), `genome_gene_key` ('CONTIG:NAME'), `read_families` (a families table with an optional third
+`Contig` column), and `load_compara(path, 'ALL' | chrom, cross_chromosome=...)`; every old call is unchanged.
+
 Only the standard library is imported at module top; numpy/scipy are imported inside the functions that use them.
 """
 import collections
@@ -175,6 +179,55 @@ def longest_cds(gff, chrom):
     return {g: (st, segs) for g, (n, st, segs) in best.items()}
 
 
+def longest_cds_all(gff, contigs=None):
+    """`longest_cds` and `gene_biotypes` for many contigs in ONE pass over the GFF (`contigs` None = every contig).
+    Returns ({(contig, gene symbol): (strand, [(start1, end)])}, {(contig, Name=): gene_biotype}, [contigs in file
+    order]). Restricted to one contig it equals longest_cds(gff, c) / gene_biotypes(gff, c) exactly: same regexes,
+    same transcript key (now (contig, Parent)), same tie rule (first transcript with the most CDS bases), same
+    last-record-wins biotype, same dict order. A symbol on two contigs (X/Y pseudoautosomal copies, 49 RefSeq names
+    in CHM13) is two genes."""
+    by_tx = collections.defaultdict(list)
+    tx_gene, tx_strand, bt, order, seen = {}, {}, {}, [], set()
+    for line in open(gff):
+        if line.startswith('#'):
+            continue
+        f = line.rstrip('\n').split('\t')
+        if len(f) < 9 or (contigs is not None and f[0] not in contigs):
+            continue
+        c = f[0]
+        if c not in seen:
+            seen.add(c); order.append(c)
+        if f[2] == 'CDS':
+            p = re.search(r'Parent=([^;]+)', f[8]); g = re.search(r'gene=([^;]+)', f[8])
+            if not p:
+                continue
+            tx = (c, p.group(1))
+            by_tx[tx].append((int(f[3]), int(f[4])))
+            tx_strand[tx] = f[6]
+            if g:
+                tx_gene[tx] = g.group(1)
+        elif f[2] in ('gene', 'pseudogene'):
+            n = re.search(r'Name=([^;]+)', f[8]); b = re.search(r'gene_biotype=([^;]+)', f[8])
+            if n:
+                bt[(c, n.group(1))] = b.group(1) if b else ''
+    best = {}
+    for tx, segs in by_tx.items():
+        g = tx_gene.get(tx)
+        if not g:
+            continue
+        k = (tx[0], g)
+        n = sum(e - s + 1 for s, e in segs)
+        if k not in best or n > best[k][0]:
+            best[k] = (n, tx_strand[tx], sorted(segs))
+    return {k: (st, segs) for k, (n, st, segs) in best.items()}, bt, order
+
+
+def genome_gene_key(contig, name):
+    """The genome-wide gene key of the bench scorers (`--chrom ALL` with a truth that carries a Contig column):
+    'CONTIG:NAME', the form `score.py referee` has always used for multi-chromosome runs."""
+    return f'{contig}:{name}'
+
+
 # ---------------------------------------------------------------- truth tables
 def soto_gene_family(s1c):
     """Soto et al. 2025 S1C (`Gene Name` / `Family ID`, header-based) -> {gene name: family id}.
@@ -199,7 +252,9 @@ def families_on(label_of, on_chrom, min_members):
 
 
 def read_referee(path):
-    """Two-column gene -> family table (`Gene Name`, `Family ID` header), read positionally."""
+    """Two-column gene -> family table (`Gene Name`, `Family ID` header), read positionally. Extra columns (the
+    genome-wide protein-homology table's third column, `Contig`) are ignored: a name on two contigs keeps the LAST
+    row, so read a genome-wide table with `read_families` instead."""
     fam = {}
     for ln in open(path):
         f = ln.rstrip('\n').split('\t')
@@ -209,17 +264,51 @@ def read_referee(path):
     return fam
 
 
-def load_compara(path, chrom):
-    """Ensembl Compara BioMart paralogue table (gene, paralog, perc_id, perc_id_r1, subtype, paralog_chromosome).
-    Returns ({frozenset(symbols): (max perc_id, subtype)} for same-chromosome pairs, {genes with any Compara row})."""
+def read_families(path):
+    """Gene -> family table, genome-wide aware. Returns ({key: family}, has_contig). With a third `Contig` column
+    (`truth.py protein-homology --chrom ALL`) the key is genome_gene_key(contig, name) = 'CONTIG:NAME'; without it
+    (per-chromosome protein-homology tables, Soto-style tables) the key is the name, as `read_referee`."""
+    fam, has_contig = {}, False
+    for ln in open(path):
+        f = ln.rstrip('\n').split('\t')
+        if f[0] == 'Gene Name':
+            has_contig = len(f) >= 3 and f[2] == 'Contig'
+            continue
+        if len(f) < 2:
+            continue
+        fam[genome_gene_key(f[2], f[0]) if has_contig else f[0]] = f[1]
+    return fam, has_contig
+
+
+COMPARA_PRIMARY = frozenset([str(i) for i in range(1, 23)] + ['X', 'Y', 'MT'])
+
+
+def load_compara(path, chrom, cross_chromosome=False):
+    """Ensembl Compara BioMart paralogue table (gene, paralog, perc_id, perc_id_r1, subtype, paralog_chromosome
+    [, gene_chromosome]). Returns ({frozenset(symbols): (max perc_id, subtype)}, {genes with any Compara row}).
+
+    Default (one chromosome, cross_chromosome False): same-chromosome pairs, exactly as before for a six-column table.
+    A seventh column (the gene's own chromosome, written by `truth.py compara`) also restricts the GENE side to
+    `chrom`, so the genome-wide table read for one chromosome gives what that chromosome's own table gives.
+    cross_chromosome=True: pairs whose gene is on `chrom` and whose paralogue is on ANY primary chromosome
+    (1-22, X, Y, MT; scaffold / patch paralogues dropped). chrom='ALL': every gene, every primary-chromosome
+    paralogue (no same-chromosome filter) — the genome-wide truth."""
     chrom_num = chrom.replace('chr', '')
+    everywhere = chrom == 'ALL'
     compara, genes_with_data = {}, set()
     for ln in open(path):
         f = ln.rstrip('\n').split('\t')
         if len(f) < 6 or not f[0] or not f[1]:
             continue
+        if not everywhere and len(f) >= 7 and f[6] != chrom_num:
+            continue   # a genome-wide table: this row's gene is on another chromosome
         genes_with_data.add(f[0])
-        if f[5] != chrom_num or f[0] == f[1]:
+        if f[0] == f[1]:
+            continue
+        if everywhere or cross_chromosome:
+            if f[5] not in COMPARA_PRIMARY:
+                continue
+        elif f[5] != chrom_num:
             continue
         try:
             pid = max(float(f[2] or 0), float(f[3] or 0))

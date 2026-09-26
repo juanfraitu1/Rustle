@@ -55,6 +55,7 @@ import lib  # noqa: E402
 # ================================================================ pairs (referee_band_score + identity_spectrum --catalog)
 BANDS_COMPARA = [(90, 101, '>=90'), (80, 90, '80-90'), (70, 80, '70-80'), (60, 70, '60-70'), (50, 60, '50-60'),
                  (30, 50, '30-50'), (0, 30, '<30')]
+NO_FAMILY = 'no-reference-family'   # a gene of the largest cluster that no truth family lists (was 'not-in-referee')
 BANDS_MRNA = [(0.90, 1.01, '>=90'), (0.80, 0.90, '80-90'), (0.70, 0.80, '70-80'), (0.60, 0.70, '60-70'), (0.0, 0.60, '<60')]
 
 
@@ -86,6 +87,46 @@ def load_gene_spans(path, chrom, fmt):
     return genes
 
 
+def load_gene_spans_all(path, fmt):
+    """`load_gene_spans` on EVERY contig: {contig: {name: (start0, end)}}, the same per-contig rules (a GTF gene is
+    the union of its exon lines on ONE contig, so a name on two contigs is two spans)."""
+    out = collections.defaultdict(dict)
+    if fmt == 'gff':
+        for ln in open(path):
+            f = ln.rstrip('\n').split('\t')
+            if len(f) < 9 or f[2] not in ('gene', 'pseudogene'):
+                continue
+            m = re.search(r'(?:^|;)Name=([^;]+)', f[8])
+            if m:
+                out[f[0]][m.group(1)] = (int(f[3]) - 1, int(f[4]))
+    else:
+        ex = collections.defaultdict(list)
+        for ln in open(path):
+            f = ln.rstrip('\n').split('\t')
+            if len(f) < 9 or f[2] != 'exon':
+                continue
+            g = lib.gtf_attr(f[8], 'gene_name') or (lib.gtf_attr(f[8], 'gene_id') or '').replace('gene-', '', 1)
+            if not g:
+                continue
+            ex[(f[0], g)].append((int(f[3]) - 1, int(f[4])))
+        for (c, g), v in ex.items():
+            out[c][g] = (min(s_ for s_, _ in v), max(e for _, e in v))
+    return out
+
+
+def span_mapper_all(spans_by_contig, key):
+    """gene_of(contig, s, e) for `--chrom ALL`: `span_mapper` on the read's contig, the gene named by key(contig,
+    name) — the name itself for a symbol truth (Compara, a two-column families table), 'CONTIG:NAME' for a
+    genome-wide protein-homology table (lib.genome_gene_key)."""
+    mappers = {c: span_mapper(g) for c, g in spans_by_contig.items()}
+
+    def gene_of(c, s_, e):
+        m = mappers.get(c)
+        g = m(s_, e) if m else None
+        return key(c, g) if g else None
+    return gene_of
+
+
 def span_mapper(genes):
     """gene_of(s, e): the gene with the largest SPAN overlap, first maximum in (start, end, name) order (linear scan,
     verbatim from referee_band_score / identity_spectrum)."""
@@ -109,7 +150,9 @@ def load_members(path, chrom, gene_of):
     """Member file -> (group -> genes, group -> genes of multi-exon members or None, members counted).
     A `cluster_id` header (mcl_families clusters.tsv: start/end in columns 7-8) is read WITHOUT a chromosome filter,
     as referee_band_score did; a `family_id` header (gw_family_catalog copies.tsv: chrom/start/end/n_exon in columns
-    4-7) is restricted to `chrom`, as identity_spectrum --catalog did."""
+    4-7) is restricted to `chrom`, as identity_spectrum --catalog did. chrom 'ALL': every row, and gene_of takes
+    (contig, start, end) (`span_mapper_all`)."""
+    everywhere = chrom == 'ALL'
     groups = collections.defaultdict(set)
     spliced = collections.defaultdict(set)
     fmt, n = None, 0
@@ -123,14 +166,14 @@ def load_members(path, chrom, gene_of):
         if fmt == 'clusters':
             if f[0] == 'cluster_id':
                 continue
-            g = gene_of(int(f[6]), int(f[7]))
+            g = gene_of(f[5], int(f[6]), int(f[7])) if everywhere else gene_of(int(f[6]), int(f[7]))
             if g:
                 groups[f[0]].add(g)
         else:
-            if f[0] == 'family_id' or f[3] != chrom:
+            if f[0] == 'family_id' or (not everywhere and f[3] != chrom):
                 continue
             n += 1
-            g = gene_of(int(f[4]), int(f[5]))
+            g = gene_of(f[3], int(f[4]), int(f[5])) if everywhere else gene_of(int(f[4]), int(f[5]))
             if g:
                 groups[f[0]].add(g)
                 if int(f[6]) >= 2:
@@ -160,6 +203,8 @@ def band_lines(counts, order):
 def cmd_pairs(a):
     low = a.genes.lower()
     fmt = a.genes_format if a.genes_format != 'auto' else ('gtf' if low.endswith(('.gtf', '.gtf.gz')) else 'gff')
+    if a.chrom == 'ALL':
+        return cmd_pairs_all(a, fmt)
     spans = load_gene_spans(a.genes, a.chrom, fmt)
     if not spans:  # a GTF read as GFF (or the wrong --chrom) finds no genes and would silently score 0 pairs
         sys.exit(f'--genes {a.genes}: no {fmt.upper()} genes on {a.chrom}; check --chrom or pass --genes-format')
@@ -174,6 +219,40 @@ def cmd_pairs(a):
     return pairs_catalog(a, gene_of, kind, tpath)
 
 
+def cmd_pairs_all(a, fmt):
+    """`pairs --chrom ALL`: one genome-wide scoring, no same-chromosome filter. Genes are read on every contig; the
+    gene key is the symbol for a Compara or two-column families truth, and 'CONTIG:NAME' for a genome-wide
+    protein-homology table (third column `Contig`), so the --expressed list and the --bands PAF must name genes the
+    same way. Compara pairs across chromosomes are kept (lib.load_compara(.., 'ALL'))."""
+    kind, tpath = a.truth.split(':', 1)
+    if kind not in ('families', 'compara'):
+        sys.exit('--truth must be families:FILE or compara:FILE')
+    has_contig = kind == 'families' and lib.read_families(tpath)[1]
+    key = lib.genome_gene_key if has_contig else (lambda c, g: g)
+    spans = load_gene_spans_all(a.genes, fmt)
+    if not spans:
+        sys.exit(f'--genes {a.genes}: no {fmt.upper()} genes on any contig; check --genes-format')
+    gene_of = span_mapper_all(spans, key)
+    if a.bands.startswith('paf:'):
+        return pairs_referee_bands(a, gene_of, kind, tpath)
+    if a.bands not in ('auto', 'compara') or (a.bands == 'compara' and kind != 'compara'):
+        sys.exit("--bands must be auto, compara (with a compara: truth) or paf:FILE")
+    return pairs_catalog(a, gene_of, kind, tpath)
+
+
+def read_expressed(path):
+    """--expressed: genes in the first column after a header starting with 'Gene'; when that header has a `Contig`
+    (or `contig`) column the gene is 'CONTIG:NAME' (lib.genome_gene_key), the key of a genome-wide table."""
+    out, ci = set(), None
+    for ln in open(path):
+        f = ln.rstrip('\n').split('\t')
+        if ln.startswith('Gene'):
+            ci = next((i for i, x in enumerate(f) if x in ('Contig', 'contig')), None)
+            continue
+        out.add(lib.genome_gene_key(f[ci], f[0]) if ci is not None and len(f) > ci else f[0])
+    return out
+
+
 def pairs_referee_bands(a, gene_of, kind, tpath):
     """referee_band_score.py: pair recall by ANNOTATED-mRNA identity band over the expressed universe, precision
     against the COMPLETE referee (expression is irrelevant to whether two genes are one family). Truth pairs =
@@ -181,8 +260,12 @@ def pairs_referee_bands(a, gene_of, kind, tpath):
     annotated mRNAs (nm/bl of any record); 'none' = no alignment record at all."""
     if kind != 'families' or not a.expressed:
         sys.exit('--bands paf: needs --truth families:FILE and --expressed FILE')
-    fam = lib.read_referee(tpath)
-    expr = set(l.split('\t')[0] for l in open(a.expressed) if not l.startswith('Gene'))
+    if a.chrom == 'ALL':
+        fam = lib.read_families(tpath)[0]
+        expr = read_expressed(a.expressed)
+    else:
+        fam = lib.read_referee(tpath)
+        expr = set(l.split('\t')[0] for l in open(a.expressed) if not l.startswith('Gene'))
     ident = {}
     for ln in open(a.bands[4:]):
         f = ln.split('\t')
@@ -207,7 +290,7 @@ def pairs_referee_bands(a, gene_of, kind, tpath):
         by[b][1] += 1; by[b][0] += (k in pairs)
     jd = {k for k in pairs if all(g in fam for g in k)}; tp = sum(1 for k in jd if len({fam[g] for g in k}) == 1)
     big = max(cg.items(), key=lambda x: len(x[1]))[1]
-    comp = collections.Counter(fam.get(g, 'not-in-referee') for g in sorted(big))
+    comp = collections.Counter(fam.get(g, NO_FAMILY) for g in sorted(big))
     order = ['>=90', '80-90', '70-80', '60-70', '<60', 'none']
     rec = ' · '.join(f"{b} {by[b][0]}/{by[b][1]}" for b in order if b in by)
     print(f"{a.label:16s} largest {largest:3d} genes {dict(comp.most_common(3))} | prec {tp}/{len(jd)}={tp/len(jd) if jd else 0:.3f} | recall by annotated-mRNA identity: {rec}")
@@ -226,7 +309,7 @@ def pairs_catalog(a, gene_of, kind, tpath):
     cat_genes = set().union(*fam_genes.values()) if fam_genes else set()
     largest = max((len(v) for v in fam_genes.values()), default=0)
     if kind == 'families':
-        fam = lib.read_referee(tpath)
+        fam = lib.read_families(tpath)[0] if a.chrom == 'ALL' else lib.read_referee(tpath)
         truth_all = family_pairs(fam)
         judge = set(fam)
         band_of = lambda k: 'all'
@@ -285,52 +368,74 @@ def cmd_spectrum(a):
 
     ⚠ B3: the default nucleotide identity/coverage (--estimator nm_bl --coverage query_over_min) are what rows
     1096-1099 were measured with, NOT the builder's (1-de, shorter-axis coverage; query_over_min exceeds 1 when the
-    query is the longer sequence). `--estimator de --coverage shorter_axis` is the builder's rule — a separate arm."""
+    query is the longer sequence). `--estimator de --coverage shorter_axis` is the builder's rule — a separate arm.
+
+    --chrom ALL (genome-wide): loci on every contig (a locus is (contig, gene_id), named CONTIG:GENE_ID), symbols by
+    exon overlap on the locus's own contig, Compara pairs across chromosomes kept (lib.load_compara(.., 'ALL')).
+    --minimap2 CMD runs CMD in place of minimap2 with the same arguments (e.g. the resumable shard wrapper
+    tools/mm2_shard.sh); --skip-t3 drops the mmseqs tier (its columns print '-' and the T1+T2+T3 rows are not
+    written) — genome-wide T3 is hours and >10 GB of m8."""
     import pysam
+    import shlex
     fa = pysam.FastaFile(a.fasta)
+    everywhere = a.chrom == 'ALL'
 
     # ---- nodes: spliced representative per locus
-    tx = collections.defaultdict(list); reads = {}; gene_of = {}; strand = {}
+    tx = collections.defaultdict(list); reads = {}; gene_of = {}; strand = {}; contig_of = {}
     for ln in open(a.gtf):
         f = ln.rstrip('\n').split('\t')
-        if len(f) < 9 or f[0] != a.chrom:
+        if len(f) < 9 or (not everywhere and f[0] != a.chrom):
             continue
         t = lib.gtf_attr(f[8], 'transcript_id')
+        if everywhere:
+            t = f'{f[0]}:{t}'; contig_of[t] = f[0]
         if f[2] == 'transcript':
             gene_of[t] = lib.gtf_attr(f[8], 'gene_id') or t; strand[t] = f[6]; r = lib.gtf_attr(f[8], 'reads'); reads[t] = int(r) if r else 0
+            if everywhere and not gene_of[t].startswith(f[0] + ':'):
+                gene_of[t] = f'{f[0]}:{gene_of[t]}'   # a locus is (contig, gene_id)
         elif f[2] == 'exon':
             tx[t].append((int(f[3]) - 1, int(f[4])))
     loci = collections.defaultdict(list)
     for t, g in gene_of.items():
         loci[g].append(t)
     node = {}   # locus -> (span, exons, seq)
+    node_contig = {}   # locus -> contig (--chrom ALL)
     with open(a.out + '.nodes.fa', 'w') as fh:
         for g, ts in loci.items():
             ts = [t for t in ts if tx.get(t)]
             if not ts:
                 continue
             rep = max(ts, key=lambda t: (reads.get(t, 0), max(b for _, b in tx[t]) - min(s for s, _ in tx[t])))
-            ex = sorted(tx[rep]); seq = ''.join(fa.fetch(a.chrom, s, e) for s, e in ex).upper()
+            ctg = contig_of[rep] if everywhere else a.chrom
+            ex = sorted(tx[rep]); seq = ''.join(fa.fetch(ctg, s, e) for s, e in ex).upper()
             if strand[rep] == '-':
                 seq = lib.rc(seq)
             if len(seq) < 200:
                 continue
             node[g] = ((ex[0][0], ex[-1][1]), ex, seq); fh.write(f'>{g}\n{seq}\n')
+            if everywhere:
+                node_contig[g] = ctg
     print(f'[spectrum] {len(node)} expressed loci with a representative >= 200 bp', flush=True)
 
     # ---- locus -> gene symbol (RefSeq exon overlap; the symbol is the gene_id with its "gene-" prefix stripped)
     ref_ex = collections.defaultdict(list)
     for ln in open(a.ref):
         f = ln.rstrip('\n').split('\t')
-        if len(f) < 9 or f[0] != a.chrom or f[2] != 'exon':
+        if len(f) < 9 or (not everywhere and f[0] != a.chrom) or f[2] != 'exon':
             continue
         g = lib.gtf_attr(f[8], 'gene_id') or ''
-        ref_ex[g.replace('gene-', '', 1)].append((int(f[3]) - 1, int(f[4])))
-    ref_list = sorted((min(s for s, _ in v), max(e for _, e in v), g, v) for g, v in ref_ex.items())
+        ref_ex[(f[0], g.replace('gene-', '', 1)) if everywhere else g.replace('gene-', '', 1)].append((int(f[3]) - 1, int(f[4])))
+    if everywhere:   # one sorted list per contig; a symbol on two contigs is two genes with one symbol
+        ref_lists = collections.defaultdict(list)
+        for (c, g), v in ref_ex.items():
+            ref_lists[c].append((min(s for s, _ in v), max(e for _, e in v), g, v))
+        ref_lists = {c: sorted(v) for c, v in ref_lists.items()}
+    else:
+        ref_list = sorted((min(s for s, _ in v), max(e for _, e in v), g, v) for g, v in ref_ex.items())
 
-    def symbol_of(exons):
+    def symbol_of(exons, ctg=None):
         lo, hi = exons[0][0], exons[-1][1]; best = None
-        for s, e, g, v in ref_list:
+        for s, e, g, v in (ref_lists.get(ctg, []) if everywhere else ref_list):
             if e <= lo:
                 continue
             if s >= hi:
@@ -339,14 +444,14 @@ def cmd_spectrum(a):
             if o > 0 and (best is None or o > best[0]):
                 best = (o, g)
         return best[1] if best else None
-    sym = {g: symbol_of(v[1]) for g, v in node.items()}
+    sym = {g: symbol_of(v[1], node_contig.get(g)) for g, v in node.items()}
     sym = {g: s for g, s in sym.items() if s}
     by_sym = collections.defaultdict(list)
     for g, s in sym.items():
         by_sym[s].append(g)
     print(f'[spectrum] {len(sym)} loci map to {len(by_sym)} RefSeq symbols', flush=True)
 
-    # ---- truth: Compara pairs on this chromosome
+    # ---- truth: Compara pairs on this chromosome (every primary chromosome with --chrom ALL)
     compara, genes_with_data = lib.load_compara(a.compara, a.chrom)   # frozenset(symbols) -> (max perc_id, subtype)
     expressed = set(by_sym)
     truth = {k: v for k, v in compara.items() if k <= expressed}
@@ -355,9 +460,10 @@ def cmd_spectrum(a):
 
     # ---- tiers
     UNION = {}   # pair -> union-of-records coverage of the shorter sequence (post-hoc variant, addendum 1)
+    mm2 = 'minimap2' if a.minimap2 == 'minimap2' else shlex.quote(a.minimap2)
 
-    def mm2(flags, out):
-        subprocess.run(f"minimap2 {flags} -c -X --no-long-join -N 50 -p 0.1 --secondary=yes -t {a.threads} {a.out}.nodes.fa {a.out}.nodes.fa > {out} 2>/dev/null", shell=True, check=True)
+    def mm2_tier(flags, out):
+        subprocess.run(f"{mm2} {flags} -c -X --no-long-join -N 50 -p 0.1 --secondary=yes -t {a.threads} {a.out}.nodes.fa {a.out}.nodes.fa > {out} 2>/dev/null", shell=True, check=True)
         best = {}; spans = collections.defaultdict(list)
         for l in open(out):
             f = l.split('\t'); q, t = f[0], f[5]
@@ -384,10 +490,11 @@ def cmd_spectrum(a):
             cov += cur[1] - cur[0]
             UNION[(out, k)] = cov / v[0][2]
         return best
-    t1 = mm2('-x asm20', a.out + '.t1.paf'); t2 = mm2('-x asm20 -k11 -w5', a.out + '.t2.paf')
-    subprocess.run(f"{a.mmseqs} easy-search {a.out}.nodes.fa {a.out}.nodes.fa {a.out}.t3.m8 {a.out}.tmp --search-type 2 --threads {a.threads} -e 1e-5 --format-output query,target,pident,qcov,tcov,evalue > /dev/null 2>&1", shell=True, check=True)
+    t1 = mm2_tier('-x asm20', a.out + '.t1.paf'); t2 = mm2_tier('-x asm20 -k11 -w5', a.out + '.t2.paf')
+    if not a.skip_t3:
+        subprocess.run(f"{a.mmseqs} easy-search {a.out}.nodes.fa {a.out}.nodes.fa {a.out}.t3.m8 {a.out}.tmp --search-type 2 --threads {a.threads} -e 1e-5 --format-output query,target,pident,qcov,tcov,evalue > /dev/null 2>&1", shell=True, check=True)
     t3 = {}
-    for l in open(a.out + '.t3.m8'):
+    for l in ([] if a.skip_t3 else open(a.out + '.t3.m8')):
         f = l.split('\t')
         if f[0] == f[1]:
             continue
@@ -405,6 +512,9 @@ def cmd_spectrum(a):
     def tier_hit(sa, sb, tiers):
         return any(edge(b, k, fl) for b, fl in tiers for k in locus_pairs(sa, sb))
     TIERS = {'T1': [(t1, 0.80)], 'T1+T2': [(t1, 0.80), (t2, 0.60)], 'T1+T2+T3': [(t1, 0.80), (t2, 0.60), (t3, 0.30)]}
+    if a.skip_t3:
+        del TIERS['T1+T2+T3']
+    ALLT = list(TIERS)[-1]   # the widest union run: T1+T2+T3, or T1+T2 with --skip-t3
     BANDS = BANDS_COMPARA
 
     def band(p):
@@ -437,14 +547,14 @@ def cmd_spectrum(a):
             if kk not in out or idn > out[kk]:
                 out[kk] = idn
         return out
-    for name, best, floor in (('T1 (nt)', t1, 0.80), ('T2 (nt)', t2, 0.60), ('T3 (protein)', t3, 0.30)):
+    for name, best, floor in (('T1 (nt)', t1, 0.80), ('T2 (nt)', t2, 0.60), ('T3 (protein)', t3, 0.30))[:2 if a.skip_t3 else 3]:
         sp = {k: v for k, v in sym_pairs(best, floor).items() if k <= genes_with_data}
         print(f'-- {name}: {len(sp)} judgeable aligned symbol pairs')
         for lo, hi, n in BANDS:
             ks = [k for k, v in sp.items() if lo <= v * 100 < hi]
             if ks:
                 tp = sum(1 for k in ks if k in compara); print(f"   {n:8s} n={len(ks):5d}  precision {tp/len(ks):.3f}"); rows.append((f'precision {name}', n, len(ks), tp / len(ks)))
-    missed = [(tuple(sorted(k)), v[0]) for k, v in truth.items() if not tier_hit(*sorted(k), TIERS['T1+T2+T3'])]
+    missed = [(tuple(sorted(k)), v[0]) for k, v in truth.items() if not tier_hit(*sorted(k), TIERS[ALLT])]
 
     # diagnosis of every truth pair: the best record each tier has for ANY locus pair of the two symbols (identity,
     # coverage), or none — separates "no seed" (no record) from "coverage clause" (record below 0.50) from "identity floor"
@@ -454,7 +564,7 @@ def cmd_spectrum(a):
     with open(a.out + '.truth_pairs.tsv', 'w') as fh:
         fh.write('geneA\tgeneB\tcompara_pid\tsubtype\trecovered\tT1_idn\tT1_cov\tT2_idn\tT2_cov\tT3_pid\tT3_cov\tlenA\tlenB\n')
         for k, (pid, sub) in sorted(truth.items(), key=lambda x: -x[1][0]):
-            sa, sb = sorted(k); rec = tier_hit(sa, sb, TIERS['T1+T2+T3'])
+            sa, sb = sorted(k); rec = tier_hit(sa, sb, TIERS[ALLT])
             cells = []
             for best in (t1, t2, t3):
                 b = best_any(best, sa, sb); cells += ([f'{b[0]:.3f}', f'{b[1]:.2f}'] if b else ['-', '-'])
@@ -520,19 +630,21 @@ def symbol_root(sym):
 
 
 def heldout_load_genes(gff, chrom):
-    """(start1, end) -> symbol, for gene/pseudogene records on `chrom` carrying a Name."""
+    """(start1, end) -> symbol, for gene/pseudogene records on `chrom` carrying a Name; chrom 'ALL': every contig,
+    keyed (contig, start1, end)."""
     out = {}
+    everywhere = chrom == 'ALL'
     name_re = re.compile(r'Name=([^;]+)')
     with open(gff) as fh:
         for line in fh:
             if line.startswith('#'):
                 continue
             f = line.rstrip('\n').split('\t')
-            if len(f) < 9 or f[0] != chrom or f[2] not in ('gene', 'pseudogene'):
+            if len(f) < 9 or (not everywhere and f[0] != chrom) or f[2] not in ('gene', 'pseudogene'):
                 continue
             m = name_re.search(f[8])
             if m:
-                out[(int(f[3]), int(f[4]))] = m.group(1)
+                out[(f[0], int(f[3]), int(f[4])) if everywhere else (int(f[3]), int(f[4]))] = m.group(1)
     return out
 
 
@@ -548,10 +660,11 @@ def symbol_root_families(genes):
     return {r: sorted(v) for r, v in by_root.items() if len(v) >= 3}
 
 
-def heldout_predicted_clusters(clusters_tsv, genes, exact_only=False):
+def heldout_predicted_clusters(clusters_tsv, genes, exact_only=False, everywhere=False):
     """cluster_id -> [symbols] (members that resolve to a named gene; LOC members are KEPT).
     Default: probe (start+1, end) then (start, end), as the old script did; ⚠ B4 (register 966): mcl_families writes
-    1-based coordinates verbatim, so --exact-only (probe (start, end) only) is the correct lookup for current files."""
+    1-based coordinates verbatim, so --exact-only (probe (start, end) only) is the correct lookup for current files.
+    everywhere (--chrom ALL): the lookup also uses the row's contig (column 6), genes keyed (contig, start1, end)."""
     out = collections.defaultdict(list)
     with open(clusters_tsv) as fh:
         for line in fh:
@@ -561,7 +674,11 @@ def heldout_predicted_clusters(clusters_tsv, genes, exact_only=False):
             if len(p) < 8:
                 continue
             cid, s, e = p[0], int(p[6]), int(p[7])
-            sym = genes.get((s, e)) if exact_only else (genes.get((s + 1, e)) or genes.get((s, e)))
+            if everywhere:
+                c = p[5]
+                sym = genes.get((c, s, e)) if exact_only else (genes.get((c, s + 1, e)) or genes.get((c, s, e)))
+            else:
+                sym = genes.get((s, e)) if exact_only else (genes.get((s + 1, e)) or genes.get((s, e)))
             out[cid].append(sym if sym else f'{p[5]}:{s}-{e}')
     return dict(out)
 
@@ -576,7 +693,10 @@ def cmd_heldout(a):
       sensitivity   = matched / truth members; precision = matched / members of the matched cluster; F = harmonic mean;
                       unmatched truth families score 0 and are KEPT in the pooled mean (lib.bipartite_families).
     --soto: Soto et al. 2025 families (S1C `Family ID`), >= 3 members on the chromosome, matched by `Gene Name`; a gene
-    with more than one distinct Family ID is EXCLUDED (see bench/soto/soto_replication.py, load_truth)."""
+    with more than one distinct Family ID is EXCLUDED (see bench/soto/soto_replication.py, load_truth).
+    --chrom ALL: one genome-wide scoring — genes of every contig, truth families of >= 3 members over the genome
+    (a family may span chromosomes), clusters looked up on their own contig. Members are symbols, so a symbol on two
+    contigs (X/Y) is one member."""
     import json
     import numpy as np
     genes = heldout_load_genes(a.gff, a.chrom)
@@ -584,7 +704,7 @@ def cmd_heldout(a):
         truth = lib.families_on(lib.soto_gene_family(a.soto), set(genes.values()), 3)
     else:
         truth = symbol_root_families(genes)
-    pred = heldout_predicted_clusters(a.clusters, genes, a.exact_only)
+    pred = heldout_predicted_clusters(a.clusters, genes, a.exact_only, a.chrom == 'ALL')
     per = lib.bipartite_families(truth, pred)
     if per is None:
         print(f'{a.chrom}: NO TRUTH FAMILIES (>=3 members) — chromosome not scoreable')
@@ -607,7 +727,8 @@ def cmd_heldout(a):
 
 # ================================================================ referee (soto_vs_us_referee)
 def cmd_referee(a):
-    """Us vs Soto, scored against a NEUTRAL referee.
+    """Us vs Soto, scored against a NEUTRAL third party: the protein-homology families (formerly "the protein
+    referee"; the subcommand keeps its name).
 
     Every number this session has quoted used Soto as the truth, so it measures agreement with Soto, not precision.
     To ask whether Soto is more precise ANYWHERE, both have to be scored against a third party.
@@ -624,13 +745,48 @@ def cmd_referee(a):
     Reports, pooled and stratified by referee-family size: pairwise precision / recall / F for each comparator against
     the referee, where a "pair" is two genes the comparator places together (lib.pair_scores, fixed universe).
 
-    ⚠ B1: the old soto_vs_us_referee.py crashed with NameError (`re`) on its first call since commit 8db314c7."""
+    ⚠ B1: the old soto_vs_us_referee.py crashed with NameError (`re`) on its first call since commit 8db314c7.
+
+    --chroms ALL (genome-wide): --families is the genome-wide protein-homology table (`truth.py protein-homology
+    --chrom ALL`, with its Contig column; a multi-hour build, so it is never built here) and --clusters is ONE
+    genome-wide mcl_families clusters.tsv; genes are CONTIG:NAME over every contig, families may span chromosomes.
+    Printed labels say "protein-homology families" (2026-09-25; they said "referee"), numbers unchanged."""
     import pysam
     import truth as truthlib
-    os.makedirs(a.workdir, exist_ok=True)
     soto = lib.soto_gene_family(a.soto)
-    fa = pysam.FastaFile(a.genome)
     ours, sot, ref = {}, {}, {}
+    if a.chroms == 'ALL':
+        if not a.families:
+            sys.exit('--chroms ALL needs --families (the truth.py protein-homology --chrom ALL table)')
+        ref, has_contig = lib.read_families(a.families)
+        if not has_contig:
+            sys.exit(f'{a.families}: no Contig column; --chroms ALL needs the genome-wide protein-homology table')
+        names = {}   # 'contig:start1-end' -> (contig, Name) over every contig (lib.gene_key_names per contig)
+        for line in open(a.gff):
+            if line.startswith('#'):
+                continue
+            f = line.rstrip('\n').split('\t')
+            if len(f) < 9 or f[2] not in ('gene', 'pseudogene'):
+                continue
+            m = re.search(r'Name=([^;]+)', f[8])
+            if m:
+                names[f'{f[0]}:{f[3]}-{f[4]}'] = (f[0], m.group(1))
+        for line in open(a.clusters):
+            if line.startswith('cluster_id'):
+                continue
+            q = line.rstrip('\n').split('\t')
+            g = names.get(f'{q[5]}:{q[6]}-{q[7]}')
+            if g:
+                ours[lib.genome_gene_key(*g)] = q[0]
+        for c, g in names.values():
+            if g in soto:
+                sot[lib.genome_gene_key(c, g)] = soto[g]
+        report_referee(ours, sot, ref)
+        return
+    if not a.genome:
+        sys.exit('--genome is required for per-chromosome runs (they build the protein-homology families)')
+    os.makedirs(a.workdir, exist_ok=True)
+    fa = pysam.FastaFile(a.genome)
     for chrom in a.chroms.split(','):
         names = lib.gene_key_names(a.gff, chrom)
         fams = truthlib.protein_referee(a.gff, fa, chrom, f'{a.workdir}/{chrom}_ref', a.threads, reuse_faa=True)
@@ -648,16 +804,20 @@ def cmd_referee(a):
         for sp, g in names.items():
             if g in soto:
                 sot[f'{chrom}:{g}'] = soto[g]
+    report_referee(ours, sot, ref)
 
-    print(f"referee: protein families — {len(set(ref.values()))} families over {len(ref)} genes\n")
+
+def report_referee(ours, sot, ref):
+    """The `referee` report: pooled and by family size, ours and Soto against the protein-homology families `ref`."""
+    print(f"protein-homology families: {len(set(ref.values()))} families over {len(ref)} genes\n")
     print(f"  {'comparator':12s} {'precision':>10} {'recall':>8} {'F':>8} {'pairs called':>13} {'TP':>6}")
     for name, lab in (('OURS (MCL)', ours), ('SOTO', sot)):
         p, r, f, np_, nt, tp = lib.pair_scores(lab, ref)
         print(f"  {name:12s} {p:>10.3f} {r:>8.3f} {f:>8.3f} {np_:>13} {tp:>6}")
-    print(f"\n  (referee pairs available: {lib.pair_scores(ours, ref)[4]})")
+    print(f"\n  (same-family pairs available: {lib.pair_scores(ours, ref)[4]})")
 
-    print("\nstratified by REFEREE family size — 'in any part':")
-    print(f"  {'ref fam size':>13} {'genes':>6} {'OURS prec':>10} {'SOTO prec':>10} {'OURS rec':>9} {'SOTO rec':>9}")
+    print("\nstratified by protein-homology family size — 'in any part':")
+    print(f"  {'family size':>13} {'genes':>6} {'OURS prec':>10} {'SOTO prec':>10} {'OURS rec':>9} {'SOTO rec':>9}")
     byr = collections.defaultdict(list)
     for g, f in ref.items():
         byr[f].append(g)
@@ -1022,6 +1182,25 @@ def cmd_protein(a):
 
 # ================================================================ eichler (eichler_compare)
 def cmd_eichler(a):
+    """The alignment-score margin rule (Eichler lab) against Rustle's copy assignment. Three modes:
+
+      --assignments A        the original reader of copy_assign's `as_margin` column (output unchanged; see
+                             _eichler_legacy for why its counts are per ROW and region-local)
+      --sim PREFIX           simulation (known source copies): the rule computed from PREFIX.bam over every
+                             alignment of the read genome-wide, joined with Rustle's per-read answer
+                             (docs/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2, experiment C)
+      --real                 real reads (no truth): the rule from the sample's as_table + the BAM's alignments over
+                             the catalog copies, joined with the union test's result (same amendment, C.3)"""
+    if getattr(a, 'sim', None):
+        return _eichler_sim(a)
+    if getattr(a, 'real', False):
+        return _eichler_real(a)
+    if not a.assignments:
+        raise SystemExit('score.py eichler: give --assignments A, --sim PREFIX or --real')
+    return _eichler_legacy(a)
+
+
+def _eichler_legacy(a):
     """Eichler-style AS-margin assignment, computed alongside ours and compared.
 
     The method the advisor cites: a multi-mapping read is assigned to its best alignment iff no other alignment scores
@@ -1035,10 +1214,21 @@ def cmd_eichler(a):
 
     ⚠ The two rules do not have the same SUBJECT: our AS-tied gate deliberately selects the reads where the aligner is
     indifferent (margin ~ 0), exactly the population Eichler's rule discards by construction. So "agreement" is not the
-    interesting number; the interesting number is what each rule decides on the population the other keeps."""
+    interesting number; the interesting number is what each rule decides on the population the other keeps.
+
+    ⚠ (2026-09-25, Amendment 2 of PREREG_genome_wide_copy_assignment) Two limits of THIS reader, kept for continuity
+    with docs/EICHLER_COMPARISON_2026-09-21.md (stdout unchanged): (1) it counts ROWS of the per-family table, and a
+    read has one row per family its placements touch, so "reads" means rows when reads touch several families (a note
+    goes to stderr when the two differ); (2) `as_margin` is region-local (copy_assign never sees alignments on other
+    contigs or outside its windows, and under --no-as-tied-only it counts supplementary records as rivals). The
+    --sim / --real modes compute the rule over every non-supplementary alignment of the read genome-wide instead."""
     rows = list(csv.DictReader(open(a.assignments), delimiter='\t'))
     if not rows:
         raise SystemExit('no rows')
+    n_names = len({r.get('read_name') for r in rows})
+    if n_names != len(rows):
+        print(f"score.py eichler: NOTE {len(rows)} rows for {n_names} distinct reads; every count below is a count "
+              f"of per-family rows, not of reads", file=sys.stderr)
 
     def num(r, k):
         v = (r.get(k) or '').strip()
@@ -1094,13 +1284,446 @@ def cmd_eichler(a):
         print(f"\n  wrote {a.out}")
 
 
+# ---------------------------------------------------------------- margin rule, genome-wide (Amendment 2, experiment C)
+EICHLER_THRESHOLDS = (1, 10, 20)
+# the six strata of docs/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2 (C.2), in display order
+MR_STRATA = ['both_same', 'both_differ', 'margin_only', 'rustle_aligner', 'rustle_test', 'neither']
+MR_STRATUM_LABEL = {
+    'both_same': 'both assign, same placement',
+    'both_differ': 'both assign, different placement',
+    'margin_only': 'margin rule only',
+    'rustle_aligner': "Rustle only: the aligner's placement (MAPQ > 0)",
+    'rustle_test': 'Rustle only: the copy-assignment test (MAPQ 0)',
+    'neither': 'neither',
+}
+MR_READINGS = {'u': 'union test', 's': 'test scored in the source family*'}
+MR_SIM_HEADER = ['read_name', 'true_family', 'true_copy', 'identity', 'mapq', 'n_aln', 'best_as', 'second_as',
+                 'margin', 'mr_copy', 'mr_verdict', 'primary_copy', 'primary_verdict', 'primary_is_best',
+                 'rs_copy', 'rs_verdict', 'same_s', 'ru_copy', 'ru_verdict', 'same_u']
+MR_REAL_HEADER = ['read_name', 'identity', 'mapq', 'n_aln', 'best_as', 'second_as', 'margin', 'mr_copy',
+                  'primary_copy', 'primary_is_best', 'ru_copy', 'ru_verdict', 'same_u']
+_ASSIGNED = ('correct', 'wrong', 'conflict', 'assigned')
+
+
+class CopyIndex:
+    """The catalog copy a reference span falls on: the copy with the LARGEST RAW OVERLAP (strict >, ties -> the first
+    copy in catalog order), i.e. exactly the rule of the Fig. 5 aligner baseline (figures/_o2.per_read), with a
+    per-contig sorted index instead of a scan of every copy of the contig (quadratic genome-wide)."""
+
+    def __init__(self, cat):
+        by = collections.defaultdict(list)
+        for order, (k, (c, s, e)) in enumerate(cat.items()):
+            by[c].append((s, e, order, k))
+        self.by = {}
+        for c, v in by.items():
+            v.sort()
+            self.by[c] = (v, [x[0] for x in v], max(e - s for s, e, _, _ in v))
+
+    def copy_of(self, chrom, s, e):
+        x = self.by.get(chrom)
+        if x is None:
+            return None
+        v, starts, maxlen = x
+        best, bo, bord = None, 0, None
+        for cs, ce, order, k in v[bisect.bisect_left(starts, s - maxlen):bisect.bisect_left(starts, e)]:
+            o = min(e, ce) - max(s, cs)
+            if o > bo or (o == bo and o > 0 and order < bord):
+                best, bo, bord = k, o, order
+        return best
+
+
+def _mr_catalog(path):
+    """(family_id, copy_idx) -> (chrom, start, end), in catalog order; and -> max_family_identity (NaN if absent)."""
+    cat, ident = {}, {}
+    for r in csv.DictReader(open(path), delimiter='\t'):
+        k = (r['family_id'], r['copy_idx'])
+        cat[k] = (r['chrom'], int(r['start']), int(r['end']))
+        v = r.get('max_family_identity')
+        ident[k] = float(v) if v not in (None, '', 'NA') else float('nan')
+    return cat, ident
+
+
+def _ckey(k):
+    return f'{k[0]}|{k[1]}' if isinstance(k, tuple) else k
+
+
+def _judge_loci(cat, loci, t):
+    """`reads`' judge(): the verdict of a set of assigned loci against the source copy t (same rule, same order)."""
+    if not loci:
+        return 'abstain'
+    ok = [k == t or same_locus(cat.get(k), cat.get(t)) for k in loci]
+    if len(loci) > 1 and not all(ok):
+        return 'conflict' if any(ok) else 'wrong'
+    return 'correct' if all(ok) else 'wrong'
+
+
+def _asg_loci(rows):
+    """The assigned loci of a read's results: status `assigned` and not origin-rejected (`reads`' asg())."""
+    return {(r['family_id'], r['catalog_copy_idx']) for r in rows
+            if r['status'] == 'assigned' and r['origin_rejected'] == '0'}
+
+
+def _same_place(cat, rustle_copy, mr_copy, primary_is_best, source):
+    """Both rules assign the read: the same alignment (a MAPQ > 0 read whose primary is the unique best-AS
+    alignment), or the same catalog copy / locus (score.same_locus). 'outside', 'tie' and 'multi' never match a copy."""
+    if source == 'aligner' and primary_is_best:
+        return True
+    if not isinstance(rustle_copy, tuple) or not isinstance(mr_copy, tuple):
+        return False
+    return rustle_copy == mr_copy or same_locus(cat.get(rustle_copy), cat.get(mr_copy))
+
+
+def mr_assigns(r, T):
+    """MR(T) on a per-read row: mapped, and no rival alignment (margin empty) or best - second >= T."""
+    if r['mapq'] == '':
+        return False
+    return r['margin'] == '' or int(r['margin']) >= T
+
+
+def rustle_source(r):
+    """'aligner' (MAPQ > 0: Rustle leaves the read at the aligner's primary), 'test' (MAPQ 0), 'none' (unmapped)."""
+    if r['mapq'] == '':
+        return 'none'
+    return 'aligner' if int(r['mapq']) > 0 else 'test'
+
+
+def rustle_assigns(r, reading='u'):
+    src = rustle_source(r)
+    if src == 'aligner':
+        return True
+    if src == 'test':
+        return r[f'r{reading}_verdict'] in _ASSIGNED
+    return False
+
+
+def rustle_correct(r, reading='u'):
+    """Simulation rows only: Rustle's placement is the source copy's locus."""
+    src = rustle_source(r)
+    if src == 'aligner':
+        return r['primary_verdict'] == 'correct'
+    return src == 'test' and r[f'r{reading}_verdict'] == 'correct'
+
+
+def mr_stratum(r, T, reading='u'):
+    """The stratum (MR_STRATA) of one per-read row for threshold T and Rustle reading 'u' (union test) or 's'
+    (test scored in the source family, simulation only)."""
+    m, ru = mr_assigns(r, T), rustle_assigns(r, reading)
+    if m and ru:
+        return 'both_same' if r[f'same_{reading}'] == '1' else 'both_differ'
+    if m:
+        return 'margin_only'
+    if ru:
+        return 'rustle_aligner' if rustle_source(r) == 'aligner' else 'rustle_test'
+    return 'neither'
+
+
+def _mr_print(rows, thresholds, readings, truth):
+    n = len(rows)
+    print(f'reads: {n}')
+    for reading in readings:
+        for T in thresholds:
+            groups = collections.defaultdict(list)
+            for r in rows:
+                groups[mr_stratum(r, T, reading)].append(r)
+            c = {s: len(v) for s, v in groups.items()}
+            c = collections.Counter(c)
+            ma = [r for r in rows if mr_assigns(r, T)]
+            ra = [r for r in rows if rustle_assigns(r, reading)]
+            print(f'== T={T} Rustle reading: {MR_READINGS[reading]}')
+            for s in MR_STRATA:
+                sel = groups.get(s, [])
+                extra = ''
+                if truth and sel:
+                    mc = sum(r['mr_verdict'] == 'correct' for r in sel if mr_assigns(r, T))
+                    rc = sum(rustle_correct(r, reading) for r in sel if rustle_assigns(r, reading))
+                    extra = f'  margin-rule correct {mc:>7}  Rustle correct {rc:>7}'
+                m0 = sum(r['margin'] == '0' for r in sel)
+                print(f'  {s:15s} {c[s]:>8} ({100 * c[s] / n if n else 0:5.1f}%)  margin 0: {m0:>7}{extra}')
+            line = f'  margin rule assigns {len(ma)} ({len(ma) / n if n else float("nan"):.3f})'
+            line2 = f'  Rustle assigns      {len(ra)} ({len(ra) / n if n else float("nan"):.3f})'
+            if truth:
+                mc = sum(r['mr_verdict'] == 'correct' for r in ma)
+                rc = sum(rustle_correct(r, reading) for r in ra)
+                line += f', correct {mc} ({mc / len(ma) if ma else float("nan"):.4f})'
+                line2 += f', correct {rc} ({rc / len(ra) if ra else float("nan"):.4f})'
+            both = c['both_same'] + c['both_differ'] + c['margin_only']
+            print(line)
+            print(line2)
+            print(f'  containment: same placement {c["both_same"]} of the {both} reads the margin rule assigns '
+                  f'({c["both_same"] / both if both else float("nan"):.4f})')
+
+
+def _write_rows(path, header, rows):
+    with open(path + '.tmp', 'w') as fh:
+        fh.write('\t'.join(header) + '\n')
+        for r in rows:
+            fh.write('\t'.join(str(r[k]) for k in header) + '\n')
+    os.replace(path + '.tmp', path)
+
+
+def _eichler_sim(a):
+    """Simulation (reads named family|copy|i): MR(T) from every non-supplementary alignment of PREFIX.bam, and
+    Rustle's answer from the same runs as Figs 4 and 5 (MAPQ > 0: the aligner's primary; MAPQ 0: the copy-assignment
+    result, reading u = any assigned result of --union (the union test), reading s = the default run's result for
+    the read's SOURCE family, as `reads` OWN). The MAPQ-0 verdicts use `reads`' own rule (_judge_loci/_asg_loci); the
+    figure layer checks them read by read against `reads --per-read`."""
+    import pysam
+    cat, ident = _mr_catalog(a.catalog)
+    idx = CopyIndex(cat)
+    st = {}   # name -> [best, second, n_best, best_span, n_aln, mapq, prim_span, prim_as]
+    # every record in file order except supplementary ones (`samtools view -F 2048`); pysam never decodes SEQ/QUAL
+    # here, which keeps a genome-wide simulation (~1 M reads) inside one bounded call
+    with pysam.AlignmentFile(a.sim + '.bam') as af:
+        for rec in af.fetch(until_eof=True):
+            if rec.is_supplementary:
+                continue
+            name = rec.query_name
+            x = st.get(name)
+            if x is None:
+                x = st[name] = [None, None, 0, None, 0, None, None, None]
+            if rec.is_unmapped:
+                continue
+            span = (rec.reference_name, rec.reference_start, rec.reference_end)
+            as_ = rec.get_tag('AS') if rec.has_tag('AS') else 0
+            x[4] += 1
+            if x[0] is None or as_ > x[0]:
+                x[1], x[0], x[2], x[3] = x[0], as_, 1, span
+            elif as_ == x[0]:
+                x[1] = as_
+                x[2] += 1
+            elif x[1] is None or as_ > x[1]:
+                x[1] = as_
+            if not rec.is_secondary:
+                x[5], x[6], x[7] = rec.mapping_quality, span, as_
+    zero = {n for n, x in st.items() if x[5] == 0}
+    tables = {}
+    for tag, prefix in (('s', a.default), ('u', a.union[0])):
+        by = collections.defaultdict(list)
+        with open(prefix + '.assignments.tsv') as fh:
+            for r in csv.DictReader(fh, delimiter='\t'):
+                if r['read_name'] in zero:
+                    by[r['read_name']].append(r)
+        tables[tag] = by
+
+    out = []
+    for name, x in st.items():
+        t = tuple(name.split('|')[:2])
+        best, second, n_best, best_span, n_aln, mapq, prim_span, prim_as = x
+        row = {'read_name': name, 'true_family': t[0], 'true_copy': t[1],
+               'identity': f"{ident.get(t, float('nan')):.6f}", 'mapq': '' if mapq is None else mapq,
+               'n_aln': n_aln, 'best_as': '' if best is None else best, 'second_as': '' if second is None else second,
+               'margin': '' if (best is None or second is None) else best - second}
+        if n_aln == 0:
+            mr_copy, prim_copy, pib = '', '', False
+        else:
+            mr_copy = 'tie' if n_best > 1 else (idx.copy_of(*best_span) or 'outside')
+            prim_copy = (idx.copy_of(*prim_span) or 'outside') if prim_span else ''
+            pib = prim_as == best and n_best == 1
+
+        def v(k):
+            if k == '':
+                return 'unmapped'
+            if k in ('outside', 'tie'):
+                return k
+            return 'correct' if (k == t or same_locus(cat.get(k), cat.get(t))) else 'wrong'
+        row.update(mr_copy=_ckey(mr_copy), mr_verdict=v(mr_copy), primary_copy=_ckey(prim_copy),
+                   primary_verdict=v(prim_copy), primary_is_best=int(pib))
+        for tag in ('s', 'u'):
+            if mapq != 0:
+                row[f'r{tag}_copy'], row[f'r{tag}_verdict'] = '', 'na'
+                rc, src = prim_copy, 'aligner'
+            else:
+                rows = tables[tag].get(name, [])
+                sel = [r for r in rows if r['family_id'] == t[0]] if tag == 's' else rows
+                loci = _asg_loci(sel)
+                verdict = ('lost' if not rows else 'no_own_row' if not sel else _judge_loci(cat, loci, t))
+                rc = next(iter(loci)) if len(loci) == 1 else ('multi' if loci else '')
+                row[f'r{tag}_copy'], row[f'r{tag}_verdict'] = _ckey(rc), verdict
+                src = 'test'
+            row[f'same_{tag}'] = int(n_aln > 0 and _same_place(cat, rc, mr_copy, pib, src))
+        out.append({k: str(v) for k, v in row.items()})   # one string copy per read (genome-wide: ~1 M reads)
+    del st, tables
+    if a.per_read:
+        _write_rows(a.per_read, MR_SIM_HEADER, out)
+        print(f'score.py eichler: wrote {len(out)} simulated reads to {a.per_read}', file=sys.stderr)
+    _mr_print(out, [int(x) for x in a.thresholds.split(',')], ('u', 's'), truth=True)
+
+
+def _eichler_real(a):
+    """Real reads (no truth): the reads whose primary alignment overlaps a catalog copy. MR(T) from the sample's
+    as_table (genome-wide best / second AS, n_records) plus the BAM's alignments over the copies (where the best one
+    lies); Rustle = MAPQ > 0: the primary's copy; MAPQ 0: the union test's result (--union prefixes, one per shard).
+    The pass over the BAM is cached per contig under --cache (one TSV per contig); with --budget-s it stops with exit
+    status 75 while contigs remain (re-run the same command)."""
+    import time
+    import pysam
+    t0 = time.time()
+    cat, ident = _mr_catalog(a.catalog)
+    idx = CopyIndex(cat)
+    spans = collections.defaultdict(list)
+    for c, s, e in cat.values():
+        spans[c].append((s, e))
+    merged = {}
+    for c, v in spans.items():
+        m = []
+        for s, e in sorted(v):
+            if m and s <= m[-1][1]:
+                m[-1][1] = max(m[-1][1], e)
+            else:
+                m.append([s, e])
+        merged[c] = m
+    cache = a.cache
+    os.makedirs(cache, exist_ok=True)
+    key = f'{os.path.abspath(a.bam)}\t{os.path.getsize(a.bam)}\t{int(os.path.getmtime(a.bam))}\t' \
+          f'{os.path.abspath(a.catalog)}\t{os.path.getsize(a.catalog)}\t{int(os.path.getmtime(a.catalog))}\n'
+    kp = os.path.join(cache, 'key')
+    if not os.path.exists(kp) or open(kp).read() != key:
+        for fn in os.listdir(cache):
+            if fn.endswith('.tsv'):
+                os.remove(os.path.join(cache, fn))
+        open(kp, 'w').write(key)
+    todo = [c for c in sorted(merged) if not os.path.exists(os.path.join(cache, f'{c}.tsv'))]
+    if todo:
+        with pysam.AlignmentFile(a.bam) as af:
+            for c in todo:
+                # at least one contig per call, so a call can never make no progress
+                if a.budget_s and c != todo[0] and time.time() - t0 > a.budget_s:
+                    print(f'score.py eichler --real: {len(todo) - todo.index(c)} contig pieces remain in {cache}; '
+                          f're-run the same command', file=sys.stderr)
+                    sys.exit(75)
+                per, seen = {}, set()
+                for lo, hi in merged[c]:
+                    for r in af.fetch(c, lo, hi):
+                        if r.is_unmapped or r.is_supplementary:
+                            continue
+                        rk = (r.query_name, r.is_secondary, r.reference_start, r.cigarstring)
+                        if rk in seen:
+                            continue
+                        seen.add(rk)
+                        k = idx.copy_of(c, r.reference_start, r.reference_end)
+                        if k is None:
+                            continue
+                        as_ = r.get_tag('AS') if r.has_tag('AS') else 0
+                        x = per.get(r.query_name)
+                        if x is None:
+                            x = per[r.query_name] = [as_, 0, k, '', '', '']
+                        if as_ > x[0]:
+                            x[0], x[1], x[2] = as_, 1, k
+                        elif as_ == x[0]:
+                            x[1] += 1
+                        if not r.is_secondary:
+                            x[3], x[4], x[5] = r.mapping_quality, k, as_
+                with open(os.path.join(cache, f'{c}.tsv.tmp'), 'w') as fh:
+                    for n, x in per.items():
+                        fh.write(f'{n}\t{x[0]}\t{x[1]}\t{_ckey(x[2])}\t{x[3]}\t{_ckey(x[4])}\t{x[5]}\n')
+                os.replace(os.path.join(cache, f'{c}.tsv.tmp'), os.path.join(cache, f'{c}.tsv'))
+    # merge the contig pieces: the best in-copy alignment over every contig, the primary from its contig
+    rd = {}
+    for c in sorted(merged):
+        with open(os.path.join(cache, f'{c}.tsv')) as fh:
+            for ln in fh:
+                n, mx, nm, mk, mq, pk, pa = ln.rstrip('\n').split('\t')
+                mx, nm = int(mx), int(nm)
+                x = rd.get(n)
+                if x is None:
+                    rd[n] = [mx, nm, mk, mq, pk, pa]
+                    continue
+                if mx > x[0]:
+                    x[0], x[1], x[2] = mx, nm, mk
+                elif mx == x[0]:
+                    x[1] += nm
+                if mq != '':
+                    x[3], x[4], x[5] = mq, pk, pa
+    universe = {n for n, x in rd.items() if x[3] != ''}
+    # genome-wide best / second AS from as_table (every non-supplementary alignment; -1 = none)
+    gw = {}
+    with open(a.as_table) as fh:
+        first = fh.readline()
+        if first.startswith('#as_table'):
+            bam_in = dict(t.split('=', 1) for t in first[1:].split('\t')[1:] if '=' in t).get('bam', '').strip()
+            if bam_in and os.path.realpath(bam_in) != os.path.realpath(a.bam):
+                raise SystemExit(f'score.py eichler --real: {a.as_table} was built from {bam_in}, not {a.bam}')
+        else:
+            fh.seek(0)
+        for ln in fh:
+            n, rest = ln.split('\t', 1)
+            if n in universe:
+                f = rest.split('\t')
+                gw[n] = (int(f[0]), int(f[1]), int(f[2]))
+    missing = universe - set(gw)
+    if missing:
+        raise SystemExit(f'score.py eichler --real: {len(missing)} reads absent from {a.as_table} '
+                         f'(e.g. {sorted(missing)[:3]}); the as_table and the BAM disagree')
+    by = collections.defaultdict(list)
+    zero = {n for n in universe if rd[n][3] == '0'}
+    for prefix in a.union:
+        with open(prefix + '.assignments.tsv') as fh:
+            for r in csv.DictReader(fh, delimiter='\t'):
+                if r['read_name'] in zero:
+                    by[r['read_name']].append(r)
+
+    def key_of(s):
+        return tuple(s.split('|', 1)) if '|' in s else s
+    out = []
+    for n in sorted(universe):
+        mx, nm, mk, mq, pk, pa = rd[n]
+        best, second, n_rec = gw[n]
+        if mx > best:
+            raise SystemExit(f'score.py eichler --real: {n}: an alignment over a copy scores {mx} > the as_table best '
+                             f'{best}; the as_table and the BAM disagree')
+        margin = '' if n_rec <= 1 else best - second
+        mk, pk = key_of(mk), key_of(pk)
+        mr_copy = ('tie' if nm > 1 else mk) if mx == best else 'outside'
+        pib = int(pa) == best and nm == 1 and mx == best and (n_rec <= 1 or second < best)
+        row = {'read_name': n, 'identity': f"{ident.get(pk, float('nan')):.6f}", 'mapq': mq, 'n_aln': n_rec,
+               'best_as': best, 'second_as': second if n_rec > 1 else '', 'margin': margin,
+               'mr_copy': _ckey(mr_copy), 'primary_copy': _ckey(pk), 'primary_is_best': int(pib)}
+        if mq != '0':
+            row['ru_copy'], row['ru_verdict'] = '', 'na'
+            rc, src = pk, 'aligner'
+        else:
+            rows = by.get(n, [])
+            loci = _asg_loci(rows)
+            rc = next(iter(loci)) if len(loci) == 1 else ('multi' if loci else '')
+            row['ru_copy'] = _ckey(rc)
+            row['ru_verdict'] = 'lost' if not rows else ('assigned' if loci else 'abstain')
+            src = 'test'
+        row['same_u'] = int(_same_place(cat, rc, mr_copy, pib, src))
+        out.append({k: str(v) for k, v in row.items()})
+    if a.per_read:
+        _write_rows(a.per_read, MR_REAL_HEADER, out)
+        print(f'score.py eichler: wrote {len(out)} reads to {a.per_read}', file=sys.stderr)
+    _mr_print(out, [int(x) for x in a.thresholds.split(',')], ('u',), truth=False)
+
+
 # ================================================================ reads (copy_assign_read_truth score)
+def same_locus(x, y):
+    """The locus rule of `reads`: two catalog spans (chrom, start, end) are ONE locus when they share a chromosome and
+    overlap by >= 50% of the shorter span, so a call to a copy admitted twice at the same place is not a wrong call.
+    Module level so the figure layer (figures/_o2.py) applies the same rule to the aligner baseline."""
+    if x is None or y is None or x[0] != y[0]:
+        return False
+    o = min(x[2], y[2]) - max(x[1], y[1]); return o >= 0.5 * min(x[2] - x[1], y[2] - y[1])
+
+
+PER_READ_HEADER = ['read_name', 'true_family', 'true_copy', 'divergence_bin', 'n_rows', 'n_assigned_rows',
+                   'own_status', 'own_n_decisive', 'OWN', 'PRIMARY', 'ANY', 'wrong_locus_rows',
+                   'wrong_locus_rows_other_family']
+
+
 def cmd_reads(a):
     """Per-read scoring of `copy_assign --families` output against simulated read truth (`sim.py copies`, read names
     `family|copy|i`): per MAPQ-0 primary read, correct / wrong / conflict / abstain / lost under three readings of the
     per-family table (OWN = the read's true family's row, PRIMARY = rows with primary_local=1, ANY = any assigned row),
     by divergence bin of the source copy (1 - max_family_identity from the catalog).
-    docs/PREREG_o2_read_truth_2026-09-23.md."""
+    docs/PREREG_o2_read_truth_2026-09-23.md.
+
+    --per-read OUT.tsv also writes one row per scored (MAPQ-0) read, in BAM order: its truth, how many rows the table
+    gives it (and how many are assigned, not origin-rejected), the status(es) of its true family's row(s) (sorted,
+    comma-joined) and their largest n_decisive (`no_row` / empty when it has none), its verdict under OWN / PRIMARY /
+    ANY exactly as tallied above (`lost` = no row at all; `no_own_row` / `no_primary_row` = no row of that kind), and
+    how many assigned rows name a locus other than the source copy's (all families / other families only). stdout is
+    unchanged by it."""
     P, O = a.prefix, a.o2prefix
     CAT = a.catalog or os.environ.get('CATALOG_TSV')
     if not CAT:
@@ -1115,11 +1738,6 @@ def cmd_reads(a):
         if d is None:
             return 'NA'
         return '<0.5%' if d < 0.005 else '0.5-1%' if d < 0.01 else '1-2%' if d < 0.02 else '2-5%' if d < 0.05 else '>=5%'
-
-    def same_locus(x, y):
-        if x is None or y is None or x[0] != y[0]:
-            return False
-        o = min(x[2], y[2]) - max(x[1], y[1]); return o >= 0.5 * min(x[2] - x[1], y[2] - y[1])
     prim = {}
     for ln in lib.sam_lines(['-F', '2308', P + '.bam']):   # streamed (was one captured whole-BAM string)
         f = ln.split('\t'); prim[f[0]] = int(f[4])
@@ -1140,6 +1758,7 @@ def cmd_reads(a):
         return 'correct' if all(ok) else 'wrong'
     S = {v: collections.defaultdict(collections.Counter) for v in ('OWN', 'PRIMARY', 'ANY')}
     n_mapq0 = 0; own_status = collections.Counter(); nprim = collections.Counter()
+    per_read = [] if a.per_read else None
     for name, mq in prim.items():
         if mq != 0:
             continue
@@ -1155,6 +1774,20 @@ def cmd_reads(a):
         for view, o in (('OWN', o_own), ('PRIMARY', o_pr), ('ANY', o_any)):
             for key in ('ALL', b):
                 S[view][key][o] += 1
+        if per_read is not None:
+            asg_all = asg(rows)
+            off = [r for r in asg_all if not ((r['family_id'], r['catalog_copy_idx']) == t
+                                              or same_locus(cat.get((r['family_id'], r['catalog_copy_idx'])), cat.get(t)))]
+            per_read.append((name, t[0], t[1], b, len(rows), len(asg_all),
+                             ','.join(sorted(r['status'] for r in own)) or 'no_row',
+                             max(int(r['n_decisive']) for r in own) if own else '', o_own, o_pr, o_any, len(off),
+                             sum(1 for r in off if r['family_id'] != t[0])))
+    if per_read is not None:
+        with open(a.per_read, 'w') as fh:
+            fh.write('\t'.join(PER_READ_HEADER) + '\n')
+            for row in per_read:
+                fh.write('\t'.join(map(str, row)) + '\n')
+        print(f'score.py reads: wrote {len(per_read)} scored reads to {a.per_read}', file=sys.stderr)
     print(f'MAPQ-0 reads {n_mapq0}; own-family row status combos: {own_status.most_common(6)}; primary_local rows per read: {dict(nprim)}')
     order = ['ALL', '<0.5%', '0.5-1%', '1-2%', '2-5%', '>=5%', 'NA']
     for view in ('OWN', 'PRIMARY', 'ANY'):
@@ -1237,6 +1870,14 @@ def cmd_bakeoff_calls(a):
     tx_multi = []
     copies_hit = set()
     fuzzy_chains = {}
+    # --tx-out only (every structure below stays empty without it, so the default output is untouched): per in-copy
+    # transcript, the molecules whose chain it carries, by the SAME exact / fuzzy / span-containment rule as `cps`
+    tx_out = a.tx_out
+    tx_rows = {}                                  # transcript -> (chrom, start, end, copy, n_introns)
+    chain_to_tx = collections.defaultdict(list)   # exact key -> transcripts
+    fuzzy_tx = {}                                 # rounded key -> [(chain, transcript)]
+    unspliced_tx = []                             # (chrom, start, end, transcript)
+    tx_support = collections.defaultdict(list)    # transcript -> molecules
     for t, v in ex.items():
         v.sort()
         chrom = v[0][2]
@@ -1261,8 +1902,17 @@ def cmd_bakeoff_calls(a):
             chain_to_copies[key].add(ci)
             if FUZZ:
                 fuzzy_chains.setdefault(key, []).append((chain, ci))
+            if tx_out:
+                if FUZZ:
+                    fuzzy_tx.setdefault(key, []).append((chain, t))
+                else:
+                    chain_to_tx[key].append(t)
         else:
             unspliced.append((chrom, s, e, ci))
+            if tx_out:
+                unspliced_tx.append((chrom, s, e, t))
+        if tx_out:
+            tx_rows[t] = (chrom, s, e, ci, len(chain))
 
     # ---------------------------------------------------------------- molecules
     regions = []
@@ -1323,6 +1973,23 @@ def cmd_bakeoff_calls(a):
                 st = 'derived_multi'
             state[st] += 1
             mol_call[name] = (st, sorted(cps))
+            if tx_out:
+                if not ich:
+                    txs = {t for tc, ts, te, t in unspliced_tx if tc == c and ts <= pos and end <= te}
+                elif not FUZZ:
+                    txs = set(chain_to_tx.get((c,) + ich, ()))
+                else:
+                    txs = set()
+                    base = 2 * FUZZ + 1
+                    for d1 in (0, -1, 1):
+                        for d2 in (0, -1, 1):
+                            k = (c,) + tuple(((x // base) + d1, (y // base) + d2) for x, y in ich)
+                            for cand, t in fuzzy_tx.get(k, ()):
+                                if len(cand) == len(ich) and all(abs(x[0] - y[0]) <= FUZZ and abs(x[1] - y[1]) <= FUZZ
+                                                                 for x, y in zip(cand, ich)):
+                                    txs.add(t)
+                for t in txs:
+                    tx_support[t].append(name)
 
     tot = sum(state.values())
     print(f'== {label}')
@@ -1378,6 +2045,14 @@ def cmd_bakeoff_calls(a):
             for n, (st, cps) in sorted(mol_call.items()):
                 fh.write(f'{n}\t{st}\t{",".join(map(str, cps))}\n')
         print(f'   wrote {out_p}.calls.tsv')
+    if tx_out:
+        with open(tx_out, 'w') as fh:
+            fh.write('transcript_id\tchrom\tstart\tend\tcopy\tn_introns\tn_molecules\tmolecules\n')
+            for t in sorted(tx_rows):
+                chrom, s, e, ci, ni = tx_rows[t]
+                ms = sorted(tx_support.get(t, ()))
+                fh.write(f'{t}\t{chrom}\t{s}\t{e}\t{ci}\t{ni}\t{len(ms)}\t{",".join(ms)}\n')
+        print(f'bakeoff-calls: wrote {len(tx_rows)} in-copy transcripts to {tx_out}', file=sys.stderr)
 
 
 def load_calls(p):
@@ -1471,6 +2146,20 @@ def cmd_bakeoff_compare(a):
         one = [m for m in asg if c.get(m, ("derived_none", []))[0] == "derived_one"]
         agree = sum(1 for m in one if str(c[m][1][0]) == assign[m]["catalog_copy_idx"])
         print(f"   {l:10s} carried {sum(1 for m in asg if carried(c, m)):3d}/{len(asg)}; derived_one {len(one):3d}, of which derived copy == O2 copy: {agree} ({100*agree/max(1,len(one)):.0f}%)")
+    # precision-side counterpart (--tx-support label=bakeoff-calls --tx-out file): how much of each tool's in-copy
+    # output carries the chain of at least one molecule of the scored universe, and of the hard set
+    if a.tx_support:
+        print("\ntranscript support: in-copy transcripts carrying the exact chain of >= 1 molecule (any / hard)")
+        for spec in a.tx_support:
+            l, p_ = spec.split("=", 1)
+            n = k_any = k_hard = 0
+            with open(p_) as fh:
+                for r in csv.DictReader(fh, delimiter="\t"):
+                    ms = set(x for x in r["molecules"].split(",") if x)
+                    n += 1
+                    k_any += bool(ms & allm)
+                    k_hard += bool(ms & hard)
+            print(f"   {l:10s} in-copy {n:6d}  any {k_any:6d} ({k_any/max(1,n):.3f})  hard {k_hard:6d} ({k_hard/max(1,n):.3f})")
 
 
 # ================================================================ locus-reads (locus_reads.py CLI)
@@ -1500,19 +2189,23 @@ def main(argv=None):
     sub = ap.add_subparsers(dest='cmd', required=True)
 
     p = _sub(sub, 'pairs', cmd_pairs, 'pair-level family scoring (was referee_band_score.py + identity_spectrum.py --catalog)')
-    p.description = (pairs_referee_bands.__doc__ + '\n\n' + pairs_catalog.__doc__ + '\n\nThe report is the referee-band '
-                     'one when --bands paf:FILE is given, the catalog one otherwise.')
+    p.description = (pairs_referee_bands.__doc__ + '\n\n' + pairs_catalog.__doc__ + '\n\n' + cmd_pairs_all.__doc__ +
+                     '\n\nThe report is the mRNA-band one (formerly "referee-band"; truth = e.g. the protein-homology '
+                     'families) when --bands paf:FILE is given, the catalog one otherwise.')
     p.add_argument('--members', required=True, help='mcl_families clusters.tsv or gw_family_catalog copies.tsv')
     p.add_argument('--genes', required=True, help='gene spans: a GFF (gene/pseudogene Name=) or a GTF (exon lines)')
     p.add_argument('--genes-format', choices=('auto', 'gff', 'gtf'), default='auto', help='auto: .gtf/.gtf.gz suffix (any case) -> gtf, else gff; zero genes found is an error')
-    p.add_argument('--chrom', required=True)
-    p.add_argument('--truth', required=True, help='families:FILE (Gene Name, Family ID) or compara:FILE (BioMart paralogues)')
+    p.add_argument('--chrom', required=True, help='a contig, or ALL: genome-wide, no same-chromosome filter; genes are '
+                   'symbols (Compara, two-column tables) or CONTIG:NAME (a genome-wide protein-homology table with a '
+                   'Contig column; --expressed and the --bands PAF must use the same names)')
+    p.add_argument('--truth', required=True, help='families:FILE (Gene Name, Family ID [, Contig]) or compara:FILE (BioMart paralogues)')
     p.add_argument('--bands', default='auto', help="auto (Compara bands, or 'all' for a families truth) | compara | paf:FILE "
-                   "(annotated-mRNA identity bands; the referee-band report)")
-    p.add_argument('--expressed', help='referee-band report: expressed genes (first column, header starting "Gene")')
+                   "(annotated-mRNA identity bands; the mRNA-band report, formerly referee-band)")
+    p.add_argument('--expressed', help='mRNA-band report: expressed genes (first column, header starting "Gene"; with '
+                   '--chrom ALL and a Contig-keyed truth, CONTIG:NAME or a header column Contig)')
     p.add_argument('--universe', help='catalog report: a .truth_pairs.tsv (geneA, geneB); recall is ALSO reported over '
                    'its pairs, a denominator the catalog cannot move')
-    p.add_argument('--label', default='', help='row label of the referee-band report')
+    p.add_argument('--label', default='', help='row label of the mRNA-band report')
 
     p = _sub(sub, 'spectrum', cmd_spectrum, 'edge tiers vs Compara, band by band (was identity_spectrum.py tier mode)')
     for k in ('--gtf', '--ref', '--fasta', '--chrom', '--compara', '--out'):
@@ -1521,17 +2214,27 @@ def main(argv=None):
     p.add_argument('--estimator', choices=('nm_bl', 'de'), default='nm_bl', help='nucleotide identity (default: the old nm/bl)')
     p.add_argument('--coverage', choices=('query_over_min', 'shorter_axis'), default='query_over_min',
                    help='nucleotide coverage (default: the old query span / min length, the M1 defect)')
+    p.add_argument('--minimap2', default='minimap2', help='command run in place of minimap2, same arguments (e.g. the '
+                   'resumable shard wrapper tools/mm2_shard.sh); default minimap2')
+    p.add_argument('--skip-t3', action='store_true', help='drop the mmseqs protein tier (genome-wide: hours, >10 GB '
+                   'of m8); T3 cells print "-" and the T1+T2+T3 rows are not written')
 
     p = _sub(sub, 'heldout', cmd_heldout, 'mcl_families clusters vs symbol-root or Soto truth (was heldout_family_score.py)')
-    p.add_argument('--gff', required=True); p.add_argument('--clusters', required=True); p.add_argument('--chrom', required=True)
+    p.add_argument('--gff', required=True); p.add_argument('--clusters', required=True)
+    p.add_argument('--chrom', required=True, help='a contig, or ALL (genome-wide: truth families and clusters over every contig)')
     p.add_argument('--json')
     p.add_argument('--soto', help='score against Soto S1C published families instead of symbol roots')
     p.add_argument('--exact-only', action='store_true', help='look up members by (start, end) only (B4 fix; default also '
                    'probes (start+1, end) first, as the old script did)')
 
-    p = _sub(sub, 'referee', cmd_referee, 'ours vs Soto against the protein referee (was soto_vs_us_referee.py)')
-    for x in ('--gff', '--genome', '--soto', '--clusters', '--chroms'):
+    p = _sub(sub, 'referee', cmd_referee, 'ours vs Soto against the protein-homology families (was soto_vs_us_referee.py)')
+    for x in ('--gff', '--soto', '--chroms'):
         p.add_argument(x, required=True)
+    p.add_argument('--genome', help='the genome FASTA (per-chromosome runs build the protein-homology families)')
+    p.add_argument('--clusters', required=True, help='a directory of <chrom>_fam.clusters.tsv, or with --chroms ALL '
+                   'one genome-wide clusters.tsv')
+    p.add_argument('--families', help='--chroms ALL: the genome-wide protein-homology table (truth.py protein-homology '
+                   '--chrom ALL)')
     p.add_argument('--workdir', default='/mnt/linuxdisk/tmp/referee')
     p.add_argument('--threads', default='4', help='blastp threads (the old script hard-coded 4)')
 
@@ -1559,26 +2262,43 @@ def main(argv=None):
     p.add_argument('--no-pseudogenes', action='store_true'); p.add_argument('--rule', type=int, default=0)
 
     p = _sub(sub, 'eichler', cmd_eichler, 'Eichler AS-margin rule vs ours (was eichler_compare.py)')
-    p.add_argument('--assignments', required=True)
+    p.add_argument('--assignments', help='legacy mode: a copy_assign assignments.tsv (region-local as_margin)')
     p.add_argument('--threshold', type=float, default=10.0)
     p.add_argument('--out')
+    p.add_argument('--sim', help='simulation mode: the sim.py copies OUT prefix (reads PREFIX.bam)')
+    p.add_argument('--real', action='store_true', help='real-read mode (needs --bam --as-table --union --cache)')
+    p.add_argument('--catalog', help='--sim / --real: the catalog copies.tsv handed to copy_assign')
+    p.add_argument('--default', help='--sim: the default copy_assign --out prefix')
+    p.add_argument('--union', nargs='+', help='--sim: the --union-certificate prefix; --real: one prefix per shard')
+    p.add_argument('--bam', help='--real: the sample BAM')
+    p.add_argument('--as-table', help='--real: the sample as_table (runs/<id>/<id>.molecules.tsv)')
+    p.add_argument('--cache', help='--real: directory for the per-contig pass over the BAM')
+    p.add_argument('--budget-s', type=float, default=0.0, help='--real: exit 75 once exceeded (re-run to continue)')
+    p.add_argument('--thresholds', default=','.join(map(str, EICHLER_THRESHOLDS)))
+    p.add_argument('--per-read', help='--sim / --real: write one row per read')
 
     p = _sub(sub, 'reads', cmd_reads, 'O2 per-read truth scoring (was copy_assign_read_truth.py score)')
     p.add_argument('--catalog', help='the catalog copies.tsv (default: $CATALOG_TSV)')
     p.add_argument('prefix', help='the sim.py copies OUT prefix (reads PREFIX.bam)')
     p.add_argument('o2prefix', help='the copy_assign --out prefix (reads O2PREFIX.assignments.tsv)')
+    p.add_argument('--per-read', metavar='OUT.tsv', help='also write one row per scored (MAPQ-0) read with its verdict '
+                   'under OWN / PRIMARY / ANY (stdout unchanged)')
 
     p = _sub(sub, 'bakeoff-calls', cmd_bakeoff_calls, 'per-molecule copy calls from a tool GTF (was copy_assign_tool_bakeoff.py calls)')
     p.add_argument('gtf'); p.add_argument('bam'); p.add_argument('copies')
     p.add_argument('--label', default='tool'); p.add_argument('--own'); p.add_argument('--out')
     p.add_argument('--restrict', help='score only the listed molecules (one read name per line)')
     p.add_argument('--fuzz', default='0', help='junction tolerance in bp')
+    p.add_argument('--tx-out', metavar='OUT.tsv', help='also write one row per transcript inside a copy: the molecules '
+                   'whose chain it carries, by the same matching rule as the calls (stdout and --out unchanged)')
 
     p = _sub(sub, 'bakeoff-compare', cmd_bakeoff_compare, 'compare per-tool calls (was copy_assign_tool_bakeoff.py compare)')
     p.add_argument("--assign", required=True)
     p.add_argument("--gtf", help="our GTF, for copy_index of the transcript carrying each molecule (P6)")
     p.add_argument("--bam", help="with --min-mult: primaries (-F 2308) give each molecule's intron chain")
     p.add_argument("--min-mult", type=int, default=0, help="keep only molecules whose exact chain is carried by >= N molecules (support-policy control)")
+    p.add_argument("--tx-support", action="append", metavar="LABEL=TX.tsv", help="bakeoff-calls --tx-out file of a tool: "
+                   "also report the fraction of its in-copy transcripts that carry >= 1 molecule / hard molecule (repeatable)")
     p.add_argument("tools", nargs="+", help="label=calls.tsv; the first is ours")
 
     p = _sub(sub, 'locus-reads', cmd_locus_reads, 'the correct read count at a locus (was locus_reads.py)')

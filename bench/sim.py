@@ -566,16 +566,139 @@ def cmd_tandem(a):
 
 
 # ================================================================ copies (was copy_assign_read_truth.py sim)
-def cmd_copies(a):
-    """O2 read-level truth simulation (docs/PREREG_o2_read_truth_2026-09-23.md): every copy of every multi-copy family
-    (copies.tsv; >= 2 copies, spliced sequence >= 300 bp) gets min(100, max(10, n_reads)) HiFi-model reads (jittered,
-    <= 10% trimmed) named `family|copy|i`, mapped with the shipped minimap2 settings against INDEX (genome-wide for the
-    real experiment); also writes OUT.copies_used.tsv and per-copy closest-sibling identity (OUT.sibling.tsv).
-    ⚠ copies.tsv is read POSITIONALLY (family_id, copy_idx, tid, chrom, start, end, n_exon, strand, n_reads).
-    ⚠ Per-copy seeds are stable_seed(family, copy) since wave 7 (B2): reads differ from every earlier run."""
-    tsv, fa, idx, out, seed = a.copies_tsv, a.copies_fa, a.index, a.out, a.seed
-    rng = random.Random(seed)
-    # copies.tsv: family_id copy_idx tid chrom start end n_exon strand n_reads
+def _fq_reads(path):
+    """Reads in a FASTQ (4 lines each)."""
+    with open(path, 'rb') as fh:
+        return sum(1 for _ in fh) // 4
+
+
+def _bam_reads(path):
+    """Primary-or-unmapped records of a BAM (-F 2304: one per input read)."""
+    return int(subprocess.run(['samtools', 'view', '-c', '-F', '2304', path], capture_output=True, text=True,
+                              check=True).stdout.strip())
+
+
+def _map_verified(fq, bam, idx, threads, log):
+    """minimap2 (MM2) | samtools sort into BAM.tmp under bash `pipefail` (a killed minimap2 fails the pipeline instead
+    of leaving a clean, truncated sort), then accept it only when it holds one primary-or-unmapped record per read of
+    FQ, and rename it to BAM."""
+    tmp = bam + '.tmp'
+    subprocess.run(f"set -o pipefail; {MM2} -t {threads} {idx} {fq} 2> {log} | samtools sort -@2 -o {tmp} -",
+                   shell=True, check=True, executable='/bin/bash')
+    n_fq, n_bam = _fq_reads(fq), _bam_reads(tmp)
+    if n_fq != n_bam:
+        os.remove(tmp)
+        raise RuntimeError(f'{tmp}: {n_bam} primary/unmapped records for the {n_fq} reads of {fq}; not accepted')
+    os.replace(tmp, bam)
+
+
+def _parts_key(fq_md5, idx, a):
+    """What every part is mapped from and with: FASTQ md5, part count, index (realpath, size, mtime), the minimap2
+    command and version. The thread count is left out (minimap2's records do not depend on it)."""
+    st = os.stat(idx)
+    ver = subprocess.run(['minimap2', '--version'], capture_output=True, text=True, check=True).stdout.strip()
+    return (f'{fq_md5} parts={a.parts}\nindex={os.path.realpath(idx)} size={st.st_size} mtime={int(st.st_mtime)}\n'
+            f'minimap2={MM2}\nminimap2_version={ver}\n'), ver
+
+
+def _legacy_parts_ok(parts, idx, a, ver):
+    """A key written before 2026-09-25 held only the FASTQ md5 and the part count. Its parts are kept only when each
+    mapped part's minimap2 log records this command (thread count aside) and this minimap2 version, and the index file
+    predates the part's BAM (so the index at `idx` is the one it was mapped against)."""
+    want = re.sub(r' -t \d+', '', f'{MM2} -t 1 {idx}')
+    for q in parts:
+        if not os.path.exists(q + '.bam'):
+            continue
+        try:
+            log = open(q + '.mm2.log').read()
+        except OSError:
+            return False
+        cmd = re.findall(r'^\[M::main\] CMD: (.*)$', log, re.M)
+        if (not cmd or re.sub(r' -t \d+', '', cmd[-1]) != f'{want} {q}.fq'
+                or f'[M::main] Version: {ver}' not in log
+                or os.path.getmtime(idx) > os.path.getmtime(q + '.bam')):
+            return False
+    return True
+
+
+def _map_in_parts(out, idx, a, prepare_only=False):
+    """Map OUT.fq in `a.parts` read-disjoint parts (read j -> part j % parts), each its own minimap2 run into
+    OUT.partI.bam (written to a temporary name, renamed when complete and verified), then merge into OUT.bam.
+    minimap2 maps every read independently, so the merged records are those of one run (argued, not compared
+    record for record; the order of records at equal coordinates may differ). Parts only bound one call's wall time
+    (the index load, ~1 min, is paid per part). `--max-parts-per-call M` maps at most M new parts and returns False
+    while parts remain, so a caller with a time budget re-runs the same command.
+    OUT.parts.key (_parts_key) records what the parts were mapped from and with; parts made under another key are
+    discarded and remapped (an old two-field key is upgraded when _legacy_parts_ok). A part is accepted only when its
+    BAM holds one primary-or-unmapped record per read of its FASTQ part: when it is mapped, and again before the merge.
+    The merge is skipped when OUT.bam is newer than every part and holds every read."""
+    import hashlib
+    h = hashlib.md5()
+    with open(out + '.fq', 'rb') as fh:
+        for block in iter(lambda: fh.read(1 << 20), b''):
+            h.update(block)
+    key, ver = _parts_key(h.hexdigest(), idx, a)
+    keyf = out + '.parts.key'
+    parts = [f'{out}.part{i}' for i in range(a.parts)]
+    old = open(keyf).read() if os.path.exists(keyf) else None
+    if old == f'{h.hexdigest()} parts={a.parts}\n' and _legacy_parts_ok(parts, idx, a, ver):
+        with open(keyf, 'w') as f:
+            f.write(key)
+        print(f'[simO2] {keyf}: upgraded (the parts\' minimap2 logs record this command and version)', flush=True)
+    elif old != key:
+        for q in parts:
+            for ext in ('.fq', '.bam', '.bam.tmp', '.mm2.log'):
+                if os.path.exists(q + ext):
+                    os.remove(q + ext)
+        fos = [open(q + '.fq', 'w') for q in parts]
+        with open(out + '.fq') as fq:
+            for j, rec in enumerate(zip(*[fq] * 4)):
+                fos[j % a.parts].writelines(rec)
+        for fo in fos:
+            fo.close()
+        with open(keyf, 'w') as f:
+            f.write(key)
+    if prepare_only:  # --simulate-only: the parts are split (and keyed); nothing is mapped in this call
+        left = sum(not os.path.exists(r + '.bam') for r in parts)
+        print(f'[simO2] --simulate-only: {left} of {a.parts} mapping parts remain: re-run without it to map', flush=True)
+        return False
+    done_now = 0
+    for i, q in enumerate(parts):
+        if os.path.exists(q + '.bam'):
+            continue
+        if a.max_parts_per_call and done_now >= a.max_parts_per_call:
+            left = sum(not os.path.exists(r + '.bam') for r in parts)
+            print(f'[simO2] {left} of {a.parts} mapping parts remain: re-run to continue', flush=True)
+            return False
+        _map_verified(q + '.fq', q + '.bam', idx, a.threads, q + '.mm2.log')
+        done_now += 1
+        print(f'[simO2] mapped part {i + 1}/{a.parts}', flush=True)
+    n_reads = 0
+    for q in parts:
+        n_fq, n_bam = _fq_reads(q + '.fq'), _bam_reads(q + '.bam')
+        if n_fq != n_bam:
+            os.remove(q + '.bam')
+            raise RuntimeError(f'{q}.bam: {n_bam} primary/unmapped records for the {n_fq} reads of {q}.fq; '
+                               f'removed, re-run to remap it')
+        n_reads += n_fq
+    merged = out + '.bam'
+    if not (os.path.exists(merged) and os.path.exists(merged + '.bai')
+            and all(os.path.getmtime(merged) >= os.path.getmtime(q + '.bam') for q in parts)
+            and _bam_reads(merged) == n_reads):
+        subprocess.run(f"samtools merge -f -@2 -o {merged} " + ' '.join(q + '.bam' for q in parts)
+                       + f" && samtools index {merged}", shell=True, check=True)
+    with open(out + '.mm2.log', 'w') as f:
+        for q in parts:
+            f.write(f'== {q}\n' + open(q + '.mm2.log').read())
+    return True
+
+
+def copies_selection(tsv, fa):
+    """What `copies` simulates, before any read is drawn: (rows, nfam, seqs, selected). rows = copies.tsv rows
+    (positional: family_id copy_idx tid chrom start end n_exon strand n_reads ...), nfam = copies per family, seqs =
+    {(family, copy): spliced sequence} from copies.fa, selected = [(row, k, length)] for every copy that gets reads (a
+    family of >= 2 copies and a spliced sequence of >= 300 bp), k = min(100, max(10, n_reads)) reads, in file order.
+    figures/_o2.py sizes the mapping parts from sum(k) before the simulation runs."""
     rows = [l.rstrip('\n').split('\t') for l in open(tsv)][1:]
     nfam = collections.Counter(r[0] for r in rows)
     seqs = {}
@@ -586,24 +709,89 @@ def cmd_copies(a):
         else:
             seqs[name].append(l.strip())
     seqs = {k: ''.join(v).upper() for k, v in seqs.items()}
-    n = 0; ncopies = 0
-    with open(out + '.fq', 'w') as fq, open(out + '.copies_used.tsv', 'w') as cu:
-        cu.write('family_id\tcopy_idx\tchrom\tstart\tend\tn_reads_real\tn_sim\tlen\n')
-        for r in rows:
-            fam, ci = r[0], r[1]
-            if nfam[fam] < 2:
-                continue
-            s = seqs.get((fam, ci))
-            if not s or len(s) < 300:
-                continue
-            k = min(100, max(10, int(r[8])))
-            ncopies += 1
-            cu.write(f'{fam}\t{ci}\t{r[3]}\t{r[4]}\t{r[5]}\t{r[8]}\t{k}\t{len(s)}\n')
-            for i, (rd, q) in enumerate(simulate_reads(s, k, err=0.001, indel=0.0003, seed=seed * 131 + stable_seed(fam, ci) % 1000003, trunc_frac=0.10)):
-                rd, q = jitter(rd, q, rng)
-                fq.write(f'@{fam}|{ci}|{i}\n{rd}\n+\n{q}\n'); n += 1
-    print(f'[simO2] {ncopies} copies, {n} reads', flush=True)
-    subprocess.run(f"{MM2} -t {a.threads} {idx} {out}.fq 2> {out}.mm2.log | samtools sort -@2 -o {out}.bam - && samtools index {out}.bam", shell=True, check=True)
+    selected = []
+    for r in rows:
+        fam, ci = r[0], r[1]
+        if nfam[fam] < 2:
+            continue
+        s = seqs.get((fam, ci))
+        if not s or len(s) < 300:
+            continue
+        selected.append((r, min(100, max(10, int(r[8]))), len(s)))
+    return rows, nfam, seqs, selected
+
+
+def _file_md5(path):
+    import hashlib
+    h = hashlib.md5()
+    with open(path, 'rb') as fh:
+        for block in iter(lambda: fh.read(1 << 20), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _fastq_key(a):
+    """--reuse-fastq: what OUT.fq was simulated from (catalog files by md5, the seed, and this file's own md5, so any
+    edit of the read model or the selection invalidates it)."""
+    return (f'copies_tsv={os.path.realpath(a.copies_tsv)} md5={_file_md5(a.copies_tsv)}\n'
+            f'copies_fa={os.path.realpath(a.copies_fa)} md5={_file_md5(a.copies_fa)}\n'
+            f'seed={a.seed}\nsim_py_md5={_file_md5(os.path.abspath(__file__))}\n')
+
+
+def cmd_copies(a):
+    """O2 read-level truth simulation (docs/PREREG_o2_read_truth_2026-09-23.md): every copy of every multi-copy family
+    (copies.tsv; >= 2 copies, spliced sequence >= 300 bp) gets min(100, max(10, n_reads)) HiFi-model reads (jittered,
+    <= 10% trimmed) named `family|copy|i`, mapped with the shipped minimap2 settings against INDEX (genome-wide for the
+    real experiment); also writes OUT.copies_used.tsv and per-copy closest-sibling identity (OUT.sibling.tsv).
+    ⚠ copies.tsv is read POSITIONALLY (family_id, copy_idx, tid, chrom, start, end, n_exon, strand, n_reads).
+    ⚠ Per-copy seeds are stable_seed(family, copy) since wave 7 (B2): reads differ from every earlier run.
+
+    Genome-wide options (docs/PREREG_genome_wide_copy_assignment_2026-09-25.md; all opt-in, the default run is
+    unchanged): --reuse-fastq keeps OUT.fq / OUT.copies_used.tsv when OUT.fq.key (catalog md5s, seed, this file's md5)
+    matches, so a call that only maps parts does not re-simulate (~0.3 ms per read); --simulate-only simulates (or
+    reuses), splits the parts and stops before mapping; --sibling none skips the closest-sibling all-vs-all (no figure
+    uses it) and marks a complete simulation with OUT.done instead of OUT.sibling.tsv."""
+    tsv, fa, idx, out, seed = a.copies_tsv, a.copies_fa, a.index, a.out, a.seed
+    fq_key = _fastq_key(a) if a.reuse_fastq else None
+    reuse = (fq_key is not None and os.path.exists(out + '.fq') and os.path.exists(out + '.copies_used.tsv')
+             and os.path.exists(out + '.fq.key') and open(out + '.fq.key').read() == fq_key)
+    rows, nfam, seqs, selected = copies_selection(tsv, fa)
+    if reuse:
+        n = sum(k for _, k, _ in selected); ncopies = len(selected)
+        print(f'[simO2] {ncopies} copies, {n} reads (reused {out}.fq: {out}.fq.key matches)', flush=True)
+    else:
+        rng = random.Random(seed)
+        if fq_key is not None and os.path.exists(out + '.fq.key'):
+            os.remove(out + '.fq.key')  # written again only once the new FASTQ is complete
+        n = 0; ncopies = 0
+        with open(out + '.fq', 'w') as fq, open(out + '.copies_used.tsv', 'w') as cu:
+            cu.write('family_id\tcopy_idx\tchrom\tstart\tend\tn_reads_real\tn_sim\tlen\n')
+            for r, k, slen in selected:
+                fam, ci = r[0], r[1]
+                s = seqs[(fam, ci)]
+                ncopies += 1
+                cu.write(f'{fam}\t{ci}\t{r[3]}\t{r[4]}\t{r[5]}\t{r[8]}\t{k}\t{slen}\n')
+                for i, (rd, q) in enumerate(simulate_reads(s, k, err=0.001, indel=0.0003, seed=seed * 131 + stable_seed(fam, ci) % 1000003, trunc_frac=0.10)):
+                    rd, q = jitter(rd, q, rng)
+                    fq.write(f'@{fam}|{ci}|{i}\n{rd}\n+\n{q}\n'); n += 1
+        if fq_key is not None:
+            with open(out + '.fq.key', 'w') as f:
+                f.write(fq_key)
+        print(f'[simO2] {ncopies} copies, {n} reads', flush=True)
+    if a.simulate_only:
+        if a.parts > 1:
+            _map_in_parts(out, idx, a, prepare_only=True)
+        return
+    if a.parts <= 1:
+        _map_verified(out + '.fq', out + '.bam', idx, a.threads, out + '.mm2.log')
+        subprocess.run(['samtools', 'index', out + '.bam'], check=True)
+    elif not _map_in_parts(out, idx, a):
+        return  # parts remain: re-run the same command to continue (every finished part is kept)
+    if a.sibling == 'none':
+        with open(out + '.done', 'w') as f:
+            f.write(f'{ncopies} copies\t{n} reads\tsibling all-vs-all skipped (--sibling none)\n')
+        print(f'[simO2] wrote {out}.bam, {out}.done (--sibling none: no closest-sibling all-vs-all)')
+        return
     # closest sibling identity per copy: all-vs-all of the multi-copy families' sequences
     with open(out + '.copies.fa', 'w') as f:
         for (fam, ci), s in seqs.items():
@@ -803,6 +991,16 @@ def main(argv=None):
     p.add_argument('copies_tsv'); p.add_argument('copies_fa'); p.add_argument('index', help='minimap2 index (.mmi) or FASTA to map to')
     p.add_argument('out'); p.add_argument('seed', type=int)
     p.add_argument('--threads', type=int, default=4, help='minimap2 threads (the old script hard-coded 4)')
+    p.add_argument('--parts', type=int, default=1, help='map the reads in this many read-disjoint parts, each a '
+                   'separate minimap2 run (identical records; bounds the wall time of one call)')
+    p.add_argument('--max-parts-per-call', type=int, default=0, help='with --parts: map at most this many new parts, '
+                   'then stop (re-run to continue); 0 = all')
+    p.add_argument('--reuse-fastq', action='store_true', help='keep OUT.fq when OUT.fq.key (catalog md5s, seed, '
+                   'sim.py md5) matches, instead of simulating again (genome-wide calls that only map parts)')
+    p.add_argument('--simulate-only', action='store_true', help='simulate (or reuse), split the --parts, and stop '
+                   'before mapping (the first call of a genome-wide simulation)')
+    p.add_argument('--sibling', choices=('all', 'none'), default='all', help='all (default): closest-sibling asm20 '
+                   'all-vs-all -> OUT.sibling.tsv; none: skip it and write OUT.done')
 
     p = add('excise', cmd_excise, 'excise one copy and look for the missing-copy signature (was copy_assign_excision.py)')
     p.add_argument('fam_dir'); p.add_argument('x', help='copy_idx to excise'); p.add_argument('out')
