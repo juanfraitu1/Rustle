@@ -1,0 +1,48 @@
+# table: fig3_gain
+# generator: figures/fig_secondary.py build
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input gorilla_bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_mm.bam	size=11745390963	mtime=1782229602
+# input gorilla_molecules: /mnt/linuxdisk/tmp/rustle_figures/runs/gorilla_OR6737/gorilla_OR6737.molecules.tsv	size=271973359	mtime=1790326830
+# input gorilla_ref: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/ref.gtf	size=188989140	mtime=1790326715
+# input gorilla_counts: /mnt/linuxdisk/tmp/rustle_figures/fig3/gorilla/eval_all/ref_tie_counts.tsv	size=7442280	mtime=1790337612
+# input gorilla_tmap_rustle: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle.rustle.gtf.tmap	size=11341310	mtime=1790377390
+# input gorilla_tmap_rustle_primary: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=11136644	mtime=1790377401
+# input gorilla_tmap_stringtie: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_stringtie.stringtie.gtf.tmap	size=7367076	mtime=1790331014
+# input gorilla_tmap_flair: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_flair.flair.gtf.tmap	size=25252988	mtime=1790331014
+# input gorilla_tmap_isoseq: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_isoseq.isoseq.gtf.tmap	size=56284188	mtime=1790331014
+# input human_bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/A119b.t2t.bam	size=96265156326	mtime=1784025276
+# input human_molecules: /mnt/linuxdisk/tmp/rustle_figures/runs/human_A119b/human_A119b.molecules.tsv	size=1429750119	mtime=1790327731
+# input human_ref: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/ref.gtf	size=322974304	mtime=1790377412
+# input human_counts: /mnt/linuxdisk/tmp/rustle_figures/fig3/human/eval_annotated/ref_tie_counts.tsv	size=12520540	mtime=1790381063
+# input human_tmap_rustle: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle.rustle.gtf.tmap	size=32427672	mtime=1790377427
+# input human_tmap_rustle_primary: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle_primary.rustle_primary.gtf.tmap	size=30844846	mtime=1790377450
+# input human_tmap_stringtie: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_stringtie.stringtie.gtf.tmap	size=26645580	mtime=1790377478
+# input human_tmap_flair: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_flair.flair.gtf.tmap	size=191143753	mtime=1790377588
+# input human_tmap_isoseq: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_isoseq.isoseq.gtf.tmap	size=327044677	mtime=1790377710
+# note: human: genome-wide = every contig its annotation covers; not annotated, so left out for every method: chrM
+# note: mode: annotation-free (de novo): Rustle assemble (reads + genome), StringTie -L without -G, FLAIR collapse without annotation (flair correct skipped), IsoSeq collapse; guided comparison: not available (guided StringTie/FLAIR GTFs not supplied)
+# note: tie ratio 0.98; candidate placement = primary or secondary with AS >= 0.98 x genome-wide best; counted if an aligned block (M/=/X; not N, not D) overlaps an exon; 0x800/0x4 never count
+# note: matched = gffcompare '=' to this transcript or to a reference transcript with the identical intron chain
+# note: scope: gorilla=genome-wide, human=genome-wide
+# note: gorilla: multi_exon_ref_transcripts=95833, unexpressed=7446, expressed=88387, unexpressed_matched_rustle=0, unexpressed_matched_rustle_primary=0, unexpressed_matched_stringtie=0, unexpressed_matched_flair=0, unexpressed_matched_isoseq=0, no_primary=839, no_primary_tie_below_1=59, streamed_records=10649751, streamed_secondary_candidate=110171, streamed_secondary_dropped=6156058, streamed_secondary_unknown=0
+# note: human: multi_exon_ref_transcripts=175402, unexpressed=4375, expressed=171027, unexpressed_matched_rustle=0, unexpressed_matched_rustle_primary=0, unexpressed_matched_stringtie=0, unexpressed_matched_flair=0, unexpressed_matched_isoseq=0, no_primary=1527, no_primary_tie_below_1=9, streamed_records=67093572, streamed_secondary_candidate=2459685, streamed_secondary_dropped=43624999, streamed_secondary_unknown=0
+# note: plotted = panels c-d; tie_bin '> 0.5' = every high-tie transcript (their n); baselines = StringTie, FLAIR and IsoSeq collapse: rustle_not_baselines = matched by Rustle and by none of the three, baselines_not_rustle = matched by at least one of the three and not by Rustle
+# note: n_groups and *_groups = independent units behind the count (high-tie rows): the read-sharing group, else the gene (cluster_of; the same units as fig3_bins)
+species	scope	tie_bin	primary_support	plotted	n_ref	n_groups	rustle_not_baselines	baselines_not_rustle	rustle_and_baseline	rustle_not_primary	primary_not_rustle	high_tie	rustle_not_baselines_groups	baselines_not_rustle_groups	rustle_and_baseline_groups	rustle_not_primary_groups	primary_not_rustle_groups
+gorilla	genome-wide	0	>=1	0	81893		216	9363	24192	1	0	0					
+gorilla	genome-wide	(0, 0.1]	>=1	0	1978		14	261	715	5	0	0					
+gorilla	genome-wide	(0.1, 0.5]	>=1	0	1450		6	144	262	4	0	0					
+gorilla	genome-wide	(0.5, 0.9]	>=1	1	965	150	12	57	127	19	0	1	10	33	56	14	0
+gorilla	genome-wide	> 0.9	>=1	1	1262	235	56	62	235	93	3	1	31	36	75	42	3
+gorilla	genome-wide	any	0	1	839	218	50	0	0	50	0	1	23	0	0	23	0
+gorilla	genome-wide	> 0.9	any	0	2047	302	101	62	235	138	3	1	46	36	75	54	3
+gorilla	genome-wide	> 0.5	any	0	3021	373	116	119	362	160	3	1	56	64	114	66	3
+human	genome-wide	0	>=1	0	156150		373	16707	34956	0	0	0					
+human	genome-wide	(0, 0.1]	>=1	0	7331		12	1043	2119	1	0	0					
+human	genome-wide	(0.1, 0.5]	>=1	0	1961		5	200	419	6	2	0					
+human	genome-wide	(0.5, 0.9]	>=1	1	1418	186	15	103	208	24	2	1	10	47	73	19	2
+human	genome-wide	> 0.9	>=1	1	2640	258	153	104	432	227	8	1	63	54	98	81	4
+human	genome-wide	any	0	1	1527	96	33	0	0	33	0	1	7	0	0	7	0
+human	genome-wide	> 0.9	any	0	4158	283	185	104	432	259	8	1	65	54	98	82	4
+human	genome-wide	> 0.5	any	0	5579	365	201	207	640	284	10	1	72	88	140	91	5

@@ -1,0 +1,464 @@
+# table: fig5s_margin_rule_sim
+# generator: figures/fig_assign_accuracy.py build_margin_rule_sim()
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input human_A119b_sim_bam: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/sim.bam	size=115317450	mtime=1790339180
+# input human_A119b_catalog: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/cat.copies.tsv	size=136856	mtime=1790339197
+# input human_A119b_assignments_default: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/o2.assignments.tsv	size=396861	mtime=1790339330
+# input human_A119b_assignments_union: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/u2.assignments.tsv	size=384691	mtime=1790339481
+# input human_A119b_margin_rule: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/margin_rule_human_A119b.tsv	size=2816521	mtime=1790369603
+# input human_A119b_margin_rule_log: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/margin_rule_human_A119b.txt	size=5396	mtime=1790369603
+# input gorilla_OR6737_sim_bam: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/sim.bam	size=63121003	mtime=1790341041
+# input gorilla_OR6737_catalog: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/cat.copies.tsv	size=53069	mtime=1790341054
+# input gorilla_OR6737_assignments_default: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/o2.assignments.tsv	size=3301	mtime=1790341092
+# input gorilla_OR6737_assignments_union: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/u2.assignments.tsv	size=3281	mtime=1790341126
+# input gorilla_OR6737_margin_rule: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/margin_rule_gorilla_OR6737.tsv	size=1125664	mtime=1790369628
+# input gorilla_OR6737_margin_rule_log: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/margin_rule_gorilla_OR6737.txt	size=4924	mtime=1790369628
+# note: experiment C of docs/PREREG_genome_wide_copy_assignment_2026-09-25.md (Amendment 2): margin rule MR(T) = assign a read to its best-scoring alignment iff it has no other alignment or best AS - second AS >= T, over every mapped non-supplementary alignment of the read in the whole genome (-F 2052; missing AS = 0); T = 10 (headline), 1, 20; computed by bench/score.py eichler --sim from the same sim.bam as Figs 4-5, not from copy_assign --eichler-margin (region-local, counts supplementary records as rivals under --no-as-tied-only)
+# note: Rustle's answer: primary MAPQ > 0 = the aligner's primary alignment (the copy-assignment step leaves these reads to the aligner); MAPQ 0 = the copy-assignment result, reading u = the union test (any assigned result of the --union-certificate run; what a user can apply), reading s = the default run's result for the read's SOURCE family (score.py reads OWN; known only in simulation); unmapped = unassigned for both
+# note: a placement's copy = the catalog copy with the largest raw overlap of the alignment's reference span (ties: first in catalog order; the Fig. 5 aligner rule); correct = the source copy or a copy at the same locus (score.same_locus); another catalog copy or outside every catalog copy = wrong (for both rules)
+# note: strata: both_same = both assign, same placement (same alignment, or same catalog copy / locus); both_differ = both assign, different placement; margin_only = the margin rule assigns, Rustle does not; rustle_aligner = the margin rule discards, Rustle keeps the aligner's primary (MAPQ > 0); rustle_test = the margin rule discards, the copy-assignment test assigns (MAPQ 0); neither; n_margin0 = reads whose best and second AS are equal
+# note: fraction_assigned = assigned / all simulated reads of the row (identity_band 'all' = every band); fraction_correct = correct / assigned; acc_lo / acc_hi / acc_ci = _o2.copy_level_ci (resampling source copies); rustle_only_* rows: the reads of that stratum (fraction_assigned = their share of the row's reads); every MAPQ-0 verdict and every aligner placement was checked read by read against Figs 4-5's own records (score.py reads --per-read, _o2.per_read)
+# note: human_A119b: containment exceptions at T = 10, reading union test: 9 reads; (stratum, Rustle source, margin-rule verdict, Rustle) = ('both_differ', 'aligner', 'correct', 'rustle_not_correct') 4; ('both_differ', 'aligner', 'wrong', 'rustle_not_correct') 2; ('both_differ', 'aligner', 'wrong', 'rustle_correct') 2; ('margin_only', 'test', 'wrong', 'rustle_not_correct') 1
+# note: human_A119b: containment exceptions at T = 10, reading test scored in the source family*: 9 reads; (stratum, Rustle source, margin-rule verdict, Rustle) = ('both_differ', 'aligner', 'correct', 'rustle_not_correct') 4; ('both_differ', 'aligner', 'wrong', 'rustle_not_correct') 2; ('both_differ', 'aligner', 'wrong', 'rustle_correct') 2; ('margin_only', 'test', 'wrong', 'rustle_not_correct') 1
+# note: human_A119b: runs as built in /mnt/linuxdisk/tmp/rustle_figures/o2sim/human (not rebuilt)
+# note: human_A119b: copy_assign runs used as built (last written 2026-09-25 05:31); the copy_assign binary now at /mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign is newer
+# note: human_A119b: per-read join checked against _o2.per_read and score.py reads --per-read (28453 simulated reads, 1263 with MAPQ 0)
+# note: gorilla_OR6737: containment exceptions at T = 10, reading union test: 168 reads; (stratum, Rustle source, margin-rule verdict, Rustle) = ('both_differ', 'aligner', 'outside', 'rustle_correct') 168
+# note: gorilla_OR6737: containment exceptions at T = 10, reading test scored in the source family*: 168 reads; (stratum, Rustle source, margin-rule verdict, Rustle) = ('both_differ', 'aligner', 'outside', 'rustle_correct') 168
+# note: gorilla_OR6737: runs as built in /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla (not rebuilt)
+# note: gorilla_OR6737: copy_assign runs used as built (last written 2026-09-25 05:58); the copy_assign binary now at /mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign is newer
+# note: gorilla_OR6737: per-read join checked against _o2.per_read and score.py reads --per-read (11448 simulated reads, 30 with MAPQ 0)
+sample	species	catalog_scope	identity_band	threshold	reading	stratum	n_reads	n_copies	n_margin0	margin_rule_correct	rustle_correct
+human_A119b	human	chr16	all	1	u	both_same	27178	1318	0	27160	27160
+human_A119b	human	chr16	all	1	u	both_differ	11	6	0	4	4
+human_A119b	human	chr16	all	1	u	margin_only	6	3	0	3	0
+human_A119b	human	chr16	all	1	u	rustle_aligner	1	1	1	0	1
+human_A119b	human	chr16	all	1	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	all	1	u	neither	1257	97	1257	0	0
+human_A119b	human	chr16	all	1	s	both_same	27178	1318	0	27160	27160
+human_A119b	human	chr16	all	1	s	both_differ	11	6	0	4	4
+human_A119b	human	chr16	all	1	s	margin_only	6	3	0	3	0
+human_A119b	human	chr16	all	1	s	rustle_aligner	1	1	1	0	1
+human_A119b	human	chr16	all	1	s	rustle_test	163	21	163	0	163
+human_A119b	human	chr16	all	1	s	neither	1094	81	1094	0	0
+human_A119b	human	chr16	all	10	u	both_same	26660	1277	0	26647	26647
+human_A119b	human	chr16	all	10	u	both_differ	8	4	0	4	2
+human_A119b	human	chr16	all	10	u	margin_only	1	1	0	0	0
+human_A119b	human	chr16	all	10	u	rustle_aligner	522	71	1	0	516
+human_A119b	human	chr16	all	10	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	all	10	u	neither	1262	98	1257	0	0
+human_A119b	human	chr16	all	10	s	both_same	26660	1277	0	26647	26647
+human_A119b	human	chr16	all	10	s	both_differ	8	4	0	4	2
+human_A119b	human	chr16	all	10	s	margin_only	1	1	0	0	0
+human_A119b	human	chr16	all	10	s	rustle_aligner	522	71	1	0	516
+human_A119b	human	chr16	all	10	s	rustle_test	163	21	163	0	163
+human_A119b	human	chr16	all	10	s	neither	1099	82	1094	0	0
+human_A119b	human	chr16	all	20	u	both_same	25680	1225	0	25668	25668
+human_A119b	human	chr16	all	20	u	both_differ	6	2	0	3	2
+human_A119b	human	chr16	all	20	u	margin_only	1	1	0	0	0
+human_A119b	human	chr16	all	20	u	rustle_aligner	1504	132	1	0	1495
+human_A119b	human	chr16	all	20	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	all	20	u	neither	1262	98	1257	0	0
+human_A119b	human	chr16	all	20	s	both_same	25680	1225	0	25668	25668
+human_A119b	human	chr16	all	20	s	both_differ	6	2	0	3	2
+human_A119b	human	chr16	all	20	s	margin_only	1	1	0	0	0
+human_A119b	human	chr16	all	20	s	rustle_aligner	1504	132	1	0	1495
+human_A119b	human	chr16	all	20	s	rustle_test	163	21	163	0	163
+human_A119b	human	chr16	all	20	s	neither	1099	82	1094	0	0
+human_A119b	human	chr16	identical	1	u	both_same	535	27	0	535	535
+human_A119b	human	chr16	identical	1	u	both_differ	0	0	0	0	0
+human_A119b	human	chr16	identical	1	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	identical	1	u	rustle_aligner	0	0	0	0	0
+human_A119b	human	chr16	identical	1	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	identical	1	u	neither	858	51	858	0	0
+human_A119b	human	chr16	identical	1	s	both_same	535	27	0	535	535
+human_A119b	human	chr16	identical	1	s	both_differ	0	0	0	0	0
+human_A119b	human	chr16	identical	1	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	identical	1	s	rustle_aligner	0	0	0	0	0
+human_A119b	human	chr16	identical	1	s	rustle_test	1	1	1	0	1
+human_A119b	human	chr16	identical	1	s	neither	857	51	857	0	0
+human_A119b	human	chr16	identical	10	u	both_same	433	22	0	433	433
+human_A119b	human	chr16	identical	10	u	both_differ	0	0	0	0	0
+human_A119b	human	chr16	identical	10	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	identical	10	u	rustle_aligner	102	9	0	0	102
+human_A119b	human	chr16	identical	10	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	identical	10	u	neither	858	51	858	0	0
+human_A119b	human	chr16	identical	10	s	both_same	433	22	0	433	433
+human_A119b	human	chr16	identical	10	s	both_differ	0	0	0	0	0
+human_A119b	human	chr16	identical	10	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	identical	10	s	rustle_aligner	102	9	0	0	102
+human_A119b	human	chr16	identical	10	s	rustle_test	1	1	1	0	1
+human_A119b	human	chr16	identical	10	s	neither	857	51	857	0	0
+human_A119b	human	chr16	identical	20	u	both_same	338	16	0	338	338
+human_A119b	human	chr16	identical	20	u	both_differ	0	0	0	0	0
+human_A119b	human	chr16	identical	20	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	identical	20	u	rustle_aligner	197	11	0	0	197
+human_A119b	human	chr16	identical	20	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	identical	20	u	neither	858	51	858	0	0
+human_A119b	human	chr16	identical	20	s	both_same	338	16	0	338	338
+human_A119b	human	chr16	identical	20	s	both_differ	0	0	0	0	0
+human_A119b	human	chr16	identical	20	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	identical	20	s	rustle_aligner	197	11	0	0	197
+human_A119b	human	chr16	identical	20	s	rustle_test	1	1	1	0	1
+human_A119b	human	chr16	identical	20	s	neither	857	51	857	0	0
+human_A119b	human	chr16	99.5-100%	1	u	both_same	2658	136	0	2652	2652
+human_A119b	human	chr16	99.5-100%	1	u	both_differ	4	2	0	3	0
+human_A119b	human	chr16	99.5-100%	1	u	margin_only	5	2	0	3	0
+human_A119b	human	chr16	99.5-100%	1	u	rustle_aligner	0	0	0	0	0
+human_A119b	human	chr16	99.5-100%	1	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	99.5-100%	1	u	neither	220	25	220	0	0
+human_A119b	human	chr16	99.5-100%	1	s	both_same	2658	136	0	2652	2652
+human_A119b	human	chr16	99.5-100%	1	s	both_differ	4	2	0	3	0
+human_A119b	human	chr16	99.5-100%	1	s	margin_only	5	2	0	3	0
+human_A119b	human	chr16	99.5-100%	1	s	rustle_aligner	0	0	0	0	0
+human_A119b	human	chr16	99.5-100%	1	s	rustle_test	56	7	56	0	56
+human_A119b	human	chr16	99.5-100%	1	s	neither	164	20	164	0	0
+human_A119b	human	chr16	99.5-100%	10	u	both_same	2401	115	0	2399	2399
+human_A119b	human	chr16	99.5-100%	10	u	both_differ	3	1	0	3	0
+human_A119b	human	chr16	99.5-100%	10	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	99.5-100%	10	u	rustle_aligner	258	34	0	0	253
+human_A119b	human	chr16	99.5-100%	10	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	99.5-100%	10	u	neither	225	26	220	0	0
+human_A119b	human	chr16	99.5-100%	10	s	both_same	2401	115	0	2399	2399
+human_A119b	human	chr16	99.5-100%	10	s	both_differ	3	1	0	3	0
+human_A119b	human	chr16	99.5-100%	10	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	99.5-100%	10	s	rustle_aligner	258	34	0	0	253
+human_A119b	human	chr16	99.5-100%	10	s	rustle_test	56	7	56	0	56
+human_A119b	human	chr16	99.5-100%	10	s	neither	169	21	164	0	0
+human_A119b	human	chr16	99.5-100%	20	u	both_same	1798	90	0	1797	1797
+human_A119b	human	chr16	99.5-100%	20	u	both_differ	3	1	0	3	0
+human_A119b	human	chr16	99.5-100%	20	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	99.5-100%	20	u	rustle_aligner	861	65	0	0	855
+human_A119b	human	chr16	99.5-100%	20	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	99.5-100%	20	u	neither	225	26	220	0	0
+human_A119b	human	chr16	99.5-100%	20	s	both_same	1798	90	0	1797	1797
+human_A119b	human	chr16	99.5-100%	20	s	both_differ	3	1	0	3	0
+human_A119b	human	chr16	99.5-100%	20	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	99.5-100%	20	s	rustle_aligner	861	65	0	0	855
+human_A119b	human	chr16	99.5-100%	20	s	rustle_test	56	7	56	0	56
+human_A119b	human	chr16	99.5-100%	20	s	neither	169	21	164	0	0
+human_A119b	human	chr16	99-99.5%	1	u	both_same	1202	77	0	1202	1202
+human_A119b	human	chr16	99-99.5%	1	u	both_differ	5	2	0	0	3
+human_A119b	human	chr16	99-99.5%	1	u	margin_only	1	1	0	0	0
+human_A119b	human	chr16	99-99.5%	1	u	rustle_aligner	0	0	0	0	0
+human_A119b	human	chr16	99-99.5%	1	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	99-99.5%	1	u	neither	56	6	56	0	0
+human_A119b	human	chr16	99-99.5%	1	s	both_same	1202	77	0	1202	1202
+human_A119b	human	chr16	99-99.5%	1	s	both_differ	5	2	0	0	3
+human_A119b	human	chr16	99-99.5%	1	s	margin_only	1	1	0	0	0
+human_A119b	human	chr16	99-99.5%	1	s	rustle_aligner	0	0	0	0	0
+human_A119b	human	chr16	99-99.5%	1	s	rustle_test	44	5	44	0	44
+human_A119b	human	chr16	99-99.5%	1	s	neither	12	2	12	0	0
+human_A119b	human	chr16	99-99.5%	10	u	both_same	1181	75	0	1181	1181
+human_A119b	human	chr16	99-99.5%	10	u	both_differ	4	2	0	0	2
+human_A119b	human	chr16	99-99.5%	10	u	margin_only	1	1	0	0	0
+human_A119b	human	chr16	99-99.5%	10	u	rustle_aligner	22	5	0	0	22
+human_A119b	human	chr16	99-99.5%	10	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	99-99.5%	10	u	neither	56	6	56	0	0
+human_A119b	human	chr16	99-99.5%	10	s	both_same	1181	75	0	1181	1181
+human_A119b	human	chr16	99-99.5%	10	s	both_differ	4	2	0	0	2
+human_A119b	human	chr16	99-99.5%	10	s	margin_only	1	1	0	0	0
+human_A119b	human	chr16	99-99.5%	10	s	rustle_aligner	22	5	0	0	22
+human_A119b	human	chr16	99-99.5%	10	s	rustle_test	44	5	44	0	44
+human_A119b	human	chr16	99-99.5%	10	s	neither	12	2	12	0	0
+human_A119b	human	chr16	99-99.5%	20	u	both_same	1134	70	0	1134	1134
+human_A119b	human	chr16	99-99.5%	20	u	both_differ	3	1	0	0	2
+human_A119b	human	chr16	99-99.5%	20	u	margin_only	1	1	0	0	0
+human_A119b	human	chr16	99-99.5%	20	u	rustle_aligner	70	11	0	0	69
+human_A119b	human	chr16	99-99.5%	20	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	99-99.5%	20	u	neither	56	6	56	0	0
+human_A119b	human	chr16	99-99.5%	20	s	both_same	1134	70	0	1134	1134
+human_A119b	human	chr16	99-99.5%	20	s	both_differ	3	1	0	0	2
+human_A119b	human	chr16	99-99.5%	20	s	margin_only	1	1	0	0	0
+human_A119b	human	chr16	99-99.5%	20	s	rustle_aligner	70	11	0	0	69
+human_A119b	human	chr16	99-99.5%	20	s	rustle_test	44	5	44	0	44
+human_A119b	human	chr16	99-99.5%	20	s	neither	12	2	12	0	0
+human_A119b	human	chr16	98-99%	1	u	both_same	1383	75	0	1383	1383
+human_A119b	human	chr16	98-99%	1	u	both_differ	0	0	0	0	0
+human_A119b	human	chr16	98-99%	1	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	98-99%	1	u	rustle_aligner	0	0	0	0	0
+human_A119b	human	chr16	98-99%	1	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	98-99%	1	u	neither	51	7	51	0	0
+human_A119b	human	chr16	98-99%	1	s	both_same	1383	75	0	1383	1383
+human_A119b	human	chr16	98-99%	1	s	both_differ	0	0	0	0	0
+human_A119b	human	chr16	98-99%	1	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	98-99%	1	s	rustle_aligner	0	0	0	0	0
+human_A119b	human	chr16	98-99%	1	s	rustle_test	41	6	41	0	41
+human_A119b	human	chr16	98-99%	1	s	neither	10	1	10	0	0
+human_A119b	human	chr16	98-99%	10	u	both_same	1342	71	0	1342	1342
+human_A119b	human	chr16	98-99%	10	u	both_differ	0	0	0	0	0
+human_A119b	human	chr16	98-99%	10	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	98-99%	10	u	rustle_aligner	41	7	0	0	41
+human_A119b	human	chr16	98-99%	10	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	98-99%	10	u	neither	51	7	51	0	0
+human_A119b	human	chr16	98-99%	10	s	both_same	1342	71	0	1342	1342
+human_A119b	human	chr16	98-99%	10	s	both_differ	0	0	0	0	0
+human_A119b	human	chr16	98-99%	10	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	98-99%	10	s	rustle_aligner	41	7	0	0	41
+human_A119b	human	chr16	98-99%	10	s	rustle_test	41	6	41	0	41
+human_A119b	human	chr16	98-99%	10	s	neither	10	1	10	0	0
+human_A119b	human	chr16	98-99%	20	u	both_same	1275	65	0	1275	1275
+human_A119b	human	chr16	98-99%	20	u	both_differ	0	0	0	0	0
+human_A119b	human	chr16	98-99%	20	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	98-99%	20	u	rustle_aligner	108	13	0	0	108
+human_A119b	human	chr16	98-99%	20	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	98-99%	20	u	neither	51	7	51	0	0
+human_A119b	human	chr16	98-99%	20	s	both_same	1275	65	0	1275	1275
+human_A119b	human	chr16	98-99%	20	s	both_differ	0	0	0	0	0
+human_A119b	human	chr16	98-99%	20	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	98-99%	20	s	rustle_aligner	108	13	0	0	108
+human_A119b	human	chr16	98-99%	20	s	rustle_test	41	6	41	0	41
+human_A119b	human	chr16	98-99%	20	s	neither	10	1	10	0	0
+human_A119b	human	chr16	<98%	1	u	both_same	21400	1003	0	21388	21388
+human_A119b	human	chr16	<98%	1	u	both_differ	2	2	0	1	1
+human_A119b	human	chr16	<98%	1	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	<98%	1	u	rustle_aligner	1	1	1	0	1
+human_A119b	human	chr16	<98%	1	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	<98%	1	u	neither	72	8	72	0	0
+human_A119b	human	chr16	<98%	1	s	both_same	21400	1003	0	21388	21388
+human_A119b	human	chr16	<98%	1	s	both_differ	2	2	0	1	1
+human_A119b	human	chr16	<98%	1	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	<98%	1	s	rustle_aligner	1	1	1	0	1
+human_A119b	human	chr16	<98%	1	s	rustle_test	21	2	21	0	21
+human_A119b	human	chr16	<98%	1	s	neither	51	7	51	0	0
+human_A119b	human	chr16	<98%	10	u	both_same	21303	994	0	21292	21292
+human_A119b	human	chr16	<98%	10	u	both_differ	1	1	0	1	0
+human_A119b	human	chr16	<98%	10	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	<98%	10	u	rustle_aligner	99	16	1	0	98
+human_A119b	human	chr16	<98%	10	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	<98%	10	u	neither	72	8	72	0	0
+human_A119b	human	chr16	<98%	10	s	both_same	21303	994	0	21292	21292
+human_A119b	human	chr16	<98%	10	s	both_differ	1	1	0	1	0
+human_A119b	human	chr16	<98%	10	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	<98%	10	s	rustle_aligner	99	16	1	0	98
+human_A119b	human	chr16	<98%	10	s	rustle_test	21	2	21	0	21
+human_A119b	human	chr16	<98%	10	s	neither	51	7	51	0	0
+human_A119b	human	chr16	<98%	20	u	both_same	21135	984	0	21124	21124
+human_A119b	human	chr16	<98%	20	u	both_differ	0	0	0	0	0
+human_A119b	human	chr16	<98%	20	u	margin_only	0	0	0	0	0
+human_A119b	human	chr16	<98%	20	u	rustle_aligner	268	32	1	0	266
+human_A119b	human	chr16	<98%	20	u	rustle_test	0	0	0	0	0
+human_A119b	human	chr16	<98%	20	u	neither	72	8	72	0	0
+human_A119b	human	chr16	<98%	20	s	both_same	21135	984	0	21124	21124
+human_A119b	human	chr16	<98%	20	s	both_differ	0	0	0	0	0
+human_A119b	human	chr16	<98%	20	s	margin_only	0	0	0	0	0
+human_A119b	human	chr16	<98%	20	s	rustle_aligner	268	32	1	0	266
+human_A119b	human	chr16	<98%	20	s	rustle_test	21	2	21	0	21
+human_A119b	human	chr16	<98%	20	s	neither	51	7	51	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	u	both_same	11236	353	0	11236	11236
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	u	both_differ	179	2	0	0	179
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	u	rustle_aligner	3	1	3	0	3
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	u	neither	30	3	30	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	s	both_same	11236	353	0	11236	11236
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	s	both_differ	179	2	0	0	179
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	s	rustle_aligner	3	1	3	0	3
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	1	s	neither	30	3	30	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	u	both_same	11218	352	0	11218	11218
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	u	both_differ	168	2	0	0	168
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	u	rustle_aligner	32	1	3	0	32
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	u	neither	30	3	30	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	s	both_same	11218	352	0	11218	11218
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	s	both_differ	168	2	0	0	168
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	s	rustle_aligner	32	1	3	0	32
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	10	s	neither	30	3	30	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	u	both_same	11208	351	0	11208	11208
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	u	both_differ	150	2	0	0	150
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	u	rustle_aligner	60	2	3	0	60
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	u	neither	30	3	30	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	s	both_same	11208	351	0	11208	11208
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	s	both_differ	150	2	0	0	150
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	s	rustle_aligner	60	2	3	0	60
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	all	20	s	neither	30	3	30	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	u	both_same	136	7	0	136	136
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	u	neither	20	2	20	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	s	both_same	136	7	0	136	136
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	1	s	neither	20	2	20	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	u	both_same	136	7	0	136	136
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	u	neither	20	2	20	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	s	both_same	136	7	0	136	136
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	10	s	neither	20	2	20	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	u	both_same	136	7	0	136	136
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	u	neither	20	2	20	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	s	both_same	136	7	0	136	136
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	identical	20	s	neither	20	2	20	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	u	both_same	147	5	0	147	147
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	u	neither	10	1	10	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	s	both_same	147	5	0	147	147
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	1	s	neither	10	1	10	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	u	both_same	147	5	0	147	147
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	u	neither	10	1	10	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	s	both_same	147	5	0	147	147
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	10	s	neither	10	1	10	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	u	both_same	137	4	0	137	137
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	u	rustle_aligner	10	1	0	0	10
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	u	neither	10	1	10	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	s	both_same	137	4	0	137	137
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	s	rustle_aligner	10	1	0	0	10
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99.5-100%	20	s	neither	10	1	10	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	u	both_same	172	2	0	172	172
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	u	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	s	both_same	172	2	0	172	172
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	1	s	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	u	both_same	172	2	0	172	172
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	u	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	s	both_same	172	2	0	172	172
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	10	s	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	u	both_same	172	2	0	172	172
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	u	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	s	both_same	172	2	0	172	172
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	99-99.5%	20	s	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	u	both_same	10	1	0	10	10
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	u	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	s	both_same	10	1	0	10	10
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	1	s	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	u	both_same	10	1	0	10	10
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	u	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	s	both_same	10	1	0	10	10
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	10	s	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	u	both_same	10	1	0	10	10
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	u	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	u	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	u	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	s	both_same	10	1	0	10	10
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	s	both_differ	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	s	rustle_aligner	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	98-99%	20	s	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	u	both_same	10771	338	0	10771	10771
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	u	both_differ	179	2	0	0	179
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	u	rustle_aligner	3	1	3	0	3
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	u	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	s	both_same	10771	338	0	10771	10771
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	s	both_differ	179	2	0	0	179
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	s	rustle_aligner	3	1	3	0	3
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	1	s	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	u	both_same	10753	337	0	10753	10753
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	u	both_differ	168	2	0	0	168
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	u	rustle_aligner	32	1	3	0	32
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	u	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	s	both_same	10753	337	0	10753	10753
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	s	both_differ	168	2	0	0	168
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	s	rustle_aligner	32	1	3	0	32
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	10	s	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	u	both_same	10753	337	0	10753	10753
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	u	both_differ	150	2	0	0	150
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	u	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	u	rustle_aligner	50	1	3	0	50
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	u	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	u	neither	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	s	both_same	10753	337	0	10753	10753
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	s	both_differ	150	2	0	0	150
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	s	margin_only	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	s	rustle_aligner	50	1	3	0	50
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	s	rustle_test	0	0	0	0	0
+gorilla_OR6737	gorilla	chr20 (NC_073244.2)	<98%	20	s	neither	0	0	0	0	0

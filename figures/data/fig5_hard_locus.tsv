@@ -1,0 +1,90 @@
+# table: fig5_hard_locus
+# generator: figures/fig_assign_accuracy.py build()
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input hard_bam: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/hsa16.bam	size=771377898	mtime=1788928587
+# input hard_copies: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/copies16.tsv	size=6739	mtime=1788927865
+# input hard_gate_rows: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/rustle_arm/ours.assignments.tsv	size=1019577	mtime=1790341368
+# input hard_gtf_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/rustle_arm/ours.gtf	size=3270323	mtime=1790341367
+# input hard_params_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/rustle_arm/ours.params.tsv	size=1159	mtime=1790341368
+# input hard_gtf_stringtie: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/stringtie_family.gtf	size=1594896	mtime=1788991692
+# input hard_gtf_flair: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/flair_family.gtf	size=4928330	mtime=1788991692
+# input hard_gtf_isoseq: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/isoseq_family.gff	size=8682998	mtime=1788991752
+# input hard_compare_all_molecules: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/compare_all_molecules.txt	size=2962	mtime=1790347193
+# input hard_compare_chain_ge2_molecules: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/compare_chain_ge2_molecules.txt	size=3047	mtime=1790347198
+# note: our arm REBUILT: /mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign --bam /mnt/linuxdisk/home/juanfraitu/bakeoff/human/hsa16.bam --fasta /mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa --region chr16:11963320-80438591 --families /mnt/linuxdisk/home/juanfraitu/bakeoff/human/copies16.tsv --copies-fa /mnt/linuxdisk/home/juanfraitu/bakeoff/human/copies16.fa --gtf --origin-drop-indels --threads 4 --out /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/rustle_arm/ours (one process writes ours.gtf and ours.assignments.tsv; log /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/rustle_arm/ours.log)
+# note: settings that differ from the recorded run (ours_final_gtf.params.tsv): best_by_duel absent -> true; gtf_copy_set absent -> true; min_isoform_fraction absent -> 0; min_boundary_fraction absent -> 0.1; min_boundary_gap absent -> 5000
+# note: outcome counts that differ from the recorded run: origin_rejected 1232 -> 1257; readthrough_explained 1 -> 0
+# note: default change not recorded in params.tsv: RUSTLE_JUNCTION_MAJORITY: the --gtf assembly's junction gate tolerates a minority of non-canonical junctions by default since 2026-09-21 (e44170f2); the recorded GTFs were built with strict canonical junctions
+# note: swept region chr16:11963320-80438591 = the catalog span, the same region the recorded runs swept
+# note: hard-locus benchmark (PREREG_hard_locus_bakeoff_2026-09-09): human A119b reads (hsa16.bam = samtools view -b -M -L copyregions.bed A119b.t2t.bam, command in its @PG header), chr16 NPIP family (copies16.tsv, 26 copies)
+# note: the hard set is a Rustle product: the rows of OUR copy_assign run's assignments.tsv (molecules its AS-tied gate admits: >= 2 placements in the swept region with the runner-up AS equal to the best, one in a catalog copy) that also have a primary inside a copy (the scored universe: primaries -F 2308 in the merged copy intervals, identical for every tool); no scorer option defines it from the BAM alone; the strata (contested, tied, assigned, ...) are our certificate's own verdicts
+# note: fraction_carried = derived_one|derived_multi (the tool emits a transcript with the molecule's exact intron chain that overlaps a catalog copy, copy = max raw overlap; for a mono-exonic molecule the exact chain means span containment); fuzz 0 for rustle/stringtie/flair, 5 for isoseq (pre-registered)
+# note: chain_ge2_molecules = --min-mult 2 --bam: the support-matched control, POST HOC (PREREG_hard_locus_bakeoff_2026-09-09 section 'Why P5 fails: a support policy, not resolution (post-hoc control, labelled as such)'; the pre-registered support-matched table of PREREG_isoform_bakeoff is for the retired lift-aware metric)
+# note: the Rustle arm is copy_assign --families --gtf (copy_assign's own transcripts), not the assembler (tools/rustle_pipeline.sh assemble) of Figures 1-3
+# note: the 0.846 / 0.574 / 0.502 / 0.755 composite quoted in older notes is bench/isoform_bakeoff.py --summary (retired, 3,633 molecules) and is NOT what this table reports
+species	molecule_set	stratum	n_molecules	tool	fraction_carried	rustle_arm
+human	all_molecules	hard (all gate rows)	4115	rustle	0.858	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	hard (all gate rows)	4115	stringtie	0.441	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	hard (all gate rows)	4115	flair	0.473	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	hard (all gate rows)	4115	isoseq	0.732	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	contested	1046	rustle	0.692	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	contested	1046	stringtie	0.327	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	contested	1046	flair	0.359	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	contested	1046	isoseq	0.813	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	assigned	262	rustle	0.763	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	assigned	262	stringtie	0.397	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	assigned	262	flair	0.29	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	assigned	262	isoseq	0.775	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	tied	450	rustle	0.698	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	tied	450	stringtie	0.127	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	tied	450	flair	0.26	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	tied	450	isoseq	0.796	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	ambiguous	334	rustle	0.629	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	ambiguous	334	stringtie	0.542	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	ambiguous	334	flair	0.548	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	ambiguous	334	isoseq	0.865	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	tie outside catalog	2773	rustle	0.96	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	tie outside catalog	2773	stringtie	0.512	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	tie outside catalog	2773	flair	0.539	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	tie outside catalog	2773	isoseq	0.75	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	origin-rejected	453	rustle	0.547	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	origin-rejected	453	stringtie	0.161	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	origin-rejected	453	flair	0.294	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	origin-rejected	453	isoseq	0.391	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	easy (not admitted by the gate)	11807	rustle	0.624	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	easy (not admitted by the gate)	11807	stringtie	0.258	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	easy (not admitted by the gate)	11807	flair	0.3	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	all_molecules	easy (not admitted by the gate)	11807	isoseq	0.553	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	hard (all gate rows)	3688	rustle	0.957	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	hard (all gate rows)	3688	stringtie	0.488	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	hard (all gate rows)	3688	flair	0.507	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	hard (all gate rows)	3688	isoseq	0.737	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	contested	839	rustle	0.863	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	contested	839	stringtie	0.398	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	contested	839	flair	0.422	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	contested	839	isoseq	0.815	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	assigned	218	rustle	0.917	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	assigned	218	stringtie	0.468	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	assigned	218	flair	0.335	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	assigned	218	isoseq	0.803	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	tied	347	rustle	0.905	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	tied	347	stringtie	0.15	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	tied	347	flair	0.305	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	tied	347	isoseq	0.79	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	ambiguous	274	rustle	0.766	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	ambiguous	274	stringtie	0.657	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	ambiguous	274	flair	0.639	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	ambiguous	274	isoseq	0.858	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	tie outside catalog	2676	rustle	0.995	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	tie outside catalog	2676	stringtie	0.531	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	tie outside catalog	2676	flair	0.549	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	tie outside catalog	2676	isoseq	0.754	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	origin-rejected	285	rustle	0.87	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	origin-rejected	285	stringtie	0.228	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	origin-rejected	285	flair	0.347	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	origin-rejected	285	isoseq	0.305	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	easy (not admitted by the gate)	8480	rustle	0.869	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	easy (not admitted by the gate)	8480	stringtie	0.349	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	easy (not admitted by the gate)	8480	flair	0.368	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	chain_ge2_molecules	easy (not admitted by the gate)	8480	isoseq	0.573	one current copy_assign run (2026-09-25) gives transcripts and hard set

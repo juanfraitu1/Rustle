@@ -1,0 +1,15 @@
+# Sample registry (figures/samples.py). One row per sample; cells are ${key} references into the inputs file
+# (figures/inputs.local.tsv holds every machine path) or literal text; '-' = none. `make.py samples --verify`
+# prints it resolved and checks every file. Genome-wide runs of every stage: `make.py runs` (figures/README.md).
+# stringtie_gtf / flair_gtf / isoseq_gff = the lab's ANNOTATION-FREE (de novo) runs: StringTie -L without -G; FLAIR
+# bam2bed + collapse without -f/--gtf (flair correct skipped); IsoSeq collapse. stringtie_guided_gtf / flair_guided_gtf
+# = ANNOTATION-GUIDED runs (StringTie -G, FLAIR with the annotation), '-' until the user supplies them; they feed only
+# the separate guided path of figures 1-3. No Rustle guided column: Rustle has no annotation-guided transcript
+# assembly (docs/PREREG_guided_transcript_comparison_2026-09-25.md).
+id	alias	species	individual	tissue	tissue_source	genome	bam	fasta	annotation_gff	annotation_gtf	splice_mmi	flag_confirm	stringtie_gtf	flair_gtf	isoseq_gff	stringtie_guided_gtf	flair_guided_gtf
+human_A119b	human	human	A119b (lab library; PacBio movie m64404e_240606_134033)	unknown	no @RG; the notes disagree (docs/PREREG_yags_daz_2026-09-07.md: 'A119b is not testis'; docs/o1_ledger.md elsewhere calls it testis)	T2T-CHM13 v2.0	${human_bam}	${human_fasta}	${human_ref_gff}	${human_ref_gtf}	${human_splice_mmi}	-	${human_stringtie_gtf}	${human_flair_gtf}	${human_isoseq_gff}	-	-
+human_testis	-	human	public library, ENA run ERR13885926 (read names)	testis	docs/DATA.md: public human testis Iso-Seq	T2T-CHM13 v2.0	${human_testis_bam}	${human_fasta}	${human_ref_gff}	${human_ref_gtf}	${human_splice_mmi}	-	-	-	-	-	-
+gorilla_OR6737	gorilla	gorilla	OR6737	testis	BAM @PG: reads raw/testis/long_reads/GGO/GGO_OR6737.IS.8a36218d3f23-filtered.fastq	mGorGor1 GCF_029281585.2	${gorilla_bam}	${gorilla_fasta}	${gorilla_ref_gff}	${gorilla_ref_gtf}	${gorilla_splice_mmi}	pat=${gorilla_pat_splice_mmi},mat=${gorilla_mat_splice_mmi}	${gorilla_stringtie_gtf}	${gorilla_flair_gtf}	${gorilla_isoseq_gff}	-	-
+gorilla_KB3781	-	gorilla	KB3781 (the individual the mGorGor1 assembly was built from); SRA run SRR27438212 (read names)	fibroblast cell line	BAM directory fibroblasts/ and the O3 notes (KB3781 fibroblast); no @RG	mGorGor1 GCF_029281585.2	${gorilla_kb3781_bam}	${gorilla_fasta}	${gorilla_ref_gff}	${gorilla_ref_gtf}	${gorilla_splice_mmi}	pat=${gorilla_pat_splice_mmi},mat=${gorilla_mat_splice_mmi}	-	-	-	-	-
+chimp_PTR	-	chimpanzee	unknown (lab PacBio movies m54329U_220421_232643, m64076_220414_205926)	unknown	BAM @PG reads from stdin, no @RG; no record in docs/	mPanTro3 GCF_028858775.2	${chimp_bam}	${chimp_fasta}	${chimp_ref_gff}	-	${chimp_splice_mmi}	-	-	-	-	-	-
+orangutan_PPY	-	orangutan	unknown (lab PacBio movie m54329U_221118_065305)	unknown	BAM @PG reads from stdin, no @RG; no record in docs/	mPonPyg2 GCF_028885625.2	${orangutan_bam}	${orangutan_fasta}	${orangutan_ref_gff}	-	${orangutan_splice_mmi}	-	-	-	-	-	-

@@ -1,0 +1,64 @@
+# table: fig6_gorilla_recall
+# generator: figures/fig_family_spectrum.py
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input referee: /mnt/linuxdisk/tmp/gw22/sec/ref/NC_073244.2.tsv	size=10338	mtime=1790141801
+# input genes: /mnt/linuxdisk/tmp/gw22/sec/ref/NC_073244.2.genes.gff	size=33112657	mtime=1790141692
+# input mrna_paf: /mnt/linuxdisk/tmp/gw22/sec/ref/referee_mrna.paf	size=470175	mtime=1790294162
+# input gorilla_bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_mm.bam	size=11745390963	mtime=1782229602
+# input score_py: /mnt/c/Users/jfris/Desktop/Rustle/bench/score.py	size=124962	mtime=1790370467
+# input primary_counts: /mnt/linuxdisk/tmp/rustle_figures/fig6/NC_073244.2.referee_primary_counts.tsv	size=30772	mtime=1790347196
+# input expressed_exon: /mnt/linuxdisk/tmp/rustle_figures/fig6/NC_073244.2.expressed.exon.tsv	size=6324	mtime=1790347196
+# input expressed_span: /mnt/linuxdisk/tmp/rustle_figures/fig6/NC_073244.2.expressed.span.tsv	size=6789	mtime=1790347196
+# input expressed_recorded: /mnt/linuxdisk/tmp/gw22/sec/ref/NC_073244.2.expressed.tsv	size=7944	mtime=1790293671
+# input clusters_rustle_primary: /mnt/linuxdisk/tmp/rustle_figures/fig6/gorilla_rustle_primary.fam.clusters.tsv	size=3606	mtime=1790384534
+# input gtf_rustle_primary: /mnt/linuxdisk/tmp/rustle_figures/fig6/gorilla_rustle_primary.gtf	size=6472821	mtime=1790384533
+# input score_pairs_log_rustle_primary: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle_primary.score.txt	size=189	mtime=1790384537
+# input score_pairs_log_rustle_primary_span: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle_primary.span.score.txt	size=195	mtime=1790384537
+# input without_top_rustle_primary_ge90: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle_primary.without_MCL2.score.txt	size=194	mtime=1790384538
+# input without_top_rustle_primary_precision: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle_primary.without_MCL2.score.txt	size=194	mtime=1790384538
+# input clusters_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig6/gorilla_rustle.fam.clusters.tsv	size=5143	mtime=1790384533
+# input gtf_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig6/gorilla_rustle.gtf	size=6537190	mtime=1790384532
+# input score_pairs_log_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle.score.txt	size=190	mtime=1790384539
+# input score_pairs_log_rustle_span: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle.span.score.txt	size=191	mtime=1790384539
+# input without_top_rustle_ge90: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle.without_MCL1.score.txt	size=190	mtime=1790384539
+# input without_top_rustle_precision: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle.without_MCL0.score.txt	size=187	mtime=1790384540
+# note: regenerated with the current binaries and pipeline-driver defaults
+# note: SUPPLEMENTARY, development: the reference is a SECONDARY one (the contig's protein-homology families; the genome-wide supplement uses Ensembl Compara and Liftoff copy pairs; protein is not part of Rustle's default family definition)
+# note: genes scored (plotted, metric recall = sensitivity): protein-homology genes with >= 2 reads whose PRIMARY record has an aligned block (M/=/X; not N, not D) on one of the gene's annotated exons (_o1.primary_counts; fig. 3's n_mol_primary rule): 576 of 775 genes
+# note: metric recall_span_universe: the same scorer over the recorded list's rule, >= 2 primary records overlapping the gene SPAN (spliced-over reads included): 613 of 775 genes; the span rule reproduces the recorded gene list of registers 1096-1101 exactly (613 genes)
+# note: rustle_primary: largest predicted family 5 genes (protein-homology families PF82:5)
+# note: rustle: largest predicted family 21 genes (protein-homology families PF68:21)
+# note: configuration (column arm) rustle = loci seeded with primaries + secondary alignments within 2% of the read's genome-wide best alignment score (driver default); rustle_primary = --no-seed-secondaries; both through the families stage (the default family rule)
+# note: recall (sensitivity): same-family pairs whose two genes are both scored (above), banded by the best minimap2 (asm20 -k11 -w5) identity between the two genes' annotated mRNAs; 'none' = no alignment record
+# note: precision: judgeable within-family gene pairs (both genes in a protein-homology family) against the COMPLETE families (score.py pairs --bands paf:; independent of the genes scored, checked); see fig6_gorilla_clusters for the judgeable / gene / locus pair counts
+# note: column truth = the reference (protein-homology families of the contig); ci = Wilson 95%, which treats pairs as independent; they are not (fig6_gorilla_clusters)
+species	contig	truth	arm	metric	band	k	n	value	ci_lo	ci_hi
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	>=90	21	83	0.253012	0.171852	0.356023
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	80-90	18	298	0.0604027	0.0385456	0.093449
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	70-80	5	198	0.0252525	0.0108335	0.0577424
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	60-70	0	65	0	0	0.0558015
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	<60	0	22	0	0	0.148655
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	none	3	35440	8.46501e-05	2.87891e-05	0.000248874
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall_span_universe	>=90	21	108	0.194444	0.130844	0.279035
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall_span_universe	80-90	18	317	0.0567823	0.0362159	0.0879621
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall_span_universe	70-80	5	204	0.0245098	0.0105135	0.0560827
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall_span_universe	60-70	0	65	0	0	0.0558015
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall_span_universe	<60	0	22	0	0	0.148655
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall_span_universe	none	3	37710	7.95545e-05	2.70561e-05	0.000233895
+gorilla	NC_073244.2	protein_referee	rustle_primary	precision	all	47	47	1	0.924442	1
+gorilla	NC_073244.2	protein_referee	rustle_primary	largest_cluster_genes	all	5		5		
+gorilla	NC_073244.2	protein_referee	rustle	recall	>=90	26	83	0.313253	0.223614	0.419414
+gorilla	NC_073244.2	protein_referee	rustle	recall	80-90	18	298	0.0604027	0.0385456	0.093449
+gorilla	NC_073244.2	protein_referee	rustle	recall	70-80	5	198	0.0252525	0.0108335	0.0577424
+gorilla	NC_073244.2	protein_referee	rustle	recall	60-70	0	65	0	0	0.0558015
+gorilla	NC_073244.2	protein_referee	rustle	recall	<60	0	22	0	0	0.148655
+gorilla	NC_073244.2	protein_referee	rustle	recall	none	3	35440	8.46501e-05	2.87891e-05	0.000248874
+gorilla	NC_073244.2	protein_referee	rustle	recall_span_universe	>=90	39	108	0.361111	0.276735	0.455028
+gorilla	NC_073244.2	protein_referee	rustle	recall_span_universe	80-90	18	317	0.0567823	0.0362159	0.0879621
+gorilla	NC_073244.2	protein_referee	rustle	recall_span_universe	70-80	5	204	0.0245098	0.0105135	0.0560827
+gorilla	NC_073244.2	protein_referee	rustle	recall_span_universe	60-70	0	65	0	0	0.0558015
+gorilla	NC_073244.2	protein_referee	rustle	recall_span_universe	<60	0	22	0	0	0.148655
+gorilla	NC_073244.2	protein_referee	rustle	recall_span_universe	none	3	37710	7.95545e-05	2.70561e-05	0.000233895
+gorilla	NC_073244.2	protein_referee	rustle	precision	all	275	275	1	0.986224	1
+gorilla	NC_073244.2	protein_referee	rustle	largest_cluster_genes	all	21		21		

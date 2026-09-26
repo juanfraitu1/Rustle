@@ -1,0 +1,63 @@
+# table: fig6_chr16_recall
+# generator: figures/fig_family_spectrum.py
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input spectrum_tsv: /mnt/linuxdisk/tmp/rustle_figures/fig6/spectrum/chr16_nt.spectrum.tsv	size=709	mtime=1790384468
+# input spectrum_truth_pairs: /mnt/linuxdisk/tmp/rustle_figures/fig6/spectrum/chr16_nt.truth_pairs.tsv	size=17047	mtime=1790384468
+# input chr16_families_copies: /mnt/linuxdisk/tmp/rustle_figures/fig6/chr16_denovo.fam.copies.tsv	size=68022	mtime=1790384532
+# input mcl_families: /mnt/linuxdisk/home/juanfraitu/rustle_target_dev/release/mcl_families	size=2141848	mtime=1790383894
+# input compara: /mnt/linuxdisk/tmp/gw22/spectrum/compara_chr16.tsv	size=4214931	mtime=1790275005
+# input chr16_ref_gtf: /mnt/linuxdisk/tmp/rustle_figures/fig6/chr16.ref.gtf	size=12076251	mtime=1790341418
+# input human_ref_gtf: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/A119b.chm13v2.0_RefSeq.gtf.gz	size=16770508	mtime=1790137613
+# input score_pairs_log: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/chr16_families.score.txt	size=774	mtime=1790384534
+# input score_py: /mnt/c/Users/jfris/Desktop/Rustle/bench/score.py	size=124962	mtime=1790370467
+# input lib_py: /mnt/c/Users/jfris/Desktop/Rustle/bench/lib.py	size=26633	mtime=1790360431
+# note: regenerated with the current binaries and pipeline-driver defaults
+# note: pairs scored: 290 Compara paralogue pairs on chr16 whose two genes both have a locus (representative >= 200 bp) in Rustle's chr16 assembly (spectrum truth_pairs, score.py spectrum --skip-t3; conditioned on the assembler's loci, not on read counts)
+# note: families = the DEFAULT de novo families: the driver's families stage (mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units, MCL 2.8) on the chr16 restriction of the genome-wide A119b assembly (loci seeded with secondary alignments within 2% of the read's best score); one copy per member locus = its representative transcript; copies mapped to genes by span (score.py pairs): 353 copies, 88 families, largest 22 genes; single-exon copies 95/353
+# note: view edge_asm20 = minimap2 asm20, identity >= 0.80, coverage >= 0.50 (query span / shorter length); edge_nt = asm20 or asm20 -k11 -w5 (identity >= 0.60, coverage >= 0.50); a DIRECT nucleotide alignment between any loci of the two genes (one representative per locus); the translated protein tier is in the supplement (fig6s_protein_tiers)
+# note: view families = both genes in one default family (score.py pairs --universe); families_edge / families_no_edge split it by the direct alignment of the same pair (edge_nt): with one, or joined without one (through other loci of the family); families_both_members = both genes have >= 1 copy in some family (the most the families can recover)
+# note: hits = round(sensitivity x n) from spectrum.tsv (exact: the scorer writes hits/n); column recall = sensitivity; ci = Wilson 95%, which treats pairs as independent (they are not: see fig6_chr16_groups)
+species	chrom	truth	compara_band	n_pairs	view	hits	recall	ci_lo	ci_hi
+human	chr16	compara	>=90	37	edge_asm20	31	0.837838	0.688635	0.923488
+human	chr16	compara	>=90	37	edge_nt	32	0.864865	0.720226	0.940867
+human	chr16	compara	>=90	37	families	25	0.675676	0.514637	0.803667
+human	chr16	compara	>=90	37	families_edge	22	0.594595	0.43486	0.736535
+human	chr16	compara	>=90	37	families_no_edge	3	0.0810811	0.0279606	0.213007
+human	chr16	compara	>=90	37	families_both_members	25	0.675676	0.514637	0.803667
+human	chr16	compara	80-90	12	edge_asm20	7	0.583333	0.319511	0.80674
+human	chr16	compara	80-90	12	edge_nt	7	0.583333	0.319511	0.80674
+human	chr16	compara	80-90	12	families	9	0.75	0.467695	0.911058
+human	chr16	compara	80-90	12	families_edge	6	0.5	0.253782	0.746218
+human	chr16	compara	80-90	12	families_no_edge	3	0.25	0.0889417	0.532305
+human	chr16	compara	80-90	12	families_both_members	9	0.75	0.467695	0.911058
+human	chr16	compara	70-80	17	edge_asm20	11	0.647059	0.413004	0.826903
+human	chr16	compara	70-80	17	edge_nt	12	0.705882	0.468669	0.8672
+human	chr16	compara	70-80	17	families	8	0.470588	0.261651	0.690368
+human	chr16	compara	70-80	17	families_edge	8	0.470588	0.261651	0.690368
+human	chr16	compara	70-80	17	families_no_edge	0	0	0	0.184318
+human	chr16	compara	70-80	17	families_both_members	12	0.705882	0.468669	0.8672
+human	chr16	compara	60-70	37	edge_asm20	21	0.567568	0.409142	0.713283
+human	chr16	compara	60-70	37	edge_nt	21	0.567568	0.409142	0.713283
+human	chr16	compara	60-70	37	families	14	0.378378	0.24064	0.538996
+human	chr16	compara	60-70	37	families_edge	12	0.324324	0.196333	0.485363
+human	chr16	compara	60-70	37	families_no_edge	2	0.0540541	0.014951	0.177047
+human	chr16	compara	60-70	37	families_both_members	24	0.648649	0.48759	0.781744
+human	chr16	compara	50-60	28	edge_asm20	11	0.392857	0.235657	0.57591
+human	chr16	compara	50-60	28	edge_nt	11	0.392857	0.235657	0.57591
+human	chr16	compara	50-60	28	families	11	0.392857	0.235657	0.57591
+human	chr16	compara	50-60	28	families_edge	7	0.25	0.126765	0.433557
+human	chr16	compara	50-60	28	families_no_edge	4	0.142857	0.0569901	0.314898
+human	chr16	compara	50-60	28	families_both_members	11	0.392857	0.235657	0.57591
+human	chr16	compara	30-50	61	edge_asm20	7	0.114754	0.056712	0.218443
+human	chr16	compara	30-50	61	edge_nt	7	0.114754	0.056712	0.218443
+human	chr16	compara	30-50	61	families	6	0.0983607	0.0458646	0.198446
+human	chr16	compara	30-50	61	families_edge	6	0.0983607	0.0458646	0.198446
+human	chr16	compara	30-50	61	families_no_edge	0	0	0	0.0592439
+human	chr16	compara	30-50	61	families_both_members	6	0.0983607	0.0458646	0.198446
+human	chr16	compara	<30	98	edge_asm20	3	0.0306122	0.0104649	0.0861702
+human	chr16	compara	<30	98	edge_nt	3	0.0306122	0.0104649	0.0861702
+human	chr16	compara	<30	98	families	2	0.0204082	0.00561461	0.0713821
+human	chr16	compara	<30	98	families_edge	2	0.0204082	0.00561461	0.0713821
+human	chr16	compara	<30	98	families_no_edge	0	0	0	0.03772
+human	chr16	compara	<30	98	families_both_members	2	0.0204082	0.00561461	0.0713821

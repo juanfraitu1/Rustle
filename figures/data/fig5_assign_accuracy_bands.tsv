@@ -1,0 +1,90 @@
+# table: fig5_assign_accuracy_bands
+# generator: figures/fig_assign_accuracy.py build()
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input human_sim_bam: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/sim.bam	size=115317450	mtime=1790339180
+# input human_catalog: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/cat.copies.tsv	size=136856	mtime=1790339197
+# input human_assignments_per_family: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/o2.assignments.tsv	size=396861	mtime=1790339330
+# input human_assignments_union: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/u2.assignments.tsv	size=384691	mtime=1790339481
+# input human_score_reads_o2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/score_reads_human_o2.txt	size=2441	mtime=1790347130
+# input human_score_reads_u2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/score_reads_human_u2.txt	size=2382	mtime=1790347131
+# input human_per_read_o2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/per_read_human_o2.tsv	size=87614	mtime=1790347130
+# input human_per_read_u2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/per_read_human_u2.tsv	size=87822	mtime=1790347131
+# input gorilla_sim_bam: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/sim.bam	size=63121003	mtime=1790341041
+# input gorilla_catalog: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/cat.copies.tsv	size=53069	mtime=1790341054
+# input gorilla_assignments_per_family: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/o2.assignments.tsv	size=3301	mtime=1790341092
+# input gorilla_assignments_union: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/u2.assignments.tsv	size=3281	mtime=1790341126
+# input gorilla_score_reads_o2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/score_reads_gorilla_o2.txt	size=944	mtime=1790347141
+# input gorilla_score_reads_u2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/score_reads_gorilla_u2.txt	size=944	mtime=1790347146
+# input gorilla_per_read_o2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/per_read_gorilla_o2.tsv	size=2288	mtime=1790347141
+# input gorilla_per_read_u2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/per_read_gorilla_u2.tsv	size=2288	mtime=1790347146
+# note: human: cross-check: score.py reads o2 OWN ALL (n, correct, wrong, conflict, abstain, other) = (1263, 163, 0, 0, 1084, 16), identical to this table's tally
+# note: human: cross-check: score.py reads o2 ANY ALL (n, correct, wrong, conflict, abstain, other) = (1263, 60, 432, 156, 599, 16), identical to this table's tally
+# note: human: cross-check: score.py reads u2 ANY ALL (n, correct, wrong, conflict, abstain, other) = (1263, 0, 0, 0, 1247, 16), identical to this table's tally
+# note: human: rebuilt /mnt/linuxdisk/tmp/rustle_figures/o2sim/human (sim.py copies seed 20260925; copy_assign /mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign)
+# note: human: simulation stamp /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/sim.params predates the simulator fingerprint (bench/sim.py md5, minimap2 command): accepted as built; bench/sim.py md5 now 7aba22abf30901854387f92f339468d6
+# note: human: sim.bam: 28453 primary/unmapped records = the 28453 simulated reads of copies_used.tsv
+# note: human: copy_assign o2: run predates the RUSTLE_* guard; its environment is not recorded (the next forced rebuild runs it with RUSTLE_* unset)
+# note: human: copy_assign u2: run predates the RUSTLE_* guard; its environment is not recorded (the next forced rebuild runs it with RUSTLE_* unset)
+# note: gorilla: cross-check: score.py reads o2 OWN ALL (n, correct, wrong, conflict, abstain, other) = (30, 0, 0, 0, 30, 0), identical to this table's tally
+# note: gorilla: cross-check: score.py reads o2 ANY ALL (n, correct, wrong, conflict, abstain, other) = (30, 0, 0, 0, 30, 0), identical to this table's tally
+# note: gorilla: cross-check: score.py reads u2 ANY ALL (n, correct, wrong, conflict, abstain, other) = (30, 0, 0, 0, 30, 0), identical to this table's tally
+# note: gorilla: rebuilt /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla (sim.py copies seed 20260925; copy_assign /mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign)
+# note: gorilla: simulation stamp /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/sim.params predates the simulator fingerprint (bench/sim.py md5, minimap2 command): accepted as built; bench/sim.py md5 now 7aba22abf30901854387f92f339468d6
+# note: gorilla: sim.bam: 11448 primary/unmapped records = the 11448 simulated reads of copies_used.tsv
+# note: gorilla: copy_assign o2: run predates the RUSTLE_* guard; its environment is not recorded (the next forced rebuild runs it with RUSTLE_* unset)
+# note: gorilla: copy_assign u2: run predates the RUSTLE_* guard; its environment is not recorded (the next forced rebuild runs it with RUSTLE_* unset)
+# note: reads = simulated reads whose primary has MAPQ 0 (the aligner's tie); identity_band 'all' = every band
+# note: family_certificate = the per-family run's row for the read's TRUE family (score.py reads OWN; uses the truth to pick the row: the certificate's intrinsic accuracy); per_family_table = any assigned row of the default per-family run (score.py reads ANY; two loci claimed = conflict); union_certificate = any assigned row of the --union-certificate run; aligner_primary = the catalog copy the primary alignment overlaps most (correct = the source copy's locus by score.same_locus, wrong = another catalog copy, not_scored = no catalog copy)
+# note: coverage = (correct + wrong + conflict) / n_reads; accuracy = correct / (correct + wrong + conflict); abstain = a row with no copy assigned; not_scored = no row in the table (or, for the aligner, a primary outside every catalog copy); verdicts from score.py reads --per-read
+# note: acc_lo / acc_hi: 95% interval with the SOURCE COPY as the unit (reads from one copy are not independent): none when fewer than 5 copies are assigned (acc_ci too_few_copies); else cluster bootstrap over copies (2000 resamples, seed 20260925, percentile), or, when every copy has the same ratio (e.g. every assigned read correct) and the bootstrap is degenerate, the Wilson interval at the pooled ratio with the n_copies_assigned copies as the sample size (acc_ci says which); n_copies = distinct source copies of the band's tied reads
+# note: n_family_psv (family_certificate rows only) = tied reads whose true family's row has >= 1 decisive PSV (score.py reads --per-read own_n_decisive >= 1; truth-selected like that reading); n_nm_twin (union_certificate rows only) = tied reads with an NM-identical twin (_o2.twin_state nm_twin: a placement not overlapping the source copy with the best AS and the true-copy placement's NM)
+species	method	identity_band	n_reads	correct	wrong	conflict	abstain	not_scored	coverage	accuracy	n_copies	n_copies_assigned	acc_lo	acc_hi	acc_ci	n_family_psv	n_nm_twin
+human	family_certificate	all	1263	163	0	0	1084	16	0.129058	1	99	21	0.845356	1	wilson_over_copies	280	
+human	family_certificate	identical	858	1	0	0	857	0	0.0011655	1	51	1			too_few_copies	4	
+human	family_certificate	99.5-100%	225	56	0	0	160	9	0.248889	1	26	7	0.645661	1	wilson_over_copies	139	
+human	family_certificate	99-99.5%	57	44	0	0	12	1	0.77193	1	7	5	0.565509	1	wilson_over_copies	56	
+human	family_certificate	98-99%	51	41	0	0	10	0	0.803922	1	7	6	0.609657	1	wilson_over_copies	51	
+human	family_certificate	<98%	72	21	0	0	45	6	0.291667	1	8	2			too_few_copies	30	
+human	per_family_table	all	1263	60	432	156	599	16	0.513064	0.0925926	99	55	0.0328638	0.177536	cluster_bootstrap		
+human	per_family_table	identical	858	20	418	34	386	0	0.550117	0.0423729	51	33	0	0.117371	cluster_bootstrap		
+human	per_family_table	99.5-100%	225	8	14	48	146	9	0.311111	0.114286	26	9	0	0.363636	cluster_bootstrap		
+human	per_family_table	99-99.5%	57	16	0	28	12	1	0.77193	0.363636	7	5	0	0.8	cluster_bootstrap		
+human	per_family_table	98-99%	51	16	0	25	10	0	0.803922	0.390244	7	6	0	0.864865	cluster_bootstrap		
+human	per_family_table	<98%	72	0	0	21	45	6	0.291667	0	8	2			too_few_copies		
+human	union_certificate	all	1263	0	0	0	1247	16	0	nan	99	0					1255
+human	union_certificate	identical	858	0	0	0	858	0	0	nan	51	0					858
+human	union_certificate	99.5-100%	225	0	0	0	216	9	0	nan	26	0					218
+human	union_certificate	99-99.5%	57	0	0	0	56	1	0	nan	7	0					56
+human	union_certificate	98-99%	51	0	0	0	51	0	0	nan	7	0					51
+human	union_certificate	<98%	72	0	0	0	66	6	0	nan	8	0					72
+human	aligner_primary	all	1263	596	588	0	0	79	0.937451	0.503378	99	97	0.470486	0.538318	cluster_bootstrap		
+human	aligner_primary	identical	858	405	450	0	0	3	0.996503	0.473684	51	51	0.4375	0.508547	cluster_bootstrap		
+human	aligner_primary	99.5-100%	225	102	73	0	0	50	0.777778	0.582857	26	24	0.492147	0.685897	cluster_bootstrap		
+human	aligner_primary	99-99.5%	57	35	18	0	0	4	0.929825	0.660377	7	7	0.486486	0.833333	cluster_bootstrap		
+human	aligner_primary	98-99%	51	24	21	0	0	6	0.882353	0.533333	7	7	0.405405	0.675676	cluster_bootstrap		
+human	aligner_primary	<98%	72	30	26	0	0	16	0.777778	0.535714	8	8	0.37037	0.705882	cluster_bootstrap		
+gorilla	family_certificate	all	30	0	0	0	30	0	0	nan	3	0				10	
+gorilla	family_certificate	identical	20	0	0	0	20	0	0	nan	2	0				0	
+gorilla	family_certificate	99.5-100%	10	0	0	0	10	0	0	nan	1	0				10	
+gorilla	family_certificate	99-99.5%	0	0	0	0	0	0	nan	nan	0	0				0	
+gorilla	family_certificate	98-99%	0	0	0	0	0	0	nan	nan	0	0				0	
+gorilla	family_certificate	<98%	0	0	0	0	0	0	nan	nan	0	0				0	
+gorilla	per_family_table	all	30	0	0	0	30	0	0	nan	3	0					
+gorilla	per_family_table	identical	20	0	0	0	20	0	0	nan	2	0					
+gorilla	per_family_table	99.5-100%	10	0	0	0	10	0	0	nan	1	0					
+gorilla	per_family_table	99-99.5%	0	0	0	0	0	0	nan	nan	0	0					
+gorilla	per_family_table	98-99%	0	0	0	0	0	0	nan	nan	0	0					
+gorilla	per_family_table	<98%	0	0	0	0	0	0	nan	nan	0	0					
+gorilla	union_certificate	all	30	0	0	0	30	0	0	nan	3	0					30
+gorilla	union_certificate	identical	20	0	0	0	20	0	0	nan	2	0					20
+gorilla	union_certificate	99.5-100%	10	0	0	0	10	0	0	nan	1	0					10
+gorilla	union_certificate	99-99.5%	0	0	0	0	0	0	nan	nan	0	0					0
+gorilla	union_certificate	98-99%	0	0	0	0	0	0	nan	nan	0	0					0
+gorilla	union_certificate	<98%	0	0	0	0	0	0	nan	nan	0	0					0
+gorilla	aligner_primary	all	30	9	4	0	0	17	0.433333	0.692308	3	3			too_few_copies		
+gorilla	aligner_primary	identical	20	6	4	0	0	10	0.5	0.6	2	2			too_few_copies		
+gorilla	aligner_primary	99.5-100%	10	3	0	0	0	7	0.3	1	1	1			too_few_copies		
+gorilla	aligner_primary	99-99.5%	0	0	0	0	0	0	nan	nan	0	0					
+gorilla	aligner_primary	98-99%	0	0	0	0	0	0	nan	nan	0	0					
+gorilla	aligner_primary	<98%	0	0	0	0	0	0	nan	nan	0	0					

@@ -1,0 +1,14 @@
+# table: figS_protein_substrates
+# generator: figures/fig_protein_supp.py (tools/protein_attach.py; docs/PREREG_protein_attach_2026-09-25.md)
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input human_chr16: /mnt/linuxdisk/tmp/rustle_figures_dev/protein_attach/human_chr16.params.tsv	size=848	mtime=1790378561
+# input human_chr6: /mnt/linuxdisk/tmp/rustle_figures_dev/protein_attach/human_chr6.params.tsv	size=849	mtime=1790378530
+# input gorilla_NC_073244.2: /mnt/linuxdisk/tmp/rustle_figures_dev/protein_attach/gorilla_NC_073244.2.params.tsv	size=863	mtime=1790378556
+# input gorilla_NC_073234.2: /mnt/linuxdisk/tmp/rustle_figures_dev/protein_attach/gorilla_NC_073234.2.params.tsv	size=849	mtime=1790378560
+# note: provisional: development scope (the Fig. 7 de novo families of four chromosomes); the genome-wide rows of every sample appear once the driver's families-protein stage has run
+species	substrate	scope	exposure	loci	families	member_loci	families_calibrated	loci_protein_ok	loci_te_majority	loci_orf_50_99	candidates	attached	attached_families	attached_nt_corroborated	null_attached	ambiguous	below_family_identity	below_scope_floor	below_coverage	family_uncalibrated	no_hit	overlaps_member	proposed_merges
+human	chr16	dev	development	2802	111	544	51	1746	442	438	1470	0	0	0	0	0	9	0	9	10	1442	22	2
+human	chr6	dev	held out, never used	5012	54	225	11	2456	1161	1241	2339	1	1	1	0	0	29	0	6	48	2255	55	0
+gorilla	NC_073244.2	dev	development (seeding rule)	1142	29	105	24	1087	37	17	1007	1	1	1	0	2	181	11	8	10	794	4	15
+gorilla	NC_073234.2	dev	held out, never used	956	6	13	1	895	26	35	887	0	0	0	0	0	0	0	0	1	886	0	0

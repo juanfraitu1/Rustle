@@ -1,0 +1,1736 @@
+# table: fig7_per_family
+# generator: figures/fig_family_recovery.py
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input clusters_human_chr16_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr16.denovo.fam.clusters.tsv	size=17315	mtime=1790342013
+# input genes_human_chr16: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr16.gff	size=64195055	mtime=1790341958
+# input truth_human_chr16_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr16_compara.tsv	size=1099	mtime=1790383400
+# input truth_human_chr16_npip_u2: /mnt/linuxdisk/tmp/union2/U2_truth.tsv	size=625	mtime=1790111651
+# input truth_human_chr16_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr16_ref.families.tsv	size=3561	mtime=1790341966
+# input truth_human_chr16_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr16_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr16.guided.clusters.tsv	size=13260	mtime=1790342022
+# input clusters_human_chr2_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr2.denovo.fam.clusters.tsv	size=17774	mtime=1790343694
+# input genes_human_chr2: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr2.gff	size=139019036	mtime=1790343262
+# input truth_human_chr2_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr2_compara.tsv	size=1004	mtime=1790383400
+# input truth_human_chr2_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr2_ref.families.tsv	size=5077	mtime=1790343277
+# input truth_human_chr2_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr2_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr2.guided.clusters.tsv	size=21770	mtime=1790343723
+# input clusters_human_chr6_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr6.denovo.fam.clusters.tsv	size=9634	mtime=1790342309
+# input genes_human_chr6: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr6.gff	size=82852061	mtime=1790341958
+# input truth_human_chr6_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr6_compara.tsv	size=736	mtime=1790383400
+# input truth_human_chr6_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr6_ref.families.tsv	size=4617	mtime=1790342029
+# input truth_human_chr6_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr6_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr6.guided.clusters.tsv	size=10892	mtime=1790342324
+# input clusters_human_chr8_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr8.denovo.fam.clusters.tsv	size=11201	mtime=1790342493
+# input genes_human_chr8: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr8.gff	size=66904056	mtime=1790341958
+# input truth_human_chr8_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr8_compara.tsv	size=1114	mtime=1790383400
+# input truth_human_chr8_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr8_ref.families.tsv	size=4089	mtime=1790342329
+# input truth_human_chr8_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr8_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr8.guided.clusters.tsv	size=13451	mtime=1790342499
+# input clusters_human_chr10_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr10.denovo.fam.clusters.tsv	size=8463	mtime=1790342630
+# input genes_human_chr10: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr10.gff	size=80436261	mtime=1790341958
+# input truth_human_chr10_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr10_compara.tsv	size=758	mtime=1790383400
+# input truth_human_chr10_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr10_ref.families.tsv	size=2875	mtime=1790342504
+# input truth_human_chr10_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr10_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr10.guided.clusters.tsv	size=11632	mtime=1790342644
+# input clusters_gorilla_NC_073244.2_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073244.2.denovo.fam.clusters.tsv	size=5143	mtime=1790342753
+# input genes_gorilla_NC_073244.2: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/gorilla_NC_073244.2.gff	size=33109369	mtime=1790341960
+# input truth_gorilla_NC_073244.2_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073244.2_ref.families.tsv	size=10338	mtime=1790342718
+# input clusters_gorilla_NC_073244.2_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073244.2.guided.clusters.tsv	size=16916	mtime=1790342994
+# input clusters_gorilla_NC_073234.2_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073234.2.denovo.fam.clusters.tsv	size=773	mtime=1790343043
+# input genes_gorilla_NC_073234.2: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/gorilla_NC_073234.2.gff	size=37350384	mtime=1790341960
+# input truth_gorilla_NC_073234.2_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073234.2_ref.families.tsv	size=5026	mtime=1790343001
+# input clusters_gorilla_NC_073234.2_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073234.2.guided.clusters.tsv	size=4645	mtime=1790343217
+# note: the cached per-contig runs of both modes in ${work}/fig7/current (2026-09-25; not re-run for this table: fig7_dev_cached 1), rescored against the current references
+# note: human chr16: development: every early O1 decision was scored here (115 ledger mentions)
+# note: human chr2: held out, reused verdict set: 0 O1-ledger mentions, but the held-out verdict set of about 30 pre-registered guided-mode tests since 2026-09-20 (registers 903-1035; PREREG_heldout_families_2026-09-20 named chr2 with chr6 as its primary held-out pair); the shipped family rule was kept over every alternative tested there on the GUIDED node set, so the exposure may favour guided; no de novo arm is recorded on it before this figure
+# note: human chr6: held out, untouched: 0 O1-ledger mentions (PREREG_heldout_families_2026-09-20 primary held-out set with chr2); its 2026-09-20 guided run could not be scored (no Soto family >= 3 members, register 903), and no later test used it
+# note: human chr8: held out, reused verdict set: 0 O1-ledger mentions, but the held-out verdict set of about 30 pre-registered guided-mode tests since 2026-09-20 (registers 903-1035; PREREG_heldout_families_2026-09-20 named chr2 with chr6 as its primary held-out pair); the shipped family rule was kept over every alternative tested there on the GUIDED node set, so the exposure may favour guided; no de novo arm is recorded on it before this figure
+# note: human chr10: held out, reused verdict set: 1 O1-ledger mention, but the held-out verdict set of about 30 pre-registered guided-mode tests since 2026-09-20 (registers 903-1035; PREREG_heldout_families_2026-09-20 named chr2 with chr6 as its primary held-out pair); the shipped family rule was kept over every alternative tested there on the GUIDED node set, so the exposure may favour guided; no de novo arm is recorded on it before this figure
+# note: gorilla NC_073244.2: development here: the pre-registered held-out verdict set of the seeding decision (PREREG_locus_read_pool_2026-09-22, registers 1059/1060; 0.98 kept in 1100), whose outcome (this contig's protein-homology F) chose the de novo mode's seeding with secondary alignments; 29 ledger, 19 register and 50 pre-registration mentions (2026-09-25)
+# note: gorilla NC_073234.2: held out, untouched: no ledger, register or pre-registration mention before this figure (one O2 table row in bench/COPY_ASSIGNMENT_AND_GATE.md); 1,948 gene + pseudogene records, the richest unexposed gorilla contig after NC_086017.1
+# note: not built (no arm): none
+# note: mode missing on a built substrate: none
+# note: denovo = loci assembled from the IsoSeq reads (driver default: also built from secondary alignments within 2% of the read's best score) -> rustle_pipeline.sh families (mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60); guided = annotated gene + pseudogene bodies -> minimap2 -x asm20 -c --eqx -P all-vs-all -> mcl_families --paf --gff --min-exonic-bp 1 --min-shared-exon-frac 0.60
+# note: reference (column truth): compara = Ensembl Compara release 116 families at Primates (connected components of protein-coding paralogue pairs whose duplication node is at or below Primates; built genome-wide, restricted to the contig; the main figure's headline); soto = bench/soto/soto_famCN_S1C.tsv (first Family ID per gene; not independent of the 0.60 exon threshold); npip_u2 = the NPIP reference set of register 990 (built by bench/union_truth_npip.py, retired in 8db314c7); referee = the contig's protein-homology families (bench/truth.py protein-homology; SECONDARY, supplementary figure only); only reference families with >= 2 members on the contig are scored
+# note: scored with family_score semantics: locus -> ONE gene by max overlap; predicted families intersected with the reference genes (an unlabelled member is not scored: precision is an upper bound, register 770/991)
+# note: guided all-vs-all: human chr16: cached; human chr2: cached; human chr6: cached; human chr8: cached; human chr10: cached; gorilla NC_073244.2: cached; gorilla NC_073234.2: cached
+# note: one row per reference family (with >= 2 members on the contig) per mode: its one-to-one matched predicted family, hit = members shared, n_pred = matched family size over the reference genes; sens = hit / n_truth, prec = hit / n_pred, f = harmonic mean, jaccard = hit / (n_truth + n_pred - hit); an unmatched family scores 0
+# note: label = longest common prefix of the named members (display only); flagship = first of ('NPIP', 'TBC1D3', 'FAM90A', 'AGAP') that prefixes a member
+species	contig	status	truth	mode	family	label	flagship	n_truth	cluster	hit	n_pred	sens	prec	f	jaccard
+human	chr16	development	compara	denovo	CF20	MT1G		2		0	0	0	0	0	0
+human	chr16	development	compara	denovo	CF142	ACSM		2		0	0	0	0	0	0
+human	chr16	development	compara	denovo	CF143	BOLA		2		0	0	0	0	0	0
+human	chr16	development	compara	denovo	CF144	CHST		2		0	0	0	0	0	0
+human	chr16	development	compara	denovo	CF145	CLEC		3	MCL22	3	3	1	1	1	1
+human	chr16	development	compara	denovo	CF146	CPHXL		2		0	0	0	0	0	0
+human	chr16	development	compara	denovo	CF147	CTRB		2		0	0	0	0	0	0
+human	chr16	development	compara	denovo	CF149	EIF3C		2	MCL27	2	2	1	1	1	1
+human	chr16	development	compara	denovo	CF150	HBA		2	MCL58	2	2	1	1	1	1
+human	chr16	development	compara	denovo	CF151	HP		2		0	0	0	0	0	0
+human	chr16	development	compara	denovo	CF152	NOMO		3	MCL18	3	3	1	1	1	1
+human	chr16	development	compara	denovo	CF153	NPIP	NPIP	19	MCL1	10	10	0.526316	1	0.689655	0.526316
+human	chr16	development	compara	denovo	CF154	SLX		2	MCL87	1	1	0.5	1	0.666667	0.5
+human	chr16	development	compara	denovo	CF155	SULT1A		2		0	0	0	0	0	0
+human	chr16	development	compara	denovo	CF156	SULT1A		2		0	0	0	0	0	0
+human	chr16	development	compara	denovo	CF157	TP53TG		3	MCL32	3	3	1	1	1	1
+human	chr16	development	compara	denovo	CF158	ZNF		2		0	0	0	0	0	0
+human	chr16	development	npip_u2	denovo	ID_151	NPIPB	NPIP	3	MCL5	2	5	0.666667	0.4	0.5	0.333333
+human	chr16	development	npip_u2	denovo	ID_154	NPIP	NPIP	19	MCL1	12	17	0.631579	0.705882	0.666667	0.5
+human	chr16	development	npip_u2	denovo	ID_149	NPIPA1	NPIP	12	MCL23	3	3	0.25	1	0.4	0.25
+human	chr16	development	referee	denovo	PF0	ABCC		4		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF1	ACS		6	MCL73	1	1	0.166667	1	0.285714	0.166667
+human	chr16	development	referee	denovo	PF2	ADA		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF3	ADCY		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF4	ADGRG		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF5	ATP		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF6	BMERB1		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF7	BOLA		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF8	BOLA2B		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF9	C1QTNF8		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF10	CA5A		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF11	CACNG3		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF12	CARMIL2		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF13	CCL		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF14	CDH		8		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF15	CDIP1		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF16	CDK10		12	MCL60	1	1	0.0833333	1	0.153846	0.0833333
+human	chr16	development	referee	denovo	PF17	CES		5	MCL106	1	1	0.2	1	0.333333	0.2
+human	chr16	development	referee	denovo	PF18	CHMP1A		40	MCL88	1	1	0.025	1	0.0487805	0.025
+human	chr16	development	referee	denovo	PF19	CHST		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF20	CIITA		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF21	CKLF		4	MCL108	1	2	0.25	0.5	0.333333	0.2
+human	chr16	development	referee	denovo	PF22	CLDN		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF23	CLEC18A		6	MCL22	5	5	0.833333	1	0.909091	0.833333
+human	chr16	development	referee	denovo	PF24	CLEC		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF25	CMTM4		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF26	CORO1A		7		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF27	CPHXL		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF28	CPNE		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF29	CTRB1		17		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF30	DDX		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF31	DECR2		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF32	DNAJA		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF33	DNASE		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF34	DOC2A		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF35	DPEP		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF36	EIF3C		2	MCL27	2	2	1	1	1	1
+human	chr16	development	referee	denovo	PF37	FBXL		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF38	GABARAPL2		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF39	GAN		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF40	GP2		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF41	GPR139		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF42	GPT2		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF43	GSPT1		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF44	HAGH		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF45	HBA1		5	MCL58	2	2	0.4	1	0.571429	0.4
+human	chr16	development	referee	denovo	PF46	HS3ST		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF47	HSD		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF48	HSD3B7		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF49	IGFALS		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF50	IRX		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF51	ITGA		4		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF52	JMJD8		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF53	KIF		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF54	LCAT		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF55	TP53TG		4	MCL3	4	4	1	1	1	1
+human	chr16	development	referee	denovo	PF56	PDPR		3	MCL8	3	3	1	1	1	1
+human	chr16	development	referee	denovo	PF57	NPIP	NPIP	21	MCL1	12	12	0.571429	1	0.727273	0.571429
+human	chr16	development	referee	denovo	PF58	SULT1A		5	MCL46	1	1	0.2	1	0.333333	0.2
+human	chr16	development	referee	denovo	PF59	SLC7A		3	MCL76	1	1	0.333333	1	0.5	0.333333
+human	chr16	development	referee	denovo	PF60	SLX		3	MCL87	1	1	0.333333	1	0.5	0.333333
+human	chr16	development	referee	denovo	PF61	MEFV		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF62	MMP		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF63	MT1A		10		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF64	NME		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF65	NOMO		3	MCL18	3	3	1	1	1	1
+human	chr16	development	referee	denovo	PF66	NUBP		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF67	OR1F1		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF68	PDI		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF69	PYCARD		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF70	RAB26		3		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF71	SCNN		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF72	SEPTIN		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF73	SLC12A		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF74	SLC38A		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF75	SLC5A		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF76	STX		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF77	TMC		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF78	WDR		2		0	0	0	0	0	0
+human	chr16	development	referee	denovo	PF79	ZG16		2		0	0	0	0	0	0
+human	chr16	development	soto	denovo	ID_2	ABCC		3		0	0	0	0	0	0
+human	chr16	development	soto	denovo	ID_4	ABHD17AP		3		0	0	0	0	0	0
+human	chr16	development	soto	denovo	ID_39	CDR2		4		0	0	0	0	0	0
+human	chr16	development	soto	denovo	ID_41	SLC7A5P2		8	MCL19	4	4	0.5	1	0.666667	0.5
+human	chr16	development	soto	denovo	ID_42	SNX29P		2		0	0	0	0	0	0
+human	chr16	development	soto	denovo	ID_85	IGHV3OR		2	MCL36	1	1	0.5	1	0.666667	0.5
+human	chr16	development	soto	denovo	ID_149	NPIPA1	NPIP	6	MCL23	1	1	0.166667	1	0.285714	0.166667
+human	chr16	development	soto	denovo	ID_150	MIR3179-1		5	MCL18	3	3	0.6	1	0.75	0.6
+human	chr16	development	soto	denovo	ID_154	NPIP	NPIP	14	MCL1	10	13	0.714286	0.769231	0.740741	0.588235
+human	chr16	development	soto	denovo	ID_187	HERC2P		2	MCL24	2	2	1	1	1	1
+human	chr16	development	soto	denovo	ID_200	IGHV3OR		2		0	0	0	0	0	0
+human	chr16	development	soto	denovo	ID_201	EIF3C		2	MCL27	2	2	1	1	1	1
+human	chr16	development	soto	denovo	ID_299	BCAP31P		2		0	0	0	0	0	0
+human	chr16	development	soto	denovo	ID_320	CLEC		3	MCL22	3	3	1	1	1	1
+human	chr16	development	soto	denovo	ID_421	OTOA		2	MCL45	2	2	1	1	1	1
+human	chr16	development	soto	denovo	ID_424	PDPK		2	MCL60	1	1	0.5	1	0.666667	0.5
+human	chr16	development	soto	denovo	ID_453	SLX		3	MCL46	2	2	0.666667	1	0.8	0.666667
+human	chr16	development	soto	denovo	ID_454	SULT1A		2		0	0	0	0	0	0
+human	chr16	development	soto	denovo	ID_474	TP53TG		2	MCL20	2	2	1	1	1	1
+human	chr16	development	soto	denovo	ID_475	TPS		2		0	0	0	0	0	0
+human	chr16	development	compara	guided	CF20	MT1G		2	MCL36	2	2	1	1	1	1
+human	chr16	development	compara	guided	CF142	ACSM		2	MCL50	2	2	1	1	1	1
+human	chr16	development	compara	guided	CF143	BOLA		2	MCL11	1	1	0.5	1	0.666667	0.5
+human	chr16	development	compara	guided	CF144	CHST		2		0	0	0	0	0	0
+human	chr16	development	compara	guided	CF145	CLEC		3	MCL7	3	3	1	1	1	1
+human	chr16	development	compara	guided	CF146	CPHXL		2	MCL88	2	2	1	1	1	1
+human	chr16	development	compara	guided	CF147	CTRB		2	MCL87	2	2	1	1	1	1
+human	chr16	development	compara	guided	CF149	EIF3C		2	MCL55	2	2	1	1	1	1
+human	chr16	development	compara	guided	CF150	HBA		2	MCL38	2	2	1	1	1	1
+human	chr16	development	compara	guided	CF151	HP		2	MCL85	2	2	1	1	1	1
+human	chr16	development	compara	guided	CF152	NOMO		3	MCL18	3	3	1	1	1	1
+human	chr16	development	compara	guided	CF153	NPIP	NPIP	19	MCL0	16	16	0.842105	1	0.914286	0.842105
+human	chr16	development	compara	guided	CF154	SLX		2		0	0	0	0	0	0
+human	chr16	development	compara	guided	CF155	SULT1A		2	MCL57	2	2	1	1	1	1
+human	chr16	development	compara	guided	CF156	SULT1A		2		0	0	0	0	0	0
+human	chr16	development	compara	guided	CF157	TP53TG		3	MCL9	3	3	1	1	1	1
+human	chr16	development	compara	guided	CF158	ZNF		2		0	0	0	0	0	0
+human	chr16	development	npip_u2	guided	ID_151	NPIPB	NPIP	3	MCL4	1	1	0.333333	1	0.5	0.333333
+human	chr16	development	npip_u2	guided	ID_154	NPIP	NPIP	19	MCL0	16	21	0.842105	0.761905	0.8	0.666667
+human	chr16	development	npip_u2	guided	ID_149	NPIPA1	NPIP	12	MCL2	5	5	0.416667	1	0.588235	0.416667
+human	chr16	development	referee	guided	PF0	ABCC		4		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF1	ACS		6	MCL50	2	2	0.333333	1	0.5	0.333333
+human	chr16	development	referee	guided	PF2	ADA		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF3	ADCY		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF4	ADGRG		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF5	ATP		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF6	BMERB1		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF7	BOLA		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF8	BOLA2B		2	MCL11	2	3	1	0.666667	0.8	0.666667
+human	chr16	development	referee	guided	PF9	C1QTNF8		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF10	CA5A		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF11	CACNG3		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF12	CARMIL2		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF13	CCL		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF14	CDH		8	MCL82	1	1	0.125	1	0.222222	0.125
+human	chr16	development	referee	guided	PF15	CDIP1		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF16	CDK10		12	MCL41	1	1	0.0833333	1	0.153846	0.0833333
+human	chr16	development	referee	guided	PF17	CES		5	MCL80	1	1	0.2	1	0.333333	0.2
+human	chr16	development	referee	guided	PF18	CHMP1A		40		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF19	CHST		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF20	CIITA		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF21	CKLF		4		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF22	CLDN		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF23	CLEC18A		6	MCL7	5	5	0.833333	1	0.909091	0.833333
+human	chr16	development	referee	guided	PF24	CLEC		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF25	CMTM4		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF26	CORO1A		7		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF27	CPHXL		2	MCL88	2	2	1	1	1	1
+human	chr16	development	referee	guided	PF28	CPNE		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF29	CTRB1		17	MCL85	2	2	0.117647	1	0.210526	0.117647
+human	chr16	development	referee	guided	PF30	DDX		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF31	DECR2		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF32	DNAJA		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF33	DNASE		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF34	DOC2A		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF35	DPEP		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF36	EIF3C		2	MCL55	2	2	1	1	1	1
+human	chr16	development	referee	guided	PF37	FBXL		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF38	GABARAPL2		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF39	GAN		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF40	GP2		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF41	GPR139		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF42	GPT2		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF43	GSPT1		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF44	HAGH		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF45	HBA1		5	MCL38	2	2	0.4	1	0.571429	0.4
+human	chr16	development	referee	guided	PF46	HS3ST		3	MCL54	1	1	0.333333	1	0.5	0.333333
+human	chr16	development	referee	guided	PF47	HSD		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF48	HSD3B7		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF49	IGFALS		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF50	IRX		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF51	ITGA		4		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF52	JMJD8		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF53	KIF		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF54	LCAT		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF55	TP53TG		4	MCL9	4	4	1	1	1	1
+human	chr16	development	referee	guided	PF56	PDPR		3	MCL8	3	3	1	1	1	1
+human	chr16	development	referee	guided	PF57	NPIP	NPIP	21	MCL0	18	18	0.857143	1	0.923077	0.857143
+human	chr16	development	referee	guided	PF58	SULT1A		5	MCL57	2	2	0.4	1	0.571429	0.4
+human	chr16	development	referee	guided	PF59	SLC7A		3	MCL52	1	1	0.333333	1	0.5	0.333333
+human	chr16	development	referee	guided	PF60	SLX		3	MCL3	1	2	0.333333	0.5	0.4	0.25
+human	chr16	development	referee	guided	PF61	MEFV		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF62	MMP		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF63	MT1A		10	MCL36	3	3	0.3	1	0.461538	0.3
+human	chr16	development	referee	guided	PF64	NME		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF65	NOMO		3	MCL18	3	3	1	1	1	1
+human	chr16	development	referee	guided	PF66	NUBP		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF67	OR1F1		2	MCL42	1	1	0.5	1	0.666667	0.5
+human	chr16	development	referee	guided	PF68	PDI		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF69	PYCARD		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF70	RAB26		3		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF71	SCNN		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF72	SEPTIN		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF73	SLC12A		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF74	SLC38A		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF75	SLC5A		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF76	STX		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF77	TMC		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF78	WDR		2		0	0	0	0	0	0
+human	chr16	development	referee	guided	PF79	ZG16		2		0	0	0	0	0	0
+human	chr16	development	soto	guided	ID_2	ABCC		3		0	0	0	0	0	0
+human	chr16	development	soto	guided	ID_4	ABHD17AP		3	MCL14	3	3	1	1	1	1
+human	chr16	development	soto	guided	ID_39	CDR2		4	MCL20	2	2	0.5	1	0.666667	0.5
+human	chr16	development	soto	guided	ID_41	SLC7A5P2		8	MCL1	7	7	0.875	1	0.933333	0.875
+human	chr16	development	soto	guided	ID_42	SNX29P		2	MCL17	2	2	1	1	1	1
+human	chr16	development	soto	guided	ID_85	IGHV3OR		2		0	0	0	0	0	0
+human	chr16	development	soto	guided	ID_149	NPIPA1	NPIP	6	MCL40	2	2	0.333333	1	0.5	0.333333
+human	chr16	development	soto	guided	ID_150	MIR3179-1		5	MCL18	3	3	0.6	1	0.75	0.6
+human	chr16	development	soto	guided	ID_154	NPIP	NPIP	14	MCL0	13	14	0.928571	0.928571	0.928571	0.866667
+human	chr16	development	soto	guided	ID_187	HERC2P		2	MCL13	2	2	1	1	1	1
+human	chr16	development	soto	guided	ID_200	IGHV3OR		2		0	0	0	0	0	0
+human	chr16	development	soto	guided	ID_201	EIF3C		2	MCL55	2	2	1	1	1	1
+human	chr16	development	soto	guided	ID_299	BCAP31P		2	MCL33	2	2	1	1	1	1
+human	chr16	development	soto	guided	ID_320	CLEC		3	MCL7	3	3	1	1	1	1
+human	chr16	development	soto	guided	ID_421	OTOA		2	MCL23	2	2	1	1	1	1
+human	chr16	development	soto	guided	ID_424	PDPK		2	MCL41	2	2	1	1	1	1
+human	chr16	development	soto	guided	ID_453	SLX		3	MCL3	2	2	0.666667	1	0.8	0.666667
+human	chr16	development	soto	guided	ID_454	SULT1A		2		0	0	0	0	0	0
+human	chr16	development	soto	guided	ID_474	TP53TG		2	MCL9	2	2	1	1	1	1
+human	chr16	development	soto	guided	ID_475	TPS		2	MCL39	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	denovo	CF132	POTE		4	MCL6	4	4	1	1	1	1
+human	chr2	held out, reused verdict set	compara	denovo	CF240	ALP		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF241	ANKRD		3	MCL12	2	2	0.666667	1	0.8	0.666667
+human	chr2	held out, reused verdict set	compara	denovo	CF242	AQP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF244	CCDC		2	MCL101	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	denovo	CF245	CD8B		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF246	CFC		2	MCL105	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	denovo	CF249	IFT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF250	LIMS		2	MCL17	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	compara	denovo	CF252	MZT		2	MCL103	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	denovo	CF253	OR6B		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF255	RAB		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF257	REG		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF258	RGPD		7	MCL5	7	7	1	1	1	1
+human	chr2	held out, reused verdict set	compara	denovo	CF259	SCYGR		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF260	TRIM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF261	UGT1A		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	denovo	CF262	UGT1A		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF0	AAMP		8	MCL19	1	1	0.125	1	0.222222	0.125
+human	chr2	held out, reused verdict set	referee	denovo	PF1	ABC		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF2	ACADL		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF3	ACKR3		17		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF4	ACTG2		8	MCL6	4	4	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	denovo	PF5	ACVR1		22	MCL98	1	1	0.0454545	1	0.0869565	0.0454545
+human	chr2	held out, reused verdict set	referee	denovo	PF6	ADAM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF7	ALP		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF8	ANKRD23		11	MCL80	1	1	0.0909091	1	0.166667	0.0909091
+human	chr2	held out, reused verdict set	referee	denovo	PF9	ANKRD		3	MCL12	2	3	0.666667	0.666667	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	denovo	PF10	AOX1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF11	AQP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF12	ARHGAP15		2	MCL108	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	denovo	PF13	ARL4C		13		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF14	ATOH8		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF15	B3G		3	MCL0	1	9	0.333333	0.111111	0.166667	0.0909091
+human	chr2	held out, reused verdict set	referee	denovo	PF16	BMP10		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF17	CAD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF18	CALCRL		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF19	CALM2		7		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF20	CAPG		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF21	CAPN		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF22	CASP10		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF23	CCDC		2	MCL101	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	denovo	PF24	CCT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF25	CD207		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF26	CD28		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF27	CD8B		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF28	CFC		2	MCL105	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	denovo	PF29	CHMP3		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF30	CHRN		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF31	CIB4		2	MCL31	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	denovo	PF32	CNGA3		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF33	CNNM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF34	CNTNAP5		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF35	COL3A1		5	MCL28	1	1	0.2	1	0.333333	0.2
+human	chr2	held out, reused verdict set	referee	denovo	PF36	COL6A3		3	MCL54	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	denovo	PF37	COLEC11		5		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF38	CRY		5		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF39	CYP		5		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF40	DDX		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF41	DGUOK		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF42	DHX57		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF43	DLX2		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF44	DNAH		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF45	DNAJC10		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF46	DNER		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF47	DPP10		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF48	DRC11		3	MCL49	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	denovo	PF49	DTNB		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF50	DUSP		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF51	DYSF		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF52	EFEMP1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF53	EGR4		12		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF54	EIPR1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF55	EML		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF56	EMX1		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF57	EPAS1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF58	EPB41L5		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF59	FAHD		3	MCL85	1	2	0.333333	0.5	0.4	0.25
+human	chr2	held out, reused verdict set	referee	denovo	PF60	FAM		2	MCL4	1	3	0.5	0.333333	0.4	0.25
+human	chr2	held out, reused verdict set	referee	denovo	PF61	FASTKD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF62	FHL2		4	MCL8	1	1	0.25	1	0.4	0.25
+human	chr2	held out, reused verdict set	referee	denovo	PF63	FKBP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF64	FSHR		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF65	FZD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF66	GALNT		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF67	GKN		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF68	GPAT		2	MCL1	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	denovo	PF69	GRHL1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF70	GTF2A1L		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF71	HNRNPA3		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF72	HOXD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF73	HOXD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF74	HOXD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF75	HSPE1-MOB4		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF76	IFT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF77	IGFBP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF78	IL18R1		6		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF79	IL1A		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF80	IL1F10		7		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF81	ILKAP		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF82	INH		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF83	ITGA		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF84	KCN		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF85	KCNJ		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF86	KCNK		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF87	KIF		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF88	KLHL23		5		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF89	LOC124900614		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF90	LOC124905938		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF91	MAL		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF92	LRP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF93	LRRTM1		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF94	LY75		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF95	LYG		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF96	LYPD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF97	MDH		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF99	MSH		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF100	MYO		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF101	MZT		2	MCL103	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	denovo	PF102	NCK2		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF103	NEU		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF104	NT5C1B		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF105	OBSL1		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF106	OR6B		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF107	PAX		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF108	PDCL3		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF109	PECR		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF110	PLC		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF111	PLGLB		2	MCL61	1	2	0.5	0.5	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	denovo	PF112	PPI		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF113	PRK		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF114	PROC		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF115	RANBP2		8	MCL5	8	8	1	1	1	1
+human	chr2	held out, reused verdict set	referee	denovo	PF116	SCN		5		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF117	SCYGR		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF119	SCYGR		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF121	SEMA		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF122	SEPTIN		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF123	SIX		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF124	SLC4A		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF125	SLC9A		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF126	SMARCAL1		2	MCL45	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	denovo	PF127	SP100		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF128	SPEG		2	MCL112	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	denovo	PF129	ST3GAL5		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF130	STAT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF131	SULT		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF132	TRIM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF133	TUBA		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF134	UBE		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF135	UGT1A		9		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF136	VAMP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	denovo	PF138	WNT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	denovo	ID_51	PLGL		3	MCL61	1	2	0.333333	0.5	0.4	0.25
+human	chr2	held out, reused verdict set	soto	denovo	ID_62	RPL23AP		2	MCL41	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	soto	denovo	ID_63	ANAPC		6	MCL62	2	2	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	soto	denovo	ID_65	CYP4F27P		7	MCL25	3	3	0.428571	1	0.6	0.428571
+human	chr2	held out, reused verdict set	soto	denovo	ID_99	LINC01881		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	denovo	ID_160	MED15P		2	MCL100	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	soto	denovo	ID_176	IGKV		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	denovo	ID_244	LINC01961		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	denovo	ID_284	POTE		4	MCL6	4	4	1	1	1	1
+human	chr2	held out, reused verdict set	soto	denovo	ID_295	ARHGAP42P		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	denovo	ID_312	CD8B		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	denovo	ID_317	CFC		2	MCL105	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	soto	denovo	ID_386	LIMS		3	MCL17	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	soto	denovo	ID_390	MIR1244-1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	denovo	ID_395	RGPD		6	MCL5	6	6	1	1	1	1
+human	chr2	held out, reused verdict set	soto	denovo	ID_438	PRSS		2	MCL27	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	soto	denovo	ID_476	TRIM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	denovo	ID_482	UBTFL		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	guided	CF132	POTE		4	MCL21	4	4	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF240	ALP		3	MCL162	2	2	0.666667	1	0.8	0.666667
+human	chr2	held out, reused verdict set	compara	guided	CF241	ANKRD		3	MCL100	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	compara	guided	CF242	AQP		2	MCL167	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF244	CCDC		2	MCL126	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF245	CD8B		2	MCL68	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF246	CFC		2	MCL139	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF249	IFT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	guided	CF250	LIMS		2	MCL42	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	compara	guided	CF252	MZT		2	MCL128	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF253	OR6B		2	MCL166	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF255	RAB		2	MCL122	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF257	REG		2	MCL67	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF258	RGPD		7	MCL1	7	7	1	1	1	1
+human	chr2	held out, reused verdict set	compara	guided	CF259	SCYGR		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	guided	CF260	TRIM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	guided	CF261	UGT1A		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	compara	guided	CF262	UGT1A		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF0	AAMP		8		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF1	ABC		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF2	ACADL		2	MCL114	1	2	0.5	0.5	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	guided	PF3	ACKR3		17	MCL154	1	1	0.0588235	1	0.111111	0.0588235
+human	chr2	held out, reused verdict set	referee	guided	PF4	ACTG2		8	MCL21	4	4	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	guided	PF5	ACVR1		22		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF6	ADAM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF7	ALP		3	MCL162	2	2	0.666667	1	0.8	0.666667
+human	chr2	held out, reused verdict set	referee	guided	PF8	ANKRD23		11	MCL165	1	1	0.0909091	1	0.166667	0.0909091
+human	chr2	held out, reused verdict set	referee	guided	PF9	ANKRD		3	MCL100	1	2	0.333333	0.5	0.4	0.25
+human	chr2	held out, reused verdict set	referee	guided	PF10	AOX1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF11	AQP		2	MCL167	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	guided	PF12	ARHGAP15		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF13	ARL4C		13	MCL122	2	2	0.153846	1	0.266667	0.153846
+human	chr2	held out, reused verdict set	referee	guided	PF14	ATOH8		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF15	B3G		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF16	BMP10		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF17	CAD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF18	CALCRL		3	MCL117	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	guided	PF19	CALM2		7		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF20	CAPG		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF21	CAPN		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF22	CASP10		3	MCL45	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	guided	PF23	CCDC		2	MCL126	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	guided	PF24	CCT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF25	CD207		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF26	CD28		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF27	CD8B		2	MCL68	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	guided	PF28	CFC		2	MCL139	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	guided	PF29	CHMP3		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF30	CHRN		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF31	CIB4		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF32	CNGA3		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF33	CNNM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF34	CNTNAP5		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF35	COL3A1		5	MCL159	1	1	0.2	1	0.333333	0.2
+human	chr2	held out, reused verdict set	referee	guided	PF36	COL6A3		3	MCL53	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	guided	PF37	COLEC11		5	MCL67	2	2	0.4	1	0.571429	0.4
+human	chr2	held out, reused verdict set	referee	guided	PF38	CRY		5		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF39	CYP		5		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF40	DDX		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF41	DGUOK		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF42	DHX57		2	MCL58	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	guided	PF43	DLX2		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF44	DNAH		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF45	DNAJC10		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF46	DNER		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF47	DPP10		3	MCL5	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	guided	PF48	DRC11		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF49	DTNB		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF50	DUSP		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF51	DYSF		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF52	EFEMP1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF53	EGR4		12		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF54	EIPR1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF55	EML		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF56	EMX1		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF57	EPAS1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF58	EPB41L5		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF59	FAHD		3	MCL96	1	2	0.333333	0.5	0.4	0.25
+human	chr2	held out, reused verdict set	referee	guided	PF60	FAM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF61	FASTKD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF62	FHL2		4	MCL42	2	2	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	guided	PF63	FKBP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF64	FSHR		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF65	FZD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF66	GALNT		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF67	GKN		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF68	GPAT		2	MCL8	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	guided	PF69	GRHL1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF70	GTF2A1L		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF71	HNRNPA3		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF72	HOXD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF73	HOXD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF74	HOXD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF75	HSPE1-MOB4		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF76	IFT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF77	IGFBP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF78	IL18R1		6		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF79	IL1A		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF80	IL1F10		7	MCL63	1	1	0.142857	1	0.25	0.142857
+human	chr2	held out, reused verdict set	referee	guided	PF81	ILKAP		3	MCL56	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	guided	PF82	INH		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF83	ITGA		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF84	KCN		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF85	KCNJ		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF86	KCNK		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF87	KIF		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF88	KLHL23		5	MCL54	1	1	0.2	1	0.333333	0.2
+human	chr2	held out, reused verdict set	referee	guided	PF89	LOC124900614		3	MCL109	2	2	0.666667	1	0.8	0.666667
+human	chr2	held out, reused verdict set	referee	guided	PF90	LOC124905938		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF91	MAL		2	MCL31	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	guided	PF92	LRP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF93	LRRTM1		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF94	LY75		3	MCL145	1	1	0.333333	1	0.5	0.333333
+human	chr2	held out, reused verdict set	referee	guided	PF95	LYG		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF96	LYPD		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF97	MDH		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF99	MSH		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF100	MYO		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF101	MZT		2	MCL128	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	guided	PF102	NCK2		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF103	NEU		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF104	NT5C1B		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF105	OBSL1		3		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF106	OR6B		2	MCL166	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	guided	PF107	PAX		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF108	PDCL3		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF109	PECR		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF110	PLC		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF111	PLGLB		2	MCL28	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	referee	guided	PF112	PPI		2	MCL23	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	guided	PF113	PRK		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF114	PROC		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF115	RANBP2		8	MCL1	8	8	1	1	1	1
+human	chr2	held out, reused verdict set	referee	guided	PF116	SCN		5		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF117	SCYGR		2	MCL47	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	guided	PF119	SCYGR		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF121	SEMA		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF122	SEPTIN		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF123	SIX		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF124	SLC4A		3	MCL4	1	2	0.333333	0.5	0.4	0.25
+human	chr2	held out, reused verdict set	referee	guided	PF125	SLC9A		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF126	SMARCAL1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF127	SP100		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF128	SPEG		2	MCL157	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	guided	PF129	ST3GAL5		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF130	STAT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF131	SULT		4		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF132	TRIM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF133	TUBA		4	MCL156	2	2	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	referee	guided	PF134	UBE		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF135	UGT1A		9		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF136	VAMP		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	referee	guided	PF138	WNT		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	guided	ID_51	PLGL		3	MCL28	3	3	1	1	1	1
+human	chr2	held out, reused verdict set	soto	guided	ID_62	RPL23AP		2	MCL13	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	soto	guided	ID_63	ANAPC		6	MCL6	3	3	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	soto	guided	ID_65	CYP4F27P		7	MCL20	4	4	0.571429	1	0.727273	0.571429
+human	chr2	held out, reused verdict set	soto	guided	ID_99	LINC01881		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	guided	ID_160	MED15P		2	MCL141	1	1	0.5	1	0.666667	0.5
+human	chr2	held out, reused verdict set	soto	guided	ID_176	IGKV		4	MCL0	3	3	0.75	1	0.857143	0.75
+human	chr2	held out, reused verdict set	soto	guided	ID_244	LINC01961		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	guided	ID_284	POTE		4	MCL21	4	4	1	1	1	1
+human	chr2	held out, reused verdict set	soto	guided	ID_295	ARHGAP42P		2	MCL124	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	soto	guided	ID_312	CD8B		2	MCL68	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	soto	guided	ID_317	CFC		2	MCL139	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	soto	guided	ID_386	LIMS		3	MCL42	2	2	0.666667	1	0.8	0.666667
+human	chr2	held out, reused verdict set	soto	guided	ID_390	MIR1244-1		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	guided	ID_395	RGPD		6	MCL1	6	6	1	1	1	1
+human	chr2	held out, reused verdict set	soto	guided	ID_438	PRSS		2	MCL140	2	2	1	1	1	1
+human	chr2	held out, reused verdict set	soto	guided	ID_476	TRIM		2		0	0	0	0	0	0
+human	chr2	held out, reused verdict set	soto	guided	ID_482	UBTFL		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF314	BTN3A		2	MCL31	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	denovo	CF315	C4A		2	MCL9	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	denovo	CF316	GSTA		2	MCL40	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	denovo	CF317	H2AC		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF318	H3C		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF319	H4C		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF320	H4C		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF321	HLA		4	MCL5	3	3	0.75	1	0.857143	0.75
+human	chr6	held out, untouched	compara	denovo	CF322	HLA-DQA		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF323	HLA-DQB		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF324	HSPA		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF325	KHDC		2	MCL16	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	compara	denovo	CF326	MIC		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF327	OR2J		3		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	denovo	CF329	RAET1G		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF0	ABCC10		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF1	ADGR		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF2	ADTRP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF3	ALDH		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF4	ASCC3		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF5	BMP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF6	BTBD9		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF7	BTN1A1		16	MCL31	1	2	0.0625	0.5	0.111111	0.0588235
+human	chr6	held out, untouched	referee	denovo	PF8	BTN3A2		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF9	C2		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF10	C4A		3	MCL34	2	2	0.666667	1	0.8	0.666667
+human	chr6	held out, untouched	referee	denovo	PF11	CALHM		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF12	CCN		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF13	CCR6		18		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF14	CDC40		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF15	CDK19		19		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF16	CDYL		3	MCL4	1	1	0.333333	1	0.5	0.333333
+human	chr6	held out, untouched	referee	denovo	PF17	CLIC		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF18	CLPS		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF19	CNPY3-GNMT		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF20	COL		5		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF21	COL12A1		2	MCL35	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	denovo	PF22	CRISP1		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF23	CUL		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF24	CYB5R4		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF25	DDX		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF26	DEFB		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF27	DLK2		4	MCL0	1	2	0.25	0.5	0.333333	0.2
+human	chr6	held out, untouched	referee	denovo	PF28	DPPA5		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF29	DRC5		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF30	EEF1A1		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF31	ELOVL		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF32	ENPP		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF33	ESR1		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF34	ETV7		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF35	EZR		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF36	FKBP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF37	GABBR1		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF38	GABRR		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF39	GCM		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF40	GJA1		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF41	GPX		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF42	GSTA		5	MCL40	2	2	0.4	1	0.571429	0.4
+human	chr6	held out, untouched	referee	denovo	PF43	GUCA		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF44	H1-1		6		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF45	H2AC		12		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF46	H2BC		15	MCL9	1	3	0.0666667	0.333333	0.111111	0.0588235
+human	chr6	held out, untouched	referee	denovo	PF47	H3C		10		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF48	H4C		12		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF49	HFE		28	MCL5	4	4	0.142857	1	0.25	0.142857
+human	chr6	held out, untouched	referee	denovo	PF50	HIVEP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF51	HMGN		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF52	HSPA		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF53	IL17A		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF54	IL20RA		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF55	KATNA1		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF56	KCNK		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF57	KHDC		2	MCL16	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	denovo	PF58	KHDRBS2		2	MCL53	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	denovo	PF59	KIAA1586		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF60	KIF		3	MCL39	1	1	0.333333	1	0.5	0.333333
+human	chr6	held out, untouched	referee	denovo	PF61	LAMA		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF62	LPA		2	MCL52	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	denovo	PF63	LRFN2		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF64	LTA		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF65	LY6G		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF66	LY6G		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF67	MAS		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF68	MCM		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF69	MDGA1		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF70	NCR2		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF71	NUDT3		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF72	OR10C1		17	MCL15	2	2	0.117647	1	0.210526	0.117647
+human	chr6	held out, untouched	referee	denovo	PF73	PGBD1		25	MCL14	1	1	0.04	1	0.0769231	0.04
+human	chr6	held out, untouched	referee	denovo	PF74	PHACTR		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF75	POPDC		2	MCL45	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	denovo	PF76	POU		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF77	PPIL		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF78	PSMB		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF79	RAB		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF80	RNF		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF81	SERPINB		3	MCL12	1	1	0.333333	1	0.5	0.333333
+human	chr6	held out, untouched	referee	denovo	PF82	SLC17A		5		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF83	SLC		7	MCL13	1	1	0.142857	1	0.25	0.142857
+human	chr6	held out, untouched	referee	denovo	PF84	SLC35B		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF85	TBC1D		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF86	TBP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF87	TBX		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF88	TFAP		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF89	TMEM		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF90	TMEM		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF91	TREM		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF92	TSPYL		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF93	TUB		4	MCL25	2	2	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	denovo	PF94	USP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF95	VARS		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	denovo	PF96	VNN		2		0	0	0	0	0	0
+human	chr6	held out, untouched	soto	denovo	ID_306	C4A		2	MCL9	2	2	1	1	1	1
+human	chr6	held out, untouched	soto	denovo	ID_329	CYP21A		2		0	0	0	0	0	0
+human	chr6	held out, untouched	soto	denovo	ID_473	TNX		2	MCL35	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF314	BTN3A		2	MCL36	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF315	C4A		2	MCL45	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF316	GSTA		2	MCL11	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF317	H2AC		2	MCL1	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF318	H3C		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	guided	CF319	H4C		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	guided	CF320	H4C		2		0	0	0	0	0	0
+human	chr6	held out, untouched	compara	guided	CF321	HLA		4	MCL2	4	4	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF322	HLA-DQA		2	MCL48	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF323	HLA-DQB		2	MCL22	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF324	HSPA		2	MCL21	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF325	KHDC		2	MCL69	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	compara	guided	CF326	MIC		2	MCL44	2	2	1	1	1	1
+human	chr6	held out, untouched	compara	guided	CF327	OR2J		3	MCL17	2	2	0.666667	1	0.8	0.666667
+human	chr6	held out, untouched	compara	guided	CF329	RAET1G		4	MCL84	2	2	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	guided	PF0	ABCC10		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF1	ADGR		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF2	ADTRP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF3	ALDH		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF4	ASCC3		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF5	BMP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF6	BTBD9		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF7	BTN1A1		16	MCL36	1	2	0.0625	0.5	0.111111	0.0588235
+human	chr6	held out, untouched	referee	guided	PF8	BTN3A2		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF9	C2		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF10	C4A		3	MCL45	2	2	0.666667	1	0.8	0.666667
+human	chr6	held out, untouched	referee	guided	PF11	CALHM		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF12	CCN		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF13	CCR6		18	MCL80	2	2	0.111111	1	0.2	0.111111
+human	chr6	held out, untouched	referee	guided	PF14	CDC40		2	MCL7	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	guided	PF15	CDK19		19		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF16	CDYL		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF17	CLIC		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF18	CLPS		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF19	CNPY3-GNMT		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF20	COL		5		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF21	COL12A1		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF22	CRISP1		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF23	CUL		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF24	CYB5R4		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF25	DDX		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF26	DEFB		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF27	DLK2		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF28	DPPA5		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF29	DRC5		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF30	EEF1A1		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF31	ELOVL		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF32	ENPP		4	MCL79	1	1	0.25	1	0.4	0.25
+human	chr6	held out, untouched	referee	guided	PF33	ESR1		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF34	ETV7		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF35	EZR		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF36	FKBP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF37	GABBR1		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF38	GABRR		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF39	GCM		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF40	GJA1		4		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF41	GPX		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF42	GSTA		5	MCL11	3	3	0.6	1	0.75	0.6
+human	chr6	held out, untouched	referee	guided	PF43	GUCA		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF44	H1-1		6		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF45	H2AC		12	MCL1	7	7	0.583333	1	0.736842	0.583333
+human	chr6	held out, untouched	referee	guided	PF46	H2BC		15	MCL0	10	10	0.666667	1	0.8	0.666667
+human	chr6	held out, untouched	referee	guided	PF47	H3C		10		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF48	H4C		12	MCL38	2	2	0.166667	1	0.285714	0.166667
+human	chr6	held out, untouched	referee	guided	PF49	HFE		28	MCL2	4	4	0.142857	1	0.25	0.142857
+human	chr6	held out, untouched	referee	guided	PF50	HIVEP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF51	HMGN		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF52	HSPA		3	MCL21	3	3	1	1	1	1
+human	chr6	held out, untouched	referee	guided	PF53	IL17A		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF54	IL20RA		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF55	KATNA1		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF56	KCNK		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF57	KHDC		2	MCL69	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	guided	PF58	KHDRBS2		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF59	KIAA1586		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF60	KIF		3	MCL49	1	1	0.333333	1	0.5	0.333333
+human	chr6	held out, untouched	referee	guided	PF61	LAMA		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF62	LPA		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF63	LRFN2		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF64	LTA		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF65	LY6G		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF66	LY6G		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF67	MAS		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF68	MCM		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF69	MDGA1		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF70	NCR2		4	MCL51	1	1	0.25	1	0.4	0.25
+human	chr6	held out, untouched	referee	guided	PF71	NUDT3		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF72	OR10C1		17	MCL17	2	2	0.117647	1	0.210526	0.117647
+human	chr6	held out, untouched	referee	guided	PF73	PGBD1		25		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF74	PHACTR		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF75	POPDC		2	MCL74	1	1	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	guided	PF76	POU		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF77	PPIL		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF78	PSMB		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF79	RAB		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF80	RNF		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF81	SERPINB		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF82	SLC17A		5		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF83	SLC		7		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF84	SLC35B		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF85	TBC1D		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF86	TBP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF87	TBX		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF88	TFAP		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF89	TMEM		3		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF90	TMEM		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF91	TREM		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF92	TSPYL		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF93	TUB		4	MCL26	2	2	0.5	1	0.666667	0.5
+human	chr6	held out, untouched	referee	guided	PF94	USP		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF95	VARS		2		0	0	0	0	0	0
+human	chr6	held out, untouched	referee	guided	PF96	VNN		2		0	0	0	0	0	0
+human	chr6	held out, untouched	soto	guided	ID_306	C4A		2	MCL45	2	2	1	1	1	1
+human	chr6	held out, untouched	soto	guided	ID_329	CYP21A		2	MCL46	2	2	1	1	1	1
+human	chr6	held out, untouched	soto	guided	ID_473	TNX		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF107	FAM90A	FAM90A	17	MCL1	7	8	0.411765	0.875	0.56	0.388889
+human	chr8	held out, reused verdict set	compara	denovo	CF118	ZNF		3	MCL11	3	3	1	1	1	1
+human	chr8	held out, reused verdict set	compara	denovo	CF148	FAM86B		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF303	USP17L		5		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF346	CYP11B		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF347	DEFA		6		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF348	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF349	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF350	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF351	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF352	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF353	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF354	NAT		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	denovo	CF355	PRR23D		2	MCL5	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	compara	denovo	CF356	SPAG		2	MCL20	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	referee	denovo	PF0	ADAM		7		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF1	ADRA1A		6		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF2	AGO2		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF3	ANGPT1		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF4	ANK1		6	MCL4	1	1	0.166667	1	0.285714	0.166667
+human	chr8	held out, reused verdict set	referee	denovo	PF5	BLK		13	MCL0	1	6	0.0769231	0.166667	0.105263	0.0555556
+human	chr8	held out, reused verdict set	referee	denovo	PF6	BMP1		4	MCL31	1	1	0.25	1	0.4	0.25
+human	chr8	held out, reused verdict set	referee	denovo	PF7	C8orf76		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF8	CA1		5		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF9	CALB1		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF10	CCN		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF11	CHMP		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF12	CHRN		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF13	CLVS1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF14	COL		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF15	CRISPLD1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF16	CYP		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF17	DECR1		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF18	DEFA		6		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF19	DEFB		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF20	DEFB		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF21	DEFB		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF22	DEFB		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF23	DEFB		3	MCL21	1	1	0.333333	1	0.5	0.333333
+human	chr8	held out, reused verdict set	referee	denovo	PF24	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF25	DEFB		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF26	DPYS		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF27	DUSP		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF28	EGR3		24	MCL11	3	3	0.125	1	0.222222	0.125
+human	chr8	held out, reused verdict set	referee	denovo	PF29	EPPK1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF30	ESRP1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF31	EXT		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF32	FABP12		5		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF33	FAM86B		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF34	FAM90A	FAM90A	42	MCL1	17	18	0.404762	0.944444	0.566667	0.395349
+human	chr8	held out, reused verdict set	referee	denovo	PF35	FBXO		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF36	FGF		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF37	FZD		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF38	GEM		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF39	GML		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF40	GSDM		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF41	IDO		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF42	JRK		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF43	KCN		4	MCL3	1	2	0.25	0.5	0.333333	0.2
+human	chr8	held out, reused verdict set	referee	denovo	PF44	LGI3		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF45	LOC124902048		29		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF46	LOC124906718		2	MCL8	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	referee	denovo	PF47	PRR23D		3	MCL5	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	denovo	PF48	SPAG		3	MCL20	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	denovo	PF49	UBE2V		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF50	USP17L		6		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF51	LOXL2		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF52	LY6D		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF53	LY6E		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF54	LY6H		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF55	LYPD2		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF56	LYPLA1		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF57	MRPS28		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF58	MSC		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF59	MTMR		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF60	NAT		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF61	NEF		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF62	PABPC1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF63	PENK		2	MCL28	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	referee	denovo	PF64	PLAT		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF65	PPP		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF66	PTK		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF67	SLC25A		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF68	SLC39A		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF69	SLC7A		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF70	SNT		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF71	SOX		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF72	STMN		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF73	TMEM276-ZFTRAF1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF74	TNFRSF		5		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF75	XKR		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF76	ZHX		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	denovo	PF77	ZNF		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_98	ENPP7P		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_107	USP17L		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_277	ALG1L		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_333	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_334	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_335	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_336	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_337	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_338	DEFB		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_339	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_340	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_355	FAM86B		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_356	FAM90A	FAM90A	4	MCL35	1	1	0.25	1	0.4	0.25
+human	chr8	held out, reused verdict set	soto	denovo	ID_420	OR7E		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	denovo	ID_437	PRR23D		2	MCL5	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	denovo	ID_458	SPAG		2	MCL20	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	denovo	ID_490	ZNF		4	MCL11	4	4	1	1	1	1
+human	chr8	held out, reused verdict set	compara	guided	CF107	FAM90A	FAM90A	17	MCL0	11	12	0.647059	0.916667	0.758621	0.611111
+human	chr8	held out, reused verdict set	compara	guided	CF118	ZNF		3	MCL12	3	3	1	1	1	1
+human	chr8	held out, reused verdict set	compara	guided	CF148	FAM86B		2	MCL13	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	compara	guided	CF303	USP17L		5		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	guided	CF346	CYP11B		2	MCL69	2	2	1	1	1	1
+human	chr8	held out, reused verdict set	compara	guided	CF347	DEFA		6	MCL6	2	2	0.333333	1	0.5	0.333333
+human	chr8	held out, reused verdict set	compara	guided	CF348	DEFB		2	MCL19	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	compara	guided	CF349	DEFB		2	MCL21	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	compara	guided	CF350	DEFB		2	MCL23	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	compara	guided	CF351	DEFB		2	MCL22	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	compara	guided	CF352	DEFB		2	MCL24	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	compara	guided	CF353	DEFB		2	MCL17	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	compara	guided	CF354	NAT		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	compara	guided	CF355	PRR23D		2	MCL8	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	compara	guided	CF356	SPAG		2	MCL20	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	referee	guided	PF0	ADAM		7	MCL48	1	1	0.142857	1	0.25	0.142857
+human	chr8	held out, reused verdict set	referee	guided	PF1	ADRA1A		6		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF2	AGO2		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF3	ANGPT1		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF4	ANK1		6		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF5	BLK		13		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF6	BMP1		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF7	C8orf76		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF8	CA1		5		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF9	CALB1		3	MCL55	1	1	0.333333	1	0.5	0.333333
+human	chr8	held out, reused verdict set	referee	guided	PF10	CCN		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF11	CHMP		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF12	CHRN		3	MCL49	1	1	0.333333	1	0.5	0.333333
+human	chr8	held out, reused verdict set	referee	guided	PF13	CLVS1		2	MCL56	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	referee	guided	PF14	COL		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF15	CRISPLD1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF16	CYP		4	MCL69	2	2	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	referee	guided	PF17	DECR1		3	MCL59	1	1	0.333333	1	0.5	0.333333
+human	chr8	held out, reused verdict set	referee	guided	PF18	DEFA		6	MCL6	2	2	0.333333	1	0.5	0.333333
+human	chr8	held out, reused verdict set	referee	guided	PF19	DEFB		3	MCL19	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	guided	PF20	DEFB		3	MCL21	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	guided	PF21	DEFB		3	MCL23	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	guided	PF22	DEFB		3	MCL22	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	guided	PF23	DEFB		3	MCL24	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	guided	PF24	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF25	DEFB		3	MCL17	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	guided	PF26	DPYS		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF27	DUSP		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF28	EGR3		24	MCL12	3	3	0.125	1	0.222222	0.125
+human	chr8	held out, reused verdict set	referee	guided	PF29	EPPK1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF30	ESRP1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF31	EXT		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF32	FABP12		5		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF33	FAM86B		3	MCL13	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	guided	PF34	FAM90A	FAM90A	42	MCL0	23	24	0.547619	0.958333	0.69697	0.534884
+human	chr8	held out, reused verdict set	referee	guided	PF35	FBXO		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF36	FGF		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF37	FZD		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF38	GEM		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF39	GML		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF40	GSDM		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF41	IDO		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF42	JRK		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF43	KCN		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF44	LGI3		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF45	LOC124902048		29	MCL1	29	29	1	1	1	1
+human	chr8	held out, reused verdict set	referee	guided	PF46	LOC124906718		2	MCL3	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	referee	guided	PF47	PRR23D		3	MCL8	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	guided	PF48	SPAG		3	MCL20	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	referee	guided	PF49	UBE2V		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF50	USP17L		6		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF51	LOXL2		4	MCL44	1	1	0.25	1	0.4	0.25
+human	chr8	held out, reused verdict set	referee	guided	PF52	LY6D		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF53	LY6E		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF54	LY6H		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF55	LYPD2		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF56	LYPLA1		3	MCL53	1	1	0.333333	1	0.5	0.333333
+human	chr8	held out, reused verdict set	referee	guided	PF57	MRPS28		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF58	MSC		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF59	MTMR		2	MCL26	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	referee	guided	PF60	NAT		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF61	NEF		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF62	PABPC1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF63	PENK		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF64	PLAT		3		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF65	PPP		2	MCL39	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	referee	guided	PF66	PTK		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF67	SLC25A		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF68	SLC39A		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF69	SLC7A		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF70	SNT		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF71	SOX		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF72	STMN		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF73	TMEM276-ZFTRAF1		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF74	TNFRSF		5	MCL40	1	1	0.2	1	0.333333	0.2
+human	chr8	held out, reused verdict set	referee	guided	PF75	XKR		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF76	ZHX		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	referee	guided	PF77	ZNF		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	guided	ID_98	ENPP7P		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	guided	ID_107	USP17L		4		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	guided	ID_277	ALG1L		2	MCL35	2	2	1	1	1	1
+human	chr8	held out, reused verdict set	soto	guided	ID_333	DEFB		2	MCL19	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	guided	ID_334	DEFB		2	MCL21	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	guided	ID_335	DEFB		2	MCL23	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	guided	ID_336	DEFB		2	MCL22	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	guided	ID_337	DEFB		2	MCL24	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	guided	ID_338	DEFB		4	MCL12	1	4	0.25	0.25	0.25	0.142857
+human	chr8	held out, reused verdict set	soto	guided	ID_339	DEFB		2		0	0	0	0	0	0
+human	chr8	held out, reused verdict set	soto	guided	ID_340	DEFB		2	MCL17	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	guided	ID_355	FAM86B		2	MCL13	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	guided	ID_356	FAM90A	FAM90A	4	MCL0	1	2	0.25	0.5	0.333333	0.2
+human	chr8	held out, reused verdict set	soto	guided	ID_420	OR7E		3	MCL5	2	2	0.666667	1	0.8	0.666667
+human	chr8	held out, reused verdict set	soto	guided	ID_437	PRR23D		2	MCL8	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	guided	ID_458	SPAG		2	MCL20	1	1	0.5	1	0.666667	0.5
+human	chr8	held out, reused verdict set	soto	guided	ID_490	ZNF		4	MCL15	3	3	0.75	1	0.857143	0.75
+human	chr10	held out, reused verdict set	compara	denovo	CF43	AGAP	AGAP	4	MCL2	1	2	0.25	0.5	0.333333	0.2
+human	chr10	held out, reused verdict set	compara	denovo	CF45	ANXA		2	MCL40	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	compara	denovo	CF46	ASAH		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	denovo	CF47	CYP2C		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	denovo	CF50	FAM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	denovo	CF51	FAM		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	denovo	CF54	LYZL		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	denovo	CF55	NPY4R		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	denovo	CF56	NUTM		4	MCL10	3	3	0.75	1	0.857143	0.75
+human	chr10	held out, reused verdict set	compara	denovo	CF58	SFTPA		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	denovo	CF59	SYT		2	MCL18	1	2	0.5	0.5	0.5	0.333333
+human	chr10	held out, reused verdict set	compara	denovo	CF60	TIMM		2	MCL3	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	compara	denovo	CF62	WASHC		2	MCL36	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	compara	denovo	CF63	ZNF		2	MCL34	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	referee	denovo	PF0	ACT		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF1	ADAM		2	MCL0	1	4	0.5	0.25	0.333333	0.2
+human	chr10	held out, reused verdict set	referee	denovo	PF2	ADRA2A		13		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF3	AGAP	AGAP	4	MCL2	1	2	0.25	0.5	0.333333	0.2
+human	chr10	held out, reused verdict set	referee	denovo	PF4	AKR		6	MCL26	2	2	0.333333	1	0.5	0.333333
+human	chr10	held out, reused verdict set	referee	denovo	PF5	ANKRD1		6		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF6	ANKRD		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF7	ANXA		4	MCL40	2	2	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	denovo	PF8	ARL3		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF9	ARMC3		2	MCL31	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	denovo	PF10	ATOH7		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF11	BMI1		5		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF12	BMPR1A		13	MCL8	1	3	0.0769231	0.333333	0.125	0.0666667
+human	chr10	held out, reused verdict set	referee	denovo	PF13	BTAF1		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF14	BTRC		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF15	BUB3		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF16	CALHM		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF17	CALML3		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF18	CDH23		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF19	CELF2		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF20	CNNM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF21	COL13A1		5		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF22	CPN1		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF23	CTNNA3		2	MCL4	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	denovo	PF24	CUBN		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF25	CYP		8		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF26	DDX		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF27	DHTKD1		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF28	DMBT1		4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF29	DNTT		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF30	DRGX		4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF31	DUSP		4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF32	DYDC		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF33	ECH		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF34	EGR2		13	MCL34	2	2	0.153846	1	0.266667	0.153846
+human	chr10	held out, reused verdict set	referee	denovo	PF35	ENTPD		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF36	FAM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF37	FAM		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF38	FRAT		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF39	GDF2		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF40	GPRIN		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF41	GSTO		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF42	HABP2		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF43	HECTD2		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF44	HHEX		7		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF45	HK1		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF46	HNRNP		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF47	IDI		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF48	IFIT		5		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF49	INA		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF50	ITIH		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF51	KIF		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF52	LDB3		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF53	LGI1		5		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF54	LIP		6	MCL24	1	1	0.166667	1	0.285714	0.166667
+human	chr10	held out, reused verdict set	referee	denovo	PF55	PITX3		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF56	LRRC18		4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF57	LYZL		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF58	MALRD1		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF59	NEBL		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF60	NFKB2		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF61	NUTM		4	MCL10	3	3	0.75	1	0.857143	0.75
+human	chr10	held out, reused verdict set	referee	denovo	PF62	OIT3		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF63	PNLIP		4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF64	PRAP1		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF65	PTP		2	MCL44	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	denovo	PF66	SAMD8		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF67	SFXN		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF68	SLC16A		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF69	SLC18A		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF70	SLC25A		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF71	SORCS		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF72	SYT		2	MCL18	1	2	0.5	0.5	0.5	0.333333
+human	chr10	held out, reused verdict set	referee	denovo	PF73	TBC1D12		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF74	TIMM		2	MCL3	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	referee	denovo	PF75	TSPAN		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF76	TUB		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	denovo	PF77	WASHC		2	MCL36	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	referee	denovo	PF78	ZDHHC		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	denovo	ID_223	ANXA8		3	MCL13	2	2	0.666667	1	0.8	0.666667
+human	chr10	held out, reused verdict set	soto	denovo	ID_224	FAM		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	denovo	ID_233	AGAP10P	AGAP	10	MCL2	5	8	0.5	0.625	0.555556	0.384615
+human	chr10	held out, reused verdict set	soto	denovo	ID_240	NUTM2A-AS1		2	MCL18	1	2	0.5	0.5	0.5	0.333333
+human	chr10	held out, reused verdict set	soto	denovo	ID_270	BMS1P1		5	MCL11	2	2	0.4	1	0.571429	0.4
+human	chr10	held out, reused verdict set	soto	denovo	ID_298	ASAH		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	denovo	ID_327	CTSLP		4	MCL22	3	3	0.75	1	0.857143	0.75
+human	chr10	held out, reused verdict set	soto	denovo	ID_330	DUX4L		12		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	denovo	ID_352	FAM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	denovo	ID_366	FRMPD		2	MCL43	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	soto	denovo	ID_405	NPY4R		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	denovo	ID_409	NUTM		5	MCL10	4	4	0.8	1	0.888889	0.8
+human	chr10	held out, reused verdict set	soto	denovo	ID_439	PTPN		2	MCL45	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	soto	denovo	ID_443	RHEBP1		5	MCL20	2	3	0.4	0.666667	0.5	0.333333
+human	chr10	held out, reused verdict set	soto	denovo	ID_461	SPRN		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	denovo	ID_471	TIMM		2	MCL3	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	soto	denovo	ID_485	WASHC		2	MCL36	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	compara	guided	CF43	AGAP	AGAP	4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	guided	CF45	ANXA		2	MCL52	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	compara	guided	CF46	ASAH		2	MCL59	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	compara	guided	CF47	CYP2C		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	guided	CF50	FAM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	guided	CF51	FAM		3	MCL8	2	3	0.666667	0.666667	0.666667	0.5
+human	chr10	held out, reused verdict set	compara	guided	CF54	LYZL		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	guided	CF55	NPY4R		2	MCL53	1	2	0.5	0.5	0.5	0.333333
+human	chr10	held out, reused verdict set	compara	guided	CF56	NUTM		4	MCL3	3	3	0.75	1	0.857143	0.75
+human	chr10	held out, reused verdict set	compara	guided	CF58	SFTPA		2	MCL28	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	compara	guided	CF59	SYT		2	MCL9	1	2	0.5	0.5	0.5	0.333333
+human	chr10	held out, reused verdict set	compara	guided	CF60	TIMM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	compara	guided	CF62	WASHC		2	MCL49	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	compara	guided	CF63	ZNF		2	MCL42	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	referee	guided	PF0	ACT		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF1	ADAM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF2	ADRA2A		13	MCL53	1	2	0.0769231	0.5	0.133333	0.0714286
+human	chr10	held out, reused verdict set	referee	guided	PF3	AGAP	AGAP	4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF4	AKR		6	MCL31	2	2	0.333333	1	0.5	0.333333
+human	chr10	held out, reused verdict set	referee	guided	PF5	ANKRD1		6		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF6	ANKRD		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF7	ANXA		4	MCL52	2	2	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	guided	PF8	ARL3		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF9	ARMC3		2	MCL16	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	guided	PF10	ATOH7		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF11	BMI1		5		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF12	BMPR1A		13		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF13	BTAF1		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF14	BTRC		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF15	BUB3		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF16	CALHM		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF17	CALML3		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF18	CDH23		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF19	CELF2		2	MCL34	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	guided	PF20	CNNM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF21	COL13A1		5	MCL28	2	2	0.4	1	0.571429	0.4
+human	chr10	held out, reused verdict set	referee	guided	PF22	CPN1		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF23	CTNNA3		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF24	CUBN		2	MCL6	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	guided	PF25	CYP		8		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF26	DDX		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF27	DHTKD1		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF28	DMBT1		4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF29	DNTT		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF30	DRGX		4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF31	DUSP		4		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF32	DYDC		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF33	ECH		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF34	EGR2		13	MCL42	2	2	0.153846	1	0.266667	0.153846
+human	chr10	held out, reused verdict set	referee	guided	PF35	ENTPD		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF36	FAM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF37	FAM		3	MCL8	2	3	0.666667	0.666667	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	guided	PF38	FRAT		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF39	GDF2		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF40	GPRIN		2	MCL54	1	2	0.5	0.5	0.5	0.333333
+human	chr10	held out, reused verdict set	referee	guided	PF41	GSTO		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF42	HABP2		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF43	HECTD2		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF44	HHEX		7		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF45	HK1		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF46	HNRNP		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF47	IDI		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF48	IFIT		5		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF49	INA		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF50	ITIH		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF51	KIF		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF52	LDB3		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF53	LGI1		5		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF54	LIP		6		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF55	PITX3		3	MCL0	1	1	0.333333	1	0.5	0.333333
+human	chr10	held out, reused verdict set	referee	guided	PF56	LRRC18		4	MCL75	1	1	0.25	1	0.4	0.25
+human	chr10	held out, reused verdict set	referee	guided	PF57	LYZL		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF58	MALRD1		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF59	NEBL		2	MCL37	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	guided	PF60	NFKB2		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF61	NUTM		4	MCL3	3	3	0.75	1	0.857143	0.75
+human	chr10	held out, reused verdict set	referee	guided	PF62	OIT3		2	MCL11	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	guided	PF63	PNLIP		4	MCL79	1	1	0.25	1	0.4	0.25
+human	chr10	held out, reused verdict set	referee	guided	PF64	PRAP1		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF65	PTP		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF66	SAMD8		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF67	SFXN		3		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF68	SLC16A		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF69	SLC18A		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF70	SLC25A		2	MCL12	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	guided	PF71	SORCS		2	MCL78	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	referee	guided	PF72	SYT		2	MCL9	1	2	0.5	0.5	0.5	0.333333
+human	chr10	held out, reused verdict set	referee	guided	PF73	TBC1D12		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF74	TIMM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF75	TSPAN		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF76	TUB		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	referee	guided	PF77	WASHC		2	MCL49	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	referee	guided	PF78	ZDHHC		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	guided	ID_223	ANXA8		3	MCL52	2	2	0.666667	1	0.8	0.666667
+human	chr10	held out, reused verdict set	soto	guided	ID_224	FAM		3	MCL8	2	3	0.666667	0.666667	0.666667	0.5
+human	chr10	held out, reused verdict set	soto	guided	ID_233	AGAP10P	AGAP	10	MCL1	6	7	0.6	0.857143	0.705882	0.545455
+human	chr10	held out, reused verdict set	soto	guided	ID_240	NUTM2A-AS1		2	MCL9	1	2	0.5	0.5	0.5	0.333333
+human	chr10	held out, reused verdict set	soto	guided	ID_270	BMS1P1		5	MCL50	2	2	0.4	1	0.571429	0.4
+human	chr10	held out, reused verdict set	soto	guided	ID_298	ASAH		2	MCL59	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	soto	guided	ID_327	CTSLP		4	MCL25	3	3	0.75	1	0.857143	0.75
+human	chr10	held out, reused verdict set	soto	guided	ID_330	DUX4L		12	MCL0	12	12	1	1	1	1
+human	chr10	held out, reused verdict set	soto	guided	ID_352	FAM		2	MCL58	1	1	0.5	1	0.666667	0.5
+human	chr10	held out, reused verdict set	soto	guided	ID_366	FRMPD		2	MCL57	2	2	1	1	1	1
+human	chr10	held out, reused verdict set	soto	guided	ID_405	NPY4R		2	MCL53	1	2	0.5	0.5	0.5	0.333333
+human	chr10	held out, reused verdict set	soto	guided	ID_409	NUTM		5	MCL3	4	4	0.8	1	0.888889	0.8
+human	chr10	held out, reused verdict set	soto	guided	ID_439	PTPN		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	guided	ID_443	RHEBP1		5	MCL21	2	3	0.4	0.666667	0.5	0.333333
+human	chr10	held out, reused verdict set	soto	guided	ID_461	SPRN		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	guided	ID_471	TIMM		2		0	0	0	0	0	0
+human	chr10	held out, reused verdict set	soto	guided	ID_485	WASHC		2	MCL49	2	2	1	1	1	1
+gorilla	NC_073244.2	development	referee	denovo	PF0	A1BG		29	MCL28	2	2	0.0689655	1	0.129032	0.0689655
+gorilla	NC_073244.2	development	referee	denovo	PF1	ADGRE1		9		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF2	ADGRE3		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF3	AKAP		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF4	AKT2		26		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF5	ANGPTL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF6	ANKRD27		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF7	AP1M		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF8	AP2A1		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF9	APOC		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF10	ARHGAP45		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF11	ARHGEF1		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF12	ATP		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF13	AXL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF14	AZU1		22		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF15	B3GNT		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF16	BCAM		5		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF17	BCL3		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF18	BSPH1		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF19	BTBD2		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF20	C3		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF21	C5AR1		15		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF22	CABP5		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF23	CACNG		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF24	CALR		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF25	CD177		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF26	CD209		6		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF27	CD22		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF28	CD33		15		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF29	CDC34		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF30	CEACAM		19		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF31	CELF5		7		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF32	CERS		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF33	CNN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF34	CRLF1		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF35	CRX		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF36	DDX		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF37	DIRAS1		7		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF38	DPRX		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF39	ERVV		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF40	FBXO17		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF41	FBXW9		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF42	FGF		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF43	FIZ1		280	MCL2	4	4	0.0142857	1	0.028169	0.0142857
+gorilla	NC_073244.2	development	referee	denovo	PF44	FTL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF45	FUT		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF46	FUT		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF47	FXYD		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF48	FZR1		5		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF49	GNA		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF50	GNG		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF51	GRI		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF52	HIF3A		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF53	HNRNPL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF54	HOMER3		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF55	HSD11B1L		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF56	ICAM		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF57	IGFL		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF58	IRG		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF59	JAK3		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF60	JUN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF61	KANK		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF62	KCN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF63	KCNN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF64	KHSRP		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF66	LGALS		6		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF67	LGI4		8		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF68	LHB		25	MCL0	21	21	0.84	1	0.913043	0.84
+gorilla	NC_073244.2	development	referee	denovo	PF69	OR7D		23		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF70	LOC101125692		14		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF71	LOC101127388		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF72	LOC101127866		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF73	RPS		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF74	LOC101132797		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF75	NTF		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF76	RPS		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF77	LOC101139203		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF78	LOC101140029		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF79	MBD		11		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF80	SYT		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF81	LOC101145215		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF82	RFPL4A		8	MCL1	8	8	1	1	1	1
+gorilla	NC_073244.2	development	referee	denovo	PF83	LOC101153729		5		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF84	RPL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF85	SAXO		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF86	PRMT		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF87	LPAR2		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF88	LYPD3		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF89	MAST		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF90	MYBPC2		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF91	MYH14		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF92	NANOS		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF93	NFI		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF94	NLRP11		10		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF95	NR1H2		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF96	NRTN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF97	PDE		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF98	PGLYRP		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF99	PLIN		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF100	PLPP		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF101	PTGER1		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF102	PTPR		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF103	RASGRP4		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF104	RFX		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF105	SAFB		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF106	SIRT		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF107	SLC1A		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF108	SLC25A		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF109	SLC27A		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF110	SLC7A		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF111	SULT		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF112	TLE		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	denovo	PF113	TPRX		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF0	A1BG		29	MCL2	6	6	0.206897	1	0.342857	0.206897
+gorilla	NC_073244.2	development	referee	guided	PF1	ADGRE1		9		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF2	ADGRE3		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF3	AKAP		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF4	AKT2		26		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF5	ANGPTL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF6	ANKRD27		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF7	AP1M		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF8	AP2A1		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF9	APOC		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF10	ARHGAP45		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF11	ARHGEF1		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF12	ATP		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF13	AXL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF14	AZU1		22		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF15	B3GNT		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF16	BCAM		5		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF17	BCL3		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF18	BSPH1		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF19	BTBD2		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF20	C3		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF21	C5AR1		15	MCL49	2	2	0.133333	1	0.235294	0.133333
+gorilla	NC_073244.2	development	referee	guided	PF22	CABP5		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF23	CACNG		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF24	CALR		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF25	CD177		3	MCL56	1	1	0.333333	1	0.5	0.333333
+gorilla	NC_073244.2	development	referee	guided	PF26	CD209		6		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF27	CD22		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF28	CD33		15	MCL58	2	2	0.133333	1	0.235294	0.133333
+gorilla	NC_073244.2	development	referee	guided	PF29	CDC34		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF30	CEACAM		19	MCL8	5	5	0.263158	1	0.416667	0.263158
+gorilla	NC_073244.2	development	referee	guided	PF31	CELF5		7		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF32	CERS		2	MCL30	1	1	0.5	1	0.666667	0.5
+gorilla	NC_073244.2	development	referee	guided	PF33	CNN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF34	CRLF1		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF35	CRX		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF36	DDX		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF37	DIRAS1		7		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF38	DPRX		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF39	ERVV		2	MCL69	2	2	1	1	1	1
+gorilla	NC_073244.2	development	referee	guided	PF40	FBXO17		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF41	FBXW9		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF42	FGF		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF43	FIZ1		280	MCL5	5	5	0.0178571	1	0.0350877	0.0178571
+gorilla	NC_073244.2	development	referee	guided	PF44	FTL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF45	FUT		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF46	FUT		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF47	FXYD		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF48	FZR1		5		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF49	GNA		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF50	GNG		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF51	GRI		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF52	HIF3A		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF53	HNRNPL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF54	HOMER3		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF55	HSD11B1L		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF56	ICAM		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF57	IGFL		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF58	IRG		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF59	JAK3		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF60	JUN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF61	KANK		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF62	KCN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF63	KCNN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF64	KHSRP		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF66	LGALS		6	MCL23	3	3	0.5	1	0.666667	0.5
+gorilla	NC_073244.2	development	referee	guided	PF67	LGI4		8		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF68	LHB		25	MCL1	25	25	1	1	1	1
+gorilla	NC_073244.2	development	referee	guided	PF69	OR7D		23	MCL6	7	7	0.304348	1	0.466667	0.304348
+gorilla	NC_073244.2	development	referee	guided	PF70	LOC101125692		14	MCL37	2	2	0.142857	1	0.25	0.142857
+gorilla	NC_073244.2	development	referee	guided	PF71	LOC101127388		4	MCL70	2	2	0.5	1	0.666667	0.5
+gorilla	NC_073244.2	development	referee	guided	PF72	LOC101127866		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF73	RPS		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF74	LOC101132797		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF75	NTF		2	MCL0	2	2	1	1	1	1
+gorilla	NC_073244.2	development	referee	guided	PF76	RPS		2	MCL41	1	1	0.5	1	0.666667	0.5
+gorilla	NC_073244.2	development	referee	guided	PF77	LOC101139203		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF78	LOC101140029		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF79	MBD		11	MCL3	9	9	0.818182	1	0.9	0.818182
+gorilla	NC_073244.2	development	referee	guided	PF80	SYT		3	MCL28	1	1	0.333333	1	0.5	0.333333
+gorilla	NC_073244.2	development	referee	guided	PF81	LOC101145215		4	MCL33	1	1	0.25	1	0.4	0.25
+gorilla	NC_073244.2	development	referee	guided	PF82	RFPL4A		8	MCL7	8	8	1	1	1	1
+gorilla	NC_073244.2	development	referee	guided	PF83	LOC101153729		5	MCL22	3	3	0.6	1	0.75	0.6
+gorilla	NC_073244.2	development	referee	guided	PF84	RPL		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF85	SAXO		2	MCL59	2	2	1	1	1	1
+gorilla	NC_073244.2	development	referee	guided	PF86	PRMT		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF87	LPAR2		4		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF88	LYPD3		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF89	MAST		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF90	MYBPC2		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF91	MYH14		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF92	NANOS		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF93	NFI		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF94	NLRP11		10		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF95	NR1H2		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF96	NRTN		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF97	PDE		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF98	PGLYRP		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF99	PLIN		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF100	PLPP		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF101	PTGER1		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF102	PTPR		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF103	RASGRP4		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF104	RFX		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF105	SAFB		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF106	SIRT		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF107	SLC1A		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF108	SLC25A		3		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF109	SLC27A		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF110	SLC7A		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF111	SULT		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF112	TLE		2		0	0	0	0	0	0
+gorilla	NC_073244.2	development	referee	guided	PF113	TPRX		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF0	A2M		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF1	AACS		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF2	ABC		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF3	ACAD		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF4	ACVR1B		16		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF5	ADCY6		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF6	AICDA		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF7	ALDH		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF8	ALG		2	MCL2	2	2	1	1	1	1
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF9	ALX1		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF10	AMIGO2		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF11	AMN1		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF12	ANAPC7		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF13	ANKRD52		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF14	ANO		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF15	ANP32D		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF16	APAF1		6		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF17	AQP2		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF18	ARF3		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF19	ASIC1		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF20	ATP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF21	AVPR1A		10		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF22	C1R		6		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF23	CABP1		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF24	CACNA1C		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF25	CD163		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF26	CD63		7		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF27	CD69		26		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF28	CNTN1		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF29	DCN		6		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF30	DDX23		6		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF31	DPPA		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF32	DUSP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF33	EEF1AKMT		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF34	FAIM2		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF35	FGD		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF36	FGF		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF37	GALNT6		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF38	GDF11		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF39	GLIPR		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF40	GPRC		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF41	HIGD1C		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF42	HMGA		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF43	HNRNPA1		5		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF44	HOXC10		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF45	HOXC		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF46	IFFO1		32		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF47	IKZF4		17	MCL5	1	1	0.0588235	1	0.111111	0.0588235
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF48	ITGA		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF49	KCN		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF50	KRAS		11		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF51	LALBA		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF52	LHX5		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF53	SLC2A		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF54	LOC101127204		24		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF55	LOC101131055		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF56	PCBP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF57	TAS2R		14		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF58	LOC101138765		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF59	LOC101140222		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF60	LOC101142817		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF61	RPS		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF62	LOC101143671		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF63	TUBA1C		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF64	RDH16		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF65	LOC109029264		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF66	LOC129525641		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF67	LOC129525654		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF68	RPH3A		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF69	LOC129525778		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF70	LRP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF71	LTA4H		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF72	LTBR		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF73	METAP2		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF74	MMP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF76	MYF		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF77	MYO		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF78	NR1H4		5		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF79	OAS1		5		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF80	OTOGL		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF81	P2RX		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF82	PAH		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF83	PLBD		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF84	PLEKHG		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF85	PTP		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF86	PTPR		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF87	RASSF		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF88	RILPL		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF89	SDS		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF90	SLC15A		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF91	SLC38A		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF92	SLC6A		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF93	SLCO		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF94	STAT		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF95	TCTN		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF96	TMEM		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF97	TMT		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF98	USP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	denovo	PF99	WNT		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF0	A2M		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF1	AACS		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF2	ABC		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF3	ACAD		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF4	ACVR1B		16		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF5	ADCY6		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF6	AICDA		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF7	ALDH		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF8	ALG		2	MCL23	2	2	1	1	1	1
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF9	ALX1		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF10	AMIGO2		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF11	AMN1		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF12	ANAPC7		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF13	ANKRD52		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF14	ANO		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF15	ANP32D		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF16	APAF1		6		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF17	AQP2		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF18	ARF3		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF19	ASIC1		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF20	ATP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF21	AVPR1A		10	MCL34	2	2	0.2	1	0.333333	0.2
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF22	C1R		6		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF23	CABP1		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF24	CACNA1C		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF25	CD163		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF26	CD63		7		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF27	CD69		26	MCL17	2	2	0.0769231	1	0.142857	0.0769231
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF28	CNTN1		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF29	DCN		6		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF30	DDX23		6		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF31	DPPA		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF32	DUSP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF33	EEF1AKMT		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF34	FAIM2		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF35	FGD		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF36	FGF		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF37	GALNT6		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF38	GDF11		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF39	GLIPR		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF40	GPRC		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF41	HIGD1C		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF42	HMGA		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF43	HNRNPA1		5		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF44	HOXC10		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF45	HOXC		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF46	IFFO1		32		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF47	IKZF4		17		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF48	ITGA		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF49	KCN		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF50	KRAS		11		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF51	LALBA		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF52	LHX5		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF53	SLC2A		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF54	LOC101127204		24		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF55	LOC101131055		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF56	PCBP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF57	TAS2R		14		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF58	LOC101138765		2	MCL18	2	2	1	1	1	1
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF59	LOC101140222		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF60	LOC101142817		2	MCL14	1	1	0.5	1	0.666667	0.5
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF61	RPS		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF62	LOC101143671		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF63	TUBA1C		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF64	RDH16		4	MCL21	1	1	0.25	1	0.4	0.25
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF65	LOC109029264		2	MCL15	2	2	1	1	1	1
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF66	LOC129525641		2	MCL8	2	2	1	1	1	1
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF67	LOC129525654		2	MCL2	1	1	0.5	1	0.666667	0.5
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF68	RPH3A		4	MCL31	1	1	0.25	1	0.4	0.25
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF69	LOC129525778		2	MCL7	2	2	1	1	1	1
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF70	LRP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF71	LTA4H		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF72	LTBR		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF73	METAP2		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF74	MMP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF76	MYF		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF77	MYO		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF78	NR1H4		5		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF79	OAS1		5		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF80	OTOGL		2	MCL22	1	1	0.5	1	0.666667	0.5
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF81	P2RX		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF82	PAH		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF83	PLBD		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF84	PLEKHG		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF85	PTP		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF86	PTPR		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF87	RASSF		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF88	RILPL		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF89	SDS		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF90	SLC15A		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF91	SLC38A		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF92	SLC6A		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF93	SLCO		4		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF94	STAT		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF95	TCTN		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF96	TMEM		3		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF97	TMT		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF98	USP		2		0	0	0	0	0	0
+gorilla	NC_073234.2	held out, untouched	referee	guided	PF99	WNT		3		0	0	0	0	0	0

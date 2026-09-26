@@ -1,0 +1,184 @@
+# table: fig6_chr16_groups
+# generator: figures/fig_family_spectrum.py
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input spectrum_tsv: /mnt/linuxdisk/tmp/rustle_figures/fig6/spectrum/chr16_nt.spectrum.tsv	size=709	mtime=1790384468
+# input spectrum_truth_pairs: /mnt/linuxdisk/tmp/rustle_figures/fig6/spectrum/chr16_nt.truth_pairs.tsv	size=17047	mtime=1790384468
+# input chr16_families_copies: /mnt/linuxdisk/tmp/rustle_figures/fig6/chr16_denovo.fam.copies.tsv	size=68022	mtime=1790384532
+# input mcl_families: /mnt/linuxdisk/home/juanfraitu/rustle_target_dev/release/mcl_families	size=2141848	mtime=1790383894
+# input compara: /mnt/linuxdisk/tmp/gw22/spectrum/compara_chr16.tsv	size=4214931	mtime=1790275005
+# input chr16_ref_gtf: /mnt/linuxdisk/tmp/rustle_figures/fig6/chr16.ref.gtf	size=12076251	mtime=1790341418
+# input human_ref_gtf: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/A119b.chm13v2.0_RefSeq.gtf.gz	size=16770508	mtime=1790137613
+# input score_pairs_log: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/chr16_families.score.txt	size=774	mtime=1790384534
+# input score_py: /mnt/c/Users/jfris/Desktop/Rustle/bench/score.py	size=124962	mtime=1790370467
+# input lib_py: /mnt/c/Users/jfris/Desktop/Rustle/bench/lib.py	size=26633	mtime=1790360431
+# note: regenerated with the current binaries and pipeline-driver defaults
+# note: pairs scored: 290 Compara paralogue pairs on chr16 whose two genes both have a locus (representative >= 200 bp) in Rustle's chr16 assembly (spectrum truth_pairs, score.py spectrum --skip-t3; conditioned on the assembler's loci, not on read counts)
+# note: families = the DEFAULT de novo families: the driver's families stage (mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units, MCL 2.8) on the chr16 restriction of the genome-wide A119b assembly (loci seeded with secondary alignments within 2% of the read's best score); one copy per member locus = its representative transcript; copies mapped to genes by span (score.py pairs): 353 copies, 88 families, largest 22 genes; single-exon copies 95/353
+# note: group = a paralogue group: a connected component of the scored pairs' graph (all bands; built here, not an Ensembl gene tree); stratum top_group = the group with the most pairs in that band (or pooled range), other_groups = the rest
+# note: band 60-90 = the pooled 80-90, 70-80 and 60-70 bands; band all = every band
+# note: views as fig6_chr16_recall; edge_nt_not_families = pairs with a direct alignment that no family holds
+# note: groups_with_hits = paralogue groups with >= 1 recovered pair; families_with_hits = default families holding >= 1 recovered pair; column recall = sensitivity; ci = Wilson 95% (pairs are not independent)
+species	chrom	truth	band	stratum	group_label	n_pairs	n_groups	view	hits	groups_with_hits	families_with_hits	recall	ci_lo	ci_hi
+human	chr16	compara	>=90	all	all groups	37	11	edge_nt	32	9		0.864865	0.720226	0.940867
+human	chr16	compara	>=90	all	all groups	37	11	families_both_members	25	6		0.675676	0.514637	0.803667
+human	chr16	compara	>=90	all	all groups	37	11	families	25	6	14	0.675676	0.514637	0.803667
+human	chr16	compara	>=90	all	all groups	37	11	families_edge	22	6	14	0.594595	0.43486	0.736535
+human	chr16	compara	>=90	all	all groups	37	11	families_no_edge	3	1	1	0.0810811	0.0279606	0.213007
+human	chr16	compara	>=90	all	all groups	37	11	edge_nt_not_families	10	4		0.27027	0.153975	0.429782
+human	chr16	compara	>=90	top_group	NPIP* (15 genes)	21	1	edge_nt	18	1		0.857143	0.653639	0.95019
+human	chr16	compara	>=90	top_group	NPIP* (15 genes)	21	1	families_both_members	14	1		0.666667	0.453735	0.828052
+human	chr16	compara	>=90	top_group	NPIP* (15 genes)	21	1	families	14	1	4	0.666667	0.453735	0.828052
+human	chr16	compara	>=90	top_group	NPIP* (15 genes)	21	1	families_edge	11	1	4	0.52381	0.323695	0.71656
+human	chr16	compara	>=90	top_group	NPIP* (15 genes)	21	1	families_no_edge	3	1	1	0.142857	0.0498101	0.346361
+human	chr16	compara	>=90	top_group	NPIP* (15 genes)	21	1	edge_nt_not_families	7	1		0.333333	0.171948	0.546265
+human	chr16	compara	>=90	other_groups	10 other groups	16	10	edge_nt	14	8		0.875	0.639772	0.965023
+human	chr16	compara	>=90	other_groups	10 other groups	16	10	families_both_members	11	5		0.6875	0.444044	0.858354
+human	chr16	compara	>=90	other_groups	10 other groups	16	10	families	11	5	10	0.6875	0.444044	0.858354
+human	chr16	compara	>=90	other_groups	10 other groups	16	10	families_edge	11	5	10	0.6875	0.444044	0.858354
+human	chr16	compara	>=90	other_groups	10 other groups	16	10	families_no_edge	0	0	0	0	0	0.193608
+human	chr16	compara	>=90	other_groups	10 other groups	16	10	edge_nt_not_families	3	3		0.1875	0.065916	0.430089
+human	chr16	compara	80-90	all	all groups	12	3	edge_nt	7	1		0.583333	0.319511	0.80674
+human	chr16	compara	80-90	all	all groups	12	3	families_both_members	9	1		0.75	0.467695	0.911058
+human	chr16	compara	80-90	all	all groups	12	3	families	9	1	2	0.75	0.467695	0.911058
+human	chr16	compara	80-90	all	all groups	12	3	families_edge	6	1	2	0.5	0.253782	0.746218
+human	chr16	compara	80-90	all	all groups	12	3	families_no_edge	3	1	1	0.25	0.0889417	0.532305
+human	chr16	compara	80-90	all	all groups	12	3	edge_nt_not_families	1	1		0.0833333	0.0148651	0.35388
+human	chr16	compara	80-90	top_group	NPIP* (15 genes)	10	1	edge_nt	7	1		0.7	0.396778	0.892209
+human	chr16	compara	80-90	top_group	NPIP* (15 genes)	10	1	families_both_members	9	1		0.9	0.59585	0.982124
+human	chr16	compara	80-90	top_group	NPIP* (15 genes)	10	1	families	9	1	2	0.9	0.59585	0.982124
+human	chr16	compara	80-90	top_group	NPIP* (15 genes)	10	1	families_edge	6	1	2	0.6	0.312674	0.83182
+human	chr16	compara	80-90	top_group	NPIP* (15 genes)	10	1	families_no_edge	3	1	1	0.3	0.107791	0.603222
+human	chr16	compara	80-90	top_group	NPIP* (15 genes)	10	1	edge_nt_not_families	1	1		0.1	0.0178762	0.40415
+human	chr16	compara	80-90	other_groups	2 other groups	2	2	edge_nt	0	0		0	0	0.65762
+human	chr16	compara	80-90	other_groups	2 other groups	2	2	families_both_members	0	0		0	0	0.65762
+human	chr16	compara	80-90	other_groups	2 other groups	2	2	families	0	0	0	0	0	0.65762
+human	chr16	compara	80-90	other_groups	2 other groups	2	2	families_edge	0	0	0	0	0	0.65762
+human	chr16	compara	80-90	other_groups	2 other groups	2	2	families_no_edge	0	0	0	0	0	0.65762
+human	chr16	compara	80-90	other_groups	2 other groups	2	2	edge_nt_not_families	0	0		0	0	0.65762
+human	chr16	compara	70-80	all	all groups	17	3	edge_nt	12	1		0.705882	0.468669	0.8672
+human	chr16	compara	70-80	all	all groups	17	3	families_both_members	12	1		0.705882	0.468669	0.8672
+human	chr16	compara	70-80	all	all groups	17	3	families	8	1	2	0.470588	0.261651	0.690368
+human	chr16	compara	70-80	all	all groups	17	3	families_edge	8	1	2	0.470588	0.261651	0.690368
+human	chr16	compara	70-80	all	all groups	17	3	families_no_edge	0	0	0	0	0	0.184318
+human	chr16	compara	70-80	all	all groups	17	3	edge_nt_not_families	4	1		0.235294	0.0955504	0.472618
+human	chr16	compara	70-80	top_group	NPIP* (15 genes)	15	1	edge_nt	12	1		0.8	0.548146	0.929525
+human	chr16	compara	70-80	top_group	NPIP* (15 genes)	15	1	families_both_members	12	1		0.8	0.548146	0.929525
+human	chr16	compara	70-80	top_group	NPIP* (15 genes)	15	1	families	8	1	2	0.533333	0.30117	0.751905
+human	chr16	compara	70-80	top_group	NPIP* (15 genes)	15	1	families_edge	8	1	2	0.533333	0.30117	0.751905
+human	chr16	compara	70-80	top_group	NPIP* (15 genes)	15	1	families_no_edge	0	0	0	0	0	0.203883
+human	chr16	compara	70-80	top_group	NPIP* (15 genes)	15	1	edge_nt_not_families	4	1		0.266667	0.108975	0.519504
+human	chr16	compara	70-80	other_groups	2 other groups	2	2	edge_nt	0	0		0	0	0.65762
+human	chr16	compara	70-80	other_groups	2 other groups	2	2	families_both_members	0	0		0	0	0.65762
+human	chr16	compara	70-80	other_groups	2 other groups	2	2	families	0	0	0	0	0	0.65762
+human	chr16	compara	70-80	other_groups	2 other groups	2	2	families_edge	0	0	0	0	0	0.65762
+human	chr16	compara	70-80	other_groups	2 other groups	2	2	families_no_edge	0	0	0	0	0	0.65762
+human	chr16	compara	70-80	other_groups	2 other groups	2	2	edge_nt_not_families	0	0		0	0	0.65762
+human	chr16	compara	60-70	all	all groups	37	4	edge_nt	21	1		0.567568	0.409142	0.713283
+human	chr16	compara	60-70	all	all groups	37	4	families_both_members	24	1		0.648649	0.48759	0.781744
+human	chr16	compara	60-70	all	all groups	37	4	families	14	1	1	0.378378	0.24064	0.538996
+human	chr16	compara	60-70	all	all groups	37	4	families_edge	12	1	1	0.324324	0.196333	0.485363
+human	chr16	compara	60-70	all	all groups	37	4	families_no_edge	2	1	1	0.0540541	0.014951	0.177047
+human	chr16	compara	60-70	all	all groups	37	4	edge_nt_not_families	9	1		0.243243	0.133614	0.401173
+human	chr16	compara	60-70	top_group	NPIP* (15 genes)	34	1	edge_nt	21	1		0.617647	0.45041	0.760998
+human	chr16	compara	60-70	top_group	NPIP* (15 genes)	34	1	families_both_members	24	1		0.705882	0.538311	0.831654
+human	chr16	compara	60-70	top_group	NPIP* (15 genes)	34	1	families	14	1	1	0.411765	0.26366	0.577784
+human	chr16	compara	60-70	top_group	NPIP* (15 genes)	34	1	families_edge	12	1	1	0.352941	0.214879	0.52086
+human	chr16	compara	60-70	top_group	NPIP* (15 genes)	34	1	families_no_edge	2	1	1	0.0588235	0.0162827	0.190936
+human	chr16	compara	60-70	top_group	NPIP* (15 genes)	34	1	edge_nt_not_families	9	1		0.264706	0.146012	0.431171
+human	chr16	compara	60-70	other_groups	3 other groups	3	3	edge_nt	0	0		0	0	0.561497
+human	chr16	compara	60-70	other_groups	3 other groups	3	3	families_both_members	0	0		0	0	0.561497
+human	chr16	compara	60-70	other_groups	3 other groups	3	3	families	0	0	0	0	0	0.561497
+human	chr16	compara	60-70	other_groups	3 other groups	3	3	families_edge	0	0	0	0	0	0.561497
+human	chr16	compara	60-70	other_groups	3 other groups	3	3	families_no_edge	0	0	0	0	0	0.561497
+human	chr16	compara	60-70	other_groups	3 other groups	3	3	edge_nt_not_families	0	0		0	0	0.561497
+human	chr16	compara	50-60	all	all groups	28	8	edge_nt	11	2		0.392857	0.235657	0.57591
+human	chr16	compara	50-60	all	all groups	28	8	families_both_members	11	1		0.392857	0.235657	0.57591
+human	chr16	compara	50-60	all	all groups	28	8	families	11	1	1	0.392857	0.235657	0.57591
+human	chr16	compara	50-60	all	all groups	28	8	families_edge	7	1	1	0.25	0.126765	0.433557
+human	chr16	compara	50-60	all	all groups	28	8	families_no_edge	4	1	1	0.142857	0.0569901	0.314898
+human	chr16	compara	50-60	all	all groups	28	8	edge_nt_not_families	4	2		0.142857	0.0569901	0.314898
+human	chr16	compara	50-60	top_group	NPIP* (15 genes)	16	1	edge_nt	10	1		0.625	0.38641	0.815188
+human	chr16	compara	50-60	top_group	NPIP* (15 genes)	16	1	families_both_members	11	1		0.6875	0.444044	0.858354
+human	chr16	compara	50-60	top_group	NPIP* (15 genes)	16	1	families	11	1	1	0.6875	0.444044	0.858354
+human	chr16	compara	50-60	top_group	NPIP* (15 genes)	16	1	families_edge	7	1	1	0.4375	0.230987	0.668214
+human	chr16	compara	50-60	top_group	NPIP* (15 genes)	16	1	families_no_edge	4	1	1	0.25	0.101821	0.494983
+human	chr16	compara	50-60	top_group	NPIP* (15 genes)	16	1	edge_nt_not_families	3	1		0.1875	0.065916	0.430089
+human	chr16	compara	50-60	other_groups	7 other groups	12	7	edge_nt	1	1		0.0833333	0.0148651	0.35388
+human	chr16	compara	50-60	other_groups	7 other groups	12	7	families_both_members	0	0		0	0	0.242494
+human	chr16	compara	50-60	other_groups	7 other groups	12	7	families	0	0	0	0	0	0.242494
+human	chr16	compara	50-60	other_groups	7 other groups	12	7	families_edge	0	0	0	0	0	0.242494
+human	chr16	compara	50-60	other_groups	7 other groups	12	7	families_no_edge	0	0	0	0	0	0.242494
+human	chr16	compara	50-60	other_groups	7 other groups	12	7	edge_nt_not_families	1	1		0.0833333	0.0148651	0.35388
+human	chr16	compara	30-50	all	all groups	61	23	edge_nt	7	1		0.114754	0.056712	0.218443
+human	chr16	compara	30-50	all	all groups	61	23	families_both_members	6	1		0.0983607	0.0458646	0.198446
+human	chr16	compara	30-50	all	all groups	61	23	families	6	1	2	0.0983607	0.0458646	0.198446
+human	chr16	compara	30-50	all	all groups	61	23	families_edge	6	1	2	0.0983607	0.0458646	0.198446
+human	chr16	compara	30-50	all	all groups	61	23	families_no_edge	0	0	0	0	0	0.0592439
+human	chr16	compara	30-50	all	all groups	61	23	edge_nt_not_families	1	1		0.0163934	0.00289973	0.0871886
+human	chr16	compara	30-50	top_group	CTCF + 7 genes	10	1	edge_nt	0	0		0	0	0.277533
+human	chr16	compara	30-50	top_group	CTCF + 7 genes	10	1	families_both_members	0	0		0	0	0.277533
+human	chr16	compara	30-50	top_group	CTCF + 7 genes	10	1	families	0	0	0	0	0	0.277533
+human	chr16	compara	30-50	top_group	CTCF + 7 genes	10	1	families_edge	0	0	0	0	0	0.277533
+human	chr16	compara	30-50	top_group	CTCF + 7 genes	10	1	families_no_edge	0	0	0	0	0	0.277533
+human	chr16	compara	30-50	top_group	CTCF + 7 genes	10	1	edge_nt_not_families	0	0		0	0	0.277533
+human	chr16	compara	30-50	other_groups	22 other groups	51	22	edge_nt	7	1		0.137255	0.068111	0.257217
+human	chr16	compara	30-50	other_groups	22 other groups	51	22	families_both_members	6	1		0.117647	0.0550507	0.233808
+human	chr16	compara	30-50	other_groups	22 other groups	51	22	families	6	1	2	0.117647	0.0550507	0.233808
+human	chr16	compara	30-50	other_groups	22 other groups	51	22	families_edge	6	1	2	0.117647	0.0550507	0.233808
+human	chr16	compara	30-50	other_groups	22 other groups	51	22	families_no_edge	0	0	0	0	0	0.0700466
+human	chr16	compara	30-50	other_groups	22 other groups	51	22	edge_nt_not_families	1	1		0.0196078	0.00346969	0.103046
+human	chr16	compara	<30	all	all groups	98	47	edge_nt	3	2		0.0306122	0.0104649	0.0861702
+human	chr16	compara	<30	all	all groups	98	47	families_both_members	2	1		0.0204082	0.00561461	0.0713821
+human	chr16	compara	<30	all	all groups	98	47	families	2	1	1	0.0204082	0.00561461	0.0713821
+human	chr16	compara	<30	all	all groups	98	47	families_edge	2	1	1	0.0204082	0.00561461	0.0713821
+human	chr16	compara	<30	all	all groups	98	47	families_no_edge	0	0	0	0	0	0.03772
+human	chr16	compara	<30	all	all groups	98	47	edge_nt_not_families	1	1		0.0102041	0.00180355	0.0555548
+human	chr16	compara	<30	top_group	CTCF + 7 genes	14	1	edge_nt	0	0		0	0	0.215311
+human	chr16	compara	<30	top_group	CTCF + 7 genes	14	1	families_both_members	0	0		0	0	0.215311
+human	chr16	compara	<30	top_group	CTCF + 7 genes	14	1	families	0	0	0	0	0	0.215311
+human	chr16	compara	<30	top_group	CTCF + 7 genes	14	1	families_edge	0	0	0	0	0	0.215311
+human	chr16	compara	<30	top_group	CTCF + 7 genes	14	1	families_no_edge	0	0	0	0	0	0.215311
+human	chr16	compara	<30	top_group	CTCF + 7 genes	14	1	edge_nt_not_families	0	0		0	0	0.215311
+human	chr16	compara	<30	other_groups	46 other groups	84	46	edge_nt	3	2		0.0357143	0.0122197	0.0998169
+human	chr16	compara	<30	other_groups	46 other groups	84	46	families_both_members	2	1		0.0238095	0.0065539	0.0827144
+human	chr16	compara	<30	other_groups	46 other groups	84	46	families	2	1	1	0.0238095	0.0065539	0.0827144
+human	chr16	compara	<30	other_groups	46 other groups	84	46	families_edge	2	1	1	0.0238095	0.0065539	0.0827144
+human	chr16	compara	<30	other_groups	46 other groups	84	46	families_no_edge	0	0	0	0	0	0.0437317
+human	chr16	compara	<30	other_groups	46 other groups	84	46	edge_nt_not_families	1	1		0.0119048	0.00210458	0.0643954
+human	chr16	compara	60-90	all	all groups	66	7	edge_nt	40	1		0.606061	0.485484	0.71497
+human	chr16	compara	60-90	all	all groups	66	7	families_both_members	45	1		0.681818	0.562126	0.78151
+human	chr16	compara	60-90	all	all groups	66	7	families	31	1	2	0.469697	0.354304	0.588423
+human	chr16	compara	60-90	all	all groups	66	7	families_edge	26	1	2	0.393939	0.28503	0.514516
+human	chr16	compara	60-90	all	all groups	66	7	families_no_edge	5	1	1	0.0757576	0.032792	0.165392
+human	chr16	compara	60-90	all	all groups	66	7	edge_nt_not_families	14	1		0.212121	0.13078	0.325131
+human	chr16	compara	60-90	top_group	NPIP* (15 genes)	59	1	edge_nt	40	1		0.677966	0.55105	0.783124
+human	chr16	compara	60-90	top_group	NPIP* (15 genes)	59	1	families_both_members	45	1		0.762712	0.640251	0.853054
+human	chr16	compara	60-90	top_group	NPIP* (15 genes)	59	1	families	31	1	2	0.525424	0.400398	0.647341
+human	chr16	compara	60-90	top_group	NPIP* (15 genes)	59	1	families_edge	26	1	2	0.440678	0.321502	0.567106
+human	chr16	compara	60-90	top_group	NPIP* (15 genes)	59	1	families_no_edge	5	1	1	0.0847458	0.036742	0.183518
+human	chr16	compara	60-90	top_group	NPIP* (15 genes)	59	1	edge_nt_not_families	14	1		0.237288	0.146946	0.359749
+human	chr16	compara	60-90	other_groups	6 other groups	7	6	edge_nt	0	0		0	0	0.35433
+human	chr16	compara	60-90	other_groups	6 other groups	7	6	families_both_members	0	0		0	0	0.35433
+human	chr16	compara	60-90	other_groups	6 other groups	7	6	families	0	0	0	0	0	0.35433
+human	chr16	compara	60-90	other_groups	6 other groups	7	6	families_edge	0	0	0	0	0	0.35433
+human	chr16	compara	60-90	other_groups	6 other groups	7	6	families_no_edge	0	0	0	0	0	0.35433
+human	chr16	compara	60-90	other_groups	6 other groups	7	6	edge_nt_not_families	0	0		0	0	0.35433
+human	chr16	compara	all	all	all groups	290	76	edge_nt	93	11		0.32069	0.269616	0.376452
+human	chr16	compara	all	all	all groups	290	76	families_both_members	89	6		0.306897	0.256627	0.362215
+human	chr16	compara	all	all	all groups	290	76	families	75	6	14	0.258621	0.211611	0.311942
+human	chr16	compara	all	all	all groups	290	76	families_edge	63	6	14	0.217241	0.173644	0.268232
+human	chr16	compara	all	all	all groups	290	76	families_no_edge	12	1	1	0.0413793	0.0238266	0.0709233
+human	chr16	compara	all	all	all groups	290	76	edge_nt_not_families	30	6		0.103448	0.0734277	0.143837
+human	chr16	compara	all	top_group	NPIP* (15 genes)	105	1	edge_nt	77	1		0.733333	0.641613	0.808583
+human	chr16	compara	all	top_group	NPIP* (15 genes)	105	1	families_both_members	78	1		0.742857	0.651731	0.816841
+human	chr16	compara	all	top_group	NPIP* (15 genes)	105	1	families	64	1	4	0.609524	0.513924	0.697392
+human	chr16	compara	all	top_group	NPIP* (15 genes)	105	1	families_edge	52	1	4	0.495238	0.401477	0.589336
+human	chr16	compara	all	top_group	NPIP* (15 genes)	105	1	families_no_edge	12	1	1	0.114286	0.066597	0.189201
+human	chr16	compara	all	top_group	NPIP* (15 genes)	105	1	edge_nt_not_families	25	1		0.238095	0.166791	0.327887
+human	chr16	compara	all	other_groups	75 other groups	185	75	edge_nt	16	10		0.0864865	0.0539357	0.135861
+human	chr16	compara	all	other_groups	75 other groups	185	75	families_both_members	11	5		0.0594595	0.0335222	0.10332
+human	chr16	compara	all	other_groups	75 other groups	185	75	families	11	5	10	0.0594595	0.0335222	0.10332
+human	chr16	compara	all	other_groups	75 other groups	185	75	families_edge	11	5	10	0.0594595	0.0335222	0.10332
+human	chr16	compara	all	other_groups	75 other groups	185	75	families_no_edge	0	0	0	0	0	0.0203422
+human	chr16	compara	all	other_groups	75 other groups	185	75	edge_nt_not_families	5	5		0.027027	0.0115984	0.0616983

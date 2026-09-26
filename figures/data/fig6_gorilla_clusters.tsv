@@ -1,0 +1,46 @@
+# table: fig6_gorilla_clusters
+# generator: figures/fig_family_spectrum.py
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input referee: /mnt/linuxdisk/tmp/gw22/sec/ref/NC_073244.2.tsv	size=10338	mtime=1790141801
+# input genes: /mnt/linuxdisk/tmp/gw22/sec/ref/NC_073244.2.genes.gff	size=33112657	mtime=1790141692
+# input mrna_paf: /mnt/linuxdisk/tmp/gw22/sec/ref/referee_mrna.paf	size=470175	mtime=1790294162
+# input gorilla_bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_mm.bam	size=11745390963	mtime=1782229602
+# input score_py: /mnt/c/Users/jfris/Desktop/Rustle/bench/score.py	size=124962	mtime=1790370467
+# input primary_counts: /mnt/linuxdisk/tmp/rustle_figures/fig6/NC_073244.2.referee_primary_counts.tsv	size=30772	mtime=1790347196
+# input expressed_exon: /mnt/linuxdisk/tmp/rustle_figures/fig6/NC_073244.2.expressed.exon.tsv	size=6324	mtime=1790347196
+# input expressed_span: /mnt/linuxdisk/tmp/rustle_figures/fig6/NC_073244.2.expressed.span.tsv	size=6789	mtime=1790347196
+# input expressed_recorded: /mnt/linuxdisk/tmp/gw22/sec/ref/NC_073244.2.expressed.tsv	size=7944	mtime=1790293671
+# input clusters_rustle_primary: /mnt/linuxdisk/tmp/rustle_figures/fig6/gorilla_rustle_primary.fam.clusters.tsv	size=3606	mtime=1790384534
+# input gtf_rustle_primary: /mnt/linuxdisk/tmp/rustle_figures/fig6/gorilla_rustle_primary.gtf	size=6472821	mtime=1790384533
+# input score_pairs_log_rustle_primary: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle_primary.score.txt	size=189	mtime=1790384537
+# input score_pairs_log_rustle_primary_span: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle_primary.span.score.txt	size=195	mtime=1790384537
+# input without_top_rustle_primary_ge90: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle_primary.without_MCL2.score.txt	size=194	mtime=1790384538
+# input without_top_rustle_primary_precision: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle_primary.without_MCL2.score.txt	size=194	mtime=1790384538
+# input clusters_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig6/gorilla_rustle.fam.clusters.tsv	size=5143	mtime=1790384533
+# input gtf_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig6/gorilla_rustle.gtf	size=6537190	mtime=1790384532
+# input score_pairs_log_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle.score.txt	size=190	mtime=1790384539
+# input score_pairs_log_rustle_span: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle.span.score.txt	size=191	mtime=1790384539
+# input without_top_rustle_ge90: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle.without_MCL1.score.txt	size=190	mtime=1790384539
+# input without_top_rustle_precision: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/gorilla_rustle.without_MCL0.score.txt	size=187	mtime=1790384540
+# note: regenerated with the current binaries and pipeline-driver defaults
+# note: SUPPLEMENTARY, development (secondary reference: the contig's protein-homology families): which predicted families and protein-homology families (columns *referee_families*) the recovered or judged pairs come from, recomputed with score.py's own loaders and checked band by band against the scorer's totals
+# note: genes scored (plotted, metric recall = sensitivity): protein-homology genes with >= 2 reads whose PRIMARY record has an aligned block (M/=/X; not N, not D) on one of the gene's annotated exons (_o1.primary_counts; fig. 3's n_mol_primary rule): 576 of 775 genes
+# note: recall rows: k/n = recovered / reference pairs in the band; clusters_with_pairs = predicted families holding >= 1 recovered pair; referee_families_with_pairs / _in_band = protein-homology families with >= 1 recovered / >= 1 reference pair in the band
+# note: precision rows: k/n = same-family / judgeable within-family gene pairs; within_cluster_locus_pairs = sum C(loci, 2) over predicted families, within_cluster_gene_pairs = distinct gene pairs after mapping loci to genes (judgeable = both genes in a protein-homology family)
+# note: top_cluster = the predicted family holding the most recovered (recall) or judged (precision) pairs, ties by id; top_cluster_span is 1-based closed; k/n_without_top = the value with that family removed from the clusters file: RESCORED by score.py pairs for >=90 and precision (without_top_source), from the attribution for the other bands (the two agree wherever both are computed)
+species	contig	truth	arm	metric	band	k	n	clusters_with_pairs	clusters_total	referee_families_with_pairs	referee_families_in_band	top_cluster	top_cluster_loci	top_cluster_span	top_cluster_referee_families	top_cluster_pairs	k_without_top	n_without_top	without_top_source	within_cluster_locus_pairs	within_cluster_gene_pairs
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	>=90	21	83	9	26	3	12	MCL2	5	NC_073244.2:67776056-67845225	PF82:5	10	11	83	score.py pairs		
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	80-90	18	298	10	26	1	7	MCL0	4	NC_073244.2:65266356-65427435	PF43:4	4	14	298	attribution		
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	70-80	5	198	5	26	1	2	MCL22	2	NC_073244.2:64543433-64901705	PF43:2	1	4	198	attribution		
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	60-70	0	65	0	26	0	1					0	0	65			
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	<60	0	22	0	26	0	1					0	0	22			
+gorilla	NC_073244.2	protein_referee	rustle_primary	recall	none	3	35440	2	26	1	76	MCL11	3	NC_073244.2:64426358-64921986	PF43:3	2	1	35440	attribution		
+gorilla	NC_073244.2	protein_referee	rustle_primary	precision	all	47	47	23	26	3		MCL2	5	NC_073244.2:67776056-67845225	PF82:5	10	37	37	score.py pairs	57	53
+gorilla	NC_073244.2	protein_referee	rustle	recall	>=90	26	83	9	29	3	12	MCL1	8	NC_073244.2:67776056-67845226	PF82:8	15	11	83	score.py pairs		
+gorilla	NC_073244.2	protein_referee	rustle	recall	80-90	18	298	10	29	1	7	MCL2	4	NC_073244.2:65266356-65427435	PF43:4	4	14	298	attribution		
+gorilla	NC_073244.2	protein_referee	rustle	recall	70-80	5	198	5	29	1	2	MCL3	3	NC_073244.2:26240037-27075057	PF43:2,no-reference-family:1	1	4	198	attribution		
+gorilla	NC_073244.2	protein_referee	rustle	recall	60-70	0	65	0	29	0	1					0	0	65			
+gorilla	NC_073244.2	protein_referee	rustle	recall	<60	0	22	0	29	0	1					0	0	22			
+gorilla	NC_073244.2	protein_referee	rustle	recall	none	3	35440	2	29	1	76	MCL13	3	NC_073244.2:64426358-64921986	PF43:3	2	1	35440	attribution		
+gorilla	NC_073244.2	protein_referee	rustle	precision	all	275	275	24	29	4		MCL0	21	NC_073244.2:60726383-60864844	PF68:21	210	65	65	score.py pairs	287	282

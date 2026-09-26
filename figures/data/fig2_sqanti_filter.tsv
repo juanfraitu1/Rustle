@@ -1,0 +1,106 @@
+# table: fig2_sqanti_filter
+# generator: figures/fig_sqanti.py build
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input gorilla genome: /mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta	size=3590176889	mtime=1780642486
+# input gorilla annotation: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/GGO.GCF_029281585.2_RefSeq.gtf.gz	size=10241973	mtime=1790137615
+# input gorilla rustle gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/rustle.gtf	size=151162432	mtime=1790326958
+# input gorilla NC_073244.2 rustle classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/qc_rustle/rustle_classification.txt	size=3070984	mtime=1790333363
+# input gorilla NC_073244.2 rustle rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/filt_rustle/rustle_RulesFilter_result_classification.txt	size=3013739	mtime=1790333365
+# input gorilla NC_073246.2 rustle classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/qc_rustle/rustle_classification.txt	size=581227	mtime=1790333384
+# input gorilla NC_073246.2 rustle rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/filt_rustle/rustle_RulesFilter_result_classification.txt	size=569671	mtime=1790333385
+# input gorilla NC_073248.2 rustle classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/qc_rustle/rustle_classification.txt	size=160452	mtime=1790333392
+# input gorilla NC_073248.2 rustle rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/filt_rustle/rustle_RulesFilter_result_classification.txt	size=156245	mtime=1790333392
+# input gorilla rustle_primary gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/rustle_primary.gtf	size=149428973	mtime=1790327055
+# input gorilla NC_073244.2 rustle_primary classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/qc_rustle_primary/rustle_primary_classification.txt	size=3045195	mtime=1790333460
+# input gorilla NC_073244.2 rustle_primary rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/filt_rustle_primary/rustle_primary_RulesFilter_result_classification.txt	size=2988782	mtime=1790333462
+# input gorilla NC_073246.2 rustle_primary classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/qc_rustle_primary/rustle_primary_classification.txt	size=573720	mtime=1790333481
+# input gorilla NC_073246.2 rustle_primary rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/filt_rustle_primary/rustle_primary_RulesFilter_result_classification.txt	size=562913	mtime=1790333482
+# input gorilla NC_073248.2 rustle_primary classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/qc_rustle_primary/rustle_primary_classification.txt	size=126326	mtime=1790333489
+# input gorilla NC_073248.2 rustle_primary rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/filt_rustle_primary/rustle_primary_RulesFilter_result_classification.txt	size=123314	mtime=1790333489
+# input gorilla stringtie gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/stringtie.gtf	size=121909527	mtime=1790327065
+# input gorilla NC_073244.2 stringtie classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/qc_stringtie/stringtie_classification.txt	size=2811867	mtime=1790333943
+# input gorilla NC_073244.2 stringtie rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/filt_stringtie/stringtie_RulesFilter_result_classification.txt	size=2752032	mtime=1790333944
+# input gorilla NC_073246.2 stringtie classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/qc_stringtie/stringtie_classification.txt	size=542588	mtime=1790333961
+# input gorilla NC_073246.2 stringtie rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/filt_stringtie/stringtie_RulesFilter_result_classification.txt	size=530339	mtime=1790333962
+# input gorilla NC_073248.2 stringtie classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/qc_stringtie/stringtie_classification.txt	size=156301	mtime=1790333970
+# input gorilla NC_073248.2 stringtie rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/filt_stringtie/stringtie_RulesFilter_result_classification.txt	size=151848	mtime=1790333970
+# input gorilla flair gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/flair.gtf	size=294734297	mtime=1790327079
+# input gorilla NC_073244.2 flair classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/qc_flair/flair_classification.txt	size=4915891	mtime=1790334277
+# input gorilla NC_073244.2 flair rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/filt_flair/flair_RulesFilter_result_classification.txt	size=4800894	mtime=1790334280
+# input gorilla NC_073246.2 flair classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/qc_flair/flair_classification.txt	size=1253761	mtime=1790334309
+# input gorilla NC_073246.2 flair rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/filt_flair/flair_RulesFilter_result_classification.txt	size=1218793	mtime=1790334310
+# input gorilla NC_073248.2 flair classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/qc_flair/flair_classification.txt	size=211272	mtime=1790334320
+# input gorilla NC_073248.2 flair rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/filt_flair/flair_RulesFilter_result_classification.txt	size=205029	mtime=1790334320
+# input gorilla isoseq gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/isoseq.gtf	size=535236274	mtime=1790327095
+# input gorilla NC_073244.2 isoseq classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/qc_isoseq/isoseq_classification.txt	size=13537432	mtime=1790335431
+# input gorilla NC_073244.2 isoseq rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073244.2/filt_isoseq/isoseq_RulesFilter_result_classification.txt	size=13074107	mtime=1790335442
+# input gorilla NC_073246.2 isoseq classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/qc_isoseq/isoseq_classification.txt	size=3610723	mtime=1790335512
+# input gorilla NC_073246.2 isoseq rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073246.2/filt_isoseq/isoseq_RulesFilter_result_classification.txt	size=3435917	mtime=1790335520
+# input gorilla NC_073248.2 isoseq classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/qc_isoseq/isoseq_classification.txt	size=733418	mtime=1790335536
+# input gorilla NC_073248.2 isoseq rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/gorilla/NC_073248.2/filt_isoseq/isoseq_RulesFilter_result_classification.txt	size=687138	mtime=1790335537
+# input human genome: /mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa	size=3156259703	mtime=1664382184
+# input human annotation: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/A119b.chm13v2.0_RefSeq.gtf.gz	size=16770508	mtime=1790137613
+# input human rustle gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_chr20-chr21-chr22/rustle.gtf	size=18897034	mtime=1790328295
+# input human chr20 rustle classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/qc_rustle/rustle_classification.txt	size=3130093	mtime=1790333561
+# input human chr20 rustle rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/filt_rustle/rustle_RulesFilter_result_classification.txt	size=2980959	mtime=1790333564
+# input human chr21 rustle classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/qc_rustle/rustle_classification.txt	size=1993452	mtime=1790333609
+# input human chr21 rustle rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/filt_rustle/rustle_RulesFilter_result_classification.txt	size=1860510	mtime=1790333612
+# input human chr22 rustle classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/qc_rustle/rustle_classification.txt	size=3075487	mtime=1790333695
+# input human chr22 rustle rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/filt_rustle/rustle_RulesFilter_result_classification.txt	size=2946411	mtime=1790333697
+# input human rustle_primary gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_chr20-chr21-chr22/rustle_primary.gtf	size=17937201	mtime=1790328761
+# input human chr20 rustle_primary classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/qc_rustle_primary/rustle_primary_classification.txt	size=3098265	mtime=1790333758
+# input human chr20 rustle_primary rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/filt_rustle_primary/rustle_primary_RulesFilter_result_classification.txt	size=2954717	mtime=1790333765
+# input human chr21 rustle_primary classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/qc_rustle_primary/rustle_primary_classification.txt	size=1686619	mtime=1790333801
+# input human chr21 rustle_primary rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/filt_rustle_primary/rustle_primary_RulesFilter_result_classification.txt	size=1593037	mtime=1790333803
+# input human chr22 rustle_primary classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/qc_rustle_primary/rustle_primary_classification.txt	size=2884105	mtime=1790333864
+# input human chr22 rustle_primary rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/filt_rustle_primary/rustle_primary_RulesFilter_result_classification.txt	size=2771463	mtime=1790333870
+# input human stringtie gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_chr20-chr21-chr22/stringtie.gtf	size=15880181	mtime=1790328769
+# input human chr20 stringtie classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/qc_stringtie/stringtie_classification.txt	size=2836012	mtime=1790334036
+# input human chr20 stringtie rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/filt_stringtie/stringtie_RulesFilter_result_classification.txt	size=2660637	mtime=1790334039
+# input human chr21 stringtie classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/qc_stringtie/stringtie_classification.txt	size=1555152	mtime=1790334078
+# input human chr21 stringtie rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/filt_stringtie/stringtie_RulesFilter_result_classification.txt	size=1444022	mtime=1790334081
+# input human chr22 stringtie classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/qc_stringtie/stringtie_classification.txt	size=2651809	mtime=1790334162
+# input human chr22 stringtie rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/filt_stringtie/stringtie_RulesFilter_result_classification.txt	size=2505458	mtime=1790334165
+# input human flair gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_chr20-chr21-chr22/flair.gtf	size=56298588	mtime=1790328801
+# input human chr20 flair classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/qc_flair/flair_classification.txt	size=10220117	mtime=1790334526
+# input human chr20 flair rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/filt_flair/flair_RulesFilter_result_classification.txt	size=9459485	mtime=1790334539
+# input human chr21 flair classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/qc_flair/flair_classification.txt	size=7186601	mtime=1790334674
+# input human chr21 flair rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/filt_flair/flair_RulesFilter_result_classification.txt	size=6510521	mtime=1790334686
+# input human chr22 flair classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/qc_flair/flair_classification.txt	size=9071695	mtime=1790335038
+# input human chr22 flair rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/filt_flair/flair_RulesFilter_result_classification.txt	size=8479860	mtime=1790335053
+# input human isoseq gtf: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_chr20-chr21-chr22/isoseq.gtf	size=100850335	mtime=1790328813
+# input human chr20 isoseq.part0 classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/qc_isoseq.part0/isoseq_classification.txt	size=8288125	mtime=1790335672
+# input human chr20 isoseq.part0 rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/filt_isoseq.part0/isoseq_RulesFilter_result_classification.txt	size=7436820	mtime=1790335685
+# input human chr20 isoseq.part1 classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/qc_isoseq.part1/isoseq_classification.txt	size=9064312	mtime=1790335931
+# input human chr20 isoseq.part1 rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/filt_isoseq.part1/isoseq_RulesFilter_result_classification.txt	size=8286036	mtime=1790335944
+# input human chr20 isoseq.part2 classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/qc_isoseq.part2/isoseq_classification.txt	size=8951671	mtime=1790336107
+# input human chr20 isoseq.part2 rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr20/filt_isoseq.part2/isoseq_RulesFilter_result_classification.txt	size=8181512	mtime=1790336120
+# input human chr21 isoseq.part0 classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/qc_isoseq.part0/isoseq_classification.txt	size=5286875	mtime=1790336166
+# input human chr21 isoseq.part0 rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/filt_isoseq.part0/isoseq_RulesFilter_result_classification.txt	size=4548352	mtime=1790336179
+# input human chr21 isoseq.part1 classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/qc_isoseq.part1/isoseq_classification.txt	size=6335400	mtime=1790336271
+# input human chr21 isoseq.part1 rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/filt_isoseq.part1/isoseq_RulesFilter_result_classification.txt	size=5567761	mtime=1790336283
+# input human chr21 isoseq.part2 classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/qc_isoseq.part2/isoseq_classification.txt	size=7747885	mtime=1790336568
+# input human chr21 isoseq.part2 rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr21/filt_isoseq.part2/isoseq_RulesFilter_result_classification.txt	size=7139733	mtime=1790336579
+# input human chr22 isoseq.part0 classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/qc_isoseq.part0/isoseq_classification.txt	size=7178616	mtime=1790336713
+# input human chr22 isoseq.part0 rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/filt_isoseq.part0/isoseq_RulesFilter_result_classification.txt	size=6540982	mtime=1790336724
+# input human chr22 isoseq.part1 classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/qc_isoseq.part1/isoseq_classification.txt	size=7767190	mtime=1790336887
+# input human chr22 isoseq.part1 rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/filt_isoseq.part1/isoseq_RulesFilter_result_classification.txt	size=7144735	mtime=1790336898
+# input human chr22 isoseq.part2 classification: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/qc_isoseq.part2/isoseq_classification.txt	size=8237873	mtime=1790337231
+# input human chr22 isoseq.part2 rules filter: /mnt/linuxdisk/tmp/rustle_figures/fig2/human/chr22/filt_isoseq.part2/isoseq_RulesFilter_result_classification.txt	size=7649104	mtime=1790337245
+# note: SQANTI3 /mnt/linuxdisk/home/juanfraitu/_from_wsl/tools/SQANTI3: per contig, sqanti3_qc.py --isoforms ARM --refGTF REF --refFasta GENOME --report skip -t N; sqanti3_filter.py rules --sqanti_class ... --filter_gtf ..._corrected.gtf --skip_report (default rules JSON); per-contig tallies summed
+# note: reference: empty gene_id replaced by the record's transcript_id (gene-level RefSeq records)
+# note: gorilla contigs by chromosome (GGO_genomic.gff region lines): NC_073244.2 = chr20, NC_073246.2 = chr22, NC_073248.2 = chrY
+# note: arms: rustle, rustle_primary, stringtie, flair, isoseq (the fig1 GTFs, assembly.ensure_arm)
+# note: n_multiexon / n_fsm_multiexon: isoforms (FSM isoforms) with more than one exon (classification column `exons`); fsm_multiexon_frac = their ratio
+species	scope	tool	n_total	n_pass	pass_frac	n_fsm	fsm_frac	n_fsm_pass	n_multiexon	n_fsm_multiexon	fsm_multiexon_frac
+gorilla	NC_073244.2,NC_073246.2,NC_073248.2	rustle	4850	3845	0.792784	1931	0.398144	1720	4809	1917	0.398628
+gorilla	NC_073244.2,NC_073246.2,NC_073248.2	rustle_primary	4727	3757	0.794796	1885	0.398773	1674	4713	1881	0.399109
+gorilla	NC_073244.2,NC_073246.2,NC_073248.2	stringtie	4647	3484	0.749731	1703	0.366473	1502	4617	1700	0.368204
+gorilla	NC_073244.2,NC_073246.2,NC_073248.2	flair	7998	4779	0.597524	1747	0.21843	1524	7533	1706	0.22647
+gorilla	NC_073244.2,NC_073246.2,NC_073248.2	isoseq	28216	13934	0.493833	3414	0.120995	2779	24160	3267	0.135224
+human	chr20,chr21,chr22	rustle	14906	8927	0.598886	2531	0.169797	2318	13093	2263	0.17284
+human	chr20,chr21,chr22	rustle_primary	13386	8495	0.634618	2347	0.175332	2137	12076	2259	0.187065
+human	chr20,chr21,chr22	stringtie	14164	6847	0.483409	1910	0.134849	1667	12627	1863	0.147541
+human	chr20,chr21,chr22	flair	54765	15882	0.290003	2572	0.0469643	2277	35824	2284	0.0637561
+human	chr20,chr21,chr22	isoseq	169422	47021	0.277538	5376	0.0317314	4523	115464	4436	0.0384189

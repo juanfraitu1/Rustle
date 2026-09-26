@@ -1,0 +1,126 @@
+# table: fig4_assignability_upset
+# generator: figures/fig_assignability.py build()
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input human_sim_bam: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/sim.bam	size=115317450	mtime=1790339180
+# input human_catalog: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/cat.copies.tsv	size=136856	mtime=1790339197
+# input human_assignments_per_family: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/o2.assignments.tsv	size=396861	mtime=1790339330
+# input human_assignments_union: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/u2.assignments.tsv	size=384691	mtime=1790339481
+# input human_score_reads_o2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/score_reads_human_o2.txt	size=2441	mtime=1790347130
+# input human_score_reads_u2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/score_reads_human_u2.txt	size=2382	mtime=1790347131
+# input human_per_read_o2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/per_read_human_o2.tsv	size=87614	mtime=1790347130
+# input human_per_read_u2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/score/per_read_human_u2.tsv	size=87822	mtime=1790347131
+# input gorilla_sim_bam: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/sim.bam	size=63121003	mtime=1790341041
+# input gorilla_catalog: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/cat.copies.tsv	size=53069	mtime=1790341054
+# input gorilla_assignments_per_family: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/o2.assignments.tsv	size=3301	mtime=1790341092
+# input gorilla_assignments_union: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/u2.assignments.tsv	size=3281	mtime=1790341126
+# input gorilla_score_reads_o2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/score_reads_gorilla_o2.txt	size=944	mtime=1790347141
+# input gorilla_score_reads_u2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/score_reads_gorilla_u2.txt	size=944	mtime=1790347146
+# input gorilla_per_read_o2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/per_read_gorilla_o2.tsv	size=2288	mtime=1790347141
+# input gorilla_per_read_u2: /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/score/per_read_gorilla_u2.tsv	size=2288	mtime=1790347146
+# note: human: cross-check: score.py reads o2 OWN ALL (n, correct, wrong, conflict, abstain, other) = (1263, 163, 0, 0, 1084, 16), identical to this table's tally
+# note: human: cross-check: score.py reads o2 ANY ALL (n, correct, wrong, conflict, abstain, other) = (1263, 60, 432, 156, 599, 16), identical to this table's tally
+# note: human: cross-check: score.py reads u2 ANY ALL (n, correct, wrong, conflict, abstain, other) = (1263, 0, 0, 0, 1247, 16), identical to this table's tally
+# note: human: rebuilt /mnt/linuxdisk/tmp/rustle_figures/o2sim/human (sim.py copies seed 20260925; copy_assign /mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign)
+# note: human: simulation stamp /mnt/linuxdisk/tmp/rustle_figures/o2sim/human/sim.params predates the simulator fingerprint (bench/sim.py md5, minimap2 command): accepted as built; bench/sim.py md5 now 7aba22abf30901854387f92f339468d6
+# note: human: sim.bam: 28453 primary/unmapped records = the 28453 simulated reads of copies_used.tsv
+# note: human: copy_assign o2: run predates the RUSTLE_* guard; its environment is not recorded (the next forced rebuild runs it with RUSTLE_* unset)
+# note: human: copy_assign u2: run predates the RUSTLE_* guard; its environment is not recorded (the next forced rebuild runs it with RUSTLE_* unset)
+# note: human: simulated 1398 copies (28453 reads; spliced sequence >= 300 bp in a family of >= 2 copies); catalog passed to copy_assign 1400 copies in 290 families; source catalog 1418 copies in 290 families, 18 dropped (_o2.derive_catalog: not simulated and no simulated primary over the span)
+# note: human: assigned in the true family's row: 163 tied reads from 21 source copies; of them without a decisive family PSV (sole candidate): 10 reads from 1 source copy (GWFAM221|4)
+# note: human: twin of the 1263 tied reads: nm_twin 1255; as_tie_nm_differs 0; no_equal_as_elsewhere 3; true_below_best 3; no_true_placement 2
+# note: gorilla: cross-check: score.py reads o2 OWN ALL (n, correct, wrong, conflict, abstain, other) = (30, 0, 0, 0, 30, 0), identical to this table's tally
+# note: gorilla: cross-check: score.py reads o2 ANY ALL (n, correct, wrong, conflict, abstain, other) = (30, 0, 0, 0, 30, 0), identical to this table's tally
+# note: gorilla: cross-check: score.py reads u2 ANY ALL (n, correct, wrong, conflict, abstain, other) = (30, 0, 0, 0, 30, 0), identical to this table's tally
+# note: gorilla: rebuilt /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla (sim.py copies seed 20260925; copy_assign /mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign)
+# note: gorilla: simulation stamp /mnt/linuxdisk/tmp/rustle_figures/o2sim/gorilla/sim.params predates the simulator fingerprint (bench/sim.py md5, minimap2 command): accepted as built; bench/sim.py md5 now 7aba22abf30901854387f92f339468d6
+# note: gorilla: sim.bam: 11448 primary/unmapped records = the 11448 simulated reads of copies_used.tsv
+# note: gorilla: copy_assign o2: run predates the RUSTLE_* guard; its environment is not recorded (the next forced rebuild runs it with RUSTLE_* unset)
+# note: gorilla: copy_assign u2: run predates the RUSTLE_* guard; its environment is not recorded (the next forced rebuild runs it with RUSTLE_* unset)
+# note: gorilla: simulated 357 copies (11448 reads; spliced sequence >= 300 bp in a family of >= 2 copies); catalog passed to copy_assign 357 copies in 54 families; source catalog 357 copies in 54 families, 0 dropped (_o2.derive_catalog: not simulated and no simulated primary over the span)
+# note: gorilla: assigned in the true family's row: 0 tied reads from 0 source copies; of them without a decisive family PSV (sole candidate): 0 reads from 0 source copies (none)
+# note: gorilla: twin of the 30 tied reads: nm_twin 30; as_tie_nm_differs 0; no_equal_as_elsewhere 0; true_below_best 0; no_true_placement 0
+# note: one row per (species, exact set combination, aligner outcome, identity band); n_reads counts simulated reads
+# note: sets: unique = primary MAPQ > 0; mapq0 = primary MAPQ 0; not_scored = MAPQ 0 and no row in the per-family table; identical = the --union-certificate run's row for the read's true family has n_decisive 0; family_psv = the per-family run's row for the true family has n_decisive >= 1; assigned = that row is 'assigned' and not origin-rejected; correct = assigned to the source copy or a catalog copy at the same locus (overlap >= 50% of the shorter span, score.py reads' rule); the certificate sets are 0 for MAPQ > 0 reads (the AS-tied gate does not score them); all from score.py reads --per-read
+# note: foreign_claim = an assigned row of the per-family table names a locus other than the source's (score.py reads --per-read wrong_locus_rows > 0; in these runs always another family's row; the union certificate removes these rows)
+# note: any_outcome / union_outcome (MAPQ-0 reads; 'na' otherwise) = the verdict a user can apply: any assigned row of the default per-family table / of the --union-certificate run (score.py reads ANY: correct, wrong, conflict = two loci claimed, abstain, not_scored = no row)
+# note: twin (MAPQ-0 reads; 'na' otherwise) = _o2.twin_state over every alignment of the read (-F 2052): nm_twin = a placement not overlapping the source copy has AS equal to the best and the NM of the true-copy placement; as_tie_nm_differs = placements elsewhere reach the best AS, none with that NM; no_equal_as_elsewhere = the true copy holds the best AS alone; true_below_best = the best AS is elsewhere; no_true_placement = no alignment overlaps the source copy (register row 1103 reported nm_twin for all 990 scored tied molecules of the hash-seeded development run; this is the re-measurement on these runs)
+# note: aligner_primary = the catalog copy with the largest raw overlap of the primary alignment's reference span: true_copy / other_copy / outside_catalog / unmapped
+# note: identity_band = figlib.identity_band(max_family_identity of the source copy in the catalog); the top band 'identical' = 100% identity over an aligned core (E_r edge, coverage >= 0.50 of the shorter copy), not full-length identity
+species	unique	mapq0	not_scored	identical	family_psv	assigned	correct	foreign_claim	any_outcome	union_outcome	twin	aligner_primary	identity_band	n_reads
+human	0	1	0	0	1	0	0	0	abstain	abstain	nm_twin	outside_catalog	99.5-100%	6
+human	0	1	0	0	1	0	0	0	abstain	abstain	nm_twin	outside_catalog	<98%	1
+human	0	1	0	0	1	0	0	1	wrong	abstain	nm_twin	true_copy	identical	1
+human	0	1	0	0	1	1	1	1	conflict	abstain	nm_twin	other_copy	98-99%	1
+human	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	other_copy	identical	196
+human	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	other_copy	99.5-100%	36
+human	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	other_copy	<98%	8
+human	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	outside_catalog	identical	3
+human	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	outside_catalog	<98%	7
+human	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	true_copy	identical	187
+human	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	true_copy	99.5-100%	34
+human	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	true_copy	<98%	11
+human	0	1	0	1	0	0	0	0	correct	abstain	nm_twin	other_copy	identical	9
+human	0	1	0	1	0	0	0	0	correct	abstain	nm_twin	true_copy	identical	10
+human	0	1	0	1	0	0	0	1	conflict	abstain	nm_twin	other_copy	identical	18
+human	0	1	0	1	0	0	0	1	conflict	abstain	nm_twin	true_copy	identical	16
+human	0	1	0	1	0	0	0	1	wrong	abstain	nm_twin	other_copy	identical	226
+human	0	1	0	1	0	0	0	1	wrong	abstain	nm_twin	other_copy	99.5-100%	5
+human	0	1	0	1	0	0	0	1	wrong	abstain	nm_twin	true_copy	identical	189
+human	0	1	0	1	0	0	0	1	wrong	abstain	nm_twin	true_copy	99.5-100%	2
+human	0	1	0	1	0	1	1	1	conflict	abstain	nm_twin	other_copy	<98%	7
+human	0	1	0	1	0	1	1	1	conflict	abstain	nm_twin	true_copy	<98%	3
+human	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	other_copy	<98%	8
+human	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	outside_catalog	99.5-100%	40
+human	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	outside_catalog	99-99.5%	4
+human	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	outside_catalog	98-99%	6
+human	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	outside_catalog	<98%	3
+human	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	true_copy	99.5-100%	30
+human	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	true_copy	99-99.5%	8
+human	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	true_copy	98-99%	4
+human	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	true_copy	<98%	7
+human	0	1	0	1	1	0	0	1	wrong	abstain	nm_twin	other_copy	identical	1
+human	0	1	0	1	1	0	0	1	wrong	abstain	nm_twin	other_copy	99.5-100%	4
+human	0	1	0	1	1	0	0	1	wrong	abstain	nm_twin	true_copy	identical	1
+human	0	1	0	1	1	0	0	1	wrong	abstain	nm_twin	true_copy	99.5-100%	3
+human	0	1	0	1	1	1	1	0	correct	abstain	nm_twin	other_copy	99.5-100%	2
+human	0	1	0	1	1	1	1	0	correct	abstain	nm_twin	other_copy	99-99.5%	3
+human	0	1	0	1	1	1	1	0	correct	abstain	nm_twin	other_copy	98-99%	8
+human	0	1	0	1	1	1	1	0	correct	abstain	nm_twin	true_copy	identical	1
+human	0	1	0	1	1	1	1	0	correct	abstain	nm_twin	true_copy	99.5-100%	6
+human	0	1	0	1	1	1	1	0	correct	abstain	nm_twin	true_copy	99-99.5%	13
+human	0	1	0	1	1	1	1	0	correct	abstain	nm_twin	true_copy	98-99%	8
+human	0	1	0	1	1	1	1	1	conflict	abstain	nm_twin	other_copy	99.5-100%	24
+human	0	1	0	1	1	1	1	1	conflict	abstain	nm_twin	other_copy	99-99.5%	14
+human	0	1	0	1	1	1	1	1	conflict	abstain	nm_twin	other_copy	98-99%	12
+human	0	1	0	1	1	1	1	1	conflict	abstain	nm_twin	other_copy	<98%	3
+human	0	1	0	1	1	1	1	1	conflict	abstain	nm_twin	true_copy	99.5-100%	24
+human	0	1	0	1	1	1	1	1	conflict	abstain	nm_twin	true_copy	99-99.5%	14
+human	0	1	0	1	1	1	1	1	conflict	abstain	nm_twin	true_copy	98-99%	12
+human	0	1	0	1	1	1	1	1	conflict	abstain	nm_twin	true_copy	<98%	8
+human	0	1	1	0	0	0	0	0	not_scored	not_scored	nm_twin	outside_catalog	99.5-100%	2
+human	0	1	1	0	0	0	0	0	not_scored	not_scored	nm_twin	outside_catalog	<98%	5
+human	0	1	1	0	0	0	0	0	not_scored	not_scored	nm_twin	true_copy	<98%	1
+human	0	1	1	0	0	0	0	0	not_scored	not_scored	no_equal_as_elsewhere	true_copy	99.5-100%	3
+human	0	1	1	0	0	0	0	0	not_scored	not_scored	no_true_placement	outside_catalog	99.5-100%	2
+human	0	1	1	0	0	0	0	0	not_scored	not_scored	true_below_best	other_copy	99.5-100%	2
+human	0	1	1	0	0	0	0	0	not_scored	not_scored	true_below_best	other_copy	99-99.5%	1
+human	1	0	0	0	0	0	0	0	na	na	na	other_copy	99.5-100%	10
+human	1	0	0	0	0	0	0	0	na	na	na	other_copy	99-99.5%	2
+human	1	0	0	0	0	0	0	0	na	na	na	other_copy	<98%	11
+human	1	0	0	0	0	0	0	0	na	na	na	outside_catalog	<98%	2
+human	1	0	0	0	0	0	0	0	na	na	na	true_copy	identical	535
+human	1	0	0	0	0	0	0	0	na	na	na	true_copy	99.5-100%	2652
+human	1	0	0	0	0	0	0	0	na	na	na	true_copy	99-99.5%	1205
+human	1	0	0	0	0	0	0	0	na	na	na	true_copy	98-99%	1383
+human	1	0	0	0	0	0	0	0	na	na	na	true_copy	<98%	21390
+gorilla	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	other_copy	identical	4
+gorilla	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	outside_catalog	identical	10
+gorilla	0	1	0	1	0	0	0	0	abstain	abstain	nm_twin	true_copy	identical	6
+gorilla	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	outside_catalog	99.5-100%	7
+gorilla	0	1	0	1	1	0	0	0	abstain	abstain	nm_twin	true_copy	99.5-100%	3
+gorilla	1	0	0	0	0	0	0	0	na	na	na	true_copy	identical	136
+gorilla	1	0	0	0	0	0	0	0	na	na	na	true_copy	99.5-100%	147
+gorilla	1	0	0	0	0	0	0	0	na	na	na	true_copy	99-99.5%	172
+gorilla	1	0	0	0	0	0	0	0	na	na	na	true_copy	98-99%	10
+gorilla	1	0	0	0	0	0	0	0	na	na	na	true_copy	<98%	10953

@@ -1,0 +1,133 @@
+# Machine-local inputs for `figures/make.py data`. Copy to figures/inputs.local.tsv (git-ignored) and edit.
+# key<TAB>value; ${key} expands an earlier key or an environment variable. Paths below are the thesis machine's.
+repo	/mnt/c/Users/jfris/Desktop/Rustle
+bin	/mnt/linuxdisk/home/juanfraitu/rustle_target/release
+driver	${repo}/tools/rustle_pipeline.sh
+work	/mnt/linuxdisk/tmp/rustle_figures
+threads	4
+# ---- external tools (conda envs)
+gffcompare	/home/juanfra/miniforge3/bin/gffcompare
+sqanti3_env	/home/juanfra/miniforge3/envs/sqanti3
+sqanti3_dir	/mnt/linuxdisk/home/juanfraitu/_from_wsl/tools/SQANTI3
+# ---- gorilla (OR6737 testis IsoSeq; GGO reference)
+gorilla_bam	/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_mm.bam
+gorilla_fasta	/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta
+gorilla_splice_mmi	/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO.splice.mmi
+gorilla_ref_gtf	/mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/GGO.GCF_029281585.2_RefSeq.gtf.gz
+gorilla_ref_gff	/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff
+gorilla_stringtie_gtf	/mnt/c/Users/jfris/Desktop/benchmark_collapse/stringtie_GGO/GGO.stringtie.gtf
+gorilla_flair_gtf	/mnt/c/Users/jfris/Desktop/benchmark_collapse/flair_GGO/GGO.flair.isoforms.gtf
+gorilla_isoseq_gff	/mnt/c/Users/jfris/Desktop/isoseq_upload/isoseq_GGO_OR6737/GGO_OR6737.collapsed.sorted.gff.gz
+# ---- human (A119b IsoSeq; CHM13 v2.0); development substrate
+human_bam	/mnt/linuxdisk/home/juanfraitu/winloci_data/A119b.t2t.bam
+human_fasta	/mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa
+human_splice_mmi	/mnt/linuxdisk/home/juanfraitu/npip_ladder/idx/target.splice.mmi
+human_ref_gtf	/mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/A119b.chm13v2.0_RefSeq.gtf.gz
+human_stringtie_gtf	/mnt/c/Users/jfris/Desktop/benchmark_collapse/stringtie_A119b/A119b.stringtie.gtf
+human_flair_gtf	/mnt/c/Users/jfris/Desktop/benchmark_collapse/flair_A119b/A119b.flair.isoforms.gtf
+human_isoseq_gff	/mnt/c/Users/jfris/Desktop/isoseq_upload/isoseq_A119b/A119b.collapsed.gff.gz
+# (figures 1-3 are scored GENOME-WIDE on every contig each sample's annotation covers; the old keys human_regions and
+# gorilla_sqanti_contigs are no longer read. The lab's stringtie/flair/isoseq GTFs above are ANNOTATION-FREE runs:
+# StringTie -L without -G, FLAIR bam2bed + collapse without -f/--gtf (flair correct skipped), IsoSeq collapse.
+# Annotation-guided StringTie/FLAIR GTFs go in samples.tsv columns stringtie_guided_gtf / flair_guided_gtf, as a path or
+# a ${key} of this file; they feed only the separate guided path of figures 1-3.)
+# ---- sample registry: figures/samples.tsv has one row per sample (6 samples, 4 species) whose cells name the keys of
+# this file; `make.py samples --verify` prints it resolved. Genome-wide runs of every pipeline stage per sample:
+# `make.py runs` (cached under ${work}/runs/<sample>/; figures/README.md)
+samples	${repo}/figures/samples.tsv
+human_testis_bam	/mnt/linuxdisk/home/juanfraitu/_from_wsl/human_val/human_testis.t2t.bam
+gorilla_kb3781_bam	/mnt/linuxdisk/home/juanfraitu/fibroblasts/GCA_029281585.2_flnc_mm.bam
+# the reference individual's (KB3781) haplotype assemblies: the flag stage confirms reference-absent candidates on them
+gorilla_pat_splice_mmi	/mnt/linuxdisk/home/juanfraitu/winloci_data/mGorGor1.pat.splice.mmi
+gorilla_mat_splice_mmi	/mnt/linuxdisk/home/juanfraitu/winloci_data/mGorGor1.mat.splice.mmi
+chimp_bam	/mnt/linuxdisk/home/juanfraitu/winloci_data/PTR_mm.bam
+chimp_fasta	/mnt/linuxdisk/home/juanfraitu/winloci_data/GCF_028858775.2_NHGRI_mPanTro3-v2.0_pri_genomic.fna
+chimp_ref_gff	/mnt/linuxdisk/home/juanfraitu/winloci_data/PTR_genomic.gff
+orangutan_bam	/mnt/linuxdisk/home/juanfraitu/winloci_data/PPY_mm.bam
+orangutan_fasta	/mnt/linuxdisk/home/juanfraitu/winloci_data/GCF_028885625.2_NHGRI_mPonPyg2-v2.0_pri_genomic.fna
+orangutan_ref_gff	/mnt/linuxdisk/home/juanfraitu/winloci_data/PPY_genomic.gff
+# no splice index exists for chimpanzee or orangutan: `make.py runs --stage index` builds these (~7 min / ~19 GB each)
+chimp_splice_mmi	${work}/runs/chimp_PTR/chimp_PTR.splice.mmi
+orangutan_splice_mmi	${work}/runs/orangutan_PPY/orangutan_PPY.splice.mmi
+# `make.py runs` per-call bounds (optional; defaults shown; none is part of a stage's key):
+# catalog_budget_s	420	(catalog --piecewise: seconds of piece work per call; exit 75 while pieces or the merge remain)
+# catalog_piece_records	1000000	(contigs with more BAM records are cut into read-free pieces of about this size)
+# runs_mm2_wrapper	${repo}/tools/mm2_shard.sh	(families/catalog all-vs-all through the resumable shard wrapper; - = plain minimap2)
+# runs_mm2_budget_s	480	(MM2_SHARD_BUDGET_S of one call, unless the environment sets it)
+# runs_call_budget_s	560	(MM2_SHARD_DEADLINE = call start + this, unless the environment sets it)
+# ---- copy assignment (O2) truth simulations and catalogs
+human_o2_catalog_tsv	/mnt/linuxdisk/home/juanfraitu/chr16_arm/on.copies.tsv
+human_o2_catalog_fa	/mnt/linuxdisk/home/juanfraitu/chr16_arm/on.copies.fa
+gorilla_o2_catalog_tsv	/mnt/linuxdisk/tmp/hom_c234.copies.tsv
+gorilla_o2_catalog_fa	/mnt/linuxdisk/tmp/hom_c234.copies.fa
+o2_sim_seed	20260925
+# the simulation maps its reads in read-disjoint parts (identical records); o2_sim_parts_per_call > 0 stops after that
+# many new parts so one foreground call stays short (re-run make.py data fig4 until it completes); 0 = all at once
+o2_sim_parts	8
+o2_sim_parts_per_call	0
+# hard-locus benchmark inputs (hsa16.bam, copies16.*, the lab GTFs' calls): read by the default fig5 build
+hard_locus_dir	/mnt/linuxdisk/home/juanfraitu/bakeoff/human
+# recorded O2 runs (hash-seeded, pre-2026-09-24): make.py data fig4|fig5 --recorded tabulates them (provisional)
+o2sim_dir	/mnt/linuxdisk/tmp/gw22/o2sim
+# ---- family definition (O1)
+spectrum_dir	/mnt/linuxdisk/tmp/gw22/spectrum
+catalog_dir	/mnt/linuxdisk/tmp/gw22/rule
+referee_dir	/mnt/linuxdisk/tmp/gw22/sec
+human_chr16_bam	/mnt/linuxdisk/home/juanfraitu/chr16_arm/chr16.bam
+compara_chr16	/mnt/linuxdisk/tmp/gw22/spectrum/compara_chr16.tsv
+# fig6 gorilla panel contig (the seeding pre-registration's verdict contig; development for the seeding comparison)
+# fig6_gorilla_contig	NC_073244.2
+# mmseqs	mmseqs	(binary for score.py spectrum's protein tier; default: the one on PATH)
+# ---- figure 7 (family recovery, de novo vs guided)
+# uncompressed CHM13 v2.0 RefSeq full GFF (mcl_families --gff needs it uncompressed; the file every guided run used)
+human_ref_gff	/mnt/linuxdisk/tmp/regress/chm13.gff
+# recorded NPIP union truth U2 (register 990; its builder bench/union_truth_npip.py was retired in 8db314c7); `none` drops the U2 row
+npip_union_truth	/mnt/linuxdisk/tmp/union2/U2_truth.tsv
+# substrates, comma-separated contig[:status]; status = untouched | reused (a held-out verdict set reused by ~30
+# guided-mode tests, r903-r1035) | development; a bare contig takes its default status
+fig7_human_contigs	chr16:development,chr2:reused,chr6:untouched,chr8:reused,chr10:reused
+fig7_gorilla_contigs	NC_073244.2:development,NC_073234.2:untouched
+# recorded guided all-vs-alls, reused only when the guided node set (regions file) is identical
+fig7_guided_paf_dirs	/mnt/linuxdisk/tmp/heldout,/mnt/linuxdisk/tmp/regress
+# fig6_scope	genome	(genome | dev: the recorded per-chromosome development tables)
+# fig7_scope	genome	(genome | dev)
+# fig7_guided_flags	denovo	(guided all-vs-all flags: denovo = the de novo mode's flags; recipe = the recorded -x asm20 -c --eqx -P)
+# compara_gw	(genome-wide Ensembl Compara paralogue table, bench/truth.py compara; default in _o1.py)
+# protein_homology_dir	(<dir>/<human|gorilla|chimp|orangutan>/ph.families.tsv, bench/truth.py protein-homology; default in _o1.py)
+# ---- figures 1-3: bounded, resumable builds (optional)
+# figs_budget_s	360	(seconds per build call for figures 1-3; exit 75 = run the same command again; 0 = no limit)
+# fig1_budget_s	360	(the same for one figure; also fig2_budget_s, fig3_budget_s)
+# fig2_budget_s	300
+# fig3_budget_s	360
+# figs_plan	1	(print the heavy units a figure 1-3 build would run, with estimated seconds; run nothing)
+# ---- figure 2 (SQANTI3) options
+# fig2_arms	rustle,rustle_primary,stringtie,flair,isoseq	(default: all five; narrows the arms)
+# fig2_chunk_tx	25000	(largest SQANTI3 call, in transcripts; bigger arms run in parts that sum exactly)
+# fig2_part	all	(all | samples: Rustle on every sample | main: the benchmark samples | guided: the annotation-guided tables only)
+# ---- figures 4-5 (copy assignment) options
+# o2_scope	genome	(genome: every sample's genome-wide catalog | dev: the recorded development tables)
+# o2_samples	chimp_PTR	(comma list of sample ids or aliases; default every sample)
+# o2_heavy_steps_per_call	1	(one simulation part or one copy_assign shard per call; re-run until done)
+# o2_reads_per_part_<species>	4400	(simulated reads per mapping part; human default 17000)
+# o2_shard	1	(0 = one unsharded copy_assign run)
+# o2_shard_union	1	(0 = the --union-certificate run unsharded)
+# o2_shard_budget_s	420
+# o2_accept_stale_catalog	1	(use a catalog whose run-cache stamp is stale)
+# fig5c_samples	human_A119b,gorilla_OR6737	(experiment B samples; none = skip)
+# hard_gw_sample_frac	0.20	(pre-registered stop rule: a seeded fraction of read-connected components)
+# hard_pass_budget_s	420
+# margin_rule_real	1	(0 = skip the real-read margin-rule comparison, Fig. 5s)
+# margin_real_budget_s	420
+# ---- figure 8 (loci, Liftoff framework) options
+# fig8_budget_s	540	(seconds per build call; exit 75 = run again)
+# fig8_plan	1
+# fig8_guided_finder	1	(also run Rustle's guided candidate search)
+# fig8_finder_units	(units per finder shard; default in _liftoff.py)
+# fig8_finder_env_mb	(memory per finder shard; default in _liftoff.py)
+# fig8_liftoff_block_records	2500	(records per Liftoff call)
+# fig8_liftoff_hard_s	590	(a Liftoff call is killed after this)
+# fig8_liftoff_index_<species>	(a prebuilt Liftoff/minimap2 index of that genome)
+# ---- development only (leave unset for the real build)
+# eval_contigs_<sample id>	NC_073248.2	(narrow figures 1-3's evaluation scope of one sample; tables marked provisional)
+# fig2_contigs_<sample id>	NC_073248.2	(narrow figure 2's SQANTI3 contigs of one sample)
+# fig1_support_contigs_<species>	(narrow fig1's exact-chain support to a contig subset, e.g. fig1_support_contigs_gorilla)

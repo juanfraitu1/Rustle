@@ -1,0 +1,21 @@
+# table: fig5_hard_locus_transcripts
+# generator: figures/fig_assign_accuracy.py build()
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input hard_bam: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/hsa16.bam	size=771377898	mtime=1788928587
+# input hard_copies: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/copies16.tsv	size=6739	mtime=1788927865
+# input hard_gate_rows: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/rustle_arm/ours.assignments.tsv	size=1019577	mtime=1790341368
+# input hard_gtf_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/rustle_arm/ours.gtf	size=3270323	mtime=1790341367
+# input hard_params_rustle: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/rustle_arm/ours.params.tsv	size=1159	mtime=1790341368
+# input hard_gtf_stringtie: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/stringtie_family.gtf	size=1594896	mtime=1788991692
+# input hard_gtf_flair: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/flair_family.gtf	size=4928330	mtime=1788991692
+# input hard_gtf_isoseq: /mnt/linuxdisk/home/juanfraitu/bakeoff/human/isoseq_family.gff	size=8682998	mtime=1788991752
+# input hard_compare_all_molecules: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/compare_all_molecules.txt	size=2962	mtime=1790347193
+# input hard_compare_chain_ge2_molecules: /mnt/linuxdisk/tmp/rustle_figures/fig5/hard_locus/current/compare_chain_ge2_molecules.txt	size=3047	mtime=1790347198
+# note: one row per tool on the hard-locus benchmark (same runs as fig5_hard_locus); transcripts_total = transcripts in the tool's family GTF; transcripts_in_copy = those overlapping a catalog copy (bakeoff-calls); in_copy_spanning_ge2 = in-copy transcripts overlapping >= 2 copy intervals (conflation)
+# note: supported_any / supported_hard = in-copy transcripts carrying the exact intron chain (fuzz as the arm; ends not compared) of >= 1 molecule of the scored universe / of the hard set (bakeoff-calls --tx-out, bakeoff-compare --tx-support); an assembler that emits only chains read in >= N reads scores ~1 on supported_any by construction
+species	tool	fuzz	transcripts_total	transcripts_in_copy	in_copy_spanning_ge2	supported_any	supported_hard	frac_supported_any	frac_supported_hard	arm
+human	rustle	0	1970	911	1	905	173	0.993414	0.189901	one current copy_assign run (2026-09-25) gives transcripts and hard set
+human	stringtie	0	1073	486	2	363	70	0.746914	0.144033	recorded (lab)
+human	flair	0	3086	917	11	908	163	0.990185	0.177754	recorded (lab)
+human	isoseq	5	10216	3403	57	2858	521	0.839847	0.1531	recorded (lab)

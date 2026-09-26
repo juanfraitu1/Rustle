@@ -132,3 +132,5 @@ bench/st_debug*.jsonl
 !/tests/fixtures/xfam_conflict/genome.fa.fai
 !/tests/fixtures/xfam_conflict/reads.bam
 !/tests/fixtures/xfam_conflict/reads.bam.bai
+/figures/inputs.local.tsv
+/figures/data_recorded/

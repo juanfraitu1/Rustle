@@ -1,0 +1,30 @@
+# table: fig6_chr16_precision
+# generator: figures/fig_family_spectrum.py
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input spectrum_tsv: /mnt/linuxdisk/tmp/rustle_figures/fig6/spectrum/chr16_nt.spectrum.tsv	size=709	mtime=1790384468
+# input spectrum_truth_pairs: /mnt/linuxdisk/tmp/rustle_figures/fig6/spectrum/chr16_nt.truth_pairs.tsv	size=17047	mtime=1790384468
+# input chr16_families_copies: /mnt/linuxdisk/tmp/rustle_figures/fig6/chr16_denovo.fam.copies.tsv	size=68022	mtime=1790384532
+# input mcl_families: /mnt/linuxdisk/home/juanfraitu/rustle_target_dev/release/mcl_families	size=2141848	mtime=1790383894
+# input compara: /mnt/linuxdisk/tmp/gw22/spectrum/compara_chr16.tsv	size=4214931	mtime=1790275005
+# input chr16_ref_gtf: /mnt/linuxdisk/tmp/rustle_figures/fig6/chr16.ref.gtf	size=12076251	mtime=1790341418
+# input human_ref_gtf: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/A119b.chm13v2.0_RefSeq.gtf.gz	size=16770508	mtime=1790137613
+# input score_pairs_log: /mnt/linuxdisk/tmp/rustle_figures/fig6/score/chr16_families.score.txt	size=774	mtime=1790384534
+# input score_py: /mnt/c/Users/jfris/Desktop/Rustle/bench/score.py	size=124962	mtime=1790370467
+# input lib_py: /mnt/c/Users/jfris/Desktop/Rustle/bench/lib.py	size=26633	mtime=1790360431
+# note: regenerated with the current binaries and pipeline-driver defaults
+# note: families = the DEFAULT de novo families: the driver's families stage (mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units, MCL 2.8) on the chr16 restriction of the genome-wide A119b assembly (loci seeded with secondary alignments within 2% of the read's best score); one copy per member locus = its representative transcript; copies mapped to genes by span (score.py pairs): 353 copies, 88 families, largest 22 genes; single-exon copies 95/353
+# note: precision over JUDGEABLE pairs only: pairs whose two genes both have Compara data (an upper bound)
+# note: edge rows: aligned representative pairs above the tier's floor, in bands of the tier's own nucleotide identity (T1 asm20, T2 asm20 -k11 -w5), 'all' = pooled; k = round(precision x n) from spectrum.tsv
+# note: family rows: within-family gene pairs of the default families (score.py pairs); multi_exon = pairs of copies with n_exon >= 2; families_with_pairs = families holding >= 1 judged pair; largest_family = the one holding the most judged pairs (family id + its gene-name group); k/n_without_largest = the judged pairs left when that family is removed
+# note: ci = Wilson 95% (treats pairs as independent; they are not)
+species	chrom	truth	measure	level	identity_band	k	n	precision	ci_lo	ci_hi	families_with_pairs	largest_family	largest_family_pairs	k_without_largest	n_without_largest	copies	single_exon_copies
+human	chr16	compara	edge_asm20	edge	>=90	87	89	0.977528	0.921724	0.993816							
+human	chr16	compara	edge_asm20	edge	80-90	4	4	1	0.510109	1							
+human	chr16	compara	edge_nt_sensitive	edge	>=90	87	89	0.977528	0.921724	0.993816							
+human	chr16	compara	edge_nt_sensitive	edge	80-90	5	5	1	0.565518	1							
+human	chr16	compara	edge_nt_sensitive	edge	70-80	1	1	1	0.206549	1							
+human	chr16	compara	edge_asm20	edge	all	91	93	0.978495	0.924945	0.994083							
+human	chr16	compara	edge_nt_sensitive	edge	all	93	95	0.978947	0.926459	0.994207							
+human	chr16	compara	families_all_copies	family	all	75	88	0.852273	0.763489	0.911587	16	MCL1 NPIP (11 of 22 genes NPIP*)	66	28	30	353	95
+human	chr16	compara	families_multi_exon	family	all	71	83	0.855422	0.764082	0.915317	14	MCL1 NPIP (11 of 22 genes NPIP*)	66	18	19	353	95

@@ -1,0 +1,26 @@
+# table: figS_protein_refs
+# generator: figures/fig_protein_supp.py (tools/protein_attach.py; docs/PREREG_protein_attach_2026-09-25.md)
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input human_chr16: /mnt/linuxdisk/tmp/rustle_figures_dev/protein_attach/human_chr16.params.tsv	size=848	mtime=1790378561
+# input human_chr6: /mnt/linuxdisk/tmp/rustle_figures_dev/protein_attach/human_chr6.params.tsv	size=849	mtime=1790378530
+# input gorilla_NC_073244.2: /mnt/linuxdisk/tmp/rustle_figures_dev/protein_attach/gorilla_NC_073244.2.params.tsv	size=863	mtime=1790378556
+# input gorilla_NC_073234.2: /mnt/linuxdisk/tmp/rustle_figures_dev/protein_attach/gorilla_NC_073234.2.params.tsv	size=849	mtime=1790378560
+# note: provisional: development scope (the Fig. 7 de novo families of four chromosomes); the genome-wide rows of every sample appear once the driver's families-protein stage has run
+species	substrate	scope	exposure	reference	role	status	members_judgeable	members_true	baseline_precision	baseline_lo	baseline_hi	att_judgeable	att_true	att_false	att_same_gene	att_unjudgeable	att_precision	att_lo	att_hi	missing	missing_protein	missing_base_hit	missing_attached	sensitivity	merges	merges_judgeable	merges_true
+human	chr16	dev	development	compara_any	primary	ok	31	31	1	0.889745	1	0	0	0	0	0				8	8	4	0	0	2	0	0
+human	chr16	dev	development	compara_primates	secondary	ok	31	31	1	0.889745	1	0	0	0	0	0				0	0	0	0		2	0	0
+human	chr16	dev	development	liftoff	certifies only	not available (Liftoff self-lift not finished for this species)																					
+human	chr16	dev	development	protein_homology	secondary, circular	ok	48	44	0.916667	0.804467	0.967116	0	0	0	0	0				7	7	4	0	0	2	0	0
+human	chr6	dev	held out, never used	compara_any	primary	ok	14	14	1	0.784689	1	1	1	0	0	0	1	0.206549	1	30	29	27	1	0.0333333	0	0	0
+human	chr6	dev	held out, never used	compara_primates	secondary	ok	14	8	0.571429	0.325906	0.786192	1	0	1	0	0	0	0	0.793451	0	0	0	0		0	0	0
+human	chr6	dev	held out, never used	liftoff	certifies only	not available (Liftoff self-lift not finished for this species)																					
+human	chr6	dev	held out, never used	protein_homology	secondary, circular	ok	18	14	0.777778	0.547854	0.909991	1	1	0	0	0	1	0.206549	1	65	62	45	1	0.0153846	0	0	0
+gorilla	NC_073244.2	dev	development (seeding rule)	compara_any	primary	Compara export in hand is human only																					
+gorilla	NC_073244.2	dev	development (seeding rule)	compara_primates	secondary	Compara export in hand is human only																					
+gorilla	NC_073244.2	dev	development (seeding rule)	liftoff	certifies only	not available (Liftoff self-lift not finished for this species)																					
+gorilla	NC_073244.2	dev	development (seeding rule)	protein_homology	secondary, circular	ok	83	81	0.975904	0.916337	0.993367	0	0	0	0	1				200	193	187	0	0	15	15	15
+gorilla	NC_073234.2	dev	held out, never used	compara_any	primary	Compara export in hand is human only																					
+gorilla	NC_073234.2	dev	held out, never used	compara_primates	secondary	Compara export in hand is human only																					
+gorilla	NC_073234.2	dev	held out, never used	liftoff	certifies only	not available (Liftoff self-lift not finished for this species)																					
+gorilla	NC_073234.2	dev	held out, never used	protein_homology	secondary, circular	ok	2	2	1	0.34238	1	0	0	0	0	0				0	0	0	0		0	0	0

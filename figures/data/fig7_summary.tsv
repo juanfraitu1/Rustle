@@ -1,0 +1,97 @@
+# table: fig7_summary
+# generator: figures/fig_family_recovery.py
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input clusters_human_chr16_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr16.denovo.fam.clusters.tsv	size=17315	mtime=1790342013
+# input genes_human_chr16: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr16.gff	size=64195055	mtime=1790341958
+# input truth_human_chr16_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr16_compara.tsv	size=1099	mtime=1790383400
+# input truth_human_chr16_npip_u2: /mnt/linuxdisk/tmp/union2/U2_truth.tsv	size=625	mtime=1790111651
+# input truth_human_chr16_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr16_ref.families.tsv	size=3561	mtime=1790341966
+# input truth_human_chr16_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr16_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr16.guided.clusters.tsv	size=13260	mtime=1790342022
+# input clusters_human_chr2_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr2.denovo.fam.clusters.tsv	size=17774	mtime=1790343694
+# input genes_human_chr2: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr2.gff	size=139019036	mtime=1790343262
+# input truth_human_chr2_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr2_compara.tsv	size=1004	mtime=1790383400
+# input truth_human_chr2_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr2_ref.families.tsv	size=5077	mtime=1790343277
+# input truth_human_chr2_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr2_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr2.guided.clusters.tsv	size=21770	mtime=1790343723
+# input clusters_human_chr6_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr6.denovo.fam.clusters.tsv	size=9634	mtime=1790342309
+# input genes_human_chr6: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr6.gff	size=82852061	mtime=1790341958
+# input truth_human_chr6_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr6_compara.tsv	size=736	mtime=1790383400
+# input truth_human_chr6_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr6_ref.families.tsv	size=4617	mtime=1790342029
+# input truth_human_chr6_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr6_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr6.guided.clusters.tsv	size=10892	mtime=1790342324
+# input clusters_human_chr8_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr8.denovo.fam.clusters.tsv	size=11201	mtime=1790342493
+# input genes_human_chr8: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr8.gff	size=66904056	mtime=1790341958
+# input truth_human_chr8_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr8_compara.tsv	size=1114	mtime=1790383400
+# input truth_human_chr8_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr8_ref.families.tsv	size=4089	mtime=1790342329
+# input truth_human_chr8_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr8_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr8.guided.clusters.tsv	size=13451	mtime=1790342499
+# input clusters_human_chr10_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr10.denovo.fam.clusters.tsv	size=8463	mtime=1790342630
+# input genes_human_chr10: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/human_chr10.gff	size=80436261	mtime=1790341958
+# input truth_human_chr10_compara: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr10_compara.tsv	size=758	mtime=1790383400
+# input truth_human_chr10_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr10_ref.families.tsv	size=2875	mtime=1790342504
+# input truth_human_chr10_soto: /mnt/c/Users/jfris/Desktop/Rustle/bench/soto/soto_famCN_S1C.tsv	size=444142	mtime=1789941067
+# input clusters_human_chr10_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/human_chr10.guided.clusters.tsv	size=11632	mtime=1790342644
+# input clusters_gorilla_NC_073244.2_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073244.2.denovo.fam.clusters.tsv	size=5143	mtime=1790342753
+# input genes_gorilla_NC_073244.2: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/gorilla_NC_073244.2.gff	size=33109369	mtime=1790341960
+# input truth_gorilla_NC_073244.2_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073244.2_ref.families.tsv	size=10338	mtime=1790342718
+# input clusters_gorilla_NC_073244.2_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073244.2.guided.clusters.tsv	size=16916	mtime=1790342994
+# input clusters_gorilla_NC_073234.2_denovo: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073234.2.denovo.fam.clusters.tsv	size=773	mtime=1790343043
+# input genes_gorilla_NC_073234.2: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gff/gorilla_NC_073234.2.gff	size=37350384	mtime=1790341960
+# input truth_gorilla_NC_073234.2_referee: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073234.2_ref.families.tsv	size=5026	mtime=1790343001
+# input clusters_gorilla_NC_073234.2_guided: /mnt/linuxdisk/tmp/rustle_figures/fig7/current/gorilla_NC_073234.2.guided.clusters.tsv	size=4645	mtime=1790343217
+# note: the cached per-contig runs of both modes in ${work}/fig7/current (2026-09-25; not re-run for this table: fig7_dev_cached 1), rescored against the current references
+# note: human chr16: development: every early O1 decision was scored here (115 ledger mentions)
+# note: human chr2: held out, reused verdict set: 0 O1-ledger mentions, but the held-out verdict set of about 30 pre-registered guided-mode tests since 2026-09-20 (registers 903-1035; PREREG_heldout_families_2026-09-20 named chr2 with chr6 as its primary held-out pair); the shipped family rule was kept over every alternative tested there on the GUIDED node set, so the exposure may favour guided; no de novo arm is recorded on it before this figure
+# note: human chr6: held out, untouched: 0 O1-ledger mentions (PREREG_heldout_families_2026-09-20 primary held-out set with chr2); its 2026-09-20 guided run could not be scored (no Soto family >= 3 members, register 903), and no later test used it
+# note: human chr8: held out, reused verdict set: 0 O1-ledger mentions, but the held-out verdict set of about 30 pre-registered guided-mode tests since 2026-09-20 (registers 903-1035; PREREG_heldout_families_2026-09-20 named chr2 with chr6 as its primary held-out pair); the shipped family rule was kept over every alternative tested there on the GUIDED node set, so the exposure may favour guided; no de novo arm is recorded on it before this figure
+# note: human chr10: held out, reused verdict set: 1 O1-ledger mention, but the held-out verdict set of about 30 pre-registered guided-mode tests since 2026-09-20 (registers 903-1035; PREREG_heldout_families_2026-09-20 named chr2 with chr6 as its primary held-out pair); the shipped family rule was kept over every alternative tested there on the GUIDED node set, so the exposure may favour guided; no de novo arm is recorded on it before this figure
+# note: gorilla NC_073244.2: development here: the pre-registered held-out verdict set of the seeding decision (PREREG_locus_read_pool_2026-09-22, registers 1059/1060; 0.98 kept in 1100), whose outcome (this contig's protein-homology F) chose the de novo mode's seeding with secondary alignments; 29 ledger, 19 register and 50 pre-registration mentions (2026-09-25)
+# note: gorilla NC_073234.2: held out, untouched: no ledger, register or pre-registration mention before this figure (one O2 table row in bench/COPY_ASSIGNMENT_AND_GATE.md); 1,948 gene + pseudogene records, the richest unexposed gorilla contig after NC_086017.1
+# note: not built (no arm): none
+# note: mode missing on a built substrate: none
+# note: denovo = loci assembled from the IsoSeq reads (driver default: also built from secondary alignments within 2% of the read's best score) -> rustle_pipeline.sh families (mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60); guided = annotated gene + pseudogene bodies -> minimap2 -x asm20 -c --eqx -P all-vs-all -> mcl_families --paf --gff --min-exonic-bp 1 --min-shared-exon-frac 0.60
+# note: reference (column truth): compara = Ensembl Compara release 116 families at Primates (connected components of protein-coding paralogue pairs whose duplication node is at or below Primates; built genome-wide, restricted to the contig; the main figure's headline); soto = bench/soto/soto_famCN_S1C.tsv (first Family ID per gene; not independent of the 0.60 exon threshold); npip_u2 = the NPIP reference set of register 990 (built by bench/union_truth_npip.py, retired in 8db314c7); referee = the contig's protein-homology families (bench/truth.py protein-homology; SECONDARY, supplementary figure only); only reference families with >= 2 members on the contig are scored
+# note: scored with family_score semantics: locus -> ONE gene by max overlap; predicted families intersected with the reference genes (an unlabelled member is not scored: precision is an upper bound, register 770/991)
+# note: guided all-vs-all: human chr16: cached; human chr2: cached; human chr6: cached; human chr8: cached; human chr10: cached; gorilla NC_073244.2: cached; gorilla NC_073234.2: cached
+# note: pair_*: reference pairs (column truth_pairs) = within-family gene pairs of the reference; predicted pairs = within-family gene pairs over the reference genes; pair_sens = tp / truth_pairs, pair_prec = tp / pred_pairs
+# note: bip_*: one-to-one assignment maximising total member overlap (scipy linear_sum_assignment = family_score); recall (sensitivity) = matched / reference members; precision = matched / members of the matched predicted families; asserted equal to family_score's printed sens / prec / F for every row
+# note: exact = reference families with F = 1; touched = reference families whose matched family holds >= 1 member; collapsed / no_locus = family_score's columns (reference genes sharing a best-covering locus / with no locus in any cluster)
+species	contig	status	truth	mode	source	truth_families	truth_genes	clusters_total	loci_in_clusters	clusters_scored	pair_tp	truth_pairs	pred_pairs	pair_sens	pair_prec	bip_matched	bip_truth_members	bip_pred_members	bip_recall	bip_precision	bip_f	exact	touched	collapsed	no_locus
+human	chr16	development	compara	denovo	cached	17	54	111	353	20	66	193	66	0.341969	1	24	54	24	0.444444	1	0.615385	5	7	5	17
+human	chr16	development	npip_u2	denovo	cached	3	34	111	353	9	78	240	145	0.325	0.537931	17	34	25	0.5	0.68	0.576271	0	3	9	1
+human	chr16	development	referee	denovo	cached	80	306	111	353	30	100	1474	101	0.0678426	0.990099	39	306	40	0.127451	0.975	0.225434	4	15	13	245
+human	chr16	development	soto	denovo	cached	20	71	111	353	34	67	173	100	0.387283	0.67	33	71	36	0.464789	0.916667	0.616822	5	12	8	18
+human	chr16	development	compara	guided	cached	17	54	90	271	15	137	193	137	0.709845	1	42	54	42	0.777778	1	0.875	11	13	2	4
+human	chr16	development	npip_u2	guided	cached	3	34	90	271	4	134	240	220	0.558333	0.609091	22	34	27	0.647059	0.814815	0.721311	0	3	1	1
+human	chr16	development	referee	guided	cached	80	306	90	271	28	186	1474	189	0.126187	0.984127	57	306	59	0.186275	0.966102	0.312329	5	20	4	231
+human	chr16	development	soto	guided	cached	20	71	90	271	17	119	173	132	0.687861	0.901515	51	71	52	0.71831	0.980769	0.829268	10	16	3	9
+human	chr2	held out, reused verdict set	compara	denovo	cached	18	48	121	361	28	31	54	31	0.574074	1	20	48	20	0.416667	1	0.588235	5	7	0	25
+human	chr2	held out, reused verdict set	referee	denovo	cached	135	438	121	361	50	38	1019	81	0.0372915	0.469136	36	438	49	0.0821918	0.734694	0.147844	4	22	3	382
+human	chr2	held out, reused verdict set	soto	denovo	cached	18	55	121	361	28	29	80	30	0.3625	0.966667	24	55	25	0.436364	0.96	0.6	5	10	2	20
+human	chr2	held out, reused verdict set	compara	guided	cached	18	48	168	441	21	36	54	36	0.666667	1	31	48	31	0.645833	1	0.78481	10	13	6	6
+human	chr2	held out, reused verdict set	referee	guided	cached	135	438	168	441	56	47	1019	52	0.0461237	0.903846	59	438	63	0.134703	0.936508	0.235529	8	36	12	352
+human	chr2	held out, reused verdict set	soto	guided	cached	18	55	168	441	24	45	80	45	0.5625	1	35	55	35	0.636364	1	0.777778	7	13	0	7
+human	chr6	held out, untouched	compara	denovo	cached	15	35	54	199	6	6	27	6	0.222222	1	10	35	10	0.285714	1	0.444444	3	5	0	23
+human	chr6	held out, untouched	referee	denovo	cached	97	404	54	199	20	11	1777	15	0.00619021	0.733333	25	404	29	0.0618812	0.862069	0.115473	0	18	4	367
+human	chr6	held out, untouched	soto	denovo	cached	3	6	54	199	3	2	3	2	0.666667	1	4	6	4	0.666667	1	0.8	2	2	2	0
+human	chr6	held out, untouched	compara	guided	cached	15	35	87	225	13	16	27	16	0.592593	1	25	35	25	0.714286	1	0.833333	9	12	0	9
+human	chr6	held out, untouched	referee	guided	cached	97	404	87	225	25	89	1777	90	0.0500844	0.988889	44	404	45	0.108911	0.977778	0.195991	1	17	1	342
+human	chr6	held out, untouched	soto	guided	cached	3	6	87	225	2	2	3	2	0.666667	1	4	6	4	0.666667	1	0.8	2	2	2	0
+human	chr8	held out, reused verdict set	compara	denovo	cached	15	53	50	234	5	24	175	31	0.137143	0.774194	12	53	13	0.226415	0.923077	0.363636	1	4	2	28
+human	chr8	held out, reused verdict set	referee	denovo	cached	78	315	50	234	19	141	1862	174	0.075725	0.810345	31	315	38	0.0984127	0.815789	0.175637	0	11	3	259
+human	chr8	held out, reused verdict set	soto	denovo	cached	17	43	50	234	6	6	39	6	0.153846	1	7	43	7	0.162791	1	0.28	1	4	2	24
+human	chr8	held out, reused verdict set	compara	guided	cached	15	53	70	282	17	60	175	71	0.342857	0.84507	27	53	28	0.509434	0.964286	0.666667	2	13	7	5
+human	chr8	held out, reused verdict set	referee	guided	cached	78	315	70	282	29	673	1862	696	0.361439	0.966954	88	315	89	0.279365	0.988764	0.435644	1	25	9	185
+human	chr8	held out, reused verdict set	soto	guided	cached	17	43	70	282	17	7	39	11	0.179487	0.636364	18	43	22	0.418605	0.818182	0.553846	1	14	10	0
+human	chr10	held out, reused verdict set	compara	denovo	cached	14	33	51	172	18	7	26	9	0.269231	0.777778	13	33	15	0.393939	0.866667	0.541667	4	7	2	14
+human	chr10	held out, reused verdict set	referee	denovo	cached	79	252	51	172	27	8	495	19	0.0161616	0.421053	21	252	28	0.0833333	0.75	0.15	2	14	3	218
+human	chr10	held out, reused verdict set	soto	denovo	cached	17	65	51	172	25	29	162	52	0.179012	0.557692	27	65	32	0.415385	0.84375	0.556701	4	11	12	19
+human	chr10	held out, reused verdict set	compara	guided	cached	14	33	81	235	18	9	26	13	0.346154	0.692308	17	33	20	0.515152	0.85	0.641509	5	9	2	7
+human	chr10	held out, reused verdict set	referee	guided	cached	79	252	81	235	28	9	495	14	0.0181818	0.642857	28	252	32	0.111111	0.875	0.197183	1	20	3	212
+human	chr10	held out, reused verdict set	soto	guided	cached	17	65	81	235	24	97	162	110	0.598765	0.881818	42	65	47	0.646154	0.893617	0.75	4	14	5	8
+gorilla	NC_073244.2	development	referee	denovo	cached	113	775	29	93	25	275	41515	275	0.00662411	1	35	775	35	0.0451613	1	0.0864198	1	4	11	681
+gorilla	NC_073244.2	development	referee	guided	cached	113	775	78	308	61	489	41515	490	0.0117789	0.997959	90	775	90	0.116129	1	0.208092	5	21	10	594
+gorilla	NC_073234.2	held out, untouched	referee	denovo	cached	99	400	6	13	2	1	1825	1	0.000547945	1	3	400	3	0.0075	1	0.0148883	1	2	0	397
+gorilla	NC_073234.2	held out, untouched	referee	guided	cached	99	400	38	83	12	7	1825	7	0.00383562	1	19	400	19	0.0475	1	0.0906921	5	12	6	368

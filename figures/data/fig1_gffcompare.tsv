@@ -1,0 +1,98 @@
+# table: fig1_gffcompare
+# generator: figures/fig_intron_chain.py build
+# commit: 628894f9-dirty
+# date: 2026-09-25
+# input gorilla rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle.stats	size=1606	mtime=1790377391
+# input gorilla rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle_primary.stats	size=1638	mtime=1790377401
+# input gorilla stringtie stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_stringtie.stats	size=1573	mtime=1790331014
+# input gorilla flair stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_flair.stats	size=1560	mtime=1790331014
+# input gorilla isoseq stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_isoseq.stats	size=1565	mtime=1790331014
+# input gorilla rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle.rustle.gtf.tmap	size=11341310	mtime=1790377390
+# input gorilla rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=11136644	mtime=1790377401
+# input gorilla stringtie tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_stringtie.stringtie.gtf.tmap	size=7367076	mtime=1790331014
+# input gorilla flair tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_flair.flair.gtf.tmap	size=25252988	mtime=1790331014
+# input gorilla isoseq tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_isoseq.isoseq.gtf.tmap	size=56284188	mtime=1790331014
+# input gorilla bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_mm.bam	size=11745390963	mtime=1782229602
+# input gorilla annotation: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/GGO.GCF_029281585.2_RefSeq.gtf.gz	size=10241973	mtime=1790137615
+# input gorilla restricted annotation: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/ref.gtf	size=188989140	mtime=1790326715
+# input gorilla chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/gorilla.genome-wide.chain_support.tsv	size=8116688	mtime=1790333203
+# input human rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle.stats	size=1630	mtime=1790377428
+# input human rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle_primary.stats	size=1662	mtime=1790377451
+# input human stringtie stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_stringtie.stats	size=1642	mtime=1790377480
+# input human flair stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_flair.stats	size=1631	mtime=1790377592
+# input human isoseq stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_isoseq.stats	size=1637	mtime=1790377719
+# input human rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle.rustle.gtf.tmap	size=32427672	mtime=1790377427
+# input human rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle_primary.rustle_primary.gtf.tmap	size=30844846	mtime=1790377450
+# input human stringtie tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_stringtie.stringtie.gtf.tmap	size=26645580	mtime=1790377478
+# input human flair tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_flair.flair.gtf.tmap	size=191143753	mtime=1790377588
+# input human isoseq tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_isoseq.isoseq.gtf.tmap	size=327044677	mtime=1790377710
+# input human bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/A119b.t2t.bam	size=96265156326	mtime=1784025276
+# input human annotation: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/A119b.chm13v2.0_RefSeq.gtf.gz	size=16770508	mtime=1790137613
+# input human restricted annotation: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/ref.gtf	size=322974304	mtime=1790377412
+# input human chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/human.genome-wide.chain_support.tsv	size=10675352	mtime=1790378341
+# note: mode: annotation-free (de novo): Rustle assemble (reads + genome), StringTie -L without -G, FLAIR collapse without annotation (flair correct skipped), IsoSeq collapse; guided comparison: not available (guided StringTie/FLAIR GTFs not supplied)
+# note: methods: rustle = pipeline driver default (loci built from primary alignments plus the secondary alignments whose alignment score is at least 98% of the read's best score anywhere in the genome); rustle_primary = the same run with --no-seed-secondaries; stringtie/flair/isoseq = the lab's GTFs (StringTie 3.0.1, FLAIR 3.0.1, IsoSeq collapse 26.2.0): gorilla stringtie /mnt/c/Users/jfris/Desktop/benchmark_collapse/stringtie_GGO/GGO.stringtie.gtf, gorilla flair /mnt/c/Users/jfris/Desktop/benchmark_collapse/flair_GGO/GGO.flair.isoforms.gtf, gorilla isoseq /mnt/c/Users/jfris/Desktop/isoseq_upload/isoseq_GGO_OR6737/GGO_OR6737.collapsed.sorted.gff.gz, human stringtie /mnt/c/Users/jfris/Desktop/benchmark_collapse/stringtie_A119b/A119b.stringtie.gtf, human flair /mnt/c/Users/jfris/Desktop/benchmark_collapse/flair_A119b/A119b.flair.isoforms.gtf, human isoseq /mnt/c/Users/jfris/Desktop/isoseq_upload/isoseq_A119b/A119b.collapsed.gff.gz
+# note: gffcompare 0.12.10 -r <annotation restricted to the scope> <method restricted to the same contigs>
+# note: gorilla (gorilla_OR6737): genome-wide = every contig its annotation covers (all contigs)
+# note: human (human_A119b): genome-wide = every contig its annotation covers; left out for every method because the annotation has no record there: chrM (transcripts there: rustle 39, rustle_primary 39, stringtie 9, flair 47, isoseq 1,509)
+species	scope	tool	level	sn	pr	matching	n_query	n_ref	n_query_multiexon	n_ref_multiexon	sample
+gorilla	genome-wide	rustle	base	0.456	0.664		74045	106487	73345	95575	gorilla_OR6737
+gorilla	genome-wide	rustle	exon	0.534	0.736		74045	106487	73345	95575	gorilla_OR6737
+gorilla	genome-wide	rustle	intron	0.597	0.826		74045	106487	73345	95575	gorilla_OR6737
+gorilla	genome-wide	rustle	intron_chain	0.271	0.353	25872	74045	106487	73345	95575	gorilla_OR6737
+gorilla	genome-wide	rustle	transcript	0.244	0.351	25959	74045	106487	73345	95575	gorilla_OR6737
+gorilla	genome-wide	rustle	locus	0.311	0.696	12565	74045	106487	73345	95575	gorilla_OR6737
+gorilla	genome-wide	rustle_primary	base	0.451	0.681		72690	106487	72271	95575	gorilla_OR6737
+gorilla	genome-wide	rustle_primary	exon	0.53	0.74		72690	106487	72271	95575	gorilla_OR6737
+gorilla	genome-wide	rustle_primary	intron	0.593	0.828		72690	106487	72271	95575	gorilla_OR6737
+gorilla	genome-wide	rustle_primary	intron_chain	0.269	0.356	25710	72690	106487	72271	95575	gorilla_OR6737
+gorilla	genome-wide	rustle_primary	transcript	0.242	0.354	25747	72690	106487	72271	95575	gorilla_OR6737
+gorilla	genome-wide	rustle_primary	locus	0.307	0.711	12413	72690	106487	72271	95575	gorilla_OR6737
+gorilla	genome-wide	stringtie	base	0.503	0.631		68249	106487	67491	95575	gorilla_OR6737
+gorilla	genome-wide	stringtie	exon	0.548	0.773		68249	106487	67491	95575	gorilla_OR6737
+gorilla	genome-wide	stringtie	intron	0.639	0.831		68249	106487	67491	95575	gorilla_OR6737
+gorilla	genome-wide	stringtie	intron_chain	0.244	0.346	23320	68249	106487	67491	95575	gorilla_OR6737
+gorilla	genome-wide	stringtie	transcript	0.22	0.343	23395	68249	106487	67491	95575	gorilla_OR6737
+gorilla	genome-wide	stringtie	locus	0.312	0.645	12601	68249	106487	67491	95575	gorilla_OR6737
+gorilla	genome-wide	flair	base	0.485	0.46		153402	106487	138552	95575	gorilla_OR6737
+gorilla	genome-wide	flair	exon	0.547	0.546		153402	106487	138552	95575	gorilla_OR6737
+gorilla	genome-wide	flair	intron	0.621	0.615		153402	106487	138552	95575	gorilla_OR6737
+gorilla	genome-wide	flair	intron_chain	0.255	0.176	24351	153402	106487	138552	95575	gorilla_OR6737
+gorilla	genome-wide	flair	transcript	0.231	0.16	24565	153402	106487	138552	95575	gorilla_OR6737
+gorilla	genome-wide	flair	locus	0.288	0.492	11634	153402	106487	138552	95575	gorilla_OR6737
+gorilla	genome-wide	isoseq	base	0.642	0.182		551342	106487	441427	95575	gorilla_OR6737
+gorilla	genome-wide	isoseq	exon	0.662	0.311		551342	106487	441427	95575	gorilla_OR6737
+gorilla	genome-wide	isoseq	intron	0.756	0.405		551342	106487	441427	95575	gorilla_OR6737
+gorilla	genome-wide	isoseq	intron_chain	0.308	0.067	29426	551342	106487	441427	95575	gorilla_OR6737
+gorilla	genome-wide	isoseq	transcript	0.28	0.054	29802	551342	106487	441427	95575	gorilla_OR6737
+gorilla	genome-wide	isoseq	locus	0.327	0.143	13236	551342	106487	441427	95575	gorilla_OR6737
+human	genome-wide	rustle	base	0.493	0.172		252178	188903	217541	175226	human_A119b
+human	genome-wide	rustle	exon	0.536	0.452		252178	188903	217541	175226	human_A119b
+human	genome-wide	rustle	intron	0.612	0.627		252178	188903	217541	175226	human_A119b
+human	genome-wide	rustle	intron_chain	0.22	0.178	38620	252178	188903	217541	175226	human_A119b
+human	genome-wide	rustle	transcript	0.205	0.154	38763	252178	188903	217541	175226	human_A119b
+human	genome-wide	rustle	locus	0.348	0.221	16185	252178	188903	217541	175226	human_A119b
+human	genome-wide	rustle_primary	base	0.482	0.175		238367	188903	206095	175226	human_A119b
+human	genome-wide	rustle_primary	exon	0.533	0.469		238367	188903	206095	175226	human_A119b
+human	genome-wide	rustle_primary	intron	0.608	0.644		238367	188903	206095	175226	human_A119b
+human	genome-wide	rustle_primary	intron_chain	0.219	0.186	38341	238367	188903	206095	175226	human_A119b
+human	genome-wide	rustle_primary	transcript	0.204	0.162	38516	238367	188903	206095	175226	human_A119b
+human	genome-wide	rustle_primary	locus	0.346	0.229	16069	238367	188903	206095	175226	human_A119b
+human	genome-wide	stringtie	base	0.596	0.145		250491	188903	211865	175226	human_A119b
+human	genome-wide	stringtie	exon	0.53	0.402		250491	188903	211865	175226	human_A119b
+human	genome-wide	stringtie	intron	0.635	0.578		250491	188903	211865	175226	human_A119b
+human	genome-wide	stringtie	intron_chain	0.181	0.15	31792	250491	188903	211865	175226	human_A119b
+human	genome-wide	stringtie	transcript	0.169	0.128	32006	250491	188903	211865	175226	human_A119b
+human	genome-wide	stringtie	locus	0.338	0.203	15708	250491	188903	211865	175226	human_A119b
+human	genome-wide	flair	base	0.664	0.088		1096234	188903	627288	175226	human_A119b
+human	genome-wide	flair	exon	0.588	0.191		1096234	188903	627288	175226	human_A119b
+human	genome-wide	flair	intron	0.677	0.302		1096234	188903	627288	175226	human_A119b
+human	genome-wide	flair	intron_chain	0.224	0.063	39242	1096234	188903	627288	175226	human_A119b
+human	genome-wide	flair	transcript	0.211	0.036	39876	1096234	188903	627288	175226	human_A119b
+human	genome-wide	flair	locus	0.319	0.063	14845	1096234	188903	627288	175226	human_A119b
+human	genome-wide	isoseq	base	0.78	0.063		3195506	188903	1958001	175226	human_A119b
+human	genome-wide	isoseq	exon	0.678	0.104		3195506	188903	1958001	175226	human_A119b
+human	genome-wide	isoseq	intron	0.778	0.163		3195506	188903	1958001	175226	human_A119b
+human	genome-wide	isoseq	intron_chain	0.27	0.024	47248	3195506	188903	1958001	175226	human_A119b
+human	genome-wide	isoseq	transcript	0.256	0.015	48342	3195506	188903	1958001	175226	human_A119b
+human	genome-wide	isoseq	locus	0.393	0.036	18251	3195506	188903	1958001	175226	human_A119b
