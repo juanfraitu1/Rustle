@@ -17,6 +17,10 @@
 //! Replaces the `samtools view | awk | sort | awk` pipeline (`as_scan.sh`, 113 min on a 96 GB human
 //! BAM) with one pass; rows are written in name order so two tables diff cleanly. Missing `AS` counts
 //! as 0, as the shell pipeline did. Memory is one entry per molecule (a 21 M-molecule human BAM ≈ 2 GB).
+//!
+//! It also writes `<out>.asbin`, the binary sidecar `copy_assign` loads instead of the text when it still
+//! describes the TSV (size, mtime, inode, header, sampled content; `load_as_table`): a human table loads in
+//! about 0.3 s instead of 6-10 s. The TSV stays the source of truth. `RUSTLE_AS_TABLE_SIDECAR=0` skips it.
 use anyhow::Result;
 use clap::Parser;
 use std::io::Write;
@@ -102,11 +106,27 @@ fn main() -> Result<()> {
         writeln!(out, "{name}\t{}\t{}\t{}\t{pchrom}\t{pas}", m.best, m.second, m.n)?;
     }
     out.flush()?;
+    drop(out);
     eprintln!(
         "[as-table] {n_records} records -> {} molecules -> {} in {:.0} s",
         mols.len(),
         args.out,
         t0.elapsed().as_secs_f64()
     );
+    // the binary sidecar `copy_assign` reads instead of the text (`denovo_assemble::load_as_table`), built from the
+    // file just written by the loader's own parse, so it holds exactly what the TSV path would load
+    if std::env::var("RUSTLE_AS_TABLE_SIDECAR").map_or(true, |v| v != "0") {
+        drop(mols);
+        let t1 = std::time::Instant::now();
+        match rustle::vg_family::denovo_assemble::load_as_table(&args.out, true) {
+            Some((t, src)) => eprintln!(
+                "[as-table] sidecar {}: {} molecules ({src}) in {:.1} s",
+                rustle::vg_family::denovo_assemble::as_sidecar_path(&args.out),
+                t.len(),
+                t1.elapsed().as_secs_f64()
+            ),
+            None => eprintln!("[as-table] WARNING: could not re-read {} to build its sidecar", args.out),
+        }
+    }
     Ok(())
 }

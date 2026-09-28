@@ -282,6 +282,46 @@ struct Args {
     #[arg(long, default_value_t = false)]
     polish_fuzzy_ism: bool,
 
+    /// JUNCTION SNAP for `--assembly-polish`, the fuzzy-junction merge that keeps real splice sites. It runs per
+    /// contig on the polish INPUT, before every polish step (so `--polish-fuzzy-junction`, ISM, the floors, the
+    /// fraction and retained-intron rules and `--polish-tss` all see the snapped set). Two junctions K and J are a
+    /// near pair when they sit in the same locus (`gene_id`) on the same strand with |Δdonor| <= 10 and
+    /// |Δacceptor| <= 10 bp (the `--polish-subchain` tolerance). A snap re-places K onto J in every transcript of that
+    /// locus that carries K, unless the move would empty an exon. Transcripts that end up with the same
+    /// (contig, strand, intron chain) then collapse into the member with the most reads (ties: first `transcript_id`
+    /// in byte order). That member keeps its id and exon ends, takes the SUM of the reads (pass 1 gives every read
+    /// to one chain, so TPM stays normalised) and gets `snapped_from "<ids>"`. A surviving transcript whose own
+    /// exons moved gets `snapped "1"`.
+    ///
+    /// * `off` (default): byte-identical to a run without this flag.
+    /// * `equiv`: K is snapped only when it is SEQUENCE-EQUIVALENT to J (the same shift s on both sides, the s
+    ///   moved bases a direct repeat, so the spliced sequence is identical). The representative J is the canonical
+    ///   class first (GT-AG > GC-AG > AT-AC > other), then pooled read support, then leftmost. Under the default
+    ///   `--assembly-junctions strict` this never fires: on the three dev contigs 0 near pairs are equivalent,
+    ///   because the equivalent position is non-canonical and pass 1 already rejects it. It can act only on
+    ///   `majority` output (not measured).
+    /// * `reads`: the READ-EQUIVALENT snap (it does not add `equiv`'s test; under `strict` that one never fires). Unlike
+    ///   `equiv`, it CHANGES the spliced sequence by the shift: it is the reads, not the sequence, that fail to tell
+    ///   K from J. Take J in order of pooled support (the summed `reads` of the
+    ///   contig's transcripts carrying it, per strand), then canonical class, then leftmost. K is snapped onto J
+    ///   when support(J) >= support(K), fewer than 2 (the pass-1 read floor) of K's own reads PROVE K, and at least 2
+    ///   of J's reads prove J. A read proves its junction X against a partner Y when its own bases (+-25 bp around
+    ///   the junction point in the read, StringTie's long-read `sserror`) align with strictly fewer edits to the
+    ///   spliced reference at X than at Y (+-40 bp windows, HW infix edit distance). Evidence comes from primary
+    ///   records (`-F 2308`) carrying X exactly, at most 400 per junction in BAM order, re-read in one indexed pass
+    ///   per contig over the span of its near pairs (needs the `.bai`). K needs at least one such read. A snapped
+    ///   junction never absorbs, and a junction that absorbed one is never snapped. No support ratio is used.
+    ///
+    /// ⚠ Designed on the three dev contigs only (fj_design, in-sample). There, `reads` left gffcompare's matching
+    /// intron chains unchanged on human chr20 and chr16 (+0/-0). On gorilla NC_073244.2 the count was unchanged too,
+    /// but one reference chain was swapped for another (+1/-1): all 10 reads of that annotated GT donor align
+    /// better at the GC donor 4 bp upstream. `j` fell by 8 / 34 / 12 and precision rose by 0.04 / 0.36 / 0.03 pt.
+    /// Every support-ratio merge measured there costs chains, which is why none is offered. Cost: the BAM re-read
+    /// around near pairs took dev wall time 5.4 -> 14.9 s (chr20) and 11.6 -> 22.3 s (chr16). Writes `params.tsv`
+    /// rows and one log line per contig only when not `off`. Driver: `RUSTLE_POLISH_JUNCTION_SNAP`.
+    #[arg(long, default_value = "off", value_parser = ["off", "equiv", "reads"])]
+    polish_junction_snap: String,
+
     /// ⭐ §6r5 TPM IN THE GTF. Add `cov` and `TPM` to every transcript line, from the `reads` support the
     /// assembler already records. **Count-based, NOT length-normalised**: a long read is one molecule, so
     /// `TPM_i = reads_i / sum(reads) * 1e6`. Measured on chr20 against StringTie's own TPM over the 507
@@ -3009,6 +3049,538 @@ fn annotate_tpm(lines: &mut [String]) -> usize {
     n
 }
 
+// ================================================================================== --polish-junction-snap
+// The read-equivalent junction snap (`--polish-junction-snap`, docs in the flag's help; design fj_design.md). It
+// reads and rewrites the polish INPUT lines of ONE contig. A junction is the polish's chain key: the 0-based
+// half-open intron [donor, acceptor), i.e. (end of exon i, start of exon i+1 - 1) in 1-based GTF coordinates.
+
+/// A junction: the 0-based half-open intron `[donor, acceptor)`.
+type SnapJn = (i64, i64);
+/// `--polish-junction-snap` pair window (bp) on the donor AND on the acceptor: the `--polish-subchain` tolerance.
+const SNAP_TOL_BP: i64 = SUBCHAIN_TOL_BP;
+/// Read bases on each side of the junction point that a read contributes (StringTie's long-read `sserror`).
+const SNAP_FLANK: usize = 25;
+/// Extra reference bases on each side of the spliced window, so an indel near the junction still fits.
+const SNAP_PAD: usize = 15;
+/// Reads per junction examined, in BAM order.
+const SNAP_CAP: u32 = 400;
+
+/// One contig's `--polish-junction-snap` statistics (params.tsv, the log line).
+#[derive(Clone, Debug, Default)]
+struct SnapStats {
+    /// distinct junction pairs within the window in one locus and strand
+    near_pairs: usize,
+    /// junctions re-placed because they are sequence-equivalent to their representative
+    equivalent: usize,
+    /// junctions re-placed because their own reads do not prove them and the representative's reads prove it
+    read_snapped: usize,
+    /// transcripts whose exons moved (collapsed ones included)
+    rewritten: usize,
+    /// transcripts removed by the collapse into an identical chain
+    collapsed: usize,
+    /// primary reads that contributed evidence, and the BAM records the indexed pass returned
+    evidence_reads: usize,
+    records: usize,
+}
+
+/// A transcript of the polish input, as the snap sees it: exons 1-based inclusive, sorted.
+struct SnapTx {
+    tid: String,
+    gene: String,
+    strand: String,
+    exons: Vec<(i64, i64)>,
+    reads: u64,
+}
+
+impl SnapTx {
+    fn chain(&self) -> Vec<SnapJn> {
+        self.exons.windows(2).map(|w| (w[0].1, w[1].0 - 1)).collect()
+    }
+}
+
+/// The transcripts of `lines`, in order of first appearance. `reads` and `gene_id` are read the way the polish
+/// reads them (the largest `reads` of any of the transcript's lines, the first `gene_id`).
+fn snap_parse(lines: &[String]) -> Vec<SnapTx> {
+    let mut order: Vec<SnapTx> = Vec::new();
+    let mut at: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for line in lines.iter() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 {
+            continue;
+        }
+        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        let k = *at.entry(tid.clone()).or_insert_with(|| {
+            order.push(SnapTx { tid, gene: String::new(), strand: String::new(), exons: Vec::new(), reads: 0 });
+            order.len() - 1
+        });
+        let t = &mut order[k];
+        if let Some(r) = re_attr(f[8], "reads").and_then(|v| v.parse::<u64>().ok()) {
+            t.reads = t.reads.max(r);
+        }
+        if t.gene.is_empty() {
+            if let Some(g) = re_attr(f[8], "gene_id") {
+                t.gene = g;
+            }
+        }
+        if f[2] == "exon" {
+            if let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) {
+                t.exons.push((a, b));
+                t.strand = f[6].to_string();
+            }
+        }
+    }
+    for t in order.iter_mut() {
+        t.exons.sort_unstable();
+    }
+    order
+}
+
+/// `seq[a..b]`, or `None` when the range leaves the contig.
+fn snap_slice(seq: &[u8], a: i64, b: i64) -> Option<&[u8]> {
+    (a >= 0 && a <= b && b as usize <= seq.len()).then(|| &seq[a as usize..b as usize])
+}
+
+/// Is moving the intron `j1` to `j2` sequence-neutral? True iff both ends shift by the same s != 0 and the s bases
+/// moved across the boundary are a direct repeat (`g[d:d+s] == g[a:a+s]` for s > 0, mirrored for s < 0), so the
+/// spliced sequence is identical.
+fn snap_equivalent(seq: &[u8], j1: SnapJn, j2: SnapJn) -> bool {
+    let s = j2.0 - j1.0;
+    if s == 0 || j2.1 - j1.1 != s {
+        return false;
+    }
+    let (d, a) = j1;
+    let (x, y) = if s > 0 {
+        (snap_slice(seq, d, d + s), snap_slice(seq, a, a + s))
+    } else {
+        (snap_slice(seq, d + s, d), snap_slice(seq, a + s, a))
+    };
+    matches!((x, y), (Some(x), Some(y)) if x == y)
+}
+
+/// Canonical class of intron `j` in transcript orientation: 0 = GT-AG, 1 = GC-AG, 2 = AT-AC, 3 = anything else.
+fn snap_motif_rank(seq: &[u8], j: SnapJn, strand: &str) -> u8 {
+    let (Some(don), Some(acc)) = (snap_slice(seq, j.0, j.0 + 2), snap_slice(seq, j.1 - 2, j.1)) else { return 3 };
+    let m: Vec<u8> = if strand == "-" {
+        let rc = rustle::vg_family::seq_utils::reverse_complement;
+        [rc(acc), rc(don)].concat()
+    } else {
+        [don, acc].concat()
+    };
+    match m.as_slice() {
+        b"GTAG" => 0,
+        b"GCAG" => 1,
+        b"ATAC" => 2,
+        _ => 3,
+    }
+}
+
+/// The spliced reference around intron `j`: `SNAP_FLANK + SNAP_PAD` bases before the donor, then as many from the
+/// acceptor (clipped at the contig ends).
+fn snap_window(seq: &[u8], j: SnapJn) -> Vec<u8> {
+    let w = (SNAP_FLANK + SNAP_PAD) as i64;
+    let len = seq.len() as i64;
+    let left = snap_slice(seq, (j.0 - w).clamp(0, len), j.0.clamp(0, len)).unwrap_or(&[]);
+    let right = snap_slice(seq, j.1.clamp(0, len), (j.1 + w).clamp(0, len)).unwrap_or(&[]);
+    [left, right].concat()
+}
+
+/// Evidence per ordered pair `(X, Y)`: `[reads of X examined, own placement better, tie, partner better]`.
+type SnapEvidence = std::collections::HashMap<(SnapJn, SnapJn), [u32; 4]>;
+
+/// One primary read's evidence. `ops` are (SAM op letter, length) from `ref_start` (0-based). For every junction X
+/// of `want` the read carries exactly (an `N` op spanning `[d, a)`) and while X has fewer than `SNAP_CAP` reads
+/// examined, the read's own bases `+-SNAP_FLANK` around its junction point are aligned (HW: the read end to end,
+/// the reference ends free) to `wins[X]` and to `wins[Y]` for every partner Y of X. True when the read was used.
+#[allow(clippy::too_many_arguments)]
+fn snap_tally_read(
+    ref_start: i64,
+    ops: &[(u8, i64)],
+    read: &[u8],
+    want: &std::collections::HashSet<SnapJn>,
+    wins: &std::collections::HashMap<SnapJn, Vec<u8>>,
+    partners: &std::collections::BTreeMap<SnapJn, Vec<SnapJn>>,
+    nreads: &mut std::collections::HashMap<SnapJn, u32>,
+    ev: &mut SnapEvidence,
+) -> bool {
+    use rustle::vg_family::seq_utils::hw_distance;
+    let (mut pos, mut q) = (ref_start, 0usize);
+    let mut hits: Vec<(SnapJn, usize)> = Vec::new();
+    for &(op, len) in ops {
+        match op {
+            b'M' | b'=' | b'X' => {
+                pos += len;
+                q += len as usize;
+            }
+            b'I' | b'S' => q += len as usize,
+            b'D' => pos += len,
+            b'N' => {
+                if want.contains(&(pos, pos + len)) {
+                    hits.push(((pos, pos + len), q));
+                }
+                pos += len;
+            }
+            _ => {}
+        }
+    }
+    let mut used = false;
+    for (x, qx) in hits {
+        let n = nreads.entry(x).or_insert(0);
+        if *n >= SNAP_CAP {
+            continue;
+        }
+        *n += 1;
+        used = true;
+        let seg = &read[qx.saturating_sub(SNAP_FLANK).min(read.len())..(qx + SNAP_FLANK).min(read.len())];
+        let own = hw_distance(seg, &wins[&x]);
+        for &y in partners.get(&x).map(|v| v.as_slice()).unwrap_or(&[]) {
+            let other = hw_distance(seg, &wins[&y]);
+            let e = ev.entry((x, y)).or_insert([0; 4]);
+            e[0] += 1;
+            e[if own < other { 1 } else if own == other { 2 } else { 3 }] += 1;
+        }
+    }
+    used
+}
+
+/// The indexed BAM `--polish-junction-snap reads` re-reads over the near pairs (opened once per run).
+struct SnapBam {
+    reader: noodles_bam::io::Reader<noodles_bgzf::MultithreadedReader<std::io::BufReader<std::fs::File>>>,
+    header: noodles_sam::Header,
+    index: noodles_bam::bai::Index,
+}
+
+impl SnapBam {
+    fn open(bam: &str) -> Result<Self> {
+        // the assembler's own reader settings (`reads_in_region`): 1 MiB buffer, min(4, cores) inflate workers
+        let workers = std::thread::available_parallelism().map(|n| n.get().min(4)).unwrap_or(1).max(1);
+        let file = std::fs::File::open(bam).with_context(|| format!("opening {bam}"))?;
+        let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(
+            NonZeroUsize::new(workers).unwrap_or(NonZeroUsize::MIN),
+            std::io::BufReader::with_capacity(1 << 20, file),
+        );
+        let mut reader = noodles_bam::io::Reader::from(bgzf);
+        let header = reader.read_header()?;
+        let index = noodles_bam::bai::read(format!("{bam}.bai")).with_context(|| format!("reading {bam}.bai"))?;
+        Ok(Self { reader, header, index })
+    }
+
+    /// Evidence for every junction of `partners` on `chrom` (see [`snap_tally_read`]) from ONE indexed pass over
+    /// `[min donor, max donor]`: every read carrying a junction overlaps its donor, so it is in the pass, in BAM
+    /// order. (Per-junction fetches give the same evidence but rescan the BAI's large bins, where spliced long reads
+    /// sit, once per fetch: 20 s against about 3 s on chr20.) Primary records only (no unmapped, secondary or
+    /// supplementary: `-F 2308`), with a sequence. Returns (evidence, reads used, records the pass returned).
+    fn evidence(
+        &mut self,
+        chrom: &str,
+        seq: &[u8],
+        partners: &std::collections::BTreeMap<SnapJn, Vec<SnapJn>>,
+    ) -> Result<(SnapEvidence, usize, usize)> {
+        let wins: std::collections::HashMap<SnapJn, Vec<u8>> = partners.keys().map(|&j| (j, snap_window(seq, j))).collect();
+        let want: std::collections::HashSet<SnapJn> = partners.keys().copied().collect();
+        let mut ev = SnapEvidence::new();
+        let mut nreads: std::collections::HashMap<SnapJn, u32> = std::collections::HashMap::new();
+        let (mut used, mut records) = (0usize, 0usize);
+        let (Some(lo), Some(hi)) = (partners.keys().map(|j| j.0).min(), partners.keys().map(|j| j.0).max()) else {
+            return Ok((ev, used, records));
+        };
+        let mut ops: Vec<(u8, i64)> = Vec::with_capacity(256);
+        let mut read: Vec<u8> = Vec::new();
+        let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi + 1).parse()?;
+        for result in self.reader.query(&self.header, &self.index, &region)? {
+            let record = result?;
+            records += 1;
+            let flags = record.flags();
+            if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
+                continue;
+            }
+            let Some(start) = record.alignment_start() else { continue };
+            let ref_start = usize::from(start?) as i64 - 1;
+            ops.clear();
+            let mut carries = false;
+            for op in record.cigar().iter() {
+                let op = op?;
+                use noodles_sam::alignment::record::cigar::op::Kind;
+                let c = match op.kind() {
+                    Kind::Match => b'M',
+                    Kind::Insertion => b'I',
+                    Kind::Deletion => b'D',
+                    Kind::Skip => {
+                        carries = true;
+                        b'N'
+                    }
+                    Kind::SoftClip => b'S',
+                    Kind::HardClip => b'H',
+                    Kind::Pad => b'P',
+                    Kind::SequenceMatch => b'=',
+                    Kind::SequenceMismatch => b'X',
+                };
+                ops.push((c, op.len() as i64));
+            }
+            if !carries {
+                continue;
+            }
+            let s = record.sequence();
+            if s.len() == 0 {
+                continue;
+            }
+            read.clear();
+            read.extend(s.iter().map(|b| b.to_ascii_uppercase()));
+            if snap_tally_read(ref_start, &ops, &read, &want, &wins, partners, &mut nreads, &mut ev) {
+                used += 1;
+            }
+        }
+        Ok((ev, used, records))
+    }
+}
+
+/// The junction re-placement map of one contig, keyed `(strand, gene_id, K) -> J`, and how many entries came from
+/// sequence equivalence and from reads. `support` is the pooled `reads` per (strand, junction); `pairs` holds each
+/// locus's near-pair partners. `ev` is only read in `reads` mode (see the flag's help for both rules).
+#[allow(clippy::type_complexity)]
+fn snap_remap(
+    mode: &str,
+    seq: &[u8],
+    groups: &std::collections::BTreeMap<(String, String), std::collections::BTreeMap<SnapJn, Vec<SnapJn>>>,
+    support: &std::collections::HashMap<(String, SnapJn), u64>,
+    ev: &SnapEvidence,
+) -> (std::collections::BTreeMap<(String, String, SnapJn), SnapJn>, usize, usize) {
+    use std::cmp::Reverse;
+    let min_reads = rustle::vg_family::denovo_assemble::PASS1_MIN_READS;
+    let mut remap = std::collections::BTreeMap::new();
+    let (mut n_eq, mut n_reads) = (0usize, 0usize);
+    for ((strand, gene), near) in groups.iter() {
+        let sup = |j: SnapJn| support.get(&(strand.clone(), j)).copied().unwrap_or(0);
+        let mut order: Vec<SnapJn> = near.keys().copied().collect();
+        if mode == "reads" {
+            order.sort_by_key(|&j| (Reverse(sup(j)), snap_motif_rank(seq, j, strand), j));
+        } else {
+            order.sort_by_key(|&j| (snap_motif_rank(seq, j, strand), Reverse(sup(j)), j));
+        }
+        let rank: std::collections::HashMap<SnapJn, usize> = order.iter().enumerate().map(|(i, &j)| (j, i)).collect();
+        let mut absorbed: std::collections::HashSet<SnapJn> = std::collections::HashSet::new();
+        let mut reps: std::collections::HashSet<SnapJn> = std::collections::HashSet::new();
+        for &big in order.iter() {
+            if absorbed.contains(&big) {
+                continue;
+            }
+            let mut cands: Vec<SnapJn> = near[&big].clone();
+            cands.sort_by_key(|k| rank[k]);
+            for k in cands {
+                if absorbed.contains(&k) || reps.contains(&k) {
+                    continue;
+                }
+                let take = if mode == "reads" {
+                    if sup(k) > sup(big) {
+                        false
+                    } else if snap_equivalent(seq, big, k) {
+                        n_eq += 1;
+                        true
+                    } else {
+                        // K needs reads of its own; it is snapped when fewer than the floor prove it and J's prove J
+                        match ev.get(&(k, big)) {
+                            Some(ek) if ek[0] > 0 => {
+                                let j_proven = ev.get(&(big, k)).is_some_and(|e| e[1] >= min_reads);
+                                let hit = ek[1] < min_reads && j_proven;
+                                n_reads += hit as usize;
+                                hit
+                            }
+                            _ => false,
+                        }
+                    }
+                } else {
+                    let hit = snap_equivalent(seq, big, k);
+                    n_eq += hit as usize;
+                    hit
+                };
+                if take {
+                    absorbed.insert(k);
+                    reps.insert(big);
+                    remap.insert((strand.clone(), gene.clone(), k), big);
+                }
+            }
+        }
+    }
+    (remap, n_eq, n_reads)
+}
+
+/// Replace the value of the attribute `re_attr` reads (the first `key "`) in `line`'s attribute column.
+fn snap_set_attr(line: &mut String, key: &str, value: &str) {
+    let Some(col) = line.match_indices('\t').nth(7).map(|(i, _)| i + 1) else { return };
+    let pat = format!("{key} \"");
+    let Some(i) = line[col..].find(&pat).map(|p| col + p + pat.len()) else { return };
+    let Some(j) = line[i..].find('"').map(|p| i + p) else { return };
+    line.replace_range(i..j, value);
+}
+
+/// `--polish-junction-snap` on one contig's polish input `lines` (`mode` != "off"). `evidence` is called once, in
+/// `reads` mode and only when there is a near pair, with every near-pair junction and its partners; it returns
+/// (evidence, reads used, BAM records read).
+fn junction_snap(
+    lines: &mut Vec<String>,
+    mode: &str,
+    seq: &[u8],
+    mut evidence: impl FnMut(&std::collections::BTreeMap<SnapJn, Vec<SnapJn>>) -> Result<(SnapEvidence, usize, usize)>,
+) -> Result<SnapStats> {
+    use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+    let mut st = SnapStats::default();
+    if mode == "off" {
+        return Ok(st);
+    }
+    let txs = snap_parse(lines);
+    // pooled support per (strand, junction) and each locus's junctions
+    let mut support: HashMap<(String, SnapJn), u64> = HashMap::new();
+    let mut loci: BTreeMap<(String, String), BTreeSet<SnapJn>> = BTreeMap::new();
+    for t in txs.iter() {
+        for j in t.chain() {
+            *support.entry((t.strand.clone(), j)).or_insert(0) += t.reads;
+            loci.entry((t.strand.clone(), t.gene.clone())).or_default().insert(j);
+        }
+    }
+    // near pairs per locus, and the partners of every junction over the contig (evidence is per junction pair)
+    let mut groups: BTreeMap<(String, String), BTreeMap<SnapJn, Vec<SnapJn>>> = BTreeMap::new();
+    let mut partners: BTreeMap<SnapJn, BTreeSet<SnapJn>> = BTreeMap::new();
+    for (key, js) in loci.iter() {
+        let js: Vec<SnapJn> = js.iter().copied().collect();
+        let mut near: BTreeMap<SnapJn, Vec<SnapJn>> = BTreeMap::new();
+        for i in 0..js.len() {
+            for &j2 in js[i + 1..].iter() {
+                if j2.0 - js[i].0 > SNAP_TOL_BP {
+                    break;
+                }
+                if (j2.1 - js[i].1).abs() <= SNAP_TOL_BP {
+                    st.near_pairs += 1;
+                    near.entry(js[i]).or_default().push(j2);
+                    near.entry(j2).or_default().push(js[i]);
+                    partners.entry(js[i]).or_default().insert(j2);
+                    partners.entry(j2).or_default().insert(js[i]);
+                }
+            }
+        }
+        if !near.is_empty() {
+            groups.insert(key.clone(), near);
+        }
+    }
+    if groups.is_empty() {
+        return Ok(st);
+    }
+    let ev = if mode == "reads" {
+        let p: BTreeMap<SnapJn, Vec<SnapJn>> = partners.into_iter().map(|(k, v)| (k, v.into_iter().collect())).collect();
+        let (ev, used, records) = evidence(&p)?;
+        st.evidence_reads = used;
+        st.records = records;
+        ev
+    } else {
+        SnapEvidence::new()
+    };
+    let (remap, n_eq, n_reads) = snap_remap(mode, seq, &groups, &support, &ev);
+    st.equivalent = n_eq;
+    st.read_snapped = n_reads;
+    if remap.is_empty() {
+        return Ok(st);
+    }
+    // re-place (a move that would empty an exon is skipped), then collapse identical chains
+    let mut moved: HashMap<usize, Vec<(i64, i64)>> = HashMap::new();
+    for (i, t) in txs.iter().enumerate() {
+        if t.exons.len() < 2 {
+            continue;
+        }
+        let mut ex = t.exons.clone();
+        let mut changed = false;
+        for (k, j) in t.chain().into_iter().enumerate() {
+            let Some(&nj) = remap.get(&(t.strand.clone(), t.gene.clone(), j)) else { continue };
+            if nj == j {
+                continue;
+            }
+            let (ne0, ns1) = (nj.0, nj.1 + 1);
+            if ne0 < ex[k].0 || ns1 > ex[k + 1].1 {
+                continue;
+            }
+            ex[k].1 = ne0;
+            ex[k + 1].0 = ns1;
+            changed = true;
+        }
+        if changed {
+            moved.insert(i, ex);
+        }
+    }
+    st.rewritten = moved.len();
+    let chain_of = |i: usize| -> Vec<SnapJn> {
+        let ex = moved.get(&i).unwrap_or(&txs[i].exons);
+        ex.windows(2).map(|w| (w[0].1, w[1].0 - 1)).collect()
+    };
+    let mut same: BTreeMap<(String, Vec<SnapJn>), Vec<usize>> = BTreeMap::new();
+    for (i, t) in txs.iter().enumerate() {
+        if t.exons.len() >= 2 {
+            same.entry((t.strand.clone(), chain_of(i))).or_default().push(i);
+        }
+    }
+    let mut drop: HashSet<String> = HashSet::new();
+    let mut new_reads: HashMap<String, u64> = HashMap::new();
+    let mut tags: HashMap<String, String> = HashMap::new();
+    for (_, mut members) in same.into_iter() {
+        if members.len() < 2 || !members.iter().any(|i| moved.contains_key(i)) {
+            continue;
+        }
+        members.sort_by(|&a, &b| txs[b].reads.cmp(&txs[a].reads).then_with(|| txs[a].tid.cmp(&txs[b].tid)));
+        let rep = &txs[members[0]];
+        new_reads.insert(rep.tid.clone(), members.iter().map(|&i| txs[i].reads).sum());
+        let from: Vec<&str> = members[1..].iter().map(|&i| txs[i].tid.as_str()).collect();
+        tags.insert(rep.tid.clone(), format!(" snapped_from \"{}\";", from.join(",")));
+        drop.extend(from.iter().map(|s| s.to_string()));
+    }
+    st.collapsed = drop.len();
+    // exon coordinate edits of the moved transcripts, keyed by their old exon
+    let mut edits: HashMap<&str, HashMap<(i64, i64), (i64, i64)>> = HashMap::new();
+    for (&i, ex) in moved.iter() {
+        let t = &txs[i];
+        if drop.contains(&t.tid) {
+            continue;
+        }
+        edits.insert(t.tid.as_str(), t.exons.iter().copied().zip(ex.iter().copied()).filter(|(a, b)| a != b).collect());
+        let tag = tags.entry(t.tid.clone()).or_default();
+        *tag = format!(" snapped \"1\";{tag}");
+    }
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    for line in lines.drain(..) {
+        // None = drop the line, Some(None) = keep it unchanged, Some(Some(s)) = replace it by s
+        let action: Option<Option<String>> = {
+            let f: Vec<&str> = line.split('\t').collect();
+            match (f.len() >= 9).then(|| re_attr(f[8], "transcript_id")).flatten() {
+                None => Some(None),
+                Some(tid) if drop.contains(&tid) => None,
+                Some(tid) if f[2] == "exon" => {
+                    let old = (f[3].parse::<i64>().unwrap_or(-1), f[4].parse::<i64>().unwrap_or(-1));
+                    Some(edits.get(tid.as_str()).and_then(|m| m.get(&old)).map(|&(a, b)| {
+                        let (a, b) = (a.to_string(), b.to_string());
+                        let mut g = f.clone();
+                        g[3] = &a;
+                        g[4] = &b;
+                        g.join("\t")
+                    }))
+                }
+                Some(tid) if f[2] == "transcript" && (new_reads.contains_key(&tid) || tags.contains_key(&tid)) => {
+                    let mut l = line.clone();
+                    if let Some(r) = new_reads.get(&tid) {
+                        snap_set_attr(&mut l, "reads", &r.to_string());
+                    }
+                    if let Some(tag) = tags.get(&tid) {
+                        l.push_str(tag);
+                    }
+                    Some(Some(l))
+                }
+                Some(_) => Some(None),
+            }
+        };
+        match action {
+            None => {}
+            Some(None) => out.push(line),
+            Some(Some(l)) => out.push(l),
+        }
+    }
+    *lines = out;
+    Ok(st)
+}
+
 // ============================================================================================ --polish-tss
 // The read-proven TSS rule (`--polish-tss`, docs in the flag's help; design tss_design.md with the tss_critique.md
 // fixes). Everything below reads the polish INPUT lines of ONE contig and that contig's 5'-end evidence
@@ -4332,6 +4904,20 @@ fn main() -> Result<()> {
             "--polish-tes {} needs the assembled GTF (--gtf or --assemble-only) and --assembly-polish mono|full",
             args.polish_tes
         );
+    }
+    if args.polish_junction_snap != "off" {
+        anyhow::ensure!(
+            args.gtf && args.assembly_polish != "none",
+            "--polish-junction-snap {} needs the assembled GTF (--gtf or --assemble-only) and --assembly-polish mono|full",
+            args.polish_junction_snap
+        );
+        if args.polish_junction_snap == "reads" {
+            anyhow::ensure!(
+                std::path::Path::new(&format!("{}.bai", args.bam)).exists(),
+                "--polish-junction-snap reads re-reads the near-pair reads through the BAM index: {}.bai is missing",
+                args.bam
+            );
+        }
     }
     // RUSTLE_READTHROUGH_JUNCTIONS (docs/PREREG_readthrough_ends_representatives_2026-09-25.md): parsed before any
     // read is touched, so a mistyped arm fails in the first second instead of running as the base arm.
@@ -6647,6 +7233,8 @@ fn main() -> Result<()> {
     // --polish-tes: per-contig statistics and the attributes to append (after the --polish-tss ones)
     let mut tes_stats: Vec<TesStats> = Vec::new();
     let mut tes_attrs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    // --polish-junction-snap: per-contig statistics (params.tsv, the log line)
+    let mut snap_stats: Vec<SnapStats> = Vec::new();
     if args.gtf {
         // §6gp: the `productive` call is RELATIVE to the family's best ORF, which is only known once every
         // region has been drained — so it is stamped here, in a second pass over the finished GTF lines.
@@ -6716,8 +7304,31 @@ fn main() -> Result<()> {
             let (mut n_ism, mut n_mono, mut n_frac, mut n_ret) = (0usize, 0usize, 0usize, 0usize);
             let mut floors: Vec<u64> = Vec::new();
             let mut polished: Vec<String> = Vec::with_capacity(gtf_lines.len());
+            // --polish-junction-snap reads: one indexed BAM reader for the whole loop, opened on first use
+            let mut snap_bam: Option<SnapBam> = None;
             for c in &contigs {
                 let mut part: Vec<String> = gtf_lines.iter().filter(|l| !l.starts_with('#') && l.split('\t').next() == Some(c.as_str())).cloned().collect();
+                // --polish-junction-snap: on the polish INPUT, before every polish step (off: never entered)
+                if args.polish_junction_snap != "off" {
+                    let t0 = std::time::Instant::now();
+                    let g = genome_for(c)?;
+                    let seq: &[u8] = g.chroms().find(|(n, _)| *n == c.as_str()).map(|(_, s)| s).unwrap_or(&[]);
+                    let st = junction_snap(&mut part, &args.polish_junction_snap, seq, |partners| {
+                        if snap_bam.is_none() {
+                            snap_bam = Some(SnapBam::open(&args.bam)?);
+                        }
+                        snap_bam.as_mut().expect("opened above").evidence(c, seq, partners)
+                    })?;
+                    eprintln!(
+                        "[copy_assign] JUNCTION SNAP ({}) {}: {} near junction pairs (same locus and strand, \
+                         |d|,|a| <= {} bp) -> {} sequence-equivalent + {} read-contradicted junctions re-placed -> {} \
+                         transcripts rewritten, {} collapsed into an identical chain (reads summed); evidence {} reads \
+                         of {} BAM records; {:.1} s",
+                        args.polish_junction_snap, c, st.near_pairs, SNAP_TOL_BP, st.equivalent, st.read_snapped,
+                        st.rewritten, st.collapsed, st.evidence_reads, st.records, t0.elapsed().as_secs_f64()
+                    );
+                    snap_stats.push(st);
+                }
                 // the contig's end evidence (--polish-tss / --polish-tes; empty and never read when both are off)
                 let recs = if args.polish_tss != "off" || args.polish_tes != "off" {
                     tss_all.by_chrom.remove(c.as_str()).unwrap_or_default()
@@ -7766,6 +8377,25 @@ fn main() -> Result<()> {
             row("polish_tes_end_pas", sum(&|st| st.end_pas))?;
             row("polish_tes_end_primed", sum(&|st| st.end_primed))?;
             row("polish_tes_ends_moved", sum(&|st| st.moved))?;
+        }
+        // --polish-junction-snap: rows only when not `off` (the default params.tsv stays byte-identical); counts
+        // summed over contigs
+        if args.polish_junction_snap != "off" {
+            let sum = |f: &dyn Fn(&SnapStats) -> usize| -> String { format!("{}", snap_stats.iter().map(f).sum::<usize>()) };
+            row("polish_junction_snap", args.polish_junction_snap.clone())?;
+            row("polish_junction_snap_tol_bp", format!("{SNAP_TOL_BP}"))?;
+            if args.polish_junction_snap == "reads" {
+                row("polish_junction_snap_min_reads", format!("{}", rustle::vg_family::denovo_assemble::PASS1_MIN_READS))?;
+                row("polish_junction_snap_read_flank_bp", format!("{SNAP_FLANK}"))?;
+                row("polish_junction_snap_ref_window_bp", format!("{}", SNAP_FLANK + SNAP_PAD))?;
+                row("polish_junction_snap_read_cap", format!("{SNAP_CAP}"))?;
+            }
+            row("polish_junction_snap_near_pairs", sum(&|st| st.near_pairs))?;
+            row("polish_junction_snap_equivalent", sum(&|st| st.equivalent))?;
+            row("polish_junction_snap_read_snapped", sum(&|st| st.read_snapped))?;
+            row("polish_junction_snap_rewritten", sum(&|st| st.rewritten))?;
+            row("polish_junction_snap_collapsed", sum(&|st| st.collapsed))?;
+            row("polish_junction_snap_evidence_reads", sum(&|st| st.evidence_reads))?;
         }
         row("posterior_prior", if prior_abundance { "abundance".into() } else { "uniform".to_string() })?;
         row("margin", format!("{}", args.margin))?;
@@ -9424,5 +10054,336 @@ mod tests {
         let got = parse_annotation(gff.to_str().unwrap()).unwrap();
         std::fs::remove_file(&gff).ok();
         assert_eq!(got, vec![("chr1".to_string(), 999u64, 2000u64)], "GFF cols 3/4, 1-based start -> 0-based");
+    }
+
+    // ------------------------------------------------------------------------------------ --polish-junction-snap
+
+    /// A deterministic ACGT contig (LCG), so no two windows repeat by accident.
+    fn snap_seq(n: usize) -> Vec<u8> {
+        let mut x: u64 = 0x2545_F491_4F6C_DD1D;
+        (0..n)
+            .map(|_| {
+                x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                b"ACGT"[(x >> 62) as usize]
+            })
+            .collect()
+    }
+
+    fn snap_tx(tid: &str, gene: &str, strand: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
+        let at = format!("gene_id \"{gene}\"; transcript_id \"{tid}\";");
+        let mut v = vec![format!(
+            "chr1\trustle\ttranscript\t{}\t{}\t.\t{strand}\t.\t{at} reads \"{reads}\"; matched_reads \"0\";",
+            exons[0].0,
+            exons[exons.len() - 1].1
+        )];
+        for (k, (s, e)) in exons.iter().enumerate() {
+            v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at} exon_number \"{}\";", k + 1));
+        }
+        v
+    }
+
+    fn snap_ev(pairs: &[((i64, i64), (i64, i64), [u32; 4])]) -> SnapEvidence {
+        pairs.iter().map(|&(x, y, e)| ((x, y), e)).collect()
+    }
+
+    /// The fixture of the read-equivalent snap: MAJ carries J = (200, 300) with 10 reads, MIN carries K = (200, 303)
+    /// (a 3-bp NAGNAG-like acceptor shift) with 2, MIN2 carries K plus a second intron with 1.
+    fn snap_fixture() -> Vec<String> {
+        let mut l = Vec::new();
+        l.extend(snap_tx("MAJ", "G", "+", 10, &[(101, 200), (301, 400)]));
+        l.extend(snap_tx("MIN", "G", "+", 2, &[(101, 200), (304, 400)]));
+        l.extend(snap_tx("MIN2", "G", "+", 1, &[(101, 200), (304, 400), (501, 600)]));
+        l
+    }
+    const SNAP_J: (i64, i64) = (200, 300);
+    const SNAP_K: (i64, i64) = (200, 303);
+
+    /// `off` never touches the lines and never asks for evidence; `reads` with K proven by its own reads leaves the
+    /// lines byte-identical too.
+    #[test]
+    fn junction_snap_off_is_byte_identical() {
+        let seq = snap_seq(1000);
+        let mut l = snap_fixture();
+        let st = junction_snap(&mut l, "off", &seq, |_| panic!("off must not read evidence")).unwrap();
+        assert_eq!(l, snap_fixture());
+        assert_eq!((st.near_pairs, st.rewritten, st.collapsed), (0, 0, 0));
+        // the design's WOBBLE case: K's own reads carry the 3 nt, so K is proven and nothing moves
+        let proven = snap_ev(&[(SNAP_K, SNAP_J, [3, 3, 0, 0]), (SNAP_J, SNAP_K, [10, 10, 0, 0])]);
+        let mut l = snap_fixture();
+        let st = junction_snap(&mut l, "reads", &seq, |_| Ok((proven.clone(), 13, 20))).unwrap();
+        assert_eq!(l, snap_fixture());
+        assert_eq!((st.near_pairs, st.read_snapped, st.rewritten, st.collapsed), (1, 0, 0, 0));
+    }
+
+    /// Sequence equivalence = the same shift on both sides AND a direct repeat of the moved bases. A NAGNAG
+    /// acceptor-only shift, a donor-only shift, unequal shifts and a same-shift move without the repeat are not.
+    #[test]
+    fn sequence_equivalent_shift_detected() {
+        let mut seq = snap_seq(1000);
+        // s = +2: g[100..102] == g[200..202]; s = -3: g[97..100] == g[197..200]
+        seq[200] = seq[100];
+        seq[201] = seq[101];
+        for k in 0..3 {
+            seq[197 + k] = seq[97 + k];
+        }
+        assert!(snap_equivalent(&seq, (100, 200), (102, 202)));
+        assert!(snap_equivalent(&seq, (100, 200), (97, 197)));
+        assert!(!snap_equivalent(&seq, (100, 200), (100, 203)), "acceptor-only (NAGNAG) shift");
+        assert!(!snap_equivalent(&seq, (100, 200), (104, 200)), "donor-only shift");
+        assert!(!snap_equivalent(&seq, (100, 200), (102, 203)), "unequal shifts");
+        let mut other = seq.clone();
+        other[201] = if seq[101] == b'A' { b'C' } else { b'A' };
+        assert!(!snap_equivalent(&other, (100, 200), (102, 202)), "no direct repeat");
+        assert!(!snap_equivalent(&seq, (100, 200), (100, 200)), "a junction is not a shift of itself");
+    }
+
+    /// `equiv`: the representative is the canonical class first, then pooled support, then leftmost; the rep keeps
+    /// its junction and the other moves onto it whatever the supports.
+    #[test]
+    fn equiv_prefers_canonical_then_support_then_left() {
+        use std::collections::{BTreeMap, HashMap};
+        let base = snap_seq(1000);
+        // J1 = (100, 200) and J2 = (101, 201) are equivalent (g[100] == g[200])
+        let mut seq = base.clone();
+        seq[200] = seq[100];
+        let (j1, j2) = ((100, 200), (101, 201));
+        assert!(snap_equivalent(&seq, j1, j2));
+        let groups: BTreeMap<(String, String), BTreeMap<(i64, i64), Vec<(i64, i64)>>> =
+            [(("+".to_string(), "G".to_string()), [(j1, vec![j2]), (j2, vec![j1])].into_iter().collect())].into_iter().collect();
+        let sup = |a: u64, b: u64| -> HashMap<(String, (i64, i64)), u64> {
+            [(("+".to_string(), j1), a), (("+".to_string(), j2), b)].into_iter().collect()
+        };
+        let rep_of = |seq: &[u8], s: &HashMap<(String, (i64, i64)), u64>| {
+            let (m, n_eq, n_reads) = snap_remap("equiv", seq, &groups, s, &SnapEvidence::new());
+            assert_eq!((m.len(), n_eq, n_reads), (1, 1, 0));
+            *m.values().next().unwrap()
+        };
+        // both non-canonical (no GT..AG here): more support wins, then leftmost
+        assert!(snap_motif_rank(&seq, j1, "+") == 3 && snap_motif_rank(&seq, j2, "+") == 3);
+        assert_eq!(rep_of(&seq, &sup(1, 9)), j2);
+        assert_eq!(rep_of(&seq, &sup(9, 1)), j1);
+        assert_eq!(rep_of(&seq, &sup(5, 5)), j1, "tie: leftmost");
+        // make J1 GT-AG (donor g[100..102] = GT, acceptor g[198..200] = AG, and g[200] = g[100] keeps the repeat)
+        let mut canon = base.clone();
+        canon[100] = b'G';
+        canon[101] = b'T';
+        canon[198] = b'A';
+        canon[199] = b'G';
+        canon[200] = b'G';
+        assert_eq!(snap_motif_rank(&canon, j1, "+"), 0);
+        assert!(snap_equivalent(&canon, j1, j2) && snap_motif_rank(&canon, j2, "+") > 0);
+        assert_eq!(rep_of(&canon, &sup(1, 9)), j1, "canonical beats support");
+        // on '-' the same intron reads CT..AC, which is GT-AG in transcript orientation
+        let mut minus = base;
+        minus[100] = b'C';
+        minus[101] = b'T';
+        minus[198] = b'A';
+        minus[199] = b'C';
+        assert_eq!(snap_motif_rank(&minus, j1, "-"), 0);
+    }
+
+    /// K (2 reads, neither proves K; J's reads prove J) moves onto J: MIN collapses into MAJ with the reads summed and
+    /// `snapped_from`, MIN2 keeps its id with the moved exon and `snapped "1"`, and TPM normalises over the sum.
+    #[test]
+    fn read_contradicted_minor_is_snapped_and_collapsed() {
+        let seq = snap_seq(1000);
+        let ev = snap_ev(&[(SNAP_K, SNAP_J, [3, 1, 1, 1]), (SNAP_J, SNAP_K, [10, 9, 1, 0])]);
+        let mut l = snap_fixture();
+        let mut asked = 0;
+        let st = junction_snap(&mut l, "reads", &seq, |p| {
+            asked += 1;
+            assert_eq!(p.keys().copied().collect::<Vec<_>>(), vec![SNAP_J, SNAP_K]);
+            Ok((ev.clone(), 13, 40))
+        })
+        .unwrap();
+        assert_eq!(asked, 1);
+        assert_eq!((st.near_pairs, st.equivalent, st.read_snapped, st.rewritten, st.collapsed), (1, 0, 1, 2, 1));
+        assert_eq!((st.evidence_reads, st.records), (13, 40));
+        let tx: Vec<&String> = l.iter().filter(|x| x.contains("\ttranscript\t")).collect();
+        assert_eq!(tx.len(), 2);
+        assert!(tx[0].contains("transcript_id \"MAJ\"; reads \"12\"; matched_reads \"0\"; snapped_from \"MIN\";"), "{}", tx[0]);
+        assert!(tx[1].contains("transcript_id \"MIN2\"; reads \"1\";") && tx[1].ends_with(" snapped \"1\";"), "{}", tx[1]);
+        assert!(!l.iter().any(|x| x.contains("transcript_id \"MIN\";")), "the collapsed member's lines are gone");
+        let min2: Vec<(i64, i64)> = l
+            .iter()
+            .filter(|x| x.contains("\texon\t") && x.contains("\"MIN2\""))
+            .map(|x| {
+                let f: Vec<&str> = x.split('\t').collect();
+                (f[3].parse().unwrap(), f[4].parse().unwrap())
+            })
+            .collect();
+        assert_eq!(min2, vec![(101, 200), (301, 400), (501, 600)]);
+        annotate_tpm(&mut l);
+        let maj = l.iter().find(|x| x.contains("\ttranscript\t") && x.contains("\"MAJ\"")).unwrap();
+        assert!(maj.contains(&format!("TPM \"{:.6}\"", 12.0 / 13.0 * 1e6)), "{maj}");
+    }
+
+    /// A junction whose own reads prove it stays, even when a better-supported partner's reads prove the partner.
+    #[test]
+    fn read_proven_nagnag_is_kept() {
+        let seq = snap_seq(1000);
+        // exactly the floor (2) of K's reads prove K
+        let ev = snap_ev(&[(SNAP_K, SNAP_J, [2, 2, 0, 0]), (SNAP_J, SNAP_K, [10, 10, 0, 0])]);
+        let mut l = snap_fixture();
+        junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 12, 12))).unwrap();
+        assert_eq!(l, snap_fixture());
+        // K with no read of its own is left alone too (absence of evidence is not a contradiction)
+        let ev = snap_ev(&[(SNAP_J, SNAP_K, [10, 10, 0, 0])]);
+        let mut l = snap_fixture();
+        junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 10, 10))).unwrap();
+        assert_eq!(l, snap_fixture());
+        // and J must be proven: J's reads that do not beat K leave K where it is
+        let ev = snap_ev(&[(SNAP_K, SNAP_J, [3, 0, 3, 0]), (SNAP_J, SNAP_K, [10, 1, 9, 0])]);
+        let mut l = snap_fixture();
+        junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 13, 13))).unwrap();
+        assert_eq!(l, snap_fixture());
+    }
+
+    /// A move that would empty an exon is skipped (the transcript keeps K), while another transcript carrying K moves.
+    #[test]
+    fn snap_never_empties_an_exon() {
+        let seq = snap_seq(1000);
+        let (j, k) = ((200, 310), (200, 303));
+        let mut l = Vec::new();
+        l.extend(snap_tx("MAJ", "G", "+", 10, &[(101, 200), (311, 400)]));
+        // SHORT's second exon is 304..306: moving its acceptor to 311 would empty it
+        l.extend(snap_tx("SHORT", "G", "+", 2, &[(101, 200), (304, 306), (401, 500)]));
+        l.extend(snap_tx("LONG", "G", "+", 1, &[(101, 200), (304, 350), (401, 500)]));
+        let before = l.clone();
+        let ev = snap_ev(&[(k, j, [3, 0, 0, 3]), (j, k, [10, 10, 0, 0])]);
+        let st = junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 13, 13))).unwrap();
+        assert_eq!((st.read_snapped, st.rewritten, st.collapsed), (1, 1, 0));
+        let short = |v: &[String]| -> Vec<String> { v.iter().filter(|x| x.contains("\"SHORT\"")).cloned().collect() };
+        assert_eq!(short(&l), short(&before));
+        assert!(l.iter().any(|x| x.contains("\texon\t311\t350\t") && x.contains("\"LONG\"")));
+    }
+
+    /// A junction that was snapped never absorbs a third one, and one that absorbed is never snapped itself.
+    #[test]
+    fn absorbed_junction_never_absorbs() {
+        use std::collections::{BTreeMap, HashMap};
+        let seq = snap_seq(1000);
+        // J = (200, 300) 10 reads; K = (200, 308) 5 reads, within 10 bp of J and of L; L = (200, 316) 1 read, 16 bp from J
+        let (j, k, lj) = ((200, 300), (200, 308), (200, 316));
+        let groups: BTreeMap<(String, String), BTreeMap<(i64, i64), Vec<(i64, i64)>>> = [(
+            ("+".to_string(), "G".to_string()),
+            [(j, vec![k]), (k, vec![j, lj]), (lj, vec![k])].into_iter().collect(),
+        )]
+        .into_iter()
+        .collect();
+        let sup: HashMap<(String, (i64, i64)), u64> =
+            [(("+".to_string(), j), 10), (("+".to_string(), k), 5), (("+".to_string(), lj), 1)].into_iter().collect();
+        // every contradicted/proven relation holds: K is not proven against J or L, L not against K
+        let ev = snap_ev(&[
+            (k, j, [5, 0, 5, 0]),
+            (j, k, [10, 10, 0, 0]),
+            (lj, k, [1, 0, 1, 0]),
+            (k, lj, [5, 5, 0, 0]),
+        ]);
+        let (m, _, n) = snap_remap("reads", &seq, &groups, &sup, &ev);
+        assert_eq!(n, 1);
+        assert_eq!(m.into_iter().collect::<Vec<_>>(), vec![(("+".to_string(), "G".to_string(), k), j)]);
+        // a junction that absorbed one is never snapped: A = (200, 300) and B = (200, 308) tie at 5 reads (A first,
+        // leftmost; both acceptors TT so the canonical rank ties too), C = (200, 292) 1 read is 8 bp from A and 16 from
+        // B. A absorbs C; B's reads prove B over A and A's do not prove A over B, which would snap A onto B, but A is
+        // now a representative, so C -> A stays one hop.
+        let mut seq2 = seq.clone();
+        for p in [290usize, 298, 306] {
+            seq2[p] = b'T';
+            seq2[p + 1] = b'T';
+        }
+        let (a, b, c) = ((200, 300), (200, 308), (200, 292));
+        let groups2: BTreeMap<(String, String), BTreeMap<(i64, i64), Vec<(i64, i64)>>> = [(
+            ("+".to_string(), "G".to_string()),
+            [(a, vec![b, c]), (b, vec![a]), (c, vec![a])].into_iter().collect(),
+        )]
+        .into_iter()
+        .collect();
+        let sup2: HashMap<(String, (i64, i64)), u64> =
+            [(("+".to_string(), a), 5), (("+".to_string(), b), 5), (("+".to_string(), c), 1)].into_iter().collect();
+        let ev2 = snap_ev(&[(c, a, [1, 0, 1, 0]), (a, c, [5, 5, 0, 0]), (a, b, [5, 0, 5, 0]), (b, a, [5, 5, 0, 0])]);
+        let (m2, _, _) = snap_remap("reads", &seq2, &groups2, &sup2, &ev2);
+        let got: Vec<((i64, i64), (i64, i64))> = m2.into_iter().map(|((_, _, x), y)| (x, y)).collect();
+        assert_eq!(got, vec![(c, a)]);
+    }
+
+    /// Pairs exist only inside one locus and strand: the same coordinates in another `gene_id` or on the other strand
+    /// are not a pair, so nothing is asked of the BAM and nothing moves.
+    #[test]
+    fn snap_scoped_to_locus_and_strand() {
+        let seq = snap_seq(1000);
+        for (gene, strand) in [("G2", "+"), ("G", "-")] {
+            let mut l = Vec::new();
+            l.extend(snap_tx("MAJ", "G", "+", 10, &[(101, 200), (301, 400)]));
+            l.extend(snap_tx("MIN", gene, strand, 2, &[(101, 200), (304, 400)]));
+            let before = l.clone();
+            let st = junction_snap(&mut l, "reads", &seq, |_| panic!("no near pair, no evidence")).unwrap();
+            assert_eq!(st.near_pairs, 0);
+            assert_eq!(l, before);
+        }
+    }
+
+    /// The snap runs on the polish INPUT, so the §6q6 fuzzy pass 0 sees the snapped, read-summed set: OTHER (11
+    /// reads, 5 bp from J, proven) would absorb MAJ (10) under `--polish-fuzzy-junction 5` alone, but after the snap
+    /// MAJ carries 12 and absorbs OTHER instead. The collapsed MIN is gone before the polish, so it has no drop site.
+    #[test]
+    fn snap_runs_before_fuzzy_and_ism() {
+        let seq = snap_seq(1000);
+        let other = (200, 305);
+        let build = || {
+            let mut l = snap_fixture();
+            l.extend(snap_tx("OTHER", "G", "+", 11, &[(101, 200), (306, 400)]));
+            l
+        };
+        let fuzzy_sites = |l: &[String]| {
+            let (drop, sites, _) =
+                polish_drop_set(l, "full", 0.0, 0.0, false, false, false, 1.0, false, 5, false, 0, 0.0);
+            let mut d: Vec<(String, &str)> = drop.into_iter().map(|t| { let s = sites[&t]; (t, s) }).collect();
+            d.sort();
+            d
+        };
+        // fuzzy alone: OTHER (11) is the bucket's best and absorbs MAJ and MIN
+        let alone = fuzzy_sites(&build());
+        assert!(alone.contains(&("MAJ".to_string(), "fuzzy")) && alone.contains(&("MIN".to_string(), "fuzzy")), "{alone:?}");
+        // snap first (OTHER, J and K are each proven against each other except K against J)
+        let ev = snap_ev(&[
+            (SNAP_K, SNAP_J, [2, 0, 2, 0]),
+            (SNAP_J, SNAP_K, [10, 10, 0, 0]),
+            (other, SNAP_J, [11, 11, 0, 0]),
+            (SNAP_J, other, [10, 10, 0, 0]),
+            (other, SNAP_K, [11, 11, 0, 0]),
+            (SNAP_K, other, [2, 2, 0, 0]),
+        ]);
+        let mut l = build();
+        junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 23, 23))).unwrap();
+        let after = fuzzy_sites(&l);
+        assert!(after.contains(&("OTHER".to_string(), "fuzzy")), "{after:?}");
+        assert!(!after.iter().any(|(t, _)| t == "MAJ" || t == "MIN"), "{after:?}");
+    }
+
+    /// One read's evidence: its own bases around the junction point (soft clip counted in the query offset) align
+    /// exactly at X and worse at a 3-bp acceptor shift; a read past the per-junction cap is not examined.
+    #[test]
+    fn snap_tally_read_counts_own_placement() {
+        use std::collections::{BTreeMap, HashMap, HashSet};
+        let seq = snap_seq(1000);
+        let (x, y) = ((200, 300), (200, 303));
+        let partners: BTreeMap<(i64, i64), Vec<(i64, i64)>> = [(x, vec![y]), (y, vec![x])].into_iter().collect();
+        let wins: HashMap<(i64, i64), Vec<u8>> = [x, y].iter().map(|&j| (j, snap_window(&seq, j))).collect();
+        let want: HashSet<(i64, i64)> = [x, y].into_iter().collect();
+        // 5 soft-clipped bases, then seq[100..200] + seq[300..400]: 100M 100N 100M from 100
+        let read: Vec<u8> = [&b"NNNNN"[..], &seq[100..200], &seq[300..400]].concat();
+        let ops = [(b'S', 5), (b'M', 100), (b'N', 100), (b'M', 100)];
+        let (mut nreads, mut ev) = (HashMap::new(), SnapEvidence::new());
+        assert!(snap_tally_read(100, &ops, &read, &want, &wins, &partners, &mut nreads, &mut ev));
+        assert_eq!(ev[&(x, y)], [1, 1, 0, 0]);
+        assert!(!ev.contains_key(&(y, x)), "the read does not carry Y");
+        // a read without X exactly (acceptor at 301) contributes nothing
+        let ops2 = [(b'M', 100), (b'N', 101), (b'M', 99)];
+        assert!(!snap_tally_read(100, &ops2, &read[5..], &want, &wins, &partners, &mut nreads, &mut ev));
+        // the cap
+        nreads.insert(x, SNAP_CAP);
+        assert!(!snap_tally_read(100, &ops, &read, &want, &wins, &partners, &mut nreads, &mut ev));
+        assert_eq!(ev[&(x, y)], [1, 1, 0, 0]);
     }
 }

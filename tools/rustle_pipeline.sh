@@ -35,7 +35,8 @@
 #   edges.tsv, nodes.tsv, rule.tsv, params.tsv), per-round collapse statistics in the catalog log, and the
 #   assignment evidence (PREFIX.assign.psv_*.tsv, PREFIX.assign.posterior.tsv).
 # Loci are seeded from primaries PLUS secondaries within 2% of the molecule's GENOME-WIDE best alignment score
-#   (one `as_table` pass over the BAM -> PREFIX.molecules.tsv, reused if present): on gorilla NC_073244.2 (the
+#   (one `as_table` pass over the BAM -> PREFIX.molecules.tsv + its binary load sidecar PREFIX.molecules.tsv.asbin,
+#   reused if present): on gorilla NC_073244.2 (the
 #   seeding pre-registration's verdict contig) this finds 30 more loci (97% annotated) and joins more
 #   >=90%-identity referee pairs (21 -> 26 of 83 on genes with >= 2 exonic primary reads; all of the gain is one
 #   tandem array) at pair precision 1.000 (rows 1060/1100/1101/1116); the streaming assembler applies the filter
@@ -45,7 +46,8 @@
 # The splice index is needed by `flag` (home search); the annotation (--gff) by `flag` only (IG/TR screen).
 # Environment: RUSTLE_POLISH_SUBCHAIN=tag|drop adds `--polish-subchain` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_TSS=tag|rescue|split adds `--polish-tss` to `assemble` (default unset = off);
-#   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off).
+#   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
+#   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off).
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
@@ -111,6 +113,15 @@ case "${RUSTLE_POLISH_TES:-}" in
   "") ;;
   off|tag|pas-end) POLISH="$POLISH --polish-tes $RUSTLE_POLISH_TES" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_TES must be off, tag or pas-end (got '$RUSTLE_POLISH_TES')" >&2; exit 2 ;;
+esac
+# RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads (opt-in; unset = off, the same command): copy_assign --polish-junction-snap,
+# the fuzzy-junction merge that keeps read-proven splice sites (reads: a junction within 10 bp of a better-supported one
+# in its locus moves onto it only when its own reads do not prove it and the other's reads do). Dev-only, in-sample
+# evidence: see its --help
+case "${RUSTLE_POLISH_JUNCTION_SNAP:-}" in
+  "") ;;
+  off|equiv|reads) POLISH="$POLISH --polish-junction-snap $RUSTLE_POLISH_JUNCTION_SNAP" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_JUNCTION_SNAP must be off, equiv or reads (got '$RUSTLE_POLISH_JUNCTION_SNAP')" >&2; exit 2 ;;
 esac
 say() { echo "[rustle_pipeline] $(date +%H:%M:%S) $*" >&2; }
 

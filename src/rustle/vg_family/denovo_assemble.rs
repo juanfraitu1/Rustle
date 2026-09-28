@@ -1506,7 +1506,7 @@ pub fn as_tie_keep(recs: &[(bool, String, Option<i32>)], ratio: f64) -> Vec<bool
 pub fn as_tie_keep_with(
     recs: &[(bool, String, Option<i32>)],
     ratio: f64,
-    global: Option<&std::collections::HashMap<u64, i32>>,
+    global: Option<&AsTable>,
 ) -> Vec<bool> {
     if ratio <= 0.0 {
         return vec![true; recs.len()];
@@ -1551,25 +1551,18 @@ pub fn read_name_hash(name: &str) -> u64 {
 /// Genome-wide best AS per molecule, from `RUSTLE_GTF_SECONDARY_AS_TABLE=<tsv>` (`name<TAB>best_as[...]`,
 /// one row per molecule, built by one scan of the whole BAM). Loaded once per process; `None` when unset or
 /// unreadable (then the region-local rule stands, exactly as before).
-pub fn global_best_as() -> Option<&'static std::collections::HashMap<u64, i32>> {
-    static TABLE: std::sync::OnceLock<Option<std::collections::HashMap<u64, i32>>> = std::sync::OnceLock::new();
+///
+/// The TSV is the only source of truth. A binary sidecar `<tsv>.asbin` (see [`load_as_table`]) holds the same
+/// (key, value) pairs and is read instead of the text when it provably describes the current TSV, which takes a
+/// human table from 6-10 s to about 0.3 s. `RUSTLE_AS_TABLE_SIDECAR=0` reads the TSV and never writes a sidecar.
+pub fn global_best_as() -> Option<&'static AsTable> {
+    static TABLE: std::sync::OnceLock<Option<AsTable>> = std::sync::OnceLock::new();
     TABLE
         .get_or_init(|| {
-            use std::io::BufRead;
             let path = std::env::var("RUSTLE_GTF_SECONDARY_AS_TABLE").ok().filter(|p| !p.is_empty())?;
-            let f = std::fs::File::open(&path).ok()?;
-            let mut m = std::collections::HashMap::new();
-            for line in std::io::BufReader::with_capacity(1 << 20, f).lines().map_while(Result::ok) {
-                if line.starts_with('#') {
-                    continue; // `as_table` provenance header (`#as_table\tbam=...`)
-                }
-                let mut it = line.split('\t');
-                if let (Some(name), Some(best)) = (it.next(), it.next()) {
-                    if let Ok(b) = best.parse::<i32>() {
-                        m.insert(read_name_hash(name), b);
-                    }
-                }
-            }
+            let sidecar = std::env::var("RUSTLE_AS_TABLE_SIDECAR").map_or(true, |v| v != "0");
+            let t0 = std::time::Instant::now();
+            let (m, src) = load_as_table(&path, sidecar)?;
             if m.is_empty() {
                 // an empty or unparseable table must not take the streaming path (whose filter would then
                 // never fire = admit-all secondaries, §6n2's regime); with `None` the buffered region-local
@@ -1577,10 +1570,406 @@ pub fn global_best_as() -> Option<&'static std::collections::HashMap<u64, i32>> 
                 eprintln!("[as-table] WARNING: 0 molecules parsed from {path} — table IGNORED (region-local AS-tie rule applies)");
                 return None;
             }
-            eprintln!("[as-table] {} molecules loaded from {path}", m.len());
+            eprintln!("[as-table] {} molecules loaded from {path} ({src}, {:.2} s)", m.len(), t0.elapsed().as_secs_f64());
             Some(m)
         })
         .as_ref()
+}
+
+/// The genome-wide best-AS table: molecule-name hash ([`read_name_hash`]) -> best AS. Sorted parallel arrays with
+/// a bucket index on the key's top bits, so it loads as two flat arrays and takes ~12 bytes per molecule. `get`
+/// answers exactly what the former `HashMap<u64, i32>` answered, duplicate keys included (the last row wins).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AsTable {
+    keys: Vec<u64>,
+    vals: Vec<i32>,
+    /// `index[b]` = the first position whose key lies in bucket `b` or later; `index.len()` = buckets + 1
+    index: Vec<u32>,
+    /// bucket = `key >> shift` (0 when `shift` is 64: one bucket)
+    shift: u32,
+}
+
+impl AsTable {
+    /// From (key, value) pairs in file order. A key seen twice keeps its LAST value, as `HashMap::insert` did.
+    pub fn from_pairs(mut pairs: Vec<(u64, i32)>) -> Self {
+        pairs.sort_by_key(|p| p.0); // stable: equal keys stay in file order
+        let mut keys: Vec<u64> = Vec::with_capacity(pairs.len());
+        let mut vals: Vec<i32> = Vec::with_capacity(pairs.len());
+        for (k, v) in pairs {
+            if keys.last() == Some(&k) {
+                *vals.last_mut().expect("parallel arrays") = v;
+            } else {
+                keys.push(k);
+                vals.push(v);
+            }
+        }
+        Self::from_sorted(keys, vals).expect("sorted and deduplicated above")
+    }
+
+    /// From strictly increasing keys and their values; `None` when that does not hold.
+    fn from_sorted(keys: Vec<u64>, vals: Vec<i32>) -> Option<Self> {
+        if keys.len() != vals.len() || keys.len() > u32::MAX as usize || keys.windows(2).any(|w| w[0] >= w[1]) {
+            return None;
+        }
+        // ~4 keys per bucket: 2^(ceil(log2 n) - 2) buckets
+        let bits = (usize::BITS - keys.len().saturating_sub(1).leading_zeros()).saturating_sub(2).min(32);
+        let shift = 64 - bits;
+        let nb = 1usize << bits;
+        let mut t = AsTable { keys, vals, index: vec![0; nb + 1], shift };
+        let mut p = 0usize;
+        for b in 0..nb {
+            while p < t.keys.len() && t.bucket(t.keys[p]) < b {
+                p += 1;
+            }
+            t.index[b] = p as u32;
+        }
+        t.index[nb] = t.keys.len() as u32;
+        Some(t)
+    }
+
+    fn bucket(&self, key: u64) -> usize {
+        if self.shift >= 64 {
+            0
+        } else {
+            (key >> self.shift) as usize
+        }
+    }
+
+    /// The best AS of the molecule whose name hashes to `key`.
+    pub fn get(&self, key: &u64) -> Option<&i32> {
+        let b = self.bucket(*key);
+        let (lo, hi) = (*self.index.get(b)? as usize, *self.index.get(b + 1)? as usize);
+        self.keys[lo..hi].binary_search(key).ok().map(|i| &self.vals[lo + i])
+    }
+
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+}
+
+/// Where [`load_as_table`] got the table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AsTableSource {
+    /// the binary sidecar, validated against the TSV
+    Sidecar,
+    /// the TSV text; `true` when a fresh sidecar was written next to it
+    Tsv(bool),
+}
+
+impl std::fmt::Display for AsTableSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AsTableSource::Sidecar => write!(f, "binary sidecar"),
+            AsTableSource::Tsv(true) => write!(f, "TSV; wrote the binary sidecar"),
+            AsTableSource::Tsv(false) => write!(f, "TSV"),
+        }
+    }
+}
+
+/// Sidecar magic and layout version. Layout (little-endian): magic, version u32, probe u64, n u64, the TSV
+/// identity (size u64, mtime seconds i64, mtime nanoseconds u32, inode u64, device u64, sample fingerprint u64,
+/// header length u32 + header bytes), then n u64 keys, n i32 values, and a u64 checksum over both arrays.
+const AS_SIDECAR_MAGIC: &[u8; 8] = b"RUSTLEAS";
+const AS_SIDECAR_VERSION: u32 = 1;
+
+/// The name hash of a fixed string: a build whose `DefaultHasher` differs gives another value, and its sidecars
+/// are rebuilt instead of read.
+fn as_sidecar_probe() -> u64 {
+    read_name_hash("rustle-as-table-probe")
+}
+
+/// What identifies the TSV a sidecar was built from: size, mtime (s, ns), inode, device, the `#as_table` header
+/// line and an FNV-1a fingerprint of 16 evenly spaced 4 KiB blocks (the last block included). A rewrite that
+/// kept all of these is not a practical event; a full hash would cost the 2-3 s the sidecar saves.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AsTsvIdentity {
+    size: u64,
+    mtime_s: i64,
+    mtime_ns: u32,
+    ino: u64,
+    dev: u64,
+    sample: u64,
+    header: Vec<u8>,
+}
+
+impl AsTsvIdentity {
+    #[cfg(unix)]
+    fn of(path: &str) -> Option<Self> {
+        use std::io::{BufRead, Read, Seek, SeekFrom};
+        use std::os::unix::fs::MetadataExt;
+        let m = std::fs::metadata(path).ok()?;
+        let mut f = std::fs::File::open(path).ok()?;
+        let mut header = Vec::new();
+        std::io::BufReader::new(&mut f).read_until(b'\n', &mut header).ok()?;
+        if !header.starts_with(b"#") {
+            header.clear();
+        }
+        let size = m.len();
+        let mut fnv = crate::vg_family::run_cache::Fnv::default();
+        let block = 4096u64;
+        let mut buf: Vec<u8> = Vec::with_capacity(block as usize);
+        for i in 0..16u64 {
+            let at = if size <= block { 0 } else { (size - block) * i / 15 };
+            f.seek(SeekFrom::Start(at)).ok()?;
+            buf.clear();
+            (&mut f).take(block).read_to_end(&mut buf).ok()?;
+            fnv.update(&at.to_le_bytes());
+            fnv.update(&buf);
+        }
+        Some(Self { size, mtime_s: m.mtime(), mtime_ns: m.mtime_nsec() as u32, ino: m.ino(), dev: m.dev(), sample: fnv.finish(), header })
+    }
+
+    #[cfg(not(unix))]
+    fn of(_path: &str) -> Option<Self> {
+        None // no inode to key on: always the TSV
+    }
+
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.size.to_le_bytes());
+        out.extend_from_slice(&self.mtime_s.to_le_bytes());
+        out.extend_from_slice(&self.mtime_ns.to_le_bytes());
+        out.extend_from_slice(&self.ino.to_le_bytes());
+        out.extend_from_slice(&self.dev.to_le_bytes());
+        out.extend_from_slice(&self.sample.to_le_bytes());
+        out.extend_from_slice(&(self.header.len() as u32).to_le_bytes());
+        out.extend_from_slice(&self.header);
+    }
+}
+
+/// A checksum over the sidecar's two arrays (word-wise, so it costs a fraction of the read).
+fn as_sidecar_checksum(keys: &[u64], vals: &[i32]) -> u64 {
+    let mut h: u64 = 0x9e37_79b9_7f4a_7c15;
+    for &k in keys {
+        h = (h ^ k).rotate_left(23).wrapping_mul(0xff51_afd7_ed55_8ccd);
+    }
+    for &v in vals {
+        h = (h ^ v as u32 as u64).rotate_left(23).wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    }
+    h
+}
+
+/// The sidecar path of a TSV.
+pub fn as_sidecar_path(tsv: &str) -> String {
+    format!("{tsv}.asbin")
+}
+
+/// The sidecar's table when it exists and describes `id` (magic, version, hash probe, TSV identity, exact length,
+/// checksum, strictly increasing keys); `None` otherwise, never a partial or stale table. Streamed in 1 MiB
+/// pieces, so the peak is the table itself.
+fn read_as_sidecar(tsv: &str, id: &AsTsvIdentity) -> Option<AsTable> {
+    use std::io::Read;
+    let path = as_sidecar_path(tsv);
+    let len = std::fs::metadata(&path).ok()?.len();
+    let mut r = std::io::BufReader::with_capacity(1 << 20, std::fs::File::open(&path).ok()?);
+    let mut word = [0u8; 8];
+    let mut read_u64 = |r: &mut std::io::BufReader<std::fs::File>| -> Option<u64> {
+        r.read_exact(&mut word).ok()?;
+        Some(u64::from_le_bytes(word))
+    };
+    let mut magic = [0u8; 8];
+    r.read_exact(&mut magic).ok()?;
+    let mut version = [0u8; 4];
+    r.read_exact(&mut version).ok()?;
+    if &magic != AS_SIDECAR_MAGIC || u32::from_le_bytes(version) != AS_SIDECAR_VERSION || read_u64(&mut r)? != as_sidecar_probe() {
+        return None;
+    }
+    let n = read_u64(&mut r)?;
+    let mut want = Vec::new();
+    id.encode(&mut want);
+    let mut got = vec![0u8; want.len()];
+    r.read_exact(&mut got).ok()?;
+    if got != want || len != (8 + 4 + 8 + 8 + want.len() as u64).checked_add(n.checked_mul(12)?)?.checked_add(8)? {
+        return None;
+    }
+    let n = n as usize;
+    let mut buf = vec![0u8; 1 << 20];
+    let mut keys: Vec<u64> = Vec::with_capacity(n);
+    let mut left = n * 8;
+    while left > 0 {
+        let k = left.min(buf.len());
+        r.read_exact(&mut buf[..k]).ok()?;
+        keys.extend(buf[..k].chunks_exact(8).map(|b| u64::from_le_bytes(b.try_into().unwrap())));
+        left -= k;
+    }
+    let mut vals: Vec<i32> = Vec::with_capacity(n);
+    let mut left = n * 4;
+    while left > 0 {
+        let k = left.min(buf.len());
+        r.read_exact(&mut buf[..k]).ok()?;
+        vals.extend(buf[..k].chunks_exact(4).map(|b| i32::from_le_bytes(b.try_into().unwrap())));
+        left -= k;
+    }
+    if read_u64(&mut r)? != as_sidecar_checksum(&keys, &vals) {
+        return None;
+    }
+    AsTable::from_sorted(keys, vals)
+}
+
+/// Write the sidecar of `tsv` (identity `id`) atomically: a staging file in the same directory, then a rename.
+fn write_as_sidecar(tsv: &str, id: &AsTsvIdentity, t: &AsTable) -> std::io::Result<()> {
+    use std::io::Write;
+    let path = as_sidecar_path(tsv);
+    let tmp = format!("{path}.tmp.{}", std::process::id());
+    let mut head = Vec::new();
+    head.extend_from_slice(AS_SIDECAR_MAGIC);
+    head.extend_from_slice(&AS_SIDECAR_VERSION.to_le_bytes());
+    head.extend_from_slice(&as_sidecar_probe().to_le_bytes());
+    head.extend_from_slice(&(t.keys.len() as u64).to_le_bytes());
+    id.encode(&mut head);
+    let res = (|| {
+        let mut w = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(&tmp)?);
+        w.write_all(&head)?;
+        for k in t.keys.iter() {
+            w.write_all(&k.to_le_bytes())?;
+        }
+        for v in t.vals.iter() {
+            w.write_all(&v.to_le_bytes())?;
+        }
+        w.write_all(&as_sidecar_checksum(&t.keys, &t.vals).to_le_bytes())?;
+        w.into_inner().map_err(|e| e.into_error())?.sync_all()?;
+        std::fs::rename(&tmp, &path)
+    })();
+    if res.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    res
+}
+
+/// Parse the TSV text (the historical reader: `#` lines skipped, name and best AS from the first two columns,
+/// rows whose AS does not parse skipped, a repeated key keeps its last value).
+fn parse_as_tsv(path: &str) -> Option<AsTable> {
+    use std::io::BufRead;
+    let f = std::fs::File::open(path).ok()?;
+    let mut pairs: Vec<(u64, i32)> = Vec::new();
+    for line in std::io::BufReader::with_capacity(1 << 20, f).lines().map_while(Result::ok) {
+        if line.starts_with('#') {
+            continue; // `as_table` provenance header (`#as_table\tbam=...`)
+        }
+        let mut it = line.split('\t');
+        if let (Some(name), Some(best)) = (it.next(), it.next()) {
+            if let Ok(b) = best.parse::<i32>() {
+                pairs.push((read_name_hash(name), b));
+            }
+        }
+    }
+    Some(AsTable::from_pairs(pairs))
+}
+
+/// Load a best-AS table. With `sidecar`, a valid `<tsv>.asbin` is read instead of the text, and after a text
+/// parse a new sidecar is written when the TSV did not change during the parse (a failed write only warns).
+/// Without it, the TSV alone (the reference arm). `None` when the TSV cannot be opened.
+pub fn load_as_table(tsv: &str, sidecar: bool) -> Option<(AsTable, AsTableSource)> {
+    let id = if sidecar { AsTsvIdentity::of(tsv) } else { None };
+    if let Some(id) = id.as_ref() {
+        if let Some(t) = read_as_sidecar(tsv, id) {
+            return Some((t, AsTableSource::Sidecar));
+        }
+    }
+    let t = parse_as_tsv(tsv)?;
+    let mut wrote = false;
+    if let Some(id) = id {
+        if !t.is_empty() && AsTsvIdentity::of(tsv).as_ref() == Some(&id) {
+            match write_as_sidecar(tsv, &id, &t) {
+                Ok(()) => wrote = true,
+                Err(e) => eprintln!("[as-table] WARNING: could not write {}: {e} (the TSV is read every time)", as_sidecar_path(tsv)),
+            }
+        }
+    }
+    Some((t, AsTableSource::Tsv(wrote)))
+}
+
+#[cfg(test)]
+mod as_table_tests {
+    use super::*;
+
+    fn xorshift(x: &mut u64) -> u64 {
+        *x ^= *x << 13;
+        *x ^= *x >> 7;
+        *x ^= *x << 17;
+        *x
+    }
+
+    /// The sorted table answers exactly what the former `HashMap<u64, i32>` answered, for every size (the one-bucket
+    /// case included), with repeated keys keeping their LAST value, and for absent keys.
+    #[test]
+    fn as_table_lookup_equals_hashmap_last_wins() {
+        for n in [0usize, 1, 2, 3, 5, 100, 10_000] {
+            let mut x = 88_172_645_463_325_252u64 ^ n as u64;
+            let mut pairs: Vec<(u64, i32)> = Vec::new();
+            for i in 0..n {
+                let r = xorshift(&mut x);
+                let k = if i % 7 == 3 { pairs[i / 2].0 } else { r };
+                pairs.push((k, (r % 1000) as i32 - 500));
+            }
+            if n >= 3 {
+                pairs.push((0, 7));
+                pairs.push((u64::MAX, 9));
+            }
+            let mut hm: std::collections::HashMap<u64, i32> = std::collections::HashMap::new();
+            for &(k, v) in pairs.iter() {
+                hm.insert(k, v);
+            }
+            let t = AsTable::from_pairs(pairs);
+            assert_eq!(t.len(), hm.len());
+            for (k, v) in hm.iter() {
+                assert_eq!(t.get(k), Some(v), "n = {n}");
+            }
+            for _ in 0..1000 {
+                let p = xorshift(&mut x);
+                assert_eq!(t.get(&p), hm.get(&p));
+            }
+        }
+    }
+
+    /// TSV -> sidecar -> sidecar hit with the same table; a same-size in-place rewrite with the mtime put back, a
+    /// truncated sidecar and a flipped byte are all rejected and rebuilt; `sidecar = false` never reads one.
+    #[test]
+    fn as_table_sidecar_roundtrip_and_staleness() {
+        let dir = std::env::temp_dir().join(format!("rustle_as_table_sidecar_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tsv = dir.join("t.molecules.tsv").display().to_string();
+        let side = as_sidecar_path(&tsv);
+        let text = |best: &str| {
+            format!("#as_table\tbam=/x.bam\trecords=4\tmolecules=3\nr1\t{best}\t90\t2\tchr1\t{best}\nr2\t50\t-1\t1\tchr2\t50\nr3\tNA\t-1\t1\tNA\tNA\n")
+        };
+        std::fs::write(&tsv, text("100")).unwrap();
+        let (t0, s0) = load_as_table(&tsv, false).unwrap();
+        assert_eq!(s0, AsTableSource::Tsv(false));
+        assert!(!std::path::Path::new(&side).exists(), "sidecar = false writes nothing");
+        assert_eq!((t0.len(), t0.get(&read_name_hash("r1")), t0.get(&read_name_hash("r3"))), (2, Some(&100), None));
+        let (t1, s1) = load_as_table(&tsv, true).unwrap();
+        assert_eq!((s1, &t1), (AsTableSource::Tsv(true), &t0));
+        let (t2, s2) = load_as_table(&tsv, true).unwrap();
+        assert_eq!((s2, &t2), (AsTableSource::Sidecar, &t0));
+        assert_eq!(load_as_table(&tsv, false).unwrap().1, AsTableSource::Tsv(false), "the reference arm ignores it");
+        // same size, same inode, mtime restored: only the content differs
+        let mtime = std::fs::metadata(&tsv).unwrap().modified().unwrap();
+        std::fs::write(&tsv, text("101")).unwrap();
+        std::fs::File::options().write(true).open(&tsv).unwrap().set_modified(mtime).unwrap();
+        let (t3, s3) = load_as_table(&tsv, true).unwrap();
+        assert_eq!((s3, t3.get(&read_name_hash("r1"))), (AsTableSource::Tsv(true), Some(&101)));
+        assert_eq!(load_as_table(&tsv, true).unwrap().1, AsTableSource::Sidecar);
+        // a truncated sidecar, then one with a flipped value byte (checksum)
+        let good = std::fs::read(&side).unwrap();
+        std::fs::write(&side, &good[..good.len() - 1]).unwrap();
+        assert_eq!(load_as_table(&tsv, true).unwrap().1, AsTableSource::Tsv(true));
+        let mut bad = std::fs::read(&side).unwrap();
+        let at = bad.len() - 9;
+        bad[at] ^= 1;
+        std::fs::write(&side, &bad).unwrap();
+        let (t4, s4) = load_as_table(&tsv, true).unwrap();
+        assert_eq!((s4, t4.get(&read_name_hash("r1"))), (AsTableSource::Tsv(true), Some(&101)));
+        // a sidecar from another hasher (probe) is not read
+        let mut other = std::fs::read(&side).unwrap();
+        other[12] ^= 1;
+        std::fs::write(&side, &other).unwrap();
+        assert_eq!(load_as_table(&tsv, true).unwrap().1, AsTableSource::Tsv(true));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 // ================================================================ the closed loop: read-home table (pass 2)
