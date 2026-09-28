@@ -3,6 +3,8 @@
 **2026-09-03.** Built from a 3-agent inventory of the full ledger, the negative-results register, memory,
 and code reachability. Ledger §6dk–§6dq and the sections cited below.
 
+> **2026-09-25 update — [`O3_WGS_TRIO_CN_2026-09-25.md`](O3_WGS_TRIO_CN_2026-09-25.md):** WGS k-mer dosage for Jim (genome animal) + parents Trib/Dolly: 17/516 autosomal families differ between the three gorillas (floor 4). RNA neither measures nor screens this (0/17 candidates); of 117 fibroblast RNA flags 82 are absent from Jim's DNA. The between-individual comparison (§1 "NO BETWEEN-INDIVIDUAL COMPARISON") is now executable at the DNA level.
+
 ---
 
 ## ⭐⭐ THE HEADLINE — AND IT IS NOT THE OBVIOUS ONE
