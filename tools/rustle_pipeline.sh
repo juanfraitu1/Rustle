@@ -47,7 +47,8 @@
 # Environment: RUSTLE_POLISH_SUBCHAIN=tag|drop adds `--polish-subchain` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_TSS=tag|rescue|split adds `--polish-tss` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
-#   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off).
+#   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
+#   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off).
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
@@ -122,6 +123,15 @@ case "${RUSTLE_POLISH_JUNCTION_SNAP:-}" in
   "") ;;
   off|equiv|reads) POLISH="$POLISH --polish-junction-snap $RUSTLE_POLISH_JUNCTION_SNAP" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_JUNCTION_SNAP must be off, equiv or reads (got '$RUSTLE_POLISH_JUNCTION_SNAP')" >&2; exit 2 ;;
+esac
+# RUSTLE_GTF_REGROUP=1 (opt-in; unset or 0 = off, the same command): copy_assign --gtf-regroup, RG3 — after every polish
+# step, split a gene_id whose surviving transcripts share no same-strand exonic base (a dropped readthrough bridge, or
+# two pre-polish components that collided on one base tid); split-only, intron chains unchanged, the deeper piece keeps
+# the name and the others become <gene_id>.rg<k>. See its --help
+case "${RUSTLE_GTF_REGROUP:-}" in
+  ""|0) ;;
+  1) POLISH="$POLISH --gtf-regroup" ;;
+  *) echo "[rustle_pipeline] RUSTLE_GTF_REGROUP must be 0 or 1 (got '$RUSTLE_GTF_REGROUP')" >&2; exit 2 ;;
 esac
 say() { echo "[rustle_pipeline] $(date +%H:%M:%S) $*" >&2; }
 
