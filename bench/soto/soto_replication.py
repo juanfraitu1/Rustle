@@ -22,10 +22,37 @@ P/R/F1 0.841/0.595/0.697 / 0.906/0.554/0.687; bipartite MICRO 0.784/0.709 / 0.81
 0.770/0.739, undetected 99/491 / 88/491. `cluster` output is byte-identical to the frozen
 `replicated_families_2334_{median,mean}_finalhuman.tsv`.
 
+NATIVE v1.0 ARM (2026-09-28): `edges --native-v1 --sedef final_v1.bed` (the user's CHM13 v1.0 SEDEF with CIGARs,
+151,759 rows, trailing header row stripped; identity lift, all 3,628 rows >= 0.98 used, 0 dropped) -> 4,384 edges
+(frozen: shared_exons_2334_finalv1_native.tsv). Same cluster/score chain, median / mean MAD: ARI 0.6985 / 0.6894,
+exact 241 / 264 (unchanged set), pair P/R/F1 0.837/0.601/0.700 / 0.900/0.560/0.691, bipartite MICRO 0.780/0.715 /
+0.807/0.728, undetected 98 / 87. The gain is the acrocentrics the v2.0->v1.0 guard dropped (27 genes newly placed,
+all with a truth-correct partner; ID_328 detected but fused with the CN-degenerate ID_321). Union with the v2.0
+edges scores identically. Earlier v1.0 arms without SEDEF's own CIGAR: 0.6316 (linear), 0.6618 (mappy CIGAR).
+
+CURATION ARM (2026-09-28, KEY=rule; figs/soto_cur_rule.md): `curate` recomputes Soto's SD98 gene set from SD98
+regions + CAT v4 (their `-f 1` rule: UCSC v1.0 track -> 5,154 genes / 1,864 eligible = their 1,793 + the 71 they
+removed by hand; `--sedef final_v1.bed` -> 5,364 / 1,999) and applies an explicit version of their manual
+curation. Rule search (scratchpad/soto_cur/rule_search.py, 44 vocabulary atoms, every <= 3-atom and/or form,
+selected on a seeded random half, scored on the other): the ONE-condition rule "drop a gene when >= 0.3 of its
+exonic bp lies inside a same-strand SD98 partner that outranks it (protein_coding > transcribed > unprocessed
+pseudogene; HGNC-named > readthrough > clone-named; more transcripts; longer)" is what every split picks
+(36/50 seeds); held-out P/R 0.78/0.80 (50-seed mean; fixed a priori 0.80/0.82), and 2-3 atoms, depth-2/3 trees
+and a 300-tree forest do NOT beat it out of sample (F1 .77/.76/.72/.79 vs .78). Plugged in:
+    python3 $S curate --cat-bed cat_v4.bed --sd98-bed sd98_v1.bed --out-eligible ge.tsv --out-full gf.tsv
+    python3 $S edges --native-v1 --sedef final_v1_clean.bed --geneset gf.tsv --cat-bed cat_v4.bed --out-shared s.tsv
+    python3 $S cluster --shared s.tsv --geneset ge.tsv --full-geneset gf.tsv --famcn ... --out f.tsv; score
+recomputed+uncurated 1,864: ARI 0.6946 / 0.6822 (median / mean), exact 234 / 257; recomputed+rule (72 dropped,
+1,792): 0.6983 / 0.6886, exact 240 / 263 -- vs their hand-curated 1,793: 0.6985 / 0.6894, 241 / 264. Fully native
+(`--sedef final_v1.bed` regions too, 1,921 eligible): 0.6981 / 0.6884. Off by default: no other subcommand calls
+any of it (headline chain re-verified byte-identical).
+
 SUBCOMMANDS
     genesets   the 2,334-gene universe (every S1C Gene ID) and the 1,793 family-eligible genes
                (S1C `In Table S1 (SD98 gene set)` = Yes), as 2-column `gene_id biotype` TSVs sorted by id.
                New: the hand-made files it replaces had no generator. They drive `cluster` byte-identically.
+    curate     OPT-IN: SD98 regions (+ CAT v4) -> SD98 gene set -> explicit curation rule -> eligible + full
+               genesets for `edges`/`cluster` (see CURATION ARM above; `--rule none` = uncurated).
     edges      steps 1-4: SEDEF rows >= 0.98 identity -> lift both sides to CHM13 v1.0 -> walk the SEDEF CIGAR
                -> project CAT v4 exons >= 0.99 covered across the pair -> `gene_a gene_b` edge TSV (sorted).
     cluster    steps 5-6: connected components -> famCN MAD split -> family call; --full-geneset adds the
@@ -232,6 +259,252 @@ def write_geneset(path, rows):
         w = csv.writer(fh, delimiter="\t")
         w.writerow(["gene_id", "biotype"])
         w.writerows(rows)
+
+
+# ---------------------------------------------------------------------------------------------------------
+# SD98 gene set from SD98 regions + the (reverse-engineered) manual curation step (2026-09-28, KEY=rule)
+# ---------------------------------------------------------------------------------------------------------
+# Soto's step 2 (A_SD98_regions.md, their released code): SD98 gene = CAT v4 gene with >= 1 exon FULLY
+# contained (`bedtools intersect -f 1`) in a merged SD98 region (chrY/chrM excluded; chrX dropped at the gene-
+# count step); family-eligible = biotype grep "protein_coding\|unprocessed_pseudogene". Then redundancy
+# candidates = self-intersect of those genes' transcripts, `bedtools intersect -wao -s -f 0.9`, different
+# gene id; then MANUAL curation ("71 genes ... removed"; "kept only fusion genes that encoded an alternative
+# protein"). `genes_to_remove.txt` was never released. The functions below recompute the gene set and the
+# per-gene vocabulary the curation could have used, and `curation_drop` applies an explicit rule fitted on
+# one random half of the genes and validated on the other (scratchpad/soto_cur/rule_search.py; report
+# figs/soto_cur_rule.md). Everything here is NEW code reached only through `curate`; no existing subcommand
+# calls it (byte-identical when unused).
+
+ELIGIBLE_GREP = ("protein_coding", "unprocessed_pseudogene")   # their literal grep (substring match)
+BIOTYPE_RANK = {"unprocessed_pseudogene": 0, "transcribed_unprocessed_pseudogene": 1,
+                "translated_unprocessed_pseudogene": 1, "protein_coding": 2}
+NAME_RANK = {"clone": 0, "MSTRG": 0, "LOC": 0, "ENSG": 0, "readthrough": 1, "named": 2}
+CURATION_RULES = ("none", "redundant", "contained", "contained_or_flag", "contained_outranked",
+                  "contained_or_flag_outranked")
+
+
+def name_class(name):
+    """Ensembl clone-accession names (AC012345.1, AL627309.3 ...) -> 'clone'; GENE1-GENE2 readthrough names ->
+    'readthrough' (antisense/divergent -AS1/-DT/-IT/-OT suffixes and X-1 style are 'named'); MSTRG/LOC/ENSG
+    placeholders keep their own class; everything else is 'named' (HGNC-style)."""
+    if name.startswith("MSTRG"):
+        return "MSTRG"
+    if name.startswith("LOC"):
+        return "LOC"
+    if name.startswith("ENSG"):
+        return "ENSG"
+    if re.match(r"^(A[CLPF]|BX|CR|CU|FP|Z)\d{5,6}\.\d+$", name) or re.match(r"^[A-Z]{1,2}\d{6}\.\d+$", name):
+        return "clone"
+    if "-" in name and not re.search(r"-(AS\d*|DT|IT\d*|OT\d*)$", name):
+        a, b = name.split("-", 1)
+        if len(a) >= 2 and len(b) >= 2 and not re.fullmatch(r"[0-9]+|[A-Z]", b):
+            return "readthrough"
+    return "named"
+
+
+def merge_intervals(iv):
+    out = []
+    for a, b in sorted(iv):
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def overlap_bp(u1, u2):
+    """Total overlap between two merged interval lists."""
+    i = j = t = 0
+    while i < len(u1) and j < len(u2):
+        a, b = max(u1[i][0], u2[j][0]), min(u1[i][1], u2[j][1])
+        if b > a:
+            t += b - a
+        if u1[i][1] < u2[j][1]:
+            i += 1
+        else:
+            j += 1
+    return t
+
+
+def load_cat_genes(cat_bed):
+    """CAT v4 BED (37 columns) -> gene_id -> dict(name, biotype, chrom, strand, start, end, source, tx (list of
+    (tx_start, tx_end, exons, cds_exons)), exon_set (distinct exons), exons (merged union), cds (merged union))."""
+    genes = {}
+    with open(cat_bed) as fh:
+        for ln in fh:
+            f = ln.rstrip("\n").split("\t")
+            if len(f) < 21:
+                continue
+            gid = f[18]
+            s, e, ts, te = int(f[1]), int(f[2]), int(f[6]), int(f[7])
+            sizes = [int(x) for x in f[10].rstrip(",").split(",") if x]
+            starts = [int(x) for x in f[11].rstrip(",").split(",") if x]
+            exs = [(s + so, s + so + sz) for sz, so in zip(sizes, starts)]
+            cds = [(max(a, ts), min(b, te)) for a, b in exs if te > ts and min(b, te) > max(a, ts)]
+            g = genes.get(gid)
+            if g is None:
+                g = genes[gid] = {"name": f[12], "biotype": f[19], "chrom": f[0], "strand": f[5], "start": s,
+                                  "end": e, "source": f[32] if len(f) > 32 else "", "tx": [],
+                                  "_ex": [], "_cds": []}
+            g["start"], g["end"] = min(g["start"], s), max(g["end"], e)
+            g["tx"].append((s, e, exs, cds))
+            g["_ex"].extend(exs)
+            g["_cds"].extend(cds)
+    for g in genes.values():
+        g["exon_set"] = sorted(set(g.pop("_ex")))       # distinct exons (their exons BED; the `-f 1` test is per exon)
+        g["exons"] = merge_intervals(g["exon_set"])     # exonic union (bp-level containment features)
+        g["cds"] = merge_intervals(g.pop("_cds"))
+    return genes
+
+
+def load_regions_bed(path):
+    """BED of regions -> chrom -> merged, sorted interval list."""
+    per = defaultdict(list)
+    with open(path) as fh:
+        for ln in fh:
+            f = ln.split("\t")
+            if len(f) < 3 or ln.startswith("#"):
+                continue
+            per[f[0]].append((int(f[1]), int(f[2])))
+    return {c: merge_intervals(v) for c, v in per.items()}
+
+
+def sd98_regions_from_sedef(sedef_path, min_identity=0.98):
+    """Their step 1 on a native SEDEF table: every row with identity (field 21) >= min_identity contributes
+    BOTH sides; merged per chromosome (`bedtools merge` equivalent)."""
+    per = defaultdict(list)
+    with open(sedef_path) as fh:
+        for ln in fh:
+            f = ln.rstrip("\n").split("\t")
+            if len(f) < 21:
+                continue
+            try:
+                ident = float(f[20])
+            except ValueError:
+                continue
+            if ident < min_identity:
+                continue
+            per[f[0]].append((int(f[1]), int(f[2])))
+            per[f[3]].append((int(f[4]), int(f[5])))
+    return {c: merge_intervals(v) for c, v in per.items()}
+
+
+def _fully_contained(regions, s, e):
+    """True if [s, e) lies inside one merged region (bisect on the sorted merged list)."""
+    import bisect
+    i = bisect.bisect_right(regions, (s, float("inf"))) - 1
+    return i >= 0 and regions[i][0] <= s and e <= regions[i][1]
+
+
+def sd98_gene_set(genes, regions, autosomal=True):
+    """Their step 2: gene ids with >= 1 exon fully contained in an SD98 region (`-f 1`); chrY/chrM never count;
+    chrX excluded when autosomal (their gene-count step). Returns {gene_id: n_contained_exons}."""
+    out = {}
+    for gid, g in genes.items():
+        if g["chrom"] in ("chrY", "chrM") or (autosomal and g["chrom"] == "chrX"):
+            continue
+        regs = regions.get(g["chrom"])
+        if not regs:
+            continue
+        n = sum(1 for s, e in g["exon_set"] if _fully_contained(regs, s, e))
+        if n:
+            out[gid] = n
+    return out
+
+
+def is_eligible_biotype(bt):
+    return any(k in bt for k in ELIGIBLE_GREP)
+
+
+def curation_features(genes, elig):
+    """Per gene in `elig` (the eligible SD98 gene ids), the vocabulary of their curation step, computed against
+    PARTNERS = other eligible SD98 genes on the same chromosome and strand whose gene bodies overlap:
+      flag                their literal candidate flag: some transcript of g lies >= 90% (of its own length) inside a
+                          transcript of a different gene (`bedtools intersect -wao -s -f 0.9`, self-intersect)
+      flag_by             the set of container genes behind `flag`
+      partners            [(h, frac_of_g_exonic_bp_inside_h, g_covers_h_90)] for partners sharing >= 1 exonic bp
+      exon_contain_frac   max over partners of exonic bp of g inside h / exonic bp of g
+      exon_novel_frac     exonic bp of g outside every partner / exonic bp of g (1.0 = no partner)
+      cds_novel_frac      coding bp of g outside every partner's CDS / coding bp of g (None = no CDS) --
+                          "encodes an alternative protein" proxy
+      n_covered           partners whose exon union is >= 90% covered by g's (fusion/readthrough container)
+      body_contained      gene body >= 90% inside a partner's body
+      name_class, biotype, n_tx, n_exons, span, has_cds, source (annotation facts, for the rank)
+    """
+    by_key = defaultdict(list)
+    for gid in elig:
+        g = genes[gid]
+        by_key[(g["chrom"], g["strand"])].append(gid)
+    feats = {}
+    for gid in elig:
+        g = genes[gid]
+        s, e = g["start"], g["end"]
+        ps = [h for h in by_key[(g["chrom"], g["strand"])]
+              if h != gid and genes[h]["start"] < e and genes[h]["end"] > s]
+        ex_len = sum(b - a for a, b in g["exons"])
+        cds_len = sum(b - a for a, b in g["cds"])
+        partners, flag_by, body_contained = [], set(), False
+        for h in ps:
+            gh = genes[h]
+            ov = overlap_bp(g["exons"], gh["exons"])
+            if ov:
+                covers = ov >= 0.9 * sum(b - a for a, b in gh["exons"])
+                partners.append((h, ov / ex_len, covers))
+            if min(e, gh["end"]) - max(s, gh["start"]) >= 0.9 * (e - s):
+                body_contained = True
+            for ts, te, _, _ in g["tx"]:
+                if any(min(te, ue) - max(ts, us) >= 0.9 * (te - ts) for us, ue, _, _ in gh["tx"]):
+                    flag_by.add(h)
+                    break
+        shared = [h for h, _, _ in partners]
+        ex_union = merge_intervals([iv for h in shared for iv in genes[h]["exons"]])
+        cds_union = merge_intervals([iv for h in shared for iv in genes[h]["cds"]])
+        feats[gid] = {
+            "flag": bool(flag_by), "flag_by": flag_by, "partners": partners,
+            "exon_contain_frac": max([fr for _, fr, _ in partners] + [0.0]),
+            "exon_novel_frac": 1 - overlap_bp(g["exons"], ex_union) / ex_len if ex_len else 1.0,
+            "cds_novel_frac": (1 - overlap_bp(g["cds"], cds_union) / cds_len) if cds_len else None,
+            "n_covered": sum(1 for _, _, c in partners if c), "n_partners": len(partners),
+            "body_contained": body_contained, "name_class": name_class(g["name"]), "biotype": g["biotype"],
+            "n_tx": len(g["tx"]), "n_exons": len(g["exon_set"]), "span": e - s, "has_cds": cds_len > 0,
+            "source": g["source"],
+        }
+    return feats
+
+
+def curation_rank(f):
+    """The annotation-quality order the curation appears to follow: protein_coding > transcribed_unprocessed
+    > unprocessed pseudogene; HGNC-named > readthrough-named > clone/placeholder-named; more transcripts;
+    longer span."""
+    return (BIOTYPE_RANK.get(f["biotype"], 0), NAME_RANK.get(f["name_class"], 0), f["n_tx"], f["span"])
+
+
+def curation_drop(feats, rule, contain=0.5):
+    """Gene ids the rule removes. Rules (all restricted to genes with >= 1 same-strand exon-sharing partner):
+      none                          nothing (the uncurated recomputed set)
+      redundant                     their literal candidate flag alone
+      contained                     >= `contain` of exonic bp inside one partner
+      contained_or_flag             the above OR their flag
+      contained_outranked           >= `contain` of exonic bp inside a partner that OUTRANKS it (curation_rank)
+      contained_or_flag_outranked   (>= `contain` inside h OR flagged by h) AND h outranks it
+    """
+    if rule == "none":
+        return set()
+    drop = set()
+    for gid, f in feats.items():
+        if rule == "redundant":
+            if f["flag"]:
+                drop.add(gid)
+            continue
+        rk = curation_rank(f)
+        for h, fr, _ in f["partners"]:
+            hit = fr >= contain
+            if rule in ("contained_or_flag", "contained_or_flag_outranked"):
+                hit = hit or (h in f["flag_by"])
+            if hit and (rule in ("contained", "contained_or_flag") or curation_rank(feats[h]) > rk):
+                drop.add(gid)
+                break
+    return drop
 
 
 # ---------------------------------------------------------------------------------------------------------
@@ -917,6 +1190,95 @@ def cmd_genesets(a):
           + (f", {a.out_eligible}" if a.out_eligible else ""), file=sys.stderr)
 
 
+def cmd_curate(a):
+    """Recompute Soto's SD98 gene set from SD98 regions + CAT v4 and apply an explicit, automatic version of
+    their manual curation step (2026-09-28, KEY=rule; report figs/soto_cur_rule.md). OPT-IN: nothing else in
+    this module calls it, and the headline chain (`genesets` from S1C) is byte-identical without it.
+
+    Regions: `--sd98-bed` (already-merged SD98 regions, e.g. the UCSC v1.0 sedefSegDups track at $24 >= 0.98
+    -- their input, 97.8 Mbp) or `--sedef` (a native SEDEF table: rows with field-21 identity >= --min-identity,
+    both sides, merged -- the same file `edges --native-v1` reads, so the chain is fully native to it).
+    Genes: >= 1 exon fully contained in a region (`-f 1`), chrY/chrM never, chrX dropped from the output (their
+    gene-count step); eligible = biotype grep "protein_coding|unprocessed_pseudogene". With the UCSC track this
+    gives 5,154 genes / 1,864 eligible = Soto's 1,793 + the 71 they removed by hand.
+
+    Curation (`--rule`, see curation_drop): the candidate partners are other eligible SD98 genes on the same
+    chromosome and strand that share exonic bp (their transcript self-intersect universe, chrX included at this
+    step as in their code). `--rule none` writes the uncurated set. The default rule is the one that survived
+    the held-out test in the report; `--contain` is its exonic-containment threshold.
+
+    Outputs: `--out-eligible` (curated family-eligible genes, `gene_id biotype`, sorted); `--out-full` the
+    universe for `edges --geneset` / `cluster --full-geneset`: `--full-source s1c` (default) = S1C's 2,334 genes
+    UNION the curated eligible set, so the only thing that changes vs the headline is the eligible backbone;
+    `--full-source sd98` = every SD98 gene of any biotype (their 5,154-style set) minus the dropped ones.
+    `--out-dropped` lists the removed genes with the feature that fired; `--out-features` dumps the per-gene
+    vocabulary for every eligible gene (what scratchpad/soto_cur/rule_search.py consumed).
+    """
+    genes = load_cat_genes(a.cat_bed)
+    if a.sedef:
+        regions = sd98_regions_from_sedef(a.sedef, a.min_identity)
+    else:
+        regions = load_regions_bed(a.sd98_bed)
+    bp = sum(e - s for c, v in regions.items() if c not in ("chrX", "chrY", "chrM") for s, e in v)
+    print(f"[regions] {sum(len(v) for v in regions.values())} merged SD98 regions, {bp:,} autosomal bp",
+          file=sys.stderr)
+    sd_auto = sd98_gene_set(genes, regions, autosomal=True)
+    sd_x = sd98_gene_set(genes, regions, autosomal=False)
+    elig_x = {g for g in sd_x if is_eligible_biotype(genes[g]["biotype"])}
+    elig_auto = {g for g in elig_x if g in sd_auto}
+    print(f"[genes] {len(sd_auto)} autosomal SD98 genes (all biotypes), {len(elig_auto)} family-eligible "
+          f"({len(elig_x) - len(elig_auto)} more on chrX, used only as curation partners)", file=sys.stderr)
+
+    feats = curation_features(genes, elig_x)
+    drop = curation_drop(feats, a.rule, a.contain) & elig_auto
+    n_univ = sum(1 for g in elig_auto if feats[g]["n_partners"] >= 1)
+    print(f"[curate] rule={a.rule} contain={a.contain}: {n_univ} eligible genes have a same-strand exon-sharing "
+          f"partner (curation universe); {len(drop)} dropped -> {len(elig_auto) - len(drop)} eligible",
+          file=sys.stderr)
+
+    eligible_rows = sorted((g, genes[g]["biotype"]) for g in elig_auto - drop)
+    if a.out_eligible:
+        write_geneset(a.out_eligible, eligible_rows)
+    if a.out_full:
+        if a.full_source == "s1c":
+            full = dict(soto_genesets(a.truth)[0])
+            for g, b in eligible_rows:
+                full.setdefault(g, b)
+        else:
+            full = {g: genes[g]["biotype"] for g in sd_auto if g not in drop}
+        write_geneset(a.out_full, sorted(full.items()))
+        print(f"[full] {len(full)} genes ({a.full_source}) -> {a.out_full}", file=sys.stderr)
+    if a.out_dropped:
+        with open(a.out_dropped, "w", newline="") as fh:
+            w = csv.writer(fh, delimiter="\t")
+            w.writerow(["gene_id", "gene_name", "biotype", "name_class", "n_tx", "flag", "exon_contain_frac",
+                        "best_partner", "best_partner_name"])
+            for g in sorted(drop):
+                f = feats[g]
+                best = max(f["partners"], key=lambda p: p[1]) if f["partners"] else None
+                w.writerow([g, genes[g]["name"], f["biotype"], f["name_class"], f["n_tx"], int(f["flag"]),
+                            f"{f['exon_contain_frac']:.4f}", best[0] if best else "",
+                            genes[best[0]]["name"] if best else ""])
+    if a.out_features:
+        cols = ["gene_id", "gene_name", "chrom", "strand", "biotype", "name_class", "source", "n_tx", "n_exons",
+                "span", "has_cds", "flag", "n_flag_by", "body_contained", "n_partners", "n_covered",
+                "exon_contain_frac", "exon_novel_frac", "cds_novel_frac", "partners"]
+        with open(a.out_features, "w", newline="") as fh:
+            w = csv.writer(fh, delimiter="\t")
+            w.writerow(cols)
+            for g in sorted(elig_x):
+                f = feats[g]
+                w.writerow([g, genes[g]["name"], genes[g]["chrom"], genes[g]["strand"], f["biotype"],
+                            f["name_class"], f["source"], f["n_tx"], f["n_exons"], f["span"], int(f["has_cds"]),
+                            int(f["flag"]), len(f["flag_by"]), int(f["body_contained"]), f["n_partners"],
+                            f["n_covered"], f"{f['exon_contain_frac']:.4f}", f"{f['exon_novel_frac']:.4f}",
+                            "" if f["cds_novel_frac"] is None else f"{f['cds_novel_frac']:.4f}",
+                            ";".join(f"{h}:{fr:.4f}:{int(c)}:{int(h in f['flag_by'])}"
+                                     for h, fr, c in sorted(f["partners"]))])
+    print(f"[done] {len(eligible_rows)} eligible genes" + (f" -> {a.out_eligible}" if a.out_eligible else ""),
+          file=sys.stderr)
+
+
 def cmd_edges(a):
     """Redo Soto's SD98/shared-exon/famCN replication using a fresh, unmerged, native CHM13 v2.0 SEDEF
     output, in place of the merged UCSC SD98 track that caused the merge-artifact bug documented in the
@@ -949,10 +1311,21 @@ def cmd_edges(a):
     (build_liftover, fitted from soto_parCN_S1E.tsv's dual v1.0/v2.0 coordinates) -- reused verbatim, not
     re-derived. A pair is dropped (and counted) if EITHER side fails to lift (straddles a regime switch,
     or its chromosome has no anchors) -- never guessed, matching the famcn step's own stated policy.
+
+    --native-v1 (2026-09-28): the SEDEF input is ALREADY CHM13 v1.0 (the user's `final_v1.bed`, same 34-column
+    schema and CIGAR convention, verified: 3,628/3,628 rows >= 0.98 reconcile), so the v2.0->v1.0 lift is the
+    identity and S1E/--extra-anchors are not read. Every row keeps both sides; offsets are 0. Omit for the
+    original behaviour (byte-identical to before this flag existed, checked against the frozen
+    shared_exons_2334_finalhuman.tsv).
     """
-    extra_anchors = load_extra_anchors(a.extra_anchors)
-    table, spans = build_liftover(a.s1e, extra_anchors=extra_anchors)
-    print(f"[liftover] {len(table)} chromosomes with anchors", file=sys.stderr)
+    if a.native_v1:
+        lift_fn = lambda chrom, start, end: (start, end)
+        print("[liftover] --native-v1: input is CHM13 v1.0 already, identity map (S1E not read)", file=sys.stderr)
+    else:
+        extra_anchors = load_extra_anchors(a.extra_anchors)
+        table, spans = build_liftover(a.s1e, extra_anchors=extra_anchors)
+        lift_fn = lambda chrom, start, end: lift(table, spans, chrom, start, end)
+        print(f"[liftover] {len(table)} chromosomes with anchors", file=sys.stderr)
 
     genes, _biotype = load_geneset(a.geneset)
     exons, _meta = load_exons(a.cat_bed, genes)
@@ -985,8 +1358,8 @@ def cmd_edges(a):
                 continue
             n_ident += 1
 
-            lift1 = lift(table, spans, chrom1, start1, end1)
-            lift2 = lift(table, spans, chrom2, start2, end2)
+            lift1 = lift_fn(chrom1, start1, end1)
+            lift2 = lift_fn(chrom2, start2, end2)
             if lift1 is None or lift2 is None:
                 continue
             v1_start1, v1_end1 = lift1
@@ -1328,6 +1701,30 @@ def main(argv=None):
     p.add_argument("--out-full", help="write the 2,334-gene S1C universe here (gene_id, biotype)")
     p.set_defaults(func=cmd_genesets)
 
+    p = sub.add_parser("curate", help="OPT-IN (2026-09-28): recompute the SD98 gene set from SD98 regions + CAT v4 "
+                                      "and apply an explicit version of Soto's manual curation (figs/soto_cur_rule.md)",
+                       description=cmd_curate.__doc__)
+    p.add_argument("--cat-bed", required=True, help="CAT v4 BED (CHM13 v1.0, 37 columns)")
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--sd98-bed", help="merged SD98 region BED (their input: UCSC v1.0 sedefSegDups $24>=0.98)")
+    src.add_argument("--sedef", help="native SEDEF table (field 21 identity); both sides of rows >= --min-identity, merged")
+    p.add_argument("--min-identity", type=float, default=0.98, help="with --sedef (default %(default)s)")
+    p.add_argument("--rule", choices=CURATION_RULES, default="contained_outranked",
+                   help="curation rule (see curation_drop; `none` = uncurated). Default: %(default)s = the "
+                        "one-condition rule that survived the held-out test (figs/soto_cur_rule.md)")
+    p.add_argument("--contain", type=float, default=0.3,
+                   help="exonic-bp containment threshold of the contained* rules (default %(default)s; the "
+                        "held-out plateau is 0.30-0.35, a depth-1 tree picks 0.32)")
+    p.add_argument("--truth", default=S1C, help="S1C, for --full-source s1c (default: %(default)s)")
+    p.add_argument("--full-source", choices=["s1c", "sd98"], default="s1c",
+                   help="--out-full = S1C's 2,334 genes UNION the curated eligible set (s1c, default) or every "
+                        "SD98 gene of any biotype minus the dropped ones (sd98)")
+    p.add_argument("--out-eligible", help="curated family-eligible geneset TSV (gene_id, biotype)")
+    p.add_argument("--out-full", help="full-universe geneset TSV for `edges --geneset` / `cluster --full-geneset`")
+    p.add_argument("--out-dropped", help="TSV of the removed genes")
+    p.add_argument("--out-features", help="TSV of the per-gene curation vocabulary (every eligible gene)")
+    p.set_defaults(func=cmd_curate)
+
     p = sub.add_parser("edges", help="steps 1-4: SEDEF CIGAR -> shared-exon edge TSV "
                                      "(was soto_replicate_from_sedef.py)")
     p.add_argument("--sedef", required=True, help="native CHM13 v2.0 SEDEF output (34 columns)")
@@ -1347,6 +1744,10 @@ def main(argv=None):
                         "anchor table before fitting regimes. The headline passes "
                         "bench/soto/acro_extra_anchors.tsv. Omit for the original behaviour "
                         "(byte-identical to before this flag existed).")
+    p.add_argument("--native-v1", action="store_true",
+                   help="OPT-IN: --sedef is already CHM13 v1.0 (e.g. final_v1.bed): the v2.0->v1.0 lift is "
+                        "the identity, --s1e/--extra-anchors are not read, no row is dropped for lifting. "
+                        "Omit for the original v2.0 behaviour (byte-identical).")
     p.set_defaults(func=cmd_edges)
 
     p = sub.add_parser("cluster", help="steps 5-6: components -> famCN MAD split -> families "

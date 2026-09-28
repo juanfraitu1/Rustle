@@ -110,6 +110,7 @@ enough for `genesets`, `cluster`, `dennislab` and `score`.
 | where (`/mnt/linuxdisk/home/juanfraitu/winloci_data/`) | files | used by |
 |---|---|---|
 | `soto_replication/` | `final_human_clean.bed`: CHM13 v2.0 SEDEF, 34 columns, 88,756 rows. The user-supplied `final_human.bed` with its trailing header row stripped (§6ip) | `edges` |
+| `soto_replication/` | `final_v1.bed`: CHM13 v1.0 native SEDEF WITH CIGARs (col 33), 34 columns, 151,759 rows, identity in col 21. User-supplied 2026-09-28; strip the trailing `#chr1 ...` header row to `final_v1_clean.bed` before use. `edges --native-v1` skips the v2.0->v1.0 liftover for this file (docs/SOTO_REPLICATION_STATUS_2026-09-28.md) | `edges --native-v1` |
 | `soto_replication/` | `cat_v4.bed`: CAT v4 transcripts (CHM13 v1.0, 37 columns, gene id in column 19), the BED dump of the `cat_v4.bb` beside it (chr21 spot check: the same 2,912 records) | `edges` |
 | `soto_replication/` | `soto_{1793,2334}_geneset.tsv` (hand-made before wave 7; `genesets` now derives the same gene/biotype sets from S1C), `shared_exons_1793_final.tsv` (§6if input to `dennislab`), and the frozen outputs `replicated_families_2334_{median,mean}_finalhuman.tsv`, `replicated_families_dennislab_{mean,median}.tsv` | checks |
 | `soto_wssd/` | 271 per-sample SGDP `*_wssd.bb` WSSD copy-number tracks (CHM13 v1.0), fetched from the UCSC hub (`BASE_URL` in the module) by the `fetch.sh` beside them | `famcn --wssd-dir` |
