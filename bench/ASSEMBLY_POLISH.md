@@ -391,8 +391,8 @@ When not `off`, the pass writes one log line (`SUB-CHAIN (tag|drop): N of M mult
 RUSTLE_POLISH_SUBCHAIN=tag  tools/rustle_pipeline.sh assemble --bam B --fasta G --out PREFIX   # or =drop
 copy_assign --assemble-only ... --polish-subchain tag|drop                                      # direct
 ```
-When `RUSTLE_POLISH_SUBCHAIN` is unset, the driver command is unchanged. The driver does not validate the value, so
-use exactly `tag` or `drop`. Exporting the variable also costs a needless catalog-cache miss; it never gives a stale
+When `RUSTLE_POLISH_SUBCHAIN` is unset, the driver command is unchanged. The driver accepts only `off`, `tag` or `drop`
+and exits with status 2 on any other value (`tools/rustle_pipeline.sh`). Exporting the variable also costs a needless catalog-cache miss; it never gives a stale
 hit.
 
 **Drop trade-off: DEV, IN-SAMPLE.** The rule was selected on these three contigs, and no held-out test was run.

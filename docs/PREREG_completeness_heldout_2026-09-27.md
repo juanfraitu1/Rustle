@@ -289,7 +289,7 @@ Whole-substrate TES50 genes rise +101 / +205 / +155 / +128 / +1 / +67 (NULL +79 
   0.037 / IsoSeq 0.034; OR6737 0.014 vs 0.040 / 0.029 / 0.042. SIRV: `m` = 0 for every arm.
 - **Contained fragments `c` are the highest:** A119b 0.074 vs 0.011 / 0.015 / 0.036; OR6737 0.084 vs 0.027 / 0.022 /
   0.061. Partial share (c+k+m+n) A119b 0.148 vs 0.177 / 0.134 / 0.149; OR6737 0.138 vs 0.141 / 0.109 / 0.175.
-- **`--polish-subchain drop` halves `c` on every substrate** (A119b 0.074 → 0.037; testis 0.060 → 0.051; OR6737 0.084 →
+- **`--polish-subchain drop` cuts `c` on every substrate, by 15-50%** (corrected 2026-09-27: halved only on A119b and SIRV) (A119b 0.074 → 0.037; testis 0.060 → 0.051; OR6737 0.084 →
   0.047; KB3781 0.058 → 0.034; chimp 0.103 → 0.068; PPY 0.089 → 0.052) and brings the partial share to 0.115 / 0.104 on
   A119b / OR6737, the lowest of all arms. Cost: matched chains −98 / −17 / −26 / −25 / −22 / −37 (≤ 0.3%); genes losing
   every `=`/`c` query 134 / 28 / 60 / 41 / 74 / 189 (0.3–1.4%); TES50 genes −12 / −2 / −25 / −13 / −10 / −18.
@@ -299,7 +299,7 @@ Whole-substrate TES50 genes rise +101 / +205 / +155 / +128 / +1 / +67 (NULL +79 
 - **SIRV truth isoforms recovered (`=`, of 61, dedup):** ours 48 in every arm; StringTie 39, FLAIR 49, IsoSeq 47.
 
 **Reading.** On held-out data the default already emits the fewest retained-intron transcripts; its remaining partials
-are contained 5′-truncated fragments, which the opt-in drop halves at ≤ 0.3% of chains and 0.3–1.4% of genes' only
+are contained 5′-truncated fragments, which the opt-in drop cuts by 15-50% (34-50% on five samples, 15% on testis) at ≤ 0.3% of chains and 0.3–1.4% of genes' only
 compatible query, losing no SIRV truth isoform. pas-end improves 3′ ends selectively on 5/6 samples but misses the
 pre-registered both-human requirement on a 65-transcript tie; it stays opt-in. Full tables:
 `/mnt/linuxdisk/tmp/rustle_figures/complete_ho/check/outcome_rows.md` and `complete_ho/tables/`.
