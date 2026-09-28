@@ -339,6 +339,9 @@ pub struct Pass1Acc {
     /// `RUSTLE_READTHROUGH_JUNCTIONS` statistics, fed by the streaming reader from every primary spliced record;
     /// `None` (the default, set by `new`) = the filter is off and nothing is collected.
     pub readthrough: Option<ReadthroughStats>,
+    /// `copy_assign --polish-tss` / `--polish-tes` end evidence ([`TssEvidence`]), fed by the streaming reader from
+    /// every primary spliced record; `None` (the default, set by `new`) = both options are off and nothing is collected.
+    pub tss: Option<TssEvidence>,
 }
 
 impl Pass1Acc {
@@ -358,6 +361,7 @@ impl Pass1Acc {
             unspliced: Vec::new(),
             n_pushed: 0,
             readthrough: None,
+            tss: None,
         }
     }
 
@@ -485,6 +489,194 @@ impl Pass1Acc {
         skels.extend(cluster_unspliced(&unspliced, min_reads, k));
         skels
     }
+}
+
+/// `copy_assign --polish-tss`: one deduplicated PRIMARY spliced alignment, reduced to what the TSS proof reads.
+///
+/// Coordinates are ORIENTED (5'->3' of the read, whose orientation is FLAG 0x10; the IsoSeq reads are oriented
+/// transcripts, and on the dev contigs 160,034 / 115,352 / 282,889 reads matched an emitted chain on their own strand
+/// against 37 / 0 / 63 on the other, tss_measure §1): a 1-based genomic position p is `p` on `+` and `-p` on `-`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TssRead {
+    /// 64-bit hash of the dedup key `(chrom, minus, ref_start, ref_end, introns)`.
+    pub key: u64,
+    /// FLAG 0x10.
+    pub minus: bool,
+    /// Oriented 5' end: `ref_start + 1` on `+`, `-ref_end` on `-` (1-based).
+    pub o5: i64,
+    /// Oriented 3' end (`copy_assign --polish-tes`): `ref_end` on `+`, `-(ref_start + 1)` on `-` (1-based; the mirror of
+    /// `o5`).
+    pub o3: i64,
+    /// The cap signature: the 5'-most CIGAR operation (read orientation) is a SOFT clip of 1-3 bases that are all
+    /// `G` (a reverse read: the trailing soft clip, all `C` in SEQ). Template-switching RT adds non-templated G
+    /// opposite an m7G cap (tss_critique §2.4).
+    pub capped: bool,
+    /// [`tss_chain_hash`] of the genomic intron chain (the same chain a transcript's exons give).
+    pub chain: u64,
+    /// Oriented introns, 5'->3' (1-based inclusive `(first, last)` intronic base, oriented).
+    pub oin: Vec<(i64, i64)>,
+}
+
+/// Hash of a genomic intron chain `(donor, acceptor)` in the 0-based half-open convention every reader here uses
+/// (`exons.windows(2).map(|w| (w[0].1, w[1].0))`; a GTF transcript gives the same pairs from `(start-1, end)` exons).
+pub fn tss_chain_hash(introns: &[(u64, u64)]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    introns.hash(&mut h);
+    h.finish()
+}
+
+/// The cap signature of one alignment ([`TssRead::capped`]): its 5'-most CIGAR op in READ orientation (the first op
+/// of a forward record, the last of a reverse one) is a soft clip of 1-3 bases, all `G` in read orientation (all `C`
+/// in a reverse record's SEQ). A hard clip, a longer clip, a missing SEQ or any other base is not the signature.
+pub fn tss_cap_clip(
+    ops: &[noodles_sam::alignment::record::cigar::Op],
+    reverse: bool,
+    seq_len: usize,
+    base_at: impl Fn(usize) -> Option<u8>,
+) -> bool {
+    let op = if reverse { ops.last() } else { ops.first() };
+    let Some(op) = op else { return false };
+    if op.kind() != Kind::SoftClip {
+        return false;
+    }
+    let c = op.len();
+    if c == 0 || c > 3 || seq_len < c {
+        return false;
+    }
+    let (from, want) = if reverse { (seq_len - c, b'C') } else { (0, b'G') };
+    (from..from + c).all(|i| base_at(i).map(|b| b.to_ascii_uppercase()) == Some(want))
+}
+
+/// `copy_assign --polish-tss` / `--polish-tes` end evidence (5' and 3' ends): every PRIMARY spliced alignment (not secondary, supplementary,
+/// unmapped or QC-fail), deduplicated on `(chrom, strand, start, end, intron chain)` — its own key, whatever the pool's
+/// `--keep-coordinate-duplicates` says, because coordinate duplicates clump and would manufacture 5' peaks (window
+/// counts 12.6 / 39 / 13.6x overdispersed with them, 3.4 / 6.8 / 5.9x without, tss_measure §1). Seeded secondaries
+/// never enter: a form carried only by secondaries cannot be proven. Kept per chromosome in arrival order (the first
+/// record of a duplicate key wins, so the cap flag of a duplicate is the first record's).
+#[derive(Clone, Debug, Default)]
+pub struct TssEvidence {
+    seen: std::collections::HashSet<u64>,
+    /// chromosome -> its deduplicated records, in arrival order
+    pub by_chrom: std::collections::BTreeMap<String, Vec<TssRead>>,
+}
+
+impl TssEvidence {
+    /// One primary spliced alignment (the caller has excluded secondary / supplementary / unmapped / QC-fail and
+    /// unspliced records). `introns` are genomic `(donor, acceptor)`, 0-based half-open, ascending.
+    pub fn push(&mut self, chrom: &str, minus: bool, ref_start: u64, ref_end: u64, introns: &[(u64, u64)], capped: bool) {
+        use std::hash::{Hash, Hasher};
+        if introns.is_empty() {
+            return;
+        }
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (chrom, minus, ref_start, ref_end, introns).hash(&mut h);
+        let key = h.finish();
+        if !self.seen.insert(key) {
+            return;
+        }
+        let (o5, o3, oin): (i64, i64, Vec<(i64, i64)>) = if minus {
+            (
+                -(ref_end as i64),
+                -(ref_start as i64 + 1),
+                introns.iter().rev().map(|&(d, a)| (-(a as i64), -(d as i64 + 1))).collect(),
+            )
+        } else {
+            (ref_start as i64 + 1, ref_end as i64, introns.iter().map(|&(d, a)| (d as i64 + 1, a as i64)).collect())
+        };
+        let rec = TssRead { key, minus, o5, o3, capped, chain: tss_chain_hash(introns), oin };
+        match self.by_chrom.get_mut(chrom) {
+            Some(v) => v.push(rec),
+            None => {
+                self.by_chrom.insert(chrom.to_string(), vec![rec]);
+            }
+        }
+    }
+
+    /// Fold another region's evidence in; a record already held (same key) is not counted twice, so regions whose
+    /// reads overlap, and the windows of one region, add up to the per-chromosome evidence.
+    pub fn absorb(&mut self, other: TssEvidence) {
+        for (chrom, recs) in other.by_chrom {
+            for r in recs {
+                if self.seen.insert(r.key) {
+                    match self.by_chrom.get_mut(&chrom) {
+                        Some(v) => v.push(r),
+                        None => {
+                            self.by_chrom.insert(chrom.clone(), vec![r]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Records held (all chromosomes).
+    pub fn len(&self) -> usize {
+        self.by_chrom.values().map(|v| v.len()).sum()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Feed one alignment record's pieces, applying the evidence's own admission rule (primary, not QC-fail,
+    /// spliced). Shared by the streaming reader and [`tss_evidence_region`], so both paths admit the same records.
+    #[allow(clippy::too_many_arguments)]
+    pub fn push_alignment(
+        &mut self,
+        chrom: &str,
+        flags: noodles_sam::alignment::record::Flags,
+        ref_start: u64,
+        exons: &[(u64, u64)],
+        ops: &[noodles_sam::alignment::record::cigar::Op],
+        seq_len: usize,
+        base_at: impl Fn(usize) -> Option<u8>,
+    ) {
+        if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() || flags.is_qc_fail() || exons.len() < 2 {
+            return;
+        }
+        let rev = flags.is_reverse_complemented();
+        let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+        let capped = tss_cap_clip(ops, rev, seq_len, base_at);
+        self.push(chrom, rev, ref_start, exons[exons.len() - 1].1, &introns, capped);
+    }
+}
+
+/// `copy_assign --polish-tss` on the BUFFERED (`--materialize-reads`) path: one indexed lazy pass over `[lo, hi)` of
+/// `chrom` feeding `ev` through [`TssEvidence::push_alignment`], exactly as the streaming reader feeds it. The
+/// materialised pool drops read sequences, so the cap signature is read here instead.
+pub fn tss_evidence_region(bam_path: &str, chrom: &str, lo: u64, hi: u64, ev: &mut TssEvidence) -> Result<()> {
+    let bai_path = format!("{bam_path}.bai");
+    anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "--polish-tss needs a .bai index");
+    let file = std::fs::File::open(bam_path)?;
+    let buf = std::io::BufReader::with_capacity(1 << 20, file);
+    let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(std::num::NonZeroUsize::MIN, buf);
+    let mut reader = noodles_bam::io::Reader::from(bgzf);
+    let header = reader.read_header()?;
+    let index = noodles_bam::bai::read(&bai_path)?;
+    let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
+    let mut ops: Vec<noodles_sam::alignment::record::cigar::Op> = Vec::with_capacity(256);
+    for result in reader.query(&header, &index, &region)? {
+        let record = result?;
+        let flags = record.flags();
+        if flags.is_unmapped() || flags.is_supplementary() {
+            continue;
+        }
+        let Some(start) = record.alignment_start() else { continue };
+        let ref_start = (usize::from(start?) as u64).saturating_sub(1);
+        ops.clear();
+        for op in record.cigar().iter() {
+            ops.push(op?);
+        }
+        let cigar = noodles_sam::alignment::record_buf::Cigar::from(ops.clone());
+        let Ok(exons) = crate::bam::exons_from_cigar(ref_start, &cigar) else { continue };
+        if exons.is_empty() {
+            continue;
+        }
+        let seq = record.sequence();
+        ev.push_alignment(chrom, flags, ref_start, &exons, &ops, seq.len(), |i| seq.get(i));
+    }
+    Ok(())
 }
 
 /// Is the footprint-node pass enabled? `RUSTLE_FOOTPRINT_NODES=1`; unset = OFF = byte-identical.
@@ -1575,8 +1767,8 @@ fn home_apply_buf(keep: bool, rb: &RecordBuf, chrom: &str, base_admits: bool, pr
 
 // ================================================================ read-end readthrough junctions (opt-in)
 
-/// ⭐ READ-END READTHROUGH JUNCTION FILTER (`RUSTLE_READTHROUGH_JUNCTIONS=off|r|rq1`; unset, empty or `off` ⟹
-/// byte-identical). Pre-registration `docs/PREREG_readthrough_ends_representatives_2026-09-25.md` §2 and its
+/// ⭐ READ-END READTHROUGH JUNCTION FILTER (`RUSTLE_READTHROUGH_JUNCTIONS=off|r|rq1|r2|list:<path>`; unset, empty or
+/// `off` ⟹ byte-identical). Pre-registration `docs/PREREG_readthrough_ends_representatives_2026-09-25.md` §2 and its
 /// Amendment 1; rule and thresholds `docs/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md` §3 (`R`) and §13-§14
 /// (`R & Q1`); instrument `bench/mechanism/readthrough_rules.py`, which this port reproduces junction by junction.
 ///
@@ -1599,12 +1791,33 @@ fn home_apply_buf(keep: bool, rb: &RecordBuf, chrom: &str, base_admits: bool, pr
 /// The NULL arm (`list:<path>`, prereg Amendments 2-3) flags the junctions LISTED in a file instead of scoring them
 /// (see [`ReadthroughList`]); the statistics are still collected so its rows report each listed junction's S, U and
 /// V1, and the removal is the same `drop_chains_with` / `filter_pool` path.
+///
+/// Arm `r2` (the v2 rule, 2026-09-26; design evidence on the development contigs only) adds one statistic, `L` = the
+/// primary reads using J for which J is their LAST splice in transcript orientation (J's acceptor exon is the read's
+/// terminal exon), counted on the same population as `S`, and two tiers over the same canonical `S >= 2` scope:
+/// - tier A = arm `r` (`U >= 20·S`), EXEMPT when `2·L >= S` and `3·V1 < 5·S` (J mostly leads into a terminal exon
+///   and nothing starts independently on the acceptor side: an alternative last exon of the donor gene);
+/// - tier B = `U >= S` and `V1 >= 4·S` (`R >= 1/2` and `Q1 >= 4/5`: the acceptor side has its own promoter).
+///
+/// `r2` flags J iff (tier A and not exempt) or tier B. The two cases never meet: tier B has `3·V1 >= 12·S > 5·S`.
+///
+/// Arm `r3` (the v3 rule, 2026-09-26, `rt4_tierb_guard` §3; design evidence on the development contigs only) is `r2`
+/// with ONE extra condition on tier B: `V1 > N_span`, where `N_span` = the strand's spliced primaries (the population
+/// of `S`/`U`/`V1`) whose 5′ end is upstream of J's donor (`U`'s test) and whose 3′ end is beyond J's acceptor (`V1`'s
+/// test), J's own reads included (`N_span = S + K`, K = the molecules that bypass J). B's own starts must outnumber
+/// every molecule that reaches B's side from A's side, a majority test of tier B's premise (B is an independently
+/// initiated gene); the tie `V1 = N_span` is not flagged. No new constant. Tier A, the exemption and the removal are
+/// `r2`'s. `N_span` is counted only for the junctions passing the rest of tier B ([`rt_span_counts`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReadthroughRule {
     /// `U >= 20·S`.
     R,
     /// `U >= 20·S` and `3·V1 >= 5·S`.
     Rq1,
+    /// (`U >= 20·S` and not (`2·L >= S` and `3·V1 < 5·S`)) or (`U >= S` and `V1 >= 4·S`).
+    R2,
+    /// (`U >= 20·S` and not (`2·L >= S` and `3·V1 < 5·S`)) or (`U >= S` and `V1 >= 4·S` and `V1 > N_span`).
+    R3,
     /// The junctions of a [`ReadthroughList`], whatever their statistics (the NULL arm).
     List,
 }
@@ -1621,18 +1834,26 @@ pub const RT_MIN_S: u32 = 2;
 pub const RT_START_GAP: u64 = 100;
 /// Start clusters: a cluster of at least this many reads is a real transcript start.
 pub const RT_START_MIN: usize = 3;
+/// `r2`'s ALE exemption of tier A: `RT_EXEMPT_L_NUM · L >= S` (`j_last = L/S >= 1/2`) and `3·V1 < 5·S` (not Q1).
+pub const RT_EXEMPT_L_NUM: u64 = 2;
+/// `r2`'s tier B: `U >= RT_B_U_FACTOR · S` (`R >= 1/2`) ...
+pub const RT_B_U_FACTOR: u64 = 1;
+/// ... and `V1 >= RT_B_V1_FACTOR · S` (`Q1 = V1/(V1+S) >= 4/5`).
+pub const RT_B_V1_FACTOR: u64 = 4;
 
 impl ReadthroughRule {
-    /// Unset (`None`), empty or `off` = `Ok(None)`; `r` / `rq1` (any case); anything else is an ERROR, because an arm
-    /// silently run as the base would be the base arm under another name. `list:<path>` carries a file and is parsed
-    /// by [`ReadthroughSwitch::parse`].
+    /// Unset (`None`), empty or `off` = `Ok(None)`; `r` / `rq1` / `r2` / `r3` (any case); anything else is an ERROR,
+    /// because an arm silently run as the base would be the base arm under another name. `list:<path>` carries a file
+    /// and is parsed by [`ReadthroughSwitch::parse`].
     pub fn parse(value: Option<&str>) -> Result<Option<ReadthroughRule>> {
         let Some(v) = value else { return Ok(None) };
         match v.trim().to_ascii_lowercase().as_str() {
             "" | "off" => Ok(None),
             "r" => Ok(Some(ReadthroughRule::R)),
             "rq1" => Ok(Some(ReadthroughRule::Rq1)),
-            _ => anyhow::bail!("RUSTLE_READTHROUGH_JUNCTIONS must be `off`, `r`, `rq1` or `list:<path>`, got {v:?}"),
+            "r2" => Ok(Some(ReadthroughRule::R2)),
+            "r3" => Ok(Some(ReadthroughRule::R3)),
+            _ => anyhow::bail!("RUSTLE_READTHROUGH_JUNCTIONS must be `off`, `r`, `rq1`, `r2`, `r3` or `list:<path>`, got {v:?}"),
         }
     }
 
@@ -1640,7 +1861,23 @@ impl ReadthroughRule {
         match self {
             ReadthroughRule::R => "r",
             ReadthroughRule::Rq1 => "rq1",
+            ReadthroughRule::R2 => "r2",
+            ReadthroughRule::R3 => "r3",
             ReadthroughRule::List => "list",
+        }
+    }
+
+    /// The tiered arms (`r2`, `r3`): their TSVs carry `L` and `tier`, their params and log lines the tier counts.
+    pub fn is_tiered(self) -> bool {
+        matches!(self, ReadthroughRule::R2 | ReadthroughRule::R3)
+    }
+
+    /// The smallest `U` (as a multiple of `S`) at which this rule can flag a junction: the tier B of `r2` / `r3` needs
+    /// only `U >= S`, every other statistic rule `U >= 20·S`. `flag` skips junctions below it unless it dumps them all.
+    fn min_u_factor(self) -> u64 {
+        match self {
+            ReadthroughRule::R2 | ReadthroughRule::R3 => RT_B_U_FACTOR,
+            _ => RT_R_FACTOR,
         }
     }
 }
@@ -1824,6 +2061,15 @@ pub struct ReadthroughJunction {
     pub r_pass: bool,
     /// `3·V1 >= 5·S`
     pub q1_pass: bool,
+    /// `r2`: the primary reads counted in `S` whose LAST splice in transcript orientation is this junction
+    pub l: u32,
+    /// `r2`'s ALE exemption of tier A: `2·L >= S` and `3·V1 < 5·S` (whatever `r_pass`)
+    pub ale_exempt: bool,
+    /// `r2`'s tier B: `S >= 2`, canonical, `U >= S` and `V1 >= 4·S`
+    pub tier_b: bool,
+    /// `r3` only: `N_span` (the strand's spliced primaries from upstream of J's donor to beyond J's acceptor, J's
+    /// reads included), counted for the junctions passing `tier_b` and `None` everywhere else (every other arm too)
+    pub n_span: Option<u32>,
 }
 
 impl ReadthroughJunction {
@@ -1833,7 +2079,36 @@ impl ReadthroughJunction {
         match rule {
             ReadthroughRule::R => self.r_pass,
             ReadthroughRule::Rq1 => self.r_pass && self.q1_pass,
+            ReadthroughRule::R2 => (self.r_pass && !self.ale_exempt) || self.tier_b,
+            ReadthroughRule::R3 => (self.r_pass && !self.ale_exempt) || (self.tier_b && !self.b_guarded()),
             ReadthroughRule::List => false,
+        }
+    }
+
+    /// `r3`'s guard holds: tier B's own starts do NOT outnumber the molecules spanning J's intron (`V1 <= N_span`, the
+    /// tie included). Always `false` when `N_span` was not counted (every arm but `r3`).
+    pub fn b_guarded(&self) -> bool {
+        self.n_span.is_some_and(|n| self.v1 <= n)
+    }
+
+    /// The reason of `r2` / `r3`, the `tier` column: `A` = tier A and not exempt (tier B may hold too: `A` takes
+    /// precedence, so the `B` rows are exactly what `r2` adds to `r`), `B` = tier B alone, `B_guarded` (`r3` only) =
+    /// tier B protected by `V1 <= N_span` (NOT flagged; the `B_guarded` rows are exactly what `r3` removes from `r2`),
+    /// `A_exempt` = tier A exempted as an alternative last exon (NOT flagged; the `A_exempt` rows are exactly what `r2`
+    /// removes from `r`), `-` = neither.
+    pub fn tier_label(&self) -> &'static str {
+        if self.r_pass && !self.ale_exempt {
+            "A"
+        } else if self.tier_b {
+            if self.b_guarded() {
+                "B_guarded"
+            } else {
+                "B"
+            }
+        } else if self.r_pass {
+            "A_exempt"
+        } else {
+            "-"
         }
     }
 
@@ -1856,11 +2131,14 @@ impl ReadthroughJunction {
 }
 
 /// Per-contig statistics: one `(p5, p3, pf)` row per primary spliced read and strand (0-based bases: 5′ end, 3′ end,
-/// last base of the read's own first exon in transcript orientation), and `S` per `(donor, acceptor, minus)`.
+/// last base of the read's own first exon in transcript orientation), `S` per `(donor, acceptor, minus)`, and `L`
+/// per the same key (the reads whose LAST splice in transcript orientation it is: the genomically last intron of a
+/// `+` read, the genomically first of a `-` read).
 #[derive(Debug, Default, Clone)]
 struct RtContig {
     rows: [Vec<(u64, u64, u64)>; 2],
     s: std::collections::HashMap<(u64, u64, bool), u32>,
+    l: std::collections::HashMap<(u64, u64, bool), u32>,
 }
 
 /// The statistics accumulator. Fed one record at a time by the streaming reader (a field of [`Pass1Acc`]) or from
@@ -1906,6 +2184,10 @@ impl ReadthroughStats {
         for w in exons.windows(2) {
             *c.s.entry((w[0].1, w[1].0, minus)).or_insert(0) += 1;
         }
+        // `L`: the read's last splice in transcript orientation (its acceptor exon is the read's terminal exon)
+        let n = exons.len();
+        let last = if minus { (exons[0].1, exons[1].0, true) } else { (exons[n - 2].1, exons[n - 1].0, false) };
+        *c.l.entry(last).or_insert(0) += 1;
     }
 
     /// The buffered paths' twin of the streaming hook: a materialised alignment, its exons rebuilt from its CIGAR by
@@ -1932,8 +2214,9 @@ impl ReadthroughStats {
     }
 
     /// Score every junction and flag under `self.rule`. `dump_all` also keeps EVERY junction with `S >= 2` (canonical
-    /// or not, full `T`/`U`/`V1`) in [`ReadthroughFlags::all`], the IV2 parity instrument; without it only the
-    /// junctions that can pass `R` are scored in full (`U <= T`, so `T < 20·S` stops early).
+    /// or not, full `T`/`U`/`V1`/`L`) in [`ReadthroughFlags::all`], the IV2 parity instrument; without it only the
+    /// junctions that can pass the rule are scored in full (`U <= T`, so `T < 20·S` stops early; `T < S` for `r2`,
+    /// whose tier B needs only `U >= S`).
     ///
     /// [`ReadthroughRule::List`]: the flagged junctions are the LISTED ones whose intron overlaps one of the region's
     /// windows, whatever their statistics (S < 2, non-canonical or on a contig without a primary spliced read
@@ -1975,10 +2258,13 @@ impl ReadthroughStats {
                 }
                 let mut by3: Vec<(u64, u64)> = rows.iter().map(|&(p5, p3, _)| (p3, p5)).collect();
                 by3.sort_unstable();
+                // this strand's scored junctions (with `is_listed`), decided below once `r3`'s N_span is known
+                let mut scored: Vec<(ReadthroughJunction, bool)> = Vec::new();
                 for &((d, a, _), s) in juncs.iter().filter(|((_, _, m), _)| *m == minus) {
                     let is_listed = listed.is_some_and(|l| l.contains(&(d, a, minus)));
                     let full = dump_all || is_listed;
-                    let need = RT_R_FACTOR * u64::from(s);
+                    // the early stops: the least U at which the arm's rule can flag (`r`/`rq1`: R's 20·S)
+                    let need = rule.min_u_factor() * u64::from(s);
                     let (lo, hi) = (by3.partition_point(|x| x.0 < d), by3.partition_point(|x| x.0 < a));
                     let t = (hi - lo) as u64;
                     if !full && t < need {
@@ -2011,8 +2297,13 @@ impl ReadthroughStats {
                         k = g;
                     }
                     // `s >= RT_MIN_S` holds for every scored junction except a listed one below the floor
-                    let r_pass = s >= RT_MIN_S && canonical && u >= need;
-                    let q1_pass = RT_Q1_NUM * v1 >= RT_Q1_DEN * u64::from(s);
+                    let s64 = u64::from(s);
+                    let r_pass = s >= RT_MIN_S && canonical && u >= RT_R_FACTOR * s64;
+                    let q1_pass = RT_Q1_NUM * v1 >= RT_Q1_DEN * s64;
+                    let l = c.l.get(&(d, a, minus)).copied().unwrap_or(0);
+                    let ale_exempt = RT_EXEMPT_L_NUM * u64::from(l) >= s64 && !q1_pass;
+                    let tier_b =
+                        s >= RT_MIN_S && canonical && u >= RT_B_U_FACTOR * s64 && v1 >= RT_B_V1_FACTOR * s64;
                     let j = ReadthroughJunction {
                         chrom: chrom.clone(),
                         donor: d,
@@ -2025,14 +2316,41 @@ impl ReadthroughStats {
                         canonical,
                         r_pass,
                         q1_pass,
+                        l,
+                        ale_exempt,
+                        tier_b,
+                        n_span: None,
                     };
-                    out.n_r_pass += usize::from(r_pass);
+                    scored.push((j, is_listed));
+                }
+                // `r3`: N_span for the junctions passing the rest of tier B, one offline sweep over this strand's rows
+                if rule == ReadthroughRule::R3 {
+                    let cand: Vec<usize> = (0..scored.len()).filter(|&i| scored[i].0.tier_b).collect();
+                    if !cand.is_empty() {
+                        let q: Vec<(u64, u64)> = cand.iter().map(|&i| (scored[i].0.donor, scored[i].0.acceptor)).collect();
+                        for (&i, n) in cand.iter().zip(rt_span_counts(rows, minus, &q)) {
+                            scored[i].0.n_span = Some(n);
+                        }
+                    }
+                }
+                for (j, is_listed) in scored {
+                    let s = j.s;
+                    out.n_r_pass += usize::from(j.r_pass);
                     let hit = match rule {
                         ReadthroughRule::List => is_listed,
                         _ => j.flagged(rule),
                     };
+                    if rule.is_tiered() {
+                        match j.tier_label() {
+                            "A" => out.n_tier_a += 1,
+                            "B" => out.n_tier_b += 1,
+                            "B_guarded" => out.n_tier_b_guarded += 1,
+                            "A_exempt" => out.n_ale_exempt += 1,
+                            _ => {}
+                        }
+                    }
                     if hit {
-                        out.flagged.entry(chrom.clone()).or_default().insert((d, a));
+                        out.flagged.entry(chrom.clone()).or_default().insert((j.donor, j.acceptor));
                         out.rows.push(j.clone());
                     }
                     if dump_all && s >= RT_MIN_S {
@@ -2045,6 +2363,54 @@ impl ReadthroughStats {
         out.all.sort();
         out
     }
+}
+
+/// `r3`'s `N_span` for the queried junctions `(donor, acceptor)` of ONE strand (the pool's intron coordinates:
+/// 0-based first intron base, 0-based exclusive end): how many of the strand's rows `(p5, p3, pf)` (the population of
+/// `S`, `U` and `V1`, 0-based bases) have their 5′ end upstream of the donor (`U`'s test: `+` `p5 < d`, `-` `p5 >= a`)
+/// AND their 3′ end beyond the acceptor (`V1`'s test: `+` `p3 >= a`, `-` `p3 < d`). On both strands that is one
+/// genomic test, first base `< d` and last base `>= a` (a read whose 3′ end is the intron's last base, the acceptor
+/// site, does not count; one ending on the acceptor exon's first base does). Every read carrying J passes it, so J's
+/// own reads are included (`N_span = S + K`).
+///
+/// An offline sweep, `O((n + q) log n)`: the queries by acceptor descending; the rows by genomic last base descending,
+/// each row entering a Fenwick tree over the (compressed) genomic first bases once its last base reaches the current
+/// acceptor; a query then counts the entered rows whose first base is `< d`. Results are in the order of `queries`.
+fn rt_span_counts(rows: &[(u64, u64, u64)], minus: bool, queries: &[(u64, u64)]) -> Vec<u32> {
+    if queries.is_empty() {
+        return Vec::new();
+    }
+    // (genomic first base, genomic last base) per row, by last base descending
+    let mut spans: Vec<(u64, u64)> = rows.iter().map(|&(p5, p3, _)| if minus { (p3, p5) } else { (p5, p3) }).collect();
+    let mut firsts: Vec<u64> = spans.iter().map(|x| x.0).collect();
+    firsts.sort_unstable();
+    firsts.dedup();
+    spans.sort_unstable_by(|x, y| y.1.cmp(&x.1));
+    let mut order: Vec<usize> = (0..queries.len()).collect();
+    order.sort_unstable_by(|&i, &k| queries[k].1.cmp(&queries[i].1));
+    let mut fen = vec![0u32; firsts.len() + 1];
+    let mut out = vec![0u32; queries.len()];
+    let mut next = 0;
+    for &qi in &order {
+        let (d, a) = queries[qi];
+        while next < spans.len() && spans[next].1 >= a {
+            let mut i = firsts.partition_point(|&x| x < spans[next].0) + 1;
+            while i < fen.len() {
+                fen[i] += 1;
+                i += i & i.wrapping_neg();
+            }
+            next += 1;
+        }
+        // entered rows (last base >= a) whose first base is < d
+        let mut i = firsts.partition_point(|&x| x < d);
+        let mut n = 0u32;
+        while i > 0 {
+            n += fen[i];
+            i -= i & i.wrapping_neg();
+        }
+        out[qi] = n;
+    }
+    out
 }
 
 /// What the filter decided for one region (default = the filter is off: nothing flagged, nothing removed).
@@ -2064,6 +2430,13 @@ pub struct ReadthroughFlags {
     pub n_junctions: usize,
     /// canonical junctions passing `R` (whatever the arm)
     pub n_r_pass: usize,
+    /// `r2` / `r3` only (0 in every other arm): junctions by [`ReadthroughJunction::tier_label`] — `A` (flagged, tier A
+    /// not exempt), `B` (flagged by tier B alone) and `A_exempt` (tier A exempted, not flagged); `A + B` = flagged
+    pub n_tier_a: usize,
+    pub n_tier_b: usize,
+    pub n_ale_exempt: usize,
+    /// `r3` only (0 in every other arm): `B_guarded` junctions (tier B protected by `V1 <= N_span`, not flagged)
+    pub n_tier_b_guarded: usize,
     /// distinct pass-1 chains (contig, intron chain) removed from the pool
     pub chains_removed: usize,
     /// pool alignments removed (after the pool's own rules: seeded secondaries included, coordinate duplicates once)
@@ -2110,8 +2483,50 @@ impl ReadthroughFlags {
         self.all.extend(other.all);
         self.n_junctions += other.n_junctions;
         self.n_r_pass += other.n_r_pass;
+        self.n_tier_a += other.n_tier_a;
+        self.n_tier_b += other.n_tier_b;
+        self.n_ale_exempt += other.n_ale_exempt;
+        self.n_tier_b_guarded += other.n_tier_b_guarded;
         self.chains_removed += other.chains_removed;
         self.alignments_removed += other.alignments_removed;
+    }
+
+    /// The tier counts of `r2` / `r3` for the log (empty in every other arm, so their lines are unchanged; `r3` adds
+    /// its guarded count).
+    pub fn tier_summary(&self) -> String {
+        match self.rule {
+            Some(ReadthroughRule::R2) => {
+                format!(" | tier A {} | tier B only {} | tier A exempt (ALE) {}", self.n_tier_a, self.n_tier_b, self.n_ale_exempt)
+            }
+            Some(ReadthroughRule::R3) => format!(
+                " | tier A {} | tier B only {} | tier A exempt (ALE) {} | tier B guarded (V1 <= N_span) {}",
+                self.n_tier_a, self.n_tier_b, self.n_ale_exempt, self.n_tier_b_guarded
+            ),
+            _ => String::new(),
+        }
+    }
+
+    /// The tiered TSV columns of `r2` / `r3` (header suffix): `L` and `tier`, and `N` (= `N_span`) for `r3`.
+    fn tier_columns(&self) -> &'static str {
+        match self.rule {
+            Some(ReadthroughRule::R2) => "\tL\ttier",
+            Some(ReadthroughRule::R3) => "\tL\ttier\tN",
+            _ => "",
+        }
+    }
+
+    /// One row's values for [`Self::tier_columns`] (`N` is `NA` where it was not counted: rows failing tier B).
+    fn tier_values(&self, j: &ReadthroughJunction) -> String {
+        match self.rule {
+            Some(ReadthroughRule::R2) => format!("\t{}\t{}", j.l, j.tier_label()),
+            Some(ReadthroughRule::R3) => format!(
+                "\t{}\t{}\t{}",
+                j.l,
+                j.tier_label(),
+                j.n_span.map_or_else(|| "NA".to_string(), |n| n.to_string())
+            ),
+            _ => String::new(),
+        }
     }
 
     /// One log line per region.
@@ -2119,8 +2534,9 @@ impl ReadthroughFlags {
         if let Some(rule) = self.rule {
             eprintln!(
                 "[readthrough] {chrom}:{lo}-{hi}: rule {} | junctions with S>=2 {} | canonical R-pass {} | flagged {} | \
-                 pool chains removed {} | pool alignments removed {}",
-                rule.as_str(), self.n_junctions, self.n_r_pass, self.rows.len(), self.chains_removed, self.alignments_removed
+                 pool chains removed {} | pool alignments removed {}{}",
+                rule.as_str(), self.n_junctions, self.n_r_pass, self.rows.len(), self.chains_removed, self.alignments_removed,
+                self.tier_summary()
             );
         }
     }
@@ -2128,15 +2544,19 @@ impl ReadthroughFlags {
     /// `<out>.readthrough_junctions.tsv`: one row per flagged junction. `donor`/`acceptor` = the 1-based inclusive
     /// intron (genomic left/right bases, the script's `start`/`end`), `V1` = Q1's read count, `rule` = `rq1` when the
     /// junction passes R and Q1, `r` when R alone (`r` rows appear only in the `r` arm), `list` in the list arm (every
-    /// listed junction of an assembled region, with its S, U and V1 from the same statistics).
+    /// listed junction of an assembled region, with its S, U and V1 from the same statistics). Arm `r2` appends two
+    /// columns, `L` and `tier` (`A` or `B`, see [`ReadthroughJunction::tier_label`]); `rule` keeps its meaning there
+    /// (the frozen rules the junction passes: `rq1`, `r` or `-` for a tier-B row that passes neither). Arm `r3` appends
+    /// `L`, `tier` and `N` (`N_span`; `NA` on a tier-A row that fails tier B).
     pub fn write_tsv(&self, path: &str) -> Result<()> {
         use std::io::Write as _;
         let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
-        writeln!(w, "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule")?;
+        writeln!(w, "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule{}", self.tier_columns())?;
         let listed = self.rule == Some(ReadthroughRule::List);
         for j in &self.rows {
             let rule = if listed { "list" } else { j.rule_label() };
-            writeln!(w, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", j.chrom, j.donor + 1, j.acceptor, j.strand(), j.s, j.u, j.v1, rule)?;
+            write!(w, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", j.chrom, j.donor + 1, j.acceptor, j.strand(), j.s, j.u, j.v1, rule)?;
+            writeln!(w, "{}", self.tier_values(j))?;
         }
         w.flush()?;
         Ok(())
@@ -2144,17 +2564,22 @@ impl ReadthroughFlags {
 
     /// `<out>.readthrough_junctions.all.tsv` (`RUSTLE_READTHROUGH_JUNCTIONS_ALL=1`): every junction with `S >= 2`, the
     /// IV2 parity instrument against `readthrough_rules.py`'s `junctions.tsv` (reads = S, ends_inside = T, R =
-    /// U/(U+S), Q1 = V1/(V1+S), canonical).
+    /// U/(U+S), Q1 = V1/(V1+S), canonical). Arm `r2` appends `L` and `tier` (`A`, `B`, `A_exempt` = tier A exempted
+    /// and NOT flagged, `-`): its flagged junctions are exactly the `A` and `B` rows. Arm `r3` appends `L`, `tier`
+    /// (the same labels plus `B_guarded` = tier B protected by `V1 <= N_span`, NOT flagged) and `N` (`N_span`, counted
+    /// for every row passing tier B, `NA` elsewhere): its flagged junctions are exactly the `A` and `B` rows, and the
+    /// `B` plus `B_guarded` rows are every tier-B candidate (`r2`'s `B` rows).
     pub fn write_all_tsv(&self, path: &str) -> Result<()> {
         use std::io::Write as _;
         let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
-        writeln!(w, "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule")?;
+        writeln!(w, "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule{}", self.tier_columns())?;
         for j in &self.all {
-            writeln!(
+            write!(
                 w,
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                 j.chrom, j.donor + 1, j.acceptor, j.strand(), j.s, j.t, j.u, j.v1, j.canonical, j.rule_label()
             )?;
+            writeln!(w, "{}", self.tier_values(j))?;
         }
         w.flush()?;
         Ok(())
@@ -2403,6 +2828,12 @@ pub fn stream_pass1_region_with(
                 let minus = (record_ts(&record).unwrap_or('+') == '+') == flags.is_reverse_complemented();
                 rt.push(chrom, ref_start, &exons, minus);
             }
+        }
+        // `copy_assign --polish-tss` (opt-in; `None` unless on): the 5'-end evidence reads every primary spliced
+        // record here too, before the pool's own rules (it deduplicates on its own key)
+        if let Some(ev) = acc.tss.as_mut() {
+            let seq = record.sequence();
+            ev.push_alignment(chrom, flags, ref_start, &exons, &ops, seq.len(), |i| seq.get(i));
         }
         // the closed loop's pass-2 filter (`RUSTLE_READ_HOME_TABLE`, opt-in; `home` is `None` unless set): a LISTED
         // molecule's record is kept iff an aligned block lies on its home copy, whatever its flag and AS, and
@@ -5458,5 +5889,525 @@ mod readthrough_junction_tests {
         let (s2, fl2) = streamed_with(&bam, Some(sw.stats()), true, &g);
         assert_eq!(fl2.alignments_removed, 4);
         assert!(s2.iter().all(|k| !k.introns.contains(&J)));
+    }
+
+    // ------------------------------------------------------------------ `r2` (the v2 rule: L, tiers A and B)
+
+    /// A J read whose LAST splice (transcript `+`) is J: its acceptor exon [6000, 6200+i) is the read's terminal exon.
+    fn j_last_read(i: u64) -> Vec<(u64, u64)> {
+        vec![(1000 + i, 1100), (2000, 2100), (6000, 6200 + i)]
+    }
+
+    /// `n_a` A reads (U), `n_last` J reads ending in J's acceptor exon (S and L), `n_mid` J reads continuing past it
+    /// (S only), `n_b` B reads (V1).
+    fn locus2(n_a: u64, n_last: u64, n_mid: u64, n_b: u64) -> Vec<(Vec<(u64, u64)>, bool)> {
+        let mut v: Vec<(Vec<(u64, u64)>, bool)> = (0..n_a).map(|i| (a_read(i), false)).collect();
+        v.extend((0..n_last).map(|i| (j_last_read(i), false)));
+        v.extend((0..n_mid).map(|i| (j_read(i), false)));
+        v.extend((0..n_b).map(|i| (b_read(i), false)));
+        v
+    }
+
+    /// J's row in the ALL dump under `rule`: (S, U, V1, L, tier label, flagged by `rule`).
+    fn j_row(rule: ReadthroughRule, reads: &[(Vec<(u64, u64)>, bool)], g: &GenomeIndex) -> (u32, u32, u32, u32, &'static str, bool) {
+        let f = stats(rule, reads).flag(g, true);
+        let j = f.all.iter().find(|x| (x.donor, x.acceptor) == J).expect("J has S >= 2");
+        (j.s, j.u, j.v1, j.l, j.tier_label(), f.flagged.get("c1").is_some_and(|set| set.contains(&J)))
+    }
+
+    #[test]
+    fn r2_parses_and_is_its_own_arm() {
+        assert_eq!(ReadthroughRule::parse(Some("r2")).unwrap(), Some(ReadthroughRule::R2));
+        assert_eq!(ReadthroughRule::parse(Some(" R2 ")).unwrap(), Some(ReadthroughRule::R2));
+        assert_eq!(ReadthroughSwitch::parse(Some("r2")).unwrap().unwrap().rule, ReadthroughRule::R2);
+        assert_eq!(ReadthroughRule::R2.as_str(), "r2");
+        for bad in ["r4", "r2q1", "v2", "r 2"] {
+            assert!(ReadthroughRule::parse(Some(bad)).is_err(), "{bad} must be fatal");
+        }
+    }
+
+    #[test]
+    fn l_counts_the_reads_whose_last_splice_is_the_junction() {
+        let g = genome();
+        // 2 J reads end in J's acceptor exon, 3 continue to B's third exon; A's and B's own reads never touch J
+        let (s, u, v1, l, _, _) = j_row(ReadthroughRule::R2, &locus2(60, 2, 3, 5), &g);
+        assert_eq!((s, u, v1, l), (5, 60, 5, 2));
+        // B's last intron (6200, 7000) is the last splice of every J-mid and every B read; A's intron of every A read
+        let f = stats(ReadthroughRule::R2, &locus2(60, 2, 3, 5)).flag(&g, true);
+        let row = |d: u64, a: u64| f.all.iter().find(|x| (x.donor, x.acceptor) == (d, a)).map(|x| (x.s, x.l)).unwrap();
+        assert_eq!(row(6200, 7000), (8, 8));
+        assert_eq!(row(1100, 2000), (65, 60), "a J read's first splice is A's intron but not its last");
+        assert_eq!(row(5100, 6000), (5, 0), "B's first splice is never its last");
+        // the same numbers under every arm (L is always collected; only r2 reads it)
+        for rule in [ReadthroughRule::R, ReadthroughRule::Rq1] {
+            assert_eq!(j_row(rule, &locus2(60, 2, 3, 5), &g).3, 2, "{rule:?}");
+        }
+    }
+
+    #[test]
+    fn r2_tier_a_alone_flags_as_r_does() {
+        let g = genome();
+        // J continues past its acceptor exon in every read (L = 0), no B promoter (V1 = 0): R's run-on, flagged
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(60, 0, 3, 0), &g), (3, 60, 0, 0, "A", true));
+        assert_eq!(j_row(ReadthroughRule::R, &locus2(60, 0, 3, 0), &g).5, true);
+        // U = 59 < 20 S and V1 = 0 < 4 S: neither tier
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(59, 0, 3, 0), &g), (3, 59, 0, 0, "-", false));
+        assert!(flagged(ReadthroughRule::R2, &locus2(59, 0, 3, 0), &g).is_empty());
+    }
+
+    #[test]
+    fn r2_exempts_an_alternative_last_exon_that_r_removes() {
+        let g = genome();
+        // every J read ends in J's acceptor exon (L = S = 3), nothing starts in the intron (V1 = 0)
+        let reads = locus2(60, 3, 0, 0);
+        assert_eq!(j_row(ReadthroughRule::R, &reads, &g).5, true, "R removes it");
+        assert_eq!(j_row(ReadthroughRule::R2, &reads, &g), (3, 60, 0, 3, "A_exempt", false));
+        let f = stats(ReadthroughRule::R2, &reads).flag(&g, false);
+        assert!(f.rows.is_empty() && f.flagged.is_empty());
+        assert_eq!((f.n_r_pass, f.n_tier_a, f.n_tier_b, f.n_ale_exempt), (1, 0, 0, 1), "R-pass keeps its meaning");
+    }
+
+    #[test]
+    fn r2_ties_at_2l_equal_s_exempt() {
+        let g = genome();
+        // S = 4, L = 2: 2 L = S, the tie exempts
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(80, 2, 2, 0), &g), (4, 80, 0, 2, "A_exempt", false));
+        // S = 4, L = 1: 2 L < S, flagged by tier A
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(80, 1, 3, 0), &g), (4, 80, 0, 1, "A", true));
+        // S = 5, L = 2: 2 L = 4 < 5
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(100, 2, 3, 0), &g), (5, 100, 0, 2, "A", true));
+        // S = 5, L = 3: 2 L = 6 >= 5
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(100, 3, 2, 0), &g), (5, 100, 0, 3, "A_exempt", false));
+    }
+
+    #[test]
+    fn r2_ties_at_3v1_equal_5s_are_not_exempt() {
+        let g = genome();
+        // S = L = 3, V1 = 5: 3 V1 = 5 S = Q1's tie, so B's own promoter is there and the exemption does not apply
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(60, 3, 0, 5), &g), (3, 60, 5, 3, "A", true));
+        // V1 = 4: 3 V1 = 12 < 15, exempt
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(60, 3, 0, 4), &g), (3, 60, 4, 3, "A_exempt", false));
+    }
+
+    #[test]
+    fn r2_tier_b_flags_an_own_promoter_junction_that_r_keeps() {
+        let g = genome();
+        // U = S = 3 (R = 1/2) and V1 = 4 S = 12 (Q1 = 4/5): both ties flag
+        let reads = locus2(3, 0, 3, 12);
+        assert_eq!(j_row(ReadthroughRule::R, &reads, &g).5, false, "R keeps it (U < 20 S)");
+        assert_eq!(j_row(ReadthroughRule::R2, &reads, &g), (3, 3, 12, 0, "B", true));
+        // the early stop of a non-dump run must not skip it (U >= S only)
+        assert_eq!(flagged(ReadthroughRule::R2, &reads, &g), vec![(J.0, J.1, 3, 3, 12)]);
+        let f = stats(ReadthroughRule::R2, &reads).flag(&g, false);
+        assert_eq!((f.n_r_pass, f.n_tier_a, f.n_tier_b, f.n_ale_exempt), (0, 0, 1, 0));
+        assert_eq!(f.rows[0].rule_label(), "-", "`rule` names the frozen rules only");
+        // V1 = 11 < 4 S
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(3, 0, 3, 11), &g), (3, 3, 11, 0, "-", false));
+        assert!(flagged(ReadthroughRule::R2, &locus2(3, 0, 3, 11), &g).is_empty());
+        // U = 2 < S
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(2, 0, 3, 12), &g), (3, 2, 12, 0, "-", false));
+        assert!(flagged(ReadthroughRule::R2, &locus2(2, 0, 3, 12), &g).is_empty());
+        // tier B ignores L (its V1 >= 4 S already fails the exemption's 3 V1 < 5 S)
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(3, 3, 0, 12), &g), (3, 3, 12, 3, "B", true));
+        // both tiers: `A` takes precedence
+        assert_eq!(j_row(ReadthroughRule::R2, &locus2(60, 0, 3, 12), &g), (3, 60, 12, 0, "A", true));
+        // tier B keeps the scope: a broken motif never flags
+        let mut sq = genome_seq();
+        sq[J.0 as usize..J.0 as usize + 2].copy_from_slice(b"CC");
+        let g2 = GenomeIndex::from_seqs(&[("c1", &sq)]);
+        assert_eq!(j_row(ReadthroughRule::R2, &reads, &g2).4, "-");
+        assert!(flagged(ReadthroughRule::R2, &reads, &g2).is_empty());
+        // S = 1: never scored
+        let mut v: Vec<(Vec<(u64, u64)>, bool)> = (0..3).map(|i| (a_read(i), false)).collect();
+        v.push((j_read(0), false));
+        v.extend((0..12).map(|i| (b_read(i), false)));
+        assert!(flagged(ReadthroughRule::R2, &v, &g).is_empty());
+    }
+
+    #[test]
+    fn r2_minus_strand_mirror_counts_l_on_the_genomically_first_splice() {
+        let rc: Vec<u8> = reverse_complement(&genome_seq());
+        let g = GenomeIndex::from_seqs(&[("c1", &rc)]);
+        let mj = (L - J.1, L - J.0);
+        let mrow = |reads: Vec<(Vec<(u64, u64)>, bool)>, rule: ReadthroughRule| {
+            let v: Vec<(Vec<(u64, u64)>, bool)> = reads.iter().map(|(ex, _)| (mirror(ex), true)).collect();
+            let f = stats(rule, &v).flag(&g, true);
+            let j = f.all.iter().find(|x| (x.donor, x.acceptor) == mj).unwrap().clone();
+            (j.minus, j.s, j.l, j.tier_label(), f.flagged.get("c1").is_some_and(|s| s.contains(&mj)))
+        };
+        assert_eq!(mrow(locus2(60, 3, 0, 0), ReadthroughRule::R2), (true, 3, 3, "A_exempt", false));
+        assert_eq!(mrow(locus2(60, 3, 0, 0), ReadthroughRule::R), (true, 3, 3, "A_exempt", true));
+        assert_eq!(mrow(locus2(60, 0, 3, 0), ReadthroughRule::R2), (true, 3, 0, "A", true));
+        assert_eq!(mrow(locus2(3, 0, 3, 12), ReadthroughRule::R2), (true, 3, 0, "B", true));
+        // the mirrored reads labelled `+`: their genomically LAST splice is B's mirrored first intron, never J
+        let v: Vec<(Vec<(u64, u64)>, bool)> = locus2(60, 3, 0, 0).iter().map(|(ex, _)| (mirror(ex), false)).collect();
+        let f = stats(ReadthroughRule::R2, &v).flag(&g, true);
+        let j = f.all.iter().find(|x| (x.donor, x.acceptor) == mj).unwrap();
+        assert_eq!((j.minus, j.l, j.canonical), (false, 0, false));
+    }
+
+    #[test]
+    fn r2_tsvs_add_l_and_tier_and_the_other_arms_keep_their_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let g = genome();
+        let tsv = |fl: &ReadthroughFlags, name: &str, all: bool| -> String {
+            let p = dir.path().join(name);
+            if all { fl.write_all_tsv(p.to_str().unwrap()).unwrap() } else { fl.write_tsv(p.to_str().unwrap()).unwrap() }
+            std::fs::read_to_string(&p).unwrap()
+        };
+        // tier B: flagged, `rule` = `-`
+        let fb = stats(ReadthroughRule::R2, &locus2(3, 0, 3, 12)).flag(&g, true);
+        let t = tsv(&fb, "b.tsv", false);
+        assert_eq!(t.lines().next().unwrap(), "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier");
+        assert_eq!(t.lines().nth(1).unwrap(), "c1\t2101\t6000\t+\t3\t3\t12\t-\t0\tB");
+        assert_eq!(t.lines().count(), 2);
+        // the exempted junction: absent from the flagged TSV, `A_exempt` in the ALL dump
+        let fe = stats(ReadthroughRule::R2, &locus2(60, 3, 0, 0)).flag(&g, true);
+        assert_eq!(tsv(&fe, "e.tsv", false).lines().count(), 1, "header only");
+        let all = tsv(&fe, "e.all.tsv", true);
+        assert_eq!(all.lines().next().unwrap(), "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule\tL\ttier");
+        assert!(all.lines().any(|l| l == "c1\t2101\t6000\t+\t3\t60\t60\t0\ttrue\tr\t3\tA_exempt"), "{all}");
+        // tier A: its `rule` column says r
+        let fa = stats(ReadthroughRule::R2, &locus2(60, 1, 2, 0)).flag(&g, false);
+        assert_eq!(tsv(&fa, "a.tsv", false).lines().nth(1).unwrap(), "c1\t2101\t6000\t+\t3\t60\t0\tr\t1\tA");
+        // r: the columns of the current tree, the same row
+        let fr = stats(ReadthroughRule::R, &locus2(60, 1, 2, 0)).flag(&g, true);
+        let t = tsv(&fr, "r.tsv", false);
+        assert_eq!(t, "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\nc1\t2101\t6000\t+\t3\t60\t0\tr\n");
+        assert!(tsv(&fr, "r.all.tsv", true).starts_with("contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule\n"));
+        assert_eq!(fr.tier_summary(), "", "r's log lines are unchanged");
+        // r2's own TSV is a valid `list:` file (the columns it reads are the first four)
+        let back = ReadthroughList::read(dir.path().join("b.tsv").to_str().unwrap()).unwrap();
+        assert_eq!(back.len(), 1);
+        // absorb adds the tier counts
+        let mut tot = ReadthroughFlags::default();
+        tot.absorb(fb);
+        tot.absorb(fe);
+        tot.absorb(fa);
+        assert_eq!((tot.n_tier_a, tot.n_tier_b, tot.n_ale_exempt, tot.rows.len()), (1, 1, 1, 2));
+    }
+
+    /// The BAM locus with J's primaries split into 2 reads ending in J's acceptor exon (one a reverse alignment with
+    /// `ts:A:-`, a `+` transcript) and 1 continuing read (S = 3, L = 2: 2 L >= S), `n_b` B reads, 60 A records.
+    fn r2_records(n_b: u64) -> Vec<RecordBuf> {
+        let mut v = Vec::new();
+        for i in 0..60u64 {
+            v.push(rec(&format!("a{i}"), Flags::default(), &a_read(i), Some(b'+')));
+        }
+        v.push(rec("jl0", Flags::default(), &j_last_read(0), Some(b'+')));
+        v.push(rec("jl1", Flags::REVERSE_COMPLEMENTED, &j_last_read(1), Some(b'-')));
+        v.push(rec("jm0", Flags::default(), &j_read(0), Some(b'+')));
+        v.push(rec("x_sec", Flags::SECONDARY, &j_last_read(5), Some(b'+'))); // never in S or L
+        for i in 0..n_b {
+            v.push(rec(&format!("b{i}"), Flags::default(), &b_read(i), Some(b'+')));
+        }
+        v.sort_by_key(|r| r.alignment_start().map(|p| p.get()).unwrap_or(0));
+        v
+    }
+
+    #[test]
+    fn streaming_and_buffered_apply_the_same_r2_rule() {
+        let g = genome();
+        // n_b = 5: Q1's tie, not exempt -> flagged by tier A with L = 2; n_b = 4: exempt -> nothing flagged
+        for (n_b, hit) in [(5u64, true), (4, false)] {
+            let dir = tempfile::tempdir().unwrap();
+            let bam = write_indexed_bam(dir.path(), &r2_records(n_b));
+            let (off, _) = streamed(&bam, None, false, &g);
+            let (s, sfl) = streamed(&bam, Some(ReadthroughRule::R2), false, &g);
+            let (b, bfl) = buffered(&bam, Some(ReadthroughRule::R2), &g);
+            assert_eq!(s, b, "n_b={n_b}: identical skeletons");
+            assert_eq!(sfl.rows, bfl.rows, "n_b={n_b}: identical flags");
+            assert_eq!((sfl.n_tier_a, sfl.n_tier_b, sfl.n_ale_exempt), (bfl.n_tier_a, bfl.n_tier_b, bfl.n_ale_exempt));
+            assert_eq!((sfl.alignments_removed, sfl.chains_removed), (bfl.alignments_removed, bfl.chains_removed));
+            if hit {
+                let got: Vec<_> = sfl.rows.iter().map(|j| (j.donor, j.acceptor, j.s, j.u, j.v1, j.l, j.tier_label())).collect();
+                assert_eq!(got, vec![(J.0, J.1, 3, 60, 5, 2, "A")]);
+                assert_eq!((sfl.alignments_removed, sfl.chains_removed), (3, 2), "J's 3 primaries in 2 chains");
+                assert!(s.iter().all(|k| !k.introns.contains(&J)));
+            } else {
+                assert!(sfl.rows.is_empty() && sfl.flagged.is_empty());
+                assert_eq!((sfl.n_tier_a, sfl.n_ale_exempt), (0, 1));
+                assert_eq!(s, off, "an exempted junction leaves the pool untouched");
+                let (r, rfl) = streamed(&bam, Some(ReadthroughRule::R), false, &g);
+                assert_eq!(rfl.rows.len(), 1, "R removes it");
+                assert!(r.iter().all(|k| !k.introns.contains(&J)));
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ `r3` (the v3 rule: tier B needs V1 > N_span)
+
+    /// A molecule that BYPASSES J: from A's first exon to B's last exon through an exon inside J's intron (J skips
+    /// it), so it spans J's whole intron without using J.
+    fn k_read(i: u64) -> Vec<(u64, u64)> {
+        vec![(1000 + i, 1100), (2000, 2100), (5000, 5100), (6000, 6200), (7000, 7150 + i)]
+    }
+
+    /// The tier-B locus of the r2 tests (U = S = 3, V1 = 12 = 4 S: `B` under r2) plus `n_k` bypass molecules, so
+    /// N_span = S + n_k = 3 + n_k.
+    fn locus3(n_k: u64) -> Vec<(Vec<(u64, u64)>, bool)> {
+        let mut v = locus2(3, 0, 3, 12);
+        v.extend((0..n_k).map(|i| (k_read(i), false)));
+        v
+    }
+
+    type J3 = (u32, u32, u32, Option<u32>, &'static str, bool, bool);
+
+    /// J's row under `rule`: (S, U, V1, N_span, tier label, flagged by the dump run, flagged by the early-stop run).
+    fn j3(rule: ReadthroughRule, reads: &[(Vec<(u64, u64)>, bool)], g: &GenomeIndex) -> J3 {
+        let f = stats(rule, reads).flag(g, true);
+        let j = f.all.iter().find(|x| (x.donor, x.acceptor) == J).expect("J has S >= 2");
+        let quick = stats(rule, reads).flag(g, false).flagged.get("c1").is_some_and(|set| set.contains(&J));
+        (j.s, j.u, j.v1, j.n_span, j.tier_label(), f.flagged.get("c1").is_some_and(|set| set.contains(&J)), quick)
+    }
+
+    #[test]
+    fn r3_parses_and_is_its_own_arm() {
+        assert_eq!(ReadthroughRule::parse(Some("r3")).unwrap(), Some(ReadthroughRule::R3));
+        assert_eq!(ReadthroughRule::parse(Some(" R3 ")).unwrap(), Some(ReadthroughRule::R3));
+        assert_eq!(ReadthroughSwitch::parse(Some("r3")).unwrap().unwrap().rule, ReadthroughRule::R3);
+        assert_eq!(ReadthroughRule::R3.as_str(), "r3");
+        assert!(ReadthroughRule::R3.is_tiered() && ReadthroughRule::R2.is_tiered());
+        assert!(!ReadthroughRule::R.is_tiered() && !ReadthroughRule::Rq1.is_tiered() && !ReadthroughRule::List.is_tiered());
+        for bad in ["r4", "r3g", "r2g", "r 3"] {
+            assert!(ReadthroughRule::parse(Some(bad)).is_err(), "{bad} must be fatal");
+        }
+    }
+
+    #[test]
+    fn span_counts_sweep_equals_the_u_and_v1_tests_by_brute_force() {
+        // U's "5′ upstream of the donor" and V1's "3′ beyond the acceptor", read by read, on each strand's rows
+        let mut x: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut rnd = |m: u64| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x % m
+        };
+        for minus in [false, true] {
+            for _ in 0..40 {
+                let n = rnd(300) as usize;
+                let mut rows: Vec<(u64, u64, u64)> = Vec::with_capacity(n);
+                for _ in 0..n {
+                    let g0 = rnd(200);
+                    let g1 = g0 + 1 + rnd(120);
+                    rows.push(if minus { (g1, g0, g1) } else { (g0, g1, g0) });
+                }
+                let nq = rnd(60);
+                let mut q: Vec<(u64, u64)> = Vec::new();
+                for _ in 0..nq {
+                    let d = rnd(220);
+                    q.push((d, d + 1 + rnd(100)));
+                }
+                let want: Vec<u32> = q
+                    .iter()
+                    .map(|&(d, a)| {
+                        rows.iter().filter(|&&(p5, p3, _)| if minus { p5 >= a && p3 < d } else { p5 < d && p3 >= a }).count() as u32
+                    })
+                    .collect();
+                assert_eq!(rt_span_counts(&rows, minus, &q), want, "minus={minus} rows={n} queries={nq}");
+            }
+        }
+        assert!(rt_span_counts(&[(0, 5, 0)], false, &[]).is_empty());
+        assert_eq!(rt_span_counts(&[], true, &[(1, 2)]), vec![0]);
+    }
+
+    #[test]
+    fn r3_tie_v1_equal_n_span_is_not_flagged_and_one_spanning_molecule_less_is() {
+        let g = genome();
+        // 9 bypass molecules + J's own 3 reads: N_span = 12 = V1, the tie protects. K = 9 < V1 alone would flag, so
+        // this is also the check that J's reads count.
+        assert_eq!(j3(ReadthroughRule::R3, &locus3(9), &g), (3, 3, 12, Some(12), "B_guarded", false, false));
+        // 8 bypass molecules: N_span = 11 < V1 = 12, flagged by tier B
+        assert_eq!(j3(ReadthroughRule::R3, &locus3(8), &g), (3, 3, 12, Some(11), "B", true, true));
+        // J's reads count whatever follows J (one of the 3 ends in J's acceptor exon here)
+        let mut v = locus2(3, 1, 2, 12);
+        v.extend((0..9).map(|i| (k_read(i), false)));
+        assert_eq!(j3(ReadthroughRule::R3, &v, &g), (3, 3, 12, Some(12), "B_guarded", false, false));
+        // r2 ignores N_span: both flagged, `B`, N_span never counted
+        for k in [8, 9] {
+            assert_eq!(j3(ReadthroughRule::R2, &locus3(k), &g), (3, 3, 12, None, "B", true, true), "k={k}");
+        }
+        // r3's counts: the guarded junction is neither flagged nor tier B
+        let f = stats(ReadthroughRule::R3, &locus3(9)).flag(&g, false);
+        assert!(f.rows.is_empty() && f.flagged.is_empty());
+        assert_eq!((f.n_tier_a, f.n_tier_b, f.n_ale_exempt, f.n_tier_b_guarded), (0, 0, 0, 1));
+        let f = stats(ReadthroughRule::R3, &locus3(8)).flag(&g, false);
+        assert_eq!((f.n_tier_a, f.n_tier_b, f.n_ale_exempt, f.n_tier_b_guarded, f.rows.len()), (0, 1, 0, 0, 1));
+        assert_eq!(f.rows[0].n_span, Some(11));
+        // tier A is untouched by the guard (the same 9 bypass molecules, U = 60): `A`, flagged, N_span still counted
+        let mut v = locus2(60, 0, 3, 12);
+        v.extend((0..9).map(|i| (k_read(i), false)));
+        assert_eq!(j3(ReadthroughRule::R3, &v, &g), (3, 60, 12, Some(12), "A", true, true));
+        // a junction failing tier B has no N_span (r3 counts it for tier-B candidates only)
+        assert_eq!(j3(ReadthroughRule::R3, &locus2(60, 1, 2, 0), &g), (3, 60, 0, None, "A", true, true));
+    }
+
+    #[test]
+    fn r3_n_span_counts_every_spliced_primary_across_the_intron_and_nothing_else() {
+        let g = genome();
+        // base: 8 bypass molecules, N_span = 11 < V1 = 12 (flagged); one more COUNTED read makes the tie (guarded)
+        let with = |extra: Vec<(u64, u64)>, minus: bool| {
+            let mut v = locus3(8);
+            v.push((extra, minus));
+            let r = j3(ReadthroughRule::R3, &v, &g);
+            (r.2, r.3, r.4, r.5)
+        };
+        let counted = (12, Some(12), "B_guarded", false);
+        let not_counted = (12, Some(11), "B", true);
+        // J's intron retained (spliced elsewhere, continuous across J's intron)
+        assert_eq!(with(vec![(1000, 1100), (2000, 6200)], false), counted);
+        // another intron chain across J: its own donor upstream and acceptor downstream of J's
+        assert_eq!(with(vec![(1500, 1600), (6100, 6300)], false), counted);
+        // 5′ end on the donor exon's last base (2099) / 3′ end on the acceptor exon's first base (6000)
+        assert_eq!(with(vec![(2099, 2150), (6000, 6200)], false), counted);
+        assert_eq!(with(vec![(1000, 1100), (2000, 6001)], false), counted);
+        // 3′ end on the acceptor base (the intron's last base, 5999: an end inside the intron, a U read)
+        assert_eq!(with(vec![(1000, 1100), (2000, 6000)], false), not_counted);
+        // 5′ end on the donor base (the intron's first base, 2100)
+        assert_eq!(with(vec![(2100, 2150), (6000, 6200)], false), not_counted);
+        // an unspliced primary across the whole intron (not in the population of S, U and V1)
+        assert_eq!(with(vec![(1000, 7000)], false), not_counted);
+        // a spanning molecule of the other strand
+        assert_eq!(with(k_read(20), true), not_counted);
+    }
+
+    #[test]
+    fn r3_minus_strand_mirror_reads_upstream_and_beyond_in_transcript_orientation() {
+        let rc: Vec<u8> = reverse_complement(&genome_seq());
+        let g = GenomeIndex::from_seqs(&[("c1", &rc)]);
+        let mj = (L - J.1, L - J.0);
+        let row = |reads: &[(Vec<(u64, u64)>, bool)], rule: ReadthroughRule| {
+            let f = stats(rule, reads).flag(&g, true);
+            let j = f.all.iter().find(|x| (x.donor, x.acceptor) == mj).unwrap().clone();
+            (j.minus, j.s, j.u, j.v1, j.n_span, j.tier_label(), f.flagged.get("c1").is_some_and(|s| s.contains(&mj)))
+        };
+        let m = |reads: Vec<(Vec<(u64, u64)>, bool)>| -> Vec<(Vec<(u64, u64)>, bool)> {
+            reads.iter().map(|(ex, _)| (mirror(ex), true)).collect()
+        };
+        assert_eq!(row(&m(locus3(9)), ReadthroughRule::R3), (true, 3, 3, 12, Some(12), "B_guarded", false));
+        assert_eq!(row(&m(locus3(8)), ReadthroughRule::R3), (true, 3, 3, 12, Some(11), "B", true));
+        assert_eq!(row(&m(locus3(9)), ReadthroughRule::R2), (true, 3, 3, 12, None, "B", true));
+        // the boundaries, mirrored: 5′ on the donor exon's last base and 3′ on the acceptor exon's first base count;
+        // 3′ on the acceptor base (the intron's last base in transcript orientation) and 5′ on the donor base do not
+        for (extra, want) in [
+            (vec![(2099, 2150), (6000, 6200)], Some(12)),
+            (vec![(1000, 1100), (2000, 6001)], Some(12)),
+            (vec![(1000, 1100), (2000, 6000)], Some(11)),
+            (vec![(2100, 2150), (6000, 6200)], Some(11)),
+        ] {
+            let mut v = m(locus3(8));
+            v.push((mirror(&extra), true));
+            assert_eq!(row(&v, ReadthroughRule::R3).4, want, "{extra:?}");
+        }
+        // `+` molecules across the same intron never count for the `-` junction
+        let mut v = m(locus3(8));
+        v.extend((0..5).map(|i| (mirror(&k_read(i)), false)));
+        assert_eq!(row(&v, ReadthroughRule::R3), (true, 3, 3, 12, Some(11), "B", true));
+    }
+
+    #[test]
+    fn r3_tsvs_add_n_and_b_guarded_and_r2_keeps_its_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let g = genome();
+        let text = |fl: &ReadthroughFlags, name: &str, all: bool| -> String {
+            let p = dir.path().join(name);
+            if all { fl.write_all_tsv(p.to_str().unwrap()).unwrap() } else { fl.write_tsv(p.to_str().unwrap()).unwrap() }
+            std::fs::read_to_string(&p).unwrap()
+        };
+        // tier B flagged: N after tier
+        let fb = stats(ReadthroughRule::R3, &locus3(8)).flag(&g, true);
+        assert_eq!(
+            text(&fb, "b.tsv", false),
+            "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier\tN\nc1\t2101\t6000\t+\t3\t3\t12\t-\t0\tB\t11\n"
+        );
+        // the guarded junction: absent from the flagged TSV, `B_guarded` with its N in the ALL dump
+        let fg = stats(ReadthroughRule::R3, &locus3(9)).flag(&g, true);
+        assert_eq!(text(&fg, "g.tsv", false), "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier\tN\n");
+        let all = text(&fg, "g.all.tsv", true);
+        assert_eq!(all.lines().next().unwrap(), "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule\tL\ttier\tN");
+        assert!(all.lines().any(|l| l == "c1\t2101\t6000\t+\t3\t3\t3\t12\ttrue\t-\t0\tB_guarded\t12"), "{all}");
+        // the rows failing tier B carry N = NA
+        assert!(all.lines().skip(1).filter(|l| !l.starts_with("c1\t2101\t6000\t")).all(|l| l.ends_with("\tNA")), "{all}");
+        assert!(all.lines().count() > 2);
+        // tier A rows: N counted only when tier B holds too
+        let fa = stats(ReadthroughRule::R3, &locus2(60, 1, 2, 0)).flag(&g, false);
+        assert_eq!(text(&fa, "a.tsv", false).lines().nth(1).unwrap(), "c1\t2101\t6000\t+\t3\t60\t0\tr\t1\tA\tNA");
+        let fab = stats(ReadthroughRule::R3, &locus2(60, 0, 3, 12)).flag(&g, false);
+        assert_eq!(text(&fab, "ab.tsv", false).lines().nth(1).unwrap(), "c1\t2101\t6000\t+\t3\t60\t12\trq1\t0\tA\t3");
+        // r2 on the same reads: its own columns and its `B` label, no N
+        let f2 = stats(ReadthroughRule::R2, &locus3(9)).flag(&g, true);
+        assert_eq!(
+            text(&f2, "r2.tsv", false),
+            "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier\nc1\t2101\t6000\t+\t3\t3\t12\t-\t0\tB\n"
+        );
+        assert!(text(&f2, "r2.all.tsv", true).lines().all(|l| !l.contains("B_guarded") && !l.ends_with("\tNA")));
+        // the log suffix: r3 names its guarded count; r2's is unchanged
+        assert_eq!(fg.tier_summary(), " | tier A 0 | tier B only 0 | tier A exempt (ALE) 0 | tier B guarded (V1 <= N_span) 1");
+        assert_eq!(f2.tier_summary(), " | tier A 0 | tier B only 1 | tier A exempt (ALE) 0");
+        // r3's own TSV is a valid `list:` file; absorb adds the guarded count
+        let back = ReadthroughList::read(dir.path().join("b.tsv").to_str().unwrap()).unwrap();
+        assert_eq!(back.len(), 1);
+        let mut tot = ReadthroughFlags::default();
+        tot.absorb(fg);
+        tot.absorb(fb);
+        assert_eq!((tot.n_tier_b, tot.n_tier_b_guarded, tot.rows.len()), (1, 1, 1));
+    }
+
+    /// r3's BAM locus: 3 A, 3 J and 12 B primaries, `n_k` bypass primaries (the first a reverse alignment with
+    /// `ts:A:-`, a `+` transcript), and records that never count in N_span: a SECONDARY and a SUPPLEMENTARY bypass
+    /// record and an unspliced primary across the whole intron.
+    fn r3_records(n_k: u64) -> Vec<RecordBuf> {
+        let mut v = Vec::new();
+        for i in 0..3u64 {
+            v.push(rec(&format!("a{i}"), Flags::default(), &a_read(i), Some(b'+')));
+            v.push(rec(&format!("j{i}"), Flags::default(), &j_read(i), Some(b'+')));
+        }
+        for i in 0..12u64 {
+            v.push(rec(&format!("b{i}"), Flags::default(), &b_read(i), Some(b'+')));
+        }
+        for i in 0..n_k {
+            let (fl, ts) = if i == 0 { (Flags::REVERSE_COMPLEMENTED, b'-') } else { (Flags::default(), b'+') };
+            v.push(rec(&format!("k{i}"), fl, &k_read(i), Some(ts)));
+        }
+        v.push(rec("k_sec", Flags::SECONDARY, &k_read(30), Some(b'+')));
+        v.push(rec("k_sup", Flags::SUPPLEMENTARY, &k_read(31), Some(b'+')));
+        v.push(rec("u_span", Flags::default(), &[(1000, 7000)], Some(b'+')));
+        v.sort_by_key(|r| r.alignment_start().map(|p| p.get()).unwrap_or(0));
+        v
+    }
+
+    #[test]
+    fn streaming_and_buffered_apply_the_same_r3_rule() {
+        let g = genome();
+        // n_k = 8: N_span = 11 < V1 = 12, flagged by tier B; n_k = 9: the tie, guarded -> nothing flagged
+        for (n_k, hit) in [(8u64, true), (9, false)] {
+            let dir = tempfile::tempdir().unwrap();
+            let bam = write_indexed_bam(dir.path(), &r3_records(n_k));
+            let (off, _) = streamed(&bam, None, false, &g);
+            let (s, sfl) = streamed(&bam, Some(ReadthroughRule::R3), false, &g);
+            let (b, bfl) = buffered(&bam, Some(ReadthroughRule::R3), &g);
+            assert_eq!(s, b, "n_k={n_k}: identical skeletons");
+            assert_eq!(sfl.rows, bfl.rows, "n_k={n_k}: identical flags");
+            assert_eq!(
+                (sfl.n_tier_a, sfl.n_tier_b, sfl.n_ale_exempt, sfl.n_tier_b_guarded),
+                (bfl.n_tier_a, bfl.n_tier_b, bfl.n_ale_exempt, bfl.n_tier_b_guarded)
+            );
+            assert_eq!((sfl.alignments_removed, sfl.chains_removed), (bfl.alignments_removed, bfl.chains_removed));
+            let (r2, r2fl) = streamed(&bam, Some(ReadthroughRule::R2), false, &g);
+            assert_eq!(r2fl.rows.len(), 1, "n_k={n_k}: r2 removes J either way");
+            assert!(r2.iter().all(|k| !k.introns.contains(&J)));
+            if hit {
+                let got: Vec<_> = sfl.rows.iter().map(|j| (j.donor, j.acceptor, j.s, j.u, j.v1, j.n_span, j.tier_label())).collect();
+                assert_eq!(got, vec![(J.0, J.1, 3, 3, 12, Some(11), "B")]);
+                assert_eq!((sfl.alignments_removed, sfl.chains_removed), (3, 1), "J's 3 primaries, one chain");
+                assert!(s.iter().all(|k| !k.introns.contains(&J)));
+                assert_eq!(s, r2, "r3 = r2 when the guard does not hold");
+            } else {
+                assert!(sfl.rows.is_empty() && sfl.flagged.is_empty());
+                assert_eq!((sfl.n_tier_b, sfl.n_tier_b_guarded), (0, 1));
+                assert_eq!(s, off, "a guarded junction leaves the pool untouched");
+            }
+        }
     }
 }

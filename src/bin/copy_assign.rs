@@ -135,6 +135,8 @@ struct RegionWork {
     /// `RUSTLE_READTHROUGH_JUNCTIONS`: this region's flagged junctions and pool removals. Default (empty,
     /// `rule` = `None`) unless the knob is set.
     readthrough: rustle::vg_family::denovo_assemble::ReadthroughFlags,
+    /// `--polish-tss`: this region's 5'-end evidence (`None` unless the option is on).
+    tss: Option<rustle::vg_family::denovo_assemble::TssEvidence>,
 }
 
 #[derive(Parser, Debug)]
@@ -192,12 +194,16 @@ struct Args {
     ///
     /// Composes with the assembly knobs: `--read-isoform-k`, `RUSTLE_JUNCTION_MAJORITY` (default ON since
     /// 2026-09-21; `=0` restores the old strict-canonicity behaviour), `RUSTLE_GTF_SECONDARY`,
-    /// `RUSTLE_GATE_CENSUS`, and `RUSTLE_READTHROUGH_JUNCTIONS=off|r|rq1|list:<path>` (opt-in, unset/`off`
+    /// `RUSTLE_GATE_CENSUS`, and `RUSTLE_READTHROUGH_JUNCTIONS=off|r|rq1|r2|r3|list:<path>` (opt-in, unset/`off`
     /// byte-identical; `docs/PREREG_readthrough_ends_representatives_2026-09-25.md`): per region (= per contig under
     /// `--genome-wide`), junctions whose donor's transcripts mostly end inside the intron (`U >= 20*S`; `rq1` also
     /// needs B's own start cluster and first exon, `3*V1 >= 5*S`) are flagged from the primary reads, and every pool
     /// alignment carrying one leaves before pass 1; writes `<out>.readthrough_junctions.tsv` + `params.tsv` rows
     /// (`RUSTLE_READTHROUGH_JUNCTIONS_ALL=1` adds `<out>.readthrough_junctions.all.tsv`, every junction with S >= 2).
+    /// `r2` (the v2 rule): `r`'s junctions minus alternative last exons (`2*L >= S` and `3*V1 < 5*S`, L = the reads
+    /// whose last splice is J), plus own-promoter junctions (`U >= S` and `V1 >= 4*S`); its TSVs add `L` and `tier`.
+    /// `r3` (the v3 rule): `r2` whose own-promoter tier also needs `V1 > N_span` (N_span = the spliced primaries from
+    /// upstream of J's donor to beyond its acceptor, J's reads included); its TSVs add `L`, `tier` and `N`.
     /// `list:<path>` (the prereg's NULL arm) flags the junctions listed in a TSV instead (header naming contig|chrom,
     /// donor|intron_start_1b, acceptor|intron_end_1b, strand; 1-based inclusive intron: the scorer's
     /// `readthrough_eval.py null` list or an arm's own `<out>.readthrough_junctions.tsv`), same removal and outputs
@@ -364,6 +370,118 @@ struct Args {
     /// `low_confidence`; this one removes rows. Default 0.0 = off.
     #[arg(long, default_value_t = 0.0)]
     polish_isoform_fraction: f64,
+
+    /// SUB-CHAIN TAG / DROP over the emitted GTF (`--gtf`, `--assemble-only`). A multi-exon transcript y is
+    /// flagged when it is **an end-compatible contiguous sub-chain of a longer emitted transcript of the same
+    /// locus with >= 1/2 its reads**: some x with the same `gene_id`, contig and strand has a strictly longer
+    /// intron chain, y's chain is the contiguous exact block `x.chain[k..k+m]`, y's first exon starts no more
+    /// than 10 bp before x's exon k and y's last exon ends no more than 10 bp after x's exon k+m, and
+    /// `2*reads(x) >= reads(y)`. Among qualifying x the one with the most reads is named (ties: the first
+    /// `transcript_id` in byte order). Mono-exonic transcripts and the longest chain of a locus are never
+    /// flagged, and every flag is decided on the input set (a flagged x can still name, or be named).
+    /// Reads-only, so legal de novo. Port of `compat_collapse.py` e14c5646 without a guard.
+    ///
+    /// * `off` (default): byte-identical to a run without this flag.
+    /// * `tag`: output-only. The transcript line of each flagged y ends with
+    ///   `subchain_of "<x>"; subchain_missing "5p"|"3p"|"both";`, where `subchain_missing` names the ends of
+    ///   x's chain that y lacks, in transcript orientation (a `-` strand flips genomic left/right). Every
+    ///   other byte is unchanged. The tag does NOT say y is incomplete: on dev, 8 of 864 tagged
+    ///   transcripts are annotation-exact (`=`).
+    /// * `drop`: removes every flagged transcript, before `--gtf-tpm`, so TPM stays normalised. No locus and
+    ///   no mono-exon transcript is lost. Measured on dev only, in-sample (the rule was selected on these
+    ///   contigs; no held-out test was run), species kept apart: human chr20 gffcompare `c` 5.7 -> 2.8% of
+    ///   multi-exon queries, '=' precision +1.02 pt, 2 '=' queries lost, 7 genes (1.46%) lose their only
+    ///   '='/'c' query against 3 for a matched random drop, 74 `j` dropped; human chr16 6.3 -> 3.1%, +1.07 pt,
+    ///   3, 9 (1.15%) vs 7, 171 `j`; gorilla NC_073244.2 5.4 -> 3.1%, +1.23 pt, 3, 7 (0.79%) vs 5, 21 `j`.
+    ///   A matched random drop of the same size gets 78-91% of that precision gain, so the gain is mostly
+    ///   fewer transcripts, not better ones. A deliberate trade, hence opt-in.
+    ///
+    /// Applied after `--assembly-polish` (it runs with or without it). The key includes the contig, so a
+    /// `--genome-wide` run flags exactly the union of its per-contig runs. Writes `params.tsv` rows and one
+    /// log line only when not `off`. Driver pass-through: `RUSTLE_POLISH_SUBCHAIN=tag|drop`.
+    #[arg(long, default_value = "off", value_parser = ["off", "tag", "drop"])]
+    polish_subchain: String,
+
+    /// READ-PROVEN TSS (`--gtf`, `--assemble-only`; needs `--assembly-polish` mono|full). A 5' end counts as a
+    /// transcription start site only when the run's own reads PROVE it. Reads only, per contig; the only constants
+    /// are alpha = 0.05 and TOL = 10 bp (the `--polish-subchain` tolerance; window W = 2*TOL+1).
+    ///
+    /// EVIDENCE (pass 1): every primary spliced record (no secondary, supplementary, QC-fail), deduplicated on
+    /// (strand, start, end, chain); its oriented 5' end and whether its 5'-most CIGAR op is a 1-3 bp soft clip of
+    /// G only (read orientation), the non-templated G template-switching RT adds opposite an m7G cap.
+    ///
+    /// NULL: a constant 5'-truncation hazard, window count ~ negative binomial (mean h * sum N(t), Var = mu + a mu^2),
+    /// N(t) = reads crossing t on their way to the junction; h and a fitted on the internal exons of this contig's
+    /// polished multi-exon transcripts; STRATIFIED at splice acceptors: within TOL of an acceptor c (every acceptor
+    /// through which reads enter the exon, plus the container's exon start) the hazard is h * r(t - c), r(d) the
+    /// observed start excess at offset d from the same internal exons' acceptors (truncated molecules whose
+    /// upstream-exon bases are soft-clipped pile at d = -2: 83-114x on dev). CAP SIGNAL (per contig, label-free):
+    /// yes iff capped reads are a majority at the run's proven first-exon TSS clusters AND a minority among the
+    /// starts inside internal-exon bodies (two one-sided exact binomial tests against 1/2 at alpha). With a cap
+    /// signal a window or cluster counts only when most of its reads are capped. WITHOUT one (gorilla OR6737 on
+    /// dev) `rescue` and `split` do NOTHING on that contig (tss_critique A2/B1: the NB count excess alone proves
+    /// truncation piles): its output is exactly `tag`'s, the log line says so and `polish_tss_applied` records it.
+    ///
+    /// CASE A (short form y = the 3'-flush intron chain of a longer x of the same locus): proven iff the best
+    /// W-window of y's first-junction 5' ends over [min(y 5', x exon-k start), y's first donor] has
+    /// p * ceil(L/W) * |candidates| < alpha, and in scope iff that window lies downstream of x's upstream exon.
+    /// CASE B (one chain, several TSSs): significant windows over the chain's own first exon (family = the
+    /// contig's polished multi-exon transcripts), merged, kept apart only across a valley (a window between them
+    /// with observed <= expected).
+    ///
+    /// * `off` (default): byte-identical to a run without this flag; no evidence is collected.
+    /// * `tag`: output-only. Each multi-exon transcript with >= 1 proven cluster ends with
+    ///   `tss_clusters "<pos>:<capped>/<n>,...";` (5'->3'; pos = the cluster's mode, 1-based genomic).
+    /// * `rescue`: tag + case A. A proven, in-scope short form that the polish dropped at the ISM, isoform-fraction
+    ///   or retained-intron step is kept (`tss_rescued "<step>";`), every other decision of the polish unchanged,
+    ///   so the output contains every `off` transcript unchanged (monotone). Its 5' end is a MODE taken among ITS OWN
+    ///   reads (exact-chain deduplicated primaries): the most-started own position inside the proven window (ties
+    ///   5'-most), never the outermost single read. A form with no own start inside the proven window (the window's
+    ///   reads all belong to other chains sharing its first junction) is neither rescued nor protected: the window
+    ///   proves another chain's TSS, not its own.
+    /// * `split`: rescue + case B. A chain with >= 2 cap-proven clusters is emitted once per cluster
+    ///   (`<tid>_tss<i>`, `tss_split "<i>/<k>";`), each 5' end at its cluster's mode (the cluster is built from the
+    ///   chain's own reads, so the mode is an own start; it is NOT the cluster's first read), each with its own
+    ///   reads (the downstream segments' deduplicated primaries; the first keeps the rest, so the sum and TPM
+    ///   normalisation are unchanged). NOT monotone: the chain itself (piece 1) moves its 5' end to its first
+    ///   cluster's mode and changes `reads`.
+    /// * `--polish-subchain` is decided on the FINAL set (after rescue / split and any `--polish-tes` end move), so a
+    ///   rescued form or a split piece carries its own correct `subchain_of`; `drop` spares the proven in-scope short
+    ///   forms (only where rescue / split acted). A rescued form can therefore also become the container that flags
+    ///   an `off` transcript (none on the dev contigs), so monotonicity under `drop` is measured, not guaranteed.
+    ///
+    /// ⚠ Designed and measured on the three dev contigs only (in-sample; no held-out test). The proven forms are
+    /// annotated at a rate BELOW the output's own chain precision (tss_design / tss_critique), so this is a recall /
+    /// precision trade, not an improvement. gffcompare folds a split's same-chain records into one intron chain.
+    /// Writes `params.tsv` rows and one log line per contig only when not `off`. Driver: `RUSTLE_POLISH_TSS`.
+    #[arg(long, default_value = "off", value_parser = ["off", "tag", "rescue", "split"])]
+    polish_tss: String,
+
+    /// READ + GENOME PROVEN TES (`--gtf`, `--assemble-only`; needs `--assembly-polish` mono|full). The 3' mirror of
+    /// `--polish-tss` with the genome in place of the cap (tesfus_design §1): per contig, for every multi-exon
+    /// transcript of the output (after `--polish-tss`), its OWN 3' ends (exact-chain, same-strand deduplicated
+    /// primary spliced records, the `--polish-tss` evidence) over its last exon are clustered by single linkage
+    /// (a gap > W = 2*TOL+1 = 21 bp starts a new cluster); a cluster needs >= 2 reads (the pass-1 floor); its mode is
+    /// the most-ended position (ties 3'-most). A cluster is PAS-PROVEN when a canonical AATAAA or ATTAAA lies wholly
+    /// inside [mode-35, mode-10] (transcript orientation) and the mode is not INTERNALLY PRIMED (>= 60% A in the 20
+    /// bp downstream, or an A6 run there: r1064's instrument). No p-value, no fitted constant.
+    ///
+    /// * `off` (default): byte-identical to a run without this flag; no evidence is collected for it.
+    /// * `tag`: output-only. Each multi-exon transcript ends with `tes_clusters "<n PAS-proven clusters>";
+    ///   tes_pas "<yes|no>"; tes_primed "<yes|no>";` (the last two: canonical PAS / internal priming at the EMITTED
+    ///   3' end, which pass 1 takes from the single most-3' read).
+    /// * `pas-end`: tag + when the emitted 3' end is internally primed AND the chain has >= 1 PAS-proven cluster, the
+    ///   3' end moves to the most-3' proven cluster's mode (an own read's end, so never beyond the transcript's own
+    ///   reads; always upstream of the primed end), with `tes_end_moved_from "<old 1-based genomic>";`; `tes_pas` /
+    ///   `tes_primed` then describe the new end. No rescue, no split: the transcript set and `reads` are unchanged
+    ///   (the moved length changes `cov`); `--polish-subchain` sees the moved ends, so a shortened transcript can
+    ///   become an end-compatible sub-chain (2 per dev contig).
+    ///
+    /// ⚠ Designed on the three dev contigs only (in-sample). The PAS separates real ends from internal-exon piles
+    /// 27x on chr20 but only 5.2x on gorilla (tesfus_design §1.2). Writes `params.tsv` rows and one log line per
+    /// contig only when not `off`. Driver: `RUSTLE_POLISH_TES`.
+    #[arg(long, default_value = "off", value_parser = ["off", "tag", "pas-end"])]
+    polish_tes: String,
 
     /// Minimum copies for a co-located family. Two-copy homologous families are the majority and were
     /// invisible to assignment at the old default of 3; lowering it to 2 changes default family detection
@@ -2246,6 +2364,7 @@ fn linearize_tsv_row(fam: &str, loc: (&str, u64, u64), c: &LinearizeCertificate)
 /// Validated in `bench/ASSEMBLY_POLISH.md` against `docs/PREREG_assembly_polish_2026-09-19.md`: the mono
 /// floor costs zero matching intron chains on both chr20 and the held-out chr11; the ISM collapse trades
 /// chains for precision.
+#[allow(clippy::too_many_arguments)]
 fn polish_gtf_lines(
     lines: &mut Vec<String>,
     mode: &str,
@@ -2261,10 +2380,65 @@ fn polish_gtf_lines(
     fraction_min_reads: u64,
     retained_ratio: f64,
 ) -> (usize, usize, usize, u64, usize) {
+    let (drop, _sites, counts) = polish_drop_set(
+        lines, mode, mono_quantile, isoform_fraction, mono_shadow, ism_absolute_escape, ism_3p_anchored, ism_ratio,
+        fraction_exempt, fuzzy, fuzzy_ism, fraction_min_reads, retained_ratio,
+    );
+    retain_transcripts(lines, &drop);
+    counts
+}
+
+/// Remove every line of the transcripts in `drop` (lines without a `transcript_id` stay).
+fn retain_transcripts(lines: &mut Vec<String>, drop: &std::collections::HashSet<String>) {
+    if !drop.is_empty() {
+        lines.retain(|line| {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 9 {
+                return true;
+            }
+            match re_attr(f[8], "transcript_id") {
+                Some(t) => !drop.contains(&t),
+                None => true,
+            }
+        });
+    }
+}
+
+/// The body of [`polish_gtf_lines`]: which transcripts the polish drops, and at which step (`fuzzy`, `ism`, `ism_mono`,
+/// `floor`, `shadow`, `frac`, `ret`), without touching `lines`. Also the counts `polish_gtf_lines` returns.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn polish_drop_set(
+    lines: &[String],
+    mode: &str,
+    mono_quantile: f64,
+    isoform_fraction: f64,
+    mono_shadow: bool,
+    ism_absolute_escape: bool,
+    ism_3p_anchored: bool,
+    ism_ratio: f64,
+    fraction_exempt: bool,
+    fuzzy: i64,
+    fuzzy_ism: bool,
+    fraction_min_reads: u64,
+    retained_ratio: f64,
+) -> (
+    std::collections::HashSet<String>,
+    std::collections::HashMap<String, &'static str>,
+    (usize, usize, usize, u64, usize),
+) {
     use std::collections::{HashMap, HashSet};
     if mode == "none" {
-        return (0, 0, 0, 0, 0);
+        return (HashSet::new(), HashMap::new(), (0, 0, 0, 0, 0));
     }
+    // the step that dropped each transcript, recorded after every step (no step's decision reads it)
+    let mut sites: HashMap<String, &'static str> = HashMap::new();
+    let mark = |drop: &HashSet<String>, sites: &mut HashMap<String, &'static str>, step: &'static str| {
+        for t in drop.iter() {
+            if !sites.contains_key(t) {
+                sites.insert(t.clone(), step);
+            }
+        }
+    };
     // exons per transcript, in genomic order, plus the transcript's read support
     let mut exons: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
     let mut key: HashMap<String, (String, String)> = HashMap::new(); // tid -> (contig, strand)
@@ -2356,6 +2530,7 @@ fn polish_gtf_lines(
         }
     }
     let n_fuzzy = drop.len();
+    mark(&drop, &mut sites, "fuzzy");
 
     if mode == "full" {
         // a fragment survives if it carries at least as much support as the chain that contains it, OR if
@@ -2475,6 +2650,11 @@ fn polish_gtf_lines(
         }
     }
     let n_ism = drop.len() - n_fuzzy;
+    for t in drop.iter() {
+        if !sites.contains_key(t) {
+            sites.insert(t.clone(), if chain.get(t).is_some_and(|c| !c.is_empty()) { "ism" } else { "ism_mono" });
+        }
+    }
 
     // mono-exonic support floor, read off this run's own multi-exon distribution
     let mut multi_reads: Vec<u64> = chain
@@ -2496,6 +2676,7 @@ fn polish_gtf_lines(
             }
         }
     }
+    mark(&drop, &mut sites, "floor");
     // §6q0 same-strand shadow: a single-exon transcript on a spliced gene's own footprint is that gene's
     // unspliced signal, not a gene. Anti-strand overlap is deliberately NOT a criterion.
     if mono_shadow {
@@ -2550,6 +2731,7 @@ fn polish_gtf_lines(
         }
     }
     let n_mono = drop.len() - n_ism - n_fuzzy;
+    mark(&drop, &mut sites, "shadow");
 
     // §6p9 locus isoform fraction: a transcript far below the best-supported isoform of its own locus is
     // a minor-flow artifact. The locus dominant is never dropped, so no locus is ever emptied.
@@ -2584,6 +2766,7 @@ fn polish_gtf_lines(
         }
     }
     let n_frac = drop.len() - n_ism - n_mono - n_fuzzy;
+    mark(&drop, &mut sites, "frac");
 
     // §6za retained-intron filter, over the survivors of every step above, in one pass (support and the
     // candidate junction sets are fixed before any drop, so the result does not depend on order).
@@ -2630,20 +2813,154 @@ fn polish_gtf_lines(
         n_ret = newly.len();
         drop.extend(newly);
     }
+    mark(&drop, &mut sites, "ret");
+    (drop, sites, (n_ism + n_fuzzy, n_mono, n_frac, floor, n_ret))
+}
 
-    if !drop.is_empty() {
-        lines.retain(|line| {
-            let f: Vec<&str> = line.split('\t').collect();
-            if f.len() < 9 {
-                return true;
+/// `--polish-subchain` end tolerance (bp) on y's first-exon start and last-exon end. Declared, not derived.
+const SUBCHAIN_TOL_BP: i64 = 10;
+
+/// A GTF attribute at an attribute boundary (the start of column 9 or right after "; ") with an all-digit
+/// value: `(?:^|; )key "(\d+)"`. The first such occurrence wins; `None` when there is none.
+fn gtf_attr_digits(attrs: &str, key: &str) -> Option<u64> {
+    let pat = format!("{key} \"");
+    let mut from = 0usize;
+    while let Some(p) = attrs[from..].find(&pat) {
+        let at = from + p;
+        from = at + 1;
+        if at != 0 && !attrs[..at].ends_with("; ") {
+            continue;
+        }
+        let v0 = at + pat.len();
+        let Some(len) = attrs[v0..].find('"') else { continue };
+        let v = &attrs[v0..v0 + len];
+        if !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()) {
+            if let Ok(n) = v.parse::<u64>() {
+                return Some(n);
             }
-            match re_attr(f[8], "transcript_id") {
-                Some(t) => !drop.contains(&t),
-                None => true,
-            }
-        });
+        }
     }
-    (n_ism + n_fuzzy, n_mono, n_frac, floor, n_ret)
+    None
+}
+
+/// `--polish-subchain`: every multi-exon transcript y of `lines` that is an end-compatible contiguous
+/// sub-chain of a longer emitted transcript x of the same locus (`gene_id`, contig, strand) with >= 1/2 its
+/// reads (`2*reads(x) >= reads(y)`, ends within `SUBCHAIN_TOL_BP`), mapped to (x, the ends of x's chain y
+/// lacks in transcript orientation: "5p", "3p" or "both"). x = the qualifying container with the most reads,
+/// ties to the first `transcript_id` in byte order. Decided on the input set: nothing is removed here.
+/// Port of `compat_collapse.py` e14c5646 (unguarded); the key includes the contig, so one call over many
+/// contigs equals the per-contig calls concatenated. Also returns the number of multi-exon transcripts.
+fn subchain_flags(lines: &[String]) -> (std::collections::BTreeMap<String, (String, &'static str)>, usize) {
+    use std::collections::{BTreeMap, HashMap};
+    // transcript line: (gene_id, contig, strand, reads); exons (0-based half-open) per transcript_id
+    let mut info: HashMap<String, (String, String, String, u64)> = HashMap::new();
+    let mut exons: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
+    for line in lines.iter() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 {
+            continue;
+        }
+        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        if f[2] == "transcript" {
+            let Some(g) = re_attr(f[8], "gene_id") else { continue };
+            let r = gtf_attr_digits(f[8], "reads").unwrap_or(0);
+            info.insert(tid, (g, f[0].to_string(), f[6].to_string(), r));
+        } else if f[2] == "exon" {
+            let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else { continue };
+            exons.entry(tid).or_default().push((a - 1, b));
+        }
+    }
+    for e in exons.values_mut() {
+        e.sort_unstable();
+    }
+    let mut chain: BTreeMap<&str, Vec<(i64, i64)>> = BTreeMap::new();
+    for (t, e) in exons.iter() {
+        if info.contains_key(t) {
+            chain.insert(t.as_str(), (0..e.len().saturating_sub(1)).map(|i| (e[i].1, e[i + 1].0)).collect());
+        }
+    }
+    // junction -> (transcript, its index in that transcript's chain), per locus key
+    let mut by_j: HashMap<(&str, &str, &str, (i64, i64)), Vec<(&str, usize)>> = HashMap::new();
+    for (&t, c) in chain.iter() {
+        let (g, ctg, s, _) = &info[t];
+        for (i, &j) in c.iter().enumerate() {
+            by_j.entry((g.as_str(), ctg.as_str(), s.as_str(), j)).or_default().push((t, i));
+        }
+    }
+    for v in by_j.values_mut() {
+        v.sort_unstable();
+    }
+    let mut flags: BTreeMap<String, (String, &'static str)> = BTreeMap::new();
+    for (&y, cy) in chain.iter() {
+        if cy.is_empty() {
+            continue;
+        }
+        let (g, ctg, s, ry) = &info[y];
+        let m = cy.len();
+        let (ey0, ey1) = (exons[y][0].0, exons[y][exons[y].len() - 1].1);
+        let mut best: Option<(&str, u64, &'static str)> = None;
+        for &(x, k) in by_j.get(&(g.as_str(), ctg.as_str(), s.as_str(), cy[0])).into_iter().flatten() {
+            let cx = &chain[x];
+            if x == y || cx.len() <= m || k + m > cx.len() || cx[k..k + m] != cy[..] {
+                continue;
+            }
+            let ex = &exons[x];
+            if ey0 < ex[k].0 - SUBCHAIN_TOL_BP || ey1 > ex[k + m].1 + SUBCHAIN_TOL_BP {
+                continue;
+            }
+            let rx = info[x].3;
+            if 2 * rx < *ry {
+                continue;
+            }
+            // junctions of x's chain left out on the genomic left (k) and right; `-` reads right to left
+            let (left, right) = (k, cx.len() - m - k);
+            let (m5, m3) = if s != "-" { (left, right) } else { (right, left) };
+            let missing = if m3 == 0 { "5p" } else if m5 == 0 { "3p" } else { "both" };
+            if best.map_or(true, |b| rx > b.1) {
+                best = Some((x, rx, missing));
+            }
+        }
+        if let Some((x, _, missing)) = best {
+            flags.insert(y.to_string(), (x.to_string(), missing));
+        }
+    }
+    let n_multi = chain.values().filter(|c| !c.is_empty()).count();
+    (flags, n_multi)
+}
+
+/// `--polish-subchain drop`: remove every line of a flagged transcript.
+fn subchain_drop(lines: &mut Vec<String>, flags: &std::collections::BTreeMap<String, (String, &'static str)>) {
+    if flags.is_empty() {
+        return;
+    }
+    lines.retain(|line| {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 {
+            return true;
+        }
+        match re_attr(f[8], "transcript_id") {
+            Some(t) => !flags.contains_key(&t),
+            None => true,
+        }
+    });
+}
+
+/// `--polish-subchain tag`: append `subchain_of "<x>"; subchain_missing "<5p|3p|both>";` to the transcript
+/// line of every flagged transcript; every other byte is unchanged.
+fn subchain_tag(lines: &mut [String], flags: &std::collections::BTreeMap<String, (String, &'static str)>) {
+    if flags.is_empty() {
+        return;
+    }
+    for line in lines.iter_mut() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 || f[2] != "transcript" {
+            continue;
+        }
+        let Some(t) = re_attr(f[8], "transcript_id") else { continue };
+        if let Some((x, missing)) = flags.get(&t) {
+            line.push_str(&format!(" subchain_of \"{x}\"; subchain_missing \"{missing}\";"));
+        }
+    }
 }
 
 
@@ -2692,6 +3009,1279 @@ fn annotate_tpm(lines: &mut [String]) -> usize {
     n
 }
 
+// ============================================================================================ --polish-tss
+// The read-proven TSS rule (`--polish-tss`, docs in the flag's help; design tss_design.md with the tss_critique.md
+// fixes). Everything below reads the polish INPUT lines of ONE contig and that contig's 5'-end evidence
+// (`denovo_assemble::TssEvidence`, deduplicated primary spliced records). Coordinates are ORIENTED: a 1-based genomic
+// position p is `p` on `+` and `-p` on `-`, so "upstream" is always "smaller".
+
+/// `--polish-tss` significance level (conventional; the only constant besides the tolerance).
+const TSS_ALPHA: f64 = 0.05;
+/// `--polish-tss` tolerance = the `--polish-subchain` end tolerance (declared, not derived): the acceptor stratum spans
+/// offsets -TOL..=+TOL and the scan window is W = 2*TOL+1 bp.
+const TSS_TOL: i64 = SUBCHAIN_TOL_BP;
+const TSS_W: usize = (2 * TSS_TOL + 1) as usize;
+
+/// ln Γ(x) for x > 0 (Lanczos, g = 7, 9 terms).
+fn tss_ln_gamma(x: f64) -> f64 {
+    const G: f64 = 7.0;
+    const C: [f64; 9] = [
+        0.999_999_999_999_809_9,
+        676.520_368_121_885_1,
+        -1259.139_216_722_402_8,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
+        12.507_343_278_686_905,
+        -0.138_571_095_265_720_1,
+        9.984_369_578_019_572e-6,
+        1.505_632_735_149_311_6e-7,
+    ];
+    if x < 0.5 {
+        std::f64::consts::PI.ln() - (std::f64::consts::PI * x).sin().ln() - tss_ln_gamma(1.0 - x)
+    } else {
+        let x = x - 1.0;
+        let t = x + G + 0.5;
+        let mut a = C[0];
+        for (i, &c) in C.iter().enumerate().skip(1) {
+            a += c / (x + i as f64);
+        }
+        0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + a.ln()
+    }
+}
+
+/// Continued fraction of the incomplete beta (modified Lentz).
+fn tss_betacf(a: f64, b: f64, x: f64) -> f64 {
+    const FPMIN: f64 = 1e-300;
+    let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
+    let mut c = 1.0;
+    let mut d = 1.0 - qab * x / qap;
+    if d.abs() < FPMIN {
+        d = FPMIN;
+    }
+    d = 1.0 / d;
+    let mut h = d;
+    for m in 1..=200_000u32 {
+        let m = m as f64;
+        let m2 = 2.0 * m;
+        let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < FPMIN {
+            d = FPMIN;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < FPMIN {
+            c = FPMIN;
+        }
+        d = 1.0 / d;
+        h *= d * c;
+        let aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < FPMIN {
+            d = FPMIN;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < FPMIN {
+            c = FPMIN;
+        }
+        d = 1.0 / d;
+        let del = d * c;
+        h *= del;
+        if (del - 1.0).abs() < 1e-15 {
+            break;
+        }
+    }
+    h
+}
+
+/// Regularized incomplete beta I_x(a, b); `y` = 1 - x computed by the caller without cancellation.
+fn tss_betai(a: f64, b: f64, x: f64, y: f64) -> f64 {
+    tss_betai_ln(a, b, x, y, tss_ln_gamma(a + b) - tss_ln_gamma(a) - tss_ln_gamma(b))
+}
+
+/// [`tss_betai`] with ln(1/B(a, b)) supplied (the NB tail sums it exactly for an integer `a`).
+fn tss_betai_ln(a: f64, b: f64, x: f64, y: f64, ln_inv_beta: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if y <= 0.0 {
+        return 1.0;
+    }
+    let lbt = ln_inv_beta + a * x.ln() + b * y.ln();
+    if x < (a + 1.0) / (a + b + 2.0) {
+        lbt.exp() * tss_betacf(a, b, x) / a
+    } else {
+        1.0 - lbt.exp() * tss_betacf(b, a, y) / b
+    }
+}
+
+/// Regularized lower incomplete gamma P(s, x) (the Poisson upper tail P(X >= s) at mean x).
+fn tss_gammp(s: f64, x: f64) -> f64 {
+    const FPMIN: f64 = 1e-300;
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let lpre = -x + s * x.ln() - tss_ln_gamma(s);
+    if x < s + 1.0 {
+        let (mut ap, mut sum) = (s, 1.0 / s);
+        let mut del = sum;
+        for _ in 0..200_000 {
+            ap += 1.0;
+            del *= x / ap;
+            sum += del;
+            if del.abs() < sum.abs() * 1e-16 {
+                break;
+            }
+        }
+        sum * lpre.exp()
+    } else {
+        let mut b = x + 1.0 - s;
+        let mut c = 1.0 / FPMIN;
+        let mut d = 1.0 / b;
+        let mut h = d;
+        for i in 1..200_000 {
+            let an = -(i as f64) * (i as f64 - s);
+            b += 2.0;
+            d = an * d + b;
+            if d.abs() < FPMIN {
+                d = FPMIN;
+            }
+            c = b + an / c;
+            if c.abs() < FPMIN {
+                c = FPMIN;
+            }
+            d = 1.0 / d;
+            let del = d * c;
+            h *= del;
+            if (del - 1.0).abs() < 1e-15 {
+                break;
+            }
+        }
+        1.0 - lpre.exp() * h
+    }
+}
+
+/// P(X >= o) for X ~ negative binomial with mean `mu` and Var = mu + a mu^2 (`a` <= 1e-12: the Poisson limit).
+/// With r = 1/a it is I_{mu/(r+mu)}(o, r) (scipy `nbinom.sf(o - 1, r, r/(r+mu))`).
+fn tss_nb_sf(o: u64, mu: f64, a: f64) -> f64 {
+    if o == 0 {
+        return 1.0;
+    }
+    if mu <= 0.0 {
+        return 0.0;
+    }
+    if a <= 1e-12 {
+        return tss_gammp(o as f64, mu);
+    }
+    let r = 1.0 / a;
+    // ln Γ(o + r) - ln Γ(o) - ln Γ(r) = sum_{i<o} ln(r + i) - ln((o-1)!): exact where the lgamma difference would
+    // cancel (r large, i.e. a small)
+    let mut lib = 0.0f64;
+    for i in 0..o {
+        lib += (r + i as f64).ln();
+        if i > 0 {
+            lib -= (i as f64).ln();
+        }
+    }
+    tss_betai_ln(o as f64, r, mu / (r + mu), r / (r + mu), lib)
+}
+
+/// P(Bin(n, 1/2) >= k).
+fn tss_binom_half_sf(k: u64, n: u64) -> f64 {
+    if k == 0 {
+        1.0
+    } else if k > n {
+        0.0
+    } else {
+        tss_betai(k as f64, (n - k + 1) as f64, 0.5, 0.5)
+    }
+}
+
+/// P(Bin(n, 1/2) <= k).
+fn tss_binom_half_cdf(k: u64, n: u64) -> f64 {
+    if k >= n {
+        1.0
+    } else {
+        tss_betai((n - k) as f64, (k + 1) as f64, 0.5, 0.5)
+    }
+}
+
+/// A transcript as the TSS rule reads it (from the polish input; parsed as `polish_drop_set` parses it).
+#[derive(Clone, Debug)]
+struct TssTx {
+    minus: bool,
+    gene: String,
+    reads: u64,
+    /// oriented exons (1-based inclusive), 5' -> 3'
+    oex: Vec<(i64, i64)>,
+    /// oriented introns, 5' -> 3'
+    ochain: Vec<(i64, i64)>,
+    /// `tss_chain_hash` of the genomic chain
+    chain: u64,
+}
+
+fn tss_parse(lines: &[String]) -> std::collections::BTreeMap<String, TssTx> {
+    use std::collections::{BTreeMap, HashMap};
+    let mut exons: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new();
+    let mut strand: HashMap<String, String> = HashMap::new();
+    let mut reads: HashMap<String, u64> = HashMap::new();
+    let mut gene: HashMap<String, String> = HashMap::new();
+    for line in lines.iter() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 {
+            continue;
+        }
+        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        if let Some(r) = re_attr(f[8], "reads").and_then(|v| v.parse::<u64>().ok()) {
+            let e = reads.entry(tid.clone()).or_insert(0);
+            *e = (*e).max(r);
+        }
+        if let Some(g) = re_attr(f[8], "gene_id") {
+            gene.entry(tid.clone()).or_insert(g);
+        }
+        if f[2] != "exon" {
+            continue;
+        }
+        let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else { continue };
+        exons.entry(tid.clone()).or_default().push((a - 1, b));
+        strand.entry(tid).or_insert_with(|| f[6].to_string());
+    }
+    let mut out = BTreeMap::new();
+    for (tid, mut ex) in exons {
+        ex.sort_unstable();
+        let minus = strand.get(&tid).is_some_and(|s| s == "-");
+        let mut oex: Vec<(i64, i64)> =
+            ex.iter().map(|&(s0, e0)| if minus { (-e0, -(s0 + 1)) } else { (s0 + 1, e0) }).collect();
+        oex.sort_unstable();
+        let ochain: Vec<(i64, i64)> = (0..oex.len().saturating_sub(1)).map(|i| (oex[i].1 + 1, oex[i + 1].0 - 1)).collect();
+        let gchain: Vec<(u64, u64)> =
+            (0..ex.len().saturating_sub(1)).map(|i| (ex[i].1 as u64, ex[i + 1].0 as u64)).collect();
+        let t = TssTx {
+            minus,
+            gene: gene.get(&tid).cloned().unwrap_or_default(),
+            reads: reads.get(&tid).copied().unwrap_or(0),
+            oex,
+            ochain,
+            chain: rustle::vg_family::denovo_assemble::tss_chain_hash(&gchain),
+        };
+        out.insert(tid, t);
+    }
+    out
+}
+
+/// The contig's evidence, indexed: (minus, oriented intron) -> first-junction starts (o5, capped, chain) sorted by
+/// o5, and -> the oriented acceptors through which reads carrying that intron as a NON-first intron enter its exon.
+#[derive(Default)]
+struct TssIndex {
+    first5: std::collections::HashMap<(bool, (i64, i64)), Vec<(i64, bool, u64)>>,
+    links: std::collections::HashMap<(bool, (i64, i64)), Vec<i64>>,
+}
+
+fn tss_index(recs: &[rustle::vg_family::denovo_assemble::TssRead]) -> TssIndex {
+    let mut ix = TssIndex::default();
+    for r in recs {
+        let Some(&j1) = r.oin.first() else { continue };
+        ix.first5.entry((r.minus, j1)).or_default().push((r.o5, r.capped, r.chain));
+        for i in 1..r.oin.len() {
+            ix.links.entry((r.minus, r.oin[i])).or_default().push(r.oin[i - 1].1 + 1);
+        }
+    }
+    for v in ix.first5.values_mut() {
+        v.sort_by_key(|e| e.0);
+    }
+    for v in ix.links.values_mut() {
+        v.sort_unstable();
+    }
+    ix
+}
+
+/// 5'-end profile over the oriented interval [lo, hi]: `n`/`cap` = starts (capped starts) at each t among `starts`
+/// (sorted by o5) that lie in the interval; `at` = N(t) = starts <= t (all of `starts`) + link acceptors <= t, i.e.
+/// the reads that cover t on their way to the junction.
+struct TssProf {
+    n: Vec<u64>,
+    cap: Vec<u64>,
+    at: Vec<u64>,
+}
+
+fn tss_profile(starts: &[(i64, bool)], links: &[i64], lo: i64, hi: i64) -> TssProf {
+    let len = (hi - lo + 1).max(0) as usize;
+    let (mut n, mut cap, mut arr) = (vec![0u64; len], vec![0u64; len], vec![0u64; len]);
+    let mut run = (starts.partition_point(|s| s.0 < lo) + links.partition_point(|&a| a < lo)) as u64;
+    for &(o, c) in starts {
+        if o >= lo && o <= hi {
+            let i = (o - lo) as usize;
+            n[i] += 1;
+            arr[i] += 1;
+            if c {
+                cap[i] += 1;
+            }
+        }
+    }
+    for &a in links {
+        if a >= lo && a <= hi {
+            arr[(a - lo) as usize] += 1;
+        }
+    }
+    let mut at = vec![0u64; len];
+    for i in 0..len {
+        run += arr[i];
+        at[i] = run;
+    }
+    TssProf { n, cap, at }
+}
+
+/// The fitted null of one contig.
+#[derive(Clone, Debug)]
+struct TssNull {
+    /// constant 5'-truncation hazard per covered bp
+    h: f64,
+    /// NB dispersion (Var = mu + a mu^2), method of moments on non-overlapping W-windows, floored at 0
+    a: f64,
+    /// acceptor stratum r(d), d = -TOL..=+TOL (index d + TOL): observed start hazard / h, floored at 1
+    r: Vec<f64>,
+    /// capped / all starts inside internal-exon bodies (offset > TOL from the acceptor): the truncation background
+    bg_capped: u64,
+    bg_n: u64,
+}
+
+/// Fit h, a and r(d) on the internal exons of `base` (the unprotected polish's multi-exon survivors), keyed (strand,
+/// outgoing junction, exon start) and taken in that sorted order. `None` when they carry no at-risk read or no start.
+/// NB: `a` is fitted under the UNSTRATIFIED mean h * sum N(t), so each exon's first window carries the acceptor
+/// excess (r(0..+10) > 1) as extra variance, while the proof uses `a` with the stratified mean; `a` is therefore
+/// slightly inflated, which is conservative (tss_review F5; as tss_design §1 specifies).
+fn tss_fit_null(base: &[&TssTx], ix: &TssIndex) -> Option<TssNull> {
+    let mut exons: std::collections::BTreeMap<(bool, (i64, i64), i64), i64> = std::collections::BTreeMap::new();
+    for t in base {
+        for j in 1..t.oex.len().saturating_sub(1) {
+            exons.insert((t.minus, t.ochain[j], t.oex[j].0), t.oex[j].1);
+        }
+    }
+    let empty_s: Vec<(i64, bool)> = Vec::new();
+    let empty_l: Vec<i64> = Vec::new();
+    let starts_of = |k: &(bool, (i64, i64))| -> Vec<(i64, bool)> {
+        ix.first5.get(k).map(|v| v.iter().map(|e| (e.0, e.1)).collect()).unwrap_or_default()
+    };
+    let (mut tn, mut tat) = (0u64, 0u64);
+    let mut profs: Vec<TssProf> = Vec::with_capacity(exons.len());
+    let mut strata: Vec<TssProf> = Vec::with_capacity(exons.len());
+    let (mut bg_capped, mut bg_n) = (0u64, 0u64);
+    for (&(minus, j, a), &b) in exons.iter() {
+        let starts = starts_of(&(minus, j));
+        let starts = if starts.is_empty() { &empty_s } else { &starts };
+        let links = ix.links.get(&(minus, j)).unwrap_or(&empty_l);
+        let p = tss_profile(starts, links, a, b);
+        tn += p.n.iter().sum::<u64>();
+        tat += p.at.iter().sum::<u64>();
+        profs.push(p);
+        strata.push(tss_profile(starts, links, a - TSS_TOL, b.min(a + TSS_TOL)));
+        for &(o, c) in starts.iter() {
+            if o > a + TSS_TOL && o <= b {
+                bg_n += 1;
+                bg_capped += u64::from(c);
+            }
+        }
+    }
+    if tn == 0 || tat == 0 {
+        return None;
+    }
+    let h = tn as f64 / tat as f64;
+    let (mut num, mut den) = (0.0f64, 0.0f64);
+    for p in &profs {
+        let mut i = 0usize;
+        while i + TSS_W <= p.n.len() {
+            let e = h * p.at[i..i + TSS_W].iter().sum::<u64>() as f64;
+            let o = p.n[i..i + TSS_W].iter().sum::<u64>() as f64;
+            num += (o - e) * (o - e) - e;
+            den += e * e;
+            i += TSS_W;
+        }
+    }
+    let a = if den > 0.0 { (num / den).max(0.0) } else { 0.0 };
+    let mut nd = vec![0u64; TSS_W];
+    let mut atd = vec![0u64; TSS_W];
+    for p in &strata {
+        for i in 0..p.n.len() {
+            nd[i] += p.n[i];
+            atd[i] += p.at[i];
+        }
+    }
+    let r = (0..TSS_W).map(|i| if atd[i] > 0 { (nd[i] as f64 / atd[i] as f64 / h).max(1.0) } else { 1.0 }).collect();
+    Some(TssNull { h, a, r, bg_capped, bg_n })
+}
+
+/// Cumulative expected starts over [lo, lo + at.len()): ce[i+1] = ce[i] + h * rho(t) * N(t), rho(t) = the largest
+/// r(t - c) over the `acceptors` c (sorted) within TOL of t, else 1.
+fn tss_cum_expect(null: &TssNull, lo: i64, at: &[u64], acceptors: &[i64]) -> Vec<f64> {
+    let mut ce = Vec::with_capacity(at.len() + 1);
+    ce.push(0.0f64);
+    for (i, &nt) in at.iter().enumerate() {
+        let t = lo + i as i64;
+        let j0 = acceptors.partition_point(|&c| c < t - TSS_TOL);
+        let mut rho: Option<f64> = None;
+        for &c in &acceptors[j0..] {
+            if c > t + TSS_TOL {
+                break;
+            }
+            let r = null.r[(t - c + TSS_TOL) as usize];
+            if rho.map_or(true, |b| r > b) {
+                rho = Some(r);
+            }
+        }
+        let haz = null.h * rho.unwrap_or(1.0);
+        let prev = ce[i];
+        ce.push(prev + haz * nt as f64);
+    }
+    ce
+}
+
+fn tss_prefix(v: &[u64]) -> Vec<u64> {
+    let mut c = Vec::with_capacity(v.len() + 1);
+    c.push(0u64);
+    for &x in v {
+        let p = c[c.len() - 1];
+        c.push(p + x);
+    }
+    c
+}
+
+/// The first position of the maximum of `n` over [i0, i1] (the mode; ties to the 5'-most).
+fn tss_mode(n: &[u64], i0: usize, i1: usize) -> usize {
+    let mut best = i0;
+    for i in i0..=i1 {
+        if n[i] > n[best] {
+            best = i;
+        }
+    }
+    best
+}
+
+/// One proven TSS cluster of a chain (oriented, inclusive span; its mode; its starts and capped starts).
+#[derive(Clone, Debug, PartialEq)]
+struct TssCluster {
+    cs: i64,
+    ce: i64,
+    mode: i64,
+    n: u64,
+    capped: u64,
+}
+
+/// CASE B scan of one chain: its own (exact-chain) starts over its first exon [ta, tb]; N(t) = those starts <= t +
+/// link acceptors <= t; significant W-windows at p * ceil(L/W) * `fam` < alpha, overlapping windows merged, and two
+/// consecutive clusters kept apart only when some W-window strictly between them has observed <= expected (a valley).
+fn tss_chain_clusters(t: &TssTx, ix: &TssIndex, null: &TssNull, fam: usize) -> Vec<TssCluster> {
+    let Some(&j1) = t.ochain.first() else { return Vec::new() };
+    let (ta, tb) = t.oex[0];
+    let starts: Vec<(i64, bool)> = ix
+        .first5
+        .get(&(t.minus, j1))
+        .map(|v| v.iter().filter(|e| e.2 == t.chain && e.0 >= ta && e.0 <= tb).map(|e| (e.0, e.1)).collect())
+        .unwrap_or_default();
+    if starts.is_empty() {
+        return Vec::new();
+    }
+    let empty: Vec<i64> = Vec::new();
+    let links = ix.links.get(&(t.minus, j1)).unwrap_or(&empty);
+    let p = tss_profile(&starts, links, ta, tb);
+    let mut acc: Vec<i64> = links.clone();
+    acc.dedup();
+    let ce = tss_cum_expect(null, ta, &p.at, &acc);
+    let l = p.n.len();
+    let w = TSS_W.min(l);
+    let nwin = l.div_ceil(w);
+    let cn = tss_prefix(&p.n);
+    let cc = tss_prefix(&p.cap);
+    let mut sig: Vec<usize> = Vec::new();
+    for i in 0..=(l - w) {
+        let o = cn[i + w] - cn[i];
+        if o < 1 {
+            continue;
+        }
+        let e = ce[i + w] - ce[i];
+        if tss_nb_sf(o, e, null.a) * (nwin as f64) * (fam as f64) < TSS_ALPHA {
+            sig.push(i);
+        }
+    }
+    let mut cl: Vec<(usize, usize)> = Vec::new();
+    for i in sig {
+        match cl.last_mut() {
+            Some(last) if i <= last.1 => last.1 = i + w - 1,
+            _ => cl.push((i, i + w - 1)),
+        }
+    }
+    let mut vm: Vec<(usize, usize)> = Vec::new();
+    for c in cl {
+        let Some(&(_, prev_end)) = vm.last() else {
+            vm.push(c);
+            continue;
+        };
+        let (lo, hi) = (prev_end + 1, c.0 as i64 - 1);
+        let mut valley = false;
+        let mut i = lo;
+        while (i as i64) <= hi - w as i64 + 1 {
+            let o = (cn[i + w] - cn[i]) as f64;
+            let e = ce[i + w] - ce[i];
+            if o <= e {
+                valley = true;
+                break;
+            }
+            i += 1;
+        }
+        if valley {
+            vm.push(c);
+        } else if let Some(last) = vm.last_mut() {
+            last.1 = c.1;
+        }
+    }
+    vm.into_iter()
+        .map(|(s, e)| TssCluster {
+            cs: ta + s as i64,
+            ce: ta + e as i64,
+            mode: ta + tss_mode(&p.n, s, e) as i64,
+            n: cn[e + 1] - cn[s],
+            capped: cc[e + 1] - cc[s],
+        })
+        .collect()
+}
+
+/// One contig's `--polish-tss` statistics (params.tsv, the log line).
+#[derive(Clone, Debug, Default)]
+struct TssStats {
+    contig: String,
+    fitted: bool,
+    h: f64,
+    a: f64,
+    r: Vec<f64>,
+    cap_signal: bool,
+    pk_capped: u64,
+    pk_n: u64,
+    bg_capped: u64,
+    bg_n: u64,
+    multi: usize,
+    candidates: usize,
+    proven: usize,
+    in_scope: usize,
+    rescued_ism: usize,
+    rescued_frac: usize,
+    rescued_ret: usize,
+    chains_clustered: usize,
+    chains_ge2: usize,
+    split_chains: usize,
+    split_added: usize,
+    /// rescue / split acted on this contig (`tag`, or a library with a cap signal); `false` = the no-cap gate (F1)
+    applied: bool,
+    /// what rescue / split would have done without the no-cap gate (diagnostic; 0 when applied)
+    withheld_rescued: usize,
+    withheld_split: usize,
+    /// proven and in scope, but no own (exact-chain) start inside the proven window: not protected, not rescued
+    proven_no_own_start: usize,
+}
+
+/// What `--polish-tss` decided for one contig.
+#[derive(Default)]
+struct TssOutcome {
+    stats: TssStats,
+    /// rescued short form -> (the polish step that dropped it, its new oriented 5' end: the most-started position
+    /// among its OWN reads in the proven window, else over the scanned region, else its raw 5' end)
+    rescued: std::collections::BTreeMap<String, (&'static str, i64)>,
+    /// every proven in-scope short form (the `--polish-subchain drop` guard)
+    protect: std::collections::BTreeSet<String>,
+    /// split chain -> its pieces (oriented 5' end = the cluster's mode, reads); piece 0 is the transcript itself
+    split: std::collections::BTreeMap<String, Vec<(i64, u64)>>,
+    /// transcript -> its `tss_clusters` value (multi-exon transcripts of the output with >= 1 proven cluster)
+    clusters: std::collections::BTreeMap<String, String>,
+}
+
+/// Decide `--polish-tss` for one contig: `lines` = the polish INPUT, `drop0`/`sites` = the unprotected polish's drops,
+/// `recs` = the contig's evidence, `mode` = tag | rescue | split. Pure (nothing is written).
+fn tss_decide(
+    contig: &str,
+    lines: &[String],
+    drop0: &std::collections::HashSet<String>,
+    sites: &std::collections::HashMap<String, &'static str>,
+    recs: &[rustle::vg_family::denovo_assemble::TssRead],
+    mode: &str,
+) -> TssOutcome {
+    tss_decide_with(contig, lines, drop0, sites, recs, mode, None)
+}
+
+/// [`tss_decide`] with the null optionally given instead of fitted (tests: hand-computable p-values): the proof
+/// ([`tss_prove_with`]) followed by the no-cap gate ([`tss_gate`]).
+fn tss_decide_with(
+    contig: &str,
+    lines: &[String],
+    drop0: &std::collections::HashSet<String>,
+    sites: &std::collections::HashMap<String, &'static str>,
+    recs: &[rustle::vg_family::denovo_assemble::TssRead],
+    mode: &str,
+    null_given: Option<TssNull>,
+) -> TssOutcome {
+    tss_gate(tss_prove_with(contig, lines, drop0, sites, recs, mode, null_given), mode)
+}
+
+/// The no-cap gate (tss_review F1; tss_critique A2 "where there is no signal, rescue nothing and say so", B1 "split
+/// only when >= 2 clusters are cap-proven"): in a library WITHOUT a cap signal, `rescue` and `split` do nothing — the
+/// outcome becomes exactly `tag`'s (the chains' `tss_clusters` only; no rescued form, no split, no drop guard) and
+/// the counts they would have had are kept as `withheld_*` for the log and params.tsv.
+fn tss_gate(mut out: TssOutcome, mode: &str) -> TssOutcome {
+    out.stats.applied = mode == "tag" || out.stats.cap_signal || !out.stats.fitted;
+    if out.stats.applied {
+        return out;
+    }
+    out.stats.withheld_rescued = out.rescued.len();
+    out.stats.withheld_split = out.split.len();
+    for y in out.rescued.keys() {
+        out.clusters.remove(y); // a rescued form is not a polished chain: its clusters were added for the rescue
+    }
+    out.rescued.clear();
+    out.split.clear();
+    out.protect.clear();
+    let st = &mut out.stats;
+    st.rescued_ism = 0;
+    st.rescued_frac = 0;
+    st.rescued_ret = 0;
+    st.split_chains = 0;
+    st.split_added = 0;
+    out
+}
+
+/// The `--polish-tss` proof of one contig, WITHOUT the no-cap gate (what rescue / split would do on the NB proof alone
+/// where the library has no cap signal). Tests exercise the proof's mechanics through it.
+fn tss_prove_with(
+    contig: &str,
+    lines: &[String],
+    drop0: &std::collections::HashSet<String>,
+    sites: &std::collections::HashMap<String, &'static str>,
+    recs: &[rustle::vg_family::denovo_assemble::TssRead],
+    mode: &str,
+    null_given: Option<TssNull>,
+) -> TssOutcome {
+    use std::collections::{BTreeMap, HashMap};
+    let mut out = TssOutcome { stats: TssStats { contig: contig.to_string(), ..Default::default() }, ..Default::default() };
+    let txs = tss_parse(lines);
+    let ix = tss_index(recs);
+    let base: Vec<(&String, &TssTx)> =
+        txs.iter().filter(|(tid, t)| !t.ochain.is_empty() && !drop0.contains(*tid)).collect();
+    out.stats.multi = base.len();
+    let base_tx: Vec<&TssTx> = base.iter().map(|(_, t)| *t).collect();
+    let Some(null) = null_given.or_else(|| tss_fit_null(&base_tx, &ix)) else { return out };
+    out.stats.fitted = true;
+    out.stats.h = null.h;
+    out.stats.a = null.a;
+    out.stats.r = null.r.clone();
+    out.stats.bg_capped = null.bg_capped;
+    out.stats.bg_n = null.bg_n;
+    let fmt_clusters = |t: &TssTx, cl: &[TssCluster]| -> String {
+        cl.iter()
+            .map(|c| format!("{}:{}/{}", if t.minus { -c.mode } else { c.mode }, c.capped, c.n))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    // CASE B scan of every polished multi-exon chain (also the library's TSS peaks for the cap test)
+    let mut chain_cl: BTreeMap<&String, Vec<TssCluster>> = BTreeMap::new();
+    for (tid, t) in base.iter() {
+        let cl = tss_chain_clusters(t, &ix, &null, base.len());
+        if cl.is_empty() {
+            continue;
+        }
+        out.stats.chains_clustered += 1;
+        if cl.len() >= 2 {
+            out.stats.chains_ge2 += 1;
+        }
+        for c in &cl {
+            out.stats.pk_capped += c.capped;
+            out.stats.pk_n += c.n;
+        }
+        chain_cl.insert(*tid, cl);
+    }
+    // CAP SIGNAL: capped reads a majority at the proven clusters and a minority in internal-exon bodies
+    let cap = tss_binom_half_sf(out.stats.pk_capped, out.stats.pk_n) < TSS_ALPHA
+        && tss_binom_half_cdf(out.stats.bg_capped, out.stats.bg_n) < TSS_ALPHA;
+    out.stats.cap_signal = cap;
+    // CASE A: y = the 3'-flush chain of a longer x (same gene_id, strand; x adds >= 1 upstream exon)
+    let mut by_j: HashMap<(&str, bool, (i64, i64)), Vec<(&String, usize)>> = HashMap::new();
+    for (tid, t) in txs.iter() {
+        for (i, &j) in t.ochain.iter().enumerate() {
+            by_j.entry((t.gene.as_str(), t.minus, j)).or_default().push((tid, i));
+        }
+    }
+    let mut cands: Vec<(&String, &String, usize)> = Vec::new();
+    for (y, ty) in txs.iter() {
+        let Some(&j1) = ty.ochain.first() else { continue };
+        let mut best: Option<(&String, usize)> = None;
+        for &(x, k) in by_j.get(&(ty.gene.as_str(), ty.minus, j1)).into_iter().flatten() {
+            let tx = &txs[x];
+            if x == y || k < 1 || tx.ochain.len() != k + ty.ochain.len() || tx.ochain[k..] != ty.ochain[..] {
+                continue;
+            }
+            let better = match best {
+                None => true,
+                Some((bx, _)) => (tx.reads, x) > (txs[bx].reads, bx),
+            };
+            if better {
+                best = Some((x, k));
+            }
+        }
+        if let Some((x, k)) = best {
+            cands.push((y, x, k));
+        }
+    }
+    out.stats.candidates = cands.len();
+    let empty: Vec<i64> = Vec::new();
+    for &(y, x, k) in &cands {
+        let (ty, tx) = (&txs[y], &txs[x]);
+        let j1 = ty.ochain[0];
+        let (ya, yb) = ty.oex[0];
+        let xa = tx.oex[k].0;
+        let lo = ya.min(xa);
+        let starts: Vec<(i64, bool)> =
+            ix.first5.get(&(ty.minus, j1)).map(|v| v.iter().map(|e| (e.0, e.1)).collect()).unwrap_or_default();
+        if starts.is_empty() {
+            continue;
+        }
+        let links = ix.links.get(&(ty.minus, j1)).unwrap_or(&empty);
+        let p = tss_profile(&starts, links, lo, yb);
+        let mut acc: Vec<i64> = links.clone();
+        acc.push(xa);
+        acc.sort_unstable();
+        acc.dedup();
+        let ce = tss_cum_expect(&null, lo, &p.at, &acc);
+        let l = p.n.len();
+        let w = TSS_W.min(l);
+        let nwin = l.div_ceil(w);
+        let cn = tss_prefix(&p.n);
+        let cc = tss_prefix(&p.cap);
+        let mut best: Option<(f64, usize)> = None;
+        for i in 0..=(l - w) {
+            let o = cn[i + w] - cn[i];
+            if o == 0 {
+                continue;
+            }
+            if cap && 2 * (cc[i + w] - cc[i]) <= o {
+                continue;
+            }
+            let pv = tss_nb_sf(o, ce[i + w] - ce[i], null.a);
+            if best.map_or(true, |b| pv < b.0) {
+                best = Some((pv, i));
+            }
+        }
+        let Some((pv, i)) = best else { continue };
+        let padj = (pv * nwin as f64).min(1.0);
+        if !(padj * (cands.len() as f64) < TSS_ALPHA) {
+            continue;
+        }
+        out.stats.proven += 1;
+        // in scope: the proven window lies downstream of x's upstream exon (y differs from x only in its start)
+        if lo + i as i64 <= tx.oex[k - 1].1 {
+            continue;
+        }
+        // The proof pools every read whose first junction is J1, so the proven window can hold only other chains'
+        // reads. A proven window proves y's TSS only when y has an OWN (exact-chain) start inside it; otherwise y is
+        // neither protected nor rescued (tss_review F4, tss2_review G1).
+        let mut own = vec![0u64; l];
+        if let Some(v) = ix.first5.get(&(ty.minus, j1)) {
+            for e in v.iter().filter(|e| e.2 == ty.chain && e.0 >= lo && e.0 <= yb) {
+                own[(e.0 - lo) as usize] += 1;
+            }
+        }
+        if !own[i..i + w].iter().any(|&c| c > 0) {
+            out.stats.proven_no_own_start += 1;
+            continue;
+        }
+        out.stats.in_scope += 1;
+        out.protect.insert(y.clone());
+        if mode == "rescue" || mode == "split" {
+            if let Some(&site) = sites.get(y) {
+                if drop0.contains(y) && matches!(site, "ism" | "frac" | "ret") {
+                    // the 5' end is the most-started own position inside the proven window (ties 5'-most)
+                    let m = lo + tss_mode(&own, i, i + w - 1) as i64;
+                    out.rescued.insert(y.clone(), (site, m));
+                    match site {
+                        "ism" => out.stats.rescued_ism += 1,
+                        "frac" => out.stats.rescued_frac += 1,
+                        _ => out.stats.rescued_ret += 1,
+                    }
+                }
+            }
+        }
+    }
+    // tss_clusters of the output's multi-exon transcripts: the polished chains, plus the rescued ones (their own first
+    // exon, before the 5' end moves)
+    for (tid, cl) in chain_cl.iter() {
+        out.clusters.insert((*tid).clone(), fmt_clusters(&txs[*tid], cl));
+    }
+    for y in out.rescued.keys() {
+        let cl = tss_chain_clusters(&txs[y], &ix, &null, base.len());
+        if !cl.is_empty() {
+            out.clusters.insert(y.clone(), fmt_clusters(&txs[y], &cl));
+        }
+    }
+    // CASE B split: >= 2 proven clusters (each cap-supported where the library has a cap signal)
+    if mode == "split" {
+        for (tid, cl) in chain_cl.iter() {
+            let t = &txs[*tid];
+            let kept: Vec<&TssCluster> = cl.iter().filter(|c| !cap || 2 * c.capped > c.n).collect();
+            if kept.len() < 2 {
+                continue;
+            }
+            let j1 = t.ochain[0];
+            let (ta, tb) = t.oex[0];
+            let own: Vec<i64> = ix
+                .first5
+                .get(&(t.minus, j1))
+                .map(|v| v.iter().filter(|e| e.2 == t.chain && e.0 >= ta && e.0 <= tb).map(|e| e.0).collect())
+                .unwrap_or_default();
+            let mut pieces: Vec<(i64, u64)> = Vec::with_capacity(kept.len());
+            let mut later = 0u64;
+            for (j, c) in kept.iter().enumerate() {
+                let hi = kept.get(j + 1).map(|n| n.cs).unwrap_or(i64::MAX);
+                let r = own.iter().filter(|&&o| o >= c.cs && o < hi).count() as u64;
+                if j > 0 {
+                    later += r;
+                }
+                pieces.push((c.mode, r));
+            }
+            if later >= t.reads {
+                continue; // the evidence exceeds the pooled support (a read-home table dropped primaries): keep T whole
+            }
+            pieces[0].1 = t.reads - later;
+            out.stats.split_chains += 1;
+            out.stats.split_added += pieces.len() - 1;
+            out.split.insert((*tid).clone(), pieces);
+        }
+    }
+    out
+}
+
+/// Rewrite one transcript's block of GTF lines: its 5' end (the oriented first exon's start) moves to oriented
+/// position `o5` in the transcript line and in its 5'-most exon line; `reads` replaces the `reads` attribute; `rename`
+/// replaces the `transcript_id`.
+fn tss_rewrite_block(block: &[String], minus: bool, o5: i64, reads: Option<u64>, rename: Option<(&str, &str)>) -> Vec<String> {
+    // the 5'-most exon line: the smallest start on `+`, the largest end on `-`
+    let mut target: Option<(usize, i64)> = None;
+    for (i, l) in block.iter().enumerate() {
+        let f: Vec<&str> = l.split('\t').collect();
+        if f.len() < 9 || f[2] != "exon" {
+            continue;
+        }
+        let v: i64 = if minus { f[4].parse().unwrap_or(i64::MIN) } else { -f[3].parse::<i64>().unwrap_or(i64::MAX) };
+        if target.map_or(true, |(_, b)| v > b) {
+            target = Some((i, v));
+        }
+    }
+    let g = if minus { -o5 } else { o5 };
+    block
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let mut f: Vec<String> = l.split('\t').map(|x| x.to_string()).collect();
+            if f.len() < 9 {
+                return l.clone();
+            }
+            if f[2] == "transcript" || Some(i) == target.map(|t| t.0) {
+                if minus {
+                    f[4] = g.to_string();
+                } else {
+                    f[3] = g.to_string();
+                }
+            }
+            if f[2] == "transcript" {
+                if let Some(r) = reads {
+                    f[8] = tss_set_reads(&f[8], r);
+                }
+            }
+            if let Some((from, to)) = rename {
+                f[8] = f[8].replacen(&format!("transcript_id \"{from}\";"), &format!("transcript_id \"{to}\";"), 1);
+            }
+            f.join("\t")
+        })
+        .collect()
+}
+
+/// Replace the value of the `reads` attribute (at an attribute boundary, as `gtf_attr_digits` reads it).
+fn tss_set_reads(attrs: &str, reads: u64) -> String {
+    let pat = "reads \"";
+    let mut from = 0usize;
+    while let Some(p) = attrs[from..].find(pat) {
+        let at = from + p;
+        from = at + 1;
+        if at != 0 && !attrs[..at].ends_with("; ") {
+            continue;
+        }
+        let v0 = at + pat.len();
+        let Some(len) = attrs[v0..].find('"') else { continue };
+        return format!("{}{}{}", &attrs[..v0], reads, &attrs[v0 + len..]);
+    }
+    attrs.to_string()
+}
+
+/// Apply a contig's `--polish-tss` outcome to its polished lines (the rescued transcripts are already in them): move
+/// each rescued form's 5' end to its proven mode, and emit each split chain as its pieces (the twins right after it).
+/// Returns the lines and the (twin -> parent) map.
+fn tss_apply(lines: Vec<String>, out: &TssOutcome, txs: &std::collections::BTreeMap<String, TssTx>) -> (Vec<String>, Vec<(String, String)>) {
+    let mut res: Vec<String> = Vec::with_capacity(lines.len());
+    let mut twins: Vec<(String, String)> = Vec::new();
+    let tid_of = |l: &str| -> Option<String> {
+        let f: Vec<&str> = l.split('\t').collect();
+        if f.len() < 9 {
+            return None;
+        }
+        re_attr(f[8], "transcript_id")
+    };
+    let mut i = 0usize;
+    while i < lines.len() {
+        let Some(tid) = tid_of(&lines[i]) else {
+            res.push(lines[i].clone());
+            i += 1;
+            continue;
+        };
+        let mut j = i + 1;
+        while j < lines.len() && tid_of(&lines[j]).as_deref() == Some(tid.as_str()) {
+            j += 1;
+        }
+        let block = &lines[i..j];
+        let minus = txs.get(&tid).is_some_and(|t| t.minus);
+        if let Some(&(_, o5)) = out.rescued.get(&tid) {
+            res.extend(tss_rewrite_block(block, minus, o5, None, None));
+        } else if let Some(pieces) = out.split.get(&tid) {
+            res.extend(tss_rewrite_block(block, minus, pieces[0].0, Some(pieces[0].1), None));
+            for (k, &(o5, r)) in pieces.iter().enumerate().skip(1) {
+                let name = format!("{tid}_tss{}", k + 1);
+                res.extend(tss_rewrite_block(block, minus, o5, Some(r), Some((tid.as_str(), name.as_str()))));
+                twins.push((name, tid.clone()));
+            }
+        } else {
+            res.extend(block.iter().cloned());
+        }
+        i = j;
+    }
+    (res, twins)
+}
+
+/// The `--polish-tss` attributes of every transcript of one contig's outcome (tss_clusters; tss_rescued; tss_split).
+fn tss_attr_strings(out: &TssOutcome) -> std::collections::BTreeMap<String, String> {
+    let mut m: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for (tid, v) in &out.clusters {
+        m.insert(tid.clone(), format!(" tss_clusters \"{v}\";"));
+    }
+    for (tid, (site, _)) in &out.rescued {
+        m.entry(tid.clone()).or_default().push_str(&format!(" tss_rescued \"{site}\";"));
+    }
+    for (tid, pieces) in &out.split {
+        let base = m.get(tid).cloned().unwrap_or_default();
+        let k = pieces.len();
+        for j in 0..k {
+            let name = if j == 0 { tid.clone() } else { format!("{tid}_tss{}", j + 1) };
+            m.insert(name, format!("{base} tss_split \"{}/{k}\";", j + 1));
+        }
+    }
+    m
+}
+
+/// One contig's `--polish-tss` lines from its polish INPUT `part`: (the lines emitted = the unprotected polish's survivors
+/// plus the rescued forms, rewritten per `out`; the unprotected polish's lines; split twin -> its chain).
+#[allow(clippy::type_complexity)]
+fn tss_emit(
+    part: &[String],
+    drop0: &std::collections::HashSet<String>,
+    out: &TssOutcome,
+) -> (Vec<String>, Vec<String>, Vec<(String, String)>) {
+    let mut off = part.to_vec();
+    retain_transcripts(&mut off, drop0);
+    let mut keep_drop = drop0.clone();
+    for y in out.rescued.keys() {
+        keep_drop.remove(y);
+    }
+    let mut on = part.to_vec();
+    retain_transcripts(&mut on, &keep_drop);
+    let (on, twins) = tss_apply(on, out, &tss_parse(part));
+    (on, off, twins)
+}
+
+/// `--polish-subchain` under `--polish-tss rescue|split` (flags decided on the final set, so a split piece has its own
+/// flag): `drop` spares the proven short forms (`protect`); `tag` is structural. Returns how many flags were spared.
+fn tss_subchain_guard(
+    flags: &mut std::collections::BTreeMap<String, (String, &'static str)>,
+    protect: &std::collections::HashSet<String>,
+    drop: bool,
+) -> usize {
+    let before = flags.len();
+    if drop {
+        flags.retain(|y, _| !protect.contains(y));
+    }
+    before - flags.len()
+}
+
+/// Append each transcript line's `--polish-tss` attributes (after TPM and any sub-chain tag: the last attributes).
+fn tss_tag(lines: &mut [String], attrs: &std::collections::HashMap<String, String>) {
+    if attrs.is_empty() {
+        return;
+    }
+    for line in lines.iter_mut() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 || f[2] != "transcript" {
+            continue;
+        }
+        let Some(t) = re_attr(f[8], "transcript_id") else { continue };
+        if let Some(a) = attrs.get(&t) {
+            line.push_str(a);
+        }
+    }
+}
+
+// ============================================================================================ --polish-tes
+// The read + genome proven TES (`--polish-tes`, docs in the flag's help; design tesfus_design.md §1, measurements
+// tesfus_measure.md §2). It reads the FINAL lines of one contig (after `--polish-tss`), the contig's end evidence (the
+// same `TssEvidence`, its `o3`) and the contig's sequence. Coordinates are ORIENTED as in `--polish-tss`.
+
+/// The canonical poly(A) signals (Proudfoot 2011; Beaudoing et al. 2000). Canonical-only was chosen label-free
+/// (tesfus_measure §2.1: at internal-exon 3' piles the pair occurs .056 / .125 / .079 vs .211 / .250 / .247 for any of
+/// the 16 hexamers).
+const TES_PAS: [&[u8; 6]; 2] = [b"AATAAA", b"ATTAAA"];
+/// The PAS window: the hexamer lies wholly inside oriented [c - 35, c - 10] of the cleavage position c.
+const TES_PAS_FAR: i64 = 35;
+const TES_PAS_NEAR: i64 = 10;
+/// Internal priming: >= 60% A in the 20 bp downstream of c, or an A6 run there (r1064's instrument).
+const TES_PRIME_BP: i64 = 20;
+const TES_PRIME_FRAC: f64 = 0.6;
+/// A 3' cluster needs >= 2 deduplicated primaries (the pass-1 floor), and single linkage joins ends <= W apart.
+const TES_MIN_READS: usize = 2;
+
+/// The oriented (5'->3') sequence of the oriented inclusive 1-based interval [olo, ohi] (clipped at the contig ends;
+/// `-` = the reverse complement). A port of tesfus_measure `teslib.Genome.oseq`.
+fn tes_oseq(seq: &[u8], minus: bool, olo: i64, ohi: i64) -> Vec<u8> {
+    let (a, b) = if minus { (-ohi, -olo) } else { (olo, ohi) };
+    let len = seq.len() as i64;
+    let i = (a - 1).max(0).min(len);
+    let j = b.max(0).min(len);
+    if i >= j {
+        return Vec::new();
+    }
+    let s = &seq[i as usize..j as usize];
+    if minus {
+        s.iter()
+            .rev()
+            .map(|&c| match c {
+                b'A' => b'T',
+                b'C' => b'G',
+                b'G' => b'C',
+                b'T' => b'A',
+                b'a' => b't',
+                b'c' => b'g',
+                b'g' => b'c',
+                b't' => b'a',
+                x => x,
+            })
+            .collect()
+    } else {
+        s.to_vec()
+    }
+}
+
+/// A canonical PAS wholly inside oriented [c - 35, c - 10] (c = the last transcribed base, oriented).
+fn tes_pas(seq: &[u8], minus: bool, c: i64) -> bool {
+    let w = tes_oseq(seq, minus, c - TES_PAS_FAR, c - TES_PAS_NEAR);
+    w.windows(6).any(|h| TES_PAS.iter().any(|p| h == &p[..]))
+}
+
+/// The internal-priming signature at oriented c: >= 60% A in the 20 bp downstream, or an A6 run there (none when the
+/// contig ends at c).
+fn tes_primed(seq: &[u8], minus: bool, c: i64) -> bool {
+    let d = tes_oseq(seq, minus, c + 1, c + TES_PRIME_BP);
+    if d.is_empty() {
+        return false;
+    }
+    let a = d.iter().filter(|&&b| b == b'A').count();
+    a as f64 >= TES_PRIME_FRAC * d.len() as f64 || d.windows(6).any(|h| h == b"AAAAAA")
+}
+
+/// One 3' cluster of a transcript's own ends: (mode, reads, PAS-proven).
+#[derive(Clone, Debug, PartialEq)]
+struct TesCluster {
+    mode: i64,
+    n: usize,
+    proven: bool,
+}
+
+/// Single-linkage clusters of sorted oriented 3' ends (a gap > W starts a new one) with >= `TES_MIN_READS` ends; the
+/// mode is the most-ended position, ties to the 3'-most.
+fn tes_clusters(ends: &[i64], seq: &[u8], minus: bool) -> Vec<TesCluster> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < ends.len() {
+        let mut j = i + 1;
+        while j < ends.len() && ends[j] - ends[j - 1] <= TSS_W as i64 {
+            j += 1;
+        }
+        if j - i >= TES_MIN_READS {
+            let (mut mode, mut best, mut k) = (ends[i], 0usize, i);
+            while k < j {
+                let mut e = k + 1;
+                while e < j && ends[e] == ends[k] {
+                    e += 1;
+                }
+                if e - k >= best {
+                    best = e - k;
+                    mode = ends[k];
+                }
+                k = e;
+            }
+            let proven = tes_pas(seq, minus, mode) && !tes_primed(seq, minus, mode);
+            out.push(TesCluster { mode, n: j - i, proven });
+        }
+        i = j;
+    }
+    out
+}
+
+/// One contig's `--polish-tes` statistics (params.tsv, the log line). `end_pas` / `end_primed` are of the emitted 3'
+/// ends BEFORE any move.
+#[derive(Clone, Debug, Default)]
+struct TesStats {
+    multi: usize,
+    with_cluster: usize,
+    with_proven: usize,
+    ge2_proven: usize,
+    end_pas: usize,
+    end_primed: usize,
+    moved: usize,
+}
+
+/// What `--polish-tes` decided for one contig.
+#[derive(Default)]
+struct TesOutcome {
+    stats: TesStats,
+    /// transcript -> its new oriented 3' end (`pas-end` only)
+    moved: std::collections::BTreeMap<String, i64>,
+    /// transcript -> its `tes_*` attributes (every multi-exon transcript)
+    attrs: std::collections::BTreeMap<String, String>,
+}
+
+/// Decide `--polish-tes` for one contig: `lines` = its final transcripts (one contig), `recs` = its end evidence, `seq` = its
+/// sequence (uppercase), `mode` = tag | pas-end. Pure (nothing is written).
+fn tes_decide(
+    lines: &[String],
+    recs: &[rustle::vg_family::denovo_assemble::TssRead],
+    seq: &[u8],
+    mode: &str,
+) -> TesOutcome {
+    let mut out = TesOutcome::default();
+    let txs = tss_parse(lines);
+    let mut exact: std::collections::HashMap<(bool, u64), Vec<i64>> = std::collections::HashMap::new();
+    for r in recs {
+        exact.entry((r.minus, r.chain)).or_default().push(r.o3);
+    }
+    let yn = |b: bool| if b { "yes" } else { "no" };
+    for (tid, t) in txs.iter() {
+        if t.ochain.is_empty() {
+            continue;
+        }
+        let (la, lb) = t.oex[t.oex.len() - 1];
+        let mut ends: Vec<i64> = exact
+            .get(&(t.minus, t.chain))
+            .map(|v| v.iter().copied().filter(|&o| o >= la && o <= lb).collect())
+            .unwrap_or_default();
+        ends.sort_unstable();
+        let cl = tes_clusters(&ends, seq, t.minus);
+        let n_proven = cl.iter().filter(|c| c.proven).count();
+        let (mut pas, mut primed) = (tes_pas(seq, t.minus, lb), tes_primed(seq, t.minus, lb));
+        let st = &mut out.stats;
+        st.multi += 1;
+        st.with_cluster += usize::from(!cl.is_empty());
+        st.with_proven += usize::from(n_proven > 0);
+        st.ge2_proven += usize::from(n_proven >= 2);
+        st.end_pas += usize::from(pas);
+        st.end_primed += usize::from(primed);
+        let mut moved_from: Option<i64> = None;
+        if mode == "pas-end" && primed {
+            if let Some(new) = cl.iter().filter(|c| c.proven).map(|c| c.mode).max() {
+                moved_from = Some(if t.minus { -lb } else { lb });
+                out.moved.insert(tid.clone(), new);
+                st.moved += 1;
+                pas = tes_pas(seq, t.minus, new);
+                primed = tes_primed(seq, t.minus, new);
+            }
+        }
+        let mut a = format!(" tes_clusters \"{n_proven}\"; tes_pas \"{}\"; tes_primed \"{}\";", yn(pas), yn(primed));
+        if let Some(g) = moved_from {
+            a.push_str(&format!(" tes_end_moved_from \"{g}\";"));
+        }
+        out.attrs.insert(tid.clone(), a);
+    }
+    out
+}
+
+/// Move one transcript block's 3' end (the oriented last exon's end) to oriented `o3`: the transcript line and the
+/// 3'-most exon line (the largest end on `+`, the smallest start on `-`).
+fn tes_rewrite_block(block: &[String], minus: bool, o3: i64) -> Vec<String> {
+    let mut target: Option<(usize, i64)> = None;
+    for (i, l) in block.iter().enumerate() {
+        let f: Vec<&str> = l.split('\t').collect();
+        if f.len() < 9 || f[2] != "exon" {
+            continue;
+        }
+        let v: i64 = if minus { -f[3].parse::<i64>().unwrap_or(i64::MAX) } else { f[4].parse().unwrap_or(i64::MIN) };
+        if target.map_or(true, |(_, b)| v > b) {
+            target = Some((i, v));
+        }
+    }
+    let g = if minus { -o3 } else { o3 };
+    block
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let mut f: Vec<String> = l.split('\t').map(|x| x.to_string()).collect();
+            if f.len() < 9 {
+                return l.clone();
+            }
+            if f[2] == "transcript" || Some(i) == target.map(|t| t.0) {
+                if minus {
+                    f[3] = g.to_string();
+                } else {
+                    f[4] = g.to_string();
+                }
+            }
+            f.join("\t")
+        })
+        .collect()
+}
+
+/// Apply a contig's `--polish-tes` outcome: move each `moved` transcript's 3' end.
+fn tes_apply(lines: Vec<String>, out: &TesOutcome) -> Vec<String> {
+    if out.moved.is_empty() {
+        return lines;
+    }
+    let tid_of = |l: &str| -> Option<String> {
+        let f: Vec<&str> = l.split('\t').collect();
+        if f.len() < 9 {
+            return None;
+        }
+        re_attr(f[8], "transcript_id")
+    };
+    let mut res: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        let Some(tid) = tid_of(&lines[i]) else {
+            res.push(lines[i].clone());
+            i += 1;
+            continue;
+        };
+        let mut j = i + 1;
+        while j < lines.len() && tid_of(&lines[j]).as_deref() == Some(tid.as_str()) {
+            j += 1;
+        }
+        let block = &lines[i..j];
+        match out.moved.get(&tid) {
+            Some(&o3) => {
+                let minus = block.iter().any(|l| l.split('\t').nth(6) == Some("-"));
+                res.extend(tes_rewrite_block(block, minus, o3));
+            }
+            None => res.extend(block.iter().cloned()),
+        }
+        i = j;
+    }
+    res
+}
+
 fn main() -> Result<()> {
     let mut args = Args::parse();
     // Bound rayon's GLOBAL pool to --threads (the locus collapse's POA alignments use `par_iter`; the
@@ -2728,6 +4318,21 @@ fn main() -> Result<()> {
             std::env::var("RUSTLE_JUNCTION_MAJORITY").unwrap_or_else(|_| "unset (majority)".into())
         );
     }
+    // `--polish-tss` acts inside the assembly polish of the emitted GTF: refuse a run where it could only do nothing
+    if args.polish_tss != "off" {
+        anyhow::ensure!(
+            args.gtf && args.assembly_polish != "none",
+            "--polish-tss {} needs the assembled GTF (--gtf or --assemble-only) and --assembly-polish mono|full",
+            args.polish_tss
+        );
+    }
+    if args.polish_tes != "off" {
+        anyhow::ensure!(
+            args.gtf && args.assembly_polish != "none",
+            "--polish-tes {} needs the assembled GTF (--gtf or --assemble-only) and --assembly-polish mono|full",
+            args.polish_tes
+        );
+    }
     // RUSTLE_READTHROUGH_JUNCTIONS (docs/PREREG_readthrough_ends_representatives_2026-09-25.md): parsed before any
     // read is touched, so a mistyped arm fails in the first second instead of running as the base arm.
     let rt_switch = rustle::vg_family::denovo_assemble::ReadthroughSwitch::from_env()?;
@@ -2762,7 +4367,17 @@ fn main() -> Result<()> {
                 "[readthrough] RUSTLE_READTHROUGH_JUNCTIONS={}: alignments carrying a flagged readthrough junction leave the \
                  read pool before pass 1 (R: U >= 20*S{})",
                 rule.as_str(),
-                if rule == rustle::vg_family::denovo_assemble::ReadthroughRule::Rq1 { "; Q1: 3*V1 >= 5*S" } else { "" }
+                match rule {
+                    rustle::vg_family::denovo_assemble::ReadthroughRule::Rq1 => "; Q1: 3*V1 >= 5*S",
+                    rustle::vg_family::denovo_assemble::ReadthroughRule::R2 => {
+                        ", unless 2*L >= S and 3*V1 < 5*S (an alternative last exon); or U >= S and V1 >= 4*S (own promoter)"
+                    }
+                    rustle::vg_family::denovo_assemble::ReadthroughRule::R3 => {
+                        ", unless 2*L >= S and 3*V1 < 5*S (an alternative last exon); or U >= S, V1 >= 4*S and V1 > N_span \
+                         (own promoter, not outnumbered by the molecules spanning the intron)"
+                    }
+                    _ => "",
+                }
             ),
         }
     }
@@ -2975,6 +4590,8 @@ fn main() -> Result<()> {
     let mut union_all = rustle::vg_family::denovo_pipeline::UnionSummary::default();
     // `RUSTLE_READTHROUGH_JUNCTIONS`: every region's flagged junctions + removals, drained in region order.
     let mut readthrough_all = rustle::vg_family::denovo_assemble::ReadthroughFlags::default();
+    // `--polish-tss`: every region's 5'-end evidence, per chromosome (empty unless the option is on).
+    let mut tss_all = rustle::vg_family::denovo_assemble::TssEvidence::default();
     // `--families`: one row per ASSIGNED copy, naming the catalog row it came from. The explicit join
     // between `<out>.quant.tsv` and the O1 `copies.tsv`, and the place a copy that failed to survive
     // assignment would be visible as a missing row.
@@ -3179,9 +4796,14 @@ fn main() -> Result<()> {
         let mut n_mapped_streamed = 0usize;
         // RUSTLE_READTHROUGH_JUNCTIONS: the region's flags and removals (default = off, nothing flagged)
         let mut readthrough = rustle::vg_family::denovo_assemble::ReadthroughFlags::default();
+        // `--polish-tss`: the 5'-end evidence (streaming: fed by the pass-1 reader; buffered: one lazy pass below)
+        let mut tss_ev: Option<rustle::vg_family::denovo_assemble::TssEvidence> = None;
         if streaming {
             let mut acc = rustle::vg_family::denovo_assemble::Pass1Acc::new(1, None);
             acc.readthrough = rt_switch.as_ref().map(|s| s.stats());
+            if args.polish_tss != "off" || args.polish_tes != "off" {
+                acc.tss = Some(rustle::vg_family::denovo_assemble::TssEvidence::default());
+            }
             let mut fetched: Vec<(String, u64, u64)> = Vec::new();
             for (wchrom, wlo, whi) in &wins {
                 n_mapped_streamed += rustle::vg_family::denovo_assemble::stream_pass1_region(
@@ -3204,7 +4826,15 @@ fn main() -> Result<()> {
                 readthrough.chains_removed = chains;
                 readthrough.alignments_removed = reads;
             }
+            tss_ev = acc.tss.take();
             streamed = Some(acc.finish(cfg.pass1_min_reads, 0, None));
+        } else if args.polish_tss != "off" || args.polish_tes != "off" {
+            let mut ev = rustle::vg_family::denovo_assemble::TssEvidence::default();
+            for (wchrom, wlo, whi) in &wins {
+                rustle::vg_family::denovo_assemble::tss_evidence_region(&args.bam, wchrom, *wlo, *whi, &mut ev)
+                    .with_context(|| format!("--polish-tss/--polish-tes evidence {wchrom}:{wlo}-{whi}"))?;
+            }
+            tss_ev = Some(ev);
         }
         // the buffered paths' statistics, fed from the materialised records below (never on the streaming path)
         let mut rt_buf = if streaming { None } else { rt_switch.as_ref().map(|s| s.stats()) };
@@ -3834,7 +5464,7 @@ fn main() -> Result<()> {
         } else {
             Vec::new()
         };
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough, tss: tss_ev })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -3878,7 +5508,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough } = work;
+            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough, tss } = work;
             // O3 Phase 2 (Task 6): fold this region's raw pair stats + orphan loci into the genome-wide
             // vectors. Nothing is written here -- the Bonferroni threshold in `finalize_flags` needs every
             // region's pairs first, so `family_join.tsv`/`missing_copy_loci.tsv` are written once, after
@@ -3888,6 +5518,9 @@ fn main() -> Result<()> {
             all_discovered.extend(discovered);
             union_all.absorb(union);
             readthrough_all.absorb(readthrough);
+            if let Some(ev) = tss {
+                tss_all.absorb(ev);
+            }
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -5003,6 +6636,17 @@ fn main() -> Result<()> {
         } // for work in works (serial drain, region order)
     } // serial-drain block
 
+    // --polish-subchain: (flagged, missing 5p, missing 3p, missing both, multi-exon transcripts) for params.tsv
+    let mut subchain_counts: (usize, usize, usize, usize, usize) = (0, 0, 0, 0, 0);
+    // --polish-tss: per-contig statistics, the attributes to append, the proven short forms (the sub-chain drop's
+    // guard, only from contigs where rescue / split acted)
+    let mut tss_stats: Vec<TssStats> = Vec::new();
+    let mut tss_attrs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut tss_protect: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut tss_subchain_spared = 0usize;
+    // --polish-tes: per-contig statistics and the attributes to append (after the --polish-tss ones)
+    let mut tes_stats: Vec<TesStats> = Vec::new();
+    let mut tes_attrs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     if args.gtf {
         // §6gp: the `productive` call is RELATIVE to the family's best ORF, which is only known once every
         // region has been drained — so it is stamped here, in a second pass over the finished GTF lines.
@@ -5074,22 +6718,99 @@ fn main() -> Result<()> {
             let mut polished: Vec<String> = Vec::with_capacity(gtf_lines.len());
             for c in &contigs {
                 let mut part: Vec<String> = gtf_lines.iter().filter(|l| !l.starts_with('#') && l.split('\t').next() == Some(c.as_str())).cloned().collect();
-                let (a, b, d, floor, e) = polish_gtf_lines(
-                    &mut part,
-                    &args.assembly_polish,
-                    args.polish_mono_quantile,
-                    args.polish_isoform_fraction,
-                    args.polish_mono_shadow,
-                    args.polish_ism_escape,
-                    args.polish_ism_3p,
-                    args.polish_ism_ratio,
-                    args.polish_fraction_exempt,
-                    args.polish_fuzzy_junction,
-                    args.polish_fuzzy_ism,
-                    args.polish_fraction_min_reads,
-                    args.polish_retained_ratio,
-                );
-                n_ism += a; n_mono += b; n_frac += d; n_ret += e; floors.push(floor);
+                // the contig's end evidence (--polish-tss / --polish-tes; empty and never read when both are off)
+                let recs = if args.polish_tss != "off" || args.polish_tes != "off" {
+                    tss_all.by_chrom.remove(c.as_str()).unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                if args.polish_tss == "off" {
+                    let (a, b, d, floor, e) = polish_gtf_lines(
+                        &mut part,
+                        &args.assembly_polish,
+                        args.polish_mono_quantile,
+                        args.polish_isoform_fraction,
+                        args.polish_mono_shadow,
+                        args.polish_ism_escape,
+                        args.polish_ism_3p,
+                        args.polish_ism_ratio,
+                        args.polish_fraction_exempt,
+                        args.polish_fuzzy_junction,
+                        args.polish_fuzzy_ism,
+                        args.polish_fraction_min_reads,
+                        args.polish_retained_ratio,
+                    );
+                    n_ism += a; n_mono += b; n_frac += d; n_ret += e; floors.push(floor);
+                } else {
+                    // --polish-tss: the unprotected polish decides everything; the proof only takes proven short forms
+                    // back out of its ISM / fraction / retained drops (so the output holds every `off` transcript)
+                    let (drop0, sites, (a, b, d, floor, e)) = polish_drop_set(
+                        &part,
+                        &args.assembly_polish,
+                        args.polish_mono_quantile,
+                        args.polish_isoform_fraction,
+                        args.polish_mono_shadow,
+                        args.polish_ism_escape,
+                        args.polish_ism_3p,
+                        args.polish_ism_ratio,
+                        args.polish_fraction_exempt,
+                        args.polish_fuzzy_junction,
+                        args.polish_fuzzy_ism,
+                        args.polish_fraction_min_reads,
+                        args.polish_retained_ratio,
+                    );
+                    n_ism += a; n_mono += b; n_frac += d; n_ret += e; floors.push(floor);
+                    let out = tss_decide(c, &part, &drop0, &sites, &recs, &args.polish_tss);
+                    let (on, _off, _twins) = tss_emit(&part, &drop0, &out);
+                    part = on;
+                    tss_attrs.extend(tss_attr_strings(&out));
+                    tss_protect.extend(out.protect.iter().cloned());
+                    let st = &out.stats;
+                    eprintln!(
+                        "[copy_assign] TSS PROOF ({}) {}: {}; cap signal {} (capped {}/{} at the proven first-exon \
+                         clusters, {}/{} in internal-exon bodies); case A: {} candidate short forms, {} proven, {} in scope \
+                         ({} proven without an own start in the window: not protected) -> rescued ISM {} / fraction {} / \
+                         retained {}; case B: {} of {} polished chains with a proven TSS, {} with >= 2 -> split {} (+{} \
+                         transcripts){}",
+                        args.polish_tss, c,
+                        if st.fitted {
+                            format!("null h {:.3e} a {:.3} r(-2) {:.1} r(-1) {:.1}", st.h, st.a, st.r[(TSS_TOL - 2) as usize], st.r[(TSS_TOL - 1) as usize])
+                        } else {
+                            "NO null (no internal-exon evidence): nothing proven".to_string()
+                        },
+                        if st.cap_signal { "YES" } else { "no" }, st.pk_capped, st.pk_n, st.bg_capped, st.bg_n,
+                        st.candidates, st.proven, st.in_scope, st.proven_no_own_start, st.rescued_ism, st.rescued_frac,
+                        st.rescued_ret,
+                        st.chains_clustered, st.multi, st.chains_ge2, st.split_chains, st.split_added,
+                        if st.applied {
+                            String::new()
+                        } else {
+                            format!(
+                                "; NO CAP SIGNAL: {} does nothing on this contig (output = tag; withheld: {} rescues, {} splits)",
+                                args.polish_tss, st.withheld_rescued, st.withheld_split
+                            )
+                        }
+                    );
+                    tss_stats.push(out.stats);
+                }
+                if args.polish_tes != "off" {
+                    // --polish-tes on the contig's final transcripts (after --polish-tss): the genome is the proof
+                    let g = genome_for(c)?;
+                    let seq: &[u8] = g.chroms().find(|(n, _)| *n == c.as_str()).map(|(_, s)| s).unwrap_or(&[]);
+                    let out = tes_decide(&part, &recs, seq, &args.polish_tes);
+                    part = tes_apply(part, &out);
+                    tes_attrs.extend(out.attrs.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    let st = &out.stats;
+                    eprintln!(
+                        "[copy_assign] TES PROOF ({}) {}: {} multi-exon transcripts, {} with a 3' cluster of >= 2 own \
+                         reads, {} with a PAS-proven cluster ({} with >= 2); emitted 3' end: canonical PAS {}, internally \
+                         primed {} -> {} moved to the most-3' proven cluster's mode",
+                        args.polish_tes, c, st.multi, st.with_cluster, st.with_proven, st.ge2_proven, st.end_pas,
+                        st.end_primed, st.moved
+                    );
+                    tes_stats.push(out.stats);
+                }
+                std::mem::drop(recs);
                 polished.extend(part);
             }
             let comments: Vec<String> = gtf_lines.iter().filter(|l| l.starts_with('#')).cloned().collect();
@@ -5103,10 +6824,48 @@ fn main() -> Result<()> {
                 args.assembly_polish, args.polish_isoform_fraction, args.polish_retained_ratio
             );
         }
+        // --polish-subchain: decided on the polished set; `drop` removes before TPM (so TPM stays normalised),
+        // `tag` appends after it (so the tag is the line's last attribute and TPM's bytes are untouched).
+        // Under --polish-tss / --polish-tes it is decided on the FINAL set (after the rescue, the split and any end
+        // move: tss_review F3), so every rescued form and split piece carries its own correct flag; under
+        // --polish-tss rescue|split `drop` spares the proven short forms of the contigs where they acted.
+        let tss_changes = args.polish_tss == "rescue" || args.polish_tss == "split";
+        let mut subchain: std::collections::BTreeMap<String, (String, &'static str)> = std::collections::BTreeMap::new();
+        if args.polish_subchain != "off" {
+            let (flags, multi) = subchain_flags(&gtf_lines);
+            subchain = flags;
+            let by = |m: &str| subchain.values().filter(|v| v.1 == m).count();
+            subchain_counts = (subchain.len(), by("5p"), by("3p"), by("both"), multi);
+            if tss_changes {
+                tss_subchain_spared = tss_subchain_guard(&mut subchain, &tss_protect, args.polish_subchain == "drop");
+            }
+            if args.polish_subchain == "drop" {
+                subchain_drop(&mut gtf_lines, &subchain);
+            }
+            eprintln!(
+                "[copy_assign] SUB-CHAIN ({}): {} of {} multi-exon transcripts are an end-compatible contiguous \
+                 sub-chain of a longer emitted transcript of the same locus with >= 1/2 its reads (ends +-{} bp; \
+                 missing 5p {} / 3p {} / both {}) -> {}{}",
+                args.polish_subchain, subchain_counts.0, subchain_counts.4, SUBCHAIN_TOL_BP, subchain_counts.1,
+                subchain_counts.2, subchain_counts.3,
+                if args.polish_subchain == "drop" { "dropped" } else { "tagged subchain_of / subchain_missing" },
+                if tss_changes && args.polish_subchain == "drop" {
+                    format!(" (--polish-tss spared {tss_subchain_spared} proven short forms)")
+                } else {
+                    String::new()
+                }
+            );
+        }
         if args.gtf_tpm {
             let n = annotate_tpm(&mut gtf_lines);
             eprintln!("[copy_assign] ⭐ TPM: annotated {n} transcript lines with count-based `TPM` and `cov` (§6r5)");
         }
+        if args.polish_subchain == "tag" {
+            subchain_tag(&mut gtf_lines, &subchain);
+        }
+        // --polish-tss then --polish-tes attributes: the line's last attributes (after TPM and any sub-chain tag)
+        tss_tag(&mut gtf_lines, &tss_attrs);
+        tss_tag(&mut gtf_lines, &tes_attrs);
         let mut gh = std::fs::File::create(format!("{}.gtf", args.out))?;
         for line in &gtf_lines {
             writeln!(gh, "{line}")?;
@@ -5824,9 +7583,9 @@ fn main() -> Result<()> {
         }
         eprintln!(
             "[readthrough] RUSTLE_READTHROUGH_JUNCTIONS={}: {} junction(s) with S>=2, {} canonical R-pass, {} flagged; \
-             {} pool chain(s) / {} pool alignment(s) removed before pass 1 -> {path}",
+             {} pool chain(s) / {} pool alignment(s) removed before pass 1 -> {path}{}",
             rule.as_str(), readthrough_all.n_junctions, readthrough_all.n_r_pass, readthrough_all.rows.len(),
-            readthrough_all.chains_removed, readthrough_all.alignments_removed
+            readthrough_all.chains_removed, readthrough_all.alignments_removed, readthrough_all.tier_summary()
         );
     }
 
@@ -5928,12 +7687,85 @@ fn main() -> Result<()> {
             row("readthrough_junctions_flagged", format!("{}", readthrough_all.rows.len()))?;
             row("readthrough_junctions_chains_removed", format!("{}", readthrough_all.chains_removed))?;
             row("readthrough_junctions_alignments_removed", format!("{}", readthrough_all.alignments_removed))?;
+            // arms r2 / r3 only: the flagged junctions by tier (A + B = flagged) and tier A's exempted junctions; r3
+            // adds tier B's guarded junctions (V1 <= N_span, not flagged)
+            if rule.is_tiered() {
+                row("readthrough_junctions_tier_a", format!("{}", readthrough_all.n_tier_a))?;
+                row("readthrough_junctions_tier_b_only", format!("{}", readthrough_all.n_tier_b))?;
+                row("readthrough_junctions_tier_a_exempt", format!("{}", readthrough_all.n_ale_exempt))?;
+            }
+            if rule == rustle::vg_family::denovo_assemble::ReadthroughRule::R3 {
+                row("readthrough_junctions_tier_b_guarded", format!("{}", readthrough_all.n_tier_b_guarded))?;
+            }
             // the list arm only: which list, and how many distinct junctions it holds (flagged = those on the
             // assembled regions)
             if let Some(list) = rt_switch.as_ref().and_then(|s| s.list.as_ref()) {
                 row("readthrough_junctions_list", list.path.clone())?;
                 row("readthrough_junctions_listed", format!("{}", list.len()))?;
             }
+        }
+        // --polish-subchain: rows only when not `off` (the default params.tsv stays byte-identical)
+        if args.polish_subchain != "off" {
+            row("polish_subchain", args.polish_subchain.clone())?;
+            row("polish_subchain_tol_bp", format!("{SUBCHAIN_TOL_BP}"))?;
+            row("polish_subchain_min_container_reads_ratio", "0.5".to_string())?;
+            row("polish_subchain_multi_exon", format!("{}", subchain_counts.4))?;
+            row("polish_subchain_flagged", format!("{}", subchain_counts.0))?;
+            row("polish_subchain_missing_5p", format!("{}", subchain_counts.1))?;
+            row("polish_subchain_missing_3p", format!("{}", subchain_counts.2))?;
+            row("polish_subchain_missing_both", format!("{}", subchain_counts.3))?;
+        }
+        // --polish-tss: rows only when not `off` (the default params.tsv stays byte-identical); fitted quantities per
+        // contig ("contig:value;..."), counts summed over contigs
+        if args.polish_tss != "off" {
+            let per = |f: &dyn Fn(&TssStats) -> String| -> String {
+                tss_stats.iter().map(|st| format!("{}:{}", st.contig, f(st))).collect::<Vec<_>>().join(";")
+            };
+            let sum = |f: &dyn Fn(&TssStats) -> usize| -> String { format!("{}", tss_stats.iter().map(f).sum::<usize>()) };
+            row("polish_tss", args.polish_tss.clone())?;
+            row("polish_tss_alpha", format!("{TSS_ALPHA}"))?;
+            row("polish_tss_tol_bp", format!("{TSS_TOL}"))?;
+            row("polish_tss_h", per(&|st| if st.fitted { format!("{:.6e}", st.h) } else { "NA".into() }))?;
+            row("polish_tss_nb_a", per(&|st| if st.fitted { format!("{:.6}", st.a) } else { "NA".into() }))?;
+            row("polish_tss_acceptor_r", per(&|st| st.r.iter().map(|x| format!("{x:.2}")).collect::<Vec<_>>().join(",")))?;
+            row("polish_tss_cap_signal", per(&|st| format!(
+                "{} (clusters {}/{}, bodies {}/{})", if st.cap_signal { "yes" } else { "no" }, st.pk_capped, st.pk_n, st.bg_capped, st.bg_n)))?;
+            row("polish_tss_multi_exon", sum(&|st| st.multi))?;
+            row("polish_tss_candidates", sum(&|st| st.candidates))?;
+            row("polish_tss_proven", sum(&|st| st.proven))?;
+            row("polish_tss_proven_in_scope", sum(&|st| st.in_scope))?;
+            row("polish_tss_rescued_ism", sum(&|st| st.rescued_ism))?;
+            row("polish_tss_rescued_fraction", sum(&|st| st.rescued_frac))?;
+            row("polish_tss_rescued_retained", sum(&|st| st.rescued_ret))?;
+            row("polish_tss_chains_with_cluster", sum(&|st| st.chains_clustered))?;
+            row("polish_tss_chains_ge2_clusters", sum(&|st| st.chains_ge2))?;
+            row("polish_tss_split_chains", sum(&|st| st.split_chains))?;
+            row("polish_tss_split_added", sum(&|st| st.split_added))?;
+            row("polish_tss_subchain_spared", format!("{tss_subchain_spared}"))?;
+            // tss_review F1 / F4
+            row("polish_tss_applied", per(&|st| {
+                if st.applied { "yes".to_string() } else { "no (no cap signal: output = tag)".to_string() }
+            }))?;
+            row("polish_tss_withheld_rescued", sum(&|st| st.withheld_rescued))?;
+            row("polish_tss_withheld_split", sum(&|st| st.withheld_split))?;
+            row("polish_tss_proven_no_own_start", sum(&|st| st.proven_no_own_start))?;
+        }
+        // --polish-tes: rows only when not `off` (the default params.tsv stays byte-identical); counts summed
+        if args.polish_tes != "off" {
+            let sum = |f: &dyn Fn(&TesStats) -> usize| -> String { format!("{}", tes_stats.iter().map(f).sum::<usize>()) };
+            row("polish_tes", args.polish_tes.clone())?;
+            row("polish_tes_link_bp", format!("{TSS_W}"))?;
+            row("polish_tes_min_cluster_reads", format!("{TES_MIN_READS}"))?;
+            row("polish_tes_hexamers", "AATAAA,ATTAAA".to_string())?;
+            row("polish_tes_pas_window", format!("{TES_PAS_NEAR}-{TES_PAS_FAR}"))?;
+            row("polish_tes_primed_rule", format!(">={TES_PRIME_FRAC} A in {TES_PRIME_BP} bp downstream or A6"))?;
+            row("polish_tes_multi_exon", sum(&|st| st.multi))?;
+            row("polish_tes_chains_with_cluster", sum(&|st| st.with_cluster))?;
+            row("polish_tes_chains_with_proven", sum(&|st| st.with_proven))?;
+            row("polish_tes_chains_ge2_proven", sum(&|st| st.ge2_proven))?;
+            row("polish_tes_end_pas", sum(&|st| st.end_pas))?;
+            row("polish_tes_end_primed", sum(&|st| st.end_primed))?;
+            row("polish_tes_ends_moved", sum(&|st| st.moved))?;
         }
         row("posterior_prior", if prior_abundance { "abundance".into() } else { "uniform".to_string() })?;
         row("margin", format!("{}", args.margin))?;
@@ -6316,6 +8148,780 @@ mod tests {
         let mut l = ism();
         polish_gtf_lines(&mut l, "full", 0.10, 0.0, false, true, false, 1.0, false, 0, false, 0, 0.0);
         assert_eq!(tids(&l), vec!["DEEP", "FRAG", "OTHER"], "with the escape a well-supported fragment survives");
+    }
+
+    /// `--polish-subchain` fixtures: one transcript as GTF lines (1-based inclusive exons, `c`/`G` defaults).
+    fn sc_gtf(tid: &str, gene: &str, strand: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
+        let at = format!("gene_id \"{gene}\"; transcript_id \"{tid}\";");
+        let mut v = vec![format!(
+            "c\trustle\ttranscript\t{}\t{}\t.\t{strand}\t.\t{at} reads \"{reads}\"; matched_reads \"0\";",
+            exons[0].0,
+            exons[exons.len() - 1].1
+        )];
+        for (k, (s, e)) in exons.iter().enumerate() {
+            v.push(format!("c\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at} exon_number \"{}\";", k + 1));
+        }
+        v
+    }
+    /// X: 4 exons 101-200 / 301-400 / 501-600 / 701-800 (introns 201-300, 401-500, 601-700), 10 reads.
+    const SC_X: [(i64, i64); 4] = [(101, 200), (301, 400), (501, 600), (701, 800)];
+    fn sc_flags(l: &[String]) -> Vec<(String, String, String)> {
+        subchain_flags(l).0.into_iter().map(|(y, (x, m))| (y, x, m.to_string())).collect()
+    }
+    fn sc_one(y: &str, x: &str, m: &str) -> Vec<(String, String, String)> {
+        vec![(y.to_string(), x.to_string(), m.to_string())]
+    }
+
+    #[test]
+    fn subchain_needs_a_contiguous_block_of_exact_junctions() {
+        // X's last two junctions, ends inside X's exons 2 and 4: a contiguous block lacking X's first junction
+        let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
+        l.extend(sc_gtf("Y", "G", "+", 4, &[(350, 400), (501, 600), (701, 750)]));
+        assert_eq!(sc_flags(&l), sc_one("Y", "X", "5p"));
+        assert_eq!(subchain_flags(&l).1, 2, "two multi-exon transcripts");
+        // junctions 1 and 3 of X with junction 2 skipped over (a retained intron): not a contiguous block
+        let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
+        l.extend(sc_gtf("Y", "G", "+", 4, &[(150, 200), (301, 600), (701, 750)]));
+        assert!(sc_flags(&l).is_empty());
+        // one junction 1 bp off X's (donor 401 instead of 400): no exact match, not flagged
+        let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
+        l.extend(sc_gtf("Y", "G", "+", 4, &[(350, 401), (501, 600)]));
+        assert!(sc_flags(&l).is_empty());
+    }
+
+    #[test]
+    fn subchain_end_tolerance_is_10_bp_at_both_ends() {
+        // Y = X's intron 2 alone; X's exon 2 starts at 301 and exon 3 ends at 600
+        for (start, end, hit) in [(291, 600, true), (290, 600, false), (301, 610, true), (301, 611, false), (291, 610, true)] {
+            let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
+            l.extend(sc_gtf("Y", "G", "+", 4, &[(start, 400), (501, end)]));
+            assert_eq!(!sc_flags(&l).is_empty(), hit, "Y {start}-{end}");
+        }
+    }
+
+    #[test]
+    fn subchain_needs_the_container_to_carry_half_the_reads() {
+        for (rx, ry, hit) in [(5, 10, true), (5, 11, false), (0, 0, true), (0, 1, false), (6, 11, true)] {
+            let mut l = sc_gtf("X", "G", "+", rx, &SC_X);
+            l.extend(sc_gtf("Y", "G", "+", ry, &[(301, 400), (501, 600)]));
+            assert_eq!(!sc_flags(&l).is_empty(), hit, "reads(x) {rx}, reads(y) {ry}");
+        }
+    }
+
+    #[test]
+    fn subchain_missing_ends_are_named_in_transcript_orientation() {
+        // genomic prefix of X (lacks X's right end) and suffix (lacks its left end), and an internal block
+        let cases = [
+            (vec![(101, 200), (301, 400), (501, 600)], "3p", "5p"),
+            (vec![(301, 400), (501, 600), (701, 800)], "5p", "3p"),
+            (vec![(301, 400), (501, 600)], "both", "both"),
+        ];
+        for (y, plus, minus) in cases {
+            for (strand, want) in [("+", plus), ("-", minus)] {
+                let mut l = sc_gtf("X", "G", strand, 10, &SC_X);
+                l.extend(sc_gtf("Y", "G", strand, 4, &y));
+                assert_eq!(sc_flags(&l), sc_one("Y", "X", want), "{strand} {y:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn subchain_names_the_best_supported_container_ties_to_the_first_id() {
+        // three containers of Y (X's intron 2); B has the most reads
+        let base = |ra: u64, rb: u64, rc: u64| {
+            let mut l = sc_gtf("C", "G", "+", rc, &SC_X);
+            l.extend(sc_gtf("A", "G", "+", ra, &[(101, 200), (301, 400), (501, 600)]));
+            l.extend(sc_gtf("B", "G", "+", rb, &[(301, 400), (501, 600), (701, 800)]));
+            l.extend(sc_gtf("Y", "G", "+", 4, &[(301, 400), (501, 600)]));
+            l
+        };
+        let y_of = |l: &[String]| sc_flags(l).into_iter().find(|f| f.0 == "Y").map(|f| (f.1, f.2));
+        // B (Y lacks its right junction) beats C (both ends) and A (its left junction) on reads
+        assert_eq!(y_of(&base(5, 9, 7)), Some(("B".to_string(), "3p".to_string())));
+        // equal reads: the first transcript_id in byte order (A before B before C), whatever the line order
+        assert_eq!(y_of(&base(9, 9, 9)), Some(("A".to_string(), "5p".to_string())));
+        assert_eq!(y_of(&base(8, 9, 9)), Some(("B".to_string(), "3p".to_string())));
+        // a container below half of Y's reads is not a candidate, however long
+        assert_eq!(y_of(&base(1, 1, 2)), Some(("C".to_string(), "both".to_string())));
+        // A and B are themselves sub-chains of C, and still name containers of Y: every flag is decided on the
+        // input set
+        let f = sc_flags(&base(9, 9, 9));
+        assert_eq!(f.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), vec!["A", "B", "Y"]);
+    }
+
+    #[test]
+    fn subchain_never_flags_mono_exon_maximal_or_other_locus_transcripts() {
+        // a single exon inside X's exon, and a chain equal to X's (not strictly shorter): neither is flagged, and
+        // X, the maximal element, never is
+        let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
+        l.extend(sc_gtf("MONO", "G", "+", 1, &[(310, 390)]));
+        l.extend(sc_gtf("TWIN", "G", "+", 1, &SC_X));
+        assert!(sc_flags(&l).is_empty());
+        // the same sub-chain under another gene_id, on the other strand, or on another contig
+        let y = [(301, 400), (501, 600)];
+        let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
+        l.extend(sc_gtf("OTHERGENE", "H", "+", 4, &y));
+        l.extend(sc_gtf("OTHERSTRAND", "G", "-", 4, &y));
+        l.extend(sc_gtf("OTHERCONTIG", "G", "+", 4, &y).into_iter().map(|s| s.replacen("c\t", "d\t", 1)));
+        assert!(sc_flags(&l).is_empty());
+    }
+
+    #[test]
+    fn subchain_reads_attribute_is_matched_at_an_attribute_boundary() {
+        assert_eq!(gtf_attr_digits("gene_id \"g\"; matched_reads \"7\"; reads \"3\";", "reads"), Some(3));
+        assert_eq!(gtf_attr_digits("reads \"12\"; x \"1\";", "reads"), Some(12));
+        assert_eq!(gtf_attr_digits("gene_id \"g\"; matched_reads \"7\";", "reads"), None);
+        assert_eq!(gtf_attr_digits("gene_id \"g\"; reads \"1.5\"; reads \"2\";", "reads"), Some(2));
+    }
+
+    #[test]
+    fn subchain_tag_appends_and_drop_removes_only_the_flagged() {
+        let base = || {
+            let mut l = sc_gtf("X", "G", "-", 10, &SC_X);
+            l.extend(sc_gtf("Y", "G", "-", 4, &[(101, 200), (301, 400)]));
+            l.extend(sc_gtf("Z", "H", "+", 1, &[(9001, 9100), (9201, 9300)]));
+            l
+        };
+        let l0 = base();
+        let (flags, _) = subchain_flags(&l0);
+        let mut t = l0.clone();
+        subchain_tag(&mut t, &flags);
+        for (a, b) in l0.iter().zip(t.iter()) {
+            if a.contains("\ttranscript\t") && a.contains("transcript_id \"Y\"") {
+                assert_eq!(*b, format!("{a} subchain_of \"X\"; subchain_missing \"5p\";"));
+            } else {
+                assert_eq!(a, b);
+            }
+        }
+        let mut d = l0.clone();
+        subchain_drop(&mut d, &flags);
+        let kept: Vec<String> = l0.iter().filter(|x| !x.contains("transcript_id \"Y\"")).cloned().collect();
+        assert_eq!(d, kept);
+        assert_eq!(d.len(), l0.len() - 3);
+    }
+
+    // ------------------------------------------------------------------------------------------ --polish-tss
+    use rustle::vg_family::denovo_assemble::TssEvidence;
+
+    /// A fixed null (tests: hand-computable): hazard `h`, Poisson (a = 0), r(-2) = `r_m2` (1 elsewhere), and the
+    /// internal-exon-body cap background `bg` = (capped, all).
+    fn tss_null(h: f64, r_m2: f64, bg: (u64, u64)) -> TssNull {
+        let mut r = vec![1.0; TSS_W];
+        r[(TSS_TOL - 2) as usize] = r_m2;
+        TssNull { h, a: 0.0, r, bg_capped: bg.0, bg_n: bg.1 }
+    }
+    /// `k` primary reads on contig `c` (distinct 3' ends, so none deduplicates): 5' end `five` and 3' end `three`
+    /// (1-based genomic; on `-` the 5' end is the right end), introns 1-based inclusive intronic bases.
+    fn tss_push(ev: &mut TssEvidence, minus: bool, five: i64, three: i64, introns_1b: &[(i64, i64)], k: usize, capped: bool) {
+        let introns: Vec<(u64, u64)> = introns_1b.iter().map(|&(a, b)| ((a - 1) as u64, b as u64)).collect();
+        for i in 0..k as i64 {
+            if minus {
+                ev.push("c", true, (three - 1 - i) as u64, five as u64, &introns, capped);
+            } else {
+                ev.push("c", false, (five - 1) as u64, (three + i) as u64, &introns, capped);
+            }
+        }
+    }
+    fn tss_recs(ev: &TssEvidence) -> Vec<rustle::vg_family::denovo_assemble::TssRead> {
+        ev.by_chrom.get("c").cloned().unwrap_or_default()
+    }
+    /// The driver's polish (full, fraction 0.02, shadow, quantile 0.82, ISM 0.7, retained 10) on `l`.
+    fn tss_polish(l: &[String]) -> (std::collections::HashSet<String>, std::collections::HashMap<String, &'static str>) {
+        let (d, s, _) = polish_drop_set(l, "full", 0.82, 0.02, true, false, false, 0.7, false, 0, false, 0, 10.0);
+        (d, s)
+    }
+    /// Case-A fixture, `+`: X = 101-200 / 1001-1100 / 1201-1300 (10 reads), Y = 501-1100 / 1201-1300 (2 reads, dropped
+    /// by the ISM against X); X's 10 reads start at 101 (capped as given).
+    const TSS_X: [(i64, i64); 3] = [(101, 200), (1001, 1100), (1201, 1300)];
+    const TSS_Y: [(i64, i64); 2] = [(501, 1100), (1201, 1300)];
+    fn tss_fixture_a(x_capped: bool) -> (Vec<String>, TssEvidence) {
+        let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
+        l.extend(sc_gtf("Y", "G", "+", 2, &TSS_Y));
+        let mut ev = TssEvidence::default();
+        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 10, x_capped);
+        (l, ev)
+    }
+    /// The proof WITHOUT the no-cap gate (the mechanics tests run on uncapped fixtures; the gate has its own test).
+    fn tss_run(l: &[String], ev: &TssEvidence, mode: &str, null: TssNull) -> TssOutcome {
+        let (d, s) = tss_polish(l);
+        tss_prove_with("c", l, &d, &s, &tss_recs(ev), mode, Some(null))
+    }
+
+    #[test]
+    fn tss_nb_tail_is_the_poisson_tail_at_zero_dispersion_and_matches_the_pmf_sum() {
+        // P(X >= 3 | mu = 1) = 1 - 2.5/e
+        let want = 1.0 - 2.5 / std::f64::consts::E;
+        assert!((tss_nb_sf(3, 1.0, 0.0) - want).abs() < 1e-12, "{}", tss_nb_sf(3, 1.0, 0.0));
+        assert!((tss_nb_sf(3, 1.0, 1e-9) - want).abs() < 1e-7, "a -> 0 is the Poisson limit");
+        assert_eq!(tss_nb_sf(0, 1.0, 1.0), 1.0);
+        // NB(mu = 0.5, a = 1.15): 1 - sum_{k<4} pmf(k)
+        let (mu, a) = (0.5f64, 1.15f64);
+        let r = 1.0 / a;
+        let q = mu / (r + mu);
+        let pmf = |k: u64| (tss_ln_gamma(k as f64 + r) - tss_ln_gamma(r) - tss_ln_gamma(k as f64 + 1.0)
+            + r * (r / (r + mu)).ln() + k as f64 * q.ln()).exp();
+        let want = 1.0 - (0..4).map(pmf).sum::<f64>();
+        assert!((tss_nb_sf(4, mu, a) - want).abs() < 1e-12 * want.max(1e-300) + 1e-15, "{} vs {want}", tss_nb_sf(4, mu, a));
+        // deep tail, relative accuracy
+        let tail: f64 = (30..200).map(pmf).sum();
+        assert!(((tss_nb_sf(30, mu, a) - tail) / tail).abs() < 1e-9);
+        // binomial halves: P(Bin(10,1/2) >= 8) = P(Bin(10,1/2) <= 2) = 56/1024
+        assert!((tss_binom_half_sf(8, 10) - 56.0 / 1024.0).abs() < 1e-13);
+        assert!((tss_binom_half_cdf(2, 10) - 56.0 / 1024.0).abs() < 1e-13);
+        assert_eq!(tss_binom_half_sf(0, 0), 1.0);
+        assert_eq!(tss_binom_half_cdf(0, 0), 1.0);
+    }
+
+    #[test]
+    fn tss_evidence_deduplicates_orients_and_reads_the_cap_clip() {
+        use noodles_sam::alignment::record::cigar::{op::Kind as K, Op};
+        use noodles_sam::alignment::record::Flags;
+        let mut ev = TssEvidence::default();
+        ev.push("c", false, 99, 1300, &[(200, 1000)], true);
+        ev.push("c", false, 99, 1300, &[(200, 1000)], false); // same key: counted once, the first record's cap wins
+        ev.push("c", true, 99, 1300, &[(200, 1000)], false); // the other strand is another key
+        let r = &ev.by_chrom["c"];
+        assert_eq!(r.len(), 2);
+        assert_eq!((r[0].o5, r[0].capped, r[0].oin.clone()), (100, true, vec![(201, 1000)]));
+        assert_eq!((r[1].o5, r[1].oin.clone()), (-1300, vec![(-1000, -201)]), "- : o5 = -end, introns mirrored");
+        assert_eq!((r[0].o3, r[1].o3), (1300, -100), "o3 = end on +, -(start + 1) on - (1-based, oriented)");
+        let mut other = TssEvidence::default();
+        other.push("c", false, 99, 1300, &[(200, 1000)], false);
+        other.push("c", false, 50, 1300, &[(200, 1000)], false);
+        ev.absorb(other);
+        assert_eq!(ev.len(), 3, "absorb skips a key already held");
+        // admission: primary spliced only
+        let exons = [(99u64, 200u64), (1000, 1300)];
+        let ops = [Op::new(K::SoftClip, 1), Op::new(K::Match, 101), Op::new(K::Skip, 800), Op::new(K::Match, 300)];
+        let seq = |_: usize| Some(b'G');
+        let mut ev = TssEvidence::default();
+        ev.push_alignment("c", Flags::SECONDARY, 99, &exons, &ops, 402, seq);
+        ev.push_alignment("c", Flags::SUPPLEMENTARY, 99, &exons, &ops, 402, seq);
+        ev.push_alignment("c", Flags::QC_FAIL, 99, &exons, &ops, 402, seq);
+        ev.push_alignment("c", Flags::empty(), 99, &exons[..1], &ops, 402, seq);
+        assert!(ev.is_empty(), "secondary / supplementary / QC-fail / unspliced never enter");
+        ev.push_alignment("c", Flags::empty(), 99, &exons, &ops, 402, seq);
+        assert_eq!(ev.len(), 1);
+        assert!(ev.by_chrom["c"][0].capped);
+        // the cap clip: 1-3 soft-clipped G at the read's 5' end (reverse: trailing C in SEQ)
+        let g = |_: usize| Some(b'G');
+        let c = |_: usize| Some(b'C');
+        let s3 = [Op::new(K::SoftClip, 3), Op::new(K::Match, 10)];
+        let s4 = [Op::new(K::SoftClip, 4), Op::new(K::Match, 10)];
+        let h2 = [Op::new(K::HardClip, 2), Op::new(K::Match, 10)];
+        let m = [Op::new(K::Match, 10), Op::new(K::SoftClip, 2)];
+        assert!(tss_cap_clip_t(&s3, false, 13, g));
+        assert!(!tss_cap_clip_t(&s4, false, 14, g), "4 bp is not the signature");
+        assert!(!tss_cap_clip_t(&h2, false, 10, g), "a hard clip has no bases");
+        assert!(!tss_cap_clip_t(&s3, false, 13, |i| Some(if i == 1 { b'A' } else { b'G' })), "G only");
+        assert!(!tss_cap_clip_t(&m, false, 12, g), "a forward read's 5' end is its first op");
+        assert!(tss_cap_clip_t(&m, true, 12, c), "reverse: the trailing clip, C in SEQ = G in the read");
+        assert!(!tss_cap_clip_t(&m, true, 12, g));
+    }
+    fn tss_cap_clip_t(ops: &[noodles_sam::alignment::record::cigar::Op], rev: bool, n: usize, b: impl Fn(usize) -> Option<u8>) -> bool {
+        rustle::vg_family::denovo_assemble::tss_cap_clip(ops, rev, n, b)
+    }
+
+    #[test]
+    fn tss_profile_and_null_fit() {
+        // N(t) = starts <= t (also those before lo) + link acceptors <= t
+        let p = tss_profile(&[(5, false), (12, true), (12, false)], &[11, 30], 10, 14);
+        assert_eq!(p.n, vec![0, 0, 2, 0, 0]);
+        assert_eq!(p.cap, vec![0, 0, 1, 0, 0]);
+        assert_eq!(p.at, vec![1, 2, 4, 4, 4]);
+        // uniform starts over two internal exons -> a floored at 0; clumped starts -> a > 0
+        let fit = |clump: bool| -> TssNull {
+            let mut l = sc_gtf("T", "G", "+", 10, &[(101, 200), (301, 700), (801, 1200), (1301, 1400)]);
+            l.extend(sc_gtf("U", "G", "+", 10, &[(2101, 2200), (2301, 2400)]));
+            let mut ev = TssEvidence::default();
+            for (a, b, js) in [(301i64, 700i64, vec![(701i64, 800i64), (1201, 1300)]), (801, 1200, vec![(1201, 1300)])] {
+                // 1000 molecules cross both exons, so the at-risk count is nearly flat and uniform starts ARE a
+                // constant hazard
+                tss_push(&mut ev, false, 101, 1400, &[(201, 300), (701, 800), (1201, 1300)], 1000, false);
+                let mut t = a;
+                while t <= b {
+                    let k = if clump && (t - a) % 84 == 0 { 8 } else if clump { 0 } else { 1 };
+                    tss_push(&mut ev, false, t, 1400, &js, k, false);
+                    t += if clump { 1 } else { 4 };
+                }
+            }
+            let txs = tss_parse(&l);
+            let base: Vec<&TssTx> = txs.values().filter(|t| !t.ochain.is_empty()).collect();
+            tss_fit_null(&base, &tss_index(&tss_recs(&ev))).expect("fitted")
+        };
+        let u = fit(false);
+        assert!(u.h > 0.0 && u.a == 0.0, "uniform: h {} a {}", u.h, u.a);
+        let c = fit(true);
+        assert!(c.a > 0.0, "clumped: a {}", c.a);
+        assert!(u.r.iter().all(|&x| x >= 1.0));
+        // the stratum: rho = the largest r(t - c) over acceptors within TOL, else 1
+        let n = tss_null(0.5, 100.0, (0, 0));
+        let ce = tss_cum_expect(&n, 0, &[1, 1, 1, 1], &[3, 40]);
+        assert_eq!(ce, vec![0.0, 0.5, 50.5, 51.0, 51.5], "t = 1 is d = -2 from the acceptor at 3");
+    }
+
+    #[test]
+    fn tss_case_a_proof_boundary_mode_scope_and_strand_mirror() {
+        // h = 0.01, |C| = 1: a spike of 2 starts at 700 (in X's intron) proves Y, 1 start does not
+        for (k, proven) in [(1usize, false), (2, true)] {
+            let (l, mut ev) = tss_fixture_a(false);
+            tss_push(&mut ev, false, 700, 1300, &[(1101, 1200)], k, false);
+            let o = tss_run(&l, &ev, "rescue", tss_null(0.01, 1.0, (0, 100)));
+            assert_eq!(o.stats.candidates, 1);
+            assert_eq!(o.rescued.contains_key("Y"), proven, "k = {k}");
+            assert_eq!(o.protect.contains("Y"), proven);
+            if proven {
+                assert_eq!(o.rescued["Y"], ("ism", 700), "rescued at the ISM, 5' end = the window's mode");
+            }
+        }
+        // a larger candidate family turns the pass into a fail: p*29 = 5.723e-3, x8 < 0.05, x9 > 0.05
+        for (extra, proven) in [(7usize, true), (8, false)] {
+            let (mut l, mut ev) = tss_fixture_a(false);
+            tss_push(&mut ev, false, 700, 1300, &[(1101, 1200)], 2, false);
+            for i in 0..extra {
+                let g = format!("G{i}");
+                l.extend(sc_gtf(&format!("X{i}"), &g, "+", 10, &[(5101, 5200), (5301, 5400), (5501, 5600)]));
+                l.extend(sc_gtf(&format!("Y{i}"), &g, "+", 1, &[(5351, 5400), (5501, 5600)]));
+            }
+            let o = tss_run(&l, &ev, "rescue", tss_null(0.01, 1.0, (0, 100)));
+            assert_eq!(o.stats.candidates, 1 + extra);
+            assert_eq!(o.rescued.contains_key("Y"), proven, "|C| = {}", 1 + extra);
+        }
+        // the emitted 5' end is the mode of the proven window, not the outermost single read (at 501)
+        let (l, mut ev) = tss_fixture_a(false);
+        tss_push(&mut ev, false, 501, 1300, &[(1101, 1200)], 1, false);
+        tss_push(&mut ev, false, 690, 1250, &[(1101, 1200)], 1, false);
+        tss_push(&mut ev, false, 700, 1300, &[(1101, 1200)], 3, false);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        assert_eq!(o.rescued["Y"], ("ism", 700));
+        let (d, _) = tss_polish(&l);
+        let (on, off, twins) = tss_emit(&l, &d, &o);
+        assert!(twins.is_empty());
+        assert!(on.iter().any(|x| x.starts_with("c\trustle\ttranscript\t700\t1300\t") && x.contains("\"Y\"")));
+        assert!(on.iter().any(|x| x.starts_with("c\trustle\texon\t700\t1100\t") && x.contains("\"Y\"")));
+        assert!(!off.iter().any(|x| x.contains("\"Y\"")), "off drops Y");
+        // F4: the 5' end is a mode among Y's OWN reads. A pile of another chain's reads (first junction J1, then a
+        // junction Y lacks) at 690 outnumbers Y's own 2 starts at 695 in the proven window [675, 695]: the end is 695
+        let (l, mut ev) = tss_fixture_a(false);
+        tss_push(&mut ev, false, 690, 1500, &[(1101, 1200), (1301, 1400)], 4, false);
+        tss_push(&mut ev, false, 695, 1300, &[(1101, 1200)], 2, false);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        assert_eq!(o.rescued["Y"], ("ism", 695), "own reads, not the window's overall mode (690)");
+        assert_eq!(o.stats.proven_no_own_start, 0);
+        // no own start in the proven window: the window proves another chain's TSS, not Y's -> Y stays dropped
+        let (l, mut ev) = tss_fixture_a(false);
+        tss_push(&mut ev, false, 690, 1500, &[(1101, 1200), (1301, 1400)], 4, false);
+        tss_push(&mut ev, false, 900, 1300, &[(1101, 1200)], 1, false);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        assert!(!o.rescued.contains_key("Y") && !o.protect.contains("Y"));
+        assert_eq!(o.stats.proven_no_own_start, 1);
+        // no own read at all: not protected, not rescued
+        let (l, mut ev) = tss_fixture_a(false);
+        tss_push(&mut ev, false, 690, 1500, &[(1101, 1200), (1301, 1400)], 4, false);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        assert!(!o.rescued.contains_key("Y") && !o.protect.contains("Y"));
+        assert_eq!(o.stats.proven_no_own_start, 1);
+        // scope: a proven window inside X's upstream exon (Y's first exon spans X's intron) is out of scope
+        let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
+        l.extend(sc_gtf("Y", "G", "+", 2, &[(151, 1100), (1201, 1300)]));
+        let mut ev = TssEvidence::default();
+        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 10, false);
+        tss_push(&mut ev, false, 160, 1300, &[(1101, 1200)], 3, false);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        assert_eq!((o.stats.proven, o.stats.in_scope), (1, 0));
+        assert!(o.rescued.is_empty() && o.protect.is_empty());
+        // the `-` strand mirror (p -> 3001 - p) takes the same decision and moves the genomic END
+        let mut l = sc_gtf("X", "G", "-", 10, &[(1701, 1800), (1901, 2000), (2801, 2900)]);
+        l.extend(sc_gtf("Y", "G", "-", 2, &[(1701, 1800), (1901, 2500)]));
+        let mut ev = TssEvidence::default();
+        tss_push(&mut ev, true, 2900, 1701, &[(1801, 1900), (2001, 2800)], 10, false);
+        tss_push(&mut ev, true, 2301, 1701, &[(1801, 1900)], 2, false);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.01, 1.0, (0, 100)));
+        assert_eq!(o.rescued.get("Y"), Some(&("ism", -2301)));
+        let (d, _) = tss_polish(&l);
+        let (on, _, _) = tss_emit(&l, &d, &o);
+        assert!(on.iter().any(|x| x.starts_with("c\trustle\ttranscript\t1701\t2301\t") && x.contains("\"Y\"")));
+        assert!(on.iter().any(|x| x.starts_with("c\trustle\texon\t1901\t2301\t") && x.contains("\"Y\"")));
+        // truncation at a constant hazard (1000 molecules enter X's exon k, one start every 5 bp) proves nothing
+        let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
+        l.extend(sc_gtf("Y", "G", "+", 2, &[(1011, 1100), (1201, 1300)]));
+        let mut ev = TssEvidence::default();
+        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 1000, false);
+        for t in (1001..=1100).step_by(5) {
+            tss_push(&mut ev, false, t, 1300, &[(1101, 1200)], 1, false);
+        }
+        let o = tss_run(&l, &ev, "rescue", tss_null(2e-4, 1.0, (0, 100)));
+        assert_eq!((o.stats.candidates, o.stats.proven), (1, 0), "starts at the null's own hazard");
+    }
+
+    #[test]
+    fn tss_acceptor_stratum_and_cap_requirement() {
+        // a pile at x's acceptor - 2 (truncated molecules with the upstream exon soft-clipped): proven under a flat
+        // null, not once the stratum r(-2) = 100 applies
+        for (r_m2, proven) in [(1.0, true), (100.0, false)] {
+            let (l, mut ev) = tss_fixture_a(false);
+            tss_push(&mut ev, false, 999, 1300, &[(1101, 1200)], 3, false);
+            let o = tss_run(&l, &ev, "rescue", tss_null(0.001, r_m2, (0, 100)));
+            assert_eq!(o.rescued.contains_key("Y"), proven, "r(-2) = {r_m2}");
+        }
+        // cap signal (X's TSS cluster capped, bodies uncapped): an uncapped pile no longer proves, a capped one does;
+        // without the signal (X uncapped) the uncapped pile proves (the NB fallback)
+        for (x_capped, y_capped, signal, proven) in
+            [(true, false, true, false), (true, true, true, true), (false, false, false, true)]
+        {
+            let (l, mut ev) = tss_fixture_a(x_capped);
+            tss_push(&mut ev, false, 700, 1300, &[(1101, 1200)], 3, y_capped);
+            let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (5, 100)));
+            assert_eq!(o.stats.cap_signal, signal);
+            assert_eq!(o.rescued.contains_key("Y"), proven, "x capped {x_capped}, y capped {y_capped}");
+        }
+        // a background that is itself mostly capped is no cap signal
+        let (l, mut ev) = tss_fixture_a(true);
+        tss_push(&mut ev, false, 700, 1300, &[(1101, 1200)], 3, false);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (90, 100)));
+        assert!(!o.stats.cap_signal);
+    }
+
+    #[test]
+    fn tss_rescue_undoes_only_ism_fraction_and_retained_drops_and_is_monotone() {
+        // ISM (Y 2 reads vs X 10), fraction (Y 8 survives the ISM, the locus max is 1000), retained (Z's junction
+        // 701-800 lies inside Y's first exon with 100 >= 10 x 8 reads)
+        let spike = |ev: &mut TssEvidence| tss_push(ev, false, 700, 1300, &[(1101, 1200)], 3, false);
+        let (l, mut ev) = tss_fixture_a(false);
+        spike(&mut ev);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        assert_eq!(o.rescued.get("Y").map(|v| v.0), Some("ism"));
+        let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
+        l.extend(sc_gtf("Y", "G", "+", 8, &TSS_Y));
+        l.extend(sc_gtf("W", "G", "+", 1000, &[(2001, 2100), (2201, 2300)]));
+        let mut ev = TssEvidence::default();
+        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 10, false);
+        spike(&mut ev);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        assert_eq!(o.rescued.get("Y").map(|v| v.0), Some("frac"));
+        assert!(!o.rescued.contains_key("X"), "X is not a proven short form: it stays dropped");
+        let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
+        l.extend(sc_gtf("Y", "G", "+", 8, &TSS_Y));
+        l.extend(sc_gtf("Z", "G", "+", 100, &[(601, 700), (801, 900)]));
+        let mut ev = TssEvidence::default();
+        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 10, false);
+        spike(&mut ev);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        assert_eq!(o.rescued.get("Y").map(|v| v.0), Some("ret"));
+        // monotone: every `off` line is in the `rescue` output, in order; `tag` and unproven forms change nothing
+        let (mut l, mut ev) = tss_fixture_a(false);
+        spike(&mut ev);
+        l.extend(sc_gtf("M", "H", "+", 1, &[(9001, 9100)])); // a mono-exonic transcript the floor drops
+        l.extend(sc_gtf("V", "G", "+", 1, &[(1051, 1100), (1201, 1300)])); // unproven short form: stays dropped
+        // (tag and rescue only: split rewrites the chains it splits, see the split test)
+        for mode in ["tag", "rescue"] {
+            let (d, _) = tss_polish(&l);
+            let o = tss_run(&l, &ev, mode, tss_null(0.001, 1.0, (0, 100)));
+            let (on, off, _) = tss_emit(&l, &d, &o);
+            let mut it = on.iter();
+            assert!(off.iter().all(|x| it.any(|y| y == x)), "{mode}: off is a subsequence of on");
+            assert!(!on.iter().any(|x| x.contains("\"V\"") || x.contains("\"M\"")));
+            assert_eq!(on.iter().any(|x| x.contains("\"Y\"")), mode != "tag");
+        }
+        // off is the plain polish, byte for byte
+        let (d, _) = tss_polish(&l);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        let (_, off, _) = tss_emit(&l, &d, &o);
+        let mut plain = l.clone();
+        polish_gtf_lines(&mut plain, "full", 0.82, 0.02, true, false, false, 0.7, false, 0, false, 0, 10.0);
+        assert_eq!(off, plain);
+    }
+
+    #[test]
+    fn tss_split_needs_two_clusters_across_a_valley_and_keeps_the_read_sum() {
+        let t = [(101i64, 300i64), (401, 500)];
+        let run = |second: i64, cap2: bool, signal: bool| -> (TssOutcome, Vec<String>) {
+            let mut l = sc_gtf("T", "G", "+", 20, &t);
+            let mut ev = TssEvidence::default();
+            tss_push(&mut ev, false, 101, 500, &[(301, 400)], 10, signal);
+            tss_push(&mut ev, false, second, 480, &[(301, 400)], 10, cap2);
+            if signal {
+                // another chain whose capped TSS makes capped reads the majority at the run's clusters
+                l.extend(sc_gtf("U", "H", "+", 30, &[(5101, 5200), (5301, 5400)]));
+                tss_push(&mut ev, false, 5101, 5400, &[(5201, 5300)], 30, true);
+            }
+            let (d, s) = tss_polish(&l);
+            let o = tss_prove_with("c", &l, &d, &s, &tss_recs(&ev), "split", Some(tss_null(0.001, 1.0, (5, 100))));
+            let (on, _, _) = tss_emit(&l, &d, &o);
+            (o, on)
+        };
+        let (o, on) = run(201, false, false);
+        assert_eq!(o.split.get("T"), Some(&vec![(101, 10), (201, 10)]), "two clusters with a valley");
+        assert_eq!(o.clusters.get("T").map(|s| s.as_str()), Some("101:0/10,201:0/10"));
+        let t2: Vec<&String> = on.iter().filter(|x| x.contains("transcript_id \"T_tss2\";")).collect();
+        assert_eq!(t2.len(), 3, "the twin: transcript + 2 exons");
+        assert!(t2[0].starts_with("c\trustle\ttranscript\t201\t500\t") && t2[0].contains("gene_id \"G\"") && t2[0].contains("reads \"10\""));
+        assert!(t2[1].starts_with("c\trustle\texon\t201\t300\t"));
+        let tl = on.iter().find(|x| x.contains("transcript_id \"T\";") && x.contains("\ttranscript\t")).unwrap();
+        assert!(tl.starts_with("c\trustle\ttranscript\t101\t500\t") && tl.contains("reads \"10\""), "{tl}");
+        // the twin is neither an ISM fragment nor a sub-chain of T (equal chains)
+        let (d, _) = tss_polish(&on);
+        assert!(!d.contains("T_tss2") && !d.contains("T"));
+        assert!(subchain_flags(&on).0.is_empty());
+        let a = tss_attr_strings(&o);
+        assert_eq!(a["T"], " tss_clusters \"101:0/10,201:0/10\"; tss_split \"1/2\";");
+        assert_eq!(a["T_tss2"], " tss_clusters \"101:0/10,201:0/10\"; tss_split \"2/2\";");
+        // 49 bp apart: no W-window fits between the clusters, so no valley: one cluster, no split
+        let (o, _) = run(150, false, false);
+        assert!(o.split.is_empty());
+        assert_eq!(o.clusters.get("T").map(|s| s.as_str()), Some("101:0/20"));
+        // with a cap signal the downstream cluster must be cap-supported
+        let (o, _) = run(201, false, true);
+        assert!(o.stats.cap_signal && o.split.is_empty());
+        let (o, _) = run(201, true, true);
+        assert_eq!(o.split.get("T"), Some(&vec![(101, 10), (201, 10)]));
+        // split is NOT monotone (tss_review F2): the split chain itself moves its 5' end to its first cluster's mode
+        // and its `reads` to the rest; every other off transcript is unchanged and in order
+        let (o, _) = run(201, true, true);
+        let mut l = sc_gtf("T", "G", "+", 20, &t);
+        l.extend(sc_gtf("U", "H", "+", 30, &[(5101, 5200), (5301, 5400)]));
+        l.extend(sc_gtf("S", "K", "+", 7, &[(8101, 8200), (8301, 8400)]));
+        let (d, _) = tss_polish(&l);
+        let mut o2 = TssOutcome::default();
+        o2.split.insert("T".to_string(), vec![(111, 10), (201, 10)]);
+        let (on, off, twins) = tss_emit(&l, &d, &o2);
+        assert_eq!(twins, vec![("T_tss2".to_string(), "T".to_string())]);
+        let t_off: Vec<&String> = off.iter().filter(|x| x.contains("transcript_id \"T\";")).collect();
+        let t_on: Vec<&String> = on.iter().filter(|x| x.contains("transcript_id \"T\";")).collect();
+        assert_ne!(t_off, t_on, "the split chain is rewritten");
+        assert!(t_on[0].starts_with("c\trustle\ttranscript\t111\t500\t") && t_on[0].contains("reads \"10\""));
+        let rest_off: Vec<&String> = off.iter().filter(|x| !x.contains("transcript_id \"T\";")).collect();
+        let rest_on: Vec<&String> =
+            on.iter().filter(|x| !x.contains("transcript_id \"T\";") && !x.contains("transcript_id \"T_tss2\";")).collect();
+        assert_eq!(rest_off, rest_on, "every other off transcript unchanged, in order");
+        assert!(o.split.contains_key("T"));
+        // rescue mode never splits
+        let l = sc_gtf("T", "G", "+", 20, &t);
+        let mut ev = TssEvidence::default();
+        tss_push(&mut ev, false, 101, 500, &[(301, 400)], 10, false);
+        tss_push(&mut ev, false, 201, 480, &[(301, 400)], 10, false);
+        let (d, s) = tss_polish(&l);
+        let o = tss_prove_with("c", &l, &d, &s, &tss_recs(&ev), "rescue", Some(tss_null(0.001, 1.0, (0, 100))));
+        assert!(o.split.is_empty() && o.clusters.contains_key("T"));
+    }
+
+    #[test]
+    fn tss_no_cap_signal_gate_makes_rescue_and_split_exactly_tag() {
+        // tss_review F1 (tss_critique A2 / B1): the proof would rescue Y (uncapped spike, NB fallback) and split T,
+        // but the library has no cap signal, so rescue and split do nothing: the outcome is tag's
+        let (mut l, mut ev) = tss_fixture_a(false);
+        tss_push(&mut ev, false, 700, 1300, &[(1101, 1200)], 3, false);
+        l.extend(sc_gtf("T", "H", "+", 20, &[(3101, 3300), (3401, 3500)]));
+        tss_push(&mut ev, false, 3101, 3500, &[(3301, 3400)], 10, false);
+        tss_push(&mut ev, false, 3201, 3480, &[(3301, 3400)], 10, false);
+        let (d, s) = tss_polish(&l);
+        let null = || Some(tss_null(0.001, 1.0, (0, 100)));
+        let ungated = tss_prove_with("c", &l, &d, &s, &tss_recs(&ev), "split", null());
+        assert!(!ungated.stats.cap_signal && ungated.rescued.contains_key("Y") && ungated.split.contains_key("T"));
+        let tag = tss_decide_with("c", &l, &d, &s, &tss_recs(&ev), "tag", null());
+        for mode in ["rescue", "split"] {
+            let o = tss_decide_with("c", &l, &d, &s, &tss_recs(&ev), mode, null());
+            assert!(!o.stats.applied, "{mode}");
+            assert!(o.rescued.is_empty() && o.split.is_empty() && o.protect.is_empty(), "{mode}");
+            assert_eq!(o.clusters, tag.clusters, "{mode}: the tag attributes are still written");
+            assert_eq!(tss_emit(&l, &d, &o).0, tss_emit(&l, &d, &tag).0, "{mode}: lines = tag's");
+            assert_eq!(o.stats.withheld_rescued, 1);
+            assert_eq!(o.stats.withheld_split, usize::from(mode == "split"));
+            assert_eq!((o.stats.rescued_ism, o.stats.split_chains), (0, 0));
+        }
+        assert!(tag.stats.applied);
+        // with a cap signal (every read capped, a background of 0/100) the same pile acts
+        let (mut l, mut ev) = tss_fixture_a(true);
+        tss_push(&mut ev, false, 700, 1300, &[(1101, 1200)], 3, true);
+        l.extend(sc_gtf("T", "H", "+", 20, &[(3101, 3300), (3401, 3500)]));
+        tss_push(&mut ev, false, 3101, 3500, &[(3301, 3400)], 10, true);
+        tss_push(&mut ev, false, 3201, 3480, &[(3301, 3400)], 10, true);
+        let (d, s) = tss_polish(&l);
+        let o = tss_decide_with("c", &l, &d, &s, &tss_recs(&ev), "split", null());
+        assert!(o.stats.cap_signal && o.stats.applied);
+        assert!(o.rescued.contains_key("Y") && o.split.contains_key("T"));
+        assert_eq!((o.stats.withheld_rescued, o.stats.withheld_split), (0, 0));
+    }
+
+    #[test]
+    fn tss_subchain_is_decided_on_the_final_ends() {
+        // tss_review F3: a rescued form whose 5' end moves into X's exon k (own reads at 1005) is an end-compatible
+        // sub-chain of X on the FINAL lines (its raw end, 501, lies in X's intron: not compatible)
+        let (l, mut ev) = tss_fixture_a(false);
+        tss_push(&mut ev, false, 1005, 1300, &[(1101, 1200)], 3, false);
+        let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
+        assert_eq!(o.rescued["Y"], ("ism", 1005));
+        let (d, _) = tss_polish(&l);
+        let (on, _, _) = tss_emit(&l, &d, &o);
+        assert_eq!(sc_flags(&on), sc_one("Y", "X", "5p"));
+        let raw_y: Vec<String> = sc_gtf("X", "G", "+", 10, &TSS_X).into_iter().chain(sc_gtf("Y", "G", "+", 2, &TSS_Y)).collect();
+        assert!(sc_flags(&raw_y).is_empty(), "at its raw 5' end Y is not end-compatible");
+        // drop spares it (the proven in-scope guard), tag keeps the flag
+        let mut f = subchain_flags(&on).0;
+        let protect: std::collections::HashSet<String> = o.protect.iter().cloned().collect();
+        assert_eq!(tss_subchain_guard(&mut f.clone(), &protect, false), 0);
+        assert_eq!(tss_subchain_guard(&mut f, &protect, true), 1);
+        assert!(f.is_empty());
+    }
+
+    #[test]
+    fn tss_subchain_guard_spares_proven_forms_only_under_drop() {
+        let mut f: std::collections::BTreeMap<String, (String, &'static str)> = std::collections::BTreeMap::new();
+        f.insert("Y1".into(), ("X".into(), "5p"));
+        f.insert("Y2".into(), ("X".into(), "5p"));
+        f.insert("T".into(), ("X".into(), "3p"));
+        let protect: std::collections::HashSet<String> = ["Y1".to_string()].into_iter().collect();
+        let mut d = f.clone();
+        assert_eq!(tss_subchain_guard(&mut d, &protect, true), 1);
+        assert_eq!(d.keys().cloned().collect::<Vec<_>>(), vec!["T", "Y2"]);
+        let mut t = f.clone();
+        assert_eq!(tss_subchain_guard(&mut t, &protect, false), 0, "tag is structural");
+        assert_eq!(t, f);
+    }
+
+    #[test]
+    fn tss_off_collects_nothing() {
+        let acc = rustle::vg_family::denovo_assemble::Pass1Acc::new(1, None);
+        assert!(acc.tss.is_none(), "Pass1Acc::new leaves the evidence off");
+    }
+
+    #[test]
+    fn tss_acceptor_stratum_recovers_a_pile_two_bases_upstream_of_the_acceptor() {
+        // tss_review F6: r(d) is an estimator, not only a floor. Internal exon 301-700 of T; 1000 molecules enter it at
+        // its acceptor 301 (links); truncated ones pile at 299 (d = -2) far above the exon-body hazard
+        let l = sc_gtf("T", "G", "+", 10, &[(101, 200), (301, 700), (801, 900)]);
+        let mut ev = TssEvidence::default();
+        tss_push(&mut ev, false, 101, 900, &[(201, 300), (701, 800)], 1000, false);
+        tss_push(&mut ev, false, 299, 900, &[(701, 800)], 50, false);
+        let mut t = 320;
+        while t <= 700 {
+            tss_push(&mut ev, false, t, 900, &[(701, 800)], 1, false);
+            t += 20;
+        }
+        let txs = tss_parse(&l);
+        let base: Vec<&TssTx> = txs.values().collect();
+        let null = tss_fit_null(&base, &tss_index(&tss_recs(&ev))).expect("fitted");
+        let r_m2 = null.r[(TSS_TOL - 2) as usize];
+        assert!(r_m2 > 20.0, "r(-2) {r_m2}");
+        assert!(null.r.iter().enumerate().all(|(i, &x)| i == (TSS_TOL - 2) as usize || x < r_m2));
+    }
+
+    // ------------------------------------------------------------------------------------------ --polish-tes
+    /// A contig of `len` C's with `edits` (1-based position, bases) written in.
+    fn tes_seq(len: usize, edits: &[(usize, &str)]) -> Vec<u8> {
+        let mut s = vec![b'C'; len];
+        for &(p, b) in edits {
+            s[p - 1..p - 1 + b.len()].copy_from_slice(b.as_bytes());
+        }
+        s
+    }
+    /// `k` primary reads with 3' end `three` (1-based genomic; on `-` the 3' end is the LEFT end) and distinct 5' ends.
+    fn tes_push(ev: &mut TssEvidence, minus: bool, five: i64, three: i64, introns_1b: &[(i64, i64)], k: usize) {
+        let introns: Vec<(u64, u64)> = introns_1b.iter().map(|&(a, b)| ((a - 1) as u64, b as u64)).collect();
+        for i in 0..k as i64 {
+            if minus {
+                ev.push("c", true, (three - 1) as u64, (five - i) as u64, &introns, false);
+            } else {
+                ev.push("c", false, (five - 1 + i) as u64, three as u64, &introns, false);
+            }
+        }
+    }
+
+    #[test]
+    fn tes_pas_window_edges_and_priming() {
+        let c = 1000i64;
+        // the hexamer must lie wholly inside [c-35, c-10]
+        for (at, want) in [(965usize, true), (964, false), (985, true), (986, false)] {
+            let s = tes_seq(2000, &[(at, "AATAAA")]);
+            assert_eq!(tes_pas(&s, false, c), want, "AATAAA at {at}");
+        }
+        assert!(tes_pas(&tes_seq(2000, &[(970, "ATTAAA")]), false, c), "ATTAAA is canonical");
+        assert!(!tes_pas(&tes_seq(2000, &[(970, "AGTAAA")]), false, c), "a variant hexamer is not");
+        // `-`: transcript orientation is the reverse complement (genomic TTTATT at c+10..c+35 reads AATAAA)
+        assert!(tes_pas(&tes_seq(2000, &[(1020, "TTTATT")]), true, -c));
+        assert!(!tes_pas(&tes_seq(2000, &[(1020, "AATAAA")]), true, -c));
+        // priming: >= 12 of the 20 downstream bases A (no A6), or an A6 run
+        let a12 = "AAACAAACACACACACACAC"; // 12 A, longest run 3
+        assert_eq!(a12.bytes().filter(|&b| b == b'A').count(), 12);
+        assert!(tes_primed(&tes_seq(2000, &[(1001, a12)]), false, c));
+        assert!(!tes_primed(&tes_seq(2000, &[(1001, "ACACACACACACACACACAC")]), false, c), "10 A");
+        assert!(!tes_primed(&tes_seq(2000, &[(1001, "AACACACACACACACACACA")]), false, c), "11 A");
+        assert!(tes_primed(&tes_seq(2000, &[(1010, "AAAAAA")]), false, c), "A6 run");
+        assert!(!tes_primed(&tes_seq(2000, &[(1010, "AAAAA")]), false, c));
+        assert!(!tes_primed(&tes_seq(2000, &[(1021, "AAAAAAAA")]), false, c), "beyond the 20 bp");
+        assert!(tes_primed(&tes_seq(2000, &[(985, "TTTTTT")]), true, -c), "- : genomic T upstream = A downstream");
+        assert!(!tes_primed(&tes_seq(2000, &[(1005, "TTTTTT")]), true, -c), "- : genomic T downstream is upstream");
+        assert!(!tes_primed(&tes_seq(1000, &[]), false, c), "no downstream sequence: not primed");
+    }
+
+    #[test]
+    fn tes_clusters_need_two_reads_link_within_w_and_the_mode_ties_3prime() {
+        let s = tes_seq(2000, &[(520, "AATAAA")]); // a PAS for a mode at 535..555 (window [c-35, c-10])
+        assert!(tes_clusters(&[550], &s, false).is_empty(), "one read never makes a cluster");
+        assert!(tes_clusters(&[500, 550], &s, false).is_empty(), "50 bp apart: two single-read clusters");
+        let cl = tes_clusters(&[530, 550, 550, 551, 551], &s, false);
+        assert_eq!(cl, vec![TesCluster { mode: 551, n: 5, proven: true }], "gap <= 21 links; tie 550/551 -> 3'");
+        let cl = tes_clusters(&[550, 550, 572, 572, 572], &s, false);
+        assert_eq!(cl.len(), 2, "a 22 bp gap splits");
+        assert!(cl[0].proven && !cl[1].proven, "572: the PAS at 520-525 lies > 35 bp upstream");
+        let primed = tes_seq(2000, &[(520, "AATAAA"), (555, "AAAAAA")]);
+        assert!(!tes_clusters(&[550, 550], &primed, false)[0].proven, "an internally primed mode is not proven");
+    }
+
+    #[test]
+    fn tes_tag_and_pas_end_move_a_primed_end_to_the_most_3prime_proven_cluster() {
+        // T (+): 101-300 / 401-600, emitted 3' end 600 (one read; A-rich downstream = internally primed); own reads
+        // end at 550 (3, PAS at 520) and 500 (2, PAS at 470); 3 reads end at 650, beyond the emitted end
+        let s = tes_seq(3000, &[(470, "AATAAA"), (520, "AATAAA"), (605, "AAAAAAAA")]);
+        let l = sc_gtf("T", "G", "+", 6, &[(101, 300), (401, 600)]);
+        let mut ev = TssEvidence::default();
+        tes_push(&mut ev, false, 101, 550, &[(301, 400)], 3);
+        tes_push(&mut ev, false, 110, 500, &[(301, 400)], 2);
+        tes_push(&mut ev, false, 120, 600, &[(301, 400)], 1);
+        tes_push(&mut ev, false, 130, 650, &[(301, 400)], 3);
+        tes_push(&mut ev, true, 300, 150, &[(301, 400)], 5); // the other strand: never T's
+        let recs = tss_recs(&ev);
+        let o = tes_decide(&l, &recs, &s, "tag");
+        assert!(o.moved.is_empty());
+        assert_eq!(o.attrs["T"], " tes_clusters \"2\"; tes_pas \"no\"; tes_primed \"yes\";");
+        assert_eq!(tes_apply(l.clone(), &o), l, "tag is output-only");
+        let o = tes_decide(&l, &recs, &s, "pas-end");
+        assert_eq!(o.moved.get("T"), Some(&550), "the most-3' proven cluster, never the reads beyond the end (650)");
+        assert_eq!(o.attrs["T"], " tes_clusters \"2\"; tes_pas \"yes\"; tes_primed \"no\"; tes_end_moved_from \"600\";");
+        assert_eq!((o.stats.multi, o.stats.with_proven, o.stats.end_primed, o.stats.moved), (1, 1, 1, 1));
+        let on = tes_apply(l.clone(), &o);
+        assert!(on[0].starts_with("c\trustle\ttranscript\t101\t550\t"), "{}", on[0]);
+        assert!(on[1].starts_with("c\trustle\texon\t101\t300\t"));
+        assert!(on[2].starts_with("c\trustle\texon\t401\t550\t"));
+        // an end that is not primed, or no proven cluster: nothing moves
+        let s2 = tes_seq(3000, &[(470, "AATAAA"), (520, "AATAAA")]);
+        assert!(tes_decide(&l, &recs, &s2, "pas-end").moved.is_empty(), "the emitted end is not primed");
+        let s3 = tes_seq(3000, &[(605, "AAAAAAAA")]);
+        let o = tes_decide(&l, &recs, &s3, "pas-end");
+        assert!(o.moved.is_empty());
+        assert_eq!(o.attrs["T"], " tes_clusters \"0\"; tes_pas \"no\"; tes_primed \"yes\";");
+        // mono-exonic transcripts carry nothing
+        let m = sc_gtf("M", "H", "+", 5, &[(1001, 1500)]);
+        assert!(tes_decide(&m, &recs, &s, "pas-end").attrs.is_empty());
+    }
+
+    #[test]
+    fn tes_pas_end_mirrors_on_the_minus_strand() {
+        // T (-): 2401-2600 / 2701-2900; 3' end = the genomic LEFT end 2401, primed (genomic T at 2381-2400 = A
+        // downstream in transcript orientation); 3 own reads end at 2451 with genomic TTTATT at 2470 (= AATAAA 16-21 bp
+        // upstream in transcript orientation)
+        let s = tes_seq(4000, &[(2470, "TTTATT"), (2385, "TTTTTTTT")]);
+        let l = sc_gtf("T", "G", "-", 4, &[(2401, 2600), (2701, 2900)]);
+        let mut ev = TssEvidence::default();
+        tes_push(&mut ev, true, 2900, 2451, &[(2601, 2700)], 3);
+        tes_push(&mut ev, true, 2890, 2401, &[(2601, 2700)], 1);
+        let o = tes_decide(&l, &tss_recs(&ev), &s, "pas-end");
+        assert_eq!(o.moved.get("T"), Some(&-2451));
+        assert_eq!(o.attrs["T"], " tes_clusters \"1\"; tes_pas \"yes\"; tes_primed \"no\"; tes_end_moved_from \"2401\";");
+        let on = tes_apply(l.clone(), &o);
+        assert!(on[0].starts_with("c\trustle\ttranscript\t2451\t2900\t"), "{}", on[0]);
+        assert!(on[1].starts_with("c\trustle\texon\t2451\t2600\t"));
+        assert!(on[2].starts_with("c\trustle\texon\t2701\t2900\t"));
     }
 
     #[test]

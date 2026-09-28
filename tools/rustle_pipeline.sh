@@ -43,6 +43,9 @@
 #   The table is only as genome-wide as the BAM: on a region SLICE it admits secondaries whose real best lies
 #   outside the slice (tes44: 4,210 transcripts vs 3,911 with the full-BAM table) — give the driver the full BAM.
 # The splice index is needed by `flag` (home search); the annotation (--gff) by `flag` only (IG/TR screen).
+# Environment: RUSTLE_POLISH_SUBCHAIN=tag|drop adds `--polish-subchain` to `assemble` (default unset = off);
+#   RUSTLE_POLISH_TSS=tag|rescue|split adds `--polish-tss` to `assemble` (default unset = off);
+#   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off).
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
@@ -85,6 +88,30 @@ if [ "$INSPECT" = 1 ]; then
   INSPECT_ASSIGN=(--dump-psv --posterior)
 fi
 POLISH="--assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7 --polish-retained-ratio 10"
+# RUSTLE_POLISH_SUBCHAIN=tag|drop (opt-in; unset = off, the same command): copy_assign --polish-subchain, which tags
+# (or drops) each transcript that is an end-compatible contiguous sub-chain of a longer emitted transcript of the same
+# locus with >= 1/2 its reads (`subchain_of` / `subchain_missing`; drop is a documented dev-only trade, see its --help)
+case "${RUSTLE_POLISH_SUBCHAIN:-}" in
+  "") ;;
+  off|tag|drop) POLISH="$POLISH --polish-subchain $RUSTLE_POLISH_SUBCHAIN" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_SUBCHAIN must be off, tag or drop (got '$RUSTLE_POLISH_SUBCHAIN')" >&2; exit 2 ;;
+esac
+# RUSTLE_POLISH_TSS=tag|rescue|split (opt-in; unset = off, the same command): copy_assign --polish-tss, the read-proven
+# TSS (tag: `tss_clusters` only; rescue: also keeps proven short-TSS forms the polish dropped; split: also emits a chain
+# once per proven TSS cluster). Dev-only, in-sample evidence: see its --help
+case "${RUSTLE_POLISH_TSS:-}" in
+  "") ;;
+  off|tag|rescue|split) POLISH="$POLISH --polish-tss $RUSTLE_POLISH_TSS" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_TSS must be off, tag, rescue or split (got '$RUSTLE_POLISH_TSS')" >&2; exit 2 ;;
+esac
+# RUSTLE_POLISH_TES=tag|pas-end (opt-in; unset = off, the same command): copy_assign --polish-tes, the read + genome
+# proven TES (tag: `tes_clusters` / `tes_pas` / `tes_primed` only; pas-end: also moves an internally primed 3' end to
+# the most-3' PAS-proven cluster of the transcript's own reads). Dev-only, in-sample evidence: see its --help
+case "${RUSTLE_POLISH_TES:-}" in
+  "") ;;
+  off|tag|pas-end) POLISH="$POLISH --polish-tes $RUSTLE_POLISH_TES" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_TES must be off, tag or pas-end (got '$RUSTLE_POLISH_TES')" >&2; exit 2 ;;
+esac
 say() { echo "[rustle_pipeline] $(date +%H:%M:%S) $*" >&2; }
 
 stage_assemble() {
