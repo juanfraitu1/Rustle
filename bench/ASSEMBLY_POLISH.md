@@ -350,3 +350,285 @@ transcript's junction carrying ≥ 10× its reads — the aligner's short-exon r
 gorilla, 26 contigs: intron-chain precision 33.1 → 35.6 for −0.46% matching chains; human chr20-22 16.0 →
 18.7 for −1.6%. Pre-registration and tables: `docs/PREREG_assembly_precision_levers_2026-09-23.md`. The
 2026-09-22 output is `--assembly-junctions majority --polish-retained-ratio 0`, byte-for-byte.
+
+## 2026-09-27 addendum — `--polish-subchain off|tag|drop`: sub-chain tag, opt-in drop (register 1128-1130)
+
+**What it flags.** A multi-exon transcript y is flagged when it is **an end-compatible contiguous sub-chain of a
+longer emitted transcript of the same locus with >= 1/2 its reads**. That means some x satisfies all of:
+- the same `gene_id`, contig and strand;
+- a strictly longer intron chain;
+- y's chain is the exact contiguous block `x.chain[k..k+m]`;
+- y's first exon starts no more than 10 bp before x's exon k, and y's last exon ends no more than 10 bp after x's
+  exon k+m;
+- `2*reads(x) >= reads(y)`.
+
+Among the qualifying x, the one with the most reads is named, with ties going to the first `transcript_id`.
+- Mono-exon transcripts and the longest chain of a locus are never flagged.
+- Every flag is decided on the input set.
+- It uses reads only, so it is legal de novo. It runs on the output of `--assembly-polish`.
+
+**How it differs from the shipped ISM collapse.** `--polish-ism-ratio 0.7` already removes contiguous sub-chains that
+have < 0.7 of their container's reads, whatever their ends. This pass adds the **end condition**, which is what
+separates the two cases on dev:
+- a 5′-truncated copy ends inside the container's exons (co-emitted `c`: median overhang 0 bp);
+- a real shorter isoform starts in the container's intron (`=` transcripts with a container: median 5′ overhang
+  33-80 bp).
+
+**Modes.** The prototype is `compat_collapse.py` e14c5646, and this is its port with the ½-reads condition kept and no
+further guard.
+
+| mode | effect |
+|---|---|
+| `off` (default) | byte-identical to a run without the flag (394/394 dev products against f480847a) |
+| `tag` | output only. The flagged transcript line ends with `subchain_of "<x>"; subchain_missing "5p"\|"3p"\|"both";`, where `subchain_missing` names the ends of x's chain that y lacks, in transcript orientation (a `-` strand swaps them). Every other byte is unchanged, and no consumer (families, gffcompare, the Python loaders) parses the tag. **It does not mean "incomplete":** on dev, 63% of tagged transcripts are `c`, 30% `j`, and 8 of 864 are `=`. |
+| `drop` | removes every flagged transcript, before `--gtf-tpm`, so TPM stays normalised. No locus and no mono-exon transcript is lost. **A deliberate trade; see the table.** |
+
+When not `off`, the pass writes one log line (`SUB-CHAIN (tag|drop): N of M multi-exon transcripts ...`) and 8
+`params.tsv` rows (`polish_subchain*`).
+
+**How to enable.**
+```
+RUSTLE_POLISH_SUBCHAIN=tag  tools/rustle_pipeline.sh assemble --bam B --fasta G --out PREFIX   # or =drop
+copy_assign --assemble-only ... --polish-subchain tag|drop                                      # direct
+```
+When `RUSTLE_POLISH_SUBCHAIN` is unset, the driver command is unchanged. The driver does not validate the value, so
+use exactly `tag` or `drop`. Exporting the variable also costs a needless catalog-cache miss; it never gives a stale
+hit.
+
+**Drop trade-off: DEV, IN-SAMPLE.** The rule was selected on these three contigs, and no held-out test was run.
+Species are never pooled. The data are human A119b and gorilla OR6737, dedup, gffcompare 0.12.10 against the
+contig-restricted RefSeq.
+
+| contig | `c` share of multi-exon queries | partial share c+k+m+n (rel.) | `=` precision | `=` queries lost | genes losing their only `=`/`c` query: drop vs matched random drop (binding seed; 5-seed mean) | `j` dropped | loci / mono-exon lost |
+|---|---|---|---|---|---|---|---|
+| human chr20 | 5.7 → 2.8% | −18.2% | +1.02 pt | 2 | 7 (1.46%) vs 3; 3.2 | 74 | 0 / 0 |
+| human chr16 | 6.3 → 3.1% | −18.2% | +1.07 pt | 3 | 9 (1.15%) vs 7; 6.6 | 171 | 0 / 0 |
+| gorilla NC_073244.2 | 5.4 → 3.1% | −16.9% | +1.23 pt | 3 | 7 (0.79%) vs 5; 3.4 | 21 | 0 / 0 |
+
+- **Precision.** A matched random drop from the same sub-chain pool (NULL_S) gets 78-91% of the precision gain, so
+  most of it is the smaller denominator.
+- **Genes.** The genes that lose their only `=`/`c` query keep every junction. Their surviving container is `j`, `k`
+  or `m` for the same reference.
+- **What `drop` also changes (not measured).**
+  - It changes the families-stage representative of 15-19 loci per contig.
+  - It shrinks 8-11 gene spans per contig by ≤ 10 bp, and `flag` reads those spans.
+
+**Status: opt-in only, not a default candidate.**
+- The held-out pre-registration (`docs/PREREG_complete_transcripts_2026-09-27.md`) was **withdrawn on dev**. The drop
+  loses more intron-correct gene labels than the matched random drop on 14 of 15 seed × contig cells (clause C5).
+- 14 reads-only guards failed to fix that (r1129). An annotation oracle shows that the limit is the reads'
+  selectivity, not the clauses.
+- The SIRV E0 truth is unspent. A default flip needs its own held-out prereg first.
+
+## 2026-09-27 addendum 2 — `--polish-tss` and `--polish-tes`: read-proven 5′ and 3′ ends (opt-in; register 1131-1135)
+
+Two opt-in passes on the output of `--assembly-polish` (the `--gtf` / `--assemble-only` path). Both default to `off`,
+which is byte-identical to a run without the flags. **Neither is a default candidate.** Every number below is **DEV,
+IN-SAMPLE**: the rules and every review fix were designed on human A119b chr20 and chr16 and gorilla OR6737
+NC_073244.2. No held-out contig and no SIRV read was used. Species are shown apart and never pooled.
+
+### Shared evidence
+
+- **Records.** Every primary, spliced record (not secondary, supplementary, unmapped or QC-fail), deduplicated on
+  (strand, start, end, intron chain). `--keep-coordinate-duplicates` is honoured, and the first record of a key wins.
+- **Per record.** The oriented 5′ end, the oriented 3′ end, the oriented intron chain, and the cap flag. A record is
+  **capped** when its 5′-most CIGAR op in read orientation is a 1-3 bp soft clip of G only. That is the non-templated G
+  that template-switching reverse transcription adds opposite the m7G cap.
+- **When.** The streaming reader collects them in pass 1, before the pool's home, AS-tie, window and dedup rules. Under
+  `--materialize-reads` there is one lazy pass per window. Nothing is collected unless one of the flags is on. The
+  memory cost is about 180 B per record, a few GB genome-wide.
+
+### `--polish-tss off|tag|rescue|split` (driver `RUSTLE_POLISH_TSS`)
+
+**The proof uses reads only.** The constants are α = 0.05 and TOL = 10 bp (the `--polish-subchain` tolerance), so the
+window is W = 21 bp.
+- **Null.** A constant 5′-truncation hazard h. The window count is negative binomial with mean h·ΣN(t) and variance
+  μ + aμ², where N(t) is the number of reads crossing t on their way to the junction. h and a are fitted per contig on
+  the internal exons of the polished multi-exon transcripts.
+- **Acceptor stratum.** Within TOL of an acceptor through which reads enter the exon, the hazard is h·r(d), where r(d)
+  is the observed start excess at offset d from internal-exon acceptors. Truncated molecules whose upstream-exon bases
+  were soft-clipped pile at d = −2: r(−2) = 97.6 (chr20), 83.1 (chr16), 114.5 (gorilla). Before this stratum was added,
+  66 / 63 / 33 % (chr20 / chr16 / gorilla) of the first design's rescues were exactly such piles.
+- **Case A** (a short form y that is the 3′-flush intron chain of a longer x of the same locus):
+  - proven iff the best W-window of y's first-junction 5′ ends has p·⌈L/W⌉·|candidates| < α;
+  - in scope iff that window lies downstream of x's upstream exon.
+- **Case B** (one chain, several TSSs): significant windows over the chain's own first exon, merged, and kept apart
+  only across a valley.
+
+**The cap-signal dependence.** Whether the rule may act is decided per contig, without labels. A contig has a cap
+signal iff capped reads are a **majority** at its proven first-exon clusters **and** a **minority** among the starts
+inside internal-exon bodies. Each half is a one-sided exact binomial test against ½ at α.
+
+| contig | capped share of all records | capped at the proven clusters | capped in internal-exon bodies | cap signal |
+|---|---|---|---|---|
+| human chr20 | .391 | 30,897 / 43,997 (70%) | 1,656 / 42,192 (4%) | yes |
+| human chr16 | .364 | 46,971 / 67,636 (69%) | 4,383 / 80,364 (5%) | yes |
+| gorilla NC_073244.2 | .034 | 1,726 / 41,932 (4%) | 121 / 11,762 (1%) | **no** |
+
+- **With a signal,** a window or cluster counts only when most of its reads are capped.
+- **Without one,** `rescue` and `split` do nothing on that contig. The output is exactly `tag`'s. The log line says
+  `NO CAP SIGNAL … (output = tag; withheld: N rescues, M splits)`, and `polish_tss_applied` records it.
+- **Why.** The negative-binomial count excess alone also proves truncation piles (tss_critique §2). On gorilla, before
+  this gate, the rule rescued 38 forms for +1 chain against a random-rescue null maximum of 1, which is not selective.
+- **So the TSS rule's usefulness is a property of the library, not of the method or the species.** Why the OR6737
+  library lacks the G clip is not established. Check the signal on any new library before claiming anything for it.
+
+**Modes.**
+
+| mode | effect |
+|---|---|
+| `off` (default) | byte-identical; no evidence collected |
+| `tag` | output only. Each multi-exon transcript with ≥ 1 proven cluster ends with `tss_clusters "<pos>:<capped>/<n>,…";` (5′→3′; pos = the cluster's mode, 1-based genomic). Families are byte-identical |
+| `rescue` | `tag`, plus case A. A proven, in-scope short form that the polish dropped at the ISM, isoform-fraction or retained-intron step is kept, with `tss_rescued "ism\|frac\|ret";`. Every other polish decision is unchanged, so every `off` transcript is present unchanged (monotone). Its 5′ end is the most-started position among **its own** exact-chain reads inside the proven window (ties 5′-most). A form with no own start inside the proven window is neither rescued nor protected: the window proves another chain's TSS (G1 fix, 2026-09-27) |
+| `split` | `rescue`, plus case B. A chain with ≥ 2 cap-proven clusters is emitted as `<tid>` plus `<tid>_tss<i>`, with `tss_split "<i>/<k>";`. Each piece's 5′ end is its cluster's mode. Reads are divided among the pieces, so their sum and the TPM normalisation are unchanged. **Not monotone:** the chain itself moves its 5′ end and changes `reads` |
+
+`--polish-subchain` is decided on the **final** set, after the rescue, the split and any TES end move. Under `drop`, the
+proven in-scope forms are spared, but only where rescue or split acted.
+
+### `--polish-tes off|tag|pas-end` (driver `RUSTLE_POLISH_TES`)
+
+**The proof uses reads plus the genome.** It has no p-value and no fitted constant.
+- For every multi-exon transcript of the output (after `--polish-tss`), take its own exact-chain, same-strand,
+  deduplicated primary 3′ ends over its last exon.
+- Cluster them by single linkage: a gap > 21 bp starts a new cluster. A cluster needs ≥ 2 reads, the pass-1 floor. Its
+  mode is the most-ended position, with ties going 3′-most.
+- A cluster is **PAS-proven** when a canonical AATAAA or ATTAAA lies wholly inside [mode−35, mode−10] (transcript
+  orientation) **and** the mode is not internally primed. Primed means ≥ 60% A in the 20 bp downstream, or an A6 run
+  there. That is r1064's instrument.
+- The reads carry no poly(A) tail (they are FLNC-trimmed; the 3′ clip is 0 in 78% of reads), so the priming test has to
+  be genomic.
+
+**Why the genome and not a scan.**
+- The 3′ background is extremely clumped. Its NB dispersion is a = 114 (chr20), 254 (chr16) and 368 (gorilla), against
+  1.2 / 1.4 / 6.6 on the 5′ side.
+- Without labels, "canonical PAS and not primed" holds at:
+  - .585 / .543 / .650 of emitted 3′ ends (chr20 / chr16 / gorilla);
+  - .022 / .074 / .125 of internal-exon 3′ piles;
+  - .007 / .007 / .004 of random internal-exon positions.
+- The likelihood ratio of a real end over a pile is therefore **27 / 7.3 / 5.2**.
+- **No library property is needed, so the TES proof runs on both species, but it separates about 5× less well on
+  gorilla.**
+
+**Modes.**
+
+| mode | effect |
+|---|---|
+| `off` (default) | byte-identical; no evidence collected for it |
+| `tag` | output only. Each multi-exon transcript ends with `tes_clusters "<n PAS-proven>"; tes_pas "yes\|no"; tes_primed "yes\|no";`. The last two describe the **emitted** 3′ end, which pass 1 takes from the single most-3′ read (r1135). Families are byte-identical |
+| `pas-end` | `tag`, plus an end move. When the emitted end is primed **and** the transcript has ≥ 1 PAS-proven cluster, the 3′ end moves to the most-3′ proven mode, with `tes_end_moved_from "<old 1-based genomic>";`. The move always goes upstream and stays within the transcript's own reads. There is no rescue and no split: the transcript set and `reads` are unchanged, and `cov` follows the new length |
+
+A TES rescue of 3′-shorter forms and a tandem-APA split were designed and measured, but **not built** (r1132).
+
+### How to enable
+
+```
+RUSTLE_POLISH_TSS=tag|rescue|split  RUSTLE_POLISH_TES=tag|pas-end \
+  tools/rustle_pipeline.sh assemble --bam B --fasta G --out PREFIX
+copy_assign --assemble-only ... --polish-tss tag|rescue|split --polish-tes tag|pas-end      # direct
+```
+
+- **Driver.** An unset variable leaves the command unchanged, `off` passes an explicit `off`, and any other value exits
+  2.
+- **Refusals.** `copy_assign` refuses either flag without `--gtf` or with `--assembly-polish none`.
+- **Output when on.** `params.tsv` gets `polish_tss*` / `polish_tes*` rows, and each contig gets one log line
+  (`[copy_assign] TSS PROOF (<mode>) <contig>: …`, `… TES PROOF …`).
+- **Cache.** Exporting either variable costs a needless catalog-cache miss, never a stale hit.
+
+### Dev effect: DEV, IN-SAMPLE
+
+The metric is multi-exon queries against the contig-restricted RefSeq (Gnomon for gorilla), scored with gffcompare
+0.12.10, on the seeded driver cell. Annotation is used as a label only.
+
+**TSS `rescue`.** The null is a depth-matched random rescue from the same dropped pool, 20 seeds.
+
+| contig | rescued | Δ chains (null mean, max) | annotated TSS ≤ 250 bp (null mean) | Δ query precision | Δ `c` | Δ ISM-like |
+|---|---|---|---|---|---|---|
+| human chr20 | 59 → **47** after the G1 fix | **+3** (0.4, 2) | 13 of 59 (1.3) | −0.18 pt | +4 | +37 |
+| human chr16 | 116 | **+7** (1.0, 3) | 23 of 116 (3.2) | −0.16 pt | +3 | +67 |
+| gorilla NC_073244.2 | 0 (38 withheld: no cap signal) | 0 | – | 0 | 0 | 0 |
+
+- **It is selective on human chains, but it is a trade, not an improvement.** The rescued forms match a reference chain
+  at .05 / .06, below the output's own precision. That is the r1064 / r1072 regime.
+- **Provenance of the numbers.** chr20's 13 is after review fix F4, which moved 26 of the 59 5′ ends. Before F4 it was
+  16. The chr16 row and the chain, precision, `c` and ISM-like columns come from tss_impl's binary (fbe4fa86, before
+  the review fixes). The rescued set and the intron chains do not depend on the 5′ end, but `c` was not re-scored after
+  F4, and chr16's on-modes were not rerun.
+
+**TSS `split`.**
+
+| contig | chains split (records added) | pieces with an annotated TSS ≤ 250 bp | chains whose pieces sit at ≥ 2 distinct annotated TSSs | families (O1) |
+|---|---|---|---|---|
+| human chr20 | 49 (+54) | .68 | 4 | 26 → 27, copies 97 → 99 |
+| human chr16 | 88 (+94), pre-fix binary | .64 | 2 | 2 representatives change; one becomes a `_tss2` twin |
+| gorilla NC_073244.2 | 0 (64 withheld) | – | – | unchanged |
+
+- **Split's query-precision "gain" (+0.35 / +0.39 pt on human) is a metric trap.** A twin of an `=` chain counts as a
+  second `=` query; distinct-chain precision equals rescue's.
+- **RefSeq rarely lists same-chain TSS variants,** so the "≥ 2 distinct TSSs" count is a lower bound, not a refutation.
+- **Split twins are not exempt from the families-stage representative choice.**
+
+**TES `pas-end`** (chr20 and gorilla; chr16 was not run). The label is an annotated TES with the same last intron,
+within 50 bp.
+
+| contig | multi-exon | emitted end primed | moved (median shift upstream) | annotated TES ≤ 50 bp: before → after | genes recovered / lost | `=`, chains, precision | families (O1) |
+|---|---|---|---|---|---|---|---|
+| human chr20 | 5,048 | 1,027 | **106** (868 bp) | 6 → **32** (of 73 labelled) | 28 / 2 (of 51) | unchanged (1,059 `=`, 0 membership changes) | 26 → 27, copies 97 → 99 |
+| gorilla NC_073244.2 | 3,899 | 455 | **118** (728 bp) | 8 → **66** (of 98 labelled) | 43 / 5 (of 67) | unchanged (1,595 `=`, 0 membership changes) | 29 → 29, copies 93 → 95 (a 2-copy and a 3-copy family merge; a new 2-copy family) |
+
+- **The rest of the primed ends stay.** 921 (chr20) and 455 − 118 = 337 (gorilla) primed ends have no PAS-proven
+  cluster.
+- **The PAS is what selects.** With the same trigger and a different target, the new-near rate of the labelled moved
+  ends is:
+
+  | target | chr20 | gorilla |
+  |---|---|---|
+  | PAS (shipped) | .438 | .673 |
+  | any unprimed cluster | .317 | .574 |
+  | any upstream cluster | .236 | .473 |
+
+  The unprimed target recovers slightly more in absolute count (37 vs 32; 77 vs 65), but it also loses more (9 vs 6;
+  13 vs 7).
+- **Classes.** The only gffcompare class changes are 2 `n→j` (chr20) and 1 `n→c` (gorilla).
+- **Sub-chain drop.** Under `--polish-subchain drop`, 2 shortened transcripts per contig become end-compatible
+  sub-chains and are dropped.
+- **Gorilla's label gain is against Gnomon models,** which may be circular. Its label-free PAS separation is the weaker
+  one (5.2×).
+
+### Why both stay opt-in
+
+1. **In-sample.** Both rules, and every critique and review fix, were designed on these three contigs. A default flip
+   needs a held-out prereg on a fresh development contig outside V1-V6 (tss_critique §7, r1129). SIRV E0 is unspent,
+   and a PAS-gated rule is inert on SIRV by construction (r1132).
+2. **The TSS rescue trades precision for recall.** Its forms are annotated below the output's precision.
+3. **The TSS rule depends on a library property.** The only gorilla library at hand has no cap signal, so on gorilla
+   `--polish-tss` is only `tag`.
+4. **`split` and `pas-end` change O1** (families, copies and representatives), and no truth on the dev contigs can
+   score the change.
+5. **The labels are lower bounds.** RefSeq and Gnomon are blind to same-chain TSS variants and to tandem APA.
+6. **Open review items** (tss2_review):
+   - **G1, medium — FIXED 2026-09-27.** A proven window now counts for a form only when the form has an own
+     (exact-chain) start inside it; otherwise the form is neither rescued nor protected (`params.tsv` row
+     `polish_tss_proven_no_own_start`). chr20 rescue 59 → 47 (the 12 fallbacks removed; `drop`+`rescue` 5,450 → 5,437
+     transcripts, `DN_chr20_61676274_23.4` no longer spared); gorilla 3 proven forms lack an own start. `off` stays
+     byte-identical (chr20 gtf/quant/families/assignments/params); `cargo test --release` 933 passed, 0 failed.
+     Binaries `/mnt/linuxdisk/tmp/rustle_figures/tss3_bin_frozen/` (`copy_assign` b1709a96). The other table
+     columns of this section were not re-scored after the fix.
+   - **G2, low.** `pas-end` ignores read support. 7 of 106 chr20 moves go from a larger cluster to a smaller one, the
+     largest from 24 reads to 4.
+   - **G3, low.** The 21-bp linkage boundary is not unit-tested; the Python parity covers it.
+   - **G4, low.** A contig missing from `--fasta` is silent: every PAS and priming test is false, and nothing moves.
+
+**Verification.**
+- **Off.** Byte-identical to the frozen pre-change products:
+  - 818/818 products over 118 runs with the flags omitted;
+  - 150/150 over 24 runs with an explicit `off`.
+  - In substance these are the GTF, `params.tsv` and readthrough products; in `--assemble-only` the quant and families
+    files are header-only.
+- **On.** The GTFs are byte-identical to an independent Python reference in 38/38 chr20 and gorilla cells.
+  Independent pysam re-derivations reproduced:
+  - the rescue sets (59/59, 38/38 before F1);
+  - chr20's `pas-end`: 106/106 moves, and 0 attribute mismatches over 5,631 transcripts.
+- **Paths.** Streaming equals `--materialize-reads`. `--genome-wide` equals the concatenated per-contig runs for TSS;
+  this was not rerun for TES.
+- **Tests.** `cargo test --release`: 933 passed, 0 failed, 13 ignored.
+- **Frozen** at `/mnt/linuxdisk/tmp/rustle_figures/tss2_bin_frozen/` (`copy_assign` aebfcf96).
