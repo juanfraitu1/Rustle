@@ -31,6 +31,9 @@
 #   BAM passes and the locus collapse) and every all-vs-all PAF (paf/<key>/out.paf). A re-run that changes only
 #   downstream settings (the E_r edge rule, gamma, coverage split) replays them: human chr16 358 s -> 0.9 s,
 #   byte-identical outputs. Keys cover the binary, BAM/FASTA (+ indexes) and every upstream RUSTLE_* setting.
+#   The families PAF is keyed on every byte of PREFIX.fam.loci.fa (hashed as it is written) and replayed as a HARD
+#   LINK to PREFIX.fam.loci.paf, not a copy (chimp: the hit step 2.6-13 s -> 0.01 s); a write through that link
+#   invalidates the entry (mtime/inode/sampled-content pins), and RUSTLE_CACHE_VERIFY=1 re-hashes it on every hit.
 # --inspect: also write the analyst dumps — catalog edge tables (PREFIX.cache/inspect/catalog.*: reps.fa, PAF,
 #   edges.tsv, nodes.tsv, rule.tsv, params.tsv), per-round collapse statistics in the catalog log, and the
 #   assignment evidence (PREFIX.assign.psv_*.tsv, PREFIX.assign.posterior.tsv).
@@ -48,7 +51,8 @@
 #   RUSTLE_POLISH_TSS=tag|rescue|split adds `--polish-tss` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
-#   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off).
+#   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off);
+#   RUSTLE_FAMILY_CONTAINER=1 adds `--emit-container` to `families` (PREFIX.fam.container*.tsv; default unset = off).
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
@@ -133,6 +137,17 @@ case "${RUSTLE_GTF_REGROUP:-}" in
   1) POLISH="$POLISH --gtf-regroup" ;;
   *) echo "[rustle_pipeline] RUSTLE_GTF_REGROUP must be 0 or 1 (got '$RUSTLE_GTF_REGROUP')" >&2; exit 2 ;;
 esac
+# RUSTLE_FAMILY_CONTAINER=1 (opt-in; unset or 0 = off, the same command): mcl_families --emit-container, the container
+# of each family member's extra pieces (docs/PREREG_fusion_container_sim_2026-09-28.md §1): every clustered locus's
+# all-transcript exon blocks, core (aligned to an exon base of another member of its family) or accessory, and the
+# other families each accessory block aligns to -> PREFIX.fam.container.tsv / .container_relations.tsv /
+# .container_summary.tsv. It never changes a family. See its --help
+FAM_EXTRA=()
+case "${RUSTLE_FAMILY_CONTAINER:-}" in
+  ""|0) ;;
+  1) FAM_EXTRA=(--emit-container) ;;
+  *) echo "[rustle_pipeline] RUSTLE_FAMILY_CONTAINER must be 0 or 1 (got '$RUSTLE_FAMILY_CONTAINER')" >&2; exit 2 ;;
+esac
 say() { echo "[rustle_pipeline] $(date +%H:%M:%S) $*" >&2; }
 
 stage_assemble() {
@@ -162,11 +177,17 @@ stage_families() {
     *'<out>.copies.tsv'*) copies=(--emit-units);;
     *) say "families: WARNING $BIN/mcl_families predates the families copy table; rebuild it to write $OUT.fam.copies.tsv";;
   esac
+  if [ ${#FAM_EXTRA[@]} -gt 0 ] && [[ "$help" != *'--emit-container'* ]]; then
+    echo "[rustle_pipeline] RUSTLE_FAMILY_CONTAINER=1 but $BIN/mcl_families predates --emit-container; rebuild it" >&2; exit 2
+  fi
   "$BIN/mcl_families" --from-gtf "$OUT.gtf" --fasta "$FASTA" --threads "$THREADS" \
-    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
+    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" "${FAM_EXTRA[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
     say "families: $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies (locus representatives) in $(awk 'NR>1' "$OUT.fam.copies.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.fam.copies.tsv)"
+  fi
+  if [ ${#FAM_EXTRA[@]} -gt 0 ]; then
+    say "families: container $(awk -F'\t' '$1=="blocks"{b=$2} $1=="accessory_blocks"{a=$2} $1=="family_relations_directed"{r=$2} END{print b" blocks, "a" accessory, "r" directed family relations"}' "$OUT.fam.container_summary.tsv") ($OUT.fam.container.tsv)"
   fi
 }
 # catalog: LEGACY (2026-09-25). gw_family_catalog's copy catalog (primaries only, span-aware POA collapse, exon-sum k11

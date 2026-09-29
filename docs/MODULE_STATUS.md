@@ -33,7 +33,7 @@ this file must list exactly the module set.
 | tag | count |
 |---|---|
 | **SHIPPED-DEFAULT** | 15 |
-| **OPT-IN** | 15 |
+| **OPT-IN** | 16 |
 | **OTHER-BINARY** | 3 |
 | **REFUTED** | 1 |
 | **TEST-ONLY** | 0 |
@@ -76,13 +76,14 @@ Reachable from a shipped binary with **no env var and no non-default flag**. Thi
 | `readonly_copy_number.rs` | - for the chi_h leg. The depth_cn leg is gated by `--lambda-global` (src/bin/copy_assign.rs:322 doc, consumed  | MEASURED: src/bin/copy_assign.rs:1983 calls chi_h_with_junctions in the unconditional famcn_rows.push loop; src/bin/copy_assign.rs:1354 comments the table as "always emitted" and copy_assign.rs:2071 writes <out>.famcn_readonly.tsv |
 | `rescue_pipeline.rs` | - (no flag, no env var). Suppressed only when copy_assign is run with --families (src/bin/copy_assign.rs:452,  | MEASURED: thin_loci at src/rustle/vg_family/denovo_pipeline.rs:2175 and rescue_thin_loci_iterative at :2176, inside detect_and_assign's per-family `for cf in colocated` loop (prod; test mod starts at denovo_pipeline.rs:7362); dete |
 
-## OPT-IN (15)
+## OPT-IN (16)
 
 Built and wired, but behind a flag that **defaults off**. An arm, not the method — always name the flag when reporting a result from one.
 
 | module | gate | deciding evidence |
 |---|---|---|
-| `run_cache.rs` | RUSTLE_CACHE_DIR (unset = nothing read or written) | MEASURED 2026-09-24: `gw_family_catalog` caches the collapsed representatives (`reps/<key>/`) and the E_r all-vs-all PAF (`paf/<key>/`); a warm run is byte-identical to a cold run and to a run without the cache (gorilla NC_073244.2, human chr16). |
+| `run_cache.rs` | RUSTLE_CACHE_DIR (unset = nothing read or written) | MEASURED 2026-09-24: `gw_family_catalog` caches the collapsed representatives (`reps/<key>/`) and the E_r all-vs-all PAF (`paf/<key>/`); a warm run is byte-identical to a cold run and to a run without the cache (gorilla NC_073244.2, human chr16). 2026-09-28: the families PAF (`mcl_families --from-gtf`, key `rustle families paf v2`) is keyed on a 128-bit hash of the loci FASTA taken while it is written and replayed by hard link from a PINNED entry (mtime/inode/sampled-content pins; `RUSTLE_CACHE_VERIFY=1` full re-hash); no cache / cold / warm byte-identical (gorilla NC_073244.2, human_testis, chimp_PTR). |
+| `family_container.rs` | `--emit-container` (src/bin/mcl_families.rs, `#[arg(long, default_value_t = false)]`; needs `--from-gtf`); driver `RUSTLE_FAMILY_CONTAINER=1` | MEASURED 2026-09-28: the only production call (`family_container::run`) sits inside `if args.emit_container {` in mcl_families; off, no file is written and every product is byte-identical. A port of the frozen `bench/family_container.py` (sha1 e197ccb3, `docs/PREREG_fusion_container_sim_2026-09-28.md` §1 + Amendment 1): its 20 unit tests ported, and the three tables byte-identical to the script on its fixtures and on real families runs. |
 | `absent_copy.rs` | --absent-copies (src/bin/copy_assign.rs:255-256, default_value_t = false); second route --vg-realign (src/bin/ | MEASURED: the only production call to absent_copy::admit_candidate is src/rustle/vg_family/denovo_pipeline.rs:2252, guarded by `if absent_copies {` at denovo_pipeline.rs:2233; the second entry admit_novel_pools (denovo_pipeline.rs |
 | `collapse_enumerate.rs` | --collapse-enumerate (src/bin/gw_family_catalog.rs:177-178, default_value_t = false) or env RUSTLE_COLLAPSE_EN | MEASURED: `if cfg.collapse_enumerate {` at denovo_pipeline.rs:3852 guards the readmit_locus call at :3853; the enclosing branch at :3841 requires collapse_enumerate // collapse_expressed // dna_family_fallback, and DenovoConfig::d |
 | `copy_discovery.rs` | --discover-copies (src/bin/copy_assign.rs:352-353, `#[arg(long, default_value_t = false)] discover_copies: bool`) | MEASURED: every production reference to `copy_discovery::` sits inside an `if args.discover_copies {` block in src/bin/copy_assign.rs -- `tie_partner_placements` at copy_assign.rs:2917 and `discover_copies_for_family` (copy_assign.rs:1442, which calls `cluster_tie_partners`) at copy_assign.rs:2918, both under the gate opened at copy_assign.rs:2912; the `<out>.discovered_copies.tsv` writer at copy_assign.rs:4503-4521 is gated by the same flag. Unset, the block short-circuits to `Vec::new()` (copy_assign.rs:2919-2921), no file is written, and output is byte-identical (regression: `discover_copies_off_by_default_is_byte_identical`, tests/copy_assign_families.rs). |

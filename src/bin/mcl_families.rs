@@ -204,6 +204,18 @@ struct Args {
     /// whenever both are supplied).
     #[arg(long, default_value_t = false)]
     no_emit_units: bool,
+    /// With `--from-gtf` only; default OFF (every product byte-identical without it). The CONTAINER of each family
+    /// member's extra pieces (`rustle::vg_family::family_container`, the port of the frozen `bench/family_container.py`,
+    /// `docs/PREREG_fusion_container_sim_2026-09-28.md` §1 + Amendment 1): after the families are written, every
+    /// clustered locus (with the records `loci.tsv` folds into it) gets its exon blocks = the union of the exons of
+    /// ALL transcripts of its gene_ids in the `--from-gtf` GTF; a block is `core` iff one aligned CIGAR column of
+    /// `<out>.loci.paf` joins it to an exon base of another member of the same family, else `accessory`, and an
+    /// accessory block records every OTHER family it aligns to the same way. Writes `<out>.container.tsv` (one row per
+    /// locus x block), `<out>.container_relations.tsv` (one row per directed family relation, with `reciprocal`) and
+    /// `<out>.container_summary.tsv` (counts), byte for byte the script's `blocks` / `relations` / `summary` tables.
+    /// It never changes a family. Driver: `RUSTLE_FAMILY_CONTAINER=1`.
+    #[arg(long, default_value_t = false)]
+    emit_container: bool,
     /// Optional RepeatMasker `.out` (curated library) — adds `rep_frac` (interspersed-repeat fraction of the
     /// unit's exon chain) to the unit table.
     #[arg(long)]
@@ -1097,6 +1109,10 @@ fn write_locus_rep_copies(
 
 fn main() -> Result<()> {
     let mut args = Args::parse();
+    anyhow::ensure!(
+        !args.emit_container || args.from_gtf.is_some(),
+        "--emit-container needs --from-gtf (the container's exon blocks are the assembled GTF's transcripts)"
+    );
     // `--from-gtf`: the de novo loci (their representatives become the copy table under `--emit-units`)
     let mut gtf_loci_list: Option<Vec<GtfLocus>> = None;
     if let Some(gtf) = args.from_gtf.clone() {
@@ -2069,6 +2085,49 @@ fn main() -> Result<()> {
         }
     }
 
+    // ⭐ `--emit-container` (with `--from-gtf`): the container of every member's extra pieces, read from the products
+    // written above exactly as the frozen post-processor reads them (clusters.tsv, loci.gff3, the fold table this run
+    // wrote, the PAF, the GTF); it changes nothing already written.
+    let mut container_counts: Option<[(&str, i64); 3]> = None;
+    if args.emit_container {
+        use rustle::vg_family::family_container as fc;
+        let gtf = args.from_gtf.as_deref().expect("--emit-container is checked to come with --from-gtf");
+        let gff3 = args.gff.as_deref().expect("--from-gtf sets --gff to <out>.loci.gff3");
+        let clusters_path = format!("{}.clusters.tsv", args.out);
+        // the fold table exists iff this run wrote it (never a stale one from an earlier run)
+        let loci_tsv = loci.as_ref().map(|_| format!("{}.loci.tsv", args.out));
+        let mut lt = match &loci_tsv {
+            Some(p) => Some(fc::open_text(p)?),
+            None => None,
+        };
+        let c = fc::run(
+            &mut *fc::open_text(gtf)?,
+            &mut *fc::open_text(&clusters_path)?,
+            &mut *fc::open_text(gff3)?,
+            lt.as_deref_mut().map(|r| r as &mut dyn std::io::BufRead),
+            &mut paf.as_bytes(),
+            &args.paf,
+        )
+        .context("--emit-container")?;
+        c.write(&args.out)?;
+        eprintln!("{}", c.summary_line());
+        eprintln!(
+            "[mcl_families] container: {} block(s), {} accessory, {} directed family relation(s) -> {}.container.tsv, \
+             {}.container_relations.tsv, {}.container_summary.tsv",
+            c.count("blocks"),
+            c.count("accessory_blocks"),
+            c.count("family_relations_directed"),
+            args.out,
+            args.out,
+            args.out
+        );
+        container_counts = Some([
+            ("container_blocks", c.count("blocks")),
+            ("container_accessory_blocks", c.count("accessory_blocks")),
+            ("container_family_relations", c.count("family_relations_directed")),
+        ]);
+    }
+
     // Params certificate: a flag with no certificate row makes two arms indistinguishable.
     let mut ph = std::fs::File::create(format!("{}.params.tsv", args.out))?;
     for (k, v) in [
@@ -2150,6 +2209,13 @@ fn main() -> Result<()> {
             ("copies_gene_key_collisions", s.key_collisions.to_string()),
             ("copies_exons_coalesced", s.coalesced.to_string()),
         ] {
+            writeln!(ph, "{k}\t{v}")?;
+        }
+    }
+    // `--emit-container` only (appended LAST, and only then, so every other run's params.tsv is unchanged)
+    if let Some(cc) = container_counts {
+        writeln!(ph, "emit_container\ttrue")?;
+        for (k, v) in cc {
             writeln!(ph, "{k}\t{v}")?;
         }
     }
@@ -2546,6 +2612,39 @@ fn gtf_loci<R: std::io::BufRead>(reader: R) -> Result<Vec<GtfLocus>> {
     Ok(out)
 }
 
+/// Write `<out>.loci.fa`: one record `>CONTIG:START-END` + the genome's forward strand over that span, per locus span.
+/// With `hash`, also the [`ContentHash`](rustle::vg_family::run_cache::ContentHash) of every byte written (the PAF
+/// cache key), taken as the bytes go out so the file is never read back.
+fn write_loci_fa(
+    genome: &rustle::genome::GenomeIndex,
+    spans: &[(String, u64, u64)],
+    fa_path: &str,
+    fasta: &str,
+    hash: bool,
+) -> Result<Option<rustle::vg_family::run_cache::ContentHash>> {
+    use rustle::vg_family::run_cache::HashingWriter;
+    let mut fa = HashingWriter::new(std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(fa_path)?), hash);
+    for (c, s, e) in spans {
+        let seq = genome.fetch_sequence(c, s - 1, *e).with_context(|| format!("{c}:{s}-{e} not in {fasta}"))?;
+        writeln!(fa, ">{c}:{s}-{e}")?;
+        fa.write_all(&seq)?;
+        writeln!(fa)?;
+    }
+    fa.flush()?;
+    Ok(fa.hash)
+}
+
+/// The families PAF cache key (`paf/<fnv(key)>/key.tsv`): the minimap2 command line and build, and the content
+/// hash + byte length of the loci FASTA it aligns. v2 (2026-09-28): the hash is the word-wise 128-bit
+/// `ContentHash` taken while the FASTA is written; v1 was a byte-wise FNV-1a 64 of the FASTA read back from disk.
+fn families_paf_key(cmd: &str, minimap2_version: &str, loci_fa: &rustle::vg_family::run_cache::ContentHash) -> String {
+    format!(
+        "rustle families paf v2\ncmd\t{cmd}\nminimap2\t{minimap2_version}\nquery_hash\tcontent128:{}\nquery_bytes\t{}\n",
+        loci_fa.hex(),
+        loci_fa.len()
+    )
+}
+
 /// `--from-gtf`: the de novo locus set of an assembled GTF, as the family stage consumes it (see the flag doc).
 /// Returns `(loci.gff3, loci.fa, loci.paf)` paths and the loci themselves (for `--emit-units`' copy table).
 fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(String, String, String, Vec<GtfLocus>)> {
@@ -2567,16 +2666,11 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
         }
         spans.push((chrom.clone(), s, e));
     }
+    use rustle::vg_family::run_cache as rc;
+    let root = rc::cache_root();
     let contigs: HashSet<String> = spans.iter().map(|x| x.0.clone()).collect();
     let genome = rustle::genome::GenomeIndex::from_fasta_contigs(fasta, &contigs)?;
-    let mut fa = std::fs::File::create(&fa_path)?;
-    for (c, s, e) in &spans {
-        let seq = genome.fetch_sequence(c, s - 1, *e).with_context(|| format!("{c}:{s}-{e} not in {fasta}"))?;
-        writeln!(fa, ">{c}:{s}-{e}")?;
-        fa.write_all(&seq)?;
-        writeln!(fa)?;
-    }
-    drop(fa);
+    let fa_hash = write_loci_fa(&genome, &spans, &fa_path, fasta, root.is_some())?;
     eprintln!("[mcl_families] --from-gtf: {} loci -> all-vs-all", spans.len());
     let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
     let mm_args: Vec<String> = ["-x", "asm20", "-c", "-X", "-N", "50", "-p", "0.1", "--secondary=yes", "-t"]
@@ -2584,26 +2678,31 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
         .map(|s| s.to_string())
         .chain(std::iter::once(threads.to_string()))
         .collect();
-    // PAF cache (`RUSTLE_CACHE_DIR`, see `rustle::vg_family::run_cache`): keyed by the loci FASTA bytes, the
-    // command line and the minimap2 build; a hit copies the cached PAF instead of re-aligning.
-    use rustle::vg_family::run_cache as rc;
-    let paf_entry = rc::cache_root().map(|root| {
-        let bytes = std::fs::read(&fa_path).unwrap_or_default();
-        let key = format!(
-            "rustle families paf v1\ncmd\t{mm2} {}\nminimap2\t{}\nquery_fnv\t{:016x}\nquery_bytes\t{}\n",
-            mm_args.join(" "),
-            rc::minimap2_version(&mm2),
-            rc::fnv1a64(&bytes),
-            bytes.len()
-        );
-        rc::Entry::new(&root, "paf", key)
+    // PAF cache (`RUSTLE_CACHE_DIR`, see `rustle::vg_family::run_cache`): keyed by EVERY byte of the loci FASTA
+    // (hashed while it was written above, never re-read), the command line and the minimap2 build; a hit hard-links
+    // the cached PAF to `<out>.loci.paf` instead of re-aligning (and instead of copying it). The entry is pinned, so a
+    // write through the link is a miss on the next run, never a stale replay.
+    let paf_entry = root.zip(fa_hash).map(|(root, h)| {
+        let key = families_paf_key(&format!("{mm2} {}", mm_args.join(" ")), &rc::minimap2_version(&mm2), &h);
+        rc::Entry::new(&root, "paf", key).pinned()
     });
+    let paf_path = std::path::Path::new(&paf);
     if let Some(e) = paf_entry.as_ref().filter(|e| e.is_hit()) {
         // a replay that fails (another run replacing the entry) falls through to running minimap2
-        if std::fs::copy(e.dir.join("out.paf"), &paf).is_ok() {
-            eprintln!("[cache] all-vs-all PAF replayed from {} (minimap2 skipped)", e.dir.display());
+        if let Ok(linked) = e.replay("out.paf", paf_path) {
+            eprintln!(
+                "[cache] all-vs-all PAF replayed from {} ({}; minimap2 skipped)",
+                e.dir.display(),
+                if linked { "hard link" } else { "copy" }
+            );
             return Ok((gff3, fa_path, paf, loci));
         }
+    }
+    // never truncate in place: `<out>.loci.paf` may be a hard link to a cache entry from an earlier run
+    match std::fs::remove_file(paf_path) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err).with_context(|| format!("removing {paf}")),
     }
     let out_paf = std::fs::File::create(&paf)?;
     let status = std::process::Command::new(&mm2)
@@ -2617,7 +2716,7 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
     anyhow::ensure!(status.success(), "minimap2 all-vs-all failed");
     if let Some(e) = paf_entry.as_ref() {
         let stored = e.staging().and_then(|st| {
-            std::fs::copy(&paf, st.join("out.paf"))?;
+            e.stage_link(&st, "out.paf", paf_path)?;
             e.commit(&st)
         });
         if let Err(err) = stored {
@@ -2625,4 +2724,54 @@ fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(S
         }
     }
     Ok((gff3, fa_path, paf, loci))
+}
+
+#[cfg(test)]
+mod paf_cache_key_tests {
+    use super::*;
+    use rustle::vg_family::run_cache as rc;
+
+    /// The families PAF key covers every byte of the loci FASTA (hashed as it is written, equal to a re-read of the
+    /// file): the same loci FASTA written again (a new mtime, a later run) keeps the key, one changed base inside a
+    /// locus span changes it at the same file size, and an entry committed under one key is a miss for the other.
+    #[test]
+    fn families_paf_key_changes_with_any_loci_fasta_byte_and_only_then() {
+        let dir = std::env::temp_dir().join(format!("rustle_fam_paf_key_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let g = dir.join("g.fa");
+        let spans = vec![("c1".to_string(), 3u64, 12u64), ("c2".to_string(), 1, 8)];
+        let key_of = |genome_text: &str, name: &str| -> (String, Vec<u8>) {
+            std::fs::write(&g, genome_text).unwrap();
+            let genome = rustle::genome::GenomeIndex::from_fasta(g.to_str().unwrap()).unwrap();
+            let fa = dir.join(name);
+            let h = write_loci_fa(&genome, &spans, fa.to_str().unwrap(), "g.fa", true).unwrap().unwrap();
+            let bytes = std::fs::read(&fa).unwrap();
+            assert_eq!(rc::ContentHash::of_file(&fa).unwrap().hex(), h.hex(), "in-stream hash == hash of the file");
+            assert_eq!(h.len(), bytes.len() as u64);
+            // without a cache nothing is hashed and the file is the same
+            assert!(write_loci_fa(&genome, &spans, fa.to_str().unwrap(), "g.fa", false).unwrap().is_none());
+            assert_eq!(std::fs::read(&fa).unwrap(), bytes);
+            (families_paf_key("minimap2 -x asm20 -t 4", "2.28-r1209", &h), bytes)
+        };
+        let (k1, b1) = key_of(">c1\nACGTACGTACGTAC\n>c2\nGGGGCCCCAA\n", "a.loci.fa");
+        assert_eq!(b1, b">c1:3-12\nGTACGTACGT\n>c2:1-8\nGGGGCCCC\n");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let (k1b, b1b) = key_of(">c1\nACGTACGTACGTAC\n>c2\nGGGGCCCCAA\n", "a.loci.fa");
+        assert_eq!((&k1, &b1), (&k1b, &b1b), "rewritten, same bytes: same key");
+        let (k2, b2) = key_of(">c1\nACGTACGTTCGTAC\n>c2\nGGGGCCCCAA\n", "a.loci.fa");
+        assert_eq!(b1.len(), b2.len());
+        assert_ne!(k1, k2, "one base inside a span, same size: another key");
+        let (k3, _) = key_of(">c1\nACGTACGTACGTAT\n>c2\nGGGGCCCCAA\n", "a.loci.fa");
+        assert_eq!(k1, k3, "a base outside every span leaves the loci FASTA, and so the key, unchanged");
+        let root = dir.join("cache");
+        let e1 = rc::Entry::new(&root, "paf", k1.clone()).pinned();
+        let st = e1.staging().unwrap();
+        std::fs::write(dir.join("p.paf"), b"c1:3-12\t10\n").unwrap();
+        e1.stage_link(&st, "out.paf", &dir.join("p.paf")).unwrap();
+        e1.commit(&st).unwrap();
+        assert!(rc::Entry::new(&root, "paf", k1).pinned().is_hit_verify(true));
+        assert!(!rc::Entry::new(&root, "paf", k2).pinned().is_hit_verify(false), "a changed loci FASTA is a miss");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
