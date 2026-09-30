@@ -168,3 +168,18 @@ both tie orders in all four runs.
 
 "No partner left" = the family of ours holding those genes is already paired with a bigger Soto family (e.g. NPIPB5 ID_153,
 GOLGA8B ID_79).
+
+## 7. The meeting page (claude.ai artifact J12TB7ebNq3uxZ7aErd7q7)
+
+Four tabs: **How Soto builds families** (eight steps of their released code on a toy example; MAD explained with a number line,
+including the real NPIPB3/NPIPB4 pair, MAD 1.30), **Soto's 491 families** (everything above, with the filter toggles, one-to-one
+matching and a genome browser per family), and the two July pages **Detection · 83 families** and **Every member · 362**
+(embedded unchanged in shadow roots, each with read-level pictures of the RNA miss reasons: collapse-K0, mis-chain, seeding gap).
+The July member page's "RNA missed" filter showed the 313 found rows instead of the 49 missed ones; fixed in the embedded copy only.
+
+```
+python3 bench/soto_m2/soto_m2_families.py ... --out-json families.json
+python3 bench/soto_m2/page/build_page.py --data families.json --out soto_vs_ours.html
+```
+
+The build is byte-identical to the published version 9.

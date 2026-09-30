@@ -1,0 +1,705 @@
+<title>Soto vs Our Families</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column. Three claim tiles, then every Soto family as a clickable grid, then a genome-browser view of the chosen family. */
+:root {
+  --bg: #f4f6f7; --surface: #ffffff; --fg: #17222b; --muted: #56636e; --faint: #8c98a2; --line: #d8dee3; --track: #eef1f3;
+  --accent: #1d6a86; --igv: #1f3f8f;
+  --k-smaller: #2a78d6; --k-our: #eb6834; --k-soto: #1baf7a; --k-both: #4a3aa7; --k-match: #c5ccd2;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s-other: #aab3ba;
+  --cross: #e34948; --within: #9aa5ae;
+  --f-display: "Literata", Georgia, serif; --f-body: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11181d; --surface: #182229; --fg: #e3e9ed; --muted: #9aa8b2; --faint: #6d7b85; --line: #2b3943; --track: #1e2a32;
+  --accent: #6cb6d3; --igv: #8fb0ff;
+  --k-smaller: #3987e5; --k-our: #d95926; --k-soto: #199e70; --k-both: #9085e9; --k-match: #3a4750;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s-other: #56636d;
+  --cross: #e66767; --within: #5d6b75; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3e9ed; --muted: #9aa8b2; --faint: #6d7b85; --line: #2b3943; --track: #1e2a32;
+  --accent: #6cb6d3; --igv: #8fb0ff;
+  --k-smaller: #3987e5; --k-our: #d95926; --k-soto: #199e70; --k-both: #9085e9; --k-match: #3a4750;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s-other: #56636d;
+  --cross: #e66767; --within: #5d6b75; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--f-body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 64px; display: grid; gap: 40px; }
+h1, h2 { font-family: var(--f-display); font-weight: 650; text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: 2rem; }
+h2 { font-size: 1.35rem; }
+p { margin: 0; max-width: 72ch; }
+.eyebrow { font-size: .74rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+header, section { display: grid; gap: 14px; min-width: 0; }
+code, .mono { font-family: var(--f-mono); font-size: .85em; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.tile .big { font-family: var(--f-display); font-size: 1.9rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tile .lab { font-weight: 600; font-size: .95rem; }
+.tile .sub { font-size: .85rem; color: var(--muted); }
+/* every-family grid */
+.groups { display: grid; gap: 14px; }
+.grp { display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: start; }
+.grp .gl { display: grid; gap: 2px; }
+.grp .gl b { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.grp .gl span { font-size: .82rem; color: var(--muted); }
+.sw { width: 12px; height: 12px; border-radius: 3px; flex: none; display: inline-block; }
+.cells { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.cell { width: 15px; height: 15px; border-radius: 3px; border: 0; padding: 0; cursor: pointer; position: relative; }
+.cell.h::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--surface); }
+.cell:focus-visible, .chip:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cell.on { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--fg); }
+@media (max-width: 640px) { .grp { grid-template-columns: 1fr; } }
+/* viewer */
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bar input { font: 500 .9rem var(--f-mono); padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); width: 16rem; max-width: 100%; }
+.chip { font: 500 .8rem var(--f-body); padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.chip:hover { border-color: var(--fg); }
+.verdict { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: baseline; }
+.verdict h2 { font-family: var(--f-mono); font-size: 1.25rem; }
+.pill { font-size: .72rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 3px 10px; border-radius: 99px; color: #fff; }
+.why { font-size: 1rem; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.facts b { color: var(--fg); font-weight: 600; }
+.igv { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.igv svg { display: block; width: 100%; height: auto; }
+.igv text { font-family: var(--f-mono); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .8rem; color: var(--muted); align-items: center; }
+.legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: .84rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; }
+th { font-size: .7rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+td.n { text-align: right; }
+tr.focus td:first-child { font-weight: 600; }
+.tag { display: inline-flex; align-items: center; gap: 5px; font-family: var(--f-mono); font-size: .78rem; }
+.tag .sw { width: 10px; height: 10px; }
+.role { font-size: .78rem; color: var(--muted); }
+.role.add { color: var(--fg); font-weight: 500; }
+.more { justify-self: start; }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 600; }
+details ul { margin: 10px 0 0; padding-left: 1.1em; display: grid; gap: 6px; font-size: .9rem; }
+pre { overflow-x: auto; font: .78rem/1.5 var(--f-mono); margin: 10px 0 0; }
+.filters { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; background: var(--bg); padding-block: 10px; border-bottom: 1px solid var(--line); }
+.sw-toggle { display: inline-flex; align-items: center; gap: 9px; font-weight: 600; font-size: .92rem; cursor: pointer; user-select: none; }
+.sw-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.knob { width: 36px; height: 20px; border-radius: 99px; background: var(--line); position: relative; flex: none; transition: background .15s; }
+.knob::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.sw-toggle input:checked + .knob { background: var(--accent); }
+.sw-toggle input:checked + .knob::after { transform: translateX(16px); }
+.sw-toggle input:focus-visible + .knob { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fnote { font-size: .82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cell.gone { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--faint); }
+.empty { padding: 28px 20px; color: var(--muted); font-size: .95rem; }
+.comp { display: grid; gap: 6px; }
+.brk { display: flex; gap: 2px; font-size: .78rem; color: var(--muted); }
+.brk > div { border-top: 2px solid var(--faint); padding-top: 4px; min-width: 0; }
+.brk span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stack { display: flex; gap: 2px; height: 34px; border-radius: 6px; overflow: hidden; }
+.seg { min-width: 3px; }
+.slabs { display: flex; gap: 2px; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.sl { min-width: 0; display: flex; gap: 5px; align-items: baseline; overflow: hidden; white-space: nowrap; }
+.sl .sw { width: 9px; height: 9px; flex: none; align-self: center; }
+@media (max-width: 720px) { .slabs { flex-wrap: wrap; gap: 4px 14px; } .sl { flex: none !important; } }
+.code { background: var(--track); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: grid; gap: 4px; overflow-x: auto; }
+.cl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: baseline; }
+.cl code { font-size: .8rem; white-space: pre; }
+.cl em { font-style: normal; font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.cl.hl code { color: var(--fg); font-weight: 500; }
+.cl.hl em { color: var(--fg); font-weight: 600; }
+@media (max-width: 720px) { .cl { grid-template-columns: 1fr; gap: 0; } }
+blockquote { margin: 0; font-family: var(--f-display); font-size: 1rem; line-height: 1.5; border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; max-width: 80ch; }
+cite { display: block; font: .78rem var(--f-body); color: var(--muted); margin-top: 4px; font-style: normal; }
+.note { font-size: .88rem; color: var(--muted); }
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow-x: auto; }
+.chart svg { display: block; min-width: 520px; }
+.chart text { font-family: var(--f-body); font-variant-numeric: tabular-nums; }
+.bcats { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: .86rem; align-items: center; }
+.bc { display: inline-flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; }
+.bc b { font-weight: 650; }
+#bstack .seg.um { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--faint); }
+.venn { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: center; font-size: .82rem; max-width: 640px; font-variant-numeric: tabular-nums; }
+.venn .vl { color: var(--muted); white-space: nowrap; }
+.venn .vb { display: flex; gap: 2px; height: 14px; }
+.venn .vb span { border-radius: 3px; min-width: 2px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); }
+.tabs button { font: 600 .92rem var(--f-body); color: var(--muted); background: transparent; border: 0; border-bottom: 3px solid transparent; padding: 8px 14px 9px; cursor: pointer; display: grid; text-align: left; gap: 1px; }
+.tabs button span { font-weight: 400; font-size: .76rem; color: var(--faint); }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tabs button:hover { color: var(--fg); }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pane { display: grid; gap: 40px; min-width: 0; }
+.pane[hidden] { display: none; }
+.prov { font-size: .84rem; color: var(--muted); background: var(--track); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; max-width: none; }
+.shost { display: block; min-width: 0; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 22px; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 12px; min-width: 0; }
+.sh { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+.sn { width: 30px; height: 30px; border-radius: 50%; background: var(--fg); color: var(--bg); display: grid; place-items: center; font-weight: 650; font-variant-numeric: tabular-nums; }
+.step h3 { margin: 0 0 2px; font-family: var(--f-display); font-size: 1.1rem; font-weight: 650; }
+.step p { margin: 0 0 6px; font-size: .9rem; color: var(--muted); max-width: 90ch; }
+.sc { display: inline-block; font-size: .76rem; background: var(--track); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; max-width: 100%; overflow-x: auto; white-space: nowrap; }
+.sv { min-width: 0; overflow-x: auto; }
+.sv svg { display: block; min-width: 560px; }
+.sv text { font-family: var(--f-body); }
+.how-intro, .how-foot { display: grid; gap: 10px; }
+.facts3 { display: flex; flex-wrap: wrap; gap: 8px 26px; font-size: .92rem; font-variant-numeric: tabular-nums; }
+.facts3 b { font-family: var(--f-display); font-size: 1.3rem; margin-right: 4px; }
+.miss { display: grid; gap: 10px; }
+.miss-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
+.mcard { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.mh { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.mh b { font-family: var(--f-display); font-size: 1.05rem; }
+.mh span { font-size: .8rem; color: var(--muted); }
+.mcard svg { display: block; }
+.mcard svg text { font-family: var(--f-body); }
+.mcard p { margin: 0; font-size: .85rem; color: var(--muted); }
+.mcard p b { color: var(--fg); font-weight: 600; }
+#tip { position: fixed; z-index: 9; pointer-events: none; background: var(--fg); color: var(--bg); font: .78rem/1.45 var(--f-body); padding: 7px 10px; border-radius: 6px; max-width: 320px; }
+#tip b { font-family: var(--f-mono); }
+footer { font-size: .8rem; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .cell { transition: transform .1s; } .cell:hover { transform: scale(1.25); } }
+@media (max-width: 480px) { h1 { font-size: 1.6rem; } .wrap { padding-block: 22px 48px; } }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Meeting brief · 30 Sep 2026 · human CHM13 · truth = Soto 2025 Table S1C</div>
+  <h1>Soto vs Our Families</h1>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Views">
+  <button role="tab" id="tab-how" aria-controls="pane-how" aria-selected="false" data-p="how">How Soto builds families<span>their method, step by step</span></button>
+  <button role="tab" id="tab-soto" aria-controls="pane-soto" aria-selected="true" data-p="soto">Soto's 491 families<span>their recipe, our copy numbers</span></button>
+  <button role="tab" id="tab-det" aria-controls="pane-det" aria-selected="false" data-p="det">Detection · 83 families<span>our Rustle pipeline, RNA and DNA</span></button>
+  <button role="tab" id="tab-mem" aria-controls="pane-mem" aria-selected="false" data-p="mem">Every member · 362<span>one row per Soto gene</span></button>
+</nav>
+__HOW_PANE__
+<div role="tabpanel" id="pane-soto" aria-labelledby="tab-soto" class="pane">
+
+<div class="filters" role="group" aria-label="Filter genes by biotype">
+  <label class="sw-toggle"><input type="checkbox" id="fp"><span class="knob" aria-hidden="true"></span>Remove pseudogenes</label>
+  <label class="sw-toggle"><input type="checkbox" id="fl"><span class="knob" aria-hidden="true"></span>Remove lncRNAs</label>
+  <span class="fnote" id="fnote"></span>
+</div>
+
+<section aria-label="Claims">
+  <div class="tiles">
+    <div class="tile"><div class="lab">Soto's families sit inside ours</div><div class="big" id="t1"></div><div class="sub" id="t1s"></div></div>
+    <div class="tile"><div class="lab">We rebuild them with our own copy numbers</div><div class="big" id="t2"></div><div class="sub" id="t2s"></div></div>
+    <div class="tile"><div class="lab">Soto is narrower than homology</div><div class="big" id="t3"></div><div class="sub">families smaller than their ≥ 98%-exon sequence family</div></div>
+    <div class="tile"><div class="lab">Soto families still standing</div><div class="big" id="t4"></div><div class="sub" id="t4s"></div></div>
+  </div>
+</section>
+
+<section id="match">
+  <div class="eyebrow">One-to-one matching (Hungarian algorithm) · each Soto family paired with at most one of ours, maximizing shared genes</div>
+  <h2>Do we recover each Soto family whole?</h2>
+  <div class="tiles">
+    <div class="tile"><div class="lab">Soto's genes kept in the matched family</div><div class="big" id="b1"></div><div class="sub">sensitivity: shared genes ÷ Soto's genes</div></div>
+    <div class="tile"><div class="lab">Our genes that belong to it</div><div class="big" id="b2"></div><div class="sub">precision: shared genes ÷ genes in our matched families</div></div>
+    <div class="tile"><div class="lab">Identical families</div><div class="big" id="b3"></div><div class="sub" id="b3s"></div></div>
+  </div>
+  <div class="stack" id="bstack" role="img" aria-label="Soto families by matching outcome"></div>
+  <div class="bcats"><div class="bc"><span class="sw" style="background:var(--k-match);"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="40" height="5" rx="2" fill="var(--faint)"/><rect x="2" y="11" width="40" height="5" rx="2" fill="var(--accent)"/></svg><b id="bc-same"></b> Same genes</div><div class="bc"><span class="sw" style="background:var(--k-smaller);"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="26" height="5" rx="2" fill="var(--faint)"/><rect x="2" y="11" width="40" height="5" rx="2" fill="var(--accent)"/></svg><b id="bc-ours_bigger"></b> Ours bigger</div><div class="bc"><span class="sw" style="background:var(--k-our);"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="40" height="5" rx="2" fill="var(--faint)"/><rect x="2" y="11" width="22" height="5" rx="2" fill="var(--accent)"/></svg><b id="bc-ours_smaller"></b> Ours smaller</div><div class="bc"><span class="sw" style="background:var(--k-both);"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="28" height="5" rx="2" fill="var(--faint)"/><rect x="14" y="11" width="28" height="5" rx="2" fill="var(--accent)"/></svg><b id="bc-different"></b> Overlapping, different</div><div class="bc"><span class="sw" style="background:transparent;box-shadow:inset 0 0 0 1.5px var(--faint)"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="32" height="5" rx="2" fill="var(--faint)"/><rect x="2.5" y="11.5" width="31" height="4" rx="2" fill="none" stroke="var(--accent)" stroke-dasharray="2 2"/></svg><b id="bc-unmatched"></b> No partner left</div></div>
+  <div class="legend"><span><svg width="22" height="8" aria-hidden="true"><rect y="1" width="22" height="5" rx="2" fill="var(--faint)"/></svg> Soto's family</span><span><svg width="22" height="8" aria-hidden="true"><rect y="1" width="22" height="5" rx="2" fill="var(--accent)"/></svg> our matched family</span><span>"No partner left": the family of ours holding these genes is already paired with a bigger Soto family</span></div>
+</section>
+
+<section id="made">
+  <div class="eyebrow">Soto's own table (S1C) and released code (github.com/mydennislab/HSD_brain_evolution)</div>
+  <h2>What Soto's families are made of</h2>
+  <div class="comp">
+    <div class="brk"><div style="flex:1679"><span>copy-number backbone · 1,679 (68%)</span></div><div style="flex:779"><span>attached "overlapping gene features" · 779 (32%)</span></div></div>
+    <div class="stack" role="img" aria-label="2,458 Soto family memberships by biotype: 618 protein-coding, 1,061 unprocessed pseudogenes, 345 lncRNA, 329 processed pseudogenes, 30 other pseudogenes, 75 other"><div class="seg" style="flex:618;background:var(--s1)" data-tip="Protein-coding: 618 of 2,458 memberships (25.1%)"></div><div class="seg" style="flex:1061;background:var(--s2)" data-tip="Unprocessed pseudogene: 1,061 of 2,458 memberships (43.2%)"></div><div class="seg" style="flex:345;background:var(--s3)" data-tip="lncRNA: 345 of 2,458 memberships (14.0%)"></div><div class="seg" style="flex:329;background:var(--s4)" data-tip="Processed pseudogene: 329 of 2,458 memberships (13.4%)"></div><div class="seg" style="flex:30;background:var(--s5)" data-tip="Other pseudogene: 30 of 2,458 memberships (1.2%)"></div><div class="seg" style="flex:75;background:var(--s6)" data-tip="miRNA, TEC, other: 75 of 2,458 memberships (3.1%)"></div></div>
+    <div class="slabs"><div class="sl" style="flex:618"><span class="sw" style="background:var(--s1)"></span><b>618</b> Protein-coding</div><div class="sl" style="flex:1061"><span class="sw" style="background:var(--s2)"></span><b>1,061</b> Unprocessed pseudogene</div><div class="sl" style="flex:345"><span class="sw" style="background:var(--s3)"></span><b>345</b> lncRNA</div><div class="sl" style="flex:329"><span class="sw" style="background:var(--s4)"></span><b>329</b> Processed pseudogene</div><div class="sl" style="flex:30"><span class="sw" style="background:var(--s5)"></span><b>30</b> Other pseudogene</div><div class="sl" style="flex:75"><span class="sw" style="background:var(--s6)"></span><b>75</b> miRNA, TEC, other</div></div>
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="lab">Families with ≥ 2 protein-coding genes</div><div class="big">129 / 491</div><div class="sub">253 have none at all</div></div>
+    <div class="tile"><div class="lab">Families made only of pseudogenes</div><div class="big">183 / 491</div><div class="sub">by Soto's own Biotype column</div></div>
+  </div>
+  <div class="code" aria-label="Excerpt of Soto's released code, A_SD98_regions.md lines 225-263">
+<div class="cl"><code># we selected exons from SD-98 protein coding and pseudogenes …</code><em>their own comment</em></div>
+<div class="cl"><code>bedtools intersect -wa -f 1 -a CHM13.combined.v4.exons.bed …</code><em>exons of every annotated feature</em></div>
+<div class="cl hl"><code># | grep "protein_coding\|unprocessed_pseudogene" \</code><em>biotype filter commented out</em></div>
+<div class="cl hl"><code>| grep "protein_coding\|unprocessed_pseudogene" \</code><em>a pair is kept if either gene is coding or an unprocessed pseudogene</em></div>
+  </div>
+  <blockquote>"Copy number was calculated only for protein coding and unprocessed psedudogenes, but other overlapping gene features (i.e. lncRNA) were reported." <cite>Soto et al., Table S2 caption</cite></blockquote>
+  <div class="bar"><span class="note">Sharing ≥ 98%-identical exons is what a pseudogene does. See it:</span>
+    <button class="chip" data-f="ID_349">EEF1A1 + 2 retrocopies</button><button class="chip" data-f="ID_319">CKS1B + 2 retrocopies</button><button class="chip" data-f="ID_322">COMMD1 + ribosomal pseudogenes</button><button class="chip" data-f="ID_441">RBM8A + RBM8B</button></div>
+</section>
+
+<section>
+  <div class="eyebrow">Every Soto family · one square each · click to open it in the browser below</div>
+  <h2>Where we agree, and who is short when we don't</h2>
+  <div class="groups" id="groups"></div>
+  <div class="legend"><span><span class="sw" style="background:var(--k-match);position:relative;display:inline-grid;place-items:center"><span style="width:4px;height:4px;border-radius:50%;background:var(--surface)"></span></span> dot = Soto family is smaller than its sequence (homology) family</span></div>
+</section>
+
+<section id="viewer">
+  <div class="eyebrow">Genome browser · CHM13 v2.0 coordinates · colors = families</div>
+  <div class="bar">
+    <input id="q" list="fams" placeholder="Family ID or gene, e.g. NPIPB3" aria-label="Find a family by ID or gene name">
+    <datalist id="fams"></datalist>
+    <span id="ex" class="bar"></span>
+  </div>
+  <div class="verdict"><h2 id="vt"></h2><span id="vp" class="pill"></span></div>
+  <p class="why" id="vw"></p>
+  <div class="facts" id="vf"></div>
+  <div class="venn" id="venn"></div>
+  <div id="panels" class="igv" role="img" aria-label="Genome browser view of the chosen family"></div>
+  <div class="legend">
+    <span><i style="border-color:var(--cross)"></i>≥ 98%-identical exons shared across two Soto families</span>
+    <span><i style="border-color:var(--within)"></i>within one Soto family</span>
+    <span><i style="border-color:var(--cross);border-top-style:dashed"></i>link only in SEDEF edges</span>
+    <span>Track colors: same color = same family; ours takes the color of the Soto family it mostly holds</span>
+  </div>
+  <div class="tbl"><table>
+    <thead><tr><th>Gene</th><th>Locus</th><th>Model (common scale)</th><th>Soto</th><th>Ours</th><th>Homology</th><th>famCN Soto</th><th>famCN ours</th><th>Role</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+  <button class="chip more" id="more" hidden></button>
+</section>
+
+<section id="loosen">
+  <div class="eyebrow">Our copy-number cut, loosened from Soto's MAD &lt; 1 · families vs the exact run</div>
+  <h2>Would a looser copy-number cut find the ones we miss?</h2>
+  <div class="legend"><span><span class="sw" style="background:var(--s1)"></span> recovered: families we cut that become exact</span><span><span class="sw" style="background:var(--s2)"></span> broken: exact families that merge with others</span></div>
+  <div class="chart"><svg viewBox="0 0 720 250" width="100%" role="img" aria-label="Families recovered versus broken as our copy-number cut is loosened"><line x1="44" x2="710" y1="202.0" y2="202.0" stroke="var(--line)"/><text x="36" y="206.0" font-size="11" fill="var(--muted)" text-anchor="end">0</text><line x1="44" x2="710" y1="155.5" y2="155.5" stroke="var(--line)"/><text x="36" y="159.5" font-size="11" fill="var(--muted)" text-anchor="end">20</text><line x1="44" x2="710" y1="109.0" y2="109.0" stroke="var(--line)"/><text x="36" y="113.0" font-size="11" fill="var(--muted)" text-anchor="end">40</text><line x1="44" x2="710" y1="62.5" y2="62.5" stroke="var(--line)"/><text x="36" y="66.5" font-size="11" fill="var(--muted)" text-anchor="end">60</text><line x1="44" x2="710" y1="16.0" y2="16.0" stroke="var(--line)"/><text x="36" y="20.0" font-size="11" fill="var(--muted)" text-anchor="end">80</text><text x="79.6" y="197.0" font-size="10.5" fill="var(--fg)" text-anchor="middle">0</text><text x="103.6" y="197.0" font-size="10.5" fill="var(--fg)" text-anchor="middle">0</text><text x="91.6" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 1</text><text x="91.6" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">411 exact</text><path d="M163.7 202.0 V195.7 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 1.25: 4 families recovered; 401 exact overall, held-out 230"/><text x="174.7" y="187.7" font-size="10.5" fill="var(--fg)" text-anchor="middle">4</text><path d="M187.7 202.0 V172.4 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 1.25: 14 families broken; 401 exact overall, held-out 230"/><text x="198.7" y="164.4" font-size="10.5" fill="var(--fg)" text-anchor="middle">14</text><text x="186.7" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 1.25</text><text x="186.7" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">401 exact</text><path d="M258.9 202.0 V193.4 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 1.5: 5 families recovered; 386 exact overall, held-out 220"/><text x="269.9" y="185.4" font-size="10.5" fill="var(--fg)" text-anchor="middle">5</text><path d="M282.9 202.0 V135.2 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 1.5: 30 families broken; 386 exact overall, held-out 220"/><text x="293.9" y="127.2" font-size="10.5" fill="var(--fg)" text-anchor="middle">30</text><text x="281.9" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 1.5</text><text x="281.9" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">386 exact</text><path d="M354.0 202.0 V181.8 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 2: 10 families recovered; 380 exact overall, held-out 215"/><text x="365.0" y="173.8" font-size="10.5" fill="var(--fg)" text-anchor="middle">10</text><path d="M378.0 202.0 V109.7 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 2: 41 families broken; 380 exact overall, held-out 215"/><text x="389.0" y="101.7" font-size="10.5" fill="var(--fg)" text-anchor="middle">41</text><text x="377.0" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 2</text><text x="377.0" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">380 exact</text><path d="M449.1 202.0 V170.1 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 3: 15 families recovered; 374 exact overall, held-out 211"/><text x="460.1" y="162.1" font-size="10.5" fill="var(--fg)" text-anchor="middle">15</text><path d="M473.1 202.0 V84.1 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 3: 52 families broken; 374 exact overall, held-out 211"/><text x="484.1" y="76.1" font-size="10.5" fill="var(--fg)" text-anchor="middle">52</text><text x="472.1" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 3</text><text x="472.1" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">374 exact</text><path d="M544.3 202.0 V170.1 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 4: 15 families recovered; 367 exact overall, held-out 207"/><text x="555.3" y="162.1" font-size="10.5" fill="var(--fg)" text-anchor="middle">15</text><path d="M568.3 202.0 V67.8 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 4: 59 families broken; 367 exact overall, held-out 207"/><text x="579.3" y="59.8" font-size="10.5" fill="var(--fg)" text-anchor="middle">59</text><text x="567.3" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 4</text><text x="567.3" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">367 exact</text><path d="M639.4 202.0 V170.1 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 8: 15 families recovered; 353 exact overall, held-out 199"/><text x="650.4" y="162.1" font-size="10.5" fill="var(--fg)" text-anchor="middle">15</text><path d="M663.4 202.0 V35.3 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 8: 73 families broken; 353 exact overall, held-out 199"/><text x="674.4" y="27.3" font-size="10.5" fill="var(--fg)" text-anchor="middle">73</text><text x="662.4" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 8</text><text x="662.4" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">353 exact</text><line x1="44" x2="710" y1="202.0" y2="202.0" stroke="var(--faint)"/></svg></div>
+  <p class="note">Every step breaks more than it recovers, on the development half and the held-out half alike (held-out exact 234 → 230 → 220 → 215). The misses come from our copy-number values, not from the cut.</p>
+</section>
+
+<details>
+  <summary>What to say, and what to avoid</summary>
+  <ul>
+    <li><b>Say:</b> Soto's families are a copy-number cut of sequence families. With our own copy numbers we rebuild 411 of 491 exactly. Theirs can be derived from ours, but ours cannot be derived from theirs.</li>
+    <li><b>Say:</b> where Soto is smaller, the cut rests on copy-number gaps that a second measurement does not reproduce. NPIPB3/B4/B5 are 98.6% identical, yet each is its own family.</li>
+    <li><b>Say:</b> of the 43 families we split, 12 are Soto's side: 6 are not reproducible from Soto's own rule and copy numbers, and 1 is a hand merge. That count includes mixed families.</li>
+    <li><b>Say:</b> pseudogenes and lncRNAs are in Soto's families by design, not by accident. The "exons" are annotation exons of every feature (the biotype filter is commented out), a pair is kept if either gene is coding or an unprocessed pseudogene, and their own caption says lncRNAs "were reported". A retrocopy shares ≥ 98%-identical exons with its parent, so an exon-sharing rule pulls pseudogenes in rather than filtering them out.</li>
+    <li><b>Say:</b> loosening our copy-number cut does not help: every step breaks more exact families than it recovers, including on held-out families. The fix is better copy numbers.</li>
+    <li><b>Avoid:</b> "ours is more accurate". Every score uses Soto's table as the truth.</li>
+    <li><b>Avoid:</b> quoting 99.1% without its edge set: it is 77.9% on the edges their Methods describe, and 80–90% on our Rustle catalogs.</li>
+  </ul>
+</details>
+
+<details>
+  <summary>How each family is classified, and how to regenerate it</summary>
+  <ul>
+    <li><b>Ours</b> = Soto's released-code rule (exon map-back edges, per-pair copy-number MAD &lt; 1) with our own copy numbers (268 SGDP samples). This is the 0.928 / 411-exact run.</li>
+    <li><b>Soto smaller</b>: all of Soto's genes sit in one of our families, which also holds other genes sharing ≥ 98%-identical exons with them.</li>
+    <li><b>We miss · our rule</b>: we cut Soto's family. Either our copy numbers split genes that sequence joins (Soto's copy numbers do not split them), or our exon graph lacks a link that SEDEF has.</li>
+    <li><b>We miss · Soto's table</b>: Soto's own rule with Soto's own copy numbers cuts the family too, or S1C marks it "Manual merge".</li>
+    <li><b>Both</b>: part of the family is cut away, and the rest sits with extra genes.</li>
+  </ul>
+<pre>python3 bench/soto_m2/soto_m2_families.py --geneset elig.tsv --full-geneset full.tsv \
+    --famcn-ours famcn_ours_allwssd.tsv --exons sd98_gene_exons.tsv --cat cat_v4.bed \
+    --out-tsv families.tsv --out-json families.json</pre>
+</details>
+
+</div>
+<div role="tabpanel" id="pane-det" aria-labelledby="tab-det" class="pane" hidden>
+  <p class="prov">Built 28 Jul 2026 from our Rustle pipeline on human A119b: RNA mode uses Iso-Seq reads; DNA mode uses <code>--from-genome</code> self-alignment. Scored against 83 Soto families (362 members). Not re-checked today, and not comparable with the 491-family tab, because the family set and the method differ.</p>
+  __MISSES_DET__
+  <div id="host-det" class="shost"></div>
+</div>
+<div role="tabpanel" id="pane-mem" aria-labelledby="tab-mem" class="pane" hidden>
+  <p class="prov">Built 27 Jul 2026: one row per member of the same 83 Soto families (362 genes), with DNA-level, <code>--from-genome</code> and RNA recovery. Not re-checked today.</p>
+  __MISSES_MEM__
+  <div id="host-mem" class="shost"></div>
+</div>
+
+<footer>Branch <code>machine2/soto-evidence</code> · <code>bench/soto_m2/soto_m2_families.py</code> · <code>docs/SOTO_M2_MEETING_EVIDENCE_2026-09-30.md</code></footer>
+</div>
+<div id="tip" hidden></div>
+
+<script type="application/json" id="d">__DATA__</script>
+<script>
+window.__initHash = location.hash || "";
+(function () {
+const D = JSON.parse(document.getElementById("d").textContent);
+const G = D.genes, META = {};
+D.families.forEach(f => META[f.f] = f);
+const byName = {};
+G.forEach(g => g.sf.forEach(s => { if (!s.startsWith("Unassigned")) (byName[g.n.toUpperCase()] = byName[g.n.toUpperCase()] || []).push(s); }));
+const fp = document.getElementById("fp"), fl = document.getElementById("fl");
+let CK = "", CB = D.combos[""];
+const hidden = i => (fp.checked && G[i].k === "p") || (fl.checked && G[i].k === "l");
+const FAMROW = fid => CB.fams[fid];
+
+const GROUPS = [
+  { key: "soto_smaller", name: "Soto smaller", color: "var(--k-smaller)", sub: "we hold all of theirs plus genes sharing ≥ 98%-identical exons" },
+  { key: "our", name: "We miss · our rule", color: "var(--k-our)", sub: "our copy numbers or our exon graph cut their family" },
+  { key: "soto", name: "We miss · Soto's table", color: "var(--k-soto)", sub: "their own rule cuts it too, a hand merge, or no exon link left" },
+  { key: "mixed", name: "Both", color: "var(--k-both)", sub: "part cut away, rest joined with extra genes" },
+  { key: "match", name: "Match", color: "var(--k-match)", sub: "identical to one of our families" },
+  { key: "gone", name: "Gone", color: "transparent", sub: "fewer than 2 genes, or none of its copy-number backbone, left after the filter" }
+];
+const groupOf = f => f.k === "we_miss" ? (f.mc.startsWith("our") ? "our" : "soto") : f.k;
+const GMETA = Object.fromEntries(GROUPS.map(g => [g.key, g]));
+const num = s => +s.split("_")[1];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const short = s => s.length > 32 ? s.slice(0, 30) + "…" : s;
+const fmt = n => n.toLocaleString("en-US");
+const pct = (a, b) => b ? (100 * a / b).toFixed(1) + "%" : "–";
+
+/* ---------- tiles + filter note ---------- */
+function tiles() {
+  const A = CB.anchor, B = A.bip, C = B.counts || {};
+  const P = x => (100 * x).toFixed(1) + "%";
+  document.getElementById("b1").textContent = P(B.sens);
+  document.getElementById("b2").textContent = P(B.prec);
+  document.getElementById("b3").textContent = `${C.same || 0} / ${A.families}`;
+  document.getElementById("b3s").textContent = `per-family average: sensitivity ${P(B.macro_sens)}, precision ${P(B.macro_prec)}` + (B.prec_alt !== B.prec ? ` · other tie order ${P(B.prec_alt)}` : " · same under either tie order");
+  const K = [["same", "var(--k-match)"], ["ours_bigger", "var(--k-smaller)"], ["ours_smaller", "var(--k-our)"], ["different", "var(--k-both)"], ["unmatched", ""]];
+  document.getElementById("bstack").innerHTML = K.filter(([k]) => C[k]).map(([k, c]) => `<div class="seg${k === "unmatched" ? " um" : ""}" style="flex:${C[k]};background:${c}" data-tip="${C[k]} Soto families: ${k.replace("_", " ")}"></div>`).join("");
+  K.forEach(([k]) => { const el = document.getElementById("bc-" + k); if (el) el.textContent = C[k] || 0; });
+  document.getElementById("t1").textContent = `${A.nest} / ${A.nest_n}`;
+  document.getElementById("t1s").textContent = `${pct(A.nest, A.nest_n)} nest in one sequence family` + (CK === "" ? " (exon map-back graph; 77.9% on SEDEF edges)" : "");
+  document.getElementById("t2").textContent = `${A.exact} / ${A.families}`;
+  document.getElementById("t2s").textContent = `exact · ARI ${A.ari.toFixed(3)}` + (CK === "" ? " · held-out 0.934" : "") + ` (their copy numbers: ${A.exact_s1c}, ${A.ari_s1c.toFixed(3)})`;
+  document.getElementById("t3").textContent = `${A.narrower} / ${A.families}`;
+  document.getElementById("t4").textContent = `${A.families} / ${A.families + A.gone}`;
+  document.getElementById("t4s").textContent = A.gone ? `${A.gone} Soto families (${pct(A.gone, A.families + A.gone)}) keep fewer than 2 genes` : "turn on a filter to see how many survive";
+  document.getElementById("fnote").textContent = `${fmt(A.genes)} of ${fmt(G.length)} genes · ${CB.label}`;
+}
+
+/* ---------- every-family grid ---------- */
+const groupsEl = document.getElementById("groups");
+function grid() {
+  groupsEl.innerHTML = "";
+  GROUPS.forEach(gr => {
+    const fams = D.families.filter(m => groupOf(FAMROW(m.f)) === gr.key).sort((a, b) => num(a.f) - num(b.f));
+    if (!fams.length) return;
+    const row = document.createElement("div");
+    row.className = "grp";
+    const sw = gr.key === "gone" ? `<span class="sw" style="box-shadow:inset 0 0 0 1.5px var(--faint)"></span>` : `<span class="sw" style="background:${gr.color}"></span>`;
+    row.innerHTML = `<div class="gl"><b>${sw}${gr.name} · ${fams.length}</b><span>${gr.sub}</span></div><div class="cells"></div>`;
+    const cells = row.querySelector(".cells");
+    fams.forEach(m => {
+      const f = FAMROW(m.f), b = document.createElement("button");
+      b.className = "cell" + (f.nh ? " h" : "") + (gr.key === "gone" ? " gone" : "") + (m.f === cur ? " on" : "");
+      b.style.background = gr.color;
+      b.dataset.f = m.f;
+      b.setAttribute("aria-label", `${m.f} ${m.ex} ${gr.name}`);
+      cells.appendChild(b);
+    });
+    groupsEl.appendChild(row);
+  });
+}
+groupsEl.addEventListener("click", e => { const b = e.target.closest(".cell"); if (b) { show(b.dataset.f); document.getElementById("viewer").scrollIntoView({ behavior: "smooth", block: "start" }); } });
+
+/* ---------- tooltip ---------- */
+const tip = document.getElementById("tip");
+function tipAt(e, html) { tip.innerHTML = html; tip.hidden = false; const w = tip.offsetWidth, h = tip.offsetHeight; let x = e.clientX + 14, y = e.clientY + 14; if (x + w > innerWidth - 8) x = e.clientX - w - 14; if (y + h > innerHeight - 8) y = e.clientY - h - 14; tip.style.left = x + "px"; tip.style.top = y + "px"; }
+document.addEventListener("mousemove", e => {
+  const c = e.target.closest && e.target.closest(".cell");
+  if (c) { const f = FAMROW(c.dataset.f); tipAt(e, `<b>${c.dataset.f}</b> · ${esc(short(META[c.dataset.f].ex))}<br>${GMETA[groupOf(f)].name}${f.nh ? " · smaller than its homology family" : ""}`); return; }
+  const dt = e.target.closest && e.target.closest("[data-tip]");
+  if (dt) { tipAt(e, esc(dt.dataset.tip)); return; }
+  const g = e.target.closest && e.target.closest("[data-i]");
+  if (g) { tipAt(e, geneTip(+g.dataset.i)); return; }
+  tip.hidden = true;
+});
+const locus = g => `${g.c}:${fmt(g.s + 1)}-${fmt(g.e)}`;
+function geneTip(i) {
+  const g = G[i];
+  const cn = (g.cs != null || g.co != null) ? `<br>famCN Soto ${g.cs ?? "–"} · ours ${g.co ?? "–"}` : "";
+  return `<b>${esc(short(g.n))}</b> ${g.st}<br>${locus(g)} · ${esc(g.bt.replace(/_/g, " "))}<br>Soto: ${g.sf.map(esc).join(", ") || "none"}${cn}`;
+}
+
+/* ---------- viewer ---------- */
+const q = document.getElementById("q"), dl = document.getElementById("fams");
+dl.innerHTML = D.families.map(f => `<option value="${f.f}">${esc(short(f.ex))}</option>`).join("");
+q.addEventListener("change", () => {
+  const v = q.value.trim(), u = v.toUpperCase();
+  const id = META[v] ? v : META["ID_" + v.replace(/^id_?/i, "")] ? "ID_" + v.replace(/^id_?/i, "") : (byName[u] || [])[0];
+  if (id) show(id);
+});
+const EX = [["NPIPB3", "ID_151"], ["NPIP A-clade", "ID_154"], ["GOLGA8B", "ID_79"], ["NBPF", "ID_397"], ["GOLGA8", "ID_113"], ["UBTFL", "ID_482"], ["TBC1D3", "ID_468"], ["FAM90A", "ID_356"]];
+document.getElementById("ex").innerHTML = EX.map(([n, f]) => `<button class="chip" data-f="${f}">${n}</button>`).join("");
+document.getElementById("ex").addEventListener("click", e => { const b = e.target.closest("button"); if (b) show(b.dataset.f); });
+document.getElementById("made").addEventListener("click", e => { const b = e.target.closest("button[data-f]"); if (b) { show(b.dataset.f); document.getElementById("viewer").scrollIntoView({ behavior: "smooth", block: "start" }); } });
+
+const SL = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "var(--s6)", "var(--s7)"];
+const OTHER = "var(--s-other)";
+const chrKey = c => { const m = c.replace("chr", ""); return isNaN(+m) ? (m === "X" ? 23 : m === "Y" ? 24 : 25) : +m; };
+let cur = null, showAll = false;
+
+const cnv = v => v == null ? "–" : v;
+const rng = (is, k) => { const v = is.map(i => G[i][k]).filter(x => x != null); return v.length ? (Math.min(...v) === Math.max(...v) ? `${Math.min(...v)}` : `${Math.min(...v)}–${Math.max(...v)}`) : "–"; };
+const RULE = "Soto's rule joins two genes only when their copy numbers differ by less than 2.";
+const FILT = () => [fp.checked && "pseudogenes", fl.checked && "lncRNAs"].filter(Boolean).join(" and ");
+function why(fid, F) {
+  const vis = F.g.filter(i => !hidden(i));
+  const mem = vis.filter(i => G[i].sf.includes(fid));
+  const own = mem.filter(i => G[i].sf.filter(s => !s.startsWith("Unassigned")).length === 1);
+  const ext = Object.keys(F.xc || {}).map(Number);
+  const nm = is => is.slice(0, 3).map(i => `${short(G[i].n)} (Soto ${cnv(G[i].cs)}, ours ${cnv(G[i].co)})`).join(", ") + (is.length > 3 ? ` and ${is.length - 3} more` : "");
+  const ownTxt = own.length === 1 ? `Soto's family has one gene of its own, ${nm(own)}` : `Soto's ${own.length} genes (copy numbers: Soto ${rng(own, "cs")}, ours ${rng(own, "co")})`;
+  const ec = F.ec || {};
+  const addWhy = ec.cn ? `Soto's copy numbers separate them, and ours do not. ${RULE}` : ec.soto_rule ? "Soto's own rule would join them too." : "Soto left them without a family.";
+  const miss = {
+    our_cn: `Sequence joins all of Soto's genes, but our copy numbers (${rng(own, "co")}) cut them into ${F.np} pieces where Soto's (${rng(own, "cs")}) do not. ${RULE}`,
+    our_edges: "Our exon graph has no link between the pieces; Soto's SEDEF-based edges do.",
+    soto_rule: `Soto's own rule with Soto's own copy numbers (${rng(own, "cs")}) cuts it too, so their table does not follow from their method.`,
+    soto_manual: 'S1C marks this family "Manual merge", and no ≥ 98% exon link joins its pieces.',
+    soto_no_seq: `No ≥ 98% exon link joins its remaining genes in any edge set: in Soto's table they hang together only through the ${FILT() || "removed genes"}.`
+  }[F.mc] || "";
+  if (F.k === "gone") {
+    const all = F.g.filter(i => G[i].sf.includes(fid)), gone = all.filter(hidden), left = all.filter(i => !hidden(i));
+    const base = `Gone once ${FILT()} are removed: ${gone.length} of Soto's ${all.length} genes are ${FILT().replace(" and ", " or ")}`;
+    if (left.length >= 2 && !left.some(i => G[i].b)) {
+      const kinds = [...new Set(left.map(i => G[i].bt.replace(/_/g, " ")))].join(", ");
+      const had = all.some(i => G[i].b);
+      return `${base}${had ? ", including its whole copy-number backbone" : "; none of its genes was in Soto's copy-number backbone to begin with"}. The ${left.length} genes left (${kinds}) are overlapping annotations, not a family.`;
+    }
+    return `${base}, leaving ${left.length}.`;
+  }
+  if (F.k === "match") return `Found exactly: Soto's ${F.nc} genes are one of our families.` + (F.nh ? ` Both of us cut it out of a ${F.ns}-gene homology family by copy number.` : "");
+  if (F.k === "soto_smaller") return `Soto is smaller. ${ownTxt}. We also join ${nm(ext)}, which ${ext.length === 1 ? "shares" : "share"} ≥ 98%-identical exons with it. ${addWhy}`;
+  if (F.k === "we_miss") return `We miss part of it. ${miss}`;
+  return `Both. ${miss} The rest also joins ${nm(ext)}. ${addWhy}`;
+}
+
+function show(fid) {
+  if (!META[fid]) return;
+  if (fid !== cur) showAll = false;
+  cur = fid;
+  const F = FAMROW(fid);
+  try { history.replaceState(null, "", "#" + fid); } catch (e) {}
+  document.querySelectorAll(".cell.on").forEach(c => c.classList.remove("on"));
+  const cell = document.querySelector(`.cell[data-f="${fid}"]`); if (cell) cell.classList.add("on");
+  const gk = groupOf(F), gm = GMETA[gk];
+  document.getElementById("vt").textContent = `${fid} · ${short(META[fid].ex.split(",").slice(0, 2).join(", "))}`;
+  const vp = document.getElementById("vp"); vp.textContent = gm.name;
+  vp.style.background = gk === "gone" ? "var(--line)" : gm.color;
+  vp.style.color = gk === "match" || gk === "gone" ? "var(--fg)" : "#fff";
+  document.getElementById("vw").textContent = why(fid, F);
+  document.getElementById("vf").innerHTML = gk === "gone" ? "" : [
+    `Soto: <b>${F.nc}</b> own genes${F.nm > F.nc ? ` (+${F.nm - F.nc} shared with other Soto families)` : ""}`,
+    `ours: <b>${F.np}</b> piece${F.np > 1 ? "s" : ""}`, `extra genes we add: <b>${F.nx}</b>`,
+    `homology family: <b>${F.ns}</b> genes`, `exact with Soto's own copy numbers: <b>${F.x1 ? "yes" : "no"}</b>`].join("<span aria-hidden='true'>·</span>");
+  const bm = F.bm, venn = document.getElementById("venn");
+  if (!bm) venn.innerHTML = "";
+  else {
+    const [sh, ts, ps] = bm, so = ts - sh, oo = ps ? ps - sh : 0, tot = Math.max(1, sh + so + oo);
+    const w = n => `flex:${n}`;
+    venn.innerHTML = `<span class="vl">Soto · ${ts} gene${ts === 1 ? "" : "s"}</span><div class="vb">${sh ? `<span style="${w(sh)};background:var(--faint)"></span>` : ""}${so ? `<span style="${w(so)};background:var(--faint);opacity:.45"></span>` : ""}${oo ? `<span style="${w(oo)}"></span>` : ""}</div>` +
+      `<span class="vl">Ours · ${ps ? ps + (ps === 1 ? " gene" : " genes") : "no partner left"}</span><div class="vb">${sh ? `<span style="${w(sh)};background:var(--accent)"></span>` : ""}${so ? `<span style="${w(so)}"></span>` : ""}${oo ? `<span style="${w(oo)};background:var(--accent);opacity:.55"></span>` : ""}${!ps ? `<span style="flex:1;box-shadow:inset 0 0 0 1.5px var(--accent);opacity:.6"></span>` : ""}</div>` +
+      `<span></span><span class="vl">${sh} shared${so ? ` · ${so} only in Soto's` : ""}${oo ? ` · ${oo} only in ours` : ""}</span>`;
+  }
+  draw();
+}
+
+function colorsFor(fid, idx) {
+  const inF = i => G[i].sf.includes(fid);
+  const cnt = new Map();
+  idx.forEach(i => G[i].sf.forEach(s => { if (!s.startsWith("Unassigned")) cnt.set(s, (cnt.get(s) || 0) + 1); }));
+  const order = [fid, ...[...cnt.keys()].filter(s => s !== fid).sort((a, b) => cnt.get(b) - cnt.get(a) || num(a) - num(b))];
+  const soto = new Map(order.map((s, k) => [s, k < SL.length ? SL[k] : OTHER]));
+  function labels(arrLab) {
+    const m = new Map();
+    idx.forEach(i => { const l = arrLab[i]; if (l) { if (!m.has(l)) m.set(l, []); m.get(l).push(i); } });
+    const arr = [...m.entries()].map(([l, is]) => ({ l, is, foc: is.filter(inF).length }))
+      .sort((a, b) => b.foc - a.foc || b.is.length - a.is.length);
+    const used = new Set(), col = new Map(), name = new Map();
+    arr.forEach((a, k) => {
+      const c = new Map();
+      a.is.forEach(i => { const s = G[i].sf.find(x => !x.startsWith("Unassigned")); if (s) c.set(s, (c.get(s) || 0) + 1); });
+      let pick = [...c.entries()].sort((x, y) => y[1] - x[1]).map(x => soto.get(x[0])).find(cc => cc && cc !== OTHER && !used.has(cc));
+      if (!pick) pick = SL.find(cc => !used.has(cc)) || OTHER;
+      if (pick !== OTHER) used.add(pick);
+      col.set(a.l, pick); name.set(a.l, String.fromCharCode(65 + (k % 26)));
+    });
+    return { col, name, of: i => arrLab[i] };
+  }
+  return { soto, our: labels(CB.our), seq: labels(CB.seq), inF };
+}
+
+function niceStep(span) { const t = span / 6, p = Math.pow(10, Math.floor(Math.log10(t))); return [1, 2, 5, 10].map(m => m * p).find(s => s >= t); }
+const fmtPos = (v, step) => step >= 1e5 ? (v / 1e6).toFixed(step >= 1e6 ? 0 : 1) + " Mb" : (v / 1e3).toFixed(step >= 1e3 ? 0 : 1) + " kb";
+
+function draw() {
+  const F = FAMROW(cur); if (!F) return;
+  const vis = F.g.filter(i => !hidden(i));
+  const host = document.getElementById("panels");
+  if (!vis.length) { host.innerHTML = `<div class="empty">No genes of this family are left with the current filter.</div>`; document.getElementById("rows").innerHTML = ""; document.getElementById("more").hidden = true; return; }
+  const C = colorsFor(cur, vis), inF = C.inF;
+  const W = Math.max(340, host.clientWidth || 900), GUT = W < 600 ? 84 : 128, R = 14, IW = W - GUT - R;
+  const set = new Set(vis);
+  const byChr = new Map();
+  vis.forEach(i => { const c = G[i].c; if (!byChr.has(c)) byChr.set(c, []); byChr.get(c).push(i); });
+  const chrs = [...byChr.keys()].sort((a, b) => chrKey(a) - chrKey(b));
+  const links = [];
+  D.links.forEach(([a, b]) => { if (set.has(a) && set.has(b)) links.push([a, b, 0]); });
+  D.sedef_links.forEach(([a, b]) => { if (set.has(a) && set.has(b)) links.push([a, b, 1]); });
+  const cross = (a, b) => { const A = G[a].sf, B = G[b].sf; return !A.some(s => B.includes(s)); };
+  const xc = F.xc || {};
+  let out = "", y = 0;
+  chrs.forEach(chr => {
+    const is = byChr.get(chr).sort((a, b) => G[a].s - G[b].s);
+    let lo = Math.min(...is.map(i => G[i].s)), hi = Math.max(...is.map(i => G[i].e));
+    const pad = Math.max(2000, (hi - lo) * 0.03); lo = Math.max(0, lo - pad); hi = hi + pad;
+    const X = p => GUT + (p - lo) / (hi - lo) * IW;
+    const inter = links.filter(([a, b]) => (G[a].c === chr) !== (G[b].c === chr)).length;
+    let s = "";
+    s += `<rect x="${GUT}" y="${y + 8}" width="${Math.min(IW, 330)}" height="20" rx="3" fill="var(--track)" stroke="var(--line)"/>`;
+    s += `<text x="${GUT + 8}" y="${y + 22}" font-size="11.5" fill="var(--fg)">${chr}:${fmt(Math.round(lo))}-${fmt(Math.round(hi))}</text>`;
+    s += `<text x="${W - R}" y="${y + 22}" font-size="10.5" fill="var(--muted)" text-anchor="end">${is.length} genes${inter ? ` · ${inter} links to other chromosomes` : ""}</text>`;
+    y += 36;
+    const step = niceStep(hi - lo);
+    s += `<line x1="${GUT}" x2="${GUT + IW}" y1="${y + 14}" y2="${y + 14}" stroke="var(--faint)"/>`;
+    for (let t = Math.ceil(lo / step) * step; t <= hi; t += step) {
+      const x = X(t);
+      s += `<line x1="${x}" x2="${x}" y1="${y + 9}" y2="${y + 14}" stroke="var(--faint)"/><text x="${x}" y="${y + 6}" font-size="9.5" fill="var(--muted)" text-anchor="middle">${fmtPos(t, step)}</text>`;
+    }
+    y += 22;
+    const rowsEnd = [-1e9, -1e9, -1e9];
+    const lab = [];
+    is.forEach(i => {
+      const g = G[i]; if (!(inF(i) || xc[i] !== undefined)) return;
+      const nm = short(g.n), w = nm.length * 6.2 + 6, cx = (X(g.s) + X(g.e)) / 2, x0 = Math.max(GUT, Math.min(cx - w / 2, GUT + IW - w));
+      const r = rowsEnd.findIndex(e => e < x0); if (r < 0) return;
+      rowsEnd[r] = x0 + w; lab.push([i, x0, r, nm]);
+    });
+    const nRows = lab.length ? Math.max(...lab.map(l => l[2])) + 1 : 0;
+    const gy = y + nRows * 12 + 4;
+    s += `<text x="10" y="${gy + 8}" font-size="10" fill="var(--muted)">Genes</text>`;
+    lab.forEach(([i, x0, r, nm]) => { s += `<text x="${x0 + 3}" y="${y + r * 12 + 9}" font-size="10" fill="${inF(i) ? "var(--fg)" : "var(--muted)"}" font-weight="${inF(i) ? 600 : 400}">${esc(nm)}</text>`; });
+    is.forEach(i => {
+      const g = G[i], x1 = X(g.s), x2 = Math.max(X(g.e), x1 + 2), op = inF(i) ? 1 : 0.5;
+      s += `<g data-i="${i}" opacity="${op}"><rect x="${x1 - 2}" y="${gy - 2}" width="${x2 - x1 + 4}" height="16" fill="transparent"/>`;
+      s += `<line x1="${x1}" x2="${x2}" y1="${gy + 6}" y2="${gy + 6}" stroke="var(--igv)"/>`;
+      g.x.forEach(([a, b]) => { const xa = X(a); s += `<rect x="${xa}" y="${gy + 1}" width="${Math.max(X(b) - xa, 1.5)}" height="10" fill="var(--igv)"/>`; });
+      if (x2 - x1 > 40) for (let x = x1 + 10; x < x2 - 6; x += 14) s += `<path d="M${x + (g.st === "-" ? 3 : -3)} ${gy + 3} l${g.st === "-" ? -3 : 3} 3 l${g.st === "-" ? 3 : -3} 3" fill="none" stroke="var(--surface)" stroke-width="1.2"/>`;
+      s += `</g>`;
+    });
+    y = gy + 20;
+    const tracks = [["Soto S1C", i => G[i].sf.filter(x => !x.startsWith("Unassigned")).map(x => C.soto.get(x) || OTHER)],
+                    ["Ours", i => C.our.of(i) ? [C.our.col.get(C.our.of(i))] : []],
+                    ["Homology", i => C.seq.of(i) ? [C.seq.col.get(C.seq.of(i))] : []]];
+    tracks.forEach(([name, colsOf]) => {
+      s += `<rect x="${GUT}" y="${y}" width="${IW}" height="14" fill="var(--track)"/>`;
+      s += `<text x="10" y="${y + 11}" font-size="10" fill="var(--muted)">${name}</text>`;
+      is.forEach(i => {
+        const g = G[i], x1 = X(g.s), w = Math.max(X(g.e) - x1, 3), cs = colsOf(i);
+        if (!cs.length) { s += `<rect data-i="${i}" x="${x1}" y="${y + 2.5}" width="${w}" height="9" fill="none" stroke="var(--faint)" stroke-dasharray="2 1.5"/>`; return; }
+        const h = 10 / cs.length;
+        cs.forEach((c, j) => { s += `<rect data-i="${i}" x="${x1}" y="${y + 2 + j * h}" width="${w}" height="${h}" fill="${c}"/>`; });
+      });
+      y += 18;
+    });
+    const ly = y + 2, LH = 70;
+    s += `<text x="10" y="${ly + 12}" font-size="10" fill="var(--muted)">Links</text>`;
+    const here = links.filter(([a, b]) => G[a].c === chr && G[b].c === chr);
+    here.sort((p, r) => cross(p[0], p[1]) - cross(r[0], r[1]));
+    here.forEach(([a, b, sd]) => {
+      const xa = (X(G[a].s) + X(G[a].e)) / 2, xb = (X(G[b].s) + X(G[b].e)) / 2, cr = cross(a, b);
+      const h = Math.min(LH, 6 + Math.abs(xb - xa) * 0.45);
+      s += `<path d="M${xa} ${ly} Q${(xa + xb) / 2} ${ly + 2 * h} ${xb} ${ly}" fill="none" stroke="${cr ? "var(--cross)" : "var(--within)"}" stroke-width="${cr ? 1.3 : 1}" opacity="${cr ? 0.85 : 0.55}"${sd ? ' stroke-dasharray="4 3"' : ""}/>`;
+    });
+    y = ly + LH + 16;
+    s += `<line x1="0" x2="${W}" y1="${y - 4}" y2="${y - 4}" stroke="var(--line)"/>`;
+    out += s;
+  });
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${y}" width="${W}" height="${y}" xmlns="http://www.w3.org/2000/svg">${out}</svg>`;
+  rows(F, C, vis);
+}
+
+function rows(F, C, vis) {
+  const xc = F.xc || {};
+  const role = i => {
+    if (C.inF(i)) return [0, "Soto member", ""];
+    const c = xc[i];
+    if (c) return [1, { cn: "we add · copy numbers differ", soto_rule: "we add · Soto's rule agrees", unassigned: "we add · Soto: no family" }[c], "add"];
+    return [2, "same homology family", ""];
+  };
+  const list = vis.map(i => [i, role(i)]).sort((a, b) => a[1][0] - b[1][0] || chrKey(G[a[0]].c) - chrKey(G[b[0]].c) || G[a[0]].s - G[b[0]].s);
+  const maxSpan = Math.max(...list.map(([i]) => G[i].e - G[i].s));
+  const MW = 180;
+  const cap = showAll ? list.length : Math.min(list.length, 40);
+  const tag = (col, t) => `<span class="tag"><span class="sw" style="background:${col}"></span>${esc(t)}</span>`;
+  document.getElementById("rows").innerHTML = list.slice(0, cap).map(([i, r]) => {
+    const g = G[i], sc = MW / maxSpan;
+    let m = `<svg width="${MW}" height="12" viewBox="0 0 ${MW} 12"><line x1="0" x2="${Math.max((g.e - g.s) * sc, 1.5)}" y1="6" y2="6" stroke="var(--igv)"/>`;
+    g.x.forEach(([a, b]) => { m += `<rect x="${(a - g.s) * sc}" y="1.5" width="${Math.max((b - a) * sc, 1.2)}" height="9" fill="var(--igv)"/>`; });
+    m += `</svg>`;
+    const soto = g.sf.filter(x => !x.startsWith("Unassigned")).map(x => tag(C.soto.get(x) || OTHER, x)).join(" ") || `<span class="role">none</span>`;
+    const ol = C.our.of(i), sl = C.seq.of(i);
+    const our = ol ? tag(C.our.col.get(ol), C.our.name.get(ol)) : `<span class="role">unplaced</span>`;
+    const seq = sl ? tag(C.seq.col.get(sl), C.seq.name.get(sl)) : `<span class="role">unplaced</span>`;
+    return `<tr class="${r[0] === 0 ? "focus" : ""}" data-i="${i}"><td>${esc(short(g.n))}</td><td class="mono">${locus(g)}</td><td>${m}</td><td>${soto}</td><td>${our}</td><td>${seq}</td><td class="n">${g.cs ?? "–"}</td><td class="n">${g.co ?? "–"}</td><td class="role ${r[2]}">${r[1]}</td></tr>`;
+  }).join("");
+  const more = document.getElementById("more");
+  more.hidden = list.length <= 40;
+  more.textContent = showAll ? "Show fewer genes" : `Show all ${list.length} genes`;
+}
+document.getElementById("more").addEventListener("click", () => { showAll = !showAll; draw(); });
+
+function applyFilter() {
+  CK = (fp.checked ? "p" : "") + (fl.checked ? "l" : "");
+  CB = D.combos[CK];
+  try { localStorage.setItem("soto-filter", CK); } catch (e) {}
+  tiles(); grid(); if (cur) show(cur);
+}
+fp.addEventListener("change", applyFilter);
+fl.addEventListener("change", applyFilter);
+try { const s = localStorage.getItem("soto-filter") || ""; fp.checked = s.includes("p"); fl.checked = s.includes("l"); } catch (e) {}
+
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(draw, 150); });
+window.__showFam = show;
+const h = (location.hash || "").slice(1);
+cur = META[h] ? h : "ID_151";
+applyFilter();
+})();
+</script>
+
+<template id="tpl-det">__DET_HTML__</template>
+<template id="tpl-mem">__MEM_HTML__</template>
+<script>
+(function () {
+  window.__sd = {};
+  function mount(key) {
+    const host = document.getElementById("host-" + key);
+    const root = host.attachShadow({ mode: "open" });
+    root.appendChild(document.getElementById("tpl-" + key).content.cloneNode(true));
+    const sync = () => { const v = document.documentElement.getAttribute("data-theme"); if (v) host.setAttribute("data-theme", v); else host.removeAttribute("data-theme"); };
+    sync();
+    try { new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) {}
+    window.__sd[key] = {
+      getElementById: id => root.getElementById(id), querySelector: s => root.querySelector(s), querySelectorAll: s => root.querySelectorAll(s),
+      createElement: (...a) => document.createElement(...a), body: root.querySelector(".sbody"), documentElement: document.documentElement,
+      addEventListener: (...a) => root.addEventListener(...a)
+    };
+  }
+  mount("det"); mount("mem");
+  document.getElementById("pane-how").addEventListener("click", e => {
+    const b = e.target.closest("[data-real]"); if (!b) return;
+    select("soto"); if (window.__showFam) window.__showFam(b.dataset.real);
+    document.getElementById("viewer").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  const tabs = [...document.querySelectorAll('.tabs [role="tab"]')];
+  function select(p, focus) {
+    tabs.forEach(b => { const on = b.dataset.p === p; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; document.getElementById("pane-" + b.dataset.p).hidden = !on; if (on && focus) b.focus(); });
+    try { localStorage.setItem("soto-tab", p); } catch (e) {}
+    if (p === "soto") window.dispatchEvent(new Event("resize"));
+  }
+  tabs.forEach((b, k) => {
+    b.addEventListener("click", () => select(b.dataset.p));
+    b.addEventListener("keydown", e => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { const n = tabs[(k + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]; select(n.dataset.p, true); } });
+  });
+  const h = (window.__initHash || "").slice(1);
+  let start = "soto";
+  if (h === "detection") start = "det"; else if (h === "members") start = "mem"; else if (h === "method") start = "how";
+  else if (!h) { try { start = localStorage.getItem("soto-tab") || "soto"; } catch (e) {} }
+  if (!["how", "soto", "det", "mem"].includes(start)) start = "soto";
+  select(start);
+})();
+</script>
+<script>(function (document) {
+__DET_JS__
+})(window.__sd.det);</script>
+<script>(function (document) {
+__MEM_JS__
+})(window.__sd.mem);</script>
