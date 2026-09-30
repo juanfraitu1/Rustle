@@ -112,3 +112,16 @@ from their own rule, 1 is a hand merge). No Soto family lacks ≥ 98% exon evide
 142/491 Soto families are narrower than their sequence (homology) family. The page
 https://claude.ai/artifact/J12TB7ebNq3uxZ7aErd7q7 draws each family as a genome-browser view (tracks: genes, Soto, ours,
 homology, ≥ 98% exon links).
+
+### 6.1 With pseudogenes and/or lncRNAs removed (removed everywhere before clustering)
+
+| run | genes | families left (≥ 2 genes) | exact (ours) / ARI | exact (S1C CN) / ARI | sequence-only nesting | narrower than homology |
+|---|---|---|---|---|---|---|
+| all genes | 2,334 | 491 | 411 / 0.9277 | 479 / 0.9698 | 440/444 | 142 |
+| no pseudogenes | 974 | 201 (290 gone, 59.1%) | 143 / 0.9504 | 165 / 0.9657 | 144/170 | 28 |
+| no lncRNAs | 2,128 | 453 (38 gone) | 383 / 0.9273 | 442 / 0.9682 | 425/428 | 120 |
+| neither | 768 | 143 (348 gone, 70.9%) | 113 / 0.9615 | 131 / 0.9773 | 130/139 | 21 |
+
+Without pseudogenes, the "we miss" families rise from 29 to 50. Of those, 15 are `soto_no_seq`: once the pseudogenes are
+removed, no ≥ 98% exon link in any edge set joins the remaining genes. Soto's table holds them together only through
+pseudogenes. Another 19 are `our_edges`: SEDEF links survive where our exon links do not.
