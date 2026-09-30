@@ -22,7 +22,9 @@ S1C genes), exactly as `score` counts exact families.
                  `soto_manual` no link in any edge set; S1C marks the family "Manual merge";
                  `soto_no_seq` no link in any edge set, no manual flag: Soto groups genes with no >= 98% exon evidence.
   mixed          both: part of F is cut away, and the rest sits with extra genes.
-  gone           (filtered runs only) fewer than 2 of F's members are left once the excluded biotypes are removed.
+  gone           (filtered runs only) fewer than 2 of F's members are left once the excluded biotypes are removed, or
+                 none of its copy-number backbone is (S1C `In Table S1 = Yes`: the coding / unprocessed genes Soto measured;
+                 the rest are "other overlapping gene features" attached to them).
 
 `narrower_than_homology` flags a family whose members all sit in one sequence-only component (no copy-number gate)
 that also holds other genes; it is a property of the copy-number step, independent of the class.
@@ -68,7 +70,8 @@ def is_pseudo(bt):
     return "pseudogene" in bt
 
 
-def classify(keep, genes0, full0, edges0, sedef0, clean0, fam_all0, info, manual, cn_s1c0, cn_ours0):
+def classify(keep, genes0, full0, edges0, sedef0, clean0, fam_all0, info, manual, cn_s1c0, cn_ours0, mad=1.0,
+             filtered=False):
     """One run of the comparison over the genes in `keep`. Returns (rows, anchors, pred_seq, pred_ours)."""
     genes, full = genes0 & keep, full0 & keep
     edges = [(x, y) for x, y in edges0 if x in keep and y in keep]
@@ -80,9 +83,11 @@ def classify(keep, genes0, full0, edges0, sedef0, clean0, fam_all0, info, manual
     cn_ours = {g: v for g, v in cn_ours0.items() if g in genes}
 
     def run(famcn, gate):
-        cover, kept, leaf_of = sr.pair_families(edges, genes, full, famcn, gate=gate)
+        cover, kept, leaf_of = sr.pair_families(edges, genes, full, famcn, gate=gate, mad_threshold=mad)
         return sr.collapse_cover(cover, leaf_of, genes)
-    pred_seq, pred_ours, pred_s1c = run({}, False), run(cn_ours, True), run(cn_s1c, True)
+    pred_seq, pred_ours = run({}, False), run(cn_ours, True)
+    cover, _kept, leaf_of = sr.pair_families(edges, genes, full, cn_s1c)  # Soto's own rule: MAD < 1, always
+    pred_s1c = sr.collapse_cover(cover, leaf_of, genes)
 
     def fams_over(pred):
         out = defaultdict(set)
@@ -100,7 +105,8 @@ def classify(keep, genes0, full0, edges0, sedef0, clean0, fam_all0, info, manual
     out = []
     for f in sorted(fam_all0, key=lambda x: int(x.split("_")[1])):
         M = members.get(f, set())
-        if len(fam_all[f]) < 2 or not M:
+        backbone = [g for g in fam_all[f] if info[g]["backbone"]]
+        if len(fam_all[f]) < 2 or not M or (filtered and not backbone):
             out.append(dict(family=f, cls="gone", miss_cause="", extra_causes={}, n_members=len(fam_all[f]),
                             n_clean=len(M), n_ours_pieces=0, n_extra=0, narrower_than_homology=False, seq_size=0,
                             manual=f in manual, exact_with_s1c_cn=False, clean=sorted(M), extra=[], extra_cause={},
@@ -185,7 +191,8 @@ def main(argv=None):
     info, fam_all, manual = {}, defaultdict(set), set()
     for r in csv.DictReader(open(a.truth), delimiter="\t"):
         g = r["Gene ID"]
-        info.setdefault(g, dict(name=r["Gene Name"], biotype=r["Biotype"], fams=[]))
+        info.setdefault(g, dict(name=r["Gene Name"], biotype=r["Biotype"], fams=[],
+                                backbone=r.get("In Table S1 (SD98 gene set)") == "Yes"))
         if r["Family ID"]:
             info[g]["fams"].append(r["Family ID"])
             if not r["Family ID"].startswith("Unassigned"):
@@ -200,7 +207,8 @@ def main(argv=None):
     for key, label, no_p, no_l in COMBOS:
         keep = {g for g in every if not (no_p and is_pseudo(info.get(g, {}).get("biotype", "")))
                 and not (no_l and info.get(g, {}).get("biotype", "") == "lncRNA")}
-        runs[key] = classify(keep, genes, full, edges, sedef, clean, fam_all, info, manual, cn_s1c, cn_ours)
+        runs[key] = classify(keep, genes, full, edges, sedef, clean, fam_all, info, manual, cn_s1c, cn_ours,
+                             filtered=bool(key))
         rows, anc = runs[key][0], runs[key][1]
         counts = defaultdict(int)
         for r in rows:
@@ -250,6 +258,7 @@ def main(argv=None):
         bt = info[g]["biotype"]
         gene_rows.append(dict(
             id=g, n=info[g]["name"], bt=bt, k="p" if is_pseudo(bt) else ("l" if bt == "lncRNA" else ""),
+            b=int(info[g]["backbone"]),
             c=exons[g][0][0] if exons[g] else "", s=merged[0][0] if merged else 0,
             e=max(e for _, e in merged) if merged else 0, st=strand.get(g, "."), x=merged, sf=info[g]["fams"],
             cs=round(cn_s1c[g], 1) if g in cn_s1c else None, co=round(cn_ours[g], 1) if g in cn_ours else None))

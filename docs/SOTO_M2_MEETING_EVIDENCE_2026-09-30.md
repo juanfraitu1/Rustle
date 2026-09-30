@@ -125,3 +125,31 @@ homology, ≥ 98% exon links).
 Without pseudogenes, the "we miss" families rise from 29 to 50. Of those, 15 are `soto_no_seq`: once the pseudogenes are
 removed, no ≥ 98% exon link in any edge set joins the remaining genes. Soto's table holds them together only through
 pseudogenes. Another 19 are `our_edges`: SEDEF links survive where our exon links do not.
+
+### 6.2 Correction and two follow-ups (2026-09-30, afternoon)
+
+- **"Gone" rule, filtered runs:** a family is also gone when none of its copy-number backbone (S1C `In Table S1 = Yes`) is
+  left. No pseudogenes: 313 gone (was 290); our-edge misses 19 → 3; `soto_no_seq` 15 → 8. ID_41 (SMG1P) is a **match**
+  in the full run; without pseudogenes its 3 leftover features (TEC, lncRNA, StringTie) are not a family. The table in
+  6.1 is superseded for the gone counts: 313 (no pseudogenes), 38 (no lncRNAs), 352 (neither).
+- **Why Soto's families hold pseudogenes and lncRNAs (their released code, `A_SD98_regions.md` l.225-263):** the exon
+  step uses `CHM13.combined.v4.exons.bed`, which holds the exons of every annotated feature. The biotype filter
+  `# | grep "protein_coding\|unprocessed_pseudogene"` is commented out there. The pair step keeps a pair if either gene
+  is coding or an unprocessed pseudogene. Table S2's caption: "Copy number was calculated only for protein coding and
+  unprocessed psedudogenes, but other overlapping gene features (i.e. lncRNA) were reported."
+  Memberships: 618 protein-coding + 1,061 unprocessed pseudogenes (backbone), plus 779 attached (345 lncRNA,
+  329 processed pseudogenes, 30 other pseudogenes, 75 other). 129/491 families have ≥ 2 protein-coding genes.
+- **Loosening our copy-number cut (`soto_m2_loosen.py`):**
+
+  | MAD cut | exact | held-out exact | recovered | broken |
+  |---|---|---|---|---|
+  | < 1 | 411 | 234 | 0 | 0 |
+  | < 1.25 | 401 | 230 | 4 | 14 |
+  | < 1.5 | 386 | 220 | 5 | 30 |
+  | < 2 | 380 | 215 | 10 | 41 |
+  | < 3 | 374 | 211 | 15 | 52 |
+  | < 4 | 367 | 207 | 15 | 59 |
+  | < 8 | 353 | 199 | 15 | 73 |
+
+  Every step loses on both halves. The misses come from our copy-number values (e.g. NBPF ID_397: ours 53-82 vs Soto 42.7-44.3),
+  not from the cut.
