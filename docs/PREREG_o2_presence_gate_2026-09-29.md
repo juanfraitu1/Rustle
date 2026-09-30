@@ -285,6 +285,6 @@ these reads by ≥ 1 mismatch), i.e. assign against the sample's copies, not gat
 - Population: first 120,000 screened reads of 2.33M (0.26% of raw reads are exact distinct-locus ties); a 4× larger
   sample would add reads, mostly at the same loci.
 
-## Draft register rows (suffix E, NOT appended to `docs/NEGATIVE_RESULTS_REGISTER.md`)
+## Register rows (appended 2026-09-29 to `docs/NEGATIVE_RESULTS_REGISTER.md` as 1180-1183; drafted as 1165E-1168E)
 
-See the session report `figs/o2_presence.md` (rows 1165E–1168E).
+See the session report `figs/o2_presence.md`.
