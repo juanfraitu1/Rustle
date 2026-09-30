@@ -275,6 +275,11 @@ tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index
 # rule replays them (human chr16 catalog 358 s cold -> 0.9 s warm; gorilla families 225 s -> 0.6 s; byte-identical).
 tools/rustle_pipeline.sh catalog --bam READS.bam --fasta GENOME.fa --out run --inspect   # + edge tables, collapse stats
 tools/rustle_pipeline.sh cache-ls --out run                                               # what run.cache holds
+# bridge-aware regrouping (opt-in; bench/ASSEMBLY_POLISH.md 2026-09-29 addendum 3). On the BAMs and best-AS tables of
+# the 2026-09-25 runs, `assemble` writes the held-out products of docs/PREREG_f1_bridge_locus_2026-09-28.md (f1: gorilla
+# OR6737, KB3781) and docs/PREREG_f1v2_readshare_2026-09-29.md (f1v2: human A119b, testis) byte for byte: run.gtf, the
+# families input run.families.gtf and the side tables. Their FUSED counts are readthrough_eval `a.fused` on the latter.
+RUSTLE_BRIDGE_REGROUP=f1v2 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...
 ```
 
 ## Tandem-copy simulations: what the aligner and the pipeline do with near-identical adjacent copies (§6zg, 2026-09-24)

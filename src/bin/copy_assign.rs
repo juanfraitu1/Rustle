@@ -137,6 +137,8 @@ struct RegionWork {
     readthrough: rustle::vg_family::denovo_assemble::ReadthroughFlags,
     /// `--polish-tss`: this region's 5'-end evidence (`None` unless the option is on).
     tss: Option<rustle::vg_family::denovo_assemble::TssEvidence>,
+    /// `--bridge-regroup`: this region's read evidence (`None` unless the option is on).
+    bridge: Option<rustle::vg_family::bridge_regroup::BridgeEvidence>,
 }
 
 #[derive(Parser, Debug)]
@@ -352,6 +354,24 @@ struct Args {
     /// and one log line only when set; default off = byte-identical products. Driver: `RUSTLE_GTF_REGROUP=1`.
     #[arg(long, default_value_t = false)]
     gtf_regroup: bool,
+
+    /// ⭐ BRIDGE-AWARE REGROUPING (`vg_family::bridge_regroup`, the port of the frozen `bench/f1_bridge.py` 37ee8e77
+    /// and `f1v2.py` b4e788ad, byte-identical to them on their held-out inputs). A BRIDGE is a transcript whose intron
+    /// J is the only link between the other transcripts of its `gene_id` upstream and downstream of J, when the
+    /// upstream side has a PAS-proven 3' cluster of reads ending inside J's intron (`--polish-tes`'s cluster rule) and
+    /// the downstream side reads starting inside it at their own promoter (the readthrough filter's V1 >= 1).
+    /// `f1`: every bridge (`docs/PREREG_f1_bridge_locus_2026-09-28.md`: EFFECTIVE on gorilla, ~40 annotated genes cut
+    /// per sample, fails on human A119b). `f1v2`: only bridges carrying fewer reads than EACH side they separate,
+    /// share < 1/2 (`docs/PREREG_f1v2_readshare_2026-09-29.md`: EFFECTIVE on both human libraries). The other
+    /// transcripts of a bridged `gene_id` split into exon-overlap pieces named as `--gtf-regroup` names them (so it
+    /// replaces `--gtf-regroup`, and the two are exclusive); bridges become `<gene_id>.fus<k>` with `fusion_of` /
+    /// `fusion_junction` attributes. Runs LAST, on the final lines; no line added, removed or moved, chains unchanged.
+    /// Writes `<out>.families.gtf` (the GTF without the bridges: the families input), `<out>.bridge_junctions.tsv`
+    /// (every structural junction with its evidence), `<out>.bridges.tsv` (f1v2: each bridge's reads and decision)
+    /// and `params.tsv` rows. Needs `--assemble-only` and one region per contig. Default off = byte-identical
+    /// products. Driver: `RUSTLE_BRIDGE_REGROUP=f1|f1v2`.
+    #[arg(long, default_value = "off", value_parser = ["off", "f1", "f1v2"])]
+    bridge_regroup: String,
 
     /// §6r2 ABSOLUTE FLOOR EXEMPTION for `--polish-isoform-fraction`: never drop a transcript carrying at
     /// least this many reads for being a minor fraction of its locus. Distinct from
@@ -2455,186 +2475,63 @@ struct RegroupStats {
 /// and an emitted `gene_id` embeds its contig (`DN_<chrom>_...`), so a `--genome-wide` run equals the concatenation
 /// of its per-contig runs. Transcript lines without a `gene_id` are never regrouped or relabelled.
 ///
-/// Errors (rg3.py's asserts, all impossible for an emitted GTF): a duplicate `transcript` line, an `exon` line
-/// before its `transcript` line, or a new name equal to an input `gene_id` or `transcript_id` (emitted names end in
+/// The transcript record, the parser and the pieces-and-names rule are `rustle::vg_family::bridge_regroup`'s
+/// `parse` and `rg3_pieces`, the same functions `--bridge-regroup` applies to a gene's non-bridge transcripts:
+/// without a bridge that flag's names are this flag's by construction. This function adds rg3.py's asserts, the
+/// stats and the rewrite.
+///
+/// Errors (rg3.py's asserts and the shared parser's checks, all impossible for an emitted GTF): a duplicate
+/// `transcript` line, an `exon` line before its `transcript` line, a transcript without an exon line or with
+/// overlapping exons, or a new name equal to an input `gene_id` or `transcript_id` (emitted names end in
 /// `_<digits>` or `.<digits>`, never `.rg<digits>`).
 fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
+    use rustle::vg_family::bridge_regroup::{parse, rg3_pieces};
     use std::collections::{HashMap, HashSet};
-    struct Tx {
-        tid: String,
-        gene: Option<String>,
-        chrom: String,
-        strand: String,
-        reads: i64,
-        span: i64,
-        exons: Vec<(i64, i64)>,
-    }
     // ---- parse (rg3.py `parse`) ----
-    let mut txs: Vec<Tx> = Vec::new();
-    let mut by_id: HashMap<String, usize> = HashMap::new();
-    for line in lines.iter() {
-        if line.starts_with('#') {
-            continue;
-        }
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 9 {
-            continue;
-        }
-        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
-        if f[2] == "transcript" {
-            if by_id.contains_key(&tid) {
-                anyhow::bail!("--gtf-regroup: duplicate transcript line for {tid}");
-            }
-            let (start, end) = (
-                f[3].parse::<i64>().with_context(|| format!("--gtf-regroup: bad start on transcript {tid}"))?,
-                f[4].parse::<i64>().with_context(|| format!("--gtf-regroup: bad end on transcript {tid}"))?,
-            );
-            // rg3.py: `int(rv) if rv.lstrip("-").isdigit() else 0`
-            let reads = re_attr(f[8], "reads")
-                .filter(|v| v.strip_prefix('-').unwrap_or(v).chars().all(|c| c.is_ascii_digit()))
-                .and_then(|v| v.parse::<i64>().ok())
-                .unwrap_or(0);
-            by_id.insert(tid.clone(), txs.len());
-            txs.push(Tx {
-                tid,
-                gene: re_attr(f[8], "gene_id"),
-                chrom: f[0].to_string(),
-                strand: f[6].to_string(),
-                reads,
-                span: end - start + 1,
-                exons: Vec::new(),
-            });
-        } else if f[2] == "exon" {
-            let Some(&i) = by_id.get(&tid) else {
-                anyhow::bail!("--gtf-regroup: exon before its transcript line: {tid}");
-            };
-            let (a, b) = (
-                f[3].parse::<i64>().with_context(|| format!("--gtf-regroup: bad exon start on {tid}"))?,
-                f[4].parse::<i64>().with_context(|| format!("--gtf-regroup: bad exon end on {tid}"))?,
-            );
-            txs[i].exons.push((a, b));
-        }
-    }
-    for t in txs.iter_mut() {
-        t.exons.sort_unstable();
-    }
-    let n = txs.len();
-
-    // ---- pieces (rg3.py `pieces`, adj = "exon"): union-find over same (gene_id, contig, strand) exon overlap ----
-    let mut parent: Vec<usize> = (0..n).collect();
-    fn find(p: &mut [usize], mut x: usize) -> usize {
-        while p[x] != x {
-            p[x] = p[p[x]];
-            x = p[x];
-        }
-        x
-    }
-    let mut groups: HashMap<(&str, &str, &str), Vec<(i64, i64, usize)>> = HashMap::new();
+    let txs = parse(lines, "--gtf-regroup")?;
+    let mut genes: Vec<&str> = Vec::new(); // input gene_ids in first-line order
+    let mut members: HashMap<&str, Vec<usize>> = HashMap::new();
     for (i, t) in txs.iter().enumerate() {
-        let Some(g) = t.gene.as_deref() else { continue };
-        let ex = groups.entry((g, t.chrom.as_str(), t.strand.as_str())).or_default();
-        for &(a, b) in &t.exons {
-            ex.push((a, b, i));
-        }
-    }
-    // sweep by start, join with the owner of the running max end (an interval overlaps some earlier one iff its
-    // start <= the max end so far, and then it overlaps that max-end interval), which is exactly interval-graph
-    // connectivity
-    for ex in groups.values_mut() {
-        ex.sort_unstable();
-        let mut max_end: Option<(i64, usize)> = None;
-        for &(a, b, i) in ex.iter() {
-            if let Some((me, owner)) = max_end {
-                if a <= me {
-                    let (ra, rb) = (find(&mut parent, i), find(&mut parent, owner));
-                    if ra != rb {
-                        parent[ra] = rb;
-                    }
-                }
-            }
-            if max_end.map_or(true, |(me, _)| b > me) {
-                max_end = Some((b, i));
-            }
-        }
-    }
-    // piece representative: max (reads, span, -i)
-    let better = |a: usize, b: usize| -> bool {
-        // true when a beats b
-        (txs[a].reads, txs[a].span, std::cmp::Reverse(a)) > (txs[b].reads, txs[b].span, std::cmp::Reverse(b))
-    };
-    let mut comp: HashMap<usize, Vec<usize>> = HashMap::new();
-    for i in 0..n {
-        let r = find(&mut parent, i);
-        comp.entry(r).or_default().push(i);
-    }
-    let mut rep: Vec<usize> = (0..n).collect();
-    for mem in comp.values() {
-        let mut best = mem[0];
-        for &m in &mem[1..] {
-            if better(m, best) {
-                best = m;
-            }
-        }
-        for &m in mem {
-            rep[m] = best;
+        if let Some(g) = t.gene.as_deref() {
+            members
+                .entry(g)
+                .or_insert_with(|| {
+                    genes.push(g);
+                    Vec::new()
+                })
+                .push(i);
         }
     }
 
-    // ---- naming (rg3.py `regroup`) ----
-    let mut by_gene: HashMap<&str, Vec<usize>> = HashMap::new(); // gene_id -> its pieces' representatives
-    for (i, t) in txs.iter().enumerate() {
-        if let Some(g) = t.gene.as_deref() {
-            let v = by_gene.entry(g).or_default();
-            if !v.contains(&rep[i]) {
-                v.push(rep[i]);
-            }
-        }
-    }
-    let mut name: HashMap<(&str, usize), String> = HashMap::new();
-    let mut st = RegroupStats { gene_ids: by_gene.len(), ..Default::default() };
-    for (g, reps) in by_gene.iter() {
-        if reps.len() == 1 {
-            name.insert((g, reps[0]), g.to_string());
-            continue;
-        }
-        st.gene_ids_split += 1;
-        let mut order = reps.clone();
-        order.sort_unstable();
-        let mut best = order[0];
-        for &r in &order[1..] {
-            if better(r, best) {
-                best = r;
-            }
-        }
-        name.insert((g, best), g.to_string());
-        let mut k = 2;
-        for &r in &order {
-            if r != best {
-                name.insert((g, r), format!("{g}.rg{k}"));
-                k += 1;
-            }
-        }
-    }
-    let mut new: HashMap<&str, &str> = HashMap::new(); // transcript_id -> its output gene_id
-    for (i, t) in txs.iter().enumerate() {
-        if let Some(g) = t.gene.as_deref() {
-            new.insert(t.tid.as_str(), name[&(g, rep[i])].as_str());
-        }
-    }
+    // ---- pieces and naming (rg3.py `pieces`, adj = "exon", + `regroup`), one gene_id at a time ----
+    let mut st = RegroupStats { gene_ids: genes.len(), ..Default::default() };
+    let mut new: Vec<Option<String>> = vec![None; txs.len()]; // each transcript's output gene_id
     // assert 3: no new name equals an input gene_id or transcript_id; asserts 2/4: every output gene_id holds
     // exactly one piece of exactly one input gene_id (split-only)
-    let inputs: HashSet<&str> = by_gene.keys().copied().chain(txs.iter().map(|t| t.tid.as_str())).collect();
-    let mut owner: HashMap<&str, (&str, usize)> = HashMap::new();
-    for (&(g, r), v) in name.iter() {
-        if v != g && inputs.contains(v.as_str()) {
-            anyhow::bail!("--gtf-regroup: the new name {v} equals an input gene_id or transcript_id");
+    let inputs: HashSet<&str> = genes.iter().copied().chain(txs.iter().map(|t| t.tid.as_str())).collect();
+    let mut owner: HashSet<String> = HashSet::new();
+    for g in &genes {
+        let (comps, names) = rg3_pieces(&txs, g, &members[g]);
+        if comps.len() >= 2 {
+            st.gene_ids_split += 1;
+            st.pieces_added += comps.len() - 1;
         }
-        if let Some(prev) = owner.insert(v.as_str(), (g, r)) {
-            anyhow::bail!("--gtf-regroup: output gene_id {v} would hold two pieces ({:?} and {:?})", prev, (g, r));
+        for (c, n) in comps.iter().zip(&names) {
+            if n != g && inputs.contains(n.as_str()) {
+                anyhow::bail!("--gtf-regroup: the new name {n} equals an input gene_id or transcript_id");
+            }
+            if !owner.insert(n.clone()) {
+                anyhow::bail!("--gtf-regroup: output gene_id {n} would hold two pieces");
+            }
+            for &t in c {
+                new[t] = Some(n.clone());
+            }
         }
     }
-    st.pieces_added = owner.len() - by_gene.len();
-    st.transcripts_relabelled = txs.iter().filter(|t| t.gene.as_deref() != new.get(t.tid.as_str()).copied()).count();
+    st.transcripts_relabelled =
+        txs.iter().enumerate().filter(|(i, t)| t.gene.is_some() && new[*i].as_deref() != t.gene.as_deref()).count();
+    let new_of: HashMap<&str, &str> =
+        txs.iter().enumerate().filter_map(|(i, t)| new[i].as_deref().map(|n| (t.tid.as_str(), n))).collect();
 
     // ---- rewrite (rg3.py `rewrite`): gene_id "<old>" -> gene_id "<new>", first occurrence, relabelled lines only ----
     for line in lines.iter_mut() {
@@ -2646,7 +2543,7 @@ fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
             continue;
         }
         let (Some(tid), Some(old)) = (re_attr(f[8], "transcript_id"), re_attr(f[8], "gene_id")) else { continue };
-        let Some(&nv) = new.get(tid.as_str()) else { continue };
+        let Some(&nv) = new_of.get(tid.as_str()) else { continue };
         if nv == old {
             continue;
         }
@@ -5185,6 +5082,21 @@ fn main() -> Result<()> {
     if args.gtf_regroup {
         anyhow::ensure!(args.gtf, "--gtf-regroup needs the assembled GTF (--gtf or --assemble-only)");
     }
+    // `--bridge-regroup` reads its own evidence in the --assemble-only pass-1 reader and rewrites the emitted GTF
+    let bridge_mode = rustle::vg_family::bridge_regroup::Mode::parse(&args.bridge_regroup)?;
+    if bridge_mode.is_some() {
+        anyhow::ensure!(
+            args.assemble_only && args.families.is_none(),
+            "--bridge-regroup {} regroups the --assemble-only GTF: set it with --assemble-only and without --families",
+            args.bridge_regroup
+        );
+        anyhow::ensure!(
+            !args.gtf_regroup,
+            "--bridge-regroup {} already splits every gene_id as --gtf-regroup does (without a bridge its names are \
+             RG3's): pass one of them",
+            args.bridge_regroup
+        );
+    }
     // RUSTLE_READTHROUGH_JUNCTIONS (docs/PREREG_readthrough_ends_representatives_2026-09-25.md): parsed before any
     // read is touched, so a mistyped arm fails in the first second instead of running as the base arm.
     let rt_switch = rustle::vg_family::denovo_assemble::ReadthroughSwitch::from_env()?;
@@ -5297,6 +5209,17 @@ fn main() -> Result<()> {
     // `--read-provenance`'s doc comment promises exactly one row per record). Validated at the boundary
     // (`--region`/`--regions` is user input), before any read is touched, rather than silently double-counted.
     validate_no_overlapping_regions(&by_contig)?;
+    // `--bridge-regroup`'s V1 counts every primary record once: two regions of one contig would both read a record
+    // crossing their boundary
+    if bridge_mode.is_some() {
+        if let Some((c, v)) = by_contig.iter().find(|(_, v)| v.len() > 1) {
+            anyhow::bail!(
+                "--bridge-regroup reads each contig's records once: give one region per contig (--genome-wide, \
+                 --region, or a --regions file naming each contig once); {c} has {} regions",
+                v.len()
+            );
+        }
+    }
     eprintln!(
         "[copy_assign] sweeping {} region(s) over {} contig(s)",
         by_contig.values().map(|v| v.len()).sum::<usize>(),
@@ -5444,6 +5367,8 @@ fn main() -> Result<()> {
     let mut readthrough_all = rustle::vg_family::denovo_assemble::ReadthroughFlags::default();
     // `--polish-tss`: every region's 5'-end evidence, per chromosome (empty unless the option is on).
     let mut tss_all = rustle::vg_family::denovo_assemble::TssEvidence::default();
+    // `--bridge-regroup`: every region's read evidence, per chromosome (empty unless the option is on).
+    let mut bridge_all = rustle::vg_family::bridge_regroup::BridgeEvidence::default();
     // `--families`: one row per ASSIGNED copy, naming the catalog row it came from. The explicit join
     // between `<out>.quant.tsv` and the O1 `copies.tsv`, and the place a copy that failed to survive
     // assignment would be visible as a missing row.
@@ -5650,11 +5575,16 @@ fn main() -> Result<()> {
         let mut readthrough = rustle::vg_family::denovo_assemble::ReadthroughFlags::default();
         // `--polish-tss`: the 5'-end evidence (streaming: fed by the pass-1 reader; buffered: one lazy pass below)
         let mut tss_ev: Option<rustle::vg_family::denovo_assemble::TssEvidence> = None;
+        // `--bridge-regroup`: its read evidence (streaming: fed by the pass-1 reader; buffered: one lazy pass below)
+        let mut bridge_ev: Option<rustle::vg_family::bridge_regroup::BridgeEvidence> = None;
         if streaming {
             let mut acc = rustle::vg_family::denovo_assemble::Pass1Acc::new(1, None);
             acc.readthrough = rt_switch.as_ref().map(|s| s.stats());
             if args.polish_tss != "off" || args.polish_tes != "off" {
                 acc.tss = Some(rustle::vg_family::denovo_assemble::TssEvidence::default());
+            }
+            if bridge_mode.is_some() {
+                acc.bridge = Some(rustle::vg_family::bridge_regroup::BridgeEvidence::default());
             }
             let mut fetched: Vec<(String, u64, u64)> = Vec::new();
             for (wchrom, wlo, whi) in &wins {
@@ -5679,6 +5609,10 @@ fn main() -> Result<()> {
                 readthrough.alignments_removed = reads;
             }
             tss_ev = acc.tss.take();
+            bridge_ev = acc.bridge.take().map(|mut ev| {
+                ev.seal();
+                ev
+            });
             streamed = Some(acc.finish(cfg.pass1_min_reads, 0, None));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::vg_family::denovo_assemble::TssEvidence::default();
@@ -5687,6 +5621,15 @@ fn main() -> Result<()> {
                     .with_context(|| format!("--polish-tss/--polish-tes evidence {wchrom}:{wlo}-{whi}"))?;
             }
             tss_ev = Some(ev);
+        }
+        if !streaming && bridge_mode.is_some() {
+            let mut ev = rustle::vg_family::bridge_regroup::BridgeEvidence::default();
+            for (wchrom, wlo, whi) in &wins {
+                rustle::vg_family::bridge_regroup::bridge_evidence_region(&args.bam, wchrom, *wlo, *whi, &mut ev)
+                    .with_context(|| format!("--bridge-regroup evidence {wchrom}:{wlo}-{whi}"))?;
+            }
+            ev.seal();
+            bridge_ev = Some(ev);
         }
         // the buffered paths' statistics, fed from the materialised records below (never on the streaming path)
         let mut rt_buf = if streaming { None } else { rt_switch.as_ref().map(|s| s.stats()) };
@@ -6316,7 +6259,7 @@ fn main() -> Result<()> {
         } else {
             Vec::new()
         };
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough, tss: tss_ev })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough, tss: tss_ev, bridge: bridge_ev })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -6360,7 +6303,7 @@ fn main() -> Result<()> {
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough, tss } = work;
+            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough, tss, bridge } = work;
             // O3 Phase 2 (Task 6): fold this region's raw pair stats + orphan loci into the genome-wide
             // vectors. Nothing is written here -- the Bonferroni threshold in `finalize_flags` needs every
             // region's pairs first, so `family_join.tsv`/`missing_copy_loci.tsv` are written once, after
@@ -6372,6 +6315,9 @@ fn main() -> Result<()> {
             readthrough_all.absorb(readthrough);
             if let Some(ev) = tss {
                 tss_all.absorb(ev);
+            }
+            if let Some(ev) = bridge {
+                bridge_all.absorb(ev)?;
             }
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
@@ -7503,6 +7449,8 @@ fn main() -> Result<()> {
     let mut snap_stats: Vec<SnapStats> = Vec::new();
     // --gtf-regroup: the pass's counts (params.tsv rows only when set)
     let mut regroup_stats: Option<RegroupStats> = None;
+    // --bridge-regroup: the pass's counts (params.tsv rows only when set)
+    let mut bridge_stats: Option<rustle::vg_family::bridge_regroup::Stats> = None;
     if args.gtf {
         // §6gp: the `productive` call is RELATIVE to the family's best ORF, which is only known once every
         // region has been drained — so it is stamped here, in a second pass over the finished GTF lines.
@@ -7759,12 +7707,63 @@ fn main() -> Result<()> {
         // --polish-tss then --polish-tes attributes: the line's last attributes (after TPM and any sub-chain tag)
         tss_tag(&mut gtf_lines, &tss_attrs);
         tss_tag(&mut gtf_lines, &tes_attrs);
+        // --bridge-regroup (F1 / F1v2): LAST, on the final lines, as f1_bridge.py post-processed the emitted GTF (the
+        // attribute passes above are keyed by transcript_id and never read gene_id). Off = this block is never entered.
+        let mut bridge_out: Option<rustle::vg_family::bridge_regroup::Outcome> = None;
+        if let Some(mode) = bridge_mode {
+            // F1's UP-proof is --polish-tes's 3' cluster rule, whose constants f1_bridge.py froze
+            const _: () = assert!(
+                TSS_W == 21 && TES_MIN_READS == 2 && TES_PAS_FAR == 35 && TES_PAS_NEAR == 10 && TES_PRIME_BP == 20
+            );
+            let end_clusters = |ends: &[i64], seq: &[u8], minus: bool| -> Vec<rustle::vg_family::bridge_regroup::EndCluster> {
+                tes_clusters(ends, seq, minus)
+                    .into_iter()
+                    .map(|c| rustle::vg_family::bridge_regroup::EndCluster {
+                        mode: c.mode,
+                        n: c.n,
+                        proven: c.proven,
+                        unprimed: !tes_primed(seq, minus, c.mode),
+                    })
+                    .collect()
+            };
+            let (t0, n_records) = (std::time::Instant::now(), bridge_all.len());
+            let out = rustle::vg_family::bridge_regroup::run(&mut gtf_lines, mode, &mut bridge_all, &genome_for, &end_clusters)?;
+            let st = &out.stats;
+            eprintln!(
+                "[copy_assign] ⭐ BRIDGE REGROUP ({}): {} structural junctions ({} UP-proven, {} DOWN-proven) -> {} F1 \
+                 bridge junctions -> {} kept -> {} bridge transcripts in {} gene_ids; {} gene_ids split -> {} gene_ids \
+                 ({} in the families input), {} lines relabelled; evidence {} spliced primaries; {:.1} s",
+                mode.as_str(), st.structural_junctions, st.up_proof, st.down_proof, st.f1_bridge_junctions,
+                st.bridge_junctions, st.bridge_transcripts, st.gene_ids_with_bridge, st.gene_ids_split, st.gene_ids_after,
+                st.families_gene_ids, st.lines_changed, n_records, t0.elapsed().as_secs_f64()
+            );
+            bridge_out = Some(out);
+        }
         let mut gh = std::fs::File::create(format!("{}.gtf", args.out))?;
         for line in &gtf_lines {
             writeln!(gh, "{line}")?;
         }
         eprintln!("[copy_assign] wrote {}.gtf ({} GTF rows = FLAIR-style isoforms; family copies tagged multicopy)",
             args.out, gtf_lines.len());
+        if let Some(out) = bridge_out {
+            let mut fh = std::io::BufWriter::new(std::fs::File::create(format!("{}.families.gtf", args.out))?);
+            for line in gtf_lines.iter().filter(|l| out.in_families(l)) {
+                writeln!(fh, "{line}")?;
+            }
+            fh.flush()?;
+            std::fs::write(format!("{}.bridge_junctions.tsv", args.out), &out.junctions_tsv)?;
+            if let Some(t) = &out.bridges_tsv {
+                std::fs::write(format!("{}.bridges.tsv", args.out), t)?;
+            }
+            eprintln!(
+                "[copy_assign] wrote {0}.families.gtf (the GTF without its {1} bridge transcripts: the families input), \
+                 {0}.bridge_junctions.tsv{2}",
+                args.out,
+                out.stats.bridge_transcripts,
+                if out.bridges_tsv.is_some() { format!(", {}.bridges.tsv", args.out) } else { String::new() }
+            );
+            bridge_stats = Some(out.stats);
+        }
     }
     let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
     writeln!(
@@ -8685,6 +8684,24 @@ fn main() -> Result<()> {
             row("gtf_regroup_gene_ids_split", format!("{}", st.gene_ids_split))?;
             row("gtf_regroup_loci_added", format!("{}", st.pieces_added))?;
             row("gtf_regroup_transcripts_relabelled", format!("{}", st.transcripts_relabelled))?;
+        }
+        // --bridge-regroup: rows only when set (the default params.tsv stays byte-identical)
+        if let (Some(mode), Some(st)) = (bridge_mode, &bridge_stats) {
+            row("bridge_regroup", mode.as_str().to_string())?;
+            row("bridge_regroup_transcripts", format!("{}", st.transcripts))?;
+            row("bridge_regroup_gene_ids", format!("{}", st.gene_ids))?;
+            row("bridge_regroup_structural_junctions", format!("{}", st.structural_junctions))?;
+            row("bridge_regroup_up_proof", format!("{}", st.up_proof))?;
+            row("bridge_regroup_down_proof", format!("{}", st.down_proof))?;
+            row("bridge_regroup_f1_bridge_junctions", format!("{}", st.f1_bridge_junctions))?;
+            row("bridge_regroup_bridge_junctions", format!("{}", st.bridge_junctions))?;
+            row("bridge_regroup_bridge_transcripts", format!("{}", st.bridge_transcripts))?;
+            row("bridge_regroup_gene_ids_with_bridge", format!("{}", st.gene_ids_with_bridge))?;
+            row("bridge_regroup_gene_ids_split", format!("{}", st.gene_ids_split))?;
+            row("bridge_regroup_gene_ids_after", format!("{}", st.gene_ids_after))?;
+            row("bridge_regroup_families_gene_ids", format!("{}", st.families_gene_ids))?;
+            row("bridge_regroup_lines_changed", format!("{}", st.lines_changed))?;
+            row("bridge_regroup_family_lines_dropped", format!("{}", st.family_lines_dropped))?;
         }
         row("posterior_prior", if prior_abundance { "abundance".into() } else { "uniform".to_string() })?;
         row("margin", format!("{}", args.margin))?;

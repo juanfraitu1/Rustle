@@ -52,6 +52,9 @@
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
 #   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off);
+#   RUSTLE_BRIDGE_REGROUP=f1|f1v2 adds `--bridge-regroup` to `assemble` and makes `families`, and `flag` without --gff,
+#     read PREFIX.families.gtf, the assembly without its bridge transcripts (bridges are relations, not loci, for
+#     every downstream stage; default unset = off, the same commands);
 #   RUSTLE_FAMILY_CONTAINER=1 adds `--emit-container` to `families` (PREFIX.fam.container*.tsv; default unset = off).
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
@@ -137,6 +140,21 @@ case "${RUSTLE_GTF_REGROUP:-}" in
   1) POLISH="$POLISH --gtf-regroup" ;;
   *) echo "[rustle_pipeline] RUSTLE_GTF_REGROUP must be 0 or 1 (got '$RUSTLE_GTF_REGROUP')" >&2; exit 2 ;;
 esac
+# RUSTLE_BRIDGE_REGROUP=f1|f1v2 (opt-in; unset or off = off, the same commands): copy_assign --bridge-regroup. A transcript
+# that is the only link between two pieces of its gene_id, when reads end at a PAS inside its intron and other reads start
+# there at their own promoter (f1v2: and it carries fewer reads than each piece), becomes a relation `<gene_id>.fus<k>`
+# with `fusion_of`, and the pieces split as RUSTLE_GTF_REGROUP splits them (so the two are exclusive). `assemble` also
+# writes PREFIX.families.gtf, the GTF without the bridges, and `families` reads it, as the held-out runs did
+# (docs/PREREG_f1_bridge_locus_2026-09-28.md, docs/PREREG_f1v2_readshare_2026-09-29.md), as does `flag`'s scan of the
+# de novo loci (without --gff): a bridge is a relation, never a locus to scan. See its --help
+FAM_GTF=$OUT.gtf
+case "${RUSTLE_BRIDGE_REGROUP:-}" in
+  ""|off) ;;
+  f1|f1v2)
+    [ "${RUSTLE_GTF_REGROUP:-0}" = 0 ] || { echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP already splits every gene_id as RUSTLE_GTF_REGROUP does: set one of them" >&2; exit 2; }
+    POLISH="$POLISH --bridge-regroup $RUSTLE_BRIDGE_REGROUP"; FAM_GTF=$OUT.families.gtf ;;
+  *) echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP must be off, f1 or f1v2 (got '$RUSTLE_BRIDGE_REGROUP')" >&2; exit 2 ;;
+esac
 # RUSTLE_FAMILY_CONTAINER=1 (opt-in; unset or 0 = off, the same command): mcl_families --emit-container, the container
 # of each family member's extra pieces (docs/PREREG_fusion_container_sim_2026-09-28.md §1): every clustered locus's
 # all-transcript exon blocks, core (aligned to an exon base of another member of its family) or accessory, and the
@@ -149,6 +167,16 @@ case "${RUSTLE_FAMILY_CONTAINER:-}" in
   *) echo "[rustle_pipeline] RUSTLE_FAMILY_CONTAINER must be 0 or 1 (got '$RUSTLE_FAMILY_CONTAINER')" >&2; exit 2 ;;
 esac
 say() { echo "[rustle_pipeline] $(date +%H:%M:%S) $*" >&2; }
+# The de novo loci a stage reads ($FAM_GTF: PREFIX.families.gtf with RUSTLE_BRIDGE_REGROUP, else PREFIX.gtf) must come
+# from the assembly on disk: set, PREFIX.families.gtf must exist and be no older than PREFIX.gtf; unset, a newer
+# PREFIX.families.gtf means the GTF was assembled with the variable and its bridges would be read as loci. $1 = the stage.
+fam_gtf_guard() {
+  if [ "$FAM_GTF" != "$OUT.gtf" ]; then
+    [ -s "$FAM_GTF" ] && [ ! "$FAM_GTF" -ot "$OUT.gtf" ] || { echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP is set but $FAM_GTF is missing or older than $OUT.gtf: run assemble with it" >&2; exit 2; }
+  elif [ -e "$OUT.families.gtf" ] && [ ! "$OUT.families.gtf" -ot "$OUT.gtf" ]; then
+    echo "[rustle_pipeline] $OUT.gtf was assembled with RUSTLE_BRIDGE_REGROUP (its bridges are relations, not loci): set it for $1 too" >&2; exit 2
+  fi
+}
 
 stage_assemble() {
   say "assemble: $BAM -> $OUT.gtf"
@@ -163,6 +191,9 @@ stage_assemble() {
   env "${seed_env[@]}" "$BIN/copy_assign" --assemble-only --genome-wide --assembly-junctions strict $POLISH --gtf-tpm \
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1
   say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.gtf" | wc -l) transcripts"
+  if [ "$FAM_GTF" != "$OUT.gtf" ]; then
+    say "assemble: $(grep -c 'fusion_of "' "$OUT.gtf") bridge transcripts kept as fusion_of relations; families input $FAM_GTF"
+  fi
 }
 # families: the de novo families AND their copy table (--emit-units with --from-gtf: PREFIX.fam.copies.tsv/.fa/.regions,
 # the gw_family_catalog copies contract, one copy per member locus = its representative transcript and its spliced exon
@@ -170,7 +201,8 @@ stage_assemble() {
 # docs/PREREG_families_copy_table_2026-09-25.md); the copy table is a new product. A binary older than the copy table
 # (its --help does not name <out>.copies.tsv) still writes the families, with a warning and no copy table.
 stage_families() {
-  say "families: gene families on the de novo loci of $OUT.gtf"
+  fam_gtf_guard families
+  say "families: gene families on the de novo loci of $FAM_GTF"
   local copies=() help
   help=$("$BIN/mcl_families" --help 2>&1 || true)
   case "$help" in
@@ -180,7 +212,7 @@ stage_families() {
   if [ ${#FAM_EXTRA[@]} -gt 0 ] && [[ "$help" != *'--emit-container'* ]]; then
     echo "[rustle_pipeline] RUSTLE_FAMILY_CONTAINER=1 but $BIN/mcl_families predates --emit-container; rebuild it" >&2; exit 2
   fi
-  "$BIN/mcl_families" --from-gtf "$OUT.gtf" --fasta "$FASTA" --threads "$THREADS" \
+  "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$THREADS" \
     --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" "${FAM_EXTRA[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
@@ -221,7 +253,9 @@ stage_assign() {
 }
 stage_flag() {
   [ -n "$INDEX" ] || { echo "flag needs --index (splice .mmi of the primary genome)" >&2; exit 2; }
-  local LOCI=${GFF:-$OUT.gtf}
+  # the loci to scan: the annotation with --gff, else the de novo loci `families` reads (bridges are relations, not loci)
+  [ -n "$GFF" ] || fam_gtf_guard flag
+  local LOCI=${GFF:-$FAM_GTF}
   say "flag: scan $BAM on $LOCI"
   "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" ${GFF:+--gff "$GFF"} --index x --threads "$THREADS" \
     --out "$OUT.flag_scan" --scan-only > "$OUT.flag_scan.log" 2>&1

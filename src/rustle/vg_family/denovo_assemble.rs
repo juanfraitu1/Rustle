@@ -342,6 +342,9 @@ pub struct Pass1Acc {
     /// `copy_assign --polish-tss` / `--polish-tes` end evidence ([`TssEvidence`]), fed by the streaming reader from
     /// every primary spliced record; `None` (the default, set by `new`) = both options are off and nothing is collected.
     pub tss: Option<TssEvidence>,
+    /// `copy_assign --bridge-regroup` read evidence ([`BridgeEvidence`](crate::vg_family::bridge_regroup::BridgeEvidence)),
+    /// fed by the streaming reader from every primary record with an intron; `None` (the default, set by `new`) = off.
+    pub bridge: Option<crate::vg_family::bridge_regroup::BridgeEvidence>,
 }
 
 impl Pass1Acc {
@@ -362,6 +365,7 @@ impl Pass1Acc {
             n_pushed: 0,
             readthrough: None,
             tss: None,
+            bridge: None,
         }
     }
 
@@ -2634,17 +2638,7 @@ impl ReadthroughStats {
             for minus in [false, true] {
                 let rows = &mut c.rows[usize::from(minus)];
                 rows.sort_unstable(); // by (p5, p3, pf): 5′ order, and equal-ends groups contiguous
-                let mut real = vec![false; rows.len()];
-                let mut i = 0;
-                while i < rows.len() {
-                    let mut j = i + 1;
-                    while j < rows.len() && rows[j].0 - rows[j - 1].0 <= RT_START_GAP {
-                        j += 1;
-                    }
-                    let is_real = j - i >= RT_START_MIN;
-                    real[i..j].iter_mut().for_each(|x| *x = is_real);
-                    i = j;
-                }
+                let real = rt_real_starts(rows);
                 let mut by3: Vec<(u64, u64)> = rows.iter().map(|&(p5, p3, _)| (p3, p5)).collect();
                 by3.sort_unstable();
                 // this strand's scored junctions (with `is_listed`), decided below once `r3`'s N_span is known
@@ -2667,24 +2661,7 @@ impl ReadthroughStats {
                     if !full && !canonical {
                         continue;
                     }
-                    // V1 over the reads starting inside the intron, one (p5, p3) group at a time: the script looks a
-                    // read's first donor up by (strand, 5′ end, 3′ end), so a group counts whole when any member's
-                    // own first exon ends inside the intron
-                    let (a5, b5) = (rows.partition_point(|x| x.0 < d), rows.partition_point(|x| x.0 < a));
-                    let mut v1 = 0u64;
-                    let mut k = a5;
-                    while k < b5 {
-                        let (p5, p3, _) = rows[k];
-                        let mut g = k + 1;
-                        while g < b5 && rows[g].0 == p5 && rows[g].1 == p3 {
-                            g += 1;
-                        }
-                        let beyond = if minus { p3 < d } else { p3 >= a };
-                        if real[k] && beyond && rows[k..g].iter().any(|x| x.2 >= d && x.2 < a) {
-                            v1 += (g - k) as u64;
-                        }
-                        k = g;
-                    }
+                    let v1 = rt_v1(rows, &real, d, a, minus);
                     // `s >= RT_MIN_S` holds for every scored junction except a listed one below the floor
                     let s64 = u64::from(s);
                     let r_pass = s >= RT_MIN_S && canonical && u >= RT_R_FACTOR * s64;
@@ -2752,6 +2729,49 @@ impl ReadthroughStats {
         out.all.sort();
         out
     }
+}
+
+/// The start clusters of ONE strand's rows `(p5, p3, pf)`, sorted (5′ order): a gap larger than [`RT_START_GAP`]
+/// between consecutive 5′ ends opens a new cluster, and a cluster of at least [`RT_START_MIN`] rows is a real
+/// transcript start. One flag per row. Only differences of 5′ ends are read, so any coordinate origin works.
+pub fn rt_real_starts(rows: &[(u64, u64, u64)]) -> Vec<bool> {
+    let mut real = vec![false; rows.len()];
+    let mut i = 0;
+    while i < rows.len() {
+        let mut j = i + 1;
+        while j < rows.len() && rows[j].0 - rows[j - 1].0 <= RT_START_GAP {
+            j += 1;
+        }
+        let is_real = j - i >= RT_START_MIN;
+        real[i..j].iter_mut().for_each(|x| *x = is_real);
+        i = j;
+    }
+    real
+}
+
+/// `V1` of the intron `[d, a)` on ONE strand: the rows (sorted, with their [`rt_real_starts`] flags) whose 5′ end lies
+/// inside the intron in a real start cluster, whose 3′ end is beyond the acceptor (`+` `p3 >= a`, `-` `p3 < d`) and
+/// whose own first exon ends inside the intron (`d <= pf < a`). Counted one `(p5, p3)` group at a time: the script
+/// looks a read's first donor up by (strand, 5′ end, 3′ end), so a group counts whole when any member's own first exon
+/// ends inside the intron. The pool's rows are 0-based with `(d, a)` = (first intron base, exclusive end); the same
+/// comparisons hold for 1-based rows queried with `(s, e + 1)` of a 1-based closed intron `[s, e]`.
+pub fn rt_v1(rows: &[(u64, u64, u64)], real: &[bool], d: u64, a: u64, minus: bool) -> u64 {
+    let (a5, b5) = (rows.partition_point(|x| x.0 < d), rows.partition_point(|x| x.0 < a));
+    let mut v1 = 0u64;
+    let mut k = a5;
+    while k < b5 {
+        let (p5, p3, _) = rows[k];
+        let mut g = k + 1;
+        while g < b5 && rows[g].0 == p5 && rows[g].1 == p3 {
+            g += 1;
+        }
+        let beyond = if minus { p3 < d } else { p3 >= a };
+        if real[k] && beyond && rows[k..g].iter().any(|x| x.2 >= d && x.2 < a) {
+            v1 += (g - k) as u64;
+        }
+        k = g;
+    }
+    v1
 }
 
 /// `r3`'s `N_span` for the queried junctions `(donor, acceptor)` of ONE strand (the pool's intron coordinates:
@@ -3203,6 +3223,15 @@ pub fn stream_pass1_region_with(
         ops.clear();
         for op in record.cigar().iter() {
             ops.push(op?);
+        }
+        // `copy_assign --bridge-regroup` (opt-in; `None` unless on): its evidence reads every primary record with an
+        // `N`, before every rule below and before the exon walk (f1_bridge.py's population and its own CIGAR walk)
+        if let Some(ev) = acc.bridge.as_mut() {
+            if !flags.is_secondary() {
+                ev.push(chrom, flags.is_reverse_complemented(), ref_start, &ops, || {
+                    crate::vg_family::bridge_regroup::ts_is_plus(&record)
+                });
+            }
         }
         let cigar = noodles_sam::alignment::record_buf::Cigar::from(ops.clone());
         let Ok(exons) = crate::bam::exons_from_cigar(ref_start, &cigar) else { continue };

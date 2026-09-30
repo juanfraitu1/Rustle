@@ -632,3 +632,76 @@ within 50 bp.
   this was not rerun for TES.
 - **Tests.** `cargo test --release`: 933 passed, 0 failed, 13 ignored.
 - **Frozen** at `/mnt/linuxdisk/tmp/rustle_figures/tss2_bin_frozen/` (`copy_assign` aebfcf96).
+
+## 2026-09-29 addendum 3 — `--bridge-regroup off|f1|f1v2`: bridge-aware regrouping (opt-in; register 1145-1147)
+
+One opt-in pass over the final GTF of `--assemble-only`: the Rust port (`vg_family::bridge_regroup`) of two frozen
+post-processors, **F1** = `bench/f1_bridge.py --mode full` (37ee8e77, `docs/PREREG_f1_bridge_locus_2026-09-28.md`)
+and **F1v2** = F1 plus `f1v2.py --rule min` (b4e788ad, `docs/PREREG_f1v2_readshare_2026-09-29.md`). `off`, the
+default, is byte-identical to a run without the flag. The rule, verbatim in the module header:
+
+- **Bridge.** A transcript whose intron J is the only link between the other transcripts of its `gene_id` upstream and
+  downstream of J (no component straddles J). The upstream side must have a PAS-proven 3′ cluster of deduplicated
+  spliced primaries ending inside J's intron: `--polish-tes`'s cluster rule and constants, called, not copied. The
+  downstream side must have V1 ≥ 1: reads starting inside J's intron in a real start cluster, reaching beyond the
+  acceptor, with their own first exon inside the intron. This is the readthrough filter's `rt_v1`, now shared.
+- **F1v2** keeps a bridge only when its transcripts carry fewer reads than EACH side: share = reads(link) /
+  (reads(link) + min(UP, DOWN)) < 1/2. A tie abstains.
+- **Output.** Bridges become `<gene_id>.fus<k>` with `fusion_of` / `fusion_junction`. The other transcripts split into
+  exon-overlap pieces named as `--gtf-regroup` names them, so without a bridge the output is RG3's. No line is added,
+  removed or moved, and intron chains are unchanged. `PREFIX.families.gtf` is the GTF without the bridges: it is the
+  families input, as it was in the held-out runs.
+- **Evidence.** The script's reads, collected by the pass-1 reader: every primary record with an `N`, QC-fail
+  included, strand = `ts` XOR reverse. This is not `--polish-tes`'s evidence, which takes the alignment's strand and
+  skips QC-fail; 1,230 of testis's 1.10 M spliced primaries carry `ts:A:-`.
+
+### How to enable
+
+```
+RUSTLE_BRIDGE_REGROUP=f1v2 tools/rustle_pipeline.sh all --bam B --fasta G --out PREFIX   # assemble + families
+copy_assign --assemble-only --genome-wide ... --bridge-regroup f1|f1v2                     # direct
+```
+
+- **Products when on.** `PREFIX.families.gtf`; `PREFIX.bridge_junctions.tsv` (F1's `junctions.tsv`: every structural
+  junction with U, its 3′ clusters, V1 and the decision); under `f1v2` also `PREFIX.bridges.tsv` (`f1v2.py`'s table: the
+  reads of each F1 bridge, its share and `keep`). `params.tsv` gets `bridge_regroup*` rows (the scripts' `stats.json`
+  counts), and the log gets one `BRIDGE REGROUP` line.
+- **Order.** It runs last: after the polish, `--polish-tss` / `--polish-tes`, the sub-chain drop and the attribute
+  passes, as the scripts post-processed the emitted GTF. It includes `--gtf-regroup`'s split, so the two are exclusive:
+  `copy_assign` and the driver refuse both. The held-out runs used it without `--gtf-regroup`.
+- **Refusals.** `copy_assign` refuses it without `--assemble-only`, with `--families`, or with two regions of one
+  contig (its V1 counts each record once). The driver refuses `families` on a bridge-regrouped GTF when the variable is
+  unset.
+- **Row order.** The side tables follow a single call of the script: contigs by name. The held-out tables merged
+  contig batches, so they hold the same rows with the contig blocks in batch order.
+
+### Read before quoting
+
+- F1 fails on human A119b (bridge splits 219 SEP / 451 FRAG), and cuts about 40 annotated genes per gorilla sample.
+- F1v2 was EFFECTIVE on both human libraries, but still leaves 149 single-gene cuts on A119b.
+- The fused-locus gain comes from moving fusions into explicit `fusion_of` relation records, not from removing them.
+  Counting each bridge as its own locus, F1v2 is no better than `--gtf-regroup` (A119b 1,829 vs 1,786).
+- Opt-in; a default flip is the user's call.
+
+### Verification (2026-09-29)
+
+Inputs: the stored driver-default BAM runs of 2026-09-25 (`rustle_figures/runs/<s>/`), re-assembled by the port with
+the driver's flags. `off` reproduced every stored BASE GTF byte for byte. The frozen outputs are those of the held-out
+tests (`f1_heldout/`, `f1v2/<s>/`, and the gorilla F1v2 dev arm `f1v2/dev/<s>/min.*`).
+
+| sample | `off` vs HEAD (6 products) | F1: GTF, families GTF, junctions | F1v2: GTF, families GTF, bridges, junctions | peak RSS off → on |
+|---|---|---|---|---|
+| human_testis | identical | identical | identical | 0.79 → 0.88 GB |
+| gorilla_OR6737 | identical | identical | identical (dev arm) | 1.18 → 1.82 GB |
+| gorilla_KB3781 | — | identical | identical (dev arm) | 1.50 (2026-09-25) → 2.28 GB |
+| human_A119b | — | identical | identical | 2.58 (2026-09-25) → 3.09 GB |
+
+- **Junction tables.** They are identical after the batch-order permutation above (`reorder.py`), and identical as
+  sorted sets.
+- **Evidence.** The evidence counts equal `samtools view -F 2308` spliced records (testis 1,104,114).
+- **Buffered path.** On the synthetic fixture, `--materialize-reads` (its own indexed evidence pass) equals streaming.
+- **Tests.** `cargo test --release`: 998 passed, 0 failed, 13 ignored (979 before; 16 unit tests and 3 end-to-end
+  tests in `tests/copy_assign_bridge_regroup.rs`). The fixture's `off` GTF run through the frozen scripts gives the
+  asserted files byte for byte.
+- **Cost.** The pass takes 5-16 s per sample (A119b: 16 s, 490 s for the whole run). The memory is about 40 B per
+  spliced primary plus the contig sequences for the PAS test, bounded by the genome cache.
