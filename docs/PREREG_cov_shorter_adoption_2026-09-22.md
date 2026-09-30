@@ -10,6 +10,8 @@ test it explicitly deferred: *"Admission is a gate, not precision."*
 **shorter** gene's exonic length; the edge weight then uses `cov_shorter`. Default `0.0` = OFF.
 **Verified byte-identical when unset** (`clusters.tsv` and `loci.tsv` both `cmp`-clean against the shipped
 chr16 de novo catalog with the new binary). New params keys appended LAST (r936).
+*(2026-09-29: the default became `0.70` by the user's decision; `--min-cov-shorter 0` is the OFF this file
+measured against, proven byte-identical on human_testis — `REPRODUCE.md` §5.)*
 
 ⚠ The shipped exon conjunct (`--min-exonic-bp 1 --min-shared-exon-frac 0.60`) applies to escaped pairs
 unchanged — a **stronger** guard than the `exonic > 0 both sides` §6x4 measured the ceiling with.

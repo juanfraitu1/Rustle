@@ -25,6 +25,12 @@ It implies `--gtf`; the GTF is the product.
 `<out>.families.tsv` and `<out>.assignments.tsv` are written **empty by construction** — there is no
 assignment in this mode, and an empty file is the honest record of that rather than a missing one.
 
+**Since 2026-09-29 the mode also runs `--bridge-regroup f1v2` by default** (`bench/ASSEMBLY_POLISH.md` addendum 3): the
+final GTF's readthrough bridges become `fusion_of` relations, and the run also writes `<out>.families.gtf` (the GTF
+without them: the families input), `<out>.bridge_junctions.tsv`, `<out>.bridges.tsv` and `bridge_regroup*` rows in
+`params.tsv`. It needs one region per contig. `--bridge-regroup off` gives exactly the products described in this file
+(every number below was measured with it off).
+
 ## Measured (27 NPIP windows, `RUSTLE_JUNCTION_MAJORITY=1 --read-isoform-k 3`)
 
 | | wall | max RSS | GTF rows |

@@ -68,9 +68,14 @@ struct Args {
     #[arg(long, default_value_t = 0.30)]
     min_cov_longer: f64,
 
-    /// ⭐ §6x4 CONTAINMENT ESCAPE — `0.0` = OFF (default), and OFF is byte-identical to every catalog
-    /// built before 2026-09-22. When `> 0.0`, a pair ALSO passes the coverage gate if the alignment
-    /// covers at least this fraction of the SHORTER gene's exonic length, even when `cov_longer` fails.
+    /// ⭐ §6x4 CONTAINMENT ESCAPE — **default `0.70` since 2026-09-29** (the user's decision; shipped opt-in in
+    /// f2144faf, register 1006/1014: held-out F up on 2 of 3 chromosomes, precision up-or-equal everywhere,
+    /// insensitive to C over 0.40-0.80). `--min-cov-shorter 0` = OFF, byte-identical to every catalog built
+    /// before the flip. When `> 0.0`, a pair ALSO passes the coverage gate if the alignment covers at least
+    /// this fraction of the SHORTER gene's exonic length, even when `cov_longer` fails, and its edge weight is
+    /// that coverage. ⚠ Known regressions (register 1007/1009): NPIP in GUIDED mode, Soto F .833 -> .800
+    /// (sensitivity .750 -> .700); semi-guided SD-region nodes, precision .973 -> .833 — an SD region has no
+    /// gene boundary, so never use it with `--from-genome-sd` nodes.
     ///
     /// Motivation (§6x3/r1002): of the 1,026 chr16 de novo loci that fail admission, 679 are evicted by a
     /// LONGER partner while aligning along a median 1.00 of their own length at passing identity and
@@ -82,7 +87,7 @@ struct Args {
     /// §6x4 measured the difference on chr16: guarded at 0.90 admits 216 of the 679 at a largest-component
     /// cost of 2.1x baseline; UNGUARDED the same norm runs 5.7-16.3x — which is register 913's refuted
     /// `min(la,lb)` hub failure. The guard is the result, not the norm.
-    #[arg(long, default_value_t = 0.0)]
+    #[arg(long, default_value_t = 0.70)]
     min_cov_shorter: f64,
 
     #[arg(long, default_value_t = 300)]
@@ -2243,6 +2248,17 @@ mod tests {
     use super::*;
     use rustle::vg_family::copy_split::AlignedRead;
     use rustle::vg_family::denovo_assemble::BamRead;
+
+    /// `--min-cov-shorter` defaults to 0.70 (2026-09-29); `0` is the explicit OFF that `graph_from_paf` treats as
+    /// "no escape" (`p.min_cov_shorter > 0.0`), the edge weights of every catalog built before the flip.
+    #[test]
+    fn min_cov_shorter_defaults_to_0_70_and_zero_turns_it_off() {
+        let a = Args::try_parse_from(["mcl_families", "--out", "o"]).expect("parse");
+        assert_eq!(a.min_cov_shorter, 0.70);
+        let a = Args::try_parse_from(["mcl_families", "--out", "o", "--min-cov-shorter", "0"]).expect("parse");
+        assert_eq!(a.min_cov_shorter, 0.0);
+        assert_eq!(GraphParams::default().min_cov_shorter, 0.0, "the library default stays off: only the CLI flips");
+    }
 
     fn br(start: u64, cigar: &[(char, u64)]) -> BamRead {
         let n: u64 = cigar.iter().filter(|(o, _)| matches!(o, 'M' | '=' | 'X' | 'I' | 'S')).map(|(_, l)| l).sum();

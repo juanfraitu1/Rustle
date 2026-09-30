@@ -33,7 +33,10 @@ streams a whole BAM into loci and isoforms; `--families` is the copy assignment;
 pairwise missing-copy test), `mcl_families` (family definition; `--from-gtf` runs the de novo stage from an
 assembled GTF in one command), `gw_family_catalog` (the copy catalog the assignment consumes),
 `missing_copy_flag` (missing copies from RNA), `as_table` (one pass over a BAM → each molecule's genome-wide best alignment score; the pipeline's assemble stage seeds loci with the tied secondaries it names, `--no-seed-secondaries` to opt out) — and five comparators and converters: `family_score`, `mcl_port`, `readthrough_filter`, `locus_bed`, `gff_to_gtf`, `parcn`.
-`tools/rustle_pipeline.sh assemble|families|catalog|assign|flag|all` runs any stage, or all of them, with the shipped defaults. `bench/` holds the
+`tools/rustle_pipeline.sh assemble|families|catalog|assign|flag|all` runs any stage, or all of them, with the shipped defaults
+(since 2026-09-29 these include bridge-aware regrouping, `copy_assign --bridge-regroup f1v2`, and the containment escape
+`mcl_families --min-cov-shorter 0.70`; `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0` is the earlier pipeline, byte
+for byte — `REPRODUCE.md` §5 and its driver section, `bench/ASSEMBLY_POLISH.md` addendum 3). `bench/` holds the
 9 Python files behind the record's analysis commands: the library `lib.py`, the subcommand scripts `score.py`,
 `sim.py` and `truth.py`, `guided_pipeline.py`, `mcl_port.py`, and the `layer_order/` and `soto/` chains
 (`bench/README.md` lists each one, and maps every retired script name to its current command); `tools/` the pipeline

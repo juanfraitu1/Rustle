@@ -382,6 +382,12 @@ cross-contig collisions; coverage asserted), G5, G8 (F1v2 and F1) and G10 (the o
 **VERDICT (§6): EFFECTIVE** (`clauses_v2.py verdict`: C1, C2, C3 PASS on both samples, C4 PASS on testis and NA on
 A119b; no refute trigger). F1v2 stays opt-in until the user decides; a default flip is the user's call.
 
+**Default flipped on 2026-09-29 by the user's decision**: `copy_assign --assemble-only` and the driver now run `f1v2`
+unless told `off`, citing this held-out verdict and the family-level side result of
+`docs/PREREG_o1_cover_growth_2026-09-29.md` (Outcome: F1v2's families, the COVER core, beat BASE on every Compara
+metric on both human substrates and on Liftoff recall on testis). `RUSTLE_BRIDGE_REGROUP=off` reproduces the pre-flip
+products byte for byte (`bench/ASSEMBLY_POLISH.md` addendum 3).
+
 **Read this before quoting it.**
 - **F1 alone fails on human A119b.** Its bridge splits are 219 SEP / 451 FRAG (it would fail its own C2 there), and 64%
   of its bridged gene_ids carry an annotated-intron junction. F1v2 turns that into 193 / 149, so the net correct

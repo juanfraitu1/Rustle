@@ -633,12 +633,16 @@ within 50 bp.
 - **Tests.** `cargo test --release`: 933 passed, 0 failed, 13 ignored.
 - **Frozen** at `/mnt/linuxdisk/tmp/rustle_figures/tss2_bin_frozen/` (`copy_assign` aebfcf96).
 
-## 2026-09-29 addendum 3 — `--bridge-regroup off|f1|f1v2`: bridge-aware regrouping (opt-in; register 1145-1147)
+## 2026-09-29 addendum 3 — `--bridge-regroup off|f1|f1v2`: bridge-aware regrouping (**default `f1v2` since 2026-09-29**; register 1145-1147)
 
-One opt-in pass over the final GTF of `--assemble-only`: the Rust port (`vg_family::bridge_regroup`) of two frozen
+One pass over the final GTF of `--assemble-only`: the Rust port (`vg_family::bridge_regroup`) of two frozen
 post-processors, **F1** = `bench/f1_bridge.py --mode full` (37ee8e77, `docs/PREREG_f1_bridge_locus_2026-09-28.md`)
-and **F1v2** = F1 plus `f1v2.py --rule min` (b4e788ad, `docs/PREREG_f1v2_readshare_2026-09-29.md`). `off`, the
-default, is byte-identical to a run without the flag. The rule, verbatim in the module header:
+and **F1v2** = F1 plus `f1v2.py --rule min` (b4e788ad, `docs/PREREG_f1v2_readshare_2026-09-29.md`). Shipped opt-in
+(default `off`) and **flipped to `f1v2` on 2026-09-29 by the user's decision**, on the F1v2 held-out verdict and its
+family-level side result (F1v2's families beat BASE on every Compara metric on both human substrates,
+`docs/PREREG_o1_cover_growth_2026-09-29.md` Outcome). `--bridge-regroup off` (driver `RUSTLE_BRIDGE_REGROUP=off`)
+restores the earlier products byte for byte: proven on human_testis against a build of 3007c3d4, the last commit
+before the flip (assemble and families products, `cmp`-clean). The rule, verbatim in the module header:
 
 - **Bridge.** A transcript whose intron J is the only link between the other transcripts of its `gene_id` upstream and
   downstream of J (no component straddles J). The upstream side must have a PAS-proven 3′ cluster of deduplicated
@@ -655,12 +659,18 @@ default, is byte-identical to a run without the flag. The rule, verbatim in the 
   included, strand = `ts` XOR reverse. This is not `--polish-tes`'s evidence, which takes the alignment's strand and
   skips QC-fail; 1,230 of testis's 1.10 M spliced primaries carry `ts:A:-`.
 
-### How to enable
+### How to run it, and how to turn it off
 
 ```
-RUSTLE_BRIDGE_REGROUP=f1v2 tools/rustle_pipeline.sh all --bam B --fasta G --out PREFIX   # assemble + families
-copy_assign --assemble-only --genome-wide ... --bridge-regroup f1|f1v2                     # direct
+tools/rustle_pipeline.sh all --bam B --fasta G --out PREFIX                                # f1v2, the default
+RUSTLE_BRIDGE_REGROUP=off tools/rustle_pipeline.sh all --bam B --fasta G --out PREFIX      # the pre-flip products
+copy_assign --assemble-only --genome-wide ...                                              # direct: f1v2
+copy_assign --assemble-only --genome-wide ... --bridge-regroup off|f1                      # direct: off, or F1
 ```
+
+The driver derives the mode once (`BRIDGE_MODE`, unset = f1v2) and every stage uses it: `assemble` passes it
+explicitly; `families`, and `flag` without `--gff`, read `PREFIX.families.gtf` under f1/f1v2 and `PREFIX.gtf` under
+off. Outside `--assemble-only` (or with `--families`) the binary's default is off and an explicit arm is refused.
 
 - **Products when on.** `PREFIX.families.gtf`; `PREFIX.bridge_junctions.tsv` (F1's `junctions.tsv`: every structural
   junction with U, its 3′ clusters, V1 and the decision); under `f1v2` also `PREFIX.bridges.tsv` (`f1v2.py`'s table: the
@@ -669,9 +679,12 @@ copy_assign --assemble-only --genome-wide ... --bridge-regroup f1|f1v2          
 - **Order.** It runs last: after the polish, `--polish-tss` / `--polish-tes`, the sub-chain drop and the attribute
   passes, as the scripts post-processed the emitted GTF. It includes `--gtf-regroup`'s split, so the two are exclusive:
   `copy_assign` and the driver refuse both. The held-out runs used it without `--gtf-regroup`.
-- **Refusals.** `copy_assign` refuses it without `--assemble-only`, with `--families`, or with two regions of one
-  contig (its V1 counts each record once). The driver refuses `families` on a bridge-regrouped GTF when the variable is
-  unset.
+- **Refusals.** `copy_assign` refuses an explicit arm without `--assemble-only` or with `--families`, and any arm
+  (the default included) with two regions of one contig (its V1 counts each record once: pass one region per contig,
+  or `--bridge-regroup off`) or with `--gtf-regroup` (RG3 = `--bridge-regroup off --gtf-regroup`; driver:
+  `RUSTLE_GTF_REGROUP=1` needs `RUSTLE_BRIDGE_REGROUP=off`). The driver's `fam_gtf_guard` refuses `families` / `flag`
+  when the GTF on disk was not assembled with the stage's mode (a missing or older `PREFIX.families.gtf` under f1/f1v2;
+  a newer one under off).
 - **Row order.** The side tables follow a single call of the script: contigs by name. The held-out tables merged
   contig batches, so they hold the same rows with the contig blocks in batch order.
 
@@ -681,7 +694,8 @@ copy_assign --assemble-only --genome-wide ... --bridge-regroup f1|f1v2          
 - F1v2 was EFFECTIVE on both human libraries, but still leaves 149 single-gene cuts on A119b.
 - The fused-locus gain comes from moving fusions into explicit `fusion_of` relation records, not from removing them.
   Counting each bridge as its own locus, F1v2 is no better than `--gtf-regroup` (A119b 1,829 vs 1,786).
-- Opt-in; a default flip is the user's call.
+- Shipped opt-in on 2026-09-29 and flipped to the default the same day, the user's call (above). Every number in this
+  file measured before the flip was measured with `off`.
 
 ### Verification (2026-09-29)
 

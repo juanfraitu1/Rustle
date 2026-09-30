@@ -161,6 +161,14 @@ target/release/family_score --clusters run.clusters.tsv --gff chr20_ref.gff --so
 components of L3 at `w_98 >= 0.985`, with L4 (0.995) applied selectively; see
 `docs/seeded_family_definition.md` §0★★ and ledger §6p0/§6p1/§6p5.
 
+⚠⚠ **`--min-cov-shorter` default flipped 0 → 0.70 on 2026-09-29** (the user's decision; shipped opt-in in f2144faf,
+register 1006/1014, `docs/PREREG_cov_shorter_adoption_2026-09-22.md`): a pair whose coverage of the LONGER locus fails
+also passes at coverage ≥ 0.70 of the SHORTER locus's exonic length, with that coverage as its edge weight. Every
+`mcl_families` number quoted in this file that does not name the flag was measured at 0 — **`--min-cov-shorter 0`
+(driver `RUSTLE_MIN_COV_SHORTER=0`) reproduces it byte for byte** (proven on human_testis against a 3007c3d4 build).
+Known regressions of the new default: NPIP in GUIDED mode, Soto F .833 → .800; semi-guided SD-region nodes, precision
+.973 → .833 (register 1007/1009) — never use it with region nodes.
+
 ### 5a. Soto 2025 family replication (concordance, not independent: register T15 / 858; ledger §6ie–§6ip)
 
 The chain uses Soto's own famCN (S1C), CAT v4 genes and gene universe, so it measures **concordance** with Soto, and
@@ -275,11 +283,14 @@ tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index
 # rule replays them (human chr16 catalog 358 s cold -> 0.9 s warm; gorilla families 225 s -> 0.6 s; byte-identical).
 tools/rustle_pipeline.sh catalog --bam READS.bam --fasta GENOME.fa --out run --inspect   # + edge tables, collapse stats
 tools/rustle_pipeline.sh cache-ls --out run                                               # what run.cache holds
-# bridge-aware regrouping (opt-in; bench/ASSEMBLY_POLISH.md 2026-09-29 addendum 3). On the BAMs and best-AS tables of
-# the 2026-09-25 runs, `assemble` writes the held-out products of docs/PREREG_f1_bridge_locus_2026-09-28.md (f1: gorilla
-# OR6737, KB3781) and docs/PREREG_f1v2_readshare_2026-09-29.md (f1v2: human A119b, testis) byte for byte: run.gtf, the
-# families input run.families.gtf and the side tables. Their FUSED counts are readthrough_eval `a.fused` on the latter.
-RUSTLE_BRIDGE_REGROUP=f1v2 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...
+# bridge-aware regrouping (bench/ASSEMBLY_POLISH.md 2026-09-29 addendum 3): f1v2 is THE DEFAULT since 2026-09-29 (the
+# user's decision), so the line above already runs it. On the BAMs and best-AS tables of the 2026-09-25 runs, `assemble`
+# writes the held-out products of docs/PREREG_f1_bridge_locus_2026-09-28.md (f1: gorilla OR6737, KB3781) and
+# docs/PREREG_f1v2_readshare_2026-09-29.md (f1v2: human A119b, testis) byte for byte: run.gtf, the families input
+# run.families.gtf and the side tables. Their FUSED counts are readthrough_eval `a.fused` on the latter.
+RUSTLE_BRIDGE_REGROUP=f1 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...   # the F1 arm
+# THE PRE-FLIP PIPELINE, byte for byte (every driver number in this file dated before 2026-09-29 was measured this way):
+RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...
 ```
 
 ## Tandem-copy simulations: what the aligner and the pipeline do with near-identical adjacent copies (§6zg, 2026-09-24)

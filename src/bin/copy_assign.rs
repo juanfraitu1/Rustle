@@ -368,10 +368,14 @@ struct Args {
     /// `fusion_junction` attributes. Runs LAST, on the final lines; no line added, removed or moved, chains unchanged.
     /// Writes `<out>.families.gtf` (the GTF without the bridges: the families input), `<out>.bridge_junctions.tsv`
     /// (every structural junction with its evidence), `<out>.bridges.tsv` (f1v2: each bridge's reads and decision)
-    /// and `params.tsv` rows. Needs `--assemble-only` and one region per contig. Default off = byte-identical
-    /// products. Driver: `RUSTLE_BRIDGE_REGROUP=f1|f1v2`.
-    #[arg(long, default_value = "off", value_parser = ["off", "f1", "f1v2"])]
-    bridge_regroup: String,
+    /// and `params.tsv` rows. Needs `--assemble-only` and one region per contig.
+    /// **Default `f1v2` under `--assemble-only`** (2026-09-29, the user's decision on the F1v2 held-out Outcome and
+    /// its family-level side result, `docs/PREREG_o1_cover_growth_2026-09-29.md` Outcome); `--bridge-regroup off`
+    /// restores the 2026-09-25 products byte for byte (no families GTF, no side tables, no `params.tsv` rows).
+    /// Outside `--assemble-only`, or with `--families`, the default is off and an explicit arm is refused.
+    /// Driver: `RUSTLE_BRIDGE_REGROUP=off|f1|f1v2` (unset = f1v2).
+    #[arg(long, value_parser = ["off", "f1", "f1v2"])]
+    bridge_regroup: Option<String>,
 
     /// §6r2 ABSOLUTE FLOOR EXEMPTION for `--polish-isoform-fraction`: never drop a transcript carrying at
     /// least this many reads for being a minor fraction of its locus. Distinct from
@@ -5013,6 +5017,32 @@ fn tes_apply(lines: Vec<String>, out: &TesOutcome) -> Vec<String> {
     res
 }
 
+/// `--bridge-regroup`'s effective arm. Unset = `f1v2` where it can run (`--assemble-only` without `--families`; the
+/// default since 2026-09-29) and off elsewhere. An explicit arm is refused where it cannot run, and any arm, default
+/// included, is refused with `--gtf-regroup`, whose split it contains: `--bridge-regroup off --gtf-regroup` is RG3.
+fn resolve_bridge_mode(args: &Args) -> Result<Option<rustle::vg_family::bridge_regroup::Mode>> {
+    use rustle::vg_family::bridge_regroup::Mode;
+    let can_run = args.assemble_only && args.families.is_none();
+    let (mode, label) = match args.bridge_regroup.as_deref() {
+        Some(arm) => (Mode::parse(arm)?, ""),
+        None => (if can_run { Some(Mode::F1v2) } else { None }, " (the default)"),
+    };
+    if let Some(m) = mode {
+        anyhow::ensure!(
+            can_run,
+            "--bridge-regroup {} regroups the --assemble-only GTF: set it with --assemble-only and without --families",
+            m.as_str()
+        );
+        anyhow::ensure!(
+            !args.gtf_regroup,
+            "--bridge-regroup {}{label} already splits every gene_id as --gtf-regroup does (without a bridge its names \
+             are RG3's): pass one of them, or --bridge-regroup off with --gtf-regroup",
+            m.as_str()
+        );
+    }
+    Ok(mode)
+}
+
 fn main() -> Result<()> {
     let mut args = Args::parse();
     // Bound rayon's GLOBAL pool to --threads (the locus collapse's POA alignments use `par_iter`; the
@@ -5082,21 +5112,9 @@ fn main() -> Result<()> {
     if args.gtf_regroup {
         anyhow::ensure!(args.gtf, "--gtf-regroup needs the assembled GTF (--gtf or --assemble-only)");
     }
-    // `--bridge-regroup` reads its own evidence in the --assemble-only pass-1 reader and rewrites the emitted GTF
-    let bridge_mode = rustle::vg_family::bridge_regroup::Mode::parse(&args.bridge_regroup)?;
-    if bridge_mode.is_some() {
-        anyhow::ensure!(
-            args.assemble_only && args.families.is_none(),
-            "--bridge-regroup {} regroups the --assemble-only GTF: set it with --assemble-only and without --families",
-            args.bridge_regroup
-        );
-        anyhow::ensure!(
-            !args.gtf_regroup,
-            "--bridge-regroup {} already splits every gene_id as --gtf-regroup does (without a bridge its names are \
-             RG3's): pass one of them",
-            args.bridge_regroup
-        );
-    }
+    // `--bridge-regroup` reads its own evidence in the --assemble-only pass-1 reader and rewrites the emitted GTF;
+    // unset = f1v2 where it can run (the default since 2026-09-29), off elsewhere
+    let bridge_mode = resolve_bridge_mode(&args)?;
     // RUSTLE_READTHROUGH_JUNCTIONS (docs/PREREG_readthrough_ends_representatives_2026-09-25.md): parsed before any
     // read is touched, so a mistyped arm fails in the first second instead of running as the base arm.
     let rt_switch = rustle::vg_family::denovo_assemble::ReadthroughSwitch::from_env()?;
@@ -5211,11 +5229,13 @@ fn main() -> Result<()> {
     validate_no_overlapping_regions(&by_contig)?;
     // `--bridge-regroup`'s V1 counts every primary record once: two regions of one contig would both read a record
     // crossing their boundary
-    if bridge_mode.is_some() {
+    if let Some(mode) = bridge_mode {
         if let Some((c, v)) = by_contig.iter().find(|(_, v)| v.len() > 1) {
             anyhow::bail!(
-                "--bridge-regroup reads each contig's records once: give one region per contig (--genome-wide, \
-                 --region, or a --regions file naming each contig once); {c} has {} regions",
+                "--bridge-regroup {}{} reads each contig's records once: give one region per contig (--genome-wide, \
+                 --region, or a --regions file naming each contig once), or pass --bridge-regroup off; {c} has {} regions",
+                mode.as_str(),
+                if args.bridge_regroup.is_none() { " (the default)" } else { "" },
                 v.len()
             );
         }
@@ -8843,6 +8863,32 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// `--bridge-regroup` unset is `f1v2` under `--assemble-only` (the default since 2026-09-29), off elsewhere;
+    /// `off` is explicit, and `--gtf-regroup` needs `off`.
+    #[test]
+    fn bridge_regroup_defaults_to_f1v2_under_assemble_only_only() {
+        use clap::Parser;
+        use rustle::vg_family::bridge_regroup::Mode;
+        let parse = |extra: &[&str]| {
+            super::Args::try_parse_from(
+                ["copy_assign", "--bam", "r.bam", "--fasta", "g.fa", "--out", "o"].iter().chain(extra.iter()),
+            )
+            .expect("parse")
+        };
+        let a = parse(&["--assemble-only", "--region", "c:1-2"]);
+        assert_eq!(a.bridge_regroup, None, "the flag itself has no default value");
+        assert_eq!(super::resolve_bridge_mode(&a).unwrap(), Some(Mode::F1v2));
+        assert_eq!(super::resolve_bridge_mode(&parse(&["--assemble-only", "--bridge-regroup", "off"])).unwrap(), None);
+        assert_eq!(super::resolve_bridge_mode(&parse(&["--assemble-only", "--bridge-regroup", "f1"])).unwrap(), Some(Mode::F1));
+        assert_eq!(super::resolve_bridge_mode(&parse(&["--gtf"])).unwrap(), None, "not the assemble-only GTF: off");
+        assert_eq!(super::resolve_bridge_mode(&parse(&["--assemble-only", "--families", "c.tsv"])).unwrap(), None);
+        let err = super::resolve_bridge_mode(&parse(&["--gtf", "--bridge-regroup", "f1v2"])).unwrap_err().to_string();
+        assert!(err.contains("--assemble-only"), "{err}");
+        let err = super::resolve_bridge_mode(&parse(&["--assemble-only", "--gtf-regroup"])).unwrap_err().to_string();
+        assert!(err.contains("f1v2 (the default)") && err.contains("--bridge-regroup off"), "{err}");
+        assert_eq!(super::resolve_bridge_mode(&parse(&["--assemble-only", "--gtf-regroup", "--bridge-regroup", "off"])).unwrap(), None);
+    }
+
     /// §6p8: build a tiny GTF and check both polish passes. Layout on chr1/+:
     ///  - LONG   2 introns, 9 reads   (the container)
     ///  - SHORT  1 intron  = LONG's first intron, 2 reads   -> ISM-dropped (2 < 9)

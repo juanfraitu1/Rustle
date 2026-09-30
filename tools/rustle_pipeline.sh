@@ -51,10 +51,14 @@
 #   RUSTLE_POLISH_TSS=tag|rescue|split adds `--polish-tss` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
-#   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off);
-#   RUSTLE_BRIDGE_REGROUP=f1|f1v2 adds `--bridge-regroup` to `assemble` and makes `families`, and `flag` without --gff,
-#     read PREFIX.families.gtf, the assembly without its bridge transcripts (bridges are relations, not loci, for
-#     every downstream stage; default unset = off, the same commands);
+#   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off; needs
+#     RUSTLE_BRIDGE_REGROUP=off, whose default contains RG3's split);
+#   RUSTLE_BRIDGE_REGROUP=off|f1|f1v2 sets `--bridge-regroup` on `assemble` (unset = f1v2, THE DEFAULT since 2026-09-29;
+#     off = the 2026-09-25 products, byte for byte). With f1 or f1v2, `families`, and `flag` without --gff, read
+#     PREFIX.families.gtf, the assembly without its bridge transcripts (bridges are relations, not loci, for every
+#     downstream stage); every stage derives the mode the same way (BRIDGE_MODE below);
+#   RUSTLE_MIN_COV_SHORTER=C sets `mcl_families --min-cov-shorter C` on `families` (unset = the binary's own default,
+#     0.70 since 2026-09-29, nothing passed; 0 = the 2026-09-25 edge weights);
 #   RUSTLE_FAMILY_CONTAINER=1 adds `--emit-container` to `families` (PREFIX.fam.container*.tsv; default unset = off).
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
@@ -134,26 +138,43 @@ esac
 # RUSTLE_GTF_REGROUP=1 (opt-in; unset or 0 = off, the same command): copy_assign --gtf-regroup, RG3 — after every polish
 # step, split a gene_id whose surviving transcripts share no same-strand exonic base (a dropped readthrough bridge, or
 # two pre-polish components that collided on one base tid); split-only, intron chains unchanged, the deeper piece keeps
-# the name and the others become <gene_id>.rg<k>. See its --help
+# the name and the others become <gene_id>.rg<k>. Exclusive with the bridge regroup below, whose default (f1v2) contains
+# this split: RUSTLE_GTF_REGROUP=1 needs RUSTLE_BRIDGE_REGROUP=off. See its --help
 case "${RUSTLE_GTF_REGROUP:-}" in
   ""|0) ;;
   1) POLISH="$POLISH --gtf-regroup" ;;
   *) echo "[rustle_pipeline] RUSTLE_GTF_REGROUP must be 0 or 1 (got '$RUSTLE_GTF_REGROUP')" >&2; exit 2 ;;
 esac
-# RUSTLE_BRIDGE_REGROUP=f1|f1v2 (opt-in; unset or off = off, the same commands): copy_assign --bridge-regroup. A transcript
-# that is the only link between two pieces of its gene_id, when reads end at a PAS inside its intron and other reads start
-# there at their own promoter (f1v2: and it carries fewer reads than each piece), becomes a relation `<gene_id>.fus<k>`
-# with `fusion_of`, and the pieces split as RUSTLE_GTF_REGROUP splits them (so the two are exclusive). `assemble` also
+# RUSTLE_BRIDGE_REGROUP=off|f1|f1v2 (unset = f1v2, THE DEFAULT since 2026-09-29 by the user's decision on the F1v2 held-out
+# Outcome and its family-level side result, docs/PREREG_o1_cover_growth_2026-09-29.md; off = the 2026-09-25 products,
+# byte for byte): copy_assign --bridge-regroup, passed explicitly by `assemble`. A transcript that is the only link
+# between two pieces of its gene_id, when reads end at a PAS inside its intron and other reads start there at their own
+# promoter (f1v2: and it carries fewer reads than each piece), becomes a relation `<gene_id>.fus<k>` with `fusion_of`,
+# and the pieces split as RUSTLE_GTF_REGROUP splits them (so the two are exclusive). With f1 or f1v2, `assemble` also
 # writes PREFIX.families.gtf, the GTF without the bridges, and `families` reads it, as the held-out runs did
 # (docs/PREREG_f1_bridge_locus_2026-09-28.md, docs/PREREG_f1v2_readshare_2026-09-29.md), as does `flag`'s scan of the
-# de novo loci (without --gff): a bridge is a relation, never a locus to scan. See its --help
+# de novo loci (without --gff): a bridge is a relation, never a locus to scan. See its --help.
+# BRIDGE_MODE is the one derivation every stage uses (assemble's flag, families' and flag's input, the guard below).
+BRIDGE_MODE=${RUSTLE_BRIDGE_REGROUP:-f1v2}
 FAM_GTF=$OUT.gtf
-case "${RUSTLE_BRIDGE_REGROUP:-}" in
-  ""|off) ;;
+case "$BRIDGE_MODE" in
+  off) ;;
   f1|f1v2)
-    [ "${RUSTLE_GTF_REGROUP:-0}" = 0 ] || { echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP already splits every gene_id as RUSTLE_GTF_REGROUP does: set one of them" >&2; exit 2; }
-    POLISH="$POLISH --bridge-regroup $RUSTLE_BRIDGE_REGROUP"; FAM_GTF=$OUT.families.gtf ;;
+    [ "${RUSTLE_GTF_REGROUP:-0}" = 0 ] || { echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP=$BRIDGE_MODE (unset = f1v2) already splits every gene_id as RUSTLE_GTF_REGROUP does: set RUSTLE_BRIDGE_REGROUP=off with RUSTLE_GTF_REGROUP=1" >&2; exit 2; }
+    FAM_GTF=$OUT.families.gtf ;;
   *) echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP must be off, f1 or f1v2 (got '$RUSTLE_BRIDGE_REGROUP')" >&2; exit 2 ;;
+esac
+POLISH="$POLISH --bridge-regroup $BRIDGE_MODE"
+# RUSTLE_MIN_COV_SHORTER=C (unset = nothing passed: the binary's default, 0.70 since 2026-09-29 by the user's decision,
+# register 1006/1014; 0 = the 2026-09-25 edge weights, byte-identical to every catalog built before the flip):
+# mcl_families --min-cov-shorter C, the §6x4 containment escape — a pair whose coverage of the LONGER locus fails also
+# passes at coverage >= C of the SHORTER locus's exonic length, with that coverage as its edge weight. Known regressions
+# (register 1007/1009): NPIP in GUIDED mode, Soto F .833 -> .800; semi-guided SD-region nodes, precision .973 -> .833.
+FAM_COV=()
+case "${RUSTLE_MIN_COV_SHORTER:-}" in
+  "") ;;
+  *) [[ "$RUSTLE_MIN_COV_SHORTER" =~ ^(0|1|1\.0+|0?\.[0-9]+)$ ]] || { echo "[rustle_pipeline] RUSTLE_MIN_COV_SHORTER must be a number in [0, 1] (got '$RUSTLE_MIN_COV_SHORTER')" >&2; exit 2; }
+     FAM_COV=(--min-cov-shorter "$RUSTLE_MIN_COV_SHORTER") ;;
 esac
 # RUSTLE_FAMILY_CONTAINER=1 (opt-in; unset or 0 = off, the same command): mcl_families --emit-container, the container
 # of each family member's extra pieces (docs/PREREG_fusion_container_sim_2026-09-28.md §1): every clustered locus's
@@ -167,14 +188,15 @@ case "${RUSTLE_FAMILY_CONTAINER:-}" in
   *) echo "[rustle_pipeline] RUSTLE_FAMILY_CONTAINER must be 0 or 1 (got '$RUSTLE_FAMILY_CONTAINER')" >&2; exit 2 ;;
 esac
 say() { echo "[rustle_pipeline] $(date +%H:%M:%S) $*" >&2; }
-# The de novo loci a stage reads ($FAM_GTF: PREFIX.families.gtf with RUSTLE_BRIDGE_REGROUP, else PREFIX.gtf) must come
-# from the assembly on disk: set, PREFIX.families.gtf must exist and be no older than PREFIX.gtf; unset, a newer
-# PREFIX.families.gtf means the GTF was assembled with the variable and its bridges would be read as loci. $1 = the stage.
+# The de novo loci a stage reads ($FAM_GTF: PREFIX.families.gtf when BRIDGE_MODE is f1 or f1v2, else PREFIX.gtf) must
+# come from the assembly on disk: with a bridge mode (the default), PREFIX.families.gtf must exist and be no older than
+# PREFIX.gtf; with off, a newer PREFIX.families.gtf means the GTF was assembled with a bridge mode and its bridges would
+# be read as loci. $1 = the stage.
 fam_gtf_guard() {
   if [ "$FAM_GTF" != "$OUT.gtf" ]; then
-    [ -s "$FAM_GTF" ] && [ ! "$FAM_GTF" -ot "$OUT.gtf" ] || { echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP is set but $FAM_GTF is missing or older than $OUT.gtf: run assemble with it" >&2; exit 2; }
+    [ -s "$FAM_GTF" ] && [ ! "$FAM_GTF" -ot "$OUT.gtf" ] || { echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP=$BRIDGE_MODE (unset = f1v2) but $FAM_GTF is missing or older than $OUT.gtf: run assemble with it, or set RUSTLE_BRIDGE_REGROUP=off for $1 on a GTF assembled with off" >&2; exit 2; }
   elif [ -e "$OUT.families.gtf" ] && [ ! "$OUT.families.gtf" -ot "$OUT.gtf" ]; then
-    echo "[rustle_pipeline] $OUT.gtf was assembled with RUSTLE_BRIDGE_REGROUP (its bridges are relations, not loci): set it for $1 too" >&2; exit 2
+    echo "[rustle_pipeline] $OUT.gtf was assembled with a bridge mode (its bridges are relations, not loci) but RUSTLE_BRIDGE_REGROUP=off: unset it, or set assemble's mode, for $1 too" >&2; exit 2
   fi
 }
 
@@ -212,8 +234,11 @@ stage_families() {
   if [ ${#FAM_EXTRA[@]} -gt 0 ] && [[ "$help" != *'--emit-container'* ]]; then
     echo "[rustle_pipeline] RUSTLE_FAMILY_CONTAINER=1 but $BIN/mcl_families predates --emit-container; rebuild it" >&2; exit 2
   fi
+  if [ ${#FAM_COV[@]} -gt 0 ] && [[ "$help" != *'--min-cov-shorter'* ]]; then
+    echo "[rustle_pipeline] RUSTLE_MIN_COV_SHORTER is set but $BIN/mcl_families predates --min-cov-shorter; rebuild it" >&2; exit 2
+  fi
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$THREADS" \
-    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" "${FAM_EXTRA[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
+    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_COV[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
     say "families: $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies (locus representatives) in $(awk 'NR>1' "$OUT.fam.copies.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.fam.copies.tsv)"

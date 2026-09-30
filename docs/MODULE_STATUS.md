@@ -23,7 +23,7 @@ also left *retracted findings* in shipped docstrings (the `RUSTLE_LOCUS_EXON_UNI
 "broke up the component fusing 40 of 83 Soto families", which memory records as *"a 40-family blob that
 does not exist in pipeline output; real worst fusion: 2"*).
 
-⭐ **Only 14 of 53 modules are reachable at defaults.** `TEST-ONLY` is not a
+⭐ **Only 14 of 53 modules are reachable at defaults** (2026-09-03; 16 rows after the 2026-09-29 flip below). `TEST-ONLY` is not a
 criticism — an idea that was built and left switched off is a legitimate outcome. The point is to be able
 to tell which is which without re-deriving it.
 
@@ -32,8 +32,8 @@ this file must list exactly the module set.
 
 | tag | count |
 |---|---|
-| **SHIPPED-DEFAULT** | 15 |
-| **OPT-IN** | 17 |
+| **SHIPPED-DEFAULT** | 16 |
+| **OPT-IN** | 16 |
 | **OTHER-BINARY** | 3 |
 | **REFUTED** | 1 |
 | **TEST-ONLY** | 0 |
@@ -54,7 +54,13 @@ this file must list exactly the module set.
 > three hash aliases, the bam module to `open_bam` + `exons_from_cigar`, and util was deleted. Recover any of it from tag
 > `notebook-2026-09-24`. Counts below were recomputed from the remaining rows.
 
-## SHIPPED-DEFAULT (15)
+> **2026-09-29 default flips (the user's decision; `bench/ASSEMBLY_POLISH.md` addendum 3, `REPRODUCE.md`):** `bridge_regroup.rs` moved from
+> OPT-IN to SHIPPED-DEFAULT (`copy_assign --assemble-only` now runs `--bridge-regroup f1v2`; `--bridge-regroup off` = the old
+> products), and `mcl_families --min-cov-shorter` (the §6x4 containment escape inside `annotation_families.rs`, OTHER-BINARY)
+> defaults to 0.70 instead of 0 (`--min-cov-shorter 0` = the old edge weights; known regressions: NPIP-guided Soto F .833 -> .800,
+> semi-guided precision .973 -> .833, register 1007/1009). Both old behaviours were proven byte-identical on human_testis.
+
+## SHIPPED-DEFAULT (16)
 
 Reachable from a shipped binary with **no env var and no non-default flag**. This is the method.
 
@@ -65,6 +71,7 @@ Reachable from a shipped binary with **no env var and no non-default flag**. Thi
 | `copy_assign_pipeline.rs` | - | MEASURED: assign_family_detailed is called unconditionally at denovo_pipeline.rs:2229 (Stage-1 of detect_and_assign, the function src/bin/copy_assign.rs:1567 drives); the module is imported wholesale at denovo_pipeline.rs:23-25 (b |
 | `copy_split.rs` | - | MEASURED: split_locus_copies is called unconditionally at denovo_pipeline.rs:2346 (the collapsed_copies count inside detect_and_assign, no enclosing flag check — contrast the flagged uses at :1393 under recover_collapsed_candidate |
 | `denovo_assemble.rs` | - | MEASURED: imported unconditionally by both flagship binaries — src/bin/copy_assign.rs:27-30 (assemble_gate, pass1_skeletons, reads_in_region, BamIndexCache, BamRead, GATE_MIN_READS) and used at src/bin/gw_family_catalog.rs:1006 (r |
+| `bridge_regroup.rs` | - (default `f1v2` under `--assemble-only` since 2026-09-29: src/bin/copy_assign.rs `bridge_regroup: Option<String>`, unset resolves to f1v2 in `resolve_bridge_mode`; `--bridge-regroup off` = the 2026-09-25 products; driver `RUSTLE_BRIDGE_REGROUP`, unset = f1v2) | MEASURED 2026-09-29: the only production calls (`bridge_regroup::run`, the evidence hooks in `stream_pass1_region` and `bridge_evidence_region`) sit behind `bridge_mode.is_some()` / `acc.bridge`, now `Some(F1v2)` on every `--assemble-only` run without `--families` and `None` (no file written, products byte-identical to the previous binary) with `off` or outside `--assemble-only`. A port of the frozen `bench/f1_bridge.py` (37ee8e77) and `f1v2.py` (b4e788ad): GTF, families GTF and side tables byte-identical to their held-out outputs (`docs/PREREG_f1_bridge_locus_2026-09-28.md`, `docs/PREREG_f1v2_readshare_2026-09-29.md`). **Default flipped 2026-09-29 by the user's decision** (was OPT-IN, `default_value = "off"`): F1v2 EFFECTIVE held out on both human libraries, and its families beat BASE on every Compara metric on both human substrates (`docs/PREREG_o1_cover_growth_2026-09-29.md` Outcome, the side result). Proven on human_testis: driver `RUSTLE_BRIDGE_REGROUP=off` = the 3007c3d4 build's default products byte for byte; the new default = the port's `f1v2` products. |
 | `denovo_pipeline.rs` | - | MEASURED: it IS the driver both flagships call — src/bin/gw_family_catalog.rs:19 imports it and src/bin/copy_assign.rs:34 imports detect_and_assign/catalog_overlaps/DenovoConfig/FamilyAssignment, with detect_and_assign invoked at  |
 | `family_detect.rs` | - | MEASURED: denovo_pipeline.rs:3690 calls `collapse_loci_span_aware(&transcripts, &cfg.detect)` in the final unconditional `else` branch of the rep-selection chain (the three earlier branches are the env-gated RUSTLE_LOCUS_EXON_UNIO |
 | `shared_definition.rs` | OPT-IN | MEASURED: reached only from denovo_pipeline.rs when `RUSTLE_SHARED_DEFINITION` is set (shared_definition::enabled()); unset leaves the catalog byte-identical. Read-isoform widening (ISOFORM_MIN_READS = 5) is ON inside that path by default, off with `RUSTLE_SD_READ_ISOFORM=0` (ledger 6m0). |
@@ -76,14 +83,13 @@ Reachable from a shipped binary with **no env var and no non-default flag**. Thi
 | `readonly_copy_number.rs` | - for the chi_h leg. The depth_cn leg is gated by `--lambda-global` (src/bin/copy_assign.rs:322 doc, consumed  | MEASURED: src/bin/copy_assign.rs:1983 calls chi_h_with_junctions in the unconditional famcn_rows.push loop; src/bin/copy_assign.rs:1354 comments the table as "always emitted" and copy_assign.rs:2071 writes <out>.famcn_readonly.tsv |
 | `rescue_pipeline.rs` | - (no flag, no env var). Suppressed only when copy_assign is run with --families (src/bin/copy_assign.rs:452,  | MEASURED: thin_loci at src/rustle/vg_family/denovo_pipeline.rs:2175 and rescue_thin_loci_iterative at :2176, inside detect_and_assign's per-family `for cf in colocated` loop (prod; test mod starts at denovo_pipeline.rs:7362); dete |
 
-## OPT-IN (17)
+## OPT-IN (16)
 
 Built and wired, but behind a flag that **defaults off**. An arm, not the method — always name the flag when reporting a result from one.
 
 | module | gate | deciding evidence |
 |---|---|---|
 | `run_cache.rs` | RUSTLE_CACHE_DIR (unset = nothing read or written) | MEASURED 2026-09-24: `gw_family_catalog` caches the collapsed representatives (`reps/<key>/`) and the E_r all-vs-all PAF (`paf/<key>/`); a warm run is byte-identical to a cold run and to a run without the cache (gorilla NC_073244.2, human chr16). 2026-09-28: the families PAF (`mcl_families --from-gtf`, key `rustle families paf v2`) is keyed on a 128-bit hash of the loci FASTA taken while it is written and replayed by hard link from a PINNED entry (mtime/inode/sampled-content pins; `RUSTLE_CACHE_VERIFY=1` full re-hash); no cache / cold / warm byte-identical (gorilla NC_073244.2, human_testis, chimp_PTR). |
-| `bridge_regroup.rs` | `--bridge-regroup f1` or `f1v2` (src/bin/copy_assign.rs, `#[arg(long, default_value = "off")]`; needs `--assemble-only`); driver `RUSTLE_BRIDGE_REGROUP` | MEASURED 2026-09-29: the only production calls (`bridge_regroup::run`, the evidence hooks in `stream_pass1_region` and `bridge_evidence_region`) sit behind `bridge_mode.is_some()` / `acc.bridge` (`None` unless set); off, no file is written and every product is byte-identical to the previous binary. A port of the frozen `bench/f1_bridge.py` (37ee8e77) and `f1v2.py` (b4e788ad): GTF, families GTF and side tables byte-identical to their held-out outputs (`docs/PREREG_f1_bridge_locus_2026-09-28.md`, `docs/PREREG_f1v2_readshare_2026-09-29.md`). |
 | `family_container.rs` | `--emit-container` (src/bin/mcl_families.rs, `#[arg(long, default_value_t = false)]`; needs `--from-gtf`); driver `RUSTLE_FAMILY_CONTAINER=1` | MEASURED 2026-09-28: the only production call (`family_container::run`) sits inside `if args.emit_container {` in mcl_families; off, no file is written and every product is byte-identical. A port of the frozen `bench/family_container.py` (sha1 e197ccb3, `docs/PREREG_fusion_container_sim_2026-09-28.md` §1 + Amendment 1): its 20 unit tests ported, and the three tables byte-identical to the script on its fixtures and on real families runs. |
 | `absent_copy.rs` | --absent-copies (src/bin/copy_assign.rs:255-256, default_value_t = false); second route --vg-realign (src/bin/ | MEASURED: the only production call to absent_copy::admit_candidate is src/rustle/vg_family/denovo_pipeline.rs:2252, guarded by `if absent_copies {` at denovo_pipeline.rs:2233; the second entry admit_novel_pools (denovo_pipeline.rs |
 | `collapse_enumerate.rs` | --collapse-enumerate (src/bin/gw_family_catalog.rs:177-178, default_value_t = false) or env RUSTLE_COLLAPSE_EN | MEASURED: `if cfg.collapse_enumerate {` at denovo_pipeline.rs:3852 guards the readmit_locus call at :3853; the enclosing branch at :3841 requires collapse_enumerate // collapse_expressed // dna_family_fallback, and DenovoConfig::d |

@@ -1,6 +1,6 @@
 //! ⭐ BRIDGE-AWARE REGROUPING of the assembled GTF: `copy_assign --assemble-only --bridge-regroup f1|f1v2`.
 //!
-//! **STATUS:** OPT-IN  (docs/MODULE_STATUS.md; `copy_assign --bridge-regroup`, default `off`, `--assemble-only` only; driver `RUSTLE_BRIDGE_REGROUP=f1|f1v2`)
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; `copy_assign --bridge-regroup`, default `f1v2` under `--assemble-only` since 2026-09-29, `off` = the 2026-09-25 products; driver `RUSTLE_BRIDGE_REGROUP=off|f1|f1v2`, unset = f1v2)
 //!
 //! The port of two frozen post-processors of the emitted GTF: **F1** = `bench/f1_bridge.py --mode full` (sha1
 //! 37ee8e77, `docs/PREREG_f1_bridge_locus_2026-09-28.md` §1) and **F1v2** = F1 filtered by `f1v2.py --rule min` (sha1

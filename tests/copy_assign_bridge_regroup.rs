@@ -3,8 +3,9 @@
 //! Gene X's reads end at a canonical PAS inside the intron [1251, 2200] that a 3-read bridge B skips on its way to
 //! gene Y, whose reads start inside that intron at their own promoter. The assembler emits X, B and Y under one
 //! `gene_id`; `--bridge-regroup` splits X and Y and keeps B as a relation. The frozen `bench/f1_bridge.py` (37ee8e77)
-//! and `f1v2.py` (b4e788ad), run on the flag-off GTF of this fixture, write exactly the files asserted here
-//! (checked 2026-09-29).
+//! and `f1v2.py` (b4e788ad), run on the `--bridge-regroup off` GTF of this fixture, write exactly the files asserted
+//! here (checked 2026-09-29). `f1v2` is the default since 2026-09-29: `off` is passed explicitly wherever the fused
+//! locus is wanted, and the default run is asserted equal to the explicit `f1v2` run.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -198,7 +199,7 @@ fn strip(line: &str) -> String {
 fn a_proven_bridge_is_split_off_and_kept_as_a_relation() {
     let dir = scratch("bridge");
     let fx = write_fixture(&dir, true, false);
-    let (o, off) = run(&dir, &fx, "off", &[]);
+    let (o, off) = run(&dir, &fx, "off", &["--bridge-regroup", "off"]);
     ok(&o);
     assert_eq!(genes(&read(&format!("{off}.gtf"))), pairs(&[(X, G), (B, G), (Y, G)]), "the fused locus");
     for ext in ["families.gtf", "bridge_junctions.tsv", "bridges.tsv"] {
@@ -244,6 +245,14 @@ fn a_proven_bridge_is_split_off_and_kept_as_a_relation() {
          DN_c1_1000_2\tc1\t1251\t2200\t+\t1\t3\t3\t1\t5\t5\t1\t4\t4\t0.4286\tTrue\tDN_c1_1000_4\n"
     );
 
+    // the default (no flag) is f1v2 since 2026-09-29: every product of the explicit arm, byte for byte
+    let (o, def) = run(&dir, &fx, "default", &[]);
+    ok(&o);
+    for ext in ["gtf", "families.gtf", "bridge_junctions.tsv", "bridges.tsv", "params.tsv"] {
+        assert_eq!(read(&format!("{def}.{ext}")), read(&format!("{v2}.{ext}")), "{ext}: the default is f1v2");
+    }
+    assert!(String::from_utf8_lossy(&o.stderr).contains("BRIDGE REGROUP (f1v2)"), "the default logs its arm");
+
     // the buffered reader (its own indexed evidence pass) decides the same
     let (o, buf) = run(&dir, &fx, "buf", &["--bridge-regroup", "f1", "--materialize-reads"]);
     ok(&o);
@@ -260,9 +269,9 @@ fn a_proven_bridge_is_split_off_and_kept_as_a_relation() {
 fn without_a_pas_there_is_no_bridge_and_the_names_are_rg3s() {
     let dir = scratch("no_pas");
     let fx = write_fixture(&dir, false, true);
-    let (o, off) = run(&dir, &fx, "off", &["--assembly-polish", "mono"]);
+    let (o, off) = run(&dir, &fx, "off", &["--assembly-polish", "mono", "--bridge-regroup", "off"]);
     ok(&o);
-    let (o, rg3) = run(&dir, &fx, "rg3", &["--assembly-polish", "mono", "--gtf-regroup"]);
+    let (o, rg3) = run(&dir, &fx, "rg3", &["--assembly-polish", "mono", "--gtf-regroup", "--bridge-regroup", "off"]);
     ok(&o);
     let (o, f1) = run(&dir, &fx, "f1", &["--assembly-polish", "mono", "--bridge-regroup", "f1"]);
     ok(&o);
@@ -285,6 +294,13 @@ fn bridge_regroup_is_refused_where_it_cannot_run() {
     let err = |o: &Output| String::from_utf8_lossy(&o.stderr).to_string();
     let (o, _) = run(&dir, &fx, "both", &["--bridge-regroup", "f1", "--gtf-regroup"]);
     assert!(!o.status.success() && err(&o).contains("pass one of them"), "{}", err(&o));
+    // the default arm (f1v2) contains --gtf-regroup's split too: RG3 alone needs an explicit off
+    let (o, _) = run(&dir, &fx, "rg3_alone", &["--gtf-regroup"]);
+    assert!(
+        !o.status.success() && err(&o).contains("f1v2 (the default)") && err(&o).contains("--bridge-regroup off"),
+        "{}",
+        err(&o)
+    );
     let regions = dir.join("regions.txt");
     std::fs::write(&regions, "c1:1-1500\nc1:1501-3000\n").unwrap();
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))

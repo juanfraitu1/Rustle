@@ -39,14 +39,22 @@ The default is:
 1. **Reads → loci.** `tools/rustle_pipeline.sh assemble`: `copy_assign --assemble-only --genome-wide
    --assembly-junctions strict` + the polish flags, from primary alignments plus secondary alignments scoring ≥ 98% of
    the read's genome-wide best alignment score (`RUSTLE_GTF_SECONDARY_AS_RATIO=0.98` with the `as_table` best-AS
-   table; register 1060). A locus is one `gene_id` of the assembled GTF.
+   table; register 1060). Since 2026-09-29 the assembly ends with the bridge-aware regrouping `--bridge-regroup f1v2`
+   (the user's decision; `bench/ASSEMBLY_POLISH.md` addendum 3): a readthrough transcript that is the only link
+   between two read-proven pieces of its `gene_id` and carries fewer reads than each becomes a `fusion_of` relation,
+   and the pieces split. A locus is one `gene_id` of `PREFIX.families.gtf`, the assembled GTF without those bridges
+   (`RUSTLE_BRIDGE_REGROUP=off`: one `gene_id` of `PREFIX.gtf`, the 2026-09-25 rule).
 2. **Locus → representative: the positional exon sum.** The locus's representative is the transcript with the most
    reads (ties: the longer span). Its exon coordinates come from the reads; its bases from the genome ("exon-sum:
    the reference bases at the candidate's exon ranges", `docs/PSEUDOCODE_2026-09-08.md`). Loci whose exon unions
    overlap are folded into one node.
 3. **Representatives → families.** `tools/rustle_pipeline.sh families` = `mcl_families --from-gtf --min-exonic-bp 1
    --min-shared-exon-frac 0.60`: all-vs-all of the loci's genomic spans (`minimap2 -x asm20 -c -X -N 50 -p 0.1
-   --secondary=yes`); an edge needs ≥ 300 bp at ≥ 70% identity, coverage ≥ 0.30 of the longer locus's exonic length,
+   --secondary=yes`); an edge needs ≥ 300 bp at ≥ 70% identity, coverage ≥ 0.30 of the longer locus's exonic length
+   — or, since 2026-09-29, ≥ 0.70 of the SHORTER locus's exonic length, which is then the edge's coverage weight
+   (`--min-cov-shorter 0.70`, the §6x4 containment escape, register 1006/1014; the user's decision;
+   `--min-cov-shorter 0` = the 2026-09-25 rule; known regressions: NPIP-guided Soto F .833 → .800, semi-guided
+   precision .973 → .833, register 1007/1009) —
    exonic bases on both sides, and one record joining exons to exons over ≥ 60% of the smaller locus's exonic length
    (`annotation_families.rs`); Markov clustering, inflation 2.8; families of ≥ 2 loci. Nucleotide only.
 4. **The same families feed copy assignment.** With `--emit-units` the stage writes the copy table
