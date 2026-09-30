@@ -38,7 +38,7 @@ import csv
 import json
 import os
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "soto"))
@@ -68,6 +68,57 @@ def components_over(edges, nodes):
 
 def is_pseudo(bt):
     return "pseudogene" in bt
+
+
+def bipartite(clean, pred, universe, reverse=False, keep_fams=None):
+    """One-to-one maximum-overlap matching of our families to Soto's (Hungarian, scipy), as `bipartite_score` in
+    soto_replication.py: Soto families = clean non-Unassigned members over `universe`; ours = our labels over the same
+    universe (only `keep_fams`, when given: a filtered-away family is not a family). Returns ({soto family: (our label or None, shared, soto size, our size)}, summary). `reverse` feeds our
+    families in the opposite order: sensitivity cannot change, precision can (ties), so the caller reports both."""
+    import numpy as np
+    from scipy.optimize import linear_sum_assignment
+    tf, pf = defaultdict(set), defaultdict(set)
+    for g in universe:
+        t = clean.get(g, "")
+        if t and not t.startswith("Unassigned") and (keep_fams is None or t in keep_fams):
+            tf[t].add(g)
+        if pred.get(g):
+            pf[pred[g]].add(g)
+    tids, pids = sorted(tf), sorted(pf, reverse=reverse)
+    n = max(len(tids), len(pids))
+    ov = np.zeros((n, n), dtype=int)
+    pidx = {p: i for i, p in enumerate(pids)}
+    for j, t in enumerate(tids):
+        for g in tf[t]:
+            if pred.get(g) in pidx:
+                ov[pidx[pred[g]], j] += 1
+    rows, cols = linear_sum_assignment(-ov)
+    out = {}
+    for i, j in zip(rows, cols):
+        if j < len(tids):
+            p = pids[i] if i < len(pids) else None
+            out[tids[j]] = (p if p and ov[i, j] else None, int(ov[i, j]), len(tf[tids[j]]), len(pf[p]) if p and ov[i, j] else 0)
+    shared = sum(v[1] for v in out.values())
+    tsum = sum(v[2] for v in out.values())
+    psum = sum(v[3] for v in out.values() if v[0])
+    summ = dict(sens=round(shared / tsum, 4), prec=round(shared / psum, 4) if psum else 0.0,
+                macro_sens=round(sum(v[1] / v[2] for v in out.values()) / len(out), 4),
+                macro_prec=round(sum(v[1] / v[3] for v in out.values() if v[0]) / max(1, sum(1 for v in out.values() if v[0])), 4))
+    return out, summ
+
+
+def bip_class(m):
+    """Literal category of one Soto family under the one-to-one matching."""
+    p, sh, ts, ps = m
+    if not p:
+        return "unmatched"
+    if sh == ts == ps:
+        return "same"
+    if sh == ts:
+        return "ours_bigger"
+    if sh == ps:
+        return "ours_smaller"
+    return "different"
 
 
 def classify(keep, genes0, full0, edges0, sedef0, clean0, fam_all0, info, manual, cn_s1c0, cn_ours0, mad=1.0,
@@ -155,6 +206,13 @@ def classify(keep, genes0, full0, edges0, sedef0, clean0, fam_all0, info, manual
             manual=f in manual, exact_with_s1c_cn=frozenset(M) in s1c_sets,
             clean=sorted(M), extra=sorted(extra), extra_cause=extra_cause, seq_members=sorted(seq_union),
             ours_members=sorted(set().union(*(ours_f[l] for l in labs if l)) if placed else set())))
+    live_f = {r["family"] for r in out if r["cls"] != "gone"}
+    bm, bsum = bipartite(clean, pred_ours, universe, keep_fams=live_f)
+    _bm2, bsum2 = bipartite(clean, pred_ours, universe, reverse=True, keep_fams=live_f)
+    for r in out:
+        m = bm.get(r["family"])
+        r["bip"] = [m[1], m[2], m[3], bip_class(m)] if (m and r["cls"] != "gone") else None
+    bcount = Counter(r["bip"][3] for r in out if r["bip"])
     # anchors: the ladder's score, plus sequence-only nesting of Soto families with >= 2 clean members
     sc = sr.score(clean, pred_ours, universe)
     sc1 = sr.score(clean, pred_s1c, universe)
@@ -164,7 +222,8 @@ def classify(keep, genes0, full0, edges0, sedef0, clean0, fam_all0, info, manual
     live = [r for r in out if r["cls"] != "gone"]
     anchors = dict(ari=round(sc["ari"], 4), exact=sc["n_exact"], ari_s1c=round(sc1["ari"], 4), exact_s1c=sc1["n_exact"],
                    families=len(live), gone=len(out) - len(live), nest=nest, nest_n=len(multi),
-                   narrower=sum(r["narrower_than_homology"] for r in live), genes=len(keep))
+                   narrower=sum(r["narrower_than_homology"] for r in live), genes=len(keep),
+                   bip=dict(bsum, prec_alt=bsum2["prec"], macro_prec_alt=bsum2["macro_prec"], counts=dict(bcount)))
     return out, anchors, pred_seq, pred_ours
 
 
@@ -214,6 +273,8 @@ def main(argv=None):
         for r in rows:
             counts[r["cls"]] += 1
         assert counts["match"] == anc["exact"] or key, (counts["match"], anc["exact"])
+        print(f"[{label}] bipartite: sens {anc['bip']['sens']} prec {anc['bip']['prec']} (other tie order {anc['bip']['prec_alt']}); "
+              f"macro sens {anc['bip']['macro_sens']} prec {anc['bip']['macro_prec']}; {anc['bip']['counts']}", file=sys.stderr)
         print(f"[{label}] genes {anc['genes']}; ARI {anc['ari']:.4f} / {anc['exact']} exact (S1C CN {anc['ari_s1c']:.4f} / "
               f"{anc['exact_s1c']}); nest {anc['nest']}/{anc['nest_n']}; narrower {anc['narrower']}; "
               + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())), file=sys.stderr)
@@ -273,7 +334,7 @@ def main(argv=None):
             fams[r["family"]] = dict(
                 k=r["cls"], mc=r["miss_cause"], ec=r["extra_causes"], nm=r["n_members"], nc=r["n_clean"],
                 np=r["n_ours_pieces"], nx=r["n_extra"], nh=r["narrower_than_homology"], ns=r["seq_size"],
-                x1=r["exact_with_s1c_cn"], g=sorted(idx[g] for g in show if g in idx),
+                x1=r["exact_with_s1c_cn"], bm=r.get("bip"), g=sorted(idx[g] for g in show if g in idx),
                 xc={str(idx[g]): c for g, c in r["extra_cause"].items()})
         combos[key] = dict(label=label, anchor=anc, seq=[pred_seq.get(g, "") for g in gl],
                            our=[pred_ours.get(g, "") for g in gl], fams=fams)

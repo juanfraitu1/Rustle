@@ -153,3 +153,18 @@ pseudogenes. Another 19 are `our_edges`: SEDEF links survive where our exon link
 
   Every step loses on both halves. The misses come from our copy-number values (e.g. NBPF ID_397: ours 53-82 vs Soto 42.7-44.3),
   not from the cut.
+
+### 6.3 One-to-one matching (Hungarian, `bipartite` in soto_m2_families.py; evaluation only)
+
+Each live Soto family is paired with at most one of our families (maximum shared genes, scipy). Precision is identical under
+both tie orders in all four runs.
+
+| run | sensitivity (micro / macro) | precision (micro / macro) | same | ours bigger | ours smaller | different | no partner left |
+|---|---|---|---|---|---|---|---|
+| all genes | 0.935 / 0.935 | 0.975 / 0.982 | 411 | 20 | 36 | 5 | 19 |
+| no pseudogenes | 0.927 / 0.913 | 0.994 / 0.988 | 143 | 4 | 22 | 0 | 9 |
+| no lncRNAs | 0.936 / 0.947 | 0.973 / 0.981 | 383 | 19 | 34 | 5 | 12 |
+| neither | 0.929 / 0.925 | 0.996 / 0.993 | 113 | 2 | 18 | 0 | 6 |
+
+"No partner left" = the family of ours holding those genes is already paired with a bigger Soto family (e.g. NPIPB5 ID_153,
+GOLGA8B ID_79).
