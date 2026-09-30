@@ -93,3 +93,22 @@ python3 bench/soto_m2/soto_m2_audit.py narrower --geneset elig.tsv --full-genese
 Inputs outside the repository: `famcn_ours_allwssd.tsv` and `sd98_gene_exons.tsv`
 (`/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_replication/`), and `attributed_pairs.tsv`
 (09-28 scratchpad `soto_attr/`, copied to `m2data/` in the clone). Each runs in under 2 s.
+
+## 6. Every Soto family classified (`soto_m2_families.py`; table `docs/SOTO_M2_FAMILIES_2026-09-30.tsv`)
+
+Here "ours" means the reconciled recipe run with our own copy numbers. Anchors reproduce: ARI 0.9277 / 411 exact, and 0.9698 / 479 with S1C
+copy numbers. The script asserts that the match count equals the exact count.
+
+| class | families | cause |
+|---|---|---|
+| match | 411 | 81 of them are also narrower than their homology family, because both of us cut by copy number |
+| Soto smaller | 37 | extra genes are split off by Soto's copy numbers but not by ours (33); Soto left them unassigned (5) |
+| we miss · our rule | 24 | our copy numbers cut genes that sequence joins (24) |
+| we miss · Soto's table | 5 | Soto's own rule with Soto's own copy numbers cuts them too (4: ID_28, ID_113, ID_144, ID_270); "Manual merge" (1: ID_482) |
+| both | 14 | miss side: our copy numbers 9, our exon graph 3 (ID_62, ID_192, ID_347), Soto's rule 2 (ID_99, ID_163) |
+
+Of the 43 families we split, 36 are on our side (33 copy numbers, 3 exon graph) and 7 are on Soto's side (6 are not reproducible
+from their own rule, 1 is a hand merge). No Soto family lacks ≥ 98% exon evidence in every edge set (`soto_no_seq` = 0).
+142/491 Soto families are narrower than their sequence (homology) family. The page
+https://claude.ai/artifact/J12TB7ebNq3uxZ7aErd7q7 draws each family as a genome-browser view (tracks: genes, Soto, ours,
+homology, ≥ 98% exon links).
