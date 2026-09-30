@@ -190,9 +190,72 @@ python3 $S score --predicted rep_median.tsv          # --truth defaults to bench
 Expected (median / mean MAD): ARI **0.6959 / 0.6862**, exact 241/491 / 264/491, pair P/R/F1 0.841/0.595/0.697 /
 0.906/0.554/0.687; bipartite MICRO 0.784/0.709 / 0.812/0.721, MACRO 0.731/0.718 / 0.770/0.739, undetected 99/491 /
 88/491. `rep_{median,mean}.tsv` are byte-identical to the frozen `replicated_families_2334_{median,mean}_finalhuman.tsv`
-(re-verified 2026-09-24; `genesets` + `cluster` + `score` for both statistics take about 4 s). `famcn` (WSSD famCN
-at arbitrary intervals) needs pyBigWig (the miniforge python) or `bigBedToBed`; `score` needs scikit-learn, numpy
-and scipy.
+(re-verified 2026-09-29; `genesets` + `cluster` + `score` for both statistics take about 4 s). `famcn` (WSSD famCN
+at arbitrary intervals) needs pyBigWig (the miniforge python) or `bigBedToBed`; `score` uses scikit-learn's ARI when
+importable (a stdlib one otherwise), numpy and scipy.
+
+**Reconciled recipe (2026-09-29; `docs/PREREG_soto_reconciliation_2026-09-29.md`, register 1162-1166;
+`docs/SOTO_REPLICATION_STATUS_2026-09-28.md` §1).** Two choices of Soto's *released code* — map SD98 exons back
+(not regions) and gate each shared-exon pair by famCN MAD < 1 then grow families through coding genes (not the
+component split) — close the gap to their Table S1C. Both are opt-in flags; the chain above is unchanged.
+
+```sh
+S=bench/soto/soto_replication.py; W=/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_replication
+python3 $S genesets --out-eligible g1793.tsv --out-full g2334.tsv
+bash tools/rlock.sh heavy python3 $S edges --exon-mapback --cat-bed $W/cat_v4.bed --sd98-bed $W/sd98_v1.bed \
+    --genome $W/t2t-chm13-v1.0.fa.gz --threads 5 --out-shared exon_edges.tsv     # 12,231 edges; ~8 GB, 2-8 min
+#   (--mm2-index IDX.mmi reuses a `minimap2 -d` index; or skip the step: bench/soto/shared_exons_5154_exon_mapback.tsv
+#    is its frozen output, byte-identical on the 2026-09-29 re-run)
+python3 $S cluster --pair-mad --shared bench/soto/shared_exons_5154_exon_mapback.tsv --geneset g1793.tsv \
+    --full-geneset g2334.tsv --famcn bench/soto/soto_famCN_S1C.tsv --out pair_s1c.tsv --out-cover pair_s1c.cover.tsv
+python3 $S score --predicted pair_s1c.tsv
+python3 $S score --predicted pair_s1c.tsv --split bench/soto/soto_split_2026-09-29.tsv --half heldout --only pairs
+```
+Expected: ARI **0.9698**, exact **479/491**, pair P/R/F1 1.000/0.942/0.970, MICRO 1.000/0.980, MACRO 0.999/0.992,
+undetected 0/491, 504 predicted families (158 genes in ≥ 2, `pair_s1c.cover.tsv`); held-out **0.9681**, 263/266
+(DEV 0.9708, 216/225). The `gene_id`/`family_id` projection of `pair_s1c.tsv` over the 2,334 genes is byte-identical
+to the frozen reconcile partition. This is concordance with Soto's tables (famCN, universe and curated list are
+theirs; register 858 / 1085).
+
+**The ladder** — what the copy-number gate buys on the same edges (register 1169 / 1170; quote exact families and
+the ARI without FAM90A beside every famCN rung, the ALL-491 ARI moves ±0.035 on that one family):
+```sh
+bash tools/rlock.sh heavy /home/juanfra/miniforge3/bin/python3 $S famcn --interval exons --samples all \
+    --cat-bed $W/cat_v4.bed --sd98-bed $W/sd98_v1.bed --wssd-dir /mnt/linuxdisk/home/juanfraitu/winloci_data/soto_wssd \
+    --matrix famcn_matrix.npz --jobs 4 --out famcn_exons_268.tsv        # 269 tracks once, ~130 s, 0.6 GB; then instant:
+/home/juanfra/miniforge3/bin/python3 $S famcn --interval sd98  --samples all --matrix famcn_matrix.npz --out famcn_sd98_268.tsv
+/home/juanfra/miniforge3/bin/python3 $S famcn --interval exons --samples all --outlier '' --matrix famcn_matrix.npz --out famcn_exons_269.tsv
+/home/juanfra/miniforge3/bin/python3 $S famcn --interval exons --samples 10  --matrix famcn_matrix.npz --out famcn_exons_10.tsv
+python3 $S ladder --shared bench/soto/shared_exons_5154_exon_mapback.tsv --geneset g1793.tsv --full-geneset g2334.tsv \
+    --famcn-ours $W/famcn_ours_allwssd.tsv --famcn-ours10 $W/famcn_ours_all.tsv \
+    --split bench/soto/soto_split_2026-09-29.tsv --drop-family ID_356
+```
+Expected: `famcn_exons_268.tsv` = columns 1-4 of `$W/famcn_ours_allwssd.tsv`, `famcn_exons_269.tsv` column 2 = its
+`famCN_269`, `famcn_sd98_268.tsv` columns 2 and 5 = its `famCN_sotoiv` / `n_sotoiv_rows` (the paste of the three is
+byte-identical, sha1 11daa3ce), `famcn_exons_10.tsv` = `famcn_ours_all.tsv` modulo its CRLF line ends. Ladder (ARI all
+/ DEV / HELD-OUT, exact, ARI without ID_356): sequence only 0.7307 / .6418 / .8693, 345, 0.7057; our famCN 10
+samples exons 0.9198 / .9096 / .9317, 373, 0.9131; 268 samples exons 0.8855 / .9039 / .8610, 375, 0.9089; **268
+samples, Soto's interval 0.9277 / .9227 / .9343, 411, 0.9251**; S1C 0.9698 / .9708 / .9681, 479, 0.9650. (Rungs 2-3
+are 0.9197 / 0.8853 in the prereg, whose scorer ordered families sharing a smallest member by Python-set order;
+the module's order is deterministic and equals the frozen reconcile output; exact counts are identical.)
+
+**Assembly parCN** (`bench/soto/parcn_assembly.py`; `docs/PREREG_soto_parcn_assembly_2026-09-29.md`, register
+1171-1174; QuicK-mer2 itself needs ~52 GB, register 1167). From the frozen k-mer count tables (`docs/DATA.md`):
+```sh
+A=/mnt/linuxdisk/tmp/rustle_figures_dev/soto_parcn_asm
+P=bench/soto/parcn_assembly.py
+python3 $P analyze --regions $A/work/regions.tsv --q $A/work/Q.u64 --pos $A/work/pos.npz \
+    --counts CHM13=$A/counts/chm13noY.i32 HG002=$A/counts/hg002.i32 GGO=$A/counts/ggo_mat.i32+$A/counts/ggo_pat.i32 \
+             GGOmat=$A/counts/ggo_mat.i32 GGOpat=$A/counts/ggo_pat.i32 PTR=$A/counts/ptr.i32 PPY=$A/counts/ppy.i32 \
+    --edit-depth $A/counts/ed0.u32,$A/counts/ed1.u32,$A/counts/ed2.u32 --out-prefix parcn_      # ~45 s, 1.6 GB
+python3 bench/soto/test_parcn_assembly.py                                                        # 8 tests, ~6 s
+```
+Expected (`parcn_summary.json`, all 113 values equal to the frozen run): controls HG002 parCN = 2 for 297/299;
+resolved 1,163/1,831; **Fixed 321/322 = 0.997** within 0.5 of S1E (mean statistic 0.994), Nearly-Fixed 408/629 =
+0.649, Polymorphic 83/212 = 0.392, Spearman 0.414; H1 105/109 = 0.963, H2 105/132 = 0.795, H3 131/631 = 0.208,
+H4 105/118 = 0.890; F-cal 0.617 / 0.886. Regenerating the counts (`regions` → `kmers` → `count --meryl --exclude chrY`
+per genome → `edit-depth`) is heavy (a whole-genome meryl DB per assembly) and was not re-run; `count` and
+`edit-depth` are verified against a brute force by the unit tests.
 
 ## 6. Before proposing anything
 

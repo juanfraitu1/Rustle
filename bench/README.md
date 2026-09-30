@@ -30,16 +30,19 @@ inside the subcommands that use them.
 | `mcl_port.py` | library | `mcl(edges, inflation, prune, max_iter)` | Python MCL comparator. It is a thin shim over the bit-faithful Rust bin `mcl_port` (§6z3, r1047; `RUSTLE_MCL_PORT_BIN`). Since wave 7 its only importer is `lib.mcl` (its docstring's "eight bench scripts" is the wave-6 count). |
 | `layer_order/lattice_common.py` | library | paths (`--root` / `LO_ROOT`), THE LEVEL TESTS (`tests`), `UF` / `components` / `truss3`, E1 catalogs (`catalog_context`, `catalog_keys`, `membership`), Soto mapping (`soto_load`, `soto_map_gene`), the EXPR read count (`count_reads`, `IntervalIndex`), clause-5 `c_tree`, scorers (`score_counts`, `score_lo`, `bip_jaccard`) | Library of the 2026-09-16 NPIP/TBC1D3 layer-order and nested edge-test lattice study. It keeps its name and old exports because the off-repo `LAT/corrections_pass2/*.py` import it by path. |
 | `layer_order/npip_tbc1d3.py` | CLI, 11 stages + `all` | `expr-recount`, `corrected-tables`, `layer-order`, `lattice-edges`, `lattice-expr`, `lattice-levels`, `lattice-truth`, `lattice-filtration`, `lattice-check-c2`, `lattice-report`, `all [--with-check-c2]`; global `--root DIR` | Reproduces `LAYER_ORDER_NPIP_TBC1D3.md` and `NESTED_LATTICE_NPIP_TBC1D3.md` (L3 at 0.98, not the shipped 0.985). ⚠ The default root is the frozen results tree and every stage overwrites its outputs there, so point `--root` at a copy. It re-executes itself with `PYTHONHASHSEED=0`. Substrate: `docs/DATA.md`. |
-| `soto/soto_replication.py` | CLI, 6 subcommands | `genesets`, `edges`, `cluster`, `dennislab`, `famcn`, `score` | Soto 2025 family replication. This is CONCORDANCE with Soto, not independent evidence (register T15/858). The §6ip headline is ARI 0.6959, 49.1% exact (median MAD). Recipe: `REPRODUCE.md` §5a; substrate: `docs/DATA.md`. |
+| `soto/soto_replication.py` | CLI, 8 subcommands | `genesets`, `curate`, `edges` (`--exon-mapback`), `cluster` (`--pair-mad`), `dennislab`, `famcn` (`--interval exons\|sd98`), `score` (`--split`), `ladder` | Soto 2025 family replication. This is CONCORDANCE with Soto, not independent evidence (register T15/858). Headline since 2026-09-29 (register 1162): Soto's released code choices (exon map-back x per-pair MAD) give ARI 0.9698, 479/491 exact (held-out 0.9681); the literal recipe (§6ip, 0.6959 / 49.1%) is the unchanged default. Recipe: `REPRODUCE.md` §5a; substrate: `docs/DATA.md`. |
+| `soto/parcn_assembly.py` | CLI, 5 subcommands | `regions`, `kmers`, `count`, `edit-depth`, `analyze` | Assembly parCN / famCN: QuicK-mer2's k-mer rule counted exactly in complete assemblies (HG002, CHM13, three apes), because QuicK-mer2 itself needs ~52 GB here (register 1167). Fixed genes 321/322 within 0.5 of S1E; Nearly-Fixed 0.649; human-vs-ape calls 0.963 / 0.795 / 0.890 (register 1171-1174). `test_parcn_assembly.py` = 8 stdlib unit tests against a brute force (`python3 bench/soto/test_parcn_assembly.py`). |
 
-## Data tables (4)
+## Data tables (6)
 
 | file | what it is |
 |---|---|
 | `soto/soto_famCN_S1C.tsv` | Soto 2025 Table S1C (gene → family, famCN), the Soto truth. Read by `soto_replication.py`, `score.py heldout --soto` / `referee` / `edge-gap`, the layer-order Soto mapping, and `family_score --soto` (REPRODUCE). |
-| `soto/soto_parCN_S1E.tsv` | Soto 2025 Table S1E, with dual CHM13 v1.0/v2.0 coordinates: the liftover anchors for `edges` and `famcn`. Wave 7 restored it from `cd37ccb0^` (wave 3 had archived it). |
+| `soto/soto_parCN_S1E.tsv` | Soto 2025 Table S1E, with dual CHM13 v1.0/v2.0 coordinates: the liftover anchors for `edges` and `famcn`, and the parCN truth / regions of `parcn_assembly.py`. Wave 7 restored it from `cd37ccb0^` (wave 3 had archived it). |
 | `soto/acro_extra_anchors.tsv` | Extra acrocentric liftover anchors (`--extra-anchors`, §6il). Restored from `cd37ccb0^` in wave 7. |
 | `soto/shared_exons_2334_finalhuman.tsv` | The frozen §6ip `edges` output (4,192 shared-exon edges over 2,223 genes), so that `cluster` and `score` run from a clone. |
+| `soto/shared_exons_5154_exon_mapback.tsv` | The frozen `edges --exon-mapback` output (2026-09-29; 12,231 edges over all 5,154 SD98 genes, sha1 d2d36db0; re-run byte-identical), so that `cluster --pair-mad`, `score` and `ladder` reproduce the reconciled numbers from a clone. |
+| `soto/soto_split_2026-09-29.tsv` | The frozen DEV / HELD-OUT split of the 2,334 S1C genes (sha1 49bcbcfe; family-hash units of `PREREG_soto_losses_2026-09-29.md`; DEV 225 / HELD-OUT 266 families) for `score --split`. |
 
 ## Subcommands: what each was, and what it reproduces
 
@@ -75,6 +78,12 @@ inside the subcommands that use them.
 | `soto_replication.py dennislab` | `soto_cluster_dennislab_algorithm.py` | The Dennis-lab notebook algorithm (a parked arm). | §6if |
 | `soto_replication.py famcn` | `famcn_from_wssd.py` | WSSD read-depth famCN at arbitrary v2.0 intervals. | §6ie, §6il, §6io |
 | `soto_replication.py score` | `soto_score_against_truth.py` + `soto_bipartite_match_score.py` | ARI / exact / pair P-R-F1 (`--only pairs`) and bipartite family matching (`--only bipartite`) vs S1C. | §6ih-§6ip |
+| `soto_replication.py edges --exon-mapback` | scratch `soto_reconcile/frozen/build_exons.py` + `build_exon_pairs.py` | Soto's released exon map-back (samtools faidx → `minimap2 -c --end-bonus 5 --eqx -N 50 -p 0.5` → same-strand ≥ 0.99 exon cover) → edge TSV; byte-identical to the frozen table. | `PREREG_soto_reconciliation_2026-09-29`; register 1162, 1166 |
+| `soto_replication.py cluster --pair-mad` | scratch `soto_reconcile/frozen/recon_lib.py` `cluster_pair` | Soto's released family rule (per-pair MAD < 1, coding-gene closure, non-coding leaves = a cover; collapsed for scoring). | register 1162-1165 |
+| `soto_replication.py score --split/--half`, `--drop-family` | scratch `soto_losses/frozen/lib.py` `score_half` | One half of the frozen split; a truth family removed (the FAM90A sensitivity). | register 1158, 1170 |
+| `soto_replication.py famcn --interval exons\|sd98 --samples all` | scratch `soto_famcn269/{build_intervals,compute_matrix,write_table}.py` | Gene-level WSSD famCN over merged CAT exons or Soto's gene body ∩ SD98, every SGDP track minus their outlier, cached per-sample matrix; reproduces `famcn_ours_all{,wssd}.tsv`. | `PREREG_soto_famcn_allwssd_2026-09-29`; register 1168-1170 |
+| `soto_replication.py ladder` | scratch `soto_reconcile_verify/v_ourcn.py`, `soto_famcn269/run.py` | Sequence only 0.73 → our famCN (10 / 268 samples; exons / Soto's interval) 0.92 / 0.89 / 0.93 → S1C 0.97, with exact families and the ARI without FAM90A. | register 1169, 1170 |
+| `parcn_assembly.py regions` … `analyze` | scratch `soto_parcn_asm/{build_q,kc30.c,kn30.c,analyze}.py` | S1E regions + controls → 30-mers → exact counts per assembly (meryl or numpy; the C counters' tables are read as they are) → SPEC / FAM rule → parCN, famCN, clauses. | `PREREG_soto_parcn_assembly_2026-09-29`; register 1171-1174 |
 
 ## Old name → new command (every file wave 7 removed)
 

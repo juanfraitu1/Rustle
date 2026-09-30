@@ -1,6 +1,8 @@
 # Soto 2025 replication: status, gaps, and the "our families are different from theirs" evidence
 
-**Written 2026-09-28 to consolidate today's work and let the advisor conversation resume from a fixed point.**
+**Written 2026-09-28 to consolidate that day's work and let the advisor conversation resume from a fixed point;
+§1, §2 and §6 rewritten 2026-09-29 after the reconciliation** (`docs/PREREG_soto_reconciliation_2026-09-29.md`,
+`PREREG_soto_famcn_allwssd_2026-09-29.md`, `PREREG_soto_parcn_assembly_2026-09-29.md`; register rows 1158-1174).
 Context: the advisor doubts the pipeline because we have not reproduced Soto et al. 2025 (Cell) exactly. This
 file separates three things that were previously tangled: (1) how close the replication now gets on their own
 inputs, (2) exactly which parts of their pipeline we still cannot rebuild and why, and (3) direct, measured
@@ -9,98 +11,136 @@ was never the right bar.
 
 Full detail lives in the cited reports and memory files; this file is the map, not a replacement for them.
 
-## 1. Where the replication stands today
+## 1. Where the replication stands today (2026-09-29)
 
-Chain: `bench/soto/soto_replication.py` (`genesets` → `edges` → `cluster` → `score`), on Soto's own 2,334-gene
-universe and their published famCN truth (Table S1C, 491 multigene families).
+Chain: `bench/soto/soto_replication.py` (`genesets` → `edges --exon-mapback` → `cluster --pair-mad` → `score`;
+recipe and expected numbers in `REPRODUCE.md` §5a), on Soto's own genome (CHM13 v1.0), CAT v4 annotation,
+2,334-gene universe and their published famCN (Table S1C, 491 multigene families). Selection was on a frozen DEV
+half (225 families) and judged on the HELD-OUT half (266; `bench/soto/soto_split_2026-09-29.tsv`).
+
+**Headline.** ~~ARI 0.7096, 235 of 491 exact families (the literal recipe, 09-28)~~ → **ARI 0.9698, 479 of 491
+exact (97.6%), held-out 0.9681 / 263 of 266; pair precision 1.000, recall 0.942; bipartite MICRO 1.000 / 0.980;
+0 undetected families; 36 of the 38 flagship families (all 9 zebrafish-modelled pHSD families, all six NPIP
+families, TBC1D3, NOTCH2NL, FAM90A, USP17L, DUX4L) exact.** The difference from the old headline is **two named
+choices of Soto's released code that their STAR Methods prose does not state**:
+
+1. **Map SD98 exons back to the genome, not SD98 regions** (`A_SD98_regions.md` l.226-238: every CAT v4 exon fully
+   inside a merged autosomal SD98 region, `minimap2 -c --end-bonus 5 --eqx -N 50 -p 0.5`, shared exon = same-strand
+   ≥ 99% cover; 25,971 exons of 5,154 genes → 12,231 edges). Alone: +0.126 ARI / +103 exact from the literal recipe.
+2. **Apply MAD < 1 to each shared-exon pair, then grow families through coding genes** (`B_SD98_families.ipynb`
+   cells 4-11), not to connected components; a non-coding gene joins every family it pairs with, which is what
+   makes S1C a cover. Alone: +0.168 / +78; both together +0.260 / +244. Their loop as released is order-dependent
+   (`gene_cluster = list(set(...))` while scanning: 0.815-0.872 over 8 hash seeds); what reproduces S1C is the
+   full closure it evidently intends — a repair, disclosed (register 1165).
+
+Nothing else moves it: the MAD statistic (median vs mean) is invariant under the pair gate; SEDEF's own CIGARs, the
+union with them, the B1 self-overlap fix, a threshold-free segmentation split and median∧mean add nothing once the
+two choices are Soto's (best such cell held-out 0.889); minimap2 2.17 (theirs) vs 2.30 costs −0.001 / −9 exact; our
+reconstructed curation rule instead of their hand-curated list −0.021 / −23 exact (register 1163).
+
+### 1.1 The ladder: how much of the 0.97 is their published copy number
+
+Same edges, same rule, different copy numbers (`soto_replication.py ladder`; register 1169 / 1170). Exact families
+and the ARI without FAM90A are quoted beside every ARI because on this recipe the ALL-491 ARI swings ±0.035 (held-out
+±0.07) on whether that one 56-gene family (ID_356, famCN 31-42) stays whole — two of its 1,533 internal pairs sit at
+|ΔfamCN| = 2, the gate's edge (register 1170):
+
+| copy numbers fed to the pair gate | ARI all 491 (DEV / HELD-OUT) | exact | ARI without FAM90A |
+|---|---|---|---|
+| none (sequence only) | 0.7307 (.6418 / .8693) | 345 | 0.7057 |
+| our WSSD famCN, 10 SGDP samples, merged exons (`famcn_ours_all.tsv`, 08-01) | 0.9198 (.9096 / .9317) | 373 | 0.9131 |
+| our WSSD famCN, all 268 SGDP samples, merged exons | 0.8855 (.9039 / .8610) | 375 | 0.9089 |
+| **our WSSD famCN, 268 samples, Soto's interval (gene body ∩ SD98)** | **0.9277 (.9227 / .9343)** | **411** | 0.9251 |
+| S1C famCN (Soto's published values) | 0.9698 (.9708 / .9681) | 479 | 0.9650 |
+
+Reading: sequence alone reaches 0.73; our own copy numbers reach **0.93 / 411** once the interval is Soto's (their
+gene body ∩ SD98 pieces, not all exons: +36 exact families, Pearson with S1C 0.932 → 0.977; register 1169); the
+sample count is not the lever (the 10-sample table was a favourable draw that happens to keep FAM90A whole; 20
+random 10-sample draws span 0.870-0.923; register 1168 / 1170). **The last ~0.04 ARI / ~68 families are agreement
+with S1C's exact values** (their per-row aggregator `genotype_cn_parallel.py` is unreleased; the GFF3 gene feature
+vs the transcript span; whether their median includes the outlier sample they drop in code) — unmeasured, not
+searched.
+
+**Advisor-safe sentence** (from the reconciliation's independent verification, with the 09-29 correction of its
+"0.92" to the 268-sample figure): *"Using Soto et al.'s released code choices (exon map-back, a per-gene-pair
+copy-number test, and their family loop completed as it evidently intends) on their genome, annotation, gene list
+and published copy numbers reproduces 479 of 491 families (ARI 0.97, 0.97 held-out); sequence alone reaches 0.73
+and our own copy numbers 0.93 (411 exact), so the step to 0.97 is agreement with their published copy numbers, not
+an independent reconstruction."* It remains **concordance with Soto's own tables** (register 858 / 1085): the gene
+universe, the 71 curated genes and, on the last rung, famCN are theirs.
+
+### 1.2 The 09-28 "walls", re-measured — three of four were artefacts of our own readings (register 1164)
+
+The 09-28 edition of this section said *"cannot match by construction = their cover (409 cap), 12 families that
+break their own MAD rule, and 50 families with members no ≥ 98% alignment reaches"* plus an acrocentric assembly
+wall. Each is now wrong or gone; the old claim is struck through:
+
+| old claim (09-28) | what is true (09-29) |
+|---|---|
+| ~~"any partition scored against their full table caps at 409/491 exact because their families are a cover"~~ | A property of partition methods only. Soto's own pair-level rule MAKES the cover: EXON × PAIR puts 158 genes in ≥ 2 families, including all 149 of S1C's, and reproduces **481 of 491 families exactly with their cover genes included** (above the "cap"). |
+| ~~"12 Soto families violate their own MAD < 1 rule (0/12 can be emitted by that rule)"~~ | Their code never gates a family's MAD — the notebook only reports it (cell 14); the gate is per pair. 9 of the 12 are exact under EXON × PAIR (ID_28, 63, 113 remain, in the per-pair famCN residual). |
+| ~~"~50 families with a member no ≥ 98% alignment reaches (unreachable under any reading)"~~ | An artefact of the REGION reading: with region-level edges 73 families are cut at the alignment stage, with exon-level edges **2** — exactly S1C's two hand-merged families (ID_347 DUX4 / ID_482 UBTFL, `Family MAD = "Manual merge"`). |
+| ~~"a genuine assembly-version wall in the acrocentric chromosomes"~~ (the v2.0 → v1.0 liftover chain) | 0 on the native v1.0 chain: no liftover, no wall. It was a property of lifting a v2.0 SEDEF, not of the replication. |
+
+What remains non-exact (12 families): 7 the per-pair gate on S1C's one-value-per-gene famCN cannot join (ID_28, 63,
+99, 113, 144, 163, 270), the 2 manual merges, 3 scoring-collapse / singleton cases (ID_62, 192, 401). The 09-28 diff
+table below is kept for the record of the literal recipe; its causes no longer describe the headline.
+
+<details><summary>09-28 literal-recipe numbers (superseded; kept for the record)</summary>
 
 | input | ARI (median-MAD / mean-MAD) | exact families | pair P/R/F1 | bipartite MICRO P/R |
 |---|---|---|---|---|
-| v2.0 SEDEF + liftover (previous best, ledger §6ip) | 0.6959 / 0.6862 | 241/491 (49.1%) / 264/491 (53.8%) | .841/.595/.697 | .784/.709 |
-| **native v1.0 SEDEF with CIGARs** (`final_v1.bed`, today) | **0.6985 / 0.6894** | 241/491 / 264/491 (unchanged) | .837/**.601**/**.700** | .780/**.715** |
-| + reconstructed curation rule (below) | 0.6983 / 0.6886 | 240/491 / 263/491 | .835/.602/.700 | .781/.715 |
-| **Soto's literal recipe** on native v1.0 (getfasta → minimap2 `-c --end-bonus 5 --eqx -N50 -p0.5` → exons projected, `-f 0.99`) | **0.7096 / 0.7039** | 235/491 (47.9%) / 261/491 (53.2%) | .831/**.621**/**.711** | .784/.718 |
-| literal ∪ CIGAR-walk edges (diagnostic) | 0.7098 / 0.7053 | **243/491 / 269/491** | — | undetected 100 / 89 |
+| v2.0 SEDEF + liftover (ledger §6ip) | 0.6959 / 0.6862 | 241/491 / 264/491 | .841/.595/.697 | .784/.709 |
+| native v1.0 SEDEF with CIGARs (`final_v1.bed`) | 0.6985 / 0.6894 | 241/491 / 264/491 | .837/.601/.700 | .780/.715 |
+| + reconstructed curation rule | 0.6983 / 0.6886 | 240/491 / 263/491 | .835/.602/.700 | .781/.715 |
+| Soto's literal recipe on native v1.0 (regions mapped back, exons projected, `-f 0.99`) | 0.7096 / 0.7039 | 235/491 / 261/491 | .831/.621/.711 | .784/.718 |
 
-Full numbers: `soto_v1_cigar.md`, `soto_v1_literal.md`, `soto_cur_rule.md` (session scratchpad, paths in §5).
+Primary causes of the 256 non-exact families under that recipe (median arm): 127 over-merges the component split
+could not undo (~700 real ≥ 98% cross-family edges, register 1160), 105 missing edges (62 fragments at 90-98%
+identity, 49 "SEDEF row but no map-back hit" — not a `-N 50` loss, register 1161 — 17 via non-eligible members),
+24 copy-number split errors; the cover was not causal. The B1 self-overlap fix was not distinguishable from its
+null (register 1158); the minimum-segmentation split failed its no-harm clause on one family (register 1159).
+</details>
 
-**Reading:** switching to the real, native CHM13 v1.0 SEDEF calls with their actual CIGAR strings (rather than
-a lifted-over v2.0 SEDEF or a v1.0 SEDEF file without CIGARs) closes the residual gap from missing/liftover-
-dropped rows and gives a small, consistent recall gain (+.006 pair recall, +.006/.007 bipartite recall) at a
-small precision cost. The exact-family set does not change. **This is concordance with Soto's own numbers on
-their own inputs, not an independent replication** — the famCN truth we score against is theirs (register
-rows 858, 1085 flag this explicitly).
+## 2. What we still cannot rebuild, and why (five named gaps, 09-29 state)
 
-### 1.1 The literal recipe and the family-by-family diff (2026-09-28, `soto_v1_literal.md`, `soto_v1_diff.md`)
+1. **Manual curation (their step 2).** Their STAR Methods self-intersect SD98 transcripts, flag pairs with > 90%
+   positional overlap, then *manually* drop redundant / readthrough-fusion transcripts; 71 genes leave between our
+   reconstructed SD98 set (1,864 eligible) and their 1,793. `soto_replication.py curate` carries a one-condition
+   rule in their vocabulary (drop the lower-ranked side of a same-strand overlapping SD98 gene pair) at nested
+   held-out P/R ≈ 0.77 / 0.76 — but its family-score effect is not distinguishable from dropping the same number of
+   genes at random (`soto_cur_critique.md`), and at the reconciled cell **their list vs our rule costs −0.021 ARI /
+   −23 exact** (register 1163). We use their list (S1C `In Table S1 = Yes`); this is the one step that stays hand-made.
+2. **famCN — now recomputed, and the gap is quantified.** `famcn --interval sd98 --samples all` computes our own
+   WSSD famCN over Soto's interval from all 268 SGDP tracks (their outlier sample dropped, as their code does;
+   `famcn_ours_allwssd.tsv`, 5,154 genes). It reaches **0.93 / 411** in the recipe (§1.1); S1C's values reach
+   0.97 / 479. The remaining ~0.04 is their unreleased per-row aggregator, the GFF3 gene feature and the outlier
+   sample — named, unmeasured. The 09-28 note that a WSSD recomputation "produces real false merges" (§6in) was about
+   using famCN as a weak-edge lever in OUR catalog, a different use; in Soto's own recipe it is the second-best rung.
+3. **parCN — QuicK-mer2 cannot run here; exact assembly counting replaces it** (`bench/soto/parcn_assembly.py`;
+   register 1167, 1171-1174). QuicK-mer2's whole-genome index needs a 2^32-slot hash: `search` peaks at ~52 GB
+   and `count` at ~43 GB against 25 GiB + 16 GB swap (`figs/soto_quickmer2.md`). The same k-mer rule (k = 30
+   canonical, once in CHM13-noY, Hamming-1 edit depth < 100) counted exactly in complete assemblies reproduces
+   S1E's population parCN on genes whose CN is fixed in humans: **HG002 within 0.5 of S1E for 321/322 Fixed genes
+   (0.997; controls 297/299 = 2)**, but only 408/629 Nearly-Fixed (0.649, bar 0.70 failed: 22% of them carry < 75%
+   of CHM13's "paralog-specific" k-mers — partly haplotype-specific) and 83/212 Polymorphic; Spearman 0.414. Their
+   WSSD human-vs-ape calls are reproduced by the assembly famCN analogue: Duplicated in humans 105/109 (0.963),
+   Expanded 105/132 (0.795), CN-called families 105/118 (0.890), non-calls 131/631 (0.208, mostly ape-individual
+   differences; no bonobo); Soto's famCN > 10 exclusion hides ~234 paralogs the assemblies call human gains
+   (subtelomeric DDX11L / WASH / OR4F first). Human and ape numbers are per genome, never pooled.
+4. **DupMasker intersection (their final annotation step) has not been run.** It labels families with ancestral
+   duplication units after clustering; it does not change membership — a completeness gap in the write-up, not a
+   scoring gap.
+5. ~~**A genuine assembly-version wall in the acrocentric chromosomes.**~~ Gone on the native v1.0 chain (§1.2): it
+   was a liftover artefact of the v2.0 SEDEF input, "not pursued further" for the wrong reason.
 
-- **Their recipe, run literally on their genome, is our best replication: ARI 0.7096 (median-MAD).** It finds
-  11,935 edges (truth precision .879) against the CIGAR walk's 4,384; 81% of the extra edges are ≥98%-identity links
-  SEDEF never reported as pairs.
-- **Which SD catalog seeds it does not matter:** the published Vollger v1.0 SD set gives a byte-identical edge set and
-  byte-identical families. The SD catalog only chooses what gets mapped back; the map-back makes the edges.
-- **Their methods sentence read literally (region-level intersect) gives ARI 0.19.** Whatever they ran kept
-  exon-to-exon correspondence, so the exon-projection reading is ours and is disclosed as such.
-- **More edges recover more genes but fewer whole families** (235 exact vs 241): about 700 real ≥98% edges join
-  different Soto families that the copy-number split then cannot separate again.
-
-**Why the remaining families are not exact** (median arm, 256 non-exact, primary cause):
-| cause | families | what it is |
-|---|---|---|
-| over-merge we cannot split | 127 | the joined true family is a minority of its predicted group in 59; a median-MAD cannot see a sub-half population |
-| edges we lack | 105 | 62 fragments whose closest SD row is 90–98% identity with no map-back hit (unreachable under any reading); 49 where SEDEF has a ≥98% row but minimap2 finds nothing; 17 linked only through non-eligible members |
-| copy-number split | 24 | 12 Soto families violate their own MAD < 1 rule (0/12 can be emitted by that rule); 20 avoidable cuts by our greedy split |
-| their cover / universe | 0 | not causal: removing the 149 multi-family genes changes nothing |
-
-**Ceilings:** a perfect split of our own components would reach ARI 0.946 / 420 exact; any partition scored against
-their full table caps at 409/491 exact because their families are a cover, and two readings of their own table agree
-only at ARI 0.94.
-
-**Advisor sentence:** *replicated* = the alignment-and-graph half of their recipe on their genome, annotation and
-universe (ARI 0.71, 48–53% exact); *concordance only* = everything that consumes their tables (famCN split, universe,
-the 71 curated genes); *cannot match by construction* = their cover (409 cap), 12 families that break their own MAD
-rule, and 50 families with members no ≥98% alignment reaches.
-
-## 2. What we still cannot rebuild, and why (five specific gaps)
-
-Each is a *named* gap, not a general "it doesn't work" — this is the list to hand the advisor directly.
-
-1. **Manual curation (their step 2).** Their STAR Methods say they self-intersect SD98 transcripts, flag
-   pairs with >90% positional overlap, and then *manually curate* to drop redundant/readthrough-fusion
-   transcripts. 71 genes are removed this way between our reconstructed SD98 set and their published 1,793.
-   - Today's work (`soto_cur_label.md`, `soto_cur_rule.md`, `soto_cur_critique.md`) found a one-condition rule
-     in their own vocabulary — drop the lower-ranked side of a same-strand overlapping SD98 gene pair (rank =
-     biotype > name-quality > transcript count > length) — that matches their 71 removals at **precision ≈0.77,
-     recall ≈0.77** when the rank order and threshold are validated on a held-out half of the genes.
-   - **Caveat, found by the same pass's hostile critique:** the family-score effect of this rule is *not*
-     distinguishable from dropping the same number of genes at random from the same candidate pool (random
-     subsets reach the same ARI about half the time). So the rule explains their curation step reasonably
-     well; it does **not** explain, or improve on, the family-recovery numbers. Say both halves of this.
-   - ~9 of the 71 are coin-flips between identical duplicate copies (e.g. DUX4L28 vs DUX4L29) and a handful
-     are protein-level readthrough judgments (e.g. ISY1-RAB43) that no coordinate rule can see.
-2. **famCN is not independently recomputed** — we use their published Table S1C values. famCN comes from WSSD
-   (whole-genome shotgun read-depth of multi-mapping short reads across SGDP n=269 + 4 archaic/great-ape
-   genomes). We built a real WSSD-based recomputation (`bench/soto/famcn_from_wssd.py`) and found it produces
-   real false merges (§6in: 4/7 accepted weak-edge components were false merges across unrelated true
-   families). **Not adopted; this stays concordance, not re-derivation**, and is the main reason full
-   independence from their pipeline isn't yet claimed.
-3. **parCN (QuicK-mer2 paralog-specific k-mer copy number) is not built.** It feeds their human-vs-ape
-   expansion calls, not family clustering itself, so it hasn't blocked anything so far — but reproducing those
-   downstream calls would need a fresh k-mer pipeline.
-4. **DupMasker intersection (their final annotation step) has not been run.** It labels families with
-   ancestral duplication units after clustering; it does not change membership, so it's a completeness gap in
-   the replication write-up, not a scoring gap.
-5. **A genuine assembly-version wall in the acrocentric chromosomes (chr13/14/15/21/22).** One small window in
-   CHM13 v1.0 corresponds to many separate, tandem-periodic segments in v2.0 — real new assembly content, not
-   a missing liftover anchor (checked directly: realigning wide windows around every gap edge re-confirms
-   existing anchors with no headroom). Several v2.0 "extra" copies have no v1.0 counterpart to compare against
-   at all, independent of any liftover fix. Ledger §6iq: "not pursued further — a real ceiling."
-
-**Everything else** in their stated method — the SD98 threshold, gene-to-SD98-region assignment, the
-minimap2 map-back, the `-f 0.99` shared-exon graph, the MAD-based family split (both the mean-vs-median-MAD
-and the discard-then-bridge-merge discrepancies between their paper prose and their released code) — has been
-reproduced from their own released code (`github.com/mydennislab/HSD_brain_evolution`,
-`section_I&II/B_SD98_families.ipynb`) and checked byte-for-byte or family-for-family against their published
-tables. See `project_soto_full_replication.md` for the full step-by-step trace.
+**Everything else** in their stated method — the SD98 threshold, gene-to-SD98-region assignment (5,154 autosomal
+genes = their count), the exon map-back, the `-f 0.99` shared-exon call, the per-pair MAD gate and the coding-gene
+closure — is reproduced from their released code (`github.com/mydennislab/HSD_brain_evolution`) and checked
+family for family against S1C. Two code audits are on record: the released closure loop is order-dependent
+(register 1165), and the two prose-vs-code differences (regions vs exons; component MAD vs per-pair MAD) carry the
+whole gap between the literal recipe and S1C (register 1166). Our 09-11 `dennislab` port read their "clusters" as
+connected components — a misreading that scored 0.50-0.56 and is kept only as a diagnostic row.
 
 ## 3. Direct evidence that Soto's "families" and ours are not the same object
 
@@ -159,13 +199,14 @@ This is the answer to "prove their families are different," with citations to wh
      `scratchpad/soto_attr/attributed_pairs.tsv` (per-pair), `scratchpad/figs/soto_um_attribution.md` (report),
      `scratchpad/figs/soto_um_verify.md` (independent re-check).
 
-**The composite statement for the advisor:** *"Our pipeline reproduces Soto's own numbers to ARI≈0.70 / 49%
-exact families using only their inputs. The remaining gap is not evidence the pipeline fails to find real
-structure — it decomposes into (a) an unreproducible manual curation step we've now characterized to ~0.77
-precision/recall, (b) one non-algorithmic assembly-version wall, and (c) a genuine granularity difference:
-Soto's families are measurably a coarser, non-partition cover that nests inside ours 80–90% of the time
-(100% on the NPIP case the advisor cares about) except at their largest, most heterogeneous families, where
-we can independently show 83 real paralog pairs their own truth misses."*
+**The composite statement for the advisor** (09-28 wording; its "ARI≈0.70 / 49%" and gap decomposition are
+superseded by §1 — use §1.1's sentence for the replication half, this paragraph for the "different object" half):
+*"Our pipeline reproduces Soto's own numbers to ARI≈0.70 / 49% exact families using only their inputs. The
+remaining gap is not evidence the pipeline fails to find real structure — it decomposes into (a) an unreproducible
+manual curation step we've now characterized to ~0.77 precision/recall, (b) one non-algorithmic assembly-version
+wall, and (c) a genuine granularity difference: Soto's families are measurably a coarser, non-partition cover that
+nests inside ours 80–90% of the time (100% on the NPIP case the advisor cares about) except at their largest, most
+heterogeneous families, where we can independently show 83 real paralog pairs their own truth misses."*
 
 ## 4. What was corrected today (say this too, don't let it surface as a gotcha)
 
@@ -192,14 +233,27 @@ we can independently show 83 real paralog pairs their own truth misses."*
 - Labelled gene table: `/mnt/linuxdisk/tmp/rustle_figures_dev/soto_cur_label/genes_labelled.tsv` (scratch disk,
   regenerable from `final_v1.bed` + `cat_v4.bed` via `soto_replication.py genesets`/`curate`).
 
-## 6. Next steps if resumed
+## 6. Where things stand and what is left (2026-09-29)
 
-1. Decide whether to pursue DupMasker (item 4) and parCN (item 3) — neither blocks the family-recovery
-   argument above; both are needed only if the advisor asks about the downstream human-specific-expansion
-   calls specifically.
-2. Consider a WSSD recomputation attempt with a stronger corroboration requirement (item 2) if the advisor
-   wants full independence from Soto's famCN — flagged as unsolved, not attempted further today (§6in's
-   generalizable lesson: a weak signal correlating with a real property still needs a structural admission
-   guarantee, not just corroboration from a second imperfect signal).
-3. The nesting result (§3.1) is the single most advisor-facing artifact here — consider turning
-   `SOTO_AS_A_REFINEMENT.md`'s table into a one-slide figure.
+**Durable now (reproducible from `bench/`; `REPRODUCE.md` §5a):** `soto_replication.py edges --exon-mapback`,
+`cluster --pair-mad`, `score --split/--half/--drop-family`, `famcn --interval exons|sd98 --samples all` and
+`ladder`; the frozen edge table `bench/soto/shared_exons_5154_exon_mapback.tsv` and split
+`bench/soto/soto_split_2026-09-29.tsv`; `bench/soto/parcn_assembly.py` (+ `test_parcn_assembly.py`) for the
+assembly parCN. Each was re-run once on 09-29 and reproduced its frozen product byte for byte (edges, exon BED /
+FASTA, the reconcile partition, `famcn_ours_allwssd.tsv`, the 269-sample matrix, all 113 parCN summary values).
+The literal 09-28 chain is unchanged and byte-identical without the new flags.
+
+1. **Nothing is left to search in the family recipe.** Both DEV / HELD-OUT halves are spent for edge sources,
+   famCN splits and the curation rule (register 1158-1163). Do not re-open the MAD statistic, B1, SEDEF-CIGAR,
+   DP-split or curation arms; their numbers are in the reconciliation prereg's `cells.tsv`.
+2. **famCN independence, if the advisor wants it closed further:** the three named, unmeasured causes of the
+   0.93 → 0.97 step (§2 item 2). The first would need Soto's `genotype_cn_parallel.py`, which is not public.
+3. **parCN:** QuicK-mer2 itself needs a ≥ 64 GB node or a hash-partitioned re-implementation validated
+   bit-for-bit on one chromosome (register 1167); the assembly route is what we have. Its open finding is the
+   Nearly-Fixed class (0.649): "paralog-specific" k-mers of one haploid reference are partly haplotype-specific,
+   so a single individual's exact count disagrees with a population median — and the same haplotype effect makes a
+   k-mer presence gate for O2 worse than random (register 1180-1182). Judge copy presence by synteny, not k-mer
+   survival.
+4. **DupMasker** (item 4) only if the downstream human-specific-expansion labels are asked for by name.
+5. **The nesting result (§3.1) is still the single most advisor-facing artifact** — `SOTO_AS_A_REFINEMENT.md`'s table
+   as one slide, now beside the ladder of §1.1 (sequence 0.73 → our CN 0.93 → their CN 0.97).

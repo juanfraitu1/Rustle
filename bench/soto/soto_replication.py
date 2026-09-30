@@ -47,6 +47,39 @@ recomputed+uncurated 1,864: ARI 0.6946 / 0.6822 (median / mean), exact 234 / 257
 (`--sedef final_v1.bed` regions too, 1,921 eligible): 0.6981 / 0.6884. Off by default: no other subcommand calls
 any of it (headline chain re-verified byte-identical).
 
+RECONCILED RECIPE (2026-09-29; docs/PREREG_soto_reconciliation_2026-09-29.md, register 1162-1166; docs/
+SOTO_REPLICATION_STATUS_2026-09-28.md §1). Two choices of Soto's RELEASED code, not their prose, carry the whole
+gap between the literal recipe (0.7096) and their Table S1C: (1) map SD98 EXONS back to the genome, not SD98
+regions (`edges --exon-mapback`); (2) apply MAD < 1 to each shared-exon PAIR and grow families through coding /
+unprocessed genes, not to connected components (`cluster --pair-mad`). Both are opt-in; the literal chain above
+is byte-identical without them.
+
+    W=winloci_data/soto_replication
+    python3 $S genesets --out-eligible g1793.tsv --out-full g2334.tsv
+    tools/rlock.sh heavy python3 $S edges --exon-mapback --cat-bed $W/cat_v4.bed --sd98-bed $W/sd98_v1.bed \\
+        --genome $W/t2t-chm13-v1.0.fa.gz [--mm2-index IDX.mmi] --out-shared exon_edges.tsv   # 12,231 edges, 5,154 genes
+    #   (or skip: bench/soto/shared_exons_5154_exon_mapback.tsv is this step's frozen output, byte-identical)
+    python3 $S cluster --pair-mad --shared bench/soto/shared_exons_5154_exon_mapback.tsv --geneset g1793.tsv \\
+        --full-geneset g2334.tsv --famcn bench/soto/soto_famCN_S1C.tsv --out pair_s1c.tsv
+    python3 $S score --predicted pair_s1c.tsv                                          # ARI 0.9698, 479/491
+    python3 $S score --predicted pair_s1c.tsv --split bench/soto/soto_split_2026-09-29.tsv --half heldout  # 0.9681, 263/266
+
+Expected (all 491 / held-out 266): ARI 0.9698 / 0.9681, exact 479 / 263, pair P/R/F1 1.000/0.942/0.970, MICRO
+1.000/0.980, MACRO 0.999/0.992, 0 undetected, 504 families, 158 genes in >= 2 families (S1C's 149 cover genes
+among them). The (gene_id, family_id) projection of `pair_s1c.tsv` is byte-identical to the frozen
+soto_reconcile/xcheck/pred_EXON_PAIR_-.tsv. Independently verified 2026-09-29 (own re-mapping and own scorer).
+
+THE LADDER (`ladder`; register 1169 / 1170): what the copy-number gate buys on the same edges and rule --
+sequence only ARI 0.7307 / 345 exact -> our WSSD famCN, 10 samples, exons (famcn_ours_all.tsv) 0.9198 / 373 ->
+our famCN, 268 SGDP samples, exons 0.8855 / 375 -> our famCN, 268 samples, Soto's own interval (gene body ∩ SD98;
+`famcn --interval sd98 --samples all`) 0.9277 / 411 (held-out 0.9343 / 235) -> S1C famCN 0.9698 / 479. So the
+last ~0.04 ARI / ~68 families are agreement with Soto's published copy numbers, not an independent reconstruction.
+Quote exact families and the ARI without FAM90A (ID_356; `--drop-family`) beside every famCN rung: the ALL-491
+ARI swings +-0.035 on whether that 56-gene family stays whole (2 of its 1,533 pairs sit at |delta famCN| = 2).
+The prereg's 0.9197 / 0.8853 for rungs 2-3 came from the verifier's collapse, whose order among families that
+share a smallest member (a cover gene) was Python-set order; this module orders them by component discovery
+(deterministic, = the frozen reconcile output): 3 non-coding genes move, exact counts identical, ARI +-0.0002.
+
 SUBCOMMANDS
     genesets   the 2,334-gene universe (every S1C Gene ID) and the 1,793 family-eligible genes
                (S1C `In Table S1 (SD98 gene set)` = Yes), as 2-column `gene_id biotype` TSVs sorted by id.
@@ -55,14 +88,21 @@ SUBCOMMANDS
                genesets for `edges`/`cluster` (see CURATION ARM above; `--rule none` = uncurated).
     edges      steps 1-4: SEDEF rows >= 0.98 identity -> lift both sides to CHM13 v1.0 -> walk the SEDEF CIGAR
                -> project CAT v4 exons >= 0.99 covered across the pair -> `gene_a gene_b` edge TSV (sorted).
+               --exon-mapback (2026-09-29): Soto's released exon map-back instead (minimap2 + samtools).
     cluster    steps 5-6: connected components -> famCN MAD split -> family call; --full-geneset adds the
                single-eligible-seed islands (§6im) and attaches non-eligible members (§6ii).
-    dennislab  the Dennis-lab notebook's algorithm (§6if Finding 2: ARI 0.541 mean / 0.564 median, worse;
-               PARKED, kept as evidence that "their real algorithm" was run).
+               --pair-mad (2026-09-29): Soto's released per-pair rule instead (cover, collapsed for the table).
+    dennislab  the Dennis-lab notebook's algorithm READ AS CONNECTED COMPONENTS (§6if: ARI 0.541 / 0.564) --
+               a misreading of their cells 4-11 (register 1165); superseded by `cluster --pair-mad`, kept as
+               the diagnostic row of the reconciliation (0.4966 on the literal edges).
     famcn      WSSD read-depth famCN at arbitrary CHM13 v2.0 intervals (needs pyBigWig or bigBedToBed). Kept
                as infrastructure; the §6io CN weak-edge lever that used it was NOT shipped.
+               --interval exons|sd98 --samples all (2026-09-29): gene-level famCN over CAT v4 intervals from
+               every SGDP track, cached per-sample matrix; reproduces famcn_ours_all{,wssd}.tsv byte for byte.
     score      fixed-universe ARI / exact-family / pair P-R-F1 (`--only pairs`), then Hungarian 1:1 family
-               matching (`--only bipartite`); default `--only all` prints both, in that order.
+               matching (`--only bipartite`); default `--only all` prints both, in that order. --split/--half
+               scores one half of the frozen DEV / HELD-OUT split; --drop-family removes a truth family.
+    ladder     the copy-number ladder above (sequence only -> our famCN -> S1C famCN), one line per rung.
 
 IN-REPO INPUTS (resolved relative to this file, not the CWD)
     soto_famCN_S1C.tsv                 Soto Table S1C (truth, famCN, biotypes; pinned by REPRODUCE.md)
@@ -72,10 +112,17 @@ IN-REPO INPUTS (resolved relative to this file, not the CWD)
     shared_exons_2334_finalhuman.tsv   frozen `edges` output (§6ip, 4,192 edges), so steps 5-6 and the
                                        scorers reproduce from a clone without the 54 MB SEDEF BED and the
                                        84 MB CAT BED, which are not committed
+    shared_exons_5154_exon_mapback.tsv frozen `edges --exon-mapback` output (2026-09-29, 12,231 edges over
+                                       all 5,154 SD98 genes; sha1 d2d36db0), so `cluster --pair-mad`, `score`
+                                       and `ladder` reproduce the reconciled numbers from a clone
+    soto_split_2026-09-29.tsv          the frozen DEV / HELD-OUT split of the 2,334 genes (sha1 49bcbcfe;
+                                       PREREG_soto_losses_2026-09-29.md), for `score --split`
 
-ENVIRONMENT. `famcn --tool pybigwig` needs pyBigWig (/home/juanfra/miniforge3/bin/python3 has it; the
-linuxbrew python3 first on PATH does not). `score` needs scikit-learn, numpy and scipy. genesets, edges,
-cluster and dennislab are stdlib-only. Heavy imports happen inside the functions that need them.
+ENVIRONMENT. `famcn --tool pybigwig` and `famcn --interval` need pyBigWig (/home/juanfra/miniforge3/bin/python3
+has it; the linuxbrew python3 first on PATH does not). `score` and `ladder` use scikit-learn's ARI when it is
+importable and a stdlib implementation otherwise (identical to 1e-12), plus numpy and scipy for the bipartite
+matching. genesets, edges (SEDEF path), cluster and dennislab are stdlib-only; `edges --exon-mapback` shells out
+to samtools and minimap2. Heavy imports happen inside the functions that need them.
 
 OLD -> NEW (wave 7, 2026-09-24; the old scripts are at tag notebook-2026-09-24, flags unchanged unless noted)
     bench/soto/soto_replicate_from_sedef.py ...        -> soto_replication.py edges ...
@@ -153,19 +200,30 @@ def load_geneset(path):
     return genes, biotype
 
 
-def load_famcn(path):
+def load_famcn(path, column=None):
     """gene -> famCN from any of the famCN tables used here (S1C `Gene ID`/`Median famCN`, or a
-    `gene_id` + `famCN`/`famCN_median` table). Rows without a numeric value are skipped."""
+    `gene_id` + `famCN`/`famCN_median` table). Rows without a numeric value are skipped. `column` names one
+    column explicitly (e.g. `famCN_sotoiv` of famcn_ours_allwssd.tsv); None keeps the historical lookup order."""
     famcn = {}
     with open(path) as fh:
         for r in csv.DictReader(fh, delimiter="\t"):
             gid = r.get("gene_id") or r.get("Gene ID")
-            v = r.get("famCN") or r.get("famCN_median") or r.get("Median famCN")
+            if column:
+                v = r.get(column)
+            else:
+                v = r.get("famCN") or r.get("famCN_median") or r.get("Median famCN")
             try:
                 famcn[gid] = float(v)
             except (TypeError, ValueError):
                 pass
     return famcn
+
+
+def load_split(path):
+    """The frozen DEV / HELD-OUT split of the 2,334 S1C genes (`soto_split_2026-09-29.tsv`: gene_id, unit_id, half,
+    ...; half = dev | heldout) -> {gene: half}."""
+    with open(path) as fh:
+        return {r["gene_id"]: r["half"] for r in csv.DictReader(fh, delimiter="\t")}
 
 
 def read_edges(path):
@@ -627,6 +685,170 @@ def cn_for_interval(bb, chrom, start, end, tool):
 
 
 # ---------------------------------------------------------------------------------------------------------
+# Gene-level WSSD famCN over CAT v4 intervals, all SGDP tracks (2026-09-29, KEY=soto_famcn269)
+# ---------------------------------------------------------------------------------------------------------
+# `famcn --interval exons|sd98`: per gene of the autosomal SD98 gene set (their step 2, `sd98_gene_set`), the
+# per-sample length-weighted mean of the WSSD window CN over (exons) every CAT v4 exon of the gene merged, or
+# (sd98) Soto's own interval, the CAT v4 gene body intersected with the merged SD98 regions, one row per piece
+# (A_SD98_regions.md §2.2 / §4; their per-row aggregator `genotype_cn_parallel.py` is unreleased -- the window
+# mean is ours, disclosed). famCN = median over samples (sd98: per-row median over samples, then median over the
+# gene's rows), famCN_mad = median |x - median| over samples. Ported from soto_famcn269/{build_intervals,
+# compute_matrix, write_table}.py (sha1 453117af / aa3501bf / 092a20d0); the per-sample matrix and the tables are
+# byte-identical to the frozen all269.npz and famcn_ours_allwssd.tsv (see the module docstring). pyBigWig only.
+
+WSSD_OUTLIER = "LP6005442-DNA_A08"   # removed in Soto's code: "outlier copy numbers" (A_SD98_regions.md §4)
+_FAMCN_CTX = {}                      # forked-worker context (set before the Pool is created)
+
+
+def famcn_intervals(genes, regions, gene_ids):
+    """(exon_iv, rows): exon_iv = [(chrom, start, end, gene)] of every gene's merged CAT v4 exons; rows =
+    [(chrom, start, end, gene)] of gene body (min start / max end over the gene's transcripts) ∩ merged SD98,
+    one row per piece, in gene order then position."""
+    import bisect
+    exon_iv, rows = [], []
+    for g in gene_ids:
+        gd = genes[g]
+        c = gd["chrom"]
+        for s, e in gd["exons"]:
+            exon_iv.append((c, s, e, g))
+        regs = regions.get(c, [])
+        i = bisect.bisect_right(regs, (gd["start"], float("inf"))) - 1
+        i = max(i, 0)
+        while i < len(regs) and regs[i][0] < gd["end"]:
+            s, e = max(regs[i][0], gd["start"]), min(regs[i][1], gd["end"])
+            if e > s:
+                rows.append((c, s, e, g))
+            i += 1
+    return exon_iv, rows
+
+
+def _famcn_blocks(per):
+    """per: chrom -> sorted [(start, end, kind, idx)]; blocks = intervals merged across a <= 1,000 bp gap, the
+    unit of one bigBed fetch (windows fetched twice by adjacent blocks are deduplicated)."""
+    blocks = {}
+    for c, iv in per.items():
+        bl = []
+        for s, e, _, _ in iv:
+            if bl and s <= bl[-1][1] + 1000:
+                bl[-1][1] = max(bl[-1][1], e)
+            else:
+                bl.append([s, e])
+        blocks[c] = bl
+    return blocks
+
+
+def _famcn_one_sample(sample):
+    """One pass over one *_wssd.bb: (sample, per-gene exon value[], per-row value[], n_unparsable). The value is
+    the length-weighted mean of the window CN (bigBed last field) over the gene's exon intervals / over the row."""
+    import numpy as np
+    import pyBigWig
+    ctx = _FAMCN_CTX
+    per, blocks = ctx["per"], ctx["blocks"]
+    bw = pyBigWig.open(os.path.join(ctx["wssd_dir"], sample))
+    gsum, gbp = np.zeros(ctx["n_genes"]), np.zeros(ctx["n_genes"])
+    rsum, rbp = np.zeros(ctx["n_rows"]), np.zeros(ctx["n_rows"])
+    nbad = 0
+    for c, bl in blocks.items():
+        ws, we, cn = [], [], []
+        for s, e in bl:
+            try:
+                ent = bw.entries(c, s, e) or []
+            except RuntimeError:
+                ent = []
+            for a, b, rest in ent:
+                try:
+                    v = float(rest.rsplit("\t", 1)[-1])
+                except ValueError:
+                    nbad += 1
+                    continue
+                ws.append(a)
+                we.append(b)
+                cn.append(v)
+        if not ws:
+            continue
+        order = np.argsort(ws, kind="stable")
+        ws, we, cn = np.asarray(ws)[order], np.asarray(we)[order], np.asarray(cn)[order]
+        keep = np.ones(len(ws), bool)
+        keep[1:] = ~((ws[1:] == ws[:-1]) & (we[1:] == we[:-1]))
+        ws, we, cn = ws[keep], we[keep], cn[keep]
+        wmax = np.maximum.accumulate(we)
+        for s, e, kind, idx in per[c]:
+            i0 = int(np.searchsorted(wmax, s, "right"))
+            i1 = int(np.searchsorted(ws, e, "left"))
+            if i1 <= i0:
+                continue
+            ov = np.minimum(we[i0:i1], e) - np.maximum(ws[i0:i1], s)
+            m = ov > 0
+            if not m.any():
+                continue
+            t, n = float((cn[i0:i1][m] * ov[m]).sum()), float(ov[m].sum())
+            if kind == 0:
+                gsum[idx] += t
+                gbp[idx] += n
+            else:
+                rsum[idx] += t
+                rbp[idx] += n
+    bw.close()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return sample, np.where(gbp > 0, gsum / gbp, np.nan), np.where(rbp > 0, rsum / rbp, np.nan), nbad
+
+
+def famcn_matrix(wssd_dir, samples, gene_ids, exon_iv, rows, jobs=4):
+    """Per-sample matrices for every SGDP track in `samples` (file names), one pass per track, `jobs` forked
+    workers. Returns dict(samples, genes, rows, row_gene, exon[genes x samples], sotoiv[rows x samples], nbad)."""
+    import numpy as np
+    from multiprocessing import Pool
+    gi = {g: i for i, g in enumerate(gene_ids)}
+    per = defaultdict(list)
+    for c, s, e, g in exon_iv:
+        per[c].append((s, e, 0, gi[g]))
+    for i, (c, s, e, g) in enumerate(rows):
+        per[c].append((s, e, 1, i))
+    for c in per:
+        per[c].sort()
+    _FAMCN_CTX.update(per=dict(per), blocks=_famcn_blocks(per), wssd_dir=wssd_dir, n_genes=len(gene_ids),
+                      n_rows=len(rows))
+    res = {}
+    with Pool(jobs) as pool:
+        for k, (smp, g, r, nb) in enumerate(pool.imap_unordered(_famcn_one_sample, samples), 1):
+            res[smp] = (g, r, nb)
+            if k % 20 == 0 or k == len(samples):
+                print(f"  {k}/{len(samples)} samples", file=sys.stderr, flush=True)
+    return dict(samples=np.array(samples), genes=np.array(gene_ids), rows=np.array([f"R{i}" for i in range(len(rows))]),
+                row_gene=np.array([r[3] for r in rows]), exon=np.stack([res[s][0] for s in samples], 1),
+                sotoiv=np.stack([res[s][1] for s in samples], 1), nbad=np.array([res[s][2] for s in samples]))
+
+
+def famcn_tables(mat, keep, interval):
+    """From the matrix and the selected sample columns: rows of (gene_id, famCN, famCN_mad, n_samples[, n_rows]).
+    exons: median / MAD over samples of the gene's exon value. sd98: per-row median over samples, then the median
+    over the gene's rows (Soto's cell 14); famCN_mad = median over rows of the per-row MAD (ours, no frozen
+    counterpart)."""
+    import numpy as np
+    genes = [str(g) for g in mat["genes"]]
+    if interval == "exons":
+        ex = mat["exon"][:, keep]
+        med = np.median(ex, 1)
+        mad = np.median(np.abs(ex - med[:, None]), 1)
+        return [(g, f"{med[i]:.3f}", f"{mad[i]:.3f}", len(keep)) for i, g in enumerate(genes)]
+    rv = mat["sotoiv"][:, keep]
+    rmed = np.median(rv, 1)
+    rmad = np.median(np.abs(rv - rmed[:, None]), 1)
+    byg = defaultdict(list)
+    for g, v, d in zip(mat["row_gene"], rmed, rmad):
+        byg[str(g)].append((float(v), float(d)))
+    out = []
+    for g in genes:
+        vals = byg.get(g, [])
+        if not vals:
+            out.append((g, "", "", len(keep), 0))
+            continue
+        out.append((g, f"{st.median([v for v, _ in vals]):.3f}", f"{st.median([d for _, d in vals]):.3f}",
+                    len(keep), len(vals)))
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------------
 # Steps 1-4: SEDEF CIGAR -> shared-exon edges (was soto_replicate_from_sedef.py + load_exons)
 # ---------------------------------------------------------------------------------------------------------
 
@@ -1022,6 +1244,220 @@ def dennislab_families(comps, biotype, famcn, mad_threshold, mad_fn):
 
 
 # ---------------------------------------------------------------------------------------------------------
+# EXON map-back edges: Soto's released code, A_SD98_regions.md §3.1 l.226-263 (2026-09-29, KEY=soto_reconcile)
+# ---------------------------------------------------------------------------------------------------------
+# Their code maps SD98 EXONS (not SD98 regions, as the STAR Methods prose says) back to the genome and calls a
+# shared exon a same-strand >= 99% cover of an SD98 exon by a mapping of another gene's exon. Ported from the
+# frozen soto_reconcile/frozen/build_exons.py + build_exon_pairs.py (sha1 23aeed57 / fda610c8); the pair table is
+# byte-identical to their output (edges_exon_v230.all5154.tsv, sha1 d2d36db0; frozen copy
+# bench/soto/shared_exons_5154_exon_mapback.tsv). Reached only through `edges --exon-mapback`.
+
+MM2_EXON_ARGS = ["-c", "--end-bonus", "5", "--eqx", "-N", "50", "-p", "0.5"]   # A_SD98_regions.md l.238
+
+
+def sd98_exons_from_cat(cat_bed, regions):
+    """Every CAT v4 exon block (any biotype) fully inside ONE merged autosomal SD98 region (chrX/chrY/chrM never),
+    deduplicated on (chrom, start, end, strand, gene id) and sorted; plus gene -> biotype for every gene of the
+    BED (their exon names carry a biotype; the per-gene value is what we can see -- disclosed in the prereg)."""
+    ex, biotype = set(), {}
+    with open(cat_bed) as fh:
+        for ln in fh:
+            f = ln.rstrip("\n").split("\t")
+            if len(f) < 21:
+                continue
+            c, ts, strand, g = f[0], int(f[1]), f[5], f[18]
+            biotype[g] = f[19]
+            if c in ("chrX", "chrY", "chrM"):
+                continue
+            regs = regions.get(c)
+            if not regs:
+                continue
+            sizes = [int(x) for x in f[10].rstrip(",").split(",") if x]
+            starts = [int(x) for x in f[11].rstrip(",").split(",") if x]
+            for sz, so in zip(sizes, starts):
+                s = ts + so
+                if _fully_contained(regs, s, s + sz):
+                    ex.add((c, s, s + sz, strand, g))
+    return sorted(ex), biotype
+
+
+def write_exon_queries(exons, genome, bed_path, fa_path, work):
+    """`bedtools getfasta -s -name` equivalent through `samtools faidx` (`-i --mark-strand no` for '-' exons):
+    BED (6 columns, name = gene|chrom:start-end|strand) and a FASTA with one sequence line per exon, '+' exons
+    first then '-' exons, both in sorted exon order."""
+    with open(bed_path, "w") as fh:
+        for c, s, e, st, g in exons:
+            fh.write(f"{c}\t{s}\t{e}\t{g}|{c}:{s}-{e}|{st}\t0\t{st}\n")
+    with open(fa_path, "w") as out:
+        for strand, flag in (("+", []), ("-", ["-i", "--mark-strand", "no"])):
+            sub = [x for x in exons if x[3] == strand]
+            if not sub:
+                continue
+            reg = os.path.join(work, f"regions{'P' if strand == '+' else 'M'}.txt")
+            with open(reg, "w") as fh:
+                for c, s, e, st, g in sub:
+                    fh.write(f"{c}:{s + 1}-{e}\n")
+            r = subprocess.run(["samtools", "faidx", genome, "-r", reg, "-n", "1000000"] + flag,
+                               capture_output=True, text=True, check=True)
+            seqs, cur = [], None
+            for ln in r.stdout.splitlines():
+                if ln.startswith(">"):
+                    cur = []
+                    seqs.append(cur)
+                else:
+                    cur.append(ln)
+            if len(seqs) != len(sub):
+                sys.exit(f"samtools faidx returned {len(seqs)} sequences for {len(sub)} '{strand}' exons")
+            for (c, s, e, st, g), sq in zip(sub, seqs):
+                seq = "".join(sq)
+                if len(seq) != e - s:
+                    sys.exit(f"sequence length mismatch at {c}:{s}-{e}: {len(seq)}")
+                out.write(f">{g}|{c}:{s}-{e}|{st}\n{seq}\n")
+
+
+def read_paf_mappings(paf_path):
+    """Every PAF line (primary or secondary) -> (target chrom, tstart, tend, PAF strand, query gene id)."""
+    out = []
+    with open(paf_path) as fh:
+        for ln in fh:
+            f = ln.split("\t")
+            out.append((f[5], int(f[7]), int(f[8]), f[4], f[0].split("|")[0]))
+    return out
+
+
+def exon_mapback_pairs(exons, mappings, biotype, min_frac=0.99):
+    """`bedtools intersect -f 0.99 -s -wa -wb -a <SD98 exons> -b <mappings>` in Python: a hit is an exon whose
+    length is covered >= min_frac by a same-strand mapping (integer arithmetic: 100 * overlap >= 99 * length is the
+    exact form of the fraction test). Each hit gives (target exon's gene, query exon's gene); dropped when the two
+    ids are equal; kept when at least one gene's biotype is family-eligible (their grep). Returns (sorted unique
+    pairs, n_hits, n_same_gene, n_both_non_eligible)."""
+    import bisect
+    by_cs = defaultdict(list)
+    for c, s, e, st, g in exons:
+        by_cs[(c, st)].append((s, e, g))
+    starts = {}
+    for k, v in by_cs.items():
+        v.sort()
+        starts[k] = [s for s, _, _ in v]
+    maxlen = max((e - s for c, s, e, st, g in exons), default=0)
+    num, den = int(round(min_frac * 100)), 100
+    pairs, hits, same, nonelig = set(), 0, 0, 0
+    for c, ts, te, st, gq in mappings:
+        v = by_cs.get((c, st))
+        if not v:
+            continue
+        lo = bisect.bisect_left(starts[(c, st)], ts - maxlen)
+        hi = bisect.bisect_left(starts[(c, st)], te)
+        for s, e, ga in v[lo:hi]:
+            ov = min(e, te) - max(s, ts)
+            if ov <= 0 or den * ov < num * (e - s):
+                continue
+            hits += 1
+            if ga == gq:
+                same += 1
+                continue
+            if biotype.get(ga) not in ELIGIBLE and biotype.get(gq) not in ELIGIBLE:
+                nonelig += 1
+                continue
+            pairs.add(tuple(sorted((ga, gq))))
+    return sorted(pairs), hits, same, nonelig
+
+
+# ---------------------------------------------------------------------------------------------------------
+# PAIR family rule: Soto's released notebook, B_SD98_families.ipynb cells 4-11 (2026-09-29, KEY=soto_reconcile)
+# ---------------------------------------------------------------------------------------------------------
+# Their code does NOT gate connected components: it keeps each shared-exon PAIR whose famCN MAD (over the members
+# that have one) is < 1, then grows a family from every coding / unprocessed gene through coding / unprocessed
+# genes; a non-coding gene joins every family it has a kept pair with (so S1C is a cover). The released loop is
+# order-dependent (`gene_cluster = list(set(...))` while scanning; register row 1165); this is the complete
+# closure it evidently intends, which reproduces S1C (register 1162). Ported from soto_reconcile/frozen/
+# recon_lib.py `cluster_pair` (sha1 35c5050e); the (gene_id, family_id) projection over the 2,334 S1C genes is
+# byte-identical to the frozen soto_reconcile/xcheck/pred_EXON_PAIR_-.tsv (sha1 e156d769). Reached only through
+# `cluster --pair-mad`.
+
+def pair_kept(a, b, famcn, mad_threshold=1.0):
+    """The per-pair gate: MAD over the members that have a famCN (median-MAD = mean-MAD = |delta| / 2 for two
+    values, 0 for one) < threshold; a pair with no famCN at all is dropped (their `nan < 1` is False)."""
+    vals = [famcn[g] for g in (a, b) if g in famcn]
+    return len(vals) >= 1 and mad_median(vals) < mad_threshold
+
+
+def pair_families(edges, elig, full, famcn, gate=True, mad_threshold=1.0, leaves=True):
+    """edges: (a, b) pairs; elig: family-eligible gene ids (their biotype grep); full: the node universe; famcn:
+    gene -> famCN (Soto's WSSD table covers coding / unprocessed genes only). With gate=False every pair is kept
+    (the sequence-only rung of the ladder). leaves=False drops pairs with a non-eligible member (U = eligible-only
+    ablation). Returns (cover, kept, leaf_of):
+      cover    list of frozensets, size >= 2, sorted by smallest member (a non-coding gene can be in several)
+      kept     the kept pairs, in edge order
+      leaf_of  non-coding gene -> {eligible gene: number of kept pairs}
+    """
+    kept = []
+    for a, b in edges:
+        if a not in full or b not in full or a == b:
+            continue
+        ea, eb = a in elig, b in elig
+        if not (ea or eb):
+            continue  # their grep: a pair needs a coding / unprocessed member
+        if (not leaves) and not (ea and eb):
+            continue
+        if gate and not pair_kept(a, b, famcn, mad_threshold):
+            continue
+        kept.append((a, b))
+    adj = defaultdict(set)
+    leaf_of = defaultdict(lambda: defaultdict(int))
+    for a, b in kept:
+        ea, eb = a in elig, b in elig
+        if ea and eb:
+            adj[a].add(b)
+            adj[b].add(a)
+        else:
+            e, x = (a, b) if ea else (b, a)
+            adj[e]  # an eligible gene with a kept pair seeds a family
+            leaf_of[x][e] += 1
+    comp_of, comps = {}, []
+    for g in sorted(adj):
+        if g in comp_of:
+            continue
+        stack, comp = [g], set()
+        comp_of[g] = len(comps)
+        while stack:
+            x = stack.pop()
+            comp.add(x)
+            for y in adj[x]:
+                if y not in comp_of:
+                    comp_of[y] = len(comps)
+                    stack.append(y)
+        comps.append(comp)
+    fam = [set(c) for c in comps]
+    for x, es in leaf_of.items():
+        for e in es:
+            fam[comp_of[e]].add(x)
+    cover = sorted((frozenset(f) for f in fam if len(f) >= 2), key=lambda f: min(f))
+    return cover, kept, leaf_of
+
+
+def collapse_cover(cover, leaf_of, elig):
+    """Cover -> partition {gene: 'P<i>'} for scoring (a partition metric needs one label per gene): i = the rank of
+    the family's smallest member; an eligible gene is in exactly one family; a non-coding gene in >= 2 families
+    goes to the one it has the most kept pairs with, tie -> the family whose smallest member gene id is smallest.
+    The collapse is our scoring necessity, not Soto's (prereg §10.5)."""
+    pred = {}
+    for i, f in enumerate(cover):
+        for g in f:
+            if g in elig:
+                pred[g] = f"P{i}"
+    for x, es in leaf_of.items():
+        cnt = defaultdict(int)
+        for e, n in es.items():
+            if e in pred:
+                cnt[pred[e]] += n
+        if cnt:
+            best = max(cnt.values())
+            pred[x] = min((l for l, n in cnt.items() if n == best), key=lambda l: int(l[1:]))
+    return pred
+
+
+# ---------------------------------------------------------------------------------------------------------
 # Scoring against S1C (was soto_score_against_truth.py + soto_bipartite_match_score.py)
 # ---------------------------------------------------------------------------------------------------------
 
@@ -1039,8 +1475,29 @@ def pairs_of(label_map, genes):
     return pairs
 
 
+def adjusted_rand_index(truth_labels, pred_labels):
+    """sklearn.metrics.adjusted_rand_score, stdlib only (Hubert & Arabie 1985): (sum_ij C(n_ij,2) - E) / (M - E)
+    with E = sum_i C(a_i,2) sum_j C(b_j,2) / C(n,2) and M = (sum_i C(a_i,2) + sum_j C(b_j,2)) / 2. Used when
+    scikit-learn is not importable (the pyBigWig python); agrees with sklearn to 1e-12 on every table here."""
+    n = len(truth_labels)
+    cont, a, b = defaultdict(int), defaultdict(int), defaultdict(int)
+    for t, p in zip(truth_labels, pred_labels):
+        cont[(t, p)] += 1
+        a[t] += 1
+        b[p] += 1
+    c2 = lambda k: k * (k - 1) // 2
+    sij, sa, sb = sum(c2(v) for v in cont.values()), sum(c2(v) for v in a.values()), sum(c2(v) for v in b.values())
+    if n < 2 or (sa == sb == sij == c2(n)) or (sa == sb == 0):
+        return 1.0
+    expected = sa * sb / c2(n)
+    return (sij - expected) / ((sa + sb) / 2 - expected)
+
+
 def score(truth, predicted, universe_genes):
-    from sklearn.metrics import adjusted_rand_score
+    try:
+        from sklearn.metrics import adjusted_rand_score
+    except ImportError:
+        adjusted_rand_score = adjusted_rand_index
 
     scored = sorted(universe_genes)
     truth_labels, pred_labels = [], []
@@ -1317,7 +1774,50 @@ def cmd_edges(a):
     identity and S1E/--extra-anchors are not read. Every row keeps both sides; offsets are 0. Omit for the
     original behaviour (byte-identical to before this flag existed, checked against the frozen
     shared_exons_2334_finalhuman.tsv).
+
+    --exon-mapback (2026-09-29, register 1162 / 1166): Soto's RELEASED code (A_SD98_regions.md §3.1), not the
+    prose: the query set is every CAT v4 exon fully inside a merged autosomal SD98 region (--sd98-bed, their UCSC
+    v1.0 track; 25,971 exons of 5,154 genes), extracted with samtools faidx (strand-aware), mapped with
+    `minimap2 -c --end-bonus 5 --eqx -N 50 -p 0.5` to --genome (or a prebuilt --mm2-index of it, built with
+    `minimap2 -d` and default parameters; 7.8 GB RSS with the index, ~12 GB indexing on the fly), and a shared
+    exon is a same-strand >= --min-cov cover of an SD98 exon by any mapping of another gene's exon; pairs with
+    both genes non-eligible are dropped (their grep). --sedef / --s1e / --extra-anchors are not read. Output:
+    sorted unique pairs over ALL SD98 genes (12,231 edges; bench/soto/shared_exons_5154_exon_mapback.tsv is the
+    frozen copy, byte-identical) -- `cluster` restricts them to its genesets. Intermediates (exon BED / FASTA,
+    PAF) are kept under --work. Heavy step: run under `tools/rlock.sh heavy`.
     """
+    if a.exon_mapback:
+        if not (a.sd98_bed and a.genome):
+            sys.exit("--exon-mapback needs --sd98-bed and --genome (a samtools-indexed FASTA; --mm2-index optional)")
+        work = a.work or (os.path.splitext(a.out_shared)[0] + "_work")
+        os.makedirs(work, exist_ok=True)
+        regions = load_regions_bed(a.sd98_bed)
+        exons, biotype = sd98_exons_from_cat(a.cat_bed, regions)
+        bed, fa, paf = (os.path.join(work, x) for x in ("sd98_exons.bed", "sd98_exons.fa", "sd98_exons.paf"))
+        print(f"[exons] {len(exons)} SD98 exons of {len({x[4] for x in exons})} genes, "
+              f"{sum(x[2] - x[1] for x in exons):,} bp -> {bed}, {fa}", file=sys.stderr)
+        write_exon_queries(exons, a.genome, bed, fa, work)
+        target = a.mm2_index or a.genome
+        cmd = [a.minimap2] + MM2_EXON_ARGS + ["-t", str(a.threads), target, fa]
+        print("[minimap2] " + " ".join(cmd), file=sys.stderr)
+        with open(paf, "w") as out, open(paf + ".log", "w") as err:
+            subprocess.run(cmd, stdout=out, stderr=err, check=True)
+        mappings = read_paf_mappings(paf)
+        pairs, hits, same, nonelig = exon_mapback_pairs(exons, mappings, biotype, a.min_cov)
+        print(f"[intersect] {len(mappings)} mappings; {hits} exon x mapping hits (-f {a.min_cov} -s); {same} "
+              f"same-gene; {nonelig} both non-eligible", file=sys.stderr)
+        if a.geneset:
+            keep, _ = load_geneset(a.geneset)
+            pairs = [p for p in pairs if p[0] in keep and p[1] in keep]
+        with open(a.out_shared, "w", newline="") as out:
+            w = csv.writer(out, delimiter="\t")
+            w.writerow(["gene_a", "gene_b"])
+            w.writerows(pairs)
+        print(f"[done] {len(pairs)} unique shared-exon edges over {len({g for p in pairs for g in p})} genes "
+              f"-> {a.out_shared}", file=sys.stderr)
+        return
+    if not (a.sedef and a.geneset):
+        sys.exit("edges needs --sedef and --geneset (or --exon-mapback)")
     if a.native_v1:
         lift_fn = lambda chrom, start, end: (start, end)
         print("[liftover] --native-v1: input is CHM13 v1.0 already, identity map (S1E not read)", file=sys.stderr)
@@ -1441,7 +1941,70 @@ def cmd_cluster(a):
     second eligible-anchored component). This recovers the §6ik `no_eligible_seed_isolated` case (3/5 of the
     largest fully-missed true families: a lone eligible gene with only non-eligible siblings, correctly
     edge-connected but stranded because the filtered backbone graph has no node for its partners).
+
+    --pair-mad (2026-09-29, register 1162-1166): Soto's RELEASED family rule (B_SD98_families.ipynb cells 4-11)
+    instead of the component split: keep each shared-exon pair whose famCN MAD over the members that have one
+    is < --mad (two coding genes: |delta famCN| < 2; a pair with one famCN passes; with none, dropped), grow
+    families from every eligible gene through eligible genes, and let every non-eligible --full-geneset gene join
+    every family it has a kept pair with (a COVER, as S1C is: `--out-cover` lists the multi-family genes). The
+    written table is the collapsed partition (a multi-family gene goes to the family with most kept pairs, tie
+    -> smallest family index; status `cover_collapsed`), family ids `P<i>` with i = rank of the smallest member.
+    famCN values are used only for --geneset genes (Soto's WSSD table covers coding / unprocessed genes only;
+    a no-op for S1C, needed for famcn_ours_allwssd.tsv, which values all 5,154 SD98 genes). --famcn-col picks the
+    column (`famCN_sotoiv` = Soto's interval). --no-cn-gate keeps every pair (the sequence-only rung). The MAD
+    statistic is invariant for a pair. On the exon map-back edges with S1C famCN: ARI 0.9698, 479/491 exact
+    (held-out 0.9681 / 263 of 266); with our famCN over Soto's interval and 268 samples: 0.9277 / 411.
     """
+    if a.pair_mad:
+        genes, biotype = load_geneset(a.geneset)
+        if a.full_geneset:
+            full_genes_all, full_biotype = load_geneset(a.full_geneset)
+            biotype.update(full_biotype)
+        else:
+            full_genes_all = set(genes)
+        edges = read_edges(a.shared)
+        if a.no_cn_gate:
+            famcn = {}
+        else:
+            if not a.famcn:
+                sys.exit("--pair-mad needs --famcn (or --no-cn-gate)")
+            famcn = load_famcn(a.famcn, a.famcn_col)
+            n_all = len(famcn)
+            famcn = {g: v for g, v in famcn.items() if g in genes}
+            print(f"[famcn] {len(famcn)} --geneset genes valued ({n_all - len(famcn)} values for other genes "
+                  f"ignored, as in Soto's coding-only WSSD table)", file=sys.stderr)
+        cover, kept, leaf_of = pair_families(edges, genes, full_genes_all, famcn, gate=not a.no_cn_gate,
+                                             mad_threshold=a.mad)
+        pred = collapse_cover(cover, leaf_of, genes)
+        n_in = defaultdict(int)
+        for f in cover:
+            for g in f:
+                n_in[g] += 1
+        size = defaultdict(int)
+        for f in pred.values():
+            size[f] += 1
+        with open(a.out, "w", newline="") as fh:
+            w = csv.writer(fh, delimiter="\t")
+            w.writerow(["gene_id", "biotype", "family_id", "n_members", "famCN", "status"])
+            for g in sorted(full_genes_all):
+                fid = pred.get(g, "")
+                status = ("family" if g in genes else "cover_collapsed" if n_in[g] > 1
+                          else "attached_noncoding_member") if fid else "singleton"
+                w.writerow([g, biotype.get(g, ""), fid, size[fid] if fid else 1,
+                            f"{famcn[g]:.2f}" if g in famcn else "", status])
+        if a.out_cover:
+            with open(a.out_cover, "w", newline="") as fh:
+                w = csv.writer(fh, delimiter="\t")
+                w.writerow(["gene_id", "n_families", "family_ids"])
+                for g in sorted(full_genes_all):
+                    if n_in[g]:
+                        w.writerow([g, n_in[g], ",".join(f"P{i}" for i, f in enumerate(cover) if g in f)])
+        n_multi = sum(1 for v in n_in.values() if v > 1)
+        print(f"[pair-mad] {len(edges)} edges, {len(kept)} kept pairs, {len(cover)} families (cover) over "
+              f"{len(n_in)} genes, {n_multi} genes in >= 2 families -> {a.out}", file=sys.stderr)
+        return
+    if not a.famcn:
+        sys.exit("cluster needs --famcn")
     mad_fn = mad_median if a.mad_statistic == "median" else mad_mean
 
     genes, biotype = load_geneset(a.geneset)
@@ -1582,7 +2145,22 @@ def cmd_famcn(a):
     score that uses famCN to split and is then evaluated against Soto is partly circular and must say so.
     The honest uses are (a) characterising what a CN signal would buy ("CN would resolve N of our M residual
     over-merges"), and (b) splitting when evaluated on an INDEPENDENT truth set.
+
+    --interval exons|sd98 (2026-09-29, register 1168-1170): the GENE-LEVEL mode, CHM13 v1.0 throughout (no
+    liftover). Genes = the autosomal SD98 gene set of --cat-bed x --sd98-bed (their step 2: >= 1 exon fully inside
+    a merged region; 5,154 genes; --geneset restricts), in cat_v4.bed first-appearance order. `exons` = every CAT v4
+    exon of the gene merged (what famcn_ours_all.tsv used); `sd98` = Soto's own interval, gene body ∩ merged SD98,
+    one row per piece (5,217 rows). Per sample: length-weighted window-CN mean over the intervals; famCN = median
+    over samples (sd98: per-row median over samples, then the median over the gene's rows), famCN_mad = median
+    |x - median|. `--samples all` = every SGDP track (LP…/SS…) in --wssd-dir minus --outlier (LP6005442-DNA_A08,
+    which Soto's code removes; pass `--outlier ''` to keep it, the paper's literal n = 269); `--samples N` = the
+    first N sorted tracks, as before. `--matrix FILE.npz` caches the per-sample values of BOTH interval sets (one
+    heavy pass over the 269 tracks, ~2-3 min with --jobs 4, ~1 GB) so every table afterwards is instant. pyBigWig
+    only. The tables reproduce `winloci_data/soto_replication/famcn_ours_allwssd.tsv` column for column and
+    `famcn_ours_all.tsv` with `--samples 10` (verified byte-identical; the module docstring has the recipe).
     """
+    if a.interval:
+        return famcn_gene_mode(a)
     extra_anchors = load_extra_anchors(a.extra_anchors)
     table, spans = build_liftover(a.s1e, extra_anchors=extra_anchors)
     print(f"[liftover] fitted over {len(table)} chromosomes; "
@@ -1596,7 +2174,7 @@ def cmd_famcn(a):
         listing = subprocess.run(["curl", "-s", "--max-time", "60", BASE_URL + "/"],
                                  capture_output=True, text=True).stdout
         bbs = [f"{BASE_URL}/{m}" for m in re.findall(r'href="([^"]+_wssd\.bb)"', listing)]
-    bbs = bbs[: a.samples]
+    bbs = bbs if a.samples == "all" else bbs[: int(a.samples)]
     print(f"[wssd] {len(bbs)} sample track(s)", file=sys.stderr)
 
     rows = list(csv.DictReader(open(a.intervals), delimiter="\t"))
@@ -1631,6 +2209,108 @@ def cmd_famcn(a):
             if done % 50 == 0:
                 print(f"  {done} intervals done", file=sys.stderr)
     print(f"[done] {done} with CN, {unmapped} unmappable -> {a.out}", file=sys.stderr)
+
+
+def famcn_gene_mode(a):
+    """`famcn --interval exons|sd98` (see cmd_famcn): matrix (cached in --matrix) -> table."""
+    import numpy as np
+    if a.matrix and os.path.exists(a.matrix):
+        z = np.load(a.matrix)
+        mat = {k: z[k] for k in z.files}
+        print(f"[matrix] {a.matrix}: {len(mat['samples'])} samples, {len(mat['genes'])} genes, "
+              f"{len(mat['rows'])} SD98 rows (cached)", file=sys.stderr)
+    else:
+        if not (a.cat_bed and a.sd98_bed and a.wssd_dir):
+            sys.exit("--interval needs --cat-bed, --sd98-bed and --wssd-dir (the local *_wssd.bb tracks; "
+                     "docs/DATA.md) when no --matrix cache exists")
+        genes = load_cat_genes(a.cat_bed)
+        regions = load_regions_bed(a.sd98_bed)
+        sd = sd98_gene_set(genes, regions, autosomal=True)
+        gene_ids = [g for g in genes if g in sd]  # cat_v4.bed first-appearance order (= famcn_ours_all.tsv)
+        if a.geneset:
+            keep_genes, _ = load_geneset(a.geneset)
+            gene_ids = [g for g in gene_ids if g in keep_genes]
+        exon_iv, rows = famcn_intervals(genes, regions, gene_ids)
+        samples = sorted(f for f in os.listdir(a.wssd_dir) if f.endswith("_wssd.bb") and f[:2] in ("LP", "SS"))
+        if not samples:
+            sys.exit(f"no SGDP (LP…/SS…) *_wssd.bb in {a.wssd_dir}")
+        print(f"[intervals] {len(gene_ids)} autosomal SD98 genes: {len(exon_iv)} merged exon intervals "
+              f"({sum(e - s for _, s, e, _ in exon_iv):,} bp), {len(rows)} gene-body ∩ SD98 rows "
+              f"({sum(e - s for _, s, e, _ in rows):,} bp); {len(samples)} SGDP tracks, {a.jobs} workers",
+              file=sys.stderr)
+        mat = famcn_matrix(a.wssd_dir, samples, gene_ids, exon_iv, rows, a.jobs)
+        print(f"[matrix] {int(mat['nbad'].sum())} unparsable CN fields", file=sys.stderr)
+        if a.matrix:
+            np.savez_compressed(a.matrix, **mat)
+            print(f"[matrix] cached -> {a.matrix}", file=sys.stderr)
+    samples = [str(s) for s in mat["samples"]]
+    if a.samples == "all":
+        keep = [i for i, s in enumerate(samples) if not (a.outlier and s == a.outlier + "_wssd.bb")]
+    else:
+        keep = list(range(min(int(a.samples), len(samples))))
+    rows = famcn_tables(mat, keep, a.interval)
+    with open(a.out, "w", newline="") as fh:
+        w = csv.writer(fh, delimiter="\t", lineterminator="\n")
+        w.writerow(["gene_id", "famCN", "famCN_mad", "n_samples"] + (["n_rows"] if a.interval == "sd98" else []))
+        w.writerows(rows)
+    print(f"[done] {len(rows)} genes, {len(keep)} samples ({a.interval}) -> {a.out}", file=sys.stderr)
+
+
+def cmd_ladder(a):
+    """The copy-number LADDER of the reconciled recipe (exon map-back edges x Soto's per-pair rule), 2026-09-29:
+    the same edges and rule, scored with no copy-number gate (sequence only), with our own WSSD famCN, and with
+    Soto's published S1C famCN. It states how much of the 0.97 is agreement with their published copy numbers
+    (register 1162 / 1169 / 1170):
+
+        sequence only                                   ARI 0.7307 / 345 exact
+        our famCN, 10 samples, exons (famcn_ours_all)   0.9197 / 373      (a favourable 10-sample draw, r1170)
+        our famCN, 268 samples, exons                   0.8853 / 375      (FAM90A splits on 2 knife-edge pairs)
+        our famCN, 268 samples, Soto's interval         0.9277 / 411      (held-out 0.9343 / 235)
+        S1C famCN                                       0.9698 / 479      (held-out 0.9681 / 263)
+
+    Quote exact families and the ARI without FAM90A (`--drop-family ID_356`) beside every famCN rung: on this
+    recipe the ALL-491 ARI swings +-0.035 on whether that one 56-gene family stays whole (register 1170).
+    Runs `cluster --pair-mad` + `score --only pairs` in-process for each rung (`--arm LABEL=TABLE[:COLUMN]` adds
+    one); with `--split`, DEV and HELD-OUT columns are added.
+    """
+    genes, _bt = load_geneset(a.geneset)
+    full_genes_all, _fb = load_geneset(a.full_geneset) if a.full_geneset else (set(genes), {})
+    edges = read_edges(a.shared)
+    clean_truth, ambiguous = load_truth(a.truth)
+    universe = set(clean_truth)
+    halves = {"ALL": universe}
+    if a.split:
+        half = load_split(a.split)
+        halves["DEV"] = {g for g in universe if half.get(g) == "dev"}
+        halves["HELD-OUT"] = {g for g in universe if half.get(g) == "heldout"}
+    drop = set(a.drop_family or [])
+    arms = [("sequence only (no copy-number gate)", None, None)]
+    if a.famcn_ours10:
+        arms.append(("our famCN, 10 samples, exons", a.famcn_ours10, "famCN"))
+    if a.famcn_ours:
+        arms.append(("our famCN, 268 samples, exons", a.famcn_ours, "famCN"))
+        arms.append(("our famCN, 268 samples, Soto's interval (gene body ∩ SD98)", a.famcn_ours, "famCN_sotoiv"))
+    for spec in a.arm or ():
+        label, _, rest = spec.partition("=")
+        path, _, col = rest.partition(":")
+        arms.append((label, path, col or None))
+    arms.append(("S1C famCN (Soto's published values)", a.truth, "Median famCN"))
+    cols = [f"{h} ARI / exact" for h in halves] + ([f"ALL ARI without {','.join(sorted(drop))}"] if drop else [])
+    print("| rung | " + " | ".join(cols) + " |")
+    print("|---|" + "---|" * len(cols))
+    for label, path, col in arms:
+        famcn = {} if path is None else {g: v for g, v in load_famcn(path, col).items() if g in genes}
+        cover, kept, leaf_of = pair_families(edges, genes, full_genes_all, famcn, gate=path is not None,
+                                             mad_threshold=a.mad)
+        pred = collapse_cover(cover, leaf_of, genes)
+        cells = []
+        for uni in halves.values():
+            r = score(clean_truth, pred, uni)
+            cells.append(f"{r['ari']:.4f} / {r['n_exact']}/{r['n_truth_fam']}")
+        if drop:
+            r = score(clean_truth, pred, {g for g in universe if clean_truth.get(g) not in drop})
+            cells.append(f"{r['ari']:.4f}")
+        print(f"| {label} | " + " | ".join(cells) + " |")
 
 
 def cmd_score(a):
@@ -1668,10 +2348,23 @@ def cmd_score(a):
     numbers are directly comparable.
 
     `--only all` (default): the pairs output, then the bipartite output.
+
+    `--split FILE --half dev|heldout` (2026-09-29): score one half of the frozen family-hash split of the 2,334
+    genes (bench/soto/soto_split_2026-09-29.tsv, sha1 49bcbcfe: union-find units of S1C families + the literal
+    map-back edges, assigned by sha1 of the family id; DEV 225 / HELD-OUT 266 families). The reconciled recipe was
+    selected on DEV and judged on HELD-OUT (0.9681 / 263 of 266). `--drop-family ID_356` removes a truth family's
+    clean genes from the scored universe (the FAM90A sensitivity of the famCN rungs, register 1170).
     """
     clean_truth, ambiguous = load_truth(a.truth)
     predicted = load_predicted(a.predicted)
     universe = restrict_universe(clean_truth, a.eligible_only_universe)
+    if a.split or a.half:
+        if not (a.split and a.half):
+            sys.exit("--split and --half go together")
+        half = load_split(a.split)
+        universe = {g for g in universe if half.get(g) == a.half}
+    for fid in a.drop_family or ():
+        universe = {g for g in universe if clean_truth.get(g) != fid}
 
     if a.only in ("all", "pairs"):
         r = score(clean_truth, predicted, universe)
@@ -1726,16 +2419,31 @@ def main(argv=None):
     p.set_defaults(func=cmd_curate)
 
     p = sub.add_parser("edges", help="steps 1-4: SEDEF CIGAR -> shared-exon edge TSV "
-                                     "(was soto_replicate_from_sedef.py)")
-    p.add_argument("--sedef", required=True, help="native CHM13 v2.0 SEDEF output (34 columns)")
+                                     "(was soto_replicate_from_sedef.py); --exon-mapback = Soto's released "
+                                     "exon map-back (2026-09-29)")
+    p.add_argument("--sedef", help="native CHM13 v2.0 SEDEF output (34 columns); required unless --exon-mapback")
     p.add_argument("--min-identity", type=float, default=0.98, help="SD98 floor (field 21, 1-indexed)")
     p.add_argument("--s1e", default=S1E, help="soto_parCN_S1E.tsv (builds the v2.0->v1.0 liftover; "
                                               "default: %(default)s)")
-    p.add_argument("--geneset", required=True, help="geneset TSV (gene_id column; the headline uses the "
-                                                    "2,334-gene `genesets --out-full` file)")
+    p.add_argument("--geneset", help="geneset TSV (gene_id column; the headline uses the 2,334-gene "
+                                     "`genesets --out-full` file); required unless --exon-mapback, where it "
+                                     "optionally restricts both ends of the written pairs")
     p.add_argument("--cat-bed", required=True, help="CAT v4 BED (v1.0)")
     p.add_argument("--min-cov", type=float, default=0.99, help="bedtools -f equivalent")
     p.add_argument("--out-shared", required=True, help="TSV: gene_a<TAB>gene_b (one row per edge, deduped)")
+    p.add_argument("--exon-mapback", action="store_true",
+                   help="OPT-IN (2026-09-29): Soto's released code -- map SD98 EXONS back with minimap2 "
+                        "(-c --end-bonus 5 --eqx -N 50 -p 0.5) and call a shared exon a same-strand >= --min-cov "
+                        "cover of an SD98 exon; needs --sd98-bed and --genome. Omit for the SEDEF CIGAR walk "
+                        "(byte-identical to before this flag existed).")
+    p.add_argument("--sd98-bed", help="--exon-mapback: merged SD98 regions (their UCSC v1.0 track, sd98_v1.bed)")
+    p.add_argument("--genome", help="--exon-mapback: CHM13 v1.0 FASTA (.fa or bgzipped .fa.gz with .fai/.gzi)")
+    p.add_argument("--mm2-index", help="--exon-mapback: prebuilt `minimap2 -d` index of --genome (default "
+                                       "parameters), to skip the 12 GB / 90 s on-the-fly index")
+    p.add_argument("--minimap2", default="minimap2", help="--exon-mapback: minimap2 binary (default %(default)s)")
+    p.add_argument("--threads", type=int, default=4, help="--exon-mapback: minimap2 -t (default %(default)s)")
+    p.add_argument("--work", help="--exon-mapback: directory for the exon BED / FASTA / PAF (default "
+                                  "<out-shared>_work)")
     p.add_argument("--limit", type=int, default=0, help="stop after N qualifying rows (0 = no limit; for smoke tests)")
     p.add_argument("--extra-anchors",
                    help="OPT-IN: TSV (chrom, v2_pos, offset columns) of extra, individually-validated "
@@ -1754,7 +2462,7 @@ def main(argv=None):
                                        "(was soto_cluster_from_shared.py)")
     p.add_argument("--shared", required=True, help="gene_a<TAB>gene_b TSV (`edges` output)")
     p.add_argument("--geneset", required=True)
-    p.add_argument("--famcn", required=True)
+    p.add_argument("--famcn", help="famCN table (S1C, or a `famcn` output); required unless --no-cn-gate")
     p.add_argument("--mad", type=float, default=1.0)
     p.add_argument("--mad-statistic", choices=["mean", "median"], default="mean",
                    help="mean = the paper's own METHODS-text wording; median = what their released "
@@ -1767,6 +2475,17 @@ def main(argv=None):
                         "SAME full geneset (`edges --geneset <this file>`), or the "
                         "extra genes will have no edges to attach through. Omit for the original, "
                         "eligible-only behaviour (byte-identical to before this flag existed).")
+    p.add_argument("--pair-mad", action="store_true",
+                   help="OPT-IN (2026-09-29): Soto's released family rule -- MAD < --mad per shared-exon PAIR, "
+                        "families grown through eligible genes, non-eligible --full-geneset genes joining every "
+                        "family they pair with (a cover, collapsed for the table). Omit for the component split "
+                        "(byte-identical to before this flag existed).")
+    p.add_argument("--famcn-col", help="--pair-mad: famCN column of --famcn (e.g. famCN_sotoiv); default = "
+                                       "famCN / famCN_median / Median famCN")
+    p.add_argument("--no-cn-gate", action="store_true",
+                   help="--pair-mad: keep every pair (sequence only, no famCN needed) -- the ladder's first rung")
+    p.add_argument("--out-cover", help="--pair-mad: TSV of every placed gene with the number and ids of the "
+                                       "families it belongs to before the collapse")
     p.add_argument("--out", required=True)
     p.set_defaults(func=cmd_cluster)
 
@@ -1782,12 +2501,28 @@ def main(argv=None):
     p.add_argument("--out", required=True)
     p.set_defaults(func=cmd_dennislab)
 
-    p = sub.add_parser("famcn", help="WSSD read-depth famCN at arbitrary v2.0 intervals (was famcn_from_wssd.py)")
-    p.add_argument("--intervals", required=True,
-                   help="TSV with chrom/start/end (+ any id columns); v2.0 coordinates")
-    p.add_argument("--wssd-dir", help="directory of *_wssd.bb; omit to stream from UCSC")
-    p.add_argument("--samples", type=int, default=8, help="how many samples to median over")
-    p.add_argument("--jobs", type=int, default=8, help="parallel bigBedToBed calls per interval")
+    p = sub.add_parser("famcn", help="WSSD read-depth famCN at arbitrary v2.0 intervals (was famcn_from_wssd.py); "
+                                     "--interval exons|sd98 = gene-level famCN over CAT v4 intervals, all SGDP "
+                                     "tracks (2026-09-29)")
+    p.add_argument("--intervals", help="TSV with chrom/start/end (+ any id columns); v2.0 coordinates "
+                                       "(required unless --interval)")
+    p.add_argument("--wssd-dir", help="directory of *_wssd.bb; omit to stream from UCSC (--intervals mode only)")
+    p.add_argument("--samples", default="8", help="how many samples to median over: N = the first N sorted "
+                                                  "tracks; `all` = every SGDP track minus --outlier (default %(default)s)")
+    p.add_argument("--jobs", type=int, default=8, help="parallel bigBedToBed calls per interval, or forked "
+                                                       "pyBigWig workers with --interval (use 4 under the heavy lock)")
+    p.add_argument("--interval", choices=["exons", "sd98"],
+                   help="OPT-IN gene-level mode (CHM13 v1.0, no liftover): exons = every CAT v4 exon of the gene "
+                        "merged; sd98 = Soto's gene body ∩ merged SD98, one row per piece. Needs --cat-bed, "
+                        "--sd98-bed, --wssd-dir, pyBigWig. Omit for the --intervals mode (unchanged).")
+    p.add_argument("--cat-bed", help="--interval: CAT v4 BED (v1.0)")
+    p.add_argument("--sd98-bed", help="--interval: merged SD98 regions (sd98_v1.bed)")
+    p.add_argument("--geneset", help="--interval: restrict to this geneset's gene_id column (default: every "
+                                     "autosomal SD98 gene, 5,154)")
+    p.add_argument("--matrix", help="--interval: .npz cache of the per-sample values (both interval sets); "
+                                    "read if it exists, written otherwise")
+    p.add_argument("--outlier", default=WSSD_OUTLIER,
+                   help="--samples all: SGDP sample removed (default %(default)s, Soto's code; '' keeps it)")
     p.add_argument("--s1e", default=S1E, help="soto_parCN_S1E.tsv (default: %(default)s)")
     p.add_argument("--tool", default="bigBedToBed",
                    help="bigBedToBed (default, needs the UCSC binary) or 'pybigwig' (reads the same "
@@ -1812,7 +2547,27 @@ def main(argv=None):
                         "soto_bipartite_match_score.py stdout; all (default) = both, in that order")
     p.add_argument("--show-worst", type=int, default=5,
                    help="bipartite: print this many worst-matched true families (by size) for inspection")
+    p.add_argument("--split", help="the frozen DEV / HELD-OUT split TSV (bench/soto/soto_split_2026-09-29.tsv)")
+    p.add_argument("--half", choices=["dev", "heldout"], help="with --split: score only this half's genes")
+    p.add_argument("--drop-family", action="append", metavar="ID",
+                   help="remove this truth family's clean genes from the scored universe (repeatable; e.g. "
+                        "ID_356 = FAM90A, the famCN rungs' knife edge)")
     p.set_defaults(func=cmd_score)
+
+    p = sub.add_parser("ladder", help="the copy-number ladder of the reconciled recipe: sequence only -> our "
+                                      "famCN -> S1C famCN, each `cluster --pair-mad` + `score` (2026-09-29)",
+                       description=cmd_ladder.__doc__)
+    p.add_argument("--shared", required=True, help="exon map-back edges (bench/soto/shared_exons_5154_exon_mapback.tsv)")
+    p.add_argument("--geneset", required=True, help="the 1,793 eligible genes (`genesets --out-eligible`)")
+    p.add_argument("--full-geneset", help="the 2,334-gene universe (`genesets --out-full`)")
+    p.add_argument("--famcn-ours", help="famcn_ours_allwssd.tsv (columns famCN and famCN_sotoiv, 268 samples)")
+    p.add_argument("--famcn-ours10", help="famcn_ours_all.tsv (the 10-sample table)")
+    p.add_argument("--arm", action="append", metavar="LABEL=TABLE[:COLUMN]", help="an extra rung (repeatable)")
+    p.add_argument("--truth", default=S1C, help="S1C (default: %(default)s); also the last rung's famCN")
+    p.add_argument("--split", help="the frozen DEV / HELD-OUT split TSV: adds DEV and HELD-OUT columns")
+    p.add_argument("--drop-family", action="append", metavar="ID", help="adds an ALL-ARI-without column")
+    p.add_argument("--mad", type=float, default=1.0)
+    p.set_defaults(func=cmd_ladder)
 
     a = ap.parse_args(argv)
     a.func(a)

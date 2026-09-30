@@ -104,18 +104,34 @@ Tools: `samtools` (on PATH); numpy and scipy (the scorers); the `mcl_port` Rust 
 ## Soto 2025 replication substrate (ledger §6ie–§6ip; `REPRODUCE.md` §5a)
 
 `bench/soto/soto_replication.py` reads these. The in-repo inputs are `bench/soto/soto_famCN_S1C.tsv`,
-`soto_parCN_S1E.tsv`, `acro_extra_anchors.tsv` and the frozen edge table `shared_exons_2334_finalhuman.tsv`. They are
-enough for `genesets`, `cluster`, `dennislab` and `score`.
+`soto_parCN_S1E.tsv`, `acro_extra_anchors.tsv`, the frozen edge tables `shared_exons_2334_finalhuman.tsv` (SEDEF
+walk) and `shared_exons_5154_exon_mapback.tsv` (Soto's exon map-back, 2026-09-29), and the frozen DEV / HELD-OUT
+split `soto_split_2026-09-29.tsv`. They are enough for `genesets`, `cluster` (both rules), `dennislab`, `score` and
+the S1C rung of `ladder`.
 
 | where (`/mnt/linuxdisk/home/juanfraitu/winloci_data/`) | files | used by |
 |---|---|---|
 | `soto_replication/` | `final_human_clean.bed`: CHM13 v2.0 SEDEF, 34 columns, 88,756 rows. The user-supplied `final_human.bed` with its trailing header row stripped (§6ip) | `edges` |
 | `soto_replication/` | `final_v1.bed`: CHM13 v1.0 native SEDEF WITH CIGARs (col 33), 34 columns, 151,759 rows, identity in col 21. User-supplied 2026-09-28; strip the trailing `#chr1 ...` header row to `final_v1_clean.bed` before use. `edges --native-v1` skips the v2.0->v1.0 liftover for this file (docs/SOTO_REPLICATION_STATUS_2026-09-28.md) | `edges --native-v1` |
-| `soto_replication/` | `cat_v4.bed`: CAT v4 transcripts (CHM13 v1.0, 37 columns, gene id in column 19), the BED dump of the `cat_v4.bb` beside it (chr21 spot check: the same 2,912 records) | `edges` |
+| `soto_replication/` | `cat_v4.bed`: CAT v4 transcripts (CHM13 v1.0, 37 columns, gene id in column 19), the BED dump of the `cat_v4.bb` beside it (chr21 spot check: the same 2,912 records) | `edges`, `curate`, `famcn --interval` |
+| `soto_replication/` | `sd98_v1.bed`: Soto's SD98 regions, the merged UCSC CHM13 v1.0 `sedefSegDups` track at `$24 >= 0.98` (817 autosomal regions, 97,797,568 bp; no chrX/Y) | `curate --sd98-bed`, `edges --exon-mapback`, `famcn --interval` |
+| `soto_replication/` | `t2t-chm13-v1.0.fa.gz` (+ `.fai`, `.gzi`): the CHM13 v1.0 genome (no chrY), samtools-indexed; the exon map-back's query sequences and mapping target. A prebuilt default-parameter `minimap2 -d` index (7.4 GB, 86 s / 12 GB to build) is at `/mnt/linuxdisk/tmp/rustle_figures_dev/soto_reconcile/exon/idx/t2t_v1_default.mmi` (`--mm2-index`; scratch, regenerable) | `edges --exon-mapback` |
 | `soto_replication/` | `soto_{1793,2334}_geneset.tsv` (hand-made before wave 7; `genesets` now derives the same gene/biotype sets from S1C), `shared_exons_1793_final.tsv` (§6if input to `dennislab`), and the frozen outputs `replicated_families_2334_{median,mean}_finalhuman.tsv`, `replicated_families_dennislab_{mean,median}.tsv` | checks |
-| `soto_wssd/` | 271 per-sample SGDP `*_wssd.bb` WSSD copy-number tracks (CHM13 v1.0), fetched from the UCSC hub (`BASE_URL` in the module) by the `fetch.sh` beside them | `famcn --wssd-dir` |
+| `soto_replication/` | `famcn_ours_all.tsv` (2026-08-01: our WSSD famCN of the 5,154 autosomal SD98 genes over their merged CAT v4 exons, first 10 SGDP tracks, CRLF line ends; = `famcn --interval exons --samples 10`) and `famcn_ours_allwssd.tsv` (2026-09-29, sha1 11daa3ce: columns `famCN`/`famCN_mad`/`n_samples` = 268 tracks over merged exons, `famCN_269` = the outlier kept, `famCN_sotoiv`/`n_sotoiv_rows` = Soto's interval, gene body ∩ SD98; = the paste of `famcn --interval exons --samples all`, `... --outlier ''` and `--interval sd98 --samples all`, byte-identical) | `cluster --pair-mad --famcn`, `ladder --famcn-ours` |
+| `soto_wssd/` | 271 per-sample `*_wssd.bb` WSSD copy-number tracks (CHM13 v1.0) = the UCSC hub listing: 269 SGDP (`LP…`/`SS…`, LP6005442-DNA_A08 among them — the sample Soto's code drops) + `chm13_wssd.bb` + `hg38_wssd.bb`; fetched by the `fetch.sh` beside them (`BASE_URL` in the module) | `famcn --wssd-dir` |
 
-Tools: scikit-learn, numpy and scipy for `score`, and pyBigWig (the miniforge python) or `bigBedToBed` for `famcn`.
+Tools: scikit-learn (optional; a stdlib ARI is used when absent), numpy and scipy for `score` / `ladder`; pyBigWig (the
+miniforge python) for `famcn --interval` (`bigBedToBed` serves only the `--intervals` mode); samtools and minimap2
+2.30 for `edges --exon-mapback`.
+
+### Assembly parCN (`bench/soto/parcn_assembly.py`; `PREREG_soto_parcn_assembly_2026-09-29.md`, register 1171-1174)
+
+| where | files | used by |
+|---|---|---|
+| `winloci_data/` | `chm13v2.0.fa` (soft-masked, `.fai`): the k-mer reference (chrY excluded at count time = v1.1 content); `Reference/chm13v2.0_RefSeq_full.gff.gz`: the 300 control genes | `regions`, `kmers`, `count --exclude chrY`, `edit-depth` |
+| `winloci_data/` | `GCF_028858775.2_NHGRI_mPanTro3-v2.0_pri_genomic.fna` (chimpanzee), `GCF_028885625.2_NHGRI_mPonPyg2-v2.0_pri_genomic.fna` (orangutan): haploid primaries, counts x 2 | `count` |
+| `~/gorilla_haps/` | `mat.fa`, `pat.fa` (mGorGor1 v2.0 haplotypes): counted separately, summed for the diploid famCN | `count` |
+| `/mnt/linuxdisk/tmp/rustle_figures_dev/soto_parcn_asm/` (scratch; the 09-29 run) | `genomes/hg002v1.1.fasta.gz` (HG002 v1.1, MAT + PAT + chrM, 47 records); `work/regions.tsv`, `Q.u64` (17,538,361 canonical 30-mers), `pos.npz`, `cand{0,1,2}.u64`; `counts/{chm13noY,hg002,ggo_mat,ggo_pat,ptr,ppy}.i32` (exact counts per Q entry, the C counter `kc30`) and `counts/ed{0,1,2}.u32` (edit depth per candidate, `kn30`); `results_*.tsv`, `summary.json` | `analyze` (reads the counts as they are; `count` / `edit-depth` regenerate them, slowly) |
 
 ## Derived working substrates
 
