@@ -97,3 +97,40 @@ exons and spans, DupMasker segments, SD98 regions) is shifted by -5 before it me
 the co-duplicated set is computed within v1.0, where duplicons and SD98 regions already agree; (2) the coordinate check becomes:
 after the shift, every SD98 region on chr16 and chr18 that does not touch a chromosome end has identical sequence, else stop.
 Nothing else changes. No read had been read and no unit counted when this was written.
+
+---
+
+Run on 2026-09-30 after this file was committed (`329ce4bc`, sha1 of the file at that commit
+`de9224a059054f4d97b886a471f71d06f8a0be4f`) and after Amendment 1 (`f2b123fd`, with the script); 19 s, heavy lock. Partner table:
+`docs/NPIP_FUSION_PARTNERS_2026-09-30.tsv`.
+
+**VERDICT (section 4): none. The held-out library is UNDERPOWERED** (human_testis: 135 primary reads at NPIP genes, 3 switch units,
+fewer than 10). The script printed "SPLIT"; by section 4 an underpowered held-out library gives no verdict, so SPLIT does not apply.
+**The development library alone passes both tests (EXPLAINED).**
+
+| library | reads at NPIP | switch units | internal units | boundary, switch vs internal | H1 p | co-duplicated partners | H2 p |
+|---|---|---|---|---|---|---|---|
+| development (A119b) | 17,948 | 103 | 725 | 0.689 vs 0.279 | 1.2e-15 | 89 / 103 = 0.864 | 8e-15 |
+| development, MAPQ >= 1 | 13,567 | 94 | 686 | 0.691 vs 0.278 | 1.3e-14 | 80 / 94 = 0.851 | 1.1e-12 |
+| held-out (human_testis) | 135 | 3 | 54 | 0.667 vs 0.259 | 0.19 | 1 / 3 | 0.88 |
+| held-out, MAPQ >= 1 | 94 | 2 | 53 | 1.000 vs 0.245 | 0.071 | 0 / 2 | 1 |
+
+Core duplicons found (section 3): SD5887, SD9443, SD9445, SD9449, SD9450, SD9456, SD9621, SD9622; 103 co-duplicated duplicons.
+
+Secondary (section 5), development: location-matched null 0.785 vs observed 0.864, p = 0.0016 (partners are more co-duplicated than
+sequence at a similar distance, by a modest margin: most sequence near NPIP is co-duplicated anyway). Single-copy partners (outside
+every SD98 region): 18 of 103. Each of the four RefSeq read-throughs has exactly one intron among the switch units (PKD1P6-NPIPP1
+chr16:15,120,014-15,126,650, the junction already seen on 09-18). Partners by reads: SD9526 (EIF3C) 2,744; SD9613 (PKD1P5, PKD1P6,
+PKD1P1, PKD1P4 fusion parts) 884 over four loci; SD9527 (SMG1P1, SMG1P4) 350; SD9534 253; SD9559 (OTOAP1) 15.
+
+Descriptive breakdown written after the run (not pre-registered): 35 of the 103 switch partners sit on core duplicons, i.e. NPIP
+sequence outside every annotated NPIP gene (co-duplicated by definition); 54 on co-duplicated non-core duplicons; 6 on duplicons not
+co-duplicated; 8 on no duplicon. Without the core-duplicon partners, 54 of 68 (0.79) are co-duplicated. Without the four RefSeq
+read-through junctions seen before the run, 85 of 99 (0.86) are co-duplicated and 70 of 99 (0.71) cross a boundary.
+
+**Reading.** In the one library with power, NPIP fusion transcripts, annotated or not, leave NPIP at a duplicon boundary and mostly
+land on duplicons that travel with the NPIP core: EIF3C, the PKD1 pieces and SMG1P (LCR16u), the known neighbours in the 16p
+mosaic. That supports the block reading (a fusion as a path across one duplicon boundary inside a co-duplicated block) for NPIP in
+A119b. It is not held-out validated: the second human library has almost no NPIP expression, and no other human long-read library is
+on disk. A third of the "partners" are NPIP-core sequence outside annotated NPIP genes, which is an unannotated-copy question (O3),
+not a fusion with another family.
