@@ -328,7 +328,7 @@ __MCL_PANE__
     <span><i style="border-color:var(--cross)"></i>≥ 98%-identical exons shared across two Soto families</span>
     <span><i style="border-color:var(--within)"></i>within one Soto family</span>
     <span><i style="border-color:var(--cross);border-top-style:dashed"></i>link only in SEDEF edges</span>
-    <span>Track colors: same color = same family; ours takes the color of the Soto family it mostly holds</span>
+    <span><b>Soto S1C</b> = Soto's families · <b>Ours</b> = our families, each coloured like the Soto family it mostly holds and named by how it relates to it ("= ID_151", "ID_151 + 1 more", "part of ID_154") · <b>Homology family</b> = genes sharing ≥ 98%-identical exons before any copy-number cut (one colour per family)</span>
     <span><b>bold</b> = Soto's own member · <span style="font-style:italic">italic ×6</span> = shared: Soto lists the gene in 6 families, and the gene counts leave it out · <b>×6</b> striped bar = the same in the Soto track</span>
     <span>← / → = strand · overlapping genes get their own line · <b>SD98</b> = Soto's ≥ 98%-identity segmental duplications, with how many genes of Soto's table each holds</span>
   </div>
@@ -336,7 +336,7 @@ __MCL_PANE__
   <div id="sdstrips" class="igv" role="img" aria-label="Segmental-duplication regions holding this family's genes, with every gene inside them"></div>
   <button class="chip more" id="sdmore" hidden></button>
   <div class="tbl"><table>
-    <thead><tr><th>Gene</th><th>Locus</th><th>Model (common scale)</th><th>Soto</th><th>Ours</th><th>Homology</th><th>famCN Soto</th><th>famCN ours</th><th>Role</th></tr></thead>
+    <thead><tr><th>Gene</th><th>Locus</th><th>Model (common scale)</th><th>Soto family</th><th>Our family</th><th>famCN Soto</th><th>famCN ours</th><th>Role</th></tr></thead>
     <tbody id="rows"></tbody>
   </table></div>
   <button class="chip more" id="more" hidden></button>
@@ -574,7 +574,39 @@ function colorsFor(fid, idx) {
     });
     return { col, name, of: i => arrLab[i] };
   }
-  return { soto, our: labels(CB.our), seq: labels(CB.seq), inF };
+  const our = labels(CB.our);
+  const cleanFam = i => { const s = G[i].sf.filter(x => !x.startsWith("Unassigned")); return s.length === 1 ? s[0] : null; };
+  our.desc = new Map();
+  const tOf = new Map(), nOf = new Map();
+  our.col.forEach((_c, L) => {
+    const mem = idx.filter(i => CB.our[i] === L);
+    const cnt = new Map();
+    mem.forEach(i => { const f = cleanFam(i); if (f) cnt.set(f, (cnt.get(f) || 0) + 1); });
+    if (!cnt.size) { our.desc.set(L, "no Soto family"); return; }
+    const T = [...cnt.entries()].sort((x, y) => y[1] - x[1] || num(x[0]) - num(y[0]))[0][0];
+    tOf.set(L, T); nOf.set(L, cnt.get(T));
+    // genes Soto also lists in T (shared genes) are not "more": the classification leaves them out too
+    const sharedT = i => { const s = G[i].sf.filter(x => !x.startsWith("Unassigned")); return s.length > 1 && s.includes(T); };
+    const tset = idx.filter(i => cleanFam(i) === T).length, inT = cnt.get(T), missing = tset - inT;
+    const extra = mem.filter(i => cleanFam(i) !== T && !sharedT(i)).length;
+    our.desc.set(L, missing === 0 && extra === 0 ? `= ${T}` : missing === 0 ? `${T} + ${extra} more` :
+      extra === 0 ? `part of ${T} (${inT} of ${tset})` : `part of ${T} (${inT} of ${tset}) + ${extra} more`);
+  });
+  // colour each of our families like the Soto family its name refers to; the larger family keeps the colour when two refer to the same one
+  const usedC = new Set(), sotoCols = new Set(soto.values()), recol = new Map();
+  const ourOrder = [...our.col.keys()].sort((x, y) => (nOf.get(y) || 0) - (nOf.get(x) || 0));
+  ourOrder.forEach(L => {   // pass 1: every family that can take its own Soto family's colour gets it
+    const want = tOf.has(L) ? soto.get(tOf.get(L)) : null;
+    if (want && want !== OTHER && !usedC.has(want)) { usedC.add(want); recol.set(L, want); }
+  });
+  ourOrder.forEach(L => {   // pass 2: the rest get a free colour, preferring ones no Soto family in view uses
+    if (recol.has(L)) return;
+    const pick = SL.find(cc => !usedC.has(cc) && !sotoCols.has(cc)) || SL.find(cc => !usedC.has(cc)) || OTHER;
+    if (pick !== OTHER) usedC.add(pick);
+    recol.set(L, pick);
+  });
+  our.col = recol;
+  return { soto, our, seq: labels(CB.seq), inF };
 }
 
 function niceStep(span) { const t = span / 6, p = Math.pow(10, Math.floor(Math.log10(t))); return [1, 2, 5, 10].map(m => m * p).find(s => s >= t); }
@@ -783,7 +815,7 @@ function draw() {
       look: i => !inF(i) ? ["var(--muted)", 400, false] : shared(i) ? ["var(--fg)", 400, true] : ["var(--fg)", 650, false],
       op: i => inF(i) ? 1 : 0.5 });
     s += lane.s + lane.gut; y += lane.h;
-    const tr = famTracks(is, X, GUT, IW, y, C, lane.place, ["Soto S1C", "Ours", "Homology"]);
+    const tr = famTracks(is, X, GUT, IW, y, C, lane.place, ["Soto S1C", "Ours", "Homology family"]);
     s += tr.s + tr.gut; y += tr.h;
     const here = links.filter(([a, b]) => G[a].c === chr && G[b].c === chr);
     const ly = y + 2, LH = here.length ? 70 : 14;
@@ -810,7 +842,7 @@ function rows(F, C, vis) {
     if (C.inF(i)) return [0, "Soto member", ""];
     const c = xc[i];
     if (c) return [1, { cn: "we add · copy numbers differ", soto_rule: "we add · Soto's rule agrees", unassigned: "we add · Soto: no family" }[c], "add"];
-    return [2, "same homology family", ""];
+    return [2, "same homology family, in neither", ""];
   };
   const list = vis.map(i => [i, role(i)]).sort((a, b) => a[1][0] - b[1][0] || chrKey(G[a[0]].c) - chrKey(G[b[0]].c) || G[a[0]].s - G[b[0]].s);
   const maxSpan = Math.max(...list.map(([i]) => G[i].e - G[i].s));
@@ -823,10 +855,9 @@ function rows(F, C, vis) {
     g.x.forEach(([a, b]) => { m += `<rect x="${(a - g.s) * sc}" y="1.5" width="${Math.max((b - a) * sc, 1.2)}" height="9" fill="var(--igv)"/>`; });
     m += `</svg>`;
     const soto = g.sf.filter(x => !x.startsWith("Unassigned")).map(x => tag(C.soto.get(x) || OTHER, x)).join(" ") || `<span class="role">none</span>`;
-    const ol = C.our.of(i), sl = C.seq.of(i);
-    const our = ol ? tag(C.our.col.get(ol), C.our.name.get(ol)) : `<span class="role">unplaced</span>`;
-    const seq = sl ? tag(C.seq.col.get(sl), C.seq.name.get(sl)) : `<span class="role">unplaced</span>`;
-    return `<tr class="${r[0] === 0 ? "focus" : ""}" data-i="${i}"><td>${esc(short(g.n))}</td><td class="mono">${locus(g)}</td><td>${m}</td><td>${soto}</td><td>${our}</td><td>${seq}</td><td class="n">${g.cs ?? "–"}</td><td class="n">${g.co ?? "–"}</td><td class="role ${r[2]}">${r[1]}</td></tr>`;
+    const ol = C.our.of(i);
+    const our = ol ? tag(C.our.col.get(ol), "ours " + (C.our.desc.get(ol) || "")) : `<span class="role">not placed</span>`;
+    return `<tr class="${r[0] === 0 ? "focus" : ""}" data-i="${i}"><td>${esc(short(g.n))}</td><td class="mono">${locus(g)}</td><td>${m}</td><td>${soto}</td><td>${our}</td><td class="n">${g.cs ?? "–"}</td><td class="n">${g.co ?? "–"}</td><td class="role ${r[2]}">${r[1]}</td></tr>`;
   }).join("");
   const more = document.getElementById("more");
   more.hidden = list.length <= 40;
@@ -890,7 +921,7 @@ function drawFlow(fid, C, vis) {
   const genes = vis.filter(i => clean(i) && (G[i].sf.includes(fid) || (CB.our[i] && ourSet.has(CB.our[i]))));
   if (!genes.length) { host.innerHTML = ""; return; }
   const leftOf = i => G[i].sf.includes(fid) ? fid : (G[i].sf.find(s => !s.startsWith("Unassigned")) || "no Soto family");
-  const rightOf = i => CB.our[i] ? "ours " + C.our.name.get(CB.our[i]) : "not placed";
+  const rightOf = i => CB.our[i] ? "ours " + (C.our.desc.get(CB.our[i]) || "") : "not placed";
   const cnt = (keyf) => { const m = new Map(); genes.forEach(i => { const k = keyf(i); if (!m.has(k)) m.set(k, []); m.get(k).push(i); }); return m; };
   const L = cnt(leftOf), Rm = cnt(rightOf);
   const lkeys = [...L.keys()].sort((a, b) => (a === fid ? -1 : b === fid ? 1 : L.get(b).length - L.get(a).length || a.localeCompare(b)));
