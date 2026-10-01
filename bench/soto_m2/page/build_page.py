@@ -6,8 +6,9 @@
   mcl_tab.py                       the "How we build families" tab (MCL, explained plainly, running live)
   july/*.html                      the two July pages, embedded as tabs in shadow roots
   families.json                    from bench/soto_m2/soto_m2_families.py --out-json
+  sd_regions.json                  from bench/soto_m2/soto_m2_sd_regions.py (SD98 regions, their genes and duplicons)
 
-    python3 bench/soto_m2/page/build_page.py --data families.json --out soto_vs_ours.html
+    python3 bench/soto_m2/page/build_page.py --data families.json --sd sd_regions.json --out soto_vs_ours.html
 
 Two fixes are applied to the July member page's copy only: its "RNA missed" filter kept the RNA-found rows (313) instead
 of the missed ones (49), and its BED button attempted a file download the viewer blocks (it already shows and copies the
@@ -52,6 +53,7 @@ def split_old(path):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", required=True, help="families.json from soto_m2_families.py")
+    ap.add_argument("--sd", required=True, help="sd_regions.json from soto_m2_sd_regions.py")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     t = open(os.path.join(HERE, "template.html")).read()
@@ -65,6 +67,9 @@ def main(argv=None):
     t = t.replace("__MCL_PANE__", mcl_tab.pane(), 1)
     t = t.replace("__MISSES_DET__", misses_panel.misses_html("d"), 1).replace("__MISSES_MEM__", misses_panel.misses_html("m"), 1)
     t = t.replace("__DATA__", d, 1)
+    sd = open(a.sd).read()
+    assert "</" not in sd
+    t = t.replace("__SD__", sd, 1)
     assert not re.search(r"__[A-Z_]+__", t), re.findall(r"__[A-Z_]+__", t)[:3]
     open(a.out, "w").write(t)
     print(f"built {a.out}: {len(t):,} bytes")
