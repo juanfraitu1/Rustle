@@ -62,3 +62,29 @@ units. If no, the cut is finer than duplicon structure.
 ## 7. Result
 
 (Filled in after the run, below this line, without editing anything above.)
+
+Run on 2026-09-30 after this file was committed (`bbbdda25`, sha1 of the file at that commit
+`a9b5dca5f006d2157648307bc2668c92918fd4ed`); `bench/soto_m2/soto_m2_duplicons.py`, 56 s, light lock.
+
+**VERDICT (§4): FOLLOWS** — on the held-out half and the dev half alike.
+
+| set | clusters | pooled Δ | pooled p | clusters with Δ > 0 | verdict |
+|---|---|---|---|---|---|
+| held-out | 16 | +0.2853 | 0.0001 | 0.88 | FOLLOWS |
+| dev | 17 | +0.3276 | 0.0001 | 0.88 | FOLLOWS |
+| all (descriptive) | 33 | +0.3071 | 0.0001 | 0.88 | FOLLOWS |
+
+Secondary: Soto's own `SD Unit` labels (28 clusters with ≥ 3 labelled genes) Δ +0.2468, p 0.0001, 0.68 → FOLLOWS; without the
+5 genes lacking an exonic duplicon, Δ +0.3121, p 0.0001. Copy-number gap vs duplicon dissimilarity, Spearman +0.577 over all
+8,565 gene pairs inside the clusters, +0.313 over the 2,834 pairs across a Soto boundary.
+
+Clusters that do not follow (Δ ≤ 0.05 or p > 0.25): ID_69/ID_76 (−0.029), ID_163/ID_191 (−0.199), ID_96/ID_97 (−0.001),
+ID_271/ID_272 (0.000), ID_172/ID_184 (+0.016), TBC1D3 ID_468/ID_469 (+0.049). Strongest: FAM90A/FAM86 ID_356/ID_355 (+0.818),
+DUX4 cluster (+0.737), FGF7P (+0.621), FRG1 (+0.595). The NPIP cluster (+0.375, p 0.0001) includes SMG1P (ID_41, the adjacent
+LCR16u module); the one-gene NPIPB3/B4/B5 families are outside this test (it needs ≥ 2 clean members per family).
+
+**Reading.** Where Soto cut a sequence family by copy number, the pieces sit on different duplicons far more than chance, and
+copy-number gaps grow with duplicon differences: different duplicons carry different copy numbers, so the copy-number gate
+largely acts as a duplicon split. The exceptions (TBC1D3 among them) are cuts inside one duplicon composition. This supports
+"duplicons as units" as the bridge between Soto's families and sequence families; it does not test the reverse (whether every
+duplicon boundary is a family boundary).
