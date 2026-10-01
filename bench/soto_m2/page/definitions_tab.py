@@ -102,6 +102,60 @@ def three_objects():
             'them and a fusion gene crossing a duplicon boundary">' + "".join(s) + '</svg>')
 
 
+def famcn_diagram():
+    """Why famCN tracks duplicons: read depth counts every copy of a gene's sequence, so genes on the same duplicons share
+    a famCN and a gene on a more-copied duplicon gets a higher one. Toy numbers, diploid copies per genome."""
+    s = []
+    dup = {"D1": ("var(--s1)", 4), "D2": ("var(--s2)", 10), "D3": ("var(--s3)", 8)}
+    s.append('<text x="0" y="14" font-size="12.5" font-weight="650" fill="var(--fg)">Copies of each duplicon in one genome (both parents)</text>')
+    for gx, name in ((0, "D1"), (190, "D3"), (400, "D2")):
+        col, n = dup[name]
+        s.append(f'<text x="{gx}" y="40" font-size="12" font-weight="650" fill="var(--fg)">{name}</text>')
+        for k in range(n):
+            s.append(f'<rect x="{gx + 24 + k * 15}" y="28" width="12" height="14" rx="2" fill="{col}" fill-opacity=".8"/>')
+        s.append(f'<text x="{gx + 24 + n * 15 + 4}" y="40" font-size="12" fill="var(--muted)">× {n}</text>')
+    s.append('<text x="280" y="76" font-size="11" fill="var(--muted)" text-anchor="middle">read depth along the gene (each copy counts)</text>')
+    s.append('<text x="458" y="76" font-size="11" fill="var(--muted)">famCN = average depth</text>')
+    s.append('<text x="612" y="76" font-size="11" fill="var(--muted)">Soto\'s rule</text>')
+    rows = [("gene X", "D1"), ("gene Z", "D1"), ("gene Y", "D2")]
+    RH, Y0, sc = 78, 86, 3.2
+    mids = []
+    for r, (name, other) in enumerate(rows):
+        y0 = Y0 + r * RH
+        yb = y0 + 40
+        d3, d2 = dup["D3"][1], dup[other][1]
+        fam = (d3 + d2) / 2
+        s.append(f'<text x="0" y="{y0 + 30}" font-size="12.5" font-weight="650" fill="var(--fg)">{name}</text>')
+        s.append(f'<text x="0" y="{y0 + 45}" font-size="10.5" fill="var(--muted)">on D3 + {other}</text>')
+        for (a, b, depth) in ((120, 280, d3), (280, 440, d2)):
+            h = depth * sc
+            s.append(f'<rect x="{a}" y="{yb - h}" width="{b - a}" height="{h}" fill="var(--faint)" fill-opacity=".35"/>')
+            s.append(f'<text x="{(a + b) / 2}" y="{yb - h - 3}" font-size="10.5" fill="var(--muted)" text-anchor="middle">{depth}</text>')
+        s.append(f'<line x1="120" x2="440" y1="{yb + 10}" y2="{yb + 10}" stroke="var(--igv)" stroke-width="1.5"/>')
+        for a, b in ((132, 160), (205, 235), (300, 330), (380, 420)):
+            s.append(f'<rect x="{a}" y="{yb + 5}" width="{b - a}" height="10" fill="var(--igv)"/>')
+        s.append(f'<rect x="120" y="{yb + 19}" width="159" height="6" fill="{dup["D3"][0]}" fill-opacity=".8"/>')
+        s.append(f'<rect x="281" y="{yb + 19}" width="159" height="6" fill="{dup[other][0]}" fill-opacity=".8"/>')
+        s.append(f'<text x="458" y="{yb + 2}" font-size="11.5" fill="var(--muted)">({d3} + {d2}) ÷ 2 =</text>')
+        s.append(f'<text x="560" y="{yb + 4}" font-size="17" font-weight="700" fill="var(--fg)">{fam:g}</text>')
+        mids.append(yb)
+    ytop, ybot = mids[0] + 15, mids[-1] + 5
+    s.append(f'<line x1="220" x2="220" y1="{ytop}" y2="{ybot}" stroke="var(--cross)" stroke-width="1.5" stroke-dasharray="4 3"/>')
+    s.append(f'<text x="220" y="{mids[-1] + 42}" font-size="11" fill="var(--cross)" text-anchor="middle">same exon (≥ 98%) in all three: one sequence family</text>')
+    s.append(f'<path d="M600 {mids[0] - 8} H606 V{mids[1] + 4} H600" fill="none" stroke="var(--fg)" stroke-width="1.5"/>')
+    yt = (mids[0] + mids[1]) / 2
+    s.append(f'<text x="614" y="{yt - 10}" font-size="12.5" font-weight="650" fill="var(--fg)">Soto family 1</text>')
+    s.append(f'<text x="614" y="{yt + 5}" font-size="11" fill="var(--muted)">famCN 6 and 6</text>')
+    s.append(f'<text x="614" y="{yt + 19}" font-size="11" fill="var(--muted)">differ by &lt; 2: together</text>')
+    s.append(f'<text x="614" y="{mids[2] - 10}" font-size="12.5" font-weight="650" fill="var(--fg)">Soto family 2</text>')
+    s.append(f'<text x="614" y="{mids[2] + 5}" font-size="11" fill="var(--muted)">famCN 9 vs 6</text>')
+    s.append(f'<text x="614" y="{mids[2] + 19}" font-size="11" fill="var(--cross)">differ by 3: cut here</text>')
+    H = mids[-1] + 52
+    return (f'<svg viewBox="0 0 760 {H}" width="100%" role="img" aria-label="Three genes share an exon on duplicon D3; their read '
+            f'depth also covers D1 or D2, which have different copy numbers, so their famCN differ and Soto\'s cut separates the '
+            f'genes on D2 from the genes on D1">' + "".join(s) + '</svg>')
+
+
 def dotplot():
     rows = sorted(CLUSTERS, key=lambda r: -r[1])
     W, L, R, T, rh = 760, 260, 20, 26, 15
@@ -161,6 +215,12 @@ def pane():
   <h2>Why Soto's copy-number cut is not arbitrary: it follows duplicons</h2>
   <p class="note">Segmental duplications are mosaics of duplicons, ancestral duplication units. Three objects, not one:</p>
   <div class="chart">{three_objects()}</div>
+  <h3 class="sub-h">Why copy number tracks duplicons</h3>
+  <div class="chart">{famcn_diagram()}</div>
+  <p class="note">famCN is read depth with every read counted at each copy it matches, so it counts how many copies of a gene's
+  sequence one genome carries. Genes on the same duplicons get the same famCN; a gene on a more-copied duplicon gets a higher one.
+  Soto keep two genes together only if their famCN differ by less than 2, so the cut falls where the duplicon make-up changes
+  (toy numbers above). That follows from how famCN is measured; the test below checks that it held in Soto's table.</p>
   <p class="note">Test, pre-registered before any number was computed: inside each of the 33 sequence families Soto cuts by copy
   number, do genes in the same Soto family share more duplicon content than genes in different ones? Duplicons from Vollger et al.
   2022 (the DupMasker annotation Soto cite).</p>
