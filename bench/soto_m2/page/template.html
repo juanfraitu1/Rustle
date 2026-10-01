@@ -25,7 +25,18 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s-other: #56636d;
   --cross: #e66767; --within: #5d6b75; --sd: #3a4954; --sdp: #1d3944; --sdp-line: #4f93ad; color-scheme: dark }
 body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--f-body); }
-.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 64px; display: grid; gap: 40px; }
+.wrap { max-width: 1720px; margin: 0 auto; padding-inline: clamp(16px, 2.5vw, 40px); padding-block: 36px 64px; display: grid; gap: 40px; }
+.chart > svg { max-width: 1100px; display: block; }
+.endrow > svg { max-width: 1150px; display: block; }
+#flow svg { max-width: 860px; }
+/* wide screens: the family grid stays beside the browser, so choosing a family needs no scrolling */
+.duo { display: grid; gap: 40px; min-width: 0; }
+.duo > section { min-width: 0; }
+@media (min-width: 1380px) {
+  .duo { grid-template-columns: minmax(340px, 0.7fr) minmax(0, 2fr); align-items: start; gap: 28px; }
+  .duo > section:first-child { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; padding-right: 6px; }
+  .duo .grp { grid-template-columns: 1fr; gap: 4px; }
+}
 h1, h2 { font-family: var(--f-display); font-weight: 650; text-wrap: balance; margin: 0; line-height: 1.2; }
 h1 { font-size: 2rem; }
 h2 { font-size: 1.35rem; }
@@ -292,8 +303,9 @@ __MCL_PANE__
     <button class="chip" data-f="ID_349">EEF1A1 + 2 retrocopies</button><button class="chip" data-f="ID_319">CKS1B + 2 retrocopies</button><button class="chip" data-f="ID_322">COMMD1 + ribosomal pseudogenes</button><button class="chip" data-f="ID_441">RBM8A + RBM8B</button></div>
 </section>
 
+<div class="duo">
 <section>
-  <div class="eyebrow">Every Soto family · one square each · click to open it in the browser below</div>
+  <div class="eyebrow">Every Soto family · one square each · click to open it in the browser</div>
   <h2>Where we agree, and who is short when we don't</h2>
   <div class="groups" id="groups"></div>
   <div class="legend"><span><span class="sw" style="background:var(--k-match);position:relative;display:inline-grid;place-items:center"><span style="width:4px;height:4px;border-radius:50%;background:var(--surface)"></span></span> dot = Soto family is smaller than its sequence (homology) family</span></div>
@@ -317,7 +329,7 @@ __MCL_PANE__
     <span><i style="border-color:var(--within)"></i>within one Soto family</span>
     <span><i style="border-color:var(--cross);border-top-style:dashed"></i>link only in SEDEF edges</span>
     <span>Track colors: same color = same family; ours takes the color of the Soto family it mostly holds</span>
-    <span><b>bold</b> = Soto's own member · <i>italic ×6</i> = shared: Soto lists the gene in 6 families, and the gene counts leave it out · <b>×6</b> striped bar = the same in the Soto track</span>
+    <span><b>bold</b> = Soto's own member · <span style="font-style:italic">italic ×6</span> = shared: Soto lists the gene in 6 families, and the gene counts leave it out · <b>×6</b> striped bar = the same in the Soto track</span>
     <span>← / → = strand · overlapping genes get their own line · <b>SD98</b> = Soto's ≥ 98%-identity segmental duplications, with how many genes of Soto's table each holds</span>
   </div>
   <div id="sdhead" class="sdhead"></div>
@@ -329,6 +341,7 @@ __MCL_PANE__
   </table></div>
   <button class="chip more" id="more" hidden></button>
 </section>
+</div>
 
 <section id="loosen">
   <div class="eyebrow">Our copy-number cut, loosened from Soto's MAD &lt; 1 · families vs the exact run</div>

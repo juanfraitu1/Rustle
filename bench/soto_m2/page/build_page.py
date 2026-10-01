@@ -45,7 +45,7 @@ def split_old(path):
     css = re.sub(r':root\[data-theme="?light"?\]', ':host([data-theme="light"])', css)
     css = css.replace(":root", ":host")
     css = re.sub(r"(^|[}\s])body\s*\{", r"\1.sbody{", css)
-    css += "\n.sbody .wrap{padding-left:0!important;padding-right:0!important;padding-top:8px!important}"
+    css += "\n.sbody .wrap{padding-left:0!important;padding-right:0!important;padding-top:8px!important;max-width:none!important}"
     js = js.replace("if(filter==='rnamiss' && d.rna!=='yes') return false;", "if(filter==='rnamiss' && d.rna!=='no') return false;")
     js = re.sub(r"\n\s*try\{ const a=document\.createElement\('a'\);.*?catch\(e\)\{\}", "", js, count=1, flags=re.S)
     markup = markup.replace("⬇ Get BED — the included loci", "Show BED — the included loci")
