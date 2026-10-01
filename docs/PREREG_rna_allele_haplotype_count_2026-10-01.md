@@ -141,3 +141,24 @@ RefSeq NPIP models are 6-27 kb, while the real fibroblast reads at NPIP have med
 27 kb did not finish in the 10-minute window. NPIP simulated transcripts are therefore the 3'-most 4,000 bp of each truth transcript (A, B
 and B-only alike); TBC1D3 is unchanged. Real arm: a family whose IsoCon run does not finish in one 10-minute call is downsampled at random
 (seed 1) by halves until it does; the size used is reported. The TBC1D3 simulation result stands as run.
+
+## Amendment 4 (2026-10-01): deletion test on NPIP — does a copy missing from the reference pass as an allele? (written before any masking)
+
+User request: remove a copy that is well covered by its own reads and see what the RNA-only methods make of it. Prior art in this project:
+the 2026-08-14 whole-genome excision of 162 two-copy families (a deleted copy's reads are ABSORBED by one paralog 64% / ORPHANED 33%;
+the S2 divergence detector TPR 0.27). New here: NPIP, and the allele framing.
+
+- **Copy:** the S_fam NPIP copy with the most primary reads over its exons in the fibroblast BAM = **NPIPA2** (gN15, 183 primaries;
+  NC_073242.2:32,426,793-32,456,482, minus strand; truth class T2i). Its span is hard-masked to N in a copy of `_pri` (no other NPIP copy
+  overlaps it; it also covers RefSeq LOC101141855 = the NPIPA2 record, LOC115932701, and the first 12.7 kb of LOC129527628, disclosed).
+- **Reads:** the 2,951 NPIP-net reads, realigned with the fibroblast BAM's `@PG` command (`-ax splice:hq -uf --eqx -Y -N 50 -p 0.1
+  --secondary=yes`) to the masked genome AND to the unmasked genome (local baseline, same minimap2, so the comparison is paired).
+- **R1 fate:** the reads whose baseline primary lies on NPIPA2's exons: unmapped / landing copy (the copy holding most of them) /
+  concentration on that copy / their mismatch rate there.
+- **R2 fake allele:** at the landing copy, the registered allele-site test (>= 10 reads, minor >= 3 and >= 0.20, not a PSV among the
+  copies left in the reference, not A>G, not near a homopolymer) on its primary reads, baseline vs masked. A site that appears only
+  in the masked arm and whose minor base is NPIPA2's base is a fake allele.
+- **R3 no-reference-match detector:** H4's read groups at the landing copy, with NPIPA2 removed from the paralog list, baseline vs masked.
+- **R4 IsoCon:** net reads re-selected from the masked alignment (any record on a remaining NPIP copy, plus the net reads it leaves
+  unmapped), IsoCon `pipeline` defaults; an output is flagged "not in the reference" when it has no hit at identity x coverage >= 0.999
+  in the masked genome. True flag = the output matches NPIPA2 at >= 0.999 in the unmasked genome. Report true and false flags.
