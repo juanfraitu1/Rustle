@@ -252,7 +252,7 @@ STEPS = [
      "chm13.draft_v1.0_plus38Y.SDs-98.merged.bed", step1),
     ("Keep the exons that lie fully inside them", "Exons of every annotated gene (CAT v4), of any biotype, that sit entirely inside an SD98 block. 71 genes on a hand-made list are removed.",
      "bedtools intersect -wa -f 1 -a CHM13.combined.v4.exons.bed … | grep -Fvf genes_to_remove.txt", step2),
-    ("Map every kept exon back to the genome", "Each exon's sequence is aligned to the whole genome, keeping up to 50 places.",
+    ("Map every kept exon back to the genome", "Each kept exon's sequence is aligned to the whole genome (CHM13 v1.0), not only to the SD98 blocks, keeping up to 50 places. The SD98 blocks only decide which exons are queried (step 2) and which hits count: a hit links two genes only where it lands on another kept exon (step 4).",
      "minimap2 -c --end-bonus 5 --eqx -N 50 -p 0.5", step3),
     ("Pair genes that share an exon", "Two genes pair when an alignment of one gene's exon covers ≥ 99% of the other gene's exon, on the same strand. A pair needs at least one protein-coding gene or unprocessed pseudogene.",
      'bedtools intersect -f 0.99 -s … | grep "protein_coding\\|unprocessed_pseudogene"', step4),
