@@ -90,6 +90,7 @@ tr.focus td:first-child { font-weight: 600; }
 .role.add { color: var(--fg); font-weight: 500; }
 .more { justify-self: start; }
 .sdhead h3 { font-family: var(--f-display); font-weight: 650; font-size: 1.15rem; margin: 6px 0 4px; }
+.famcn-steps { margin: 6px 0 8px; padding-left: 1.2em; display: grid; gap: 2px; }
 .sub-h { font-family: var(--f-display); font-weight: 650; font-size: 1.1rem; margin: 18px 0 4px; }
 .endrow { border-bottom: 1px solid var(--line); padding: 6px 0; }
 .endtbl { border-collapse: collapse; margin-top: 6px; font-size: .9rem; }
@@ -269,7 +270,19 @@ __HOW_PANE__
       <div class="tile"><div class="lab">Same raw data</div><div class="sub">the 268 SGDP read-depth (WSSD) tracks Soto published on the UCSC hub; their code drops one outlier genome, so do we</div></div>
       <div class="tile"><div class="lab">Same genes, same pieces</div><div class="sub">gene body ∩ SD98, one value per gene, median over the 268 genomes</div></div>
       <div class="tile"><div class="lab">Agreement</div><div class="big" id="cnr"></div><div class="sub" id="cnr2"></div></div>
-      <div class="tile"><div class="lab">What we cannot copy</div><div class="sub">the script that averages read depth over each gene piece (<code>genotype_cn_parallel.py</code>) is not in Soto's release; we use a length-weighted mean</div></div>
+      <div class="tile"><div class="lab">How we compute famCN</div><div class="sub">Soto's script that averages read depth over a gene's pieces (<code>genotype_cn_parallel.py</code>) is not released, so step 2 is our approximation:
+        <ol class="famcn-steps"><li>the gene's interval is its body ∩ SD98, often several pieces</li><li>per genome and piece: the WSSD windows it overlaps, averaged by bases of overlap (below)</li><li>per piece: the median over the 268 genomes</li><li>the gene's famCN: the median over its pieces, as in Soto's notebook</li></ol></div>
+        <svg viewBox="0 0 520 132" width="100%" role="img" aria-label="Worked example: a gene piece overlapping three WSSD windows with copy numbers 4, 6 and 6 over 200, 1,200 and 300 bp; the length-weighted mean is 5.8">
+<text x="0" y="12" font-size="11" fill="var(--muted)">WSSD windows, one genome</text>
+<rect x="20" y="20" width="139" height="22" rx="3" fill="var(--s1)" fill-opacity=".35"/><text x="89" y="35" font-size="11.5" fill="var(--fg)" text-anchor="middle">CN 4</text>
+<rect x="161" y="20" width="238" height="22" rx="3" fill="var(--s1)" fill-opacity=".6"/><text x="280" y="35" font-size="11.5" fill="var(--fg)" text-anchor="middle">CN 6</text>
+<rect x="401" y="20" width="99" height="22" rx="3" fill="var(--s1)" fill-opacity=".6"/><text x="450" y="35" font-size="11.5" fill="var(--fg)" text-anchor="middle">CN 6</text>
+<line x1="120" x2="120" y1="16" y2="84" stroke="var(--faint)" stroke-dasharray="3 3"/><line x1="460" x2="460" y1="16" y2="84" stroke="var(--faint)" stroke-dasharray="3 3"/>
+<text x="0" y="62" font-size="11" fill="var(--muted)">gene piece (gene body ∩ SD98)</text>
+<rect x="120" y="68" width="340" height="12" rx="2" fill="var(--igv)"/>
+<text x="140" y="98" font-size="10.5" fill="var(--muted)" text-anchor="middle">200 bp</text><text x="280" y="98" font-size="10.5" fill="var(--muted)" text-anchor="middle">1,200 bp</text><text x="430" y="98" font-size="10.5" fill="var(--muted)" text-anchor="middle">300 bp</text>
+<text x="0" y="124" font-size="12" fill="var(--fg)">(4 × 200 + 6 × 1,200 + 6 × 300) ÷ 1,700 = <tspan font-weight="700">5.8</tspan></text>
+</svg></div>
     </div>
   </div>
   <p class="note">Switch <b>Copy numbers</b> to <b>Soto's (Table S1C)</b> at the top: every family is then rebuilt with Soto's own numbers, and the copy-number disagreements disappear (479 of 491 exact). The 12 left are Soto's table against Soto's own rule, two hand merges, and gaps in our exon links.</p>
