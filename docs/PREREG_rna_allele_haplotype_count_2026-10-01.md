@@ -100,3 +100,30 @@ not usable if H2 FAILS or H1 FAILS.
 3. RNA: `as_table` scan of the fibroblast BAM; `copy_assign` (O2 default) on the S_fam and S_multi regions; per-gene pileups; caller.
 4. Score H1-H4 against the frozen truth; result in `docs/RNA_ALLELE_HAPLOTYPE_COUNT_2026-10-01.md`. No threshold above is changed after
    step 1; any deviation is written down with its reason.
+
+## Amendment 1 (2026-10-01): IsoCon, the reference-free arm (written after the chr20 + chrX pilot of the caller, before any IsoCon run)
+
+The user asked to add IsoCon (Sahlin et al. 2018), the reference-free clustering of Iso-Seq reads into distinct transcripts, as a
+head-to-head with the PSV allele caller, on the same frozen truth, and to keep it to what this machine can run.
+
+**Pilot facts that set the scope (seen before writing this):** fibroblast reads touching the S_fam copies (any alignment record): NPIP
+2,951 distinct reads (1,040 primaries), TBC1D3 1,264 (5 primaries: TBC1D3 is essentially not expressed in fibroblasts). The caller pilot
+(chr20 + chrX) gave f_X = 2/439 and S_single precision 588/590; it does not touch these rulings.
+
+- **Arm I, real reads (NPIP; TBC1D3 reported for completeness).** Reads = every distinct read with any alignment record (primary or
+  secondary) overlapping an S_fam copy span of the family: a broad net, so a copy the reference lacks still contributes its reads through
+  whichever copy they best resemble. Sequence = the read's primary record, restored to the read's own orientation. Above 3,000 reads a
+  family is downsampled at random (seed 1) to 3,000. IsoCon `pipeline` with its default parameters (version 0.3.3, PyPI), no reference.
+- **Arm S, simulation (NPIP and TBC1D3).** Truth transcripts = each S_fam copy's exon union on each haplotype: haplotype A = the `_pri`
+  exon sequence; haplotype B = the same exon blocks lifted through the frozen `_pri` -> B alignments; plus the B-only locus (lifted
+  from the family copy whose hit it is). 20 reads per haplotype-copy transcript, 1% errors (0.5% substitutions, 0.25% insertions, 0.25%
+  deletions), 5' end shortened by an exponential with mean 100 bp, 3' end by one with mean 10 bp; seed 1. IsoCon `pipeline`, defaults.
+- **Scoring, both arms** (descriptive; no pass/fail):
+  - every IsoCon transcript is mapped to the maternal and paternal assemblies (`minimap2 -c -x splice` to the frozen splice indexes) and
+    assigned to the copy whose locus its best hit overlaps and to the haplotype with the higher identity (equal = both);
+  - **recovered** = haplotype copies with a transcript at identity >= 0.999; **alleles separated** = T2d copies with one transcript on
+    each haplotype; **alleles merged** = T2d copies with transcripts on one haplotype only; **paralogs merged** = a transcript whose best
+    hits on two copies tie; **unmatched** = transcripts below 0.99 to every copy;
+  - **lower bound check**: IsoCon's count of distinct coding groups (its own copy estimate) against T (NPIP 41, TBC1D3 28; real arm:
+    against the haplotype copies with reads);
+  - in Arm S, recall and precision against the known truth transcripts (exact match, then >= 0.999).
