@@ -139,3 +139,41 @@ Machine rules: builds and runs go through `tools/rlock.sh` (a build is a heavy j
 The borrow-strength test; base-level graphs; any change to family definition, O2, or pipeline defaults; a pipeline
 stage and the genome-wide run (after the flagships, and after concurrent work on `mcl_families` merges); the human vs
 gorilla comparison (the same exporter, run later on the gorilla catalog).
+
+## Amendment 1 (2026-09-30): duplicon annotation
+
+**Why.** Segmental duplications are mosaics of duplicons (ancestral duplication units). A pre-registered test on the Soto
+branch (`docs/PREREG_soto_cn_vs_duplicon_2026-09-30.md`, KEY=cnduplicon) found that Soto's copy-number cut follows duplicon
+boundaries (verdict FOLLOWS on the held-out and dev halves; copy-number gap vs duplicon dissimilarity, Spearman +0.58).
+Fusion genes such as PKD1P6-NPIPP1 span two duplicons. A family graph should therefore show which duplicons each node sits
+on, and a fusion's joint graph should show the duplicon boundary the fused transcript crosses.
+
+**Input.** `--duplicons BED`, optional. Without it every output is byte-identical to the unamended spec. Column 4 is the
+duplicon ID; overlapping records are allowed and every overlapping duplicon counts. The intended file is the DupMasker painting
+of Vollger et al. 2022 (Zenodo 4726156, `data.tar` member `chm13.draft_v1.0_plus38Y_dupmasker_colors.bed`, the source Soto
+cite), fetched on 2026-09-30 to `/mnt/linuxdisk/home/juanfraitu/winloci_data/duplicons/`.
+
+**Assembly.** The BED must be in the catalog's coordinates. The annotation is CHM13 v1.0. On 2026-09-30 gene coordinates
+agreed between the CAT v4 annotation and RefSeq on CHM13 v2.0 on chr1, chr4, chr16 and chr17 (AMY1A, DUX4, NOTCH2NLA, NPIPA1,
+SRGAP2C, TBC1D3, within annotation-boundary differences). The acrocentric chromosomes (13, 14, 15, 21, 22) and chrY were not
+checked, and a run on them must check first. The GFA comment line records the BED's file name and sha1.
+
+**Annotation (representation only).** Duplicons label the graph; they never change nodes, links, paths or families. Duplicon
+rules were refuted as family definers (register 677, 743, 817, 997).
+- Each node gets a tag `DU:Z:` listing the duplicon IDs that cover its representative copy's bases, with the base count, for
+  example `DU:Z:SD9443:1179;SD9456:714`. The list is sorted by base count (descending), then by ID. A node with no duplicon
+  gets no tag.
+- `<family>.paths.tsv` gains a column `duplicons`: the copy's exonic duplicon composition, in the same `id:bp` form.
+- `summary.tsv` gains `n_duplicons` (distinct duplicon IDs over the family's nodes) and `dominant_duplicons` (the three
+  covering the most bases).
+- A second colour file, `<family>.duplicons.csv`, colours each node by its dominant duplicon. The 8 most frequent duplicons in
+  the family get the categorical palette in order of frequency, and the rest are grey. Bandage can then switch between the
+  copy-sharing colours and the duplicon colours.
+- Each fusion link in a joint graph gets `DX:Z:<left node's dominant duplicon>><right node's dominant duplicon>`.
+
+**Tests (added to the plan as Task 7 before execution resumes).**
+- A synthetic duplicon BED over the integration fixture gives the expected `DU:Z:` values, `paths.tsv` compositions and
+  colour file.
+- Without `--duplicons`, outputs are byte-identical to a run of the unamended binary.
+- A fusion link carries the expected `DX:Z:` tag.
+- A BED chromosome absent from the catalog is ignored silently, while a duplicon overlapping no node is simply not reported.
