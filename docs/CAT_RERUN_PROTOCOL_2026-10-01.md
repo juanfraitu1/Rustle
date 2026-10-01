@@ -38,3 +38,8 @@ Gorilla is untouched. Nothing in the canonical repo is edited; changed copies of
 RefSeq NPIPB3 (chr16:21,337,400-21,360,419) has no CAT gene: the CAT NPIP truth has 25 of 26 chr16 copies (+ NPIPB1P chr18). CAT names
 are permuted relative to RefSeq (CAT NPIPB3 = RefSeq NPIPB5; TBC1D3 D/E/K rotated). RefSeq NPIP / TBC1D3 copies vs CAT: 18 strong, 15
 partial, 1 weak, 7 none (before R1's span rule for exon-less records).
+
+**Amendment 1 (2026-10-01, after seeing step 1's first output).** R1's span rule for exon-less RefSeq records used the largest span
+overlap, which let a read-through record containing the copy win (NPIPB14P -> PDXDC2P-NPIPB14P, TBC1D3P1 -> TBC1D3P1-DHX40P1). Changed to
+the largest span Jaccard (overlap / union) on the same strand, so the CAT record of the copy itself wins. Applies only to the 6
+exon-less records (NPIPB14P; TBC1D3P1, P3, P4, P7; LOC100420311).
