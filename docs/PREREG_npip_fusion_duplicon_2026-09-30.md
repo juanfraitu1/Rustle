@@ -1,0 +1,88 @@
+# Pre-registration: are NPIP fusion transcripts duplicon-boundary crossings inside co-duplicated blocks? (2026-09-30, KEY=npipfusion)
+
+Written before any statistic below was computed. Human CHM13 only, NPIP only. Nothing in `src/` or `tools/` changes.
+Script: `bench/soto_m2/npip_fusion_duplicons.py`, written after this file is committed; the commit hash of this file is recorded
+in the result section. After the first run the script may change only to fix a crash, and every such change is listed as a
+deviation.
+
+## 1. Question
+
+A descriptive look at the four annotated NPIP read-throughs (section 6) suggests that NPIP fusions are not two families joined by
+chance: each fused transcript switches from a partner's duplicons (PKD1's, PDXDC1's) to the NPIP core at a duplicon boundary,
+and the partner's duplicons travel with the NPIP core from one segmental duplication to the next. **Does this hold for the NPIP
+fusion transcripts seen in long reads, annotated or not?** If yes, an NPIP fusion is a property of the duplicated block, and the
+right container is a path across one duplicon boundary. If the partners are single-copy sequence, NPIP fusions are copy-specific
+events instead.
+
+## 2. Inputs (frozen)
+
+- **Reads.** Two human Iso-Seq libraries aligned to CHM13 v2.0 with minimap2 `-ax splice:hq`:
+  - development: `/mnt/linuxdisk/home/juanfraitu/winloci_data/A119b.t2t.bam`;
+  - held-out: `/home/juanfra/human_val/human_testis.t2t.bam`. **The verdict is the held-out library's.**
+- **NPIP genes.** Genes on chr16 and chr18 whose name starts with `NPIP` and contains no `-`, from RefSeq
+  (`winloci_data/Reference/chm13v2.0_RefSeq_full.gff.gz`: NPIPA1, A2, A5-A9, NPIPB2-B15 including B10P and B14P, NPIPB1P) or from
+  the CAT v4 gene list used by the meeting page (`families_cn.json` `genes`; it adds copies RefSeq lacks, such as NPIPP1).
+  `T_N` = the union of their exons; `B_N` = the union of their gene spans.
+- **Duplicons.** DupMasker colours BED, Vollger et al. 2022 (`winloci_data/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed`),
+  every overlapping record counts. **SD98 regions:** `winloci_data/soto_replication/sd98_v1.bed`.
+- **Coordinates.** The duplicon and SD98 files are CHM13 v1.0; reads and RefSeq are v2.0. The script asserts that every SD98 region
+  on chr16 and chr18 has the same sequence in `sd98_regions.fa` (cut from v1.0) and in `Reference/chm13v2.0.fa`, and stops otherwise.
+
+## 3. Units and measures (fixed now)
+
+- **Reads:** primary alignments (`-F 2308`) overlapping `B_N`, each read counted once. **Blocks:** the read's aligned reference
+  segments split at `N` (`M`, `=`, `X`, `D` extend a block; `I`, `S`, `H` do not).
+- **Block class:** `N` if it overlaps `T_N` by at least 1 bp; `O` if it overlaps no `B_N`; otherwise `I` (NPIP intron or a new NPIP
+  exon). `I` blocks never form a switch.
+- **Junction:** (chromosome, intron start, intron end) between two consecutive blocks. **Units are distinct junctions supported by at
+  least 2 reads** (the project's floor). For each unit, each flank is its most frequent adjacent block across the supporting reads
+  (ties: the longer block).
+- **Switch unit:** one flank `N`, the other `O`. **Internal unit:** both flanks `N`.
+- **Duplicons of a block:** the DupMasker IDs overlapping it; the **dominant** one covers the most bases (ties: ID order).
+- `b(j)` **boundary:** the two flanks' duplicon sets share no ID (an empty set on either side counts as no shared ID).
+- **Core duplicons `K`:** duplicons overlapping the exons of at least half of the NPIP gene records (RefSeq and CAT records counted
+  separately).
+- **Co-duplicated duplicon:** one that occurs in at least 2 SD98 regions each holding at least one segment of a core duplicon.
+- `c(j)` **co-duplicated partner** (switch units only): the `O` flank's dominant duplicon exists and is co-duplicated.
+
+## 4. Tests and decision rule (fixed now)
+
+- **H1 boundary.** Fraction of units with `b = 1`, switch vs internal; one-sided Fisher exact test (switch greater). Passes if
+  p < 0.01 and the switch fraction is the larger.
+- **H2 co-duplicated partner.** Fraction of switch units with `c = 1`; one-sided exact binomial test against 1/2 (most partners
+  co-duplicated). Passes if p < 0.01.
+- **Verdict** (held-out decides; development reported beside it; if they disagree the verdict is SPLIT with both):
+  - **EXPLAINED:** H1 and H2 pass.
+  - **BOUNDARY ONLY:** H1 passes, H2 fails.
+  - **NOT EXPLAINED:** H1 fails.
+  - **UNDERPOWERED:** fewer than 10 switch units in the held-out library (reported, no verdict).
+
+## 5. Secondary (descriptive, no verdict)
+
+- MAPQ >= 1 reads only: H1 and H2 recomputed.
+- **Location-matched null for H2:** for each switch unit with intron length g, a block of the `O` flank's length placed on the `O` side
+  with its near edge at a distance drawn uniformly from [g/2, 2g] from the `N`-side splice site, redrawn (up to 100 times) until it
+  overlaps no `B_N`; mean `c` over 10,000 replicates, seed 20260930. Says whether partners are more co-duplicated than sequence at a
+  similar distance (enrichment beyond locality), which H2 does not ask.
+- **Partner table:** per switch unit, the `O` flank's dominant duplicon, the RefSeq or CAT gene(s) it overlaps, the NPIP gene(s) of
+  the `N` flank, read support.
+- **Recurrence:** per partner duplicon, the number of distinct NPIP genes it is joined to (placement among identical copies is
+  ambiguous, so this is not a test).
+- Fraction of switch units whose `O` flank lies in no SD98 region (single-copy partners).
+- Whether the junctions of the four RefSeq read-throughs are among the switch units.
+
+## 6. Seen before writing this file (disclosed)
+
+- RefSeq longest transcripts, 5' to 3' dominant duplicon per exon: PKD1P3-NPIPA1, PKD1P4-NPIPA8 and PKD1P6-NPIPP1 share one string,
+  SD9474 (SD9605 or SD9609) SD9607 SD9611 SD9613 then SD9449 or SD9450, SD9443, SD9622; PDXDC2P-NPIPB14P is SD9585, SD9479 ... SD9456,
+  SD9450, SD9449, SD9443, SD9445. PKD1 (chr16:2.1 Mb) exonic duplicons SD9613, SD9606, SD9605, SD9607, SD9474, SD9609; PDXDC1's main
+  duplicon SD9479. The 4 SD98 regions other than PKD1's that carry PKD1 duplicons all carry NPIP duplicons. RefSeq NPIPA1 exonic
+  duplicons SD9443, SD9622, SD9449; NPIPA8 SD9443, SD9613, SD9622, SD9450.
+- A119b: the PKD1P6-NPIPP1 fusion junction chr16:15,120,015-15,126,650 has 110 MAPQ-60 reads (2026-09-18). A119b is therefore the
+  development library.
+- human_testis: no NPIP read has been examined for this question.
+- Expectation written now: H1 will likely pass (gene ends tend to sit at duplicon ends); H2 is the informative test.
+
+## 7. Result
+
+(Filled in after the run, below this line, without editing anything above.)
