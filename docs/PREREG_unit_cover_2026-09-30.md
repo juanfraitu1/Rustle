@@ -59,3 +59,28 @@ several families, and which families, from the single-family genes alone.
 ## 7. Result
 
 (Filled in after the run, below this line, without editing anything above.)
+
+Run on 2026-09-30 after this file was committed (`cedce819`, sha1 `39ae6af4942b045551d5dbfbcb03a18d71b1f919`);
+`bench/soto_m2/soto_m2_unit_cover.py`, 1 s, light lock. Output `docs/SOTO_UNIT_COVER_2026-09-30.md`, per gene
+`docs/SOTO_UNIT_COVER_2026-09-30.tsv`.
+
+**VERDICT (section 4): HOLDS** — held-out and dev alike.
+
+| half | multi genes | mean Jaccard, structure | mean Jaccard, location baseline | permutation p |
+|---|---|---|---|---|
+| dev | 81 | 0.439 | 0.221 | 0.001 (the floor at 1,000 permutations) |
+| held-out | 68 | 0.473 | 0.277 | 0.001 |
+
+2,071 clean and 149 multi genes; 1,546 duplicons owned by 392 families.
+
+Secondary: over all 149 multi genes the structure gets the exact family set for 10.7% (location 5.4%), recall 0.555 (0.286), precision
+0.718 (0.426). Clean genes, leave-one-out: 54.6% predicted exactly their own family, 30.3% two or more families, 2.0% none. NPIP side: the
+shared genes get 1-3 of their 5-6 Soto families (PKD1P6-NPIPP1 and AC126755.6: ID_149 + ID_154 of six; AP001120.2: ID_154 only), as
+expected in section 6: the NPIP subfamilies share their core duplicons and Soto separates them by copy number, which a partition of
+duplicons cannot express.
+
+**Reading.** The structure carries real signal: it predicts Soto's multi-family memberships from single-family genes alone far better
+than location or chance, on the held-out half. It is not a complete account: exact sets are rare, a third of single-family genes touch a
+second family's duplicon (the 1 bp touch rule counts slivers), and where families differ by copy number rather than by duplicon (NPIP)
+the duplicon level is too coarse. A finer unit (duplicon x copy-number class) or a usage rule that ignores slivers would be the next
+pre-registration, not a change to this one.
