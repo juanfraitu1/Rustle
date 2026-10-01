@@ -220,15 +220,11 @@ footer { font-size: .8rem; color: var(--muted); }
 
 <nav class="tabs" role="tablist" aria-label="Views">
   <button role="tab" id="tab-how" aria-controls="pane-how" aria-selected="false" data-p="how">How Soto builds families<span>their method, step by step</span></button>
-  <button role="tab" id="tab-def" aria-controls="pane-def" aria-selected="false" data-p="def">Two definitions<span>what "gene family" means</span></button>
-  <button role="tab" id="tab-mcl" aria-controls="pane-mcl" aria-selected="false" data-p="mcl">How we build families<span>MCL, explained plainly</span></button>
   <button role="tab" id="tab-soto" aria-controls="pane-soto" aria-selected="true" data-p="soto">Soto's 491 families<span>their recipe, our copy numbers</span></button>
   <button role="tab" id="tab-det" aria-controls="pane-det" aria-selected="false" data-p="det">Detection · 83 families<span>our Rustle pipeline, DNA mode</span></button>
   <button role="tab" id="tab-mem" aria-controls="pane-mem" aria-selected="false" data-p="mem">Every member · 362<span>one row per Soto gene</span></button>
 </nav>
 __HOW_PANE__
-__DEF_PANE__
-__MCL_PANE__
 <div role="tabpanel" id="pane-soto" aria-labelledby="tab-soto" class="pane">
 
 <div class="filters" role="group" aria-label="Filter genes by biotype">
@@ -928,7 +924,7 @@ applyFilter();
     };
   }
   mount("det"); mount("mem");
-  ["pane-how", "pane-def"].forEach(id => document.getElementById(id).addEventListener("click", e => {
+  ["pane-how"].forEach(id => document.getElementById(id).addEventListener("click", e => {
     const b = e.target.closest("[data-real]"); if (!b) return;
     select("soto"); if (window.__showFam) window.__showFam(b.dataset.real);
     document.getElementById("viewer").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -945,9 +941,9 @@ applyFilter();
   });
   const h = (window.__initHash || "").slice(1);
   let start = "soto";
-  if (h === "detection") start = "det"; else if (h === "members") start = "mem"; else if (h === "method") start = "how"; else if (h === "definitions") start = "def"; else if (h === "mcl") start = "mcl";
+  if (h === "detection") start = "det"; else if (h === "members") start = "mem"; else if (h === "method") start = "how";
   else if (!h) { try { start = localStorage.getItem("soto-tab") || "soto"; } catch (e) {} }
-  if (!["how", "def", "mcl", "soto", "det", "mem"].includes(start)) start = "soto";
+  if (!["how", "soto", "det", "mem"].includes(start)) start = "soto";
   select(start);
 })();
 </script>

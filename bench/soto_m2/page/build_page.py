@@ -2,8 +2,7 @@
 """Builds the Soto-vs-ours meeting page (claude.ai artifact J12TB7ebNq3uxZ7aErd7q7) from:
   template.html                    the page (tabs, styles, viewer script) with placeholders
   method_tab.py / misses_panel.py  the "How Soto builds families" tab and the RNA miss-reason cards
-  definitions_tab.py               the "Two definitions" tab (Soto's operational definition vs the evolutionary one)
-  mcl_tab.py                       the "How we build families" tab (MCL, explained plainly, running live)
+  definitions_tab.py, mcl_tab.py   moved to the companion page (build_definitions_page.py, artifact 9yXmXZd2kRrQffQVzEJGti)
   july/*.html                      the two July pages, embedded as tabs in shadow roots
   families.json                    from bench/soto_m2/soto_m2_families.py --out-json
   sd_regions.json                  from bench/soto_m2/soto_m2_sd_regions.py (SD98 regions, their genes and duplicons)
