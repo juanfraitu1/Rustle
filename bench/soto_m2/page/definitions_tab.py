@@ -75,6 +75,55 @@ QUOTES = [
      "Limitations of the study"),
 ]
 
+CLUSTERS = [('dev', 0.4863, 'ID_100,ID_192,ID_62,ID_99', 'AC016629.3, AC138393.2, AC139099.2, AL669831.4'), ('dev', 0.1699, 'ID_214,ID_396,ID_397,ID_400', 'AC239809.3, HYDIN, HYDIN2, NBPF1'), ('heldout', 0.3232, 'ID_23,ID_33,ID_34', 'AC006453.2, AC027612.1, AL356585.2, AP000550.3'), ('heldout', 0.3419, 'ID_126,ID_147', 'AC098826.2, AC125634.1, AL353626.3, ANKRD30BP2'), ('dev', 0.516, 'ID_104,ID_141,ID_142,ID_182,ID_279,ID_280', 'AC073464.1, AC119751.3, AC119751.5, AC137800.1'), ('heldout', 0.1372, 'ID_269,ID_275', 'AL591479.1, C2orf27AP3, CR382287.1'), ('heldout', 0.1541, 'ID_215,ID_250', 'AC239860.1, AC239860.2, AC241952.1, AC244394.2'), ('dev', 0.5953, 'ID_241,ID_363,ID_364', 'AL161457.2, FRG1BP, FRG1FP, FRG1GP'), ('dev', 0.3437, 'ID_403,ID_404', 'NF1P1, NF1P10, NF1P11, NF1P2'), ('heldout', 0.4664, 'ID_300,ID_301,ID_84', 'AC026273.1, BMS1P11, BMS1P12, BMS1P13'), ('dev', 0.3976, 'ID_156,ID_72', 'AC023310.3, AC091304.4, AC100756.1, AC100757.3'), ('dev', 0.2016, 'ID_113,ID_21,ID_368,ID_78,ID_88', 'AC006328.1, AC044860.1, AC091057.4, AC243562.1'), ('dev', 0.4397, 'ID_178,ID_179', 'CHRFAM7A, CHRNA7, ULK4P1, ULK4P2'), ('dev', 0.3647, 'ID_324,ID_481', 'CSPG4P10, CSPG4P11, CSPG4P12, CSPG4P4Y'), ('heldout', 0.375, 'ID_149,ID_154,ID_155,ID_41', 'AC009086.2, AC126755.1, AC138932.1, AC138969.1'), ('dev', -0.0288, 'ID_69,ID_76', 'AC022145.2, AC024257.2, AC113404.2, AL034380.2'), ('dev', 0.0163, 'ID_172,ID_184', 'AC133919.3, CICP19, CICP24, CICP26'), ('dev', 0.0489, 'ID_468,ID_469', 'TBC1D3, TBC1D3B, TBC1D3D, TBC1D3E'), ('heldout', 0.1722, 'ID_114,ID_14', 'AC005562.2, AC090616.5, AC090616.6, LRRC37A'), ('dev', 0.6214, 'ID_303,ID_359', 'BX088651.1, BX664615.1, BX664615.2, FGF7P1'), ('heldout', 0.2878, 'ID_395,ID_63', 'AC017002.3, AC083899.1, AC097527.1, ANAPC1'), ('heldout', 0.2377, 'ID_106,ID_107', 'AC087203.1, USP17L1, USP17L10, USP17L11'), ('dev', -0.1991, 'ID_163,ID_191', 'AC131392.1, AC138866.2, AC146949.1, AL021368.2'), ('heldout', 0.5626, 'ID_10,ID_11,ID_8', 'AC211476.3, AC211486.3, PMS2P1, PMS2P10'), ('heldout', 0.2108, 'ID_181,ID_187,ID_188,ID_93', 'AC055876.1, AC138649.5, FP700111.1, HERC2'), ('heldout', 0.8175, 'ID_355,ID_356', 'FAM86B1, FAM86B2, FAM90A10P, FAM90A11P'), ('heldout', -0.001, 'ID_96,ID_97', 'AC068587.6, AC068587.8, AC105233.3, AC134684.3'), ('heldout', 0.0, 'ID_271,ID_272', 'AL627230.1'), ('dev', 0.7372, 'ID_161,ID_330,ID_347,ID_62', 'AC016629.3, AC131281.1, CENPBD1P1, DUX4'), ('dev', 0.5065, 'ID_233,ID_270', 'AGAP10P, AGAP12P, AGAP13P, AGAP14P'), ('dev', 0.3518, 'ID_352,ID_485', 'FAM21EP, FAM21FP, WASHC2A, WASHC2C'), ('heldout', 0.1688, 'ID_289,ID_476', 'AP003122.1, AP004607.5, AP004607.8, AP005435.2'), ('heldout', 0.3101, 'ID_477,ID_478', 'TRIM49, TRIM49C, TRIM49D1, TRIM49D2')]  # docs/SOTO_CN_DUPLICON_CLUSTERS_2026-09-30.tsv (KEY=cnduplicon, frozen result)
+
+
+
+def three_objects():
+    s = []
+    segs = [(120, 220, "var(--s1)", "D1"), (220, 340, "var(--s2)", "D2"), (340, 440, "var(--s3)", "D3"), (440, 550, "var(--s4)", "D4"),
+            (550, 650, "var(--s2)", "D2"), (650, 740, "var(--s1)", "D1")]
+    s.append('<path d="M120 40 V32 H738 V40" fill="none" stroke="var(--fg)" stroke-width="1.5"/>')
+    s.append('<text x="429" y="24" font-size="12.5" font-weight="650" fill="var(--fg)" text-anchor="middle">SD block: one duplicated stretch (SEDEF; Soto\'s "SD Unit")</text>')
+    for a, b, c, lab in segs:
+        s.append(f'<rect x="{a}" y="48" width="{b - a - 2}" height="26" rx="4" fill="{c}" fill-opacity=".75"/>')
+        s.append(f'<text x="{(a + b) / 2}" y="66" font-size="12" font-weight="650" fill="#fff" text-anchor="middle">{lab}</text>')
+    s.append('<text x="110" y="66" font-size="11.5" fill="var(--muted)" text-anchor="end">duplicons</text>')
+    genes = [(356, 532, "fusion gene: crosses the D3 | D4 boundary", 96), (130, 210, "gene of family A (on D1)", 120), (230, 330, "gene of family B (on D2)", 144)]
+    for a, b, lab, y in genes:
+        s.append(f'<line x1="{a}" x2="{b}" y1="{y}" y2="{y}" stroke="var(--igv)" stroke-width="2"/>')
+        for x in range(a, b - 10, 32):
+            s.append(f'<rect x="{x}" y="{y - 5}" width="16" height="10" rx="2" fill="var(--igv)"/>')
+        s.append(f'<path d="M{b} {y} l-7 -5 v10 z" fill="var(--igv)"/>')
+        if lab:
+            s.append(f'<text x="{b + 10}" y="{y + 4}" font-size="11.5" fill="var(--fg)">{lab}</text>')
+    s.append('<line x1="440" x2="440" y1="76" y2="106" stroke="var(--cross)" stroke-width="1.5" stroke-dasharray="3 3"/>')
+    return ('<svg viewBox="0 0 840 160" width="100%" role="img" aria-label="An SD block made of duplicons, with genes riding on '
+            'them and a fusion gene crossing a duplicon boundary">' + "".join(s) + '</svg>')
+
+
+def dotplot():
+    rows = sorted(CLUSTERS, key=lambda r: -r[1])
+    W, L, R, T, rh = 760, 260, 20, 26, 15
+    H = T + rh * len(rows) + 40
+    lo, hi = -0.3, 0.9
+    X = lambda v: L + (v - lo) / (hi - lo) * (W - L - R)
+    s = []
+    for v in (-0.2, 0, 0.2, 0.4, 0.6, 0.8):
+        s.append(f'<line x1="{X(v):.1f}" x2="{X(v):.1f}" y1="{T - 6}" y2="{H - 34}" stroke="{"var(--fg)" if v == 0 else "var(--line)"}"/>')
+        s.append(f'<text x="{X(v):.1f}" y="{H - 20}" font-size="11" fill="var(--muted)" text-anchor="middle">{v:+.1f}</text>')
+    s.append(f'<text x="{(L + W - R) / 2}" y="{H - 4}" font-size="11.5" fill="var(--fg)" text-anchor="middle">duplicon sharing inside Soto\'s families minus across them (0 = no relation)</text>')
+    s.append(f'<text x="{X(0) + 6}" y="{T - 10}" font-size="10.5" fill="var(--muted)">no relation</text>')
+    for k, (half, dl, fams, ex) in enumerate(rows):
+        y = T + rh * k + rh / 2
+        names = ", ".join(ex.split(", ")[:2])
+        bad = dl <= 0.05
+        s.append(f'<text x="{L - 10}" y="{y + 4}" font-size="10.5" fill="{"var(--cross)" if bad else "var(--fg)"}" text-anchor="end">{names}</text>')
+        fill = "var(--accent)" if half == "heldout" else "var(--surface)"
+        s.append(f'<circle cx="{X(dl):.1f}" cy="{y}" r="5" fill="{fill}" stroke="var(--accent)" stroke-width="1.8"><title>{fams}: {dl:+.3f} ({"held-out" if half == "heldout" else "dev"})</title></circle>')
+    return (f'<svg viewBox="0 0 {W} {H}" width="100%" role="img" aria-label="Per sequence family, how much more duplicon '
+            f'content genes share inside Soto\'s families than across them">' + "".join(s) + '</svg>')
+
 
 def pane():
     rows = "".join(f'<tr><th scope="row">{a}</th><td>{b}</td><td>{c}</td></tr>' for a, b, c in ROWS)
@@ -107,6 +156,23 @@ def pane():
     <thead><tr><th></th><th>Soto 2025 (operational)</th><th>Evolutionary (this thesis)</th></tr></thead>
     <tbody>{rows}</tbody>
   </table></div>
+</section>
+<section>
+  <h2>Why Soto's copy-number cut is not arbitrary: it follows duplicons</h2>
+  <p class="note">Segmental duplications are mosaics of duplicons, ancestral duplication units. Three objects, not one:</p>
+  <div class="chart">{three_objects()}</div>
+  <p class="note">Test, pre-registered before any number was computed: inside each of the 33 sequence families Soto cuts by copy
+  number, do genes in the same Soto family share more duplicon content than genes in different ones? Duplicons from Vollger et al.
+  2022 (the DupMasker annotation Soto cite).</p>
+  <div class="def-grid">
+    <div class="chart">{dotplot()}<div class="legend" style="margin-top:6px"><span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="var(--accent)"/></svg> held-out half (decides)</span><span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="var(--accent)" stroke-width="1.8"/></svg> development half</span><span style="color:var(--cross)">red = cut inside one duplicon make-up</span></div></div>
+    <div class="cn-facts">
+      <div class="tile"><div class="lab">Soto's pieces sit on different duplicons</div><div class="big">14 / 16</div><div class="sub">held-out sequence families (p = 0.0001); development half 15 / 17</div></div>
+      <div class="tile"><div class="lab">Copy-number gaps follow duplicon differences</div><div class="big">ρ = 0.58</div><div class="sub">8,565 gene pairs; 0.31 across Soto's cuts alone</div></div>
+      <div class="tile"><div class="lab">Exceptions</div><div class="sub">6 cuts inside one duplicon make-up, among them TBC1D3 and CICP (red in the plot). Not tested: whether every duplicon boundary is a family boundary.</div></div>
+    </div>
+  </div>
+  <p class="note">Reading: different duplicons carry different copy numbers, so Soto's copy-number gate largely separates genes riding on different duplicons. Duplicons are the shared unit: a family is a set of duplicon-aligned pieces, an SD block can carry several families, and a fusion gene crosses a duplicon boundary.</p>
 </section>
 <section>
   <h2>In Soto's own words</h2>

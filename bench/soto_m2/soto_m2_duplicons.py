@@ -158,6 +158,7 @@ def main(argv=None):
     ap.add_argument("--full-geneset", required=True)
     ap.add_argument("--exons", required=True)
     ap.add_argument("--duplicons", required=True)
+    ap.add_argument("--out-tsv", help="per-cluster rows (descriptive output only; the test is unchanged)")
     a = ap.parse_args(argv)
 
     genes, _ = sr.load_geneset(a.geneset)
@@ -222,6 +223,13 @@ def main(argv=None):
     final = v_ho if v_ho == v_dev else f"SPLIT (dev {v_dev}, held-out {v_ho})"
     print(f"**VERDICT (prereg §4): {final}**\n")
 
+    if a.out_tsv:
+        with open(a.out_tsv, "w") as fh:
+            fh.write("half\tn_genes\tsoto_families\tdelta\tp\texample_genes\n")
+            for x, (d, pv) in zip(clusters, per_all):
+                c, gs, labels, fams = x
+                fh.write(f"{assign_half(x)}\t{len(gs)}\t{','.join(fams)}\t{'' if d is None else f'{d:.4f}'}\t"
+                         f"{'' if pv is None else f'{pv:.4f}'}\t{', '.join(sorted({name[g] for g in gs})[:4])}\n")
     print("| cluster genes | Soto families (sizes) | delta | p | genes, example |\n|---|---|---|---|---|")
     for (c, gs, labels, fams), (d, pv) in zip(clusters, per_all):
         sizes = ",".join(f"{f}({len(soto[f])})" for f in fams)
