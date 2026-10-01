@@ -2,6 +2,7 @@
 """Builds the Soto-vs-ours meeting page (claude.ai artifact J12TB7ebNq3uxZ7aErd7q7) from:
   template.html                    the page (tabs, styles, viewer script) with placeholders
   method_tab.py / misses_panel.py  the "How Soto builds families" tab and the RNA miss-reason cards
+  definitions_tab.py               the "Two definitions" tab (Soto's operational definition vs the evolutionary one)
   july/*.html                      the two July pages, embedded as tabs in shadow roots
   families.json                    from bench/soto_m2/soto_m2_families.py --out-json
 
@@ -17,6 +18,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import definitions_tab  # noqa: E402
 import method_tab  # noqa: E402
 import misses_panel  # noqa: E402
 
@@ -57,6 +59,7 @@ def main(argv=None):
         html, js = split_old(os.path.join(HERE, "july", name))
         t = t.replace(f"__{key}_HTML__", html, 1).replace(f"__{key}_JS__", js, 1)
     t = t.replace("__HOW_PANE__", method_tab.pane() + "\n", 1)
+    t = t.replace("__DEF_PANE__", definitions_tab.pane(), 1)
     t = t.replace("__MISSES_DET__", misses_panel.misses_html("d"), 1).replace("__MISSES_MEM__", misses_panel.misses_html("m"), 1)
     t = t.replace("__DATA__", d, 1)
     assert not re.search(r"__[A-Z_]+__", t), re.findall(r"__[A-Z_]+__", t)[:3]

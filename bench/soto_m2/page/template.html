@@ -171,6 +171,14 @@ cite { display: block; font: .78rem var(--f-body); color: var(--muted); margin-t
 .flowcap { font-size: .8rem; color: var(--muted); }
 #flow svg { display: block; width: 100%; height: auto; }
 #flow text { font-family: var(--f-body); }
+.def-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 820px) { .def-grid { grid-template-columns: 1fr; } }
+.def-grid svg, #pane-def .chart svg { display: block; }
+#pane-def svg text { font-family: var(--f-body); }
+.deftbl th[scope="row"] { font-size: .8rem; text-transform: none; letter-spacing: 0; color: var(--fg); font-weight: 600; white-space: normal; width: 18%; }
+.deftbl td { white-space: normal; font-size: .88rem; vertical-align: top; }
+.deftbl thead th:nth-child(2) { color: var(--s2); }
+.quotes { display: grid; gap: 12px; }
 #tip { position: fixed; z-index: 9; pointer-events: none; background: var(--fg); color: var(--bg); font: .78rem/1.45 var(--f-body); padding: 7px 10px; border-radius: 6px; max-width: 320px; }
 #tip b { font-family: var(--f-mono); }
 footer { font-size: .8rem; color: var(--muted); }
@@ -186,11 +194,13 @@ footer { font-size: .8rem; color: var(--muted); }
 
 <nav class="tabs" role="tablist" aria-label="Views">
   <button role="tab" id="tab-how" aria-controls="pane-how" aria-selected="false" data-p="how">How Soto builds families<span>their method, step by step</span></button>
+  <button role="tab" id="tab-def" aria-controls="pane-def" aria-selected="false" data-p="def">Two definitions<span>what "gene family" means</span></button>
   <button role="tab" id="tab-soto" aria-controls="pane-soto" aria-selected="true" data-p="soto">Soto's 491 families<span>their recipe, our copy numbers</span></button>
   <button role="tab" id="tab-det" aria-controls="pane-det" aria-selected="false" data-p="det">Detection · 83 families<span>our Rustle pipeline, RNA and DNA</span></button>
   <button role="tab" id="tab-mem" aria-controls="pane-mem" aria-selected="false" data-p="mem">Every member · 362<span>one row per Soto gene</span></button>
 </nav>
 __HOW_PANE__
+__DEF_PANE__
 <div role="tabpanel" id="pane-soto" aria-labelledby="tab-soto" class="pane">
 
 <div class="filters" role="group" aria-label="Filter genes by biotype">
@@ -814,11 +824,11 @@ applyFilter();
     };
   }
   mount("det"); mount("mem");
-  document.getElementById("pane-how").addEventListener("click", e => {
+  ["pane-how", "pane-def"].forEach(id => document.getElementById(id).addEventListener("click", e => {
     const b = e.target.closest("[data-real]"); if (!b) return;
     select("soto"); if (window.__showFam) window.__showFam(b.dataset.real);
     document.getElementById("viewer").scrollIntoView({ behavior: "smooth", block: "start" });
-  });
+  }));
   const tabs = [...document.querySelectorAll('.tabs [role="tab"]')];
   function select(p, focus) {
     tabs.forEach(b => { const on = b.dataset.p === p; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; document.getElementById("pane-" + b.dataset.p).hidden = !on; if (on && focus) b.focus(); });
@@ -831,9 +841,9 @@ applyFilter();
   });
   const h = (window.__initHash || "").slice(1);
   let start = "soto";
-  if (h === "detection") start = "det"; else if (h === "members") start = "mem"; else if (h === "method") start = "how";
+  if (h === "detection") start = "det"; else if (h === "members") start = "mem"; else if (h === "method") start = "how"; else if (h === "definitions") start = "def";
   else if (!h) { try { start = localStorage.getItem("soto-tab") || "soto"; } catch (e) {} }
-  if (!["how", "soto", "det", "mem"].includes(start)) start = "soto";
+  if (!["how", "def", "soto", "det", "mem"].includes(start)) start = "soto";
   select(start);
 })();
 </script>
