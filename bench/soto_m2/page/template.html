@@ -80,6 +80,10 @@ tr.focus td:first-child { font-weight: 600; }
 .more { justify-self: start; }
 .sdhead h3 { font-family: var(--f-display); font-weight: 650; font-size: 1.15rem; margin: 6px 0 4px; }
 .sub-h { font-family: var(--f-display); font-weight: 650; font-size: 1.1rem; margin: 18px 0 4px; }
+.endrow { border-bottom: 1px solid var(--line); padding: 6px 0; }
+.endtbl { border-collapse: collapse; margin-top: 6px; font-size: .9rem; }
+.endtbl th, .endtbl td { padding: 2px 10px; text-align: right; }
+.endtbl th[scope="row"] { text-align: left; color: var(--muted); font-weight: 500; }
 .sdhead p { margin: 0; color: var(--muted); font-size: .88rem; max-width: 80ch; }
 details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
 summary { cursor: pointer; font-weight: 600; }
@@ -208,6 +212,7 @@ footer { font-size: .8rem; color: var(--muted); }
   <button role="tab" id="tab-def" aria-controls="pane-def" aria-selected="false" data-p="def">Two definitions<span>what "gene family" means</span></button>
   <button role="tab" id="tab-mcl" aria-controls="pane-mcl" aria-selected="false" data-p="mcl">How we build families<span>MCL, explained plainly</span></button>
   <button role="tab" id="tab-soto" aria-controls="pane-soto" aria-selected="true" data-p="soto">Soto's 491 families<span>their recipe, our copy numbers</span></button>
+  <button role="tab" id="tab-ends" aria-controls="pane-ends" aria-selected="false" data-p="ends">Gene ends<span>NPIP and TBC1D3 copies vs RefSeq</span></button>
   <button role="tab" id="tab-det" aria-controls="pane-det" aria-selected="false" data-p="det">Detection · 83 families<span>our Rustle pipeline, RNA and DNA</span></button>
   <button role="tab" id="tab-mem" aria-controls="pane-mem" aria-selected="false" data-p="mem">Every member · 362<span>one row per Soto gene</span></button>
 </nav>
@@ -334,6 +339,7 @@ __MCL_PANE__
 </section>
 
 </div>
+__ENDS_PANE__
 <div role="tabpanel" id="pane-det" aria-labelledby="tab-det" class="pane" hidden>
   <p class="prov">Built 28 Jul 2026 from our Rustle pipeline on human A119b: RNA mode uses Iso-Seq reads; DNA mode uses <code>--from-genome</code> self-alignment. Scored against 83 Soto families (362 members). Not re-checked today, and not comparable with the 491-family tab, because the family set and the method differ.</p>
   __MISSES_DET__
@@ -969,9 +975,9 @@ applyFilter();
   });
   const h = (window.__initHash || "").slice(1);
   let start = "soto";
-  if (h === "detection") start = "det"; else if (h === "members") start = "mem"; else if (h === "method") start = "how"; else if (h === "definitions") start = "def"; else if (h === "mcl") start = "mcl";
+  if (h === "detection") start = "det"; else if (h === "members") start = "mem"; else if (h === "method") start = "how"; else if (h === "definitions") start = "def"; else if (h === "mcl") start = "mcl"; else if (h === "ends") start = "ends";
   else if (!h) { try { start = localStorage.getItem("soto-tab") || "soto"; } catch (e) {} }
-  if (!["how", "def", "mcl", "soto", "det", "mem"].includes(start)) start = "soto";
+  if (!["how", "def", "mcl", "soto", "ends", "det", "mem"].includes(start)) start = "soto";
   select(start);
 })();
 </script>
