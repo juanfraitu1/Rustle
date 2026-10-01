@@ -46,3 +46,32 @@ lines. Nothing about arms B-D has been computed.
 ## 6. Result
 
 (Filled in after the run, below this line, without editing anything above.)
+
+Run on 2026-09-30 after this file was committed (`af100ada`, sha1 `f1cfdab2f50b4d841ee5d36b47fd2da6c73d5d45`). Deviation (form only): the
+arms live in a new script, `bench/soto_m2/soto_m2_unit_cover_cn.py`, so that `soto_m2_unit_cover.py` stays as KEY=unitcover ran it; arm A
+reproduces KEY=unitcover exactly (asserted: 0.439 / 0.473, same exact / recall / precision / clean shares). 9 s, light lock. Output
+`docs/SOTO_UNIT_COVER_CN_2026-09-30.md`, per gene `docs/SOTO_UNIT_COVER_CN_2026-09-30.tsv`.
+
+**VERDICT (section 3): REFINES.** Arm D with S1C famCN, held-out: mean Jaccard 0.660 (arm A 0.473), clean-gene false-multi 0.157 (arm A
+0.303), permutation p 0.001.
+
+| arm | famCN | Jaccard dev / held-out | exact | recall | precision | clean: own family / 2+ / empty |
+|---|---|---|---|---|---|---|
+| A (KEY=unitcover) | - | 0.439 / 0.473 | 0.107 | 0.555 | 0.718 | 0.546 / 0.303 / 0.020 |
+| B sliver-free | - | 0.440 / 0.464 | 0.121 | 0.496 | 0.800 | 0.607 / 0.201 / 0.023 |
+| C CN classes | S1C | 0.548 / 0.624 | 0.215 | 0.917 | 0.617 | 0.644 / 0.224 / 0.045 |
+| C CN classes | ours | 0.492 / 0.601 | 0.161 | 0.817 | 0.608 | 0.626 / 0.225 / 0.053 |
+| **D both** | **S1C** | **0.693 / 0.660** | **0.349** | **0.869** | **0.734** | **0.697 / 0.157 / 0.052** |
+| D both | ours | 0.540 / 0.654 | 0.195 | 0.768 | 0.739 | 0.668 / 0.165 / 0.061 |
+
+All permutation p = 0.001 (the floor); location baseline 0.221 / 0.277.
+
+The two refinements do different jobs: sliver-free usage mostly removes false memberships (precision 0.718 -> 0.800, clean false-multi
+0.303 -> 0.201), copy-number classes mostly add the missing ones (recall 0.555 -> 0.917); together they beat both. NPIP: with S1C famCN all
+five shared genes get exactly Soto's six (or five) families; with our famCN 3-6 of them.
+
+**Reading.** The structure — a partition of (duplicon, copy-number class) units, genes as paths, a gene without a copy number using every
+class — expresses most of Soto's cover, including the NPIP shared genes exactly. With S1C famCN this is expressiveness, not independent
+discovery (section 4); with our independently recomputed famCN the held-out Jaccard is nearly the same (0.654), while exact sets drop
+(0.195), following the copy-number disagreements. Still incomplete: 65% of multi genes are not exact, 16% of single-family genes would be
+called multi, 5% get no family.
