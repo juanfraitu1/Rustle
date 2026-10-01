@@ -1,0 +1,343 @@
+<title>NPIP Read Pools</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one lab-report column (max 1040px) in the Locus Anatomy family: answer first, then the copy table, the browser windows, the family test. */
+:root{
+  --bg:#FAFAF8; --surface:#FFFFFF; --surface-2:#F1F2EF; --ink:#191B1F; --ink-soft:#4B4F58; --muted:#6E737D; --rule:#DCDEE2; --rule-strong:#B9BDC6;
+  --copy:#2a78d6; --offexon:#eb6834; --anti:#1baf7a; --else:#8a8f98;
+  --tied:#4B4F58; --untied:#D5D8DD; --heat:#2a78d6;
+  --warn:#9A4A06; --warn-soft:#FCEED4; --good:#15803D; --good-soft:#DFF3E4; --bad:#B91C1C; --bad-soft:#FBE2E1;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14151A; --surface:#1B1D23; --surface-2:#22242B; --ink:#EDEEF2; --ink-soft:#C2C5CE; --muted:#9A9EA8; --rule:#33353D; --rule-strong:#454852;
+  --copy:#3987e5; --offexon:#d95926; --anti:#199e70; --else:#7d828b; --tied:#C2C5CE; --untied:#3A3D46; --heat:#3987e5;
+  --warn:#F4B860; --warn-soft:#3A2C14; --good:#4ADE80; --good-soft:#173420; --bad:#F87171; --bad-soft:#3A1C1B; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14151A; --surface:#1B1D23; --surface-2:#22242B; --ink:#EDEEF2; --ink-soft:#C2C5CE; --muted:#9A9EA8; --rule:#33353D; --rule-strong:#454852;
+  --copy:#3987e5; --offexon:#d95926; --anti:#199e70; --else:#7d828b; --tied:#C2C5CE; --untied:#3A3D46; --heat:#3987e5;
+  --warn:#F4B860; --warn-soft:#3A2C14; --good:#4ADE80; --good-soft:#173420; --bad:#F87171; --bad-soft:#3A1C1B; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14.5px;line-height:1.55;padding-inline:20px;padding-block:28px 56px}
+.wrap{max-width:1040px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+h1{font-family:var(--mono);font-weight:600;font-size:26px;line-height:1.25;letter-spacing:-.01em;margin:0 0 10px;text-wrap:balance}
+h2{font-family:var(--mono);font-weight:600;font-size:16px;margin:0 0 6px;text-wrap:balance}
+p{margin:0 0 10px;max-width:72ch}
+.lede{color:var(--ink-soft);font-size:15.5px}
+section{margin-top:36px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:12px}
+.answers{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}
+.ans{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:16px 18px;min-width:0}
+.ans .big{font-family:var(--mono);font-size:30px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.ans .k{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:2px 0 8px}
+.ans p{font-size:13.5px;color:var(--ink-soft);margin:0}
+.ans.v-yes .k{color:var(--good)} .ans.v-no .k{color:var(--bad)} .ans.v-mid .k{color:var(--warn)}
+.note{display:flex;gap:10px;align-items:flex-start;background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 14px;margin-top:16px;font-size:13.5px}
+.note b{font-family:var(--mono);font-size:11px;letter-spacing:.05em;flex-shrink:0;padding-top:2px}
+.note span{color:var(--ink-soft)}
+.scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 12px;border-bottom:1px solid var(--rule);text-align:right;white-space:nowrap}
+th{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--surface-2)}
+th:first-child,td:first-child{text-align:left}
+tr.grp td{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);text-align:left}
+td.lab{color:var(--ink-soft);white-space:normal;min-width:220px}
+td.hi{font-weight:600}
+.pool{font-family:var(--mono);font-size:12px}
+.pool small{display:block;font-family:var(--sans);font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px;white-space:normal;max-width:190px;margin-left:auto}
+/* copy table */
+table.copies td{padding:4px 10px}
+table.copies td.nm{font-family:var(--mono);font-size:12px}
+.tbar{display:flex;align-items:center;gap:8px;min-width:230px}
+.tbar .track{flex:1;height:10px;border-radius:2px;background:var(--untied);display:flex;overflow:hidden;min-width:120px}
+.tbar .fill{background:var(--tied);height:100%}
+.tbar .v{font-family:var(--mono);font-size:11.5px;width:96px;text-align:right;color:var(--ink-soft)}
+td.lc{font-family:var(--mono);font-size:12px;text-align:center;min-width:56px}
+td.lc .c{display:inline-block;min-width:34px;padding:1px 6px;border-radius:5px}
+td.lc .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;vertical-align:1px;border:1.5px solid var(--ink-soft)}
+td.lc .dot.on{background:var(--ink-soft)}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--muted);margin:10px 0 0;font-family:var(--mono)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{display:inline-block;width:14px;height:9px;border-radius:2px}
+/* browser */
+.win{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:14px 16px 10px;margin-top:14px}
+.win h3{font-family:var(--mono);font-size:13.5px;font-weight:600;margin:0 0 2px}
+.win .wsub{font-size:12.5px;color:var(--muted);margin:0 0 6px;max-width:none}
+.win svg{display:block;width:100%;height:auto;overflow:visible}
+.wscroll{overflow-x:auto}
+.wscroll svg{min-width:720px}
+.tl{font-family:var(--mono);font-size:11px;fill:var(--muted)}
+.tln{font-family:var(--mono);font-size:11px;fill:var(--ink-soft);font-weight:600}
+/* composition */
+.comp{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:760px){.comp{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:16px 18px;min-width:0}
+.card h3{font-family:var(--mono);font-size:13px;font-weight:600;margin:0 0 10px}
+.card ul{margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-soft)}
+.card li{margin-bottom:6px}
+.card li b{color:var(--ink)}
+.verdict{border-left:3px solid var(--warn);padding:8px 12px;background:var(--surface-2);border-radius:0 8px 8px 0;font-size:13.5px;margin-top:12px;color:var(--ink-soft)}
+.verdict b{color:var(--ink)}
+code{font-family:var(--mono);font-size:12px;background:var(--surface-2);padding:1px 5px;border-radius:4px}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--rule);font-size:12px;color:var(--muted)}
+footer p{max-width:none}
+:focus-visible{outline:2px solid var(--copy);outline-offset:2px}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Rustle · O1 locus definition · human chr16 · A119b Iso-Seq · CHM13 v2.0 · 25 CAT/Liftoff NPIP copies</p>
+  <h1>Which alignments should build the NPIP loci?</h1>
+  <p class="lede">The proposal: build loci from every alignment, primaries and secondaries, and let the later all-vs-all minimap2 step remove the
+  false positives. Below, the same pipeline run three ways on real data. Only the read pool that builds the loci changes.</p>
+
+  <div class="answers">
+    <div class="ans v-yes"><div class="big">59%</div><div class="k">The coin toss is real at NPIP</div>
+      <p>of the primary reads at the 25 copies are tied with another placement (genome-wide: 2.5%). <b>15 copies are majority-tied</b>, and
+      LOC124907807 and LOC124907808 rest on tied reads alone. So a primaries-only locus can sit at the wrong copy.</p></div>
+    <div class="ans v-no"><div class="big">87 of 147</div><div class="k">All alignments: the all-vs-all keeps the extras</div>
+      <p>nodes in the clusters that hold NPIP are not on any NPIP copy (primaries only: 11 of 38). A secondary alignment lands only on
+      homologous sequence, so every locus it builds is homologous by construction. Homology cannot reject it.</p></div>
+    <div class="ans v-mid"><div class="big">21 vs 23</div><div class="k">Good secondaries: the default costs two copies here</div>
+      <p>copies keep a node of their own with good secondaries, against 23 with primaries only. Extra secondary reads merge NPIPA6 into
+      NPIPA7's locus and NPIPB6 into a longer locus beyond it; a 2-read split alignment with a 430 kb "intron" joins NPIPB4 to NPIPB5.</p></div>
+  </div>
+  <div class="note"><b>NOTE</b><span>The Locus Anatomy page (step 2) says only primary alignments build loci. That was the pipeline default until
+  24 Sep 2026. Since then <code>tools/rustle_pipeline.sh</code> seeds loci from primaries plus good secondaries (AS ≥ 0.98 × the read's
+  best AS anywhere in the genome); <code>--no-seed-secondaries</code> restores primaries only.</span></div>
+
+  <section>
+    <h2>Three read pools, one pipeline</h2>
+    <p class="sub">Same frozen binary, same polish, same downstream steps: one locus per gene, a minimap2 all-vs-all of the locus spans
+    (<code>-x asm20 -c -X -N 50 -p 0.1</code>), then <code>mcl_families</code>. Only the alignments that may build a locus change.</p>
+    <div class="scroll"><table id="armtab"></table></div>
+  </section>
+
+  <section>
+    <h2>Every NPIP copy: how tied its reads are, and how many loci each pool builds there</h2>
+    <p class="sub">Tied = the read's second-best alignment scores at least 0.98 of its best, anywhere in the genome. Loci = loci whose
+    representative exons overlap the copy's exons on the same strand. ● = the copy keeps a node of its own in the clusters that hold NPIP.</p>
+    <div class="scroll"><table class="copies" id="copytab"></table></div>
+    <div class="legend"><span><i class="sw" style="background:var(--tied)"></i>tied primaries</span><span><i class="sw" style="background:var(--untied)"></i>untied primaries</span>
+      <span>● own node · ○ no own node · – no locus</span></div>
+  </section>
+
+  <section>
+    <h2>Three copies, three pools</h2>
+    <p class="sub">Every locus each pool builds in the window. A locus is its span (thin line) and its representative's exons (boxes). Colour
+    = where it sits; fill = what the family step did with it. Hover a locus for its details.</p>
+    <div class="legend" id="wlegend"></div>
+    <div id="windows"></div>
+  </section>
+
+  <section>
+    <h2>Does the all-vs-all remove what all alignments add?</h2>
+    <p class="sub">Nodes after the family step, in every cluster that holds a locus on an NPIP copy. Records sitting on top of a member are
+    folded into that member and are not counted.</p>
+    <div class="comp">
+      <div class="card"><h3>Nodes in the clusters that hold NPIP</h3><svg id="compsvg" viewBox="0 0 520 210" role="img"
+        aria-label="Stacked bars of nodes by class for each read pool"></svg>
+        <div class="legend"><span><i class="sw" style="background:var(--copy)"></i>on an NPIP copy</span><span><i class="sw" style="background:var(--offexon)"></i>inside a copy, off its exons</span>
+        <span><i class="sw" style="background:var(--anti)"></i>antisense to a copy</span><span><i class="sw" style="background:var(--else)"></i>elsewhere</span></div></div>
+      <div class="card"><h3>What the step does and does not remove</h3><ul id="removes"></ul>
+        <div class="verdict" id="verdict"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What this means</h2>
+    <div class="card"><ul>
+      <li><b>The concern is right, the remedy is not.</b> At NPIP most primaries are coin tosses, so primaries alone can put a locus at the
+      wrong copy. Adding every secondary does not decide where a tied read came from. It copies the read to every copy it ties with, and
+      the family step cannot undo that.</li>
+      <li><b>Which copy a tied read came from is decided after the loci exist</b>, by the positions where copies differ (PSVs): assign the
+      read or abstain, never split it 1/k. That step works the same whichever pool built the loci.</li>
+      <li><b>Locus existence is the part the pool decides.</b> Primaries only: 23 of 25 copies with their own node, 11 extra nodes. All
+      alignments: 24 copies (NPIPB2 is the gain) for 87 extra nodes and 22× the all-vs-all work. Good secondaries: in between on extras, but
+      two copies fewer on NPIP. Its genome-scale held-out gain (gorilla, 23 Sep) is not overturned by one family.</li>
+      <li><b>The two copies with no untied primary</b> (LOC124907807, LOC124907808) are the case for an existence-only call: present, but
+      never assigned reads (<code>--tied-seed</code>).</li>
+    </ul></div>
+  </section>
+
+  <footer>
+    <p>Pre-registered before any arm ran: <code>docs/PREREG_npip_read_pool_2026-10-01.md</code> (commit e5530d37). Result:
+    <code>docs/NPIP_READ_POOL_2026-10-01.md</code>. Scorers <code>bench/npip_read_pool/score.py</code>, <code>bench/npip_read_pool/cointoss.py</code>,
+    <code>bench/npip_read_pool/figdata.py</code>; runs in <code>/mnt/linuxdisk/tmp/readpool_npip/</code>. Assembly:
+    <code>copy_assign --assemble-only --assembly-junctions strict</code> + shipped polish, frozen binary of 28 Sep, BAM
+    <code>A119b.t2t.bam</code> (minimap2 <code>-N 50 -p 0.1</code>). Good secondaries: <code>RUSTLE_GTF_SECONDARY=1
+    RUSTLE_GTF_SECONDARY_AS_RATIO=0.98</code> + the genome-wide AS table; all: <code>RUSTLE_GTF_SECONDARY=1</code>. Copies: CAT/Liftoff v2.0
+    (25 on chr16; RefSeq NPIPB3 has no CAT gene). Built 1 Oct 2026.</p>
+  </footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+const D = __DATA__;
+const A = ["P","GOOD","ALL"];
+const NAME = {P:"Primaries only", GOOD:"+ good secondaries", ALL:"+ all secondaries"};
+const RULE = {P:"what minimap2 calls the best placement", GOOD:"AS ≥ 0.98 × the read's best anywhere (default)", ALL:"every alignment minimap2 reports (-N 50 -p 0.1)"};
+const fmt = n => n.toLocaleString("en-US");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// ---------- arm table ----------
+(function(){
+  const a = D.arms;
+  const r = (lab, f, hi) => `<tr><td class="lab">${lab}</td>${A.map(k => `<td class="${hi && hi(k) ? "hi" : ""}">${f(a[k], k)}</td>`).join("")}</tr>`;
+  const npipOff = x => x.npip.nodes - (x.npip.by_class.copy || 0);
+  let h = `<thead><tr><th>chr16</th>${A.map(k => `<th class="pool">${NAME[k]}<small>${RULE[k]}</small></th>`).join("")}</tr></thead><tbody>`;
+  h += `<tr class="grp"><td colspan="4">Cost</td></tr>`;
+  h += r("transcripts", x => fmt(x.transcripts));
+  h += r("loci", x => fmt(x.loci));
+  h += r("all-vs-all records", x => fmt(x.paf));
+  h += r("all-vs-all wall time", x => x.mm2);
+  h += `<tr class="grp"><td colspan="4">Locus definition at the 25 NPIP copies</td></tr>`;
+  h += r("loci on NPIP copies", x => fmt(x.loci_on_copies));
+  h += r("copies with at least one locus", x => `${x.copies_covered} / 25`, k => k === "ALL");
+  h += r("loci whose span covers exons of two copies", x => x.span_fused);
+  h += `<tr class="grp"><td colspan="4">After the all-vs-all and clustering</td></tr>`;
+  h += r("clusters that hold an NPIP copy", x => x.npip.clusters);
+  h += r("nodes in them", x => x.npip.nodes);
+  h += r("of which on an NPIP copy", x => x.npip.by_class.copy || 0);
+  h += r("of which not on any copy", x => npipOff(x), k => k === "P");
+  h += r("copies with a node of their own", x => `${x.copies_with_node} / 25`, k => k === "ALL");
+  document.getElementById("armtab").innerHTML = h + "</tbody>";
+})();
+
+// ---------- copy table ----------
+(function(){
+  const mx = Math.max(...D.rows.map(r => Math.max(r.loci.P, r.loci.GOOD, r.loci.ALL)));
+  let h = `<thead><tr><th>copy</th><th>strand</th><th style="text-align:left">tied primaries at the copy</th>${A.map(k => `<th class="pool" style="text-align:center">${k === "P" ? "primaries" : k === "GOOD" ? "+ good" : "+ all"}</th>`).join("")}</tr></thead><tbody>`;
+  for (const r of D.rows) {
+    const f = r.prim ? r.tied / r.prim : 0;
+    const cells = A.map(k => {
+      const n = r.loci[k];
+      const a = n ? 0.10 + 0.55 * Math.min(1, n / mx) : 0;
+      const dot = n ? `<i class="dot ${r.node[k] ? "on" : ""}" title="${r.node[k] ? "own node in the NPIP clusters" : "no own node"}"></i>` : "";
+      const bg = n ? `background:color-mix(in srgb, var(--heat) ${Math.round(a * 100)}%, transparent)` : "";
+      return `<td class="lc"><span class="c" style="${bg}">${n || "–"}</span>${dot}</td>`;
+    }).join("");
+    h += `<tr><td class="nm">${esc(r.name)}</td><td style="text-align:center">${r.st}</td>
+      <td><div class="tbar" title="${r.tied} of ${r.prim} primaries tied; ${r.prim - r.tied} untied"><div class="track"><div class="fill" style="width:${(f * 100).toFixed(1)}%"></div></div>
+      <span class="v">${Math.round(f * 100)}% of ${fmt(r.prim)}</span></div></td>${cells}</tr>`;
+  }
+  const tp = D.rows.reduce((s, r) => s + r.prim, 0), tt = D.rows.reduce((s, r) => s + r.tied, 0);
+  h += `<tr><td class="nm"><b>all 25</b></td><td></td><td><div class="tbar"><div class="track"><div class="fill" style="width:${(tt / tp * 100).toFixed(1)}%"></div></div><span class="v"><b>${Math.round(tt / tp * 100)}%</b> of ${fmt(tp)}</span></div></td>
+    ${A.map(k => `<td class="lc" title="distinct loci on copies (a locus on two copies counts once)"><b>${D.arms[k].loci_on_copies}</b></td>`).join("")}</tr>`;
+  document.getElementById("copytab").innerHTML = h + "</tbody>";
+})();
+
+// ---------- browser windows ----------
+const KCOL = {copy:"var(--copy)", offexon:"var(--offexon)", antisense:"var(--anti)", other:"var(--else)"};
+const KLAB = {copy:"on an NPIP copy", offexon:"inside a copy, off its exons", antisense:"antisense to a copy", other:"elsewhere"};
+const FLAB = {npip_node:"a node in an NPIP cluster", folded_npip:"folded into an NPIP node", other_family:"in another cluster", folded_other:"folded into another cluster's node", singleton:"in no cluster"};
+document.getElementById("wlegend").innerHTML =
+  Object.keys(KCOL).map(k => `<span><i class="sw" style="background:${KCOL[k]}"></i>${KLAB[k]}</span>`).join("") +
+  `<span><svg width="30" height="10" aria-hidden="true"><rect x="1" y="1" width="28" height="8" fill="var(--ink-soft)"/></svg>node in an NPIP cluster</span>
+   <span><svg width="30" height="10" aria-hidden="true"><rect x="1" y="1" width="28" height="8" fill="var(--ink-soft)" fill-opacity=".3" stroke="var(--ink-soft)" stroke-width="1"/></svg>folded into one</span>
+   <span><svg width="30" height="10" aria-hidden="true"><rect x="1" y="1" width="28" height="8" fill="none" stroke="var(--ink-soft)" stroke-width="1" stroke-dasharray="3 2"/></svg>outside the NPIP clusters</span>`;
+const WHY = {
+  "NPIPB4": "Primaries build 2 loci on NPIPB4; good secondaries 8; all secondaries 25, plus antisense and intronic pieces. One good-secondary locus runs 430 kb to NPIPB5 on a single split alignment.",
+  "NPIPA6 and NPIPA7": "Primaries give each copy its own locus. With good secondaries one 76 kb locus covers both copies and its representative sits on NPIPA7, so NPIPA6 has no locus of its own. All secondaries rebuild NPIPA6 among 34 loci.",
+  "NPIPB2": "Only all secondaries build a locus whose representative is on NPIPB2 (the polish drops it; registered 29 Sep). All secondaries recover it, with 16 more loci around it."
+};
+(function(){
+  const host = document.getElementById("windows");
+  for (const w of D.windows) {
+    const W = 960, X0 = 130, X1 = 940, span = w.hi - w.lo;
+    const X = p => X0 + (Math.max(w.lo, Math.min(w.hi, p)) - w.lo) / span * (X1 - X0);
+    let y = 18, out = [];
+    // scale bar
+    const step = span > 80000 ? 20000 : 10000;
+    out.push(`<line x1="${X0}" x2="${X1}" y1="${y}" y2="${y}" stroke="var(--rule-strong)"/>`);
+    for (let t = Math.ceil(w.lo / step) * step; t <= w.hi; t += step) {
+      out.push(`<line x1="${X(t)}" x2="${X(t)}" y1="${y - 3}" y2="${y + 3}" stroke="var(--rule-strong)"/><text class="tl" x="${X(t)}" y="${y - 6}" text-anchor="middle">${(t / 1e6).toFixed(2)} Mb</text>`);
+    }
+    y += 22;
+    // CAT genes (non-copy) and copies
+    out.push(`<text class="tl" x="${X0 - 10}" y="${y + 4}" text-anchor="end">CAT genes</text>`);
+    const lanes = [];
+    for (const g of w.genes) {
+      if (w.copies.some(c => c.s0 < g.e && g.s0 < c.e && g.st === c.strand && Math.abs(g.s0 - c.s0) < 2000)) continue;
+      const x1 = X(g.s0), x2 = Math.max(X(g.e), x1 + 2);
+      let li = lanes.findIndex(e => e < x1 - 4); if (li < 0) { li = lanes.length; lanes.push(0); } lanes[li] = x2 + 40;
+      if (li > 2) continue;
+      const yy = y + li * 9;
+      out.push(`<g><title>${esc(g.name)} (${g.st}) ${fmt(g.s0 + 1)}-${fmt(g.e)}</title><rect x="${x1}" y="${yy - 2}" width="${x2 - x1}" height="4" fill="var(--rule-strong)"/></g>`);
+    }
+    y += Math.min(3, Math.max(1, lanes.length)) * 9 + 10;
+    out.push(`<text class="tln" x="${X0 - 10}" y="${y + 4}" text-anchor="end">NPIP copies</text>`);
+    for (const c of w.copies) {
+      out.push(`<g><title>${esc(c.name)} (${c.strand}) CAT ${esc(c.cat)}: ${fmt(c.s0 + 1)}-${fmt(c.e)}</title><line x1="${X(c.s0)}" x2="${X(c.e)}" y1="${y}" y2="${y}" stroke="var(--copy)" stroke-width="1.2"/>`);
+      for (const [a, b] of c.exons) if (b > w.lo && a < w.hi) out.push(`<rect x="${X(a)}" y="${y - 6}" width="${Math.max(1.5, X(b) - X(a))}" height="12" fill="var(--copy)"/>`);
+      out.push(`</g><text class="tln" x="${Math.min(X1 - 4, Math.max(X0 + 4, (X(c.s0) + X(c.e)) / 2))}" y="${y - 10}" text-anchor="middle" fill="var(--copy)">${esc(c.name)} ${c.strand === "+" ? "→" : "←"}</text>`);
+    }
+    y += 22;
+    for (const arm of A) {
+      const items = w.arms[arm];
+      out.push(`<line x1="${X0 - 120}" x2="${X1}" y1="${y - 6}" y2="${y - 6}" stroke="var(--rule)"/>`);
+      out.push(`<text class="tln" x="${X0 - 10}" y="${y + 8}" text-anchor="end">${NAME[arm]}</text><text class="tl" x="${X0 - 10}" y="${y + 21}" text-anchor="end">${items.length} loci</text>`);
+      const rows = [];
+      const placed = items.map(it => {
+        const x1 = X(it.s0), x2 = Math.max(X(it.e), x1 + 3);
+        let ri = rows.findIndex(e => e < x1 - 3); if (ri < 0) { ri = rows.length; rows.push(0); } rows[ri] = x2;
+        return [it, ri, x1, x2];
+      });
+      const RH = rows.length > 16 ? 8 : 11;
+      for (const [it, ri, x1, x2] of placed) {
+        const yy = y + 4 + ri * RH, col = KCOL[it.k];
+        const node = it.f === "npip_node", folded = it.f === "folded_npip";
+        const fill = node ? col : folded ? col : "none", fo = node ? 1 : folded ? 0.32 : 1;
+        const dash = (node || folded) ? "" : ` stroke-dasharray="3 2"`;
+        const tip = `${it.n} (${it.st}) ${fmt(it.s0 + 1)}-${fmt(it.e)} · ${fmt(it.e - it.s0)} bp · ${it.ex.length} exon${it.ex.length > 1 ? "s" : ""} · ${KLAB[it.k]}${it.on.length ? " (" + it.on.join(", ") + ")" : ""} · ${FLAB[it.f]}`;
+        let g = `<g><title>${esc(tip)}</title><line x1="${x1}" x2="${x2}" y1="${yy}" y2="${yy}" stroke="${col}" stroke-width="1"/>`;
+        for (const [a, b] of it.ex) if (b > w.lo && a < w.hi) g += `<rect x="${X(a)}" y="${yy - RH / 2 + 1.5}" width="${Math.max(2, X(b) - X(a))}" height="${RH - 3}" fill="${fill}" fill-opacity="${fo}" stroke="${col}" stroke-width="${node ? 0 : 1}"${dash}/>`;
+        if (it.s0 < w.lo) g += `<text class="tl" x="${X0 - 2}" y="${yy + 3}" text-anchor="end" fill="${col}">‹</text>`;
+        if (it.e > w.hi) g += `<text class="tl" x="${X1 + 2}" y="${yy + 3}" fill="${col}">› ${it.e - w.hi > 50000 ? Math.round((it.e - w.lo) / 1000) + " kb" : ""}</text>`;
+        out.push(g + "</g>");
+      }
+      y += Math.max(30, 8 + rows.length * RH) + 10;
+    }
+    const div = document.createElement("div");
+    div.className = "win";
+    div.innerHTML = `<h3>${esc(w.title)} · chr16:${fmt(w.lo)}-${fmt(w.hi)}</h3><p class="wsub">${esc(WHY[w.title] || "")}</p>
+      <div class="wscroll"><svg viewBox="0 0 ${W + 40} ${y}" role="img" aria-label="${esc(w.title)}: loci built by each read pool">${out.join("")}</svg></div>`;
+    host.appendChild(div);
+  }
+})();
+
+// ---------- composition + verdict ----------
+(function(){
+  const svg = document.getElementById("compsvg");
+  const K = [["copy","var(--copy)"],["offexon","var(--offexon)"],["antisense","var(--anti)"],["elsewhere","var(--else)"]];
+  const max = 150, X0 = 140, X1 = 500, sc = v => v / max * (X1 - X0);
+  let s = "";
+  for (let t = 0; t <= max; t += 50) s += `<line x1="${X0 + sc(t)}" x2="${X0 + sc(t)}" y1="12" y2="168" stroke="var(--rule)"/><text class="tl" x="${X0 + sc(t)}" y="186" text-anchor="middle">${t}</text>`;
+  s += `<text class="tl" x="${(X0 + X1) / 2}" y="204" text-anchor="middle">nodes</text>`;
+  A.forEach((a, i) => {
+    const y = 24 + i * 50, bc = D.arms[a].npip.by_class; let x = X0;
+    s += `<text class="tln" x="${X0 - 10}" y="${y + 13}" text-anchor="end">${NAME[a]}</text>`;
+    for (const [k, col] of K) {
+      const v = bc[k] || 0; if (!v) continue;
+      s += `<g><title>${NAME[a]}: ${v} nodes ${k === "copy" ? "on an NPIP copy" : k === "offexon" ? "inside a copy, off its exons" : k === "antisense" ? "antisense to a copy" : "elsewhere"}</title><rect x="${x}" y="${y}" width="${Math.max(1, sc(v) - 2)}" height="22" rx="2" fill="${col}"/></g>`;
+      x += sc(v);
+    }
+    const n = D.arms[a].npip.nodes, off = n - (bc.copy || 0);
+    s += `<text class="tl" x="${x + 6}" y="${y + 15}">${n} (${off} not on a copy)</text>`;
+  });
+  svg.innerHTML = s;
+  const p = D.prereg;
+  document.getElementById("removes").innerHTML = `
+    <li><b>Removes loci with no homolog.</b> Of the ${fmt(p.added)} loci that only all secondaries build on chr16, ${fmt(p.added - p.added_clustered)}
+    (${Math.round((p.added - p.added_clustered) / p.added * 100)}%) align to nothing and stay singletons.</li>
+    <li><b>Folds loci that sit on top of each other.</b> Under all secondaries, 76 loci fold into a node of the largest NPIP cluster.</li>
+    <li><b>Keeps homologous extras.</b> Intronic pieces, antisense loci and two-copy loci align to the family at high identity, so they
+    get edges and stay: 87 of 147 nodes. Two-copy loci also fold copies together, so the largest NPIP cluster keeps a node for 17 copies
+    under all secondaries against 20 under primaries only.</li>`;
+  document.getElementById("verdict").innerHTML = `<b>Pre-registered rule: f = ${p.fp_in} / ${fmt(p.fp)} = ${p.f.toFixed(3)} → "the claim holds".</b>
+    The rule counted every extra locus on chr16, most of them far from NPIP and unable to join an NPIP cluster, so it could not see what
+    happens inside the NPIP clusters. It is reported as registered. The table on the left measures the NPIP clusters directly.`;
+})();
+})();
+</script>
