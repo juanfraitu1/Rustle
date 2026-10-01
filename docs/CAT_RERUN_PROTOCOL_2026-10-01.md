@@ -43,3 +43,14 @@ partial, 1 weak, 7 none (before R1's span rule for exon-less records).
 overlap, which let a read-through record containing the copy win (NPIPB14P -> PDXDC2P-NPIPB14P, TBC1D3P1 -> TBC1D3P1-DHX40P1). Changed to
 the largest span Jaccard (overlap / union) on the same strand, so the CAT record of the copy itself wins. Applies only to the 6
 exon-less records (NPIPB14P; TBC1D3P1, P3, P4, P7; LOC100420311).
+
+**Amendment 2 (2026-10-01, after step 2's report).** The Dishuck row `PKD1P6-NPIPP1` (GeneID 105369154; the table places copy A4 =
+NPIPP1 at 15.105 Mb) is the RefSeq read-through record chr16:15,105,353-15,141,806 (−). R1 maps it to the CAT gene sharing most exonic
+bases, which is Liftoff PKD1P6 (LOFF_G0001012), because most of the read-through's exons lie in PKD1P6. The NPIP copy is the 3′ (low
+coordinate) half: CAT NPIPP1, CHM13_G0020725 (15,105,363-15,124,458, −). The registered RefSeq copy-recovery pre-registration made the
+mirror error: it says "territory = its NPIPP1 half" but selects exons at or above 15,126,650, which is the PKD1P6 half (RefSeq PKD1P6
+spans 15,126,099-15,159,720). Ruling: for a RefSeq read-through record `A-B` that a truth table names as the B copy, R1 is applied to
+the exons outside A's RefSeq record. This changes one row (PKD1P6-NPIPP1 → CHM13_G0020725). Step 2 reports it as arm S2 beside the
+R1 headline, and steps 5-6 use it. The step-1 TSV is left as R1 produced it, and this override is applied downstream. The registered
+RefSeq result is not re-run. Its fusion row scored the PKD1P6 half, and that row was not in its E2 set, so its E2 headline does not
+depend on the error.
