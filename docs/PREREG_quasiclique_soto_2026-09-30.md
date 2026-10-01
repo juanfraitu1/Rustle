@@ -47,3 +47,9 @@ AC243829.6 needs a minimap2 score floor below asm20's 200 to align at all. No `-
 ## 6. Result
 
 (Filled in after the run, below this line, without editing anything above.)
+
+**Amendment 1 (2026-09-30 23:15, before any family was built).** The genome-wide self-alignment (paralog discovery) needs ~40 min
+(1 of 14 chunks done when stopped for a meeting). A **windows-only arm (W)** is run first: the same command, but the self-alignment
+returns no hits (wrapper `PROJ_EMPTY=1`), so the representatives are exactly Soto's 2,334 loci and the γ-quasi-clique grouping runs on
+them alone. Arm W is reported as a deviation and decides nothing; the full arm of section 2 still decides when it is run. Everything
+else (scoring, decision margins) unchanged.
