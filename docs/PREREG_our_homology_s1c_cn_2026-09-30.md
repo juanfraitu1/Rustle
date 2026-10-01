@@ -45,3 +45,32 @@ The 0.05 / 0.15 margins are fixed here without data; they are not fitted. Exact 
 ## 6. Result
 
 (Filled in after the run, below this line, without editing anything above.)
+
+Run on 2026-09-30 after this file was committed (`ffc7fb13`, sha1 `94dd0a83a411ea099eede3c846c39198ee08a41b`). All-vs-all 164,616 PAF
+records (4 query chunks, 2.5 min, heavy lock); `mcl_families` (binary sha1 e4cc13b9) with the shipped DNA settings: 1,819 nodes, 11,031
+edges, 26,778 pairs dropped for no exonic evidence, 3,053 for a shared-exon fraction < 0.60, 93 annotation records folded into 86 loci;
+380 families covering 1,709 of 2,334 genes; 10,045 within-family edges -> 10,731 gene pairs. Scoring: `soto_m2_our_homology.py`, 6 s.
+H0 reproduces every earlier number exactly (0.7307 / 345; 0.9698 / 479, held-out 0.9681 / 263; ours 0.9277 / 411).
+
+| homology | copy numbers | ARI all / dev / held-out | exact all (dev / held-out) | nesting | bipartite sens / prec |
+|---|---|---|---|---|---|
+| H0 Soto map-back | none | 0.7307 / 0.6418 / 0.8693 | 345 | 440/444 | - |
+| H0 Soto map-back | S1C | 0.9698 / 0.9708 / 0.9681 | 479 (216 / 263) | 440/444 | 0.980 / 1.000 |
+| H0 Soto map-back | ours | 0.9277 / 0.9227 / 0.9343 | 411 (177 / 234) | 440/444 | 0.935 / 0.975 |
+| H1 ours | none | 0.7648 / 0.7146 / 0.8242 | 186 | 257/444 | - |
+| **H1 ours** | **S1C** | **0.8235 / 0.7675 / 0.8844** | **249 (113 / 136)** | 257/444 | **0.690 / 0.966** |
+| H1 ours | ours | 0.7856 / 0.7323 / 0.8446 | 221 (91 / 130) | 257/444 | 0.656 / 0.947 |
+
+**VERDICT (section 4): PARTIAL.** Held-out ARI 0.8844 against the map-back reference 0.9681 (within 0.15, not within 0.05).
+
+Descriptive, after the verdict: our families rarely over-merge Soto's (bipartite precision 0.966) but miss part of them (sensitivity
+0.690). Of the 185 Soto families (>= 2 clean members) not inside one of our components, 158 have members with no edge at all in our graph
+and 27 are split across our components. The unlinked members are unprocessed pseudogenes (126), protein-coding (76), processed
+pseudogenes (59), miRNAs (51), transcribed unprocessed pseudogenes (39) and lncRNAs (34). 8,657 of the 12,231 map-back pairs are also our
+edges; we add 2,074 pairs the map-back does not have.
+
+**Reading.** The two homology definitions differ in what counts as related: Soto links two genes that share one >= 98%-identical exon;
+our shipped DNA edge asks the alignment to cover a substantial part of a gene (30% of the longer gene's exons, or 70% of the shorter's)
+over >= 300 bp, with >= 60% of exons shared. Short genes (miRNAs) and genes that share only a piece fall below ours. Given Soto's copy
+numbers, our homology recovers most of Soto's structure without merging their families, but not the single-exon links that make their
+families larger.
