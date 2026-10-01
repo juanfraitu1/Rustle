@@ -127,3 +127,17 @@ head-to-head with the PSV allele caller, on the same frozen truth, and to keep i
   - **lower bound check**: IsoCon's count of distinct coding groups (its own copy estimate) against T (NPIP 41, TBC1D3 28; real arm:
     against the haplotype copies with reads);
   - in Arm S, recall and precision against the known truth transcripts (exact match, then >= 0.999).
+
+**Amendment 2 (2026-10-01, after building the Arm S truth and before any IsoCon run).** Two defects in Amendment 1's truth transcripts:
+(a) an exon union merges every annotated isoform of a copy, reaching 36 kb for NPIP, far beyond Iso-Seq read lengths; (b) lifting a block
+by the min/max target position over every record that touches it produced a 1.6 Mb "transcript" when one block touched two records far
+apart. Changes: the simulated transcript of a copy is its primary annotated transcript in the 2026-09-29 truth GTF (most junctions, ties:
+longest); each exon block is lifted through the single primary record that covers most of its bases, and the lift is rejected when that
+record covers < 95% of the block or the lifted span exceeds 1.2 x the block length + 100 bp. The caller's truth (T2d/T2i/T1 per copy) is
+unchanged. Scoring of both arms is unchanged.
+
+**Amendment 3 (2026-10-01, after the TBC1D3 simulation ran and the NPIP simulation timed out; no NPIP IsoCon output exists).** The gorilla
+RefSeq NPIP models are 6-27 kb, while the real fibroblast reads at NPIP have median 3,820 bp (p90 4,367); IsoCon on 880 reads of up to
+27 kb did not finish in the 10-minute window. NPIP simulated transcripts are therefore the 3'-most 4,000 bp of each truth transcript (A, B
+and B-only alike); TBC1D3 is unchanged. Real arm: a family whose IsoCon run does not finish in one 10-minute call is downsampled at random
+(seed 1) by halves until it does; the size used is reported. The TBC1D3 simulation result stands as run.
