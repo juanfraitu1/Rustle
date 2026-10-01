@@ -8,7 +8,7 @@
   --accent: #1d6a86; --igv: #1f3f8f;
   --k-smaller: #2a78d6; --k-our: #eb6834; --k-soto: #1baf7a; --k-both: #4a3aa7; --k-match: #c5ccd2;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s-other: #aab3ba;
-  --cross: #e34948; --within: #9aa5ae; --sd: #c3ccd3;
+  --cross: #e34948; --within: #9aa5ae; --sd: #c3ccd3; --sdp: #d3e7ee; --sdp-line: #5f9fb6;
   --f-display: "Literata", Georgia, serif; --f-body: "Instrument Sans", system-ui, -apple-system, sans-serif;
   --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
 }
@@ -17,13 +17,13 @@
   --accent: #6cb6d3; --igv: #8fb0ff;
   --k-smaller: #3987e5; --k-our: #d95926; --k-soto: #199e70; --k-both: #9085e9; --k-match: #3a4750;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s-other: #56636d;
-  --cross: #e66767; --within: #5d6b75; --sd: #3a4954; color-scheme: dark } }
+  --cross: #e66767; --within: #5d6b75; --sd: #3a4954; --sdp: #1d3944; --sdp-line: #4f93ad; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #11181d; --surface: #182229; --fg: #e3e9ed; --muted: #9aa8b2; --faint: #6d7b85; --line: #2b3943; --track: #1e2a32;
   --accent: #6cb6d3; --igv: #8fb0ff;
   --k-smaller: #3987e5; --k-our: #d95926; --k-soto: #199e70; --k-both: #9085e9; --k-match: #3a4750;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s-other: #56636d;
-  --cross: #e66767; --within: #5d6b75; --sd: #3a4954; color-scheme: dark }
+  --cross: #e66767; --within: #5d6b75; --sd: #3a4954; --sdp: #1d3944; --sdp-line: #4f93ad; color-scheme: dark }
 body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--f-body); }
 .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 64px; display: grid; gap: 40px; }
 h1, h2 { font-family: var(--f-display); font-weight: 650; text-wrap: balance; margin: 0; line-height: 1.2; }
@@ -661,13 +661,13 @@ function drawStrips(F, C, vis) {
   const parts = [`${nOwn} own gene${nOwn === 1 ? "" : "s"}`, nSh ? `${nSh} shared` : "", nAdd ? `${nAdd} we add` : ""].filter(Boolean).join(", ");
   head.innerHTML = `<h3>Where ${cur}'s genes sit: ${regs.length} segmental-duplication region${regs.length === 1 ? "" : "s"}</h3>` +
     `<p>One strip per SD98 region (Soto's ≥ 98%-identity duplications, where their method starts) holding a gene of ${cur} (${parts}). ` +
-    `Every gene of Soto's table inside the region is drawn and labelled with its Soto family. The top row is the region's duplicons in DupMasker's colours (grey = no colour assigned). Track colours as in the browser above; grey = a family outside this view.</p>`;
+    `Every gene of Soto's table inside the region is drawn and labelled with its Soto family. The <b>SD ≥ 98%</b> row shows the duplications the region is made of (SEDEF, ≥ 98% identity), each labelled with where its other copy lies; the <b>Duplicons</b> row breaks them into their ancestral pieces (DupMasker colours; grey = no colour assigned). Track colours as in the browser above; grey = a family outside this view.</p>`;
   const W = Math.max(340, host.clientWidth || 900), GUT = W < 600 ? 84 : 128, R = 14, IW = W - GUT - R;
   const famTxt = i => { const n = sotoOf(i); return !n.length ? "no Soto family" : n.length === 1 ? n[0] : `in ${n.length} Soto families`; };
   const look = i => { const p = role(i); return p === 0 ? ["var(--fg)", 650, false] : p === 1 ? ["var(--fg)", 400, true] : p === 2 ? ["var(--fg)", 400, false] : ["var(--muted)", 400, false]; };
   let out = "", y = 0;
   regs.slice(0, sdAll ? regs.length : 6).forEach(k => {
-    const [c, a, b, gi, segs] = RG[k];
+    const [c, a, b, gi, segs, pcs = []] = RG[k];
     const is = gi.filter(i => !hidden(i)), nHid = gi.length - is.length;
     const one = is.filter(i => sotoOf(i).length === 1), nSh = is.filter(i => sotoOf(i).length > 1).length, nNo = is.length - one.length - nSh;
     const fams = new Set(one.map(i => sotoOf(i)[0]));
@@ -677,6 +677,28 @@ function drawStrips(F, C, vis) {
     s += `<text x="${W - R}" y="${y + 22}" font-size="10.5" fill="var(--muted)" text-anchor="end"><tspan font-weight="650" fill="var(--fg)">${is.length} gene${is.length === 1 ? "" : "s"}</tspan> · ${fams.size} Soto famil${fams.size === 1 ? "y" : "ies"}${nSh ? ` + ${nSh} shared gene${nSh === 1 ? "" : "s"}` : ""}${nNo ? ` · ${nNo} in none` : ""}${nHid ? ` · ${nHid} hidden by the filter` : ""}</text>`;
     y += 36;
     s += axis(X, lo, hi, y, GUT, IW); y += 22;
+    // the individual SEDEF duplications (>= 98%) the merged region is made of, each labelled with where its other copy is
+    const prow = [], pp = [], MAXP = 8;
+    let hiddenP = 0;
+    [...pcs].sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]) || p[0] - q[0]).forEach(p => {
+      const x1 = X(p[0]), x2 = Math.max(X(p[1]), x1 + 2);
+      let r = 0;
+      while (r < MAXP && !freeAt(prow, r, x1, x2, 2)) r++;
+      if (r >= MAXP) { hiddenP++; return; }
+      (prow[r] = prow[r] || []).push([x1, x2]); pp.push([x1, x2, r, p]);
+    });
+    const PH = 4 + Math.max(1, prow.length) * 13;
+    s += `<text x="10" y="${y + 11}" font-size="10" fill="var(--muted)">SD ≥ 98%</text><rect x="${X(a)}" y="${y}" width="${X(b) - X(a)}" height="${PH}" fill="var(--track)"/>`;
+    if (hiddenP) s += `<text x="10" y="${y + 24}" font-size="9" fill="var(--muted)">+${hiddenP} narrower not drawn</text>`;
+    pp.forEach(([x1, x2, r, p]) => {
+      const [p0, p1, c2, s2, e2, idn, st2] = p;
+      const same = c2 === c && s2 < b && e2 > a;
+      const lab = `↔ ${same ? "same region" : `${c2}:${(s2 / 1e6).toFixed(2)} Mb`} · ${(idn * 100).toFixed(1)}%${st2 === "-" ? " · inverted" : ""}`;
+      const tipT = `duplication ≥ 98% (SEDEF): ${c}:${fmt(p0 + 1)}-${fmt(p1)} (${kb(p1 - p0)} in this region) ↔ ${c2}:${fmt(s2 + 1)}-${fmt(e2)}, ${(idn * 100).toFixed(2)}% identical${st2 === "-" ? ", inverted" : ""}`;
+      s += `<rect data-tip="${esc(tipT)}" x="${x1}" y="${y + 2 + r * 13}" width="${x2 - x1}" height="10" rx="2" fill="var(--sdp)" stroke="var(--sdp-line)" stroke-width="0.8"/>`;
+      if (x2 - x1 > lab.length * 5.3 + 8) s += `<text x="${x1 + 4}" y="${y + 10.5 + r * 13}" font-size="9" fill="var(--fg)" pointer-events="none">${esc(lab)}</text>`;
+    });
+    y += PH + 6;
     const drows = [], dp = [];
     segs.forEach(([s0, e0, di, ci]) => {
       const x1 = X(s0), x2 = Math.max(X(e0), x1 + 1); let r = 0;

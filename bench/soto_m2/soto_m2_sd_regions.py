@@ -7,10 +7,17 @@ segments inside it, clipped to the region. Duplicon colours are DupMasker's own 
 the colouring used in the SD literature.
 
     python3 bench/soto_m2/soto_m2_sd_regions.py --data families.json \
-        --sd98 sd98_v1.bed --duplicons chm13.draft_v1.0_plus38Y_dupmasker_colors.bed --out sd_regions.json
+        --sd98 sd98_v1.bed --duplicons chm13.draft_v1.0_plus38Y_dupmasker_colors.bed \
+        [--sedef final_v1_clean.bed] --out sd_regions.json
 
 Output: {"regions": [[chr, start, end, [gene idx...], [[start, end, duplicon idx, colour idx]...]], ...],
-         "dups": [duplicon IDs], "cols": ["#rrggbb", ...]}; coordinates 0-based half-open, as in the BEDs."""
+         "dups": [duplicon IDs], "cols": ["#rrggbb", ...]}; coordinates 0-based half-open, as in the BEDs.
+
+With --sedef (the native CHM13 v1.0 SEDEF table, 34 columns, identity in field 21; both sides of every row count), every region
+also gets the individual SEDEF duplications at identity >= --min-frac that overlap it, clipped to the region, as a sixth element:
+[[start, end, partner chrom, partner start, partner end, identity, partner strand], ...]. Without it the output is unchanged.
+(The UCSC `sedefSegDups.bb` beside the SD98 BED is NOT usable here: its chromosome lengths are CHM13 v2.0's, so chr16 is off by
+5 bp and the acrocentrics by their rDNA changes.)"""
 import argparse
 import bisect
 import collections
@@ -44,6 +51,8 @@ def main(argv=None):
     ap.add_argument("--data", required=True, help="families.json from soto_m2_families.py (its `genes` list)")
     ap.add_argument("--sd98", required=True, help="merged SD98 regions, BED, CHM13 v1.0")
     ap.add_argument("--duplicons", required=True, help="DupMasker duplicons with itemRgb, BED9, CHM13 v1.0")
+    ap.add_argument("--sedef", help="native CHM13 v1.0 SEDEF table (final_v1_clean.bed); adds each region's SD98 pieces")
+    ap.add_argument("--min-frac", type=float, default=0.98, help="identity floor for --sedef (their SD98 cut)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
 
@@ -77,14 +86,33 @@ def main(argv=None):
                 cols.append(rgb)
             segs[(c, k)].append([max(s, r0), min(e, r1), dup_id[f[3]], col_id[rgb]])
 
-    regions = []
+    pieces_by = None
+    if a.sedef:
+        pieces_by = collections.defaultdict(list)
+        for line in open(a.sedef):
+            f = line.rstrip("\n").split("\t")
+            try:
+                ident = float(f[20])
+            except (IndexError, ValueError):
+                continue
+            if ident < a.min_frac:
+                continue
+            c1, s1, e1, c2, s2, e2, st2 = f[0], int(f[1]), int(f[2]), f[3], int(f[4]), int(f[5]), f[9]
+            pieces_by[c1].append((s1, e1, c2, s2, e2, round(ident, 4), st2))
+            pieces_by[c2].append((s2, e2, c1, s1, e1, round(ident, 4), st2))
+    regions, npieces = [], 0
     for (c, k) in sorted(held, key=lambda ck: (ck[0], ck[1])):
         r0, r1 = sd[c][k]
-        regions.append([c, r0, r1, sorted(held[(c, k)], key=lambda i: genes[i]["s"]), sorted(segs[(c, k)])])
+        row = [c, r0, r1, sorted(held[(c, k)], key=lambda i: genes[i]["s"]), sorted(segs[(c, k)])]
+        if pieces_by is not None:
+            pieces = {(max(s, r0), min(e, r1)) + tuple(rest) for s, e, *rest in pieces_by[c] if s < r1 and e > r0}
+            row.append([list(x) for x in sorted(pieces)])
+            npieces += len(pieces)
+        regions.append(row)
     json.dump({"regions": regions, "dups": dups, "cols": cols}, open(a.out, "w"), separators=(",", ":"))
     print(f"{len(regions)} SD98 regions hold {sum(len(r[3]) for r in regions)} gene placements "
           f"({len(genes)} genes, {unplaced} outside every region); {sum(len(r[4]) for r in regions)} duplicon segments, "
-          f"{len(dups)} duplicons, {len(cols)} colours")
+          f"{len(dups)} duplicons, {len(cols)} colours" + (f"; {npieces} SD98 pieces" if pieces_by is not None else ""))
 
 
 if __name__ == "__main__":
