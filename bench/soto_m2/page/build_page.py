@@ -8,6 +8,8 @@
   sd_regions.json                  from bench/soto_m2/soto_m2_sd_regions.py (SD98 regions, their genes and duplicons)
   gene_ends.json                   from bench/soto_m2/soto_m2_gene_ends.py (the "Gene ends" tab; frozen copy
                                    docs/SOTO_GENE_ENDS_2026-09-30.json)
+  cat_labels.json                  from bench/soto_m2/soto_m2_cat_labels.py: CAT/Liftoff v2.0 labels for the Detection tab
+                                   (--cat-labels; without it the tab keeps the July RefSeq labels)
 
     python3 bench/soto_m2/page/build_page.py --data families.json --sd sd_regions.json --out soto_vs_ours.html
 
@@ -24,6 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import definitions_tab  # noqa: E402
 import gene_ends_tab  # noqa: E402
+import july_cat  # noqa: E402
 import july_dna_only  # noqa: E402
 import mcl_tab  # noqa: E402
 import method_tab  # noqa: E402
@@ -59,6 +62,7 @@ def main(argv=None):
     ap.add_argument("--data", required=True, help="families.json from soto_m2_families.py")
     ap.add_argument("--sd", required=True, help="sd_regions.json from soto_m2_sd_regions.py")
     ap.add_argument("--ends", help="gene_ends.json from soto_m2_gene_ends.py (only if the template has the Gene ends tab)")
+    ap.add_argument("--cat-labels", help="cat_labels.json from soto_m2_cat_labels.py (Detection tab on CAT/Liftoff v2.0)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     t = open(os.path.join(HERE, "template.html")).read()
@@ -67,6 +71,8 @@ def main(argv=None):
     for key, name in (("DET", "detection_2026-07-28.html"), ("MEM", "members_2026-07-27.html")):
         html, js = split_old(os.path.join(HERE, "july", name))
         html, js = (july_dna_only.det if key == "DET" else july_dna_only.mem)(html, js)   # DNA to DNA only (2026-09-30)
+        if key == "DET" and a.cat_labels:
+            html, js = july_cat.det(html, js, july_cat.load(a.cat_labels))           # CAT/Liftoff v2.0 labels (2026-10-01)
         t = t.replace(f"__{key}_HTML__", html, 1).replace(f"__{key}_JS__", js, 1)
     t = t.replace("__HOW_PANE__", method_tab.pane() + "\n", 1)
     t = t.replace("__DEF_PANE__", definitions_tab.pane(), 1)

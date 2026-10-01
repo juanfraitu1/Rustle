@@ -13,6 +13,11 @@ moved to v2.0 by the per-chromosome offsets found by sequence (chr16 -5, chr17 -
 
     python3 bench/soto_m2/soto_m2_gene_ends.py --copies copies.hsa.tsv --truth truth.hsa.gtf --ours-json models.hsa.ours.json \
         --ours-gtf hsa.ours.gtf --cat families.json --out gene_ends.json
+
+CAT reference (2026-10-01, docs/CAT_RERUN_PROTOCOL_2026-10-01.md): pass --ref-genes chm13v2.0_CAT_Liftoff.genes.tsv with the CAT
+copy-recovery instruments (copies table with `isoform_gene` = the copy's CAT gene id and `refseq_name`; models scored against the
+CAT truth). The reference gene is then the CAT v2.0 gene, all its transcripts collapsed (its exon-union blocks), in place of the
+RefSeq gene; --truth is not read. Rows keep the RefSeq copy name (cids are shared with the RefSeq run) and carry the CAT id/name.
 """
 import argparse
 import collections
@@ -70,12 +75,22 @@ def end_call(ref, lane, strand):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    for k in ("copies", "truth", "ours_json", "ours_gtf", "cat", "out"):
+    for k in ("copies", "ours_json", "ours_gtf", "cat", "out"):
         ap.add_argument("--" + k.replace("_", "-"), required=True)
+    ap.add_argument("--truth", help="RefSeq truth GTF (gene_id = cid); not used with --ref-genes")
+    ap.add_argument("--ref-genes", help="CAT genes.tsv: the reference gene is the copy's CAT gene (isoform_gene), exon-union blocks")
     a = ap.parse_args(argv)
 
     copies = list(csv.DictReader(open(a.copies), delimiter="\t"))
-    truth = gtf_exons(a.truth, "gene_id")
+    if a.ref_genes:
+        want = {c["isoform_gene"] for c in copies}
+        blocks = {r["gene_id"]: [[int(x) for x in b.split("-")] for b in r["exon_blocks"].split(",") if b]
+                  for r in csv.DictReader(open(a.ref_genes), delimiter="\t") if r["gene_id"] in want}
+        truth = {c["cid"]: blocks.get(c["isoform_gene"], []) for c in copies}
+        names = {c["cid"]: dict(name=c["refseq_name"], cat_id=c["isoform_gene"], cat_name=c["cat_name"]) for c in copies}
+    else:
+        truth = gtf_exons(a.truth, "gene_id")
+        names = {}
     ours_ex = gtf_exons(a.ours_gtf, "transcript_id")
     scored = json.load(open(a.ours_json))["copies"]
     cat = [g for g in json.load(open(a.cat))["genes"] if g["c"] in SHIFT]
@@ -89,6 +104,7 @@ def main(argv=None):
         r_lo, r_hi = ref[0][0], ref[-1][1]
         row = dict(cid=cid, name=c["name"], family=c["family"], chrom=chrom, strand=strand, ref=ref,
                    readthrough=int(c.get("readthrough", 0) or 0))
+        row.update(names.get(cid, {}))
         # Soto's gene: the CAT v4 gene on this strand with the most exonic overlap with the RefSeq gene (ties: closest extent)
         best, best_ov, best_ext = None, 0, None
         for g in cat:
