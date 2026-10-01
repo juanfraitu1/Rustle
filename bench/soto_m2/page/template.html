@@ -305,14 +305,14 @@ __MCL_PANE__
 
 <div class="duo">
 <section>
-  <div class="eyebrow">Every Soto family · one square each · click to open it in the browser</div>
+  <div class="eyebrow">Every Soto family · one square each · click to open it in the viewer</div>
   <h2>Where we agree, and who is short when we don't</h2>
   <div class="groups" id="groups"></div>
   <div class="legend"><span><span class="sw" style="background:var(--k-match);position:relative;display:inline-grid;place-items:center"><span style="width:4px;height:4px;border-radius:50%;background:var(--surface)"></span></span> dot = Soto family is smaller than its sequence (homology) family</span></div>
 </section>
 
 <section id="viewer">
-  <div class="eyebrow">Genome browser · CHM13 coordinates (CAT v4 annotation, v1.0; matches v2.0 on these chromosomes) · colors = families</div>
+  <div class="eyebrow">Family viewer · CHM13 v1.0 coordinates (CAT v4 annotation, as in Soto's table) · colors = families</div>
   <div class="bar">
     <input id="q" list="fams" placeholder="Family ID or gene, e.g. NPIPB3" aria-label="Find a family by ID or gene name">
     <datalist id="fams"></datalist>
@@ -323,14 +323,10 @@ __MCL_PANE__
   <div class="facts" id="vf"></div>
   <div class="venn" id="venn"></div>
   <div class="flowwrap"><div class="flowcap">Who goes where: Soto's families on the left, ours on the right; each band is the genes they share (genes Soto puts in several families are left out, as in the classification)</div><div id="flow"></div></div>
-  <div id="panels" class="igv" role="img" aria-label="Genome browser view of the chosen family"></div>
+  <div id="panels" class="igv" role="img" aria-label="Message area of the family viewer"></div>
   <div class="legend">
-    <span><i style="border-color:var(--cross)"></i>≥ 98%-identical exons shared across two Soto families</span>
-    <span><i style="border-color:var(--within)"></i>within one Soto family</span>
-    <span><i style="border-color:var(--cross);border-top-style:dashed"></i>link only in SEDEF edges</span>
-    <span><b>Soto S1C</b> = Soto's families · <b>Ours</b> = our families, each coloured like the Soto family it mostly holds and named by how it relates to it ("= ID_151", "ID_151 + 1 more", "part of ID_154") · <b>Homology family</b> = genes sharing ≥ 98%-identical exons before any copy-number cut (one colour per family)</span>
-    <span><b>bold</b> = Soto's own member · <span style="font-style:italic">italic ×6</span> = shared: Soto lists the gene in 6 families, and the gene counts leave it out · <b>×6</b> striped bar = the same in the Soto track</span>
-    <span>← / → = strand · overlapping genes get their own line · <b>SD98</b> = Soto's ≥ 98%-identity segmental duplications, with how many genes of Soto's table each holds</span>
+    <span><b>Soto S1C</b> = Soto's families · <b>Ours</b> = our families, each named by how it relates to the Soto family it mostly holds ("= ID_151", "ID_151 + 1 more", "part of ID_154") and coloured like it</span>
+    <span><b>bold</b> = Soto's own member · <span style="font-style:italic">italic</span> = shared: Soto lists the gene in several families (striped bar, ×N), and the gene counts leave it out · ← / → = strand · overlapping genes get their own line</span>
   </div>
   <div id="sdhead" class="sdhead"></div>
   <div id="sdstrips" class="igv" role="img" aria-label="Segmental-duplication regions holding this family's genes, with every gene inside them"></div>
@@ -343,13 +339,6 @@ __MCL_PANE__
 </section>
 </div>
 
-<section id="loosen">
-  <div class="eyebrow">Our copy-number cut, loosened from Soto's MAD &lt; 1 · families vs the exact run</div>
-  <h2>Would a looser copy-number cut find the ones we miss?</h2>
-  <div class="legend"><span><span class="sw" style="background:var(--s1)"></span> recovered: families we cut that become exact</span><span><span class="sw" style="background:var(--s2)"></span> broken: exact families that merge with others</span></div>
-  <div class="chart"><svg viewBox="0 0 720 250" width="100%" role="img" aria-label="Families recovered versus broken as our copy-number cut is loosened"><line x1="44" x2="710" y1="202.0" y2="202.0" stroke="var(--line)"/><text x="36" y="206.0" font-size="11" fill="var(--muted)" text-anchor="end">0</text><line x1="44" x2="710" y1="155.5" y2="155.5" stroke="var(--line)"/><text x="36" y="159.5" font-size="11" fill="var(--muted)" text-anchor="end">20</text><line x1="44" x2="710" y1="109.0" y2="109.0" stroke="var(--line)"/><text x="36" y="113.0" font-size="11" fill="var(--muted)" text-anchor="end">40</text><line x1="44" x2="710" y1="62.5" y2="62.5" stroke="var(--line)"/><text x="36" y="66.5" font-size="11" fill="var(--muted)" text-anchor="end">60</text><line x1="44" x2="710" y1="16.0" y2="16.0" stroke="var(--line)"/><text x="36" y="20.0" font-size="11" fill="var(--muted)" text-anchor="end">80</text><text x="79.6" y="197.0" font-size="10.5" fill="var(--fg)" text-anchor="middle">0</text><text x="103.6" y="197.0" font-size="10.5" fill="var(--fg)" text-anchor="middle">0</text><text x="91.6" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 1</text><text x="91.6" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">411 exact</text><path d="M163.7 202.0 V195.7 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 1.25: 4 families recovered; 401 exact overall, held-out 230"/><text x="174.7" y="187.7" font-size="10.5" fill="var(--fg)" text-anchor="middle">4</text><path d="M187.7 202.0 V172.4 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 1.25: 14 families broken; 401 exact overall, held-out 230"/><text x="198.7" y="164.4" font-size="10.5" fill="var(--fg)" text-anchor="middle">14</text><text x="186.7" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 1.25</text><text x="186.7" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">401 exact</text><path d="M258.9 202.0 V193.4 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 1.5: 5 families recovered; 386 exact overall, held-out 220"/><text x="269.9" y="185.4" font-size="10.5" fill="var(--fg)" text-anchor="middle">5</text><path d="M282.9 202.0 V135.2 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 1.5: 30 families broken; 386 exact overall, held-out 220"/><text x="293.9" y="127.2" font-size="10.5" fill="var(--fg)" text-anchor="middle">30</text><text x="281.9" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 1.5</text><text x="281.9" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">386 exact</text><path d="M354.0 202.0 V181.8 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 2: 10 families recovered; 380 exact overall, held-out 215"/><text x="365.0" y="173.8" font-size="10.5" fill="var(--fg)" text-anchor="middle">10</text><path d="M378.0 202.0 V109.7 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 2: 41 families broken; 380 exact overall, held-out 215"/><text x="389.0" y="101.7" font-size="10.5" fill="var(--fg)" text-anchor="middle">41</text><text x="377.0" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 2</text><text x="377.0" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">380 exact</text><path d="M449.1 202.0 V170.1 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 3: 15 families recovered; 374 exact overall, held-out 211"/><text x="460.1" y="162.1" font-size="10.5" fill="var(--fg)" text-anchor="middle">15</text><path d="M473.1 202.0 V84.1 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 3: 52 families broken; 374 exact overall, held-out 211"/><text x="484.1" y="76.1" font-size="10.5" fill="var(--fg)" text-anchor="middle">52</text><text x="472.1" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 3</text><text x="472.1" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">374 exact</text><path d="M544.3 202.0 V170.1 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 4: 15 families recovered; 367 exact overall, held-out 207"/><text x="555.3" y="162.1" font-size="10.5" fill="var(--fg)" text-anchor="middle">15</text><path d="M568.3 202.0 V67.8 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 4: 59 families broken; 367 exact overall, held-out 207"/><text x="579.3" y="59.8" font-size="10.5" fill="var(--fg)" text-anchor="middle">59</text><text x="567.3" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 4</text><text x="567.3" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">367 exact</text><path d="M639.4 202.0 V170.1 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s1)" data-tip="MAD < 8: 15 families recovered; 353 exact overall, held-out 199"/><text x="650.4" y="162.1" font-size="10.5" fill="var(--fg)" text-anchor="middle">15</text><path d="M663.4 202.0 V35.3 q0 -3 3 -3 h16.0 q3 0 3 3 V202.0 Z" fill="var(--s2)" data-tip="MAD < 8: 73 families broken; 353 exact overall, held-out 199"/><text x="674.4" y="27.3" font-size="10.5" fill="var(--fg)" text-anchor="middle">73</text><text x="662.4" y="220" font-size="11.5" fill="var(--fg)" text-anchor="middle" font-weight="600">< 8</text><text x="662.4" y="236" font-size="10.5" fill="var(--muted)" text-anchor="middle">353 exact</text><line x1="44" x2="710" y1="202.0" y2="202.0" stroke="var(--faint)"/></svg></div>
-  <p class="note">Every step breaks more than it recovers, on the development half and the held-out half alike (held-out exact 234 → 230 → 220 → 215). The misses come from our copy-number values, not from the cut.</p>
-</section>
 
 </div>
 __ENDS_PANE__
@@ -687,18 +676,6 @@ function famTracks(is, X, GUT, IW, y, C, place, names) {
   return { s, gut, h: y - y0 };
 }
 
-// SD98 regions behind the genes of one browser panel, each with how many genes of Soto's table it holds.
-function sdTrack(is, X, GUT, IW, y) {
-  let s = `<rect x="${GUT}" y="${y}" width="${IW}" height="14" fill="var(--track)"/><text x="10" y="${y + 11}" font-size="10" fill="var(--muted)">SD98</text>`;
-  [...new Set(is.flatMap(i => REG_OF[i]))].forEach(k => {
-    const [c, a, b, gi] = SDD.regions[k], x1 = Math.max(GUT, X(a)), w = Math.max(Math.min(GUT + IW, X(b)) - x1, 2);
-    const n = `${gi.length} gene${gi.length === 1 ? "" : "s"}`;
-    s += `<rect data-tip="${esc(`SD98 region ${c}:${fmt(a + 1)}-${fmt(b)} · ${kb(b - a)} · ${n} of Soto's table inside (see the strips below)`)}" x="${x1}" y="${y + 2}" width="${w}" height="10" rx="2" fill="var(--sd)"/>`;
-    if (w > n.length * 5.6 + 8) s += `<text x="${x1 + w / 2}" y="${y + 10.5}" font-size="9.5" fill="var(--fg)" text-anchor="middle" pointer-events="none">${n}</text>`;
-  });
-  return { s, h: 20 };
-}
-
 // One strip per SD98 region that holds a gene of this family (own, shared, or added by us): every gene of Soto's table inside it.
 function drawStrips(F, C, vis) {
   const host = document.getElementById("sdstrips"), head = document.getElementById("sdhead"), more = document.getElementById("sdmore");
@@ -782,56 +759,9 @@ function draw() {
   const vis = F.g.filter(i => !hidden(i));
   const host = document.getElementById("panels");
   if (!vis.length) { document.getElementById("flow").innerHTML = ""; host.innerHTML = `<div class="empty">No genes of this family are left with the current filter.</div>`; document.getElementById("rows").innerHTML = ""; document.getElementById("more").hidden = true; drawStrips(F, colorsFor(cur, []), []); return; }
-  const C = colorsFor(cur, vis), inF = C.inF;
+  host.innerHTML = "";
+  const C = colorsFor(cur, vis);
   drawFlow(cur, C, vis);
-  const W = Math.max(340, host.clientWidth || 900), GUT = W < 600 ? 84 : 128, R = 14, IW = W - GUT - R;
-  const set = new Set(vis);
-  const byChr = new Map();
-  vis.forEach(i => { const c = G[i].c; if (!byChr.has(c)) byChr.set(c, []); byChr.get(c).push(i); });
-  const chrs = [...byChr.keys()].sort((a, b) => chrKey(a) - chrKey(b));
-  const links = [];
-  D.links.forEach(([a, b]) => { if (set.has(a) && set.has(b)) links.push([a, b, 0]); });
-  D.sedef_links.forEach(([a, b]) => { if (set.has(a) && set.has(b)) links.push([a, b, 1]); });
-  const cross = (a, b) => { const A = G[a].sf, B = G[b].sf; return !A.some(s => B.includes(s)); };
-  const xc = F.xc || {};
-  let out = "", y = 0;
-  chrs.forEach(chr => {
-    const is = byChr.get(chr).sort((a, b) => G[a].s - G[b].s);
-    let lo = Math.min(...is.map(i => G[i].s)), hi = Math.max(...is.map(i => G[i].e));
-    const pad = Math.max(2000, (hi - lo) * 0.03); lo = Math.max(0, lo - pad); hi = hi + pad;
-    const X = p => GUT + (p - lo) / (hi - lo) * IW;
-    const inter = links.filter(([a, b]) => (G[a].c === chr) !== (G[b].c === chr)).length;
-    let s = "";
-    s += `<rect x="${GUT}" y="${y + 8}" width="${Math.min(IW, 330)}" height="20" rx="3" fill="var(--track)" stroke="var(--line)"/>`;
-    s += `<text x="${GUT + 8}" y="${y + 22}" font-size="11.5" fill="var(--fg)">${chr}:${fmt(Math.round(lo))}-${fmt(Math.round(hi))}</text>`;
-    s += `<text x="${W - R}" y="${y + 22}" font-size="10.5" fill="var(--muted)" text-anchor="end">${is.length} genes${inter ? ` · ${inter} links to other chromosomes` : ""}</text>`;
-    y += 36;
-    s += axis(X, lo, hi, y, GUT, IW); y += 22;
-    const sdt = sdTrack(is, X, GUT, IW, y); s += sdt.s; y += sdt.h;
-    const shared = i => inF(i) && sotoOf(i).length > 1;
-    const lane = geneLane(is, X, GUT, IW, y, {
-      pri: i => inF(i) ? 0 : xc[i] !== undefined ? 1 : 2,
-      text: i => glab(i) + (shared(i) ? ` ×${sotoOf(i).length}` : ""),
-      look: i => !inF(i) ? ["var(--muted)", 400, false] : shared(i) ? ["var(--fg)", 400, true] : ["var(--fg)", 650, false],
-      op: i => inF(i) ? 1 : 0.5 });
-    s += lane.s + lane.gut; y += lane.h;
-    const tr = famTracks(is, X, GUT, IW, y, C, lane.place, ["Soto S1C", "Ours", "Homology family"]);
-    s += tr.s + tr.gut; y += tr.h;
-    const here = links.filter(([a, b]) => G[a].c === chr && G[b].c === chr);
-    const ly = y + 2, LH = here.length ? 70 : 14;
-    s += `<text x="10" y="${ly + 12}" font-size="10" fill="var(--muted)">Links</text>`;
-    if (!here.length) s += `<text x="${GUT}" y="${ly + 12}" font-size="10.5" fill="var(--muted)">No links between genes on ${chr}${inter ? ` · their ${inter} link${inter === 1 ? "" : "s"} go${inter === 1 ? "es" : ""} to genes on other chromosomes` : ""}</text>`;
-    here.sort((p, r) => cross(p[0], p[1]) - cross(r[0], r[1]));
-    here.forEach(([a, b, sd]) => {
-      const xa = (X(G[a].s) + X(G[a].e)) / 2, xb = (X(G[b].s) + X(G[b].e)) / 2, cr = cross(a, b);
-      const h = Math.min(LH, 6 + Math.abs(xb - xa) * 0.45);
-      s += `<path d="M${xa} ${ly} Q${(xa + xb) / 2} ${ly + 2 * h} ${xb} ${ly}" fill="none" stroke="${cr ? "var(--cross)" : "var(--within)"}" stroke-width="${cr ? 1.3 : 1}" opacity="${cr ? 0.85 : 0.55}"${sd ? ' stroke-dasharray="4 3"' : ""}/>`;
-    });
-    y = ly + LH + 16;
-    s += `<line x1="0" x2="${W}" y1="${y - 4}" y2="${y - 4}" stroke="var(--line)"/>`;
-    out += s;
-  });
-  host.innerHTML = `<svg viewBox="0 0 ${W} ${y}" width="${W}" height="${y}" xmlns="http://www.w3.org/2000/svg">${out}</svg>`;
   rows(F, C, vis);
   drawStrips(F, C, vis);
 }
