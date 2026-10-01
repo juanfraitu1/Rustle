@@ -333,33 +333,6 @@ __MCL_PANE__
   <p class="note">Every step breaks more than it recovers, on the development half and the held-out half alike (held-out exact 234 → 230 → 220 → 215). The misses come from our copy-number values, not from the cut.</p>
 </section>
 
-<details>
-  <summary>What to say, and what to avoid</summary>
-  <ul>
-    <li><b>Say:</b> Soto's families are a copy-number cut of sequence families. With our own copy numbers we rebuild 411 of 491 exactly. Theirs can be derived from ours, but ours cannot be derived from theirs.</li>
-    <li><b>Say:</b> where Soto is smaller, the cut rests on copy-number gaps that a second measurement does not reproduce. NPIPB3/B4/B5 are 98.6% identical, yet each is its own family.</li>
-    <li><b>Say:</b> of the 43 families we split, 12 are Soto's side: 6 are not reproducible from Soto's own rule and copy numbers, and 1 is a hand merge. That count includes mixed families.</li>
-    <li><b>Say:</b> pseudogenes and lncRNAs are in Soto's families by design, not by accident. The "exons" are annotation exons of every feature (the biotype filter is commented out), a pair is kept if either gene is coding or an unprocessed pseudogene, and their own caption says lncRNAs "were reported". A retrocopy shares ≥ 98%-identical exons with its parent, so an exon-sharing rule pulls pseudogenes in rather than filtering them out.</li>
-    <li><b>Say:</b> loosening our copy-number cut does not help: every step breaks more exact families than it recovers, including on held-out families. The fix is better copy numbers.</li>
-    <li><b>Avoid:</b> "ours is more accurate". Every score uses Soto's table as the truth.</li>
-    <li><b>Avoid:</b> quoting 99.1% without its edge set: it is 77.9% on the edges their Methods describe, and 80–90% on our Rustle catalogs.</li>
-  </ul>
-</details>
-
-<details>
-  <summary>How each family is classified, and how to regenerate it</summary>
-  <ul>
-    <li><b>Ours</b> = Soto's released-code rule (exon map-back edges, per-pair copy-number MAD &lt; 1) with our own copy numbers (268 SGDP samples). This is the 0.928 / 411-exact run.</li>
-    <li><b>Soto smaller</b>: all of Soto's genes sit in one of our families, which also holds other genes sharing ≥ 98%-identical exons with them.</li>
-    <li><b>We miss · our rule</b>: we cut Soto's family. Either our copy numbers split genes that sequence joins (Soto's copy numbers do not split them), or our exon graph lacks a link that SEDEF has.</li>
-    <li><b>We miss · Soto's table</b>: Soto's own rule with Soto's own copy numbers cuts the family too, or S1C marks it "Manual merge".</li>
-    <li><b>Both</b>: part of the family is cut away, and the rest sits with extra genes.</li>
-  </ul>
-<pre>python3 bench/soto_m2/soto_m2_families.py --geneset elig.tsv --full-geneset full.tsv \
-    --famcn-ours famcn_ours_allwssd.tsv --exons sd98_gene_exons.tsv --cat cat_v4.bed \
-    --out-tsv families.tsv --out-json families.json</pre>
-</details>
-
 </div>
 <div role="tabpanel" id="pane-det" aria-labelledby="tab-det" class="pane" hidden>
   <p class="prov">Built 28 Jul 2026 from our Rustle pipeline on human A119b: RNA mode uses Iso-Seq reads; DNA mode uses <code>--from-genome</code> self-alignment. Scored against 83 Soto families (362 members). Not re-checked today, and not comparable with the 491-family tab, because the family set and the method differ.</p>
