@@ -86,3 +86,14 @@ events instead.
 ## 7. Result
 
 (Filled in after the run, below this line, without editing anything above.)
+
+**Amendment 1 (2026-09-30, before any statistic was computed).** The first run stopped at the section 2 coordinate check, as the
+rule says it should: on chr16, CHM13 v1.0 and v2.0 differ by a 5 bp indel in the first telomeric repeat, so every v1.0 coordinate
+on chr16 sits 5 bp to the right of v2.0 (47 of 64 chr16/chr18 SD98 regions differed unshifted). After shifting chr16 by -5, all
+chr16 SD98 regions are identical except the two that touch the chromosome ends (chr16:0-12,460 and chr16:96,183,274-end, 539 and 151
+mismatches); chr18 needs no shift (one mismatch, in chr18:0-217,988, which touches the chromosome start). NPIP lies at
+chr16:11.9-30.7 Mb and 75-80 Mb and on chr18 at 11.8 Mb, away from all three. Changes: (1) every v1.0 coordinate on chr16 (CAT
+exons and spans, DupMasker segments, SD98 regions) is shifted by -5 before it meets v2.0 data (reads, RefSeq); chr18 is not shifted;
+the co-duplicated set is computed within v1.0, where duplicons and SD98 regions already agree; (2) the coordinate check becomes:
+after the shift, every SD98 region on chr16 and chr18 that does not touch a chromosome end has identical sequence, else stop.
+Nothing else changes. No read had been read and no unit counted when this was written.
