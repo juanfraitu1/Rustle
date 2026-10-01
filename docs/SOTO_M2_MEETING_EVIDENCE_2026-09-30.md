@@ -183,3 +183,16 @@ python3 bench/soto_m2/page/build_page.py --data families.json --out soto_vs_ours
 ```
 
 The build is byte-identical to the published version 9.
+
+### 6.4 Copy-number source switch (page version 10)
+
+`soto_m2_families.py` now runs every comparison twice: with our copy numbers (recomputed from Soto's own 268 SGDP WSSD
+tracks over gene body ∩ SD98) and with Soto's published S1C values in their place (JSON keys `ours:<filter>` and
+`s1c:<filter>`; the TSV keeps the `ours` run, unchanged). Ours vs S1C: r = 0.977, 1,582/1,793 genes within 2 copies,
+and of the 211 further apart 154 are higher in ours. The only step we cannot copy is Soto's unreleased per-piece
+read-depth averaging script (`genotype_cn_parallel.py`).
+
+With S1C copy numbers: 479 match, and the 12 left are 7 where Soto's own rule and copy numbers group differently from
+their table (ID_28, 63, 99, 113, 144, 163, 270), the UBTFL hand merge (ID_482), 3 where our exon links miss (ID_62, ID_192,
+ID_347 DUX4, itself a hand merge), and 1 gene Soto left unassigned (ID_401). The page's browser adds a "who goes where"
+figure (Soto's families to ours, single-family genes only, as in the classification).

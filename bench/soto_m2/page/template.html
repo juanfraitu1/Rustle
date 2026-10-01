@@ -157,6 +157,20 @@ cite { display: block; font: .78rem var(--f-body); color: var(--muted); margin-t
 .mcard svg text { font-family: var(--f-body); }
 .mcard p { margin: 0; font-size: .85rem; color: var(--muted); }
 .mcard p b { color: var(--fg); font-weight: 600; }
+.cnsw { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; flex-wrap: wrap; }
+.cnsw > span { color: var(--muted); font-weight: 600; margin-right: 2px; }
+.cnsw label { cursor: pointer; }
+.cnsw input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.cnsw b { display: inline-block; font-weight: 600; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.cnsw input:checked + b { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.cnsw input:focus-visible + b { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cn-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.cn-facts { display: grid; gap: 10px; }
+@media (max-width: 820px) { .cn-grid { grid-template-columns: 1fr; } }
+.flowwrap { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+.flowcap { font-size: .8rem; color: var(--muted); }
+#flow svg { display: block; width: 100%; height: auto; }
+#flow text { font-family: var(--f-body); }
 #tip { position: fixed; z-index: 9; pointer-events: none; background: var(--fg); color: var(--bg); font: .78rem/1.45 var(--f-body); padding: 7px 10px; border-radius: 6px; max-width: 320px; }
 #tip b { font-family: var(--f-mono); }
 footer { font-size: .8rem; color: var(--muted); }
@@ -182,13 +196,18 @@ __HOW_PANE__
 <div class="filters" role="group" aria-label="Filter genes by biotype">
   <label class="sw-toggle"><input type="checkbox" id="fp"><span class="knob" aria-hidden="true"></span>Remove pseudogenes</label>
   <label class="sw-toggle"><input type="checkbox" id="fl"><span class="knob" aria-hidden="true"></span>Remove lncRNAs</label>
+  <div class="cnsw" role="radiogroup" aria-label="Copy numbers used for the families">
+    <span>Copy numbers</span>
+    <label><input type="radio" name="cn" value="ours" id="cn-ours" checked><b>ours, recomputed</b></label>
+    <label><input type="radio" name="cn" value="s1c" id="cn-s1c"><b>Soto's (Table S1C)</b></label>
+  </div>
   <span class="fnote" id="fnote"></span>
 </div>
 
 <section aria-label="Claims">
   <div class="tiles">
     <div class="tile"><div class="lab">Soto's families sit inside ours</div><div class="big" id="t1"></div><div class="sub" id="t1s"></div></div>
-    <div class="tile"><div class="lab">We rebuild them with our own copy numbers</div><div class="big" id="t2"></div><div class="sub" id="t2s"></div></div>
+    <div class="tile"><div class="lab" id="t2l">We rebuild them with our own copy numbers</div><div class="big" id="t2"></div><div class="sub" id="t2s"></div></div>
     <div class="tile"><div class="lab">Soto is narrower than homology</div><div class="big" id="t3"></div><div class="sub">families smaller than their ≥ 98%-exon sequence family</div></div>
     <div class="tile"><div class="lab">Soto families still standing</div><div class="big" id="t4"></div><div class="sub" id="t4s"></div></div>
   </div>
@@ -205,6 +224,21 @@ __HOW_PANE__
   <div class="stack" id="bstack" role="img" aria-label="Soto families by matching outcome"></div>
   <div class="bcats"><div class="bc"><span class="sw" style="background:var(--k-match);"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="40" height="5" rx="2" fill="var(--faint)"/><rect x="2" y="11" width="40" height="5" rx="2" fill="var(--accent)"/></svg><b id="bc-same"></b> Same genes</div><div class="bc"><span class="sw" style="background:var(--k-smaller);"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="26" height="5" rx="2" fill="var(--faint)"/><rect x="2" y="11" width="40" height="5" rx="2" fill="var(--accent)"/></svg><b id="bc-ours_bigger"></b> Ours bigger</div><div class="bc"><span class="sw" style="background:var(--k-our);"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="40" height="5" rx="2" fill="var(--faint)"/><rect x="2" y="11" width="22" height="5" rx="2" fill="var(--accent)"/></svg><b id="bc-ours_smaller"></b> Ours smaller</div><div class="bc"><span class="sw" style="background:var(--k-both);"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="28" height="5" rx="2" fill="var(--faint)"/><rect x="14" y="11" width="28" height="5" rx="2" fill="var(--accent)"/></svg><b id="bc-different"></b> Overlapping, different</div><div class="bc"><span class="sw" style="background:transparent;box-shadow:inset 0 0 0 1.5px var(--faint)"></span><svg class="gl" width="44" height="18" viewBox="0 0 44 18" aria-hidden="true"><rect x="2" y="2" width="32" height="5" rx="2" fill="var(--faint)"/><rect x="2.5" y="11.5" width="31" height="4" rx="2" fill="none" stroke="var(--accent)" stroke-dasharray="2 2"/></svg><b id="bc-unmatched"></b> No partner left</div></div>
   <div class="legend"><span><svg width="22" height="8" aria-hidden="true"><rect y="1" width="22" height="5" rx="2" fill="var(--faint)"/></svg> Soto's family</span><span><svg width="22" height="8" aria-hidden="true"><rect y="1" width="22" height="5" rx="2" fill="var(--accent)"/></svg> our matched family</span><span>"No partner left": the family of ours holding these genes is already paired with a bigger Soto family</span></div>
+</section>
+
+<section id="cnsec">
+  <div class="eyebrow">Copy numbers · 1,793 genes · ours recomputed from Soto's raw data vs Soto's published Table S1C</div>
+  <h2>Why our copy numbers differ from Soto's</h2>
+  <div class="cn-grid">
+    <div class="chart" id="cnplot" role="img" aria-label="Scatter of our copy number against Soto's for 1,793 genes"></div>
+    <div class="cn-facts">
+      <div class="tile"><div class="lab">Same raw data</div><div class="sub">the 268 SGDP read-depth (WSSD) tracks Soto published on the UCSC hub; their code drops one outlier genome, so do we</div></div>
+      <div class="tile"><div class="lab">Same genes, same pieces</div><div class="sub">gene body ∩ SD98, one value per gene, median over the 268 genomes</div></div>
+      <div class="tile"><div class="lab">Agreement</div><div class="big" id="cnr"></div><div class="sub" id="cnr2"></div></div>
+      <div class="tile"><div class="lab">What we cannot copy</div><div class="sub">the script that averages read depth over each gene piece (<code>genotype_cn_parallel.py</code>) is not in Soto's release; we use a length-weighted mean</div></div>
+    </div>
+  </div>
+  <p class="note">Switch <b>Copy numbers</b> to <b>Soto's (Table S1C)</b> at the top: every family is then rebuilt with Soto's own numbers, and the copy-number disagreements disappear (479 of 491 exact). The 12 left are Soto's table against Soto's own rule, two hand merges, and gaps in our exon links.</p>
 </section>
 
 <section id="made">
@@ -248,6 +282,7 @@ __HOW_PANE__
   <p class="why" id="vw"></p>
   <div class="facts" id="vf"></div>
   <div class="venn" id="venn"></div>
+  <div class="flowwrap"><div class="flowcap">Who goes where: Soto's families on the left, ours on the right; each band is the genes they share (genes Soto puts in several families are left out, as in the classification)</div><div id="flow"></div></div>
   <div id="panels" class="igv" role="img" aria-label="Genome browser view of the chosen family"></div>
   <div class="legend">
     <span><i style="border-color:var(--cross)"></i>≥ 98%-identical exons shared across two Soto families</span>
@@ -323,7 +358,9 @@ D.families.forEach(f => META[f.f] = f);
 const byName = {};
 G.forEach(g => g.sf.forEach(s => { if (!s.startsWith("Unassigned")) (byName[g.n.toUpperCase()] = byName[g.n.toUpperCase()] || []).push(s); }));
 const fp = document.getElementById("fp"), fl = document.getElementById("fl");
-let CK = "", CB = D.combos[""];
+let CK = "ours:", CB = D.combos["ours:"];
+const cnSrc = () => (document.getElementById("cn-s1c").checked ? "s1c" : "ours");
+const fkey = () => CK.split(":")[1];
 const hidden = i => (fp.checked && G[i].k === "p") || (fl.checked && G[i].k === "l");
 const FAMROW = fid => CB.fams[fid];
 
@@ -355,9 +392,11 @@ function tiles() {
   document.getElementById("bstack").innerHTML = K.filter(([k]) => C[k]).map(([k, c]) => `<div class="seg${k === "unmatched" ? " um" : ""}" style="flex:${C[k]};background:${c}" data-tip="${C[k]} Soto families: ${k.replace("_", " ")}"></div>`).join("");
   K.forEach(([k]) => { const el = document.getElementById("bc-" + k); if (el) el.textContent = C[k] || 0; });
   document.getElementById("t1").textContent = `${A.nest} / ${A.nest_n}`;
-  document.getElementById("t1s").textContent = `${pct(A.nest, A.nest_n)} nest in one sequence family` + (CK === "" ? " (exon map-back graph; 77.9% on SEDEF edges)" : "");
+  document.getElementById("t1s").textContent = `${pct(A.nest, A.nest_n)} nest in one sequence family` + (fkey() === "" ? " (exon map-back graph; 77.9% on SEDEF edges)" : "");
   document.getElementById("t2").textContent = `${A.exact} / ${A.families}`;
-  document.getElementById("t2s").textContent = `exact · ARI ${A.ari.toFixed(3)}` + (CK === "" ? " · held-out 0.934" : "") + ` (their copy numbers: ${A.exact_s1c}, ${A.ari_s1c.toFixed(3)})`;
+  const src = cnSrc(), other = src === "ours" ? "s1c" : "ours", B2 = D.combos[other + ":" + fkey()].anchor;
+  document.getElementById("t2l").textContent = src === "ours" ? "We rebuild them with our own copy numbers" : "We rebuild them with Soto's copy numbers";
+  document.getElementById("t2s").textContent = `exact · ARI ${A.ari.toFixed(3)}` + (fkey() === "" ? (src === "ours" ? " · held-out 0.934" : " · held-out 0.968") : "") + ` (${other === "s1c" ? "Soto's" : "our"} copy numbers: ${B2.exact}, ${B2.ari.toFixed(3)})`;
   document.getElementById("t3").textContent = `${A.narrower} / ${A.families}`;
   document.getElementById("t4").textContent = `${A.families} / ${A.families + A.gone}`;
   document.getElementById("t4s").textContent = A.gone ? `${A.gone} Soto families (${pct(A.gone, A.families + A.gone)}) keep fewer than 2 genes` : "turn on a filter to see how many survive";
@@ -456,7 +495,7 @@ function why(fid, F) {
     }
     return `${base}, leaving ${left.length}.`;
   }
-  if (F.k === "match") return `Found exactly: Soto's ${F.nc} genes are one of our families.` + (F.nh ? ` Both of us cut it out of a ${F.ns}-gene homology family by copy number.` : "");
+  if (F.k === "match") return `Found exactly: Soto's ${F.nc} gene${F.nc === 1 ? "" : "s"} ${F.nc === 1 ? "is" : "are"} one of our families.` + (F.nh ? ` Both of us cut it out of a ${F.ns}-gene homology family by copy number.` : "");
   if (F.k === "soto_smaller") return `Soto is smaller. ${ownTxt}. We also join ${nm(ext)}, which ${ext.length === 1 ? "shares" : "share"} ≥ 98%-identical exons with it. ${addWhy}`;
   if (F.k === "we_miss") return `We miss part of it. ${miss}`;
   return `Both. ${miss} The rest also joins ${nm(ext)}. ${addWhy}`;
@@ -524,8 +563,9 @@ function draw() {
   const F = FAMROW(cur); if (!F) return;
   const vis = F.g.filter(i => !hidden(i));
   const host = document.getElementById("panels");
-  if (!vis.length) { host.innerHTML = `<div class="empty">No genes of this family are left with the current filter.</div>`; document.getElementById("rows").innerHTML = ""; document.getElementById("more").hidden = true; return; }
+  if (!vis.length) { document.getElementById("flow").innerHTML = ""; host.innerHTML = `<div class="empty">No genes of this family are left with the current filter.</div>`; document.getElementById("rows").innerHTML = ""; document.getElementById("more").hidden = true; return; }
   const C = colorsFor(cur, vis), inF = C.inF;
+  drawFlow(cur, C, vis);
   const W = Math.max(340, host.clientWidth || 900), GUT = W < 600 ? 84 : 128, R = 14, IW = W - GUT - R;
   const set = new Set(vis);
   const byChr = new Map();
@@ -637,15 +677,115 @@ function rows(F, C, vis) {
 }
 document.getElementById("more").addEventListener("click", () => { showAll = !showAll; draw(); });
 
+
+/* ---------- copy numbers: ours vs Soto's ---------- */
+function cnPlot() {
+  const pts = G.map((g, i) => [i, g.cs, g.co]).filter(p => p[1] != null && p[2] != null);
+  const n = pts.length;
+  const mx = pts.reduce((s, p) => s + p[1], 0) / n, my = pts.reduce((s, p) => s + p[2], 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  pts.forEach(p => { sxy += (p[1] - mx) * (p[2] - my); sxx += (p[1] - mx) ** 2; syy += (p[2] - my) ** 2; });
+  const r = sxy / Math.sqrt(sxx * syy);
+  const within = pts.filter(p => Math.abs(p[1] - p[2]) < 2).length;
+  document.getElementById("cnr").textContent = `r = ${r.toFixed(3)}`;
+  const higher = pts.filter(p => p[2] - p[1] >= 2).length;
+  document.getElementById("cnr2").textContent = `${within.toLocaleString("en-US")} of ${n.toLocaleString("en-US")} genes (${(100 * within / n).toFixed(1)}%) within 2 copies, the gap Soto's rule tolerates; of the ${n - within} further apart, ${higher} are higher in ours`;
+  const W = 620, H = 440, L = 56, B = 46, T = 14, R = 16;
+  const lx = v => Math.log10(Math.max(v, 1));
+  const X = v => L + (lx(v) / 3) * (W - L - R), Y = v => H - B - (lx(v) / 3) * (H - B - T);
+  let s = "";
+  [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].forEach(v => {
+    s += `<line x1="${X(v)}" x2="${X(v)}" y1="${T}" y2="${H - B}" stroke="var(--line)"/><line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/>`;
+    s += `<text x="${X(v)}" y="${H - B + 16}" font-size="11" fill="var(--muted)" text-anchor="middle">${v}</text><text x="${L - 8}" y="${Y(v) + 4}" font-size="11" fill="var(--muted)" text-anchor="end">${v}</text>`;
+  });
+  s += `<line x1="${X(1)}" y1="${Y(1)}" x2="${X(1000)}" y2="${Y(1000)}" stroke="var(--muted)"/>`;
+  pts.forEach(([i, a, b]) => {
+    const off = Math.abs(a - b) >= 2;
+    s += `<circle cx="${X(a).toFixed(1)}" cy="${Y(b).toFixed(1)}" r="${off ? 3 : 2.2}" fill="${off ? "var(--s2)" : "var(--faint)"}" opacity="${off ? 0.85 : 0.45}" data-tip="${esc(short(G[i].n))}: Soto ${a}, ours ${b}"/>`;
+  });
+  // named genes: one label each, except the NPIPB3/B4/B5 trio (one label); the label sits where it cannot clip
+  const NAMED = { NPIPA1: [-8, -8, "end"], GOLGA8B: [8, 14, "start"], BET1L: [-8, -10, "end"] };
+  const trio = [];
+  pts.forEach(([i, a, b]) => {
+    const nm = G[i].n;
+    if (["NPIPB3", "NPIPB4", "NPIPB5"].includes(nm)) { trio.push([a, b]); s += `<circle cx="${X(a)}" cy="${Y(b)}" r="5" fill="none" stroke="var(--fg)" stroke-width="1.5"/>`; return; }
+    if (!NAMED[nm]) return;
+    const [dx, dy, anc] = NAMED[nm];
+    s += `<circle cx="${X(a)}" cy="${Y(b)}" r="5" fill="none" stroke="var(--fg)" stroke-width="1.5"/><text x="${X(a) + dx}" y="${Y(b) + dy}" font-size="11.5" font-weight="600" fill="var(--fg)" text-anchor="${anc}">${esc(nm)}: Soto ${a}, ours ${b}</text>`;
+  });
+  if (trio.length) {
+    const lo = v => Math.min(...trio.map(x => x[v])), hi = v => Math.max(...trio.map(x => x[v]));
+    s += `<text x="${X(lo(0)) - 6}" y="${Y(lo(1)) + 26}" font-size="11.5" font-weight="600" fill="var(--fg)" text-anchor="end">NPIPB3/B4/B5: Soto ${lo(0)}–${hi(0)}, ours ${lo(1)}–${hi(1)}</text>`;
+  }
+  s += `<text x="${(L + W - R) / 2}" y="${H - 8}" font-size="12" fill="var(--fg)" text-anchor="middle">Soto's copy number (Table S1C)</text>`;
+  s += `<text transform="translate(16 ${(T + H - B) / 2}) rotate(-90)" font-size="12" fill="var(--fg)" text-anchor="middle">our copy number</text>`;
+  document.getElementById("cnplot").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Our copy numbers against Soto's: r ${r.toFixed(3)}">${s}</svg>` +
+    `<div class="legend" style="margin-top:6px"><span><span class="sw" style="background:var(--faint)"></span> within 2 copies</span><span><span class="sw" style="background:var(--s2)"></span> 2 or more apart (${n - within})</span><span>diagonal = perfect agreement; log scale</span></div>`;
+}
+
+/* ---------- who goes where: Soto's families -> our families ---------- */
+function drawFlow(fid, C, vis) {
+  const host = document.getElementById("flow");
+  // genes Soto puts in one family only (as in the classification); genes shared by several Soto families are left out
+  const clean = i => G[i].sf.filter(s => !s.startsWith("Unassigned")).length <= 1;
+  const focal = vis.filter(i => clean(i) && G[i].sf.includes(fid));
+  const ourSet = new Set(focal.map(i => CB.our[i]).filter(Boolean));
+  const genes = vis.filter(i => clean(i) && (G[i].sf.includes(fid) || (CB.our[i] && ourSet.has(CB.our[i]))));
+  if (!genes.length) { host.innerHTML = ""; return; }
+  const leftOf = i => G[i].sf.includes(fid) ? fid : (G[i].sf.find(s => !s.startsWith("Unassigned")) || "no Soto family");
+  const rightOf = i => CB.our[i] ? "ours " + C.our.name.get(CB.our[i]) : "not placed";
+  const cnt = (keyf) => { const m = new Map(); genes.forEach(i => { const k = keyf(i); if (!m.has(k)) m.set(k, []); m.get(k).push(i); }); return m; };
+  const L = cnt(leftOf), Rm = cnt(rightOf);
+  const lkeys = [...L.keys()].sort((a, b) => (a === fid ? -1 : b === fid ? 1 : L.get(b).length - L.get(a).length || a.localeCompare(b)));
+  const rkeys = [];
+  lkeys.forEach(k => L.get(k).forEach(i => { const r = rightOf(i); if (!rkeys.includes(r)) rkeys.push(r); }));
+  const total = genes.length, gap = 10, H = Math.max(120, Math.min(420, total * 16 + gap * (Math.max(lkeys.length, rkeys.length) - 1) + 20));
+  const unit = (H - 20 - gap * (Math.max(lkeys.length, rkeys.length) - 1)) / total;
+  const W = 640, xl = 190, xr = 450, bw = 14;
+  const place = (keys, m) => { let y = 10; const pos = new Map(); keys.forEach(k => { const h = m.get(k).length * unit; pos.set(k, { y, h, used: 0 }); y += h + gap; }); return pos; };
+  const lp = place(lkeys, L), rp = place(rkeys, Rm);
+  let s = "";
+  lkeys.forEach(lk => {
+    const byR = new Map();
+    L.get(lk).forEach(i => { const r = rightOf(i); byR.set(r, (byR.get(r) || 0) + 1); });
+    rkeys.forEach(rk => {
+      const c = byR.get(rk); if (!c) return;
+      const a = lp.get(lk), b = rp.get(rk), h = c * unit;
+      const y0 = a.y + a.used, y1 = b.y + b.used; a.used += h; b.used += h;
+      const col = lk === fid ? (C.soto.get(fid) || "var(--s1)") : (C.soto.get(lk) || OTHER);
+      s += `<path d="M${xl + bw} ${y0} C ${(xl + xr) / 2} ${y0}, ${(xl + xr) / 2} ${y1}, ${xr} ${y1} L ${xr} ${y1 + h} C ${(xl + xr) / 2} ${y1 + h}, ${(xl + xr) / 2} ${y0 + h}, ${xl + bw} ${y0 + h} Z" fill="${col}" opacity=".45" data-tip="${c} gene${c > 1 ? "s" : ""}: ${esc(lk)} → ${esc(rk)}"/>`;
+    });
+  });
+  lkeys.forEach(k => {
+    const p = lp.get(k), n = L.get(k).length, col = k === fid ? (C.soto.get(fid) || "var(--s1)") : (C.soto.get(k) || OTHER);
+    s += `<rect x="${xl}" y="${p.y}" width="${bw}" height="${Math.max(p.h, 2)}" rx="2" fill="${col}"${k === fid ? ' stroke="var(--fg)" stroke-width="1.5"' : ""}/>`;
+    s += `<text x="${xl - 8}" y="${p.y + p.h / 2 + 4}" font-size="11.5" text-anchor="end" fill="var(--fg)" font-weight="${k === fid ? 650 : 400}">${esc(k)} · ${n} gene${n > 1 ? "s" : ""}</text>`;
+  });
+  rkeys.forEach(k => {
+    const p = rp.get(k), n = Rm.get(k).length;
+    s += `<rect x="${xr}" y="${p.y}" width="${bw}" height="${Math.max(p.h, 2)}" rx="2" fill="${k === "not placed" ? "var(--line)" : "var(--muted)"}"/>`;
+    s += `<text x="${xr + bw + 8}" y="${p.y + p.h / 2 + 4}" font-size="11.5" fill="var(--fg)">${esc(k)} · ${n} gene${n > 1 ? "s" : ""}</text>`;
+  });
+  s += `<text x="${xl + bw / 2}" y="${H - 2}" font-size="10.5" fill="var(--muted)" text-anchor="middle">Soto</text><text x="${xr + bw / 2}" y="${H - 2}" font-size="10.5" fill="var(--muted)" text-anchor="middle">ours</text>`;
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H + 8}" role="img" aria-label="Soto families to our families for ${esc(fid)}">${s}</svg>`;
+}
+
 function applyFilter() {
-  CK = (fp.checked ? "p" : "") + (fl.checked ? "l" : "");
+  const f = (fp.checked ? "p" : "") + (fl.checked ? "l" : "");
+  CK = cnSrc() + ":" + f;
   CB = D.combos[CK];
-  try { localStorage.setItem("soto-filter", CK); } catch (e) {}
+  try { localStorage.setItem("soto-filter", f); localStorage.setItem("soto-cn", cnSrc()); } catch (e) {}
   tiles(); grid(); if (cur) show(cur);
 }
 fp.addEventListener("change", applyFilter);
 fl.addEventListener("change", applyFilter);
-try { const s = localStorage.getItem("soto-filter") || ""; fp.checked = s.includes("p"); fl.checked = s.includes("l"); } catch (e) {}
+document.getElementById("cn-ours").addEventListener("change", applyFilter);
+document.getElementById("cn-s1c").addEventListener("change", applyFilter);
+try {
+  const s = localStorage.getItem("soto-filter") || ""; fp.checked = s.includes("p"); fl.checked = s.includes("l");
+  if (localStorage.getItem("soto-cn") === "s1c") document.getElementById("cn-s1c").checked = true;
+} catch (e) {}
+cnPlot();
 
 let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(draw, 150); });
 window.__showFam = show;

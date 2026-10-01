@@ -262,24 +262,28 @@ def main(argv=None):
     cn_ours = {g: v for g, v in sr.load_famcn(a.famcn_ours, "famCN_sotoiv").items() if g in genes}
     every = set(info) | genes | full
 
+    # every run twice: with OUR copy numbers (recomputed from the same 268 SGDP WSSD tracks) and with Soto's published
+    # S1C values in our place; run keys are "<source>:<filter>", e.g. "ours:", "s1c:p"
     runs = {}
-    for key, label, no_p, no_l in COMBOS:
+    for src, cn_use in (("ours", cn_ours), ("s1c", cn_s1c)):
+      for key0, label0, no_p, no_l in COMBOS:
+        key, label = f"{src}:{key0}", f"{label0}, {src} copy numbers"
         keep = {g for g in every if not (no_p and is_pseudo(info.get(g, {}).get("biotype", "")))
                 and not (no_l and info.get(g, {}).get("biotype", "") == "lncRNA")}
-        runs[key] = classify(keep, genes, full, edges, sedef, clean, fam_all, info, manual, cn_s1c, cn_ours,
-                             filtered=bool(key))
+        runs[key] = classify(keep, genes, full, edges, sedef, clean, fam_all, info, manual, cn_s1c, cn_use,
+                             filtered=bool(key0))
         rows, anc = runs[key][0], runs[key][1]
         counts = defaultdict(int)
         for r in rows:
             counts[r["cls"]] += 1
-        assert counts["match"] == anc["exact"] or key, (counts["match"], anc["exact"])
+        assert counts["match"] == anc["exact"] or key0, (counts["match"], anc["exact"])
         print(f"[{label}] bipartite: sens {anc['bip']['sens']} prec {anc['bip']['prec']} (other tie order {anc['bip']['prec_alt']}); "
               f"macro sens {anc['bip']['macro_sens']} prec {anc['bip']['macro_prec']}; {anc['bip']['counts']}", file=sys.stderr)
         print(f"[{label}] genes {anc['genes']}; ARI {anc['ari']:.4f} / {anc['exact']} exact (S1C CN {anc['ari_s1c']:.4f} / "
               f"{anc['exact_s1c']}); nest {anc['nest']}/{anc['nest_n']}; narrower {anc['narrower']}; "
               + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())), file=sys.stderr)
-    base = runs[""][0]
-    assert sum(r["cls"] == "match" for r in base) == runs[""][1]["exact"]
+    base = runs["ours:"][0]
+    assert sum(r["cls"] == "match" for r in base) == runs["ours:"][1]["exact"]
 
     with open(a.out_tsv, "w") as fh:
         fh.write("family_id\tclass\tmiss_cause\textra_causes\tn_members\tn_clean\tn_our_pieces\tn_extra\t"
@@ -291,7 +295,7 @@ def main(argv=None):
             fh.write(f"{r['family']}\t{r['cls']}\t{r['miss_cause']}\t{ec}\t{r['n_members']}\t{r['n_clean']}\t"
                      f"{r['n_ours_pieces']}\t{r['n_extra']}\t{int(r['narrower_than_homology'])}\t{r['seq_size']}\t"
                      f"{int(r['manual'])}\t{int(r['exact_with_s1c_cn'])}\t{','.join(info[g]['name'] for g in top[:3])}\t"
-                     f"{runs['p'][0][i]['cls']}\t{runs['l'][0][i]['cls']}\t{runs['pl'][0][i]['cls']}\n")
+                     f"{runs['ours:p'][0][i]['cls']}\t{runs['ours:l'][0][i]['cls']}\t{runs['ours:pl'][0][i]['cls']}\n")
 
     # JSON for the viewer: genes (coordinates, exons, copy numbers), links, and per filter: labels and family rows
     exons = defaultdict(list)
@@ -326,7 +330,8 @@ def main(argv=None):
     link_set = {tuple(sorted((idx[x], idx[y]))) for x, y in edges if x in idx and y in idx and x != y}
     sedef_only = {tuple(sorted((idx[x], idx[y]))) for x, y in sedef if x in idx and y in idx and x != y} - link_set
     combos = {}
-    for key, label, _p, _l in COMBOS:
+    labels = {f"{src}:{k}": f"{lab}" for src in ("ours", "s1c") for k, lab, _p, _l in COMBOS}
+    for key, label in labels.items():
         rows, anc, pred_seq, pred_ours = runs[key]
         fams = {}
         for r in rows:
