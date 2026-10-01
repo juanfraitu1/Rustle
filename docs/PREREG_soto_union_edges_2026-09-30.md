@@ -44,3 +44,21 @@ The other seven settings (our copy numbers; the three filters) are reported besi
 ## 6. Result
 
 (Filled in after the run, below this line, without editing anything above.)
+
+Run on 2026-09-30 after this file was committed (`427da056`, sha1 `de32c7946a723c9de791ed4eb8af63d33a379812`);
+`bench/soto_m2/soto_m2_union.py`, 3 s, light lock. Full output: `docs/SOTO_UNION_EDGES_2026-09-30.md`.
+
+**VERDICT (section 4): UNION HURTS.** With S1C copy numbers and all genes, the union graph (12,231 map-back + 1,019 SEDEF-only
+edges) recovers 0 families and breaks 82: exact 479 -> 397, held-out 263 -> 211, ARI 0.9698 -> 0.9304. The broken families mostly
+become `soto_smaller` (1 to 20 extra genes each): SEDEF links join genes that Soto's table keeps apart, i.e. links Soto's code did not
+use. Every other setting goes the same way (ours, all genes: 411 -> 345, 66 broken, 0 recovered; filtered settings 12-70 broken, 0
+recovered).
+
+Found while checking the three target families (descriptive, after the verdict): the pre-registered union collapses duplicate
+edges; the two SEDEF files share 4,174 of their 8,576 rows. Concatenating the files without collapsing gives the same exact count
+(397, ARI 0.9350) but recovers ID_62 and ID_192, while the collapsed union recovers neither; ID_347 stays `mixed` (+58 genes) in
+both. The map-back graph alone has no duplicates and gives 479 under three random edge orders, so the reconstruction is not
+affected; the pair rule's sensitivity to repeated edges matters only once SEDEF links are added. Same verdict either way.
+
+**Reading.** The fair comparison is the map-back graph alone (Soto's released code). SEDEF-projected links describe the duplication
+blocks, not Soto's families: adding them merges 82 of Soto's exact families with neighbours.
