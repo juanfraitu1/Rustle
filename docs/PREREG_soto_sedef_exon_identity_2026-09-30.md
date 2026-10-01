@@ -46,3 +46,26 @@ Recovered and broken families are reported beside it, with no verdict attached.
 ## 6. Result
 
 (Filled in after the run, below this line, without editing anything above.)
+
+Run on 2026-09-30 after this file was committed (`cdaa8338`, sha1 `80ca836f39ea7fa5f307a76f545560956ee7a7b9`);
+`bench/soto_m2/soto_m2_sedef_exonid.py` (miniforge python, edlib), 14 s, light lock. Output: `docs/SOTO_SEDEF_EXON_IDENTITY_2026-09-30.md`;
+per-link identities: `docs/SOTO_SEDEF_EXON_IDENTITY_LINKS_2026-09-30.tsv`. Implementation choice not fixed above: B and C collapse duplicate
+edges, as KEY=unionedges did.
+
+Correctness gate passed: the 4,384 re-derived SEDEF links equal the frozen native-v1 edge file (3,628 rows used, 57,456 exon projections).
+
+**VERDICT (section 4): DOES NOT CONVERGE.** S1C copy numbers, all genes: A 479, B 397, C 406 exact (midpoint 438); C recovers 0 and
+breaks 73 of A's exact families (held-out 263 -> 214). Every other setting goes the same way (ours, all genes: 411 / 345 / 353, 58 broken).
+
+Why: the exon pairs are already >= 98% identical. Exon-pair identity of all 4,384 SEDEF links, quartiles 0.994 / 1.000 / 1.000; 4,066
+(92.7%) are >= 0.98. Of the 1,012 SEDEF-only links (not in the map-back), 856 are >= 0.98 (quartiles 0.986 / 0.996 / 1.000); the filter
+removes only 156.
+
+Descriptive, after the verdict: SEDEF-only links mostly involve a non-coding gene (813 of the 856 high-identity ones; 43 join two coding
+genes) against 2,492 of 3,372 map-back links; gene strand does not separate them (opposite-strand pairs 46% vs 47%). The damage passes
+mostly through those genes: with pseudogenes and lncRNAs removed, B and C each break 12 families.
+
+**Reading.** SEDEF links are not low-identity noise: they are >= 98%-identical exon pairs that Soto's exon map-back does not report
+(the map-back queries only exons fully inside a merged SD98 region, keeps up to 50 secondary hits, and needs >= 99% cover of the target
+exon). Soto's families are therefore defined by their map-back procedure, not by exon identity alone: at the same 98% exon identity,
+SEDEF's links join genes Soto keeps apart. The fair comparison stays the map-back graph.
