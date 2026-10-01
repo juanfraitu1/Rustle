@@ -309,6 +309,7 @@ __MCL_PANE__
     <span><i style="border-color:var(--within)"></i>within one Soto family</span>
     <span><i style="border-color:var(--cross);border-top-style:dashed"></i>link only in SEDEF edges</span>
     <span>Track colors: same color = same family; ours takes the color of the Soto family it mostly holds</span>
+    <span><b>×6</b> striped bar = one gene that Soto lists in 6 families · ← / → = strand · overlapping genes get their own line</span>
   </div>
   <div class="tbl"><table>
     <thead><tr><th>Gene</th><th>Locus</th><th>Model (common scale)</th><th>Soto</th><th>Ours</th><th>Homology</th><th>famCN Soto</th><th>famCN ours</th><th>Role</th></tr></thead>
@@ -615,44 +616,60 @@ function draw() {
       s += `<line x1="${x}" x2="${x}" y1="${y + 9}" y2="${y + 14}" stroke="var(--faint)"/><text x="${x}" y="${y + 6}" font-size="9.5" fill="var(--muted)" text-anchor="middle">${fmtPos(t, step)}</text>`;
     }
     y += 22;
-    const rowsEnd = [-1e9, -1e9, -1e9];
-    const lab = [];
-    is.forEach(i => {
-      const g = G[i]; if (!(inF(i) || xc[i] !== undefined)) return;
-      const nm = short(g.n), w = nm.length * 6.2 + 6, cx = (X(g.s) + X(g.e)) / 2, x0 = Math.max(GUT, Math.min(cx - w / 2, GUT + IW - w));
-      const r = rowsEnd.findIndex(e => e < x0); if (r < 0) return;
-      rowsEnd[r] = x0 + w; lab.push([i, x0, r, nm]);
+    // Expanded display, as in IGV: genes that overlap go on separate lines; every gene carries its name and strand.
+    const MAXL = 18, RH = 24;
+    const pri = i => inF(i) ? 0 : xc[i] !== undefined ? 1 : 2;
+    const gRows = [], place = new Map();
+    const free = (rows, r, a, b, gap) => !(rows[r] || []).some(([p, q]) => a < q + gap && p < b + gap);
+    const glab = i => (G[i].st === "-" ? "← " : "") + short(G[i].n) + (G[i].st === "-" ? "" : " →");
+    [...is].sort((a, b) => pri(a) - pri(b) || G[a].s - G[b].s).forEach(i => {
+      const x1 = X(G[i].s), x2 = Math.max(X(G[i].e), x1 + 2), w = glab(i).length * 6.2 + 6;
+      const l0 = Math.max(GUT, Math.min((x1 + x2) / 2 - w / 2, GUT + IW - w)), full = [Math.min(x1, l0), Math.max(x2, l0 + w)];
+      let r = -1, lx = l0;
+      for (let k = 0; k < MAXL && r < 0; k++) if (free(gRows, k, full[0], full[1], 4)) r = k;
+      if (r < 0) { lx = null; for (let k = 0; r < 0; k++) if (free(gRows, k, x1 - 1, x2 + 1, 2)) r = k; }
+      (gRows[r] = gRows[r] || []).push(lx === null ? [x1 - 1, x2 + 1] : full);
+      place.set(i, [r, lx]);
     });
-    const nRows = lab.length ? Math.max(...lab.map(l => l[2])) + 1 : 0;
-    const gy = y + nRows * 12 + 4;
-    s += `<text x="10" y="${gy + 8}" font-size="10" fill="var(--muted)">Genes</text>`;
-    lab.forEach(([i, x0, r, nm]) => { s += `<text x="${x0 + 3}" y="${y + r * 12 + 9}" font-size="10" fill="${inF(i) ? "var(--fg)" : "var(--muted)"}" font-weight="${inF(i) ? 600 : 400}">${esc(nm)}</text>`; });
+    s += `<text x="10" y="${y + 20}" font-size="10" fill="var(--muted)">Genes</text>`;
     is.forEach(i => {
-      const g = G[i], x1 = X(g.s), x2 = Math.max(X(g.e), x1 + 2), op = inF(i) ? 1 : 0.5;
-      s += `<g data-i="${i}" opacity="${op}"><rect x="${x1 - 2}" y="${gy - 2}" width="${x2 - x1 + 4}" height="16" fill="transparent"/>`;
+      const g = G[i], [r, lx] = place.get(i), gy = y + r * RH + 11, x1 = X(g.s), x2 = Math.max(X(g.e), x1 + 2), op = inF(i) ? 1 : 0.5;
+      if (lx !== null) s += `<text x="${lx + 3}" y="${gy - 2}" font-size="10" fill="${inF(i) ? "var(--fg)" : "var(--muted)"}" font-weight="${inF(i) ? 600 : 400}">${esc(glab(i))}</text>`;
+      s += `<g data-i="${i}" opacity="${op}"><rect x="${x1 - 2}" y="${gy - 2}" width="${x2 - x1 + 4}" height="14" fill="transparent"/>`;
       s += `<line x1="${x1}" x2="${x2}" y1="${gy + 6}" y2="${gy + 6}" stroke="var(--igv)"/>`;
       g.x.forEach(([a, b]) => { const xa = X(a); s += `<rect x="${xa}" y="${gy + 1}" width="${Math.max(X(b) - xa, 1.5)}" height="10" fill="var(--igv)"/>`; });
       if (x2 - x1 > 40) for (let x = x1 + 10; x < x2 - 6; x += 14) s += `<path d="M${x + (g.st === "-" ? 3 : -3)} ${gy + 3} l${g.st === "-" ? -3 : 3} 3 l${g.st === "-" ? 3 : -3} 3" fill="none" stroke="var(--surface)" stroke-width="1.2"/>`;
       s += `</g>`;
     });
-    y = gy + 20;
-    const tracks = [["Soto S1C", i => G[i].sf.filter(x => !x.startsWith("Unassigned")).map(x => C.soto.get(x) || OTHER)],
+    y += gRows.length * RH + 8;
+    // Tracks expand the same way: a gene that overlaps another gets its own line, in the same order as the genes above.
+    const sotoOf = i => G[i].sf.filter(x => !x.startsWith("Unassigned"));
+    const tRows = [], tPlace = new Map();
+    [...is].sort((a, b) => place.get(a)[0] - place.get(b)[0] || G[a].s - G[b].s).forEach(i => {
+      const x1 = X(G[i].s), x2 = x1 + Math.max(X(G[i].e) - x1, 3) + (sotoOf(i).length > 1 ? 20 : 0);
+      let k = 0; while (!free(tRows, k, x1, x2, 1)) k++;
+      (tRows[k] = tRows[k] || []).push([x1, x2]); tPlace.set(i, k);
+    });
+    const TH = 4 + tRows.length * 12;
+    const tracks = [["Soto S1C", i => sotoOf(i).map(x => C.soto.get(x) || OTHER)],
                     ["Ours", i => C.our.of(i) ? [C.our.col.get(C.our.of(i))] : []],
                     ["Homology", i => C.seq.of(i) ? [C.seq.col.get(C.seq.of(i))] : []]];
-    tracks.forEach(([name, colsOf]) => {
-      s += `<rect x="${GUT}" y="${y}" width="${IW}" height="14" fill="var(--track)"/>`;
+    tracks.forEach(([name, colsOf], t) => {
+      s += `<rect x="${GUT}" y="${y}" width="${IW}" height="${TH}" fill="var(--track)"/>`;
       s += `<text x="10" y="${y + 11}" font-size="10" fill="var(--muted)">${name}</text>`;
       is.forEach(i => {
-        const g = G[i], x1 = X(g.s), w = Math.max(X(g.e) - x1, 3), cs = colsOf(i);
-        if (!cs.length) { s += `<rect data-i="${i}" x="${x1}" y="${y + 2.5}" width="${w}" height="9" fill="none" stroke="var(--faint)" stroke-dasharray="2 1.5"/>`; return; }
+        const g = G[i], x1 = X(g.s), w = Math.max(X(g.e) - x1, 3), cs = colsOf(i), ty = y + 2 + tPlace.get(i) * 12;
+        if (!cs.length) { s += `<rect data-i="${i}" x="${x1}" y="${ty + 0.5}" width="${w}" height="9" fill="none" stroke="var(--faint)" stroke-dasharray="2 1.5"/>`; return; }
         const h = 10 / cs.length;
-        cs.forEach((c, j) => { s += `<rect data-i="${i}" x="${x1}" y="${y + 2 + j * h}" width="${w}" height="${h}" fill="${c}"/>`; });
+        cs.forEach((c, j) => { s += `<rect data-i="${i}" x="${x1}" y="${ty + j * h}" width="${w}" height="${h}" fill="${c}"/>`; });
+        if (t === 0 && cs.length > 1) s += `<text data-i="${i}" x="${x1 + w + 3}" y="${ty + 9}" font-size="9.5" font-weight="650" fill="var(--fg)">×${cs.length}</text>`;
       });
-      y += 18;
+      y += TH + 4;
     });
-    const ly = y + 2, LH = 70;
-    s += `<text x="10" y="${ly + 12}" font-size="10" fill="var(--muted)">Links</text>`;
     const here = links.filter(([a, b]) => G[a].c === chr && G[b].c === chr);
+    const ly = y + 2, LH = here.length ? 70 : 14;
+    s += `<text x="10" y="${ly + 12}" font-size="10" fill="var(--muted)">Links</text>`;
+    if (!here.length) s += `<text x="${GUT}" y="${ly + 12}" font-size="10.5" fill="var(--muted)">No links between genes on ${chr}${inter ? ` · their ${inter} link${inter === 1 ? "" : "s"} go${inter === 1 ? "es" : ""} to genes on other chromosomes` : ""}</text>`;
     here.sort((p, r) => cross(p[0], p[1]) - cross(r[0], r[1]));
     here.forEach(([a, b, sd]) => {
       const xa = (X(G[a].s) + X(G[a].e)) / 2, xb = (X(G[b].s) + X(G[b].e)) / 2, cr = cross(a, b);
