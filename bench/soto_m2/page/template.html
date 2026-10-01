@@ -223,8 +223,7 @@ footer { font-size: .8rem; color: var(--muted); }
   <button role="tab" id="tab-def" aria-controls="pane-def" aria-selected="false" data-p="def">Two definitions<span>what "gene family" means</span></button>
   <button role="tab" id="tab-mcl" aria-controls="pane-mcl" aria-selected="false" data-p="mcl">How we build families<span>MCL, explained plainly</span></button>
   <button role="tab" id="tab-soto" aria-controls="pane-soto" aria-selected="true" data-p="soto">Soto's 491 families<span>their recipe, our copy numbers</span></button>
-  <button role="tab" id="tab-ends" aria-controls="pane-ends" aria-selected="false" data-p="ends">Gene ends<span>NPIP and TBC1D3 copies vs RefSeq</span></button>
-  <button role="tab" id="tab-det" aria-controls="pane-det" aria-selected="false" data-p="det">Detection · 83 families<span>our Rustle pipeline, RNA and DNA</span></button>
+  <button role="tab" id="tab-det" aria-controls="pane-det" aria-selected="false" data-p="det">Detection · 83 families<span>our Rustle pipeline, DNA mode</span></button>
   <button role="tab" id="tab-mem" aria-controls="pane-mem" aria-selected="false" data-p="mem">Every member · 362<span>one row per Soto gene</span></button>
 </nav>
 __HOW_PANE__
@@ -341,15 +340,12 @@ __MCL_PANE__
 
 
 </div>
-__ENDS_PANE__
 <div role="tabpanel" id="pane-det" aria-labelledby="tab-det" class="pane" hidden>
-  <p class="prov">Built 28 Jul 2026 from our Rustle pipeline on human A119b: RNA mode uses Iso-Seq reads; DNA mode uses <code>--from-genome</code> self-alignment. Scored against 83 Soto families (362 members). Not re-checked today, and not comparable with the 491-family tab, because the family set and the method differ.</p>
-  __MISSES_DET__
+  <p class="prov">Built 28 Jul 2026 from our Rustle pipeline in DNA mode: <code>--from-genome</code> self-alignment of CHM13 v2.0, no reads. Scored against 83 Soto families (362 members). Not re-checked today, and not comparable with the 491-family tab, because the family set and the method differ.</p>
   <div id="host-det" class="shost"></div>
 </div>
 <div role="tabpanel" id="pane-mem" aria-labelledby="tab-mem" class="pane" hidden>
-  <p class="prov">Built 27 Jul 2026: one row per member of the same 83 Soto families (362 genes), with DNA-level, <code>--from-genome</code> and RNA recovery. Not re-checked today.</p>
-  __MISSES_MEM__
+  <p class="prov">Built 27 Jul 2026: one row per member of the same 83 Soto families (362 genes), with DNA-level and <code>--from-genome</code> recovery. Not re-checked today.</p>
   <div id="host-mem" class="shost"></div>
 </div>
 
@@ -949,9 +945,9 @@ applyFilter();
   });
   const h = (window.__initHash || "").slice(1);
   let start = "soto";
-  if (h === "detection") start = "det"; else if (h === "members") start = "mem"; else if (h === "method") start = "how"; else if (h === "definitions") start = "def"; else if (h === "mcl") start = "mcl"; else if (h === "ends") start = "ends";
+  if (h === "detection") start = "det"; else if (h === "members") start = "mem"; else if (h === "method") start = "how"; else if (h === "definitions") start = "def"; else if (h === "mcl") start = "mcl";
   else if (!h) { try { start = localStorage.getItem("soto-tab") || "soto"; } catch (e) {} }
-  if (!["how", "def", "mcl", "soto", "ends", "det", "mem"].includes(start)) start = "soto";
+  if (!["how", "def", "mcl", "soto", "det", "mem"].includes(start)) start = "soto";
   select(start);
 })();
 </script>
