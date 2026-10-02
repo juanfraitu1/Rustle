@@ -182,3 +182,27 @@ reads are forced onto a paralog (Amendment 4: 97% of NPIPA2's reads on LOC124907
   abstain. For the other NPIP reads: how many move onto an `iso` copy that is not theirs (false moves) or onto any `iso` copy at all.
 - **Rule (fixed now):** the extra copies **help** if, for NPIPA2 reads, wrong falls by >= 50% from R to R+I, and false moves of the other
   reads stay <= 5% of them; **hurt** if false moves exceed 10%; otherwise **mixed**.
+
+## Amendment 6 (2026-10-01): held-out test of Amendment 5 on the 2026-08-14 excision panel (written before any of these runs)
+
+Amendment 5 was developed on NPIP (one deletion). Held-out substrate, never used for it: the 162 two-copy gorilla families of the
+2026-08-14 whole-genome excision (`winloci_scratch/o3_excise/PREREG.md`): in each family the copy with the larger start was hard-masked
+(all 162 in one genome, `o3_excise/GGO.masked.fasta`), the other kept; 348,046 reads realigned (`o3_excise/masked.bam`, minimap2
+2.30 = the version used here). Known fates (2026-08-14): absorbed 104, orphaned 54, scattered 4.
+
+- **Reads per family f (scored set S_f):** baseline primaries (`o3_excise/panel_primary.bam`) on the masked copy D (D reads) and on the
+  kept copy K (K reads); up to 500 of each, random, seed 1. Sequences from `o3_excise/panel_reads.fq`.
+- **IsoCon input (net_f):** the reads of S_f with any masked-arm record overlapping K, plus the reads of S_f the masked arm leaves
+  unmapped. D reads absorbed by another locus are not given to IsoCon (the method is family-scoped; disclosed). IsoCon `pipeline` defaults.
+- **Flags and contigs:** IsoCon outputs with no hit at identity x coverage >= 0.999 in the masked genome (`minimap2 -c -x splice:hq -uf`)
+  become contigs `iso_<fam>_<k>` appended to the masked genome. An output "is D" / "is K" when its best hit in the unmasked genome is
+  >= 0.999 and overlaps D's / K's span.
+- **Arms:** R = the existing masked-arm alignments; R+I = S_f realigned (same `@PG` command) to the masked genome + all contigs.
+- **Final call per read (deviation from Amendment 5, declared):** the locus of its primary alignment; a read whose best and second-best AS
+  over its records tie (second >= 0.98 x best) is "abstain". O2 is not run: in R every family has one copy left (O2 needs >= 2), and in
+  Amendment 5 O2 assigned none of the tied reads in either arm.
+- **Readouts, pooled over families:** D reads: right (an "is D" contig of its family) / wrong (K, another locus, or a contig that is not D)
+  / unplaced (unmapped or abstain). K reads: false move = primary on any contig that is not "is K".
+- **Rule (Amendment 5's, unchanged):** HELP if wrong D calls fall by >= 50% from R to R+I and false moves <= 5% of K reads; HURT if false
+  moves > 10%; otherwise MIXED. Also reported: right D calls R -> R+I; per family; by fate (absorbed / orphaned) and by D-K divergence
+  (median `de` of D reads on K in the masked arm, >= 0.01 vs < 0.01).
