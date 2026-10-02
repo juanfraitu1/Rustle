@@ -1,0 +1,23 @@
+outputs 23; flagged 19; kept as new copies after linking 15
+  linked=0: by source {'S:GWFAM104:0': 1, 'D': 10, 'S:GWFAM407:0': 1, 'S:GWFAM331:0': 1, 'S:GWFAM331:1': 1, 'S:GWFAM490:1': 1}
+  linked=1: by source {'S:GWFAM314:2': 1, 'S:GWFAM402:2': 1, 'S:GWFAM4:3': 1, 'elsewhere': 1}
+[half delta=0.00479] components 14 {'D': 9, 'S_only': 5}; families with >= 2 D contigs 2, D contigs in ONE component 1 (50.0%)
+[delta delta=0.00958] components 14 {'D': 9, 'S_only': 5}; families with >= 2 D contigs 2, D contigs in ONE component 1 (50.0%)
+[double delta=0.01916] components 14 {'D': 9, 'S_only': 5}; families with >= 2 D contigs 2, D contigs in ONE component 1 (50.0%)
+over-split D pairs by cause: {'no alignment': 1}
+rc=0
+[R] D: {'unplaced': 7068, 'wrong': 10218} | S: {'elsewhere': 6, 'stay': 41051, 'unplaced': 670}
+[RIL] D: {'right': 2043, 'unplaced': 7078, 'wrong': 8165} | S: {'elsewhere': 5, 'stay': 41030, 'unplaced': 692}
+[M] D: {'right': 2534, 'unplaced': 6587, 'wrong': 8165} | S: {'elsewhere': 5, 'false_move': 2, 'stay': 41030, 'unplaced': 690}
+[T] D: {'right': 2534, 'unplaced': 6587, 'wrong': 8165} | S: {'elsewhere': 5, 'false_move': 2, 'stay': 41030, 'unplaced': 690}
+[M_half] D: {'right': 2534, 'unplaced': 6587, 'wrong': 8165} | S: {'elsewhere': 5, 'false_move': 2, 'stay': 41030, 'unplaced': 690}
+[M_double] D: {'right': 2534, 'unplaced': 6587, 'wrong': 8165} | S: {'elsewhere': 5, 'false_move': 2, 'stay': 41030, 'unplaced': 690}
+M1: D right 2043 -> 2534 (truth-grouped 2534; bar 6,440 = 50% of 12,879); false moves 2/41727 = 0.00% -> DOES NOT WORK
+OVERALL (R vs R+I+L+M): wrong D 10218 -> 8165 (drop 20.1%); false moves 0.00% -> MIXED
+M2: D contigs in ONE component 1/2 = 50.0% (bar 2/3); mixed components 0/14 = 0.0% (bar 10%) -> FAILS
+=== missing_copy_flag ===
+[missing_copy_flag] 148 loci
+[missing_copy_flag] scanned 148, with >= 10 reads 148, fired 23
+[missing_copy_flag] wrote /mnt/linuxdisk/tmp/rna_allele/linktest/ih/scan.scan.tsv and /mnt/linuxdisk/tmp/rna_allele/linktest/ih/scan.consensus.fa
+[missing_copy_flag] verdicts: [("reference_absent_candidate", 15), ("scattered", 8)]
+[missing_copy_flag] wrote /mnt/linuxdisk/tmp/rna_allele/linktest/ih/flag.missing_copy.tsv
