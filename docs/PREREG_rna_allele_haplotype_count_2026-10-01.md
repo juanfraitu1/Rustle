@@ -291,3 +291,31 @@ nothing masked: the chain runs against the full `_pri`, and every candidate copy
   - Reported: candidates per family by class; overlap with the deletion run's 21 survivor-derived candidates (same family and a contig at
     identity >= 0.999 to one of them); the counts at delta/2 and 2 x delta.
 - **Not tested:** other individuals or tissues; the 1,000-read cap per family.
+
+## Amendment 10 (2026-10-01): real reference-absent copies of KB3781 — does the chain flag them? (truth built first, rules written before the chain ran on these families)
+
+**Truth (built independently of the chain; `bench/rna_allele/refabsent_truth.py`, work dir `/mnt/linuxdisk/tmp/rna_allele/refabsent`).**
+Every copy of the 2026-08-14 interval table (378 families, 915 copies) was lifted to its B haplotype (asm5 alignments of the frozen truth;
+913/915 lifted >= 50%) and its clean interval aligned to both haplotype assemblies (`minimap2 -c -x asm20 -p 0.1 -N 100`). A **B-only
+locus** = a hit at identity >= 0.90 and coverage >= 0.80 on the haplotype `_pri` did NOT take that chromosome from, overlapping the lifted
+B interval of no copy of the family (overlapping hits merged): 127 loci in 34 families. Each locus sequence was aligned back to `_pri`
+(asm20): **absent beyond delta** (best `_pri` identity < 1 - 0.00958 over >= 50% of the locus; detectable in principle): 13 loci in 6
+families; **absent within delta** (an allele of an unlisted `_pri` locus or a near-identical duplicate; indistinguishable from an allele
+by construction): 114 loci in 33 families. **Expressed** = >= 3 fibroblast reads of the family whose best record over both haplotype
+assemblies (AS, untied at 0.98) lies on the locus: **11 loci in 8 families — beyond delta: GWFAM175_B0 (281 reads), GWFAM26_B2 (13),
+GWFAM26_B3 (9), GWFAM175_B1 (6); within delta: 7 loci (4-77 reads).** Two further beyond-delta loci have 2 reads (GWFAM175_B2,
+GWFAM26_B6), below the floor. One locus has >= 20 reads: this is a demonstration on the biology of one individual and one tissue, not a
+rate.
+
+- **Chain:** Amendments 7-9's chain on the 34 B-only families (reads: every baseline record on a copy of the family, <= 2,000 per family,
+  seed 1; IsoCon input <= 1,000); **flag = a candidate copy holding >= 2 IsoCon transcripts** (the support floor Amendment 9 found post
+  hoc, pre-registered here); candidates classified against the haplotypes as in Amendment 9 (a / b / c).
+- **Rules (fixed now):**
+  - **D1 (detection):** every expressed beyond-delta locus with >= 20 reads (n = 1, GWFAM175_B0) receives a flag whose best haplotype hit
+    at identity x coverage >= 0.999 overlaps the locus. Reported beside: the three beyond-delta loci with 6-13 reads, and the two with 2.
+  - **D2 (delta does what it says):** none of the 7 expressed within-delta loci receives a new-copy flag (their transcripts link to a
+    `_pri` locus); a flag there is reported as a false flag of the design.
+  - **D3 (false flags in these families):** families among the 34 with a >= 2-transcript candidate of class b or c <= 20% (twice the
+    control's 5/49 = 10.2% on families without any B-only locus).
+  - Reported: for each expressed beyond-delta locus, where its reads sit in arm R0 (`_pri` copy, median `de`) and in arm C (the
+    candidate), i.e. the O2 side; the single-transcript candidates (below the flag floor) matching a truth locus.
