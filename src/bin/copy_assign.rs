@@ -1228,12 +1228,11 @@ struct Args {
     /// A CROSS-CHROMOSOME family (RABL2's 5 contigs) is not truncated to whichever copies happen to fall
     /// in one region (2026-09-15): its reads are gathered directly from every one of its copies' own
     /// (chromosome, span) windows and pooled before assignment, via a synthetic `~xchrom~<family_id>`
-    /// sweep key (see `catalog_input::group_families`/`load_supplied_families`). ⚠ KNOWN LIMITATION: the
-    /// deeper PSV/mosaic certificate (`assign_family_detailed_once`, `best_overlap_copy`) still compares
-    /// bare numeric positions with no chromosome field at all (`AlignedRead` carries none) — for a
-    /// cross-chromosome family whose copies happen to sit at OVERLAPPING numeric coordinates on different
-    /// chromosomes, that layer can attribute a read to the wrong copy. Safe whenever a family's per-
-    /// chromosome coordinate ranges do not numerically coincide; not a general guarantee.
+    /// sweep key (see `catalog_input::group_families`/`load_supplied_families`). `detect_and_assign` then hands
+    /// the family the reads on EVERY chromosome carrying one of its copies and matches each read only to the
+    /// copies on its OWN chromosome (`read_chroms`), so coinciding coordinates on different chromosomes no longer
+    /// cross-attribute. Still chromosome-blind for such a family: the read-through cut, the mosaic breakpoint
+    /// stamp, and `in_copy`/`primary_local` (compared with the sweep key, so they read false).
     #[arg(long)]
     families: Option<String>,
 

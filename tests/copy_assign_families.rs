@@ -360,17 +360,11 @@ fn a_cross_chrom_family_is_assigned_not_refused() {
     let assignments = read(&out_s, "assignments.tsv");
     let cross_rows: Vec<&str> = assignments.lines().filter(|l| l.contains("read_cross_")).collect();
     assert_eq!(cross_rows.len(), 3, "all 3 read_cross_* molecules must appear in the assignment output:\n{assignments}");
-    // ⚠ NOT ASSERTED HERE (a known, separate limitation, not something this fix touches): whether a
-    // molecule genuinely AS-tied ACROSS two chromosomes is scored as `n_candidates == 2` by the deeper
-    // PSV/mosaic certificate (`assign_family_detailed_once` / `best_overlap_copy` in
-    // `copy_assign_pipeline.rs`) depends on `AlignedRead`, which carries NO chromosome field at all — its
-    // overlap math compares bare numeric ranges. For a family whose copies sit on DIFFERENT chromosomes
-    // but at OVERLAPPING numeric coordinates (as `c1:0-260` and `c2:0-260` deliberately do here), that
-    // layer can pick the wrong "best overlap" copy for a record having nothing to do with its real
-    // chromosome. This is safe for a family whose copies' coordinates do not numerically coincide across
-    // chromosomes (checked by hand for the real target this feature was built for), but is not a general
-    // guarantee — fixing it means threading chromosome through `AlignedRead` and every PSV/mosaic call
-    // site that compares positions, a much larger change than the read-gathering fix here.
+    // Not asserted here: whether a molecule AS-tied ACROSS the two chromosomes is scored as `n_candidates == 2`.
+    // The certificate now takes each read's chromosome (`read_chroms`) and `detect_and_assign` hands the family
+    // its reads on BOTH c1 and c2, so a read overlaps only the copies on its own chromosome even where `c1:0-260`
+    // and `c2:0-260` coincide numerically (pinned in `denovo_pipeline.rs` by
+    // `a_cross_chromosome_family_is_assigned_the_reads_on_every_chromosome_it_has_a_copy_on`).
 }
 
 /// A supplied copy outside every swept region would never have its reads read. Loud, not skipped.

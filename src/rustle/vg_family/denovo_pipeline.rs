@@ -2086,7 +2086,9 @@ fn linearize_cert_if_enabled(
 /// * the family RESCUE leg (`rescue_thin_loci_iterative`), which ADDS under-assembled copies to the family.
 ///
 /// What still runs is the ASSIGNMENT of BAM reads to the given copies (PSV + junction likelihood +
-/// significance gate) — reads always come from the BAM; only the copy set is supplied. The other
+/// significance gate) — reads always come from the BAM; only the copy set is supplied. A supplied
+/// CROSS-chromosome family is handed the reads on every chromosome that carries one of its copies (each
+/// overlapping that chromosome's copy hull), and a read overlaps only the copies on its own chromosome. The other
 /// roster-changing legs (`absent_copies`, `vg_realign` admission, `iterative_prune`, `collapse_gate`,
 /// `tied_seed`) are refused by the CLI when `--families` is given rather than silently widened here.
 pub fn detect_and_assign(
@@ -2403,12 +2405,35 @@ pub fn detect_and_assign(
                 seq: rc.seq.clone(),
              ..Default::default() });
         }
-        // reads on this family's chrom overlapping its span (assign overlaps by coord, so pre-filter chrom).
+        // The reads this family is assigned (assign overlaps by coordinate, so they are pre-filtered by chromosome):
+        // (1) those on `cf.chrom` overlapping its span, as ever; (2) for a family with copies on OTHER chromosomes
+        // -- a supplied cross-chromosome family -- those on each of those chromosomes overlapping that
+        // chromosome's own copy hull (min start .. max end over the family's copies there, rescued ones
+        // included). Without (2) such a family only ever saw the reads on its first chromosome, so its copies
+        // elsewhere were scored on none of theirs. A detected or refined family is single-chromosome:
+        // `other_hulls` is empty and this is exactly the old filter. `region_chroms` below keeps each read to the
+        // copies of its own chromosome.
+        let other_hulls: Vec<(String, u64, u64)> = {
+            let mut hulls: BTreeMap<&str, (u64, u64)> = BTreeMap::new();
+            for c in all_copies.iter().filter(|c| c.chrom != cf.chrom) {
+                let h = hulls.entry(c.chrom.as_str()).or_insert((c.start, c.end));
+                h.0 = h.0.min(c.start);
+                h.1 = h.1.max(c.end);
+            }
+            hulls.into_iter().map(|(c, (lo, hi))| (c.to_string(), lo, hi)).collect()
+        };
         let mut idx_map = Vec::new();
         let mut region = Vec::new();
         let mut region_mapq = Vec::new();
         for (i, br) in bam_reads.iter().enumerate() {
-            if br.chrom == cf.chrom && br.read.ref_start < cf.end && read_ref_end(&br.read) > cf.start {
+            let in_region = if br.chrom == cf.chrom {
+                br.read.ref_start < cf.end && read_ref_end(&br.read) > cf.start
+            } else {
+                other_hulls
+                    .iter()
+                    .any(|(c, lo, hi)| *c == br.chrom && br.read.ref_start < *hi && read_ref_end(&br.read) > *lo)
+            };
+            if in_region {
                 idx_map.push(i);
                 region.push(br.read.clone());
                 region_mapq.push(br.mapq);
@@ -2419,9 +2444,9 @@ pub fn detect_and_assign(
         // scorable). The names make the MOLECULE the unit of a result — see `assign_family_detailed_once`.
         let region_names: Vec<String> = idx_map.iter().map(|&i| bam_reads[i].name.clone()).collect();
         // The records' chromosomes, in `region` order: a read overlaps only the family's copies on its own
-        // chromosome (`AlignedRead` carries none). Every record here is on `cf.chrom` (the filter above), so for
-        // a family on one chromosome this changes nothing; it keeps a copy on another chromosome at the same
-        // numeric span (a cross-chromosome family) from being counted as overlapped.
+        // chromosome (`AlignedRead` carries none). For a family on one chromosome every record here is on
+        // `cf.chrom`, so this changes nothing; for a cross-chromosome family it keeps a read on one chromosome
+        // from being counted as overlapping a copy on another that spans the same numbers.
         let region_chroms: Vec<String> = idx_map.iter().map(|&i| bam_reads[i].chrom.clone()).collect();
         // Unique-mapper support is a property of the MOLECULE ("this molecule has a mapq>0 placement"),
         // not of whichever of its records represents it after the reduction — only the PRIMARY record
@@ -13713,6 +13738,126 @@ mod tests {
         assert_eq!(t.get("a"), Some(&vec![0usize, 1]), "max-AS records only; the supplementary one never counts");
         assert!(!t.contains_key("b"), "a clear best is not a tie");
         assert!(!t.contains_key("c"), "a single record is not a tie");
+    }
+
+    // ---- the reads a family is assigned: every chromosome that carries one of its copies ------------------
+
+    /// One supplied family `XC` of two 600 bp copies over ONE backbone that differ at 8 PSV offsets (`x0`: `A`,
+    /// `x1`: `C`): `x0` on `u1` at 1000, `x1` on `second` at 3000 -- `second = "u2"` is a supplied
+    /// CROSS-chromosome family (`cf.chrom = u1`, its span the min/max over BOTH chromosomes, as
+    /// `catalog_input::to_colocated` builds it), `second = "u1"` a single-chromosome one. Reads (MAPQ 60): 3
+    /// carrying `x0` at u1:1000 (`a_*`), 3 carrying `x1` at `second`:3000 (`b_*`), and decoys carrying `x1` at
+    /// 3000 on the chromosome `decoy` (no copy of the family there) and, for a cross-chromosome family, on `u1`
+    /// (inside `cf`'s numeric span, in the numbers of the second copy but on the wrong chromosome). Two
+    /// molecules (`m_dc`, `m_hull`) have a MAPQ-0 record on the first copy and a MAPQ-60 record where the family
+    /// has no copy (on `decoy`; on `second` but outside its copy hull): that record must not enter, so neither
+    /// molecule counts as unique-mapped within the family (`FamilyAssignment::uniq`).
+    /// Returns the rows of `detect_and_assign` (record-level certificate, no external aligner) and the reads.
+    fn run_two_copy_family(second: &str, decoy: &str) -> (Vec<FamilyAssignment>, Vec<BamRead>) {
+        let mut x = rand_seq(600, 0x0C12_05ED);
+        let pa: Vec<usize> = (0..8).map(|i| 40 + 60 * i).collect();
+        for &p in &pa {
+            x[p] = b'G';
+        }
+        let variant = |base: u8| {
+            let mut s = x.clone();
+            for &p in &pa {
+                s[p] = base;
+            }
+            s
+        };
+        let (x0, x1) = (variant(b'A'), variant(b'C'));
+        let mut chroms: Vec<(&str, Vec<u8>)> =
+            ["u1", "u2", "u3"].iter().enumerate().map(|(i, c)| (*c, rand_seq(20_000, 0xC4A0 + i as u64))).collect();
+        for (c, g) in chroms.iter_mut() {
+            if *c == "u1" {
+                g[1000..1600].copy_from_slice(&x0);
+            }
+            if *c == second {
+                g[3000..3600].copy_from_slice(&x1);
+            }
+        }
+        let pairs: Vec<(&str, &[u8])> = chroms.iter().map(|(c, g)| (*c, g.as_slice())).collect();
+        let genome = GenomeIndex::from_seqs(&pairs);
+        let copy = |tid: &str, chrom: &str, at: u64, seq: &[u8]| DenovoTranscript {
+            tid: tid.into(), chrom: chrom.into(), start: at, end: at + 600, n_reads: 3, strand: '+',
+            introns: vec![], seq: seq.to_vec(), ..Default::default()
+        };
+        let copies = vec![copy("x0", "u1", 1000, &x0), copy("x1", second, 3000, &x1)];
+        let supplied = vec![ColocatedFamily {
+            family_id: "XC".into(), chrom: "u1".into(), start: 1000, end: 3600, copies,
+        }];
+        let rec = |name: &str, chrom: &str, at: u64, seq: &[u8], mapq: u8| BamRead {
+            chrom: chrom.into(),
+            read: AlignedRead { ref_start: at, cigar: vec![('M', 600)], seq: seq.to_vec(), qual: vec![] },
+            mapq, name: name.into(), as_score: 600, de: 0.0, is_supplementary: false, is_secondary: false,
+            reverse: false, ts: None,
+        };
+        let mut bam = Vec::new();
+        for k in 0..3 {
+            bam.push(rec(&format!("a_{k}"), "u1", 1000, &x0, 60));
+            bam.push(rec(&format!("b_{k}"), second, 3000, &x1, 60));
+        }
+        bam.push(rec("decoy_off_family", decoy, 3000, &x1, 60));
+        bam.push(rec("m_dc", "u1", 1000, &x0, 0));
+        bam.push(rec("m_dc", decoy, 5000, &x0, 60));
+        if second != "u1" {
+            bam.push(rec("decoy_wrong_chrom", "u1", 3000, &x1, 60));
+            bam.push(rec("m_hull", "u1", 1000, &x0, 0));
+            bam.push(rec("m_hull", second, 100, &x0, 60));
+        }
+        let p = super::super::copy_assign::AssignParams::default();
+        let (fams, _, _, _) = detect_and_assign(
+            &[], &bam, &genome, &DenovoConfig::default(), 5_000_000, 2, &p, &[], false, false, false, "",
+            Some(&supplied),
+        );
+        (fams, bam)
+    }
+
+    /// A supplied CROSS-chromosome family is assigned the reads on EVERY chromosome that carries one of its
+    /// copies, not only the first one's: its copy on `u2` is scored on `u2`'s reads (each is certified to that
+    /// copy), while a read on `u1` in the numbers of the `u2` copy overlaps nothing and a read on a chromosome
+    /// with no copy of the family never enters.
+    #[test]
+    fn a_cross_chromosome_family_is_assigned_the_reads_on_every_chromosome_it_has_a_copy_on() {
+        let (fams, bam) = run_two_copy_family("u2", "u3");
+        assert_eq!(fams.len(), 1);
+        let rows = |n: &str| rows_named(&fams, &bam, n);
+        for k in 0..3 {
+            let a = rows(&format!("a_{k}"));
+            assert_eq!(a.len(), 1, "a_{k}: {a:?}");
+            assert_eq!((a[0].1.best_copy, a[0].1.status), (0, AssignStatus::Assigned), "a_{k}: {:?}", a[0].1);
+            let b = rows(&format!("b_{k}"));
+            assert_eq!(b.len(), 1, "b_{k} is on the family's SECOND chromosome and must enter assignment: {b:?}");
+            assert_eq!((b[0].1.best_copy, b[0].1.status), (1, AssignStatus::Assigned), "b_{k}: {:?}", b[0].1);
+        }
+        assert!(rows("decoy_wrong_chrom").is_empty(), "a u1 read at the u2 copy's numbers overlaps no copy on u1");
+        assert!(rows("decoy_off_family").is_empty(), "u3 carries no copy of the family: its reads never enter");
+        // the molecules whose MAPQ-60 record lies off every copy (on u3; on u2 outside the u2 copy's hull) are
+        // judged on their u1 record alone, so they are not unique-mapped within the family
+        assert_eq!((rows("m_dc").len(), rows("m_hull").len()), (1, 1));
+        assert_eq!(fams[0].assignments.len(), 8);
+        assert_eq!(fams[0].uniq, 6, "only a_* and b_* are unique-mapped: a record off every copy must not enter");
+    }
+
+    /// The guard for the widening: a SINGLE-chromosome family is assigned exactly the reads it always was --
+    /// those on its own chromosome -- and a read on another chromosome (no copy there) never enters, whatever
+    /// its coordinates.
+    #[test]
+    fn a_single_chromosome_family_is_assigned_only_the_reads_on_its_own_chromosome() {
+        let (fams, bam) = run_two_copy_family("u1", "u2");
+        assert_eq!(fams.len(), 1);
+        let rows = |n: &str| rows_named(&fams, &bam, n);
+        for k in 0..3 {
+            let (a, b) = (rows(&format!("a_{k}")), rows(&format!("b_{k}")));
+            assert_eq!((a.len(), b.len()), (1, 1), "a_{k}/b_{k}");
+            assert_eq!((a[0].1.best_copy, a[0].1.status), (0, AssignStatus::Assigned), "a_{k}: {:?}", a[0].1);
+            assert_eq!((b[0].1.best_copy, b[0].1.status), (1, AssignStatus::Assigned), "b_{k}: {:?}", b[0].1);
+        }
+        assert!(rows("decoy_off_family").is_empty(), "u2 carries no copy of the family: its reads never enter");
+        assert_eq!(rows("m_dc").len(), 1);
+        assert_eq!(fams[0].assignments.len(), 7);
+        assert_eq!(fams[0].uniq, 6, "m_dc's MAPQ-60 record is on u2, where the family has no copy: it must not enter");
     }
 }
 
