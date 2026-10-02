@@ -42,13 +42,38 @@ SUB = {
         families=("TSPY", "RBMY", "DAZ", "CDY", "BPY2", "HSFY", "PRY", "VCY"),
         single_copy=("SRY", "RPS4Y1", "ZFY", "AMELY", "TBL1Y", "PRKY", "USP9Y", "DDX3Y", "UTY", "TMSB4Y", "NLGN4Y", "TXLNGY", "KDM5D",
                      "EIF1AY", "RPS4Y2"),
+        match="name",                       # family = gene_name prefix
+    ),
+    "gorilla": dict(                        # HELD-OUT: OR6737 testis on mGorGor1 `_pri`; RefSeq GFF, families by description
+        genome="/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta",
+        idx="/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO.splice.mmi",
+        bam="/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_mm.bam",
+        gff="/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff",
+        chry="NC_073248.2",
+        families=("TSPY", "RBMY", "DAZ", "CDY", "BPY2", "HSFY", "PRY", "VCY"),
+        family_desc={"TSPY": r"testis-specific Y-encoded protein", "RBMY": r"RNA-binding motif protein, Y chromosome",
+                     "DAZ": r"deleted in azoospermia", "CDY": r"chromodomain protein Y", "BPY2": r"testis-specific basic protein Y",
+                     "HSFY": r"heat shock transcription factor, Y-linked", "PRY": r"PTPN13 like Y-linked", "VCY": r"variable charge Y-linked"},
+        single_copy=("SRY", "RPS4Y1", "ZFY", "AMELY", "KDM5D", "NLGN4Y", "UTY", "DDX3Y", "USP9Y"),
+        match="desc",
     ),
 }
+
+
+def fam_of(cfg, name, desc):
+    import re
+    if cfg["match"] == "name":
+        return next((y for y in cfg["families"] if name.startswith(y)), None)
+    return next((y for y, rx in cfg["family_desc"].items() if re.search(rx, desc)), None)
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
 def gff_chry(cfg):
     """genes: [(name, biotype, s0, e, strand, id)]; tx: id -> (gene_id, biotype, [exons]) for chrY."""
+    """genes: [(name, biotype, s0, e, strand, id, description)]; tx: id -> (gene_id, biotype, strand); ex: tx id -> exons. CAT (gene /
+    transcript / exon with gene_name, gene_biotype, transcript_biotype) and RefSeq (gene / pseudogene, mRNA / transcript / *_RNA with
+    Parent=gene-..., exon with Parent=rna-...; description URL-encoded)."""
+    import urllib.parse
     genes, tx, ex = [], {}, collections.defaultdict(list)
     op = gzip.open if cfg["gff"].endswith(".gz") else open
     for ln in op(cfg["gff"], "rt"):
@@ -58,12 +83,14 @@ def gff_chry(cfg):
         if f[0] != cfg["chry"]:
             continue
         at = dict(x.split("=", 1) for x in f[8].split(";") if "=" in x)
-        if f[2] == "gene":
-            genes.append((at.get("gene_name", at.get("Name", "?")), at.get("gene_biotype", "?"), int(f[3]) - 1, int(f[4]), f[6], at["ID"]))
-        elif f[2] == "transcript":
-            tx[at["ID"]] = (at["Parent"], at.get("transcript_biotype", "?"), f[6])
+        if f[2] in ("gene", "pseudogene"):
+            genes.append((at.get("gene_name", at.get("Name", "?")), at.get("gene_biotype", "?"), int(f[3]) - 1, int(f[4]), f[6], at["ID"],
+                          urllib.parse.unquote(at.get("description", ""))))
         elif f[2] == "exon":
             ex[at["Parent"]].append((int(f[3]) - 1, int(f[4])))
+        elif "Parent" in at and (f[2] == "transcript" or f[2] == "mRNA" or f[2].endswith("RNA") or f[2].endswith("transcript")):
+            bt = at.get("transcript_biotype", "protein_coding" if f[2] == "mRNA" else f[2])
+            tx[at["ID"]] = (at["Parent"], bt, f[6])
     return genes, tx, ex
 
 
@@ -84,9 +111,9 @@ def panel(a):
     out = []
     with open(f"{a.w}/masked_tx.fa", "w") as mt:
         for fam in cfg["families"]:
-            recs = sorted((g for g in genes if g[0].startswith(fam)), key=lambda g: g[2])
+            recs = sorted((g for g in genes if fam_of(cfg, g[0], g[6]) == fam), key=lambda g: g[2])
             copies = []                      # merged intervals: [s, e, names, pc, gene_ids]
-            for name, bt, s, e, st, gid in recs:
+            for name, bt, s, e, st, gid, _desc in recs:
                 if copies and s < copies[-1][1]:
                     c = copies[-1]; c[1] = max(c[1], e); c[2].append(name); c[3] |= bt == "protein_coding"; c[4].append(gid)
                 else:
@@ -121,7 +148,7 @@ def panel(a):
     os.makedirs(f"{a.w}/sc", exist_ok=True)
     rng = random.Random(1)
     sc = {}
-    for name, bt, s, e, st, gid in genes:
+    for name, bt, s, e, st, gid, _desc in genes:
         if name in cfg["single_copy"] and bt == "protein_coding":
             sc.setdefault(name, []).append((s, e))
     kept = {}

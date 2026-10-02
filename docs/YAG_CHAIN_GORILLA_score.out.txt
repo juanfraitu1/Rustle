@@ -1,0 +1,42 @@
+TSPY: no protein-coding copy with >= 20 primaries; kept with no mask
+TSPY: copies 16 (protein-coding 6), masked []
+RBMY: copies 23 (protein-coding 13), masked ['RBMY:19694605:LOC129530241 reads=45']
+DAZ: copies 2 (protein-coding 2), masked ['DAZ:42783132:DAZ1 reads=200']
+CDY: dropped (1 protein-coding copies)
+BPY2: no protein-coding copy with >= 20 primaries; kept with no mask
+BPY2: copies 2 (protein-coding 2), masked []
+HSFY: no protein-coding copy with >= 20 primaries; kept with no mask
+HSFY: copies 13 (protein-coding 5), masked []
+PRY: dropped (0 protein-coding copies)
+VCY: dropped (0 protein-coding copies)
+single-copy genes with >= 20 primaries: {'RPS4Y1': 120, 'ZFY': 148, 'AMELY': 33, 'KDM5D': 445, 'UTY': 221, 'DDX3Y': 1697, 'USP9Y': 228}
+IsoCon inputs: {'DAZ': 220, 'RBMY': 177, 'TSPY': 41, 'HSFY': 13, 'BPY2': 1}
+  RBMY:19694605:LOC129530241: d_min 0.00108 nearest NC_073248.2:19625714
+  DAZ:42783132:DAZ1: d_min 0.10194 nearest NC_073248.2:42879824
+delta_Y = p99 of d over 99 single-copy-gene outputs (7 genes) = 0.00383; median 0.00043, p95 0.00129; per gene max: AMELY:0.0023(n=1), DDX3Y:0.0038(n=55), KDM5D:0.0004(n=18), RPS4Y1:0.0000(n=8), USP9Y:0.0022(n=2), UTY:0.0008(n=6), ZFY:0.0012(n=9)
+delta used 0.00383: outputs 34; flagged 19; linked back 7; new copies 12; new-copy sources {'D': 12}
+families 1, contigs 12, alignments 216
+[R] D: {'unplaced': 45, 'wrong': 200} | S: {'stay': 121, 'unplaced': 86}
+[M] D: {'right': 185, 'unplaced': 51, 'wrong': 9} | S: {'false_move': 10, 'stay': 107, 'unplaced': 90}
+
+delta used 0.00383; per masked copy (prediction: flag iff d_min > delta and input reads >= 6):
+  RBMY:19694605:LOC129530241               d_min 0.00108 input   45 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/0/45 -> M 0/0/45
+  DAZ:42783132:DAZ1                        d_min 0.10194 input  200 pred 1 flagged 1 OK  | D right/wrong/unplaced R 0/200/0 -> M 185/9/6
+Y1: prediction right for 2/2 masked copies = 100.0% (bar 80%) -> HOLDS
+Y2: false moves 10/207 = 4.83% (bar 5%) -> HOLDS
+=== delta 0.00958 (autosomal, reported beside) ===
+delta used 0.00958: outputs 34; flagged 19; linked back 9; new copies 10; new-copy sources {'D': 10}
+families 1, contigs 10, alignments 111
+
+delta used 0.00958; per masked copy (prediction: flag iff d_min > delta and input reads >= 6):
+  RBMY:19694605:LOC129530241               d_min 0.00108 input   45 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/0/45 -> M 0/0/0
+  DAZ:42783132:DAZ1                        d_min 0.10194 input  200 pred 1 flagged 1 OK  | D right/wrong/unplaced R 0/200/0 -> M 0/0/0
+Y1: prediction right for 2/2 masked copies = 100.0% (bar 80%) -> HOLDS
+=== delta 0.00129 (p95, reported beside) ===
+delta used 0.00129: outputs 34; flagged 19; linked back 1; new copies 18; new-copy sources {'D': 16, 'S': 2}
+families 2, contigs 18, alignments 252
+
+delta used 0.00129; per masked copy (prediction: flag iff d_min > delta and input reads >= 6):
+  RBMY:19694605:LOC129530241               d_min 0.00108 input   45 pred 0 flagged 1 MISS | D right/wrong/unplaced R 0/0/45 -> M 0/0/0
+  DAZ:42783132:DAZ1                        d_min 0.10194 input  200 pred 1 flagged 1 OK  | D right/wrong/unplaced R 0/200/0 -> M 0/0/0
+Y1: prediction right for 1/2 masked copies = 50.0% (bar 80%) -> FAILS
