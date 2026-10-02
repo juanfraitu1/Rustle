@@ -1,0 +1,12 @@
+[R] D reads 51165: {'wrong': 30785, 'unplaced': 20380}
+[R] K reads 52871: {'stay': 52225, 'unplaced': 645, 'elsewhere': 1}
+[RI] D reads 51165: {'wrong': 13526, 'unplaced': 35843, 'right': 1796}
+[RI] K reads 52871: {'stay': 15172, 'unplaced': 35182, 'false_move': 2516, 'elsewhere': 1}
+RULE: wrong D 30785 -> 13526 (drop 56.1%); right D 0 -> 1796; false moves 2516/52871 = 4.8% -> HELP
+  [fate=absorbed] families 104: wrong D 28900 -> 12616, right D 0 -> 1170, unplaced D 3467 -> 18581, false moves 1540
+  [fate=orphaned] families 54: wrong D 1695 -> 705, right D 0 -> 626, unplaced D 16258 -> 16622, false moves 903
+  [fate=scattered] families 4: wrong D 190 -> 205, right D 0 -> 0, unplaced D 655 -> 640, false moves 73
+  [divergence=D-K < 0.01] families 13: wrong D 4134 -> 940, right D 0 -> 239, unplaced D 51 -> 3006, false moves 80
+  [divergence=D-K >= 0.01] families 55: wrong D 13953 -> 2228, right D 0 -> 570, unplaced D 2364 -> 13519, false moves 923
+  [divergence=no D read on K] families 94: wrong D 12698 -> 10358, right D 0 -> 987, unplaced D 17965 -> 19318, false moves 1513
+families where wrong D fell by >= 50%: 88 of 162 with wrong D in R
