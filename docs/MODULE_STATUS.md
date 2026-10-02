@@ -36,7 +36,7 @@ this file must list exactly the module set.
 | **OPT-IN** | 16 |
 | **OTHER-BINARY** | 3 |
 | **REFUTED** | 1 |
-| **TEST-ONLY** | 0 |
+| **TEST-ONLY** | 1 |
 | **INFRASTRUCTURE** | 1 |
 
 > **2026-09-23 wave 6 (consolidation):** the binaries `asj`, `asj_verify`, `debug_poa`, `bam_null_probe`, `index_bam`,
@@ -124,12 +124,13 @@ Implemented, **measured**, and the measurement went against it. Kept deliberatel
 |---|---|---|
 | `collapse_gate.rs` | --collapse-gate (src/bin/copy_assign.rs:393-394, default_value_t = false); DenovoConfig::default sets collapse | MEASURED (the refutation is a recorded measurement in-tree): collapse_gate.rs:17-21 — 'DEFAULT OFF. The instrument is not what this module's name claims, and a control proved it… Run genome-wide, the gate fires on EEF1A1 … and rep |
 
-## TEST-ONLY (0)
+## TEST-ONLY (1)
 
 **No non-test callers anywhere in `src/`.** Dead in every shipped binary. Not deleted, but nothing it claims is in effect.
 
 | module | gate | deciding evidence |
 |---|---|---|
+| `o3_candidates.rs` | - | MEASURED 2026-10-02: no caller outside its own unit tests (the only reference in src/ is the `pub mod o3_candidates;` line in vg_family/mod.rs). The `o3_candidates` binary (plan task 8) and the driver stage (task 9) make it OPT-IN; this row moves to OPT-IN and the header tag changes then. |
 
 ## INFRASTRUCTURE (1)
 

@@ -81,8 +81,13 @@ mod tests {
         let mut x = seed; (0..n).map(|_| { x ^= x << 13; x ^= x >> 7; x ^= x << 17; b"ACGT"[(x % 4) as usize] }).collect()
     }
     fn mutate(s: &[u8], rate_per_kb: usize, seed: u64) -> Vec<u8> {
+        // substitutes every (1000 / rate_per_kb)-th base; the new base is always different from the original
         let mut v = s.to_vec(); let mut x = seed.max(1);
-        for i in (0..v.len()).step_by(1000 / rate_per_kb.max(1)) { x ^= x << 13; x ^= x >> 7; x ^= x << 17; v[i] = b"ACGT"[((v[i] as u64 + 1 + x % 3) % 4) as usize]; }
+        for i in (0..v.len()).step_by(1000 / rate_per_kb.max(1)) {
+            x ^= x << 13; x ^= x >> 7; x ^= x << 17;
+            let orig = b"ACGT".iter().position(|&c| c == v[i]).expect("ACGT input");
+            v[i] = b"ACGT"[(orig + 1 + (x % 3) as usize) % 4];   // index + 1..=3 (mod 4) never returns the original index
+        }
         v
     }
     #[test]
@@ -96,8 +101,10 @@ mod tests {
     #[test]
     fn sketch_share_separates_copies_from_errors() {
         let copy_a = rand_seq(3000, 1);
-        let same_copy_read = mutate(&copy_a, 2, 3);        // 0.2%: HiFi-like
-        let copy_b = mutate(&copy_a, 20, 5);               // 2% diverged paralog
+        let same_copy_read = mutate(&copy_a, 2, 3);        // 0.2%: HiFi-like (every 500th base: 6 substitutions in 3 kb)
+        let copy_b = mutate(&copy_a, 25, 5);               // 2.5% diverged paralog (every 40th base: 75 substitutions in 3 kb)
+        let real_subs = |x: &[u8]| x.iter().zip(&copy_a).filter(|(p, q)| p != q).count();
+        assert_eq!((real_subs(&same_copy_read), real_subs(&copy_b)), (6, 75), "every substitution must be real: exactly 0.2% and 2.5% of 3000 bp");
         let sa = minimizer_sketch(&copy_a, 31, 5);
         assert!(sketch_share(&sa, &minimizer_sketch(&same_copy_read, 31, 5)) > 0.8);
         assert!(sketch_share(&sa, &minimizer_sketch(&copy_b, 31, 5)) < 0.6);
