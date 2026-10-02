@@ -1,0 +1,35 @@
+absent_beyond_delta: 13 loci in 6 families; `_pri` identity median 0.9862
+absent_within_delta: 114 loci in 33 families; `_pri` identity median 0.9986
+rc=0
+B-only loci 127; expressed (>= 3 reads best-placed there, untied) 11 in 8 families; reads on expressed loci: median 13, max 281; loci with 1-2 reads 8
+outputs 1060; flagged 647; linked back 582; kept as new copies 65 in 11 families; new-copy sources {'elsewhere': 4, 'S': 60, 'none': 1}
+families 11, contigs 65, alignments 616
+[half delta=0.00479] components 20 {'other': 4, 'S_only': 16}; families with >= 2 D contigs 0, D contigs in ONE component 0 (0.0%)
+[delta delta=0.00958] components 18 {'other': 4, 'S_only': 14}; families with >= 2 D contigs 0, D contigs in ONE component 0 (0.0%)
+[double delta=0.01916] components 18 {'other': 4, 'S_only': 14}; families with >= 2 D contigs 0, D contigs in ONE component 0 (0.0%)
+over-split D pairs by cause: {}
+[delta delta=0.00958] candidates 18 {'a_haplotype_only': 2, 'b_allele': 5, 'c_unmatched': 11}; families with >= 1 candidate 11/53, with >= 1 FALSE candidate 10/53 = 18.9%; matching the deletion run's survivor candidates 0
+C1: families with >= 1 false candidate 10/53 = 18.9% (bar <= 28%) -> HOLDS; any candidate 11/53 = 20.8%
+candidates 18; flags (>= 2 transcripts) 7 in 6 families; classes of flags {'c_unmatched': 2, 'a_haplotype_only': 1, 'b_allele': 4}
+  GWFAM175_B0    absent_beyond_delta  reads  281  flags matching 1 ['GWFAM175:iso_GWFAM175_22']  single-transcript matches 0
+  GWFAM205_B0    absent_within_delta  reads   77  flags matching 0 []  single-transcript matches 0
+  GWFAM70_B4     absent_within_delta  reads   24  flags matching 0 []  single-transcript matches 0
+  GWFAM390_B1    absent_within_delta  reads   20  flags matching 0 []  single-transcript matches 0
+  GWFAM70_B1     absent_within_delta  reads   16  flags matching 0 []  single-transcript matches 0
+  GWFAM227_B0    absent_within_delta  reads   13  flags matching 0 []  single-transcript matches 0
+  GWFAM26_B2     absent_beyond_delta  reads   13  flags matching 0 []  single-transcript matches 0
+  GWFAM26_B3     absent_beyond_delta  reads    9  flags matching 0 []  single-transcript matches 0
+  GWFAM175_B1    absent_beyond_delta  reads    6  flags matching 0 []  single-transcript matches 0
+  GWFAM4_B0      absent_within_delta  reads    5  flags matching 0 []  single-transcript matches 0
+  GWFAM382_B0    absent_within_delta  reads    4  flags matching 0 []  single-transcript matches 0
+D1: beyond-delta loci with >= 20 reads 1: flagged 1 -> PASSES; beyond-delta loci with 3-19 reads: [('GWFAM26_B2', 13, 0), ('GWFAM26_B3', 9, 0), ('GWFAM175_B1', 6, 0)]; with 2 reads: [('GWFAM175_B2', 0), ('GWFAM26_B6', 0)]
+D2: expressed within-delta loci 7, flagged 0 [] -> HOLDS
+D3: families with a false flag 6/34 = 17.6% (bar 20%) -> HOLDS; ['GWFAM169', 'GWFAM175', 'GWFAM256', 'GWFAM318', 'GWFAM382', 'GWFAM70']
+  O2 GWFAM175_B0 (281 reads) [R0]: {'placed:copy:GWFAM175:2': 262, 'placed:copy:GWFAM175:1': 17, 'tied:copy:GWFAM175:2': 2}; median de on reference 0.0663
+  O2 GWFAM175_B0 (281 reads) [C]: {'tied:cand:GWFAM175:c0': 273, 'placed:cand:GWFAM175:c0': 6, 'placed:copy:GWFAM175:2': 1, 'placed:copy:GWFAM175:1': 1}; median de on reference 0.0533
+  O2 GWFAM26_B2 (13 reads) [R0]: {'placed:copy:GWFAM26:7': 4, 'tied:copy:GWFAM26:2': 4, 'tied:other:NC_073224.2': 2, 'tied:copy:GWFAM26:7': 1}; median de on reference 0.0130
+  O2 GWFAM26_B2 (13 reads) [C]: {'placed:copy:GWFAM26:7': 4, 'tied:copy:GWFAM26:2': 4, 'tied:other:NC_073224.2': 2, 'tied:copy:GWFAM26:7': 1}; median de on reference 0.0130
+  O2 GWFAM26_B3 (9 reads) [R0]: {'tied:copy:GWFAM26:2': 5, 'placed:copy:GWFAM26:2': 2, 'placed:other:NC_073224.2': 2}; median de on reference 0.0070
+  O2 GWFAM26_B3 (9 reads) [C]: {'tied:copy:GWFAM26:2': 5, 'placed:copy:GWFAM26:2': 2, 'placed:other:NC_073224.2': 2}; median de on reference 0.0070
+  O2 GWFAM175_B1 (6 reads) [R0]: {'placed:copy:GWFAM175:2': 5, 'tied:copy:GWFAM175:2': 1}; median de on reference 0.0776
+  O2 GWFAM175_B1 (6 reads) [C]: {'placed:copy:GWFAM175:2': 4, 'tied:cand:GWFAM175:c0': 2}; median de on reference 0.0719
