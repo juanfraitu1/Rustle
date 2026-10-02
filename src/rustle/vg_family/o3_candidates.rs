@@ -192,6 +192,134 @@ pub fn parse_cs(cs: &str) -> anyhow::Result<Vec<CsOp>> {
     Ok(ops)
 }
 
+/// Indels of at least this many bases are STRUCTURE (isoforms, ruling R2), not sequencing errors; shorter ones follow the 50% majority.
+const STRUCT_MIN_INDEL: usize = 20;
+/// Members that must cover a column before the vote (or a < 20 bp indel majority) may change the template there.
+const VOTE_MIN_COVER: usize = 3;
+/// Members that must carry an insertion of >= 20 bp for it to be inserted (an exon the template lacks), whatever its share.
+const STRUCT_MIN_SUPPORT: usize = 3;
+
+/// Clusters one family's reads (spec §5.3, with minimap2's all-vs-all hits in place of the greedy pass; ruling §9b): union-find over the reads,
+/// joining a pair when its best hit covers >= 50% of the shorter read (`shorter_cov`) with `de <= delta`. The pair's best hit is the one with
+/// the most matching bases, the first on a tie, whichever read is `q` (`best_pairs` of `bench/rna_allele/merge_test.py`, which this
+/// reproduces). Self hits and hits naming a read that is not in `names` are ignored; the strand is not consulted (`de` and the spans do not
+/// depend on orientation). `names` must be distinct. Returns the clusters as ascending index lists ordered by (size descending, first
+/// index). The clusters are a function of the set of joined pairs, so neither the hash order of the pair table nor the order of `ava`
+/// (beyond the first-wins tie rule) reaches the output.
+pub fn cluster_reads(names: &[String], ava: &[PafHit], delta: f64) -> Vec<Vec<usize>> {
+    let idx: HashMap<&str, usize> = names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
+    let mut best: HashMap<(usize, usize), &PafHit> = HashMap::new();
+    for h in ava {
+        let (Some(&a), Some(&b)) = (idx.get(h.q.as_str()), idx.get(h.t.as_str())) else { continue };
+        if a == b { continue; }
+        let key = (a.min(b), a.max(b));
+        if best.get(&key).map_or(true, |o| h.matches > o.matches) { best.insert(key, h); }
+    }
+    fn find(p: &mut [usize], mut x: usize) -> usize { while p[x] != x { p[x] = p[p[x]]; x = p[x]; } x }
+    let mut par: Vec<usize> = (0..names.len()).collect();
+    for (&(a, b), h) in &best {
+        if shorter_cov(h) >= 0.5 && h.de <= delta {
+            let (ra, rb) = (find(&mut par, a), find(&mut par, b));
+            if ra != rb { par[ra.max(rb)] = ra.min(rb); }
+        }
+    }
+    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+    for i in 0..names.len() { let r = find(&mut par, i); groups.entry(r).or_default().push(i); }   // pushed in index order: each group is ascending
+    let mut out: Vec<Vec<usize>> = groups.into_values().collect();
+    out.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));                                // first indices are distinct: a total order
+    out
+}
+
+/// Template-and-vote consensus of one cluster (spec §5.4, ruling R2). `template` is the sequence the members were aligned to; each member's
+/// hit carries its `cs` against it (`ts..te` on the template). The member sequences are not read (the `cs` holds every base the vote needs)
+/// and the strand is not consulted (a `cs` always lies along the target's forward strand). A member without a `cs` abstains; a malformed
+/// `cs` is an error naming the member. The template votes only if it is itself among the members (as a self hit). Per template column,
+/// over the members that cover it (`Eq`, `Sub` and `Del` columns cover; an `Intron` that a member splices out does not):
+/// * a column covered by >= 3 members takes the substituted base (the query base, upper case) with the most votes when that count exceeds the
+///   number of covering members that carry no substitution and no < 20 bp deletion there (the template-base carriers: a member that skips the
+///   column inside a >= 20 bp deletion counts among them; a tie keeps the template; two variants with equal support take the smaller base);
+///   fewer than 3 covering members keep the template base;
+/// * an insertion < 20 bp before a column (after the last column when `t == n`) is inserted when its most frequent sequence (ties to the
+///   smaller) is carried by >= 50% of >= 3 covering members; a deletion < 20 bp removes the column when >= 50% of >= 3 covering members
+///   delete it;
+/// * indels >= 20 bp are STRUCTURE, not errors (R2): an insertion >= 20 bp whose most frequent sequence is carried by >= 3 members is inserted
+///   whatever its share (an exon the template lacks); a deletion >= 20 bp is never applied and no column inside one is ever removed (the
+///   template's exon stays), so the consensus is the exon union of the cluster's isoforms with SNV-level majority voting.
+///
+/// The output is upper case. NOT done here: spec §5.4's trim of template ends covered by fewer than 2 members. A `cs` that runs past the
+/// template end is clamped (nothing beyond the end is voted or appended); the frame of the `cs` (`ts` and the template) is trusted, not checked.
+pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]) -> anyhow::Result<Vec<u8>> {
+    let n = template.len();
+    if n == 0 { return Ok(Vec::new()); }
+    let mut cover = vec![0usize; n];
+    let mut subs: Vec<HashMap<u8, usize>> = vec![HashMap::new(); n];
+    let mut dels = vec![0usize; n];
+    let mut big_del = vec![false; n];
+    let mut ins: Vec<HashMap<Vec<u8>, usize>> = vec![HashMap::new(); n + 1];
+    for (_, h) in member_hits {
+        let Some(cs) = h.cs.as_deref() else { continue };
+        let ops = parse_cs(cs).map_err(|e| anyhow::anyhow!("member {} against {}: {e}", h.q, h.t))?;
+        let mut t = h.ts;
+        for op in ops {
+            match op {
+                CsOp::Eq(len) => { for p in t..t.saturating_add(len).min(n) { cover[p] += 1; } t = t.saturating_add(len); }
+                CsOp::Sub(_, qb) => { if t < n { cover[t] += 1; *subs[t].entry(qb.to_ascii_uppercase()).or_insert(0) += 1; } t = t.saturating_add(1); }
+                CsOp::Del(seq) => {
+                    let big = seq.len() >= STRUCT_MIN_INDEL;
+                    for p in t..t.saturating_add(seq.len()).min(n) { cover[p] += 1; if big { big_del[p] = true; } else { dels[p] += 1; } }
+                    t = t.saturating_add(seq.len());
+                }
+                CsOp::Ins(mut seq) => { if t <= n { seq.make_ascii_uppercase(); *ins[t].entry(seq).or_insert(0) += 1; } }
+                CsOp::Intron(len) => { t = t.saturating_add(len); }
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(n + 64);
+    for p in 0..=n {
+        // the most frequent insertion before column p: the larger count, then the smaller sequence (a total order: no hash order reaches the output)
+        if let Some((seq, &cnt)) = ins[p].iter().max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0))) {
+            let covering = cover[p.min(n - 1)];
+            let structure = seq.len() >= STRUCT_MIN_INDEL && cnt >= STRUCT_MIN_SUPPORT;
+            if structure || (seq.len() < STRUCT_MIN_INDEL && covering >= VOTE_MIN_COVER && 2 * cnt >= covering) { out.extend_from_slice(seq); }
+        }
+        if p == n { break; }
+        if cover[p] >= VOTE_MIN_COVER && 2 * dels[p] >= cover[p] && !big_del[p] { continue; }
+        let mut base = template[p].to_ascii_uppercase();
+        if cover[p] >= VOTE_MIN_COVER {
+            let same = cover[p].saturating_sub(subs[p].values().sum::<usize>() + dels[p]);
+            if let Some((&b, &c)) = subs[p].iter().max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0))) { if c > same { base = b; } }
+        }
+        out.push(base);
+    }
+    Ok(out)
+}
+
+/// The number of substitutions in a pairwise `cs`: spec §5.5's k, the columns that distinguish two consensus sequences. Indels are not counted.
+pub fn distinguishing_columns(ops: &[CsOp]) -> usize { ops.iter().filter(|o| matches!(o, CsOp::Sub(..))).count() }
+
+/// P(X >= n_small) for X ~ Binomial(n_small + n_large, eps^k), in log space with a log-factorial table; the variant is real iff it is < alpha
+/// (spec §5.5: n_small = the reads of the smaller cluster, n_large = the larger's, k = `distinguishing_columns`). No distinguishing column or
+/// no reads in the small cluster is never real; an `eps^k` that underflows to 0 gives P = 0: real.
+pub fn variant_is_real(n_small: usize, n_large: usize, k: usize, eps: f64, alpha: f64) -> bool {
+    if k == 0 || n_small == 0 { return false; }
+    let n = n_small + n_large;
+    let p = eps.powi(i32::try_from(k).unwrap_or(i32::MAX));
+    let (lp, lq) = (p.ln(), (1.0 - p).ln());
+    let mut lf = vec![0f64; n + 1];
+    for i in 1..=n { lf[i] = lf[i - 1] + (i as f64).ln(); }
+    let tail: f64 = (n_small..=n).map(|x| (lf[n] - lf[x] - lf[n - x] + x as f64 * lp + (n - x) as f64 * lq).exp()).sum();
+    tail < alpha
+}
+
+/// One refinement pass over a cluster (spec §5.4's one polishing pass, then the split). `members` pairs each member read with its hit against
+/// the consensus; `template` is that consensus. Neither it nor the read sequences are consulted (the rule reads the hits only; the parameters
+/// keep the signature parallel to `consensus_from_template`). Returns the ascending indices of the members that fit the consensus
+/// (`de <= delta` and `shorter_cov >= 0.5`) and of the rest; the caller makes the rest a new cluster when it holds >= `--min-cluster` reads
+/// and places a member that has no hit at all.
+pub fn refine_cluster(_template: &[u8], members: &[(&[u8], &PafHit)], delta: f64) -> (Vec<usize>, Vec<usize>) {
+    (0..members.len()).partition(|&i| { let h = members[i].1; h.de <= delta && shorter_cov(h) >= 0.5 })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,5 +461,347 @@ mod tests {
         assert_eq!(shorter_cov(&h), 0.0);
         (h.qlen, h.qs, h.qe, h.tlen, h.ts, h.te, h.block, h.matches) = (100, 60, 40, 100, 60, 40, 10, 5);   // end before start: zero span, not a wrapped one
         assert_eq!((id_cov(&h), shorter_cov(&h)), (0.0, 0.0));
+    }
+
+    // ---- read clustering, template-and-vote consensus, the real-vs-error test, one refinement pass --------------------------------------
+
+    /// A hit between two 3000 bp reads covering `cov` of the shorter one (both are 3000 bp), for the clustering tests.
+    fn ava_hit(a: &str, b: &str, matches: usize, cov: f64, de: f64) -> PafHit {
+        let span = (3000.0 * cov).round() as usize;
+        PafHit { q: a.into(), qlen: 3000, qs: 0, qe: span, strand: b'+', t: b.into(), tlen: 3000, ts: 0, te: span, matches, block: 3000, de, cs: None }
+    }
+    fn names_of(s: &str) -> Vec<String> { s.split_whitespace().map(str::to_string).collect() }
+
+    /// An edit of a synthetic member relative to the template, in template coordinates (ascending, non-overlapping).
+    enum Edit<'a> { Sub(usize, u8), Ins(usize, &'a [u8]), Del(usize, usize) }
+    impl Edit<'_> { fn at(&self) -> usize { match self { Edit::Sub(p, _) | Edit::Ins(p, _) | Edit::Del(p, _) => *p } } }
+    /// A synthetic member: its sequence (the template with `edits` applied) and its full-length `+` hit against the template, with the short
+    /// `cs` minimap2 would write (bases lower case). `matches`, `block` and `de` are fillers: the vote reads `ts` and `cs` only.
+    fn member_of(template: &[u8], edits: &[Edit]) -> (Vec<u8>, PafHit) {
+        let lower = |s: &[u8]| String::from_utf8(s.to_ascii_lowercase()).unwrap();
+        let (mut seq, mut cs, mut t) = (Vec::new(), String::new(), 0usize);
+        for e in edits {
+            assert!(e.at() >= t, "edits must ascend and not overlap");
+            if e.at() > t { cs += &format!(":{}", e.at() - t); seq.extend_from_slice(&template[t..e.at()]); }
+            t = e.at();
+            match e {
+                Edit::Sub(p, b) => { cs += &format!("*{}{}", lower(&template[*p..*p + 1]), lower(&[*b])); seq.push(*b); t = p + 1; }
+                Edit::Ins(_, s) => { cs += &format!("+{}", lower(s)); seq.extend_from_slice(s); }
+                Edit::Del(p, len) => { cs += &format!("-{}", lower(&template[*p..p + len])); t = p + len; }
+            }
+        }
+        if t < template.len() { cs += &format!(":{}", template.len() - t); seq.extend_from_slice(&template[t..]); }
+        let hit = PafHit { q: "m".into(), qlen: seq.len(), qs: 0, qe: seq.len(), strand: b'+', t: "t".into(), tlen: template.len(), ts: 0, te: template.len(), matches: template.len(), block: template.len(), de: 0.0, cs: Some(cs) };
+        (seq, hit)
+    }
+    /// `total` members, the first `carriers` of them with `edits` and the rest equal to the template.
+    fn cluster_of(template: &[u8], carriers: usize, total: usize, edits: &[Edit]) -> Vec<(Vec<u8>, PafHit)> {
+        let none: &[Edit] = &[];
+        (0..total).map(|i| member_of(template, if i < carriers { edits } else { none })).collect()
+    }
+    fn consensus_of(template: &[u8], members: &[(Vec<u8>, PafHit)]) -> Vec<u8> {
+        let refs: Vec<(&[u8], &PafHit)> = members.iter().map(|(s, h)| (s.as_slice(), h)).collect();
+        consensus_from_template(template, &refs).unwrap()
+    }
+    /// The k-th base different from `b`.
+    fn other_base(b: u8, k: usize) -> u8 { *b"ACGT".iter().filter(|&&c| c != b.to_ascii_uppercase()).nth(k).unwrap() }
+
+    #[test]
+    fn clustering_splits_two_percent_and_joins_point_two_percent() {
+        // 6 reads: r0..r2 from copy A (0.2% errors), r3..r5 from copy B (2% from A); hits written as the minimap2 ava would give them
+        let names: Vec<String> = (0..6).map(|i| format!("r{i}")).collect();
+        let hit = |a: usize, b: usize, de: f64| PafHit { q: format!("r{a}"), qlen: 3000, qs: 0, qe: 3000, strand: b'+', t: format!("r{b}"), tlen: 3000, ts: 0, te: 3000, matches: 2900, block: 3000, de, cs: None };
+        let ava = vec![hit(0,1,0.002), hit(1,2,0.003), hit(0,2,0.002), hit(3,4,0.002), hit(4,5,0.002), hit(0,3,0.021), hit(2,5,0.019)];
+        let cl = cluster_reads(&names, &ava, 0.00958);
+        assert_eq!(cl, vec![vec![0,1,2], vec![3,4,5]]);
+    }
+    #[test]
+    fn clustering_decides_on_the_pairs_best_hit_and_needs_half_of_the_shorter_read() {
+        let names = names_of("a b c d e f g h i j k l m n o p q r");           // indices 0..=17
+        let d = 0.00958;
+        let ava = vec![
+            ava_hit("a", "b", 2900, 1.0, 0.002), ava_hit("b", "a", 2950, 1.0, 0.05),    // the hit with the MOST MATCHES decides, and it is too divergent: not joined
+            ava_hit("c", "d", 2900, 1.0, 0.002), ava_hit("d", "c", 2900, 1.0, 0.05),    // equal matches: the first hit is kept, here a good one: joined
+            ava_hit("e", "f", 2900, 1.0, 0.05), ava_hit("f", "e", 2900, 1.0, 0.002),    // ... and here the first is the divergent one: not joined
+            ava_hit("g", "h", 2900, 1.0, d),                                            // de == delta joins
+            ava_hit("i", "j", 2900, 0.5, 0.001),                                        // exactly half of the shorter read joins
+            ava_hit("k", "l", 2900, 0.49, 0.001),                                       // just under half does not
+            PafHit { strand: b'-', ..ava_hit("n", "m", 2900, 1.0, 0.002) },             // an opposite-strand pair, named the other way round: joined
+            ava_hit("o", "o", 3000, 1.0, 0.0), ava_hit("o", "zz", 3000, 1.0, 0.0),      // a self hit and a hit to an unknown read are ignored
+            ava_hit("p", "q", 2900, 1.0, 0.002), ava_hit("q", "r", 2900, 1.0, 0.002),    // p-q-r is one cluster with no p-r hit at all
+        ];
+        let want: Vec<Vec<usize>> = vec![vec![15, 16, 17], vec![2, 3], vec![6, 7], vec![8, 9], vec![12, 13], vec![0], vec![1], vec![4], vec![5], vec![10], vec![11], vec![14]];
+        assert_eq!(cluster_reads(&names, &ava, d), want);                               // by size descending, then first index
+    }
+    #[test]
+    fn clustering_of_nothing_and_of_unlinked_reads() {
+        assert!(cluster_reads(&[], &[], 0.01).is_empty());
+        let names = names_of("x y z");
+        assert_eq!(cluster_reads(&names, &[], 0.01), vec![vec![0], vec![1], vec![2]]);   // singletons, in index order
+        assert_eq!(cluster_reads(&names, &[ava_hit("z", "x", 2900, 1.0, 0.9)], 0.01), vec![vec![0], vec![1], vec![2]]);
+    }
+    #[test]
+    fn clustering_matches_a_brute_force_reference_on_random_hit_lists() {
+        // reproducible xorshift; 40 reads, 50 random hits (either direction, repeated pairs, self hits) so that components stay small and varied
+        let mut x = 0x2545F4914F6CDD1Du64;
+        let mut next = move || { x ^= x << 13; x ^= x >> 7; x ^= x << 17; x };
+        let (n, d) = (40usize, 0.00958);
+        let names: Vec<String> = (0..n).map(|i| format!("r{i}")).collect();
+        for round in 0..40 {
+            let ava: Vec<PafHit> = (0..50).map(|_| {
+                let (a, b) = ((next() % n as u64) as usize, (next() % n as u64) as usize);
+                let (m, c, e) = (2800 + (next() % 200) as usize, [0.3, 0.45, 0.5, 0.75, 1.0][(next() % 5) as usize], [0.001, 0.005, d, 0.012, 0.03][(next() % 5) as usize]);
+                ava_hit(&names[a], &names[b], m, c, e)
+            }).collect();
+            // reference: per unordered pair the first hit with the most matches; joined iff cov >= 0.5 && de <= delta; components by label propagation
+            let mut joined = vec![];
+            for a in 0..n { for b in a + 1..n {
+                let mut best: Option<&PafHit> = None;
+                for h in &ava { if (h.q == names[a] && h.t == names[b]) || (h.q == names[b] && h.t == names[a]) { if best.map_or(true, |o| h.matches > o.matches) { best = Some(h); } } }
+                if let Some(h) = best { if shorter_cov(h) >= 0.5 && h.de <= d { joined.push((a, b)); } }
+            } }
+            let mut label: Vec<usize> = (0..n).collect();
+            loop {
+                let mut changed = false;
+                for &(a, b) in &joined { let m = label[a].min(label[b]); if label[a] != m || label[b] != m { label[a] = m; label[b] = m; changed = true; } }
+                if !changed { break; }
+            }
+            let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+            for i in 0..n { groups.entry(label[i]).or_default().push(i); }
+            let mut want: Vec<Vec<usize>> = groups.into_values().collect();
+            want.sort_by(|p, q| q.len().cmp(&p.len()).then(p[0].cmp(&q[0])));
+            assert_eq!(cluster_reads(&names, &ava, d), want, "round {round}");
+        }
+    }
+
+    #[test]
+    fn consensus_vote_fixes_errors_and_keeps_majority_indels() {
+        let template = b"ACGTACGTACGTTTTTACGTACGT".to_vec();          // template carries a 1-base error at index 4 (A instead of G)
+        let truth    = b"ACGTGCGTACGTTTTTACGTACGT".to_vec();
+        // three members equal to truth: cs vs template = ":4*ag:19"  (4 eq, sub a->g, 19 eq)
+        let h = PafHit { q: "m".into(), qlen: 24, qs: 0, qe: 24, strand: b'+', t: "t".into(), tlen: 24, ts: 0, te: 24, matches: 23, block: 24, de: 0.04, cs: Some(":4*ag:19".into()) };
+        let members: Vec<(&[u8], &PafHit)> = vec![(&truth[..], &h), (&truth[..], &h), (&truth[..], &h)];
+        assert_eq!(consensus_from_template(&template, &members).unwrap(), truth);
+    }
+    #[test]
+    fn consensus_keeps_an_exon_that_two_of_five_members_skip_and_inserts_a_24bp_insertion_carried_by_three() {
+        // ruling R2: the template carries an exon (40..64, 24 bp) that 2 of 5 members skip (a 24 bp `-` in their cs); 3 of 5 carry a 24 bp insertion at 100
+        let template = rand_seq(120, 41);
+        let ins: &[u8] = b"GATTACAGATTACACCGGTTAACC";
+        assert_eq!(ins.len(), 24);
+        let carrier = || member_of(&template, &[Edit::Ins(100, ins)]);
+        let skipper = || member_of(&template, &[Edit::Del(40, 24)]);
+        let members = vec![carrier(), carrier(), carrier(), skipper(), skipper()];
+        let mut want = template.clone(); want.splice(100..100, ins.iter().copied());
+        let got = consensus_of(&template, &members);
+        assert_eq!(got.len(), 120 + 24);                                  // the exon stayed and the insertion went in
+        assert_eq!(got, want);
+    }
+    #[test]
+    fn consensus_treats_indels_of_20_bp_and_more_as_structure_whatever_their_share() {
+        let template = rand_seq(120, 43);
+        let ins24: &[u8] = b"GATTACAGATTACACCGGTTAACC";
+        // deletions: 19 bp follows the 50% majority (4 of 5 -> applied) but 20 bp never does, even when every member carries it
+        let mut minus19 = template.clone(); minus19.drain(40..59);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 4, 5, &[Edit::Del(40, 19)])), minus19);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 4, 5, &[Edit::Del(40, 20)])), template);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 5, 5, &[Edit::Del(40, 24)])), template);
+        // insertions: 20 bp with 3 members is inserted although 3 of 8 is only 37.5%, with 2 members it is not ...
+        let with = |ins: &[u8]| { let mut v = template.clone(); v.splice(100..100, ins.iter().copied()); v };
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 8, &[Edit::Ins(100, &ins24[..20])])), with(&ins24[..20]));
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 8, &[Edit::Ins(100, &ins24[..20])])), template);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 2, &[Edit::Ins(100, &ins24[..20])])), template);   // 100%, but only 2 members
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 3, &[Edit::Ins(100, &ins24[..20])])), template);   // 67% of 3: 20 bp needs 3 carriers
+        // ... while 19 bp needs 50% of the covering members: 3 of 8 no, 4 of 8 yes
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 8, &[Edit::Ins(100, &ins24[..19])])), template);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 4, 8, &[Edit::Ins(100, &ins24[..19])])), with(&ins24[..19]));
+    }
+    #[test]
+    fn consensus_small_indels_follow_the_fifty_percent_majority_of_three_or_more_covering_members() {
+        let template = rand_seq(80, 81);
+        let (mut minus2, mut plus3) = (template.clone(), template.clone());
+        minus2.drain(30..32); plus3.splice(50..50, b"CCA".iter().copied());
+        let (del2, ins3) = ([Edit::Del(30, 2)], [Edit::Ins(50, b"CCA")]);
+        // 3 of 5 and exactly 2 of 4 (>= 50%) apply; 2 of 5 does not; two covering members are below the floor of 3
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 5, &del2)), minus2);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 4, &del2)), minus2);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 5, &del2)), template);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 2, &del2)), template);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 5, &ins3)), plus3);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 4, &ins3)), plus3);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 5, &ins3)), template);
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 2, &ins3)), template);
+        // an insertion before the first column and one after the last are placed there
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 4, &[Edit::Ins(0, b"GG")])), [&b"GG"[..], &template].concat());
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 4, &[Edit::Ins(80, b"GG")])), [&template[..], &b"GG"[..]].concat());
+        // the most frequent insertion sequence wins over a rarer one, whichever sorts first (3 TT + 1 AC) ...
+        let mut skew = cluster_of(&template, 3, 3, &[Edit::Ins(50, b"TT")]);
+        skew.extend(cluster_of(&template, 1, 1, &[Edit::Ins(50, b"AC")]));
+        let mut plus_tt = template.clone(); plus_tt.splice(50..50, b"TT".iter().copied());
+        assert_eq!(consensus_of(&template, &skew), plus_tt);
+        // ... and equally frequent ones tie to the smaller sequence (3 + 3 of 6, each at 50%), whatever the hash order: every call builds its own
+        // HashMaps with their own random seed, so repeating the call exposes a missing tie-break
+        let mut mixed = cluster_of(&template, 3, 3, &[Edit::Ins(50, b"TT")]);
+        mixed.extend(cluster_of(&template, 3, 3, &[Edit::Ins(50, b"AC")]));
+        let mut plus_ac = template.clone(); plus_ac.splice(50..50, b"AC".iter().copied());
+        for _ in 0..40 { assert_eq!(consensus_of(&template, &mixed), plus_ac); }
+    }
+    #[test]
+    fn consensus_substitution_needs_three_covering_members_and_more_votes_than_the_template_base() {
+        let template = rand_seq(50, 71);
+        let alt = |k: usize| other_base(template[20], k);
+        let variant = |k: usize| member_of(&template, &[Edit::Sub(20, alt(k))]);
+        let plain = || member_of(&template, &[]);
+        let mut with_alt = template.clone(); with_alt[20] = alt(0);
+        assert_eq!(consensus_of(&template, &[variant(0), variant(0)]), template);                              // 2 covering members: below the floor
+        assert_eq!(consensus_of(&template, &[variant(0), variant(0), variant(0)]), with_alt);                  // 3 of 3
+        assert_eq!(consensus_of(&template, &[variant(0), variant(0), plain()]), with_alt);                     // 2 votes > 1 template base
+        assert_eq!(consensus_of(&template, &[variant(0), variant(0), plain(), plain()]), template);            // a tie keeps the template
+        assert_eq!(consensus_of(&template, &[variant(0), variant(0), variant(0), plain(), plain()]), with_alt);
+        // two variants with the same support: the smaller base, provided it beats the template base (whatever the hash order: repeated calls)
+        let mut with_min = template.clone(); with_min[20] = alt(0).min(alt(1));
+        for _ in 0..40 {
+            assert_eq!(consensus_of(&template, &[variant(0), variant(0), variant(1), variant(1), plain()]), with_min);
+            assert_eq!(consensus_of(&template, &[variant(1), variant(1), variant(0), variant(0), plain()]), with_min);
+        }
+        // the better supported variant wins over a rarer one, also when it is the larger base (3 x alt(1) against 1 x alt(0))
+        let mut with_big = template.clone(); with_big[20] = alt(1);
+        assert!(alt(1) > alt(0));
+        assert_eq!(consensus_of(&template, &[variant(1), variant(1), variant(1), variant(0)]), with_big);
+        assert_eq!(consensus_of(&template, &[variant(1), variant(1), variant(1), variant(0), plain()]), with_big);
+        // members that delete the column carry no base: they are neither template carriers nor votes (2 variants, 2 deleters, 1 template base)
+        let del1 = || member_of(&template, &[Edit::Del(20, 1)]);
+        assert_eq!(consensus_of(&template, &[variant(0), variant(0), del1(), del1(), plain()]), with_alt);
+    }
+    #[test]
+    fn consensus_recovers_the_truth_from_ten_reads_with_private_errors_and_a_homopolymer_indel() {
+        let mut truth = rand_seq(200, 17);
+        truth[99] = b'A'; truth[100..106].fill(b'T'); truth[106] = b'C';                    // a 6-T homopolymer at 100..106
+        let mut template = truth.clone(); template.insert(100, b'T');                       // the template has 7 T's (an insertion error) ...
+        template[151] = if truth[150] == b'G' { b'A' } else { b'G' };                       // ... and a substitution error (truth 150 = template 151)
+        let fix = truth[150];
+        let mut members = vec![];
+        for p in [10usize, 30, 60, 90, 120, 140, 170] {                                      // 7 members: their own error, the homopolymer fixed, the template error fixed
+            let mut e = vec![Edit::Sub(p, other_base(template[p], 0)), Edit::Del(100, 1), Edit::Sub(151, fix)];
+            e.sort_by_key(|x| x.at()); members.push(member_of(&template, &e));
+        }
+        members.push(member_of(&template, &[Edit::Del(100, 2), Edit::Sub(151, fix)]));       // one that also lost a second T (5 T's)
+        members.push(member_of(&template, &[Edit::Sub(151, fix)]));                          // one that shares the template's 7 T's
+        members.push(member_of(&template, &[Edit::Del(100, 1), Edit::Sub(151, fix), Edit::Sub(190, other_base(template[190], 1))]));
+        assert_eq!(members.len(), 10);
+        assert_eq!(consensus_of(&template, &members), truth);
+    }
+    #[test]
+    fn consensus_counts_a_spliced_out_segment_as_not_covering_but_a_deletion_as_covering() {
+        // 8 members; 4 lack the 24 bp segment 40..64; of the 4 that have it, 2 carry a 5 bp insertion inside it (at 50)
+        let template = rand_seq(100, 61);
+        let mut plus5 = template.clone(); plus5.splice(50..50, b"ACGTA".iter().copied());
+        let (carrier, plain) = (|| member_of(&template, &[Edit::Ins(50, b"ACGTA")]), || member_of(&template, &[]));
+        // written as an intron the 4 skippers do not cover 40..64: 2 of 4 covering members carry the insertion (50%) -> inserted
+        let spliced = || { let (s, mut h) = member_of(&template, &[Edit::Del(40, 24)]); h.cs = Some(":40~gt24ag:36".into()); (s, h) };
+        assert_eq!(consensus_of(&template, &[carrier(), carrier(), plain(), plain(), spliced(), spliced(), spliced(), spliced()]), plus5);
+        // written as a `-` deletion they cover it (and delete it): 2 of 8 (25%) -> not inserted, and the exon is not removed either
+        let skipper = || member_of(&template, &[Edit::Del(40, 24)]);
+        assert_eq!(consensus_of(&template, &[carrier(), carrier(), plain(), plain(), skipper(), skipper(), skipper(), skipper()]), template);
+    }
+    #[test]
+    fn consensus_inside_a_skipped_exon_counts_skippers_for_the_template_and_never_removes_a_column() {
+        // the brief's behaviour, pinned so that changing it is deliberate (see the task report): (1) a member that skips the exon with a >= 20 bp
+        // deletion counts as agreeing with the template base at those columns, so 3 variants do not outvote 3 skippers; (2) a column that any
+        // member skips with a >= 20 bp deletion is never removed, even by a majority of 1 bp deletions.
+        let template = rand_seq(120, 53);
+        let alt = other_base(template[50], 0);
+        let mut with_alt = template.clone(); with_alt[50] = alt;
+        let (skip, variant, del1) = (|| member_of(&template, &[Edit::Del(40, 24)]), || member_of(&template, &[Edit::Sub(50, alt)]), || member_of(&template, &[Edit::Del(50, 1)]));
+        assert_eq!(consensus_of(&template, &[variant(), variant(), variant(), skip(), skip(), skip()]), template);   // 3 votes vs 3 template-base carriers
+        assert_eq!(consensus_of(&template, &[variant(), variant(), variant(), skip(), skip()]), with_alt);           // 3 votes > 2
+        assert_eq!(consensus_of(&template, &[del1(), del1(), del1(), skip(), skip()]), template);                     // inside a skipped exon: kept
+        let mut minus1 = template.clone(); minus1.remove(50);
+        assert_eq!(consensus_of(&template, &[del1(), del1(), del1(), member_of(&template, &[]), member_of(&template, &[])]), minus1);   // outside: applied
+    }
+    #[test]
+    fn consensus_places_a_member_that_starts_inside_the_template_at_its_ts() {
+        let template = rand_seq(60, 5);
+        let alt = other_base(template[30], 0);
+        let mut with_alt = template.clone(); with_alt[30] = alt;
+        let partial = || { let (s, mut h) = member_of(&template[25..], &[Edit::Sub(5, alt)]); h.ts = 25; h.te = 60; h.tlen = 60; (s, h) };   // cs `:5*xy:29` from ts = 25
+        assert_eq!(consensus_of(&template, &[member_of(&template, &[Edit::Sub(30, alt)]), partial(), partial()]), with_alt);
+        assert_eq!(consensus_of(&template, &[partial(), partial()]), template);                                      // two covering members at 30: below the floor
+    }
+    #[test]
+    fn consensus_ignores_members_without_a_cs_and_rejects_a_malformed_one() {
+        let template = rand_seq(40, 91);
+        let alt = other_base(template[10], 0);
+        let mut with_alt = template.clone(); with_alt[10] = alt;
+        let (s, h) = member_of(&template, &[Edit::Sub(10, alt)]);
+        let none = PafHit { cs: None, ..h.clone() };
+        let read = &s[..];
+        let mut three: Vec<(&[u8], &PafHit)> = vec![(read, &h), (read, &h), (read, &h)];
+        three.extend([(read, &none), (read, &none), (read, &none), (read, &none), (read, &none)]);                  // five members with no alignment string abstain
+        assert_eq!(consensus_from_template(&template, &three).unwrap(), with_alt);
+        let two: Vec<(&[u8], &PafHit)> = vec![(read, &h), (read, &h), (read, &none), (read, &none), (read, &none)];
+        assert_eq!(consensus_from_template(&template, &two).unwrap(), template);                                    // only 2 members count
+        let bad = PafHit { q: "read7".into(), cs: Some(":10*a".into()), ..h.clone() };
+        let err = consensus_from_template(&template, &[(read, &h), (read, &bad)]).unwrap_err().to_string();
+        assert!(err.contains("read7") && err.contains("malformed cs"), "the error names the member and the cs problem: {err}");
+    }
+    #[test]
+    fn consensus_survives_an_empty_template_and_a_cs_longer_than_the_template_and_returns_upper_case() {
+        let hit = |cs: &str, ts: usize| PafHit { q: "m".into(), qlen: 0, qs: 0, qe: 0, strand: b'+', t: "t".into(), tlen: 0, ts, te: 0, matches: 0, block: 0, de: 0.0, cs: Some(cs.into()) };
+        let read: &[u8] = b"";
+        // an empty template: an insertion-only cs from three members must not panic (a bare cover[n - 1] would underflow)
+        let ins = hit("+acgtacgtacgtacgtacgtacgt", 0);
+        assert_eq!(consensus_from_template(b"", &[(read, &ins), (read, &ins), (read, &ins)]).unwrap(), b"".to_vec());
+        assert_eq!(consensus_from_template(b"", &[]).unwrap(), b"".to_vec());
+        // a cs that runs past the end of the template (garbage in) is clamped: nothing beyond the end is voted or appended
+        let template = rand_seq(24, 5);
+        let over = hit(":50*ac:10-acg+tt", 0);
+        assert_eq!(consensus_from_template(&template, &[(read, &over), (read, &over), (read, &over)]).unwrap(), template);
+        let after = hit(":5+aaaa", 30);                                                                      // a member that starts past the end
+        assert_eq!(consensus_from_template(&template, &[(read, &after), (read, &after), (read, &after)]).unwrap(), template);
+        assert_eq!(consensus_from_template(b"acgtnacgt", &[]).unwrap(), b"ACGTNACGT".to_vec());               // upper case, no member needed
+    }
+
+    #[test]
+    fn significance_keeps_supported_variants_and_merges_singletons() {
+        assert!(variant_is_real(5, 200, 3, 0.001, 0.01));     // 5 reads carrying 3 distinguishing bases: not error
+        assert!(!variant_is_real(2, 200, 1, 0.001, 0.01));    // 2 reads, 1 column: P(X>=2) with p=0.001, n=202 ~ 0.018 >= 0.01 -> merge
+        assert!(!variant_is_real(3, 10, 0, 0.001, 0.01));
+    }
+    #[test]
+    fn significance_is_the_binomial_tail_of_the_small_cluster() {
+        // exact P(X >= n_small), X ~ Binomial(n_small + n_large, eps^k), eps = 0.001, from rational arithmetic outside this file: the alpha pairs
+        // bracket each value, so the p-value is pinned to about three digits (including n = 1000, where the log-factorial table matters)
+        let real = |ns: usize, nl: usize, k: usize, alpha: f64| variant_is_real(ns, nl, k, 0.001, alpha);
+        assert!(!real(2, 200, 1, 0.0177) && real(2, 200, 1, 0.0178));          // 0.0177860
+        assert!(!real(1, 200, 1, 0.1821) && real(1, 200, 1, 0.1822));          // 0.1821698
+        assert!(!real(3, 200, 1, 0.00118) && real(3, 200, 1, 0.00119));        // 0.00118318
+        assert!(!real(2, 200, 2, 2.02e-8) && real(2, 200, 2, 2.04e-8));        // eps^2 = 1e-6: 2.02983e-8
+        assert!(!real(30, 970, 1, 9.4e-34) && real(30, 970, 1, 9.6e-34));      // n = 1000: 9.5031e-34
+        // no distinguishing column or no reads is never a real variant; a vanishing p (underflow of eps^k) is real; alpha = 0 admits nothing
+        assert!(!real(5, 200, 0, 0.5) && !real(0, 200, 3, 0.5));
+        assert!(real(2, 200, 400, 0.01) && !real(2, 200, 400, 0.0));
+        // more supporting reads or more columns only make a variant more real
+        assert!(!real(2, 200, 1, 0.01) && real(3, 200, 1, 0.01) && real(2, 200, 2, 0.01));
+    }
+    #[test]
+    fn distinguishing_columns_count_substitutions_only() {
+        assert_eq!(distinguishing_columns(&parse_cs(":10*ag:5+acgt:3-tt~gt100ag*ct:2").unwrap()), 2);
+        assert_eq!(distinguishing_columns(&parse_cs(":50+aaaa-cc:20").unwrap()), 0);
+        assert_eq!(distinguishing_columns(&[]), 0);
+    }
+
+    #[test]
+    fn refine_splits_the_members_that_do_not_fit_the_consensus() {
+        let consensus = rand_seq(3000, 3);
+        let hit = |de: f64, span: usize| PafHit { q: "m".into(), qlen: 3000, qs: 0, qe: span, strand: b'+', t: "cons".into(), tlen: 3000, ts: 0, te: span, matches: span, block: span, de, cs: None };
+        let d = 0.00958;
+        // fits; de exactly delta fits; de above delta splits (also between delta and 2 delta); half of the shorter read fits; under half splits
+        let hits = [hit(0.002, 3000), hit(d, 3000), hit(0.021, 3000), hit(0.001, 1500), hit(0.001, 1499), hit(0.015, 3000)];
+        let read: &[u8] = b"";
+        let members: Vec<(&[u8], &PafHit)> = hits.iter().map(|h| (read, h)).collect();
+        assert_eq!(refine_cluster(&consensus, &members, d), (vec![0, 1, 3], vec![2, 4, 5]));
+        assert_eq!(refine_cluster(&consensus, &members[..2], d), (vec![0, 1], vec![]));              // nothing to split
+        assert_eq!(refine_cluster(&consensus, &[], d), (vec![], vec![]));
     }
 }
