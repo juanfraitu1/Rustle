@@ -1,0 +1,13 @@
+outputs 2441; flagged 1152; linked back 1076; kept as new copies 76 in 16 families; new-copy sources {'S': 74, 'none': 1, 'elsewhere': 1}
+families 16, contigs 76, alignments 916
+[half delta=0.00479] components 30 {'S_only': 28, 'other': 2}; families with >= 2 D contigs 0, D contigs in ONE component 0 (0.0%)
+[delta delta=0.00958] components 28 {'S_only': 26, 'other': 2}; families with >= 2 D contigs 0, D contigs in ONE component 0 (0.0%)
+[double delta=0.01916] components 26 {'S_only': 24, 'other': 2}; families with >= 2 D contigs 0, D contigs in ONE component 0 (0.0%)
+over-split D pairs by cause: {}
+[half delta=0.00479] candidates 30 {'c_unmatched': 26, 'a_haplotype_only': 1, 'b_allele': 3}; families with >= 1 candidate 16/53, with >= 1 FALSE candidate 16/53 = 30.2%; matching the deletion run's survivor candidates 21
+[delta delta=0.00958] candidates 28 {'c_unmatched': 24, 'a_haplotype_only': 1, 'b_allele': 3}; families with >= 1 candidate 16/53, with >= 1 FALSE candidate 16/53 = 30.2%; matching the deletion run's survivor candidates 20
+[double delta=0.01916] candidates 26 {'c_unmatched': 22, 'a_haplotype_only': 1, 'b_allele': 3}; families with >= 1 candidate 16/53, with >= 1 FALSE candidate 16/53 = 30.2%; matching the deletion run's survivor candidates 18
+C1: families with >= 1 false candidate 16/53 = 30.2% (bar <= 28%) -> FAILS; any candidate 16/53 = 30.2%
+[R0] {'other_copy': 13, 'stay': 58097, 'unplaced': 903}
+[C] {'false_move': 27, 'other_copy': 11, 'own_candidate': 2018, 'stay': 55306, 'unplaced': 1651}
+C2: false moves 27/59013 = 0.05% (bar <= 5%) -> HOLDS; own-candidate placements 2018; unplaced 903 -> 1651
