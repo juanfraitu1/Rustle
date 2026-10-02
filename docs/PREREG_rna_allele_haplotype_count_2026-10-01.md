@@ -206,3 +206,30 @@ Amendment 5 was developed on NPIP (one deletion). Held-out substrate, never used
 - **Rule (Amendment 5's, unchanged):** HELP if wrong D calls fall by >= 50% from R to R+I and false moves <= 5% of K reads; HURT if false
   moves > 10%; otherwise MIXED. Also reported: right D calls R -> R+I; per family; by fate (absorbed / orphaned) and by D-K divergence
   (median `de` of D reads on K in the masked arm, >= 0.01 vs < 0.01).
+
+## Amendment 7 (2026-10-01): linking IsoCon transcripts to their source locus, held-out on multi-copy families (written before any run)
+
+Amendment 6 showed that most added transcripts come from a family's own copies (alleles, ends), so reads tie between a locus and its own
+transcript and abstain. The linking rule is fixed here from an independent source, then tested on deletions never used before.
+
+- **Linking rule.** For each flagged IsoCon output, d = 1 - (matching bases of its best hit in the masked genome) / (output length).
+  If d <= delta the output is an allele/variant of that hit's locus and is NOT added as a copy (its reads stay with the locus); otherwise
+  it is a new copy and is added as a contig. **delta = 0.00958** = the 99th percentile of per-gene exonic divergence between KB3781's two
+  haplotypes over 28,541 single-copy genes (>= 500 exonic bp, on both haplotypes; frozen truth `lift.tsv`), computed before this test.
+- **Held-out substrate (new deletions).** Families of `o3_collapse/method/intervals/data/intervals.tsv` with >= 3 copies, every copy listed,
+  >= 20 clean reads on every copy and every clean span <= 200 kb: **55 families, 207 copies**. In each family the copy last by (chrom,
+  clean_start) is hard-masked to N over its clean interval; a family whose masked interval overlaps any other interval of the table is
+  dropped (G3). Fibroblast Iso-Seq, KB3781.
+- **Reads:** baseline primaries (the fibroblast BAM) on the masked copy (D reads) and on each surviving copy (S reads), up to 500 per copy,
+  random, seed 1. Arms: R (masked genome), R+I (masked + every flagged output, as Amendment 6), R+I+L (masked + only the outputs the
+  linking rule keeps as new copies). IsoCon input per family: the reads with an R-arm record overlapping a surviving copy, plus the
+  reads R leaves unmapped; at most 1,000 (random, seed 1).
+- **Final call:** the locus of the primary alignment (a contig is its own locus); abstain when best and second-best AS over the read's
+  records tie (second >= 0.98 x best) and lie on different loci.
+- **Labels:** a contig is D-derived when its best hit in the unmasked genome lies on D's interval (any identity). D read: right = a
+  D-derived contig; wrong = anything else that is placed; unplaced = unmapped / abstain. S read: false move = placed on a contig that is
+  not derived from its own copy (best unmasked hit on its own interval); stay = its own copy or a contig derived from it.
+- **Rules (fixed now):**
+  - **Linking works** if, from R+I to R+I+L, S reads unplaced fall by >= 50% AND D reads right fall by <= 20%.
+  - **Overall (Amendment 5's rule, R vs R+I+L):** HELP if wrong D falls by >= 50% and false moves <= 5% of S reads; HURT if > 10%.
+  - Reported beside: right D, unplaced, by D-to-nearest-survivor divergence (< 0.01 vs >= 0.01).
