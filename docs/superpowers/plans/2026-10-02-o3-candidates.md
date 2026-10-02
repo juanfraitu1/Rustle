@@ -14,7 +14,7 @@
 
 - Build only with `CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target_m2`, always `--release` for runs, `cargo test` output captured to a file (a pipe to `tail` hides the exit code). Heavy commands (cargo build/test, minimap2, any run > 3 min or > 2 GB) go through `bash tools/rlock.sh heavy ...`, in the foreground; no `pkill -f`, no background waiters.
 - Determinism: seeded sampling (seed 1 over sorted read names), stable orders everywhere; threads only inside minimap2.
-- The link cut is `--delta`, default `0.00958`; the merge rule is "coverage of the shorter >= 0.5 and `de` <= delta"; the flag floor is `--min-clusters 2`; clusters need `--min-cluster 3` reads; nets are capped at `--max-reads 1000`. These are the spec's values and the prereg's; do not tune them.
+- The link cut is `--delta`, default `0.00958`; the merge rule is "coverage of the shorter >= 0.5 and `de` <= delta"; the flag floor is `--min-support 6` reads over a component's clusters (the registered >= 2-transcript floor translated: 2 x IsoCon's 3-read transcript minimum; our clusters merge a copy's isoforms, so a cluster count cannot play that role — ruling R1 in the ledger); clusters need `--min-cluster 3` reads; nets are capped at `--max-reads 1000`. These are the spec's values and the prereg's; do not tune them.
 - `copy_assign`'s existing fixtures must stay byte-identical (Task 3).
 - The canonical checkout `/mnt/c/Users/jfris/Desktop/Rustle` is never edited; work in `/mnt/linuxdisk/home/juanfraitu/rustle_m2_soto` (branch `machine2/soto-evidence`); commits carry the attribution lines.
 - Plan rulings against the spec (same observable behaviour, recorded here): alignment engine = batched minimap2 (spec §5.3/5.5/5.7 said poasta): `de`, coverage and mismatch columns come from minimap2's PAF/`cs`, exactly as in Amendments 7-8; the chromosome check in `copy_assign` is a parallel `read_chroms` slice (spec §6 said a field on `AlignedRead`; 41 literal constructors would change for nothing).
@@ -44,12 +44,14 @@ Spec `docs/superpowers/specs/2026-10-02-o3-candidates-design.md`. Substrate: Ame
 table made from `panel.json`'s surviving copies (clean intervals, `n_reads` from the BAM) in `P.fam.copies.tsv` format, and the
 masked splice index. Arm M = masked genome + `P.cand.contigs.fa` (one union per flagged candidate), components as loci, scored by
 `merge_test.py score` semantics (D right / wrong / unplaced; S false moves) with the contigs' D/S labels from their best unmasked hit.
+- Flag = a component with >= 6 supporting reads over its clusters (`--min-support 6`, the >= 2-transcript floor translated: 2 x IsoCon's
+  3-read minimum; the stage's clusters merge a copy's isoforms, so cluster counts cannot play that role). The >= 2-cluster count is reported beside.
 - **A12-1 (adopt):** D right >= 80% of IsoCon's 12,787 (>= 10,230) AND false moves <= 5% of S reads.
 - **A12-2 (representative):** >= 95% of the reads of each flagged component's clusters keep an AS on the union >= 0.98 x their best
   AS over the component's cluster consensuses (the `rep_choice.py` measure, run on the stage's own alignments).
 - **A12-3 (cost):** wall time of the stage on the 53 families <= 40 min (2 x IsoCon's ~20 min) on this machine, 4 threads.
 - Reported: candidates per family, clusters per candidate, the deleted copies with no candidate by cause (no reads in the net / clusters
-  below the floor / linked to a survivor), and the same numbers at delta/2 and 2 x delta.
+  below the floor / linked to a survivor), the same numbers at delta/2 and 2 x delta, and the flag counts under the alternative >= 2-cluster floor.
 ```
 
 - [ ] **Step 2: Commit**
@@ -347,12 +349,14 @@ pub fn cluster_reads(names: &[String], ava: &[PafHit], delta: f64) -> Vec<Vec<us
 }
 
 /// Template-and-vote: per template column the majority base over covering members (>= 3 covering, else the template base);
-/// insertions after a column present in >= 50% of the members covering it are inserted (the most frequent sequence); deletions
-/// in >= 50% remove the column. Members' `cs` strings are relative to the template (`+` strand, ts..te on the template).
+/// insertions < 20 bp after a column present in >= 50% of the members covering it are inserted (the most frequent sequence); deletions
+/// < 20 bp in >= 50% remove the column. Indels >= 20 bp are STRUCTURE (isoforms): an insertion >= 20 bp carried by >= 3 members is
+/// inserted whatever its share (an exon the template lacks); a deletion >= 20 bp is never applied (the template's exon stays), so the
+/// cluster consensus is the exon union of its reads' isoforms with SNV-level majority voting (ruling R2). Members' `cs` strings are relative to the template (`+` strand, ts..te on the template).
 pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]) -> Vec<u8> {
     let n = template.len();
     let mut cover = vec![0usize; n]; let mut subs: Vec<HashMap<u8, usize>> = vec![HashMap::new(); n];
-    let mut dels = vec![0usize; n]; let mut ins: Vec<HashMap<Vec<u8>, usize>> = vec![HashMap::new(); n + 1];
+    let mut dels = vec![0usize; n]; let mut big_del = vec![false; n]; let mut ins: Vec<HashMap<Vec<u8>, usize>> = vec![HashMap::new(); n + 1];
     for (_, h) in member_hits {
         let Some(cs) = h.cs.as_deref() else { continue };
         let mut t = h.ts;
@@ -360,7 +364,7 @@ pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]
             match op {
                 CsOp::Eq(len) => { for p in t..(t + len).min(n) { cover[p] += 1; } t += len; }
                 CsOp::Sub(_, qb) => { if t < n { cover[t] += 1; *subs[t].entry(qb.to_ascii_uppercase()).or_insert(0) += 1; } t += 1; }
-                CsOp::Del(seq) => { for p in t..(t + seq.len()).min(n) { cover[p] += 1; dels[p] += 1; } t += seq.len(); }
+                CsOp::Del(seq) => { let big = seq.len() >= 20; for p in t..(t + seq.len()).min(n) { cover[p] += 1; if big { big_del[p] = true; } else { dels[p] += 1; } } t += seq.len(); }
                 CsOp::Ins(seq) => { *ins[t.min(n)].entry(seq.to_ascii_uppercase()).or_insert(0) += 1; }
                 CsOp::Intron(len) => { t += len; }
             }
@@ -370,10 +374,10 @@ pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]
     for p in 0..=n {
         if let Some((seq, cnt)) = ins[p].iter().max_by_key(|(s, c)| (**c, std::cmp::Reverse((*s).clone()))) {
             let covering = if p < n { cover[p] } else { cover[n - 1] };
-            if covering >= 3 && 2 * cnt >= covering { out.extend_from_slice(seq); }
+            if (seq.len() >= 20 && *cnt >= 3) || (seq.len() < 20 && covering >= 3 && 2 * cnt >= covering) { out.extend_from_slice(seq); }
         }
         if p == n { break; }
-        if cover[p] >= 3 && 2 * dels[p] >= cover[p] { continue; }
+        if cover[p] >= 3 && 2 * dels[p] >= cover[p] && !big_del[p] { continue; }
         let mut base = template[p].to_ascii_uppercase();
         if cover[p] >= 3 {
             let same = cover[p] - subs[p].values().sum::<usize>() - dels[p];
@@ -411,6 +415,7 @@ pub fn variant_is_real(n_small: usize, n_large: usize, k: usize, eps: f64, alpha
 - `pub struct ClusterSeq { pub family: String, pub id: String, pub n_reads: usize, pub seq: Vec<u8> }`
 - `pub enum Fate { InReference, Linked { locus: String, d: f64 }, NewCopy { nearest: String, d: f64 } }`; `pub fn classify(c: &ClusterSeq, best_genome_hit: Option<&PafHit>, delta: f64) -> Fate` — `InReference` iff `id_cov >= 0.999`; `Linked` iff `whole_length_d <= delta`; else `NewCopy`.
 - `pub fn components(ids: &[String], ava: &[PafHit], delta: f64) -> Vec<Vec<usize>>` — reuse `cluster_reads` (same rule).
+- `pub fn is_flagged(component_clusters: &[&ClusterSeq], min_support: usize) -> bool` — the summed `n_reads` of the component's clusters >= min_support (ruling R1; `--min-support 6`).
 - `pub fn union_sequence(members_longest_first: &[Vec<u8>], hits_vs_current: impl FnMut(&[u8], &[u8]) -> Option<PafHit>) -> Vec<u8>` — backbone = first; for each next member the closure aligns it to the CURRENT union (the binary runs minimap2 `-c --cs -x splice:hq`? no: `-x asm20 -c --cs`, member as query, union as target); every `Ins` >= 20 bp is spliced into the union at its target position, an unaligned prefix (`qs >= 20`) is prepended, an unaligned suffix (`qlen - qe >= 20`) appended; positions processed from the end so earlier offsets stay valid.
 
 - [ ] **Step 1: Failing tests**
@@ -452,7 +457,7 @@ fn union_contains_each_exon_once() {
 - `pub fn minimap2(args: &[&str], target: &Path, query: &Path, out_paf: &Path, cache: Option<&CacheRoot>) -> Result<()>` — `RUSTLE_MINIMAP2`, `std::process::Command`, stderr to null, `ensure!(status.success())`; with a cache root it keys `kind="paf"` on (args, minimap2 version via `rc::minimap2_version`, FNV hash of target + query bytes) exactly as `mcl_families.rs:2691-2741` and replays by hard link.
 - Fixed argument sets (constants): `MM2_AVA = ["-x","asm20","-c","--cs","-X","-N","100","-p","0.1","--secondary=yes"]`, `MM2_MEMBERS = ["-x","asm20","-c","--cs","-N","5","-p","0.5"]` (members vs templates / union), `MM2_GENOME = ["-x","splice:hq","-uf","-c","--eqx","-N","20"]` (consensus vs the splice index).
 - `pub struct Candidate { pub family: String, pub id: String, pub clusters: Vec<ClusterSeq>, pub union: Vec<u8>, pub flagged: bool, pub nearest: String, pub d: f64 }`
-- `pub fn write_outputs(prefix: &str, cands: &[Candidate], linked: &[(ClusterSeq, String, f64)], nets_for_patch: &[(String, Vec<(String, Vec<u8>)>)]) -> Result<()>` writing `P.cand.candidates.tsv` (`family candidate n_clusters n_reads flagged union_len nearest_locus d n_net n_used`), `P.cand.clusters.tsv` (`family cluster candidate n_reads consensus_len fate linked_to d`), `P.cand.contigs.fa` (flagged only, `>cand_<family>_<k>`), `P.cand.nets.fa`.
+- `pub fn write_outputs(prefix: &str, cands: &[Candidate], linked: &[(ClusterSeq, String, f64)], nets_for_patch: &[(String, Vec<(String, Vec<u8>)>)]) -> Result<()>` writing `P.cand.candidates.tsv` (`family candidate n_clusters n_reads flagged union_len nearest_locus d n_net n_used`; `flagged` = `n_reads >= --min-support`), `P.cand.clusters.tsv` (`family cluster candidate n_reads consensus_len fate linked_to d`), `P.cand.contigs.fa` (flagged only, `>cand_<family>_<k>`), `P.cand.nets.fa`.
 
 - [ ] **Step 1: Failing test** — `write_outputs` on two synthetic candidates produces files whose headers equal the strings above and whose FASTA holds only the flagged one (`tempdir`).
 - [ ] **Step 2–5:** implement, run, commit — `o3_candidates: cached minimap2 runner and output writers; run_cache kind cand`.
@@ -467,7 +472,7 @@ fn union_contains_each_exon_once() {
 - Create: `tests/fixtures/o3_candidates/make_fixture.py`, the generated `genome.fa(.fai)`, `reads.bam(.bai)`, `copies.tsv`, `copies.fa`, `genome.splice.mmi` is NOT committed (built in the test from `genome.fa` with `minimap2 -x splice -d` into a tempdir — the fixture genome is ~60 kb)
 - Create: `tests/o3_candidates.rs`
 
-**Binary flow (`main`):** parse args (hand-rolled as `missing_copy_flag.rs:49-66`: `--bam --fasta --copies --copies-fa --index --out [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-clusters 2] [--threads 4] [--families]`), load copies (`catalog_input.rs` parsers, column names), per family intervals (`locus_start/locus_end` else `start/end`); BAM pass A (`crate::bam::open_bam`, `reader.query(&header, &index, &region)` per interval, `aligned_read_from_record`; primaries give `seq` oriented as sequenced: reverse-complement when the record's flags say reverse); BAM pass B (one `reader.record_bufs(&header)` sweep: sequences of secondary-only names + unmapped records >= 300 bp through `FamilyKmerIndex::attribute`); cap (sort names, seeded shuffle, `--max-reads`); per family: write `net.fa` -> `minimap2(MM2_AVA, net, net)` -> `cluster_reads` -> drop clusters < `--min-cluster` -> template = longest member -> `minimap2(MM2_MEMBERS, templates.fa, net.fa)` -> `consensus_from_template` per cluster -> `refine_cluster` once -> consensus ava (`MM2_AVA`) -> `variant_is_real` merges (eps 0.001, alpha = the gate's constant; re-polish merged clusters on the larger template) -> all consensuses of all families to one FASTA -> `minimap2(MM2_GENOME, index, consensus.fa)` -> `classify` -> per family `components` over the `NewCopy` clusters (`MM2_AVA` of the family's new-copy consensuses) -> flagged iff >= `--min-clusters` -> union (`MM2_MEMBERS` member vs current union, iteratively) -> `write_outputs`. Temporary files live under `<out>.tmp/` and are removed on success; the whole result is a `run_cache` entry of kind `cand`.
+**Binary flow (`main`):** parse args (hand-rolled as `missing_copy_flag.rs:49-66`: `--bam --fasta --copies --copies-fa --index --out [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families]`), load copies (`catalog_input.rs` parsers, column names), per family intervals (`locus_start/locus_end` else `start/end`); BAM pass A (`crate::bam::open_bam`, `reader.query(&header, &index, &region)` per interval, `aligned_read_from_record`; primaries give `seq` oriented as sequenced: reverse-complement when the record's flags say reverse); BAM pass B (one `reader.record_bufs(&header)` sweep: sequences of secondary-only names + unmapped records >= 300 bp through `FamilyKmerIndex::attribute`); cap (sort names, seeded shuffle, `--max-reads`); per family: write `net.fa` -> `minimap2(MM2_AVA, net, net)` -> `cluster_reads` -> drop clusters < `--min-cluster` -> template = longest member -> `minimap2(MM2_MEMBERS, templates.fa, net.fa)` -> `consensus_from_template` per cluster -> `refine_cluster` once -> consensus ava (`MM2_AVA`) -> `variant_is_real` merges (eps 0.001, alpha = the gate's constant; re-polish merged clusters on the larger template) -> all consensuses of all families to one FASTA -> `minimap2(MM2_GENOME, index, consensus.fa)` -> `classify` -> per family `components` over the `NewCopy` clusters (`MM2_AVA` of the family's new-copy consensuses) -> flagged iff the component's clusters sum to >= `--min-support` reads (`is_flagged`) -> union (`MM2_MEMBERS` member vs current union, iteratively) -> `write_outputs`. Temporary files live under `<out>.tmp/` and are removed on success; the whole result is a `run_cache` entry of kind `cand`.
 
 - [ ] **Step 1: Fixture generator** (`make_fixture.py`, run once, outputs committed): a 60 kb random genome with a 3-exon gene (exons 300/200/400 bp) at 10 kb (copy A) and a second copy at 40 kb diverged 3% in the exons (copy B); `genome.fa` keeps only copy A (copy B's region is written as random sequence); 60 reads per copy = spliced transcripts with 0.2% random substitutions and varying 5' starts; reads aligned with `minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes` to `genome.fa`, sorted, indexed; `copies.tsv` with one family `MCL0`, one copy (A) in the `P.fam.copies.tsv` column layout (`mcl_families.rs:764`), `copies.fa` with A's spliced exon sum. Record the python/minimap2/samtools versions in a `README` line.
 - [ ] **Step 2: Failing integration test**

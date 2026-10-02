@@ -179,6 +179,13 @@ place: D right >= 80% of 12,787 and false moves <= 5% -> adopt; the union repres
 - §6: the chromosome reaches `best_overlap_copy` as a parallel `read_chroms: Option<&[String]>` slice on `assign_family_detailed_once`
   instead of a field on `AlignedRead` (41 literal constructors); same observable behaviour, byte-identical when `None`.
 
+- Pre-flight rulings R1/R2 (2026-10-02, before Task 1): **R1** the flag floor is `--min-support 6` reads over a component's clusters,
+  not `>= 2 clusters` — the stage's clusters merge a copy's isoforms at delta (Amendment 8's rule applied to reads), so the cluster count is
+  not IsoCon's transcript count; 6 = 2 x IsoCon's 3-read transcript minimum. The >= 2-cluster count is reported beside in the acceptance.
+  **R2** §5.4 consensus: indels >= 20 bp are structure — an insertion >= 20 bp carried by >= 3 members is inserted whatever its share, a
+  deletion >= 20 bp is never applied — so a cluster's consensus is the exon union of its reads' isoforms (the representative decision
+  carried down one level); indels < 20 bp follow the 50% majority.
+
 ## 10. Open items (deferred, named)
 
 - POA-graph consensus (`build_poa_graph`, `family_graph.rs:18`) instead of template-and-vote, if the acceptance run shows consensus
