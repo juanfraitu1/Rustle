@@ -1,0 +1,75 @@
+TSPY: copies 62 (protein-coding 39), masked ['TSPY:9613204:TSPY3 reads=30']
+RBMY: copies 27 (protein-coding 5), masked ['RBMY:22386599:RBMY1A1|RBMY1B reads=259', 'RBMY:23004064:RBMY1F reads=123']
+DAZ: copies 4 (protein-coding 4), masked ['DAZ:25661797:DAZ3 reads=354', 'DAZ:24076196:DAZ4 reads=201']
+CDY: copies 23 (protein-coding 4), masked ['CDY:26434504:CDY1|CDY1B reads=108', 'CDY:18783967:CDY2B reads=23']
+BPY2: copies 4 (protein-coding 3), masked ['BPY2:23809494:BPY2 reads=30']
+HSFY: copies 8 (protein-coding 2), masked ['HSFY:19453177:HSFY1 reads=1107']
+PRY: copies 8 (protein-coding 4), masked ['PRY:23326034:PRY2 reads=31']
+VCY: copies 2 (protein-coding 2), masked ['VCY:14962883:VCY1B reads=26']
+single-copy genes with >= 20 primaries: {'RPS4Y1': 318, 'ZFY': 1159, 'AMELY': 29, 'TBL1Y': 97, 'PRKY': 142, 'USP9Y': 1865, 'DDX3Y': 11358, 'UTY': 3311, 'TMSB4Y': 52, 'NLGN4Y': 240, 'KDM5D': 1048, 'EIF1AY': 363, 'RPS4Y2': 22}
+IsoCon inputs: {'HSFY': 1026, 'CDY': 273, 'VCY': 27, 'DAZ': 1052, 'RBMY': 1195, 'PRY': 69, 'TSPY': 281, 'BPY2': 58}
+  TSPY:9613204:TSPY3: d_min 0.00053 nearest chrY:9714766
+  RBMY:22386599:RBMY1A1|RBMY1B: d_min 0.00000 nearest chrY:22715592
+  RBMY:23004064:RBMY1F: d_min 0.00000 nearest chrY:23239102
+  DAZ:25661797:DAZ3: d_min 0.00000 nearest chrY:23965002
+  DAZ:24076196:DAZ4: d_min 0.00307 nearest chrY:25571712
+  CDY:26434504:CDY1|CDY1B: d_min 0.00086 nearest chrY:24814590
+  CDY:18783967:CDY2B: d_min 0.00000 nearest chrY:18932263
+  BPY2:23809494:BPY2: d_min 0.00000 nearest chrY:25843296
+  HSFY:19453177:HSFY1: d_min 0.00000 nearest chrY:19678278
+  PRY:23326034:PRY2: d_min 0.00000 nearest chrY:22907274
+  VCY:14962883:VCY1B: d_min 0.00185 nearest chrY:14892389
+delta_Y = p99 of d over 383 single-copy-gene outputs (12 genes) = 0.03893; median 0.00037, p95 0.00464; per gene max: AMELY:0.0000(n=1), DDX3Y:0.0033(n=60), EIF1AY:0.0057(n=24), KDM5D:0.0389(n=62), NLGN4Y:0.0013(n=6), PRKY:0.0059(n=4), RPS4Y1:0.0059(n=21), TBL1Y:0.0000(n=2), TMSB4Y:0.0010(n=2), USP9Y:0.0501(n=53), UTY:0.1057(n=64), ZFY:0.2155(n=84)
+delta used 0.03893: outputs 282; flagged 119; linked back 111; new copies 8; new-copy sources {'D': 7, 'S': 1}
+families 3, contigs 8, alignments 46
+[R] D: {'unplaced': 838, 'wrong': 844} | S: {'stay': 1126, 'unplaced': 1177}
+[M] D: {'right': 171, 'unplaced': 628, 'wrong': 883} | S: {'false_move': 34, 'stay': 1259, 'unplaced': 1010}
+
+delta used 0.03893; per masked copy (prediction: flag iff d_min > delta and input reads >= 6):
+  TSPY:9613204:TSPY3                       d_min 0.00053 input   30 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/0/30 -> M 0/0/30
+  RBMY:22386599:RBMY1A1|RBMY1B             d_min 0.00000 input  217 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/20/239 -> M 0/20/239
+  RBMY:23004064:RBMY1F                     d_min 0.00000 input  101 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/88/35 -> M 0/88/35
+  DAZ:25661797:DAZ3                        d_min 0.00000 input  336 pred 0 flagged 1 MISS | D right/wrong/unplaced R 0/55/299 -> M 171/28/155
+  DAZ:24076196:DAZ4                        d_min 0.00307 input  193 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/11/190 -> M 0/77/124
+  CDY:26434504:CDY1|CDY1B                  d_min 0.00086 input  108 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/108/0 -> M 0/108/0
+  CDY:18783967:CDY2B                       d_min 0.00000 input   23 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/22/1 -> M 0/22/1
+  BPY2:23809494:BPY2                       d_min 0.00000 input   30 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/0/30 -> M 0/0/30
+  HSFY:19453177:HSFY1                      d_min 0.00000 input  491 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/500/0 -> M 0/500/0
+  PRY:23326034:PRY2                        d_min 0.00000 input   28 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/14/14 -> M 0/14/14
+  VCY:14962883:VCY1B                       d_min 0.00185 input   26 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/26/0 -> M 0/26/0
+Y1: prediction right for 10/11 masked copies = 90.9% (bar 80%) -> HOLDS
+Y2: false moves 34/2303 = 1.48% (bar 5%) -> HOLDS
+=== delta 0.00958 (autosomal, reported beside) ===
+delta used 0.00958: outputs 282; flagged 119; linked back 100; new copies 19; new-copy sources {'S': 6, 'D': 13}
+families 5, contigs 19, alignments 395
+
+delta used 0.00958; per masked copy (prediction: flag iff d_min > delta and input reads >= 6):
+  TSPY:9613204:TSPY3                       d_min 0.00053 input   30 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/0/30 -> M 0/0/0
+  RBMY:22386599:RBMY1A1|RBMY1B             d_min 0.00000 input  217 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/20/239 -> M 0/0/0
+  RBMY:23004064:RBMY1F                     d_min 0.00000 input  101 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/88/35 -> M 0/0/0
+  DAZ:25661797:DAZ3                        d_min 0.00000 input  336 pred 0 flagged 1 MISS | D right/wrong/unplaced R 0/55/299 -> M 0/0/0
+  DAZ:24076196:DAZ4                        d_min 0.00307 input  193 pred 0 flagged 1 MISS | D right/wrong/unplaced R 0/11/190 -> M 0/0/0
+  CDY:26434504:CDY1|CDY1B                  d_min 0.00086 input  108 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/108/0 -> M 0/0/0
+  CDY:18783967:CDY2B                       d_min 0.00000 input   23 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/22/1 -> M 0/0/0
+  BPY2:23809494:BPY2                       d_min 0.00000 input   30 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/0/30 -> M 0/0/0
+  HSFY:19453177:HSFY1                      d_min 0.00000 input  491 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/500/0 -> M 0/0/0
+  PRY:23326034:PRY2                        d_min 0.00000 input   28 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/14/14 -> M 0/0/0
+  VCY:14962883:VCY1B                       d_min 0.00185 input   26 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/26/0 -> M 0/0/0
+Y1: prediction right for 9/11 masked copies = 81.8% (bar 80%) -> HOLDS
+=== delta 0.00464 (p95, reported beside) ===
+delta used 0.00464: outputs 282; flagged 119; linked back 87; new copies 32; new-copy sources {'S': 12, 'D': 20}
+families 5, contigs 32, alignments 842
+
+delta used 0.00464; per masked copy (prediction: flag iff d_min > delta and input reads >= 6):
+  TSPY:9613204:TSPY3                       d_min 0.00053 input   30 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/0/30 -> M 0/0/0
+  RBMY:22386599:RBMY1A1|RBMY1B             d_min 0.00000 input  217 pred 0 flagged 1 MISS | D right/wrong/unplaced R 0/20/239 -> M 0/0/0
+  RBMY:23004064:RBMY1F                     d_min 0.00000 input  101 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/88/35 -> M 0/0/0
+  DAZ:25661797:DAZ3                        d_min 0.00000 input  336 pred 0 flagged 1 MISS | D right/wrong/unplaced R 0/55/299 -> M 0/0/0
+  DAZ:24076196:DAZ4                        d_min 0.00307 input  193 pred 0 flagged 1 MISS | D right/wrong/unplaced R 0/11/190 -> M 0/0/0
+  CDY:26434504:CDY1|CDY1B                  d_min 0.00086 input  108 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/108/0 -> M 0/0/0
+  CDY:18783967:CDY2B                       d_min 0.00000 input   23 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/22/1 -> M 0/0/0
+  BPY2:23809494:BPY2                       d_min 0.00000 input   30 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/0/30 -> M 0/0/0
+  HSFY:19453177:HSFY1                      d_min 0.00000 input  491 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/500/0 -> M 0/0/0
+  PRY:23326034:PRY2                        d_min 0.00000 input   28 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/14/14 -> M 0/0/0
+  VCY:14962883:VCY1B                       d_min 0.00185 input   26 pred 0 flagged 0 OK  | D right/wrong/unplaced R 0/26/0 -> M 0/0/0
+Y1: prediction right for 8/11 masked copies = 72.7% (bar 80%) -> FAILS
