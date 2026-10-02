@@ -49,6 +49,7 @@ pub mod catalog_input; // O1->O2 FILE contract: parse a gw_family_catalog copies
 pub mod shared_definition; // OPT-IN RUSTLE_SHARED_DEFINITION: the shared family definition (seeded_family_definition.md §0★★) on the homology catalog: gene-level read-supported nodes + guided edge finders + triangle-supported leaders.
 pub mod seed_projection; // `--seed`: a QUERY over the EMITTED catalog (the block containing s), never a term in the definition; the node set stays seed-free.
 pub mod copy_discovery; // Discovery of candidate gene-family copies from read alignment ties.
+pub mod o3_candidates; // O3 candidate copies: read net -> clusters -> consensus -> flag/link/merge -> union (spec 2026-10-02)
 
 
 #[cfg(test)]
