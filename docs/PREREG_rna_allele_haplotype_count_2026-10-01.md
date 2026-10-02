@@ -162,3 +162,23 @@ the S2 divergence detector TPR 0.27). New here: NPIP, and the allele framing.
 - **R4 IsoCon:** net reads re-selected from the masked alignment (any record on a remaining NPIP copy, plus the net reads it leaves
   unmapped), IsoCon `pipeline` defaults; an output is flagged "not in the reference" when it has no hit at identity x coverage >= 0.999
   in the masked genome. True flag = the output matches NPIPA2 at >= 0.999 in the unmasked genome. Report true and false flags.
+
+## Amendment 5 (2026-10-01): IsoCon's reference-free transcripts as extra copies for O2 (written before any of these runs)
+
+User request: use IsoCon's machinery for O2. The part tested: the copy set. O2 can only choose among reference copies, so a missing copy's
+reads are forced onto a paralog (Amendment 4: 97% of NPIPA2's reads on LOC124907808).
+
+- **Extra copies:** the 35 IsoCon outputs flagged "not in the reference" in Amendment 4's R4, appended to the NPIPA2-masked genome as
+  contigs `iso_<k>` (transcript orientation). No other change to the genome.
+- **Reads:** the 2,951 NPIP-net reads, aligned with the BAM's `@PG` command to (R) the masked genome [`masked.bam`, already made] and
+  (R+I) the masked genome + the 35 contigs.
+- **O2:** shipped `copy_assign --families` (defaults; O2 scope = AS-tied reads). Catalog R = the 24 NPIP copies left in the reference
+  (exon unions, as in the main catalog). Catalog R+I = the same 24 + the 35 contigs, each one exon spanning the contig.
+- **Final call per read:** O2's copy where O2 rows the read (`assigned`); abstain where O2 rows it as `ambiguous`/`tied`; the copy holding
+  its primary alignment where O2 does not touch it (not AS-tied).
+- **Truth:** NPIPA2's 176 reads (baseline primary on its exons) belong to NPIPA2; an `iso_<k>` copy "is NPIPA2" when its sequence matches
+  NPIPA2 at >= 0.999 in the unmasked genome (16 of the 35, from R4). Every other read belongs to the copy of its baseline primary.
+- **Readouts:** for NPIPA2 reads in R and R+I: right (an NPIPA2 `iso` copy) / wrong (LOC124907808, another copy, or a non-NPIPA2 `iso`) /
+  abstain. For the other NPIP reads: how many move onto an `iso` copy that is not theirs (false moves) or onto any `iso` copy at all.
+- **Rule (fixed now):** the extra copies **help** if, for NPIPA2 reads, wrong falls by >= 50% from R to R+I, and false moves of the other
+  reads stay <= 5% of them; **hurt** if false moves exceed 10%; otherwise **mixed**.
