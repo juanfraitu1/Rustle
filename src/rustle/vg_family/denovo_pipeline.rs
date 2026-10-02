@@ -2418,6 +2418,11 @@ pub fn detect_and_assign(
         // shipped BAM is `-Y`, so its secondary records carry the full SEQ and each is independently
         // scorable). The names make the MOLECULE the unit of a result — see `assign_family_detailed_once`.
         let region_names: Vec<String> = idx_map.iter().map(|&i| bam_reads[i].name.clone()).collect();
+        // The records' chromosomes, in `region` order: a read overlaps only the family's copies on its own
+        // chromosome (`AlignedRead` carries none). Every record here is on `cf.chrom` (the filter above), so for
+        // a family on one chromosome this changes nothing; it keeps a copy on another chromosome at the same
+        // numeric span (a cross-chromosome family) from being counted as overlapped.
+        let region_chroms: Vec<String> = idx_map.iter().map(|&i| bam_reads[i].chrom.clone()).collect();
         // Unique-mapper support is a property of the MOLECULE ("this molecule has a mapq>0 placement"),
         // not of whichever of its records represents it after the reduction — only the PRIMARY record
         // carries mapq>0, and the representative need not be the primary. Taking the max over a molecule's
@@ -2436,7 +2441,7 @@ pub fn detect_and_assign(
         // Stage-1: assign over the reference copies only (borrow scoped so `all_copies` stays reassignable).
         let mut detail = {
             let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
-            assign_family_detailed(&copies, &region, &p_once, Some(genome), Some(&region_names))
+            assign_family_detailed(&copies, &region, &p_once, Some(genome), Some(&region_names), Some(&region_chroms))
         };
         // Task 5 (opt-in): two-stage freeze for reference-ABSENT (collapsed) copies. OFF => this whole block
         // is skipped, so the loop below is byte-for-byte the pre-Task-5 path (`all_copies`/`detail` unchanged).
@@ -2512,7 +2517,7 @@ pub fn detect_and_assign(
                 // surviving absent-copy assignment is flagged `discovery_coupled`). Matched by read_index.
                 {
                     let copies2: Vec<&DenovoTranscript> = copies2_owned.iter().collect();
-                    let mut d2 = assign_family_detailed(&copies2, &region, &p_once, Some(genome), Some(&region_names));
+                    let mut d2 = assign_family_detailed(&copies2, &region, &p_once, Some(genome), Some(&region_names), Some(&region_chroms));
                     d2.results = freeze_merge(&detail.results, std::mem::take(&mut d2.results), n_ref);
                     detail = d2;
                 }
@@ -2526,7 +2531,7 @@ pub fn detect_and_assign(
         // post-process so the output copy roster is internally consistent.
         if p.iterative_prune && all_copies.len() >= 2 {
             let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
-            detail = assign_family_detailed_pruned(&copies, &region, p, Some(genome), Some(&region_names));
+            detail = assign_family_detailed_pruned(&copies, &region, p, Some(genome), Some(&region_names), Some(&region_chroms));
             all_copies = detail.copy_indices.iter().map(|&i| all_copies[i].clone()).collect();
         }
         // Unified gene-conversion-vs-artifact discriminator: tag each confirmed event by recurrence
@@ -3208,17 +3213,21 @@ pub fn union_certificate_pass(
             labels.push(label);
         }
         // every tied record of the group's molecules, named, so the certificate takes each molecule as one unit
+        // and each record's chromosome: the union spans families on several chromosomes plus outside pseudo-copies,
+        // and a record must overlap only the candidates on its own chromosome, not one elsewhere at the same numbers
         let mut reads: Vec<AlignedRead> = Vec::new();
         let mut names: Vec<String> = Vec::new();
+        let mut chroms: Vec<String> = Vec::new();
         for (name, recs) in &mols {
             for &ri in recs {
                 reads.push(bam_reads[ri].read.clone());
                 names.push(name.clone());
+                chroms.push(bam_reads[ri].chrom.clone());
             }
         }
         let results: HashMap<&str, super::copy_assign_pipeline::ReadResult> = if copies.len() >= 2 {
             let refs: Vec<&DenovoTranscript> = copies.iter().collect();
-            let d = assign_family_detailed(&refs, &reads, &p_union, Some(genome), Some(&names));
+            let d = assign_family_detailed(&refs, &reads, &p_union, Some(genome), Some(&names), Some(&chroms));
             d.results.into_iter().map(|r| (names[r.read_index].as_str(), r)).collect()
         } else {
             HashMap::new()

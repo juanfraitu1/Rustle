@@ -1556,15 +1556,18 @@ fn read_features(read: &AlignedRead, mc: usize, fp: &FamilyProfiles) -> ReadFeat
     ReadFeatures { psv_obs, psv_qual, junctions }
 }
 
-/// The copy whose genomic span the read overlaps most (`None` if it overlaps none).
 /// Does the read have an ALIGNED BLOCK (M/=/X) inside some copy's span? Span overlap is not enough: a read
 /// spliced OVER a copy (an `N` across it) touches no base of it (the §6cm invariant). Read-star aligns only
 /// such molecules (§6fe): on NPIP 1,004 of the region's 3,307 molecules — the other 70 % end as ties whatever
 /// they are aligned to, and were 70 % of the minimap2 time.
-pub(crate) fn has_block_in_any_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> bool {
+///
+/// `chrom` is the read's chromosome when the caller knows it (`AlignedRead` carries none): `Some` counts only
+/// the copies on that chromosome, so a copy elsewhere that spans the same numbers is no hit; `None` compares
+/// coordinates only, as every caller did before (spec 2026-10-02 §6, §9b).
+pub(crate) fn has_block_in_any_copy_on(read: &AlignedRead, copies: &[&DenovoTranscript], chrom: Option<&str>) -> bool {
     let mut p = read.ref_start;
     let mut cur: Option<(u64, u64)> = None;
-    let hit = |s: u64, e: u64| copies.iter().any(|c| s < c.end && c.start < e);
+    let hit = |s: u64, e: u64| copies.iter().any(|c| chrom.map_or(true, |ch| ch == c.chrom) && s < c.end && c.start < e);
     for &(op, n) in &read.cigar {
         match op {
             'M' | '=' | 'X' | 'D' => {
@@ -1585,11 +1588,25 @@ pub(crate) fn has_block_in_any_copy(read: &AlignedRead, copies: &[&DenovoTranscr
     cur.is_some_and(|(s, e)| hit(s, e))
 }
 
-pub(crate) fn best_overlap_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> Option<usize> {
+/// `has_block_in_any_copy_on` with no chromosome (coordinates only). Test-only: every pipeline call site now
+/// passes the read's chromosome, so outside the tests nothing calls it.
+#[cfg(test)]
+pub(crate) fn has_block_in_any_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> bool {
+    has_block_in_any_copy_on(read, copies, None)
+}
+
+/// The copy whose genomic span the read overlaps most (`None` if it overlaps none); the index is into `copies`
+/// (a tie goes to the first). `chrom` is the read's chromosome when the caller knows it: `Some` considers only
+/// the copies on that chromosome, so a copy on another chromosome at the same coordinates is never the best
+/// overlap; `None` compares coordinates only, as every caller did before (spec 2026-10-02 §6, §9b).
+pub(crate) fn best_overlap_copy_on(read: &AlignedRead, copies: &[&DenovoTranscript], chrom: Option<&str>) -> Option<usize> {
     let r_end = read_ref_end(read);
     let mut best = None;
     let mut best_ov = 0i64;
     for (ci, c) in copies.iter().enumerate() {
+        if chrom.is_some_and(|ch| ch != c.chrom) {
+            continue;
+        }
         let ov = (r_end.min(c.end) as i64) - (read.ref_start.max(c.start) as i64);
         if ov > best_ov {
             best_ov = ov;
@@ -1597,6 +1614,11 @@ pub(crate) fn best_overlap_copy(read: &AlignedRead, copies: &[&DenovoTranscript]
         }
     }
     best
+}
+
+/// `best_overlap_copy_on` with no chromosome (coordinates only): the callers that cannot know the read's chromosome.
+pub(crate) fn best_overlap_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> Option<usize> {
+    best_overlap_copy_on(read, copies, None)
 }
 
 /// Two-pass per-read assignment: the mapped copy, the PSV-ONLY assignment, and the PSV+JUNCTION assignment
@@ -1990,14 +2012,19 @@ fn find_weak_copies(
 /// scorable). With names supplied, the unit of an assignment becomes the MOLECULE: see
 /// `assign_family_detailed_once`. `None` (unit tests, callers with no name vector) keeps the historical
 /// one-row-per-record behaviour exactly.
+///
+/// `read_chroms` — the chromosome of each entry of `reads` (same order), when the caller can supply it: a
+/// read then overlaps only the copies on its own chromosome (see `assign_family_detailed_once`). `None`
+/// (unit tests, synthetic reads) compares coordinates only, exactly as before.
 pub fn assign_family_detailed(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],
     p: &AssignParams,
     genome: Option<&crate::genome::GenomeIndex>,
     mol_names: Option<&[String]>,
+    read_chroms: Option<&[String]>,
 ) -> FamilyDetail {
-    assign_family_detailed_once(copies, reads, p, genome, mol_names)
+    assign_family_detailed_once(copies, reads, p, genome, mol_names, read_chroms)
 }
 
 /// IsoCon-style iterative copy pruning: repeatedly assign reads, identify copies with no significant
@@ -2007,12 +2034,15 @@ pub fn assign_family_detailed(
 /// Returns a `FamilyDetail` whose `copy_indices` field lists the original indices (into the input `copies`
 /// slice) that survived. The caller should use those indices to align downstream bookkeeping with the
 /// reduced copy set.
+///
+/// `read_chroms` is as in `assign_family_detailed`; every reassignment below passes it on.
 pub fn assign_family_detailed_pruned(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],
     p: &AssignParams,
     genome: Option<&crate::genome::GenomeIndex>,
     mol_names: Option<&[String]>,
+    read_chroms: Option<&[String]>,
 ) -> FamilyDetail {
     // Phase 1: iteratively decide which original copies survive.  `merge_target[i]` always points from
     // original index i to the original index that currently represents it.  Initially each copy represents
@@ -2021,7 +2051,7 @@ pub fn assign_family_detailed_pruned(
     let mut current_indices: Vec<usize> = (0..copies.len()).collect();
     let mut current_copies: Vec<&DenovoTranscript> = copies.to_vec();
     loop {
-        let detail = assign_family_detailed_once(&current_copies, reads, p, genome, mol_names);
+        let detail = assign_family_detailed_once(&current_copies, reads, p, genome, mol_names, read_chroms);
         let weak = find_weak_copies(&detail, &current_copies, reads, p, genome);
         if weak.is_empty() {
             break;
@@ -2042,14 +2072,14 @@ pub fn assign_family_detailed_pruned(
 
     if current_indices.len() == copies.len() {
         // Nothing was pruned — use the detail from the last full-size iteration.
-        let mut detail = assign_family_detailed_once(copies, reads, p, genome, mol_names);
+        let mut detail = assign_family_detailed_once(copies, reads, p, genome, mol_names, read_chroms);
         detail.copy_indices = current_indices;
         return detail;
     }
 
     // Phase 2: assign against the FULL original copy set so reads that only overlapped a removed copy
     // are not dropped.  Then remap every per-copy index to its surviving output position.
-    let full_detail = assign_family_detailed_once(copies, reads, p, genome, mol_names);
+    let full_detail = assign_family_detailed_once(copies, reads, p, genome, mol_names, read_chroms);
 
     // Map original copy index -> output copy index (position in `current_indices`).
     let mut orig_to_out: Vec<Option<usize>> = vec![None; copies.len()];
@@ -2220,12 +2250,23 @@ pub fn assign_family_detailed_pruned(
 /// `n_reads_hard` and `abundance`, `collapsed_copies`, the iterative-prune decisions) counts molecules.
 ///
 /// `None` keeps the historical one-row-per-record behaviour byte-for-byte.
+///
+/// # `read_chroms`: which copies a read can overlap
+///
+/// `AlignedRead` carries no chromosome, so a read's overlap with a copy (`best_overlap_copy_on`,
+/// `has_block_in_any_copy_on`) used to compare bare coordinates: in a family with copies on several
+/// chromosomes (or on extra contigs at `0..len`) a read "overlapped" a copy on another chromosome by numeric
+/// coincidence. With `Some(chroms)` — one chromosome per entry of `reads`, in the same order — a read overlaps
+/// only the copies on its own chromosome. `None` keeps the coordinate-only comparison byte-for-byte, and is
+/// what a caller that cannot know the chromosomes (a unit test, a synthetic read set) passes; a family on one
+/// chromosome gives the same result either way.
 fn assign_family_detailed_once(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],
     p: &AssignParams,
     genome: Option<&crate::genome::GenomeIndex>,
     mol_names: Option<&[String]>,
+    read_chroms: Option<&[String]>,
 ) -> FamilyDetail {
     if copies.len() < 2 {
         return FamilyDetail {
@@ -2243,6 +2284,12 @@ fn assign_family_detailed_once(
             copy_indices: Vec::new(),
         };
     }
+    // `read_chroms[i]` is `reads[i]`'s chromosome (see the doc above); every read-vs-copy overlap below asks
+    // for it, so a read overlaps only the copies on its own chromosome. `None` = coordinates only.
+    if let Some(c) = read_chroms {
+        assert_eq!(c.len(), reads.len(), "read_chroms must hold one chromosome per read");
+    }
+    let chrom_of = |i: usize| read_chroms.map(|c| c[i].as_str());
     use super::mosaic::{aggregate_family, detect_mosaic, MosaicParams, SiteObs};
     const MOSAIC_EPS: f64 = 0.01; // HiFi per-base error for the mosaic likelihood
     const MAX_MOSAIC_SITES: usize = 250; // cap PSV sites per detect_mosaic (it is O(sites^2)); stride-sample
@@ -2273,8 +2320,8 @@ fn assign_family_detailed_once(
     // passes `--psv-read-filter` or sets the variable (§6eu, register 689: the filter deletes every column of an
     // unexpressed paralogue). Library callers that leave the variable unset still get the filter ON.
     let mut all_obs: Vec<Vec<Option<u8>>> = Vec::with_capacity(reads.len());
-    for read in reads {
-        if let Some(mc) = best_overlap_copy(read, copies) {
+    for (ri, read) in reads.iter().enumerate() {
+        if let Some(mc) = best_overlap_copy_on(read, copies, chrom_of(ri)) {
             let mut psv_obs = vec![None; fp0.n_cols];
             let mut psv_qual = vec![None; fp0.n_cols];
             fill_psv_obs(read, &fp0.copy_gpos[mc], fp0.strand[mc] == '-', &mut psv_obs, &mut psv_qual);
@@ -2392,10 +2439,13 @@ fn assign_family_detailed_once(
                 groups[name]
                     .iter()
                     .copied()
-                    .filter(|&i| has_block_in_any_copy(&reads[i], copies) || best_overlap_copy(&reads[i], copies).is_some())
+                    .filter(|&i| {
+                        has_block_in_any_copy_on(&reads[i], copies, chrom_of(i))
+                            || best_overlap_copy_on(&reads[i], copies, chrom_of(i)).is_some()
+                    })
                     .max_by(|&a, &b| {
-                        (has_block_in_any_copy(&reads[a], copies), reads[a].seq.len())
-                            .cmp(&(has_block_in_any_copy(&reads[b], copies), reads[b].seq.len()))
+                        (has_block_in_any_copy_on(&reads[a], copies, chrom_of(a)), reads[a].seq.len())
+                            .cmp(&(has_block_in_any_copy_on(&reads[b], copies, chrom_of(b)), reads[b].seq.len()))
                             .then(b.cmp(&a))
                     })
             })
@@ -2492,7 +2542,7 @@ fn assign_family_detailed_once(
             .zip(alns.par_iter())
             .map(|(&ri, (cand, obs, profiles, unit_edits, covered, star_cols))| {
                 let read = &reads[ri];
-                let mc = best_overlap_copy(read, copies).expect("rep overlaps a copy");
+                let mc = best_overlap_copy_on(read, copies, chrom_of(ri)).expect("rep overlaps a copy");
                 let (cand, obs, profiles) = (cand.clone(), obs.clone(), profiles.clone());
                 // the molecule's best GENOME placement (fewest edits per aligned base over all its records;
                 // needs `=`/`X` CIGARs, else None and the certificate below is skipped)
@@ -2967,7 +3017,7 @@ fn assign_family_detailed_once(
             .par_iter()
             .enumerate()
             .map(|(ri, read)| {
-                let mc = best_overlap_copy(read, copies)?;
+                let mc = best_overlap_copy_on(read, copies, chrom_of(ri))?;
                 Some(finish(ri, mc, read_features(read, mc, &fp)))
             })
             .collect()
@@ -3926,7 +3976,7 @@ mod tests {
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 100), ('N', 100), ('M', 200)], seq: spliced, qual: vec![] };
         // junction_err=1e-4 < alpha=1e-3: a single copy-specific junction resolves under the
         // significance gate (p_read=1e-4 < 1e-3, margin >> 0 -> Assigned).
-        let detail = assign_family_detailed(&copies, &[read], &AssignParams::default(), None, None);
+        let detail = assign_family_detailed(&copies, &[read], &AssignParams::default(), None, None, None);
         assert_eq!(detail.n_cols, 0, "identical sequences -> no PSV columns");
         assert_eq!(detail.results.len(), 1);
         let r = &detail.results[0];
@@ -3975,7 +4025,7 @@ mod tests {
         let reads: Vec<AlignedRead> = (0..30)
             .map(|_| AlignedRead { ref_start: 0, cigar: vec![('M', 150)], seq: base[0..150].to_vec(), qual: vec![] })
             .collect();
-        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None, None);
+        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None, None, None);
         assert!(
             detail.copy_abundance_ci.iter().all(|&ci| (ci - 0.5).abs() < 1e-9),
             "unidentifiable (no decisive reads) -> CI = 0.5 full-simplex, got {:?}",
@@ -4149,7 +4199,7 @@ mod tests {
             recomb[p] = b'C'; // ...then switch to copy B at the last 4 PSVs
         }
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: recomb, qual: vec![] };
-        let detail = assign_family_detailed(&[&ca, &cb], &[read], &AssignParams::default(), None, None);
+        let detail = assign_family_detailed(&[&ca, &cb], &[read], &AssignParams::default(), None, None, None);
         assert!(detail.mosaic_reads >= 1, "recombinant flagged as mosaic; got {}", detail.mosaic_reads);
     }
 
@@ -4168,7 +4218,7 @@ mod tests {
         let ca = copy_tx("A", 0, 300, '+', &[], sa);
         let cb = copy_tx("B", 1000, 1300, '+', &[], sb);
         let cc = copy_tx("C", 2000, 2300, '+', &[], sc);
-        let detail = assign_family_detailed(&[&ca, &cb, &cc], &[], &AssignParams::default(), None, None);
+        let detail = assign_family_detailed(&[&ca, &cb, &cc], &[], &AssignParams::default(), None, None, None);
         assert_eq!(detail.copy_conversions.len(), 1, "exactly copy C is a mosaic of two others");
         assert_eq!(detail.copy_conversions[0].copy_c, 2, "copy C (index 2) is the converted copy");
     }
@@ -4412,7 +4462,7 @@ mod tests {
         let reads = [r0, r1, r2];
         let mut p = AssignParams::default();
         p.iterative_prune = true;
-        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None, None);
+        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None, None, None);
         assert_eq!(detail.copy_psv_alleles.len(), 2, "duplicate c2 merged -> 2 surviving copies");
         // The surviving copies should be c0 and c1 (c2 removed, not c0).
         assert!(detail.results.iter().all(|r| r.combined.best_copy < 2));
@@ -4436,7 +4486,7 @@ mod tests {
         let reads = [r0, r1, r2];
         let mut p = AssignParams::default();
         p.iterative_prune = true;
-        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None, None);
+        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None, None, None);
         assert_eq!(detail.copy_psv_alleles.len(), 3, "all distinct supported copies kept");
     }
 
@@ -4455,7 +4505,64 @@ mod tests {
         let r1 = q40_read(1000, vec![('M', 100)], seq_with(&base, &[(50, b'C')]));
         let r2 = q40_read(2000, vec![('M', 100)], seq_with(&base, &[(50, b'C')]));
         let reads = [r0, r1, r2];
-        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None, None);
+        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None, None, None);
         assert_eq!(detail.copy_psv_alleles.len(), 3, "default (prune off) keeps all 3 copies");
+    }
+
+    // ---- chromosome-aware overlap (spec 2026-10-02 §6, §9b) ----
+
+    /// A bare copy: only the chromosome and the span matter to the overlap functions.
+    fn mk_copy(chrom: &str, start: u64, end: u64) -> DenovoTranscript {
+        DenovoTranscript { chrom: chrom.into(), start, end, ..Default::default() }
+    }
+
+    #[test]
+    fn cross_chrom_overlap_is_not_an_overlap() {
+        let (a, b) = (mk_copy("c1", 100, 500), mk_copy("c2", 120, 520));
+        let read = AlignedRead { ref_start: 150, cigar: vec![('M', 200)], seq: vec![b'A'; 200], qual: vec![] };
+        assert_eq!(best_overlap_copy_on(&read, &[&a, &b], Some("c2")), Some(1));
+        assert_eq!(best_overlap_copy_on(&read, &[&a, &b], Some("c3")), None);
+        assert_eq!(best_overlap_copy_on(&read, &[&a, &b], None), best_overlap_copy(&read, &[&a, &b]));
+    }
+
+    #[test]
+    fn has_block_in_any_copy_on_respects_the_chromosome() {
+        let (a, b) = (mk_copy("c1", 100, 500), mk_copy("c2", 120, 520));
+        let read = AlignedRead { ref_start: 150, cigar: vec![('M', 200)], seq: vec![b'A'; 200], qual: vec![] };
+        assert!(has_block_in_any_copy_on(&read, &[&a, &b], Some("c2")));
+        assert!(!has_block_in_any_copy_on(&read, &[&a, &b], Some("c3")), "no copy on the read's chromosome");
+        assert!(!has_block_in_any_copy_on(&read, &[&a], Some("c2")), "the only copy spanning those numbers is on c1");
+        // no chromosome: coordinates only, exactly the two-argument function
+        assert!(has_block_in_any_copy(&read, &[&a]));
+        assert_eq!(has_block_in_any_copy_on(&read, &[&a, &b], None), has_block_in_any_copy(&read, &[&a, &b]));
+    }
+
+    #[test]
+    fn read_chroms_decide_the_mapped_copy() {
+        // Two exonically identical copies on DIFFERENT chromosomes at the SAME numeric span, one read inside it.
+        // The read's chromosome decides the copy it maps to; a chromosome no copy sits on maps to none; with no
+        // chromosomes the numeric tie goes to the first copy, exactly as before.
+        let seq = rand_seq(300, 0xC4A0);
+        let mut ca = copy_tx("A", 0, 300, '+', &[], seq.clone());
+        let mut cb = copy_tx("B", 0, 300, '+', &[], seq.clone());
+        ca.chrom = "c1".into();
+        cb.chrom = "c2".into();
+        let copies = [&ca, &cb];
+        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq, qual: vec![] };
+        let mapped = |chroms: Option<Vec<String>>| -> Vec<usize> {
+            let d = assign_family_detailed(
+                &copies,
+                std::slice::from_ref(&read),
+                &AssignParams::default(),
+                None,
+                None,
+                chroms.as_deref(),
+            );
+            d.results.iter().map(|r| r.mapped_copy).collect()
+        };
+        assert_eq!(mapped(Some(vec!["c2".into()])), vec![1]);
+        assert_eq!(mapped(Some(vec!["c1".into()])), vec![0]);
+        assert!(mapped(Some(vec!["c3".into()])).is_empty(), "no copy on the read's chromosome: it overlaps none");
+        assert_eq!(mapped(None), vec![0], "no chromosomes: the numeric tie goes to the first copy");
     }
 }
