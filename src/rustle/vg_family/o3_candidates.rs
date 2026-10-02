@@ -198,6 +198,8 @@ const STRUCT_MIN_INDEL: usize = 20;
 const VOTE_MIN_COVER: usize = 3;
 /// Members that must carry an insertion of >= 20 bp for it to be inserted (an exon the template lacks), whatever its share.
 const STRUCT_MIN_SUPPORT: usize = 3;
+/// Members that must cover a template column at either end of the consensus for it to survive the end trim (spec §5.4, ruling R5).
+const END_MIN_COVER: usize = 2;
 
 /// Clusters one family's reads (spec §5.3, with minimap2's all-vs-all hits in place of the greedy pass; ruling §9b): union-find over the reads,
 /// joining a pair when its best hit covers >= 50% of the shorter read (`shorter_cov`) with `de <= delta`. The pair's best hit is the one with
@@ -230,31 +232,32 @@ pub fn cluster_reads(names: &[String], ava: &[PafHit], delta: f64) -> Vec<Vec<us
     out
 }
 
-/// Template-and-vote consensus of one cluster (spec §5.4, ruling R2). `template` is the sequence the members were aligned to; each member's
-/// hit carries its `cs` against it (`ts..te` on the template). The member sequences are not read (the `cs` holds every base the vote needs)
-/// and the strand is not consulted (a `cs` always lies along the target's forward strand). A member without a `cs` abstains; a malformed
-/// `cs` is an error naming the member. The template votes only if it is itself among the members (as a self hit). Per template column,
-/// over the members that cover it (`Eq`, `Sub` and `Del` columns cover; an `Intron` that a member splices out does not):
+/// Template-and-vote consensus of one cluster (spec §5.4, rulings R2 and R5). `template` is the sequence the members were aligned to; each
+/// member's hit carries its `cs` against it (`ts..te` on the template). The member sequences are not read (the `cs` holds every base the vote
+/// needs) and the strand is not consulted (a `cs` always lies along the target's forward strand). A member without a `cs` abstains; a
+/// malformed `cs` is an error naming the member. The template votes (and covers) only if it is itself among the members, as a self hit.
+/// Per template column, over the members that COVER it: `Eq`, `Sub` and `< 20 bp` `Del` columns cover; an `Intron` that a member splices out
+/// and a `>= 20 bp` `Del` (an isoform's absence) do not: such a member carries no base there, so it is neither a vote for the template base
+/// nor a vote to delete (R5).
 /// * a column covered by >= 3 members takes the substituted base (the query base, upper case) with the most votes when that count exceeds the
-///   number of covering members that carry no substitution and no < 20 bp deletion there (the template-base carriers: a member that skips the
-///   column inside a >= 20 bp deletion counts among them; a tie keeps the template; two variants with equal support take the smaller base);
-///   fewer than 3 covering members keep the template base;
+///   number of covering members that carry the template base (no substitution, no deletion there); a tie keeps the template; two variants
+///   with equal support take the smaller base; fewer than 3 covering members keep the template base;
 /// * an insertion < 20 bp before a column (after the last column when `t == n`) is inserted when its most frequent sequence (ties to the
 ///   smaller) is carried by >= 50% of >= 3 covering members; a deletion < 20 bp removes the column when >= 50% of >= 3 covering members
-///   delete it;
+///   delete it (a plain majority of the covering members, also inside an exon that other members skip);
 /// * indels >= 20 bp are STRUCTURE, not errors (R2): an insertion >= 20 bp whose most frequent sequence is carried by >= 3 members is inserted
-///   whatever its share (an exon the template lacks); a deletion >= 20 bp is never applied and no column inside one is ever removed (the
-///   template's exon stays), so the consensus is the exon union of the cluster's isoforms with SNV-level majority voting.
+///   whatever its share (an exon the template lacks); a deletion >= 20 bp is never applied (the template's exon stays), so the consensus is
+///   the exon union of the cluster's isoforms with SNV-level majority voting.
 ///
-/// The output is upper case. NOT done here: spec §5.4's trim of template ends covered by fewer than 2 members. A `cs` that runs past the
-/// template end is clamped (nothing beyond the end is voted or appended); the frame of the `cs` (`ts` and the template) is trusted, not checked.
+/// End trim (spec §5.4, R5): after the vote, the leading and trailing template columns covered by fewer than 2 members are dropped. An
+/// insertion goes with the column it precedes (the one after the last column, with the last column). When no column is covered by 2 members
+/// nothing survives: the consensus is empty (as it is for an empty member list). The output is upper case. A `cs` that runs past the template
+/// end is clamped (nothing beyond the end is voted or appended); the frame of the `cs` (`ts` and the template) is trusted, not checked.
 pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]) -> anyhow::Result<Vec<u8>> {
     let n = template.len();
-    if n == 0 { return Ok(Vec::new()); }
     let mut cover = vec![0usize; n];
     let mut subs: Vec<HashMap<u8, usize>> = vec![HashMap::new(); n];
     let mut dels = vec![0usize; n];
-    let mut big_del = vec![false; n];
     let mut ins: Vec<HashMap<Vec<u8>, usize>> = vec![HashMap::new(); n + 1];
     for (_, h) in member_hits {
         let Some(cs) = h.cs.as_deref() else { continue };
@@ -264,9 +267,10 @@ pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]
             match op {
                 CsOp::Eq(len) => { for p in t..t.saturating_add(len).min(n) { cover[p] += 1; } t = t.saturating_add(len); }
                 CsOp::Sub(_, qb) => { if t < n { cover[t] += 1; *subs[t].entry(qb.to_ascii_uppercase()).or_insert(0) += 1; } t = t.saturating_add(1); }
+                // a < 20 bp deletion is an error-sized gap: the member covers the columns and votes to delete them; a >= 20 bp one is an isoform's
+                // absence (R5, as for an `Intron`): the member carries no base there, so it neither covers nor votes
                 CsOp::Del(seq) => {
-                    let big = seq.len() >= STRUCT_MIN_INDEL;
-                    for p in t..t.saturating_add(seq.len()).min(n) { cover[p] += 1; if big { big_del[p] = true; } else { dels[p] += 1; } }
+                    if seq.len() < STRUCT_MIN_INDEL { for p in t..t.saturating_add(seq.len()).min(n) { cover[p] += 1; dels[p] += 1; } }
                     t = t.saturating_add(seq.len());
                 }
                 CsOp::Ins(mut seq) => { if t <= n { seq.make_ascii_uppercase(); *ins[t].entry(seq).or_insert(0) += 1; } }
@@ -274,8 +278,13 @@ pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]
             }
         }
     }
-    let mut out = Vec::with_capacity(n + 64);
-    for p in 0..=n {
+    // spec §5.4 / R5 end trim: columns lo..=hi survive, the leading and trailing ones covered by fewer than END_MIN_COVER members do not; an
+    // insertion goes with the column it precedes, so the one after the last column survives only with the last column. No covered column
+    // (an empty template, no member) returns here, so n >= 1 below.
+    let (Some(lo), Some(hi)) = (cover.iter().position(|&c| c >= END_MIN_COVER), cover.iter().rposition(|&c| c >= END_MIN_COVER)) else { return Ok(Vec::new()); };
+    let last = if hi + 1 == n { n } else { hi };
+    let mut out = Vec::with_capacity(hi - lo + 64);
+    for p in lo..=last {
         // the most frequent insertion before column p: the larger count, then the smaller sequence (a total order: no hash order reaches the output)
         if let Some((seq, &cnt)) = ins[p].iter().max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0))) {
             let covering = cover[p.min(n - 1)];
@@ -283,7 +292,7 @@ pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]
             if structure || (seq.len() < STRUCT_MIN_INDEL && covering >= VOTE_MIN_COVER && 2 * cnt >= covering) { out.extend_from_slice(seq); }
         }
         if p == n { break; }
-        if cover[p] >= VOTE_MIN_COVER && 2 * dels[p] >= cover[p] && !big_del[p] { continue; }
+        if cover[p] >= VOTE_MIN_COVER && 2 * dels[p] >= cover[p] { continue; }
         let mut base = template[p].to_ascii_uppercase();
         if cover[p] >= VOTE_MIN_COVER {
             let same = cover[p].saturating_sub(subs[p].values().sum::<usize>() + dels[p]);
@@ -494,6 +503,12 @@ mod tests {
         let hit = PafHit { q: "m".into(), qlen: seq.len(), qs: 0, qe: seq.len(), strand: b'+', t: "t".into(), tlen: template.len(), ts: 0, te: template.len(), matches: template.len(), block: template.len(), de: 0.0, cs: Some(cs) };
         (seq, hit)
     }
+    /// A synthetic member that aligns to the window `template[ts..te]` only: `edits` are in the window's coordinates, the hit starts at `ts`.
+    fn member_span(template: &[u8], ts: usize, te: usize, edits: &[Edit]) -> (Vec<u8>, PafHit) {
+        let (seq, mut h) = member_of(&template[ts..te], edits);
+        (h.ts, h.te, h.tlen) = (ts, te, template.len());
+        (seq, h)
+    }
     /// `total` members, the first `carriers` of them with `edits` and the rest equal to the template.
     fn cluster_of(template: &[u8], carriers: usize, total: usize, edits: &[Edit]) -> Vec<(Vec<u8>, PafHit)> {
         let none: &[Edit] = &[];
@@ -692,32 +707,69 @@ mod tests {
         assert_eq!(consensus_of(&template, &members), truth);
     }
     #[test]
-    fn consensus_counts_a_spliced_out_segment_as_not_covering_but_a_deletion_as_covering() {
-        // 8 members; 4 lack the 24 bp segment 40..64; of the 4 that have it, 2 carry a 5 bp insertion inside it (at 50)
+    fn consensus_intron_and_long_deletion_members_do_not_cover_but_a_short_deletion_member_does() {
+        // ruling R5. 8 members; 4 lack columns 40..64; of the 4 that have them, 2 carry a 5 bp insertion inside (at 50)
         let template = rand_seq(100, 61);
         let mut plus5 = template.clone(); plus5.splice(50..50, b"ACGTA".iter().copied());
         let (carrier, plain) = (|| member_of(&template, &[Edit::Ins(50, b"ACGTA")]), || member_of(&template, &[]));
-        // written as an intron the 4 skippers do not cover 40..64: 2 of 4 covering members carry the insertion (50%) -> inserted
+        let eight = |absent: &dyn Fn() -> (Vec<u8>, PafHit)| vec![carrier(), carrier(), plain(), plain(), absent(), absent(), absent(), absent()];
+        // an intron, a 24 bp `-` and a 20 bp `-` all leave the 4 members out of the coverage: 2 of the 4 covering members carry the insertion (50%)
         let spliced = || { let (s, mut h) = member_of(&template, &[Edit::Del(40, 24)]); h.cs = Some(":40~gt24ag:36".into()); (s, h) };
-        assert_eq!(consensus_of(&template, &[carrier(), carrier(), plain(), plain(), spliced(), spliced(), spliced(), spliced()]), plus5);
-        // written as a `-` deletion they cover it (and delete it): 2 of 8 (25%) -> not inserted, and the exon is not removed either
-        let skipper = || member_of(&template, &[Edit::Del(40, 24)]);
-        assert_eq!(consensus_of(&template, &[carrier(), carrier(), plain(), plain(), skipper(), skipper(), skipper(), skipper()]), template);
+        assert_eq!(consensus_of(&template, &eight(&spliced)), plus5);
+        assert_eq!(consensus_of(&template, &eight(&|| member_of(&template, &[Edit::Del(40, 24)]))), plus5);
+        assert_eq!(consensus_of(&template, &eight(&|| member_of(&template, &[Edit::Del(40, 20)]))), plus5);
+        // a 19 bp deletion is error-sized: those 4 members cover the columns and delete them (4 of 8 = 50% removes 40..59), and the insertion
+        // has only 2 of 8 (25%)
+        let mut minus19 = template.clone(); minus19.drain(40..59);
+        assert_eq!(consensus_of(&template, &eight(&|| member_of(&template, &[Edit::Del(40, 19)]))), minus19);
     }
     #[test]
-    fn consensus_inside_a_skipped_exon_counts_skippers_for_the_template_and_never_removes_a_column() {
-        // the brief's behaviour, pinned so that changing it is deliberate (see the task report): (1) a member that skips the exon with a >= 20 bp
-        // deletion counts as agreeing with the template base at those columns, so 3 variants do not outvote 3 skippers; (2) a column that any
-        // member skips with a >= 20 bp deletion is never removed, even by a majority of 1 bp deletions.
-        let template = rand_seq(120, 53);
+    fn consensus_members_that_skip_an_exon_do_not_vote_inside_it_and_the_carriers_decide() {
+        // ruling R5: a member with a >= 20 bp deletion has no base there (an isoform's absence): it neither covers the columns nor counts as
+        // agreeing with the template, so the vote inside the exon is among the members that carry it and needs 3 of them
+        let template = rand_seq(120, 53);                                  // exon 40..64, variant column 50
         let alt = other_base(template[50], 0);
         let mut with_alt = template.clone(); with_alt[50] = alt;
-        let (skip, variant, del1) = (|| member_of(&template, &[Edit::Del(40, 24)]), || member_of(&template, &[Edit::Sub(50, alt)]), || member_of(&template, &[Edit::Del(50, 1)]));
-        assert_eq!(consensus_of(&template, &[variant(), variant(), variant(), skip(), skip(), skip()]), template);   // 3 votes vs 3 template-base carriers
-        assert_eq!(consensus_of(&template, &[variant(), variant(), variant(), skip(), skip()]), with_alt);           // 3 votes > 2
-        assert_eq!(consensus_of(&template, &[del1(), del1(), del1(), skip(), skip()]), template);                     // inside a skipped exon: kept
+        let (skip, variant, plain) = (|| member_of(&template, &[Edit::Del(40, 24)]), || member_of(&template, &[Edit::Sub(50, alt)]), || member_of(&template, &[]));
+        assert_eq!(consensus_of(&template, &[variant(), variant(), skip(), skip(), skip()]), template);                        // 3 of 5 skip: 2 carriers are below the floor of 3
+        assert_eq!(consensus_of(&template, &[variant(), variant(), plain(), skip(), skip(), skip()]), with_alt);               // 3 of 6 skip: 2 against 1 among the carriers flips it
+        assert_eq!(consensus_of(&template, &[variant(), variant(), variant(), skip(), skip(), skip()]), with_alt);             // 3 against 0
+        assert_eq!(consensus_of(&template, &[variant(), variant(), plain(), plain(), skip(), skip(), skip()]), template);      // 2 against 2: the template stays
+    }
+    #[test]
+    fn consensus_small_deletions_are_a_plain_majority_of_the_covering_members_even_inside_a_skipped_exon() {
+        // ruling R5: no guard for columns that a member skips with a >= 20 bp deletion, and the skippers do not dilute the share
+        let template = rand_seq(120, 53);
         let mut minus1 = template.clone(); minus1.remove(50);
-        assert_eq!(consensus_of(&template, &[del1(), del1(), del1(), member_of(&template, &[]), member_of(&template, &[])]), minus1);   // outside: applied
+        let (skip, del1, plain) = (|| member_of(&template, &[Edit::Del(40, 24)]), || member_of(&template, &[Edit::Del(50, 1)]), || member_of(&template, &[]));
+        assert_eq!(consensus_of(&template, &[del1(), del1(), del1(), skip(), skip()]), minus1);          // 3 of the 3 carriers delete the column
+        assert_eq!(consensus_of(&template, &[del1(), del1(), plain(), skip(), skip()]), minus1);         // 2 of 3
+        assert_eq!(consensus_of(&template, &[del1(), plain(), plain(), skip(), skip()]), template);      // 1 of 3
+        assert_eq!(consensus_of(&template, &[del1(), del1(), skip(), skip(), skip()]), template);        // 2 carriers: below the floor of 3
+    }
+    #[test]
+    fn consensus_trims_template_ends_covered_by_fewer_than_two_members() {
+        // spec §5.4 as ruled in R5: leading and trailing template columns with coverage < 2 are dropped (the template counts only as a member: here a self hit)
+        let template = rand_seq(150, 33);
+        let selfhit = || member_of(&template, &[]);
+        let window = |ts: usize, te: usize| member_span(&template, ts, te, &[]);
+        // the template is 30 bp longer at the 5' end than every other member (they start at 30 and at 45) and 20 bp longer at the 3' end:
+        // the consensus starts where the second member starts and stops where the others stop
+        assert_eq!(consensus_of(&template, &[selfhit(), window(30, 130), window(45, 130)]), template[30..130].to_vec());
+        // coverage of exactly 2 survives, also at the ends ...
+        assert_eq!(consensus_of(&template, &[selfhit(), selfhit()]), template);
+        assert_eq!(consensus_of(&template, &[selfhit(), window(10, 140)]), template[10..140].to_vec());
+        // ... one member covers nothing twice and no member covers nothing: an empty consensus
+        assert!(consensus_of(&template, &[selfhit()]).is_empty());
+        assert!(consensus_of(&template, &[]).is_empty());
+        // only the ENDS are trimmed: a stretch in the middle that a single member covers stays
+        assert_eq!(consensus_of(&template, &[selfhit(), window(0, 60), window(90, 150)]), template);
+        // an insertion goes with the column it precedes: one before the first surviving column stays, one after the last surviving column (it
+        // precedes a trimmed one) goes. (Alignments that begin or end with an insertion: minimap2 does not write them, a vote over `cs` must handle them.)
+        let gg = |ts: usize, te: usize, at: usize| member_span(&template, ts, te, &[Edit::Ins(at, b"GG")]);
+        let mut want = b"GG".to_vec(); want.extend_from_slice(&template[30..130]);
+        assert_eq!(consensus_of(&template, &[selfhit(), gg(30, 130, 0), gg(30, 130, 0), gg(30, 130, 0)]), want);
+        assert_eq!(consensus_of(&template, &[gg(20, 120, 100), gg(20, 120, 100), gg(20, 120, 100)]), template[20..120].to_vec());
     }
     #[test]
     fn consensus_places_a_member_that_starts_inside_the_template_at_its_ts() {
@@ -725,8 +777,10 @@ mod tests {
         let alt = other_base(template[30], 0);
         let mut with_alt = template.clone(); with_alt[30] = alt;
         let partial = || { let (s, mut h) = member_of(&template[25..], &[Edit::Sub(5, alt)]); h.ts = 25; h.te = 60; h.tlen = 60; (s, h) };   // cs `:5*xy:29` from ts = 25
-        assert_eq!(consensus_of(&template, &[member_of(&template, &[Edit::Sub(30, alt)]), partial(), partial()]), with_alt);
-        assert_eq!(consensus_of(&template, &[partial(), partial()]), template);                                      // two covering members at 30: below the floor
+        // two full-length members keep every column covered twice; the three carriers of the variant at 30 are one of them and the two partial members
+        assert_eq!(consensus_of(&template, &[member_of(&template, &[Edit::Sub(30, alt)]), member_of(&template, &[]), partial(), partial()]), with_alt);
+        // the two partial members alone cover 25..60 twice (below the vote's 3): the consensus is that stretch, unvoted, starting at their ts
+        assert_eq!(consensus_of(&template, &[partial(), partial()]), template[25..].to_vec());
     }
     #[test]
     fn consensus_ignores_members_without_a_cs_and_rejects_a_malformed_one() {
@@ -757,9 +811,10 @@ mod tests {
         let template = rand_seq(24, 5);
         let over = hit(":50*ac:10-acg+tt", 0);
         assert_eq!(consensus_from_template(&template, &[(read, &over), (read, &over), (read, &over)]).unwrap(), template);
-        let after = hit(":5+aaaa", 30);                                                                      // a member that starts past the end
-        assert_eq!(consensus_from_template(&template, &[(read, &after), (read, &after), (read, &after)]).unwrap(), template);
-        assert_eq!(consensus_from_template(b"acgtnacgt", &[]).unwrap(), b"ACGTNACGT".to_vec());               // upper case, no member needed
+        let after = hit(":5+aaaa", 30);                                                                      // members that start past the end cover nothing ...
+        assert!(consensus_from_template(&template, &[(read, &after), (read, &after), (read, &after)]).unwrap().is_empty());   // ... and nothing survives the end trim
+        let whole = hit(":9", 0);
+        assert_eq!(consensus_from_template(b"acgtnacgt", &[(read, &whole), (read, &whole)]).unwrap(), b"ACGTNACGT".to_vec());   // lower-case template: upper-case consensus
     }
 
     #[test]
