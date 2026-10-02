@@ -1,0 +1,5 @@
+[R] D: {'unplaced': 7068, 'wrong': 10218} | S: {'stay': 41051, 'unplaced': 670, 'elsewhere': 6}
+[RI] D: {'unplaced': 12322, 'right': 1525, 'wrong': 3439} | S: {'unplaced': 26191, 'stay': 15521, 'elsewhere': 3, 'false_move': 12}
+[RIL] D: {'unplaced': 12086, 'right': 1616, 'wrong': 3584} | S: {'stay': 38595, 'unplaced': 3115, 'false_move': 14, 'elsewhere': 3}
+LINKING: S unplaced 26191 -> 3115 (fall 88.1%); D right 1525 -> 1616 (fall -6.0%) -> WORKS
+OVERALL (R vs R+I+L): wrong D 10218 -> 3584 (drop 64.9%); false moves 0.0% -> HELP
