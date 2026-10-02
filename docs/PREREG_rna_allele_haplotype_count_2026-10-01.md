@@ -345,3 +345,19 @@ copy is built by patching the reference at those sites. This amendment swaps it 
     below delta for the link rule); the 2-member floor's effect; structure (`n_bigins`, `n_rearr`) in the scan table.
 - **Not tested here:** the structural extension (keeping clipped / inserted segments) — IsoCon's transcripts carry structure, the patched
   consensus does not; if IH1 fails, that is the first suspect, and the human DAZ3 panel (`yag_hsa`) is the structural check to run next.
+
+## Amendment 12 (2026-10-02): `o3_candidates` (the in-house, IsoCon-free stage) on the same held-out (written before the stage ran on it)
+
+Spec `docs/superpowers/specs/2026-10-02-o3-candidates-design.md`. Substrate: Amendment 7's 53 families, masked genome, the same
+59,013 scored reads (`linktest/scored.fa`) given to the stage as the BAM `linktest/R.bam` (reads on the masked genome) with a copies
+table made from `panel.json`'s surviving copies (clean intervals, `n_reads` from the BAM) in `P.fam.copies.tsv` format, and the
+masked splice index. Arm M = masked genome + `P.cand.contigs.fa` (one union per flagged candidate), components as loci, scored by
+`merge_test.py score` semantics (D right / wrong / unplaced; S false moves) with the contigs' D/S labels from their best unmasked hit.
+- Flag = a component with >= 6 supporting reads over its clusters (`--min-support 6`, the >= 2-transcript floor translated: 2 x IsoCon's
+  3-read minimum; the stage's clusters merge a copy's isoforms, so cluster counts cannot play that role). The >= 2-cluster count is reported beside.
+- **A12-1 (adopt):** D right >= 80% of IsoCon's 12,787 (>= 10,230) AND false moves <= 5% of S reads.
+- **A12-2 (representative):** >= 95% of the reads of each flagged component's clusters keep an AS on the union >= 0.98 x their best
+  AS over the component's cluster consensuses (the `rep_choice.py` measure, run on the stage's own alignments).
+- **A12-3 (cost):** wall time of the stage on the 53 families <= 40 min (2 x IsoCon's ~20 min) on this machine, 4 threads.
+- Reported: candidates per family, clusters per candidate, the deleted copies with no candidate by cause (no reads in the net / clusters
+  below the floor / linked to a survivor), the same numbers at delta/2 and 2 x delta, and the flag counts under the alternative >= 2-cluster floor.
