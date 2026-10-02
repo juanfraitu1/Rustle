@@ -262,3 +262,32 @@ families and the same R+I+L alignments: no realignment, a read's call changes on
     delta/2 and 2 x delta (sensitivity); the truth-grouped ceiling; the cause of each over-split (no alignment covering >= 50% vs
     divergence > delta).
 - **Not tested here:** families with no missing copy (the false-flag rate without a deletion) — a separate control.
+
+## Amendment 9 (2026-10-01): the no-deletion control — flags raised when nothing is missing (written before any run)
+
+Amendments 7-8 measured the chain where one copy per family is missing. Its specificity is measured here on the same families with
+nothing masked: the chain runs against the full `_pri`, and every candidate copy it names is a flag raised without a deletion.
+
+- **Substrate:** the 53 families of Amendment 7 and the same 59,013 scored reads (labels: family, copy), the unmasked `_pri`
+  (`GGO.fasta`; splice index `winloci_data/GGO.splice.mmi`, the one the deletion run used for its unmasked arm).
+- **Procedure, identical to Amendments 7-8 with `_pri` as the reference:** arm R0 = the scored reads aligned to `_pri` (the same minimap2
+  command); IsoCon input per family = the reads with an R0 record on ANY copy of the family plus the reads R0 leaves unmapped, <= 1,000
+  (random, seed 1); IsoCon; flag = output with identity x coverage < 0.999 against `_pri`; link = d <= delta (0.00958) to its best `_pri`
+  hit -> allele of that locus, not a copy; merge = Amendment 8's components at delta -> candidate copies; arm C = `_pri` + the new-copy
+  contigs, components as loci. "Derived from copy g" = best `_pri` hit overlapping g's clean interval (Amendment 7's "source").
+- **Classification of each candidate against the diploid truth** (KB3781's own mat / pat assemblies; the component's contigs aligned with
+  the same splice command; the component takes the class of its best contig): (a) **haplotype-only locus** — best hit at identity x
+  coverage >= 0.999 on the haplotype `_pri` did NOT take that chromosome from, OUTSIDE the lifted B interval of every copy of the family
+  (copy intervals lifted through the frozen truth's asm5 `_pri` -> B alignments, `out/chr*.paf`, primary records; a copy with < 50% of its
+  interval lifted has no B interval) — a genuine reference-absent locus, a TRUE flag; (b) **allele** — best hit >= 0.999 inside a lifted
+  copy interval of the family — a false flag (an allele beyond the 99th percentile); (c) **unmatched** — no hit >= 0.999 on either
+  haplotype — a false flag (error / chimera).
+- **Rules (fixed now):**
+  - **C1 (specificity):** the fraction of the 53 families with >= 1 FALSE candidate (classes b + c) is <= 0.28 — one third of the
+    deletion run's detection rate (44/53 = 0.83), i.e. a flag carries a likelihood ratio >= 3. Reported beside: the same fraction counting
+    every candidate (a + b + c), the specificity against the haploid reference alone.
+  - **C2 (cost without a deletion):** from R0 to C, reads placed on a candidate not derived from their own copy (false moves) <= 5% of
+    all reads. Reported beside: reads that become unplaced, reads moving onto candidates derived from their own copy (harmless).
+  - Reported: candidates per family by class; overlap with the deletion run's 21 survivor-derived candidates (same family and a contig at
+    identity >= 0.999 to one of them); the counts at delta/2 and 2 x delta.
+- **Not tested:** other individuals or tissues; the 1,000-read cap per family.
