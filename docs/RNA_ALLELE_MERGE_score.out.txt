@@ -1,0 +1,13 @@
+[R] D: {'unplaced': 7068, 'wrong': 10218} | S: {'elsewhere': 6, 'stay': 41051, 'unplaced': 670}
+[RIL] D: {'right': 1616, 'unplaced': 12086, 'wrong': 3584} | S: {'elsewhere': 3, 'false_move': 14, 'stay': 38595, 'unplaced': 3115}
+[M] D: {'right': 12787, 'unplaced': 900, 'wrong': 3599} | S: {'elsewhere': 3, 'false_move': 25, 'stay': 40421, 'unplaced': 1278}
+[T] D: {'right': 12797, 'unplaced': 897, 'wrong': 3592} | S: {'elsewhere': 3, 'false_move': 25, 'stay': 39883, 'unplaced': 1816}
+[M_half] D: {'right': 12787, 'unplaced': 900, 'wrong': 3599} | S: {'elsewhere': 3, 'false_move': 25, 'stay': 40420, 'unplaced': 1279}
+[M_double] D: {'right': 12787, 'unplaced': 900, 'wrong': 3599} | S: {'elsewhere': 3, 'false_move': 29, 'stay': 40421, 'unplaced': 1274}
+M1: D right 1616 -> 12787 (truth-grouped 12797; bar 6,440 = 50% of 12,879); false moves 25/41727 = 0.06% -> WORKS
+OVERALL (R vs R+I+L+M): wrong D 10218 -> 3599 (drop 64.8%); false moves 0.06% -> HELP
+M2: D contigs in ONE component 33/41 = 80.5% (bar 2/3); mixed components 1/75 = 1.3% (bar 10%) -> HOLDS
+[half delta=0.00479] components 76 {'D': 53, 'S_only': 22, 'mixed': 1}; families with >= 2 D contigs 41, D contigs in ONE component 33 (80.5%)
+[delta delta=0.00958] components 75 {'D': 53, 'S_only': 21, 'mixed': 1}; families with >= 2 D contigs 41, D contigs in ONE component 33 (80.5%)
+[double delta=0.01916] components 71 {'D': 51, 'S_only': 19, 'mixed': 1}; families with >= 2 D contigs 41, D contigs in ONE component 35 (85.4%)
+over-split D pairs by cause: {'coverage < 0.5': 62, 'no alignment': 41, 'de > delta': 60}
