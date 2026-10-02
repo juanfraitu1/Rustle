@@ -233,3 +233,32 @@ transcript and abstain. The linking rule is fixed here from an independent sourc
   - **Linking works** if, from R+I to R+I+L, S reads unplaced fall by >= 50% AND D reads right fall by <= 20%.
   - **Overall (Amendment 5's rule, R vs R+I+L):** HELP if wrong D falls by >= 50% and false moves <= 5% of S reads; HURT if > 10%.
   - Reported beside: right D, unplaced, by D-to-nearest-survivor divergence (< 0.01 vs >= 0.01).
+
+## Amendment 8 (2026-10-01): merging a missing copy's new-copy transcripts into one candidate copy, without truth (written before any run)
+
+Amendment 7 leaves the several new-copy transcripts of one missing copy as separate contigs, so a deleted copy's reads tie among its own
+transcripts and abstain (D right 1,616; counted as one locus WITH truth, 12,879). The merge rule is fixed here and scored on the same 53
+families and the same R+I+L alignments: no realignment, a read's call changes only through which contigs count as one locus.
+
+- **Merge rule.** Within a family, the new-copy contigs (`contigs_L.fa`, 565 in 46 families) are aligned all-vs-all
+  (`minimap2 -c -x asm20 --cs -N 200 -p 0.1`, self hits dropped, the best alignment per unordered pair by matching bases). Two contigs are
+  joined when that alignment covers >= 50% of the SHORTER contig's length AND its gap-compressed divergence (`de`) <= delta = 0.00958
+  (Amendment 7's delta, unchanged). Components of the joined pairs (transitive) are the candidate copies; a contig joined to nothing is a
+  candidate copy on its own. Gap-compressed divergence is used so that isoform differences (a skipped exon = one gap event) do not count as
+  sequence divergence; the overlap floor stops two transcripts from being joined on a shared fragment.
+- **Final call (Amendment 7's, with components as loci):** the locus of the primary alignment; a contig's locus is its component; abstain
+  when records within 0.98 x best AS lie on different loci. Reads tied between two contigs of one component are placed in that component.
+- **Labels (truth, scoring only).** A component is D-derived when it holds >= 1 D-derived contig (best unmasked hit on D's interval),
+  S:g-derived when it holds >= 1 contig derived from surviving copy g, mixed when both. D read: right = placed on a D-derived component;
+  wrong = any other placement; unplaced = unmapped / abstain. S read: stay = its own copy or a component holding a contig derived from its
+  own copy; false move = any other contig / component; elsewhere = another reference locus.
+- **Rules (fixed now):**
+  - **M1 (merging works, read level):** from R+I+L to R+I+L+M, D right rises to >= 50% of Amendment 7's truth-grouped value (12,879,
+    i.e. >= 6,440) AND false moves stay <= 5% of S reads. Reported beside it, Amendment 5's overall rule for R vs R+I+L+M (HELP if wrong D
+    falls >= 50% and false moves <= 5%; HURT if > 10%).
+  - **M2 (one missing copy, one candidate — the O3 count):** among the families with >= 2 D-derived new-copy contigs (41), the D-derived
+    contigs fall in ONE component in >= 2/3 of them AND mixed components are <= 10% of all components.
+  - Reported beside (not the verdict): components per family (total, D-derived, S-only = spurious new copies, mixed); the same counts at
+    delta/2 and 2 x delta (sensitivity); the truth-grouped ceiling; the cause of each over-split (no alignment covering >= 50% vs
+    divergence > delta).
+- **Not tested here:** families with no missing copy (the false-flag rate without a deletion) — a separate control.
