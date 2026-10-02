@@ -319,3 +319,29 @@ rate.
     control's 5/49 = 10.2% on families without any B-only locus).
   - Reported: for each expressed beyond-delta locus, where its reads sit in arm R0 (`_pri` copy, median `de`) and in arm C (the
     candidate), i.e. the O2 side; the single-transcript candidates (below the flag floor) matching a truth locus.
+
+## Amendment 11 (2026-10-02): the in-house consensus in place of IsoCon, on the same held-out (written before any run)
+
+The user wants no IsoCon dependency. The chain used IsoCon for one thing: reference-free consensus transcripts of a family's read net.
+The in-house counterpart is `missing_copy_flag` (`src/rustle/vg_family/missing_copy.rs`): per locus, the per-read `de` mixture splits
+the pile into host and divergent sub-pile, the sub-pile's mismatches are tested for PSV consistency, and a spliced consensus of the hidden
+copy is built by patching the reference at those sites. This amendment swaps it in and scores it against IsoCon's own numbers.
+
+- **Substrate:** Amendment 7's 53 families, the same masked genome, the same scored reads and the same R-arm alignments (`R.bam`).
+- **In-house consensus:** `missing_copy_flag --bam R.bam --fasta masked.fa --loci surviving_copies.bed --index masked.splice.mmi` with
+  defaults (`--delta-min 0.01 --min-reads 10 --min-sub 3 --max-reads 2000`), `--scan-only` then `--from-scan`. Loci = the 201 surviving
+  copies' clean intervals (BED, name = family:copy). Its `consensus.fa` (one sequence per locus with a consistent divergent sub-pile)
+  replaces IsoCon's outputs; everything downstream is Amendments 7-8 unchanged: flag (identity x coverage < 0.999 in the masked genome),
+  link (d <= 0.00958), merge (components at delta), labels (D-derived = best unmasked hit on the masked interval), arm M = masked genome +
+  the new-copy consensus contigs with components as loci.
+- **Rules (fixed now), IsoCon's Amendment 8 result as the comparator (D right 12,787 = 74.0%, false moves 25 = 0.06%, one candidate per
+  deleted copy in 33/41 families with >= 2 D contigs):**
+  - **IH1 (adopt):** D right >= 80% of IsoCon's (>= 10,230) AND false moves <= 5% of S reads -> the in-house consensus replaces IsoCon in
+    the `candidates` stage. Otherwise the gap is reported by cause (deleted copies with no consensus at all vs consensus present but reads
+    not placed).
+  - **IH2 (one copy, one candidate):** among families with >= 1 D-derived candidate, exactly one D-derived component in >= 2/3.
+  - Reported beside: consensus count and `missing_copy_flag`'s own verdict classes; per deleted copy, whether a consensus exists and its
+    d to the nearest survivor (copies closer than `--delta-min` 0.01 are below the S2 statistic's floor by construction, as they are
+    below delta for the link rule); the 2-member floor's effect; structure (`n_bigins`, `n_rearr`) in the scan table.
+- **Not tested here:** the structural extension (keeping clipped / inserted segments) — IsoCon's transcripts carry structure, the patched
+  consensus does not; if IH1 fails, that is the first suspect, and the human DAZ3 panel (`yag_hsa`) is the structural check to run next.
