@@ -170,6 +170,15 @@ byte-identical outputs on every existing fixture after §6, plus one cross-chrom
 place: D right >= 80% of 12,787 and false moves <= 5% -> adopt; the union representatives keep >= 95% of the components' reads (the
 `rep_choice.py` measure); wall time <= 2 x IsoCon's (~20 min for 53 families at the 1,000-read cap).
 
+## 9b. Plan rulings (2026-10-02, recorded here so the spec and the plan agree)
+
+- Alignment engine for read-vs-template, consensus votes, cluster/consensus all-vs-all and the union: **batched minimap2** calls through
+  `run_cache` (as `mcl_families` does), not poasta. Poasta's exact affine search runs ~100 ms per 3 kb pair, which puts the 53-family
+  acceptance at hours; minimap2's `de`, coverage and `cs` are the quantities Amendments 7-8 validated. §5.3, §5.5 and §5.7 read with
+  this substitution; the rules are unchanged.
+- §6: the chromosome reaches `best_overlap_copy` as a parallel `read_chroms: Option<&[String]>` slice on `assign_family_detailed_once`
+  instead of a field on `AlignedRead` (41 literal constructors); same observable behaviour, byte-identical when `None`.
+
 ## 10. Open items (deferred, named)
 
 - POA-graph consensus (`build_poa_graph`, `family_graph.rs:18`) instead of template-and-vote, if the acceptance run shows consensus
