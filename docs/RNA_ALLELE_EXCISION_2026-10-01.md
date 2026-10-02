@@ -35,3 +35,28 @@ while their best reference placement is 93-96% (chr18). The signal of a missing 
 | NPIP 4 kb (880 reads) | 34.1% | 28.9% | 4.0% | 0% | 33.1% |
 
 Among assigned reads the wrong-copy rate is 28% (TBC1D3) and 6% (NPIP): IsoCon's grouping is not an assign-or-abstain certificate.
+
+## Amendment 5: IsoCon's reference-absent transcripts as extra O2 copies (NPIPA2 deleted)
+
+The 35 IsoCon outputs flagged "not in the reference" (15 of them NPIPA2 transcripts; the amendment said 16: the 16th NPIPA2 output was
+not flagged, so it is not a contig) were added to the masked genome as contigs; reads realigned; shipped `copy_assign --families` run with
+the 24 remaining NPIP copies (R) and with those + the 35 contigs (R+I).
+
+- **O2 itself barely acts:** it rows 13 (R) and 11 (R+I) AS-tied reads, all `ambiguous`/`tied`, none `assigned`. Every other read keeps
+  its aligner placement, so the copy set changes the outcome through the aligner, not through the certificate.
+
+| NPIPA2's 176 reads | R (reference copies) | R+I (+ IsoCon transcripts) |
+|---|---|---|
+| right (an NPIPA2 IsoCon transcript) | 0 | **126** |
+| wrong: LOC124907808 | 171 | 41 |
+| wrong: other copies / non-NPIPA2 transcripts | 5 | 8 |
+| abstain | 0 | 1 |
+
+- **Other NPIP reads (761, baseline primary on a remaining copy):** R: 740 stay, 12 elsewhere, 9 abstain. R+I: 691 stay, 2 move to their
+  own copy's transcript, **45 move to another transcript (5.9%)**, 17 elsewhere, 6 abstain.
+- **Registered rule:** wrong 176 -> 49 (-72%) but false moves 5.9% > 5% -> **MIXED**.
+- **Post hoc (not the verdict):** 31 of the 47 reads that moved onto a transcript had been placed by the reference at > 2% mismatches
+  (median 8.2%) and fit their transcript at < 0.5% (median 0.11%). Most went to iso_31/iso_32, short transcripts of the maternal-only
+  sequence at chr18 mat 6.72-6.76 Mb (0.999 to the maternal haplotype, 0.80-0.86 to the reference). The truth label (the reference
+  placement) is wrong for these reads: they belong to sequence the reference lacks. The remaining 16 mostly fit both places poorly; about
+  3 moved off a good reference fit because two sequences are near-identical.
