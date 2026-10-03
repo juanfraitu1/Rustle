@@ -2,7 +2,7 @@
 //! PREREG_rna_allele_haplotype_count Amendments 7-11 without IsoCon. Pure functions here, plus the cached minimap2 runner and the output
 //! writers; the BAM passes and the flow of the stage are in the binary.
 //!
-//! **STATUS:** OTHER-BINARY — reached only from the `o3_candidates` binary (`src/bin/o3_candidates.rs`; the driver's `candidates` stage runs that binary)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+//! **STATUS:** OTHER-BINARY — reached only from the `o3_candidates` binary (`src/bin/o3_candidates.rs`; the driver's `candidates` stage runs that binary, an OPT-IN stage since ruling R14: Amendment 12 failed)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use crate::vg_family::run_cache as rc;
 use anyhow::Context;
@@ -95,7 +95,7 @@ pub struct PafHit {
 /// Parses minimap2 PAF text into one `PafHit` per alignment line. Lenient, like the repo's other PAF readers
 /// (`shared_definition::parse_paf`): a line with fewer than 12 tab-separated columns, a non-numeric fixed column or a strand other than
 /// `+`/`-` (blank lines, a truncated last line) is skipped. Tags are looked up after column 12: `de:f:` (absent or unreadable -> 1.0, the
-/// worst divergence: such a hit never links and never merges) and `cs:Z:` (absent -> `None`).
+/// worst divergence: such a hit never clusters and never merges; linking is decided by d, not `de`) and `cs:Z:` (absent -> `None`).
 pub fn parse_paf(text: &str) -> Vec<PafHit> { text.lines().filter_map(parse_paf_line).collect() }
 
 fn parse_paf_line(line: &str) -> Option<PafHit> {
@@ -409,8 +409,8 @@ pub struct UnionNote {
 /// members share is taken once: the second one finds it already there. That hit must skip a long stretch of the union in ONE alignment (a
 /// member that skips an exon): minimap2 `-x splice:hq -uf -c --cs` does (the skip is a `~` intron of the `cs`); `-x asm20 -c --cs` does not,
 /// a skip of some hundred bp costs more than the shorter side earns, the alignment is cut there, and what lies beyond the cut comes back as an
-/// 'unaligned' prefix or suffix and is inserted again. Measured on Amendment 8's 50 multi-member components (540 real IsoCon contigs):
-/// 11.7% of the unions' bases were such duplicates with asm20, 0% with splice:hq (the backbones alone: 0%). From the hit, in member order:
+/// 'unaligned' prefix or suffix and is inserted again (ruling R6, spec §9b, records the measurement behind the splice preset). From the
+/// hit, in member order:
 /// * the unaligned prefix `member[..qs]`, when `qs >= 20`, goes in front of target position `ts`, and the unaligned suffix `member[qe..]`,
 ///   when `qlen - qe >= 20`, in front of position `te` (so with `ts == 0` / `te == tlen` they are prepended / appended);
 /// * every insertion of the `cs` of >= 20 bp goes in front of the target base it precedes. An insertion < 20 bp is an error or a microindel,
@@ -490,9 +490,9 @@ fn union_pieces(member: &[u8], union: &[u8], h: &PafHit) -> anyhow::Result<Vec<(
 pub const MM2_AVA: &[&str] = &["-x", "asm20", "-c", "--cs", "--dual=no", "-N", "100", "-p", "0.1", "--secondary=yes"];
 /// Members against their template (the consensus vote) and against their cluster's consensus (`refine_cluster`).
 pub const MM2_MEMBERS: &[&str] = &["-x", "asm20", "-c", "--cs", "-N", "5", "-p", "0.5"];
-/// A member against the CURRENT union (`union_sequence`; ruling R6). A splice preset: it skips an exon the member lacks in ONE alignment, where
-/// `asm20` cuts the alignment at the skip and the far side comes back as an unaligned end and is inserted again (measured on Amendment 8's 540 real
-/// contigs: `asm20` duplicated 11.7% of the unions' bases, `splice:hq` 0%).
+/// A member against the CURRENT union (`union_sequence`; ruling R6, spec §9b, records the measurement that chose it). A splice preset: it
+/// skips an exon the member lacks in ONE alignment, where `asm20` cuts the alignment at the skip and the far side comes back as an unaligned end
+/// and is inserted again.
 pub const MM2_UNION: &[&str] = &["-x", "splice:hq", "-uf", "-c", "--cs", "-N", "5", "-p", "0.5"];
 /// Consensus sequences against the primary genome's splice index (`--index`): the genome hits that `classify` judges (spec §5.6).
 pub const MM2_GENOME: &[&str] = &["-x", "splice:hq", "-uf", "-c", "--eqx", "-N", "20"];
@@ -505,12 +505,12 @@ pub fn candidate_id(family: &str, k: usize) -> String { format!("cand_{family}_{
 /// binary names `RUSTLE_MINIMAP2` too) and leaves no stale or partial `out_paf` behind.
 ///
 /// With `cache = Some(root)` (the run_cache root, `run_cache::cache_root()`) the PAF is a pinned `paf` entry keyed on the command line, the
-/// minimap2 build and the content hash of every byte of `target` and `query` (`paf_key`; paths and mtimes do not count): a hit hard-links the
-/// cached PAF to `out_paf`, a miss runs minimap2 and links the product into a new entry; only a successful run is stored. `-t <threads>` is
-/// appended after the key is made (ruling R10): the thread count never enters it, so a run with other threads replays the same entry
-/// (minimap2's output does not depend on it). Every call reads both inputs in full to hash them, which for a multi-GB `.mmi` takes about as
-/// long as loading it: key such a target with `minimap2_keyed`. An input that cannot be read is an error naming it. `out_paf` is unlinked
-/// before it is written, never truncated: it may be a hard link to a cache payload.
+/// minimap2 build and the content hash of every byte of `target` and `query` (`paf_key`; paths and mtimes do not count): a hit replays the
+/// cached PAF as `out_paf` (a hard link, else a copy), a miss runs minimap2 and links the product into a new entry; only a successful run is
+/// stored. `-t <threads>` is appended after the key is made (ruling R10): the thread count never enters it, so a run with other threads
+/// replays the same entry (minimap2's output does not depend on it). Every call reads both inputs in full to hash them, which for a multi-GB
+/// `.mmi` takes about as long as loading it: key such a target with `minimap2_keyed`. An input that cannot be read is an error naming it.
+/// `out_paf` is unlinked before it is written, never truncated: it may be a hard link to a cache payload.
 pub fn minimap2(args: &[&str], target: &Path, query: &Path, out_paf: &Path, cache: Option<&Path>, threads: usize) -> anyhow::Result<()> {
     run_minimap2(&minimap2_binary(), args, target, None, query, out_paf, cache, threads)
 }
@@ -868,7 +868,7 @@ mod tests {
         assert!((a.de - 0.01).abs() < 1e-12);
         assert_eq!(a.cs.as_deref(), Some(":100"));              // the CR of CRLF is not part of the cs string
         assert_eq!((c.q.as_str(), c.qlen, c.qs, c.qe, c.strand, c.t.as_str(), c.tlen, c.ts, c.te, c.matches, c.block), ("c", 300, 10, 290, b'+', "d", 350, 5, 285, 270, 281));
-        assert_eq!((c.de, c.cs.as_deref()), (1.0, None));       // absent de -> 1.0 (never clusters, never links), absent cs -> None
+        assert_eq!((c.de, c.cs.as_deref()), (1.0, None));       // absent de -> 1.0 (never clusters, never merges), absent cs -> None
         assert_eq!((g.q.as_str(), g.t.as_str(), g.matches, g.de, g.cs.as_deref()), ("g", "h", 40, 1.0, None));
         assert!(parse_paf("").is_empty() && parse_paf("\n\n").is_empty());
     }
@@ -1404,7 +1404,8 @@ mod tests {
 
     /// Concatenation of byte slices.
     fn cat(parts: &[&[u8]]) -> Vec<u8> { parts.concat() }
-    /// A hit of a member (query) on a union (target) as minimap2 `-x asm20 -c --cs` writes it: `+` strand; matches, block and de are fillers.
+    /// A hit of a member (query) on a union (target) as minimap2 `-x splice:hq -uf -c --cs` (`MM2_UNION`) writes it: `+` strand; matches, block
+    /// and de are fillers.
     fn uhit(qlen: usize, qs: usize, qe: usize, tlen: usize, ts: usize, te: usize, cs: &str) -> PafHit {
         PafHit { q: "m".into(), qlen, qs, qe, strand: b'+', t: "u".into(), tlen, ts, te, matches: te.saturating_sub(ts), block: qe.saturating_sub(qs), de: 0.0, cs: Some(cs.into()) }
     }

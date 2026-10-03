@@ -7,14 +7,16 @@
 //! usage: o3_candidates --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi --out P.cand
 //!        [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2]
 //!
-//! Products (`<out>.`): `candidates.tsv`, `clusters.tsv`, `contigs.fa`, `nets.fa` (`write_outputs`), `families.tsv` (one row per family, ruling
-//! R8), `reads.tsv` (read -> cluster, spec §4) and `clusters.fa` (the consensus of every cluster in `clusters.tsv`; with `reads.tsv` the input
-//! of Amendment 12's A12-2 measure). Temporary files live in `<out>.tmp/` and are removed on success.
+//! Products (`<out>.`): from `write_outputs`, `candidates.tsv`, `clusters.tsv` (the new-copy and the linked clusters; the in-reference
+//! ones are counted in `families.tsv`, not listed), `contigs.fa` and `nets.fa` (the whole net of each family with a flagged candidate, each
+//! read once: R9); `families.tsv` (one row per family, ruling R8); `reads.tsv` (read -> cluster, spec §4, for the clusters of `clusters.tsv`
+//! only) and `clusters.fa` (the consensus of every cluster in `clusters.tsv`; with `reads.tsv` the input of Amendment 12's A12-2 measure).
+//! Temporary files live in `<out>.tmp/` and are removed on success.
 //!
 //! Environment: `RUSTLE_MINIMAP2` (the minimap2 binary, default `minimap2`), `RUSTLE_CACHE_DIR` (run_cache: the whole result is one `cand`
 //! entry replayed on a hit; every minimap2 PAF is a `paf` entry). Exit status 2: a usage error, `--copies` missing / empty / unreadable, an
-//! input file that does not exist, minimap2 that cannot be started (spec §8). Deterministic: seeded sampling over sorted names, stable orders;
-//! threads only inside minimap2 and the BAM decompression.
+//! input file that does not exist, a copy on a contig the BAM header does not name, minimap2 that cannot be started (spec §8).
+//! Deterministic: seeded sampling over sorted names, stable orders; threads only inside minimap2 and the BAM decompression.
 
 use anyhow::{Context, Result};
 use noodles_core::{Position, Region};
@@ -339,7 +341,7 @@ fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, Vec<(String, Vec<u8>)
         return Err(exit_two(format!("--copies {} is empty", args.copies)));
     }
     let rows = parse_copies_tsv(&text).map_err(|e| exit_two(format!("--copies {}: {e:#}", args.copies)))?;
-    let all = group_families(rows)?;
+    let all = group_families(rows).map_err(|e| exit_two(format!("--copies {}: {e:#}", args.copies)))?;
     if let Some(f) = all.iter().find(|f| f.family_id.is_empty() || f.family_id.contains(char::is_whitespace)) {
         return Err(exit_two(format!("--copies {}: family id {:?} is empty or holds whitespace (it names FASTA records)", args.copies, f.family_id)));
     }
@@ -446,11 +448,12 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], kmer_input: &[(String, 
         let index = noodles_bam::bai::read(&bai).with_context(|| format!("reading the BAM index {bai}"))?;
         for (fi, fam) in families.iter().enumerate() {
             for c in fam.copies.iter().filter(|c| !c.partner) {
-                anyhow::ensure!(
-                    header.reference_sequences().contains_key(c.chrom.as_bytes()),
-                    "copy {} of family {} lies on {}, which the header of {} does not name",
-                    c.copy_idx, c.family_id, c.chrom, args.bam
-                );
+                if !header.reference_sequences().contains_key(c.chrom.as_bytes()) {
+                    return Err(exit_two(format!(
+                        "copy {} of family {} lies on {}, which the header of {} does not name",
+                        c.copy_idx, c.family_id, c.chrom, args.bam
+                    )));
+                }
                 // spec §5.1: the read-supported locus extent when the row has one, else the copy's span (0-based half-open -> 1-based closed)
                 let (lo, hi) = c.locus.unwrap_or((c.start, c.end));
                 let region = Region::new(c.chrom.as_str(), Position::try_from(lo as usize + 1)?..=Position::try_from(hi.max(lo + 1) as usize)?);
