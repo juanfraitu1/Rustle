@@ -11,8 +11,13 @@
 //!        [--gff ANNOTATION.gff] [--confirm NAME=GENOME.mmi ...] [--m-min 0.10] [--delta-min 0.01]
 //!        [--min-reads 10] [--min-sub 3] [--max-reads 2000] [--pi 0.002] [--threads 2] [--contigs c1,c2]
 //!        [--foreign NAME=GENOME.mmi ...] [--scan-only] [--from-scan PREFIX1,PREFIX2,...]
+//!        [--candidates P.cand.candidates.tsv]
 //!
 //! Outputs `<PREFIX>.missing_copy.tsv` (one row per locus with >= --min-reads reads) and `<PREFIX>.consensus.fa`.
+//! With `--candidates` (the `o3_candidates` stage's table, spec 2026-10-02 §7) the table gains a last column
+//! `o3_candidate`: the flagged candidate copies whose nearest reference locus (`nearest_locus`, the consensus's best
+//! genome hit) lies on the row's chromosome and overlaps its span, comma-separated, else `-` — the two O3 sources
+//! corroborating each other. Without it the table is unchanged.
 //! Heavy work (one minimap2 run per genome index) happens once at the end, never per locus. A genome-wide run
 //! on a 5-core laptop is split: `--scan-only` (BAM scan + mixture + consistency + consensus for a contig batch,
 //! writes `<PREFIX>.scan.tsv` + `<PREFIX>.consensus.fa`), then one `--from-scan A,B,C` call that aligns every
@@ -44,6 +49,7 @@ struct Args {
     contigs: Option<Vec<String>>,
     scan_only: bool,
     from_scan: Option<Vec<String>>,
+    candidates: Option<String>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -81,7 +87,52 @@ fn parse_args() -> Result<Args> {
         contigs: get("--contigs").map(|v| v.split(',').map(|s| s.to_string()).collect()),
         scan_only: a.iter().any(|x| x == "--scan-only"),
         from_scan: get("--from-scan").map(|v| v.split(',').map(|s| s.to_string()).collect()),
+        candidates: get("--candidates"),
     })
+}
+
+/// A flagged `o3_candidates` candidate copy and its nearest reference locus (0-based half-open, as `nearest_locus`).
+#[derive(Clone, Debug, PartialEq)]
+struct FlaggedCandidate {
+    id: String,
+    chrom: String,
+    start: u64,
+    end: u64,
+}
+
+/// The flagged rows of an `o3_candidates` `<prefix>.candidates.tsv` (columns by name) that carry a nearest locus
+/// (`chrom:start-end`; `none` = no genome hit, nothing to corroborate), in table order.
+fn parse_flagged_candidates(text: &str) -> Result<Vec<FlaggedCandidate>> {
+    let mut lines = text.lines();
+    let header = lines.next().context("--candidates: empty file (expected an o3_candidates candidates.tsv)")?;
+    let cols: Vec<&str> = header.split('\t').collect();
+    let idx = |name: &str| cols.iter().position(|c| *c == name).with_context(|| format!("--candidates: no `{name}` column (header {header:?})"));
+    let (i_id, i_flag, i_near) = (idx("candidate")?, idx("flagged")?, idx("nearest_locus")?);
+    let mut out = Vec::new();
+    for (ln, line) in lines.enumerate().filter(|(_, l)| !l.trim().is_empty()) {
+        let f: Vec<&str> = line.split('\t').collect();
+        let at = |i: usize| f.get(i).copied().with_context(|| format!("--candidates line {}: too few fields", ln + 2));
+        if at(i_flag)? != "1" || at(i_near)? == "none" {
+            continue;
+        }
+        let near = at(i_near)?;
+        let parsed = near.rsplit_once(':').and_then(|(c, span)| {
+            let (a, b) = span.split_once('-')?;
+            Some((c.to_string(), a.parse::<u64>().ok()?, b.parse::<u64>().ok()?))
+        });
+        let Some((chrom, start, end)) = parsed else {
+            anyhow::bail!("--candidates line {}: nearest_locus {near:?} is not chrom:start-end", ln + 2);
+        };
+        out.push(FlaggedCandidate { id: at(i_id)?.to_string(), chrom, start, end });
+    }
+    Ok(out)
+}
+
+/// The `o3_candidate` cell of a verdict row: the flagged candidates whose nearest locus lies on the row's chromosome and
+/// overlaps its (0-based half-open) span, comma-separated in table order, else `-`.
+fn o3_candidate_column(cands: &[FlaggedCandidate], r: &Row) -> String {
+    let on: Vec<&str> = cands.iter().filter(|c| c.chrom == r.chrom && c.start < r.end && r.start < c.end).map(|c| c.id.as_str()).collect();
+    if on.is_empty() { "-".to_string() } else { on.join(",") }
 }
 
 /// Primary reads (`-F 2308`) overlapping a region, capped by name order. With `only`, records whose name is not
@@ -450,6 +501,11 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
 
 fn main() -> Result<()> {
     let args = parse_args()?;
+    // read before the scan, so a bad table fails in the first second (the scan-only phase writes no verdict table)
+    let cands: Option<Vec<FlaggedCandidate>> = match (&args.candidates, args.scan_only) {
+        (Some(p), false) => Some(parse_flagged_candidates(&std::fs::read_to_string(p).with_context(|| format!("reading --candidates {p}"))?)?),
+        _ => None,
+    };
     // phase 1: scan (this call's batch), unless resuming from earlier scans
     let (rows, cons_fasta): (Vec<Row>, std::path::PathBuf) = match &args.from_scan {
         None => {
@@ -510,10 +566,14 @@ fn main() -> Result<()> {
         head.push(format!("foreign_{g}_identity"));
         head.push(format!("foreign_{g}_locus"));
     }
+    let n_extra = head.len() - SCAN_HEAD.split('\t').count();
+    if cands.is_some() {
+        head.push("o3_candidate".to_string());
+    }
     writeln!(tsv, "{}", head.join("\t"))?;
     let mut counts: HashMap<&'static str, usize> = HashMap::new();
     let (mut n_confirmed, mut n_candidates) = (0usize, 0usize);
-    let n_extra = head.len() - SCAN_HEAD.split('\t').count();
+    let mut n_corroborated = 0usize;
     for r in &rows {
         let mut f: Vec<String> = vec![r.to_scan_line()];
         if r.fired {
@@ -557,6 +617,11 @@ fn main() -> Result<()> {
         } else {
             f.extend(std::iter::repeat("NA".to_string()).take(n_extra));
         }
+        if let Some(c) = &cands {
+            let cell = o3_candidate_column(c, r);
+            n_corroborated += (cell != "-") as usize;
+            f.push(cell);
+        }
         writeln!(tsv, "{}", f.join("\t"))?;
     }
     let mut vc: Vec<_> = counts.iter().collect();
@@ -565,6 +630,60 @@ fn main() -> Result<()> {
     if n_conf > 0 {
         eprintln!("[missing_copy_flag] reference_absent_candidate {n_candidates}, confirmed by a confirm genome {n_confirmed}");
     }
+    if let (Some(c), Some(p)) = (&cands, &args.candidates) {
+        eprintln!("[missing_copy_flag] --candidates {p}: {} flagged candidates with a nearest locus; {n_corroborated} rows name one (o3_candidate)", c.len());
+    }
     eprintln!("[missing_copy_flag] wrote {tsv_path}");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A scan-phase row with the locus fields set and every statistic 0 (only the locus matters to `--candidates`).
+    fn row(id: &str, chrom: &str, start: u64, end: u64) -> Row {
+        let mut f: Vec<String> = vec![id.into(), id.into(), chrom.into(), start.to_string(), end.to_string(), "40".into(), "fired".into()];
+        f.resize(SCAN_HEAD.split('\t').count(), "0".into());
+        Row::from_scan_line(&f.join("\t")).expect("a well-formed scan line")
+    }
+
+    const CAND_HEAD: &str = "family\tcandidate\tn_clusters\tn_reads\tflagged\tunion_len\tnearest_locus\td\tn_net\tn_used";
+
+    /// `--candidates P.cand.candidates.tsv` (spec 2026-10-02 §7): the `o3_candidate` column names the FLAGGED candidates
+    /// whose nearest locus (0-based half-open, the consensus's best genome hit) lies on the row's chromosome and overlaps
+    /// its span, else `-`; an unflagged candidate, one with no genome hit (`none`) and a span that only touches the
+    /// locus do not corroborate.
+    #[test]
+    fn the_o3_candidate_column_names_a_flagged_candidate_whose_nearest_locus_overlaps_the_row() {
+        let text = format!(
+            "{CAND_HEAD}\n\
+             MCL0\tcand_MCL0_0\t1\t60\t1\t895\tchrT:10005-13100\t0.03017\t120\t120\n\
+             MCL0\tcand_MCL0_1\t1\t4\t0\t700\tchrT:10005-13100\t0.05000\t120\t120\n\
+             MCL1\tcand_MCL1_0\t2\t9\t1\t600\tnone\t1.00000\t30\t30\n"
+        );
+        let cands = parse_flagged_candidates(&text).unwrap();
+        assert_eq!(cands.len(), 1, "only flagged candidates with a nearest locus: {cands:?}");
+        // the two synthetic rows: the deleted copy's surviving sibling, and a locus elsewhere on the chromosome
+        assert_eq!(o3_candidate_column(&cands, &row("geneA", "chrT", 10000, 13100)), "cand_MCL0_0");
+        assert_eq!(o3_candidate_column(&cands, &row("geneB", "chrT", 20000, 21000)), "-");
+        // same coordinates on another chromosome, and a span that only touches the hit (half-open), do not corroborate
+        assert_eq!(o3_candidate_column(&cands, &row("geneC", "chrU", 10000, 13100)), "-");
+        assert_eq!(o3_candidate_column(&cands, &row("geneD", "chrT", 13100, 14000)), "-");
+        // two flagged candidates on one locus: both, in table order
+        let two = format!("{text}MCL2\tcand_MCL2_0\t1\t7\t1\t500\tchrT:12000-12500\t0.02000\t10\t10\n");
+        let cands = parse_flagged_candidates(&two).unwrap();
+        assert_eq!(o3_candidate_column(&cands, &row("geneA", "chrT", 10000, 13100)), "cand_MCL0_0,cand_MCL2_0");
+    }
+
+    /// The table is read by column NAME, and a malformed one is an error, not an empty corroboration.
+    #[test]
+    fn a_candidates_table_without_its_columns_or_with_a_bad_locus_is_an_error() {
+        let e = parse_flagged_candidates("family\tcandidate\tflagged\nMCL0\tcand_MCL0_0\t1\n").unwrap_err().to_string();
+        assert!(e.contains("nearest_locus"), "{e}");
+        let bad = format!("{CAND_HEAD}\nMCL0\tcand_MCL0_0\t1\t60\t1\t895\tchrT:10005\t0.03\t120\t120\n");
+        let e = parse_flagged_candidates(&bad).unwrap_err().to_string();
+        assert!(e.contains("chrT:10005"), "{e}");
+        assert!(parse_flagged_candidates("").is_err(), "an empty file has no header");
+    }
 }
