@@ -1,9 +1,14 @@
 //! O3 candidate copies (spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md): the reference-absent-copy chain of
-//! PREREG_rna_allele_haplotype_count Amendments 7-11 without IsoCon. Pure functions here; BAM passes and minimap2 calls in the binary.
+//! PREREG_rna_allele_haplotype_count Amendments 7-11 without IsoCon. Pure functions here, plus the cached minimap2 runner and the output
+//! writers; the BAM passes and the flow of the stage are in the binary.
 //!
 //! **STATUS:** TEST-ONLY — no caller yet (the `o3_candidates` binary and the driver stage land in later tasks of the plan; flips to OPT-IN then)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
+use crate::vg_family::run_cache as rc;
+use anyhow::Context;
 use std::collections::HashMap;
+use std::io::Write;
+use std::path::Path;
 
 pub const KMER_K: usize = 31;
 pub const SKETCH_W: usize = 5;
@@ -470,6 +475,204 @@ fn union_pieces(member: &[u8], union: &[u8], h: &PafHit) -> anyhow::Result<Vec<(
     // ts <= every position of the cs walk <= te (the walk ends at te): the order that `union_sequence_with_note` relies on
     debug_assert!(pieces.windows(2).all(|w| w[0].0 <= w[1].0), "pieces out of order: {:?}", pieces.iter().map(|p| p.0).collect::<Vec<_>>());
     Ok(pieces)
+}
+
+// ---- the minimap2 runner (cached through run_cache) and the output writers (spec §5.8; plan task 7) ---------------------------------------
+
+/// All-vs-all, one direction per pair (`-X`) with the secondary hits kept (`-N 100 -p 0.1`): the reads of a net (read clustering) and the
+/// consensus sequences of a family (the significance merge, the components of new-copy consensus sequences). `--cs` carries the substitution columns.
+pub const MM2_AVA: &[&str] = &["-x", "asm20", "-c", "--cs", "-X", "-N", "100", "-p", "0.1", "--secondary=yes"];
+/// Members against their template (the consensus vote) and against their cluster's consensus (`refine_cluster`).
+pub const MM2_MEMBERS: &[&str] = &["-x", "asm20", "-c", "--cs", "-N", "5", "-p", "0.5"];
+/// A member against the CURRENT union (`union_sequence`; ruling R6). A splice preset: it skips an exon the member lacks in ONE alignment, where
+/// `asm20` cuts the alignment at the skip and the far side comes back as an unaligned end and is inserted again (measured on Amendment 8's 540 real
+/// contigs: `asm20` duplicated 11.7% of the unions' bases, `splice:hq` 0%).
+pub const MM2_UNION: &[&str] = &["-x", "splice:hq", "-uf", "-c", "--cs", "-N", "5", "-p", "0.5"];
+/// Consensus sequences against the primary genome's splice index (`--index`): the genome hits that `classify` judges (spec §5.6).
+pub const MM2_GENOME: &[&str] = &["-x", "splice:hq", "-uf", "-c", "--eqx", "-N", "20"];
+
+/// The name of the k-th candidate of `family` (k = the component's order within the family): `cand_<family>_<k>`.
+pub fn candidate_id(family: &str, k: usize) -> String { format!("cand_{family}_{k}") }
+
+/// Runs `minimap2 <args> <target> <query>` and leaves its PAF at `out_paf`; `target` may be a `.mmi` index. The binary is `RUSTLE_MINIMAP2`
+/// (default `minimap2`) and its stderr is discarded. A run that fails is an error naming the whole command (an unstartable binary names
+/// `RUSTLE_MINIMAP2` too) and leaves no stale or partial `out_paf` behind.
+///
+/// With `cache = Some(root)` (the run_cache root, `run_cache::cache_root()`) the PAF is a pinned `paf` entry keyed on the command line, the
+/// minimap2 build and the content hash of every byte of `target` and `query` (`paf_key`; paths and mtimes do not count): a hit hard-links the
+/// cached PAF to `out_paf`, a miss runs minimap2 and links the product into a new entry; only a successful run is stored. Every call reads both
+/// inputs in full to hash them, which for a multi-GB `.mmi` takes about as long as loading it: pass `cache = None` for such a call. An input
+/// that cannot be read is an error naming it. `out_paf` is unlinked before it is written, never truncated: it may be a hard link to a cache payload.
+pub fn minimap2(args: &[&str], target: &Path, query: &Path, out_paf: &Path, cache: Option<&Path>) -> anyhow::Result<()> {
+    let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+    run_minimap2(&mm2, args, target, query, out_paf, cache)
+}
+
+/// `minimap2` with the binary given (the tests' seam: no process-wide variable to set).
+fn run_minimap2(mm2: &str, args: &[&str], target: &Path, query: &Path, out_paf: &Path, cache: Option<&Path>) -> anyhow::Result<()> {
+    let entry = cache.map(|root| paf_entry(root, mm2, args, target, query)).transpose()?;
+    if let Some(e) = entry.as_ref().filter(|e| e.is_hit()) {
+        // a replay that fails (another run replacing the entry) falls through to running minimap2
+        if let Ok(linked) = e.replay("out.paf", out_paf) {
+            eprintln!("[cache] o3_candidates: minimap2 PAF replayed from {} ({}; minimap2 skipped)", e.dir.display(), if linked { "hard link" } else { "copy" });
+            return Ok(());
+        }
+    }
+    let shown = format!("{mm2} {} {} {}", args.join(" "), target.display(), query.display());
+    unlink_if_present(out_paf)?;
+    let ran = std::fs::File::create(out_paf).with_context(|| format!("creating {}", out_paf.display())).and_then(|paf| {
+        let status = std::process::Command::new(mm2).args(args).arg(target).arg(query).stdout(paf).stderr(std::process::Stdio::null()).status()
+            .with_context(|| format!("running `{shown}` (RUSTLE_MINIMAP2 names the minimap2 binary)"))?;
+        anyhow::ensure!(status.success(), "`{shown}` failed ({status})");
+        Ok(())
+    });
+    if let Err(e) = ran {
+        let _ = std::fs::remove_file(out_paf);
+        return Err(e);
+    }
+    if let Some(e) = entry.as_ref() {
+        let stored = e.staging().and_then(|st| { e.stage_link(&st, "out.paf", out_paf)?; e.commit(&st) });
+        if let Err(err) = stored { eprintln!("[cache] could not store the PAF ({err:#}); continuing"); }
+    }
+    Ok(())
+}
+
+/// The pinned `paf` cache entry of one call: its key (`paf_key`) hashes `target` and `query` in full.
+fn paf_entry(root: &Path, mm2: &str, args: &[&str], target: &Path, query: &Path) -> anyhow::Result<rc::Entry> {
+    let hash = |p: &Path| rc::ContentHash::of_file(p).with_context(|| format!("hashing {} for the minimap2 cache key", p.display()));
+    let key = paf_key(&format!("{mm2} {}", args.join(" ")), &rc::minimap2_version(mm2), &hash(target)?, &hash(query)?);
+    Ok(rc::Entry::new(root, "paf", key).pinned())
+}
+
+/// The key text of one minimap2 call (`paf/<fnv(key)>/key.tsv`, which a hit must equal byte for byte): the command line (binary and
+/// arguments; not the paths, the content stands for them), the minimap2 build, and the content hash and byte length of the target and of the
+/// query, in that order, so the two files in each other's roles are another key.
+fn paf_key(cmd: &str, minimap2_version: &str, target: &rc::ContentHash, query: &rc::ContentHash) -> String {
+    format!(
+        "rustle o3 minimap2 v1\ncmd\t{cmd}\nminimap2\t{minimap2_version}\ntarget_hash\tcontent128:{}\ntarget_bytes\t{}\nquery_hash\tcontent128:{}\nquery_bytes\t{}\n",
+        target.hex(), target.len(), query.hex(), query.len()
+    )
+}
+
+/// One candidate copy of a family: a component of its new-copy cluster consensus sequences (`components`), judged by `is_flagged` and
+/// represented by the exon union (`union_sequence`). The caller builds it; `write_outputs` writes it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Candidate {
+    pub family: String,
+    /// The candidate's name `cand_<family>_<k>` (`candidate_id`): its contig's FASTA name, the `candidate` column of both tables.
+    pub id: String,
+    /// The component's clusters, all of this family (`write_outputs` refuses another family's).
+    pub clusters: Vec<ClusterSeq>,
+    /// The exon-union representative; written as the contig when `flagged`.
+    pub union: Vec<u8>,
+    /// `is_flagged` of the component's clusters (reads >= `--min-support`), computed by the caller: the `flagged` column, and only a flagged
+    /// candidate gets a contig.
+    pub flagged: bool,
+    /// The nearest reference locus (`chrom:start-end` of the best genome hit, `"none"` without one) and the whole-length divergence d to it
+    /// (`Fate::NewCopy`'s fields). `clusters.tsv` shows this d on each of the candidate's member rows too: a member's own d is not carried.
+    pub nearest: String,
+    pub d: f64,
+    /// The family's net: its reads before the `--max-reads` cap and the reads used after it (a capped net is sampled, never truncated silently:
+    /// spec §8). PER FAMILY, so the caller sets the same two numbers on every candidate of the family and each row repeats them.
+    pub n_net: usize,
+    pub n_used: usize,
+}
+
+const CANDIDATES_HEADER: &str = "family\tcandidate\tn_clusters\tn_reads\tflagged\tunion_len\tnearest_locus\td\tn_net\tn_used";
+const CLUSTERS_HEADER: &str = "family\tcluster\tcandidate\tn_reads\tconsensus_len\tfate\tlinked_to\td";
+
+/// Writes the stage's four products (spec §4, §5.8), every float with 5 decimals, deterministic: rows are sorted by family, then candidate
+/// (names ending in a number sort by it: `cand_F_2` before `cand_F_10`, `MCL2` before `MCL10`), whatever the input order.
+/// * `<prefix>.candidates.tsv` (`family candidate n_clusters n_reads flagged union_len nearest_locus d n_net n_used`): one row per candidate,
+///   flagged or not; `n_reads` sums its clusters' reads, `flagged` is `1` / `0` (the caller's `is_flagged`: reads >= `--min-support`).
+/// * `<prefix>.clusters.tsv` (`family cluster candidate n_reads consensus_len fate linked_to d`): one row per cluster. A candidate's clusters
+///   have its id, fate `new_copy`, `linked_to` `-` and the candidate's d; the `linked` clusters (cluster, locus, d) have candidate `-`, fate
+///   `linked`, their locus and their own d and come last in their family. `InReference` clusters are not written (the caller drops them).
+/// * `<prefix>.contigs.fa`: `>cand_<family>_<k>` and the union on one line, for the flagged candidates only.
+/// * `<prefix>.nets.fa`: `>name` and the read on one line for every read of `nets_for_patch` (family, reads), in the given order: the input
+///   of the patch realignment, whose caller picks the families (those with a flagged candidate).
+///
+/// A flagged candidate with an empty union and a cluster of another family than its candidate's are refused before anything is written. Each
+/// file is unlinked and created anew, never truncated in place (run_cache replays products by hard link).
+pub fn write_outputs(prefix: &str, cands: &[Candidate], linked: &[(ClusterSeq, String, f64)], nets_for_patch: &[(String, Vec<(String, Vec<u8>)>)]) -> anyhow::Result<()> {
+    for c in cands {
+        anyhow::ensure!(!c.flagged || !c.union.is_empty(), "candidate {} is flagged but its union sequence is empty: there is no contig to write", c.id);
+        if let Some(k) = c.clusters.iter().find(|k| k.family != c.family) {
+            anyhow::bail!("candidate {} (family {}) holds cluster {} of family {}", c.id, c.family, k.id, k.family);
+        }
+    }
+    let mut sorted: Vec<&Candidate> = cands.iter().collect();
+    sorted.sort_by(|a, b| name_order(&a.family, &b.family).then_with(|| name_order(&a.id, &b.id)));
+    write_file(&format!("{prefix}.candidates.tsv"), |w| {
+        writeln!(w, "{CANDIDATES_HEADER}")?;
+        for c in &sorted {
+            let n_reads: usize = c.clusters.iter().map(|k| k.n_reads).sum();
+            writeln!(w, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.5}\t{}\t{}", c.family, c.id, c.clusters.len(), n_reads, c.flagged as u8, c.union.len(), c.nearest, c.d, c.n_net, c.n_used)?;
+        }
+        Ok(())
+    })?;
+    // `locus` is Some for a linked cluster
+    struct Row<'a> { family: &'a str, cluster: &'a str, candidate: &'a str, n_reads: usize, len: usize, locus: Option<&'a str>, d: f64 }
+    let mut rows: Vec<Row> = Vec::new();
+    for c in &sorted {
+        for k in &c.clusters { rows.push(Row { family: &c.family, cluster: &k.id, candidate: &c.id, n_reads: k.n_reads, len: k.seq.len(), locus: None, d: c.d }); }
+    }
+    for (k, locus, d) in linked { rows.push(Row { family: &k.family, cluster: &k.id, candidate: "-", n_reads: k.n_reads, len: k.seq.len(), locus: Some(locus), d: *d }); }
+    rows.sort_by(|a, b| name_order(a.family, b.family)
+        .then(a.locus.is_some().cmp(&b.locus.is_some()))
+        .then_with(|| name_order(a.candidate, b.candidate))
+        .then_with(|| name_order(a.cluster, b.cluster)));
+    write_file(&format!("{prefix}.clusters.tsv"), |w| {
+        writeln!(w, "{CLUSTERS_HEADER}")?;
+        for r in &rows {
+            writeln!(w, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.5}", r.family, r.cluster, r.candidate, r.n_reads, r.len, if r.locus.is_some() { "linked" } else { "new_copy" }, r.locus.unwrap_or("-"), r.d)?;
+        }
+        Ok(())
+    })?;
+    write_file(&format!("{prefix}.contigs.fa"), |w| {
+        for c in sorted.iter().filter(|c| c.flagged) {
+            writeln!(w, ">{}", c.id)?;
+            w.write_all(&c.union)?;
+            writeln!(w)?;
+        }
+        Ok(())
+    })?;
+    write_file(&format!("{prefix}.nets.fa"), |w| {
+        for (name, seq) in nets_for_patch.iter().flat_map(|(_family, reads)| reads) {
+            writeln!(w, ">{name}")?;
+            w.write_all(seq)?;
+            writeln!(w)?;
+        }
+        Ok(())
+    })
+}
+
+/// The order of names that end in a number: the text before the trailing digits, then the number (by digit count, then digits: it cannot
+/// overflow), then the whole name. `MCL2` < `MCL10`; `cand_F_2` < `cand_F_10`.
+fn name_order(a: &str, b: &str) -> std::cmp::Ordering {
+    fn key(s: &str) -> (&str, usize, &str) {
+        let stem = s.trim_end_matches(|c: char| c.is_ascii_digit());
+        let digits = s[stem.len()..].trim_start_matches('0');
+        (stem, digits.len(), digits)
+    }
+    key(a).cmp(&key(b)).then_with(|| a.cmp(b))
+}
+
+/// Unlinks `path` when it exists. A product is unlinked before it is rewritten, never truncated in place: run_cache replays products by
+/// hard link, so an old product may share its inode with a cache payload.
+fn unlink_if_present(path: &Path) -> anyhow::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).with_context(|| format!("removing {}", path.display())),
+    }
+}
+
+/// A new file at `path` (any old one unlinked first) holding what `fill` writes, flushed; an error names the path.
+fn write_file(path: &str, fill: impl FnOnce(&mut dyn Write) -> std::io::Result<()>) -> anyhow::Result<()> {
+    unlink_if_present(Path::new(path))?;
+    let mut w = std::io::BufWriter::new(std::fs::File::create(path).with_context(|| format!("creating {path}"))?);
+    fill(&mut w).and_then(|()| w.flush()).with_context(|| format!("writing {path}"))
 }
 
 #[cfg(test)]
@@ -1292,5 +1495,226 @@ mod tests {
             let got = union_sequence(&seqs, |m, u| exon_hit(&pool, m, u)).unwrap();
             assert_eq!(got, want, "trial {trial}: isoforms {isoforms:?}");
         }
+    }
+
+    // ---- the minimap2 runner and the output writers (plan task 7) -----------------------------------------------------------------------
+
+    fn cl(family: &str, id: &str, n_reads: usize, len: usize) -> ClusterSeq { ClusterSeq { family: family.into(), id: id.into(), n_reads, seq: vec![b'A'; len] } }
+    /// A candidate of a net of 120 reads, 100 of them used.
+    fn cand(family: &str, id: &str, clusters: Vec<ClusterSeq>, union: &[u8], flagged: bool, nearest: &str, d: f64) -> Candidate {
+        Candidate { family: family.into(), id: id.into(), clusters, union: union.to_vec(), flagged, nearest: nearest.into(), d, n_net: 120, n_used: 100 }
+    }
+    fn prefix_in(dir: &tempfile::TempDir) -> String { dir.path().join("t.cand").to_str().unwrap().to_string() }
+    fn text(prefix: &str, ext: &str) -> String { std::fs::read_to_string(format!("{prefix}.{ext}")).unwrap() }
+    const OUTPUT_EXTS: [&str; 4] = ["candidates.tsv", "clusters.tsv", "contigs.fa", "nets.fa"];
+    const CANDIDATES_HEADER_TEXT: &str = "family\tcandidate\tn_clusters\tn_reads\tflagged\tunion_len\tnearest_locus\td\tn_net\tn_used";
+    const CLUSTERS_HEADER_TEXT: &str = "family\tcluster\tcandidate\tn_reads\tconsensus_len\tfate\tlinked_to\td";
+
+    #[test]
+    fn write_outputs_writes_the_four_files_with_the_registered_headers_and_a_contig_for_the_flagged_candidate_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = prefix_in(&dir);
+        let cands = vec![
+            cand("MCL0", "cand_MCL0_0", vec![cl("MCL0", "MCL0:c0", 4, 100), cl("MCL0", "MCL0:c1", 3, 101)], b"ACGTACGTAC", true, "chr1:100-1100", 0.0123456),
+            cand("MCL0", "cand_MCL0_1", vec![cl("MCL0", "MCL0:c3", 2, 60)], b"GGGGCC", false, "none", 1.0),
+        ];
+        let linked = vec![(cl("MCL0", "MCL0:c2", 5, 90), "chr1:2000-3000".to_string(), 0.00321)];
+        let nets = vec![
+            ("MCL0".to_string(), vec![("r1".to_string(), b"ACGT".to_vec()), ("r2".to_string(), b"GGCC".to_vec())]),
+            ("MCL3".to_string(), vec![("r9".to_string(), b"TTTT".to_vec())]),
+        ];
+        write_outputs(&prefix, &cands, &linked, &nets).unwrap();
+        // one row per candidate, flagged or not; n_reads sums its clusters' reads; the flag is 1 / 0; floats with 5 decimals; n_net / n_used as given
+        assert_eq!(text(&prefix, "candidates.tsv"), format!("{CANDIDATES_HEADER_TEXT}\n\
+            MCL0\tcand_MCL0_0\t2\t7\t1\t10\tchr1:100-1100\t0.01235\t120\t100\n\
+            MCL0\tcand_MCL0_1\t1\t2\t0\t6\tnone\t1.00000\t120\t100\n"));
+        // one row per cluster: the candidates' members (fate new_copy, the candidate's d), then the linked clusters (candidate -, their own locus and d)
+        assert_eq!(text(&prefix, "clusters.tsv"), format!("{CLUSTERS_HEADER_TEXT}\n\
+            MCL0\tMCL0:c0\tcand_MCL0_0\t4\t100\tnew_copy\t-\t0.01235\n\
+            MCL0\tMCL0:c1\tcand_MCL0_0\t3\t101\tnew_copy\t-\t0.01235\n\
+            MCL0\tMCL0:c3\tcand_MCL0_1\t2\t60\tnew_copy\t-\t1.00000\n\
+            MCL0\tMCL0:c2\t-\t5\t90\tlinked\tchr1:2000-3000\t0.00321\n"));
+        // the contigs: the flagged candidate only, its union on one line; the nets: every read of every family, in the given order
+        assert_eq!(text(&prefix, "contigs.fa"), ">cand_MCL0_0\nACGTACGTAC\n");
+        assert_eq!(text(&prefix, "nets.fa"), ">r1\nACGT\n>r2\nGGCC\n>r9\nTTTT\n");
+    }
+
+    #[test]
+    fn write_outputs_of_nothing_is_the_two_headers_and_two_empty_fastas() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = prefix_in(&dir);
+        write_outputs(&prefix, &[], &[], &[]).unwrap();
+        assert_eq!(text(&prefix, "candidates.tsv"), format!("{CANDIDATES_HEADER_TEXT}\n"));
+        assert_eq!(text(&prefix, "clusters.tsv"), format!("{CLUSTERS_HEADER_TEXT}\n"));
+        assert_eq!((text(&prefix, "contigs.fa"), text(&prefix, "nets.fa")), (String::new(), String::new()));
+    }
+
+    #[test]
+    fn write_outputs_sorts_by_family_then_candidate_with_trailing_numbers_in_numeric_order_whatever_the_input_order() {
+        assert_eq!(candidate_id("MCL0", 3), "cand_MCL0_3");
+        let mk = |f: &str, k: usize| cand(f, &candidate_id(f, k), vec![cl(f, &format!("{f}:c{k}"), 6, 50), cl(f, &format!("{f}:b{k}"), 1, 40)], b"ACGTAC", true, "none", 1.0);
+        let sorted = vec![mk("MCL1", 0), mk("MCL1", 2), mk("MCL1", 10), mk("MCL2", 0), mk("MCL10", 0)];
+        let shuffled: Vec<Candidate> = [4usize, 2, 0, 3, 1].iter().map(|&i| sorted[i].clone()).collect();
+        let linked = vec![(cl("MCL1", "MCL1:y", 2, 10), "chr1:3-4".to_string(), 0.002), (cl("MCL2", "MCL2:z", 2, 10), "chr1:1-2".to_string(), 0.001)];
+        let reversed: Vec<(ClusterSeq, String, f64)> = linked.iter().rev().cloned().collect();
+        let dir = tempfile::tempdir().unwrap();
+        let (pa, pb) = (dir.path().join("a.cand").to_str().unwrap().to_string(), dir.path().join("b.cand").to_str().unwrap().to_string());
+        write_outputs(&pa, &sorted, &linked, &[]).unwrap();
+        write_outputs(&pb, &shuffled, &reversed, &[]).unwrap();
+        for ext in OUTPUT_EXTS { assert_eq!(text(&pa, ext), text(&pb, ext), "{ext}: the input order must not show"); }
+        let col = |s: &str, c: usize| -> Vec<String> { s.lines().skip(1).map(|l| l.split('\t').nth(c).unwrap().to_string()).collect() };
+        let (cands_tsv, clusters_tsv, contigs) = (text(&pa, "candidates.tsv"), text(&pa, "clusters.tsv"), text(&pa, "contigs.fa"));
+        assert_eq!(col(&cands_tsv, 0), ["MCL1", "MCL1", "MCL1", "MCL2", "MCL10"]);
+        assert_eq!(col(&cands_tsv, 1), ["cand_MCL1_0", "cand_MCL1_2", "cand_MCL1_10", "cand_MCL2_0", "cand_MCL10_0"]);
+        // clusters: by family, then the candidates in order with their clusters by id, a family's linked clusters last
+        assert_eq!(col(&clusters_tsv, 1), ["MCL1:b0", "MCL1:c0", "MCL1:b2", "MCL1:c2", "MCL1:b10", "MCL1:c10", "MCL1:y", "MCL2:b0", "MCL2:c0", "MCL2:z", "MCL10:b0", "MCL10:c0"]);
+        assert_eq!(contigs.lines().filter(|l| l.starts_with('>')).collect::<Vec<_>>(), [">cand_MCL1_0", ">cand_MCL1_2", ">cand_MCL1_10", ">cand_MCL2_0", ">cand_MCL10_0"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_outputs_replaces_its_files_instead_of_writing_through_a_hard_link() {
+        // run_cache replays products by hard link: a writer that truncated its old product in place would rewrite the cache entry's payload
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = prefix_in(&dir);
+        for ext in OUTPUT_EXTS {
+            let payload = dir.path().join(format!("payload.{ext}"));
+            std::fs::write(&payload, b"cached payload\n").unwrap();
+            std::fs::hard_link(&payload, format!("{prefix}.{ext}")).unwrap();
+        }
+        write_outputs(&prefix, &[], &[], &[]).unwrap();
+        for ext in OUTPUT_EXTS {
+            assert_eq!(std::fs::read(dir.path().join(format!("payload.{ext}"))).unwrap(), b"cached payload\n", "{ext}: the linked payload must be untouched");
+        }
+        assert_eq!(text(&prefix, "candidates.tsv"), format!("{CANDIDATES_HEADER_TEXT}\n"));
+    }
+
+    #[test]
+    fn write_outputs_refuses_inconsistent_input_before_writing_anything() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = prefix_in(&dir);
+        let nothing_written = |p: &str| OUTPUT_EXTS.iter().all(|e| !Path::new(&format!("{p}.{e}")).exists());
+        // a flagged candidate needs a union: it is its contig
+        let no_union = cand("F", "cand_F_0", vec![cl("F", "F:c0", 6, 50)], b"", true, "none", 1.0);
+        let msg = format!("{:#}", write_outputs(&prefix, &[no_union.clone()], &[], &[]).unwrap_err());
+        assert!(msg.contains("cand_F_0") && msg.contains("union"), "{msg}");
+        // a candidate holds the clusters of its own family only
+        let mixed = cand("F", "cand_F_0", vec![cl("F", "F:c0", 6, 50), cl("G", "G:c0", 6, 50)], b"ACGT", true, "none", 1.0);
+        let msg = format!("{:#}", write_outputs(&prefix, &[mixed], &[], &[]).unwrap_err());
+        assert!(msg.contains("cand_F_0") && msg.contains("G:c0"), "{msg}");
+        assert!(nothing_written(&prefix), "a refused input leaves no partial output");
+        // an unflagged candidate has no contig, so an empty union is fine
+        write_outputs(&prefix, &[Candidate { flagged: false, ..no_union }], &[], &[]).unwrap();
+        assert_eq!(text(&prefix, "contigs.fa"), "");
+        // an output that cannot be created names its path
+        let bad = dir.path().join("no_such_dir").join("t.cand");
+        let msg = format!("{:#}", write_outputs(bad.to_str().unwrap(), &[], &[], &[]).unwrap_err());
+        assert!(msg.contains("no_such_dir"), "{msg}");
+    }
+
+    #[test]
+    fn the_minimap2_argument_sets_are_the_registered_ones() {
+        assert_eq!(MM2_AVA, ["-x", "asm20", "-c", "--cs", "-X", "-N", "100", "-p", "0.1", "--secondary=yes"]);
+        assert_eq!(MM2_MEMBERS, ["-x", "asm20", "-c", "--cs", "-N", "5", "-p", "0.5"]);
+        assert_eq!(MM2_UNION, ["-x", "splice:hq", "-uf", "-c", "--cs", "-N", "5", "-p", "0.5"]);
+        assert_eq!(MM2_GENOME, ["-x", "splice:hq", "-uf", "-c", "--eqx", "-N", "20"]);
+    }
+
+    #[test]
+    fn the_paf_key_covers_every_byte_of_the_target_and_the_query_the_command_and_the_build_and_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = |name: &str, bytes: &[u8]| { let p = dir.path().join(name); std::fs::write(&p, bytes).unwrap(); p };
+        let root = dir.path().join("cache");
+        let entry = |t: &Path, q: &Path, args: &[&str]| paf_entry(&root, "/bin/false", args, t, q).unwrap();
+        let (target, query) = (b">t\nACGTACGTACGTACGTACGT\n".to_vec(), b">q\nGGGGCCCCAAAATTTTGGGG\n".to_vec());
+        let base = entry(&file("t.fa", &target), &file("q.fa", &query), MM2_AVA);
+        assert!(base.key.starts_with("rustle o3 minimap2 v1\ncmd\t/bin/false -x asm20 -c --cs -X -N 100 -p 0.1 --secondary=yes\nminimap2\t"), "{}", base.key);
+        assert!(base.pin && base.dir.starts_with(root.join("paf")), "a pinned entry of kind paf: {}", base.dir.display());
+        // the same bytes written again later (a new mtime) and under other names: the same key, so the same entry
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let again = entry(&file("t.fa", &target), &file("q.fa", &query), MM2_AVA);
+        let renamed = entry(&file("t2.fa", &target), &file("q2.fa", &query), MM2_AVA);
+        assert_eq!((&again.key, &again.dir), (&base.key, &base.dir));
+        assert_eq!((&renamed.key, &renamed.dir), (&base.key, &base.dir));
+        // any one byte of the query or of the target, the size unchanged: another key and another entry
+        let flip = |b: &[u8], i: usize| { let mut v = b.to_vec(); v[i] = if v[i] == b'A' { b'C' } else { b'A' }; v };
+        for i in 0..query.len() {
+            let e = entry(&file("t.fa", &target), &file("qx.fa", &flip(&query, i)), MM2_AVA);
+            assert!(e.key != base.key && e.dir != base.dir, "query byte {i}");
+        }
+        for i in 0..target.len() {
+            let e = entry(&file("tx.fa", &flip(&target, i)), &file("q.fa", &query), MM2_AVA);
+            assert!(e.key != base.key && e.dir != base.dir, "target byte {i}");
+        }
+        // one byte more or fewer; the two files in each other's roles; other arguments; another binary
+        let longer: Vec<u8> = query.iter().copied().chain(*b"A").collect();
+        assert_ne!(entry(&file("t.fa", &target), &file("ql.fa", &longer), MM2_AVA).key, base.key);
+        assert_ne!(entry(&file("t.fa", &target), &file("qs.fa", &query[..query.len() - 1]), MM2_AVA).key, base.key);
+        assert_ne!(entry(&file("q.fa", &query), &file("t.fa", &target), MM2_AVA).key, base.key);
+        assert_ne!(entry(&file("t.fa", &target), &file("q.fa", &query), MM2_MEMBERS).key, base.key);
+        assert_ne!(paf_entry(&root, "/bin/true", MM2_AVA, &file("t.fa", &target), &file("q.fa", &query)).unwrap().key, base.key);
+        // the minimap2 build is part of the key
+        let hash = |b: &[u8]| { let mut h = rc::ContentHash::default(); h.update(b); h };
+        let (ht, hq) = (hash(&target), hash(&query));
+        assert_eq!(paf_key("minimap2 -x asm20", "2.30-r1287", &ht, &hq), paf_key("minimap2 -x asm20", "2.30-r1287", &hash(&target), &hash(&query)));
+        assert_ne!(paf_key("minimap2 -x asm20", "2.30-r1287", &ht, &hq), paf_key("minimap2 -x asm20", "2.28-r1209", &ht, &hq));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failing_minimap2_names_its_command_and_leaves_neither_a_paf_nor_a_cache_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let (t, q, out, root) = (dir.path().join("t.fa"), dir.path().join("q.fa"), dir.path().join("out.paf"), dir.path().join("cache"));
+        std::fs::write(&t, b">t\nACGT\n").unwrap();
+        std::fs::write(&q, b">q\nACGT\n").unwrap();
+        for cache in [None, Some(root.as_path())] {
+            std::fs::write(&out, b"an earlier product\n").unwrap();
+            let msg = format!("{:#}", run_minimap2("/bin/false", MM2_AVA, &t, &q, &out, cache).unwrap_err());
+            for want in ["/bin/false -x asm20 -c --cs -X -N 100 -p 0.1 --secondary=yes", t.to_str().unwrap(), q.to_str().unwrap()] { assert!(msg.contains(want), "{msg}"); }
+            assert!(!out.exists(), "a failed run leaves no stale or partial PAF");
+            assert!(!root.join("paf").exists(), "a failed run commits nothing to the cache");
+        }
+        // a binary that cannot be started: the error names it and the variable that overrides it
+        let msg = format!("{:#}", run_minimap2("/nonexistent/minimap2", MM2_GENOME, &t, &q, &out, None).unwrap_err());
+        assert!(msg.contains("/nonexistent/minimap2") && msg.contains("RUSTLE_MINIMAP2"), "{msg}");
+        assert!(!out.exists());
+        // an input the cache key cannot hash is named too
+        let msg = format!("{:#}", run_minimap2("/bin/false", MM2_GENOME, &dir.path().join("absent.mmi"), &q, &out, Some(&root)).unwrap_err());
+        assert!(msg.contains("absent.mmi"), "{msg}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn minimap2_replays_a_hit_by_content_and_reruns_on_any_change_without_touching_the_cached_paf() {
+        // `/bin/echo` stands for minimap2: it prints its command line, so a PAF says which files the run that wrote it was given
+        let dir = tempfile::tempdir().unwrap();
+        let file = |name: &str, bytes: &[u8]| { let p = dir.path().join(name); std::fs::write(&p, bytes).unwrap(); p };
+        let (target, query) = (b">t\nACGTACGTACGT\n".to_vec(), b">q\nGGGGCCCCAAAA\n".to_vec());
+        let mut query3 = query.clone();
+        query3[5] = b'T';
+        let (t1, q1, t2, q2, q3) = (file("t1.fa", &target), file("q1.fa", &query), file("t2.fa", &target), file("q2.fa", &query), file("q3.fa", &query3));
+        let (out, out2, root) = (dir.path().join("out.paf"), dir.path().join("out2.paf"), dir.path().join("cache"));
+        let run = |args: &[&str], t: &Path, q: &Path, o: &Path, cached: bool| run_minimap2("/bin/echo", args, t, q, o, cached.then_some(root.as_path())).unwrap();
+        let said = |o: &Path| std::fs::read_to_string(o).unwrap();
+        let line = |args: &[&str], t: &Path, q: &Path| format!("{} {} {}\n", args.join(" "), t.display(), q.display());
+        // a miss runs the program, and its output is the PAF
+        run(MM2_AVA, &t1, &q1, &out, true);
+        assert_eq!(said(&out), line(MM2_AVA, &t1, &q1));
+        // the same bytes under other names: a hit, replayed from the first run (its output names t1 and q1): the key is the content, not the paths
+        run(MM2_AVA, &t2, &q2, &out2, true);
+        assert_eq!(said(&out2), line(MM2_AVA, &t1, &q1));
+        // one query byte changed: a miss, run again into the very path the first run's PAF was linked to ...
+        run(MM2_AVA, &t2, &q3, &out, true);
+        assert_eq!(said(&out), line(MM2_AVA, &t2, &q3));
+        // ... which left the first run's cached PAF as it was
+        run(MM2_AVA, &t2, &q2, &out, true);
+        assert_eq!(said(&out), line(MM2_AVA, &t1, &q1));
+        // other arguments, or the two files in each other's roles: misses; without a cache root nothing is replayed
+        run(MM2_MEMBERS, &t2, &q2, &out, true);
+        assert_eq!(said(&out), line(MM2_MEMBERS, &t2, &q2));
+        run(MM2_AVA, &q2, &t2, &out, true);
+        assert_eq!(said(&out), line(MM2_AVA, &q2, &t2));
+        run(MM2_AVA, &t2, &q2, &out, false);
+        assert_eq!(said(&out), line(MM2_AVA, &t2, &q2));
     }
 }

@@ -5,7 +5,7 @@
 //! Enabled by `RUSTLE_CACHE_DIR=<dir>` (the pipeline driver sets `PREFIX.cache`); unset = nothing is read or
 //! written and every output is byte-identical to a build without this module.
 //!
-//! Two objects are cached, both at boundaries where everything downstream reads only the cached object:
+//! These objects are cached, each at a boundary where everything downstream reads only the cached object:
 //!
 //! * **`reps/<key>/`** — the collapsed locus representatives with their read statistics, i.e. the state of
 //!   `detect_homology_catalog_genome_wide` after both BAM passes and the locus collapse (human chr16: ~260 of
@@ -27,6 +27,10 @@
 //!   `RUSTLE_CACHE_VERIFY=1` re-hashes every pinned payload on a hit and closes it (audit mode). Every writer of a
 //!   replayed product unlinks it first, never truncates it, and a payload is linked to at most one product (a
 //!   second prefix sharing the cache directory gets a copy), so two products never share an inode.
+//!   `o3_candidates::minimap2` (key line `rustle o3 minimap2 v1`) keeps each of its minimap2 calls here the same way, keyed on the
+//!   content hashes of the target and of the query file.
+//! * **`cand/<key>/`** — the result of the `o3_candidates` stage (spec `docs/superpowers/specs/2026-10-02-o3-candidates-design.md`
+//!   §5.8): `candidates.tsv` and `contigs.fa` are required (an empty `contigs.fa`, a run that flagged nothing, is a complete payload).
 //!
 //! A hit requires `DONE` and a `key.tsv` byte-identical to the key the current run computes, so a hash
 //! collision in the directory name can only cause a miss, never a wrong hit. Writes go to a temporary
@@ -306,7 +310,7 @@ pub fn env_fingerprint(exclude: &[&str]) -> String {
 pub struct Entry {
     pub dir: PathBuf,
     pub key: String,
-    /// Payload files a complete entry of this kind must list in `DONE` (`reps`: reps.tsv + reps.fa, `paf`: out.paf).
+    /// Payload files a complete entry of this kind must list in `DONE` (`reps`: reps.tsv + reps.fa, `paf`: out.paf, `cand`: candidates.tsv + contigs.fa).
     pub required: &'static [&'static str],
     /// A PINNED entry's payloads may be hard-linked out ([`Entry::replay`], [`Entry::stage_link`]): its `DONE` lines
     /// are `name<TAB>bytes<TAB>mtime_ns<TAB>inode<TAB>sample<TAB>content_hash` and a hit needs all of them to match
@@ -321,6 +325,7 @@ impl Entry {
             "reps" => &["reps.tsv", "reps.fa"],
             "paf" => &["out.paf"],
             "plan" => &["pieces.tsv"],
+            "cand" => &["candidates.tsv", "contigs.fa"],
             _ => &[],
         };
         Entry { dir, key, required, pin: false }
@@ -603,6 +608,25 @@ mod tests {
         e3.commit(&st3).unwrap();
         assert!(!e3.is_hit(), "a reps entry without reps.fa must not be a hit");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The `cand` kind (the `o3_candidates` result) requires `candidates.tsv` and `contigs.fa`: a half-written entry is a miss, and an
+    /// EMPTY `contigs.fa` (a run that flagged no candidate) is a complete payload, not a missing one.
+    #[test]
+    fn a_cand_entry_is_a_hit_only_with_both_its_candidates_table_and_its_contigs() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = Entry::new(dir.path(), "cand", "rustle o3 candidates v1\n".into());
+        assert_eq!(e.required, ["candidates.tsv", "contigs.fa"]);
+        assert!(e.dir.starts_with(dir.path().join("cand")), "{}", e.dir.display());
+        let st = e.staging().unwrap();
+        std::fs::write(st.join("candidates.tsv"), b"family\n").unwrap();
+        e.commit(&st).unwrap();
+        assert!(!e.is_hit(), "a cand entry without contigs.fa must not be a hit");
+        let st = e.staging().unwrap();
+        std::fs::write(st.join("candidates.tsv"), b"family\n").unwrap();
+        std::fs::write(st.join("contigs.fa"), b"").unwrap();
+        e.commit(&st).unwrap();
+        assert!(e.is_hit(), "both payloads present (one of them empty): a hit");
     }
 
     #[test]
