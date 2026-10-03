@@ -25,7 +25,8 @@ use rustle::vg_family::copy_assign::AssignParams;
 use rustle::vg_family::o3_candidates::{
     attribute_by_hits, best_by_id_cov, best_by_matches, candidate_id, classify, cluster_reads, components, consensus_from_template,
     distinguishing_columns, is_flagged, is_poorly_placed, minimap2, minimap2_binary, minimap2_keyed, minimizer_sketch, parse_cs, parse_paf,
-    refine_cluster, sample_net, sketch_share, union_sequence_with_note, variant_is_real, write_cluster_members, write_family_table, write_outputs,
+    refine_cluster, refined_template, sample_net, sketch_share, structural_template, union_sequence_with_note, variant_is_real, write_cluster_members,
+    write_family_table, write_outputs,
     Candidate, ClusterSeq, FamilyCounts, Fate, PafHit, ATTRIB_MAX_DE, ATTRIB_MIN_READ_COV, KMER_K, MIN_UNMAPPED_LEN, MM2_ATTRIB, MM2_AVA,
     MM2_GENOME, MM2_MEMBERS, MM2_UNION, POORLY_PLACED_DE, SKETCH_W,
 };
@@ -462,13 +463,15 @@ fn oriented_sequence(record: &noodles_bam::Record) -> Vec<u8> {
 /// Pass A (indexed, per copy interval): every primary or secondary record overlapping a copy names its read for that family's net
 /// (supplementary records do not); a primary record gives the read's sequence. Pass B (one sequential sweep of the whole BAM): the sequence
 /// of every read that only secondary records named, from its primary record wherever it lies; and the ATTRIBUTION SET of prereg Amendment
-/// 13b, streamed as sequenced to `<tmp>/attrib.fa` while the sweep meets it (never held in memory): every unmapped record of
-/// >= `MIN_UNMAPPED_LEN` bases, and every read in no net of this run (ruling R18) whose primary record is poorly placed (`is_poorly_placed`).
-/// After the sweep the targets go to `<tmp>/attrib_targets.fa` (`write_attrib_targets`: this run's net reads as `{family}|{read}`, then
-/// `--copies-fa`), the set is aligned once against them (`MM2_ATTRIB`), and `attribute_by_hits` gives reads to families (`family_of_copy`
-/// names the copies' records, the net-read targets name their own family); a read given to a family the stage runs on joins its net
-/// (before the `--max-reads` cap), its sequence read back from the FASTA (`join_attributed`). A read whose sequence never appears (a
-/// secondary-only name without a primary record in the BAM) stays out of every net.
+/// 13b, streamed as sequenced to `<tmp>/attrib.fa` while the sweep meets it (never held in memory; `attrib_record`, the class in the header):
+/// every unmapped record, and every read in no net of this run (ruling R18) whose primary record is poorly placed (`is_poorly_placed`), of
+/// >= `MIN_UNMAPPED_LEN` bases (Amendment 13c, ruling R19: the floor holds for both classes; a shorter record is never decoded, and the
+/// poorly placed ones below the floor are counted). After the sweep the targets go to `<tmp>/attrib_targets.fa` (`write_attrib_targets`:
+/// this run's net reads as `{family}|{read}`, then `--copies-fa`), the set is aligned once against them (`MM2_ATTRIB`), and
+/// `attribute_by_hits` gives reads to families (`family_of_copy` names the copies' records, the net-read targets name their own family); a
+/// read given to a family the stage runs on joins its net (before the `--max-reads` cap), its sequence read back from the FASTA in the pass
+/// that also counts the aligned and the attributed reads of each class (`read_back`). A read whose sequence never appears (a secondary-only
+/// name without a primary record in the BAM) stays out of every net.
 fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMap<String, String>, tmp: &Path, mm: &Mm2) -> Result<Nets> {
     let mut seqs: HashMap<String, Vec<u8>> = HashMap::new();
     let mut names: Vec<BTreeSet<String>> = vec![BTreeSet::new(); families.len()];
@@ -517,8 +520,7 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMa
     let netted: HashSet<String> = names.iter().flatten().cloned().collect();
     let attrib_fa = tmp.join("attrib.fa");
     let mut attrib = std::io::BufWriter::new(std::fs::File::create(&attrib_fa).with_context(|| format!("creating {}", attrib_fa.display()))?);
-    let mut class: HashMap<String, AttribClass> = HashMap::new();
-    let (mut n_found, mut n_unmapped, mut n_poor, mut n_no_de) = (0usize, 0usize, 0usize, 0usize);
+    let (mut n_found, mut n_unmapped, mut n_poor, mut n_poor_short, mut n_no_de) = (0usize, 0usize, 0usize, 0usize, 0usize);
     let mut reader = rustle::bam::open_bam(&args.bam, args.threads).with_context(|| format!("opening --bam {}", args.bam))?;
     reader.read_header().with_context(|| format!("reading the header of {}", args.bam))?;
     for result in reader.records() {
@@ -531,9 +533,9 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMa
             }
             let Some(name) = record.name() else { continue };
             let name = name.to_string();
-            // A13 Review Focus 5: decoded once and written now; only the reads that join a net are read back after the alignment
-            fasta_record(&mut attrib, &name, &oriented_sequence(&record)).with_context(|| format!("writing {}", attrib_fa.display()))?;
-            class.insert(name, AttribClass::Unmapped);
+            // A13 Review Focus 5: decoded once and written now (its class in the header); only the reads that join a net are kept after the
+            // alignment
+            attrib_record(&mut attrib, &name, AttribClass::Unmapped, &oriented_sequence(&record)).with_context(|| format!("writing {}", attrib_fa.display()))?;
             n_unmapped += 1;
             continue;
         }
@@ -556,10 +558,11 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMa
         n_no_de += usize::from(!in_net && de.is_none());
         let mapq = record.mapping_quality().map_or(u8::MAX, |q| q.get());
         if is_poorly_placed(de.unwrap_or(0.0), mapq, in_net) {
-            let seq = oriented_sequence(&record);
-            if !seq.is_empty() {
-                fasta_record(&mut attrib, name, &seq).with_context(|| format!("writing {}", attrib_fa.display()))?;
-                class.insert(name.to_string(), AttribClass::PoorlyPlaced);
+            // Amendment 13c (ruling R19): the 300-bp floor holds for the poorly placed reads too; a shorter one is counted, never decoded
+            if record.sequence().len() < MIN_UNMAPPED_LEN {
+                n_poor_short += 1;
+            } else {
+                attrib_record(&mut attrib, name, AttribClass::PoorlyPlaced, &oriented_sequence(&record)).with_context(|| format!("writing {}", attrib_fa.display()))?;
                 n_poor += 1;
             }
         }
@@ -567,7 +570,7 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMa
     attrib.flush().with_context(|| format!("writing {}", attrib_fa.display()))?;
     drop(attrib);
     // prereg Amendment 13b: one alignment of the attribution set against this run's net reads and every family's copies, then the rule
-    let (mut n_aligned, mut n_attributed, mut n_att_unmapped, mut n_att_poor, mut n_joined) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    let (mut counts, mut n_attributed, mut n_joined) = (ClassCounts::default(), 0usize, 0usize);
     if n_unmapped + n_poor > 0 {
         let targets_fa = tmp.join("attrib_targets.fa");
         let mut family_of_target = family_of_copy.clone();
@@ -579,18 +582,19 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMa
             family_of_target.extend(net_targets.with_context(|| format!("writing {}", targets_fa.display()))?);
         }
         let hits = mm.run(MM2_ATTRIB, &targets_fa, &attrib_fa, &tmp.join("attrib.paf"))?;
-        n_aligned = hits.iter().filter(|h| family_of_target.contains_key(&h.t)).map(|h| h.q.as_str()).collect::<HashSet<_>>().len();
+        // the reads with a hit on a target: the only names kept while the FASTA is read back (no name -> class map of the whole set)
+        let aligned: HashSet<String> = hits.iter().filter(|h| family_of_target.contains_key(&h.t)).map(|h| h.q.clone()).collect();
         let attributed = attribute_by_hits(&hits, &family_of_target);
+        drop(hits);
         n_attributed = attributed.len();
-        n_att_unmapped = attributed.keys().filter(|r| class.get(r.as_str()) == Some(&AttribClass::Unmapped)).count();
-        n_att_poor = attributed.keys().filter(|r| class.get(r.as_str()) == Some(&AttribClass::PoorlyPlaced)).count();
         let fam_pos: HashMap<&str, usize> = families.iter().enumerate().map(|(i, f)| (f.family_id.as_str(), i)).collect();
         let joining: HashMap<String, usize> =
-            attributed.into_iter().filter_map(|(read, family)| fam_pos.get(family.as_str()).map(|&fi| (read, fi))).collect();
+            attributed.iter().filter_map(|(read, family)| fam_pos.get(family.as_str()).map(|&fi| (read.clone(), fi))).collect();
         n_joined = joining.len();
-        if !joining.is_empty() {
+        if !aligned.is_empty() {
             let file = std::fs::File::open(&attrib_fa).with_context(|| format!("opening {}", attrib_fa.display()))?;
-            join_attributed(std::io::BufReader::new(file), &joining, &mut names, &mut seqs).with_context(|| format!("reading {}", attrib_fa.display()))?;
+            counts = read_back(std::io::BufReader::new(file), aligned, &attributed, &joining, &mut names, &mut seqs)
+                .with_context(|| format!("reading {}", attrib_fa.display()))?;
         }
     }
     let n_lost = need.iter().filter(|n| !seqs.contains_key(n.as_str())).count();
@@ -600,9 +604,14 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMa
         need.len()
     );
     eprintln!(
-        "[o3_candidates] pass B: unmapped >= {MIN_UNMAPPED_LEN} bp {n_unmapped}, poorly placed {n_poor} (de > {POORLY_PLACED_DE} or MAPQ 0, no record \
-         on a family copy); aligned {n_aligned}; attributed {n_attributed} (read coverage >= {ATTRIB_MIN_READ_COV}, de <= {ATTRIB_MAX_DE:.2}): unmapped \
-         {n_att_unmapped}, poorly placed {n_att_poor}; joined this run's families {n_joined}"
+        "[o3_candidates] pass B: unmapped >= {MIN_UNMAPPED_LEN} bp {n_unmapped}; poorly placed >= {MIN_UNMAPPED_LEN} bp {n_poor} (de > {POORLY_PLACED_DE} \
+         or MAPQ 0, in no net of this run; {n_poor_short} below the floor); aligned {}: unmapped {}, poorly placed {}; attributed {n_attributed} (read \
+         coverage >= {ATTRIB_MIN_READ_COV}, de <= {ATTRIB_MAX_DE:.2}): unmapped {}, poorly placed {}; joined this run's families {n_joined}",
+        counts.aligned_unmapped + counts.aligned_poor,
+        counts.aligned_unmapped,
+        counts.aligned_poor,
+        counts.attributed_unmapped,
+        counts.attributed_poor
     );
     if n_no_de > 0 {
         eprintln!("[o3_candidates] pass B: {n_no_de} primary records of reads in no net carry no de tag: judged by their MAPQ alone");
@@ -611,11 +620,87 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMa
     Ok(Nets { names, seqs })
 }
 
-/// Which part of the attribution set (prereg Amendment 13b) a read belongs to; the log reports the attributed reads of each.
+/// Which part of the attribution set (prereg Amendment 13b) a read belongs to: the comment of its record in the attribution FASTA
+/// (`attrib_record`); the log reports the aligned and the attributed reads of each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AttribClass {
     Unmapped,
     PoorlyPlaced,
+}
+impl AttribClass {
+    fn tag(self) -> &'static str {
+        match self {
+            AttribClass::Unmapped => "unmapped",
+            AttribClass::PoorlyPlaced => "poorly_placed",
+        }
+    }
+    fn from_tag(tag: &str) -> Option<Self> {
+        [AttribClass::Unmapped, AttribClass::PoorlyPlaced].into_iter().find(|c| c.tag() == tag)
+    }
+}
+
+/// One record of the attribution FASTA: `>{read} {class}` and the read on one line. minimap2 names a query by its header up to the first
+/// whitespace, and a SAM read name holds none, so the class never reaches a PAF and comes back when the FASTA is read back (`read_back`).
+fn attrib_record(w: &mut impl Write, name: &str, class: AttribClass, seq: &[u8]) -> std::io::Result<()> {
+    writeln!(w, ">{name} {}", class.tag())?;
+    w.write_all(seq)?;
+    writeln!(w)
+}
+
+/// What pass B's read-back counted per class (the log line): the reads with a hit on a target, and those the rule gave a family.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct ClassCounts {
+    aligned_unmapped: usize,
+    aligned_poor: usize,
+    attributed_unmapped: usize,
+    attributed_poor: usize,
+}
+
+/// Pass B's read-back (prereg Amendments 13 / 13b), one pass over the attribution FASTA as `attrib_record` writes it (`>{read} {class}`,
+/// one sequence line per record), so that no name -> class map of the whole set is held (the reviewer's minor). Each read of `aligned` (the
+/// reads with a hit on a target; `attributed` and `joining` are subsets of it) is counted once under its record's class, and also as
+/// attributed when the rule gave it a family; it leaves `aligned` as it is counted, so a second record of the same name is neither counted
+/// nor read again. Each read of `joining` (read -> index of the family it joins) enters that family's `names`, and its sequence enters `seqs`
+/// unless the read has one already (the first wins). Every other record is passed over without being kept; a joining name the FASTA lacks
+/// adds nothing. A header without a known class is not the sweep's record: an `InvalidData` error naming it.
+fn read_back(
+    fasta: impl BufRead,
+    mut aligned: HashSet<String>,
+    attributed: &HashMap<String, String>,
+    joining: &HashMap<String, usize>,
+    names: &mut [BTreeSet<String>],
+    seqs: &mut HashMap<String, Vec<u8>>,
+) -> std::io::Result<ClassCounts> {
+    let mut counts = ClassCounts::default();
+    let mut current: Option<(String, usize)> = None;
+    for line in fasta.lines() {
+        let line = line?;
+        match line.strip_prefix('>') {
+            Some(header) => {
+                current = None;
+                let Some((name, class)) = header.split_once(' ').and_then(|(n, c)| AttribClass::from_tag(c).map(|c| (n, c))) else {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("the attribution record `>{header}` names no class")));
+                };
+                if !aligned.remove(name) {
+                    continue;
+                }
+                let (n_aligned, n_attributed) = match class {
+                    AttribClass::Unmapped => (&mut counts.aligned_unmapped, &mut counts.attributed_unmapped),
+                    AttribClass::PoorlyPlaced => (&mut counts.aligned_poor, &mut counts.attributed_poor),
+                };
+                *n_aligned += 1;
+                *n_attributed += usize::from(attributed.contains_key(name));
+                current = joining.get(name).map(|&fi| (name.to_string(), fi));
+            }
+            None => {
+                if let Some((name, fi)) = current.take() {
+                    names[fi].insert(name.clone());
+                    seqs.entry(name).or_insert_with(|| line.into_bytes());
+                }
+            }
+        }
+    }
+    Ok(counts)
 }
 
 /// The attribution targets (prereg Amendment 13b; ruling R18: this run's nets and the copies): every read of each net (family id, the reads
@@ -641,27 +726,6 @@ fn write_attrib_targets(
     Ok(family_of_target)
 }
 
-/// Pass B's read-back (prereg Amendments 13 / 13b): the reads of `joining` (read -> index of the family it joins) from the attribution FASTA
-/// (the unmapped and the poorly placed reads), written by `fasta_record` with one sequence line per record, so the line after a joining read's
-/// header is its sequence. Each joining read enters its family's `names`, and its sequence enters `seqs` unless the read has one already (the
-/// first wins). Every other record is passed over without being kept, and a joining name the FASTA lacks adds nothing.
-fn join_attributed(fasta: impl BufRead, joining: &HashMap<String, usize>, names: &mut [BTreeSet<String>], seqs: &mut HashMap<String, Vec<u8>>) -> std::io::Result<()> {
-    let mut current: Option<(String, usize)> = None;
-    for line in fasta.lines() {
-        let line = line?;
-        match line.strip_prefix('>') {
-            Some(name) => current = joining.get(name).map(|&fi| (name.to_string(), fi)),
-            None => {
-                if let Some((name, fi)) = current.take() {
-                    names[fi].insert(name.clone());
-                    seqs.entry(name).or_insert_with(|| line.into_bytes());
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 /// One family's used net, written to `net.fa` (sorted names) in its temporary directory: the query of every members alignment.
 struct Net<'a> {
     names: Vec<String>,
@@ -675,17 +739,60 @@ impl<'a> Net<'a> {
         write_fasta(&fasta, names.iter().cloned().zip(seqs.iter().copied()))?;
         Ok(Net { names, seqs, fasta })
     }
-    /// The index of the longest member, the first in net order on a tie: a cluster's template (spec §5.3).
-    fn longest(&self, members: &[usize]) -> usize {
-        *members.iter().max_by(|&&a, &&b| self.seqs[a].len().cmp(&self.seqs[b].len()).then(b.cmp(&a))).expect("a cluster has members")
+}
+
+/// One family's used net with what the structural template reads (prereg Amendment 13): the net's all-vs-all hits (`MM2_AVA`, with `cs`;
+/// the hits `cluster_reads` clustered on) and its read lengths. Every template of the family is chosen through it.
+struct Family<'n, 'a> {
+    net: &'n Net<'a>,
+    ava: Vec<PafHit>,
+    lens: Vec<usize>,
+}
+impl Family<'_, '_> {
+    /// `structural_template` of `members`: a new cluster's template, and a merged cluster's.
+    fn template(&self, members: &[usize]) -> Result<usize> { structural_template(members, &self.net.names, &self.ava, &self.lens) }
+    /// `refined_template`: the kept set's template after the refinement (re-templated when the old template was split off).
+    fn kept_template(&self, template: usize, kept: &[usize]) -> Result<usize> {
+        refined_template(template, kept, &self.net.names, &self.ava, &self.lens)
     }
 }
 
 /// A cluster of net reads: its members (indices into the net, ascending), the read it is polished on, and its consensus.
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Cluster {
     members: Vec<usize>,
     template: usize,
     consensus: Vec<u8>,
+}
+
+/// The key of an undone merge (`merge`'s veto): the two clusters' member lists, the one with the smaller first member first (clusters are
+/// disjoint, so first members differ and the key names the unordered pair).
+fn pair_key(a: &[usize], b: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    if a <= b { (a.to_vec(), b.to_vec()) } else { (b.to_vec(), a.to_vec()) }
+}
+
+/// One round of the significance merge applied (spec §5.5, with prereg Amendment 13's empty-merge fallback). `absorbed_by[y] = Some(x)`:
+/// cluster y is absorbed by x in this round; `merged[x]` is x's group (x and every cluster it absorbs) re-polished. A group whose re-polished
+/// consensus is non-empty takes the absorber's place in the list and its absorbed clusters leave it. A group whose re-polished consensus is
+/// EMPTY is undone: the absorber and the clusters it absorbed stay in the list as they were, separate, instead of being dropped. Clusters keep
+/// their order. Returns the clusters, the number of clusters absorbed, and per undone absorption the absorber's and the absorbed cluster's
+/// member lists (`(absorber, absorbed)`, in cluster order), which `merge` vetoes in later rounds.
+fn apply_absorptions(clusters: Vec<Cluster>, absorbed_by: &[Option<usize>], mut merged: BTreeMap<usize, Cluster>) -> (Vec<Cluster>, usize, Vec<(Vec<usize>, Vec<usize>)>) {
+    let undone_by: HashSet<usize> = merged.iter().filter(|(_, c)| c.consensus.is_empty()).map(|(&x, _)| x).collect();
+    let undone: Vec<(Vec<usize>, Vec<usize>)> = absorbed_by
+        .iter()
+        .enumerate()
+        .filter_map(|(y, a)| a.filter(|x| undone_by.contains(x)).map(|x| (clusters[x].members.clone(), clusters[y].members.clone())))
+        .collect();
+    let mut n_absorbed = 0;
+    let mut out = Vec::with_capacity(clusters.len());
+    for (k, c) in clusters.into_iter().enumerate() {
+        match absorbed_by[k] {
+            Some(x) if !undone_by.contains(&x) => n_absorbed += 1,
+            _ => out.push(merged.remove(&k).filter(|m| !m.consensus.is_empty()).unwrap_or(c)),
+        }
+    }
+    (out, n_absorbed, undone)
 }
 
 /// One family after phase 1: its final clusters (named `<family>:c<k>`) with their members' names, and the net sizes.
@@ -705,8 +812,12 @@ struct ClusterLog {
     split_off: usize,
     split_clusters: usize,
     dropped_small: usize,
+    /// Kept sets whose template the refinement split off: re-templated and re-polished (prereg Amendment 13).
+    retemplated: usize,
     rounds: usize,
     absorbed: usize,
+    /// Merges undone because the absorber's re-polished consensus was empty: its absorbed clusters kept separate (prereg Amendment 13).
+    undone: usize,
     fin: usize,
 }
 impl std::fmt::Display for ClusterLog {
@@ -714,8 +825,10 @@ impl std::fmt::Display for ClusterLog {
         write!(
             f,
             "{} read clusters >= --min-cluster; {} empty consensus dropped; refinement split off {} reads ({} new clusters, {} clusters fell under \
-             --min-cluster); significance merge absorbed {} clusters in {} rounds; {} clusters",
-            self.read_clusters, self.empty, self.split_off, self.split_clusters, self.dropped_small, self.absorbed, self.rounds, self.fin
+             --min-cluster, {} kept sets re-templated); significance merge absorbed {} clusters in {} rounds ({} absorptions undone: empty \
+             merged consensus, the absorbed cluster kept separate); {} clusters",
+            self.read_clusters, self.empty, self.split_off, self.split_clusters, self.dropped_small, self.retemplated, self.absorbed, self.rounds,
+            self.undone, self.fin
         )
     }
 }
@@ -744,7 +857,7 @@ fn hits_on_own_target(net: &Net, dir: &Path, tag: &str, targets: &[&[u8]], group
 
 /// The template-and-vote consensus of each `(members, template)` group (spec §5.4, rulings R2/R5): one `MM2_MEMBERS` run of the net against
 /// the templates; the template read is one of the members, so its self hit covers and votes. Returns each consensus with the members' hits
-/// on the template (a refined cluster is re-polished on the same template from these).
+/// on the template (a refined cluster that keeps its template is re-polished on it from these).
 fn polish(net: &Net, dir: &Path, tag: &str, groups: &[(Vec<usize>, usize)], mm: &Mm2) -> Result<Vec<(Vec<u8>, Vec<(usize, PafHit)>)>> {
     let targets: Vec<&[u8]> = groups.iter().map(|(_, t)| net.seqs[*t]).collect();
     let members: Vec<&[usize]> = groups.iter().map(|(m, _)| m.as_slice()).collect();
@@ -759,10 +872,17 @@ fn polish(net: &Net, dir: &Path, tag: &str, groups: &[(Vec<usize>, usize)], mm: 
         .collect()
 }
 
-/// Polishes new groups (each on its longest member) and keeps those with a non-empty consensus (R5).
-fn seeded_clusters(net: &Net, dir: &Path, tag: &str, groups: Vec<Vec<usize>>, mm: &Mm2, log: &mut ClusterLog) -> Result<(Vec<Cluster>, Vec<Vec<(usize, PafHit)>>)> {
-    let seeds: Vec<(Vec<usize>, usize)> = groups.into_iter().map(|g| { let t = net.longest(&g); (g, t) }).collect();
-    let polished = polish(net, dir, tag, &seeds, mm)?;
+/// Polishes new groups, each on its structural template (prereg Amendment 13: `structural_template`, in place of the longest member), and
+/// keeps those with a non-empty consensus (R5).
+fn seeded_clusters(fam: &Family, dir: &Path, tag: &str, groups: Vec<Vec<usize>>, mm: &Mm2, log: &mut ClusterLog) -> Result<(Vec<Cluster>, Vec<Vec<(usize, PafHit)>>)> {
+    let seeds: Vec<(Vec<usize>, usize)> = groups
+        .into_iter()
+        .map(|g| {
+            let t = fam.template(&g)?;
+            Ok((g, t))
+        })
+        .collect::<Result<_>>()?;
+    let polished = polish(fam.net, dir, tag, &seeds, mm)?;
     let (mut clusters, mut hits) = (Vec::new(), Vec::new());
     for ((members, template), (consensus, h)) in seeds.into_iter().zip(polished) {
         if consensus.is_empty() {
@@ -776,20 +896,22 @@ fn seeded_clusters(net: &Net, dir: &Path, tag: &str, groups: Vec<Vec<usize>>, mm
 }
 
 /// Phase 1 of one family (spec §5.3-5.5 with the minimap2 engine of §9b, rulings R2/R5): the reads clustered at delta on their all-vs-all,
-/// clusters under `--min-cluster` dropped, a consensus per cluster on its longest read, one refinement pass, the significance merge. The
-/// final clusters come back ordered by size (descending), then first member.
+/// clusters under `--min-cluster` dropped, a consensus per cluster on its structural template (prereg Amendment 13: the member with the
+/// fewest bases of >= 20 bp indels against the other members, read from the same all-vs-all), one refinement pass, the significance merge.
+/// The final clusters come back ordered by size (descending), then first member.
 fn family_clusters(net: &Net, args: &Args, dir: &Path, mm: &Mm2, alpha: f64) -> Result<(Vec<Cluster>, ClusterLog)> {
     let mut log = ClusterLog::default();
     let ava = mm.run(MM2_AVA, &net.fasta, &net.fasta, &dir.join("ava.paf"))?;
     let groups: Vec<Vec<usize>> = cluster_reads(&net.names, &ava, args.delta).into_iter().filter(|g| g.len() >= args.min_cluster).collect();
-    drop(ava);
     log.read_clusters = groups.len();
     if groups.is_empty() {
         return Ok((Vec::new(), log));
     }
-    let (clusters, template_hits) = seeded_clusters(net, dir, "T", groups, mm, &mut log)?;
-    let clusters = if clusters.is_empty() { clusters } else { refine(net, args, dir, mm, clusters, template_hits, &mut log)? };
-    let mut clusters = merge(net, dir, mm, clusters, alpha, &mut log)?;
+    // every template of the family (new, refined, merged clusters) is chosen from these hits
+    let fam = Family { net, ava, lens: net.seqs.iter().map(|s| s.len()).collect() };
+    let (clusters, template_hits) = seeded_clusters(&fam, dir, "T", groups, mm, &mut log)?;
+    let clusters = if clusters.is_empty() { clusters } else { refine(&fam, args, dir, mm, clusters, template_hits, &mut log)? };
+    let mut clusters = merge(&fam, dir, mm, clusters, alpha, &mut log)?;
     clusters.sort_by(|a, b| b.members.len().cmp(&a.members.len()).then(a.members[0].cmp(&b.members[0])));
     log.fin = clusters.len();
     Ok((clusters, log))
@@ -797,19 +919,23 @@ fn family_clusters(net: &Net, args: &Args, dir: &Path, mm: &Mm2, alpha: f64) -> 
 
 /// Ruling R5: one refinement pass. The members are aligned to their cluster's consensus (`MM2_MEMBERS`, the consensus as the target) and
 /// `refine_cluster` keeps those that fit (`de <= delta`, half of the shorter covered); a member with no hit on the consensus does not fit
-/// either. When members were split off, the kept set is re-polished on the same template (from the hits it already has) and the split-off
-/// members become one new cluster, polished on its longest read, when they are at least `--min-cluster` (else they are dropped); a kept set
-/// that falls under `--min-cluster` is dropped like any cluster under the floor.
-fn refine(net: &Net, args: &Args, dir: &Path, mm: &Mm2, clusters: Vec<Cluster>, template_hits: Vec<Vec<(usize, PafHit)>>, log: &mut ClusterLog) -> Result<Vec<Cluster>> {
+/// either. When members were split off: a kept set that still holds its template is re-polished on it (from the hits it already has); a kept
+/// set whose template was split off is re-templated by the same structural rule over its own pairs (prereg Amendment 13, `refined_template`)
+/// and polished on the new template (one `MM2_MEMBERS` run for every such set); the split-off members become one new cluster, polished on
+/// its structural template, when they are at least `--min-cluster` (else they are dropped); a kept set that falls under `--min-cluster` is
+/// dropped like any cluster under the floor. The clusters keep their order, the new ones last.
+fn refine(fam: &Family, args: &Args, dir: &Path, mm: &Mm2, clusters: Vec<Cluster>, template_hits: Vec<Vec<(usize, PafHit)>>, log: &mut ClusterLog) -> Result<Vec<Cluster>> {
+    let net = fam.net;
     let targets: Vec<&[u8]> = clusters.iter().map(|c| c.consensus.as_slice()).collect();
     let groups: Vec<&[usize]> = clusters.iter().map(|c| c.members.as_slice()).collect();
     let on_consensus = hits_on_own_target(net, dir, "C", &targets, &groups, mm)?;
-    let (mut out, mut split): (Vec<Cluster>, Vec<Vec<usize>>) = (Vec::new(), Vec::new());
+    // one slot per cluster that goes on, in order: a re-templated kept set fills its slot after the batched polish below
+    let (mut slots, mut retemplate, mut split): (Vec<Option<Cluster>>, Vec<(usize, Vec<usize>, usize)>, Vec<Vec<usize>>) = (Vec::new(), Vec::new(), Vec::new());
     for ((c, on_template), on_cons) in clusters.into_iter().zip(template_hits).zip(on_consensus) {
         let pairs: Vec<(&[u8], &PafHit)> = on_cons.iter().map(|(m, h)| (net.seqs[*m], h)).collect();
         let fit: HashSet<usize> = refine_cluster(&c.consensus, &pairs, args.delta).0.into_iter().map(|i| on_cons[i].0).collect();
         if fit.len() == c.members.len() {
-            out.push(c);
+            slots.push(Some(c));
             continue;
         }
         let (kept, rest): (Vec<usize>, Vec<usize>) = c.members.iter().copied().partition(|m| fit.contains(m));
@@ -821,17 +947,36 @@ fn refine(net: &Net, args: &Args, dir: &Path, mm: &Mm2, clusters: Vec<Cluster>, 
             log.dropped_small += 1;
             continue;
         }
+        let template = fam.kept_template(c.template, &kept)?;
+        if template != c.template {
+            // A13: the refinement split the template off: the kept set gets its own structural template, polished below
+            log.retemplated += 1;
+            retemplate.push((slots.len(), kept, template));
+            slots.push(None);
+            continue;
+        }
         let votes: Vec<(&[u8], &PafHit)> = on_template.iter().filter(|(m, _)| fit.contains(m)).map(|(m, h)| (net.seqs[*m], h)).collect();
-        let consensus = consensus_from_template(net.seqs[c.template], &votes)?;
+        let consensus = consensus_from_template(net.seqs[template], &votes)?;
         if consensus.is_empty() {
             log.empty += 1;
             continue;
         }
-        out.push(Cluster { members: kept, template: c.template, consensus });
+        slots.push(Some(Cluster { members: kept, template, consensus }));
     }
+    if !retemplate.is_empty() {
+        let seeds: Vec<(Vec<usize>, usize)> = retemplate.iter().map(|(_, kept, t)| (kept.clone(), *t)).collect();
+        for ((slot, members, template), (consensus, _)) in retemplate.into_iter().zip(polish(net, dir, "K", &seeds, mm)?) {
+            if consensus.is_empty() {
+                log.empty += 1;
+                continue;
+            }
+            slots[slot] = Some(Cluster { members, template, consensus });
+        }
+    }
+    let mut out: Vec<Cluster> = slots.into_iter().flatten().collect();
     if !split.is_empty() {
         log.split_clusters = split.len();
-        out.extend(seeded_clusters(net, dir, "S", split, mm, log)?.0);
+        out.extend(seeded_clusters(fam, dir, "S", split, mm, log)?.0);
     }
     Ok(out)
 }
@@ -859,9 +1004,14 @@ fn best_pairs<'h>(names: &[String], hits: &'h [PafHit]) -> BTreeMap<(usize, usiz
 /// assignment gate's alpha and k = the substitutions of the pair's best hit; k = 0 merges). Merges are applied by absorption: clusters in
 /// order of size (descending, then index) each absorb every smaller, not yet absorbed cluster they merge with, and an absorbed cluster
 /// absorbs nothing in that round, so every merge rests on a test between the absorber and the absorbed (a chain A-B-C is A+B, then (A+B)
-/// against C in the next round). Each merged cluster is re-polished on the absorber's (the larger cluster's) template. Rounds repeat until
-/// none merges.
-fn merge(net: &Net, dir: &Path, mm: &Mm2, mut clusters: Vec<Cluster>, alpha: f64, log: &mut ClusterLog) -> Result<Vec<Cluster>> {
+/// against C in the next round). Each merged cluster is re-polished on the structural template of its members (prereg Amendment 13: the
+/// rule over the union of the absorber's and the absorbed clusters' members, from the family's read all-vs-all; no longer the absorber's
+/// template). An absorption whose re-polished consensus is empty is undone (`apply_absorptions`: the absorber and the clusters it absorbed
+/// stay separate, nothing is dropped) and that pair of clusters is vetoed in later rounds: the two would be tested and merged the same way
+/// again, and the veto is what ends the rounds (each round either merges, so the number of clusters falls, or vetoes a new pair of unchanged
+/// clusters, of which there are finitely many). A cluster that absorbs another is a new cluster for the veto. Rounds repeat until none merges.
+fn merge(fam: &Family, dir: &Path, mm: &Mm2, mut clusters: Vec<Cluster>, alpha: f64, log: &mut ClusterLog) -> Result<Vec<Cluster>> {
+    let mut vetoed: HashSet<(Vec<usize>, Vec<usize>)> = HashSet::new();
     while clusters.len() >= 2 {
         log.rounds += 1;
         let names: Vec<String> = (0..clusters.len()).map(|k| format!("M{k}")).collect();
@@ -872,6 +1022,9 @@ fn merge(net: &Net, dir: &Path, mm: &Mm2, mut clusters: Vec<Cluster>, alpha: f64
         let mut joins: HashSet<(usize, usize)> = HashSet::new();
         for (&(a, b), h) in &best_pairs(&names, &hits) {
             if sketch_share(&sketches[a], &sketches[b]) < MERGE_MIN_SKETCH_SHARE {
+                continue;
+            }
+            if !vetoed.is_empty() && vetoed.contains(&pair_key(&clusters[a].members, &clusters[b].members)) {
                 continue;
             }
             let Some(cs) = h.cs.as_deref() else { continue };
@@ -894,12 +1047,10 @@ fn merge(net: &Net, dir: &Path, mm: &Mm2, mut clusters: Vec<Cluster>, alpha: f64
                 }
             }
         }
-        let n_absorbed = absorbed_by.iter().filter(|a| a.is_some()).count();
-        if n_absorbed == 0 {
+        if absorbed_by.iter().all(Option::is_none) {
             break;
         }
-        log.absorbed += n_absorbed;
-        // the merged groups (absorber -> its members and those of every cluster it absorbed), re-polished on the absorber's template
+        // the merged groups (absorber -> its members and those of every cluster it absorbed), each re-polished on its structural template
         let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (y, a) in absorbed_by.iter().enumerate() {
             if let Some(x) = a {
@@ -907,28 +1058,25 @@ fn merge(net: &Net, dir: &Path, mm: &Mm2, mut clusters: Vec<Cluster>, alpha: f64
             }
         }
         let seeds: Vec<(Vec<usize>, usize)> = groups
-            .iter()
-            .map(|(&x, m)| {
+            .values()
+            .map(|m| {
                 let mut m = m.clone();
                 m.sort_unstable();
-                (m, clusters[x].template)
+                let t = fam.template(&m)?;
+                Ok((m, t))
             })
+            .collect::<Result<_>>()?;
+        let polished = polish(fam.net, dir, "R", &seeds, mm)?;
+        let merged: BTreeMap<usize, Cluster> = groups
+            .keys()
+            .zip(seeds.into_iter().zip(polished))
+            .map(|(&x, ((members, template), (consensus, _)))| (x, Cluster { members, template, consensus }))
             .collect();
-        let polished = polish(net, dir, "R", &seeds, mm)?;
-        let mut merged: HashMap<usize, Cluster> = HashMap::new();
-        for ((&x, _), ((members, template), (consensus, _))) in groups.iter().zip(seeds.into_iter().zip(polished)) {
-            if consensus.is_empty() {
-                log.empty += 1;
-                continue;
-            }
-            merged.insert(x, Cluster { members, template, consensus });
-        }
-        clusters = clusters
-            .into_iter()
-            .enumerate()
-            .filter(|(k, _)| absorbed_by[*k].is_none())
-            .filter_map(|(k, c)| if groups.contains_key(&k) { merged.remove(&k) } else { Some(c) })
-            .collect();
+        let (next, n_absorbed, undone) = apply_absorptions(clusters, &absorbed_by, merged);
+        log.absorbed += n_absorbed;
+        log.undone += undone.len();
+        vetoed.extend(undone.iter().map(|(x, y)| pair_key(x, y)));
+        clusters = next;
     }
     Ok(clusters)
 }
@@ -1046,23 +1194,72 @@ mod tests {
     }
 
     #[test]
-    fn the_attribution_readback_brings_exactly_the_joining_reads_into_their_family() {
-        // pass B's read-back (prereg Amendments 13 / 13b) on a FASTA as the sweep writes it (`fasta_record`, one sequence line per record):
-        // each joining read enters its family's names with its own sequence; a read that joins no family is not kept; a read that has a
-        // sequence already keeps it (the first wins, as before); a joining name the FASTA lacks adds nothing
+    fn the_attribution_readback_counts_each_class_and_brings_exactly_the_joining_reads_into_their_family() {
+        // pass B's read-back (prereg Amendments 13 / 13b; the reviewer's minor: classes counted here, no name -> class map) on a FASTA as the
+        // sweep writes it (`attrib_record`: `>{read} {class}`, one sequence line per record). Each read with a hit (`aligned`) is counted once
+        // under its class, and as attributed when the rule gave it a family (p5's family is not of this run: attributed, not joined); u2 has
+        // no hit: neither counted nor kept. Each joining read enters its family's names with its own sequence; a read that has a sequence
+        // already keeps it (the first wins), and so does u1, whose second record (a duplicate name) is neither counted nor read again; a
+        // joining name the FASTA lacks (u9) adds nothing
+        use AttribClass::{PoorlyPlaced, Unmapped};
         let mut fasta: Vec<u8> = Vec::new();
-        for (name, seq) in [("u1", "ACGTACGTAA"), ("u2", "GGGGCC"), ("u3", "TTTTCCA"), ("u4", "CCCAT")] {
-            fasta_record(&mut fasta, name, seq.as_bytes()).unwrap();
+        for (name, class, seq) in [
+            ("u1", Unmapped, "ACGTACGTAA"), ("u2", Unmapped, "GGGGCC"), ("p3", PoorlyPlaced, "TTTTCCA"), ("u4", Unmapped, "CCCAT"),
+            ("p5", PoorlyPlaced, "AAAC"), ("p6", PoorlyPlaced, "CGCG"), ("u1", Unmapped, "TTTT"),
+        ] {
+            attrib_record(&mut fasta, name, class, seq.as_bytes()).unwrap();
         }
-        let joining: HashMap<String, usize> = [("u1", 1), ("u3", 0), ("u4", 1), ("u9", 0)].iter().map(|(r, f)| (r.to_string(), *f)).collect();
+        assert!(fasta.starts_with(b">u1 unmapped\nACGTACGTAA\n>u2 unmapped\n"), "{}", String::from_utf8_lossy(&fasta));
+        let owned = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<HashSet<String>>();
+        let aligned = owned(&["u1", "p3", "u4", "p5", "p6", "u9"]);
+        let attributed: HashMap<String, String> = [("u1", "F2"), ("p3", "F1"), ("u4", "F2"), ("p5", "F7"), ("u9", "F1")].iter().map(|(r, f)| (r.to_string(), f.to_string())).collect();
+        let joining: HashMap<String, usize> = [("u1", 1), ("p3", 0), ("u4", 1), ("u9", 0)].iter().map(|(r, f)| (r.to_string(), *f)).collect();
         let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
         let mut names = vec![BTreeSet::new(), set(&["p1"])];
         let mut seqs: HashMap<String, Vec<u8>> = [("p1", "AAAA"), ("u4", "KEPT")].iter().map(|(r, s)| (r.to_string(), s.as_bytes().to_vec())).collect();
-        join_attributed(&fasta[..], &joining, &mut names, &mut seqs).unwrap();
-        assert_eq!(names, vec![set(&["u3"]), set(&["p1", "u1", "u4"])]);
+        let counts = read_back(&fasta[..], aligned, &attributed, &joining, &mut names, &mut seqs).unwrap();
+        assert_eq!(counts, ClassCounts { aligned_unmapped: 2, aligned_poor: 3, attributed_unmapped: 2, attributed_poor: 2 });
+        assert_eq!(names, vec![set(&["p3"]), set(&["p1", "u1", "u4"])]);
         let got: BTreeMap<&str, &[u8]> = seqs.iter().map(|(r, s)| (r.as_str(), s.as_slice())).collect();
-        let want: BTreeMap<&str, &[u8]> = [("p1", &b"AAAA"[..]), ("u1", b"ACGTACGTAA"), ("u3", b"TTTTCCA"), ("u4", b"KEPT")].into_iter().collect();
+        let want: BTreeMap<&str, &[u8]> = [("p1", &b"AAAA"[..]), ("u1", b"ACGTACGTAA"), ("p3", b"TTTTCCA"), ("u4", b"KEPT")].into_iter().collect();
         assert_eq!(got, want);
+        // a header without a known class is not the sweep's record: an error naming it
+        for bad in [&b">u7\nACGT\n"[..], b">u7 mapped\nACGT\n"] {
+            let err = read_back(bad, owned(&["u7"]), &attributed, &joining, &mut names, &mut seqs).unwrap_err().to_string();
+            assert!(err.contains("u7"), "{err}");
+        }
+    }
+
+    /// A cluster of the merge tests: its members, template and consensus.
+    fn clu(members: &[usize], template: usize, consensus: &str) -> Cluster {
+        Cluster { members: members.to_vec(), template, consensus: consensus.as_bytes().to_vec() }
+    }
+
+    #[test]
+    fn an_empty_merged_consensus_keeps_the_absorbed_clusters_separate() {
+        // prereg Amendment 13 (the empty-merge fallback), one round of the significance merge with two absorbing groups. c0 absorbs c1 and the
+        // re-polished consensus is non-empty: the merged cluster takes c0's place and c1 leaves. c2 absorbs c3 and c4, and the re-polished
+        // consensus is EMPTY: that merge is undone, so c2, c3 and c4 stay as they were (not dropped) and the pairs (c2, c3), (c2, c4) come
+        // back for the caller to veto. c5 is untouched. The order of the list is kept
+        let (c0, c1, c2, c3, c4, c5) = (clu(&[0, 1, 2, 3], 0, "AAAA"), clu(&[4, 5], 4, "CCCC"), clu(&[6, 7, 8], 7, "GGGG"), clu(&[9, 10], 9, "TTTT"), clu(&[11], 11, "ACAC"), clu(&[12, 13, 14], 12, "GTGT"));
+        let clusters = vec![c0.clone(), c1.clone(), c2.clone(), c3.clone(), c4.clone(), c5.clone()];
+        let absorbed_by = [None, Some(0), None, Some(2), Some(2), None];
+        let m0 = clu(&[0, 1, 2, 3, 4, 5], 1, "AAAACCCC");
+        let merged: BTreeMap<usize, Cluster> = [(0, m0.clone()), (2, clu(&[6, 7, 8, 9, 10, 11], 6, ""))].into_iter().collect();
+        let (next, n_absorbed, undone) = apply_absorptions(clusters.clone(), &absorbed_by, merged);
+        assert_eq!(next, vec![m0.clone(), c2.clone(), c3.clone(), c4.clone(), c5.clone()]);
+        assert_eq!(n_absorbed, 1);
+        assert_eq!(undone, vec![(c2.members.clone(), c3.members.clone()), (c2.members.clone(), c4.members.clone())]);
+        // every merged consensus non-empty: both merges apply and nothing is undone
+        let merged: BTreeMap<usize, Cluster> = [(0, m0.clone()), (2, clu(&[6, 7, 8, 9, 10, 11], 6, "GGTT"))].into_iter().collect();
+        let (next, n_absorbed, undone) = apply_absorptions(clusters.clone(), &absorbed_by, merged);
+        assert_eq!(next, vec![m0, clu(&[6, 7, 8, 9, 10, 11], 6, "GGTT"), c5]);
+        assert_eq!((n_absorbed, undone.len()), (3, 0));
+        // the only group undone: the list comes back as it was
+        let alone = [None, Some(0), None, None, None, None];
+        let merged: BTreeMap<usize, Cluster> = [(0, clu(&[0, 1, 2, 3, 4, 5], 0, ""))].into_iter().collect();
+        let (next, n_absorbed, undone) = apply_absorptions(clusters.clone(), &alone, merged);
+        assert_eq!((next, n_absorbed, undone), (clusters, 0, vec![(c0.members, c1.members)]));
     }
 
     #[test]
