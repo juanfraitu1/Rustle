@@ -1,0 +1,287 @@
+# Amendment 12 acceptance of o3_candidates (docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md); work dir /mnt/linuxdisk/tmp/rna_allele/a12
+
+=== registered run (delta 0.00958): stage batches (/usr/bin/time Elapsed, the stage's own done line)
+batch 0: GWFAM4,GWFAM28,GWFAM100,GWFAM105,GWFAM164,GWFAM415
+[o3_candidates] done: 6 families, 35 clusters, 5 candidates, 3 flagged in 2 families; 35 minimap2 calls; 134.8 s (nets 3.9 s, clusters 69.2 s, genome 61.8 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:29.27
+	Maximum resident set size (kbytes): 15723008
+batch 1: GWFAM6,GWFAM47,GWFAM99,GWFAM149,GWFAM169,GWFAM175,GWFAM177,GWFAM185,GWFAM192,GWFAM247,GWFAM398,GWFAM490
+[o3_candidates] done: 12 families, 82 clusters, 15 candidates, 11 flagged in 6 families; 72 minimap2 calls; 226.8 s (nets 4.1 s, clusters 132.7 s, genome 89.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:12.01
+	Maximum resident set size (kbytes): 15723008
+batch 2: GWFAM21,GWFAM54,GWFAM104,GWFAM125,GWFAM181,GWFAM236,GWFAM269,GWFAM272,GWFAM331,GWFAM401,GWFAM402,GWFAM440
+[o3_candidates] done: 12 families, 57 clusters, 7 candidates, 6 flagged in 4 families; 73 minimap2 calls; 348.5 s (nets 6.9 s, clusters 253.8 s, genome 83.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 6:32.24
+	Maximum resident set size (kbytes): 14949632
+batch 3: GWFAM23,GWFAM62,GWFAM144,GWFAM163,GWFAM173,GWFAM244,GWFAM282,GWFAM317,GWFAM335,GWFAM407,GWFAM439
+[o3_candidates] done: 11 families, 92 clusters, 17 candidates, 10 flagged in 7 families; 81 minimap2 calls; 260.0 s (nets 4.5 s, clusters 191.5 s, genome 63.8 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:48.75
+	Maximum resident set size (kbytes): 16288272
+batch 4: GWFAM37,GWFAM98,GWFAM112,GWFAM123,GWFAM158,GWFAM161,GWFAM182,GWFAM246,GWFAM268,GWFAM314,GWFAM348,GWFAM425
+[o3_candidates] done: 12 families, 83 clusters, 16 candidates, 9 flagged in 6 families; 86 minimap2 calls; 249.6 s (nets 5.4 s, clusters 200.3 s, genome 42.9 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:38.65
+	Maximum resident set size (kbytes): 15723008
+
+=== registered run: merge_test.py components (no pair alignments: every candidate its own component)
+[half delta=0.00479] components 39 {'D': 26, 'S_only': 12, 'other': 1}; families with >= 2 D contigs 6, D contigs in ONE component 0 (0.0%)
+[delta delta=0.00958] components 39 {'D': 26, 'S_only': 12, 'other': 1}; families with >= 2 D contigs 6, D contigs in ONE component 0 (0.0%)
+[double delta=0.01916] components 39 {'D': 26, 'S_only': 12, 'other': 1}; families with >= 2 D contigs 6, D contigs in ONE component 0 (0.0%)
+over-split D pairs by cause: {'no alignment': 8}
+
+=== registered run: merge_test.py score
+[R] D: {'unplaced': 7068, 'wrong': 10218} | S: {'elsewhere': 6, 'stay': 41051, 'unplaced': 670}
+[RIL] D: {'right': 5995, 'unplaced': 6411, 'wrong': 4880} | S: {'elsewhere': 5, 'false_move': 346, 'stay': 40194, 'unplaced': 1182}
+[M] D: {'right': 5995, 'unplaced': 6411, 'wrong': 4880} | S: {'elsewhere': 5, 'false_move': 346, 'stay': 40194, 'unplaced': 1182}
+[T] D: {'right': 6420, 'unplaced': 5986, 'wrong': 4880} | S: {'elsewhere': 5, 'false_move': 346, 'stay': 40194, 'unplaced': 1182}
+[M_half] D: {'right': 5995, 'unplaced': 6411, 'wrong': 4880} | S: {'elsewhere': 5, 'false_move': 346, 'stay': 40194, 'unplaced': 1182}
+[M_double] D: {'right': 5995, 'unplaced': 6411, 'wrong': 4880} | S: {'elsewhere': 5, 'false_move': 346, 'stay': 40194, 'unplaced': 1182}
+M1: D right 5995 -> 5995 (truth-grouped 6420; bar 6,440 = 50% of 12,879); false moves 346/41727 = 0.83% -> DOES NOT WORK
+OVERALL (R vs R+I+L+M): wrong D 10218 -> 4880 (drop 52.2%); false moves 0.83% -> HELP
+M2: D contigs in ONE component 0/6 = 0.0% (bar 2/3); mixed components 0/39 = 0.0% (bar 10%) -> FAILS
+
+=== registered run: A12-2 (accept_o3_candidates.py keep)
+[pooled] (read, candidate) pairs 5416: kept 4866, lost 486, no record on the union 0, not measured (no record on its consensus sequences) 64 -> kept 90.92% of 5352 measured (bar 95%: FAILS); per candidate kept fraction min 0.10242587601078167, p10 0.9159891598915989, median 1.0; candidates below 95%: 4/39 ['cand_GWFAM244_0', 'cand_GWFAM269_0', 'cand_GWFAM331_0', 'cand_GWFAM37_0']
+[isolated] (read, candidate) pairs 5416: kept 4929, lost 483, no record on the union 0, not measured (no record on its consensus sequences) 4 -> kept 91.08% of 5412 measured (bar 95%: FAILS); per candidate kept fraction min 0.10242587601078167, p10 0.9159891598915989, median 1.0; candidates below 95%: 4/39 ['cand_GWFAM244_0', 'cand_GWFAM269_0', 'cand_GWFAM331_0', 'cand_GWFAM37_0']
+
+=== registered run: accept_o3_candidates.py report
+net check: 53/53 families with n_net and n_used equal to the stage's
+stage totals: {'n_net': 48985, 'n_used': 40405, 'n_clusters': 349, 'n_in_reference': 136, 'n_linked': 146, 'n_new': 67, 'n_candidates': 60, 'n_flagged': 39} | families with >= 1 flagged candidate 25/53
+flagged candidates 39 by source {'D': 26, 'S': 12, 'elsewhere': 1}; deleted copies with >= 1 D-derived flagged candidate 19/53; exactly one D-derived candidate in 13/19; D-derived candidates per such family {1: 13, 2: 5, 3: 1}; families with a non-D flagged candidate 10
+candidates per family {0: 23, 1: 15, 2: 7, 3: 4, 4: 2, 5: 1, 6: 1}; flagged per family {0: 28, 1: 15, 2: 7, 3: 2, 4: 1}; clusters per candidate (all) {1: 53, 2: 7}, (flagged) {1: 32, 2: 7}; reads per flagged candidate median 107, min 6, max 390
+>= 2-cluster floor: 7 candidates (of 39 flagged at >= 6 reads) by source {'D': 5, 'S': 2}; deleted copies with a D-derived one 5/53
+deleted copies without a D-derived flagged candidate: 34
+   25  i: no D read in the net
+    5  ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+    1  ii: D reads' component below --min-support
+    3  iii: D reads' clusters linked (allele of a reference locus)
+family	D_net	D_used	n_net	n_used	clusters	in_ref	linked	new	cands	flagged	D reads by fate	cause
+GWFAM4	95	95	400	400	3	0	3	0	0	0	{'linked': 93, 'no_cluster': 2} {'survivor': 76, 'elsewhere': 17}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM6	0	0	1021	1000	5	3	1	1	1	0	{} 	i: no D read in the net
+GWFAM21	0	0	1000	1000	3	2	1	0	0	0	{} 	i: no D read in the net
+GWFAM23	1	1	1501	1000	6	2	3	1	1	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM28	500	337	1500	1000	3	0	3	0	0	0	{'linked': 332, 'no_cluster': 5} {'survivor': 332}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM54	0	0	1000	1000	4	3	1	0	0	0	{} 	i: no D read in the net
+GWFAM62	0	0	1000	1000	5	1	3	1	1	0	{} 	i: no D read in the net
+GWFAM99	0	0	1000	1000	5	1	3	1	1	1	{} 	i: no D read in the net
+GWFAM105	0	0	83	83	5	3	2	0	0	0	{} 	i: no D read in the net
+GWFAM112	0	0	521	521	4	2	2	0	0	0	{} 	i: no D read in the net
+GWFAM125	0	0	679	679	4	2	2	0	0	0	{} 	i: no D read in the net
+GWFAM144	0	0	1000	1000	5	3	2	0	0	0	{} 	i: no D read in the net
+GWFAM149	0	0	234	234	4	3	1	0	0	0	{} 	i: no D read in the net
+GWFAM158	1	1	1432	1000	17	10	7	0	0	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM161	0	0	300	300	6	3	3	0	0	0	{} 	i: no D read in the net
+GWFAM163	0	0	687	687	8	0	5	3	3	2	{} 	i: no D read in the net
+GWFAM173	0	0	815	815	9	7	1	1	1	1	{} 	i: no D read in the net
+GWFAM177	0	0	610	610	3	2	1	0	0	0	{} 	i: no D read in the net
+GWFAM181	0	0	868	868	4	4	0	0	0	0	{} 	i: no D read in the net
+GWFAM182	0	0	287	287	4	3	1	0	0	0	{} 	i: no D read in the net
+GWFAM185	0	0	383	383	6	2	4	0	0	0	{} 	i: no D read in the net
+GWFAM192	1	1	535	535	6	4	2	0	0	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM236	0	0	1000	1000	6	3	3	0	0	0	{} 	i: no D read in the net
+GWFAM246	0	0	1000	1000	5	2	1	2	2	0	{} 	i: no D read in the net
+GWFAM272	0	0	540	540	3	3	0	0	0	0	{} 	i: no D read in the net
+GWFAM282	0	0	1000	1000	4	1	3	0	0	0	{} 	i: no D read in the net
+GWFAM317	3	3	506	506	11	2	7	2	2	1	{'below_support': 3} 	ii: D reads' component below --min-support
+GWFAM335	0	0	598	598	9	4	3	2	2	1	{} 	i: no D read in the net
+GWFAM348	0	0	707	707	9	2	6	1	1	0	{} 	i: no D read in the net
+GWFAM398	0	0	1000	1000	4	2	2	0	0	0	{} 	i: no D read in the net
+GWFAM401	290	284	1038	1000	4	0	4	0	0	0	{'no_cluster': 3, 'linked': 281} {'survivor': 281}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM415	58	58	164	164	4	1	3	0	0	0	{'no_cluster': 38, 'linked': 20} {'survivor': 20}	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM439	0	0	482	482	10	4	5	1	1	1	{} 	i: no D read in the net
+GWFAM440	1	1	204	204	3	3	0	0	0	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+cause-table families with D reads on a surviving copy, median de of those reads (the D-to-survivor divergence; delta = 0.00958):
+  GWFAM4 0.0057 (n 95, iii); GWFAM23 0.1134 (n 1, ii:); GWFAM28 0.0057 (n 500, iii); GWFAM158 0.0855 (n 1, ii:); GWFAM192 0.1439 (n 1, ii:); GWFAM317 0.1346 (n 3, ii:); GWFAM401 0.0035 (n 290, iii); GWFAM415 0.0052 (n 58, ii:); GWFAM440 0.1496 (n 1, ii:)
+D reads: 17286 scored; in a net of their family 7181; under the cap 5508; R arm: {'elsewhere': 4792, 'on_survivor': 7181, 'unmapped': 5313}; in the 25 cause-i families: {'elsewhere': 3225, 'unmapped': 4498} (families whose D reads are all unmapped: 2)
+
+=== post hoc (not a registered rule): accept_o3_candidates.py decompose
+[IsoCon (Amendment 8)] arm M equals merge_test.py score (D right 12787, S false moves 25); D reads by their R-arm status:
+    on_survivor    7181: right   6048  wrong    382  unplaced    751
+    elsewhere      4792: right   1501  wrong   3217  unplaced     74
+    unmapped       5313: right   5238  wrong      0  unplaced     75
+    S false moves by (family, target's family, target's sources): GWFAM247 own family S:other: 7; GWFAM175 own family D: 5; GWFAM28 own family D: 4; GWFAM175 own family S:other+S:other: 3; GWFAM175 own family S:other: 3; GWFAM269 own family D: 2; GWFAM331 own family S:other: 1
+[o3_candidates] arm M equals merge_test.py score (D right 5995, S false moves 346); D reads by their R-arm status:
+    on_survivor    7181: right   5247  wrong    885  unplaced   1049
+    elsewhere      4792: right    248  wrong   3995  unplaced    549
+    unmapped       5313: right    500  wrong      0  unplaced   4813
+    S false moves by (family, target's family, target's sources): GWFAM175 own family S:other: 295; GWFAM331 own family S:other: 36; GWFAM244 own family elsewhere: 8; GWFAM175 own family D: 5; GWFAM269 own family D: 2
+per family D right (IsoCon -> o3_candidates), families where either > 0:
+  GWFAM4 9->0; GWFAM6 34->0; GWFAM21 500->0; GWFAM23 478->0; GWFAM28 30->0; GWFAM37 496->496; GWFAM47 107->107; GWFAM54 80->0; GWFAM62 433->0; GWFAM98 494->488; GWFAM100 478->477; GWFAM104 417->417; GWFAM105 496->0; GWFAM112 268->0; GWFAM123 30->39; GWFAM125 310->0; GWFAM144 116->0; GWFAM149 423->0; GWFAM158 290->0; GWFAM163 476->0; GWFAM164 287->287; GWFAM169 40->10; GWFAM173 240->0; GWFAM175 499->498; GWFAM181 71->0; GWFAM182 40->0; GWFAM236 329->0; GWFAM244 500->500; GWFAM246 498->0; GWFAM247 497->158; GWFAM268 498->500; GWFAM269 491->491; GWFAM282 500->0; GWFAM314 492->492; GWFAM331 103->1; GWFAM335 162->0; GWFAM348 200->0; GWFAM401 172->0; GWFAM402 111->118; GWFAM407 485->494; GWFAM415 53->0; GWFAM425 375->334; GWFAM440 39->0; GWFAM490 140->88
+
+=== half: stage batches
+[o3_candidates] done: 6 families, 34 clusters, 13 candidates, 7 flagged in 4 families; 45 minimap2 calls; 156.7 s (nets 6.5 s, clusters 102.5 s, genome 47.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:54.75
+[o3_candidates] done: 5 families, 36 clusters, 6 candidates, 4 flagged in 3 families; 33 minimap2 calls; 163.1 s (nets 5.0 s, clusters 110.5 s, genome 47.5 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:01.20
+[o3_candidates] done: 6 families, 44 clusters, 8 candidates, 4 flagged in 3 families; 43 minimap2 calls; 161.7 s (nets 5.8 s, clusters 110.2 s, genome 45.3 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:59.75
+[o3_candidates] done: 6 families, 32 clusters, 7 candidates, 4 flagged in 2 families; 39 minimap2 calls; 161.4 s (nets 4.5 s, clusters 103.8 s, genome 53.0 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:59.51
+[o3_candidates] done: 6 families, 60 clusters, 8 candidates, 8 flagged in 5 families; 41 minimap2 calls; 151.8 s (nets 5.7 s, clusters 86.4 s, genome 58.4 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:49.95
+[o3_candidates] done: 6 families, 45 clusters, 10 candidates, 5 flagged in 4 families; 42 minimap2 calls; 136.2 s (nets 3.8 s, clusters 68.3 s, genome 64.0 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:30.65
+[o3_candidates] done: 6 families, 33 clusters, 9 candidates, 5 flagged in 2 families; 42 minimap2 calls; 153.2 s (nets 6.5 s, clusters 98.1 s, genome 48.7 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:47.69
+[o3_candidates] done: 6 families, 34 clusters, 3 candidates, 3 flagged in 3 families; 39 minimap2 calls; 176.5 s (nets 16.2 s, clusters 120.4 s, genome 39.9 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:18.13
+[o3_candidates] done: 6 families, 41 clusters, 15 candidates, 8 flagged in 5 families; 49 minimap2 calls; 157.0 s (nets 4.2 s, clusters 92.0 s, genome 60.7 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:54.74
+
+=== half: merge_test.py components
+[half delta=0.00479] components 48 {'D': 23, 'S_only': 25}; families with >= 2 D contigs 4, D contigs in ONE component 0 (0.0%)
+[delta delta=0.00958] components 48 {'D': 23, 'S_only': 25}; families with >= 2 D contigs 4, D contigs in ONE component 0 (0.0%)
+[double delta=0.01916] components 48 {'D': 23, 'S_only': 25}; families with >= 2 D contigs 4, D contigs in ONE component 0 (0.0%)
+over-split D pairs by cause: {'no alignment': 4}
+
+=== half: merge_test.py score
+[R] D: {'unplaced': 7068, 'wrong': 10218} | S: {'elsewhere': 6, 'stay': 41051, 'unplaced': 670}
+[RIL] D: {'right': 5944, 'unplaced': 6421, 'wrong': 4921} | S: {'elsewhere': 5, 'false_move': 312, 'stay': 40306, 'unplaced': 1104}
+[M] D: {'right': 5944, 'unplaced': 6421, 'wrong': 4921} | S: {'elsewhere': 5, 'false_move': 312, 'stay': 40306, 'unplaced': 1104}
+[T] D: {'right': 5985, 'unplaced': 6380, 'wrong': 4921} | S: {'elsewhere': 5, 'false_move': 312, 'stay': 40309, 'unplaced': 1101}
+[M_half] D: {'right': 5944, 'unplaced': 6421, 'wrong': 4921} | S: {'elsewhere': 5, 'false_move': 312, 'stay': 40306, 'unplaced': 1104}
+[M_double] D: {'right': 5944, 'unplaced': 6421, 'wrong': 4921} | S: {'elsewhere': 5, 'false_move': 312, 'stay': 40306, 'unplaced': 1104}
+M1: D right 5944 -> 5944 (truth-grouped 5985; bar 6,440 = 50% of 12,879); false moves 312/41727 = 0.75% -> DOES NOT WORK
+OVERALL (R vs R+I+L+M): wrong D 10218 -> 4921 (drop 51.8%); false moves 0.75% -> HELP
+M2: D contigs in ONE component 0/4 = 0.0% (bar 2/3); mixed components 0/48 = 0.0% (bar 10%) -> FAILS
+
+=== half: accept_o3_candidates.py report
+net check: 53/53 families with n_net and n_used equal to the stage's
+stage totals: {'n_net': 48985, 'n_used': 40405, 'n_clusters': 359, 'n_in_reference': 158, 'n_linked': 112, 'n_new': 89, 'n_candidates': 79, 'n_flagged': 48} | families with >= 1 flagged candidate 31/53
+flagged candidates 48 by source {'S': 25, 'D': 23}; deleted copies with >= 1 D-derived flagged candidate 19/53; exactly one D-derived candidate in 15/19; D-derived candidates per such family {1: 15, 2: 4}; families with a non-D flagged candidate 20
+candidates per family {0: 17, 1: 12, 2: 15, 3: 5, 4: 1, 5: 1, 6: 1, 7: 1}; flagged per family {0: 22, 1: 18, 2: 10, 3: 2, 4: 1}; clusters per candidate (all) {1: 69, 2: 10}, (flagged) {1: 38, 2: 10}; reads per flagged candidate median 110, min 6, max 445
+>= 2-cluster floor: 10 candidates (of 48 flagged at >= 6 reads) by source {'D': 7, 'S': 3}; deleted copies with a D-derived one 7/53
+deleted copies without a D-derived flagged candidate: 34
+   25  i: no D read in the net
+    5  ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+    3  iii: D reads' clusters linked (allele of a reference locus)
+    1  iv: D reads in a flagged candidate labelled S / elsewhere
+family	D_net	D_used	n_net	n_used	clusters	in_ref	linked	new	cands	flagged	D reads by fate	cause
+GWFAM4	95	95	400	400	3	0	3	0	0	0	{'linked': 86, 'no_cluster': 9} {'survivor': 86}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM6	0	0	1021	1000	6	2	2	2	2	1	{} 	i: no D read in the net
+GWFAM21	0	0	1000	1000	3	2	1	0	0	0	{} 	i: no D read in the net
+GWFAM23	1	1	1501	1000	7	1	4	2	2	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM54	0	0	1000	1000	4	3	1	0	0	0	{} 	i: no D read in the net
+GWFAM62	0	0	1000	1000	4	2	2	0	0	0	{} 	i: no D read in the net
+GWFAM99	0	0	1000	1000	4	2	0	2	2	1	{} 	i: no D read in the net
+GWFAM104	476	378	1288	1000	6	1	5	0	0	0	{'no_cluster': 48, 'linked': 330} {'survivor': 330}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM105	0	0	83	83	5	5	0	0	0	0	{} 	i: no D read in the net
+GWFAM112	0	0	521	521	5	4	1	0	0	0	{} 	i: no D read in the net
+GWFAM125	0	0	679	679	4	2	2	0	0	0	{} 	i: no D read in the net
+GWFAM144	0	0	1000	1000	6	4	1	1	1	0	{} 	i: no D read in the net
+GWFAM149	0	0	234	234	5	4	1	0	0	0	{} 	i: no D read in the net
+GWFAM158	1	1	1432	1000	22	12	9	1	1	1	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM161	0	0	300	300	5	4	1	0	0	0	{} 	i: no D read in the net
+GWFAM163	0	0	687	687	7	0	4	3	3	2	{} 	i: no D read in the net
+GWFAM173	0	0	815	815	10	8	1	1	1	1	{} 	i: no D read in the net
+GWFAM177	0	0	610	610	3	1	1	1	1	1	{} 	i: no D read in the net
+GWFAM181	0	0	868	868	5	3	1	1	1	0	{} 	i: no D read in the net
+GWFAM182	0	0	287	287	4	3	1	0	0	0	{} 	i: no D read in the net
+GWFAM185	0	0	383	383	5	2	3	0	0	0	{} 	i: no D read in the net
+GWFAM192	1	1	535	535	7	4	2	1	1	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM236	0	0	1000	1000	4	3	1	0	0	0	{} 	i: no D read in the net
+GWFAM246	0	0	1000	1000	4	2	0	2	2	0	{} 	i: no D read in the net
+GWFAM272	0	0	540	540	3	3	0	0	0	0	{} 	i: no D read in the net
+GWFAM282	0	0	1000	1000	4	2	2	0	0	0	{} 	i: no D read in the net
+GWFAM317	3	3	506	506	9	2	5	2	2	1	{'no_cluster': 3} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM335	0	0	598	598	8	4	1	3	2	1	{} 	i: no D read in the net
+GWFAM348	0	0	707	707	8	4	3	1	1	1	{} 	i: no D read in the net
+GWFAM398	0	0	1000	1000	4	2	1	1	1	1	{} 	i: no D read in the net
+GWFAM401	290	284	1038	1000	3	0	1	2	2	2	{'no_cluster': 11, 'flagged_not_D': 273} 	iv: D reads in a flagged candidate labelled S / elsewhere
+GWFAM415	58	58	164	164	4	2	2	0	0	0	{'linked': 41, 'no_cluster': 17} {'survivor': 41}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM439	0	0	482	482	13	4	7	2	1	1	{} 	i: no D read in the net
+GWFAM440	1	1	204	204	3	2	1	0	0	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+cause-table families with D reads on a surviving copy, median de of those reads (the D-to-survivor divergence; delta = 0.00958):
+  GWFAM4 0.0057 (n 95, iii); GWFAM23 0.1134 (n 1, ii:); GWFAM104 0.0024 (n 476, iii); GWFAM158 0.0855 (n 1, ii:); GWFAM192 0.1439 (n 1, ii:); GWFAM317 0.1346 (n 3, ii:); GWFAM401 0.0035 (n 290, iv:); GWFAM415 0.0052 (n 58, iii); GWFAM440 0.1496 (n 1, ii:)
+D reads: 17286 scored; in a net of their family 7181; under the cap 5508; R arm: {'elsewhere': 4792, 'on_survivor': 7181, 'unmapped': 5313}; in the 25 cause-i families: {'elsewhere': 3225, 'unmapped': 4498} (families whose D reads are all unmapped: 2)
+
+=== double: stage batches
+[o3_candidates] done: 6 families, 26 clusters, 6 candidates, 3 flagged in 2 families; 37 minimap2 calls; 136.5 s (nets 3.6 s, clusters 91.9 s, genome 40.9 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:30.72
+[o3_candidates] done: 5 families, 32 clusters, 6 candidates, 5 flagged in 3 families; 30 minimap2 calls; 168.8 s (nets 5.8 s, clusters 112.4 s, genome 50.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:07.16
+[o3_candidates] done: 6 families, 37 clusters, 5 candidates, 4 flagged in 4 families; 37 minimap2 calls; 132.4 s (nets 5.8 s, clusters 85.0 s, genome 41.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:30.44
+[o3_candidates] done: 6 families, 24 clusters, 3 candidates, 2 flagged in 1 families; 35 minimap2 calls; 145.0 s (nets 5.6 s, clusters 100.3 s, genome 38.8 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:39.71
+[o3_candidates] done: 6 families, 42 clusters, 2 candidates, 1 flagged in 1 families; 32 minimap2 calls; 117.8 s (nets 3.9 s, clusters 78.0 s, genome 35.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:12.52
+[o3_candidates] done: 6 families, 40 clusters, 4 candidates, 4 flagged in 3 families; 35 minimap2 calls; 116.7 s (nets 3.6 s, clusters 66.3 s, genome 46.7 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:11.13
+[o3_candidates] done: 6 families, 32 clusters, 7 candidates, 6 flagged in 1 families; 38 minimap2 calls; 145.9 s (nets 5.2 s, clusters 95.6 s, genome 44.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:40.75
+[o3_candidates] done: 6 families, 34 clusters, 1 candidates, 1 flagged in 1 families; 38 minimap2 calls; 179.7 s (nets 4.3 s, clusters 124.4 s, genome 50.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:17.96
+[o3_candidates] done: 6 families, 37 clusters, 15 candidates, 11 flagged in 5 families; 41 minimap2 calls; 125.1 s (nets 4.1 s, clusters 83.4 s, genome 37.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:15.97
+
+=== double: merge_test.py components
+[half delta=0.00479] components 37 {'D': 22, 'S_only': 13, 'other': 2}; families with >= 2 D contigs 6, D contigs in ONE component 0 (0.0%)
+[delta delta=0.00958] components 37 {'D': 22, 'S_only': 13, 'other': 2}; families with >= 2 D contigs 6, D contigs in ONE component 0 (0.0%)
+[double delta=0.01916] components 37 {'D': 22, 'S_only': 13, 'other': 2}; families with >= 2 D contigs 6, D contigs in ONE component 0 (0.0%)
+over-split D pairs by cause: {'no alignment': 8}
+
+=== double: merge_test.py score
+[R] D: {'unplaced': 7068, 'wrong': 10218} | S: {'elsewhere': 6, 'stay': 41051, 'unplaced': 670}
+[RIL] D: {'right': 5021, 'unplaced': 6947, 'wrong': 5318} | S: {'elsewhere': 5, 'false_move': 272, 'stay': 40742, 'unplaced': 708}
+[M] D: {'right': 5021, 'unplaced': 6947, 'wrong': 5318} | S: {'elsewhere': 5, 'false_move': 272, 'stay': 40742, 'unplaced': 708}
+[T] D: {'right': 5394, 'unplaced': 6547, 'wrong': 5345} | S: {'elsewhere': 6, 'false_move': 272, 'stay': 40755, 'unplaced': 694}
+[M_half] D: {'right': 5021, 'unplaced': 6947, 'wrong': 5318} | S: {'elsewhere': 5, 'false_move': 272, 'stay': 40742, 'unplaced': 708}
+[M_double] D: {'right': 5021, 'unplaced': 6947, 'wrong': 5318} | S: {'elsewhere': 5, 'false_move': 272, 'stay': 40742, 'unplaced': 708}
+M1: D right 5021 -> 5021 (truth-grouped 5394; bar 6,440 = 50% of 12,879); false moves 272/41727 = 0.65% -> DOES NOT WORK
+OVERALL (R vs R+I+L+M): wrong D 10218 -> 5318 (drop 48.0%); false moves 0.65% -> MIXED
+M2: D contigs in ONE component 0/6 = 0.0% (bar 2/3); mixed components 0/37 = 0.0% (bar 10%) -> FAILS
+
+=== double: accept_o3_candidates.py report
+net check: 53/53 families with n_net and n_used equal to the stage's
+stage totals: {'n_net': 48985, 'n_used': 40405, 'n_clusters': 304, 'n_in_reference': 126, 'n_linked': 128, 'n_new': 50, 'n_candidates': 49, 'n_flagged': 37} | families with >= 1 flagged candidate 21/53
+flagged candidates 37 by source {'D': 22, 'S': 13, 'elsewhere': 2}; deleted copies with >= 1 D-derived flagged candidate 15/53; exactly one D-derived candidate in 9/15; D-derived candidates per such family {1: 9, 2: 5, 3: 1}; families with a non-D flagged candidate 10
+candidates per family {0: 29, 1: 13, 2: 3, 3: 6, 5: 1, 7: 1}; flagged per family {0: 32, 1: 12, 2: 6, 3: 1, 4: 1, 6: 1}; clusters per candidate (all) {1: 48, 2: 1}, (flagged) {1: 36, 2: 1}; reads per flagged candidate median 111, min 6, max 666
+>= 2-cluster floor: 1 candidates (of 37 flagged at >= 6 reads) by source {'D': 1}; deleted copies with a D-derived one 1/53
+deleted copies without a D-derived flagged candidate: 38
+   25  i: no D read in the net
+    4  ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+    1  ii: D reads' component below --min-support
+    6  iii: D reads' clusters linked (allele of a reference locus)
+    2  iv: D reads in a flagged candidate labelled S / elsewhere
+family	D_net	D_used	n_net	n_used	clusters	in_ref	linked	new	cands	flagged	D reads by fate	cause
+GWFAM4	95	95	400	400	3	0	3	0	0	0	{'linked': 95} {'survivor': 95}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM6	0	0	1021	1000	3	2	1	0	0	0	{} 	i: no D read in the net
+GWFAM21	0	0	1000	1000	4	2	2	0	0	0	{} 	i: no D read in the net
+GWFAM23	1	1	1501	1000	5	2	3	0	0	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM28	500	337	1500	1000	5	1	4	0	0	0	{'linked': 337} {'survivor': 337}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM54	0	0	1000	1000	4	4	0	0	0	0	{} 	i: no D read in the net
+GWFAM62	0	0	1000	1000	4	1	3	0	0	0	{} 	i: no D read in the net
+GWFAM99	0	0	1000	1000	4	1	3	0	0	0	{} 	i: no D read in the net
+GWFAM104	476	378	1288	1000	4	1	2	1	1	1	{'flagged_not_D': 257, 'no_cluster': 93, 'linked': 28} {'survivor': 28}	iv: D reads in a flagged candidate labelled S / elsewhere
+GWFAM105	0	0	83	83	5	5	0	0	0	0	{} 	i: no D read in the net
+GWFAM112	0	0	521	521	4	2	2	0	0	0	{} 	i: no D read in the net
+GWFAM125	0	0	679	679	5	2	3	0	0	0	{} 	i: no D read in the net
+GWFAM144	0	0	1000	1000	3	3	0	0	0	0	{} 	i: no D read in the net
+GWFAM149	0	0	234	234	4	3	1	0	0	0	{} 	i: no D read in the net
+GWFAM158	1	1	1432	1000	17	10	7	0	0	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM161	0	0	300	300	5	3	2	0	0	0	{} 	i: no D read in the net
+GWFAM163	0	0	687	687	5	0	4	1	1	1	{} 	i: no D read in the net
+GWFAM169	227	227	550	550	6	2	4	0	0	0	{'linked': 225, 'no_cluster': 2} {'survivor': 225}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM173	0	0	815	815	8	7	0	1	1	1	{} 	i: no D read in the net
+GWFAM177	0	0	610	610	2	1	1	0	0	0	{} 	i: no D read in the net
+GWFAM181	0	0	868	868	3	3	0	0	0	0	{} 	i: no D read in the net
+GWFAM182	0	0	287	287	4	4	0	0	0	0	{} 	i: no D read in the net
+GWFAM185	0	0	383	383	5	2	3	0	0	0	{} 	i: no D read in the net
+GWFAM192	1	1	535	535	5	4	1	0	0	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+GWFAM236	0	0	1000	1000	6	3	3	0	0	0	{} 	i: no D read in the net
+GWFAM246	0	0	1000	1000	5	2	2	1	1	0	{} 	i: no D read in the net
+GWFAM272	0	0	540	540	2	1	1	0	0	0	{} 	i: no D read in the net
+GWFAM282	0	0	1000	1000	3	1	2	0	0	0	{} 	i: no D read in the net
+GWFAM314	500	234	2000	1000	3	1	2	0	0	0	{'linked': 233, 'no_cluster': 1} {'survivor': 233}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM317	3	3	506	506	10	2	7	1	1	0	{'below_support': 3} 	ii: D reads' component below --min-support
+GWFAM331	151	151	421	421	3	0	0	3	3	2	{'flagged_not_D': 144, 'no_cluster': 3, 'below_support': 4} 	iv: D reads in a flagged candidate labelled S / elsewhere
+GWFAM335	0	0	598	598	10	3	4	3	3	1	{} 	i: no D read in the net
+GWFAM348	0	0	707	707	8	1	6	1	1	0	{} 	i: no D read in the net
+GWFAM398	0	0	1000	1000	4	3	1	0	0	0	{} 	i: no D read in the net
+GWFAM401	290	284	1038	1000	3	1	2	0	0	0	{'linked': 283, 'no_cluster': 1} {'survivor': 283}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM402	134	134	524	524	5	3	2	0	0	0	{'linked': 131, 'no_cluster': 3} {'survivor': 131}	iii: D reads' clusters linked (allele of a reference locus)
+GWFAM439	0	0	482	482	11	3	7	1	1	1	{} 	i: no D read in the net
+GWFAM440	1	1	204	204	3	3	0	0	0	0	{'no_cluster': 1} 	ii: D reads in no cluster reaching the chain (< --min-cluster, split off, or an in-reference cluster)
+cause-table families with D reads on a surviving copy, median de of those reads (the D-to-survivor divergence; delta = 0.00958):
+  GWFAM4 0.0057 (n 95, iii); GWFAM23 0.1134 (n 1, ii:); GWFAM28 0.0057 (n 500, iii); GWFAM104 0.0024 (n 476, iv:); GWFAM158 0.0855 (n 1, ii:); GWFAM169 0.0095 (n 227, iii); GWFAM192 0.1439 (n 1, ii:); GWFAM314 0.0197 (n 500, iii); GWFAM317 0.1346 (n 3, ii:); GWFAM331 0.0381 (n 151, iv:); GWFAM401 0.0035 (n 290, iii); GWFAM402 0.0246 (n 134, iii); GWFAM440 0.1496 (n 1, ii:)
+D reads: 17286 scored; in a net of their family 7181; under the cap 5508; R arm: {'elsewhere': 4792, 'on_survivor': 7181, 'unmapped': 5313}; in the 25 cause-i families: {'elsewhere': 3225, 'unmapped': 4498} (families whose D reads are all unmapped: 2)
