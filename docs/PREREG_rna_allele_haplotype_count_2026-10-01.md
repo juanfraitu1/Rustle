@@ -417,3 +417,12 @@ construction, and it stands as recorded; (2) the rule is fixed as the family's o
 #### Amendment 13c (2026-10-03, before the A13 run): two clarifications of 13b's attribution set. The 300-bp floor applies to BOTH classes
 (unmapped and poorly placed reads). "No record on any family copy" is read as "in no net of this run" (pass A's scope under `--families`,
 ruling R18), so a read whose only copy record is supplementary is eligible when its primary is poorly placed.
+
+#### Amendment 13d (2026-10-03, before the A13 run): the template rule corrected at the step itself. Amendment 13's "lowest total bases of
+indels >= 20 bp" favours fragments (a short read's alignments hold no indels) and, under the all-vs-all's `-N 100`, members with few aligned
+partners (smoke on five A12 families: an 877-bp read, 48th longest of 50, became a cluster's template; a consensus never extends past its
+template). The rule becomes the **medoid under a structural distance**: d(m, p) = bases of indels >= 20 bp (insertions, deletions and `~`
+introns alike) in m's best alignment to p, PLUS p's terminal bases (>= 20 bp at either end) that m's alignment leaves uncovered; a member is
+**eligible** when it is aligned to >= 50% of the cluster's other members (every member is eligible in clusters of < 4); template = the
+eligible member with the lowest MEAN d over its aligned partners, ties -> longest -> smallest name; a cluster with no eligible member takes
+its longest member. Unchanged: everything else in Amendments 13-13c.
