@@ -2,7 +2,7 @@
 //! PREREG_rna_allele_haplotype_count Amendments 7-11 without IsoCon. Pure functions here, plus the cached minimap2 runner and the output
 //! writers; the BAM passes and the flow of the stage are in the binary.
 //!
-//! **STATUS:** TEST-ONLY — no caller yet (the `o3_candidates` binary and the driver stage land in later tasks of the plan; flips to OPT-IN then)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+//! **STATUS:** OTHER-BINARY — reached only from the `o3_candidates` binary (`src/bin/o3_candidates.rs`; the driver's `candidates` stage runs that binary)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use crate::vg_family::run_cache as rc;
 use anyhow::Context;

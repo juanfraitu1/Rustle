@@ -117,5 +117,9 @@ name = "missing_copy_flag"
 path = "src/bin/missing_copy_flag.rs"
 
 [[bin]]
+name = "o3_candidates"
+path = "src/bin/o3_candidates.rs"
+
+[[bin]]
 name = "as_table"
 path = "src/bin/as_table.rs"

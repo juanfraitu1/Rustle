@@ -34,9 +34,9 @@ this file must list exactly the module set.
 |---|---|
 | **SHIPPED-DEFAULT** | 16 |
 | **OPT-IN** | 16 |
-| **OTHER-BINARY** | 3 |
+| **OTHER-BINARY** | 4 |
 | **REFUTED** | 1 |
-| **TEST-ONLY** | 1 |
+| **TEST-ONLY** | 0 |
 | **INFRASTRUCTURE** | 1 |
 
 > **2026-09-23 wave 6 (consolidation):** the binaries `asj`, `asj_verify`, `debug_poa`, `bam_null_probe`, `index_bam`,
@@ -106,7 +106,7 @@ Built and wired, but behind a flag that **defaults off**. An arm, not the method
 | `single_copy.rs` | --single-copy-baseline (src/bin/gw_family_catalog.rs:189-190, `#[arg(long, default_value_t = false)] single_co | MEASURED: single_copy_loci's only production caller is src/rustle/vg_family/denovo_pipeline.rs:2704 inside detect_single_copy_baseline_genome_wide, and that function's only caller in the whole tree is src/bin/gw_family_catalog.rs: |
 | `vg_realign.rs` | --vg-realign or --vg-realign-correct (src/bin/copy_assign.rs:340-341 and :346-347, both `default_value_t = fal | MEASURED: the correction leg is guarded by `if cfg.vg_realign` at src/rustle/vg_family/denovo_pipeline.rs:2356 (call at :2376), and DenovoConfig's default is `vg_realign: false` / `vg_realign_admit: false` at denovo_pipeline.rs:14 |
 
-## OTHER-BINARY (3)
+## OTHER-BINARY (4)
 
 Live, but only from a binary other than `gw_family_catalog` / `copy_assign`.
 
@@ -115,6 +115,7 @@ Live, but only from a binary other than `gw_family_catalog` / `copy_assign`.
 | `annotation_families.rs` | - | MEASURED: sole caller is src/bin/mcl_families.rs:18-20 (build_clusters, graph_from_paf, mcl, Cluster, GeneKey, GraphParams). The one other hit, family_detect.rs:207, is a doc comment (`/// Iterative path-halving union-find (matche |
 | `missing_copy.rs` | - | MEASURED: sole caller is src/bin/missing_copy_flag.rs (`use rustle::vg_family::missing_copy::*`, §6ze RNA-only O3 chain: two_means/split_pile/consistency/patched_consensus/home/verdict/confirmed); no reference from gw_family_catalog or copy_assign. |
 | `parcn.rs` | binary `parcn` (Cargo.toml:116-118, path src/bin/parcn.rs); no flag inside it gates the module — the whole bin | MEASURED: the only importer is src/bin/parcn.rs:15-18 (`use rustle::vg_family::parcn::{assign_locus, dedup_loci, format_family_row, format_parcn_row, parse_copies_fa, sun_positions, tabulate, Assignment, CopySun, Locus};`); no oth |
+| `o3_candidates.rs` | binary `o3_candidates` (Cargo.toml `[[bin]] o3_candidates`, src/bin/o3_candidates.rs); no flag inside it gates the module — the whole binary is the O3 candidates stage (spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md) | MEASURED 2026-10-02: the only importer is src/bin/o3_candidates.rs (`use rustle::vg_family::o3_candidates::{...}`: the k-mer index, PAF/cs parsing, cluster_reads, consensus_from_template, refine_cluster, variant_is_real, classify, components, is_flagged, union_sequence_with_note, the cached minimap2 runner and the writers); no reference from gw_family_catalog or copy_assign. The pipeline driver's `candidates` stage (plan task 9) runs that binary. Was TEST-ONLY until the binary landed (plan task 8). |
 
 ## REFUTED (1)
 
@@ -124,13 +125,12 @@ Implemented, **measured**, and the measurement went against it. Kept deliberatel
 |---|---|---|
 | `collapse_gate.rs` | --collapse-gate (src/bin/copy_assign.rs:393-394, default_value_t = false); DenovoConfig::default sets collapse | MEASURED (the refutation is a recorded measurement in-tree): collapse_gate.rs:17-21 — 'DEFAULT OFF. The instrument is not what this module's name claims, and a control proved it… Run genome-wide, the gate fires on EEF1A1 … and rep |
 
-## TEST-ONLY (1)
+## TEST-ONLY (0)
 
 **No non-test callers anywhere in `src/`.** Dead in every shipped binary. Not deleted, but nothing it claims is in effect.
 
 | module | gate | deciding evidence |
 |---|---|---|
-| `o3_candidates.rs` | - | MEASURED 2026-10-02: no caller outside its own unit tests (the only reference in src/ is the `pub mod o3_candidates;` line in vg_family/mod.rs). The `o3_candidates` binary (plan task 8) and the driver stage (task 9) make it OPT-IN; this row moves to OPT-IN and the header tag changes then. |
 
 ## INFRASTRUCTURE (1)
 
