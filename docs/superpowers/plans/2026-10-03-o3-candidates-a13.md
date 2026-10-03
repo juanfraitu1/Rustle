@@ -1,0 +1,61 @@
+# o3_candidates A13 (net by alignment, structural template) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Fix the two measured causes of Amendment 12's failure in the `o3_candidates` stage and re-run the acceptance unchanged; flip the stage to default-on iff it passes.
+
+**Architecture:** Changes confined to `src/bin/o3_candidates.rs` (pass B: unmapped reads attributed by one minimap2 run against the copies; template choice from the all-vs-all PAF), `src/rustle/vg_family/o3_candidates.rs` (new preset `MM2_ATTRIB`, splice `MM2_MEMBERS`, the structural-template scorer, the insertion vote order, the refine re-template, the empty-merge fallback), and the acceptance harness re-run into `/mnt/linuxdisk/tmp/rna_allele/a13/`.
+
+**Tech Stack:** Rust (rustle crate), minimap2 2.30, the Amendment 12 harness (`bench/rna_allele/accept_o3_candidates.{sh,py}`, `panel_to_copies.py`).
+
+**Spec:** `docs/superpowers/specs/2026-10-02-o3-candidates-design.md` as amended by prereg Amendment 13 in `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` (the amendment is the binding text for every rule below).
+
+## Global Constraints
+
+- Build/test only with `CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target_m2 bash tools/rlock.sh heavy cargo ... --release`, output captured to a file; every heavy run (binary, minimap2, samtools, the harness) foreground through `bash tools/rlock.sh heavy ...`, each call < 10 min; no background jobs, no waiter loops, no `pkill -f`.
+- The chain's registered rules do not move: `--delta 0.00958`, component merge rule, `--min-support 6`, `--min-cluster 3`, 0.98 tie ratio, `--max-reads 1000`, R13.
+- Amendment 13's exact values: `MM2_ATTRIB = [-x splice:hq -uf -c -N 5 -p 0.5]`; attribution iff best hit (most matches) covers >= 50% of the read (`shorter_cov`) and `de <= 0.15`; unmapped reads >= 300 bp only; template = member with the LOWEST total bases of indels >= 20 bp over its all-vs-all alignments to the other members (ties: longest, then name); `MM2_MEMBERS = [-x splice:hq -uf -c --cs -N 5 -p 0.5]`; insertion vote: >= 20 bp with >= 3 carriers first, then the < 20 bp 50% rule; refine re-templates by the same rule when the template is split off; an absorbing cluster with an empty re-polished consensus keeps the absorbed clusters separate.
+- Existing tests stay green (1081 + new); the fixture integration test and `run_e2e.sh` still pass (one flagged candidate `cand_MCL0_0`, 850-950 bp).
+- Commits end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01DAyQQ6R8drUxY5GsM5wNkb`; author from the canonical repo's git config; never touch `/mnt/c/Users/jfris/Desktop/Rustle`; do not push.
+
+## Review Focus
+
+1. An unmapped read that aligns to copies of two families (a shared exon): it joins the family of its best hit only when that hit covers >= 50% of the read — a 40%-coverage best hit attributes nothing (Task 1 test).
+2. A cluster whose longest member retains an intron: the template is a shorter clean member (Task 2 test `retained_intron_read_is_not_the_template`).
+3. A cluster of two members with identical structure: ties resolve by length then name, deterministically (Task 2 test).
+4. The fixture (all reads mapped) is unaffected by Task 1: identical outputs before/after (Task 1 check).
+5. Pass B must not read sequences of unmapped records twice or hold all of them in memory when only some are long enough (Task 1: stream to the FASTA).
+
+---
+
+### Task 1: Net attribution by alignment
+
+**Files:**
+- Modify: `src/rustle/vg_family/o3_candidates.rs` (add `pub const MM2_ATTRIB`, `pub fn attribute_by_hits(hits: &[PafHit], family_of_target: &HashMap<String, String>) -> HashMap<String, String>` (read -> family), remove `FamilyKmerIndex`, `ATTRIB_MAX_FAMILIES`, their tests)
+- Modify: `src/bin/o3_candidates.rs` (pass B writes `unmapped.fa` under `<out>.tmp/`, runs `minimap2(MM2_ATTRIB, copies_fa, unmapped.fa)`, attributes via `attribute_by_hits`; `families.tsv` gains nothing; the log line reports aligned / attributed counts; `--copies-fa` headers map target name -> family via `{fid}|...` prefix)
+- Modify: `docs/MODULE_STATUS.md` only if the registry test demands it
+
+- [ ] **Step 1: Failing tests** — `attribute_by_hits`: (a) best hit with `shorter_cov` 0.9 and de 0.05 -> attributed; (b) best hit coverage 0.4 -> None; (c) de 0.2 -> None; (d) two hits, the one with more matches decides even if the other has lower de.
+- [ ] **Step 2: Run** (RED). **Step 3: Implement** in the library (pure) and wire pass B in the binary (stream unmapped records >= 300 bp to the FASTA while sweeping; one minimap2 call after the sweep; attributed reads join their family's net BEFORE the cap). Remove the k-mer index and its constants/tests. **Step 4: Run** `--lib o3_candidates`, `--test o3_candidates`, then the full suite (captured). Re-run the binary on the fixture: outputs byte-identical to the pre-change run (no unmapped reads there). **Step 5: Commit** — `o3_candidates: unmapped reads attributed by alignment to the copies (A13); k-mer index retired`.
+
+### Task 2: Structural template and the consensus details
+
+**Files:**
+- Modify: `src/rustle/vg_family/o3_candidates.rs` (`MM2_MEMBERS` -> splice preset; `pub fn structural_template(members: &[usize], names: &[String], ava: &[PafHit], lens: &[usize]) -> usize` scoring big-indel bases from each member's `cs` against the other members; the insertion vote order in `consensus_from_template`; update the constant-pinning test)
+- Modify: `src/bin/o3_candidates.rs` (`Net::longest` replaced by the structural template wherever a template is chosen: initial clusters, refine re-template, merged clusters; empty-merge fallback keeps absorbed clusters)
+
+- [ ] **Step 1: Failing tests** — `retained_intron_read_is_not_the_template` (3 members: A full clean 900 bp, B = A + 300 bp intron inside, C = A with 0.2% errors; ava cs strings written by hand: B's hits carry a 300-bp insertion/deletion; template = A); `skipping_read_is_not_the_template` (one member lacks a 200-bp exon); `tie_breaks_by_length_then_name`; insertion vote: a 24-bp insertion with 3 carriers at a position where 4 of 8 carry a 1-bp insertion -> the 24-bp one is inserted (and the 1-bp one is not, since both cannot precede the same column — document the choice); refine re-template test (template split off -> new template chosen among the kept set); empty-merge fallback test.
+- [ ] **Step 2: Run** (RED). **Step 3: Implement.** **Step 4: Run** focused + full suite; binary on the fixture: still one flagged candidate, union 850-950 bp (its length may change by a few bp — report it). **Step 5: Commit** — `o3_candidates: structurally central template, splice preset for votes, insertion vote by size class, refine re-template, empty-merge fallback (A13)`.
+
+### Task 3: Acceptance A13 and the default flip
+
+**Files:**
+- Modify: `bench/rna_allele/accept_o3_candidates.sh` (work dir and prefixes parameterised: `A13` into `/mnt/linuxdisk/tmp/rna_allele/a13/`; reuse `A12.copies.*`), `docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md` (new), `docs/NEGATIVE_RESULTS_REGISTER.md` (rows 1221+), and — iff A13-1/2/3 all hold — `tools/rustle_pipeline.sh` (`CANDIDATES=1` default, `all` runs the stage, header/usage/README/AGENTS/REPRODUCE/figures docs updated, `run_e2e.sh` adapted) with the spec's §9b note.
+
+- [ ] **Step 1:** rebuild the binary; run the stage in batches (as A12: 5 groups via `--families`, each under 10 min, `/usr/bin/time -v`); concatenate.
+- [ ] **Step 2:** arm M exactly as A12 (rename contigs `iso_*`, index, realign the three parts, label contigs from the unmasked genome, `merge_test.py score`); A13-2 with the arm-M preset; A13-3 = summed batch time.
+- [ ] **Step 3:** cause table; attribution counts (unmapped reads aligned / attributed / attributed to the right family by `labels.tsv`); delta/2 and 2 x delta reruns.
+- [ ] **Step 4:** verdicts as registered; write the doc and register rows; IF all three hold, flip the default (and say so in the doc); commit.
+
+## Self-review notes
+Spec coverage: Amendment 13's four bullets map to Tasks 1 (net), 2 (template + details), 3 (acceptance + flip). Review Focus 1-5 each name their test or check. No placeholders.
