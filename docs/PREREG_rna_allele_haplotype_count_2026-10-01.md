@@ -413,3 +413,7 @@ construction, and it stands as recorded; (2) the rule is fixed as the family's o
   by the rule above. **A13-1: stage D right (all reads) >= 0.80 x C AND false moves <= 5% of S reads.** A12-1's original bar (10,230) is
   reported beside, not decided on. A13-2 and A13-3 unchanged.
 - Nothing else moves: delta, `--min-support 6`, 0.98, the 1,000-read cap, R13; the template rule of Amendment 13 stands.
+
+#### Amendment 13c (2026-10-03, before the A13 run): two clarifications of 13b's attribution set. The 300-bp floor applies to BOTH classes
+(unmapped and poorly placed reads). "No record on any family copy" is read as "in no net of this run" (pass A's scope under `--families`,
+ruling R18), so a read whose only copy record is supplementary is eligible when its primary is poorly placed.
