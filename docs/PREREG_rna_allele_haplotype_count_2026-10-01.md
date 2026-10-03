@@ -391,3 +391,25 @@ rules unchanged. The chain's rules (delta link, component merge at delta, `--min
   and the delta/2 and 2 x delta reruns.
 - **Not changed, by design:** `--min-support 6`, delta, the 0.98 tie ratio, the 1,000-read cap, R13 (reads placed uniquely on a candidate
   are the aligner's result).
+
+### Amendment 13b (2026-10-03, before the A13 run): the attribution rule measured at the attribution step, and the comparator re-registered
+
+Measured on the attribution step only (never on the outcome metric), with the 5,312 unmapped and the un-netted D reads of Amendment 12's
+run aligned (`minimap2 -x map-ont -c`) against the families' own mapped net reads: the best hits of the deleted copies' reads to their
+family's transcripts sit at `de` 0.15-0.30 (902 reads at coverage >= 0.5) or cover < 50% of the read (1,824); at the family definition's
+own identity floor (clause 2: identity >= 0.80, coverage >= 0.50, i.e. `de <= 0.20`, read coverage >= 0.5) **135 of 5,312 unmapped
+reads** (97.8% to the right family, 11 families) and **302 of 3,462 poorly placed un-netted reads** (92.1%, 14 families) are attributable;
+Amendment 13's first draft (`splice:hq` against the copies, `de <= 0.15`) attributes 24. So: (1) no truth-free rule reaches the ~5,200
+reads IsoCon received by truth label in Amendment 8 — the Amendment 12 bar (80% of IsoCon's 12,787) was partly unattainable by
+construction, and it stands as recorded; (2) the rule is fixed as the family's own edge rule in read space.
+
+- **Attribution set:** unmapped records >= 300 bp, PLUS mapped reads with no record on any family copy whose primary record has `de >
+  0.02` or MAPQ 0 ("poorly placed"), both collected in BAM pass B. **Targets:** the families' mapped net reads (every read pass A put in a
+  net, tagged `<family>|<read>`) together with `--copies-fa`. **Preset:** `MM2_ATTRIB = [-x map-ont -c -N 5 -p 0.5]`. **Rule:** a read
+  joins the family of its best hit (most matches) iff the hit covers >= 50% of the READ and `de <= 0.20`. The chain's genome check
+  (`InReference` at 0.999) remains the guard against reads of foreign genes pulled in this way.
+- **Comparator re-registered for A13-1:** C = IsoCon's right D reads of Amendment 8 (`linktest/merge/score.out` semantics, per read)
+  counted over the TRUTH-FREE ATTAINABLE D reads — D reads with any record on a surviving copy of their family in `R.bam`, or attributable
+  by the rule above. **A13-1: stage D right (all reads) >= 0.80 x C AND false moves <= 5% of S reads.** A12-1's original bar (10,230) is
+  reported beside, not decided on. A13-2 and A13-3 unchanged.
+- Nothing else moves: delta, `--min-support 6`, 0.98, the 1,000-read cap, R13; the template rule of Amendment 13 stands.
