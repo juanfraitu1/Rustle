@@ -32,7 +32,8 @@ use rustle::vg_family::denovo_assemble::{
     BamIndexCache, BamRead, GATE_MIN_READS,
 };
 use rustle::vg_family::catalog_input::{
-    group_families, parse_copies_fa, parse_copies_tsv, to_colocated, CatalogFamily, SeqIndex,
+    group_families, parse_copies_fa, parse_copies_tsv, parse_family_list, select_families, to_colocated, CatalogFamily,
+    SeqIndex,
 };
 use rustle::vg_family::denovo_pipeline::{
     catalog_overlaps, detect_and_assign, ColocatedFamily, DenovoConfig, FallbackEdge, FamilyAssignment,
@@ -1223,7 +1224,8 @@ struct Args {
     /// # Contract (all loud, none silent)
     /// Every supplied copy must (a) be named by the `copies.tsv` header columns, (b) fall inside some
     /// `--region`/`--regions` entry on its OWN chromosome (c) have a sequence (see `--copies-fa`), and
-    /// (d) have at least one overlapping read in the BAM. A violation aborts the run.
+    /// (d) have at least one overlapping read in the BAM, unless its row says `n_reads` 0 or `member_status`
+    /// `partner` or `candidate` (an O3 candidate copy, spec 2026-10-02 §7). A violation aborts the run.
     ///
     /// A CROSS-CHROMOSOME family (RABL2's 5 contigs) is not truncated to whichever copies happen to fall
     /// in one region (2026-09-15): its reads are gathered directly from every one of its copies' own
@@ -1245,6 +1247,20 @@ struct Args {
     /// FASTA is not the assembly the catalog was built against, and aborts). Prefer `--copies-fa`.
     #[arg(long)]
     copies_fa: Option<String>,
+
+    /// Assign only the `--families` families whose ids FILE lists (one id per line, blank lines ignored). The rows
+    /// are selected right after the table is parsed and BEFORE every contract check, so the checks (regions, sequences,
+    /// reads) apply to exactly the families assigned. An id the table does not hold aborts the run, as does a selection
+    /// that keeps no family. With `--skip-families` too, a family must be listed here and not there. For the driver's
+    /// two-run O2 split (spec 2026-10-02 §7): the families with an O3 candidate copy on the augmented genome and BAM,
+    /// the others on the originals. Unset: the table as given, byte-identical.
+    #[arg(long)]
+    only_families: Option<String>,
+
+    /// Assign every `--families` family EXCEPT those whose ids FILE lists (one id per line); same contract as
+    /// `--only-families` (unknown ids abort; nothing left aborts). Unset: the table as given, byte-identical.
+    #[arg(long)]
+    skip_families: Option<String>,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -1898,6 +1914,9 @@ fn load_supplied_families(
         if args.copies_fa.is_some() {
             anyhow::bail!("--copies-fa is only meaningful with --families (it supplies the copies' sequences)");
         }
+        if args.only_families.is_some() || args.skip_families.is_some() {
+            anyhow::bail!("--only-families / --skip-families are only meaningful with --families (they select its families)");
+        }
         if args.flag_missing_copies {
             anyhow::bail!("--flag-missing-copies requires --families (it tests catalog copies for a missing sibling)");
         }
@@ -1936,7 +1955,29 @@ fn load_supplied_families(
         );
     }
     let text = std::fs::read_to_string(path).with_context(|| format!("reading --families {path}"))?;
-    let fams = group_families(parse_copies_tsv(&text).with_context(|| format!("parsing --families {path}"))?)?;
+    let rows = parse_copies_tsv(&text).with_context(|| format!("parsing --families {path}"))?;
+    // --only-families / --skip-families: select the rows BEFORE every check below, so the contract binds exactly the
+    // families assigned. Neither given: `select_families` returns the rows untouched and nothing is printed.
+    let read_list = |flag: &str, p: &Option<String>| -> Result<Option<std::collections::BTreeSet<String>>> {
+        p.as_deref()
+            .map(|p| std::fs::read_to_string(p).with_context(|| format!("reading {flag} {p}")).map(|t| parse_family_list(&t)))
+            .transpose()
+    };
+    let (only, skip) = (read_list("--only-families", &args.only_families)?, read_list("--skip-families", &args.skip_families)?);
+    let n_listed = rows.iter().map(|c| c.family_id.as_str()).collect::<std::collections::BTreeSet<_>>().len();
+    let rows = select_families(rows, only.as_ref(), skip.as_ref()).with_context(|| format!("selecting from --families {path}"))?;
+    if only.is_some() || skip.is_some() {
+        let kept = rows.iter().map(|c| c.family_id.as_str()).collect::<std::collections::BTreeSet<_>>().len();
+        eprintln!(
+            "[copy_assign] --families {path}: {kept} of {n_listed} families selected ({})",
+            [("--only-families", &args.only_families), ("--skip-families", &args.skip_families)]
+                .iter()
+                .filter_map(|(f, p)| p.as_deref().map(|p| format!("{f} {p}")))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    let fams = group_families(rows)?;
     let seqs = match args.copies_fa.as_deref() {
         Some(p) => {
             let t = std::fs::read_to_string(p).with_context(|| format!("reading --copies-fa {p}"))?;
@@ -5772,7 +5813,8 @@ fn main() -> Result<()> {
                             .count();
                         // §6ft: a catalog copy the catalog itself marks unexpressed (`n_reads 0`, an annotated model
                         // kept as the unit) or a partner may legitimately have no read here — it stays a target
-                        let catalog_zero = f.copies.iter().any(|cc| cc.tid == c.tid && (cc.n_reads == 0 || cc.partner));
+                        // (and, spec 2026-10-02 §7, an O3 candidate: `CatalogCopy::may_have_no_reads`)
+                        let catalog_zero = f.copies.iter().any(|cc| cc.tid == c.tid && cc.may_have_no_reads());
                         if n == 0 && !catalog_zero {
                             anyhow::bail!(
                                 "--families: {} copy {} ({}:{}-{}) has NO reads in {contig}:{lo}-{hi} of \
@@ -8767,6 +8809,12 @@ fn main() -> Result<()> {
         row("iterative_prune", format!("{}", args.iterative_prune))?;
         row("families", args.families.clone().unwrap_or_else(|| "NONE".to_string()))?;
         row("copies_fa", args.copies_fa.clone().unwrap_or_else(|| "NONE".to_string()))?;
+        // written only when given, so a run without them keeps its certificate byte-identical
+        for (key, list) in [("only_families", &args.only_families), ("skip_families", &args.skip_families)] {
+            if let Some(p) = list {
+                row(key, p.clone())?;
+            }
+        }
         row("dump_psv", format!("{}", args.dump_psv))?;
         row("phase", format!("{}", args.phase))?;
         row("posterior", format!("{}", args.posterior))?;

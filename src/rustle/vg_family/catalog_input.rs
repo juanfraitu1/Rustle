@@ -70,6 +70,54 @@ pub struct CatalogCopy {
     /// §6ft: `member_status = partner` — a neighbouring unit of another family, aligned to explain read-through
     /// tails, never a candidate for assignment.
     pub partner: bool,
+    /// `member_status = candidate` (spec 2026-10-02 §7): a reference-absent copy proposed by `o3_candidates`, written by
+    /// the driver's augmentation on its own contig `cand_<family>_<k>`. A full assignment target (unlike a partner);
+    /// like a partner it is exempt from the every-copy-has-a-read contract check ([`CatalogCopy::may_have_no_reads`]).
+    pub candidate: bool,
+}
+
+impl CatalogCopy {
+    /// True when the `--families` contract lets this copy have no overlapping read: the catalog marks it unexpressed
+    /// (`n_reads 0`, an annotated model kept as the unit), it is a partner (§6ft), or it is an O3 candidate (whose
+    /// contig only the patch realignment's reads can reach). Every other copy without a read aborts the run.
+    pub fn may_have_no_reads(&self) -> bool {
+        self.n_reads == 0 || self.partner || self.candidate
+    }
+}
+
+/// A `copy_assign --only-families` / `--skip-families` list: one family id per line, trimmed, blank lines ignored.
+pub fn parse_family_list(text: &str) -> std::collections::BTreeSet<String> {
+    text.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect()
+}
+
+/// Keep the rows of the families in `only` (when given) that are not in `skip` (when given), in file order — the
+/// driver's two-run O2 split (spec 2026-10-02 §7: the candidate families on the augmented inputs, the rest on the
+/// originals). Applied to the parsed rows BEFORE every contract check, so the checks see exactly the families assigned.
+/// Loud, like the rest of the contract: an id the table does not hold is an error (a typo would otherwise drop or keep a
+/// family silently), and so is a selection that keeps no family.
+pub fn select_families(
+    copies: Vec<CatalogCopy>,
+    only: Option<&std::collections::BTreeSet<String>>,
+    skip: Option<&std::collections::BTreeSet<String>>,
+) -> Result<Vec<CatalogCopy>> {
+    if only.is_none() && skip.is_none() {
+        return Ok(copies);
+    }
+    let have: std::collections::BTreeSet<&str> = copies.iter().map(|c| c.family_id.as_str()).collect();
+    for (flag, list) in [("--only-families", only), ("--skip-families", skip)] {
+        let unknown: Vec<&str> = list.into_iter().flatten().map(String::as_str).filter(|id| !have.contains(id)).collect();
+        if !unknown.is_empty() {
+            bail!("{flag} names {} not in the --families table: {}", if unknown.len() == 1 { "a family" } else { "families" }, unknown.join(", "));
+        }
+    }
+    let kept: Vec<CatalogCopy> = copies
+        .into_iter()
+        .filter(|c| only.map_or(true, |o| o.contains(&c.family_id)) && skip.map_or(true, |s| !s.contains(&c.family_id)))
+        .collect();
+    if kept.is_empty() {
+        bail!("--only-families / --skip-families leave no family of the --families table to assign");
+    }
+    Ok(kept)
 }
 
 /// A catalog FAMILY: its rows grouped by `family_id`, in first-seen (file) order.
@@ -244,6 +292,7 @@ pub fn parse_copies_tsv(text: &str) -> Result<Vec<CatalogCopy>> {
                 }
             },
             partner: i_status.map(at) == Some("partner"),
+            candidate: i_status.map(at) == Some("candidate"),
             locus: match i_locus.map(|(a, b)| (at(a), at(b))) {
                 None | Some(("NA", _)) | Some(("", _)) => None,
                 Some((a, b)) => Some((
@@ -594,6 +643,64 @@ mod tests {
     fn a_header_only_file_is_an_error_rather_than_an_empty_roster() {
         let e = parse_copies_tsv(&format!("{HDR}\n")).unwrap_err().to_string();
         assert!(e.contains("no copy rows"), "{e}");
+    }
+
+    /// `copy_assign --only-families` / `--skip-families` (the O2 split over candidate families, spec 2026-10-02 §7): a
+    /// list is one family id per line (blank lines ignored, ids trimmed); the selection keeps the rows' file order; an id
+    /// the table does not hold is an error (a typo would otherwise silently drop or keep a family), and so is a selection
+    /// that keeps nothing.
+    #[test]
+    fn family_lists_select_rows_by_family_id_and_fail_loudly() {
+        let t = format!(
+            "{HDR}\n{}\n{}\n{}\n{}\n",
+            row("F1", 0, "c1", 100, 200, "100-200", 1),
+            row("F2", 0, "c1", 300, 400, "300-400", 1),
+            row("F1", 1, "c2", 100, 200, "100-200", 1),
+            row("F3", 0, "c3", 500, 600, "500-600", 1),
+        );
+        let all = parse_copies_tsv(&t).unwrap();
+        let ids = |v: &[CatalogCopy]| v.iter().map(|c| format!("{}:{}", c.family_id, c.copy_idx)).collect::<Vec<_>>();
+        let list = parse_family_list("F1\n\n  F3 \n");
+        assert_eq!(list.iter().map(String::as_str).collect::<Vec<_>>(), vec!["F1", "F3"]);
+        assert_eq!(ids(&select_families(all.clone(), Some(&list), None).unwrap()), vec!["F1:0", "F1:1", "F3:0"]);
+        assert_eq!(ids(&select_families(all.clone(), None, Some(&list)).unwrap()), vec!["F2:0"]);
+        assert_eq!(select_families(all.clone(), None, None).unwrap(), all, "no list: the table unchanged");
+        // both lists compose: in `only` and not in `skip`
+        let f1 = parse_family_list("F1\n");
+        assert_eq!(ids(&select_families(all.clone(), Some(&list), Some(&f1)).unwrap()), vec!["F3:0"]);
+        // an id the table does not hold, in either list
+        let typo = parse_family_list("F1\nF9\n");
+        let e = select_families(all.clone(), Some(&typo), None).unwrap_err().to_string();
+        assert!(e.contains("--only-families") && e.contains("F9"), "{e}");
+        let e = select_families(all.clone(), None, Some(&typo)).unwrap_err().to_string();
+        assert!(e.contains("--skip-families") && e.contains("F9"), "{e}");
+        // a selection that keeps nothing (every family skipped, or an empty only-list)
+        let every = parse_family_list("F1\nF2\nF3\n");
+        let e = select_families(all.clone(), None, Some(&every)).unwrap_err().to_string();
+        assert!(e.contains("no family"), "{e}");
+        let e = select_families(all.clone(), Some(&parse_family_list("\n")), None).unwrap_err().to_string();
+        assert!(e.contains("no family"), "{e}");
+    }
+
+    /// `member_status = candidate` (an `o3_candidates` copy added by the driver's augmentation, spec 2026-10-02 §7) is a
+    /// full assignment target, NOT a partner (a partner never receives a molecule), but it is exempt from the "every copy
+    /// has a read" contract check exactly as a partner or an `n_reads = 0` copy is.
+    #[test]
+    fn a_candidate_copy_is_a_target_exempt_from_the_read_check_like_a_partner() {
+        let t = format!(
+            "{HDR}\tmember_status\n{}\tcandidate\n{}\tpartner\n{}\tkept\n",
+            row("F", 0, "cand_F_0", 0, 900, "0-900", 1),
+            row("F", 1, "c1", 100, 200, "100-200", 1),
+            row("F", 2, "c1", 300, 400, "300-400", 1),
+        );
+        let cs = parse_copies_tsv(&t).unwrap();
+        assert!(cs[0].candidate && !cs[0].partner, "a candidate is not a partner");
+        assert!(cs[1].partner && !cs[1].candidate);
+        assert!(!cs[2].partner && !cs[2].candidate);
+        // the row helper writes n_reads 7: only the status exempts here
+        assert!(cs[0].may_have_no_reads() && cs[1].may_have_no_reads() && !cs[2].may_have_no_reads());
+        let zero = format!("{HDR}\n{}\n", row("F", 0, "c1", 100, 200, "100-200", 1).replace("\t7\t", "\t0\t"));
+        assert!(parse_copies_tsv(&zero).unwrap()[0].may_have_no_reads(), "n_reads 0 keeps its exemption");
     }
 
     #[test]

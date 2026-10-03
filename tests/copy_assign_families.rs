@@ -447,3 +447,55 @@ fn copies_fa_without_families_is_an_error() {
     assert!(!o.status.success());
     assert!(stderr(&o).contains("only meaningful with --families"), "{}", stderr(&o));
 }
+
+/// `--only-families` / `--skip-families` (spec 2026-10-02 §7, the driver's two-run O2 split over the families with an O3
+/// candidate copy): each run assigns exactly its selection of the supplied table and the two runs cover the full run's
+/// families; an unknown id or a selection that keeps nothing aborts, and so does a list without `--families`.
+#[test]
+fn only_and_skip_families_split_the_supplied_roster() {
+    let d = scratch("split");
+    let regions = write(&d, "regions.txt", "c1:0-600\nc2:0-320\n");
+    let go = |name: &str, extra: &[&str]| -> (Output, String) {
+        let out = d.join(name).to_str().expect("utf-8 path").to_string();
+        let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
+            .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+            .args(["--regions", &regions, "--out", &out])
+            .args(["--families", &format!("{FIX}/out_default.copies.tsv"), "--copies-fa", &format!("{FIX}/out_default.copies.fa")])
+            .args(extra)
+            .output()
+            .expect("copy_assign failed to spawn");
+        (o, out)
+    };
+    let list = write(&d, "gwfam0.txt", "GWFAM0\n");
+    let (o, all) = go("all", &[]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(!stderr(&o).contains("families selected"), "no list: nothing selected, nothing said");
+    let (o, only) = go("only", &["--only-families", &list]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(stderr(&o).contains("1 of 2 families selected (--only-families"), "{}", stderr(&o));
+    let (o, skip) = go("skip", &["--skip-families", &list]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let mut fams_all = col(&read(&all, "families.tsv"), 0);
+    fams_all.sort();
+    assert_eq!(fams_all, vec!["GWFAM0", "GWFAM1"]);
+    assert_eq!(col(&read(&only, "families.tsv"), 0), vec!["GWFAM0"]);
+    assert_eq!(col(&read(&skip, "families.tsv"), 0), vec!["GWFAM1"]);
+    for (out, fam) in [(&only, "GWFAM0"), (&skip, "GWFAM1")] {
+        for t in ["assignments.tsv", "quant.tsv", "family_join.tsv", "famcn_readonly.tsv"] {
+            let ids = col(&read(out, t), 0 + (t == "assignments.tsv") as usize);
+            assert!(ids.iter().all(|f| f == fam), "{out}.{t} holds another family: {ids:?}");
+        }
+    }
+    // the run certificate names the list it was given, and only then
+    assert!(read(&only, "params.tsv").contains(&format!("only_families\t{list}\n")));
+    assert!(read(&skip, "params.tsv").contains(&format!("skip_families\t{list}\n")));
+    assert!(!read(&all, "params.tsv").contains("_families\t"), "no list, no row");
+    let typo = write(&d, "typo.txt", "GWFAM0\nGWFAM9\n");
+    let (o, _) = go("typo", &["--only-families", &typo]);
+    assert!(!o.status.success() && stderr(&o).contains("GWFAM9"), "{}", stderr(&o));
+    let both = write(&d, "both.txt", "GWFAM0\nGWFAM1\n");
+    let (o, _) = go("none", &["--skip-families", &both]);
+    assert!(!o.status.success() && stderr(&o).contains("leave no family"), "{}", stderr(&o));
+    let (o, _) = run(&d, &["--only-families", &list]);
+    assert!(!o.status.success() && stderr(&o).contains("only meaningful with --families"), "{}", stderr(&o));
+}
