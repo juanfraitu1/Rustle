@@ -110,6 +110,15 @@ pub fn best_by_matches(hits: &[PafHit]) -> HashMap<String, PafHit> {
     best
 }
 
+/// Per query name, the hit with the highest identity x coverage (`id_cov`); a tie keeps the first encountered (stable). This chooses the GENOME
+/// hit that `classify` judges (ruling R4), as `best_hits` of `bench/rna_allele/link_test.py` does; pairwise (all-vs-all) hits keep
+/// `best_by_matches`, as `best_pairs` of `bench/rna_allele/merge_test.py` does.
+pub fn best_by_id_cov(hits: &[PafHit]) -> HashMap<String, PafHit> {
+    let mut best: HashMap<String, PafHit> = HashMap::new();
+    for h in hits { if best.get(&h.q).map_or(true, |b| id_cov(h) > id_cov(b)) { best.insert(h.q.clone(), h.clone()); } }
+    best
+}
+
 // The three quantities below divide by lengths from the PAF; a zero length counts as 1 (no NaN / inf) and an end before its start as an
 // empty span (no usize wrap-around).
 
@@ -327,6 +336,140 @@ pub fn variant_is_real(n_small: usize, n_large: usize, k: usize, eps: f64, alpha
 /// and places a member that has no hit at all.
 pub fn refine_cluster(_template: &[u8], members: &[(&[u8], &PafHit)], delta: f64) -> (Vec<usize>, Vec<usize>) {
     (0..members.len()).partition(|&i| { let h = members[i].1; h.de <= delta && shorter_cov(h) >= 0.5 })
+}
+
+// ---- flag / link / merge fates, the flag floor and the exon-union representative (spec §5.6-§5.7) ------------------------------------
+
+/// Identity x coverage (`id_cov`) from which a consensus counts as already in the reference (`bench/rna_allele/link_test.py:141`).
+const IN_REFERENCE_ID_COV: f64 = 0.999;
+
+/// One cluster consensus of a family, the unit the flag / link / merge chain judges: `id` is its sequence name in the consensus FASTA (the
+/// `q` of its PAF hits), `n_reads` the reads behind it after refinement and merging, `seq` the consensus.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClusterSeq { pub family: String, pub id: String, pub n_reads: usize, pub seq: Vec<u8> }
+
+/// The chain's verdict on one consensus (spec §5.6; Amendments 7-9). Loci are `chrom:start-end` of the best genome hit in PAF coordinates
+/// (0-based, half-open).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Fate {
+    /// Identity x coverage >= 0.999: the sequence is already in the reference, so it is no copy of anything and is dropped.
+    InReference,
+    /// Within delta of a reference locus (`d` = `whole_length_d` of the hit): an allele of that locus, never a candidate.
+    Linked { locus: String, d: f64 },
+    /// Beyond delta of every reference locus: a new copy, merged by `components` and kept by `is_flagged`. `nearest` is the best hit's
+    /// locus, `"none"` (with d = 1.0) when the genome gave no hit.
+    NewCopy { nearest: String, d: f64 },
+}
+
+/// The verdict on one consensus from its best genome hit (`best_by_id_cov`; `None` = no hit at all). Identity x coverage (`id_cov`) >= 0.999
+/// is `InReference`, tested first as `contigs` of `bench/rna_allele/link_test.py` does; otherwise the whole-length divergence d
+/// (`whole_length_d`) <= `delta` is `Linked` to the hit's locus, and anything else a `NewCopy` with that locus as `nearest`. No hit is a
+/// `NewCopy` with `nearest = "none"` and d = 1.0 whatever `delta`. The cluster is not consulted (its hit carries every quantity used; the
+/// parameter is the plan's interface).
+pub fn classify(_c: &ClusterSeq, best_genome_hit: Option<&PafHit>, delta: f64) -> Fate {
+    let Some(h) = best_genome_hit else { return Fate::NewCopy { nearest: "none".into(), d: 1.0 } };
+    if id_cov(h) >= IN_REFERENCE_ID_COV { return Fate::InReference; }
+    let (locus, d) = (format!("{}:{}-{}", h.t, h.ts, h.te), whole_length_d(h));
+    if d <= delta { Fate::Linked { locus, d } } else { Fate::NewCopy { nearest: locus, d } }
+}
+
+/// The merge step (spec §5.6.4, Amendment 8): the components of a family's NEW-COPY consensus sequences `ids` under their all-vs-all hits
+/// `ava`. The rule is the read clustering's, so this is `cluster_reads` (a pair joins on its best hit when that covers >= 50% of the shorter
+/// sequence with `de <= delta`), with its ordering: ascending index lists by (size descending, first index).
+pub fn components(ids: &[String], ava: &[PafHit], delta: f64) -> Vec<Vec<usize>> { cluster_reads(ids, ava, delta) }
+
+/// The flag floor (ruling R1): a component of new-copy clusters is a flagged candidate iff the reads behind its clusters sum to
+/// >= `min_support` (`--min-support`, 6 = twice IsoCon's 3-read transcript minimum). It counts reads, not clusters: at delta a copy's
+/// isoforms merge into one cluster, so the cluster count is not IsoCon's transcript count. An empty component sums to 0.
+pub fn is_flagged(component_clusters: &[&ClusterSeq], min_support: usize) -> bool {
+    component_clusters.iter().map(|c| c.n_reads).sum::<usize>() >= min_support
+}
+
+/// What `union_sequence_with_note` set aside, counted per member after the backbone.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UnionNote {
+    /// Members for which the closure found no alignment to the current union: nothing is taken from them.
+    pub no_hit: usize,
+    /// Members whose best hit is not on the `+` strand: skipped whole (see `union_sequence`).
+    pub skipped_minus: usize,
+}
+
+/// The exon-union representative of a component (spec §5.7). `members_longest_first` are the component's consensus sequences, the longest
+/// first (the caller sorts; lengths are not looked at). The backbone is the first member (upper-cased); each later member is passed with the
+/// CURRENT union to `hits_vs_current`, which returns its best hit with the member as query and the union as target, so an exon that two
+/// members share is taken once: the second one finds it already there. That hit must skip a long stretch of the union in ONE alignment (a
+/// member that skips an exon): minimap2 `-x splice:hq -uf -c --cs` does (the skip is a `~` intron of the `cs`); `-x asm20 -c --cs` does not,
+/// a skip of some hundred bp costs more than the shorter side earns, the alignment is cut there, and what lies beyond the cut comes back as an
+/// 'unaligned' prefix or suffix and is inserted again. Measured on Amendment 8's 50 multi-member components (540 real IsoCon contigs):
+/// 11.7% of the unions' bases were such duplicates with asm20, 0% with splice:hq (the backbones alone: 0%). From the hit, in member order:
+/// * the unaligned prefix `member[..qs]`, when `qs >= 20`, goes in front of target position `ts`, and the unaligned suffix `member[qe..]`,
+///   when `qlen - qe >= 20`, in front of position `te` (so with `ts == 0` / `te == tlen` they are prepended / appended);
+/// * every insertion of the `cs` of >= 20 bp goes in front of the target base it precedes. An insertion < 20 bp is an error or a microindel,
+///   not an exon (the 20 bp of the consensus' R2); deletions (the union has what the member lacks) and substitutions (the backbone's allele
+///   stays) change nothing.
+///
+/// The pieces of one member are all placed against the union as it was when the member was aligned: they are applied from the highest target
+/// position down, so the offsets of those still to be applied stay valid, and pieces at one position keep their member order. Everything
+/// inserted is upper case (`cs` writes lower case).
+///
+/// A member with no hit adds nothing. Nor does one whose hit is not on the `+` strand (ruled): inserted `cs` bases already lie along the
+/// target, but the unaligned ends of a `-` member would have to be reverse-complemented, which is not done. `union_sequence_with_note` counts
+/// both kinds. A hit without a `cs` contributes its unaligned ends only. A hit that does not fit its sequences (query or target length,
+/// spans, a `cs` that does not end at `te`) and a malformed `cs` are errors naming the member.
+///
+/// What one linear sequence cannot express is exon ORDER. Members that order exons inconsistently (an exon the union holds before another,
+/// a later member holds after it; this also arises when an insertion and a deletion sit side by side in a `cs` and the aligner chose their
+/// order) cannot all be read from the union: the out-of-order exon is inserted again, a duplicate. Alternative first (last) exons end up side
+/// by side at `ts` (`te`). A piece that the aligner left unaligned through divergence rather than structure is inserted although the union
+/// has it, and a long unaligned end of a member (junk, a primer remnant) is taken like an exon: the rule is length only.
+pub fn union_sequence(members_longest_first: &[Vec<u8>], hits_vs_current: impl FnMut(&[u8], &[u8]) -> Option<PafHit>) -> anyhow::Result<Vec<u8>> {
+    union_sequence_with_note(members_longest_first, hits_vs_current).map(|(union, _)| union)
+}
+
+/// `union_sequence` with the count of the members it set aside (no hit; hit not on the `+` strand).
+pub fn union_sequence_with_note(
+    members_longest_first: &[Vec<u8>],
+    mut hits_vs_current: impl FnMut(&[u8], &[u8]) -> Option<PafHit>,
+) -> anyhow::Result<(Vec<u8>, UnionNote)> {
+    let mut note = UnionNote::default();
+    let Some((backbone, rest)) = members_longest_first.split_first() else { return Ok((Vec::new(), note)) };
+    let mut union = backbone.to_ascii_uppercase();
+    for (k, member) in rest.iter().enumerate() {
+        let Some(hit) = hits_vs_current(member.as_slice(), union.as_slice()) else { note.no_hit += 1; continue };
+        if hit.strand != b'+' { note.skipped_minus += 1; continue; }
+        let pieces = union_pieces(member, &union, &hit).map_err(|e| anyhow::anyhow!("member {}: {e}", k + 1))?;
+        // the pieces are in member order, so their positions never decrease: taken from the last one back, each goes in at the highest position
+        // still to do (the offsets of the pieces before it stay valid), and pieces at one position are applied last-first, so that they end up in member order
+        for (pos, seq) in pieces.into_iter().rev() { union.splice(pos..pos, seq); }
+    }
+    Ok((union, note))
+}
+
+/// The pieces of `member` that the union lacks (see `union_sequence`), in member order, each with the union position it goes in front of;
+/// the positions never decrease along the list. An error when the hit does not fit the two sequences or its `cs` is malformed.
+fn union_pieces(member: &[u8], union: &[u8], h: &PafHit) -> anyhow::Result<Vec<(usize, Vec<u8>)>> {
+    anyhow::ensure!(h.qlen == member.len(), "the hit's query length {} is not the member's {} bp", h.qlen, member.len());
+    anyhow::ensure!(h.tlen == union.len(), "the hit's target length {} is not the current union's {} bp", h.tlen, union.len());
+    anyhow::ensure!(h.qs <= h.qe && h.qe <= h.qlen, "query span {}..{} lies outside the {} bp member", h.qs, h.qe, h.qlen);
+    anyhow::ensure!(h.ts <= h.te && h.te <= h.tlen, "target span {}..{} lies outside the {} bp union", h.ts, h.te, h.tlen);
+    let mut pieces = Vec::new();
+    if h.qs >= STRUCT_MIN_INDEL { pieces.push((h.ts, member[..h.qs].to_ascii_uppercase())); }
+    if let Some(cs) = h.cs.as_deref() {
+        let mut t = h.ts;                                                   // the target position the cs has reached
+        for op in parse_cs(cs)? {
+            match op {
+                CsOp::Eq(n) | CsOp::Intron(n) => t = t.saturating_add(n),
+                CsOp::Sub(..) => t = t.saturating_add(1),
+                CsOp::Del(s) => t = t.saturating_add(s.len()),
+                CsOp::Ins(mut s) => if s.len() >= STRUCT_MIN_INDEL { s.make_ascii_uppercase(); pieces.push((t, s)); },
+            }
+        }
+        anyhow::ensure!(t == h.te, "the cs ends at target position {t}, not at te = {}", h.te);
+    }
+    if h.qlen - h.qe >= STRUCT_MIN_INDEL { pieces.push((h.te, member[h.qe..].to_ascii_uppercase())); }
+    // ts <= every position of the cs walk <= te (the walk ends at te): the order that `union_sequence_with_note` relies on
+    debug_assert!(pieces.windows(2).all(|w| w[0].0 <= w[1].0), "pieces out of order: {:?}", pieces.iter().map(|p| p.0).collect::<Vec<_>>());
+    Ok(pieces)
 }
 
 #[cfg(test)]
@@ -858,5 +1001,296 @@ mod tests {
         assert_eq!(refine_cluster(&consensus, &members, d), (vec![0, 1, 3], vec![2, 4, 5]));
         assert_eq!(refine_cluster(&consensus, &members[..2], d), (vec![0, 1], vec![]));              // nothing to split
         assert_eq!(refine_cluster(&consensus, &[], d), (vec![], vec![]));
+    }
+
+    // ---- flag / link / merge fates, the flag floor and the exon-union representative (spec §5.6-§5.7) ---------------------------------------
+
+    fn cluster(n_reads: usize) -> ClusterSeq { ClusterSeq { family: "F".into(), id: "F:c0".into(), n_reads, seq: vec![b'A'; 1000] } }
+    /// A genome hit of the 1000 bp consensus `F:c0` on chr7:500-1500 with the given matches, block and query span.
+    fn genome_hit(matches: usize, block: usize, qs: usize, qe: usize) -> PafHit {
+        PafHit { q: "F:c0".into(), qlen: 1000, qs, qe, strand: b'+', t: "chr7".into(), tlen: 2_000_000, ts: 500, te: 1500, matches, block, de: 0.01, cs: None }
+    }
+
+    #[test]
+    fn linked_cluster_never_enters_a_component() {
+        let c = ClusterSeq { family: "F".into(), id: "F:c0".into(), n_reads: 5, seq: vec![b'A'; 1000] };
+        let h = PafHit { q: "F:c0".into(), qlen: 1000, qs: 0, qe: 1000, strand: b'+', t: "chr1".into(), tlen: 1_000_000, ts: 10, te: 1010, matches: 995, block: 1000, de: 0.005, cs: None };
+        assert!(matches!(classify(&c, Some(&h), 0.00958), Fate::Linked { .. }));
+        let h2 = PafHit { matches: 950, de: 0.05, ..h.clone() };
+        assert!(matches!(classify(&c, Some(&h2), 0.00958), Fate::NewCopy { .. }));
+        assert!(matches!(classify(&c, None, 0.00958), Fate::NewCopy { .. }));
+    }
+    #[test]
+    fn classify_tests_the_reference_first_then_the_link_distance_and_names_the_nearest_locus() {
+        let (c, delta) = (cluster(5), 0.00958);
+        let linked = |f: Fate| match f { Fate::Linked { locus, d } => Some((locus, d)), _ => None };
+        // identity x coverage = matches / block x span / qlen; exactly 0.999 is already in the reference (>=), although its d = 0.001 would link it
+        assert_eq!(classify(&c, Some(&genome_hit(999, 1000, 0, 1000)), delta), Fate::InReference);
+        let (locus, d) = linked(classify(&c, Some(&genome_hit(998, 1000, 0, 1000)), delta)).expect("0.998 is not in the reference: linked");
+        assert_eq!(locus, "chr7:500-1500");                                  // `chrom:ts-te` of the hit
+        assert!((d - 0.002).abs() < 1e-12);                                   // 1 - matches / qlen
+        // identity and coverage both count for the reference test: 999 matches in a 1100 bp block, or a clean hit over 995 of 1000 bases, are not in it
+        assert!(linked(classify(&c, Some(&genome_hit(999, 1100, 0, 1000)), delta)).is_some());
+        assert!(linked(classify(&c, Some(&genome_hit(995, 995, 5, 1000)), delta)).is_some());
+        // d is 1 - matches / qlen whatever the block: 600 clean matches over 600 bases is 40% divergent, a new copy beside that locus
+        match classify(&c, Some(&genome_hit(600, 600, 0, 600)), delta) {
+            Fate::NewCopy { nearest, d } => { assert_eq!(nearest, "chr7:500-1500"); assert!((d - 0.4).abs() < 1e-12); }
+            f => panic!("{f:?}"),
+        }
+        // d == delta links, a hair below it does not
+        let h = genome_hit(990, 1000, 0, 1000);
+        let d = whole_length_d(&h);
+        assert!(matches!(classify(&c, Some(&h), d), Fate::Linked { .. }));
+        assert!(matches!(classify(&c, Some(&h), d - 1e-9), Fate::NewCopy { .. }));
+        // no genome hit at all: a new copy with no nearest locus and d = 1, even when delta would admit 1
+        assert_eq!(classify(&c, None, delta), Fate::NewCopy { nearest: "none".into(), d: 1.0 });
+        assert_eq!(classify(&c, None, 5.0), Fate::NewCopy { nearest: "none".into(), d: 1.0 });
+    }
+    #[test]
+    fn components_join_new_copy_consensus_sequences_by_the_clustering_rule() {
+        let (ids, d) = (names_of("n0 n1 n2 n3 n4"), 0.00958);
+        let ava = vec![
+            ava_hit("n0", "n1", 2900, 1.0, 0.002),                 // joined
+            ava_hit("n1", "n2", 2900, 1.0, 0.015),                 // too divergent: between delta and 2 delta
+            ava_hit("n2", "n3", 2900, 0.5, d),                     // exactly half of the shorter sequence and de == delta: joined
+            ava_hit("n3", "n4", 2900, 0.49, 0.001),                // just under half
+        ];
+        assert_eq!(components(&ids, &ava, d), vec![vec![0, 1], vec![2, 3], vec![4]]);
+        assert_eq!(components(&ids, &[], d), vec![vec![0], vec![1], vec![2], vec![3], vec![4]]);
+        assert!(components(&[], &[], d).is_empty());
+    }
+    #[test]
+    fn best_by_id_cov_prefers_identity_times_coverage_over_matches() {
+        let hit = |q: &str, t: &str, matches: usize, block: usize, qs: usize, qe: usize| PafHit { q: q.into(), t: t.into(), matches, block, qs, qe, ..paf_hit(q, t, matches) };
+        let hits = vec![
+            hit("q", "wide", 900, 1100, 0, 1000),                  // the longer hit (1000 bases, 900 matches) but gappy: 900 / 1100 x 1.00 = 0.818
+            hit("q", "clean", 850, 860, 40, 900),                  // the shorter, cleaner one: 850 / 860 x 0.86 = 0.850
+            hit("q", "tiny", 300, 300, 0, 300),                    // perfect identity over 30% of the query: 0.300, so identity alone is not the rule either
+            hit("r", "first", 800, 800, 0, 800), hit("r", "second", 800, 800, 0, 800),   // equal identity x coverage
+            hit("s", "only", 10, 100, 0, 100),
+        ];
+        let best = best_by_id_cov(&hits);
+        assert_eq!(best.len(), 3);
+        assert_eq!(best["q"].t, "clean");                          // identity x coverage, not the number of matches ...
+        assert_eq!(best_by_matches(&hits)["q"].t, "wide");         // ... which is what the pairwise rule keeps
+        assert_eq!(best["r"].t, "first");                          // a tie keeps the first encountered
+        assert_eq!(best["s"].t, "only");
+        assert!(best_by_id_cov(&[]).is_empty());
+    }
+    #[test]
+    fn is_flagged_sums_the_reads_of_the_component_against_the_floor() {
+        let (a, b, c) = (cluster(3), cluster(3), cluster(2));
+        assert!(is_flagged(&[&a, &b], 6));                         // 3 + 3 = 6: exactly the floor
+        assert!(!is_flagged(&[&a, &c], 6));                        // 3 + 2 = 5
+        assert!(is_flagged(&[&cluster(6)], 6) && !is_flagged(&[&cluster(5)], 6));   // the floor counts reads, not clusters: one cluster of 6 is enough
+        assert!(!is_flagged(&[&a, &b, &c], 9) && is_flagged(&[&a, &b, &c], 8));
+        assert!(!is_flagged(&[], 6));
+        assert!(is_flagged(&[&c], 0));
+    }
+
+    /// Concatenation of byte slices.
+    fn cat(parts: &[&[u8]]) -> Vec<u8> { parts.concat() }
+    /// A hit of a member (query) on a union (target) as minimap2 `-x asm20 -c --cs` writes it: `+` strand; matches, block and de are fillers.
+    fn uhit(qlen: usize, qs: usize, qe: usize, tlen: usize, ts: usize, te: usize, cs: &str) -> PafHit {
+        PafHit { q: "m".into(), qlen, qs, qe, strand: b'+', t: "u".into(), tlen, ts, te, matches: te.saturating_sub(ts), block: qe.saturating_sub(qs), de: 0.0, cs: Some(cs.into()) }
+    }
+    /// The lower-case string minimap2 writes inside a `cs`.
+    fn lc(s: &[u8]) -> String { String::from_utf8(s.to_ascii_lowercase()).unwrap() }
+
+    #[test]
+    fn union_contains_each_exon_once() {
+        let e1 = b"ACGTACGTACGTACGTACGTACGT".to_vec(); let e2 = b"TTGACCATGACCATGACCATGACC".to_vec(); let e3 = b"GGCATTGGCATTGGCATTGGCATT".to_vec();
+        let iso_a: Vec<u8> = [e1.clone(), e3.clone()].concat();                 // skips e2
+        let iso_b: Vec<u8> = [e1.clone(), e2.clone(), e3.clone()].concat();
+        // the closure plays minimap2: iso_b vs union(iso_a) has a 24-bp insertion after e1
+        let u = union_sequence(&[iso_b.clone(), iso_a.clone()], |_m, _u| None).unwrap();  // longest first: nothing to add from iso_a
+        assert_eq!(u, iso_b);
+        let u2 = union_sequence(&[iso_a.clone(), iso_b.clone()], |_m, _u| Some(PafHit { q: "b".into(), qlen: 72, qs: 0, qe: 72, strand: b'+', t: "u".into(), tlen: 48, ts: 0, te: 48, matches: 48, block: 72, de: 0.0, cs: Some(format!(":24+{}:24", String::from_utf8_lossy(&e2).to_lowercase())) })).unwrap();
+        assert_eq!(u2, iso_b);
+    }
+    #[test]
+    fn union_reads_a_hit_parsed_from_paf_text() {
+        let (e1, e2, e3) = (rand_seq(24, 7), rand_seq(24, 8), rand_seq(24, 9));
+        let (a, b) = (cat(&[&e1, &e3]), cat(&[&e1, &e2, &e3]));
+        let line = format!("b\t72\t0\t72\t+\tu\t48\t0\t48\t48\t72\t60\tNM:i:24\tde:f:0.0\tcs:Z::24+{}:24\n", lc(&e2));
+        let hit = parse_paf(&line).remove(0);
+        assert_eq!(union_sequence(&[a, b.clone()], |_, _| Some(hit.clone())).unwrap(), b);
+    }
+    #[test]
+    fn union_takes_unaligned_ends_in_front_of_ts_and_te() {
+        let (a, core, c) = (rand_seq(30, 1), rand_seq(100, 2), rand_seq(30, 3));
+        let (pre, suf) = (rand_seq(25, 4), rand_seq(22, 5));
+        let one = |hit: PafHit, backbone: &[u8], member: &[u8]| union_sequence(&[backbone.to_vec(), member.to_vec()], |_, _| Some(hit.clone())).unwrap();
+        // the member aligns inside the union (ts = 30, te = 130 of 160): its prefix goes in front of ts and its suffix in front of te, not to the ends
+        let (u, m) = (cat(&[&a, &core, &c]), cat(&[&pre, &core, &suf]));
+        assert_eq!(one(uhit(147, 25, 125, 160, 30, 130, ":100"), &u, &m), cat(&[&a, &pre, &core, &suf, &c]));
+        // from the union's own ends (ts = 0, te = tlen) they are prepended and appended
+        let (u, m) = (cat(&[&core, &c]), cat(&[&pre, &core]));
+        assert_eq!(one(uhit(125, 25, 125, 130, 0, 100, ":100"), &u, &m), cat(&[&pre, &core, &c]));
+        let (u, m) = (cat(&[&a, &core]), cat(&[&core, &suf]));
+        assert_eq!(one(uhit(122, 0, 100, 130, 30, 130, ":100"), &u, &m), cat(&[&a, &core, &suf]));
+        // both at once
+        let (u, m) = (core.clone(), cat(&[&pre, &core, &suf]));
+        assert_eq!(one(uhit(147, 25, 125, 100, 0, 100, ":100"), &u, &m), m);
+        // the output is upper case whatever the case of the backbone or of the member the ends come from
+        let lower = core.to_ascii_lowercase();
+        assert_eq!(one(uhit(125, 25, 125, 100, 0, 100, ":100"), &lower, &cat(&[&pre, &core])), cat(&[&pre, &core]));
+        assert_eq!(one(uhit(147, 25, 125, 100, 0, 100, ":100"), &u, &m.to_ascii_lowercase()), m);
+    }
+    #[test]
+    fn union_takes_a_piece_only_from_20_bp() {
+        let (core, e1) = (rand_seq(100, 2), 40usize);
+        for len in [19usize, 20, 21] {
+            let (x, take) = (rand_seq(len, 60 + len as u64), len >= 20);
+            let run = |hit: PafHit, member: &[u8]| union_sequence(&[core.clone(), member.to_vec()], |_, _| Some(hit.clone())).unwrap();
+            // an insertion of the cs
+            let m = cat(&[&core[..e1], &x, &core[e1..]]);
+            assert_eq!(run(uhit(100 + len, 0, 100 + len, 100, 0, 100, &format!(":{e1}+{}:{}", lc(&x), 100 - e1)), &m), if take { m.clone() } else { core.clone() }, "insertion of {len} bp");
+            // an unaligned prefix, an unaligned suffix
+            let m = cat(&[&x, &core]);
+            assert_eq!(run(uhit(len + 100, len, len + 100, 100, 0, 100, ":100"), &m), if take { m.clone() } else { core.clone() }, "prefix of {len} bp");
+            let m = cat(&[&core, &x]);
+            assert_eq!(run(uhit(100 + len, 0, 100, 100, 0, 100, ":100"), &m), if take { m.clone() } else { core.clone() }, "suffix of {len} bp");
+        }
+    }
+    #[test]
+    fn union_applies_the_pieces_of_one_member_from_the_highest_position_and_keeps_their_order_at_one_position() {
+        let ex: Vec<Vec<u8>> = (0..5).map(|i| rand_seq(24 + 3 * i, 20 + i as u64)).collect();       // 24, 27, 30, 33, 36 bp
+        let (fl, fr) = (rand_seq(30, 11), rand_seq(20, 12));
+        // union = flank e0 e2 e4 flank, member e0 e1 e2 e3 e4: two insertions, at 30 + 24 and 30 + 24 + 30 of the union; the alignment starts at ts = 30
+        let u = cat(&[&fl, &ex[0], &ex[2], &ex[4], &fr]);
+        let m = cat(&[&ex[0], &ex[1], &ex[2], &ex[3], &ex[4]]);
+        let cs = format!(":{}+{}:{}+{}:{}", ex[0].len(), lc(&ex[1]), ex[2].len(), lc(&ex[3]), ex[4].len());
+        let hit = uhit(m.len(), 0, m.len(), u.len(), fl.len(), u.len() - fr.len(), &cs);
+        assert_eq!(union_sequence(&[u, m.clone()], |_, _| Some(hit.clone())).unwrap(), cat(&[&fl, &m, &fr]));
+        // two pieces at ONE position stay in member order: an unaligned prefix then a cs that starts with an insertion; an insertion that ends
+        // the cs then an unaligned suffix (minimap2 does not write such alignments; the rule must still be deterministic)
+        let (p, x, y, s, core) = (rand_seq(21, 31), rand_seq(22, 32), rand_seq(23, 33), rand_seq(24, 34), rand_seq(60, 35));
+        let m = cat(&[&p, &x, &core, &y, &s]);
+        let hit = uhit(m.len(), p.len(), p.len() + x.len() + 60 + y.len(), 60, 0, 60, &format!("+{}:60+{}", lc(&x), lc(&y)));
+        assert_eq!(union_sequence(&[core, m.clone()], |_, _| Some(hit.clone())).unwrap(), m);
+    }
+    #[test]
+    fn union_tracks_the_target_position_through_every_cs_operation() {
+        // a 158 bp union; the member has, in order: a substitution at 10, a 2 bp deletion at 16..18, an intron of 100 bases at 26..126 and a 25 bp
+        // insertion in front of 138. The walk lands on 138 only if every operation advances the target by its own length (and starts at ts).
+        let (u, x) = (rand_seq(158, 77), rand_seq(25, 78));
+        let alt = other_base(u[10], 0);
+        let m = cat(&[&u[..10], &[alt], &u[11..16], &u[18..26], &u[126..138], &x, &u[138..]]);
+        assert_eq!(m.len(), 10 + 1 + 5 + 8 + 12 + 25 + 20);
+        let cs = format!(":10*{}{}:5-{}:8~gt100ag:12+{}:20", lc(&u[10..11]), lc(&[alt]), lc(&u[16..18]), lc(&x));
+        let want = cat(&[&u[..138], &x, &u[138..]]);
+        assert_eq!(union_sequence(&[u.clone(), m.clone()], |_, _| Some(uhit(m.len(), 0, m.len(), 158, 0, 158, &cs))).unwrap(), want);
+        // the same member against a union that has a 12 bp flank on the left (ts = 12) and a 9 bp one on the right (te = tlen - 9)
+        let (fl, fr) = (rand_seq(12, 79), rand_seq(9, 80));
+        let uf = cat(&[&fl, &u, &fr]);
+        assert_eq!(union_sequence(&[uf.clone(), m.clone()], |_, _| Some(uhit(m.len(), 0, m.len(), uf.len(), 12, 12 + 158, &cs))).unwrap(), cat(&[&fl, &want, &fr]));
+    }
+    #[test]
+    fn union_aligns_each_member_to_the_union_as_it_has_grown() {
+        let ex: Vec<Vec<u8>> = (0..4).map(|i| rand_seq(25 + i, 40 + i as u64)).collect();           // e0..e3, 25..28 bp
+        let (b, m1, m2) = (cat(&[&ex[0], &ex[3]]), cat(&[&ex[0], &ex[1], &ex[3]]), cat(&[&ex[0], &ex[2], &ex[3]]));
+        let mut seen = vec![];
+        let got = union_sequence(&[b.clone(), m1.clone(), m2.clone()], |m, u| {
+            seen.push(u.len());
+            // m1 vs e0 e3: an insertion of e1; m2 vs e0 e1 e3 (the grown union): the cs deletes e1 and inserts e2
+            let cs = if m == &m1[..] { format!(":{}+{}:{}", ex[0].len(), lc(&ex[1]), ex[3].len()) } else { format!(":{}-{}+{}:{}", ex[0].len(), lc(&ex[1]), lc(&ex[2]), ex[3].len()) };
+            Some(uhit(m.len(), 0, m.len(), u.len(), 0, u.len(), &cs))
+        }).unwrap();
+        assert_eq!(seen, vec![b.len(), b.len() + ex[1].len()]);                                      // the second member met the union with e1 in it
+        assert_eq!(got, cat(&[&ex[0], &ex[1], &ex[2], &ex[3]]));
+    }
+    #[test]
+    fn union_skips_members_without_a_plus_hit_and_counts_them() {
+        let (core, x) = (rand_seq(60, 3), rand_seq(25, 4));
+        let m = cat(&[&core[..30], &x, &core[30..]]);                                                // the union with a 25 bp exon inside
+        let hit = |strand: u8| PafHit { strand, ..uhit(85, 0, 85, 60, 0, 60, &format!(":30+{}:30", lc(&x))) };
+        // a '-' hit, no hit, then a '+' hit: only the last one adds the exon, and the first two are counted
+        let mut results = vec![Some(hit(b'-')), None, Some(hit(b'+'))].into_iter();
+        let members = vec![core.clone(), m.clone(), m.clone(), m.clone()];
+        let (u, note) = union_sequence_with_note(&members, |_, _| results.next().unwrap()).unwrap();
+        assert_eq!((u, note), (m.clone(), UnionNote { no_hit: 1, skipped_minus: 1 }));
+        // the '-' hit alone adds nothing, though the same hit on the '+' strand would add the exon
+        let (u, note) = union_sequence_with_note(&members[..2], |_, _| Some(hit(b'-'))).unwrap();
+        assert_eq!((u, note), (core.clone(), UnionNote { no_hit: 0, skipped_minus: 1 }));
+        assert_eq!(union_sequence_with_note(&members[..2], |_, _| Some(hit(b'.'))).unwrap().1, UnionNote { no_hit: 0, skipped_minus: 1 });   // anything but '+'
+        assert_eq!(union_sequence(&members[..2], |_, _| Some(hit(b'+'))).unwrap(), m);
+        assert_eq!(union_sequence_with_note(&members[..1], |_, _| unreachable!()).unwrap(), (core, UnionNote::default()));
+    }
+    #[test]
+    fn union_takes_the_ends_of_a_hit_without_a_cs_and_nothing_inside_it() {
+        let (core, x, suf) = (rand_seq(100, 2), rand_seq(30, 6), rand_seq(22, 5));
+        let m = cat(&[&core[..40], &x, &core[40..], &suf]);                                          // an exon inside AND an unaligned suffix
+        let hit = PafHit { cs: None, ..uhit(m.len(), 0, 130, 100, 0, 100, "") };
+        assert_eq!(union_sequence(&[core.clone(), m], |_, _| Some(hit.clone())).unwrap(), cat(&[&core, &suf]));
+    }
+    #[test]
+    fn union_of_nothing_and_of_one_member_never_calls_the_closure() {
+        let never = |_: &[u8], _: &[u8]| -> Option<PafHit> { panic!("no member after the backbone: nothing to align") };
+        assert_eq!(union_sequence(&[], never).unwrap(), Vec::<u8>::new());
+        assert_eq!(union_sequence(&[b"acgtNacgt".to_vec()], never).unwrap(), b"ACGTNACGT".to_vec());   // upper case, like the consensus
+    }
+    #[test]
+    fn union_rejects_a_hit_that_does_not_fit_its_sequences_and_a_malformed_cs() {
+        let (core, x) = (rand_seq(60, 3), rand_seq(20, 4));
+        let m = cat(&[&core, &x]);                                                                   // 80 bp: the union plus a 20 bp exon at its end
+        let ok = uhit(80, 0, 80, 60, 0, 60, &format!(":60+{}", lc(&x)));
+        assert_eq!(union_sequence(&[core.clone(), m.clone()], |_, _| Some(ok.clone())).unwrap(), m);   // the control: this hit is fine
+        let bad = [
+            ("query length", PafHit { qlen: 81, ..ok.clone() }, "query length"),
+            ("target length", PafHit { tlen: 61, ..ok.clone() }, "target length"),
+            ("qe past qlen", PafHit { qe: 90, ..ok.clone() }, "query span"),
+            ("qs after qe", PafHit { qs: 50, qe: 40, ..ok.clone() }, "query span"),
+            ("te past tlen", PafHit { te: 70, ..ok.clone() }, "target span"),
+            ("ts after te", PafHit { ts: 50, te: 40, ..ok.clone() }, "target span"),
+            ("cs short of te", PafHit { cs: Some(format!(":59+{}", lc(&x))), ..ok.clone() }, "cs ends"),
+            ("cs past te", PafHit { cs: Some(format!(":61+{}", lc(&x))), ..ok.clone() }, "cs ends"),
+            ("malformed cs", PafHit { cs: Some(":60+".into()), ..ok.clone() }, "malformed cs"),
+        ];
+        for (what, hit, needle) in bad {
+            let err = union_sequence(&[core.clone(), m.clone()], |_, _| Some(hit.clone())).expect_err(what).to_string();
+            assert!(err.contains("member 1") && err.contains(needle), "{what}: {err}");
+        }
+    }
+
+    /// A stand-in for minimap2 on exon-structured sequences (the property test): both sequences are concatenations of distinct exons of `pool`.
+    /// A member exon found in the union after the previous aligned one is a match (`:len`; the union stretch between two aligned exons is a
+    /// `-`), one the union lacks between two aligned exons is a `+`, and member exons before the first / after the last aligned one are the
+    /// unaligned query ends (`qs`, `qlen - qe`). No shared exon: no hit.
+    fn exon_hit(pool: &[Vec<u8>], member: &[u8], union: &[u8]) -> Option<PafHit> {
+        let find = |hay: &[u8], e: &[u8]| hay.windows(e.len()).position(|w| w == e);
+        let mut in_member: Vec<(usize, &Vec<u8>)> = pool.iter().filter_map(|e| find(member, e).map(|p| (p, e))).collect();
+        in_member.sort_by_key(|x| x.0);
+        let (mut cs, mut pending, mut first, mut t, mut qe) = (String::new(), String::new(), None::<(usize, usize)>, 0usize, 0usize);   // first = (qs, ts)
+        for (q, e) in in_member {
+            match find(union, e) {
+                Some(p) if first.is_none() || p >= t => {
+                    if first.is_none() { first = Some((q, p)); } else { cs += &pending; if p > t { cs += &format!("-{}", lc(&union[t..p])); } }
+                    pending.clear();
+                    cs += &format!(":{}", e.len()); t = p + e.len(); qe = q + e.len();
+                }
+                _ if first.is_some() => pending += &format!("+{}", lc(e)),
+                _ => {}
+            }
+        }
+        let (qs, ts) = first?;
+        Some(uhit(member.len(), qs, qe, union.len(), ts, t, &cs))
+    }
+    #[test]
+    fn union_of_random_collinear_isoforms_is_the_exon_pool_in_slot_order() {
+        // slots in genomic order: a 5' exon, c0, o0, c1, o1, c2, o2, c3, a 3' exon. The c's are in every isoform, every other exon in a random half
+        let sizes = [31usize, 40, 24, 52, 27, 45, 33, 60, 22];
+        let pool: Vec<Vec<u8>> = sizes.iter().enumerate().map(|(i, &n)| rand_seq(n, 100 + i as u64)).collect();
+        let mut x = 0x9E3779B97F4A7C15u64;
+        let mut coin = move || { x ^= x << 13; x ^= x >> 7; x ^= x << 17; x & 8 != 0 };
+        for trial in 0..200usize {
+            let isoforms: Vec<Vec<usize>> = (0..2 + trial % 5).map(|_| (0..pool.len()).filter(|i| i % 2 == 1 || coin()).collect()).collect();
+            let mut seqs: Vec<Vec<u8>> = isoforms.iter().map(|iso| iso.iter().flat_map(|&i| pool[i].iter().copied()).collect()).collect();
+            seqs.sort_by(|a, b| b.len().cmp(&a.len()));                                              // longest first (a stable sort)
+            let used: Vec<usize> = (0..pool.len()).filter(|i| isoforms.iter().any(|iso| iso.contains(i))).collect();
+            let want: Vec<u8> = used.iter().flat_map(|&i| pool[i].iter().copied()).collect();
+            let got = union_sequence(&seqs, |m, u| exon_hit(&pool, m, u)).unwrap();
+            assert_eq!(got, want, "trial {trial}: isoforms {isoforms:?}");
+        }
     }
 }
