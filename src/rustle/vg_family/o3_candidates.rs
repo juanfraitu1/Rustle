@@ -13,13 +13,16 @@ use std::path::Path;
 pub const KMER_K: usize = 31;
 pub const SKETCH_W: usize = 5;
 pub const MIN_UNMAPPED_LEN: usize = 300;
+/// k-mers carried by more than this many families are repeats: the index drops them (spec §5.2; the `max_families` of `FamilyKmerIndex::build`).
+pub const ATTRIB_MAX_FAMILIES: usize = 8;
 const ATTRIB_MIN_FRAC: f64 = 0.30;
 const ATTRIB_MIN_RATIO: f64 = 2.0;
 
 fn code(b: u8) -> Option<u64> { match b { b'A' | b'a' => Some(0), b'C' | b'c' => Some(1), b'G' | b'g' => Some(2), b'T' | b't' => Some(3), _ => None } }
 
-/// Canonical (min of forward / reverse-complement) 2-bit k-mers, k <= 32; windows with N are skipped.
+/// Canonical (min of forward / reverse-complement) 2-bit k-mers, 1 <= k <= 32 (asserted); windows with N are skipped.
 pub fn canonical_kmers(seq: &[u8], k: usize) -> Vec<u64> {
+    assert!((1..=32).contains(&k), "canonical_kmers: k = {k} must lie in 1..=32 (2-bit codes in a u64)");
     let mask: u64 = if k == 32 { u64::MAX } else { (1u64 << (2 * k)) - 1 };
     let (mut fw, mut rv, mut valid) = (0u64, 0u64, 0usize);
     let mut out = Vec::with_capacity(seq.len().saturating_sub(k) + 1);
@@ -36,8 +39,9 @@ pub fn canonical_kmers(seq: &[u8], k: usize) -> Vec<u64> {
 fn mix(x: u64) -> u64 { let mut z = x.wrapping_add(0x9E3779B97F4A7C15); z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9); z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB); z ^ (z >> 31) }
 
 /// (k, w) minimizers over the canonical k-mers: the smallest hashed k-mer of every window of w consecutive k-mers, deduplicated
-/// consecutively; sorted and deduplicated so sketches compare by merge.
+/// consecutively; sorted and deduplicated so sketches compare by merge. w >= 1 (asserted; k as in `canonical_kmers`).
 pub fn minimizer_sketch(seq: &[u8], k: usize, w: usize) -> Vec<u64> {
+    assert!(w >= 1, "minimizer_sketch: the window w = {w} must be at least 1");
     let km: Vec<u64> = canonical_kmers(seq, k).into_iter().map(mix).collect();
     let mut out = Vec::new();
     if km.len() < w { out.extend(km.iter().copied().min()); }
@@ -494,23 +498,35 @@ pub const MM2_GENOME: &[&str] = &["-x", "splice:hq", "-uf", "-c", "--eqx", "-N",
 /// The name of the k-th candidate of `family` (k = the component's order within the family): `cand_<family>_<k>`.
 pub fn candidate_id(family: &str, k: usize) -> String { format!("cand_{family}_{k}") }
 
-/// Runs `minimap2 <args> <target> <query>` and leaves its PAF at `out_paf`; `target` may be a `.mmi` index. The binary is `RUSTLE_MINIMAP2`
-/// (default `minimap2`) and its stderr is discarded. A run that fails is an error naming the whole command (an unstartable binary names
-/// `RUSTLE_MINIMAP2` too) and leaves no stale or partial `out_paf` behind.
+/// Runs `minimap2 <args> -t <threads> <target> <query>` and leaves its PAF at `out_paf`; `target` may be a `.mmi` index. The binary is
+/// `RUSTLE_MINIMAP2` (default `minimap2`) and its stderr is discarded. A run that fails is an error naming the whole command (an unstartable
+/// binary names `RUSTLE_MINIMAP2` too) and leaves no stale or partial `out_paf` behind.
 ///
 /// With `cache = Some(root)` (the run_cache root, `run_cache::cache_root()`) the PAF is a pinned `paf` entry keyed on the command line, the
 /// minimap2 build and the content hash of every byte of `target` and `query` (`paf_key`; paths and mtimes do not count): a hit hard-links the
-/// cached PAF to `out_paf`, a miss runs minimap2 and links the product into a new entry; only a successful run is stored. Every call reads both
-/// inputs in full to hash them, which for a multi-GB `.mmi` takes about as long as loading it: pass `cache = None` for such a call. An input
-/// that cannot be read is an error naming it. `out_paf` is unlinked before it is written, never truncated: it may be a hard link to a cache payload.
-pub fn minimap2(args: &[&str], target: &Path, query: &Path, out_paf: &Path, cache: Option<&Path>) -> anyhow::Result<()> {
-    let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
-    run_minimap2(&mm2, args, target, query, out_paf, cache)
+/// cached PAF to `out_paf`, a miss runs minimap2 and links the product into a new entry; only a successful run is stored. `-t <threads>` is
+/// appended after the key is made (ruling R10): the thread count never enters it, so a run with other threads replays the same entry
+/// (minimap2's output does not depend on it). Every call reads both inputs in full to hash them, which for a multi-GB `.mmi` takes about as
+/// long as loading it: key such a target with `minimap2_keyed`. An input that cannot be read is an error naming it. `out_paf` is unlinked
+/// before it is written, never truncated: it may be a hard link to a cache payload.
+pub fn minimap2(args: &[&str], target: &Path, query: &Path, out_paf: &Path, cache: Option<&Path>, threads: usize) -> anyhow::Result<()> {
+    run_minimap2(&minimap2_binary(), args, target, None, query, out_paf, cache, threads)
 }
 
-/// `minimap2` with the binary given (the tests' seam: no process-wide variable to set).
-fn run_minimap2(mm2: &str, args: &[&str], target: &Path, query: &Path, out_paf: &Path, cache: Option<&Path>) -> anyhow::Result<()> {
-    let entry = cache.map(|root| paf_entry(root, mm2, args, target, query)).transpose()?;
+/// `minimap2` with the TARGET named in the cache key by `target_key` instead of the content hash of its bytes (ruling R7): the genome's
+/// splice index (`--index`, 12-14 GB) is keyed by `run_cache::file_fingerprint` (canonical path, size, mtime), as the binaries key their
+/// BAM and FASTA, and is never read for the key. The query is still hashed in full.
+pub fn minimap2_keyed(args: &[&str], target: &Path, target_key: &str, query: &Path, out_paf: &Path, cache: Option<&Path>, threads: usize) -> anyhow::Result<()> {
+    run_minimap2(&minimap2_binary(), args, target, Some(target_key), query, out_paf, cache, threads)
+}
+
+/// `RUSTLE_MINIMAP2`, else `minimap2`.
+pub fn minimap2_binary() -> String { std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string()) }
+
+/// `minimap2` / `minimap2_keyed` with the binary given (the tests' seam: no process-wide variable to set).
+#[allow(clippy::too_many_arguments)]
+fn run_minimap2(mm2: &str, args: &[&str], target: &Path, target_key: Option<&str>, query: &Path, out_paf: &Path, cache: Option<&Path>, threads: usize) -> anyhow::Result<()> {
+    let entry = cache.map(|root| paf_entry(root, mm2, args, target, target_key, query)).transpose()?;
     if let Some(e) = entry.as_ref().filter(|e| e.is_hit()) {
         // a replay that fails (another run replacing the entry) falls through to running minimap2
         if let Ok(linked) = e.replay("out.paf", out_paf) {
@@ -518,10 +534,13 @@ fn run_minimap2(mm2: &str, args: &[&str], target: &Path, query: &Path, out_paf: 
             return Ok(());
         }
     }
-    let shown = format!("{mm2} {} {} {}", args.join(" "), target.display(), query.display());
+    // R10: the thread count joins the command only now, after the key
+    let threads = threads.max(1).to_string();
+    let shown = format!("{mm2} {} -t {threads} {} {}", args.join(" "), target.display(), query.display());
     unlink_if_present(out_paf)?;
     let ran = std::fs::File::create(out_paf).with_context(|| format!("creating {}", out_paf.display())).and_then(|paf| {
-        let status = std::process::Command::new(mm2).args(args).arg(target).arg(query).stdout(paf).stderr(std::process::Stdio::null()).status()
+        let status = std::process::Command::new(mm2).args(args).args(["-t", threads.as_str()]).arg(target).arg(query)
+            .stdout(paf).stderr(std::process::Stdio::null()).status()
             .with_context(|| format!("running `{shown}` (RUSTLE_MINIMAP2 names the minimap2 binary)"))?;
         anyhow::ensure!(status.success(), "`{shown}` failed ({status})");
         Ok(())
@@ -537,21 +556,32 @@ fn run_minimap2(mm2: &str, args: &[&str], target: &Path, query: &Path, out_paf: 
     Ok(())
 }
 
-/// The pinned `paf` cache entry of one call: its key (`paf_key`) hashes `target` and `query` in full.
-fn paf_entry(root: &Path, mm2: &str, args: &[&str], target: &Path, query: &Path) -> anyhow::Result<rc::Entry> {
+/// How the cache key of one minimap2 call names its target.
+enum TargetId {
+    /// The content hash of every byte of the target file (the default).
+    Content(rc::ContentHash),
+    /// A caller-given key, e.g. `run_cache::file_fingerprint` of a multi-GB `.mmi` (`minimap2_keyed`; ruling R7).
+    Key(String),
+}
+
+/// The pinned `paf` cache entry of one call: its key (`paf_key`) hashes the query in full, and the target too unless `target_key` names it.
+fn paf_entry(root: &Path, mm2: &str, args: &[&str], target: &Path, target_key: Option<&str>, query: &Path) -> anyhow::Result<rc::Entry> {
     let hash = |p: &Path| rc::ContentHash::of_file(p).with_context(|| format!("hashing {} for the minimap2 cache key", p.display()));
-    let key = paf_key(&format!("{mm2} {}", args.join(" ")), &rc::minimap2_version(mm2), &hash(target)?, &hash(query)?);
+    let target = match target_key { Some(k) => TargetId::Key(k.to_string()), None => TargetId::Content(hash(target)?) };
+    let key = paf_key(&format!("{mm2} {}", args.join(" ")), &rc::minimap2_version(mm2), &target, &hash(query)?);
     Ok(rc::Entry::new(root, "paf", key).pinned())
 }
 
 /// The key text of one minimap2 call (`paf/<fnv(key)>/key.tsv`, which a hit must equal byte for byte): the command line (binary and
-/// arguments; not the paths, the content stands for them), the minimap2 build, and the content hash and byte length of the target and of the
-/// query, in that order, so the two files in each other's roles are another key.
-fn paf_key(cmd: &str, minimap2_version: &str, target: &rc::ContentHash, query: &rc::ContentHash) -> String {
-    format!(
-        "rustle o3 minimap2 v1\ncmd\t{cmd}\nminimap2\t{minimap2_version}\ntarget_hash\tcontent128:{}\ntarget_bytes\t{}\nquery_hash\tcontent128:{}\nquery_bytes\t{}\n",
-        target.hex(), target.len(), query.hex(), query.len()
-    )
+/// arguments without `-t`; not the paths, the content stands for them), the minimap2 build, the target (content hash and byte length, or the
+/// caller's key under its own label) and the query (content hash and byte length), in that order, so the two files in each other's roles are
+/// another key.
+fn paf_key(cmd: &str, minimap2_version: &str, target: &TargetId, query: &rc::ContentHash) -> String {
+    let target = match target {
+        TargetId::Content(h) => format!("target_hash\tcontent128:{}\ntarget_bytes\t{}\n", h.hex(), h.len()),
+        TargetId::Key(k) => format!("target_key\t{k}\n"),
+    };
+    format!("rustle o3 minimap2 v1\ncmd\t{cmd}\nminimap2\t{minimap2_version}\n{target}query_hash\tcontent128:{}\nquery_bytes\t{}\n", query.hex(), query.len())
 }
 
 /// One candidate copy of a family: a component of its new-copy cluster consensus sequences (`components`), judged by `is_flagged` and
@@ -641,6 +671,85 @@ pub fn write_outputs(prefix: &str, cands: &[Candidate], linked: &[(ClusterSeq, S
         for (name, seq) in nets_for_patch.iter().flat_map(|(_family, reads)| reads) {
             writeln!(w, ">{name}")?;
             w.write_all(seq)?;
+            writeln!(w)?;
+        }
+        Ok(())
+    })
+}
+
+/// The `--max-reads` cap of one family's net (spec §5.1.4): the names (distinct) sorted, and when there are more than `cap` of them a sample
+/// of `cap`: the sorted names shuffled by Fisher-Yates driven by splitmix64 seeded with 1, the first `cap` kept. Returned sorted. A function of
+/// the SET of names and `cap` only (no hash order, no clock, no thread), so the same on every run and machine.
+pub fn sample_net(names: &[String], cap: usize) -> Vec<String> {
+    let mut v = names.to_vec();
+    v.sort_unstable();
+    if v.len() > cap {
+        let mut state = 1u64;                                               // splitmix64 seed 1: outputs mix(1), mix(1 + g), ...
+        let mut next = || { let r = mix(state); state = state.wrapping_add(0x9E37_79B9_7F4A_7C15); r };
+        for i in (1..v.len()).rev() { let j = (next() % (i as u64 + 1)) as usize; v.swap(i, j); }
+        v.truncate(cap);
+        v.sort_unstable();
+    }
+    v
+}
+
+const FAMILIES_HEADER: &str = "family\tn_net\tn_used\tn_clusters\tn_in_reference\tn_linked\tn_new\tn_candidates\tn_flagged";
+
+/// One family's row of `<prefix>.families.tsv` (ruling R8): every family the stage was given gets one, zeros where nothing happened, so a
+/// family without a candidate is visible with where its reads went (no net, no cluster, all clusters already in the reference or linked).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FamilyCounts {
+    pub family: String,
+    /// The net before the `--max-reads` cap and the reads used after it (the numbers `Candidate` carries).
+    pub n_net: usize,
+    pub n_used: usize,
+    /// The clusters the chain judged (after the `--min-cluster` floor, the refinement and the significance merge) and their fates.
+    pub n_clusters: usize,
+    pub n_in_reference: usize,
+    pub n_linked: usize,
+    pub n_new: usize,
+    /// The components of the new-copy clusters (the candidates) and the flagged ones among them.
+    pub n_candidates: usize,
+    pub n_flagged: usize,
+}
+
+/// Writes `<prefix>.families.tsv` (`family n_net n_used n_clusters n_in_reference n_linked n_new n_candidates n_flagged`), one row per
+/// given family, sorted by family as `write_outputs` sorts (`MCL2` before `MCL10`); the file is unlinked and created anew.
+pub fn write_family_table(prefix: &str, rows: &[FamilyCounts]) -> anyhow::Result<()> {
+    let mut sorted: Vec<&FamilyCounts> = rows.iter().collect();
+    sorted.sort_by(|a, b| name_order(&a.family, &b.family));
+    write_file(&format!("{prefix}.families.tsv"), |w| {
+        writeln!(w, "{FAMILIES_HEADER}")?;
+        for r in sorted {
+            writeln!(w, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", r.family, r.n_net, r.n_used, r.n_clusters, r.n_in_reference, r.n_linked, r.n_new, r.n_candidates, r.n_flagged)?;
+        }
+        Ok(())
+    })
+}
+
+const READS_HEADER: &str = "read\tfamily\tcluster";
+
+/// The members and consensus sequences of the clusters written to `clusters.tsv` (the caller passes those: the new-copy and the linked ones):
+/// `<prefix>.reads.tsv` (`read family cluster`, spec §4: read -> cluster, diagnostics that O2 does not read) and `<prefix>.clusters.fa`
+/// (`>cluster` and its consensus on one line), the inputs of the representative measure (Amendment 12, A12-2: each read against its union
+/// and its cluster consensus). Clusters in `clusters.tsv` order (family, then cluster id, `name_order`), reads sorted within a cluster; each
+/// file unlinked and created anew.
+pub fn write_cluster_members(prefix: &str, clusters: &[(&ClusterSeq, &[String])]) -> anyhow::Result<()> {
+    let mut sorted: Vec<&(&ClusterSeq, &[String])> = clusters.iter().collect();
+    sorted.sort_by(|a, b| name_order(&a.0.family, &b.0.family).then_with(|| name_order(&a.0.id, &b.0.id)));
+    write_file(&format!("{prefix}.reads.tsv"), |w| {
+        writeln!(w, "{READS_HEADER}")?;
+        for (c, reads) in &sorted {
+            let mut names: Vec<&String> = reads.iter().collect();
+            names.sort();
+            for r in names { writeln!(w, "{r}\t{}\t{}", c.family, c.id)?; }
+        }
+        Ok(())
+    })?;
+    write_file(&format!("{prefix}.clusters.fa"), |w| {
+        for (c, _) in &sorted {
+            writeln!(w, ">{}", c.id)?;
+            w.write_all(&c.seq)?;
             writeln!(w)?;
         }
         Ok(())
@@ -1625,7 +1734,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = |name: &str, bytes: &[u8]| { let p = dir.path().join(name); std::fs::write(&p, bytes).unwrap(); p };
         let root = dir.path().join("cache");
-        let entry = |t: &Path, q: &Path, args: &[&str]| paf_entry(&root, "/bin/false", args, t, q).unwrap();
+        let entry = |t: &Path, q: &Path, args: &[&str]| paf_entry(&root, "/bin/false", args, t, None, q).unwrap();
         let (target, query) = (b">t\nACGTACGTACGTACGTACGT\n".to_vec(), b">q\nGGGGCCCCAAAATTTTGGGG\n".to_vec());
         let base = entry(&file("t.fa", &target), &file("q.fa", &query), MM2_AVA);
         assert!(base.key.starts_with("rustle o3 minimap2 v1\ncmd\t/bin/false -x asm20 -c --cs -X -N 100 -p 0.1 --secondary=yes\nminimap2\t"), "{}", base.key);
@@ -1652,12 +1761,21 @@ mod tests {
         assert_ne!(entry(&file("t.fa", &target), &file("qs.fa", &query[..query.len() - 1]), MM2_AVA).key, base.key);
         assert_ne!(entry(&file("q.fa", &query), &file("t.fa", &target), MM2_AVA).key, base.key);
         assert_ne!(entry(&file("t.fa", &target), &file("q.fa", &query), MM2_MEMBERS).key, base.key);
-        assert_ne!(paf_entry(&root, "/bin/true", MM2_AVA, &file("t.fa", &target), &file("q.fa", &query)).unwrap().key, base.key);
+        assert_ne!(paf_entry(&root, "/bin/true", MM2_AVA, &file("t.fa", &target), None, &file("q.fa", &query)).unwrap().key, base.key);
         // the minimap2 build is part of the key
         let hash = |b: &[u8]| { let mut h = rc::ContentHash::default(); h.update(b); h };
-        let (ht, hq) = (hash(&target), hash(&query));
-        assert_eq!(paf_key("minimap2 -x asm20", "2.30-r1287", &ht, &hq), paf_key("minimap2 -x asm20", "2.30-r1287", &hash(&target), &hash(&query)));
+        let (ht, hq) = (TargetId::Content(hash(&target)), hash(&query));
+        assert_eq!(paf_key("minimap2 -x asm20", "2.30-r1287", &ht, &hq), paf_key("minimap2 -x asm20", "2.30-r1287", &TargetId::Content(hash(&target)), &hash(&query)));
         assert_ne!(paf_key("minimap2 -x asm20", "2.30-r1287", &ht, &hq), paf_key("minimap2 -x asm20", "2.28-r1209", &ht, &hq));
+        // R7: a target named by the caller's key (the genome index's file fingerprint) is never read: an absent file is no error; the key text
+        // carries the given key under its own label instead of a content hash; another key is another entry; the query still counts
+        let absent = dir.path().join("absent.mmi");
+        let keyed = |k: &str, q: &Path| paf_entry(&root, "/bin/false", MM2_GENOME, &absent, Some(k), q).unwrap();
+        let k1 = keyed("/x/G.mmi\t13600000000\t1", &file("q.fa", &query));
+        assert!(k1.key.contains("\ntarget_key\t/x/G.mmi\t13600000000\t1\nquery_hash\tcontent128:") && !k1.key.contains("target_hash"), "{}", k1.key);
+        assert_eq!(keyed("/x/G.mmi\t13600000000\t1", &file("q2.fa", &query)).key, k1.key);
+        assert_ne!(keyed("/x/G.mmi\t13600000000\t2", &file("q.fa", &query)).key, k1.key);
+        assert_ne!(keyed("/x/G.mmi\t13600000000\t1", &file("ql.fa", &longer)).key, k1.key);
     }
 
     #[cfg(unix)]
@@ -1669,17 +1787,17 @@ mod tests {
         std::fs::write(&q, b">q\nACGT\n").unwrap();
         for cache in [None, Some(root.as_path())] {
             std::fs::write(&out, b"an earlier product\n").unwrap();
-            let msg = format!("{:#}", run_minimap2("/bin/false", MM2_AVA, &t, &q, &out, cache).unwrap_err());
-            for want in ["/bin/false -x asm20 -c --cs -X -N 100 -p 0.1 --secondary=yes", t.to_str().unwrap(), q.to_str().unwrap()] { assert!(msg.contains(want), "{msg}"); }
+            let msg = format!("{:#}", run_minimap2("/bin/false", MM2_AVA, &t, None, &q, &out, cache, 3).unwrap_err());
+            for want in ["/bin/false -x asm20 -c --cs -X -N 100 -p 0.1 --secondary=yes -t 3", t.to_str().unwrap(), q.to_str().unwrap()] { assert!(msg.contains(want), "{msg}"); }
             assert!(!out.exists(), "a failed run leaves no stale or partial PAF");
             assert!(!root.join("paf").exists(), "a failed run commits nothing to the cache");
         }
         // a binary that cannot be started: the error names it and the variable that overrides it
-        let msg = format!("{:#}", run_minimap2("/nonexistent/minimap2", MM2_GENOME, &t, &q, &out, None).unwrap_err());
+        let msg = format!("{:#}", run_minimap2("/nonexistent/minimap2", MM2_GENOME, &t, None, &q, &out, None, 1).unwrap_err());
         assert!(msg.contains("/nonexistent/minimap2") && msg.contains("RUSTLE_MINIMAP2"), "{msg}");
         assert!(!out.exists());
         // an input the cache key cannot hash is named too
-        let msg = format!("{:#}", run_minimap2("/bin/false", MM2_GENOME, &dir.path().join("absent.mmi"), &q, &out, Some(&root)).unwrap_err());
+        let msg = format!("{:#}", run_minimap2("/bin/false", MM2_GENOME, &dir.path().join("absent.mmi"), None, &q, &out, Some(&root), 1).unwrap_err());
         assert!(msg.contains("absent.mmi"), "{msg}");
     }
 
@@ -1694,9 +1812,9 @@ mod tests {
         query3[5] = b'T';
         let (t1, q1, t2, q2, q3) = (file("t1.fa", &target), file("q1.fa", &query), file("t2.fa", &target), file("q2.fa", &query), file("q3.fa", &query3));
         let (out, out2, root) = (dir.path().join("out.paf"), dir.path().join("out2.paf"), dir.path().join("cache"));
-        let run = |args: &[&str], t: &Path, q: &Path, o: &Path, cached: bool| run_minimap2("/bin/echo", args, t, q, o, cached.then_some(root.as_path())).unwrap();
+        let run = |args: &[&str], t: &Path, q: &Path, o: &Path, cached: bool| run_minimap2("/bin/echo", args, t, None, q, o, cached.then_some(root.as_path()), 1).unwrap();
         let said = |o: &Path| std::fs::read_to_string(o).unwrap();
-        let line = |args: &[&str], t: &Path, q: &Path| format!("{} {} {}\n", args.join(" "), t.display(), q.display());
+        let line = |args: &[&str], t: &Path, q: &Path| format!("{} -t 1 {} {}\n", args.join(" "), t.display(), q.display());
         // a miss runs the program, and its output is the PAF
         run(MM2_AVA, &t1, &q1, &out, true);
         assert_eq!(said(&out), line(MM2_AVA, &t1, &q1));
@@ -1716,5 +1834,177 @@ mod tests {
         assert_eq!(said(&out), line(MM2_AVA, &q2, &t2));
         run(MM2_AVA, &t2, &q2, &out, false);
         assert_eq!(said(&out), line(MM2_AVA, &t2, &q2));
+        // R10: the thread count is on the command line but not in the key: 4 threads replay the 1-thread run's entry; uncached, `-t 4` is passed
+        run_minimap2("/bin/echo", MM2_AVA, &t2, None, &q2, &out, Some(&root), 4).unwrap();
+        assert_eq!(said(&out), line(MM2_AVA, &t1, &q1));
+        run_minimap2("/bin/echo", MM2_AVA, &t2, None, &q2, &out, None, 4).unwrap();
+        assert_eq!(said(&out), format!("{} -t 4 {} {}\n", MM2_AVA.join(" "), t2.display(), q2.display()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_keyed_target_is_replayed_by_its_key_and_never_read() {
+        // R7: the target (here a path that does not exist: `/bin/echo` never opens it) is named in the key by the caller's string
+        let dir = tempfile::tempdir().unwrap();
+        let (q, out, root) = (dir.path().join("q.fa"), dir.path().join("out.paf"), dir.path().join("cache"));
+        std::fs::write(&q, b">q\nACGTACGT\n").unwrap();
+        let (g1, g2) = (dir.path().join("G1.mmi"), dir.path().join("G2.mmi"));
+        let run = |t: &Path, key: &str| { run_minimap2("/bin/echo", MM2_GENOME, t, Some(key), &q, &out, Some(&root), 2).unwrap(); std::fs::read_to_string(&out).unwrap() };
+        let line = |t: &Path| format!("{} -t 2 {} {}\n", MM2_GENOME.join(" "), t.display(), q.display());
+        assert_eq!(run(&g1, "fp-1"), line(&g1));                                                      // a miss runs
+        assert_eq!(run(&g2, "fp-1"), line(&g1));                                                      // the same key: replayed, whatever the path
+        assert_eq!(run(&g1, "fp-2"), line(&g1));                                                      // another key (a rebuilt index): a miss ...
+        assert_eq!(run(&g2, "fp-2"), line(&g1));                                                      // ... stored under its own key
+        assert_eq!(run(&g2, "fp-3"), line(&g2));
+    }
+
+    // ---- the binary's helpers: the net sample, the family and cluster-member tables (plan task 8) -------------------------------------
+
+    #[test]
+    fn sampling_is_deterministic() {
+        // Review Focus 2: the sample of an over-cap net is the same across runs and machines. Pinned from an independent Python implementation of
+        // splitmix64 (seed 1) + Fisher-Yates over the sorted names (j = next() % (i + 1) for i = n - 1 down to 1), not from this code's output.
+        let names: Vec<String> = (0..40).map(|i| format!("read{i:02}")).collect();
+        let pinned = sample_net(&names, 6);
+        assert_eq!(pinned, ["read02", "read11", "read16", "read18", "read26", "read28"].map(String::from).to_vec());
+        // the input order does not matter (the names are sorted first), nor does a repeat call
+        let mut shuffled = names.clone();
+        shuffled.reverse();
+        shuffled.swap(3, 17);
+        assert_eq!(sample_net(&shuffled, 6), pinned);
+        for _ in 0..5 { assert_eq!(sample_net(&names, 6), pinned); }
+        // at or under the cap: every name, sorted; a cap of 0: nothing
+        assert_eq!(sample_net(&shuffled, 40), names);
+        assert_eq!(sample_net(&shuffled[..5], 6), { let mut v = shuffled[..5].to_vec(); v.sort(); v });
+        assert!(sample_net(&names, 0).is_empty());
+        // a larger cap keeps another fixed set (same reference)
+        let big: Vec<String> = [2, 4, 5, 6, 9, 10, 11, 12, 13, 15, 16, 17, 18, 20, 22, 24, 26, 28, 29, 30, 32, 34, 35, 37, 38].iter().map(|i| format!("read{i:02}")).collect();
+        assert_eq!(sample_net(&names, 25), big);
+    }
+
+    #[test]
+    fn write_family_table_writes_one_row_per_family_sorted_with_the_ruled_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = prefix_in(&dir);
+        let row = |f: &str, n: usize| FamilyCounts { family: f.into(), n_net: n, n_used: n.min(1000), n_clusters: 3, n_in_reference: 1, n_linked: 1, n_new: 1, n_candidates: 1, n_flagged: 1 };
+        write_family_table(&prefix, &[row("MCL10", 1500), FamilyCounts { family: "MCL2".into(), ..Default::default() }, row("MCL1", 40)]).unwrap();
+        assert_eq!(text(&prefix, "families.tsv"), "family\tn_net\tn_used\tn_clusters\tn_in_reference\tn_linked\tn_new\tn_candidates\tn_flagged\n\
+            MCL1\t40\t40\t3\t1\t1\t1\t1\t1\n\
+            MCL2\t0\t0\t0\t0\t0\t0\t0\t0\n\
+            MCL10\t1500\t1000\t3\t1\t1\t1\t1\t1\n");
+        write_family_table(&prefix, &[]).unwrap();
+        assert_eq!(text(&prefix, "families.tsv"), format!("{FAMILIES_HEADER}\n"));
+    }
+
+    #[test]
+    fn write_cluster_members_lists_each_clusters_reads_and_its_consensus() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = prefix_in(&dir);
+        let (c10, c2, g0) = (ClusterSeq { seq: b"ACGT".to_vec(), ..cl("MCL0", "MCL0:c10", 2, 4) }, ClusterSeq { seq: b"GGA".to_vec(), ..cl("MCL0", "MCL0:c2", 2, 3) }, ClusterSeq { seq: b"T".to_vec(), ..cl("MCL1", "MCL1:c0", 1, 1) });
+        let (r10, r2, r0) = (vec!["r9".to_string(), "r1".to_string()], vec!["r5".to_string(), "r3".to_string()], vec!["r1".to_string()]);
+        write_cluster_members(&prefix, &[(&g0, &r0), (&c10, &r10), (&c2, &r2)]).unwrap();
+        // clusters by family then id (c2 before c10), reads sorted inside a cluster; a read may be in two families' clusters
+        assert_eq!(text(&prefix, "reads.tsv"), "read\tfamily\tcluster\nr3\tMCL0\tMCL0:c2\nr5\tMCL0\tMCL0:c2\nr1\tMCL0\tMCL0:c10\nr9\tMCL0\tMCL0:c10\nr1\tMCL1\tMCL1:c0\n");
+        assert_eq!(text(&prefix, "clusters.fa"), ">MCL0:c2\nGGA\n>MCL0:c10\nACGT\n>MCL1:c0\nT\n");
+    }
+
+    // ---- canonical k-mers, sketches and the attribution boundaries against independent references (Task 2's deferred items) -----------
+
+    /// A reproducible generator for the reference tests below (not the module's code paths).
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 { let mut x = self.0; x ^= x << 13; x ^= x >> 7; x ^= x << 17; self.0 = x; x }
+        fn below(&mut self, n: u64) -> u64 { (self.next() >> 11) % n }
+        fn acgt(&mut self, n: usize) -> Vec<u8> { (0..n).map(|_| b"ACGT"[self.below(4) as usize]).collect() }
+    }
+    /// Canonical k-mers by explicit window slicing and an explicit reverse complement, with u128 accumulators: no rolling state.
+    fn brute_canonical(seq: &[u8], k: usize) -> Vec<u64> {
+        let code = |b: u8| match b.to_ascii_uppercase() { b'A' => Some(0u128), b'C' => Some(1), b'G' => Some(2), b'T' => Some(3), _ => None };
+        (0..(seq.len() + 1).saturating_sub(k)).filter_map(|i| {
+            let c: Vec<u128> = seq[i..i + k].iter().map(|&b| code(b)).collect::<Option<_>>()?;
+            let fw = c.iter().fold(0u128, |a, &x| (a << 2) | x);
+            let rv = c.iter().rev().fold(0u128, |a, &x| (a << 2) | (3 - x));
+            Some(fw.min(rv) as u64)
+        }).collect()
+    }
+
+    #[test]
+    fn canonical_kmers_equal_a_brute_force_reference_with_n_lower_case_and_iupac_for_every_k() {
+        let mut rng = Rng(0x1234_5678_9abc_def1);
+        let (mut nonempty, mut with_other_bytes) = (0usize, 0usize);
+        for k in [1usize, 2, 3, 7, 16, 21, 30, 31, 32] {
+            for _ in 0..400 {
+                // N runs, IUPAC codes and lower case mixed into random sequence of 0..160 bases
+                let len = rng.below(160) as usize;
+                let mut s = Vec::with_capacity(len);
+                while s.len() < len {
+                    match rng.below(100) {
+                        0..=1 => { for _ in 0..1 + rng.below(40) { if s.len() < len { s.push(b'N'); } } }
+                        2..=3 => s.push(b"RYKMSWnBDHV"[rng.below(11) as usize]),
+                        _ => { let b = b"ACGT"[rng.below(4) as usize]; s.push(if rng.below(2) == 0 { b.to_ascii_lowercase() } else { b }); }
+                    }
+                }
+                let got = canonical_kmers(&s, k);
+                assert_eq!(got, brute_canonical(&s, k), "k = {k}, seq {}", String::from_utf8_lossy(&s));
+                if !got.is_empty() { nonempty += 1; if s.iter().any(|b| !b"ACGTacgt".contains(b)) { with_other_bytes += 1; } }
+            }
+        }
+        assert!(nonempty > 1000 && with_other_bytes > 200, "the cases must exercise the reference: {nonempty} / {with_other_bytes}");
+    }
+
+    #[test]
+    fn canonical_kmers_edge_cases_and_the_parameter_asserts() {
+        let mut rng = Rng(5);
+        assert!(canonical_kmers(b"", 31).is_empty() && canonical_kmers(b"ACGT", 31).is_empty());
+        assert!(canonical_kmers(&rng.acgt(30), 31).is_empty());
+        assert_eq!(canonical_kmers(&rng.acgt(31), 31).len(), 1);
+        let s32 = rng.acgt(32);
+        assert_eq!(canonical_kmers(&s32, 32), brute_canonical(&s32, 32));                            // k = 32: the full-width mask
+        assert_eq!(canonical_kmers(&s32, 32).len(), 1);
+        // an N in the middle of a 71-mer leaves 5 windows on each side, none across it; an N run before a clean tail resets the window
+        let mut v = rng.acgt(71); v[35] = b'N';
+        assert_eq!(canonical_kmers(&v, 31).len(), 5 + 5);
+        let mut t = b"NNN".to_vec(); t.extend(rng.acgt(100));
+        assert_eq!(canonical_kmers(&t, 31).len(), 100 - 31 + 1);
+        assert!(canonical_kmers(&[b'N'; 500], 31).is_empty());
+        let mut sparse = rng.acgt(500); for i in (10..500).step_by(20) { sparse[i] = b'N'; }        // no 31-window free of N
+        assert!(canonical_kmers(&sparse, 31).is_empty());
+        // k outside 1..=32 and w = 0 are refused, not computed into garbage
+        for bad in [0usize, 33, 64] { assert!(std::panic::catch_unwind(|| canonical_kmers(b"ACGTACGTAC", bad)).is_err(), "k = {bad}"); }
+        assert!(std::panic::catch_unwind(|| minimizer_sketch(b"ACGTACGTACGTACGTACGTACGTACGTACGTACGT", 31, 0)).is_err(), "w = 0");
+        assert_eq!(minimizer_sketch(&rng.acgt(34), 31, 5).len(), 1);                                 // fewer k-mers than w: one minimizer
+    }
+
+    #[test]
+    fn attribution_boundaries_are_the_spec_values() {
+        // spec §5.2 at its edges: 300 bp, 30% of the read's k-mers, 2 x the runner-up, k-mers of more than ATTRIB_MAX_FAMILIES families dropped.
+        // Random parts share no 31-mer with the families, so a read made of x family bases then random bases has x - 30 hits.
+        let mut rng = Rng(42);
+        let f1 = rng.acgt(2000);
+        let idx = FamilyKmerIndex::build(&[("F1".into(), f1.clone())], KMER_K, ATTRIB_MAX_FAMILIES);
+        assert_eq!((idx.attribute(&f1[..MIN_UNMAPPED_LEN - 1]), idx.attribute(&f1[..MIN_UNMAPPED_LEN]).as_deref()), (None, Some("F1")));
+        // a 1000 bp read has 970 k-mers, 30% of them is 291: 321 family bases give 291 hits (in), 320 give 290 (out)
+        for (x, want) in [(321usize, Some("F1")), (320, None)] {
+            let mut read = f1[..x].to_vec(); read.extend(rng.acgt(1000 - x));
+            assert_eq!(idx.attribute(&read).as_deref(), want, "30% boundary at {x} family bases");
+        }
+        // F1 = X + Y and F2 = Y, the read is X + Y: F1 has lx + ly - 30 hits, F2 ly - 30, and F1 needs at least twice F2's: ly <= lx + 30
+        for (lx, ly, want) in [(500usize, 529usize, Some("F1")), (500, 530, Some("F1")), (500, 531, None)] {
+            let (x, y) = (rng.acgt(lx), rng.acgt(ly));
+            let f = [x, y.clone()].concat();
+            let idx = FamilyKmerIndex::build(&[("F1".into(), f.clone()), ("F2".into(), y)], KMER_K, ATTRIB_MAX_FAMILIES);
+            assert_eq!(idx.attribute(&f).as_deref(), want, "2x boundary at lx = {lx}, ly = {ly}");
+        }
+        // F1 = U + S, and n - 1 more families carry S only: with n = 8 families S is kept (F1 does not lead 2x), with n = 9 it is a repeat
+        // and dropped (F1 wins on U alone, 450 hits of 1170 k-mers)
+        assert_eq!(ATTRIB_MAX_FAMILIES, 8);
+        for (n_fam, want) in [(ATTRIB_MAX_FAMILIES, None), (ATTRIB_MAX_FAMILIES + 1, Some("F1"))] {
+            let (u, s) = (rng.acgt(450), rng.acgt(750));
+            let f = [u, s.clone()].concat();
+            let mut copies = vec![("F1".to_string(), f.clone())];
+            copies.extend((2..=n_fam).map(|i| (format!("F{i}"), s.clone())));
+            let idx = FamilyKmerIndex::build(&copies, KMER_K, ATTRIB_MAX_FAMILIES);
+            assert_eq!(idx.attribute(&f).as_deref(), want, "family cap at {n_fam} families");
+        }
     }
 }
